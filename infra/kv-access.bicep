@@ -7,7 +7,7 @@ resource keyVault 'Microsoft.KeyVault/vaults@2023-02-01' existing = {
 
 // Grant the Web App's system-assigned MI secrets get+list on the shared vault.
 // We use a vault access policy rather than a control-plane RBAC role because
-// `kv-poshared` is deployed with `enableRbacAuthorization: false` (legacy mode).
+// `kv-poshared2` is deployed with `enableRbacAuthorization: false` (legacy mode).
 // The access policy covers both `getSecret` (used by the runtime config provider
 // for `PoMiniGames--*` keys) and `list` (required by
 // `AzureKeyVaultConfigurationProvider.Load()` which enumerates the secrets

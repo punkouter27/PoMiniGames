@@ -95,7 +95,7 @@ public sealed class AiQuestionService : IQuestionService
                 return await _mock.GenerateQuestionAsync(category, cancellationToken);
             }
             throw new InvalidOperationException(
-                $"PoCoupleQuiz: AIFoundry not configured. Set {AIFoundryOptions.SectionName} in Key Vault (kv-poshared).");
+                $"PoCoupleQuiz: AIFoundry not configured. Set {AIFoundryOptions.SectionName} in Key Vault (kv-poshared2).");
         }
 
         var categoryHint = category?.ToString() ?? "any category";
@@ -196,7 +196,7 @@ public sealed class AiQuestionService : IQuestionService
                 return await _mock.CheckAnswerSimilarityAsync(answer1, answer2, cancellationToken);
             }
             throw new InvalidOperationException(
-                $"PoCoupleQuiz: AIFoundry not configured. Set {AIFoundryOptions.SectionName} in Key Vault (kv-poshared).");
+                $"PoCoupleQuiz: AIFoundry not configured. Set {AIFoundryOptions.SectionName} in Key Vault (kv-poshared2).");
         }
 
         var (a, b) = string.CompareOrdinal(answer1, answer2) <= 0 ? (answer1, answer2) : (answer2, answer1);
@@ -261,7 +261,7 @@ public sealed class AiQuestionService : IQuestionService
             if (IsNonProduction())
                 return await _mock.CheckAnswerSimilarityAsync(answer1, answer2, cancellationToken);
             throw new InvalidOperationException(
-                $"PoCoupleQuiz: AIFoundry not configured. Set {AIFoundryOptions.SectionName} in Key Vault (kv-poshared).");
+                $"PoCoupleQuiz: AIFoundry not configured. Set {AIFoundryOptions.SectionName} in Key Vault (kv-poshared2).");
         }
 
         var systemPrompt =

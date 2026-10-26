@@ -97,7 +97,7 @@ public sealed class GameChatClientFactory
         => ForDeployment(gameKey, _options.CurrentValue.ResolveDeployment(gameKey))
            ?? throw new InvalidOperationException(
                $"AIFoundry is not configured for game '{gameKey}'. Set {AIFoundryOptions.SectionName} " +
-               "(FoundryEndpoint + DefaultDeployment) in Key Vault (kv-poshared) or configuration.");
+               "(FoundryEndpoint + DefaultDeployment) in Key Vault (kv-poshared2) or configuration.");
 
     /// <summary>
     /// The decorated client for an explicit deployment, or null when the foundry is unconfigured.

@@ -59,7 +59,7 @@ public sealed class AiFoundryHealthCheck : IHealthCheck
             return Task.FromResult(_environment.IsProduction()
                 ? HealthCheckResult.Unhealthy(
                     $"AI Foundry is not configured. Set {AIFoundryOptions.SectionName} " +
-                    "(FoundryEndpoint + DefaultDeployment) in Key Vault (kv-poshared).")
+                    "(FoundryEndpoint + DefaultDeployment) in Key Vault (kv-poshared2).")
                 : HealthCheckResult.Healthy(
                     $"AI Foundry is not configured; games fall back to mocks in {_environment.EnvironmentName}."));
         }

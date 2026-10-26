@@ -10,7 +10,7 @@ param resourceGroupName string = 'PoMiniGames'
 param sharedResourceGroupName string = 'PoShared'
 
 @description('Existing shared Key Vault name')
-param sharedKeyVaultName string = 'kv-poshared'
+param sharedKeyVaultName string = 'kv-poshared2'
 
 // ── Microsoft (Entra ID) OAuth configuration ─────────────────────────────
 // Wire the SPA client ID + API audience as Bicep parameters so the App Service

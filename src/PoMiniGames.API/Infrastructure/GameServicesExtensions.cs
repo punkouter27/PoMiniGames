@@ -41,7 +41,7 @@ internal static class GameServicesExtensions
         services.AddOptions<AIFoundryOptions>()
             // Bind the configuration section the Key Vault secrets land in. This was missing:
             // the options object was built ONLY from the environment-variable overrides below,
-            // so a correctly-populated kv-poshared (PoMiniGames--AI--*) left Endpoint empty,
+            // so a correctly-populated kv-poshared2 (PoMiniGames--AI--*) left Endpoint empty,
             // IsConfigured false, and every AI-backed game silently served mock data.
             .BindConfiguration(AIFoundryOptions.SectionName)
             .PostConfigure<IConfiguration>((opts, configuration) =>

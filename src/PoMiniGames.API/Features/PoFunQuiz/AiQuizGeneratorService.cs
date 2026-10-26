@@ -122,7 +122,7 @@ public sealed class AiQuizGeneratorService : IOpenAIService
                 return MockOpenAIService.GenerateQuestions(category, count);
             }
             throw new InvalidOperationException(
-                $"PoFunQuiz: AIFoundry not configured. Set {AIFoundryOptions.SectionName} in Key Vault (kv-poshared).");
+                $"PoFunQuiz: AIFoundry not configured. Set {AIFoundryOptions.SectionName} in Key Vault (kv-poshared2).");
         }
 
         // Batch pre-generation to minimize total cloud calls.
@@ -300,7 +300,7 @@ public sealed class AiQuizGeneratorService : IOpenAIService
                 return MockOpenAIService.GenerateQuestions(category, batchCount);
             }
             throw new InvalidOperationException(
-                $"PoFunQuiz: AIFoundry not configured. Set {AIFoundryOptions.SectionName} in Key Vault (kv-poshared).");
+                $"PoFunQuiz: AIFoundry not configured. Set {AIFoundryOptions.SectionName} in Key Vault (kv-poshared2).");
         }
 
         // ── Distractor quality is the whole game ──────────────────────────

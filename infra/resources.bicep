@@ -3,13 +3,13 @@ param location string
 param tags object
 
 @description('The name of the existing Key Vault in PoShared')
-param sharedKeyVaultName string = 'kv-poshared'
+param sharedKeyVaultName string = 'kv-poshared2'
 
 @description('The name of the existing App Insights in PoShared')
 param sharedAppInsightsName string = 'poappideinsights8f9c9a4e'
 
 @description('The name of the existing Azure AI Foundry hub in PoShared')
-param sharedAIFoundryName string = 'po-aiservices-shared'
+param sharedAIFoundryName string = 'po-aiservices-shared2'
 
 @description('The name of the resource group containing shared resources')
 param sharedResourceGroupName string = 'PoShared'
