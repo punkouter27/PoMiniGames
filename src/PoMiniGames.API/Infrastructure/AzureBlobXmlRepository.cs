@@ -50,7 +50,7 @@ public sealed class AzureBlobXmlRepository : IXmlRepository
         var results = new List<XElement>();
         try
         {
-            foreach (var blob in _container.GetBlobs(prefix: KeyBlobPrefix))
+            foreach (var blob in _container.GetBlobs(BlobTraits.None, BlobStates.None, KeyBlobPrefix, CancellationToken.None))
             {
                 if (!blob.Name.EndsWith(KeyBlobSuffix, StringComparison.OrdinalIgnoreCase))
                 {
