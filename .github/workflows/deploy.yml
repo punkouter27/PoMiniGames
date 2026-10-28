@@ -194,9 +194,9 @@ jobs:
       - name: Azure Login
         uses: azure/login@v2
         with:
-          client-id: ${{ secrets.AZURE_CLIENT_ID }}
-          tenant-id: ${{ secrets.AZURE_TENANT_ID }}
-          subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+          client-id: ${{ vars.AZURE_CLIENT_ID }}
+          tenant-id: ${{ vars.AZURE_TENANT_ID }}
+          subscription-id: ${{ vars.AZURE_SUBSCRIPTION_ID }}
 
       - name: Deploy to App Service
         shell: bash
@@ -204,7 +204,7 @@ jobs:
           # Self-healing target resolution: discover the API web app from its
           # resource group instead of hard-coding a name. A future resource
           # rename can no longer silently 404 the deploy (the original failure mode).
-          APP_NAME=$(az webapp list --resource-group "$AZURE_RESOURCE_GROUP" --query "[0].name" -o tsv)
+          APP_NAME="${{ vars.AZURE_WEBAPP_NAME }}"
           if [ -z "$APP_NAME" ]; then echo "::error::No web app found in the configured resource group"; exit 1; fi
           echo "Resolved App Service: $APP_NAME"
           echo "APP_NAME=$APP_NAME" >> "$GITHUB_ENV"
@@ -221,6 +221,20 @@ jobs:
             --track-status true
 
       # One loop both absorbs the F1 cold start (the retries) and is the smoke test (the exit).
+      # Same gate in every Po web repo: the process is up (/health/live) and its dependencies answer (/health).
+      - name: Health gate (/health/live, /health)
+        shell: bash
+        run: |
+          base="https://${{ vars.AZURE_WEBAPP_NAME }}.azurewebsites.net"
+          for path in /health/live /health; do
+            for attempt in $(seq 1 60); do
+              code=$(curl -s -o /dev/null -w '%{http_code}' --max-time 30 "$base$path" || echo 000)
+              [ "$code" = "200" ] && { echo "$path -> 200 (attempt $attempt)"; break; }
+              [ "$attempt" = "60" ] && { echo "::error::$path never returned 200 (last: $code)"; exit 1; }
+              sleep 15
+            done
+          done
+
       - name: Smoke tests (health, diag)
         shell: bash
         run: |
