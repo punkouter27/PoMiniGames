@@ -48,6 +48,8 @@ public static class DiagEndpoints
 
     public static IEndpointRouteBuilder MapDiagEndpoints(this IEndpointRouteBuilder app)
     {
+        var isDevelopment = app.ServiceProvider.GetRequiredService<IWebHostEnvironment>().IsDevelopment();
+
         async Task<IResult> diagHandler(IConfiguration configuration, IWebHostEnvironment environment, ConfigurationDiagnosticsSnapshotProvider diagnosticsProvider, CancellationToken ct)
         {
             var diagnosticsEnabled = configuration.GetValue("FeatureFlags:EnableDiagnostics", environment.IsDevelopment());
@@ -199,11 +201,15 @@ public static class DiagEndpoints
         .WithName("GetDiagnostics")
         .WithSummary("Exposes a development-focused diagnostic summary without raw secret values");
 
-        diag.MapGet("/ai", GetAiUsage)
+        // Signed-in callers only outside Development: the report carries deployment names and
+        // every player's aggregate calls, tokens and spend, which is more than presence info.
+        var aiUsage = diag.MapGet("/ai", GetAiUsage)
         .WithName("AiUsage")
         .WithSummary("Per-game AI call counts, failures, token totals and latency for this process.")
         .RequireRateLimiting("leaderboard-read")
         .Produces<AiUsageReportDto>(StatusCodes.Status200OK);
+        if (!isDevelopment)
+            aiUsage.RequireAuthorization();
 
         // Note: /diag is NOT registered as an API endpoint to avoid conflicting with
         // the Blazor page route at /diag. Use /api/diag for programmatic access.
@@ -216,12 +222,6 @@ public static class DiagEndpoints
         // log without taking a competing lock.
         async Task<IResult> logsTailHandler(IConfiguration config, IWebHostEnvironment environment, int? lines = 50)
         {
-            // Raw log tails are dev-only: unlike /api/diag (masked projection) this
-            // streams unmasked log content, so it must never be reachable in Production
-            // even when diagnostics are enabled for the masked /api/diag snapshot.
-            if (!environment.IsDevelopment())
-                return Results.NotFound();
-
             var diagnosticsEnabled = config.GetValue("FeatureFlags:EnableDiagnostics", environment.IsDevelopment());
             if (!diagnosticsEnabled)
                 return Results.NotFound();
@@ -287,6 +287,11 @@ public static class DiagEndpoints
                 return Results.Ok(new { error = ex.Message });
             }
         }
+
+        // Raw log tails are dev-only: unlike /api/diag (masked projection) this streams
+        // unmasked log content, so outside Development the route is not mapped at all.
+        if (!isDevelopment)
+            return app;
 
         // The log-tail surface gets its own /api/logs group (distinct prefix from
         // /api/diag) so every route is registered via a group rather than a scattered

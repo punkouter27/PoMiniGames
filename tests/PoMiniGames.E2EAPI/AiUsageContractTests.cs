@@ -4,6 +4,7 @@ using System.Text.Json;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Mvc.Testing;
 using Microsoft.Extensions.Configuration;
+using PoMiniGames.Features.Auth;
 using PoMiniGames.TestUtilities;
 
 namespace PoMiniGames.E2EAPI;
@@ -42,6 +43,8 @@ public sealed class AiUsageContractTests
         protected override void ConfigureWebHost(IWebHostBuilder builder)
         {
             builder.UseEnvironment("Test");
+            // Host setting, not app configuration: auth reads it while services are registered.
+            builder.UseSetting("Auth:EnableFakeAuth", "true");
             builder.ConfigureAppConfiguration((_, cfg) =>
             {
                 var overrides = new Dictionary<string, string?>(TestBudgetGuard.Overrides)
@@ -67,6 +70,8 @@ public sealed class AiUsageContractTests
     {
         using var factory = new UsageFactory(configured: true);
         using var client = factory.CreateClient();
+        // Outside Development the report is for signed-in callers only.
+        client.DefaultRequestHeaders.Add(FakeAuthHandler.UserHeader, "ai-usage-test");
 
         var response = await client.GetAsync("/api/diag/ai");
         response.StatusCode.Should().Be(HttpStatusCode.OK);

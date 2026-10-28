@@ -15,7 +15,8 @@ public sealed class RoutingContractApiTests(PoMiniGamesE2EFixture factory)
     // Every route a signed-out caller may reach. A new public route fails this test until it is
     // added here on purpose. Static files and the Blazor host itself are public by design and
     // are identified by their metadata, not listed. The host runs as Test, so the routes only
-    // that environment maps are listed too.
+    // that environment maps are listed too, and the Development-only ones (/api/logs/tail, an
+    // anonymous /api/diag/ai) are not. /api/diag stays public: a masked, presence-only snapshot.
     private static readonly string[] AnonymousAllowList =
     [
         "/api/auth/antiforgery-token",
@@ -23,14 +24,12 @@ public sealed class RoutingContractApiTests(PoMiniGamesE2EFixture factory)
         "/api/auth/dev-logout",
         "/api/auth/handshake",
         "/api/diag/",
-        "/api/diag/ai",
         "/api/ecosystem/gallery",
         "/api/ecosystem/gallery/{code}/data",
         "/api/health/",
         "/api/health/ping",
         "/api/leaderboards/",
         "/api/leaderboards/{game}",
-        "/api/logs/tail",
         "/api/player/card/",
         "/api/player/card/svg",
         "/api/pobrawl/dossier",
