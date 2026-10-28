@@ -208,6 +208,17 @@ jobs:
             exit 1
           fi
 
+      # This app's package is ~100 MB, and on the Windows F1 instance Kudu leaves each zip deploy's upload and
+      # unpacked copy in C:\local\Temp\zipdeploy. Two of them fill the small local disk and the next deploy fails
+      # with "There is not enough space on the disk" (2026-10-28). Clear them first; a missing folder is fine.
+      - name: Clear stale zip-deploy temp files
+        run: |
+          token=$(az account get-access-token --query accessToken -o tsv)
+          curl -fsS --max-time 120 -X POST -H "Authorization: Bearer $token" -H 'Content-Type: application/json' \
+            "https://${{ vars.AZURE_WEBAPP_NAME }}.scm.azurewebsites.net/api/command" \
+            -d '{"command":"cmd /c if exist C:\\local\\Temp\\zipdeploy rd /s /q C:\\local\\Temp\\zipdeploy","dir":"C:\\local\\Temp"}' \
+            || echo "::warning::Could not clear the zip-deploy temp folder; the deploy may run out of local disk."
+
       # Same pair in every Po web repo: keep the live build, and put it back if anything fails once the
       # new package is live (see "Roll back to the previous build" at the end of this job).
       - name: Back up the live site
