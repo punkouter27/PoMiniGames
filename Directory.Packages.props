@@ -96,6 +96,6 @@
          produces a SemVer 2.0 version (e.g. v1.4.0 + 3 commits → 1.4.4-alpha.0.3).
          Version flows into AssemblyVersion, FileVersion, and InformationalVersion
          via Directory.Build.props so every project gets it for free. -->
-    <PackageVersion Include="MinVer" Version="6.0.0" />
+    <PackageVersion Include="MinVer" Version="8.0.0" />
   </ItemGroup>
 </Project>
