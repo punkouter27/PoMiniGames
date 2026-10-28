@@ -1,3 +1,4 @@
+using System.Reflection;
 using PoMiniGames.Features.Auth;       // Source-generated AuthLog + MicrosoftAuthOptionsBinder
 using PoMiniGames.Domain.Abstractions;
 using PoMiniGames.Infrastructure;
@@ -204,6 +205,19 @@ catch (Exception ex)
 // streamed with `SendFile` (which honors the compression layer), so this
 // ordering works for the WASM payload too.
 app.UseResponseCompression();
+// Which build answered: the SDK stamps the commit into the informational version as
+// <version>+<sha>, and the deploy checks this header against the commit it shipped. OnStarting,
+// so a response the exception handler rewrites keeps it.
+var commit = typeof(Program).Assembly.GetCustomAttribute<AssemblyInformationalVersionAttribute>()?.InformationalVersion.Split('+') is [_, var sha] ? sha : "unknown";
+app.Use((ctx, next) =>
+{
+    ctx.Response.OnStarting(() =>
+    {
+        ctx.Response.Headers["X-Commit"] = commit;
+        return Task.CompletedTask;
+    });
+    return next(ctx);
+});
 // CORS: applies only in Development (see registration above). Must precede
 // UseAuthentication / MapPoMiniGamesEndpoints so preflight OPTIONS requests
 // are answered before the auth pipeline tries to validate them.
