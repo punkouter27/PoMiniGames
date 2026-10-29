@@ -24,7 +24,7 @@
 // the render frame already carries and looks for a sharp drop in vertical speed. It is
 // approximate — a body whose row index shifts is simply skipped that frame — and that is
 // fine, because a missed dust puff is invisible and the sim stays untouched.
-import * as THREE from 'three';
+import { Vector3 } from 'three-eco/webgpu';
 import { FRAME } from '../sim/frame.js';
 import { PROP_CAP, PROP_KIND } from '../sim/core/config.js';
 import { tileX, tileZ } from '../sim/terrain/tiles.js';
@@ -66,7 +66,7 @@ export function createEventFx(particles, audio, { tier = 'high' } = {}) {
   let smokeDebt = 0;
   let lavaDebt = 0;
 
-  const tmp = new THREE.Vector3();
+  const tmp = new Vector3();
 
   function shake(dist, preset) {
     // Distance falloff for the physical layer. impactBus owns trauma/haptics/hitstop;

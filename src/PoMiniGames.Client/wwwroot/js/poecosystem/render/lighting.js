@@ -3,25 +3,25 @@
 // actually see rather than the whole 200 m island (the trick from povoxelstrike/game.js).
 //
 // Publishes the sun and fog settings shared by water and post-processing.
-import * as THREE from 'three';
+import { AmbientLight, Color, DirectionalLight, FogExp2, HemisphereLight, Vector3 } from 'three-eco/webgpu';
 
 const SHADOW_HALF = 120; // Encloses the full 200m island (plus margins) to eliminate frustum clipping lines
 
 // Night is deliberately mild — the sky darkens slightly and the
 // sun dims, but light floors stay high enough that creatures and terrain remain clearly
 // observable around the clock. The scene must never become a dark screen.
-const DAY_SKY = new THREE.Color(0x8ec5ff);
-const NIGHT_SKY = new THREE.Color(0x2a3c5a);
-const DUSK_SKY = new THREE.Color(0xf59e0b);
-const DAY_SUN = new THREE.Color(0xfff2df);
-const NIGHT_SUN = new THREE.Color(0x9db4d8);
+const DAY_SKY = new Color(0x8ec5ff);
+const NIGHT_SKY = new Color(0x2a3c5a);
+const DUSK_SKY = new Color(0xf59e0b);
+const DAY_SUN = new Color(0xfff2df);
+const NIGHT_SUN = new Color(0x9db4d8);
 // A closed storm deck greys the sky and the haze together (weather).
-const OVERCAST_SKY = new THREE.Color(0x7d8894);
+const OVERCAST_SKY = new Color(0x7d8894);
 
 export function createLighting(scene, { shadows = true, shadowMapSize = 2048 } = {}) {
-  const hemi = new THREE.HemisphereLight(0xbfd4ff, 0x2f3a2a, 1.1);
-  const ambient = new THREE.AmbientLight(0xc8d4e8, 0.35);
-  const sun = new THREE.DirectionalLight(0xfff2df, 2.0);
+  const hemi = new HemisphereLight(0xbfd4ff, 0x2f3a2a, 1.1);
+  const ambient = new AmbientLight(0xc8d4e8, 0.35);
+  const sun = new DirectionalLight(0xfff2df, 2.0);
   sun.castShadow = shadows;
   if (shadows) {
     sun.shadow.mapSize.set(shadowMapSize, shadowMapSize);
@@ -29,21 +29,24 @@ export function createLighting(scene, { shadows = true, shadowMapSize = 2048 } =
     sun.shadow.camera.top = SHADOW_HALF; sun.shadow.camera.bottom = -SHADOW_HALF;
     sun.shadow.camera.near = 10; sun.shadow.camera.far = 420;
     sun.shadow.bias = -0.00008; sun.shadow.normalBias = 0.04;
+    // Node shadows filter with PCF; the radius is what softens the edge now that the
+    // separate soft-PCF mode is gone.
+    sun.shadow.radius = 2;
   }
   scene.add(hemi, ambient, sun, sun.target);
 
   // The fog is owned here rather than by the renderer: its colour and density both track
   // the same `elevation` the sun does, and splitting that across two files is how a sky
   // and its haze end up disagreeing about what time it is.
-  const fog = new THREE.FogExp2(DAY_SKY.getHex(), 0.0045);
+  const fog = new FogExp2(DAY_SKY.getHex(), 0.0045);
   scene.fog = fog;
 
   // No camera-following mist plane: its broad noise patches obscure the island.
 
-  const islandCenter = new THREE.Vector3(100, 0, 100);
-  const sky = new THREE.Color();
-  const sunColour = new THREE.Color();
-  const sunDir = new THREE.Vector3(0, 1, 0);
+  const islandCenter = new Vector3(100, 0, 100);
+  const sky = new Color();
+  const sunColour = new Color();
+  const sunDir = new Vector3(0, 1, 0);
   // Reused so update() allocates nothing at 60 fps — it is called every frame.
   const info = { sky, sunColour, sunDir, night: 0, day: 1, dusk: 0, fogDensity: 0.0045 };
 

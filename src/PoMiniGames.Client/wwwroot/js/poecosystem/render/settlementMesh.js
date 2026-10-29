@@ -1,7 +1,7 @@
 // settlementMesh.js — 3D procedural structures for tribal settlements.
 'use strict';
 
-import * as THREE from 'three';
+import { BoxGeometry, ConeGeometry, CylinderGeometry, Group, Mesh, MeshBasicNodeMaterial, MeshLambertNodeMaterial, Object3D } from 'three-eco/webgpu';
 import { BUILDING_KIND } from '../sim/tribe/contracts.js';
 
 // Okabe–Ito picks for the colour-blind palette (Settings): orange / blue / bluish green stay
@@ -15,77 +15,77 @@ const PALETTES = Object.freeze({
 export const bannerColour = (palette, tribeId) => (PALETTES[palette] ?? PALETTES.default)[tribeId] ?? 0xffffff;
 
 export function createSettlementMeshes(scene, heightAt = () => 0, palette = 'default') {
-  const group = new THREE.Group();
+  const group = new Group();
   group.name = 'settlement_structures';
   scene.add(group);
 
-  const buildingMeshes = new Map(); // buildingId -> THREE.Object3D
+  const buildingMeshes = new Map(); // buildingId -> Object3D
 
   // Materials
-  const woodMat = new THREE.MeshLambertMaterial({ color: 0x8c5e3c });
-  const thatchMat = new THREE.MeshLambertMaterial({ color: 0xd4b26f });
-  const stoneMat = new THREE.MeshLambertMaterial({ color: 0x7a8288 });
-  const scaffoldMat = new THREE.MeshBasicMaterial({ color: 0xb8860b, wireframe: true });
+  const woodMat = new MeshLambertNodeMaterial({ color: 0x8c5e3c });
+  const thatchMat = new MeshLambertNodeMaterial({ color: 0xd4b26f });
+  const stoneMat = new MeshLambertNodeMaterial({ color: 0x7a8288 });
+  const scaffoldMat = new MeshBasicNodeMaterial({ color: 0xb8860b, wireframe: true });
 
   const BANNER_COLORS = PALETTES[palette] ?? PALETTES.default;   // Amber, Cobalt, Verdant
 
   function buildStructureObject(b) {
-    const root = new THREE.Group();
+    const root = new Group();
     root.position.set(b.x, heightAt(b.x, b.z), b.z);
 
     const bannerColor = BANNER_COLORS[b.tribeId] || 0xffffff;
-    const bannerMat = new THREE.MeshLambertMaterial({ color: bannerColor });
+    const bannerMat = new MeshLambertNodeMaterial({ color: bannerColor });
 
     if (b.kind === BUILDING_KIND.HUT) {
       // Cylindrical hut base with conical thatch roof
-      const baseGeo = new THREE.CylinderGeometry(1.6, 1.7, 1.5, 8);
-      const baseMesh = new THREE.Mesh(baseGeo, woodMat);
+      const baseGeo = new CylinderGeometry(1.6, 1.7, 1.5, 8);
+      const baseMesh = new Mesh(baseGeo, woodMat);
       baseMesh.position.y = 0.75;
       root.add(baseMesh);
 
-      const roofGeo = new THREE.ConeGeometry(2.1, 1.2, 8);
-      const roofMesh = new THREE.Mesh(roofGeo, thatchMat);
+      const roofGeo = new ConeGeometry(2.1, 1.2, 8);
+      const roofMesh = new Mesh(roofGeo, thatchMat);
       roofMesh.position.y = 2.1;
       root.add(roofMesh);
     } else if (b.kind === BUILDING_KIND.GRANARY) {
       // Raised box on stone stilts
-      const stiltGeo = new THREE.BoxGeometry(0.3, 0.8, 0.3);
+      const stiltGeo = new BoxGeometry(0.3, 0.8, 0.3);
       for (const [sx, sz] of [[-0.8, -0.8], [0.8, -0.8], [-0.8, 0.8], [0.8, 0.8]]) {
-        const stilt = new THREE.Mesh(stiltGeo, stoneMat);
+        const stilt = new Mesh(stiltGeo, stoneMat);
         stilt.position.set(sx, 0.4, sz);
         root.add(stilt);
       }
-      const binGeo = new THREE.BoxGeometry(2.0, 1.6, 2.0);
-      const binMesh = new THREE.Mesh(binGeo, woodMat);
+      const binGeo = new BoxGeometry(2.0, 1.6, 2.0);
+      const binMesh = new Mesh(binGeo, woodMat);
       binMesh.position.y = 1.6;
       root.add(binMesh);
     } else if (b.kind === BUILDING_KIND.WATCHTOWER) {
       // Tall tower with top lookout
-      const legGeo = new THREE.CylinderGeometry(0.12, 0.15, 4.2, 4);
+      const legGeo = new CylinderGeometry(0.12, 0.15, 4.2, 4);
       for (const [lx, lz] of [[-0.6, -0.6], [0.6, -0.6], [-0.6, 0.6], [0.6, 0.6]]) {
-        const leg = new THREE.Mesh(legGeo, woodMat);
+        const leg = new Mesh(legGeo, woodMat);
         leg.position.set(lx, 2.1, lz);
         root.add(leg);
       }
-      const platformGeo = new THREE.BoxGeometry(1.8, 0.2, 1.8);
-      const platform = new THREE.Mesh(platformGeo, woodMat);
+      const platformGeo = new BoxGeometry(1.8, 0.2, 1.8);
+      const platform = new Mesh(platformGeo, woodMat);
       platform.position.y = 4.2;
       root.add(platform);
 
       // Banner on top of watchtower
-      const bannerGeo = new THREE.BoxGeometry(0.1, 0.8, 0.6);
-      const banner = new THREE.Mesh(bannerGeo, bannerMat);
+      const bannerGeo = new BoxGeometry(0.1, 0.8, 0.6);
+      const banner = new Mesh(bannerGeo, bannerMat);
       banner.position.set(0, 5.0, 0);
       root.add(banner);
     } else if (b.kind === BUILDING_KIND.WAR_TOTEM) {
       // Carved wooden obelisk with tribal banner
-      const pillarGeo = new THREE.BoxGeometry(0.8, 3.5, 0.8);
-      const pillar = new THREE.Mesh(pillarGeo, woodMat);
+      const pillarGeo = new BoxGeometry(0.8, 3.5, 0.8);
+      const pillar = new Mesh(pillarGeo, woodMat);
       pillar.position.y = 1.75;
       root.add(pillar);
 
-      const crestGeo = new THREE.ConeGeometry(0.7, 1.0, 4);
-      const crest = new THREE.Mesh(crestGeo, bannerMat);
+      const crestGeo = new ConeGeometry(0.7, 1.0, 4);
+      const crest = new Mesh(crestGeo, bannerMat);
       crest.position.y = 4.0;
       root.add(crest);
     }

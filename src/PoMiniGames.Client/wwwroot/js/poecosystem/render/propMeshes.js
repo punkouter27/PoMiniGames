@@ -1,10 +1,10 @@
 // propMeshes.js — physics props (ragdoll parts, logs, rocks, volcanic projectiles) as one
 // InstancedMesh per PROP_SIZES entry. The frame carries a full quaternion per prop, so
 // these are drawn exactly where cannon-es put them.
-import * as THREE from 'three';
+import { BoxGeometry, DynamicDrawUsage, IcosahedronGeometry, InstancedMesh, Object3D } from 'three-eco/webgpu';
 import { PROP_KIND, PROP_SIZES } from '../sim/core/config.js';
 import { FRAME } from '../sim/frame.js';
-import { enhanceLambert } from './materials.js';
+import { ecoLambert } from './materials.js';
 
 const KIND_COLOUR = {
   [PROP_KIND.ragdollPart]: 0x8a6f5a,
@@ -15,15 +15,15 @@ const KIND_COLOUR = {
 
 export function createPropMeshes(scene, propCap) {
   const buckets = [];
-  const dummy = new THREE.Object3D();
+  const dummy = new Object3D();
   for (const kind of Object.values(PROP_KIND)) {
-    const material = enhanceLambert(new THREE.MeshLambertMaterial({ color: KIND_COLOUR[kind] ?? 0x888888, flatShading: true }), { rim: 0.3, mottle: 0.26, mottleScale: 0.5 });
+    const material = ecoLambert({ color: KIND_COLOUR[kind] ?? 0x888888, flatShading: true }, { rim: 0.3, mottle: 0.26, mottleScale: 0.5 });
     const perSize = PROP_SIZES.map((size, sizeIndex) => {
       const geo = kind === PROP_KIND.rock || kind === PROP_KIND.projectile
-        ? new THREE.IcosahedronGeometry(size[0] * 0.6, 0)
-        : new THREE.BoxGeometry(size[0], size[1], size[2]);
-      const mesh = new THREE.InstancedMesh(geo, material, propCap);
-      mesh.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
+        ? new IcosahedronGeometry(size[0] * 0.6, 0)
+        : new BoxGeometry(size[0], size[1], size[2]);
+      const mesh = new InstancedMesh(geo, material, propCap);
+      mesh.instanceMatrix.setUsage(DynamicDrawUsage);
       mesh.castShadow = true; mesh.count = 0; mesh.frustumCulled = false;
       mesh.name = `prop-${kind}-${sizeIndex}`;
       scene.add(mesh);

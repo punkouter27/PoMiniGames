@@ -2,10 +2,10 @@
 // (species × body part). Every creature is drawn from the frame's [x, y, z, yaw, scale,
 // species, goal, lifeStage] record; legs swing cosmetically from the position delta, so
 // walking reads as walking without the sim sending any animation state.
-import * as THREE from 'three';
+import { BoxGeometry, Color, ConeGeometry, DynamicDrawUsage, InstancedBufferAttribute, InstancedMesh, Object3D } from 'three-eco/webgpu';
 import { FRAME } from '../sim/frame.js';
 import { SPECIES_ID } from '../sim/creatures/species.js';
-import { enhanceLambert, materialLens } from './materials.js';
+import { ecoLambert, materialLens } from './materials.js';
 
 // Part = box or cone offset from the creature's origin (feet), forward = +Z.
 // feet = [fore-aft, sideways] distance from the origin to where the legs meet the ground:
@@ -76,8 +76,8 @@ const SEAT_MAX_SLOPE = 1.2;
 // The evolution tint: a creature's chosen base trait mapped cool → warm. Applied through
 // InstancedMesh.instanceColor, which multiplies the material colour, so the species
 // material goes white while a tint is on and back to its own colour when it is off.
-const TINT_LOW = new THREE.Color(0x2563eb);
-const TINT_HIGH = new THREE.Color(0xfbbf24);
+const TINT_LOW = new Color(0x2563eb);
+const TINT_HIGH = new Color(0xfbbf24);
 
 // The naturalist lenses. 0–4 are the five traits (the evolution tint); the rest
 // read what the frame carries: hunger, health and the sick flag, how fast the creature
@@ -85,40 +85,45 @@ const TINT_HIGH = new THREE.Color(0xfbbf24);
 export const LENS = Object.freeze({ NONE: -1, HUNGER: 5, HEALTH: 6, THERMAL: 7, KIN: 8, COUNT: 9 });
 // How far the lens colour replaces the lit colour (materials.js materialLens).
 const LENS_GLOW = { [LENS.HUNGER]: 0.7, [LENS.HEALTH]: 0.7, [LENS.THERMAL]: 1, [LENS.KIN]: 0.85 };
-const FED = new THREE.Color(0x22c55e); const STARVING = new THREE.Color(0xef4444);
-const DYING = new THREE.Color(0xdc2626); const HEALTHY = new THREE.Color(0x34d399); const SICK = new THREE.Color(0xc026d3);
+const FED = new Color(0x22c55e); const STARVING = new Color(0xef4444);
+const DYING = new Color(0xdc2626); const HEALTHY = new Color(0x34d399); const SICK = new Color(0xc026d3);
 // Thermal ramp: cold violet → magenta → orange → near white.
-const THERMAL = [new THREE.Color(0x22105e), new THREE.Color(0xc0206e), new THREE.Color(0xff8a1f), new THREE.Color(0xfff3b0)];
+const THERMAL = [new Color(0x22105e), new Color(0xc0206e), new Color(0xff8a1f), new Color(0xfff3b0)];
 const BODY_HEAT = [0.3, 0.42, 0.5, 0.46];   // rabbit, deer, wolf, human at rest
-const KIN_SELF = new THREE.Color(0xfde047);
-const KIN_REL = [new THREE.Color(0x7dd3fc), new THREE.Color(0x86efac), new THREE.Color(0xfda4af)];   // elder, young, sibling
-const KIN_OTHER = new THREE.Color(0x2c313c);
+const KIN_SELF = new Color(0xfde047);
+const KIN_REL = [new Color(0x7dd3fc), new Color(0x86efac), new Color(0xfda4af)];   // elder, young, sibling
+const KIN_OTHER = new Color(0x2c313c);
 
 export function createCreatureMeshes(scene, cap) {
   const groups = [];
   let tint = -1;               // lens id: a trait index, a LENS value, or -1 for none
   let repaint = false;         // one pass back to white after the tint is switched off
   let kinSelf = -1; let kin = new Map();   // handle → relation (0 elder, 1 young, 2 sibling)
-  const tintColour = new THREE.Color();
+  const tintColour = new Color();
   function thermal(t) {
     const x = Math.max(0, Math.min(0.9999, t)) * 3; const k = x | 0;
     return tintColour.copy(THERMAL[k]).lerp(THERMAL[k + 1], x - k);
   }
   // Two reusable transforms: at 400 creatures × ~8 parts × 60 fps, allocating an
   // Object3D per part per frame would be ~200k allocations a second.
-  const dummy = new THREE.Object3D();
-  const local = new THREE.Object3D();
+  const dummy = new Object3D();
+  const local = new Object3D();
   dummy.rotation.order = 'YXZ';   // yaw outermost, so pitch and roll are about the body's own axes
   for (const [id, rig] of Object.entries(RIGS)) {
     // Fur/skin grain at a body scale, and a sky-tinted rim so a creature separates from the
     // ground it stands on at a distance (materials.js).
-    const material = enhanceLambert(new THREE.MeshLambertMaterial({ color: rig.colour, flatShading: true }), { rim: 0.42, mottle: 0.16, mottleScale: 0.9, lens: true });
+    const material = ecoLambert({ color: rig.colour, flatShading: true }, { rim: 0.42, mottle: 0.16, mottleScale: 0.9, lens: true });
     const parts = rig.parts.map((p) => {
       const geo = p.shape === 'cone'
-        ? new THREE.ConeGeometry(p.size[0], p.size[1], 5)
-        : new THREE.BoxGeometry(p.size[0], p.size[1], p.size[2]);
-      const mesh = new THREE.InstancedMesh(geo, material, cap);
-      mesh.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
+        ? new ConeGeometry(p.size[0], p.size[1], 5)
+        : new BoxGeometry(p.size[0], p.size[1], p.size[2]);
+      const mesh = new InstancedMesh(geo, material, cap);
+      mesh.instanceMatrix.setUsage(DynamicDrawUsage);
+      // A white instance colour from the start: the node material compiles its lens term
+      // only for a mesh that carries one, and a mesh that gained it mid-session on the first
+      // lens switch would recompile under the player's cursor.
+      mesh.instanceColor = new InstancedBufferAttribute(new Float32Array(cap * 3).fill(1), 3);
+      mesh.instanceColor.setUsage(DynamicDrawUsage);
       mesh.castShadow = true;
       mesh.count = 0;
       mesh.frustumCulled = false;

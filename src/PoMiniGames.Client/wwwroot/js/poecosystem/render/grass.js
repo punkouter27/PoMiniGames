@@ -13,17 +13,22 @@
 // the biomass mask and the trail texture are all sampled in the vertex shader. The CPU
 // touches this module only on a tile sync (1 Hz), to repack the biomass mask.
 //
-// WHY A HOOKED LAMBERT RATHER THAN A SHADERMATERIAL
+// WHY A NODE LAMBERT RATHER THAN A HAND-ROLLED MATERIAL
 // The blades have to sit in the ground they grow out of. A hand-rolled lighting model is
-// always slightly wrong against MeshLambertMaterial (the terrain) at some hour of the day,
-// and the seam is exactly where the eye looks. Hooking Lambert gets the same lights, the
-// same fog, the same shadows and the same tone mapping for free. The normal is forced to
-// world-up so a blade is lit like the ground under it rather than like a vertical card.
+// always slightly wrong against the terrain's Lambert at some hour of the day, and the seam
+// is exactly where the eye looks. GrassMaterial is a MeshLambertNodeMaterial with its own
+// vertex stage (positionNode), so it gets the same lights, fog, shadows and tone mapping
+// for free, on WebGPU and the WebGL2 fallback alike. The normal is forced to world-up so a
+// blade is lit like the ground under it rather than like a vertical card.
 //
 // Low tier: not built at all.
-import * as THREE from 'three';
+import { Color, DataTexture, DoubleSide, Float32BufferAttribute, FloatType, InstancedBufferAttribute, InstancedBufferGeometry, LinearFilter, Mesh, MeshLambertNodeMaterial, NearestFilter, RedFormat, UnsignedByteType, Vector2, Vector3 } from 'three-eco/webgpu';
+import {
+  attribute, cameraPosition, cameraViewMatrix, clamp, cos, diffuseColor, dot, float, floor, ivec2, length, mix, mod,
+  normalize, positionGeometry, positionWorld, pow, sin, smoothstep, step, texture, textureLoad, uniform, varying, vec2, vec3, vec4,
+} from 'three-eco/tsl';
 import { TILE, TILE_STATE } from '../sim/terrain/tiles.js';
-import { cloudShadowGlsl, materialClock, materialCloud, materialSeason, materialSnow } from './materials.js';
+import { cloudLight, materialClock, materialSeason, materialSnow } from './materials.js';
 import { trailUniforms } from './trails.js';
 
 const TIER = {
@@ -46,8 +51,8 @@ function bladeGeometry(count) {
   const top = (RUNGS.length - 1) * 2;
   index.push(top, top + 1, top + 2);
 
-  const geo = new THREE.InstancedBufferGeometry();
-  geo.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3));
+  const geo = new InstancedBufferGeometry();
+  geo.setAttribute('position', new Float32BufferAttribute(positions, 3));
   geo.setIndex(index);
   // Seeds are stratified on a jittered grid rather than pure random: pure random clumps,
   // and a clumped meadow reads as patchy at exactly the distance the blades are visible.
@@ -61,87 +66,88 @@ function bladeGeometry(count) {
     seeds[i * 3 + 1] = (gz + rand()) / side;
     seeds[i * 3 + 2] = rand();
   }
-  geo.setAttribute('aSeed', new THREE.InstancedBufferAttribute(seeds, 3));
+  geo.setAttribute('aSeed', new InstancedBufferAttribute(seeds, 3));
   geo.instanceCount = count;
   return geo;
 }
 
-const VERT_HEAD = `
-#include <common>
-uniform vec2 uCam;
-uniform float uPatch;
-uniform float uGrassTime;
-uniform vec2 uWind;
-uniform sampler2D uHeight;
-uniform float uSize;
-uniform sampler2D uMask;
-uniform sampler2D uTrail;
-uniform float uTrailSpan;
-uniform float uGrassSnow;
-uniform float uGrassSeason;
-uniform vec3 uGreen;
-uniform vec3 uDry;
-attribute vec3 aSeed;
-varying vec3 vGrassCol;
-varying float vBladeT;
-varying vec3 vViewUp;
+/**
+ * The blade material: a node Lambert whose vertex stage places, sizes and bends every blade
+ * from the patch seed, the heightmap, the biomass mask and the trail texture, with the
+ * normal seated on world-up (a blade is lit like the ground it stands on) and a
+ * translucency term added after the lighting sum.
+ */
+class GrassMaterial extends MeshLambertNodeMaterial {
+  constructor(u, heightTex, maskTex) {
+    super({ side: DoubleSide });
+    this.u = u;
+    this.ecoKey = 'grass';
+    const seed = attribute('aSeed', 'vec3');
+    const patch = vec2(u.uPatch);
+    const seedPos = seed.xy.mul(u.uPatch);
+    const wp = u.uCam.add(mod(seedPos.sub(u.uCam).add(patch.mul(0.5)), patch)).sub(patch.mul(0.5));
+    const rnd = seed.z;
+    const camDist = length(wp.sub(u.uCam));
+    // Fade to nothing well inside the patch edge, so the wrap never shows as a line.
+    const fade = float(1).sub(smoothstep(u.uPatch.mul(0.28), u.uPatch.mul(0.47), camDist));
+    const muv = wp.div(u.uSize);
+    const inside = step(0, muv.x).mul(step(muv.x, 1)).mul(step(0, muv.y)).mul(step(muv.y, 1));
+    const biomass = texture(maskTex, muv).level(0).r.mul(inside);
+    const tr = trailUniforms.uTrail.sample(wp.div(trailUniforms.uTrailSpan)).level(0).rg;
+    const bladeH = rnd.mul(0.46).add(0.2).mul(smoothstep(0.06, 0.55, biomass)).mul(fade)
+      .mul(float(1).sub(tr.x.mul(0.8))).mul(float(1).sub(clamp(materialSnow, 0, 1).mul(0.92)));
+    const t = positionGeometry.y;
+    const width = rnd.mul(0.6).add(0.7).mul(0.06).mul(float(1).sub(t.mul(0.85))).mul(step(0.02, bladeH));
+    const yaw = rnd.mul(43);
+    const across = vec2(cos(yaw), sin(yaw));
+    const phase = materialClock.mul(rnd.mul(0.7).add(1.3)).add(wp.x.mul(0.35)).add(wp.y.mul(0.21));
+    // A slow travelling gust front: the field moves in waves, not in unison.
+    const gust = sin(materialClock.mul(0.6).add(wp.x.mul(0.07)).sub(wp.y.mul(0.05))).mul(0.45).add(0.55);
+    const sway = u.uWind.mul(sin(phase).mul(0.55).add(0.45)).mul(gust).add(vec2(sin(phase.mul(1.3)), cos(phase.mul(0.9))).mul(0.03));
+    // Trample: fresh tracks lay the blade down along its own facing.
+    const laid = tr.y;
+    const lay = vec2(across.y.negate(), across.x).mul(laid).mul(0.8);
+    const bend = sway.add(lay).mul(t).mul(t).mul(bladeH).mul(2.4);
+    const rise = t.mul(bladeH).mul(float(1).sub(laid.mul(0.7)));
+    const transformed = vec3(
+      wp.x.add(across.x.mul(positionGeometry.x).mul(width)).add(bend.x),
+      heightAt(heightTex, wp, u.uSize).sub(0.03).add(rise),
+      wp.y.add(across.y.mul(positionGeometry.x).mul(width)).add(bend.y),
+    );
+    this.positionNode = transformed;
+    let tint = mix(u.uDry, u.uGreen, clamp(biomass.mul(1.2), 0, 1)).mul(rnd.mul(0.36).add(0.82));
+    const autumn = step(1.5, materialSeason).mul(step(materialSeason, 2.5));
+    tint = mix(tint, tint.mul(vec3(1.22, 0.86, 0.5)), autumn);
+    this.colorNode = varying(tint.mul(mix(0.5, 1.18, t)).mul(cloudLight(transformed)), 'vGrassCol');
+    this.bladeT = varying(t, 'vBladeT');
+    // DoubleSide would flip the normal on the back face and light the far side of every
+    // blade as if it faced the ground: seat it on world-up, in view space.
+    this.normalNode = normalize(cameraViewMatrix.mul(vec4(0, 1, 0, 0)).xyz);
+  }
 
-float grassHeightAt(vec2 p) {
-  vec2 q = clamp(p, vec2(0.0), vec2(uSize - 0.001));
-  ivec2 i = ivec2(floor(q));
-  vec2 f = q - vec2(i);
-  float h00 = texelFetch(uHeight, i, 0).r;
-  float h10 = texelFetch(uHeight, i + ivec2(1, 0), 0).r;
-  float h01 = texelFetch(uHeight, i + ivec2(0, 1), 0).r;
-  float h11 = texelFetch(uHeight, i + ivec2(1, 1), 0).r;
+  customProgramCacheKey() { return super.customProgramCacheKey() + this.ecoKey; }
+
+  setupLighting(builder) {
+    const out = super.setupLighting(builder);
+    // Translucency: a low sun behind the field lights the tips — the one term that makes
+    // grass read as grass rather than green fur.
+    const toFrag = normalize(positionWorld.sub(cameraPosition));
+    const backlit = pow(clamp(dot(toFrag, normalize(this.u.uSunDir)), 0, 1), 3);
+    return out.add(this.u.uSunCol.mul(diffuseColor.rgb).mul(backlit).mul(this.bladeT).mul(0.35));
+  }
+}
+
+/** Bilinear height from the corner heightmap, with texel loads (the R32F map is unfilterable). */
+function heightAt(heightTex, p, size) {
+  const q = clamp(p, vec2(0), vec2(size.sub(0.001)));
+  const i = ivec2(floor(q));
+  const f = q.sub(floor(q));
+  const h00 = textureLoad(heightTex, i).r;
+  const h10 = textureLoad(heightTex, i.add(ivec2(1, 0))).r;
+  const h01 = textureLoad(heightTex, i.add(ivec2(0, 1))).r;
+  const h11 = textureLoad(heightTex, i.add(ivec2(1, 1))).r;
   return mix(mix(h00, h10, f.x), mix(h01, h11, f.x), f.y);
 }
-// The clouds' shade, per blade: the same field the terrain under it samples (materials.js).
-float gHash(vec2 p) { return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453); }
-float gNoise(vec2 p) {
-  vec2 i = floor(p); vec2 f = fract(p);
-  vec2 u = f * f * (3.0 - 2.0 * f);
-  return mix(mix(gHash(i), gHash(i + vec2(1.0, 0.0)), u.x),
-             mix(gHash(i + vec2(0.0, 1.0)), gHash(i + vec2(1.0, 1.0)), u.x), u.y);
-}
-${cloudShadowGlsl('gNoise')}
-`;
-
-const VERT_BODY = `
-  vec2 seedPos = aSeed.xy * uPatch;
-  vec2 wp = uCam + mod(seedPos - uCam + 0.5 * uPatch, uPatch) - 0.5 * uPatch;
-  float rnd = aSeed.z;
-  float camDist = length(wp - uCam);
-  // Fade to nothing well inside the patch edge, so the wrap never shows as a line.
-  float fade = 1.0 - smoothstep(uPatch * 0.28, uPatch * 0.47, camDist);
-  vec2 muv = wp / uSize;
-  float inside = step(0.0, muv.x) * step(muv.x, 1.0) * step(0.0, muv.y) * step(muv.y, 1.0);
-  float biomass = texture2D(uMask, muv).r * inside;
-  vec2 tr = texture2D(uTrail, wp / uTrailSpan).rg;
-  float bladeH = (0.2 + 0.46 * rnd) * smoothstep(0.06, 0.55, biomass) * fade
-               * (1.0 - tr.r * 0.8) * (1.0 - clamp(uGrassSnow, 0.0, 1.0) * 0.92);
-  float t = position.y;
-  float width = 0.06 * (0.7 + rnd * 0.6) * (1.0 - t * 0.85) * step(0.02, bladeH);
-  float yaw = rnd * 43.0;
-  vec2 across = vec2(cos(yaw), sin(yaw));
-  float phase = uGrassTime * (1.3 + rnd * 0.7) + wp.x * 0.35 + wp.y * 0.21;
-  // A slow travelling gust front: the field moves in waves, not in unison.
-  float gust = 0.55 + 0.45 * sin(uGrassTime * 0.6 + wp.x * 0.07 - wp.y * 0.05);
-  vec2 sway = uWind * (0.45 + 0.55 * sin(phase)) * gust + vec2(sin(phase * 1.3), cos(phase * 0.9)) * 0.03;
-  // Trample: fresh tracks lay the blade down along its own facing.
-  float laid = tr.g;
-  vec2 lay = vec2(-across.y, across.x) * laid * 0.8;
-  vec2 bend = (sway + lay) * t * t * bladeH * 2.4;
-  float rise = t * bladeH * (1.0 - laid * 0.7);
-  vec3 transformed = vec3(wp.x + across.x * position.x * width + bend.x,
-                          grassHeightAt(wp) - 0.03 + rise,
-                          wp.y + across.y * position.x * width + bend.y);
-  vec3 tint = mix(uDry, uGreen, clamp(biomass * 1.2, 0.0, 1.0)) * (0.82 + rnd * 0.36);
-  if (uGrassSeason > 1.5 && uGrassSeason < 2.5) tint *= vec3(1.22, 0.86, 0.5);
-  vGrassCol = tint * mix(0.5, 1.18, t) * cloudLight(transformed);
-  vBladeT = t;
-  vViewUp = normalize((viewMatrix * vec4(0.0, 1.0, 0.0, 0.0)).xyz);
-`;
 
 export function createGrass(scene, terrain, { tier = 'high' } = {}) {
   const cfg = TIER[tier];
@@ -151,73 +157,32 @@ export function createGrass(scene, terrain, { tier = 'high' } = {}) {
 
   const heights = new Float32Array(cs * cs);
   for (let i = 0; i < heights.length; i++) heights[i] = terrain.height[i];
-  const heightTex = new THREE.DataTexture(heights, cs, cs, THREE.RedFormat, THREE.FloatType);
-  heightTex.minFilter = heightTex.magFilter = THREE.NearestFilter;
+  const heightTex = new DataTexture(heights, cs, cs, RedFormat, FloatType);
+  heightTex.minFilter = heightTex.magFilter = NearestFilter;
   heightTex.unpackAlignment = 1;
   heightTex.needsUpdate = true;
 
   const mask = new Uint8Array(size * size);
-  const maskTex = new THREE.DataTexture(mask, size, size, THREE.RedFormat, THREE.UnsignedByteType);
-  maskTex.minFilter = maskTex.magFilter = THREE.LinearFilter;
+  const maskTex = new DataTexture(mask, size, size, RedFormat, UnsignedByteType);
+  maskTex.minFilter = maskTex.magFilter = LinearFilter;
   maskTex.unpackAlignment = 1;
   maskTex.needsUpdate = true;
 
   const uniforms = {
-    uCam: { value: new THREE.Vector2(size / 2, size / 2) },
-    uPatch: { value: cfg.patch },
-    uGrassTime: materialClock,
-    uWind: { value: new THREE.Vector2(0.08, 0.03) },
-    uHeight: { value: heightTex },
-    uSize: { value: size },
-    uMask: { value: maskTex },
-    uTrail: trailUniforms.uTrail,
-    uTrailSpan: trailUniforms.uTrailSpan,
-    uGrassSnow: materialSnow,
-    uGrassSeason: materialSeason,
-    uGreen: { value: new THREE.Color(0x5a9434) },
-    uDry: { value: new THREE.Color(0x9a8c52) },
+    uCam: uniform(new Vector2(size / 2, size / 2)),
+    uPatch: uniform(cfg.patch),
+    uWind: uniform(new Vector2(0.08, 0.03)),
+    uSize: uniform(size),
+    uGreen: uniform(new Color(0x5a9434)),
+    uDry: uniform(new Color(0x9a8c52)),
+    uSunDir: uniform(new Vector3(0, 1, 0)),
+    uSunCol: uniform(new Color(0xfff2df)),
   };
 
-  const material = new THREE.MeshLambertMaterial({ side: THREE.DoubleSide });
-  material.onBeforeCompile = (shader) => {
-    Object.assign(shader.uniforms, uniforms, materialCloud);
-    shader.vertexShader = shader.vertexShader
-      .replace('#include <common>', VERT_HEAD)
-      // Up-facing normal: the blade is lit like the ground it stands on.
-      .replace('#include <beginnormal_vertex>', 'vec3 objectNormal = vec3(0.0, 1.0, 0.0);')
-      .replace('#include <begin_vertex>', VERT_BODY);
-    shader.fragmentShader = shader.fragmentShader
-      .replace('#include <common>', `
-        #include <common>
-        varying vec3 vGrassCol;
-        varying float vBladeT;
-        varying vec3 vViewUp;
-      `)
-      .replace('#include <color_fragment>', `
-        #include <color_fragment>
-        diffuseColor.rgb *= vGrassCol;
-      `)
-      // DoubleSide flips the normal on the back face, which would light the far side of
-      // every blade as if it faced the ground. Re-seat it on world-up.
-      .replace('#include <normal_fragment_begin>', `
-        #include <normal_fragment_begin>
-        normal = normalize(vViewUp);
-      `)
-      // Translucency: a low sun behind the field lights the tips — the one term that makes
-      // grass read as grass rather than green fur.
-      .replace('#include <opaque_fragment>', `
-        #if NUM_DIR_LIGHTS > 0
-          vec3 grassSun = normalize(directionalLights[0].direction);
-          float backlit = pow(clamp(dot(-normalize(vViewPosition), grassSun), 0.0, 1.0), 3.0);
-          outgoingLight += directionalLights[0].color * diffuseColor.rgb * backlit * vBladeT * 0.35;
-        #endif
-        #include <opaque_fragment>
-      `);
-  };
-  material.customProgramCacheKey = () => 'poeco-grass';
+  const material = new GrassMaterial(uniforms, heightTex, maskTex);
 
   const geometry = bladeGeometry(cfg.blades);
-  const mesh = new THREE.Mesh(geometry, material);
+  const mesh = new Mesh(geometry, material);
   mesh.frustumCulled = false;       // positions are made in the shader; the box is meaningless
   mesh.receiveShadow = true;
   mesh.name = 'grass';
@@ -239,9 +204,10 @@ export function createGrass(scene, terrain, { tier = 'high' } = {}) {
       }
       maskTex.needsUpdate = true;
     },
-    /** Per frame: the patch follows the camera; wind is 0..1 (calm → gale). */
-    update(dt, player, wind) {
+    /** Per frame: the patch follows the camera; wind is 0..1 (calm → gale); sky lights the backlit tips. */
+    update(dt, player, wind, sky = null) {
       uniforms.uCam.value.set(player.x, player.z);
+      if (sky) { uniforms.uSunDir.value.copy(sky.sunDir); uniforms.uSunCol.value.copy(sky.sunColour); }
       // The wind veers slowly; a gale holds its direction better than a breeze.
       windAngle.value += dt * 0.012;
       const strength = 0.06 + wind * 0.34;

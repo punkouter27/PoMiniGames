@@ -5,12 +5,14 @@
 // dusk was an orange wall, and night was a slightly darker wall with no stars in it. On a
 // game where the god spends half the time flying, the sky is most of the frame.
 //
-// Two meshes, both parented to the camera position so they never run out:
+// Two meshes, both node materials (TSL: one graph for WebGPU and the WebGL2 fallback),
+// both centred on the camera position so they never run out:
 //
 //   DOME   an inverted sphere with a gradient from zenith to horizon, a sun disc with a
 //          soft halo along the sun direction, a moon opposite it, and hash-based stars
-//          that fade in with the night factor. Depth-tested off and drawn first, so it is
-//          strictly behind everything and costs one full-screen-ish draw.
+//          that fade in with the night factor, and a faint bright haze line right on the
+//          horizon. Depth-tested off and drawn first, so it is strictly behind everything
+//          and costs one full-screen-ish draw.
 //   CLOUDS a high plane carrying two octaves of drifting value noise, coverage-thresholded
 //          so it reads as separate clouds rather than haze, lit from the sun side and
 //          darkened at night. Fades with distance so the plane never shows its edge.
@@ -29,196 +31,146 @@
 //   METEORS   one potential streak per 2.6 s slot, hashed from the slot; the rate is the
 //             renderer's (a shower night is again a property of the world and the date).
 //             Each is a short great-circle segment with a fading tail.
-import * as THREE from 'three';
+import { BackSide, Color, DoubleSide, Mesh, MeshBasicNodeMaterial, PlaneGeometry, SphereGeometry, Vector3 } from 'three-eco/webgpu';
+import {
+  Fn, If, abs, acos, cameraPosition, clamp, dot, exp, float, floor, fract, length, max, mix, normalize,
+  positionLocal, positionWorld, pow, sin, smoothstep, step, uniform, vec2, vec3,
+} from 'three-eco/tsl';
+import { hash21, vnoise } from './materials.js';
 
 const DOME_RADIUS = 560;
 const CLOUD_Y = 96;
 const CLOUD_SPAN = 1400;
 
-const NOISE = `
-float sHash(vec2 p) { return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453); }
-float sNoise(vec2 p) {
-  vec2 i = floor(p); vec2 f = fract(p);
-  vec2 u = f * f * (3.0 - 2.0 * f);
-  return mix(mix(sHash(i), sHash(i + vec2(1.0, 0.0)), u.x),
-             mix(sHash(i + vec2(0.0, 1.0)), sHash(i + vec2(1.0, 1.0)), u.x), u.y);
-}
-`;
-
-const DOME_VERT = `
-varying vec3 vDir;
-void main() {
-  vDir = normalize(position);
-  // The dome rides the camera: no translation, so it is a direction field, not a place.
-  vec4 clip = projectionMatrix * mat4(mat3(viewMatrix)) * vec4(position, 1.0);
-  gl_Position = clip.xyww;   // z = w: always at the far plane, never in front of anything
-}
-`;
-
-const DOME_FRAG = `
-uniform vec3 uZenith;
-uniform vec3 uHorizon;
-uniform vec3 uSunColor;
-uniform vec3 uSunDir;
-uniform float uNight;
-uniform float uDusk;
-uniform float uTime;
-uniform float uAurora;     // 0..1 tonight's aurora
-uniform float uMeteors;    // 0..1 chance a meteor slot fires
-uniform float uRainbow;    // 0..1 a bow after rain
-varying vec3 vDir;
-${NOISE}
-
-vec3 aurora(vec3 d) {
-  if (d.y < 0.03) return vec3(0.0);
-  vec3 acc = vec3(0.0);
-  for (int i = 0; i < 3; i++) {
-    float fi = float(i);
-    float sheet = 1.0 + fi * 0.35;
-    vec2 q = d.xz / (d.y + 0.12) * sheet * 0.55;
+/** Curtains on three stacked sheets: green at the foot, violet at the crown. */
+const aurora = (d, t) => {
+  let acc = vec3(0);
+  for (let i = 0; i < 3; i++) {
+    const q = d.xz.div(d.y.add(0.12)).mul((1 + i * 0.35) * 0.55);
     // The curtain line itself: a slow sinuous band across the sky.
-    float wave = q.x * 1.3 + sNoise(q * 0.9 + vec2(uTime * 0.02, fi * 3.1)) * 2.6 + sin(q.y * 0.8 + uTime * 0.05) * 0.8;
-    float band = exp(-pow(sin(wave) * 2.2, 2.0));
+    const wave = q.x.mul(1.3).add(vnoise(q.mul(0.9).add(vec2(t.mul(0.02), i * 3.1))).mul(2.6)).add(sin(q.y.mul(0.8).add(t.mul(0.05))).mul(0.8));
+    const s = sin(wave).mul(2.2);
+    const band = exp(s.mul(s).negate());
     // Vertical rays: noise stretched along the curtain, flickering slowly.
-    float rays = 0.45 + 0.55 * sNoise(vec2(wave * 9.0, uTime * 0.35 + fi * 5.0));
-    vec3 tint = mix(vec3(0.12, 1.0, 0.45), vec3(0.62, 0.25, 1.0), fi / 2.0);
-    acc += tint * band * rays * (0.55 - fi * 0.12);
+    const rays = vnoise(vec2(wave.mul(9), t.mul(0.35).add(i * 5))).mul(0.55).add(0.45);
+    const tint = [vec3(0.12, 1.0, 0.45), vec3(0.37, 0.62, 0.72), vec3(0.62, 0.25, 1.0)][i];
+    acc = acc.add(tint.mul(band).mul(rays).mul(0.55 - i * 0.12));
   }
-  float lift = smoothstep(0.03, 0.25, d.y) * (1.0 - smoothstep(0.75, 1.0, d.y));
-  return acc * lift;
+  const lift = smoothstep(0.03, 0.25, d.y).mul(float(1).sub(smoothstep(0.75, 1, d.y)));
+  return acc.mul(lift).mul(step(0.03, d.y));
+};
+
+/** One potential streak per 2.6 s slot, hashed from the slot; `rate` is the chance it fires. */
+const meteor = (d, t, rate) => {
+  const slot = floor(t.div(2.6));
+  const fires = step(hash21(vec2(slot, 17)), rate);
+  const p = fract(t.div(2.6)).div(0.32);              // lives for the first third of its slot
+  const alive = step(p, 1);
+  const az = hash21(vec2(slot, 3)).mul(6.2831);
+  const el = hash21(vec2(slot, 5)).mul(0.4).add(0.35);
+  const a = normalize(vec3(az.cos().mul(el.cos()), el.sin(), az.sin().mul(el.cos())));
+  const b = normalize(a.add(vec3(az.sin().negate(), -0.55, az.cos()).mul(0.35)));
+  const head = normalize(mix(a, b, p.min(1)));
+  const tail = normalize(mix(a, b, max(p.sub(0.35), 0)));
+  const seg = head.sub(tail);
+  const k = clamp(dot(d.sub(tail), seg).div(max(dot(seg, seg), 1e-6)), 0, 1);
+  const dist = length(d.sub(tail.add(seg.mul(k))));
+  const line = exp(dist.mul(dist).mul(-2.2e5)).mul(k).mul(k);
+  return vec3(0.85, 0.92, 1.0).mul(line).mul(float(1).sub(p.mul(0.6))).mul(2.4).mul(fires).mul(alive);
+};
+
+function domeMaterial(u) {
+  const material = new MeshBasicNodeMaterial({ side: BackSide, depthWrite: false, depthTest: false, fog: false });
+  material.colorNode = Fn(() => {
+    // The dome rides the camera, so its own vertex direction is the view ray.
+    const d = normalize(positionLocal);
+    const up = clamp(d.y, -1, 1);
+    // Gradient: the horizon band is wider at dusk, when the warm light sits low.
+    const h = pow(float(1).sub(clamp(up, 0, 1)), mix(2.6, 1.6, u.uDusk));
+    const col = mix(u.uZenith, u.uHorizon, h).toVar();
+    // A brighter haze line right on the horizon, the way thick air glows edge-on.
+    col.addAssign(u.uHorizon.mul(exp(abs(up).mul(-18))).mul(0.12).mul(float(1).sub(u.uNight.mul(0.7))));
+    // Below the horizon there is only sea; keep the horizon colour so the dome never shows
+    // a seam where the water plane ends.
+    col.assign(mix(col, u.uHorizon.mul(0.92), smoothstep(0, -0.08, up)));
+
+    // Sun: a hard disc, a tight halo, and a wide warm glow that carries the dusk.
+    const cosSun = dot(d, normalize(u.uSunDir));
+    const disc = smoothstep(0.9993, 0.9997, cosSun);
+    const halo = pow(max(cosSun, 0), 220).mul(0.9);
+    const glow = pow(max(cosSun, 0), 6).mul(u.uDusk.mul(0.5).add(0.22));
+    col.addAssign(u.uSunColor.mul(disc.mul(3).add(halo).add(glow)).mul(float(1).sub(u.uNight.mul(0.85))));
+
+    // Moon: opposite the sun, small, cool, only at night.
+    const cosMoon = dot(d, normalize(u.uSunDir.negate().add(vec3(0, 0.35, 0))));
+    const moon = smoothstep(0.99955, 0.9998, cosMoon).add(pow(max(cosMoon, 0), 400).mul(0.35));
+    col.addAssign(vec3(0.86, 0.9, 1.0).mul(moon).mul(u.uNight).mul(1.4));
+
+    // Stars: a hash on a quantised direction, thresholded so only a few cells light, with
+    // a slow twinkle, above the horizon and only once the sky is dark enough.
+    const cell = floor(d.xz.div(max(abs(d.y), 0.05)).mul(90));
+    const s = hash21(cell);
+    const star = step(0.986, s).mul(sin(u.uTime.mul(s.mul(3).add(1.5)).add(s.mul(40))).mul(0.4).add(0.6));
+    col.addAssign(vec3(0.9, 0.95, 1.0).mul(star).mul(smoothstep(0.02, 0.2, up)).mul(smoothstep(0.35, 0.9, u.uNight)).mul(0.9));
+
+    // Rainbow: the primary bow, 42 degrees out from the antisolar point, red outside. Only
+    // above the horizon, so a high sun (bow centre far below it) shows none.
+    If(u.uRainbow.greaterThan(0.01).and(up.greaterThan(0)), () => {
+      const ang = acos(clamp(dot(d, normalize(u.uSunDir).negate()), -1, 1));
+      const x = ang.sub(0.733).div(0.03);
+      const band = exp(x.mul(x).mul(-0.45));
+      const hue = clamp(float(0.5).sub(x.mul(0.27)), 0, 1).mul(0.76);
+      const spectrum = clamp(abs(hue.mul(6).add(vec3(0, 4, 2)).mod(6).sub(3)).sub(1), 0, 1);
+      col.addAssign(spectrum.mul(band).mul(u.uRainbow).mul(0.3).mul(smoothstep(0, 0.14, up))
+        .mul(float(1).sub(smoothstep(0.45, 0.72, u.uNight))));
+    });
+
+    const dark = smoothstep(0.3, 0.85, u.uNight);
+    if (u.spectacle) {
+      If(u.uAurora.greaterThan(0.01).and(dark.greaterThan(0)), () => { col.addAssign(aurora(d, u.uTime).mul(u.uAurora).mul(dark).mul(0.9)); });
+      If(u.uMeteors.greaterThan(0.001).and(dark.greaterThan(0)), () => { col.addAssign(meteor(d, u.uTime, u.uMeteors).mul(dark)); });
+    }
+    return col;
+  })();
+  return material;
 }
 
-vec3 meteor(vec3 d) {
-  float slot = floor(uTime / 2.6);
-  float h = sHash(vec2(slot, 17.0));
-  if (h > uMeteors) return vec3(0.0);
-  float p = fract(uTime / 2.6) / 0.32;          // lives for the first third of its slot
-  if (p > 1.0) return vec3(0.0);
-  float az = sHash(vec2(slot, 3.0)) * 6.2831;
-  float el = 0.35 + sHash(vec2(slot, 5.0)) * 0.4;
-  vec3 a = normalize(vec3(cos(az) * cos(el), sin(el), sin(az) * cos(el)));
-  vec3 b = normalize(a + vec3(-sin(az), -0.55, cos(az)) * 0.35);
-  vec3 head = normalize(mix(a, b, p));
-  vec3 tail = normalize(mix(a, b, max(0.0, p - 0.35)));
-  // Distance from d to the segment tail→head, on the chord.
-  vec3 seg = head - tail;
-  float t = clamp(dot(d - tail, seg) / max(dot(seg, seg), 1e-6), 0.0, 1.0);
-  float dist = length(d - (tail + seg * t));
-  float line = exp(-dist * dist * 2.2e5) * t * t;
-  return vec3(0.85, 0.92, 1.0) * line * (1.0 - p * 0.6) * 2.4;
+function cloudMaterial(c) {
+  const material = new MeshBasicNodeMaterial({ transparent: true, depthWrite: false, side: DoubleSide, fog: false, alphaTest: 0.003 });
+  const P = positionWorld;
+  const p = P.xz.mul(0.006).add(vec2(c.uTime.mul(0.0045), c.uTime.mul(0.0018)));
+  const n = vnoise(p).mul(0.55).add(vnoise(p.mul(2.3).add(7.1)).mul(0.3)).add(vnoise(p.mul(5.1).sub(3.3)).mul(0.15));
+  const edge = mix(0.72, 0.42, c.uCover);
+  const body = smoothstep(edge, edge.add(0.22), n);
+  // The sun side of a cloud is where the noise slopes toward the sun: a gradient of the
+  // same noise is a cheap normal, and enough to give the tops a lit rim.
+  const e = 0.02;
+  const g = vec2(vnoise(p.add(vec2(e, 0))).sub(vnoise(p.sub(vec2(e, 0)))), vnoise(p.add(vec2(0, e))).sub(vnoise(p.sub(vec2(0, e)))));
+  const lit = clamp(dot(normalize(g.add(1e-5)), normalize(c.uSunDir.xz.add(1e-5))).mul(0.6).add(0.5), 0, 1);
+  material.colorNode = mix(c.uShade, c.uLit, lit).mul(float(1).sub(c.uNight.mul(0.75)));
+  const far = float(1).sub(smoothstep(380, 640, length(cameraPosition.xz.sub(P.xz))));
+  material.opacityNode = body.mul(0.86).mul(far);
+  return material;
 }
-
-void main() {
-  vec3 d = normalize(vDir);
-  float up = clamp(d.y, -1.0, 1.0);
-
-  // Gradient: the horizon band is wider at dusk, when the warm light sits low.
-  float h = pow(1.0 - clamp(up, 0.0, 1.0), mix(2.6, 1.6, uDusk));
-  vec3 col = mix(uZenith, uHorizon, h);
-  // Below the horizon there is only sea; keep the horizon colour so the dome never shows
-  // a seam where the water plane ends.
-  col = mix(col, uHorizon * 0.92, smoothstep(0.0, -0.08, up));
-
-  // Sun: a hard disc, a tight halo, and a wide warm glow that carries the dusk.
-  float cosSun = dot(d, normalize(uSunDir));
-  float disc = smoothstep(0.9993, 0.9997, cosSun);
-  float halo = pow(max(cosSun, 0.0), 220.0) * 0.9;
-  float glow = pow(max(cosSun, 0.0), 6.0) * (0.22 + uDusk * 0.5);
-  col += uSunColor * (disc * 3.0 + halo + glow) * (1.0 - uNight * 0.85);
-
-  // Moon: opposite the sun, small, cool, only at night.
-  float cosMoon = dot(d, normalize(-uSunDir + vec3(0.0, 0.35, 0.0)));
-  float moon = smoothstep(0.99955, 0.9998, cosMoon) + pow(max(cosMoon, 0.0), 400.0) * 0.35;
-  col += vec3(0.86, 0.9, 1.0) * moon * uNight * 1.4;
-
-  // Stars: a hash on a quantised direction, thresholded so only a few cells light, with a
-  // slow twinkle. They live above the horizon and only once the sky is dark enough.
-  vec2 cell = floor(d.xz / max(abs(d.y), 0.05) * 90.0);
-  float s = sHash(cell);
-  float star = step(0.986, s) * (0.6 + 0.4 * sin(uTime * (1.5 + s * 3.0) + s * 40.0));
-  float aboveHorizon = smoothstep(0.02, 0.2, up);
-  col += vec3(0.9, 0.95, 1.0) * star * aboveHorizon * smoothstep(0.35, 0.9, uNight) * 0.9;
-
-  // Rainbow: the primary bow, 42 degrees out from the antisolar point, red on
-  // the outside. Only above the horizon, so a high sun (bow centre far below it) shows none —
-  // which is why real ones belong to mornings and late afternoons.
-  if (uRainbow > 0.01 && up > 0.0) {
-    float ang = acos(clamp(dot(d, -normalize(uSunDir)), -1.0, 1.0));
-    float x = (ang - 0.733) / 0.03;
-    float band = exp(-x * x * 0.45);
-    float hue = clamp(0.5 - x * 0.27, 0.0, 1.0) * 0.76;
-    vec3 spectrum = clamp(abs(mod(hue * 6.0 + vec3(0.0, 4.0, 2.0), 6.0) - 3.0) - 1.0, 0.0, 1.0);
-    col += spectrum * band * uRainbow * 0.3 * smoothstep(0.0, 0.14, up) * (1.0 - smoothstep(0.45, 0.72, uNight));
-  }
-
-  float dark = smoothstep(0.3, 0.85, uNight);
-  if (uAurora > 0.01 && dark > 0.0) col += aurora(d) * uAurora * dark * 0.9;
-  if (uMeteors > 0.001 && dark > 0.0) col += meteor(d) * dark;
-
-  gl_FragColor = vec4(col, 1.0);
-}
-`;
-
-const CLOUD_VERT = `
-varying vec3 vWorld;
-void main() {
-  vWorld = (modelMatrix * vec4(position, 1.0)).xyz;
-  gl_Position = projectionMatrix * viewMatrix * vec4(vWorld, 1.0);
-}
-`;
-
-const CLOUD_FRAG = `
-uniform vec3 uLit;        // sun-facing colour
-uniform vec3 uShade;      // underside colour
-uniform vec3 uSunDir;
-uniform float uTime;
-uniform float uCover;     // 0..1 coverage
-uniform float uNight;
-varying vec3 vWorld;
-${NOISE}
-
-void main() {
-  vec2 p = vWorld.xz * 0.006 + vec2(uTime * 0.0045, uTime * 0.0018);
-  float n = sNoise(p) * 0.55 + sNoise(p * 2.3 + 7.1) * 0.3 + sNoise(p * 5.1 - 3.3) * 0.15;
-  float edge = mix(0.72, 0.42, uCover);
-  float body = smoothstep(edge, edge + 0.22, n);
-  if (body <= 0.003) discard;
-
-  // Lighting: the sun side of a cloud is where the noise slopes toward the sun. A gradient
-  // of the same noise is a cheap normal, and it is enough to give the tops a lit rim.
-  float e = 0.02;
-  vec2 g = vec2(sNoise(p + vec2(e, 0.0)) - sNoise(p - vec2(e, 0.0)), sNoise(p + vec2(0.0, e)) - sNoise(p - vec2(0.0, e)));
-  float lit = clamp(0.5 + dot(normalize(g + 1e-5), normalize(uSunDir.xz + 1e-5)) * 0.6, 0.0, 1.0);
-  vec3 col = mix(uShade, uLit, lit) * (1.0 - uNight * 0.75);
-
-  float dist = length(cameraPosition.xz - vWorld.xz);
-  float far = 1.0 - smoothstep(380.0, 640.0, dist);
-  gl_FragColor = vec4(col, body * 0.86 * far);
-}
-`;
 
 export function createSky(scene, { tier = 'high' } = {}) {
-  const domeMat = new THREE.ShaderMaterial({
-    uniforms: {
-      uZenith: { value: new THREE.Color(0x3b7dd8) },
-      uHorizon: { value: new THREE.Color(0x8ec5ff) },
-      uSunColor: { value: new THREE.Color(0xfff2df) },
-      uSunDir: { value: new THREE.Vector3(0, 1, 0) },
-      uNight: { value: 0 },
-      uDusk: { value: 0 },
-      uTime: { value: 0 },
-      uAurora: { value: 0 },
-      uMeteors: { value: 0 },
-      uRainbow: { value: 0 },
-    },
-    vertexShader: DOME_VERT,
-    fragmentShader: DOME_FRAG,
-    side: THREE.BackSide,
-    depthWrite: false,
-    depthTest: false,
-    fog: false,
-  });
-  const dome = new THREE.Mesh(new THREE.SphereGeometry(DOME_RADIUS, 32, 18), domeMat);
+  const u = {
+    uZenith: uniform(new Color(0x3b7dd8)),
+    uHorizon: uniform(new Color(0x8ec5ff)),
+    uSunColor: uniform(new Color(0xfff2df)),
+    uSunDir: uniform(new Vector3(0, 1, 0)),
+    uNight: uniform(0),
+    uDusk: uniform(0),
+    uTime: uniform(0),
+    uAurora: uniform(0),
+    uMeteors: uniform(0),
+    uRainbow: uniform(0),
+    // The low tier keeps the gradient, sun, moon, stars and bow but builds the dome without
+    // the aurora and meteor terms: the most expensive pixels in the sky, on the cheapest GPUs.
+    spectacle: tier !== 'low',
+  };
+  const domeMat = domeMaterial(u);
+  const dome = new Mesh(new SphereGeometry(DOME_RADIUS, 32, 18), domeMat);
   dome.renderOrder = -10;
   dome.frustumCulled = false;
   dome.name = 'sky';
@@ -226,56 +178,43 @@ export function createSky(scene, { tier = 'high' } = {}) {
 
   let clouds = null;
   if (tier !== 'low') {
-    const mat = new THREE.ShaderMaterial({
-      uniforms: {
-        uLit: { value: new THREE.Color(0xffffff) },
-        uShade: { value: new THREE.Color(0x9fb3c8) },
-        uSunDir: { value: new THREE.Vector3(0, 1, 0) },
-        uTime: { value: 0 },
-        uCover: { value: 0.45 },
-        uNight: { value: 0 },
-      },
-      vertexShader: CLOUD_VERT,
-      fragmentShader: CLOUD_FRAG,
-      transparent: true,
-      depthWrite: false,
-      side: THREE.DoubleSide,
-      fog: false,
-    });
-    const geo = new THREE.PlaneGeometry(CLOUD_SPAN, CLOUD_SPAN, 1, 1);
+    const c = {
+      uLit: uniform(new Color(0xffffff)),
+      uShade: uniform(new Color(0x9fb3c8)),
+      uSunDir: uniform(new Vector3(0, 1, 0)),
+      uTime: uniform(0),
+      uCover: uniform(0.45),
+      uNight: uniform(0),
+    };
+    const mat = cloudMaterial(c);
+    const geo = new PlaneGeometry(CLOUD_SPAN, CLOUD_SPAN, 1, 1);
     geo.rotateX(-Math.PI / 2);
-    const plane = new THREE.Mesh(geo, mat);
+    const plane = new Mesh(geo, mat);
     plane.position.y = CLOUD_Y;
     plane.renderOrder = -5;
     plane.frustumCulled = false;
     plane.name = 'clouds';
     scene.add(plane);
-    clouds = { plane, mat };
+    clouds = { plane, mat, u: c };
   }
 
-  const zenith = new THREE.Color();
-  const WHITE = new THREE.Color(0xffffff);
-  const SLATE = new THREE.Color(0x6b7a8c);
-  const STORM = new THREE.Color(0x4a5360);
+  const zenith = new Color();
+  const WHITE = new Color(0xffffff);
+  const SLATE = new Color(0x6b7a8c);
+  const STORM = new Color(0x4a5360);
   // Weather: 0 = the usual scattered clouds, 1 = a closed storm deck. Eased per frame so
   // a spell rolls in rather than switching the sky.
   let overcast = 0;
   let overcastTarget = 0;
   const spectacle = { aurora: 0, meteors: 0 };
   let rainbow = 0;
-  const DAY_ZENITH = new THREE.Color(0x2f6fd0);
-  const NIGHT_ZENITH = new THREE.Color(0x0b1326);
-  const DUSK_ZENITH = new THREE.Color(0x4a3a7a);
+  const DAY_ZENITH = new Color(0x2f6fd0);
+  const NIGHT_ZENITH = new Color(0x0b1326);
+  const DUSK_ZENITH = new Color(0x4a3a7a);
 
   return {
     dome,
     get clouds() { return clouds?.plane ?? null; },
-    /**
-     * @param {{ sky: THREE.Color, sunColour: THREE.Color, sunDir: THREE.Vector3, night: number, day: number, dusk: number }} sky
-     *   the object lighting.update() returns
-     * @param {{x:number, z:number}} player
-     * @param {number} time seconds
-     */
     /** 0..1 cloud deck from the weather (renderer.js). */
     setOvercast(v) { overcastTarget = Math.max(0, Math.min(1, v)); },
     /** Tonight's spectacle (renderer.js decides it from the world): 0..1 each. Eased. */
@@ -288,11 +227,20 @@ export function createSky(scene, { tier = 'high' } = {}) {
     get cover() { return 0.45 + overcast * 0.45; },
     /** 0..1 rainbow strength (renderer.js: rain easing off over wet ground, in daylight). */
     setRainbow(v) { rainbow = Math.max(0, Math.min(1, v)); },
-    get rainbow() { return domeMat.uniforms.uRainbow.value; },
+    get rainbow() { return u.uRainbow.value; },
+    /**
+     * @param {{ sky: Color, sunColour: Color, sunDir: Vector3, night: number, day: number, dusk: number }} sky
+     *   the object lighting.update() returns; this adds `zenith` to it, which the water
+     *   reflects along steep rays
+     * @param {{x:number, y:number, z:number}} player the camera's position: the dome is
+     *   centred on it, so its own vertex direction is the view ray
+     * @param {number} time seconds
+     */
     update(sky, player, time) {
-      const u = domeMat.uniforms;
       overcast += (overcastTarget - overcast) * 0.02;
       zenith.copy(NIGHT_ZENITH).lerp(DAY_ZENITH, sky.day).lerp(DUSK_ZENITH, sky.dusk * 0.6).lerp(STORM, overcast * 0.6);
+      sky.zenith = zenith;
+      dome.position.set(player.x, player.y, player.z);
       u.uZenith.value.copy(zenith);
       u.uHorizon.value.copy(sky.sky);
       u.uSunColor.value.copy(sky.sunColour);
@@ -307,7 +255,7 @@ export function createSky(scene, { tier = 'high' } = {}) {
       u.uMeteors.value = spectacle.meteors * clear;
       u.uRainbow.value += (rainbow - u.uRainbow.value) * 0.02;
       if (clouds) {
-        const c = clouds.mat.uniforms;
+        const c = clouds.u;
         c.uSunDir.value.copy(sky.sunDir);
         c.uTime.value = time;
         c.uNight.value = sky.night;

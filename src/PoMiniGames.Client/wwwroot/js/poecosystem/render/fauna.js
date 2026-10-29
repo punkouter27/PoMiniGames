@@ -7,7 +7,7 @@
 // Birds are boids (cohesion, alignment, separation) chasing a slow flock target that loops
 // the island; they roost at night and ground themselves in a storm. Fish are schools
 // circling in the shallows, where the water shader is transparent enough to see them.
-import * as THREE from 'three';
+import { BufferAttribute, BufferGeometry, DoubleSide, InstancedMesh, MeshLambertNodeMaterial, Object3D } from 'three-eco/webgpu';
 import { TILE } from '../sim/terrain/tiles.js';
 
 const FLOCKS = { high: 3, medium: 2, low: 0 };
@@ -19,24 +19,24 @@ const FISH_VISIBLE_METRES = 80;
 function birdGeometry() {
   // A flat "V": nose, two wing tips, tail. Flapping is a per-instance Y scale that swings
   // the tips through the body plane, which reads as a wingbeat at this size.
-  const g = new THREE.BufferGeometry();
+  const g = new BufferGeometry();
   const v = new Float32Array([
     0, 0, 0.28, -0.62, 0.18, -0.12, 0, 0, -0.32,
     0, 0, 0.28, 0, 0, -0.32, 0.62, 0.18, -0.12,
   ]);
-  g.setAttribute('position', new THREE.BufferAttribute(v, 3));
+  g.setAttribute('position', new BufferAttribute(v, 3));
   g.computeVertexNormals();
   return g;
 }
 
 function fishGeometry() {
-  const g = new THREE.BufferGeometry();
+  const g = new BufferGeometry();
   const v = new Float32Array([
     0, 0, 0.22, 0.06, 0.03, 0, 0, 0, -0.2,
     0, 0, 0.22, 0, 0, -0.2, -0.06, 0.03, 0,
     0, 0, -0.2, 0.07, 0.05, -0.3, -0.07, 0.05, -0.3,
   ]);
-  g.setAttribute('position', new THREE.BufferAttribute(v, 3));
+  g.setAttribute('position', new BufferAttribute(v, 3));
   g.computeVertexNormals();
   return g;
 }
@@ -46,13 +46,13 @@ export function createFauna(scene, terrainApi, { tier = 'high' } = {}) {
   const schoolCount = SCHOOLS[tier] ?? 0;
   const perSchool = FISH_PER_SCHOOL[tier] ?? 0;
   const size = terrainApi.size;
-  const dummy = new THREE.Object3D();
+  const dummy = new Object3D();
 
   // ── birds ─────────────────────────────────────────────────────────────
   const birdTotal = flockCount * BIRDS_PER_FLOCK;
   let birds = null;
   if (birdTotal > 0) {
-    const mesh = new THREE.InstancedMesh(birdGeometry(), new THREE.MeshLambertMaterial({ color: 0x2e3036, side: THREE.DoubleSide, flatShading: true }), birdTotal);
+    const mesh = new InstancedMesh(birdGeometry(), new MeshLambertNodeMaterial({ color: 0x2e3036, side: DoubleSide, flatShading: true }), birdTotal);
     mesh.frustumCulled = false;
     mesh.name = 'birds';
     scene.add(mesh);
@@ -93,7 +93,7 @@ export function createFauna(scene, terrainApi, { tier = 'high' } = {}) {
   }
   let fish = null;
   if (schools.length) {
-    const mesh = new THREE.InstancedMesh(fishGeometry(), new THREE.MeshLambertMaterial({ color: 0x7f9fb4, side: THREE.DoubleSide, flatShading: true }), schools.length * perSchool);
+    const mesh = new InstancedMesh(fishGeometry(), new MeshLambertNodeMaterial({ color: 0x7f9fb4, side: DoubleSide, flatShading: true }), schools.length * perSchool);
     mesh.frustumCulled = false;
     mesh.name = 'fish';
     mesh.count = 0;

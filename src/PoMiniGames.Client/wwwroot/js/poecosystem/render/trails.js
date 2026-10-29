@@ -20,7 +20,8 @@
 //
 // Nothing here is saved: a reload starts with clean ground, which is fine for a surface
 // effect and keeps the snapshot format untouched.
-import * as THREE from 'three';
+import { ClampToEdgeWrapping, DataTexture, LinearFilter, RGFormat, UnsignedByteType } from 'three-eco/webgpu';
+import { texture, uniform } from 'three-eco/tsl';
 import { FRAME } from '../sim/frame.js';
 
 const TEXELS_PER_METRE = 2;
@@ -34,10 +35,15 @@ const WEAR_FADE = 1 / 540;             // e-folding ~9 minutes
 const FRESH_RATE = 3.2;
 const FRESH_FADE = 1 / 26;             // e-folding ~26 s — long enough to read a wake in snow
 
-/** Shared uniforms: the terrain and grass shaders bind these objects directly. */
+// A 1x1 bare-ground texel stands in until the first island's trails exist: the terrain is
+// built before createTrails runs, and a texture node needs a texture to compile against.
+const EMPTY = new DataTexture(new Uint8Array(2), 1, 1, RGFormat, UnsignedByteType);
+EMPTY.needsUpdate = true;
+
+/** Shared nodes: the terrain and grass materials sample these; createTrails swaps the texture in. */
 export const trailUniforms = {
-  uTrail: { value: null },
-  uTrailSpan: { value: 200 },
+  uTrail: texture(EMPTY),
+  uTrailSpan: uniform(200),
 };
 
 export function createTrails(size) {
@@ -45,13 +51,13 @@ export function createTrails(size) {
   const wear = new Float32Array(W * W);
   const fresh = new Float32Array(W * W);
   const bytes = new Uint8Array(W * W * 2);
-  const texture = new THREE.DataTexture(bytes, W, W, THREE.RGFormat, THREE.UnsignedByteType);
-  texture.minFilter = THREE.LinearFilter;
-  texture.magFilter = THREE.LinearFilter;
-  texture.wrapS = texture.wrapT = THREE.ClampToEdgeWrapping;
-  texture.unpackAlignment = 1;
-  texture.needsUpdate = true;
-  trailUniforms.uTrail.value = texture;
+  const tex = new DataTexture(bytes, W, W, RGFormat, UnsignedByteType);
+  tex.minFilter = LinearFilter;
+  tex.magFilter = LinearFilter;
+  tex.wrapS = tex.wrapT = ClampToEdgeWrapping;
+  tex.unpackAlignment = 1;
+  tex.needsUpdate = true;
+  trailUniforms.uTrail.value = tex;
   trailUniforms.uTrailSpan.value = size;
 
   let sinceUpload = 0;
@@ -75,7 +81,7 @@ export function createTrails(size) {
   }
 
   return {
-    texture,
+    texture: tex,
     /** The WEAR grid (width × width floats, 0..1) — the minimap's traffic layer reads it. */
     get wear() { return wear; },
     get width() { return W; },
@@ -104,11 +110,11 @@ export function createTrails(size) {
         bytes[b] = wv * 255;
         bytes[b + 1] = fv * 255;
       }
-      texture.needsUpdate = true;
+      tex.needsUpdate = true;
     },
     dispose() {
-      if (trailUniforms.uTrail.value === texture) trailUniforms.uTrail.value = null;
-      texture.dispose();
+      if (trailUniforms.uTrail.value === tex) trailUniforms.uTrail.value = EMPTY;
+      tex.dispose();
     },
   };
 }

@@ -11,28 +11,30 @@
 //
 // One LineSegments mesh, rebuilt in place each frame: an arc is ARC_SEGMENTS short segments
 // lifted in the middle, so a thread clears the ground between two animals on a slope.
-import * as THREE from 'three';
+import { AdditiveBlending, BufferAttribute, BufferGeometry, Color, DynamicDrawUsage, LineBasicNodeMaterial, LineSegments } from 'three-eco/webgpu';
 import { FRAME } from '../sim/frame.js';
 
 const MAX_KIN = 48;
 const ARC_SEGMENTS = 10;
-const REL_COLOUR = [new THREE.Color(0x7dd3fc), new THREE.Color(0x86efac), new THREE.Color(0xfda4af)];   // elder, young, sibling
+const REL_COLOUR = [new Color(0x7dd3fc), new Color(0x86efac), new Color(0xfda4af)];   // elder, young, sibling
 
 export function createKinThreads(scene) {
   const vertices = MAX_KIN * ARC_SEGMENTS * 2;
   const positions = new Float32Array(vertices * 3);
   const colours = new Float32Array(vertices * 3);
-  const geometry = new THREE.BufferGeometry();
-  geometry.setAttribute('position', new THREE.BufferAttribute(positions, 3).setUsage(THREE.DynamicDrawUsage));
-  geometry.setAttribute('color', new THREE.BufferAttribute(colours, 3).setUsage(THREE.DynamicDrawUsage));
+  const geometry = new BufferGeometry();
+  geometry.setAttribute('position', new BufferAttribute(positions, 3).setUsage(DynamicDrawUsage));
+  geometry.setAttribute('color', new BufferAttribute(colours, 3).setUsage(DynamicDrawUsage));
   geometry.setDrawRange(0, 0);
-  const material = new THREE.LineBasicMaterial({
-    vertexColors: true, transparent: true, opacity: 0.8, blending: THREE.AdditiveBlending, depthWrite: false, fog: false,
+  const material = new LineBasicNodeMaterial({
+    vertexColors: true, transparent: true, opacity: 0.8, blending: AdditiveBlending, depthWrite: false, fog: false,
   });
-  const lines = new THREE.LineSegments(geometry, material);
+  const lines = new LineSegments(geometry, material);
   lines.frustumCulled = false;      // rewritten every frame; a stale bounding sphere would cull it
   lines.renderOrder = 11;
   lines.name = 'kin-threads';
+  // Hidden while there is nothing to draw: WebGPU warns on a zero-vertex draw call.
+  lines.visible = false;
   scene.add(lines);
 
   let self = -1;
@@ -45,11 +47,11 @@ export function createKinThreads(scene) {
     get count() { return geometry.drawRange.count / (ARC_SEGMENTS * 2); },
     /** Per frame, from the renderer's interpolated rows. */
     update(rows, handles, count, time) {
-      if (self < 0 || kin.length === 0) { geometry.setDrawRange(0, 0); return; }
+      if (self < 0 || kin.length === 0) { geometry.setDrawRange(0, 0); lines.visible = false; return; }
       rowOf.clear();
       for (let k = 0; k < count; k++) rowOf.set(handles[k], k);
       const s = rowOf.get(self);
-      if (s === undefined) { geometry.setDrawRange(0, 0); return; }
+      if (s === undefined) { geometry.setDrawRange(0, 0); lines.visible = false; return; }
       const so = s * FRAME.CREATURE_STRIDE;
       const ax = rows[so]; const ay = rows[so + 1] + 0.9; const az = rows[so + 2];
       let v = 0;
@@ -76,6 +78,7 @@ export function createKinThreads(scene) {
         }
       }
       geometry.setDrawRange(0, v);
+      lines.visible = v > 0;
       geometry.attributes.position.needsUpdate = true;
       geometry.attributes.color.needsUpdate = true;
     },

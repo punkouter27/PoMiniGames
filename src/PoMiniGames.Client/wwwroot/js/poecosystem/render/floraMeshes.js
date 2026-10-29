@@ -1,16 +1,16 @@
 // floraMeshes.js — trees, stumps, berry bushes, huts and fire/lava markers. All static
 // per tile-sync (once a second), so each is one InstancedMesh rebuilt only when the tile
 // message says something changed.
-import * as THREE from 'three';
+import { BoxGeometry, InstancedBufferAttribute, Color, ConeGeometry, CylinderGeometry, DynamicDrawUsage, IcosahedronGeometry, InstancedMesh, Object3D } from 'three-eco/webgpu';
 import { TILE_STATE, tileX, tileZ } from '../sim/terrain/tiles.js';
 import { TREE_STATE } from '../sim/flora/trees.js';
 import { FLORA } from '../sim/core/config.js';
-import { enhanceLambert } from './materials.js';
+import { ecoLambert } from './materials.js';
 
 // Per-instance colour jitter: a hash of the index picks a point between two tones, so a
 // forest is many greens rather than one. Applied through instanceColor when placing.
 const jitterColour = (() => {
-  const a = new THREE.Color(); const b = new THREE.Color(); const out = new THREE.Color();
+  const a = new Color(); const b = new Color(); const out = new Color();
   return (k, hexA, hexB) => {
     const h = Math.abs(Math.sin(k * 12.9898 + 78.233) * 43758.5453) % 1;
     return out.copy(a.setHex(hexA)).lerp(b.setHex(hexB), h);
@@ -18,9 +18,13 @@ const jitterColour = (() => {
 })();
 
 function instanced(scene, geo, colour, cap, name, { emissive = 0, enhance = { rim: 0.22, mottle: 0.12, mottleScale: 1.0 } } = {}) {
-  const material = enhanceLambert(new THREE.MeshLambertMaterial({ color: colour, flatShading: true, emissive }), enhance);
-  const mesh = new THREE.InstancedMesh(geo, material, Math.max(1, cap));
-  mesh.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
+  const material = ecoLambert({ color: colour, flatShading: true, emissive }, enhance);
+  const mesh = new InstancedMesh(geo, material, Math.max(1, cap));
+  mesh.instanceMatrix.setUsage(DynamicDrawUsage);
+  // White instance colours from the start. A node material is compiled for the mesh as it
+  // is on its first draw, and one that only gained instanceColor later (the first
+  // setColorAt) would keep drawing the untinted white crown.
+  mesh.instanceColor = new InstancedBufferAttribute(new Float32Array(Math.max(1, cap) * 3).fill(1), 3);
   mesh.castShadow = true; mesh.count = 0; mesh.frustumCulled = false; mesh.name = name;
   scene.add(mesh);
   return { mesh, geo, material };
@@ -35,26 +39,26 @@ export function createFloraMeshes(scene, terrain, { trees = [], bushes = [] } = 
   const bushCap = Math.max(1, FLORA.maxBushes);
   // Crowns sway (materials.js), trunks carry bark grain, bushes rustle a little. Crowns
   // and bushes are white so the per-instance tint below is the whole colour.
-  const trunk = instanced(scene, new THREE.CylinderGeometry(0.18, 0.24, 2.6, 5), 0x6b4423, treeCap, 'tree-trunk', { enhance: { rim: 0.18, mottle: 0.3, mottleScale: 0.45 } });
-  const crown = instanced(scene, new THREE.ConeGeometry(1.5, 3.2, 6), 0xffffff, treeCap, 'tree-crown', { enhance: { rim: 0.3, mottle: 0.22, mottleScale: 1.3, sway: 0.16, swayHeight: 3.2 } });
-  const stump = instanced(scene, new THREE.CylinderGeometry(0.26, 0.3, 0.5, 5), 0x4a3520, treeCap, 'tree-stump');
-  const bush = instanced(scene, new THREE.IcosahedronGeometry(0.55, 0), 0xffffff, bushCap, 'bush', { enhance: { rim: 0.3, mottle: 0.2, mottleScale: 0.7, sway: 0.05, swayHeight: 1.1 } });
-  const berry = instanced(scene, new THREE.IcosahedronGeometry(0.6, 0), 0x9f1239, bushCap, 'bush-ripe', { enhance: { rim: 0.3, mottle: 0.2, mottleScale: 0.7, sway: 0.05, swayHeight: 1.1 } });
-  const hutBase = instanced(scene, new THREE.BoxGeometry(2.2, 1.6, 2.2), 0xa8a29e, 32, 'hut');
-  const hutRoof = instanced(scene, new THREE.ConeGeometry(1.9, 1.4, 4), 0x7c2d12, 32, 'hut-roof');
-  const flame = instanced(scene, new THREE.ConeGeometry(0.5, 1.4, 5), 0xf97316, 4096, 'fire', { emissive: 0xf97316 });
-  const lava = instanced(scene, new THREE.BoxGeometry(1, 0.3, 1), 0xef4444, 512, 'lava', { emissive: 0x991b1b });
-  const carcass = instanced(scene, new THREE.BoxGeometry(0.7, 0.3, 1.0), 0x57534e, 256, 'carcass');
+  const trunk = instanced(scene, new CylinderGeometry(0.18, 0.24, 2.6, 5), 0x6b4423, treeCap, 'tree-trunk', { enhance: { rim: 0.18, mottle: 0.3, mottleScale: 0.45 } });
+  const crown = instanced(scene, new ConeGeometry(1.5, 3.2, 6), 0xffffff, treeCap, 'tree-crown', { enhance: { rim: 0.3, mottle: 0.22, mottleScale: 1.3, sway: 0.16, swayHeight: 3.2 } });
+  const stump = instanced(scene, new CylinderGeometry(0.26, 0.3, 0.5, 5), 0x4a3520, treeCap, 'tree-stump');
+  const bush = instanced(scene, new IcosahedronGeometry(0.55, 0), 0xffffff, bushCap, 'bush', { enhance: { rim: 0.3, mottle: 0.2, mottleScale: 0.7, sway: 0.05, swayHeight: 1.1 } });
+  const berry = instanced(scene, new IcosahedronGeometry(0.6, 0), 0x9f1239, bushCap, 'bush-ripe', { enhance: { rim: 0.3, mottle: 0.2, mottleScale: 0.7, sway: 0.05, swayHeight: 1.1 } });
+  const hutBase = instanced(scene, new BoxGeometry(2.2, 1.6, 2.2), 0xa8a29e, 32, 'hut');
+  const hutRoof = instanced(scene, new ConeGeometry(1.9, 1.4, 4), 0x7c2d12, 32, 'hut-roof');
+  const flame = instanced(scene, new ConeGeometry(0.5, 1.4, 5), 0xf97316, 4096, 'fire', { emissive: 0xf97316 });
+  const lava = instanced(scene, new BoxGeometry(1, 0.3, 1), 0xef4444, 512, 'lava', { emissive: 0x991b1b });
+  const carcass = instanced(scene, new BoxGeometry(0.7, 0.3, 1.0), 0x57534e, 256, 'carcass');
   // The tribe's works (behavior/tech.js): fence posts and rails, the campfire's stone
   // ring (its flame reuses `flame`), tilled field plots, and the watchtower.
-  const fencePost = instanced(scene, new THREE.BoxGeometry(0.22, 1.5, 0.22), 0x8b5a2b, 320, 'fence-post');
-  const fenceRail = instanced(scene, new THREE.BoxGeometry(1.0, 0.14, 0.14), 0xa16207, 320, 'fence-rail');
-  const hearth = instanced(scene, new THREE.CylinderGeometry(0.7, 0.8, 0.25, 8), 0x57534e, 4, 'campfire');
-  const field = instanced(scene, new THREE.BoxGeometry(0.92, 0.16, 0.92), 0x6b4f2a, 32, 'field');
-  const tower = instanced(scene, new THREE.BoxGeometry(1.1, 4.2, 1.1), 0x7c5c3a, 4, 'tower');
-  const towerTop = instanced(scene, new THREE.BoxGeometry(1.9, 0.35, 1.9), 0x5c4326, 4, 'tower-top');
+  const fencePost = instanced(scene, new BoxGeometry(0.22, 1.5, 0.22), 0x8b5a2b, 320, 'fence-post');
+  const fenceRail = instanced(scene, new BoxGeometry(1.0, 0.14, 0.14), 0xa16207, 320, 'fence-rail');
+  const hearth = instanced(scene, new CylinderGeometry(0.7, 0.8, 0.25, 8), 0x57534e, 4, 'campfire');
+  const field = instanced(scene, new BoxGeometry(0.92, 0.16, 0.92), 0x6b4f2a, 32, 'field');
+  const tower = instanced(scene, new BoxGeometry(1.1, 4.2, 1.1), 0x7c5c3a, 4, 'tower');
+  const towerTop = instanced(scene, new BoxGeometry(1.9, 0.35, 1.9), 0x5c4326, 4, 'tower-top');
   const all = [trunk, crown, stump, bush, berry, hutBase, hutRoof, flame, lava, carcass, fencePost, fenceRail, hearth, field, tower, towerTop];
-  const dummy = new THREE.Object3D();
+  const dummy = new Object3D();
 
   const place = (entry, i, x, y, z, scale = 1, rotY = 0) => {
     dummy.position.set(x, y, z);

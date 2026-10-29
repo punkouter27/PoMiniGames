@@ -32,16 +32,37 @@
 
          Anything that adds a module script earlier than this line reintroduces
          the bug silently — the games just stop, with one console line. -->
+    <!-- Two three.js versions, on purpose. Every game but PoEcosystem stays on r165 through
+         "three" / "three/addons/". PoEcosystem renders with WebGPURenderer and node materials
+         (TSL), which need the three/webgpu + three/tsl builds, so it imports its own pinned
+         copy as "three-eco/webgpu" / "three-eco/tsl" / "three-eco/addons/". The scope makes the
+         bare "three/webgpu" and "three/tsl" specifiers INSIDE that copy (three.tsl.js and the
+         addons import them) resolve to the same r186 files, so there is one instance of it.
+         Bump the version and the integrity hashes together. -->
     <script type="importmap">
     {
       "imports": {
         "three": "https://cdn.jsdelivr.net/npm/three@0.165.0/build/three.module.js",
         "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.165.0/examples/jsm/",
-        "cannon-es": "https://cdn.jsdelivr.net/npm/cannon-es@0.20.0/dist/cannon-es.js"
+        "cannon-es": "https://cdn.jsdelivr.net/npm/cannon-es@0.20.0/dist/cannon-es.js",
+        "three-eco/webgpu": "https://cdn.jsdelivr.net/npm/three@0.186.1/build/three.webgpu.js",
+        "three-eco/tsl": "https://cdn.jsdelivr.net/npm/three@0.186.1/build/three.tsl.js",
+        "three-eco/addons/": "https://cdn.jsdelivr.net/npm/three@0.186.1/examples/jsm/"
+      },
+      "scopes": {
+        "https://cdn.jsdelivr.net/npm/three@0.186.1/": {
+          "three": "https://cdn.jsdelivr.net/npm/three@0.186.1/build/three.webgpu.js",
+          "three/webgpu": "https://cdn.jsdelivr.net/npm/three@0.186.1/build/three.webgpu.js",
+          "three/tsl": "https://cdn.jsdelivr.net/npm/three@0.186.1/build/three.tsl.js"
+        }
       },
       "integrity": {
         "https://cdn.jsdelivr.net/npm/three@0.165.0/build/three.module.js": "sha384-Qvl1RLjZOCDFOOH2bKcGnaDHMM8MVv3zVtMvhy3juQdiIOs6RgQ/7zYdM1FbpHzI",
-        "https://cdn.jsdelivr.net/npm/cannon-es@0.20.0/dist/cannon-es.js": "sha384-LDCkTUkpgO4r4LtCJLXk5kwgo36GMMbF99L04+unS4RQdoKCAhj6jZ2B+2CkdSyo"
+        "https://cdn.jsdelivr.net/npm/cannon-es@0.20.0/dist/cannon-es.js": "sha384-LDCkTUkpgO4r4LtCJLXk5kwgo36GMMbF99L04+unS4RQdoKCAhj6jZ2B+2CkdSyo",
+        "https://cdn.jsdelivr.net/npm/three@0.186.1/build/three.webgpu.js": "sha384-4BcMoAQ5pbGKlA/ACC52ZLD19HUU8F/mGnEtg8LEb6G0S5xckMOrpPtPHQMzWi0D",
+        "https://cdn.jsdelivr.net/npm/three@0.186.1/build/three.core.js": "sha384-mdKeCwPEcbDvzaxwhm+MVuLoMou+E7jQqrs4tmu/n8HBYPGI1kZt0MkJxlMR4zFM",
+        "https://cdn.jsdelivr.net/npm/three@0.186.1/build/three.tsl.js": "sha384-i76xepHrmVxDoGJBGuT2FUEUGw0jdaDjus4NJ40g1FtIyusteqsUxnSz8avnH130",
+        "https://cdn.jsdelivr.net/npm/three@0.186.1/examples/jsm/tsl/display/BloomNode.js": "sha384-i681B4DcPx08phYxUWUXAWtpILC5sB+eIKXSxbTTQK5ZP+MB1D2j4HOz41lkNLNI"
       }
     }
     </script>

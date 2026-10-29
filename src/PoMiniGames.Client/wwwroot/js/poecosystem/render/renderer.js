@@ -6,7 +6,7 @@
 // worker as soon as its data has been copied out, which is what keeps the pool from
 // running dry (see host/simRuntime.js).
 //
-// It is also the conductor for the GFX stack added alongside it: the composer
+// It is also the conductor for the GFX stack added alongside it: the post pipeline
 // (postProcess.js), the particle field (particles.js), the event router (eventFx.js) and
 // the atmosphere (lighting.js) all hang off this one frame loop, because every one of them
 // needs the same three facts — the frame delta, where the camera is, and what time of day
@@ -16,9 +16,14 @@
 // the sim: creature trails (trails.js) and the grass field (grass.js), a SURFACE state
 // (wetness from the sim's weather, rain, snow cover, bioluminescent surf) handed to the
 // terrain and water, tonight's spectacle (aurora, meteors) decided from the world's seed
-// and the date, heat sources and shockwaves for the composer, the mood grade, creature
+// and the date, heat sources and shockwaves for the post pipeline, the mood grade, creature
 // voices near the listener, and gamepad rumble for a near blast.
-import * as THREE from 'three';
+//
+// THE RENDERER is three's WebGPURenderer (backend.js): WebGPU where the browser has it, its
+// own WebGL2 backend where it does not, one set of node materials for both. Its init is
+// async, so createRenderer still returns at once — the scene, the input and the camera are
+// all live straight away — and only the draw loop waits for `ready`.
+import { ACESFilmicToneMapping, Color, PCFShadowMap, PerspectiveCamera, PointLight, Scene, Vector2, Vector3 } from 'three-eco/webgpu';
 import { CREATURE_CAP, PROP_CAP } from '../sim/core/config.js';
 import { FRAME, frameViews } from '../sim/frame.js';
 import { TILE, TILE_STATE } from '../sim/terrain/tiles.js';
@@ -39,7 +44,7 @@ import { createDirector } from './director.js';
 import { createPip } from './pip.js';
 import { createSky } from './sky.js';
 import { materialClock, materialCloud, materialDetail, materialSeason, materialSnow, materialWet, materialSky } from './materials.js';
-import { applyCameraShake } from '../../postFx.js';
+import { applyCameraShake } from './impact.js';
 import { createSettlementMeshes, bannerColour } from './settlementMesh.js';
 import { createFauna } from './fauna.js';
 import { createTrails } from './trails.js';
@@ -68,7 +73,7 @@ const EPIDEMIC_MOOD = [0.95, 1.05, 0.9, 0.9];
 const VOICE_RANGE = 70;           // metres: creatures further than this are not voiced
 const HEAT_RANGE = 85;
 const THERMAL_MOOD = [0.5, 0.62, 0.95, 0.12];   // the world behind a thermal lens: cold and nearly grey
-const UNDER_FOG = new THREE.Color(0x0b5f73);
+const UNDER_FOG = new Color(0x0b5f73);
 const UNDER_FOG_DENSITY = 0.05;
 const CLOUD_SHADE = 0.42;         // how much sun a cloud takes at noon under a broken sky
 const GRAZE_CELL = 4;             // metres per cell of the minimap's grazing layer
@@ -90,6 +95,9 @@ const DPR_DOWN_FPS = 45;
 const DPR_UP_FPS = 58;
 const DPR_DOWN_SECONDS = 2;    // consecutive bad seconds before dropping — one stutter is not a trend
 const DPR_UP_SECONDS = 6;      // and a long run of good ones before climbing back
+// Device / context losses answered with a rebuild, per page session (see onLost below).
+const MAX_RESTORES = 3;
+let lossesThisSession = 0;
 
 export function createRenderer(container, {
   cap = CREATURE_CAP, propCap = PROP_CAP, minimapCanvas = null, quality = {}, audio = null,
@@ -121,19 +129,30 @@ export function createRenderer(container, {
   // an override that can only demote — a Blazor-side low-end hint must not be undone by a
   // machine that happens to report a fast GPU.
   const tier = forcedTier ?? (lowEnd ? 'low' : (window.PoQuality?.tier?.() ?? 'high'));
-  // backend.js owns the WebGPU/WebGL2 choice; today it always hands back WebGL2 (the
-  // scene's GLSL and composer are not ported) and reports what the WebGPU probe found.
-  const { renderer, report: backend } = createSceneRenderer(THREE, canvas, { lowEnd, tier });
+  // backend.js owns the WebGPU/WebGL2 choice and the device-loss contract. A lost device or
+  // context stops every draw dead and every GPU resource this module made goes with it, so
+  // the answer is the engine's 'contextRestored': it rebuilds the renderer (on WebGL2 for
+  // the rest of the session, if it was WebGPU that died) from the cached terrain and tiles.
+  let disposed = false;
+  const { renderer, report: backend, ready } = createSceneRenderer(canvas, {
+    lowEnd, tier,
+    onLost: () => {
+      contextLost = true; running = false;
+      onAction('contextLost');
+      // A GPU that keeps dropping the context would rebuild forever; three tries a session.
+      if (++lossesThisSession <= MAX_RESTORES) setTimeout(() => { if (!disposed) onAction('contextRestored'); }, 700);
+    },
+  });
   const maxDpr = window.PoCanvasDpr?.ceiling ? window.PoCanvasDpr.ceiling(lowEnd ? 1 : 2) : Math.min(devicePixelRatio || 1, lowEnd ? 1 : 2);
   let dprScale = 1;
   renderer.setPixelRatio(maxDpr);
   renderer.shadowMap.enabled = !lowEnd;
-  renderer.shadowMap.type = THREE.PCFSoftShadowMap;
-  renderer.toneMapping = THREE.ACESFilmicToneMapping;
+  renderer.shadowMap.type = PCFShadowMap;      // node shadows: PCF (soft PCF was retired), softened by shadow.radius
+  renderer.toneMapping = ACESFilmicToneMapping;
   renderer.toneMappingExposure = 1.15;
 
-  const scene = new THREE.Scene();
-  const camera = new THREE.PerspectiveCamera(75, 1, 0.5, 700);
+  const scene = new Scene();
+  const camera = new PerspectiveCamera(75, 1, 0.5, 700);
   // lighting owns scene.fog now: its colour and density both ride the same day/night curve
   // as the sky, and the water and particle shaders read the density back off it.
   const lighting = createLighting(scene, { shadows: !lowEnd, shadowMapSize: lowEnd ? 1024 : 2048, tier });
@@ -147,7 +166,7 @@ export function createRenderer(container, {
   const particles = createParticles(scene, { tier });
   const eventFx = createEventFx(particles, audio, { tier });
   const post = createPostProcess(renderer, scene, camera, {
-    tier, width: container.clientWidth || 1, height: container.clientHeight || 1, pixelRatio: maxDpr,
+    tier, width: container.clientWidth || 1, height: container.clientHeight || 1,
   });
 
   // terrainApi mirrors the sim terrain's read API (heightAt/type) from the transferred arrays.
@@ -170,8 +189,8 @@ export function createRenderer(container, {
   let snowFall = 0;                // snow laid by a weather spell; melts when it ends
   let bioTarget = 0;
   let spectacleKey = '';
-  const moodGrade = new THREE.Color(1, 1, 1);
-  const heatNdc = new THREE.Vector3();
+  const moodGrade = new Color(1, 1, 1);
+  const heatNdc = new Vector3();
   const heatList = [];
   let voiceAt = 0; let howlAt = -1e9; let barkAt = -1e9; let thumpAt = -1e9; let drumBarAt = 0;
   const howlTimers = new Set();
@@ -208,14 +227,14 @@ export function createRenderer(container, {
   let fireTiles = [];
   let lavaTiles = [];
 
-  const sunNdc = new THREE.Vector3();
-  const sunView = new THREE.Vector3();
-  const sunUv = new THREE.Vector2();
-  const sunFromCam = new THREE.Vector3();
+  const sunNdc = new Vector3();
+  const sunView = new Vector3();
+  const sunUv = new Vector2();
+  const sunFromCam = new Vector3();
 
   // The campfire's light (behavior/tech.js FIRE): one point light parked on the hearth,
   // bright at night and a flicker by day. Zero intensity until the tribe has a fire.
-  const campfireLight = new THREE.PointLight(0xffa040, 0, 28, 1.7);
+  const campfireLight = new PointLight(0xffa040, 0, 28, 1.7);
   campfireLight.name = 'campfire';
   scene.add(campfireLight);
   let campfireAt = null;
@@ -806,7 +825,7 @@ export function createRenderer(container, {
     updateUnderwater(dt);
     island?.update(timeSec, sky, surface);
     const windy = weatherKind === WEATHER_STORM ? weatherIntensity : weatherKind === WEATHER_RAIN ? weatherIntensity * 0.4 : 0.12;
-    grass?.update(dt, player, windy);
+    grass?.update(dt, player, windy, sky);
     if (campfireAt) {
       campfireLight.position.set(campfireAt.x, campfireAt.y + 1.1, campfireAt.z);
       const flicker = 0.85 + 0.15 * Math.sin(timeSec * 11.3) * Math.sin(timeSec * 7.1);
@@ -817,10 +836,7 @@ export function createRenderer(container, {
     emitWeather(dt);
     emitSeason(dt);
     fauna?.update(dt, timeSec, { player, night: sky.night ?? 0, storm: weatherKind === WEATHER_STORM ? weatherIntensity : 0 });
-    particles.update(dt, {
-      fogColor: sky.sky, fogDensity: sky.fogDensity,
-      pixelHeight: renderer.domElement.height, fov: camera.fov,
-    });
+    particles.update(dt);
 
     post.setNight(sky.night, sky.dusk);
     updateShafts(sky, dir);
@@ -841,16 +857,9 @@ export function createRenderer(container, {
     // a hidden tab's own requestAnimationFrame never fires.
     pip.raf(frame);
   }
-  requestAnimationFrame(frame);
-
-  // A lost GL context (driver reset, GPU process crash, too many contexts) stops every draw
-  // dead. preventDefault is what makes the browser offer a restore at all; the engine
-  // answers 'contextRestored' by rebuilding the renderer from the cached terrain and tiles,
-  // because every GPU resource this module made is gone with the context.
-  const onContextLost = (e) => { e.preventDefault(); contextLost = true; running = false; onAction('contextLost'); };
-  const onContextRestored = () => { onAction('contextRestored'); };
-  canvas.addEventListener('webglcontextlost', onContextLost);
-  canvas.addEventListener('webglcontextrestored', onContextRestored);
+  // The loop starts once the backend is up: drawing before init() settles is an error in
+  // WebGPURenderer, and nothing is lost by waiting — the scene is already being built.
+  ready.then((report) => { if (running && report.backend !== 'none') requestAnimationFrame(frame); });
 
   return {
     canvas, scene, camera, renderer, particles,
@@ -859,8 +868,12 @@ export function createRenderer(container, {
     get fps() { return fps; },
     get dprScale() { return dprScale; },
     get tier() { return tier; },
-    /** { backend: 'webgl2' | 'webgpu', reason, tier, webgpu: probe result | null, blockers }. */
+    /** The post facade (dev console: post.pipeline, post.scenePass). */
+    get post() { return post; },
+    /** { backend: 'pending' | 'webgpu' | 'webgl2' | 'none', reason, tier, adapter }. */
     get backend() { return backend; },
+    /** Resolves (to the backend report) once the renderer can draw. */
+    ready,
     get hovered() { return hovered; },
     get locked() { return input.locked; },
     setTerrain, setTiles, acceptFrame,
@@ -933,6 +946,7 @@ export function createRenderer(container, {
       const base = renderer.getPixelRatio();
       const w = container.clientWidth || 1;
       const scale = Math.max(1, Math.min(2, 4096 / Math.max(1, w * base)));
+      if (backend.backend === 'pending' || backend.backend === 'none') return null;
       try {
         if (scale > 1) { renderer.setPixelRatio(base * scale); post.setPixelRatio(base * scale); resize(); }
         post.render();
@@ -1001,13 +1015,12 @@ export function createRenderer(container, {
     requestLock: () => canvas.requestPointerLock?.(),
     dispose() {
       running = false;
+      disposed = true; backend.disposed = true;
       // The two frames held for interpolation belong to the worker's pool of three; a
       // renderer rebuilt without returning them (quality change, context restore) would
       // leave the sim one buffer short, and it skips frames when the pool is empty.
       if (lastRecycle) { if (prev) lastRecycle(prev.buffer); if (curr) lastRecycle(curr.buffer); }
       prev = null; curr = null;
-      canvas.removeEventListener('webglcontextlost', onContextLost);
-      canvas.removeEventListener('webglcontextrestored', onContextRestored);
       fauna?.dispose();
       for (const id of howlTimers) clearTimeout(id);
       howlTimers.clear();
@@ -1022,9 +1035,9 @@ export function createRenderer(container, {
       kinThreads.dispose();
       creatures.dispose(); props.dispose(); flora?.dispose(); island?.dispose(); lighting.dispose(); skyDome.dispose(); minimap?.dispose();
       particles.dispose(); post.dispose();
-      renderer.dispose();
-      // dispose() does not hand the context back; see pobrawl/game.js dispose().
-      try { renderer.forceContextLoss?.(); } catch { /* context already gone */ }
+      // WebGPURenderer.dispose hands the GPU back itself: the device is destroyed (WebGPU) or
+      // the context lost on purpose (WebGL2), which is why onLost ignores a disposed renderer.
+      try { renderer.dispose(); } catch { /* a lost device has little left to free */ }
       canvas.remove();
     },
   };

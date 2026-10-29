@@ -5,9 +5,9 @@
 // raising a speck of dust. This module is the missing layer.
 //
 // DESIGN: THE CPU NEVER TOUCHES A LIVE PARTICLE
-// Each particle is written exactly once, at emission, as a row of five vertex attributes
-// (origin, velocity, life, style, colour). The vertex shader then integrates its whole
-// trajectory from `uTime - birth` in closed form. That matters at this scale: a burning
+// Each particle is written exactly once, at emission, as a row of five instance attributes
+// (origin, velocity, life, style, colour). The node material's vertex stage then integrates
+// its whole trajectory from `time - birth` in closed form. That matters at this scale: a burning
 // forest can carry a few thousand smoke puffs, and stepping those on the main thread every
 // frame would cost more than the entire rest of the render loop.
 //
@@ -24,7 +24,8 @@
 //
 // Ring buffers, never allocation: a pool that is full overwrites its oldest row. Dropping
 // the eldest smoke puff in a firestorm is invisible; a GC pause is not.
-import * as THREE from 'three';
+import { AdditiveBlending, Color, DynamicDrawUsage, InstancedBufferAttribute, NormalBlending, Sprite, SpriteNodeMaterial } from 'three-eco/webgpu';
+import { dot, exp, float, instancedDynamicBufferAttribute, max, mix, sin, smoothstep, step, uniform, uv, varying, vec2, vec3 } from 'three-eco/tsl';
 
 const SOFT_CAP = { high: 3000, medium: 1400, low: 0 };
 const GLOW_CAP = { high: 1500, medium: 700, low: 0 };
@@ -64,125 +65,69 @@ const PRESETS = {
   mote: { pool: 'glow', life: [1.3, 2.1], size: [0.1, 0.18], speed: [2.3, 2.9], spread: 0.04, drag: 1.3, gravity: 0.06, growth: 0, alpha: 0.9, colors: [0xfde68a, 0xbbf7d0, 0xffffff] },
 };
 
-const VERT = `
-attribute vec3 aVel;
-attribute vec4 aLife;    // birth, life, gravity, drag
-attribute vec4 aStyle;   // size, growth, sparkle, alpha
-attribute vec3 aColor;
-uniform float uTime;
-uniform float uScale;    // drawingBufferHeight / (2 * tan(fov/2)) — px per world unit at 1 m
-varying vec3 vColor;
-varying float vAlpha;
-varying float vSparkle;
-varying float vDepth;
-
-void main() {
-  float age = uTime - aLife.x;
-  float life = aLife.y;
-  if (age < 0.0 || age > life) {
-    // Dead rows are parked behind the camera rather than branched around: a degenerate
-    // clip position costs one vertex and never reaches the fragment stage.
-    // Every varying is written even here: the point is clipped so no fragment can read
-    // them, but leaving them undefined trips validation warnings on some drivers.
-    gl_Position = vec4(0.0, 0.0, 2.0, 1.0);
-    gl_PointSize = 0.0;
-    vColor = vec3(0.0); vAlpha = 0.0; vSparkle = 0.0; vDepth = 0.0;
-    return;
-  }
-
-  float k = max(0.01, aLife.w);
-  float f = (1.0 - exp(-k * age)) / k;
-  vec3 pos = position + aVel * f + vec3(0.0, aLife.z, 0.0) * (age - f) / k;
-
-  float t = age / life;
-  float size = aStyle.x * (1.0 + aStyle.y * t);
-
-  // Fade in over the first tenth of the life, out over the last two thirds. The in-fade
-  // is what stops a burst from popping into existence as a hard disc.
-  vAlpha = aStyle.w * smoothstep(0.0, 0.1, t) * (1.0 - smoothstep(0.35, 1.0, t));
-  vColor = aColor;
-  vSparkle = aStyle.z;
-
-  vec4 mv = modelViewMatrix * vec4(pos, 1.0);
-  vDepth = -mv.z;
-  gl_Position = projectionMatrix * mv;
-  gl_PointSize = max(1.0, size * uScale / max(0.5, -mv.z));
-}
-`;
-
-const FRAG = `
-uniform float uTime;
-uniform vec3 uFogColor;
-uniform float uFogDensity;
-varying vec3 vColor;
-varying float vAlpha;
-varying float vSparkle;
-varying float vDepth;
-
-void main() {
-  // Soft round sprite. No texture: a smoothstep on the point coord is one instruction
-  // cheaper than a sample and cannot be blurry at any DPR.
-  vec2 d = gl_PointCoord - 0.5;
-  float r = dot(d, d) * 4.0;
-  float mask = 1.0 - smoothstep(0.35, 1.0, r);
-  if (mask <= 0.001) discard;
-
-  float a = vAlpha * mask;
-  // Embers flicker; matter does not. The frequency is per-particle via the colour hash so
-  // a burst does not pulse in unison.
-  if (vSparkle > 0.5) a *= 0.62 + 0.38 * sin(uTime * 24.0 + vColor.r * 90.0);
-
-  // FogExp2, matched to the scene's own fog so particles sit in the same air as the world.
-  // The depth comes from the vertex stage rather than gl_FragCoord: a point sprite's
-  // fragment depth is the sprite's, and eyeballing it from z/w drifts at grazing angles.
-  float fog = 1.0 - exp(-uFogDensity * uFogDensity * vDepth * vDepth);
-  gl_FragColor = vec4(mix(vColor, uFogColor, fog), a);
-}
-`;
-
-function createPool(scene, cap, { additive, name }) {
-  const geometry = new THREE.BufferGeometry();
+// One pool = one instanced Sprite. Each row is a sprite instance whose attributes were
+// written once at emission; the node graph below integrates its trajectory from
+// `time - birth` in closed form, scales it by its age, and fades it in and out. Sprites,
+// not GL points: WebGPU has no point size, and a world-sized billboard is what the old
+// gl_PointSize maths was imitating anyway (size × px-per-metre ÷ distance).
+function createPool(scene, cap, uTime, { additive, name }) {
   const origin = new Float32Array(cap * 3);
   const vel = new Float32Array(cap * 3);
   const life = new Float32Array(cap * 4);
   const style = new Float32Array(cap * 4);
   const colour = new Float32Array(cap * 3);
-  geometry.setAttribute('position', new THREE.BufferAttribute(origin, 3));
-  geometry.setAttribute('aVel', new THREE.BufferAttribute(vel, 3));
-  geometry.setAttribute('aLife', new THREE.BufferAttribute(life, 4));
-  geometry.setAttribute('aStyle', new THREE.BufferAttribute(style, 4));
-  geometry.setAttribute('aColor', new THREE.BufferAttribute(colour, 3));
-  for (const key of ['position', 'aVel', 'aLife', 'aStyle', 'aColor']) {
-    geometry.attributes[key].setUsage(THREE.DynamicDrawUsage);
-  }
-  // Every row starts dead (life = 0 → age > life on the first frame).
-  geometry.setDrawRange(0, cap);
-  // The field spans the island; a bounding sphere computed from the parked rows would cull
-  // the whole pool the moment the player looked away from the origin.
-  geometry.boundingSphere = new THREE.Sphere(new THREE.Vector3(), 1e6);
+  const attrs = {
+    origin: new InstancedBufferAttribute(origin, 3),
+    vel: new InstancedBufferAttribute(vel, 3),
+    life: new InstancedBufferAttribute(life, 4),     // birth, life, gravity, drag
+    style: new InstancedBufferAttribute(style, 4),   // size, growth, sparkle, alpha
+    colour: new InstancedBufferAttribute(colour, 3),
+  };
+  for (const a of Object.values(attrs)) a.setUsage(DynamicDrawUsage);
 
-  const material = new THREE.ShaderMaterial({
-    uniforms: {
-      uTime: { value: 0 },
-      uScale: { value: 600 },
-      uFogColor: { value: new THREE.Color(0x8ec5ff) },
-      uFogDensity: { value: 0.006 },
-    },
-    vertexShader: VERT,
-    fragmentShader: FRAG,
-    transparent: true,
-    depthWrite: false,
-    depthTest: true,
-    blending: additive ? THREE.AdditiveBlending : THREE.NormalBlending,
+  const aOrigin = instancedDynamicBufferAttribute(attrs.origin, 'vec3');
+  const aVel = instancedDynamicBufferAttribute(attrs.vel, 'vec3');
+  const aLife = instancedDynamicBufferAttribute(attrs.life, 'vec4');
+  const aStyle = instancedDynamicBufferAttribute(attrs.style, 'vec4');
+  const aColour = instancedDynamicBufferAttribute(attrs.colour, 'vec3');
+
+  const age = uTime.sub(aLife.x);
+  const span = aLife.y;
+  // Every row starts dead (life = 0); a dead row is a zero-size sprite.
+  const alive = step(0, age).mul(step(age, span));
+  // dv/dt = g - k*v, solved exactly: f = (1 - e^-kt)/k; pos = o + v0*f + g*(t - f)/k.
+  const k = max(0.01, aLife.w);
+  const f = float(1).sub(exp(k.negate().mul(age))).div(k);
+  const pos = aOrigin.add(aVel.mul(f)).add(vec3(0, aLife.z, 0).mul(age.sub(f)).div(k));
+  const t = age.div(span);
+  const size = aStyle.x.mul(aStyle.y.mul(t).add(1)).mul(alive);
+
+  const material = new SpriteNodeMaterial({
+    transparent: true, depthWrite: false, depthTest: true, fog: true,
+    blending: additive ? AdditiveBlending : NormalBlending,
   });
+  material.positionNode = pos;
+  material.scaleNode = vec2(size, size);
+  material.colorNode = varying(aColour, 'vPartColour');
+  // Fade in over the first tenth of the life, out over the last two thirds; a soft round
+  // sprite from the quad's own uv (no texture: cannot be blurry at any DPR). Embers flicker,
+  // per particle via the colour, so a burst does not pulse in unison; matter does not.
+  const d = uv().sub(0.5);
+  const r = dot(d, d).mul(4);
+  const mask = float(1).sub(smoothstep(0.35, 1, r));
+  const fade = smoothstep(0, 0.1, t).mul(float(1).sub(smoothstep(0.35, 1, t)));
+  const flicker = mix(float(1), sin(uTime.mul(24).add(aColour.x.mul(90))).mul(0.38).add(0.62), step(0.5, aStyle.z));
+  material.opacityNode = varying(aStyle.w.mul(fade).mul(flicker), 'vPartAlpha').mul(mask);
+  material.alphaTest = 0.001;
 
-  const points = new THREE.Points(geometry, material);
-  points.frustumCulled = false;
-  points.name = name;
-  points.renderOrder = additive ? 12 : 10;   // glow over matter, both over the world
-  scene.add(points);
+  const sprite = new Sprite(material);
+  sprite.count = cap;
+  sprite.frustumCulled = false;
+  sprite.name = name;
+  sprite.renderOrder = additive ? 12 : 10;   // glow over matter, both over the world
+  scene.add(sprite);
 
-  return { geometry, material, points, cap, cursor: 0, dirty: false, origin, vel, life, style, colour };
+  return { material, sprite, attrs, cap, cursor: 0, dirty: false, origin, vel, life, style, colour };
 }
 
 const lerp = (a, b, t) => a + (b - a) * t;
@@ -192,13 +137,16 @@ export function createParticles(scene, { tier = 'high' } = {}) {
   const glowCap = GLOW_CAP[tier] ?? 0;
 
   // Low tier gets a real object with no pools: every call site stays unconditional.
+  // One clock for both pools; the fog is the scene's own (FogExp2 through the node
+  // material's fog stage), so particles sit in the same air as the world for free.
+  const uTime = uniform(0);
   const pools = {
-    soft: softCap ? createPool(scene, softCap, { additive: false, name: 'particles-soft' }) : null,
-    glow: glowCap ? createPool(scene, glowCap, { additive: true, name: 'particles-glow' }) : null,
+    soft: softCap ? createPool(scene, softCap, uTime, { additive: false, name: 'particles-soft' }) : null,
+    glow: glowCap ? createPool(scene, glowCap, uTime, { additive: true, name: 'particles-glow' }) : null,
   };
 
   let time = 0;
-  const tmp = new THREE.Color();
+  const tmp = new Color();
 
   function write(pool, preset, x, y, z, vx, vy, vz, scale) {
     const i = pool.cursor;
@@ -307,23 +255,14 @@ export function createParticles(scene, { tier = 'high' } = {}) {
       }
     },
 
-    /** Per frame. `fog` keeps the pools in the same air as the scene. */
-    update(dt, { fogColor, fogDensity, pixelHeight, fov } = {}) {
+    /** Per frame: advance the shared clock and upload the rows written since the last one. */
+    update(dt) {
       time += dt;
+      uTime.value = time;
       for (const pool of [pools.soft, pools.glow]) {
-        if (!pool) continue;
-        pool.material.uniforms.uTime.value = time;
-        if (fogColor) pool.material.uniforms.uFogColor.value.copy(fogColor);
-        if (fogDensity !== undefined) pool.material.uniforms.uFogDensity.value = fogDensity;
-        if (pixelHeight && fov) {
-          // gl_PointSize is in device pixels, so the world→pixel scale has to follow both
-          // the drawing buffer height and the FOV or particles change size on resize.
-          pool.material.uniforms.uScale.value = pixelHeight / (2 * Math.tan((fov * Math.PI / 180) / 2));
-        }
-        if (pool.dirty) {
-          for (const key of ['position', 'aVel', 'aLife', 'aStyle', 'aColor']) pool.geometry.attributes[key].needsUpdate = true;
-          pool.dirty = false;
-        }
+        if (!pool || !pool.dirty) continue;
+        for (const a of Object.values(pool.attrs)) a.needsUpdate = true;
+        pool.dirty = false;
       }
     },
 
@@ -333,8 +272,7 @@ export function createParticles(scene, { tier = 'high' } = {}) {
     dispose() {
       for (const pool of [pools.soft, pools.glow]) {
         if (!pool) continue;
-        scene.remove(pool.points);
-        pool.geometry.dispose();
+        scene.remove(pool.sprite);
         pool.material.dispose();
       }
     },

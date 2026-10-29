@@ -1,38 +1,30 @@
-// backend.js — which GPU API draws the island: the WebGPU probe, the choice, and the
-// fallback contract. No three.js import (the caller hands THREE in) and no DOM beyond
-// `navigator`/`location`/`sessionStorage`, each guarded, so the choice is unit-tested.
+// backend.js — which GPU API draws the island, and what happens when it goes away.
 //
-// WHERE THIS STANDS
-// The scene is WebGL2 through and through: materials.js patches MeshLambertMaterial with
-// onBeforeCompile, sky/water/grass/particles/terrain ship GLSL ShaderMaterials, and
-// postProcess.js is an EffectComposer chain (bloom, SMAA, the grade). three's
-// WebGPURenderer ignores onBeforeCompile, cannot run GLSL ShaderMaterials, and has no
-// EffectComposer — every one of those would have to be rewritten as node materials (TSL)
-// and a PostProcessing node graph before a WebGPU frame could look like a WebGL2 one.
-// Until that port lands, SCENE_WEBGPU_READY is false and the choice is always webgl2;
-// the probe still runs so the dev console (and window.PoEcoBackend) says whether this
-// machine could take the WebGPU path, and why it did not.
+// The scene is node materials (TSL) end to end, so ONE renderer draws it on either API:
+// three's WebGPURenderer runs WebGPU where the browser has it and its own WebGL2 backend
+// where it does not (no navigator.gpu, no adapter, a device that will not open). There is
+// no second code path to choose between — only which backend that one renderer starts on.
 //
-// FALLBACK CONTRACT: no navigator.gpu, no adapter, a device that will not open, a device
-// lost (this session), low tier, an explicit ?ecoBackend=webgl2, or any thrown error →
-// webgl2, silently. Nothing here throws to its caller.
-
-/** Flip once every GLSL/onBeforeCompile/EffectComposer piece has a node-material twin. */
-export const SCENE_WEBGPU_READY = false;
-
-/** What still pins the scene to WebGL2 (reported alongside the choice). */
-export const WEBGPU_BLOCKERS = Object.freeze([
-  'materials.js: onBeforeCompile patches on MeshLambertMaterial',
-  'sky.js, water.js, grass.js, particles.js, terrainMesh.js: GLSL ShaderMaterial',
-  'postProcess.js: EffectComposer (bloom, SMAA, grade, output)',
-]);
+// THE CHOICE (pure, so it is testable without a GPU)
+//   ?ecoBackend=webgl2            → WebGL2 (forceWebGL), for comparing the two
+//   a device lost this session    → WebGL2 for the rest of the session (sessionStorage)
+//   no navigator.gpu              → WebGL2, said up front rather than via three's warning
+//   otherwise (every tier)        → WebGPU, and three falls back to WebGL2 by itself if the
+//                                   adapter or device will not open. The low tier is cheap
+//                                   because of what it draws, not the API it draws with.
+//
+// DEVICE LOSS: createSceneRenderer's `onLost` fires once when the device (WebGPU) or the
+// context (WebGL2) is lost. A lost WebGPU device is remembered for the session first, so
+// the rebuild the engine does next — and every later one — starts on WebGL2 instead of
+// failing the same way again.
+//
+// On a dev host (or with ?ecoDebug) one console line says which backend is drawing and
+// why; the same report is mirrored on window.PoEcoBackend.
+import { WebGPURenderer } from 'three-eco/webgpu';
 
 const BROKEN_KEY = 'poeco.webgpuBroken';
-const PROBE_TIMEOUT_MS = 2500;
 
-let probePromise = null;
-
-/** The ?ecoBackend=webgl2|webgpu override, or null. */
+/** The ?ecoBackend=webgl2|webgpu override, or null. `webgpu` also ignores a past device loss. */
 export function backendOverride(search = safeSearch()) {
   try {
     const v = new URLSearchParams(search).get('ecoBackend');
@@ -49,93 +41,85 @@ export function backendDebug() {
 }
 
 /**
- * Ask for a WebGPU adapter and device once per page; resolves to
- * { ok, reason, adapter: { vendor, architecture } | null }. The device is destroyed right
- * after: this answers "could it", the renderer that takes the path opens its own.
+ * The choice, pure: { forceWebGL, reason }. `hasGpu` is whether navigator.gpu exists at all
+ * (without it WebGPURenderer would only warn and fall back, so it is cleaner to ask for
+ * WebGL2 up front and say why).
  */
-export function probeWebGPU(nav = globalThis.navigator) {
-  if (probePromise) return probePromise;
-  probePromise = (async () => {
-    try {
-      if (wasMarkedBroken()) return { ok: false, reason: 'device-lost-this-session', adapter: null };
-      const gpu = nav?.gpu;
-      if (!gpu || typeof gpu.requestAdapter !== 'function') return { ok: false, reason: 'no-navigator-gpu', adapter: null };
-      const adapter = await withTimeout(gpu.requestAdapter({ powerPreference: 'high-performance' }));
-      if (!adapter) return { ok: false, reason: 'no-adapter', adapter: null };
-      const info = adapter.info ?? (typeof adapter.requestAdapterInfo === 'function' ? await withTimeout(adapter.requestAdapterInfo()).catch(() => null) : null);
-      const summary = info ? { vendor: info.vendor || '', architecture: info.architecture || '' } : null;
-      if (adapter.isFallbackAdapter || info?.isFallbackAdapter) return { ok: false, reason: 'software-adapter', adapter: summary };
-      const device = await withTimeout(adapter.requestDevice());
-      if (!device) return { ok: false, reason: 'no-device', adapter: summary };
-      try { device.destroy(); } catch { /* already gone */ }
-      return { ok: true, reason: 'available', adapter: summary };
-    } catch (e) {
-      return { ok: false, reason: 'probe-failed: ' + (e?.message || String(e)), adapter: null };
-    }
-  })();
-  return probePromise;
+export function chooseBackend({ override = null, broken = false, hasGpu = true } = {}) {
+  if (override === 'webgl2') return { forceWebGL: true, reason: 'override' };
+  if (broken && override !== 'webgpu') return { forceWebGL: true, reason: 'device-lost-this-session' };
+  if (!hasGpu) return { forceWebGL: true, reason: 'no-navigator-gpu' };
+  return { forceWebGL: false, reason: override === 'webgpu' ? 'override' : 'auto' };
 }
 
 /**
- * The choice, pure: { backend: 'webgpu' | 'webgl2', reason }.
- * `probe` is probeWebGPU()'s result (or null while it is pending).
+ * Build the scene renderer and start `renderer.init()`. Returns { renderer, report, ready }
+ * at once — the renderer can be sized and a scene built against it straight away; only
+ * drawing has to wait for `ready`, which resolves to the report once init has settled.
+ * `report.backend` is what actually came up ('webgpu' or 'webgl2'; a WebGPU request that
+ * fell back says 'webgl2' with reason 'fallback'). `onLost(info)` is called at most once,
+ * on device or context loss, and never after `report.disposed` is set.
  */
-export function chooseBackend({ tier = 'high', probe = null, override = null, sceneReady = SCENE_WEBGPU_READY, broken = false } = {}) {
-  if (override === 'webgl2') return { backend: 'webgl2', reason: 'override' };
-  if (broken) return { backend: 'webgl2', reason: 'device-lost-this-session' };
-  if (!sceneReady) return { backend: 'webgl2', reason: 'scene-not-ported' };
-  if (tier === 'low' && override !== 'webgpu') return { backend: 'webgl2', reason: 'low-tier' };
-  if (!probe) return { backend: 'webgl2', reason: 'probe-pending' };
-  if (!probe.ok) return { backend: 'webgl2', reason: probe.reason };
-  return { backend: 'webgpu', reason: override === 'webgpu' ? 'override' : 'available' };
-}
-
-/**
- * Build the WebGL2 renderer (today's only path) and start the probe. `report` is a live
- * object: `backend`/`reason` describe what is drawing, `webgpu` fills in once the probe
- * answers. The same object is mirrored on window.PoEcoBackend for the dev console.
- */
-export function createSceneRenderer(THREE, canvas, { lowEnd = false, tier = 'high' } = {}) {
-  const renderer = new THREE.WebGLRenderer({ canvas, antialias: !lowEnd, powerPreference: 'high-performance' });
+export function createSceneRenderer(canvas, { lowEnd = false, tier = 'high', onLost = () => {} } = {}) {
   const override = backendOverride();
-  const choice = chooseBackend({ tier, override, broken: wasMarkedBroken() });
-  const report = { backend: 'webgl2', reason: choice.reason, tier, webgpu: null, blockers: SCENE_WEBGPU_READY ? [] : WEBGPU_BLOCKERS };
+  const choice = chooseBackend({ override, broken: wasMarkedBroken(), hasGpu: !!globalThis.navigator?.gpu });
+  const renderer = new WebGPURenderer({
+    canvas,
+    antialias: !lowEnd,
+    powerPreference: 'high-performance',
+    forceWebGL: choice.forceWebGL,
+  });
+  const report = { backend: 'pending', reason: choice.reason, tier, adapter: null, disposed: false };
   try { globalThis.PoEcoBackend = report; } catch { /* frozen global: the report still rides the renderer */ }
-  // While the scene is not ported the probe only informs, so it opens a GPU device only
-  // where someone is looking (dev host, ?ecoDebug, ?ecoBackend=webgpu) — not for every player.
-  if (!SCENE_WEBGPU_READY && !backendDebug() && override !== 'webgpu') return { renderer, report };
-  probeWebGPU().then((probe) => {
-    report.webgpu = probe;
-    // Would the choice change with the probe in? Only in what it reports: the WebGL2
-    // renderer is already drawing, and a backend swap is a renderer rebuild the engine owns.
-    const next = chooseBackend({ tier, probe, override, broken: wasMarkedBroken() });
-    if (next.backend === 'webgl2') report.reason = next.reason;
-    else report.reason = 'webgpu-available-not-wired';
-    if (backendDebug()) {
-      console.info(`PoEcosystem: rendering with WebGL2 (${report.reason}); WebGPU ${probe.ok ? 'available' : 'unavailable: ' + probe.reason}`, report);
+
+  let lost = false;
+  renderer.onDeviceLost = (info) => {
+    // Our own dispose loses the WebGL context on purpose (WebGLBackend.dispose): not a failure.
+    if (lost || report.disposed) return;
+    lost = true;
+    if (info?.api === 'WebGPU') markWebGPUBroken(info.message || info.reason || 'lost');
+    report.lost = info?.message || 'lost';
+    try { onLost(info); } catch { /* the caller's bug must not stop the fallback */ }
+  };
+
+  const ready = renderer.init().then(() => {
+    shareInstancePrograms(renderer);
+    const gpu = !!renderer.backend?.isWebGPUBackend;
+    report.backend = gpu ? 'webgpu' : 'webgl2';
+    if (!gpu && !choice.forceWebGL) report.reason = 'fallback';
+    if (gpu) {
+      const info = renderer.backend.device?.adapterInfo ?? null;
+      report.adapter = info ? { vendor: info.vendor || '', architecture: info.architecture || '' } : null;
+      report.compatibility = !!renderer.backend.compatibilityMode;
     }
-  }, () => { /* probeWebGPU never rejects */ });
-  return { renderer, report };
+    if (backendDebug()) console.info(`PoEcosystem: rendering with ${gpu ? 'WebGPU' : 'WebGL2'} (${report.reason})`, report);
+    return report;
+  }, (err) => {
+    // Neither backend would open: nothing can draw. Reported, never thrown at the engine.
+    report.backend = 'none';
+    report.reason = 'init-failed: ' + (err?.message || String(err));
+    console.error('PoEcosystem: no GPU backend could start', err);
+    return report;
+  });
+  return { renderer, report, ready };
 }
 
 /**
- * For the WebGPU renderer once it exists: a lost device (driver reset, GPU process
- * crash) is remembered for the session so the rebuild — and every later one — takes
- * WebGL2 instead of failing the same way again.
+ * One program per material, not one per instanced mesh. Under the uniform-buffer limit,
+ * three's node InstancedMesh reads its matrices from a uniform array named after that
+ * mesh's own buffer node, so every one of the island's ~120 instanced meshes compiles its
+ * own vertex program: ~170 programs, and on the WebGL2 backend (ANGLE) many seconds of
+ * main-thread compile on the first frame. With the limit at 0 every mesh takes the
+ * instanced-attribute path WebGLRenderer always used: identical source, compiled once and
+ * shared. Instance matrices change every frame either way, so nothing is lost.
  */
-export function watchDeviceLost(device, onLost = () => {}) {
-  try {
-    device?.lost?.then((info) => {
-      if (info?.reason === 'destroyed') return;        // our own dispose, not a failure
-      markWebGPUBroken(info?.message || info?.reason || 'lost');
-      try { onLost(info); } catch { /* the caller's bug must not stop the fallback */ }
-    }, () => {});
-  } catch { /* no lost promise: nothing to watch */ }
+function shareInstancePrograms(renderer) {
+  const caps = renderer.backend?.capabilities;
+  if (caps && typeof caps.getUniformBufferLimit === 'function') caps.getUniformBufferLimit = () => 0;
 }
 
 export function markWebGPUBroken(reason = 'lost') {
   try { globalThis.sessionStorage?.setItem(BROKEN_KEY, String(reason)); } catch { /* private mode */ }
-  probePromise = Promise.resolve({ ok: false, reason: 'device-lost-this-session', adapter: null });
 }
 
 function wasMarkedBroken() {
@@ -145,12 +129,3 @@ function wasMarkedBroken() {
 function safeSearch() {
   try { return globalThis.location?.search ?? ''; } catch { return ''; }
 }
-
-function withTimeout(p) {
-  let timer;
-  const timeout = new Promise((_, reject) => { timer = setTimeout(() => reject(new Error('timeout')), PROBE_TIMEOUT_MS); });
-  return Promise.race([p, timeout]).finally(() => clearTimeout(timer));
-}
-
-/** Tests only: forget the cached probe. */
-export function _resetProbe() { probePromise = null; }
