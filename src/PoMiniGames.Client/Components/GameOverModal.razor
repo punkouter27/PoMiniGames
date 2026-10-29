@@ -6,8 +6,8 @@
    The one end-of-game modal for every game in PoMiniGames.
 
    Centered, blocking, no backdrop-dismiss: the final result (GameSummary), the
-   stats grid (Stats), this game's top 3 (fetched from GameKey), Share and Full
-   leaderboard, a Play again button and one that returns to the main menu.
+   stats grid (Stats), this game's top 3 (fetched from GameKey) and one button, Back to
+   main menu. There is no Play again: a player picks the game on the hub again.
 
    It is also the one end-of-game MOMENT. When it opens it plays the result for
    every game at once (GameOverMoment): the outcome cue, confetti on a win or a new
@@ -32,9 +32,9 @@
 
    `dialog.showModal()` is called from JS after first render, then `close()` is
    called immediately before navigation so the page transition runs cleanly.
-   `<form method="dialog">` is intentionally NOT used here — the OK button is a
-   normal Blazor button that calls our Back() callback, because we need to invoke
-   OnOk + navigate rather than the dialog's native "close + submit" semantics. *@
+   `<form method="dialog">` is intentionally NOT used here — the button is a
+   normal Blazor button that calls our Back() callback, because we need to
+   navigate rather than use the dialog's native "close + submit" semantics. *@
 @* data-glass: glassFx.js paints a blurred capture of the game's last frame under the card
    (game-shell.css keeps it faint; a DOM game with no canvas simply gets the plain card). *@
 <dialog class="gps-modal @(Moment.Vignette ? "gps-modal--loss" : null)" aria-label="Game over" data-fx-tilt="5" data-glass @ref="_dialog" @oncancel="HandleCancel">
@@ -126,52 +126,16 @@
             </div>
         }
 
+        @* One way out, and only one: back to the main menu. Playing again means picking the
+           game on the hub again. Focused on open, so Enter takes it; Escape is the dialog's
+           cancel (HandleCancel). *@
         <footer class="gps-play-again-actions">
-            <div class="gps-modal-extras">
-                <button type="button" class="app-btn app-btn--ghost" @onclick="ShareAsync" disabled="@_shareBusy">
-                    <span aria-hidden="true">↗</span> Share
-                </button>
-                @if (!string.IsNullOrEmpty(GameKey))
-                {
-                    <button type="button" class="app-btn app-btn--ghost" @onclick="OpenLeaderboardAsync">
-                        <span aria-hidden="true">🏆</span> Full leaderboard
-                    </button>
-                }
-            </div>
-            <div class="gps-modal-main">
-                @if (OnPrimary.HasDelegate)
-                {
-                    @* The game's own next step (a rematch in place) leads; leaving drops to a
-                       secondary button, and Escape still means leaving. *@
-                    <button class="app-btn app-btn--secondary" @onclick="Back">
-                        <span>@BackText</span>
-                        <kbd class="gps-kbd">Esc</kbd>
-                    </button>
-                    @if (OnSecondary.HasDelegate)
-                    {
-                        <button class="app-btn app-btn--secondary" @onclick="SecondaryAsync">@SecondaryLabel</button>
-                    }
-                    <button class="app-btn app-btn--primary" @onclick="PrimaryAsync" autofocus>@PrimaryLabel</button>
-                }
-                else
-                {
-                    @if (CanPlayAgain)
-                    {
-                        <button class="app-btn app-btn--secondary" @onclick="PlayAgain">Play again</button>
-                    }
-                    <button class="app-btn app-btn--primary"
-                            @onclick="Back"
-                            autofocus>
-                        <span>@BackText</span>
-                        <kbd class="gps-kbd gps-kbd--primary">Esc</kbd>
-                    </button>
-                }
-            </div>
+            <button type="button" class="app-btn app-btn--primary" data-end-action
+                    @onclick="Back" autofocus>
+                <span>Back to main menu</span>
+                <kbd class="gps-kbd gps-kbd--primary">Esc</kbd>
+            </button>
         </footer>
-
-        @* A toast inside the dialog: the app's toast stack sits under the top layer a modal
-           dialog lives in, so one raised there would be dimmed behind the backdrop. *@
-        <p class="gps-modal-toast @(_toast is null ? null : "gps-modal-toast--on")" role="status">@_toast</p>
 </dialog>
 
 @code {
@@ -192,32 +156,6 @@
 
     /// <summary>Player name, used to highlight their own row in the top 3.</summary>
     [Parameter] public string? Player { get; set; }
-
-    /// <summary>Where OK navigates. The main menu unless a game overrides it.</summary>
-    [Parameter] public string BackTo { get; set; } = "/";
-
-    /// <summary>
-    /// Optional teardown to run when OK is pressed, before navigating. For games
-    /// holding end-of-match state outside the page (a store that keeps
-    /// ShowPostMortem set), this is where that state gets cleared — otherwise the
-    /// modal would still be up when the player next opens the game.
-    /// </summary>
-    [Parameter] public EventCallback OnOk { get; set; }
-
-    /// <summary>Label of the leave button. "Back to all games" unless the game sits under a lobby.</summary>
-    [Parameter] public string? BackLabel { get; set; }
-
-    /// <summary>
-    /// Optional in-place next step ("Fight again", "Rematch"). When set it becomes the primary
-    /// button, replaces the page-reloading Play again, and the leave button turns secondary.
-    /// The modal closes first; the game resets its own state (dropping GameOver unmounts this).
-    /// </summary>
-    [Parameter] public EventCallback OnPrimary { get; set; }
-    [Parameter] public string PrimaryLabel { get; set; } = "Play again";
-
-    /// <summary>Optional second in-place action beside <see cref="OnPrimary"/> ("Pick new fighters").</summary>
-    [Parameter] public EventCallback OnSecondary { get; set; }
-    [Parameter] public string? SecondaryLabel { get; set; }
 
     /// <summary>
     /// How the match ended, so the modal can sound the right cue. Left
@@ -241,9 +179,6 @@
     [Inject] private Services.Ui.ScreenFxService ScreenFx { get; set; } = null!;
     [Inject] private IJSRuntime JS { get; set; } = null!;
 
-    /// <summary>Where the leaderboards page keeps the board to open on (LeaderboardsPage.LastBoardKey).</summary>
-    private const string LeaderboardBoardKey = "pomini_lb_board";
-
     private Services.Ui.GameOverMoment Moment => Services.Ui.GameOverMoment.For(Outcome, NewBest);
 
     /// <summary>True from open until the board fetch settles, while the skeleton holds its place.</summary>
@@ -253,9 +188,6 @@
     private ElementReference _firstStatRef;
     private bool _confettiFired;
     private bool _bestCelebrated;
-    private bool _shareBusy;
-    private string? _toast;
-    private IJSObjectReference? _shareModule;
 
     private GameLeaderboardDto? _board;
 
@@ -497,62 +429,7 @@
     private bool IsMe(LeaderboardEntryDto e) =>
         !string.IsNullOrEmpty(Player) && string.Equals(e.Name, Player, StringComparison.OrdinalIgnoreCase);
 
-    /// <summary>
-    /// Play again is offered on a game's own address (/game or /game/{mode}). A deeper
-    /// address is one specific match (/game/race/{code}), which cannot be replayed.
-    /// </summary>
-    private bool CanPlayAgain
-    {
-        get
-        {
-            var uri = new Uri(Navigation.Uri);
-            return uri.AbsolutePath.Trim('/').Split('/').Length <= 2
-                && !uri.Query.Contains("code=", StringComparison.OrdinalIgnoreCase);
-        }
-    }
-
-    /// <summary>
-    /// Reloads the game's page, the same way a hub chip opens it, so every game starts
-    /// again from a clean engine without needing a reset path of its own.
-    /// </summary>
-    private async Task PlayAgain()
-    {
-        if (_dialogOpened)
-        {
-            try { await _dialog.CloseAsync(JS); } catch { /* already closed */ }
-        }
-        if (OnOk.HasDelegate) await OnOk.InvokeAsync();
-        Navigation.NavigateTo(Navigation.Uri, forceLoad: true);
-    }
-
-    private string BackText => string.IsNullOrWhiteSpace(BackLabel) ? "Back to all games" : BackLabel;
-
-    private async Task PrimaryAsync() => await CloseThenAsync(OnPrimary);
-
-    private async Task SecondaryAsync() => await CloseThenAsync(OnSecondary);
-
-    /// <summary>An in-place action: close the native dialog (see Back), then let the game reset.</summary>
-    private async Task CloseThenAsync(EventCallback action)
-    {
-        if (_dialogOpened)
-        {
-            try { await _dialog.CloseAsync(JS); } catch { /* already closed */ }
-        }
-        await action.InvokeAsync();
-    }
-
-    private async Task Ok()
-    {
-        if (OnOk.HasDelegate) await OnOk.InvokeAsync();
-        Navigation.NavigateTo(BackTo);
-    }
-
-    /// <summary>
-    /// A single "Back" action used by both modal CTAs (Back to all games /
-    /// Back to X). Fires <see cref="OnOk"/> first so a game holding
-    /// end-of-match state outside the page still gets a clean teardown
-    /// before the navigation.
-    /// </summary>
+    /// <summary>The modal's one action: back to the main menu.</summary>
     private async Task Back()
     {
         // Option #9: close the native dialog before navigating. The dialog
@@ -561,12 +438,12 @@
         // visible on top, and the user sees a frozen dialog over the new page
         // for the duration of the transition. close() fires the native `close`
         // event (no callback for it here — we just want the modal gone), then
-        // we proceed to the original OK flow.
+        // we navigate home.
         if (_dialogOpened)
         {
             try { await _dialog.CloseAsync(JS); } catch { /* already closed */ }
         }
-        await Ok();
+        Navigation.NavigateTo("/");
     }
 
     /// <summary>
@@ -580,82 +457,9 @@
     private async Task HandleCancel(System.EventArgs e)
         => await Back();
 
-    /// <summary>
-    /// The whole board for this game: the leaderboards page opens on the board named in
-    /// <see cref="LeaderboardBoardKey"/>, the same key it writes when the player picks one.
-    /// </summary>
-    private async Task OpenLeaderboardAsync()
-    {
-        try { Services.Play.LocalStorageService.SetItem(LeaderboardBoardKey, GameKey!); }
-        catch { /* storage unavailable: the page opens on its default board */ }
-        if (_dialogOpened)
-        {
-            try { await _dialog.CloseAsync(JS); } catch { /* already closed */ }
-        }
-        if (OnOk.HasDelegate) await OnOk.InvokeAsync();
-        Navigation.NavigateTo("/leaderboards");
-    }
-
-    /// <summary>
-    /// Share the result: a PNG card through the share sheet where files can be shared,
-    /// else an emoji summary through the share sheet or the clipboard (shareCard.js).
-    /// </summary>
-    private async Task ShareAsync()
-    {
-        if (_shareBusy) return;
-        _shareBusy = true;
-        string? toast;
-        try
-        {
-            _shareModule ??= await JS.InvokeAsync<IJSObjectReference>("import", "./js/shareCard.js");
-            var outcome = Outcome switch
-            {
-                Models.GameResult.Win => "win",
-                Models.GameResult.Loss => "loss",
-                Models.GameResult.Draw => "draw",
-                _ => "done",
-            };
-            var result = await _shareModule.InvokeAsync<string>("share", _dialog, new
-            {
-                outcome,
-                rank = _myRank,
-                of = _myRank is null ? null : BoardSizeLabel,
-                climb = _delta,
-            });
-            toast = result switch
-            {
-                "copied" => "Result copied. Paste it anywhere.",
-                "shared" => null,
-                _ => "Could not share this time.",
-            };
-        }
-        catch
-        {
-            toast = "Could not share this time.";
-        }
-        finally
-        {
-            _shareBusy = false;
-        }
-
-        if (toast is null) return;
-        _toast = toast;
-        StateHasChanged();
-        await Task.Delay(2800);
-        if (_toast == toast)
-        {
-            _toast = null;
-            StateHasChanged();
-        }
-    }
-
     public async ValueTask DisposeAsync()
     {
         // Nothing left on screen to land on.
         await ScreenFx.CollideWithAsync();
-        if (_shareModule is not null)
-        {
-            try { await _shareModule.DisposeAsync(); } catch { /* circuit gone */ }
-        }
     }
 }

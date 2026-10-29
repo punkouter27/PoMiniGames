@@ -51,7 +51,7 @@ for PoMule · **Deferred** = planned after PoMule v1.
 | PoMule score verification | API `Features/PoMule/PoMuleRunVerifier.cs` | Replays seed + action log through the Shared engine |
 | Gamepad input | Client `wwwroot/js/gamepadBus.js` | Engines, DOM focus navigation and rumble; loaded on first `gamepadconnected` |
 | Ghost runs | Client `wwwroot/js/ghostTrack.js` | Compact best-run paths in localStorage; PoRacer and PoMarbleRace |
-| Share a result | Client `wwwroot/js/shareCard.js`, `Components/GameOverModal.razor` | 1080x1080 PNG card or a text summary |
+| Start and end cards | Client `Components/GameIntro.razor`, `Components/GameOverModal.razor` | Every game opens on a card with one OK button (controls, a How to play tab, the setup) that fits without scrolling, and ends on one with one Back to main menu button |
 | Per-game palettes and cues | Client `wwwroot/js/paletteBus.js`, `gameCues.js` | Each game's colors and sound cues; no background music anywhere (event stingers and jingles only, e.g. Brawl's president motifs) |
 
 ## Existing games

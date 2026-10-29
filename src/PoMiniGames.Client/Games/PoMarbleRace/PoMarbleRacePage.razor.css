@@ -330,6 +330,21 @@
     gap: 6px;
 }
 
+/* Wide enough (the start card's setup column on a desktop): three a row, so the card fits. */
+@media (min-width: 900px) {
+    .mr-tracks { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+}
+
+/* A short screen (a phone on its side): one line an option, the small print dropped. */
+@media (max-height: 560px) {
+    .mr-setup { gap: 4px; }
+    .mr-setup-label { margin-top: 0; }
+    .mr-tracks { grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 4px; }
+    .mr-opt { padding: 4px 6px; }
+    .mr-opt-hint, .mr-track-wr, .mr-setup-note { display: none; }
+    .mr-skin-ball { width: 18px; height: 18px; }
+}
+
 .mr-opt {
     flex: 1 1 0;
     display: flex;

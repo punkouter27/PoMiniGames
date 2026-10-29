@@ -628,3 +628,9 @@
         margin-top: 4px;
     }
 }
+
+/* A phone on its side: the start card's draw keeps the pairings and drops its note. */
+@media (max-height: 560px) {
+    .pt-draw-note { display: none; }
+    .pt-draw-list li { padding-block: 2px; }
+}

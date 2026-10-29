@@ -22,14 +22,17 @@
     <div class="pm-root">
         @if (_stage == Stage.Intro && _radzenReady)
         {
-            <GameIntro CueScope="pomule"
+            @* Keyed on the mode: 1P and Demo share this page instance, and the same card
+               shrinking from the 1P setup to the demo's few lines read as a layout shift. *@
+            <GameIntro @key="_demo" CueScope="pomule"
                        Title=@LogoContent
                        Objective="Twelve months on planet Irata. Claim land, put M.U.L.E.s to work, trade on the floor. Richest colonist wins, if the colony survives."
                        Controls=@ControlsContent
+                       HowToPlay=@RulesContent
                        Options="@(_demo ? null : SpeciesPicker)"
+                       Wide="@(!_demo)"
                        Mode="@(_demo ? GameIntro.IntroMode.Demo : GameIntro.IntroMode.OnePlayer)"
-                       StartLabel="@(_saved is null ? "Start" : "New match")"
-                       OnStart="StartNewAsync" />
+                       OnStart="StartAsync" />
         }
         else if (_stage == Stage.Failed)
         {
@@ -99,14 +102,23 @@
     private RenderFragment ControlsContent => @<div>
         <p class="keys-only"><kbd>W</kbd><kbd>A</kbd><kbd>S</kbd><kbd>D</kbd> or arrows move · <kbd>Space</kbd> is the button (claim, install) · <kbd>Shift</kbd> dashes.</p>
         <p class="touch-only">Stick moves · <strong>Act</strong> is the button (claim, install) · <strong>Dash</strong> sprints.</p>
-        <p>Each month: press the button when the highlighter is on the plot you want. Walk into a town, get a M.U.L.E. at the corral, walk it into an outfitting stall, then out to your plot and press the button. Sell what you can spare at the auction, and walk up the floor to bid when land is for sale. Go hungry and your month is cut short. A dash-speed bump makes a towed M.U.L.E. bolt.</p>
     </div>;
 
+    // The month, step by step: behind the card's How to play tab.
+    private RenderFragment RulesContent => @<ul>
+        <li>Press the button when the highlighter is on the plot you want.</li>
+        <li>In town: get a M.U.L.E. at the corral, walk it into an outfitting stall, then out to your plot and press the button.</li>
+        <li>Sell what you can spare at the auction; walk up the floor to bid when land is for sale.</li>
+        <li>Go hungry and your month is cut short. A dash-speed bump makes a towed M.U.L.E. bolt.</li>
+    </ul>;
+
     private RenderFragment SpeciesPicker => @<div class="pm-species">
+        @* A saved match is a choice, not a second button: OK starts whichever is ticked. *@
         @if (_saved is { } saved)
         {
-            <div class="pm-continue">
-                <RadzenButton Text="@($"Continue your match (month {saved.Month})")" ButtonStyle="ButtonStyle.Warning" Click="@(_ => ContinueAsync())" />
+            <div class="pm-continue" role="radiogroup" aria-label="Match">
+                <label><input type="radio" name="pomule-match" checked="@_resume" @onchange="() => _resume = true" /> Continue (month @saved.Month)</label>
+                <label><input type="radio" name="pomule-match" checked="@(!_resume)" @onchange="() => _resume = false" /> New match</label>
             </div>
         }
         <label class="pm-classic">
@@ -116,7 +128,7 @@
         <div class="pm-species-label">Choose your species</div>
         <RadzenDataList Data="@PoMuleSpecies.All" TItem="SpeciesInfo" AllowPaging="false">
             <Template Context="s">
-                <button type="button" class="pm-species-card @(s.Id == _species ? "pm-species-card--on" : "")"
+                <button type="button" class="pm-species-card @(s.Id == _species ? "pm-species-card--on" : "")" title="@(_classic ? "No trait" : s.Trait)"
                         aria-pressed="@(s.Id == _species ? "true" : "false")" @onclick="@(() => _species = s.Id)">
                     <span class="pm-species-name">@PoMuleSpecies.Name(s.Id, _classic)</span>
                     <span class="pm-species-cash">@PoMuleSpecies.StartingCash(s.Id, _classic).ToString("N0") cr</span>
@@ -124,7 +136,8 @@
                 </button>
             </Template>
         </RadzenDataList>
-        <div class="pm-press">Press Start to go on</div>
+        @* A small screen shows the cards as name and cash only; the pick's trait is said once, here. *@
+        <p class="pm-species-picked">@(_classic ? "No trait" : PoMuleSpecies.Get(_species).Trait)</p>
     </div>;
 
     private RenderFragment EndSummary => @<p>@_endLine</p>;

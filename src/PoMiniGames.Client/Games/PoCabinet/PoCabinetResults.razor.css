@@ -7,8 +7,7 @@
     margin-top: 1rem;
 }
 
-/* The chart's title with the replay beside it (the replay used to be a fourth button in a
-   row under the results, with Race again, Next stage and a share menu the modal repeats). */
+/* The chart's title. */
 .pocabinet-telemetry__head {
     display: flex;
     align-items: center;
@@ -21,8 +20,6 @@
     margin: 0;
     font-size: 0.95rem;
 }
-
-.pocabinet-results__replay { flex: none; }
 
 .pocabinet-telemetry__chart {
     display: block;

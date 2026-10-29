@@ -117,8 +117,6 @@ window.PoVoxelStrike = {
     engine?.applySettings(s);
   },
 
-  /** Download the run's biggest-collapse clip. False when there is none to save. */
-  saveClip() { return !!engine?.clip?.save(); },
 
   /**
    * Fullscreen the canvas host (the engine's ResizeObserver handles the resize).

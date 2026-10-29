@@ -77,8 +77,6 @@ public partial class PoJevArenaPage : ComponentBase, IAsyncDisposable
     private string? _resultNote;
     private ArenaBlackBoxView? _blackBox;
     private bool _showDebrief;
-    /// <summary>Past the end-of-game modal, on the debrief and the Black Box.</summary>
-    private bool _reviewing;
     private bool _autoCamera = true;
     private string _mobileTeam = "blue";
     private bool _statsOpen;
@@ -634,7 +632,6 @@ public partial class PoJevArenaPage : ComponentBase, IAsyncDisposable
         _phase = Phase.Replay;
         // The debrief is the first thing a player sees after the whistle (the demo goes straight to its highlight replay).
         _showDebrief = !IsDemo;
-        _reviewing = false;
         _resultNote = "recording…";
         await InvokeAsync(StateHasChanged);
 

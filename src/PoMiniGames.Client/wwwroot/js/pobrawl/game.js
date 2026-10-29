@@ -35,7 +35,6 @@ import { SIM_DT, MAX_HP, ATTACKS, TIME_LIMIT, MAT_HALF } from './constants.js';
 import { SceneSetup, ENV_INTENSITY } from './sceneSetup.js';
 import { KeyBridge } from '../gamepadBus.js';
 import { BrawlHaptics } from './haptics.js';
-import { KoClipRecorder } from './clip.js';
 import { NetController, Netplay } from './netplay.js';
 import { Commentary } from './commentary.js';
 import { Spectacle, REWIND_SEC } from './spectacle.js';
@@ -467,14 +466,6 @@ export class BrawlGame {
     // an inert router that still claims the platform haptics, so nothing buzzes on their behalf.
     this.haptics = new BrawlHaptics(this, { active: !cpuOnly && !spectating });
 
-    // Rolling KO clip (clip.js). Not in the tournament (nobody to hand it to), not
-    // in the training room (no KO), not on the low tier (encoding costs frames).
-    if ((this.options.mode === '1p' || this.options.mode === '2p' || this.options.mode === 'online') && !this.training
-        && Quality.tier() !== 'low') {
-      this.clip = new KoClipRecorder(this.renderer.domElement, () => this.audio.tapStream());
-      if (this.clip.ok) this.clip.start(); else this.clip = null;
-    }
-
     // Inter-round splash. Created once; reused via _showSplash() so the
     // browser doesn't pay the cost of mounting a new DOM node every match.
     this.splash = document.createElement('div');
@@ -699,8 +690,6 @@ export class BrawlGame {
       this._renderIsoCam();
       // Showtime modules that read the finished frame (replay grade, result glass).
       this._renderShow(now);
-      // Same task as the render, or the WebGL canvas is already cleared.
-      if (this.clip) this.clip.mirror(now);
       // The result shatter snapshots the frame, so it has the same constraint.
       if (this._shatterPending) this._shatterNow();
     };
@@ -1071,8 +1060,6 @@ export class BrawlGame {
       }
     }
     this._setBanner('3');
-    // The clip recorder starts cycling again for the new fight.
-    if (this.clip) this.clip.resume();
     this._dangerPushed = -1;
   }
 
@@ -2393,33 +2380,15 @@ export class BrawlGame {
     }
   }
 
-  // ══ Result package: shatter + pyro (Full show) and the clip ═══════════════
+  // ══ Result package: shatter + pyro (Full show) ═══════════════════════════
   // Called from _reportResult once the winner is known. The result itself — line, recap,
-  // press, the clip button — is the page's one result modal; nothing here repeats it.
+  // press — is the page's one result modal; nothing here repeats it.
   _presentResult() {
     // Full show: a KO breaks the glass into the result, and the winner gets the pyro.
     if (this._fullShow() && this.fighters.some((f) => f.state === 'ko')) {
       this._shatterPending = true;
       if (this.winner) this._startPyro();
     }
-    if (this.clip) {
-      this.clip.freeze();
-      // Let the fall, the banner and the first hops of a celebration make it
-      // into the file before closing it.
-      clearTimeout(this._clipTimer);
-      this._clipTimer = setTimeout(() => {
-        if (this.disposed || !this.clip) return;
-        this.clip.capture().then((blob) => {
-          if (!blob || this.disposed) return;
-          this.dotnet?.invokeMethodAsync('OnClipReady').catch(() => {});
-        });
-      }, 1800);
-    }
-  }
-
-  /** Save or share the last KO clip (the result modal's button). */
-  saveClip() {
-    return this.clip ? this.clip.save() : Promise.resolve(false);
   }
 
   // Photosensitive-safe presentation: the app-wide reduced-motion setting
@@ -2600,12 +2569,10 @@ export class BrawlGame {
     this.disposed = true;
     cancelAnimationFrame(this.raf);
     clearTimeout(this._splashTimer);
-    clearTimeout(this._clipTimer);
     // The pads first: releasing their held keys has to
     // reach the controllers before those are disposed below.
     if (this.gamepads) { this.gamepads.dispose(); this.gamepads = null; }
     if (this.haptics) { this.haptics.dispose(); this.haptics = null; }
-    if (this.clip) { this.clip.dispose(); this.clip = null; }
     if (this.matWear) { this.matWear.dispose(); this.matWear = null; }
     if (this._pSprite) { this._pSprite.dispose(); this._pSprite = null; }
     this._disposeBlood();

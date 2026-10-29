@@ -27,6 +27,12 @@ namespace PoMiniGames.E2EUI;
 /// is 0.25, the "poor" line of Core Web Vitals, so this flags a page that jumps, not one
 /// that settles a few pixels. The main pages are also held to no sideways scroll on a phone.
 /// </para>
+/// <para>
+/// Every game route that opens on a start card (GameIntro, or Voxel Strike's own) is held to
+/// the card's two rules, on the phone pass and again on a desktop pass: everything fits with
+/// no vertical scroll (the card and its body), and its one action is a single button reading
+/// OK. Tabs, radios and toggles inside the card switch what it shows and do not count.
+/// </para>
 /// </remarks>
 [Collection(KestrelServerCollection.Name)]
 public class LinkAuditUiTests
@@ -34,6 +40,31 @@ public class LinkAuditUiTests
     private const double MaxLayoutShift = 0.25;
     private const int SettleMs = 1500;
 
+    /// <summary>The desktop pass's viewport: a 1280×720 laptop, the smallest common one.</summary>
+    private static readonly ViewportSize Desktop = new() { Width = 1280, Height = 720 };
+
+    /// <summary>
+    /// The start card, read in one go (a demo card leaves on its own a moment later): null when
+    /// none is up, else what breaks its rules. A card scrolls when its content is taller than
+    /// its box; its action is every button in the card that is not a tab, a radio or a toggle.
+    /// </summary>
+    private const string StartCardProblems = """
+        () => {
+          const card = document.querySelector('.gps-intro-card');
+          if (!card) return null;
+          const out = [];
+          for (const el of [card, card.querySelector('.gps-intro-body')]) {
+            if (el && el.scrollHeight > el.clientHeight + 1)
+              out.push(`${el.className.split(' ')[0]} scrolls (${el.scrollHeight}px of content in ${el.clientHeight}px)`);
+          }
+          const acts = [...card.querySelectorAll('button')].filter(b =>
+            !b.matches('[role=tab], [role=radio], [aria-pressed], [aria-checked]') && !b.closest('[role=radiogroup], [role=tablist]'));
+          const labels = acts.map(b => b.innerText.trim());
+          if (acts.length !== 1 || labels[0] !== 'OK' || !acts[0].hasAttribute('data-intro-action'))
+            out.push(`its buttons are [${labels.join(' | ')}], not one OK`);
+          return out.join('; ');
+        }
+        """;
     /// <summary>The non-game pages a player reaches from the shell.</summary>
     private static readonly string[] MainPages = ["/", "/leaderboards", "/profile", "/health", "/pobrawl/hq"];
 
@@ -188,6 +219,34 @@ public class LinkAuditUiTests
                 if (overflow > 1)
                     failures.Add($"{route}: scrolls sideways by {overflow}px on a {MobileViewport.Portrait.Width}px phone");
             }
+            else if (await page.EvaluateAsync<string?>(StartCardProblems) is { Length: > 0 } problems)
+            {
+                failures.Add($"{route}: on a {MobileViewport.Portrait.Width}px phone the start card {problems}");
+            }
+        }
+
+        // Desktop pass: the start cards again, on a laptop screen. Most game pages read their
+        // mode once, on first mount, so each route is a full load here.
+        await page.SetViewportSizeAsync(Desktop.Width, Desktop.Height);
+        foreach (var route in routes.Where(r => !MainPages.Contains(r) && !r.Contains("/demo", StringComparison.OrdinalIgnoreCase)))
+        {
+            current = route;
+            await page.GotoAsync(new Uri(origin, route.TrimStart('/')).ToString(), new PageGotoOptions
+            {
+                WaitUntil = WaitUntilState.NetworkIdle,
+                Timeout = 60_000,
+            });
+            try
+            {
+                await page.Locator(".gps-intro-card").First.WaitForAsync(new LocatorWaitForOptions { Timeout = 15_000 });
+            }
+            catch (TimeoutException)
+            {
+                continue; // no start card on this route
+            }
+            await page.WaitForTimeoutAsync(SettleMs);
+            if (await page.EvaluateAsync<string?>(StartCardProblems) is { Length: > 0 } problems)
+                failures.Add($"{route}: at {Desktop.Width}×{Desktop.Height} the start card {problems}");
         }
 
         lock (missing) failures.AddRange(missing);

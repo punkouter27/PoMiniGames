@@ -949,26 +949,6 @@ button.pb-net-btn {
     }
 }
 
-.pb-hq-link {
-    display: inline-flex;
-    align-items: center;
-    min-height: 32px;
-    font-size: var(--text-sm);
-    font-weight: 600;
-    color: var(--accent-ink);
-    text-decoration: none;
-}
-
-.pb-hq-link:hover {
-    text-decoration: underline;
-}
-
-.pb-hq-link:focus-visible {
-    outline: 2px solid var(--color-accent);
-    outline-offset: 2px;
-    border-radius: var(--radius-sm, 4px);
-}
-
 /* "📁 Dossiers" disclosure (2P select): PoBrawlDossierCard behind a summary row, so the
    long intro card only grows when the player asks. */
 .pb-dossier-disclosure {
@@ -1349,14 +1329,6 @@ button.pb-net-btn {
     background: linear-gradient(90deg, #22c55e var(--left, 50%), #ef4444 var(--left, 50%));
 }
 
-.pb-result-actions {
-    display: flex;
-    flex-wrap: wrap;
-    justify-content: center;
-    align-items: center;
-    gap: 6px 14px;
-}
-
 /* ── Post-fight press conference (a result tab) ── */
 .pb-presser {
     margin: 0;
@@ -1381,109 +1353,28 @@ button.pb-net-btn {
     color: var(--accent-ink);
 }
 
-/* The result modal's clip button — a real theme surface, so tokens. */
-.pb-clip-btn {
-    min-height: 36px;
-    font: inherit;
-    font-size: var(--text-sm);
-    padding: 8px 14px;
-    border-radius: var(--radius-pill);
-    border: 1px solid var(--color-border);
-    background: var(--surface-2);
-    color: var(--color-text-primary);
-    cursor: pointer;
-}
-
-.pb-clip-btn:hover {
-    border-color: var(--accent-ink);
-}
-
 /* ── Intro card (1P + 2P) ──────────────────────────────────────────────
    GameIntro is shared; .pb-intro (display: contents) is this page's handle on it. */
 .pb-intro {
     display: contents;
 }
 
-/* Start stays on screen however long the card is: on a phone the 1P card is taller than
-   the viewport and scrolls inside itself. */
-/* --pb-card-pad tracks the shared card's side padding (game-shell.css: 1.5rem, 1.25rem
-   under 520px), so the bar spans the card edge to edge without overflowing it. */
-.pb-intro ::deep .gps-intro-card--oneplayer {
-    --pb-card-pad: 1.5rem;
-}
-
-@media (max-width: 520px) {
-    .pb-intro ::deep .gps-intro-card--oneplayer {
-        --pb-card-pad: 1.25rem;
+/* A phone on its side: the rung card keeps its head (rung, next stop, votes) and drops the
+   state board; the dossier keeps who and how they fight. */
+@media (max-height: 560px) {
+    .pb-scout ::deep .pbm-board,
+    .pb-scout ::deep .pbd-summary,
+    .pb-scout ::deep .pbd-source {
+        display: none;
     }
 }
 
-.pb-intro ::deep .gps-intro-card--oneplayer .gps-intro-actions {
-    position: sticky;
-    bottom: calc(-1 * (1.25rem + env(safe-area-inset-bottom)));
-    width: calc(100% + 2 * var(--pb-card-pad));
-    margin: 0 calc(-1 * var(--pb-card-pad)) calc(-1 * (1.25rem + env(safe-area-inset-bottom)));
-    padding: 0.6rem var(--pb-card-pad) calc(0.9rem + env(safe-area-inset-bottom));
-    background: var(--color-surface);
-    border-top: 1px solid var(--color-border);
-    z-index: 2;
-}
-
+/* The shared card does the layout (GameIntro Wide: controls beside the setup). The 2P select
+   only needs more width on a desktop for its portrait grid. */
 @media (min-width: 1024px) {
-    .pb-intro ::deep .gps-intro-card--oneplayer {
-        width: min(94vw, 1080px);
-        display: grid;
-        grid-template-columns: minmax(0, 1fr) minmax(0, 2fr);
-        grid-template-areas:
-            "title    title"
-            "modes    modes"
-            "obj      obj"
-            "controls options"
-            "actions  actions";
-        column-gap: 1.5rem;
-        align-items: start;
-    }
-
-    .pb-intro ::deep .gps-intro-card--oneplayer .gps-intro-title { grid-area: title; }
-    .pb-intro ::deep .gps-intro-card--oneplayer .gps-intro-modes { grid-area: modes; justify-self: center; }
-    .pb-intro ::deep .gps-intro-card--oneplayer .gps-intro-objective { grid-area: obj; }
-    .pb-intro ::deep .gps-intro-card--oneplayer .gps-intro-controls { grid-area: controls; }
-    .pb-intro ::deep .gps-intro-card--oneplayer .gps-intro-options { grid-area: options; }
-
-    .pb-intro ::deep .gps-intro-card--oneplayer .gps-intro-actions {
-        grid-area: actions;
-        position: static;
-        width: auto;
-        margin: 0;
-        padding: 0.35rem 0 0;
-        border-top: 0;
-        background: none;
-    }
-}
-
-/* 2P on a desktop: the same two columns as 1P — the key table beside the select — so the
-   portraits' grid fits the screen instead of scrolling inside the card. */
-@media (min-width: 1024px) {
-    .pb-intro ::deep .gps-intro-card--twoplayer {
+    .pb-intro ::deep .gps-intro-card--twoplayer.gps-intro-card--wide {
         width: min(94vw, 1180px);
-        display: grid;
-        grid-template-columns: minmax(0, 0.85fr) minmax(0, 2fr);
-        grid-template-areas:
-            "title    title"
-            "modes    modes"
-            "obj      obj"
-            "controls options"
-            "actions  actions";
-        column-gap: 1.5rem;
-        align-items: start;
     }
-
-    .pb-intro ::deep .gps-intro-card--twoplayer .gps-intro-title { grid-area: title; }
-    .pb-intro ::deep .gps-intro-card--twoplayer .gps-intro-modes { grid-area: modes; justify-self: center; }
-    .pb-intro ::deep .gps-intro-card--twoplayer .gps-intro-objective { grid-area: obj; }
-    .pb-intro ::deep .gps-intro-card--twoplayer .gps-intro-controls { grid-area: controls; }
-    .pb-intro ::deep .gps-intro-card--twoplayer .gps-intro-options { grid-area: options; }
-    .pb-intro ::deep .gps-intro-card--twoplayer .gps-intro-actions { grid-area: actions; }
 }
 
 /* ── 2P select: holo-glass cards (the side lock toggles) over one shared 4×4 grid ──
@@ -1902,17 +1793,6 @@ button.pb-net-btn {
 
     .pb-dossier-disclosure {
         margin-top: 2px;
-    }
-
-    .pb-intro ::deep .gps-intro-card--twoplayer {
-        gap: 0.55rem;
-        padding-top: 1rem;
-        padding-bottom: 0.75rem;
-    }
-
-    .pb-intro ::deep .gps-intro-card--twoplayer .gps-intro-controls,
-    .pb-intro ::deep .gps-intro-card--twoplayer .gps-intro-options {
-        padding-top: 0.55rem;
     }
 }
 

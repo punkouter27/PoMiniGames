@@ -8,13 +8,14 @@
 
    A blocking overlay rendered inside a game's GameShell ChildContent (or
    standalone for games that can't host GameShell). It welcomes the player,
-   shows the controls (reuse the page's existing HowToPlay fragment), and
-   gates the start of play by mode:
+   shows the controls and the game's setup, and gates the start of play by
+   mode. Every mode has the one OK button:
 
-     • Demo       → flashes for DemoDelayMs (default 2s), then auto-starts.
+     • Demo       → flashes for DemoDelayMs (default 2s), then auto-starts
+                    (OK starts it at once).
      • OnePlayer  → stays up until the player presses OK (or Enter/Space).
      • TwoPlayer  → shows an optional Options slot (e.g. Brawl's per-player
-                    keyboard character select) and a Start button that is
+                    keyboard character select) and an OK button that is
                     disabled until StartEnabled. Keydowns are forwarded to
                     the host via OnKey so each game wires its own two-player
                     selection to its in-game keys.
@@ -33,98 +34,105 @@
    propagation in every mode. *@
 @* Always shown: there is no opt-out. The one exception is the demo attract loop
    (?kiosk=N), which starts at once and renders nothing (_kiosk). *@
+@* One structure for every game, so no card ever scrolls:
+     header  – icon + title, the mode switch, one objective line;
+     body    – the controls (with the longer rules behind a "How to play" tab when a game
+               has them) and the game's setup (Options). Wide cards put the two side by side;
+     footer  – exactly one button, OK, plus any setup toggles that belong beside it (Actions).
+   The card is a flex column that never scrolls itself; the body is the only part that may,
+   and every game's content is cut to fit so it does not (LinkAuditUiTests holds the line). *@
 @if (!_kiosk)
 {
 <div class="gps-intro-overlay" role="dialog" aria-modal="true" aria-label="@(string.IsNullOrWhiteSpace(DialogLabel) ? "Game intro" : DialogLabel)"
      @ref="_root" tabindex="0"
      @onclick="HandleOverlayClick"
      @onkeydown="HandleKey" @onkeydown:preventDefault="CaptureKeys">
-    <div class="gps-intro-card gps-intro-card--@ModeClass"
+    <div class="gps-intro-card gps-intro-card--@ModeClass @(Wide ? "gps-intro-card--wide" : null)"
         @onclick:stopPropagation="true">
-        @if (Title != null)
-        {
-            <div class="gps-intro-title">@Title</div>
-        }
-
-        @* The game's other modes, one tap away, so changing mode does not mean going
-           back to the hub. Not on the demo card, which is gone in two seconds. Keydowns stop here so Enter on a mode button picks that mode
-           instead of also reaching HandleKey and starting this one. *@
-        @if (Mode != IntroMode.Demo)
-        {
-            <div class="gps-intro-modes" @onkeydown:stopPropagation="true">
-                <ModeSwitch />
-            </div>
-        }
-
-        @if (!string.IsNullOrWhiteSpace(Objective))
-        {
-            <p class="gps-intro-objective">@Objective</p>
-        }
-
-        @if (Controls != null)
-        {
-            <div class="gps-intro-controls">
-                <div class="gps-intro-section-label">Controls</div>
-                @Controls
-            </div>
-        }
-
-        @if (Options != null)
-        {
-            @* Keydowns stop here for the same reason as the mode switch above: Space
-               on a checkbox in the options must tick it, not start the game. A select
-               driven by per-player keys (ForwardOptionKeys) lets them through to OnKey,
-               so its keys keep working once a tile inside it has focus. *@
-            <div class="gps-intro-options" @onkeydown:stopPropagation="@(!ForwardOptionKeys)">@Options</div>
-        }
-
-        <div class="gps-intro-actions">
-            @switch (Mode)
+        <header class="gps-intro-head">
+            @if (Title != null)
             {
-                case IntroMode.Demo:
-                    <div class="gps-intro-demo-hint" role="status">
-                        <span class="gps-intro-spinner" aria-hidden="true"></span>
-                        Demo starting…
-                    </div>
-                    break;
-
-                case IntroMode.TwoPlayer:
-                    @if (ShowStart)
-                    {
-                        <button class="app-btn app-btn--lg app-btn--primary"
-                                disabled="@(!StartEnabled)"
-                                @onclick="StartAsync">
-                            @(StartLabel ?? "Start")
-                        </button>
-                    }
-                    @if (!string.IsNullOrWhiteSpace(StartHint))
-                    {
-                        <p class="gps-intro-hint">@StartHint</p>
-                    }
-                    break;
-
-                default:
-                    @if (Actions != null)
-                    {
-                        @* Keydowns stop here like the options: Space on a checkbox ticks it. *@
-                        <div class="gps-intro-actions-row" @onkeydown:stopPropagation="true">
-                            <button class="app-btn app-btn--lg app-btn--primary"
-                                    @onclick="StartAsync">
-                                @(StartLabel ?? "Start")
-                            </button>
-                            @Actions
-                        </div>
-                    }
-                    else
-                    {
-                        <button class="app-btn app-btn--lg app-btn--primary"
-                                @onclick="StartAsync">
-                            @(StartLabel ?? "Start")
-                        </button>
-                    }
-                    break;
+                <div class="gps-intro-title">@Title</div>
             }
-        </div>
+
+            @* The game's other modes, one tap away, so changing mode does not mean going
+               back to the hub. Not on the demo card, which is gone in two seconds. Keydowns stop here so Enter on a mode button picks that mode
+               instead of also reaching HandleKey and starting this one. *@
+            @if (Mode != IntroMode.Demo)
+            {
+                <div class="gps-intro-modes" @onkeydown:stopPropagation="true">
+                    <ModeSwitch />
+                </div>
+            }
+
+            @if (!string.IsNullOrWhiteSpace(Objective))
+            {
+                <p class="gps-intro-objective">@Objective</p>
+            }
+        </header>
+
+        @if (Controls != null || HowToPlay != null || Options != null)
+        {
+            <div class="gps-intro-body">
+                @if (Controls != null || HowToPlay != null)
+                {
+                    <section class="gps-intro-controls" aria-label="@(ShowingRules ? "How to play" : "Controls")">
+                        @if (Controls != null && HowToPlay != null)
+                        {
+                            @* Two views of one panel, not two actions: a tab strip. Keydowns stop
+                               so Enter on a tab switches it instead of starting the game. *@
+                            <div class="gps-intro-tabs" role="tablist" aria-label="Intro" @onkeydown:stopPropagation="true">
+                                <button type="button" role="tab" class="gps-intro-tab"
+                                        aria-selected="@(!ShowingRules ? "true" : "false")"
+                                        @onclick="() => _rules = false">Controls</button>
+                                <button type="button" role="tab" class="gps-intro-tab"
+                                        aria-selected="@(ShowingRules ? "true" : "false")"
+                                        @onclick="() => _rules = true">How to play</button>
+                            </div>
+                        }
+                        else
+                        {
+                            <div class="gps-intro-section-label">@(Controls != null ? "Controls" : "How to play")</div>
+                        }
+                        <div class="gps-intro-panel">@(ShowingRules ? HowToPlay : Controls)</div>
+                    </section>
+                }
+
+                @if (Options != null)
+                {
+                    @* Keydowns stop here for the same reason as the mode switch above: Space
+                       on a checkbox in the options must tick it, not start the game. A select
+                       driven by per-player keys (ForwardOptionKeys) lets them through to OnKey,
+                       so its keys keep working once a tile inside it has focus. *@
+                    <div class="gps-intro-options" @onkeydown:stopPropagation="@(!ForwardOptionKeys)">@Options</div>
+                }
+            </div>
+        }
+
+        <footer class="gps-intro-actions">
+            @if (Mode == IntroMode.Demo)
+            {
+                <div class="gps-intro-demo-hint" role="status">
+                    <span class="gps-intro-spinner" aria-hidden="true"></span>
+                    Demo starting…
+                </div>
+            }
+            @if (Actions != null)
+            {
+                @* Setup toggles beside OK (Brawl's "Training first"). Keydowns stop so Space
+                   on a checkbox ticks it. *@
+                <div class="gps-intro-actions-extra" @onkeydown:stopPropagation="true">@Actions</div>
+            }
+            @* The card's one button. 1P and demo: focused on open, so Enter and Space take it. *@
+            <button type="button" class="app-btn app-btn--lg app-btn--primary" data-intro-action
+                    @ref="_ok"
+                    disabled="@(Mode == IntroMode.TwoPlayer && !StartEnabled)"
+                    @onclick="StartAsync">OK</button>
+            @if (Mode == IntroMode.TwoPlayer && !string.IsNullOrWhiteSpace(StartHint))
+            {
+                <p class="gps-intro-hint">@StartHint</p>
+            }
+        </footer>
     </div>
 </div>
 }
@@ -138,34 +146,33 @@
     /// <summary>One-line welcome / objective shown under the title.</summary>
     [Parameter] public string? Objective { get; set; }
 
-    /// <summary>Controls list — pass the page's existing HowToPlay fragment.</summary>
+    /// <summary>Controls: compact key chips, one or two lines (keys, touch or pad, by device).</summary>
     [Parameter] public RenderFragment? Controls { get; set; }
+
+    /// <summary>
+    /// The longer rules, for a game that has more to say than its controls. Shown behind a
+    /// "How to play" tab beside Controls, so the default view stays short.
+    /// </summary>
+    [Parameter] public RenderFragment? HowToPlay { get; set; }
+
+    /// <summary>A long setup (track picker, campaign rung): the card goes wide, info beside setup.</summary>
+    [Parameter] public bool Wide { get; set; }
 
     /// <summary>Optional extra content for TwoPlayer mode (e.g. character select).</summary>
     [Parameter] public RenderFragment? Options { get; set; }
 
     /// <summary>
-    /// OnePlayer only: small controls that sit in one row beside the Start button (PoBrawl's
-    /// "Training first" toggle and its HQ link), so the start choice and Start read together.
+    /// Setup toggles that sit in the footer beside OK (PoBrawl's "Training first"), so the
+    /// start choice and OK read together. Inputs only: OK is the card's one button.
     /// </summary>
     [Parameter] public RenderFragment? Actions { get; set; }
 
     [Parameter] public IntroMode Mode { get; set; } = IntroMode.OnePlayer;
 
-    /// <summary>In TwoPlayer mode, gates the Start button (both players ready).</summary>
+    /// <summary>In TwoPlayer mode, gates the OK button (both players ready).</summary>
     [Parameter] public bool StartEnabled { get; set; } = true;
 
-    /// <summary>Overrides the action button label ("OK" / "Start").</summary>
-    [Parameter] public string? StartLabel { get; set; }
-
-    /// <summary>
-    /// TwoPlayer only: false drops the Start button, for a select whose own lock-ins start
-    /// the match (PoBrawl) — there, Start was a second way in that skipped the picks.
-    /// Escape still calls OnStart (a modal must never trap the keyboard).
-    /// </summary>
-    [Parameter] public bool ShowStart { get; set; } = true;
-
-    /// <summary>Optional helper line under the TwoPlayer Start button.</summary>
+    /// <summary>Optional helper line under the TwoPlayer OK button.</summary>
     [Parameter] public string? StartHint { get; set; }
 
     /// <summary>How long the demo card flashes before auto-starting.</summary>
@@ -210,7 +217,12 @@
     [Inject] private NavigationManager Navigation { get; set; } = null!;
 
     private ElementReference _root;
+    private ElementReference _ok;
     private bool _started;
+
+    // The "How to play" tab is showing instead of Controls.
+    private bool _rules;
+    private bool ShowingRules => (_rules && HowToPlay != null) || Controls == null;
     private Timer? _demoTimer;
 
     // The demo attract loop (?kiosk=N) starts at once and never shows the card.
@@ -242,9 +254,10 @@
     {
         if (!firstRender) return;
 
-        // Focus the overlay so Enter/Space (1P) and the per-player select keys
-        // (2P) land here without the player having to click first.
-        try { await _root.FocusAsync(); } catch { /* headless / detached — fine */ }
+        // 1P and demo: focus OK, the card's default, so Enter/Space press it. 2P: focus the
+        // overlay, where the per-player select keys land (OK is disabled until both lock in,
+        // and a disabled button cannot hold focus).
+        try { await (Mode == IntroMode.TwoPlayer ? _root : _ok).FocusAsync(); } catch { /* headless / detached — fine */ }
 
         // The title swarm (gpuFxWebGPU.js): particles fall into the heading's letters and
         // burst away when this card leaves the DOM, which the module watches for itself.

@@ -33,7 +33,7 @@
            game title on a phone. Leaving a game is one tap on the brand, plus the
            swipe-back gesture below.
 
-           `BackTo` drives SwipeBack and the Home button on <GameOverModal>. *@
+           `BackTo` drives SwipeBack; <GameOverModal> always goes home. *@
 
         @* Live rating badge for single-player, ELO-rated modes: the page passes
            its current rating via Elo and it renders next to the signed-in
@@ -107,8 +107,8 @@
 
     @* End-of-game modal: the one centered, blocking dialog every game ends on.
        It surfaces the final result (GameSummary), the stats grid (Stats), this
-       game's top 3 (fetched from GameKey), Share, Full leaderboard, Play again (on
-       a game's own address) and Back to all games. There is intentionally no
+       game's top 3 (fetched from GameKey) and its one button, Back to main menu.
+       There is intentionally no
        backdrop-dismiss, so the flow is identical in every game. It also plays the
        shared end-of-game moment (cue, confetti, pulse, vignette); see GameOverModal.
 
@@ -125,13 +125,7 @@
                        GameKey="@GameKey"
                        Player="@Player"
                        Outcome="@Outcome"
-                       NewBest="@NewBest"
-                       BackTo="@BackTo"
-                       BackLabel="@BackLabel"
-                       OnPrimary="@OnPrimary"
-                       PrimaryLabel="@(PrimaryLabel ?? "Play again")"
-                       OnSecondary="@OnSecondary"
-                       SecondaryLabel="@SecondaryLabel" />
+                       NewBest="@NewBest" />
     }
 </div>
 </SwipeBack>
@@ -149,19 +143,9 @@
     [Parameter] public int? Elo { get; set; }
     [Parameter] public List<Models.StatItem>? Stats { get; set; }
     [Parameter] public bool Fullscreen { get; set; }
-    // Where the Home button on the end-of-game modal navigates. Default is the
-    // home page ("/") — pages only need to override when they sit under a
-    // sub-lobby (e.g. PoCoupleQuiz lobby → "/couplequiz"). This makes every
-    // game page identical on this dimension by default.
+    // Where the swipe-back gesture goes. Default is the home page ("/"). The end-of-game
+    // modal always goes home, whatever this says.
     [Parameter] public string BackTo { get; set; } = "/";
-    // The modal's leave button text when BackTo is not the home page ("Back to the lobby").
-    [Parameter] public string? BackLabel { get; set; }
-    // Optional in-place next step on the modal (GameOverModal.OnPrimary): a game that can
-    // replay without reloading its page leads with it. Unset, the modal is unchanged.
-    [Parameter] public EventCallback OnPrimary { get; set; }
-    [Parameter] public string? PrimaryLabel { get; set; }
-    [Parameter] public EventCallback OnSecondary { get; set; }
-    [Parameter] public string? SecondaryLabel { get; set; }
     [Parameter] public bool GameOver { get; set; }
     /// <summary>
     /// Milliseconds to wait after <see cref="GameOver"/> flips to

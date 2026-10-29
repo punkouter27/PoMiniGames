@@ -436,7 +436,7 @@ export class Game {
   }
 
   regenerate() {
-    if (this.phase === 'racing') return; // ignore mid-race spam; R is for pick/result
+    if (this.phase !== 'pick') return; // R re-rolls the course before the start, never after a race
     this._nextTrack();
   }
 
@@ -976,8 +976,10 @@ export class Game {
         const ws = winner.s;
         this.scene.followTarget(this.track.centerAt(ws), dt, false, this.track.dirAt(ws));
       }
-      // Guest: the host decides when the next race starts (nextTrack, with its seed).
-      if (this.resultTimer <= 0 && !this.isGuest) this._nextTrack();
+      // The demo rolls on, and so does a solo run that is still alive (a top-10 finish keeps
+      // the streak going, like Brawl's ladder). A miss, and every online race, ends here on
+      // the page's end-of-game modal, whose one way on is the main menu.
+      if (this.resultTimer <= 0 && (this.demo || (!this.online && this._runAlive))) this._nextTrack();
     } else {
       // pick phase: gentle overview of the start gate. The heading matters here too — without
       // it the camera sat straight back in world -Z while the track headed off at an angle,
@@ -1092,6 +1094,7 @@ export class Game {
     if (this.score > this.best) { this.best = this.score; try { localStorage.setItem(BEST_KEY, String(this.best)); } catch { } }
     if (!this.demo) this._recordTrackStat(place, finished ? me.finishTime : 0);
 
+    this._runAlive = won;
     this.resultTimer = RESULT_MS / 1000;
     this._setPhase('result');
     // #3 — the result grade, set AFTER _setPhase so it isn't overwritten by a phase grade.

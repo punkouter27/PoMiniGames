@@ -24,7 +24,7 @@
            Player="@_playerName"
            BackTo="/"
            Stats="@_statItems"
-           GameOver="@(_phase == "result" && !_demo)"
+           GameOver="@(_phase == "result" && !_demo && (_online || !_lastWon))"
            GameKey="pomarblerace"
            RequiresWebGl="true"
            Fullscreen="true"
@@ -38,7 +38,7 @@
                    Objective="@IntroObjective"
                    Controls="@(_demo ? DemoQuickControls : _online ? OnlineHowToPlayContent : HowToPlayContent)"
                    Options="@(_demo || _online ? null : SetupContent)"
-                   StartLabel="@(_demo ? null : "Race")"
+                   Wide="@(!_demo && !_online)"
                    Mode="@(_demo ? GameIntro.IntroMode.Demo : GameIntro.IntroMode.OnePlayer)"
                    OnStart="OnIntroStartAsync" />
     }
@@ -277,7 +277,6 @@
             <li class="keys-only"><kbd>←</kbd>/<kbd>→</kbd> hold to steer — red for the host, white for the guest</li>
             <li class="touch-only">Hold the ◀ ▶ pads to steer — red for the host, white for the guest</li>
             <li>The host's browser runs the physics; the guest sees the race a beat behind</li>
-            <li>The next race starts automatically with the same opponent</li>
         </ul>
     </div>;
 

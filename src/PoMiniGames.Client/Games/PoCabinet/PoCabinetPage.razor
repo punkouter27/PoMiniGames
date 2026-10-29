@@ -6,16 +6,12 @@
 
 <PageTitle>Cabinet · PoMiniGames</PageTitle>
 
-@* The race ends on the shared end-of-game modal: the results are its summary, and its buttons
-   are the ways on: Race again (1P) or Back to lobby (online) leads, Next stage when this race
-   opened one, then Back to all games. A demo has nobody to press them, so it loops instead.
+@* The race ends on the shared end-of-game modal: the results are its summary, and its one
+   button goes back to the main menu. A demo has nobody to press it, so it loops instead.
    No GameKey: the unified leaderboard has no Cabinet board, and the summary carries the podium. *@
 <GameShell Title="@TitleContent" Player="@_playerName" BackTo="/" Fullscreen="true" RequiresWebGl="true"
            GameOver="@(_phase == Phase.Finished && Mode != GameMode.Demo)"
            Outcome="@ResultsOutcome" NewBest="@_isPersonalBest"
-           OnPrimary="ResultsPrimaryAsync" PrimaryLabel="@(IsMultiplayerMode ? "Back to lobby" : "Race again")"
-           OnSecondary="@(NextStageTrackId is null ? default : EventCallback.Factory.Create(this, ResultsNextStageAsync))"
-           SecondaryLabel="@(NextStageTrackId is { } next ? $"Next stage: {PoCabinetCatalog.GetTrack(next).Name}" : null)"
            GameSummary="@ResultsContent">
     <div class="pocabinet-root">
         @if (_phase == Phase.Start)
@@ -33,7 +29,7 @@
                                Controls="@ControlsContent"
                                Options="@OptionsContent"
                                Mode="@(Mode == GameMode.Demo ? GameIntro.IntroMode.Demo : GameIntro.IntroMode.OnePlayer)"
-                               StartLabel="@(Mode == GameMode.Demo ? null : IsMultiplayerMode ? "Join lobby" : "Start race")"
+                               Wide="@(Mode == GameMode.OnePlayer)"
                                OnStart="StartRaceAsync" />
                 </div>
             }
@@ -52,7 +48,7 @@
                restart on the same <canvas> could not get a working one back. *@
             <section @key="_raceSerial" class="pocabinet-race @(Mode == GameMode.Demo ? "pocabinet-race--demo" : null)"
                      style="--pocabinet-hud:@Settings.HudScaleCss"
-                     aria-label="@(_phase == Phase.Replay ? "Race replay" : "Race in progress")">
+                     aria-label="Race in progress">
                 <canvas id="pocabinetCanvas"
                         class="pocabinet-canvas"
                         role="img"
@@ -139,49 +135,42 @@
                     <span class="pocabinet-spectating" role="status">Spectating — following the leader</span>
                 }
 
-                @if (_phase == Phase.Replay)
+                @if (Mode != GameMode.Demo)
                 {
-                    <PoCabinetReplayBar @ref="_replayBar" OnExit="ExitReplayAsync" HasLap="@(_laps.BestValidLap > 0)" />
+                    @* Lap, time, last, best and the sectors, on the race view under the top edge.
+                       Speed and place live on the gauge and badge. Not a live region: it
+                       re-renders ~15 times a second; the announcer below speaks laps, places
+                       and the finish instead. *@
+                    <div class="pocabinet-hud">
+                        <span class="pocabinet-hud__stats">
+                            <span>Lap <strong>@Math.Min(_lap, _totalLaps)</strong>/@_totalLaps</span>
+                            <span>Time <strong>@PoCabinetCatalog.FormatLap(_lapSeconds)</strong></span>
+                            <span>Last <strong class="@(_lastLapInvalid ? "pocabinet-lap--deleted" : null)" title="@(_lastLapInvalid ? "Deleted: track limits" : null)">@PoCabinetCatalog.FormatLap(_laps.LastLapSeconds)</strong></span>
+                            <span>Best <strong>@PoCabinetCatalog.FormatLap(_laps.BestLapShown)</strong></span>
+                        </span>
+                        @SectorChips
+                    </div>
                 }
-                else
-                {
-                    @if (Mode != GameMode.Demo)
+                <span class="pocabinet-hudbar">
+                    <button type="button" class="pocabinet-iconbtn" @onclick="CycleCameraAsync"
+                            aria-label="@(Mode == GameMode.Demo ? "Cut to the next shot (C)" : "Change camera (C)")"
+                            title="@(Mode == GameMode.Demo ? "The director follows the closest fights · cut to the next shot" : "Change camera (C)")">🎥</button>
+                    @if (Pausable)
                     {
-                        @* Lap, time, last, best and the sectors, on the race view under the top edge.
-                           Speed and place live on the gauge and badge. Not a live region: it
-                           re-renders ~15 times a second; the announcer below speaks laps, places
-                           and the finish instead. *@
-                        <div class="pocabinet-hud">
-                            <span class="pocabinet-hud__stats">
-                                <span>Lap <strong>@Math.Min(_lap, _totalLaps)</strong>/@_totalLaps</span>
-                                <span>Time <strong>@PoCabinetCatalog.FormatLap(_lapSeconds)</strong></span>
-                                <span>Last <strong class="@(_lastLapInvalid ? "pocabinet-lap--deleted" : null)" title="@(_lastLapInvalid ? "Deleted: track limits" : null)">@PoCabinetCatalog.FormatLap(_laps.LastLapSeconds)</strong></span>
-                                <span>Best <strong>@PoCabinetCatalog.FormatLap(_laps.BestLapShown)</strong></span>
-                            </span>
-                            @SectorChips
-                        </div>
+                        <button type="button" class="pocabinet-iconbtn" @onclick="TogglePauseAsync"
+                                aria-label="@(_paused ? "Resume race" : "Pause race")">
+                            @(_paused ? "▶" : "⏸")
+                        </button>
                     }
-                    <span class="pocabinet-hudbar">
-                        <button type="button" class="pocabinet-iconbtn" @onclick="CycleCameraAsync"
-                                aria-label="@(Mode == GameMode.Demo ? "Cut to the next shot (C)" : "Change camera (C)")"
-                                title="@(Mode == GameMode.Demo ? "The director follows the closest fights · cut to the next shot" : "Change camera (C)")">🎥</button>
-                        @if (Pausable)
-                        {
-                            <button type="button" class="pocabinet-iconbtn" @onclick="TogglePauseAsync"
-                                    aria-label="@(_paused ? "Resume race" : "Pause race")">
-                                @(_paused ? "▶" : "⏸")
-                            </button>
-                        }
-                        @if (IsMultiplayerMode && _phase == Phase.Racing)
-                        {
-                            @* Online there is no pause: this is the way out for drivers, wrecks and
-                               spectators. A driver taps twice (the first tap arms it). *@
-                            <button type="button" class="pocabinet-iconbtn" @onclick="LeaveWireRaceAsync"
-                                    aria-label="@(_confirmLeave ? "Tap again to leave the race" : "Leave race")"
-                                    title="Leave the race and go back to the lobby">@(_confirmLeave ? "Leave?" : "✕")</button>
-                        }
-                    </span>
-                }
+                    @if (IsMultiplayerMode && _phase == Phase.Racing)
+                    {
+                        @* Online there is no pause: this is the way out for drivers, wrecks and
+                           spectators. A driver taps twice (the first tap arms it). *@
+                        <button type="button" class="pocabinet-iconbtn" @onclick="LeaveWireRaceAsync"
+                                aria-label="@(_confirmLeave ? "Tap again to leave the race" : "Leave race")"
+                                title="Leave the race and go back to the lobby">@(_confirmLeave ? "Leave?" : "✕")</button>
+                    }
+                </span>
                 @* Screen-reader channel: laps, places, officials' radio lines, the finish. *@
                 <p class="pocabinet-sr" role="status" aria-live="polite">@_liveAnnouncement</p>
                 @if (IsMultiplayerMode && _phase == Phase.Racing && _connectionLost is not null)
@@ -237,7 +226,7 @@
         }
         <PoCabinetDrawer @ref="_drawer" Settings="Settings" SettingsChanged="OnSettingsChangedAsync"
                          Color="@_color" PaintChanged="OnPaintChanged"
-                         ShowWeather="@(!IsMultiplayerMode)" WeatherNextRace="@(_phase is Phase.Racing or Phase.Finished or Phase.Replay)" />
+                         ShowWeather="@(!IsMultiplayerMode)" WeatherNextRace="@(_phase is Phase.Racing or Phase.Finished)" />
     </div>
 </GameShell>
 
@@ -275,13 +264,11 @@
     </span>;
 
     // The card's Options slot: the tracks, in 1P (online, the lobby host picks one; the demo
-    // picks its own), and the drawer's button: aids, touch controls and the car's colour are
-    // worth setting BEFORE the first race (they used to be reachable only from the pause card).
-    // Otherwise only a failed start says so here.
+    // picks its own). Aids, touch controls and the car's colour are in the drawer, from the
+    // pause card. Otherwise only a failed start says so here.
     private RenderFragment? OptionsContent => Mode == GameMode.OnePlayer
         ? @<div class="pocabinet-start">
             <PoCabinetTrackSelector SelectedTrackId="@_trackId" SelectedTrackIdChanged="OnTrackChanged" Campaign="true" />
-            <button type="button" class="app-btn app-btn--ghost pocabinet-start__settings" @onclick="OpenDrawerAsync">⚙ Car &amp; settings</button>
             @if (!string.IsNullOrEmpty(_status))
             {
                 @StatusLine
@@ -298,7 +285,6 @@
                           TrackName="@TrackName" IsSpectating="IsSpectating" IsMultiplayer="IsMultiplayerMode"
                           AwaitingFinal="_awaitingFinal" IsPersonalBest="_isPersonalBest" PreviousBest="_previousBest"
                           CampaignNote="CampaignNote" Debrief="_debrief" TelemetrySummary="@_telemetrySummary"
-                          HasReferenceLap="_hasReferenceLap" Status="@_status" Dnf="_dnf"
-                          OnReplay="StartReplayAsync" />
+                          HasReferenceLap="_hasReferenceLap" Status="@_status" Dnf="_dnf" />
     </section>;
 }

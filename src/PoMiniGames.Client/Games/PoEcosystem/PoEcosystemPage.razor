@@ -20,7 +20,6 @@
                    Objective="A living island that runs without you — creatures born, hungry and ageing while you watch."
                    Controls=@HowToPlayContent
                    Mode="@(IsDemo ? GameIntro.IntroMode.Demo : GameIntro.IntroMode.OnePlayer)"
-                   StartLabel="Watch"
                    OnStart="@(() => _introDismissed = true)" />
     }
     else

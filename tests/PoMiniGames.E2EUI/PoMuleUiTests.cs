@@ -48,7 +48,7 @@ public class PoMuleUiTests
         (await page.Locator(".pm-species-card").CountAsync()).Should().Be(8);
         await page.Locator(".pm-species-card", new() { HasText = "Zephyr-Flapper" }).ClickAsync();
         await page.ScreenshotAsync(new() { Path = Path.Combine(shots, "1-start-card.png") });
-        await page.GetByRole(AriaRole.Button, new() { Name = "Start", Exact = true }).ClickAsync();
+        await page.GetByRole(AriaRole.Button, new() { Name = "OK", Exact = true }).ClickAsync();
 
         // Land grant: the highlighter sweeps the plots row by row; Space claims the one it is on.
         await WaitForPhase(page, Land, 1);
@@ -111,11 +111,13 @@ public class PoMuleUiTests
         await page.Keyboard.PressAsync("Space");
         await WaitForPhase(page, Land, 2, 30_000);
 
-        // A reload offers the match back from the start of month 2.
+        // A reload offers the match back from the start of month 2: Continue is the ticked
+        // choice, and OK takes it.
         await page.ReloadAsync(new() { WaitUntil = WaitUntilState.NetworkIdle });
-        var resume = page.GetByRole(AriaRole.Button, new() { Name = "Continue your match (month 2)" });
+        var resume = page.GetByRole(AriaRole.Radio, new() { Name = "Continue (month 2)" });
         await resume.WaitForAsync(new() { Timeout = 60_000 });
-        await resume.ClickAsync();
+        (await resume.IsCheckedAsync()).Should().BeTrue("a saved match is offered back by default");
+        await page.GetByRole(AriaRole.Button, new() { Name = "OK", Exact = true }).ClickAsync();
         await WaitForPhase(page, Land, 2, 30_000);
         (await page.EvaluateAsync<int>("() => window.__pomule().owner.filter(o => o >= 0).length"))
             .Should().BeGreaterThanOrEqualTo(8, "month 1's land is still owned");
@@ -127,7 +129,7 @@ public class PoMuleUiTests
         var mobile = await phone.NewPageAsync();
         await mobile.GotoAsync($"{origin}/pomule/1player?autoGuest=1", new() { WaitUntil = WaitUntilState.NetworkIdle, Timeout = 60_000 });
         await mobile.Locator(".pm-species-card").First.WaitForAsync(new() { Timeout = 60_000 });
-        await mobile.GetByRole(AriaRole.Button, new() { Name = "Start", Exact = true }).TapAsync();
+        await mobile.GetByRole(AriaRole.Button, new() { Name = "OK", Exact = true }).TapAsync();
         await WaitForPhase(mobile, Land, 1);
         // The Act button claims the lit plot, the same as Space.
         await mobile.WaitForFunctionAsync("() => window.__pomule().snap[10] >= 0", null, new() { Timeout = 30_000 });

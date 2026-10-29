@@ -111,7 +111,10 @@ public partial class PoMulePage : IAsyncDisposable
     private Task StartNewAsync() =>
         BeginAsync(PoMuleMatch.New((ulong)Random.Shared.NextInt64(1, long.MaxValue), _demo ? null : _species, fast: _demo, classic: _classic && !_demo));
 
-    private Task ContinueAsync() => _saved is { } saved ? BeginAsync(new PoMuleMatch(saved)) : Task.CompletedTask;
+    // The start card's OK: the saved match when "Continue" is ticked (the default), else a new one.
+    private Task StartAsync() => _resume && _saved is { } saved ? BeginAsync(new PoMuleMatch(saved)) : StartNewAsync();
+
+    private bool _resume = true;
 
     private async Task BeginAsync(PoMuleMatch match)
     {

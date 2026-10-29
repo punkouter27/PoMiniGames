@@ -1,9 +1,8 @@
 @*
     PoCabinetResults — the race's results, inside the shared end-of-game modal's summary (the page
     wraps it in the modal's section). Two columns: the result and the field on the left, the
-    telemetry, the race engineer and the replay on the right. The ways on are the modal's own
-    buttons (Race again or Back to lobby, Next stage, Back to all games, Share), so nothing here
-    repeats them. The telemetry canvas is drawn by race.js (PoCabinet.showTelemetry) once this
+    telemetry and the race engineer on the right. The way out is the modal's own one button
+    (Back to main menu), so nothing here acts. The telemetry canvas is drawn by race.js (PoCabinet.showTelemetry) once this
     renders.
 *@
 
@@ -105,7 +104,6 @@
         <div class="pocabinet-telemetry">
             <div class="pocabinet-telemetry__head">
                 <h3>Telemetry — best lap@(HasReferenceLap ? " vs your personal best" : "")</h3>
-                <button type="button" class="app-btn app-btn--secondary pocabinet-results__replay" @onclick="OnReplay">▶ Watch replay</button>
             </div>
             @* No lap at all (an early wreck): the canvas stays for race.js, but an empty box is not shown. *@
             <canvas id="pocabinetTelemetry" class="pocabinet-telemetry__chart @(Laps.LapRows == 0 ? "pocabinet-telemetry__chart--empty" : null)" role="img"
@@ -126,12 +124,6 @@
                     </ul>
                 </section>
             }
-        </div>
-    }
-    else
-    {
-        <div class="pocabinet-telemetry">
-            <button type="button" class="app-btn app-btn--secondary pocabinet-results__replay" @onclick="OnReplay">▶ Watch replay</button>
         </div>
     }
 </div>
@@ -162,8 +154,6 @@
     [Parameter] public string? Status { get; set; }
     /// <summary>The player's car was wrecked: did not finish, classified behind every runner.</summary>
     [Parameter] public bool Dnf { get; set; }
-
-    [Parameter] public EventCallback OnReplay { get; set; }
 
     private string Headline => AwaitingFinal ? "You're home — waiting for the field…"
         : Dnf ? "Wrecked — did not finish"

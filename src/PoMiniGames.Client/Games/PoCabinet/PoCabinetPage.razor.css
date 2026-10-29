@@ -3,7 +3,7 @@
    light/dark themes flow through automatically.
 
    Scoped CSS reaches only markup written in PoCabinetPage.razor: every child component
-   (setup, track selector, paint shop, lobby, drawer, settings panel, results, replay bar,
+   (setup, track selector, paint shop, lobby, drawer, settings panel, results,
    broadcast) has its own .razor.css. What several of them render — muted text, status lines,
    sector chips, screen-reader text — is styled here, as ::deep. The custom properties on
    .pocabinet-root are inherited by all of them. */
@@ -617,7 +617,7 @@
     background: rgba(255, 255, 255, 0.28);
 }
 
-/* ─── Spectator badge + replay bar ───────────────────────────────────────── */
+/* ─── Spectator badge ───────────────────────────────────────────────── */
 .pocabinet-spectating {
     position: absolute;
     top: 0.7rem;
@@ -695,7 +695,7 @@
    merged start card, the compact HUD strip, results with pinned actions, touch-safe
    targets, contrast, and ONE reduced-motion rule. Later rules win on purpose. */
 /* The race view fills the screen under the app's top bar (kept, like every other game's, except
-   on a phone held sideways: games.css), and the lap readout, replay bar and status sit on the
+   on a phone held sideways: games.css), and the lap readout and status sit on the
    view instead of under it. Touch controls, the cluster and the broadcast graphics all key off
    this one variable. --pocabinet-topbar-h is the bar's MEASURED height (pocabinet/index.js): a
    fixed 3.35rem was 10px short of the phone bar, so the race page scrolled and the Gas pedal
@@ -704,14 +704,10 @@
     --pocabinet-canvas-h: max(280px, calc(100dvh - var(--pocabinet-topbar-h, 3.35rem) - var(--safe-bottom, 0px)));
 }
 
-/* The start card's settings button sits under the track list, at its right edge. */
+/* The start card's setup: the track list, and a failed start's line under it. */
 .pocabinet-start {
     display: grid;
     gap: 0.5rem;
-}
-
-.pocabinet-start__settings {
-    justify-self: end;
 }
 
 /* Screen-reader-only text (the live region here; stage notes in the track rows). */
@@ -744,12 +740,9 @@
 }
 
 /* ─── Start: the shared opening card (GameIntro) ─────────────────────────── */
-/* The 1P card's Options slot is the track list: one row a track, wide enough for its name,
-   length, best lap and campaign tag. The wrapper is display:contents, there only so this
-   scoped sheet can widen the shared card; Online and Demo keep the card's own width. */
+/* The 1P card's Options slot is the track list (GameIntro Wide puts it beside the controls).
+   The wrapper is display:contents. */
 .pocabinet-intro { display: contents; }
-
-.pocabinet-intro ::deep .gps-intro-card:has(.pocabinet-start) { width: min(96vw, 720px); }
 
 .pocabinet-controls { margin: 0; }
 

@@ -45,96 +45,87 @@
     }
     else if (_phase == Phase.Intro)
     {
-        @* The start card: mode, run type, controls, settings and the way in. The arena is
-           already built and rendering behind it, so the one button is the one click the
-           browser needs before it will hand over Pointer Lock. It borrows the shared
-           intro card's classes rather than the component: that card has no "not ready
-           yet" state for its button, and no slot for a lobby. *@
+        @* The start card: mode, run type, controls, settings and OK. The arena is already
+           built and rendering behind it, so OK is the one click the browser needs before it
+           will hand over Pointer Lock. It borrows the shared intro card's structure (head,
+           body, one-button footer) rather than the component: that card has no "not ready
+           yet" state for its button, and no slot for a lobby. Online, OK opens the lobby
+           (the squad's room) on this card; once the host starts, OK deploys. *@
         <div class="gps-intro-overlay" role="dialog" aria-modal="true" aria-label="Voxel Strike — start">
             <div class="gps-intro-card pvs-start">
-                <div class="gps-intro-title">@TitleContent</div>
+                <header class="gps-intro-head">
+                    <div class="gps-intro-title">@TitleContent</div>
 
-                @* The shared mode switch. Solo and Online swap in place on this card (the
-                   address does not move), so the page tells it which is selected and
-                   makes the switch itself. *@
-                <ModeSwitch Current="@(_tab == Tab.Online ? GameMode.Multiplayer : GameMode.OnePlayer)" OnSelect="OnModeAsync" />
+                    @* The shared mode switch. Solo and Online swap in place on this card (the
+                       address does not move), so the page tells it which is selected and
+                       makes the switch itself. *@
+                    <ModeSwitch Current="@(_tab == Tab.Online ? GameMode.Multiplayer : GameMode.OnePlayer)" OnSelect="OnModeAsync" />
+
+                    <p class="gps-intro-objective">@StartObjective</p>
+                </header>
 
                 @if (_fatalError is not null)
                 {
                     <p class="pvs-start-error" role="alert">The arena could not start: @_fatalError</p>
                 }
 
-                @if (_tab == Tab.Solo)
-                {
-                    <p class="gps-intro-objective">Blast through the walls to the golden chalice — while the guns shoot back.</p>
+                <div class="gps-intro-body">
+                    @if (_tab == Tab.Solo)
+                    {
+                        <div class="app-seg app-seg--quiet" role="radiogroup" aria-label="Run type">
+                            @foreach (var run in Enum.GetValues<SoloRun>())
+                            {
+                                <button type="button" role="radio" class="app-seg__btn"
+                                        aria-checked="@Flag(_solo == run)" @onclick="() => SetSoloRunAsync(run)">@RunLabel(run)</button>
+                            }
+                        </div>
+                        <p class="pvs-start-note">@RunNote</p>
+                    }
 
-                    <div class="app-seg app-seg--quiet" role="radiogroup" aria-label="Run type">
-                        @foreach (var run in Enum.GetValues<SoloRun>())
+                    @if (_tab == Tab.Solo || !_lobbyOpen || _runStarted)
+                    {
+                        <div class="gps-intro-controls">
+                            <div class="gps-intro-section-label">Controls</div>
+                            @ControlsContent
+                        </div>
+                    }
+
+                    @if (_tab == Tab.Solo)
+                    {
+                        <details class="pvs-details">
+                            <summary>Settings</summary>
+                            @SettingsContent
+                        </details>
+                    }
+                    else if (_lobbyOpen && !_runStarted)
+                    {
+                        <LobbyPanel TPlayer="PoVoxelStrikeLobbyPlayer"
+                                    State="@Hub.Lobby.State"
+                                    LocalConnectionId="@Hub.LobbyConnectionId"
+                                    ConnectionState="@Hub.Lobby.ConnectionState"
+                                    Hint="One shared room — first to arrive hosts. Every wall one of you opens is open for all, and one hand on the chalice wins it for the squad."
+                                    MaxPlayersHint="6"
+                                    StartLabel="Start the Run"
+                                    OnReady="Hub.ToggleReadyAsync"
+                                    OnStart="Hub.StartGameAsync"
+                                    OnLeave="() => SwitchTabAsync(Tab.Solo)">
+                            <PlayerLabel Context="p">
+                                <span class="app-chip">P@(p.PlayerNumber)</span> @p.DisplayName
+                            </PlayerLabel>
+                        </LobbyPanel>
+                    }
+                </div>
+
+                @if (_tab == Tab.Solo || !_lobbyOpen || _runStarted)
+                {
+                    <footer class="gps-intro-actions">
+                        @if (StartStatus is { } status)
                         {
-                            <button type="button" role="radio" class="app-seg__btn"
-                                    aria-checked="@Flag(_solo == run)" @onclick="() => SetSoloRunAsync(run)">@RunLabel(run)</button>
+                            <p class="gps-intro-hint" role="status">@status</p>
                         }
-                    </div>
-                    <p class="pvs-start-note">@RunNote</p>
-
-                    <div class="gps-intro-controls">
-                        <div class="gps-intro-section-label">Controls</div>
-                        @ControlsContent
-                    </div>
-
-                    <details class="pvs-details">
-                        <summary>Settings</summary>
-                        @SettingsContent
-                    </details>
-
-                    <div class="gps-intro-actions">
-                        <button type="button" class="app-btn app-btn--lg app-btn--primary"
-                                disabled="@(!_ready)" @onclick="EnterAsync">
-                            @(_ready ? "Enter the siege" : "Building the arena…")
-                        </button>
-                    </div>
-                }
-                else if (!_runStarted)
-                {
-                    @* The same two things every opening card says, above the lobby: what the
-                       game is and how it is played. They used to wait for the deploy card. *@
-                    <p class="gps-intro-objective">Blast through the walls to the golden chalice with your squad — while the guns shoot back.</p>
-                    <div class="gps-intro-controls">
-                        <div class="gps-intro-section-label">Controls</div>
-                        @ControlsContent
-                    </div>
-
-                    <LobbyPanel TPlayer="PoVoxelStrikeLobbyPlayer"
-                                State="@Hub.Lobby.State"
-                                LocalConnectionId="@Hub.LobbyConnectionId"
-                                ConnectionState="@Hub.Lobby.ConnectionState"
-                                Hint="One shared room — first to arrive hosts. Every wall one of you opens is open for all, and one hand on the chalice wins it for the squad."
-                                MaxPlayersHint="6"
-                                StartLabel="Start the Run"
-                                OnReady="Hub.ToggleReadyAsync"
-                                OnStart="Hub.StartGameAsync"
-                                OnLeave="() => SwitchTabAsync(Tab.Solo)">
-                        <PlayerLabel Context="p">
-                            <span class="app-chip">P@(p.PlayerNumber)</span> @p.DisplayName
-                        </PlayerLabel>
-                    </LobbyPanel>
-                }
-                else
-                {
-                    <p class="gps-intro-objective">
-                        Same arena, whole squad — you are P@(_playerNumber) of @(_squadSize).
-                        Go down and a squadmate standing over you gets you back up.
-                    </p>
-                    <div class="gps-intro-controls">
-                        <div class="gps-intro-section-label">Controls</div>
-                        @ControlsContent
-                    </div>
-                    <div class="gps-intro-actions">
-                        <button type="button" class="app-btn app-btn--lg app-btn--primary"
-                                disabled="@(!_ready)" @onclick="EnterAsync">
-                            @(_ready ? "Deploy" : "Building the squad's arena…")
-                        </button>
-                    </div>
+                        <button type="button" class="app-btn app-btn--lg app-btn--primary" data-intro-action
+                                disabled="@(!CanPressOk)" @onclick="OkAsync">OK</button>
+                    </footer>
                 }
             </div>
         </div>
@@ -251,7 +242,7 @@
     private Task _submitInFlight = Task.CompletedTask;
 
     // ── This run ──
-    private uint? _seedOverride;     // ?seed= or "Replay this arena"
+    private uint? _seedOverride;     // ?seed=
     private string? _runDay;         // yyyy-MM-dd when this run is a Daily Siege
 
     // HUD snapshot, updated by the engine's 10 Hz pump.
@@ -277,7 +268,6 @@
     private int _finalCrushKills;
     private int _finalVoxels;
     private int _finalDamage;
-    private string _finalSeed = "";
     private bool _isNewBest;
     private bool _won;   // set by OnVictory; a loss never clears it mid-run, only a restart does
     private PoVoxelStrikeHighScore[]? _dailyBoard;
@@ -295,13 +285,38 @@
     // The ONE controls block: the start card, the squad's deploy card and the pause dialog
     // all render this. It used to be written out four times (intro, veil, pause, a status
     // line under the canvas) plus a fifth, wrong, copy on the lobby page.
+    // Online: OK on the opening card opens the lobby (the hub connects then, not on arrival).
+    private bool _lobbyOpen;
+
+    private string StartObjective => _tab == Tab.Solo
+        ? "Blast through the walls to the golden chalice — while the guns shoot back."
+        : _runStarted
+            ? $"Same arena, whole squad — you are P{_playerNumber} of {_squadSize}. Go down and a squadmate standing over you gets you back up."
+            : "Blast through the walls to the golden chalice with your squad — while the guns shoot back.";
+
+    // The arena builds behind the card; until it is up, OK waits and says why.
+    private bool CanPressOk => _tab == Tab.Online && !_lobbyOpen || _ready;
+
+    private string? StartStatus => CanPressOk ? null
+        : _tab == Tab.Online ? "Building the squad's arena…" : "Building the arena…";
+
+    private async Task OkAsync()
+    {
+        if (_tab == Tab.Online && !_lobbyOpen)
+        {
+            _lobbyOpen = true;
+            StateHasChanged();
+            await ConnectLobbyAsync();
+            return;
+        }
+        await EnterAsync();
+    }
+
     private RenderFragment ControlsContent => @<ul class="pvs-controls">
         <li class="keys-only"><kbd>W</kbd><kbd>A</kbd><kbd>S</kbd><kbd>D</kbd> move · <kbd>Shift</kbd> run · <kbd>Space</kbd> jump · mouse to look</li>
-        <li class="keys-only">Hold <kbd>F</kbd> or left mouse to dig · <kbd>G</kbd> or right mouse to blast</li>
-        <li class="keys-only"><kbd>Esc</kbd> pauses · a gamepad works too</li>
-        <li class="touch-only">Left thumb moves · drag the right side of the screen to look</li>
-        <li class="touch-only">Hold DIG to dig · tap BLAST and JUMP</li>
-        <li class="touch-only">The II button pauses</li>
+        <li class="keys-only">Hold <kbd>F</kbd>/left mouse dig · <kbd>G</kbd>/right mouse blast · <kbd>Esc</kbd> pause · gamepad works</li>
+        <li class="touch-only">Left thumb moves · drag the right side to look</li>
+        <li class="touch-only">Hold DIG to dig · tap BLAST and JUMP · II pauses</li>
     </ul>;
 
     private RenderFragment SettingsContent => @<div class="pvs-settings">
@@ -369,14 +384,6 @@
                 }
             </ol>
         }
-        <div class="pvs-summary-actions">
-            @if (_finalSeed.Length > 0 && !IsMulti)
-            {
-                <button class="pvs-btn" type="button" title="Arena @_finalSeed" @onclick="ReplayArenaAsync">Replay this arena</button>
-                <button class="pvs-btn" type="button" @onclick="CopyArenaLinkAsync">Copy link</button>
-            }
-            <button class="pvs-btn" type="button" @onclick="SaveClipAsync">Save collapse clip</button>
-        </div>
     </div>;
 
     /// <summary>Earned on this run, from numbers the engine already counted.</summary>
@@ -455,9 +462,9 @@
             try { await JSRuntime.InvokeVoidAsync("PoVoxelStrike.unload"); } catch { /* engine not loaded yet */ }
             return;
         }
+        _lobbyOpen = false;
         if (!await EnsureEngineAsync()) return;
-        if (_tab == Tab.Online) await ConnectLobbyAsync();
-        else await BuildSoloAsync();
+        if (_tab == Tab.Solo) await BuildSoloAsync();
     }
 
     private async Task<bool> EnsureEngineAsync()
@@ -549,14 +556,15 @@
         _fatalError = null;
         await LeaveOnlineAsync();
         _tab = tab;
+        _lobbyOpen = false;
         if (tab == Tab.Online)
         {
             // The squad's arena is built from the session's seed once the host starts; the
-            // solo one behind the card is no use to it, so stop paying to render it.
+            // solo one behind the card is no use to it, so stop paying to render it. The
+            // lobby opens on the card's OK.
             _ready = false;
             try { await JSRuntime.InvokeVoidAsync("PoVoxelStrike.unload"); } catch { }
             StateHasChanged();
-            await ConnectLobbyAsync();
         }
         else
         {
@@ -588,6 +596,7 @@
         if (!await Api.IsAvailableAsync())
         {
             ToastService.Show("Server unavailable. Try Solo.", ToastType.Error);
+            _lobbyOpen = false;
             return;
         }
         if (!_lobbySubscribed)
@@ -822,38 +831,6 @@
         await BuildSoloAsync();
     }
 
-    private async Task ReplayArenaAsync()
-    {
-        if (!uint.TryParse(_finalSeed, NumberStyles.HexNumber, CultureInfo.InvariantCulture, out var seed)) return;
-        ResetRun();
-        _phase = Phase.Intro;
-        _solo = _solo == SoloRun.Daily ? SoloRun.Siege : _solo;
-        _seedOverride = seed;
-        _autoEnter = true;
-        await BuildSoloAsync();
-    }
-
-    private async Task CopyArenaLinkAsync()
-    {
-        try
-        {
-            await JSRuntime.InvokeVoidAsync("navigator.clipboard.writeText",
-                Navigation.ToAbsoluteUri($"/povoxelstrike/1player?seed={_finalSeed}").ToString());
-            ToastService.Show("Arena link copied.", ToastType.Success);
-        }
-        catch
-        {
-            ToastService.Show($"Couldn't copy. The arena is {_finalSeed}.", ToastType.Info);
-        }
-    }
-
-    private async Task SaveClipAsync()
-    {
-        var saved = false;
-        try { saved = await JSRuntime.InvokeAsync<bool>("PoVoxelStrike.saveClip"); } catch { }
-        if (!saved) ToastService.Show("No collapse big enough to clip this run (clips need High graphics).", ToastType.Info);
-    }
-
     [JSInvokable]
     public void OnReady(int assetCount, int structureCount, string weather)
     {
@@ -934,7 +911,6 @@
         int crushKills, int voxelsDestroyed, string seed, int gunsSilenced, int gunsTotal, int damageTaken)
     {
         _phase = Phase.Dead;
-        _finalSeed = seed;
         _score = score;
         _kills = kills;
         _finalSurvival = survivalSeconds;

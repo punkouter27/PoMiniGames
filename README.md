@@ -137,6 +137,12 @@ scripts/                        Working scripts only — see scripts/README.md
   `PoMiniGames.Shared/Games/PoMule` (unit-tested, seeded, deterministic) with JavaScript only
   drawing and moving the avatars. The server replays a submitted match from its seed and
   action log (`PoMuleRunVerifier`). See `SPEC.md` and `CAPABILITY-MAP.md`.
+- **Two three.js versions.** PoEcosystem renders with three r186 `WebGPURenderer` and node
+  materials (TSL), imported as `three-eco/webgpu` / `three-eco/tsl` / `three-eco/addons/`; it
+  falls back to three's WebGL2 backend by itself, and `?ecoBackend=webgl2` forces that. Every
+  other three.js game stays on r165 (`three`, `three/addons/`). Both are pinned, with SRI, in the
+  import map in `wwwroot/index.html`. See section 3.9 of the
+  [architecture overview](DOCS/20261003/architecture_overview.md).
 - Offline-friendly PWA: finished scores park locally and sync on reconnect/sign-in.
 - Deploy: `azd up` (App Service F1, resource group `PoMiniGames`).
 
@@ -183,6 +189,7 @@ CI validates Bicep and deploys application code; use `azd up` for resource provi
 | `GET /api/leaderboards` and `/api/leaderboards/{game}` | New `period=week` query for this ISO week's boards |
 | `GET /api/pobrawl/dossier` | New, anonymous: every Brawl fighter's dossier (number, term, party, fighting style, Wikipedia summary, portrait, article link) in one call |
 | `/pobrawl/hq` (client route) | New (2026-10-18): Brawl HQ, one page over the existing reads (`GET /api/pobrawl/progress`, `/api/leaderboards/pobrawl`, `pobrawlko`, `pobrawldemo`) and this browser's ladder and Cup titles. No new endpoint |
+| Start and end cards (client UI) | 2026-10-29: every start card (`GameIntro`) has one button, **OK**, and fits without scrolling on a laptop and a phone: header, controls (longer rules behind a How to play tab), the game's setup (beside the controls on a wide card), footer. Every end card (`GameOverModal`) has one button, **Back to main menu**: Share, Full leaderboard, Play again and each game's own next steps (Fight again, Rematch, Race again, Next stage, Watch replay, Save the KO clip, Save collapse clip, Replay this arena, Copy link, Review the match, Brawl HQ) are gone, with `shareCard.js` and both clip recorders |
 | `GET /api/pocabinet/lobby` | Removed (2026-10-19, same day it came): the start card no longer shows who is online |
 | `/pocabinet` (client UI) | 2026-10-19: the start card is how to play plus, in 1P, the track list (your best lap and campaign stage per track); paint and settings live in one drawer opened from the pause card and the lobby; the race fills the screen under the app bar (lap readout on the view); pause shows the race so far and adds Restart; results add the per-lap sector table, "Same track again" and "Next stage". |
 | `GET /api/pocabinet/scores` | Removed (2026-10-19): nothing read it, the app has no Cabinet board. `POST` stays; the stored place is now the worse of the claim and the server replay's (solo) or the server sim's (online) |

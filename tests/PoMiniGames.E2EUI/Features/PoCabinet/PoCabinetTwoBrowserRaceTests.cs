@@ -4,7 +4,7 @@ namespace PoMiniGames.E2EUI.Features.PoCabinet;
 
 /// <summary>
 /// Two browsers, one lobby: PoCabinet has no join codes, so two identities that
-/// open <c>/pocabinet/multi</c> and press Join lobby must land in the same lobby — the first
+/// open <c>/pocabinet/multi</c> and press OK on the start card must land in the same lobby — the first
 /// as host (start button), the second seated beside them (ready button) — without a JS error.
 ///
 /// <para>
@@ -47,7 +47,7 @@ public sealed class PoCabinetTwoBrowserRaceTests(KestrelServerFixture fixture)
         pageErrors.Should().BeEmpty("neither browser may raise a JS error joining the lobby");
     }
 
-    /// <summary>A fresh context with its own fake identity, on the multiplayer start screen, past Join lobby.</summary>
+    /// <summary>A fresh context with its own fake identity, on the multiplayer start screen, past its OK.</summary>
     private async Task<IPage> JoinLobbyAsync(IBrowser browser, string user, List<string> pageErrors)
     {
         var ctx = await browser.NewContextAsync(new() { ViewportSize = MobileViewport.Portrait });
@@ -71,7 +71,7 @@ public sealed class PoCabinetTwoBrowserRaceTests(KestrelServerFixture fixture)
 
         await page.GotoAsync($"{origin}/pocabinet/multi?autoGuest=1",
             new() { WaitUntil = WaitUntilState.NetworkIdle, Timeout = 90_000 });
-        var join = page.GetByRole(AriaRole.Button, new() { Name = "Join lobby", Exact = true });
+        var join = page.GetByRole(AriaRole.Button, new() { Name = "OK", Exact = true });
         await join.WaitForAsync(new() { Timeout = 60_000 });
         await join.ClickAsync();
         await page.Locator(".pocabinet-lobby").WaitForAsync(new() { Timeout = 30_000 });

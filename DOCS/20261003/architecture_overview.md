@@ -673,7 +673,8 @@ drop, LED boards, instant replay and result glass, and turns on the KO shatter a
 (`_presentResult`), the comic KO words and the crowd's camera flashes (`spectacle.js`), the belt
 ceremony (`ceremony.js`, whose belt is not even built in Simple), the director's default in Demo
 (`director.js`), the Cup's starting camera and the 1P campaign-map interlude between rungs. The
-result itself is always the page's one result card (line, recap, press, KO clip); the old
+result itself is always the page's one result card (line, recap, press; its one button goes back
+to the main menu); the old
 "Breaking News" lower third (`news.js`) repeated the recap and was removed on 2026-10-18.
 
 | Module | What it does |
@@ -682,7 +683,7 @@ result itself is always the page's one result card (line, recap, press, KO clip)
 | `chargeAura.js` | A fresnel energy shell on the striking fist or shoe while a strike charges, going from white to gold, with heat shimmer, motes from the shared particle pool, a full-charge star glint and a release flare. |
 | `balloons.js` | Full show only. A convention balloon drop: 60 instanced balloons, sized by tier. Half of them drop on a KO win, all of them on the tournament final or the last ladder rung. Balloons float down buoyantly, collide through a spatial hash, are shoved by fighters and pop on hits. Pleated bunting and pennant strings run on Verlet cloth and kick on hits and the KO. Test hook: `_balloonDrop(n, spread)`. |
 | `ledBoards.js` (+ `arena.js` `uWave`) | Full show only. Dot-matrix LED ribbon boards on the apron skirt and a ringside barrier. One shader scrolls a canvas marquee that is redrawn only when the text changes. It shows names, the popular-vote split, combos, BLOCKED, super names, KNOCKOUT, COMEBACK!, FINAL 10 SECONDS and UPSET ALERT, in the colour of the momentum leader. The truss and boards pulse on `beat.pulse`. A stadium wave rolls round the stands, lifting seats and phone lights. |
-| `replay.js` | A preallocated ring buffer of every joint and root, about 4 s at 60 Hz. After a KO (not on a TIME decision, online, in training or under tournament fast-forward) a new `replay` phase runs between `ko` and `result`. It opens with a seal wipe and an "INSTANT REPLAY" bug, plays a wide angle at 1x and then the impact at 0.3x under a telestrator circle and arrow, and restores the live pose and camera exactly. Any key, tap or click skips it. Full show only. `OnMatchEnd`, the shatter and the KO clip all follow it. |
+| `replay.js` | A preallocated ring buffer of every joint and root, about 4 s at 60 Hz. After a KO (not on a TIME decision, online, in training or under tournament fast-forward) a new `replay` phase runs between `ko` and `result`. It opens with a seal wipe and an "INSTANT REPLAY" bug, plays a wide angle at 1x and then the impact at 0.3x under a telestrator circle and arrow, and restores the live pose and camera exactly. Any key, tap or click skips it. Full show only. `OnMatchEnd` and the shatter follow it. |
 | `resultGlass.js` | Full show only. On the medium and high tiers, when the result modal opens: the captured last frame goes through a dual-Kawase blur on a lazily created WebGL2 canvas. A glass slab under the modal adds refraction, edge dispersion, a specular that follows the pointer and one light sweep. The modal turns translucent (`data-pb-glass`) only once the glass is drawn. The low tier keeps the stock backdrop blur. |
 
 **Fighter select and campaign map.** The 2P select (`selectStage.js`, `PoBrawl.select.*`) draws
@@ -696,3 +697,62 @@ the beaten president's home state plus a regional batch, a campaign bus drives t
 opponent's state, and the count crosses 270 only on the last rung; a unit scenario pins this. With the Full show the
 between-rungs hold is 4.2 s so the map can play; the Simple show skips the map and holds 1.8 s. The ending card shows the full map stamped
 "270 — ELECTED". Reduced motion shows the final state at once.
+
+### 3.9 PoEcosystem renderer: WebGPU and node materials (2026-10-29)
+
+PoEcosystem is the one game on a newer three.js. It draws with three **r186**
+(`three@0.186.1`) and `WebGPURenderer`; every other three.js game stays on r165. The two
+versions sit side by side in the import map in `wwwroot/index.html`:
+
+| Specifier | Resolves to | Used by |
+|---|---|---|
+| `three`, `three/addons/` | `three@0.165.0` `build/three.module.js`, `examples/jsm/` | PoBrawl, PoMarbleRace, PoVoxelStrike, PoCabinet and the shared `postFx.js` |
+| `three-eco/webgpu`, `three-eco/tsl`, `three-eco/addons/` | `three@0.186.1` `build/three.webgpu.js`, `build/three.tsl.js`, `examples/jsm/` | `js/poecosystem/render/*` only |
+
+A `scopes` entry maps the bare `three`, `three/webgpu` and `three/tsl` specifiers *inside*
+the r186 files (`three.tsl.js` and the TSL addons import them) to the same r186 URLs, so there
+is a single r186 instance. `three.webgpu.js`, `three.core.js`, `three.tsl.js` and
+`tsl/display/BloomNode.js` carry SRI hashes in the map's `integrity` block; bump them with the
+version. Nothing else is needed for the CDN: the service worker already caches
+`cdn.jsdelivr.net`, and the host's CSP has no `script-src` yet.
+
+**One code path.** Every custom surface is a node material written in TSL, which three compiles
+to WGSL on WebGPU and to GLSL on its WebGL2 backend. The old `onBeforeCompile` patches, GLSL
+`ShaderMaterial`s and the `EffectComposer` chain are gone.
+
+| File | What it is now |
+|---|---|
+| `render/materials.js` | `EcoLambertMaterial` (a `MeshLambertNodeMaterial` with rim, mottle, sway, cloud shade, wet/snow/autumn and the naturalist lens) and the shared TSL uniforms, value noise and `cloudLight` |
+| `render/terrainMesh.js` | `TerrainMaterial`: grain, strata, rock, snow line, ripples, bump, paths, puddles with rain rings, lava/fire emissive and tribe borders |
+| `render/water.js` | waves in `positionNode`, depth-graded body, Fresnel reflection of the sky gradient, caustics, foam, rain rings, bioluminescence |
+| `render/sky.js` | dome (gradient, horizon haze line, sun, moon, stars, rainbow, aurora, meteors) and the cloud deck |
+| `render/grass.js` | `GrassMaterial`: blades placed, bent and trampled in the vertex stage |
+| `render/particles.js` | two instanced `Sprite` pools on `SpriteNodeMaterial`; the trajectory is still integrated in closed form on the GPU (WebGPU has no point size) |
+| `render/postProcess.js` | a `RenderPipeline`: `pass()` → `bloom()` → one atmosphere stage (shafts, heat shimmer, shockwaves, aberration, radial blur, vignette, grade, mood, underwater, grain) → ACES output. MSAA on the high tier replaces SMAA |
+| `render/impact.js` | the impact-envelope helpers `postFx.js` exports, restated so the game never loads r165 |
+
+**Backend and fallback (`render/backend.js`).** `createSceneRenderer` builds a
+`WebGPURenderer` and starts `init()`; the scene is built straight away and the draw loop starts
+when init settles. WebGPU is used where the browser has it, and three falls back to its WebGL2
+backend on its own when no adapter or device opens. `?ecoBackend=webgl2` forces WebGL2
+(`forceWebGL`), `?ecoBackend=webgpu` ignores a past device loss, and on a dev host (or with
+`?ecoDebug`) one console line names the backend; the same report is `window.PoEcoBackend` and
+`renderer.backend`.
+
+**Device loss.** A lost WebGPU device (or WebGL2 context) stops the loop and raises
+`contextLost` to Blazor; a WebGPU loss is remembered in `sessionStorage`
+(`poeco.webgpuBroken`). 0.7 s later the renderer raises `contextRestored` and the engine
+rebuilds it from the cached terrain, tiles and stats, on WebGL2 for the rest of the session.
+At most three rebuilds per page session. The interop contract with .NET did not change.
+
+**Program count.** Under the uniform-buffer limit, three's node `InstancedMesh` reads its
+matrices from a uniform array named after its own buffer, which gave every one of the island's
+~120 instanced meshes its own vertex program (about 170). `backend.js` sets the backend's
+uniform-buffer limit to 0 after init, so every mesh takes the instanced-attribute path and the
+programs are shared (about 20). On the WebGL2 backend that cut the first-frame compile from
+about 15 s to under 2 s on the test machine.
+
+**Tiers and reduced motion** are unchanged: the low tier has no pipeline (a plain
+`renderer.render`), no grass, clouds, particles, shadows, aurora or meteors, and the materials
+are built without their detail terms. Reduced motion still turns off the camera shake, heat
+shimmer, shockwaves and haptics.

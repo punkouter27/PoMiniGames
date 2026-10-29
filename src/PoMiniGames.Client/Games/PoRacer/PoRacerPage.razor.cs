@@ -196,13 +196,6 @@ public partial class PoRacerPage
         _ => $"{PoRacerCatalog.TotalLaps} laps round the circuit. Finish first, and set a lap worth keeping: your best one goes on the board.",
     };
 
-    private string? IntroStartLabel => _mode switch
-    {
-        RaceMode.Demo => null,
-        RaceMode.Online => string.IsNullOrWhiteSpace(MatchCode) ? "Join lobby" : "Join race",
-        _ => "Start race",
-    };
-
     private async Task OnIntroStartAsync()
     {
         _introDone = true;

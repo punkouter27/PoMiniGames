@@ -305,67 +305,20 @@ dialog.gps-modal:has(.gps-summary--wide) {
   to   { opacity: 1; }
 }
 
-/* ── Actions ──
-   Two rows: the quiet ones (Share, Full leaderboard) over the two that end the game.
-   Each row wraps rather than overflow on a 360px phone. */
+/* ── Action ──
+   The one button, Back to main menu, across the card's width. */
 .gps-play-again-actions {
   width: 100%;
   display: flex;
-  flex-direction: column;
-  align-items: stretch;
-  gap: 0.5rem;
+  justify-content: center;
   margin-top: 0.4rem;
 }
 
-.gps-modal-extras,
-.gps-modal-main {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  justify-content: center;
-  gap: 0.5rem 0.75rem;
-}
-
-/* The buttons are the shared .app-btn; here they share the row's width. */
-.gps-modal-main .app-btn {
+.gps-play-again-actions .app-btn {
   flex: 1 1 auto;
   min-height: 2.75rem;
   padding: 0.65rem 1rem;
   white-space: nowrap;
-}
-
-.gps-modal-extras .app-btn {
-  flex: 1 1 auto;
-  min-height: 2.5rem;
-  white-space: nowrap;
-}
-
-/* Share's result: a toast inside the dialog (the app's toast stack is under the top layer). */
-.gps-modal-toast {
-  position: absolute;
-  left: 50%;
-  bottom: 0.75rem;
-  margin: 0;
-  max-width: calc(100% - 2rem);
-  padding: 0.5rem 0.9rem;
-  border-radius: var(--radius-pill);
-  background: var(--color-surface);
-  border: 1px solid var(--color-border);
-  color: var(--color-text-primary);
-  font-size: var(--text-sm);
-  font-weight: 600;
-  text-align: center;
-  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.35);
-  pointer-events: none;
-  opacity: 0;
-  transform: translate(-50%, 6px);
-  transition: opacity var(--dur-fast) var(--ease-standard),
-              transform var(--dur-fast) var(--ease-standard);
-}
-
-.gps-modal-toast--on {
-  opacity: 1;
-  transform: translate(-50%, 0);
 }
 
 .gps-kbd {
@@ -390,21 +343,6 @@ dialog.gps-modal:has(.gps-summary--wide) {
 .gps-intro-modes {
   display: flex;
   justify-content: center;
-}
-
-/* The card's action is the shared .app-btn; it keeps a floor so "OK" is not a sliver. */
-.gps-intro-actions .app-btn {
-  min-width: 7rem;
-}
-
-/* Start plus the page's own small controls (GameIntro Actions) on one line; they wrap
-   under Start on a narrow card. */
-.gps-intro-actions-row {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  justify-content: center;
-  gap: 0.5rem 1rem;
 }
 
 @keyframes gps-modal-fade {
@@ -503,17 +441,17 @@ dialog.gps-modal {
   animation: gps-modal-fade 0.2s ease-out both;
 }
 
+/* The card: header, body, footer in one flex column that never scrolls. Only the body may
+   (a last resort on a screen smaller than any we test); each game's content is cut to fit. */
 .gps-intro-card {
   pointer-events: auto;
-  width: min(94vw, 440px);
+  width: min(94vw, 460px);
   max-height: calc(100dvh - 2rem);
-  overflow-y: auto;
+  overflow: hidden;
   display: flex;
   flex-direction: column;
-  align-items: center;
-  gap: 0.85rem;
-  --gps-intro-pad-bottom: 1.25rem;
-  padding: 1.5rem 1.5rem var(--gps-intro-pad-bottom);
+  gap: 0.75rem;
+  padding: 1.25rem 1.5rem 1rem;
   background: var(--color-surface);
   border: 1px solid var(--color-border);
   border-radius: 16px;
@@ -522,17 +460,54 @@ dialog.gps-modal {
   animation: gps-modal-pop 0.25s cubic-bezier(0.2, 0.8, 0.2, 1) both;
 }
 
+/* A game with a long setup (a track picker, the campaign rung, a species pick). */
+.gps-intro-card--wide { width: min(96vw, 980px); }
+/* The two-player select wants room for its side-by-side rosters. */
+.gps-intro-card--twoplayer { width: min(96vw, 640px); }
+
+.gps-intro-head {
+  flex: none;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.gps-intro-body {
+  flex: 0 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+  padding-top: 0.75rem;
+  border-top: 1px solid var(--color-border);
+}
+
+/* Wide: info on the left, setup on the right. */
+@media (min-width: 760px) {
+  .gps-intro-card--wide .gps-intro-body:has(> .gps-intro-controls + .gps-intro-options) {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) minmax(0, 2fr);
+    align-items: start;
+    gap: 1.25rem;
+  }
+}
+
 @media (max-width: 520px) {
   .gps-intro-overlay {
     align-items: flex-end;
     padding: 0;
   }
-  .gps-intro-card {
+  .gps-intro-card,
+  .gps-intro-card--wide,
+  .gps-intro-card--twoplayer {
     width: 100%;
+    max-height: calc(100dvh - 0.5rem);
+    gap: 0.6rem;
     border-bottom-left-radius: 0;
     border-bottom-right-radius: 0;
-    --gps-intro-pad-bottom: calc(1.25rem + env(safe-area-inset-bottom));
-    padding: 1.25rem 1.25rem var(--gps-intro-pad-bottom);
+    padding: 1rem 1rem calc(0.75rem + env(safe-area-inset-bottom));
     animation: gps-sheet-up 0.25s cubic-bezier(0.2, 0.8, 0.2, 1) both;
   }
 }
@@ -542,30 +517,10 @@ dialog.gps-modal {
   to   { opacity: 1; transform: none; }
 }
 
-/* Two-player select wants more room for its side-by-side rosters. */
-.gps-intro-card--twoplayer {
-  width: min(96vw, 620px);
-  position: relative;
-}
-
-.gps-intro-card--twoplayer .gps-intro-actions {
-  position: sticky;
-  bottom: 0;
-  width: 100%;
-  padding-top: 0.5rem;
-  padding-bottom: calc(0.25rem + env(safe-area-inset-bottom));
-  background: linear-gradient(180deg, transparent, var(--color-surface) 30%);
-  z-index: 1;
-  pointer-events: none;
-}
-
-.gps-intro-card--twoplayer .gps-intro-actions > * {
-  pointer-events: auto;
-}
-
 .gps-intro-title {
   font-size: 1.4rem;
   font-weight: 800;
+  line-height: 1.2;
   color: var(--color-text-primary);
 }
 
@@ -578,17 +533,16 @@ dialog.gps-modal {
 
 .gps-intro-controls {
   width: 100%;
-  padding-top: 0.85rem;
-  border-top: 1px solid var(--color-border);
   text-align: left;
   font-size: 0.85rem;
   color: var(--color-text-secondary);
-  line-height: 1.6;
+  line-height: 1.55;
 }
 
-.gps-intro-controls p { margin: 0 0 0.35rem; }
+.gps-intro-controls p { margin: 0 0 0.3rem; }
+.gps-intro-controls p:last-child { margin-bottom: 0; }
 .gps-intro-controls ul { margin: 0; padding-left: 1.1rem; }
-.gps-intro-controls li { margin-bottom: 0.2rem; }
+.gps-intro-controls li { margin-bottom: 0.15rem; }
 
 .gps-intro-section-label {
   font-size: 0.75rem; /* 12px floor (2026-09-29); was 0.65rem, ~10px, on every intro card */
@@ -603,7 +557,42 @@ dialog.gps-modal {
   margin-bottom: 0.4rem;
 }
 
-/* Reuse the shell's <kbd> look inside the controls list. */
+/* Controls | How to play: two views of the one panel. */
+.gps-intro-tabs {
+  display: inline-flex;
+  gap: 0.25rem;
+  margin-bottom: 0.5rem;
+  padding: 0.15rem;
+  border-radius: 999px;
+  background: var(--color-surface-hover);
+}
+
+.gps-intro-tab {
+  padding: 0.2rem 0.75rem;
+  border: 0;
+  border-radius: 999px;
+  background: none;
+  font: inherit;
+  font-size: 0.75rem;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--color-text-secondary);
+  cursor: pointer;
+}
+
+.gps-intro-tab[aria-selected="true"] {
+  background: var(--color-surface);
+  color: var(--color-text-primary);
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.2);
+}
+
+.gps-intro-tab:focus-visible {
+  outline: 2px solid var(--color-accent);
+  outline-offset: 1px;
+}
+
+/* Key chips: the shell's <kbd> look. A run of them on one line reads as the controls. */
 .gps-intro-controls kbd {
   display: inline-block;
   min-width: 1.1rem;
@@ -620,53 +609,75 @@ dialog.gps-modal {
 
 .gps-intro-options {
   width: 100%;
-  padding-top: 0.85rem;
-  border-top: 1px solid var(--color-border);
   position: relative;
   z-index: 1;
   pointer-events: auto;
 }
 
+/* The footer: OK, and beside it any setup toggle (Actions). Never scrolls away. */
 .gps-intro-actions {
+  flex: none;
   display: flex;
-  flex-direction: column;
+  flex-wrap: wrap;
   align-items: center;
-  gap: 0.4rem;
-  padding-top: 0.35rem;
-  /* Pinned to the bottom of the card. The card scrolls its own content when it is
-     taller than the screen (a phone on its side, Marble Race's track picker on a
-     phone), and the Start button used to be the part that scrolled out of view.
-     The shadow is the card's own colour: it fades the text passing underneath. */
-  position: sticky;
-  /* Sticky pins to the card's content edge, which leaves the card's bottom padding
-     showing whatever scrolls past. Reaching into that padding keeps the bar solid
-     all the way to the card's edge. */
-  bottom: calc(-1 * var(--gps-intro-pad-bottom, 0px));
-  margin-bottom: calc(-1 * var(--gps-intro-pad-bottom, 0px));
-  z-index: 1;
-  width: 100%;
-  padding-bottom: calc(0.25rem + var(--gps-intro-pad-bottom, 0px));
-  background: var(--color-surface);
-  box-shadow: 0 -0.75rem 0.75rem -0.4rem var(--color-surface),
-              -0.75rem 0 0 var(--color-surface), 0.75rem 0 0 var(--color-surface);
+  justify-content: center;
+  gap: 0.5rem 1rem;
+  padding-top: 0.75rem;
+  border-top: 1px solid var(--color-border);
 }
 
-/* A phone on its side: 390px of height. Wider card, tighter spacing, the controls
-   list in two columns, and Start beside its tick-box instead of above it. */
-@media (max-height: 500px) {
+/* The card's one button is the shared .app-btn; it keeps a floor so "OK" is not a sliver. */
+.gps-intro-actions .app-btn {
+  min-width: 8rem;
+}
+
+.gps-intro-actions-extra {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: center;
+  gap: 0.5rem 1rem;
+}
+
+/* The OK button leads the footer; a toggle beside it follows. */
+.gps-intro-actions-extra { order: 1; }
+
+.gps-intro-hint {
+  flex-basis: 100%;
+}
+
+/* A short screen (a phone on its side, a small laptop window): tighter spacing, a smaller
+   title, and the header on one row. */
+@media (max-height: 560px) {
   .gps-intro-overlay { padding: 0.5rem; }
-  .gps-intro-card {
-    width: min(96vw, 720px);
+  .gps-intro-card,
+  .gps-intro-card--wide,
+  .gps-intro-card--twoplayer {
+    width: min(98vw, 980px);
     max-height: calc(100dvh - 1rem);
-    gap: 0.5rem;
-    --gps-intro-pad-bottom: 0.5rem;
-    padding: 0.75rem 1rem var(--gps-intro-pad-bottom);
+    gap: 0.35rem;
+    padding: 0.5rem 1rem 0.4rem;
   }
+  .gps-intro-tabs { margin-bottom: 0.25rem; }
+  .gps-intro-section-label { margin-bottom: 0.2rem; }
+  .gps-intro-head {
+    flex-direction: row;
+    flex-wrap: wrap;
+    justify-content: center;
+    gap: 0.25rem 0.75rem;
+  }
+  .gps-intro-objective { flex-basis: 100%; font-size: 0.8rem; line-height: 1.3; }
   .gps-intro-title { font-size: 1.1rem; }
-  .gps-intro-controls { padding-top: 0.5rem; line-height: 1.4; }
-  .gps-intro-controls ul { columns: 2; column-gap: 1.5rem; }
-  .gps-intro-controls li { break-inside: avoid; }
-  .gps-intro-actions { flex-direction: row; justify-content: center; gap: 1rem; }
+  .gps-intro-body { padding-top: 0.4rem; gap: 0.5rem; }
+  .gps-intro-controls { line-height: 1.4; }
+  .gps-intro-actions { padding-top: 0.4rem; }
+  .gps-intro-actions .app-btn { min-height: 2.5rem; padding-block: 0.35rem; }
+  .gps-intro-body:has(> .gps-intro-controls + .gps-intro-options) {
+    display: grid;
+    grid-template-columns: minmax(0, 0.8fr) minmax(0, 1.2fr);
+    align-items: start;
+    gap: 1rem;
+  }
 }
 
 /* Control hints come in two forms: .keys-only for a keyboard and mouse, .touch-only for a
@@ -798,24 +809,6 @@ dialog.gps-modal {
 .conn-strip__detail {
   font-size: var(--text-sm);
   color: var(--color-text-secondary);
-}
-
-@media (max-width: 640px) {
-  .gps-intro-card--twoplayer {
-    width: min(97vw, 560px);
-    max-height: calc(100dvh - 0.75rem);
-    gap: 0.65rem;
-    padding: 1rem 0.9rem 0.75rem;
-  }
-
-  .gps-intro-card--twoplayer .gps-intro-controls {
-    font-size: 0.78rem;
-    line-height: 1.45;
-  }
-
-  .gps-intro-card--twoplayer .gps-intro-side-keys {
-    margin-bottom: 0.35rem;
-  }
 }
 
 @keyframes gps-intro-spin {

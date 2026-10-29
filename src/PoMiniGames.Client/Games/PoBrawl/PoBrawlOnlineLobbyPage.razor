@@ -22,8 +22,8 @@
     <GameIntro CueScope="pobrawl"
                Title="@TitleContent"
                Objective="A real-time 1v1 in the arena: one round, 60 seconds, and the server keeps the HP."
-               Controls="@HowToPlayContent"
-               StartLabel="Join lobby"
+               Controls="@IntroKeys"
+               HowToPlay="@IntroTips"
                OnStart="OnIntroStartAsync" />
 }
 else if (_failed is { } why)
@@ -141,6 +141,8 @@ else
 
     private static RenderFragment TitleContent => GameCatalog.TitleFor(GameKeys.PoBrawl);
     private static RenderFragment HowToPlayContent => @<PoBrawlControls Mode="online" />;
+    private static RenderFragment IntroKeys => @<PoBrawlControls Mode="online" Part="keys" />;
+    private static RenderFragment IntroTips => @<PoBrawlControls Mode="online" Part="tips" />;
 
     // Picker order: 1P avatar first, then the presidents roster in ladder order.
     private static readonly IReadOnlyList<PoBrawlFighter> RosterForPicker =

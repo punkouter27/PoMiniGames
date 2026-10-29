@@ -25,7 +25,6 @@
            Player="@_playerName"
            Elo="@(_mode == "1p" ? _rating.Elo : (int?)null)"
            BackTo="@(_mode == "online" ? "/pobrawl/multi" : "/")"
-           BackLabel="@(_mode == "online" ? "Back to the lobby" : null)"
            GameOver="@(_phase == "result")"
            GameOverDelayMs="@LadderResultHoldMs"
            Fullscreen="true"
@@ -33,10 +32,6 @@
            Outcome="@OutcomeForCue"
            RequiresWebGl="true"
            GameSummary="@GameSummaryContent"
-           OnPrimary="@ResultPrimary"
-           PrimaryLabel="@ResultPrimaryLabel"
-           OnSecondary="@ResultSecondary"
-           SecondaryLabel="Pick new fighters"
            Announcement="@_announcement">
     @if (!_introDone)
     {
@@ -47,12 +42,12 @@
                        Title="@TitleContent"
                        Objective="@IntroObjective"
                        Controls="@IntroControlsContent"
+                       HowToPlay="@IntroTipsContent"
                        Mode="@_introMode"
                        Options="@IntroOptions"
                        Actions="@IntroActions"
-                       StartEnabled="true"
-                       ShowStart="@(_mode != "2p")"
-                       StartHint="@null"
+                       Wide="true"
+                       StartEnabled="@(_mode != "2p" || (_p1Locked && _p2Locked))"
                        DialogLabel="@IntroDialogLabel"
                        CaptureKeys="false"
                        ForwardOptionKeys="@(_mode == "2p")"
@@ -171,7 +166,8 @@
         : "Both locked in — fight!";
 
     // One legend for every mode (PoBrawlControls): 2P's split keys, 1P's grid.
-    private RenderFragment IntroControlsContent => @<PoBrawlControls Mode="@_mode" />;
+    private RenderFragment IntroControlsContent => @<PoBrawlControls Mode="@_mode" Part="keys" />;
+    private RenderFragment IntroTipsContent => @<PoBrawlControls Mode="@_mode" Part="tips" />;
 
     // 2P gets the fighter select, 1P the training choice and its rung.
     private RenderFragment? IntroOptions => _mode switch
@@ -188,15 +184,12 @@
         <PoBrawlDossierCard FighterId="@_p2Char" Compact="true" />
     </div>;
 
-    // 1P: the start choice and the way to the stats page, on Start's own row.
+    // 1P: the start choice, beside OK.
     private RenderFragment? IntroActions => _mode == "1p"
-        ? @<text>
-            <label class="pb-intro-train" title="No clock, no KO; the room's bar has the exit.">
-                <input type="checkbox" @bind="_training" />
-                <span><b>🥋 Training first</b> <small>· no clock, no KO</small></span>
-            </label>
-            <a class="pb-hq-link" href="/pobrawl/hq">📊 Brawl HQ</a>
-        </text>
+        ? @<label class="pb-intro-train" title="No clock, no KO; the room's bar has the exit.">
+            <input type="checkbox" @bind="_training" />
+            <span><b>🥋 Training first</b> <small>· no clock, no KO</small></span>
+        </label>
         : null;
 
     // Two-player fighter select: one shared 4×4 grid with a cursor per player. Each player
@@ -337,15 +330,6 @@
             </div>
         }
 
-        <div class="pb-result-actions">
-            @* The engine records the fight on a rolling buffer and reports OnClipReady once the
-               result's clip is closed; nothing is kept or sent unless the player presses this. *@
-            @if (_clipReady)
-            {
-                <button type="button" class="pb-clip-btn" @onclick="SaveClipAsync">🎬 Save the KO clip</button>
-            }
-            <a class="pb-hq-link" href="/pobrawl/hq">📊 Brawl HQ</a>
-        </div>
     </div>;
 
     private string? _resultTab;

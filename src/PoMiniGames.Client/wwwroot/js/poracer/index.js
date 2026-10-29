@@ -382,18 +382,4 @@ window.PoRacer = {
     /** The paint-shop swatch. Works before a race is mounted. */
     preview: Render.preview,
 
-    /**
-     * Share a result line: the system share sheet where there is one, the clipboard otherwise
-     * (and also when the sheet exists but refuses, which desktop browsers do for some targets).
-     * Returns 'shared', 'copied' or 'failed'; closing the sheet without sending is 'failed', quietly.
-     */
-    async share(text) {
-        const url = location.origin + '/poracer';
-        if (navigator.share) {
-            try { await navigator.share({ text, url }); return 'shared'; }
-            catch (e) { if (e?.name === 'AbortError') return 'failed'; }
-        }
-        try { await navigator.clipboard.writeText(text + ' ' + url); return 'copied'; }
-        catch { return 'failed'; }
-    },
 };

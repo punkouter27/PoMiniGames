@@ -106,7 +106,7 @@ class AudioBus {
 
       this.master.connect(comp).connect(limiter).connect(
         (window.PoAudioBus && window.PoAudioBus.busSync('sfx')) || ctx.destination);
-      // Post-limiter mix, tapped by tapStream() for the KO clip recorder (clip.js).
+      // Post-limiter mix.
       this.out = limiter;
 
       this.sfxGain = ctx.createGain();

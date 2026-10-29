@@ -66,11 +66,11 @@ public class PoCabinetRouteUiTests
         appHtml.Should().NotBeNullOrWhiteSpace("the Blazor app shell must render markup after NetworkIdle");
 
         // Every mode opens on the shared intro card. Solo's carries the track selector; Online's
-        // only "Join lobby" (the lobby host picks the track there); Demo's times out
+        // only OK (the lobby host picks the track there); Demo's times out
         // into the race reel.
         if (path.EndsWith("/multi", StringComparison.OrdinalIgnoreCase))
         {
-            var join = page.GetByRole(AriaRole.Button, new() { Name = "Join lobby", Exact = true });
+            var join = page.GetByRole(AriaRole.Button, new() { Name = "OK", Exact = true });
             await join.WaitForAsync(new() { Timeout = 30_000 });
             (await page.Locator(".pocabinet-track").CountAsync()).Should().Be(0,
                 "the online start card no longer repeats the tracks the lobby host picks");

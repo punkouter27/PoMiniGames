@@ -129,8 +129,6 @@ window.PoBrawl = {
     return { frame: s.frame, anchor: s.anchor?.frame ?? -1, rtt: s.rtt, clock: s.clockSource,
       hp: st ? [st.p1.hp, st.p2.hp] : null, x: st ? [st.p1.x, st.p2.x] : null, ...s.stats };
   },
-  /** Save or share the last KO clip. Resolves false when there is none. */
-  saveClip() { return game ? game.saveClip() : Promise.resolve(false); },
   /** Training-room controls (training.js). key: 'reset'. No-op outside a training session. */
   training(key) { if (game && key === 'reset') game.resetTraining(); },
   destroy() {

@@ -5,22 +5,20 @@
 <PageTitle>Jev Arena · PoMiniGames</PageTitle>
 
 @* The match ends on the shared end-of-game modal: the result, the MVP, and one
-   button back to the hub. "Review the match" steps past it to the debrief and the Black Box,
-   which are things to do with a result rather than ways out; their bar has a way back here.
-   A demo has nobody to press the button, so it keeps its own loop. No GameKey: there is no
+   button back to the main menu. The debrief and the Black Box are the demo's: a demo has nobody to press the button, so it keeps its own loop. No GameKey: there is no
    Jev Arena board for the modal to read (the key that used to sit here 404ed once the modal
    could actually open). *@
 <GameShell Title="@TitleContent" Player="@_playerName" BackTo="/" Fullscreen="true"
-           GameOver="@(_phase == Phase.Replay && _result is not null && !IsDemo && !_reviewing)"
+           GameOver="@(_phase == Phase.Replay && _result is not null && !IsDemo)"
            GameSummary="@GameSummaryContent">
     @if (_phase == Phase.Intro)
     {
         <GameIntro CueScope="pojevarena"
                    Title="@TitleContent"
                    Objective="@IntroObjective"
-                   Controls="@HowToPlay"
+                   Controls="@IntroControls"
+                   HowToPlay="@(IsDemo ? null : HowToPlay)"
                    Mode="@IntroMode"
-                   StartLabel="@(IsDemo ? "Watch" : "Start drafting")"
                    OnStart="StartAsync" />
     }
     else
@@ -73,10 +71,6 @@
                         @if (_result.Clip)
                         {
                             <button type="button" class="jev-btn jev-btn--ghost" @onclick="ShareClipAsync">Share final blow</button>
-                        }
-                        @if (!IsDemo)
-                        {
-                            <button type="button" class="jev-btn" @onclick="() => _reviewing = false">Back to the result</button>
                         }
                     </div>
                 </div>
@@ -184,7 +178,6 @@
     private static RenderFragment TitleContent => GameCatalog.TitleFor(GameKeys.PoJevArena);
 
     // A <section>, not a <div>: the modal's small-print rule is written for div summaries.
-    // The button is the shared one, because the modal sits outside .jev-root's palette.
     private RenderFragment GameSummaryContent => @<section class="jev-summary">
         <strong>@ResultHeadline</strong>
         <span>@ResultDetail</span>
@@ -192,19 +185,21 @@
         {
             <span><span aria-hidden="true">★</span> @MvpLine</span>
         }
-        <button type="button" class="app-btn app-btn--secondary app-btn--sm" @onclick="() => _reviewing = true">Review the match</button>
     </section>;
 
     private string IntroObjective => IsDemo
         ? "Preset squads and community creatures fight while TypeSafe's Jev makes every call."
         : "Design creatures, draft two squads of ten, and watch Jev decide every move.";
 
-    private RenderFragment HowToPlay => @<div>
-        <ul>
-            <li>Build creatures in the <strong>Factory</strong>: stats, one offense and one defense ability, a personality. Everyone melees.</li>
-            <li>Draft ten per side from the public library with <strong>+ Blue</strong> / <strong>+ Red</strong>, then <strong>Deploy</strong>. Pillars, brush and tar change every map.</li>
-            <li>The battle runs full screen: hold <kbd>Tab</kbd> for the stats. Click a creature to inspect Jev's probabilities. <kbd>[</kbd> <kbd>]</kbd> cycle Blue, <kbd>;</kbd> <kbd>'</kbd> cycle Red.</li>
-            <li>After the match, scrub the <strong>Black Box</strong>: <kbd>Space</kbd> play, <kbd>←</kbd> <kbd>→</kbd> step, <kbd>Home</kbd> <kbd>End</kbd> jump.</li>
-        </ul>
-    </div>;
+    // The battle's keys: what the start card shows first.
+    private static RenderFragment IntroControls => @<p>
+        Hold <kbd>Tab</kbd> for the stats · click a creature for Jev's odds ·
+        <kbd>[</kbd><kbd>]</kbd> cycle Blue · <kbd>;</kbd><kbd>'</kbd> cycle Red
+    </p>;
+
+    // The steps before the battle, behind the card's How to play tab.
+    private static RenderFragment HowToPlay => @<ul>
+        <li>Build creatures in the <strong>Factory</strong>: stats, one offense and one defense ability, a personality. Everyone melees.</li>
+        <li>Draft ten per side with <strong>+ Blue</strong> / <strong>+ Red</strong>, then <strong>Deploy</strong>. Pillars, brush and tar change every map.</li>
+    </ul>;
 }

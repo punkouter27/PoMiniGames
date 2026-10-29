@@ -29,11 +29,35 @@
    choices sit in the card as one Racer-palette panel (.racer-setup), because the track cards
    and paint chips are drawn for a dark surface and the shared card is light in the light theme. */
 .racer-intro { display: contents; }
-.racer-intro ::deep .gps-intro-card:has(.racer-setup) { width: min(96vw, 900px); }
 .racer-setup { width: 100%; box-shadow: none; text-align: left; color: var(--racer-text); }
-/* The controls help is one paragraph of spans; on the card each is a line of its own. */
+/* The controls help is one paragraph of spans; on the card each is a line of its own, and the
+   tips are the How to play tab's. */
 .racer-intro ::deep .racer-controls { margin: 0; }
 .racer-intro ::deep .racer-controls span { display: block; }
+.racer-intro ::deep .racer-controls .for-tips { display: none; }
+/* The setup on the start card, packed so the card never scrolls: the track cards drop their
+   description (it is each card's tooltip) and stack the outline over the name, and the paint
+   shop's preview shrinks. */
+.racer-intro .racer-setup { gap: 10px; padding: 12px; }
+.racer-intro ::deep .track-card { grid-template-columns: 1fr; justify-items: start; gap: 4px; padding: 8px 10px; }
+.racer-intro ::deep .track-card small { display: none; }
+.racer-intro ::deep .track-outline { width: 64px; height: 38px; }
+.racer-intro ::deep .paint-preview { width: 72px; height: 48px; }
+/* A phone on its side: the small print and the car preview go. */
+@media (max-height: 560px) {
+    .racer-intro .racer-setup { gap: 6px; padding: 8px 10px; }
+    .racer-intro ::deep .track-picker { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+    .racer-intro ::deep .track-picker legend, .racer-intro ::deep .track-best, .racer-intro ::deep .paint-preview,
+    .racer-intro .racer-actions { display: none; }
+    .racer-intro ::deep .track-outline { width: 48px; height: 26px; }
+    .racer-intro ::deep .racer-chips label { min-height: 28px; padding: 2px 10px; }
+    .racer-intro ::deep .paint-swatch { width: 24px; height: 24px; }
+}
+@media (max-width: 760px) {
+    .racer-intro ::deep .track-picker { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+    .racer-intro ::deep .track-card strong { font-size: 13px; }
+    .racer-intro ::deep .track-medals { font-size: 11px; }
+}
 .racer-error { margin: 0; color: var(--accent-danger-ink); }
 
 /* Chip groups (race type, pace, livery): radios that look like segmented buttons. ::deep because

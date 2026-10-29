@@ -126,8 +126,6 @@
    three colonists marching under it, block capitals. Only the shared card's colours and
    type change; its structure and behaviour stay the shell's. ── */
 .pm-root ::deep .gps-intro-card {
-    width: min(760px, 94vw);
-    max-width: none;
     background: var(--pm-card);
     color: var(--pm-card-ink);
     border: 4px solid var(--pm-ink);
@@ -260,22 +258,32 @@
     letter-spacing: 0.12em;
 }
 
-.pm-root ::deep .pm-press {
-    text-align: center;
-    color: var(--pm-ink);
-    font-weight: 900;
-    letter-spacing: 0.3em;
-}
-
 .pm-root ::deep .pm-species {
     display: flex;
     flex-direction: column;
     gap: 0.5rem;
 }
 
+/* Continue the saved match or start a new one: two radio chips. */
 .pm-root ::deep .pm-continue {
     display: flex;
     justify-content: center;
+    flex-wrap: wrap;
+    gap: 0.4rem;
+}
+
+.pm-root ::deep .pm-continue label {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.35rem;
+    padding: 0.2rem 0.6rem;
+    border: 2px solid var(--pm-ink);
+    cursor: pointer;
+}
+
+.pm-root ::deep .pm-continue label:has(input:checked) {
+    background: var(--pm-ink);
+    color: #f0b878;
 }
 
 /* Radzen lays a data list out as a column; the picker wants a grid so all eight species
@@ -321,6 +329,33 @@
     font-size: 0.68rem;
     line-height: 1.2;
     text-transform: none;
+}
+
+.pm-root ::deep .pm-species-picked {
+    display: none;
+    margin: 0;
+    text-align: center;
+    font-size: 0.75rem;
+    text-transform: none;
+}
+
+/* A phone, or a short screen: the card's logo shrinks, and the species cards drop their
+   trait to the one line under the grid. */
+@media (max-width: 520px), (max-height: 560px) {
+    .pm-root ::deep .pm-logo { font-size: 2.2rem; }
+    .pm-root ::deep .pm-parade { height: 26px; margin-top: 2px; }
+    .pm-root ::deep .pm-species-card { min-height: 0; padding: 0.2rem 0.4rem; }
+    .pm-root ::deep .pm-species-trait { display: none; }
+    .pm-root ::deep .pm-species-picked { display: block; }
+}
+
+@media (max-height: 560px) {
+    .pm-root ::deep .pm-logo { font-size: 1.7rem; }
+    .pm-root ::deep .pm-parade { display: none; }
+    .pm-root ::deep .pm-species-label { display: none; }
+    .pm-root ::deep .pm-species { gap: 0.3rem; }
+    .pm-root ::deep .pm-species-name { font-size: 0.75rem; }
+    .pm-root ::deep .pm-species-cash { font-size: 0.7rem; }
 }
 
 .pm-root ::deep .pm-species-card.pm-species-card--on {

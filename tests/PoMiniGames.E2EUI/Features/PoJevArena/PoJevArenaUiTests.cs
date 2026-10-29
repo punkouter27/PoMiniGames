@@ -50,7 +50,7 @@ public class PoJevArenaUiTests
         await page.GotoAsync($"{origin}/pojevarena/1player?autoGuest=1",
             new PageGotoOptions { WaitUntil = WaitUntilState.NetworkIdle, Timeout = 60_000 });
 
-        await page.GetByRole(AriaRole.Button, new() { Name = "Start drafting" }).ClickAsync(new() { Timeout = 30_000 });
+        await page.GetByRole(AriaRole.Button, new() { Name = "OK", Exact = true }).ClickAsync(new() { Timeout = 30_000 });
         await page.Locator(".jev-add--blue").Nth(4).WaitForAsync(new() { Timeout = 30_000 });
         (await page.Locator(".jev-status").InnerTextAsync()).Should().Contain("ready", "the Test host serves the stub for every brain");
 
@@ -103,34 +103,13 @@ public class PoJevArenaUiTests
         var modal = page.Locator("dialog.gps-modal[open]");
         await modal.WaitForAsync(new() { Timeout = 20_000 });
         (await modal.InnerTextAsync()).Should().MatchRegex("(Blue wins|Red wins|Draw)").And.Contain("MVP");
-        // Share and Full leaderboard sit beside it as secondary actions; the way out stays single.
-        (await modal.Locator("footer .app-btn--primary").CountAsync()).Should().Be(1, "every game ends on one primary button");
+        // One button and only one: back to the main menu.
+        var buttons = modal.Locator("button");
+        (await buttons.CountAsync()).Should().Be(1, "every game ends on one button");
+        (await buttons.First.InnerTextAsync()).Should().Contain("Back to main menu");
         await page.ScreenshotAsync(new() { Path = Path.Combine(shots, "result.png") });
-
-        // "Review the match" steps past the modal to the debrief and the Black Box.
-        await modal.GetByRole(AriaRole.Button, new() { Name = "Review the match" }).ClickAsync();
-        var result = page.Locator(".jev-resultbar");
-        await result.WaitForAsync(new() { Timeout = 20_000 });
-        (await result.InnerTextAsync()).Should().MatchRegex("(Blue wins|Red wins|Draw)").And.Contain("MVP");
-
-        // Jev debrief: shown first after the whistle, one plain-language card per team, with
-        // "Jump" links that open the Black Box on that moment.
-        var debrief = page.Locator(".jev-debrief");
-        await debrief.WaitForAsync(new() { Timeout = 10_000 });
-        var story = await debrief.InnerTextAsync();
-        story.Should().Contain("Blue played").And.Contain("Red played").And.Contain("melee charge",
-            "the stub always charges, and the debrief should say so");
-        await page.ScreenshotAsync(new() { Path = Path.Combine(shots, "debrief.png"), FullPage = true });
-        await debrief.GetByRole(AriaRole.Button, new() { Name = "Show" }).First.ClickAsync();
-        await page.Locator("#jev-bb-slider").WaitForAsync(new() { Timeout = 10_000 });
-
-        // Black Box: scrubbing moves the inspector to the recorded frame.
-        var before = await page.Locator(".jev-inspector--blue").InnerTextAsync();
-        await page.Locator("#jev-bb-slider").EvaluateAsync(
-            "s => { s.value = Math.floor(s.max * 0.3); s.dispatchEvent(new Event('input', { bubbles: true })); }");
-        await page.WaitForFunctionAsync(
-            "b => document.querySelector('.jev-inspector--blue')?.innerText !== b", before, new() { Timeout = 10_000 });
-        await page.ScreenshotAsync(new() { Path = Path.Combine(shots, "blackbox.png") });
+        await buttons.First.ClickAsync();
+        await page.WaitForFunctionAsync("() => location.pathname === '/'", null, new() { Timeout = 10_000 });
 
         errors.Should().BeEmpty("the arena should run without console errors");
     }

@@ -174,10 +174,9 @@
        text (controls, a lobby roster) with no blur behind them, and the lobby
        card's shadow is now its beat glow (LobbyPanel.razor.css). They keep
        their own opaque surface and shadow and take only the lit edge.
-     - `overflow: hidden` stays on the game card alone, which needs it to clip
-       the sheen. The intro card scrolls its own content on a short screen
-       (game-shell.css); clipping it would strand the Start button, the same
-       trap the note on `.gps-modal` above describes. */
+     - `overflow: hidden` is the game card's, which needs it to clip the
+       sheen. The intro card sets its own (game-shell.css): its footer is a
+       flex item that never scrolls, so OK cannot be stranded. */
 .gps-game-card.gps-game-card,
 .gps-intro-card.gps-intro-card,
 .sp-card.sp-card {

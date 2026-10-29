@@ -4,7 +4,7 @@
    move fires by itself) and netplay.js online (no circling, H is the special). On a touch
    screen the key column shows the pad's glyphs instead (CSS, .pbc-touch). *@
 
-@if (Mode == "2p")
+@if (Part != "tips" && Mode == "2p")
 {
     <table class="pbc-table">
         <thead>
@@ -22,7 +22,7 @@
     @* Gamepads take the corners in the order they connect (input.js): pad 1 is Player 1. *@
     <p class="pbc-touch-note">On a phone the touch pad drives Player 1. Player 2 needs a keyboard, or a second gamepad: the first pad is Player 1, the second Player 2.</p>
 }
-else
+else if (Part != "tips")
 {
     <dl class="pbc-keys">
         <div><dt>Move</dt><dd><span class="pbc-kb"><kbd>A</kbd><kbd>D</kbd></span><span class="pbc-touch">◀ ▶</span></dd></div>
@@ -46,6 +46,8 @@ else
 
 @* 2P keeps to the guard line: its card is the fighter select, and the HUD's energy bar is in
    front of both players. *@
+@if (Part != "keys")
+{
 <ul class="pbc-tips">
     @if (Mode is "1p" or "online")
     {
@@ -67,8 +69,15 @@ else
         <li>🛡 Guard <b>as they wind up</b> for a PERFECT: they freeze and your answer hits harder.@(Mode == "2p" ? " Take enough punishment and your signature move fires itself." : "")</li>
     }
 </ul>
+}
 
 @code {
     /// <summary>"1p", "2p" or "online".</summary>
     [Parameter] public string Mode { get; set; } = "1p";
+
+    /// <summary>
+    /// "keys" (the start card's Controls tab), "tips" (its How to play tab) or "all" (the
+    /// online lobby's how-to, which has room for both).
+    /// </summary>
+    [Parameter] public string Part { get; set; } = "all";
 }

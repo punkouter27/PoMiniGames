@@ -55,7 +55,6 @@ import { createPhysicsWorld, PHYSICS_STEP as SI_PHYSICS_STEP } from './physics.j
 import { Avatar } from './avatar.js';
 import { AltInput } from './input.js';
 import { Weather } from './weather.js';
-import { ClipRecorder } from './clip.js';
 import { loadSettings } from './settings.js';
 
 const CAM_DISTANCE = 7;
@@ -512,7 +511,6 @@ export class Engine {
 
     this._buildCrosshair();
     this.input = new AltInput(this.host, { pause: () => this.pause() });
-    this.clip = (this.q.collapseClip && !this.demo) ? new ClipRecorder(this.canvas) : null;
 
     window.addEventListener('keydown', this._onKeyDown);
     window.addEventListener('keyup', this._onKeyUp);
@@ -599,7 +597,6 @@ export class Engine {
     if (this._locked()) document.exitPointerLock();
 
     this.input?.dispose();
-    this.clip?.dispose();
     this.weather?.dispose();
     for (const peer of this.peers.values()) peer.avatar.dispose();
     this.peers.clear();
@@ -1004,11 +1001,10 @@ export class Engine {
 
   /**
    * A fall big enough to stop the clock for: a few frames of hit-stop, the sub dropping
-   * out, a dust front racing along the ground, and — if it beats the run's best — the clip.
+   * out and a dust front racing along the ground.
    * One collapse arrives as many clusters, so the stop is rate-limited rather than stacked.
    */
   _bigCollapse(voxels, position, proximity) {
-    this.clip?.trigger(voxels);
     this.vfx.groundRing(position, this.terrain.heightAt(position.x, position.z));
     if (proximity <= 0.15 || this._hitStopCd > 0) return;
     this._hitStopCd = 1.5;

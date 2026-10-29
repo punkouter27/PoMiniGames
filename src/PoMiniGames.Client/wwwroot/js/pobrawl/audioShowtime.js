@@ -717,21 +717,6 @@ class AudioShowtimeMethods {
     autoDisconnect(sqk, [sqk, sg, spat, spat.output].filter(Boolean), () => { this._popVoices--; });
   }
 
-  /**
-   * The finished mix as a MediaStream, for the KO clip recorder. Null until the
-   * context exists (no gesture yet) — clip.js asks again on each recorder restart.
-   */
-  tapStream() {
-    if (!this.ctx || !this.out || this._ensureFailed) return null;
-    if (!this._tap) {
-      try {
-        this._tap = this.ctx.createMediaStreamDestination();
-        this.out.connect(this._tap);
-      } catch { this._tap = null; return null; }
-    }
-    return this._tap.stream;
-  }
-
   close() {
     this.stopMusic();
     this.stopIntroTheme();
@@ -758,7 +743,6 @@ class AudioShowtimeMethods {
       }
       this.ctx = null;
     }
-    if (this._tap) { try { this.out?.disconnect(this._tap); } catch { /* */ } this._tap = null; }
     this.master = this.sfxGain = this.musicGain = this.reverbGain = this.introGain = null;
     this.sfxFilter = this.musicDuck = this.musicLP = this.crowdGain = this.crowdDuck = null;
     this.stingGain = this.rhythmGain = this.crowdPersp = null;

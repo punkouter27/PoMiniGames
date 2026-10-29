@@ -124,9 +124,6 @@ public partial class PoBrawlPage
     // "Training first" box.
     private bool _training;
 
-    // KO clip (wwwroot/js/pobrawl/clip.js).
-    private bool _clipReady;
-
     // How long a 1P win holds on the result before rolling into the next rung: long enough
     // for the banner and the winner's fanfare to land.
     private const int LadderResultHoldMs = 1800;
@@ -558,7 +555,6 @@ public partial class PoBrawlPage
     private void ResetRoundHud()
     {
         _hud?.Reset();
-        _clipReady = false;
     }
 
     private async Task InitEngine()
@@ -890,19 +886,6 @@ public partial class PoBrawlPage
         InvokeAsync(StateHasChanged);
     }
 
-    /// <summary>Engine → page: the KO clip for the result on screen is ready to save.</summary>
-    [JSInvokable]
-    public void OnClipReady()
-    {
-        _clipReady = true;
-        InvokeAsync(StateHasChanged);
-    }
-
-    private async Task SaveClipAsync()
-    {
-        try { await JSRuntime.InvokeAsync<bool>("PoBrawl.saveClip"); } catch { }
-    }
-
     /// <summary>Engine → page on every spawn: the resolved ids keep the HUD names on the
     /// fighters underneath them.</summary>
     [JSInvokable]
@@ -1178,60 +1161,6 @@ public partial class PoBrawlPage
             Console.Error.WriteLine($"[PoBrawl] restart failed, re-initialising: {ex.Message}");
             await InitEngine();
         }
-    }
-
-    // ── The result's own next step (GameOverModal.OnPrimary): no page reload ──
-    private EventCallback ResultPrimary => CanPause ? EventCallback.Factory.Create(this, FightAgainAsync) : default;
-
-    private EventCallback ResultSecondary => _mode == "2p" ? EventCallback.Factory.Create(this, PickNewFightersAsync) : default;
-
-    private string ResultPrimaryLabel => _mode == "2p" ? "Rematch" : _champion ? "Start a new run" : "Fight again";
-
-    /// <summary>
-    /// 1P: the rung that just held (or, after a full clear, rung 1 again) as a new run. 2P: the
-    /// same two fighters again.
-    /// </summary>
-    private async Task FightAgainAsync()
-    {
-        var newRun = _champion;
-        ResetRoundState();
-        _recap = null;
-        _lastRecap = null;
-        _presser = null;
-        _resultTab = null;
-        _newRecord = false;
-        _announcement = _mode == "2p"
-            ? $"Rematch — {CharName(_p1Char)} versus {CharName(_p2Char)}."
-            : $"Again — {CharName(newRun ? Roster[_ladder].Id : _p2Char)} for the rung.";
-        if (newRun)
-        {
-            // The ladder already wrapped to rung 1 (OnMatchEnd): a new matchup, so a new boot.
-            _champion = false;
-            _p2Char = Roster[_ladder].Id;
-            StateHasChanged();
-            await InitEngine();
-            return;
-        }
-        StateHasChanged();
-        await RestartEngineAsync();
-    }
-
-    /// <summary>2P: back to the fighter select, in place.</summary>
-    private async Task PickNewFightersAsync()
-    {
-        ResetRoundState();
-        _recap = null;
-        _lastRecap = null;
-        _presser = null;
-        _resultTab = null;
-        try { await JSRuntime.InvokeVoidAsync("PoBrawl.destroy"); } catch { }
-        _p1Locked = _p2Locked = false;
-        // The select's live portraits mount again on the next render (SyncSelectStageAsync).
-        _selectStageMount = null;
-        _selectStageSent = null;
-        _introDone = false;
-        _announcement = "Pick new fighters.";
-        StateHasChanged();
     }
 
     private string ResultLine()

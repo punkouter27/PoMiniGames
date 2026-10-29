@@ -21,13 +21,13 @@ public sealed class PoRacerUiTests(KestrelServerFixture fixture)
         page.PageError += (_, error) => errors.Add(error);
         var driver = new PoRacerDriver(page);
         await page.GotoAsync($"{fixture.ServerAddress.TrimEnd('/')}/poracer/1player?autoGuest=1");
-        await page.GetByRole(AriaRole.Button, new() { Name = "Start race", Exact = true }).WaitForAsync(new() { Timeout = 60000 });
+        await page.GetByRole(AriaRole.Button, new() { Name = "OK", Exact = true }).WaitForAsync(new() { Timeout = 60000 });
         await page.Locator($"input[name=poracer-track][value={track}]").CheckAsync();
         // Isolate lap timing and persistence from 99-car traffic: the keyboard driver
         // follows the centerline and does not plan overtakes. Full-field input is tested below.
         await page.GetByText("Time trial", new() { Exact = true }).ClickAsync();
         var save = page.WaitForResponseAsync(r => r.Url.EndsWith("/api/poracer/scores", StringComparison.Ordinal) && r.Request.Method == "POST", new() { Timeout = 200000 });
-        await page.GetByRole(AriaRole.Button, new() { Name = "Start race", Exact = true }).ClickAsync();
+        await page.GetByRole(AriaRole.Button, new() { Name = "OK", Exact = true }).ClickAsync();
         await page.Locator(".race-countdown").WaitForAsync();
         (await page.Locator("#racerCanvas").EvaluateAsync<bool>("e => e === document.activeElement")).Should().BeTrue();
         await driver.DriveAsync(page, track);
@@ -43,14 +43,14 @@ public sealed class PoRacerUiTests(KestrelServerFixture fixture)
         (await page.Locator(".race-results .local-driver").InnerTextAsync()).Should().NotContain("DNF");
         await page.ScreenshotAsync(new() { Path = $"artifacts/poracer-{track}-results.png" });
         // Return to the hub; visiting the racer again opens the start card.
-        await page.GetByRole(AriaRole.Button, new() { Name = "Back to all games" }).ClickAsync();
+        await page.GetByRole(AriaRole.Button, new() { Name = "Back to main menu" }).ClickAsync();
         await page.WaitForURLAsync(url => new Uri(url).AbsolutePath == "/");
         await page.GotoAsync($"{fixture.ServerAddress.TrimEnd('/')}/poracer/1player");
-        await page.GetByRole(AriaRole.Button, new() { Name = "Start race", Exact = true }).WaitForAsync(new() { Timeout = 60000 });
+        await page.GetByRole(AriaRole.Button, new() { Name = "OK", Exact = true }).WaitForAsync(new() { Timeout = 60000 });
         // The lap just driven is on its track card as a personal best.
         (await page.Locator(".track-card.selected .track-best").InnerTextAsync()).Should().Contain("Your best");
         driver.Reset();
-        await page.GetByRole(AriaRole.Button, new() { Name = "Start race", Exact = true }).ClickAsync();
+        await page.GetByRole(AriaRole.Button, new() { Name = "OK", Exact = true }).ClickAsync();
         await page.Locator(".race-metrics").WaitForAsync();
         await BackToStartAsync(page);
         errors.Should().BeEmpty();
@@ -66,14 +66,14 @@ public sealed class PoRacerUiTests(KestrelServerFixture fixture)
         var errors = new List<string>(); page.PageError += (_, error) => errors.Add(error);
         var driver = new PoRacerDriver(page);
         await page.GotoAsync($"{fixture.ServerAddress.TrimEnd('/')}/poracer/1player?autoGuest=1");
-        await page.GetByRole(AriaRole.Button, new() { Name = "Start race", Exact = true }).ClickAsync(new() { Timeout = 60000 });
+        await page.GetByRole(AriaRole.Button, new() { Name = "OK", Exact = true }).ClickAsync(new() { Timeout = 60000 });
         await driver.DriveAsync(page, "dnf", drive: false);
         driver.Result!.Standings.Single(s => s.CarId == driver.LocalId).Finished.Should().BeFalse();
         await page.Locator(".race-results").WaitForAsync();
         (await page.Locator(".race-results .local-driver").InnerTextAsync()).Should().Contain("DNF");
-        (await page.Locator("dialog.gps-modal[open] footer").GetByRole(AriaRole.Button,
-            new() { Name = "Back to all games" }).CountAsync()).Should().Be(1);
-        await page.GetByRole(AriaRole.Button, new() { Name = "Back to all games" }).ClickAsync();
+        // The end card's one button.
+        (await page.Locator("dialog.gps-modal[open] button").CountAsync()).Should().Be(1);
+        await page.GetByRole(AriaRole.Button, new() { Name = "Back to main menu" }).ClickAsync();
         await page.WaitForURLAsync(url => new Uri(url).AbsolutePath == "/");
         errors.Should().BeEmpty();
     }
@@ -90,10 +90,10 @@ public sealed class PoRacerUiTests(KestrelServerFixture fixture)
         var url = $"{fixture.ServerAddress.TrimEnd('/')}/poracer/multi?autoGuest=1";
         // Each browser opens on the game's card; its button is what takes the lobby seat.
         await host.GotoAsync(url);
-        await host.GetByRole(AriaRole.Button, new() { Name = "Join lobby", Exact = true }).ClickAsync(new() { Timeout = 60000 });
+        await host.GetByRole(AriaRole.Button, new() { Name = "OK", Exact = true }).ClickAsync(new() { Timeout = 60000 });
         await host.GetByRole(AriaRole.Button, new() { Name = "Start Race", Exact = true }).WaitForAsync(new() { Timeout = 60000 });
         await guest.GotoAsync(url);
-        await guest.GetByRole(AriaRole.Button, new() { Name = "Join lobby", Exact = true }).ClickAsync(new() { Timeout = 60000 });
+        await guest.GetByRole(AriaRole.Button, new() { Name = "OK", Exact = true }).ClickAsync(new() { Timeout = 60000 });
         await guest.GetByRole(AriaRole.Button, new() { Name = "Ready!", Exact = true }).ClickAsync(new() { Timeout = 60000 });
         await host.GetByRole(AriaRole.Button, new() { Name = "Start Race", Exact = true }).ClickAsync();
         foreach (var page in new[] { host, guest })
@@ -116,7 +116,7 @@ public sealed class PoRacerUiTests(KestrelServerFixture fixture)
     {
         await page.GetByRole(AriaRole.Button, new() { Name = "Pause", Exact = true }).ClickAsync();
         await page.GetByRole(AriaRole.Button, new() { Name = "Back to start", Exact = true }).ClickAsync();
-        await page.GetByRole(AriaRole.Button, new() { Name = "Start race", Exact = true }).WaitForAsync();
+        await page.GetByRole(AriaRole.Button, new() { Name = "OK", Exact = true }).WaitForAsync();
     }
 
     [Theory]
@@ -137,7 +137,7 @@ public sealed class PoRacerUiTests(KestrelServerFixture fixture)
         page.PageError += (_, error) => errors.Add(error);
         await page.GotoAsync($"{fixture.ServerAddress.TrimEnd('/')}/poracer?autoGuest=1");
         if (!touch) await VerifyTrackBitmapCacheAsync(page);
-        await page.GetByRole(AriaRole.Button, new() { Name = "Start race", Exact = true }).ClickAsync(new() { Timeout = 60000 });
+        await page.GetByRole(AriaRole.Button, new() { Name = "OK", Exact = true }).ClickAsync(new() { Timeout = 60000 });
         await page.Locator(".race-metrics").WaitForAsync(new() { Timeout = 30000 });
         (await page.Locator(".race-pos small").InnerTextAsync()).Should().Be("/100");
         if (touch)
@@ -158,7 +158,7 @@ public sealed class PoRacerUiTests(KestrelServerFixture fixture)
         (await page.Locator("#racerMinimap").CountAsync()).Should().Be(0);
         (await page.Locator(".race-standings li").CountAsync()).Should().Be(4);
         await BackToStartAsync(page);
-        await page.GetByRole(AriaRole.Button, new() { Name = "Start race", Exact = true }).ClickAsync();
+        await page.GetByRole(AriaRole.Button, new() { Name = "OK", Exact = true }).ClickAsync();
         await page.Locator(".race-metrics").WaitForAsync();
         await BackToStartAsync(page);
         errors.Should().BeEmpty();

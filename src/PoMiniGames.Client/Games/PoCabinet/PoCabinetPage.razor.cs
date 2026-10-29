@@ -22,7 +22,7 @@ namespace PoMiniGamesClient.Games.PoCabinet;
 ///         frame loop to <c>js/pocabinet/race.js</c>: it simulates solo races, predicts the
 ///         local car online, renders every car and records the race.</item>
 ///   <item><b>Finished</b> — <see cref="PoCabinetResults"/> over the still-running scene, with
-///         the telemetry chart, and <b>Replay</b> (<see cref="PoCabinetReplayBar"/>) with clip export.</item>
+///         the telemetry chart.</item>
 /// </list>
 /// <para>
 /// The page is the HUD, not the renderer: it receives a snapshot per tick (from race.js for
@@ -42,7 +42,7 @@ public partial class PoCabinetPageBase : ComponentBase, IAsyncDisposable
 
     [Parameter] public string? ModeSegment { get; set; }
 
-    protected enum Phase { Start, Lobby, Loading, Racing, Finished, Replay }
+    protected enum Phase { Start, Lobby, Loading, Racing, Finished }
 
     // There is no 2P mode: a stale /pocabinet/2player link plays 1P.
     protected GameMode Mode => GameModes.Parse(ModeSegment) is var m && m == GameMode.TwoPlayer ? GameMode.OnePlayer : m;
@@ -94,7 +94,6 @@ public partial class PoCabinetPageBase : ComponentBase, IAsyncDisposable
     protected string? _telemetrySummary;
     protected bool _hasReferenceLap;
     private bool _telemetryDrawn;
-    protected PoCabinetReplayBar? _replayBar;
     /// <summary>The player's car was wrecked: a DNF (no place, no stage credit).</summary>
     protected bool _dnf;
     /// <summary>What this race did for the campaign, decided when the result is recorded.</summary>
@@ -158,20 +157,6 @@ public partial class PoCabinetPageBase : ComponentBase, IAsyncDisposable
         return cleared ? null : ($"Stage {n} cleared ✓", true);
     }
 
-    /// <summary>The campaign's next open stage, once this race cleared the one before it.</summary>
-    protected string? NextStageTrackId
-    {
-        get
-        {
-            if (Mode != GameMode.OnePlayer) return null;
-            var stage = PoCabinetCatalog.StageIndexOf(_trackId);
-            var next = Career.Current.CurrentStageIndex;
-            if (stage < 0 || !Career.Current.CompletedStages.Contains(stage) || next <= stage
-                || Career.Current.CompletedStages.Contains(next) || next >= PoCabinetCatalog.CampaignStages) return null;
-            return PoCabinetCatalog.Tracks[next].Id;
-        }
-    }
-
     private IJSObjectReference? _sceneHandle;
     private IJSObjectReference? _dialogueHandle;
     private IJSObjectReference? _minimapHandle;
@@ -212,12 +197,6 @@ public partial class PoCabinetPageBase : ComponentBase, IAsyncDisposable
         catch { /* storage unavailable or corrupt — defaults are fine */ }
         _loaded = true;
     }
-
-    /// <summary>The results modal's lead button: race again in 1P, back to the lobby online.</summary>
-    protected Task ResultsPrimaryAsync() => IsMultiplayerMode ? BackToLobbyAsync() : RestartRaceAsync();
-
-    /// <summary>The results modal's second button: the campaign's next stage, once this race opened it.</summary>
-    protected Task ResultsNextStageAsync() => NextStageTrackId is { } next ? RaceTrackAsync(next) : Task.CompletedTask;
 
     /// <summary>The modal's cue: a win for a front-runner, a loss for a wreck, neutral otherwise
     /// (P40 of a hundred is not a defeat).</summary>
@@ -351,13 +330,6 @@ public partial class PoCabinetPageBase : ComponentBase, IAsyncDisposable
         _status = null;
         _phase = Phase.Loading;
         await InvokeAsync(StateHasChanged);
-    }
-
-    /// <summary>The results' "Next stage": race the campaign's next track straight away.</summary>
-    protected Task RaceTrackAsync(string trackId)
-    {
-        _trackId = trackId;
-        return RestartRaceAsync();
     }
 
     /// <summary>Online results: the lobby reopens after every race, so the rematch is there.</summary>
@@ -560,7 +532,7 @@ public partial class PoCabinetPageBase : ComponentBase, IAsyncDisposable
         }
         var canSubmit = loss.MaySubmit && !IsSpectating && !_submitted;
         var lap = _laps.BestValidLap > 0 ? _laps.BestValidLap : _laps.BestLapSession;
-        if (_phase is Phase.Finished or Phase.Replay)
+        if (_phase == Phase.Finished)
         {
             // The results are up and waiting on a RaceFinished that will never come.
             _awaitingFinal = false;
@@ -1091,34 +1063,6 @@ public partial class PoCabinetPageBase : ComponentBase, IAsyncDisposable
             try { await h.DisposeAsync(); } catch { /* already gone */ }
         }
         _envHandle = _minimapHandle = _dialogueHandle = _sceneHandle = null;
-    }
-
-    // ─── Replay ──────────────────────────────────────────────────────────────
-
-    protected async Task StartReplayAsync()
-    {
-        try
-        {
-            if (await JS.InvokeAsync<bool>("PoCabinet.startReplay")) _phase = Phase.Replay;
-            else _status = "Nothing was recorded to replay.";
-        }
-        catch (Exception ex)
-        {
-            _status = $"Replay unavailable: {ex.Message}";
-        }
-        await InvokeAsync(StateHasChanged);
-    }
-
-    [JSInvokable]
-    public Task OnReplayStateAsync(double t, double duration, bool playing, string camera, double speed) =>
-        _replayBar?.SetState(t, duration, playing, camera, speed) ?? Task.CompletedTask;
-
-    protected async Task ExitReplayAsync()
-    {
-        await SafeJsAsync("PoCabinet.stopReplay");
-        _phase = Phase.Finished;
-        _telemetryDrawn = false;
-        await InvokeAsync(StateHasChanged);
     }
 
     // ─── Settings ────────────────────────────────────────────────────────────

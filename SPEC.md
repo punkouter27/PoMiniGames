@@ -26,7 +26,7 @@ Two modes ship in v1:
    or the touch pad; the announcement bar always says which phase is running and how long is
    left.
 3. **Finish.** After month 12 the standings grid shows final Net Worth, the First Founder and
-   the colony grade. The shared end modal offers Play Again and Home. If signed in, the score
+   the colony grade. The shared end modal has one button, Back to main menu. If signed in, the score
    is posted; if offline, it is parked and sent later.
 4. **Watch.** Demo mode plays without input at 4× speed by default (buttons switch between
    1×, 2×, 4×, 8× and 16×). Any key or

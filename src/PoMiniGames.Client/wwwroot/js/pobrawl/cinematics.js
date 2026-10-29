@@ -176,7 +176,7 @@ class CinematicsMethods {
       }).catch(() => {});
     }
     this._show('result', { winner: this.winner, ko: this.fighters.some((f) => f.state === 'ko') });
-    // The Full-show shatter and pyro, and the KO clip.
+    // The Full-show shatter and pyro.
     this._presentResult();
   }
 

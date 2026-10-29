@@ -42,10 +42,11 @@
             <GameIntro CueScope="pobrawl-cup"
                        Title="@TitleContent"
                        Objective="Eight presidents, seven bouts, one belt. The CPU fights every bout — you watch the bracket play out."
-                       Controls="@HowItWorks"
+                       HowToPlay="@HowItWorks"
                        Mode="GameIntro.IntroMode.Demo"
                        DemoDelayMs="4000"
                        Options="@DrawPreview"
+                       Wide="true"
                        DialogLabel="Brawl Cup: a CPU knockout"
                        CaptureKeys="false"
                        OnStart="StartAsync" />
@@ -260,14 +261,10 @@
         }
     </div>;
 
-    private RenderFragment HowItWorks => @<div>
-        <ul>
-            <li>🎲 Eight of the fifteen presidents, drawn into a random bracket</li>
-            <li>🥊 Three rounds of 60-second CPU bouts; a level bell goes to health, then hits</li>
-            <li>📈 Every result moves both fighters' Elo (K 24, the fighter board's maths)</li>
-            <li>⏩ 2× or 4× fast-forwards; 🗂 Bracket opens beside the ring any time</li>
-        </ul>
-    </div>;
+    private static RenderFragment HowItWorks => @<ul>
+        <li>🎲 Eight of the fifteen presidents in a random bracket, three 60-second CPU rounds a bout</li>
+        <li>📈 Every result moves both fighters' Elo · ⏩ 2×/4× and 🗂 Bracket on the arena's bar</li>
+    </ul>;
 
     private RenderFragment DrawPreview => @<div class="pt-draw">
         <div class="pt-draw-head">
@@ -669,10 +666,6 @@
     /// <summary>No training room here; the engine still reports it on every spawn.</summary>
     [JSInvokable]
     public void OnTrainingState(bool active) { }
-
-    /// <summary>The KO clip is off in tournament mode; kept so the engine's call always binds.</summary>
-    [JSInvokable]
-    public void OnClipReady() { }
 
     /// <param name="winner">1 = left corner, 2 = right; tournament mode never reports a draw.</param>
     [JSInvokable]

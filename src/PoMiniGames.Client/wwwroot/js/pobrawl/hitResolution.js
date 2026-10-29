@@ -740,12 +740,10 @@ class HitResolutionMethods {
         this._pressBurst(10);
         // The body reaches the mat ~0.55 s into the slow-mo fall (game.js
         // _updateMatWear: dust and a scrape); every human's pad gets the long
-        // KO rumble; the clip recorder stops recycling so the lead-up to the
-        // finishing blow is kept.
+        // KO rumble.
         this._koDust = loser ? { t: 0.55, fighter: loser } : null;
         // The thud borrows past impactBus's duty cap (priority) — it is the one long effect.
         for (const f of this.fighters) this._rumble(f, 1, 0.8, 650, { priority: true, phone: [70, 40, 240] });
-        this.clip?.freeze();
 
         // The KO limelight stays disarmed: with the house lights up it is
         // just a blown-out hotspot.

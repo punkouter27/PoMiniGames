@@ -34,9 +34,10 @@
                            Title="@TitleContent"
                            Objective="@IntroObjective"
                            Controls="@ControlsContent"
+                           HowToPlay="@TipsContent"
                            Options="@(_mode == RaceMode.Solo ? SoloSetup : StartError)"
                            Mode="@(_isDemo ? GameIntro.IntroMode.Demo : GameIntro.IntroMode.OnePlayer)"
-                           StartLabel="@IntroStartLabel"
+                           Wide="@(_mode == RaceMode.Solo)"
                            OnStart="OnIntroStartAsync" />
             </div>
         }
@@ -131,12 +132,18 @@
     private static RenderFragment TitleContent => GameCatalog.TitleFor(GameKeys.PoRacer);
     private RenderFragment SummaryContent => @<PoRacerResults Result="_result" Roster="_roster" PlayerId="_localCarId"
         Track="@PoRacerCatalog.GetTrack(_raceTrackId)" PreviousBest="_previousBest" IsTrial="_raceTrial"
-        SubmitStatus="@_submitStatus" Retry="SubmitScoreAsync" />;
+        SubmitStatus="@_submitStatus" />;
     // Each track has its own board (UnifiedLeaderboardEndpoints): the oval keeps the original
     // "poracer" key, the other two are "poracer-{trackId}". The results' Top 3 is the raced track's.
     private string BoardKey => _raceTrackId == PoRacerCatalog.DefaultTrackId ? "poracer" : "poracer-" + _raceTrackId;
 
     private RenderFragment ControlsContent => @<PoRacerControls />;
+
+    // The racing craft, behind the start card's How to play tab (the card's controls hide it).
+    private static RenderFragment TipsContent => @<ul>
+        <li>Hold Drift through a bend and let go for a boost.</li>
+        <li>Tuck in behind a car for a tow; arrows on the road are boost pads.</li>
+    </ul>;
 
     // The solo race's choices, in the card's Options slot. .racer-card keeps them on the
     // Racer palette (the track cards and paint chips are drawn for a dark panel).
