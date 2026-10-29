@@ -83,7 +83,7 @@
          Jev allowance and match-registry TTL tests. Unit tier only; nothing reaches WASM. -->
     <PackageVersion Include="Verify.Xunit" Version="31.12.5" />
     <PackageVersion Include="Microsoft.Extensions.TimeProvider.Testing" Version="10.7.0" />
-    <PackageVersion Include="coverlet.collector" Version="6.0.4" />
+    <PackageVersion Include="coverlet.collector" Version="10.1.0" />
     <PackageVersion Include="Microsoft.AspNetCore.Mvc.Testing" Version="10.0.13" />
     <PackageVersion Include="Microsoft.Playwright" Version="1.50.0" />
     <!-- Testcontainers v4 with the dedicated Azurite module. -->
