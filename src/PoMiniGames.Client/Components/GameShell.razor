@@ -20,8 +20,9 @@
             <h1 class="gps-game-title">@Title</h1>
         }
 
-        @* Per-game options (difficulty, mode, online): a gear beside the title that opens
-           a side drawer, the same kind of sheet Settings is. Only for a page that passes
+        @* Per-game mid-match options (mode, online): a gear beside the title that opens
+           a side drawer, the same kind of sheet Settings is. Difficulty belongs on the
+           start card (GameIntro Options), not here. Only for a page that passes
            OptionsContent; every other game's header is unchanged. *@
         @if (OptionsContent != null)
         {
@@ -212,7 +213,8 @@
     [Parameter] public string? LoadingLabel { get; set; }
 
     /// <summary>
-    /// The game's own options (difficulty, mode, online). When set, a gear appears beside
+    /// The game's mid-match options (mode, online). Difficulty is picked on the start card
+    /// through <see cref="GameIntro.Options"/> instead. When set, a gear appears beside
     /// the title in the top bar and opens them in a side drawer, like the Settings sheet.
     /// Null, the default, renders no gear.
     /// </summary>

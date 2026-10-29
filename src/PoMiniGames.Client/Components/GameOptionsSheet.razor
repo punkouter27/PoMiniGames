@@ -4,7 +4,9 @@
 @implements IDisposable
 
 @*
-    A game's own options (difficulty, mode, online) in a side drawer. It opens the way the
+    A game's mid-match options (mode, online) in a side drawer. Difficulty is not one of
+    them: it is chosen before play, in GameIntro's Options slot on the start card (see
+    PoRacer's Pace), never here or in Settings. It opens the way the
     Settings sheet does: a native modal <dialog> pinned to the right edge on a wide window
     and a bottom sheet on a phone, so it has the focus trap, Esc and the inert page behind
     for free. GameShell renders it, and a gear button to open it, only for a page that
