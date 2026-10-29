@@ -10,33 +10,33 @@
     <!-- Radzen: PoMule is the first screen built on it; the rest of the shell migrates
          later. Its net10.0 build needs Microsoft.AspNetCore.Components >= 10.0.12, which
          is why the ASP.NET 10.0.x pins below moved together. -->
-    <PackageVersion Include="Radzen.Blazor" Version="12.0.5" />
+    <PackageVersion Include="Radzen.Blazor" Version="12.1.8" />
     <!-- Azure -->
-    <PackageVersion Include="Azure.Identity" Version="1.19.0" />
-    <PackageVersion Include="Azure.Extensions.AspNetCore.Configuration.Secrets" Version="1.5.0" />
-    <PackageVersion Include="Azure.Monitor.OpenTelemetry.AspNetCore" Version="1.4.0" />
+    <PackageVersion Include="Azure.Identity" Version="1.21.0" />
+    <PackageVersion Include="Azure.Extensions.AspNetCore.Configuration.Secrets" Version="1.5.2" />
+    <PackageVersion Include="Azure.Monitor.OpenTelemetry.AspNetCore" Version="1.6.0" />
     <!-- Transitive security pin: Azure.Monitor 1.4.0 drags in OpenTelemetry.Api 1.14.0,
          which has GHSA-g94r-2vxg-569j (moderate). Pin the patched line. -->
     <PackageVersion Include="OpenTelemetry.Api" Version="1.16.0" />
-    <PackageVersion Include="Azure.Data.Tables" Version="12.11.0" />
-    <PackageVersion Include="Azure.Storage.Blobs" Version="12.23.0" />
+    <PackageVersion Include="Azure.Data.Tables" Version="12.13.0" />
+    <PackageVersion Include="Azure.Storage.Blobs" Version="12.30.1" />
     <!-- API -->
-    <PackageVersion Include="Microsoft.AspNetCore.Authentication.JwtBearer" Version="10.0.13" />
-    <PackageVersion Include="Microsoft.AspNetCore.OpenApi" Version="10.0.13" />
+    <PackageVersion Include="Microsoft.AspNetCore.Authentication.JwtBearer" Version="10.0.14" />
+    <PackageVersion Include="Microsoft.AspNetCore.OpenApi" Version="10.0.14" />
     <!-- Native .NET 10 resilience pipelines (retry / circuit-breaker / timeout
          / hedging) backed by Polly v8, registered via IHttpClientFactory. -->
-    <PackageVersion Include="Microsoft.Extensions.Http.Resilience" Version="10.7.0" />
-    <PackageVersion Include="Microsoft.Extensions.Configuration.Abstractions" Version="10.0.13" />
-    <PackageVersion Include="Microsoft.Extensions.Diagnostics.HealthChecks" Version="10.0.13" />
+    <PackageVersion Include="Microsoft.Extensions.Http.Resilience" Version="10.11.0" />
+    <PackageVersion Include="Microsoft.Extensions.Configuration.Abstractions" Version="10.0.14" />
+    <PackageVersion Include="Microsoft.Extensions.Diagnostics.HealthChecks" Version="10.0.14" />
     <!-- Native HybridCache (stampede protection + L1/L2). Memoizes expensive
          Azure OpenAI generations at the slice boundary. -->
-    <PackageVersion Include="Microsoft.Extensions.Caching.Hybrid" Version="10.7.0" />
+    <PackageVersion Include="Microsoft.Extensions.Caching.Hybrid" Version="10.11.0" />
     <!-- Transitive pin: Microsoft.AspNetCore.OpenApi pulls Microsoft.OpenApi; with
          CentralPackageTransitivePinningEnabled this holds it at a current version so
          the NuGet CVE audit (which fails the build) can't be tripped by an old
          transitive. No project references it directly. -->
     <PackageVersion Include="Microsoft.OpenApi" Version="2.12.2" />
-    <PackageVersion Include="Scalar.AspNetCore" Version="2.13.10" />
+    <PackageVersion Include="Scalar.AspNetCore" Version="2.18.5" />
     <!-- IdentityModel — security-pinned transitive deps (CVE mitigation, upgrade from 8.0.1) -->
     <PackageVersion Include="Microsoft.IdentityModel.Abstractions" Version="8.19.2" />
     <PackageVersion Include="Microsoft.IdentityModel.JsonWebTokens" Version="8.19.2" />
@@ -54,14 +54,14 @@
     <!-- Blazor WASM -->
     <PackageVersion Include="Microsoft.AspNetCore.Components.WebAssembly.Server" Version="10.0.13" />
     <PackageVersion Include="Microsoft.AspNetCore.Components.WebAssembly" Version="10.0.13" />
-    <PackageVersion Include="Microsoft.AspNetCore.Components.WebAssembly.DevServer" Version="10.0.13" />
-    <PackageVersion Include="Microsoft.AspNetCore.SignalR.Client" Version="10.0.13" />
+    <PackageVersion Include="Microsoft.AspNetCore.Components.WebAssembly.DevServer" Version="10.0.14" />
+    <PackageVersion Include="Microsoft.AspNetCore.SignalR.Client" Version="10.0.14" />
     <!-- AuthenticationStateProvider + AuthorizeRouteView. Not transitively
          included by the WASM metapackage in .NET 10. -->
     <PackageVersion Include="Microsoft.AspNetCore.Components.Authorization" Version="10.0.13" />
     <!-- AI (server-side calls to Azure AI Foundry through Microsoft.Extensions.AI) -->
-    <PackageVersion Include="Microsoft.Extensions.AI" Version="10.5.2" />
-    <PackageVersion Include="Microsoft.Extensions.AI.OpenAI" Version="10.5.2" />
+    <PackageVersion Include="Microsoft.Extensions.AI" Version="10.11.0" />
+    <PackageVersion Include="Microsoft.Extensions.AI.OpenAI" Version="10.11.0" />
     <!-- Must stay compatible with the OpenAI version Microsoft.Extensions.AI.OpenAI pulls in
          (10.5.2 → OpenAI 2.10.0). NuGet unifies OpenAI to the highest requested version, so the
          GA Azure.AI.OpenAI 2.1.0 — built against OpenAI 2.1.0 — bound against 2.10.0 at runtime
@@ -71,23 +71,23 @@
     <PackageVersion Include="Azure.AI.OpenAI" Version="2.9.0-beta.1" />
     <!-- PoVoxelStrike asset pipeline: GLB parsing for the startup voxelizer. API-side
          only — must never be referenced from the Client, whose publish is trim-audited. -->
-    <PackageVersion Include="SharpGLTF.Core" Version="1.0.6" />
-    <PackageVersion Include="QRCoder" Version="1.8.0" />
+    <PackageVersion Include="SharpGLTF.Core" Version="1.0.7" />
+    <PackageVersion Include="QRCoder" Version="1.8.1" />
     <!-- Testing -->
     <PackageVersion Include="Microsoft.NET.Test.Sdk" Version="17.14.1" />
     <PackageVersion Include="xunit" Version="2.9.3" />
-    <PackageVersion Include="xunit.runner.visualstudio" Version="3.1.4" />
-    <PackageVersion Include="FluentAssertions" Version="8.8.0" />
+    <PackageVersion Include="xunit.runner.visualstudio" Version="3.1.5" />
+    <PackageVersion Include="FluentAssertions" Version="8.11.0" />
     <!-- PoJevArena: Verify pins the exact state/question text Jev is shown (a
          wording change is a behaviour change for the model); FakeTimeProvider drives the daily
          Jev allowance and match-registry TTL tests. Unit tier only; nothing reaches WASM. -->
     <PackageVersion Include="Verify.Xunit" Version="31.12.5" />
-    <PackageVersion Include="Microsoft.Extensions.TimeProvider.Testing" Version="10.7.0" />
+    <PackageVersion Include="Microsoft.Extensions.TimeProvider.Testing" Version="10.11.0" />
     <PackageVersion Include="coverlet.collector" Version="6.0.4" />
     <PackageVersion Include="Microsoft.AspNetCore.Mvc.Testing" Version="10.0.13" />
-    <PackageVersion Include="Microsoft.Playwright" Version="1.50.0" />
+    <PackageVersion Include="Microsoft.Playwright" Version="1.64.1" />
     <!-- Testcontainers v4 with the dedicated Azurite module. -->
-    <PackageVersion Include="Testcontainers.Azurite" Version="4.12.0" />
+    <PackageVersion Include="Testcontainers.Azurite" Version="4.16.0" />
     <!-- Transitive security pin: Testcontainers 4.12.0 drags in SSH.NET 2025.1.0
          (High). Pin the patched line. Nothing references SSH.NET directly — it
          exists only inside Testcontainers' Docker plumbing in the test tiers. -->
@@ -96,6 +96,6 @@
          produces a SemVer 2.0 version (e.g. v1.4.0 + 3 commits → 1.4.4-alpha.0.3).
          Version flows into AssemblyVersion, FileVersion, and InformationalVersion
          via Directory.Build.props so every project gets it for free. -->
-    <PackageVersion Include="MinVer" Version="6.0.0" />
+    <PackageVersion Include="MinVer" Version="6.1.0" />
   </ItemGroup>
 </Project>
