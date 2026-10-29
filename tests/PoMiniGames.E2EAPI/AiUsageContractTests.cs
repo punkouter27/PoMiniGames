@@ -24,8 +24,8 @@ namespace PoMiniGames.E2EAPI;
 /// Deliberately asserts the <em>shape and reachability</em> rather than any usage figures: nothing
 /// here calls a model (<see cref="TestBudgetGuard"/> exists to guarantee that), so the counters are
 /// legitimately empty. What matters is that the surface answers, that it reports configuration
-/// truthfully, and that it reports the caller's own budget — which is the part a player hitting the
-/// ceiling needs in order to be told why.
+/// truthfully, that it reports the caller's own budget — which is the part a player hitting the
+/// ceiling needs in order to be told why — and that only operators see the cross-player figures.
 /// </para>
 /// <para>
 /// Two methods: the E2E-API tier is capped at 25 by the 100/50/25/25 rule and both hermetic tiers
@@ -34,6 +34,10 @@ namespace PoMiniGames.E2EAPI;
 /// </remarks>
 public sealed class AiUsageContractTests
 {
+    // Mirrors DiagEndpoints.AiUsageAdminsKey (internal to the API assembly).
+    private const string AiUsageAdminsKey = "PoMiniGames:Diag:AiUsageAdmins";
+    private const string AdminUser = "ai-usage-admin";
+
     private sealed class UsageFactory : WebApplicationFactory<Program>
     {
         private readonly bool _configured;
@@ -49,7 +53,7 @@ public sealed class AiUsageContractTests
             {
                 var overrides = new Dictionary<string, string?>(TestBudgetGuard.Overrides)
                 {
-                    ["Auth:EnableFakeAuth"] = "true",
+                    [$"{AiUsageAdminsKey}:0"] = AdminUser,
                 };
 
                 if (_configured)
@@ -69,9 +73,32 @@ public sealed class AiUsageContractTests
     public async Task AiUsage_ReportsConfigurationAndTheCallersOwnBudget()
     {
         using var factory = new UsageFactory(configured: true);
-        using var client = factory.CreateClient();
+
         // Outside Development the report is for signed-in callers only.
-        client.DefaultRequestHeaders.Add(FakeAuthHandler.UserHeader, "ai-usage-test");
+        using (var anonymous = factory.CreateClient())
+        {
+            (await anonymous.GetAsync("/api/diag/ai")).StatusCode.Should().Be(HttpStatusCode.Unauthorized);
+        }
+
+        // A signed-in player who is not an operator gets their own budget and nothing that
+        // covers other players: no per-game spend, no deployment names.
+        using (var player = factory.CreateClient())
+        {
+            player.DefaultRequestHeaders.Add(FakeAuthHandler.UserHeader, "ai-usage-player");
+            var playerResponse = await player.GetAsync("/api/diag/ai");
+            playerResponse.StatusCode.Should().Be(HttpStatusCode.OK);
+
+            using var playerDoc = JsonDocument.Parse(await playerResponse.Content.ReadAsStringAsync());
+            var playerRoot = playerDoc.RootElement;
+            playerRoot.GetProperty("configured").GetBoolean().Should().BeTrue();
+            playerRoot.GetProperty("aggregates").GetBoolean().Should().BeFalse();
+            playerRoot.GetProperty("defaultDeployment").ValueKind.Should().Be(JsonValueKind.Null);
+            playerRoot.GetProperty("games").GetArrayLength().Should().Be(0);
+            playerRoot.GetProperty("budget").GetProperty("allowed").GetBoolean().Should().BeTrue();
+        }
+
+        using var client = factory.CreateClient();
+        client.DefaultRequestHeaders.Add(FakeAuthHandler.UserHeader, AdminUser);
 
         var response = await client.GetAsync("/api/diag/ai");
         response.StatusCode.Should().Be(HttpStatusCode.OK);
@@ -80,6 +107,7 @@ public sealed class AiUsageContractTests
         var root = doc.RootElement;
 
         root.GetProperty("configured").GetBoolean().Should().BeTrue();
+        root.GetProperty("aggregates").GetBoolean().Should().BeTrue();
         root.GetProperty("defaultDeployment").GetString().Should().Be("stub-default");
 
         // No embedding deployment is set, and the report must say so rather than omit it — that is

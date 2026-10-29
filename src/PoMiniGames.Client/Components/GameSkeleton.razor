@@ -1,0 +1,19 @@
+@namespace PoMiniGamesClient.Components
+
+@*
+    The placeholder a game area shows while its engine loads. GameShell lays it over the
+    game area (absolute, inset 0) rather than in place of the game, so the engine's
+    container is already in the DOM at its final size: the skeleton fills exactly the
+    stage the canvas will take, and nothing moves when it goes away.
+
+    Hidden from assistive technology; the label is the one thing read out.
+*@
+<div class="game-skeleton" role="status" aria-live="polite">
+    <div class="game-skeleton__stage skeleton" aria-hidden="true"></div>
+    <span class="game-skeleton__label">@Label</span>
+</div>
+
+@code {
+    /// <summary>The words under the shimmer, also read by screen readers.</summary>
+    [Parameter] public string Label { get; set; } = "Loading game…";
+}

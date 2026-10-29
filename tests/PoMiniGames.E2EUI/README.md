@@ -14,6 +14,10 @@ the rendered Blazor WASM UI.
 
 - **`HomePageUiTests`** — launches headless Chromium, navigates to `/`, waits for
   network idle, and asserts the WASM client booted (title + `#app` content).
+- **`LinkAuditUiTests`** — visits every route in `GameCatalog.All` plus the main
+  pages in one session (SPA navigation), and fails on "Page not found", the error
+  boundary or error bar, a same-origin asset 404, a layout shift over 0.25 (CLS via
+  `PerformanceObserver`), or sideways scroll on a main page at phone width.
 
 ## Prerequisites
 

@@ -11,45 +11,27 @@
 }
 
 /* ── Head ────────────────────────────────────────────────────────────────────
-   Title and the period switch on the first line; a meta line (board count, the
-   player's best-placing chip) that holds its height from the first paint, so the
-   skeleton → content swap moves nothing. Wide screens fold both onto one line. */
+   The title, then a meta line (board count, the player's best-placing chip) that
+   holds its height from the first paint, so the skeleton → content swap moves
+   nothing. Wide screens fold both onto one line. */
 .lb-head {
     display: grid;
     grid-template-columns: minmax(0, 1fr);
     grid-template-areas:
         "title"
-        "period"
         "meta";
     align-items: center;
     gap: var(--space-2) var(--space-3);
-    margin-bottom: var(--space-3);
-}
-
-/* A 360px phone cannot hold the title and both period buttons on one line. */
-@media (min-width: 561px) {
-    .lb-head {
-        grid-template-columns: minmax(0, 1fr) auto;
-        grid-template-areas:
-            "title period"
-            "meta  meta";
-    }
+    margin-bottom: var(--space-2);
 }
 
 .lb-title { grid-area: title; }
-.lb-period { grid-area: period; justify-self: start; }
-
-@media (min-width: 561px) and (max-width: 899px) {
-    .lb-period { justify-self: end; }
-}
 
 /* On a phone the chip takes the meta line alone, so the line never wraps to two
-   when it arrives; the board count is in the picker anyway. */
+   when it arrives. */
 @media (max-width: 560px) {
     .lb-meta:has(.lb-me-chip) .lb-count { display: none; }
 }
-
-.lb-period .app-seg__btn { min-height: 40px; }
 
 .lb-meta {
     grid-area: meta;
@@ -61,12 +43,95 @@
     min-height: 40px;
 }
 
-@media (min-width: 900px) {
+@media (min-width: 561px) {
     .lb-head {
-        grid-template-columns: auto auto minmax(0, 1fr);
-        grid-template-areas: "title period meta";
+        grid-template-columns: auto minmax(0, 1fr);
+        grid-template-areas: "title meta";
     }
     .lb-meta { justify-content: flex-end; }
+}
+
+/* ── Toolbar ─────────────────────────────────────────────────────────────────
+   Board picker, period and player search on one row (Radzen). Radzen's one theme is
+   dark; its variables are re-pointed at the app tokens here so it follows the light
+   scheme too. The row's height is reserved, so the controls arriving with the theme move nothing. */
+.lb-toolbar {
+    --rz-text-color: var(--color-text-primary);
+    --rz-text-secondary-color: var(--color-text-secondary);
+    --rz-base-background-color: var(--color-surface);
+    --rz-primary: var(--color-accent);
+    --rz-on-primary: #fff;
+    --rz-input-background-color: var(--color-surface);
+    --rz-input-value-color: var(--color-text-primary);
+    --rz-input-placeholder-color: var(--color-text-secondary);
+    --rz-input-border: 1px solid var(--color-border);
+    --rz-input-hover-border: 1px solid var(--color-border-strong, var(--color-border));
+    --rz-input-focus-border: 1px solid var(--color-accent);
+    --rz-input-border-radius: var(--radius-md);
+    --rz-input-height: 40px;
+    --rz-panel-background-color: var(--color-surface);
+    --rz-dropdown-item-hover-background-color: var(--tint-soft);
+    --rz-dropdown-item-hover-color: var(--color-text-primary);
+    --rz-dropdown-item-selected-background-color: var(--accent-soft);
+    --rz-dropdown-item-selected-color: var(--color-text-primary);
+    --rz-selectbar-background-color: var(--surface-2, var(--tint-subtle));
+    --rz-selectbar-color: var(--color-text-secondary);
+    --rz-selectbar-border: 1px solid var(--color-border);
+    --rz-selectbar-selected-background-color: var(--color-accent);
+    --rz-selectbar-selected-color: #fff;
+    --rz-selectbar-selected-border: 1px solid var(--color-accent);
+    display: grid;
+    grid-template-columns: minmax(0, 1.4fr) auto minmax(0, 1fr);
+    align-items: center;
+    gap: var(--space-2);
+    min-height: 40px;
+    margin-bottom: var(--space-3);
+}
+
+.lb-toolbar ::deep .lb-tb-game,
+.lb-toolbar ::deep .lb-tb-search {
+    width: 100%;
+    min-width: 0;
+    height: 40px;
+}
+
+.lb-toolbar ::deep .lb-tb-period { flex-wrap: nowrap; }
+
+.lb-toolbar ::deep .lb-tb-period .rz-button {
+    min-height: 40px;
+    white-space: nowrap;
+}
+
+.lb-tb-opt {
+    display: flex;
+    align-items: baseline;
+    gap: var(--space-2);
+    min-width: 0;
+}
+
+.lb-tb-opt-group {
+    flex: 0 0 auto;
+    font-size: var(--text-xs);
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    color: var(--color-text-secondary);
+}
+
+.lb-tb-opt-name {
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+/* A phone: the picker takes the first line, period and search share the second. */
+@media (max-width: 560px) {
+    .lb-toolbar {
+        grid-template-columns: auto minmax(0, 1fr);
+        min-height: calc(80px + var(--space-2));
+    }
+    .lb-toolbar ::deep .lb-tb-game { grid-column: 1 / -1; }
 }
 
 /* The player's best placing: a compact chip that opens that board. Token colours
@@ -114,97 +179,27 @@
 }
 
 /* Keyboard focus, for every control on the page that is not a shared .app-* one. */
-.lb-me-chip:focus-visible,
-.lb-pick-item:focus-visible,
-.lb-select:focus-visible {
+.lb-me-chip:focus-visible {
     outline: 2px solid var(--accent-ring, var(--color-accent, #6366f1));
     outline-offset: 2px;
 }
 
-/* ── Picker + board ──────────────────────────────────────────────────────────
-   Wide: a side list of every board beside the one that is selected. Narrow: the
-   same list as a native <select> above it. Both are in the DOM and CSS picks,
-   so nothing shifts after load. */
+/* ── Board ───────────────────────────────────────────────────────────────────
+   One board at a time, picked in the toolbar. */
 .lb-layout {
     display: grid;
-    grid-template-columns: 15rem minmax(0, 1fr);
-    gap: var(--space-4);
-    align-items: start;
-}
-
-.lb-select { display: none; }
-
-.lb-pick {
-    display: flex;
-    flex-direction: column;
-    gap: 2px;
-}
-
-.lb-pick .gps-phase-h {
-    margin: var(--space-2) 0 var(--space-1);
-}
-
-.lb-pick .gps-phase-h:first-child { margin-top: 0; }
-
-.lb-pick-item {
-    appearance: none;
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
+    grid-template-columns: minmax(0, 1fr);
     gap: var(--space-2);
-    padding: 0.4rem 0.65rem;
-    border: 1px solid transparent;
-    border-radius: var(--radius-md);
-    background: transparent;
-    color: var(--color-text-secondary);
-    font: inherit;
-    font-size: var(--text-sm);
-    text-align: left;
-    cursor: pointer;
 }
 
-.lb-pick-item:hover {
-    background: var(--tint-soft);
-    color: var(--color-text-primary);
-}
-
-.lb-pick-item--on {
-    border-color: var(--color-accent, #6366f1);
-    background: var(--accent-soft);
-    color: var(--color-text-primary);
-    font-weight: 600;
-}
-
-.lb-pick-name {
-    min-width: 0;
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
-}
-
-/* The player's rank on that board, so every board they are on shows at a glance. */
+/* The player's rank on a board, beside its name in the picker. */
 .lb-pick-rank {
     flex: 0 0 auto;
+    margin-left: auto;
     font-size: var(--text-xs);
     font-weight: 700;
     font-variant-numeric: tabular-nums;
     color: var(--accent-ink);
-}
-
-@media (max-width: 640px) {
-    .lb-layout { grid-template-columns: minmax(0, 1fr); gap: var(--space-2); }
-    .lb-pick { display: none; }
-    .lb-select {
-        display: block;
-        width: 100%;
-        min-height: 44px;
-        padding: 0 var(--space-3);
-        border: 1px solid var(--color-border);
-        border-radius: var(--radius-md);
-        background: var(--color-surface);
-        color: var(--color-text-primary);
-        font: inherit;
-    }
 }
 
 @media (max-height: 780px) {

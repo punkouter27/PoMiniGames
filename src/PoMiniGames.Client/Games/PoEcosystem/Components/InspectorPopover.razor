@@ -122,6 +122,17 @@
     private bool _renaming;
     private string _newName = "";
 
+    /// <summary>
+    /// A followed creature's detail lands up to sixteen times a second at 4×. The viewer pushes
+    /// it here so only this popover re-renders, not the viewer and its HUD; the viewer still
+    /// re-renders (and passes <see cref="Detail"/>) when the popover appears or goes.
+    /// </summary>
+    public void Push(EcoDetail detail)
+    {
+        Detail = detail;
+        _ = InvokeAsync(StateHasChanged);
+    }
+
     private string Colour => EcoSpeciesInfo.ColourOf(Detail.Species);
     private string Stage => Detail.LifeStage switch { 0 => "young", 2 => "old", _ => "adult" };
     private string Sex => Detail.Sex == 1 ? "♀" : "♂";

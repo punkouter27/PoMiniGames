@@ -926,6 +926,7 @@ export class Game {
       // The rolling bed rides the marble on camera (not the leader) and what it is touching.
       const rolling = this._lastFocus || leaderNow;
       this.audio.updateBeds(rolling ? rolling.speed : 0, nearFinish, this.phase === 'racing', this._surface);
+      this.audio.updateRivals(this.scene.camera, this.marbleSet.marbles, rolling, this.phase === 'racing');
 
       // #3 — FINAL STRETCH grade. Deliberately keyed off the same 0.86 leader-progress threshold
       // the HUD's own "🏁 FINAL STRETCH" klaxon uses (PoMarbleRacePage.razor), so the screen and
@@ -1255,6 +1256,7 @@ export class Game {
     const nearFinish = Math.pow(nearRaw, 0.6);
     const rolling = this._lastFocus || leaderNow;
     this.audio.updateBeds(rolling ? rolling.speed : 0, nearFinish, true, this._surfaceOf(rolling, dt));
+    this.audio.updateRivals(this.scene.camera, this.marbleSet.marbles, rolling, true);
     this._setGrade(this.marbleSet.progress() >= 0.86 ? 'final' : 'racing');
 
     const focus = this._pickShot(order);

@@ -189,3 +189,29 @@
         max-width: none;
     }
 }
+
+/* ── Build-date stamp ────────────────────────────────────────────────────────
+   Bottom-right, faint, out of the pointer's way. Off on game pages: a page that holds a
+   GameShell (.gps-shell) has controls in its corners, so the stamp only shows on the
+   hub, the profile, the boards and the other non-game pages. */
+.gl-build-stamp {
+    position: fixed;
+    right: calc(0.4rem + env(safe-area-inset-right, 0px));
+    bottom: calc(0.25rem + env(safe-area-inset-bottom, 0px));
+    z-index: 1;
+    font-size: 0.625rem;
+    font-variant-numeric: tabular-nums;
+    letter-spacing: 0.04em;
+    color: var(--color-text-secondary);
+    opacity: 0.45;
+    pointer-events: none;
+    user-select: none;
+}
+
+.gl-page:has(.gps-shell) .gl-build-stamp {
+    display: none;
+}
+
+@media print {
+    .gl-build-stamp { display: none; }
+}

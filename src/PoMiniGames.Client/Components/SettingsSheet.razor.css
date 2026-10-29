@@ -286,3 +286,52 @@
 @media (prefers-reduced-motion: reduce) {
     .prefs-sheet[open] { animation: none; }
 }
+
+/* ── Advanced (collapsed <details>) ──
+   The summary reads as a quiet row with a chevron; the fieldset inside is an ordinary
+   section card once it is open. */
+.prefs-advanced-summary {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    min-height: 2.75rem;
+    padding: var(--space-2) var(--space-3);
+    border: 1px solid var(--color-border);
+    border-radius: var(--radius-md);
+    background: var(--surface-1);
+    color: var(--color-text-secondary);
+    font-size: var(--text-xs);
+    font-weight: 700;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    cursor: pointer;
+    list-style: none;
+}
+
+.prefs-advanced-summary::-webkit-details-marker {
+    display: none;
+}
+
+.prefs-advanced-summary::after {
+    content: "▾";
+    font-size: var(--text-sm);
+    transition: transform var(--dur-fast) var(--ease-standard);
+}
+
+.prefs-advanced[open] > .prefs-advanced-summary::after {
+    transform: rotate(180deg);
+}
+
+.prefs-advanced-summary:hover {
+    background: var(--surface-3);
+    color: var(--color-text-primary);
+}
+
+.prefs-advanced-summary:focus-visible {
+    outline: 2px solid var(--accent-ring);
+    outline-offset: 2px;
+}
+
+.prefs-advanced[open] > .prefs-group--advanced {
+    margin-top: var(--space-2);
+}

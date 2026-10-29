@@ -14,6 +14,8 @@ namespace PoMiniGamesClient.Games.PoCabinet;
     UseStringEnumConverter = true)]
 [JsonSerializable(typeof(PoCabinetCareerDto))]
 [JsonSerializable(typeof(PoCabinetUiSettings))]
+// Solo race.js pushes the whole field as JSON on its first and last HUD tick (OnSoloSnapshotJsonAsync).
+[JsonSerializable(typeof(PoCabinetRaceSnapshot))]
 // Never serialized through this context: the page hands the static world to JS interop, which
 // reflects. PoMiniGames.Shared is trimmable, so a property only JS reads (CenterZ, FinishIndex,
 // HiddenFrom/To) would lose its getter in a Release publish; naming the type here roots them.

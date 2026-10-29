@@ -1,0 +1,45 @@
+/* The game-over sheet's lighting. The frosted glass itself (backdrop blur, the
+   theme-aware fill, the grain) is glass.css's `.gps-modal.gps-modal`; this adds the
+   two things that make it read as a pane catching a room light rather than a flat
+   translucent card:
+
+   1. a soft key light falling from the top-left, as a background-IMAGE only, so the
+      glass fill colour (light and dark scheme) stays glass.css's;
+   2. a gradient rim: bright on the lit top-left edge, fading out along the sides and
+      picking up the route accent on the far corner. A 1px ring cut out with a mask,
+      so it costs one static layer and no animation.
+
+   Static, so reduced motion needs nothing. The low tier hides ::before through
+   glass.css (`:root[data-gfx='low'] .gps-modal.gps-modal::before`), and a live glassFx
+   capture ([data-glass-live], fx.css) replaces the background but keeps the rim. */
+dialog.gps-modal {
+    background-image: radial-gradient(130% 70% at 0% 0%, rgba(255, 255, 255, 0.09), transparent 55%);
+}
+
+dialog.gps-modal::before {
+    content: '';
+    position: absolute;
+    inset: 0;
+    border-radius: inherit;
+    padding: 1px;
+    pointer-events: none;
+    background: linear-gradient(145deg,
+        rgba(255, 255, 255, 0.55),
+        rgba(255, 255, 255, 0.10) 32%,
+        transparent 58%,
+        color-mix(in srgb, var(--fx-accent, #60a5fa) 45%, transparent));
+    -webkit-mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0);
+    -webkit-mask-composite: xor;
+    mask: linear-gradient(#000 0 0) content-box exclude, linear-gradient(#000 0 0);
+}
+
+:root[data-gfx="low"] dialog.gps-modal {
+    background-image: none;
+}
+
+/* Less transparency asked for: no light painted over the text. */
+@media (prefers-reduced-transparency: reduce) {
+    dialog.gps-modal {
+        background-image: none;
+    }
+}

@@ -1,0 +1,71 @@
+@namespace PoMiniGamesClient.Components
+@inject IJSRuntime JS
+@inject NavigationManager Nav
+@implements IDisposable
+
+@*
+    A game's own options (difficulty, mode, online) in a side drawer. It opens the way the
+    Settings sheet does: a native modal <dialog> pinned to the right edge on a wide window
+    and a bottom sheet on a phone, so it has the focus trap, Esc and the inert page behind
+    for free. GameShell renders it, and a gear button to open it, only for a page that
+    passes OptionsContent.
+
+    It closes itself on navigation: a mode switch inside it changes the address, and a
+    dialog left in the top layer across a route change reads as a frozen page.
+*@
+
+<button type="button" class="game-opts-gear" aria-label="@Heading" title="@Heading"
+        aria-haspopup="dialog" @onclick="OpenAsync">
+    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
+         stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+        <circle cx="12" cy="12" r="3" />
+        <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 1 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 1 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 1 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 1 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z" />
+    </svg>
+</button>
+
+<dialog @ref="_dialog" class="game-opts-sheet" closedby="any" aria-labelledby="game-opts-title">
+    <header class="game-opts-head">
+        <h2 id="game-opts-title" class="game-opts-title">@Heading</h2>
+        <button type="button" class="game-opts-close" aria-label="Close game options" @onclick="CloseAsync">×</button>
+    </header>
+    <div class="game-opts-body">
+        @ChildContent
+    </div>
+</dialog>
+
+@code {
+    /// <summary>The page's option controls. Rendered inside the drawer.</summary>
+    [Parameter] public RenderFragment? ChildContent { get; set; }
+
+    /// <summary>The drawer's heading and the gear's accessible name.</summary>
+    [Parameter] public string Heading { get; set; } = "Game options";
+
+    private ElementReference _dialog;
+    private bool _open;
+
+    protected override void OnInitialized() => Nav.LocationChanged += OnLocationChanged;
+
+    private async Task OpenAsync()
+    {
+        _open = true;
+        await _dialog.ShowModalAloneAsync(JS);
+    }
+
+    private async Task CloseAsync()
+    {
+        _open = false;
+        await _dialog.CloseAsync(JS);
+    }
+
+    private void OnLocationChanged(object? sender, LocationChangedEventArgs e)
+    {
+        if (!_open) return;
+        _ = InvokeAsync(async () =>
+        {
+            try { await CloseAsync(); }
+            catch (JSDisconnectedException) { /* page torn down */ }
+        });
+    }
+
+    public void Dispose() => Nav.LocationChanged -= OnLocationChanged;
+}

@@ -10,12 +10,18 @@
 // start and an unconditional stop, an incoming counter that mounted before the
 // outgoing one disposed would be silently killed by its predecessor's stop and
 // the badge would stay blank until a full reload.
+//
+// Frames are counted here and reported to .NET once per ~500 ms window
+// (OnSample(frames, elapsedMs)) instead of one interop call per frame.
 
 (function () {
   let raf = 0;
   let last = 0;
   let dotnetRef = null;
   let owner = 0;
+  let frames = 0;
+  let elapsed = 0;
+  const WINDOW_MS = 500;
 
   function tick(now) {
     if (!dotnetRef) return;
@@ -23,7 +29,14 @@
       const delta = now - last;
       // Ignore giant gaps (tab was hidden) so the counter doesn't drop to 0.
       if (delta < 1000) {
-        try { dotnetRef.invokeMethodAsync('OnTick', delta); } catch { /* component gone */ }
+        frames++;
+        elapsed += delta;
+        if (elapsed >= WINDOW_MS) {
+          const f = frames, e = elapsed;
+          frames = 0;
+          elapsed = 0;
+          try { dotnetRef.invokeMethodAsync('OnSample', f, e); } catch { /* component gone */ }
+        }
       }
     }
     last = now;
@@ -35,6 +48,8 @@
       dotnetRef = ref;
       owner = token;
       last = 0;
+      frames = 0;
+      elapsed = 0;
       if (!raf) raf = requestAnimationFrame(tick);
     },
     // token omitted (or 0) means "stop regardless" — used by beforeunload.
@@ -45,6 +60,8 @@
       dotnetRef = null;
       owner = 0;
       last = 0;
+      frames = 0;
+      elapsed = 0;
     },
   };
 

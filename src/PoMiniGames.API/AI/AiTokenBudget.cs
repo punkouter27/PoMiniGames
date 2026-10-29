@@ -95,6 +95,13 @@ public sealed class AiTokenBudget
 
         /// <summary>Serialises hydration so concurrent first calls issue one read, not N.</summary>
         public readonly SemaphoreSlim HydrationLock = new(1, 1);
+
+        /// <summary>
+        /// Set (under the ledger lock) when <see cref="FlushAsync"/> evicts a stale, fully-flushed
+        /// ledger. A writer that fetched it just before the eviction sees this and takes a fresh one,
+        /// so no spend lands on an entry that is no longer in the dictionary.
+        /// </summary>
+        public bool Retired;
     }
 
     /// <summary>True when the ceiling is switched off entirely.</summary>
@@ -170,22 +177,32 @@ public sealed class AiTokenBudget
         if (IsUnlimited || tokens <= 0) return;
 
         var today = DateOnly.FromDateTime(_clock().UtcDateTime);
-        var ledger = _ledgers.GetOrAdd(identity, _ => new Ledger { Day = today });
-        lock (ledger)
+        while (true)
         {
-            if (ledger.Day != today)
+            var ledger = _ledgers.GetOrAdd(identity, _ => new Ledger { Day = today });
+            lock (ledger)
             {
-                // A new UTC day: the old day's total is gone from this ledger, but any unflushed
-                // delta still belongs to the day it was spent on, so it is flushed before the
-                // rollover by the flusher. Anything left here is re-attributed to the new day
-                // rather than dropped — over-charging the caller slightly is the safe direction.
-                ledger.Day = today;
-                ledger.Spent = 0;
-                ledger.Hydrated = false;
+                if (ledger.Retired) continue;
+                RecordLocked(ledger, today, tokens);
+                return;
             }
-            ledger.Spent += tokens;
-            ledger.PendingFlush += tokens;
         }
+    }
+
+    private static void RecordLocked(Ledger ledger, DateOnly today, long tokens)
+    {
+        if (ledger.Day != today)
+        {
+            // A new UTC day: the old day's total is gone from this ledger, but any unflushed
+            // delta still belongs to the day it was spent on, so it is flushed before the
+            // rollover by the flusher. Anything left here is re-attributed to the new day
+            // rather than dropped — over-charging the caller slightly is the safe direction.
+            ledger.Day = today;
+            ledger.Spent = 0;
+            ledger.Hydrated = false;
+        }
+        ledger.Spent += tokens;
+        ledger.PendingFlush += tokens;
     }
 
     /// <summary>Tokens spent by this identity so far today, as far as this process knows.</summary>
@@ -199,8 +216,23 @@ public sealed class AiTokenBudget
     {
         if (!_store.IsDurable || IsUnlimited) return;
 
+        var today = DateOnly.FromDateTime(_clock().UtcDateTime);
         foreach (var (identity, ledger) in _ledgers)
         {
+            // Evict a ledger left over from an earlier UTC day once nothing is waiting to be
+            // written: without this the dictionary grows by every identity that ever called.
+            // Retired is set under the ledger lock so a concurrent Record re-fetches instead of
+            // charging the evicted entry; the conditional remove only drops this exact instance.
+            lock (ledger)
+            {
+                if (ledger.Day < today && ledger.PendingFlush == 0)
+                {
+                    ledger.Retired = true;
+                    _ledgers.TryRemove(new KeyValuePair<string, Ledger>(identity, ledger));
+                    continue;
+                }
+            }
+
             long delta;
             DateOnly day;
             lock (ledger)

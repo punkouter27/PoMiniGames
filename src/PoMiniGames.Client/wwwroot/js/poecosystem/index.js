@@ -42,6 +42,15 @@ function ensureStyles() {
   document.head.appendChild(link);
 }
 
+// Whether a .NET panel that charts popHistory / traitHistory is open. Module-level, so it
+// outlives an engine restart; PoEcosystemInteropService dedups the calls that set it.
+let historyWanted = false;
+
+/** A typed array's bytes as a Uint8Array view (crosses to .NET as byte[]). */
+function bytesOf(typed) {
+  return new Uint8Array(typed.buffer, typed.byteOffset, typed.byteLength);
+}
+
 function createEngine(container, dotnetRef, opts) {
   const state = {
     container, dotnetRef, opts, host: null, mode: 'starting', ready: false, seed: null,
@@ -123,7 +132,16 @@ function createEngine(container, dotnetRef, opts) {
         state.audio.setDay(msg.stats.dayFraction, msg.stats.season ?? 0);
         feedMusic(msg.stats);
         state.renderer?.setStats(msg.stats);
-        invoke('OnStats', JSON.stringify({ ...msg.stats, popHistory: Array.from(msg.stats.popHistory), traitHistory: Array.from(msg.stats.traitHistory ?? []) }));
+        {
+          // The two histories are the bulk of a stats message (30 min of population, two
+          // hours of traits) and only the dashboard's timeline and evolution charts read
+          // them. They cross as raw bytes (Uint8Array → byte[], no JSON), and only while
+          // the page says a panel showing them is open (setHistoryWanted).
+          const { popHistory, traitHistory, ...rest } = msg.stats;
+          const pop = historyWanted && popHistory ? bytesOf(popHistory) : null;
+          const traits = historyWanted && traitHistory ? bytesOf(traitHistory) : null;
+          invoke('OnStats', JSON.stringify(rest), pop, traits);
+        }
         return;
       case 'lineage':
         invoke('OnLineage', msg.handle, msg.tree ? JSON.stringify(msg.tree) : null);
@@ -733,6 +751,7 @@ const PoEcosystem = {
     return true;
   },
   stop() { if (engine) { engine.stop(); engine = null; } },
+  setHistoryWanted: (on) => { historyWanted = !!on; },
   setSpeed: (s) => engine?.setSpeed(s),
   select: (h) => engine?.select(h),
   newWorld: (seed) => engine?.newWorld(seed),

@@ -1,3 +1,4 @@
+using PoMiniGames.Features.Integrity;
 using Microsoft.AspNetCore.SignalR;
 using PoMiniGames.Infrastructure;
 using PoMiniGames.Shared.Games;

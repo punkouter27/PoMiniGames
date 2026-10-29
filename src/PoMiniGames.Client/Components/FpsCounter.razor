@@ -1,4 +1,4 @@
-@implements IDisposable
+@implements IAsyncDisposable
 @inject IJSRuntime JSRuntime
 @inject IWebAssemblyHostEnvironment Env
 @inject NavigationManager Navigation
@@ -23,9 +23,8 @@
     private string _tier = "ok";
     private bool _hasReading;
     private bool _enabled;
-    private int _frames;
-    private double _elapsedMs;
     private DotNetObjectReference<FpsCounter>? _ref;
+    private IJSObjectReference? _module;
     private bool _running;
 
     protected override void OnInitialized()
@@ -53,7 +52,7 @@
         try
         {
             _running = true;
-            await JSRuntime.InvokeAsync<IJSObjectReference>("import", "./js/gl-fps.js");
+            _module ??= await JSRuntime.InvokeAsync<IJSObjectReference>("import", "./js/gl-fps.js");
             _ref ??= DotNetObjectReference.Create(this);
             await JSRuntime.InvokeVoidAsync("glFps.start", _ref, _token);
         }
@@ -65,15 +64,13 @@
         }
     }
 
+    // gl-fps.js counts frames itself and calls this once per ~500 ms window,
+    // not once per frame.
     [JSInvokable]
-    public void OnTick(double deltaMs)
+    public void OnSample(int frames, double elapsedMs)
     {
-        _frames++;
-        _elapsedMs += deltaMs;
-        if (_elapsedMs < 500) return;
-        var fps = Math.Round(_frames * 1000.0 / _elapsedMs);
-        _frames = 0;
-        _elapsedMs = 0;
+        if (frames <= 0 || elapsedMs <= 0) return;
+        var fps = Math.Round(frames * 1000.0 / elapsedMs);
         var next = $"{fps:0} FPS";
         var nextTier = fps >= 55 ? "ok" : fps >= 30 ? "warn" : "bad";
         if (next == _label && nextTier == _tier && _hasReading) return;
@@ -83,10 +80,16 @@
         InvokeAsync(StateHasChanged);
     }
 
-    public void Dispose()
+    public async ValueTask DisposeAsync()
     {
         _running = false;
-        try { JSRuntime.InvokeVoidAsync("glFps.stop", _token); } catch { }
+        try { await JSRuntime.InvokeVoidAsync("glFps.stop", _token); } catch { /* circuit or page gone */ }
         _ref?.Dispose();
+        _ref = null;
+        if (_module is not null)
+        {
+            try { await _module.DisposeAsync(); } catch (JSDisconnectedException) { }
+            _module = null;
+        }
     }
 }

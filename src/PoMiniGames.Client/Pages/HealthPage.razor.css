@@ -24,6 +24,19 @@
      rule written here. Change it there, not here. */
 }
 
+/* Room for about three checks, reserved before the report lands. */
+.hp-body {
+  min-height: 12rem;
+  display: flex;
+  flex-direction: column;
+}
+
+.hp-body > .app-loading { flex: 1; }
+
+@media (max-width: 640px) {
+  .hp-body { min-height: 22rem; }
+}
+
 .hp-head {
   display: flex;
   flex-wrap: wrap;

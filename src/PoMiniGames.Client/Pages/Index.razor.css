@@ -74,6 +74,13 @@
     .home-ambient { display: none; }
 }
 
+/* The app's own reduced-motion toggle and the low tier switch the field off too
+   (ambientParticles.js also stops rendering; this hides any frame left behind). */
+:root[data-motion="reduce"] .home-ambient,
+:root[data-gfx="low"] .home-ambient {
+    display: none;
+}
+
 /* ── Heading ─────────────────────────────────────────────────────────────────
    Visually hidden, not removed: it is the page's h1 for the outline and the
    element App.razor's FocusOnNavigate lands on. The visible brand is the top

@@ -107,7 +107,8 @@
            of every cut that followed. *@
         @if (_detail is not null && !_dashboardOpen && !_directorOn)
         {
-            <InspectorPopover Detail="_detail"
+            <InspectorPopover @ref="_inspector"
+                              Detail="_detail"
                               Family="_lineage"
                               FamilyOpen="_lineageOpen"
                               OnFollow="FollowAsync"

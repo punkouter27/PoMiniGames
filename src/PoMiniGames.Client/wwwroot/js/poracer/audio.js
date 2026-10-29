@@ -10,7 +10,10 @@
 //     and pitch-shifted for Doppler, so a pass is heard before it is seen.
 //   • events  — crash, skid, sand, turbo and pass cues, read off consecutive server snapshots
 //     at 20 Hz. The voices live in gameCues.js. Each also rumbles a gamepad (phones buzz through the cue's own haptic).
+//   • music   — musicLayers.js on the shared music bus: a bassline from the green light, hats,
+//     kick and arp joining and the tempo climbing lap by lap. Silent at music volume 0 (the default).
 import { rumble } from './input.js';
+import { createMusicLayers } from '../musicLayers.js';
 
 const GEAR_TOP = [70, 130, 195, 265, 345];   // sim units/s at the top of each gear
 const RIVALS = 3, HEAR = 620;
@@ -19,6 +22,7 @@ let ctx = null, engine = null, rivals = [];
 let gear = 0, lastV = 0;
 const last = { skid: 0, pass: 0, turbo: 0, crash: 0 };
 let litWas = 0;
+let music = null, totalLaps = 3;
 
 const cue = (name, opts) => { try { window.PoCue?.fire('poracer', name, opts); } catch { /* audio is never fatal */ } };
 
@@ -35,9 +39,14 @@ function voice(pan) {
     return { osc, filter, gain, panner, extra: [] };
 }
 
-/** Build the voices. Safe to call repeatedly and before a user gesture (the context just stays suspended). */
-export function start() {
+/**
+ * Build the voices. Safe to call repeatedly and before a user gesture (the context just stays
+ * suspended). `laps` is the race length, which scales the music's build.
+ */
+export function start(laps) {
     stop();
+    totalLaps = laps > 0 ? laps : 3;
+    music = createMusicLayers({ root: 49, bpmLow: 108, bpmHigh: 152 });
     ctx = window.PoAudioBus?.contextSync?.() || null;
     if (!ctx || !window.PoAudioBus.busSync('sfx')) { ctx = null; return; }
     engine = voice(false);
@@ -50,6 +59,7 @@ export function start() {
 }
 
 export function stop() {
+    music?.stop(); music = null;
     for (const v of [engine, ...rivals]) {
         if (!v) continue;
         for (const node of [v.osc, ...v.extra]) { try { node.stop(); node.disconnect(); } catch { /* already stopped */ } }
@@ -113,6 +123,7 @@ export function frame(cars, me, quiet) {
  * `me` is the local car's index (-1 when spectating: no cues, the engine bed is enough).
  */
 export function events(prev, cur, me) {
+    tune(cur, me);
     const a = prev?.[me], b = cur?.[me];
     if (!a || !b) return;
     const now = performance.now();
@@ -145,6 +156,23 @@ export function events(prev, cur, me) {
             cue('dopplerPass', { pan: Math.max(-1, Math.min(1, (cur[i].x - b.x) / 70)), pitch: cur[i].v > b.v ? 1.15 : 0.9 });
         }
     }
+}
+
+/**
+ * Music intensity from the lap the followed car is on (the leader when spectating): the first
+ * lap is the bassline alone, the last one everything. Laps run 1..laps; past that the car is home.
+ */
+function tune(cur, me) {
+    if (!music || !cur?.length) return;
+    const car = cur[me] || cur.reduce((x, c) => (c.position < x.position ? c : x), cur[0]);
+    if (car.finished || car.lap > totalLaps) { music.setIntensity(0); return; }
+    const lap = Math.max(1, car.lap);
+    // A one-lap race still builds: lead the progress with the field position.
+    const byLap = totalLaps > 1 ? (lap - 1) / (totalLaps - 1) : 0.5;
+    const byPlace = cur.length > 1 ? 1 - (car.position - 1) / (cur.length - 1) : 1;
+    music.setIntensity(lap === totalLaps ? Math.max(0.85, byLap) : 0.1 + byLap * 0.6 + byPlace * 0.15);
+    music.setGain(me < 0 ? 0.5 : 1);
+    music.start();
 }
 
 /** Start lights: one beep per lamp as it comes on. `lit` is 0-5. */

@@ -13,6 +13,49 @@
     box-shadow: 0 0 0 4px rgba(34, 211, 238, 0.25);
 }
 
+/* ── Focus rings the zero-specificity rule above cannot reach ──
+   That rule is :where(), so any component that styles its own outline or shadow wins over
+   it. Three surfaces need a ring that holds:
+     • Hub cards. Their chips take focus, not the card, and the card's paint containment
+       clips an outline drawn outside a chip, so the card itself lights up while a chip
+       inside it has keyboard or gamepad focus.
+     • Dialog buttons. `.gps-shell :focus-visible` (games.css) swaps the outline for a 45%
+       alpha shadow that disappears on the modal scrim; the :is() below outranks it on
+       specificity, whatever order the sheets load in.
+     • Gamepad navigation. gamepadBus.js moves focus with el.focus(), which a browser may not
+       mark :focus-visible after a pointer click; html[data-input="pad"] (set while a pad
+       drives the page) shows the ring on plain :focus as well.
+   Colour is the same --accent-cyan halo as the global ring, so a theme swap is one token. */
+.home-card.home-card:has(:focus-visible),
+.gps-game-card.gps-game-card:has(:focus-visible),
+.gps-game-card.gps-game-card:focus-visible {
+    border-color: var(--accent-cyan, #22d3ee);
+    box-shadow: 0 0 0 2px var(--accent-cyan, #22d3ee), 0 0 0 6px rgba(34, 211, 238, 0.22);
+}
+
+:is(dialog, [role="dialog"], [role="alertdialog"], [aria-modal="true"], .gps-modal-overlay, .gps-shell)
+    :is(button, a[href], [role="button"], [role="tab"], summary):focus-visible,
+html[data-input="pad"] :is(a[href], button, [role="button"], [role="tab"], input, select, summary):focus {
+    outline: 2px solid var(--accent-cyan, #22d3ee);
+    outline-offset: 2px;
+    box-shadow: 0 0 0 4px rgba(34, 211, 238, 0.25);
+}
+
+html[data-input="pad"] .home-card.home-card:has(:focus),
+html[data-input="pad"] .gps-game-card.gps-game-card:has(:focus) {
+    border-color: var(--accent-cyan, #22d3ee);
+    box-shadow: 0 0 0 2px var(--accent-cyan, #22d3ee), 0 0 0 6px rgba(34, 211, 238, 0.22);
+}
+
+/* Windows High Contrast / forced colours drop box-shadow; keep a system-coloured outline. */
+@media (forced-colors: active) {
+    :focus-visible,
+    :is(.home-card, .gps-game-card):has(:focus-visible) {
+        outline: 2px solid Highlight;
+        outline-offset: 2px;
+    }
+}
+
 /* Tabular figures for numbers, counters, leaderboards & timestamps to avoid layout jitter.
    Option #8: broaden from an explicit class list to the wider "this surface holds
    numbers" pattern — every HUD chip, score tile, time display, badge, and

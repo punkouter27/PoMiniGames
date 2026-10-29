@@ -156,6 +156,39 @@ const CUES = {
             ],
             feel: 'heavy', scale: 0.9, bus: 'ui',
         },
+        // Generic outcome and countdown phrases for a game without voices of its own. Named
+        // apart from 'win' / 'draw' on purpose: has() falls back to this scope, so a ui 'win'
+        // would answer GameOverMoment's first try for every game and hide its own 'ko' or
+        // 'finish'. They sit on the ui bus, so the effects volume covers them.
+        victory: {
+            // A rising major arpeggio landing on a held octave: C5 E5 G5 C6.
+            voices: [
+                v('triangle', 523.25, 0.09, 0.08, { decay: 0.08 }),
+                v('triangle', 659.25, 0.09, 0.08, { decay: 0.08, delay: 0.08 }),
+                v('triangle', 783.99, 0.09, 0.08, { decay: 0.08, delay: 0.16 }),
+                v('sine', 1046.5, 0.45, 0.11, { decay: 0.42, sustain: 0.3, delay: 0.24 }),
+                v('sine', 523.25, 0.45, 0.05, { decay: 0.42, delay: 0.24 }),
+            ],
+            feel: 'win', jitter: 0, bus: 'ui',
+        },
+        defeat: {
+            // Falling minor steps into a low, slightly sour tail — sad, not an error buzz.
+            voices: [
+                v('triangle', 392, 0.16, 0.07, { decay: 0.15 }),
+                v('triangle', 311.13, 0.16, 0.07, { decay: 0.15, delay: 0.15 }),
+                v('triangle', 261.63, 0.5, 0.08, { freqEnd: 246.94, sweep: 0.45, decay: 0.48, delay: 0.3, cutoff: 1800 }),
+            ],
+            feel: 'lose', scale: 0.6, jitter: 0, bus: 'ui',
+        },
+        // One per second of a 3-2-1; `go` is the release, an octave and a fifth above.
+        countdown: { voices: [v('square', 440, 0.09, 0.045, { decay: 0.08, cutoff: 2600 })], feel: 'tick', jitter: 0, bus: 'ui' },
+        go: {
+            voices: [
+                v('square', 1318.5, 0.28, 0.05, { decay: 0.26, cutoff: 4200 }),
+                v('sine', 659.25, 0.28, 0.06, { decay: 0.26 }),
+            ],
+            feel: 'select', jitter: 0, bus: 'ui',
+        },
     },
 
     // ── TicTacToe — struck wood & neon laser ───────────────────────────

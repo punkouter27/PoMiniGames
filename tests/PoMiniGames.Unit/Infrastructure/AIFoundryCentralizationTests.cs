@@ -54,6 +54,7 @@ public sealed class AIFoundryCentralizationTests
     [InlineData(nameof(AIFoundryOptions_IsConfigured_RequiresBothEndpointAndDefaultDeployment))]
     [InlineData(nameof(AIFoundryClientFactory_NeverFabricatesAClient_AndStaysOneTypePerHost))]
     [InlineData(nameof(MockServices_NeverResolvedThroughAIFoundry))]
+    [InlineData(nameof(AiTokenBudget_EvictsStaleLedgersOnlyOnceFlushed))]
     public Task Scenario(string name) => Scenarios.RunAsync(this, name);
 
     private void AIFoundryOptions_IsConfigured_RequiresBothEndpointAndDefaultDeployment()
@@ -110,6 +111,47 @@ public sealed class AIFoundryCentralizationTests
         var config = new ConfigurationBuilder().Build();
         config["PoFunQuiz:AzureOpenAI:ApiKey"].Should().BeNull();
         config["PoCoupleQuiz:AzureOpenAI:ApiKey"].Should().BeNull();
+    }
+
+    /// <summary>
+    /// The budget's per-identity ledgers are a cache over the durable store, so one left from an
+    /// earlier UTC day must go once its spend is written (or the dictionary grows by every caller
+    /// the process ever saw) and must stay while a delta is still waiting to be written.
+    /// </summary>
+    private async Task AiTokenBudget_EvictsStaleLedgersOnlyOnceFlushed()
+    {
+        var now = new DateTimeOffset(2026, 10, 1, 23, 0, 0, TimeSpan.Zero);
+        var store = new RecordingLedgerStore();
+        var budget = new AiTokenBudget(1000, () => now, store);
+        var ledgers = (System.Collections.IDictionary)typeof(AiTokenBudget)
+            .GetField("_ledgers", System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic)!
+            .GetValue(budget)!;
+
+        budget.Record("id:a", 40);
+        now = now.AddHours(2); // next UTC day, the delta not yet written
+
+        await budget.FlushAsync();
+        store.Writes.Should().ContainSingle().Which.Should().Be((new DateOnly(2026, 10, 1), "id:a", 40L));
+        ledgers.Count.Should().Be(1, "a ledger with an unwritten delta must not be dropped");
+
+        await budget.FlushAsync();
+        ledgers.Count.Should().Be(0, "a stale, fully-flushed ledger is evicted");
+
+        budget.Record("id:a", 5);
+        (await budget.CheckAsync("id:a")).Spent.Should().Be(5, "a fresh ledger starts the new day");
+    }
+
+    private sealed class RecordingLedgerStore : IAiTokenLedgerStore
+    {
+        public List<(DateOnly Day, string Identity, long Delta)> Writes { get; } = [];
+        public bool IsDurable => true;
+        public Task<long> LoadAsync(DateOnly day, string identity, CancellationToken cancellationToken = default)
+            => Task.FromResult(0L);
+        public Task IncrementAsync(DateOnly day, string identity, long delta, CancellationToken cancellationToken = default)
+        {
+            Writes.Add((day, identity, delta));
+            return Task.CompletedTask;
+        }
     }
 
     private sealed class TestOptionsMonitor<T> : IOptionsMonitor<T>

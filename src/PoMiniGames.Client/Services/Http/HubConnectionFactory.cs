@@ -70,6 +70,8 @@ public static class HubConnectionFactory
             {
                 options.PayloadSerializerOptions.Converters.Add(
                     new JsonStringEnumConverter(JsonNamingPolicy.CamelCase));
+                // Source-generated metadata for the Shared hub DTOs, reflection behind it.
+                PoMiniGames.Shared.Games.HubJsonContext.Apply(options.PayloadSerializerOptions);
             });
         builder = reconnectDelays is null
             ? builder.WithAutomaticReconnect()

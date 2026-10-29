@@ -21,6 +21,7 @@ public enum ThemeMode
 /// Global app settings shared by every game: colour scheme, master mute and
 /// volume, haptics and reduced motion. Persisted as plain localStorage values
 /// (<c>pomini_muted</c>, <c>pomini_theme</c>, <c>pomini_volume</c>,
+/// <c>pomini_sfx_volume</c>, <c>pomini_music_volume</c>,
 /// <c>pomini_haptics</c>, <c>pomini_reducedmotion</c>) so JS modules (uiAudio.js,
 /// audioBus.js, the index.html pre-paint theme script, game engines) can read
 /// them directly without an interop round-trip.
@@ -49,6 +50,8 @@ public sealed class SettingsService : IAsyncDisposable
     private const string MutedKey = "pomini_muted";
     private const string ThemeKey = "pomini_theme";
     private const string VolumeKey = "pomini_volume";
+    private const string SfxVolumeKey = "pomini_sfx_volume";
+    private const string MusicVolumeKey = "pomini_music_volume";
     private const string HapticsKey = "pomini_haptics";
     private const string ReducedMotionKey = "pomini_reducedmotion";
     private const string ColorSafeKey = "pomini_colorsafe";
@@ -86,6 +89,12 @@ public sealed class SettingsService : IAsyncDisposable
     /// <summary>Master output volume as a percentage, 0–100.</summary>
     public int Volume { get; private set; } = 100;
 
+    /// <summary>Effects level (UI and game sounds) under the master, 0–100.</summary>
+    public int SfxVolume { get; private set; } = 100;
+
+    /// <summary>Adaptive music level, 0–100. Off by default: music is opt-in.</summary>
+    public int MusicVolume { get; private set; }
+
     /// <summary>Whether vibration cues fire on devices that support them.</summary>
     public bool Haptics { get; private set; } = true;
 
@@ -114,6 +123,8 @@ public sealed class SettingsService : IAsyncDisposable
             Muted = LocalStorageService.GetItem<string>(MutedKey) == "1";
             Theme = ParseTheme(LocalStorageService.GetItem<string>(ThemeKey));
             Volume = ParseVolume(LocalStorageService.GetItem<string>(VolumeKey));
+            SfxVolume = ParseVolume(LocalStorageService.GetItem<string>(SfxVolumeKey));
+            MusicVolume = ParseVolume(LocalStorageService.GetItem<string>(MusicVolumeKey), fallback: 0);
             Haptics = LocalStorageService.GetItem<string>(HapticsKey) != "0";
             ReducedMotion = LocalStorageService.GetItem<string>(ReducedMotionKey) == "1";
             ColorSafe = LocalStorageService.GetItem<string>(ColorSafeKey) == "1";
@@ -136,10 +147,11 @@ public sealed class SettingsService : IAsyncDisposable
 
     /// <summary>
     /// Clamped to 0–100. A corrupt or missing value reads as full volume rather
-    /// than 0, so a bad key never presents as broken audio.
+    /// than 0, so a bad key never presents as broken audio. Music passes 0 as its
+    /// fallback because it is off until the player raises it.
     /// </summary>
-    private static int ParseVolume(string? raw) =>
-        int.TryParse(raw, out var pct) ? Math.Clamp(pct, 0, 100) : 100;
+    private static int ParseVolume(string? raw, int fallback = 100) =>
+        int.TryParse(raw, out var pct) ? Math.Clamp(pct, 0, 100) : fallback;
 
     private static string ThemeToStorage(ThemeMode mode) => mode switch
     {
@@ -168,6 +180,20 @@ public sealed class SettingsService : IAsyncDisposable
         Volume = Math.Clamp(percent, 0, 100);
         Changed?.Invoke();
         await InvokeAsync("applyVolume", Volume / 100.0);
+    }
+
+    public async Task SetSfxVolumeAsync(int percent)
+    {
+        SfxVolume = Math.Clamp(percent, 0, 100);
+        Changed?.Invoke();
+        await InvokeAsync("applySfxVolume", SfxVolume / 100.0);
+    }
+
+    public async Task SetMusicVolumeAsync(int percent)
+    {
+        MusicVolume = Math.Clamp(percent, 0, 100);
+        Changed?.Invoke();
+        await InvokeAsync("applyMusicVolume", MusicVolume / 100.0);
     }
 
     /// <summary>

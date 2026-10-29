@@ -38,6 +38,7 @@
     Stats="@(PlayMode == "ai" ? _statItems : null)"
     Elo="@(PlayMode == "ai" ? _rating.Elo : (int?)null)"
     Announcement="@Announcement"
+    OptionsContent="@OptionsContent"
     GameSummary="@GameSummaryContent">
     @if (!_introDone)
     {
@@ -284,6 +285,14 @@
     // The title is the classic "Tic-Tac-Toe", without the grid dimension; the
     // in-game intro / how-to-play carry the 6×6 / 4-in-a-row details.
     private static RenderFragment TitleContent => GameCatalog.TitleFor(GameKeys.TicTacToe);
+
+    // The example of GameShell's options drawer: the gear beside the title opens the mode
+    // switch, so the mode can change mid-match without going back to the intro card.
+    // ModeSwitch reads the address and navigates, and the drawer closes on navigation.
+    private static RenderFragment OptionsContent => @<div class="ttt-options">
+        <p class="ttt-options__label">Mode</p>
+        <ModeSwitch />
+    </div>;
 
     // Mode-specific HowToPlay. 1P talks about the CPU and ELO, 2P
     // talks about two players taking turns, the demo is a CPU-vs-CPU exhibition.

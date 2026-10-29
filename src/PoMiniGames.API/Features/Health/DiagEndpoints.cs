@@ -1,4 +1,5 @@
 using System.Globalization;
+using System.Security.Claims;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Http;
@@ -6,6 +7,7 @@ using Microsoft.AspNetCore.Routing;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Options;
 using PoMiniGames.Domain.Abstractions;
+using PoMiniGames.Features.Auth;
 using PoMiniGames.Infrastructure;
 
 namespace PoMiniGames.Features.Health;
@@ -201,8 +203,9 @@ public static class DiagEndpoints
         .WithName("GetDiagnostics")
         .WithSummary("Exposes a development-focused diagnostic summary without raw secret values");
 
-        // Signed-in callers only outside Development: the report carries deployment names and
-        // every player's aggregate calls, tokens and spend, which is more than presence info.
+        // Signed-in callers only outside Development. Every signed-in caller gets their own budget;
+        // the cross-identity aggregates (per-game spend, deployment names) are stripped unless the
+        // caller is an operator (see IsAiUsageAdmin).
         var aiUsage = diag.MapGet("/ai", GetAiUsage)
         .WithName("AiUsage")
         .WithSummary("Per-game AI call counts, failures, token totals and latency for this process.")
@@ -308,19 +311,23 @@ public static class DiagEndpoints
     /// <c>GET /api/diag/ai</c>: the runtime read-model of what the AI path is doing and costing.
     /// Process-local and not authoritative (the figures reset on restart and are per-instance); the
     /// billing truth is the per-call log lines Application Insights ingests. Not gated by
-    /// <c>EnableDiagnostics</c>: it exposes only aggregate counters and the caller's own budget.
+    /// <c>EnableDiagnostics</c>. Every caller sees configuration presence and their own budget;
+    /// per-game counters, spend totals and deployment names cover every player, so outside
+    /// Development they go only to operators listed in <see cref="AiUsageAdminsKey"/>.
     /// </summary>
     private static IResult GetAiUsage(
         AiUsageAccumulator usage,
         AiTokenBudget budget,
         IOptionsMonitor<AIFoundryOptions> options,
         IWebHostEnvironment environment,
+        IConfiguration configuration,
         HttpContext http)
     {
         var opts = options.CurrentValue;
-        var snapshot = usage.Snapshot();
+        var isDevelopment = environment.IsDevelopment();
+        var showAggregates = isDevelopment || IsAiUsageAdmin(http.User, configuration);
 
-        var games = snapshot
+        List<AiGameUsageDto> games = !showAggregates ? [] : usage.Snapshot()
             .OrderBy(kv => kv.Key, StringComparer.OrdinalIgnoreCase)
             .Select(kv => new AiGameUsageDto(
                 Game: kv.Key,
@@ -345,10 +352,11 @@ public static class DiagEndpoints
 
         return Results.Ok(new AiUsageReportDto(
             Configured: opts.IsConfigured,
-            // Anonymous route: the account's address is shown in Development only.
-            Endpoint: opts.IsConfigured && environment.IsDevelopment() ? opts.Endpoint : null,
-            DefaultDeployment: opts.DefaultDeployment,
-            EmbeddingDeployment: string.IsNullOrWhiteSpace(opts.EmbeddingDeployment) ? null : opts.EmbeddingDeployment,
+            // The account's address is shown in Development only, even to operators.
+            Endpoint: opts.IsConfigured && isDevelopment ? opts.Endpoint : null,
+            DefaultDeployment: showAggregates ? opts.DefaultDeployment : null,
+            EmbeddingDeployment: showAggregates && !string.IsNullOrWhiteSpace(opts.EmbeddingDeployment) ? opts.EmbeddingDeployment : null,
+            Aggregates: showAggregates,
             Games: games,
             TotalCalls: games.Sum(g => g.Calls),
             TotalFailures: games.Sum(g => g.Failures),
@@ -361,17 +369,44 @@ public static class DiagEndpoints
                 Allowed: verdict.Allowed,
                 ResetUtc: verdict.ResetUtc)));
     }
+
+    /// <summary>Config key listing the operators (user object ids) who see the full AI usage report.</summary>
+    internal const string AiUsageAdminsKey = "PoMiniGames:Diag:AiUsageAdmins";
+
+    /// <summary>
+    /// True when the caller may see cross-identity AI aggregates: a signed-in, non-guest identity
+    /// whose object id is listed under <see cref="AiUsageAdminsKey"/>.
+    /// </summary>
+    /// <remarks>
+    /// Object ids only. Sign-in accepts the multi-tenant <c>common</c> authority, so an email or
+    /// <c>preferred_username</c> claim is not proof of owning that address, and an app-role claim
+    /// can be granted by any tenant's own admin. An oid is assigned by Entra and cannot be chosen.
+    /// </remarks>
+    internal static bool IsAiUsageAdmin(ClaimsPrincipal user, IConfiguration configuration)
+    {
+        var identity = RequestIdentity.Resolve(user);
+        if (!identity.IsAuthenticated)
+            return false;
+
+        var admins = configuration.GetSection(AiUsageAdminsKey).Get<string[]>() ?? [];
+        return admins.Any(a => !string.IsNullOrWhiteSpace(a)
+            && string.Equals(a.Trim(), identity.UserId, StringComparison.OrdinalIgnoreCase));
+    }
 }
 
 /// <param name="Configured">False when no foundry endpoint is set; games serve mocks or fail.</param>
-/// <param name="Games">Per-game counters for this process. Empty before the first call.</param>
+/// <param name="DefaultDeployment">Default deployment name; null when <paramref name="Aggregates"/> is false.</param>
+/// <param name="Aggregates">True when the cross-identity fields (games, totals, deployment names) are filled in.
+/// False for a signed-in non-operator outside Development: they get only their own budget.</param>
+/// <param name="Games">Per-game counters for this process. Empty before the first call, and for non-operators.</param>
 /// <param name="TotalCostUsd">Running USD total across every game in <see cref="Games"/>, at list prices.</param>
 /// <param name="Budget">The calling identity's own daily token allowance.</param>
 public sealed record AiUsageReportDto(
     bool Configured,
     string? Endpoint,
-    string DefaultDeployment,
+    string? DefaultDeployment,
     string? EmbeddingDeployment,
+    bool Aggregates,
     IReadOnlyList<AiGameUsageDto> Games,
     long TotalCalls,
     long TotalFailures,

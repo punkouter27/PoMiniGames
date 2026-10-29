@@ -51,6 +51,7 @@ public partial class PoEcosystemViewer : ComponentBase, IAsyncDisposable
     private readonly List<EcoThought> _thoughts = [];
     private EcoStats? _stats;
     private EcoDetail? _detail;
+    private InspectorPopover? _inspector;
     private EcoLineage? _lineage;
     private EcoSaveInfo? _resumePrompt;
     private EcoWorldMeta[] _worlds = [];
@@ -133,7 +134,12 @@ public partial class PoEcosystemViewer : ComponentBase, IAsyncDisposable
 
     protected override async Task OnAfterRenderAsync(bool firstRender)
     {
-        if (!firstRender) return;
+        if (!firstRender)
+        {
+            // The stats histories cross interop only while a chart that reads them is open.
+            await Interop.SetHistoryWantedAsync(HistoryOnScreen);
+            return;
+        }
         await Viewport.RefreshAsync();
         _narrow = Viewport.IsNarrow;
 
@@ -238,6 +244,9 @@ public partial class PoEcosystemViewer : ComponentBase, IAsyncDisposable
     // when it was open — every panel of the dashboard. The newest stats are always kept;
     // the render is what is rationed.
     private const int StatsRenderMs = 400;
+
+    /// <summary>The timeline (Island tab) and evolution chart (Life tab) are the only readers of the stats histories.</summary>
+    private bool HistoryOnScreen => _dashboardOpen && _dashTab is "island" or "life";
     private DateTime _statsRenderedAt = DateTime.MinValue;
 
     private void RenderStats()
@@ -291,7 +300,9 @@ public partial class PoEcosystemViewer : ComponentBase, IAsyncDisposable
             else if (ev.Kind == "birth" && ((ev.Mother is { } m && _watched.Contains(m)) || (ev.Father is { } f && _watched.Contains(f)))) Toasts.Show(ev.Text, ToastType.Success);
         }
         AnnounceNotes(_milestones.Observe(events));
-        InvokeAsync(StateHasChanged);
+        // The log is only on screen inside the dashboard, and events arrive in bursts at 4×:
+        // the same 400 ms ration as stats (toasts and the ticker are not rendered here).
+        RenderStats();
     }
 
     private void OnThoughts(IReadOnlyList<EcoThought> thoughts)
@@ -311,7 +322,9 @@ public partial class PoEcosystemViewer : ComponentBase, IAsyncDisposable
         // detail of a followed creature arrives up to sixteen times a second at 4×: with the
         // dashboard open, each of those re-rendered every panel in it for a popover nobody
         // could see.
-        if (appeared || (!_dashboardOpen && !_directorOn)) InvokeAsync(StateHasChanged);
+        // A detail for the creature already on screen only re-renders the popover itself.
+        if (appeared || _inspector is null) InvokeAsync(StateHasChanged);
+        else if (detail is not null && !_dashboardOpen && !_directorOn) _inspector.Push(detail);
     }
 
     private void OnLineage(int handle, EcoLineage? tree)

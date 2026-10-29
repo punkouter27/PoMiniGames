@@ -107,6 +107,32 @@
                        @oninput="OnVolumeInput" />
             </div>
 
+            <div class="prefs-row @(Settings.Muted ? "prefs-row--disabled" : null)">
+                <div class="prefs-label">
+                    <span class="prefs-name">Effects</span>
+                    <span class="prefs-hint">@Settings.SfxVolume%</span>
+                </div>
+                <input type="range" class="prefs-range"
+                       min="0" max="100" step="5"
+                       aria-label="Effects volume"
+                       disabled="@Settings.Muted"
+                       value="@Settings.SfxVolume"
+                       @oninput="OnSfxVolumeInput" />
+            </div>
+
+            <div class="prefs-row @(Settings.Muted ? "prefs-row--disabled" : null)">
+                <div class="prefs-label">
+                    <span class="prefs-name">Music</span>
+                    <span class="prefs-hint">@(Settings.MusicVolume == 0 ? "Off" : $"{Settings.MusicVolume}%") · adaptive music in PoRacer and PoBrawl</span>
+                </div>
+                <input type="range" class="prefs-range"
+                       min="0" max="100" step="5"
+                       aria-label="Music volume"
+                       disabled="@Settings.Muted"
+                       value="@Settings.MusicVolume"
+                       @oninput="OnMusicVolumeInput" />
+            </div>
+
             <div class="prefs-row">
                 <div class="prefs-label">
                     <span class="prefs-name">Haptics</span>
@@ -165,15 +191,14 @@
             </div>
         </fieldset>
 
-        @* Games: one row per game-wide choice (which questions a quiz draws, how answers
-           are matched, the arena's brain, on-device AI, invites). Add a row here with a
-           simple default, so a player who never opens the sheet still gets a sensible game.
-           Rows from a child component keep the prefs-row classes; the sheet styles them. *@
+        @* Games: one row per game-wide choice most players care about (which questions a
+           quiz draws, how answers are matched, invites). Add a row here with a simple
+           default, so a player who never opens the sheet still gets a sensible game.
+           Rows from a child component keep the prefs-row classes; the sheet styles them.
+           Choices that only matter to one game's enthusiasts go under Advanced below. *@
         <fieldset class="prefs-group prefs-group--games">
             <legend class="prefs-group-legend">Games</legend>
             <QuizPrefsRows />
-            <PoMiniGamesClient.Games.PoJevArena.ArenaAiPrefs />
-            <PoMiniGamesClient.Games.PoBrawl.PoBrawlShowPrefs />
             <div class="prefs-row @(InvitesAvailable ? null : "prefs-row--disabled")">
                 <div class="prefs-label">
                     <span class="prefs-name">Game invites</span>
@@ -190,6 +215,22 @@
                 </button>
             </div>
         </fieldset>
+
+        @* Advanced: the niche, one-game choices, collapsed by default so the sheet opens on
+           the settings everyone uses. A native <details>, so it needs no state of its own and
+           the summary is a real disclosure button for keyboards and screen readers. The rows
+           stay mounted while it is shut, so each one still reads its value when the sheet
+           opens. Holds Brawl's show level (pobrawl_show) and the Jev Arena brain with its
+           on-device AI switch (pomini_arena_brain, pomini_local_ai). The FPS badge has no
+           preference to put here: it is the Development / ?debug=1 diagnostic. *@
+        <details class="prefs-advanced">
+            <summary class="prefs-advanced-summary">Advanced</summary>
+            <fieldset class="prefs-group prefs-group--advanced">
+                <legend class="prefs-group-legend">Advanced game options</legend>
+                <PoMiniGamesClient.Games.PoBrawl.PoBrawlShowPrefs />
+                <PoMiniGamesClient.Games.PoJevArena.ArenaAiPrefs />
+            </fieldset>
+        </details>
 
         <fieldset class="prefs-group">
             <legend class="prefs-group-legend">Your data</legend>
@@ -303,6 +344,16 @@
         {
             await Settings.SetVolumeAsync(pct);
         }
+    }
+
+    private async Task OnSfxVolumeInput(ChangeEventArgs e)
+    {
+        if (int.TryParse(e.Value?.ToString(), out var pct)) await Settings.SetSfxVolumeAsync(pct);
+    }
+
+    private async Task OnMusicVolumeInput(ChangeEventArgs e)
+    {
+        if (int.TryParse(e.Value?.ToString(), out var pct)) await Settings.SetMusicVolumeAsync(pct);
     }
 
     // Fire the haptic *after* enabling so the user feels the setting they just

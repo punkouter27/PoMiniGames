@@ -69,6 +69,9 @@ public partial class PoJevArenaPage : ComponentBase, IAsyncDisposable
     private ArenaMatchTicket? _ticket;
     private bool _deploying, _pendingDeploy;
     private ArenaHudView? _hud;
+    // The two bits of markup the 4 Hz HUD pump changes: the arena's glass strip and the brain chip.
+    private HudRegion? _hudRegion;
+    private HudRegion? _statusRegion;
     private ArenaInspectorView? _inspectBlue, _inspectRed;
     private ArenaMatchEndView? _result;
     private string? _resultNote;
@@ -580,8 +583,16 @@ public partial class PoJevArenaPage : ComponentBase, IAsyncDisposable
     [JSInvokable]
     public Task OnHud(string json)
     {
+        var hadHud = _hud is not null;
+        var banner = NoticeBanner;
         _hud = JsonSerializer.Deserialize(json, ArenaUiJsonContext.Default.ArenaHudView);
-        return InvokeAsync(StateHasChanged);
+        // The pump re-renders its two regions; the page only when the HUD appears or goes, or
+        // a notice changes the banner.
+        if (_hudRegion is null || _statusRegion is null || hadHud != (_hud is not null) || banner != NoticeBanner)
+            return InvokeAsync(StateHasChanged);
+        _hudRegion.Refresh();
+        _statusRegion.Refresh();
+        return Task.CompletedTask;
     }
 
     [JSInvokable]

@@ -148,34 +148,37 @@
                rings round the crosshair already show both, where the player is looking. *@
             @if (!_demo && _phase is Phase.Playing or Phase.Paused)
             {
-                <div class="pvs-hud pvs-glass" data-glass>
-                    <div class="pvs-bar @(_hp <= 30 ? "pvs-bar-low" : null)">
-                        <span class="pvs-bar-label">HP</span>
-                        <div class="pvs-bar-track"><div class="pvs-bar-fill pvs-bar-hp" style="--fill: @(_hp)%"></div></div>
-                        <span class="pvs-bar-value">@_hp</span>
+                @* Its own render region: OnHudTick refreshes this 10 times a second, not the page. *@
+                <HudRegion @ref="_hudRegion">
+                    <div class="pvs-hud pvs-glass" data-glass>
+                        <div class="pvs-bar @(_hp <= 30 ? "pvs-bar-low" : null)">
+                            <span class="pvs-bar-label">HP</span>
+                            <div class="pvs-bar-track"><div class="pvs-bar-fill pvs-bar-hp" style="--fill: @(_hp)%"></div></div>
+                            <span class="pvs-bar-value">@_hp</span>
+                        </div>
+                        <div class="pvs-hud-meta">
+                            @FormatTime(_elapsed) · @_gunsSilenced/@_gunsTotal guns silenced@(_solo == SoloRun.Survival && !IsMulti ? $" · {_kills} kills" : "")@(IsMulti ? $" · P{_playerNumber} of {_squadSize}" : "")
+                        </div>
+                        <div class="pvs-hud-score-wrap">
+                            @foreach (var pop in _popups)
+                            {
+                                <span class="pvs-pop" @key="pop.Id">+@pop.Amount</span>
+                            }
+                            <div class="pvs-hud-score">@_score.ToString("N0")</div>
+                        </div>
+                        <button class="pvs-hud-btn" type="button" title="Fullscreen"
+                                aria-label="Toggle fullscreen" @onclick="ToggleFullscreenAsync">⛶</button>
                     </div>
-                    <div class="pvs-hud-meta">
-                        @FormatTime(_elapsed) · @_gunsSilenced/@_gunsTotal guns silenced@(_solo == SoloRun.Survival && !IsMulti ? $" · {_kills} kills" : "")@(IsMulti ? $" · P{_playerNumber} of {_squadSize}" : "")
-                    </div>
-                    <div class="pvs-hud-score-wrap">
-                        @foreach (var pop in _popups)
-                        {
-                            <span class="pvs-pop" @key="pop.Id">+@pop.Amount</span>
-                        }
-                        <div class="pvs-hud-score">@_score.ToString("N0")</div>
-                    </div>
-                    <button class="pvs-hud-btn" type="button" title="Fullscreen"
-                            aria-label="Toggle fullscreen" @onclick="ToggleFullscreenAsync">⛶</button>
-                </div>
 
-                @if (_down)
-                {
-                    <div class="pvs-down" role="status">
-                        <strong>Down</strong>
-                        <span>@(_revivePct > 0 ? "A squadmate is getting you up…" : "A squadmate standing over you gets you back up")</span>
-                        <div class="pvs-bar-track"><div class="pvs-bar-fill pvs-bar-hp" style="--fill: @(_revivePct)%"></div></div>
-                    </div>
-                }
+                    @if (_down)
+                    {
+                        <div class="pvs-down" role="status">
+                            <strong>Down</strong>
+                            <span>@(_revivePct > 0 ? "A squadmate is getting you up…" : "A squadmate standing over you gets you back up")</span>
+                            <div class="pvs-bar-track"><div class="pvs-bar-fill pvs-bar-hp" style="--fill: @(_revivePct)%"></div></div>
+                        </div>
+                    }
+                </HudRegion>
             }
 
             @if (_phase == Phase.Paused)
@@ -260,6 +263,7 @@
     private int _gunsTotal;
     private bool _down;
     private int _revivePct;
+    private HudRegion? _hudRegion;   // the HUD strip and the Down card (OnHudTick)
 
     // Settings (mirrors js/povoxelstrike/settings.js; the engine owns the storage).
     private double _sens = 1;
@@ -705,12 +709,38 @@
     private void OnPlayerDropped(string connectionId) =>
         _ = InvokeAsync(() => ToastService.Show("A squad member dropped.", ToastType.Warning));
 
-    /// <summary>The engine's lockstep batch for this tick; shipped through the hub, one at a time.</summary>
+    /// <summary>
+    /// The engine's lockstep input for this tick (20 Hz), as positional primitives so the hot
+    /// path marshals no nested object; shipped through the hub as a batch, one at a time.
+    /// Bits: 1 forward, 2 back, 4 left, 8 right, 16 fire, 32 alt fire, 64 down (povoxelstrike/index.js).
+    /// </summary>
     [JSInvokable]
-    public void OnLockstepBatch(PoVoxelStrikeInputBatch batch)
+    public void OnLockstepInput(int tick, int bits, float yaw, float pitch, float x, float y, float z)
     {
         if (!IsMulti || !_submitInFlight.IsCompleted) return;
-        batch.PlayerNumber = _playerNumber;
+        var batch = new PoVoxelStrikeInputBatch
+        {
+            PlayerNumber = _playerNumber,
+            Tick = tick,
+            Inputs =
+            {
+                new PoVoxelStrikeInput
+                {
+                    Forward = (bits & 1) != 0,
+                    Back = (bits & 2) != 0,
+                    Left = (bits & 4) != 0,
+                    Right = (bits & 8) != 0,
+                    Fire = (bits & 16) != 0,
+                    AltFire = (bits & 32) != 0,
+                    Down = (bits & 64) != 0,
+                    Yaw = yaw,
+                    Pitch = pitch,
+                    X = x,
+                    Y = y,
+                    Z = z,
+                },
+            },
+        };
         _submitInFlight = QuietlyAsync(Hub.SubmitInputsAsync(batch));
     }
 
@@ -866,7 +896,10 @@
         _gunsTotal = gunsTotal;
         _down = down;
         _revivePct = revivePct;
-        StateHasChanged();
+        // Everything a tick changes is inside the HUD region, so only it repaints (the pause
+        // card and the results read the same fields when the page next renders).
+        if (_hudRegion is null) StateHasChanged();
+        else _hudRegion.Refresh();
     }
 
     [JSInvokable]

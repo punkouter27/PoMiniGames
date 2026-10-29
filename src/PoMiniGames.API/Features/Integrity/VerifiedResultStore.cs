@@ -4,7 +4,7 @@ using System.Text.Json;
 using Azure;
 using Azure.Data.Tables;
 
-namespace PoMiniGames.Infrastructure;
+namespace PoMiniGames.Features.Integrity;
 
 /// <summary>
 /// Durable copy of the results a race registry timed itself, so the proof behind a score submit

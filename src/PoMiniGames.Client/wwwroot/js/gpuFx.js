@@ -245,6 +245,10 @@ const PRESETS = {
     impact:   { count: 34, size: 9,  ttl: 0.45, speed: 780, spread: Math.PI * 2, gravity: 600,  drag: 5.5, additive: 1, hue: 'accent' },
 };
 
+// Moment names, so an engine says what happened rather than which particle it wants:
+// burst(x, y, 'ko'). Each maps onto a preset above; there is still only one system.
+const ALIASES = { win: 'confetti', ko: 'impact', highscore: 'coins', best: 'coins', hit: 'sparks' };
+
 const PALETTES = {
     party: [[0.98, 0.30, 0.42], [0.32, 0.78, 1.00], [1.00, 0.82, 0.25], [0.55, 0.95, 0.55], [0.75, 0.45, 1.00]],
     gold:  [[1.00, 0.84, 0.32], [1.00, 0.66, 0.18], [1.00, 0.95, 0.70]],
@@ -567,9 +571,14 @@ function pickColor(hue) {
  * @param {number[]} [o.color]    explicit 0..1 RGB, overriding the preset palette
  * @param {number} [o.angle]      centre of the emission cone, radians, 0 = right
  * @param {number} [o.spread]     cone width, radians
+ *
+ * Also callable positionally, for engines: burst(x, y, preset, opts) — preset may be a
+ * moment name from ALIASES ('win', 'ko', 'highscore').
  */
-export function burst(o) {
+export function burst(o, y, preset, opts) {
+    if (typeof o === 'number') o = { ...(opts || {}), x: o, y, preset: preset || (opts && opts.preset) };
     if (!o || !init()) return;
+    if (ALIASES[o.preset]) o = { ...o, preset: ALIASES[o.preset] };
 
     const p = PRESETS[o.preset] || PRESETS.sparks;
     const scale = o.scale == null ? 1 : Math.max(0.1, Math.min(3, o.scale));

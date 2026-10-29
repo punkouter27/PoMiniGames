@@ -1,0 +1,132 @@
+/* A game's options drawer. It matches the Settings sheet (SettingsSheet.razor.css): a
+   drawer on the right edge of a wide window, a bottom sheet under 640px, both a native
+   modal <dialog>. Every colour reads through a design token. */
+
+.game-opts-gear {
+    appearance: none;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    flex: 0 0 auto;
+    width: 2.25rem;
+    height: 2.25rem;
+    padding: 0;
+    border: 1px solid var(--color-border);
+    border-radius: var(--radius-pill);
+    background: var(--surface-2);
+    color: var(--color-text-secondary);
+    cursor: pointer;
+}
+
+.game-opts-gear:hover {
+    background: var(--surface-3);
+    color: var(--color-text-primary);
+}
+
+.game-opts-sheet {
+    margin: 0 0 0 auto;
+    inset-block: 0;
+    width: min(22rem, 100vw);
+    max-width: 100vw;
+    height: 100dvh;
+    max-height: 100dvh;
+    padding: 0;
+    border: none;
+    border-left: 1px solid var(--color-border);
+    border-radius: var(--radius-lg) 0 0 var(--radius-lg);
+    background: var(--color-surface);
+    color: var(--color-text-primary);
+    box-shadow: -12px 0 40px rgb(0 0 0 / 0.28);
+    overflow-x: hidden;
+    overflow-y: auto;
+    overscroll-behavior: contain;
+}
+
+.game-opts-sheet[open] {
+    animation: game-opts-in-right var(--dur-base, 220ms) var(--ease-out, ease-out) both;
+}
+
+.game-opts-sheet::backdrop {
+    background: rgb(0 0 0 / 0.5);
+}
+
+@keyframes game-opts-in-right {
+    from { transform: translateX(100%); }
+    to   { transform: none; }
+}
+
+@keyframes game-opts-in-up {
+    from { transform: translateY(100%); }
+    to   { transform: none; }
+}
+
+.game-opts-head {
+    position: sticky;
+    top: 0;
+    z-index: 1;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: var(--space-2) var(--space-3) var(--space-2) var(--space-4);
+    background: var(--color-surface);
+    border-bottom: 1px solid var(--color-border);
+}
+
+.game-opts-title {
+    margin: 0;
+    font-size: var(--text-lg);
+    font-weight: 700;
+}
+
+.game-opts-close {
+    appearance: none;
+    width: 2.75rem;
+    height: 2.75rem;
+    border: none;
+    border-radius: var(--radius-md);
+    background: transparent;
+    color: var(--color-text-secondary);
+    font-size: 1.5rem;
+    line-height: 1;
+    cursor: pointer;
+}
+
+.game-opts-close:hover {
+    background: var(--surface-3);
+    color: var(--color-text-primary);
+}
+
+.game-opts-body {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-3);
+    padding: var(--space-3) var(--space-4) calc(var(--space-4) + env(safe-area-inset-bottom, 0px));
+}
+
+.game-opts-gear:focus-visible,
+.game-opts-close:focus-visible {
+    outline: 2px solid var(--accent-ring);
+    outline-offset: 2px;
+}
+
+@media (max-width: 639.98px) {
+    .game-opts-sheet {
+        margin: auto 0 0;
+        inset-block: auto 0;
+        width: 100vw;
+        height: auto;
+        max-height: 92dvh;
+        border-left: none;
+        border-top: 1px solid var(--color-border);
+        border-radius: var(--radius-lg) var(--radius-lg) 0 0;
+        box-shadow: 0 -12px 40px rgb(0 0 0 / 0.28);
+    }
+
+    .game-opts-sheet[open] {
+        animation-name: game-opts-in-up;
+    }
+}
+
+@media (prefers-reduced-motion: reduce) {
+    .game-opts-sheet[open] { animation: none; }
+}

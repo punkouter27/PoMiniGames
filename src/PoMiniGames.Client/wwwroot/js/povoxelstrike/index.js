@@ -41,7 +41,15 @@ async function boot(host, dotnetRef, demo, loaded, online, opts) {
         } catch { }
       };
       // Each lockstep batch goes to the page, which ships it through the lockstep hub.
-      engine.multiplayerSink = (batch) => send('OnLockstepBatch', batch);
+      // 20 Hz, so it crosses interop as positional primitives (no object for .NET to
+      // reflect over). Bits: 1 forward, 2 back, 4 left, 8 right, 16 fire, 32 alt fire, 64 down.
+      engine.multiplayerSink = (batch) => {
+        const i = batch.inputs[0];
+        if (!i) return;
+        const bits = (i.forward ? 1 : 0) | (i.back ? 2 : 0) | (i.left ? 4 : 0) | (i.right ? 8 : 0)
+          | (i.fire ? 16 : 0) | (i.altFire ? 32 : 0) | (i.down ? 64 : 0);
+        send('OnLockstepInput', batch.tick, bits, i.yaw, i.pitch, i.x, i.y, i.z);
+      };
       // Carves and the win ride their own messages: neither may be dropped the way a
       // stale position batch is.
       engine.carveSink = (kind, structure, x, y, z) => send('OnCarve', kind, structure, x, y, z);

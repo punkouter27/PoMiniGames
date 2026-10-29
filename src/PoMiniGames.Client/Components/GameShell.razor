@@ -8,7 +8,7 @@
    back-arrow: the top bar's brand covers navigation back to the home page, and
    the swipe-back gesture below still works. *@
 <SectionContent SectionName="game-header">
-    <div class="gps-header-slot">
+    <div class="gps-header-slot @(OptionsContent != null ? "gps-header-slot--opts" : null)">
         @* Game title — always rendered as the first child of the chrome slot so
            every game page identifies itself in the top bar. Renders as an
            <h1> so screen readers see a heading hierarchy, not a styled <span>.
@@ -18,6 +18,14 @@
         @if (Title != null)
         {
             <h1 class="gps-game-title">@Title</h1>
+        }
+
+        @* Per-game options (difficulty, mode, online): a gear beside the title that opens
+           a side drawer, the same kind of sheet Settings is. Only for a page that passes
+           OptionsContent; every other game's header is unchanged. *@
+        @if (OptionsContent != null)
+        {
+            <GameOptionsSheet Heading="@OptionsHeading">@OptionsContent</GameOptionsSheet>
         }
 
         @* The header has no "All games" pill: it would compete for width with the
@@ -83,7 +91,16 @@
         }
         else
         {
-            @ChildContent
+            @* A crash inside the game is caught here, so the Retry box sits in the game
+               area and the top bar, title and swipe-back stay intact. *@
+            <GameErrorBoundary>@ChildContent</GameErrorBoundary>
+            @* Laid over the area, not in place of the game: the engine's container is
+               already mounted at its final size, so the shimmer is exactly the stage's
+               size and nothing jumps when it goes. *@
+            @if (Loading)
+            {
+                <GameSkeleton Label="@(LoadingLabel ?? "Loading game…")" />
+            }
         }
     </div>
 
@@ -184,6 +201,26 @@
 
     [Parameter] public RenderFragment ChildContent { get; set; } = null!;
 
+    /// <summary>
+    /// True while the game's engine is still loading: a skeleton covers the game area
+    /// (sized to it, so nothing jumps) until the page sets it back to false. Off by
+    /// default, so a page that never passes it renders exactly as before.
+    /// </summary>
+    [Parameter] public bool Loading { get; set; }
+
+    /// <summary>Words under the loading skeleton. Defaults to "Loading game…".</summary>
+    [Parameter] public string? LoadingLabel { get; set; }
+
+    /// <summary>
+    /// The game's own options (difficulty, mode, online). When set, a gear appears beside
+    /// the title in the top bar and opens them in a side drawer, like the Settings sheet.
+    /// Null, the default, renders no gear.
+    /// </summary>
+    [Parameter] public RenderFragment? OptionsContent { get; set; }
+
+    /// <summary>Heading of the options drawer.</summary>
+    [Parameter] public string OptionsHeading { get; set; } = "Game options";
+
     [Inject] private IJSRuntime JS { get; set; } = null!;
     [Inject] private NavigationManager Nav { get; set; } = null!;
     [Inject] private Services.Play.AchievementService Achievements { get; set; } = null!;
@@ -195,11 +232,18 @@
     // games played. Once per address, so a mode switch (/pomule/1player → /pomule/demo) is a
     // new session but a re-render is not. The unattended kiosk reel is not anyone playing.
     private string? _sessionPath;
+    // The address CountSession last looked at. OnParametersSet runs on every parent
+    // render, and the address rarely changes between them, so an unchanged Uri skips the
+    // base-relative path and the split altogether.
+    private string? _sessionUri;
 
     private void CountSession()
     {
-        var path = Nav.ToBaseRelativePath(Nav.Uri);
-        var bare = path.Split('?', '#')[0];
+        var uri = Nav.Uri;
+        if (uri == _sessionUri) return;
+        _sessionUri = uri;
+        var path = Nav.ToBaseRelativePath(uri);
+        var bare = path.AsSpan().IndexOfAny('?', '#') is var cut and >= 0 ? path[..cut] : path;
         if (bare == _sessionPath) return;
         _sessionPath = bare;
         if (path.Contains("kiosk=", StringComparison.OrdinalIgnoreCase)) return;

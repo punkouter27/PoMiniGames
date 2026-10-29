@@ -1301,15 +1301,32 @@ class Race {
         // into .NET thirty times a second costs more than the race does.
         const whole = finished || !this.hudFieldSent || !local;
         this.hudFieldSent = true;
+        const started = elapsed >= 0;
+        const countdown = elapsed < 0 ? Math.ceil(-elapsed) : 0;
+        const bestLap = local && local.bestLap > 0 ? local.bestLap : 0;
+        if (!whole) {
+            // The per-tick path: positional primitives only, no nested object for .NET to
+            // reflect over. Flags: 1 started, 2 lap invalid, 4 wrecked, 8 car finished.
+            const flags = (started ? 1 : 0) | (local.lapInvalid ? 2 : 0) | (local.body.wrecked ? 4 : 0) | (local.finished ? 8 : 0);
+            const line = this.line;
+            try {
+                this.dotnet.invokeMethodAsync('OnSoloTickAsync', Math.max(0, elapsed), countdown,
+                    local.id, local.lapsDone + 1, local.position, flags, bestLap,
+                    line ? line.officialId : null, line ? line.text : null, line ? line.raceTick : 0);
+            } catch { /* disposed */ }
+            return;
+        }
+        // First tick and finish: the whole field, as one JSON string the page parses with
+        // its source-generated context (PoCabinetJsonContext).
         const snap = {
             gameCode: 'SOLO',
             serverTimeMs: Math.round(this.clock * 1000),
             elapsedRaceTime: Math.max(0, elapsed),
-            started: elapsed >= 0,
-            countdownSeconds: elapsed < 0 ? Math.ceil(-elapsed) : 0,
+            started,
+            countdownSeconds: countdown,
             finished,
             localCarId: local ? local.id : null,
-            cars: (whole ? this.cars : [local]).map(c => ({
+            cars: this.cars.map(c => ({
                 id: c.id, name: c.name, officialId: c.officialId, color: c.color,
                 x: round2(c.body.x), y: round2(c.body.y), heading: round3(c.body.heading),
                 speedKmh: Math.round(Math.abs(c.body.speed) * ph.KMH_PER_UNIT),
@@ -1321,10 +1338,10 @@ class Race {
             })),
             latestDialogue: this.line,
             static: null,
-            bestLapSeconds: local && local.bestLap > 0 ? local.bestLap : null,
+            bestLapSeconds: bestLap > 0 ? bestLap : null,
         };
         if (finished) this.hudFinishedSent = true;
-        try { this.dotnet.invokeMethodAsync('OnSoloSnapshotAsync', snap); } catch { /* disposed */ }
+        try { this.dotnet.invokeMethodAsync('OnSoloSnapshotJsonAsync', JSON.stringify(snap)); } catch { /* disposed */ }
     }
 
     // ── Recording ────────────────────────────────────────────────────────

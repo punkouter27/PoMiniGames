@@ -73,7 +73,21 @@ public sealed class AiQuizGeneratorService : IOpenAIService
         _hybridCache = hybridCache;
     }
 
-    private static readonly System.Collections.Concurrent.ConcurrentDictionary<QuestionCategory, List<QuizQuestion>> QuestionPoolCache = new();
+    private static readonly System.Collections.Concurrent.ConcurrentDictionary<QuestionCategory, QuestionPool> QuestionPoolCache = new();
+
+    /// <summary>Most distinct questions the warm pool keeps per category; the oldest go first.</summary>
+    internal const int MaxPoolPerCategory = 200;
+
+    /// <summary>
+    /// One category's warm pool: the dealt questions in arrival order plus the normalized-hash set
+    /// that keeps them distinct. Both are guarded by locking the instance. The set lives alongside
+    /// the list so a merge costs the batch, not a rebuild over the whole pool.
+    /// </summary>
+    private sealed class QuestionPool
+    {
+        public readonly List<QuizQuestion> Items = new();
+        public readonly HashSet<string> Seen = new(StringComparer.Ordinal);
+    }
 
     public async Task<IReadOnlyList<QuizQuestion>> GenerateQuizQuestionsAsync(
         QuestionCategory category, int count, CancellationToken cancellationToken = default)
@@ -89,13 +103,13 @@ public sealed class AiQuizGeneratorService : IOpenAIService
         // each question's options in the order the model emitted them, correct answer included.
         // SelectVariedSet re-randomises the option order too, and copies, so the shared pool
         // is never mutated.
-        if (QuestionPoolCache.TryGetValue(category, out var pool) && pool.Count >= count)
+        if (QuestionPoolCache.TryGetValue(category, out var pool) && pool.Items.Count >= count)
         {
             lock (pool)
             {
-                if (pool.Count >= count)
+                if (pool.Items.Count >= count)
                 {
-                    return SelectVariedSet(pool, count);
+                    return SelectVariedSet(pool.Items, count);
                 }
             }
         }
@@ -192,22 +206,31 @@ public sealed class AiQuizGeneratorService : IOpenAIService
     /// is how a ten-question quiz can ask the same question twice: after N requests each question
     /// occupies N positions, so a "distinct positions" draw is not a distinct-questions draw.
     /// Deduplicating on question text keeps the pool the size of the distinct material actually
-    /// generated, which is what both the fast path and SelectVariedSet already assume.
+    /// generated, which is what both the fast path and SelectVariedSet already assume. Distinct
+    /// material still accumulates as the six-hour cache entry turns over, so the pool is capped at
+    /// <see cref="MaxPoolPerCategory"/> and drops its oldest questions first.
     /// </remarks>
     private static void MergeIntoPool(QuestionCategory category, IReadOnlyList<QuizQuestion> batch)
     {
-        var pool = QuestionPoolCache.GetOrAdd(category, _ => new List<QuizQuestion>());
+        var pool = QuestionPoolCache.GetOrAdd(category, _ => new QuestionPool());
         lock (pool)
         {
             // Normalized-hash identity (QuizQuality.Hash), not exact text: "What's the capital of
             // France" and "What is the capital of France?" are one question.
-            var seen = new HashSet<string>(pool.Select(q => QuizQuality.Hash(q.Text)), StringComparer.Ordinal);
             foreach (var question in batch)
             {
-                if (seen.Add(QuizQuality.Hash(question.Text)))
+                if (pool.Seen.Add(QuizQuality.Hash(question.Text)))
                 {
-                    pool.Add(question);
+                    pool.Items.Add(question);
                 }
+            }
+
+            var excess = pool.Items.Count - MaxPoolPerCategory;
+            if (excess > 0)
+            {
+                for (var i = 0; i < excess; i++)
+                    pool.Seen.Remove(QuizQuality.Hash(pool.Items[i].Text));
+                pool.Items.RemoveRange(0, excess);
             }
         }
     }

@@ -160,7 +160,13 @@
        label and a Status link; Status is in the account menu now, and the row's height
        was space every page needed (the hub's grid, a portrait game). The landmark
        stays so a screen-reader user still finds the site's end. *@
-    <footer class="gl-sr-only" aria-label="Site information">PoMiniGames</footer>
+    <footer class="gl-sr-only" aria-label="Site information">PoMiniGames, build @BuildInfo.Date</footer>
+
+    @* Build-date stamp (YYMMDD, generated at build time into BuildInfo.Date by the client
+       csproj). Faint, bottom-right, ignores the pointer and is not focusable; it is hidden
+       on game pages (any page with a GameShell) so it never sits on a game's controls.
+       The footer above carries the same date for screen readers. *@
+    <span class="gl-build-stamp" aria-hidden="true">@BuildInfo.Date</span>
 
     @* The one settings sheet. Mounted here so it exists on every route; it opens
        itself when anything calls Settings.RequestOpen(). *@

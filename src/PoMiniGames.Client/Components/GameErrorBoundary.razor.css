@@ -1,0 +1,38 @@
+/* The retry box a crashed game shows inside the shell. The game area is a flex row that
+   centres its content and ignores the pointer (games opt in), so the box turns the
+   pointer back on for its own buttons. */
+.game-error {
+    pointer-events: auto;
+    max-width: 26rem;
+    margin: var(--space-4) auto;
+    padding: var(--space-4);
+    border: 1px solid color-mix(in srgb, var(--accent-danger) 45%, transparent);
+    border-radius: var(--radius-lg);
+    background: var(--color-surface);
+    color: var(--color-text-primary);
+    text-align: center;
+}
+
+.game-error__icon {
+    font-size: 1.75rem;
+    margin-bottom: var(--space-1);
+}
+
+.game-error__title {
+    margin: 0 0 var(--space-2);
+    font-size: var(--text-lg);
+    font-weight: 700;
+}
+
+.game-error__body {
+    margin: 0 0 var(--space-3);
+    font-size: var(--text-sm);
+    line-height: 1.5;
+    color: var(--color-text-secondary);
+}
+
+.game-error__actions {
+    display: flex;
+    justify-content: center;
+    gap: var(--space-2);
+}

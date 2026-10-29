@@ -41,6 +41,7 @@ let onPointerMove = null;
 let onTierChange = null;
 let onVisibilityChange = null;
 let onPageHide = null;
+let gateObs = null;
 let bandTimer = 0;
 
 // Frame thumbnails (snapshot()): one request in flight at a time.
@@ -60,6 +61,21 @@ const MAX_DPR = 1.0;
 // Bands → worker at ~15 Hz. The worker interpolates between messages, so the
 // visual is smooth; posting per frame would clone a message 60×/s for 3 floats.
 const BAND_INTERVAL_MS = 66;
+
+/**
+ * Off on the low tier and under reduced motion — the OS setting or the app's own
+ * Profile toggle (data-motion on <html>; app.js's probe only sees the OS one).
+ */
+function suppressed() {
+    try {
+        const root = document.documentElement;
+        if (root.getAttribute('data-gfx') === 'low') return true;
+        if (root.getAttribute('data-motion') === 'reduce') return true;
+        return window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+    } catch {
+        return false;
+    }
+}
 
 function currentQualityScale() {
     try {
@@ -141,7 +157,10 @@ function attachDomObservers(canvas, onResize, onPointer, onVisible, onViewport, 
             window.PoCue?.fire('ui', 'fluidRipple');
         }
     };
-    canvas.addEventListener('pointermove', onPointerMove, { passive: true });
+    // On the window, not the canvas: the canvas is pointer-events: none (taps must
+    // reach the cards above it), so a listener on it never fired and the field sat
+    // still under the pointer.
+    window.addEventListener('pointermove', onPointerMove, { passive: true });
 
     // Keep references: these must be the SAME function objects passed to
     // removeEventListener in stop(), or the listeners outlive the canvas.
@@ -151,10 +170,22 @@ function attachDomObservers(canvas, onResize, onPointer, onVisible, onViewport, 
     window.addEventListener('pagehide', onPageHide);
 
     // Battery guard: pause rendering when the canvas leaves the viewport.
+    // The low tier or a reduced-motion switch mid-session pauses the render and
+    // hides the last frame; leaving it resumes. Folded into the viewport flag the
+    // render loop already honours, so there is one pause path, not two.
+    let onScreen = true;
+    const applyGate = () => {
+        const off = suppressed();
+        canvas.style.visibility = off ? 'hidden' : '';
+        onViewport(onScreen && !off);
+    };
     intersectObs = new IntersectionObserver((entries) => {
-        for (const e of entries) onViewport(e.isIntersecting);
+        for (const e of entries) onScreen = e.isIntersecting;
+        applyGate();
     }, { rootMargin: '50px' });
     intersectObs.observe(canvas);
+    gateObs = new MutationObserver(applyGate);
+    gateObs.observe(document.documentElement, { attributes: true, attributeFilter: ['data-gfx', 'data-motion'] });
 
     // Adaptive quality: visualRuntime.js is the single authority on how much
     // the machine can afford. A tier change also resizes the backing store,
@@ -226,6 +257,8 @@ function takeSnap() {
 }
 
 export function start(canvas) {
+    // Never wake the GPU for a field nobody should see. The CSS gradient behind it stays.
+    if (suppressed()) return false;
     const ok = startRender(canvas);
     // Glass hub cards (high tier only — glassFx gates itself on every capture). glassFx
     // arrives late in fxBootstrap's chain, so a first visit may beat it here: retry briefly.
@@ -372,10 +405,9 @@ export function stop() {
     }
     if (resizeObs) { resizeObs.disconnect(); resizeObs = null; }
     if (intersectObs) { intersectObs.disconnect(); intersectObs = null; }
+    if (gateObs) { gateObs.disconnect(); gateObs = null; }
     if (onTierChange) { window.removeEventListener('po-gfx-tier', onTierChange); onTierChange = null; }
-    if (boundCanvas && onPointerMove) {
-        boundCanvas.removeEventListener('pointermove', onPointerMove);
-    }
+    if (onPointerMove) window.removeEventListener('pointermove', onPointerMove);
     onPointerMove = null;
     boundCanvas = null;
 

@@ -2,27 +2,15 @@
 
   <PropertyGroup>
     <!-- TFM / Nullable / ImplicitUsings inherited from Directory.Build.props.
-         Trimming safeguards. All HttpClient JSON call sites go through
-         ApiJsonContext (source-generated). IL2026/IL2091 in user code are fixed.
-         IL2110/IL2111 are suppressed for Blazor framework code only: LayoutView.Layout
-         and Router.NotFoundPage setters in App_razor.g.cs use reflection-based
-         parameter dispatch that the Blazor source generator does not yet emit as
-         trim-safe; these cannot be fixed in user code.
-         NOTE: PoMiniGames.Shared carries NO such suppression — it is genuinely trim-clean.
-
-         RISK / TODO (scope this later): this NoWarn is project-wide, so it also
-         silences any *genuine* IL2110/IL2111 trim warning in our OWN code, not just
-         the framework false-positives above. It exists solely for the generated
-         App_razor.g.cs LayoutView.Layout / Router.NotFoundPage setter dispatch. It is
-         kept blanket because those warnings originate in generated code with no stable
-         member handle to target via a scoped [UnconditionalSuppressMessage] or
-         per-file suppression; narrowing it safely would require a targeted attribute on
-         the exact framework-generated members, which we cannot reference here without
-         risking a broken build. Prefer safety: leave it until those members can be
-         suppressed narrowly. -->
-    <IsTrimmable>true</IsTrimmable>
+         Trimming. The app assembly is deliberately NOT IsTrimmable: Blazor's Router finds
+         every @page component by reflecting over it, so trimming it removes every page
+         nobody references statically and each route falls through to NotFound. Untrimmed,
+         it ships whole (no TrimmerRoots descriptor needed); framework and library
+         assemblies, and the IsTrimmable Shared/Domain projects, are still trimmed.
+         EnableTrimAnalyzer still flags trim-unsafe code here. All HttpClient JSON call
+         sites go through ApiJsonContext (source-generated). The only suppressions are
+         IL2110/IL2111, scoped to App.razor's generated LayoutView/Router dispatch. -->
     <EnableTrimAnalyzer>true</EnableTrimAnalyzer>
-    <NoWarn>$(NoWarn);IL2110;IL2111</NoWarn>
   </PropertyGroup>
 
   <PropertyGroup>
@@ -39,12 +27,6 @@
   <ItemGroup>
     <ServiceWorker Include="wwwroot\service-worker.js"
                    PublishedContent="wwwroot\service-worker.published.js" />
-  </ItemGroup>
-
-  <ItemGroup>
-    <!-- Preserve reflectively-instantiated layout constructors from the trimmer
-         (see TrimmerRoots.xml — fixes CtorNotLocated for MainLayout in Release). -->
-    <TrimmerRootDescriptor Include="TrimmerRoots.xml" />
   </ItemGroup>
 
   <ItemGroup>
@@ -77,5 +59,28 @@
          here. -->
     <ProjectReference Include="..\PoMiniGames.Domain\PoMiniGames.Domain.csproj" />
   </ItemGroup>
+
+  <!-- Build-date stamp. The YYMMDD (UTC) of the build is written into a generated
+       constant, PoMiniGamesClient.BuildInfo.Date, which MainLayout shows in its corner.
+       A constant, not an assembly attribute, so reading it needs no reflection under
+       trimming. Pass -p:PoBuildDate=YYMMDD to pin it. The file is only rewritten when
+       the date changes, so an unchanged day stays an incremental build. -->
+  <PropertyGroup>
+    <PoBuildDate Condition="'$(PoBuildDate)' == ''">$([System.DateTime]::UtcNow.ToString("yyMMdd"))</PoBuildDate>
+  </PropertyGroup>
+
+  <Target Name="PoWriteBuildInfo" BeforeTargets="CoreCompile">
+    <PropertyGroup>
+      <_PoBuildInfoFile>$(IntermediateOutputPath)PoBuildInfo.g.cs</_PoBuildInfoFile>
+    </PropertyGroup>
+    <WriteLinesToFile File="$(_PoBuildInfoFile)"
+                      Lines="// &lt;auto-generated /&gt;;namespace PoMiniGamesClient%3B;internal static class BuildInfo;{;    public const string Date = &quot;$(PoBuildDate)&quot;%3B;}"
+                      Overwrite="true"
+                      WriteOnlyWhenDifferent="true" />
+    <ItemGroup>
+      <Compile Include="$(_PoBuildInfoFile)" />
+      <FileWrites Include="$(_PoBuildInfoFile)" />
+    </ItemGroup>
+  </Target>
 
 </Project>

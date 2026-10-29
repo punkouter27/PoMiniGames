@@ -13,10 +13,15 @@
 //
 // THE GRAPH
 //
-//     ui   ──┐
-//     sfx  ──┼─→ preMaster ─→ compressor ─→ masterGain ─→ analyser ─→ destination
-//     music ─┘        │                                       │
-//                     └──→ reverbSend ─→ convolver ───┘       └→ getLevels()
+//     ui   ──┬─→ sfxVol ──┐
+//     sfx  ──┘             ├─→ preMaster ─→ compressor ─→ masterGain ─→ analyser ─→ destination
+//     music ───→ musicVol ─┘        │                                       │
+//                                   └──→ reverbSend ─→ convolver ───┘       └→ getLevels()
+//
+// Two level stages sit between the buses and the mix: sfxVol (UI clicks and game
+// effects — one "Effects" slider) and musicVol (the adaptive layers, musicLayers.js).
+// They are separate nodes from the buses themselves because duck() automates the
+// music bus's own gain; one owner per AudioParam.
 //
 // The compressor is a safety net: generative audio has no mastering engineer,
 // and stacking a fanfare over an ambient bed over UI clicks can clip. The
@@ -27,12 +32,21 @@
 
 const MUTE_KEY = 'pomini_muted';
 const VOLUME_KEY = 'pomini_volume';
+// Per-category levels, integer percent like VOLUME_KEY. Music defaults to 0: background
+// music is off app-wide unless the player turns it up, so a fresh install stays as quiet
+// as it was before the music stage existed.
+const BUS_VOLUME_KEYS = { sfx: 'pomini_sfx_volume', music: 'pomini_music_volume' };
+const BUS_VOLUME_DEFAULTS = { sfx: 1, music: 0 };
 
 let _ctx = null;
 let _initPromise = null;
 let _nodes = null;
 let _muted = readMutedFromStorage();
 let _volume = readVolumeFromStorage();
+let _busVolume = {
+    sfx: readPercent(BUS_VOLUME_KEYS.sfx, BUS_VOLUME_DEFAULTS.sfx),
+    music: readPercent(BUS_VOLUME_KEYS.music, BUS_VOLUME_DEFAULTS.music),
+};
 let _analyserData = null;
 
 function readMutedFromStorage() {
@@ -52,14 +66,19 @@ function readMutedFromStorage() {
  * corrupt key must never look like broken audio.
  */
 function readVolumeFromStorage() {
+    return readPercent(VOLUME_KEY, 1);
+}
+
+/** An integer-percent key as 0..1; missing or unparseable is `fallback`. */
+function readPercent(key, fallback) {
     try {
-        const raw = localStorage.getItem(VOLUME_KEY);
-        if (raw === null) return 1;
+        const raw = localStorage.getItem(key);
+        if (raw === null) return fallback;
         const pct = parseInt(raw, 10);
-        if (!Number.isFinite(pct)) return 1;
+        if (!Number.isFinite(pct)) return fallback;
         return Math.max(0, Math.min(100, pct)) / 100;
     } catch {
-        return 1;
+        return fallback;
     }
 }
 
@@ -141,6 +160,10 @@ function buildGraph(ctx) {
     const music = ctx.createGain();
     const sfx = ctx.createGain();
     const ui = ctx.createGain();
+    const sfxVol = ctx.createGain();
+    sfxVol.gain.value = _busVolume.sfx;
+    const musicVol = ctx.createGain();
+    musicVol.gain.value = _busVolume.music;
 
     // Synthesized impulse response — a reverb with no asset to download.
     // Exponentially-decaying stereo noise is a crude but convincing small-room
@@ -152,10 +175,12 @@ function buildGraph(ctx) {
     const reverbReturn = ctx.createGain();
     reverbReturn.gain.value = 0.9;
 
-    // Background music is switched off app-wide: the music bus is deliberately left
-    // unconnected, so anything still routed to it is silent.
-    sfx.connect(preMaster);
-    ui.connect(preMaster);
+    // Background music is off app-wide by default: musicVol starts at the stored music
+    // level, which is 0 until the player raises it.
+    sfx.connect(sfxVol);
+    ui.connect(sfxVol);
+    sfxVol.connect(preMaster);
+    music.connect(musicVol).connect(preMaster);
 
     preMaster.connect(reverbSend);
     reverbSend.connect(convolver).connect(reverbReturn).connect(compressor);
@@ -163,7 +188,10 @@ function buildGraph(ctx) {
     preMaster.connect(compressor);
     compressor.connect(masterGain).connect(analyser).connect(ctx.destination);
 
-    _nodes = { masterGain, analyser, compressor, preMaster, music, sfx, ui, convolver, reverbSend, reverbReturn };
+    _nodes = {
+        masterGain, analyser, compressor, preMaster, music, sfx, ui, sfxVol, musicVol,
+        convolver, reverbSend, reverbReturn,
+    };
 }
 
 /**
@@ -248,6 +276,44 @@ export function setVolume(volume) {
     _volume = Number.isFinite(v) ? Math.max(0, Math.min(1, v)) : 1;
     try { localStorage.setItem(VOLUME_KEY, String(Math.round(_volume * 100))); } catch { /* private mode */ }
     applyGain();
+}
+
+/**
+ * Level of one category, 0..1: 'sfx' (UI clicks and game effects share it) or 'music'.
+ * Anything else reads as the sfx level.
+ * @param {'sfx'|'ui'|'music'} name
+ */
+export function getBusVolume(name) {
+    return name === 'music' ? _busVolume.music : _busVolume.sfx;
+}
+
+/**
+ * Set one category's level, 0..1, ramped like setVolume. 'ui' is the same stage as
+ * 'sfx': players think of clicks and hits as one kind of sound.
+ * @param {'sfx'|'ui'|'music'} name
+ * @param {number} volume
+ */
+export function setBusVolume(name, volume) {
+    const key = name === 'music' ? 'music' : 'sfx';
+    const v = Number(volume);
+    _busVolume[key] = Number.isFinite(v) ? Math.max(0, Math.min(1, v)) : BUS_VOLUME_DEFAULTS[key];
+    try { localStorage.setItem(BUS_VOLUME_KEYS[key], String(Math.round(_busVolume[key] * 100))); } catch { /* private mode */ }
+    if (_nodes && _ctx) {
+        const g = (key === 'music' ? _nodes.musicVol : _nodes.sfxVol).gain;
+        const t = _ctx.currentTime;
+        g.cancelScheduledValues(t);
+        g.setTargetAtTime(_busVolume[key], t, 0.02);
+    }
+    try { window.dispatchEvent(new Event('po-audio-change')); } catch { /* no window */ }
+}
+
+/**
+ * True when a category would reach the speakers at all — not muted and neither the
+ * master nor that category at 0. Generators check this to skip scheduling silence.
+ * @param {'sfx'|'ui'|'music'} name
+ */
+export function isAudible(name) {
+    return !_muted && _volume > 0 && getBusVolume(name) > 0;
 }
 
 /**
@@ -402,6 +468,7 @@ if (typeof window !== 'undefined') {
     // shared graph quietly stops being shared.
     window.PoAudioBus = {
         context, contextSync, bus, busSync, isMuted, setMuted, getVolume, setVolume,
+        getBusVolume, setBusVolume, isAudible,
         duck, setReverb, setSpaceBuffer, reverbSend, panner, getLevels, resume, isAvailable, hasContext,
     };
 }

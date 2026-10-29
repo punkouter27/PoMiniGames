@@ -29,7 +29,10 @@
             @* One bar for the whole page: the Jev chip (what it says follows the phase) and, while
                drafting, the one primary action. The score lives on the arena's glass HUD. *@
             <header class="jev-topbar">
-                <span class="jev-status @(Configured ? "is-ok" : "is-off")" role="status">@StatusText</span>
+                @* Its own render region: during a match the chip counts moves at the HUD's 4 Hz (OnHud). *@
+                <HudRegion @ref="_statusRegion">
+                    <span class="jev-status @(Configured ? "is-ok" : "is-off")" role="status">@StatusText</span>
+                </HudRegion>
                 @if (Drafting)
                 {
                     @if (DeployNote is not null)
@@ -116,14 +119,17 @@
                         <div class="jev-arena @(ShowDebrief ? "is-hidden" : null)">
                             <canvas id="@CanvasId" class="jev-arena__canvas" aria-label="Arena. Click a creature to inspect it."></canvas>
                             <canvas id="@(CanvasId + "Gl")" class="jev-arena__gl" hidden aria-hidden="true"></canvas>
-                            <div class="jev-hud" data-glass hidden="@(_phase != Phase.Battle || _hud is null)">
-                                <span class="jev-hud__team jev-hud__team--blue">Blue @_hud?.BlueAlive</span>
-                                <span class="jev-hud__bar" role="img" aria-label="@HpShareLabel" style="--blue: @BlueSharePct%"></span>
-                                <span class="jev-hud__team jev-hud__team--red">@_hud?.RedAlive Red</span>
-                                <span class="jev-hud__clock">@Clock(_hud?.Time ?? 0)</span>
-                                <span class="jev-hud__map jev-small">@_hud?.Arena</span>
-                                <button type="button" class="jev-hud__cam" aria-pressed="@Pressed(_autoCamera)" @onclick="ToggleCameraAsync">Auto camera</button>
-                            </div>
+                            @* The glass HUD re-renders on its own at 4 Hz (OnHud), not with the page. *@
+                            <HudRegion @ref="_hudRegion">
+                                <div class="jev-hud" data-glass hidden="@(_phase != Phase.Battle || _hud is null)">
+                                    <span class="jev-hud__team jev-hud__team--blue">Blue @_hud?.BlueAlive</span>
+                                    <span class="jev-hud__bar" role="img" aria-label="@HpShareLabel" style="--blue: @BlueSharePct%"></span>
+                                    <span class="jev-hud__team jev-hud__team--red">@_hud?.RedAlive Red</span>
+                                    <span class="jev-hud__clock">@Clock(_hud?.Time ?? 0)</span>
+                                    <span class="jev-hud__map jev-small">@_hud?.Arena</span>
+                                    <button type="button" class="jev-hud__cam" aria-pressed="@Pressed(_autoCamera)" @onclick="ToggleCameraAsync">Auto camera</button>
+                                </div>
+                            </HudRegion>
                             @if (_phase == Phase.Battle)
                             {
                                 @* Hold Tab for the stat HUD; this is the same toggle for touch, where there is no Tab. *@

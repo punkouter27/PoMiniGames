@@ -79,8 +79,26 @@ public sealed class PoEcosystemInteropService : IAsyncDisposable
             ["demo"] = demo,
             ["ephemeral"] = ephemeral,
         };
+        _lastPopHistory = [];
+        _lastTraitHistory = null;
         _started = await _js.InvokeAsync<bool>("PoEcosystem.start", containerId, _self, options);
         return _started;
+    }
+
+    // ── stats histories ──────────────────────────────────────────────────
+    // popHistory / traitHistory are most of a stats message and only the dashboard's
+    // timeline and evolution charts read them, so the engine sends them (as raw bytes) only
+    // while one of those is on screen. In between, StatsReceived carries the last ones seen.
+    private bool? _historyWanted;
+    private int[] _lastPopHistory = [];
+    private double[]? _lastTraitHistory;
+
+    /// <summary>Ask the engine to include (or stop including) the stats histories. Deduped.</summary>
+    public async ValueTask SetHistoryWantedAsync(bool on)
+    {
+        if (!_started || _historyWanted == on) return;
+        _historyWanted = on;
+        await SafeInvokeAsync("PoEcosystem.setHistoryWanted", on);
     }
 
     public ValueTask SetSpeedAsync(int speed) => SafeInvokeAsync("PoEcosystem.setSpeed", speed);
@@ -233,11 +251,32 @@ public sealed class PoEcosystemInteropService : IAsyncDisposable
         if (frames is not null) KeyframesReceived?.Invoke(frames);
     }
 
+    /// <param name="popHistory">Int16 little-endian, [sample * 4 + species]; null when the page did not ask.</param>
+    /// <param name="traitHistory">Float32 little-endian, [sample * 20 + species * 5 + trait]; null likewise.</param>
     [JSInvokable]
-    public void OnStats(string json)
+    public void OnStats(string json, byte[]? popHistory, byte[]? traitHistory)
     {
         var stats = Deserialize(json, EcoJsonContext.Default.EcoStats);
-        if (stats is not null) StatsReceived?.Invoke(stats);
+        if (stats is null) return;
+        if (popHistory is not null) _lastPopHistory = DecodeInt16(popHistory);
+        if (traitHistory is not null) _lastTraitHistory = DecodeFloat32(traitHistory);
+        StatsReceived?.Invoke(stats with { PopHistory = _lastPopHistory, TraitHistory = _lastTraitHistory });
+    }
+
+    internal static int[] DecodeInt16(ReadOnlySpan<byte> bytes)
+    {
+        var src = System.Runtime.InteropServices.MemoryMarshal.Cast<byte, short>(bytes[..(bytes.Length & ~1)]);
+        var dst = new int[src.Length];
+        for (var i = 0; i < src.Length; i++) dst[i] = src[i];
+        return dst;
+    }
+
+    internal static double[] DecodeFloat32(ReadOnlySpan<byte> bytes)
+    {
+        var src = System.Runtime.InteropServices.MemoryMarshal.Cast<byte, float>(bytes[..(bytes.Length & ~3)]);
+        var dst = new double[src.Length];
+        for (var i = 0; i < src.Length; i++) dst[i] = src[i];
+        return dst;
     }
 
     [JSInvokable]

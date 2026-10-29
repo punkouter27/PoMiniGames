@@ -597,6 +597,9 @@
         _p2Char = first.P2Id!;
         _announcement = $"Tournament on. {first.Label}: {Name(_p1Char)} versus {Name(_p2Char)}.";
         StateHasChanged();
+        // DisposeAsync bumps _generation; a player who leaves while the engine is still
+        // downloading must not have it initialised against a disposed reference.
+        var generation = _generation;
         try
         {
             if (!await JSRuntime.InvokeAsync<bool>("loadEngine", "pobrawl"))
@@ -604,6 +607,7 @@
                 Console.Error.WriteLine("[pobrawl-cup] engine failed to load");
                 return;
             }
+            if (generation != _generation) return;
             _ref ??= DotNetObjectReference.Create(this);
             await JSRuntime.InvokeVoidAsync("PoBrawl.init", "pobrawl-container", _ref, new
             {
@@ -617,6 +621,11 @@
                 round = (int)first.Round,
                 p1Expected = _cup.ExpectedP1(first),
             });
+            if (generation != _generation)
+            {
+                try { await JSRuntime.InvokeVoidAsync("PoBrawl.destroy"); } catch { }
+                return;
+            }
             await JSRuntime.InvokeVoidAsync("PoBrawl.setSpeed", _speed);
             await JSRuntime.InvokeVoidAsync("PoBrawl.setDirector", _director);
             await JSRuntime.InvokeVoidAsync("PoBrawl.setIsoCam", _isoCam);
@@ -736,5 +745,6 @@
         Auth.StateChanged -= OnAuthChanged;
         try { await JSRuntime.InvokeVoidAsync("PoBrawl.destroy"); } catch { }
         _ref?.Dispose();
+        _ref = null;
     }
 }

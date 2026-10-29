@@ -89,6 +89,8 @@ builder.Services.AddSignalR(options =>
     options.PayloadSerializerOptions.Converters.Add(
         new System.Text.Json.Serialization.JsonStringEnumConverter(
             System.Text.Json.JsonNamingPolicy.CamelCase));
+    // Source-generated metadata for the Shared hub DTOs, reflection behind it.
+    PoMiniGames.Shared.Games.HubJsonContext.Apply(options.PayloadSerializerOptions);
 });
 
 // ─── Swagger / OpenAPI ───────────────────────────────────────────────

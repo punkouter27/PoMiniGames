@@ -1,3 +1,4 @@
+using PoMiniGames.Features.Integrity;
 using System.Net;
 using System.Net.Http.Json;
 using FluentAssertions;
@@ -39,7 +40,7 @@ public sealed class PoRacerScoreTests(TestWebApplicationFactory factory) : IClas
             factory.Services.GetRequiredService<PoMiniGames.Features.PoRacer.PoRacerLobbyService>(),
             factory.Services.GetRequiredService<Microsoft.AspNetCore.SignalR.IHubContext<PoMiniGames.Features.PoRacer.PoRacerRaceHub>>(),
             factory.Services.GetRequiredService<Microsoft.Extensions.Logging.ILoggerFactory>(),
-            factory.Services.GetRequiredService<PoMiniGames.Infrastructure.VerifiedResultStore>());
+            factory.Services.GetRequiredService<VerifiedResultStore>());
         PoMiniGames.Features.PoRacer.PoRacerVerifiedLap? kept = null;
         for (var attempt = 0; attempt < 30 && kept is null; attempt++)
         {

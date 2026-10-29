@@ -18,6 +18,7 @@ import { COMBAT_EVENTS, REGIONS, regionEffect } from './combat.js';
 import { PERSONALITIES } from './personalities.js';
 import { testAttackHit, guardCovers, testAttackClash, regionForHurtBone } from './hitboxes.js';
 import { SIM_DT, MAX_HP, ATTACKS, HEAVY_HIT_DMG } from './constants.js';
+import * as Feel from '../feelPresets.js';
 
 // ── Dismemberment ─────────────────────────────────────────────────────────
 // When the arms region reddens, an arm tears off and falls to the canvas with a
@@ -152,9 +153,8 @@ class HitResolutionMethods {
     }
     this._spawnSparks(new THREE.Vector3(mid.x, mid.y - 1.0, mid.z), 0xfff2c0, 14, 1.8);
     this._flashImpactLight(mid, 12, 0xfff2c0, 0.2);
-    this.hitstopT = 6 * SIM_DT;
-    this.shakeT = 0.16;
-    this.shakeAmp = 0.1;
+    this.hitstopT = Feel.hitstopFrames('clash') * SIM_DT;
+    Feel.shake(this, 'clash');
     this.audio.block(mid);
     this._show('block', { point: mid });
     this.excited = Math.max(this.excited, 0.5);
@@ -843,13 +843,13 @@ class HitResolutionMethods {
 
   _hitFeedback(attack, connected, chargeMul = 1) {
     if (!connected) {
-      this.shakeT = 0.08; this.shakeAmp = 0.05;
+      Feel.shake(this, 'whiff');
       return;
     }
     // Hit-pause scales with attack weight and stored charge — a fully charged
     // release lands with a heavier stop, shake and lens kick. Charge adds a
     // fraction of the base, hard-capped at HITSTOP_MAX_FRAMES (see there).
-    const base = attack.name === 'kick' ? 5 : 3;
+    const base = Feel.hitstopFrames(attack.name === 'kick' ? 'kick' : 'jab');
     const frames = Math.min(
       HITSTOP_MAX_FRAMES,
       Math.round(base * (1 + HITSTOP_CHARGE_BONUS * (chargeMul - 1)))
@@ -857,8 +857,7 @@ class HitResolutionMethods {
     this.hitstopT = frames * SIM_DT;
     // Random jitter stays small — the directional spring impulse (in
     // _landHit) carries most of the camera reaction.
-    this.shakeT = 0.14;
-    this.shakeAmp = (attack.name === 'kick' ? 0.09 : 0.06) * chargeMul;
+    Feel.shake(this, attack.name === 'kick' ? 'kick' : 'jab', chargeMul);
     this.fovPunch = (attack.name === 'kick' ? 5.0 : 3.0) * chargeMul;
     // No full-frame post-FX pulses per hit: several hits a second overlap
     // into a continuous flicker.

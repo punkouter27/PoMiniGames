@@ -35,8 +35,8 @@ public sealed record GameOverMoment(
     /// Sports — so the modal asks for the family and takes whichever this game defines.
     /// The final entry in each list is the shared "ui" fallback, which every scope resolves.
     /// </summary>
-    private static readonly string[] WinCues = ["win", "ko", "finish", "goal", "correct", "confirm"];
-    private static readonly string[] LossCues = ["death", "bust", "crash", "wrong", "timeout", "error"];
+    private static readonly string[] WinCues = ["win", "ko", "finish", "goal", "correct", "victory", "confirm"];
+    private static readonly string[] LossCues = ["death", "bust", "crash", "wrong", "timeout", "defeat", "error"];
     private static readonly string[] DrawCues = ["draw", "whistle", "reveal", "confirm"];
 
     /// <summary>

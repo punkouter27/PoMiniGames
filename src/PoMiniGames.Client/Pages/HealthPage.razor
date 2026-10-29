@@ -4,6 +4,7 @@
 @using PoMiniGamesClient.Services
 @implements IDisposable
 @inject HttpClient Http
+@inject IWebAssemblyHostEnvironment Env
 
 @*
     /health — the human-facing status page for this app's external connections.
@@ -33,60 +34,65 @@
         </div>
     </header>
 
-    @if (_error is not null)
-    {
-        @* An unreachable /api/health is itself the answer, and the most important one this
-           page can give — surface it as the result rather than as an empty table. *@
-        @* The `_error` message stays in the body so the on-call engineer can read it
-           without expanding a details element. *@
-        <ErrorState Icon="📡"
-                    Title="Could not reach the health endpoint"
-                    OnRetry="RefreshAsync">
-            @_error
-        </ErrorState>
-    }
-    else if (_report is null)
-    {
-        @* Shared `.app-loading` primitive — same centered spinner + muted label as the
-           leaderboards / lobbies. *@
-        <div class="app-loading" role="status" aria-live="polite">
-            <div class="app-loading__spinner" aria-hidden="true"></div>
-            <span>Contacting the API…</span>
-        </div>
-    }
-    else if (_report.Checks.Count == 0)
-    {
-        <EmptyState Icon="🩺"
-                    Title="No registered dependency checks">
-            The API is reachable but reports no registered dependency checks.
-        </EmptyState>
-    }
-    else
-    {
-        <table class="hp-table">
-            <thead>
-                <tr>
-                    <th scope="col">Connection</th>
-                    <th scope="col">Status</th>
-                    <th scope="col">Detail</th>
-                </tr>
-            </thead>
-            <tbody>
-                @foreach (var check in _report.Checks)
-                {
+    @* The result area holds a fixed minimum height from the first paint, so the spinner
+       giving way to the checks does not push the footer down the page (a layout shift
+       the link audit, LinkAuditUiTests, measures). *@
+    <div class="hp-body">
+        @if (_error is not null)
+        {
+            @* An unreachable /api/health is itself the answer, and the most important one this
+               page can give — surface it as the result rather than as an empty table. *@
+            @* The `_error` message stays in the body so the on-call engineer can read it
+               without expanding a details element. *@
+            <ErrorState Icon="📡"
+                        Title="Could not reach the health endpoint"
+                        OnRetry="RefreshAsync">
+                @_error
+            </ErrorState>
+        }
+        else if (_report is null)
+        {
+            @* Shared `.app-loading` primitive — same centered spinner + muted label as the
+               leaderboards / lobbies. *@
+            <div class="app-loading" role="status" aria-live="polite">
+                <div class="app-loading__spinner" aria-hidden="true"></div>
+                <span>Contacting the API…</span>
+            </div>
+        }
+        else if (_report.Checks.Count == 0)
+        {
+            <EmptyState Icon="🩺"
+                        Title="No registered dependency checks">
+                The API is reachable but reports no registered dependency checks.
+            </EmptyState>
+        }
+        else
+        {
+            <table class="hp-table">
+                <thead>
                     <tr>
-                        @* data-label renders as the small uppercase caption next to
-                           each value when the table reflows into cards on phones
-                           (HealthPage.razor.css, @media max-width 640px). Desktop
-                           ignores the attribute. *@
-                        <th scope="row" class="hp-name" data-label="Connection">@check.Name</th>
-                        <td data-label="Status"><span class="hp-dot hp-dot--@Slug(check.Status)" aria-hidden="true"></span>@check.Status</td>
-                        <td class="hp-detail" data-label="Detail">@(string.IsNullOrWhiteSpace(check.Description) ? "—" : check.Description)</td>
+                        <th scope="col">Connection</th>
+                        <th scope="col">Status</th>
+                        <th scope="col">Detail</th>
                     </tr>
-                }
-            </tbody>
-        </table>
-    }
+                </thead>
+                <tbody>
+                    @foreach (var check in _report.Checks)
+                    {
+                        <tr>
+                            @* data-label renders as the small uppercase caption next to
+                               each value when the table reflows into cards on phones
+                               (HealthPage.razor.css, @media max-width 640px). Desktop
+                               ignores the attribute. *@
+                            <th scope="row" class="hp-name" data-label="Connection">@check.Name</th>
+                            <td data-label="Status"><span class="hp-dot hp-dot--@Slug(check.Status)" aria-hidden="true"></span>@check.Status</td>
+                            <td class="hp-detail" data-label="Detail">@(string.IsNullOrWhiteSpace(check.Description) ? "—" : check.Description)</td>
+                        </tr>
+                    }
+                </tbody>
+            </table>
+        }
+    </div>
 
     <p class="hp-muted hp-foot">
         Last checked @(_checkedAt?.ToLocalTime().ToString("HH:mm:ss") ?? "—").
@@ -99,7 +105,7 @@
             <button class="hp-link-btn" @onclick="() => _showDeveloperLinks = false" aria-label="Hide developer endpoints">hide developer endpoints</button>
             <span class="hp-foot-divider">·</span>
             <span class="hp-foot-devlinks">
-                @foreach (var ep in _developerEndpoints)
+                @foreach (var ep in DeveloperEndpoints)
                 {
                     <code>@ep</code>
                 }
@@ -123,8 +129,11 @@
     // /health page doesn't leak /api/diag and friends to every visitor.
     // Default off; a click reveals them in place.
     private bool _showDeveloperLinks;
-    private static readonly string[] _developerEndpoints =
-        ["/api/diag", "/api/logs/tail"];
+    // /api/logs/tail is mapped only in Development (DiagEndpoints), so it is listed only
+    // there; anywhere else it would advertise a route that answers with the SPA shell.
+    private IEnumerable<string> DeveloperEndpoints => Env.IsDevelopment()
+        ? ["/api/diag", "/api/logs/tail"]
+        : ["/api/diag"];
 
     // Polling keeps an on-call tab current without a manual refresh. 15s is slow enough
     // that a parked tab costs the API almost nothing and fast enough to catch a dependency

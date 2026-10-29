@@ -660,11 +660,57 @@ public partial class PoCabinetPageBase : ComponentBase, IAsyncDisposable
         catch { _minimapHandle = null; }
     }
 
-    /// <summary>race.js pushes one of these per tick in solo modes (the server does, online).</summary>
+    /// <summary>
+    /// race.js, solo modes, on the first tick and at the finish: the whole field as JSON, parsed
+    /// with the source-generated <see cref="PoCabinetJsonContext"/> (the server pushes snapshots online).
+    /// </summary>
     [JSInvokable]
-    public Task OnSoloSnapshotAsync(PoCabinetRaceSnapshot snap)
+    public Task OnSoloSnapshotJsonAsync(string json)
     {
-        if (_phase == Phase.Racing) ApplySnapshot(snap);
+        if (_phase != Phase.Racing || string.IsNullOrEmpty(json)) return Task.CompletedTask;
+        var snap = System.Text.Json.JsonSerializer.Deserialize(json, PoCabinetJsonContext.Default.PoCabinetRaceSnapshot);
+        if (snap is not null) ApplySnapshot(snap);
+        return Task.CompletedTask;
+    }
+
+    // One snapshot and one local-car row, reused by every solo tick: the HUD only reads them.
+    private readonly PoCabinetCarState _soloTickCar = new() { IsPlayer = true };
+    private readonly PoCabinetDialogueEvent _soloTickLine = new();
+    private PoCabinetRaceSnapshot? _soloTickSnap;
+
+    /// <summary>
+    /// race.js, solo modes, every other tick (~30 Hz): the local car as positional primitives, so
+    /// the hot path marshals no nested object. Flags: 1 started, 2 lap invalid, 4 wrecked, 8 car finished.
+    /// </summary>
+    [JSInvokable]
+    public Task OnSoloTickAsync(double elapsed, int countdown, int carId, int lap, int position, int flags,
+        double bestLap, string? lineOfficialId, string? lineText, long lineTick)
+    {
+        if (_phase != Phase.Racing) return Task.CompletedTask;
+        var car = _soloTickCar;
+        car.Id = carId;
+        car.Lap = lap;
+        car.Position = position;
+        car.LapInvalid = (flags & 2) != 0;
+        car.Wrecked = (flags & 4) != 0;
+        car.Finished = (flags & 8) != 0;
+        PoCabinetDialogueEvent? line = null;
+        if (!string.IsNullOrEmpty(lineText))
+        {
+            _soloTickLine.OfficialId = lineOfficialId ?? "";
+            _soloTickLine.Text = lineText;
+            _soloTickLine.RaceTick = lineTick;
+            line = _soloTickLine;
+        }
+        var snap = _soloTickSnap ??= new PoCabinetRaceSnapshot { GameCode = "SOLO", Cars = new[] { car } };
+        snap.ElapsedRaceTime = elapsed;
+        snap.Started = (flags & 1) != 0;
+        snap.CountdownSeconds = countdown;
+        snap.Finished = false;
+        snap.LocalCarId = carId;
+        snap.LatestDialogue = line;
+        snap.BestLapSeconds = bestLap > 0 ? bestLap : null;
+        ApplySnapshot(snap);
         return Task.CompletedTask;
     }
 

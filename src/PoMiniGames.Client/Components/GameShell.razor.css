@@ -1,0 +1,16 @@
+/* GameShell's own scoped rules. The shell's layout (.gps-shell, .gps-game-area, the
+   no-WebGL card) is global, in css/games.css and css/game-shell.css; this file holds
+   only what the shell's optional parts add. */
+
+/* A game with an options drawer puts its gear on the title's line in the top bar. The
+   title keeps its truncation, and the gear never shrinks. */
+.gps-header-slot--opts {
+    display: flex;
+    align-items: center;
+    gap: var(--space-2);
+    min-width: 0;
+}
+
+.gps-header-slot--opts .gps-game-title {
+    min-width: 0;
+}

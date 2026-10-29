@@ -145,6 +145,38 @@ export function applyVolume(volume) {
 }
 
 /**
+ * Effects volume, 0..1: UI clicks and every game's sound effects, under the master.
+ * The bus persists it as `pomini_sfx_volume` (integer percent, default 100).
+ * @param {number} volume
+ */
+export function applySfxVolume(volume) {
+    try {
+        AudioBus.setBusVolume('sfx', volume);
+    } catch { /* Web Audio unavailable — nothing to set */ }
+}
+
+/**
+ * Music volume, 0..1: the adaptive layers PoRacer and PoBrawl build up as a race or round
+ * heats up (musicLayers.js). Persisted as `pomini_music_volume`, default 0 — music is
+ * opt-in, so nothing plays until the player raises it.
+ * @param {number} volume
+ */
+export function applyMusicVolume(volume) {
+    try {
+        AudioBus.setBusVolume('music', volume);
+    } catch { /* Web Audio unavailable — nothing to set */ }
+}
+
+/** Current effects and music levels (0..1), for a settings sheet to seed its sliders. */
+export function getBusVolumes() {
+    try {
+        return { sfx: AudioBus.getBusVolume('sfx'), music: AudioBus.getBusVolume('music') };
+    } catch {
+        return { sfx: 1, music: 0 };
+    }
+}
+
+/**
  * Master mute. Goes through the bus so the change lands on the live gain node,
  * not just on the storage key: every already-running game engine is connected
  * to that node, so writing storage alone would leave the current session

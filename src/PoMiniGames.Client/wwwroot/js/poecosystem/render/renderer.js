@@ -45,6 +45,7 @@ import { createFauna } from './fauna.js';
 import { createTrails } from './trails.js';
 import { createGrass } from './grass.js';
 import { GOAL } from '../sim/behavior/utility.js';
+import { createSceneRenderer } from './backend.js';
 
 const TAU = Math.PI * 2;
 // What the auto-director calls a cut to an event tile.
@@ -120,7 +121,9 @@ export function createRenderer(container, {
   // an override that can only demote — a Blazor-side low-end hint must not be undone by a
   // machine that happens to report a fast GPU.
   const tier = forcedTier ?? (lowEnd ? 'low' : (window.PoQuality?.tier?.() ?? 'high'));
-  const renderer = new THREE.WebGLRenderer({ canvas, antialias: !lowEnd, powerPreference: 'high-performance' });
+  // backend.js owns the WebGPU/WebGL2 choice; today it always hands back WebGL2 (the
+  // scene's GLSL and composer are not ported) and reports what the WebGPU probe found.
+  const { renderer, report: backend } = createSceneRenderer(THREE, canvas, { lowEnd, tier });
   const maxDpr = window.PoCanvasDpr?.ceiling ? window.PoCanvasDpr.ceiling(lowEnd ? 1 : 2) : Math.min(devicePixelRatio || 1, lowEnd ? 1 : 2);
   let dprScale = 1;
   renderer.setPixelRatio(maxDpr);
@@ -856,6 +859,8 @@ export function createRenderer(container, {
     get fps() { return fps; },
     get dprScale() { return dprScale; },
     get tier() { return tier; },
+    /** { backend: 'webgl2' | 'webgpu', reason, tier, webgpu: probe result | null, blockers }. */
+    get backend() { return backend; },
     get hovered() { return hovered; },
     get locked() { return input.locked; },
     setTerrain, setTiles, acceptFrame,

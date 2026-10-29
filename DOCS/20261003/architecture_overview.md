@@ -409,7 +409,12 @@ secrets in Azure Key Vault. Do not use `dotnet user-secrets` in this repo.
 
 Both quizzes and their answer-similarity scoring point at `gpt-5.4-nano`, the cheapest
 model in `ModelPricing.cs`. The process-local usage, cost and caller-budget read-model is
-`GET /api/diag/ai` (the AI half of `/api/diag`).
+`GET /api/diag/ai` (the AI half of `/api/diag`). Outside Development it requires a signed-in
+caller (anonymous is `401`). Every caller gets their own budget; the cross-identity parts (per-game
+counters and spend, totals, deployment names) are filled in only for operators listed in
+`PoMiniGames:Diag:AiUsageAdmins` (Entra object ids), and the
+response's `aggregates` flag says which view was served. `GET /api/logs/tail` streams unmasked log
+lines, so it is mapped in Development only.
 
 #### Free external content: PoBrawl fighter dossiers
 
@@ -557,6 +562,12 @@ Anti-cheat stays where it was: the server pins each connection to its corner at 
 client only ever sends inputs, and the result comes from the server's copy of the sim alone.
 
 ### 3.8 Game feel: haptics and the super ink shift
+
+**Audio.** `wwwroot/js/audioBus.js` owns one AudioContext and the ui / sfx / music buses. Master
+volume is `pomini_volume`; `pomini_sfx_volume` (default 100) scales ui + sfx together, and
+`pomini_music_volume` (default 0) gates `musicLayers.js`, the adaptive layers PoRacer and PoBrawl
+drive. Settings sets all three through `SettingsService` → `appPrefs.apply*Volume`. A game with no
+win or loss cue of its own falls back to the ui `victory` / `defeat` cues (`GameOverMoment`).
 
 **Haptics.** `wwwroot/js/impactBus.js` is the one gate for every rumble and vibration:
 `gateRumble` / `playRumble` (controller `dual-rumble`) and `vibrate` (phones). It honours the

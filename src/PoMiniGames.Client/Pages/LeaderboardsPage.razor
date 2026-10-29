@@ -5,25 +5,17 @@
 @inject UiFeedbackService Feedback
 @inject ScreenFxService ScreenFx
 @inject AchievementService Achievements
+@inject IJSRuntime JS
 @implements IAsyncDisposable
 
 <PageTitle>Leaderboards · PoMiniGames</PageTitle>
 
 <div class="lb-page">
-    @* The head is a fixed frame rendered from the first paint: title and the period
-       switch on one line, then a meta line that is always reserved, so nothing moves
-       when the boards arrive. The player's best placing is a compact chip on that meta
+    @* The head is a fixed frame rendered from the first paint: the title and a meta line
+       that is always reserved, so nothing moves when the boards arrive. The player's best placing is a compact chip on that meta
        line (it used to be a hero card that pushed the page down once loaded). *@
     <header class="lb-head">
         <h1 class="lb-title">Leaderboards</h1>
-        <div class="app-seg app-seg--quiet lb-period" role="radiogroup" aria-label="Period">
-            <button type="button" role="radio" class="app-seg__btn"
-                    aria-checked="@(_weekly ? "false" : "true")"
-                    @onclick="() => SetPeriodAsync(false)">All time</button>
-            <button type="button" role="radio" class="app-seg__btn"
-                    aria-checked="@(_weekly ? "true" : "false")"
-                    @onclick="() => SetPeriodAsync(true)">This week</button>
-        </div>
         <div class="lb-meta">
             @if (!_loading && _boards.Count > 0)
             {
@@ -43,6 +35,44 @@
             }
         </div>
     </header>
+
+    @* One compact toolbar row: which board, which period, and a player search. Radzen,
+       loaded on demand like Brawl HQ (its theme is global CSS, so it is in the document
+       only while this page is). Radzen's components call its script as they mount, so they
+       render once the theme and script have landed; the row's height is reserved from the
+       first paint, so that moves nothing. *@
+    <div class="lb-toolbar" role="toolbar" aria-label="Leaderboard filters">
+        @if (_radzenReady)
+        {
+            <RadzenDropDown TValue="string" Data="@_pickItems" TextProperty="Label" ValueProperty="Key"
+                            Value="@_selectedGame" Change="@(v => SelectAsync(v as string))"
+                            Disabled="@(_loading || _error || _pickItems.Count == 0)"
+                            Placeholder="Pick a game" class="lb-tb-game"
+                            InputAttributes="@(new Dictionary<string, object> { ["aria-label"] = "Pick a game" })">
+                <Template Context="item">
+                    @{ var pick = (PickItem)(object)item; }
+                    <span class="lb-tb-opt">
+                        <span class="lb-tb-opt-group">@pick.Group</span>
+                        <span class="lb-tb-opt-name">@pick.Title</span>
+                        @if (pick.Rank is int r)
+                        {
+                            <span class="lb-pick-rank" title="Your rank">#@r</span>
+                        }
+                    </span>
+                </Template>
+            </RadzenDropDown>
+            <RadzenSelectBar TValue="bool" Value="@_weekly" Change="@(v => SetPeriodAsync(v))"
+                             Size="ButtonSize.Small" AriaLabel="Period" class="lb-tb-period">
+                <Items>
+                    <RadzenSelectBarItem Text="All time" Value="false" />
+                    <RadzenSelectBarItem Text="This week" Value="true" />
+                </Items>
+            </RadzenSelectBar>
+            <RadzenTextBox Value="@_search" Change="@(v => SearchAsync(v))" Immediate="true"
+                           Placeholder="Find a player" class="lb-tb-search" MaxLength="40"
+                           aria-label="Find a player on this board" autocomplete="off" />
+        }
+    </div>
 
     @if (!_loading && !_error && _boards.Count == 0)
     {
@@ -89,59 +119,26 @@
     {
         @* One board at a time. Laying every board out at once would be fourteen
            cards, each showing what the end-of-game modal already shows, and
-           2,600px of them on a phone. The picker is the page's navigation and the
-           one board it selects is ten rows deep, with the player's own line added
-           when they rank below that.
-
-           Two renderings of the same picker, toggled in CSS so there is no layout
-           shift: a native <select> on a phone (fourteen chips wrapped to 312px
-           there, and a sideways-scrolling strip is ruled out), a side list on
-           anything wider. Both carry the player's rank beside each board. *@
+           2,600px of them on a phone. The toolbar's picker is the page's navigation
+           and the one board it selects is ten rows deep, with the player's own line
+           added when they rank below that. *@
         <div class="lb-layout">
-            <select class="lb-select" aria-label="Pick a game"
-                    value="@_selectedGame" @onchange="e => SelectAsync(e.Value?.ToString())">
-                @foreach (var group in _groupedBoards)
-                {
-                    <optgroup label="@group.Title">
-                        @foreach (var b in group.Boards)
-                        {
-                            <option value="@b.GameKey">@OptionLabel(b)</option>
-                        }
-                    </optgroup>
-                }
-            </select>
-
-            <nav class="lb-pick" aria-label="Pick a game">
-                @foreach (var group in _groupedBoards)
-                {
-                    // The visible heading is a stylised "1 PLAYER";
-                    // the aria-label carries the readable form.
-                    <h2 class="gps-phase-h" aria-label="@($"{GroupAriaLabel(group.Title)} leaderboards")">@group.Title</h2>
-                    @foreach (var b in group.Boards)
-                    {
-                        @* One board is shown at a time, so the picker is navigation: the
-                           current item is aria-current, not a toggle that is "pressed". *@
-                        <button type="button"
-                                class="lb-pick-item @(b.GameKey == _selectedGame ? "lb-pick-item--on" : null)"
-                                aria-current="@(b.GameKey == _selectedGame ? "true" : null)"
-                                @onclick="() => SelectAsync(b.GameKey)">
-                            <span class="lb-pick-name">@b.Title</span>
-                            @if (MyRank(b) is int rank)
-                            {
-                                <span class="lb-pick-rank" title="Your rank">#@rank</span>
-                            }
-                        </button>
-                    }
-                }
-            </nav>
-
             @if (Selected is { } board)
             {
-                var rows = VisibleRows(board);
+                var searching = _search.Trim().Length > 0;
+                var rows = searching ? SearchRows(board) : VisibleRows(board);
                 <article class="lb-board" aria-label="@($"{board.Title} leaderboard, scored by {board.Unit}")">
                     <h2 class="lb-board-title">@board.Title</h2>
 
-                    @if (rows.Count == 0)
+                    @if (searching && _searchLoading)
+                    {
+                        <p class="lb-board-empty" role="status">Searching @board.Title…</p>
+                    }
+                    else if (searching && rows.Count == 0)
+                    {
+                        <p class="lb-board-empty" role="status">Nobody matching “@_search.Trim()” in the top @RankSearchDepth.</p>
+                    }
+                    else if (rows.Count == 0)
                     {
                         <p class="lb-board-empty">No scores @(_weekly ? "this week" : "yet"). Play @board.Title to claim #1.</p>
                     }
@@ -164,7 +161,7 @@
                             {
                                 @RankRow(board, e)
                             }
-                            @if (_myRow.GetValueOrDefault(board.GameKey) is { } mine)
+                            @if (!searching && _myRow.GetValueOrDefault(board.GameKey) is { } mine)
                             {
                                 <div class="lb-row lb-row--gap" aria-hidden="true">⋯</div>
                                 @RankRow(board, mine)
@@ -205,8 +202,57 @@
         _weekly = weekly;
         // Rows below the fold were looked up for the other period's boards.
         _myRow.Clear();
+        _deep.Clear();
         await Load();
+        await LoadDeepAsync();
     }
+
+    // ── Toolbar ────────────────────────────────────────────────────────────
+    /// <summary>One entry in the toolbar's board picker. Public: Radzen reads Label/Key by name.</summary>
+    public sealed record PickItem(string Key, string Label, string Group, string Title, int? Rank);
+
+    private List<PickItem> _pickItems = [];
+    private bool _radzenReady;
+    private IJSObjectReference? _theme;
+
+    // The player search runs over the selected board's top RankSearchDepth rows (one read per
+    // board and period), because the ten on screen are rarely where a looked-up name sits.
+    private string _search = "";
+    private bool _searchLoading;
+    private readonly Dictionary<string, GameLeaderboardDto?> _deep = [];
+
+    private async Task SearchAsync(string? text)
+    {
+        _search = text ?? "";
+        await LoadDeepAsync();
+    }
+
+    private async Task LoadDeepAsync()
+    {
+        if (_search.Trim().Length == 0 || _selectedGame is not { } key || _deep.ContainsKey(key)) return;
+        _searchLoading = true;
+        StateHasChanged();
+        _deep[key] = await ApiService.GetGameLeaderboardAsync(key, limit: RankSearchDepth, weekly: _weekly);
+        _searchLoading = false;
+        StateHasChanged();
+    }
+
+    private List<LeaderboardEntryDto> SearchRows(GameLeaderboardDto board)
+    {
+        var needle = _search.Trim();
+        var source = _deep.GetValueOrDefault(board.GameKey)?.Entries ?? board.Entries;
+        return source
+            .Where(e => e.Name != PlaceholderName)
+            .Where(e => LeaderboardNames.Pretty(e.Name).Contains(needle, StringComparison.OrdinalIgnoreCase)
+                        || e.Name.Contains(needle, StringComparison.OrdinalIgnoreCase))
+            .Take(RowLimit)
+            .ToList();
+    }
+
+    private void BuildPickItems() =>
+        _pickItems = _groupedBoards
+            .SelectMany(g => g.Boards.Select(b => new PickItem(b.GameKey, OptionLabel(b), g.Title, b.Title, MyRank(b))))
+            .ToList();
 
     // The chip on the head's meta line: the player's best placing.
     private string? _topGameKey;
@@ -245,6 +291,7 @@
         if (string.IsNullOrEmpty(gameKey)) return;
         _selectedGame = gameKey;
         LocalStorageService.SetItem(LastBoardKey, gameKey);
+        await LoadDeepAsync();
         await LoadMyRowAsync(gameKey);
     }
 
@@ -267,6 +314,10 @@
 
         var deep = await ApiService.GetGameLeaderboardAsync(gameKey, limit: RankSearchDepth, weekly: _weekly);
         _myRow[gameKey] = deep?.Entries.FirstOrDefault(e => IsMe(e.Name));
+        // The same read answers a later player search on this board.
+        _deep.TryAdd(gameKey, deep);
+        // The picker shows the player's rank, which this read may just have found.
+        BuildPickItems();
         StateHasChanged();
     }
 
@@ -293,19 +344,6 @@
             .Where(e => e.Name != PlaceholderName)
             .Take(RowLimit)
             .ToList();
-
-    // The visible heading is a stylised "1 PLAYER" / "MULTIPLAYER" string.
-    // Screen readers announce exactly that, which is shouting abbreviations
-    // as a landmark name. GroupAriaLabel is the human-readable form ("Single
-    // player games") used for aria-label, so the visible label and the
-    // spoken label do not have to be the same string.
-    private static string GroupAriaLabel(string title) => title switch
-    {
-        "1 Player" => "Single-player games",
-        "2 Player" => "Two-player games on one device",
-        "Multiplayer" => "Online multiplayer games",
-        _ => title,
-    };
 
     protected override async Task OnInitializedAsync() => await Load();
 
@@ -434,6 +472,21 @@
 
     protected override async Task OnAfterRenderAsync(bool firstRender)
     {
+        if (firstRender)
+        {
+            try
+            {
+                _theme = await JS.InvokeAsync<IJSObjectReference>("import", "./js/radzenTheme.js");
+                await _theme.InvokeVoidAsync("ensure");
+            }
+            catch (JSException ex)
+            {
+                Console.Error.WriteLine($"[leaderboards] Radzen theme failed: {ex.Message}");
+            }
+            _radzenReady = true;
+            StateHasChanged();
+        }
+
         // After render, because the burst targets the player's own row and that row
         // has to exist in the DOM first. The flag is lowered before awaiting so a
         // re-render during the staggered playback cannot start it a second time.
@@ -444,7 +497,17 @@
         }
     }
 
-    public ValueTask DisposeAsync() => ValueTask.CompletedTask;
+    public async ValueTask DisposeAsync()
+    {
+        if (_theme is null) return;
+        try
+        {
+            await _theme.InvokeVoidAsync("remove");
+            await _theme.DisposeAsync();
+        }
+        catch (JSDisconnectedException) { }
+        catch (JSException) { }
+    }
 
     private async Task Load()
     {
@@ -470,6 +533,7 @@
             // resets every Monday and would read as a fall, then a climb, every week.
             if (!_weekly) DetectRankChanges();
             BuildGrouped();
+            BuildPickItems();
             BuildHero();
             if (!_weekly && _topGameKey is not null) Achievements.NoteBoardRank(_topRank);
         }

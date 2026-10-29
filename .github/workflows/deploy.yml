@@ -214,10 +214,20 @@ jobs:
       - name: Clear stale zip-deploy temp files
         run: |
           token=$(az account get-access-token --query accessToken -o tsv)
-          curl -fsS --max-time 120 -X POST -H "Authorization: Bearer $token" -H 'Content-Type: application/json' \
+          # Kudu answers 200 even when the command itself fails; the verdict is ExitCode in the JSON body.
+          if ! body=$(curl -fsS --max-time 120 -X POST -H "Authorization: Bearer $token" -H 'Content-Type: application/json' \
             "https://${{ vars.AZURE_WEBAPP_NAME }}.scm.azurewebsites.net/api/command" \
-            -d '{"command":"cmd /c if exist C:\\local\\Temp\\zipdeploy rd /s /q C:\\local\\Temp\\zipdeploy","dir":"C:\\local\\Temp"}' \
-            || echo "::warning::Could not clear the zip-deploy temp folder; the deploy may run out of local disk."
+            -d '{"command":"cmd /c if exist C:\\local\\Temp\\zipdeploy rd /s /q C:\\local\\Temp\\zipdeploy","dir":"C:\\local\\Temp"}'); then
+            echo "::warning::Could not clear the zip-deploy temp folder; the deploy may run out of local disk."
+            exit 0
+          fi
+          exit_code=$(printf '%s' "$body" | jq -r '.ExitCode // "unknown"' 2>/dev/null || echo unknown)
+          if [ "$exit_code" != "0" ]; then
+            error=$(printf '%s' "$body" | jq -r '.Error // empty' 2>/dev/null | tr '\r\n' '  ' | cut -c1-300 || true)
+            echo "::warning::Clearing the zip-deploy temp folder exited ${exit_code}${error:+: $error}; the deploy may run out of local disk."
+          else
+            echo "Cleared the zip-deploy temp folder."
+          fi
 
       # Same pair in every Po web repo: keep the live build, and put it back if anything fails once the
       # new package is live (see "Roll back to the previous build" at the end of this job).
@@ -265,13 +275,22 @@ jobs:
         run: |
           base="https://${{ vars.AZURE_WEBAPP_NAME }}.azurewebsites.net"
           for attempt in $(seq 1 60); do
-            commit=$(curl -s -D - -o /dev/null --max-time 30 "$base/health/live" | tr -d '\r' | awk -F': ' 'tolower($1)=="x-commit" {print $2}' || true)
+            # Only a timeout (28) is a cold start worth waiting out. DNS, connect and TLS failures
+            # (6, 7, 35, 60) will not fix themselves in 15 minutes, so they fail the step now.
+            rc=0
+            headers=$(curl -s -D - -o /dev/null --max-time 30 "$base/health/live") || rc=$?
+            case "$rc" in
+              0|28) ;;
+              6|7|35|60) echo "::error::curl could not reach $base/health/live (curl exit $rc)"; exit 1 ;;
+              *) echo "::warning::curl exit $rc on /health/live (attempt $attempt); retrying" ;;
+            esac
+            commit=$(printf '%s' "$headers" | tr -d '\r' | awk -F': ' 'tolower($1)=="x-commit" {print $2}')
             [ "$commit" = "$GITHUB_SHA" ] && { echo "/health/live serves $GITHUB_SHA (attempt $attempt)"; break; }
             [ "$attempt" = "60" ] && { echo "::error::/health/live still serves ${commit:-no X-Commit header}, not $GITHUB_SHA"; exit 1; }
             sleep 15
           done
           for attempt in $(seq 1 20); do
-            code=$(curl -s -o /dev/null -w '%{http_code}' --max-time 30 "$base/health" || echo 000)
+            code=$(curl -s -o /dev/null -w '%{http_code}' --max-time 30 "$base/health") || true
             [ "$code" = "200" ] && { echo "/health -> 200 (attempt $attempt)"; exit 0; }
             sleep 15
           done

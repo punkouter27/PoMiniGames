@@ -279,6 +279,13 @@ public partial class PoRacerPage
             _connecting?.Dispose();
             _connecting = null;
             _isStarting = false;
+            // DisposeAsync skips a session that is still starting, so a page torn down mid-start
+            // hands the cleanup to here; otherwise a connect that won the race leaks its hub.
+            if (_disposed && ReferenceEquals(_session, session))
+            {
+                _session = null;
+                await session.DisposeAsync();
+            }
             // The start failed: the card comes back, with the reason on it.
             if (_error is not null && _phase == RacePhase.Start) ReopenIntro();
             if (!_disposed) StateHasChanged();

@@ -1,4 +1,10 @@
 ﻿@using Microsoft.AspNetCore.Components.Authorization
+@* Scoped trim suppression (was a project-wide NoWarn). The generated render code below sets
+   LayoutView.Layout and Router.NotFoundPage, whose [DynamicallyAccessedMembers] setters the
+   Razor generator dispatches by reflection. The layout and page types are app-assembly types,
+   which the trimmer keeps (the app is not IsTrimmable), so nothing it needs can be removed. *@
+@attribute [System.Diagnostics.CodeAnalysis.UnconditionalSuppressMessage("Trimming", "IL2110", Justification = "Razor-generated LayoutView/Router parameter dispatch; the layout and page types live in the untrimmed app assembly.")]
+@attribute [System.Diagnostics.CodeAnalysis.UnconditionalSuppressMessage("Trimming", "IL2111", Justification = "Razor-generated LayoutView/Router parameter dispatch; the layout and page types live in the untrimmed app assembly.")]
 @* AuthGate gates the whole app. AppErrorBoundary wraps everything so an
    unhandled exception in any page surfaces an actionable, environment-aware
    banner instead of the default Blazor error template. *@

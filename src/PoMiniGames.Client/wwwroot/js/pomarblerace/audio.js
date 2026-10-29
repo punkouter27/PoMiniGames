@@ -26,6 +26,13 @@
 // PannerNode: it is dramatically cheaper per node, and the HRTF detail is inaudible on the
 // laptop speakers most players use.
 //
+// ── Rival marbles (spatial) ──
+// The continuous half of the field is positional too: the RIVAL_VOICES marbles nearest the
+// camera (not the one it follows, which owns the rolling bed) each roll through their own
+// PannerNode against an AudioListener riding the camera, so a marble coming up behind is heard
+// before it is seen. HRTF on the high quality tier, equal-power below. The voices sit on the bed
+// bus, so they duck and mute with the beds. See updateRivals.
+//
 // ── Buffers (SOUND #8) ──
 // Impacts are PRE-RENDERED through an OfflineAudioContext at startup into a small bank of
 // AudioBuffers, rather than building an oscillator graph per hit. This is both cheaper per
@@ -39,6 +46,10 @@ const IMPACT_SECONDS = 0.22;
 
 // #10 — impulse response length for the convolution reverb.
 const IR_SECONDS = 1.5;
+
+// Rival rolling voices: how many, and the distance model they share (world units).
+const RIVAL_VOICES = 3;
+const RIVAL_REF = 6, RIVAL_MAX = 140;
 
 // ── Surface-aware rolling ──
 // The rolling bed follows the camera's marble and the material it is actually touching
@@ -72,6 +83,8 @@ export function createAudio() {
   let droneOscs = null, droneFilter = null, droneGain = null, droneBase = null;
   let noiseBuf = null;
   let impactBank = null;      // #8 — filled asynchronously; null until then
+  let rivals = null;          // [{ src, filter, gain, panner }] — built with the beds
+  const listenAt = new Float32Array(6).fill(NaN);
 
   function makeNoise(c) {
     const buf = c.createBuffer(1, c.sampleRate * NOISE_SECONDS, c.sampleRate);
@@ -220,6 +233,8 @@ export function createAudio() {
     droneGain = c.createGain();
     droneGain.gain.value = 0;
     droneFilter.connect(droneGain).connect(bedBus);
+    buildRivals(c);
+
     droneOscs = [];
     droneBase = [];
     for (const [freq, detune] of [[110, -7], [110, 9], [164.81, 4]]) {
@@ -231,6 +246,111 @@ export function createAudio() {
       o.start();
       droneOscs.push(o);
       droneBase.push(freq);
+    }
+  }
+
+  // Rival rolling voices: the bed's noise, each read from its own offset so two marbles never
+  // phase into one, through a bandpass and a PannerNode. Gains start at 0; updateRivals drives them.
+  function buildRivals(c) {
+    rivals = [];
+    if (!c.createPanner) return;
+    const hrtf = window.PoQuality?.tier?.() === 'high';
+    for (let i = 0; i < RIVAL_VOICES; i++) {
+      const src = c.createBufferSource();
+      src.buffer = noiseBuf;
+      src.loop = true;
+      const filter = c.createBiquadFilter();
+      filter.type = 'bandpass';
+      filter.frequency.value = 240;
+      filter.Q.value = 1.3;
+      const gain = c.createGain();
+      gain.gain.value = 0;
+      const panner = c.createPanner();
+      panner.panningModel = hrtf ? 'HRTF' : 'equalpower';
+      panner.distanceModel = 'inverse';
+      panner.refDistance = RIVAL_REF;
+      panner.maxDistance = RIVAL_MAX;
+      panner.rolloffFactor = 1.2;
+      src.connect(filter).connect(gain).connect(panner).connect(bedBus);
+      src.start(0, (i + 1) * NOISE_SECONDS / (RIVAL_VOICES + 1));
+      rivals.push({ src, filter, gain, panner });
+    }
+  }
+
+  function setPos(param, x, y, z, now) {
+    param.x.setTargetAtTime(x, now, 0.04);
+    param.y.setTargetAtTime(y, now, 0.04);
+    param.z.setTargetAtTime(z, now, 0.04);
+  }
+
+  // The listener rides the camera: forward = -Z and up = +Y of its world matrix. Written only
+  // when it moved, so a held shot costs nothing. The listener belongs to the shared context, so
+  // dispose() puts it back at the origin.
+  function placeListener(camera, now) {
+    const L = ctx.listener;
+    const e = camera.matrixWorld.elements;
+    const p = camera.position;
+    const fx = -e[8], fy = -e[9], fz = -e[10];
+    if (Math.abs(listenAt[0] - p.x) + Math.abs(listenAt[1] - p.y) + Math.abs(listenAt[2] - p.z)
+      + Math.abs(listenAt[3] - fx) + Math.abs(listenAt[4] - fy) + Math.abs(listenAt[5] - fz) < 1e-3) return;
+    listenAt[0] = p.x; listenAt[1] = p.y; listenAt[2] = p.z;
+    listenAt[3] = fx; listenAt[4] = fy; listenAt[5] = fz;
+    if (L.positionX) {
+      setPos({ x: L.positionX, y: L.positionY, z: L.positionZ }, p.x, p.y, p.z, now);
+      setPos({ x: L.forwardX, y: L.forwardY, z: L.forwardZ }, fx, fy, fz, now);
+      setPos({ x: L.upX, y: L.upY, z: L.upZ }, e[4], e[5], e[6], now);
+    } else {
+      L.setPosition(p.x, p.y, p.z);
+      L.setOrientation(fx, fy, fz, e[4], e[5], e[6]);
+    }
+  }
+
+  function resetListener() {
+    const L = ctx && ctx.listener;
+    if (!L) return;
+    try {
+      if (L.positionX) {
+        L.positionX.value = 0; L.positionY.value = 0; L.positionZ.value = 0;
+        L.forwardX.value = 0; L.forwardY.value = 0; L.forwardZ.value = -1;
+        L.upX.value = 0; L.upY.value = 1; L.upZ.value = 0;
+      } else {
+        L.setPosition(0, 0, 0);
+        L.setOrientation(0, 0, -1, 0, 1, 0);
+      }
+    } catch { /* closed context */ }
+  }
+
+  // Per frame, after updateBeds. `marbles` is the field, `focus` the marble on camera.
+  // Picks the RIVAL_VOICES nearest still-racing marbles and parks one voice on each.
+  const nearest = [];
+  function updateRivals(camera, marbles, focus, racing) {
+    if (!ctx || !rivals || !rivals.length || !camera) return;
+    const now = ctx.currentTime;
+    placeListener(camera, now);
+    nearest.length = 0;
+    if (racing && marbles) {
+      const c = camera.position;
+      for (const m of marbles) {
+        if (m === focus || m.finished || m.eliminated || !(m.speed > 1)) continue;
+        const p = m.mesh.position;
+        const d = (p.x - c.x) ** 2 + (p.y - c.y) ** 2 + (p.z - c.z) ** 2;
+        if (d > RIVAL_MAX * RIVAL_MAX) continue;
+        let i = nearest.length;
+        while (i > 0 && nearest[i - 1].d > d) i--;
+        if (i >= RIVAL_VOICES) continue;
+        nearest.splice(i, 0, { m, d });
+        if (nearest.length > RIVAL_VOICES) nearest.pop();
+      }
+    }
+    for (let i = 0; i < rivals.length; i++) {
+      const r = rivals[i], n = nearest[i];
+      if (!n) { r.gain.gain.setTargetAtTime(0, now, 0.1); continue; }
+      const p = n.m.mesh.position;
+      const v = Math.min(1, n.m.speed / 45);
+      if (r.panner.positionX) setPos({ x: r.panner.positionX, y: r.panner.positionY, z: r.panner.positionZ }, p.x, p.y, p.z, now);
+      else r.panner.setPosition(p.x, p.y, p.z);
+      r.gain.gain.setTargetAtTime(0.02 + v * 0.09, now, 0.08);
+      r.filter.frequency.setTargetAtTime(160 + v * 560, now, 0.08);
     }
   }
 
@@ -374,6 +494,7 @@ export function createAudio() {
     const now = ctx.currentTime;
     rollGain.gain.setTargetAtTime(0, now, 0.1);
     crowdGain.gain.setTargetAtTime(0, now, 0.1);
+    if (rivals) for (const r of rivals) r.gain.gain.setTargetAtTime(0, now, 0.1);
     // The drone is deliberately NOT silenced here — resolveDrone() lands its release first, and
     // cutting the gain at the same moment would swallow it.
   }
@@ -555,6 +676,7 @@ export function createAudio() {
     playRoar,
     playFinish,
     updateBeds,
+    updateRivals,
     silenceBeds,
     setMuted(m) { muted = !!m; applyMute(); },
     toggleMuted() { muted = !muted; applyMute(); return muted; },
@@ -567,6 +689,8 @@ export function createAudio() {
         // keeps the context alive after close() in some browsers.
         if (droneOscs) for (const o of droneOscs) { try { o.stop(); } catch { } }
         try { tremOsc && tremOsc.stop(); } catch { }
+        if (rivals) for (const r of rivals) { try { r.src.stop(); r.panner.disconnect(); } catch { } }
+        if (!ownsCtx) resetListener();
         // The shared context outlives this game: detach our graph from it instead of closing it.
         if (ownsCtx) { try { ctx.close(); } catch { } } else { try { master && master.disconnect(); } catch { } }
         ctx = null; master = null; comp = null; bedBus = null; sfxBus = null;
@@ -574,7 +698,7 @@ export function createAudio() {
         reverbSend = null; convolver = null;
         rollSrc = null; crowdSrc = null; rollGain = null; crowdGain = null;
         droneOscs = null; droneGain = null; droneFilter = null; droneBase = null;
-        impactBank = null;
+        impactBank = null; rivals = null; listenAt.fill(NaN);
       }
     },
   };

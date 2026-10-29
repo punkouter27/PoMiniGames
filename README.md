@@ -33,6 +33,13 @@ scores, and, only when a player opts in, talks to AI models on the player's beha
   haptics under reduced motion, and rate and duty caps so nothing holds a motor on. PoBrawl
   routes rumble to the local human only (`js/pobrawl/haptics.js`): a rising pulse while a strike
   charges, a tick on a perfect guard, thumps scaled by the hit, a long KO thud.
+- **Sound is one mix.** `wwwroot/js/audioBus.js` owns the single AudioContext: master volume
+  (`pomini_volume`), an Effects level (`pomini_sfx_volume`, default 100) and a Music level
+  (`pomini_music_volume`, default 0, so music is opt-in). Every sound is synthesized
+  (`dsp.js` + `gameCues.js`), with no audio files. `musicLayers.js` adds adaptive layers that build
+  with PoRacer's laps and PoBrawl's round clock. Shared camera-shake presets live in
+  `feelPresets.js` (`window.PoFeel`), and particle bursts in `gpuFx.js`
+  (`PoFx.burst(x, y, 'win' | 'ko' | 'highscore')`).
 - **No database.** Scores, ratings, saves and AI spend ledgers live in Azure Table Storage;
   PoEcosystem world files live in Blob Storage. A player is whoever the sign-in token says
   they are; there is no Player table.
@@ -161,11 +168,13 @@ CI validates Bicep and deploys application code; use `azd up` for resource provi
 | `PoMiniGames:AI:QuizPrebake:*` | Background bank filler: `Enabled` (on), `Interval`, `DelayBetweenCategories`, `Categories`, `AllowAiTopUp` (off, the only part that spends) |
 | `PoMiniGames:Jev:Brain` | `Local` (free rules, default) or `Jev` (paid; also needs `ApiKey` and the player's choice) |
 | `PoMiniGames:AI:Deployments` | `funquiz`, `couplequiz` and `couplequiz.similarity` all run on `gpt-5.4-nano` |
+| `PoMiniGames:Diag:AiUsageAdmins` | Operators (Entra object ids, not emails: sign-in is multi-tenant, so an email claim proves nothing) who see the full `GET /api/diag/ai` report outside Development. Empty by default: nobody does |
 | `PoMiniGames:PoBrawl:Dossier:FetchWikipedia`, `CacheHours` | Fighter dossiers: enrich the static facts from the free Wikimedia REST API (default `true`), cached 24 h; off or failing, static facts are served. Tests pin it to `false` |
 
 | Endpoint | Change |
 |---|---|
-| `GET /api/diag/ai` | New home of the AI usage and cost read-model |
+| `GET /api/diag/ai` | New home of the AI usage and cost read-model. Outside Development it needs a signed-in caller (anonymous gets `401`); everyone sees only their own budget, and the per-game spend, totals and deployment names go only to operators listed in `PoMiniGames:Diag:AiUsageAdmins` (Entra object ids) (2026-10-29) |
+| `GET /api/logs/tail` | Development only: not mapped in any other environment (2026-10-29) |
 | `GET /api/health/ai` | Removed (moved to `/api/diag/ai`) |
 | `/api/joker/*` | Removed with the Joker game |
 | `GET /api/ecosystem/culture/{seed}` and the ecosystem chronicle, thought, treaty and lore routes | Removed; PoEcosystem calls no AI |

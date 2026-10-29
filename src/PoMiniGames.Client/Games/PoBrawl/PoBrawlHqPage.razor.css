@@ -57,23 +57,61 @@
     min-height: 40px;
 }
 
-/* Two columns on a desktop: the player's record and the map, then the boards. */
-.hq-grid {
-    display: grid;
-    grid-template-columns: minmax(0, 1fr);
-    gap: 12px;
-    align-items: start;
+/* ── Tabs: Ladder, Map, Boards, Titles — one surface at a time, so the page fits the
+   viewport. The tab strip and panel take the app's tokens, not Radzen's dark theme. ── */
+.hq {
+    --rz-tabs-background-color: transparent;
+    --rz-tabs-tab-color: var(--color-text-secondary);
+    --rz-tabs-tab-selected-color: var(--color-text-primary);
+    --rz-tabs-tab-selected-top-border-color: var(--color-accent);
+    --rz-tabs-tab-selected-background-color: transparent;
+    --rz-tabs-tab-background-color: transparent;
+    --rz-tabs-tab-hover-color: var(--color-text-primary);
+    --rz-tabs-tab-focus-color: var(--color-text-primary);
+    --rz-tabs-border: none;
+    --rz-tabs-shadow: none;
 }
 
-@media (min-width: 960px) {
-    .hq-grid {
-        grid-template-columns: minmax(0, 1fr) minmax(0, 1.1fr);
-    }
+.hq ::deep .hq-tabs {
+    background: var(--color-surface);
+    border: 1px solid var(--color-border);
+    border-radius: var(--radius-lg);
+    overflow: hidden;
 }
 
-.hq-col {
-    display: grid;
-    gap: 12px;
+.hq ::deep .hq-tabs .rz-tabview-nav {
+    display: flex;
+    background: var(--surface-2);
+}
+
+.hq ::deep .hq-tabs .rz-tabview-nav li {
+    flex: 1 1 0;
+    min-width: 0;
+}
+
+.hq ::deep .hq-tabs .rz-tabview-nav li a {
+    justify-content: center;
+    min-height: 44px;
+}
+
+.hq ::deep .hq-tabs .rz-tabview-panels {
+    padding: 12px;
+    /* Room for the play strip, the GameShell header and the tab strip; a long board
+       scrolls inside its panel rather than pushing the whole page. */
+    max-height: calc(100dvh - 14rem);
+    overflow-y: auto;
+}
+
+.hq-tabs-pending {
+    min-height: 16rem;
+    border: 1px solid var(--color-border);
+    border-radius: var(--radius-lg);
+    background: var(--color-surface);
+}
+
+.hq-map {
+    max-width: 40rem;
+    margin: 0 auto;
 }
 
 .hq-stats {
@@ -111,15 +149,11 @@
     color: var(--color-text-secondary);
 }
 
-/* ── Boards card ── */
+/* ── Boards panel ── */
 .hq-boards {
     display: grid;
     grid-template-columns: minmax(0, 1fr);
     gap: 8px;
-    padding: 12px;
-    border: 1px solid var(--color-border);
-    border-radius: var(--radius-lg);
-    background: var(--color-surface);
 }
 
 .hq-boards ::deep .hq-select {
@@ -137,7 +171,7 @@
 }
 
 .hq-board-note {
-    margin: 0;
+    margin: 0 0 8px;
     font-size: var(--text-sm);
     color: var(--color-text-secondary);
 }

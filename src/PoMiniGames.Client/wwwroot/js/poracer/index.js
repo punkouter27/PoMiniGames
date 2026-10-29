@@ -245,7 +245,7 @@ window.PoRacer = {
     /** Track geometry, once per race. */
     setStatic(center, width, walls, boostPads, surfaceZones, theme, laps) {
         Render.setStatic(center, width, walls, boostPads, surfaceZones, theme);
-        Audio.start();
+        Audio.start(laps);
         // Weather of the day (weather.js): one seed per track and UTC day, so everyone on a track
         // drives under the same sky. A 2D overlay directly above the track canvas, under the HUD;
         // it changes nothing the server simulates.

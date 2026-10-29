@@ -24,11 +24,16 @@
 //                    the high tier, equal-power below).
 //   Crowd rhythm   — stomp-stomp-CLAP on the conductor when the energy is high, in the last ten
 //                    seconds and during a comeback; the "U-S-A!" chant joins at the top end.
+//   Music layers   — musicLayers.js, locked to the conductor's grid on the app's music bus
+//                    (its own slider, 0 by default, so the no-music-bed rule holds unless the
+//                    player opts in). Intensity is the conductor's energy floored by how much of
+//                    the round clock has run, so the arrangement builds toward the bell.
 //
 // Presentation only: Math.random (inside the AudioBus), never `this.rng`.
 // No per-frame allocation: every per-frame value lives in `this._as` / `this.beat`.
 
 import * as Quality from './quality.js';
+import { createMusicLayers } from '../musicLayers.js';
 
 const TIME_LIMIT = 60;          // game.js's round length (not exported there)
 const COUNTDOWN_BPM = 120;      // the PA calls once a second: every other beat
@@ -82,12 +87,15 @@ class AudioShowMethods {
     if (!audio) return;
     audio.setConductor(() => this._asGridDelay());
     if (!director) audio.setListenerMode(Quality.tier() === 'high' ? 'HRTF' : 'equalpower');
+    this._music = createMusicLayers({ root: 55 });
     this._onShow((type, d) => this._asEvent(type, d));
     this._onShowUpdate((dt) => this._asUpdate(dt));
     this._onShowDispose(() => {
       audio.stopRisers();
       audio.setCrowdRhythm(0);
       audio.setConductor(null);
+      this._music?.stop();
+      this._music = null;
       this._as.risers[0] = this._as.risers[1] = null;
     });
   }
@@ -239,6 +247,22 @@ class AudioShowMethods {
     b.phase = A.pos - b.beatN;
     b.bar = Math.floor(b.beatN / 4);
     b.pulse = Math.exp(-b.phase * 5);
+
+    const music = this._music;
+    if (music) {
+      const live = this.phase === 'countdown' || this.phase === 'fighting' || this.phase === 'ko';
+      if (live && !this.training) {
+        // The round clock alone takes it from the bassline to the kick by the bell; the
+        // energy (hits, danger, comebacks, the last ten seconds) can only push it further.
+        const aged = this.phase === 'fighting' ? clamp01((this.clock || 0) / TIME_LIMIT) * 0.65 : 0;
+        music.setIntensity(this.phase === 'countdown' ? 0 : Math.max(b.energy * 0.95, aged, late > 0 ? 0.85 : 0));
+        music.setGain(A.director ? 0.7 : 1);
+        music.setBeat(A.pos, b.bpm);
+        music.start();
+      } else if (music.isRunning()) {
+        music.stop();
+      }
+    }
 
     if (!audio) return;
 

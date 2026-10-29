@@ -1,0 +1,16 @@
+@* A render island for markup that changes several times a second (a game HUD strip, a
+   status chip). The page writes the markup as ChildContent, so it keeps reading the page's
+   own fields and keeps the page's scoped CSS, but a per-tick update calls Refresh() on this
+   region instead of StateHasChanged() on the page: only the region's subtree is diffed, not
+   the page, its GameShell and every panel around them. A normal page render still flows
+   through (ChildContent is a new fragment each time), so nothing goes stale.
+
+   Adds no DOM of its own. *@
+@ChildContent
+
+@code {
+    [Parameter, EditorRequired] public RenderFragment ChildContent { get; set; } = default!;
+
+    /// <summary>Re-render just this region (safe to call from any interop callback).</summary>
+    public void Refresh() => _ = InvokeAsync(StateHasChanged);
+}
