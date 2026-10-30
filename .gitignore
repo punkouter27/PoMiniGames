@@ -113,6 +113,12 @@ cookbook/
 instructions/
 skills/
 .copilot-session/
+# Workspace-level MCP server config. It pins absolute paths into this
+# machine's VS Code extension folder, so it is never portable.
+.mcp.json
+# Aura code-graph cache (the graph.db index and its history folder). Rebuilt
+# locally by the extension; ~100 MB of binary that is not source.
+.aura/
 
 # ─── Environment / secrets ───────────────────────────────────────────
 .env
