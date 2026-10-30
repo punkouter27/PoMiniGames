@@ -6,7 +6,7 @@ namespace PoMiniGames.E2EUI.Features.PoJevArena;
 /// Journey 1 end to end against the real Kestrel host under the "Test" environment, where every
 /// brain (local and Jev) is the deterministic stub (TestBudgetGuard; the stub always takes the first
 /// offered option, i.e. melee_charge on the nearest threat, so matches genuinely finish):
-/// guest sign-in → Factory preview per ability → draft 10 + 10 → deploy → the match plays to a
+/// guest sign-in → Factory preview per ability → CPU-drafted squads → deploy → the match plays to a
 /// result → the Black Box scrubs and the inspector follows the scrubbed frame.
 /// Screenshots land in artifacts/pojevarena/ for the readability review.
 /// One method: this tier holds 25 in total.
@@ -47,7 +47,7 @@ public class PoJevArenaUiTests
         };
 
         var origin = _fixture.ServerAddress.TrimEnd('/');
-        await page.GotoAsync($"{origin}/pojevarena/1player?autoGuest=1",
+        await page.GotoAsync($"{origin}/pojevarena/demo?autoGuest=1",
             new PageGotoOptions { WaitUntil = WaitUntilState.NetworkIdle, Timeout = 60_000 });
 
         await page.GetByRole(AriaRole.Button, new() { Name = "OK", Exact = true }).ClickAsync(new() { Timeout = 30_000 });
@@ -70,14 +70,9 @@ public class PoJevArenaUiTests
         }
         await factory.GetByRole(AriaRole.Button, new() { Name = "Close" }).ClickAsync();
 
-        // Draft: the five presets twice into each side with the per-card + Blue / + Red buttons.
-        for (var i = 0; i < 10; i++)
-        {
-            await page.Locator(".jev-add--blue").Nth(i % 5).ClickAsync();
-            await page.Locator(".jev-add--red").Nth(i % 5).ClickAsync();
-        }
-        (await page.Locator(".jev-team--blue .jev-slot:not(.is-empty)").CountAsync()).Should().Be(10);
-        (await page.Locator(".jev-team--red .jev-slot:not(.is-empty)").CountAsync()).Should().Be(10);
+        // Demo only: the CPU drafts both squads itself.
+        (await page.Locator(".jev-team--blue .jev-slot:not(.is-empty)").CountAsync()).Should().BeGreaterThan(0);
+        (await page.Locator(".jev-team--red .jev-slot:not(.is-empty)").CountAsync()).Should().BeGreaterThan(0);
         await page.ScreenshotAsync(new() { Path = Path.Combine(shots, "draft.png") });
 
         await page.GetByRole(AriaRole.Button, new() { Name = "Deploy battle" }).ClickAsync();
@@ -96,20 +91,10 @@ public class PoJevArenaUiTests
 
         await page.WaitForFunctionAsync("() => window.PoJevArena?.state()?.over === true", null,
             new() { Timeout = 240_000, PollingInterval = 500 });
-        // The whistle plays the kill cam and the victory ceremony (~7 s) before the result.
+        // The whistle plays the kill cam; the demo shows no end-of-game modal and loops to a new draft.
         await page.WaitForTimeoutAsync(2_500);
         await page.ScreenshotAsync(new() { Path = Path.Combine(shots, "killcam.png") });
-        // The match ends on the shared end-of-game modal: the result, the MVP, one way out.
-        var modal = page.Locator("dialog.gps-modal[open]");
-        await modal.WaitForAsync(new() { Timeout = 20_000 });
-        (await modal.InnerTextAsync()).Should().MatchRegex("(Blue wins|Red wins|Draw)").And.Contain("MVP");
-        // One button and only one: back to the main menu.
-        var buttons = modal.Locator("button");
-        (await buttons.CountAsync()).Should().Be(1, "every game ends on one button");
-        (await buttons.First.InnerTextAsync()).Should().Contain("Back to main menu");
-        await page.ScreenshotAsync(new() { Path = Path.Combine(shots, "result.png") });
-        await buttons.First.ClickAsync();
-        await page.WaitForFunctionAsync("() => location.pathname === '/'", null, new() { Timeout = 10_000 });
+        (await page.Locator("dialog.gps-modal[open]").CountAsync()).Should().Be(0, "the demo has no result modal");
 
         errors.Should().BeEmpty("the arena should run without console errors");
     }
