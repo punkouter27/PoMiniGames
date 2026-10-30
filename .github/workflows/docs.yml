@@ -36,19 +36,21 @@ jobs:
 
       # The Pages site has to exist before the official deploy action will run.
       # Creating it needs the repository's own token, so it is done here rather than
-      # by hand. A site that already exists answers 409, which is fine; a token
-      # that may not create one answers 403, which is also fine - the deploy step
-      # below reports the truth either way.
-      - name: Create the Pages site
+      # by hand. A token that may not create one answers 403, which is fine - the
+      # deploy step below reports the truth either way.
+      - name: Make sure the Pages site exists
         continue-on-error: true
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           REPO: ${{ github.repository }}
         run: |
           set +e
-          gh api --method POST "repos/$REPO/pages" -f build_type=workflow 2>&1 \
-            | sed 's/^/  /'
-          echo "::notice::create-site exit code: $?"
+          if gh api "repos/$REPO/pages" >/dev/null 2>&1; then
+            echo "  the Pages site already exists"
+          else
+            gh api --method POST "repos/$REPO/pages" -f build_type=workflow 2>&1 \
+              | sed 's/^/  /'
+          fi
 
       - name: Enable the Pages site
         continue-on-error: true
@@ -108,6 +110,7 @@ jobs:
             else
               echo
               echo "::warning::The Pages deployment did not run. The suite is still in the repository under DOCS/."
+              echo "::warning::A Pages site that has never been enabled can only be created by a repository admin: Settings > Pages > Source: GitHub Actions."
             fi
           } >> "$GITHUB_STEP_SUMMARY"
           echo "Docs URL: $URL"
