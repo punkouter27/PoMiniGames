@@ -23,18 +23,10 @@ public partial class PoJevArenaPage : ComponentBase, IAsyncDisposable
     private const string CanvasId = "jevArenaCanvas";
     private const string SquadsKey = "pojevarena.squads.v1";
     private const string AutoCameraKey = "pojevarena.autocam";
-    /// <summary>Settings sheet (ArenaAiPrefs): the brain the player asked for, and the on-device model switch.</summary>
-    internal const string BrainPrefKey = "pomini_arena_brain";
-    internal const string LocalAiPrefKey = "pomini_local_ai";
     private const int MaxSquads = 20;
     internal const string FilterAll = "all";
     /// <summary>How long the demo holds the draft screen before it deploys the match by itself.</summary>
     private const int DemoDraftSeconds = 30;
-    /// <summary>
-    /// Worst case for a 3:00 Jev match: 20 units asked at most every 2 s (most ask far less, on a
-    /// state change only, and the server reuses cached answers); below this a deploy may run out.
-    /// </summary>
-    private const long CallsPerFullMatch = 1_800;
 
     private enum Phase { Intro, Draft, Battle, Replay }
 
@@ -85,31 +77,18 @@ public partial class PoJevArenaPage : ComponentBase, IAsyncDisposable
     private bool _statsOpen;
     private string? _error;
     private string? _toast;
-    /// <summary>The player picked the Jev brain in Settings.</summary>
-    private bool _wantsJev;
-    /// <summary>...and the on-device model serves it in this browser instead of the paid server path.</summary>
-    private bool _onDevice;
     private DotNetObjectReference<PoJevArenaPage>? _self;
     private CancellationTokenSource? _demoLoop;
 
     private bool Drafting => _phase == Phase.Draft;
     private bool Configured => _status?.Configured == true;
-    /// <summary>The paid Jev brain answers the next match: asked for, on offer, not served on-device.</summary>
-    private bool UsesJev => _wantsJev && !_onDevice && _status?.JevAvailable == true;
-    /// <summary>The running (or last) match is on paid Jev.</summary>
-    private bool LiveJev => _ticket?.Brain == ArenaBrains.Jev;
     private bool ShowDebrief => _showDebrief && _phase == Phase.Replay && _result?.Debrief is not null;
 
-    /// <summary>The one brain chip: which brain plays (and Jev's allowance) while drafting, this match's moves once it runs.</summary>
+    /// <summary>The one brain chip: the local brain is ready while drafting, this match's move count once it runs.</summary>
     private string StatusText => _status is null ? "Checking the arena…"
         : !_status.Configured ? "The arena is unavailable right now"
         : _hud is not null && !Drafting
-            ? _hud.Device ?? (LiveJev
-                ? string.Create(CultureInfo.InvariantCulture, $"{_hud.Calls:N0} Jev calls · {_hud.Remaining ?? _status.Remaining:N0} left today")
-                : string.Create(CultureInfo.InvariantCulture, $"{_hud.Calls:N0} moves · local brain, free"))
-        : _onDevice ? "On-device AI · free"
-        : UsesJev ? string.Create(CultureInfo.InvariantCulture, $"Jev ready · {_status.Remaining:N0} moves left today")
-        : _wantsJev ? "Local brain ready · Jev is off on this server"
+            ? string.Create(CultureInfo.InvariantCulture, $"{_hud.Calls:N0} moves · local brain, free")
         : "Local brain ready · free";
 
     private string? Banner => _error ?? NoticeBanner ?? _toast;
@@ -119,10 +98,7 @@ public partial class PoJevArenaPage : ComponentBase, IAsyncDisposable
         get
         {
             var notices = _hud?.Notices ?? [];
-            if (notices.Contains("allowance-exhausted")) return "Daily Jev allowance reached. Units hold their last orders; it resets at 00:00 UTC.";
             if (notices.Contains("match-expired")) return "This match expired on the server (the host restarted). Units hold their orders; redeploy for a fresh match.";
-            if (notices.Contains("jev-rejected")) return "Jev rejected the request (key or credits). Units hold their last orders.";
-            if (notices.Contains("jev-unavailable")) return "Jev is unavailable. Units hold their last orders.";
             return null;
         }
     }
@@ -132,10 +108,9 @@ public partial class PoJevArenaPage : ComponentBase, IAsyncDisposable
     private bool CanDeploy => Configured && RostersFull && !_deploying;
 
     private string DeployHint =>
-        !Configured ? "Deploy needs Jev."
+        !Configured ? "The arena is unavailable."
         : !RostersFull ? "Fill both teams to deploy."
-        : UsesJev ? "Jev is asked only when a unit's situation changes: up to about 1,800 calls per match."
-        : "Free: the local brain makes every call. Pick Jev in Settings.";
+        : "Free: the local brain makes every call.";
 
     /// <summary>What stands between the player and Deploy, next to the button; null when nothing does.</summary>
     private string? DeployNote
@@ -144,10 +119,7 @@ public partial class PoJevArenaPage : ComponentBase, IAsyncDisposable
         {
             if (!Configured) return null;
             var missing = _blue.Count(c => c is null) + _red.Count(c => c is null);
-            if (missing > 0) return $"{missing} to draft";
-            return UsesJev && (_status?.Remaining ?? long.MaxValue) < CallsPerFullMatch
-                ? string.Create(CultureInfo.InvariantCulture, $"Only {_status!.Remaining:N0} AI moves left today")
-                : null;
+            return missing > 0 ? $"{missing} to draft" : null;
         }
     }
 
@@ -177,7 +149,7 @@ public partial class PoJevArenaPage : ComponentBase, IAsyncDisposable
     };
 
     private string ResultDetail => _result is null ? "" : string.Create(CultureInfo.InvariantCulture,
-        $"{(_result.Reason == "time" ? "time" : "wipe")} at {Clock(_result.DurationSeconds)}{(_result.Arena is null ? "" : " on " + _result.Arena)} · {_result.Decisions:N0} {(LiveJev ? "Jev decisions" : "decisions")} · {_resultNote}");
+        $"{(_result.Reason == "time" ? "time" : "wipe")} at {Clock(_result.DurationSeconds)}{(_result.Arena is null ? "" : " on " + _result.Arena)} · {_result.Decisions:N0} decisions · {_resultNote}");
 
     /// <summary>"Red-04 Boulder Brute · 2 KOs · 312 dmg": the engine's MVP, named from the frozen roster.</summary>
     private string? MvpLine
@@ -234,7 +206,7 @@ public partial class PoJevArenaPage : ComponentBase, IAsyncDisposable
 
             var ticketJson = JsonSerializer.Serialize(_ticket, PoJevArenaJsonContext.Default.ArenaMatchTicket);
             var abilitiesJson = JsonSerializer.Serialize(PoJevArenaCatalog.Abilities, PoJevArenaJsonContext.Default.ArenaAbilityArray);
-            var options = $$"""{"autoCamera":{{(_autoCamera ? "true" : "false")}},"onDevice":{{(_onDevice ? "true" : "false")}}}""";
+            var options = $$"""{"autoCamera":{{(_autoCamera ? "true" : "false")}}}""";
             await JS.InvokeAsync<bool>("PoJevArena.deploy", CanvasId, _self, ticketJson, abilitiesJson, options);
         }
         catch (JSException ex)
@@ -406,7 +378,6 @@ public partial class PoJevArenaPage : ComponentBase, IAsyncDisposable
 
     private async Task LoadPrefsAsync()
     {
-        await LoadBrainPrefsAsync();
         try
         {
             _autoCamera = await Storage.GetItemAsStringAsync(AutoCameraKey) != "0";
@@ -414,29 +385,6 @@ public partial class PoJevArenaPage : ComponentBase, IAsyncDisposable
             if (!string.IsNullOrEmpty(raw)) _squads = JsonSerializer.Deserialize(raw, ArenaUiJsonContext.Default.ListArenaSquad) ?? [];
         }
         catch { /* storage blocked or a corrupt entry: defaults */ }
-    }
-
-    /// <summary>Re-read before every deploy, so a change in the Settings sheet applies to the next match.</summary>
-    private async Task LoadBrainPrefsAsync()
-    {
-        var onDeviceWanted = false;
-        try
-        {
-            _wantsJev = await Storage.GetItemAsStringAsync(BrainPrefKey) == ArenaBrains.Jev;
-            onDeviceWanted = _wantsJev && await Storage.GetItemAsStringAsync(LocalAiPrefKey) == "on";
-        }
-        catch { _wantsJev = false; /* storage blocked: the free local brain */ }
-
-        _onDevice = false;
-        if (!onDeviceWanted) return;
-        try
-        {
-            // Only localAi.js (a few KB); the model library is fetched by the engine, and only when on.
-            await using var ai = await JS.InvokeAsync<IJSObjectReference>("import", "./js/localAi.js");
-            _onDevice = await ai.InvokeAsync<bool>("hasWebGpu");
-        }
-        catch (JSException) { }
-        catch (InvalidOperationException) { }
     }
 
     private async Task ToggleCameraAsync()
@@ -461,19 +409,16 @@ public partial class PoJevArenaPage : ComponentBase, IAsyncDisposable
         _deploying = true;
         _error = null;
         _toast = null;
-        await LoadBrainPrefsAsync();
         var (ticket, error) = await Api.RegisterMatchAsync(new ArenaMatchRequest(
             ArenaMode.Demo,
             _blue.Select(c => c!.Id).ToArray(),
-            _red.Select(c => c!.Id).ToArray(),
-            _wantsJev && !_onDevice ? ArenaBrains.Jev : ArenaBrains.Local));
+            _red.Select(c => c!.Id).ToArray()));
         _deploying = false;
 
         if (ticket is null)
         {
             _error = error switch
             {
-                "jev-unavailable" => "Jev isn't configured on this server, so the arena can't run.",
                 "unknown-creature" => "A creature in your roster no longer exists. Replace it and deploy again.",
                 "library-offline" => "The creature library is unreachable right now.",
                 _ => "Couldn't start the match. Try again in a moment.",
@@ -482,7 +427,6 @@ public partial class PoJevArenaPage : ComponentBase, IAsyncDisposable
         }
 
         _ticket = ticket;
-        if (_wantsJev && !_onDevice && ticket.Brain != ArenaBrains.Jev) _toast = "Jev is off on this server, so the free local brain runs this match.";
         _result = null;
         _resultNote = null;
         _hud = null;
@@ -605,7 +549,7 @@ public partial class PoJevArenaPage : ComponentBase, IAsyncDisposable
 
     /// <summary>
     /// Preset squads plus up to six random library creatures per side, fight, show the result,
-    /// replay the last 20 s from the Black Box, repeat — until the allowance can't cover a match.
+    /// replay the last 20 s from the Black Box, repeat.
     /// </summary>
     private async Task RunDemoAsync()
     {
@@ -618,12 +562,6 @@ public partial class PoJevArenaPage : ComponentBase, IAsyncDisposable
         {
             await LoadStatusAsync();
             if (!Configured) { _error = "The arena is unavailable right now, so the demo can't run."; return; }
-            if (UsesJev && _status!.Remaining < CallsPerFullMatch)
-            {
-                _error = "Daily Jev allowance reached for this account. The demo resumes tomorrow (00:00 UTC).";
-                await InvokeAsync(StateHasChanged);
-                return;
-            }
 
             FillDemoTeam(_blue, rng);
             FillDemoTeam(_red, rng);

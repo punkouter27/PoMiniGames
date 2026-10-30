@@ -81,11 +81,9 @@ public sealed class PoJevArenaApiClient(HttpClient http)
 
             var error = response.StatusCode switch
             {
-                HttpStatusCode.TooManyRequests => (await response.Content.ReadAsStringAsync(ct)).Contains("allowance-exhausted", StringComparison.Ordinal)
-                    ? "allowance-exhausted"
-                    : "rate-limited",
+                HttpStatusCode.TooManyRequests => "rate-limited",
                 HttpStatusCode.NotFound => "match-expired",
-                HttpStatusCode.ServiceUnavailable => "jev-unavailable",
+                HttpStatusCode.ServiceUnavailable => "arena-unavailable",
                 _ => $"http-{(int)response.StatusCode}",
             };
             return $$"""{"error":"{{error}}"}""";

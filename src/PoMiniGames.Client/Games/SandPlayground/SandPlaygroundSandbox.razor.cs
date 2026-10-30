@@ -147,7 +147,11 @@ public partial class SandPlaygroundSandbox : ComponentBase, IAsyncDisposable
         DockShown = !IsDemo;
     }
 
-    protected void WakeDock() => DockShown = true;
+    // The demo is a watch-only reel: the CPU does every action, so a touch never brings up the tools.
+    protected void WakeDock()
+    {
+        if (!IsDemo) DockShown = true;
+    }
 
     protected override async Task OnAfterRenderAsync(bool firstRender)
     {
@@ -159,6 +163,7 @@ public partial class SandPlaygroundSandbox : ComponentBase, IAsyncDisposable
         await _module.InvokeVoidAsync("setTool", ActiveTool);
         await _module.InvokeVoidAsync("setBrush", BrushSize);
         await _module.InvokeVoidAsync("setDemo", DemoOn);
+        await _module.InvokeVoidAsync("lockInput", IsDemo);
     }
 
     // ── Engine → Blazor ──────────────────────────────────────────────────

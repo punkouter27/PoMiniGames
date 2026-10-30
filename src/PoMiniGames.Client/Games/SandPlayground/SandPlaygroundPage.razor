@@ -27,7 +27,7 @@
         <GameIntro CueScope="sandplayground"
                    Title=@TitleContent
                    Objective="A GPU physics sandbox — dig, flood, build, then blow it apart."
-                   Controls=@HowToPlayContent
+                   Controls="@(IsDemo ? DemoContent : HowToPlayContent)"
                    Mode="@(IsDemo ? GameIntro.IntroMode.Demo : GameIntro.IntroMode.OnePlayer)"
                    OnStart="@(() => _introDismissed = true)" />
     }
@@ -46,6 +46,8 @@
     private bool IsDemo => GameModes.Parse(Mode) == GameMode.Demo;
 
     private static RenderFragment TitleContent => GameCatalog.TitleFor(GameKeys.SandPlayground);
+
+    private RenderFragment DemoContent => @<div><p>Watch only: the CPU pours, digs and blows things up on its own.</p></div>;
 
     private RenderFragment HowToPlayContent => @<div>
         @* Each tool button already carries its description as a tooltip and shows it as

@@ -71,7 +71,7 @@ public sealed class LocalJevClient : IJevClient
         var answers = new JevAnswers(
             action, Chosen, Spread(action, actionQuestion.Criteria.Keys),
             focus, focus is null ? 0 : Chosen, focusProbabilities, panic);
-        return new JevOutcome(true, null, answers, new JevUsage(0, 0, 0), LatencyMs: 0);
+        return new JevOutcome(true, null, answers, LatencyMs: 0);
     }
 
     private static string PickFocus(Read read, IReadOnlyDictionary<string, string> offered)

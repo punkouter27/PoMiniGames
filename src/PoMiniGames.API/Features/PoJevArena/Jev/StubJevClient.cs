@@ -20,7 +20,7 @@ public sealed class StubJevClient : IJevClient
             action, 0.6, actionProbabilities,
             focus?.Choice, focus is null ? 0 : 0.6, focus?.Probabilities,
             Panic: 0.1);
-        return Task.FromResult(new JevOutcome(true, null, answers, new JevUsage(0, 0, 0), LatencyMs: 0));
+        return Task.FromResult(new JevOutcome(true, null, answers, LatencyMs: 0));
     }
 
     private static (string Choice, Dictionary<string, double> Probabilities)? FirstOf(JevPrompt prompt, string key)

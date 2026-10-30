@@ -95,7 +95,7 @@ function deploy(canvasId, dotnet, ticketJson, abilitiesJson, optionsJson) {
         mode: 'live',           // 'live' | 'killcam' | 'ceremony' | 'replay'
         frame: 0, playing: false, speed: 1, replayAcc: 0,
         raf: 0, last: 0, acc: 0, hudAcc: 0, paused: false,
-        notices: [], remaining: null, pendingEvents: [],
+        notices: [], pendingEvents: [],
         listeners: [],
         autoCam: options.autoCamera !== false,
         cam: { x: sim.ARENA_W / 2, y: sim.ARENA_H / 2, zoom: 1 },
@@ -107,7 +107,7 @@ function deploy(canvasId, dotnet, ticketJson, abilitiesJson, optionsJson) {
     };
 
     m.scheduler = createScheduler(world, {
-        brain: ticket.brain === 'jev' ? 'jev' : 'local',
+        brain: 'local',
         decide: async (batch) => JSON.parse(await dotnet.invokeMethodAsync('DecideAsync', JSON.stringify(batch))),
         onDecision: (frame, idx, decision, request) => {
             blackbox.recordDecision(frame, idx, decision, request);
@@ -115,17 +115,7 @@ function deploy(canvasId, dotnet, ticketJson, abilitiesJson, optionsJson) {
             if (idx === m.sel.blue || idx === m.sel.red) pushInspector(m, world.units[idx].team);
         },
         onNotice: (notice) => { if (!m.notices.includes(notice)) m.notices.push(notice); pushHud(m, true); },
-        onRemaining: (remaining) => { m.remaining = remaining; },
     });
-    // The optional on-device model (Settings: On-device AI). Its module is only imported when the
-    // page asked for it, and WebLLM itself only once the player's switch is on and WebGPU exists.
-    if (options.onDevice) {
-        import('../localAi.js').then((ai) => {
-            if (match !== m || !ai.enabled() || !ai.hasWebGpu()) return;
-            ai.warmUp();
-            m.scheduler.setDevice(ai);
-        }).catch(() => { /* stays on the rule-based brain */ });
-    }
 
     const on = (target, type, fn, opts) => { target.addEventListener(type, fn, opts); m.listeners.push(() => target.removeEventListener(type, fn, opts)); };
     on(canvas, 'pointerdown', (e) => {
@@ -480,20 +470,11 @@ function pushHud(m, force = false) {
     }
     send(m.dotnet, 'OnHud', {
         time: w.time, blueAlive: counts.blue, redAlive: counts.red,
-        calls: m.scheduler.calls, remaining: m.remaining, notices: m.notices, stopped: m.scheduler.stoppedReason, force,
+        calls: m.scheduler.calls, notices: m.notices, stopped: m.scheduler.stoppedReason, force,
         blueHp: blueMax ? blueHp / blueMax : 0, redHp: redMax ? redHp / redMax : 0,
         arena: w.arena.name,
         brain: m.scheduler.brain,
-        device: deviceLine(m.scheduler.device),
     });
-}
-
-/** "On-device AI ready · 12 moves", or null when the on-device model is not in play. */
-function deviceLine(d) {
-    if (!d) return null;
-    if (d.status === 'ready') return `On-device AI ready · ${d.used} moves`;
-    if (d.status === 'error') return 'On-device AI failed to load · rules in charge';
-    return `On-device AI ${d.status} · rules in charge`;
 }
 
 /** One side's inspector payload: its selected unit, what it's doing, and the Jev answer governing it. */

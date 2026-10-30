@@ -45,14 +45,12 @@ public sealed record ArenaHudView(
     int BlueAlive,
     int RedAlive,
     int Calls,
-    long? Remaining,
     string[] Notices,
     string? Stopped,
     double BlueHp = 1,
     double RedHp = 1,
     string? Arena = null,
-    string? Brain = null,
-    string? Device = null);
+    string? Brain = null);
 
 /// <summary>A knockout on the Black Box timeline.</summary>
 public sealed record ArenaKo(int Frame, string Team);

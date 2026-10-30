@@ -1,6 +1,5 @@
 using System.Collections.Concurrent;
 using System.Security.Cryptography;
-using PoMiniGames.Features.PoJevArena.Jev;
 using PoMiniGames.Shared.Games.PoJevArena;
 
 namespace PoMiniGames.Features.PoJevArena;
@@ -14,14 +13,12 @@ public enum ArenaResultGate
 }
 
 /// <summary>
-/// One registered match: the frozen rosters (so a mid-match library edit changes nothing and Jev's
-/// prompt names come from here, not the client), the owner, which brain it runs on, and what it
-/// has spent.
+/// One registered match: the frozen rosters (so a mid-match library edit changes nothing and the
+/// prompt names come from here, not the client), the owner, and how many decisions it has answered.
 /// </summary>
-public sealed class ArenaMatch(string matchId, string ownerId, ArenaRoster roster, ArenaMode mode, int seed, DateTimeOffset now, bool usesJev = false)
+public sealed class ArenaMatch(string matchId, string ownerId, ArenaRoster roster, ArenaMode mode, int seed, DateTimeOffset now)
 {
     private int _decisions;
-    private long _costMicroUsd;
     private int _reported;
     private long _lastTouchedTicks = now.UtcTicks;
 
@@ -32,39 +29,27 @@ public sealed class ArenaMatch(string matchId, string ownerId, ArenaRoster roste
     public int Seed { get; } = seed;
     public DateTimeOffset RegisteredAt { get; } = now;
 
-    /// <summary>True when paid Jev answers this match; false for the free local brain.</summary>
-    public bool UsesJev { get; } = usesJev;
-
-    /// <summary>Paid answers already bought this match, reused for a matching situation.</summary>
-    public JevDecisionCache Cache { get; } = new();
-
     public int Decisions => Volatile.Read(ref _decisions);
-    public double CostUsd => Interlocked.Read(ref _costMicroUsd) / 1_000_000.0;
 
     internal DateTimeOffset LastTouched => new(Interlocked.Read(ref _lastTouchedTicks), TimeSpan.Zero);
 
     internal void Touch(DateTimeOffset now) => Interlocked.Exchange(ref _lastTouchedTicks, now.UtcTicks);
 
-    /// <summary>Counts answered decisions only — the paid work the result gate requires.</summary>
-    public void RecordDecisions(int count, double costUsd)
-    {
-        Interlocked.Add(ref _decisions, count);
-        Interlocked.Add(ref _costMicroUsd, (long)Math.Round(costUsd * 1_000_000));
-    }
+    /// <summary>Counts answered decisions only — the work the result gate requires.</summary>
+    public void RecordDecisions(int count) => Interlocked.Add(ref _decisions, count);
 
     /// <summary>
     /// One result per match, and only when the claim is plausible for a match that really ran:
     /// at least <see cref="ArenaMatchRegistry.MinResultSeconds"/> long, at least 80% of the claimed
     /// duration elapsed on the server's clock since registration (the sim runs in real time and
     /// pauses when hidden, so it can only be slower), and decisions in proportion to that
-    /// duration (a Jev match asks only on a state change, so it needs fewer per second). The winner itself is the client's word — the server does not re-simulate — so
+    /// duration. The winner itself is the client's word — the server does not re-simulate — so
     /// this does not make a result unforgeable; it makes forging one cost the same time and
     /// allowance as playing it, which keeps library win rates honest enough for a sort order.
     /// </summary>
     public ArenaResultGate TryClaimResult(double durationSeconds, DateTimeOffset now)
     {
-        var perSecond = UsesJev ? ArenaMatchRegistry.MinJevDecisionsPerSecond : ArenaMatchRegistry.MinDecisionsPerSecond;
-        var needed = Math.Max(ArenaMatchRegistry.MinDecisionsForResult, (int)(durationSeconds * perSecond));
+        var needed = Math.Max(ArenaMatchRegistry.MinDecisionsForResult, (int)(durationSeconds * ArenaMatchRegistry.MinDecisionsPerSecond));
         if (Decisions < needed) return ArenaResultGate.TooFewDecisions;
         if (durationSeconds < ArenaMatchRegistry.MinResultSeconds
             || (now - RegisteredAt).TotalSeconds < durationSeconds * 0.8)
@@ -87,8 +72,6 @@ public sealed class ArenaMatchRegistry(TimeProvider clock)
 {
     public const int MinDecisionsForResult = 40;
     public const double MinDecisionsPerSecond = 4;
-    /// <summary>Jev matches ask on a state change at most every 2 s per unit and reuse cached answers.</summary>
-    public const double MinJevDecisionsPerSecond = 1;
     public const double MinResultSeconds = 10;
     public static readonly TimeSpan IdleExpiry = TimeSpan.FromMinutes(15);
 
@@ -97,13 +80,13 @@ public sealed class ArenaMatchRegistry(TimeProvider clock)
 
     private readonly ConcurrentDictionary<string, ArenaMatch> _matches = new(StringComparer.Ordinal);
 
-    public ArenaMatch Register(string ownerId, ArenaRoster roster, ArenaMode mode, bool usesJev = false)
+    public ArenaMatch Register(string ownerId, ArenaRoster roster, ArenaMode mode)
     {
         var now = clock.GetUtcNow();
         Sweep(now);
 
         var id = Convert.ToHexString(RandomNumberGenerator.GetBytes(8)).ToLowerInvariant();
-        var match = new ArenaMatch(id, ownerId, roster, mode, RandomNumberGenerator.GetInt32(1, int.MaxValue), now, usesJev);
+        var match = new ArenaMatch(id, ownerId, roster, mode, RandomNumberGenerator.GetInt32(1, int.MaxValue), now);
         _matches[id] = match;
         return match;
     }

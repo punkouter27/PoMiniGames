@@ -60,7 +60,7 @@ let frameNo = 0;
 let uploadSwapsGB = false;         // driver quirk, probed once at init
 
 let running = true, stepRequest = false;
-let demo = false, demoTimer = 0;
+let demo = false, demoTimer = 0, demoPourTimer = 0, demoPour = null, inputLocked = false;
 let tool = 'dig', brush = 8;
 let bodies = [];        // oriented rigid boxes {cx,cy,len,thick,angle,omega,vx,vy,kind,stamped}
 let projectiles = [];   // {type,x,y,vx,vy,r,fuse,lit,rest}
@@ -480,6 +480,8 @@ export function detonateRemote() {
 export function setBrush(b) { brush = Math.max(1, Math.min(32, b | 0)); }
 export function setPaused(p) { running = !p; }
 export function setDemo(on) { demo = !!on; demoTimer = 0; }
+// Watch-only reel: the CPU plays, so pointer and keyboard input are ignored.
+export function lockInput(on) { inputLocked = !!on; }
 export function stepOnce() { stepRequest = true; }
 export function setSpeed(s) { speed = s === 0.25 || s === 2 ? s : 1; simCredit = 0; }
 
@@ -2596,6 +2598,7 @@ function attachInput() {
     overlay.addEventListener('contextmenu', e => e.preventDefault());
 
     overlay.addEventListener('pointerdown', e => {
+        if (inputLocked) return;
         if (e.button !== 0 && e.button !== 2) return;
         e.preventDefault();
         SFX.unlock();
@@ -2628,6 +2631,7 @@ function attachInput() {
     });
 
     overlay.addEventListener('pointermove', e => {
+        if (inputLocked) return;
         if (pointers.has(e.pointerId)) pointers.set(e.pointerId, { x: e.clientX, y: e.clientY });
         if (pinch && pointers.size >= 2) {
             const [a, b] = [...pointers.values()];
@@ -2646,6 +2650,7 @@ function attachInput() {
 
     // Wheel = brush size, so the size control costs no toolbar space on a desktop.
     overlay.addEventListener('wheel', e => {
+        if (inputLocked) return;
         e.preventDefault();
         nudgeBrush(brush - Math.sign(e.deltaY) * 2);
     }, { passive: false });
@@ -2675,6 +2680,7 @@ const TOOL_KEYS = ['dig', 'sand', 'water', 'fire', 'concrete', 'tnt', 'balloon',
 // echoed to Blazor so the toolbar never shows a stale tool.
 function attachKeys() {
     const onKey = e => {
+        if (inputLocked) return;
         const tag = e.target?.tagName;
         if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT' || e.altKey) return;
         if (e.ctrlKey || e.metaKey) {
@@ -3199,6 +3205,26 @@ function simFrame(dt) {
                 vx: (Math.random() - 0.5) * 2, vy: 0,
                 r: 4, fuse: TNT_FUSE_MS, lit: true, size: 1, rest: 0,
             });
+        }
+    }
+    // The CPU also pours sand and water and digs trenches, so the reel is more than blasts.
+    if (demo && !challenge) {
+        demoPourTimer -= dt;
+        if (demoPourTimer <= 0) {
+            demoPourTimer = 2500 + Math.random() * 2500;
+            demoPour = {
+                tool: ['sand', 'water', 'dig'][Math.floor(Math.random() * 3)],
+                x: 60 + Math.random() * (W - 120), y: H * (0.35 + Math.random() * 0.4),
+                left: 600,
+            };
+        }
+        if (demoPour) {
+            const savedBrush = brush, savedTool = strokeTool;
+            brush = 8; strokeTool = demoPour.tool;
+            paintBrush(demoPour.x + Math.sin(demoPour.left / 90) * 25, demoPour.y);
+            brush = savedBrush; strokeTool = savedTool;
+            demoPour.left -= dt;
+            if (demoPour.left <= 0) demoPour = null;
         }
     }
     // The torch burns for as long as it is held, moving or not.

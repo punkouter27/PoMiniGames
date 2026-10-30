@@ -1,5 +1,4 @@
 using Microsoft.AspNetCore.Mvc;
-using Microsoft.Extensions.Options;
 using PoMiniGames.Domain.Services;
 using PoMiniGames.Features.Auth;
 using PoMiniGames.Features.PoFunQuiz.Storage;
@@ -19,22 +18,15 @@ public static class FunQuizEndpoints
         var group = app.MapGroup("/funquiz").WithTags("PoFunQuiz");
 
         // ── Questions ────────────────────────────────────────────────────
-        // Free by default: dealt from the permanent question bank (Open Trivia DB + the bundled
-        // set + earlier top-ups). `source=FreshAi` asks the paid model instead, and is honoured
-        // only when PoFunQuiz:AllowFreshAi is on AND the caller is a signed-in player, not a
-        // guest; anyone else silently gets the bank.
+        // Dealt at random from the question bank loaded once from Data/questions.json.
         //
         // Not cached here. Memoizing the finished, already-dealt list would give every game in
-        // the same window a byte-identical quiz. The pool is cached (bank in memory, AI batches in
-        // HybridCache under two fixed batch sizes); the dealing happens per request.
+        // the same window a byte-identical quiz; the dealing happens per request.
 
         group.MapGet("/quiz/questions", async (
             [FromQuery] int count,
             [FromQuery] string? category,
-            [FromQuery] string? source,
-            HttpContext ctx,
             IFunQuizQuestionSource questionSource,
-            IOptionsSnapshot<FunQuizOptions> quizOptions,
             CancellationToken cancellationToken) =>
         {
             if (count <= 0) count = 10;
@@ -43,27 +35,17 @@ public static class FunQuizEndpoints
             // owns — and the client surfaces 429 as "wait and retry", advice that would never
             // make count=500 succeed.
             if (count > 50) return Results.BadRequest(new { error = "count must be between 1 and 50." });
-            if (string.Equals(category, "BrowserAI", StringComparison.OrdinalIgnoreCase))
-            {
-                return Results.BadRequest(new { error = "BrowserAI must be invoked client-side; this endpoint serves server-side AI only." });
-            }
 
             var cat = Enum.TryParse<QuestionCategory>(category, ignoreCase: true, out var c)
                 ? c
                 : QuestionCategory.General;
-            // The paid path needs a real signed-in identity: the group's RequireAuthorization also
-            // admits guests, and a guest must never be able to spend on the model.
-            var mode = quizOptions.Value.Resolve(source, RequestIdentity.Resolve(ctx.User).IsAuthenticated);
 
-            // Called directly. The AsyncLocal identity the request middleware set is still on
-            // this flow, so a Fresh AI generation is billed to this caller (the generator carries
-            // it into its HybridCache factory state itself).
-            var questions = await questionSource.GetQuestionsAsync(cat, count, mode, cancellationToken);
+            var questions = await questionSource.GetQuestionsAsync(cat, count, cancellationToken);
             return Results.Ok(questions);
         })
-        .RequireRateLimiting("ai-generation")
         .WithName("FunQuiz_GetQuestions")
-        .WithSummary("PoFunQuiz questions: the free bank by default, or Fresh AI for signed-in players (source=FreshAi)");
+        .WithSummary("PoFunQuiz questions dealt at random from the bundled bank");
+
 
         // ── Leaderboard ────────────────────────────────────────────────────────
 
