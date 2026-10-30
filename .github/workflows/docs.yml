@@ -1,0 +1,100 @@
+name: Publish docs
+
+# The documentation suite under DOCS/ is a static site. This workflow publishes it
+# to GitHub Pages so there is one hosted URL for the whole suite, and it does so
+# from CI - nothing about the docs is deployed by hand.
+#
+# Nothing here can break the app: it runs on its own path filter, it never touches
+# the Azure App Service, and a Pages problem is reported in the job summary rather
+# than failing the default branch.
+on:
+  push:
+    branches: [ master ]
+    paths:
+      - 'DOCS/**'
+      - '.github/workflows/docs.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: docs-pages
+  cancel-in-progress: true
+
+jobs:
+  publish:
+    name: Publish the documentation suite
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      # The Pages site has to exist before the official deploy action will run.
+      # configure-pages can enable it with the repository's own token, so it is
+      # done here rather than by hand. A site that already exists is fine.
+      - name: Enable the Pages site
+        continue-on-error: true
+        uses: actions/configure-pages@v5
+        with:
+          enablement: true
+
+      - name: Stage the site
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p _site
+          cp -r DOCS/. _site/
+          LATEST=$(ls -1 DOCS | grep -E '^[0-9]{8}$' | sort | tail -1)
+          echo "Latest suite: $LATEST"
+          echo "LATEST=$LATEST" >> "$GITHUB_ENV"
+          cat > _site/index.html <<HTML
+          <!doctype html>
+          <html lang="en">
+          <head>
+          <meta charset="utf-8">
+          <meta http-equiv="refresh" content="0; url=$LATEST/artifact.html">
+          <link rel="canonical" href="$LATEST/artifact.html">
+          <title>PoMiniGames documentation</title>
+          </head>
+          <body style="font:16px system-ui,sans-serif;padding:2rem">
+          <p>Opening <a href="$LATEST/artifact.html">the PoMiniGames documentation suite</a>&hellip;</p>
+          <p><a href="$LATEST/index.html">Or start with the plain-English overview</a>.</p>
+          </body>
+          </html>
+          HTML
+
+      - name: Upload the site artifact
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: _site
+
+      - name: Deploy to GitHub Pages
+        id: deploy
+        continue-on-error: true
+        uses: actions/deploy-pages@v4
+
+      - name: Report where the suite lives
+        shell: bash
+        run: |
+          URL="https://${{ github.repository_owner }}.github.io/${{ github.event.repository.name }}/"
+          {
+            echo "## Documentation suite published"
+            echo
+            echo "- Site root: $URL"
+            echo "- Tabbed shell: $URL${LATEST:-latest}/artifact.html"
+            echo "- Overview: $URL${LATEST:-latest}/index.html"
+            echo "- In the repository: \`DOCS/\`"
+            if [ "${{ steps.deploy.outcome }}" = "success" ]; then
+              echo
+              echo "Pages deployment succeeded."
+            else
+              echo
+              echo "::warning::The Pages deployment did not run. The suite is still in the repository under DOCS/."
+            fi
+          } >> "$GITHUB_STEP_SUMMARY"
+          echo "Docs URL: $URL"

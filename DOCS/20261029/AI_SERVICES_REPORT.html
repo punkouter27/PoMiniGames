@@ -1,0 +1,814 @@
+<!doctype html>
+<html lang="en" data-tier="2">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="generator" content="PoMiniGames docs generator">
+<title>PoMiniGames documentation - AI and external services &middot; PoMiniGames</title>
+<style>
+:root{
+  color-scheme: light;
+  --bg:#f4f6f8; --surface:#ffffff; --surface-2:#eef2f6; --ink:#0d1117; --ink-2:#48525d;
+  --muted:#7d8894; --line:#dde3ea; --line-strong:#c4cfda; --accent:#1f6feb; --accent-ink:#0b4fc7;
+  --accent-soft:#e8f1fe; --chip:#eef1f5; --code-bg:#f7f9fb;
+  --good:#128a4c; --warn:#9a6508; --crit:#c0362c; --s1:#1f6feb; --s2:#e8710a; --s3:#1a7f5a;
+  --s4:#8250df; --s5:#bf3989;
+  --shadow:0 1px 2px rgba(16,24,40,.06),0 1px 3px rgba(16,24,40,.09);
+  --radius:12px; --maxw:1240px;
+  --mono: ui-monospace, SFMono-Regular, "SF Mono", Consolas, "Liberation Mono", monospace;
+}
+html[data-theme="dark"]{ color-scheme: dark;
+  --bg:#0d1117; --surface:#151b23; --surface-2:#1b222b; --ink:#e6edf3; --ink-2:#b3bdc9;
+  --muted:#8b949e; --line:#262d36; --line-strong:#39424d; --accent:#4a9eff;
+  --accent-ink:#79b8ff; --accent-soft:#12243d; --chip:#1b222b; --code-bg:#0b0f14;
+  --good:#3fb950; --warn:#d29922; --crit:#f85149; --s1:#4a9eff; --s2:#f0883e;
+  --s3:#3fb950; --s4:#a371f7; --s5:#f778ba;
+  --shadow:0 1px 2px rgba(1,4,9,.5),0 1px 3px rgba(1,4,9,.45);
+
+}
+@media (prefers-color-scheme: dark){
+  html:not([data-theme]){ color-scheme: dark;
+  --bg:#0d1117; --surface:#151b23; --surface-2:#1b222b; --ink:#e6edf3; --ink-2:#b3bdc9;
+  --muted:#8b949e; --line:#262d36; --line-strong:#39424d; --accent:#4a9eff;
+  --accent-ink:#79b8ff; --accent-soft:#12243d; --chip:#1b222b; --code-bg:#0b0f14;
+  --good:#3fb950; --warn:#d29922; --crit:#f85149; --s1:#4a9eff; --s2:#f0883e;
+  --s3:#3fb950; --s4:#a371f7; --s5:#f778ba;
+  --shadow:0 1px 2px rgba(1,4,9,.5),0 1px 3px rgba(1,4,9,.45);
+
+  }
+}
+*,*::before,*::after{ box-sizing:border-box; }
+html,body{ margin:0; padding:0; }
+body{
+  background:var(--bg); color:var(--ink);
+  font:15px/1.6 system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;
+  -webkit-text-size-adjust:100%;
+}
+img,svg,table,pre{ max-width:100%; }
+a{ color:var(--accent-ink); }
+code,kbd{ font-family:var(--mono); font-size:.92em; }
+
+/* ---------- Sticky header ---------- */
+.topbar{
+  position:sticky; top:0; z-index:50;
+  background:color-mix(in srgb, var(--surface) 88%, transparent);
+  backdrop-filter:saturate(1.4) blur(10px);
+  border-bottom:1px solid var(--line);
+}
+.tb-inner{
+  max-width:var(--maxw); margin:0 auto; padding:10px 16px;
+  display:flex; gap:12px; align-items:center; flex-wrap:wrap;
+}
+.brand{
+  font-weight:800; letter-spacing:-.01em; text-decoration:none; color:var(--ink);
+  display:inline-flex; align-items:center; gap:8px; white-space:nowrap;
+}
+.brand .dot{ width:9px; height:9px; border-radius:50%; background:var(--accent); flex:none; }
+.doc-title{ color:var(--ink-2); font-size:13.5px; min-width:0; overflow-wrap:anywhere; }
+.tb-right{ margin-left:auto; display:flex; gap:8px; align-items:center; flex-wrap:wrap; }
+.seg{
+  display:inline-flex; border:1px solid var(--line-strong); border-radius:999px;
+  overflow:hidden; background:var(--surface-2);
+}
+.seg button{
+  appearance:none; border:0; background:transparent; color:var(--ink-2);
+  font:inherit; font-size:12.5px; font-weight:600; padding:5px 11px; cursor:pointer;
+  white-space:nowrap;
+}
+.seg button + button{ border-left:1px solid var(--line); }
+.seg button[aria-pressed="true"]{ background:var(--accent); color:#fff; }
+.seg button:hover:not([aria-pressed="true"]){ background:var(--chip); color:var(--ink); }
+.icon-btn{
+  appearance:none; border:1px solid var(--line-strong); background:var(--surface-2);
+  color:var(--ink-2); border-radius:999px; width:32px; height:30px; cursor:pointer;
+  font-size:14px; line-height:1; display:inline-flex; align-items:center; justify-content:center;
+}
+.icon-btn:hover{ background:var(--chip); color:var(--ink); }
+
+/* ---------- Layout ---------- */
+.wrap{ max-width:var(--maxw); margin:0 auto; padding:24px 16px 72px; }
+h1{ font-size:clamp(24px,3.4vw,34px); line-height:1.18; letter-spacing:-.02em; margin:0 0 6px; }
+h2{
+  font-size:clamp(19px,2.3vw,24px); line-height:1.25; margin:52px 0 6px;
+  padding-top:18px; border-top:1px solid var(--line); scroll-margin-top:70px;
+}
+h3{ font-size:16px; margin:26px 0 4px; }
+h4{ font-size:14px; margin:18px 0 2px; color:var(--ink-2); text-transform:uppercase; letter-spacing:.05em; }
+p{ margin:0 0 12px; max-width:78ch; color:var(--ink-2); }
+ul,ol{ color:var(--ink-2); max-width:78ch; padding-left:20px; }
+li{ margin:5px 0; }
+strong{ color:var(--ink); }
+.lede{ font-size:17px; color:var(--ink); max-width:74ch; }
+
+/* ---------- Tier visibility ---------- */
+html[data-tier="1"] .l2, html[data-tier="1"] .l3{ display:none !important; }
+html[data-tier="2"] .l3{ display:none !important; }
+
+/* ---------- Cards & grids ---------- */
+.card{
+  background:var(--surface); border:1px solid var(--line); border-radius:var(--radius);
+  padding:16px 18px; box-shadow:var(--shadow); margin:16px 0; min-width:0;
+}
+.card > :last-child{ margin-bottom:0; }
+.card h3:first-child, .card h2:first-child{ margin-top:0; }
+.grid{ display:grid; gap:14px; grid-template-columns:repeat(auto-fit, minmax(min(280px,100%),1fr)); margin:16px 0; }
+.grid.two{ grid-template-columns:repeat(auto-fit, minmax(min(340px,100%),1fr)); }
+.grid.three{ grid-template-columns:repeat(auto-fit, minmax(min(240px,100%),1fr)); }
+.stat{ display:flex; flex-direction:column; gap:2px; }
+.stat b{ font-size:24px; line-height:1.15; letter-spacing:-.02em; }
+.stat span{ font-size:12.5px; color:var(--muted); }
+
+/* ---------- Callouts ---------- */
+.note{
+  background:var(--accent-soft); border:1px solid var(--line); border-left:3px solid var(--accent);
+  border-radius:8px; padding:12px 14px; margin:16px 0; color:var(--ink-2);
+}
+.note > :last-child{ margin-bottom:0; }
+.note b, .note strong{ color:var(--ink); }
+.note.warn{ background:color-mix(in srgb,var(--warn) 9%, var(--surface)); border-left-color:var(--warn); }
+.note.crit{ background:color-mix(in srgb,var(--crit) 9%, var(--surface)); border-left-color:var(--crit); }
+.note.good{ background:color-mix(in srgb,var(--good) 9%, var(--surface)); border-left-color:var(--good); }
+.el{ /* ELI5 block */
+  background:var(--surface-2); border:1px dashed var(--line-strong); border-radius:10px;
+  padding:12px 14px; margin:12px 0;
+}
+.el::before{
+  content:"In plain English"; display:block; font-size:11px; font-weight:800; letter-spacing:.08em;
+  text-transform:uppercase; color:var(--muted); margin-bottom:5px;
+}
+
+/* ---------- Analogy chips ---------- */
+.analogy{ display:flex; gap:10px; align-items:flex-start; }
+.analogy .badge{
+  flex:none; font-size:11px; font-weight:800; letter-spacing:.06em; text-transform:uppercase;
+  background:var(--accent-soft); color:var(--accent-ink); border:1px solid var(--line);
+  border-radius:6px; padding:3px 7px; margin-top:2px;
+}
+
+/* ---------- Tables ---------- */
+.scroll{ overflow-x:auto; border:1px solid var(--line); border-radius:10px; background:var(--surface); margin:14px 0; }
+table{ border-collapse:collapse; width:100%; font-size:13.5px; }
+th,td{ padding:8px 11px; text-align:left; border-bottom:1px solid var(--line); vertical-align:top; }
+th{ font-size:11.5px; text-transform:uppercase; letter-spacing:.05em; color:var(--muted); white-space:nowrap; background:var(--surface-2); }
+tr:last-child td{ border-bottom:0; }
+td code{ overflow-wrap:anywhere; }
+.nowrap{ white-space:nowrap; }
+
+/* ---------- Citations & snippets ---------- */
+.cite{
+  font-family:var(--mono); font-size:11.5px; text-decoration:none; white-space:nowrap;
+  background:var(--chip); border:1px solid var(--line); border-radius:5px; padding:1px 5px;
+  color:var(--accent-ink); display:inline-block; max-width:100%; overflow-wrap:anywhere;
+}
+.cite:hover{ border-color:var(--accent); }
+pre.snip{
+  background:var(--code-bg); border:1px solid var(--line); border-left:3px solid var(--line-strong);
+  border-radius:8px; padding:10px 12px; overflow-x:auto; margin:10px 0;
+  font-family:var(--mono); font-size:12.5px; line-height:1.5; color:var(--ink-2);
+}
+pre.snip code{ background:none; padding:0; }
+.snip-cap{ font-size:12px; color:var(--muted); margin:0 0 -4px; }
+
+/* ---------- Mermaid ---------- */
+.figure{ margin:16px 0; }
+.mermaid-wrap{
+  background:var(--surface); border:1px solid var(--line); border-radius:var(--radius);
+  padding:14px; overflow-x:auto; box-shadow:var(--shadow);
+}
+.mermaid{ display:flex; justify-content:center; }
+.mermaid svg{ max-width:100%; height:auto; }
+figcaption{ font-size:12.5px; color:var(--muted); margin-top:7px; }
+figcaption b{ color:var(--ink-2); }
+
+/* ---------- Narrative steps ---------- */
+.steps{ counter-reset:step; list-style:none; padding:0; margin:14px 0; display:grid; gap:10px; }
+.steps li{
+  position:relative; background:var(--surface); border:1px solid var(--line); border-radius:10px;
+  padding:12px 14px 12px 46px; margin:0; counter-increment:step; color:var(--ink-2);
+}
+.steps li::before{
+  content:counter(step); position:absolute; left:12px; top:11px; width:24px; height:24px;
+  border-radius:50%; background:var(--accent); color:#fff; font-size:12.5px; font-weight:800;
+  display:flex; align-items:center; justify-content:center;
+}
+.steps li b{ color:var(--ink); display:block; margin-bottom:2px; }
+
+/* ---------- Pills & tags ---------- */
+.pill{
+  display:inline-block; font-size:11.5px; font-weight:700; padding:2px 8px; border-radius:999px;
+  border:1px solid var(--line-strong); background:var(--chip); color:var(--ink-2); white-space:nowrap;
+}
+.pill.free{ background:color-mix(in srgb,var(--good) 14%,var(--surface)); color:var(--good); border-color:color-mix(in srgb,var(--good) 35%,var(--line)); }
+.pill.paid{ background:color-mix(in srgb,var(--warn) 14%,var(--surface)); color:var(--warn); border-color:color-mix(in srgb,var(--warn) 35%,var(--line)); }
+.pill.opt{ background:color-mix(in srgb,var(--s4) 12%,var(--surface)); color:var(--s4); border-color:color-mix(in srgb,var(--s4) 32%,var(--line)); }
+.pill.off{ background:var(--chip); color:var(--muted); }
+
+/* ---------- Tabs (artifact shell) ---------- */
+.tabbar{
+  position:sticky; top:0; z-index:40; background:var(--surface); border-bottom:1px solid var(--line);
+  display:flex; gap:4px; overflow-x:auto; padding:8px 16px; max-width:var(--maxw); margin:0 auto;
+}
+.tabbar button{
+  appearance:none; border:1px solid var(--line-strong); background:var(--surface-2); color:var(--ink-2);
+  font:inherit; font-size:13px; font-weight:600; padding:6px 12px; border-radius:8px; cursor:pointer;
+  white-space:nowrap;
+}
+.tabbar button[aria-selected="true"]{ background:var(--accent); border-color:var(--accent); color:#fff; }
+.frame{ display:block; width:100%; border:0; min-height:70vh; background:var(--bg); }
+
+/* ---------- Footer ---------- */
+.foot{
+  border-top:1px solid var(--line); margin-top:56px; padding:18px 16px 40px;
+  color:var(--muted); font-size:12.5px;
+}
+.foot .wrap{ padding:0; }
+.foot code{ font-size:11.5px; }
+.foot a{ color:var(--muted); }
+.tagrow{ display:flex; gap:8px; flex-wrap:wrap; margin:8px 0 0; }
+
+/* ---------- Small screens ---------- */
+@media (max-width:640px){
+  .tb-inner{ padding:8px 12px; }
+  .doc-title{ width:100%; order:3; }
+  .seg button{ padding:5px 9px; font-size:12px; }
+  .wrap{ padding:18px 12px 56px; }
+  h2{ margin-top:40px; }
+  .steps li{ padding-left:42px; }
+}
+@media print{
+  .topbar,.tabbar{ position:static; }
+  .l2,.l3{ display:block !important; }
+}
+</style>
+</head>
+<body>
+
+<header class="topbar">
+  <div class="tb-inner">
+    <a class="brand" href="index.html"><span class="dot"></span>PoMiniGames</a>
+    <span class="doc-title">AI and external services</span>
+    <div class="tb-right">
+      <div class="seg" role="group" aria-label="Detail level">
+        <button type="button" data-set-tier="1" title="Plain English only">Simple</button>
+        <button type="button" data-set-tier="2" title="Add architecture diagrams">Architectural</button>
+        <button type="button" data-set-tier="3" title="Add code citations and schemas">Deep dive</button>
+      </div>
+      <button type="button" class="icon-btn" id="themeToggle" title="Toggle light / dark" aria-label="Toggle light or dark theme">&#9681;</button>
+    </div>
+  </div>
+</header>
+
+<main class="wrap">
+<h1>AI and external services</h1>
+<p class="lede">Every service this app talks to that is not part of its own source code &mdash; what
+it is for, what it costs, and what happens when it is unavailable.</p>
+
+<div class="el">
+<p><b>The rule is simple: the games work without any outside service.</b> The free question bank,
+the rule-based arena brain and the scripted commentary are the normal path. A paid model is an
+extra the player asks for, metered per player per day, and when it is missing or over budget the
+free path answers instead. No game has a feature that only exists if a cloud model is
+reachable.</p>
+</div>
+
+<div class="note">
+<b>How to read the cost column.</b> "Free" means no money leaves the account. "Optional" means
+money can leave the account, but only if a signed-in player turns it on. "None" means the service
+is never called. Nothing on this page can spend money without a player having asked for it first
+&mdash; except the quiz bank filler, whose paid top-up switch is off by default
+<a class="cite" href="https://github.com/punkouter27/PoMiniGames/blob/master/src/PoMiniGames.API/appsettings.json#L42" title="open src/PoMiniGames.API/appsettings.json line 42">src/PoMiniGames.API/appsettings.json:42</a>.
+</div>
+
+<h2>The complete inventory</h2>
+<div class="scroll">
+<table>
+<thead><tr><th>Service</th><th>What it is used for</th><th>Cost</th><th>If it is unavailable</th><th>Citation</th></tr></thead>
+<tbody>
+<tr>
+<td><b>Microsoft Entra ID</b><br/>Azure AI Foundry</td>
+<td>Validating sign-in tokens; serving Fresh AI quiz questions and the AI judge</td>
+<td>Optional for the AI parts.<br/>Required for sign-in.</td>
+<td>The app refuses to start in Production without a Foundry endpoint and deployment
+<a class="cite" href="https://github.com/punkouter27/PoMiniGames/blob/master/src/PoMiniGames.API/Infrastructure/StartupSecretValidator.cs#L116" title="open src/PoMiniGames.API/Infrastructure/StartupSecretValidator.cs line 116">src/PoMiniGames.API/Infrastructure/StartupSecretValidator.cs:116</a></td>
+<td><a class="cite" href="https://github.com/punkouter27/PoMiniGames/blob/master/src/PoMiniGames.API/AI/AIFoundryClientFactory.cs#L61" title="open src/PoMiniGames.API/AI/AIFoundryClientFactory.cs line 61">src/PoMiniGames.API/AI/AIFoundryClientFactory.cs:61</a></td>
+</tr>
+<tr>
+<td><b>Azure AI Foundry</b> model <code>gpt-5.4-nano</code></td>
+<td>Writing fresh quiz questions; judging close quiz answers</td>
+<td><span class="pill paid">Metered</span> one model, metered per player per day</td>
+<td>The free bank answers instead; the free matcher decides instead</td>
+<td><a class="cite" href="https://github.com/punkouter27/PoMiniGames/blob/master/src/PoMiniGames.API/appsettings.json#L38" title="open src/PoMiniGames.API/appsettings.json line 38">src/PoMiniGames.API/appsettings.json:38</a></td>
+</tr>
+<tr>
+<td><b>Open Trivia DB</b></td>
+<td>Tops up the PoFunQuiz question bank</td>
+<td><span class="pill free">Free</span> and public</td>
+<td>The bundled set takes over; the request logs an information message and returns an empty list</td>
+<td><a class="cite" href="https://github.com/punkouter27/PoMiniGames/blob/master/src/PoMiniGames.API/Features/PoFunQuiz/OpenTriviaDbClient.cs#L100" title="open src/PoMiniGames.API/Features/PoFunQuiz/OpenTriviaDbClient.cs line 100">src/PoMiniGames.API/Features/PoFunQuiz/OpenTriviaDbClient.cs:100</a></td>
+</tr>
+<tr>
+<td><b>Wikimedia REST API</b></td>
+<td>Enriches PoBrawl fighter dossiers with a summary and portrait</td>
+<td><span class="pill free">Free</span>, cached for 24 hours</td>
+<td>The static facts are served; the enrichment is skipped</td>
+<td><a class="cite" href="https://github.com/punkouter27/PoMiniGames/blob/master/src/PoMiniGames.API/Features/PoBrawl/PoBrawlDossierService.cs#L190" title="open src/PoMiniGames.API/Features/PoBrawl/PoBrawlDossierService.cs line 190">src/PoMiniGames.API/Features/PoBrawl/PoBrawlDossierService.cs:190</a></td>
+</tr>
+<tr>
+<td><b>OpenRouter</b> &rarr; TypeSafe Jev</td>
+<td>The tactical brain in PoJevArena</td>
+<td><span class="pill paid">Metered</span> only when <code>PoMiniGames:Jev:Brain</code> is
+<code>Jev</code> and the player asks for it</td>
+<td>The free rule-based brain plays the match instead</td>
+<td><a class="cite" href="https://github.com/punkouter27/PoMiniGames/blob/master/src/PoMiniGames.API/Features/PoJevArena/Jev/JevBrainRouter.cs#L8" title="open src/PoMiniGames.API/Features/PoJevArena/Jev/JevBrainRouter.cs line 8">src/PoMiniGames.API/Features/PoJevArena/Jev/JevBrainRouter.cs:8</a></td>
+</tr>
+<tr>
+<td><b>WebLLM over WebGPU</b></td>
+<td>An on-device brain, entirely inside the browser</td>
+<td><span class="pill free">Free</span> and private &mdash; nothing leaves the device</td>
+<td>The rule-based answer stands; the module returns <code>null</code> and never throws</td>
+<td><a class="cite" href="https://github.com/punkouter27/PoMiniGames/blob/master/src/PoMiniGames.Client/wwwroot/js/localAi.js#L4" title="open src/PoMiniGames.Client/wwwroot/js/localAi.js line 4">src/PoMiniGames.Client/wwwroot/js/localAi.js:4</a></td>
+</tr>
+<tr>
+<td><b>Trivia question licence</b></td>
+<td>Attribution for the trivia questions</td>
+<td>CC BY-SA 4.0 &mdash; the README links the licence</td>
+<td>n/a</td><td>README, trivia attribution line</td>
+</tr>
+</tbody>
+</table>
+</div>
+
+<div class="note">
+<b>Open-meteo is gone.</b> PoCabinet used to read live weather. The setting now stores only
+<em>Clear</em> or <em>Rain</em>, a stored <code>auto</code> reads as clear, and there is no weather
+call left in the source.
+</div>
+
+<h2>How an AI call is made</h2>
+
+<figure class="figure">
+<div class="mermaid-wrap">
+<pre class="mermaid">flowchart TB
+    Req[&quot;A request needs a model&quot;]
+    Fallback[&quot;Fallback client&lt;br/&gt;one retry on a backup deployment, when configured&quot;]
+    Resilient[&quot;Resilient client&lt;br/&gt;total-call budget, retry with jitter,&lt;br/&gt;circuit breaker&quot;]
+    Budget[&quot;Budgeted client&lt;br/&gt;per-identity daily token ceiling&quot;]
+    Instrumented[&quot;Instrumented client&lt;br/&gt;token and latency logging, health tracking&quot;]
+    Foundry[&quot;Foundry chat client&lt;br/&gt;one shared SDK client per deployment&quot;]
+    Ledger[(&quot;Token ledger&lt;br/&gt;Table Storage&quot;)]
+
+    Req --&gt; Fallback --&gt; Resilient --&gt; Budget --&gt; Instrumented --&gt; Foundry
+    Budget --&gt; Ledger
+    Instrumented --&gt; Ledger
+</pre>
+</div>
+<figcaption><b>The decorator stack.</b> Five wrappers, each with exactly one job. The order is
+written down in the source.</figcaption>
+</figure>
+
+<p class="snip-cap">src/PoMiniGames.API/AI/GameChatClientRegistration.cs:18-25</p><pre class="snip"><code>/// cross-cutting guarantee opt-in, and every slice opted out: the resilience pipeline had no
+/// consumers at all, and no call site recorded token usage. Composing here means a slice gets the
+/// whole posture by asking for its client:
+/// &lt;/para&gt;
+/// &lt;code&gt;
+/// FallbackChatClient                   // one retry on FallbackDeployment, when set
+///   └─ ResilientChatClient             // total-call budget, retry, circuit breaker
+///        └─ BudgetedChatClient         // per-identity daily token ceiling</code></pre>
+
+<ol class="steps">
+<li><b>Budget first</b>
+<p><code>BudgetedChatClient</code> asks the ledger whether this identity has spent its daily
+allowance. If it has, it throws <code>AiTokenBudgetExceededException</code> before any network
+call happens <a class="cite" href="https://github.com/punkouter27/PoMiniGames/blob/master/src/PoMiniGames.API/AI/BudgetedChatClient.cs#L72" title="open src/PoMiniGames.API/AI/BudgetedChatClient.cs line 72">src/PoMiniGames.API/AI/BudgetedChatClient.cs:72</a>.</p></li>
+
+<li><b>Resilience second</b>
+<p>The resilient wrapper applies the total-call budget, concurrency gates, a jittered retry and a
+circuit breaker <a class="cite" href="https://github.com/punkouter27/PoMiniGames/blob/master/src/PoMiniGames.API/AI/GameChatClientRegistration.cs#L194" title="open src/PoMiniGames.API/AI/GameChatClientRegistration.cs line 194">src/PoMiniGames.API/AI/GameChatClientRegistration.cs:194</a>.</p></li>
+
+<li><b>Instrumentation third</b>
+<p>The instrumented wrapper records token counts and latency and feeds the health tracker
+<a class="cite" href="https://github.com/punkouter27/PoMiniGames/blob/master/src/PoMiniGames.API/AI/GameChatClientRegistration.cs#L128" title="open src/PoMiniGames.API/AI/GameChatClientRegistration.cs line 128">src/PoMiniGames.API/AI/GameChatClientRegistration.cs:128</a>.</p></li>
+
+<li><b>The model last</b>
+<p>Only then does the shared Foundry SDK client talk to the deployment
+<a class="cite" href="https://github.com/punkouter27/PoMiniGames/blob/master/src/PoMiniGames.API/AI/AIFoundryClientFactory.cs#L61" title="open src/PoMiniGames.API/AI/AIFoundryClientFactory.cs line 61">src/PoMiniGames.API/AI/AIFoundryClientFactory.cs:61</a>.</p></li>
+</ol>
+
+<p class="snip-cap">src/PoMiniGames.API/AI/AIFoundryClientFactory.cs:61-68</p><pre class="snip"><code>                new Uri(opts.Endpoint),
+                new Azure.Identity.DefaultAzureCredential(),
+                AzureOpenAIResilience.DefaultOptions());
+        });
+
+        // The OpenAI-compatible path: Ollama, Gemini&#x27;s compatibility endpoint, or anything else
+        // that speaks the same wire protocol. Deliberately the same SDK surface — OpenAIClient and
+        // AzureOpenAIClient both hand back OpenAI.Chat.ChatClient — so nothing downstream</code></pre>
+
+<h2>The cost boundary</h2>
+<div class="grid two">
+  <div class="card">
+    <h3 style="margin-top:0">A hard daily ceiling per player</h3>
+    <p>Every identity may spend <b>250,000 tokens per UTC day</b> across the whole AI surface.
+    The value is declared in code and repeated in configuration
+    <a class="cite" href="https://github.com/punkouter27/PoMiniGames/blob/master/src/PoMiniGames.API/AI/AiTokenBudget.cs#L14" title="open src/PoMiniGames.API/AI/AiTokenBudget.cs line 14">src/PoMiniGames.API/AI/AiTokenBudget.cs:14</a>
+    <a class="cite" href="https://github.com/punkouter27/PoMiniGames/blob/master/src/PoMiniGames.API/appsettings.json#L47" title="open src/PoMiniGames.API/appsettings.json line 47">src/PoMiniGames.API/appsettings.json:47</a>.</p>
+  </div>
+  <div class="card">
+    <h3 style="margin-top:0">The message says when it resets</h3>
+    <p>The exception carries what was spent, the limit and the reset time, so a handler can answer
+    with a reset instead of pretending the model is broken
+    <a class="cite" href="https://github.com/punkouter27/PoMiniGames/blob/master/src/PoMiniGames.API/AI/BudgetedChatClient.cs#L99" title="open src/PoMiniGames.API/AI/BudgetedChatClient.cs line 99">src/PoMiniGames.API/AI/BudgetedChatClient.cs:99</a>.</p>
+  </div>
+  <div class="card">
+    <h3 style="margin-top:0">Rate limits on top</h3>
+    <p>The <code>ai-generation</code> policy allows eight requests per fifteen seconds; Jev
+    decisions get three hundred a minute because a single match asks many small questions
+    <a class="cite" href="https://github.com/punkouter27/PoMiniGames/blob/master/src/PoMiniGames.API/Infrastructure/RateLimitingExtensions.cs#L117" title="open src/PoMiniGames.API/Infrastructure/RateLimitingExtensions.cs line 117">src/PoMiniGames.API/Infrastructure/RateLimitingExtensions.cs:117</a>
+    <a class="cite" href="https://github.com/punkouter27/PoMiniGames/blob/master/src/PoMiniGames.API/Infrastructure/RateLimitingExtensions.cs#L160" title="open src/PoMiniGames.API/Infrastructure/RateLimitingExtensions.cs line 160">src/PoMiniGames.API/Infrastructure/RateLimitingExtensions.cs:160</a>.</p>
+  </div>
+  <div class="card">
+    <h3 style="margin-top:0">A separate ledger for Jev</h3>
+    <p>PoJevArena keeps its own call ledger in its own table, so the arena's spend can be capped
+    independently of the quiz budget
+    <a class="cite" href="https://github.com/punkouter27/PoMiniGames/blob/master/src/PoMiniGames.API/Features/PoJevArena/JevCallAllowance.cs#L14" title="open src/PoMiniGames.API/Features/PoJevArena/JevCallAllowance.cs line 14">src/PoMiniGames.API/Features/PoJevArena/JevCallAllowance.cs:14</a>.</p>
+  </div>
+</div>
+
+<p class="snip-cap">src/PoMiniGames.API/AI/AiTokenBudget.cs:14-23</p><pre class="snip"><code>public sealed class AiTokenBudgetOptions
+{
+    public const string SectionName = &quot;PoMiniGames:AI:TokenBudget&quot;;
+
+    /// &lt;summary&gt;
+    /// Tokens one identity may spend per UTC day. 0 or negative disables the ceiling — which is
+    /// a deliberate opt-out, not the default.
+    /// &lt;/summary&gt;
+    public long DailyTokensPerIdentity { get; set; } = 250_000;
+</code></pre>
+
+<div class="note">
+<b>The ledger is a table, not a counter in memory.</b> <code>AiTokenLedger</code>
+<a class="cite" href="https://github.com/punkouter27/PoMiniGames/blob/master/src/PoMiniGames.API/AI/AiTokenLedgerStore.cs#L66" title="open src/PoMiniGames.API/AI/AiTokenLedgerStore.cs line 66">src/PoMiniGames.API/AI/AiTokenLedgerStore.cs:66</a> means the daily budget survives a restart
+and is shared across every instance of the host.
+</div>
+
+<h2>What operators can see</h2>
+
+<figure class="figure">
+<div class="mermaid-wrap">
+<pre class="mermaid">flowchart LR
+    Call[&quot;GET /api/diag/ai&quot;]
+    Dev[&quot;Development&lt;br/&gt;anonymous, full aggregates&quot;]
+    Signed[&quot;Production, signed in&lt;br/&gt;your own budget only&quot;]
+    Admin[&quot;Production, operator&lt;br/&gt;per-game spend, totals,&lt;br/&gt;deployment names&quot;]
+
+    Call --&gt; Dev
+    Call --&gt; Signed
+    Call --&gt; Admin
+</pre>
+</div>
+<figcaption><b>The diagnostics gate.</b> Everyone sees their own budget. Only listed operators see
+the whole picture, and only outside Development.</figcaption>
+</figure>
+
+<div class="scroll">
+<table>
+<thead><tr><th>Caller</th><th>What they see</th><th>Citation</th></tr></thead>
+<tbody>
+<tr><td>Anyone, in Development</td><td>Everything, anonymously</td>
+<td><a class="cite" href="https://github.com/punkouter27/PoMiniGames/blob/master/src/PoMiniGames.API/Features/Health/DiagEndpoints.cs#L214" title="open src/PoMiniGames.API/Features/Health/DiagEndpoints.cs line 214">src/PoMiniGames.API/Features/Health/DiagEndpoints.cs:214</a></td></tr>
+<tr><td>Anonymous, outside Development</td><td>HTTP 401 &mdash; authorization is required</td>
+<td><a class="cite" href="https://github.com/punkouter27/PoMiniGames/blob/master/src/PoMiniGames.API/Features/Health/DiagEndpoints.cs#L215" title="open src/PoMiniGames.API/Features/Health/DiagEndpoints.cs line 215">src/PoMiniGames.API/Features/Health/DiagEndpoints.cs:215</a></td></tr>
+<tr><td>Signed in, outside Development</td><td>Configuration presence and their own budget only</td>
+<td><a class="cite" href="https://github.com/punkouter27/PoMiniGames/blob/master/src/PoMiniGames.API/Features/Health/DiagEndpoints.cs#L313" title="open src/PoMiniGames.API/Features/Health/DiagEndpoints.cs line 313">src/PoMiniGames.API/Features/Health/DiagEndpoints.cs:313</a></td></tr>
+<tr><td>An operator in <code>PoMiniGames:Diag:AiUsageAdmins</code></td>
+<td>Per-game counters, spend totals and deployment names</td>
+<td><a class="cite" href="https://github.com/punkouter27/PoMiniGames/blob/master/src/PoMiniGames.API/Features/Health/DiagEndpoints.cs#L326" title="open src/PoMiniGames.API/Features/Health/DiagEndpoints.cs line 326">src/PoMiniGames.API/Features/Health/DiagEndpoints.cs:326</a></td></tr>
+<tr><td>Logs tail</td><td>Not mapped at all outside Development</td>
+<td><a class="cite" href="https://github.com/punkouter27/PoMiniGames/blob/master/src/PoMiniGames.API/Features/Health/DiagEndpoints.cs#L298" title="open src/PoMiniGames.API/Features/Health/DiagEndpoints.cs line 298">src/PoMiniGames.API/Features/Health/DiagEndpoints.cs:298</a></td></tr>
+</tbody>
+</table>
+</div>
+
+<div class="note">
+The admin list holds <b>Microsoft Entra object ids, not email addresses</b>. The code explains
+why: sign-in is multi-tenant, so an email claim proves nothing about who the caller is
+<a class="cite" href="https://github.com/punkouter27/PoMiniGames/blob/master/src/PoMiniGames.API/Features/Health/DiagEndpoints.cs#L373" title="open src/PoMiniGames.API/Features/Health/DiagEndpoints.cs line 373">src/PoMiniGames.API/Features/Health/DiagEndpoints.cs:373</a>.
+</div>
+
+<h2>What happens when the paid path is not there</h2>
+<div class="scroll">
+<table>
+<thead><tr><th>Situation</th><th>What the player gets</th><th>Citation</th></tr></thead>
+<tbody>
+<tr><td>The model deployment is unreachable</td>
+<td>The free path answers. The resilience wrapper retries, then the breaker opens and the call
+falls through</td>
+<td><a class="cite" href="https://github.com/punkouter27/PoMiniGames/blob/master/src/PoMiniGames.API/AI/GameChatClientRegistration.cs#L18" title="open src/PoMiniGames.API/AI/GameChatClientRegistration.cs line 18">src/PoMiniGames.API/AI/GameChatClientRegistration.cs:18</a></td></tr>
+<tr><td>Open Trivia DB times out, fails DNS or returns nonsense</td>
+<td>An empty result, an information log, and the bundled question set instead</td>
+<td><a class="cite" href="https://github.com/punkouter27/PoMiniGames/blob/master/src/PoMiniGames.API/Features/PoFunQuiz/OpenTriviaDbClient.cs#L100" title="open src/PoMiniGames.API/Features/PoFunQuiz/OpenTriviaDbClient.cs line 100">src/PoMiniGames.API/Features/PoFunQuiz/OpenTriviaDbClient.cs:100</a></td></tr>
+<tr><td>Wikipedia is slow or down</td>
+<td>The static fighter facts are served and the enrichment is skipped; the dossier endpoint still
+answers</td>
+<td><a class="cite" href="https://github.com/punkouter27/PoMiniGames/blob/master/src/PoMiniGames.API/Features/PoBrawl/PoBrawlDossierService.cs#L190" title="open src/PoMiniGames.API/Features/PoBrawl/PoBrawlDossierService.cs line 190">src/PoMiniGames.API/Features/PoBrawl/PoBrawlDossierService.cs:190</a></td></tr>
+<tr><td>The player has spent their daily tokens</td>
+<td>The request is refused before the model is called, with the reset time in the message</td>
+<td><a class="cite" href="https://github.com/punkouter27/PoMiniGames/blob/master/src/PoMiniGames.API/AI/BudgetedChatClient.cs#L72" title="open src/PoMiniGames.API/AI/BudgetedChatClient.cs line 72">src/PoMiniGames.API/AI/BudgetedChatClient.cs:72</a></td></tr>
+<tr><td>Jev is configured but no key is set</td>
+<td>Every match runs on the free local brain, and the app logs exactly that</td>
+<td><a class="cite" href="https://github.com/punkouter27/PoMiniGames/blob/master/src/PoMiniGames.API/Features/PoJevArena/PoJevArenaLog.cs#L15" title="open src/PoMiniGames.API/Features/PoJevArena/PoJevArenaLog.cs line 15">src/PoMiniGames.API/Features/PoJevArena/PoJevArenaLog.cs:15</a></td></tr>
+<tr><td>The browser has no WebGPU, or the model fails to load</td>
+<td>The on-device brain returns <code>null</code> and the rule-based answer stands</td>
+<td><a class="cite" href="https://github.com/punkouter27/PoMiniGames/blob/master/src/PoMiniGames.Client/wwwroot/js/localAi.js#L4" title="open src/PoMiniGames.Client/wwwroot/js/localAi.js line 4">src/PoMiniGames.Client/wwwroot/js/localAi.js:4</a></td></tr>
+<tr><td>The whole storage account is unreachable</td>
+<td>Leaderboards render empty and score writes are dropped; the games themselves keep working</td>
+<td><a class="cite" href="https://github.com/punkouter27/PoMiniGames/blob/master/src/PoMiniGames.Infrastructure/Services/StorageService.cs#L58" title="open src/PoMiniGames.Infrastructure/Services/StorageService.cs line 58">src/PoMiniGames.Infrastructure/Services/StorageService.cs:58</a></td></tr>
+</tbody>
+</table>
+</div>
+
+<h2>Three games that never call a model</h2>
+
+<figure class="figure">
+<div class="mermaid-wrap">
+<pre class="mermaid">flowchart LR
+    Eco[&quot;PoEcosystem&lt;br/&gt;scripted thoughts&quot;]
+    Brawl[&quot;PoBrawl&lt;br/&gt;scripted commentary&quot;]
+    Cab[&quot;PoCabinet&lt;br/&gt;scripted dialogue&quot;]
+    NoAI[&quot;No API call.&lt;br/&gt;No token spent.&lt;br/&gt;No latency added.&quot;]
+
+    Eco --&gt; NoAI
+    Brawl --&gt; NoAI
+    Cab --&gt; NoAI
+</pre>
+</div>
+<figcaption><b>Scripted, not generated.</b> These three games are the strongest evidence that AI is
+genuinely optional here: their entire commentary lives in JavaScript files in the
+repository.</figcaption>
+</figure>
+
+<div class="scroll">
+<table>
+<thead><tr><th>Game</th><th>Where the words live</th><th>Citation</th></tr></thead>
+<tbody>
+<tr><td>PoEcosystem</td><td><code>wwwroot/js/poecosystem/sim/thoughts/templates.js</code></td>
+<td><a class="cite" href="https://github.com/punkouter27/PoMiniGames/blob/master/src/PoMiniGames.Client/wwwroot/js/poecosystem/sim/thoughts/templates.js" title="open src/PoMiniGames.Client/wwwroot/js/poecosystem/sim/thoughts/templates.js">src/PoMiniGames.Client/wwwroot/js/poecosystem/sim/thoughts/templates.js</a></td></tr>
+<tr><td>PoBrawl</td><td><code>wwwroot/js/pobrawl/commentary.js</code></td>
+<td><a class="cite" href="https://github.com/punkouter27/PoMiniGames/blob/master/src/PoMiniGames.Client/wwwroot/js/pobrawl/commentary.js" title="open src/PoMiniGames.Client/wwwroot/js/pobrawl/commentary.js">src/PoMiniGames.Client/wwwroot/js/pobrawl/commentary.js</a></td></tr>
+<tr><td>PoCabinet</td><td><code>wwwroot/js/pocabinet/dialogue.js</code></td>
+<td><a class="cite" href="https://github.com/punkouter27/PoMiniGames/blob/master/src/PoMiniGames.Client/wwwroot/js/pocabinet/dialogue.js" title="open src/PoMiniGames.Client/wwwroot/js/pocabinet/dialogue.js">src/PoMiniGames.Client/wwwroot/js/pocabinet/dialogue.js</a></td></tr>
+</tbody>
+</table>
+</div>
+
+<div class="note">
+The API routes that once provided generated text for these games have been removed: the ecosystem
+culture, thought, treaty and lore routes, the Cabinet banter and debrief routes, and the Brawl
+presser and intro routes. Removing a route is the strongest form of "this does not call AI".
+</div>
+
+<h2>Configuration reference</h2>
+<div class="scroll">
+<table>
+<thead><tr><th>Key</th><th>Values</th><th>Default</th><th>Citation</th></tr></thead>
+<tbody>
+<tr><td><code>PoMiniGames:AI:Deployments:funquiz</code></td><td>a deployment name</td>
+<td><code>gpt-5.4-nano</code></td>
+<td><a class="cite" href="https://github.com/punkouter27/PoMiniGames/blob/master/src/PoMiniGames.API/appsettings.json#L38" title="open src/PoMiniGames.API/appsettings.json line 38">src/PoMiniGames.API/appsettings.json:38</a></td></tr>
+<tr><td><code>PoMiniGames:AI:Deployments:couplequiz</code></td><td>a deployment name</td>
+<td><code>gpt-5.4-nano</code></td>
+<td><a class="cite" href="https://github.com/punkouter27/PoMiniGames/blob/master/src/PoMiniGames.API/appsettings.json#L38" title="open src/PoMiniGames.API/appsettings.json line 38">src/PoMiniGames.API/appsettings.json:38</a></td></tr>
+<tr><td><code>PoMiniGames:AI:Deployments:couplequiz.similarity</code></td><td>a deployment name</td>
+<td><code>gpt-5.4-nano</code></td>
+<td><a class="cite" href="https://github.com/punkouter27/PoMiniGames/blob/master/src/PoMiniGames.API/appsettings.json#L38" title="open src/PoMiniGames.API/appsettings.json line 38">src/PoMiniGames.API/appsettings.json:38</a></td></tr>
+<tr><td><code>PoMiniGames:AI:TokenBudget:DailyTokensPerIdentity</code></td><td>a token count</td>
+<td>250,000</td><td><a class="cite" href="https://github.com/punkouter27/PoMiniGames/blob/master/src/PoMiniGames.API/AI/AiTokenBudget.cs#L14" title="open src/PoMiniGames.API/AI/AiTokenBudget.cs line 14">src/PoMiniGames.API/AI/AiTokenBudget.cs:14</a></td></tr>
+<tr><td><code>PoMiniGames:AI:FoundryEndpoint</code></td><td>a URL</td>
+<td>Not declared &mdash; required in Production</td>
+<td><a class="cite" href="https://github.com/punkouter27/PoMiniGames/blob/master/src/PoMiniGames.API/Infrastructure/StartupSecretValidator.cs#L116" title="open src/PoMiniGames.API/Infrastructure/StartupSecretValidator.cs line 116">src/PoMiniGames.API/Infrastructure/StartupSecretValidator.cs:116</a></td></tr>
+<tr><td><code>PoMiniGames:AI:DefaultDeployment</code></td><td>a deployment name</td>
+<td>Not declared &mdash; required in Production</td>
+<td><a class="cite" href="https://github.com/punkouter27/PoMiniGames/blob/master/src/PoMiniGames.API/Infrastructure/StartupSecretValidator.cs#L121" title="open src/PoMiniGames.API/Infrastructure/StartupSecretValidator.cs line 121">src/PoMiniGames.API/Infrastructure/StartupSecretValidator.cs:121</a></td></tr>
+<tr><td><code>PoFunQuiz:QuestionSource</code></td><td><code>Bank</code> or <code>FreshAi</code></td>
+<td><code>Bank</code></td>
+<td><a class="cite" href="https://github.com/punkouter27/PoMiniGames/blob/master/src/PoMiniGames.API/Features/PoFunQuiz/FunQuizOptions.cs#L30" title="open src/PoMiniGames.API/Features/PoFunQuiz/FunQuizOptions.cs line 30">src/PoMiniGames.API/Features/PoFunQuiz/FunQuizOptions.cs:30</a></td></tr>
+<tr><td><code>PoFunQuiz:AllowFreshAi</code></td><td>true or false</td><td>true</td>
+<td><a class="cite" href="https://github.com/punkouter27/PoMiniGames/blob/master/src/PoMiniGames.API/Features/PoFunQuiz/FunQuizOptions.cs#L31" title="open src/PoMiniGames.API/Features/PoFunQuiz/FunQuizOptions.cs line 31">src/PoMiniGames.API/Features/PoFunQuiz/FunQuizOptions.cs:31</a></td></tr>
+<tr><td><code>PoFunQuiz:OpenTriviaDb:BaseUrl</code></td><td>a URL</td>
+<td><code>https://opentdb.com/api.php</code></td>
+<td><a class="cite" href="https://github.com/punkouter27/PoMiniGames/blob/master/src/PoMiniGames.API/Features/PoFunQuiz/FunQuizOptions.cs#L68" title="open src/PoMiniGames.API/Features/PoFunQuiz/FunQuizOptions.cs line 68">src/PoMiniGames.API/Features/PoFunQuiz/FunQuizOptions.cs:68</a></td></tr>
+<tr><td><code>PoFunQuiz:OpenTriviaDb:TimeoutSeconds</code></td><td>a number, clamped to 1&ndash;30</td>
+<td>5</td>
+<td><a class="cite" href="https://github.com/punkouter27/PoMiniGames/blob/master/src/PoMiniGames.API/Features/PoFunQuiz/FunQuizOptions.cs#L72" title="open src/PoMiniGames.API/Features/PoFunQuiz/FunQuizOptions.cs line 72">src/PoMiniGames.API/Features/PoFunQuiz/FunQuizOptions.cs:72</a></td></tr>
+<tr><td><code>PoCoupleQuiz:Features:QuestionSource</code></td>
+<td><code>Bank</code> or <code>FreshAi</code></td><td><code>Bank</code></td>
+<td><a class="cite" href="https://github.com/punkouter27/PoMiniGames/blob/master/src/PoMiniGames.API/Features/PoCoupleQuiz/CoupleQuizOptions.cs#L42" title="open src/PoMiniGames.API/Features/PoCoupleQuiz/CoupleQuizOptions.cs line 42">src/PoMiniGames.API/Features/PoCoupleQuiz/CoupleQuizOptions.cs:42</a></td></tr>
+<tr><td><code>PoCoupleQuiz:Features:AllowAiJudge</code></td><td>true or false</td><td>true</td>
+<td><a class="cite" href="https://github.com/punkouter27/PoMiniGames/blob/master/src/PoMiniGames.API/Features/PoCoupleQuiz/CoupleQuizOptions.cs#L57" title="open src/PoMiniGames.API/Features/PoCoupleQuiz/CoupleQuizOptions.cs line 57">src/PoMiniGames.API/Features/PoCoupleQuiz/CoupleQuizOptions.cs:57</a></td></tr>
+<tr><td><code>PoMiniGames:Jev:Brain</code></td><td><code>Local</code> or <code>Jev</code></td>
+<td><code>Local</code></td>
+<td><a class="cite" href="https://github.com/punkouter27/PoMiniGames/blob/master/src/PoMiniGames.API/appsettings.json#L56" title="open src/PoMiniGames.API/appsettings.json line 56">src/PoMiniGames.API/appsettings.json:56</a></td></tr>
+<tr><td><code>PoMiniGames:Jev:ApiKey</code></td><td>a secret &mdash; never in source</td><td>empty</td>
+<td><a class="cite" href="https://github.com/punkouter27/PoMiniGames/blob/master/src/PoMiniGames.API/appsettings.json#L56" title="open src/PoMiniGames.API/appsettings.json line 56">src/PoMiniGames.API/appsettings.json:56</a></td></tr>
+<tr><td><code>PoMiniGames:PoBrawl:Dossier:FetchWikipedia</code></td><td>true or false</td><td>true</td>
+<td><a class="cite" href="https://github.com/punkouter27/PoMiniGames/blob/master/src/PoMiniGames.API/Features/PoBrawl/PoBrawlDossierService.cs#L8" title="open src/PoMiniGames.API/Features/PoBrawl/PoBrawlDossierService.cs line 8">src/PoMiniGames.API/Features/PoBrawl/PoBrawlDossierService.cs:8</a></td></tr>
+<tr><td><code>PoMiniGames:PoBrawl:Dossier:CacheHours</code></td><td>a number of hours</td><td>24</td>
+<td><a class="cite" href="https://github.com/punkouter27/PoMiniGames/blob/master/src/PoMiniGames.API/Features/PoBrawl/PoBrawlDossierService.cs#L20" title="open src/PoMiniGames.API/Features/PoBrawl/PoBrawlDossierService.cs line 20">src/PoMiniGames.API/Features/PoBrawl/PoBrawlDossierService.cs:20</a></td></tr>
+<tr><td><code>PoMiniGames:Diag:AiUsageAdmins</code></td><td>a list of Entra object ids</td>
+<td>empty &mdash; nobody is an operator</td>
+<td><a class="cite" href="https://github.com/punkouter27/PoMiniGames/blob/master/src/PoMiniGames.API/Features/Health/DiagEndpoints.cs#L373" title="open src/PoMiniGames.API/Features/Health/DiagEndpoints.cs line 373">src/PoMiniGames.API/Features/Health/DiagEndpoints.cs:373</a></td></tr>
+</tbody>
+</table>
+</div>
+
+<div class="note">
+<b>No secret is printed anywhere in this suite.</b> Where a key exists, this page names the
+configuration key and the file and line where it is read &mdash; never a value. The API key slot in
+<code>appsettings.json</code> is an empty string in source
+<a class="cite" href="https://github.com/punkouter27/PoMiniGames/blob/master/src/PoMiniGames.API/appsettings.json#L56" title="open src/PoMiniGames.API/appsettings.json line 56">src/PoMiniGames.API/appsettings.json:56</a>.
+</div>
+
+<h2>The safety boundary in one paragraph</h2>
+<p>Nothing in this application can spend money on its own. A Foundry call needs the request to have
+resolved to <code>FreshAi</code> or to an ambiguous judge case; that needs a signed-in player and
+a configuration flag; that player has a daily token ceiling; and every call passes a budget check
+before it leaves the server. Jev needs a second opt-in on top: the server-side brain setting, a
+configured key, <i>and</i> the player's own choice in Settings. The only background process that
+can spend is the quiz bank filler, and its paid top-up switch is off by default
+<a class="cite" href="https://github.com/punkouter27/PoMiniGames/blob/master/src/PoMiniGames.API/appsettings.json#L42" title="open src/PoMiniGames.API/appsettings.json line 42">src/PoMiniGames.API/appsettings.json:42</a>.</p>
+
+</main>
+
+<footer class="foot">
+  <div class="wrap">
+    <div><b>PoMiniGames documentation suite</b> &middot; generated 2026-10-29 &middot; describes the code at commit
+      <a href="https://github.com/punkouter27/PoMiniGames/blob/master/commit/21eb48c938015bb685339b45c19994a100b775b9><code>21eb48c9</code></a>.</div>
+    <div>Sources: source code first, then configuration, then comments and this repository's README.
+      Every claim carries a <span class="cite">path:line</span> citation that links to the exact line on GitHub.</div>
+    <div class="tagrow">
+      <span class="pill">Mermaid 10.9.0 (pinned)</span>
+      <span class="pill">Inline CSS</span>
+      <span class="pill">Light / dark</span>
+      <span class="pill">3-tier detail toggle</span>
+      <span class="pill">No secrets included</span>
+    </div>
+  </div>
+</footer>
+
+<script src="https://cdn.jsdelivr.net/npm/mermaid@10.9.0/dist/mermaid.min.js"></script>
+<script>
+(function () {
+  var TIER_KEY = 'pomg-docs-tier';
+  var THEME_KEY = 'pomg-docs-theme';
+  var TIER_NAMES = { '1': 'Simple', '2': 'Architectural', '3': 'Deep dive' };
+
+  function readTier() {
+    try {
+      var v = localStorage.getItem(TIER_KEY);
+      return (v === '1' || v === '2' || v === '3') ? v : '2';
+    } catch (e) { return '2'; }
+  }
+  function readTheme() {
+    try {
+      var v = localStorage.getItem(THEME_KEY);
+      return (v === 'light' || v === 'dark') ? v : null;
+    } catch (e) { return null; }
+  }
+
+  var root = document.documentElement;
+  var tier = readTier();
+  root.setAttribute('data-tier', tier);
+  var theme = readTheme();
+  if (theme) root.setAttribute('data-theme', theme);
+
+  function paintTierButtons() {
+    Array.prototype.forEach.call(document.querySelectorAll('[data-set-tier]'), function (b) {
+      b.setAttribute('aria-pressed', String(b.getAttribute('data-set-tier') === tier));
+    });
+    Array.prototype.forEach.call(document.querySelectorAll('[data-tier-label]'), function (n) {
+      n.textContent = TIER_NAMES[tier];
+    });
+  }
+  paintTierButtons();
+
+  document.addEventListener('click', function (ev) {
+    var b = ev.target.closest ? ev.target.closest('[data-set-tier]') : null;
+    if (b) {
+      tier = b.getAttribute('data-set-tier');
+      root.setAttribute('data-tier', tier);
+      try { localStorage.setItem(TIER_KEY, tier); } catch (e) {}
+      paintTierButtons();
+      window.__docsPaintDiagrams && window.__docsPaintDiagrams(false);
+      return;
+    }
+    var t = ev.target.closest ? ev.target.closest('#themeToggle') : null;
+    if (t) {
+      var cur = root.getAttribute('data-theme');
+      if (!cur) {
+        var dark = window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches;
+        cur = dark ? 'dark' : 'light';
+      }
+      var next = cur === 'dark' ? 'light' : 'dark';
+      root.setAttribute('data-theme', next);
+      try { localStorage.setItem(THEME_KEY, next); } catch (e) {}
+      window.__docsPaintDiagrams && window.__docsPaintDiagrams(true);
+    }
+  });
+
+  // ----- Mermaid: theme-aware, rendered only when the container is visible -----
+  var rendered = new WeakSet();
+
+  function tokens() {
+    var cs = getComputedStyle(root);
+    var get = function (n) { return cs.getPropertyValue(n).trim(); };
+    return {
+      bg: get('--surface'), ink: get('--ink'), ink2: get('--ink-2'), muted: get('--muted'),
+      line: get('--line-strong'), accent: get('--accent'), s1: get('--s1'), s2: get('--s2'),
+      s3: get('--s3'), s4: get('--s4'), s5: get('--s5')
+    };
+  }
+
+  function visible(el) {
+    return !!(el.offsetWidth || el.offsetHeight || el.getClientRects().length);
+  }
+
+  window.__docsPaintDiagrams = function (force) {
+    if (!window.mermaid) return;
+    var all = Array.prototype.slice.call(document.querySelectorAll('.mermaid'));
+    var t = tokens();
+    window.mermaid.initialize({
+      startOnLoad: false,
+      securityLevel: 'strict',
+      theme: 'base',
+      fontFamily: 'system-ui, -apple-system, "Segoe UI", sans-serif',
+      flowchart: { htmlLabels: true, curve: 'basis', useMaxWidth: true },
+      sequence: { useMaxWidth: true, wrap: true },
+      themeVariables: {
+        background: t.bg, primaryColor: t.bg, primaryTextColor: t.ink,
+        primaryBorderColor: t.line, secondaryColor: t.bg, tertiaryColor: t.bg,
+        lineColor: t.ink2, textColor: t.ink, mainBkg: t.bg, nodeBorder: t.line,
+        clusterBkg: t.bg, clusterBorder: t.line, edgeLabelBackground: t.bg,
+        titleColor: t.ink, labelBoxBkgColor: t.bg, labelBoxBorderColor: t.line,
+        actorBkg: t.bg, actorBorder: t.line, actorTextColor: t.ink,
+        signalColor: t.ink2, signalTextColor: t.ink, labelBoxTextColor: t.ink2,
+        noteBkgColor: t.bg, noteTextColor: t.ink, noteBorderColor: t.line,
+        pie1: t.s1, pie2: t.s2, pie3: t.s3, pie4: t.s4, pie5: t.s5,
+        todayColor: t.s5, doneColor: t.s3, taskTextColor: t.ink, taskTextDarkColor: t.ink,
+        taskTextLightColor: t.ink, taskTextOutsideColor: t.ink, taskTextOutsideDarkColor: t.ink
+      }
+    });
+    var targets = all.filter(function (el) {
+      if (!visible(el)) return false;
+      return force || !rendered.has(el);
+    });
+    if (!targets.length) return;
+    targets.forEach(function (el) {
+      if (!el.dataset.src) el.dataset.src = el.textContent.trim();
+      el.removeAttribute('data-processed');
+      el.textContent = el.dataset.src;
+      rendered.add(el);
+    });
+    try {
+      window.mermaid.run({ nodes: targets });
+    } catch (e) {
+      /* a broken diagram must never take the page down */
+    }
+  };
+
+  function boot() {
+    if (window.mermaid && window.mermaid.initialize) {
+      window.__docsPaintDiagrams(true);
+    } else if (window.mermaid) {
+      window.mermaid.initialize({ startOnLoad: false });
+      window.__docsPaintDiagrams(true);
+    }
+  }
+
+  if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', boot);
+  } else {
+    boot();
+  }
+
+  // Keep the shell and the report it frames in sync (artifact.html -> iframe).
+  window.addEventListener('message', function (ev) {
+    var d = ev.data || {};
+    if (d.type === 'pomg-docs-tier' && (d.tier === '1' || d.tier === '2' || d.tier === '3')) {
+      tier = d.tier;
+      root.setAttribute('data-tier', tier);
+      try { localStorage.setItem(TIER_KEY, tier); } catch (e) {}
+      paintTierButtons();
+      window.__docsPaintDiagrams && window.__docsPaintDiagrams(false);
+    } else if (d.type === 'pomg-docs-theme' && (d.theme === 'light' || d.theme === 'dark')) {
+      root.setAttribute('data-theme', d.theme);
+      try { localStorage.setItem(THEME_KEY, d.theme); } catch (e) {}
+      window.__docsPaintDiagrams && window.__docsPaintDiagrams(true);
+    }
+  });
+
+  window.addEventListener('load', function () {
+    window.__docsPaintDiagrams && window.__docsPaintDiagrams(false);
+  });
+})();
+</script>
+</body>
+</html>

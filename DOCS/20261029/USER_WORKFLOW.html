@@ -1,0 +1,916 @@
+<!doctype html>
+<html lang="en" data-tier="2">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="generator" content="PoMiniGames docs generator">
+<title>PoMiniGames documentation - user journeys &middot; PoMiniGames</title>
+<style>
+:root{
+  color-scheme: light;
+  --bg:#f4f6f8; --surface:#ffffff; --surface-2:#eef2f6; --ink:#0d1117; --ink-2:#48525d;
+  --muted:#7d8894; --line:#dde3ea; --line-strong:#c4cfda; --accent:#1f6feb; --accent-ink:#0b4fc7;
+  --accent-soft:#e8f1fe; --chip:#eef1f5; --code-bg:#f7f9fb;
+  --good:#128a4c; --warn:#9a6508; --crit:#c0362c; --s1:#1f6feb; --s2:#e8710a; --s3:#1a7f5a;
+  --s4:#8250df; --s5:#bf3989;
+  --shadow:0 1px 2px rgba(16,24,40,.06),0 1px 3px rgba(16,24,40,.09);
+  --radius:12px; --maxw:1240px;
+  --mono: ui-monospace, SFMono-Regular, "SF Mono", Consolas, "Liberation Mono", monospace;
+}
+html[data-theme="dark"]{ color-scheme: dark;
+  --bg:#0d1117; --surface:#151b23; --surface-2:#1b222b; --ink:#e6edf3; --ink-2:#b3bdc9;
+  --muted:#8b949e; --line:#262d36; --line-strong:#39424d; --accent:#4a9eff;
+  --accent-ink:#79b8ff; --accent-soft:#12243d; --chip:#1b222b; --code-bg:#0b0f14;
+  --good:#3fb950; --warn:#d29922; --crit:#f85149; --s1:#4a9eff; --s2:#f0883e;
+  --s3:#3fb950; --s4:#a371f7; --s5:#f778ba;
+  --shadow:0 1px 2px rgba(1,4,9,.5),0 1px 3px rgba(1,4,9,.45);
+
+}
+@media (prefers-color-scheme: dark){
+  html:not([data-theme]){ color-scheme: dark;
+  --bg:#0d1117; --surface:#151b23; --surface-2:#1b222b; --ink:#e6edf3; --ink-2:#b3bdc9;
+  --muted:#8b949e; --line:#262d36; --line-strong:#39424d; --accent:#4a9eff;
+  --accent-ink:#79b8ff; --accent-soft:#12243d; --chip:#1b222b; --code-bg:#0b0f14;
+  --good:#3fb950; --warn:#d29922; --crit:#f85149; --s1:#4a9eff; --s2:#f0883e;
+  --s3:#3fb950; --s4:#a371f7; --s5:#f778ba;
+  --shadow:0 1px 2px rgba(1,4,9,.5),0 1px 3px rgba(1,4,9,.45);
+
+  }
+}
+*,*::before,*::after{ box-sizing:border-box; }
+html,body{ margin:0; padding:0; }
+body{
+  background:var(--bg); color:var(--ink);
+  font:15px/1.6 system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;
+  -webkit-text-size-adjust:100%;
+}
+img,svg,table,pre{ max-width:100%; }
+a{ color:var(--accent-ink); }
+code,kbd{ font-family:var(--mono); font-size:.92em; }
+
+/* ---------- Sticky header ---------- */
+.topbar{
+  position:sticky; top:0; z-index:50;
+  background:color-mix(in srgb, var(--surface) 88%, transparent);
+  backdrop-filter:saturate(1.4) blur(10px);
+  border-bottom:1px solid var(--line);
+}
+.tb-inner{
+  max-width:var(--maxw); margin:0 auto; padding:10px 16px;
+  display:flex; gap:12px; align-items:center; flex-wrap:wrap;
+}
+.brand{
+  font-weight:800; letter-spacing:-.01em; text-decoration:none; color:var(--ink);
+  display:inline-flex; align-items:center; gap:8px; white-space:nowrap;
+}
+.brand .dot{ width:9px; height:9px; border-radius:50%; background:var(--accent); flex:none; }
+.doc-title{ color:var(--ink-2); font-size:13.5px; min-width:0; overflow-wrap:anywhere; }
+.tb-right{ margin-left:auto; display:flex; gap:8px; align-items:center; flex-wrap:wrap; }
+.seg{
+  display:inline-flex; border:1px solid var(--line-strong); border-radius:999px;
+  overflow:hidden; background:var(--surface-2);
+}
+.seg button{
+  appearance:none; border:0; background:transparent; color:var(--ink-2);
+  font:inherit; font-size:12.5px; font-weight:600; padding:5px 11px; cursor:pointer;
+  white-space:nowrap;
+}
+.seg button + button{ border-left:1px solid var(--line); }
+.seg button[aria-pressed="true"]{ background:var(--accent); color:#fff; }
+.seg button:hover:not([aria-pressed="true"]){ background:var(--chip); color:var(--ink); }
+.icon-btn{
+  appearance:none; border:1px solid var(--line-strong); background:var(--surface-2);
+  color:var(--ink-2); border-radius:999px; width:32px; height:30px; cursor:pointer;
+  font-size:14px; line-height:1; display:inline-flex; align-items:center; justify-content:center;
+}
+.icon-btn:hover{ background:var(--chip); color:var(--ink); }
+
+/* ---------- Layout ---------- */
+.wrap{ max-width:var(--maxw); margin:0 auto; padding:24px 16px 72px; }
+h1{ font-size:clamp(24px,3.4vw,34px); line-height:1.18; letter-spacing:-.02em; margin:0 0 6px; }
+h2{
+  font-size:clamp(19px,2.3vw,24px); line-height:1.25; margin:52px 0 6px;
+  padding-top:18px; border-top:1px solid var(--line); scroll-margin-top:70px;
+}
+h3{ font-size:16px; margin:26px 0 4px; }
+h4{ font-size:14px; margin:18px 0 2px; color:var(--ink-2); text-transform:uppercase; letter-spacing:.05em; }
+p{ margin:0 0 12px; max-width:78ch; color:var(--ink-2); }
+ul,ol{ color:var(--ink-2); max-width:78ch; padding-left:20px; }
+li{ margin:5px 0; }
+strong{ color:var(--ink); }
+.lede{ font-size:17px; color:var(--ink); max-width:74ch; }
+
+/* ---------- Tier visibility ---------- */
+html[data-tier="1"] .l2, html[data-tier="1"] .l3{ display:none !important; }
+html[data-tier="2"] .l3{ display:none !important; }
+
+/* ---------- Cards & grids ---------- */
+.card{
+  background:var(--surface); border:1px solid var(--line); border-radius:var(--radius);
+  padding:16px 18px; box-shadow:var(--shadow); margin:16px 0; min-width:0;
+}
+.card > :last-child{ margin-bottom:0; }
+.card h3:first-child, .card h2:first-child{ margin-top:0; }
+.grid{ display:grid; gap:14px; grid-template-columns:repeat(auto-fit, minmax(min(280px,100%),1fr)); margin:16px 0; }
+.grid.two{ grid-template-columns:repeat(auto-fit, minmax(min(340px,100%),1fr)); }
+.grid.three{ grid-template-columns:repeat(auto-fit, minmax(min(240px,100%),1fr)); }
+.stat{ display:flex; flex-direction:column; gap:2px; }
+.stat b{ font-size:24px; line-height:1.15; letter-spacing:-.02em; }
+.stat span{ font-size:12.5px; color:var(--muted); }
+
+/* ---------- Callouts ---------- */
+.note{
+  background:var(--accent-soft); border:1px solid var(--line); border-left:3px solid var(--accent);
+  border-radius:8px; padding:12px 14px; margin:16px 0; color:var(--ink-2);
+}
+.note > :last-child{ margin-bottom:0; }
+.note b, .note strong{ color:var(--ink); }
+.note.warn{ background:color-mix(in srgb,var(--warn) 9%, var(--surface)); border-left-color:var(--warn); }
+.note.crit{ background:color-mix(in srgb,var(--crit) 9%, var(--surface)); border-left-color:var(--crit); }
+.note.good{ background:color-mix(in srgb,var(--good) 9%, var(--surface)); border-left-color:var(--good); }
+.el{ /* ELI5 block */
+  background:var(--surface-2); border:1px dashed var(--line-strong); border-radius:10px;
+  padding:12px 14px; margin:12px 0;
+}
+.el::before{
+  content:"In plain English"; display:block; font-size:11px; font-weight:800; letter-spacing:.08em;
+  text-transform:uppercase; color:var(--muted); margin-bottom:5px;
+}
+
+/* ---------- Analogy chips ---------- */
+.analogy{ display:flex; gap:10px; align-items:flex-start; }
+.analogy .badge{
+  flex:none; font-size:11px; font-weight:800; letter-spacing:.06em; text-transform:uppercase;
+  background:var(--accent-soft); color:var(--accent-ink); border:1px solid var(--line);
+  border-radius:6px; padding:3px 7px; margin-top:2px;
+}
+
+/* ---------- Tables ---------- */
+.scroll{ overflow-x:auto; border:1px solid var(--line); border-radius:10px; background:var(--surface); margin:14px 0; }
+table{ border-collapse:collapse; width:100%; font-size:13.5px; }
+th,td{ padding:8px 11px; text-align:left; border-bottom:1px solid var(--line); vertical-align:top; }
+th{ font-size:11.5px; text-transform:uppercase; letter-spacing:.05em; color:var(--muted); white-space:nowrap; background:var(--surface-2); }
+tr:last-child td{ border-bottom:0; }
+td code{ overflow-wrap:anywhere; }
+.nowrap{ white-space:nowrap; }
+
+/* ---------- Citations & snippets ---------- */
+.cite{
+  font-family:var(--mono); font-size:11.5px; text-decoration:none; white-space:nowrap;
+  background:var(--chip); border:1px solid var(--line); border-radius:5px; padding:1px 5px;
+  color:var(--accent-ink); display:inline-block; max-width:100%; overflow-wrap:anywhere;
+}
+.cite:hover{ border-color:var(--accent); }
+pre.snip{
+  background:var(--code-bg); border:1px solid var(--line); border-left:3px solid var(--line-strong);
+  border-radius:8px; padding:10px 12px; overflow-x:auto; margin:10px 0;
+  font-family:var(--mono); font-size:12.5px; line-height:1.5; color:var(--ink-2);
+}
+pre.snip code{ background:none; padding:0; }
+.snip-cap{ font-size:12px; color:var(--muted); margin:0 0 -4px; }
+
+/* ---------- Mermaid ---------- */
+.figure{ margin:16px 0; }
+.mermaid-wrap{
+  background:var(--surface); border:1px solid var(--line); border-radius:var(--radius);
+  padding:14px; overflow-x:auto; box-shadow:var(--shadow);
+}
+.mermaid{ display:flex; justify-content:center; }
+.mermaid svg{ max-width:100%; height:auto; }
+figcaption{ font-size:12.5px; color:var(--muted); margin-top:7px; }
+figcaption b{ color:var(--ink-2); }
+
+/* ---------- Narrative steps ---------- */
+.steps{ counter-reset:step; list-style:none; padding:0; margin:14px 0; display:grid; gap:10px; }
+.steps li{
+  position:relative; background:var(--surface); border:1px solid var(--line); border-radius:10px;
+  padding:12px 14px 12px 46px; margin:0; counter-increment:step; color:var(--ink-2);
+}
+.steps li::before{
+  content:counter(step); position:absolute; left:12px; top:11px; width:24px; height:24px;
+  border-radius:50%; background:var(--accent); color:#fff; font-size:12.5px; font-weight:800;
+  display:flex; align-items:center; justify-content:center;
+}
+.steps li b{ color:var(--ink); display:block; margin-bottom:2px; }
+
+/* ---------- Pills & tags ---------- */
+.pill{
+  display:inline-block; font-size:11.5px; font-weight:700; padding:2px 8px; border-radius:999px;
+  border:1px solid var(--line-strong); background:var(--chip); color:var(--ink-2); white-space:nowrap;
+}
+.pill.free{ background:color-mix(in srgb,var(--good) 14%,var(--surface)); color:var(--good); border-color:color-mix(in srgb,var(--good) 35%,var(--line)); }
+.pill.paid{ background:color-mix(in srgb,var(--warn) 14%,var(--surface)); color:var(--warn); border-color:color-mix(in srgb,var(--warn) 35%,var(--line)); }
+.pill.opt{ background:color-mix(in srgb,var(--s4) 12%,var(--surface)); color:var(--s4); border-color:color-mix(in srgb,var(--s4) 32%,var(--line)); }
+.pill.off{ background:var(--chip); color:var(--muted); }
+
+/* ---------- Tabs (artifact shell) ---------- */
+.tabbar{
+  position:sticky; top:0; z-index:40; background:var(--surface); border-bottom:1px solid var(--line);
+  display:flex; gap:4px; overflow-x:auto; padding:8px 16px; max-width:var(--maxw); margin:0 auto;
+}
+.tabbar button{
+  appearance:none; border:1px solid var(--line-strong); background:var(--surface-2); color:var(--ink-2);
+  font:inherit; font-size:13px; font-weight:600; padding:6px 12px; border-radius:8px; cursor:pointer;
+  white-space:nowrap;
+}
+.tabbar button[aria-selected="true"]{ background:var(--accent); border-color:var(--accent); color:#fff; }
+.frame{ display:block; width:100%; border:0; min-height:70vh; background:var(--bg); }
+
+/* ---------- Footer ---------- */
+.foot{
+  border-top:1px solid var(--line); margin-top:56px; padding:18px 16px 40px;
+  color:var(--muted); font-size:12.5px;
+}
+.foot .wrap{ padding:0; }
+.foot code{ font-size:11.5px; }
+.foot a{ color:var(--muted); }
+.tagrow{ display:flex; gap:8px; flex-wrap:wrap; margin:8px 0 0; }
+
+/* ---------- Small screens ---------- */
+@media (max-width:640px){
+  .tb-inner{ padding:8px 12px; }
+  .doc-title{ width:100%; order:3; }
+  .seg button{ padding:5px 9px; font-size:12px; }
+  .wrap{ padding:18px 12px 56px; }
+  h2{ margin-top:40px; }
+  .steps li{ padding-left:42px; }
+}
+@media print{
+  .topbar,.tabbar{ position:static; }
+  .l2,.l3{ display:block !important; }
+}
+</style>
+</head>
+<body>
+
+<header class="topbar">
+  <div class="tb-inner">
+    <a class="brand" href="index.html"><span class="dot"></span>PoMiniGames</a>
+    <span class="doc-title">User journeys and experience</span>
+    <div class="tb-right">
+      <div class="seg" role="group" aria-label="Detail level">
+        <button type="button" data-set-tier="1" title="Plain English only">Simple</button>
+        <button type="button" data-set-tier="2" title="Add architecture diagrams">Architectural</button>
+        <button type="button" data-set-tier="3" title="Add code citations and schemas">Deep dive</button>
+      </div>
+      <button type="button" class="icon-btn" id="themeToggle" title="Toggle light / dark" aria-label="Toggle light or dark theme">&#9681;</button>
+    </div>
+  </div>
+</header>
+
+<main class="wrap">
+<h1>User journeys</h1>
+<p class="lede">What a person actually does, from opening the site to their score appearing on a
+leaderboard &mdash; and what the machine does at each step.</p>
+
+<div class="el">
+<p>Every journey on this page follows the same shape: <b>the person does something in the browser,
+the browser asks the server for permission or for a fact, and the server answers</b>. The games
+themselves never run on the server. The server's job is to be the referee and the record keeper,
+not the opponent.</p>
+</div>
+
+<div class="note">
+These journeys are written from the code, not from a design document. Where a journey needs a
+number &mdash; a rate limit, a timeout, a ceiling &mdash; the number carries a
+<span class="cite">file:line</span> citation. Where the code does not declare a number, the page
+says so rather than inventing one.
+</div>
+
+<h2>Journey 1 &mdash; Play a game and get on the board</h2>
+<p>This is the loop every game shares. It is worth reading once, because the other journeys are
+variations on it.</p>
+
+<figure class="figure">
+<div class="mermaid-wrap">
+<pre class="mermaid">flowchart TD
+    Open[&quot;Player opens a game card&quot;]
+    Start[&quot;Start card: controls, setup, one OK button&quot;]
+    Session[&quot;Browser asks the server for a signed play session&quot;]
+    Guard[&quot;Server stamps the session with game, player and time&quot;]
+    Play[&quot;The game runs in the browser&quot;]
+    Score[&quot;Player finishes; the score is submitted&quot;]
+    Check{&quot;Is the score plausible&lt;br/&gt;for this game and this player?&quot;}
+    Store[(&quot;Score written to the leaderboard&quot;)]
+    Reject[&quot;Refused with a plain-English reason&quot;]
+    Park[&quot;Score parked in the browser&lt;br/&gt;and resent later&quot;]
+
+    Open --&gt; Start --&gt; Session --&gt; Guard --&gt; Play --&gt; Score --&gt; Check
+    Check --&gt;|&quot;yes&quot;| Store
+    Check --&gt;|&quot;no&quot;| Reject
+    Score -.-&gt;|&quot;network failed&quot;| Park
+</pre>
+</div>
+<figcaption><b>The core loop.</b> The play session is what lets the server tell a real run from a
+fabricated number, because it knows which game was opened and roughly how long ago.</figcaption>
+</figure>
+
+<ol class="steps">
+<li><b>The player opens the game</b>
+<p>From the hub, every game sits on a card. The start card carries the controls, the setup and a
+single <b>OK</b> button, and it is sized to fit without scrolling on a laptop or a phone.</p></li>
+
+<li><b>The browser asks for a play session</b>
+<p>Opening a game mints a signed session ticket bound to that game and to the signed-in player.
+The ticket is a Data Protection payload of nonce, game key, hashed identity and issue time
+<a class="cite" href="https://github.com/punkouter27/PoMiniGames/blob/master/src/PoMiniGames.API/Features/Integrity/PlaySessionService.cs#L83" title="open src/PoMiniGames.API/Features/Integrity/PlaySessionService.cs line 83">src/PoMiniGames.API/Features/Integrity/PlaySessionService.cs:83</a>.</p>
+<p class="snip-cap">src/PoMiniGames.API/Features/Integrity/PlaySessionService.cs:83-99</p><pre class="snip"><code>    /// without silently accepting the old shape under the new parser.
+    /// &lt;/summary&gt;
+    private const string ProtectorPurpose = &quot;PoMiniGames.PlaySession.v1&quot;;
+
+    /// &lt;summary&gt;Field separator inside the payload. Not legal in a game key or a base64url hash.&lt;/summary&gt;
+    private const char Separator = &#x27;|&#x27;;
+
+    private readonly IDataProtector _protector;
+    private readonly IOptionsMonitor&lt;IntegrityOptions&gt; _options;
+    private readonly TimeProvider _clock;
+
+    public PlaySessionService(
+        IDataProtectionProvider protectionProvider,
+        IOptionsMonitor&lt;IntegrityOptions&gt; options,
+        TimeProvider clock)
+    {
+        _protector = protectionProvider.CreateProtector(ProtectorPurpose);</code></pre></li>
+
+<li><b>The game runs entirely in the browser</b>
+<p>The engine is loaded on demand from <code>wwwroot/js/&lt;game&gt;/</code> and talks to the
+Blazor page over JS interop. The server is not running the game and never sees your inputs for a
+solo run.</p></li>
+
+<li><b>The score is submitted</b>
+<p>The result goes through <code>GameResultService</code>, which records local stats and then
+posts the score to the API.</p></li>
+
+<li><b>The server checks the score</b>
+<p>Three checks, in order: the raw value must be inside the game's declared bounds, the play
+session must have been issued for this game and this player, and the score must be possible given
+the time the session has been open
+<a class="cite" href="https://github.com/punkouter27/PoMiniGames/blob/master/src/PoMiniGames.API/Features/Integrity/ScoreIntegrityGuard.cs#L64" title="open src/PoMiniGames.API/Features/Integrity/ScoreIntegrityGuard.cs line 64">src/PoMiniGames.API/Features/Integrity/ScoreIntegrityGuard.cs:64</a>
+<a class="cite" href="https://github.com/punkouter27/PoMiniGames/blob/master/src/PoMiniGames.API/Features/Integrity/ScoreIntegrityGuard.cs#L81" title="open src/PoMiniGames.API/Features/Integrity/ScoreIntegrityGuard.cs line 81">src/PoMiniGames.API/Features/Integrity/ScoreIntegrityGuard.cs:81</a>
+<a class="cite" href="https://github.com/punkouter27/PoMiniGames/blob/master/src/PoMiniGames.API/Features/Integrity/ScoreIntegrityGuard.cs#L93" title="open src/PoMiniGames.API/Features/Integrity/ScoreIntegrityGuard.cs line 93">src/PoMiniGames.API/Features/Integrity/ScoreIntegrityGuard.cs:93</a>.</p>
+<p class="snip-cap">src/PoMiniGames.API/Features/Integrity/ScoreIntegrityGuard.cs:64-73</p><pre class="snip"><code>
+        // ── Tier one: absolute range. Always evaluated, never mode-gated. ──
+        var valueVerdict = ScoreRules.CheckValue(game, score);
+        if (valueVerdict != ScoreVerdict.Plausible)
+        {
+            IntegrityLog.ValueRejected(_log, game.Value, score, valueVerdict.ToString(), options.EnforceValueBounds);
+            if (options.EnforceValueBounds)
+            {
+                return new IntegrityVerdict(false, &quot;score_out_of_range&quot;, ScoreRules.Describe(valueVerdict));
+            }</code></pre></li>
+
+<li><b>Accepted or refused, plainly</b>
+<p>Every refusal returns the same shape: HTTP 400 with an <code>error</code> code and a
+<code>detail</code> string
+<a class="cite" href="https://github.com/punkouter27/PoMiniGames/blob/master/src/PoMiniGames.API/Features/Integrity/ScoreIntegrityGuard.cs#L16" title="open src/PoMiniGames.API/Features/Integrity/ScoreIntegrityGuard.cs line 16">src/PoMiniGames.API/Features/Integrity/ScoreIntegrityGuard.cs:16</a>.</p></li>
+</ol>
+
+<div class="note">
+<b>Two games go further than a plausibility check.</b> PoCabinet sends its input log and the
+server re-runs the lap in its own physics to decide the time and the place
+<a class="cite" href="https://github.com/punkouter27/PoMiniGames/blob/master/src/PoMiniGames.API/Features/PoCabinet/PoCabinetLapVerifier.cs#L28" title="open src/PoMiniGames.API/Features/PoCabinet/PoCabinetLapVerifier.cs line 28">src/PoMiniGames.API/Features/PoCabinet/PoCabinetLapVerifier.cs:28</a>. PoMule sends a seed
+and an action log and the server replays it through the shared C# engine
+<a class="cite" href="https://github.com/punkouter27/PoMiniGames/blob/master/src/PoMiniGames.API/Features/PoMule/PoMuleRunVerifier.cs#L16" title="open src/PoMiniGames.API/Features/PoMule/PoMuleRunVerifier.cs line 16">src/PoMiniGames.API/Features/PoMule/PoMuleRunVerifier.cs:16</a>. Both verifiers state plainly
+what they cannot prove.
+</div>
+
+<p class="snip-cap">src/PoMiniGames.API/Features/PoMule/PoMuleRunVerifier.cs:10-19</p><pre class="snip"><code>/// Replays a PoMule match from the seed and action log the client sends with its score, so the
+/// board keeps the server&#x27;s Net Worth. Unlike PoMarbleRace (cannon-es, no server physics), PoMule&#x27;s
+/// whole rules engine is deterministic C# in PoMiniGames.Shared, the same code the browser ran, so
+/// this is a full re-run rather than a plausibility bound.
+/// &lt;/summary&gt;
+/// &lt;remarks&gt;
+/// What it cannot prove: that the seed was random, or that the AI arrivals the renderer reported
+/// came from honest walking. Both are bounded by the rules (an arrival only performs the AI&#x27;s own
+/// next errand) and by the play-session guard.
+/// &lt;/remarks&gt;</code></pre>
+
+<p class="snip-cap">src/PoMiniGames.API/Features/PoCabinet/PoCabinetLapVerifier.cs:27-31</p><pre class="snip"><code>/// &lt;para&gt;
+/// What this does not prove: that a human drove it. A bot that emits a legal input stream
+/// sets a legal lap. It does rule out every lap the physics cannot produce.
+/// &lt;/para&gt;
+/// &lt;/summary&gt;</code></pre>
+
+<h2>Journey 2 &mdash; Sign in</h2>
+
+<figure class="figure">
+<div class="mermaid-wrap">
+<pre class="mermaid">sequenceDiagram
+    participant P as Player
+    participant B as Browser
+    participant A as API host
+    participant E as Microsoft Entra
+    P-&gt;&gt;B: Click Sign in
+    B-&gt;&gt;E: MSAL sign-in popup
+    E--&gt;&gt;B: ID token
+    B-&gt;&gt;A: GET /api/auth/me with Bearer token
+    A-&gt;&gt;E: Validate token signature and audience
+    E--&gt;&gt;A: Token is valid
+    A--&gt;&gt;B: Authenticated profile
+    B-&gt;&gt;A: POST /api/play/sessions/poracer with X-CSRF-TOKEN
+    A--&gt;&gt;B: Signed play session ticket
+</pre>
+</div>
+<figcaption><b>Real sign-in.</b> The browser signs in with Microsoft; the API validates the token
+against Entra before trusting anything in it.</figcaption>
+</figure>
+
+<ol class="steps">
+<li><b>The browser signs in</b>
+<p>MSAL handles the popup. The client never sees a password.</p></li>
+
+<li><b>The token travels as a bearer token</b>
+<p>The composite scheme picks the JWT handler when it sees an <code>Authorization: Bearer</code>
+header <a class="cite" href="https://github.com/punkouter27/PoMiniGames/blob/master/src/PoMiniGames.API/Infrastructure/AuthExtensions.cs#L43" title="open src/PoMiniGames.API/Infrastructure/AuthExtensions.cs line 43">src/PoMiniGames.API/Infrastructure/AuthExtensions.cs:43</a>.</p></li>
+
+<li><b>Writes carry a second token</b>
+<p>Every state-changing request under <code>/api</code> must also echo an antiforgery token in
+the <code>X-CSRF-TOKEN</code> header
+<a class="cite" href="https://github.com/punkouter27/PoMiniGames/blob/master/src/PoMiniGames.API/Infrastructure/AntiforgeryExtensions.cs#L42" title="open src/PoMiniGames.API/Infrastructure/AntiforgeryExtensions.cs line 42">src/PoMiniGames.API/Infrastructure/AntiforgeryExtensions.cs:42</a>. The token is bound to the
+signed-in identity, which is why the check runs after authentication
+<a class="cite" href="https://github.com/punkouter27/PoMiniGames/blob/master/src/PoMiniGames.API/Program.cs#L440" title="open src/PoMiniGames.API/Program.cs line 440">src/PoMiniGames.API/Program.cs:440</a>.</p></li>
+
+<li><b>Development has a shortcut</b>
+<p>A guest cookie exists only in Development and Test
+<a class="cite" href="https://github.com/punkouter27/PoMiniGames/blob/master/src/PoMiniGames.API/Infrastructure/AuthExtensions.cs#L25" title="open src/PoMiniGames.API/Infrastructure/AuthExtensions.cs line 25">src/PoMiniGames.API/Infrastructure/AuthExtensions.cs:25</a>, and an
+<code>X-Fake-User</code> header only when <code>Auth:EnableFakeAuth</code> is on and the
+environment is Development or Test
+<a class="cite" href="https://github.com/punkouter27/PoMiniGames/blob/master/src/PoMiniGames.API/Infrastructure/AuthExtensions.cs#L32" title="open src/PoMiniGames.API/Infrastructure/AuthExtensions.cs line 32">src/PoMiniGames.API/Infrastructure/AuthExtensions.cs:32</a>. Production refuses to start if
+either is present <a class="cite" href="https://github.com/punkouter27/PoMiniGames/blob/master/src/PoMiniGames.API/Infrastructure/StartupSecretValidator.cs#L52" title="open src/PoMiniGames.API/Infrastructure/StartupSecretValidator.cs line 52">src/PoMiniGames.API/Infrastructure/StartupSecretValidator.cs:52</a>.</p></li>
+</ol>
+
+<h2>Journey 3 &mdash; Play someone else, over the network</h2>
+<p>Online play runs over SignalR. Two shapes exist: a <b>lobby hub</b> that finds and seats
+players, and a <b>play hub</b> that carries the actual match or race.</p>
+
+<figure class="figure">
+<div class="mermaid-wrap">
+<pre class="mermaid">sequenceDiagram
+    participant A as Player one
+    participant B as Player two
+    participant L as Lobby hub
+    participant R as Race or match hub
+    A-&gt;&gt;L: Join the lobby
+    B-&gt;&gt;L: Join the lobby
+    L--&gt;&gt;A: Seat assigned, opponents known
+    L--&gt;&gt;B: Seat assigned, opponents known
+    A-&gt;&gt;R: Ready
+    B-&gt;&gt;R: Ready
+    R--&gt;&gt;A: Game started, match code
+    R--&gt;&gt;B: Game started, match code
+    loop Every tick
+        A-&gt;&gt;R: Input
+        R--&gt;&gt;B: Input relayed, stamped with the frame the server applied it on
+    end
+    R--&gt;&gt;A: Result
+    R--&gt;&gt;B: Result
+</pre>
+</div>
+<figcaption><b>Online play.</b> The server decides which frame each input lands on and is the only
+source of the result.</figcaption>
+</figure>
+
+<ol class="steps">
+<li><b>The lobby seats the players</b>
+<p>Each game owns its own lobby hub: Racer, Cabinet, Voxel Strike, Brawl, Couple Quiz and Fun
+Quiz all have one
+<a class="cite" href="https://github.com/punkouter27/PoMiniGames/blob/master/src/PoMiniGames.API/Infrastructure/EndpointRouteExtensions.cs#L122" title="open src/PoMiniGames.API/Infrastructure/EndpointRouteExtensions.cs line 122">src/PoMiniGames.API/Infrastructure/EndpointRouteExtensions.cs:122</a>
+<a class="cite" href="https://github.com/punkouter27/PoMiniGames/blob/master/src/PoMiniGames.API/Infrastructure/EndpointRouteExtensions.cs#L123" title="open src/PoMiniGames.API/Infrastructure/EndpointRouteExtensions.cs line 123">src/PoMiniGames.API/Infrastructure/EndpointRouteExtensions.cs:123</a>
+<a class="cite" href="https://github.com/punkouter27/PoMiniGames/blob/master/src/PoMiniGames.API/Infrastructure/EndpointRouteExtensions.cs#L124" title="open src/PoMiniGames.API/Infrastructure/EndpointRouteExtensions.cs line 124">src/PoMiniGames.API/Infrastructure/EndpointRouteExtensions.cs:124</a>
+<a class="cite" href="https://github.com/punkouter27/PoMiniGames/blob/master/src/PoMiniGames.API/Infrastructure/EndpointRouteExtensions.cs#L127" title="open src/PoMiniGames.API/Infrastructure/EndpointRouteExtensions.cs line 127">src/PoMiniGames.API/Infrastructure/EndpointRouteExtensions.cs:127</a>
+<a class="cite" href="https://github.com/punkouter27/PoMiniGames/blob/master/src/PoMiniGames.API/Infrastructure/EndpointRouteExtensions.cs#L132" title="open src/PoMiniGames.API/Infrastructure/EndpointRouteExtensions.cs line 132">src/PoMiniGames.API/Infrastructure/EndpointRouteExtensions.cs:132</a>
+<a class="cite" href="https://github.com/punkouter27/PoMiniGames/blob/master/src/PoMiniGames.API/Infrastructure/EndpointRouteExtensions.cs#L136" title="open src/PoMiniGames.API/Infrastructure/EndpointRouteExtensions.cs line 136">src/PoMiniGames.API/Infrastructure/EndpointRouteExtensions.cs:136</a>.</p></li>
+
+<li><b>The play hub carries the match</b>
+<p>Cabinet's race hub sends a fresh race code every time so one results screen cannot pick up the
+next race.</p></li>
+
+<li><b>The server is the authority</b>
+<p>PoBrawl's match hub relays frame-stamped inputs and answers <code>Ping</code> for clock sync;
+snapshots go out at 10 Hz. The server decides which frame each input lands on.</p></li>
+
+<li><b>The result is recorded</b>
+<p>An online match posts its result to an authenticated endpoint. When the Elo write fails, the
+endpoint answers 503 with <code>Retry-After: 5</code> and releases the claim, so a retry within 90
+seconds still works.</p></li>
+</ol>
+
+<h2>Journey 4 &mdash; Take a quiz</h2>
+
+<figure class="figure">
+<div class="mermaid-wrap">
+<pre class="mermaid">flowchart TD
+    Join[&quot;Player joins the quiz lobby&quot;]
+    Ask[&quot;Server needs a question&quot;]
+    Source{&quot;Which source is configured?&quot;}
+    Bank[(&quot;Permanent question bank&lt;br/&gt;Table Storage&quot;)]
+    Trivia[&quot;Open Trivia DB&lt;br/&gt;free, external&quot;]
+    Bundled[&quot;Bundled question set&lt;br/&gt;ships with the app&quot;]
+    Ai[&quot;AI writes a fresh question&lt;br/&gt;opt-in, metered&quot;]
+    Serve[&quot;Question is served&quot;]
+    Answer[&quot;Player answers&quot;]
+    Match{&quot;Free matcher confident?&quot;}
+    Judge[&quot;AI judge decides&lt;br/&gt;opt-in, only on close calls&quot;]
+
+    Join --&gt; Ask --&gt; Source
+    Source --&gt;|&quot;Bank (default)&quot;| Bank --&gt; Serve
+    Source --&gt;|&quot;bank is thin&quot;| Trivia
+    Source --&gt;|&quot;bank is thin&quot;| Bundled
+    Source --&gt;|&quot;Fresh AI, opted in&quot;| Ai --&gt; Serve
+    Answer --&gt; Match
+    Match --&gt;|&quot;clear&quot;| Serve
+    Match --&gt;|&quot;too close to call&quot;| Judge
+</pre>
+</div>
+<figcaption><b>Quizzes.</b> The free path is a permanent bank topped up from two free sources; the
+AI path is one opt-in switch away and always has the bank behind it.</figcaption>
+</figure>
+
+<ol class="steps">
+<li><b>The bank is the default</b>
+<p>PoFunQuiz deals from the <code>PoFunQuizBank</code> table
+<a class="cite" href="https://github.com/punkouter27/PoMiniGames/blob/master/src/PoMiniGames.API/Features/PoFunQuiz/Storage/QuizBankRepository.cs#L28" title="open src/PoMiniGames.API/Features/PoFunQuiz/Storage/QuizBankRepository.cs line 28">src/PoMiniGames.API/Features/PoFunQuiz/Storage/QuizBankRepository.cs:28</a>, and
+<code>PoFunQuiz:QuestionSource</code> defaults to <code>Bank</code>
+<a class="cite" href="https://github.com/punkouter27/PoMiniGames/blob/master/src/PoMiniGames.API/Features/PoFunQuiz/FunQuizOptions.cs#L30" title="open src/PoMiniGames.API/Features/PoFunQuiz/FunQuizOptions.cs line 30">src/PoMiniGames.API/Features/PoFunQuiz/FunQuizOptions.cs:30</a>.</p></li>
+
+<li><b>The bank grows without you</b>
+<p>A background service tops it up from Open Trivia DB and a bundled set. The request path also
+tops it up as players arrive, so nothing depends on that job running
+<a class="cite" href="https://github.com/punkouter27/PoMiniGames/blob/master/src/PoMiniGames.API/Features/PoFunQuiz/QuizPrebakeService.cs#L45" title="open src/PoMiniGames.API/Features/PoFunQuiz/QuizPrebakeService.cs line 45">src/PoMiniGames.API/Features/PoFunQuiz/QuizPrebakeService.cs:45</a>.</p></li>
+
+<li><b>If the free source is down, nothing breaks</b>
+<p>An Open Trivia DB timeout, DNS failure or malformed response logs an information message and
+returns an empty list, so the bundled set takes over
+<a class="cite" href="https://github.com/punkouter27/PoMiniGames/blob/master/src/PoMiniGames.API/Features/PoFunQuiz/OpenTriviaDbClient.cs#L100" title="open src/PoMiniGames.API/Features/PoFunQuiz/OpenTriviaDbClient.cs line 100">src/PoMiniGames.API/Features/PoFunQuiz/OpenTriviaDbClient.cs:100</a>.</p>
+<p class="snip-cap">src/PoMiniGames.API/Features/PoFunQuiz/OpenTriviaDbClient.cs:100-107</p><pre class="snip"><code>        }
+        catch (Exception ex) when (!cancellationToken.IsCancellationRequested)
+        {
+            // Timeout, DNS, TLS, malformed JSON: all mean &quot;use the fallback&quot;, none is worth an alarm.
+            _logger.LogInformation(ex, &quot;Open Trivia DB unreachable for category {Category}; using the bundled set.&quot;, category);
+            return [];
+        }
+    }</code></pre></li>
+
+<li><b>Fresh AI is a deliberate choice</b>
+<p>Only when the resolved mode is <code>FreshAi</code> does the request reach the model
+<a class="cite" href="https://github.com/punkouter27/PoMiniGames/blob/master/src/PoMiniGames.API/Features/PoFunQuiz/FunQuizQuestionService.cs#L70" title="open src/PoMiniGames.API/Features/PoFunQuiz/FunQuizQuestionService.cs line 70">src/PoMiniGames.API/Features/PoFunQuiz/FunQuizQuestionService.cs:70</a>.</p></li>
+
+<li><b>Close calls can be refereed</b>
+<p>PoCoupleQuiz's free matcher normalises answers, folds synonyms and plurals, and scores exact,
+token-overlap and typo-tolerant similarity
+<a class="cite" href="https://github.com/punkouter27/PoMiniGames/blob/master/src/PoMiniGames.API/Features/PoCoupleQuiz/AnswerMatcher.cs#L9" title="open src/PoMiniGames.API/Features/PoCoupleQuiz/AnswerMatcher.cs line 9">src/PoMiniGames.API/Features/PoCoupleQuiz/AnswerMatcher.cs:9</a>. Only an <i>ambiguous</i>
+score is sent to the AI judge
+<a class="cite" href="https://github.com/punkouter27/PoMiniGames/blob/master/src/PoMiniGames.API/Features/PoCoupleQuiz/CoupleQuizRoundDirector.cs#L350" title="open src/PoMiniGames.API/Features/PoCoupleQuiz/CoupleQuizRoundDirector.cs line 350">src/PoMiniGames.API/Features/PoCoupleQuiz/CoupleQuizRoundDirector.cs:350</a>.</p>
+<p class="snip-cap">src/PoMiniGames.API/Features/PoCoupleQuiz/AnswerMatcher.cs:9-18</p><pre class="snip"><code>/// &lt;/summary&gt;
+/// &lt;remarks&gt;
+/// &lt;para&gt;
+/// &lt;b&gt;Pipeline.&lt;/b&gt; Both answers are normalized (case, accents, punctuation, articles and
+/// possessives dropped, simple plurals folded), common synonyms are mapped onto one spelling
+/// (&quot;NYC&quot; / &quot;New York City&quot;, &quot;puppy&quot; / &quot;dog&quot;, &quot;3&quot; / &quot;three&quot;), and then scored three ways — exact,
+/// token-set overlap, and a typo-tolerant string similarity (Levenshtein blended with Jaro-Winkler).
+/// The best of the three wins.
+/// &lt;/para&gt;
+/// &lt;para&gt;</code></pre></li>
+</ol>
+
+<h2>Journey 5 &mdash; Play with no network, then sync</h2>
+
+<figure class="figure">
+<div class="mermaid-wrap">
+<pre class="mermaid">flowchart LR
+    Finish[&quot;Game ends&quot;]
+    Submit[&quot;Score submitted&quot;]
+    Ok[&quot;Score saved on the leaderboard&quot;]
+    Fail[&quot;Submission refused outright&quot;]
+    Queue[(&quot;Parked in the browser&lt;br/&gt;durable local queue&quot;)]
+    Retry[&quot;Flushed in order&lt;br/&gt;on app start or reconnect&quot;]
+    Done[&quot;Score lands, badge appears&quot;]
+    Drop[&quot;Dropped&lt;br/&gt;it could only fail again&quot;]
+
+    Finish --&gt; Submit
+    Submit --&gt;|&quot;accepted&quot;| Ok --&gt; Done
+    Submit --&gt;|&quot;refused outright&quot;| Fail
+    Submit --&gt;|&quot;network down&quot;| Queue --&gt; Retry
+    Retry --&gt;|&quot;accepted&quot;| Done
+    Retry --&gt;|&quot;refused again&quot;| Drop
+</pre>
+</div>
+<figcaption><b>Offline resilience.</b> A score that cannot reach the server is not lost, and a score
+the server refuses is not retried forever.</figcaption>
+</figure>
+
+<ol class="steps">
+<li><b>The score is parked, not lost</b>
+<p><code>PendingScoreStore</code> holds the failed submission durably in the browser.</p></li>
+
+<li><b>The queue is flushed in order</b>
+<p><code>ScoreSyncService.FlushAsync</code> resubmits every queued score FIFO on app start and
+whenever the API is reachable again
+<a class="cite" href="https://github.com/punkouter27/PoMiniGames/blob/master/src/PoMiniGames.Client/Services/Play/ScoreSyncService.cs#L90" title="open src/PoMiniGames.Client/Services/Play/ScoreSyncService.cs line 90">src/PoMiniGames.Client/Services/Play/ScoreSyncService.cs:90</a>
+<a class="cite" href="https://github.com/punkouter27/PoMiniGames/blob/master/src/PoMiniGames.Client/Services/Play/ScoreSyncService.cs#L97" title="open src/PoMiniGames.Client/Services/Play/ScoreSyncService.cs line 97">src/PoMiniGames.Client/Services/Play/ScoreSyncService.cs:97</a>.</p>
+<p class="snip-cap">src/PoMiniGames.Client/Services/Play/ScoreSyncService.cs:90-96</p><pre class="snip"><code>    /// &lt;summary&gt;
+    /// Attempts to resubmit every queued score in FIFO order. Synced entries are dropped, and so are ones
+    /// the server rejects outright — a payload the server refuses can only be refused again, so keeping it
+    /// would replay the same rejection on every flush forever. Only entries that could still succeed stay
+    /// queued (attempt count bumped). Re-entrant calls are ignored so a startup flush and a reconnect flush
+    /// can&#x27;t double-submit. Returns the number of scores synced.
+    /// &lt;/summary&gt;</code></pre></li>
+
+<li><b>A refusal ends the story</b>
+<p>A payload the server rejects outright is dropped rather than replayed on every future flush;
+only entries that could still succeed stay queued.</p></li>
+
+<li><b>A double-submit is impossible</b>
+<p>Re-entrant flushes are ignored, so a startup flush and a reconnect flush cannot submit the
+same score twice.</p></li>
+</ol>
+
+<h2>Journey 6 &mdash; Draft creatures and watch the arena think</h2>
+<p>PoJevArena is the one game where the computer opponent is the point: you design creatures,
+draft ten against ten, and the arena brain makes every tactical call.</p>
+
+<figure class="figure">
+<div class="mermaid-wrap">
+<pre class="mermaid">flowchart TD
+    Design[&quot;Player designs a creature&quot;]
+    Draft[&quot;Ten-versus-ten draft&quot;]
+    Arena[&quot;Match starts&quot;]
+    Decide{&quot;Which brain answers?&quot;}
+    Local[&quot;LocalJevClient&lt;br/&gt;deterministic rules,&lt;br/&gt;no network, no cost&quot;]
+    Jev[&quot;TypeSafe Jev via OpenRouter&lt;br/&gt;paid, opt-in&quot;]
+    OnDevice[&quot;On-device WebLLM&lt;br/&gt;in the browser,&lt;br/&gt;off by default&quot;]
+    Rules[&quot;Rule-based answer&lt;br/&gt;always available&quot;]
+
+    Design --&gt; Draft --&gt; Arena --&gt; Decide
+    Decide --&gt;|&quot;default&quot;| Local
+    Decide --&gt;|&quot;configured and asked for&quot;| Jev
+    Decide --&gt;|&quot;player enabled it in the browser&quot;| OnDevice
+    Jev -.-&gt;|&quot;unavailable or over budget&quot;| Rules
+    OnDevice -.-&gt;|&quot;no WebGPU or load failed&quot;| Rules
+    Local --&gt; Rules
+</pre>
+</div>
+<figcaption><b>The brain ladder.</b> Three possible brains, and a rule-based answer at the bottom of
+every one of them.</figcaption>
+</figure>
+
+<ol class="steps">
+<li><b>The default brain is free and offline</b>
+<p><code>LocalJevClient</code> is plain tactics rules: deterministic, no I/O, no allowance
+<a class="cite" href="https://github.com/punkouter27/PoMiniGames/blob/master/src/PoMiniGames.API/Features/PoJevArena/Jev/LocalJevClient.cs#L4" title="open src/PoMiniGames.API/Features/PoJevArena/Jev/LocalJevClient.cs line 4">src/PoMiniGames.API/Features/PoJevArena/Jev/LocalJevClient.cs:4</a>.</p></li>
+
+<li><b>The paid brain needs three things</b>
+<p>Server-side the brain is only available when <code>PoMiniGames:Jev:Brain</code> is
+<code>Jev</code>, a key is configured, and the player asked for it
+<a class="cite" href="https://github.com/punkouter27/PoMiniGames/blob/master/src/PoMiniGames.API/Features/PoJevArena/Jev/JevBrainRouter.cs#L8" title="open src/PoMiniGames.API/Features/PoJevArena/Jev/JevBrainRouter.cs line 8">src/PoMiniGames.API/Features/PoJevArena/Jev/JevBrainRouter.cs:8</a>.</p></li>
+
+<li><b>A missing key is announced, not silent</b>
+<p>If the brain is set to Jev but no key is configured, the app logs that every match runs on the
+free local brain <a class="cite" href="https://github.com/punkouter27/PoMiniGames/blob/master/src/PoMiniGames.API/Features/PoJevArena/PoJevArenaLog.cs#L15" title="open src/PoMiniGames.API/Features/PoJevArena/PoJevArenaLog.cs line 15">src/PoMiniGames.API/Features/PoJevArena/PoJevArenaLog.cs:15</a>.</p></li>
+
+<li><b>The browser can run its own brain</b>
+<p>WebLLM over WebGPU downloads a small model into the browser, but only if the player switched it
+on and the browser exposes WebGPU
+<a class="cite" href="https://github.com/punkouter27/PoMiniGames/blob/master/src/PoMiniGames.Client/wwwroot/js/localAi.js#L29" title="open src/PoMiniGames.Client/wwwroot/js/localAi.js line 29">src/PoMiniGames.Client/wwwroot/js/localAi.js:29</a>
+<a class="cite" href="https://github.com/punkouter27/PoMiniGames/blob/master/src/PoMiniGames.Client/wwwroot/js/localAi.js#L34" title="open src/PoMiniGames.Client/wwwroot/js/localAi.js line 34">src/PoMiniGames.Client/wwwroot/js/localAi.js:34</a>
+<a class="cite" href="https://github.com/punkouter27/PoMiniGames/blob/master/src/PoMiniGames.Client/wwwroot/js/localAi.js#L49" title="open src/PoMiniGames.Client/wwwroot/js/localAi.js line 49">src/PoMiniGames.Client/wwwroot/js/localAi.js:49</a>. It returns <code>null</code> rather than
+throwing, so the rule-based answer simply stands
+<a class="cite" href="https://github.com/punkouter27/PoMiniGames/blob/master/src/PoMiniGames.Client/wwwroot/js/localAi.js#L4" title="open src/PoMiniGames.Client/wwwroot/js/localAi.js line 4">src/PoMiniGames.Client/wwwroot/js/localAi.js:4</a>.</p></li>
+</ol>
+
+<h2>Journey 7 &mdash; Save a world and share it</h2>
+<ol class="steps">
+<li><b>PoEcosystem saves three cloud slots</b>
+<p>Worlds are saved as blobs in the <code>poecosystem-worlds</code> container
+<a class="cite" href="https://github.com/punkouter27/PoMiniGames/blob/master/src/PoMiniGames.API/Features/PoEcosystem/EcosystemWorldStore.cs#L37" title="open src/PoMiniGames.API/Features/PoEcosystem/EcosystemWorldStore.cs line 37">src/PoMiniGames.API/Features/PoEcosystem/EcosystemWorldStore.cs:37</a>.</p></li>
+
+<li><b>Sharing is one endpoint</b>
+<p><code>POST /api/poecosystem/worlds/{slot}/share</code>
+<a class="cite" href="https://github.com/punkouter27/PoMiniGames/blob/master/src/PoMiniGames.API/Features/PoEcosystem/EcosystemEndpoints.cs#L30" title="open src/PoMiniGames.API/Features/PoEcosystem/EcosystemEndpoints.cs line 30">src/PoMiniGames.API/Features/PoEcosystem/EcosystemEndpoints.cs:30</a>.</p></li>
+
+<li><b>It is observation-only</b>
+<p>PoEcosystem never calls an AI service; its commentary is scripted in the browser
+<a class="cite" href="https://github.com/punkouter27/PoMiniGames/blob/master/src/PoMiniGames.Client/wwwroot/js/poecosystem/sim/thoughts/templates.js" title="open src/PoMiniGames.Client/wwwroot/js/poecosystem/sim/thoughts/templates.js">src/PoMiniGames.Client/wwwroot/js/poecosystem/sim/thoughts/templates.js</a>.</p></li>
+</ol>
+
+<h2>Journey 8 &mdash; Take your data with you</h2>
+<div class="scroll">
+<table>
+<thead><tr><th>Endpoint</th><th>What it does</th><th>Who may call it</th><th>Citation</th></tr></thead>
+<tbody>
+<tr><td><code>GET /api/account/export</code></td><td>Exports everything held for the caller's claim identity</td>
+<td>Signed-in player only</td><td><a class="cite" href="https://github.com/punkouter27/PoMiniGames/blob/master/src/PoMiniGames.API/Features/Account/AccountEndpoints.cs#L45" title="open src/PoMiniGames.API/Features/Account/AccountEndpoints.cs line 45">src/PoMiniGames.API/Features/Account/AccountEndpoints.cs:45</a></td></tr>
+<tr><td><code>DELETE /api/account/data</code></td><td>Erases the caller's stored data</td>
+<td>Signed-in player only</td><td><a class="cite" href="https://github.com/punkouter27/PoMiniGames/blob/master/src/PoMiniGames.API/Features/Account/AccountEndpoints.cs#L79" title="open src/PoMiniGames.API/Features/Account/AccountEndpoints.cs line 79">src/PoMiniGames.API/Features/Account/AccountEndpoints.cs:79</a></td></tr>
+<tr><td><code>GET /api/player/card</code></td><td>The shareable player card, as SVG</td>
+<td>Signed-in player only</td><td><a class="cite" href="https://github.com/punkouter27/PoMiniGames/blob/master/src/PoMiniGames.API/Features/Account/PlayerCardEndpoints.cs#L20" title="open src/PoMiniGames.API/Features/Account/PlayerCardEndpoints.cs line 20">src/PoMiniGames.API/Features/Account/PlayerCardEndpoints.cs:20</a></td></tr>
+</tbody>
+</table>
+</div>
+
+<div class="note">
+These live inside the authenticated <code>/api</code> group, so the subject of every export or
+erase is always the caller's own claim identity
+<a class="cite" href="https://github.com/punkouter27/PoMiniGames/blob/master/src/PoMiniGames.API/Infrastructure/EndpointRouteExtensions.cs#L88" title="open src/PoMiniGames.API/Infrastructure/EndpointRouteExtensions.cs line 88">src/PoMiniGames.API/Infrastructure/EndpointRouteExtensions.cs:88</a>.
+</div>
+
+<h2>What every journey has in common</h2>
+<div class="grid two">
+  <div class="card">
+    <h3 style="margin-top:0">The game is never on the server</h3>
+    <p>Engines load on demand from <code>wwwroot/js/</code> and run in the browser. The server
+    sees scores, not keystrokes, for a solo run.</p>
+  </div>
+  <div class="card">
+    <h3 style="margin-top:0">Two tokens, always</h3>
+    <p>A bearer token says who you are. An antiforgery token says the request really came from
+    your signed-in browser.</p>
+  </div>
+  <div class="card">
+    <h3 style="margin-top:0">Free paths are not fallbacks of last resort</h3>
+    <p>They are the default. The paid paths are additions on top, and the app behaves identically
+    without them.</p>
+  </div>
+  <div class="card">
+    <h3 style="margin-top:0">Failures are legible</h3>
+    <p>A refused score names its reason. A refused write names its reason. A storage outage
+    degrades the leaderboards instead of the games.</p>
+  </div>
+</div>
+
+</main>
+
+<footer class="foot">
+  <div class="wrap">
+    <div><b>PoMiniGames documentation suite</b> &middot; generated 2026-10-29 &middot; describes the code at commit
+      <a href="https://github.com/punkouter27/PoMiniGames/blob/master/commit/21eb48c938015bb685339b45c19994a100b775b9><code>21eb48c9</code></a>.</div>
+    <div>Sources: source code first, then configuration, then comments and this repository's README.
+      Every claim carries a <span class="cite">path:line</span> citation that links to the exact line on GitHub.</div>
+    <div class="tagrow">
+      <span class="pill">Mermaid 10.9.0 (pinned)</span>
+      <span class="pill">Inline CSS</span>
+      <span class="pill">Light / dark</span>
+      <span class="pill">3-tier detail toggle</span>
+      <span class="pill">No secrets included</span>
+    </div>
+  </div>
+</footer>
+
+<script src="https://cdn.jsdelivr.net/npm/mermaid@10.9.0/dist/mermaid.min.js"></script>
+<script>
+(function () {
+  var TIER_KEY = 'pomg-docs-tier';
+  var THEME_KEY = 'pomg-docs-theme';
+  var TIER_NAMES = { '1': 'Simple', '2': 'Architectural', '3': 'Deep dive' };
+
+  function readTier() {
+    try {
+      var v = localStorage.getItem(TIER_KEY);
+      return (v === '1' || v === '2' || v === '3') ? v : '2';
+    } catch (e) { return '2'; }
+  }
+  function readTheme() {
+    try {
+      var v = localStorage.getItem(THEME_KEY);
+      return (v === 'light' || v === 'dark') ? v : null;
+    } catch (e) { return null; }
+  }
+
+  var root = document.documentElement;
+  var tier = readTier();
+  root.setAttribute('data-tier', tier);
+  var theme = readTheme();
+  if (theme) root.setAttribute('data-theme', theme);
+
+  function paintTierButtons() {
+    Array.prototype.forEach.call(document.querySelectorAll('[data-set-tier]'), function (b) {
+      b.setAttribute('aria-pressed', String(b.getAttribute('data-set-tier') === tier));
+    });
+    Array.prototype.forEach.call(document.querySelectorAll('[data-tier-label]'), function (n) {
+      n.textContent = TIER_NAMES[tier];
+    });
+  }
+  paintTierButtons();
+
+  document.addEventListener('click', function (ev) {
+    var b = ev.target.closest ? ev.target.closest('[data-set-tier]') : null;
+    if (b) {
+      tier = b.getAttribute('data-set-tier');
+      root.setAttribute('data-tier', tier);
+      try { localStorage.setItem(TIER_KEY, tier); } catch (e) {}
+      paintTierButtons();
+      window.__docsPaintDiagrams && window.__docsPaintDiagrams(false);
+      return;
+    }
+    var t = ev.target.closest ? ev.target.closest('#themeToggle') : null;
+    if (t) {
+      var cur = root.getAttribute('data-theme');
+      if (!cur) {
+        var dark = window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches;
+        cur = dark ? 'dark' : 'light';
+      }
+      var next = cur === 'dark' ? 'light' : 'dark';
+      root.setAttribute('data-theme', next);
+      try { localStorage.setItem(THEME_KEY, next); } catch (e) {}
+      window.__docsPaintDiagrams && window.__docsPaintDiagrams(true);
+    }
+  });
+
+  // ----- Mermaid: theme-aware, rendered only when the container is visible -----
+  var rendered = new WeakSet();
+
+  function tokens() {
+    var cs = getComputedStyle(root);
+    var get = function (n) { return cs.getPropertyValue(n).trim(); };
+    return {
+      bg: get('--surface'), ink: get('--ink'), ink2: get('--ink-2'), muted: get('--muted'),
+      line: get('--line-strong'), accent: get('--accent'), s1: get('--s1'), s2: get('--s2'),
+      s3: get('--s3'), s4: get('--s4'), s5: get('--s5')
+    };
+  }
+
+  function visible(el) {
+    return !!(el.offsetWidth || el.offsetHeight || el.getClientRects().length);
+  }
+
+  window.__docsPaintDiagrams = function (force) {
+    if (!window.mermaid) return;
+    var all = Array.prototype.slice.call(document.querySelectorAll('.mermaid'));
+    var t = tokens();
+    window.mermaid.initialize({
+      startOnLoad: false,
+      securityLevel: 'strict',
+      theme: 'base',
+      fontFamily: 'system-ui, -apple-system, "Segoe UI", sans-serif',
+      flowchart: { htmlLabels: true, curve: 'basis', useMaxWidth: true },
+      sequence: { useMaxWidth: true, wrap: true },
+      themeVariables: {
+        background: t.bg, primaryColor: t.bg, primaryTextColor: t.ink,
+        primaryBorderColor: t.line, secondaryColor: t.bg, tertiaryColor: t.bg,
+        lineColor: t.ink2, textColor: t.ink, mainBkg: t.bg, nodeBorder: t.line,
+        clusterBkg: t.bg, clusterBorder: t.line, edgeLabelBackground: t.bg,
+        titleColor: t.ink, labelBoxBkgColor: t.bg, labelBoxBorderColor: t.line,
+        actorBkg: t.bg, actorBorder: t.line, actorTextColor: t.ink,
+        signalColor: t.ink2, signalTextColor: t.ink, labelBoxTextColor: t.ink2,
+        noteBkgColor: t.bg, noteTextColor: t.ink, noteBorderColor: t.line,
+        pie1: t.s1, pie2: t.s2, pie3: t.s3, pie4: t.s4, pie5: t.s5,
+        todayColor: t.s5, doneColor: t.s3, taskTextColor: t.ink, taskTextDarkColor: t.ink,
+        taskTextLightColor: t.ink, taskTextOutsideColor: t.ink, taskTextOutsideDarkColor: t.ink
+      }
+    });
+    var targets = all.filter(function (el) {
+      if (!visible(el)) return false;
+      return force || !rendered.has(el);
+    });
+    if (!targets.length) return;
+    targets.forEach(function (el) {
+      if (!el.dataset.src) el.dataset.src = el.textContent.trim();
+      el.removeAttribute('data-processed');
+      el.textContent = el.dataset.src;
+      rendered.add(el);
+    });
+    try {
+      window.mermaid.run({ nodes: targets });
+    } catch (e) {
+      /* a broken diagram must never take the page down */
+    }
+  };
+
+  function boot() {
+    if (window.mermaid && window.mermaid.initialize) {
+      window.__docsPaintDiagrams(true);
+    } else if (window.mermaid) {
+      window.mermaid.initialize({ startOnLoad: false });
+      window.__docsPaintDiagrams(true);
+    }
+  }
+
+  if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', boot);
+  } else {
+    boot();
+  }
+
+  // Keep the shell and the report it frames in sync (artifact.html -> iframe).
+  window.addEventListener('message', function (ev) {
+    var d = ev.data || {};
+    if (d.type === 'pomg-docs-tier' && (d.tier === '1' || d.tier === '2' || d.tier === '3')) {
+      tier = d.tier;
+      root.setAttribute('data-tier', tier);
+      try { localStorage.setItem(TIER_KEY, tier); } catch (e) {}
+      paintTierButtons();
+      window.__docsPaintDiagrams && window.__docsPaintDiagrams(false);
+    } else if (d.type === 'pomg-docs-theme' && (d.theme === 'light' || d.theme === 'dark')) {
+      root.setAttribute('data-theme', d.theme);
+      try { localStorage.setItem(THEME_KEY, d.theme); } catch (e) {}
+      window.__docsPaintDiagrams && window.__docsPaintDiagrams(true);
+    }
+  });
+
+  window.addEventListener('load', function () {
+    window.__docsPaintDiagrams && window.__docsPaintDiagrams(false);
+  });
+})();
+</script>
+</body>
+</html>

@@ -1,0 +1,1034 @@
+<!doctype html>
+<html lang="en" data-tier="2">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="generator" content="PoMiniGames docs generator">
+<title>PoMiniGames documentation - architecture &middot; PoMiniGames</title>
+<style>
+:root{
+  color-scheme: light;
+  --bg:#f4f6f8; --surface:#ffffff; --surface-2:#eef2f6; --ink:#0d1117; --ink-2:#48525d;
+  --muted:#7d8894; --line:#dde3ea; --line-strong:#c4cfda; --accent:#1f6feb; --accent-ink:#0b4fc7;
+  --accent-soft:#e8f1fe; --chip:#eef1f5; --code-bg:#f7f9fb;
+  --good:#128a4c; --warn:#9a6508; --crit:#c0362c; --s1:#1f6feb; --s2:#e8710a; --s3:#1a7f5a;
+  --s4:#8250df; --s5:#bf3989;
+  --shadow:0 1px 2px rgba(16,24,40,.06),0 1px 3px rgba(16,24,40,.09);
+  --radius:12px; --maxw:1240px;
+  --mono: ui-monospace, SFMono-Regular, "SF Mono", Consolas, "Liberation Mono", monospace;
+}
+html[data-theme="dark"]{ color-scheme: dark;
+  --bg:#0d1117; --surface:#151b23; --surface-2:#1b222b; --ink:#e6edf3; --ink-2:#b3bdc9;
+  --muted:#8b949e; --line:#262d36; --line-strong:#39424d; --accent:#4a9eff;
+  --accent-ink:#79b8ff; --accent-soft:#12243d; --chip:#1b222b; --code-bg:#0b0f14;
+  --good:#3fb950; --warn:#d29922; --crit:#f85149; --s1:#4a9eff; --s2:#f0883e;
+  --s3:#3fb950; --s4:#a371f7; --s5:#f778ba;
+  --shadow:0 1px 2px rgba(1,4,9,.5),0 1px 3px rgba(1,4,9,.45);
+
+}
+@media (prefers-color-scheme: dark){
+  html:not([data-theme]){ color-scheme: dark;
+  --bg:#0d1117; --surface:#151b23; --surface-2:#1b222b; --ink:#e6edf3; --ink-2:#b3bdc9;
+  --muted:#8b949e; --line:#262d36; --line-strong:#39424d; --accent:#4a9eff;
+  --accent-ink:#79b8ff; --accent-soft:#12243d; --chip:#1b222b; --code-bg:#0b0f14;
+  --good:#3fb950; --warn:#d29922; --crit:#f85149; --s1:#4a9eff; --s2:#f0883e;
+  --s3:#3fb950; --s4:#a371f7; --s5:#f778ba;
+  --shadow:0 1px 2px rgba(1,4,9,.5),0 1px 3px rgba(1,4,9,.45);
+
+  }
+}
+*,*::before,*::after{ box-sizing:border-box; }
+html,body{ margin:0; padding:0; }
+body{
+  background:var(--bg); color:var(--ink);
+  font:15px/1.6 system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;
+  -webkit-text-size-adjust:100%;
+}
+img,svg,table,pre{ max-width:100%; }
+a{ color:var(--accent-ink); }
+code,kbd{ font-family:var(--mono); font-size:.92em; }
+
+/* ---------- Sticky header ---------- */
+.topbar{
+  position:sticky; top:0; z-index:50;
+  background:color-mix(in srgb, var(--surface) 88%, transparent);
+  backdrop-filter:saturate(1.4) blur(10px);
+  border-bottom:1px solid var(--line);
+}
+.tb-inner{
+  max-width:var(--maxw); margin:0 auto; padding:10px 16px;
+  display:flex; gap:12px; align-items:center; flex-wrap:wrap;
+}
+.brand{
+  font-weight:800; letter-spacing:-.01em; text-decoration:none; color:var(--ink);
+  display:inline-flex; align-items:center; gap:8px; white-space:nowrap;
+}
+.brand .dot{ width:9px; height:9px; border-radius:50%; background:var(--accent); flex:none; }
+.doc-title{ color:var(--ink-2); font-size:13.5px; min-width:0; overflow-wrap:anywhere; }
+.tb-right{ margin-left:auto; display:flex; gap:8px; align-items:center; flex-wrap:wrap; }
+.seg{
+  display:inline-flex; border:1px solid var(--line-strong); border-radius:999px;
+  overflow:hidden; background:var(--surface-2);
+}
+.seg button{
+  appearance:none; border:0; background:transparent; color:var(--ink-2);
+  font:inherit; font-size:12.5px; font-weight:600; padding:5px 11px; cursor:pointer;
+  white-space:nowrap;
+}
+.seg button + button{ border-left:1px solid var(--line); }
+.seg button[aria-pressed="true"]{ background:var(--accent); color:#fff; }
+.seg button:hover:not([aria-pressed="true"]){ background:var(--chip); color:var(--ink); }
+.icon-btn{
+  appearance:none; border:1px solid var(--line-strong); background:var(--surface-2);
+  color:var(--ink-2); border-radius:999px; width:32px; height:30px; cursor:pointer;
+  font-size:14px; line-height:1; display:inline-flex; align-items:center; justify-content:center;
+}
+.icon-btn:hover{ background:var(--chip); color:var(--ink); }
+
+/* ---------- Layout ---------- */
+.wrap{ max-width:var(--maxw); margin:0 auto; padding:24px 16px 72px; }
+h1{ font-size:clamp(24px,3.4vw,34px); line-height:1.18; letter-spacing:-.02em; margin:0 0 6px; }
+h2{
+  font-size:clamp(19px,2.3vw,24px); line-height:1.25; margin:52px 0 6px;
+  padding-top:18px; border-top:1px solid var(--line); scroll-margin-top:70px;
+}
+h3{ font-size:16px; margin:26px 0 4px; }
+h4{ font-size:14px; margin:18px 0 2px; color:var(--ink-2); text-transform:uppercase; letter-spacing:.05em; }
+p{ margin:0 0 12px; max-width:78ch; color:var(--ink-2); }
+ul,ol{ color:var(--ink-2); max-width:78ch; padding-left:20px; }
+li{ margin:5px 0; }
+strong{ color:var(--ink); }
+.lede{ font-size:17px; color:var(--ink); max-width:74ch; }
+
+/* ---------- Tier visibility ---------- */
+html[data-tier="1"] .l2, html[data-tier="1"] .l3{ display:none !important; }
+html[data-tier="2"] .l3{ display:none !important; }
+
+/* ---------- Cards & grids ---------- */
+.card{
+  background:var(--surface); border:1px solid var(--line); border-radius:var(--radius);
+  padding:16px 18px; box-shadow:var(--shadow); margin:16px 0; min-width:0;
+}
+.card > :last-child{ margin-bottom:0; }
+.card h3:first-child, .card h2:first-child{ margin-top:0; }
+.grid{ display:grid; gap:14px; grid-template-columns:repeat(auto-fit, minmax(min(280px,100%),1fr)); margin:16px 0; }
+.grid.two{ grid-template-columns:repeat(auto-fit, minmax(min(340px,100%),1fr)); }
+.grid.three{ grid-template-columns:repeat(auto-fit, minmax(min(240px,100%),1fr)); }
+.stat{ display:flex; flex-direction:column; gap:2px; }
+.stat b{ font-size:24px; line-height:1.15; letter-spacing:-.02em; }
+.stat span{ font-size:12.5px; color:var(--muted); }
+
+/* ---------- Callouts ---------- */
+.note{
+  background:var(--accent-soft); border:1px solid var(--line); border-left:3px solid var(--accent);
+  border-radius:8px; padding:12px 14px; margin:16px 0; color:var(--ink-2);
+}
+.note > :last-child{ margin-bottom:0; }
+.note b, .note strong{ color:var(--ink); }
+.note.warn{ background:color-mix(in srgb,var(--warn) 9%, var(--surface)); border-left-color:var(--warn); }
+.note.crit{ background:color-mix(in srgb,var(--crit) 9%, var(--surface)); border-left-color:var(--crit); }
+.note.good{ background:color-mix(in srgb,var(--good) 9%, var(--surface)); border-left-color:var(--good); }
+.el{ /* ELI5 block */
+  background:var(--surface-2); border:1px dashed var(--line-strong); border-radius:10px;
+  padding:12px 14px; margin:12px 0;
+}
+.el::before{
+  content:"In plain English"; display:block; font-size:11px; font-weight:800; letter-spacing:.08em;
+  text-transform:uppercase; color:var(--muted); margin-bottom:5px;
+}
+
+/* ---------- Analogy chips ---------- */
+.analogy{ display:flex; gap:10px; align-items:flex-start; }
+.analogy .badge{
+  flex:none; font-size:11px; font-weight:800; letter-spacing:.06em; text-transform:uppercase;
+  background:var(--accent-soft); color:var(--accent-ink); border:1px solid var(--line);
+  border-radius:6px; padding:3px 7px; margin-top:2px;
+}
+
+/* ---------- Tables ---------- */
+.scroll{ overflow-x:auto; border:1px solid var(--line); border-radius:10px; background:var(--surface); margin:14px 0; }
+table{ border-collapse:collapse; width:100%; font-size:13.5px; }
+th,td{ padding:8px 11px; text-align:left; border-bottom:1px solid var(--line); vertical-align:top; }
+th{ font-size:11.5px; text-transform:uppercase; letter-spacing:.05em; color:var(--muted); white-space:nowrap; background:var(--surface-2); }
+tr:last-child td{ border-bottom:0; }
+td code{ overflow-wrap:anywhere; }
+.nowrap{ white-space:nowrap; }
+
+/* ---------- Citations & snippets ---------- */
+.cite{
+  font-family:var(--mono); font-size:11.5px; text-decoration:none; white-space:nowrap;
+  background:var(--chip); border:1px solid var(--line); border-radius:5px; padding:1px 5px;
+  color:var(--accent-ink); display:inline-block; max-width:100%; overflow-wrap:anywhere;
+}
+.cite:hover{ border-color:var(--accent); }
+pre.snip{
+  background:var(--code-bg); border:1px solid var(--line); border-left:3px solid var(--line-strong);
+  border-radius:8px; padding:10px 12px; overflow-x:auto; margin:10px 0;
+  font-family:var(--mono); font-size:12.5px; line-height:1.5; color:var(--ink-2);
+}
+pre.snip code{ background:none; padding:0; }
+.snip-cap{ font-size:12px; color:var(--muted); margin:0 0 -4px; }
+
+/* ---------- Mermaid ---------- */
+.figure{ margin:16px 0; }
+.mermaid-wrap{
+  background:var(--surface); border:1px solid var(--line); border-radius:var(--radius);
+  padding:14px; overflow-x:auto; box-shadow:var(--shadow);
+}
+.mermaid{ display:flex; justify-content:center; }
+.mermaid svg{ max-width:100%; height:auto; }
+figcaption{ font-size:12.5px; color:var(--muted); margin-top:7px; }
+figcaption b{ color:var(--ink-2); }
+
+/* ---------- Narrative steps ---------- */
+.steps{ counter-reset:step; list-style:none; padding:0; margin:14px 0; display:grid; gap:10px; }
+.steps li{
+  position:relative; background:var(--surface); border:1px solid var(--line); border-radius:10px;
+  padding:12px 14px 12px 46px; margin:0; counter-increment:step; color:var(--ink-2);
+}
+.steps li::before{
+  content:counter(step); position:absolute; left:12px; top:11px; width:24px; height:24px;
+  border-radius:50%; background:var(--accent); color:#fff; font-size:12.5px; font-weight:800;
+  display:flex; align-items:center; justify-content:center;
+}
+.steps li b{ color:var(--ink); display:block; margin-bottom:2px; }
+
+/* ---------- Pills & tags ---------- */
+.pill{
+  display:inline-block; font-size:11.5px; font-weight:700; padding:2px 8px; border-radius:999px;
+  border:1px solid var(--line-strong); background:var(--chip); color:var(--ink-2); white-space:nowrap;
+}
+.pill.free{ background:color-mix(in srgb,var(--good) 14%,var(--surface)); color:var(--good); border-color:color-mix(in srgb,var(--good) 35%,var(--line)); }
+.pill.paid{ background:color-mix(in srgb,var(--warn) 14%,var(--surface)); color:var(--warn); border-color:color-mix(in srgb,var(--warn) 35%,var(--line)); }
+.pill.opt{ background:color-mix(in srgb,var(--s4) 12%,var(--surface)); color:var(--s4); border-color:color-mix(in srgb,var(--s4) 32%,var(--line)); }
+.pill.off{ background:var(--chip); color:var(--muted); }
+
+/* ---------- Tabs (artifact shell) ---------- */
+.tabbar{
+  position:sticky; top:0; z-index:40; background:var(--surface); border-bottom:1px solid var(--line);
+  display:flex; gap:4px; overflow-x:auto; padding:8px 16px; max-width:var(--maxw); margin:0 auto;
+}
+.tabbar button{
+  appearance:none; border:1px solid var(--line-strong); background:var(--surface-2); color:var(--ink-2);
+  font:inherit; font-size:13px; font-weight:600; padding:6px 12px; border-radius:8px; cursor:pointer;
+  white-space:nowrap;
+}
+.tabbar button[aria-selected="true"]{ background:var(--accent); border-color:var(--accent); color:#fff; }
+.frame{ display:block; width:100%; border:0; min-height:70vh; background:var(--bg); }
+
+/* ---------- Footer ---------- */
+.foot{
+  border-top:1px solid var(--line); margin-top:56px; padding:18px 16px 40px;
+  color:var(--muted); font-size:12.5px;
+}
+.foot .wrap{ padding:0; }
+.foot code{ font-size:11.5px; }
+.foot a{ color:var(--muted); }
+.tagrow{ display:flex; gap:8px; flex-wrap:wrap; margin:8px 0 0; }
+
+/* ---------- Small screens ---------- */
+@media (max-width:640px){
+  .tb-inner{ padding:8px 12px; }
+  .doc-title{ width:100%; order:3; }
+  .seg button{ padding:5px 9px; font-size:12px; }
+  .wrap{ padding:18px 12px 56px; }
+  h2{ margin-top:40px; }
+  .steps li{ padding-left:42px; }
+}
+@media print{
+  .topbar,.tabbar{ position:static; }
+  .l2,.l3{ display:block !important; }
+}
+</style>
+</head>
+<body>
+
+<header class="topbar">
+  <div class="tb-inner">
+    <a class="brand" href="index.html"><span class="dot"></span>PoMiniGames</a>
+    <span class="doc-title">System architecture and flow</span>
+    <div class="tb-right">
+      <div class="seg" role="group" aria-label="Detail level">
+        <button type="button" data-set-tier="1" title="Plain English only">Simple</button>
+        <button type="button" data-set-tier="2" title="Add architecture diagrams">Architectural</button>
+        <button type="button" data-set-tier="3" title="Add code citations and schemas">Deep dive</button>
+      </div>
+      <button type="button" class="icon-btn" id="themeToggle" title="Toggle light / dark" aria-label="Toggle light or dark theme">&#9681;</button>
+    </div>
+  </div>
+</header>
+
+<main class="wrap">
+<h1>Visual architecture dashboard</h1>
+<p class="lede">The system at three zoom levels &mdash; what it is, what it is made of, and what
+happens inside &mdash; plus the request flows and the data model that hold it together.</p>
+
+<div class="el">
+<p>Zoom out and PoMiniGames is one box with a player in front of it and five outside services
+behind it. Zoom in and that one box becomes a browser app, a web host, two storage systems and a
+carefully metered AI pipeline. This page walks that zoom, then follows a single score from the
+player's fingers to the leaderboard and back.</p>
+</div>
+
+<h2>Level 1 &mdash; The system in its surroundings</h2>
+
+<figure class="figure">
+<div class="mermaid-wrap">
+<pre class="mermaid">flowchart LR
+    Player[&quot;Player&lt;br/&gt;a person with a browser&quot;]
+    Sys[&quot;PoMiniGames&lt;br/&gt;thirteen browser games,&lt;br/&gt;leaderboards and online matches&quot;]
+    Entra[&quot;Microsoft Entra&lt;br/&gt;sign-in and identity&quot;]
+    Foundry[&quot;Azure AI Foundry&lt;br/&gt;optional question and judging models&quot;]
+    Trivia[&quot;Open Trivia DB&lt;br/&gt;free question source&quot;]
+    Wiki[&quot;Wikimedia REST API&lt;br/&gt;free fighter summaries&quot;]
+    Router[&quot;OpenRouter&lt;br/&gt;optional Jev brain&quot;]
+
+    Player --&gt;|&quot;plays, signs in&quot;| Sys
+    Player --&gt;|&quot;signs in with&quot;| Entra
+    Sys --&gt;|&quot;validates tokens with&quot;| Entra
+    Sys --&gt;|&quot;asks for a question, only if opted in&quot;| Foundry
+    Sys --&gt;|&quot;pulls trivia questions&quot;| Trivia
+    Sys --&gt;|&quot;pulls fighter summaries&quot;| Wiki
+    Sys --&gt;|&quot;asks for a tactical call, only if opted in&quot;| Router
+</pre>
+</div>
+<figcaption><b>C4 level 1.</b> One system, one kind of user, five outside dependencies. Three of
+those five are free and optional; two are paid and opt-in. Nothing outside the box is required
+for the games to work.</figcaption>
+</figure>
+
+<div class="grid two">
+  <div class="card">
+    <h3 style="margin-top:0">The one thing everybody touches</h3>
+    <p>A player with a browser. There is no install, no app store and no separate client
+    deployment: the host serves the client from the same origin
+    <a class="cite" href="https://github.com/punkouter27/PoMiniGames/blob/master/src/PoMiniGames.API/Program.cs#L321" title="open src/PoMiniGames.API/Program.cs line 321">src/PoMiniGames.API/Program.cs:321</a>
+    <a class="cite" href="https://github.com/punkouter27/PoMiniGames/blob/master/src/PoMiniGames.API/Program.cs#L462" title="open src/PoMiniGames.API/Program.cs line 462">src/PoMiniGames.API/Program.cs:462</a>.</p>
+  </div>
+  <div class="card">
+    <h3 style="margin-top:0">The dependency that is not optional</h3>
+    <p>Microsoft Entra. It decides who a player is. Every other dependency can be switched off and
+    the games still run.</p>
+  </div>
+</div>
+
+<h2>Level 2 &mdash; The containers</h2>
+
+<figure class="figure">
+<div class="mermaid-wrap">
+<pre class="mermaid">flowchart TB
+    subgraph Browser[&quot;Browser - one origin, served by the host&quot;]
+        Blazor[&quot;Blazor WebAssembly client&lt;br/&gt;routing, pages, services&quot;]
+        Engines[&quot;JavaScript game engines&lt;br/&gt;wwwroot/js - one per game&quot;]
+        Blazor --&gt; Engines
+    end
+
+    subgraph Host[&quot;ASP.NET Core host - Azure App Service, F1&quot;]
+        Static[&quot;Static file middleware&lt;br/&gt;client bundle&quot;]
+        Endpoints[&quot;Minimal API endpoints&lt;br/&gt;Features - one folder per game&quot;]
+        Hubs[&quot;SignalR hubs&lt;br/&gt;13 live hubs&quot;]
+        AI[&quot;AI pipeline&lt;br/&gt;budget, resilience, instrumentation&quot;]
+        Integrity[&quot;Score integrity&lt;br/&gt;play sessions and guards&quot;]
+        Auth[&quot;Auth and antiforgery&lt;br/&gt;middleware&quot;]
+        Storage[&quot;Storage service&lt;br/&gt;tables and blobs&quot;]
+        Static --&gt; Endpoints
+        Endpoints --&gt; Hubs
+        Endpoints --&gt; AI
+        Endpoints --&gt; Integrity
+        Endpoints --&gt; Auth
+        Auth --&gt; Storage
+        Integrity --&gt; Storage
+        AI --&gt; Storage
+    end
+
+    subgraph Data[&quot;Azure Storage&quot;]
+        Tables[(&quot;Table Storage&lt;br/&gt;23 tables&quot;)]
+        Blobs[(&quot;Blob Storage&lt;br/&gt;poecosystem-worlds&quot;)]
+    end
+
+    subgraph Cloud[&quot;External services&quot;]
+        Entra[&quot;Microsoft Entra&quot;]
+        Foundry[&quot;Azure AI Foundry&quot;]
+        External[&quot;Open Trivia DB, Wikimedia, OpenRouter&quot;]
+    end
+
+    Browser --&gt;|&quot;HTTP and WebSocket&quot;| Host
+    Host --&gt; Tables
+    Host --&gt; Blobs
+    Host --&gt; Entra
+    Host --&gt; Foundry
+    Host --&gt; External
+</pre>
+</div>
+<figcaption><b>C4 level 2.</b> The browser holds the games; the host holds the books, the referees
+and the metering.</figcaption>
+</figure>
+
+<div class="scroll">
+<table>
+<thead><tr><th>Container</th><th>Technology</th><th>Owns</th><th>Citation</th></tr></thead>
+<tbody>
+<tr><td>Blazor WebAssembly client</td><td>.NET 10 Blazor WASM, trimmed</td>
+<td>All game rendering, UI, local stats, the offline score queue</td>
+<td><a class="cite" href="https://github.com/punkouter27/PoMiniGames/blob/master/src/PoMiniGames.Client/PoMiniGamesClient.csproj" title="open src/PoMiniGames.Client/PoMiniGamesClient.csproj">src/PoMiniGames.Client/PoMiniGamesClient.csproj</a></td></tr>
+<tr><td>JavaScript engines</td><td>Plain ES modules under <code>wwwroot/js/</code></td>
+<td>One engine folder per game, loaded on demand by <code>engineLoader.js</code></td>
+<td><a class="cite" href="https://github.com/punkouter27/PoMiniGames/blob/master/src/PoMiniGames.Client/wwwroot/js/" title="open src/PoMiniGames.Client/wwwroot/js/">src/PoMiniGames.Client/wwwroot/js/</a></td></tr>
+<tr><td>ASP.NET Core host</td><td>.NET 10 Minimal API</td>
+<td>The route table, the middleware pipeline, all server-side state</td>
+<td><a class="cite" href="https://github.com/punkouter27/PoMiniGames/blob/master/src/PoMiniGames.API/Program.cs#L51" title="open src/PoMiniGames.API/Program.cs line 51">src/PoMiniGames.API/Program.cs:51</a></td></tr>
+<tr><td>Feature slices</td><td>One folder per game under <code>Features/</code></td>
+<td>Endpoints, verifiers, stores and hubs for that game only</td>
+<td><a class="cite" href="https://github.com/punkouter27/PoMiniGames/blob/master/src/PoMiniGames.API/Features/" title="open src/PoMiniGames.API/Features/">src/PoMiniGames.API/Features/</a></td></tr>
+<tr><td>SignalR hubs</td><td>13 hubs, auth required</td>
+<td>Lobbies, races, matches, quizzes. State is in server memory and is lost on restart</td>
+<td><a class="cite" href="https://github.com/punkouter27/PoMiniGames/blob/master/src/PoMiniGames.API/Infrastructure/EndpointRouteExtensions.cs#L122" title="open src/PoMiniGames.API/Infrastructure/EndpointRouteExtensions.cs line 122">src/PoMiniGames.API/Infrastructure/EndpointRouteExtensions.cs:122</a></td></tr>
+<tr><td>AI pipeline</td><td>Azure AI Foundry via <code>AzureOpenAIClient</code></td>
+<td>Budget, resilience, instrumentation, fallback</td>
+<td><a class="cite" href="https://github.com/punkouter27/PoMiniGames/blob/master/src/PoMiniGames.API/AI/GameChatClientRegistration.cs#L18" title="open src/PoMiniGames.API/AI/GameChatClientRegistration.cs line 18">src/PoMiniGames.API/AI/GameChatClientRegistration.cs:18</a></td></tr>
+<tr><td>Integrity services</td><td>Data Protection signed tickets</td>
+<td>Mints play sessions, redeems them, judges plausibility</td>
+<td><a class="cite" href="https://github.com/punkouter27/PoMiniGames/blob/master/src/PoMiniGames.API/Features/Integrity/ScoreIntegrityGuard.cs#L81" title="open src/PoMiniGames.API/Features/Integrity/ScoreIntegrityGuard.cs line 81">src/PoMiniGames.API/Features/Integrity/ScoreIntegrityGuard.cs:81</a></td></tr>
+<tr><td>Table Storage</td><td>Azure Tables</td>
+<td>Scores, ladders, Elo, weekly boards, question bank, AI ledger, invites</td>
+<td><a class="cite" href="https://github.com/punkouter27/PoMiniGames/blob/master/src/PoMiniGames.Infrastructure/Services/StorageService.cs#L24" title="open src/PoMiniGames.Infrastructure/Services/StorageService.cs line 24">src/PoMiniGames.Infrastructure/Services/StorageService.cs:24</a></td></tr>
+<tr><td>Blob Storage</td><td>Azure Blobs</td><td>PoEcosystem world saves, one container</td>
+<td><a class="cite" href="https://github.com/punkouter27/PoMiniGames/blob/master/src/PoMiniGames.API/Features/PoEcosystem/EcosystemWorldStore.cs#L37" title="open src/PoMiniGames.API/Features/PoEcosystem/EcosystemWorldStore.cs line 37">src/PoMiniGames.API/Features/PoEcosystem/EcosystemWorldStore.cs:37</a></td></tr>
+</tbody>
+</table>
+</div>
+
+<h2>Level 3 &mdash; Inside the host</h2>
+
+<figure class="figure">
+<div class="mermaid-wrap">
+<pre class="mermaid">flowchart LR
+    subgraph Pipeline[&quot;Request pipeline, in order&quot;]
+        C1[&quot;Response compression&quot;]
+        C2[&quot;CORS - development only&quot;]
+        C3[&quot;Authentication&lt;br/&gt;composite scheme&quot;]
+        C4[&quot;Rate limiter&lt;br/&gt;per-endpoint policies&quot;]
+        C5[&quot;Authorization&lt;br/&gt;the /api group&quot;]
+        C6[&quot;AI usage scope&lt;br/&gt;who pays for this call&quot;]
+        C7[&quot;Antiforgery&lt;br/&gt;X-CSRF-TOKEN&quot;]
+        C8[&quot;Endpoint routing&quot;]
+        C1 --&gt; C2 --&gt; C3 --&gt; C4 --&gt; C5 --&gt; C6 --&gt; C7 --&gt; C8
+    end
+
+    subgraph Slices[&quot;Feature slices&quot;]
+        S1[&quot;Leaderboard&quot;]
+        S2[&quot;Integrity&quot;]
+        S3[&quot;PoBrawl&quot;]
+        S4[&quot;PoFunQuiz&quot;]
+        S5[&quot;PoCoupleQuiz&quot;]
+        S6[&quot;PoJevArena&quot;]
+        S7[&quot;PoEcosystem&quot;]
+        S8[&quot;PoCabinet, PoMule, PoRacer,&lt;br/&gt;PoVoxelStrike, PoMarbleRace&quot;]
+        S9[&quot;Account, Auth, Invites,&lt;br/&gt;MatchHistory, Health&quot;]
+    end
+
+    subgraph Supply[&quot;The supply closet - dependency injection&quot;]
+        DI[&quot;Services registered once at startup&lt;br/&gt;storage, auth, game services, rate limiting&quot;]
+    end
+
+    C8 --&gt; Slices
+    Slices --&gt; DI
+</pre>
+</div>
+<figcaption><b>C4 level 3, the request pipeline.</b> The order is not arbitrary and the code says
+so: authentication comes before authorization, the rate limiter comes before the AI usage scope so
+a shed request never opens a scope, and antiforgery comes last because the token is bound to the
+now-established identity.</figcaption>
+</figure>
+
+<p class="snip-cap">src/PoMiniGames.API/Program.cs:425-444</p><pre class="snip"><code>app.UseAuthentication();
+app.UseRateLimiter();
+app.UseAuthorization();
+
+// Names the caller each request&#x27;s model calls are charged to (BudgetedChatClient reads it).
+// AFTER UseAuthentication on purpose: read any earlier, the principal is not yet established and
+// every signed-in player would be charged to their IP — sharing one ledger with everyone behind
+// the same NAT. After UseRateLimiter too, so a shed request never opens a scope at all.
+app.UseAiUsageScope();
+
+// CSRF gate. Deliberately AFTER UseAuthentication: the antiforgery token is bound to
+// the user&#x27;s identity claims, so validating before the principal is established would
+// reject every token this same user was just issued. After UseRateLimiter too, so a flood
+// of token-less writes is shed by the limiter rather than each one paying for a
+// Data Protection unprotect.
+app.UsePoMiniGamesAntiforgery();
+
+// ─── Minimal API endpoints + SignalR hubs (one ordered registration) ──
+// The whole route table lives in EndpointRouteExtensions.MapPoMiniGamesEndpoints.
+app.MapPoMiniGamesEndpoints();</code></pre>
+
+<h2>The route table, in one place</h2>
+
+<figure class="figure">
+<div class="mermaid-wrap">
+<pre class="mermaid">flowchart TB
+    Root[&quot;Every route the host maps&quot;]
+    Api[&quot;Group /api&lt;br/&gt;RequireAuthorization&quot;]
+    Public[&quot;Public routes&lt;br/&gt;allow anonymous&quot;]
+    Hubs2[&quot;13 SignalR hubs&lt;br/&gt;RequireAuthorization&quot;]
+    SPA[&quot;Fallback to index.html&lt;br/&gt;client-side routes&quot;]
+
+    Root --&gt; Api
+    Root --&gt; Public
+    Root --&gt; Hubs2
+    Root --&gt; SPA
+
+    Api --&gt; A1[&quot;Play sessions&quot;]
+    Api --&gt; A2[&quot;Account export and erase&quot;]
+    Api --&gt; A3[&quot;Player stats&quot;]
+    Api --&gt; A4[&quot;High scores for Marble Race, Brawl,&lt;br/&gt;Racer, Cabinet, Voxel Strike, Mule&quot;]
+    Api --&gt; A5[&quot;Match history&quot;]
+    Api --&gt; A6[&quot;Fun Quiz, Racer, Cabinet,&lt;br/&gt;Voxel Strike, Mule, Brawl online results&quot;]
+    Api --&gt; A7[&quot;Ecosystem worlds and sharing&quot;]
+    Api --&gt; A8[&quot;Jev status, allowance, decisions&quot;]
+    Api --&gt; A9[&quot;Invites and push subscriptions&quot;]
+
+    Public --&gt; P1[&quot;GET /api/pobrawl/dossier&quot;]
+    Public --&gt; P2[&quot;GET /api/auth/antiforgery-token&quot;]
+    Public --&gt; P3[&quot;GET /api/health, /api/health/ping&quot;]
+    Public --&gt; P4[&quot;GET /health/live&quot;]
+    Public --&gt; P5[&quot;GET /auth/login/microsoft&quot;]
+</pre>
+</div>
+<figcaption><b>The whole surface.</b> Everything that touches player data sits behind one group
+with one authorization call on it.</figcaption>
+</figure>
+
+<p class="snip-cap">src/PoMiniGames.API/Infrastructure/EndpointRouteExtensions.cs:86-92</p><pre class="snip"><code>        // AntiforgeryExtensions validates, so the CSRF boundary, the auth boundary and
+        // the URL boundary are now one line instead of three separate conventions.
+        var gameApi = app.MapGroup(&quot;/api&quot;).RequireAuthorization();
+
+        // Play sessions: minted per game opened, redeemed by the score guard on submission.
+        // Authenticated because a session is bound to an identity — there is nothing to bind
+        // for an anonymous caller, and an unbound session is a token anyone could spend.</code></pre>
+
+<div class="scroll">
+<table>
+<thead><tr><th>Route group</th><th>What is inside</th><th>Gate</th><th>Citation</th></tr></thead>
+<tbody>
+<tr><td><code>/api</code></td><td>19 endpoint families mapped onto one authorized group</td>
+<td><code>RequireAuthorization()</code> on the group</td>
+<td><a class="cite" href="https://github.com/punkouter27/PoMiniGames/blob/master/src/PoMiniGames.API/Infrastructure/EndpointRouteExtensions.cs#L88" title="open src/PoMiniGames.API/Infrastructure/EndpointRouteExtensions.cs line 88">src/PoMiniGames.API/Infrastructure/EndpointRouteExtensions.cs:88</a></td></tr>
+<tr><td>SignalR hubs</td><td>13 hubs, each authorized individually</td>
+<td><code>RequireAuthorization()</code> per hub</td>
+<td><a class="cite" href="https://github.com/punkouter27/PoMiniGames/blob/master/src/PoMiniGames.API/Infrastructure/EndpointRouteExtensions.cs#L122" title="open src/PoMiniGames.API/Infrastructure/EndpointRouteExtensions.cs line 122">src/PoMiniGames.API/Infrastructure/EndpointRouteExtensions.cs:122</a></td></tr>
+<tr><td><code>/api/pobrawl/dossier</code></td><td>Every fighter's public dossier</td>
+<td><code>AllowAnonymous()</code></td>
+<td><a class="cite" href="https://github.com/punkouter27/PoMiniGames/blob/master/src/PoMiniGames.API/Features/PoBrawl/PoBrawlDossierEndpoints.cs#L28" title="open src/PoMiniGames.API/Features/PoBrawl/PoBrawlDossierEndpoints.cs line 28">src/PoMiniGames.API/Features/PoBrawl/PoBrawlDossierEndpoints.cs:28</a></td></tr>
+<tr><td><code>/api/auth/antiforgery-token</code></td><td>Issues the CSRF token a write needs</td>
+<td><code>AllowAnonymous()</code></td>
+<td><a class="cite" href="https://github.com/punkouter27/PoMiniGames/blob/master/src/PoMiniGames.API/Infrastructure/AntiforgeryExtensions.cs#L125" title="open src/PoMiniGames.API/Infrastructure/AntiforgeryExtensions.cs line 125">src/PoMiniGames.API/Infrastructure/AntiforgeryExtensions.cs:125</a></td></tr>
+<tr><td><code>/api/health</code>, <code>/api/health/ping</code></td>
+<td>Dependency report and a zero-dependency pong</td>
+<td>Anonymous, so probes never fail on auth</td>
+<td><a class="cite" href="https://github.com/punkouter27/PoMiniGames/blob/master/src/PoMiniGames.API/Features/Health/HealthEndpoints.cs#L37" title="open src/PoMiniGames.API/Features/Health/HealthEndpoints.cs line 37">src/PoMiniGames.API/Features/Health/HealthEndpoints.cs:37</a></td></tr>
+<tr><td><code>/health/live</code></td><td>Uniform liveness probe, touches nothing</td>
+<td>Anonymous</td><td><a class="cite" href="https://github.com/punkouter27/PoMiniGames/blob/master/src/PoMiniGames.API/Infrastructure/PoPlatform.cs#L105" title="open src/PoMiniGames.API/Infrastructure/PoPlatform.cs line 105">src/PoMiniGames.API/Infrastructure/PoPlatform.cs:105</a></td></tr>
+<tr><td><code>/health</code></td><td>Deep probe: JSON for monitors, the Blazor page for browsers</td>
+<td>Anonymous</td><td><a class="cite" href="https://github.com/punkouter27/PoMiniGames/blob/master/src/PoMiniGames.API/Features/Health/HealthEndpoints.cs#L61" title="open src/PoMiniGames.API/Features/Health/HealthEndpoints.cs line 61">src/PoMiniGames.API/Features/Health/HealthEndpoints.cs:61</a></td></tr>
+<tr><td><code>/api/{*rest}</code></td><td>Typed 404 for any unmapped API path</td>
+<td>Anonymous</td><td><a class="cite" href="https://github.com/punkouter27/PoMiniGames/blob/master/src/PoMiniGames.API/Program.cs#L454" title="open src/PoMiniGames.API/Program.cs line 454">src/PoMiniGames.API/Program.cs:454</a></td></tr>
+<tr><td>Fallback to <code>index.html</code></td><td>Client-side routes such as <code>/leaderboards</code></td>
+<td>Anonymous</td><td><a class="cite" href="https://github.com/punkouter27/PoMiniGames/blob/master/src/PoMiniGames.API/Program.cs#L462" title="open src/PoMiniGames.API/Program.cs line 462">src/PoMiniGames.API/Program.cs:462</a></td></tr>
+</tbody>
+</table>
+</div>
+
+<h2>How a score travels</h2>
+
+<figure class="figure">
+<div class="mermaid-wrap">
+<pre class="mermaid">sequenceDiagram
+    participant B as Browser
+    participant M as Middleware pipeline
+    participant E as Score endpoint
+    participant G as Score integrity guard
+    participant P as Play session service
+    participant T as Table Storage
+
+    B-&gt;&gt;M: POST score with Bearer token and X-CSRF-TOKEN
+    M-&gt;&gt;M: Authenticate, rate limit, authorize
+    M-&gt;&gt;M: Validate the antiforgery token
+    M-&gt;&gt;E: Hand the request over
+    E-&gt;&gt;G: Ask for a verdict
+    G-&gt;&gt;G: Check the raw value against the game&#x27;s bounds
+    G-&gt;&gt;P: Redeem the X-Play-Session header
+    P--&gt;&gt;G: Valid, and how long the session has been open
+    G-&gt;&gt;G: Check the score is possible in that time
+    alt plausible
+        G--&gt;&gt;E: Allow
+        E-&gt;&gt;T: Write the row
+        T--&gt;&gt;E: Stored
+        E--&gt;&gt;B: 201 with the stored row
+    else not plausible
+        G--&gt;&gt;E: Refuse with a reason
+        E--&gt;&gt;B: 400 with error and detail
+    end
+</pre>
+</div>
+<figcaption><b>The write path.</b> Every refusal has a name, and every acceptance writes one
+row.</figcaption>
+</figure>
+
+<ol class="steps">
+<li><b>Authentication happens first</b>
+<p>The composite scheme resolves who the caller is
+<a class="cite" href="https://github.com/punkouter27/PoMiniGames/blob/master/src/PoMiniGames.API/Infrastructure/AuthExtensions.cs#L34" title="open src/PoMiniGames.API/Infrastructure/AuthExtensions.cs line 34">src/PoMiniGames.API/Infrastructure/AuthExtensions.cs:34</a>.</p></li>
+
+<li><b>Then the rate limiter</b>
+<p>Per-endpoint policies cap writes; for example the high-score policy allows ten a minute
+<a class="cite" href="https://github.com/punkouter27/PoMiniGames/blob/master/src/PoMiniGames.API/Infrastructure/RateLimitingExtensions.cs#L29" title="open src/PoMiniGames.API/Infrastructure/RateLimitingExtensions.cs line 29">src/PoMiniGames.API/Infrastructure/RateLimitingExtensions.cs:29</a>.</p></li>
+
+<li><b>Then authorization</b>
+<p>The whole <code>/api</code> group requires a signed-in caller
+<a class="cite" href="https://github.com/punkouter27/PoMiniGames/blob/master/src/PoMiniGames.API/Infrastructure/EndpointRouteExtensions.cs#L88" title="open src/PoMiniGames.API/Infrastructure/EndpointRouteExtensions.cs line 88">src/PoMiniGames.API/Infrastructure/EndpointRouteExtensions.cs:88</a>.</p></li>
+
+<li><b>Then antiforgery</b>
+<p>State-changing <code>/api</code> requests must carry <code>X-CSRF-TOKEN</code>
+<a class="cite" href="https://github.com/punkouter27/PoMiniGames/blob/master/src/PoMiniGames.API/Infrastructure/AntiforgeryExtensions.cs#L154" title="open src/PoMiniGames.API/Infrastructure/AntiforgeryExtensions.cs line 154">src/PoMiniGames.API/Infrastructure/AntiforgeryExtensions.cs:154</a>.</p></li>
+
+<li><b>Then the integrity guard</b>
+<p>Value, then session, then rate against elapsed time
+<a class="cite" href="https://github.com/punkouter27/PoMiniGames/blob/master/src/PoMiniGames.API/Features/Integrity/ScoreIntegrityGuard.cs#L64" title="open src/PoMiniGames.API/Features/Integrity/ScoreIntegrityGuard.cs line 64">src/PoMiniGames.API/Features/Integrity/ScoreIntegrityGuard.cs:64</a>.</p></li>
+
+<li><b>Then storage</b>
+<p>The row key is a deterministic hash of the row's identity fields, so a retry writes the same
+row instead of a duplicate
+<a class="cite" href="https://github.com/punkouter27/PoMiniGames/blob/master/src/PoMiniGames.Infrastructure/Services/StorageService.HighScores.cs#L479" title="open src/PoMiniGames.Infrastructure/Services/StorageService.HighScores.cs line 479">src/PoMiniGames.Infrastructure/Services/StorageService.HighScores.cs:479</a>.</p></li>
+</ol>
+
+<p class="snip-cap">src/PoMiniGames.Infrastructure/Services/StorageService.HighScores.cs:479-483</p><pre class="snip"><code>    // The RowKey is derived deterministically from the row&#x27;s content so a duplicate
+    // HTTP request or a retry-after-timeout collapses onto the same row instead of
+    // inflating the leaderboard with a second identical entry. Ranking is done in
+    // memory (see GetHighScoresAsync), so RowKey ordering is irrelevant to correctness.
+    // `weekly` also writes the row into the current ISO week&#x27;s partition (see Weekly boards).</code></pre>
+
+<h2>How an AI call travels</h2>
+
+<figure class="figure">
+<div class="mermaid-wrap">
+<pre class="mermaid">sequenceDiagram
+    participant Q as Quiz request
+    participant B as Budgeted client
+    participant R as Resilient client
+    participant I as Instrumented client
+    participant F as Foundry client
+    participant L as Token ledger
+    participant X as Free fallback
+
+    Q-&gt;&gt;B: Ask for a question
+    B-&gt;&gt;L: Has this player spent their allowance today?
+    L--&gt;&gt;B: Spent and limit
+    B-&gt;&gt;B: Throw if the daily ceiling is reached
+    B-&gt;&gt;R: Forward the call
+    R-&gt;&gt;R: Retry with jitter, then trip the breaker
+    R-&gt;&gt;I: Forward the call
+    I-&gt;&gt;F: Call the model deployment
+    F--&gt;&gt;I: Answer, with token counts
+    I-&gt;&gt;L: Record the tokens spent
+    I--&gt;&gt;R: Answer
+    R--&gt;&gt;B: Answer
+    B--&gt;&gt;Q: Answer
+    Note over R,X: If the model is unreachable, the free path answers instead
+</pre>
+</div>
+<figcaption><b>The paid path.</b> Budget first, resilience second, instrumentation third, the model
+last &mdash; and a free answer underneath all of it.</figcaption>
+</figure>
+
+<h2>The data model</h2>
+<p>There is no relational database here. Every table is an Azure Table: a
+<code>PartitionKey</code> that groups rows and a <code>RowKey</code> that names one. There are no
+foreign keys and no joins; relationships are expressed by choosing the same partition and by
+hashing the same fields into the row key.</p>
+
+<figure class="figure">
+<div class="mermaid-wrap">
+<pre class="mermaid">erDiagram
+    PLAYER_STATS {
+        string PartitionKey PK &quot;the game&quot;
+        string RowKey PK &quot;the sanitized player name&quot;
+    }
+    LEADERBOARD {
+        string PartitionKey PK &quot;the game, or the game plus week&quot;
+        string RowKey PK &quot;hash of the identity fields&quot;
+    }
+    POBRAWL_LADDER {
+        string PartitionKey PK &quot;pobrawlladder&quot;
+        string RowKey PK &quot;hash of the claim id&quot;
+    }
+    POBRAWL_FIGHTER_RATINGS {
+        string PartitionKey PK &quot;pobrawlelo&quot;
+        string RowKey PK &quot;the fighter id&quot;
+    }
+    POBRAWL_PLAYER_RATINGS {
+        string PartitionKey PK &quot;pobrawlplayerelo&quot;
+        string RowKey PK &quot;the principal id&quot;
+    }
+    PO_FUN_QUIZ_BANK {
+        string PartitionKey PK &quot;the category&quot;
+        string RowKey PK &quot;hash of the question text&quot;
+    }
+    AI_TOKEN_LEDGER {
+        string PartitionKey PK &quot;the identity&quot;
+        string RowKey PK &quot;the UTC day&quot;
+    }
+    POEVOSYSTEM_WORLDS {
+        string BlobName PK &quot;the world file&quot;
+    }
+</pre>
+</div>
+<figcaption><b>Entity model.</b> One shape for everything: a partition that groups and a key that
+names. The generic leaderboard descriptor means every game board is the same mechanism with
+different identity fields.</figcaption>
+</figure>
+
+<div class="note">
+<b>Leaderboards are one mechanism, not thirteen.</b> A game declares a
+<code>HighScoreDescriptor&lt;T&gt;</code> &mdash; the table, the partition, the fields that make up
+the row's identity, and how to rank it
+<a class="cite" href="https://github.com/punkouter27/PoMiniGames/blob/master/src/PoMiniGames.Infrastructure/Services/HighScoreDescriptor.cs#L32" title="open src/PoMiniGames.Infrastructure/Services/HighScoreDescriptor.cs line 32">src/PoMiniGames.Infrastructure/Services/HighScoreDescriptor.cs:32</a>. Changing the identity
+fields re-keys the board, which is why the existing rows keep their old row key and stop appearing
+on the new board.
+</div>
+
+<p class="snip-cap">src/PoMiniGames.Infrastructure/Services/StorageService.cs:24-37</p><pre class="snip"><code>    private const string PlayerStatsTable = &quot;PlayerStats&quot;;
+    private const string MarbleRaceTable = &quot;MarbleRaceHighScores&quot;;
+    private const string MarbleRaceRecordsTable = &quot;MarbleRaceMapRecords&quot;;
+    private const string PoBrawlTable = &quot;PoBrawlHighScores&quot;;
+    private const string PoBrawlLadderTable = &quot;PoBrawlLadder&quot;;
+    private const string PoBrawlEloTable = &quot;PoBrawlFighterRatings&quot;;
+    // The player-Elo table for live 1v1 over SignalR.
+    // Distinct from PoBrawlEloTable (which rates fighters from CPU-vs-CPU demo) —
+    // see PoBrawlPlayerRating&#x27;s remarks for why a single table cannot serve both.
+    private const string PoBrawlPlayerEloTable = &quot;PoBrawlPlayerRatings&quot;;
+    private const string PoRacerTable = &quot;PoRacerHighScores&quot;;
+    private const string PoVoxelStrikeTable = &quot;PoVoxelStrikeHighScores&quot;;
+    private const string PoCabinetTable = &quot;PoCabinetHighScores&quot;;
+    private const string PoMuleTable = &quot;PoMuleHighScores&quot;;</code></pre>
+
+<div class="scroll">
+<table>
+<thead><tr><th>Table</th><th>Partition</th><th>Row identity</th><th>Citation</th></tr></thead>
+<tbody>
+<tr><td><code>PlayerStats</code></td><td>the game key</td><td>the sanitized player name</td>
+<td><a class="cite" href="https://github.com/punkouter27/PoMiniGames/blob/master/src/PoMiniGames.Infrastructure/Services/StorageService.cs#L24" title="open src/PoMiniGames.Infrastructure/Services/StorageService.cs line 24">src/PoMiniGames.Infrastructure/Services/StorageService.cs:24</a></td></tr>
+<tr><td><code>MarbleRaceHighScores</code></td><td><code>marblerace</code></td>
+<td>PlayerInitials, UserId, IsGuest</td>
+<td><a class="cite" href="https://github.com/punkouter27/PoMiniGames/blob/master/src/PoMiniGames.Infrastructure/Services/StorageService.HighScores.cs#L71" title="open src/PoMiniGames.Infrastructure/Services/StorageService.HighScores.cs line 71">src/PoMiniGames.Infrastructure/Services/StorageService.HighScores.cs:71</a></td></tr>
+<tr><td><code>MarbleRaceMapRecords</code></td><td><code>marblerace</code></td><td>the map id</td>
+<td><a class="cite" href="https://github.com/punkouter27/PoMiniGames/blob/master/src/PoMiniGames.Infrastructure/Services/StorageService.HighScores.cs#L111" title="open src/PoMiniGames.Infrastructure/Services/StorageService.HighScores.cs line 111">src/PoMiniGames.Infrastructure/Services/StorageService.HighScores.cs:111</a></td></tr>
+<tr><td><code>PoBrawlHighScores</code></td><td><code>pobrawl</code></td><td>PlayerInitials</td>
+<td><a class="cite" href="https://github.com/punkouter27/PoMiniGames/blob/master/src/PoMiniGames.Infrastructure/Services/StorageService.HighScores.cs#L152" title="open src/PoMiniGames.Infrastructure/Services/StorageService.HighScores.cs line 152">src/PoMiniGames.Infrastructure/Services/StorageService.HighScores.cs:152</a></td></tr>
+<tr><td><code>PoBrawlLadder</code></td><td><code>pobrawlladder</code></td><td>a hash of the claim id</td>
+<td><a class="cite" href="https://github.com/punkouter27/PoMiniGames/blob/master/src/PoMiniGames.Infrastructure/Services/StorageService.PoBrawl.cs#L32" title="open src/PoMiniGames.Infrastructure/Services/StorageService.PoBrawl.cs line 32">src/PoMiniGames.Infrastructure/Services/StorageService.PoBrawl.cs:32</a></td></tr>
+<tr><td><code>PoBrawlFighterRatings</code></td><td><code>pobrawlelo</code></td><td>the canonical fighter id</td>
+<td><a class="cite" href="https://github.com/punkouter27/PoMiniGames/blob/master/src/PoMiniGames.Infrastructure/Services/StorageService.PoBrawl.cs#L167" title="open src/PoMiniGames.Infrastructure/Services/StorageService.PoBrawl.cs line 167">src/PoMiniGames.Infrastructure/Services/StorageService.PoBrawl.cs:167</a></td></tr>
+<tr><td><code>PoBrawlPlayerRatings</code></td><td><code>pobrawlplayerelo</code></td><td>the principal id</td>
+<td><a class="cite" href="https://github.com/punkouter27/PoMiniGames/blob/master/src/PoMiniGames.Infrastructure/Services/StorageService.PoBrawlOnline.cs#L153" title="open src/PoMiniGames.Infrastructure/Services/StorageService.PoBrawlOnline.cs line 153">src/PoMiniGames.Infrastructure/Services/StorageService.PoBrawlOnline.cs:153</a></td></tr>
+<tr><td><code>PoRacerHighScores</code></td><td><code>poracer</code></td>
+<td>FinalPosition, PlayerName, TotalTimeSeconds, UserId, TrackId</td>
+<td><a class="cite" href="https://github.com/punkouter27/PoMiniGames/blob/master/src/PoMiniGames.Infrastructure/Services/StorageService.HighScores.cs#L330" title="open src/PoMiniGames.Infrastructure/Services/StorageService.HighScores.cs line 330">src/PoMiniGames.Infrastructure/Services/StorageService.HighScores.cs:330</a></td></tr>
+<tr><td><code>PoCabinetHighScores</code></td><td><code>pocabinet</code></td>
+<td>PlayerName, UserId, IsGuest, TrackId</td>
+<td><a class="cite" href="https://github.com/punkouter27/PoMiniGames/blob/master/src/PoMiniGames.Infrastructure/Services/StorageService.HighScores.cs#L400" title="open src/PoMiniGames.Infrastructure/Services/StorageService.HighScores.cs line 400">src/PoMiniGames.Infrastructure/Services/StorageService.HighScores.cs:400</a></td></tr>
+<tr><td><code>PoVoxelStrikeHighScores</code></td><td><code>povoxelstrike</code></td>
+<td>PlayerName, UserId, IsGuest</td>
+<td><a class="cite" href="https://github.com/punkouter27/PoMiniGames/blob/master/src/PoMiniGames.Infrastructure/Services/StorageService.HighScores.cs#L263" title="open src/PoMiniGames.Infrastructure/Services/StorageService.HighScores.cs line 263">src/PoMiniGames.Infrastructure/Services/StorageService.HighScores.cs:263</a></td></tr>
+<tr><td><code>PoMuleHighScores</code></td><td><code>pomule</code></td><td>PlayerName, UserId, IsGuest</td>
+<td><a class="cite" href="https://github.com/punkouter27/PoMiniGames/blob/master/src/PoMiniGames.Infrastructure/Services/StorageService.HighScores.cs#L209" title="open src/PoMiniGames.Infrastructure/Services/StorageService.HighScores.cs line 209">src/PoMiniGames.Infrastructure/Services/StorageService.HighScores.cs:209</a></td></tr>
+<tr><td><code>PoFunQuizBank</code></td><td>the category</td><td>a hash of the question text</td>
+<td><a class="cite" href="https://github.com/punkouter27/PoMiniGames/blob/master/src/PoMiniGames.API/Features/PoFunQuiz/Storage/QuizBankRepository.cs#L28" title="open src/PoMiniGames.API/Features/PoFunQuiz/Storage/QuizBankRepository.cs line 28">src/PoMiniGames.API/Features/PoFunQuiz/Storage/QuizBankRepository.cs:28</a></td></tr>
+<tr><td><code>MatchHistory</code></td><td>the owner</td><td>the match id</td>
+<td><a class="cite" href="https://github.com/punkouter27/PoMiniGames/blob/master/src/PoMiniGames.Infrastructure/Services/StorageService.PlayerCard.cs#L10" title="open src/PoMiniGames.Infrastructure/Services/StorageService.PlayerCard.cs line 10">src/PoMiniGames.Infrastructure/Services/StorageService.PlayerCard.cs:10</a></td></tr>
+<tr><td><code>AiTokenLedger</code></td><td>the identity</td><td>the UTC day</td>
+<td><a class="cite" href="https://github.com/punkouter27/PoMiniGames/blob/master/src/PoMiniGames.API/AI/AiTokenLedgerStore.cs#L66" title="open src/PoMiniGames.API/AI/AiTokenLedgerStore.cs line 66">src/PoMiniGames.API/AI/AiTokenLedgerStore.cs:66</a></td></tr>
+<tr><td><code>PoEcosystemWorlds</code></td><td>Blob container <code>poecosystem-worlds</code></td>
+<td>the world file</td>
+<td><a class="cite" href="https://github.com/punkouter27/PoMiniGames/blob/master/src/PoMiniGames.API/Features/PoEcosystem/EcosystemWorldStore.cs#L37" title="open src/PoMiniGames.API/Features/PoEcosystem/EcosystemWorldStore.cs line 37">src/PoMiniGames.API/Features/PoEcosystem/EcosystemWorldStore.cs:37</a></td></tr>
+</tbody>
+</table>
+</div>
+
+<div class="note">
+<b>Weekly boards are the same board, re-partitioned.</b> A weekly leaderboard is the same table
+and the same descriptor, read from a partition that rolls over every Monday
+<a class="cite" href="https://github.com/punkouter27/PoMiniGames/blob/master/src/PoMiniGames.Infrastructure/Services/StorageService.HighScores.cs#L436" title="open src/PoMiniGames.Infrastructure/Services/StorageService.HighScores.cs line 436">src/PoMiniGames.Infrastructure/Services/StorageService.HighScores.cs:436</a>. That is why
+<code>GET /api/leaderboards/{game}?period=week</code> needs no new storage design.
+</div>
+
+<h2>Weekly boards</h2>
+
+<figure class="figure">
+<div class="mermaid-wrap">
+<pre class="mermaid">flowchart LR
+    All[&quot;All-time board&lt;br/&gt;partition: the game&quot;]
+    Week[&quot;Weekly board&lt;br/&gt;partition: the game plus this ISO week&quot;]
+    Read[&quot;GET /api/leaderboards/pobrawl&lt;br/&gt;period equals week&quot;]
+    Both[(&quot;One table, two partitions&quot;)]
+
+    All --&gt; Both
+    Week --&gt; Both
+    Read --&gt;|&quot;reads the weekly partition&quot;| Week
+    Read --&gt;|&quot;reads the base partition&quot;| All
+</pre>
+</div>
+<figcaption><b>One board, two questions.</b> The weekly view is a partition choice, not a second
+table.</figcaption>
+</figure>
+
+<h2>Where it runs</h2>
+
+<figure class="figure">
+<div class="mermaid-wrap">
+<pre class="mermaid">flowchart TB
+    User[&quot;Player&#x27;s browser&quot;]
+    Edge[&quot;Azure App Service&lt;br/&gt;Windows, F1 free tier&lt;br/&gt;the single origin&quot;]
+    Identity[&quot;Managed identity&lt;br/&gt;no key in code&quot;]
+    KV[&quot;Azure Key Vault&lt;br/&gt;PoMiniGames-- prefixed secrets&quot;]
+    Tables[(&quot;Storage account&lt;br/&gt;Tables and Blobs&quot;)]
+    Entra[&quot;Microsoft Entra ID&quot;]
+    Foundry[&quot;Azure AI Foundry&quot;]
+
+    User --&gt;|&quot;https&quot;| Edge
+    Edge --&gt;|&quot;DefaultAzureCredential&quot;| Tables
+    Edge --&gt;|&quot;reads secrets&quot;| KV
+    Edge --&gt;|&quot;validates tokens&quot;| Entra
+    Edge -.-&gt;|&quot;only when opted in&quot;| Foundry
+    Identity --&gt; Tables
+    Identity --&gt; Foundry
+</pre>
+</div>
+<figcaption><b>Production topology.</b> One App Service, one storage account, one identity. The CI
+workflow signs in with GitHub OIDC and deploys; nothing is deployed by hand.</figcaption>
+</figure>
+
+<div class="scroll">
+<table>
+<thead><tr><th>Piece</th><th>How it authenticates</th><th>Citation</th></tr></thead>
+<tbody>
+<tr><td>Azure services</td><td><code>DefaultAzureCredential</code> with a two-retry,
+three-second-timeout policy</td>
+<td><a class="cite" href="https://github.com/punkouter27/PoMiniGames/blob/master/src/PoMiniGames.API/Infrastructure/TelemetryExtensions.cs#L102" title="open src/PoMiniGames.API/Infrastructure/TelemetryExtensions.cs line 102">src/PoMiniGames.API/Infrastructure/TelemetryExtensions.cs:102</a></td></tr>
+<tr><td>Production secrets</td><td>Azure Key Vault, prefix <code>PoMiniGames--</code></td>
+<td><a class="cite" href="https://github.com/punkouter27/PoMiniGames/blob/master/src/PoMiniGames.API/Program.cs#L487" title="open src/PoMiniGames.API/Program.cs line 487">src/PoMiniGames.API/Program.cs:487</a></td></tr>
+<tr><td>Entra client ids</td><td>Required in Production:
+<code>PoMiniGames:MicrosoftAuth:ClientId</code> and <code>ApiClientId</code></td>
+<td><a class="cite" href="https://github.com/punkouter27/PoMiniGames/blob/master/src/PoMiniGames.API/Infrastructure/StartupSecretValidator.cs#L94" title="open src/PoMiniGames.API/Infrastructure/StartupSecretValidator.cs line 94">src/PoMiniGames.API/Infrastructure/StartupSecretValidator.cs:94</a></td></tr>
+<tr><td>CI sign-in</td><td>GitHub OIDC federated credential, no stored secret</td>
+<td><a class="cite" href="https://github.com/punkouter27/PoMiniGames/blob/master/.github/workflows/deploy.yml#L18" title="open .github/workflows/deploy.yml line 18">.github/workflows/deploy.yml:18</a></td></tr>
+</tbody>
+</table>
+</div>
+
+<h2>Health, and what the probes mean</h2>
+<div class="scroll">
+<table>
+<thead><tr><th>Probe</th><th>Touches</th><th>Use</th><th>Citation</th></tr></thead>
+<tbody>
+<tr><td><code>GET /health/live</code></td><td>Nothing at all</td>
+<td>Is the process up. Identical shape in every Po app, so a dashboard can poll them all</td>
+<td><a class="cite" href="https://github.com/punkouter27/PoMiniGames/blob/master/src/PoMiniGames.API/Infrastructure/PoPlatform.cs#L93" title="open src/PoMiniGames.API/Infrastructure/PoPlatform.cs line 93">src/PoMiniGames.API/Infrastructure/PoPlatform.cs:93</a></td></tr>
+<tr><td><code>GET /api/health</code></td><td>Every registered health check</td>
+<td>Are the dependencies reachable</td>
+<td><a class="cite" href="https://github.com/punkouter27/PoMiniGames/blob/master/src/PoMiniGames.API/Features/Health/HealthEndpoints.cs#L39" title="open src/PoMiniGames.API/Features/Health/HealthEndpoints.cs line 39">src/PoMiniGames.API/Features/Health/HealthEndpoints.cs:39</a></td></tr>
+<tr><td><code>GET /api/health/ping</code></td><td>Nothing at all</td>
+<td>A zero-dependency <code>pong</code></td>
+<td><a class="cite" href="https://github.com/punkouter27/PoMiniGames/blob/master/src/PoMiniGames.API/Features/Health/HealthEndpoints.cs#L43" title="open src/PoMiniGames.API/Features/Health/HealthEndpoints.cs line 43">src/PoMiniGames.API/Features/Health/HealthEndpoints.cs:43</a></td></tr>
+<tr><td><code>GET /health</code></td><td>Health checks, or the Blazor page</td>
+<td>Content-negotiated: JSON for monitors, the status page for a browser</td>
+<td><a class="cite" href="https://github.com/punkouter27/PoMiniGames/blob/master/src/PoMiniGames.API/Features/Health/HealthEndpoints.cs#L61" title="open src/PoMiniGames.API/Features/Health/HealthEndpoints.cs line 61">src/PoMiniGames.API/Features/Health/HealthEndpoints.cs:61</a></td></tr>
+</tbody>
+</table>
+</div>
+
+<div class="note">
+The Azure Table health check probes a real table with the filter
+<code>PartitionKey eq '__healthcheck__'</code> and, when no table name is configured, falls back to
+<code>pominigameshealth</code>
+<a class="cite" href="https://github.com/punkouter27/PoMiniGames/blob/master/src/PoMiniGames.Infrastructure/HealthChecks/AzureTableStorageHealthCheck.cs#L27" title="open src/PoMiniGames.Infrastructure/HealthChecks/AzureTableStorageHealthCheck.cs line 27">src/PoMiniGames.Infrastructure/HealthChecks/AzureTableStorageHealthCheck.cs:27</a>
+<a class="cite" href="https://github.com/punkouter27/PoMiniGames/blob/master/src/PoMiniGames.Infrastructure/HealthChecks/AzureTableStorageHealthCheck.cs#L67" title="open src/PoMiniGames.Infrastructure/HealthChecks/AzureTableStorageHealthCheck.cs line 67">src/PoMiniGames.Infrastructure/HealthChecks/AzureTableStorageHealthCheck.cs:67</a>. The
+deploy workflow's health gate checks both <code>/health/live</code> and <code>/health</code>.
+</div>
+
+</main>
+
+<footer class="foot">
+  <div class="wrap">
+    <div><b>PoMiniGames documentation suite</b> &middot; generated 2026-10-29 &middot; describes the code at commit
+      <a href="https://github.com/punkouter27/PoMiniGames/blob/master/commit/21eb48c938015bb685339b45c19994a100b775b9><code>21eb48c9</code></a>.</div>
+    <div>Sources: source code first, then configuration, then comments and this repository's README.
+      Every claim carries a <span class="cite">path:line</span> citation that links to the exact line on GitHub.</div>
+    <div class="tagrow">
+      <span class="pill">Mermaid 10.9.0 (pinned)</span>
+      <span class="pill">Inline CSS</span>
+      <span class="pill">Light / dark</span>
+      <span class="pill">3-tier detail toggle</span>
+      <span class="pill">No secrets included</span>
+    </div>
+  </div>
+</footer>
+
+<script src="https://cdn.jsdelivr.net/npm/mermaid@10.9.0/dist/mermaid.min.js"></script>
+<script>
+(function () {
+  var TIER_KEY = 'pomg-docs-tier';
+  var THEME_KEY = 'pomg-docs-theme';
+  var TIER_NAMES = { '1': 'Simple', '2': 'Architectural', '3': 'Deep dive' };
+
+  function readTier() {
+    try {
+      var v = localStorage.getItem(TIER_KEY);
+      return (v === '1' || v === '2' || v === '3') ? v : '2';
+    } catch (e) { return '2'; }
+  }
+  function readTheme() {
+    try {
+      var v = localStorage.getItem(THEME_KEY);
+      return (v === 'light' || v === 'dark') ? v : null;
+    } catch (e) { return null; }
+  }
+
+  var root = document.documentElement;
+  var tier = readTier();
+  root.setAttribute('data-tier', tier);
+  var theme = readTheme();
+  if (theme) root.setAttribute('data-theme', theme);
+
+  function paintTierButtons() {
+    Array.prototype.forEach.call(document.querySelectorAll('[data-set-tier]'), function (b) {
+      b.setAttribute('aria-pressed', String(b.getAttribute('data-set-tier') === tier));
+    });
+    Array.prototype.forEach.call(document.querySelectorAll('[data-tier-label]'), function (n) {
+      n.textContent = TIER_NAMES[tier];
+    });
+  }
+  paintTierButtons();
+
+  document.addEventListener('click', function (ev) {
+    var b = ev.target.closest ? ev.target.closest('[data-set-tier]') : null;
+    if (b) {
+      tier = b.getAttribute('data-set-tier');
+      root.setAttribute('data-tier', tier);
+      try { localStorage.setItem(TIER_KEY, tier); } catch (e) {}
+      paintTierButtons();
+      window.__docsPaintDiagrams && window.__docsPaintDiagrams(false);
+      return;
+    }
+    var t = ev.target.closest ? ev.target.closest('#themeToggle') : null;
+    if (t) {
+      var cur = root.getAttribute('data-theme');
+      if (!cur) {
+        var dark = window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches;
+        cur = dark ? 'dark' : 'light';
+      }
+      var next = cur === 'dark' ? 'light' : 'dark';
+      root.setAttribute('data-theme', next);
+      try { localStorage.setItem(THEME_KEY, next); } catch (e) {}
+      window.__docsPaintDiagrams && window.__docsPaintDiagrams(true);
+    }
+  });
+
+  // ----- Mermaid: theme-aware, rendered only when the container is visible -----
+  var rendered = new WeakSet();
+
+  function tokens() {
+    var cs = getComputedStyle(root);
+    var get = function (n) { return cs.getPropertyValue(n).trim(); };
+    return {
+      bg: get('--surface'), ink: get('--ink'), ink2: get('--ink-2'), muted: get('--muted'),
+      line: get('--line-strong'), accent: get('--accent'), s1: get('--s1'), s2: get('--s2'),
+      s3: get('--s3'), s4: get('--s4'), s5: get('--s5')
+    };
+  }
+
+  function visible(el) {
+    return !!(el.offsetWidth || el.offsetHeight || el.getClientRects().length);
+  }
+
+  window.__docsPaintDiagrams = function (force) {
+    if (!window.mermaid) return;
+    var all = Array.prototype.slice.call(document.querySelectorAll('.mermaid'));
+    var t = tokens();
+    window.mermaid.initialize({
+      startOnLoad: false,
+      securityLevel: 'strict',
+      theme: 'base',
+      fontFamily: 'system-ui, -apple-system, "Segoe UI", sans-serif',
+      flowchart: { htmlLabels: true, curve: 'basis', useMaxWidth: true },
+      sequence: { useMaxWidth: true, wrap: true },
+      themeVariables: {
+        background: t.bg, primaryColor: t.bg, primaryTextColor: t.ink,
+        primaryBorderColor: t.line, secondaryColor: t.bg, tertiaryColor: t.bg,
+        lineColor: t.ink2, textColor: t.ink, mainBkg: t.bg, nodeBorder: t.line,
+        clusterBkg: t.bg, clusterBorder: t.line, edgeLabelBackground: t.bg,
+        titleColor: t.ink, labelBoxBkgColor: t.bg, labelBoxBorderColor: t.line,
+        actorBkg: t.bg, actorBorder: t.line, actorTextColor: t.ink,
+        signalColor: t.ink2, signalTextColor: t.ink, labelBoxTextColor: t.ink2,
+        noteBkgColor: t.bg, noteTextColor: t.ink, noteBorderColor: t.line,
+        pie1: t.s1, pie2: t.s2, pie3: t.s3, pie4: t.s4, pie5: t.s5,
+        todayColor: t.s5, doneColor: t.s3, taskTextColor: t.ink, taskTextDarkColor: t.ink,
+        taskTextLightColor: t.ink, taskTextOutsideColor: t.ink, taskTextOutsideDarkColor: t.ink
+      }
+    });
+    var targets = all.filter(function (el) {
+      if (!visible(el)) return false;
+      return force || !rendered.has(el);
+    });
+    if (!targets.length) return;
+    targets.forEach(function (el) {
+      if (!el.dataset.src) el.dataset.src = el.textContent.trim();
+      el.removeAttribute('data-processed');
+      el.textContent = el.dataset.src;
+      rendered.add(el);
+    });
+    try {
+      window.mermaid.run({ nodes: targets });
+    } catch (e) {
+      /* a broken diagram must never take the page down */
+    }
+  };
+
+  function boot() {
+    if (window.mermaid && window.mermaid.initialize) {
+      window.__docsPaintDiagrams(true);
+    } else if (window.mermaid) {
+      window.mermaid.initialize({ startOnLoad: false });
+      window.__docsPaintDiagrams(true);
+    }
+  }
+
+  if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', boot);
+  } else {
+    boot();
+  }
+
+  // Keep the shell and the report it frames in sync (artifact.html -> iframe).
+  window.addEventListener('message', function (ev) {
+    var d = ev.data || {};
+    if (d.type === 'pomg-docs-tier' && (d.tier === '1' || d.tier === '2' || d.tier === '3')) {
+      tier = d.tier;
+      root.setAttribute('data-tier', tier);
+      try { localStorage.setItem(TIER_KEY, tier); } catch (e) {}
+      paintTierButtons();
+      window.__docsPaintDiagrams && window.__docsPaintDiagrams(false);
+    } else if (d.type === 'pomg-docs-theme' && (d.theme === 'light' || d.theme === 'dark')) {
+      root.setAttribute('data-theme', d.theme);
+      try { localStorage.setItem(THEME_KEY, d.theme); } catch (e) {}
+      window.__docsPaintDiagrams && window.__docsPaintDiagrams(true);
+    }
+  });
+
+  window.addEventListener('load', function () {
+    window.__docsPaintDiagrams && window.__docsPaintDiagrams(false);
+  });
+})();
+</script>
+</body>
+</html>
