@@ -138,6 +138,39 @@ jobs:
         if: github.event_name == 'push' && github.ref == 'refs/heads/master'
         run: dotnet publish src/PoMiniGames.API/PoMiniGames.API.csproj -c Release -o ./publish
 
+      # The documentation suite under DOCS/ ships with the app as static files, so
+      # it has a public URL of its own and is deployed by the same CI pass that
+      # deploys the app. It is copied into the publish output after the publish
+      # step - nothing in the app's build or its runtime changes.
+      - name: Stage the documentation suite into the publish output
+        if: github.event_name == 'push' && github.ref == 'refs/heads/master'
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p ./publish/wwwroot/docs
+          cp -r DOCS/. ./publish/wwwroot/docs/
+          LATEST=$(ls -1 DOCS | grep -E '^[0-9]{8}$' | sort | tail -1 || true)
+          if [ -z "$LATEST" ]; then
+            echo "::warning::No dated documentation suite found under DOCS/; nothing to link to."
+            exit 0
+          fi
+          echo "Latest documentation suite: $LATEST"
+          cat > ./publish/wwwroot/docs/index.html <<HTML
+          <!doctype html>
+          <html lang="en">
+          <head>
+          <meta charset="utf-8">
+          <meta http-equiv="refresh" content="0; url=$LATEST/artifact.html">
+          <link rel="canonical" href="$LATEST/artifact.html">
+          <title>PoMiniGames documentation</title>
+          </head>
+          <body style="font:16px system-ui,sans-serif;padding:2rem">
+          <p>Opening <a href="$LATEST/artifact.html">the PoMiniGames documentation suite</a>&hellip;</p>
+          <p><a href="$LATEST/index.html">Or start with the plain-English overview</a>.</p>
+          </body>
+          </html>
+          HTML
+
       - name: Upload publish artifact (push-to-master only)
         if: github.event_name == 'push' && github.ref == 'refs/heads/master'
         uses: actions/upload-artifact@v4
