@@ -149,13 +149,6 @@ public sealed record ArenaDebrief(ArenaTeamDebrief Blue, ArenaTeamDebrief Red, A
 
 public sealed record ArenaBlackBoxView(int Frame, int Frames, double Seconds, bool Playing, double Speed, int Decisions);
 
-/// <summary>
-/// What the page remembers between visits: the last two rosters as creature snapshots, so a
-/// creature outside the current library page is never mistaken for a deleted one. The server
-/// re-resolves every id at deploy, so a stale snapshot cannot put an outdated design in a match.
-/// </summary>
-public sealed record ArenaSavedRosters(ArenaCreature?[] Blue, ArenaCreature?[] Red);
-
 /// <summary>A named squad saved from either team column (localStorage), loadable into either.</summary>
 public sealed record ArenaSquad(string Name, ArenaCreature?[] Slots);
 
@@ -164,7 +157,6 @@ public sealed record ArenaSquad(string Name, ArenaCreature?[] Slots);
 [JsonSerializable(typeof(ArenaHudView))]
 [JsonSerializable(typeof(ArenaMatchEndView))]
 [JsonSerializable(typeof(ArenaBlackBoxView))]
-[JsonSerializable(typeof(ArenaSavedRosters))]
 [JsonSerializable(typeof(List<ArenaSquad>))]
 
 internal sealed partial class ArenaUiJsonContext : JsonSerializerContext

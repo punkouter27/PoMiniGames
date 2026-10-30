@@ -21,7 +21,6 @@ namespace PoMiniGamesClient.Games.PoJevArena;
 public partial class PoJevArenaPage : ComponentBase, IAsyncDisposable
 {
     private const string CanvasId = "jevArenaCanvas";
-    private const string RosterKey = "pojevarena.rosters.v1";
     private const string SquadsKey = "pojevarena.squads.v1";
     private const string AutoCameraKey = "pojevarena.autocam";
     /// <summary>Settings sheet (ArenaAiPrefs): the brain the player asked for, and the on-device model switch.</summary>
@@ -29,6 +28,8 @@ public partial class PoJevArenaPage : ComponentBase, IAsyncDisposable
     internal const string LocalAiPrefKey = "pomini_local_ai";
     private const int MaxSquads = 20;
     internal const string FilterAll = "all";
+    /// <summary>How long the demo holds the draft screen before it deploys the match by itself.</summary>
+    private const int DemoDraftSeconds = 30;
     /// <summary>
     /// Worst case for a 3:00 Jev match: 20 units asked at most every 2 s (most ask far less, on a
     /// state change only, and the server reuses cached answers); below this a deploy may run out.
@@ -36,8 +37,11 @@ public partial class PoJevArenaPage : ComponentBase, IAsyncDisposable
     private const long CallsPerFullMatch = 1_800;
 
     private enum Phase { Intro, Draft, Battle, Replay }
-    private enum TwoPlayerStep { Blue, Red, Ready }
 
+    /// <summary>
+    /// A legacy mode segment (<c>/pojevarena/1player</c>). The arena is demo-only now, so the
+    /// segment changes nothing: every address runs the same self-playing demo.
+    /// </summary>
     [Parameter] public string? ModeSegment { get; set; }
 
     [Inject] private IJSRuntime JS { get; set; } = default!;
@@ -46,7 +50,6 @@ public partial class PoJevArenaPage : ComponentBase, IAsyncDisposable
     [Inject] private PlayerNameService PlayerNames { get; set; } = default!;
 
     private Phase _phase = Phase.Intro;
-    private TwoPlayerStep _twoPlayerStep = TwoPlayerStep.Blue;
     private string _playerName = "";
 
     private ArenaStatus? _status;
@@ -59,7 +62,6 @@ public partial class PoJevArenaPage : ComponentBase, IAsyncDisposable
 
     private readonly ArenaCreature?[] _blue = new ArenaCreature?[PoJevArenaCatalog.TeamSize];
     private readonly ArenaCreature?[] _red = new ArenaCreature?[PoJevArenaCatalog.TeamSize];
-    private bool _blueLocked, _redLocked;
 
     private bool _factoryOpen;
     private ArenaCreature? _editing;
@@ -68,6 +70,7 @@ public partial class PoJevArenaPage : ComponentBase, IAsyncDisposable
 
     private ArenaMatchTicket? _ticket;
     private bool _deploying, _pendingDeploy;
+    private bool _deployRequested;
     private ArenaHudView? _hud;
     // The two bits of markup the 4 Hz HUD pump changes: the arena's glass strip and the brain chip.
     private HudRegion? _hudRegion;
@@ -89,9 +92,6 @@ public partial class PoJevArenaPage : ComponentBase, IAsyncDisposable
     private DotNetObjectReference<PoJevArenaPage>? _self;
     private CancellationTokenSource? _demoLoop;
 
-    private GameMode Mode => GameModes.Parse(ModeSegment);
-    private bool IsDemo => Mode == GameMode.Demo;
-    private bool IsTwoPlayer => Mode == GameMode.TwoPlayer;
     private bool Drafting => _phase == Phase.Draft;
     private bool Configured => _status?.Configured == true;
     /// <summary>The paid Jev brain answers the next match: asked for, on offer, not served on-device.</summary>
@@ -99,9 +99,6 @@ public partial class PoJevArenaPage : ComponentBase, IAsyncDisposable
     /// <summary>The running (or last) match is on paid Jev.</summary>
     private bool LiveJev => _ticket?.Brain == ArenaBrains.Jev;
     private bool ShowDebrief => _showDebrief && _phase == Phase.Replay && _result?.Debrief is not null;
-
-    private GameIntro.IntroMode IntroMode => IsDemo ? GameIntro.IntroMode.Demo
-        : IsTwoPlayer ? GameIntro.IntroMode.TwoPlayer : GameIntro.IntroMode.OnePlayer;
 
     /// <summary>The one brain chip: which brain plays (and Jev's allowance) while drafting, this match's moves once it runs.</summary>
     private string StatusText => _status is null ? "Checking the arena…"
@@ -132,18 +129,11 @@ public partial class PoJevArenaPage : ComponentBase, IAsyncDisposable
 
     private bool RostersFull => _blue.All(c => c is not null) && _red.All(c => c is not null);
 
-    /// <summary>Whether a side takes picks now: always in 1P; in hot-seat only on that player's turn.</summary>
-    private bool CanDraftFor(string team) => Drafting && (team == "blue"
-        ? !_blueLocked && (!IsTwoPlayer || _twoPlayerStep == TwoPlayerStep.Blue)
-        : !_redLocked && (!IsTwoPlayer || _twoPlayerStep == TwoPlayerStep.Red));
-
-    private bool CanDeploy => Configured && RostersFull && !_deploying
-        && (!IsTwoPlayer || _twoPlayerStep == TwoPlayerStep.Ready);
+    private bool CanDeploy => Configured && RostersFull && !_deploying;
 
     private string DeployHint =>
         !Configured ? "Deploy needs Jev."
         : !RostersFull ? "Fill both teams to deploy."
-        : IsTwoPlayer && _twoPlayerStep != TwoPlayerStep.Ready ? "Both players must lock their team."
         : UsesJev ? "Jev is asked only when a unit's situation changes: up to about 1,800 calls per match."
         : "Free: the local brain makes every call. Pick Jev in Settings.";
 
@@ -154,7 +144,6 @@ public partial class PoJevArenaPage : ComponentBase, IAsyncDisposable
         {
             if (!Configured) return null;
             var missing = _blue.Count(c => c is null) + _red.Count(c => c is null);
-            if (IsTwoPlayer) return _twoPlayerStep == TwoPlayerStep.Ready ? null : _twoPlayerStep == TwoPlayerStep.Blue ? "Player 1 drafts Blue" : "Player 2 drafts Red";
             if (missing > 0) return $"{missing} to draft";
             return UsesJev && (_status?.Remaining ?? long.MaxValue) < CallsPerFullMatch
                 ? string.Create(CultureInfo.InvariantCulture, $"Only {_status!.Remaining:N0} AI moves left today")
@@ -180,12 +169,10 @@ public partial class PoJevArenaPage : ComponentBase, IAsyncDisposable
         _ => true,
     };
 
-    private static double Points(ArenaCreature?[] team) => team.Sum(c => c?.BuildCost ?? 0);
-
     private string ResultHeadline => _result is null ? "" : _result.Winner switch
     {
-        "blue" => IsTwoPlayer ? "Player 1 (Blue) wins" : "Blue wins",
-        "red" => IsTwoPlayer ? "Player 2 (Red) wins" : "Red wins",
+        "blue" => "Blue wins",
+        "red" => "Red wins",
         _ => "Draw",
     };
 
@@ -230,7 +217,6 @@ public partial class PoJevArenaPage : ComponentBase, IAsyncDisposable
         _playerName = PlayerNames.GetPlayerName();
         _self = DotNetObjectReference.Create(this);
         await Task.WhenAll(LoadStatusAsync(), LoadLibraryAsync(), LoadPrefsAsync());
-        if (!IsDemo && !IsTwoPlayer) await RestoreRostersAsync();
     }
 
     protected override async Task OnAfterRenderAsync(bool firstRender)
@@ -268,7 +254,7 @@ public partial class PoJevArenaPage : ComponentBase, IAsyncDisposable
     private async Task StartAsync()
     {
         _phase = Phase.Draft;
-        if (IsDemo) await RunDemoAsync();
+        await RunDemoAsync();
     }
 
     // ── Server state ─────────────────────────────────────────────────────────
@@ -299,16 +285,15 @@ public partial class PoJevArenaPage : ComponentBase, IAsyncDisposable
 
     private ArenaCreature?[] TeamOf(string team) => team == "blue" ? _blue : _red;
 
-    private async Task DraftAsync((ArenaCreature Creature, string Team) pick)
+    private void DraftAsync((ArenaCreature Creature, string Team) pick)
     {
-        if (!CanDraftFor(pick.Team)) return;
+        if (!Drafting) return;
         var team = TeamOf(pick.Team);
         var free = Array.IndexOf(team, null);
         if (free < 0) { _toast = $"{(pick.Team == "blue" ? "Blue" : "Red")} is full. Click a slot to free it."; return; }
 
         team[free] = pick.Creature;
         _toast = null;
-        await SaveRostersAsync();
     }
 
     private async Task OnSlotAsync(string team, int slot)
@@ -316,7 +301,6 @@ public partial class PoJevArenaPage : ComponentBase, IAsyncDisposable
         if (Drafting)
         {
             TeamOf(team)[slot] = null;
-            await SaveRostersAsync();
             return;
         }
 
@@ -324,43 +308,17 @@ public partial class PoJevArenaPage : ComponentBase, IAsyncDisposable
         await SafeJsAsync("PoJevArena.select", index);
     }
 
-    private async Task ClearTeam(string team)
-    {
-        Array.Clear(TeamOf(team));
-        await SaveRostersAsync();
-    }
+    private void ClearTeam(string team) => Array.Clear(TeamOf(team));
 
     /// <summary>Fills a side's empty slots with random picks from the presets and the loaded library.</summary>
-    private async Task FillAsync(string team)
+    private void FillAsync(string team)
     {
         var slots = TeamOf(team);
         ArenaCreature[] pool = [.. PoJevArenaCatalog.Presets, .. _library];
         for (var i = 0; i < slots.Length; i++) slots[i] ??= pool[Random.Shared.Next(pool.Length)];
-        await SaveRostersAsync();
     }
 
-    private async Task CopyBlueAsync()
-    {
-        Array.Copy(_blue, _red, _red.Length);
-        await SaveRostersAsync();
-    }
-
-    /// <summary>Hot-seat: Blue's lock hands the device straight to Player 2; Red's lock deploys.</summary>
-    private async Task LockAsync(string team)
-    {
-        if (team == "blue")
-        {
-            _blueLocked = true;
-            _twoPlayerStep = TwoPlayerStep.Red;
-            _toast = "Blue is locked and hidden. Pass the device to Player 2.";
-            return;
-        }
-
-        _redLocked = true;
-        _twoPlayerStep = TwoPlayerStep.Ready;
-        _toast = null;
-        if (CanDeploy) await DeployAsync();
-    }
+    private void CopyBlueAsync() => Array.Copy(_blue, _red, _red.Length);
 
     // ── Squads (localStorage) ────────────────────────────────────────────────
 
@@ -375,7 +333,7 @@ public partial class PoJevArenaPage : ComponentBase, IAsyncDisposable
         await SaveSquadsAsync();
     }
 
-    private async Task LoadSquadAsync(string team, string name)
+    private void LoadSquadAsync(string team, string name)
     {
         if (_squads.Find(s => s.Name == name) is not { } squad) return;
         var fresh = FreshCreatures();
@@ -385,7 +343,6 @@ public partial class PoJevArenaPage : ComponentBase, IAsyncDisposable
             var c = squad.Slots.ElementAtOrDefault(i);
             slots[i] = c is null ? null : fresh.GetValueOrDefault(c.Id) ?? c;
         }
-        await SaveRostersAsync();
     }
 
     private async Task DeleteSquadAsync(string name)
@@ -438,46 +395,11 @@ public partial class PoJevArenaPage : ComponentBase, IAsyncDisposable
                 if (_blue[i]?.Id == doomed.Id) _blue[i] = null;
                 if (_red[i]?.Id == doomed.Id) _red[i] = null;
             }
-            await SaveRostersAsync();
             await LoadLibraryAsync();
         }
     }
 
-    // ── Rosters and prefs in localStorage (rosters 1P only; 2P starts clean so neither player sees the other's) ──
-
-    private async Task SaveRostersAsync()
-    {
-        if (IsDemo || IsTwoPlayer) return;
-        var saved = new ArenaSavedRosters([.. _blue], [.. _red]);
-        try { await Storage.SetItemAsStringAsync(RosterKey, JsonSerializer.Serialize(saved, ArenaUiJsonContext.Default.ArenaSavedRosters)); }
-        catch { /* storage blocked (private mode): rosters just don't persist */ }
-    }
-
-    private async Task RestoreRostersAsync()
-    {
-        ArenaSavedRosters? saved = null;
-        try
-        {
-            var raw = await Storage.GetItemAsStringAsync(RosterKey);
-            if (!string.IsNullOrEmpty(raw)) saved = JsonSerializer.Deserialize(raw, ArenaUiJsonContext.Default.ArenaSavedRosters);
-        }
-        catch { return; }
-        if (saved is null) return;
-
-        // Snapshots, refreshed from the current library page when the creature is on it. A
-        // creature deleted since is only discovered at deploy, where the server says so.
-        var fresh = FreshCreatures();
-        void Fill(ArenaCreature?[]? from, ArenaCreature?[] into)
-        {
-            if (from is null) return;
-            for (var i = 0; i < Math.Min(from.Length, into.Length); i++)
-            {
-                if (from[i] is { } c) into[i] = fresh.GetValueOrDefault(c.Id) ?? c;
-            }
-        }
-        Fill(saved.Blue, _blue);
-        Fill(saved.Red, _red);
-    }
+    // ── Squads and prefs in localStorage ─────────────────────────────────────
 
     private Dictionary<string, ArenaCreature> FreshCreatures() =>
         PoJevArenaCatalog.Presets.Concat(_library).DistinctBy(c => c.Id).ToDictionary(c => c.Id);
@@ -527,6 +449,12 @@ public partial class PoJevArenaPage : ComponentBase, IAsyncDisposable
 
     // ── Battle ───────────────────────────────────────────────────────────────
 
+    /// <summary>
+    /// The visitor pressed Deploy on the draft screen. The demo owns the deploy, so the
+    /// request is recorded and the demo's loop starts the match on its next tick.
+    /// </summary>
+    private void RequestDeploy() => _deployRequested = true;
+
     /// <returns>True when the match was registered and the arena is about to mount.</returns>
     private async Task<bool> DeployAsync()
     {
@@ -535,7 +463,7 @@ public partial class PoJevArenaPage : ComponentBase, IAsyncDisposable
         _toast = null;
         await LoadBrainPrefsAsync();
         var (ticket, error) = await Api.RegisterMatchAsync(new ArenaMatchRequest(
-            IsDemo ? ArenaMode.Demo : IsTwoPlayer ? ArenaMode.TwoPlayer : ArenaMode.OnePlayer,
+            ArenaMode.Demo,
             _blue.Select(c => c!.Id).ToArray(),
             _red.Select(c => c!.Id).ToArray(),
             _wantsJev && !_onDevice ? ArenaBrains.Jev : ArenaBrains.Local));
@@ -630,8 +558,8 @@ public partial class PoJevArenaPage : ComponentBase, IAsyncDisposable
     {
         _result = JsonSerializer.Deserialize(json, ArenaUiJsonContext.Default.ArenaMatchEndView);
         _phase = Phase.Replay;
-        // The debrief is the first thing a player sees after the whistle (the demo goes straight to its highlight replay).
-        _showDebrief = !IsDemo;
+        // The demo goes straight to its highlight replay: the debrief is a player's read-out.
+        _showDebrief = false;
         _resultNote = "recording…";
         await InvokeAsync(StateHasChanged);
 
@@ -699,6 +627,16 @@ public partial class PoJevArenaPage : ComponentBase, IAsyncDisposable
 
             FillDemoTeam(_blue, rng);
             FillDemoTeam(_red, rng);
+            _deployRequested = false;
+            await InvokeAsync(StateHasChanged);
+
+            // The draft screen is the showcase: both squads are on show, and a visitor may
+            // take the match and deploy it now. Left alone, the demo deploys by itself.
+            var draftDeadline = DateTime.UtcNow.AddSeconds(DemoDraftSeconds);
+            while (!ct.IsCancellationRequested && !_deployRequested && DateTime.UtcNow < draftDeadline)
+                await Delay(250, ct);
+            if (ct.IsCancellationRequested) return;
+
             if (!await DeployAsync()) return;
             await InvokeAsync(StateHasChanged);
 

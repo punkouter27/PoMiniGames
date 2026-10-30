@@ -228,14 +228,10 @@ public sealed record EcoLineage(
     int Descendants,
     int Generation);
 
-/// <summary>Result of probing IndexedDB for a saved world.</summary>
-public sealed record EcoSaveInfo(bool Exists, int Seed, int Tick, int Year, long SavedAt, int[]? Counts);
-
 [JsonSerializable(typeof(EcoStats))]
 [JsonSerializable(typeof(EcoEvent[]))]
 [JsonSerializable(typeof(EcoDetail))]
 [JsonSerializable(typeof(EcoLineage))]
-[JsonSerializable(typeof(EcoSaveInfo))]
 [JsonSerializable(typeof(EcoAlmanac))]
 [JsonSerializable(typeof(EcoThought[]))]
 [JsonSerializable(typeof(TribeStateDto[]))]

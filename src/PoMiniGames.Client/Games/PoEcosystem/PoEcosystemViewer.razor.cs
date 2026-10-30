@@ -25,9 +25,6 @@ public partial class PoEcosystemViewer : ComponentBase, IAsyncDisposable
     private const string TourDoneKey = "poeco:tourDone";
     private const int TicksPerYear = 600;   // YEAR_SECONDS / TICK_SECONDS in sim/core/config.js
 
-    /// <summary>The kiosk: a fresh island every time, never saved (the page's /demo route).</summary>
-    [Parameter] public bool IsDemo { get; set; }
-
     /// <summary>A shared island's code from <c>?island=CODE</c>: boot straight into a visit of it.</summary>
     [Parameter] public string? VisitCode { get; set; }
 
@@ -53,7 +50,6 @@ public partial class PoEcosystemViewer : ComponentBase, IAsyncDisposable
     private EcoDetail? _detail;
     private InspectorPopover? _inspector;
     private EcoLineage? _lineage;
-    private EcoSaveInfo? _resumePrompt;
     private EcoWorldMeta[] _worlds = [];
     private EcoSharedWorld[] _gallery = [];
     private string? _banner;
@@ -143,34 +139,28 @@ public partial class PoEcosystemViewer : ComponentBase, IAsyncDisposable
         await Viewport.RefreshAsync();
         _narrow = Viewport.IsNarrow;
 
-        // A demo always starts a fresh island and a share link goes straight to the visit,
-        // so neither asks whether there is an island to resume.
+        // The ecosystem is demo-only: every visit opens a fresh island and a share link
+        // sails straight to the visited one. Nothing is kept in this browser, so there is
+        // never an island to ask about.
         var visiting = !string.IsNullOrWhiteSpace(VisitCode);
-        var save = IsDemo || visiting ? new EcoSaveInfo(false, 0, 0, 0, 0, null) : await Interop.ProbeSaveAsync();
-        if (save.Exists) _resumePrompt = save;
-        else
-        {
-            await BootAsync(resume: false);
-            if (visiting) await VisitAsync(VisitCode!.Trim());
-        }
+        await BootAsync();
+        if (visiting) await VisitAsync(VisitCode!.Trim());
         await InvokeAsync(StateHasChanged);
     }
 
-    private async Task BootAsync(bool resume)
+    private async Task BootAsync()
     {
-        _resumePrompt = null;
         _booted = true;
         await InvokeAsync(StateHasChanged);   // the container must exist before the engine starts
         var ok = await Interop.StartAsync(
             containerId: "poeco-world",
             minimapId: "poeco-minimap",
             seed: string.IsNullOrWhiteSpace(_seedInput) ? null : _seedInput,
-            resume: resume,
+            resume: false,
             lowEnd: _narrow,
-            demo: IsDemo,
-            // Neither a demo nor the island booted only to be replaced by a visit is saved:
-            // the island this browser already holds stays exactly as it was left.
-            ephemeral: IsDemo || !string.IsNullOrWhiteSpace(VisitCode));
+            demo: true,
+            // The island is a demo: it runs, and nothing it does is written to this browser.
+            ephemeral: true);
         if (!ok) _error = "The island engine could not start. Your browser may not support WebGL2.";
         _sound = await Interop.SoundEnabledAsync();
         _viewSettings = await Interop.SettingsAsync();
@@ -184,7 +174,6 @@ public partial class PoEcosystemViewer : ComponentBase, IAsyncDisposable
         _seedInput = seed.ToString();
         _seed = seed;
         _past = past;
-        if (_returning) { _returning = false; _visiting = false; }
         _banner = null;
         _lastStanding = -1;
         _lineage = null;
@@ -403,11 +392,10 @@ public partial class PoEcosystemViewer : ComponentBase, IAsyncDisposable
             Toasts.Show("The simulation stopped unexpectedly and was resumed from its last autosave.", ToastType.Warning);
             return;
         }
-        // The time machine failing (a decade no longer kept, no island to return to) is a
-        // message, not a broken engine: the world on screen is still running.
+        // The time machine failing (a decade no longer kept) is a message, not a broken
+        // engine: the world on screen is still running.
         if (where == "keyframe")
         {
-            _returning = false;
             Toasts.Show(message, ToastType.Warning);
             return;
         }
@@ -668,7 +656,8 @@ public partial class PoEcosystemViewer : ComponentBase, IAsyncDisposable
             _log.Clear();
             _dashboardOpen = false;
             _visiting = false;
-            await Interop.ImportSnapshotAsync(bytes, ephemeral: false);
+            // A demo keeps no island of its own: the loaded world is watched, not adopted.
+            await Interop.ImportSnapshotAsync(bytes, ephemeral: true);
             _cloudMessage = null;
         }
         _cloudBusy = false;
@@ -775,16 +764,17 @@ public partial class PoEcosystemViewer : ComponentBase, IAsyncDisposable
         return Interop.OpenKeyframeAsync(year).AsTask();
     }
 
-    /// <summary>Leave a past decade or a shared island for the island this browser holds.</summary>
+    /// <summary>
+    /// Leave a past decade or a shared island for the island this visitor started with.
+    /// A demo keeps no island of its own, so "home" is that island started over.
+    /// </summary>
     private Task ReturnHomeAsync()
     {
         _log.Clear();
         _dashboardOpen = false;
-        _returning = true;      // the visit ends when the island answers (OnReady), not before
-        return Interop.ReturnHomeAsync().AsTask();
+        _visiting = false;
+        return Interop.NewWorldAsync(_seedInput).AsTask();
     }
-
-    private bool _returning;
 
     /// <summary>
     /// The field journal as a printable page: the timeline and the field notes. The engine builds it in a throwaway frame and calls the browser's print
@@ -913,21 +903,6 @@ public partial class PoEcosystemViewer : ComponentBase, IAsyncDisposable
     }
 
     private Task TouchEnd(TouchEventArgs e) => Interop.TouchReleaseAsync().AsTask();
-
-    // The counts come from a saved world, so a snapshot written by another schema could
-    // carry a shorter array — checking the length keeps the resume prompt from throwing.
-    private static string Counts(int[]? counts) =>
-        counts is not { Length: EcoSpeciesInfo.Count } c ? "an empty island"
-        : string.Join(", ", Enumerable.Range(0, EcoSpeciesInfo.Count).Select(s => $"{c[s]} {EcoSpeciesInfo.PluralOf(s).ToLowerInvariant()}"));
-
-    private static string Ago(long savedAtMs)
-    {
-        var span = DateTimeOffset.UtcNow - DateTimeOffset.FromUnixTimeMilliseconds(savedAtMs);
-        return span.TotalMinutes < 1 ? "moments ago"
-            : span.TotalHours < 1 ? $"{(int)span.TotalMinutes} min ago"
-            : span.TotalDays < 1 ? $"{(int)span.TotalHours} h ago"
-            : $"{(int)span.TotalDays} d ago";
-    }
 
     /// <summary>
     /// The minimap is the camera control: click near a tribe's camp to fly to it, anywhere

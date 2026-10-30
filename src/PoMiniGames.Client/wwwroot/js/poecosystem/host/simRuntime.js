@@ -4,7 +4,7 @@
 //
 // In:  probe · init · newWorld · setSpeed · pause · resume · select · saveNow · recycle ·
 //      debug · exportTelemetry · lineage · rename · watch · exportSnapshot · importSnapshot ·
-//      find · kin · heat · keyframes · openKeyframe · returnHome · dispose
+//      find · kin · heat · keyframes · openKeyframe · dispose
 // Out: probeResult · ready · terrain · frame (transferred) · tiles · stats · events ·
 //      thoughts · detail · saved · debugResult · telemetry · lineage ·
 //      snapshotBytes (transferred) · history · found · kin · heat (transferred) · keyframes · error
@@ -220,8 +220,11 @@ export function createSimRuntime(post, deps = {}) {
           return;
         case 'init': boot(msg); return;
         case 'newWorld':
-          ephemeral = false; past = -1;
-          if (idb) { deleteWorld(idb).catch(() => {}); clearKeyframes(idb).catch(() => {}); }
+          // The island on screen is replaced. The island is a demo, so it stays ephemeral:
+          // the new world is watched too, never written to this browser, and the island
+          // stored here is left exactly as it was.
+          past = -1;
+          if (!ephemeral && idb) { deleteWorld(idb).catch(() => {}); clearKeyframes(idb).catch(() => {}); }
           world?.physics.dispose();
           world = buildWorld(msg.seed | 0);
           announce(false);
@@ -275,16 +278,8 @@ export function createSimRuntime(post, deps = {}) {
           }).catch((err) => post({ type: 'error', where: 'keyframe', message: String(err?.message ?? err) }));
           return;
         }
-        case 'returnHome':
-          if (!idb) return;
-          loadWorld(idb).then((snap) => {
-            if (disposed) return;
-            const restored = snap ? restoreWorld(snap, { CANNON, caps }) : null;
-            if (!restored) { post({ type: 'error', where: 'keyframe', message: 'There is no saved island of your own to return to.' }); return; }
-            adopt(restored, -1);
-          }).catch((err) => post({ type: 'error', where: 'keyframe', message: String(err?.message ?? err) }));
-          return;
         case 'saveNow': lastSaveWall = now(); save(msg.reason ?? 'manual'); return;
+
         case 'recycle': if (msg.buffer && pool.length < HOST.frameBuffers) pool.push(msg.buffer); return;
         case 'debug': if (world) post({ type: 'debugResult', op: msg.op, result: world.debug(msg.op, msg.arg ?? {}) }); return;
         case 'lineage': if (world) post({ type: 'lineage', handle: msg.handle, tree: world.lineageOf(msg.handle) }); return;

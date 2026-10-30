@@ -9,18 +9,6 @@
        "shockwave" cue that used to hang off it went with the rest of the powers. *@
     <div id="poeco-world" class="poeco-world" role="img" aria-label="First-person view of the living island"></div>
 
-    @if (_resumePrompt is not null)
-    {
-        <div class="poeco-resume" role="dialog" aria-label="Resume or start a new world">
-            <h2>An island is waiting</h2>
-            <p>Year @_resumePrompt.Year, @Counts(_resumePrompt.Counts) — saved @Ago(_resumePrompt.SavedAt).</p>
-            <div class="poeco-resume-actions">
-                <button class="poeco-btn poeco-btn--primary" @onclick="() => BootAsync(resume: true)">Resume</button>
-                <button class="poeco-btn" @onclick="() => BootAsync(resume: false)">New world</button>
-            </div>
-        </div>
-    }
-
     @if (_booted)
     {
         @* NOT a glass panel. This element covers the whole view, so data-glass on it would
@@ -55,11 +43,7 @@
             @if (ReadOnly)
             {
                 <p class="poeco-visiting" role="status">
-                    @(_past >= 0 ? $"Year {_past} of your island, as it was — read-only." : "Visiting a shared island — nothing here is saved over your own.")
-                    @if (!IsDemo)
-                    {
-                        <button type="button" class="poeco-pill poeco-pill--on" @onclick="ReturnHomeAsync">@(_past >= 0 ? "Back to the present" : "Back to my island")</button>
-                    }
+                    @(_past >= 0 ? $"Year {_past} of this island, as it was — read-only." : "Visiting a shared island — nothing here is saved.")
                 </p>
             }
 

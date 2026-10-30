@@ -527,7 +527,6 @@ function createEngine(container, dotnetRef, opts) {
     },
     keyframes: () => state.host?.send({ type: 'keyframes' }),
     openKeyframe: (year) => state.host?.send({ type: 'openKeyframe', year: year | 0 }),
-    returnHome: () => state.host?.send({ type: 'returnHome' }),
   });
 
   async function startHost() {
@@ -780,7 +779,6 @@ const PoEcosystem = {
   sonify(json, peak) { try { return engine?.sonify(JSON.parse(json), peak) ?? 0; } catch { return 0; } },
   keyframes: () => engine?.keyframes(),
   openKeyframe: (year) => engine?.openKeyframe(year),
-  returnHome: () => engine?.returnHome(),
   islandThumb,
   peekHistory,
   share: shareLink,

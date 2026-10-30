@@ -9,16 +9,14 @@
    Jev Arena board for the modal to read (the key that used to sit here 404ed once the modal
    could actually open). *@
 <GameShell Title="@TitleContent" Player="@_playerName" BackTo="/" Fullscreen="true"
-           GameOver="@(_phase == Phase.Replay && _result is not null && !IsDemo)"
-           GameSummary="@GameSummaryContent">
+           GameOver="false">
     @if (_phase == Phase.Intro)
     {
         <GameIntro CueScope="pojevarena"
                    Title="@TitleContent"
                    Objective="@IntroObjective"
                    Controls="@IntroControls"
-                   HowToPlay="@(IsDemo ? null : HowToPlay)"
-                   Mode="@IntroMode"
+                   Mode="@GameIntro.IntroMode.Demo"
                    OnStart="StartAsync" />
     }
     else
@@ -37,7 +35,7 @@
                     {
                         <span class="jev-muted jev-small">@DeployNote</span>
                     }
-                    <button type="button" class="jev-btn jev-btn--big jev-topbar__deploy" disabled="@(!CanDeploy)" title="@DeployHint" @onclick="DeployAsync">
+                    <button type="button" class="jev-btn jev-btn--big jev-topbar__deploy" disabled="@(!CanDeploy)" title="@DeployHint" @onclick="RequestDeploy">
                         @(_deploying ? "Deploying…" : "Deploy battle")
                     </button>
                 }
@@ -78,13 +76,8 @@
 
             <div class="jev-layout" data-focus="@_mobileTeam">
                 <TeamColumn Team="blue" Slots="_blue" Drafting="Drafting"
-                            Hidden="@(IsTwoPlayer && Drafting && _twoPlayerStep != TwoPlayerStep.Blue)"
-                            Locked="@(!CanDraftFor("blue"))"
-                            LockLabel="@(IsTwoPlayer && _twoPlayerStep == TwoPlayerStep.Blue ? "Lock & pass" : null)"
-                            PlayerLabel="@(IsTwoPlayer ? "Player 1" : null)"
-                            OtherPoints="@(IsTwoPlayer ? null : Points(_red))"
                             Squads="_squads" Inspector="_inspectBlue"
-                            OnClear='() => ClearTeam("blue")' OnLock='() => LockAsync("blue")' OnFill='() => FillAsync("blue")'
+                            OnClear='() => ClearTeam("blue")' OnFill='() => FillAsync("blue")'
                             OnSaveSquad='name => SaveSquadAsync("blue", name)' OnLoadSquad='name => LoadSquadAsync("blue", name)' OnDeleteSquad="DeleteSquadAsync"
                             OnSlot='slot => OnSlotAsync("blue", slot)' />
 
@@ -92,7 +85,7 @@
                     @if (Drafting)
                     {
                         <CreatureLibrary Items="VisibleLibrary" Sort="@_sort" Query="@_query" Filter="@_filter"
-                                         CanBlue="@CanDraftFor("blue")" CanRed="@CanDraftFor("red")" Offline="_libraryOffline"
+                                         CanBlue="@Drafting" CanRed="@Drafting" Offline="_libraryOffline"
                                          OnPick="DraftAsync" OnEdit="Edit" OnFork="Fork" OnDelete="AskDelete"
                                          OnSort="OnSortAsync" OnQuery="OnQueryAsync" OnFilter="f => _filter = f ?? FilterAll" OnNew="NewCreature" />
 
@@ -141,7 +134,7 @@
                         {
                             @if (ShowDebrief)
                             {
-                                <JevDebrief Debrief="_result!.Debrief!" Winner="@_result.Winner" IsTwoPlayer="IsTwoPlayer" Frames="_result.Frames" OnJump="JumpToMomentAsync" />
+                                <JevDebrief Debrief="_result!.Debrief!" Winner="@_result.Winner" Frames="_result.Frames" OnJump="JumpToMomentAsync" />
                             }
                             else
                             {
@@ -152,13 +145,9 @@
                 </div>
 
                 <TeamColumn Team="red" Slots="_red" Drafting="Drafting"
-                            Locked="@(!CanDraftFor("red"))"
-                            LockLabel="@(IsTwoPlayer && _twoPlayerStep == TwoPlayerStep.Red ? "Lock & deploy" : null)"
-                            PlayerLabel="@(IsTwoPlayer ? "Player 2" : null)"
-                            OtherPoints="@(IsTwoPlayer ? null : Points(_blue))"
                             Squads="_squads" Inspector="_inspectRed"
-                            OnClear='() => ClearTeam("red")' OnLock='() => LockAsync("red")' OnFill='() => FillAsync("red")'
-                            ShowCopy="@(!IsTwoPlayer)" OnCopy="CopyBlueAsync"
+                            OnClear='() => ClearTeam("red")' OnFill='() => FillAsync("red")'
+                            ShowCopy="true" OnCopy="CopyBlueAsync"
                             OnSaveSquad='name => SaveSquadAsync("red", name)' OnLoadSquad='name => LoadSquadAsync("red", name)' OnDeleteSquad="DeleteSquadAsync"
                             OnSlot='slot => OnSlotAsync("red", slot)' />
             </div>
@@ -177,29 +166,12 @@
 @code {
     private static RenderFragment TitleContent => GameCatalog.TitleFor(GameKeys.PoJevArena);
 
-    // A <section>, not a <div>: the modal's small-print rule is written for div summaries.
-    private RenderFragment GameSummaryContent => @<section class="jev-summary">
-        <strong>@ResultHeadline</strong>
-        <span>@ResultDetail</span>
-        @if (MvpLine is not null)
-        {
-            <span><span aria-hidden="true">★</span> @MvpLine</span>
-        }
-    </section>;
-
-    private string IntroObjective => IsDemo
-        ? "Preset squads and community creatures fight while TypeSafe's Jev makes every call."
-        : "Design creatures, draft two squads of ten, and watch Jev decide every move.";
+    private static string IntroObjective =>
+        "Preset squads and community creatures fight while TypeSafe's Jev makes every call.";
 
     // The battle's keys: what the start card shows first.
     private static RenderFragment IntroControls => @<p>
         Hold <kbd>Tab</kbd> for the stats · click a creature for Jev's odds ·
         <kbd>[</kbd><kbd>]</kbd> cycle Blue · <kbd>;</kbd><kbd>'</kbd> cycle Red
     </p>;
-
-    // The steps before the battle, behind the card's How to play tab.
-    private static RenderFragment HowToPlay => @<ul>
-        <li>Build creatures in the <strong>Factory</strong>: stats, one offense and one defense ability, a personality. Everyone melees.</li>
-        <li>Draft ten per side with <strong>+ Blue</strong> / <strong>+ Red</strong>, then <strong>Deploy</strong>. Pillars, brush and tar change every map.</li>
-    </ul>;
 }

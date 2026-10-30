@@ -14,7 +14,7 @@
             <img class="poeco-thumb" src="@ThumbOf(CurrentSeed)" alt="" width="72" height="72" />
             <div class="poeco-slot-meta">
                 <strong>Year @(Stats?.Year ?? 0) · @(Stats?.Alive ?? 0) alive</strong>
-                <span class="poeco-note">seed @CurrentSeed@(Visiting ? " · a visit, not saved" : " · kept in this browser")</span>
+                <span class="poeco-note">seed @CurrentSeed@(Visiting ? " · a visit, not saved" : " · not saved in this browser")</span>
             </div>
             @if (Visiting)
             {

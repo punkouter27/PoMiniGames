@@ -8,7 +8,7 @@
     <div class="jev-debrief__teams">
         @foreach (var (team, t) in Teams)
         {
-            var name = team == "blue" ? (IsTwoPlayer ? "Player 1 · Blue" : "Blue") : (IsTwoPlayer ? "Player 2 · Red" : "Red");
+            var name = team == "blue" ? "Blue" : "Red";
             <article class="jev-debrief__card jev-debrief__card--@team">
                 <header class="jev-debrief__head">
                     <h3>@name</h3>
@@ -77,7 +77,6 @@
 @code {
     [Parameter, EditorRequired] public ArenaDebrief Debrief { get; set; } = default!;
     [Parameter] public string Winner { get; set; } = "draw";
-    [Parameter] public bool IsTwoPlayer { get; set; }
 
     /// <summary>Match length in Black Box frames: the stories' shared time axis.</summary>
     [Parameter] public int Frames { get; set; }

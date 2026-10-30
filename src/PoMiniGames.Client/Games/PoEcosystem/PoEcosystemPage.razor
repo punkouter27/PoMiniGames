@@ -19,16 +19,20 @@
                    Title=@TitleContent
                    Objective="A living island that runs without you — creatures born, hungry and ageing while you watch."
                    Controls=@HowToPlayContent
-                   Mode="@(IsDemo ? GameIntro.IntroMode.Demo : GameIntro.IntroMode.OnePlayer)"
+                   Mode="@GameIntro.IntroMode.Demo"
                    OnStart="@(() => _introDismissed = true)" />
     }
     else
     {
-        <PoEcosystemViewer IsDemo="@IsDemo" VisitCode="@Island" />
+        <PoEcosystemViewer VisitCode="@Island" />
     }
 </GameShell>
 
 @code {
+    /// <summary>
+    /// A legacy mode segment (<c>/poecosystem/1player</c>). The game is demo-only now, so the
+    /// segment no longer changes anything: every address opens the same kiosk island.
+    /// </summary>
     [Parameter] public string? Mode { get; set; }
 
     /// <summary>A shared island's code (<c>?island=CODE</c>): the viewer sails straight to it, read-only.</summary>
@@ -36,12 +40,6 @@
 
     private string _playerName = "";
     private bool _introDismissed;
-
-    // /poecosystem and /poecosystem/1player are YOUR island: it is kept in this browser and
-    // offered back on the next visit. /poecosystem/demo is the kiosk — a fresh island every
-    // time, never saved. Treating every mode as demo would make the resume prompt
-    // unreachable and every visit autosave a new island over the last one.
-    private bool IsDemo => GameModes.Parse(Mode) == GameMode.Demo;
 
     private static RenderFragment TitleContent => GameCatalog.TitleFor(GameKeys.PoEcosystem);
 

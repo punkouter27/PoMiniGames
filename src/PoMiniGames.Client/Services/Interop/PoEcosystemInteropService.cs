@@ -50,20 +50,6 @@ public sealed class PoEcosystemInteropService : IAsyncDisposable
     /// <summary>The timeline grew (a landmark or a year row was added).</summary>
     public event Action<EcoHistory>? HistoryReceived;
 
-    /// <summary>Is there a world in IndexedDB to resume?</summary>
-    public async ValueTask<EcoSaveInfo> ProbeSaveAsync()
-    {
-        try
-        {
-            if (!await LoadEngineAsync()) return new EcoSaveInfo(false, 0, 0, 0, 0, null);
-            var json = await _js.InvokeAsync<string?>("JSON.stringify", await _js.InvokeAsync<object>("PoEcosystem.probeSave"));
-            if (string.IsNullOrWhiteSpace(json)) return new EcoSaveInfo(false, 0, 0, 0, 0, null);
-            return JsonSerializer.Deserialize(json, EcoJsonContext.Default.EcoSaveInfo) ?? new EcoSaveInfo(false, 0, 0, 0, 0, null);
-        }
-        catch (JSException) { return new EcoSaveInfo(false, 0, 0, 0, 0, null); }
-        catch (JSDisconnectedException) { return new EcoSaveInfo(false, 0, 0, 0, 0, null); }
-    }
-
     /// <param name="ephemeral">Nothing this boot does is saved: a demo, or a visit to a shared island.
     /// The island this browser already holds is left as it was.</param>
     public async ValueTask<bool> StartAsync(string containerId, string? minimapId, string? seed, bool resume, bool lowEnd, bool demo = false, bool ephemeral = false)
@@ -138,8 +124,6 @@ public sealed class PoEcosystemInteropService : IAsyncDisposable
     public ValueTask SetAmbientAsync(bool on) => SafeInvokeAsync("PoEcosystem.setAmbient", on);
     /// <summary>Open a kept decade of this island, read-only. The present is saved first.</summary>
     public ValueTask OpenKeyframeAsync(int year) => SafeInvokeAsync("PoEcosystem.openKeyframe", year);
-    /// <summary>Leave a visit (a past decade, or a shared island) for the island saved in this browser.</summary>
-    public ValueTask ReturnHomeAsync() => SafeInvokeAsync("PoEcosystem.returnHome");
     /// <summary>Play population rows ([rabbits, deer, wolves, humans] each) as chords.</summary>
     public ValueTask SonifyAsync(int[][] rows, int peak) =>
         SafeInvokeAsync("PoEcosystem.sonify", JsonSerializer.Serialize(rows, EcoJsonContext.Default.Int32ArrayArray), peak);

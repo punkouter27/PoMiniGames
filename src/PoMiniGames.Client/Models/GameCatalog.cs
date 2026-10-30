@@ -199,19 +199,17 @@ public static class GameCatalog
         // PoJevArena: design creatures, draft 10 v 10, and watch TypeSafe's Jev
         // decide every move. Needs sign-in (guests included) and a Jev key on the server;
         // not in the kiosk rotation, because an unattended loop spends Jev calls.
+        // Demo only: the arena runs itself, so there is no solo or hot-seat draft to pick
+        // and no match to win — the visitor watches the brain play.
         new(GameKeys.PoJevArena, "Jev Arena", "⚔️",
         [
-            new(GameMode.OnePlayer, "/pojevarena/1player", RequiresNetwork: true),
-            new(GameMode.TwoPlayer, "/pojevarena/2player", RequiresNetwork: true),
             new(GameMode.Demo, "/pojevarena/demo", RequiresNetwork: true),
         ]),
 
-        // PoEcosystem is an autonomous simulation that is watched, never played. 1P is "your
-        // island": kept in this browser and offered back on the next visit. Demo is the kiosk:
-        // a fresh island every time, never saved.
+        // PoEcosystem is an autonomous simulation that is watched, never played. Demo only:
+        // a fresh island every time, never saved in this browser.
         new(GameKeys.PoEcosystem, "Ecosystem", "🌿",
         [
-            new(GameMode.OnePlayer, "/poecosystem/1player"),
             new(GameMode.Demo, "/poecosystem/demo"),
         ]),
 
