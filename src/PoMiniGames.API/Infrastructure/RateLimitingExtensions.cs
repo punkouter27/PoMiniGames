@@ -90,42 +90,6 @@ internal static class RateLimitingExtensions
                         QueueLimit = 0,
                     }));
 
-            // AI-backed content generation (currently only PoFunQuiz question fetches).
-            //
-            // 8 per 15 s. Not every call reaches a model: AiQuizGeneratorService wraps the
-            // question POOL in a stampede-protected HybridCache (6 h, durable L2), so a
-            // (category, batchCount) pair costs exactly one generation per six hours and every
-            // other request is a cache read that deals a fresh hand out of it. What this
-            // actually bounds is *starting a quiz* — and a player who opens solo, retries
-            // once, then opens 2-player has spent three permits inside one window, on
-            // an endpoint where at most one of those calls could have cost anything. A tight
-            // limit would surface as a 429 on the funquiz page.
-            //
-            // Spend stays bounded by the three layers that can actually see cost: the pool
-            // cache above (one call per category per 6 h, and QuestionCategory is a small
-            // closed enum, so key rotation is bounded too), the durable per-identity token
-            // budget, and the shared AI gate in AzureOpenAIResilience. Eight quiz starts in fifteen seconds is already
-            // faster than a human can read a question, and is still useless as an amplifier.
-            // A SHORT window, unlike every policy above it, because what hurt here was not the
-            // rate but the penalty: a one-minute window that trips on the fourth quiz start
-            // locks the game for the rest of the minute and can only advertise a 60 s
-            // Retry-After. 8 per 15 s is a higher sustained ceiling (32/min)
-            // AND a wait short enough for the page to sit through and retry itself.
-            // A sliding window is not the fix — its permits come back one full window after
-            // they were taken, so it smooths the ceiling without shortening the lockout, and
-            // .NET's implementation publishes no Retry-After metadata to hand the client.
-            opts.AddPolicy("ai-generation", ctx =>
-                RateLimitPartition.GetFixedWindowLimiter(
-                    partitionKey: BuildPartitionKey(ctx),
-                    factory: _ => new FixedWindowRateLimiterOptions
-                    {
-                        Window = TimeSpan.FromSeconds(15),
-                        PermitLimit = 8,
-                        AutoReplenishment = true,
-                        QueueProcessingOrder = QueueProcessingOrder.OldestFirst,
-                        QueueLimit = 0,
-                    }));
-
             // PoCabinet: the score-submission policy for the cockpit-view racing game.
             // A racing session submits one best lap per finish, so 10/min mirrors "highscores"
             // — the cap that worked for the rest of the games. Uses the same (IP + identity)

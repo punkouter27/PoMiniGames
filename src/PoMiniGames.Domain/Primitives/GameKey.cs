@@ -2,7 +2,7 @@ namespace PoMiniGames.Domain.Primitives;
 
 /// <summary>
 /// Strongly-typed wrapper around the game identifier used across leaderboards, stats,
-/// and the AI Foundry deployment map. Replaces the raw-string convention
+/// and the game catalogue. Replaces the raw-string convention
 /// (<c>"couplequiz"</c>, <c>"funquiz"</c>, …) that was previously scattered through
 /// endpoints, services, and clients — typos silently broke the leaderboard.
 /// </summary>

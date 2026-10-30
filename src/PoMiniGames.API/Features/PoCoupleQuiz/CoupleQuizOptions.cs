@@ -22,39 +22,4 @@ public sealed class CoupleQuizOptions
 
     /// <summary>How long the round result stays on screen before the next question.</summary>
     public int RevealSeconds { get; set; } = 6;
-
-    /// <summary>Sub-feature toggles.</summary>
-    public CoupleQuizFeatures Features { get; set; } = new();
-}
-
-public sealed class CoupleQuizFeatures
-{
-    /// <summary>If true, the in-process mock question service is used even when Azure OpenAI
-    /// is reachable. NEVER set this in Production — it bypasses real AI scoring.
-    /// Canonical key: <c>PoCoupleQuiz:Features:UseMockAI</c> (matches PoFunQuiz casing).</summary>
-    public bool UseMockAI { get; set; } = false;
-
-    /// <summary>Configuration value of <see cref="QuestionSource"/> that means the paid model.</summary>
-    public const string FreshAiValue = "FreshAi";
-
-    /// <summary>Configuration value of <see cref="AnswerMatching"/> that means the paid AI judge.</summary>
-    public const string AiJudgeValue = "AiJudge";
-
-    /// <summary>
-    /// Default question source for a lobby whose host did not say: <c>Bank</c> (the curated, free
-    /// <see cref="CoupleQuizQuestionBank"/>) or <c>FreshAi</c>. Paid only for a signed-in host.
-    /// </summary>
-    public string QuestionSource { get; set; } = "Bank";
-
-    /// <summary>Kill switch for AI-written questions.</summary>
-    public bool AllowFreshAi { get; set; } = true;
-
-    /// <summary>
-    /// Default answer matching: <c>Smart</c> (free, <see cref="AnswerMatcher"/>) or <c>AiJudge</c>
-    /// (the free score first, the model only for close calls). Paid only for a signed-in host.
-    /// </summary>
-    public string AnswerMatching { get; set; } = "Smart";
-
-    /// <summary>Kill switch for the AI judge.</summary>
-    public bool AllowAiJudge { get; set; } = true;
 }

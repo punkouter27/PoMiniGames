@@ -22,13 +22,13 @@ namespace PoMiniGames.Unit.Features.Health;
 public sealed class DiagProjectionTests
 {
     // Shape of the projection: which sections/keys must (or must never) appear. `cors` must stay
-    // absent because the single-origin host has no CORS policy to report; the AI Foundry rows must
-    // stay present, even unconfigured, because prod observability reads them.
+    // absent because the single-origin host has no CORS policy to report; the AI rows must stay
+    // gone because the app has no AI services.
     [Theory]
     [InlineData(null, "cors", false)]
-    [InlineData("integrations", "aiFoundryConfigured", true)]
-    [InlineData("keys", "aiFoundryEndpoint", true)]
-    [InlineData("keys", "aiDefaultDeployment", true)]
+    [InlineData("integrations", "aiFoundryConfigured", false)]
+    [InlineData("keys", "aiFoundryEndpoint", false)]
+    [InlineData("keys", "aiDefaultDeployment", false)]
     public void Snapshot_ExposesExactlyTheContractedFields(string? section, string property, bool expectedPresent)
     {
         using var doc = JsonDocument.Parse(SerializeSnapshot());

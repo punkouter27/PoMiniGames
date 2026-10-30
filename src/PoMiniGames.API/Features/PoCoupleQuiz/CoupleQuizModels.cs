@@ -152,14 +152,7 @@ public class GameSession
     /// </summary>
     public int LastEvaluatedRound { get; set; } = -1;
 
-    /// <summary>
-    /// Each player's quiz options, by connection id, already gated server-side (paid options are
-    /// on only for a signed-in player while the server allows them). The HOST's entry drives the
-    /// lobby, so whoever is promoted after a host leaves brings their own.
-    /// </summary>
-    public Dictionary<string, LobbyPreferences> Preferences { get; } = new(StringComparer.Ordinal);
-
-    /// <summary>Bank questions already asked this match, so a match never repeats one.</summary>
+    /// <summary>Bank questions already asked this match, so a match never repeats one.
     public HashSet<string> AskedQuestions { get; } = new(StringComparer.Ordinal);
 
     /// <summary>Single-shot timer for the current phase. Rearmed on every transition.</summary>
@@ -179,8 +172,3 @@ public record LobbyReadyState(
     int MaxRounds,
     bool AllReady,
     int MinPlayersToStart);
-
-/// <summary>A player's quiz options after the server's gate: true means the paid option is on.</summary>
-/// <param name="FreshAi">AI-written questions instead of the curated bank.</param>
-/// <param name="AiJudge">Ask the model about close calls the free matcher cannot settle.</param>
-public readonly record struct LobbyPreferences(bool FreshAi, bool AiJudge);

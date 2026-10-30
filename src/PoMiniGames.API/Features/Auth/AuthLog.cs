@@ -37,14 +37,6 @@ internal static partial class AuthLog
         Message = "Startup secret validation skipped in Test environment")]
     public static partial void StartupValidationSkippedForTest(this ILogger logger);
 
-    [LoggerMessage(EventId = 6108, Level = LogLevel.Information,
-        Message = "AIFoundryClientFactory initialised: endpoint={Endpoint}, defaultDeployment={DefaultDeployment}")]
-    public static partial void AIFoundryInitialised(this ILogger logger, string endpoint, string defaultDeployment);
-
-    [LoggerMessage(EventId = 6109, Level = LogLevel.Warning,
-        Message = "AIFoundry not configured (Endpoint or DefaultDeployment missing); AI-consuming services will fall back to mock implementations in non-Production only.")]
-    public static partial void AIFoundryNotConfigured(this ILogger logger);
-
     [LoggerMessage(EventId = 6110, Level = LogLevel.Warning,
         Message = "StorageInitializer reported an error; per-game tables/containers will be retried lazily on first use")]
     public static partial void StorageInitializerError(this ILogger logger, Exception ex);

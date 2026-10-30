@@ -92,18 +92,12 @@ node --test tests/pomule-world.test.mjs                        # JS engine tests
   - Game writes need auth plus antiforgery. Leaderboard reads are anonymous.
 - **SignalR:** multiplayer games use authorized hubs mapped in `EndpointRouteExtensions.cs`, and
   their state is held in memory.
-- **AI:** free by default; paid AI is opt-in only, to save money.
-  - PoFunQuiz deals from the `PoFunQuizBank` table (Open Trivia DB plus a bundled set, filled by
-    `QuizPrebakeService`). PoCoupleQuiz uses a curated bank and the free `AnswerMatcher`.
-  - Their paid paths (Fresh AI questions, the AI judge) need a server flag and a signed-in
-    player's choice. They go through `API/AI`, where `AddGameChatClient` stacks resilience, a
-    per-identity token budget, instrumentation and the Foundry client (`gpt-5.4-nano`). Usage
-    is reported at `GET /api/diag/ai`.
-  - PoJevArena's default brain is the free `LocalJevClient`. Paid Jev (OpenRouter) needs
-    `PoMiniGames:Jev:Brain=Jev`, a key and the player's choice. `js/localAi.js` (WebLLM) is an
-    opt-in on-device alternative.
-  - Ecosystem, Brawl and Cabinet are scripted and AI-free. Do not add paid AI back without being
-    asked.
+- **AI:** none; quizzes draw from JSON banks.
+  - PoFunQuiz and PoCoupleQuiz pick random questions from in-memory banks loaded once from
+    `Features/*/Data/questions.json` (no table, no network). Couple answers use the free
+    `AnswerMatcher`.
+  - PoJevArena's only brain is the free `LocalJevClient`. Ecosystem, Brawl and Cabinet are
+    scripted. Do not add AI services back without being asked.
 - **Constraints:**
   - PoEcosystem is observation-only: never add controls that change its world.
   - Every in-app `<a>` goes through the Blazor router. Hub links marked `data-hub-nav` are

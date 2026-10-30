@@ -5,8 +5,7 @@ using System.Text;
 namespace PoMiniGames.Features.PoFunQuiz;
 
 /// <summary>
-/// Quality gate and identity for a trivia question, shared by every source: the AI parser,
-/// Open Trivia DB, the bundled set and the bank.
+/// Quality gate and identity for a trivia question, shared by every source: the bundled bank and its tests.
 /// </summary>
 /// <remarks>
 /// <para>

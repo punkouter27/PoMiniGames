@@ -496,9 +496,7 @@
         _isLoading = true;
         try
         {
-            // The settings sheet's "Quiz questions" choice. Fresh AI is a request: the server
-            // serves it only to signed-in players and quietly falls back to the free bank.
-            var url = $"/api/funquiz/quiz/questions?count=10&category={Uri.EscapeDataString(_category)}&source={QuizPreferences.SourceParam}";
+            var url = $"/api/funquiz/quiz/questions?count=10&category={Uri.EscapeDataString(_category)}";
             using var response = await Http.GetAsync(url);
 
             // The status is checked by hand instead of GetFromJsonAsync: that turns every

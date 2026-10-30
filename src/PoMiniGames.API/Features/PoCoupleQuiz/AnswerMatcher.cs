@@ -19,7 +19,7 @@ namespace PoMiniGames.Features.PoCoupleQuiz;
 /// <b>Short words are strict.</b> One letter turns "cat" into "car" and "horse" into "house", so
 /// the string score is damped for short answers. Those land in the ambiguous band
 /// (<see cref="AmbiguousLow"/>–<see cref="AmbiguousHigh"/>) rather than scoring as a match — which is
-/// exactly the band the optional AI judge is asked about, and nothing else.
+/// exactly the band between a clear miss and a clear match.
 /// </para>
 /// </remarks>
 public static class AnswerMatcher
@@ -27,13 +27,13 @@ public static class AnswerMatcher
     /// <summary>Free-only mode: a score at or above this counts as a match.</summary>
     public const float MatchThreshold = 0.6f;
 
-    /// <summary>Below this the answers are clearly different; no judge is consulted.</summary>
+    /// <summary>Below this the answers are clearly different.</summary>
     public const float AmbiguousLow = 0.4f;
 
-    /// <summary>At or above this the answers clearly match; no judge is consulted.</summary>
+    /// <summary>At or above this the answers clearly match.</summary>
     public const float AmbiguousHigh = 0.8f;
 
-    /// <summary>True for a close call the optional AI judge may settle.</summary>
+    /// <summary>True for a close call: neither a clear miss nor a clear match.</summary>
     public static bool IsAmbiguous(float score) => score >= AmbiguousLow && score < AmbiguousHigh;
 
     private static readonly HashSet<string> StopWords = new(StringComparer.Ordinal)

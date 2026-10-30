@@ -3,13 +3,12 @@ using System.Text.Json;
 namespace PoMiniGames.Features.PoFunQuiz;
 
 /// <summary>
-/// The hand-written question set shipped inside the API assembly (<c>Data/questions.json</c>,
-/// an embedded resource). The floor under every other source: with storage down and Open Trivia DB
-/// unreachable, a quiz still starts.
+/// The question bank shipped inside the API assembly (<c>Data/questions.json</c>, an embedded
+/// resource), loaded once on first use. Every Fun Quiz deal comes from here: no storage, no network.
 /// </summary>
 /// <remarks>
-/// Written for this project, not copied from Open Trivia DB, so it carries no licence of its own.
-/// Items pass the same <see cref="QuizQuality"/> gate as every other source; one that does not is
+/// Gathered ahead of time from Open Trivia DB plus the original hand-written set (the DB's content
+/// is CC BY-SA 4.0). Items pass the same <see cref="QuizQuality"/> gate as ever; one that does not is
 /// dropped at load rather than served, and the unit tier checks the file ships none.
 /// </remarks>
 public static class BundledQuizQuestions

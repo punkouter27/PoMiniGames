@@ -88,9 +88,9 @@ public sealed class FunQuizModelsTests
     [InlineData(QuestionCategory.Science, 12)]
     [InlineData(QuestionCategory.General, 5)]
     [InlineData(QuestionCategory.History, 8)]
-    public void MockOpenAIService_ReturnsRequestedCount(QuestionCategory category, int count)
+    public async Task FunQuizQuestionService_ReturnsRequestedCount(QuestionCategory category, int count)
     {
-        var q = MockOpenAIService.GenerateQuestions(category, count);
+        var q = await new FunQuizQuestionService().GetQuestionsAsync(category, count);
         q.Should().HaveCount(count);
         q.Should().AllSatisfy(question =>
         {

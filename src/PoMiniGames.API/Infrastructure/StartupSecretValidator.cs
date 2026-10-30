@@ -14,7 +14,7 @@ namespace PoMiniGames.Infrastructure;
 /// <list type="bullet">
 ///   <item><b>Production</b> — throws <see cref="InvalidOperationException"/> if any required
 ///         secret is missing or empty. Prevents the app from accepting traffic with a
-///         half-configured Azure OpenAI client that would degrade to mock data on every call.</item>
+///         half-configured host.</item>
 ///   <item><b>Development</b> — logs a warning and continues so local dev iteration is not
 ///         blocked by missing secrets.</item>
 ///   <item><b>Test</b> — skips validation; tests intentionally use mock services.</item>
@@ -22,9 +22,7 @@ namespace PoMiniGames.Infrastructure;
 /// <para>Pattern: Fail-Fast. The service runs as <see cref="IHostedService"/> before the first
 /// HTTP request is processed.</para>
 /// </summary>
-/// <remarks>Validates platform-level secrets (Key Vault, Table Storage, Microsoft Auth) plus
-/// the centralized Azure AI Foundry endpoint/deployment. AI is a single shared hub — there are
-/// no per-game secret sections.</remarks>
+/// <remarks>Validates platform-level secrets (Key Vault, Table Storage, Microsoft Auth).</remarks>
 public sealed class StartupSecretValidator : IHostedService
 {
     private readonly IHostEnvironment _environment;
@@ -114,23 +112,6 @@ public sealed class StartupSecretValidator : IHostedService
             {
                 missing.Add("PoMiniGames:MicrosoftAuth:ApiClientId");
             }
-        }
-
-        // ── Centralized Azure AI Foundry secrets (production-mandatory) ──
-        // Replaces the legacy per-game AzureOpenAI sections. The KV contract:
-        //   PoMiniGames--AI--FoundryEndpoint  (e.g. https://cog-pominigames-xxx.openai.azure.com)
-        //   PoMiniGames--AI--DefaultDeployment (e.g. gpt-5.4-nano)
-        // The DefaultAzureCredential on the Web App's system-assigned MI provides
-        // the AAD bearer; no API key is required (or stored) by design.
-        if (_environment.IsProduction())
-        {
-            var foundryEndpoint = _configuration["PoMiniGames:AI:FoundryEndpoint"]
-                ?? _configuration["PoMiniGames:AI:Endpoint"];
-            var foundryDeployment = _configuration["PoMiniGames:AI:DefaultDeployment"];
-            if (string.IsNullOrWhiteSpace(foundryEndpoint))
-                missing.Add("PoMiniGames:AI:FoundryEndpoint");
-            if (string.IsNullOrWhiteSpace(foundryDeployment))
-                missing.Add("PoMiniGames:AI:DefaultDeployment");
         }
 
         if (missing.Count == 0)

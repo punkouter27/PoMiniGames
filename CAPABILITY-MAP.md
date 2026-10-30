@@ -32,7 +32,6 @@ for PoMule · **Deferred** = planned after PoMule v1.
 | Shared audio and palette buses | Client `wwwroot/js/gameCues.js`, `paletteBus.js`, `spatialAudio.js` | Yes, reuse existing cues | Retained |
 | Online play (SignalR hubs, lobbies, invites) | API `Features/*`, Client per-game clients | No | Retained |
 | Server score verification | API `Features/PoCabinet`, `PoMule` | Yes: Cabinet sends its input log and `PoCabinetLapVerifier` re-runs the race for the lap time and place (online, the server sim timed it); PoMule sends seed + action log, `PoMuleRunVerifier` replays it through the Shared engine; no log = range check only | Extended |
-| AI text (Azure AI Foundry), opt-in only | API `AI/`, quiz slices; free banks and matching by default | No | Retained |
 | Cloud saves and gallery | API `Features/PoEcosystem`, Blob storage | No | Retained |
 | Radzen component library | Client | Yes: all PoMule non-canvas UI; Brawl HQ's select bar, grid and chart | New |
 | Radzen in the hub, settings sheet, leaderboards and the other games' screens | Client | No (in-game HUDs stay custom CSS) | Deferred |
@@ -43,11 +42,11 @@ for PoMule · **Deferred** = planned after PoMule v1.
 |---|---|---|
 | Achievements | Client `Services/Play/AchievementService.cs` | Rules over local stats; shown on the profile |
 | Weekly leaderboards | Infrastructure `StorageService.HighScores`, API `Features/Leaderboard/UnifiedLeaderboardEndpoints.cs` | `period=week` reads this ISO week's boards |
-| PoFunQuiz question bank | API `Features/PoFunQuiz/Storage/QuizBankRepository.cs` (`PoFunQuizBank` table), `OpenTriviaDbClient.cs`, `BundledQuizQuestions.cs`, `QuizPrebakeService.cs` | Free; grows only; dedup by text hash |
-| PoFunQuiz question source | API `Features/PoFunQuiz/FunQuizQuestionService.cs` | Bank by default; opt-in Fresh AI falls back to the bank |
-| PoCoupleQuiz answer matching | API `Features/PoCoupleQuiz/AnswerMatcher.cs` | Free and deterministic; the AI judge is opt-in for close calls |
-| PoJevArena free brain | API `Features/PoJevArena/Jev/LocalJevClient.cs` | Default `PoMiniGames:Jev:Brain`; paid Jev is opt-in |
-| On-device language model | Client `wwwroot/js/localAi.js` | WebLLM over WebGPU, off by default; serves the Jev brain in the browser |
+| PoFunQuiz question bank | API `Features/PoFunQuiz/Data/questions.json`, `BundledQuizQuestions.cs` | JSON file loaded once at startup; dedup by text hash |
+| PoFunQuiz question source | API `Features/PoFunQuiz/FunQuizQuestionService.cs` | Deals a random hand from the in-memory bank; no storage, no network |
+| PoCoupleQuiz question bank | API `Features/PoCoupleQuiz/Data/questions.json`, `CoupleQuizQuestionBank.cs` | Embedded JSON loaded once; random draw that avoids repeats |
+| PoCoupleQuiz answer matching | API `Features/PoCoupleQuiz/AnswerMatcher.cs` | Free and deterministic |
+| PoJevArena brain | API `Features/PoJevArena/Jev/LocalJevClient.cs` | The only brain: free local rules |
 | PoMule score verification | API `Features/PoMule/PoMuleRunVerifier.cs` | Replays seed + action log through the Shared engine |
 | Gamepad input | Client `wwwroot/js/gamepadBus.js` | Engines, DOM focus navigation and rumble; loaded on first `gamepadconnected` |
 | Ghost runs | Client `wwwroot/js/ghostTrack.js` | Compact best-run paths in localStorage; PoRacer and PoMarbleRace |

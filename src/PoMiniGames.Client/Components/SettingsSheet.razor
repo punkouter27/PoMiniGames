@@ -191,14 +191,13 @@
             </div>
         </fieldset>
 
-        @* Games: one row per game-wide choice most players care about (which questions a
-           quiz draws, how answers are matched, invites). Add a row here with a simple
+        @* Games: one row per game-wide choice most players care about (invites).
+           Add a row here with a simple
            default, so a player who never opens the sheet still gets a sensible game.
            Rows from a child component keep the prefs-row classes; the sheet styles them.
            Choices that only matter to one game's enthusiasts go under Advanced below. *@
         <fieldset class="prefs-group prefs-group--games">
             <legend class="prefs-group-legend">Games</legend>
-            <QuizPrefsRows />
             <div class="prefs-row @(InvitesAvailable ? null : "prefs-row--disabled")">
                 <div class="prefs-label">
                     <span class="prefs-name">Game invites</span>

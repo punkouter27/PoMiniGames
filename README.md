@@ -2,14 +2,14 @@
 
 Instant-play mini-games platform: a .NET 10 Minimal API host that also serves its
 Blazor WebAssembly client from a single origin (port 5080), with SignalR for real-time
-multiplayer, Azure Table Storage for persistence, and opt-in Azure AI Foundry models behind
-the two quizzes.
+multiplayer and Azure Table Storage for persistence. There are no AI services; the two
+quizzes draw from JSON question banks.
 
 ## Overview
 
 Fourteen small games on one website. The browser runs each game in full, including its
 computer opponents; the server signs players in, referees online play, checks and stores
-scores, and, only when a player opts in, talks to AI models on the player's behalf.
+scores.
 
 - **One origin.** The API host serves the Blazor client it is then called by, so there is no
   cross-site setup in production.
@@ -45,15 +45,11 @@ scores, and, only when a player opts in, talks to AI models on the player's beha
   they are; there is no Player table.
 - **Computer opponents are hand-written rules, not trained models.** Difficulty is a table of
   numbers in source.
-- **Free by default; paid AI is opt-in.** PoFunQuiz deals from a permanent question bank
-  (Open Trivia DB plus a bundled set, stored in the `PoFunQuizBank` table), and PoCoupleQuiz
-  uses a curated bank with free fuzzy answer matching (`AnswerMatcher`). A signed-in player can
-  pick *Fresh AI* questions or the *AI judge* (Azure AI Foundry, `gpt-5.4-nano`). PoJevArena's
-  battle calls come from a free local rules brain; TypeSafe's Jev (OpenRouter) answers only when
-  `PoMiniGames:Jev:Brain` is `Jev` and the player picks it in Settings, and an on-device WebLLM
-  model (`js/localAi.js`, off by default) can serve it in the browser instead. Paid calls have a
-  daily cap per player and fall back to the free path. Ecosystem, Brawl and Cabinet use no AI
-  service: their commentary is scripted.
+- **No AI services.** PoFunQuiz and PoCoupleQuiz pick random questions from JSON banks
+  (`Features/PoFunQuiz/Data/questions.json`, `Features/PoCoupleQuiz/Data/questions.json`)
+  loaded into memory once at startup; PoCoupleQuiz matches answers with free fuzzy matching
+  (`AnswerMatcher`). PoJevArena's battle calls come from a free local rules brain. Ecosystem,
+  Brawl and Cabinet commentary is scripted.
 - **Around the games.** The hub is the game cards plus *Watch all demos* (the Today card,
   streak, Continue strip, pins and filters were cut on 2026-10-19), and it launches games
   without rebooting the app. Leaderboards have all-time and weekly boards. The profile shows
@@ -81,8 +77,8 @@ scores, and, only when a player opts in, talks to AI models on the player's beha
 | TicTacToe | 4-in-a-row on 6×6 vs AI, hot-seat, or online quick-match (SignalR) |
 | ConnectFive | Five-in-a-row vs AI, hot-seat, or online quick-match (SignalR) |
 | PoBrawl | Physics brawler with a presidents ladder, an 8-fighter CPU tournament, the **Brawl Cup**, as its Demo mode (`/pobrawl/demo`; the old `/pobrawl/tournament` redirects there; random draw, Elo after every bout; golden-hour → dusk → night arena, an Elo-upset crowd, an animated bracket and a belt ceremony; a TV-style director camera with a picture-in-picture iso cam in the Cup; 1P/2P/online keep a plain side view); 1P, 2P and training pause on Esc / P, on the touch ⏸ button and automatically when the window loses focus (Resume, Restart fight, Quit), and the result leads with Fight again / Rematch in place; a showtime layer of charge auras and president motifs over a crowd that stomps and chants, plus — with the settings sheet's **Brawl show** set to Full (`pobrawl_show`; Simple is the default) — convention balloon drops, LED ribbon boards, a stadium wave, an instant replay, a glass result screen, the belt ceremony and the director camera (those four Full-only modules are loaded on demand, so Simple never parses them); live 3D fighter select (a mirror pick gives Player 2 an alternate suit); an election-night campaign map for the ladder + fighter Elo demo board; **Brawl HQ** (`/pobrawl/hq`) puts the ladder, campaign map, local record, the ladder / fastest-KO / fighter-Elo boards and Cup titles on one page |
-| PoCoupleQuiz | Two-player realtime couples quiz (SignalR); curated questions, free answer matching, opt-in AI judge |
-| PoFunQuiz | Multiplayer trivia lobby from a free question bank (opt-in Fresh AI questions) |
+| PoCoupleQuiz | Two-player realtime couples quiz (SignalR); curated JSON question bank, free answer matching |
+| PoFunQuiz | Multiplayer trivia lobby from a JSON question bank |
 | PoMarbleRace | Physics marble race on baked GLB tracks; online 2-player via host-streamed physics |
 | PoRacer | Canvas racer with WebGL effects, solo races, and a multiplayer lobby |
 | PoCabinet | 3D circuit racer: solo career across four tracks, plus Senate Hill and a seeded daily circuit (a new layout every UTC day, the same for everyone, with its own board), AI officials, and a server-simulated online lobby; tracks have hills and banking, pinch points and wide braking zones, a bus-stop chicane with raised kerbs, gravel traps and tarmac run-off, grip patches (resurfaced, dusty, bumpy, puddles in the rain), a racing line that rubbers in over the race (and dries first in the rain), split sections with a shorter joker lane, braking boards and corner numbers; track limits are enforced (all four wheels off and the lap does not count, here and on the server); a 100-car field where every driver has its own personality (bruisers, late brakers, wild cards…) and runs off the road now and then; damage is real: hits dent the body where they land, knock bumpers, wings and mirrors loose and off, break lamps and glass, and cost the car power, grip and alignment until it is wrecked and out; hills and banking are real physics (cars run faster downhill, slower uphill, banked turns hold them in, hard braking mid-corner washes wide); the demo is covered like a TV race: a director cuts to the closest battles, with a timing tower, callouts (lead changes, passes, fastest laps, wrecks, the flag), a caption for the car on screen and a rear-cam / onboard picture-in-picture; graphics on medium/high add ambient occlusion, wet-road and puddle reflections with raindrop ripples, a heat mirage, exhaust haze, per-object motion blur, 32k lit GPU smoke and fire that cars part, rigid-body crash debris (bumpers, wheels, shards), cars that get dirty, wet and scarred, and a felt slipstream (a heat shimmer between the cars and a tow arc on the gauge); sound adds an adaptive synthesized score (settings: **Music**), reverb zones (grandstand, gantry, open country) and gravel/sand/wet tyre sounds |
@@ -168,18 +164,12 @@ CI validates Bicep and deploys application code; use `azd up` for resource provi
 
 | Key | Meaning |
 |---|---|
-| `PoFunQuiz:QuestionSource`, `AllowFreshAi`, `BankTargetPerCategory` | `Bank` (free, default) or `FreshAi`; Fresh AI only for signed-in players while allowed; bank size per category |
-| `PoFunQuiz:OpenTriviaDb:*` | `Enabled`, `BaseUrl`, `TimeoutSeconds` for the free question source |
-| `PoCoupleQuiz:Features:QuestionSource`, `AllowFreshAi`, `AnswerMatching`, `AllowAiJudge` | `Bank` and `Smart` (free) by default; `FreshAi` and `AiJudge` only for a signed-in host |
-| `PoMiniGames:AI:QuizPrebake:*` | Background bank filler: `Enabled` (on), `Interval`, `DelayBetweenCategories`, `Categories`, `AllowAiTopUp` (off, the only part that spends) |
-| `PoMiniGames:Jev:Brain` | `Local` (free rules, default) or `Jev` (paid; also needs `ApiKey` and the player's choice) |
-| `PoMiniGames:AI:Deployments` | `funquiz`, `couplequiz` and `couplequiz.similarity` all run on `gpt-5.4-nano` |
-| `PoMiniGames:Diag:AiUsageAdmins` | Operators (Entra object ids, not emails: sign-in is multi-tenant, so an email claim proves nothing) who see the full `GET /api/diag/ai` report outside Development. Empty by default: nobody does |
+| (AI keys removed) | `PoFunQuiz:QuestionSource/AllowFreshAi/OpenTriviaDb`, `PoCoupleQuiz:Features:*AI*`, `PoMiniGames:AI:*`, `PoMiniGames:Jev:Brain` and `PoMiniGames:Diag:AiUsageAdmins` no longer exist; the quizzes read their JSON banks and Jev uses the local brain only |
 | `PoMiniGames:PoBrawl:Dossier:FetchWikipedia`, `CacheHours` | Fighter dossiers: enrich the static facts from the free Wikimedia REST API (default `true`), cached 24 h; off or failing, static facts are served. Tests pin it to `false` |
 
 | Endpoint | Change |
 |---|---|
-| `GET /api/diag/ai` | New home of the AI usage and cost read-model. Outside Development it needs a signed-in caller (anonymous gets `401`); everyone sees only their own budget, and the per-game spend, totals and deployment names go only to operators listed in `PoMiniGames:Diag:AiUsageAdmins` (Entra object ids) (2026-10-29) |
+| `GET /api/diag/ai` | Removed with all AI services |
 | `GET /api/logs/tail` | Development only: not mapped in any other environment (2026-10-29) |
 | `GET /api/health/ai` | Removed (moved to `/api/diag/ai`) |
 | `/api/joker/*` | Removed with the Joker game |
@@ -205,7 +195,5 @@ CI validates Bicep and deploys application code; use `azd up` for resource provi
 | `POST /api/pocabinet/scores` | 2026-10-19: `GameCode` at most 32 letters, digits, `-` or `_`; input log length checked before decoding; the play-session preflight runs before a replay; at most two replays at once (`503` + `Retry-After: 5` after a 2 s wait); an online lap is spent only after the score is stored, so a retried `503` still verifies |
 | `/pobrawl/match-hub` (SignalR) | Rollback protocol: `SubmitInput` takes `{ frame, held, press, sequence }`; new `matchInput` event (each accepted input with the frame the server used) and `Ping` method (clock sync); `matchState` now carries `frame`, `sim` (26 packed ints) and `checksum` in place of the per-tick swing fields |
 
-Trivia questions in PoFunQuiz come in part from the [Open Trivia Database](https://opentdb.com/),
-licensed under [CC BY-SA 4.0](https://creativecommons.org/licenses/by-sa/4.0/).
 PoBrawl's fighter dossiers quote summaries and portraits from [Wikipedia](https://en.wikipedia.org/)
 (text CC BY-SA 4.0); each card links its article with a "From Wikipedia" attribution.

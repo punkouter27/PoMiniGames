@@ -26,23 +26,9 @@ public sealed class StorageInitializer
     public static readonly string[] AdditionalTables =
     [
         "PoFunQuizPlayers",
-        // PoFunQuiz permanent question bank (PartitionKey = category, RowKey = normalized-text
-        // hash). Name must match QuizBankRepository.TableName.
-        "PoFunQuizBank",
-        // Per-identity daily AI token spend (PartitionKey = yyyy-MM-dd, RowKey = identity hash).
-        // Ensured eagerly because the budget check runs on the first model call of a cold host,
-        // and a lazy create there would put a table-creation round trip inside a player's turn.
-        // Name must match TableAiTokenLedgerStore.TableName.
-        "AiTokenLedger",
-        // HybridCache L2. Ensured for the same reason: the first cache read of a cold host is on
-        // a request path. Name must match TableDistributedCache.TableName.
-        "PoMiniGamesCache",
         // PoEcosystem cloud slots + the public gallery index. Name must match
         // EcosystemWorldStore.TableName.
         "PoEcosystemWorlds",
-        // PoJevArena's daily Jev call cap (same shape as AiTokenLedger). Name must match
-        // JevCallAllowance.TableName.
-        "PoJevArenaCallLedger",
         // PoJevArena public creature library (one partition). Name must match
         // CreatureLibraryStore.TableName.
         "PoJevArenaCreatures",

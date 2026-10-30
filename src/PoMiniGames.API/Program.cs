@@ -58,14 +58,9 @@ builder.Services.AddSingleton<ConfigurationDiagnosticsSnapshotProvider>();
 // Enrich every hub invocation's logs with UserId/ConnectionId — the SignalR
 // equivalent of RequestLogContextMiddleware for HTTP (see HubLogContextFilter).
 builder.Services.AddSingleton<HubLogContextFilter>();
-// Names the caller every hub invocation's model calls are charged to. PoCoupleQuiz generates
-// questions and scores answers from inside its hub, so without this the game with the highest
-// per-round AI call count would be the one the token budget could not see.
-builder.Services.AddSingleton<PoMiniGames.AI.AiUsageScopeHubFilter>();
 builder.Services.AddSignalR(options =>
 {
     options.AddFilter<HubLogContextFilter>();
-    options.AddFilter<PoMiniGames.AI.AiUsageScopeHubFilter>();
     // Only surface server-side exception detail to clients in Development.
     // In Production this would leak internal exception messages/stack traces
     // over the wire to every connected client.
@@ -425,12 +420,6 @@ app.UseStaticFiles(new Microsoft.AspNetCore.Builder.StaticFileOptions
 app.UseAuthentication();
 app.UseRateLimiter();
 app.UseAuthorization();
-
-// Names the caller each request's model calls are charged to (BudgetedChatClient reads it).
-// AFTER UseAuthentication on purpose: read any earlier, the principal is not yet established and
-// every signed-in player would be charged to their IP — sharing one ledger with everyone behind
-// the same NAT. After UseRateLimiter too, so a shed request never opens a scope at all.
-app.UseAiUsageScope();
 
 // CSRF gate. Deliberately AFTER UseAuthentication: the antiforgery token is bound to
 // the user's identity claims, so validating before the principal is established would

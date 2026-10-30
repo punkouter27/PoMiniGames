@@ -35,104 +35,6 @@ internal static class GameServicesExtensions
         // Scoped: one cross-table scan per request, and it holds no state between them.
         services.AddScoped<PoMiniGames.Features.Account.PlayerDataService>();
 
-        // ─── Centralized Azure AI Foundry hub (PoShared RG) ─────────────────
-        // One shared AzureOpenAIClient + per-deployment ChatClient cache. Every
-        // game that needs an AI model resolves through GameChatClientFactory
-        // with its game key (couplequiz, funquiz).
-        services.AddOptions<AIFoundryOptions>()
-            // Bind the configuration section the Key Vault secrets land in. This was missing:
-            // the options object was built ONLY from the environment-variable overrides below,
-            // so a correctly-populated kv-poshared2 (PoMiniGames--AI--*) left Endpoint empty,
-            // IsConfigured false, and every AI-backed game silently served mock data.
-            .BindConfiguration(AIFoundryOptions.SectionName)
-            .PostConfigure<IConfiguration>((opts, configuration) =>
-            {
-                // The vault names the endpoint secret PoMiniGames--AI--FoundryEndpoint, which
-                // binds to "<section>:FoundryEndpoint" — not to the Endpoint property. Map it
-                // across rather than renaming the secret, which other apps also read.
-                // Host environment variables stay the local override, and each only applies when
-                // actually set: unconditionally assigning DefaultDeployment used to stamp
-                // "gpt-4o-mini" over whatever the vault said.
-                var endpoint = Environment.GetEnvironmentVariable("PoMiniGames__AI__FoundryEndpoint")
-                    ?? configuration[$"{AIFoundryOptions.SectionName}:FoundryEndpoint"];
-                if (!string.IsNullOrWhiteSpace(endpoint))
-                {
-                    opts.Endpoint = endpoint!;
-                }
-
-                var defaultDeployment = Environment.GetEnvironmentVariable("PoMiniGames__AI__DefaultDeployment");
-                if (!string.IsNullOrWhiteSpace(defaultDeployment))
-                {
-                    opts.DefaultDeployment = defaultDeployment!;
-                }
-
-                // The vault stores the per-game map as ONE secret — PoMiniGames--AI--Deployments,
-                // "game=deployment,game=deployment" — which arrives as a scalar value at
-                // "<section>:Deployments" and cannot bind to a dictionary at all. Parsed here so
-                // the flat and nested forms produce the same options object; nested keys already
-                // bound above are kept, with the flat form filling gaps rather than overwriting.
-                var flat = Environment.GetEnvironmentVariable("PoMiniGames__AI__Deployments")
-                    ?? configuration[$"{AIFoundryOptions.SectionName}:Deployments"];
-                foreach (var (game, deployment) in ParseDeploymentPairs(flat))
-                {
-                    if (!opts.Deployments.Any(kv => string.Equals(kv.Key, game, StringComparison.OrdinalIgnoreCase)))
-                        opts.Deployments[game] = deployment;
-                }
-            });
-        services.AddSingleton<AIFoundryClientFactory>();
-        // Register the resilience pipeline (retry + circuit breaker + outer timeout)
-        // used by every AI Foundry consumer. Idempotent — safe to call multiple times.
-        // Consumed by GameChatClientFactory, which wraps every keyed game chat client in it;
-        // a pipeline that is registered but resolved nowhere would let a single call run far
-        // past its documented 20 s ceiling.
-        services.AddAzureOpenAIResilience();
-        // Cross-cutting AI concerns: usage/latency read-model, per-identity spend ceiling, and a
-        // startup check that every configured deployment name exists on the account.
-        services.AddSingleton<AiUsageAccumulator>();
-        services.AddOptions<AiTokenBudgetOptions>().BindConfiguration(AiTokenBudgetOptions.SectionName);
-        // Durable backing for the daily ceiling. Without it the ledger is a ConcurrentDictionary
-        // that an App Service F1 recycle (no AlwaysOn, so idle = recycle) resets to zero, which
-        // made "250k tokens per identity per day" mean "per identity per uptime".
-        services.AddSingleton<IAiTokenLedgerStore>(sp =>
-        {
-            // TableServiceClient is always registered (AddPoMiniGamesStorage), but a host built
-            // without storage — or with it unreachable — must still serve AI traffic, so the null
-            // store is the documented degradation rather than a startup failure.
-            var tables = sp.GetService<Azure.Data.Tables.TableServiceClient>();
-            return tables is null
-                ? NullAiTokenLedgerStore.Instance
-                : new TableAiTokenLedgerStore(tables, sp.GetRequiredService<ILogger<TableAiTokenLedgerStore>>());
-        });
-        services.AddSingleton<AiTokenBudget>();
-        // Write-behind flusher: pushes accumulated spend to the ledger on an interval and once
-        // more on graceful shutdown. Idles immediately when the store is the null one.
-        services.AddHostedService<AiTokenBudgetFlushService>();
-        // Memoizes per-(game, deployment) ChatOptions so the JSON-element cloning and the
-        // raw-representation factory allocation happen once per pair rather than once per call.
-        // Pure-local hot-path win; no network effect.
-        services.AddSingleton<AiDecisionOptionsCache>();
-        // Embeddings for the similarity-scoring path. Dormant unless
-        // PoMiniGames:AI:EmbeddingDeployment names a deployment — the shared account currently has
-        // none, so PoCoupleQuiz still scores via chat; see AiEmbeddingService.
-        services.AddSingleton<AiEmbeddingService>();
-        services.AddHttpClient(nameof(FoundryDeploymentValidator), client =>
-        {
-            client.Timeout = TimeSpan.FromSeconds(10);
-        });
-        services.AddHostedService<FoundryDeploymentValidator>();
-        // Every AI-consuming slice now resolves its chat client through GameChatClientFactory, so
-        // each gets the resilience pipeline, the spend ceiling and the telemetry by construction.
-        // Registering the keys here (rather than in each slice) keeps the set in one place and
-        // makes the health-tracker keys predictable. Idempotent.
-        foreach (var game in AIFoundryOptions.Games.All)
-            services.AddGameChatClient(game);
-        // /health gains an AI check, and /api/diag/ai exposes the usage read-model that
-        // AiUsageAccumulator fills.
-        services.AddHealthChecks()
-            .AddCheck<AiFoundryHealthCheck>(
-                "AiFoundry",
-                tags: ["ai", "ready"]);
-
         // Elo calculation, on the defaults in EloOptions.
         services.AddSingleton(sp =>
         {
@@ -170,55 +72,26 @@ internal static class GameServicesExtensions
         services.AddHttpClient<PoMiniGames.Features.Invites.WebPushSender>(client => client.Timeout = TimeSpan.FromSeconds(10))
             .ConfigurePrimaryHttpMessageHandler(() => new HttpClientHandler { AllowAutoRedirect = false });
 
-        // Fail-fast startup validator: throws in Production if any consolidated game's
-        // required Azure OpenAI secrets are missing.
+        // Fail-fast startup validator: throws in Production when fake auth is on.
         services.AddHostedService<StartupSecretValidator>();
 
-        // PoCoupleQuiz — Phase 1 of the consolidation. See Features/PoCoupleQuiz/.
-        // The question service resolves to the mock in Dev/Test when UseMockAI=true
-        // or Azure OpenAI is not configured; in Production it always uses the real
-        // service (StartupSecretValidator fails-fast if the secrets are missing).
-        // CoupleQuizOptions is bound in Program.cs before AddPoMiniGamesGameServices.
+        // PoCoupleQuiz — see Features/PoCoupleQuiz/. Questions are dealt from the embedded
+        // JSON bank (CoupleQuizQuestionBank). CoupleQuizOptions is bound in Program.cs before
+        // AddPoMiniGamesGameServices.
         services.AddSingleton<GameSessionManager>();
         // Note: GameSessionManager is a pure in-memory state holder, not a hosted service.
         // The round timer lives in CoupleQuizRoundDirector below.
-        services.AddSingleton<IQuestionService, AiQuestionService>();
-        services.AddSingleton<MockQuestionService>();
         // Owns the round clock. A Hub instance lives for one invocation and cannot hold a
         // timer, so rounds are driven from this singleton over a long-lived IHubContext.
         services.AddSingleton<CoupleQuizRoundDirector>();
 
         // PoFunQuiz — Phase 2 of the consolidation. See Features/PoFunQuiz/.
-        // AiQuizGeneratorService is the production path; mock fallback is gated to Dev/Test
-        // inside the service. The leaderboard repository writes to the
+        // Questions are dealt at random from the embedded JSON bank (FunQuizQuestionService).
+        // The leaderboard repository writes to the
         // PoFunQuizPlayers table (PartitionKey = Category, RowKey = Guid).
         // MultiplayerLobbyService is the in-memory registry for the SignalR hub
         // (CreateGame/JoinGame/StartGame/UpdateScore/PlayerFinished).
-        // HybridCache: stampede-protected memoization for deterministic, expensive
-        // Azure OpenAI calls (answer-similarity scoring + question generation).
-        // Shared by PoCoupleQuiz (answer similarity) and PoFunQuiz (question list).
-        // L2 for HybridCache. Registered BEFORE AddHybridCache so the hybrid layer picks it up:
-        // without an IDistributedCache the "L1/L2" above is L1 only, and every cached model
-        // generation is lost on the next F1 recycle and re-bought at generation rates.
-        // TryAdd so a test host that wires its own distributed cache keeps it.
-        Microsoft.Extensions.DependencyInjection.Extensions.ServiceCollectionDescriptorExtensions
-            .TryAddSingleton<Microsoft.Extensions.Caching.Distributed.IDistributedCache>(services, sp =>
-                new PoMiniGames.Infrastructure.TableDistributedCache(
-                    sp.GetRequiredService<Azure.Data.Tables.TableServiceClient>(),
-                    sp.GetRequiredService<ILogger<PoMiniGames.Infrastructure.TableDistributedCache>>()));
-        services.AddHybridCache();
-        services.AddSingleton<IOpenAIService, AiQuizGeneratorService>();
-        // Free question pipeline (default): Table Storage bank + Open Trivia DB + bundled set.
-        // The AI generator above is reached only for opted-in Fresh AI requests.
-        services.AddOptions<FunQuizOptions>().BindConfiguration(FunQuizOptions.SectionName);
-        services.AddHttpClient(OpenTriviaDbClient.HttpClientName, client => client.Timeout = TimeSpan.FromSeconds(10));
-        services.AddSingleton<OpenTriviaDbClient>();
-        services.AddSingleton<PoMiniGames.Features.PoFunQuiz.Storage.QuizBankRepository>();
-        services.AddSingleton<FunQuizQuestionService>();
-        services.AddSingleton<IFunQuizQuestionSource>(sp => sp.GetRequiredService<FunQuizQuestionService>());
-        // Background bank filler: free sources only unless QuizPrebake:AllowAiTopUp is set.
-        services.AddOptions<QuizPrebakeOptions>().BindConfiguration(QuizPrebakeOptions.SectionName);
-        services.AddHostedService<QuizPrebakeService>();
+        services.AddSingleton<IFunQuizQuestionSource, FunQuizQuestionService>();
         services.AddSingleton<PoMiniGames.Features.PoFunQuiz.Storage.LeaderboardRepository>();
         services.AddSingleton<MultiplayerLobbyService>();
 
@@ -226,51 +99,21 @@ internal static class GameServicesExtensions
         // empty when storage is unreachable.
         services.AddSingleton<EcosystemWorldStore>();
 
-        // PoJevArena — the free rule-based LocalJevClient is the default brain, so the arena always
-        // plays. Paid Jev (TypeSafe, via OpenRouter) answers a match only when Brain=Jev, a key is
-        // configured and the player asked (JevBrainRouter). The paid client is a typed HttpClient
-        // with its own per-call timeout and no retry pipeline; the concurrency gate is a singleton
-        // so every typed-client instance shares one in-flight cap. The stub is selected only under
-        // the Test environment.
+        // PoJevArena — the free rule-based LocalJevClient is the only brain, so the arena always
+        // plays. The scripted stub is selected only under the Test environment.
         services.AddOptions<JevOptions>()
             .BindConfiguration(JevOptions.SectionName);
-        services.AddSingleton<JevConcurrencyGate>();
-        services.AddHttpClient<JevClient>(
-            JevClient.HttpClientName,
-            (sp, client) => client.BaseAddress = new Uri(sp
-                .GetRequiredService<IOptions<JevOptions>>()
-                .Value.Endpoint));
         services.AddSingleton<StubJevClient>();
         services.AddSingleton<LocalJevClient>();
-        services.AddScoped<JevBrainRouter>();
         services.AddTransient<IJevClient>(sp =>
         {
             var options = sp.GetRequiredService<IOptions<JevOptions>>().Value;
             return options.UseStub && sp.GetRequiredService<IHostEnvironment>().IsEnvironment("Test")
                 ? sp.GetRequiredService<StubJevClient>()
-                : sp.GetRequiredService<JevClient>();
-        });
-        // Daily Jev call cap: its own AiTokenBudget (counting calls, not tokens) over its own
-        // ledger table, flushed by a second instance of the stock flusher. Registered through
-        // AddSingleton<IHostedService> on purpose — AddHostedService<T> is a TryAddEnumerable
-        // and would silently drop a second AiTokenBudgetFlushService.
-        services.AddSingleton(sp =>
-        {
-            var tables = sp.GetService<Azure.Data.Tables.TableServiceClient>();
-            IAiTokenLedgerStore store = tables is null
-                ? NullAiTokenLedgerStore.Instance
-                : new TableAiTokenLedgerStore(
-                    tables, sp.GetRequiredService<ILogger<TableAiTokenLedgerStore>>(), JevCallAllowance.TableName);
-            var clock = sp.GetRequiredService<TimeProvider>();
-            return new JevCallAllowance(new AiTokenBudget(
-                sp.GetRequiredService<IOptions<JevOptions>>().Value.DailyCallsPerIdentity, clock.GetUtcNow, store));
+                : sp.GetRequiredService<LocalJevClient>();
         });
         services.AddSingleton<ArenaMatchRegistry>();
         services.AddSingleton<CreatureLibraryStore>();
-        services.AddSingleton<IHostedService>(sp => new AiTokenBudgetFlushService(
-            sp.GetRequiredService<JevCallAllowance>().Budget,
-            sp.GetRequiredService<IOptions<AiTokenBudgetOptions>>(),
-            sp.GetRequiredService<ILogger<AiTokenBudgetFlushService>>()));
 
         // PoRacer — multiplayer racing. The lobby service is the in-memory
         // registry; the race registry + service own the per-game simulation
@@ -359,27 +202,5 @@ internal static class GameServicesExtensions
         });
 
         return services;
-    }
-
-    /// <summary>
-    /// Parses the flat <c>game=deployment,game=deployment</c> form of the per-game deployment map.
-    /// Accepts <c>:</c> as the separator too, which is how the secret is documented.
-    /// </summary>
-    private static IEnumerable<(string Game, string Deployment)> ParseDeploymentPairs(string? raw)
-    {
-        if (string.IsNullOrWhiteSpace(raw))
-            yield break;
-
-        foreach (var pair in raw.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries))
-        {
-            var split = pair.IndexOfAny(['=', ':']);
-            if (split <= 0 || split == pair.Length - 1)
-                continue;
-
-            var game = pair[..split].Trim();
-            var deployment = pair[(split + 1)..].Trim();
-            if (game.Length > 0 && deployment.Length > 0)
-                yield return (game, deployment);
-        }
     }
 }

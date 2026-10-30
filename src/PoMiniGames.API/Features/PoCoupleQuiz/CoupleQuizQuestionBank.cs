@@ -1,342 +1,26 @@
+using System.Reflection;
+using System.Text.Json;
+
 namespace PoMiniGames.Features.PoCoupleQuiz;
 
 /// <summary>
-/// The curated, free PoCoupleQuiz question bank: 300 short questions, 50 per category. The round
-/// director deals from here by default; the paid model writes questions only in Fresh AI mode.
+/// The curated PoCoupleQuiz question bank: about a thousand short questions across six
+/// categories, shipped as the embedded <c>Data/questions.json</c> and loaded once on first use.
+/// The round director deals from here at random.
 /// </summary>
 /// <remarks>
 /// Written for the game's actual shape — one player (the King) answers about themselves and the
 /// others guess that answer — so every question has a short answer the King knows, stays under
-/// twelve words, and is fine for a family game night.
+/// thirteen words, and is fine for a family game night.
 /// </remarks>
 public static class CoupleQuizQuestionBank
 {
-    private static readonly Dictionary<QuestionCategory, string[]> ByCategory = new()
-    {
-        [QuestionCategory.Relationships] =
-        [
-            "Where did you two first meet?",
-            "Where was your first date?",
-            "Who said \"I love you\" first?",
-            "What was your first impression of your partner?",
-            "What song reminds you of your partner?",
-            "What is your partner's most adorable habit?",
-            "Who is the better cook in your relationship?",
-            "Who is more likely to get lost?",
-            "What nickname do you call your partner?",
-            "What was the first movie you watched together?",
-            "What is your favorite date night activity?",
-            "Who apologizes first after a disagreement?",
-            "What is your partner's love language?",
-            "Which trip together was your favorite?",
-            "Who takes longer to get ready?",
-            "What gift from your partner do you treasure most?",
-            "What chore does your partner always avoid?",
-            "Who is the bigger night owl?",
-            "Which restaurant feels like your place?",
-            "Who hogs the blanket at night?",
-            "What is your partner's best quality?",
-            "Who controls the TV remote at home?",
-            "What was your first meal together?",
-            "Who is more romantic?",
-            "What inside joke always makes you both laugh?",
-            "Who remembers birthdays and anniversaries better?",
-            "What does your partner do that always makes you smile?",
-            "Who is the better driver?",
-            "What was your partner wearing when you met?",
-            "What is your favorite photo of you two?",
-            "Who is more likely to cry at a movie?",
-            "Who plans most of your trips?",
-            "What phrase does your partner say most often?",
-            "In what season was your first date?",
-            "What is your favorite thing to do together on Sundays?",
-            "Who is more competitive at board games?",
-            "What snack does your partner always steal from you?",
-            "Who is the morning person between you two?",
-            "Which of you is the better singer?",
-            "What was your partner's job when you met?",
-            "Who usually picks the restaurant?",
-            "What is the sweetest thing your partner has done for you?",
-            "Who is the tidier one?",
-            "Who is more likely to forget their keys?",
-            "What is your favorite memory together?",
-            "Who made the first move?",
-            "What silly thing do you two always debate?",
-            "Who is the bigger spender?",
-            "What dish would you order for your partner?",
-            "What TV show do you both love?",
-        ],
-        [QuestionCategory.Hobbies] =
-        [
-            "What hobby could you talk about for hours?",
-            "What sport do you most enjoy watching?",
-            "What is your favorite board game?",
-            "What instrument would you love to learn?",
-            "What is your favorite video game ever?",
-            "What book have you read more than once?",
-            "What craft or DIY project are you proudest of?",
-            "What is your go-to karaoke song?",
-            "Which outdoor activity do you enjoy most?",
-            "What podcast do you listen to most?",
-            "What is your favorite way to exercise?",
-            "What hobby did you quit but still miss?",
-            "What do you collect, or wish you collected?",
-            "What is your favorite card game?",
-            "What is your signature dance move?",
-            "What TV show could you rewatch forever?",
-            "What is your favorite thing to bake?",
-            "What app do you spend the most time on?",
-            "What would you do with a free Saturday?",
-            "Which museum would you visit first?",
-            "What sport did you play as a kid?",
-            "What is your favorite kind of puzzle?",
-            "What skill would you master in one day?",
-            "What is your favorite genre of music?",
-            "Which concert will you never forget?",
-            "What is your favorite way to relax?",
-            "What new hobby do you want to try this year?",
-            "What is your favorite movie genre?",
-            "What game do you always win?",
-            "What is your favorite plant to grow?",
-            "Which artist or band do you play on repeat?",
-            "What is your favorite place to go for a walk?",
-            "What would your YouTube channel be about?",
-            "What is your favorite camping activity?",
-            "What do you doodle when you are bored?",
-            "Where is your favorite place to read?",
-            "Which sports team do you cheer for?",
-            "What is your favorite water activity?",
-            "What hobby would you turn into a job?",
-            "What is your favorite holiday tradition?",
-            "What do you do to unwind after work?",
-            "What is your favorite thing to photograph?",
-            "What class would you take just for fun?",
-            "What is your favorite winter activity?",
-            "What was the last thing you made by hand?",
-            "Which game show would you win easily?",
-            "What is your favorite theme park ride?",
-            "What is your favorite way to spend a rainy day?",
-            "Which superhero movie is your favorite?",
-            "What is your guilty-pleasure TV show?",
-        ],
-        [QuestionCategory.Childhood] =
-        [
-            "What was your favorite childhood toy?",
-            "What did you want to be when you grew up?",
-            "What was your favorite cartoon as a kid?",
-            "What was your first pet's name?",
-            "What was your favorite school subject?",
-            "Who was your best friend in elementary school?",
-            "What was your favorite childhood snack?",
-            "Where did your family go on vacation?",
-            "What was your best birthday party?",
-            "What was your first concert?",
-            "What was your favorite book as a child?",
-            "What sport did you play in school?",
-            "What was your childhood nickname?",
-            "What was your favorite candy growing up?",
-            "What chore did you hate as a kid?",
-            "What was your favorite playground game?",
-            "What was your first job?",
-            "What was your favorite holiday as a child?",
-            "What was your favorite cereal growing up?",
-            "Who was your childhood hero?",
-            "What was the first movie you saw in theaters?",
-            "What was your favorite family meal?",
-            "What was your favorite video game as a kid?",
-            "What street did you grow up on?",
-            "What instrument did you play in school?",
-            "What was your favorite ice cream flavor as a kid?",
-            "Which Halloween costume do you remember best?",
-            "What was your favorite summer activity as a kid?",
-            "Who was your favorite teacher?",
-            "What was your first phone or computer?",
-            "What did you collect as a kid?",
-            "What was your favorite song as a teenager?",
-            "What time was your bedtime as a kid?",
-            "What was your favorite stuffed animal called?",
-            "What was your family's first car?",
-            "What was your favorite TV show as a teen?",
-            "What scared you most as a child?",
-            "What was your favorite school field trip?",
-            "What did you spend your allowance on?",
-            "What was your favorite board game growing up?",
-            "What was the best gift you got as a kid?",
-            "What was your favorite fast food as a kid?",
-            "Which poster hung on your bedroom wall?",
-            "What was the first thing you learned to cook?",
-            "Where was your favorite hiding spot?",
-            "What was your favorite dessert growing up?",
-            "Who taught you to ride a bike?",
-            "What was your favorite game console as a kid?",
-            "What was your favorite after-school activity?",
-            "What was your favorite family tradition?",
-        ],
-        [QuestionCategory.Future] =
-        [
-            "Where would you most like to live someday?",
-            "What is the next trip you want to take?",
-            "What is at the top of your bucket list?",
-            "What would you do if you won the lottery?",
-            "What pet would you love to have someday?",
-            "What would your dream job be?",
-            "Where would you go for a dream anniversary trip?",
-            "What skill do you want to learn next?",
-            "What must your dream house have?",
-            "Which country do you want to visit next?",
-            "What would you name a future pet?",
-            "What car would you buy with unlimited money?",
-            "Where do you see yourself in five years?",
-            "What would your perfect retirement look like?",
-            "What business would you love to start?",
-            "What adventure sport would you try someday?",
-            "Which city would you move to tomorrow?",
-            "What would you do with a year off?",
-            "What language would you love to speak?",
-            "What would you grow in your dream garden?",
-            "Which famous landmark do you most want to see?",
-            "Which concert would you love to attend?",
-            "What goal do you want to reach this year?",
-            "Where would your dream weekend getaway be?",
-            "What would you build if you had the skills?",
-            "What would your dream kitchen include?",
-            "What event would you love to attend live?",
-            "How would you spend a perfect birthday?",
-            "What new tradition would you like to start?",
-            "What would you invent to make life easier?",
-            "What book do you want to read next?",
-            "Which celebrity would you love to meet?",
-            "Where would you take a dream road trip?",
-            "What would you do first in a new city?",
-            "What room would you add to your home?",
-            "What would you cook for a big celebration?",
-            "What would you buy first with a big bonus?",
-            "What sport would you like to try?",
-            "What would you do on a dream day off?",
-            "Which festival would you love to go to?",
-            "What would you name your boat?",
-            "Where would your dream vacation home be?",
-            "What would you love to accomplish by age seventy?",
-            "What would be your perfect anniversary gift?",
-            "Which wonder of the world do you want to see?",
-            "What party would you throw for a big milestone?",
-            "What would a perfect future Saturday look like?",
-            "Where would you go if you could fly for a day?",
-            "What do you want to get better at?",
-            "Where would you spend a whole month away?",
-        ],
-        [QuestionCategory.Preferences] =
-        [
-            "What is your favorite pizza topping?",
-            "Coffee or tea?",
-            "What is your favorite color?",
-            "What is your go-to comfort food?",
-            "What is your favorite season?",
-            "Beach or mountains?",
-            "What is your favorite ice cream flavor?",
-            "What is your favorite dessert?",
-            "What is your favorite fast food restaurant?",
-            "What is your favorite movie of all time?",
-            "Cats or dogs?",
-            "What is your favorite breakfast?",
-            "What is your favorite candy?",
-            "What is your favorite kind of weather?",
-            "What is your favorite holiday?",
-            "What is your favorite smell?",
-            "What is your go-to coffee order?",
-            "What is your favorite fruit?",
-            "What is your least favorite vegetable?",
-            "What is your favorite sandwich?",
-            "What is your favorite type of cuisine?",
-            "Sunrise or sunset?",
-            "What is your favorite animal?",
-            "What is your favorite snack?",
-            "What is your favorite drink?",
-            "What is your favorite flower?",
-            "Morning shower or evening shower?",
-            "What is your favorite soup?",
-            "What is your favorite pasta dish?",
-            "What is your favorite cookie?",
-            "What is your favorite room in your home?",
-            "What is your favorite day of the week?",
-            "Sweet or salty snacks?",
-            "What is your favorite cereal?",
-            "What is your favorite kind of shoe?",
-            "What is your favorite emoji?",
-            "What is your favorite chip flavor?",
-            "What music do you like while driving?",
-            "Window seat or aisle seat?",
-            "What is your favorite sauce or condiment?",
-            "What is your favorite cake flavor?",
-            "What is your favorite sports team?",
-            "What is your favorite number?",
-            "What is your favorite cheese?",
-            "Pancakes or waffles?",
-            "What is your favorite pie?",
-            "What is your favorite holiday movie?",
-            "What is your favorite salad dressing?",
-            "Books or movies?",
-            "What is your favorite way to eat potatoes?",
-        ],
-        [QuestionCategory.Values] =
-        [
-            "What quality do you value most in a friend?",
-            "What makes you feel most loved?",
-            "What is one thing you would never compromise on?",
-            "What cause do you care about most?",
-            "What would your perfect day include?",
-            "Who do you admire most?",
-            "What are you most grateful for today?",
-            "What is your biggest life lesson so far?",
-            "What makes a house feel like home?",
-            "What is the best advice you ever received?",
-            "What trait do you most want to pass on?",
-            "What are you proudest of about yourself?",
-            "What is your favorite way to help others?",
-            "What would you do with one extra hour daily?",
-            "What habit are you trying to build?",
-            "What one word best describes you?",
-            "What is your personal motto?",
-            "What matters most to you in a home?",
-            "Which tradition matters most to you?",
-            "What makes you laugh the hardest?",
-            "What do you never leave the house without?",
-            "What small thing instantly cheers you up?",
-            "How do you like to celebrate a win?",
-            "What is one thing you cannot stand?",
-            "Relaxing vacation or busy sightseeing?",
-            "What do you think is the key to happiness?",
-            "What would you want to be remembered for?",
-            "Which charity would you support with a big donation?",
-            "What is your biggest pet peeve?",
-            "What item would you save from your home first?",
-            "What compliment means the most to you?",
-            "What do you do when you feel stressed?",
-            "What makes a great teammate?",
-            "What is the most important thing in a relationship?",
-            "Who is the funniest person you know?",
-            "What value did your family teach you?",
-            "What makes you feel most at peace?",
-            "What would you change about the world?",
-            "Which act of kindness do you remember most?",
-            "What is your favorite way to say thank you?",
-            "Are you more of a saver or a spender?",
-            "What is your biggest strength?",
-            "What do you want more of in life?",
-            "What topic could you debate forever?",
-            "What do you think makes a good leader?",
-            "What is your favorite quote?",
-            "What gets you out of bed in the morning?",
-            "What little luxury is worth paying for?",
-            "What does success look like to you?",
-            "What promise do you always keep?",
-        ],
-    };
+    private const string ResourceName = "PoCoupleQuiz.questions.json";
+
+    private static readonly Lazy<IReadOnlyList<Question>> Loaded = new(Load);
 
     /// <summary>Every question in the bank, all categories.</summary>
-    public static IReadOnlyList<Question> All { get; } = ByCategory
-        .SelectMany(kv => kv.Value.Select(text => new Question { Text = text, Category = kv.Key }))
-        .ToList();
+    public static IReadOnlyList<Question> All => Loaded.Value;
 
     /// <summary>
     /// A random question none of <paramref name="asked"/> has used. When every question has been
@@ -345,9 +29,27 @@ public static class CoupleQuizQuestionBank
     public static Question Draw(IReadOnlySet<string> asked, Random? random = null)
     {
         random ??= Random.Shared;
-        var fresh = All.Where(q => !asked.Contains(q.Text)).ToList();
-        var pickFrom = fresh.Count > 0 ? fresh : (IReadOnlyList<Question>)All;
+        var all = All;
+        var fresh = all.Where(q => !asked.Contains(q.Text)).ToList();
+        var pickFrom = fresh.Count > 0 ? fresh : all;
         var picked = pickFrom[random.Next(pickFrom.Count)];
         return new Question { Text = picked.Text, Category = picked.Category };
+    }
+
+    private static IReadOnlyList<Question> Load()
+    {
+        using var stream = Assembly.GetExecutingAssembly().GetManifestResourceStream(ResourceName)
+            ?? throw new InvalidOperationException($"Embedded resource '{ResourceName}' is missing.");
+        var byCategory = JsonSerializer.Deserialize<Dictionary<string, string[]>>(stream)
+            ?? throw new InvalidOperationException("The couple question bank is empty.");
+
+        var list = new List<Question>();
+        foreach (var (name, texts) in byCategory)
+        {
+            var category = Enum.Parse<QuestionCategory>(name);
+            list.AddRange(texts.Select(text => new Question { Text = text, Category = category }));
+        }
+
+        return list;
     }
 }

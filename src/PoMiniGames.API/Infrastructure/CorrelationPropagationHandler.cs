@@ -3,7 +3,7 @@ namespace PoMiniGames.Infrastructure;
 /// <summary>
 /// Stamps the current request's correlation and session identifiers onto every outbound
 /// HTTP call made through a typed <see cref="HttpClient"/>. Without this, a failure logged
-/// by an upstream Azure service (Face / OpenAI) cannot be tied back to the originating
+/// by an upstream service cannot be tied back to the originating
 /// in-app request, so production debugging is disjointed.
 /// </summary>
 internal sealed class CorrelationPropagationHandler : DelegatingHandler

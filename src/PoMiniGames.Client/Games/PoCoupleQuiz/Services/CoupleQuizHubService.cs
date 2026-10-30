@@ -153,16 +153,6 @@ public sealed class CoupleQuizHubService : IAsyncDisposable
         return _connection!.InvokeAsync("SetRounds", rounds);
     }
 
-    /// <summary>
-    /// Sends this player's quiz options (question source, answer matching). The server gates the
-    /// paid ones by sign-in and only the host's options drive the lobby.
-    /// </summary>
-    public Task SetPreferencesAsync(string questionSource, string answerMatching)
-    {
-        EnsureConnected();
-        return _connection!.InvokeAsync("SetPreferences", questionSource, answerMatching);
-    }
-
     public Task SubmitAnswerAsync(string answer)
     {
         EnsureConnected();

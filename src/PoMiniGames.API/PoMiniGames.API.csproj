@@ -54,12 +54,14 @@
              CopyToPublishDirectory="PreserveNewest" />
   </ItemGroup>
 
-  <!-- PoFunQuiz's bundled question set: the floor under the bank when storage and Open Trivia DB
-       are both unreachable. Embedded (not Content) so it can never be missing from a deployment;
-       the Web SDK would otherwise also publish it as a loose .json content file. -->
+  <!-- The quiz banks (PoFunQuiz trivia, PoCoupleQuiz questions): the only question source. Embedded
+       (not Content) so they can never be missing from a deployment; the Web SDK would otherwise
+       also publish them as loose .json content files. -->
   <ItemGroup>
     <Content Remove="Features/PoFunQuiz/Data/questions.json" />
     <EmbeddedResource Include="Features/PoFunQuiz/Data/questions.json" LogicalName="PoFunQuiz.questions.json" />
+    <Content Remove="Features/PoCoupleQuiz/Data/questions.json" />
+    <EmbeddedResource Include="Features/PoCoupleQuiz/Data/questions.json" LogicalName="PoCoupleQuiz.questions.json" />
   </ItemGroup>
 
   <!-- Expose internals (e.g. PoRacerSim) to the unit-test tier so the AI sim can be
@@ -74,16 +76,10 @@
     <PackageReference Include="Azure.Extensions.AspNetCore.Configuration.Secrets" />
     <PackageReference Include="Azure.Data.Tables" />
     <PackageReference Include="Azure.Storage.Blobs" />
-    <PackageReference Include="Azure.AI.OpenAI" />
-    <!-- The chat clients wrap an ME.AI IChatClient resolved from
-         GameChatClientFactory; the .AsIChatClient() adapter extension lives here. -->
-    <PackageReference Include="Microsoft.Extensions.AI" />
-    <PackageReference Include="Microsoft.Extensions.AI.OpenAI" />
     <!-- API -->
     <PackageReference Include="Microsoft.AspNetCore.Authentication.JwtBearer" />
     <PackageReference Include="Microsoft.AspNetCore.OpenApi" />
     <PackageReference Include="Microsoft.Extensions.Http.Resilience" />
-    <PackageReference Include="Microsoft.Extensions.Caching.Hybrid" />
     <PackageReference Include="Microsoft.AspNetCore.Components.WebAssembly.Server" />
     <PackageReference Include="Scalar.AspNetCore" />
     <!-- PoVoxelStrike: GLB → voxel ingestion (Features/PoVoxelStrike/GlbVoxelizer). -->

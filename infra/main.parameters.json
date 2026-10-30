@@ -22,9 +22,6 @@
     },
     "microsoftAuthTenantId": {
       "value": ""
-    },
-    "jevApiKey": {
-      "value": ""
     }
   }
 }

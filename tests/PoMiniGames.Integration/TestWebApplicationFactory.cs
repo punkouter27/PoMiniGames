@@ -6,7 +6,6 @@ using Microsoft.AspNetCore.TestHost;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
-using PoMiniGames.AI;
 using PoMiniGames.Features.Auth;
 using PoMiniGames.TestUtilities;
 

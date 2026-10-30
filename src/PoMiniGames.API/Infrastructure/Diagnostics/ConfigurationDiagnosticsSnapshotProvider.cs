@@ -68,7 +68,6 @@ public sealed class ConfigurationDiagnosticsSnapshotProvider
                 microsoftAuthConfigured = HasConfiguredValue(
                     "PoMiniGames:MicrosoftAuth:ClientId",
                     "PoMiniGames:MicrosoftAuth:ApiClientId"),
-                aiFoundryConfigured = HasConfiguredValue("PoMiniGames:AI:FoundryEndpoint", "PoMiniGames:AI:Endpoint"),
             },
             ["keys"] = new
             {
@@ -79,8 +78,6 @@ public sealed class ConfigurationDiagnosticsSnapshotProvider
                     ?? _configuration["APPINSIGHTS_CONNECTIONSTRING"]),
                 microsoftClientId = SecretMasker.MaskMiddle(_configuration["PoMiniGames:MicrosoftAuth:ClientId"]),
                 microsoftApiClientId = SecretMasker.MaskMiddle(_configuration["PoMiniGames:MicrosoftAuth:ApiClientId"]),
-                aiFoundryEndpoint = SecretMasker.MaskMiddle(_configuration["PoMiniGames:AI:FoundryEndpoint"] ?? _configuration["PoMiniGames:AI:Endpoint"]),
-                aiDefaultDeployment = _configuration["PoMiniGames:AI:DefaultDeployment"] ?? "(null)",
             },
             ["health"] = new
             {

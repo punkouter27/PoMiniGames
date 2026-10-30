@@ -139,10 +139,6 @@
             _isConnected = true;
             StateHasChanged();
             await Hub.JoinAsync(_playerName);
-            // The settings sheet's quiz options. Best-effort: a failure leaves the lobby on the
-            // free defaults, which is never worth blocking a join over.
-            try { await Hub.SetPreferencesAsync(QuizPreferences.SourceParam, QuizPreferences.MatchingParam); }
-            catch { /* free defaults stand */ }
         }
         catch (Exception ex)
         {

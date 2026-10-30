@@ -2,20 +2,18 @@
 namespace PoMiniGames.TestUtilities;
 
 /// <summary>
-/// Zero-Waste budget guardrail for the entire automated test suite.
+/// Zero-Waste guardrail for the entire automated test suite.
 /// Every fixture (Unit harness, Integration <see cref="Microsoft.AspNetCore.Mvc.Testing.WebApplicationFactory{TEntryPoint}"/>,
 /// E2E-API host, E2E-UI Kestrel host) MUST apply <see cref="Overrides"/> before any HTTP
-/// request is served. The intent is structural: even if a developer has live Azure OpenAI
-/// keys wired in <c>appsettings.Development.json</c> or <c>dotnet user-secrets</c>, the
-/// overrides pin every AI boundary to its in-process mock implementation so the suite can
-/// never spend live tokens, accidentally incur a 429, or leak a deployment name.
+/// request is served. The intent is structural: the app has no paid services, and the
+/// overrides keep every test host off live network calls and real Key Vault.
 /// </summary>
 /// <remarks>
 /// <para><b>Single source of truth.</b> The override dictionary is not duplicated inline in
 /// <c>TestWebApplicationFactory.ConfigureWebHost</c>, <c>KestrelServerFixture.ConfigureWebHost</c>,
-/// or <c>PoMiniGamesE2EFixture.ConfigureWebHost</c>: drift between copies would let an AI
-/// boundary (for example <c>IFaceAnalysisService</c>) be missed in one of them.</para>
-/// <para><b>Pattern:</b> Immutable shared dictionary. Adding a new AI boundary requires
+/// or <c>PoMiniGamesE2EFixture.ConfigureWebHost</c>: drift between copies would let a live
+/// boundary be missed in one of them.</para>
+/// <para><b>Pattern:</b> Immutable shared dictionary. Adding a new external boundary requires
 /// exactly one edit here; the next build of any fixture picks it up automatically.</para>
 /// </remarks>
 public static class TestBudgetGuard
@@ -28,25 +26,9 @@ public static class TestBudgetGuard
     /// </summary>
     public static IReadOnlyDictionary<string, string?> Overrides { get; } = new Dictionary<string, string?>
     {
-        // ── Per-game AI mocks ─────────────────────────────────────────────
-        // Force the registration switch to true so each game's
-        // "if (Features.UseMockAI) AddSingleton<MockX>()" branch wins.
-        ["PoFunQuiz:Features:UseMockAI"] = "true",
-        ["PoCoupleQuiz:Features:UseMockAI"] = "true",
-        // Free, but still a live network call: tests deal FunQuiz questions from the bundled set,
-        // never from opentdb.com. Fresh AI is switched off too, so no test request can reach the
-        // paid generator even as a signed-in identity.
-        ["PoFunQuiz:OpenTriviaDb:Enabled"] = "false",
-        ["PoFunQuiz:AllowFreshAi"] = "false",
-        ["PoCoupleQuiz:Features:AllowFreshAi"] = "false",
-        ["PoCoupleQuiz:Features:AllowAiJudge"] = "false",
-        // PoJevArena: this switch is honoured only when the host environment is "Test", and swaps
-        // the deterministic StubJevClient in for every brain (local rules and paid Jev alike).
-        // The empty key and the Local brain keep a developer's real OpenRouter key, and the paid
-        // path, out of every test host.
+        // PoJevArena: honoured only when the host environment is "Test"; swaps in the
+        // deterministic StubJevClient for the local brain.
         ["PoMiniGames:Jev:UseStub"] = "true",
-        ["PoMiniGames:Jev:ApiKey"] = "",
-        ["PoMiniGames:Jev:Brain"] = "Local",
         // PoBrawl dossiers: free, but a live call to en.wikipedia.org. Tests serve the static facts.
         ["PoMiniGames:PoBrawl:Dossier:FetchWikipedia"] = "false",
         ["KeyVault:Uri"] = "",

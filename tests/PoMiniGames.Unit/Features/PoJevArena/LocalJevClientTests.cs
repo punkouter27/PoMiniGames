@@ -49,7 +49,6 @@ public sealed class LocalJevClientTests
         outcome.Answers!.Action.Should().Be(action);
         outcome.Answers.Focus.Should().Be(focus);
         (outcome.Answers.Panic > 0.7).Should().Be(panics);
-        outcome.Usage!.CostUsd.Should().Be(0, "the local brain is free");
         prompt.Questions[JevPromptBuilder.ActionKey].Criteria.Should().ContainKey(outcome.Answers.Action, "only offered options");
         outcome.Answers.ActionProbabilities.Values.Sum().Should().BeApproximately(1, 0.01);
     }

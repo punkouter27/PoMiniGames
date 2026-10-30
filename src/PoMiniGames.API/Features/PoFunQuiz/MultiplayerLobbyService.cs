@@ -51,18 +51,16 @@ public class MultiplayerLobbyService(IFunQuizQuestionSource questions, ILogger<M
         }
 
         // Nobody waiting → this player opens the lobby, and its questions are dealt for the
-        // category *they* picked — from the free bank: a lobby is shared with a stranger, so the
-        // opener's paid Fresh AI preference does not apply here. Deliberately outside the gate: a
-        // cold bank can take a moment (storage read, Open Trivia DB top-up), and holding a lock
-        // across it would stall every other player's join.
-        var questions = (await _questions.GetQuestionsAsync(category, questionCount, QuizSourceMode.Bank, ct)).ToList();
+        // category *they* picked — from the in-memory bank. Deliberately outside the gate so
+        // dealing never holds the lock that every other player's join needs.
+        var questions = (await _questions.GetQuestionsAsync(category, questionCount, ct)).ToList();
 
         lock (_gate)
         {
-            // Someone may have opened a lobby while we were waiting on the AI. Prefer
+            // Someone may have opened a lobby while we were dealing. Prefer
             // theirs — otherwise two players who pressed the button together end up
             // alone in two separate lobbies, which is the exact failure the single
-            // lobby exists to prevent. Our freshly generated questions are discarded.
+            // lobby exists to prevent. Our freshly dealt questions are discarded.
             var open = TryTakeOpenSeat(connectionId, playerName);
             if (open is not null) return (open, false);
 

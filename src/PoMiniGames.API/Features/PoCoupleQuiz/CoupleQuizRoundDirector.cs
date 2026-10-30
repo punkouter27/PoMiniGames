@@ -27,15 +27,11 @@ namespace PoMiniGames.Features.PoCoupleQuiz;
 /// </remarks>
 public sealed class CoupleQuizRoundDirector : IDisposable
 {
-    /// <summary>AI-judge similarity at or above which a guess counts as matching the King's answer.</summary>
-    private const float MatchThreshold = 0.5f;
-
     /// <summary>Points for a guesser who matched the King this round.</summary>
     private const int MatchPoints = 10;
 
     private readonly IHubContext<CoupleQuizHub, IGameClient> _hub;
     private readonly GameSessionManager _sessions;
-    private readonly IQuestionService _questions;
     private readonly IOptionsMonitor<CoupleQuizOptions> _options;
     private readonly ILogger<CoupleQuizRoundDirector> _logger;
     private readonly SemaphoreSlim _gate = new(1, 1);
@@ -43,13 +39,11 @@ public sealed class CoupleQuizRoundDirector : IDisposable
     public CoupleQuizRoundDirector(
         IHubContext<CoupleQuizHub, IGameClient> hub,
         GameSessionManager sessions,
-        IQuestionService questions,
         IOptionsMonitor<CoupleQuizOptions> options,
         ILogger<CoupleQuizRoundDirector> logger)
     {
         _hub = hub;
         _sessions = sessions;
-        _questions = questions;
         _options = options;
         _logger = logger;
     }
@@ -73,7 +67,7 @@ public sealed class CoupleQuizRoundDirector : IDisposable
                 return;
             }
 
-            var first = await NextQuestionAsync(newMatch: true, cancellationToken);
+            var first = NextQuestion(newMatch: true);
             var game = _sessions.StartGame(first.Text, first.Category.ToString());
 
             await _hub.Clients.All.GameStarted(new GameStartedPayload(
@@ -189,30 +183,14 @@ public sealed class CoupleQuizRoundDirector : IDisposable
             _gate.Release();
         }
 
-        // Scoring is free by default (AnswerMatcher). With the host's AI judge on, a close call
-        // asks the model, so scoring happens OUTSIDE the gate — a slow model must not block a
-        // player's submission on another lobby event.
-        var aiJudge = _sessions.HostPreferences().AiJudge;
+        // Scoring uses the free AnswerMatcher.
         var points = new Dictionary<string, int>();
         if (question.KingPlayerAnswer is { } secret)
         {
             foreach (var p in guessers)
             {
                 if (!question.PlayerAnswers.TryGetValue(p.Name, out var guess)) continue;
-                // The round is already marked evaluated and its timer disarmed, so a throw
-                // here would leave it with no result and nothing to retry it. A guess that
-                // cannot be scored scores zero and the round still completes.
-                bool matched;
-                try
-                {
-                    matched = await IsMatchAsync(secret, guess, aiJudge, cancellationToken);
-                }
-                catch (Exception ex) when (ex is not OperationCanceledException)
-                {
-                    _logger.RoundAdvanceFailed(ex);
-                    matched = false;
-                }
-                points[p.Name] = matched ? MatchPoints : 0;
+                points[p.Name] = AnswerMatcher.Score(secret, guess) >= AnswerMatcher.MatchThreshold ? MatchPoints : 0;
             }
         }
 
@@ -269,10 +247,9 @@ public sealed class CoupleQuizRoundDirector : IDisposable
             _gate.Release();
         }
 
-        // The next question may be an AI call (Fresh AI mode) — again, outside the gate.
         try
         {
-            next = await NextQuestionAsync(newMatch: false, cancellationToken);
+            next = NextQuestion(newMatch: false);
         }
         catch (Exception ex)
         {
@@ -324,47 +301,8 @@ public sealed class CoupleQuizRoundDirector : IDisposable
 
     // ── Questions and scoring ───────────────────────────────────────────────
 
-    /// <summary>
-    /// The next question: from the curated bank by default; written by the model only when the
-    /// host turned Fresh AI on (and was allowed to). A failed model call falls back to the bank,
-    /// so Fresh AI can never end a match early.
-    /// </summary>
-    private async Task<Question> NextQuestionAsync(bool newMatch, CancellationToken cancellationToken)
-    {
-        if (_sessions.HostPreferences().FreshAi)
-        {
-            try
-            {
-                return await _questions.GenerateQuestionAsync(category: null, cancellationToken);
-            }
-            catch (Exception ex) when (ex is not OperationCanceledException)
-            {
-                _logger.QuestionGenerationFailed(ex);
-            }
-        }
-        return _sessions.TakeBankQuestion(newMatch);
-    }
-
-    /// <summary>
-    /// Free score first. The paid judge is consulted only when the host turned it on AND the free
-    /// score is a close call (<see cref="AnswerMatcher.IsAmbiguous"/>); a clear match or miss never
-    /// reaches the model, and a judge failure falls back to the free verdict.
-    /// </summary>
-    private async Task<bool> IsMatchAsync(string secret, string guess, bool aiJudge, CancellationToken cancellationToken)
-    {
-        var score = AnswerMatcher.Score(secret, guess);
-        if (!aiJudge || !AnswerMatcher.IsAmbiguous(score)) return score >= AnswerMatcher.MatchThreshold;
-
-        try
-        {
-            return await _questions.CheckAnswerSimilarityAsync(secret, guess, cancellationToken) >= MatchThreshold;
-        }
-        catch (Exception ex) when (ex is not OperationCanceledException)
-        {
-            _logger.SimilarityScoringFailed(ex);
-            return score >= AnswerMatcher.MatchThreshold;
-        }
-    }
+    /// <summary>The next question, dealt at random from the curated bank (never repeating within a match).</summary>
+    private Question NextQuestion(bool newMatch) => _sessions.TakeBankQuestion(newMatch);
 
     // ── Timer plumbing ──────────────────────────────────────────────────────
 

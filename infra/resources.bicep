@@ -8,9 +8,6 @@ param sharedKeyVaultName string = 'kv-poshared2'
 @description('The name of the existing App Insights in PoShared')
 param sharedAppInsightsName string = 'poappideinsights8f9c9a4e'
 
-@description('The name of the existing Azure AI Foundry hub in PoShared')
-param sharedAIFoundryName string = 'po-aiservices-shared2'
-
 @description('The name of the resource group containing shared resources')
 param sharedResourceGroupName string = 'PoShared'
 
@@ -35,9 +32,6 @@ var storageTableDataContributorRoleId = subscriptionResourceId('Microsoft.Author
 // Storage Blob Data Contributor covers both the table writes (it includes table perms) and
 // the blob container CreateIfNotExists that DataProtection uses for key escrow.
 var storageBlobDataContributorRoleId = subscriptionResourceId('Microsoft.Authorization/roleDefinitions', 'ba92f5b4-2d11-453d-a403-e96b0029c9fe')
-// Cognitive Services User role id was moved to shared-rbac.bicep — that
-// assignment is cross-RG (PoMiniGames MI → PoShared AI Foundry hub) so it
-// can't be declared here at RG scope (BCP139).
 
 // Zero-waste compute: a single dedicated F1 (Free) Windows plan for this app.
 // F1 is the lowest tier (no idle cost); SKU/OS are expressed as tags, never
@@ -120,10 +114,6 @@ resource webApp 'Microsoft.Web/sites@2022-09-01' = {
           name: 'PoMiniGames__Storage__TableService__TableName'
           value: appTable.name
         }
-        {
-          name: 'PoMiniGames__AI__FoundryEndpoint'
-          value: sharedAIFoundry.properties.endpoint
-        }
         // ── Microsoft (Entra ID) OAuth (App Settings, not KV — these are
         //    public identifiers, not secrets). Wired as Bicep parameters so
         //    each environment can supply its own app registration via
@@ -154,15 +144,6 @@ resource sharedKeyVault 'Microsoft.KeyVault/vaults@2023-02-01' existing = {
 
 resource sharedAppInsights 'Microsoft.Insights/components@2020-02-02' existing = {
   name: sharedAppInsightsName
-  scope: resourceGroup(sharedResourceGroupName)
-}
-
-// Centralized Azure AI Foundry hub (PoShared RG). Single endpoint, single
-// audit, single quota surface for every game. The shared resource was
-// deployed with `disableLocalAuth: true` so only AAD bearer auth works;
-// the Web App's MI is granted Cognitive Services User below.
-resource sharedAIFoundry 'Microsoft.CognitiveServices/accounts@2023-05-01' existing = {
-  name: sharedAIFoundryName
   scope: resourceGroup(sharedResourceGroupName)
 }
 
@@ -219,5 +200,3 @@ output API_URI string = 'https://${webApp.properties.defaultHostName}'
 output WEB_APP_NAME string = webApp.name
 output WEB_APP_PRINCIPAL_ID string = webApp.identity.principalId
 output STORAGE_ACCOUNT_NAME string = storageAccount.name
-output AI_FOUNDRY_NAME string = sharedAIFoundry.name
-output AI_FOUNDRY_ENDPOINT string = sharedAIFoundry.properties.endpoint

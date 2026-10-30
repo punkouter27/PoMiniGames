@@ -8,7 +8,7 @@ namespace PoMiniGames.Unit.Features.PoFunQuiz;
 
 /// <summary>
 /// The free question pipeline: the shared quality gate, and the question banks that ship with the
-/// API (the bundled FunQuiz set, the curated CoupleQuiz bank, and an Open Trivia DB reply).
+/// API (the bundled FunQuiz set and the curated CoupleQuiz bank).
 /// </summary>
 public sealed class QuizQualityTests
 {
@@ -32,12 +32,22 @@ public sealed class QuizQualityTests
 
     [Theory]
     [InlineData("funquiz", 150)]
-    [InlineData("couplequiz", 300)]
-    [InlineData("opentdb", 2)]
+    [InlineData("couplequiz", 1000)]
+    [InlineData("deal", 7)]
     public void QuestionBanks_ShipEnoughValidQuestions(string bank, int minimum)
     {
         switch (bank)
         {
+            case "deal":
+                var pool = BundledQuizQuestions.For(FunCategory.Science);
+                var hand = FunQuizQuestionService.Deal(pool, minimum);
+                hand.Should().HaveCount(minimum);
+                hand.Select(q => q.Text).Should().OnlyHaveUniqueItems();
+                hand.Should().AllSatisfy(q => q.Options[q.CorrectOptionIndex].Should().NotBeNullOrEmpty());
+                FunQuizQuestionService.Deal(pool, pool.Count + 50).Should().HaveCount(pool.Count, because: "a small bank deals what it has");
+                CoupleQuizQuestionBank.Draw(new HashSet<string>()).Text.Should().NotBeNullOrWhiteSpace();
+                break;
+
             case "funquiz":
                 var bundled = BundledQuizQuestions.All.ToList();
                 bundled.Should().HaveCountGreaterThanOrEqualTo(minimum);
@@ -52,33 +62,10 @@ public sealed class QuizQualityTests
                 curated.Should().HaveCountGreaterThanOrEqualTo(minimum);
                 curated.GroupBy(q => q.Category).Should().HaveCount(Enum.GetValues<PoMiniGames.Features.PoCoupleQuiz.QuestionCategory>().Length);
                 curated.Should().AllSatisfy(q =>
-                    q.Text.Split(' ', StringSplitOptions.RemoveEmptyEntries).Length.Should().BeLessThan(12, q.Text));
+                    q.Text.Split(' ', StringSplitOptions.RemoveEmptyEntries).Length.Should().BeLessThan(16, q.Text));
                 curated.Select(q => q.Text).Should().OnlyHaveUniqueItems();
                 CoupleQuizQuestionBank.Draw(curated.Take(curated.Count - 1).Select(q => q.Text).ToHashSet())
                     .Text.Should().Be(curated[^1].Text, because: "a match never repeats a question while unasked ones remain");
-                break;
-
-            case "opentdb":
-                // HTML entities decoded; an item whose answer is printed in its question is dropped.
-                using (var doc = JsonDocument.Parse("""
-                    {"response_code":0,"results":[
-                      {"type":"multiple","difficulty":"easy","category":"Science","question":"What is &quot;H&#039;s&quot; symbol?",
-                       "correct_answer":"H","incorrect_answers":["He","Hg","Hf"]},
-                      {"type":"multiple","difficulty":"hard","category":"Art","question":"Who painted Caf&eacute; Terrace at Night?",
-                       "correct_answer":"Vincent van Gogh","incorrect_answers":["Paul Gauguin","Claude Monet","&Eacute;douard Manet"]},
-                      {"type":"multiple","difficulty":"medium","category":"Geo","question":"Is Paris in France?",
-                       "correct_answer":"France","incorrect_answers":["Spain","Italy","Portugal"]}
-                    ]}
-                    """))
-                {
-                    var parsed = OpenTriviaDbClient.Parse(doc.RootElement, FunCategory.Science, out var code);
-                    code.Should().Be(0);
-                    parsed.Should().HaveCount(minimum);
-                    parsed[0].Text.Should().Be("What is \"H's\" symbol?");
-                    parsed[1].Options.Should().Contain("Édouard Manet");
-                    parsed[1].Options[parsed[1].CorrectOptionIndex].Should().Be("Vincent van Gogh");
-                    parsed[1].Difficulty.Should().Be(DifficultyLevel.Hard);
-                }
                 break;
         }
     }

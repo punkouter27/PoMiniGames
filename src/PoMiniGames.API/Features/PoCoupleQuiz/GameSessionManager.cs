@@ -70,7 +70,6 @@ public sealed class GameSessionManager
             var session = _session;
             session.Players.RemoveAll(p => p.ConnectionId == connectionId);
             session.ReadyConnectionIds.Remove(connectionId);
-            session.Preferences.Remove(connectionId);
 
             if (session.Players.Count == 0)
             {
@@ -103,27 +102,6 @@ public sealed class GameSessionManager
             return _session is not null && _session.Players.Any(p => p.ConnectionId == connectionId)
                 ? _session
                 : null;
-        }
-    }
-
-    /// <summary>Record a player's (already gated) quiz options. Ignored for a connection not in the lobby.</summary>
-    public void SetPreferences(string connectionId, LobbyPreferences preferences)
-    {
-        lock (_gate)
-        {
-            if (_session is null || _session.Players.All(p => p.ConnectionId != connectionId)) return;
-            _session.Preferences[connectionId] = preferences;
-        }
-    }
-
-    /// <summary>The host's options; all-free when the host never sent any.</summary>
-    public LobbyPreferences HostPreferences()
-    {
-        lock (_gate)
-        {
-            return _session is not null && _session.Preferences.TryGetValue(_session.HostConnectionId, out var p)
-                ? p
-                : default;
         }
     }
 

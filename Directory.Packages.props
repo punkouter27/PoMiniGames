@@ -28,9 +28,6 @@
     <PackageVersion Include="Microsoft.Extensions.Http.Resilience" Version="10.7.0" />
     <PackageVersion Include="Microsoft.Extensions.Configuration.Abstractions" Version="10.0.13" />
     <PackageVersion Include="Microsoft.Extensions.Diagnostics.HealthChecks" Version="10.0.13" />
-    <!-- Native HybridCache (stampede protection + L1/L2). Memoizes expensive
-         Azure OpenAI generations at the slice boundary. -->
-    <PackageVersion Include="Microsoft.Extensions.Caching.Hybrid" Version="10.7.0" />
     <!-- Transitive pin: Microsoft.AspNetCore.OpenApi pulls Microsoft.OpenApi; with
          CentralPackageTransitivePinningEnabled this holds it at a current version so
          the NuGet CVE audit (which fails the build) can't be tripped by an old
@@ -59,16 +56,6 @@
     <!-- AuthenticationStateProvider + AuthorizeRouteView. Not transitively
          included by the WASM metapackage in .NET 10. -->
     <PackageVersion Include="Microsoft.AspNetCore.Components.Authorization" Version="10.0.13" />
-    <!-- AI (server-side calls to Azure AI Foundry through Microsoft.Extensions.AI) -->
-    <PackageVersion Include="Microsoft.Extensions.AI" Version="10.5.2" />
-    <PackageVersion Include="Microsoft.Extensions.AI.OpenAI" Version="10.5.2" />
-    <!-- Must stay compatible with the OpenAI version Microsoft.Extensions.AI.OpenAI pulls in
-         (10.5.2 → OpenAI 2.10.0). NuGet unifies OpenAI to the highest requested version, so the
-         GA Azure.AI.OpenAI 2.1.0 — built against OpenAI 2.1.0 — bound against 2.10.0 at runtime
-         and every chat call threw MissingMethodException on the removed
-         ChatCompletionOptions.SerializedAdditionalRawData. That surfaced as a game-side "could not
-         answer" error rather than a startup failure. Bump both together. -->
-    <PackageVersion Include="Azure.AI.OpenAI" Version="2.9.0-beta.1" />
     <!-- PoVoxelStrike asset pipeline: GLB parsing for the startup voxelizer. API-side
          only — must never be referenced from the Client, whose publish is trim-audited. -->
     <PackageVersion Include="SharpGLTF.Core" Version="1.0.6" />

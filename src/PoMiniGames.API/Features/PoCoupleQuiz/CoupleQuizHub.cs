@@ -24,18 +24,15 @@ public class CoupleQuizHub : Hub<IGameClient>
 {
     private readonly GameSessionManager _sessions;
     private readonly CoupleQuizRoundDirector _director;
-    private readonly IOptionsSnapshot<CoupleQuizOptions> _options;
     private readonly ILogger<CoupleQuizHub> _logger;
 
     public CoupleQuizHub(
         GameSessionManager sessions,
         CoupleQuizRoundDirector director,
-        IOptionsSnapshot<CoupleQuizOptions> options,
         ILogger<CoupleQuizHub> logger)
     {
         _sessions = sessions;
         _director = director;
-        _options = options;
         _logger = logger;
     }
 
@@ -81,24 +78,6 @@ public class CoupleQuizHub : Hub<IGameClient>
         {
             await _director.StartGameAsync(Context.ConnectionAborted);
         }
-    }
-
-    /// <summary>
-    /// The caller's quiz options from their settings: <c>Bank</c>/<c>FreshAi</c> questions and
-    /// <c>Smart</c>/<c>AiJudge</c> answer matching. Gated HERE, where the caller's identity is
-    /// known: a paid option sticks only for a signed-in (non-guest) player while the server allows
-    /// it. The host's options drive the lobby.
-    /// </summary>
-    public Task SetPreferences(string? questionSource, string? answerMatching)
-    {
-        var features = _options.Value.Features;
-        var signedIn = RequestIdentity.Resolve(Context.User).IsAuthenticated;
-        _sessions.SetPreferences(Context.ConnectionId, new LobbyPreferences(
-            FreshAi: QuizPreferenceGate.PaidOptionOn(
-                questionSource, CoupleQuizFeatures.FreshAiValue, features.QuestionSource, features.AllowFreshAi, signedIn),
-            AiJudge: QuizPreferenceGate.PaidOptionOn(
-                answerMatching, CoupleQuizFeatures.AiJudgeValue, features.AnswerMatching, features.AllowAiJudge, signedIn)));
-        return Task.CompletedTask;
     }
 
     /// <summary>Host-only: 3, 5 or 7 rounds. Ignored from anyone else, or once a match is live.</summary>

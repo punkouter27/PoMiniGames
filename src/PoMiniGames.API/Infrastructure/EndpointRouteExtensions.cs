@@ -50,7 +50,7 @@ internal static class EndpointRouteExtensions
         // Uniform cross-app liveness probe (see PoPlatform). Same shape in every Po app, which
         // is what lets the portfolio dashboard poll them all and render one uptime grid.
         app.MapPoLiveness();
-        // /api/diag, plus the AI usage read-model at /api/diag/ai.
+        // /api/diag.
         app.MapDiagEndpoints();
         // Browser-side error sink (js/errorReporter.js). Deliberately NOT under /api: it is fed
         // by sendBeacon, which cannot carry the antiforgery header that scope requires.
@@ -79,7 +79,7 @@ internal static class EndpointRouteExtensions
 
         // ── Authenticated game API ─────────────────────────────────────────
         // All game-data endpoints require a valid session. Per-endpoint rate
-        // limits (highscores, ai-generation, ...) are declared
+        // limits (highscores, leaderboard-read, ...) are declared
         // inside each slice; the group adds the auth gate only.
         //
         // The "/api" prefix lives here, not in the slices: it is exactly the scope
