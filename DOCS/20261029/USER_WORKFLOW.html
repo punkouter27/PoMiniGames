@@ -84,6 +84,8 @@ code,kbd{ font-family:var(--mono); font-size:.92em; }
   font-size:14px; line-height:1; display:inline-flex; align-items:center; justify-content:center;
 }
 .icon-btn:hover{ background:var(--chip); color:var(--ink); }
+.tier-name{ font-size:12px; color:var(--muted); white-space:nowrap; }
+.tier-name b{ color:var(--ink-2); }
 
 /* ---------- Layout ---------- */
 .wrap{ max-width:var(--maxw); margin:0 auto; padding:24px 16px 72px; }
@@ -114,7 +116,10 @@ html[data-tier="2"] .l3{ display:none !important; }
 .grid{ display:grid; gap:14px; grid-template-columns:repeat(auto-fit, minmax(min(280px,100%),1fr)); margin:16px 0; }
 .grid.two{ grid-template-columns:repeat(auto-fit, minmax(min(340px,100%),1fr)); }
 .grid.three{ grid-template-columns:repeat(auto-fit, minmax(min(240px,100%),1fr)); }
-.stat{ display:flex; flex-direction:column; gap:2px; }
+/* Grid and flex children default to min-width:auto, which lets a long unbreakable
+   child widen the whole track instead of scrolling inside it. */
+.grid > *{ min-width:0; }
+.stat{ display:flex; flex-direction:column; gap:2px; min-width:0; }
 .stat b{ font-size:24px; line-height:1.15; letter-spacing:-.02em; }
 .stat span{ font-size:12.5px; color:var(--muted); }
 
@@ -146,34 +151,37 @@ html[data-tier="2"] .l3{ display:none !important; }
 }
 
 /* ---------- Tables ---------- */
-.scroll{ overflow-x:auto; border:1px solid var(--line); border-radius:10px; background:var(--surface); margin:14px 0; }
+.scroll{ overflow-x:auto; border:1px solid var(--line); border-radius:10px; background:var(--surface); margin:14px 0; max-width:100%; }
 table{ border-collapse:collapse; width:100%; font-size:13.5px; }
 th,td{ padding:8px 11px; text-align:left; border-bottom:1px solid var(--line); vertical-align:top; }
 th{ font-size:11.5px; text-transform:uppercase; letter-spacing:.05em; color:var(--muted); white-space:nowrap; background:var(--surface-2); }
 tr:last-child td{ border-bottom:0; }
 td code{ overflow-wrap:anywhere; }
 .nowrap{ white-space:nowrap; }
+caption{ caption-side:top; text-align:left; font-size:12.5px; color:var(--muted); padding:0 0 6px; }
 
 /* ---------- Citations & snippets ---------- */
 .cite{
-  font-family:var(--mono); font-size:11.5px; text-decoration:none; white-space:nowrap;
+  font-family:var(--mono); font-size:11.5px; text-decoration:none;
   background:var(--chip); border:1px solid var(--line); border-radius:5px; padding:1px 5px;
-  color:var(--accent-ink); display:inline-block; max-width:100%; overflow-wrap:anywhere;
+  color:var(--accent-ink); display:inline-block; max-width:100%;
+  /* A long file path must be free to break, or it pushes the page sideways. */
+  white-space:normal; overflow-wrap:anywhere; word-break:break-word;
 }
 .cite:hover{ border-color:var(--accent); }
 pre.snip{
   background:var(--code-bg); border:1px solid var(--line); border-left:3px solid var(--line-strong);
-  border-radius:8px; padding:10px 12px; overflow-x:auto; margin:10px 0;
+  border-radius:8px; padding:10px 12px; overflow-x:auto; margin:10px 0; max-width:100%;
   font-family:var(--mono); font-size:12.5px; line-height:1.5; color:var(--ink-2);
 }
 pre.snip code{ background:none; padding:0; }
 .snip-cap{ font-size:12px; color:var(--muted); margin:0 0 -4px; }
 
 /* ---------- Mermaid ---------- */
-.figure{ margin:16px 0; }
+.figure{ margin:16px 0; min-width:0; }
 .mermaid-wrap{
   background:var(--surface); border:1px solid var(--line); border-radius:var(--radius);
-  padding:14px; overflow-x:auto; box-shadow:var(--shadow);
+  padding:14px; overflow-x:auto; box-shadow:var(--shadow); max-width:100%;
 }
 .mermaid{ display:flex; justify-content:center; }
 .mermaid svg{ max-width:100%; height:auto; }
@@ -181,10 +189,11 @@ figcaption{ font-size:12.5px; color:var(--muted); margin-top:7px; }
 figcaption b{ color:var(--ink-2); }
 
 /* ---------- Narrative steps ---------- */
-.steps{ counter-reset:step; list-style:none; padding:0; margin:14px 0; display:grid; gap:10px; }
+.steps{ counter-reset:step; list-style:none; padding:0; margin:14px 0; display:grid; gap:10px; min-width:0; }
 .steps li{
   position:relative; background:var(--surface); border:1px solid var(--line); border-radius:10px;
   padding:12px 14px 12px 46px; margin:0; counter-increment:step; color:var(--ink-2);
+  min-width:0; overflow-wrap:anywhere;
 }
 .steps li::before{
   content:counter(step); position:absolute; left:12px; top:11px; width:24px; height:24px;
@@ -192,6 +201,7 @@ figcaption b{ color:var(--ink-2); }
   display:flex; align-items:center; justify-content:center;
 }
 .steps li b{ color:var(--ink); display:block; margin-bottom:2px; }
+.steps li p{ max-width:none; }
 
 /* ---------- Pills & tags ---------- */
 .pill{
@@ -248,6 +258,7 @@ figcaption b{ color:var(--ink-2); }
     <a class="brand" href="index.html"><span class="dot"></span>PoMiniGames</a>
     <span class="doc-title">User journeys and experience</span>
     <div class="tb-right">
+      <span class="tier-name">Detail: <b data-tier-label>Architectural</b></span>
       <div class="seg" role="group" aria-label="Detail level">
         <button type="button" data-set-tier="1" title="Plain English only">Simple</button>
         <button type="button" data-set-tier="2" title="Add architecture diagrams">Architectural</button>
@@ -313,8 +324,8 @@ single <b>OK</b> button, and it is sized to fit without scrolling on a laptop or
 <li><b>The browser asks for a play session</b>
 <p>Opening a game mints a signed session ticket bound to that game and to the signed-in player.
 The ticket is a Data Protection payload of nonce, game key, hashed identity and issue time
-<a class="cite" href="https://github.com/punkouter27/PoMiniGames/blob/master/src/PoMiniGames.API/Features/Integrity/PlaySessionService.cs#L83" title="open src/PoMiniGames.API/Features/Integrity/PlaySessionService.cs line 83">src/PoMiniGames.API/Features/Integrity/PlaySessionService.cs:83</a>.</p>
-<p class="snip-cap">src/PoMiniGames.API/Features/Integrity/PlaySessionService.cs:83-99</p><pre class="snip"><code>    /// without silently accepting the old shape under the new parser.
+<span class="l3"><a class="cite" href="https://github.com/punkouter27/PoMiniGames/blob/master/src/PoMiniGames.API/Features/Integrity/PlaySessionService.cs#L83" title="open src/PoMiniGames.API/Features/Integrity/PlaySessionService.cs line 83">src/PoMiniGames.API/Features/Integrity/PlaySessionService.cs:83</a></span>.</p>
+<p class="snip-cap l3">src/PoMiniGames.API/Features/Integrity/PlaySessionService.cs:83-99</p><pre class="snip l3"><code>    /// without silently accepting the old shape under the new parser.
     /// &lt;/summary&gt;
     private const string ProtectorPurpose = &quot;PoMiniGames.PlaySession.v1&quot;;
 
@@ -345,10 +356,10 @@ posts the score to the API.</p></li>
 <p>Three checks, in order: the raw value must be inside the game's declared bounds, the play
 session must have been issued for this game and this player, and the score must be possible given
 the time the session has been open
-<a class="cite" href="https://github.com/punkouter27/PoMiniGames/blob/master/src/PoMiniGames.API/Features/Integrity/ScoreIntegrityGuard.cs#L64" title="open src/PoMiniGames.API/Features/Integrity/ScoreIntegrityGuard.cs line 64">src/PoMiniGames.API/Features/Integrity/ScoreIntegrityGuard.cs:64</a>
-<a class="cite" href="https://github.com/punkouter27/PoMiniGames/blob/master/src/PoMiniGames.API/Features/Integrity/ScoreIntegrityGuard.cs#L81" title="open src/PoMiniGames.API/Features/Integrity/ScoreIntegrityGuard.cs line 81">src/PoMiniGames.API/Features/Integrity/ScoreIntegrityGuard.cs:81</a>
-<a class="cite" href="https://github.com/punkouter27/PoMiniGames/blob/master/src/PoMiniGames.API/Features/Integrity/ScoreIntegrityGuard.cs#L93" title="open src/PoMiniGames.API/Features/Integrity/ScoreIntegrityGuard.cs line 93">src/PoMiniGames.API/Features/Integrity/ScoreIntegrityGuard.cs:93</a>.</p>
-<p class="snip-cap">src/PoMiniGames.API/Features/Integrity/ScoreIntegrityGuard.cs:64-73</p><pre class="snip"><code>
+<span class="l3"><a class="cite" href="https://github.com/punkouter27/PoMiniGames/blob/master/src/PoMiniGames.API/Features/Integrity/ScoreIntegrityGuard.cs#L64" title="open src/PoMiniGames.API/Features/Integrity/ScoreIntegrityGuard.cs line 64">src/PoMiniGames.API/Features/Integrity/ScoreIntegrityGuard.cs:64</a></span>
+<span class="l3"><a class="cite" href="https://github.com/punkouter27/PoMiniGames/blob/master/src/PoMiniGames.API/Features/Integrity/ScoreIntegrityGuard.cs#L81" title="open src/PoMiniGames.API/Features/Integrity/ScoreIntegrityGuard.cs line 81">src/PoMiniGames.API/Features/Integrity/ScoreIntegrityGuard.cs:81</a></span>
+<span class="l3"><a class="cite" href="https://github.com/punkouter27/PoMiniGames/blob/master/src/PoMiniGames.API/Features/Integrity/ScoreIntegrityGuard.cs#L93" title="open src/PoMiniGames.API/Features/Integrity/ScoreIntegrityGuard.cs line 93">src/PoMiniGames.API/Features/Integrity/ScoreIntegrityGuard.cs:93</a></span>.</p>
+<p class="snip-cap l3">src/PoMiniGames.API/Features/Integrity/ScoreIntegrityGuard.cs:64-73</p><pre class="snip l3"><code>
         // ── Tier one: absolute range. Always evaluated, never mode-gated. ──
         var valueVerdict = ScoreRules.CheckValue(game, score);
         if (valueVerdict != ScoreVerdict.Plausible)
@@ -362,19 +373,19 @@ the time the session has been open
 <li><b>Accepted or refused, plainly</b>
 <p>Every refusal returns the same shape: HTTP 400 with an <code>error</code> code and a
 <code>detail</code> string
-<a class="cite" href="https://github.com/punkouter27/PoMiniGames/blob/master/src/PoMiniGames.API/Features/Integrity/ScoreIntegrityGuard.cs#L16" title="open src/PoMiniGames.API/Features/Integrity/ScoreIntegrityGuard.cs line 16">src/PoMiniGames.API/Features/Integrity/ScoreIntegrityGuard.cs:16</a>.</p></li>
+<span class="l3"><a class="cite" href="https://github.com/punkouter27/PoMiniGames/blob/master/src/PoMiniGames.API/Features/Integrity/ScoreIntegrityGuard.cs#L16" title="open src/PoMiniGames.API/Features/Integrity/ScoreIntegrityGuard.cs line 16">src/PoMiniGames.API/Features/Integrity/ScoreIntegrityGuard.cs:16</a></span>.</p></li>
 </ol>
 
 <div class="note">
 <b>Two games go further than a plausibility check.</b> PoCabinet sends its input log and the
 server re-runs the lap in its own physics to decide the time and the place
-<a class="cite" href="https://github.com/punkouter27/PoMiniGames/blob/master/src/PoMiniGames.API/Features/PoCabinet/PoCabinetLapVerifier.cs#L28" title="open src/PoMiniGames.API/Features/PoCabinet/PoCabinetLapVerifier.cs line 28">src/PoMiniGames.API/Features/PoCabinet/PoCabinetLapVerifier.cs:28</a>. PoMule sends a seed
+<span class="l3"><a class="cite" href="https://github.com/punkouter27/PoMiniGames/blob/master/src/PoMiniGames.API/Features/PoCabinet/PoCabinetLapVerifier.cs#L28" title="open src/PoMiniGames.API/Features/PoCabinet/PoCabinetLapVerifier.cs line 28">src/PoMiniGames.API/Features/PoCabinet/PoCabinetLapVerifier.cs:28</a></span>. PoMule sends a seed
 and an action log and the server replays it through the shared C# engine
-<a class="cite" href="https://github.com/punkouter27/PoMiniGames/blob/master/src/PoMiniGames.API/Features/PoMule/PoMuleRunVerifier.cs#L16" title="open src/PoMiniGames.API/Features/PoMule/PoMuleRunVerifier.cs line 16">src/PoMiniGames.API/Features/PoMule/PoMuleRunVerifier.cs:16</a>. Both verifiers state plainly
+<span class="l3"><a class="cite" href="https://github.com/punkouter27/PoMiniGames/blob/master/src/PoMiniGames.API/Features/PoMule/PoMuleRunVerifier.cs#L16" title="open src/PoMiniGames.API/Features/PoMule/PoMuleRunVerifier.cs line 16">src/PoMiniGames.API/Features/PoMule/PoMuleRunVerifier.cs:16</a></span>. Both verifiers state plainly
 what they cannot prove.
 </div>
 
-<p class="snip-cap">src/PoMiniGames.API/Features/PoMule/PoMuleRunVerifier.cs:10-19</p><pre class="snip"><code>/// Replays a PoMule match from the seed and action log the client sends with its score, so the
+<p class="snip-cap l3">src/PoMiniGames.API/Features/PoMule/PoMuleRunVerifier.cs:10-19</p><pre class="snip l3"><code>/// Replays a PoMule match from the seed and action log the client sends with its score, so the
 /// board keeps the server&#x27;s Net Worth. Unlike PoMarbleRace (cannon-es, no server physics), PoMule&#x27;s
 /// whole rules engine is deterministic C# in PoMiniGames.Shared, the same code the browser ran, so
 /// this is a full re-run rather than a plausibility bound.
@@ -385,7 +396,7 @@ what they cannot prove.
 /// next errand) and by the play-session guard.
 /// &lt;/remarks&gt;</code></pre>
 
-<p class="snip-cap">src/PoMiniGames.API/Features/PoCabinet/PoCabinetLapVerifier.cs:27-31</p><pre class="snip"><code>/// &lt;para&gt;
+<p class="snip-cap l3">src/PoMiniGames.API/Features/PoCabinet/PoCabinetLapVerifier.cs:27-31</p><pre class="snip l3"><code>/// &lt;para&gt;
 /// What this does not prove: that a human drove it. A bot that emits a legal input stream
 /// sets a legal lap. It does rule out every lap the physics cannot produce.
 /// &lt;/para&gt;
@@ -421,22 +432,22 @@ against Entra before trusting anything in it.</figcaption>
 
 <li><b>The token travels as a bearer token</b>
 <p>The composite scheme picks the JWT handler when it sees an <code>Authorization: Bearer</code>
-header <a class="cite" href="https://github.com/punkouter27/PoMiniGames/blob/master/src/PoMiniGames.API/Infrastructure/AuthExtensions.cs#L43" title="open src/PoMiniGames.API/Infrastructure/AuthExtensions.cs line 43">src/PoMiniGames.API/Infrastructure/AuthExtensions.cs:43</a>.</p></li>
+header <span class="l3"><a class="cite" href="https://github.com/punkouter27/PoMiniGames/blob/master/src/PoMiniGames.API/Infrastructure/AuthExtensions.cs#L43" title="open src/PoMiniGames.API/Infrastructure/AuthExtensions.cs line 43">src/PoMiniGames.API/Infrastructure/AuthExtensions.cs:43</a></span>.</p></li>
 
 <li><b>Writes carry a second token</b>
 <p>Every state-changing request under <code>/api</code> must also echo an antiforgery token in
 the <code>X-CSRF-TOKEN</code> header
-<a class="cite" href="https://github.com/punkouter27/PoMiniGames/blob/master/src/PoMiniGames.API/Infrastructure/AntiforgeryExtensions.cs#L42" title="open src/PoMiniGames.API/Infrastructure/AntiforgeryExtensions.cs line 42">src/PoMiniGames.API/Infrastructure/AntiforgeryExtensions.cs:42</a>. The token is bound to the
+<span class="l3"><a class="cite" href="https://github.com/punkouter27/PoMiniGames/blob/master/src/PoMiniGames.API/Infrastructure/AntiforgeryExtensions.cs#L42" title="open src/PoMiniGames.API/Infrastructure/AntiforgeryExtensions.cs line 42">src/PoMiniGames.API/Infrastructure/AntiforgeryExtensions.cs:42</a></span>. The token is bound to the
 signed-in identity, which is why the check runs after authentication
-<a class="cite" href="https://github.com/punkouter27/PoMiniGames/blob/master/src/PoMiniGames.API/Program.cs#L440" title="open src/PoMiniGames.API/Program.cs line 440">src/PoMiniGames.API/Program.cs:440</a>.</p></li>
+<span class="l3"><a class="cite" href="https://github.com/punkouter27/PoMiniGames/blob/master/src/PoMiniGames.API/Program.cs#L440" title="open src/PoMiniGames.API/Program.cs line 440">src/PoMiniGames.API/Program.cs:440</a></span>.</p></li>
 
 <li><b>Development has a shortcut</b>
 <p>A guest cookie exists only in Development and Test
-<a class="cite" href="https://github.com/punkouter27/PoMiniGames/blob/master/src/PoMiniGames.API/Infrastructure/AuthExtensions.cs#L25" title="open src/PoMiniGames.API/Infrastructure/AuthExtensions.cs line 25">src/PoMiniGames.API/Infrastructure/AuthExtensions.cs:25</a>, and an
+<span class="l3"><a class="cite" href="https://github.com/punkouter27/PoMiniGames/blob/master/src/PoMiniGames.API/Infrastructure/AuthExtensions.cs#L25" title="open src/PoMiniGames.API/Infrastructure/AuthExtensions.cs line 25">src/PoMiniGames.API/Infrastructure/AuthExtensions.cs:25</a></span>, and an
 <code>X-Fake-User</code> header only when <code>Auth:EnableFakeAuth</code> is on and the
 environment is Development or Test
-<a class="cite" href="https://github.com/punkouter27/PoMiniGames/blob/master/src/PoMiniGames.API/Infrastructure/AuthExtensions.cs#L32" title="open src/PoMiniGames.API/Infrastructure/AuthExtensions.cs line 32">src/PoMiniGames.API/Infrastructure/AuthExtensions.cs:32</a>. Production refuses to start if
-either is present <a class="cite" href="https://github.com/punkouter27/PoMiniGames/blob/master/src/PoMiniGames.API/Infrastructure/StartupSecretValidator.cs#L52" title="open src/PoMiniGames.API/Infrastructure/StartupSecretValidator.cs line 52">src/PoMiniGames.API/Infrastructure/StartupSecretValidator.cs:52</a>.</p></li>
+<span class="l3"><a class="cite" href="https://github.com/punkouter27/PoMiniGames/blob/master/src/PoMiniGames.API/Infrastructure/AuthExtensions.cs#L32" title="open src/PoMiniGames.API/Infrastructure/AuthExtensions.cs line 32">src/PoMiniGames.API/Infrastructure/AuthExtensions.cs:32</a></span>. Production refuses to start if
+either is present <span class="l3"><a class="cite" href="https://github.com/punkouter27/PoMiniGames/blob/master/src/PoMiniGames.API/Infrastructure/StartupSecretValidator.cs#L52" title="open src/PoMiniGames.API/Infrastructure/StartupSecretValidator.cs line 52">src/PoMiniGames.API/Infrastructure/StartupSecretValidator.cs:52</a></span>.</p></li>
 </ol>
 
 <h2>Journey 3 &mdash; Play someone else, over the network</h2>
@@ -474,12 +485,12 @@ source of the result.</figcaption>
 <li><b>The lobby seats the players</b>
 <p>Each game owns its own lobby hub: Racer, Cabinet, Voxel Strike, Brawl, Couple Quiz and Fun
 Quiz all have one
-<a class="cite" href="https://github.com/punkouter27/PoMiniGames/blob/master/src/PoMiniGames.API/Infrastructure/EndpointRouteExtensions.cs#L122" title="open src/PoMiniGames.API/Infrastructure/EndpointRouteExtensions.cs line 122">src/PoMiniGames.API/Infrastructure/EndpointRouteExtensions.cs:122</a>
-<a class="cite" href="https://github.com/punkouter27/PoMiniGames/blob/master/src/PoMiniGames.API/Infrastructure/EndpointRouteExtensions.cs#L123" title="open src/PoMiniGames.API/Infrastructure/EndpointRouteExtensions.cs line 123">src/PoMiniGames.API/Infrastructure/EndpointRouteExtensions.cs:123</a>
-<a class="cite" href="https://github.com/punkouter27/PoMiniGames/blob/master/src/PoMiniGames.API/Infrastructure/EndpointRouteExtensions.cs#L124" title="open src/PoMiniGames.API/Infrastructure/EndpointRouteExtensions.cs line 124">src/PoMiniGames.API/Infrastructure/EndpointRouteExtensions.cs:124</a>
-<a class="cite" href="https://github.com/punkouter27/PoMiniGames/blob/master/src/PoMiniGames.API/Infrastructure/EndpointRouteExtensions.cs#L127" title="open src/PoMiniGames.API/Infrastructure/EndpointRouteExtensions.cs line 127">src/PoMiniGames.API/Infrastructure/EndpointRouteExtensions.cs:127</a>
-<a class="cite" href="https://github.com/punkouter27/PoMiniGames/blob/master/src/PoMiniGames.API/Infrastructure/EndpointRouteExtensions.cs#L132" title="open src/PoMiniGames.API/Infrastructure/EndpointRouteExtensions.cs line 132">src/PoMiniGames.API/Infrastructure/EndpointRouteExtensions.cs:132</a>
-<a class="cite" href="https://github.com/punkouter27/PoMiniGames/blob/master/src/PoMiniGames.API/Infrastructure/EndpointRouteExtensions.cs#L136" title="open src/PoMiniGames.API/Infrastructure/EndpointRouteExtensions.cs line 136">src/PoMiniGames.API/Infrastructure/EndpointRouteExtensions.cs:136</a>.</p></li>
+<span class="l3"><a class="cite" href="https://github.com/punkouter27/PoMiniGames/blob/master/src/PoMiniGames.API/Infrastructure/EndpointRouteExtensions.cs#L122" title="open src/PoMiniGames.API/Infrastructure/EndpointRouteExtensions.cs line 122">src/PoMiniGames.API/Infrastructure/EndpointRouteExtensions.cs:122</a></span>
+<span class="l3"><a class="cite" href="https://github.com/punkouter27/PoMiniGames/blob/master/src/PoMiniGames.API/Infrastructure/EndpointRouteExtensions.cs#L123" title="open src/PoMiniGames.API/Infrastructure/EndpointRouteExtensions.cs line 123">src/PoMiniGames.API/Infrastructure/EndpointRouteExtensions.cs:123</a></span>
+<span class="l3"><a class="cite" href="https://github.com/punkouter27/PoMiniGames/blob/master/src/PoMiniGames.API/Infrastructure/EndpointRouteExtensions.cs#L124" title="open src/PoMiniGames.API/Infrastructure/EndpointRouteExtensions.cs line 124">src/PoMiniGames.API/Infrastructure/EndpointRouteExtensions.cs:124</a></span>
+<span class="l3"><a class="cite" href="https://github.com/punkouter27/PoMiniGames/blob/master/src/PoMiniGames.API/Infrastructure/EndpointRouteExtensions.cs#L127" title="open src/PoMiniGames.API/Infrastructure/EndpointRouteExtensions.cs line 127">src/PoMiniGames.API/Infrastructure/EndpointRouteExtensions.cs:127</a></span>
+<span class="l3"><a class="cite" href="https://github.com/punkouter27/PoMiniGames/blob/master/src/PoMiniGames.API/Infrastructure/EndpointRouteExtensions.cs#L132" title="open src/PoMiniGames.API/Infrastructure/EndpointRouteExtensions.cs line 132">src/PoMiniGames.API/Infrastructure/EndpointRouteExtensions.cs:132</a></span>
+<span class="l3"><a class="cite" href="https://github.com/punkouter27/PoMiniGames/blob/master/src/PoMiniGames.API/Infrastructure/EndpointRouteExtensions.cs#L136" title="open src/PoMiniGames.API/Infrastructure/EndpointRouteExtensions.cs line 136">src/PoMiniGames.API/Infrastructure/EndpointRouteExtensions.cs:136</a></span>.</p></li>
 
 <li><b>The play hub carries the match</b>
 <p>Cabinet's race hub sends a fresh race code every time so one results screen cannot pick up the
@@ -529,20 +540,20 @@ AI path is one opt-in switch away and always has the bank behind it.</figcaption
 <ol class="steps">
 <li><b>The bank is the default</b>
 <p>PoFunQuiz deals from the <code>PoFunQuizBank</code> table
-<a class="cite" href="https://github.com/punkouter27/PoMiniGames/blob/master/src/PoMiniGames.API/Features/PoFunQuiz/Storage/QuizBankRepository.cs#L28" title="open src/PoMiniGames.API/Features/PoFunQuiz/Storage/QuizBankRepository.cs line 28">src/PoMiniGames.API/Features/PoFunQuiz/Storage/QuizBankRepository.cs:28</a>, and
+<span class="l3"><a class="cite" href="https://github.com/punkouter27/PoMiniGames/blob/master/src/PoMiniGames.API/Features/PoFunQuiz/Storage/QuizBankRepository.cs#L28" title="open src/PoMiniGames.API/Features/PoFunQuiz/Storage/QuizBankRepository.cs line 28">src/PoMiniGames.API/Features/PoFunQuiz/Storage/QuizBankRepository.cs:28</a></span>, and
 <code>PoFunQuiz:QuestionSource</code> defaults to <code>Bank</code>
-<a class="cite" href="https://github.com/punkouter27/PoMiniGames/blob/master/src/PoMiniGames.API/Features/PoFunQuiz/FunQuizOptions.cs#L30" title="open src/PoMiniGames.API/Features/PoFunQuiz/FunQuizOptions.cs line 30">src/PoMiniGames.API/Features/PoFunQuiz/FunQuizOptions.cs:30</a>.</p></li>
+<span class="l3"><a class="cite" href="https://github.com/punkouter27/PoMiniGames/blob/master/src/PoMiniGames.API/Features/PoFunQuiz/FunQuizOptions.cs#L30" title="open src/PoMiniGames.API/Features/PoFunQuiz/FunQuizOptions.cs line 30">src/PoMiniGames.API/Features/PoFunQuiz/FunQuizOptions.cs:30</a></span>.</p></li>
 
 <li><b>The bank grows without you</b>
 <p>A background service tops it up from Open Trivia DB and a bundled set. The request path also
 tops it up as players arrive, so nothing depends on that job running
-<a class="cite" href="https://github.com/punkouter27/PoMiniGames/blob/master/src/PoMiniGames.API/Features/PoFunQuiz/QuizPrebakeService.cs#L45" title="open src/PoMiniGames.API/Features/PoFunQuiz/QuizPrebakeService.cs line 45">src/PoMiniGames.API/Features/PoFunQuiz/QuizPrebakeService.cs:45</a>.</p></li>
+<span class="l3"><a class="cite" href="https://github.com/punkouter27/PoMiniGames/blob/master/src/PoMiniGames.API/Features/PoFunQuiz/QuizPrebakeService.cs#L45" title="open src/PoMiniGames.API/Features/PoFunQuiz/QuizPrebakeService.cs line 45">src/PoMiniGames.API/Features/PoFunQuiz/QuizPrebakeService.cs:45</a></span>.</p></li>
 
 <li><b>If the free source is down, nothing breaks</b>
 <p>An Open Trivia DB timeout, DNS failure or malformed response logs an information message and
 returns an empty list, so the bundled set takes over
-<a class="cite" href="https://github.com/punkouter27/PoMiniGames/blob/master/src/PoMiniGames.API/Features/PoFunQuiz/OpenTriviaDbClient.cs#L100" title="open src/PoMiniGames.API/Features/PoFunQuiz/OpenTriviaDbClient.cs line 100">src/PoMiniGames.API/Features/PoFunQuiz/OpenTriviaDbClient.cs:100</a>.</p>
-<p class="snip-cap">src/PoMiniGames.API/Features/PoFunQuiz/OpenTriviaDbClient.cs:100-107</p><pre class="snip"><code>        }
+<span class="l3"><a class="cite" href="https://github.com/punkouter27/PoMiniGames/blob/master/src/PoMiniGames.API/Features/PoFunQuiz/OpenTriviaDbClient.cs#L100" title="open src/PoMiniGames.API/Features/PoFunQuiz/OpenTriviaDbClient.cs line 100">src/PoMiniGames.API/Features/PoFunQuiz/OpenTriviaDbClient.cs:100</a></span>.</p>
+<p class="snip-cap l3">src/PoMiniGames.API/Features/PoFunQuiz/OpenTriviaDbClient.cs:100-107</p><pre class="snip l3"><code>        }
         catch (Exception ex) when (!cancellationToken.IsCancellationRequested)
         {
             // Timeout, DNS, TLS, malformed JSON: all mean &quot;use the fallback&quot;, none is worth an alarm.
@@ -553,15 +564,15 @@ returns an empty list, so the bundled set takes over
 
 <li><b>Fresh AI is a deliberate choice</b>
 <p>Only when the resolved mode is <code>FreshAi</code> does the request reach the model
-<a class="cite" href="https://github.com/punkouter27/PoMiniGames/blob/master/src/PoMiniGames.API/Features/PoFunQuiz/FunQuizQuestionService.cs#L70" title="open src/PoMiniGames.API/Features/PoFunQuiz/FunQuizQuestionService.cs line 70">src/PoMiniGames.API/Features/PoFunQuiz/FunQuizQuestionService.cs:70</a>.</p></li>
+<span class="l3"><a class="cite" href="https://github.com/punkouter27/PoMiniGames/blob/master/src/PoMiniGames.API/Features/PoFunQuiz/FunQuizQuestionService.cs#L70" title="open src/PoMiniGames.API/Features/PoFunQuiz/FunQuizQuestionService.cs line 70">src/PoMiniGames.API/Features/PoFunQuiz/FunQuizQuestionService.cs:70</a></span>.</p></li>
 
 <li><b>Close calls can be refereed</b>
 <p>PoCoupleQuiz's free matcher normalises answers, folds synonyms and plurals, and scores exact,
 token-overlap and typo-tolerant similarity
-<a class="cite" href="https://github.com/punkouter27/PoMiniGames/blob/master/src/PoMiniGames.API/Features/PoCoupleQuiz/AnswerMatcher.cs#L9" title="open src/PoMiniGames.API/Features/PoCoupleQuiz/AnswerMatcher.cs line 9">src/PoMiniGames.API/Features/PoCoupleQuiz/AnswerMatcher.cs:9</a>. Only an <i>ambiguous</i>
+<span class="l3"><a class="cite" href="https://github.com/punkouter27/PoMiniGames/blob/master/src/PoMiniGames.API/Features/PoCoupleQuiz/AnswerMatcher.cs#L9" title="open src/PoMiniGames.API/Features/PoCoupleQuiz/AnswerMatcher.cs line 9">src/PoMiniGames.API/Features/PoCoupleQuiz/AnswerMatcher.cs:9</a></span>. Only an <i>ambiguous</i>
 score is sent to the AI judge
-<a class="cite" href="https://github.com/punkouter27/PoMiniGames/blob/master/src/PoMiniGames.API/Features/PoCoupleQuiz/CoupleQuizRoundDirector.cs#L350" title="open src/PoMiniGames.API/Features/PoCoupleQuiz/CoupleQuizRoundDirector.cs line 350">src/PoMiniGames.API/Features/PoCoupleQuiz/CoupleQuizRoundDirector.cs:350</a>.</p>
-<p class="snip-cap">src/PoMiniGames.API/Features/PoCoupleQuiz/AnswerMatcher.cs:9-18</p><pre class="snip"><code>/// &lt;/summary&gt;
+<span class="l3"><a class="cite" href="https://github.com/punkouter27/PoMiniGames/blob/master/src/PoMiniGames.API/Features/PoCoupleQuiz/CoupleQuizRoundDirector.cs#L350" title="open src/PoMiniGames.API/Features/PoCoupleQuiz/CoupleQuizRoundDirector.cs line 350">src/PoMiniGames.API/Features/PoCoupleQuiz/CoupleQuizRoundDirector.cs:350</a></span>.</p>
+<p class="snip-cap l3">src/PoMiniGames.API/Features/PoCoupleQuiz/AnswerMatcher.cs:9-18</p><pre class="snip l3"><code>/// &lt;/summary&gt;
 /// &lt;remarks&gt;
 /// &lt;para&gt;
 /// &lt;b&gt;Pipeline.&lt;/b&gt; Both answers are normalized (case, accents, punctuation, articles and
@@ -606,9 +617,9 @@ the server refuses is not retried forever.</figcaption>
 <li><b>The queue is flushed in order</b>
 <p><code>ScoreSyncService.FlushAsync</code> resubmits every queued score FIFO on app start and
 whenever the API is reachable again
-<a class="cite" href="https://github.com/punkouter27/PoMiniGames/blob/master/src/PoMiniGames.Client/Services/Play/ScoreSyncService.cs#L90" title="open src/PoMiniGames.Client/Services/Play/ScoreSyncService.cs line 90">src/PoMiniGames.Client/Services/Play/ScoreSyncService.cs:90</a>
-<a class="cite" href="https://github.com/punkouter27/PoMiniGames/blob/master/src/PoMiniGames.Client/Services/Play/ScoreSyncService.cs#L97" title="open src/PoMiniGames.Client/Services/Play/ScoreSyncService.cs line 97">src/PoMiniGames.Client/Services/Play/ScoreSyncService.cs:97</a>.</p>
-<p class="snip-cap">src/PoMiniGames.Client/Services/Play/ScoreSyncService.cs:90-96</p><pre class="snip"><code>    /// &lt;summary&gt;
+<span class="l3"><a class="cite" href="https://github.com/punkouter27/PoMiniGames/blob/master/src/PoMiniGames.Client/Services/Play/ScoreSyncService.cs#L90" title="open src/PoMiniGames.Client/Services/Play/ScoreSyncService.cs line 90">src/PoMiniGames.Client/Services/Play/ScoreSyncService.cs:90</a></span>
+<span class="l3"><a class="cite" href="https://github.com/punkouter27/PoMiniGames/blob/master/src/PoMiniGames.Client/Services/Play/ScoreSyncService.cs#L97" title="open src/PoMiniGames.Client/Services/Play/ScoreSyncService.cs line 97">src/PoMiniGames.Client/Services/Play/ScoreSyncService.cs:97</a></span>.</p>
+<p class="snip-cap l3">src/PoMiniGames.Client/Services/Play/ScoreSyncService.cs:90-96</p><pre class="snip l3"><code>    /// &lt;summary&gt;
     /// Attempts to resubmit every queued score in FIFO order. Synced entries are dropped, and so are ones
     /// the server rejects outright — a payload the server refuses can only be refused again, so keeping it
     /// would replay the same rejection on every flush forever. Only entries that could still succeed stay
@@ -657,53 +668,53 @@ every one of them.</figcaption>
 <ol class="steps">
 <li><b>The default brain is free and offline</b>
 <p><code>LocalJevClient</code> is plain tactics rules: deterministic, no I/O, no allowance
-<a class="cite" href="https://github.com/punkouter27/PoMiniGames/blob/master/src/PoMiniGames.API/Features/PoJevArena/Jev/LocalJevClient.cs#L4" title="open src/PoMiniGames.API/Features/PoJevArena/Jev/LocalJevClient.cs line 4">src/PoMiniGames.API/Features/PoJevArena/Jev/LocalJevClient.cs:4</a>.</p></li>
+<span class="l3"><a class="cite" href="https://github.com/punkouter27/PoMiniGames/blob/master/src/PoMiniGames.API/Features/PoJevArena/Jev/LocalJevClient.cs#L4" title="open src/PoMiniGames.API/Features/PoJevArena/Jev/LocalJevClient.cs line 4">src/PoMiniGames.API/Features/PoJevArena/Jev/LocalJevClient.cs:4</a></span>.</p></li>
 
 <li><b>The paid brain needs three things</b>
 <p>Server-side the brain is only available when <code>PoMiniGames:Jev:Brain</code> is
 <code>Jev</code>, a key is configured, and the player asked for it
-<a class="cite" href="https://github.com/punkouter27/PoMiniGames/blob/master/src/PoMiniGames.API/Features/PoJevArena/Jev/JevBrainRouter.cs#L8" title="open src/PoMiniGames.API/Features/PoJevArena/Jev/JevBrainRouter.cs line 8">src/PoMiniGames.API/Features/PoJevArena/Jev/JevBrainRouter.cs:8</a>.</p></li>
+<span class="l3"><a class="cite" href="https://github.com/punkouter27/PoMiniGames/blob/master/src/PoMiniGames.API/Features/PoJevArena/Jev/JevBrainRouter.cs#L8" title="open src/PoMiniGames.API/Features/PoJevArena/Jev/JevBrainRouter.cs line 8">src/PoMiniGames.API/Features/PoJevArena/Jev/JevBrainRouter.cs:8</a></span>.</p></li>
 
 <li><b>A missing key is announced, not silent</b>
 <p>If the brain is set to Jev but no key is configured, the app logs that every match runs on the
-free local brain <a class="cite" href="https://github.com/punkouter27/PoMiniGames/blob/master/src/PoMiniGames.API/Features/PoJevArena/PoJevArenaLog.cs#L15" title="open src/PoMiniGames.API/Features/PoJevArena/PoJevArenaLog.cs line 15">src/PoMiniGames.API/Features/PoJevArena/PoJevArenaLog.cs:15</a>.</p></li>
+free local brain <span class="l3"><a class="cite" href="https://github.com/punkouter27/PoMiniGames/blob/master/src/PoMiniGames.API/Features/PoJevArena/PoJevArenaLog.cs#L15" title="open src/PoMiniGames.API/Features/PoJevArena/PoJevArenaLog.cs line 15">src/PoMiniGames.API/Features/PoJevArena/PoJevArenaLog.cs:15</a></span>.</p></li>
 
 <li><b>The browser can run its own brain</b>
 <p>WebLLM over WebGPU downloads a small model into the browser, but only if the player switched it
 on and the browser exposes WebGPU
-<a class="cite" href="https://github.com/punkouter27/PoMiniGames/blob/master/src/PoMiniGames.Client/wwwroot/js/localAi.js#L29" title="open src/PoMiniGames.Client/wwwroot/js/localAi.js line 29">src/PoMiniGames.Client/wwwroot/js/localAi.js:29</a>
-<a class="cite" href="https://github.com/punkouter27/PoMiniGames/blob/master/src/PoMiniGames.Client/wwwroot/js/localAi.js#L34" title="open src/PoMiniGames.Client/wwwroot/js/localAi.js line 34">src/PoMiniGames.Client/wwwroot/js/localAi.js:34</a>
-<a class="cite" href="https://github.com/punkouter27/PoMiniGames/blob/master/src/PoMiniGames.Client/wwwroot/js/localAi.js#L49" title="open src/PoMiniGames.Client/wwwroot/js/localAi.js line 49">src/PoMiniGames.Client/wwwroot/js/localAi.js:49</a>. It returns <code>null</code> rather than
+<span class="l3"><a class="cite" href="https://github.com/punkouter27/PoMiniGames/blob/master/src/PoMiniGames.Client/wwwroot/js/localAi.js#L29" title="open src/PoMiniGames.Client/wwwroot/js/localAi.js line 29">src/PoMiniGames.Client/wwwroot/js/localAi.js:29</a></span>
+<span class="l3"><a class="cite" href="https://github.com/punkouter27/PoMiniGames/blob/master/src/PoMiniGames.Client/wwwroot/js/localAi.js#L34" title="open src/PoMiniGames.Client/wwwroot/js/localAi.js line 34">src/PoMiniGames.Client/wwwroot/js/localAi.js:34</a></span>
+<span class="l3"><a class="cite" href="https://github.com/punkouter27/PoMiniGames/blob/master/src/PoMiniGames.Client/wwwroot/js/localAi.js#L49" title="open src/PoMiniGames.Client/wwwroot/js/localAi.js line 49">src/PoMiniGames.Client/wwwroot/js/localAi.js:49</a></span>. It returns <code>null</code> rather than
 throwing, so the rule-based answer simply stands
-<a class="cite" href="https://github.com/punkouter27/PoMiniGames/blob/master/src/PoMiniGames.Client/wwwroot/js/localAi.js#L4" title="open src/PoMiniGames.Client/wwwroot/js/localAi.js line 4">src/PoMiniGames.Client/wwwroot/js/localAi.js:4</a>.</p></li>
+<span class="l3"><a class="cite" href="https://github.com/punkouter27/PoMiniGames/blob/master/src/PoMiniGames.Client/wwwroot/js/localAi.js#L4" title="open src/PoMiniGames.Client/wwwroot/js/localAi.js line 4">src/PoMiniGames.Client/wwwroot/js/localAi.js:4</a></span>.</p></li>
 </ol>
 
 <h2>Journey 7 &mdash; Save a world and share it</h2>
 <ol class="steps">
 <li><b>PoEcosystem saves three cloud slots</b>
 <p>Worlds are saved as blobs in the <code>poecosystem-worlds</code> container
-<a class="cite" href="https://github.com/punkouter27/PoMiniGames/blob/master/src/PoMiniGames.API/Features/PoEcosystem/EcosystemWorldStore.cs#L37" title="open src/PoMiniGames.API/Features/PoEcosystem/EcosystemWorldStore.cs line 37">src/PoMiniGames.API/Features/PoEcosystem/EcosystemWorldStore.cs:37</a>.</p></li>
+<span class="l3"><a class="cite" href="https://github.com/punkouter27/PoMiniGames/blob/master/src/PoMiniGames.API/Features/PoEcosystem/EcosystemWorldStore.cs#L37" title="open src/PoMiniGames.API/Features/PoEcosystem/EcosystemWorldStore.cs line 37">src/PoMiniGames.API/Features/PoEcosystem/EcosystemWorldStore.cs:37</a></span>.</p></li>
 
 <li><b>Sharing is one endpoint</b>
 <p><code>POST /api/poecosystem/worlds/{slot}/share</code>
-<a class="cite" href="https://github.com/punkouter27/PoMiniGames/blob/master/src/PoMiniGames.API/Features/PoEcosystem/EcosystemEndpoints.cs#L30" title="open src/PoMiniGames.API/Features/PoEcosystem/EcosystemEndpoints.cs line 30">src/PoMiniGames.API/Features/PoEcosystem/EcosystemEndpoints.cs:30</a>.</p></li>
+<span class="l3"><a class="cite" href="https://github.com/punkouter27/PoMiniGames/blob/master/src/PoMiniGames.API/Features/PoEcosystem/EcosystemEndpoints.cs#L30" title="open src/PoMiniGames.API/Features/PoEcosystem/EcosystemEndpoints.cs line 30">src/PoMiniGames.API/Features/PoEcosystem/EcosystemEndpoints.cs:30</a></span>.</p></li>
 
 <li><b>It is observation-only</b>
 <p>PoEcosystem never calls an AI service; its commentary is scripted in the browser
-<a class="cite" href="https://github.com/punkouter27/PoMiniGames/blob/master/src/PoMiniGames.Client/wwwroot/js/poecosystem/sim/thoughts/templates.js" title="open src/PoMiniGames.Client/wwwroot/js/poecosystem/sim/thoughts/templates.js">src/PoMiniGames.Client/wwwroot/js/poecosystem/sim/thoughts/templates.js</a>.</p></li>
+<span class="l3"><a class="cite" href="https://github.com/punkouter27/PoMiniGames/blob/master/src/PoMiniGames.Client/wwwroot/js/poecosystem/sim/thoughts/templates.js" title="open src/PoMiniGames.Client/wwwroot/js/poecosystem/sim/thoughts/templates.js">src/PoMiniGames.Client/wwwroot/js/poecosystem/sim/thoughts/templates.js</a></span>.</p></li>
 </ol>
 
 <h2>Journey 8 &mdash; Take your data with you</h2>
-<div class="scroll">
+<div class="scroll l3">
 <table>
 <thead><tr><th>Endpoint</th><th>What it does</th><th>Who may call it</th><th>Citation</th></tr></thead>
 <tbody>
 <tr><td><code>GET /api/account/export</code></td><td>Exports everything held for the caller's claim identity</td>
-<td>Signed-in player only</td><td><a class="cite" href="https://github.com/punkouter27/PoMiniGames/blob/master/src/PoMiniGames.API/Features/Account/AccountEndpoints.cs#L45" title="open src/PoMiniGames.API/Features/Account/AccountEndpoints.cs line 45">src/PoMiniGames.API/Features/Account/AccountEndpoints.cs:45</a></td></tr>
+<td>Signed-in player only</td><td><span class="l3"><a class="cite" href="https://github.com/punkouter27/PoMiniGames/blob/master/src/PoMiniGames.API/Features/Account/AccountEndpoints.cs#L45" title="open src/PoMiniGames.API/Features/Account/AccountEndpoints.cs line 45">src/PoMiniGames.API/Features/Account/AccountEndpoints.cs:45</a></span></td></tr>
 <tr><td><code>DELETE /api/account/data</code></td><td>Erases the caller's stored data</td>
-<td>Signed-in player only</td><td><a class="cite" href="https://github.com/punkouter27/PoMiniGames/blob/master/src/PoMiniGames.API/Features/Account/AccountEndpoints.cs#L79" title="open src/PoMiniGames.API/Features/Account/AccountEndpoints.cs line 79">src/PoMiniGames.API/Features/Account/AccountEndpoints.cs:79</a></td></tr>
+<td>Signed-in player only</td><td><span class="l3"><a class="cite" href="https://github.com/punkouter27/PoMiniGames/blob/master/src/PoMiniGames.API/Features/Account/AccountEndpoints.cs#L79" title="open src/PoMiniGames.API/Features/Account/AccountEndpoints.cs line 79">src/PoMiniGames.API/Features/Account/AccountEndpoints.cs:79</a></span></td></tr>
 <tr><td><code>GET /api/player/card</code></td><td>The shareable player card, as SVG</td>
-<td>Signed-in player only</td><td><a class="cite" href="https://github.com/punkouter27/PoMiniGames/blob/master/src/PoMiniGames.API/Features/Account/PlayerCardEndpoints.cs#L20" title="open src/PoMiniGames.API/Features/Account/PlayerCardEndpoints.cs line 20">src/PoMiniGames.API/Features/Account/PlayerCardEndpoints.cs:20</a></td></tr>
+<td>Signed-in player only</td><td><span class="l3"><a class="cite" href="https://github.com/punkouter27/PoMiniGames/blob/master/src/PoMiniGames.API/Features/Account/PlayerCardEndpoints.cs#L20" title="open src/PoMiniGames.API/Features/Account/PlayerCardEndpoints.cs line 20">src/PoMiniGames.API/Features/Account/PlayerCardEndpoints.cs:20</a></span></td></tr>
 </tbody>
 </table>
 </div>
@@ -711,7 +722,7 @@ throwing, so the rule-based answer simply stands
 <div class="note">
 These live inside the authenticated <code>/api</code> group, so the subject of every export or
 erase is always the caller's own claim identity
-<a class="cite" href="https://github.com/punkouter27/PoMiniGames/blob/master/src/PoMiniGames.API/Infrastructure/EndpointRouteExtensions.cs#L88" title="open src/PoMiniGames.API/Infrastructure/EndpointRouteExtensions.cs line 88">src/PoMiniGames.API/Infrastructure/EndpointRouteExtensions.cs:88</a>.
+<span class="l3"><a class="cite" href="https://github.com/punkouter27/PoMiniGames/blob/master/src/PoMiniGames.API/Infrastructure/EndpointRouteExtensions.cs#L88" title="open src/PoMiniGames.API/Infrastructure/EndpointRouteExtensions.cs line 88">src/PoMiniGames.API/Infrastructure/EndpointRouteExtensions.cs:88</a></span>.
 </div>
 
 <h2>What every journey has in common</h2>
@@ -736,6 +747,22 @@ erase is always the caller's own claim identity
     <p>A refused score names its reason. A refused write names its reason. A storage outage
     degrades the leaderboards instead of the games.</p>
   </div>
+</div>
+
+<div class="card">
+  <h3 style="margin-top:0">How to read this page</h3>
+  <p>The header toggle changes how deep the page goes. The choice is remembered in your browser
+     (the <code>localStorage</code> key <code>pomg-docs-tier</code>) and applies to every report in
+     the suite, including the ones framed inside <a href="artifact.html">the tabbed shell</a>.</p>
+  <ul>
+    <li><b>Simple</b> &mdash; the plain-English story: the summaries, the everyday analogies and the
+        step-by-step narratives. No diagrams, no citations, no code.</li>
+    <li><b>Architectural</b> &mdash; adds the architecture layer: the C4 maps, the request
+        sequences, the component tables and the data model.</li>
+    <li><b>Deep dive</b> &mdash; adds the evidence: every <code>file:line</code> citation, every
+        verbatim code snippet, and the reference tables (routes, permissions, rate limits, storage
+        map, configuration keys).</li>
+  </ul>
 </div>
 
 </main>

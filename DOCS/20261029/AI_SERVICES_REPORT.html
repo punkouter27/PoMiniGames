@@ -84,6 +84,8 @@ code,kbd{ font-family:var(--mono); font-size:.92em; }
   font-size:14px; line-height:1; display:inline-flex; align-items:center; justify-content:center;
 }
 .icon-btn:hover{ background:var(--chip); color:var(--ink); }
+.tier-name{ font-size:12px; color:var(--muted); white-space:nowrap; }
+.tier-name b{ color:var(--ink-2); }
 
 /* ---------- Layout ---------- */
 .wrap{ max-width:var(--maxw); margin:0 auto; padding:24px 16px 72px; }
@@ -114,7 +116,10 @@ html[data-tier="2"] .l3{ display:none !important; }
 .grid{ display:grid; gap:14px; grid-template-columns:repeat(auto-fit, minmax(min(280px,100%),1fr)); margin:16px 0; }
 .grid.two{ grid-template-columns:repeat(auto-fit, minmax(min(340px,100%),1fr)); }
 .grid.three{ grid-template-columns:repeat(auto-fit, minmax(min(240px,100%),1fr)); }
-.stat{ display:flex; flex-direction:column; gap:2px; }
+/* Grid and flex children default to min-width:auto, which lets a long unbreakable
+   child widen the whole track instead of scrolling inside it. */
+.grid > *{ min-width:0; }
+.stat{ display:flex; flex-direction:column; gap:2px; min-width:0; }
 .stat b{ font-size:24px; line-height:1.15; letter-spacing:-.02em; }
 .stat span{ font-size:12.5px; color:var(--muted); }
 
@@ -146,34 +151,37 @@ html[data-tier="2"] .l3{ display:none !important; }
 }
 
 /* ---------- Tables ---------- */
-.scroll{ overflow-x:auto; border:1px solid var(--line); border-radius:10px; background:var(--surface); margin:14px 0; }
+.scroll{ overflow-x:auto; border:1px solid var(--line); border-radius:10px; background:var(--surface); margin:14px 0; max-width:100%; }
 table{ border-collapse:collapse; width:100%; font-size:13.5px; }
 th,td{ padding:8px 11px; text-align:left; border-bottom:1px solid var(--line); vertical-align:top; }
 th{ font-size:11.5px; text-transform:uppercase; letter-spacing:.05em; color:var(--muted); white-space:nowrap; background:var(--surface-2); }
 tr:last-child td{ border-bottom:0; }
 td code{ overflow-wrap:anywhere; }
 .nowrap{ white-space:nowrap; }
+caption{ caption-side:top; text-align:left; font-size:12.5px; color:var(--muted); padding:0 0 6px; }
 
 /* ---------- Citations & snippets ---------- */
 .cite{
-  font-family:var(--mono); font-size:11.5px; text-decoration:none; white-space:nowrap;
+  font-family:var(--mono); font-size:11.5px; text-decoration:none;
   background:var(--chip); border:1px solid var(--line); border-radius:5px; padding:1px 5px;
-  color:var(--accent-ink); display:inline-block; max-width:100%; overflow-wrap:anywhere;
+  color:var(--accent-ink); display:inline-block; max-width:100%;
+  /* A long file path must be free to break, or it pushes the page sideways. */
+  white-space:normal; overflow-wrap:anywhere; word-break:break-word;
 }
 .cite:hover{ border-color:var(--accent); }
 pre.snip{
   background:var(--code-bg); border:1px solid var(--line); border-left:3px solid var(--line-strong);
-  border-radius:8px; padding:10px 12px; overflow-x:auto; margin:10px 0;
+  border-radius:8px; padding:10px 12px; overflow-x:auto; margin:10px 0; max-width:100%;
   font-family:var(--mono); font-size:12.5px; line-height:1.5; color:var(--ink-2);
 }
 pre.snip code{ background:none; padding:0; }
 .snip-cap{ font-size:12px; color:var(--muted); margin:0 0 -4px; }
 
 /* ---------- Mermaid ---------- */
-.figure{ margin:16px 0; }
+.figure{ margin:16px 0; min-width:0; }
 .mermaid-wrap{
   background:var(--surface); border:1px solid var(--line); border-radius:var(--radius);
-  padding:14px; overflow-x:auto; box-shadow:var(--shadow);
+  padding:14px; overflow-x:auto; box-shadow:var(--shadow); max-width:100%;
 }
 .mermaid{ display:flex; justify-content:center; }
 .mermaid svg{ max-width:100%; height:auto; }
@@ -181,10 +189,11 @@ figcaption{ font-size:12.5px; color:var(--muted); margin-top:7px; }
 figcaption b{ color:var(--ink-2); }
 
 /* ---------- Narrative steps ---------- */
-.steps{ counter-reset:step; list-style:none; padding:0; margin:14px 0; display:grid; gap:10px; }
+.steps{ counter-reset:step; list-style:none; padding:0; margin:14px 0; display:grid; gap:10px; min-width:0; }
 .steps li{
   position:relative; background:var(--surface); border:1px solid var(--line); border-radius:10px;
   padding:12px 14px 12px 46px; margin:0; counter-increment:step; color:var(--ink-2);
+  min-width:0; overflow-wrap:anywhere;
 }
 .steps li::before{
   content:counter(step); position:absolute; left:12px; top:11px; width:24px; height:24px;
@@ -192,6 +201,7 @@ figcaption b{ color:var(--ink-2); }
   display:flex; align-items:center; justify-content:center;
 }
 .steps li b{ color:var(--ink); display:block; margin-bottom:2px; }
+.steps li p{ max-width:none; }
 
 /* ---------- Pills & tags ---------- */
 .pill{
@@ -248,6 +258,7 @@ figcaption b{ color:var(--ink-2); }
     <a class="brand" href="index.html"><span class="dot"></span>PoMiniGames</a>
     <span class="doc-title">AI and external services</span>
     <div class="tb-right">
+      <span class="tier-name">Detail: <b data-tier-label>Architectural</b></span>
       <div class="seg" role="group" aria-label="Detail level">
         <button type="button" data-set-tier="1" title="Plain English only">Simple</button>
         <button type="button" data-set-tier="2" title="Add architecture diagrams">Architectural</button>
@@ -276,7 +287,7 @@ reachable.</p>
 money can leave the account, but only if a signed-in player turns it on. "None" means the service
 is never called. Nothing on this page can spend money without a player having asked for it first
 &mdash; except the quiz bank filler, whose paid top-up switch is off by default
-<a class="cite" href="https://github.com/punkouter27/PoMiniGames/blob/master/src/PoMiniGames.API/appsettings.json#L42" title="open src/PoMiniGames.API/appsettings.json line 42">src/PoMiniGames.API/appsettings.json:42</a>.
+<span class="l3"><a class="cite" href="https://github.com/punkouter27/PoMiniGames/blob/master/src/PoMiniGames.API/appsettings.json#L42" title="open src/PoMiniGames.API/appsettings.json line 42">src/PoMiniGames.API/appsettings.json:42</a></span>.
 </div>
 
 <h2>The complete inventory</h2>
@@ -289,29 +300,29 @@ is never called. Nothing on this page can spend money without a player having as
 <td>Validating sign-in tokens; serving Fresh AI quiz questions and the AI judge</td>
 <td>Optional for the AI parts.<br/>Required for sign-in.</td>
 <td>The app refuses to start in Production without a Foundry endpoint and deployment
-<a class="cite" href="https://github.com/punkouter27/PoMiniGames/blob/master/src/PoMiniGames.API/Infrastructure/StartupSecretValidator.cs#L116" title="open src/PoMiniGames.API/Infrastructure/StartupSecretValidator.cs line 116">src/PoMiniGames.API/Infrastructure/StartupSecretValidator.cs:116</a></td>
-<td><a class="cite" href="https://github.com/punkouter27/PoMiniGames/blob/master/src/PoMiniGames.API/AI/AIFoundryClientFactory.cs#L61" title="open src/PoMiniGames.API/AI/AIFoundryClientFactory.cs line 61">src/PoMiniGames.API/AI/AIFoundryClientFactory.cs:61</a></td>
+<span class="l3"><a class="cite" href="https://github.com/punkouter27/PoMiniGames/blob/master/src/PoMiniGames.API/Infrastructure/StartupSecretValidator.cs#L116" title="open src/PoMiniGames.API/Infrastructure/StartupSecretValidator.cs line 116">src/PoMiniGames.API/Infrastructure/StartupSecretValidator.cs:116</a></span></td>
+<td><span class="l3"><a class="cite" href="https://github.com/punkouter27/PoMiniGames/blob/master/src/PoMiniGames.API/AI/AIFoundryClientFactory.cs#L61" title="open src/PoMiniGames.API/AI/AIFoundryClientFactory.cs line 61">src/PoMiniGames.API/AI/AIFoundryClientFactory.cs:61</a></span></td>
 </tr>
 <tr>
 <td><b>Azure AI Foundry</b> model <code>gpt-5.4-nano</code></td>
 <td>Writing fresh quiz questions; judging close quiz answers</td>
 <td><span class="pill paid">Metered</span> one model, metered per player per day</td>
 <td>The free bank answers instead; the free matcher decides instead</td>
-<td><a class="cite" href="https://github.com/punkouter27/PoMiniGames/blob/master/src/PoMiniGames.API/appsettings.json#L38" title="open src/PoMiniGames.API/appsettings.json line 38">src/PoMiniGames.API/appsettings.json:38</a></td>
+<td><span class="l3"><a class="cite" href="https://github.com/punkouter27/PoMiniGames/blob/master/src/PoMiniGames.API/appsettings.json#L38" title="open src/PoMiniGames.API/appsettings.json line 38">src/PoMiniGames.API/appsettings.json:38</a></span></td>
 </tr>
 <tr>
 <td><b>Open Trivia DB</b></td>
 <td>Tops up the PoFunQuiz question bank</td>
 <td><span class="pill free">Free</span> and public</td>
 <td>The bundled set takes over; the request logs an information message and returns an empty list</td>
-<td><a class="cite" href="https://github.com/punkouter27/PoMiniGames/blob/master/src/PoMiniGames.API/Features/PoFunQuiz/OpenTriviaDbClient.cs#L100" title="open src/PoMiniGames.API/Features/PoFunQuiz/OpenTriviaDbClient.cs line 100">src/PoMiniGames.API/Features/PoFunQuiz/OpenTriviaDbClient.cs:100</a></td>
+<td><span class="l3"><a class="cite" href="https://github.com/punkouter27/PoMiniGames/blob/master/src/PoMiniGames.API/Features/PoFunQuiz/OpenTriviaDbClient.cs#L100" title="open src/PoMiniGames.API/Features/PoFunQuiz/OpenTriviaDbClient.cs line 100">src/PoMiniGames.API/Features/PoFunQuiz/OpenTriviaDbClient.cs:100</a></span></td>
 </tr>
 <tr>
 <td><b>Wikimedia REST API</b></td>
 <td>Enriches PoBrawl fighter dossiers with a summary and portrait</td>
 <td><span class="pill free">Free</span>, cached for 24 hours</td>
 <td>The static facts are served; the enrichment is skipped</td>
-<td><a class="cite" href="https://github.com/punkouter27/PoMiniGames/blob/master/src/PoMiniGames.API/Features/PoBrawl/PoBrawlDossierService.cs#L190" title="open src/PoMiniGames.API/Features/PoBrawl/PoBrawlDossierService.cs line 190">src/PoMiniGames.API/Features/PoBrawl/PoBrawlDossierService.cs:190</a></td>
+<td><span class="l3"><a class="cite" href="https://github.com/punkouter27/PoMiniGames/blob/master/src/PoMiniGames.API/Features/PoBrawl/PoBrawlDossierService.cs#L190" title="open src/PoMiniGames.API/Features/PoBrawl/PoBrawlDossierService.cs line 190">src/PoMiniGames.API/Features/PoBrawl/PoBrawlDossierService.cs:190</a></span></td>
 </tr>
 <tr>
 <td><b>OpenRouter</b> &rarr; TypeSafe Jev</td>
@@ -319,14 +330,14 @@ is never called. Nothing on this page can spend money without a player having as
 <td><span class="pill paid">Metered</span> only when <code>PoMiniGames:Jev:Brain</code> is
 <code>Jev</code> and the player asks for it</td>
 <td>The free rule-based brain plays the match instead</td>
-<td><a class="cite" href="https://github.com/punkouter27/PoMiniGames/blob/master/src/PoMiniGames.API/Features/PoJevArena/Jev/JevBrainRouter.cs#L8" title="open src/PoMiniGames.API/Features/PoJevArena/Jev/JevBrainRouter.cs line 8">src/PoMiniGames.API/Features/PoJevArena/Jev/JevBrainRouter.cs:8</a></td>
+<td><span class="l3"><a class="cite" href="https://github.com/punkouter27/PoMiniGames/blob/master/src/PoMiniGames.API/Features/PoJevArena/Jev/JevBrainRouter.cs#L8" title="open src/PoMiniGames.API/Features/PoJevArena/Jev/JevBrainRouter.cs line 8">src/PoMiniGames.API/Features/PoJevArena/Jev/JevBrainRouter.cs:8</a></span></td>
 </tr>
 <tr>
 <td><b>WebLLM over WebGPU</b></td>
 <td>An on-device brain, entirely inside the browser</td>
 <td><span class="pill free">Free</span> and private &mdash; nothing leaves the device</td>
 <td>The rule-based answer stands; the module returns <code>null</code> and never throws</td>
-<td><a class="cite" href="https://github.com/punkouter27/PoMiniGames/blob/master/src/PoMiniGames.Client/wwwroot/js/localAi.js#L4" title="open src/PoMiniGames.Client/wwwroot/js/localAi.js line 4">src/PoMiniGames.Client/wwwroot/js/localAi.js:4</a></td>
+<td><span class="l3"><a class="cite" href="https://github.com/punkouter27/PoMiniGames/blob/master/src/PoMiniGames.Client/wwwroot/js/localAi.js#L4" title="open src/PoMiniGames.Client/wwwroot/js/localAi.js line 4">src/PoMiniGames.Client/wwwroot/js/localAi.js:4</a></span></td>
 </tr>
 <tr>
 <td><b>Trivia question licence</b></td>
@@ -346,7 +357,7 @@ call left in the source.
 
 <h2>How an AI call is made</h2>
 
-<figure class="figure">
+<figure class="figure l2">
 <div class="mermaid-wrap">
 <pre class="mermaid">flowchart TB
     Req[&quot;A request needs a model&quot;]
@@ -366,7 +377,7 @@ call left in the source.
 written down in the source.</figcaption>
 </figure>
 
-<p class="snip-cap">src/PoMiniGames.API/AI/GameChatClientRegistration.cs:18-25</p><pre class="snip"><code>/// cross-cutting guarantee opt-in, and every slice opted out: the resilience pipeline had no
+<p class="snip-cap l3">src/PoMiniGames.API/AI/GameChatClientRegistration.cs:18-25</p><pre class="snip l3"><code>/// cross-cutting guarantee opt-in, and every slice opted out: the resilience pipeline had no
 /// consumers at all, and no call site recorded token usage. Composing here means a slice gets the
 /// whole posture by asking for its client:
 /// &lt;/para&gt;
@@ -379,22 +390,22 @@ written down in the source.</figcaption>
 <li><b>Budget first</b>
 <p><code>BudgetedChatClient</code> asks the ledger whether this identity has spent its daily
 allowance. If it has, it throws <code>AiTokenBudgetExceededException</code> before any network
-call happens <a class="cite" href="https://github.com/punkouter27/PoMiniGames/blob/master/src/PoMiniGames.API/AI/BudgetedChatClient.cs#L72" title="open src/PoMiniGames.API/AI/BudgetedChatClient.cs line 72">src/PoMiniGames.API/AI/BudgetedChatClient.cs:72</a>.</p></li>
+call happens <span class="l3"><a class="cite" href="https://github.com/punkouter27/PoMiniGames/blob/master/src/PoMiniGames.API/AI/BudgetedChatClient.cs#L72" title="open src/PoMiniGames.API/AI/BudgetedChatClient.cs line 72">src/PoMiniGames.API/AI/BudgetedChatClient.cs:72</a></span>.</p></li>
 
 <li><b>Resilience second</b>
 <p>The resilient wrapper applies the total-call budget, concurrency gates, a jittered retry and a
-circuit breaker <a class="cite" href="https://github.com/punkouter27/PoMiniGames/blob/master/src/PoMiniGames.API/AI/GameChatClientRegistration.cs#L194" title="open src/PoMiniGames.API/AI/GameChatClientRegistration.cs line 194">src/PoMiniGames.API/AI/GameChatClientRegistration.cs:194</a>.</p></li>
+circuit breaker <span class="l3"><a class="cite" href="https://github.com/punkouter27/PoMiniGames/blob/master/src/PoMiniGames.API/AI/GameChatClientRegistration.cs#L194" title="open src/PoMiniGames.API/AI/GameChatClientRegistration.cs line 194">src/PoMiniGames.API/AI/GameChatClientRegistration.cs:194</a></span>.</p></li>
 
 <li><b>Instrumentation third</b>
 <p>The instrumented wrapper records token counts and latency and feeds the health tracker
-<a class="cite" href="https://github.com/punkouter27/PoMiniGames/blob/master/src/PoMiniGames.API/AI/GameChatClientRegistration.cs#L128" title="open src/PoMiniGames.API/AI/GameChatClientRegistration.cs line 128">src/PoMiniGames.API/AI/GameChatClientRegistration.cs:128</a>.</p></li>
+<span class="l3"><a class="cite" href="https://github.com/punkouter27/PoMiniGames/blob/master/src/PoMiniGames.API/AI/GameChatClientRegistration.cs#L128" title="open src/PoMiniGames.API/AI/GameChatClientRegistration.cs line 128">src/PoMiniGames.API/AI/GameChatClientRegistration.cs:128</a></span>.</p></li>
 
 <li><b>The model last</b>
 <p>Only then does the shared Foundry SDK client talk to the deployment
-<a class="cite" href="https://github.com/punkouter27/PoMiniGames/blob/master/src/PoMiniGames.API/AI/AIFoundryClientFactory.cs#L61" title="open src/PoMiniGames.API/AI/AIFoundryClientFactory.cs line 61">src/PoMiniGames.API/AI/AIFoundryClientFactory.cs:61</a>.</p></li>
+<span class="l3"><a class="cite" href="https://github.com/punkouter27/PoMiniGames/blob/master/src/PoMiniGames.API/AI/AIFoundryClientFactory.cs#L61" title="open src/PoMiniGames.API/AI/AIFoundryClientFactory.cs line 61">src/PoMiniGames.API/AI/AIFoundryClientFactory.cs:61</a></span>.</p></li>
 </ol>
 
-<p class="snip-cap">src/PoMiniGames.API/AI/AIFoundryClientFactory.cs:61-68</p><pre class="snip"><code>                new Uri(opts.Endpoint),
+<p class="snip-cap l3">src/PoMiniGames.API/AI/AIFoundryClientFactory.cs:61-68</p><pre class="snip l3"><code>                new Uri(opts.Endpoint),
                 new Azure.Identity.DefaultAzureCredential(),
                 AzureOpenAIResilience.DefaultOptions());
         });
@@ -409,31 +420,31 @@ circuit breaker <a class="cite" href="https://github.com/punkouter27/PoMiniGames
     <h3 style="margin-top:0">A hard daily ceiling per player</h3>
     <p>Every identity may spend <b>250,000 tokens per UTC day</b> across the whole AI surface.
     The value is declared in code and repeated in configuration
-    <a class="cite" href="https://github.com/punkouter27/PoMiniGames/blob/master/src/PoMiniGames.API/AI/AiTokenBudget.cs#L14" title="open src/PoMiniGames.API/AI/AiTokenBudget.cs line 14">src/PoMiniGames.API/AI/AiTokenBudget.cs:14</a>
-    <a class="cite" href="https://github.com/punkouter27/PoMiniGames/blob/master/src/PoMiniGames.API/appsettings.json#L47" title="open src/PoMiniGames.API/appsettings.json line 47">src/PoMiniGames.API/appsettings.json:47</a>.</p>
+    <span class="l3"><a class="cite" href="https://github.com/punkouter27/PoMiniGames/blob/master/src/PoMiniGames.API/AI/AiTokenBudget.cs#L14" title="open src/PoMiniGames.API/AI/AiTokenBudget.cs line 14">src/PoMiniGames.API/AI/AiTokenBudget.cs:14</a></span>
+    <span class="l3"><a class="cite" href="https://github.com/punkouter27/PoMiniGames/blob/master/src/PoMiniGames.API/appsettings.json#L47" title="open src/PoMiniGames.API/appsettings.json line 47">src/PoMiniGames.API/appsettings.json:47</a></span>.</p>
   </div>
   <div class="card">
     <h3 style="margin-top:0">The message says when it resets</h3>
     <p>The exception carries what was spent, the limit and the reset time, so a handler can answer
     with a reset instead of pretending the model is broken
-    <a class="cite" href="https://github.com/punkouter27/PoMiniGames/blob/master/src/PoMiniGames.API/AI/BudgetedChatClient.cs#L99" title="open src/PoMiniGames.API/AI/BudgetedChatClient.cs line 99">src/PoMiniGames.API/AI/BudgetedChatClient.cs:99</a>.</p>
+    <span class="l3"><a class="cite" href="https://github.com/punkouter27/PoMiniGames/blob/master/src/PoMiniGames.API/AI/BudgetedChatClient.cs#L99" title="open src/PoMiniGames.API/AI/BudgetedChatClient.cs line 99">src/PoMiniGames.API/AI/BudgetedChatClient.cs:99</a></span>.</p>
   </div>
   <div class="card">
     <h3 style="margin-top:0">Rate limits on top</h3>
     <p>The <code>ai-generation</code> policy allows eight requests per fifteen seconds; Jev
     decisions get three hundred a minute because a single match asks many small questions
-    <a class="cite" href="https://github.com/punkouter27/PoMiniGames/blob/master/src/PoMiniGames.API/Infrastructure/RateLimitingExtensions.cs#L117" title="open src/PoMiniGames.API/Infrastructure/RateLimitingExtensions.cs line 117">src/PoMiniGames.API/Infrastructure/RateLimitingExtensions.cs:117</a>
-    <a class="cite" href="https://github.com/punkouter27/PoMiniGames/blob/master/src/PoMiniGames.API/Infrastructure/RateLimitingExtensions.cs#L160" title="open src/PoMiniGames.API/Infrastructure/RateLimitingExtensions.cs line 160">src/PoMiniGames.API/Infrastructure/RateLimitingExtensions.cs:160</a>.</p>
+    <span class="l3"><a class="cite" href="https://github.com/punkouter27/PoMiniGames/blob/master/src/PoMiniGames.API/Infrastructure/RateLimitingExtensions.cs#L117" title="open src/PoMiniGames.API/Infrastructure/RateLimitingExtensions.cs line 117">src/PoMiniGames.API/Infrastructure/RateLimitingExtensions.cs:117</a></span>
+    <span class="l3"><a class="cite" href="https://github.com/punkouter27/PoMiniGames/blob/master/src/PoMiniGames.API/Infrastructure/RateLimitingExtensions.cs#L160" title="open src/PoMiniGames.API/Infrastructure/RateLimitingExtensions.cs line 160">src/PoMiniGames.API/Infrastructure/RateLimitingExtensions.cs:160</a></span>.</p>
   </div>
   <div class="card">
     <h3 style="margin-top:0">A separate ledger for Jev</h3>
     <p>PoJevArena keeps its own call ledger in its own table, so the arena's spend can be capped
     independently of the quiz budget
-    <a class="cite" href="https://github.com/punkouter27/PoMiniGames/blob/master/src/PoMiniGames.API/Features/PoJevArena/JevCallAllowance.cs#L14" title="open src/PoMiniGames.API/Features/PoJevArena/JevCallAllowance.cs line 14">src/PoMiniGames.API/Features/PoJevArena/JevCallAllowance.cs:14</a>.</p>
+    <span class="l3"><a class="cite" href="https://github.com/punkouter27/PoMiniGames/blob/master/src/PoMiniGames.API/Features/PoJevArena/JevCallAllowance.cs#L14" title="open src/PoMiniGames.API/Features/PoJevArena/JevCallAllowance.cs line 14">src/PoMiniGames.API/Features/PoJevArena/JevCallAllowance.cs:14</a></span>.</p>
   </div>
 </div>
 
-<p class="snip-cap">src/PoMiniGames.API/AI/AiTokenBudget.cs:14-23</p><pre class="snip"><code>public sealed class AiTokenBudgetOptions
+<p class="snip-cap l3">src/PoMiniGames.API/AI/AiTokenBudget.cs:14-23</p><pre class="snip l3"><code>public sealed class AiTokenBudgetOptions
 {
     public const string SectionName = &quot;PoMiniGames:AI:TokenBudget&quot;;
 
@@ -446,13 +457,13 @@ circuit breaker <a class="cite" href="https://github.com/punkouter27/PoMiniGames
 
 <div class="note">
 <b>The ledger is a table, not a counter in memory.</b> <code>AiTokenLedger</code>
-<a class="cite" href="https://github.com/punkouter27/PoMiniGames/blob/master/src/PoMiniGames.API/AI/AiTokenLedgerStore.cs#L66" title="open src/PoMiniGames.API/AI/AiTokenLedgerStore.cs line 66">src/PoMiniGames.API/AI/AiTokenLedgerStore.cs:66</a> means the daily budget survives a restart
+<span class="l3"><a class="cite" href="https://github.com/punkouter27/PoMiniGames/blob/master/src/PoMiniGames.API/AI/AiTokenLedgerStore.cs#L66" title="open src/PoMiniGames.API/AI/AiTokenLedgerStore.cs line 66">src/PoMiniGames.API/AI/AiTokenLedgerStore.cs:66</a></span> means the daily budget survives a restart
 and is shared across every instance of the host.
 </div>
 
 <h2>What operators can see</h2>
 
-<figure class="figure">
+<figure class="figure l2">
 <div class="mermaid-wrap">
 <pre class="mermaid">flowchart LR
     Call[&quot;GET /api/diag/ai&quot;]
@@ -474,16 +485,16 @@ the whole picture, and only outside Development.</figcaption>
 <thead><tr><th>Caller</th><th>What they see</th><th>Citation</th></tr></thead>
 <tbody>
 <tr><td>Anyone, in Development</td><td>Everything, anonymously</td>
-<td><a class="cite" href="https://github.com/punkouter27/PoMiniGames/blob/master/src/PoMiniGames.API/Features/Health/DiagEndpoints.cs#L214" title="open src/PoMiniGames.API/Features/Health/DiagEndpoints.cs line 214">src/PoMiniGames.API/Features/Health/DiagEndpoints.cs:214</a></td></tr>
+<td><span class="l3"><a class="cite" href="https://github.com/punkouter27/PoMiniGames/blob/master/src/PoMiniGames.API/Features/Health/DiagEndpoints.cs#L214" title="open src/PoMiniGames.API/Features/Health/DiagEndpoints.cs line 214">src/PoMiniGames.API/Features/Health/DiagEndpoints.cs:214</a></span></td></tr>
 <tr><td>Anonymous, outside Development</td><td>HTTP 401 &mdash; authorization is required</td>
-<td><a class="cite" href="https://github.com/punkouter27/PoMiniGames/blob/master/src/PoMiniGames.API/Features/Health/DiagEndpoints.cs#L215" title="open src/PoMiniGames.API/Features/Health/DiagEndpoints.cs line 215">src/PoMiniGames.API/Features/Health/DiagEndpoints.cs:215</a></td></tr>
+<td><span class="l3"><a class="cite" href="https://github.com/punkouter27/PoMiniGames/blob/master/src/PoMiniGames.API/Features/Health/DiagEndpoints.cs#L215" title="open src/PoMiniGames.API/Features/Health/DiagEndpoints.cs line 215">src/PoMiniGames.API/Features/Health/DiagEndpoints.cs:215</a></span></td></tr>
 <tr><td>Signed in, outside Development</td><td>Configuration presence and their own budget only</td>
-<td><a class="cite" href="https://github.com/punkouter27/PoMiniGames/blob/master/src/PoMiniGames.API/Features/Health/DiagEndpoints.cs#L313" title="open src/PoMiniGames.API/Features/Health/DiagEndpoints.cs line 313">src/PoMiniGames.API/Features/Health/DiagEndpoints.cs:313</a></td></tr>
+<td><span class="l3"><a class="cite" href="https://github.com/punkouter27/PoMiniGames/blob/master/src/PoMiniGames.API/Features/Health/DiagEndpoints.cs#L313" title="open src/PoMiniGames.API/Features/Health/DiagEndpoints.cs line 313">src/PoMiniGames.API/Features/Health/DiagEndpoints.cs:313</a></span></td></tr>
 <tr><td>An operator in <code>PoMiniGames:Diag:AiUsageAdmins</code></td>
 <td>Per-game counters, spend totals and deployment names</td>
-<td><a class="cite" href="https://github.com/punkouter27/PoMiniGames/blob/master/src/PoMiniGames.API/Features/Health/DiagEndpoints.cs#L326" title="open src/PoMiniGames.API/Features/Health/DiagEndpoints.cs line 326">src/PoMiniGames.API/Features/Health/DiagEndpoints.cs:326</a></td></tr>
+<td><span class="l3"><a class="cite" href="https://github.com/punkouter27/PoMiniGames/blob/master/src/PoMiniGames.API/Features/Health/DiagEndpoints.cs#L326" title="open src/PoMiniGames.API/Features/Health/DiagEndpoints.cs line 326">src/PoMiniGames.API/Features/Health/DiagEndpoints.cs:326</a></span></td></tr>
 <tr><td>Logs tail</td><td>Not mapped at all outside Development</td>
-<td><a class="cite" href="https://github.com/punkouter27/PoMiniGames/blob/master/src/PoMiniGames.API/Features/Health/DiagEndpoints.cs#L298" title="open src/PoMiniGames.API/Features/Health/DiagEndpoints.cs line 298">src/PoMiniGames.API/Features/Health/DiagEndpoints.cs:298</a></td></tr>
+<td><span class="l3"><a class="cite" href="https://github.com/punkouter27/PoMiniGames/blob/master/src/PoMiniGames.API/Features/Health/DiagEndpoints.cs#L298" title="open src/PoMiniGames.API/Features/Health/DiagEndpoints.cs line 298">src/PoMiniGames.API/Features/Health/DiagEndpoints.cs:298</a></span></td></tr>
 </tbody>
 </table>
 </div>
@@ -491,7 +502,7 @@ the whole picture, and only outside Development.</figcaption>
 <div class="note">
 The admin list holds <b>Microsoft Entra object ids, not email addresses</b>. The code explains
 why: sign-in is multi-tenant, so an email claim proves nothing about who the caller is
-<a class="cite" href="https://github.com/punkouter27/PoMiniGames/blob/master/src/PoMiniGames.API/Features/Health/DiagEndpoints.cs#L373" title="open src/PoMiniGames.API/Features/Health/DiagEndpoints.cs line 373">src/PoMiniGames.API/Features/Health/DiagEndpoints.cs:373</a>.
+<span class="l3"><a class="cite" href="https://github.com/punkouter27/PoMiniGames/blob/master/src/PoMiniGames.API/Features/Health/DiagEndpoints.cs#L373" title="open src/PoMiniGames.API/Features/Health/DiagEndpoints.cs line 373">src/PoMiniGames.API/Features/Health/DiagEndpoints.cs:373</a></span>.
 </div>
 
 <h2>What happens when the paid path is not there</h2>
@@ -502,33 +513,33 @@ why: sign-in is multi-tenant, so an email claim proves nothing about who the cal
 <tr><td>The model deployment is unreachable</td>
 <td>The free path answers. The resilience wrapper retries, then the breaker opens and the call
 falls through</td>
-<td><a class="cite" href="https://github.com/punkouter27/PoMiniGames/blob/master/src/PoMiniGames.API/AI/GameChatClientRegistration.cs#L18" title="open src/PoMiniGames.API/AI/GameChatClientRegistration.cs line 18">src/PoMiniGames.API/AI/GameChatClientRegistration.cs:18</a></td></tr>
+<td><span class="l3"><a class="cite" href="https://github.com/punkouter27/PoMiniGames/blob/master/src/PoMiniGames.API/AI/GameChatClientRegistration.cs#L18" title="open src/PoMiniGames.API/AI/GameChatClientRegistration.cs line 18">src/PoMiniGames.API/AI/GameChatClientRegistration.cs:18</a></span></td></tr>
 <tr><td>Open Trivia DB times out, fails DNS or returns nonsense</td>
 <td>An empty result, an information log, and the bundled question set instead</td>
-<td><a class="cite" href="https://github.com/punkouter27/PoMiniGames/blob/master/src/PoMiniGames.API/Features/PoFunQuiz/OpenTriviaDbClient.cs#L100" title="open src/PoMiniGames.API/Features/PoFunQuiz/OpenTriviaDbClient.cs line 100">src/PoMiniGames.API/Features/PoFunQuiz/OpenTriviaDbClient.cs:100</a></td></tr>
+<td><span class="l3"><a class="cite" href="https://github.com/punkouter27/PoMiniGames/blob/master/src/PoMiniGames.API/Features/PoFunQuiz/OpenTriviaDbClient.cs#L100" title="open src/PoMiniGames.API/Features/PoFunQuiz/OpenTriviaDbClient.cs line 100">src/PoMiniGames.API/Features/PoFunQuiz/OpenTriviaDbClient.cs:100</a></span></td></tr>
 <tr><td>Wikipedia is slow or down</td>
 <td>The static fighter facts are served and the enrichment is skipped; the dossier endpoint still
 answers</td>
-<td><a class="cite" href="https://github.com/punkouter27/PoMiniGames/blob/master/src/PoMiniGames.API/Features/PoBrawl/PoBrawlDossierService.cs#L190" title="open src/PoMiniGames.API/Features/PoBrawl/PoBrawlDossierService.cs line 190">src/PoMiniGames.API/Features/PoBrawl/PoBrawlDossierService.cs:190</a></td></tr>
+<td><span class="l3"><a class="cite" href="https://github.com/punkouter27/PoMiniGames/blob/master/src/PoMiniGames.API/Features/PoBrawl/PoBrawlDossierService.cs#L190" title="open src/PoMiniGames.API/Features/PoBrawl/PoBrawlDossierService.cs line 190">src/PoMiniGames.API/Features/PoBrawl/PoBrawlDossierService.cs:190</a></span></td></tr>
 <tr><td>The player has spent their daily tokens</td>
 <td>The request is refused before the model is called, with the reset time in the message</td>
-<td><a class="cite" href="https://github.com/punkouter27/PoMiniGames/blob/master/src/PoMiniGames.API/AI/BudgetedChatClient.cs#L72" title="open src/PoMiniGames.API/AI/BudgetedChatClient.cs line 72">src/PoMiniGames.API/AI/BudgetedChatClient.cs:72</a></td></tr>
+<td><span class="l3"><a class="cite" href="https://github.com/punkouter27/PoMiniGames/blob/master/src/PoMiniGames.API/AI/BudgetedChatClient.cs#L72" title="open src/PoMiniGames.API/AI/BudgetedChatClient.cs line 72">src/PoMiniGames.API/AI/BudgetedChatClient.cs:72</a></span></td></tr>
 <tr><td>Jev is configured but no key is set</td>
 <td>Every match runs on the free local brain, and the app logs exactly that</td>
-<td><a class="cite" href="https://github.com/punkouter27/PoMiniGames/blob/master/src/PoMiniGames.API/Features/PoJevArena/PoJevArenaLog.cs#L15" title="open src/PoMiniGames.API/Features/PoJevArena/PoJevArenaLog.cs line 15">src/PoMiniGames.API/Features/PoJevArena/PoJevArenaLog.cs:15</a></td></tr>
+<td><span class="l3"><a class="cite" href="https://github.com/punkouter27/PoMiniGames/blob/master/src/PoMiniGames.API/Features/PoJevArena/PoJevArenaLog.cs#L15" title="open src/PoMiniGames.API/Features/PoJevArena/PoJevArenaLog.cs line 15">src/PoMiniGames.API/Features/PoJevArena/PoJevArenaLog.cs:15</a></span></td></tr>
 <tr><td>The browser has no WebGPU, or the model fails to load</td>
 <td>The on-device brain returns <code>null</code> and the rule-based answer stands</td>
-<td><a class="cite" href="https://github.com/punkouter27/PoMiniGames/blob/master/src/PoMiniGames.Client/wwwroot/js/localAi.js#L4" title="open src/PoMiniGames.Client/wwwroot/js/localAi.js line 4">src/PoMiniGames.Client/wwwroot/js/localAi.js:4</a></td></tr>
+<td><span class="l3"><a class="cite" href="https://github.com/punkouter27/PoMiniGames/blob/master/src/PoMiniGames.Client/wwwroot/js/localAi.js#L4" title="open src/PoMiniGames.Client/wwwroot/js/localAi.js line 4">src/PoMiniGames.Client/wwwroot/js/localAi.js:4</a></span></td></tr>
 <tr><td>The whole storage account is unreachable</td>
 <td>Leaderboards render empty and score writes are dropped; the games themselves keep working</td>
-<td><a class="cite" href="https://github.com/punkouter27/PoMiniGames/blob/master/src/PoMiniGames.Infrastructure/Services/StorageService.cs#L58" title="open src/PoMiniGames.Infrastructure/Services/StorageService.cs line 58">src/PoMiniGames.Infrastructure/Services/StorageService.cs:58</a></td></tr>
+<td><span class="l3"><a class="cite" href="https://github.com/punkouter27/PoMiniGames/blob/master/src/PoMiniGames.Infrastructure/Services/StorageService.cs#L58" title="open src/PoMiniGames.Infrastructure/Services/StorageService.cs line 58">src/PoMiniGames.Infrastructure/Services/StorageService.cs:58</a></span></td></tr>
 </tbody>
 </table>
 </div>
 
 <h2>Three games that never call a model</h2>
 
-<figure class="figure">
+<figure class="figure l2">
 <div class="mermaid-wrap">
 <pre class="mermaid">flowchart LR
     Eco[&quot;PoEcosystem&lt;br/&gt;scripted thoughts&quot;]
@@ -551,11 +562,11 @@ repository.</figcaption>
 <thead><tr><th>Game</th><th>Where the words live</th><th>Citation</th></tr></thead>
 <tbody>
 <tr><td>PoEcosystem</td><td><code>wwwroot/js/poecosystem/sim/thoughts/templates.js</code></td>
-<td><a class="cite" href="https://github.com/punkouter27/PoMiniGames/blob/master/src/PoMiniGames.Client/wwwroot/js/poecosystem/sim/thoughts/templates.js" title="open src/PoMiniGames.Client/wwwroot/js/poecosystem/sim/thoughts/templates.js">src/PoMiniGames.Client/wwwroot/js/poecosystem/sim/thoughts/templates.js</a></td></tr>
+<td><span class="l3"><a class="cite" href="https://github.com/punkouter27/PoMiniGames/blob/master/src/PoMiniGames.Client/wwwroot/js/poecosystem/sim/thoughts/templates.js" title="open src/PoMiniGames.Client/wwwroot/js/poecosystem/sim/thoughts/templates.js">src/PoMiniGames.Client/wwwroot/js/poecosystem/sim/thoughts/templates.js</a></span></td></tr>
 <tr><td>PoBrawl</td><td><code>wwwroot/js/pobrawl/commentary.js</code></td>
-<td><a class="cite" href="https://github.com/punkouter27/PoMiniGames/blob/master/src/PoMiniGames.Client/wwwroot/js/pobrawl/commentary.js" title="open src/PoMiniGames.Client/wwwroot/js/pobrawl/commentary.js">src/PoMiniGames.Client/wwwroot/js/pobrawl/commentary.js</a></td></tr>
+<td><span class="l3"><a class="cite" href="https://github.com/punkouter27/PoMiniGames/blob/master/src/PoMiniGames.Client/wwwroot/js/pobrawl/commentary.js" title="open src/PoMiniGames.Client/wwwroot/js/pobrawl/commentary.js">src/PoMiniGames.Client/wwwroot/js/pobrawl/commentary.js</a></span></td></tr>
 <tr><td>PoCabinet</td><td><code>wwwroot/js/pocabinet/dialogue.js</code></td>
-<td><a class="cite" href="https://github.com/punkouter27/PoMiniGames/blob/master/src/PoMiniGames.Client/wwwroot/js/pocabinet/dialogue.js" title="open src/PoMiniGames.Client/wwwroot/js/pocabinet/dialogue.js">src/PoMiniGames.Client/wwwroot/js/pocabinet/dialogue.js</a></td></tr>
+<td><span class="l3"><a class="cite" href="https://github.com/punkouter27/PoMiniGames/blob/master/src/PoMiniGames.Client/wwwroot/js/pocabinet/dialogue.js" title="open src/PoMiniGames.Client/wwwroot/js/pocabinet/dialogue.js">src/PoMiniGames.Client/wwwroot/js/pocabinet/dialogue.js</a></span></td></tr>
 </tbody>
 </table>
 </div>
@@ -567,55 +578,55 @@ presser and intro routes. Removing a route is the strongest form of "this does n
 </div>
 
 <h2>Configuration reference</h2>
-<div class="scroll">
+<div class="scroll l3">
 <table>
 <thead><tr><th>Key</th><th>Values</th><th>Default</th><th>Citation</th></tr></thead>
 <tbody>
 <tr><td><code>PoMiniGames:AI:Deployments:funquiz</code></td><td>a deployment name</td>
 <td><code>gpt-5.4-nano</code></td>
-<td><a class="cite" href="https://github.com/punkouter27/PoMiniGames/blob/master/src/PoMiniGames.API/appsettings.json#L38" title="open src/PoMiniGames.API/appsettings.json line 38">src/PoMiniGames.API/appsettings.json:38</a></td></tr>
+<td><span class="l3"><a class="cite" href="https://github.com/punkouter27/PoMiniGames/blob/master/src/PoMiniGames.API/appsettings.json#L38" title="open src/PoMiniGames.API/appsettings.json line 38">src/PoMiniGames.API/appsettings.json:38</a></span></td></tr>
 <tr><td><code>PoMiniGames:AI:Deployments:couplequiz</code></td><td>a deployment name</td>
 <td><code>gpt-5.4-nano</code></td>
-<td><a class="cite" href="https://github.com/punkouter27/PoMiniGames/blob/master/src/PoMiniGames.API/appsettings.json#L38" title="open src/PoMiniGames.API/appsettings.json line 38">src/PoMiniGames.API/appsettings.json:38</a></td></tr>
+<td><span class="l3"><a class="cite" href="https://github.com/punkouter27/PoMiniGames/blob/master/src/PoMiniGames.API/appsettings.json#L38" title="open src/PoMiniGames.API/appsettings.json line 38">src/PoMiniGames.API/appsettings.json:38</a></span></td></tr>
 <tr><td><code>PoMiniGames:AI:Deployments:couplequiz.similarity</code></td><td>a deployment name</td>
 <td><code>gpt-5.4-nano</code></td>
-<td><a class="cite" href="https://github.com/punkouter27/PoMiniGames/blob/master/src/PoMiniGames.API/appsettings.json#L38" title="open src/PoMiniGames.API/appsettings.json line 38">src/PoMiniGames.API/appsettings.json:38</a></td></tr>
+<td><span class="l3"><a class="cite" href="https://github.com/punkouter27/PoMiniGames/blob/master/src/PoMiniGames.API/appsettings.json#L38" title="open src/PoMiniGames.API/appsettings.json line 38">src/PoMiniGames.API/appsettings.json:38</a></span></td></tr>
 <tr><td><code>PoMiniGames:AI:TokenBudget:DailyTokensPerIdentity</code></td><td>a token count</td>
-<td>250,000</td><td><a class="cite" href="https://github.com/punkouter27/PoMiniGames/blob/master/src/PoMiniGames.API/AI/AiTokenBudget.cs#L14" title="open src/PoMiniGames.API/AI/AiTokenBudget.cs line 14">src/PoMiniGames.API/AI/AiTokenBudget.cs:14</a></td></tr>
+<td>250,000</td><td><span class="l3"><a class="cite" href="https://github.com/punkouter27/PoMiniGames/blob/master/src/PoMiniGames.API/AI/AiTokenBudget.cs#L14" title="open src/PoMiniGames.API/AI/AiTokenBudget.cs line 14">src/PoMiniGames.API/AI/AiTokenBudget.cs:14</a></span></td></tr>
 <tr><td><code>PoMiniGames:AI:FoundryEndpoint</code></td><td>a URL</td>
 <td>Not declared &mdash; required in Production</td>
-<td><a class="cite" href="https://github.com/punkouter27/PoMiniGames/blob/master/src/PoMiniGames.API/Infrastructure/StartupSecretValidator.cs#L116" title="open src/PoMiniGames.API/Infrastructure/StartupSecretValidator.cs line 116">src/PoMiniGames.API/Infrastructure/StartupSecretValidator.cs:116</a></td></tr>
+<td><span class="l3"><a class="cite" href="https://github.com/punkouter27/PoMiniGames/blob/master/src/PoMiniGames.API/Infrastructure/StartupSecretValidator.cs#L116" title="open src/PoMiniGames.API/Infrastructure/StartupSecretValidator.cs line 116">src/PoMiniGames.API/Infrastructure/StartupSecretValidator.cs:116</a></span></td></tr>
 <tr><td><code>PoMiniGames:AI:DefaultDeployment</code></td><td>a deployment name</td>
 <td>Not declared &mdash; required in Production</td>
-<td><a class="cite" href="https://github.com/punkouter27/PoMiniGames/blob/master/src/PoMiniGames.API/Infrastructure/StartupSecretValidator.cs#L121" title="open src/PoMiniGames.API/Infrastructure/StartupSecretValidator.cs line 121">src/PoMiniGames.API/Infrastructure/StartupSecretValidator.cs:121</a></td></tr>
+<td><span class="l3"><a class="cite" href="https://github.com/punkouter27/PoMiniGames/blob/master/src/PoMiniGames.API/Infrastructure/StartupSecretValidator.cs#L121" title="open src/PoMiniGames.API/Infrastructure/StartupSecretValidator.cs line 121">src/PoMiniGames.API/Infrastructure/StartupSecretValidator.cs:121</a></span></td></tr>
 <tr><td><code>PoFunQuiz:QuestionSource</code></td><td><code>Bank</code> or <code>FreshAi</code></td>
 <td><code>Bank</code></td>
-<td><a class="cite" href="https://github.com/punkouter27/PoMiniGames/blob/master/src/PoMiniGames.API/Features/PoFunQuiz/FunQuizOptions.cs#L30" title="open src/PoMiniGames.API/Features/PoFunQuiz/FunQuizOptions.cs line 30">src/PoMiniGames.API/Features/PoFunQuiz/FunQuizOptions.cs:30</a></td></tr>
+<td><span class="l3"><a class="cite" href="https://github.com/punkouter27/PoMiniGames/blob/master/src/PoMiniGames.API/Features/PoFunQuiz/FunQuizOptions.cs#L30" title="open src/PoMiniGames.API/Features/PoFunQuiz/FunQuizOptions.cs line 30">src/PoMiniGames.API/Features/PoFunQuiz/FunQuizOptions.cs:30</a></span></td></tr>
 <tr><td><code>PoFunQuiz:AllowFreshAi</code></td><td>true or false</td><td>true</td>
-<td><a class="cite" href="https://github.com/punkouter27/PoMiniGames/blob/master/src/PoMiniGames.API/Features/PoFunQuiz/FunQuizOptions.cs#L31" title="open src/PoMiniGames.API/Features/PoFunQuiz/FunQuizOptions.cs line 31">src/PoMiniGames.API/Features/PoFunQuiz/FunQuizOptions.cs:31</a></td></tr>
+<td><span class="l3"><a class="cite" href="https://github.com/punkouter27/PoMiniGames/blob/master/src/PoMiniGames.API/Features/PoFunQuiz/FunQuizOptions.cs#L31" title="open src/PoMiniGames.API/Features/PoFunQuiz/FunQuizOptions.cs line 31">src/PoMiniGames.API/Features/PoFunQuiz/FunQuizOptions.cs:31</a></span></td></tr>
 <tr><td><code>PoFunQuiz:OpenTriviaDb:BaseUrl</code></td><td>a URL</td>
 <td><code>https://opentdb.com/api.php</code></td>
-<td><a class="cite" href="https://github.com/punkouter27/PoMiniGames/blob/master/src/PoMiniGames.API/Features/PoFunQuiz/FunQuizOptions.cs#L68" title="open src/PoMiniGames.API/Features/PoFunQuiz/FunQuizOptions.cs line 68">src/PoMiniGames.API/Features/PoFunQuiz/FunQuizOptions.cs:68</a></td></tr>
+<td><span class="l3"><a class="cite" href="https://github.com/punkouter27/PoMiniGames/blob/master/src/PoMiniGames.API/Features/PoFunQuiz/FunQuizOptions.cs#L68" title="open src/PoMiniGames.API/Features/PoFunQuiz/FunQuizOptions.cs line 68">src/PoMiniGames.API/Features/PoFunQuiz/FunQuizOptions.cs:68</a></span></td></tr>
 <tr><td><code>PoFunQuiz:OpenTriviaDb:TimeoutSeconds</code></td><td>a number, clamped to 1&ndash;30</td>
 <td>5</td>
-<td><a class="cite" href="https://github.com/punkouter27/PoMiniGames/blob/master/src/PoMiniGames.API/Features/PoFunQuiz/FunQuizOptions.cs#L72" title="open src/PoMiniGames.API/Features/PoFunQuiz/FunQuizOptions.cs line 72">src/PoMiniGames.API/Features/PoFunQuiz/FunQuizOptions.cs:72</a></td></tr>
+<td><span class="l3"><a class="cite" href="https://github.com/punkouter27/PoMiniGames/blob/master/src/PoMiniGames.API/Features/PoFunQuiz/FunQuizOptions.cs#L72" title="open src/PoMiniGames.API/Features/PoFunQuiz/FunQuizOptions.cs line 72">src/PoMiniGames.API/Features/PoFunQuiz/FunQuizOptions.cs:72</a></span></td></tr>
 <tr><td><code>PoCoupleQuiz:Features:QuestionSource</code></td>
 <td><code>Bank</code> or <code>FreshAi</code></td><td><code>Bank</code></td>
-<td><a class="cite" href="https://github.com/punkouter27/PoMiniGames/blob/master/src/PoMiniGames.API/Features/PoCoupleQuiz/CoupleQuizOptions.cs#L42" title="open src/PoMiniGames.API/Features/PoCoupleQuiz/CoupleQuizOptions.cs line 42">src/PoMiniGames.API/Features/PoCoupleQuiz/CoupleQuizOptions.cs:42</a></td></tr>
+<td><span class="l3"><a class="cite" href="https://github.com/punkouter27/PoMiniGames/blob/master/src/PoMiniGames.API/Features/PoCoupleQuiz/CoupleQuizOptions.cs#L42" title="open src/PoMiniGames.API/Features/PoCoupleQuiz/CoupleQuizOptions.cs line 42">src/PoMiniGames.API/Features/PoCoupleQuiz/CoupleQuizOptions.cs:42</a></span></td></tr>
 <tr><td><code>PoCoupleQuiz:Features:AllowAiJudge</code></td><td>true or false</td><td>true</td>
-<td><a class="cite" href="https://github.com/punkouter27/PoMiniGames/blob/master/src/PoMiniGames.API/Features/PoCoupleQuiz/CoupleQuizOptions.cs#L57" title="open src/PoMiniGames.API/Features/PoCoupleQuiz/CoupleQuizOptions.cs line 57">src/PoMiniGames.API/Features/PoCoupleQuiz/CoupleQuizOptions.cs:57</a></td></tr>
+<td><span class="l3"><a class="cite" href="https://github.com/punkouter27/PoMiniGames/blob/master/src/PoMiniGames.API/Features/PoCoupleQuiz/CoupleQuizOptions.cs#L57" title="open src/PoMiniGames.API/Features/PoCoupleQuiz/CoupleQuizOptions.cs line 57">src/PoMiniGames.API/Features/PoCoupleQuiz/CoupleQuizOptions.cs:57</a></span></td></tr>
 <tr><td><code>PoMiniGames:Jev:Brain</code></td><td><code>Local</code> or <code>Jev</code></td>
 <td><code>Local</code></td>
-<td><a class="cite" href="https://github.com/punkouter27/PoMiniGames/blob/master/src/PoMiniGames.API/appsettings.json#L56" title="open src/PoMiniGames.API/appsettings.json line 56">src/PoMiniGames.API/appsettings.json:56</a></td></tr>
+<td><span class="l3"><a class="cite" href="https://github.com/punkouter27/PoMiniGames/blob/master/src/PoMiniGames.API/appsettings.json#L56" title="open src/PoMiniGames.API/appsettings.json line 56">src/PoMiniGames.API/appsettings.json:56</a></span></td></tr>
 <tr><td><code>PoMiniGames:Jev:ApiKey</code></td><td>a secret &mdash; never in source</td><td>empty</td>
-<td><a class="cite" href="https://github.com/punkouter27/PoMiniGames/blob/master/src/PoMiniGames.API/appsettings.json#L56" title="open src/PoMiniGames.API/appsettings.json line 56">src/PoMiniGames.API/appsettings.json:56</a></td></tr>
+<td><span class="l3"><a class="cite" href="https://github.com/punkouter27/PoMiniGames/blob/master/src/PoMiniGames.API/appsettings.json#L56" title="open src/PoMiniGames.API/appsettings.json line 56">src/PoMiniGames.API/appsettings.json:56</a></span></td></tr>
 <tr><td><code>PoMiniGames:PoBrawl:Dossier:FetchWikipedia</code></td><td>true or false</td><td>true</td>
-<td><a class="cite" href="https://github.com/punkouter27/PoMiniGames/blob/master/src/PoMiniGames.API/Features/PoBrawl/PoBrawlDossierService.cs#L8" title="open src/PoMiniGames.API/Features/PoBrawl/PoBrawlDossierService.cs line 8">src/PoMiniGames.API/Features/PoBrawl/PoBrawlDossierService.cs:8</a></td></tr>
+<td><span class="l3"><a class="cite" href="https://github.com/punkouter27/PoMiniGames/blob/master/src/PoMiniGames.API/Features/PoBrawl/PoBrawlDossierService.cs#L8" title="open src/PoMiniGames.API/Features/PoBrawl/PoBrawlDossierService.cs line 8">src/PoMiniGames.API/Features/PoBrawl/PoBrawlDossierService.cs:8</a></span></td></tr>
 <tr><td><code>PoMiniGames:PoBrawl:Dossier:CacheHours</code></td><td>a number of hours</td><td>24</td>
-<td><a class="cite" href="https://github.com/punkouter27/PoMiniGames/blob/master/src/PoMiniGames.API/Features/PoBrawl/PoBrawlDossierService.cs#L20" title="open src/PoMiniGames.API/Features/PoBrawl/PoBrawlDossierService.cs line 20">src/PoMiniGames.API/Features/PoBrawl/PoBrawlDossierService.cs:20</a></td></tr>
+<td><span class="l3"><a class="cite" href="https://github.com/punkouter27/PoMiniGames/blob/master/src/PoMiniGames.API/Features/PoBrawl/PoBrawlDossierService.cs#L20" title="open src/PoMiniGames.API/Features/PoBrawl/PoBrawlDossierService.cs line 20">src/PoMiniGames.API/Features/PoBrawl/PoBrawlDossierService.cs:20</a></span></td></tr>
 <tr><td><code>PoMiniGames:Diag:AiUsageAdmins</code></td><td>a list of Entra object ids</td>
 <td>empty &mdash; nobody is an operator</td>
-<td><a class="cite" href="https://github.com/punkouter27/PoMiniGames/blob/master/src/PoMiniGames.API/Features/Health/DiagEndpoints.cs#L373" title="open src/PoMiniGames.API/Features/Health/DiagEndpoints.cs line 373">src/PoMiniGames.API/Features/Health/DiagEndpoints.cs:373</a></td></tr>
+<td><span class="l3"><a class="cite" href="https://github.com/punkouter27/PoMiniGames/blob/master/src/PoMiniGames.API/Features/Health/DiagEndpoints.cs#L373" title="open src/PoMiniGames.API/Features/Health/DiagEndpoints.cs line 373">src/PoMiniGames.API/Features/Health/DiagEndpoints.cs:373</a></span></td></tr>
 </tbody>
 </table>
 </div>
@@ -624,7 +635,7 @@ presser and intro routes. Removing a route is the strongest form of "this does n
 <b>No secret is printed anywhere in this suite.</b> Where a key exists, this page names the
 configuration key and the file and line where it is read &mdash; never a value. The API key slot in
 <code>appsettings.json</code> is an empty string in source
-<a class="cite" href="https://github.com/punkouter27/PoMiniGames/blob/master/src/PoMiniGames.API/appsettings.json#L56" title="open src/PoMiniGames.API/appsettings.json line 56">src/PoMiniGames.API/appsettings.json:56</a>.
+<span class="l3"><a class="cite" href="https://github.com/punkouter27/PoMiniGames/blob/master/src/PoMiniGames.API/appsettings.json#L56" title="open src/PoMiniGames.API/appsettings.json line 56">src/PoMiniGames.API/appsettings.json:56</a></span>.
 </div>
 
 <h2>The safety boundary in one paragraph</h2>
@@ -634,7 +645,23 @@ a configuration flag; that player has a daily token ceiling; and every call pass
 before it leaves the server. Jev needs a second opt-in on top: the server-side brain setting, a
 configured key, <i>and</i> the player's own choice in Settings. The only background process that
 can spend is the quiz bank filler, and its paid top-up switch is off by default
-<a class="cite" href="https://github.com/punkouter27/PoMiniGames/blob/master/src/PoMiniGames.API/appsettings.json#L42" title="open src/PoMiniGames.API/appsettings.json line 42">src/PoMiniGames.API/appsettings.json:42</a>.</p>
+<span class="l3"><a class="cite" href="https://github.com/punkouter27/PoMiniGames/blob/master/src/PoMiniGames.API/appsettings.json#L42" title="open src/PoMiniGames.API/appsettings.json line 42">src/PoMiniGames.API/appsettings.json:42</a></span>.</p>
+
+<div class="card">
+  <h3 style="margin-top:0">How to read this page</h3>
+  <p>The header toggle changes how deep the page goes. The choice is remembered in your browser
+     (the <code>localStorage</code> key <code>pomg-docs-tier</code>) and applies to every report in
+     the suite, including the ones framed inside <a href="artifact.html">the tabbed shell</a>.</p>
+  <ul>
+    <li><b>Simple</b> &mdash; the plain-English story: the summaries, the everyday analogies and the
+        step-by-step narratives. No diagrams, no citations, no code.</li>
+    <li><b>Architectural</b> &mdash; adds the architecture layer: the C4 maps, the request
+        sequences, the component tables and the data model.</li>
+    <li><b>Deep dive</b> &mdash; adds the evidence: every <code>file:line</code> citation, every
+        verbatim code snippet, and the reference tables (routes, permissions, rate limits, storage
+        map, configuration keys).</li>
+  </ul>
+</div>
 
 </main>
 

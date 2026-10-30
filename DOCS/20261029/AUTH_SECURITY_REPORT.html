@@ -84,6 +84,8 @@ code,kbd{ font-family:var(--mono); font-size:.92em; }
   font-size:14px; line-height:1; display:inline-flex; align-items:center; justify-content:center;
 }
 .icon-btn:hover{ background:var(--chip); color:var(--ink); }
+.tier-name{ font-size:12px; color:var(--muted); white-space:nowrap; }
+.tier-name b{ color:var(--ink-2); }
 
 /* ---------- Layout ---------- */
 .wrap{ max-width:var(--maxw); margin:0 auto; padding:24px 16px 72px; }
@@ -114,7 +116,10 @@ html[data-tier="2"] .l3{ display:none !important; }
 .grid{ display:grid; gap:14px; grid-template-columns:repeat(auto-fit, minmax(min(280px,100%),1fr)); margin:16px 0; }
 .grid.two{ grid-template-columns:repeat(auto-fit, minmax(min(340px,100%),1fr)); }
 .grid.three{ grid-template-columns:repeat(auto-fit, minmax(min(240px,100%),1fr)); }
-.stat{ display:flex; flex-direction:column; gap:2px; }
+/* Grid and flex children default to min-width:auto, which lets a long unbreakable
+   child widen the whole track instead of scrolling inside it. */
+.grid > *{ min-width:0; }
+.stat{ display:flex; flex-direction:column; gap:2px; min-width:0; }
 .stat b{ font-size:24px; line-height:1.15; letter-spacing:-.02em; }
 .stat span{ font-size:12.5px; color:var(--muted); }
 
@@ -146,34 +151,37 @@ html[data-tier="2"] .l3{ display:none !important; }
 }
 
 /* ---------- Tables ---------- */
-.scroll{ overflow-x:auto; border:1px solid var(--line); border-radius:10px; background:var(--surface); margin:14px 0; }
+.scroll{ overflow-x:auto; border:1px solid var(--line); border-radius:10px; background:var(--surface); margin:14px 0; max-width:100%; }
 table{ border-collapse:collapse; width:100%; font-size:13.5px; }
 th,td{ padding:8px 11px; text-align:left; border-bottom:1px solid var(--line); vertical-align:top; }
 th{ font-size:11.5px; text-transform:uppercase; letter-spacing:.05em; color:var(--muted); white-space:nowrap; background:var(--surface-2); }
 tr:last-child td{ border-bottom:0; }
 td code{ overflow-wrap:anywhere; }
 .nowrap{ white-space:nowrap; }
+caption{ caption-side:top; text-align:left; font-size:12.5px; color:var(--muted); padding:0 0 6px; }
 
 /* ---------- Citations & snippets ---------- */
 .cite{
-  font-family:var(--mono); font-size:11.5px; text-decoration:none; white-space:nowrap;
+  font-family:var(--mono); font-size:11.5px; text-decoration:none;
   background:var(--chip); border:1px solid var(--line); border-radius:5px; padding:1px 5px;
-  color:var(--accent-ink); display:inline-block; max-width:100%; overflow-wrap:anywhere;
+  color:var(--accent-ink); display:inline-block; max-width:100%;
+  /* A long file path must be free to break, or it pushes the page sideways. */
+  white-space:normal; overflow-wrap:anywhere; word-break:break-word;
 }
 .cite:hover{ border-color:var(--accent); }
 pre.snip{
   background:var(--code-bg); border:1px solid var(--line); border-left:3px solid var(--line-strong);
-  border-radius:8px; padding:10px 12px; overflow-x:auto; margin:10px 0;
+  border-radius:8px; padding:10px 12px; overflow-x:auto; margin:10px 0; max-width:100%;
   font-family:var(--mono); font-size:12.5px; line-height:1.5; color:var(--ink-2);
 }
 pre.snip code{ background:none; padding:0; }
 .snip-cap{ font-size:12px; color:var(--muted); margin:0 0 -4px; }
 
 /* ---------- Mermaid ---------- */
-.figure{ margin:16px 0; }
+.figure{ margin:16px 0; min-width:0; }
 .mermaid-wrap{
   background:var(--surface); border:1px solid var(--line); border-radius:var(--radius);
-  padding:14px; overflow-x:auto; box-shadow:var(--shadow);
+  padding:14px; overflow-x:auto; box-shadow:var(--shadow); max-width:100%;
 }
 .mermaid{ display:flex; justify-content:center; }
 .mermaid svg{ max-width:100%; height:auto; }
@@ -181,10 +189,11 @@ figcaption{ font-size:12.5px; color:var(--muted); margin-top:7px; }
 figcaption b{ color:var(--ink-2); }
 
 /* ---------- Narrative steps ---------- */
-.steps{ counter-reset:step; list-style:none; padding:0; margin:14px 0; display:grid; gap:10px; }
+.steps{ counter-reset:step; list-style:none; padding:0; margin:14px 0; display:grid; gap:10px; min-width:0; }
 .steps li{
   position:relative; background:var(--surface); border:1px solid var(--line); border-radius:10px;
   padding:12px 14px 12px 46px; margin:0; counter-increment:step; color:var(--ink-2);
+  min-width:0; overflow-wrap:anywhere;
 }
 .steps li::before{
   content:counter(step); position:absolute; left:12px; top:11px; width:24px; height:24px;
@@ -192,6 +201,7 @@ figcaption b{ color:var(--ink-2); }
   display:flex; align-items:center; justify-content:center;
 }
 .steps li b{ color:var(--ink); display:block; margin-bottom:2px; }
+.steps li p{ max-width:none; }
 
 /* ---------- Pills & tags ---------- */
 .pill{
@@ -248,6 +258,7 @@ figcaption b{ color:var(--ink-2); }
     <a class="brand" href="index.html"><span class="dot"></span>PoMiniGames</a>
     <span class="doc-title">Security and access control</span>
     <div class="tb-right">
+      <span class="tier-name">Detail: <b data-tier-label>Architectural</b></span>
       <div class="seg" role="group" aria-label="Detail level">
         <button type="button" data-set-tier="1" title="Plain English only">Simple</button>
         <button type="button" data-set-tier="2" title="Add architecture diagrams">Architectural</button>
@@ -274,9 +285,9 @@ open at all if they are left unlocked.</p>
 <h2>One doorway, several badges</h2>
 <p>The host does not register one authentication scheme. It registers a <b>composite scheme</b> that
 looks at each request and decides which credential applies
-<a class="cite" href="https://github.com/punkouter27/PoMiniGames/blob/master/src/PoMiniGames.API/Infrastructure/AuthExtensions.cs#L34" title="open src/PoMiniGames.API/Infrastructure/AuthExtensions.cs line 34">src/PoMiniGames.API/Infrastructure/AuthExtensions.cs:34</a>.</p>
+<span class="l3"><a class="cite" href="https://github.com/punkouter27/PoMiniGames/blob/master/src/PoMiniGames.API/Infrastructure/AuthExtensions.cs#L34" title="open src/PoMiniGames.API/Infrastructure/AuthExtensions.cs line 34">src/PoMiniGames.API/Infrastructure/AuthExtensions.cs:34</a></span>.</p>
 
-<figure class="figure">
+<figure class="figure l2">
 <div class="mermaid-wrap">
 <pre class="mermaid">flowchart TD
     Req[&quot;An incoming request&quot;]
@@ -306,7 +317,7 @@ convention, then the development fake header, then the development cookie. Anyth
 through to the JWT handler, which simply finds no user.</figcaption>
 </figure>
 
-<p class="snip-cap">src/PoMiniGames.API/Infrastructure/AuthExtensions.cs:43-59</p><pre class="snip"><code>                options.ForwardDefaultSelector = context =&gt;
+<p class="snip-cap l3">src/PoMiniGames.API/Infrastructure/AuthExtensions.cs:43-59</p><pre class="snip l3"><code>                options.ForwardDefaultSelector = context =&gt;
                 {
                     var authHeader = context.Request.Headers.Authorization.ToString();
                     if (!string.IsNullOrWhiteSpace(authHeader)
@@ -330,19 +341,19 @@ through to the JWT handler, which simply finds no user.</figcaption>
 <tbody>
 <tr><td><b>JWT bearer</b></td><td>Always</td>
 <td>A Microsoft Entra access token, validated against the configured authority and audience</td>
-<td><a class="cite" href="https://github.com/punkouter27/PoMiniGames/blob/master/src/PoMiniGames.API/Infrastructure/AuthExtensions.cs#L105" title="open src/PoMiniGames.API/Infrastructure/AuthExtensions.cs line 105">src/PoMiniGames.API/Infrastructure/AuthExtensions.cs:105</a></td></tr>
+<td><span class="l3"><a class="cite" href="https://github.com/punkouter27/PoMiniGames/blob/master/src/PoMiniGames.API/Infrastructure/AuthExtensions.cs#L105" title="open src/PoMiniGames.API/Infrastructure/AuthExtensions.cs line 105">src/PoMiniGames.API/Infrastructure/AuthExtensions.cs:105</a></span></td></tr>
 <tr><td><b>JWT bearer</b> (SignalR path)</td><td>Always</td>
 <td>The same token, but passed as an <code>access_token</code> query parameter because a WebSocket
 client cannot set headers</td>
-<td><a class="cite" href="https://github.com/punkouter27/PoMiniGames/blob/master/src/PoMiniGames.API/Infrastructure/AuthExtensions.cs#L50" title="open src/PoMiniGames.API/Infrastructure/AuthExtensions.cs line 50">src/PoMiniGames.API/Infrastructure/AuthExtensions.cs:50</a></td></tr>
+<td><span class="l3"><a class="cite" href="https://github.com/punkouter27/PoMiniGames/blob/master/src/PoMiniGames.API/Infrastructure/AuthExtensions.cs#L50" title="open src/PoMiniGames.API/Infrastructure/AuthExtensions.cs line 50">src/PoMiniGames.API/Infrastructure/AuthExtensions.cs:50</a></span></td></tr>
 <tr><td><b>FakeAuth</b></td>
 <td>Development or Test <b>and</b> <code>Auth:EnableFakeAuth=true</code></td>
 <td>The <code>X-Fake-User</code> header. Optional <code>X-Fake-Roles</code> header as well</td>
-<td><a class="cite" href="https://github.com/punkouter27/PoMiniGames/blob/master/src/PoMiniGames.API/Infrastructure/AuthExtensions.cs#L32" title="open src/PoMiniGames.API/Infrastructure/AuthExtensions.cs line 32">src/PoMiniGames.API/Infrastructure/AuthExtensions.cs:32</a>
-<a class="cite" href="https://github.com/punkouter27/PoMiniGames/blob/master/src/PoMiniGames.API/Features/Auth/FakeAuthHandler.cs#L31" title="open src/PoMiniGames.API/Features/Auth/FakeAuthHandler.cs line 31">src/PoMiniGames.API/Features/Auth/FakeAuthHandler.cs:31</a></td></tr>
+<td><span class="l3"><a class="cite" href="https://github.com/punkouter27/PoMiniGames/blob/master/src/PoMiniGames.API/Infrastructure/AuthExtensions.cs#L32" title="open src/PoMiniGames.API/Infrastructure/AuthExtensions.cs line 32">src/PoMiniGames.API/Infrastructure/AuthExtensions.cs:32</a></span>
+<span class="l3"><a class="cite" href="https://github.com/punkouter27/PoMiniGames/blob/master/src/PoMiniGames.API/Features/Auth/FakeAuthHandler.cs#L31" title="open src/PoMiniGames.API/Features/Auth/FakeAuthHandler.cs line 31">src/PoMiniGames.API/Features/Auth/FakeAuthHandler.cs:31</a></span></td></tr>
 <tr><td><b>DevCookie</b></td><td>Development or Test only</td>
 <td>A signed cookie set by the <code>/api/auth/dev-login</code> endpoint</td>
-<td><a class="cite" href="https://github.com/punkouter27/PoMiniGames/blob/master/src/PoMiniGames.API/Infrastructure/AuthExtensions.cs#L25" title="open src/PoMiniGames.API/Infrastructure/AuthExtensions.cs line 25">src/PoMiniGames.API/Infrastructure/AuthExtensions.cs:25</a></td></tr>
+<td><span class="l3"><a class="cite" href="https://github.com/punkouter27/PoMiniGames/blob/master/src/PoMiniGames.API/Infrastructure/AuthExtensions.cs#L25" title="open src/PoMiniGames.API/Infrastructure/AuthExtensions.cs line 25">src/PoMiniGames.API/Infrastructure/AuthExtensions.cs:25</a></span></td></tr>
 </tbody>
 </table>
 </div>
@@ -350,13 +361,13 @@ client cannot set headers</td>
 <div class="note">
 <b>Both development doors are bolted shut in Production.</b> The startup validator looks for the
 <code>FakeAuth</code> scheme, and if it finds one it logs fatally and throws
-<a class="cite" href="https://github.com/punkouter27/PoMiniGames/blob/master/src/PoMiniGames.API/Infrastructure/StartupSecretValidator.cs#L52" title="open src/PoMiniGames.API/Infrastructure/StartupSecretValidator.cs line 52">src/PoMiniGames.API/Infrastructure/StartupSecretValidator.cs:52</a>
-<a class="cite" href="https://github.com/punkouter27/PoMiniGames/blob/master/src/PoMiniGames.API/Infrastructure/StartupSecretValidator.cs#L57" title="open src/PoMiniGames.API/Infrastructure/StartupSecretValidator.cs line 57">src/PoMiniGames.API/Infrastructure/StartupSecretValidator.cs:57</a>. It does the same for
+<span class="l3"><a class="cite" href="https://github.com/punkouter27/PoMiniGames/blob/master/src/PoMiniGames.API/Infrastructure/StartupSecretValidator.cs#L52" title="open src/PoMiniGames.API/Infrastructure/StartupSecretValidator.cs line 52">src/PoMiniGames.API/Infrastructure/StartupSecretValidator.cs:52</a></span>
+<span class="l3"><a class="cite" href="https://github.com/punkouter27/PoMiniGames/blob/master/src/PoMiniGames.API/Infrastructure/StartupSecretValidator.cs#L57" title="open src/PoMiniGames.API/Infrastructure/StartupSecretValidator.cs line 57">src/PoMiniGames.API/Infrastructure/StartupSecretValidator.cs:57</a></span>. It does the same for
 <code>Auth:AutoGuestLogin</code>
-<a class="cite" href="https://github.com/punkouter27/PoMiniGames/blob/master/src/PoMiniGames.API/Infrastructure/StartupSecretValidator.cs#L68" title="open src/PoMiniGames.API/Infrastructure/StartupSecretValidator.cs line 68">src/PoMiniGames.API/Infrastructure/StartupSecretValidator.cs:68</a>.
+<span class="l3"><a class="cite" href="https://github.com/punkouter27/PoMiniGames/blob/master/src/PoMiniGames.API/Infrastructure/StartupSecretValidator.cs#L68" title="open src/PoMiniGames.API/Infrastructure/StartupSecretValidator.cs line 68">src/PoMiniGames.API/Infrastructure/StartupSecretValidator.cs:68</a></span>.
 </div>
 
-<p class="snip-cap">src/PoMiniGames.API/Infrastructure/StartupSecretValidator.cs:52-63</p><pre class="snip"><code>        // of how it got there.
+<p class="snip-cap l3">src/PoMiniGames.API/Infrastructure/StartupSecretValidator.cs:52-63</p><pre class="snip l3"><code>        // of how it got there.
         if (_environment.IsProduction())
         {
             var fakeScheme = await _schemeProvider.GetSchemeAsync(FakeAuthHandler.SchemeName);
@@ -373,11 +384,11 @@ client cannot set headers</td>
 <p>Worth being precise about, because it is the one place where a caller can choose their own
 identity. In Development only, the header value is trimmed and lower-cased, and if it has no
 <code>@</code> an <code>@example.com</code> is appended
-<a class="cite" href="https://github.com/punkouter27/PoMiniGames/blob/master/src/PoMiniGames.API/Features/Auth/FakeAuthHandler.cs#L72" title="open src/PoMiniGames.API/Features/Auth/FakeAuthHandler.cs line 72">src/PoMiniGames.API/Features/Auth/FakeAuthHandler.cs:72</a>. That value becomes the name
+<span class="l3"><a class="cite" href="https://github.com/punkouter27/PoMiniGames/blob/master/src/PoMiniGames.API/Features/Auth/FakeAuthHandler.cs#L72" title="open src/PoMiniGames.API/Features/Auth/FakeAuthHandler.cs line 72">src/PoMiniGames.API/Features/Auth/FakeAuthHandler.cs:72</a></span>. That value becomes the name
 identifier, the object id, the name and the email claims
-<a class="cite" href="https://github.com/punkouter27/PoMiniGames/blob/master/src/PoMiniGames.API/Features/Auth/FakeAuthHandler.cs#L75" title="open src/PoMiniGames.API/Features/Auth/FakeAuthHandler.cs line 75">src/PoMiniGames.API/Features/Auth/FakeAuthHandler.cs:75</a>. A missing or empty header is not
+<span class="l3"><a class="cite" href="https://github.com/punkouter27/PoMiniGames/blob/master/src/PoMiniGames.API/Features/Auth/FakeAuthHandler.cs#L75" title="open src/PoMiniGames.API/Features/Auth/FakeAuthHandler.cs line 75">src/PoMiniGames.API/Features/Auth/FakeAuthHandler.cs:75</a></span>. A missing or empty header is not
 an error &mdash; it simply produces an anonymous result
-<a class="cite" href="https://github.com/punkouter27/PoMiniGames/blob/master/src/PoMiniGames.API/Features/Auth/FakeAuthHandler.cs#L57" title="open src/PoMiniGames.API/Features/Auth/FakeAuthHandler.cs line 57">src/PoMiniGames.API/Features/Auth/FakeAuthHandler.cs:57</a>.</p>
+<span class="l3"><a class="cite" href="https://github.com/punkouter27/PoMiniGames/blob/master/src/PoMiniGames.API/Features/Auth/FakeAuthHandler.cs#L57" title="open src/PoMiniGames.API/Features/Auth/FakeAuthHandler.cs line 57">src/PoMiniGames.API/Features/Auth/FakeAuthHandler.cs:57</a></span>.</p>
 
 <div class="note">
 <b>Why this is safe in Production.</b> It is not that the handler is careful &mdash; it is that
@@ -390,7 +401,7 @@ failed boot rather than a silent hole.
 your browser rather than from a page some other website convinced your browser to load. That is
 what the antiforgery token is for.</p>
 
-<figure class="figure">
+<figure class="figure l2">
 <div class="mermaid-wrap">
 <pre class="mermaid">sequenceDiagram
     participant B as Browser
@@ -419,26 +430,26 @@ what the antiforgery token is for.</p>
 <thead><tr><th>Rule</th><th>Detail</th><th>Citation</th></tr></thead>
 <tbody>
 <tr><td>The header name</td><td><code>X-CSRF-TOKEN</code></td>
-<td><a class="cite" href="https://github.com/punkouter27/PoMiniGames/blob/master/src/PoMiniGames.API/Infrastructure/AntiforgeryExtensions.cs#L42" title="open src/PoMiniGames.API/Infrastructure/AntiforgeryExtensions.cs line 42">src/PoMiniGames.API/Infrastructure/AntiforgeryExtensions.cs:42</a></td></tr>
+<td><span class="l3"><a class="cite" href="https://github.com/punkouter27/PoMiniGames/blob/master/src/PoMiniGames.API/Infrastructure/AntiforgeryExtensions.cs#L42" title="open src/PoMiniGames.API/Infrastructure/AntiforgeryExtensions.cs line 42">src/PoMiniGames.API/Infrastructure/AntiforgeryExtensions.cs:42</a></span></td></tr>
 <tr><td>Which requests are checked</td><td>POST, PUT, PATCH and DELETE under <code>/api</code></td>
-<td><a class="cite" href="https://github.com/punkouter27/PoMiniGames/blob/master/src/PoMiniGames.API/Infrastructure/AntiforgeryExtensions.cs#L154" title="open src/PoMiniGames.API/Infrastructure/AntiforgeryExtensions.cs line 154">src/PoMiniGames.API/Infrastructure/AntiforgeryExtensions.cs:154</a></td></tr>
+<td><span class="l3"><a class="cite" href="https://github.com/punkouter27/PoMiniGames/blob/master/src/PoMiniGames.API/Infrastructure/AntiforgeryExtensions.cs#L154" title="open src/PoMiniGames.API/Infrastructure/AntiforgeryExtensions.cs line 154">src/PoMiniGames.API/Infrastructure/AntiforgeryExtensions.cs:154</a></span></td></tr>
 <tr><td>How it is validated</td><td><code>IAntiforgery.ValidateRequestAsync</code></td>
-<td><a class="cite" href="https://github.com/punkouter27/PoMiniGames/blob/master/src/PoMiniGames.API/Infrastructure/AntiforgeryExtensions.cs#L75" title="open src/PoMiniGames.API/Infrastructure/AntiforgeryExtensions.cs line 75">src/PoMiniGames.API/Infrastructure/AntiforgeryExtensions.cs:75</a></td></tr>
+<td><span class="l3"><a class="cite" href="https://github.com/punkouter27/PoMiniGames/blob/master/src/PoMiniGames.API/Infrastructure/AntiforgeryExtensions.cs#L75" title="open src/PoMiniGames.API/Infrastructure/AntiforgeryExtensions.cs line 75">src/PoMiniGames.API/Infrastructure/AntiforgeryExtensions.cs:75</a></span></td></tr>
 <tr><td>What a failure looks like</td>
 <td>HTTP 403 with <code>error: antiforgery_validation_failed</code> and a detail naming the header
 and the endpoint to fetch a token from</td>
-<td><a class="cite" href="https://github.com/punkouter27/PoMiniGames/blob/master/src/PoMiniGames.API/Infrastructure/AntiforgeryExtensions.cs#L95" title="open src/PoMiniGames.API/Infrastructure/AntiforgeryExtensions.cs line 95">src/PoMiniGames.API/Infrastructure/AntiforgeryExtensions.cs:95</a></td></tr>
+<td><span class="l3"><a class="cite" href="https://github.com/punkouter27/PoMiniGames/blob/master/src/PoMiniGames.API/Infrastructure/AntiforgeryExtensions.cs#L95" title="open src/PoMiniGames.API/Infrastructure/AntiforgeryExtensions.cs line 95">src/PoMiniGames.API/Infrastructure/AntiforgeryExtensions.cs:95</a></span></td></tr>
 <tr><td>Where to get a token</td><td><code>GET /api/auth/antiforgery-token</code>, which is anonymous</td>
-<td><a class="cite" href="https://github.com/punkouter27/PoMiniGames/blob/master/src/PoMiniGames.API/Infrastructure/AntiforgeryExtensions.cs#L125" title="open src/PoMiniGames.API/Infrastructure/AntiforgeryExtensions.cs line 125">src/PoMiniGames.API/Infrastructure/AntiforgeryExtensions.cs:125</a></td></tr>
+<td><span class="l3"><a class="cite" href="https://github.com/punkouter27/PoMiniGames/blob/master/src/PoMiniGames.API/Infrastructure/AntiforgeryExtensions.cs#L125" title="open src/PoMiniGames.API/Infrastructure/AntiforgeryExtensions.cs line 125">src/PoMiniGames.API/Infrastructure/AntiforgeryExtensions.cs:125</a></span></td></tr>
 <tr><td>Why it runs after authentication</td>
 <td>The token is bound to the user's identity claims, so validating it before the principal exists
 would reject every token that same user was just issued</td>
-<td><a class="cite" href="https://github.com/punkouter27/PoMiniGames/blob/master/src/PoMiniGames.API/Program.cs#L434" title="open src/PoMiniGames.API/Program.cs line 434">src/PoMiniGames.API/Program.cs:434</a></td></tr>
+<td><span class="l3"><a class="cite" href="https://github.com/punkouter27/PoMiniGames/blob/master/src/PoMiniGames.API/Program.cs#L434" title="open src/PoMiniGames.API/Program.cs line 434">src/PoMiniGames.API/Program.cs:434</a></span></td></tr>
 </tbody>
 </table>
 </div>
 
-<p class="snip-cap">src/PoMiniGames.API/Infrastructure/AntiforgeryExtensions.cs:95-110</p><pre class="snip"><code>                    context.Request.Path);
+<p class="snip-cap l3">src/PoMiniGames.API/Infrastructure/AntiforgeryExtensions.cs:95-110</p><pre class="snip l3"><code>                    context.Request.Path);
 
                 // 403, not 400: the request was well-formed, it was refused. The typed
                 // `error` code is the contract the client&#x27;s AntiforgeryHandler keys off to
@@ -456,34 +467,34 @@ would reject every token that same user was just issued</td>
             }</code></pre>
 
 <h2>Who may do what</h2>
-<div class="scroll">
+<div class="scroll l3">
 <table>
 <thead><tr><th>Surface</th><th>Authentication</th><th>CSRF token</th><th>Rate limit</th><th>Citation</th></tr></thead>
 <tbody>
 <tr><td><code>/api/*</code> game data</td><td>Required &mdash; the group demands it</td>
 <td>Required for writes</td><td>Per endpoint</td>
-<td><a class="cite" href="https://github.com/punkouter27/PoMiniGames/blob/master/src/PoMiniGames.API/Infrastructure/EndpointRouteExtensions.cs#L88" title="open src/PoMiniGames.API/Infrastructure/EndpointRouteExtensions.cs line 88">src/PoMiniGames.API/Infrastructure/EndpointRouteExtensions.cs:88</a></td></tr>
+<td><span class="l3"><a class="cite" href="https://github.com/punkouter27/PoMiniGames/blob/master/src/PoMiniGames.API/Infrastructure/EndpointRouteExtensions.cs#L88" title="open src/PoMiniGames.API/Infrastructure/EndpointRouteExtensions.cs line 88">src/PoMiniGames.API/Infrastructure/EndpointRouteExtensions.cs:88</a></span></td></tr>
 <tr><td>All 13 SignalR hubs</td><td>Required &mdash; each hub says so</td>
 <td>n/a &mdash; the WebSocket handshake carries the token</td><td>n/a</td>
-<td><a class="cite" href="https://github.com/punkouter27/PoMiniGames/blob/master/src/PoMiniGames.API/Infrastructure/EndpointRouteExtensions.cs#L122" title="open src/PoMiniGames.API/Infrastructure/EndpointRouteExtensions.cs line 122">src/PoMiniGames.API/Infrastructure/EndpointRouteExtensions.cs:122</a></td></tr>
+<td><span class="l3"><a class="cite" href="https://github.com/punkouter27/PoMiniGames/blob/master/src/PoMiniGames.API/Infrastructure/EndpointRouteExtensions.cs#L122" title="open src/PoMiniGames.API/Infrastructure/EndpointRouteExtensions.cs line 122">src/PoMiniGames.API/Infrastructure/EndpointRouteExtensions.cs:122</a></span></td></tr>
 <tr><td><code>GET /api/pobrawl/dossier</code></td><td>Anonymous</td><td>n/a</td><td>n/a</td>
-<td><a class="cite" href="https://github.com/punkouter27/PoMiniGames/blob/master/src/PoMiniGames.API/Features/PoBrawl/PoBrawlDossierEndpoints.cs#L28" title="open src/PoMiniGames.API/Features/PoBrawl/PoBrawlDossierEndpoints.cs line 28">src/PoMiniGames.API/Features/PoBrawl/PoBrawlDossierEndpoints.cs:28</a></td></tr>
+<td><span class="l3"><a class="cite" href="https://github.com/punkouter27/PoMiniGames/blob/master/src/PoMiniGames.API/Features/PoBrawl/PoBrawlDossierEndpoints.cs#L28" title="open src/PoMiniGames.API/Features/PoBrawl/PoBrawlDossierEndpoints.cs line 28">src/PoMiniGames.API/Features/PoBrawl/PoBrawlDossierEndpoints.cs:28</a></span></td></tr>
 <tr><td><code>GET /api/auth/antiforgery-token</code></td><td>Anonymous</td><td>n/a</td><td>n/a</td>
-<td><a class="cite" href="https://github.com/punkouter27/PoMiniGames/blob/master/src/PoMiniGames.API/Infrastructure/AntiforgeryExtensions.cs#L125" title="open src/PoMiniGames.API/Infrastructure/AntiforgeryExtensions.cs line 125">src/PoMiniGames.API/Infrastructure/AntiforgeryExtensions.cs:125</a></td></tr>
+<td><span class="l3"><a class="cite" href="https://github.com/punkouter27/PoMiniGames/blob/master/src/PoMiniGames.API/Infrastructure/AntiforgeryExtensions.cs#L125" title="open src/PoMiniGames.API/Infrastructure/AntiforgeryExtensions.cs line 125">src/PoMiniGames.API/Infrastructure/AntiforgeryExtensions.cs:125</a></span></td></tr>
 <tr><td><code>/api/health</code>, <code>/api/health/ping</code></td>
 <td>Anonymous &mdash; probes must never fail on auth</td><td>n/a</td><td>n/a</td>
-<td><a class="cite" href="https://github.com/punkouter27/PoMiniGames/blob/master/src/PoMiniGames.API/Features/Health/HealthEndpoints.cs#L37" title="open src/PoMiniGames.API/Features/Health/HealthEndpoints.cs line 37">src/PoMiniGames.API/Features/Health/HealthEndpoints.cs:37</a></td></tr>
+<td><span class="l3"><a class="cite" href="https://github.com/punkouter27/PoMiniGames/blob/master/src/PoMiniGames.API/Features/Health/HealthEndpoints.cs#L37" title="open src/PoMiniGames.API/Features/Health/HealthEndpoints.cs line 37">src/PoMiniGames.API/Features/Health/HealthEndpoints.cs:37</a></span></td></tr>
 <tr><td><code>GET /api/diag/ai</code></td>
 <td>Anonymous in Development; required outside it</td><td>n/a &mdash; a read</td>
 <td><code>leaderboard-read</code></td>
-<td><a class="cite" href="https://github.com/punkouter27/PoMiniGames/blob/master/src/PoMiniGames.API/Features/Health/DiagEndpoints.cs#L209" title="open src/PoMiniGames.API/Features/Health/DiagEndpoints.cs line 209">src/PoMiniGames.API/Features/Health/DiagEndpoints.cs:209</a></td></tr>
+<td><span class="l3"><a class="cite" href="https://github.com/punkouter27/PoMiniGames/blob/master/src/PoMiniGames.API/Features/Health/DiagEndpoints.cs#L209" title="open src/PoMiniGames.API/Features/Health/DiagEndpoints.cs line 209">src/PoMiniGames.API/Features/Health/DiagEndpoints.cs:209</a></span></td></tr>
 <tr><td><code>GET /api/logs/tail</code></td><td>Not mapped outside Development at all</td>
 <td>n/a</td><td>n/a</td>
-<td><a class="cite" href="https://github.com/punkouter27/PoMiniGames/blob/master/src/PoMiniGames.API/Features/Health/DiagEndpoints.cs#L298" title="open src/PoMiniGames.API/Features/Health/DiagEndpoints.cs line 298">src/PoMiniGames.API/Features/Health/DiagEndpoints.cs:298</a></td></tr>
+<td><span class="l3"><a class="cite" href="https://github.com/punkouter27/PoMiniGames/blob/master/src/PoMiniGames.API/Features/Health/DiagEndpoints.cs#L298" title="open src/PoMiniGames.API/Features/Health/DiagEndpoints.cs line 298">src/PoMiniGames.API/Features/Health/DiagEndpoints.cs:298</a></span></td></tr>
 <tr><td><code>GET /api/account/export</code>, <code>DELETE /api/account/data</code></td>
 <td>Required &mdash; the subject is the caller's own identity</td><td>Required for the delete</td>
 <td>n/a</td>
-<td><a class="cite" href="https://github.com/punkouter27/PoMiniGames/blob/master/src/PoMiniGames.API/Features/Account/AccountEndpoints.cs#L45" title="open src/PoMiniGames.API/Features/Account/AccountEndpoints.cs line 45">src/PoMiniGames.API/Features/Account/AccountEndpoints.cs:45</a></td></tr>
+<td><span class="l3"><a class="cite" href="https://github.com/punkouter27/PoMiniGames/blob/master/src/PoMiniGames.API/Features/Account/AccountEndpoints.cs#L45" title="open src/PoMiniGames.API/Features/Account/AccountEndpoints.cs line 45">src/PoMiniGames.API/Features/Account/AccountEndpoints.cs:45</a></span></td></tr>
 </tbody>
 </table>
 </div>
@@ -496,30 +507,30 @@ are deliberate and few.
 </div>
 
 <h2>Rate limits</h2>
-<div class="scroll">
+<div class="scroll l3">
 <table>
 <thead><tr><th>Policy</th><th>Limit</th><th>Window</th><th>Where it is attached</th><th>Citation</th></tr></thead>
 <tbody>
 <tr><td><code>highscores</code></td><td>10</td><td>per minute</td><td>Score submissions</td>
-<td><a class="cite" href="https://github.com/punkouter27/PoMiniGames/blob/master/src/PoMiniGames.API/Infrastructure/RateLimitingExtensions.cs#L29" title="open src/PoMiniGames.API/Infrastructure/RateLimitingExtensions.cs line 29">src/PoMiniGames.API/Infrastructure/RateLimitingExtensions.cs:29</a></td></tr>
+<td><span class="l3"><a class="cite" href="https://github.com/punkouter27/PoMiniGames/blob/master/src/PoMiniGames.API/Infrastructure/RateLimitingExtensions.cs#L29" title="open src/PoMiniGames.API/Infrastructure/RateLimitingExtensions.cs line 29">src/PoMiniGames.API/Infrastructure/RateLimitingExtensions.cs:29</a></span></td></tr>
 <tr><td><code>leaderboard-read</code></td><td>60</td><td>per minute</td>
 <td>Board reads, and the AI diagnostics read</td>
-<td><a class="cite" href="https://github.com/punkouter27/PoMiniGames/blob/master/src/PoMiniGames.API/Infrastructure/RateLimitingExtensions.cs#L48" title="open src/PoMiniGames.API/Infrastructure/RateLimitingExtensions.cs line 48">src/PoMiniGames.API/Infrastructure/RateLimitingExtensions.cs:48</a></td></tr>
+<td><span class="l3"><a class="cite" href="https://github.com/punkouter27/PoMiniGames/blob/master/src/PoMiniGames.API/Infrastructure/RateLimitingExtensions.cs#L48" title="open src/PoMiniGames.API/Infrastructure/RateLimitingExtensions.cs line 48">src/PoMiniGames.API/Infrastructure/RateLimitingExtensions.cs:48</a></span></td></tr>
 <tr><td><code>play-session</code></td><td>30</td><td>per minute</td><td>Minting a play session</td>
-<td><a class="cite" href="https://github.com/punkouter27/PoMiniGames/blob/master/src/PoMiniGames.API/Infrastructure/RateLimitingExtensions.cs#L65" title="open src/PoMiniGames.API/Infrastructure/RateLimitingExtensions.cs line 65">src/PoMiniGames.API/Infrastructure/RateLimitingExtensions.cs:65</a>
-<a class="cite" href="https://github.com/punkouter27/PoMiniGames/blob/master/src/PoMiniGames.API/Features/Integrity/IntegrityEndpoints.cs#L44" title="open src/PoMiniGames.API/Features/Integrity/IntegrityEndpoints.cs line 44">src/PoMiniGames.API/Features/Integrity/IntegrityEndpoints.cs:44</a></td></tr>
+<td><span class="l3"><a class="cite" href="https://github.com/punkouter27/PoMiniGames/blob/master/src/PoMiniGames.API/Infrastructure/RateLimitingExtensions.cs#L65" title="open src/PoMiniGames.API/Infrastructure/RateLimitingExtensions.cs line 65">src/PoMiniGames.API/Infrastructure/RateLimitingExtensions.cs:65</a></span>
+<span class="l3"><a class="cite" href="https://github.com/punkouter27/PoMiniGames/blob/master/src/PoMiniGames.API/Features/Integrity/IntegrityEndpoints.cs#L44" title="open src/PoMiniGames.API/Features/Integrity/IntegrityEndpoints.cs line 44">src/PoMiniGames.API/Features/Integrity/IntegrityEndpoints.cs:44</a></span></td></tr>
 <tr><td><code>ai-generation</code></td><td>8</td><td>per 15 seconds</td><td>Paid model calls</td>
-<td><a class="cite" href="https://github.com/punkouter27/PoMiniGames/blob/master/src/PoMiniGames.API/Infrastructure/RateLimitingExtensions.cs#L117" title="open src/PoMiniGames.API/Infrastructure/RateLimitingExtensions.cs line 117">src/PoMiniGames.API/Infrastructure/RateLimitingExtensions.cs:117</a></td></tr>
+<td><span class="l3"><a class="cite" href="https://github.com/punkouter27/PoMiniGames/blob/master/src/PoMiniGames.API/Infrastructure/RateLimitingExtensions.cs#L117" title="open src/PoMiniGames.API/Infrastructure/RateLimitingExtensions.cs line 117">src/PoMiniGames.API/Infrastructure/RateLimitingExtensions.cs:117</a></span></td></tr>
 <tr><td><code>pocabinet</code></td><td>10</td><td>per minute</td><td>Cabinet writes</td>
-<td><a class="cite" href="https://github.com/punkouter27/PoMiniGames/blob/master/src/PoMiniGames.API/Infrastructure/RateLimitingExtensions.cs#L133" title="open src/PoMiniGames.API/Infrastructure/RateLimitingExtensions.cs line 133">src/PoMiniGames.API/Infrastructure/RateLimitingExtensions.cs:133</a></td></tr>
+<td><span class="l3"><a class="cite" href="https://github.com/punkouter27/PoMiniGames/blob/master/src/PoMiniGames.API/Infrastructure/RateLimitingExtensions.cs#L133" title="open src/PoMiniGames.API/Infrastructure/RateLimitingExtensions.cs line 133">src/PoMiniGames.API/Infrastructure/RateLimitingExtensions.cs:133</a></span></td></tr>
 <tr><td><code>pojevarena</code></td><td>30</td><td>per minute</td><td>Arena writes</td>
-<td><a class="cite" href="https://github.com/punkouter27/PoMiniGames/blob/master/src/PoMiniGames.API/Infrastructure/RateLimitingExtensions.cs#L149" title="open src/PoMiniGames.API/Infrastructure/RateLimitingExtensions.cs line 149">src/PoMiniGames.API/Infrastructure/RateLimitingExtensions.cs:149</a></td></tr>
+<td><span class="l3"><a class="cite" href="https://github.com/punkouter27/PoMiniGames/blob/master/src/PoMiniGames.API/Infrastructure/RateLimitingExtensions.cs#L149" title="open src/PoMiniGames.API/Infrastructure/RateLimitingExtensions.cs line 149">src/PoMiniGames.API/Infrastructure/RateLimitingExtensions.cs:149</a></span></td></tr>
 <tr><td><code>pojevarena-decide</code></td><td>300</td><td>per minute</td>
 <td>Arena decisions &mdash; one match asks many small questions</td>
-<td><a class="cite" href="https://github.com/punkouter27/PoMiniGames/blob/master/src/PoMiniGames.API/Infrastructure/RateLimitingExtensions.cs#L160" title="open src/PoMiniGames.API/Infrastructure/RateLimitingExtensions.cs line 160">src/PoMiniGames.API/Infrastructure/RateLimitingExtensions.cs:160</a></td></tr>
+<td><span class="l3"><a class="cite" href="https://github.com/punkouter27/PoMiniGames/blob/master/src/PoMiniGames.API/Infrastructure/RateLimitingExtensions.cs#L160" title="open src/PoMiniGames.API/Infrastructure/RateLimitingExtensions.cs line 160">src/PoMiniGames.API/Infrastructure/RateLimitingExtensions.cs:160</a></span></td></tr>
 <tr><td><code>pobrawl-elo</code></td><td>20</td><td>per minute</td><td>Cup bout Elo</td>
-<td><a class="cite" href="https://github.com/punkouter27/PoMiniGames/blob/master/src/PoMiniGames.API/Infrastructure/RateLimitingExtensions.cs#L176" title="open src/PoMiniGames.API/Infrastructure/RateLimitingExtensions.cs line 176">src/PoMiniGames.API/Infrastructure/RateLimitingExtensions.cs:176</a>
-<a class="cite" href="https://github.com/punkouter27/PoMiniGames/blob/master/src/PoMiniGames.API/Features/PoBrawl/PoBrawlLeaderboardEndpoints.cs#L145" title="open src/PoMiniGames.API/Features/PoBrawl/PoBrawlLeaderboardEndpoints.cs line 145">src/PoMiniGames.API/Features/PoBrawl/PoBrawlLeaderboardEndpoints.cs:145</a></td></tr>
+<td><span class="l3"><a class="cite" href="https://github.com/punkouter27/PoMiniGames/blob/master/src/PoMiniGames.API/Infrastructure/RateLimitingExtensions.cs#L176" title="open src/PoMiniGames.API/Infrastructure/RateLimitingExtensions.cs line 176">src/PoMiniGames.API/Infrastructure/RateLimitingExtensions.cs:176</a></span>
+<span class="l3"><a class="cite" href="https://github.com/punkouter27/PoMiniGames/blob/master/src/PoMiniGames.API/Features/PoBrawl/PoBrawlLeaderboardEndpoints.cs#L145" title="open src/PoMiniGames.API/Features/PoBrawl/PoBrawlLeaderboardEndpoints.cs line 145">src/PoMiniGames.API/Features/PoBrawl/PoBrawlLeaderboardEndpoints.cs:145</a></span></td></tr>
 </tbody>
 </table>
 </div>
@@ -528,16 +539,16 @@ are deliberate and few.
 <b>Two limits are enforced in application code rather than by the limiter.</b> The Brawl demo
 refuses a bout that comes too soon or too many times a day, answering <code>demo_too_fast</code> or
 <code>demo_daily_cap</code>
-<a class="cite" href="https://github.com/punkouter27/PoMiniGames/blob/master/src/PoMiniGames.API/Features/PoBrawl/PoBrawlDemoEloGate.cs#L47" title="open src/PoMiniGames.API/Features/PoBrawl/PoBrawlDemoEloGate.cs line 47">src/PoMiniGames.API/Features/PoBrawl/PoBrawlDemoEloGate.cs:47</a>, and the ladder refuses a
+<span class="l3"><a class="cite" href="https://github.com/punkouter27/PoMiniGames/blob/master/src/PoMiniGames.API/Features/PoBrawl/PoBrawlDemoEloGate.cs#L47" title="open src/PoMiniGames.API/Features/PoBrawl/PoBrawlDemoEloGate.cs line 47">src/PoMiniGames.API/Features/PoBrawl/PoBrawlDemoEloGate.cs:47</a></span>, and the ladder refuses a
 climb that arrives too quickly with <code>ladder_too_fast</code>
-<a class="cite" href="https://github.com/punkouter27/PoMiniGames/blob/master/src/PoMiniGames.API/Features/PoBrawl/PoBrawlLeaderboardEndpoints.cs#L118" title="open src/PoMiniGames.API/Features/PoBrawl/PoBrawlLeaderboardEndpoints.cs line 118">src/PoMiniGames.API/Features/PoBrawl/PoBrawlLeaderboardEndpoints.cs:118</a>. The code reads
+<span class="l3"><a class="cite" href="https://github.com/punkouter27/PoMiniGames/blob/master/src/PoMiniGames.API/Features/PoBrawl/PoBrawlLeaderboardEndpoints.cs#L118" title="open src/PoMiniGames.API/Features/PoBrawl/PoBrawlLeaderboardEndpoints.cs line 118">src/PoMiniGames.API/Features/PoBrawl/PoBrawlLeaderboardEndpoints.cs:118</a></span>. The code reads
 the gap and the daily cap from constants in the same file; this page does not restate the numbers
 because they are not declared as configuration.
 </div>
 
 <h2>Not losing to a forged score</h2>
 
-<figure class="figure">
+<figure class="figure l2">
 <div class="mermaid-wrap">
 <pre class="mermaid">flowchart TD
     Sub[&quot;A score arrives&quot;]
@@ -570,13 +581,13 @@ observation.</figcaption>
 <tbody>
 <tr><td>Value bounds</td><td>The number is inside the range the game can physically produce</td>
 <td><code>score_out_of_range</code></td>
-<td><a class="cite" href="https://github.com/punkouter27/PoMiniGames/blob/master/src/PoMiniGames.API/Features/Integrity/ScoreIntegrityGuard.cs#L64" title="open src/PoMiniGames.API/Features/Integrity/ScoreIntegrityGuard.cs line 64">src/PoMiniGames.API/Features/Integrity/ScoreIntegrityGuard.cs:64</a></td></tr>
+<td><span class="l3"><a class="cite" href="https://github.com/punkouter27/PoMiniGames/blob/master/src/PoMiniGames.API/Features/Integrity/ScoreIntegrityGuard.cs#L64" title="open src/PoMiniGames.API/Features/Integrity/ScoreIntegrityGuard.cs line 64">src/PoMiniGames.API/Features/Integrity/ScoreIntegrityGuard.cs:64</a></span></td></tr>
 <tr><td>Play session</td><td>A signed ticket was issued for this game and this identity</td>
 <td><code>play_session_required</code></td>
-<td><a class="cite" href="https://github.com/punkouter27/PoMiniGames/blob/master/src/PoMiniGames.API/Features/Integrity/ScoreIntegrityGuard.cs#L86" title="open src/PoMiniGames.API/Features/Integrity/ScoreIntegrityGuard.cs line 86">src/PoMiniGames.API/Features/Integrity/ScoreIntegrityGuard.cs:86</a></td></tr>
+<td><span class="l3"><a class="cite" href="https://github.com/punkouter27/PoMiniGames/blob/master/src/PoMiniGames.API/Features/Integrity/ScoreIntegrityGuard.cs#L86" title="open src/PoMiniGames.API/Features/Integrity/ScoreIntegrityGuard.cs line 86">src/PoMiniGames.API/Features/Integrity/ScoreIntegrityGuard.cs:86</a></span></td></tr>
 <tr><td>Rate against elapsed time</td><td>The score is possible given how long the game has been open</td>
 <td><code>score_implausible</code></td>
-<td><a class="cite" href="https://github.com/punkouter27/PoMiniGames/blob/master/src/PoMiniGames.API/Features/Integrity/ScoreIntegrityGuard.cs#L93" title="open src/PoMiniGames.API/Features/Integrity/ScoreIntegrityGuard.cs line 93">src/PoMiniGames.API/Features/Integrity/ScoreIntegrityGuard.cs:93</a></td></tr>
+<td><span class="l3"><a class="cite" href="https://github.com/punkouter27/PoMiniGames/blob/master/src/PoMiniGames.API/Features/Integrity/ScoreIntegrityGuard.cs#L93" title="open src/PoMiniGames.API/Features/Integrity/ScoreIntegrityGuard.cs line 93">src/PoMiniGames.API/Features/Integrity/ScoreIntegrityGuard.cs:93</a></span></td></tr>
 </tbody>
 </table>
 </div>
@@ -584,18 +595,18 @@ observation.</figcaption>
 <ol class="steps">
 <li><b>The ticket is signed, not just random</b>
 <p>A play session is a Data Protection payload of a nonce, the game key, a hash of the identity and
-the issue time <a class="cite" href="https://github.com/punkouter27/PoMiniGames/blob/master/src/PoMiniGames.API/Features/Integrity/PlaySessionService.cs#L83" title="open src/PoMiniGames.API/Features/Integrity/PlaySessionService.cs line 83">src/PoMiniGames.API/Features/Integrity/PlaySessionService.cs:83</a>.</p></li>
+the issue time <span class="l3"><a class="cite" href="https://github.com/punkouter27/PoMiniGames/blob/master/src/PoMiniGames.API/Features/Integrity/PlaySessionService.cs#L83" title="open src/PoMiniGames.API/Features/Integrity/PlaySessionService.cs line 83">src/PoMiniGames.API/Features/Integrity/PlaySessionService.cs:83</a></span>.</p></li>
 
 <li><b>It is checked against both the game and the player</b>
 <p>Redeeming a ticket for the wrong game gives <code>WrongGame</code>; redeeming it as a different
 player is caught by a fixed-time comparison and gives <code>WrongIdentity</code>
-<a class="cite" href="https://github.com/punkouter27/PoMiniGames/blob/master/src/PoMiniGames.API/Features/Integrity/PlaySessionService.cs#L137" title="open src/PoMiniGames.API/Features/Integrity/PlaySessionService.cs line 137">src/PoMiniGames.API/Features/Integrity/PlaySessionService.cs:137</a>.</p></li>
+<span class="l3"><a class="cite" href="https://github.com/punkouter27/PoMiniGames/blob/master/src/PoMiniGames.API/Features/Integrity/PlaySessionService.cs#L137" title="open src/PoMiniGames.API/Features/Integrity/PlaySessionService.cs line 137">src/PoMiniGames.API/Features/Integrity/PlaySessionService.cs:137</a></span>.</p></li>
 
 <li><b>Two games replay the run instead of estimating it</b>
 <p>PoCabinet re-runs the lap through the server's own physics
-<a class="cite" href="https://github.com/punkouter27/PoMiniGames/blob/master/src/PoMiniGames.API/Features/PoCabinet/PoCabinetLapVerifier.cs#L28" title="open src/PoMiniGames.API/Features/PoCabinet/PoCabinetLapVerifier.cs line 28">src/PoMiniGames.API/Features/PoCabinet/PoCabinetLapVerifier.cs:28</a> and PoMule replays a
+<span class="l3"><a class="cite" href="https://github.com/punkouter27/PoMiniGames/blob/master/src/PoMiniGames.API/Features/PoCabinet/PoCabinetLapVerifier.cs#L28" title="open src/PoMiniGames.API/Features/PoCabinet/PoCabinetLapVerifier.cs line 28">src/PoMiniGames.API/Features/PoCabinet/PoCabinetLapVerifier.cs:28</a></span> and PoMule replays a
 seed and an action log through the shared C# engine
-<a class="cite" href="https://github.com/punkouter27/PoMiniGames/blob/master/src/PoMiniGames.API/Features/PoMule/PoMuleRunVerifier.cs#L16" title="open src/PoMiniGames.API/Features/PoMule/PoMuleRunVerifier.cs line 16">src/PoMiniGames.API/Features/PoMule/PoMuleRunVerifier.cs:16</a>.</p></li>
+<span class="l3"><a class="cite" href="https://github.com/punkouter27/PoMiniGames/blob/master/src/PoMiniGames.API/Features/PoMule/PoMuleRunVerifier.cs#L16" title="open src/PoMiniGames.API/Features/PoMule/PoMuleRunVerifier.cs line 16">src/PoMiniGames.API/Features/PoMule/PoMuleRunVerifier.cs:16</a></span>.</p></li>
 
 <li><b>The verifiers are honest about their limits</b>
 <p>The PoCabinet verifier states that it cannot prove a human drove the car, only that the lap is
@@ -603,7 +614,7 @@ one the physics can produce. The PoMule verifier states that it cannot prove the
 random.</p></li>
 </ol>
 
-<p class="snip-cap">src/PoMiniGames.API/Features/Integrity/PlaySessionService.cs:137-151</p><pre class="snip"><code>        {
+<p class="snip-cap l3">src/PoMiniGames.API/Features/Integrity/PlaySessionService.cs:137-151</p><pre class="snip l3"><code>        {
             payload = _protector.Unprotect(token);
         }
         catch (CryptographicException)
@@ -620,29 +631,29 @@ random.</p></li>
         {</code></pre>
 
 <h2>What a refusal looks like</h2>
-<div class="scroll">
+<div class="scroll l3">
 <table>
 <thead><tr><th>Status</th><th>Body</th><th>When</th><th>Citation</th></tr></thead>
 <tbody>
 <tr><td><b>401</b></td><td>The standard challenge response</td>
 <td>An authenticated surface was called without a valid identity</td>
-<td><a class="cite" href="https://github.com/punkouter27/PoMiniGames/blob/master/src/PoMiniGames.API/Features/Health/DiagEndpoints.cs#L215" title="open src/PoMiniGames.API/Features/Health/DiagEndpoints.cs line 215">src/PoMiniGames.API/Features/Health/DiagEndpoints.cs:215</a></td></tr>
+<td><span class="l3"><a class="cite" href="https://github.com/punkouter27/PoMiniGames/blob/master/src/PoMiniGames.API/Features/Health/DiagEndpoints.cs#L215" title="open src/PoMiniGames.API/Features/Health/DiagEndpoints.cs line 215">src/PoMiniGames.API/Features/Health/DiagEndpoints.cs:215</a></span></td></tr>
 <tr><td><b>403</b></td><td><code>antiforgery_validation_failed</code> plus a detail</td>
 <td>A write under <code>/api</code> had a missing or invalid CSRF token</td>
-<td><a class="cite" href="https://github.com/punkouter27/PoMiniGames/blob/master/src/PoMiniGames.API/Infrastructure/AntiforgeryExtensions.cs#L95" title="open src/PoMiniGames.API/Infrastructure/AntiforgeryExtensions.cs line 95">src/PoMiniGames.API/Infrastructure/AntiforgeryExtensions.cs:95</a></td></tr>
+<td><span class="l3"><a class="cite" href="https://github.com/punkouter27/PoMiniGames/blob/master/src/PoMiniGames.API/Infrastructure/AntiforgeryExtensions.cs#L95" title="open src/PoMiniGames.API/Infrastructure/AntiforgeryExtensions.cs line 95">src/PoMiniGames.API/Infrastructure/AntiforgeryExtensions.cs:95</a></span></td></tr>
 <tr><td><b>400</b></td><td><code>error</code> and <code>detail</code></td>
 <td>A score was refused by the integrity guard</td>
-<td><a class="cite" href="https://github.com/punkouter27/PoMiniGames/blob/master/src/PoMiniGames.API/Features/Integrity/ScoreIntegrityGuard.cs#L16" title="open src/PoMiniGames.API/Features/Integrity/ScoreIntegrityGuard.cs line 16">src/PoMiniGames.API/Features/Integrity/ScoreIntegrityGuard.cs:16</a></td></tr>
+<td><span class="l3"><a class="cite" href="https://github.com/punkouter27/PoMiniGames/blob/master/src/PoMiniGames.API/Features/Integrity/ScoreIntegrityGuard.cs#L16" title="open src/PoMiniGames.API/Features/Integrity/ScoreIntegrityGuard.cs line 16">src/PoMiniGames.API/Features/Integrity/ScoreIntegrityGuard.cs:16</a></span></td></tr>
 <tr><td><b>429</b></td><td>A named reason such as <code>ladder_too_fast</code></td>
 <td>An application-level rate limit was hit</td>
-<td><a class="cite" href="https://github.com/punkouter27/PoMiniGames/blob/master/src/PoMiniGames.API/Features/PoBrawl/PoBrawlLeaderboardEndpoints.cs#L118" title="open src/PoMiniGames.API/Features/PoBrawl/PoBrawlLeaderboardEndpoints.cs line 118">src/PoMiniGames.API/Features/PoBrawl/PoBrawlLeaderboardEndpoints.cs:118</a></td></tr>
+<td><span class="l3"><a class="cite" href="https://github.com/punkouter27/PoMiniGames/blob/master/src/PoMiniGames.API/Features/PoBrawl/PoBrawlLeaderboardEndpoints.cs#L118" title="open src/PoMiniGames.API/Features/PoBrawl/PoBrawlLeaderboardEndpoints.cs line 118">src/PoMiniGames.API/Features/PoBrawl/PoBrawlLeaderboardEndpoints.cs:118</a></span></td></tr>
 <tr><td><b>404</b></td><td><code>no_such_endpoint</code> plus a detail</td>
 <td>An unmapped <code>/api</code> path, or a diagnostics route that is switched off</td>
-<td><a class="cite" href="https://github.com/punkouter27/PoMiniGames/blob/master/src/PoMiniGames.API/Program.cs#L454" title="open src/PoMiniGames.API/Program.cs line 454">src/PoMiniGames.API/Program.cs:454</a>
-<a class="cite" href="https://github.com/punkouter27/PoMiniGames/blob/master/src/PoMiniGames.API/Features/Health/DiagEndpoints.cs#L224" title="open src/PoMiniGames.API/Features/Health/DiagEndpoints.cs line 224">src/PoMiniGames.API/Features/Health/DiagEndpoints.cs:224</a></td></tr>
+<td><span class="l3"><a class="cite" href="https://github.com/punkouter27/PoMiniGames/blob/master/src/PoMiniGames.API/Program.cs#L454" title="open src/PoMiniGames.API/Program.cs line 454">src/PoMiniGames.API/Program.cs:454</a></span>
+<span class="l3"><a class="cite" href="https://github.com/punkouter27/PoMiniGames/blob/master/src/PoMiniGames.API/Features/Health/DiagEndpoints.cs#L224" title="open src/PoMiniGames.API/Features/Health/DiagEndpoints.cs line 224">src/PoMiniGames.API/Features/Health/DiagEndpoints.cs:224</a></span></td></tr>
 <tr><td><b>503</b></td><td>The server is up but a dependency is not</td>
 <td>Storage is unavailable, or the F1 plan has exhausted its daily CPU quota</td>
-<td><a class="cite" href="https://github.com/punkouter27/PoMiniGames/blob/master/src/PoMiniGames.Infrastructure/Services/StorageService.cs#L58" title="open src/PoMiniGames.Infrastructure/Services/StorageService.cs line 58">src/PoMiniGames.Infrastructure/Services/StorageService.cs:58</a></td></tr>
+<td><span class="l3"><a class="cite" href="https://github.com/punkouter27/PoMiniGames/blob/master/src/PoMiniGames.Infrastructure/Services/StorageService.cs#L58" title="open src/PoMiniGames.Infrastructure/Services/StorageService.cs line 58">src/PoMiniGames.Infrastructure/Services/StorageService.cs:58</a></span></td></tr>
 </tbody>
 </table>
 </div>
@@ -650,32 +661,32 @@ random.</p></li>
 <div class="note">
 <b>One more guard worth knowing about.</b> If diagnostics are switched off, the log-tail endpoint
 answers 404 rather than exposing anything
-<a class="cite" href="https://github.com/punkouter27/PoMiniGames/blob/master/src/PoMiniGames.API/Features/Health/DiagEndpoints.cs#L224" title="open src/PoMiniGames.API/Features/Health/DiagEndpoints.cs line 224">src/PoMiniGames.API/Features/Health/DiagEndpoints.cs:224</a>. The diagnostics switch itself
+<span class="l3"><a class="cite" href="https://github.com/punkouter27/PoMiniGames/blob/master/src/PoMiniGames.API/Features/Health/DiagEndpoints.cs#L224" title="open src/PoMiniGames.API/Features/Health/DiagEndpoints.cs line 224">src/PoMiniGames.API/Features/Health/DiagEndpoints.cs:224</a></span>. The diagnostics switch itself
 defaults to on only in Development.
 </div>
 
 <h2>Secrets</h2>
-<div class="scroll">
+<div class="scroll l3">
 <table>
 <thead><tr><th>What</th><th>Where it comes from</th><th>Citation</th></tr></thead>
 <tbody>
 <tr><td>Azure service credentials</td>
 <td><code>DefaultAzureCredential</code> &mdash; managed identity in production, so there is no key
 in code at all</td>
-<td><a class="cite" href="https://github.com/punkouter27/PoMiniGames/blob/master/src/PoMiniGames.API/Infrastructure/TelemetryExtensions.cs#L102" title="open src/PoMiniGames.API/Infrastructure/TelemetryExtensions.cs line 102">src/PoMiniGames.API/Infrastructure/TelemetryExtensions.cs:102</a></td></tr>
+<td><span class="l3"><a class="cite" href="https://github.com/punkouter27/PoMiniGames/blob/master/src/PoMiniGames.API/Infrastructure/TelemetryExtensions.cs#L102" title="open src/PoMiniGames.API/Infrastructure/TelemetryExtensions.cs line 102">src/PoMiniGames.API/Infrastructure/TelemetryExtensions.cs:102</a></span></td></tr>
 <tr><td>Application secrets</td><td>Azure Key Vault, every secret prefixed
 <code>PoMiniGames--</code></td>
-<td><a class="cite" href="https://github.com/punkouter27/PoMiniGames/blob/master/src/PoMiniGames.API/Program.cs#L487" title="open src/PoMiniGames.API/Program.cs line 487">src/PoMiniGames.API/Program.cs:487</a></td></tr>
+<td><span class="l3"><a class="cite" href="https://github.com/punkouter27/PoMiniGames/blob/master/src/PoMiniGames.API/Program.cs#L487" title="open src/PoMiniGames.API/Program.cs line 487">src/PoMiniGames.API/Program.cs:487</a></span></td></tr>
 <tr><td>The Entra client ids</td><td>Required in Production:
 <code>PoMiniGames:MicrosoftAuth:ClientId</code> and <code>ApiClientId</code></td>
-<td><a class="cite" href="https://github.com/punkouter27/PoMiniGames/blob/master/src/PoMiniGames.API/Infrastructure/StartupSecretValidator.cs#L94" title="open src/PoMiniGames.API/Infrastructure/StartupSecretValidator.cs line 94">src/PoMiniGames.API/Infrastructure/StartupSecretValidator.cs:94</a></td></tr>
+<td><span class="l3"><a class="cite" href="https://github.com/punkouter27/PoMiniGames/blob/master/src/PoMiniGames.API/Infrastructure/StartupSecretValidator.cs#L94" title="open src/PoMiniGames.API/Infrastructure/StartupSecretValidator.cs line 94">src/PoMiniGames.API/Infrastructure/StartupSecretValidator.cs:94</a></span></td></tr>
 <tr><td>The AI endpoint and deployment</td><td>Required in Production:
 <code>PoMiniGames:AI:FoundryEndpoint</code> and <code>PoMiniGames:AI:DefaultDeployment</code></td>
-<td><a class="cite" href="https://github.com/punkouter27/PoMiniGames/blob/master/src/PoMiniGames.API/Infrastructure/StartupSecretValidator.cs#L116" title="open src/PoMiniGames.API/Infrastructure/StartupSecretValidator.cs line 116">src/PoMiniGames.API/Infrastructure/StartupSecretValidator.cs:116</a></td></tr>
+<td><span class="l3"><a class="cite" href="https://github.com/punkouter27/PoMiniGames/blob/master/src/PoMiniGames.API/Infrastructure/StartupSecretValidator.cs#L116" title="open src/PoMiniGames.API/Infrastructure/StartupSecretValidator.cs line 116">src/PoMiniGames.API/Infrastructure/StartupSecretValidator.cs:116</a></span></td></tr>
 <tr><td>The Jev API key</td><td>Empty string in source; read at run time from configuration</td>
-<td><a class="cite" href="https://github.com/punkouter27/PoMiniGames/blob/master/src/PoMiniGames.API/appsettings.json#L56" title="open src/PoMiniGames.API/appsettings.json line 56">src/PoMiniGames.API/appsettings.json:56</a></td></tr>
+<td><span class="l3"><a class="cite" href="https://github.com/punkouter27/PoMiniGames/blob/master/src/PoMiniGames.API/appsettings.json#L56" title="open src/PoMiniGames.API/appsettings.json line 56">src/PoMiniGames.API/appsettings.json:56</a></span></td></tr>
 <tr><td>CI sign-in</td><td>GitHub OIDC &mdash; a federated token, not a stored secret</td>
-<td><a class="cite" href="https://github.com/punkouter27/PoMiniGames/blob/master/.github/workflows/deploy.yml#L18" title="open .github/workflows/deploy.yml line 18">.github/workflows/deploy.yml:18</a></td></tr>
+<td><span class="l3"><a class="cite" href="https://github.com/punkouter27/PoMiniGames/blob/master/.github/workflows/deploy.yml#L18" title="open .github/workflows/deploy.yml line 18">.github/workflows/deploy.yml:18</a></span></td></tr>
 </tbody>
 </table>
 </div>
@@ -683,7 +694,7 @@ in code at all</td>
 <div class="note">
 <b>No secret value appears in this document, and none appears in the source.</b> The only API key
 slot in the repository is an empty string
-<a class="cite" href="https://github.com/punkouter27/PoMiniGames/blob/master/src/PoMiniGames.API/appsettings.json#L56" title="open src/PoMiniGames.API/appsettings.json line 56">src/PoMiniGames.API/appsettings.json:56</a>. Key Vault names are prefixed so a secret can never
+<span class="l3"><a class="cite" href="https://github.com/punkouter27/PoMiniGames/blob/master/src/PoMiniGames.API/appsettings.json#L56" title="open src/PoMiniGames.API/appsettings.json line 56">src/PoMiniGames.API/appsettings.json:56</a></span>. Key Vault names are prefixed so a secret can never
 be picked up by accident, and the production validator refuses to boot if a required identity
 setting is missing.
 </div>
@@ -716,6 +727,22 @@ setting is missing.
       <li>Nothing here replaces transport security; the tokens are bearer credentials.</li>
     </ul>
   </div>
+</div>
+
+<div class="card">
+  <h3 style="margin-top:0">How to read this page</h3>
+  <p>The header toggle changes how deep the page goes. The choice is remembered in your browser
+     (the <code>localStorage</code> key <code>pomg-docs-tier</code>) and applies to every report in
+     the suite, including the ones framed inside <a href="artifact.html">the tabbed shell</a>.</p>
+  <ul>
+    <li><b>Simple</b> &mdash; the plain-English story: the summaries, the everyday analogies and the
+        step-by-step narratives. No diagrams, no citations, no code.</li>
+    <li><b>Architectural</b> &mdash; adds the architecture layer: the C4 maps, the request
+        sequences, the component tables and the data model.</li>
+    <li><b>Deep dive</b> &mdash; adds the evidence: every <code>file:line</code> citation, every
+        verbatim code snippet, and the reference tables (routes, permissions, rate limits, storage
+        map, configuration keys).</li>
+  </ul>
 </div>
 
 </main>
