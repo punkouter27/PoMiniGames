@@ -175,7 +175,7 @@ pre.snip{
   font-family:var(--mono); font-size:12.5px; line-height:1.5; color:var(--ink-2);
 }
 pre.snip code{ background:none; padding:0; }
-.snip-cap{ font-size:12px; color:var(--muted); margin:0 0 -4px; }
+.snip-cap{ font-size:12px; color:var(--muted); margin:0 0 -4px; overflow-wrap:anywhere; word-break:break-word; }
 
 /* ---------- Mermaid ---------- */
 .figure{ margin:16px 0; min-width:0; }
@@ -735,13 +735,14 @@ setting is missing.
      (the <code>localStorage</code> key <code>pomg-docs-tier</code>) and applies to every report in
      the suite, including the ones framed inside <a href="artifact.html">the tabbed shell</a>.</p>
   <ul>
-    <li><b>Simple</b> &mdash; the plain-English story: the summaries, the everyday analogies and the
-        step-by-step narratives. No diagrams, no citations, no code.</li>
-    <li><b>Architectural</b> &mdash; adds the architecture layer: the C4 maps, the request
-        sequences, the component tables and the data model.</li>
+    <li><b>Simple</b> &mdash; the plain-English story: the summaries, the everyday analogies, the
+        step-by-step journeys and the high-level snapshot. No code, no citations, no reference
+        tables.</li>
+    <li><b>Architectural</b> &mdash; adds the architecture layer: the C4 maps, the sequence
+        diagrams, the component tables and the route map.</li>
     <li><b>Deep dive</b> &mdash; adds the evidence: every <code>file:line</code> citation, every
-        verbatim code snippet, and the reference tables (routes, permissions, rate limits, storage
-        map, configuration keys).</li>
+        verbatim code snippet, and the reference tables (permissions, rate limits, storage map,
+        configuration keys, secrets).</li>
   </ul>
 </div>
 
@@ -790,14 +791,26 @@ setting is missing.
   if (theme) root.setAttribute('data-theme', theme);
 
   function paintTierButtons() {
+    // Read the tier off the root element, so the label stays right even when
+    // something else (the shell, a bookmark) changed the attribute.
+    var current = root.getAttribute('data-tier') || tier;
+    if (current !== tier) tier = current;
     Array.prototype.forEach.call(document.querySelectorAll('[data-set-tier]'), function (b) {
-      b.setAttribute('aria-pressed', String(b.getAttribute('data-set-tier') === tier));
+      b.setAttribute('aria-pressed', String(b.getAttribute('data-set-tier') === current));
     });
     Array.prototype.forEach.call(document.querySelectorAll('[data-tier-label]'), function (n) {
-      n.textContent = TIER_NAMES[tier];
+      n.textContent = TIER_NAMES[current];
     });
   }
   paintTierButtons();
+
+  // Keep the label honest even when the tier is set from outside this page
+  // (the artifact shell posts a message, a bookmark can carry one).
+  if (window.MutationObserver) {
+    new MutationObserver(paintTierButtons).observe(root, {
+      attributes: true, attributeFilter: ['data-tier']
+    });
+  }
 
   document.addEventListener('click', function (ev) {
     var b = ev.target.closest ? ev.target.closest('[data-set-tier]') : null;

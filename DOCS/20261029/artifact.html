@@ -175,7 +175,7 @@ pre.snip{
   font-family:var(--mono); font-size:12.5px; line-height:1.5; color:var(--ink-2);
 }
 pre.snip code{ background:none; padding:0; }
-.snip-cap{ font-size:12px; color:var(--muted); margin:0 0 -4px; }
+.snip-cap{ font-size:12px; color:var(--muted); margin:0 0 -4px; overflow-wrap:anywhere; word-break:break-word; }
 
 /* ---------- Mermaid ---------- */
 .figure{ margin:16px 0; min-width:0; }
@@ -293,6 +293,14 @@ figcaption b{ color:var(--ink-2); }
     <p>Five reports, one tab bar. The detail toggle and the theme apply to the shell and to every
     report you open. If a tab cannot load &mdash; for example because the file was opened on its
     own &mdash; the link below the tab bar opens that report directly.</p>
+    <ul>
+      <li><b>Simple</b> &mdash; the plain-English story: summaries, analogies, the step-by-step
+      journeys and the high-level snapshot.</li>
+      <li><b>Architectural</b> &mdash; adds the architecture layer: the C4 maps, the sequence
+      diagrams and the component tables.</li>
+      <li><b>Deep dive</b> &mdash; adds the evidence: every <code>file:line</code> citation, every
+      verbatim snippet and the reference tables.</li>
+    </ul>
   </div>
 </div>
 
@@ -361,14 +369,26 @@ figcaption b{ color:var(--ink-2); }
   if (theme) root.setAttribute('data-theme', theme);
 
   function paintTierButtons() {
+    // Read the tier off the root element, so the label stays right even when
+    // something else (the shell, a bookmark) changed the attribute.
+    var current = root.getAttribute('data-tier') || tier;
+    if (current !== tier) tier = current;
     Array.prototype.forEach.call(document.querySelectorAll('[data-set-tier]'), function (b) {
-      b.setAttribute('aria-pressed', String(b.getAttribute('data-set-tier') === tier));
+      b.setAttribute('aria-pressed', String(b.getAttribute('data-set-tier') === current));
     });
     Array.prototype.forEach.call(document.querySelectorAll('[data-tier-label]'), function (n) {
-      n.textContent = TIER_NAMES[tier];
+      n.textContent = TIER_NAMES[current];
     });
   }
   paintTierButtons();
+
+  // Keep the label honest even when the tier is set from outside this page
+  // (the artifact shell posts a message, a bookmark can carry one).
+  if (window.MutationObserver) {
+    new MutationObserver(paintTierButtons).observe(root, {
+      attributes: true, attributeFilter: ['data-tier']
+    });
+  }
 
   document.addEventListener('click', function (ev) {
     var b = ev.target.closest ? ev.target.closest('[data-set-tier]') : null;
