@@ -48,6 +48,7 @@
                        Actions="@IntroActions"
                        Wide="true"
                        StartEnabled="@(_mode != "2p" || (_p1Locked && _p2Locked))"
+                       StartHint="@(_mode == "2p" && !BothLocked ? "Lock in both fighters to start" : null)"
                        DialogLabel="@IntroDialogLabel"
                        CaptureKeys="false"
                        ForwardOptionKeys="@(_mode == "2p")"

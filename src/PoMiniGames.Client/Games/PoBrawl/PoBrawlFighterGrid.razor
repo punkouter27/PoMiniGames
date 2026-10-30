@@ -6,15 +6,17 @@
    (data-stage="off" on the .pb-select around this grid, or the low tier) they collapse and
    the tiles stay plain glass buttons.
    Styles: PoBrawlPage.razor.css (.pb-select-*); this component shares that CSS scope. *@
-<ul class="pb-select-grid" aria-label="Fighters">
+<ul class="pb-select-grid" role="radiogroup" aria-label="Fighters">
     @for (var i = 0; i < Fighters.Count; i++)
     {
         var idx = i;
         var f = Fighters[idx];
         var p1 = idx == P1Index;
         var p2 = idx == P2Index;
-        <li>
+        <li role="none">
             <button type="button"
+                    role="radio"
+                    aria-checked="@(p1 || p2 ? "true" : "false")"
                     class="pb-select-tile @(p1 ? "pb-select-tile--p1" : "") @(p2 ? "pb-select-tile--p2" : "")"
                     aria-label="@(f.Name + (p1 ? ", Player 1" : "") + (p2 ? ", Player 2" : ""))"
                     @onclick="() => OnPick.InvokeAsync(idx)">
