@@ -147,8 +147,8 @@ const DRACO_PATH = 'https://cdn.jsdelivr.net/npm/three@0.165.0/examples/jsm/libs
 // drawn at 15x: 150 sim units per room unit, the scale the track's knots were printed at, so a
 // car is a ~4 cm toy on the carpet. The scan is unlit (its textures carry the room's own light)
 // and single-sided, so a camera outside a wall sees through it. The road is the toy track: orange
-// plastic on the carpet, decked and on stilts where it climbs onto the cushion, and the scene's
-// sun reaches the room only through a shadow catcher on the floor. The carpet is the run-off.
+// plastic decked out to the rails and standing on stilts wherever it is off the carpet (the whole
+// lap, ~4 ft up), and the scene's sun reaches the room only through a shadow catcher on the floor.
 // Render-only; if the model fails the race runs on a plain carpet-coloured floor.
 const ROOM = {
     url: 'models/bedroom.glb',
@@ -848,7 +848,7 @@ class SceneHandle {
             }
         }
         if (spots.length) {
-            const stilt = new THREE.InstancedMesh(new THREE.CylinderGeometry(0.22, 0.3, 1, 8),
+            const stilt = new THREE.InstancedMesh(new THREE.CylinderGeometry(0.45, 0.6, 1, 10),
                 new THREE.MeshStandardMaterial({ color: '#f4f1ea', roughness: 0.5, metalness: 0 }), spots.length);
             const m = new THREE.Matrix4();
             spots.forEach(([x, h, z], k) => stilt.setMatrixAt(k, m.compose(

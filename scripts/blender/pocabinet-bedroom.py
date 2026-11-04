@@ -36,10 +36,13 @@ OUT_GLB = os.path.join(REPO, "src", "PoMiniGames.Client", "wwwroot", "models", "
 # 150 sim units per room unit: a car (radius 14) is ~4 cm long, a Micro Machine on the carpet,
 # and the lap comes out near Capitol's, long enough for a 100-car field.
 SIM_PER_UNIT = 150.0
-TRACK_WIDTH = 100.0           # sim; PoCabinetTrackGeometry["bedroom"].TrackWidth
+TRACK_WIDTH = 200.0           # sim; PoCabinetTrackGeometry["bedroom"].TrackWidth
 RUN_OFF = 26.0                # physics.js RUN_OFF: the barrier stands this far past the road edge
 STEPS = 10                    # StepsPerSegment
-CUT_Z = 6.5                   # room units (~1.5 m): the ceiling and the flaps hanging from it go
+CUT_Z = 7.8                   # room units (~1.8 m): the ceiling and the flaps hanging from it go
+# The whole lap rides this far above the ROUTE heights: ~4 ft (1.22 m at ~4.3 room units to the
+# metre), a toy track on tall stilts over the furniture, the cushion's hump kept as a hill.
+LIFT = 785.0                  # sim
 DECIMATE = 0.5
 TEXTURE_SHRINK = 4            # 8K atlases → 2K
 
@@ -55,26 +58,25 @@ TEXTURE_SHRINK = 4            # 8K atlases → 2K
 # sim's right side higher (the mirror makes these clockwise turns left-handers in the sim, so a
 # turn banked into them is negative).
 ROUTE = [
-    (-4.30, 0.05, 3, 0),
-    (-4.40, 1.10, 3, 0),
-    (-4.15, 2.25, 3, 0),
-    (-3.35, 2.55, 3, 0),
-    (-2.10, 2.55, 6, 0),
-    (-1.45, 3.15, 18, 0),
-    (-0.95, 3.95, 38, 0),
-    (-0.30, 4.18, 58, -0.08),
-    (0.35, 3.85, 77, -0.22),
-    (0.55, 3.10, 89, -0.04),
-    (0.55, 2.40, 89, 0),
-    (0.55, 1.45, 89, 0),
-    (0.62, 0.55, 58, 0),
-    (0.95, -0.50, 30, 0),
-    (0.90, -1.60, 10, 0),
-    (0.15, -2.35, 3, 0),
-    (-1.05, -2.40, 3, 0),
-    (-1.90, -1.40, 3, 0),
-    (-2.75, -0.72, 3, 0),
-    (-3.75, -0.62, 3, 0),
+    (-4.22, -0.50, 3, 0),
+    (-4.25, 0.45, 3, 0),
+    (-3.85, 1.62, 3, -0.06),
+    (-2.95, 2.20, 3, -0.08),
+    (-1.85, 2.40, 3, 0),
+    (-0.80, 2.95, 8, 0),
+    (0.45, 3.45, 20, -0.06),
+    (1.60, 3.25, 30, -0.14),
+    (2.25, 2.30, 45, -0.08),
+    (2.25, 0.90, 80, 0),
+    (2.10, -0.60, 90, 0),
+    (2.10, -2.00, 50, 0),
+    (1.75, -3.20, 15, -0.08),
+    (0.80, -3.90, 3, -0.12),
+    (-0.50, -4.00, 3, -0.06),
+    (-1.75, -3.55, 3, 0),
+    (-2.70, -2.75, 3, -0.04),
+    (-3.45, -2.20, 3, -0.08),
+    (-4.00, -1.45, 3, -0.08),
 ]
 
 
@@ -154,7 +156,7 @@ def clean(meshes):
 
 def check_route(bvh):
     xs, ys = resample([p[0] for p in ROUTE]), resample([p[1] for p in ROUTE])
-    zs, banks = resample([p[2] for p in ROUTE]), resample([p[3] for p in ROUTE])
+    zs, banks = resample([p[2] + LIFT for p in ROUTE]), resample([p[3] for p in ROUTE])
     n = len(xs)
     wall = (TRACK_WIDTH / 2 + RUN_OFF) / SIM_PER_UNIT
     problems = []
@@ -171,9 +173,19 @@ def check_route(bvh):
             lat = wall * k / 4
             h = height(bvh, xs[i] + nx * lat, ys[i] + ny * lat)
             if h is None:
-                problems.append(f"sample {i} lat {lat:+.2f}: a hole in the scan")
+                if zs[i] < 50:   # up on the stilts a hole in the floor scan is nobody's problem
+                    problems.append(f"sample {i} lat {lat:+.2f}: a hole in the scan")
             elif h * SIM_PER_UNIT > zs[i] + 12:
                 problems.append(f"sample {i} (knot {i / STEPS:.1f}) lat {lat:+.2f}: {h * SIM_PER_UNIT:.0f} sim of room above a road at {zs[i]:.0f}")
+    # Tighter than this and the road's inside edge folds over itself: the field jams there.
+    min_radius = TRACK_WIDTH / 2 + 40
+    for i in range(n):
+        a, b = (i - 1) % n, (i + 1) % n
+        turn = math.atan2(ys[b] - ys[i], xs[b] - xs[i]) - math.atan2(ys[i] - ys[a], xs[i] - xs[a])
+        turn = (turn + math.pi) % (2 * math.pi) - math.pi
+        seg = math.hypot(xs[b] - xs[i], ys[b] - ys[i]) * SIM_PER_UNIT
+        if abs(turn) > 1e-6 and seg / abs(turn) < min_radius:
+            problems.append(f"sample {i} (knot {i / STEPS:.1f}): corner radius {seg / abs(turn):.0f} < {min_radius:.0f}")
     closest = min((math.hypot(xs[a] - xs[b], ys[a] - ys[b]), a, b)
                   for a in range(n) for b in range(a + 1, n)
                   if min(b - a, n - (b - a)) > STEPS * 2.5)
@@ -191,7 +203,7 @@ def print_csharp():
         return "0" if s in ("-0", "") else s
     knots = ", ".join(f"({num(x * SIM_PER_UNIT)}, {num(-y * SIM_PER_UNIT)})" for x, y, _, _ in ROUTE)
     print("CSHARP Knots: [" + knots + "]")
-    print("CSHARP KnotZ = [" + ", ".join(num(z) for _, _, z, _ in ROUTE) + "]")
+    print("CSHARP KnotZ = [" + ", ".join(num(z + LIFT) for _, _, z, _ in ROUTE) + "]")
     print("CSHARP KnotBank = [" + ", ".join(f"{b:g}" for *_, b in ROUTE) + "]")
 
 

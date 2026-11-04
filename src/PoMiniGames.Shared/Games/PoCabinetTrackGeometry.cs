@@ -286,26 +286,27 @@ public static class PoCabinetTrackGeometry
                 Islands = [new(19.9, 21.6, -12, 12, 1)],
                 Theme = "senate",
             },
-            // A toy-car circuit on the floor of a scanned bedroom (wwwroot/models/bedroom.glb):
-            // up the wall past the drum kit, esses round the closet's wall return that lift the
-            // road off the carpet on stilts, a banked right-hander that carries the climb onto the
-            // floor cushion, along its top, a long drop off the end back to the carpet, and an S
-            // round the office chair. The carpet is the run-off.
+            // A toy-car circuit on tall stilts ~4 ft over the floor of a scanned bedroom
+            // (wwwroot/models/bedroom.glb): up the wall past the drum kit, under the closet's wall
+            // return, a banked right-hander past the floor cushion, a hill down the side over the
+            // standing desk's edge, a banked sweep over the office chair and back over the drum
+            // kit. The road is twice the other tracks' width (a car is ~4 cm, the road ~30 cm), so
+            // no corner is tighter than its half width + 40 or the inside edge folds over.
             //
             // GENERATED, do not hand-edit: scripts/blender/pocabinet-bedroom.py lays the route
             // in the scan's room units, checks it clears the furniture, and prints these at
             // 150 sim units per room unit (a car is ~4 cm long); scene.js ROOM draws the model
-            // at 15x to match. KnotZ is the road's height: 3 just clears the carpet's pile,
-            // 89 is the cushion's top.
+            // at 15x to match. KnotZ is the road's height: 785 (~1.22 m) of lift plus the
+            // route's own profile, whose hump follows the cushion below.
             ["bedroom"] = new(
                 "bedroom",
-                TrackWidth: 100,
+                TrackWidth: 200,
                 Knots:
                 [
-                    (-645, -7.5), (-660, -165), (-622.5, -337.5), (-502.5, -382.5), (-315, -382.5),
-                    (-217.5, -472.5), (-142.5, -592.5), (-45, -627), (52.5, -577.5), (82.5, -465),
-                    (82.5, -360), (82.5, -217.5), (93, -82.5), (142.5, 75), (135, 240),
-                    (22.5, 352.5), (-157.5, 360), (-285, 210), (-412.5, 108), (-562.5, 93),
+                    (-633, 75), (-637.5, -67.5), (-577.5, -243), (-442.5, -330), (-277.5, -360),
+                    (-120, -442.5), (67.5, -517.5), (240, -487.5), (337.5, -345), (337.5, -135),
+                    (315, 90), (315, 300), (262.5, 480), (120, 585), (-75, 600),
+                    (-262.5, 532.5), (-405, 412.5), (-517.5, 330), (-600, 217.5),
                 ],
                 StepsPerSegment: 10,
                 Atmosphere: new PoCabinetAtmosphereWire
@@ -322,9 +323,9 @@ public static class PoCabinetTrackGeometry
                     AccentHex = "#2f86d6",
                 })
             {
-                //       0  1  2  3  4  5  6   7   8   9  10  11  12 13 14 15 16 17 18 19
-                KnotZ = [3, 3, 3, 3, 6, 18, 38, 58, 77, 89, 89, 89, 58, 30, 10, 3, 3, 3, 3, 3],
-                KnotBank = [0, 0, 0, 0, 0, 0, 0, -0.08, -0.22, -0.04, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
+                //         0    1    2    3    4    5    6    7    8    9   10   11   12   13   14   15   16   17   18
+                KnotZ = [788, 788, 788, 788, 788, 793, 805, 815, 830, 865, 875, 835, 800, 788, 788, 788, 788, 788, 788],
+                KnotBank = [0, 0, -0.06, -0.08, 0, 0, -0.06, -0.14, -0.08, 0, 0, 0, -0.08, -0.12, -0.06, 0, -0.04, -0.08, -0.08],
                 Theme = "bedroom",
             },
             ["playground"] = new(
