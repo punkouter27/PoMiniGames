@@ -10,7 +10,7 @@ proofs the tests replay.
 1. Dump the worlds the page hands race.js (the same JSON, from the shared C#):
 
    ```powershell
-   dotnet run scripts/pocabinet/dump.cs -- artifacts/pocabinet-worlds capitol maralago pressbriefing playground senate today
+   dotnet run scripts/pocabinet/dump.cs -- artifacts/pocabinet-worlds capitol maralago pressbriefing playground senate bedroom today
    ```
 
    `today` is today's daily circuit; `daily:7` dumps the next seven.
@@ -38,3 +38,20 @@ proofs the tests replay.
 
    `PoCabinetLapVerifierTests` replays every proof in C# and needs the browser's lap time
    exactly; a mismatch means the two copies have drifted apart.
+
+## Bedroom Floor GP (a track built from a room scan)
+
+`scripts/blender/pocabinet-bedroom.py` builds the bedroom track in headless Blender from the
+merged room scan (`BedroomScene.glb`, kept out of the repo). It stands the scan up, cuts the
+ceiling, decimates it, shrinks the textures and writes `wwwroot/models/bedroom.glb`
+(Draco). It also checks the hand-laid `ROUTE` against the room: every road sample's corridor
+must clear the furniture, the road must sit on whatever it crosses, and no two parts of the
+lap may overlap. Then it prints the knots, `KnotZ` and `KnotBank` to paste into
+`PoCabinetTrackGeometry["bedroom"]`:
+
+```powershell
+& "C:\Program Files\Blender Foundation\Blender 5.2lender.exe" -b --factory-startup --python-exit-code 1 `
+  -P scripts/blender/pocabinet-bedroom.py -- <path>\BedroomScene.glb --preview SCREENSHOTS/<yymmdd>-bedroom.png
+```
+
+After pasting, dump the world and race it here (step 2) before shipping.

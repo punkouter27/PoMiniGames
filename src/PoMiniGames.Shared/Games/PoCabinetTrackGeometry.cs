@@ -286,6 +286,47 @@ public static class PoCabinetTrackGeometry
                 Islands = [new(19.9, 21.6, -12, 12, 1)],
                 Theme = "senate",
             },
+            // A toy-car circuit on the floor of a scanned bedroom (wwwroot/models/bedroom.glb):
+            // up the wall past the drum kit, esses round the closet's wall return that lift the
+            // road off the carpet on stilts, a banked right-hander that carries the climb onto the
+            // floor cushion, along its top, a long drop off the end back to the carpet, and an S
+            // round the office chair. The carpet is the run-off.
+            //
+            // GENERATED, do not hand-edit: scripts/blender/pocabinet-bedroom.py lays the route
+            // in the scan's room units, checks it clears the furniture, and prints these at
+            // 150 sim units per room unit (a car is ~4 cm long); scene.js ROOM draws the model
+            // at 15x to match. KnotZ is the road's height: 3 just clears the carpet's pile,
+            // 89 is the cushion's top.
+            ["bedroom"] = new(
+                "bedroom",
+                TrackWidth: 100,
+                Knots:
+                [
+                    (-645, -7.5), (-660, -165), (-622.5, -337.5), (-502.5, -382.5), (-315, -382.5),
+                    (-217.5, -472.5), (-142.5, -592.5), (-45, -627), (52.5, -577.5), (82.5, -465),
+                    (82.5, -360), (82.5, -217.5), (93, -82.5), (142.5, 75), (135, 240),
+                    (22.5, 352.5), (-157.5, 360), (-285, 210), (-412.5, 108), (-562.5, 93),
+                ],
+                StepsPerSegment: 10,
+                Atmosphere: new PoCabinetAtmosphereWire
+                {
+                    // Indoors: the room is ~230 scene units across, so the fog only softens
+                    // what is past the walls.
+                    SkyHex = "#d9d0c2",
+                    FogStart = 500,
+                    FogEnd = 1800,
+                    FogHex = "#d9d0c2",
+                    AmbientIntensity = 0.75,
+                    GroundHex = "#7b7166",
+                    RoadHex = "#d9581a",
+                    AccentHex = "#2f86d6",
+                })
+            {
+                //       0  1  2  3  4  5  6   7   8   9  10  11  12 13 14 15 16 17 18 19
+                KnotZ = [3, 3, 3, 3, 6, 18, 38, 58, 77, 89, 89, 89, 58, 30, 10, 3, 3, 3, 3, 3],
+                KnotBank = [0, 0, 0, 0, 0, 0, 0, -0.08, -0.22, -0.04, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
+                Theme = "bedroom",
+            },
             ["playground"] = new(
                 "playground",
                 TrackWidth: 74,

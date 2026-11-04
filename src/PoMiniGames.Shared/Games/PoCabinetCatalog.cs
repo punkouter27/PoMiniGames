@@ -93,6 +93,11 @@ public static class PoCabinetCatalog
             "Senate Hill",
             "Autumn hill road course: a climb to a blind crest, a banked downhill hairpin, the esses, a filibuster chicane with raised kerbs and a split sweeper with a joker lane.",
             "#b3541e", 4, "Hard"),
+        new PoCabinetTrackInfo(
+            "bedroom",
+            "Bedroom Floor GP",
+            "Toy-car circuit on a scanned bedroom floor: past the drum kit and the closet, a banked ramp up onto the floor cushion, a drop off its end and an S round the office chair.",
+            "#ff7a1a", 1, "Medium"),
     });
 
     /// <summary>The tracks that are campaign stages, in stage order (the first four of <see cref="Tracks"/>).</summary>

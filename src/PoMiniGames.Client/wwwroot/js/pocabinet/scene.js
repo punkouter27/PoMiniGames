@@ -27,6 +27,7 @@
 //     boards and corner numbers (trackside.js)
 //   • sky dome (sky.js) and trackside scenery (scenery.js), dressed by track.theme
 //   • Playground only: the imported playground.glb (see PLAYGROUND)
+//   • Bedroom Floor GP: the imported bedroom.glb, a scanned room the road is laid in (see ROOM)
 //
 // World mapping: sim (x, y) → three (x / 10, h, y / 10). h is the road's height (track.z,
 // tilted across by track.bank) on the road and its run-off out to the barriers, and the
@@ -69,7 +70,7 @@ import { Scenery } from './scenery.js';
 import { PostFx } from './postfx.js';
 import { Grass } from './grass.js';
 import { asphalt, grass as grassTextures, macro, clock, reflective } from './materials.js';
-import { Terrain, themeOf, isPlayground, wallFace } from './terrain.js';
+import { Terrain, themeOf, isPlayground, isRoom, wallFace } from './terrain.js';
 import { Trackside } from './trackside.js';
 import { gravel, sand, limitStripes } from './surfaces.js';
 import { WORLD_SCALE, roadPlane, canvasTexture } from './util.js';
@@ -140,6 +141,23 @@ const PLAYGROUND = {
 };
 const DRACO_PATH = 'https://cdn.jsdelivr.net/npm/three@0.165.0/examples/jsm/libs/draco/gltf/';
 
+// Bedroom Floor GP: wwwroot/models/bedroom.glb, a scanned bedroom that
+// scripts/blender/pocabinet-bedroom.py stands up (floor on y = 0), cuts the ceiling off,
+// decimates and checks the route against. It is in the scan's room units (~4.3 to the metre),
+// drawn at 15x: 150 sim units per room unit, the scale the track's knots were printed at, so a
+// car is a ~4 cm toy on the carpet. The scan is unlit (its textures carry the room's own light)
+// and single-sided, so a camera outside a wall sees through it. The road is the toy track: orange
+// plastic on the carpet, decked and on stilts where it climbs onto the cushion, and the scene's
+// sun reaches the room only through a shadow catcher on the floor. The carpet is the run-off.
+// Render-only; if the model fails the race runs on a plain carpet-coloured floor.
+const ROOM = {
+    url: 'models/bedroom.glb',
+    scale: 15,
+    carpetHex: '#7b7166',
+    lift: 1.15,           // the scan's colours, brightened for the post pass's grade and vignette
+    deckFrom: 8,         // sim height past which the road is off the carpet: decked, on stilts
+};
+
 /** Sim-unit ring of the model's footprint, or null on tracks without a model. */
 function keepOutFor(trackId) {
     return trackId === 'playground' ? PLAYGROUND.footprint.map(v => v * PLAYGROUND.scale * WORLD_SCALE) : null;
@@ -165,6 +183,7 @@ class SceneHandle {
         this.roadRefl = { value: 0.02 };   // the road's reflectivity for postfx.js, set by setWeather
         this.theme = 'capitol';
         this.playground = false;
+        this.room = false;        // a road laid in a scanned room (isRoom): the model is the world
         this.sky = null;
         this.envSky = null;
         this.envTarget = null;
@@ -637,6 +656,10 @@ class SceneHandle {
         const t = this.track;
         this.theme = themeOf(t);
         this.playground = isPlayground(t);
+        this.room = isRoom(t);
+        // Where a model is the world (the Playground, the bedroom) the scene adds no terrain,
+        // trackside props or grass of its own.
+        const modelWorld = this.playground || this.room;
         const group = new THREE.Group();
         group.name = 'pocabinet-track';
         const plaza = this.theme === 'pressbriefing';
@@ -652,7 +675,7 @@ class SceneHandle {
             roughnessMap: plaza ? tex.roughnessMap : null,
         }), plaza ? 40 : 70, plaza ? 0.15 : 0.35);
         let ground = null;
-        if (!this.playground) {
+        if (!modelWorld) {
             try {
                 this.terrain = new Terrain(t, this.theme);
                 ground = this.terrain.mesh(groundMat, reach, tile);
@@ -660,6 +683,11 @@ class SceneHandle {
                 this.terrain = null;
                 console.warn('pocabinet/scene: terrain skipped', e);
             }
+        }
+        if (!ground && this.room) {
+            // Under the scan's floor (it dips to -0.07): shows only through holes in the scan.
+            ground = flatGround(world, new THREE.MeshStandardMaterial({ color: ROOM.carpetHex, roughness: 1, metalness: 0 }), reach, tile);
+            ground.position.y = -0.2;
         }
         if (!ground) ground = flatGround(world, groundMat, reach, tile);
         group.add(ground);
@@ -670,12 +698,15 @@ class SceneHandle {
         const built = (i) => t.built(i);
         // The Playground keeps the straight-up normals it always had; a hill shades as one.
         const flat = this.playground;
-        this.roadMesh = new THREE.Mesh(ribbon(t, (i) => -t.hw[i], (i) => t.hw[i], 0.02, 45, built, { flat }),
-            reflective(macro(new THREE.MeshStandardMaterial({
+        // The bedroom's road is a toy track: smooth moulded plastic, not tarmac.
+        const roadMat = this.room
+            ? new THREE.MeshStandardMaterial({ color: hex(atmosphere.roadHex, '#d9581a'), roughness: 0.55, metalness: 0, side: THREE.DoubleSide })
+            : reflective(macro(new THREE.MeshStandardMaterial({
                 color: hex(atmosphere.roadHex, '#393b42'), roughness: 1, metalness: 0,
                 map: tar.map, normalMap: tar.normalMap, normalScale: new THREE.Vector2(0.8, 0.8), roughnessMap: tar.roughnessMap,
                 side: THREE.DoubleSide,
-            }), 30, 0.2), this.roadRefl));
+            }), 30, 0.2), this.roadRefl);
+        this.roadMesh = new THREE.Mesh(ribbon(t, (i) => -t.hw[i], (i) => t.hw[i], 0.02, 45, built, { flat }), roadMat);
         this.roadMesh.receiveShadow = true;
         group.add(this.roadMesh);
         if (this.playground) {
@@ -708,6 +739,8 @@ class SceneHandle {
                     group.add(chute);
                 }
             }
+        } else if (this.room) {
+            this.buildRoomTrack(group, atmosphere);
         } else {
             this.buildRunoff(group, atmosphere, groundMat, tile);
         }
@@ -739,7 +772,7 @@ class SceneHandle {
 
         group.add(startLine(t));
 
-        if (!this.playground) {
+        if (!modelWorld) {
             try {
                 this.trackside = new Trackside(t, { theme: this.theme, terrain: this.terrain, atmosphere });
                 group.add(this.trackside.group);
@@ -766,7 +799,7 @@ class SceneHandle {
         }
         try {
             this.scenery = new Scenery(t, {
-                ...world, kerbs: computeKerbs(t), theme: this.theme, terrain: this.terrain, playground: this.playground,
+                ...world, kerbs: computeKerbs(t), theme: this.theme, terrain: this.terrain, playground: modelWorld,
             });
             group.add(this.scenery.group);
         } catch (e) {
@@ -779,6 +812,63 @@ class SceneHandle {
         this.buildGrass();
         this.setWeather(false);
         if (t.id === 'playground') this.loadPlayground(group);
+        else if (this.room) this.loadRoom(group);
+    }
+
+    /**
+     * The bedroom's toy track off the carpet: where the road climbs (track.z past ROOM.deckFrom)
+     * the run-off is decked in darker plastic out to the barrier and the deck stands on stilts
+     * down to the floor (on the cushion they stand inside it). Plus a shadow catcher on the floor,
+     * so the cars, road and rails throw shadows onto the unlit scan.
+     */
+    buildRoomTrack(group, atmosphere) {
+        const t = this.track;
+        const n = t.count;
+        const up = (i) => !!t.z && Math.min(t.z[i], t.z[(i + 1) % n]) > ROOM.deckFrom;
+        const deckMat = new THREE.MeshStandardMaterial({
+            color: hex(atmosphere.roadHex, '#d9581a').multiplyScalar(0.62), roughness: 0.6, metalness: 0, side: THREE.DoubleSide,
+        });
+        for (const [a, b] of [[(i) => -wallFace(t, i, -1), (i) => -t.hw[i]], [(i) => t.hw[i], (i) => wallFace(t, i, 1)]]) {
+            const deck = new THREE.Mesh(ribbon(t, a, b, 0.015, 45, (i) => t.drawn(i) && up(i)), deckMat);
+            deck.castShadow = true;
+            deck.receiveShadow = true;
+            group.add(deck);
+        }
+        this.roadMesh.castShadow = true;
+
+        // Stilts: a pair every few samples under the deck's edges, floor to deck.
+        const spots = [];
+        for (let i = 0; i < n; i += 4) {
+            if (!up(i)) continue;
+            for (const s of [-1, 1]) {
+                const lat = s * (wallFace(t, i, s) - 3);
+                const h = roadPlane(t, i, lat) / WORLD_SCALE;
+                const x = (t.x[i] - t.ty[i] * lat) / WORLD_SCALE, z = (t.y[i] + t.tx[i] * lat) / WORLD_SCALE;
+                spots.push([x, h, z]);
+            }
+        }
+        if (spots.length) {
+            const stilt = new THREE.InstancedMesh(new THREE.CylinderGeometry(0.22, 0.3, 1, 8),
+                new THREE.MeshStandardMaterial({ color: '#f4f1ea', roughness: 0.5, metalness: 0 }), spots.length);
+            const m = new THREE.Matrix4();
+            spots.forEach(([x, h, z], k) => stilt.setMatrixAt(k, m.compose(
+                new THREE.Vector3(x, h / 2, z), new THREE.Quaternion(), new THREE.Vector3(1, h, 1))));
+            stilt.castShadow = true;
+            stilt.name = 'pocabinet-room-stilts';
+            group.add(stilt);
+        }
+
+        const pad = 60;
+        const xs = [], ys = [];
+        for (let i = 0; i < n; i++) { xs.push(t.x[i]); ys.push(t.y[i]); }
+        const minX = Math.min(...xs), maxX = Math.max(...xs), minY = Math.min(...ys), maxY = Math.max(...ys);
+        const w = (maxX - minX) / WORLD_SCALE + pad * 2, d = (maxY - minY) / WORLD_SCALE + pad * 2;
+        const catcher = new THREE.Mesh(new THREE.PlaneGeometry(w, d).rotateX(-Math.PI / 2),
+            new THREE.ShadowMaterial({ opacity: 0.32 }));
+        catcher.position.set((minX + maxX) / 2 / WORLD_SCALE, 0.09, (minY + maxY) / 2 / WORLD_SCALE);
+        catcher.receiveShadow = true;
+        catcher.name = 'pocabinet-room-shadows';
+        group.add(catcher);
     }
 
     /**
@@ -839,8 +929,11 @@ class SceneHandle {
         }
     }
 
-    /** Fetch and place playground.glb into `group`; non-fatal, and dropped if the track changed meanwhile. */
-    async loadPlayground(group) {
+    /**
+     * Fetch a Draco GLB and place it in `group` at `scale`, after `prepare(mesh)` has had each
+     * mesh; non-fatal, and dropped if the track changed meanwhile.
+     */
+    async loadModel(group, url, scale, name, prepare) {
         let draco = null;
         try {
             const [{ GLTFLoader }, { DRACOLoader }] = await Promise.all([
@@ -848,7 +941,7 @@ class SceneHandle {
                 import('three/addons/loaders/DRACOLoader.js'),
             ]);
             draco = new DRACOLoader().setDecoderPath(DRACO_PATH);
-            const gltf = await new GLTFLoader().setDRACOLoader(draco).loadAsync(PLAYGROUND.url);
+            const gltf = await new GLTFLoader().setDRACOLoader(draco).loadAsync(url);
             const model = gltf.scene;
             const textures = new Set();
             model.traverse(o => {
@@ -856,36 +949,59 @@ class SceneHandle {
                 for (const m of [o.material].flat()) {
                     for (const v of Object.values(m)) if (v && v.isTexture) textures.add(v);
                 }
-                if (PLAYGROUND.hidden.test(o.name)) {
-                    o.visible = false;
-                } else if (o.name.startsWith('SM_Ground')) {
-                    // The pad has ~0.36 m of relief and dips up to 0.13 m below y = 0, where the
-                    // scene's own lawn would cut holes in it: lift the dips to just above the lawn
-                    // (mounds keep their shape) and let it take shadows without casting them.
-                    const pos = o.geometry.attributes.position;
-                    for (let i = 0; i < pos.count; i++) if (pos.getY(i) < 0.006) pos.setY(i, 0.006);
-                    pos.needsUpdate = true;
-                    o.geometry.computeBoundingSphere();
-                    o.receiveShadow = true;
-                } else {
-                    o.castShadow = true;
-                    o.receiveShadow = true;
-                }
+                prepare(o);
             });
             if (this.disposed || this.trackGroup !== group) {
                 disposeObject(model);
                 for (const t of textures) t.dispose();
                 return;
             }
-            model.name = 'pocabinet-playground';
-            model.scale.setScalar(PLAYGROUND.scale);
+            model.name = name;
+            model.scale.setScalar(scale);
             group.add(model);
             this.ownedTextures.push(...textures);
         } catch (e) {
-            console.warn('pocabinet/scene: playground model skipped', e);
+            console.warn(`pocabinet/scene: ${name} skipped`, e);
         } finally {
             draco?.dispose();
         }
+    }
+
+    /**
+     * The bedroom scan: unlit and single-sided as exported; it neither casts nor takes the sun's
+     * shadows (the catcher does). Its textures are already the room as the camera saw it, so they
+     * skip the filmic curve (which would grey them) and get a little lift for the post grade.
+     */
+    loadRoom(group) {
+        return this.loadModel(group, ROOM.url, ROOM.scale, 'pocabinet-room', (o) => {
+            o.castShadow = false;
+            o.receiveShadow = false;
+            for (const m of [o.material].flat()) {
+                m.toneMapped = false;
+                m.color?.multiplyScalar(ROOM.lift);
+            }
+        });
+    }
+
+    /** Fetch and place playground.glb into `group`. */
+    loadPlayground(group) {
+        return this.loadModel(group, PLAYGROUND.url, PLAYGROUND.scale, 'pocabinet-playground', (o) => {
+            if (PLAYGROUND.hidden.test(o.name)) {
+                o.visible = false;
+            } else if (o.name.startsWith('SM_Ground')) {
+                // The pad has ~0.36 m of relief and dips up to 0.13 m below y = 0, where the
+                // scene's own lawn would cut holes in it: lift the dips to just above the lawn
+                // (mounds keep their shape) and let it take shadows without casting them.
+                const pos = o.geometry.attributes.position;
+                for (let i = 0; i < pos.count; i++) if (pos.getY(i) < 0.006) pos.setY(i, 0.006);
+                pos.needsUpdate = true;
+                o.geometry.computeBoundingSphere();
+                o.receiveShadow = true;
+            } else {
+                o.castShadow = true;
+                o.receiveShadow = true;
+            }
+        });
     }
 
     buildGrass() {
@@ -895,7 +1011,7 @@ class SceneHandle {
         }
         this.grass = null;
         const blades = GRASS_BLADES[this.quality] || 0;
-        if (!this.track || !blades || this.theme === 'pressbriefing') return;
+        if (!this.track || !blades || this.theme === 'pressbriefing' || this.room) return;
         try {
             this.grass = new Grass(this.track, hex(this.baseAtmosphere?.groundHex, '#2a3a24'), blades, {
                 keepOut: keepOutFor(this.track.id), terrain: this.terrain, playground: this.playground,

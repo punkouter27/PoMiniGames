@@ -38,7 +38,7 @@ const HILLS = {
     senate: { near: 170, far: 400 },
 };
 
-const THEMES = new Set(['capitol', 'maralago', 'pressbriefing', 'senate', 'playground']);
+const THEMES = new Set(['capitol', 'maralago', 'pressbriefing', 'senate', 'playground', 'bedroom']);
 
 /** The scenery theme a track is dressed in: its own word, else its id, else Capitol. */
 export function themeOf(track) {
@@ -46,6 +46,12 @@ export function themeOf(track) {
     if (THEMES.has(t)) return t;
     const id = String(track?.id || '');
     return THEMES.has(id) ? id : 'capitol';
+}
+
+/** A toy track laid on a scanned room (Bedroom Floor GP): the model is the ground and the
+ *  scenery, the road is plastic on the carpet and up on stilts where it climbs. */
+export function isRoom(track) {
+    return themeOf(track) === 'bedroom';
 }
 
 /** The Playground run: a road in the air over a model, with its own (older) staging. */

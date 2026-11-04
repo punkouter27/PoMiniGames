@@ -21,13 +21,13 @@
     <PackageVersion Include="Azure.Data.Tables" Version="12.11.0" />
     <PackageVersion Include="Azure.Storage.Blobs" Version="12.23.0" />
     <!-- API -->
-    <PackageVersion Include="Microsoft.AspNetCore.Authentication.JwtBearer" Version="10.0.13" />
-    <PackageVersion Include="Microsoft.AspNetCore.OpenApi" Version="10.0.13" />
+    <PackageVersion Include="Microsoft.AspNetCore.Authentication.JwtBearer" Version="10.0.14" />
+    <PackageVersion Include="Microsoft.AspNetCore.OpenApi" Version="10.0.14" />
     <!-- Native .NET 10 resilience pipelines (retry / circuit-breaker / timeout
          / hedging) backed by Polly v8, registered via IHttpClientFactory. -->
     <PackageVersion Include="Microsoft.Extensions.Http.Resilience" Version="10.7.0" />
-    <PackageVersion Include="Microsoft.Extensions.Configuration.Abstractions" Version="10.0.13" />
-    <PackageVersion Include="Microsoft.Extensions.Diagnostics.HealthChecks" Version="10.0.13" />
+    <PackageVersion Include="Microsoft.Extensions.Configuration.Abstractions" Version="10.0.14" />
+    <PackageVersion Include="Microsoft.Extensions.Diagnostics.HealthChecks" Version="10.0.14" />
     <!-- Transitive pin: Microsoft.AspNetCore.OpenApi pulls Microsoft.OpenApi; with
          CentralPackageTransitivePinningEnabled this holds it at a current version so
          the NuGet CVE audit (which fails the build) can't be tripped by an old
@@ -49,13 +49,13 @@
     <PackageVersion Include="Serilog.Enrichers.Thread" Version="4.0.0" />
     <PackageVersion Include="Serilog.Exceptions" Version="8.4.0" />
     <!-- Blazor WASM -->
-    <PackageVersion Include="Microsoft.AspNetCore.Components.WebAssembly.Server" Version="10.0.13" />
-    <PackageVersion Include="Microsoft.AspNetCore.Components.WebAssembly" Version="10.0.13" />
-    <PackageVersion Include="Microsoft.AspNetCore.Components.WebAssembly.DevServer" Version="10.0.13" />
-    <PackageVersion Include="Microsoft.AspNetCore.SignalR.Client" Version="10.0.13" />
+    <PackageVersion Include="Microsoft.AspNetCore.Components.WebAssembly.Server" Version="10.0.14" />
+    <PackageVersion Include="Microsoft.AspNetCore.Components.WebAssembly" Version="10.0.14" />
+    <PackageVersion Include="Microsoft.AspNetCore.Components.WebAssembly.DevServer" Version="10.0.14" />
+    <PackageVersion Include="Microsoft.AspNetCore.SignalR.Client" Version="10.0.14" />
     <!-- AuthenticationStateProvider + AuthorizeRouteView. Not transitively
          included by the WASM metapackage in .NET 10. -->
-    <PackageVersion Include="Microsoft.AspNetCore.Components.Authorization" Version="10.0.13" />
+    <PackageVersion Include="Microsoft.AspNetCore.Components.Authorization" Version="10.0.14" />
     <!-- PoVoxelStrike asset pipeline: GLB parsing for the startup voxelizer. API-side
          only — must never be referenced from the Client, whose publish is trim-audited. -->
     <PackageVersion Include="SharpGLTF.Core" Version="1.0.6" />
@@ -71,7 +71,7 @@
     <PackageVersion Include="Verify.Xunit" Version="31.12.5" />
     <PackageVersion Include="Microsoft.Extensions.TimeProvider.Testing" Version="10.7.0" />
     <PackageVersion Include="coverlet.collector" Version="6.0.4" />
-    <PackageVersion Include="Microsoft.AspNetCore.Mvc.Testing" Version="10.0.13" />
+    <PackageVersion Include="Microsoft.AspNetCore.Mvc.Testing" Version="10.0.14" />
     <PackageVersion Include="Microsoft.Playwright" Version="1.50.0" />
     <!-- Testcontainers v4 with the dedicated Azurite module. -->
     <PackageVersion Include="Testcontainers.Azurite" Version="4.12.0" />

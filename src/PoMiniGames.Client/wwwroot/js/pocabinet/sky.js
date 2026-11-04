@@ -35,6 +35,12 @@ const PRESETS = {
         zenith: '#3f86d6', sun: [-0.4, 0.74, 0.5], sunColor: '#fff3d8', sunSize: 1.3,
         clouds: 0.34, cloudColor: '#ffffff',
     },
+    // Bedroom Floor GP: indoors. The scan has no ceiling (it is cut off over the walls), so the
+    // dome stands in for one: warm off-white, no clouds, the "sun" a ceiling light near overhead.
+    bedroom: {
+        zenith: '#e8dfd2', sun: [0.18, 0.94, 0.28], sunColor: '#fff2dc', sunSize: 0.5,
+        clouds: 0, cloudColor: '#ffffff',
+    },
 };
 
 const VERT = /* glsl */ `
