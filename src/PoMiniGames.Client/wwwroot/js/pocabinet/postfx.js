@@ -21,7 +21,7 @@
 //        ─► bright pass (soft knee) at half res
 //        ─► dual-filter bloom: N downsamples, N upsamples added back up the chain
 //        ─► composite:
-//             • heat haze (medium, high) — every full car's exhaust shimmers what is behind it
+//             • heat haze (off on every tier, see PASSES) — every full car's exhaust shimmers what is behind it
 //               (depth-tested, so the car in front stays crisp), plus the far road on a clear
 //               day and the slipstream between two cars (fx.haze, slipstream.js)
 //             • speed — radial blur toward the vanishing point, chromatic fringing
@@ -737,11 +737,13 @@ void main() {
 }`;
 
 const LEVELS = { low: 3, medium: 4, high: 5 };
-// Which depth passes each tier runs (low is the frame as it always was).
+// Which depth passes each tier runs (low is the frame as it always was). Heat haze and the road
+// mirage are off on every tier: the wavy refraction read as a smeared, hazy picture (2026-11-04).
+// The shader paths stay; flip haze/mirage back on here to restore them.
 const PASSES = {
     low: { ao: false, ssr: false, haze: false, blur: false, mirage: false },
-    medium: { ao: true, ssr: true, haze: true, blur: false, mirage: false },
-    high: { ao: true, ssr: true, haze: true, blur: true, mirage: true },
+    medium: { ao: true, ssr: true, haze: false, blur: false, mirage: false },
+    high: { ao: true, ssr: true, haze: false, blur: true, mirage: false },
 };
 const AO_RADIUS = 1.6;        // world units (a car is 3.9 long)
 const AO_STRENGTH = 0.9;
