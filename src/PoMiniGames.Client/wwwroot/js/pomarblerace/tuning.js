@@ -44,7 +44,7 @@ export const STALL_STEP = 8;
 export const STALL_MAX = 40;
 export const STALL_LOOKAHEAD = 12;
 // Dead centre: a marble pressed against a free turnstile right at its pivot exerts no torque, so a
-// push straight down the course never frees it (Canyon Run parked three marbles at one turnstile
+// push straight down the course never frees it (Canyon Run, now part of Neon Canyon, parked three marbles at one turnstile
 // for 120 s). From the STALL_SIDESTEP-th nudge on, each push also carries STALL_SIDE_SHARE of its
 // strength sideways, alternating sides, sliding the marble along the bar to an end.
 export const STALL_SIDESTEP = 3;

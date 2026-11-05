@@ -9,7 +9,7 @@
 //     boost: a radial smear and rim speed-lines at pace, and a dirty-lens glow off bright light.
 //     The pass disables itself whenever both are idle, so cruising costs nothing.
 //   · Screen-space reflections (#25) — three's SSRPass on the heavy tier, only where the track is
-//     meant to shine: a map whose theme says `reflect` (Neon Chute) or a rainy race.
+//     meant to shine: a map whose theme says `reflect` (Neon Canyon) or a rainy race.
 //
 // The scene's own sparks/confetti (CPU, scene.js) stay as they were: these are additions.
 import * as THREE from 'three';
@@ -314,7 +314,7 @@ export function createRaceFx({ scene, camera, renderer, composer, renderPass, gr
   }
 
   return {
-    /** A theme with `reflect: true` asks for SSR (Neon Chute's wet-look neon floor). */
+    /** A theme with `reflect: true` asks for SSR (Neon Canyon's wet-look neon floor). */
     setTheme(t) { reflectTheme = !!(t && t.reflect); applySsr(); },
     setLevel(l) {
       full = l !== 'lite';

@@ -1,8 +1,8 @@
 // maps.js — the marble-race map registry, and the single track interface the game speaks to.
 //
-// Slots 1-9. Slot 1 is the original procedural chute, slot 2 is the authored marble_track.glb
-// course, slot 3 is marble_track_2.glb, 4 is Canyon Run (procedural), 5 is the imported
-// playground.glb scene, and 6-9 are free for further GLB courses. TO ADD A MAP,
+// Slots 1-9. Slot 1 is Neon Canyon (procedural), slot 2 is the authored marble_track.glb
+// course, slot 3 is marble_track_2.glb, 4 is retired (it was Canyon Run, now folded into slot 1),
+// 5 is the imported playground.glb scene, and 6-9 are free for further GLB courses. TO ADD A MAP,
 // see ADDING A GLB MAP below — it is a handful of lines here plus one bake, with nothing to
 // change in game.js.
 //
@@ -258,7 +258,7 @@ function addCheckpointArches(track) {
 
 // ── registry ────────────────────────────────────────────────────────────────────────────────
 //
-// ADDING A GLB MAP (slots 4-9):
+// ADDING A GLB MAP (slots 6-9; 4 is retired — reusing it would inherit Canyon Run's records):
 //   1. Drop the model in wwwroot/models/. It must satisfy the ring-major swept-channel layout the
 //      baker asserts — see the EXPORT CONTRACT in scripts/build-marble-track-2.py, which
 //      generates a conforming course from scratch and is the easiest starting point.
@@ -270,42 +270,49 @@ function addCheckpointArches(track) {
 //      below with the next free `id`.
 // `load` is awaited once before the first build and may return anything the map needs; whatever
 // it resolves to is handed back to `build` as `asset`.
-// Canyon Run: the chute recipe, longer and narrower with a different hazard mix. The kicker band
-// sits between the plinko and the rumble strip; bobs are dropped (from > to) for a longer plinko.
-const CANYON_RUN = {
-  track: { LENGTH: 2200, DROP: 930, START_Y: 180, CHANNEL_WIDTH: 50, SEGMENTS: 640 },
+// Neon Canyon: the two procedural maps (Neon Chute and Canyon Run) folded into one. From Canyon
+// Run: the longer, steeper, twistier canyon (2200 long, 930 drop), its tight early washboard, the
+// four boost pads, the nine-row plinko, three pinches and the long double Gauntlet. From Neon
+// Chute: the pendulum bobs (Canyon Run dropped them), a wider road than the canyon's 50 so the
+// bobs have room to swing past the pack, the neon night with its wet reflective floor, the
+// two-band rumble timing and the sparser three-turnstile spacing (Canyon Run's four, 0.037 apart,
+// queued the pack: a marble sat 58 s behind them on seed 1, 25 s with these). The echo off the canyon walls comes along too (reverb below).
+// Zones are fractions of the course and must not overlap (track-procedural.js).
+const NEON_CANYON = {
+  track: { LENGTH: 2200, DROP: 930, START_Y: 180, CHANNEL_WIDTH: 56, SEGMENTS: 640 },
   zones: {
-    RIDGES: { from: 0.06, to: 0.16, step: 0.035 },
-    BOOST: [[0.18, 0.21], [0.47, 0.50], [0.64, 0.67], [0.83, 0.86]],
-    PLINKO: { from: 0.24, to: 0.40, rows: 9 },
-    KICKERS: [0.415, 0.435],
-    RUMBLE: [[0.44, 0.46], [0.60, 0.63]],
-    BOBS: { from: 1, to: 0, step: 0.04 },
-    TURNSTILES: { from: 0.69, to: 0.80, step: 0.037 },
+    RIDGES: { from: 0.05, to: 0.13, step: 0.035 },
+    BOOST: [[0.15, 0.18], [0.44, 0.47], [0.63, 0.66], [0.835, 0.865]],
+    PLINKO: { from: 0.20, to: 0.33, rows: 9 },
+    KICKERS: [0.345, 0.365],
+    RUMBLE: [[0.375, 0.405], [0.60, 0.62]],
+    BOBS: { from: 0.48, to: 0.57, step: 0.045 },
+    TURNSTILES: { from: 0.70, to: 0.78, step: 0.04 },
     GAUNTLET: { from: 0.87, to: 0.925, step: 0.018 },
     FINISH: [0.93, 1.0],
   },
-  pinches: [{ c: 0.22, w: 0.04, d: 0.45 }, { c: 0.55, w: 0.05, d: 0.5 }, { c: 0.855, w: 0.03, d: 0.4 }],
-  curve: 1.2,
+  pinches: [{ c: 0.185, w: 0.04, d: 0.45 }, { c: 0.595, w: 0.045, d: 0.5 }, { c: 0.855, w: 0.03, d: 0.4 }],
+  curve: 1.1,
 };
 
 const MAPS = [
   {
     id: 1,
-    name: 'Neon Chute',
-    blurb: 'Procedural — a new chute every race, with boost pads, rumble strips and the Gauntlet.',
-    // Night: the chute's neon emissives are the light show, so the fill drops and goes violet.
+    name: 'Neon Canyon',
+    blurb: 'Procedural — a new canyon every race: neon night, boost pads, a long plinko, pendulums and a double Gauntlet.',
+    // Night: the chute's neon emissives are the light show, so the fill drops and goes violet;
+    // the ground bounce keeps a little of the canyon's red rock.
     theme: {
-      bg: 0x070a1c, fogNear: 70, fogFar: 240,
-      ambient: [0x9ea4cc, 2.6], hemi: [0xb89cff, 0x1a1030, 1.7], key: [0xd8e0ff, 2.6], exposure: 1.1,
+      bg: 0x0a0a1c, fogNear: 80, fogFar: 300,
+      ambient: [0xa8a4cc, 2.6], hemi: [0xb89cff, 0x2a1420, 1.7], key: [0xe0dcff, 2.7], exposure: 1.1,
       // The neon floor reads wet: screen-space reflections on the heavy tier (fx-race.js #25).
       reflect: true,
     },
-    // A walled chute: a bright, medium tail off the 44-tall walls (audio.js setReverb).
-    reverb: { decay: 1.6, wet: 0.26, tone: 5200 },
+    // Tall canyon walls: a medium tail plus a slapback echo off the far wall (audio.js setReverb).
+    reverb: { decay: 1.8, wet: 0.27, tone: 4200, echo: { time: 0.32, feedback: 0.3, level: 0.4 } },
     load: () => Promise.resolve(null),
     build: (world, materials, marbleCount, _asset, seed) =>
-      addCheckpointArches(adaptProceduralTrack(generateTrack(world, materials, seed >>> 0, marbleCount))),
+      addCheckpointArches(adaptProceduralTrack(generateTrack(world, materials, seed >>> 0, marbleCount, NEON_CANYON))),
   },
   {
     id: 2,
@@ -334,22 +341,6 @@ const MAPS = [
     reverb: { decay: 0.8, wet: 0.1, tone: 7500 },
     load: (onProgress) => grandSpiral.loadModel(onProgress),
     build: (world, materials, marbleCount, asset) => addCheckpointArches(grandSpiral.buildTrack(world, materials, marbleCount, asset)),
-  },
-  {
-    id: 4,
-    name: 'Canyon Run',
-    blurb: 'Procedural at dusk — a longer, tighter canyon: twin kicker gates, a long plinko and a double Gauntlet.',
-    // Built from the Neon Chute recipe (track-procedural.js), whose 44-tall walls have never lost
-    // a marble. Narrower, longer and twistier, with a different hazard mix.
-    theme: {
-      bg: 0x3b2233, fogNear: 90, fogFar: 330,
-      ambient: [0xffd2b0, 2.8], hemi: [0xffb38a, 0x3a2418, 1.8], key: [0xffa060, 3.4], exposure: 1.05,
-    },
-    // Canyon walls: a darker tail plus a slapback echo off the far wall.
-    reverb: { decay: 2.0, wet: 0.28, tone: 2600, echo: { time: 0.32, feedback: 0.3, level: 0.45 } },
-    load: () => Promise.resolve(null),
-    build: (world, materials, marbleCount, _asset, seed) =>
-      addCheckpointArches(adaptProceduralTrack(generateTrack(world, materials, seed >>> 0, marbleCount, CANYON_RUN))),
   },
   {
     id: 5,

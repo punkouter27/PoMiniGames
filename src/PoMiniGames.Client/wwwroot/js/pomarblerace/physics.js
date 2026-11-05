@@ -34,7 +34,7 @@ export const MAX_SUBSTEPS = 4;
 
 // cannon-es remembers which body pairs touched last step in a triangular ArrayCollisionMatrix: a
 // plain JS array sized n(n-1)/2 by assigning `length`, then zeroed element by element every step.
-// With ~1700 static chunks plus the field (Neon Chute) that is ~1.5 million slots, which V8 keeps
+// With ~1700 static chunks plus the field (Neon Canyon) that is ~1.5 million slots, which V8 keeps
 // as a sparse dictionary rather than a packed array, so the per-step reset and every set() were
 // hash-table writes: 60% of the whole step in a profile (scripts/pomarblerace, node --cpu-prof),
 // and ~260 ms a frame on Playground Run at the start. A Uint8Array holds the same bits densely and

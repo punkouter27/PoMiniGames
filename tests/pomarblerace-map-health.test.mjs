@@ -24,20 +24,18 @@ const harness = path.resolve(here, '../scripts/pomarblerace/harness.mjs');
 // lost = eliminated, stalled = still running at the 180 s timeout, maxStall = longest a marble
 // went without the engine's own progress threshold, spread = median finish over the winner's.
 // Measured on seed 1 (2026-11-05), each bound a little above it:
-//   Neon Chute      101 home, 0 lost, 0 stalled, max stall 19 s, spread 1.41
+//   Neon Canyon     101 home, 0 lost, 0 stalled, max stall 26 s, spread 1.64
 //   Spiral Works     95 home, 6 lost, 0 stalled, max stall 60 s, spread 1.48
 //   Grand Spiral     76 home, 17 lost, 8 stalled, max stall 116 s, spread 1.78
-//   Canyon Run      101 home, 0 lost, 0 stalled, max stall 49 s, spread 1.67
 //   Playground Run  101 home, 0 lost, 0 stalled, max stall 13 s, spread 1.61
 // The two authored spirals still lose marbles through their shells (Spiral Works at the Merge ->
 // Penalty drop and LowerA's mouth; Grand Spiral in LowerA and the SplitC fan), so their bounds
 // record today's state, not a target: tighten them as those are fixed. The E2EUI certification
 // keeps the zero-loss target and fails on both until then.
 const BOUNDS = {
-    1: { name: 'Neon Chute', lost: 1, stalled: 1, maxStall: 40, spread: 1.8 },
+    1: { name: 'Neon Canyon', lost: 1, stalled: 1, maxStall: 50, spread: 2.0 },
     2: { name: 'Spiral Works', lost: 9, stalled: 3, maxStall: 90, spread: 1.9 },
     3: { name: 'Grand Spiral', lost: 22, stalled: 12, maxStall: 150, spread: 2.2 },
-    4: { name: 'Canyon Run', lost: 1, stalled: 1, maxStall: 80, spread: 2.0 },
     5: { name: 'Playground Run', lost: 1, stalled: 1, maxStall: 30, spread: 2.0 },
 };
 
@@ -62,7 +60,7 @@ function spawn(cmd, map) {
 const ids = Object.keys(BOUNDS).map(Number);
 // Start everything up front; each test awaits its own result.
 // Longest first so the slowest course never starts last.
-const races = new Map([3, 5, 2, 4, 1].map((id) => [id, run('race', id)]));
+const races = new Map([3, 5, 2, 1].map((id) => [id, run('race', id)]));
 const tunnels = new Map(ids.map((id) => [id, run('tunnel', id)]));
 // A run that fails before its test awaits it must not surface as an unhandled rejection.
 for (const p of [...races.values(), ...tunnels.values()]) p.catch(() => {});

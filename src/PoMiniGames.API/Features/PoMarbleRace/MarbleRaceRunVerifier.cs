@@ -24,12 +24,13 @@ public static class MarbleRaceRunVerifier
     public const int MaxRaces = 500;
 
     // Finish-line arclength per map slot: maps.js finishS for Spiral Works, the baked ARCLENGTH ×
-    // SCALE minus the 16-unit backoff for Grand Spiral, 0.995 × LENGTH for the procedural maps
-    // (Neon Chute 1800, Canyon Run 2200), and Playground Run's baked ARCLENGTH × SCALE minus the same
-    // backoff. Move a finish line and this moves with it.
+    // SCALE minus the 16-unit backoff for Grand Spiral, 0.995 × LENGTH for the procedural Neon
+    // Canyon (2200), and Playground Run's baked ARCLENGTH × SCALE minus the same backoff. Move a
+    // finish line and this moves with it. Slot 4 (Canyon Run) is retired: it was folded into slot 1
+    // on 2026-11-05, and its entry stays only so a score an older client parked still verifies.
     private static readonly Dictionary<int, double> FinishDistance = new()
     {
-        [1] = 1791,
+        [1] = 2189,
         [2] = 2230,
         [3] = 3881,
         [4] = 2189,

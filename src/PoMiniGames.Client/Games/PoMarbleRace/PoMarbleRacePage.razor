@@ -485,10 +485,9 @@
     {
         var (path, color) = mapId switch
         {
-            1 => ("M6 6 L26 13 L12 20 L34 28 L58 28", "#22d3ee"),                        // Neon Chute: switchback descent
+            1 => ("M4 8 C 16 24, 22 2, 34 14 L 22 22 L 46 28 L60 24", "#22d3ee"),          // Neon Canyon: meanders into a switchback
             2 => ("M32 17 m-3 0 a3 3 0 1 1 6 0 a7 7 0 1 1 -14 0 a11 11 0 1 1 22 0 a14 13 0 1 1 -28 0", "#a855f7"), // Spiral Works
             3 => ("M8 30 C 8 4, 30 4, 30 17 S 56 30, 56 4", "#f59e0b"),                    // Grand Spiral: twin helix
-            4 => ("M4 10 C 16 26, 24 2, 36 16 S 54 30, 60 18", "#fb923c"),                 // Canyon Run: wide meanders
             5 => ("M6 6 H40 V14 H14 V22 H48 L58 30", "#4ade80"),                           // Playground Run: gutter laps + slide
             _ => ("M6 6 L58 30", "#94a3b8"),
         };

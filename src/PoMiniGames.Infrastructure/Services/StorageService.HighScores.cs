@@ -111,13 +111,30 @@ public partial class StorageService
         RowKeyFields: ["MapId"],
         Rank: s => s.OrderBy(x => x.MapId))
     {
+        // A record set before its course was rebuilt is replaced by any finish on the new course.
         ShouldOverwrite = (existing, incoming) =>
-            (incoming.TryGetValue("Seconds", out var v) ? v as double? ?? double.MaxValue : double.MaxValue)
+            IsStaleMarbleRaceRecord(existing.GetInt32("MapId") ?? 0,
+                DateTimeOffset.TryParse(existing.GetString("Date"), System.Globalization.CultureInfo.InvariantCulture, System.Globalization.DateTimeStyles.AssumeUniversal, out var at) ? at : default)
+            || (incoming.TryGetValue("Seconds", out var v) ? v as double? ?? double.MaxValue : double.MaxValue)
                 < (existing.GetDouble("Seconds") ?? double.MaxValue),
     };
 
-    public Task<List<MarbleRaceMapRecord>> GetMarbleRaceMapRecordsAsync() =>
-        GetHighScoresAsync(MarbleRaceRecords, 50);
+    // Slot → the moment its course last changed shape. 2026-11-05: Neon Chute (1) and Canyon Run (4)
+    // were folded into Neon Canyon on slot 1, a longer course, so older slot-1 times no longer
+    // compare and slot 4 has no course. Records from before are hidden and overwritten.
+    private static readonly Dictionary<int, DateTimeOffset> MarbleRaceCourseSince = new()
+    {
+        [1] = new DateTimeOffset(2026, 11, 5, 0, 0, 0, TimeSpan.Zero),
+        [4] = DateTimeOffset.MaxValue,
+    };
+
+    private static bool IsStaleMarbleRaceRecord(int mapId, DateTimeOffset achievedAt) =>
+        MarbleRaceCourseSince.TryGetValue(mapId, out var since) && achievedAt < since;
+
+    public async Task<List<MarbleRaceMapRecord>> GetMarbleRaceMapRecordsAsync() =>
+        (await GetHighScoresAsync(MarbleRaceRecords, 50))
+            .Where(r => !IsStaleMarbleRaceRecord(r.MapId, r.AchievedAtUtc))
+            .ToList();
 
     public Task<MarbleRaceMapRecord> SaveMarbleRaceMapRecordAsync(MarbleRaceMapRecord entry) =>
         SaveHighScoreAsync(MarbleRaceRecords, entry);

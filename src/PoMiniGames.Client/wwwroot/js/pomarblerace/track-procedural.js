@@ -1,4 +1,4 @@
-// track-procedural.js — the procedural descending ROAD (Neon Chute, and Canyon Run as a variant): an asphalt floor (lumpy surface) edged by curved
+// track-procedural.js — the procedural descending ROAD (Neon Canyon, maps.js, runs it as a variant): an asphalt floor (lumpy surface) edged by curved
 // red/white kerb berms, with curves, banked turns, vertical undulation, channel pinches,
 // friction bands, boost pads, telegraphed kicker bands, and five hazard zones (washboard
 // ridges, plinko pins, pendulum bobs, turnstiles, and the motorised Gauntlet). Builds matching
@@ -14,8 +14,8 @@
 import * as THREE from 'three';
 import * as CANNON from 'cannon-es';
 
-// The Neon Chute recipe. A map may run it with a VARIANT (generateTrack's last argument), which
-// overrides any of these and of ZONES / pinches / curve amplitude — that is how Canyon Run is
+// The base chute recipe. A map may run it with a VARIANT (generateTrack's last argument), which
+// overrides any of these and of ZONES / pinches / curve amplitude — that is how Neon Canyon is
 // built. The containment is the part to keep: 44-tall walls on a strictly descending chute
 // lost zero marbles in the fall census, where both authored courses lost dozens.
 export const TRACK = {

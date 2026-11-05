@@ -32,4 +32,4 @@ turned away). Map health ran headless in node (`tests/pomarblerace-map-health.te
 | 6 | P3 | The tutorial ring points at the marble's projected screen position even when a wall hides it | First race on an authored course | Cosmetic. |
 | 7 | P3 | Reverb zones are placed by `track.length`, which can differ slightly from the baked arclength | Playground Run covered spans | Zones may start or end a little early or late. |
 | 8 | Info | A forced finish submits an impossible record time and the server answers 400 | Test-only (forced `_resolve`) | Correct behaviour: the server refuses implausible times. |
-| 9 | Info | Reflections (SSR) on Neon Chute / rain cost about 40% more triangles and ~63 draw calls | F3 on Neon Chute, Full effects | Heavy tier + Full only; Lite turns it off. Not measured on a real GPU yet. |
+| 9 | Info | Reflections (SSR) on Neon Canyon (measured on Neon Chute before the merge) / rain cost about 40% more triangles and ~63 draw calls | F3 on Neon Canyon, Full effects | Heavy tier + Full only; Lite turns it off. Not measured on a real GPU yet. |

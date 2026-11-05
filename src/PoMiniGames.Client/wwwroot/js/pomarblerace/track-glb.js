@@ -844,6 +844,14 @@ export function createGlbCourse({
   const FED_DIST = 25;           // back kerb at a landing zone's start (see fedFromAir)   // rings left unlidded where a lane is fed from the air (~130 units)
   const landing = [];   // rings an end cap's guide wall starts back from the junction (~24 units)
   const CONTAIN_MARGIN = 5;
+  const DROP_MAX = 20;           // deepest step down a junction bridge walls in
+  // Landing rings flare into a hopper: walls rise LAND_EXTRA past the authored wall top and lean
+  // LAND_FLARE outward at the top, so a marble coming down just outside the lane is steered in.
+  const LAND_EXTRA = 14;
+  const LAND_FLARE = 10;
+  const HAIRPIN_LOOK = 10;       // how far back along the course a lane's inflow direction is read
+  const APRON_LEN = 9;           // apron behind a hairpin-fed lane's first ring
+  const BACKSTOP_H = 30;
   // xyz triangle soups (walls, lids, junction floors), per-lane coverage
   const CONTAIN = { walls: [], lids: [], floors: [], stats: [] };
   {
@@ -874,6 +882,15 @@ export function createGlbCourse({
     const edge = new THREE.Line3(), onEdge = new THREE.Vector3();
     const fedFromAir = LANES.map((L, li) => !LANES.some((M, mi) => {
       if (mi === li) return false;
+      edge.start.copy(vv3(M.B, M.n - 1)); edge.end.copy(vv3(M.C, M.n - 1));
+      const p = vv3(L.P, 0);
+      return edge.closestPointToPoint(p, true, onEdge).distanceTo(p) < FED_DIST;
+    }));
+    // A lane an open Catch lane runs into is part of the same landing ground: Grand Spiral's
+    // field flies off the five-lane fan over the whole Catch → Lower A pan, and a lid on Lower A
+    // caught them on its top, where they rolled off the edge. It gets the landing walls, no lid.
+    const fedByCatch = LANES.map((L, li) => LANES.some((M, mi) => {
+      if (mi === li || !M.open) return false;
       edge.start.copy(vv3(M.B, M.n - 1)); edge.end.copy(vv3(M.C, M.n - 1));
       const p = vv3(L.P, 0);
       return edge.closestPointToPoint(p, true, onEdge).distanceTo(p) < FED_DIST;
@@ -913,9 +930,12 @@ export function createGlbCourse({
         const H = Math.min(Math.max(CONTAIN_H, hA, hD), clear - CONTAIN_MARGIN);
         baseL.push(A); baseR.push(D);
         if (!(H >= 4)) { topL.push(null); topR.push(null); continue; }   // no room: an overpass is the lid
-        if (L.open || (fedFromAir[li] && r < LANDING_RINGS)) {
+        if (L.open || fedByCatch[li] || (fedFromAir[li] && r < LANDING_RINGS)) {
           // Landing zone: extend the walls, leave the top open (see fedFromAir).
-          const eL = A.clone().addScaledVector(U, Math.max(0, H - hA)), eD = D.clone().addScaledVector(U, Math.max(0, H - hD));
+          const HL = Math.min(Math.max(H, hA + LAND_EXTRA, hD + LAND_EXTRA), clear - CONTAIN_MARGIN);
+          (L.LAND ||= [])[r] = [HL, clear, hA, hD];
+          const eL = A.clone().addScaledVector(U, Math.max(0, HL - hA)).addScaledVector(R, -LAND_FLARE);
+          const eD = D.clone().addScaledVector(U, Math.max(0, HL - hD)).addScaledVector(R, LAND_FLARE);
           landing.push([li, r, eL, eD]);
           topL.push(null); topR.push(null);
           continue;
@@ -930,9 +950,26 @@ export function createGlbCourse({
       // above clears it.
       // A lane may opt out (Playground Run's slide): marbles land out of the drop well on BOTH sides
       // of its first ring, and the kerb parked the ones that landed behind it.
+      //
+      // Every such lane also gets a short floor apron behind its first ring, walled at the sides:
+      // a hard landing bounces marbles backwards (Grand Spiral's field drops ~57 units onto the
+      // Finish), and the old kerb on ring 0 itself let them roll off the lip under it. The kerb
+      // moves to the apron's back edge. A lane fed round a HAIRPIN (the course arrives running
+      // against the lane: Spiral Works' funnel throat drops onto Lower A heading the other way)
+      // gets a tall backstop there instead, since the whole field lands carrying its old direction.
       if (fedFromAir[li] && L.kerb) {
-        const k0 = vv3(L.B, 0), k1 = vv3(L.C, 0), ku = vv3(L.U, 0).multiplyScalar(KERB_H);
-        pushTri(CONTAIN.walls, k0, k1, k1.clone().add(ku)); pushTri(CONTAIN.walls, k0, k1.clone().add(ku), k0.clone().add(ku));
+        const k0 = vv3(L.B, 0), k1 = vv3(L.C, 0), U0 = vv3(L.U, 0);
+        const T0 = vv3(L.P, 1).sub(vv3(L.P, 0)).normalize();
+        const inflow = dirAt(Math.max(0, L.s0 - HAIRPIN_LOOK), new THREE.Vector3());
+        const hairpin = inflow.dot(T0) < 0;
+        const bk = T0.clone().multiplyScalar(-APRON_LEN);
+        const j0 = k0.clone().add(bk), j1 = k1.clone().add(bk);
+        const side = U0.clone().multiplyScalar(BACKSTOP_H), back = U0.clone().multiplyScalar(hairpin ? BACKSTOP_H : KERB_H);
+        pushTri(CONTAIN.floors, k0, k1, j1); pushTri(CONTAIN.floors, k0, j1, j0);
+        pushTri(CONTAIN.walls, k0, j0, j0.clone().add(side)); pushTri(CONTAIN.walls, k0, j0.clone().add(side), k0.clone().add(side));
+        pushTri(CONTAIN.walls, k1, j1.clone().add(side), j1); pushTri(CONTAIN.walls, k1, k1.clone().add(side), j1.clone().add(side));
+        pushTri(CONTAIN.walls, j0, j1, j1.clone().add(back)); pushTri(CONTAIN.walls, j0, j1.clone().add(back), j0.clone().add(back));
+        if (hairpin) CONTAIN.stats.hairpins = (CONTAIN.stats.hairpins || 0) + 1;
       }
       // Landing-zone walls (no lid): extension quads between consecutive landing rings.
       for (let k = 0; k + 1 < landing.length; k++) {
@@ -971,7 +1008,9 @@ export function createGlbCourse({
       LANES.forEach((M, mi) => {
         if (mi === li || M.open) return;
         const d = vv(M.P, 0).sub(P);
-        if (d.length() < 0.5 || d.dot(T) < -2 || d.dot(T) > 14 || Math.abs(d.dot(U)) > 8) return;
+        // A continuing lane may start BELOW this end (a drop: Spiral Works' Penalty starts 12 under the
+        // Merge). The bridge then walls and lids the drop; without it the field fell out its side.
+        if (d.length() < 0.5 || d.dot(T) < -2 || d.dot(T) > 14 || d.dot(U) > 8 || d.dot(U) < -DROP_MAX) return;
         const TM = vv(M.P, 1).sub(vv(M.P, 0)).normalize();
         if (TM.dot(T) < 0.3) return;   // must continue onward, not run alongside or back
         // Bridge only where the two rings OVERLAP across their width. A split feeds several lanes
@@ -996,10 +1035,15 @@ export function createGlbCourse({
         if (lB.distanceTo(mB) < 0.5 && lC.distanceTo(mC) < 0.5) return;
         pushTri(CONTAIN.floors, lB, lC, mC); pushTri(CONTAIN.floors, lB, mC, mB);
         const H = Math.min(L.HLID[r] || CONTAIN_H, M.HLID[0] || CONTAIN_H);
+        // Each end rises along its OWN lane's up, so the bridge's top meets both tubes' wall tops.
+        // Raised along L's up alone, a drop into a steeper lane (Merge → Penalty) left a wedge
+        // open between the bridge and the next lane's first walls, and marbles left through it.
+        const UM = vv(M.U, 0);
         const up = (p) => p.clone().addScaledVector(U, H);
-        pushTri(CONTAIN.walls, lB, mB, up(mB)); pushTri(CONTAIN.walls, lB, up(mB), up(lB));
-        pushTri(CONTAIN.walls, lC, up(mC), mC); pushTri(CONTAIN.walls, lC, up(lC), up(mC));
-        pushTri(CONTAIN.lids, up(lB), up(mB), up(mC)); pushTri(CONTAIN.lids, up(lB), up(mC), up(lC));
+        const upM = (p) => p.clone().addScaledVector(UM, H);
+        pushTri(CONTAIN.walls, lB, mB, upM(mB)); pushTri(CONTAIN.walls, lB, upM(mB), up(lB));
+        pushTri(CONTAIN.walls, lC, upM(mC), mC); pushTri(CONTAIN.walls, lC, up(lC), upM(mC));
+        pushTri(CONTAIN.lids, up(lB), upM(mB), upM(mC)); pushTri(CONTAIN.lids, up(lB), upM(mC), up(lC));
         CONTAIN.stats.find((st) => st.index === li).bridges = (CONTAIN.stats.find((st) => st.index === li).bridges || 0) + 1;
       });
     });
@@ -1693,6 +1737,7 @@ export function createGlbCourse({
       ...(driveAccel ? { driveAccel } : {}),
       // Per-lane containment coverage, for the map certification test's diagnostics.
       containment: CONTAIN.stats,
+      _lanes: LANES,   // lane rings, for the node tools (scripts/pomarblerace)
       laneNames: LANES.map((l) => l.name),
       rimSegments: rimWalls.length / 18,
       rimDebug,
