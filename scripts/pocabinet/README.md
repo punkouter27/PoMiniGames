@@ -55,3 +55,24 @@ lap may overlap. Then it prints the knots, `KnotZ` and `KnotBank` to paste into
 ```
 
 After pasting, dump the world and race it here (step 2) before shipping.
+
+### The room as a Gaussian splat
+
+The room is drawn from a separate 3DGS capture (`scene.ply`, 2.4M splats, base colour only). The
+mesh above stays the collision model: the route is checked against it. To rebuild
+`wwwroot/models/bedroom.ksplat`:
+
+```powershell
+# 1. Register the splat onto the mesh (similarity ICP, then point-to-surface; prints the median
+#    error, ~0.034 room units = under a centimetre), crop it like the mesh, keep the 400k most
+#    important splats, write a plain 3DGS PLY.
+& "C:\Program Files\Blender Foundation\Blender 5.2lender.exe" -b --factory-startup --python-exit-code 1 `
+  -P scripts/blender/pocabinet-bedroom-splat.py -- <path>\BedroomScene.glb <path>\scene.ply <tmp>edroom-room.ply --budget 400000
+
+# 2. Pack it for gaussian-splats-3d (needs the package in a scratch folder; see the script header).
+node scripts/pocabinet/ksplat.mjs <tmp>edroom-room.ply src/PoMiniGames.Client/wwwroot/models/bedroom.ksplat
+```
+
+`scene.js` loads it through `gaussian-splats-3d` (pinned 0.4.7 in the `index.html` import map,
+which works with the three r165 PoCabinet uses). The low graphics tier keeps the mesh, which is
+also the fallback if the splat fails to load.

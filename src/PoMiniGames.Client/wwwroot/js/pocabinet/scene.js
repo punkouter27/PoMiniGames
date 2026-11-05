@@ -150,8 +150,16 @@ const DRACO_PATH = 'https://cdn.jsdelivr.net/npm/three@0.165.0/examples/jsm/libs
 // plastic decked out to the rails and standing on stilts wherever it is off the carpet (the whole
 // lap, ~4 ft up), and the scene's sun reaches the room only through a shadow catcher on the floor.
 // Render-only; if the model fails the race runs on a plain carpet-coloured floor.
+//
+// The room is drawn as a Gaussian splat when it loads (wwwroot/models/bedroom.ksplat, a separate
+// 3DGS capture of the same room that scripts/blender/pocabinet-bedroom-splat.py registers onto the
+// mesh to under a centimetre, crops like it and trims to 400k splats), through
+// gaussian-splats-3d's DropInViewer, which sorts in a worker. The mesh stays the collision model
+// (the route is checked against it) and is drawn instead on the low graphics tier or if the
+// splat cannot be.
 const ROOM = {
     url: 'models/bedroom.glb',
+    splat: 'models/bedroom.ksplat',
     scale: 15,
     carpetHex: '#7b7166',
     lift: 1.15,           // the scan's colours, brightened for the post pass's grade and vignette
@@ -184,6 +192,7 @@ class SceneHandle {
         this.theme = 'capitol';
         this.playground = false;
         this.room = false;        // a road laid in a scanned room (isRoom): the model is the world
+        this.roomSplat = null;    // the bedroom's Gaussian splat (DropInViewer), when it loaded
         this.sky = null;
         this.envSky = null;
         this.envTarget = null;
@@ -250,6 +259,7 @@ class SceneHandle {
                 this.sky?.update(this.camera, this.scene.fog, now / 1000);
                 this.scenery?.update(dt, this.fx.focus);
                 this.updateSunScreen();
+                this.syncRoomSplat();
             } catch { /* decoration never kills the frame */ }
             if (this.post) this.post.render(this.scene, this.camera, this.fx, now / 1000);
             else this.renderer.render(this.scene, this.camera);
@@ -972,8 +982,12 @@ class SceneHandle {
      * shadows (the catcher does). Its textures are already the room as the camera saw it, so they
      * skip the filmic curve (which would grey them) and get a little lift for the post grade.
      */
-    loadRoom(group) {
-        return this.loadModel(group, ROOM.url, ROOM.scale, 'pocabinet-room', (o) => {
+    async loadRoom(group) {
+        // The splat (400k, sorted every frame) costs ~a third of the frame rate: the low tier
+        // keeps the mesh. A tier change mid-race does not swap it.
+        if (this.quality !== 'low' && await this.loadRoomSplat(group)) return;
+        if (this.disposed || this.trackGroup !== group) return;
+        await this.loadModel(group, ROOM.url, ROOM.scale, 'pocabinet-room', (o) => {
             o.castShadow = false;
             o.receiveShadow = false;
             for (const m of [o.material].flat()) {
@@ -1023,7 +1037,78 @@ class SceneHandle {
         }
     }
 
+    /**
+     * The bedroom as a Gaussian splat, in the room frame (z up) turned to three's y up and scaled
+     * like the mesh. True once it is in the scene; false (and nothing added) if the library, the
+     * file or the GPU says no, or the track changed while it loaded.
+     */
+    async loadRoomSplat(group) {
+        let viewer = null;
+        try {
+            const GS = await import('gaussian-splats-3d');
+            if (this.disposed || this.trackGroup !== group) return false;
+            viewer = new GS.DropInViewer({
+                gpuAcceleratedSort: false,
+                sharedMemoryForWorkers: false,   // no cross-origin isolation on this site
+                integerBasedSort: true,
+                dynamicScene: false,
+                sphericalHarmonicsDegree: 0,
+                logLevel: GS.LogLevel.None,
+            });
+            const upright = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(1, 0, 0), -Math.PI / 2);
+            await viewer.addSplatScene(ROOM.splat, {
+                format: GS.SceneFormat.KSplat,
+                showLoadingUI: false,
+                progressiveLoad: false,
+                position: [0, 0, 0],
+                rotation: upright.toArray(),
+                scale: [ROOM.scale, ROOM.scale, ROOM.scale],
+            });
+            if (this.disposed || this.trackGroup !== group) {
+                viewer.dispose();
+                return false;
+            }
+            viewer.name = 'pocabinet-room-splat';
+            group.add(viewer);
+            this.roomSplat = viewer;
+            return true;
+        } catch (e) {
+            console.warn('pocabinet/scene: room splat skipped, drawing the mesh', e);
+            try { viewer?.dispose(); } catch { /* already half torn down */ }
+            return false;
+        }
+    }
+
+    /**
+     * gaussian-splats-3d's fragment shader writes its sRGB colour straight out. Drawn straight to
+     * the canvas that is right; through postfx.js (a linear HDR target, then ACES and sRGB) it is
+     * encoded twice and comes out washed white. So its material gets two uniforms: linearize (and
+     * lift, like the mesh) while the post pass is on. Patched lazily: the viewer may swap its
+     * mesh. Matches the pinned 0.4.7 shader; if the text ever differs it is left alone.
+     */
+    syncRoomSplat() {
+        const mat = this.roomSplat?.viewer?.splatMesh?.material;
+        if (!mat) return;
+        if (!mat.userData.pcPatched) {
+            mat.userData.pcPatched = true;
+            const out = 'gl_FragColor = vec4(color.rgb, opacity);';
+            if (!mat.fragmentShader.includes(out)) return;
+            mat.uniforms.pcLinear = { value: 1 };
+            mat.uniforms.pcLift = { value: ROOM.lift };
+            mat.fragmentShader = mat.fragmentShader
+                .replace('void main () {', 'uniform float pcLinear;\nuniform float pcLift;\nvoid main () {')
+                .replace(out, 'color = mix(color, pow(max(color, vec3(0.0)), vec3(2.2)) * pcLift, pcLinear);\n' + out);
+            mat.needsUpdate = true;
+        }
+        if (mat.uniforms.pcLinear) mat.uniforms.pcLinear.value = this.post ? 1 : 0;
+    }
+
     disposeTrackMeshes() {
+        if (this.roomSplat) {
+            this.roomSplat.parent?.remove(this.roomSplat);
+            try { this.roomSplat.dispose(); } catch (e) { console.warn('pocabinet/scene: splat dispose', e); }
+            this.roomSplat = null;
+        }
         if (this.grass) {
             this.scene.remove(this.grass.mesh);
             this.grass.dispose();
