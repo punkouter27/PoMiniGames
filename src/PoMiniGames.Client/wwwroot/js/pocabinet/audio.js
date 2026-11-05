@@ -24,7 +24,8 @@
 //     convolution reverb whose impulse responses are made here at init (decaying stereo
 //     noise, one shape per zone: 'stand' a big wide slap off the grandstand, 'metal' a tight
 //     bright ring under the gantry, a bridge or between close walls, 'open' near-dry open
-//     air). setAcoustics(zone, wet) each frame (acoustics.js picks the zone): a new zone is
+//     air, 'room' a small damped bedroom (the toy track: short, dark, carpet and curtains)).
+//     setAcoustics(zone, wet) each frame (acoustics.js picks the zone): a new zone is
 //     loaded into whichever convolver is silent and the two crossfade, so a switch never
 //     clicks.
 //   • surface — under the tyres: gravel crunch (a looped grain buffer whose playback rate
@@ -41,10 +42,18 @@
 //     the note and pop, lifting off at high RPM crackles, and on the grid the
 //     throttle revs it in neutral.
 //   • rivals — one lighter voice per other car through an HRTF PannerNode placed
-//     where the car is drawn, pitch-shifted for Doppler against the camera.
+//     where the car is drawn (inverse distance rolloff, duller with distance), pitch-shifted
+//     for Doppler from the radial velocity between car and camera (PannerNode no longer does
+//     Doppler). race.js hands over only the nearest few; voices that drop out are pooled
+//     and reused, so the nearest-N set churning round a pack does not rebuild HRTF nodes.
+//   • the bedroom (setRoom: terrain.js isRoom, the 'bedroom' theme) — the toy track: tyres
+//     click over the plastic segment seams (seams(), counted along the lap by acoustics.js;
+//     the nearest rivals click too, quieter, from where they are), impacts and the rail
+//     scrape go plastic-on-plastic, and acoustics.js picks the 'room' reverb.
 //   • road + wind noise — rises with speed²; a short slapback delay on the engine
 //     swells as the car nears a barrier, panned to that side.
-//   • squeal, wall scrape, kerb buzz, impacts (optionally positional), rain on the
+//   • squeal, wall scrape, kerb buzz, impacts (optionally positional; loudness, brightness,
+//     pitch and length follow the impact energy, timbre the material), rain on the
 //     roof, camera shutters, and the UI pings (countdown, blip,
 //     lap chime, fanfare).
 //   • slow motion — one control: pulls the master lowpass down and every engine's
@@ -58,6 +67,7 @@
 
 import { Music } from './music.js';
 import { lcg, clamp01 } from './util.js';
+import { KMH_PER_UNIT, MAX_SPEED } from './physics.js';
 
 let ctx = null;            // AudioContext, created on first user gesture
 let master = null;         // master GainNode (mix level, app volume / mute, pause duck)
@@ -93,6 +103,9 @@ let hidden = false;        // the tab is in the background
 let slowAmount = 0;
 let lastShutter = 0;
 let lastImpact = 0;
+let roomMode = false;      // the bedroom toy track (setRoom): plastic seams, plastic impacts
+let seamBus = null;        // seam clicks of the ear car: sfx bus + a little room
+let seamClicks = null;     // a few pre-rendered plastic ticks (AudioBuffers)
 
 // ── Virtual gearbox (render-only; physics.js has no gears) ──────────────────
 const IDLE_RPM = 950;
@@ -283,7 +296,7 @@ function buildBeds() {
     const scGain = gainNode(0);
     sc.connect(scBand); scBand.connect(scGain); scGain.connect(bus); scGain.connect(verb.send);
     sc.start();
-    scrape = { gain: scGain };
+    scrape = { gain: scGain, band: scBand };
 
     // Kerb buzz: a square wave at a speed-dependent rate, low-passed into a rumble.
     const k = ctx.createOscillator();
@@ -327,6 +340,14 @@ const IR_SHAPES = {
         early: [[0.004, 0.8, 0.4], [0.009, 0.4, 0.8], [0.0135, 0.65, 0.35], [0.019, 0.3, 0.6], [0.0245, 0.45, 0.25],
             [0.031, 0.2, 0.4], [0.038, 0.3, 0.18], [0.046, 0.14, 0.22]],
         rings: [[1180, 0.16, 0.05], [2470, 0.12, 0.04], [3890, 0.09, 0.03], [5230, 0.07, 0.022]], seed: 37,
+    },
+    // The bedroom (the toy track): walls a couple of metres off, carpet, bed and curtains soaking
+    // it up. Quick floor and wall taps, a short dark tail, no ring; the faint 85 Hz is the room's
+    // own boxy mode.
+    room: {
+        dur: 0.42, decay: 0.055, build: 0.0015, bright: 0.11, tail: 0.7,
+        early: [[0.0026, 0.5, 0.45], [0.0071, 0.42, 0.2], [0.0094, 0.18, 0.4], [0.0138, 0.26, 0.22], [0.0192, 0.14, 0.2]],
+        rings: [[85, 0.09, 0.03]], seed: 53,
     },
 };
 
@@ -425,6 +446,103 @@ function buildSurface() {
     surf = { grains, gravel, gravelBand, sandGrains, rumble, sand, grass, wet, wetHp, wetLp };
 }
 
+// ── The toy track: plastic segment seams under the tyres ────────────────────
+
+const SEAM_CLICK_VARIANTS = 4;
+const SEAM_WHEELBASE = 18;   // sim units, front axle to rear: the rear tyres hit the same seam this much later
+
+/**
+ * A few short plastic ticks, rendered once: a hard transient (the tyre dropping into the joint)
+ * and the stiff, quickly-damped modes of a moulded track piece. ~30 ms each, peak-normalised.
+ */
+function buildSeams() {
+    const sr = ctx.sampleRate;
+    const rnd = lcg(0x5ea4);
+    seamClicks = [];
+    for (let v = 0; v < SEAM_CLICK_VARIANTS; v++) {
+        const n = Math.ceil(sr * 0.03);
+        const buf = ctx.createBuffer(1, n, sr);
+        const d = buf.getChannelData(0);
+        const j = () => 0.9 + rnd() * 0.2;
+        const modes = [[720 * j(), 0.008, 0.35], [1680 * j(), 0.0055, 0.55], [2950 * j(), 0.004, 0.4], [4800 * j(), 0.0025, 0.25]];
+        const phase = modes.map(() => rnd() * Math.PI * 2);
+        let lp = 0, peak = 1e-6;
+        for (let i = 0; i < n; i++) {
+            const t = i / sr;
+            lp += ((rnd() * 2 - 1) - lp) * 0.6;
+            let s = lp * Math.exp(-t / 0.0012) * 0.9;
+            for (let m = 0; m < modes.length; m++) {
+                const [f, tc, a] = modes[m];
+                s += a * Math.sin(2 * Math.PI * f * t + phase[m]) * Math.exp(-t / tc);
+            }
+            d[i] = s * Math.min(1, i / 6);
+            peak = Math.max(peak, Math.abs(d[i]));
+        }
+        for (let i = 0; i < n; i++) d[i] /= peak;
+        seamClicks.push(buf);
+    }
+    seamBus = gainNode(1);
+    seamBus.connect(bus);
+    const send = gainNode(0.5);
+    seamBus.connect(send);
+    send.connect(verb.send);
+}
+
+/** One plastic tick at `at` (context time) into `dest`. Two nodes, released when it ends. */
+function seamClick(at, level, rate, dest) {
+    const src = ctx.createBufferSource();
+    src.buffer = seamClicks[Math.floor(Math.random() * SEAM_CLICK_VARIANTS)];
+    src.playbackRate.value = rate;
+    const g = gainNode(level);
+    src.connect(g);
+    g.connect(dest);
+    src.start(at);
+}
+
+/** Schedule `count` seams (front + rear axle each) evenly over the next `span` seconds. */
+function seamRun(count, speed, span, level, dest) {
+    const u = Math.abs(Number(speed) || 0);
+    if (u < 3) return;
+    const s01 = Math.min(1, u / MAX_SPEED);
+    const t0 = ctx.currentTime + 0.012;     // a hair of lookahead: never schedule in the past
+    const rear = Math.min(0.3, SEAM_WHEELBASE / u);
+    // Faster is a harder knock: louder and a touch brighter (the tick played a little quicker).
+    const lvl = level * (0.3 + 0.7 * s01);
+    const rate = (0.88 + 0.28 * s01) * (1 - slowAmount * 0.4);
+    const n = Math.min(6, count);
+    for (let i = 0; i < n; i++) {
+        const at = t0 + span * i / n;
+        seamClick(at, lvl * (0.8 + Math.random() * 0.4), rate * (0.95 + Math.random() * 0.1), dest);
+        seamClick(at + rear, lvl * (0.6 + Math.random() * 0.3), rate * (0.93 + Math.random() * 0.1), dest);
+    }
+}
+
+/**
+ * The ear car's tyres crossed `count` toy-track seams since the last call, at `speed` (sim
+ * units/s), spread over `span` seconds (the frame). Room tracks only (setRoom); acoustics.js
+ * counts the seams along the lap.
+ */
+export function seams(count, speed, span = 1 / 60) {
+    if (!ctx || !seamBus || !roomMode || !player.active || !(count > 0)) return;
+    seamRun(count, speed, Math.min(0.1, Math.max(0, Number(span) || 0)), 0.16, seamBus);
+}
+
+/**
+ * The bedroom's toy track (terrain.js isRoom) or not: seams click, impacts go plastic, the rail
+ * scrape is a lower plastic scuff. Safe before init (applied when the context exists).
+ */
+export function setRoom(on) {
+    roomMode = !!on;
+    applyRoomTimbre();
+}
+
+function applyRoomTimbre() {
+    if (!ctx || !scrape?.band) return;
+    const t = ctx.currentTime;
+    scrape.band.frequency.setTargetAtTime(roomMode ? 1750 : 2600, t, 0.05);
+    scrape.band.Q.setTargetAtTime(roomMode ? 1.5 : 2.5, t, 0.05);
+}
+
 /** Create/resume the AudioContext. Must be called from a user-gesture call path. */
 export function init() {
     try {
@@ -457,7 +575,9 @@ export function init() {
             engine = buildPlayerEngine();
             buildBeds();
             buildSurface();
+            buildSeams();
             buildCrowd();
+            applyRoomTimbre();
             try {
                 music = new Music(ctx, noiseBuffer, musicBus);
                 music.setEnabled(musicEnabled);
@@ -733,7 +853,7 @@ export function musicStinger() {
 }
 
 /**
- * The room the ear is in: zone 'open' | 'stand' | 'metal', wet 0..1 (reverb send level).
+ * The room the ear is in: zone 'open' | 'stand' | 'metal' | 'room', wet 0..1 (reverb send level).
  * A new zone loads into the convolver that has been silent at least a second, then the two
  * crossfade; the switch is held off until then, so flicking between zones never clicks.
  */
@@ -820,6 +940,8 @@ function whoosh(strength, side) {
 
 // ── Rivals: positional engines with Doppler ──────────────────────────────────
 
+/** Sim units between two toy-track segment joints (the bedroom): ~7 seams a second at full speed. */
+export const SEAM_SPACING = 20;
 const SOUND_SPEED = 60;          // world units/s: tuned so a pass-by bends, not warbles
 const listenerPos = { x: 0, y: 0, z: 0 };
 const listenerVel = { x: 0, y: 0, z: 0 };
@@ -834,9 +956,13 @@ function makePanner() {
     return p;
 }
 
-function setPannerPosition(p, x, y, z) {
+function setPannerPosition(p, x, y, z, snap = false) {
     const t = ctx.currentTime;
     if (p.positionX) {
+        if (snap) {
+            for (const [a, val] of [[p.positionX, x], [p.positionY, y], [p.positionZ, z]]) { a.cancelScheduledValues(t); a.setValueAtTime(val, t); }
+            return;
+        }
         p.positionX.setTargetAtTime(x, t, 0.02);
         p.positionY.setTargetAtTime(y, t, 0.02);
         p.positionZ.setTargetAtTime(z, t, 0.02);
@@ -874,7 +1000,23 @@ export function updateListener(pos, fwd, up, vel) {
     } catch { /* listener is best-effort */ }
 }
 
-function makeRivalVoice() {
+const RIVAL_SPARES = 3;           // faded-out voices kept for reuse (the nearest-N set churns in a pack)
+const SEAM_NEAR = 7;              // world units: a rival this close is heard clicking over the seams
+const SEAM_RIVALS = 2;            // and at most this many at once
+const spareRivals = [];
+let lastRivalStamp = 0;
+
+/** A rival engine: oscillator → lowpass → gain → HRTF panner. Reuses a parked voice when one is spare. */
+function makeRivalVoice(r) {
+    const spare = spareRivals.pop();
+    if (spare) {
+        clearTimeout(spare.detachTimer);
+        if (spare.detached) { spare.g.connect(spare.panner); spare.detached = false; }
+        spare.state = { gear: 1, rpm: IDLE_RPM };
+        spare.lastKmh = 0; spare.seamAcc = 0; spare.doppler = 1;
+        setPannerPosition(spare.panner, r.x, r.y || 0.5, r.z, true);   // no sweep from where it was last
+        return spare;
+    }
     const osc = ctx.createOscillator();
     osc.setPeriodicWave(engineWave);
     osc.frequency.value = IDLE_RPM / 120;
@@ -883,30 +1025,43 @@ function makeRivalVoice() {
     const panner = makePanner();
     osc.connect(lp); lp.connect(g); g.connect(panner); panner.connect(bus); panner.connect(verb.rivalSend);
     osc.start();
-    return { osc, lp, g, panner, state: { gear: 1, rpm: IDLE_RPM }, lastKmh: 0, seen: 0 };
+    setPannerPosition(panner, r.x, r.y || 0.5, r.z, true);
+    return { osc, lp, g, panner, state: { gear: 1, rpm: IDLE_RPM }, lastKmh: 0, seen: 0, seamAcc: 0, doppler: 1, detached: false, detachTimer: 0 };
 }
 
+/** Fade a rival out; park it for reuse (its panner unhooked once silent, so HRTF stops working), else release it. */
 function dropRival(id, v) {
+    rivals.delete(id);
     try {
         const t = ctx.currentTime;
         v.g.gain.setTargetAtTime(0, t, 0.05);
+        if (spareRivals.length < RIVAL_SPARES) {
+            spareRivals.push(v);
+            v.detachTimer = window.setTimeout(() => {
+                try { v.g.disconnect(); v.detached = true; } catch { /* gone */ }
+            }, 400);
+            return;
+        }
         v.osc.stop(t + 0.3);
         window.setTimeout(() => { try { v.panner.disconnect(); } catch { /* gone */ } }, 400);
     } catch { /* already stopped */ }
-    rivals.delete(id);
 }
 
 /**
- * Every other car's engine, in world units: [{ id, x, y, z, vx, vz, kmh }].
- * Cars missing from the list fade out and are released.
+ * Every other car's engine, in world units: [{ id, x, y, z, vx, vy?, vz, kmh }] (race.js sends
+ * the nearest few). Each sits where the car is drawn; Doppler is worked out here from the
+ * radial velocity between car and listener. Cars missing from the list fade out and are released.
  */
 export function updateRivals(list) {
     if (!ctx) return;
     const stamp = performance.now();
+    const dt = lastRivalStamp ? Math.min(0.1, Math.max(0, (stamp - lastRivalStamp) / 1000)) : 0;
+    lastRivalStamp = stamp;
     const t = ctx.currentTime;
+    let clicking = 0;
     for (const r of list || []) {
         let v = rivals.get(r.id);
-        if (!v) { v = makeRivalVoice(); rivals.set(r.id, v); }
+        if (!v) { v = makeRivalVoice(r); rivals.set(r.id, v); }
         v.seen = stamp;
         const kmh = Math.max(0, Number(r.kmh) || 0);
         const accel = kmh - v.lastKmh;
@@ -921,16 +1076,34 @@ export function updateRivals(list) {
         const dx = r.x - listenerPos.x, dy = (r.y || 0) - listenerPos.y, dz = r.z - listenerPos.z;
         const d = Math.hypot(dx, dy, dz) || 1;
         const nx = dx / d, ny = dy / d, nz = dz / d;
-        const vs = (r.vx || 0) * nx + (r.vz || 0) * nz;
+        // Radial speeds along listener → car: the car receding (vs > 0) drops the note, the
+        // listener closing on it (vl > 0) raises it. Smoothed a touch so a close pass bends, not snaps.
+        const vs = (r.vx || 0) * nx + (r.vy || 0) * ny + (r.vz || 0) * nz;
         const vl = listenerVel.x * nx + listenerVel.y * ny + listenerVel.z * nz;
-        const doppler = Math.min(1.5, Math.max(0.65, (SOUND_SPEED + vl) / (SOUND_SPEED + vs)));
+        const target = Math.min(1.5, Math.max(0.65, (SOUND_SPEED + vl) / Math.max(1, SOUND_SPEED + vs)));
+        v.doppler += (target - v.doppler) * (dt > 0 ? 1 - Math.exp(-dt * 14) : 1);
 
-        const pitch = doppler * (1 - slowAmount * 0.42);
+        const pitch = v.doppler * (1 - slowAmount * 0.42);
         v.osc.frequency.setTargetAtTime(v.state.rpm / 120 * pitch, t, 0.05);
         const r01 = (v.state.rpm - IDLE_RPM) / (REDLINE - IDLE_RPM);
-        v.lp.frequency.setTargetAtTime(500 + v.state.rpm * 0.35, t, 0.08);
+        // Air takes the top off a far car (the panner's rolloff handles the level).
+        const air = Math.min(1, Math.max(0.45, 1.1 - d / 300));
+        v.lp.frequency.setTargetAtTime((500 + v.state.rpm * 0.35) * air, t, 0.08);
         v.g.gain.setTargetAtTime(0.16 + r01 * 0.14, t, 0.1);
         setPannerPosition(v.panner, r.x, r.y || 0.5, r.z);
+
+        // The toy track: a rival close by clicks over the seams too, quieter, from where it is.
+        if (roomMode && seamClicks && dt > 0) {
+            const u = kmh / KMH_PER_UNIT;
+            v.seamAcc += u * dt;
+            if (v.seamAcc > SEAM_SPACING * 6) v.seamAcc %= SEAM_SPACING;
+            let n = 0;
+            while (v.seamAcc >= SEAM_SPACING) { v.seamAcc -= SEAM_SPACING; n++; }
+            if (n > 0 && d < SEAM_NEAR && clicking < SEAM_RIVALS) {
+                clicking++;
+                seamRun(n, u, dt, 0.1 * (1 - d / SEAM_NEAR * 0.5), v.panner);
+            }
+        }
     }
     for (const [id, v] of rivals) if (v.seen !== stamp) dropRival(id, v);
 }
@@ -1023,8 +1196,12 @@ function oneShotDest(pos) {
 }
 
 /**
- * A crash: low thump + crunch + metallic ring. kind 'wall' | 'car'.
- * `pos` (world units) makes it positional — a rival's shunt heard from where it happened.
+ * A crash. `strength` 0..1 is the impact energy as race.js scales it (wall closing speed, or the
+ * contact's relative speed); kind 'wall' | 'car'. Loudness, brightness, pitch and length all
+ * follow it: a brush is a dull, short, low tap, a big hit a bright, long crunch. The material is
+ * the track's: tarmac-and-steel (a thump, a crunch, a metal ring) or, on the bedroom's toy
+ * track, plastic on plastic (plasticImpact). `pos` (world units) makes it positional — a rival's
+ * shunt heard from where it happened.
  */
 export function impact(strength, kind = 'wall', pos = null) {
     if (!ctx) return;
@@ -1036,10 +1213,51 @@ export function impact(strength, kind = 'wall', pos = null) {
     const car = kind === 'car';
     // The score flinches with a hit near the ear (one heard from afar barely moves it).
     music?.hit(pos ? s * 0.35 : s);
-    sweep(car ? 170 : 115, car ? 70 : 42, 0.2, 'sine', 0.3 * s, t, dest);
-    burst('lowpass', car ? 2400 : 1600, 0.7, 0.14, 0.28 * s, t, dest);
-    burst('bandpass', car ? 3200 : 2300, 6, car ? 0.12 : 0.08, 0.12 * s, t + 0.01, dest);
-    if (car) sweep(2100, 1900, 0.18, 'triangle', 0.02 * s, t + 0.01, dest);
+    if (roomMode) { plasticImpact(s, car, t, dest); return; }
+    // Energy shapes the timbre around the old fixed voicing (which it matches near s ≈ 0.65).
+    const pitch = 0.85 + 0.25 * s;          // harder → the thump lands higher
+    const bright = 0.55 + 0.7 * s;          // and the crunch opens up
+    const len = 0.7 + 0.5 * s;              // and rings on longer
+    sweep((car ? 170 : 115) * pitch, car ? 70 : 42, 0.2 * len, 'sine', 0.3 * s, t, dest);
+    burst('lowpass', (car ? 2400 : 1600) * bright, 0.7, 0.14 * len, 0.28 * s, t, dest);
+    burst('bandpass', (car ? 3200 : 2300) * (0.8 + 0.35 * s), 6, (car ? 0.12 : 0.08) * len, 0.12 * s * (0.5 + 0.6 * s), t + 0.01, dest);
+    if (car) sweep(2100, 1900, 0.18 * len, 'triangle', 0.02 * s, t + 0.01, dest);
+    else if (s > 0.6) burst('bandpass', 4200, 3, 0.18 * len, 0.05 * (s - 0.6) / 0.4, t + 0.02, dest);  // a big hit's barrier shudder
+}
+
+/**
+ * Plastic on plastic (the toy track): a 4 cm car is all shell and no mass, so no thump — a sharp
+ * click, the hollow modes of the shell (car on car: two shells, a double clack) or of the long
+ * moulded rail (lower, woodier 'tock'), and on a hard hit the loose bits rattling after.
+ */
+function plasticImpact(s, car, t, dest) {
+    const pitch = 0.88 + 0.3 * s;
+    const len = 0.6 + 0.7 * s;
+    const j = () => 0.94 + Math.random() * 0.12;
+    // The click: the moment of contact, brighter the harder it is.
+    burst('bandpass', (2400 + 2600 * s) * j(), 1.1, 0.01 + 0.012 * s, 0.26 * s, t, dest);
+    // A little body: the track piece or shell flexing.
+    burst('lowpass', 700 + 600 * s, 0.8, 0.035 * len, 0.1 * s, t, dest);
+    const modes = car ? [1180, 2470, 3960] : [640, 1390, 2280];
+    const decays = car ? [0.045, 0.03, 0.018] : [0.07, 0.045, 0.028];
+    const amps = car ? [0.07, 0.05, 0.03] : [0.085, 0.05, 0.028];
+    for (let k = 0; k < modes.length; k++) {
+        const f = modes[k] * pitch * j();
+        sweep(f, f * 0.97, decays[k] * len, k ? 'sine' : 'triangle', amps[k] * s, t + 0.001, dest);
+    }
+    if (car) {
+        // The other shell, a few ms later and a touch higher.
+        const at = t + 0.006 + Math.random() * 0.008;
+        burst('bandpass', (3000 + 2400 * s) * j(), 1.3, 0.009 + 0.01 * s, 0.18 * s, at, dest);
+        const f = 1420 * pitch * j();
+        sweep(f, f * 0.97, 0.035 * len, 'triangle', 0.05 * s, at, dest);
+    }
+    // Hard hits: the wheels and loose bits chatter on for a moment.
+    const rattles = s > 0.45 ? Math.round((s - 0.45) * 8) : 0;
+    for (let i = 0; i < rattles; i++) {
+        const at = t + 0.025 + i * (0.018 + Math.random() * 0.02);
+        burst('highpass', 2600 + Math.random() * 2200, 0.8, 0.006 + Math.random() * 0.006, 0.08 * s * (1 - i / (rattles + 1)), at, dest);
+    }
 }
 
 /** Press-camera shutter: two clicks and a faint flash-charge whine. Rate-limited. */

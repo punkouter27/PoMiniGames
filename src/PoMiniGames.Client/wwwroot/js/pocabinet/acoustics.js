@@ -7,8 +7,12 @@
 //   • acoustic zone — 'metal' under the start gantry, under a bridge (a stretch of the course
 //     passing overhead, found once at start) or between close barrier walls (a narrow section
 //     with tight run-off both sides); 'stand' near the grandstand (scenery.crowd.center);
-//     otherwise 'open' air, driest up on the hills. The zone and its wet level go to
-//     audio.setAcoustics, which crossfades its two convolvers.
+//     otherwise 'open' air, driest up on the hills. The bedroom (terrain.js isRoom) is one
+//     'room' throughout: a small damped room, whatever the outdoor rules would say. The zone
+//     and its wet level go to audio.setAcoustics, which crossfades its two convolvers.
+//   • toy-track seams (the bedroom only) — the ear car's distance along the lap, counted in
+//     audio.SEAM_SPACING joints, to audio.seams; audio.setRoom tells audio.js the track is plastic
+//     (seams, plastic impacts and rail scrape).
 //   • surface — what the tyres are on (the body's SURF_*, as fx.js reads it): gravel crunch,
 //     sand drag (Mar-a-Lago's traps are beach sand), grass; wet tarmac hiss in the rain and a
 //     splash through a puddle patch.
@@ -23,6 +27,7 @@ import * as audio from './audio.js';
 import { battleGap, BATTLE_LOST } from './broadcast.js';
 import { currentEnvironment } from './environment.js';
 import { WORLD_SCALE as WS } from './util.js';
+import { isRoom } from './terrain.js';
 
 const GANTRY_AT = 20;          // scenery.js buildGantry: the gantry stands this far along the lap
 const GANTRY_REACH = 45;       // sim units either side of it that ring
@@ -51,6 +56,12 @@ export class Acoustics {
         this.stingAt = 0;
         this.finished = false;
         this.raceStartAt = 0;
+        this.room = isRoom(t);
+        audio.setRoom(this.room);
+        this.seamEar = null;       // whose seams are being counted, and where along the lap it was
+        this.seamAlong = 0;
+        this.seamAcc = 0;
+        this.seamAt = 0;
     }
 
     /** Raining now: read live, so a weather change mid-race reaches the tyres' hiss and the puddles. */
@@ -73,7 +84,9 @@ export class Acoustics {
         const z = this.zone(ear, i);
         audio.setAcoustics(z.zone, z.wet);
 
-        audio.setSurface(racing ? this.surface(b, i) : 'road', racing ? kmh : 0, this.wet, racing ? this.puddle(i, b.lateral) : 0);
+        const kind = racing ? this.surface(b, i) : 'road';
+        audio.setSurface(kind, racing ? kmh : 0, this.wet, racing ? this.puddle(i, b.lateral) : 0);
+        if (this.room) this.seams(ear, racing && kind === 'road' && !b.wrecked, now);
 
         const fx = r.scene.fx;
         const draft = racing ? Math.min(1, Math.max(0, Number(fx?.draft) || 0)) : 0;
@@ -121,8 +134,40 @@ export class Acoustics {
         return battleGap(p(a), p(c));
     }
 
+    /**
+     * Toy-track joints the ear car's tyres crossed since last frame: its distance along the lap
+     * (render.along, unwrapped across the line), in SEAM_SPACING steps, handed to audio.seams with
+     * the frame's span so they land evenly. A new ear (demo cut), a reset or a teleport restarts it.
+     */
+    seams(ear, on, now) {
+        const L = this.track.length;
+        const along = ear.render.along;
+        const span = this.seamAt ? (now - this.seamAt) / 1000 : 0;
+        this.seamAt = now;
+        if (ear !== this.seamEar || !on || !(span > 0) || span > 0.25) {
+            this.seamEar = ear; this.seamAlong = along;
+            return;
+        }
+        let d = along - this.seamAlong;
+        if (d > L / 2) d -= L; else if (d < -L / 2) d += L;
+        this.seamAlong = along;
+        d = Math.abs(d);
+        const step = audio.SEAM_SPACING;
+        if (d > step * 8) { this.seamAcc = 0; return; }   // a jump (reset to the road), not driving
+        this.seamAcc += d;
+        let n = 0;
+        while (this.seamAcc >= step) { this.seamAcc -= step; n++; }
+        if (n > 0) audio.seams(n, ear.render.speed, span);
+    }
+
     zone(ear, i) {
         const t = this.track;
+        // The bedroom: one small damped room everywhere (a touch drier up on the stilts, nearer the
+        // middle of the room and further from the carpet).
+        if (this.room) {
+            const up = t.z && this.zSpan > 1 ? (t.z[i] - this.zLo) / this.zSpan : 0;
+            return { zone: 'room', wet: 0.2 - 0.05 * up };
+        }
         const rd = ear.render;
         // Metal: the gantry overhead, a bridge, or the walls closing in.
         let da = Math.abs(t.wrap(rd.along) - GANTRY_AT);
