@@ -286,46 +286,47 @@ public static class PoCabinetTrackGeometry
                 Islands = [new(19.9, 21.6, -12, 12, 1)],
                 Theme = "senate",
             },
-            // A toy-car circuit on tall stilts ~4 ft over the floor of a scanned bedroom
+            // A toy-car circuit on stilts ~2 ft over the floor of a scanned bedroom
             // (wwwroot/models/bedroom.glb): up the wall past the drum kit, under the closet's wall
-            // return, a banked right-hander past the floor cushion, a hill down the side over the
-            // standing desk's edge, a banked sweep over the office chair and back over the drum
-            // kit. The road is twice the other tracks' width (a car is ~4 cm, the road ~30 cm), so
-            // no corner is tighter than its half width + 40 or the inside edge folds over.
+            // return, a banked right-hander past the floor cushion, a hill down the side clear of
+            // the standing desk, a banked sweep over the office chair's seat and back across the
+            // front of the drum pad. The road is grey plastic, twice the other tracks' width (a car
+            // is ~4 cm, the road ~30 cm), so no corner is tighter than its half width + 40 or the
+            // inside edge folds over.
             //
             // GENERATED, do not hand-edit: scripts/blender/pocabinet-bedroom.py lays the route
             // in the scan's room units, checks it clears the furniture, and prints these at
             // 150 sim units per room unit (a car is ~4 cm long); scene.js ROOM draws the model
-            // at 15x to match. KnotZ is the road's height: 785 (~1.22 m) of lift plus the
+            // at 15x to match. KnotZ is the road's height: 393 (~0.61 m) of lift plus the
             // route's own profile, whose hump follows the cushion below.
             ["bedroom"] = new(
                 "bedroom",
                 TrackWidth: 200,
                 Knots:
                 [
-                    (-633, 75), (-637.5, -67.5), (-577.5, -243), (-442.5, -330), (-277.5, -360),
-                    (-120, -442.5), (67.5, -517.5), (240, -487.5), (337.5, -345), (337.5, -135),
-                    (315, 90), (315, 300), (262.5, 480), (120, 585), (-75, 600),
-                    (-262.5, 532.5), (-405, 412.5), (-517.5, 330), (-600, 217.5),
+                    (-585, -15), (-622.5, -142.5), (-585, -252), (-468, -325.5), (-289.5, -348),
+                    (-108, -472.5), (22.5, -487.5), (135, -427.5), (195, -285), (198, -147),
+                    (225, 90), (225, 300), (180, 480), (60, 577.5), (-108, 562.5),
+                    (-210, 465), (-243, 288), (-318, 162), (-495, 75),
                 ],
                 StepsPerSegment: 10,
                 Atmosphere: new PoCabinetAtmosphereWire
                 {
                     // Indoors: the room is ~230 scene units across, so the fog only softens
                     // what is past the walls.
-                    SkyHex = "#d9d0c2",
+                    SkyHex = "#8d877e",
                     FogStart = 500,
                     FogEnd = 1800,
-                    FogHex = "#d9d0c2",
+                    FogHex = "#8d877e",
                     AmbientIntensity = 0.75,
                     GroundHex = "#7b7166",
-                    RoadHex = "#d9581a",
+                    RoadHex = "#56585e",
                     AccentHex = "#2f86d6",
                 })
             {
                 //         0    1    2    3    4    5    6    7    8    9   10   11   12   13   14   15   16   17   18
-                KnotZ = [788, 788, 788, 788, 788, 793, 805, 815, 830, 865, 875, 835, 800, 788, 788, 788, 788, 788, 788],
-                KnotBank = [0, 0, -0.06, -0.08, 0, 0, -0.06, -0.14, -0.08, 0, 0, 0, -0.08, -0.12, -0.06, 0, -0.04, -0.08, -0.08],
+                KnotZ = [396, 396, 396, 396, 396, 401, 413, 423, 433, 443, 458, 473, 463, 433, 408, 396, 396, 396, 396],
+                KnotBank = [-0.06, 0, -0.06, -0.08, 0, 0, -0.06, -0.14, -0.08, 0, 0, 0, -0.08, -0.12, -0.06, 0, 0, 0, -0.06],
                 Theme = "bedroom",
             },
             ["playground"] = new(

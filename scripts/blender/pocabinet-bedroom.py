@@ -40,9 +40,9 @@ TRACK_WIDTH = 200.0           # sim; PoCabinetTrackGeometry["bedroom"].TrackWidt
 RUN_OFF = 26.0                # physics.js RUN_OFF: the barrier stands this far past the road edge
 STEPS = 10                    # StepsPerSegment
 CUT_Z = 7.8                   # room units (~1.8 m): the ceiling and the flaps hanging from it go
-# The whole lap rides this far above the ROUTE heights: ~4 ft (1.22 m at ~4.3 room units to the
+# The whole lap rides this far above the ROUTE heights: ~2 ft (0.61 m at ~4.3 room units to the
 # metre), a toy track on tall stilts over the furniture, the cushion's hump kept as a hill.
-LIFT = 785.0                  # sim
+LIFT = 393.0                  # sim
 DECIMATE = 0.5
 TEXTURE_SHRINK = 4            # 8K atlases → 2K
 
@@ -58,25 +58,25 @@ TEXTURE_SHRINK = 4            # 8K atlases → 2K
 # sim's right side higher (the mirror makes these clockwise turns left-handers in the sim, so a
 # turn banked into them is negative).
 ROUTE = [
-    (-4.22, -0.50, 3, 0),
-    (-4.25, 0.45, 3, 0),
-    (-3.85, 1.62, 3, -0.06),
-    (-2.95, 2.20, 3, -0.08),
-    (-1.85, 2.40, 3, 0),
-    (-0.80, 2.95, 8, 0),
-    (0.45, 3.45, 20, -0.06),
-    (1.60, 3.25, 30, -0.14),
-    (2.25, 2.30, 45, -0.08),
-    (2.25, 0.90, 80, 0),
-    (2.10, -0.60, 90, 0),
-    (2.10, -2.00, 50, 0),
-    (1.75, -3.20, 15, -0.08),
-    (0.80, -3.90, 3, -0.12),
-    (-0.50, -4.00, 3, -0.06),
-    (-1.75, -3.55, 3, 0),
-    (-2.70, -2.75, 3, -0.04),
-    (-3.45, -2.20, 3, -0.08),
-    (-4.00, -1.45, 3, -0.08),
+    (-3.90, 0.10, 3, -0.06),
+    (-4.15, 0.95, 3, 0),
+    (-3.90, 1.68, 3, -0.06),
+    (-3.12, 2.17, 3, -0.08),
+    (-1.93, 2.32, 3, 0),
+    (-0.72, 3.15, 8, 0),
+    (0.15, 3.25, 20, -0.06),
+    (0.90, 2.85, 30, -0.14),
+    (1.30, 1.90, 40, -0.08),
+    (1.32, 0.98, 50, 0),
+    (1.50, -0.60, 65, 0),
+    (1.50, -2.00, 80, 0),
+    (1.20, -3.20, 70, -0.08),
+    (0.40, -3.85, 40, -0.12),
+    (-0.72, -3.75, 15, -0.06),
+    (-1.40, -3.10, 3, 0),
+    (-1.62, -1.92, 3, 0),
+    (-2.12, -1.08, 3, 0),
+    (-3.30, -0.50, 3, -0.06),
 ]
 
 
@@ -154,9 +154,11 @@ def clean(meshes):
     return bvh_of(meshes)
 
 
-def check_route(bvh):
-    xs, ys = resample([p[0] for p in ROUTE]), resample([p[1] for p in ROUTE])
-    zs, banks = resample([p[2] + LIFT for p in ROUTE]), resample([p[3] for p in ROUTE])
+def check_route(bvh, route=None, quiet=False):
+    """Samples and the list of problems (empty = the route is good)."""
+    route = route or ROUTE
+    xs, ys = resample([p[0] for p in route]), resample([p[1] for p in route])
+    zs, banks = resample([p[2] + LIFT for p in route]), resample([p[3] for p in route])
     n = len(xs)
     wall = (TRACK_WIDTH / 2 + RUN_OFF) / SIM_PER_UNIT
     problems = []
@@ -191,10 +193,11 @@ def check_route(bvh):
                   if min(b - a, n - (b - a)) > STEPS * 2.5)
     if closest[0] < 2 * wall:
         problems.append(f"samples {closest[1]} and {closest[2]} share a corridor ({closest[0]:.2f} < {2 * wall:.2f})")
-    print(f"LAP {length * SIM_PER_UNIT:.0f} sim, {n} samples, road {min(zs):.1f}..{max(zs):.1f}, nearest other part of the lap {closest[0] * SIM_PER_UNIT:.0f} sim")
-    for p in problems[:40]:
-        print("PROBLEM", p)
-    return (xs, ys, zs, banks), not problems
+    if not quiet:
+        print(f"LAP {length * SIM_PER_UNIT:.0f} sim, {n} samples, road {min(zs):.1f}..{max(zs):.1f}, nearest other part of the lap {closest[0] * SIM_PER_UNIT:.0f} sim")
+        for p in problems[:400]:
+            print("PROBLEM", p)
+    return (xs, ys, zs, banks), problems
 
 
 def print_csharp():
@@ -281,9 +284,9 @@ def main():
     glb, preview_path = args()
     meshes = load_room(glb)
     bvh = clean(meshes)
-    sampled, ok = check_route(bvh)
+    sampled, problems = check_route(bvh)
     print_csharp()
-    if not ok:
+    if problems:
         raise SystemExit("route check failed; nothing exported")
     export(meshes)
     if preview_path:

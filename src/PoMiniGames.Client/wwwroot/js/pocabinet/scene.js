@@ -162,7 +162,8 @@ const ROOM = {
     splat: 'models/bedroom.ksplat',
     scale: 15,
     carpetHex: '#7b7166',
-    lift: 1.15,           // the scan's colours, brightened for the post pass's grade and vignette
+    lift: 1.0,            // the mesh's colours into the post pass (1 = as captured)
+    splatLift: 0.78,      // the splat's, once linearized: it reads brighter than the mesh, so a touch down
     deckFrom: 8,         // sim height past which the road is off the carpet: decked, on stilts
 };
 
@@ -1083,7 +1084,7 @@ class SceneHandle {
      * gaussian-splats-3d's fragment shader writes its sRGB colour straight out. Drawn straight to
      * the canvas that is right; through postfx.js (a linear HDR target, then ACES and sRGB) it is
      * encoded twice and comes out washed white. So its material gets two uniforms: linearize (and
-     * lift, like the mesh) while the post pass is on. Patched lazily: the viewer may swap its
+     * scale by ROOM.splatLift) while the post pass is on. Patched lazily: the viewer may swap its
      * mesh. Matches the pinned 0.4.7 shader; if the text ever differs it is left alone.
      */
     syncRoomSplat() {
@@ -1094,7 +1095,7 @@ class SceneHandle {
             const out = 'gl_FragColor = vec4(color.rgb, opacity);';
             if (!mat.fragmentShader.includes(out)) return;
             mat.uniforms.pcLinear = { value: 1 };
-            mat.uniforms.pcLift = { value: ROOM.lift };
+            mat.uniforms.pcLift = { value: ROOM.splatLift };
             mat.fragmentShader = mat.fragmentShader
                 .replace('void main () {', 'uniform float pcLinear;\nuniform float pcLift;\nvoid main () {')
                 .replace(out, 'color = mix(color, pow(max(color, vec3(0.0)), vec3(2.2)) * pcLift, pcLinear);\n' + out);

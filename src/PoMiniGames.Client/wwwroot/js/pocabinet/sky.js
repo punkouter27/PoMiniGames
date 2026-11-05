@@ -36,9 +36,9 @@ const PRESETS = {
         clouds: 0.34, cloudColor: '#ffffff',
     },
     // Bedroom Floor GP: indoors. The scan has no ceiling (it is cut off over the walls), so the
-    // dome stands in for one: warm off-white, no clouds, the "sun" a ceiling light near overhead.
+    // dome stands in for one: a dim warm grey, no clouds, the "sun" a ceiling light near overhead.
     bedroom: {
-        zenith: '#e8dfd2', sun: [0.18, 0.94, 0.28], sunColor: '#fff2dc', sunSize: 0.5,
+        zenith: '#8f887e', sun: [0.18, 0.94, 0.28], sunColor: '#f4e6cf', sunSize: 0.5,
         clouds: 0, cloudColor: '#ffffff',
     },
 };
