@@ -128,7 +128,8 @@ public class PoRacerSimAiTests
     public void RaceCompletion_FinishesBotsOrSerializesDnf(string trackId, bool expireRace = false)
     {
         PrecomputedUpcomingBend_MatchesCenterlineCalculation(trackId);
-        var sim = new PoRacerSim(Array.Empty<PoRacerLobbyPlayer>(), trackId);
+        // Seeded: the boost/sand/finish assertions below hold for this race every run.
+        var sim = new PoRacerSim(Array.Empty<PoRacerLobbyPlayer>(), trackId, seed: 7);
         var noInput = new Dictionary<string, PoRacerInput>();
         if (expireRace)
         {

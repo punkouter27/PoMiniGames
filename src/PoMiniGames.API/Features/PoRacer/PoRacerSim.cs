@@ -59,6 +59,7 @@ internal sealed class PoRacerSim
     internal int LastCollisionCandidateCount => _collisionCandidates.Count;
 
     private readonly Stopwatch _wallClock = Stopwatch.StartNew();
+    private readonly Random _rng;
     private long _startElapsedMs;
     // Pause (solo only): the race clock is "now - start", so a pause freezes "now" and resuming
     // slides the start forward by the time spent paused. Every lap and finish time is measured
@@ -73,10 +74,14 @@ internal sealed class PoRacerSim
     /// <param name="bots">False for a time trial: only the human cars take the grid. Ignored with no humans.</param>
     /// <param name="botPace">Scales every bot's top speed and acceleration (the solo difficulty tier).</param>
     /// <param name="botCaution">How much speed a bot gives up for a bend, 0-1. See <see cref="DefaultBotCaution"/>.</param>
+    /// <param name="seed">Seeds the bots' steering wobble. Null (live races): Random.Shared, every
+    /// race different. Tests pass one so a race is the same race every run (a lucky miss of
+    /// every boost pad used to fail CI now and then).</param>
     public PoRacerSim(IReadOnlyList<PoRacerLobbyPlayer> players, string? trackId = null, int countdownSeconds = 0,
         bool bots = true, double botPace = 1.0, double botCaution = DefaultBotCaution,
-        int carCount = PoRacerCatalog.CarCount)
+        int carCount = PoRacerCatalog.CarCount, int? seed = null)
     {
+        _rng = seed is { } fixedSeed ? new Random(fixedSeed) : Random.Shared;
         ArgumentOutOfRangeException.ThrowIfLessThan(carCount, 1);
         ArgumentOutOfRangeException.ThrowIfGreaterThan(carCount, PoRacerCatalog.SoloCarCount);
         _botCaution = botCaution;
@@ -595,9 +600,9 @@ internal sealed class PoRacerSim
         ApplyControl(c, dt, accel ? 1 : 0, brake ? 1 : 0, (right ? 1 : 0) - (left ? 1 : 0), handbrake);
 
         // Small stochastic imperfection so the field isn't robotic; less for skilled bots.
-        if (Random.Shared.NextDouble() < 0.015 * (1.15 - c.CorneringSkill))
+        if (_rng.NextDouble() < 0.015 * (1.15 - c.CorneringSkill))
         {
-            c.Steer += (Random.Shared.NextDouble() - 0.5) * 0.06;
+            c.Steer += (_rng.NextDouble() - 0.5) * 0.06;
         }
     }
 
