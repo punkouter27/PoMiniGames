@@ -73,21 +73,22 @@ import { asphalt, grass as grassTextures, macro, clock, reflective } from './mat
 import { Terrain, themeOf, isPlayground, isRoom, wallFace } from './terrain.js';
 import { Trackside } from './trackside.js';
 import { gravel, sand, limitStripes } from './surfaces.js';
-import { WORLD_SCALE, roadPlane, canvasTexture } from './util.js';
+import { WORLD_SCALE } from './util.js';
+import { barrier, barrierTexture, disposeObject, flatGround, hex, ribbon, startLine } from './meshes.js';
+import { PLAYGROUND, ROOM, keepOutFor } from './models.js';
+import { SHADOW_EXTENT } from './cameras.js';
+import * as cams from './cameras.js';
+import * as models from './models.js';
 
 const SUN_BASE = 3.2;
 const HEMI_BASE = 0.7;
 const ENV_BASE = 0.85;
-const SHADOW_EXTENT = 38;
 const GRASS_BLADES = { low: 0, medium: 14000, high: 36000 };
 const SHADOW_SIZE = { low: 1024, medium: 1536, high: 2048 };
 
 /** Reduced motion: <html data-motion> (the OS preference or the app's settings switch). */
 const calm = () => document.documentElement.dataset.motion === 'reduce';
 
-function hex(value, fallback) {
-    try { return new THREE.Color(value || fallback); } catch { return new THREE.Color(fallback); }
-}
 
 const RENDER_SCALE = { low: 0.6, medium: 0.8, high: 1 };
 
@@ -110,67 +111,9 @@ function followAppTier(handle) {
         for (const h of liveScenes) h.applyTier(t);
     });
 }
-const PIP_WIDTH = 0.26;   // of the canvas width
 
-// Playground Marble Run: wwwroot/models/playground.glb (metres, +Y up) drawn at 50× around
-// the world origin, so 1 model metre = 50 scene units = 500 sim units — the scale the track's
-// knots in PoCabinetTrackGeometry were baked at, and the one at which the marble gutter's
-// 26 cm floor is as wide as the physics corridor (road + run-off). The track is the marble
-// run, without its walls (the gutter's sides would stand eight units
-// tall around a one-unit car and hide the rest of the scene). So the model's gutter is hidden
-// and, down to track.roadFrom, the scene lays an open chute in its place: the gutter's
-// floor, same width, same bank, on the same supports, with two edge lines. From there on
-// the gutter has ended at the drop well (marbles fall; cars get a ramp) and the scene builds
-// a road: the ramp, down the slide, into the finish tray — tarmac and run-off deck. No
-// barriers anywhere; the physics still stops a car at the edge. The well and the four
-// marbles are hidden too. Render-only (neither physics copy knows the model exists). Loaded
-// async after the track is built; if it fails the race runs on the chute over a plain lawn.
-const PLAYGROUND = {
-    url: 'models/playground.glb',
-    scale: 50,
-    hidden: /^SM_Marble(Track|DropWell|_\d)/,
-    chuteHex: '#2f86d6',
-    // Outline (model metres, x/z) of everything it puts on the ground — pad, posts, slide,
-    // marble-run supports and tray — kept free of grass blades.
-    footprint: [
-        6.9, 0.6, 7.49, 1.99, 7.22, 3.38, 6.52, 4.62, 5.26, 5.36, 3.58, 5.21, 2.3, 4.94, 1.32, 4.71,
-        0.5, 5, -0.5, 5.63, -1.49, 5.4, -2.43, 4.98, -3.41, 4.51, -4.32, 3.82, -5.27, 2.99, -6.05, 1.9,
-        -6.2, 0.6, -6.07, -0.71, -5.92, -2.06, -5.26, -3.25, -4.21, -4.11, -2.73, -4.24, -1.54, -4.32, -0.48, -4.34,
-        0.5, -4.1, 1.26, -3.22, 2.03, -3.09, 3.1, -3.3, 3.96, -2.86, 4.81, -2.28, 5.51, -1.48, 5.86, -0.47,
-    ],
-};
-const DRACO_PATH = 'https://cdn.jsdelivr.net/npm/three@0.165.0/examples/jsm/libs/draco/gltf/';
 
-// Bedroom Floor GP: wwwroot/models/bedroom.glb, a scanned bedroom that
-// scripts/blender/pocabinet-bedroom.py stands up (floor on y = 0), cuts the ceiling off,
-// decimates and checks the route against. It is in the scan's room units (~4.3 to the metre),
-// drawn at 15x: 150 sim units per room unit, the scale the track's knots were printed at, so a
-// car is a ~4 cm toy on the carpet. The scan is unlit (its textures carry the room's own light)
-// and single-sided, so a camera outside a wall sees through it. The road is the toy track: orange
-// plastic decked out to the rails and standing on stilts wherever it is off the carpet (the whole
-// lap, ~4 ft up), and the scene's sun reaches the room only through a shadow catcher on the floor.
-// Render-only; if the model fails the race runs on a plain carpet-coloured floor.
-//
-// The room is drawn as a Gaussian splat when it loads (wwwroot/models/bedroom.ksplat, a separate
-// 3DGS capture of the same room that scripts/blender/pocabinet-bedroom-splat.py registers onto the
-// mesh to under a centimetre, crops like it and trims to 400k splats), through
-// gaussian-splats-3d's DropInViewer, which sorts in a worker. The mesh stays the collision model
-// (the route is checked against it) and is drawn instead on the low graphics tier or if the
-// splat cannot be.
-const ROOM = {
-    url: 'models/bedroom.glb',
-    splat: 'models/bedroom.ksplat',
-    scale: 15,
-    carpetHex: '#7b7166',
-    lift: 1.0,            // the mesh's colours into the post pass (1 = as captured)
-    splatLift: 0.78,      // the splat's, once linearized: it reads brighter than the mesh, so a touch down
-    deckFrom: 8,         // sim height past which the road is off the carpet: decked, on stilts
-};
 
-/** Sim-unit ring of the model's footprint, or null on tracks without a model. */
-function keepOutFor(trackId) {
-    return trackId === 'playground' ? PLAYGROUND.footprint.map(v => v * PLAYGROUND.scale * WORLD_SCALE) : null;
-}
 
 class SceneHandle {
     constructor(renderer, scene, camera, hemi, sun, canvas) {
@@ -194,6 +137,8 @@ class SceneHandle {
         this.playground = false;
         this.room = false;        // a road laid in a scanned room (isRoom): the model is the world
         this.roomSplat = null;    // the bedroom's Gaussian splat (DropInViewer), when it loaded
+        this.roomProgress = null; // its loading bar over the canvas
+        this.roomDetail = null;   // 'splat' | 'mesh' (lite); read from the stored settings when unset
         this.sky = null;
         this.envSky = null;
         this.envTarget = null;
@@ -278,69 +223,8 @@ class SceneHandle {
         }
     }
 
-    /**
-     * Place the camera for a car pose. mode: 'chase' | 'far' | 'tv'.
-     * Car forward = (cos h, 0, sin h) in three's x/z.
-     */
     setView(p) {
-        if (this.disposed || !p) return;
-        const x = (Number(p.x) || 0) / WORLD_SCALE;
-        const z = (Number(p.y) || 0) / WORLD_SCALE;
-        const heading = Number(p.heading) || 0;
-        const mode = p.mode || 'chase';
-        const fx = Math.cos(heading), fz = Math.sin(heading);
-        // Road height under the car and its slope (both 0 on a flat track): the camera sits
-        // back up the slope and looks down it, so a descent reads as one.
-        const h = Number(p.h) || 0;
-        const rise = Math.tan(Number(p.pitch) || 0);
-        if (mode === 'chase' || mode === 'far') {
-            const far = mode === 'far';
-            const s01 = Math.min(1, Math.abs(Number(p.speed) || 0) / 140);
-            const back = (far ? 13 : 7.4) + s01 * (far ? 2 : 1.6);
-            const up = (far ? 5.2 : 2.35) + s01 * 0.25;
-            const target = this._v.set(x - fx * back, h - rise * back + up, z - fz * back);
-            // Lagged follow so the car swings in frame through corners; time-based so
-            // the lag is the same at 30 fps as at 144.
-            const dt = Number(p.dt) || 0;
-            const k = dt > 0 ? 1 - Math.exp(-dt * (far ? 5 : 8)) : 0.18;
-            const ahead = far ? 6 : 4.5;
-            const look = new THREE.Vector3(x + fx * ahead, h + rise * ahead + (far ? 0.6 : 1.0), z + fz * ahead);
-            if (!this._chaseInit || p.snap) {
-                this._chase.copy(target);
-                this._chaseLook.copy(look);
-                this._chaseInit = true;
-            } else {
-                this._chase.lerp(target, k);
-                this._chaseLook.lerp(look, 1 - Math.exp(-(dt || 0.016) * 14));
-            }
-            this._chase.y = Math.max(this._chase.y, h + 0.7);
-            // Never inside a hillside the road cuts past.
-            if (this.terrain) this._chase.y = Math.max(this._chase.y, this.terrain.worldHeight(this._chase.x * WORLD_SCALE, this._chase.z * WORLD_SCALE) + 0.6);
-            this.camera.position.copy(this._chase);
-            this.camera.lookAt(this._chaseLook);
-            return;
-        }
-        // TV: fixed trackside cameras every eighth of the lap, handing off as the car passes.
-        this._chaseInit = false;
-        const t = this.track;
-        if (!t) return;
-        const along = Number(p.along) || 0;
-        const idx = Math.floor(((along % t.length) + t.length) % t.length / (t.length / 8) + 0.5) % 8;
-        if (idx !== this._tvIndex || !this._tvPos) {
-            this._tvIndex = idx;
-            // Camera 0 stands level with the start gantry, not 40 past it: from there it looked
-            // back at the cars coming to the line straight through the gantry's beam.
-            const at = idx * (t.length / 8) + (idx === 0 ? 2 : 40);
-            const q = t.pointAt(at);
-            const side = (this.playground ? t.halfWidth + RUN_OFF : wallFace(t, t.indexAt(at), 1)) + 30;
-            const gx = q.x - q.ty * side, gy = q.y + q.tx * side;
-            // On its mast on the ground, or (in the air, the Playground) at the road's height.
-            const road = t.heightAt(at) / WORLD_SCALE;
-            const ground = this.terrain ? Math.max(road, this.terrain.worldHeight(gx, gy)) : road;
-            this._tvPos = new THREE.Vector3(gx / WORLD_SCALE, 7 + ground, gy / WORLD_SCALE);
-        }
-        this.camera.position.copy(this._tvPos);
-        this.camera.lookAt(x, h + 0.6, z);
+        return cams.setView(this, p);
     }
 
     /**
@@ -353,120 +237,20 @@ class SceneHandle {
         if (!this.pip) this.pipRect = null;
     }
 
-    /**
-     * The PiP pass: an HDR frame of its own, tone-mapped into a corner of the canvas by the post
-     * pass (postfx.js drawInset; without one, straight to the canvas through a scissor with the
-     * renderer's tone mapping), reusing this frame's shadow map. Left out on the low
-     * tier, where the frame has no time for a second scene, and on a narrow canvas, where the
-     * inset would be too small to read. pipRect (canvas CSS px from the top left) tells the
-     * page where to put the frame and label, or null when nothing was drawn.
-     */
     renderPip() {
-        const r = this.renderer;
-        const size = r.getSize(this._pipSize || (this._pipSize = new THREE.Vector2()));
-        if (this.quality === 'low' || size.x < 560) { this.pipRect = null; return; }
-        const p = this.pip;
-        const w = Math.round(size.x * PIP_WIDTH), h = Math.round(w * 9 / 16);
-        const m = Math.round(Math.max(8, size.x * 0.012));
-        const x = size.x - w - m, y = m;   // bottom right (the viewport counts y from the bottom)
-        const cam = this.pipCamera || (this.pipCamera = new THREE.PerspectiveCamera(62, 16 / 9, 0.2, 2000));
-        if (Math.abs(cam.aspect - w / h) > 1e-3) { cam.aspect = w / h; cam.updateProjectionMatrix(); }
-        const cx = (Number(p.x) || 0) / WORLD_SCALE, cz = (Number(p.y) || 0) / WORLD_SCALE;
-        const ground = Number(p.h) || 0;
-        const rise = Math.tan(Number(p.pitch) || 0);
-        const dir = p.back ? -1 : 1;
-        const fx = Math.cos(Number(p.heading) || 0) * dir, fz = Math.sin(Number(p.heading) || 0) * dir;
-        // Above the roof line of the tallest body (the van's, 1.42), a touch towards the view.
-        cam.position.set(cx + fx * 0.6, ground + 1.75 + rise * 0.6 * dir, cz + fz * 0.6);
-        const ahead = p.back ? 14 : 30;
-        cam.lookAt(cx + fx * ahead, ground + rise * ahead * dir + (p.back ? 0.9 : 1.1), cz + fz * ahead);
-
-        // Through the post pass when there is one: drawn into a linear HDR target, the inset uses
-        // the very programs the main pass compiled (drawn straight to the canvas with tone mapping,
-        // every material needs a second variant, and compiling ~25 of them the moment the demo's
-        // PiP first appears froze the start for seconds), then tone-mapped into its corner.
-        if (this.post) {
-            const shadows = r.shadowMap.autoUpdate;
-            r.shadowMap.autoUpdate = false;
-            try {
-                this.post.drawInset(this.scene, cam, x, y, w, h, this.fx.exposure || 1);
-            } finally {
-                r.shadowMap.autoUpdate = shadows;
-            }
-            this.pipRect = { x, y: size.y - y - h, w, h };
-            return;
-        }
-        const tone = r.toneMapping, exposure = r.toneMappingExposure, shadows = r.shadowMap.autoUpdate;
-        r.setRenderTarget(null);
-        r.toneMapping = THREE.ACESFilmicToneMapping;
-        r.toneMappingExposure = this.fx.exposure || 1;
-        r.shadowMap.autoUpdate = false;
-        r.setScissorTest(true);
-        r.setScissor(x, y, w, h);
-        r.setViewport(x, y, w, h);
-        try {
-            r.render(this.scene, cam);
-        } finally {
-            r.setScissorTest(false);
-            r.setViewport(0, 0, size.x, size.y);
-            r.toneMapping = tone;
-            r.toneMappingExposure = exposure;
-            r.shadowMap.autoUpdate = shadows;
-        }
-        this.pipRect = { x, y: size.y - y - h, w, h };
+        return cams.renderPip(this);
     }
 
-    /**
-     * Speed FOV kick + camera shake, applied after setView has placed the camera
-     * for this frame (setView fully re-places it next frame, so nothing accumulates).
-     */
     applyFx(dt) {
-        const fx = this.fx;
-        const motion = !fx.reduced;
-        const fov = this.baseFov + (motion ? Math.pow(Math.min(1, fx.speed), 1.6) * 8 : 0);
-        const k = dt > 0 ? 1 - Math.exp(-dt * 4) : 1;
-        const next = this.camera.fov + (fov - this.camera.fov) * k;
-        if (Math.abs(next - this.camera.fov) > 0.01) {
-            this.camera.fov = next;
-            this.camera.updateProjectionMatrix();
-        }
-        const amp = motion ? Math.min(1, fx.shake + fx.rumble * 0.35) : 0;
-        if (amp > 0.002) {
-            const r = () => Math.random() - 0.5;
-            this.camera.position.x += r() * 0.06 * amp;
-            this.camera.position.y += r() * 0.08 * amp;
-            this.camera.rotateX(r() * 0.012 * amp);
-            this.camera.rotateZ(r() * 0.016 * amp);
-        }
-        const decay = dt > 0 ? Math.exp(-dt * 7) : 1;
-        fx.shake *= decay;
-        fx.flash *= dt > 0 ? Math.exp(-dt * 4.5) : 1;
-        if (fx.flash < 0.004) fx.flash = 0;
+        return cams.applyFx(this, dt);
     }
 
-    /** Keep the sun's shadow frustum centred on the action, snapped to texels (no shimmer). */
     followShadow() {
-        if (!this.sun.castShadow) return;
-        const f = this.fx.focus;
-        const cx = f ? f.x : this.camera.position.x;
-        const cz = f ? f.z : this.camera.position.z;
-        const cy = (f && f.y) || 0;   // the road's height under the car in focus
-        const texel = (SHADOW_EXTENT * 2) / this.sun.shadow.mapSize.x;
-        const sx = Math.round(cx / texel) * texel, sz = Math.round(cz / texel) * texel;
-        this.sun.target.position.set(sx, cy, sz);
-        this.sun.position.set(sx + this.sunDir.x * 90, cy + this.sunDir.y * 90, sz + this.sunDir.z * 90);
+        return cams.followShadow(this);
     }
 
-    /** Sun position on screen for the glare/shafts, and how visible it is. */
     updateSunScreen() {
-        const vis = this.sunVisibility;
-        if (!(vis > 0.01) || !this.sunDirVisual) { this.fx.sun = null; return; }
-        const p = this._v.copy(this.sunDirVisual).multiplyScalar(1000).add(this.camera.position).project(this.camera);
-        const facing = this.camera.getWorldDirection(new THREE.Vector3()).dot(this.sunDirVisual);
-        if (p.z >= 1 || facing <= 0) { this.fx.sun = null; return; }
-        const edge = Math.max(Math.abs(p.x), Math.abs(p.y));
-        const fade = Math.max(0, 1 - Math.max(0, edge - 0.85) / 0.35);
-        this.fx.sun = { x: p.x * 0.5 + 0.5, y: p.y * 0.5 + 0.5, v: vis * fade };
+        return cams.updateSunScreen(this);
     }
 
     /** Apply player view preferences (reduced motion is the platform's). */
@@ -670,7 +454,7 @@ class SceneHandle {
         this.room = isRoom(t);
         // Where a model is the world (the Playground, the bedroom) the scene adds no terrain,
         // trackside props or grass of its own.
-        const modelWorld = this.playground || this.room;
+        const modelWorld = this.playground || !!models.MODEL_LOOKS[this.theme];
         const group = new THREE.Group();
         group.name = 'pocabinet-track';
         const plaza = this.theme === 'pressbriefing';
@@ -711,7 +495,7 @@ class SceneHandle {
         const flat = this.playground;
         // The bedroom's road is a toy track: smooth moulded plastic, not tarmac.
         const roadMat = this.room
-            ? new THREE.MeshStandardMaterial({ color: hex(atmosphere.roadHex, '#d9581a'), roughness: 0.55, metalness: 0, side: THREE.DoubleSide })
+            ? models.toyRoadMaterial(atmosphere)
             : reflective(macro(new THREE.MeshStandardMaterial({
                 color: hex(atmosphere.roadHex, '#393b42'), roughness: 1, metalness: 0,
                 map: tar.map, normalMap: tar.normalMap, normalScale: new THREE.Vector2(0.8, 0.8), roughnessMap: tar.roughnessMap,
@@ -822,64 +606,11 @@ class SceneHandle {
         this.trackGroup = group;
         this.buildGrass();
         this.setWeather(false);
-        if (t.id === 'playground') this.loadPlayground(group);
-        else if (this.room) this.loadRoom(group);
+        models.MODEL_LOOKS[this.theme]?.load(this, group);
     }
 
-    /**
-     * The bedroom's toy track off the carpet: where the road climbs (track.z past ROOM.deckFrom)
-     * the run-off is decked in darker plastic out to the barrier and the deck stands on stilts
-     * down to the floor (on the cushion they stand inside it). Plus a shadow catcher on the floor,
-     * so the cars, road and rails throw shadows onto the unlit scan.
-     */
     buildRoomTrack(group, atmosphere) {
-        const t = this.track;
-        const n = t.count;
-        const up = (i) => !!t.z && Math.min(t.z[i], t.z[(i + 1) % n]) > ROOM.deckFrom;
-        const deckMat = new THREE.MeshStandardMaterial({
-            color: hex(atmosphere.roadHex, '#d9581a').multiplyScalar(0.62), roughness: 0.6, metalness: 0, side: THREE.DoubleSide,
-        });
-        for (const [a, b] of [[(i) => -wallFace(t, i, -1), (i) => -t.hw[i]], [(i) => t.hw[i], (i) => wallFace(t, i, 1)]]) {
-            const deck = new THREE.Mesh(ribbon(t, a, b, 0.015, 45, (i) => t.drawn(i) && up(i)), deckMat);
-            deck.castShadow = true;
-            deck.receiveShadow = true;
-            group.add(deck);
-        }
-        this.roadMesh.castShadow = true;
-
-        // Stilts: a pair every few samples under the deck's edges, floor to deck.
-        const spots = [];
-        for (let i = 0; i < n; i += 4) {
-            if (!up(i)) continue;
-            for (const s of [-1, 1]) {
-                const lat = s * (wallFace(t, i, s) - 3);
-                const h = roadPlane(t, i, lat) / WORLD_SCALE;
-                const x = (t.x[i] - t.ty[i] * lat) / WORLD_SCALE, z = (t.y[i] + t.tx[i] * lat) / WORLD_SCALE;
-                spots.push([x, h, z]);
-            }
-        }
-        if (spots.length) {
-            const stilt = new THREE.InstancedMesh(new THREE.CylinderGeometry(0.45, 0.6, 1, 10),
-                new THREE.MeshStandardMaterial({ color: '#f4f1ea', roughness: 0.5, metalness: 0 }), spots.length);
-            const m = new THREE.Matrix4();
-            spots.forEach(([x, h, z], k) => stilt.setMatrixAt(k, m.compose(
-                new THREE.Vector3(x, h / 2, z), new THREE.Quaternion(), new THREE.Vector3(1, h, 1))));
-            stilt.castShadow = true;
-            stilt.name = 'pocabinet-room-stilts';
-            group.add(stilt);
-        }
-
-        const pad = 60;
-        const xs = [], ys = [];
-        for (let i = 0; i < n; i++) { xs.push(t.x[i]); ys.push(t.y[i]); }
-        const minX = Math.min(...xs), maxX = Math.max(...xs), minY = Math.min(...ys), maxY = Math.max(...ys);
-        const w = (maxX - minX) / WORLD_SCALE + pad * 2, d = (maxY - minY) / WORLD_SCALE + pad * 2;
-        const catcher = new THREE.Mesh(new THREE.PlaneGeometry(w, d).rotateX(-Math.PI / 2),
-            new THREE.ShadowMaterial({ opacity: 0.32 }));
-        catcher.position.set((minX + maxX) / 2 / WORLD_SCALE, 0.09, (minY + maxY) / 2 / WORLD_SCALE);
-        catcher.receiveShadow = true;
-        catcher.name = 'pocabinet-room-shadows';
-        group.add(catcher);
+        return models.buildRoomTrack(this, group, atmosphere);
     }
 
     /**
@@ -940,83 +671,16 @@ class SceneHandle {
         }
     }
 
-    /**
-     * Fetch a Draco GLB and place it in `group` at `scale`, after `prepare(mesh)` has had each
-     * mesh; non-fatal, and dropped if the track changed meanwhile.
-     */
     async loadModel(group, url, scale, name, prepare) {
-        let draco = null;
-        try {
-            const [{ GLTFLoader }, { DRACOLoader }] = await Promise.all([
-                import('three/addons/loaders/GLTFLoader.js'),
-                import('three/addons/loaders/DRACOLoader.js'),
-            ]);
-            draco = new DRACOLoader().setDecoderPath(DRACO_PATH);
-            const gltf = await new GLTFLoader().setDRACOLoader(draco).loadAsync(url);
-            const model = gltf.scene;
-            const textures = new Set();
-            model.traverse(o => {
-                if (!o.isMesh) return;
-                for (const m of [o.material].flat()) {
-                    for (const v of Object.values(m)) if (v && v.isTexture) textures.add(v);
-                }
-                prepare(o);
-            });
-            if (this.disposed || this.trackGroup !== group) {
-                disposeObject(model);
-                for (const t of textures) t.dispose();
-                return;
-            }
-            model.name = name;
-            model.scale.setScalar(scale);
-            group.add(model);
-            this.ownedTextures.push(...textures);
-        } catch (e) {
-            console.warn(`pocabinet/scene: ${name} skipped`, e);
-        } finally {
-            draco?.dispose();
-        }
+        return models.loadModel(this, group, url, scale, name, prepare);
     }
 
-    /**
-     * The bedroom scan: unlit and single-sided as exported; it neither casts nor takes the sun's
-     * shadows (the catcher does). Its textures are already the room as the camera saw it, so they
-     * skip the filmic curve (which would grey them) and get a little lift for the post grade.
-     */
     async loadRoom(group) {
-        // The splat (400k, sorted every frame) costs ~a third of the frame rate: the low tier
-        // keeps the mesh. A tier change mid-race does not swap it.
-        if (this.quality !== 'low' && await this.loadRoomSplat(group)) return;
-        if (this.disposed || this.trackGroup !== group) return;
-        await this.loadModel(group, ROOM.url, ROOM.scale, 'pocabinet-room', (o) => {
-            o.castShadow = false;
-            o.receiveShadow = false;
-            for (const m of [o.material].flat()) {
-                m.toneMapped = false;
-                m.color?.multiplyScalar(ROOM.lift);
-            }
-        });
+        return models.loadRoom(this, group);
     }
 
-    /** Fetch and place playground.glb into `group`. */
     loadPlayground(group) {
-        return this.loadModel(group, PLAYGROUND.url, PLAYGROUND.scale, 'pocabinet-playground', (o) => {
-            if (PLAYGROUND.hidden.test(o.name)) {
-                o.visible = false;
-            } else if (o.name.startsWith('SM_Ground')) {
-                // The pad has ~0.36 m of relief and dips up to 0.13 m below y = 0, where the
-                // scene's own lawn would cut holes in it: lift the dips to just above the lawn
-                // (mounds keep their shape) and let it take shadows without casting them.
-                const pos = o.geometry.attributes.position;
-                for (let i = 0; i < pos.count; i++) if (pos.getY(i) < 0.006) pos.setY(i, 0.006);
-                pos.needsUpdate = true;
-                o.geometry.computeBoundingSphere();
-                o.receiveShadow = true;
-            } else {
-                o.castShadow = true;
-                o.receiveShadow = true;
-            }
-        });
+        return models.loadPlayground(this, group);
     }
 
     buildGrass() {
@@ -1038,78 +702,21 @@ class SceneHandle {
         }
     }
 
-    /**
-     * The bedroom as a Gaussian splat, in the room frame (z up) turned to three's y up and scaled
-     * like the mesh. True once it is in the scene; false (and nothing added) if the library, the
-     * file or the GPU says no, or the track changed while it loaded.
-     */
     async loadRoomSplat(group) {
-        let viewer = null;
-        try {
-            const GS = await import('gaussian-splats-3d');
-            if (this.disposed || this.trackGroup !== group) return false;
-            viewer = new GS.DropInViewer({
-                gpuAcceleratedSort: false,
-                sharedMemoryForWorkers: false,   // no cross-origin isolation on this site
-                integerBasedSort: true,
-                dynamicScene: false,
-                sphericalHarmonicsDegree: 0,
-                logLevel: GS.LogLevel.None,
-            });
-            const upright = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(1, 0, 0), -Math.PI / 2);
-            await viewer.addSplatScene(ROOM.splat, {
-                format: GS.SceneFormat.KSplat,
-                showLoadingUI: false,
-                progressiveLoad: false,
-                position: [0, 0, 0],
-                rotation: upright.toArray(),
-                scale: [ROOM.scale, ROOM.scale, ROOM.scale],
-            });
-            if (this.disposed || this.trackGroup !== group) {
-                viewer.dispose();
-                return false;
-            }
-            viewer.name = 'pocabinet-room-splat';
-            group.add(viewer);
-            this.roomSplat = viewer;
-            return true;
-        } catch (e) {
-            console.warn('pocabinet/scene: room splat skipped, drawing the mesh', e);
-            try { viewer?.dispose(); } catch { /* already half torn down */ }
-            return false;
-        }
+        return models.loadRoomSplat(this, group);
     }
 
-    /**
-     * gaussian-splats-3d's fragment shader writes its sRGB colour straight out. Drawn straight to
-     * the canvas that is right; through postfx.js (a linear HDR target, then ACES and sRGB) it is
-     * encoded twice and comes out washed white. So its material gets two uniforms: linearize (and
-     * scale by ROOM.splatLift) while the post pass is on. Patched lazily: the viewer may swap its
-     * mesh. Matches the pinned 0.4.7 shader; if the text ever differs it is left alone.
-     */
     syncRoomSplat() {
-        const mat = this.roomSplat?.viewer?.splatMesh?.material;
-        if (!mat) return;
-        if (!mat.userData.pcPatched) {
-            mat.userData.pcPatched = true;
-            const out = 'gl_FragColor = vec4(color.rgb, opacity);';
-            if (!mat.fragmentShader.includes(out)) return;
-            mat.uniforms.pcLinear = { value: 1 };
-            mat.uniforms.pcLift = { value: ROOM.splatLift };
-            mat.fragmentShader = mat.fragmentShader
-                .replace('void main () {', 'uniform float pcLinear;\nuniform float pcLift;\nvoid main () {')
-                .replace(out, 'color = mix(color, pow(max(color, vec3(0.0)), vec3(2.2)) * pcLift, pcLinear);\n' + out);
-            mat.needsUpdate = true;
-        }
-        if (mat.uniforms.pcLinear) mat.uniforms.pcLinear.value = this.post ? 1 : 0;
+        return models.syncRoomSplat(this);
+    }
+
+    /** 'splat' (full) or 'mesh' (lite) for the room scan: swaps it live on the bedroom. */
+    setRoomDetail(detail) {
+        return models.setRoomDetail(this, detail);
     }
 
     disposeTrackMeshes() {
-        if (this.roomSplat) {
-            this.roomSplat.parent?.remove(this.roomSplat);
-            try { this.roomSplat.dispose(); } catch (e) { console.warn('pocabinet/scene: splat dispose', e); }
-            this.roomSplat = null;
-        }
+        models.disposeRoomSplat(this);
         if (this.grass) {
             this.scene.remove(this.grass.mesh);
             this.grass.dispose();
@@ -1168,192 +775,13 @@ class SceneHandle {
 //  Geometry builders. Lateral offsets are sim units (+ = right of travel).
 // ──────────────────────────────────────────────────────────────────────────
 
-/** Free every geometry and material under `root` (textures are the caller's). */
-function disposeObject(root) {
-    root.traverse(o => {
-        if (o.geometry) o.geometry.dispose();
-        for (const m of [o.material].flat()) m?.dispose();
-    });
-}
 
-function scaleUv(geom, su, sv) {
-    const uv = geom.attributes.uv;
-    for (let i = 0; i < uv.count; i++) uv.setXY(i, uv.getX(i) * su, uv.getY(i) * sv);
-    uv.needsUpdate = true;
-}
 
-/**
- * The road surface's normal at sample `k` (world space): tilted back by the grade and
- * across by the bank. Straight up on a flat track.
- */
-function roadNormal(track, k, out) {
-    const n = track.count;
-    const p = (k - 1 + n) % n, q = (k + 1) % n;
-    const span = track.segLen[p] + track.segLen[k];
-    const g = track.z && span > 1e-9 ? (track.z[q] - track.z[p]) / span : 0;
-    const b = track.bank ? track.bank[k] : 0;
-    const tx = track.tx[k], ty = track.ty[k];
-    // (lateral, bank) x (forward, grade), lateral = (-ty, tx).
-    return out.set(b * ty - tx * g, 1, -ty * g - b * tx).normalize();
-}
 
-/**
- * A strip between two lateral offsets (sim units; numbers, or functions of the sample for a
- * road whose width changes), following the road's height and bank; uv = (lateral, distance)
- * / tile (sim units), or world xz / opts.worldTile (world units) for a surface that has to
- * meet the terrain's mapping. `pick(i)` chooses the segments to lay (default: everything
- * but the return link). Normals follow the road's slope, or point straight up (opts.flat).
- */
-function ribbon(track, fromLat, toLat, height, tile, pick = (i) => track.drawn(i), opts = {}) {
-    const from = typeof fromLat === 'function' ? fromLat : () => fromLat;
-    const to = typeof toLat === 'function' ? toLat : () => toLat;
-    const positions = [], uvs = [], normals = [];
-    const n = track.count;
-    const nrm = new THREE.Vector3();
-    for (let i = 0; i <= n; i++) {
-        const k = i % n;
-        const nx = -track.ty[k], ny = track.tx[k];
-        const x = track.x[k], y = track.y[k];
-        const a = from(k), b = to(k);
-        const ax = (x + nx * a) / WORLD_SCALE, az = (y + ny * a) / WORLD_SCALE;
-        const bx = (x + nx * b) / WORLD_SCALE, bz = (y + ny * b) / WORLD_SCALE;
-        positions.push(ax, height + roadPlane(track, k, a) / WORLD_SCALE, az, bx, height + roadPlane(track, k, b) / WORLD_SCALE, bz);
-        if (opts.worldTile) {
-            uvs.push(ax / opts.worldTile, az / opts.worldTile, bx / opts.worldTile, bz / opts.worldTile);
-        } else {
-            const v = (i === n ? track.length : track.cum[k]) / tile;
-            uvs.push(a / tile, v, b / tile, v);
-        }
-        if (opts.flat) nrm.set(0, 1, 0);
-        else roadNormal(track, k, nrm);
-        normals.push(nrm.x, nrm.y, nrm.z, nrm.x, nrm.y, nrm.z);
-    }
-    const geom = new THREE.BufferGeometry();
-    geom.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3));
-    geom.setAttribute('uv', new THREE.Float32BufferAttribute(uvs, 2));
-    geom.setAttribute('normal', new THREE.Float32BufferAttribute(normals, 3));
-    const indices = [];
-    for (let i = 0; i < n; i++) {
-        if (!pick(i)) continue;
-        const a0 = i * 2, a1 = i * 2 + 1, b0 = (i + 1) * 2, b1 = (i + 1) * 2 + 1;
-        indices.push(a0, a1, b0, a1, b1, b0);
-    }
-    geom.setIndex(indices);
-    return geom;
-}
 
-/** The Playground's lawn (and the fallback if the terrain fails): one flat plane past the fog. */
-function flatGround(world, material, reach, tile) {
-    const minX = Number(world.minX) || 0, maxX = Number(world.maxX) || 0;
-    const minY = Number(world.minY) || 0, maxY = Number(world.maxY) || 0;
-    const w = (maxX - minX) / WORLD_SCALE + reach * 2, d = (maxY - minY) / WORLD_SCALE + reach * 2;
-    const geom = new THREE.PlaneGeometry(w, d);
-    geom.rotateX(-Math.PI / 2);
-    scaleUv(geom, w / tile, d / tile);
-    const ground = new THREE.Mesh(geom, material);
-    ground.position.set((minX + maxX) / 2 / WORLD_SCALE, 0, (minY + maxY) / 2 / WORLD_SCALE);
-    ground.receiveShadow = true;
-    return ground;
-}
 
-/**
- * Barrier wall: inner face at `lateral` (a number, or a function of the sample), a top, and
- * an outer face `thick` sim units further out (on side `s`), standing on the road's plane
- * (height and bank) with its foot sunk below it so no slope of the ground opens a gap.
- * uv.x runs along the lap for the striped texture.
- *
- * Where the face would stand on another part of the road (the inside of a corner tighter than
- * the wall's offset, or a stretch whose run-off reaches a neighbouring one), that piece is not
- * drawn: the physics measures its wall from the nearest point of the road, so there is no wall
- * there, and cars used to drive straight through one standing across the track.
- */
-function barrier(track, lateral, s, height, thick) {
-    const lat = typeof lateral === 'function' ? lateral : () => lateral;
-    const positions = [], uvs = [];
-    const n = track.count;
-    const onRoad = new Uint8Array(n);
-    for (let k = 0; k < n; k++) {
-        const face = lat(k);
-        const pr = track.project(track.x[k] - track.ty[k] * face, track.y[k] + track.tx[k] * face, -1);
-        if (Math.abs(pr.lateral) < track.hwAt(pr.index) + 1) onRoad[k] = 1;
-    }
-    const rows = [[0, -0.3], [0, height], [s * thick, height], [s * thick, -1.2]];
-    const vs = [0, 0.8, 0.9, 1];
-    for (let i = 0; i <= n; i++) {
-        const k = i % n;
-        const nx = -track.ty[k], ny = track.tx[k];
-        const u = (i === n ? track.length : track.cum[k]) / 80;
-        const face = lat(k);
-        // The top follows the plane at the face, so the wall stands level across its thickness.
-        const base = roadPlane(track, k, face) / WORLD_SCALE;
-        rows.forEach(([dl, h], r) => {
-            const l = face + dl;
-            positions.push((track.x[k] + nx * l) / WORLD_SCALE, base + h, (track.y[k] + ny * l) / WORLD_SCALE);
-            uvs.push(u, vs[r]);
-        });
-    }
-    const geom = new THREE.BufferGeometry();
-    geom.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3));
-    geom.setAttribute('uv', new THREE.Float32BufferAttribute(uvs, 2));
-    const idx = [];
-    for (let i = 0; i < n; i++) {
-        if (onRoad[i] || onRoad[(i + 1) % n]) continue;
-        for (let r = 0; r < 3; r++) {
-            const a0 = i * 4 + r, a1 = i * 4 + r + 1, b0 = (i + 1) * 4 + r, b1 = (i + 1) * 4 + r + 1;
-            idx.push(a0, a1, b0, a1, b1, b0);
-        }
-    }
-    geom.setIndex(idx);
-    geom.computeVertexNormals();
-    return geom;
-}
 
-const barrierTextures = new Map();
-function barrierTexture(accentHex) {
-    const key = accentHex || '#c6a35a';
-    if (barrierTextures.has(key)) return barrierTextures.get(key);
-    const tex = canvasTexture(256, 64, (g) => {
-        for (let i = 0; i < 4; i++) {
-            g.fillStyle = i % 2 ? '#e9e6df' : key;
-            g.fillRect(i * 64, 0, 64, 52);
-        }
-        g.fillStyle = '#3a3c40';
-        g.fillRect(0, 52, 256, 12);
-        g.fillStyle = 'rgba(0,0,0,0.18)';
-        g.fillRect(0, 0, 256, 4);
-    }, { repeat: 's', anisotropy: 8 });
-    barrierTextures.set(key, tex);
-    return tex;
-}
 
-/** Chequered strip across the road where a lap ends: distance 0 on a circuit, the finish of a point-to-point run. */
-function startLine(track) {
-    const group = new THREE.Group();
-    const p = track.pointAt(track.lapLength);
-    const y0 = 0.035 + track.heightAt(track.lapLength) / WORLD_SCALE;
-    const bank = track.bankAt(track.lapLength);
-    const cols = 12, rows = 2, hw = track.hw[track.indexAt(track.lapLength)];
-    const cell = (hw * 2) / cols;
-    const geom = new THREE.PlaneGeometry(cell / WORLD_SCALE, cell / WORLD_SCALE);
-    geom.rotateX(-Math.PI / 2);
-    const white = new THREE.MeshStandardMaterial({ color: 0xf2f2f2, roughness: 0.55 });
-    const black = new THREE.MeshStandardMaterial({ color: 0x111111, roughness: 0.6 });
-    for (let r = 0; r < rows; r++) {
-        for (let c = 0; c < cols; c++) {
-            const lat = -hw + cell * (c + 0.5);
-            const fwd = (r - 0.5) * cell;
-            const m = new THREE.Mesh(geom, (r + c) % 2 === 0 ? white : black);
-            m.position.set(
-                (p.x + -p.ty * lat + p.tx * fwd) / WORLD_SCALE,
-                y0 + bank * lat / WORLD_SCALE,
-                (p.y + p.tx * lat + p.ty * fwd) / WORLD_SCALE);
-            m.rotation.y = -Math.atan2(p.ty, p.tx);
-            m.receiveShadow = true;
-            group.add(m);
-        }
-    }
-    return group;
-}
 
 // ──────────────────────────────────────────────────────────────────────────
 //  Public mount / unmount.

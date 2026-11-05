@@ -291,6 +291,8 @@ class CarFx {
         this.track = track;
         this.grip = Number(opts.grip) || 1;
         this.dust = new THREE.Color(opts.groundHex || '#6b6040').lerp(new THREE.Color('#c8b890'), 0.45);
+        // Bedroom Floor GP: the toy track's run-off kicks up carpet fluff and lint, not dirt.
+        if (track.theme === 'bedroom') this.dust = new THREE.Color('#e2ddd4');
         // Gravel traps: grey-brown stones and pale dust; Mar-a-Lago's are beach sand.
         this.beach = track.theme === 'maralago';
         this.stone = new THREE.Color(this.beach ? '#d9c79c' : '#8d8577');

@@ -30,6 +30,12 @@
 *.mp3 binary
 *.wav binary
 *.ogg binary
+# 3D assets: track models, the bedroom's Gaussian splat and the scan sources it is built from.
+*.glb binary
+*.ksplat binary
+*.ply binary
+*.sog binary
+*.spz binary
 
 # Windows-only scripts. PowerShell itself handles LF fine, but these are the files
 # most likely to be opened in a tool that does not, so keep them CRLF.

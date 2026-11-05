@@ -2,7 +2,8 @@
 
 Headless Blender (5.x):
 
-    blender -b --factory-startup -P scripts/blender/pocabinet-bedroom.py -- <BedroomScene.glb> [--preview out.png]
+    blender -b --factory-startup -P scripts/blender/pocabinet-bedroom.py -- <BedroomScene.glb>
+        [--preview out.png] [--nudge] [--fixture tests/Shared/Fixtures/pocabinet-bedroom-centerline.json]
 
 Reads the merged room scan (10 meshes, unlit, 8K atlases, ~30 MB; up is the scan's -Y) and
 
@@ -15,7 +16,12 @@ Reads the merged room scan (10 meshes, unlit, 8K atlases, ~30 MB; up is the scan
 3. prints the knots, KnotZ and KnotBank for PoCabinetTrackGeometry ("bedroom"), already in sim
    units: x = SIM_PER_UNIT * x, y = -SIM_PER_UNIT * y (the GLB is Y-up, so room y is three's -z
    and the sim's y is three's z);
-4. optionally renders a top-down preview of the room with the road laid on it.
+4. optionally renders a top-down preview of the room with the road laid on it;
+5. --nudge: when the check fails, moves knots one at a time in shrinking steps, keeping any move
+   that lowers the problem count, and prints the repaired ROUTE to paste back here;
+6. --fixture: writes this script's own centerline samples (sim units) for the unit test that
+   proves they equal PoCabinetTrackGeometry.BuildCenterlineXY: the route checked here is the
+   road the game races.
 
 The route itself is hand-laid here, in room units (about 4.3 to the metre), and is the one
 place it lives: change ROUTE, re-run, paste the printed block into PoCabinetTrackGeometry.
@@ -83,9 +89,52 @@ ROUTE = [
 def args():
     a = sys.argv[sys.argv.index("--") + 1:] if "--" in sys.argv else []
     if not a:
-        raise SystemExit("usage: blender -b -P pocabinet-bedroom.py -- <BedroomScene.glb> [--preview out.png]")
+        raise SystemExit("usage: blender -b -P pocabinet-bedroom.py -- <BedroomScene.glb> [--preview out.png] [--nudge] [--fixture out.json]")
     preview = a[a.index("--preview") + 1] if "--preview" in a else None
-    return a[0], preview
+    fixture = a[a.index("--fixture") + 1] if "--fixture" in a else None
+    return a[0], preview, "--nudge" in a, fixture
+
+
+def nudge(bvh):
+    """Greedy repair: shift one knot at a time (8 directions, shrinking steps) while the
+    problem count falls. Heights and banks stay; only x/y move. Returns the new route."""
+    route = [list(p) for p in ROUTE]
+    score = lambda r: len(check_route(bvh, [tuple(p) for p in r], quiet=True)[1])
+    best = score(route)
+    dirs = [(math.cos(i * math.pi / 4), math.sin(i * math.pi / 4)) for i in range(8)]
+    for step in (0.12, 0.08, 0.05, 0.03):
+        improved = True
+        while improved and best:
+            improved = False
+            for k in range(len(route)):
+                for dx, dy in dirs:
+                    trial = [p[:] for p in route]
+                    trial[k][0] += dx * step
+                    trial[k][1] += dy * step
+                    sc = score(trial)
+                    if sc < best:
+                        best, route, improved = sc, trial, True
+                        break
+        print(f"NUDGE step {step}: {best} problems left")
+        if not best:
+            break
+    print("NUDGE paste this over ROUTE:")
+    for p in route:
+        print("    (%.2f, %.2f, %g, %g)," % tuple(p))
+    return [tuple(p) for p in route], best
+
+
+def write_fixture(path):
+    """The centerline exactly as this script samples it, in sim units, for the parity test."""
+    import json
+    xs, ys = resample([p[0] for p in ROUTE]), resample([p[1] for p in ROUTE])
+    xy = []
+    for x, y in zip(xs, ys):
+        xy += [round(x * SIM_PER_UNIT, 4), round(-y * SIM_PER_UNIT, 4)]
+    with open(path, "w", encoding="utf-8", newline="\n") as f:
+        json.dump({"trackId": "bedroom", "stepsPerSegment": STEPS, "centerXY": xy}, f)
+        f.write("\n")
+    print(f"FIXTURE {path}: {len(xy) // 2} samples")
 
 
 def catmull(p0, p1, p2, p3, t):
@@ -281,13 +330,18 @@ def preview(path, sampled):
 
 
 def main():
-    glb, preview_path = args()
+    glb, preview_path, want_nudge, fixture = args()
     meshes = load_room(glb)
     bvh = clean(meshes)
     sampled, problems = check_route(bvh)
+    if problems and want_nudge:
+        nudge(bvh)
+        raise SystemExit("route repaired above: paste it over ROUTE and run again")
     print_csharp()
+    if fixture:
+        write_fixture(fixture)
     if problems:
-        raise SystemExit("route check failed; nothing exported")
+        raise SystemExit("route check failed; nothing exported (try --nudge)")
     export(meshes)
     if preview_path:
         preview(preview_path, sampled)

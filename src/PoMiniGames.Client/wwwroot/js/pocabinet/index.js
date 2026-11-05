@@ -110,7 +110,11 @@ const api = {
 
     /** Push the player's settings into the live scene, audio graph and race driver. */
     applySettings(sceneHandle, settings) {
-        if (sceneHandle && !sceneHandle.disposed) sceneHandle.applyView(settings);
+        if (sceneHandle && !sceneHandle.disposed) {
+            sceneHandle.applyView(settings);
+            // "Room scans": full splat or lite mesh (PoCabinetUiSettings.RoomDetail).
+            if (settings?.roomDetail) sceneHandle.setRoomDetail(settings.roomDetail);
+        }
         audio.setMusicEnabled(settings?.music !== false);
         updateRaceSettings(settings);
     },

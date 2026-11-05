@@ -204,6 +204,10 @@ jobs:
       # the C# half runs in the unit tier above. Node ships on ubuntu-latest.
       - name: Run PoBrawl rollback sim parity (JS)
         run: node --test tests/pobrawl-rollback.test.mjs
+      - name: Run PoCabinet race health (JS, 100-car field on Capitol and the Bedroom Floor GP)
+        run: |
+          dotnet run scripts/pocabinet/dump.cs -- artifacts/pocabinet-worlds capitol bedroom
+          node --test tests/pocabinet-race-health.test.mjs
 
   deploy:
     name: Deploy to Azure App Service

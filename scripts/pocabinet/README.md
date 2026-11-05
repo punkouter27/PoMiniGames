@@ -56,6 +56,24 @@ lap may overlap. Then it prints the knots, `KnotZ` and `KnotBank` to paste into
 
 After pasting, dump the world and race it here (step 2) before shipping.
 
+- `--nudge`: when the check fails, the script moves knots one at a time in shrinking steps,
+  keeping any move that lowers the problem count, and prints a repaired `ROUTE` to paste back.
+- `--fixture tests/Shared/Fixtures/pocabinet-bedroom-centerline.json`: writes the script's own
+  centerline samples. `PoCabinetTests` compares them with `BuildCenterlineXY("bedroom")`, so the
+  road the script cleared of furniture is provably the road the race runs on. Re-run it whenever
+  `ROUTE` changes.
+
+## Race health in CI
+
+`tests/pocabinet-race-health.test.mjs` races the 100-car field (clean and messy drivers) on
+Capitol and the Bedroom Floor GP through `harness.mjs` and fails on a jam, a wreck-fest or a
+strung-out field. The bounds sit above today's numbers; the harness is deterministic.
+
+```powershell
+dotnet run scripts/pocabinet/dump.cs -- artifacts/pocabinet-worlds capitol bedroom
+node --test tests/pocabinet-race-health.test.mjs
+```
+
 ### The room as a Gaussian splat
 
 The room is drawn from a separate 3DGS capture (`scene.ply`, 2.4M splats, base colour only). The
@@ -69,7 +87,7 @@ mesh above stays the collision model: the route is checked against it. To rebuil
 & "C:\Program Files\Blender Foundation\Blender 5.2lender.exe" -b --factory-startup --python-exit-code 1 `
   -P scripts/blender/pocabinet-bedroom-splat.py -- <path>\BedroomScene.glb <path>\scene.ply <tmp>edroom-room.ply --budget 400000
 
-# 2. Pack it for gaussian-splats-3d (needs the package in a scratch folder; see the script header).
+# 2. Pack it for gaussian-splats-3d (once: npm ci --prefix scripts/pocabinet).
 node scripts/pocabinet/ksplat.mjs <tmp>edroom-room.ply src/PoMiniGames.Client/wwwroot/models/bedroom.ksplat
 ```
 

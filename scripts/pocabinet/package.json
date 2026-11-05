@@ -1,0 +1,13 @@
+{
+  "name": "pocabinet-tools",
+  "private": true,
+  "description": "Node tools for PoCabinet assets (ksplat.mjs packs the bedroom's Gaussian splat). Not part of the app build.",
+  "type": "module",
+  "scripts": {
+    "ksplat": "node ksplat.mjs"
+  },
+  "dependencies": {
+    "@mkkellogg/gaussian-splats-3d": "0.4.7",
+    "three": "0.165.0"
+  }
+}
