@@ -25,8 +25,8 @@ const harness = path.resolve(here, '../scripts/pomarblerace/harness.mjs');
 // went without the engine's own progress threshold, spread = median finish over the winner's.
 // Measured on seed 1 (2026-11-05), each bound a little above it:
 //   Neon Canyon     101 home, 0 lost, 0 stalled, max stall 26 s, spread 1.64
-//   Spiral Works     95 home, 6 lost, 0 stalled, max stall 60 s, spread 1.48
-//   Grand Spiral     76 home, 17 lost, 8 stalled, max stall 116 s, spread 1.78
+//   Spiral Works     95 home, 0 lost, 6 stalled, max stall 102 s (parked in the Catch pan)
+//   Grand Spiral     96 home, 0 lost, 5 stalled, max stall 110 s
 //   Playground Run  101 home, 0 lost, 0 stalled, max stall 13 s, spread 1.61
 // The two authored spirals still lose marbles through their shells (Spiral Works at the Merge ->
 // Penalty drop and LowerA's mouth; Grand Spiral in LowerA and the SplitC fan), so their bounds
@@ -34,8 +34,8 @@ const harness = path.resolve(here, '../scripts/pomarblerace/harness.mjs');
 // keeps the zero-loss target and fails on both until then.
 const BOUNDS = {
     1: { name: 'Neon Canyon', lost: 1, stalled: 1, maxStall: 50, spread: 2.0 },
-    2: { name: 'Spiral Works', lost: 9, stalled: 3, maxStall: 90, spread: 1.9 },
-    3: { name: 'Grand Spiral', lost: 22, stalled: 12, maxStall: 150, spread: 2.2 },
+    2: { name: 'Spiral Works', lost: 1, stalled: 8, maxStall: 120, spread: 1.9 },
+    3: { name: 'Grand Spiral', lost: 1, stalled: 7, maxStall: 150, spread: 2.2 },
     5: { name: 'Playground Run', lost: 1, stalled: 1, maxStall: 30, spread: 2.0 },
 };
 

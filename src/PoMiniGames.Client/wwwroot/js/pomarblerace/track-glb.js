@@ -933,7 +933,6 @@ export function createGlbCourse({
         if (L.open || fedByCatch[li] || (fedFromAir[li] && r < LANDING_RINGS)) {
           // Landing zone: extend the walls, leave the top open (see fedFromAir).
           const HL = Math.min(Math.max(H, hA + LAND_EXTRA, hD + LAND_EXTRA), clear - CONTAIN_MARGIN);
-          (L.LAND ||= [])[r] = [HL, clear, hA, hD];
           const eL = A.clone().addScaledVector(U, Math.max(0, HL - hA)).addScaledVector(R, -LAND_FLARE);
           const eD = D.clone().addScaledVector(U, Math.max(0, HL - hD)).addScaledVector(R, LAND_FLARE);
           landing.push([li, r, eL, eD]);

@@ -33,3 +33,7 @@ turned away). Map health ran headless in node (`tests/pomarblerace-map-health.te
 | 7 | P3 | Reverb zones are placed by `track.length`, which can differ slightly from the baked arclength | Playground Run covered spans | Zones may start or end a little early or late. |
 | 8 | Info | A forced finish submits an impossible record time and the server answers 400 | Test-only (forced `_resolve`) | Correct behaviour: the server refuses implausible times. |
 | 9 | Info | Reflections (SSR) on Neon Canyon (measured on Neon Chute before the merge) / rain cost about 40% more triangles and ~63 draw calls | F3 on Neon Canyon, Full effects | Heavy tier + Full only; Lite turns it off. Not measured on a real GPU yet. |
+
+## Update: spiral containment (later on 2026-11-05)
+
+Items 1 and 2 are fixed: Spiral Works and Grand Spiral now lose 0 marbles (drop bridges, landing hoppers, aprons behind landing lanes, Lower A unlidded). New open item: Spiral Works parks 6 marbles still in its Catch pan (s≈1951) until the timeout.
