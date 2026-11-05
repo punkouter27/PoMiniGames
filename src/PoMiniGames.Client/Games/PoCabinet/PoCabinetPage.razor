@@ -40,193 +40,211 @@
                             OnRaceStarting="OnLobbyRaceStartingAsync" OnExit="LeaveLobbyAsync"
                             OnOpenSettings="OpenDrawerAsync" Notice="@_lobbyNotice" />
         }
+        else if (_phase == Phase.Failed)
+        {
+            @CrashCard(_raceError)
+        }
         else
         {
-            @* The race view fills the screen under the app's top bar, like every other game, and
-               every readout sits on the view (the lap strip used to be a white band under it). *@
-            @* @key: every race gets fresh canvases. Teardown destroys the WebGL context, and a
-               restart on the same <canvas> could not get a working one back. *@
-            <section @key="_raceSerial" class="pocabinet-race @(Mode == GameMode.Demo ? "pocabinet-race--demo" : null)"
-                     style="--pocabinet-hud:@Settings.HudScaleCss"
-                     aria-label="Race in progress">
-                <canvas id="pocabinetCanvas"
-                        class="pocabinet-canvas"
-                        role="img"
-                        tabindex="0"
-                        aria-label="Cabinet race view. Drive with W A S D, the arrow keys, a gamepad or the on-screen controls.">
-                </canvas>
-                <canvas id="pocabinetMinimap" class="pocabinet-minimap" aria-hidden="true"></canvas>
-                @if (Mode == GameMode.Demo && _phase is Phase.Racing or Phase.Finished)
-                {
-                    <PoCabinetBroadcast TrackName="@TrackName" />
-                }
-                @if (_phase == Phase.Racing && !IsSpectating && Mode != GameMode.Demo)
-                {
-                    @* The driver's cluster: speedometer and damage panel side by side (on a phone,
-                       just above the steer pad). race.js writes speed, gear and --rpm (slipstream.js:
-                       --tow) into the gauge every frame, straight to the DOM. The speed and gear spans
-                       are rendered EMPTY on purpose: Blazor must own no text node inside them, or JS
-                       replacing it breaks the renderer's diff ("reading 'Symbol()'"). aria-hidden:
-                       the live announcer below covers what matters. *@
-                    <div class="pocabinet-cluster" aria-hidden="true">
-                        <div id="pocabinetGauge" class="pocabinet-gauge">
-                            <span class="pocabinet-gauge__track"></span>
-                            <span class="pocabinet-gauge__ring"></span>
-                            <span class="pocabinet-gauge__tow"></span>
-                            <span class="pocabinet-gauge__speed" data-gauge="speed"></span>
-                            <span class="pocabinet-gauge__unit">km/h</span>
-                            <span class="pocabinet-gauge__gear" data-gauge="gear"></span>
+            @* A throw while the race view renders (or a child of it) lands on the same card as a
+               failed mount, instead of taking the page with it. *@
+            <ErrorBoundary @ref="_raceBoundary">
+                <ChildContent>
+                    @* The race view fills the screen under the app's top bar, like every other game, and
+                       every readout sits on the view (the lap strip used to be a white band under it). *@
+                    @* @key: every race gets fresh canvases. Teardown destroys the WebGL context, and a
+                       restart on the same <canvas> could not get a working one back. *@
+                    <section @key="_raceSerial" class="pocabinet-race @(Mode == GameMode.Demo ? "pocabinet-race--demo" : null)"
+                             style="--pocabinet-hud:@Settings.HudScaleCss"
+                             aria-label="Race in progress">
+                        <canvas id="pocabinetCanvas"
+                                class="pocabinet-canvas"
+                                role="img"
+                                tabindex="0"
+                                aria-label="Cabinet race view. Drive with W A S D, the arrow keys, a gamepad or the on-screen controls.">
+                        </canvas>
+                        @* Fixed size from the first render (CSS) and faded in, so it does not pop in once
+                           minimap.js draws on it. *@
+                        <canvas id="pocabinetMinimap" class="pocabinet-minimap" aria-hidden="true"></canvas>
+                        @* Rendered from the Loading pass on, so the timing tower's box is there before
+                           broadcast.js fills it. *@
+                        @if (Mode == GameMode.Demo)
+                        {
+                            <PoCabinetBroadcast TrackName="@TrackName" />
+                        }
+                        @if (_phase == Phase.Racing && !IsSpectating && Mode != GameMode.Demo)
+                        {
+                            @* The driver's cluster: speedometer and damage panel side by side (on a phone,
+                               just above the steer pad). race.js writes speed, gear and --rpm (slipstream.js:
+                               --tow) into the gauge every frame, straight to the DOM. The speed and gear spans
+                               are rendered EMPTY on purpose: Blazor must own no text node inside them, or JS
+                               replacing it breaks the renderer's diff ("reading 'Symbol()'"). aria-hidden:
+                               the live announcer below covers what matters. *@
+                            <div class="pocabinet-cluster" aria-hidden="true">
+                                <div id="pocabinetGauge" class="pocabinet-gauge">
+                                    <span class="pocabinet-gauge__track"></span>
+                                    <span class="pocabinet-gauge__ring"></span>
+                                    <span class="pocabinet-gauge__tow"></span>
+                                    <span class="pocabinet-gauge__speed" data-gauge="speed"></span>
+                                    <span class="pocabinet-gauge__unit">km/h</span>
+                                    <span class="pocabinet-gauge__gear" data-gauge="gear"></span>
+                                </div>
+                                @* Damage panel: race.js writes the --dmg-* zones (0..1) and data-state
+                                   (ok | hurt | critical | wrecked) straight to the DOM, like the gauge; the
+                                   words are CSS content, so Blazor owns no text that JS changes. *@
+                                <div id="pocabinetDamage" class="pocabinet-damage" data-state="ok">
+                                    <span class="pocabinet-damage__car">
+                                        <span class="pocabinet-damage__zone pocabinet-damage__zone--front"></span>
+                                        <span class="pocabinet-damage__zone pocabinet-damage__zone--rear"></span>
+                                        <span class="pocabinet-damage__zone pocabinet-damage__zone--left"></span>
+                                        <span class="pocabinet-damage__zone pocabinet-damage__zone--right"></span>
+                                        <span class="pocabinet-damage__engine"></span>
+                                    </span>
+                                    <span class="pocabinet-damage__bar pocabinet-damage__bar--engine"></span>
+                                    <span class="pocabinet-damage__bar pocabinet-damage__bar--body"></span>
+                                </div>
+                            </div>
+                            <div class="pocabinet-wreckbanner" aria-hidden="true">Wrecked</div>
+                            @if (_lapInvalid)
+                            {
+                                @* Track limits: all four wheels past the edge this lap. The announcer says it too. *@
+                                <div class="pocabinet-limits" aria-hidden="true"><b>Track limits</b> this lap won't count</div>
+                            }
+                            @* @key re-creates the badge on every place change, so its swoosh replays. Prefixed:
+                               the countdown sibling keys on its number, and a bare 3 here collided with it. *@
+                            <div @key="PosBadgeKey" class="pocabinet-posbadge @PosBadgeClass" aria-hidden="true">
+                                <span class="pocabinet-posbadge__p">P</span>@_position<span class="pocabinet-posbadge__of">/@_totalCars</span>
+                            </div>
+                        }
+                        <div id="pocabinetDialogueLayer" class="pocabinet-dialogue-layer" aria-hidden="true"></div>
+
+                        @* Touch controls: always in the DOM so input.js can bind once; input.js shows
+                           them (data-active) on touch screens or when the setting forces them on. *@
+                        <div id="pocabinetTouch" class="pocabinet-touch" aria-hidden="true">
+                            <div class="pocabinet-touch__steer" data-ctl="steer"><span class="pocabinet-touch__knob"></span></div>
+                            <button type="button" class="pocabinet-touch__tilt" data-ctl="tilt-enable" tabindex="-1">Enable tilt</button>
+                            <div class="pocabinet-touch__pedals">
+                                <div class="pocabinet-touch__pedal pocabinet-touch__pedal--brake" data-ctl="brake">Brake</div>
+                                <div class="pocabinet-touch__pedal pocabinet-touch__pedal--gas" data-ctl="gas">Gas</div>
+                            </div>
                         </div>
-                        @* Damage panel: race.js writes the --dmg-* zones (0..1) and data-state
-                           (ok | hurt | critical | wrecked) straight to the DOM, like the gauge; the
-                           words are CSS content, so Blazor owns no text that JS changes. *@
-                        <div id="pocabinetDamage" class="pocabinet-damage" data-state="ok">
-                            <span class="pocabinet-damage__car">
-                                <span class="pocabinet-damage__zone pocabinet-damage__zone--front"></span>
-                                <span class="pocabinet-damage__zone pocabinet-damage__zone--rear"></span>
-                                <span class="pocabinet-damage__zone pocabinet-damage__zone--left"></span>
-                                <span class="pocabinet-damage__zone pocabinet-damage__zone--right"></span>
-                                <span class="pocabinet-damage__engine"></span>
-                            </span>
-                            <span class="pocabinet-damage__bar pocabinet-damage__bar--engine"></span>
-                            <span class="pocabinet-damage__bar pocabinet-damage__bar--body"></span>
-                        </div>
-                    </div>
-                    <div class="pocabinet-wreckbanner" aria-hidden="true">Wrecked</div>
-                    @if (_lapInvalid)
-                    {
-                        @* Track limits: all four wheels past the edge this lap. The announcer says it too. *@
-                        <div class="pocabinet-limits" aria-hidden="true"><b>Track limits</b> this lap won't count</div>
-                    }
-                    @* @key re-creates the badge on every place change, so its swoosh replays. Prefixed:
-                       the countdown sibling keys on its number, and a bare 3 here collided with it. *@
-                    <div @key="PosBadgeKey" class="pocabinet-posbadge @PosBadgeClass" aria-hidden="true">
-                        <span class="pocabinet-posbadge__p">P</span>@_position<span class="pocabinet-posbadge__of">/@_totalCars</span>
-                    </div>
-                }
-                <div id="pocabinetDialogueLayer" class="pocabinet-dialogue-layer" aria-hidden="true"></div>
 
-                @* Touch controls: always in the DOM so input.js can bind once; input.js shows
-                   them (data-active) on touch screens or when the setting forces them on. *@
-                <div id="pocabinetTouch" class="pocabinet-touch" aria-hidden="true">
-                    <div class="pocabinet-touch__steer" data-ctl="steer"><span class="pocabinet-touch__knob"></span></div>
-                    <button type="button" class="pocabinet-touch__tilt" data-ctl="tilt-enable" tabindex="-1">Enable tilt</button>
-                    <div class="pocabinet-touch__pedals">
-                        <div class="pocabinet-touch__pedal pocabinet-touch__pedal--brake" data-ctl="brake">Brake</div>
-                        <div class="pocabinet-touch__pedal pocabinet-touch__pedal--gas" data-ctl="gas">Gas</div>
-                    </div>
-                </div>
+                        @if (_countdownDisplay > 0)
+                        {
+                            @* @key re-creates the element per number, so its entry animation replays each second. *@
+                            <div @key="_countdownDisplay" class="pocabinet-countdown" aria-hidden="true">@_countdownDisplay</div>
+                        }
+                        else if (_showGo)
+                        {
+                            <div class="pocabinet-countdown pocabinet-countdown--go" aria-hidden="true">GO!</div>
+                        }
+                        @if (IsMultiplayerMode && _phase == Phase.Racing && _pingMs is not null)
+                        {
+                            <span class="pocabinet-ping @PingClass" title="Round-trip latency to the race server">@_pingMs ms</span>
+                        }
+                        @if (IsSpectating && _phase == Phase.Racing)
+                        {
+                            <span class="pocabinet-spectating" role="status">Spectating — following the leader</span>
+                        }
 
-                @if (_countdownDisplay > 0)
-                {
-                    @* @key re-creates the element per number, so its entry animation replays each second. *@
-                    <div @key="_countdownDisplay" class="pocabinet-countdown" aria-hidden="true">@_countdownDisplay</div>
-                }
-                else if (_showGo)
-                {
-                    <div class="pocabinet-countdown pocabinet-countdown--go" aria-hidden="true">GO!</div>
-                }
-                @if (IsMultiplayerMode && _phase == Phase.Racing && _pingMs is not null)
-                {
-                    <span class="pocabinet-ping @PingClass" title="Round-trip latency to the race server">@_pingMs ms</span>
-                }
-                @if (IsSpectating && _phase == Phase.Racing)
-                {
-                    <span class="pocabinet-spectating" role="status">Spectating — following the leader</span>
-                }
-
-                @if (Mode != GameMode.Demo)
-                {
-                    @* Lap, time, last, best and the sectors, on the race view under the top edge.
-                       Speed and place live on the gauge and badge. Not a live region: it
-                       re-renders ~15 times a second; the announcer below speaks laps, places
-                       and the finish instead. *@
-                    <div class="pocabinet-hud">
-                        <span class="pocabinet-hud__stats">
-                            <span>Lap <strong>@Math.Min(_lap, _totalLaps)</strong>/@_totalLaps</span>
-                            <span>Time <strong>@PoCabinetCatalog.FormatLap(_lapSeconds)</strong></span>
-                            <span>Last <strong class="@(_lastLapInvalid ? "pocabinet-lap--deleted" : null)" title="@(_lastLapInvalid ? "Deleted: track limits" : null)">@PoCabinetCatalog.FormatLap(_laps.LastLapSeconds)</strong></span>
-                            <span>Best <strong>@PoCabinetCatalog.FormatLap(_laps.BestLapShown)</strong></span>
+                        @if (Mode != GameMode.Demo)
+                        {
+                            @* Lap, time, last, best and the sectors, on the race view under the top edge.
+                               Speed and place live on the gauge and badge. Not a live region: it
+                               re-renders ~15 times a second; the announcer below speaks laps, places
+                               and the finish instead. *@
+                            <div class="pocabinet-hud">
+                                <span class="pocabinet-hud__stats">
+                                    <span>Lap <strong>@Math.Min(_lap, _totalLaps)</strong>/@_totalLaps</span>
+                                    <span>Time <strong>@PoCabinetCatalog.FormatLap(_lapSeconds)</strong></span>
+                                    <span>Last <strong class="@(_lastLapInvalid ? "pocabinet-lap--deleted" : null)" title="@(_lastLapInvalid ? "Deleted: track limits" : null)">@PoCabinetCatalog.FormatLap(_laps.LastLapSeconds)</strong></span>
+                                    <span>Best <strong>@PoCabinetCatalog.FormatLap(_laps.BestLapShown)</strong></span>
+                                </span>
+                                @SectorChips
+                            </div>
+                        }
+                        <span class="pocabinet-hudbar">
+                            <button type="button" class="pocabinet-iconbtn" @onclick="CycleCameraAsync"
+                                    aria-label="@(Mode == GameMode.Demo ? "Cut to the next shot (C)" : "Change camera (C)")"
+                                    title="@(Mode == GameMode.Demo ? "The director follows the closest fights · cut to the next shot" : "Change camera (C)")">🎥</button>
+                            @if (Pausable)
+                            {
+                                <button type="button" class="pocabinet-iconbtn" @onclick="TogglePauseAsync"
+                                        aria-label="@(_paused ? "Resume race" : "Pause race")">
+                                    @(_paused ? "▶" : "⏸")
+                                </button>
+                            }
+                            @if (IsMultiplayerMode && _phase == Phase.Racing)
+                            {
+                                @* Online there is no pause: this is the way out for drivers, wrecks and
+                                   spectators. A driver taps twice (the first tap arms it). *@
+                                <button type="button" class="pocabinet-iconbtn" @onclick="LeaveWireRaceAsync"
+                                        aria-label="@(_confirmLeave ? "Tap again to leave the race" : "Leave race")"
+                                        title="Leave the race and go back to the lobby">@(_confirmLeave ? "Leave?" : "✕")</button>
+                            }
                         </span>
-                        @SectorChips
-                    </div>
-                }
-                <span class="pocabinet-hudbar">
-                    <button type="button" class="pocabinet-iconbtn" @onclick="CycleCameraAsync"
-                            aria-label="@(Mode == GameMode.Demo ? "Cut to the next shot (C)" : "Change camera (C)")"
-                            title="@(Mode == GameMode.Demo ? "The director follows the closest fights · cut to the next shot" : "Change camera (C)")">🎥</button>
-                    @if (Pausable)
-                    {
-                        <button type="button" class="pocabinet-iconbtn" @onclick="TogglePauseAsync"
-                                aria-label="@(_paused ? "Resume race" : "Pause race")">
-                            @(_paused ? "▶" : "⏸")
-                        </button>
-                    }
-                    @if (IsMultiplayerMode && _phase == Phase.Racing)
-                    {
-                        @* Online there is no pause: this is the way out for drivers, wrecks and
-                           spectators. A driver taps twice (the first tap arms it). *@
-                        <button type="button" class="pocabinet-iconbtn" @onclick="LeaveWireRaceAsync"
-                                aria-label="@(_confirmLeave ? "Tap again to leave the race" : "Leave race")"
-                                title="Leave the race and go back to the lobby">@(_confirmLeave ? "Leave?" : "✕")</button>
-                    }
-                </span>
-                @* Screen-reader channel: laps, places, officials' radio lines, the finish. *@
-                <p class="pocabinet-sr" role="status" aria-live="polite">@_liveAnnouncement</p>
-                @if (IsMultiplayerMode && _phase == Phase.Racing && _connectionLost is not null)
-                {
-                    @* The race connection is gone for good: say so and offer the ways out. *@
-                    <div class="pocabinet-reconnect pocabinet-reconnect--lost" role="alert">
-                        <span>@_connectionLost</span>
-                        <button type="button" class="app-btn app-btn--primary" @onclick="BackToLobbyAsync">Back to lobby</button>
-                        <button type="button" class="app-btn app-btn--ghost" @onclick="QuitOnlineAsync">Quit to menu</button>
-                    </div>
-                }
-                else if (IsMultiplayerMode && _phase == Phase.Racing && !string.IsNullOrEmpty(_status))
-                {
-                    <div class="pocabinet-reconnect" role="alert">
-                        <span class="pocabinet-reconnect__spinner" aria-hidden="true"></span>
-                        <span>@_status</span>
-                    </div>
-                }
-                else if (!string.IsNullOrEmpty(_status) && _phase == Phase.Racing)
-                {
-                    <p class="pocabinet-status" role="alert">@_status</p>
-                }
+                        @* Screen-reader channel: laps, places, officials' radio lines, the finish. *@
+                        <p class="pocabinet-sr" role="status" aria-live="polite">@_liveAnnouncement</p>
+                        @if (IsMultiplayerMode && _phase == Phase.Racing && _connectionLost is not null)
+                        {
+                            @* The race connection is gone for good: say so and offer the ways out. *@
+                            <div class="pocabinet-reconnect pocabinet-reconnect--lost" role="alert">
+                                <span>@_connectionLost</span>
+                                <button type="button" class="app-btn app-btn--primary" @onclick="BackToLobbyAsync">Back to lobby</button>
+                                <button type="button" class="app-btn app-btn--ghost" @onclick="QuitOnlineAsync">Quit to menu</button>
+                            </div>
+                        }
+                        else if (IsMultiplayerMode && _phase == Phase.Racing && !string.IsNullOrEmpty(_status))
+                        {
+                            <div class="pocabinet-reconnect" role="alert">
+                                <span class="pocabinet-reconnect__spinner" aria-hidden="true"></span>
+                                <span>@_status</span>
+                            </div>
+                        }
+                        else if (!string.IsNullOrEmpty(_status) && _phase == Phase.Racing)
+                        {
+                            <p class="pocabinet-status" role="alert">@_status</p>
+                        }
 
-            </section>
-            @if (_paused)
-            {
-                @* Modal: showModal() (after render, PoCabinet.showModal) traps focus and makes the
-                   page behind inert. Esc is input.js's pause toggle, so the dialog's own Esc-close
-                   is cancelled in JS to keep the two from fighting. The card is the race so far
-                   and what to do next; the settings are one button away in the drawer. *@
-                <dialog id="pocabinetPause" class="pocabinet-overlay" aria-labelledby="pocabinet-pause-title">
-                    <div class="pocabinet-overlay__card">
-                        <header class="pocabinet-pause__head">
-                            <h2 id="pocabinet-pause-title">Paused</h2>
-                            <span class="pocabinet-muted">@TrackName</span>
-                        </header>
-                        <dl class="pocabinet-pause__stats">
-                            <div><dt>Place</dt><dd>P@(_position)<small>/@_totalCars</small></dd></div>
-                            <div><dt>Lap</dt><dd>@Math.Min(_lap, _totalLaps)<small>/@_totalLaps</small></dd></div>
-                            <div><dt>Time</dt><dd>@PoCabinetCatalog.FormatLap(_lapSeconds)</dd></div>
-                            <div><dt>Best lap</dt><dd>@PoCabinetCatalog.FormatLap(_laps.BestLapShown)</dd></div>
-                        </dl>
-                        @SectorChips
-                        <div class="pocabinet-pause__actions">
-                            <button class="app-btn app-btn--primary" @onclick="ResumeRaceAsync">Resume</button>
-                            <button class="app-btn app-btn--secondary" @onclick="RestartRaceAsync">Restart</button>
-                            <button class="app-btn app-btn--secondary" @onclick="OpenDrawerAsync">Settings</button>
-                            <button class="app-btn app-btn--ghost" @onclick="QuitToMenuAsync">Quit to menu</button>
-                        </div>
-                    </div>
-                </dialog>
-            }
+                    </section>
+                    @if (_paused)
+                    {
+                        @* Modal: showModal() (after render, PoCabinet.showModal) traps focus and makes the
+                           page behind inert. Esc is input.js's pause toggle, so the dialog's own Esc-close
+                           is cancelled in JS to keep the two from fighting. The card is the race so far
+                           and what to do next; the settings are one button away in the drawer. *@
+                        <dialog id="pocabinetPause" class="pocabinet-overlay" aria-labelledby="pocabinet-pause-title">
+                            <div class="pocabinet-overlay__card">
+                                <header class="pocabinet-pause__head">
+                                    <h2 id="pocabinet-pause-title">Paused</h2>
+                                    <span class="pocabinet-muted">@TrackName</span>
+                                </header>
+                                <dl class="pocabinet-pause__stats">
+                                    <div><dt>Place</dt><dd>P@(_position)<small>/@_totalCars</small></dd></div>
+                                    <div><dt>Lap</dt><dd>@Math.Min(_lap, _totalLaps)<small>/@_totalLaps</small></dd></div>
+                                    <div><dt>Time</dt><dd>@PoCabinetCatalog.FormatLap(_lapSeconds)</dd></div>
+                                    <div><dt>Best lap</dt><dd>@PoCabinetCatalog.FormatLap(_laps.BestLapShown)</dd></div>
+                                </dl>
+                                @SectorChips
+                                <div class="pocabinet-pause__actions">
+                                    <button class="app-btn app-btn--primary" @onclick="ResumeRaceAsync">Resume</button>
+                                    <button class="app-btn app-btn--secondary" @onclick="RestartRaceAsync">Restart</button>
+                                    <button class="app-btn app-btn--secondary" @onclick="OpenDrawerAsync">Settings</button>
+                                    <button class="app-btn app-btn--ghost" @onclick="QuitToMenuAsync">Quit to menu</button>
+                                </div>
+                            </div>
+                        </dialog>
+                    }
+                </ChildContent>
+                <ErrorContent Context="ex">
+                    @CrashCard(ex.Message)
+                </ErrorContent>
+            </ErrorBoundary>
         }
         <PoCabinetDrawer @ref="_drawer" Settings="Settings" SettingsChanged="OnSettingsChangedAsync"
                          Color="@_color" PaintChanged="OnPaintChanged"
-                         ShowWeather="@(!IsMultiplayerMode)" WeatherNextRace="@(_phase is Phase.Racing or Phase.Finished)" />
+                         ShowWeather="@(!IsMultiplayerMode)" WeatherNextRace="@(_phase is Phase.Racing or Phase.Finished)"
+                         ShowCamera="@(_phase is Phase.Racing)" OnCycleCamera="CycleCameraAsync" />
     </div>
 </GameShell>
 
@@ -263,12 +281,14 @@
         }
     </span>;
 
-    // The card's Options slot: the tracks, in 1P (online, the lobby host picks one; the demo
-    // picks its own). Aids, touch controls and the car's colour are in the drawer, from the
-    // pause card. Otherwise only a failed start says so here.
+    // The card's Options slot, in 1P: one tabbed sheet, Track (the default) / Car / Settings
+    // (online, the lobby host picks the track; the demo picks its own). In a race the same
+    // panels are in the drawer, from the pause card. Otherwise only a failed start says so here.
     private RenderFragment? OptionsContent => Mode == GameMode.OnePlayer
         ? @<div class="pocabinet-start">
-            <PoCabinetTrackSelector SelectedTrackId="@_trackId" SelectedTrackIdChanged="OnTrackChanged" Campaign="true" />
+            <PoCabinetPreRace TrackId="@_trackId" TrackIdChanged="OnTrackChanged"
+                              Settings="Settings" SettingsChanged="OnSettingsChangedAsync"
+                              Color="@_color" PaintChanged="OnPaintChanged" />
             @if (!string.IsNullOrEmpty(_status))
             {
                 @StatusLine
@@ -278,6 +298,26 @@
 
     private RenderFragment StatusLine => @<p class="pocabinet-status" role="alert">@_status</p>;
 
+    /// <summary>
+    /// The race view could not start, or threw while it ran: a card where the race would be,
+    /// with a plain retry and one on lite graphics (the mesh room, the low tier), not a dead page.
+    /// </summary>
+    private RenderFragment CrashCard(string? message) => @<div class="pocabinet-crash" role="alert" aria-labelledby="pocabinet-crash-title">
+        <div class="pocabinet-crash__card">
+            <h2 id="pocabinet-crash-title">The race view stopped</h2>
+            <p>Cabinet's 3D view hit a problem on this device. Try again, or try with lite graphics: the low quality tier and the plain room instead of the room scan.</p>
+            @if (!string.IsNullOrWhiteSpace(message))
+            {
+                <p class="pocabinet-crash__detail pocabinet-muted">@message</p>
+            }
+            <div class="pocabinet-crash__actions">
+                <button type="button" class="app-btn app-btn--primary" @onclick="RetryRaceAsync">Retry</button>
+                <button type="button" class="app-btn app-btn--secondary" @onclick="RetryLiteAsync">Retry with lite graphics</button>
+                <button type="button" class="app-btn app-btn--ghost" @onclick="LeaveCrashAsync">@(IsMultiplayerMode ? "Back to lobby" : "Back")</button>
+            </div>
+        </div>
+    </div>;
+
     // The end-of-game modal's summary. A <section>, not a <div>: the modal's own rule for
     // "a div's second and later divs are small print" would shrink the podium.
     private RenderFragment ResultsContent => @<section class="pocabinet-results__body gps-summary--wide">
@@ -285,6 +325,8 @@
                           TrackName="@TrackName" IsSpectating="IsSpectating" IsMultiplayer="IsMultiplayerMode"
                           AwaitingFinal="_awaitingFinal" IsPersonalBest="_isPersonalBest" PreviousBest="_previousBest"
                           CampaignNote="CampaignNote" Debrief="_debrief" TelemetrySummary="@_telemetrySummary"
-                          HasReferenceLap="_hasReferenceLap" Status="@_status" Dnf="_dnf" />
+                          HasReferenceLap="_hasReferenceLap" Status="@_status" Dnf="_dnf"
+                          RaceAgainLabel="@(IsMultiplayerMode ? "Back to lobby" : "Race again")"
+                          OnRaceAgain="RaceAgainAsync" />
     </section>;
 }

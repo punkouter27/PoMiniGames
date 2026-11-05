@@ -1,6 +1,7 @@
 @*
     PoCabinetTrackSelector — the themed tracks and today's daily circuit as one-line rows
-    (two lines on a phone): accent, name, length · difficulty, your best lap there, and a
+    (two lines on a phone): accent, a mini route map (the centre line, a dot on the start, a
+    square on a point-to-point finish), name, length · difficulty, your best lap there, and a
     short campaign tag. Keyboard navigation + screen reader labels; the parent owns the
     selection (two-way binding).
 
@@ -50,6 +51,15 @@ else
                     style="--accent: @track.Accent;"
                     @onclick="() => SelectTrack(track.Id)">
                 <span class="pocabinet-track__swatch" aria-hidden="true"></span>
+                @{ var route = RouteFor(track.Id); }
+                <svg class="pocabinet-track__map" viewBox="0 0 @MapW @MapH" aria-hidden="true" focusable="false">
+                    <polyline class="pocabinet-track__route" points="@route.Points" />
+                    <circle class="pocabinet-track__start" cx="@route.StartX" cy="@route.StartY" r="6" />
+                    @if (route.FinishX is { } fx && route.FinishY is { } fy)
+                    {
+                        <rect class="pocabinet-track__finish" x="@Num(fx - 4.5)" y="@Num(fy - 4.5)" width="9" height="9" />
+                    }
+                </svg>
                 <strong class="pocabinet-track__title">@track.Name</strong>
                 <span class="pocabinet-track__meta">@TrackMeta(track)</span>
                 <span class="pocabinet-track__best @(best > 0 ? null : "pocabinet-track__best--none")">
@@ -114,6 +124,74 @@ else
                 : $"Stage {stage + 1} cleared");
         if (stage == Career.Current.CurrentStageIndex) return ("active", $"Stage {stage + 1}: a top-{PoCabinetCatalog.CampaignPassPlace} finish advances");
         return ("free", $"Stage {stage + 1}: a free race for now");
+    }
+
+    // ─── Mini route map ──────────────────────────────────────────────────────
+    private const int MapW = 100;
+    private const int MapH = 70;
+    private const double MapPad = 7;
+    private const int MaxRoutePoints = 160;
+
+    /// <summary>A track's route, normalized into the map's viewBox. SVG coordinates, invariant culture.</summary>
+    private sealed record Route(string Points, string StartX, string StartY, double? FinishX, double? FinishY);
+
+    /// <summary>Built once per track id for the app's lifetime (a daily id is one day's circuit).</summary>
+    private static readonly System.Collections.Concurrent.ConcurrentDictionary<string, Route> Routes = new(StringComparer.OrdinalIgnoreCase);
+
+    private static Route RouteFor(string trackId) => Routes.GetOrAdd(trackId, BuildRoute);
+
+    private static string Num(double v) => v.ToString("0.#", System.Globalization.CultureInfo.InvariantCulture);
+
+    /// <summary>
+    /// The centre line (<see cref="PoCabinetTrackGeometry.BuildCenterlineXY"/>), minus a
+    /// point-to-point track's hidden return link, fitted into the viewBox with its aspect kept and
+    /// thinned to at most <see cref="MaxRoutePoints"/> points. Same orientation as the race's
+    /// minimap (y down). A circuit's line closes on its start.
+    /// </summary>
+    private static Route BuildRoute(string trackId)
+    {
+        var def = PoCabinetTrackGeometry.Get(trackId);
+        var xy = PoCabinetTrackGeometry.BuildCenterlineXY(def);
+        var count = xy.Length / 2;
+        var steps = def.StepsPerSegment;
+        int hiddenFrom = def.HiddenFromKnot * steps, hiddenTo = def.HiddenToKnot * steps;
+        bool Hidden(int i) => hiddenTo > hiddenFrom && i >= hiddenFrom && i < hiddenTo;
+        var finish = def.FinishKnot > 0 ? Math.Min(def.FinishKnot * steps, count - 1) : -1;
+
+        double minX = double.MaxValue, minY = double.MaxValue, maxX = double.MinValue, maxY = double.MinValue;
+        for (var i = 0; i < count; i++)
+        {
+            if (Hidden(i)) continue;
+            minX = Math.Min(minX, xy[2 * i]);
+            maxX = Math.Max(maxX, xy[2 * i]);
+            minY = Math.Min(minY, xy[2 * i + 1]);
+            maxY = Math.Max(maxY, xy[2 * i + 1]);
+        }
+        if (count == 0 || minX > maxX) return new Route("", Num(MapW / 2.0), Num(MapH / 2.0), null, null);
+        var spanX = Math.Max(1e-6, maxX - minX);
+        var spanY = Math.Max(1e-6, maxY - minY);
+        var scale = Math.Min((MapW - 2 * MapPad) / spanX, (MapH - 2 * MapPad) / spanY);
+        var offX = (MapW - spanX * scale) / 2;
+        var offY = (MapH - spanY * scale) / 2;
+        double Px(int i) => offX + (xy[2 * i] - minX) * scale;
+        double Py(int i) => offY + (xy[2 * i + 1] - minY) * scale;
+
+        // A point-to-point run is drawn from the end of its hidden link round to where it begins,
+        // so the polyline never jumps across the gap.
+        var first = hiddenTo > hiddenFrom ? hiddenTo % count : 0;
+        var stride = Math.Max(1, (int)Math.Ceiling(count / (double)MaxRoutePoints));
+        var sb = new System.Text.StringBuilder();
+        var closed = hiddenTo <= hiddenFrom;
+        for (var n = 0; n < count; n += stride)
+        {
+            var i = (first + n) % count;
+            if (Hidden(i)) continue;
+            if (sb.Length > 0) sb.Append(' ');
+            sb.Append(Num(Px(i))).Append(',').Append(Num(Py(i)));
+        }
+        if (closed) sb.Append(' ').Append(Num(Px(0))).Append(',').Append(Num(Py(0)));
+        return new Route(sb.ToString(), Num(Px(0)), Num(Py(0)),
+            finish >= 0 ? Px(finish) : null, finish >= 0 ? Py(finish) : null);
     }
 
     private Task SelectTrack(string id)

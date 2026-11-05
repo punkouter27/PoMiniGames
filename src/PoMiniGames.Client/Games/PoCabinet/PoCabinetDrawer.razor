@@ -1,6 +1,7 @@
 @*
-    PoCabinetDrawer — the one place Cabinet's car and settings live: a side sheet on desktop, a
-    bottom sheet on phones, opened from the start card, the pause card and the lobby. The car's
+    PoCabinetDrawer — Cabinet's car and settings once the start card is gone: a side sheet on
+    desktop, a bottom sheet on phones, opened from the pause card and the lobby (the start card
+    has the same panels as tabs, PoCabinetPreRace). The car's
     colour is on top (a change applies from the next race); the settings below it.
 
     A native <dialog> opened through PoDialogInterop.showModalAlone, which puts the layer
@@ -26,7 +27,8 @@
                     <PoCabinetPaintShop SelectedColor="@Color" SelectionChanged="PaintChanged" />
                 </section>
                 <PoCabinetSettingsPanel Value="Settings" ValueChanged="SettingsChanged"
-                                        ShowWeather="ShowWeather" WeatherNextRace="WeatherNextRace" />
+                                        ShowWeather="ShowWeather" WeatherNextRace="WeatherNextRace"
+                                        OnCycleCamera="@(ShowCamera ? OnCycleCamera : default)" />
             }
         </div>
     </div>
@@ -39,6 +41,9 @@
     [Parameter] public EventCallback<string> PaintChanged { get; set; }
     [Parameter] public bool ShowWeather { get; set; } = true;
     [Parameter] public bool WeatherNextRace { get; set; }
+    /// <summary>A race is mounted: the settings offer its camera cycle.</summary>
+    [Parameter] public bool ShowCamera { get; set; }
+    [Parameter] public EventCallback OnCycleCamera { get; set; }
 
     private ElementReference _dialog;
     private bool _open;

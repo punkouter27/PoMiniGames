@@ -11,7 +11,35 @@
     font: inherit;
 }
 
-/* ─── Settings panel: four groups of rows ─────────────────────────────────── */
+/* A button inside a row (the camera's Next view): no gap above it. */
+.pocabinet-secondary.pocabinet-settings__inline { margin-top: 0; }
+
+.pocabinet-secondary:hover { border-color: var(--color-primary); }
+
+.pocabinet-secondary:active { transform: scale(0.97); }
+
+.pocabinet-secondary { transition: transform 0.12s ease, border-color 0.15s ease; }
+
+.pocabinet-pill span { transition: background-color 0.15s ease, color 0.15s ease; }
+
+.pocabinet-pill:hover input:not(:checked) + span {
+    background: color-mix(in srgb, var(--color-text) 8%, transparent);
+}
+
+.pocabinet-pill:active span { transform: scale(0.96); }
+
+@media (prefers-reduced-motion: reduce) {
+    .pocabinet-secondary,
+    .pocabinet-pill span,
+    .pocabinet-switch,
+    .pocabinet-switch::after {
+        transition: none;
+    }
+    .pocabinet-secondary:active,
+    .pocabinet-pill:active span { transform: none; }
+}
+
+/* ─── Settings panel: groups of rows ─────────────────────────────────── */
 .pocabinet-settings {
     display: grid;
     gap: 0.25rem;

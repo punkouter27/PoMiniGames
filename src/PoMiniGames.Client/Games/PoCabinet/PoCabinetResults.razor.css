@@ -223,3 +223,85 @@
     padding-left: 1.2rem;
     line-height: 1.4;
 }
+
+/* ─── One card: the result's facts, the primary action, then the details ─── */
+.pocabinet-results__facts {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.4rem 1.4rem;
+    margin: 0;
+}
+
+.pocabinet-results__facts > div { display: grid; gap: 0.05rem; }
+
+.pocabinet-results__facts dt {
+    font-size: 0.72rem;
+    font-weight: 700;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+    color: var(--color-text-muted);
+}
+
+.pocabinet-results__facts dd {
+    margin: 0;
+    font-size: 1.15rem;
+    font-weight: 700;
+    font-variant-numeric: tabular-nums;
+}
+
+.pocabinet-results__facts dd small {
+    display: block;
+    font-size: 0.78rem;
+    font-weight: 400;
+    color: var(--color-text-muted);
+}
+
+/* Faster reads from its minus sign; the tint is extra (no green on white passes AA). */
+.pocabinet-results__delta--faster { color: var(--color-primary); }
+
+.pocabinet-results__delta--slower { color: var(--color-text); }
+
+.pocabinet-results__facts dd.pocabinet-results__delta--none { color: var(--color-text-muted); font-size: 0.95rem; font-weight: 600; }
+
+.pocabinet-results__actions {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 0.5rem;
+    margin-top: 0.85rem;
+}
+
+.pocabinet-results__again { min-width: 9rem; }
+
+.pocabinet-results__actions .app-btn {
+    transition: transform 0.12s ease;
+}
+
+.pocabinet-results__actions .app-btn:active { transform: scale(0.97); }
+
+.pocabinet-results__more-toggle { margin-left: auto; }
+
+/* Shut by height, not display: the telemetry canvas keeps its width for race.js's chart. */
+.pocabinet-results__details {
+    height: 0;
+    overflow: hidden;
+    visibility: hidden;
+}
+
+.pocabinet-results__details--open {
+    height: auto;
+    overflow: visible;
+    visibility: visible;
+    animation: pocabinet-results-open 0.2s ease both;
+}
+
+@media (prefers-reduced-motion: reduce) {
+    .pocabinet-results__details--open { animation: none; }
+    .pocabinet-results__actions .app-btn { transition: none; }
+    .pocabinet-results__actions .app-btn:active { transform: none; }
+}
+
+@keyframes pocabinet-results-open {
+    from { opacity: 0; transform: translateY(-4px); }
+    to { opacity: 1; transform: none; }
+}

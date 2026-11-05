@@ -76,10 +76,18 @@
     line-height: 1.25;
 }
 
+/* The top ten's box is held from the first render (broadcast.js fills the rows a beat after
+   the race starts), so the tower does not grow down the screen as they land. */
 .pocabinet-bc__rows {
     list-style: none;
     margin: 0;
     padding: 0.2rem 0;
+    min-height: calc(10 * (1.35em + 0.2rem) + 0.4rem);
+}
+
+/* The tower fades in rather than popping in over the first frames. */
+.pocabinet-bc__tower {
+    animation: pocabinet-bc-fade 0.45s ease 0.25s both;
 }
 
 .pocabinet-bc__row {
@@ -311,12 +319,14 @@
 @media (max-width: 640px) {
     .pocabinet-bc__tower { width: calc(10.5rem * var(--pocabinet-hud, 1)); font-size: max(12px, calc(0.72rem * var(--pocabinet-hud, 1))); }
     .pocabinet-bc__row:nth-child(n+6):not([data-focus="on"]) { display: none; }
+    .pocabinet-bc__rows { min-height: calc(5 * (1.35em + 0.2rem) + 0.4rem); }
     .pocabinet-bc__callout { top: auto; bottom: 5.4rem; max-width: calc(100% - 1.4rem); font-size: calc(0.82rem * var(--pocabinet-hud, 1)); }
     .pocabinet-bc__lower { max-width: calc(100% - 1.4rem); font-size: calc(0.78rem * var(--pocabinet-hud, 1)); }
 }
 
 @media (prefers-reduced-motion: reduce) {
     .pocabinet-bc__live::before,
+    .pocabinet-bc__tower,
     .pocabinet-bc__callout[data-show="on"] .pocabinet-bc__ct { animation: none; }
     .pocabinet-bc__callout,
     .pocabinet-bc__lower { transition: none; }
@@ -330,4 +340,9 @@
 @keyframes pocabinet-bc-wipe {
     from { clip-path: inset(0 100% 0 0); }
     to { clip-path: inset(0 0 0 0); }
+}
+
+@keyframes pocabinet-bc-fade {
+    from { opacity: 0; }
+    to { opacity: 1; }
 }

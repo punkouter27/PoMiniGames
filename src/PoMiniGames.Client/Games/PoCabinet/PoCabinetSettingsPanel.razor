@@ -11,10 +11,16 @@
    work: either source turns the option on, so with the app's switch on, turning
    Cabinet's off would do nothing. One button opens the sheet.
 
-   It lives in one place, PoCabinetDrawer, which the start card, the pause card and the
-   lobby all open (it used to be a fold-out on the start card and a second, "compact"
-   copy with a fold-out inside it in the pause card). The racing-line overlay was removed
-   2026-10-19: it was the centre line coloured by curvature, not a line to follow. *@
+   It lives in two places: the start card's Settings tab (PoCabinetPreRace) and
+   PoCabinetDrawer, which the pause card and the lobby open. The racing-line overlay was
+   removed 2026-10-19: it was the centre line coloured by curvature, not a line to follow.
+
+   Graphics: the quality tier is the APP's (window.PoQuality via SettingsService, the same
+   switch as the app sheet's Graphics row), shown here because a 3D race is where it
+   matters. Room scans is Cabinet's own (RoomDetail). The camera is not a stored setting:
+   it is the race's C-key cycle, so its button only shows while a race is mounted. No
+   Radzen here either: its theme is global CSS that the app loads only on the pages built
+   on it (PoMule, Brawl HQ, the leaderboards), and it cannot be scoped to one panel. *@
 @inject SettingsService AppSettings
 
 <div class="pocabinet-settings" role="group" aria-label="Cabinet settings">
@@ -24,10 +30,28 @@
             <span>Race music</span>
             <input type="checkbox" role="switch" class="pocabinet-switch" checked="@Value.Music" @onchange="OnMusicChanged" />
         </label>
-        <div class="pocabinet-settings__row">
-            <span>Volume, mute, motion and colours</span>
-            <button type="button" class="pocabinet-secondary" @onclick="AppSettings.RequestOpen">App settings</button>
-        </div>
+        @if (ShowAppSettings)
+        {
+            <div class="pocabinet-settings__row">
+                <span>Volume, mute, motion and colours</span>
+                <button type="button" class="pocabinet-secondary" @onclick="AppSettings.RequestOpen">App settings</button>
+            </div>
+        }
+    </fieldset>
+
+    <fieldset class="pocabinet-settings__group">
+        <legend>Graphics &amp; camera</legend>
+        @Pills("gfx", "Graphics quality", GraphicsOptions, AppSettings.Graphics, SetGraphicsAsync,
+               "Every game's setting. Lower is smoother on a slow device.")
+        @Pills("room", "Room scans", RoomOptions, Value.RoomDetail, v => RaiseAsync(s => s.RoomDetail = v),
+               "Full is a 9.6 MB scan and heavier on phones; Lite draws the plain room.")
+        @if (OnCycleCamera.HasDelegate)
+        {
+            <div class="pocabinet-settings__row">
+                <span>Camera<small>Or press C in the race</small></span>
+                <button type="button" class="pocabinet-secondary pocabinet-settings__inline" @onclick="() => OnCycleCamera.InvokeAsync()">Next view</button>
+            </div>
+        }
     </fieldset>
 
     <fieldset class="pocabinet-settings__group">
@@ -70,18 +94,30 @@
     [Parameter] public bool ShowWeather { get; set; } = true;
     /// <summary>A race is on screen: a weather change applies from the next one.</summary>
     [Parameter] public bool WeatherNextRace { get; set; }
+    /// <summary>The "App settings" button. Off on the start card, whose one action is OK.</summary>
+    [Parameter] public bool ShowAppSettings { get; set; } = true;
+    /// <summary>A race is mounted: the camera row's button cycles its view (the C key).</summary>
+    [Parameter] public EventCallback OnCycleCamera { get; set; }
 
     private static readonly (string Value, string Text)[] HudOptions = [("0.85", "Small"), ("1", "Normal"), ("1.15", "Large")];
     private static readonly (string Value, string Text)[] WeatherOptions = [("clear", "Clear"), ("rain", "Rain")];
     private static readonly (string Value, string Text)[] AssistOptions = [("off", "Off"), ("light", "Light"), ("strong", "Strong")];
     private static readonly (string Value, string Text)[] TouchOptions = [("auto", "Auto"), ("on", "Always"), ("off", "Hide")];
     private static readonly (string Value, string Text)[] SteerOptions = [("pad", "Steer pad"), ("tilt", "Tilt")];
+    private static readonly (string Value, string Text)[] GraphicsOptions = [("auto", "Auto"), ("low", "Low"), ("medium", "Med"), ("high", "High")];
+    private static readonly (string Value, string Text)[] RoomOptions = [("splat", "Full"), ("mesh", "Lite")];
 
     /// <summary>One labelled row of radio pills; the group name keeps each row its own radio set.</summary>
-    private RenderFragment Pills(string name, string label, (string Value, string Text)[] options, string current, Func<string, Task> onPick) => __builder =>
+    private RenderFragment Pills(string name, string label, (string Value, string Text)[] options, string current, Func<string, Task> onPick, string? hint = null) => __builder =>
     {
         <div class="pocabinet-settings__row" role="radiogroup" aria-label="@label">
-            <span>@label</span>
+            <span>
+                @label
+                @if (hint is not null)
+                {
+                    <small>@hint</small>
+                }
+            </span>
             <span class="pocabinet-pills">
                 @foreach (var (value, text) in options)
                 {
@@ -101,6 +137,14 @@
     {
         mutate(Value);
         if (ValueChanged.HasDelegate) await ValueChanged.InvokeAsync(Value);
+    }
+
+    // The app's tier: SettingsService persists it (poFx.tier) and applies it (PoQuality).
+    private async Task SetGraphicsAsync(string tier)
+    {
+        if (AppSettings.Graphics == tier) return;
+        try { await AppSettings.SetGraphicsAsync(tier); }
+        catch { /* interop gone: the sheet still shows the stored choice */ }
     }
 
     private Task OnMusicChanged(ChangeEventArgs e) =>

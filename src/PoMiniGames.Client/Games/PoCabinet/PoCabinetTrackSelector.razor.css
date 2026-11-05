@@ -11,8 +11,8 @@
 
 .pocabinet-track {
     display: grid;
-    grid-template-columns: 6px minmax(0, 1fr) auto auto 6.6rem;
-    grid-template-areas: "sw title meta best stage";
+    grid-template-columns: 6px 2.6rem minmax(0, 1fr) auto auto 6.6rem;
+    grid-template-areas: "sw map title meta best stage";
     align-items: center;
     gap: 0.25rem 0.75rem;
     min-height: 2.75rem;
@@ -29,6 +29,60 @@
 .pocabinet-track:hover {
     border-color: color-mix(in srgb, var(--accent) 60%, var(--color-border));
 }
+
+/* Hover lifts the card a hair; a press sinks it. Off for reduced motion (below, and the
+   page's own blanket rule). */
+.pocabinet-track {
+    transition: transform 0.14s ease, box-shadow 0.18s ease, border-color 0.15s ease, background-color 0.15s ease;
+}
+
+@media (hover: hover) {
+    .pocabinet-track:hover {
+        transform: translateY(-1px);
+        box-shadow: 0 4px 12px color-mix(in srgb, var(--accent) 22%, transparent);
+    }
+}
+
+.pocabinet-track:active {
+    transform: translateY(0) scale(0.985);
+    box-shadow: none;
+}
+
+.pocabinet-track:focus-visible {
+    outline: 2px solid var(--color-focus, currentColor);
+    outline-offset: 2px;
+}
+
+/* The mini route map: the centre line in the track's accent, a dot on the start. */
+.pocabinet-track__map {
+    grid-area: map;
+    display: block;
+    width: 2.6rem;
+    height: 1.82rem;
+    overflow: visible;
+}
+
+.pocabinet-track__route {
+    fill: none;
+    stroke: var(--accent);
+    stroke-width: 2px;
+    stroke-linecap: round;
+    stroke-linejoin: round;
+    vector-effect: non-scaling-stroke;
+}
+
+.pocabinet-track__start {
+    fill: var(--color-surface);
+    stroke: var(--color-text);
+    stroke-width: 1.5px;
+    vector-effect: non-scaling-stroke;
+}
+
+.pocabinet-track__finish {
+    fill: var(--color-text);
+}
+
+.pocabinet-track--selected .pocabinet-track__route { stroke-width: 2.5px; }
 
 .pocabinet-track--selected {
     border-color: var(--accent);
@@ -58,24 +112,6 @@
 
 .pocabinet-track__best--none { color: var(--color-text-muted); }
 
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 /* Each track row's campaign tag, right-aligned. */
 .pocabinet-track__stage {
     grid-area: stage;
@@ -102,16 +138,14 @@
 @media (max-width: 640px) {
     .pocabinet-track-selector { gap: 0.25rem; }
     .pocabinet-track {
-        grid-template-columns: 6px minmax(0, 1fr) auto;
-        grid-template-areas: "sw title stage" "sw meta best";
+        grid-template-columns: 6px 2.3rem minmax(0, 1fr) auto;
+        grid-template-areas: "sw map title stage" "sw map meta best";
         row-gap: 0.05rem;
         min-height: 0;
         padding: 0.28rem 0.65rem 0.28rem 0.45rem;
         line-height: 1.2;
     }
-    
-    
-    
+    .pocabinet-track__map { width: 2.3rem; height: 1.6rem; }
 }
 
 .pocabinet-track-select {
@@ -131,10 +165,17 @@
 @media (max-height: 560px) {
     .pocabinet-track-selector { gap: 0.2rem; }
     .pocabinet-track {
-        grid-template-columns: 6px minmax(0, 1fr) auto 6.6rem;
-        grid-template-areas: "sw title meta stage";
+        grid-template-columns: 6px 2rem minmax(0, 1fr) auto 6.6rem;
+        grid-template-areas: "sw map title meta stage";
         min-height: 2.1rem;
         padding: 0.2rem 0.6rem 0.2rem 0.5rem;
     }
     .pocabinet-track__best { display: none; }
+    .pocabinet-track__map { width: 2rem; height: 1.4rem; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+    .pocabinet-track { transition: none; }
+    .pocabinet-track:hover,
+    .pocabinet-track:active { transform: none; }
 }

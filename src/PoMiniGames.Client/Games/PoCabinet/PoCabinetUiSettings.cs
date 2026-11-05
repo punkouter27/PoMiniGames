@@ -27,6 +27,11 @@ public sealed class PoCabinetUiSettings
     /// <summary>"off", "light" or "strong": blend the steering toward the centre line.</summary>
     public string SteeringAssist { get; set; } = "light";
     public bool AutoBrake { get; set; }
+    /// <summary>
+    /// The scanned rooms (the bedroom track): "splat" draws the Gaussian-splat scan (a 9.6 MB
+    /// download, heavier on phones), "mesh" the lite mesh it collides with. JS key <c>roomDetail</c>.
+    /// </summary>
+    public string RoomDetail { get; set; } = "splat";
 
     /// <summary>Parse the stored JSON; defaults for anything missing or out of range, unknown keys ignored.</summary>
     public static PoCabinetUiSettings FromJson(string? json)
@@ -41,6 +46,7 @@ public sealed class PoCabinetUiSettings
         s.TouchControls = OneOf(s.TouchControls, d.TouchControls, "auto", "on", "off");
         s.SteerMode = OneOf(s.SteerMode, d.SteerMode, "pad", "tilt");
         s.SteeringAssist = OneOf(s.SteeringAssist, d.SteeringAssist, "off", "light", "strong");
+        s.RoomDetail = OneOf(s.RoomDetail, d.RoomDetail, "splat", "mesh");
         s.HudScale = Clamp(s.HudScale, 0.8, 1.3, d.HudScale);
         s.SteerSensitivity = Clamp(s.SteerSensitivity, 0.5, 1.5, d.SteerSensitivity);
         return s;

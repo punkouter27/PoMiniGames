@@ -1,0 +1,145 @@
+/* PoCabinetPreRace — the start card's tabbed setup: Track, Car, Settings. */
+.pocabinet-prerace {
+    display: grid;
+    gap: 0.5rem;
+    min-width: 0;
+}
+
+/* A segmented strip, like the intro's own Controls / How to play tabs. */
+.pocabinet-prerace__tabs {
+    display: flex;
+    gap: 2px;
+    padding: 2px;
+    border: 1px solid var(--color-border, transparent);
+    border-radius: 999px;
+    background: color-mix(in srgb, var(--color-text) 5%, transparent);
+    justify-self: start;
+}
+
+.pocabinet-prerace__tab {
+    min-height: 2rem;
+    padding: 0 1rem;
+    border: 0;
+    border-radius: 999px;
+    background: transparent;
+    color: var(--color-text-muted);
+    font: inherit;
+    font-size: 0.9rem;
+    font-weight: 600;
+    cursor: pointer;
+    transition: background-color 0.15s ease, color 0.15s ease, transform 0.12s ease;
+}
+
+.pocabinet-prerace__tab:hover { color: var(--color-text); }
+
+.pocabinet-prerace__tab:active { transform: scale(0.96); }
+
+.pocabinet-prerace__tab[aria-selected="true"] {
+    background: var(--color-primary);
+    color: var(--color-on-primary, white);
+}
+
+.pocabinet-prerace__tab:focus-visible {
+    outline: 2px solid var(--color-focus, currentColor);
+    outline-offset: 2px;
+}
+
+.pocabinet-prerace__panel {
+    min-width: 0;
+    animation: pocabinet-prerace-in 0.18s ease both;
+}
+
+/* The car and the settings scroll inside their panel, so the start card itself never does. */
+.pocabinet-prerace__panel--Car,
+.pocabinet-prerace__panel--Settings {
+    max-height: min(52dvh, 24rem);
+    overflow-y: auto;
+    overscroll-behavior: contain;
+    padding-right: 0.25rem;
+}
+
+.pocabinet-prerace__car h3 {
+    margin: 0 0 0.5rem;
+    font-size: 0.95rem;
+}
+
+.pocabinet-prerace__car p { margin: 0.6rem 0 0; font-size: 0.85rem; }
+
+/* The bedroom's room-scan choice under the track list. */
+.pocabinet-prerace__room {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    justify-content: space-between;
+    gap: 0.25rem 0.75rem;
+    margin-top: 0.4rem;
+    font-size: 0.9rem;
+}
+
+.pocabinet-prerace__room small {
+    display: block;
+    color: var(--color-text-muted);
+    font-size: 0.8rem;
+}
+
+.pocabinet-prerace__pills {
+    display: inline-flex;
+    padding: 2px;
+    border: 1px solid var(--color-border, transparent);
+    border-radius: 999px;
+    background: color-mix(in srgb, var(--color-text) 5%, transparent);
+}
+
+.pocabinet-prerace__pill { position: relative; cursor: pointer; }
+
+.pocabinet-prerace__pill input {
+    position: absolute;
+    inset: 0;
+    margin: 0;
+    opacity: 0;
+    cursor: pointer;
+}
+
+.pocabinet-prerace__pill span {
+    display: inline-flex;
+    align-items: center;
+    min-height: 1.9rem;
+    padding: 0 0.8rem;
+    border-radius: 999px;
+    font-size: 0.85rem;
+}
+
+.pocabinet-prerace__pill input:checked + span {
+    background: var(--color-primary);
+    color: var(--color-on-primary, white);
+    font-weight: 600;
+}
+
+.pocabinet-prerace__pill input:focus-visible + span {
+    outline: 2px solid var(--color-focus, currentColor);
+    outline-offset: 1px;
+}
+
+@media (pointer: coarse) {
+    .pocabinet-prerace__tab,
+    .pocabinet-prerace__pill span { min-height: 44px; }
+}
+
+/* A phone on its side: the strip slims down with the rest of the card. */
+@media (max-height: 560px) {
+    .pocabinet-prerace { gap: 0.3rem; }
+    .pocabinet-prerace__tab { min-height: 1.8rem; }
+    .pocabinet-prerace__panel--Car,
+    .pocabinet-prerace__panel--Settings { max-height: 46dvh; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+    .pocabinet-prerace__panel { animation: none; }
+    .pocabinet-prerace__tab { transition: none; }
+    .pocabinet-prerace__tab:active { transform: none; }
+}
+
+@keyframes pocabinet-prerace-in {
+    from { opacity: 0; transform: translateY(4px); }
+    to { opacity: 1; transform: none; }
+}

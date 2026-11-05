@@ -1,9 +1,11 @@
 @*
     PoCabinetResults — the race's results, inside the shared end-of-game modal's summary (the page
-    wraps it in the modal's section). Two columns: the result and the field on the left, the
-    telemetry and the race engineer on the right. The way out is the modal's own one button
-    (Back to main menu), so nothing here acts. The telemetry canvas is drawn by race.js (PoCabinet.showTelemetry) once this
-    renders.
+    wraps it in the modal's section). One card: the place, this race's best lap and how it sits
+    against the personal best, then the primary Race again (online: Back to lobby). The rest
+    (the field, every lap, the telemetry and the race engineer) is one "Race details" tap
+    below it. The modal's own Back to main menu stays the way out. The telemetry canvas is drawn
+    by race.js (PoCabinet.showTelemetry) once this renders: the details are collapsed by height,
+    not display:none, so the canvas keeps its width for the chart while they are shut.
 *@
 
 @using PoMiniGames.Shared.Games
@@ -24,14 +26,29 @@
     }
     <div class="pocabinet-results__headline">
         <h2>@Headline <span class="pocabinet-muted">· @TrackName</span></h2>
+        @if (!IsSpectating)
+        {
+            <dl class="pocabinet-results__facts">
+                <div>
+                    <dt>Best lap</dt>
+                    <dd>@(RaceBest > 0 ? PoCabinetCatalog.FormatLap(RaceBest) : "—")</dd>
+                </div>
+                <div>
+                    <dt>@(IsPersonalBest ? "Personal best" : "vs your best")</dt>
+                    <dd class="@DeltaClass">
+                        @DeltaText
+                        @if (ReferenceBest > 0)
+                        {
+                            <small>@(IsPersonalBest ? "was" : "best") @PoCabinetCatalog.FormatLap(ReferenceBest)</small>
+                        }
+                    </dd>
+                </div>
+            </dl>
+        }
         <p class="pocabinet-results__chips">
             @if (IsPersonalBest)
             {
                 <span class="pocabinet-chip pocabinet-chip--pb" role="status">★ New personal best</span>
-            }
-            else if (PreviousBest > 0)
-            {
-                <span class="pocabinet-chip">Personal best @PoCabinetCatalog.FormatLap(PreviousBest)</span>
             }
             @if (CampaignNote is { } note)
             {
@@ -40,6 +57,17 @@
         </p>
     </div>
 </header>
+<div class="pocabinet-results__actions">
+    @if (OnRaceAgain.HasDelegate)
+    {
+        <button type="button" class="app-btn app-btn--primary pocabinet-results__again" @onclick="() => OnRaceAgain.InvokeAsync()">@RaceAgainLabel</button>
+    }
+    <button type="button" class="app-btn app-btn--ghost pocabinet-results__more-toggle"
+            aria-expanded="@(_details ? "true" : "false")" aria-controls="pocabinet-results-details"
+            @onclick="() => _details = !_details">@(_details ? "Hide race details" : "Race details")</button>
+</div>
+<div id="pocabinet-results-details" class="pocabinet-results__details @(_details ? "pocabinet-results__details--open" : null)"
+     inert="@(!_details)">
 <div class="pocabinet-results__grid">
     <div class="pocabinet-results__col">
         @if (Standings is { Count: > 0 } standings)
@@ -127,6 +155,7 @@
         </div>
     }
 </div>
+</div>
 @if (!string.IsNullOrEmpty(Status))
 {
     <p class="pocabinet-status" role="status">@Status</p>
@@ -154,6 +183,28 @@
     [Parameter] public string? Status { get; set; }
     /// <summary>The player's car was wrecked: did not finish, classified behind every runner.</summary>
     [Parameter] public bool Dnf { get; set; }
+    /// <summary>The card's primary button: the same track again (online: back to the lobby).</summary>
+    [Parameter] public EventCallback OnRaceAgain { get; set; }
+    [Parameter] public string RaceAgainLabel { get; set; } = "Race again";
+
+    /// <summary>The field, the laps, the telemetry and the debrief: shut until asked for.</summary>
+    private bool _details;
+
+    /// <summary>This race's best lap: the best that counted, else the best timed.</summary>
+    private double RaceBest => Laps.BestValidLap > 0 ? Laps.BestValidLap : Laps.BestLapSession;
+
+    /// <summary>The best lap before this race: the stored record's answer, else what the race loaded.</summary>
+    private double ReferenceBest => PreviousBest > 0 ? PreviousBest : Laps.StoredBestLap;
+
+    private double? Delta => RaceBest > 0 && ReferenceBest > 0 ? RaceBest - ReferenceBest : null;
+
+    private string DeltaText => Delta is { } d
+        ? (d < 0 ? "−" : "+") + Math.Abs(d).ToString("0.000", System.Globalization.CultureInfo.InvariantCulture) + " s"
+        : RaceBest > 0 ? "First lap on record" : "No lap counted";
+
+    private string? DeltaClass => Delta is { } d
+        ? d < 0 ? "pocabinet-results__delta--faster" : d > 0 ? "pocabinet-results__delta--slower" : null
+        : "pocabinet-results__delta--none";
 
     private string Headline => AwaitingFinal ? "You're home — waiting for the field…"
         : Dnf ? "Wrecked — did not finish"

@@ -1,5 +1,6 @@
 using System.Text.Json;
 using Microsoft.AspNetCore.Components;
+using Microsoft.AspNetCore.Components.Web;
 using Microsoft.JSInterop;
 using PoMiniGames.Shared.Games;
 using PoMiniGamesClient.Models;
@@ -39,10 +40,12 @@ public partial class PoCabinetPageBase : ComponentBase, IAsyncDisposable
     [Inject] private GameResultService GameResults { get; set; } = default!;
     [Inject] private PoCabinetSession Session { get; set; } = default!;
     [Inject] private PoCabinetCareerState Career { get; set; } = default!;
+    [Inject] private NavigationManager Nav { get; set; } = default!;
 
     [Parameter] public string? ModeSegment { get; set; }
 
-    protected enum Phase { Start, Lobby, Loading, Racing, Finished }
+    /// <summary>Failed: the race view could not mount (or threw); the crash card offers a retry.</summary>
+    protected enum Phase { Start, Lobby, Loading, Racing, Finished, Failed }
 
     // There is no 2P mode: a stale /pocabinet/2player link plays 1P.
     protected GameMode Mode => GameModes.Parse(ModeSegment) is var m && m == GameMode.TwoPlayer ? GameMode.OnePlayer : m;
@@ -68,6 +71,10 @@ public partial class PoCabinetPageBase : ComponentBase, IAsyncDisposable
     private long _placeAnnouncedAt;
     protected string? _status;
     private bool _pauseShown;
+    /// <summary>Why the race view failed (the crash card's small print).</summary>
+    protected string? _raceError;
+    /// <summary>Round the race view: a render throw shows the crash card; a retry recovers it.</summary>
+    protected ErrorBoundary? _raceBoundary;
 
     protected PoCabinetTalk.Debrief? _debrief;
 
@@ -388,10 +395,51 @@ public partial class PoCabinetPageBase : ComponentBase, IAsyncDisposable
         {
             try { await JS.InvokeVoidAsync("console.error", "pocabinet BeginSoloAsync failed: " + ex); } catch { }
             await TeardownRaceAsync();
-            _status = $"Could not start the race: {ex.Message}";
-            _phase = Phase.Start;
+            // The crash card, not the start card: a retry (or a lite one) is one tap away.
+            _status = null;
+            _raceError = ex.Message;
+            _phase = Phase.Failed;
             await InvokeAsync(StateHasChanged);
         }
+    }
+
+    /// <summary>The results card's primary button: the same track again (online, the lobby, where the rematch is).</summary>
+    protected Task RaceAgainAsync() => IsMultiplayerMode ? BackToLobbyAsync() : RestartRaceAsync();
+
+    /// <summary>The crash card's Retry: a clean teardown and a fresh mount on new canvases.</summary>
+    protected async Task RetryRaceAsync()
+    {
+        await TeardownRaceAsync();
+        _raceError = null;
+        _status = null;
+        _raceBoundary?.Recover();
+        _phase = IsMultiplayerMode ? Phase.Lobby : Phase.Loading;
+        await InvokeAsync(StateHasChanged);
+    }
+
+    /// <summary>
+    /// The crash card's lite retry: the plain mesh room (stored, so it sticks) and the app's
+    /// low tier for this visit. qualityTiers.js reads the tier from the URL's <c>fx</c> when it
+    /// loads, so this is a reload with <c>?fx=low</c>, which also hands the race a fresh WebGL
+    /// stack. The start card comes back on the reload; OK starts the race.
+    /// </summary>
+    protected async Task RetryLiteAsync()
+    {
+        Settings.RoomDetail = "mesh";
+        try { await JS.InvokeVoidAsync("localStorage.setItem", PoCabinetUiSettings.StorageKey, Settings.ToJson()); }
+        catch { /* storage unavailable: the low tier still applies */ }
+        await TeardownRaceAsync();
+        Nav.NavigateTo(Nav.GetUriWithQueryParameter("fx", "low"), forceLoad: true);
+    }
+
+    /// <summary>The crash card's way out: the start card (online, the lobby).</summary>
+    protected async Task LeaveCrashAsync()
+    {
+        await TeardownRaceAsync();
+        _raceError = null;
+        _raceBoundary?.Recover();
+        if (IsMultiplayerMode) await BackToLobbyAsync();
+        else await ReturnToStartAsync();
     }
 
     /// <summary>
