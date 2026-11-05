@@ -335,6 +335,15 @@
     .mr-tracks { grid-template-columns: repeat(3, minmax(0, 1fr)); }
 }
 
+/* A narrow phone (390px): five tracks stack three rows deep and the card overflowed by ~14px.
+   Tighter options and gaps win back ~30px without dropping a line of information. */
+@media (max-width: 480px) and (min-height: 561px) {
+    .mr-setup { gap: 4px; }
+    .mr-setup-label { margin-top: 2px; }
+    .mr-tracks { gap: 4px; }
+    .mr-opt { padding: 5px 6px; gap: 1px; }
+}
+
 /* A short screen (a phone on its side): one line an option, the small print dropped. */
 @media (max-height: 560px) {
     .mr-setup { gap: 4px; }

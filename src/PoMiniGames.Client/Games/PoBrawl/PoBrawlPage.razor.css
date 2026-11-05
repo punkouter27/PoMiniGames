@@ -1783,8 +1783,10 @@ button.pb-net-btn {
         gap: 5px;
     }
 
+    /* 56, not 60: with the live portrait stage on, four rows of 60 left the 2P card 7px too
+       tall at 1280×720 (444 of content in 437); the portraits still fit. */
     :root:not([data-gfx='low']) .pb-select:not([data-stage='off']) .pb-select-tile {
-        min-height: 60px;
+        min-height: 56px;
     }
 
     :root:not([data-gfx='low']) .pb-select:not([data-stage='off']) .pb-select-side {
