@@ -47,6 +47,9 @@ namespace PoMiniGames.Shared.Games;
 [JsonSerializable(typeof(MarbleRacePhase))]
 [JsonSerializable(typeof(MarbleRacePodium))]
 [JsonSerializable(typeof(MarbleRaceResult))]
+[JsonSerializable(typeof(MarbleRaceRoom))]
+[JsonSerializable(typeof(MarbleRaceJoin))]
+[JsonSerializable(typeof(MarbleRaceRematch))]
 // PoRacer
 [JsonSerializable(typeof(PoRacerRaceSnapshot))]
 [JsonSerializable(typeof(PoRacerFinalResult))]

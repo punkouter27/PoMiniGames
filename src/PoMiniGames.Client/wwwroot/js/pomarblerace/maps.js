@@ -42,11 +42,31 @@
 import * as THREE from 'three';
 import { generateTrack } from './track-procedural.js';
 import { createGlbCourse } from './track-glb.js';
-import * as SPIRAL_WORKS_PATH from './track-path.js';
-import * as SPIRAL_WORKS_COL from './track-collision.js';
-import * as GRAND_SPIRAL_PATH from './track2-path.js';
-import * as GRAND_SPIRAL_COL from './track2-collision.js';
-import * as PLAYGROUND_PATH from './track-playground-path.js';
+import * as SPIRAL_WORKS_PATH from './courses/spiral-works.path.js';
+import * as SPIRAL_WORKS_COL from './courses/spiral-works.collision.js';
+import * as GRAND_SPIRAL_PATH from './courses/grand-spiral.path.js';
+import * as GRAND_SPIRAL_COL from './courses/grand-spiral.collision.js';
+import * as PLAYGROUND_PATH from './courses/playground-run.path.js';
+
+// Reverb zones (audio.js setReverb) for a baked course with a CEILING (clear height per sample,
+// 99 = open sky) and AIR (no floor: the drop well): every covered or enclosed run of samples, as
+// fractions of the course, gets the close, darker room sound in `room`.
+function enclosedZones(path, room) {
+  const { CEILING, AIR, CUM, COUNT } = path;
+  if (!CEILING || !CUM) return null;
+  const total = CUM[COUNT - 1] || 1;
+  const zones = [];
+  let from = -1;
+  for (let i = 0; i < COUNT; i++) {
+    const shut = CEILING[i] < 99 || (AIR && AIR[i]);
+    if (shut && from < 0) from = i;
+    if ((!shut || i === COUNT - 1) && from >= 0) {
+      zones.push({ from: CUM[from] / total, to: CUM[i] / total, ...room });
+      from = -1;
+    }
+  }
+  return zones;
+}
 
 // ── authored courses ────────────────────────────────────────────────────────────────────────
 // One createGlbCourse() per GLB. The factory closes over that course's baked centerline and
@@ -82,7 +102,7 @@ const grandSpiral = createGlbCourse({
 // real-scale play structure, through a drop well, down the slide and into a tray. Authored in metres
 // for four 10 cm marbles; at SCALE 40 our radius-1 marble is a 5 cm one, so the 28 cm gutter holds
 // the field about five abreast. The export is a plain trimesh with no ring layout, so its centerline
-// and cross-sections were baked from the export's own reference race (track-playground-path.js).
+// and cross-sections were baked from the export's own reference race (courses/playground-run.path.js).
 // The gutter collides against a shell synthesized from those cross-sections (see ringShell in
 // track-glb.js), fitted to descend everywhere; the well, slide, tray and ground collide as authored,
 // with the slide walled by a containment-only lane.
@@ -278,7 +298,11 @@ const MAPS = [
     theme: {
       bg: 0x070a1c, fogNear: 70, fogFar: 240,
       ambient: [0x9ea4cc, 2.6], hemi: [0xb89cff, 0x1a1030, 1.7], key: [0xd8e0ff, 2.6], exposure: 1.1,
+      // The neon floor reads wet: screen-space reflections on the heavy tier (fx-race.js #25).
+      reflect: true,
     },
+    // A walled chute: a bright, medium tail off the 44-tall walls (audio.js setReverb).
+    reverb: { decay: 1.6, wet: 0.26, tone: 5200 },
     load: () => Promise.resolve(null),
     build: (world, materials, marbleCount, _asset, seed) =>
       addCheckpointArches(adaptProceduralTrack(generateTrack(world, materials, seed >>> 0, marbleCount))),
@@ -292,7 +316,9 @@ const MAPS = [
       bg: 0x17130f, fogNear: 78, fogFar: 250,
       ambient: [0xc4b59c, 3.3], hemi: [0xffd9a8, 0x3a2a1c, 2.0], key: [0xffc98a, 3.2], exposure: 1.12,
     },
-    load: () => spiralWorks.loadModel(),
+    // A factory hall: long, dark tail.
+    reverb: { decay: 2.4, wet: 0.32, tone: 3200 },
+    load: (onProgress) => spiralWorks.loadModel(onProgress),
     build: (world, materials, marbleCount, asset) => addCheckpointArches(spiralWorks.buildTrack(world, materials, marbleCount, asset)),
   },
   {
@@ -304,7 +330,9 @@ const MAPS = [
       bg: 0x7fb0d8, fogNear: 150, fogFar: 560,
       ambient: [0xd0d8e0, 2.8], hemi: [0xbcdcff, 0x6a6450, 2.0], key: [0xffeccc, 4.0], exposure: 0.95,
     },
-    load: () => grandSpiral.loadModel(),
+    // Open sky: almost dry, nothing to reflect off.
+    reverb: { decay: 0.8, wet: 0.1, tone: 7500 },
+    load: (onProgress) => grandSpiral.loadModel(onProgress),
     build: (world, materials, marbleCount, asset) => addCheckpointArches(grandSpiral.buildTrack(world, materials, marbleCount, asset)),
   },
   {
@@ -317,6 +345,8 @@ const MAPS = [
       bg: 0x3b2233, fogNear: 90, fogFar: 330,
       ambient: [0xffd2b0, 2.8], hemi: [0xffb38a, 0x3a2418, 1.8], key: [0xffa060, 3.4], exposure: 1.05,
     },
+    // Canyon walls: a darker tail plus a slapback echo off the far wall.
+    reverb: { decay: 2.0, wet: 0.28, tone: 2600, echo: { time: 0.32, feedback: 0.3, level: 0.45 } },
     load: () => Promise.resolve(null),
     build: (world, materials, marbleCount, _asset, seed) =>
       addCheckpointArches(adaptProceduralTrack(generateTrack(world, materials, seed >>> 0, marbleCount, CANYON_RUN))),
@@ -330,7 +360,10 @@ const MAPS = [
       bg: 0x9cc7e8, fogNear: 260, fogFar: 900,
       ambient: [0xe6e0d4, 2.4], hemi: [0xcfe6ff, 0x6b5a3a, 1.8], key: [0xfff0d6, 3.8], exposure: 1.0,
     },
-    load: () => playground.loadModel(),
+    // Outdoors and dry, closing in to a boxy little room under the play structure and down the
+    // drop well (the baked CEILING / AIR samples).
+    reverb: { decay: 0.7, wet: 0.1, tone: 7000, zones: enclosedZones(PLAYGROUND_PATH, { wet: 0.42, tone: 2400 }) },
+    load: (onProgress) => playground.loadModel(onProgress),
     build: (world, materials, marbleCount, asset) => addCheckpointArches(playground.buildTrack(world, materials, marbleCount, asset)),
   },
 ];

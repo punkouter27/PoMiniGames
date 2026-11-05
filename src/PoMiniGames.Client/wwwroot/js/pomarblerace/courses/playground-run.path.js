@@ -1,4 +1,4 @@
-// track-playground-path.js — GENERATED from the Playground Run export's own Rapier reference race (the
+// playground-run.path.js — GENERATED from the Playground Run export's own Rapier reference race (the
 // four authored marbles, averaged, then recentred between the walls by ray probes). Do not
 // hand-edit; re-bake from the export if the course changes.
 //

@@ -1,7 +1,9 @@
 // scene.js — Three.js renderer/scene/lights + smooth orbit-follow camera, plus the
 // post-processing pipeline: ACES tone mapping, dynamic shadows, GTAO, a transient rack focus,
 // a colour grade, SMAA, a speed-reactive FOV, GPU sparks, pooled impact light pulses and a
-// per-map lighting theme (setTheme).
+// per-map lighting theme (setTheme). The race's extra GPU effects (bursts, speed streak + lens
+// dirt, SSR) live in fx-race.js and the finish swoop in followTarget; Effects: Lite turns all of
+// those off (store.js prefs.effects, setEffects below).
 import * as THREE from 'three';
 import { EffectComposer } from 'three/addons/postprocessing/EffectComposer.js';
 import { RenderPass } from 'three/addons/postprocessing/RenderPass.js';
@@ -10,6 +12,8 @@ import { SMAAPass } from 'three/addons/postprocessing/SMAAPass.js';
 import { GTAOPass } from 'three/addons/postprocessing/GTAOPass.js';
 import { OutputPass } from 'three/addons/postprocessing/OutputPass.js';
 import * as PostFx from '../postFx.js';
+import { createRaceFx } from './fx-race.js';
+import { readPref } from './store.js';
 
 const BG = 0x0f172a;            // cyberpunk dark slate
 // Broadcast-style chase cam: higher and further back for a cleaner, more
@@ -51,6 +55,11 @@ const FOV_BASE = 60;
 const FOV_SPEED_ADD = 10;       // max degrees added at top speed
 const FOV_SPEED_LO = 25;        // speed at which the widening starts
 const FOV_SPEED_HI = 90;        // speed at which it saturates
+// #26 finish swoop: when the winner crosses on camera, the orbit swings round the marble and lifts,
+// then settles back — a whip-pan that turns the line into a reveal. The follow lerp smooths it.
+const SWOOP_TIME = 1.6;         // seconds, out and back
+const SWOOP_YAW = 1.05;         // radians of swing at the peak
+const SWOOP_PITCH = 0.28;       // radians of lift at the peak
 
 // Colour-grade post pass (#3). Runs in linear HDR before OutputPass.
 //
@@ -109,10 +118,10 @@ export function createScene(container) {
   // The glass marbles (marbles.js, heavy tier) render the scene once more for refraction; they
   // are small on screen, so half resolution is indistinguishable and halves that pass.
   renderer.transmissionResolutionScale = 0.5;
-  // FLICKER FIX (1/4) — anisotropy. Every procedural texture in track.js pinned itself to 4,
+  // FLICKER FIX (1/4) — anisotropy. Every procedural texture in track-procedural.js pinned itself to 4,
   // and the kerb stripes (hard red/white, seen at grazing angles by a chase cam) aliased into
   // crawling moiré at that level. Textures inherit this default, so raising it here raises it
-  // for the whole track — createScene runs before buildTrack, and track.js's texture
+  // for the whole track — createScene runs before buildTrack, and track-procedural.js's texture
   // singletons are built lazily on first use, so the ordering holds.
   THREE.Texture.DEFAULT_ANISOTROPY = renderer.capabilities.getMaxAnisotropy();
   container.style.position = 'relative';
@@ -224,7 +233,8 @@ export function createScene(container) {
   // ── Post-processing composer ──────────────────────────────────────────
   const composer = new EffectComposer(renderer);
   composer.setPixelRatio(renderer.getPixelRatio());
-  composer.addPass(new RenderPass(scene, camera));
+  const renderPass = new RenderPass(scene, camera);
+  composer.addPass(renderPass);
 
   // GTAO. The chute is a big diffuse trough lit by one key light, so without it the
   // marbles read as *hovering over* the road rather than rolling on it — there is no
@@ -267,6 +277,13 @@ export function createScene(container) {
   composer.addPass(smaa);
   composer.addPass(new OutputPass());                     // tone-map + sRGB to screen
 
+  // #23-#28 extras (fx-race.js): bursts, the speed-streak/lens-dirt pass (slotted in before the
+  // grade) and lazily built SSR. Heavy-only pieces check `heavy` themselves.
+  let effects = readPref('effects') === 'lite' ? 'lite' : 'full';
+  const raceFx = createRaceFx({ scene, camera, renderer, composer, renderPass, gradePass: post, heavy: !!gtao, level: effects });
+  const reducedMotion = () =>
+    typeof matchMedia === 'function' && matchMedia('(prefers-reduced-motion: reduce)').matches;
+
   // ── Per-map theme ─────────────────────────────────────────────────────
   // Each map in maps.js may carry a `theme`: background (which is also the fog colour, so the
   // horizon never shows a seam), fog range, the three lights and
@@ -283,6 +300,7 @@ export function createScene(container) {
     hemi.color.setHex(t.hemi[0]); hemi.groundColor.setHex(t.hemi[1]); hemi.intensity = t.hemi[2];
     key.color.setHex(t.key[0]); key.intensity = t.key[1];
     renderer.toneMappingExposure = t.exposure;
+    raceFx.setTheme(t);   // a theme with `reflect` asks for SSR (fx-race.js)
   }
 
   // ── Impact light pulses (GFX #5) ──────────────────────────────────────
@@ -407,6 +425,8 @@ export function createScene(container) {
   let cutT = 0;                 // seconds left on the accelerated post-cut ease
   let fovPunch = 0;
   function punchFov() { fovPunch = -9; }
+  let swoopT = 0;               // seconds left on the finish swoop (#26)
+  let swoopDir = 1;
 
   // ── #3 grade state ────────────────────────────────────────────────────
   // Live values are eased toward the targets every frame so a grade change is always a
@@ -525,13 +545,21 @@ export function createScene(container) {
       fx = forward.x / L; fy = forward.y / L; fz = forward.z / L;
     }
     const fxz = Math.hypot(fx, fz) || 1;
-    const horiz = CAM_BACK * Math.cos(orbitPitch);
-    const vert = CAM_HEIGHT + CAM_BACK * Math.sin(orbitPitch);
+    // #26 swoop: a sine out-and-back added to the orbit, so it composes with any drag offset.
+    let yaw = orbitYaw, pitch = orbitPitch;
+    if (swoopT > 0) {
+      const e = Math.sin(Math.PI * (1 - swoopT / SWOOP_TIME));
+      yaw += swoopDir * SWOOP_YAW * e;
+      pitch = Math.min(PITCH_MAX, pitch + SWOOP_PITCH * e);
+      swoopT = Math.max(0, swoopT - Math.max(0, dt));
+    }
+    const horiz = CAM_BACK * Math.cos(pitch);
+    const vert = CAM_HEIGHT + CAM_BACK * Math.sin(pitch);
     const climb = -(fy / fxz) * horiz;           // fy < 0 descending → the ground behind is higher
     // Backward heading rotated by the orbit yaw; yaw 0 → directly behind, matching the old
     // (sin, -cos) world offset when `forward` is +Z.
     const bx = -fx / fxz, bz = -fz / fxz;
-    const cy = Math.cos(orbitYaw), sy = Math.sin(orbitYaw);
+    const cy = Math.cos(yaw), sy = Math.sin(yaw);
     const desired = new THREE.Vector3(
       pos.x + (bx * cy - bz * sy) * horiz,
       pos.y + vert + climb,
@@ -552,7 +580,7 @@ export function createScene(container) {
     // The aim point rides the full 3D heading, so on the ramp it tracks the road DOWN instead of
     // floating above it — aiming a flat CAM_LOOKAHEAD ahead in XZ only pointed the camera at
     // empty air over a descent, which is half of why the ramp never read.
-    const laFactor = Math.max(0, Math.cos(orbitYaw)) * CAM_LOOKAHEAD;
+    const laFactor = Math.max(0, Math.cos(yaw)) * CAM_LOOKAHEAD;
     const look = new THREE.Vector3(
       pos.x + fx * laFactor,
       pos.y + fy * laFactor + CAM_LOOK_LIFT,
@@ -591,6 +619,7 @@ export function createScene(container) {
     updatePulses(dt);
     updatePost(dt);             // #3 colour grade
     rackFocus.update(dt);       // §GFX-2 — no-op unless a photo finish is running
+    raceFx.update(dt, spd);         // #24/#28 bursts and the speed streak follow the shot's marble
   }
 
   return {
@@ -620,6 +649,25 @@ export function createScene(container) {
     photoFinish(distance) {
       rackFocus.trigger(distance == null ? CAM_BACK : distance, 1.1, 1);
     },
+    /** #24 GPU burst: kind 'kicker' | 'pop' | 'boost' | 'finish'; `dir` (boost) the track heading; `big` (finish). */
+    burstFx(kind, pos, dir, big) { raceFx.burst(kind, pos, dir, big); },
+    /** #28 the followed marble is on a boost pad: the streak and lens dirt swell. */
+    setBoosting(b) { raceFx.setBoosting(b); },
+    /** #26 swing the camera round the winner at the line. Skipped on Lite and under reduced motion. */
+    finishSwoop() {
+      if (effects === 'lite' || reducedMotion()) return;
+      swoopDir = Math.random() < 0.5 ? -1 : 1;
+      swoopT = SWOOP_TIME;
+      raceFx.flashDirt(0.8);
+    },
+    /** 'full' | 'lite' — everything fx-race.js adds, the swoop and marble dispersion follow it. */
+    setEffects(level) {
+      effects = level === 'lite' ? 'lite' : 'full';
+      raceFx.setLevel(effects);
+      if (effects === 'lite') swoopT = 0;
+    },
+    get effects() { return effects; },
+    composer,
     render() { composer.render(); },
     resize,
     dispose() {
@@ -628,6 +676,7 @@ export function createScene(container) {
       canvas.removeEventListener('pointerdown', onPointerDown);
       canvas.removeEventListener('pointermove', onPointerMove);
       window.removeEventListener('pointerup', onPointerUp);
+      raceFx.dispose();
       sparkGeo.dispose();
       sparkMat.dispose();
       marbleEnv.dispose();   // PMREM render target + its texture

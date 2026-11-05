@@ -338,7 +338,7 @@ public static class PoCabinetTrackGeometry
                 // run, no laps. The scene draws the gutter as an open chute, floor without walls.
                 //
                 // GENERATED, do not hand-edit: the knots are the model's marble path (the same
-                // reference race pomarblerace/track-playground-path.js was baked from), recentred
+                // reference race pomarblerace/courses/playground-run.path.js was baked from), recentred
                 // between the gutter's rims and resampled every ~0.5 m, in sim units at 500 per
                 // model metre; scene.js draws the model at 50x to match. That scale is
                 // the one at which the gutter's 26 cm floor is as wide as this track's physics

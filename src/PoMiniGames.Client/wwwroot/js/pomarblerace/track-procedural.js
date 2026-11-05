@@ -1,4 +1,4 @@
-// track.js — procedural descending ROAD: an asphalt floor (lumpy surface) edged by curved
+// track-procedural.js — the procedural descending ROAD (Neon Chute, and Canyon Run as a variant): an asphalt floor (lumpy surface) edged by curved
 // red/white kerb berms, with curves, banked turns, vertical undulation, channel pinches,
 // friction bands, boost pads, telegraphed kicker bands, and five hazard zones (washboard
 // ridges, plinko pins, pendulum bobs, turnstiles, and the motorised Gauntlet). Builds matching

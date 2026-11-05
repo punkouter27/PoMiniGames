@@ -32,8 +32,46 @@ export const GRAVITY = 72;        // world gravity magnitude (down -Y) — weigh
 export const FIXED_DT = 1 / 60;   // fixed physics step
 export const MAX_SUBSTEPS = 4;
 
+// cannon-es remembers which body pairs touched last step in a triangular ArrayCollisionMatrix: a
+// plain JS array sized n(n-1)/2 by assigning `length`, then zeroed element by element every step.
+// With ~1700 static chunks plus the field (Neon Chute) that is ~1.5 million slots, which V8 keeps
+// as a sparse dictionary rather than a packed array, so the per-step reset and every set() were
+// hash-table writes: 60% of the whole step in a profile (scripts/pomarblerace, node --cpu-prof),
+// and ~260 ms a frame on Playground Run at the start. A Uint8Array holds the same bits densely and
+// zeroes with one fill(). Same get/set/reset/setNumObjects contract, same results bit for bit
+// (the headless harness races are identical with and without it), 2-10x faster steps.
+class TypedCollisionMatrix {
+  constructor() { this.matrix = new Uint8Array(0); }
+  _at(bi, bj) {
+    let i = bi.index, j = bj.index;
+    if (j > i) { const t = j; j = i; i = t; }
+    return ((i * (i + 1)) >> 1) + j - 1;
+  }
+  get(bi, bj) { return this.matrix[this._at(bi, bj)]; }
+  set(bi, bj, value) {
+    const k = this._at(bi, bj);
+    // cannon-es sizes only the CURRENT matrix as bodies are added, and swaps the pair every step,
+    // so the other one meets the larger body count only when written: grow then, the way the
+    // plain array it replaces did.
+    if (k >= this.matrix.length) this._grow(k + 1);
+    this.matrix[k] = value ? 1 : 0;
+  }
+  reset() { this.matrix.fill(0); }
+  setNumObjects(n) { this._grow((n * (n + 1)) >> 1); }
+  // Grows only (with headroom, so a race adding marbles one by one is not n reallocations);
+  // bodies come and go each race and a larger buffer is harmless.
+  _grow(len) {
+    if (len <= this.matrix.length) return;
+    const next = new Uint8Array(Math.max(len, Math.ceil(this.matrix.length * 1.25)));
+    next.set(this.matrix);
+    this.matrix = next;
+  }
+}
+
 export function createWorld() {
   const world = new CANNON.World({ gravity: new CANNON.Vec3(0, -GRAVITY, 0) });
+  world.collisionMatrix = new TypedCollisionMatrix();
+  world.collisionMatrixPrevious = new TypedCollisionMatrix();
   world.broadphase = new CANNON.SAPBroadphase(world);
   world.allowSleep = false;
   // Friction now matters, and 101 marbles pile up a lot of simultaneous contacts, so give the

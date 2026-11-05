@@ -57,6 +57,21 @@ public sealed record MarbleRaceResult(bool HostWon, int HostPlace, bool GuestWon
 
 public sealed record MarbleRaceQueueStatus(bool Matched, int Waiting);
 
+/// <summary>A private race waiting for a friend: share <see cref="Code"/>; the race starts when they join.</summary>
+public sealed record MarbleRaceRoom(string Code);
+
+/// <summary>
+/// Answer to a join by code. <see cref="Error"/> says why not: no such race, or it already has its
+/// two players (a race seats exactly two: the host and one guest).
+/// </summary>
+public sealed record MarbleRaceJoin(bool Joined, string? Error);
+
+/// <summary>
+/// Rematch handshake, sent to both seats whenever either asks. The race restarts once both
+/// <see cref="HostWants"/> and <see cref="GuestWants"/> are true (then both are cleared).
+/// </summary>
+public sealed record MarbleRaceRematch(bool HostWants, bool GuestWants, bool Agreed);
+
 /// <summary>One finish on one map, offered as a world record. The server keeps it only if it is the fastest.</summary>
 public sealed record MarbleRaceRecordRequest(int MapId, double FinishSeconds);
 

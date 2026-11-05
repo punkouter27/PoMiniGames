@@ -1,0 +1,14 @@
+{
+  "name": "pomarblerace-tools",
+  "private": true,
+  "description": "Node harness for PoMarbleRace: runs the real engine modules headless (rendering and audio stubbed) for map health, the tunnelling check and the stall tuner. Not part of the app build.",
+  "type": "module",
+  "scripts": {
+    "race": "node harness.mjs race",
+    "tune": "node tune-stall.mjs"
+  },
+  "dependencies": {
+    "cannon-es": "0.20.0",
+    "three": "0.165.0"
+  }
+}

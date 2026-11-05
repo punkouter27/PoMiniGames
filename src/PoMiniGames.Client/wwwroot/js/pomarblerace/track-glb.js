@@ -194,6 +194,8 @@ const CHUNK = 64;
 // a bank.
 const OOB_DROP = 24;
 const OOB_LATERAL = 20;
+// Samples past the end of a free-fall span (see FALL_ALLOW below) still judged as a landing.
+const FALL_TAIL = 12;
 
 // Uniform grid cell for the cold-start centerline lookup, world units.
 const GRID_CELL = 48;
@@ -469,17 +471,32 @@ export function createGlbCourse({
 
   /**
    * Fetch + parse the course model. Safe to call repeatedly; the parse happens once.
+   * @param {(fraction: number) => void} [onProgress] download progress 0..1 across the model and
+   *   its collider, for the page's loading bar. Only the call that starts the fetch reports.
    * @returns {Promise<THREE.Group>} the raw glTF scene (unscaled, as authored).
    */
-  function loadModel() {
+  function loadModel(onProgress) {
     if (!_modelPromise) {
+      // Bytes seen per file; a file whose server sends no length counts as half done until it lands.
+      const got = [0, 0], total = [0, 0];
+      const report = (i) => (e) => {
+        got[i] = e.loaded; total[i] = e.lengthComputable ? e.total : 0;
+        if (!onProgress) return;
+        const parts = colliderUrl ? [0, 1] : [0];
+        const sum = parts.reduce((a, k) => a + (total[k] ? got[k] / total[k] : got[k] ? 0.5 : 0), 0);
+        onProgress(Math.min(1, sum / parts.length));
+      };
       _modelPromise = Promise.all([
-        gltfLoader().loadAsync(modelUrl),
-        colliderUrl ? gltfLoader().loadAsync(colliderUrl) : null,
+        gltfLoader().loadAsync(modelUrl, report(0)),
+        colliderUrl ? gltfLoader().loadAsync(colliderUrl, report(1)) : null,
       ]).then(([gltf, col]) => {
         _colliderScene = col ? col.scene : null;
         if (conformNodes) conformToShell(gltf.scene, PATH, conformNodes);
         return gltf.scene;
+      }).catch((err) => {
+        // Forget a failed fetch, or the page's "Reload engine" would replay the same rejection.
+        _modelPromise = null;
+        throw err;
       });
     }
     return _modelPromise;
@@ -491,6 +508,25 @@ export function createGlbCourse({
   // bases are unit vectors and do not.
   const WORLD_CUM = new Float32Array(COUNT);
   for (let i = 0; i < COUNT; i++) WORLD_CUM[i] = CUM[i] * SCALE;
+
+  // ── free-fall spans ──
+  // A funnel (the course's `bowlMeshName`) and a bare drop (a baked segment that is not a
+  // `Track-` channel, e.g. Grand Spiral's Bowl and Drop) are crossed by the centerline in two or
+  // three samples, 30-75 units apart, while the marbles spiral down the funnel wall or fall
+  // through the throat well below that line. The channel envelope (OOB_DROP / OOB_LATERAL) read
+  // that as leaving the course, and a marble in the air for LOST_AIR was retired: the map
+  // certification lost ~30 a race on Grand Spiral this way, and the harness showed 26 of 32 of
+  // them rolling on to the finish once left alone. Over such a span, and FALL_TAIL samples into
+  // the landing after it, a marble has left the course only once it is OOB_DROP below the lowest
+  // point the course reaches there. Per sample: how far below its centerline that is, 0 = normal.
+  const FALL_ALLOW = new Float32Array(COUNT);
+  for (const sg of PATH.SEGMENTS || []) {
+    if (sg.role !== 'main' || (sg.name.startsWith('Track-') && sg.name !== bowlMeshName)) continue;
+    const a = Math.max(0, sg.from - 1), b = Math.min(COUNT - 1, sg.to + FALL_TAIL);
+    let lowest = Infinity;
+    for (let i = a; i <= b; i++) lowest = Math.min(lowest, POINTS[i * 3 + 1] * SCALE);
+    for (let i = a; i <= b; i++) FALL_ALLOW[i] = Math.max(FALL_ALLOW[i], POINTS[i * 3 + 1] * SCALE - lowest + OOB_DROP);
+  }
 
   // Uniform grid over the centerline, for the cold-start / marble-teleported lookup. Every
   // frame's projection normally starts from the marble's previous index and only scans a short
@@ -1638,8 +1674,16 @@ export function createGlbCourse({
        * falls with lateral ~ 0, satisfied the height test alone, and so was never retired at all.
        * It just kept falling while still holding its place in the standings.
        */
-      isOutOfBounds: (proj) => proj.height < -OOB_DROP
-        || Math.abs(proj.lateral) > (proj.lane >= 0 ? proj.reach : halfWidthAt(proj.s)) + OOB_LATERAL,
+      //
+      // Over a free-fall span (FALL_ALLOW above) only the drop counts: a marble circling a funnel
+      // is far outside the channel's width by design, and one that has truly left still falls
+      // below the course within a second.
+      isOutOfBounds: (proj) => {
+        const allow = proj.lane < 0 ? FALL_ALLOW[proj.index] : 0;
+        if (allow > 0) return proj.height < -allow;
+        return proj.height < -OOB_DROP
+          || Math.abs(proj.lateral) > (proj.lane >= 0 ? proj.reach : halfWidthAt(proj.s)) + OOB_LATERAL;
+      },
 
       // Speed cap on a brake band at `s`, 0 elsewhere (game.js _applyBrakes).
       ...(BRAKE_BANDS.length ? { brakeAt } : {}),

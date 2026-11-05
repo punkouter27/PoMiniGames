@@ -17,6 +17,29 @@ public sealed class MarbleMenu
     public Dictionary<string, MarbleTrackStat> Stats { get; set; } = [];
     public string Skin { get; set; } = "swirl";
     public string Weight { get; set; } = "balanced";
+    /// <summary>HUD colours (marbles.js paletteHex): the page keeps no copy of its own.</summary>
+    public MarblePalette Palette { get; set; } = new();
+    /// <summary>The Settings drawer's switches as saved (store.js prefs, ghost and mute).</summary>
+    public MarblePrefs Prefs { get; set; } = new();
+}
+
+public sealed class MarblePrefs
+{
+    public bool GhostOn { get; set; } = true;
+    public bool Muted { get; set; }
+    public bool Announcer { get; set; }
+    public bool PerfHud { get; set; }
+    /// <summary>"full" or "lite".</summary>
+    public string Effects { get; set; } = "full";
+    public bool TutorialSeen { get; set; }
+}
+
+public sealed class MarblePalette
+{
+    public string Player { get; set; } = "#ef4444";
+    public string Guest { get; set; } = "#f8fafc";
+    /// <summary>Pack colours; marble i (i &gt;= 1) takes Pack[(i - 1) % Pack.Length].</summary>
+    public string[] Pack { get; set; } = [];
 }
 
 public sealed class MarbleMapOption

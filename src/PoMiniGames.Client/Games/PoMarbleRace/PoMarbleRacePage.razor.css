@@ -49,62 +49,116 @@
     to { opacity: 1; }
 }
 
-/* ── Online quick-match card ── */
-.mr-overlay {
+/* ── Scrim behind a centred panel (online waiting states, the retry card) ── */
+.mr-scrim {
     position: absolute;
     inset: 0;
+    z-index: 5;
     display: flex;
     align-items: center;
     justify-content: center;
+    padding: 12px;
     background: rgba(2, 6, 23, 0.55);
     backdrop-filter: blur(3px);
-}
-
-.mr-pick-card {
-    text-align: center;
-    padding: 22px 28px;
-    border-radius: 14px;
-    background: rgba(15, 23, 42, 0.92);
-    border: 1px solid rgba(168, 85, 247, 0.45);
-    box-shadow: 0 0 28px rgba(168, 85, 247, 0.25);
+    animation: mr-fade-in 0.2s ease-out;
 }
 
 /* The colour words, coloured like the marbles they name (white mirrors GUEST_COLOR). */
 .mr-red { color: #ef4444; text-shadow: 0 0 12px rgba(239, 68, 68, 0.7); }
 .mr-white { color: #f8fafc; text-shadow: 0 0 12px rgba(248, 250, 252, 0.7); }
 
-/* ── Countdown pill ── */
-.mr-countdown {
+/* ── Pre-race panel: who you are, the download, the countdown, and online status (#20) ──
+   One fixed-size panel, so nothing shifts as it moves from loading to counting (#33). */
+.mr-prerace {
     position: absolute;
     top: 14px;
     left: 50%;
-    transform: translateX(-50%);
     z-index: 4;
-    display: flex;
-    flex-wrap: wrap;
-    align-items: center;
-    justify-content: center;
-    gap: 4px 12px;
-    max-width: calc(100% - 24px);
-    padding: 8px 16px;
-    border-radius: 9999px;
-    background: rgba(8, 12, 24, 0.8);
+    width: min(340px, calc(100% - 24px));
+    padding: 10px 16px 12px;
+    border-radius: 16px;
+    background: rgba(8, 12, 24, 0.86);
     border: 1px solid rgba(168, 85, 247, 0.45);
-    box-shadow: 0 4px 18px rgba(2, 6, 18, 0.5);
+    box-shadow: 0 6px 24px rgba(2, 6, 18, 0.5);
     backdrop-filter: blur(8px);
     color: #e2e8f0;
-    animation: mr-fade-in 0.25s ease-out;
+    text-align: center;
+    transform: translateX(-50%);
+    animation: mr-panel-in 0.28s var(--ease-standard, ease-out);
 }
 
-.mr-countdown-title {
+.mr-prerace--center {
+    position: relative;
+    top: auto;
+    left: auto;
+    width: min(380px, 100%);
+    transform: none;
+    animation-name: mr-pop-in;
+}
+
+@keyframes mr-panel-in {
+    from { opacity: 0; transform: translate(-50%, -8px); }
+    to { opacity: 1; transform: translate(-50%, 0); }
+}
+
+@keyframes mr-pop-in {
+    from { opacity: 0; transform: scale(0.96); }
+    to { opacity: 1; transform: scale(1); }
+}
+
+.mr-prerace-title {
+    margin: 0;
     font-weight: 800;
     letter-spacing: 0.02em;
 }
 
-.mr-countdown-sub {
-    font-size: 0.85rem;
+.mr-prerace-kicker {
+    margin: 0;
+    font-size: var(--text-xs);
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
     color: #94a3b8;
 }
+
+.mr-prerace-line {
+    margin: 2px 0 0;
+    font-size: 0.85rem;
+    color: #cbd5e1;
+}
+
+.mr-prerace-hint {
+    margin: 6px 0 0;
+    font-size: 0.75rem;
+    color: #94a3b8;
+}
+
+.mr-prerace-actions {
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: center;
+    gap: 8px;
+    margin-top: 8px;
+}
+
+.mr-num { font-variant-numeric: tabular-nums; }
+
+/* Always laid out (full when not loading), so the panel never changes height. */
+.mr-progress {
+    height: 5px;
+    margin-top: 8px;
+    border-radius: 3px;
+    background: rgba(51, 65, 85, 0.8);
+    overflow: hidden;
+}
+
+.mr-progress i {
+    display: block;
+    height: 100%;
+    background: linear-gradient(90deg, #a855f7, #22d3ee);
+    transition: width 0.25s ease-out, opacity 0.4s ease;
+}
+
+.mr-progress.is-done i { opacity: 0.35; }
 
 .mr-countdown-num {
     display: inline-block;
@@ -112,26 +166,90 @@
     color: #e2e8f0;
     font-size: 1.05rem;
     font-variant-numeric: tabular-nums;
-    animation: mr-tick 1s ease-out infinite;
+    animation: mr-tick 1s ease-out;
 }
 
 @keyframes mr-tick {
-    0% { transform: scale(1.3); color: #a855f7; }
+    0% { transform: scale(1.35); color: #a855f7; }
     100% { transform: scale(1); color: #e2e8f0; }
 }
 
-.mr-countdown-btn {
+.mr-chip-btn {
     font: inherit;
     font-size: 0.8rem;
-    padding: 3px 10px;
+    padding: 3px 12px;
     border-radius: 9999px;
     border: 1px solid rgba(168, 85, 247, 0.6);
     background: rgba(168, 85, 247, 0.15);
     color: #e9d5ff;
     cursor: pointer;
+    transition: background 120ms ease, transform 90ms ease;
 }
 
-.mr-countdown-btn:hover { background: rgba(168, 85, 247, 0.3); }
+.mr-chip-btn:hover { background: rgba(168, 85, 247, 0.3); }
+.mr-chip-btn:active { transform: scale(0.95); }
+
+/* ── First-race tutorial (#36) ── */
+.mr-tut-ring {
+    position: absolute;
+    z-index: 4;
+    width: 46px;
+    height: 46px;
+    margin: -23px 0 0 -23px;
+    border: 3px solid #fde047;
+    border-radius: 50%;
+    box-shadow: 0 0 18px rgba(253, 224, 71, 0.7);
+    pointer-events: none;
+    animation: mr-ring 1.4s ease-out infinite;
+}
+
+@keyframes mr-ring {
+    0% { transform: scale(1.4); opacity: 0.2; }
+    40% { transform: scale(1); opacity: 1; }
+    100% { transform: scale(1); opacity: 0.85; }
+}
+
+.mr-tutorial {
+    position: absolute;
+    left: 50%;
+    bottom: 18px;
+    z-index: 5;
+    width: min(420px, calc(100% - 24px));
+    padding: 12px 16px;
+    border-radius: 14px;
+    background: rgba(8, 12, 24, 0.92);
+    border: 1px solid rgba(253, 224, 71, 0.5);
+    box-shadow: 0 6px 24px rgba(2, 6, 18, 0.55);
+    color: #e2e8f0;
+    font-size: 0.85rem;
+    text-align: center;
+    transform: translateX(-50%);
+    animation: mr-panel-up 0.3s var(--ease-standard, ease-out);
+}
+
+@keyframes mr-panel-up {
+    from { opacity: 0; transform: translate(-50%, 10px); }
+    to { opacity: 1; transform: translate(-50%, 0); }
+}
+
+.mr-tutorial ul {
+    margin: 0 0 10px;
+    padding: 0;
+    list-style: none;
+    display: grid;
+    gap: 4px;
+    text-align: left;
+}
+
+.mr-boost-swatch {
+    display: inline-block;
+    width: 22px;
+    height: 12px;
+    vertical-align: middle;
+    border-radius: 3px;
+    background: repeating-linear-gradient(115deg, #22d3ee 0 4px, #0e7490 4px 8px);
+    box-shadow: 0 0 8px rgba(34, 211, 238, 0.6);
+}
 
 /* ── Standings chip: place while racing, podium once it is known ── */
 .mr-place {
@@ -159,13 +277,6 @@
     gap: 0.4rem;
 }
 
-.mr-place-label {
-    font-size: var(--text-xs);
-    letter-spacing: 0.1em;
-    text-transform: uppercase;
-    color: #94a3b8;
-}
-
 .mr-place-value {
     font-size: 1.05rem;
     font-weight: 800;
@@ -177,22 +288,29 @@
 }
 
 .mr-split {
-    font-size: 0.8rem;
-    animation: mr-fade-in 0.2s ease-out;
-}
-
-.mr-split-time {
-    font-weight: 700;
-    font-variant-numeric: tabular-nums;
-}
-
-.mr-split-delta {
+    padding: 1px 7px;
+    border-radius: 9999px;
+    font-size: 0.75rem;
     font-weight: 800;
     font-variant-numeric: tabular-nums;
+    background: rgba(74, 222, 128, 0.14);
+    color: #4ade80;
+    animation: mr-pop-in 0.22s ease-out;
 }
 
-.mr-split-delta.is-faster { color: #4ade80; }
-.mr-split-delta.is-slower { color: #f87171; }
+.mr-split.is-slower {
+    background: rgba(248, 113, 113, 0.14);
+    color: #f87171;
+}
+
+.mr-place-winner {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    font-size: 0.75rem;
+    color: #cbd5e1;
+    animation: mr-fade-in 0.3s ease-out;
+}
 
 .mr-podium {
     list-style: none;
@@ -213,9 +331,19 @@
     align-items: center;
     gap: 7px;
     font-size: 0.8rem;
+    /* Rows slide in one after another as the podium lands (#26). */
+    animation: mr-row-in 0.32s var(--ease-standard, ease-out) both;
+    animation-delay: calc((var(--i, 1) - 1) * 90ms);
+}
+
+@keyframes mr-row-in {
+    from { opacity: 0; transform: translateX(-10px); }
+    to { opacity: 1; transform: translateX(0); }
 }
 
 .mr-podium-dot {
+    display: inline-block;
+    flex: none;
     width: 10px;
     height: 10px;
     border-radius: 50%;
@@ -442,9 +570,6 @@
     background: linear-gradient(170deg, #ffe4e6 0%, #f87171 30%, #450a0a 52%, #b91c1c 70%, #fecaca 100%);
 }
 
-@media (prefers-reduced-motion: reduce) {
-    .mr-countdown-num { animation: none; }
-}
 
 /* Narrow game slot (the shell is a `gps` inline-size container): the canvas takes the whole
    viewport budget. The max-heights break a resize feedback loop — a content-sized parent chain
@@ -466,8 +591,282 @@
         max-height: var(--gps-area-h, 100dvh);
         border-radius: 0;
     }
-    .mr-pick-card { padding: 14px 12px; }
     .mr-place { top: 8px; left: 8px; }
-    .mr-countdown { top: 8px; }
+    .mr-prerace:not(.mr-prerace--center) { top: 8px; }
     .mr-nudge-pad { width: 50px; height: 50px; }
+}
+
+/* ── Online: private race code, join field, series + rematch ── */
+.mr-room-code {
+    margin: 4px 0 6px;
+    font-family: var(--font-display);
+    font-size: 2.6rem;
+    font-weight: 800;
+    letter-spacing: 0.3em;
+    color: var(--color-text-primary);
+}
+
+.mr-join-code {
+    width: 100%;
+    padding: 8px 10px;
+    border-radius: 10px;
+    border: 1px solid rgba(168, 85, 247, 0.5);
+    background: var(--color-surface-hover);
+    color: var(--color-text-primary);
+    font: inherit;
+    font-size: 1.3rem;
+    font-weight: 700;
+    letter-spacing: 0.3em;
+    text-align: center;
+    text-transform: uppercase;
+}
+
+.mr-join-code:focus-visible {
+    outline: none;
+    border-color: rgba(168, 85, 247, 0.95);
+    box-shadow: 0 0 14px rgba(168, 85, 247, 0.35);
+}
+
+.mr-series {
+    margin-top: 6px;
+    font-weight: 700;
+}
+
+.mr-rematch {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+    margin-top: 10px;
+}
+
+.mr-rematch-note {
+    font-size: 0.8rem;
+    color: var(--color-text-secondary);
+}
+
+/* ── Track cards: a glyph of the course above its name (#35) ── */
+.mr-track-glyph {
+    display: block;
+    width: 100%;
+    height: 34px;
+    margin-bottom: 2px;
+    border-radius: 6px;
+    background: rgba(15, 23, 42, 0.9);
+}
+
+.mr-track-glyph path {
+    fill: none;
+    stroke-width: 3;
+    stroke-linecap: round;
+    stroke-linejoin: round;
+}
+
+/* ── Settings drawer (#19) ── */
+.mr-settings {
+    display: grid;
+    gap: 4px;
+}
+
+.mr-setting {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    padding: 8px 2px;
+    border-bottom: 1px solid color-mix(in srgb, var(--color-text-secondary) 20%, transparent);
+    cursor: pointer;
+}
+
+.mr-setting-text {
+    display: grid;
+    gap: 1px;
+    min-width: 0;
+}
+
+.mr-setting-name { font-weight: 700; }
+
+.mr-setting-hint {
+    font-size: var(--text-xs);
+    color: var(--color-text-secondary);
+}
+
+.mr-switch {
+    flex: none;
+    appearance: none;
+    position: relative;
+    width: 40px;
+    height: 22px;
+    margin: 0;
+    border-radius: 9999px;
+    background: color-mix(in srgb, var(--color-text-secondary) 45%, transparent);
+    cursor: pointer;
+    transition: background 150ms ease;
+}
+
+.mr-switch::after {
+    content: "";
+    position: absolute;
+    top: 3px;
+    left: 3px;
+    width: 16px;
+    height: 16px;
+    border-radius: 50%;
+    background: #fff;
+    transition: transform 150ms var(--ease-standard, ease-out);
+}
+
+.mr-switch:checked { background: #7c3aed; }
+.mr-switch:checked::after { transform: translateX(18px); }
+
+.mr-switch:focus-visible {
+    outline: 2px solid #a855f7;
+    outline-offset: 2px;
+}
+
+.mr-seg {
+    flex: none;
+    display: inline-flex;
+    border: 1px solid rgba(168, 85, 247, 0.5);
+    border-radius: 9999px;
+    overflow: hidden;
+}
+
+.mr-seg-btn {
+    font: inherit;
+    font-size: 0.8rem;
+    padding: 3px 12px;
+    border: 0;
+    background: transparent;
+    color: var(--color-text-primary);
+    cursor: pointer;
+}
+
+.mr-seg-btn.is-on {
+    background: #7c3aed;
+    color: #fff;
+}
+
+.mr-settings-track { margin-top: 8px; }
+
+/* ── Result sheet (#37): the way on first, then the standings with your row picked out ── */
+.mr-result {
+    display: grid;
+    gap: 8px;
+}
+
+.mr-result-head { font-weight: 800; }
+
+.mr-result-actions {
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: center;
+    gap: 8px;
+}
+
+.mr-result-table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 0.85rem;
+    font-variant-numeric: tabular-nums;
+}
+
+.mr-result-table td {
+    padding: 3px 6px;
+    text-align: left;
+}
+
+.mr-result-table td:first-child { width: 2.5em; }
+.mr-result-table td:last-child { text-align: right; }
+
+.mr-result-table tr {
+    animation: mr-row-in 0.3s var(--ease-standard, ease-out) both;
+}
+
+.mr-result-table tr.is-me td {
+    font-weight: 800;
+    background: rgba(239, 68, 68, 0.16);
+}
+
+.mr-result-run { color: var(--color-text-secondary); }
+
+.mr-sr-only {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    clip-path: inset(50%);
+    white-space: nowrap;
+}
+
+/* ── Micro-interactions (#26): options and pads press in ── */
+.mr-opt:active:not(:disabled),
+.mr-seg-btn:active { transform: scale(0.97); }
+
+.mr-opt { transition: border-color 120ms ease, box-shadow 120ms ease, background 120ms ease, transform 90ms ease; }
+
+/* ── Touch pads follow the device in use (#40): a touch shows them even on a fine pointer,
+   and a keyboard or pad hides them on a touch laptop. ── */
+.mr-input--touch .mr-nudge-pads { display: flex; }
+
+@media (pointer: coarse) {
+    .mr-input--keys .mr-nudge-pads,
+    .mr-input--pad .mr-nudge-pads { display: none; }
+}
+
+/* ── Small screens (#34): the chip keeps the top-left corner, the pre-race panel drops below it,
+   and the pads keep clear of both. ── */
+@media (max-width: 520px) {
+    .mr-prerace:not(.mr-prerace--center) {
+        top: 52px;
+        padding: 8px 12px 10px;
+    }
+    .mr-prerace-title { font-size: 0.95rem; }
+    .mr-place { max-width: calc(100% - 70px); }
+    .mr-tutorial { bottom: 84px; font-size: 0.8rem; }
+}
+
+/* A phone on its side: little height, so the panel and the chip share the top edge and the
+   tutorial card sits between the pads. */
+@media (max-height: 480px) {
+    .mr-prerace:not(.mr-prerace--center) {
+        top: 8px;
+        left: auto;
+        right: 8px;
+        width: min(300px, 48%);
+        padding: 6px 10px 8px;
+        transform: none;
+        animation-name: mr-fade-in;
+    }
+    .mr-prerace-hint { display: none; }
+    .mr-tutorial {
+        bottom: 8px;
+        width: min(420px, calc(100% - 150px));
+    }
+    .mr-tutorial ul { gap: 2px; margin-bottom: 6px; }
+    .mr-nudge-pads { bottom: 10px; }
+    .mr-nudge-pad { width: 48px; height: 48px; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+    .mr-prerace,
+    .mr-tutorial,
+    .mr-scrim,
+    .mr-split,
+    .mr-place-winner,
+    .mr-podium,
+    .mr-podium-row,
+    .mr-result-table tr,
+    .mr-countdown-num,
+    .mr-tut-ring { animation: none; }
+    .mr-opt,
+    .mr-chip-btn,
+    .mr-switch,
+    .mr-switch::after,
+    .mr-progress i { transition: none; }
+    .mr-opt:active:not(:disabled),
+    .mr-seg-btn:active,
+    .mr-chip-btn:active,
+    .mr-nudge-pad:active { transform: none; }
 }

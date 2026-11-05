@@ -34,6 +34,14 @@
 import * as THREE from 'three';
 import * as CANNON from 'cannon-es';
 import { newProjection } from './maps.js';
+import { readPref } from './store.js';
+
+// #23 chromatic dispersion on the glass marbles (heavy tier only, where they transmit at all): the
+// refraction through the player and the glass top three splits into colour fringes, the way real
+// soda-lime glass does at a sphere's rim. Dispersion > 0 is a shader define, so turning Effects to
+// Lite recompiles those few materials once; it is never animated.
+const DISPERSION_LEADERS = 0.45;
+const DISPERSION_PLAYER = 0.3;
 
 export const MARBLE_COUNT = 101;    // 1 red player + 100 AI rivals
 export const PLAYER_INDEX = 0;      // index 0 is the red marble the player controls
@@ -50,10 +58,9 @@ const RED = 0xef4444;   // the player — see PACK_PALETTE for why nothing else 
 // would put a decoy in the pack. Oranges are the closest this gets, and they are the light,
 // clearly-amber end (#fb923c / #fdba74) rather than anything that reads scarlet at speed.
 //
-// MIRRORED IN C#: PoMarbleRacePage.razor ColorOf() reproduces this array exactly, because the
-// HUD's podium dots and edge-gauge marker have to match the marble you are looking at. Colour is
-// a pure function of the marble index — the index is the contract between the two files. Change
-// this array and you MUST change that one.
+// The page's HUD dots read this same array: index.js menu() hands it over as hex strings
+// (paletteHex below), so the podium matches the marble you are looking at with no C# copy to
+// keep in step. Colour is a pure function of the marble index.
 const PACK_PALETTE = [
   0xf59e0b, 0xfacc15, 0xa3e635, 0x22c55e, 0x10b981, 0x14b8a6, 0x22d3ee, 0x38bdf8,
   0x3b82f6, 0x6366f1, 0x8b5cf6, 0xa855f7, 0xd946ef, 0xec4899, 0xfb923c, 0x84cc16,
@@ -62,7 +69,14 @@ const PACK_PALETTE = [
 ];
 
 // Colour for a marble index. Index 0 is the player and is always red; everything else cycles the
-// palette. Deterministic, so JS and C# agree without any colour crossing the interop boundary.
+// palette. Deterministic, so the page can colour a marble from its index alone.
+const hex = (c) => '#' + c.toString(16).padStart(6, '0');
+
+/** The palette as CSS hex for the page: { player, pack[] }; pack[i] is marble i + 1 (cycled). */
+export function paletteHex() {
+  return { player: hex(RED), pack: PACK_PALETTE.map(hex) };
+}
+
 export function marbleColor(index) {
   return index === PLAYER_INDEX ? RED : PACK_PALETTE[(index - 1) % PACK_PALETTE.length];
 }
@@ -72,7 +86,7 @@ export function marbleColor(index) {
 //
 // Real glass marble: at the world scale of 1 unit = 1 cm, a radius-1 marble is 20 mm across,
 // and solid soda-lime glass (~2500 kg/m³) makes that ≈ 10.5 g. Mass is carried here as 1.0
-// "marble unit" (the obstacle masses in track.js are multiples of it), and cannon-es derives a
+// "marble unit" (the obstacle masses in track-procedural.js are multiples of it), and cannon-es derives a
 // real SOLID-SPHERE moment of inertia (I = 2/5·m·r²) from the sphere shape — so the marbles
 // carry realistic rotational momentum and roll true.
 //
@@ -104,7 +118,7 @@ export const MARBLE_ROSTER = Array.from({ length: MARBLE_COUNT }, (_, i) => ({
 // Hard ceiling on marble speed, world units/s. This is a SAFETY interlock, not a game feel knob.
 //
 // cannon-es has no continuous collision detection, and the course's collision shell is a single
-// open surface with no thickness behind it (track-collision.js). A marble is caught only if it
+// open surface with no thickness behind it (courses/*.collision.js). A marble is caught only if it
 // still overlaps the surface at the instant a step is sampled, so it must not travel more than
 // its own diameter (2 units) between steps. At physics.FIXED_DT = 1/60 that puts the hard limit
 // at 120 u/s; 85 leaves a 40% margin.
@@ -124,7 +138,7 @@ export const MAX_SPEED = 85;
 
 // ── Player choices (intro card) ──
 // Skins change the red marble's finish, never its hue. `need` is the best run score that unlocks
-// one (localStorage pomarblerace_best), so a good run buys a flashier marble and nothing else.
+// one (store.js `best`), so a good run buys a flashier marble and nothing else.
 export const SKINS = [
   { id: 'swirl', name: 'Swirl', need: 0 },
   { id: 'catseye', name: "Cat's eye", need: 15 },
@@ -431,6 +445,7 @@ export function createMarbles(world, materials, startPositions, chosenIndex, onC
     glassMat = new THREE.MeshPhysicalMaterial({
       color: 0xffffff, roughness: 0.06, metalness: 0, transmission: 0.85, thickness: 1.6, ior: 1.5,
       clearcoat: 1, clearcoatRoughness: 0.04, iridescence: 0.35,
+      dispersion: readPref('effects') === 'lite' ? 0 : DISPERSION_LEADERS,
       envMap: envMap || null, envMapIntensity: envMap ? 1.2 : 0,
     });
     glassMesh = new THREE.InstancedMesh(glassGeo, glassMat, LEADERS);
@@ -491,6 +506,7 @@ export function createMarbles(world, materials, startPositions, chosenIndex, onC
         ...(glass ? {
           clearcoat: 1, clearcoatRoughness: 0.05,
           transmission: chrome ? 0 : 0.4, thickness: 1.4, ior: 1.5,
+          dispersion: chrome || readPref('effects') === 'lite' ? 0 : DISPERSION_PLAYER,
           iridescence: skin === 'galaxy' ? 1 : 0.25,
         } : {}),
       });
@@ -533,7 +549,8 @@ export function createMarbles(world, materials, startPositions, chosenIndex, onC
     if (onCollide && isPlayer) {
       body.addEventListener('collide', (e) => {
         const v = Math.abs(e.contact.getImpactVelocityAlongNormal());
-        if (v > 1.2) onCollide(v, body.position, RED);
+        // The other body's material names the impact sound (audio.js IMPACT_MATERIALS).
+        if (v > 1.2) onCollide(v, body.position, RED, e.body && e.body.material ? e.body.material.name : 'surface');
       });
     }
     world.addBody(body);
@@ -641,7 +658,7 @@ export function createMarbles(world, materials, startPositions, chosenIndex, onC
     if (m.packIndex < 0) continue;
     _m4.compose(m.mesh.position, m.mesh.quaternion, _scale);
     pack.setMatrixAt(m.packIndex, _m4);
-    // Online mode recolours one pack marble for the guest (game.js GUEST_COLOR); everything
+    // Online mode recolours one pack marble for the guest (tuning.js GUEST_COLOR); everything
     // else keeps its palette entry.
     _col.setHex(colorOverrides && colorOverrides[m.index] !== undefined ? colorOverrides[m.index] : m.spec.color);
     pack.setColorAt(m.packIndex, _col);
@@ -894,5 +911,14 @@ export function createMarbles(world, materials, startPositions, chosenIndex, onC
     }
   }
 
-  return { marbles, group, pack, decorations, clampSpeeds, updateProgress, sync, eliminate, checkFinishes, forceFinishRemaining, leaderboard, progress, progressOf, dispose };
+  // #23 — Effects: Lite drops the dispersion on the live glass; Full puts it back. Only materials
+  // that transmit carry it (the chrome skin and the non-heavy standard material never did).
+  function setEffects(level) {
+    const on = level !== 'lite';
+    if (glassMat) glassMat.dispersion = on ? DISPERSION_LEADERS : 0;
+    const pm = marbles[PLAYER_INDEX] && marbles[PLAYER_INDEX].mesh.material;
+    if (pm && pm.isMeshPhysicalMaterial && pm.transmission > 0) pm.dispersion = on ? DISPERSION_PLAYER : 0;
+  }
+
+  return { marbles, group, pack, decorations, clampSpeeds, updateProgress, sync, eliminate, checkFinishes, forceFinishRemaining, leaderboard, progress, progressOf, setEffects, dispose };
 }

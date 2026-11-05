@@ -181,7 +181,8 @@ jobs:
   test:
     name: Unit tests (no infra)
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    # 25, not 15: the PoMarbleRace map health step races all five courses (~8-10 min on 4 cores).
+    timeout-minutes: 25
     steps:
       - name: Checkout
         uses: actions/checkout@v7
@@ -208,6 +209,12 @@ jobs:
         run: |
           dotnet run scripts/pocabinet/dump.cs -- artifacts/pocabinet-worlds capitol bedroom
           node --test tests/pocabinet-race-health.test.mjs
+      # Every Marble Race course runs a full 101-marble race on the real engine, headless, plus
+      # the speed-cap tunnelling check (scripts/pomarblerace/harness.mjs). Maps run in parallel.
+      - name: Run PoMarbleRace map health (JS, 101-marble field on every course)
+        run: |
+          npm ci --prefix scripts/pomarblerace --no-audit --no-fund
+          node --test tests/pomarblerace-map-health.test.mjs
 
   deploy:
     name: Deploy to Azure App Service

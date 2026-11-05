@@ -212,6 +212,13 @@
     display: none;
 }
 
+/* Marble Race keeps it: its canvas leaves the bottom-right corner clear (the steer pads sit
+   above it), so the build is still readable mid-race. Raised over the race overlays. */
+.gl-page:has(.gps-shell .mr-wrap) .gl-build-stamp {
+    display: block;
+    z-index: 6;
+}
+
 @media print {
     .gl-build-stamp { display: none; }
 }

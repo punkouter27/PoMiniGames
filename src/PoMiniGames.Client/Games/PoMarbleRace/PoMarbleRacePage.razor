@@ -28,139 +28,215 @@
            GameKey="pomarblerace"
            RequiresWebGl="true"
            Fullscreen="true"
+           OptionsContent="@(_demo ? null : SettingsContent)"
+           OptionsHeading="Race settings"
            GameSummary="@GameSummaryContent">
     @* The one decision card: controls, and in 1P the track and your marble. Everything after it
-       is a three-second countdown pill — there is nothing left to choose by then. *@
+       is the pre-race panel — there is nothing left to choose by then. *@
     @if (!_introDone)
     {
         <GameIntro CueScope="pomarblerace"
                    Title="@TitleContent"
                    Objective="@IntroObjective"
                    Controls="@(_demo ? DemoQuickControls : _online ? OnlineHowToPlayContent : HowToPlayContent)"
-                   Options="@(_demo || _online ? null : SetupContent)"
-                   Wide="@(!_demo && !_online)"
+                   Options="@(_demo ? null : _online ? OnlineSetupContent : SetupContent)"
+                   Wide="@(!_demo)"
                    Mode="@(_demo ? GameIntro.IntroMode.Demo : GameIntro.IntroMode.OnePlayer)"
                    OnStart="OnIntroStartAsync" />
     }
     <div class="mr-wrap-row">
-        <div class="mr-wrap">
-            @* Purely a canvas mount; its CSS gradient matches the scene's first frame so the canvas
-               fades in without a flash. *@
-            <div id="marble-race-container" class="mr-canvas-host"
-                 role="img" aria-label="Marble race track — the race renders here"></div>
+        <div class="mr-wrap mr-input--@_inputKind">
+            @* A render fault in the race view (or a lost engine) is contained here: a retry card
+               in place of the canvas, not a dead page. *@
+            <ErrorBoundary @ref="_boundary">
+                <ChildContent>
+                    @* Purely a canvas mount; its CSS gradient matches the scene's first frame so the
+                       canvas fades in without a flash. *@
+                    <div id="marble-race-container" class="mr-canvas-host"
+                         role="img" aria-label="Marble race track — the race renders here"></div>
 
-            @* Online: connecting, searching and session-over are the shared quick-match card. *@
-            @if (_introDone && _online && _onlinePhase != OnlinePhase.Racing)
-            {
-                <div class="mr-overlay">
-                    <div class="mr-pick-card">
-                        <QuickMatchPanel Phase="@QuickPhase"
-                                         OpponentName="@_opponentName"
-                                         OpponentGone="@(_onlinePhase == OnlinePhase.PeerLeft)"
-                                         SearchingHint="The first to arrive hosts the race and steers RED; the second steers WHITE."
-                                         OnCancel="LeaveOnline"
-                                         OnRetry="RetryOnlineAsync"
-                                         OnFindAnother="FindOpponentSafeAsync" />
-                    </div>
-                </div>
-            }
-
-            @* The start beat. Gated on _introDone so it never shows behind the intro card. The
-               online guest has no countdown of its own — the host's pick phase is what it waits on. *@
-            @if (ShowCountdown)
-            {
-                <div class="mr-countdown" role="status">
-                    <span class="mr-countdown-title">You're the <span class="@MyColorClass">@MyColorWord</span> marble</span>
-                    @if (_online)
+                    @if (_engineError is not null)
                     {
-                        <span class="mr-countdown-sub">@_opponentName steers @TheirColorWord</span>
-                    }
-                    <span class="mr-countdown-sub">
-                        @if (_loading)
-                        {
-                            <text>Loading track…</text>
-                        }
-                        else if (IsOnlineGuest)
-                        {
-                            <text>Waiting for @_opponentName to start…</text>
-                        }
-                        else
-                        {
-                            <text>Go in <strong class="mr-countdown-num">@_pickCountdown</strong></text>
-                        }
-                    </span>
-                    @if (!_online && !_loading)
-                    {
-                        <button type="button" class="mr-countdown-btn" @onclick="ChangeTrackAsync">Change track</button>
-                    }
-                </div>
-            }
-
-            @* Standings: your place while racing; the podium joins it the moment the third marble
-               crosses, and stays through the result. One chip instead of two panels. *@
-            @if (ShowPlace || _podium.Count > 0)
-            {
-                <div class="mr-place" role="status" aria-label="@StandingsLabel">
-                    @if (ShowPlace)
-                    {
-                        <div class="mr-place-line">
-                            <span class="mr-place-label">Place</span>
-                            <span class="mr-place-value">P@(_myPlace > 0 ? _myPlace.ToString() : "–")</span>
-                            <span class="mr-place-field">/@_myField</span>
+                        <div class="mr-scrim">
+                            <div class="mr-prerace mr-prerace--center" role="alert">
+                                <p class="mr-prerace-title">The race didn't start</p>
+                                <p class="mr-prerace-line">@_engineError</p>
+                                <div class="mr-prerace-actions">
+                                    <button type="button" class="app-btn app-btn--primary" @onclick="ReloadEngineAsync">Reload engine</button>
+                                    @if (!_online)
+                                    {
+                                        <button type="button" class="app-btn app-btn--secondary" @onclick="ChangeTrackAsync">Change track</button>
+                                    }
+                                </div>
+                            </div>
                         </div>
-                        @if (_split is { } split)
-                        {
-                            @* Checkpoint split, shown for a few seconds after each arch. *@
-                            <div class="mr-place-line mr-split" @key="split.Sector">
-                                <span class="mr-place-label">S@(split.Sector)/@split.Count</span>
-                                <span class="mr-split-time">@split.Time.ToString("0.00")s</span>
-                                @if (split.Best > 0)
+                    }
+                    else if (ShowOnlineCard)
+                    {
+                        @* Online before the race: connecting, searching, a private code, the opponent gone. *@
+                        <div class="mr-scrim">
+                            <div class="mr-prerace mr-prerace--center" role="status">
+                                @if (_onlinePhase == OnlinePhase.Searching && _roomCode is not null)
                                 {
-                                    var delta = split.Time - split.Best;
-                                    <span class="mr-split-delta @(delta <= 0 ? "is-faster" : "is-slower")">@(delta <= 0 ? "−" : "+")@Math.Abs(delta).ToString("0.00")</span>
+                                    <p class="mr-prerace-kicker">Your race code</p>
+                                    <p class="mr-room-code" aria-label="Race code @string.Join(" ", _roomCode.ToCharArray())">@_roomCode</p>
+                                    <p class="mr-prerace-line">Send it to a friend: they pick Online, then Join a friend. The race starts when they join (2 players max).</p>
+                                    <div class="mr-prerace-actions">
+                                        <button type="button" class="app-btn app-btn--secondary" @onclick="CopyRoomCodeAsync">Copy code</button>
+                                        <button type="button" class="app-btn app-btn--secondary" @onclick="LeaveOnline">Cancel</button>
+                                    </div>
                                 }
                                 else
                                 {
-                                    <span class="mr-split-delta is-faster">first</span>
+                                    <QuickMatchPanel Phase="@QuickPhase"
+                                                     OpponentName="@_opponentName"
+                                                     OpponentGone="@(_onlinePhase == OnlinePhase.PeerLeft)"
+                                                     SearchingHint="The first to arrive hosts the race and steers RED; the second steers WHITE."
+                                                     OnCancel="LeaveOnline"
+                                                     OnRetry="RetryOnlineAsync"
+                                                     OnFindAnother="FindOpponentSafeAsync" />
                                 }
                             </div>
-                        }
+                        </div>
                     }
-                    @if (_podium.Count > 0)
+                    else if (ShowPrerace)
                     {
-                        <ol class="mr-podium">
-                            @foreach (var row in _podium)
+                        @* The start beat: who you are, the load, then the countdown. One panel, fixed
+                           size, so nothing jumps as it moves from loading to counting. *@
+                        <div class="mr-prerace" role="status">
+                            <p class="mr-prerace-title">You're the <span class="@MyColorClass">@MyColorWord</span> marble</p>
+                            @if (_online)
                             {
-                                <li class="mr-podium-row">
-                                    @MedalIcon(row.Place)
-                                    <span class="mr-podium-dot" style="--dot:@row.Color"></span>
-                                    <span class="mr-podium-name">@row.Name</span>
-                                    <span class="mr-podium-time">@(row.Place == 1 ? $"{row.Time:0.00}s" : $"+{row.Gap:0.00}")</span>
-                                </li>
+                                <p class="mr-prerace-line">@_opponentName steers @TheirColorWord</p>
                             }
-                        </ol>
+                            <p class="mr-prerace-line">
+                                @if (_loading)
+                                {
+                                    <text>Loading track… <span class="mr-num">@(_loadPct)%</span></text>
+                                }
+                                else if (IsOnlineGuest)
+                                {
+                                    <text>Waiting for @_opponentName to start…</text>
+                                }
+                                else if (_showTutorial)
+                                {
+                                    <text>Ready when you are</text>
+                                }
+                                else
+                                {
+                                    <text>Go in <strong class="mr-countdown-num" @key="_pickCountdown">@_pickCountdown</strong></text>
+                                }
+                            </p>
+                            <div class="mr-progress @(_loading ? "" : "is-done")" role="progressbar" aria-label="Track download"
+                                 aria-valuemin="0" aria-valuemax="100" aria-valuenow="@_loadPct">
+                                <i style="width:@(_loading ? _loadPct : 100)%"></i>
+                            </div>
+                            <p class="mr-prerace-hint">@SteerHint</p>
+                            @if (!_online && !_loading)
+                            {
+                                <div class="mr-prerace-actions">
+                                    <button type="button" class="mr-chip-btn" @onclick="ChangeTrackAsync">Change track</button>
+                                </div>
+                            }
+                        </div>
                     }
-                </div>
-            }
 
-            @* Hold-to-steer pads for touch screens (CSS shows them only on a coarse pointer). *@
-            @if (_phase == "racing" && !_demo)
-            {
-                <div class="mr-nudge-pads">
-                    <button class="mr-nudge-pad"
-                            @onpointerdown="() => Steer(-1, true)"
-                            @onpointerup="() => Steer(-1, false)"
-                            @onpointerleave="() => Steer(-1, false)"
-                            @oncontextmenu:preventDefault="true"
-                            aria-label="Steer left">◀</button>
-                    <button class="mr-nudge-pad"
-                            @onpointerdown="() => Steer(1, true)"
-                            @onpointerup="() => Steer(1, false)"
-                            @onpointerleave="() => Steer(1, false)"
-                            @oncontextmenu:preventDefault="true"
-                            aria-label="Steer right">▶</button>
-                </div>
-            }
+                    @if (_showTutorial && !_loading && _engineError is null)
+                    {
+                        @* First race only: point at the red marble and name the boost pads. *@
+                        @if (_tutorialAt is { } at)
+                        {
+                            <div class="mr-tut-ring" style="left:@Pct(at.X);top:@Pct(at.Y)" aria-hidden="true"></div>
+                        }
+                        <div class="mr-tutorial" role="dialog" aria-label="How to race">
+                            <ul>
+                                <li><span class="mr-red">That's you</span>: the one red marble in a pack of 101.</li>
+                                <li>@SteerHint</li>
+                                <li><span class="mr-boost-swatch" aria-hidden="true"></span> Cyan chevrons are boost pads: roll over them for speed.</li>
+                                <li>Finish in the top 10 to score. A miss ends the run.</li>
+                            </ul>
+                            <button type="button" class="app-btn app-btn--primary" @onclick="DismissTutorialAsync">Got it, race!</button>
+                        </div>
+                    }
+
+                    @* Standings: one chip. Racing, it is your place, with the latest split inline and
+                       the winner's line once someone has finished. The full podium waits for the
+                       race to end (or a demo, where there is no place of yours to show). *@
+                    @if (ShowPlace || _podium.Count > 0)
+                    {
+                        <div class="mr-place" role="status" aria-label="@StandingsLabel">
+                            @if (ShowPlace)
+                            {
+                                <div class="mr-place-line">
+                                    <span class="mr-place-value">P@(_myPlace > 0 ? _myPlace.ToString() : "–")</span>
+                                    <span class="mr-place-field">/@_myField</span>
+                                    @if (_split is { } split)
+                                    {
+                                        var delta = split.Time - split.Best;
+                                        <span class="mr-split @(split.Best <= 0 || delta <= 0 ? "is-faster" : "is-slower")" @key="split.Sector"
+                                              title="Sector @split.Sector of @split.Count: @split.Time.ToString("0.00")s">
+                                            S@(split.Sector) @(split.Best > 0 ? $"{(delta <= 0 ? "−" : "+")}{Math.Abs(delta):0.00}" : $"{split.Time:0.00}s")
+                                        </span>
+                                    }
+                                </div>
+                                @if (_podium.Count > 0)
+                                {
+                                    var w = _podium[0];
+                                    <div class="mr-place-winner">
+                                        <span class="mr-podium-dot" style="--dot:@w.Color"></span>
+                                        <span>Winner @w.Name · @w.Time.ToString("0.00")s</span>
+                                    </div>
+                                }
+                            }
+                            else
+                            {
+                                <ol class="mr-podium">
+                                    @foreach (var row in _podium)
+                                    {
+                                        <li class="mr-podium-row" style="--i:@row.Place">
+                                            @MedalIcon(row.Place)
+                                            <span class="mr-podium-dot" style="--dot:@row.Color"></span>
+                                            <span class="mr-podium-name">@row.Name</span>
+                                            <span class="mr-podium-time">@(row.Place == 1 ? $"{row.Time:0.00}s" : $"+{row.Gap:0.00}")</span>
+                                        </li>
+                                    }
+                                </ol>
+                            }
+                        </div>
+                    }
+
+                    @* Hold-to-steer pads for touch screens (CSS shows them on a coarse pointer, or
+                       whenever the last input was a touch). *@
+                    @if (_phase == "racing" && !_demo)
+                    {
+                        <div class="mr-nudge-pads">
+                            <button class="mr-nudge-pad"
+                                    @onpointerdown="() => Steer(-1, true)"
+                                    @onpointerup="() => Steer(-1, false)"
+                                    @onpointerleave="() => Steer(-1, false)"
+                                    @oncontextmenu:preventDefault="true"
+                                    aria-label="Steer left">◀</button>
+                            <button class="mr-nudge-pad"
+                                    @onpointerdown="() => Steer(1, true)"
+                                    @onpointerup="() => Steer(1, false)"
+                                    @onpointerleave="() => Steer(1, false)"
+                                    @oncontextmenu:preventDefault="true"
+                                    aria-label="Steer right">▶</button>
+                        </div>
+                    }
+                </ChildContent>
+                <ErrorContent Context="ex">
+                    <div class="mr-scrim">
+                        <div class="mr-prerace mr-prerace--center" role="alert">
+                            <p class="mr-prerace-title">The race view hit a problem</p>
+                            <p class="mr-prerace-line">Your run and scores are safe. Reload the engine to carry on.</p>
+                            <div class="mr-prerace-actions">
+                                <button type="button" class="app-btn app-btn--primary" @onclick="ReloadEngineAsync">Reload engine</button>
+                            </div>
+                        </div>
+                    </div>
+                </ErrorContent>
+            </ErrorBoundary>
         </div>
     </div>
 </GameShell>
@@ -235,28 +311,49 @@
     private string TheirColorWord => IsOnlineGuest ? "RED" : "WHITE";
     private string MyColorClass => IsOnlineGuest ? "mr-white" : "mr-red";
 
-    private bool ShowCountdown => _introDone && _phase == "pick" && !_demo
+    private bool ShowPrerace => _introDone && _phase == "pick" && !_demo
         && (!_online || _onlinePhase == OnlinePhase.Racing)
-        && (_pickCountdown > 0 || _loading || IsOnlineGuest);
+        && (_pickCountdown > 0 || _loading || IsOnlineGuest || _showTutorial);
+    private bool ShowOnlineCard => _introDone && _online && _onlinePhase is not (OnlinePhase.Racing or OnlinePhase.Idle);
     private bool ShowPlace => _phase == "racing" && !_demo;
     private string StandingsLabel => ShowPlace ? $"Your position: {_myPlace} of {_myField}" : "Podium";
 
-    // MIRRORS PACK_PALETTE and GUEST_COLOR in marbles.js/game.js — colour is a pure function of the
-    // marble index, so it never crosses interop. No red in here: red is the player's alone.
-    private const string RedColor = "#ef4444";
-    private const string GuestColor = "#f8fafc";
-    private static readonly string[] PackPalette =
+    // ── Engine health (item 32/33): a failed start is a retry card, the download a progress bar ──
+    private ErrorBoundary? _boundary;
+    private string? _engineError;
+    private int _loadPct;
+    private object? _lastOnlineStart;   // the online record the engine was booted with, for a reload
+    private bool _rebootAfterRender;
+
+    // ── Input device in use ('keys' | 'touch' | 'pad'), reported by gamepad.js ──
+    private string _inputKind = "keys";
+
+    private string SteerHint => _inputKind switch
     {
-        "#f59e0b", "#facc15", "#a3e635", "#22c55e", "#10b981", "#14b8a6", "#22d3ee", "#38bdf8",
-        "#3b82f6", "#6366f1", "#8b5cf6", "#a855f7", "#d946ef", "#ec4899", "#fb923c", "#84cc16",
-        "#fcd34d", "#bef264", "#4ade80", "#34d399", "#2dd4bf", "#67e8f9", "#7dd3fc", "#93c5fd",
-        "#a5b4fc", "#c4b5fd", "#d8b4fe", "#f0abfc", "#f9a8d4", "#fdba74", "#fde68a", "#5eead4",
+        "pad" => "Left stick or D-pad: hold to steer",
+        "touch" => "Hold the ◀ ▶ pads at the bottom to steer",
+        _ => "Hold ← → (or A / D) to steer",
     };
 
-    private string ColorOf(int index) =>
-        index == PlayerIndex ? RedColor
-        : _online && index == _guestIndex ? GuestColor
-        : PackPalette[(index - 1) % PackPalette.Length];
+    // ── First-race tutorial (shown once; prefs.tutorialSeen) ──
+    private bool _showTutorial;
+    private (double X, double Y)? _tutorialAt;
+
+    private static string Pct(double f) =>
+        (Math.Clamp(f, 0, 1) * 100).ToString("0.##", System.Globalization.CultureInfo.InvariantCulture) + "%";
+
+    // Colour is a pure function of the marble index; the engine hands its palette over with the
+    // menu (marbles.js paletteHex), so there is no copy here to keep in step.
+    private const string UnknownColor = "#94a3b8";
+
+    private string ColorOf(int index)
+    {
+        var p = _menu?.Palette;
+        if (p is null) return UnknownColor;
+        if (index == PlayerIndex) return p.Player;
+        if (_online && index == _guestIndex) return p.Guest;
+        return p.Pack.Length > 0 ? p.Pack[(index - 1) % p.Pack.Length] : UnknownColor;
+    }
 
     // Online: the two human marbles carry the humans' names; "You" follows the local role.
     private string RosterName(int index) =>
@@ -272,21 +369,101 @@
             ? "Race another player through a pack of 101. One of you steers RED, the other WHITE — finish in the top 10 to score."
             : "You steer the one RED marble in a pack of 101. Finish in the top 10 to score.";
 
+    // Hints follow the device last used (gamepad.js watchInput), not just the pointer type.
     private RenderFragment OnlineHowToPlayContent => @<div>
         <ul>
-            <li class="keys-only"><kbd>←</kbd>/<kbd>→</kbd> hold to steer — red for the host, white for the guest</li>
-            <li class="touch-only">Hold the ◀ ▶ pads to steer — red for the host, white for the guest</li>
+            <li>@SteerHint: red for the host, white for the guest</li>
             <li>The host's browser runs the physics; the guest sees the race a beat behind</li>
         </ul>
     </div>;
 
     private RenderFragment HowToPlayContent => @<div>
         <ul>
-            <li class="keys-only"><kbd>←</kbd>/<kbd>→</kbd> hold to steer · <kbd>R</kbd> new track · <kbd>M</kbd> mute · <kbd>G</kbd> ghost</li>
-            <li class="touch-only">Hold the ◀ ▶ pads at the bottom of the screen to steer</li>
-            <li>Chain top-10 finishes for a multiplier — one miss ends the run</li>
+            <li>@SteerHint</li>
+            @if (_inputKind == "keys")
+            {
+                <li><kbd>R</kbd> new track · <kbd>M</kbd> mute · <kbd>G</kbd> ghost (all also under ⚙ Race settings)</li>
+            }
+            <li>Chain top-10 finishes for a multiplier: one miss ends the run</li>
         </ul>
     </div>;
+
+    // ── Settings drawer (GameShell OptionsContent) ──
+    // Each switch is saved in the engine's store and applied live; an entry point another part of
+    // the engine has not shipped yet is skipped quietly (the saved value still applies next start).
+    private RenderFragment SettingsContent => @<div class="mr-settings">
+        @{ var p = _menu?.Prefs ?? new MarblePrefs(); }
+        @SettingSwitch("Ghost of your best run", "Replays your fastest finish on the authored courses (G)", p.GhostOn, v => SetPrefAsync("ghost", v))
+        @SettingSwitch("Sound", "All race audio (M)", !p.Muted, v => SetPrefAsync("sound", v))
+        @SettingSwitch("Announcer", "Calls lead changes, photo finishes and your top-10 moments", p.Announcer, v => SetPrefAsync("announcer", v))
+        @SettingSwitch("Performance overlay", "Frame rate, physics step time and draw calls", p.PerfHud, v => SetPrefAsync("perfHud", v))
+        <div class="mr-setting">
+            <span class="mr-setting-text">
+                <span class="mr-setting-name">Effects</span>
+                <span class="mr-setting-hint">Lite drops the heaviest screen effects for older devices</span>
+            </span>
+            <span class="mr-seg" role="radiogroup" aria-label="Effects">
+                @foreach (var level in new[] { "full", "lite" })
+                {
+                    var l = level;
+                    <button type="button" role="radio" aria-checked="@(p.Effects == l ? "true" : "false")"
+                            class="mr-seg-btn @(p.Effects == l ? "is-on" : "")" @onclick="() => SetEffectsAsync(l)">@(l == "full" ? "Full" : "Lite")</button>
+                }
+            </span>
+        </div>
+        @if (!_online)
+        {
+            <button type="button" class="app-btn app-btn--secondary mr-settings-track" @onclick="ChangeTrackAsync">Change track (R)</button>
+        }
+    </div>;
+
+    private RenderFragment SettingSwitch(string name, string hint, bool on, Func<bool, Task> set) => @<label class="mr-setting">
+        <span class="mr-setting-text">
+            <span class="mr-setting-name">@name</span>
+            <span class="mr-setting-hint">@hint</span>
+        </span>
+        <input type="checkbox" role="switch" class="mr-switch" checked="@on" @onchange="e => set(e.Value is true)" />
+    </label>;
+
+    private async Task SetPrefAsync(string key, bool on)
+    {
+        var p = (_menu ??= new MarbleMenu()).Prefs;
+        switch (key)
+        {
+            case "ghost":
+                p.GhostOn = on;
+                await TryJsAsync("PoMarbleRace.setGhost", on);
+                break;
+            case "sound":
+                p.Muted = !on;
+                await TryJsAsync("PoMarbleRace.setMuted", !on);
+                break;
+            case "announcer":
+                p.Announcer = on;
+                await TryJsAsync("PoMarbleRace.setPref", "announcer", on);
+                await TryJsAsync("PoMarbleRace.setAnnouncer", on);
+                break;
+            case "perfHud":
+                p.PerfHud = on;
+                await TryJsAsync("PoMarbleRace.setPref", "perfHud", on);
+                await TryJsAsync("PoMarbleRace.setPerfHud", on);
+                break;
+        }
+    }
+
+    private async Task SetEffectsAsync(string level)
+    {
+        (_menu ??= new MarbleMenu()).Prefs.Effects = level;
+        await TryJsAsync("PoMarbleRace.setPref", "effects", level);
+        await TryJsAsync("PoMarbleRace.setEffects", level);
+    }
+
+    private async Task TryJsAsync(string fn, params object?[] args)
+    {
+        try { await JSRuntime.InvokeVoidAsync(fn, args); }
+        catch (JSException) { /* an entry point not shipped yet: the saved pref applies next start */ }
+        catch (JSDisconnectedException) { }
+    }
 
     private RenderFragment DemoQuickControls => @<div>
         <p>Every marble is CPU-driven — no controls, just watch the pack.</p>
@@ -299,8 +476,26 @@
 
     private string RecordText(int mapId) =>
         _records.TryGetValue(mapId, out var r) && r.Seconds > 0
-            ? $"World record {r.Seconds:0.00}s · {r.PlayerName}"
-            : "World record — be the first";
+            ? $"WR {r.Seconds:0.00}s · {r.PlayerName}"
+            : "WR: be the first";
+
+    // Track thumbnails: a glyph of each course's shape in its own colour, drawn inline so the card
+    // needs no image download (slots per maps.js; an unknown slot gets a plain descent).
+    private static RenderFragment TrackGlyph(int mapId)
+    {
+        var (path, color) = mapId switch
+        {
+            1 => ("M6 6 L26 13 L12 20 L34 28 L58 28", "#22d3ee"),                        // Neon Chute: switchback descent
+            2 => ("M32 17 m-3 0 a3 3 0 1 1 6 0 a7 7 0 1 1 -14 0 a11 11 0 1 1 22 0 a14 13 0 1 1 -28 0", "#a855f7"), // Spiral Works
+            3 => ("M8 30 C 8 4, 30 4, 30 17 S 56 30, 56 4", "#f59e0b"),                    // Grand Spiral: twin helix
+            4 => ("M4 10 C 16 26, 24 2, 36 16 S 54 30, 60 18", "#fb923c"),                 // Canyon Run: wide meanders
+            5 => ("M6 6 H40 V14 H14 V22 H48 L58 30", "#4ade80"),                           // Playground Run: gutter laps + slide
+            _ => ("M6 6 L58 30", "#94a3b8"),
+        };
+        return @<svg class="mr-track-glyph" viewBox="0 0 64 34" aria-hidden="true" focusable="false">
+            <path d="@path" stroke="@color" />
+        </svg>;
+    }
 
     private MarbleTrackStat? StatFor(int id) =>
         _menu is not null && _menu.Stats.TryGetValue(id.ToString(), out var s) && s.Races > 0 ? s : null;
@@ -310,6 +505,45 @@
         : s.BestPlace == 0 ? $"{s.Races} races, no finish"
         : $"Best P{s.BestPlace} · {s.BestTime:0.0}s · {s.Wins} {(s.Wins == 1 ? "win" : "wins")}";
 
+    // ── Online setup: the track (used when you end up hosting) and how to meet the other player ──
+    private enum OnlineHow { QuickMatch, CreateRoom, JoinRoom }
+    private OnlineHow _onlineHow = OnlineHow.QuickMatch;
+    private string _joinCode = "";
+    private string? _roomCode;   // set while a private race we opened waits for its guest
+
+    private RenderFragment OnlineSetupContent => @<div class="mr-setup">
+        <div class="mr-setup-label">Play with</div>
+        <div class="mr-weights" role="radiogroup" aria-label="How to find the other player">
+            @foreach (var (how, name, hint) in new[]
+            {
+                (OnlineHow.QuickMatch, "Anyone", "Quick match with the next player"),
+                (OnlineHow.CreateRoom, "A friend", "Get a code to send them"),
+                (OnlineHow.JoinRoom, "Join a friend", "Type the code they sent"),
+            })
+            {
+                var h = how;
+                <button type="button" role="radio" aria-checked="@(h == _onlineHow ? "true" : "false")"
+                        class="mr-opt @(h == _onlineHow ? "is-on" : "")"
+                        @onclick="() => _onlineHow = h">
+                    <span class="mr-opt-name">@name</span>
+                    <span class="mr-opt-hint">@hint</span>
+                </button>
+            }
+        </div>
+        @if (_onlineHow == OnlineHow.JoinRoom)
+        {
+            <label class="mr-setup-label" for="mr-join-code">Race code</label>
+            <input id="mr-join-code" class="mr-join-code" maxlength="4" autocomplete="off" spellcheck="false"
+                   placeholder="ABCD" @bind="_joinCode" @bind:event="oninput" />
+            <p class="mr-setup-note">The host's track is the one you race.</p>
+        }
+        else
+        {
+            @TrackPicker
+            <p class="mr-setup-note">Two players per race. Whoever hosts picks the track.</p>
+        }
+    </div>;
+
     private RenderFragment SetupContent => @<div class="mr-setup">
         @if (_menu is null)
         {
@@ -317,21 +551,7 @@
         }
         else
         {
-            <div class="mr-setup-label">Track</div>
-            <div class="mr-tracks" role="radiogroup" aria-label="Choose a track">
-                @foreach (var m in _menu.Maps)
-                {
-                    var id = m.Id;
-                    <button type="button" role="radio" aria-checked="@(id == _mapId ? "true" : "false")"
-                            class="mr-opt mr-track @(id == _mapId ? "is-on" : "")"
-                            @onclick="() => _mapId = id">
-                        <span class="mr-opt-name">@m.Name</span>
-                        <span class="mr-track-wr">@RecordText(id)</span>
-                        <span class="mr-opt-hint">@TrackStatText(StatFor(id))</span>
-                    </button>
-                }
-            </div>
-            <p class="mr-setup-note">@(MapAt(_mapId)?.Blurb)</p>
+            @TrackPicker
 
             <div class="mr-setup-label">Your marble</div>
             <div class="mr-skins" role="radiogroup" aria-label="Marble finish">
@@ -368,23 +588,175 @@
         }
     </div>;
 
+    private RenderFragment TrackPicker => @<div>
+        @if (_menu is null)
+        {
+            <p class="mr-setup-note">Loading tracks…</p>
+        }
+        else
+        {
+            <div class="mr-setup-label">Track</div>
+            <div class="mr-tracks" role="radiogroup" aria-label="Choose a track">
+                @foreach (var m in _menu.Maps)
+                {
+                    var id = m.Id;
+                    <button type="button" role="radio" aria-checked="@(id == _mapId ? "true" : "false")"
+                            class="mr-opt mr-track @(id == _mapId ? "is-on" : "")"
+                            @onclick="() => _mapId = id">
+                        @TrackGlyph(id)
+                        <span class="mr-opt-name">@m.Name</span>
+                        <span class="mr-track-wr">@RecordText(id)</span>
+                        <span class="mr-opt-hint">@TrackStatText(StatFor(id))</span>
+                    </button>
+                }
+            </div>
+            <p class="mr-setup-note">@(MapAt(_mapId)?.Blurb)</p>
+        }
+    </div>;
+
     // Host and guest share one summary: the guest simply has no run score of its own.
-    private RenderFragment GameSummaryContent => @<div>
-        <div>
+    // The way on comes first (Race again / Next track, or Rematch online), then the standings with
+    // your own row picked out, then the run.
+    private RenderFragment GameSummaryContent => @<div class="mr-result">
+        <div class="mr-result-head">
             @(_lastWon
-                ? $"🏆 {Ordinal(_lastPlace)} place{(IsOnlineGuest ? "" : $" — +{_lastGained} points")}"
-                : IsOnlineGuest ? "💀 Outside the top 10" : "💀 Run over")
+                ? $"🏆 {Ordinal(_lastPlace)} place{(IsOnlineGuest ? "" : $" · +{_lastGained} points")}"
+                : IsOnlineGuest ? "💀 Outside the top 10" : $"💀 Run over · {(_lastPlace > 0 ? $"you placed {Ordinal(_lastPlace)}" : "you didn't finish")}")
         </div>
-        <div>@(_lastPlace > 0 ? $"You placed {Ordinal(_lastPlace)}" : "You didn't finish")</div>
+        @if (!_online)
+        {
+            <div class="mr-result-actions">
+                <button type="button" class="app-btn app-btn--primary" @onclick="() => RaceAgainAsync(nextTrack: false)">Race again</button>
+                <button type="button" class="app-btn app-btn--secondary" @onclick="() => RaceAgainAsync(nextTrack: true)">Next track: @(MapAt(NextMapId)?.Name ?? "next")</button>
+            </div>
+        }
+        else if (_onlineResultKnown && _onlinePhase == OnlinePhase.Racing)
+        {
+            <div class="mr-rematch">
+                <button type="button" class="app-btn app-btn--primary" disabled="@_rematch.Mine"
+                        @onclick="RequestRematchAsync">
+                    @(_rematch.Mine ? $"Waiting for {_opponentName}…" : _rematch.Theirs ? "Accept rematch" : "Rematch")
+                </button>
+                @if (_rematch.Theirs && !_rematch.Mine)
+                {
+                    <span class="mr-rematch-note">@_opponentName wants a rematch</span>
+                }
+            </div>
+        }
+        @if (_podium.Count > 0 || _lastPlace > 0)
+        {
+            <table class="mr-result-table">
+                <caption class="mr-sr-only">Final standings</caption>
+                <tbody>
+                    @foreach (var row in _podium)
+                    {
+                        <tr class="@(row.Place == _lastPlace ? "is-me" : null)">
+                            <td>@row.Place</td>
+                            <td><span class="mr-podium-dot" style="--dot:@row.Color"></span> @row.Name</td>
+                            <td>@(row.Place == 1 ? $"{row.Time:0.00}s" : $"+{row.Gap:0.00}")</td>
+                        </tr>
+                    }
+                    @if (_lastPlace > _podium.Count)
+                    {
+                        <tr class="is-me">
+                            <td>@_lastPlace</td>
+                            <td><span class="mr-podium-dot" style="--dot:@ColorOf(IsOnlineGuest ? _guestIndex : PlayerIndex)"></span> You</td>
+                            <td></td>
+                        </tr>
+                    }
+                </tbody>
+            </table>
+        }
         @if (!IsOnlineGuest)
         {
-            <div>@(_lastWon ? $"Run: {_score} · Streak: {_streak}" : $"Best run: {_best}")</div>
+            <div class="mr-result-run">@(_lastWon ? $"Run: {_score} · Streak: {_streak}" : $"Best run: {_best}")</div>
         }
         @if (_online && _onlineResultKnown)
         {
             <div>@_opponentName @(_opponentPlace > 0 ? $"placed {Ordinal(_opponentPlace)}" : "didn't finish")</div>
+            <div class="mr-series">Series: You @_seriesMine – @_seriesTheirs @_opponentName</div>
         }
     </div>;
+
+    // The track after this one in the menu's order, wrapping.
+    private int NextMapId
+    {
+        get
+        {
+            var maps = _menu?.Maps;
+            if (maps is null || maps.Length == 0) return _mapId;
+            var i = Array.FindIndex(maps, m => m.Id == _mapId);
+            return maps[(i + 1) % maps.Length].Id;
+        }
+    }
+
+    /// <summary>Result sheet: the same track again, or the next one, straight from the modal.</summary>
+    private async Task RaceAgainAsync(bool nextTrack)
+    {
+        if (nextTrack) _mapId = NextMapId;
+        await StopEngineAsync();
+        _phase = "pick";
+        _podium.Clear();
+        _myPlace = -1;
+        _split = null;
+        _pickCountdown = PickSeconds;
+        await InvokeAsync(StateHasChanged);
+        await BootEngineAsync(null);
+    }
+
+    // ── Rematch + series (online) ──
+    // Each finished race scores the series for whoever placed better (a non-finish loses to any
+    // finish; two non-finishes score nobody). A rematch needs both players to ask.
+    private int _seriesMine, _seriesTheirs;
+    private (bool Mine, bool Theirs) _rematch;
+
+    private void ScoreSeries(int myPlace, int theirPlace)
+    {
+        var mine = myPlace > 0 ? myPlace : int.MaxValue;
+        var theirs = theirPlace > 0 ? theirPlace : int.MaxValue;
+        if (mine < theirs) _seriesMine++;
+        else if (theirs < mine) _seriesTheirs++;
+    }
+
+    private async Task RequestRematchAsync()
+    {
+        if (_onlineClient is null) return;
+        _rematch.Mine = true;
+        await _onlineClient.RequestRematchAsync();
+    }
+
+    private void OnRematchChanged(MarbleRaceRematch r)
+    {
+        _ = InvokeAsync(async () =>
+        {
+            var host = _onlineRole == MarbleRaceRole.Host;
+            if (r.Agreed)
+            {
+                _rematch = (false, false);
+                _onlineResultKnown = false;
+                _podium.Clear();
+                // The host's engine rolls the next race; its pick phase reaches the guest by relay.
+                if (host) { try { await JSRuntime.InvokeVoidAsync("PoMarbleRace.rematch"); } catch { } }
+                else _phase = "pick";
+            }
+            else
+            {
+                _rematch = host ? (r.HostWants, r.GuestWants) : (r.GuestWants, r.HostWants);
+            }
+            StateHasChanged();
+        });
+    }
+
+    private async Task CopyRoomCodeAsync()
+    {
+        if (_roomCode is null) return;
+        try
+        {
+            await JSRuntime.InvokeVoidAsync("navigator.clipboard.writeText", _roomCode);
+            ToastService.Show("Race code copied.", ToastType.Success);
+        }
+        catch { ToastService.Show($"Your code is {_roomCode}.", ToastType.Info); }
+    }
 
     protected override void OnInitialized()
     {
@@ -398,7 +770,80 @@
 
     protected override async Task OnAfterRenderAsync(bool firstRender)
     {
-        if (firstRender && !_demo && !_online) await LoadMenuAsync();
+        // Every mode loads it: online picks a track too, and the HUD's colours come with it.
+        if (firstRender)
+        {
+            await LoadMenuAsync();
+            _ref ??= DotNetObjectReference.Create(this);
+            await TryJsAsync("PoMarbleRace.watchInput", _ref);
+        }
+        // "Reload engine": the boundary has re-rendered the canvas host, so the engine has a
+        // container to mount into again.
+        if (_rebootAfterRender)
+        {
+            _rebootAfterRender = false;
+            await BootEngineAsync(_online ? _lastOnlineStart : null);
+        }
+    }
+
+    /// <summary>Retry card (engine start failure or a render fault): reset and boot again.</summary>
+    private async Task ReloadEngineAsync()
+    {
+        _engineError = null;
+        await StopEngineAsync();
+        _phase = "pick";
+        _podium.Clear();
+        _pickCountdown = PickSeconds;
+        _rebootAfterRender = true;
+        _boundary?.Recover();
+        await InvokeAsync(StateHasChanged);
+    }
+
+    /// <summary>Track download progress, whole percent (index.js start()).</summary>
+    [JSInvokable]
+    public Task OnLoadProgress(int pct)
+    {
+        _loadPct = Math.Clamp(pct, 0, 100);
+        return InvokeAsync(StateHasChanged);
+    }
+
+    /// <summary>The input device last used: 'keys', 'touch' or 'pad' (gamepad.js).</summary>
+    [JSInvokable]
+    public Task OnInputKind(string kind)
+    {
+        _inputKind = kind is "touch" or "pad" ? kind : "keys";
+        return InvokeAsync(StateHasChanged);
+    }
+
+    private async Task ShowTutorialAsync()
+    {
+        _showTutorial = true;
+        _tutorialAt = null;
+        await InvokeAsync(StateHasChanged);
+        // Let the start-gate camera settle before asking where the red marble sits on screen.
+        await Task.Delay(600);
+        try
+        {
+            var at = await JSRuntime.InvokeAsync<string>("PoMarbleRace.playerScreenPos");
+            var parts = (at ?? "").Split(',');
+            if (parts.Length == 2
+                && double.TryParse(parts[0], System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out var x)
+                && double.TryParse(parts[1], System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out var y))
+            {
+                _tutorialAt = (x, y);
+            }
+        }
+        catch (JSException) { }
+        await InvokeAsync(StateHasChanged);
+    }
+
+    private async Task DismissTutorialAsync()
+    {
+        _showTutorial = false;
+        _tutorialAt = null;
+        (_menu ??= new MarbleMenu()).Prefs.TutorialSeen = true;
+        await TryJsAsync("PoMarbleRace.setPref", "tutorialSeen", true);
+        if (_phase == "pick" && _engineStarted) StartPickCountdown();
     }
 
     /// <summary>
@@ -478,6 +923,9 @@
     {
         _engineStarted = true;
         _loading = true;
+        _loadPct = 0;
+        _engineError = null;
+        _lastOnlineStart = online;
         _ref ??= DotNetObjectReference.Create(this);
         try
         {
@@ -485,6 +933,7 @@
             if (!await JSRuntime.InvokeAsync<bool>("loadEngine", "pomarblerace"))
             {
                 Console.Error.WriteLine("[pomarblerace] engine failed to load");
+                FailEngine("The race engine didn't download. Check your connection and try again.");
                 return;
             }
 
@@ -494,10 +943,27 @@
             await JSRuntime.InvokeVoidAsync("PoMarbleRace.start", "marble-race-container", _ref, _demo, _mapId, online, marble);
             await JSRuntime.InvokeVoidAsync("PoMarbleRace.resume");
         }
-        catch (Exception ex)
+        catch (JSException ex)
         {
             Console.Error.WriteLine($"[PoMarbleRace] JS init failed: {ex.Message}");
+            // index.js throws a player-facing sentence for a failed course download; keep its
+            // first line (the rest is the JS stack).
+            var line = ex.Message.Split('\n', 2)[0].Trim();
+            FailEngine(line.StartsWith("Couldn't", StringComparison.Ordinal) ? line : "The race engine failed to start.");
         }
+        catch (Exception ex) when (ex is not OperationCanceledException and not JSDisconnectedException)
+        {
+            Console.Error.WriteLine($"[PoMarbleRace] JS init failed: {ex.Message}");
+            FailEngine("The race engine failed to start.");
+        }
+    }
+
+    private void FailEngine(string message)
+    {
+        _engineStarted = false;
+        _loading = false;
+        _engineError = message;
+        StateHasChanged();
     }
 
     // ── Online session ──
@@ -517,6 +983,7 @@
                 _onlineClient.PodiumReceived += OnPodiumReceived;
                 _onlineClient.ResultReceived += OnResultReceived;
                 _onlineClient.GuestSteerReceived += OnGuestSteerReceived;
+                _onlineClient.RematchChanged += OnRematchChanged;
                 _onlineClient.PeerLeft += OnPeerLeft;
                 _onlineClient.ConnectionChanged += OnOnlineConnection;
             }
@@ -546,9 +1013,35 @@
         _phase = "pick";
         _podium.Clear();
         await InvokeAsync(StateHasChanged);
-        // raceStarted may fire before this returns (the server pairs inside the call), so the
+        _roomCode = null;
+        _seriesMine = _seriesTheirs = 0;
+        _rematch = (false, false);
+        await InvokeAsync(StateHasChanged);
+        // raceStarted may fire before these return (the server pairs inside the call), so the
         // phase is only ever advanced by the event, never here.
-        await _onlineClient.FindRaceAsync(_playerName, !AuthState.IsAuthenticated, _mapId);
+        var guest = !AuthState.IsAuthenticated;
+        switch (_onlineHow)
+        {
+            case OnlineHow.CreateRoom:
+                var room = await _onlineClient.CreateRoomAsync(_playerName, guest, _mapId);
+                if (_onlinePhase == OnlinePhase.Searching) _roomCode = room?.Code;
+                break;
+            case OnlineHow.JoinRoom:
+                var join = await _onlineClient.JoinRoomAsync(_joinCode, _playerName, guest);
+                if (!join.Joined)
+                {
+                    ToastService.Show(join.Error ?? "Couldn't join that race.", ToastType.Warning);
+                    // Back to the setup card so the code can be fixed.
+                    await TearDownOnlineAsync();
+                    _onlinePhase = OnlinePhase.Idle;
+                    _introDone = false;
+                }
+                break;
+            default:
+                await _onlineClient.FindRaceAsync(_playerName, guest, _mapId);
+                break;
+        }
+        await InvokeAsync(StateHasChanged);
     }
 
     private async Task FindOpponentSafeAsync()
@@ -570,6 +1063,7 @@
             _opponentName = start.YourRole == MarbleRaceRole.Host ? start.Guest.DisplayName : start.Host.DisplayName;
             _guestIndex = start.GuestMarbleIndex;
             _mapId = start.MapId;
+            _roomCode = null;
             _onlinePhase = OnlinePhase.Racing;
             _onlineResultKnown = false;
             _phase = "pick";
@@ -630,6 +1124,7 @@
             _lastGained = 0;
             _opponentPlace = result.HostPlace;
             _onlineResultKnown = true;
+            ScoreSeries(result.GuestPlace, result.HostPlace);
             _phase = "result";
             try { await JSRuntime.InvokeVoidAsync("PoMarbleRace.guestResult", result.GuestWon); } catch { }
             // A win/loss for the local record; the run/score/high-score system stays the host's.
@@ -702,6 +1197,7 @@
     {
         _opponentPlace = place;
         _onlineResultKnown = true;
+        if (IsOnlineHost) ScoreSeries(_lastPlace, place);
         if (IsOnlineHost && _onlineClient is not null)
         {
             await _onlineClient.SendResultAsync(new MarbleRaceResult(_lastWon, _lastPlace, won, place));
@@ -714,6 +1210,8 @@
     private async Task StopEngineAsync()
     {
         StopPickCountdown();
+        _showTutorial = false;
+        _tutorialAt = null;
         if (!_engineStarted) return;
         _engineStarted = false;
         try { await JSRuntime.InvokeVoidAsync("PoMarbleRace.stop"); } catch { }
@@ -730,6 +1228,7 @@
         online.PodiumReceived -= OnPodiumReceived;
         online.ResultReceived -= OnResultReceived;
         online.GuestSteerReceived -= OnGuestSteerReceived;
+        online.RematchChanged -= OnRematchChanged;
         online.PeerLeft -= OnPeerLeft;
         online.ConnectionChanged -= OnOnlineConnection;
         await online.LeaveAsync();
@@ -813,8 +1312,14 @@
             _myPlace = -1;
             _podium.Clear();   // hide the previous race's podium as the next race sets up
 
-            // Demo auto-picks on the JS side, and an online guest starts when the host does.
-            if (!_demo && !IsOnlineGuest) StartPickCountdown();
+            // Demo auto-picks on the JS side, and an online guest starts when the host does. A first
+            // solo race holds the countdown for the tutorial card (DismissTutorialAsync starts it).
+            if (!_demo && !_online && _menu is { Prefs.TutorialSeen: false })
+            {
+                StopPickCountdown();
+                _ = ShowTutorialAsync();
+            }
+            else if (!_demo && !IsOnlineGuest) StartPickCountdown();
         }
         else
         {
@@ -959,6 +1464,7 @@
         await TearDownOnlineAsync();
         // Before the JS ref goes away — a pending tick would otherwise Pick() through a disposed ref.
         StopPickCountdown();
+        try { await JSRuntime.InvokeVoidAsync("PoMarbleRace.unwatchInput"); } catch { }
         try { await JSRuntime.InvokeVoidAsync("PoMarbleRace.stop"); } catch { }
         _ref?.Dispose();
     }
