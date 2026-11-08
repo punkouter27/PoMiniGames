@@ -15,6 +15,12 @@ namespace PoMiniGamesClient.Models;
 /// </param>
 public sealed record CatalogMode(GameMode Mode, string Url, bool RequiresNetwork = false)
 {
+    /// <summary>Optional home-page chip label override for a game-specific mode name.</summary>
+    public string? ChipLabel { get; init; }
+
+    /// <summary>Optional accessible description override for a game-specific mode name.</summary>
+    public string? ChipDescription { get; init; }
+
     /// <summary>
     /// Optional URL used by the home-page chip when it would otherwise duplicate the
     /// card head's URL. Null means "same as <see cref="Url"/>" — Couple Quiz's card
@@ -120,9 +126,12 @@ public static class GameCatalog
             // fight. POST /api/pobrawl/matches feeds the per-player Elo table —
             // see Features/PoBrawl/Online.
             new(GameMode.Multiplayer, "/pobrawl/multi", RequiresNetwork: true),
-            // The Demo tab is the Brawl Cup, the CPU-only 8-fighter knockout
-            // (PoBrawlTournamentPage); every bout feeds the fighter Elo board.
-            new(GameMode.Demo, "/pobrawl/demo?autoGuest=1"),
+            // The tournament runs through the Demo route, but is labelled explicitly on the hub.
+            new(GameMode.Demo, "/pobrawl/demo?autoGuest=1")
+            {
+                ChipLabel = "Tournament",
+                ChipDescription = "16-slot Brawl Cup tournament",
+            },
         ]),
 
         new(GameKeys.PoRacer, "Racer", "🏎️",

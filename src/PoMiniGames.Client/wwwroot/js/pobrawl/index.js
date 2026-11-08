@@ -91,7 +91,7 @@ window.PoBrawl = {
   },
   /**
    * Tournament, between bouts: the bracket on the arena's jumbotrons until the next count
-   * starts (cup.js cupBoard has the shape: { bouts: [{ p1, p2, w }] ×7, fresh, next, champ, title }).
+   * starts (cup.js cupBoard has the shape: { bouts: [{ p1, p2, w }] ×15, fresh, next, champ, champWins, title }).
    */
   jumbotronBracket(data) { if (game) game.cupBoard(data); },
   /** Tournament, after the final: the belt ceremony for the champion (ceremony.js). */

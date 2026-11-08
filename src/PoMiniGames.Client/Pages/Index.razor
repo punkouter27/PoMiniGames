@@ -147,16 +147,19 @@
     private bool IsPlayable(CatalogMode mode) => !mode.RequiresNetwork || OnlineStatus.IsOnline;
 
     // data-hub-nav: js/app.js launches the game in place, morphing the card into its title.
+    private static string ModeLabel(CatalogMode mode) => mode.ChipLabel ?? GameModes.ToLabel(mode.Mode);
+    private static string ModeDescription(CatalogMode mode) => mode.ChipDescription ?? GameModes.ToDescription(mode.Mode);
+
     private RenderFragment ModeChip(CatalogGame game, CatalogMode m) =>
         IsPlayable(m)
             ? @<a class="home-mode-chip home-mode-chip--@(m.Mode.ToString().ToLowerInvariant())"
                   href="@(m.ChipUrl ?? m.Url)" data-hub-nav
-                  title="@($"{game.Title} — {GameModes.ToDescription(m.Mode)}")"
-                  aria-label="@($"{game.Title}, {GameModes.ToDescription(m.Mode)}")">@GameModes.ToLabel(m.Mode)</a>
+                  title="@($"{game.Title} — {ModeDescription(m)}")"
+                  aria-label="@($"{game.Title}, {ModeDescription(m)}")">@ModeLabel(m)</a>
             : @<span class="home-mode-chip home-mode-chip--offline"
                      aria-disabled="true"
-                     aria-label="@($"{game.Title}, {GameModes.ToDescription(m.Mode)} — unavailable offline")"
-                     title="Needs a connection — unavailable offline">@GameModes.ToLabel(m.Mode)</span>;
+                     aria-label="@($"{game.Title}, {ModeDescription(m)} — unavailable offline")"
+                     title="Needs a connection — unavailable offline">@ModeLabel(m)</span>;
 
     protected override void OnInitialized()
     {

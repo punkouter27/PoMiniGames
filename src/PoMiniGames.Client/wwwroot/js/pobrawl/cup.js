@@ -1,7 +1,7 @@
 // cup.js — the CPU tournament's presentation layer (mode 'tournament' only). Mixin (mixin.js).
 //
-//   • The arena remembers the night: one lighting look per round (golden hour for the
-//     quarterfinals, dusk for the semis, a night final under tight spots and heavy haze),
+//   • The arena remembers the night: one lighting look per stage (golden hour for the
+//     first two rounds, dusk for the semis, a night final under tight spots and heavy haze),
 //     the hall filling in, and an excitement floor that climbs round by round. (Mat wear,
 //     blood and broken crates persisting across the bouts is game.js / props.js: in this
 //     mode they are simply not reset.)
@@ -189,12 +189,12 @@ class CupMethods {
   // ── The jumbotron bracket ────────────────────────────────────────────────
   /**
    * Between bouts the arena screens show the bracket instead of the fight card, until the
-   * next count starts. data: { bouts: [{ p1, p2, w }] ×7 in play order (w 0 undecided,
+   * next count starts. data: { bouts: [{ p1, p2, w }] ×15 in play order (w 0 undecided,
    * 1 left, 2 right), fresh: index of the bout just decided (its winner's line burns
-   * forward) or -1, next: index of the next bout or -1, champ: name or null, title }.
+   * forward) or -1, next: index of the next bout or -1, champ: name or null, champWins, title }.
    */
   cupBoard(data) {
-    if (!data || !Array.isArray(data.bouts) || data.bouts.length !== 7) { this._cupBoardData = null; return; }
+    if (!data || !Array.isArray(data.bouts) || data.bouts.length !== 15) { this._cupBoardData = null; return; }
     this._cupBoardData = { ...data, burn: this._calm() || !(data.fresh >= 0) ? 1 : 0 };
     this._jumboT = 99;
   }
@@ -240,7 +240,7 @@ class CupMethods {
       g.fillText(name, W / 2, 74);
       g.font = 'bold 10px Impact, sans-serif';
       g.fillStyle = '#cfe0ff';
-      g.fillText('THREE BOUTS · THREE WINS', W / 2, 104);
+      g.fillText(`${Number(d.champWins) || 0} WINS`, W / 2, 104);
     } else {
       this._drawCupBracket(g, d);
     }
@@ -250,13 +250,16 @@ class CupMethods {
   }
 
   _drawCupBracket(g, d) {
-    const COL_X = [4, 90, 176], COL_W = 76, HALF = 11;
-    const at = (i) => (i < 4 ? { col: 0, cy: 30 + i * 28 } : i < 6 ? { col: 1, cy: 44 + (i - 4) * 56 } : { col: 2, cy: 72 });
-    const nextOf = (i) => (i < 4 ? 4 + (i >> 1) : i < 6 ? 6 : -1);
-    const slotOf = (i) => (i < 4 ? i & 1 : i - 4);
+    const COL_X = [3, 65, 127, 189], COL_W = 54, HALF = 8;
+    const at = (i) => (i < 8 ? { col: 0, cy: 24 + i * 14 }
+      : i < 12 ? { col: 1, cy: 32 + (i - 8) * 28 }
+        : i < 14 ? { col: 2, cy: 46 + (i - 12) * 56 }
+          : { col: 3, cy: 74 });
+    const nextOf = (i) => (i < 8 ? 8 + (i >> 1) : i < 12 ? 12 + ((i - 8) >> 1) : i < 14 ? 14 : -1);
+    const slotOf = (i) => (i < 8 ? i & 1 : i < 12 ? (i - 8) & 1 : i < 14 ? i - 12 : 0);
 
     // Connectors first, under the boxes.
-    for (let i = 0; i < 6; i++) {
+    for (let i = 0; i < 14; i++) {
       const b = d.bouts[i], { col, cy } = at(i);
       const n = at(nextOf(i));
       const x0 = COL_X[col] + COL_W, x2 = COL_X[n.col], xm = (x0 + x2) / 2;
@@ -286,7 +289,7 @@ class CupMethods {
 
     g.font = 'bold 9px Impact, sans-serif';
     g.textAlign = 'left';
-    for (let i = 0; i < 7; i++) {
+    for (let i = 0; i < 15; i++) {
       const b = d.bouts[i], { col, cy } = at(i);
       const x = COL_X[col];
       g.fillStyle = i === d.next ? 'rgba(255,209,102,0.16)' : 'rgba(255,255,255,0.06)';

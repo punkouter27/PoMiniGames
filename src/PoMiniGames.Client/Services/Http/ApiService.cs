@@ -615,7 +615,8 @@ public class ApiService
     /// have since moved — a wrong number is worse here than a missing one. Attract-mode
     /// matches are also effectively unlimited, so dropping the ones that fail costs the
     /// board nothing but a little precision. That includes the server's 429s
-    /// (<c>demo_too_fast</c>, <c>demo_daily_cap</c>): false, and the caller says nothing.
+    /// (<c>demo_too_fast</c>, <c>demo_daily_cap</c>): false; the tournament reports partial
+    /// write failures in its closing summary.
     /// </remarks>
     public async Task<bool> SubmitPoBrawlDemoResultAsync(PoBrawlDemoResultRequest request)
     {

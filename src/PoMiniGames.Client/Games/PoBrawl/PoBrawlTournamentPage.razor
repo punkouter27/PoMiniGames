@@ -18,7 +18,8 @@
 
 @* The Brawl Cup (/pobrawl/demo — the app-wide Demo tab; /pobrawl/tournament, the old address,
    redirects here): the CPU-only knockout bracket. The literal routes win over PoBrawlPage's
-   /pobrawl/{Mode}. Eight presidents are drawn at random, the seven bouts play out
+   /pobrawl/{Mode}. All current presidents enter the 16-slot draw, remaining slots are BYEs,
+   and every real bout plays out
    in the same arena the other modes use (engine mode 'tournament': both corners CPU, the page
    picks every pairing through PoBrawl.matchup), and each result moves both fighters' Elo.
    This component shares PoBrawlPage's CSS scope (CssScope in the csproj), so the engine's DOM —
@@ -41,7 +42,7 @@
         <div class="pb-intro">
             <GameIntro CueScope="pobrawl-cup"
                        Title="@TitleContent"
-                       Objective="Eight presidents, seven bouts, one belt. The CPU fights every bout — you watch the bracket play out."
+                       Objective="Sixteen slots, one belt. The CPU fights every bout — BYEs advance without fighting."
                        HowToPlay="@HowItWorks"
                        Mode="GameIntro.IntroMode.Demo"
                        DemoDelayMs="4000"
@@ -145,7 +146,7 @@
 
     // Between bouts the jumbotrons show the bracket for this long before the next pairing.
     // Fast-forward trims it only a little: the bracket is the part of a tournament worth reading.
-    private int BetweenBoutsMs => _speed switch { 4 => 2600, 2 => 3400, _ => 4200 };
+    private int BetweenBoutsMs => _speed switch { 4 => 3200, 2 => 3400, _ => 4200 };
     // After the final, the arena holds this long before the result modal covers it.
     private const int FinalHoldMs = 3500;
     // …and before that the arena crowns the champion (PoBrawl.ceremony): the belt comes
@@ -155,11 +156,12 @@
     private string _playerName = "";
     private PoBrawlTournament? _cup;
     private IReadOnlyDictionary<string, int> _ratings = new Dictionary<string, int>();
-    // The draw is rebuilt from this seed when the board's ratings arrive, so the same eight
+    // The draw is rebuilt from this seed when the board's ratings arrive, so the same entrants
     // fighters keep their places and only the numbers change.
     private int _drawSeed = Random.Shared.Next();
     private bool _ratingsLoaded;
-    private bool _report = true;
+    private int _reportedMatches;
+    private bool _reportFailed;
     private int _speed = 1;
     // The camera starts where the settings sheet's "Brawl show" row says: Full = Broadcast, Simple = Ringside.
     private bool _director;
@@ -187,13 +189,19 @@
 
     private static RenderFragment TitleContent => @<span><span aria-hidden="true">🥊</span> Brawl Cup</span>;
 
-    private static string Name(string? id) => id is null ? "TBD" : PoBrawlRoster.NameOf(id) ?? id;
+    private static string Name(string? id) => id is null ? "TBD"
+        : id == PoBrawlTournament.ByeId ? "BYE"
+        : PoBrawlRoster.NameOf(id) ?? id;
 
     private string HudName(string id) => _cup is null || string.IsNullOrEmpty(id) ? Name(id) : $"{Name(id)} · {_cup.EloOf(id)}";
 
     // ── Under the HUD clock: the round and one pip per bout ──
+    private int MatchesBefore(PoBrawlTournament.Bout bout) =>
+        _cup!.Bouts.Take(bout.Index).Count(b => b.WinnerId != null && !b.IsBye);
+
     private RenderFragment? BoutChip => _cup?.Current is { } now
-        ? @<span class="pb-chip" role="img" aria-label="@now.Label — bout @(now.Index + 1) of @_cup.Bouts.Count">
+        ? @<span class="pb-chip" role="img"
+               aria-label="@($"{now.Label} — match {MatchesBefore(now) + 1} of {_cup.Field.Count - 1}")">
             <b>@RoundShort(now.Round)</b>
             <span class="pb-chip-pips">
                 @foreach (var b in _cup.Bouts)
@@ -201,12 +209,13 @@
                     <span class="pb-chip-pip @(b.WinnerId is not null ? "pb-chip-pip--done" : b == now ? "pb-chip-pip--now" : "")"></span>
                 }
             </span>
-            <span>@(now.Index + 1)/@_cup.Bouts.Count</span>
+            <span>@(MatchesBefore(now) + 1)/@(_cup.Field.Count - 1)</span>
         </span>
         : null;
 
     private static string RoundShort(PoBrawlTournament.Round round) => round switch
     {
+        PoBrawlTournament.Round.RoundOf16 => "R16",
         PoBrawlTournament.Round.Quarterfinal => "QF",
         PoBrawlTournament.Round.Semifinal => "SF",
         _ => "Final",
@@ -262,40 +271,52 @@
     </div>;
 
     private static RenderFragment HowItWorks => @<ul>
-        <li>🎲 Eight of the fifteen presidents in a random bracket, three 60-second CPU rounds a bout</li>
+        <li>🎲 All fifteen presidents fill a 16-slot bracket; any open slots are BYEs</li>
+        <li>🤖 The CPU plays each bout through to one champion; BYEs advance without a fight</li>
         <li>📈 Every result moves both fighters' Elo · ⏩ 2×/4× and 🗂 Bracket on the arena's bar</li>
     </ul>;
 
     private RenderFragment DrawPreview => @<div class="pt-draw">
         <div class="pt-draw-head">
-            <span class="pt-draw-title">The draw</span>
+            <span class="pt-draw-title">16-player bracket</span>
         </div>
         @if (_cup is not null)
         {
-            <ol class="pt-draw-list" aria-label="Quarterfinal pairings">
-                @foreach (var b in _cup.Bouts.Where(b => b.Round == PoBrawlTournament.Round.Quarterfinal))
-                {
-                    <li>
-                        <span class="pt-draw-who">@Name(b.P1Id) <small>@_cup.EloOf(b.P1Id!)</small></span>
-                        <span class="pt-draw-vs" aria-label="versus">vs</span>
-                        <span class="pt-draw-who">@Name(b.P2Id) <small>@_cup.EloOf(b.P2Id!)</small></span>
-                    </li>
-                }
-            </ol>
-            <p class="pt-draw-note">@(_ratingsLoaded ? "Starting Elo from the global Brawl fighter board." : "Loading ratings from the fighter board…")</p>
+            <div class="pt-menu-bracket" aria-label="16-player tournament bracket">
+                @PreviewRound("Round of 16", _cup.Bouts.Take(8))
+                @PreviewRound("Quarterfinals", _cup.Bouts.Skip(8).Take(4))
+                @PreviewRound("Semifinals", _cup.Bouts.Skip(12).Take(2))
+                @PreviewRound("Final", _cup.Bouts.Skip(14).Take(1))
+            </div>
+            <p class="pt-draw-note">@(_ratingsLoaded ? $"{_cup.Field.Count} fighters · {PoBrawlTournament.Size} slots · BYEs advance automatically · Elo starts from the global fighter board." : "Loading ratings from the fighter board…")</p>
         }
-        @* The speed lives on the arena's bar alone. Reporting needs a signed-in visitor (the
-           POST is authorised), so a signed-out one is not offered a box that does nothing. *@
-        @if (Auth.IsAuthenticated)
-        {
-            <label class="pt-draw-report">
-                <input type="checkbox" @bind="_report" />
-                <span>Report each bout to the global fighter Elo board</span>
-            </label>
-        }
+        <p class="pt-draw-note">@(Auth.IsAuthenticated
+            ? "Every completed bout automatically updates global fighter Elo; BYEs do not affect ratings."
+            : "Every completed bout updates this tournament's Elo; sign in to save ratings to the global board.")</p>
     </div>;
 
-    // The board: quarterfinals, semifinals, final and the belt in four columns on a fixed
+    private RenderFragment PreviewRound(string title, IEnumerable<PoBrawlTournament.Bout> bouts) => @<section class="pt-menu-round">
+        <h4>@title</h4>
+        <ol>
+            @foreach (var bout in bouts)
+            {
+                <li class="pt-menu-bout">
+                    @PreviewCorner(bout.P1Id)
+                    @PreviewCorner(bout.P2Id)
+                </li>
+            }
+        </ol>
+    </section>;
+
+    private RenderFragment PreviewCorner(string? id) => @<span class="pt-menu-corner">
+        <span>@Name(id)</span>
+        @if (id is not null && id != PoBrawlTournament.ByeId)
+        {
+            <small>@_cup!.EloOf(id)</small>
+        }
+    </span>;
+
+    // The board: four tournament rounds and the belt in five columns on a fixed
     // grid (every row the same height), joined by SVG wires drawn to that grid's rem
     // geometry. Each bout lists its corners with the Elo they carry now and what this bout
     // moved it by. The bout just decided (_freshIndex) plays its result in: the loser's
@@ -304,25 +325,34 @@
     // styles are the end state, so reduced motion simply shows the result.
     // Under 640 px the board stacks into one column and the wires go.
     private RenderFragment Bracket => @<div class="pt-bracket">
-        <h3 class="pt-col-head" style="grid-column:1">Quarterfinals</h3>
-        @for (var i = 0; i < 4; i++)
+        <h3 class="pt-col-head" style="grid-column:1">Round of 16</h3>
+        @for (var i = 0; i < 8; i++)
         {
             @Slot(_cup!.Bouts[i], 1, i + 2, 1)
         }
-        @Wires(2, 2, 2, 0, 1)
-        @Wires(2, 4, 2, 2, 3)
-        <h3 class="pt-col-head" style="grid-column:3">Semifinals</h3>
-        @Slot(_cup!.Bouts[4], 3, 2, 2)
-        @Slot(_cup!.Bouts[5], 3, 4, 2)
-        @Wires(4, 2, 4, 4, 5)
-        <h3 class="pt-col-head" style="grid-column:5">Final</h3>
-        @Slot(_cup!.Bouts[6], 5, 2, 4)
-        @Wires(6, 2, 4, 6, -1)
-        <h3 class="pt-col-head" style="grid-column:7">Champion</h3>
-        <div class="pt-slot" style="grid-column:7;grid-row:2 / span 4">
+        @for (var i = 0; i < 4; i++)
+        {
+            @Wires(2, 2 + i * 2, 2, i * 2, i * 2 + 1)
+        }
+        <h3 class="pt-col-head" style="grid-column:3">Quarterfinals</h3>
+        @for (var i = 0; i < 4; i++)
+        {
+            @Slot(_cup!.Bouts[8 + i], 3, 2 + i * 2, 2)
+        }
+        @Wires(4, 2, 4, 8, 9)
+        @Wires(4, 6, 4, 10, 11)
+        <h3 class="pt-col-head" style="grid-column:5">Semifinals</h3>
+        @Slot(_cup!.Bouts[12], 5, 2, 4)
+        @Slot(_cup!.Bouts[13], 5, 6, 4)
+        @Wires(6, 2, 8, 12, 13)
+        <h3 class="pt-col-head" style="grid-column:7">Final</h3>
+        @Slot(_cup!.Bouts[14], 7, 2, 8)
+        @Wires(8, 2, 8, 14, -1)
+        <h3 class="pt-col-head" style="grid-column:9">Champion</h3>
+        <div class="pt-slot" style="grid-column:9;grid-row:2 / span 8">
             @if (_cup!.ChampionId is { } champ)
             {
-                <div class="pt-champ @(_freshIndex == 6 ? "pt-champ--fresh" : "")"><span aria-hidden="true">🏆</span> @Name(champ)</div>
+                <div class="pt-champ @(_freshIndex == 14 ? "pt-champ--fresh" : "")"><span aria-hidden="true">🏆</span> @Name(champ)</div>
             }
             else
             {
@@ -337,7 +367,7 @@
             @Corner(b, b.P2Id, b.P2Delta)
             @if (b.WinnerId is not null)
             {
-                <div class="pt-bout-how">@(b.IsUpset ? "Upset · " : "")@(b.Knockout ? $"KO {b.ElapsedSeconds:0}s" : "Decision")</div>
+                <div class="pt-bout-how">@(b.IsBye ? "BYE · advances" : $"{(b.IsUpset ? "Upset · " : "")}{(b.Knockout ? $"KO {b.ElapsedSeconds:0}s" : "Decision")}")</div>
             }
         </div>
     </div>;
@@ -350,7 +380,7 @@
         var state = id is not null && b.WinnerId == id ? "pt-corner--win" : id is not null && b.LoserId == id ? "pt-corner--out" : "";
         return @<div class="pt-corner @state @(fresh ? "pt-corner--fresh" : "") @(arrive ? "pt-corner--arrive" : "")">
             <span class="pt-corner-name">@Name(id)</span>
-            @if (id is not null)
+            @if (id is not null && id != PoBrawlTournament.ByeId)
             {
                 <span class="pt-corner-elo">
                     @if (fresh && b.WinnerId is not null)
@@ -432,13 +462,14 @@
     }
 
     // The wires out of one or two feeder bouts into the next slot, in 0.1 rem units: a row
-    // is 4.8 rem, the row gap 0.5, a wire column 1.6 wide (see .pt-bracket in the CSS —
+    // is 4.8 rem, the row gap 0.5, a wire column 1rem wide (see .pt-bracket in the CSS —
     // change both together). `bottom` -1 is the single straight wire, final → belt.
     private RenderFragment Wires(int column, int row, int span, int top, int bottom)
     {
         var height = span * 48 + (span - 1) * 5;
         var mid = height / 2.0;
-        var quarter = span == 2 ? 24.0 : 50.5;
+        var halfHeight = (span / 2) * 48 + (span / 2 - 1) * 5;
+        var quarter = halfHeight / 2.0;
         string Path(double y) => bottom < 0 ? Fmt($"M0 {mid} H16") : Fmt($"M0 {y} H8 V{mid} H16");
         (int Bout, double Y)[] feeders = bottom < 0 ? [(top, mid)] : [(top, quarter), (bottom, height - quarter)];
         return @<div class="pt-wire-cell" style="@($"grid-column:{column};grid-row:{row} / span {span}")" aria-hidden="true">
@@ -473,7 +504,7 @@
             <section class="pb-ending" aria-label="Tournament champion">
                 <div class="pb-ending-seal" aria-hidden="true">🏆</div>
                 <h3 class="pb-ending-title">@Name(champ) wins the belt</h3>
-                <p class="pb-ending-line">Three bouts, three wins. @Name(champ) leaves at @_cup.EloOf(champ) Elo (@Signed(_cup.EloOf(champ) - _cup.StartEloOf(champ))).</p>
+                <p class="pb-ending-line">@(_cup.RecordOf(champ).Wins) wins to the belt. @Name(champ) leaves at @_cup.EloOf(champ) Elo (@Signed(_cup.EloOf(champ) - _cup.StartEloOf(champ))).</p>
             </section>
             <table class="pb-recap pt-standings">
                 <caption>Elo after the tournament</caption>
@@ -501,11 +532,17 @@
                     }
                 </tbody>
             </table>
-            <p class="pt-final-note">@(_report && Auth.IsAuthenticated ? "All seven bouts were reported to the global fighter Elo board." : "These bouts were not reported to the global board.")</p>
+            <p class="pt-final-note">@ReportSummary</p>
         }
     </div>;
 
     private static string Signed(int n) => n >= 0 ? $"+{n}" : n.ToString();
+
+    private string ReportSummary => !Auth.IsAuthenticated
+        ? "These bouts were not reported to the global board."
+        : _reportFailed
+            ? $"The global Elo board accepted {_reportedMatches} of {_cup!.Field.Count - 1} match results; local standings include every result."
+            : $"All {_reportedMatches} match results were reported to the global fighter Elo board; BYEs do not change Elo.";
 
     // "UPSET! Carter beats Reagan by KO in 19 seconds as a 31% underdog and advances (Elo +17)."
     // `tagged` false leaves the "UPSET!" to the bracket's own stamp.
@@ -533,6 +570,7 @@
         fresh = _freshIndex,
         next = _cup.Current?.Index ?? -1,
         champ = _cup.ChampionId is { } c ? Name(c) : null,
+        champWins = _cup.ChampionId is { } champion ? _cup.RecordOf(champion).Wins : 0,
         title = _cup.Current is { } n ? $"Next: {n.Label}" : "Champion",
     };
 
@@ -544,7 +582,16 @@
 
     // Per-bout engine options: the round sets the arena's time of day and crowd, the left
     // corner's Elo expectation the crowd's upset storyline (PoBrawl.matchup's 5th argument).
-    private object BoutOptions(PoBrawlTournament.Bout b) => new { round = (int)b.Round, p1Expected = _cup!.ExpectedP1(b) };
+    private object BoutOptions(PoBrawlTournament.Bout b) => new
+    {
+        round = b.Round switch
+        {
+            PoBrawlTournament.Round.Semifinal => 1,
+            PoBrawlTournament.Round.Final => 2,
+            _ => 0,
+        },
+        p1Expected = _cup!.ExpectedP1(b),
+    };
 
     protected override void OnInitialized()
     {
@@ -679,9 +726,13 @@
         _freshIndex = decided.Index;
         _announcement = ResultSentence(decided);
 
-        if (_report && Auth.IsAuthenticated)
+        if (Auth.IsAuthenticated)
         {
-            _ = ApiService.SubmitPoBrawlDemoResultAsync(new PoBrawlDemoResultRequest(decided.WinnerId!, decided.LoserId!, IsDraw: false));
+            if (await ApiService.SubmitPoBrawlDemoResultAsync(
+                    new PoBrawlDemoResultRequest(decided.WinnerId!, decided.LoserId!, IsDraw: false)))
+                _reportedMatches++;
+            else
+                _reportFailed = true;
         }
 
         var generation = ++_generation;

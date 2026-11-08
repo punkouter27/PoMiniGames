@@ -798,7 +798,7 @@ export class BrawlGame {
 
     // A fresh match starts on a clean canvas — the accumulated blood
     // stains belong to the fight that produced them. Not in the tournament:
-    // there the ring keeps all seven bouts' blood, scuffs and sweat (cup.js).
+    // there the ring keeps the tournament's bouts' blood, scuffs and sweat (cup.js).
     const keepWear = this.options.mode === 'tournament';
     if (!keepWear) this._clearBlood();
     // …and so do the scuffs, skids and sweat.

@@ -4,8 +4,8 @@ using PoMiniGames.Domain.Services;
 namespace PoMiniGamesClient.Games.PoBrawl;
 
 /// <summary>
-/// One CPU-only, eight-fighter, single-elimination Brawl tournament: the random draw, the seven
-/// bouts (four quarterfinals, two semifinals, the final), who advances where, and every
+/// One CPU-only, 16-slot, single-elimination Brawl tournament: the random draw, byes, the bouts,
+/// who advances where, and every
 /// fighter's Elo as the results come in.
 /// </summary>
 /// <remarks>
@@ -23,8 +23,9 @@ namespace PoMiniGamesClient.Games.PoBrawl;
 /// </remarks>
 public sealed class PoBrawlTournament
 {
-    /// <summary>Fighters in the draw.</summary>
-    public const int Size = 8;
+    /// <summary>Slots in the bracket, including any BYEs needed to fill the field.</summary>
+    public const int Size = 16;
+    public const string ByeId = "bye";
 
     private static readonly PairwiseEloCalculator Elo = new(new PairwiseEloOptions());
 
@@ -41,48 +42,62 @@ public sealed class PoBrawlTournament
     private readonly Dictionary<string, int> _elo;
     private readonly Dictionary<string, (int Wins, int Losses)> _record = [];
 
-    /// <summary>The draw, in bracket order: entries 0 v 1, 2 v 3, 4 v 5, 6 v 7 open the quarterfinals.</summary>
+    /// <summary>The actual fighters in the draw; BYE slots are excluded.</summary>
     public IReadOnlyList<PoBrawlFighter> Field { get; }
 
-    /// <summary>All seven bouts in play order: quarterfinals 0-3, semifinals 4-5, the final 6.</summary>
+    /// <summary>All 16 opening-round slots in bracket order, including BYE entries.</summary>
+    public IReadOnlyList<string> Entrants { get; }
+
+    /// <summary>All 15 bracket bouts in play order: 8 opening round, 4 quarterfinals, 2 semifinals, final.</summary>
     public IReadOnlyList<Bout> Bouts { get; }
 
-    private PoBrawlTournament(IReadOnlyList<PoBrawlFighter> field, IReadOnlyDictionary<string, int> ratings)
+    private PoBrawlTournament(IReadOnlyList<string> entrants, IReadOnlyDictionary<string, int> ratings)
     {
-        Field = field;
-        _startElo = field.ToDictionary(f => f.Id, f => ratings.TryGetValue(f.Id, out var r) ? r : SeedElo);
+        Entrants = entrants;
+        Field = entrants.Where(id => id != ByeId)
+            .Select(id => PoBrawlRoster.Find(id)!)
+            .ToArray();
+        _startElo = Field.ToDictionary(f => f.Id, f => ratings.TryGetValue(f.Id, out var r) ? r : SeedElo);
         _elo = new Dictionary<string, int>(_startElo);
-        foreach (var f in field) _record[f.Id] = (0, 0);
+        foreach (var f in Field) _record[f.Id] = (0, 0);
 
         var bouts = new List<Bout>(Size - 1);
-        for (var i = 0; i < Size / 2; i++) bouts.Add(new Bout(i, Round.Quarterfinal, i, field[i * 2].Id, field[i * 2 + 1].Id));
-        bouts.Add(new Bout(4, Round.Semifinal, 0, null, null));
-        bouts.Add(new Bout(5, Round.Semifinal, 1, null, null));
-        bouts.Add(new Bout(6, Round.Final, 0, null, null));
+        for (var i = 0; i < Size / 2; i++)
+            bouts.Add(new Bout(i, Round.RoundOf16, i, entrants[i * 2], entrants[i * 2 + 1]));
+        AddRound(bouts, Round.Quarterfinal, 8, 4);
+        AddRound(bouts, Round.Semifinal, 12, 2);
+        bouts.Add(new Bout(14, Round.Final, 0, null, null));
         Bouts = bouts;
+
+        foreach (var bout in Bouts.Take(8).Where(b => b.P1Id == ByeId || b.P2Id == ByeId).ToArray())
+            AdvanceBye(bout);
     }
 
     /// <summary>
-    /// Draw <see cref="Size"/> distinct fighters from <paramref name="roster"/> at random and
-    /// place them at random. <paramref name="ratings"/> maps fighter id to a starting rating;
-    /// anyone missing starts at <see cref="SeedElo"/>.
+    /// Draw up to <see cref="Size"/> distinct fighters at random and fill the remaining slots
+    /// with randomly placed BYEs. <paramref name="ratings"/> maps fighter id to a starting
+    /// rating; anyone missing starts at <see cref="SeedElo"/>.
     /// </summary>
     public static PoBrawlTournament Draw(IReadOnlyList<PoBrawlFighter> roster, Random rng, IReadOnlyDictionary<string, int>? ratings = null)
     {
         ArgumentNullException.ThrowIfNull(roster);
         ArgumentNullException.ThrowIfNull(rng);
         var distinct = roster.DistinctBy(f => f.Id).ToArray();
-        if (distinct.Length < Size)
-            throw new ArgumentException($"A tournament needs {Size} distinct fighters; the roster has {distinct.Length}.", nameof(roster));
         rng.Shuffle(distinct);
-        return new PoBrawlTournament(distinct[..Size], ratings ?? new Dictionary<string, int>());
+        if (distinct.Length == 0)
+            throw new ArgumentException("A tournament needs at least one fighter.", nameof(roster));
+        var entrants = distinct.Take(Size).Select(f => f.Id).ToList();
+        while (entrants.Count < Size) entrants.Add(ByeId);
+        var shuffledEntrants = entrants.ToArray();
+        rng.Shuffle(shuffledEntrants);
+        return new PoBrawlTournament(shuffledEntrants, ratings ?? new Dictionary<string, int>());
     }
 
     /// <summary>The next bout to fight, or null once the final is decided.</summary>
     public Bout? Current => Bouts.FirstOrDefault(b => b.WinnerId is null);
 
     /// <summary>The champion, once the final is decided.</summary>
-    public string? ChampionId => Bouts[^1].WinnerId;
+    public string? ChampionId => Bouts[^1].WinnerId is { } winner && winner != ByeId ? winner : null;
 
     public bool IsComplete => ChampionId is not null;
 
@@ -98,7 +113,9 @@ public sealed class PoBrawlTournament
     public double ExpectedP1(Bout bout)
     {
         ArgumentNullException.ThrowIfNull(bout);
-        return bout.P1Id is null || bout.P2Id is null ? 0.5 : EloMath.ExpectedScore(EloOf(bout.P1Id), EloOf(bout.P2Id));
+        return bout.P1Id is null || bout.P2Id is null || bout.P1Id == ByeId || bout.P2Id == ByeId
+            ? 0.5
+            : EloMath.ExpectedScore(EloOf(bout.P1Id), EloOf(bout.P2Id));
     }
 
     public (int Wins, int Losses) RecordOf(string fighterId) => _record.TryGetValue(fighterId, out var r) ? r : (0, 0);
@@ -119,7 +136,7 @@ public sealed class PoBrawlTournament
         if (winnerSide is not (1 or 2))
             throw new ArgumentOutOfRangeException(nameof(winnerSide), winnerSide, "A tournament bout has a winner: side 1 or 2.");
         var bout = Current ?? throw new InvalidOperationException("The tournament is already decided.");
-        if (bout.P1Id is null || bout.P2Id is null)
+        if (bout.P1Id is null || bout.P2Id is null || bout.P1Id == ByeId || bout.P2Id == ByeId)
             throw new InvalidOperationException($"Bout {bout.Index} has no pairing yet.");
 
         bout.P1Expected = ExpectedP1(bout);
@@ -138,34 +155,59 @@ public sealed class PoBrawlTournament
         bout.P1Delta = winnerSide == 1 ? _elo[winner] - winnerBefore : _elo[loser] - loserBefore;
         bout.P2Delta = winnerSide == 2 ? _elo[winner] - winnerBefore : _elo[loser] - loserBefore;
 
-        // Quarterfinal i feeds semifinal i / 2; semifinal j feeds the final. An even slot is the
-        // next bout's left corner, an odd one its right.
-        if (bout.Round != Round.Final)
-        {
-            var next = Bouts[bout.Round == Round.Quarterfinal ? 4 + bout.Slot / 2 : 6];
-            if (bout.Slot % 2 == 0) next.P1Id = winner; else next.P2Id = winner;
-        }
+        Advance(bout, winner);
         return bout;
     }
 
-    public enum Round { Quarterfinal, Semifinal, Final }
+    private static void AddRound(List<Bout> bouts, Round round, int firstIndex, int count)
+    {
+        for (var i = 0; i < count; i++)
+            bouts.Add(new Bout(firstIndex + i, round, i, null, null));
+    }
+
+    private void AdvanceBye(Bout bout)
+    {
+        var winner = bout.P1Id == ByeId ? bout.P2Id! : bout.P1Id!;
+        bout.WinnerId = winner;
+        Advance(bout, winner);
+    }
+
+    private void Advance(Bout bout, string winner)
+    {
+        if (bout.Round == Round.Final) return;
+        var nextStart = bout.Round switch
+        {
+            Round.RoundOf16 => 8,
+            Round.Quarterfinal => 12,
+            _ => 14,
+        };
+        var next = Bouts[nextStart + bout.Slot / 2];
+        if (bout.Slot % 2 == 0) next.P1Id = winner;
+        else next.P2Id = winner;
+        if (next.P1Id is not null && next.P2Id is not null && (next.P1Id == ByeId || next.P2Id == ByeId))
+            AdvanceBye(next);
+    }
+
+    public enum Round { RoundOf16, Quarterfinal, Semifinal, Final }
 
     /// <summary>How many bouts a round holds.</summary>
     public static int BoutsIn(Round round) => round switch
     {
+        Round.RoundOf16 => 8,
         Round.Quarterfinal => 4,
         Round.Semifinal => 2,
         _ => 1,
     };
 
     /// <summary>One bout of the bracket. Pairings fill in as the earlier round finishes.</summary>
-    /// <param name="Index">0-6, play order.</param>
+    /// <param name="Index">0-14, play order.</param>
     /// <param name="Slot">Position inside its round, 0-based.</param>
     public sealed record Bout(int Index, Round Round, int Slot, string? P1Id, string? P2Id)
     {
         public string? P1Id { get; set; } = P1Id;
         public string? P2Id { get; set; } = P2Id;
         public string? WinnerId { get; set; }
+        public bool IsBye => P1Id == ByeId || P2Id == ByeId;
         public double ElapsedSeconds { get; set; }
         public bool Knockout { get; set; }
         /// <summary>Elo the left corner gained (+) or lost (−) in this bout.</summary>
@@ -175,10 +217,19 @@ public sealed class PoBrawlTournament
         public double P1Expected { get; set; } = 0.5;
 
         /// <summary>True once decided for the corner the ratings said would lose (see <see cref="UpsetBelow"/>).</summary>
-        public bool IsUpset => WinnerId is not null && (WinnerId == P1Id ? P1Expected : 1 - P1Expected) <= UpsetBelow;
+        public bool IsUpset => WinnerId is not null && !IsBye
+            && (WinnerId == P1Id ? P1Expected : 1 - P1Expected) <= UpsetBelow;
 
-        /// <summary>"Quarterfinal 2 of 4", "Semifinal 1 of 2", "Final".</summary>
-        public string Label => Round == Round.Final ? "Final" : $"{Round} {Slot + 1} of {BoutsIn(Round)}";
+        /// <summary>"Round of 16 2 of 8", "Quarterfinal 1 of 4", or "Final".</summary>
+        public string Label => Round == Round.Final ? "Final" : $"{GetRoundName(Round)} {Slot + 1} of {BoutsIn(Round)}";
+
+        private static string GetRoundName(Round round) => round switch
+        {
+            Round.RoundOf16 => "Round of 16",
+            Round.Quarterfinal => "Quarterfinal",
+            Round.Semifinal => "Semifinal",
+            _ => "Final",
+        };
 
         public string? LoserId => WinnerId is null ? null : WinnerId == P1Id ? P2Id : P1Id;
     }
