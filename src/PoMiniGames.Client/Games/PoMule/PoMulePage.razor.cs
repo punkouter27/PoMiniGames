@@ -405,8 +405,8 @@ public partial class PoMulePage : IAsyncDisposable
 
         if (_demo)
         {
-            Kiosk.MarkFinished();
             // Outside the reel a demo keeps going: show the result, then play another.
+            // In the reel, keep it visible until the full 60-second slot expires.
             await Task.Delay(10000);
             if (!_disposed && _demo && _finished && !Kiosk.IsActive) await StartNewAsync();
             return;

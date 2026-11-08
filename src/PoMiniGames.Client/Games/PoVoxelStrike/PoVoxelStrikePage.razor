@@ -106,6 +106,7 @@
                                     Hint="One shared room — first to arrive hosts. Every wall one of you opens is open for all, and one hand on the chalice wins it for the squad."
                                     MaxPlayersHint="6"
                                     StartLabel="Start the Run"
+                                    OnReconnect="ConnectLobbyAsync"
                                     OnReady="Hub.ToggleReadyAsync"
                                     OnStart="Hub.StartGameAsync"
                                     OnLeave="() => SwitchTabAsync(Tab.Solo)">
@@ -604,6 +605,7 @@
             _lobbySubscribed = true;
             Hub.Lobby.StateChanged += OnLobbyChanged;
             Hub.Lobby.ConnectionChanged += OnConnectionChanged;
+            Hub.Lobby.ReconnectFailed += _ => ToastService.Show("Connection restored, but the lobby could not be rejoined. Retry the connection.", ToastType.Error);
             Hub.Lobby.EventReceived += OnLobbyEvent;
             Hub.Lobby.GameStarted += OnGameStarted;
             Hub.FrameReceived += OnLockstepFrame;
@@ -929,10 +931,7 @@
 
         if (_demo)
         {
-            // Signal the kiosk reel that the demo run is over. The death
-            // screen otherwise lingers for the full 20s dwell while the attract loop
-            // sits on a frozen game-over modal.
-            Kiosk.MarkFinished();
+            // Keep the result visible until the kiosk's 60-second slot expires.
             return;
         }
         try

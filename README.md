@@ -17,6 +17,9 @@ scores.
   demand and wired together with JS interop callbacks.
 - **Online play runs over 15 SignalR hubs.** Match, lobby and race state is held in server
   memory and is lost on restart.
+- **Lobby recovery is visible.** Shared lobbies automatically rejoin after SignalR reconnects
+  when the game supports it, report a failed rejoin, and offer a manual retry after reconnect
+  attempts are exhausted.
 - **PoBrawl's online 1v1 uses rollback netcode.** Both browsers and the server run the same
   integer, 60 Hz fight sim, written twice to give bit-identical results
   (`Shared/Games/PoBrawlRollbackSim.cs` and `wwwroot/js/pobrawl/rollbackSim.js`). Your own
@@ -55,6 +58,12 @@ scores.
   without rebooting the app. Leaderboards have all-time and weekly boards. The profile shows
   achievements. PoRacer and PoMarbleRace race your best-run ghost. Gamepads work in every game
   and on the hub. The game-over sheet can share a result card. Settings is a side drawer.
+  Each demo in the reel gets a 60-second slot, including games whose match ends early.
+  Reel controls fit narrow phones, and Ecosystem skips its interactive onboarding in the
+  reel. Mule reserves room for the controls and uses readable player cards in portrait.
+  Voxel Strike's automatic graphics budget responds to sustained frame times rather than
+  assuming a fast GPU from CPU core count; explicit graphics choices remain authoritative.
+  The `/health` status page includes the build date for support and diagnostics.
 - **Works offline.** A score that cannot reach the server is parked in the browser and sent
   automatically later.
 
@@ -62,12 +71,11 @@ scores.
 
 | Document | What it covers |
 |---|---|
-| [Architecture & game loop](DOCS/20261003/architecture_overview.md) | How agents look, decide and act; scoring rules; tuning settings |
-| [Agent & rig inventory](DOCS/20261003/model_summary.md) | Every computer-controlled character, its source file and physics setup |
-| [Creature dashboard](DOCS/20261003/creatures_dashboard.html) | Abilities grid with an Executive / Technical toggle |
-| [Level & arena setup](DOCS/20261003/scene_layout.html) | To-scale arena drawings, spawn points, hazards, collision layers |
-| [Performance comparison](DOCS/20261003/creature_benchmarks.html) | Skill by difficulty, smoothness, update rates and running cost |
-| [Training charts guide](DOCS/20261003/training_metrics_guide.md) | The four training charts in plain English, and what stands in for them here |
+| [Documentation overview](DOCS/20261029/index.html) | Index of the current documentation suite |
+| [Visual architecture dashboard](DOCS/20261029/VISUAL_ARCHITECTURE_DASHBOARD.html) | Visual map of the app's architecture and major flows |
+| [User journeys](DOCS/20261029/USER_WORKFLOW.html) | Player-facing workflows through the app |
+| [Auth and security report](DOCS/20261029/AUTH_SECURITY_REPORT.html) | Authentication and access-control overview |
+| [AI and external services report](DOCS/20261029/AI_SERVICES_REPORT.html) | Current AI and external-service boundaries |
 | [Architecture map](https://claude.ai/artifact/HGHLwMdGyveqtknNC1o5ar) | Component diagrams, request flows and the data model (private link; share it from the page to give others access) |
 
 ## Games (`src/PoMiniGames.Client/Games/`)
@@ -137,8 +145,8 @@ scripts/                        Working scripts only — see scripts/README.md
   materials (TSL), imported as `three-eco/webgpu` / `three-eco/tsl` / `three-eco/addons/`; it
   falls back to three's WebGL2 backend by itself, and `?ecoBackend=webgl2` forces that. Every
   other three.js game stays on r165 (`three`, `three/addons/`). Both are pinned, with SRI, in the
-  import map in `wwwroot/index.html`. See section 3.9 of the
-  [architecture overview](DOCS/20261003/architecture_overview.md).
+  import map in   `wwwroot/index.html`. See the
+  [visual architecture dashboard](DOCS/20261029/VISUAL_ARCHITECTURE_DASHBOARD.html).
 - Offline-friendly PWA: finished scores park locally and sync on reconnect/sign-in.
 - Deploy: `azd up` (App Service F1, resource group `PoMiniGames`).
 

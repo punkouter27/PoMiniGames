@@ -7,7 +7,7 @@ The rules for working in this repository live in `AGENTS.md` and apply to every 
 @AGENTS.md
 
 For the project tour and the list of games, see `README.md`. `CAPABILITY-MAP.md` says which module
-owns what; `DOCS/20261003/architecture_overview.md` is the long-form architecture write-up.
+owns what; `DOCS/20261029/VISUAL_ARCHITECTURE_DASHBOARD.html` is the current visual architecture overview.
 
 ## Commands
 

@@ -715,7 +715,9 @@ export class Structure {
 
   recheckSupport() {
     if (this.solidCount === 0) return [];
-    const clusters = this._detachUnsupported();
+    // Undermining is a support change just like carving: use the same coalesced worker
+    // and onClusters delivery instead of blocking each terrain shot on a full-grid solve.
+    const clusters = this._requestSolve();
     if (clusters.length > 0) this.colliderDirty = true;
     return clusters;
   }
@@ -1035,17 +1037,27 @@ export class Structure {
 
       const { boxes, count } = greedyBoxes(sub, [w, h, d], COLLIDER_BOX_BUDGET);
       const body = new CANNON.Body({ type: CANNON.Body.STATIC, material: this.physicsMaterial });
+      // Cannon's broadphase uses position ± boundingRadius. Anchoring every chunk at
+      // the building origin inflated that radius by its offset across the fortress.
+      // Keep shape coordinates chunk-local so distant chunks can actually be rejected.
+      const centerX = (x0 + w / 2 - this.cx) * this.scale;
+      const centerY = (y0 + h / 2) * this.scale;
+      const centerZ = (z0 + d / 2 - this.cz) * this.scale;
       for (let i = 0; i < count; i++) {
         const o = i * 6;
         body.addShape(
           new CANNON.Box(new CANNON.Vec3(
             boxes[o + 3] * this.scale, boxes[o + 4] * this.scale, boxes[o + 5] * this.scale)),
           new CANNON.Vec3(
-            (x0 + boxes[o] - this.cx) * this.scale,
-            (y0 + boxes[o + 1]) * this.scale,
-            (z0 + boxes[o + 2] - this.cz) * this.scale));
+            (boxes[o] - w / 2) * this.scale,
+            (boxes[o + 1] - h / 2) * this.scale,
+            (boxes[o + 2] - d / 2) * this.scale));
       }
-      body.position.set(px.x, px.y, px.z);
+      const cos = Math.cos(ry), sin = Math.sin(ry);
+      body.position.set(
+        px.x + cos * centerX + sin * centerZ,
+        px.y + centerY,
+        px.z - sin * centerX + cos * centerZ);
       body.quaternion.setFromEuler(0, ry, 0);
       // Respect the streaming state: a chunk rebuilt while this structure is streamed out
       // must stay out, or carving something distant would quietly resurrect it.

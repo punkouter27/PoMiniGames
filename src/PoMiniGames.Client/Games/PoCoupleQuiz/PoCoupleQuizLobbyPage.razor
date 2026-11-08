@@ -35,7 +35,7 @@
     {
         <p class="gps-error" role="alert">
             @_error
-            <button class="app-btn app-btn--secondary app-btn--sm" @onclick="ConnectAndJoinAsync">Retry</button>
+            <button class="app-btn app-btn--secondary app-btn--sm" @onclick="ReconnectLobbyAsync">Retry</button>
         </p>
     }
     @* One start path: the server starts the match the moment everyone is ready, so there
@@ -43,7 +43,7 @@
     <LobbyPanel TPlayer="NamedLobbyPlayer"
                 State="@LobbyState"
                 LocalConnectionId="@(_lobby?.PlayerName ?? "")"
-                ConnectionState="@(_isConnected ? HubConnectionState.Connected : HubConnectionState.Connecting)"
+                ConnectionState="@Hub.ConnectionState"
                 Hint="@(_lobby is { Players.Count: >= 2 }
                         ? "One shared room. The match starts as soon as everyone is ready."
                         : "One shared room. Waiting for another player to join…")"
@@ -54,6 +54,7 @@
                 CanReady="@(!_ready)"
                 PickerTitle="Rounds"
                 HowTo="@HowToPlayContent"
+                OnReconnect="ReconnectLobbyAsync"
                 OnReady="OnReady"
                 OnLeave="Leave">
         <Picker>
@@ -117,6 +118,7 @@
         Hub.OnPlayerDisconnected += HandleLobbyUpdated;
         Hub.OnLobbyError += HandleError;
         Hub.OnGameStarted += HandleGameStarted;
+        Hub.ConnectionChanged += HandleConnectionChanged;
     }
 
     /// <summary>The opening card was dismissed: connect and take a seat.</summary>
@@ -149,6 +151,40 @@
             _busy = false;
             StateHasChanged();
         }
+    }
+
+    private async Task ReconnectLobbyAsync()
+    {
+        if (_busy) return;
+        _busy = true;
+        _error = null;
+        try
+        {
+            await Hub.ConnectAsync();
+            _isConnected = true;
+            await Hub.JoinAsync(_playerName);
+        }
+        catch (Exception ex) when (ex is HttpRequestException or InvalidOperationException or Microsoft.AspNetCore.SignalR.HubException or OperationCanceledException or IOException)
+        {
+            _error = $"Could not rejoin the lobby: {ex.Message}";
+        }
+        finally
+        {
+            _busy = false;
+            await InvokeAsync(StateHasChanged);
+        }
+    }
+
+    private void HandleConnectionChanged(HubConnectionState state)
+    {
+        _isConnected = state == HubConnectionState.Connected;
+        if (state == HubConnectionState.Disconnected && _lobby is not null)
+        {
+            _lobby = null;
+            _ready = false;
+            _error = "Connection lost. Rejoin the lobby to continue.";
+        }
+        _ = InvokeAsync(StateHasChanged);
     }
 
     // The hub connection is app-lifetime and shared with the game page (see DisposeAsync),
@@ -230,6 +266,7 @@
         Hub.OnPlayerDisconnected -= HandleLobbyUpdated;
         Hub.OnLobbyError -= HandleError;
         Hub.OnGameStarted -= HandleGameStarted;
+        Hub.ConnectionChanged -= HandleConnectionChanged;
         return ValueTask.CompletedTask;
     }
 }

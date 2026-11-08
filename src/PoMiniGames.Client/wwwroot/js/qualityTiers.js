@@ -121,6 +121,13 @@
         allowHeavy: function () { return _tier === 'high'; },
         reduceFlashing: function () { return _reduceFlashing; },
         source: function () { return _source; },
+        setSessionTier: function (t) {
+            const tier = clampTier(t);
+            if (!tier) return false;
+            _source = 'session';
+            apply(tier);
+            return true;
+        },
         setOverride: function (t) {
             try {
                 if (t) localStorage.setItem(STORE_TIER, clampTier(t) || '');

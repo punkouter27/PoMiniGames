@@ -30,7 +30,7 @@
 
 .pm-canvas-host {
     position: absolute;
-    inset: 0;
+    inset: 2.5rem 0 var(--kiosk-clearance, 0px);
 }
 
 .pm-canvas-host ::deep .pm-canvas {

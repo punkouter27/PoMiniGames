@@ -18,6 +18,7 @@ public sealed class LobbyClient<TPlayer> : IAsyncDisposable where TPlayer : ILob
     private HubConnection? _hub;
     private string _displayName = "Player";
     private bool _isGuest = true;
+    private bool _needsRejoin;
 
     /// <param name="hubPath">Hub path relative to the API base, e.g. <c>poracer/lobby-hub</c>.</param>
     public LobbyClient(ApiEndpoints endpoints, string hubPath)
@@ -31,11 +32,12 @@ public sealed class LobbyClient<TPlayer> : IAsyncDisposable where TPlayer : ILob
     /// <summary>The host started; payload is the game code to carry to the game page.</summary>
     public event Action<string>? GameStarted;
     public event Action<HubConnectionState>? ConnectionChanged;
+    public event Action<Exception>? ReconnectFailed;
 
     public LobbyState<TPlayer>? State { get; private set; }
     public string ConnectionId => _hub?.ConnectionId ?? "";
-    public HubConnectionState ConnectionState => _hub?.State ?? HubConnectionState.Disconnected;
-    public bool IsConnected => _hub is not null && _hub.State == HubConnectionState.Connected;
+    public HubConnectionState ConnectionState => _needsRejoin ? HubConnectionState.Disconnected : _hub?.State ?? HubConnectionState.Disconnected;
+    public bool IsConnected => !_needsRejoin && _hub is not null && _hub.State == HubConnectionState.Connected;
 
     public TPlayer? Me => State is null ? default : State.Players.FirstOrDefault(p => p.ConnectionId == ConnectionId);
     public bool IsHost => State is not null && !string.IsNullOrEmpty(ConnectionId) && State.HostConnectionId == ConnectionId;
@@ -62,7 +64,13 @@ public sealed class LobbyClient<TPlayer> : IAsyncDisposable where TPlayer : ILob
             _hub.Reconnected += async _ =>
             {
                 ConnectionChanged?.Invoke(HubConnectionState.Connected);
-                try { await JoinAsync(); } catch { /* surfaced on the next user action */ }
+                try { await JoinAsync(); }
+                catch (Exception ex)
+                {
+                    _needsRejoin = true;
+                    ConnectionChanged?.Invoke(HubConnectionState.Disconnected);
+                    ReconnectFailed?.Invoke(ex);
+                }
             };
             _hub.Closed += _ => { ConnectionChanged?.Invoke(HubConnectionState.Disconnected); return Task.CompletedTask; };
         }
@@ -76,10 +84,15 @@ public sealed class LobbyClient<TPlayer> : IAsyncDisposable where TPlayer : ILob
         return await JoinAsync();
     }
 
+    /// <summary>Retry the existing lobby connection and reclaim its seat.</summary>
+    public Task<LobbyState<TPlayer>?> ReconnectAsync() =>
+        ConnectAndJoinAsync(_displayName, _isGuest);
+
     public async Task<LobbyState<TPlayer>?> JoinAsync()
     {
         if (_hub is null) return null;
         var state = await _hub.InvokeAsync<LobbyState<TPlayer>>("Join", _displayName, _isGuest);
+        _needsRejoin = false;
         State = state;
         StateChanged?.Invoke(state);
         return state;

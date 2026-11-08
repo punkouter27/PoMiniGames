@@ -50,6 +50,7 @@ export class ShrapnelField {
     this.collision = collision;
     this.physicsMaterial = physicsMaterial;
     this.capacity = Math.max(0, capacity | 0);
+    this.budget = this.capacity;
     this.enabled = this.capacity > 0;
     this.cursor = 0;
     if (!this.enabled) return;
@@ -100,9 +101,9 @@ export class ShrapnelField {
    * @param velocity THREE.Vector3 initial velocity (clamped to MAX_SPEED)
    */
   spawn(position, size, color, velocity, density = MATERIAL_PRESETS.stone.density) {
-    if (!this.enabled) return;
+    if (!this.enabled || this.budget === 0) return;
     const i = this.cursor;
-    this.cursor = (this.cursor + 1) % this.capacity;
+    this.cursor = (this.cursor + 1) % this.budget;
     const slot = this.slots[i];
     if (slot.live) this.world.removeBody(slot.body); else this.live++;
 
@@ -144,8 +145,8 @@ export class ShrapnelField {
    * @param budget max voxels to throw from this one carve
    */
   spawnFromCarve(structure, removed, origin, power, budget) {
-    if (!this.enabled || removed.length === 0) return;
-    const take = Math.min(budget, removed.length, this.capacity);
+    if (!this.enabled || this.budget === 0 || removed.length === 0) return;
+    const take = Math.min(budget, removed.length, this.budget);
     // Even stride rather than the first N: `removed` is emitted in grid-scan order, so
     // the first N would all come from one corner of the crater and the rubble would fly
     // out of one face instead of the whole hole.
@@ -173,10 +174,10 @@ export class ShrapnelField {
 
   /** Same, for terrain: the caller supplies world points because terrain has no grid API. */
   spawnBurst(origin, count, size, color, power, density = MATERIAL_PRESETS.soil.density) {
-    if (!this.enabled) return;
+    if (!this.enabled || this.budget === 0) return;
     const vel = new THREE.Vector3();
     const at = new THREE.Vector3();
-    const n = Math.min(count, this.capacity);
+    const n = Math.min(count, this.budget);
     for (let i = 0; i < n; i++) {
       const theta = Math.random() * Math.PI * 2;
       const r = Math.random() * 1.2;
@@ -268,6 +269,22 @@ export class ShrapnelField {
       const shrink = remaining < FADE_S ? Math.max(0, remaining / FADE_S) : 1;
       this._s.setScalar(slot.size * shrink);
       this.mesh.setMatrixAt(i, this._m.compose(this._p, this._q, this._s));
+    }
+    this.mesh.instanceMatrix.needsUpdate = true;
+  }
+
+  /** Shrink the sampled chip pool without reallocating or touching structural rubble. */
+  setBudget(budget) {
+    this.budget = Math.min(this.capacity, Math.max(0, budget | 0));
+    this.cursor = this.budget ? this.cursor % this.budget : 0;
+    if (!this.enabled) return;
+    for (let i = this.budget; i < this.capacity; i++) {
+      const slot = this.slots[i];
+      if (!slot.live) continue;
+      this.world.removeBody(slot.body);
+      slot.live = false;
+      this.live--;
+      this.mesh.setMatrixAt(i, this._zero);
     }
     this.mesh.instanceMatrix.needsUpdate = true;
   }

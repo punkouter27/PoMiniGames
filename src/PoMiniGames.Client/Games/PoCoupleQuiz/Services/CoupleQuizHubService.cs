@@ -96,13 +96,22 @@ public sealed class CoupleQuizHubService : IAsyncDisposable
     public event Action<CoupleQuizGameOverPayload>? OnGameOver;
     public event Action<string>? OnGameError;
     public event Action<CoupleQuizLobbyUpdatedPayload>? OnPlayerDisconnected;
+    public event Action<HubConnectionState>? ConnectionChanged;
 
     public CoupleQuizHubService(NavigationManager navigation, ApiEndpoints endpoints) =>
         (_navigation, _endpoints) = (navigation, endpoints);
 
+    public HubConnectionState ConnectionState => _connection?.State ?? HubConnectionState.Disconnected;
+
     public async Task ConnectAsync()
     {
-        if (_connection is not null) return;
+        if (_connection is { } current)
+        {
+            if (current.State != HubConnectionState.Disconnected) return;
+            await current.StartAsync();
+            ConnectionChanged?.Invoke(current.State);
+            return;
+        }
         // Absolute URL: SignalR ignores the DI HttpClient BaseAddress, so we
         // compose against ApiEndpoints.ApiBase — the API host (:5000), not the
         // WASM host (:5261). Without this, the standalone client hits
@@ -131,12 +140,37 @@ public sealed class CoupleQuizHubService : IAsyncDisposable
         _connection.On<string>("GameError", m => OnGameError?.Invoke(m));
         _connection.On<CoupleQuizLobbyUpdatedPayload>("PlayerDisconnected", p => OnPlayerDisconnected?.Invoke(p));
 
+        _connection.Reconnecting += _ =>
+        {
+            ConnectionChanged?.Invoke(HubConnectionState.Reconnecting);
+            return Task.CompletedTask;
+        };
+        _connection.Reconnected += async _ =>
+        {
+            ConnectionChanged?.Invoke(HubConnectionState.Connected);
+            if (_lastPlayerName is null) return;
+            try { await JoinAsync(_lastPlayerName); }
+            catch (Exception ex) when (ex is HttpRequestException or InvalidOperationException or Microsoft.AspNetCore.SignalR.HubException or OperationCanceledException or IOException)
+            {
+                OnLobbyError?.Invoke($"Could not rejoin the lobby: {ex.Message}");
+            }
+        };
+        _connection.Closed += _ =>
+        {
+            ConnectionChanged?.Invoke(HubConnectionState.Disconnected);
+            return Task.CompletedTask;
+        };
+
         await _connection.StartAsync();
+        ConnectionChanged?.Invoke(_connection.State);
     }
+
+    private string? _lastPlayerName;
 
     public Task JoinAsync(string playerName)
     {
         EnsureConnected();
+        _lastPlayerName = playerName;
         return _connection!.InvokeAsync("Join", playerName);
     }
 

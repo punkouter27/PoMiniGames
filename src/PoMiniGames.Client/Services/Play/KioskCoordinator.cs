@@ -13,7 +13,7 @@ namespace PoMiniGamesClient.Services.Play;
 /// Centralized manager for the "Watch All Demos" auto-rotation kiosk mode.
 ///
 /// Fixes a critical bug where each demo page created its own private
-/// <c>System.Threading.Timer</c> for the 20s advance-to-next-demo logic.
+/// <c>System.Threading.Timer</c> for the per-demo 60s advance-to-next-demo logic.
 /// Those timers survived Blazor's enhanced navigation and continued to fire
 /// after the user manually navigated to another page, hijacking the user
 /// back into the kiosk cycle. They also raced with each demo's own
@@ -59,8 +59,7 @@ public sealed class KioskCoordinator : IDisposable
     public bool IsPaused => _isPaused;
     public string? CurrentGameName { get; private set; }
     public int SecondsUntilAdvance { get; private set; } = AdvanceSeconds;
-    /// <summary>How long every demo stays on screen. A demo whose match ends on a frozen
-    /// result screen moves on sooner by calling <see cref="MarkFinished"/>.</summary>
+    /// <summary>How long every demo stays on screen, even if its match ends early.</summary>
     public const int AdvanceSeconds = 60;
 
     /// <summary>0-based index of the demo currently on screen. -1 before the first page reports itself.</summary>
@@ -155,23 +154,6 @@ public sealed class KioskCoordinator : IDisposable
     }
 
     /// <summary>
-    /// Demo pages call this when their match ends (post-mortem screen, game-over
-    /// modal, race finished, etc.) so the reel advances immediately instead of
-    /// sitting on the "Game over" screen for the rest of the per-game dwell. The
-    /// effect is identical to <see cref="SkipNext"/> from the viewer's point of
-    /// view — both rotate the reel — but it lives here so a per-game page can
-    /// opt in without having to know the timer internals.
-    /// </summary>
-    public void MarkFinished()
-    {
-        if (!IsActive) return;
-        if (_entries.Count == 0) return;
-        // Drop straight to the next demo. We deliberately do NOT pause first —
-        // a finished match that then sits paused is the same visual problem as
-        // one that sits on the timer, just with a different cause.
-        SkipNext();
-    }
-
     /// <summary>
     /// Jump directly to a specific demo by its catalog index. Used by the home page's
     /// "start here" affordance so a passer-by can land on the most visually striking
@@ -251,7 +233,7 @@ public sealed class KioskCoordinator : IDisposable
         // Any non-kiosk location change cancels the auto-tick. This is what
         // stops the "stale timer hijacks manual navigation" bug — if the
         // user clicks Home or a single-player game, the kiosk cycle stops
-        // instead of yanking them back 20s later.
+        // instead of yanking them back when the 60s demo dwell expires.
         if (_timer is not null)
         {
             _timer.Dispose();

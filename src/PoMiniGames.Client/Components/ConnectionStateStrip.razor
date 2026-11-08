@@ -32,6 +32,13 @@
     {
         <span class="conn-strip__detail">@Detail</span>
     }
+    @if (State == HubConnectionState.Disconnected && OnRetry.HasDelegate)
+    {
+        <button type="button" class="app-btn app-btn--secondary app-btn--sm"
+                disabled="@_retrying" @onclick="RetryAsync">
+            @(_retrying ? "Retrying…" : "Retry connection")
+        </button>
+    }
 </p>
 
 @code {
@@ -49,6 +56,19 @@
 
     /// <summary>Optional trailing context — e.g. "waiting for a fight…".</summary>
     [Parameter] public string? Detail { get; set; }
+
+    /// <summary>Optional action to retry a connection after automatic retries are exhausted.</summary>
+    [Parameter] public EventCallback OnRetry { get; set; }
+
+    private bool _retrying;
+
+    private async Task RetryAsync()
+    {
+        if (_retrying || !OnRetry.HasDelegate) return;
+        _retrying = true;
+        try { await OnRetry.InvokeAsync(); }
+        finally { _retrying = false; }
+    }
 
     // A dropped hub and its return are heard, not only read: the pill changing colour is
     // easy to miss while looking at the roster. Only a real edge sounds; the first state

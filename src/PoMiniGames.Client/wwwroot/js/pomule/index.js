@@ -9,7 +9,7 @@
 import * as W from './world.js';
 import * as P from './physics.js';
 import * as Sfx from './audio.js';
-import { drawFrame, SCREEN_W, SCREEN_H, MAP_Y } from './render.js';
+import { drawFrame, frameLayout, SCREEN_W, MAP_Y } from './render.js';
 import { buildTouchControls, isTouchDevice } from './touch.js';
 
 const TICK = 0.1;
@@ -219,10 +219,11 @@ function simulate(dt) {
 /** A point on the fat-pixel screen (render.js) in viewport px, for a cue's particle burst. */
 function screenPoint(bx, by) {
   const r = g.canvas.getBoundingClientRect();
-  const scale = Math.min(g.view.w / SCREEN_W, g.view.h / SCREEN_H);
+  const layout = frameLayout(g.view);
+  const scale = layout.width / SCREEN_W;
   return {
-    x: r.left + (g.view.w - SCREEN_W * scale) / 2 + bx * scale,
-    y: r.top + (g.view.h - SCREEN_H * scale) / 2 + by * scale,
+    x: r.left + layout.x + bx * scale,
+    y: r.top + layout.y + by * scale,
   };
 }
 
@@ -378,6 +379,8 @@ window.PoMule = {
     onSnapshot(opts.snapshot);
     resize();
     g.onResize = () => g && resize();
+    g.resizeObserver = new ResizeObserver(g.onResize);
+    g.resizeObserver.observe(host);
     window.addEventListener('resize', g.onResize);
     window.addEventListener('keydown', onKeyDown);
     window.addEventListener('keyup', onKeyUp);
@@ -451,6 +454,7 @@ window.PoMule = {
     if (!g) return;
     g.running = false;
     cancelAnimationFrame(g.raf);
+    g.resizeObserver.disconnect();
     window.removeEventListener('resize', g.onResize);
     window.removeEventListener('keydown', onKeyDown);
     window.removeEventListener('keyup', onKeyUp);

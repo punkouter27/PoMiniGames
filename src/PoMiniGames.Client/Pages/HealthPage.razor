@@ -96,6 +96,7 @@
 
     <p class="hp-muted hp-foot">
         Last checked @(_checkedAt?.ToLocalTime().ToString("HH:mm:ss") ?? "—").
+        Build @PoMiniGamesClient.BuildInfo.Date.
         @* The developer endpoints link to raw JSON rather than a UI, so no diagnostics
            page ships in the WASM bundle. They leak internal infrastructure to anyone
            who hits /health, so they sit behind an explicit opt-in disclosure. *@

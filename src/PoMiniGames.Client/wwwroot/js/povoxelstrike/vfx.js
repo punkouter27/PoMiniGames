@@ -307,7 +307,7 @@ export class Vfx {
     this.sun = null; // set by attachSun()
     this._sunDir = new THREE.Vector3(0.4, 0.8, 0.25).normalize();
 
-    const size = renderer.getSize(new THREE.Vector2());
+    const size = renderer.getDrawingBufferSize(new THREE.Vector2());
     const w = Math.max(1, Math.floor(size.x));
     const h = Math.max(1, Math.floor(size.y));
     this._buildTargets(w, h);
@@ -342,6 +342,8 @@ export class Vfx {
         type: THREE.HalfFloatType, depthBuffer: false, stencilBuffer: false,
       });
       this.composer = new EffectComposer(renderer, ldr);
+      // All targets use physical pixels. Do not multiply them by DPR again.
+      this.composer.setPixelRatio(1);
       this.combinePass = new CombinePass();
       this.combinePass.material.uniforms.tScene.value = this.sceneTarget.texture;
       this.combinePass.material.uniforms.tAo.value = this.aoTarget.texture;
@@ -361,6 +363,7 @@ export class Vfx {
         this.smaaPass = new SMAAPass(w, h); // after OutputPass: SMAA wants LDR input
         this.composer.addPass(this.smaaPass);
       }
+      this.syncQuality();
     } catch (e) {
       console.warn('[povoxelstrike/vfx] post-processing unavailable, rendering plain:', e);
       this.composer = null;
@@ -535,14 +538,25 @@ export class Vfx {
   }
 
   resize(width, height) {
-    const w = Math.max(1, Math.floor(width));
-    const h = Math.max(1, Math.floor(height));
+    const ratio = this.renderer.getPixelRatio();
+    const w = Math.max(1, Math.floor(width * ratio));
+    const h = Math.max(1, Math.floor(height * ratio));
     this.sceneTarget.setSize(w, h);
     const aoDiv = this.q.ssaoHalfRes ? 2 : 1;
     this.aoTarget.setSize(Math.max(1, Math.floor(w / aoDiv)), Math.max(1, Math.floor(h / aoDiv)));
     this.shaftTarget.setSize(Math.max(1, Math.floor(w / 4)), Math.max(1, Math.floor(h / 4)));
     this.composer?.setSize(w, h);
     this.smaaPass?.setSize(w, h);
+  }
+
+  syncQuality() {
+    if (this.combinePass) {
+      const u = this.combinePass.material.uniforms;
+      u.aoEnabled.value = this.q.ssao ? 1 : 0;
+      u.shaftEnabled.value = this.q.godRays ? 1 : 0;
+    }
+    if (this.smaaPass) this.smaaPass.enabled = this.q.smaa;
+    if (this.bloomPass) this.bloomPass.enabled = this.q.bloom;
   }
 
   /** Add shake trauma, 0..1 per event. Shake amplitude is trauma², so small events whisper. */

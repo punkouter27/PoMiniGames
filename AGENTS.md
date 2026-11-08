@@ -30,6 +30,7 @@ Rules for any AI agent working in this repository.
 - **UI Previews:** For visual changes, save before-and-after HTML mockups to
   `SCREENSHOTS/{YYMMDD}-{feature}.html`, and annotate screenshots showing the before and after with
   notes in a single PNG. Give the full path.
+- **Proposed Solutions:** When reporting a problem, include a proposed solution for approval.
 - **Clarifying Questions:** If modifying more than 100 lines and no pending questions exist, list 3
   key follow-up questions about future direction or logic.
 - **Required Footers:**
@@ -38,6 +39,13 @@ Rules for any AI agent working in this repository.
     - *Toddler:* Explain the idea simply.
     - *Child:* Explain what the app actually does now.
     - *Adult:* Explain how it was built.
+    Include a small diagram to make the changes easier to understand
+    ([diagram-design](https://github.com/cathrynlavery/diagram-design)).
+
+## 5. Shared Components
+
+- **Consolidate When Practical:** Prefer consolidating reusable functionality and UI into shared
+  components when it meaningfully reduces duplication without obscuring game-specific behavior.
 
 ## CI/CD and Azure (same section in every Po repo)
 

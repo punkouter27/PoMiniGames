@@ -24,7 +24,9 @@
         <section class="lobby__section">
             <div class="lobby__head">
                 <h2 class="gps-phase-h">Players · @(State?.Players.Count ?? 0)@(MaxPlayers > 0 ? $"/{MaxPlayers}" : "")</h2>
-                <ConnectionStateStrip State="ConnectionState" Pending="State is null" />
+                <ConnectionStateStrip State="ConnectionState"
+                                      Pending="State is null && ConnectionState == HubConnectionState.Connecting"
+                                      OnRetry="OnReconnect" />
             </div>
             <p class="lobby__hint">@Hint</p>
             @if (State is null)
@@ -168,6 +170,7 @@
     [Parameter] public EventCallback OnReady { get; set; }
     [Parameter] public EventCallback OnStart { get; set; }
     [Parameter] public EventCallback OnLeave { get; set; }
+    [Parameter] public EventCallback OnReconnect { get; set; }
 
     private int MaxPlayers => State?.MaxPlayers ?? MaxPlayersHint;
 

@@ -49,6 +49,7 @@ else
                 ShowReady="false"
                 ShowStart="false"
                 HowTo="@HowToPlayContent"
+                OnReconnect="ConnectAsync"
                 OnLeave="LeaveAsync">
         <PlayerBadges Context="p">
             <span class="app-chip">@FighterName(p.Fighter.Id)</span>
@@ -212,6 +213,11 @@ else
                 await AutoStartAsync();
             });
             _lobby.ConnectionChanged += _ => InvokeAsync(StateHasChanged);
+            _lobby.ReconnectFailed += _ => InvokeAsync(() =>
+            {
+                _failed = "Connection restored, but the lobby could not be rejoined. Retry the connection.";
+                StateHasChanged();
+            });
             _lobby.EventReceived += ev => ToastService.Show(ev.Message, ev.Kind == "left" ? ToastType.Warning : ToastType.Info);
             _lobby.GameStarted += code => Nav.NavigateTo($"/pobrawl/online?code={Uri.EscapeDataString(code)}");
         }

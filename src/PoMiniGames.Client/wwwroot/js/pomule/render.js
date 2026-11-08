@@ -362,7 +362,37 @@ function drawStatus(c, g) {
   }
 }
 
-/** One whole frame, scaled to fit the canvas and centred in it. */
+export function frameLayout(view) {
+  const portrait = view.w < 600 && view.h > view.w;
+  const sourceHeight = portrait ? STATUS_Y - 2 : SCREEN_H;
+  const scale = Math.min(Math.max(1, view.w - 16) / SCREEN_W,
+    Math.max(1, view.h - (portrait ? 300 : 16)) / sourceHeight);
+  const width = SCREEN_W * scale, height = sourceHeight * scale;
+  return { portrait, sourceHeight, width, height, x: (view.w - width) / 2,
+    y: portrait ? 8 : (view.h - height) / 2 };
+}
+
+function drawPortraitStatus(ctx, g, layout, view) {
+  const top = layout.y + layout.height + 12;
+  const columnWidth = (view.w - 24) / 2;
+  ctx.font = 'bold 13px monospace';
+  ctx.textAlign = 'left';
+  ctx.textBaseline = 'top';
+  for (let seat = 0; seat < g.seats; seat++) {
+    const x = 8 + seat % 2 * (columnWidth + 8), y = top + Math.floor(seat / 2) * 68;
+    ctx.fillStyle = '#f4f4f4';
+    ctx.fillRect(x, y, columnWidth, 60);
+    ctx.fillStyle = g.colors[seat];
+    ctx.fillRect(x, y, 3, 60);
+    ctx.fillStyle = TEXT;
+    ctx.fillText(shortName(g.names[seat]), x + 8, y + 5);
+    ctx.fillText(`$${g.seat(seat, 0)}`, x + 8, y + 23);
+    ctx.fillText(`F${g.seat(seat, 1)} E${g.seat(seat, 2)} S${g.seat(seat, 3)} C${g.seat(seat, 4)}`,
+      x + 8, y + 41, columnWidth - 16);
+  }
+}
+
+/** Portrait keeps the planet intact and gives the eight colonists readable cards. */
 export function drawFrame(ctx, g, view) {
   const lo = (g.lo ??= Object.assign(document.createElement('canvas'), { width: SCREEN_W, height: SCREEN_H }));
   const c = lo.getContext('2d');
@@ -393,10 +423,11 @@ export function drawFrame(ctx, g, view) {
   drawText(c, (g.message || hint(g)).slice(0, 63), SCREEN_W / 2, MSG_Y, ORANGE, 1, 'center');
   drawStatus(c, g);
 
-  const scale = Math.min(view.w / SCREEN_W, view.h / SCREEN_H);
-  const w = SCREEN_W * scale, h = SCREEN_H * scale;
+  const layout = frameLayout(view);
   ctx.fillStyle = GROUND;
   ctx.fillRect(0, 0, view.w, view.h);
   ctx.imageSmoothingEnabled = false;
-  ctx.drawImage(lo, 0, 0, SCREEN_W, SCREEN_H, (view.w - w) / 2, (view.h - h) / 2, w, h);
+  ctx.drawImage(lo, 0, 0, SCREEN_W, layout.sourceHeight,
+    layout.x, layout.y, layout.width, layout.height);
+  if (layout.portrait) drawPortraitStatus(ctx, g, layout, view);
 }

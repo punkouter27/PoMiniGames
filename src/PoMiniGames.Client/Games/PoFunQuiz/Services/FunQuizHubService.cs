@@ -94,7 +94,12 @@ public sealed class FunQuizHubService : IAsyncDisposable
 
     public async Task ConnectAsync()
     {
-        if (_connection is not null && _connection.State != HubConnectionState.Disconnected) return;
+        if (_connection is { } current)
+        {
+            if (current.State != HubConnectionState.Disconnected) return;
+            await current.StartAsync();
+            return;
+        }
         // Absolute URL: SignalR ignores the DI HttpClient BaseAddress, so we
         // compose against ApiEndpoints.ApiBase — the API host (:5000), not the
         // WASM host (:5261). Without this, the standalone client hits

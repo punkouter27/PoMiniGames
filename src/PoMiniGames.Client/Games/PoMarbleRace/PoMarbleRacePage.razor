@@ -267,6 +267,7 @@
     private PlayerStats _stats = new();
     private readonly GameStatsService _gameStats = new();
     private DotNetObjectReference<PoMarbleRacePage>? _ref;
+    private bool _disposed;
     private bool _engineStarted;
     // True from engine boot until its first pick phase: an authored course has a model to fetch.
     private bool _loading;
@@ -769,10 +770,12 @@
 
     protected override async Task OnAfterRenderAsync(bool firstRender)
     {
+        if (_disposed) return;
         // Every mode loads it: online picks a track too, and the HUD's colours come with it.
         if (firstRender)
         {
             await LoadMenuAsync();
+            if (_disposed) return;
             _ref ??= DotNetObjectReference.Create(this);
             await TryJsAsync("PoMarbleRace.watchInput", _ref);
         }
@@ -857,6 +860,7 @@
             if (!await JSRuntime.InvokeAsync<bool>("loadEngine", "pomarblerace")) return;
             var json = await JSRuntime.InvokeAsync<string>("PoMarbleRace.menu");
             if (await recordsTask is { } recs) _records = recs.GroupBy(r => r.MapId).ToDictionary(g => g.Key, g => g.MinBy(r => r.Seconds)!);
+            if (_disposed) return;
             var menu = JsonSerializer.Deserialize(json, MarbleMenuJsonContext.Default.MarbleMenu);
             if (menu is null) return;
             if (_menu is null)
@@ -920,6 +924,7 @@
     /// </summary>
     private async Task BootEngineAsync(object? online)
     {
+        if (_disposed) return;
         _engineStarted = true;
         _loading = true;
         _loadPct = 0;
@@ -938,8 +943,10 @@
 
             // Null when the menu never loaded (an auto-skipped intro can beat it): the engine then
             // uses the last pick it saved itself.
+            if (_disposed) return;
             object? marble = _menu is null || _demo || _online ? null : new { skin = _skin, weight = _weight };
             await JSRuntime.InvokeVoidAsync("PoMarbleRace.start", "marble-race-container", _ref, _demo, _mapId, online, marble);
+            if (_disposed) return;
             await JSRuntime.InvokeVoidAsync("PoMarbleRace.resume");
         }
         catch (JSException ex)
@@ -1439,8 +1446,7 @@
             UpdateStats();
         }
         await InvokeAsync(StateHasChanged);
-        // Tell the kiosk reel the demo race is over, or it sits on the result until its dwell expires.
-        if (_demo) Kiosk.MarkFinished();
+        // In the kiosk, the result stays visible until this demo's 60-second dwell expires.
     }
 
     private void UpdateStats()
@@ -1459,6 +1465,7 @@
 
     public async ValueTask DisposeAsync()
     {
+        _disposed = true;
         // Online: tell the peer we left and drop the hub before the engine goes.
         await TearDownOnlineAsync();
         // Before the JS ref goes away — a pending tick would otherwise Pick() through a disposed ref.

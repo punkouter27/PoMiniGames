@@ -1376,7 +1376,7 @@
 .poeco-tour {
     position: absolute;
     left: 50%;
-    bottom: var(--space-4);
+    bottom: max(var(--space-4), var(--kiosk-clearance, 0px));
     transform: translateX(-50%);
     width: min(440px, calc(100vw - 32px));
     padding: var(--space-3);

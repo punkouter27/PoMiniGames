@@ -157,6 +157,7 @@ public partial class PoRacerPage
         var lobby = _lobby = new LobbyClient<PoRacerLobbyPlayer>(Endpoints, "poracer/lobby-hub");
         lobby.StateChanged += _ => InvokeAsync(StateHasChanged);
         lobby.ConnectionChanged += _ => InvokeAsync(StateHasChanged);
+        lobby.ReconnectFailed += _ => ToastService.Show("Connection restored, but the lobby could not be rejoined. Retry the connection.", ToastType.Error);
         lobby.EventReceived += ev => ToastService.Show(ev.Message, ev.Kind == "left" ? ToastType.Warning : ToastType.Info);
         // The code goes in the address so a reload during the race rejoins it (seats are bound
         // to the claim identity) instead of landing back in a lobby that has already started.
@@ -165,11 +166,24 @@ public partial class PoRacerPage
         {
             await lobby.ConnectAndJoinAsync(AuthState.User?.DisplayName ?? "Player", !AuthState.IsAuthenticated);
         }
-        catch (Exception ex) when (ex is HttpRequestException or InvalidOperationException or Microsoft.AspNetCore.SignalR.HubException or OperationCanceledException)
+        catch (Exception ex) when (ex is HttpRequestException or InvalidOperationException or Microsoft.AspNetCore.SignalR.HubException or OperationCanceledException or IOException)
         {
             ToastService.Show("Server unavailable. Please try again shortly.", ToastType.Error);
         }
         if (!_disposed) StateHasChanged();
+    }
+
+    private async Task ReconnectLobbyAsync()
+    {
+        if (_lobby is not { } lobby) return;
+        try
+        {
+            await lobby.ReconnectAsync();
+        }
+        catch (Exception ex) when (ex is HttpRequestException or InvalidOperationException or Microsoft.AspNetCore.SignalR.HubException or OperationCanceledException or IOException)
+        {
+            ToastService.Show("Server unavailable. Please try again shortly.", ToastType.Error);
+        }
     }
 
     private async Task CloseLobbyAsync()
@@ -387,7 +401,6 @@ public partial class PoRacerPage
         await JS.InvokeVoidAsync("PoRacer.setInputEnabled", false);
         if (_isDemo)
         {
-            Kiosk.MarkFinished();
             StateHasChanged();
             return;
         }

@@ -45,7 +45,7 @@ import { Weapon } from './combat.js';
 import { EnemyManager } from './enemies.js';
 import { VoxelAudio } from './audio.js';
 import { Vfx } from './vfx.js';
-import { resolveQuality, createRenderer } from './quality.js';
+import { resolveQuality, createRenderer, AdaptiveQuality, applyRenderTier } from './quality.js';
 import { setQuality, SkyEnvironment, markHotCarve, tickMaterials, resetMaterials } from './materials.js';
 import { ParticleSystem } from './particles.js';
 import { DecalField } from './decals.js';
@@ -116,9 +116,6 @@ const SHADOW_HALF_M = 45;
 // voxel grid directly rather than the physics world.
 const PHYSICS_STREAM_RADIUS_M = 70;
 const PHYSICS_STREAM_INTERVAL_S = 0.5;
-// Floor for dynamic resolution. Below this the picture is soft enough that the frames are
-// not worth having.
-const MIN_RENDER_SCALE = 0.6;
 // Kiosk siege AI (demo mode). Tuned so the attract loop reads clearly from across a room:
 // the bot should visibly stop at a wall, chew through it, and walk in.
 const DEMO_PROBE_RANGE = 14;        // metres of "is something in my way"
@@ -256,6 +253,7 @@ export class Engine {
     // Resolve the GFX tier FIRST and publish it: world geometry is built further down
     // this method and every material it creates reads the tier through materials.js.
     this.q = resolveQuality();
+    this._adaptiveQuality = new AdaptiveQuality(this.q);
     setQuality(this.q);
 
     // MSAA is redundant once SMAA is in the chain, and the two together cost twice for
@@ -264,9 +262,9 @@ export class Engine {
     if (this.disposed) { built.renderer.dispose?.(); return; }
     this.renderer = built.renderer;
     this.rendererApi = built.api;
-    this.renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+    this.renderer.setPixelRatio(Math.min(window.devicePixelRatio, this.q.pixelRatioCap));
     this.renderer.setSize(width, height);
-    this.renderer.shadowMap.enabled = true;
+    this.renderer.shadowMap.enabled = this.q.shadows;
     this.renderer.shadowMap.type = THREE.PCFSoftShadowMap;
     // PBR wants a filmic curve and a linear working space; without tone mapping the
     // sun-lit faces of a white cottage clip to flat white the moment the sun is up.
@@ -300,7 +298,7 @@ export class Engine {
     sun.position.set(40, 80, 25);
     // One 2048 shadow map over the whole arena: ~13 cm texels, chunky but exactly the
     // voxel aesthetic — and cheap enough that collapsing towers cast moving shadows.
-    sun.castShadow = true;
+    sun.castShadow = this.q.shadows;
     sun.shadow.mapSize.set(this.q.shadowMapSize, this.q.shadowMapSize);
     // The shadow camera FOLLOWS the player (see _updateShadowCamera) instead of covering
     // the whole 260 m arena from a fixed box. Same map resolution over a 70 m window is
@@ -329,7 +327,7 @@ export class Engine {
     this.skyEnv = new SkyEnvironment(this.renderer, this.scene, this.q);
     this.skyEnv.update(0, this.vfx.skyKey, this.vfx._sunDir, true);
     this.particles = new ParticleSystem(this.scene, this.q.particles);
-    this.particles.setViewportHeight(this.renderer.getSize(new THREE.Vector2()).y);
+    this.particles.setViewportHeight(this.renderer.getDrawingBufferSize(new THREE.Vector2()).y);
     this.decals = new DecalField(this.scene, this.q.decals);
     this._spaceClock = 0;
     // Demo (kiosk) keeps the visuals but stays silent — there is no user gesture to
@@ -639,7 +637,8 @@ export class Engine {
     // performance.now() taken in start() (observed ~2.8 s stale in headless Chromium). An
     // unclamped negative dt turns the camera lerp factor 1−e^(−12·dt) negative and the
     // follow diverges exponentially instead of converging.
-    const dt = Math.min(Math.max((time - this.lastTime) / 1000, 0), 0.05);
+    const frameDt = (time - this.lastTime) / 1000;
+    const dt = Math.min(Math.max(frameDt, 0), 0.05);
     this.lastTime = time;
 
     // Paused, or 'ready' behind the start card: render the frozen scene, nothing advances
@@ -747,7 +746,7 @@ export class Engine {
     this.weather.update(dt, this.camera.position, this.indoors);
     this._updateShadowCamera();
     this._streamColliders(dt);
-    this._updateRenderScale(dt);
+    this._updateRenderScale(frameDt);
     this.skyEnv.update(dt, this.vfx.skyKey, this.vfx._sunDir);
     if (this.audio) {
       // The listener must follow the SHAKEN camera: the shake is what the player sees,
@@ -1080,19 +1079,21 @@ export class Engine {
    */
   _updateRenderScale(dt) {
     if (!this.q.dynamicResolution) return;
-    this._frameAvg = this._frameAvg === undefined ? dt : this._frameAvg * 0.9 + dt * 0.1;
-    this._scaleClock = (this._scaleClock ?? 0) - dt;
-    if (this._scaleClock > 0) return;
-    this._scaleClock = 0.5;
-
-    const target = 1 / 60;
-    let scale = this._renderScale ?? 1;
-    if (this._frameAvg > target * 1.35) scale -= 0.1;
-    else if (this._frameAvg < target * 1.05) scale += 0.05;
-    scale = Math.min(1, Math.max(MIN_RENDER_SCALE, scale));
-    if (Math.abs(scale - (this._renderScale ?? 1)) < 0.01) return;
-    this._renderScale = scale;
-    this.renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2) * scale);
+    const change = this._adaptiveQuality.update(dt,
+      !document.hidden && this.state !== 'paused' && this.state !== 'ready');
+    if (!change) return;
+    if (change.tier !== this.q.renderTier) {
+      applyRenderTier(this.q, change.tier);
+      this.shrapnel?.setBudget(this.q.shrapnel);
+      this.sun.shadow.map?.dispose();
+      this.sun.shadow.map = null;
+      this.sun.shadow.mapSize.set(this.q.shadowMapSize, this.q.shadowMapSize);
+      this.sun.castShadow = this.q.shadows;
+      this.renderer.shadowMap.enabled = this.q.shadows;
+      this.vfx.syncQuality();
+    }
+    this._renderScale = change.scale;
+    this.renderer.setPixelRatio(Math.min(window.devicePixelRatio, this.q.pixelRatioCap) * change.scale);
     this._resize();
   }
 
@@ -1701,7 +1702,7 @@ export class Engine {
     this.camera.updateProjectionMatrix();
     this.renderer.setSize(width, height);
     this.vfx?.resize(width, height);
-    this.particles?.setViewportHeight(height * Math.min(window.devicePixelRatio, 2));
+    this.particles?.setViewportHeight(height * this.renderer.getPixelRatio());
   }
 
   // ── Pointer lock ───────────────────────────────────────────────────────

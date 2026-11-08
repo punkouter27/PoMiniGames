@@ -31,6 +31,7 @@ public partial class PoEcosystemViewer : ComponentBase, IAsyncDisposable
     [Inject] private PoEcosystemInteropService Interop { get; set; } = default!;
     [Inject] private PoEcosystemApiClient Api { get; set; } = default!;
     [Inject] private BrowserViewport Viewport { get; set; } = default!;
+    [Inject] private KioskCoordinator Kiosk { get; set; } = default!;
     [Inject] private ToastService Toasts { get; set; } = default!;
     [Inject] private AuthStateService Auth { get; set; } = default!;
     [Inject] private UiFeedbackService Feedback { get; set; } = default!;
@@ -840,8 +841,9 @@ public partial class PoEcosystemViewer : ComponentBase, IAsyncDisposable
     }
 
     // ── first-visit tour ─────────────────────────────────────────────────
-    private void StartTourIfNew()
+    private void StartTourIfNew(bool replay = false)
     {
+        if (Kiosk.IsActive && !replay) return;
         string? done = null;
         try { done = LocalStorageService.GetItem<string>(TourDoneKey); } catch { /* storage off: show it */ }
         if (done == "1") return;
@@ -878,7 +880,7 @@ public partial class PoEcosystemViewer : ComponentBase, IAsyncDisposable
     {
         try { LocalStorageService.SetItem(TourDoneKey, "0"); } catch { /* best effort */ }
         _dashboardOpen = false;
-        StartTourIfNew();
+        StartTourIfNew(replay: true);
         await InvokeAsync(StateHasChanged);
     }
 

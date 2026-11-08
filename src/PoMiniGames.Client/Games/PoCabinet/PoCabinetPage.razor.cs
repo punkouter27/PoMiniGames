@@ -417,19 +417,19 @@ public partial class PoCabinetPageBase : ComponentBase, IAsyncDisposable
         await InvokeAsync(StateHasChanged);
     }
 
-    /// <summary>
-    /// The crash card's lite retry: the plain mesh room (stored, so it sticks) and the app's
-    /// low tier for this visit. qualityTiers.js reads the tier from the URL's <c>fx</c> when it
-    /// loads, so this is a reload with <c>?fx=low</c>, which also hands the race a fresh WebGL
-    /// stack. The start card comes back on the reload; OK starts the race.
-    /// </summary>
+    /// <summary>The crash card's lite retry: switch to the mesh room and low effects, then remount in place.</summary>
     protected async Task RetryLiteAsync()
     {
         Settings.RoomDetail = "mesh";
         try { await JS.InvokeVoidAsync("localStorage.setItem", PoCabinetUiSettings.StorageKey, Settings.ToJson()); }
         catch { /* storage unavailable: the low tier still applies */ }
+        await JS.InvokeVoidAsync("PoQuality.setSessionTier", "low");
         await TeardownRaceAsync();
-        Nav.NavigateTo(Nav.GetUriWithQueryParameter("fx", "low"), forceLoad: true);
+        _raceError = null;
+        _status = null;
+        _raceBoundary?.Recover();
+        _phase = IsMultiplayerMode ? Phase.Lobby : Phase.Loading;
+        await InvokeAsync(StateHasChanged);
     }
 
     /// <summary>The crash card's way out: the start card (online, the lobby).</summary>

@@ -54,6 +54,7 @@
                                     Hint="One shared room. The first driver in hosts and picks the track; bots fill the empty seats."
                                     MaxPlayersHint="8"
                                     StartLabel="Start Race"
+                                    OnReconnect="ReconnectLobbyAsync"
                                     OnReady="@(() => _lobby?.ToggleReadyAsync() ?? Task.CompletedTask)"
                                     OnStart="@(() => _lobby?.StartGameAsync() ?? Task.CompletedTask)"
                                     OnLeave="LeaveLobbyAsync">
