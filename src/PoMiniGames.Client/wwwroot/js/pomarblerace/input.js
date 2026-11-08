@@ -1,6 +1,7 @@
 // input.js — Game mixin: the player's one verb (held lateral steering) and its key bindings.
 // Mixed into Game.prototype by game.js.
 import { STEER_ACCEL } from './tuning.js';
+import { setPref } from './store.js';
 
 export class InputMixin {
   // The player's in-race input: hold a direction to steer the picked marble sideways. dir is
@@ -72,9 +73,12 @@ export class InputMixin {
   _bindKeys() {
     this._keyHandler = (e) => {
       if (e.key === 'r' || e.key === 'R') { e.preventDefault(); this.regenerate(); }
-      // M was documented as the mute key but was never actually bound to anything, and the
-      // only other caller (a Settings drawer) had been deleted — so mute was unreachable.
-      if (e.key === 'm' || e.key === 'M') { e.preventDefault(); this.audio.toggleMuted(); }
+      if (e.key === 'm' || e.key === 'M') {
+        e.preventDefault();
+        const muted = this.audio.toggleMuted();
+        setPref('muted', muted);
+        this._invoke('OnMuted', muted);
+      }
       // G: show or hide the ghost of your best run (local races on the authored courses).
       if (e.key === 'g' || e.key === 'G') { e.preventDefault(); this.toggleGhost(); }
       // Held-key steering: keydown starts the hold (auto-repeat re-sets the same flag, which

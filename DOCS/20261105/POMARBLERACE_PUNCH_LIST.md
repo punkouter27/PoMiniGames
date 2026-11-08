@@ -37,3 +37,14 @@ turned away). Map health ran headless in node (`tests/pomarblerace-map-health.te
 ## Update: spiral containment (later on 2026-11-05)
 
 Items 1 and 2 are fixed: Spiral Works and Grand Spiral now lose 0 marbles (drop bridges, landing hoppers, aprons behind landing lanes, Lower A unlidded). New open item: Spiral Works parks 6 marbles still in its Catch pan (s≈1951) until the timeout.
+
+## Verification follow-up (2026-11-08)
+
+| Previous item | Current status | Evidence |
+|---|---|---|
+| 1. Grand Spiral losses and stalls | Fixed | The all-map health suite passes, including Grand Spiral's completion and tunnel checks. |
+| 2. Spiral Works stalls | Fixed | The all-map health suite passes, including Spiral Works' completion and tunnel checks. Its elevated recovery nudge is scoped to this course so it does not regress Grand Spiral. |
+| 3. Zero-loss E2EUI certification | Race behavior fixed; UI certification blocked | Seed 1 now completes 101/101 with no losses or stalls on both authored spirals. The targeted E2EUI run stops during fixture setup with `DockerUnavailableException`; no UI assertions run. |
+| 5. M mute preference not saved | Fixed | Pressing M sets the persisted `prefs.muted` value, which remained set after a page reload. |
+
+The current map-health run passes all 8 checks. The remaining P3 observations are the settings drawer under severe main-thread starvation, the tutorial ring's projected position when a wall occludes the marble, and small possible reverb-zone alignment offsets. Forced-finish rejection is expected server validation; the SSR/rain rendering cost remains a performance note rather than a functional defect.

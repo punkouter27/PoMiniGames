@@ -403,6 +403,7 @@ export const newProjection = () => ({ s: 0, index: -1, lateral: 0, height: 0 });
  * @param {RegExp|null} [opts.colliderNodes] which meshes of the collider model to use
  * @param {number} [opts.driveAccel] u/s² push along the course for marbles on the track, for a
  *   course whose grade is too gentle to race on (game.js _applyDrive); 0 = none
+ * @param {boolean} [opts.dropStallAssist] bias elevated recovery nudges toward the floor
  * @param {RegExp|null} [opts.conformNodes] model nodes to re-pose onto the ring shell, for a path
  *   that carries DRAWN — see conformToShell
  */
@@ -421,6 +422,7 @@ export function createGlbCourse({
   grid = {},
   colliderNodes = null,
   driveAccel = 0,
+  dropStallAssist = false,
   conformNodes = null,
 }) {
   if (!COL && ringLanes) ({ PATH, COL } = ringShell(PATH, ringLanes));
@@ -868,6 +870,22 @@ export function createGlbCourse({
       if (e1.cross(e2).lengthSq() < 1e-4) return;
       list.push(p.x, p.y, p.z, q.x, q.y, q.z, r.x, r.y, r.z);
     };
+    const lidA = new THREE.Triangle(), lidB = new THREE.Triangle();
+    const lidProbe = new THREE.Vector3(), lidClosest = new THREE.Vector3();
+    const OPEN_LANE_CLEARANCE = 4;
+    const lidCrowdsOpenLane = (a, b, c, d) => {
+      lidA.set(a, b, c);
+      lidB.set(a, c, d);
+      for (const M of LANES) {
+        if (!M.open) continue;
+        for (let r = 0; r < M.n; r++) {
+          lidProbe.fromArray(M.P, r * 3);
+          if (lidA.closestPointToPoint(lidProbe, lidClosest).distanceToSquared(lidProbe) < OPEN_LANE_CLEARANCE ** 2 ||
+              lidB.closestPointToPoint(lidProbe, lidClosest).distanceToSquared(lidProbe) < OPEN_LANE_CLEARANCE ** 2) return true;
+        }
+      }
+      return false;
+    };
     // A lane nobody feeds end-to-end is fed from the AIR — after a free fall or out of a funnel —
     // and its first rings are where marbles land. A lid there catches them on its TOP: Grand
     // Spiral's field flies ~100 units off the five-lane fan, landed on the Finish lid, rolled off
@@ -985,6 +1003,8 @@ export function createGlbCourse({
         if (!a0 || !a1 || !d0 || !d1) continue;
         pushTri(CONTAIN.walls, baseL[r], baseL[r + 1], a1); pushTri(CONTAIN.walls, baseL[r], a1, a0);
         pushTri(CONTAIN.walls, baseR[r], d1, baseR[r + 1]); pushTri(CONTAIN.walls, baseR[r], d0, d1);
+        // A closed lane's lid must not become a low ceiling over a neighboring open catch pan.
+        if (lidCrowdsOpenLane(a0, a1, d1, d0)) continue;
         pushTri(CONTAIN.lids, a0, a1, d1); pushTri(CONTAIN.lids, a0, d1, d0);
       }
     });
@@ -1657,6 +1677,7 @@ export function createGlbCourse({
       length: TRACK.LENGTH,
       finishS: TRACK.FINISH_S,
       overviewTarget,
+      ...(dropStallAssist ? { dropStallAssist: true } : {}),
 
       /**
        * Project a body position onto the centerline. Pass the caller's previous index as `hint`

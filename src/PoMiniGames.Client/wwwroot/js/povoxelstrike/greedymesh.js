@@ -73,7 +73,7 @@ export function greedyMesh({ get, min, max, palette, offset = [0, 0, 0], step = 
 
   // Coarse sampler for LOD. Erring toward solid is right for a distant mesh: a false
   // solid is a slightly fatter silhouette, a false empty is a hole you can see through.
-  const sample = s === 1 ? get : (x, y, z) => {
+  const read = s === 1 ? get : (x, y, z) => {
     for (let dz = 0; dz < s; dz++) {
       for (let dy = 0; dy < s; dy++) {
         for (let dx = 0; dx < s; dx++) {
@@ -83,6 +83,20 @@ export function greedyMesh({ get, min, max, palette, offset = [0, 0, 0], step = 
       }
     }
     return 0;
+  };
+  // All six sweeps sample the same cells and their neighbours. Cache one chunk
+  // plus its halo so empty coarse blocks are not scanned six times per rebuild.
+  const width = Math.ceil((max[0] - min[0]) / s) + 2;
+  const height = Math.ceil((max[1] - min[1]) / s) + 2;
+  const depth = Math.ceil((max[2] - min[2]) / s) + 2;
+  if (width <= 2 || height <= 2 || depth <= 2) return null;
+  const samples = new Int32Array(width * height * depth);
+  const sample = (x, y, z) => {
+    const index = (x - min[0]) / s + 1
+      + ((y - min[1]) / s + 1) * width
+      + ((z - min[2]) / s + 1) * width * height;
+    if (samples[index] === 0) samples[index] = read(x, y, z) + 1;
+    return samples[index] - 1;
   };
 
   for (const dir of DIRECTIONS) {
@@ -94,19 +108,19 @@ export function greedyMesh({ get, min, max, palette, offset = [0, 0, 0], step = 
     const bCount = Math.ceil((max[bi] - min[bi]) / s);
     if (aCount <= 0 || bCount <= 0) continue;
     const mask = new Int32Array(aCount * bCount);
+    const p = [0, 0, 0], q = [0, 0, 0];
 
     for (let sv = min[axis]; sv < max[axis]; sv += s) {
       // Build the exposed-face mask for this slice.
       let any = false;
       for (let bj = 0; bj < bCount; bj++) {
         for (let aj = 0; aj < aCount; aj++) {
-          const p = [0, 0, 0];
           p[axis] = sv;
           p[ai] = min[ai] + aj * s;
           p[bi] = min[bi] + bj * s;
           const here = sample(p[0], p[1], p[2]);
           if (here === 0) { mask[aj + bj * aCount] = 0; continue; }
-          const q = [p[0], p[1], p[2]];
+          q[0] = p[0]; q[1] = p[1]; q[2] = p[2];
           q[axis] = sv + (dir.plus ? s : -s);
           const there = sample(q[0], q[1], q[2]);
           mask[aj + bj * aCount] = there === 0 ? here : 0;

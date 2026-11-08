@@ -23,19 +23,18 @@ const harness = path.resolve(here, '../scripts/pomarblerace/harness.mjs');
 
 // lost = eliminated, stalled = still running at the 180 s timeout, maxStall = longest a marble
 // went without the engine's own progress threshold, spread = median finish over the winner's.
-// Measured on seed 1 (2026-11-05), each bound a little above it:
+// Latest seed-1 results (2026-11-08), each bound still has headroom:
 //   Neon Canyon     101 home, 0 lost, 0 stalled, max stall 26 s, spread 1.64
-//   Spiral Works     95 home, 0 lost, 6 stalled, max stall 102 s (parked in the Catch pan)
-//   Grand Spiral     96 home, 0 lost, 5 stalled, max stall 110 s
+//   Spiral Works    101 home, 0 lost, 0 stalled, max stall 61 s
+//   Grand Spiral    101 home, 0 lost, 0 stalled, max stall 73 s
 //   Playground Run  101 home, 0 lost, 0 stalled, max stall 13 s, spread 1.61
-// The two authored spirals still lose marbles through their shells (Spiral Works at the Merge ->
-// Penalty drop and LowerA's mouth; Grand Spiral in LowerA and the SplitC fan), so their bounds
-// record today's state, not a target: tighten them as those are fixed. The E2EUI certification
-// keeps the zero-loss target and fails on both until then.
+// The stricter authored-course bounds preserve headroom over the previous regression baseline;
+// don't loosen them to hide a future stall or tunnel regression. The E2EUI certification has a
+// zero-loss target, but its Testcontainers fixture requires Docker.
 const BOUNDS = {
     1: { name: 'Neon Canyon', lost: 1, stalled: 1, maxStall: 50, spread: 2.0 },
-    2: { name: 'Spiral Works', lost: 1, stalled: 8, maxStall: 120, spread: 1.9 },
-    3: { name: 'Grand Spiral', lost: 1, stalled: 7, maxStall: 150, spread: 2.2 },
+    2: { name: 'Spiral Works', lost: 0, stalled: 0, maxStall: 100, spread: 1.7 },
+    3: { name: 'Grand Spiral', lost: 0, stalled: 0, maxStall: 100, spread: 1.7 },
     5: { name: 'Playground Run', lost: 1, stalled: 1, maxStall: 30, spread: 2.0 },
 };
 

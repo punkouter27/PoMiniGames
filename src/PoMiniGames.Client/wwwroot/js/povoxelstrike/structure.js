@@ -1037,6 +1037,7 @@ export class Structure {
 
       const { boxes, count } = greedyBoxes(sub, [w, h, d], COLLIDER_BOX_BUDGET);
       const body = new CANNON.Body({ type: CANNON.Body.STATIC, material: this.physicsMaterial });
+      body.voxelBoundsStatic = true;
       // Cannon's broadphase uses position ± boundingRadius. Anchoring every chunk at
       // the building origin inflated that radius by its offset across the fortress.
       // Keep shape coordinates chunk-local so distant chunks can actually be rejected.

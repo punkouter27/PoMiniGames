@@ -15,7 +15,7 @@ is in one place.
 | 6 | P3 | Visual | Splat walls look hazy/soft on bare surfaces; the ceiling is cut at ~1.8 m so the dome shows above. | Bedroom, chase cam near a wall. | Open: drop the largest splats or raise the budget. |
 | 7 | P3 | Visual | Rain can fall indoors on the bedroom (weather setting is global). | Settings → Weather: Rain, race the bedroom. | Open. |
 | 8 | P3 | Audio | Bedroom audio (seam clicks, room reverb, plastic impacts) not yet tuned by ear; road rumble and squeal still sound like tarmac; vertical Doppler is zero (race.js sends no `vy`). | Race the bedroom with sound. | Open. |
-| 9 | P3 | UI | Page-transition captures: the "Cabinet" title doubles and a particle burst covers the header for a frame while the hub morph runs. | Navigate hub → Cabinet and screenshot during the transition. | Open (transient, cosmetic). |
+| 9 | P3 | UI | Page-transition captures: the "Cabinet" title doubles and a particle burst covers the header for a frame while the hub morph runs. | Navigate hub → Cabinet and screenshot during the transition. | **Fixed**: suppresses the title swarm during hero navigation, including after asynchronous startup waits. |
 | 10 | P3 | UI | Results "Race details" collapse: telemetry chart drawn while collapsed (height-hidden) — verify it renders full width once expanded on a finished race. | Finish a 1P race, open details. | Verify. |
 | 11 | P3 | UI | Camera is not a stored setting; the "Next view" button only appears in the in-race drawer. | Pre-race Settings tab. | By design. |
 | 12 | P4 | Console | D3D shader compile notes (X3595 gradient-in-loop, X3577 isnan) from three/splat shaders. | Any race on Windows/ANGLE D3D11. | Harmless; ignore. |

@@ -81,6 +81,8 @@ const spiralWorks = createGlbCourse({
   // Rumble strips capping speed before the three split mouths: the field reached Split A at the
   // 85 u/s cap and 108 of 152 census falls happened there.
   brakeBands: [[905, 965, 46], [1480, 1536, 46], [1690, 1712, 46]],
+  // Elevated recovery nudges should fall toward LowerA rather than jump into its overpass.
+  dropStallAssist: true,
   // FINISH EARLY, at the foot of the Track-LowerA loop (world s 2270.7, 62.3% of the geometry).
   // That loop climbs 23.3 world units and needs ~59 u/s at the bottom simply to crest, so the
   // field bunches there and almost nothing gets over — the race was being decided by game.js's
@@ -96,6 +98,8 @@ const grandSpiral = createGlbCourse({
   collision: GRAND_SPIRAL_COL,
   // Track-Bowl2 is this course's funnel — same deal as Spiral Works' Track-Bowl.
   bowlMeshName: 'Track-Bowl2',
+  // The authored bends bleed too much speed for the full field to clear LowerA consistently.
+  driveAccel: 16,
 });
 
 // Playground Run: an imported scene — a marble gutter winding three laps down around a

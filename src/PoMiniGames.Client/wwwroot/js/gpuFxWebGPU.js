@@ -111,6 +111,10 @@ fn fs(in: VOut) -> @location(0) vec4f {
         return document.documentElement.getAttribute('data-gfx') === 'low';
     }
 
+    function heroNavigation() {
+        return document.documentElement.hasAttribute('data-hero-nav');
+    }
+
     function rgbOf(name, fallback) {
         try {
             const raw = getComputedStyle(document.documentElement).getPropertyValue(name).trim();
@@ -376,12 +380,12 @@ fn fs(in: VOut) -> @location(0) vec4f {
         try {
             end();
             const token = _token;
-            if (_dead || quiet() || !target || !target.querySelector) return false;
+            if (_dead || quiet() || heroNavigation() || !target || !target.querySelector) return false;
             const title = target.querySelector('.gps-intro-title') || target;
             const text = opts && opts.text ? String(opts.text) : null;
             if (!text && !(title.textContent || '').trim()) return false;
             const dev = await device();
-            if (!dev || token !== _token) return false;
+            if (!dev || token !== _token || heroNavigation()) return false;
 
             // The card animates in (a pop, or a sheet sliding up on phones); the element's
             // rect is only its final one after that.
@@ -389,7 +393,7 @@ fn fs(in: VOut) -> @location(0) vec4f {
             if (card && card.getAnimations) {
                 await Promise.all(card.getAnimations().map(function (a) { return a.finished.catch(function () { }); }));
             }
-            if (token !== _token || !title.isConnected || quiet()) return false;
+            if (token !== _token || !title.isConnected || quiet() || heroNavigation()) return false;
             const found = homesOf(title, text);
             if (!found) return false;
 

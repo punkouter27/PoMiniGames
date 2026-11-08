@@ -4,7 +4,7 @@
 //
 //   { v: 2, best, trackStats: { [mapId]: { races, top10, wins, bestPlace, bestTime } },
 //     marble: { skin, weight }, sectors: { [mapId]: [best sector seconds] }, ghostOn,
-//     prefs: { announcer, perfHud, effects: 'full'|'lite', tutorialSeen }, courseEpoch }
+//     prefs: { announcer, muted, perfHud, effects: 'full'|'lite', tutorialSeen }, courseEpoch }
 //
 // `prefs` are the Settings drawer's switches (PoMarbleRacePage OptionsContent); each engine
 // system reads its own with readPref() and the page writes them through setPref().
@@ -22,7 +22,7 @@ const LEGACY = {
   ghost: 'pomarblerace_ghost',
 };
 
-const PREFS = () => ({ announcer: false, perfHud: false, effects: 'full', tutorialSeen: false });
+const PREFS = () => ({ announcer: false, muted: false, perfHud: false, effects: 'full', tutorialSeen: false });
 const fresh = () => ({ v: 2, courseEpoch: 1, best: 0, trackStats: {}, marble: { skin: 'swirl', weight: 'balanced' }, sectors: {}, ghostOn: true, prefs: PREFS() });
 
 function parse(raw, fallback) {

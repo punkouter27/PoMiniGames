@@ -817,6 +817,13 @@
         return InvokeAsync(StateHasChanged);
     }
 
+    [JSInvokable]
+    public Task OnMuted(bool muted)
+    {
+        (_menu ??= new MarbleMenu()).Prefs.Muted = muted;
+        return InvokeAsync(StateHasChanged);
+    }
+
     private async Task ShowTutorialAsync()
     {
         _showTutorial = true;

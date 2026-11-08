@@ -663,6 +663,10 @@
     stroke-linejoin: round;
 }
 
+@media (max-width: 480px) and (min-height: 561px) {
+    .mr-track-glyph { height: 28px; margin-bottom: 0; }
+}
+
 /* ── Settings drawer (#19) ── */
 .mr-settings {
     display: grid;

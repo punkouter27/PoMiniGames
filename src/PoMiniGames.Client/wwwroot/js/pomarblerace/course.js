@@ -138,7 +138,8 @@ export class CourseMixin {
       const push = Math.min(STALL_MAX, STALL_NUDGE + STALL_STEP * (m.nudges || 0));
       m.nudges = (m.nudges || 0) + 1;
       m.body.velocity.x += d.x * push;
-      m.body.velocity.y += d.y * push + 3;
+      // An elevated stall should drop back into the track, not jump up into an overpass.
+      m.body.velocity.y += d.y * push + (this.track.dropStallAssist && m.proj?.height > 4 ? -3 : 3);
       m.body.velocity.z += d.z * push;
       // Still stuck after a few straight pushes: add a sideways part, alternating sides (see
       // STALL_SIDESTEP), for the marble jammed at a turnstile's pivot.

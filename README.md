@@ -63,6 +63,14 @@ scores.
   reel. Mule reserves room for the controls and uses readable player cards in portrait.
   Voxel Strike's automatic graphics budget responds to sustained frame times rather than
   assuming a fast GPU from CPU core count; explicit graphics choices remain authoritative.
+  Its collision narrowphase searches terrain within each chunk's actual footprint and
+  rejects disjoint convex bounds before expensive contact tests, preserving the existing
+  contact solver, masses, debris limits, and 60 Hz timestep.
+  Box collision tests discard duplicate opposite edge directions and compute exact
+  projection intervals directly; sparse collision bookkeeping avoids clearing a dense
+  matrix for hundreds of mostly static bodies.
+  Chunk remeshing caches voxel samples across all six face sweeps without changing
+  geometry, damage tinting, or collision accuracy.
   The `/health` status page includes the build date for support and diagnostics.
 - **Works offline.** A score that cannot reach the server is parked in the browser and sent
   automatically later.
