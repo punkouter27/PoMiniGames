@@ -105,6 +105,7 @@ const _q = new THREE.Quaternion();
 const _qInv = new THREE.Quaternion();
 const _v = new THREE.Vector3();
 const _axis = new THREE.Vector3();
+const _scale = new THREE.Vector3();
 
 export class CannonRagdoll {
   constructor(world, ragdollMaterial, rig) {
@@ -132,7 +133,8 @@ export class CannonRagdoll {
   //                 "lights out, crumples in place" KO.
   activate(knockDir, opts = {}) {
     if (this.bodies) this.dispose();
-    const s = (this.rig.config && this.rig.config.heightScale) || 1;
+    this.rig.root.updateMatrixWorld(true);
+    const s = this.rig.root.getWorldScale(_scale).x;
     const vel = opts.velocity || { x: 0, z: 0 };
     const rand = opts.rng ? () => opts.rng.random() : Math.random;
     const launch = opts.launch || {};
@@ -243,7 +245,7 @@ export class CannonRagdoll {
     if (!this.bodies) return;
     const root = this.rig.root;
     const joints = this.rig.joints;
-    const s = (this.rig.config && this.rig.config.heightScale) || 1;
+    const s = root.getWorldScale(_scale).x;
 
     // Inside the ring, whatever the solver did this step (see RING_LIMIT).
     for (const part in this.bodies) {

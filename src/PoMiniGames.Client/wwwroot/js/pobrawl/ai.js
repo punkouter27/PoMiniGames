@@ -25,7 +25,7 @@ import { PERSONALITIES } from './personalities.js';
 // And a read of the scoreboard (`_mood`): hurt → careful, ahead late → protect
 // the lead, behind late → press.
 
-// Fifteen rungs for the 1-player presidents ladder. Difficulty is the PRODUCT of
+// Sixteen rungs for the 1-player presidents ladder. Difficulty is the PRODUCT of
 // the columns, so keep each column strictly monotone and lift them together.
 //   aggro     — scales how often the AI attacks at all.
 //   comboP    — chance a punch is pre-planned as a punch→kick cancel string
@@ -52,10 +52,10 @@ const LEVELS = [
   /* 13 */ { reactionMs: 129, blockP: 0.90, baitP: 0.31, punishP: 0.93, aggro: 1.11, comboP: 0.74, chargeP: 0.53, punishGas: 0.90, maxCharge: 0.93 },
   /* 14 */ { reactionMs: 114, blockP: 0.94, baitP: 0.35, punishP: 0.97, aggro: 1.17, comboP: 0.80, chargeP: 0.56, punishGas: 0.94, maxCharge: 0.97 },
   /* 15 */ { reactionMs: 101, blockP: 0.95, baitP: 0.40, punishP: 0.98, aggro: 1.24, comboP: 0.86, chargeP: 0.60, punishGas: 0.97, maxCharge: 1.00 },
+  /* 16 */ { reactionMs: 92, blockP: 0.97, baitP: 0.44, punishP: 0.99, aggro: 1.28, comboP: 0.90, chargeP: 0.62, punishGas: 0.99, maxCharge: 1.00 },
 ];
 
-// Kept in sync with Roster.Length in PoBrawlPage.razor.
-const MAX_RUNG = 15;
+const MAX_RUNG = LEVELS.length;
 
 // Habit tracker: exponential decay so recent behavior dominates.
 const HABIT_TAU = 8;          // seconds of memory
@@ -88,14 +88,14 @@ const NAMED_LEVELS = { easy: 2, medium: 5, hard: 8 };
 const NEUTRAL = Object.freeze({ move: 0, side: 0, punch: false, kick: false, block: false });
 
 export class AiController {
-  /** difficulty: 1-15 rung number, or 'easy' | 'medium' | 'hard'.
+  /** difficulty: 1-16 rung number, or 'easy' | 'medium' | 'hard'.
    *  charId: optional president id used to apply personality modifiers. */
   constructor(difficulty, rng = null, charId = null) {
     const level = typeof difficulty === 'number'
       ? Math.max(1, Math.min(MAX_RUNG, Math.round(difficulty)))
       : (NAMED_LEVELS[difficulty] || NAMED_LEVELS.medium);
     const p = LEVELS[level - 1];
-    const k = (level - 1) / (MAX_RUNG - 1);   // 0 at rung 1 → 1 at rung 15
+    const k = (level - 1) / (MAX_RUNG - 1);   // 0 at rung 1 → 1 at rung 16
     this.level = level;
     this.reactionMs = p.reactionMs;
     this.blockP = p.blockP;
@@ -138,7 +138,7 @@ export class AiController {
     // is rooted, and any hit dumps the coil. A top-rung habit.
     this.interruptP = 0.04 + 0.40 * k;
     // Supers per second while one is ready and could fire: rung 1 sits on a
-    // full meter for ~5 s on average, rung 15 for under a second.
+    // full meter for ~5 s on average, rung 16 for under a second.
     this.superRate = 0.2 + 1.1 * k;
     // Engine time the opponent's current wind-up began, or -1 between swings,
     // and whether this rung has already taken its single guard roll on it.
@@ -653,7 +653,7 @@ export class AiController {
     // ── Reactive guard, held ────────────────────────────────────────────
     // Up until the swing it answered is spent (wind-up, coil and active frames)
     // plus guardLinger — it used to drop on the next decision tick, ~95 ms at
-    // rung 15, against coils that wind up for up to a second. A swing that
+    // rung 16, against coils that wind up for up to a second. A swing that
     // bounces off it leaves the attacker in block stun: drop the guard and
     // punish with the fast string, which lands inside the 0.5 s freeze.
     if (this._guardSince >= 0) {
@@ -831,7 +831,7 @@ export class AiController {
       }
       // Held for a beat through the reactive-guard machinery, so a swing that
       // bounces off it is punished the same way (it used to drop on the next
-      // decision tick — 110 ms at rung 15, too short to stop anything).
+      // decision tick — under 100 ms at rung 16, too short to stop anything).
       this._guardSince = this.t;
       this._guardSloppy = false;
       this._guardUntil = this.t + 0.3 + this.rng.random() * 0.3;

@@ -126,11 +126,21 @@ public static class GameCatalog
             // fight. POST /api/pobrawl/matches feeds the per-player Elo table —
             // see Features/PoBrawl/Online.
             new(GameMode.Multiplayer, "/pobrawl/multi", RequiresNetwork: true),
-            // The tournament runs through the Demo route, but is labelled explicitly on the hub.
+            // Both Brawl exhibitions are demo modes, labelled explicitly on the hub.
             new(GameMode.Demo, "/pobrawl/demo?autoGuest=1")
             {
-                ChipLabel = "Tournament",
+                ChipLabel = "DEMO · Tournament",
                 ChipDescription = "16-slot Brawl Cup tournament",
+            },
+            new(GameMode.Demo, "/pobrawl/ffa")
+            {
+                ChipLabel = "DEMO · FFA",
+                ChipDescription = "16-president free-for-all exhibition",
+            },
+            new(GameMode.OnePlayer, "/pobrawl/ffa/play")
+            {
+                ChipLabel = "1P · FFA",
+                ChipDescription = "Play Bob versus 16 CPU presidents",
             },
         ]),
 
@@ -261,10 +271,10 @@ public static class GameCatalog
             GameKeys.PoCabinet, GameKeys.PoMule, GameKeys.PoEcosystem, GameKeys.SandPlayground,
         }
         .Select(key => All.First(g => g.Key == key))
-        .Select(g =>
-        {
-            var demo = g.Find(GameMode.Demo)!;
-            return new CatalogEntry(g.Key, g.Title, g.Icon, demo.Url, GameMode.Demo, demo.RequiresNetwork);
-        }),
+        .SelectMany(g => g.Modes
+            .Where(mode => mode.Mode == GameMode.Demo)
+            .Select(demo => new CatalogEntry(g.Key,
+                g.Key == GameKeys.PoBrawl ? (demo.Url == "/pobrawl/ffa" ? "Brawl FFA" : "Brawl Cup") : g.Title,
+                g.Icon, demo.Url, GameMode.Demo, demo.RequiresNetwork))),
     ];
 }

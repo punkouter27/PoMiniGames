@@ -92,7 +92,7 @@ scores.
 |---|---|
 | TicTacToe | 4-in-a-row on 6×6 vs AI, hot-seat, or online quick-match (SignalR) |
 | ConnectFive | Five-in-a-row vs AI, hot-seat, or online quick-match (SignalR) |
-| PoBrawl | Physics brawler with a presidents ladder and a 16-slot CPU knockout tournament, the **Brawl Cup**, as its Tournament mode (shown as **Tournament** on the home hub and routed through `/pobrawl/demo`; the old `/pobrawl/tournament` redirects there; all current presidents enter, unused slots are BYEs, every bout plays automatically to one champion, and each bout updates fighter Elo; an animated 16-slot bracket and belt ceremony; golden-hour → dusk → night arena, an Elo-upset crowd, and a TV-style director camera with a picture-in-picture iso cam in the Cup; 1P/2P/online keep a plain side view); 1P, 2P and training pause on Esc / P, on the touch ⏸ button and automatically when the window loses focus (Resume, Restart fight, Quit), and the result leads with Fight again / Rematch in place; a showtime layer of charge auras and president motifs over a crowd that stomps and chants, plus — with the settings sheet's **Brawl show** set to Full (`pobrawl_show`; Simple is the default) — convention balloon drops, LED ribbon boards, a stadium wave, an instant replay, a glass result screen, the belt ceremony and the director camera (those four Full-only modules are loaded on demand, so Simple never parses them); live 3D fighter select (a mirror pick gives Player 2 an alternate suit); an election-night campaign map for the ladder + fighter Elo board; **Brawl HQ** (`/pobrawl/hq`) puts the ladder, campaign map, local record, the ladder / fastest-KO / fighter-Elo boards and Cup titles on one page |
+| PoBrawl | Physics brawler with a presidents ladder and two CPU exhibitions on the home hub: **DEMO · Tournament** (the 16-slot Brawl Cup at `/pobrawl/demo`; all presidents enter, every bout advances automatically to one champion, and each bout updates fighter Elo) and **DEMO · FFA** (`/pobrawl/ffa`; all 16 presidents fight in the ring at once, rear attacks bypass guards, knockout places are shown, and a new round starts after five seconds; this exhibition does not submit 1v1 Elo results); the Cup has an animated bracket and belt ceremony, golden-hour → dusk → night arena, an Elo-upset crowd, and a TV-style director camera with picture-in-picture iso cam; 1P/2P/online keep a plain side view; the old `/pobrawl/tournament` address redirects to the Cup; 1P, 2P and training pause on Esc / P, on the touch ⏸ button and automatically when the window loses focus (Resume, Restart fight, Quit), and the result leads with Fight again / Rematch in place; a showtime layer of charge auras and president motifs over a crowd that stomps and chants, plus — with the settings sheet's **Brawl show** set to Full (`pobrawl_show`; Simple is the default) — convention balloon drops, LED ribbon boards, a stadium wave, an instant replay, a glass result screen, the belt ceremony and the director camera (those four Full-only modules are loaded on demand, so Simple never parses them); live 3D fighter select (a mirror pick gives Player 2 an alternate suit); an election-night campaign map for the ladder + fighter Elo board; **Brawl HQ** (`/pobrawl/hq`) puts the ladder, campaign map, local record, the ladder / fastest-KO / fighter-Elo boards and Cup titles on one page |
 | PoCoupleQuiz | Two-player realtime couples quiz (SignalR); curated JSON question bank, free answer matching |
 | PoFunQuiz | Multiplayer trivia lobby from a JSON question bank (~7,800 questions; most from [The Trivia API](https://the-trivia-api.com), CC BY-NC 4.0) |
 | PoMarbleRace | You steer the one red marble through a 101-marble field on four courses (Neon Canyon, Spiral Works, Grand Spiral, Playground Run); CPU rivals each have a personality (steady, cautious, line-hugger, bully, wildcard); your best run is a ghost; sector splits and per-track records; online is 2 players max, by quick match or a private 4-letter race code, with a both-must-agree **Rematch** and a running series score (the host's browser streams the physics); a **Race settings** drawer (ghost, sound, spoken announcer, F3 performance overlay, Full/Lite effects); keyboard, touch and gamepad steering; sound is fully synthesized (energy- and material-driven impacts, a skid hiss, per-map reverb, crowd stings). Engine modules live in `wwwroot/js/pomarblerace/` (game.js plus one mixin per system; constants in `tuning.js`, the save in `store.js`) |
@@ -103,6 +103,101 @@ scores.
 | PoMule | Eight-player M.U.L.E.: claim land, work M.U.L.E.s and trade on a walking-floor market for twelve months vs seven AI personalities; all-AI demo |
 | PoEcosystem | Watch-only island simulation: species, tribes and chronicle cards for landmark events; cloud save slots and a shared gallery |
 | SandPlayground | GPU sand-and-water sandbox |
+
+In PoBrawl FFA, knockouts use the same jointed physics ragdolls as 1v1: fighters
+fall from their current pose with the final hit's momentum instead of snapping
+sideways. Bodies stay on the mat through the rest of
+the round and its five-second result hold. The next round returns all 16 fighters
+to their standing starting positions.
+Its cinematic camera cuts to the lowest-health survivor, alternates three fight
+angles, holds briefly on their knockout, and returns to a wide shot after the
+champion close-up. Reduced-motion mode keeps the steady arena overview.
+
+**1P · FFA** (`/pobrawl/ffa/play`, also **Play as Bob** inside the exhibition)
+adds human-controlled Bob to all 16 CPU presidents: 17 entrants, no replaced CPU.
+A stable over-the-shoulder camera follows Bob rather than cutting to endangered
+CPUs. WASD moves relative to that view; F punches, G kicks, R guards, and P/Esc
+pauses. Nearby opponents are aimed at automatically; attacks require a press.
+The existing controller and touch input paths work too. Losing focus pauses human
+play; Resume is explicit. If Bob is knocked out, he stays down until next round.
+Human matches have their own browser-local seasons, ratings and agent choices;
+they never modify the 16-CPU exhibition's saved standings.
+
+The final KO has a bounded, transform-only half-speed replay before champion
+results. It includes the fall, never replays score or impact events, then restores
+the final poses. The five-second results hold starts after playback. Reduced
+motion skips the replay. Leaving or restarting clears the replay buffer.
+
+**FFA seasons & studio** (top-right button) adds an unattended, browser-local
+20-round season. Placement points crown each season's champion; pairwise
+placement Elo, wins, average finishing place, damage, knockouts and rear hits
+accumulate independently of the global 1v1 leaderboard. Eight recent season
+titles and the latest completed benchmark are retained. An interrupted round is
+restarted from the same seed on reload; only finished rounds are scored.
+
+The strategy selector applies balanced, aggressive or cautious behavior next
+round. **Run strategy benchmark** executes 48 repeatable fixed-step simulations:
+16 paired seeds rotate the test president through all three profiles against 15
+balanced rivals. The saved report compares placement gains, wins, damage and KOs
+without changing live-season ratings. This is scripted strategy testing, not
+training or paid AI. Lifetime damage bars and accessible tables need no new
+charting dependency.
+After 55 simulated seconds, overtime increases damage and disables guards so
+cautious fighters cannot stall an unattended season indefinitely.
+
+FFA now uses the existing Three.js quality and studio-rendering mechanisms:
+physical fighter materials, arena reflections, shadows and an adaptive
+resolution/effects budget. The broadcast overlay labels its featured fighter,
+health, last attacker, recent knockouts and the final duel.
+
+Automatic highlights use `captureStream` and `MediaRecorder` when supported;
+unsupported browsers show a status instead of blocking the game. Silent clips
+capture knockout/final-duel/champion moments, are bounded to four downloadable
+session clips, and are released when leaving the page. Download before leaving;
+they are not uploaded or stored with seasons.
+
+Optional president facts use Wikidata's structured-data API (CC0), not copied
+article text. Enable them in the studio to show champion facts between rounds.
+Public entity IDs are sent to Wikimedia; no account or gameplay data is sent.
+Facts are cached locally, linked to their source, and network/offline failures
+are displayed without interrupting the match. No API key is needed.
+Strategy, highlight capture and fact-card preferences are remembered locally.
+Wikidata HTTP failures impose a cooldown of at least 60 seconds (or the
+server's longer `Retry-After`) rather than retrying every round.
+
+**Agent lab** gives every president a distinct scripted default style and offers
+pressure, counter and opportunist candidates. **Evaluate and promote if better**
+runs the incumbent and candidate on the same eight fixed seeds against the same
+frozen CPU roster/presets/global strategy (16 simulations, CPU-only even from human
+mode). Only strictly improved average placement replaces the saved incumbent;
+ties and regressions are rejected. The last report and presets survive reload;
+promotions apply next round. This is repeatable rule tuning, not neural-network
+training, learned models, external AI or paid inference.
+
+### FFA graphics, physics and audio
+
+FFA uses continuous swept-circle contacts for its 16 or 17 standing body capsules and
+ring boundary, with the roster's mass ratios, friction and momentum-aware
+knockback. Knockouts use the shared jointed ragdoll solver. Settled parts sleep;
+each whole corpse retires from physics within four seconds while keeping its
+final visual pose. At most 16 corpses/176 dynamic parts are tracked. Survivors
+step over corpses instead of clipping through or getting stuck behind a pile.
+The same fixed-step physics runs in benchmarks; older benchmark reports are
+invalidated when this physics revision changes.
+
+Quality-adaptive WebGL effects add bounded instanced sweat/dust bursts and
+shock rings, anti-aliasing, bloom, screen-space contact shading, subtle hit
+dispersion and color grading. Skin uses a scattering approximation; clothing
+gets procedural micro-detail, sweat and battle wear. Mat marks and bruising
+last until the next round. Light shafts and haze approximate volumetric arena
+lighting; these are not ray-traced RTX or multi-bounce global illumination.
+
+Web Audio impacts now follow collision energy and flesh/cloth/shoe/rope
+materials. HRTF sources follow the cinematic camera's listener, with bounded
+nearest-fighter friction voices and approximate arena reverb/occlusion.
+Studio clicks, toggle cues, drawer slides, standings highlights and press
+feedback respect shared mute/volume and reduced-motion preferences. The
+top-right sound toggle controls the same app-wide mute setting.
 
 ## Quick start
 

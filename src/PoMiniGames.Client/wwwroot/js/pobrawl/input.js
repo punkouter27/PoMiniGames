@@ -73,7 +73,7 @@ export class KeyboardController {
   // fighters do not (ai.js paces its own activation as a difficulty knob).
   isHuman = true;
 
-  constructor(layout) {
+  constructor(layout, { ignoreEditable = false } = {}) {
     this.map = LAYOUTS[layout];
     this.down = new Set();
     this.punchQueued = false;
@@ -83,6 +83,7 @@ export class KeyboardController {
       // Let any modified chord through untouched: Ctrl+R / Cmd+R is reload, and
       // no binding in either layout uses a modifier.
       if (e.ctrlKey || e.metaKey || e.altKey) return;
+      if (ignoreEditable && e.target?.matches?.('input,select,textarea,[contenteditable="true"]')) return;
       if (Object.values(this.map).includes(e.code)) e.preventDefault();
       if (e.repeat) return;
       this.down.add(e.code);

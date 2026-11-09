@@ -31,7 +31,7 @@ const ROPE_LO = 0.32, ROPE_HI = 1.45;
 const CANVAS_Y = 0.04, FLOOR_Y = -0.5;
 const BAL_COLORS = [0xc4142c, 0xf3efe6, 0x1f46ab];
 const POP_SPEED = 6.5;        // m/s: a limb this fast through a balloon pops it
-const LADDER_TOP = 15;        // 1P ladder rungs (PoBrawlRoster.Fighters)
+const LADDER_TOP = 16;        // 1P ladder rungs (PoBrawlRoster.Fighters)
 const POOL = 60;              // balloons in the net (high tier); see dropCap
 const KEEP_MAX = 10;          // tournament: balloons left lying outside the ropes between bouts
 

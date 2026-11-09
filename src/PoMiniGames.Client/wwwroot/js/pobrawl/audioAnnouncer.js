@@ -166,6 +166,15 @@ const INTRO_THEMES = {
     ],
     bass: [['G2', 2], ['D2', 2], ['C2', 2], ['G1', 2]],
   },
+  // Herbert Hoover (1929-1933) — an original, measured brass-and-reed fanfare.
+  hoover: {
+    bpm: 92,
+    melody: [
+      ['G4', 1], ['B4', 0.5], ['D5', 0.5], ['C5', 1],
+      ['B4', 0.5], ['A4', 0.5], ['G4', 1], ['D4', 1],
+    ],
+    bass: [['G2', 2], ['D2', 2], ['G2', 2], ['C3', 2]],
+  },
 };
 
 // A super calls superStinger twice (the show bus with the owner, personalityEffects without):

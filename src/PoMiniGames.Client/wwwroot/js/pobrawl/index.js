@@ -1,5 +1,6 @@
 // index.js — public interop surface for PoBrawl. The Blazor page calls these.
 import { BrawlGame } from './game.js';
+import { BrawlFfaGame } from './ffa.js';
 import * as SelectStage from './selectStage.js';
 
 let game = null;
@@ -22,13 +23,13 @@ window.PoBrawl = {
     stats: () => SelectStage.stats(),
   },
   /**
-   * options: { mode: '1p'|'2p'|'tournament'|'online', p1Character, p2Character, difficulty,
+   * options: { mode: '1p'|'2p'|'tournament'|'ffa'|'online', p1Character, p2Character, difficulty,
    *            training?: boolean (1P only),
    *            localSide?: 1|2 (online; 0 or absent = spectating), seed?,
    *            roundLabel? (tournament: the first bout's splash heading),
    *            round?: 0|1|2, p1Expected?: 0..1 (tournament: see matchup's `opts`),
    *            director?: boolean, isoCam?: boolean (tournament camera; default = the Full show) }
-   * The /pobrawl/demo route is the Cup: mode 'tournament'.
+   * The /pobrawl/demo route is the Cup; /pobrawl/ffa runs a 16-fighter battle royale.
    */
   init(containerId, dotnetRef, options) {
     // The select screen's context must be gone before the arena takes its own.
@@ -36,7 +37,9 @@ window.PoBrawl = {
     if (game) { game.dispose(); game = null; }
     const el = document.getElementById(containerId);
     if (!el) { console.error('[PoBrawl] container not found:', containerId); return; }
-    game = new BrawlGame(el, dotnetRef, { ...options });
+    game = options?.mode === 'ffa'
+      ? new BrawlFfaGame(el, dotnetRef, { ...options })
+      : new BrawlGame(el, dotnetRef, { ...options });
     game.start();
     // Headless harnesses: ?debug (or localStorage pobrawl.debug) exposes the live engine as
     // window.__pobrawl(). The sign-in redirect can drop the query, hence the storage flag.
@@ -131,6 +134,15 @@ window.PoBrawl = {
   },
   /** Training-room controls (training.js). key: 'reset'. No-op outside a training session. */
   training(key) { if (game && key === 'reset') game.resetTraining(); },
+  ffaProfile(profile) { if (game instanceof BrawlFfaGame) game.setProfile(profile); },
+  ffaBenchmark() { if (game instanceof BrawlFfaGame) void game.runBenchmark(); },
+  ffaResetSeasons() { if (game instanceof BrawlFfaGame) game.resetSeasons(); },
+  ffaRecording(enabled) { if (game instanceof BrawlFfaGame) game.setRecording(enabled); },
+  ffaDownloadClip(id) { if (game instanceof BrawlFfaGame) game.downloadClip(id); },
+  ffaFacts(enabled) { if (game instanceof BrawlFfaGame) game.setFacts(enabled); },
+  ffaClick(action) { if (game instanceof BrawlFfaGame) game.uiClick(action); },
+  ffaPause(paused) { if (game instanceof BrawlFfaGame) game.setPaused(paused); },
+  ffaEvaluateAgent(id, preset) { if (game instanceof BrawlFfaGame) void game.evaluateAgent(id, preset); },
   destroy() {
     SelectStage.unmount();
     if (game) { game.dispose(); game = null; }

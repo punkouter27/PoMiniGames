@@ -16,7 +16,7 @@ public enum GameMode
     /// <summary>Hub-backed online play. Always requires a live server.</summary>
     Multiplayer,
 
-    /// <summary>Unattended attract-mode playback (the kiosk reel). Brawl's is its CPU cup.</summary>
+    /// <summary>Unattended attract-mode playback (the kiosk reel). Brawl offers its CPU cup and FFA.</summary>
     Demo,
 }
 

@@ -69,7 +69,7 @@ public sealed record PoBrawlDossierFacts(
 }
 
 /// <summary>
-/// The static dossier facts, keyed by <see cref="PoBrawlRoster"/> fighter id: all fifteen
+/// The static dossier facts, keyed by <see cref="PoBrawlRoster"/> fighter id: all sixteen
 /// presidents in ladder order, then BOB. Shared by the server (which enriches them from
 /// Wikipedia) and the client (which falls back to them when the API is unreachable).
 /// </summary>
@@ -115,6 +115,8 @@ public static class PoBrawlDossiers
             "The Buck Stops Here: walks straight in and gets stronger with every hit he takes. His signature move cashes the whole stack."),
         P("fdr", "Franklin D. Roosevelt", "32nd President", 32, "1933–1945", Dem, "Franklin_D._Roosevelt",
             "Fireside Chat: fast out of the gate, holds the centre and pivots you around it, slipping shots on a steady beat before a late surge."),
+        P("hoover", "Herbert Hoover", "31st President", 31, "1929–1933", Rep, "Herbert_Hoover",
+            "The Great Engineer: a measured counter-fighter who guards, studies your approach and answers with deliberate combinations."),
         new(PoBrawlRoster.Bob.Id, "Bob from Accounts", "Your fighter", 0, "Mon–Fri, 9 to 5", "Independent", null,
             "No gimmicks: plain punches and kicks, a block and whatever you make of them. The everyman climbing the ladder.",
             "BOB answered a memo about a \"leadership retreat\" and ended up in a ring with fifteen presidents. " +

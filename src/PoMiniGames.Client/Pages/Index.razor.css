@@ -251,6 +251,10 @@ a.home-card-head:hover .home-card-title { text-decoration: underline; text-under
     align-items: center;
 }
 
+.home-card--brawl .home-card-modes {
+    flex-wrap: wrap;
+}
+
 .home-mode-chip {
     display: inline-flex;
     align-items: center;
@@ -402,6 +406,8 @@ a.home-card-head:hover .home-card-title { text-decoration: underline; text-under
     .home-card-icon { font-size: 1.2rem; }
     .home-card-title { font-size: 0.92rem; }
     .home-card-modes { flex: 0 0 auto; align-self: stretch; align-items: stretch; }
+    .home-card--brawl { flex-wrap: wrap; }
+    .home-card--brawl .home-card-modes { flex: 1 1 100%; }
     .home-mode-chip { min-height: 2.25rem; min-width: 2.25rem; padding: 0 0.5rem; font-size: 0.78rem; }
     
 

@@ -91,6 +91,7 @@ public static class PoBrawlCampaign
         ["eisenhower"] = "KS",
         ["truman"] = "MO",
         ["fdr"] = "NY",
+        ["hoover"] = "IA",
     };
 
     private static readonly Dictionary<string, PoBrawlCampaignState> ByCode = States.ToDictionary(s => s.Code);

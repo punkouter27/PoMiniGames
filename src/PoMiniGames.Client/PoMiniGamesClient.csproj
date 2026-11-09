@@ -47,6 +47,7 @@
          under .pb-canvas-host. A shared scope id applies those rules to both components. -->
     <None Update="Games\PoBrawl\PoBrawlPage.razor.css" CssScope="b-pobrawl-arena" />
     <None Update="Games\PoBrawl\PoBrawlTournamentPage.razor.css" CssScope="b-pobrawl-arena" />
+    <None Update="Games\PoBrawl\PoBrawlFfaPage.razor.css" CssScope="b-pobrawl-arena" />
     <!-- The fighter grid and the online lobby reuse the 2P select's glass tiles and side cards. -->
     <None Update="Games\PoBrawl\PoBrawlFighterGrid.razor.css" CssScope="b-pobrawl-arena" />
     <None Update="Games\PoBrawl\PoBrawlOnlineLobbyPage.razor.css" CssScope="b-pobrawl-arena" />

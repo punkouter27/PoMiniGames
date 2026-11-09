@@ -2,6 +2,7 @@ using FluentAssertions;
 using PoMiniGames.Domain.Primitives;
 using PoMiniGames.Shared.Games;
 using PoMiniGamesClient.Games.PoBrawl;
+using PoMiniGamesClient.Models;
 
 namespace PoMiniGames.Unit.Features.PoBrawl;
 
@@ -20,21 +21,36 @@ public sealed class PoBrawlTournamentTests
     [InlineData(nameof(Expectation_FavoursTheHigherRating_AndOnlyAnUnderdogWinIsAnUpset))]
     [InlineData(nameof(CampaignTrail_Crosses270_OnlyOnTheLastRung))]
     [InlineData(nameof(Progress_Merge_TakesTheNewerRung_TheFastestKo_AndTheMostClears))]
+    [InlineData(nameof(Catalog_HasTwoDistinctDemoModesAndReelEntries))]
     public Task Scenario(string name) => Scenarios.RunAsync(this, name);
 
     private static PoBrawlTournament NewCup(int seed = 7, IReadOnlyDictionary<string, int>? ratings = null) =>
         PoBrawlTournament.Draw(PoBrawlRoster.Fighters, new Random(seed), ratings);
+
+    private void Catalog_HasTwoDistinctDemoModesAndReelEntries()
+    {
+        var game = GameCatalog.All.Single(g => g.Key == GameKeys.PoBrawl);
+        var demos = game.Modes.Where(mode => mode.Mode == GameMode.Demo).ToArray();
+        demos.Select(mode => mode.ChipLabel).Should().Equal("DEMO · Tournament", "DEMO · FFA");
+        demos.Select(mode => mode.Url).Should().Equal("/pobrawl/demo?autoGuest=1", "/pobrawl/ffa");
+        demos.Should().OnlyContain(mode => !mode.RequiresNetwork);
+        var reel = GameCatalog.Demo.Where(entry => entry.Key == GameKeys.PoBrawl).ToArray();
+        reel.Select(entry => entry.Url).Should().Equal(demos.Select(mode => mode.Url));
+        reel.Select(entry => entry.Title).Should().Equal("Brawl Cup", "Brawl FFA");
+        game.Primary.Mode.Should().Be(GameMode.OnePlayer);
+    }
 
     private void Draw_PicksAllPresidents_AndSeedsUnratedAtTheBoardSeed()
     {
         var cup = NewCup(ratings: new Dictionary<string, int> { ["fdr"] = 1400 });
         cup.Field.Should().HaveCount(PoBrawlRoster.Count).And.OnlyHaveUniqueItems(f => f.Id);
         cup.Field.Should().OnlyContain(f => PoBrawlRoster.IsRateable(f.Id), because: "BOB is never in a CPU bracket");
+        PoBrawlRoster.Fighters.TakeLast(2).Select(f => f.Id).Should().Equal("fdr", "hoover");
         cup.Entrants.Should().HaveCount(PoBrawlTournament.Size);
-        cup.Entrants.Count(id => id == PoBrawlTournament.ByeId).Should().Be(1);
+        cup.Entrants.Should().OnlyContain(id => id != PoBrawlTournament.ByeId);
         cup.Bouts.Should().HaveCount(PoBrawlTournament.Size - 1);
         cup.Bouts.Take(8).Should().OnlyContain(b => b.P1Id != null && b.P2Id != null);
-        cup.Bouts.Take(8).Count(b => b.IsBye).Should().Be(1);
+        cup.Bouts.Take(8).Should().OnlyContain(b => !b.IsBye);
         foreach (var f in cup.Field)
             cup.EloOf(f.Id).Should().Be(f.Id == "fdr" ? 1400 : PoBrawlTournament.SeedElo);
 

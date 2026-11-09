@@ -23,8 +23,8 @@ public partial class PoBrawlPage
     [SupplyParameterFromQuery(Name = "code")] public string? CodeQuery { get; set; }
 
     // 1-player ladder: PoBrawlRoster.Fighters in ladder order — most recent president first,
-    // marching back in time to FDR. Rung index doubles as the CPU difficulty level (index + 1
-    // → 1-15, the full range ai.js LEVELS/MAX_RUNG defines). fighters.js CHARACTERS is the
+    // marching back in time to Hoover. Rung index doubles as the CPU difficulty level (index + 1
+    // → 1-16, the full range ai.js LEVELS/MAX_RUNG defines). fighters.js CHARACTERS is the
     // one copy of these names kept in step by hand.
     private static readonly PoBrawlFighter[] Roster = [.. PoBrawlRoster.Fighters];
 
@@ -35,7 +35,7 @@ public partial class PoBrawlPage
     private static readonly PoBrawlFighter[] PickableRoster = [Bob, .. Roster];
 
     // Fixed rating per ladder rung for the ELO math: rung 1 (Trump) is a
-    // pushover at 800; rung 15 (FDR) tops out near 2660. Beating an easy rung
+    // pushover at 800; rung 16 (Hoover) tops out near 2928. Beating an easy rung
     // when your rating is high earns almost nothing; losing to it costs a lot.
     private static int PresidentElo(int rung) => 800 + rung * 133;
 

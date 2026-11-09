@@ -1,0 +1,519 @@
+@page "/pobrawl/ffa"
+@page "/pobrawl/ffa/{Mode}"
+@using PoMiniGames.Domain.Primitives
+@using PoMiniGamesClient.Components
+@using PoMiniGamesClient.Services
+@using PoMiniGamesClient.Services.Play
+@using System.Text.Json
+@using System.Globalization
+@implements IAsyncDisposable
+@inject IJSRuntime JSRuntime
+@inject SettingsService Settings
+@inject KioskCoordinator Kiosk
+@inject NavigationManager Navigation
+
+<PageTitle>Brawl FFA · PoMiniGames</PageTitle>
+
+<GameShell Title="@TitleContent"
+           BackTo="/"
+           Fullscreen="true"
+           RequiresWebGl="true"
+           Announcement="@_announcement">
+    @if (!_introDone)
+    {
+        <div class="pb-intro">
+            <GameIntro CueScope="pobrawl-ffa"
+                       Title="@TitleContent"
+                       Objective="@(IsHuman ? "Play Bob against all 16 presidents. Last fighter standing wins." : "Sixteen presidents enter the ring at once. The last fighter standing wins.")"
+                       HowToPlay="@HowItWorks"
+                       Mode="@(IsHuman ? GameIntro.IntroMode.OnePlayer : GameIntro.IntroMode.Demo)"
+                       DemoDelayMs="4000"
+                       Wide="true"
+                       DialogLabel="Brawl FFA: sixteen-fighter battle royale"
+                       CaptureKeys="false"
+                       OnStart="StartAsync" />
+        </div>
+    }
+
+    <div class="pb-wrap @(IsHuman ? "pffa-player-mode" : "")">
+        <div id="pobrawl-container" class="pb-canvas-host"
+             role="img" aria-label="@(IsHuman ? "Brawl FFA arena — you are Bob versus sixteen CPUs" : "Brawl FFA arena — sixteen presidents fight here")"></div>
+        @if (_introDone)
+        {
+            <aside class="pffa-board" aria-label="Free-for-all standings">
+                <header class="pffa-board-head">
+                    <span class="pffa-kicker">PRESIDENTIAL RUMBLE</span>
+                    <strong>@(_champion is null ? $"{_remaining} / {Roster.Count} ALIVE" : "CHAMPION")</strong>
+                </header>
+                @if (_champion is not null)
+                {
+                    <p class="pffa-winner">@NameOf(_champion) wins Round @_round</p>
+                }
+                @if (_engineError is not null)
+                {
+                    <p class="pffa-error" role="alert">@_engineError</p>
+                }
+                <ol class="pffa-roster">
+                    @foreach (var fighter in OrderedStandings)
+                    {
+                        var hp = _health[fighter.Id];
+                        var isWinner = fighter.Id == _champion;
+                        <li @key="fighter.Id" class="pffa-fighter @(hp > 0 ? "pffa-fighter--alive" : "pffa-fighter--out") @(isWinner ? "pffa-fighter--winner" : "") @(_broadcast.Focus == fighter.Id ? "pffa-fighter--featured" : "")">
+                            <span class="pffa-fighter-name">@fighter.Name</span>
+                            @if (!_places.ContainsKey(fighter.Id) || isWinner)
+                            {
+                                <span class="pffa-health" aria-label="@($"{hp} health")">
+                                    <span style="@($"width:{hp}%")"></span>
+                                </span>
+                            }
+                            else
+                            {
+                                <span class="pffa-place">#@_places[fighter.Id]</span>
+                            }
+                        </li>
+                    }
+                </ol>
+                <p class="pffa-foot">Season @_dashboard.Season · @_dashboard.Completed / @_dashboard.SeasonRounds rounds<br />@(IsHuman ? "17-player local ratings · separate from CPU seasons" : "Local FFA ratings · separate from 1v1 Elo")</p>
+            </aside>
+            <div class="pffa-tools">
+                <a href="@(IsHuman ? "/pobrawl/ffa" : "/pobrawl/ffa/play")">@(IsHuman ? "Watch CPU FFA" : "Play as Bob")</a>
+                @if (IsHuman)
+                {
+                    <button type="button" @onclick="TogglePauseAsync">@(_paused ? "Resume" : "Pause")</button>
+                }
+                <button type="button" @onclick="ToggleDashboardAsync" aria-expanded="@_dashboardOpen">Seasons &amp; studio</button>
+                <button type="button" @onclick="ToggleMuteAsync" aria-pressed="@Settings.Muted" aria-label="@(Settings.Muted ? "Unmute FFA audio" : "Mute FFA audio")">@(Settings.Muted ? "Sound off" : "Sound on")</button>
+            </div>
+            <aside class="pffa-broadcast" aria-label="Broadcast coverage">
+                <strong>@(_paused ? "PAUSED" : _replaying ? "FINAL KO REPLAY" : _broadcast.FinalDuel ? "FINAL DUEL" : _champion is not null ? "CHAMPION" : IsHuman ? "BOB · YOU" : "DANGER CAM")</strong>
+                <span>@(_broadcast.Focus.Length > 0 ? $"{NameOf(_broadcast.Focus)} · {_broadcast.Health} HP · {_broadcast.Shot}" : IsHuman ? "Bob follow camera · 16 CPU opponents" : "Sixteen presidents · arena overview")</span>
+                @if (IsHuman)
+                {
+                    <small>@(_health.GetValueOrDefault("bob") > 0 ? "WASD move · F punch · G kick · R guard · P/Esc pause. Controller/touch supported." : "Bob is knocked out. Watch the finish; you rejoin next round.")</small>
+                }
+                @if (_broadcast.Attacker.Length > 0)
+                {
+                    <small>Last attacked by @NameOf(_broadcast.Attacker)</small>
+                }
+                @if (_broadcast.Overtime && _champion is null)
+                {
+                    <small>OVERTIME · guards exhausted · stronger hits</small>
+                }
+                @foreach (var knockout in _broadcast.Feed.Take(2))
+                {
+                    <small>#@knockout.Place @NameOf(knockout.Id) out @(knockout.Attacker.Length > 0 ? $"— KO by {NameOf(knockout.Attacker)}" : "")</small>
+                }
+                @if (_factsEnabled && _champion is not null)
+                {
+                    <p class="pffa-fact">@(!string.IsNullOrEmpty(_presentation.Fact.Text) ? _presentation.Fact.Text : _presentation.Fact.Status)</p>
+                    @if (_presentation.Fact.SourceUrl is { } sourceUrl && sourceUrl.StartsWith("https://www.wikidata.org/", StringComparison.Ordinal))
+                    {
+                        <a href="@sourceUrl" target="_blank" rel="noopener noreferrer">Wikidata · CC0 facts</a>
+                    }
+                }
+            </aside>
+            @if (_dashboardOpen)
+            {
+                <section class="pffa-studio @(_studioClosing ? "pffa-studio--closing" : "")" aria-label="FFA seasons and production studio">
+                    <header><h2>FFA seasons &amp; studio</h2><button type="button" @onclick="ToggleDashboardAsync" aria-label="Close studio">Close</button></header>
+                    @if (_workflowError is not null)
+                    {
+                        <p class="pffa-error" role="alert">@_workflowError</p>
+                    }
+                    <p>Season @_dashboard.Season · @_dashboard.Completed / @_dashboard.SeasonRounds rounds · @_dashboard.TotalRounds lifetime matches. Each 20-round season crowns a champion automatically.</p>
+                    <details class="pffa-production">
+                        <summary>Graphics &amp; spatial audio</summary>
+                        <p>Quality-adaptive GPU hit bursts, bloom, contact shading, skin/fabric detail, sweat and round-long wear. Arena haze and light beams are WebGL approximations, not RTX.</p>
+                        <p>Camera-linked binaural impacts and foot friction share the app's volume and mute settings. Reduced motion keeps a steady camera and suppresses bursts and hit flashes.</p>
+                        <p>Mass-aware swept collisions prevent fighters crossing each other or the ring edge. Jointed knockouts settle and retire from the solver; survivors step over them.</p>
+                    </details>
+                    <label>Next-round strategy
+                        <select value="@_dashboard.Profile" @onchange="ChangeProfileAsync">
+                            <option value="balanced">Balanced</option>
+                            <option value="aggressive">Aggressive — faster attacks, hunt weak rivals</option>
+                            <option value="cautious">Cautious — more frequent guarding</option>
+                        </select>
+                    </label>
+                    <small>Active strategy: @_dashboard.ActiveProfile. Changes apply next round; no agent training or paid AI.</small>
+                    <h3>Season standings &amp; lifetime agent stats</h3>
+                    <div class="pffa-table-scroll">
+                        <table>
+                            <caption>Ratings compare each placement against the other @(Roster.Count - 1) fighters; wins and damage are lifetime totals.</caption>
+                            <thead><tr><th>Agent</th><th>Points</th><th>FFA Elo</th><th>Wins</th><th>Avg place</th><th>Damage</th><th>KOs</th><th>Rear hits taken</th></tr></thead>
+                            <tbody>
+                                @foreach (var record in _dashboard.Records)
+                                {
+                                    <tr>
+                                        <th scope="row">@NameOf(record.Id)</th><td>@record.SeasonPoints</td>
+                                        <td>@record.Rating.ToString("F0", CultureInfo.InvariantCulture)</td><td>@record.Wins / @record.Rounds</td>
+                                        <td>@record.AveragePlace.ToString("F1", CultureInfo.InvariantCulture)</td>
+                                        <td><meter min="0" max="@Math.Max(1, _dashboard.Records.Max(r => r.Damage))" value="@record.Damage" aria-label="@($"{NameOf(record.Id)}: {record.Damage} damage")"></meter> @record.Damage</td>
+                                        <td>@record.Knockouts</td><td>@record.RearHitsTaken</td>
+                                    </tr>
+                                }
+                            </tbody>
+                        </table>
+                    </div>
+                    @if (_dashboard.History.Count > 0)
+                    {
+                        <h3>Season champions</h3>
+                        <ul>@foreach (var title in _dashboard.History) { <li>Season @title.Season: @NameOf(title.Champion) (@title.Points points)</li> }</ul>
+                    }
+                    <h3>Repeatable strategy benchmark</h3>
+                    <p>48 simulations: 16 fixed seeds, each president tested once with balanced, aggressive, and cautious behavior against 15 balanced rivals. Uses the real fixed-step combat engine, not live results. No ratings change. The last completed report is saved locally; positive placement gain is better, negative is worse.</p>
+                    <button type="button" disabled="@_dashboard.BenchmarkRunning" @onclick="RunBenchmarkAsync">@(_dashboard.BenchmarkRunning ? "Benchmark running…" : "Run strategy benchmark")</button>
+                    @if (_dashboard.Benchmark is { } benchmark)
+                    {
+                        <progress max="@benchmark.Total" value="@benchmark.Completed" aria-label="Benchmark progress"></progress>
+                        <span>@benchmark.Completed / @benchmark.Total simulations</span>
+                        <div class="pffa-table-scroll">
+                            <table>
+                                <thead><tr><th>Strategy</th><th>Matches</th><th>Wins</th><th>Avg place</th><th>Avg damage</th><th>KOs</th><th>Placement gain vs balanced</th></tr></thead>
+                                <tbody>@foreach (var row in benchmark.Rows) {
+                                    <tr><th>@row.Profile</th><td>@row.Rounds</td><td>@row.Wins</td><td>@row.AveragePlace.ToString("F2", CultureInfo.InvariantCulture)</td><td>@row.AverageDamage.ToString("F0", CultureInfo.InvariantCulture)</td><td>@row.Knockouts</td><td>@row.PlacementGain.ToString("+0.00;-0.00;0.00", CultureInfo.InvariantCulture)</td></tr>
+                                }</tbody>
+                            </table>
+                        </div>
+                    }
+                    <h3>Agent lab · tune, compare, promote</h3>
+                    <p>Every CPU has its own scripted style. Test a new preset against the saved incumbent on eight paired seeds (16 simulations). Only better average placement is promoted, starting next round. No paid AI or machine learning.</p>
+                    <label>President
+                        <select @bind="_agentId" disabled="@_dashboard.BenchmarkRunning">
+                            @foreach (var agent in _dashboard.Agents)
+                            {
+                                <option value="@agent.Id">@agent.Name · @agent.Preset</option>
+                            }
+                        </select>
+                    </label>
+                    <label>Candidate preset
+                        <select @bind="_agentPreset" disabled="@_dashboard.BenchmarkRunning">
+                            <option value="pressure">Pressure</option>
+                            <option value="counter">Counter</option>
+                            <option value="opportunist">Opportunist</option>
+                            <option value="native">Original character style</option>
+                        </select>
+                    </label>
+                    <button type="button" disabled="@_dashboard.BenchmarkRunning" @onclick="EvaluateAgentAsync">Evaluate and promote if better</button>
+                    @if (_dashboard.AgentEvaluation is { } evaluation)
+                    {
+                        <p role="status">@NameOf(evaluation.CharacterId) · @evaluation.CandidatePreset · @evaluation.Status</p>
+                        @if (!_dashboard.BenchmarkRunning)
+                        {
+                            <p>@(evaluation.Promoted ? "PROMOTED next round" : "Incumbent retained") · average place @evaluation.AveragePlace.Candidate.ToString("F2", CultureInfo.InvariantCulture) vs @evaluation.AveragePlace.Incumbent.ToString("F2", CultureInfo.InvariantCulture) · gain @evaluation.PlacementGain.ToString("+0.00;-0.00;0.00", CultureInfo.InvariantCulture)</p>
+                        }
+                    }
+                    <h3>Automatic highlights</h3>
+                    <label><input type="checkbox" checked="@_presentation.Recording.Enabled" disabled="@(!_presentation.Recording.Supported)" @onchange="ToggleRecordingAsync" /> Capture knockout and final-duel clips</label>
+                    <p>@_presentation.Recording.Status</p>
+                    <small>Silent video of the arena. Download before leaving; clips are session-only and bounded to protect memory.</small>
+                    <ul>
+                        @foreach (var clip in _presentation.Recording.Clips)
+                        {
+                            <li><a href="@clip.Url" download="@ClipFileName(clip)" @onclick="DownloadCueAsync">Download @clip.Label</a></li>
+                        }
+                    </ul>
+                    <h3>President fact cards</h3>
+                    <label><input type="checkbox" checked="@_factsEnabled" @onchange="ToggleFactsAsync" /> Show cached Wikidata facts between rounds</label>
+                    <p>@_presentation.Fact.Status</p>
+                    <small>Optional external lookup of public historical facts; no account or gameplay data is sent. Cached locally; failures never block a round.</small>
+                    <h3>Local data</h3>
+                    <p>Seasons and statistics stay in this browser, not the global leaderboard.</p>
+                    <button type="button" @onclick="ResetSeasonsAsync">@(_confirmReset ? "Confirm: erase local seasons and stats" : "Reset local seasons")</button>
+                </section>
+            }
+        }
+    </div>
+</GameShell>
+
+@code {
+    [Parameter] public string? Mode { get; set; }
+    private bool IsHuman => Mode == "play";
+    private IReadOnlyList<PoBrawlFighter> Roster =>
+        IsHuman ? [.. PoBrawlRoster.Fighters, PoBrawlRoster.Bob] : PoBrawlRoster.Fighters;
+    private static readonly Dictionary<string, string> Names =
+        PoBrawlRoster.Fighters.Append(PoBrawlRoster.Bob).ToDictionary(fighter => fighter.Id, fighter => fighter.Name, StringComparer.OrdinalIgnoreCase);
+    private static RenderFragment TitleContent => @<span><span aria-hidden="true">🥊</span> Brawl FFA</span>;
+    private RenderFragment HowItWorks => @<ul>
+        <li>@(IsHuman ? "You are Bob, fighting all 16 CPU presidents from a player-follow camera." : "All 16 presidents fight in the ring together — no bracket and no player controls.")</li>
+        @if (IsHuman) { <li>WASD move, F punch, G kick, R guard. P/Esc pauses. Touch and controller controls are available.</li> }
+        <li>Every fighter chooses a nearby rival. Knockouts are ranked, and the final survivor takes the round.</li>
+        <li>Watch your back: guards cover the front, but attacks from behind still land.</li>
+        <li>The final knockout gets a slow-motion replay, then five-second results and a fresh round.</li>
+    </ul>;
+
+    private readonly Dictionary<string, int> _health =
+        new(StringComparer.OrdinalIgnoreCase);
+    private readonly Dictionary<string, int> _places = new(StringComparer.OrdinalIgnoreCase);
+    private DotNetObjectReference<PoBrawlFfaPage>? _ref;
+    private string? _champion;
+    private string? _engineError;
+    private string _announcement = "Sixteen presidents enter the ring. Last one standing wins.";
+    private int _round;
+    private int _generation;
+    private bool _introDone;
+    private bool _disposed;
+    private bool _engineLoaded;
+    private bool _dashboardOpen;
+    private bool _studioClosing;
+    private int _studioGeneration;
+    private bool _confirmReset;
+    private bool _factsEnabled;
+    private bool _paused;
+    private bool _replaying;
+    private bool? _loadedHuman;
+    private string? _workflowError;
+    private string _agentId = "trump";
+    private string _agentPreset = "pressure";
+    private FfaDashboard _dashboard = new();
+    private FfaBroadcast _broadcast = new();
+    private FfaPresentation _presentation = new();
+    private int _remaining => _health.Values.Count(health => health > 0);
+    private IEnumerable<PoBrawlFighter> OrderedStandings =>
+        Roster.OrderByDescending(fighter => IsHuman && fighter.Id == "bob")
+            .ThenByDescending(fighter => _health[fighter.Id] > 0)
+            .ThenBy(fighter => _places.TryGetValue(fighter.Id, out var place) ? place : int.MaxValue);
+
+    protected override void OnInitialized() => Kiosk.SetCurrent("pobrawl-ffa");
+
+    protected override async Task OnParametersSetAsync()
+    {
+        if (Mode is not null && Mode != "play")
+        {
+            Navigation.NavigateTo("/pobrawl/ffa");
+            return;
+        }
+        if (_loadedHuman == IsHuman) return;
+        _generation++;
+        if (_engineLoaded) await JSRuntime.InvokeVoidAsync("PoBrawl.destroy");
+        _loadedHuman = IsHuman;
+        _engineLoaded = false;
+        _introDone = false;
+        _dashboardOpen = false;
+        _paused = false;
+        _replaying = false;
+        _champion = null;
+        _places.Clear();
+        _health.Clear();
+        foreach (var fighter in Roster) _health[fighter.Id] = 100;
+    }
+
+    protected override void OnAfterRender(bool firstRender)
+    {
+        if (firstRender) _ref = DotNetObjectReference.Create(this);
+    }
+
+    private async Task StartAsync()
+    {
+        if (_introDone) return;
+        _introDone = true;
+        _announcement = IsHuman ? "Bob versus sixteen CPUs is starting." : "The 16-president free-for-all is starting.";
+        StateHasChanged();
+        var generation = ++_generation;
+
+        try
+        {
+            if (!await JSRuntime.InvokeAsync<bool>("loadEngine", "pobrawl"))
+                throw new InvalidOperationException("The PoBrawl engine failed to load.");
+            _engineLoaded = true;
+            if (generation != _generation || _disposed) return;
+
+            _ref ??= DotNetObjectReference.Create(this);
+            await JSRuntime.InvokeVoidAsync("PoBrawl.init", "pobrawl-container", _ref, new
+            {
+                mode = "ffa",
+                fighters = PoBrawlRoster.Fighters.Select(fighter => new { id = fighter.Id, name = fighter.Name }).ToArray(),
+                human = IsHuman,
+                muted = Settings.Muted,
+            });
+        }
+        catch (Exception ex)
+        {
+            Console.Error.WriteLine($"[pobrawl-ffa] JS init failed: {ex.Message}");
+            _engineError = "The free-for-all could not start. Return to the menu and try again.";
+            _announcement = _engineError;
+            await InvokeAsync(StateHasChanged);
+            if (_engineLoaded)
+            {
+                try { await JSRuntime.InvokeVoidAsync("PoBrawl.destroy"); }
+                catch (JSDisconnectedException) { }
+            }
+        }
+    }
+
+    [JSInvokable]
+    public Task OnFfaRoundStarted(int round)
+    {
+        if (_disposed) return Task.CompletedTask;
+        _round = round;
+        _champion = null;
+        _replaying = false;
+        _broadcast = new();
+        _engineError = null;
+        _places.Clear();
+        foreach (var fighter in Roster) _health[fighter.Id] = 100;
+        _announcement = $"Round {round}. {Roster.Count} fighters enter the ring.";
+        return InvokeAsync(StateHasChanged);
+    }
+
+    [JSInvokable]
+    public Task OnFfaHit(string fighterId, int health)
+    {
+        if (_disposed || !_health.ContainsKey(fighterId)) return Task.CompletedTask;
+        _health[fighterId] = Math.Clamp(health, 0, 100);
+        return InvokeAsync(StateHasChanged);
+    }
+
+    [JSInvokable]
+    public Task OnFfaEliminated(string fighterId, int place, int remaining)
+    {
+        if (_disposed || !_health.ContainsKey(fighterId)) return Task.CompletedTask;
+        _health[fighterId] = 0;
+        _places[fighterId] = place;
+        _announcement = $"{NameOf(fighterId)} is out in place {place}. {remaining} remain.";
+        return InvokeAsync(StateHasChanged);
+    }
+
+    [JSInvokable]
+    public Task OnFfaChampion(string fighterId)
+    {
+        if (_disposed || !_health.ContainsKey(fighterId)) return Task.CompletedTask;
+        _champion = fighterId;
+        _places[fighterId] = 1;
+        _announcement = $"{NameOf(fighterId)} wins Round {_round}. The next free-for-all starts in five seconds.";
+        return InvokeAsync(StateHasChanged);
+    }
+
+    private static string NameOf(string fighterId) =>
+        Names.TryGetValue(fighterId, out var name) ? name : fighterId;
+
+    private static string ClipFileName(FfaClip clip) =>
+        $"pobrawl-ffa-highlight-{clip.Id}.{(clip.MimeType.Contains("mp4", StringComparison.OrdinalIgnoreCase) ? "mp4" : "webm")}";
+
+    private async Task ToggleDashboardAsync()
+    {
+        if (IsHuman && !_dashboardOpen) await CommandAsync("PoBrawl.ffaPause", true);
+        _confirmReset = false;
+        var generation = ++_studioGeneration;
+        await CommandAsync("PoBrawl.ffaClick", _dashboardOpen ? "close" : "open");
+        if (_dashboardOpen)
+        {
+            _studioClosing = true;
+            await Task.Delay(160);
+            if (_disposed || generation != _studioGeneration) return;
+            _dashboardOpen = false;
+        }
+        else
+        {
+            _dashboardOpen = true;
+        }
+        _studioClosing = false;
+    }
+
+    private async Task ToggleMuteAsync()
+    {
+        await Settings.SetMutedAsync(!Settings.Muted);
+        await CommandAsync("PoBrawl.setMuted", Settings.Muted);
+        if (!Settings.Muted) await CommandAsync("PoBrawl.ffaClick", "toggle");
+    }
+
+    private Task DownloadCueAsync() => CommandAsync("PoBrawl.ffaClick", "download");
+    private Task TogglePauseAsync() => CommandAsync("PoBrawl.ffaPause", !_paused);
+
+    [JSInvokable]
+    public Task OnFfaPaused(bool paused)
+    {
+        _paused = paused;
+        return _disposed ? Task.CompletedTask : InvokeAsync(StateHasChanged);
+    }
+
+    [JSInvokable]
+    public Task OnFfaReplay(bool replaying)
+    {
+        _replaying = replaying;
+        return _disposed ? Task.CompletedTask : InvokeAsync(StateHasChanged);
+    }
+
+    private async Task CommandAsync(string method, params object?[] args)
+    {
+        try { await JSRuntime.InvokeVoidAsync(method, args); }
+        catch (JSException ex)
+        {
+            Console.Error.WriteLine($"[pobrawl-ffa] {method} failed: {ex.Message}");
+            _workflowError = ex.Message;
+        }
+    }
+
+    private async Task StudioCommandAsync(string method, params object?[] args)
+    {
+        await CommandAsync("PoBrawl.ffaClick", "toggle");
+        await CommandAsync(method, args);
+    }
+
+    private Task ChangeProfileAsync(ChangeEventArgs e) => StudioCommandAsync("PoBrawl.ffaProfile", e.Value?.ToString() ?? "balanced");
+    private Task RunBenchmarkAsync() => StudioCommandAsync("PoBrawl.ffaBenchmark");
+    private Task EvaluateAgentAsync() => StudioCommandAsync("PoBrawl.ffaEvaluateAgent", _agentId, _agentPreset);
+    private Task ToggleRecordingAsync(ChangeEventArgs e) => StudioCommandAsync("PoBrawl.ffaRecording", e.Value is true);
+    private Task ToggleFactsAsync(ChangeEventArgs e)
+    {
+        _factsEnabled = e.Value is true;
+        return StudioCommandAsync("PoBrawl.ffaFacts", _factsEnabled);
+    }
+
+    private async Task ResetSeasonsAsync()
+    {
+        if (!_confirmReset) { _confirmReset = true; await CommandAsync("PoBrawl.ffaClick", "toggle"); return; }
+        _confirmReset = false;
+        _workflowError = null;
+        await StudioCommandAsync("PoBrawl.ffaResetSeasons");
+    }
+
+    [JSInvokable]
+    public Task OnFfaDashboard(string json)
+    {
+        if (_disposed) return Task.CompletedTask;
+        _dashboard = JsonSerializer.Deserialize(json, PoBrawlFfaJsonContext.Default.FfaDashboard)
+            ?? throw new JsonException("Missing FFA dashboard state.");
+        _factsEnabled = _dashboard.FactsEnabled;
+        return InvokeAsync(StateHasChanged);
+    }
+
+    [JSInvokable]
+    public Task OnFfaBroadcast(string json)
+    {
+        if (_disposed) return Task.CompletedTask;
+        _broadcast = JsonSerializer.Deserialize(json, PoBrawlFfaJsonContext.Default.FfaBroadcast)
+            ?? throw new JsonException("Missing FFA broadcast state.");
+        return InvokeAsync(StateHasChanged);
+    }
+
+    [JSInvokable]
+    public Task OnFfaPresentation(string json)
+    {
+        if (_disposed) return Task.CompletedTask;
+        _presentation = JsonSerializer.Deserialize(json, PoBrawlFfaJsonContext.Default.FfaPresentation)
+            ?? throw new JsonException("Missing FFA presentation state.");
+        return InvokeAsync(StateHasChanged);
+    }
+
+    [JSInvokable]
+    public Task OnFfaError(string message)
+    {
+        if (_disposed) return Task.CompletedTask;
+        Console.Error.WriteLine($"[pobrawl-ffa] {message}");
+        _workflowError = message;
+        _announcement = message;
+        return InvokeAsync(StateHasChanged);
+    }
+
+    public async ValueTask DisposeAsync()
+    {
+        _disposed = true;
+        _generation++;
+        if (_engineLoaded)
+        {
+            try { await JSRuntime.InvokeVoidAsync("PoBrawl.destroy"); }
+            catch (JSDisconnectedException) { }
+        }
+        _ref?.Dispose();
+    }
+}

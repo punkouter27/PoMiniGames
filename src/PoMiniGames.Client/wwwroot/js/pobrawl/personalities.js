@@ -41,7 +41,7 @@
 //                 'wait'              stand still
 //
 // ai.js `_unlockedPatterns` unlocks entries by rung: 1-3 run phrase 0, 4-9
-// alternate 0 and 1, 10-15 cycle all three. So index 1 answers having learned
+// alternate 0 and 1, 10-16 cycle all three. So index 1 answers having learned
 // index 0, and index 2 answers both. Rotation is a fixed cycle, never random.
 //
 // Rules:
@@ -692,6 +692,31 @@ export const PERSONALITIES = {
           { act: 'block', secs: 0.35 },
           { act: 'advance', secs: 0.25 },
           { act: 'charge', attack: 'punch', secs: 0.90 },
+        ] },
+    ],
+  },
+
+  // ── Hoover — "The Great Engineer": patient guard and measured counters ──
+  hoover: {
+    footwork: [{ secs: 0.75, move: 0 }, { secs: 0.45, move: 1 }, { secs: 0.35, move: 0, side: 1 }],
+    aiPatterns: [
+      { everySecs: 5.2, range: 1.2,
+        steps: [
+          { act: 'block', secs: 0.45 },
+          { act: 'advance', secs: 0.20 },
+          { act: 'punch', secs: 0.30 },
+        ] },
+      { everySecs: 5.8, range: 1.4,
+        steps: [
+          { act: 'sidestep', dir: 1, secs: 0.24 },
+          { act: 'wait', secs: 0.30 },
+          { act: 'charge', attack: 'punch', secs: 0.65 },
+        ] },
+      { everySecs: 6.4, range: 1.5,
+        steps: [
+          { act: 'retreat', secs: 0.25 },
+          { act: 'block', secs: 0.40 },
+          { act: 'charge', attack: 'kick', secs: 0.75 },
         ] },
     ],
   },

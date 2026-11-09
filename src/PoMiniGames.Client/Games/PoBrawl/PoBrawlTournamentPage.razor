@@ -144,9 +144,8 @@
     private static readonly PoBrawlFighter[] Roster = [.. PoBrawlRoster.Fighters];
     private static readonly int[] Speeds = [1, 2, 4];
 
-    // Between bouts the jumbotrons show the bracket for this long before the next pairing.
-    // Fast-forward trims it only a little: the bracket is the part of a tournament worth reading.
-    private int BetweenBoutsMs => _speed switch { 4 => 3200, 2 => 3400, _ => 4200 };
+    // Keep each result visible for five seconds before starting the next bout, at every speed.
+    private const int ResultHoldMs = 5000;
     // After the final, the arena holds this long before the result modal covers it.
     private const int FinalHoldMs = 3500;
     // …and before that the arena crowns the champion (PoBrawl.ceremony): the belt comes
@@ -271,9 +270,10 @@
     </div>;
 
     private static RenderFragment HowItWorks => @<ul>
-        <li>🎲 All fifteen presidents fill a 16-slot bracket; any open slots are BYEs</li>
+        <li>🎲 All sixteen presidents fill the 16-slot bracket; open slots, if any, are BYEs</li>
         <li>🤖 The CPU plays each bout through to one champion; BYEs advance without a fight</li>
         <li>📈 Every result moves both fighters' Elo · ⏩ 2×/4× and 🗂 Bracket on the arena's bar</li>
+        <li>⏱ Results stay up for 5 seconds before the next bout starts automatically</li>
     </ul>;
 
     private RenderFragment DrawPreview => @<div class="pt-draw">
@@ -726,6 +726,16 @@
         _freshIndex = decided.Index;
         _announcement = ResultSentence(decided);
 
+        var generation = ++_generation;
+        await InvokeAsync(StateHasChanged);
+        // OnMatchEnd fires once the engine is in 'result' (the KO cinematic is over), so the
+        // jumbotrons switch to the bracket straight away.
+        await ShowJumbotronBracketAsync();
+        if (generation != _generation) return;
+        _bracketFresh = true;
+        await InvokeAsync(StateHasChanged);
+        var resultHold = Task.Delay(ResultHoldMs);
+
         if (Auth.IsAuthenticated)
         {
             if (await ApiService.SubmitPoBrawlDemoResultAsync(
@@ -735,16 +745,8 @@
                 _reportFailed = true;
         }
 
-        var generation = ++_generation;
-        await InvokeAsync(StateHasChanged);
+        if (generation != _generation) return;
 
-        // OnMatchEnd fires once the engine is in 'result' (the KO cinematic is over), so the
-        // jumbotrons switch to the bracket straight away.
-        // The arena's screens show the bracket (or, after the final, the champion). The drawer
-        // stays as the viewer left it — opening it here covered most of the arena after every
-        // bout; the Bracket button glows instead.
-        await ShowJumbotronBracketAsync();
-        _bracketFresh = true;
         if (_cup.IsComplete)
         {
             SaveTitle(_cup.ChampionId!);
@@ -761,7 +763,7 @@
         }
         await InvokeAsync(StateHasChanged);
 
-        await Task.Delay(BetweenBoutsMs);
+        await resultHold;
         if (generation != _generation || _cup.Current is not { } next) return;
 
         _freshIndex = -1;

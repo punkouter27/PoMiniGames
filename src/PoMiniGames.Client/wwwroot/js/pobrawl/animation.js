@@ -332,6 +332,15 @@ const ENTRANCES = {
        shoulderR: { x: -0.65, y: 0, z: -0.2 }, elbowR: { x: -1.3, y: 0, z: 0 } }, 0.4, { k: 9 }],
     [GUARD, 0.4, { k: 6 }],
   ],
+  // Hoover offers a brisk handshake, nods once, then settles into his guard.
+  hooverHandshake: [
+    [{ torso: { x: 0.08, y: 0.03, z: 0 }, head: { x: 0.1, y: 0, z: 0.02 },
+       shoulderR: { x: -2.0, y: 0, z: -0.15 }, elbowR: { x: -0.55, y: 0, z: 0 },
+       shoulderL: { x: -0.6, y: 0, z: 0.1 }, elbowL: { x: -1.2, y: 0, z: 0 } }, 0.4, { k: 14 }],
+    [{ torso: { x: 0.02, y: 0, z: 0 }, head: { x: -0.04, y: 0, z: 0 },
+       shoulderR: { x: -1.8, y: 0, z: -0.1 }, elbowR: { x: -0.7, y: 0, z: 0 } }, 0.25, { k: 18 }],
+    [GUARD, 0.4, { k: 8 }],
+  ],
 };
 
 function lerpAngle(cur, target, k) {

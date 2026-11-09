@@ -85,6 +85,7 @@ export const VOICES = {
   eisenhower: { f0: 115, f1: 560, f2: 1250, rasp: 0.25 },
   truman:     { f0: 128, f1: 620, f2: 1550, rasp: 0.15 },
   fdr:        { f0: 104, f1: 580, f2: 1150, rasp: 0.2 },
+  hoover:     { f0: 102, f1: 560, f2: 1180, rasp: 0.25 },
 };
 export const DEFAULT_VOICE = { f0: 112, f1: 600, f2: 1250, rasp: 0.25 };
 
@@ -123,6 +124,7 @@ export const MOTIFS = {
   eisenhower: { root: 'F3',  timbre: 'brass', notes: [0, 5, 9, 12, 9, 12],     durs: [1, 1, 1, 2, 1, 4] },
   truman:     { root: 'C4',  timbre: 'keys',  notes: [0, 4, 7, 9, 7, 4, 12],   durs: [1, 1, 1, 1, 1, 1, 4] },
   fdr:        { root: 'Eb4', timbre: 'reed',  notes: [7, 9, 7, 4, 0],          durs: [1, 1, 1, 1, 4] },
+  hoover:     { root: 'G3',  timbre: 'brass', notes: [0, 2, 7, 5, 2, 0],       durs: [2, 1, 2, 1, 1, 4] },
   bob:        { root: 'C4',  timbre: 'chip',  notes: [0, 12, 7, 0],            durs: [1, 1, 1, 3] },
 };
 export const DEFAULT_MOTIF = { root: 'C4', timbre: 'brass', notes: [0, 4, 7, 12], durs: [1, 1, 1, 3] };

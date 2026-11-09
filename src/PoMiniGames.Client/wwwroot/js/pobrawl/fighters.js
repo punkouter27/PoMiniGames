@@ -290,6 +290,23 @@ export const CHARACTERS = {
     mass: 0.96, attackPower: 1.1, moveAccel: 12,
     entrance: 'fdrCane',
   },
+  hoover: {
+    id: 'hoover', name: 'Hoover',
+    skin: 0xe7c2a3, suit: 0x343b46, tie: 0x7d2932, tieLength: 0.95,
+    hair: 0xaaa49a, hairStyle: 'balding',
+    heightScale: 1.0, buildScale: 1.04, headW: 0.27,
+    face: {
+      brow: { color: 0x8e887e, angle: -0.08, thick: 1.0 },
+      eyes: { squint: 0.35, color: 0x5d7180 },
+      nose: { type: 'straight', size: 1.05 },
+      mouth: { w: 0.95, frown: 0.12 },
+      chin: 1.15, wrinkles: 0.55,
+    },
+    glasses: 'round', lapelPin: true,
+    stance: { torso: { x: 0.02 }, head: { x: -0.03 } },
+    mass: 1.08, attackPower: 1.12, moveAccel: 10,
+    entrance: 'hooverHandshake',
+  },
   // BOB — the 1-player everyman hero, built with `outfit: 'casual'` (no suit).
   bob: {
     id: 'bob', name: 'BOB',

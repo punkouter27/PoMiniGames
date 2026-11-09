@@ -34,12 +34,12 @@ public sealed record PoBrawlFighter(string Id, string Name);
 public static class PoBrawlRoster
 {
     /// <summary>
-    /// The rateable presidents, in ladder order — most recent first, marching back to FDR.
+    /// The rateable presidents, in ladder order — most recent first, marching back to Hoover.
     /// </summary>
     /// <remarks>
     /// The order is load-bearing for the client, not for this class: the board ranks by
     /// rating, but <c>PoBrawlPage</c> indexes this list as the 1-player ladder, where the rung
-    /// index doubles as the CPU difficulty level (index + 1 → 1-15, the range ai.js
+    /// index doubles as the CPU difficulty level (index + 1 → 1-16, the range ai.js
     /// LEVELS/MAX_RUNG defines). Reordering it reorders the ladder.
     /// </remarks>
     public static readonly IReadOnlyList<PoBrawlFighter> Fighters =
@@ -59,6 +59,7 @@ public static class PoBrawlRoster
         new("eisenhower", "Eisenhower"),
         new("truman", "Truman"),
         new("fdr", "FDR"),
+        new("hoover", "Hoover"),
     ];
 
     /// <summary>The 1-player avatar and 2-player pick. Never rateable — see the type remarks.</summary>

@@ -76,7 +76,7 @@
         @foreach (var game in GameCatalog.AllSorted)
         {
             var playable = IsPlayable(game.Primary);
-            <article class="home-card" aria-labelledby="@($"home-card-{game.Key.Value}")">
+            <article class="home-card @(game.Key == GameKeys.PoBrawl ? "home-card--brawl" : null)" aria-labelledby="@($"home-card-{game.Key.Value}")">
                 @* The heading opens the game's main mode: one large target on every card,
                    however small a short phone makes the chips. Out of the tab order,
                    because the first chip is the same destination for a keyboard. *@
@@ -257,7 +257,7 @@
         if (demos.Count == 0) return;
         if (index < 0 || index >= demos.Count) index = 0;
 
-        Kiosk.RegisterEntries(demos.Select(d => new Services.Play.DemoEntry(d.Key, d.Url, d.Title, d.Icon)));
+        Kiosk.RegisterEntries(demos.Select(d => new Services.Play.DemoEntry(DemoEntryKey(d), d.Url, d.Title, d.Icon)));
         // Clear every active toast before entering the reel — the PWA "Update now"
         // prompt and any error toast are persistent (ShowAction never auto-expires) and
         // would otherwise follow the user into the loop and steal taps from the reel
@@ -271,6 +271,9 @@
         Kiosk.Start(index);
         NavigationManager.NavigateTo($"{entry.Url}{sep}kiosk={index}");
     }
+
+    private static string DemoEntryKey(CatalogEntry entry) =>
+        entry.Url.Split('?', '#')[0] == "/pobrawl/ffa" ? "pobrawl-ffa" : entry.Key.Value;
 
 
     public async ValueTask DisposeAsync()
