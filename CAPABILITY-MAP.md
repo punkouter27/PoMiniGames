@@ -14,7 +14,7 @@ for PoMule · **Deferred** = planned after PoMule v1.
 | `src/PoMiniGames.Domain` | `GameKey`, high-score models, Elo, `ScoreRules`, name sanitizer | `GameKey.PoMule`, `PoMuleHighScore`, a score-range rule | Extended |
 | `src/PoMiniGames.Infrastructure` | Table/Blob storage, `HighScoreDescriptor<T>` leaderboards | One descriptor for the PoMule board | Extended |
 | `src/PoMiniGames.API` | Host, auth, 15 SignalR hubs, vertical slices in `Features/<Slice>` | New slice `Features/PoMule/` with high-score endpoints only (no hub) | Extended |
-| `src/PoMiniGames.Client` | Blazor WASM shell, 14 game pages, JS engines in `wwwroot/js/<game>/` | `Games/PoMule/` page and components in Radzen; `wwwroot/js/pomule/` canvas renderer; Radzen package, theme and services | Extended |
+| `src/PoMiniGames.Client` | Blazor WASM shell, 13 game pages, JS engines in `wwwroot/js/<game>/` | `Games/PoMule/` page and components in Radzen; `wwwroot/js/pomule/` canvas renderer; Radzen package, theme and services | Extended |
 | `tests/*` | Four capped tiers (100/50/25/25) plus `node --test` files | PoMule tests in every tier; the Unit tier went to 140 for PoMule and was folded back to 100 (`Scenario` theories) | Extended |
 | `infra/`, `.github/` | Bicep and deploy workflow | None | Retained |
 
@@ -61,7 +61,7 @@ All thirteen are retained and still evolving; none is pruned or reworked by this
 | Group | Games |
 |---|---|
 | Racers | PoRacer, PoCabinet, PoMarbleRace |
-| Action and sims | PoBrawl, PoVoxelStrike, PoJevArena, PoEcosystem, SandPlayground |
+| Action and sims | PoBrawl, PoVoxelStrike, PoJevArena, PoEcosystem, PoMule, SandPlayground |
 | Quiz and AI | PoCoupleQuiz, PoFunQuiz |
 | Board | TicTacToe, ConnectFive |
 

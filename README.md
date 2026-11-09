@@ -7,7 +7,7 @@ quizzes draw from JSON question banks.
 
 ## Overview
 
-Fourteen small games on one website. The browser runs each game in full, including its
+Thirteen small games on one website. The browser runs each game in full, including its
 computer opponents; the server signs players in, referees online play, checks and stores
 scores.
 

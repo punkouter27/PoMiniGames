@@ -1,5 +1,5 @@
-using System.Text.Json;
 using PoMiniGames.Features.Auth;
+using PoMiniGames.Serialization;
 
 namespace PoMiniGames.Features.Account;
 
@@ -23,20 +23,6 @@ namespace PoMiniGames.Features.Account;
 /// </remarks>
 public static class AccountEndpoints
 {
-    /// <summary>
-    /// Serializer for the export document.
-    /// </summary>
-    /// <remarks>
-    /// Seeded from <see cref="JsonSerializerDefaults.Web"/>, which is the part that matters: a
-    /// bare <c>new JsonSerializerOptions()</c> defaults to PascalCase, so the export came out
-    /// with <c>"TotalRows"</c> while every other response on this API says <c>"totalRows"</c> —
-    /// one endpoint speaking a different dialect than the rest of its own surface. Indented
-    /// because a human opens this file; it is a few hundred rows at most and is never on a hot
-    /// path.
-    /// </remarks>
-    private static readonly JsonSerializerOptions ExportJson =
-        new(JsonSerializerDefaults.Web) { WriteIndented = true };
-
     public static IEndpointRouteBuilder MapAccountEndpoints(this IEndpointRouteBuilder app)
     {
         // Account data lives under /api/account.
@@ -67,7 +53,7 @@ public static class AccountEndpoints
                 http.Response.Headers.ContentDisposition =
                     $"attachment; filename=\"pominigames-data-{DateTime.UtcNow:yyyyMMdd}.json\"";
 
-                return Results.Json(export, ExportJson);
+                return Results.Json(export, AccountDataJsonContext.Default.PlayerDataExport);
             })
             .WithName("ExportAccountData")
             .WithSummary("Download every row this platform stores about the signed-in caller")

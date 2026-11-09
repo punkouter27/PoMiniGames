@@ -1,5 +1,6 @@
 using System.Globalization;
 using System.Security.Claims;
+using System.Text.Json;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Http;
@@ -9,6 +10,7 @@ using Microsoft.Extensions.Options;
 using PoMiniGames.Domain.Abstractions;
 using PoMiniGames.Features.Auth;
 using PoMiniGames.Infrastructure;
+using PoMiniGames.Serialization;
 
 namespace PoMiniGames.Features.Health;
 
@@ -66,11 +68,7 @@ public static class DiagEndpoints
             // reflection helpers / type graphs never leak to dev tooling.
             var raw = await diagnosticsProvider.BuildSnapshotAsync();
             var projection = ProjectDiagnostics(raw, configuration, environment);
-            var json = System.Text.Json.JsonSerializer.SerializeToUtf8Bytes(projection, new System.Text.Json.JsonSerializerOptions
-            {
-                WriteIndented = false,
-                DefaultIgnoreCondition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull
-            });
+            var json = JsonSerializer.SerializeToUtf8Bytes(projection, DiagJsonContext.Default.DiagResponse);
             if (json.Length > MaxPayloadBytes)
             {
                 return Results.Problem(
@@ -86,34 +84,15 @@ public static class DiagEndpoints
         // so a future change to the provider cannot widen the response surface.
         static DiagResponse ProjectDiagnostics(object raw, IConfiguration config, IWebHostEnvironment env)
         {
-            var dict = raw as IDictionary<string, object?>
-                       ?? (raw is string s ? new Dictionary<string, object?>() { ["raw"] = s } : new Dictionary<string, object?>());
+            var dict = raw as IDictionary<string, object?> ?? new Dictionary<string, object?>();
 
-            // Bug fix QA #5: the snapshot provider returns nested *anonymous* objects
-            // (e.g. `new { solution, appPrefix, ports }`) which are NOT IDictionary
-            // instances — so the original lookup-by-string-path returned "" for every
-            // nested key, surfacing empty identity/integrations to /api/diag. Use a
-            // case-insensitive reflection walker that handles anonymous types as well
-            // as dictionaries, so the live snapshot fields actually appear.
             string Get(params string[] path)
             {
                 object? cur = dict;
                 foreach (var key in path)
                 {
-                    if (cur is null) return string.Empty;
-                    if (cur is IDictionary<string, object?> d)
-                    {
-                        if (!d.TryGetValue(key, out var v)) return string.Empty;
-                        cur = v;
-                        continue;
-                    }
-                    // Anonymous / POCO walk via case-insensitive property lookup.
-                    var prop = cur.GetType()
-                        .GetProperty(key, System.Reflection.BindingFlags.Public
-                            | System.Reflection.BindingFlags.Instance
-                            | System.Reflection.BindingFlags.IgnoreCase);
-                    if (prop is null) return string.Empty;
-                    cur = prop.GetValue(cur);
+                    if (cur is not IDictionary<string, object?> nested || !nested.TryGetValue(key, out cur))
+                        return string.Empty;
                 }
                 return cur?.ToString() ?? string.Empty;
             }
@@ -150,33 +129,23 @@ public static class DiagEndpoints
                 TelemetryFlags: telemetryFlags);
 
             // Project the integrations section into a flat name/status/description list.
-            // The provider returns an anonymous object with named boolean sub-fields
-            // (keyVaultConfigured, applicationInsightsConfigured, …) — flatten them here
-            // so /api/diag surfaces the live integration state, not [].
             var integrations = new List<DiagIntegration>();
 
-            // 1) Anonymous object with boolean sub-fields (e.g. integrations = new { keyVaultConfigured = true })
-            if (dict.TryGetValue("integrations", out var integObj) && integObj is not null
-                && integObj is not IDictionary<string, object?>
-                && integObj is not string
-                && integObj is not IEnumerable<object?>)
+            if (dict.TryGetValue("integrations", out var integObj)
+                && integObj is IDictionary<string, object?> configured)
             {
-                var anonType = integObj.GetType();
-                foreach (var prop in anonType.GetProperties(System.Reflection.BindingFlags.Public
-                                                           | System.Reflection.BindingFlags.Instance))
+                foreach (var (name, value) in configured)
                 {
-                    var value = prop.GetValue(integObj);
                     var status = value switch
                     {
                         bool b => b ? "configured" : "not-configured",
                         null => "not-configured",
                         _ => value.ToString() ?? "unknown"
                     };
-                    integrations.Add(new DiagIntegration(prop.Name, status ?? "unknown", null));
+                    integrations.Add(new DiagIntegration(name, status, null));
                 }
             }
-            // 2) Already-shaped list of { name, status, description } dictionaries.
-            else if (dict.TryGetValue("integrations", out var integList) && integList is IEnumerable<object?> items)
+            else if (integObj is IEnumerable<object?> items)
             {
                 foreach (var item in items)
                 {
@@ -296,4 +265,3 @@ public static class DiagEndpoints
         return app;
     }
 }
-

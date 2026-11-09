@@ -1,4 +1,6 @@
+using System.Text.Json;
 using Microsoft.Extensions.Diagnostics.HealthChecks;
+using PoMiniGames.Serialization;
 
 namespace PoMiniGames.Features.Health;
 
@@ -26,9 +28,11 @@ public static class HealthEndpoints
         {
             var report = await healthCheckService.CheckHealthAsync();
             var response = CreateHealthResponse(report);
-            return report.Status != HealthStatus.Unhealthy
-                ? Results.Ok(response)
-                : Results.Json(response, statusCode: StatusCodes.Status503ServiceUnavailable);
+            var statusCode = report.Status == HealthStatus.Unhealthy
+                ? StatusCodes.Status503ServiceUnavailable
+                : StatusCodes.Status200OK;
+            var json = JsonSerializer.Serialize(response, ApiJsonContext.Default.HealthCheckResponse);
+            return Results.Content(json, "application/json", statusCode: statusCode);
         }
 
         // Every /api/health/* route lives under the same
@@ -114,21 +118,24 @@ public static class HealthEndpoints
             : Results.Redirect("/api/health");
     }
 
-    private static dynamic CreateHealthResponse(HealthReport report)
+    private static HealthCheckResponse CreateHealthResponse(HealthReport report)
     {
-        return new
-        {
-            status = report.Status.ToString(),
-            checks = report.Entries.Select(e => new
-            {
-                name = e.Key,
-                status = e.Value.Status.ToString(),
-                description = e.Value.Description,
-                duration = e.Value.Duration.TotalMilliseconds,
-            }),
-            totalDuration = report.TotalDuration.TotalMilliseconds,
-            checkedAtUtc = DateTimeOffset.UtcNow,
-        };
+        return new HealthCheckResponse(
+            report.Status.ToString(),
+            report.Entries.Select(e => new HealthCheckEntry(
+                e.Key,
+                e.Value.Status.ToString(),
+                e.Value.Description,
+                e.Value.Duration.TotalMilliseconds)).ToArray(),
+            report.TotalDuration.TotalMilliseconds,
+            DateTimeOffset.UtcNow);
     }
 }
 
+internal sealed record HealthCheckResponse(
+    string Status,
+    IReadOnlyList<HealthCheckEntry> Checks,
+    double TotalDuration,
+    DateTimeOffset CheckedAtUtc);
+
+internal sealed record HealthCheckEntry(string Name, string Status, string? Description, double Duration);

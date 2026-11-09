@@ -1,4 +1,5 @@
 using System.Text.Json;
+using PoMiniGames.Serialization;
 
 namespace PoMiniGames.Features.Health;
 
@@ -30,8 +31,6 @@ public static class ClientErrorEndpoints
     public const string Route = "/client-errors";
     public const int MaxBodyBytes = 8 * 1024;
 
-    private static readonly JsonSerializerOptions Json = new(JsonSerializerDefaults.Web);
-
     public static IEndpointRouteBuilder MapClientErrorEndpoints(this IEndpointRouteBuilder app)
     {
         app.MapPost(Route, async (HttpContext http, ILoggerFactory logs) =>
@@ -54,7 +53,7 @@ public static class ClientErrorEndpoints
                 ClientErrorReport? report;
                 try
                 {
-                    report = JsonSerializer.Deserialize<ClientErrorReport>(buffer.AsSpan(0, read), Json);
+                    report = JsonSerializer.Deserialize(buffer.AsSpan(0, read), ApiJsonContext.Default.ClientErrorReport);
                 }
                 catch (JsonException)
                 {

@@ -1,5 +1,6 @@
 using System.Reflection;
 using System.Text.Json;
+using PoMiniGames.Serialization;
 
 namespace PoMiniGames.Features.PoCoupleQuiz;
 
@@ -40,7 +41,7 @@ public static class CoupleQuizQuestionBank
     {
         using var stream = Assembly.GetExecutingAssembly().GetManifestResourceStream(ResourceName)
             ?? throw new InvalidOperationException($"Embedded resource '{ResourceName}' is missing.");
-        var byCategory = JsonSerializer.Deserialize<Dictionary<string, string[]>>(stream)
+        var byCategory = JsonSerializer.Deserialize(stream, ApiJsonContext.Default.QuestionBank)
             ?? throw new InvalidOperationException("The couple question bank is empty.");
 
         var list = new List<Question>();

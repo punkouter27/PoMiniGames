@@ -1,6 +1,7 @@
 using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
+using System.Text.Json.Serialization.Metadata;
 using Azure;
 using Azure.Data.Tables;
 
@@ -32,7 +33,12 @@ public sealed class VerifiedResultStore(TableServiceClient tables, ILogger<Verif
     private bool _ensured;
 
     /// <summary>Remember <paramref name="value"/> for <paramref name="game"/> under <paramref name="key"/>.</summary>
-    public async Task SaveAsync<T>(string game, string key, T value, CancellationToken ct = default)
+    public async Task SaveAsync<T>(
+        string game,
+        string key,
+        T value,
+        JsonTypeInfo<T> jsonTypeInfo,
+        CancellationToken ct = default)
     {
         try
         {
@@ -43,7 +49,7 @@ public sealed class VerifiedResultStore(TableServiceClient tables, ILogger<Verif
             await _table.UpsertEntityAsync(
                 new TableEntity(game, RowKeyFor(key))
                 {
-                    ["Json"] = JsonSerializer.Serialize(value),
+                    ["Json"] = JsonSerializer.Serialize(value, jsonTypeInfo),
                     ["SavedAtUtc"] = DateTimeOffset.UtcNow,
                 },
                 TableUpdateMode.Replace, ct);
@@ -59,7 +65,13 @@ public sealed class VerifiedResultStore(TableServiceClient tables, ILogger<Verif
     /// <paramref name="lifetime"/>, or storage is unreachable. <paramref name="take"/> deletes the
     /// row once read, for results that back exactly one submit.
     /// </summary>
-    public async Task<T?> FindAsync<T>(string game, string key, TimeSpan lifetime, bool take = false, CancellationToken ct = default)
+    public async Task<T?> FindAsync<T>(
+        string game,
+        string key,
+        TimeSpan lifetime,
+        JsonTypeInfo<T> jsonTypeInfo,
+        bool take = false,
+        CancellationToken ct = default)
     {
         try
         {
@@ -69,7 +81,7 @@ public sealed class VerifiedResultStore(TableServiceClient tables, ILogger<Verif
 
             var expired = DateTimeOffset.UtcNow - (entity.GetDateTimeOffset("SavedAtUtc") ?? DateTimeOffset.MinValue) > lifetime;
             if (take || expired) await _table.DeleteEntityAsync(entity.PartitionKey, entity.RowKey, ETag.All, ct);
-            return expired ? default : JsonSerializer.Deserialize<T>(entity.GetString("Json") ?? "null");
+            return expired ? default : JsonSerializer.Deserialize(entity.GetString("Json") ?? "null", jsonTypeInfo);
         }
         catch (Exception ex)
         {

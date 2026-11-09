@@ -3,6 +3,7 @@ using System.Collections.Concurrent;
 using Microsoft.AspNetCore.SignalR;
 using PoMiniGames.Infrastructure;
 using PoMiniGames.Shared.Games;
+using PoMiniGames.Serialization;
 
 namespace PoMiniGames.Features.PoCabinet;
 
@@ -107,7 +108,13 @@ public sealed class PoCabinetRaceRegistry : IAsyncDisposable
     {
         if (!_verifiedLaps.TryGetValue(playerId, out var lap) && _store is not null)
         {
-            lap = await _store.FindAsync<VerifiedLap>(StoreGame, playerId, VerifiedLapLifetime, take: false, ct);
+            lap = await _store.FindAsync(
+                StoreGame,
+                playerId,
+                VerifiedLapLifetime,
+                ApiJsonContext.Default.VerifiedLap,
+                take: false,
+                ct);
         }
         return lap is not null && _time.GetUtcNow() - lap.At < VerifiedLapLifetime ? lap : null;
     }
@@ -278,7 +285,7 @@ public sealed class PoCabinetRaceRegistry : IAsyncDisposable
             if (_store is null) continue;
             // Not awaited: this is the 30 Hz tick, and the store logs its own failures. Tracked,
             // so a fast submit's removal waits for this write instead of racing it.
-            var save = _store.SaveAsync(StoreGame, owner, timed);
+            var save = _store.SaveAsync(StoreGame, owner, timed, ApiJsonContext.Default.VerifiedLap);
             _lapSaves[owner] = save;
             _ = save.ContinueWith(t => _lapSaves.TryRemove(new KeyValuePair<string, Task>(owner, t)), TaskScheduler.Default);
         }

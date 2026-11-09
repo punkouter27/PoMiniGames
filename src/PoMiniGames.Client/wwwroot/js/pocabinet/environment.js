@@ -63,7 +63,8 @@ class EnvironmentHandle {
  * is clear). Returns a handle with dispose(); call it on race teardown or before a remount.
  */
 export async function mountEnvironment(sceneHandle, weather) {
-    return new EnvironmentHandle(sceneHandle, weather === 'rain');
+    const raining = weather === 'rain' && !sceneHandle?.room;
+    return new EnvironmentHandle(sceneHandle, raining);
 }
 
 export function unmountEnvironment(handle) {

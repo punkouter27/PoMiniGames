@@ -27,70 +27,74 @@ public sealed class ConfigurationDiagnosticsSnapshotProvider
 
         return new Dictionary<string, object?>
         {
-            ["identity"] = new
+            ["identity"] = new Dictionary<string, object?>
             {
-                solution = PoMiniGamesIdentity.SolutionName,
-                appPrefix = PoMiniGamesIdentity.AppPrefix,
-                ports = new { http = PoMiniGamesIdentity.HttpPort, https = PoMiniGamesIdentity.HttpsPort }
+                ["solution"] = PoMiniGamesIdentity.SolutionName,
+                ["appPrefix"] = PoMiniGamesIdentity.AppPrefix,
+                ["ports"] = new Dictionary<string, object?>
+                {
+                    ["http"] = PoMiniGamesIdentity.HttpPort,
+                    ["https"] = PoMiniGamesIdentity.HttpsPort,
+                },
             },
-            ["environment"] = new
+            ["environment"] = new Dictionary<string, object?>
             {
-                name = _environment.EnvironmentName,
-                application = _environment.ApplicationName,
-                urls = SecretMasker.MaskMiddle(_configuration["ASPNETCORE_URLS"] ?? _configuration["URLS"]),
+                ["name"] = _environment.EnvironmentName,
+                ["application"] = _environment.ApplicationName,
+                ["urls"] = SecretMasker.MaskMiddle(_configuration["ASPNETCORE_URLS"] ?? _configuration["URLS"]),
             },
-            ["storage"] = new
+            ["storage"] = new Dictionary<string, object?>
             {
-                provider = "AzureTableStorage",
-                tableServiceConnection = SecretMasker.MaskMiddle(_configuration["PoMiniGames:Storage:TableService:ConnectionString"]),
-                tableServiceEndpoint = SecretMasker.MaskMiddle(_configuration["PoMiniGames:Storage:TableService:Endpoint"]),
-                tableServiceAccount = SecretMasker.MaskMiddle(_configuration["PoMiniGames:Storage:TableService:AccountName"]),
-                tableServiceTable = _configuration["PoMiniGames:Storage:TableService:TableName"] ?? "(null)",
+                ["provider"] = "AzureTableStorage",
+                ["tableServiceConnection"] = SecretMasker.MaskMiddle(_configuration["PoMiniGames:Storage:TableService:ConnectionString"]),
+                ["tableServiceEndpoint"] = SecretMasker.MaskMiddle(_configuration["PoMiniGames:Storage:TableService:Endpoint"]),
+                ["tableServiceAccount"] = SecretMasker.MaskMiddle(_configuration["PoMiniGames:Storage:TableService:AccountName"]),
+                ["tableServiceTable"] = _configuration["PoMiniGames:Storage:TableService:TableName"] ?? "(null)",
             },
-            ["logging"] = new
+            ["logging"] = new Dictionary<string, object?>
             {
-                defaultLevel = _configuration["Serilog:MinimumLevel:Default"]
+                ["defaultLevel"] = _configuration["Serilog:MinimumLevel:Default"]
                     ?? _configuration["Logging:LogLevel:Default"]
                     ?? "(null)",
-                devLogFile = _environment.IsDevelopment() ? "logs/pominigames-.log" : "(disabled)",
+                ["devLogFile"] = _environment.IsDevelopment() ? "logs/pominigames-.log" : "(disabled)",
             },
-            ["featureFlags"] = new
+            ["featureFlags"] = new Dictionary<string, object?>
             {
-                enableDiagnostics = _configuration.GetValue("FeatureFlags:EnableDiagnostics", _environment.IsDevelopment()),
+                ["enableDiagnostics"] = _configuration.GetValue("FeatureFlags:EnableDiagnostics", _environment.IsDevelopment()),
             },
-            ["integrations"] = new
+            ["integrations"] = new Dictionary<string, object?>
             {
-                keyVaultConfigured = HasConfiguredValue("PoMiniGames:KeyVault:Uri", "KeyVault:Uri"),
-                applicationInsightsConfigured = HasConfiguredValue(
+                ["keyVaultConfigured"] = HasConfiguredValue("PoMiniGames:KeyVault:Uri", "KeyVault:Uri"),
+                ["applicationInsightsConfigured"] = HasConfiguredValue(
                     "PoMiniGames:ApplicationInsights:ConnectionString",
                     "APPLICATIONINSIGHTS_CONNECTION_STRING",
                     "APPINSIGHTS_CONNECTIONSTRING"),
-                microsoftAuthConfigured = HasConfiguredValue(
+                ["microsoftAuthConfigured"] = HasConfiguredValue(
                     "PoMiniGames:MicrosoftAuth:ClientId",
                     "PoMiniGames:MicrosoftAuth:ApiClientId"),
             },
-            ["keys"] = new
+            ["keys"] = new Dictionary<string, object?>
             {
-                keyVaultUri = SecretMasker.MaskMiddle(_configuration["PoMiniGames:KeyVault:Uri"] ?? _configuration["KeyVault:Uri"]),
-                applicationInsights = SecretMasker.MaskMiddle(
+                ["keyVaultUri"] = SecretMasker.MaskMiddle(_configuration["PoMiniGames:KeyVault:Uri"] ?? _configuration["KeyVault:Uri"]),
+                ["applicationInsights"] = SecretMasker.MaskMiddle(
                     _configuration["PoMiniGames:ApplicationInsights:ConnectionString"]
                     ?? _configuration["APPLICATIONINSIGHTS_CONNECTION_STRING"]
                     ?? _configuration["APPINSIGHTS_CONNECTIONSTRING"]),
-                microsoftClientId = SecretMasker.MaskMiddle(_configuration["PoMiniGames:MicrosoftAuth:ClientId"]),
-                microsoftApiClientId = SecretMasker.MaskMiddle(_configuration["PoMiniGames:MicrosoftAuth:ApiClientId"]),
+                ["microsoftClientId"] = SecretMasker.MaskMiddle(_configuration["PoMiniGames:MicrosoftAuth:ClientId"]),
+                ["microsoftApiClientId"] = SecretMasker.MaskMiddle(_configuration["PoMiniGames:MicrosoftAuth:ApiClientId"]),
             },
-            ["health"] = new
+            ["health"] = new Dictionary<string, object?>
             {
-                status = report.Status.ToString(),
-                checks = report.Entries.Select(entry => new
+                ["status"] = report.Status.ToString(),
+                ["checks"] = report.Entries.Select(entry => new Dictionary<string, object?>
                 {
-                    name = entry.Key,
-                    status = entry.Value.Status.ToString(),
-                    description = entry.Value.Description,
-                    duration = entry.Value.Duration.TotalMilliseconds,
+                    ["name"] = entry.Key,
+                    ["status"] = entry.Value.Status.ToString(),
+                    ["description"] = entry.Value.Description,
+                    ["duration"] = entry.Value.Duration.TotalMilliseconds,
                 }).ToArray(),
-                totalDuration = report.TotalDuration.TotalMilliseconds,
-                checkedAtUtc = DateTimeOffset.UtcNow,
+                ["totalDuration"] = report.TotalDuration.TotalMilliseconds,
+                ["checkedAtUtc"] = DateTimeOffset.UtcNow,
             },
         };
     }

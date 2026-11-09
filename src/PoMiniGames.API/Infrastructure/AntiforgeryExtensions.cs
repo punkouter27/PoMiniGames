@@ -1,4 +1,5 @@
 using Microsoft.AspNetCore.Antiforgery;
+using PoMiniGames.Serialization;
 
 namespace PoMiniGames.Infrastructure;
 
@@ -100,12 +101,12 @@ internal static class AntiforgeryExtensions
                 // failure to the player — a generic 403 is indistinguishable from a real
                 // authorization denial and must not trigger a replay.
                 context.Response.StatusCode = StatusCodes.Status403Forbidden;
-                await context.Response.WriteAsJsonAsync(new
-                {
-                    error = "antiforgery_validation_failed",
-                    detail = $"A valid '{HeaderName}' header is required for state-changing requests. "
-                           + "Fetch one from GET /api/auth/antiforgery-token.",
-                });
+                await context.Response.WriteAsJsonAsync(
+                    new AntiforgeryValidationError(
+                        "antiforgery_validation_failed",
+                        $"A valid '{HeaderName}' header is required for state-changing requests. "
+                        + "Fetch one from GET /api/auth/antiforgery-token."),
+                    ApiJsonContext.Default.AntiforgeryValidationError);
                 return;
             }
 
@@ -114,6 +115,8 @@ internal static class AntiforgeryExtensions
 
         return app;
     }
+
+    internal sealed record AntiforgeryValidationError(string Error, string Detail);
 
     /// <summary>
     /// Issues the request token (and sets the paired cookie). Anonymous and safe by

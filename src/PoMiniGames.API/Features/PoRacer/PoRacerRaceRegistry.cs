@@ -2,6 +2,7 @@ using PoMiniGames.Features.Integrity;
 using Microsoft.AspNetCore.SignalR;
 using PoMiniGames.Infrastructure;
 using PoMiniGames.Shared.Games;
+using PoMiniGames.Serialization;
 
 namespace PoMiniGames.Features.PoRacer;
 
@@ -110,7 +111,7 @@ public sealed class PoRacerRaceRegistry : IAsyncDisposable
         code = code.ToLowerInvariant();
         lock (_gate) _verified[(userId, code)] = lap;
         // Not awaited: the race loop must not wait on storage, and the store logs its own failures.
-        _ = _store?.SaveAsync(StoreGame, StoreKey(userId, code), lap);
+        _ = _store?.SaveAsync(StoreGame, StoreKey(userId, code), lap, ApiJsonContext.Default.PoRacerVerifiedLap);
     }
 
     /// <summary>
@@ -123,7 +124,12 @@ public sealed class PoRacerRaceRegistry : IAsyncDisposable
         PoRacerVerifiedLap? lap;
         lock (_gate) _verified.TryGetValue((userId, code), out lap);
         if (lap is null && _store is not null)
-            lap = await _store.FindAsync<PoRacerVerifiedLap>(StoreGame, StoreKey(userId, code), VerifiedFor, ct: ct);
+            lap = await _store.FindAsync(
+                StoreGame,
+                StoreKey(userId, code),
+                VerifiedFor,
+                ApiJsonContext.Default.PoRacerVerifiedLap,
+                ct: ct);
         return lap is not null && DateTimeOffset.UtcNow - lap.FinishedAtUtc <= VerifiedFor ? lap : null;
     }
 

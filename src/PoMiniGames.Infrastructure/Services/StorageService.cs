@@ -11,6 +11,7 @@ using PoMiniGames.Domain.Abstractions;
 using PoMiniGames.Domain.Primitives;
 using PoMiniGames.Domain.Services;
 using PoMiniGames.Infrastructure.Storage;
+using PoMiniGames.Infrastructure.Serialization;
 
 namespace PoMiniGames.Infrastructure.Services;
 
@@ -297,7 +298,7 @@ public partial class StorageService : IStorageService
             {
                 var json = entity.GetString("StatsJson");
                 if (string.IsNullOrEmpty(json)) continue;
-                var stats = JsonSerializer.Deserialize<PlayerStats>(json);
+                var stats = JsonSerializer.Deserialize(json, StorageJsonContext.Default.PlayerStats);
                 if (stats is null) continue;
                 rows.Add(new PlayerStatsDto
                 {
@@ -337,7 +338,7 @@ public partial class StorageService : IStorageService
         {
             var response = await Table(PlayerStatsTable).GetEntityAsync<TableEntity>(sanitizedGame, sanitizedName);
             var json = response.Value.GetString("StatsJson");
-            return json is null ? null : JsonSerializer.Deserialize<PlayerStats>(json);
+            return json is null ? null : JsonSerializer.Deserialize(json, StorageJsonContext.Default.PlayerStats);
         }
         catch (RequestFailedException ex) when (ex.Status == 404)
         {
@@ -405,10 +406,10 @@ public partial class StorageService : IStorageService
                     var merged = stats;
                     if (!string.IsNullOrEmpty(existingJson))
                     {
-                        var existing = JsonSerializer.Deserialize<PlayerStats>(existingJson);
+                        var existing = JsonSerializer.Deserialize(existingJson, StorageJsonContext.Default.PlayerStats);
                         if (existing is not null) merged = MergeStats(existing, stats);
                     }
-                    var mergedJson = JsonSerializer.Serialize(merged);
+                    var mergedJson = JsonSerializer.Serialize(merged, StorageJsonContext.Default.PlayerStats);
                     if (existingJson == mergedJson) return false; // idempotent no-op
                     e["StatsJson"] = mergedJson;
                     e["UpdatedAt"] = DateTime.UtcNow.ToString("yyyy-MM-ddTHH:mm:ssZ");
@@ -502,7 +503,7 @@ public partial class StorageService : IStorageService
             {
                 var json = entity.GetString("StatsJson");
                 if (string.IsNullOrEmpty(json)) continue;
-                var stats = JsonSerializer.Deserialize<PlayerStats>(json) ?? new PlayerStats();
+                var stats = JsonSerializer.Deserialize(json, StorageJsonContext.Default.PlayerStats) ?? new PlayerStats();
 
                 BackfillLegacyElo(stats);
 

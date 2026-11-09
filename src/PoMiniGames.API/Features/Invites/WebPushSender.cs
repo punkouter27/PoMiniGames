@@ -83,12 +83,16 @@ public sealed class WebPushSender(HttpClient http, ILogger<WebPushSender> logger
     public static string BuildToken(VapidKeys keys, string audience, string subject, DateTimeOffset now)
     {
         var header = Encode("""{"typ":"JWT","alg":"ES256"}""");
-        var claims = Encode(JsonSerializer.Serialize(new Dictionary<string, object>
+        using var payload = new MemoryStream();
+        using (var writer = new Utf8JsonWriter(payload))
         {
-            ["aud"] = audience,
-            ["exp"] = now.Add(TokenLifetime).ToUnixTimeSeconds(),
-            ["sub"] = subject,
-        }));
+            writer.WriteStartObject();
+            writer.WriteString("aud", audience);
+            writer.WriteNumber("exp", now.Add(TokenLifetime).ToUnixTimeSeconds());
+            writer.WriteString("sub", subject);
+            writer.WriteEndObject();
+        }
+        var claims = InviteStore.Base64Url(payload.ToArray());
         var signingInput = $"{header}.{claims}";
 
         using var key = ECDsa.Create();
