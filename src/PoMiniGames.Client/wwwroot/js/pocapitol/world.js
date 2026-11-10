@@ -1,24 +1,44 @@
-// Deliberately fictional footprint: recognizable spaces, not a real access plan.
+// PoCapitol's rules: a crowd-pressure simulation, not a shooter.
+//
+// Deliberately fictional footprint: recognizable spaces, not a real access plan. The rooms
+// sit in a straight line that the real building does not have, and police positions are
+// invented. What follows the record is the SHAPE of the day: a mostly passive crowd, a
+// minority pushing on police lines, non-lethal police tools, lines that fall back in stages,
+// a House chamber that was evacuated and never entered, and a 6 pm curfew.
+//
+// The spectator demo is the exception, by the owner's request: an armed variant in which both
+// sides carry guns and whoever is hit drops out for good. That part follows no record at all.
+import { createSteering } from './steering.js';
+
 export const areas = [
-    { x: 0, z: 41, w: 76, d: 54, name: 'Capitol grounds' },
-    { x: 0, z: 6, w: 14, d: 18, name: 'Entrance gallery' },
+    // The lawn runs well back from the building: the crowd starts out on the grass.
+    { x: 0, z: 61, w: 76, d: 94, name: 'West front grounds' },
+    { x: 0, z: 5.5, w: 18, d: 19, name: 'Crypt' },
     { x: 0, z: -14, w: 34, d: 24, name: 'Rotunda' },
-    { x: 0, z: -30, w: 10, d: 12, name: 'Fictional connecting gallery' },
-    { x: 0, z: -48, w: 38, d: 26, name: 'House chamber' },
+    { x: 0, z: -27.5, w: 8, d: 5, name: 'Connecting doorway' },
+    { x: 0, z: -37, w: 24, d: 16, name: 'Statuary Hall' },
+    { x: 0, z: -48.5, w: 8, d: 9, name: 'House corridor' },
 ];
+
+/**
+ * Height of the walking surface the renderer draws at (x, z), so feet and contact shadows sit
+ * on it: interior floors, the paved forecourt, the two planted beds, otherwise the lawn.
+ * Visual only; the simulation stays flat.
+ */
+export function groundHeight(x, z) {
+    if (z < 15) return 0.1;
+    if (Math.abs(x) <= 12 && z >= 12 && z <= 72) return 0.02;
+    if (Math.abs(Math.abs(x) - 30) <= 4.5 && z >= 38 && z <= 64) return 0.05;
+    return -0.05;
+}
 
 export const obstacles = [
-    { x: -9, z: 31, w: 6, d: 2, h: 1.3 },
-    { x: 9, z: 31, w: 6, d: 2, h: 1.3 },
-    { x: -8, z: -12, w: 3, d: 3, h: 1.3 },
-    { x: 8, z: -12, w: 3, d: 3, h: 1.3 },
-    { x: -10, z: -46, w: 8, d: 2, h: 1.1 },
-    { x: 10, z: -46, w: 8, d: 2, h: 1.1 },
+    // Inauguration bleachers flank the approach and leave one central gap.
+    { x: -25.5, z: 33, w: 24, d: 6, h: 4.5, kind: 'bleacher' },
+    { x: 25.5, z: 33, w: 24, d: 6, h: 4.5, kind: 'bleacher' },
+    { x: -8, z: -12, w: 3, d: 3, h: 1.3, kind: 'bench' },
+    { x: 8, z: -12, w: 3, d: 3, h: 1.3, kind: 'bench' },
 ];
-
-export const seats = [-1, 1].flatMap(side => Array.from({ length: 5 }, (_, row) =>
-    Array.from({ length: 5 }, (_, seat) => ({ x: side * (5.5 + seat * 2.35), z: -39 - row * 3.3, w: 1.15, d: 1.2 }))
-        .filter(s => !(Math.abs(s.z + 46) < 2.2 && Math.abs(s.x - side * 10) < 4.5)))).flat();
 
 export const columns = [
     ...[-25, 25].flatMap(x => [-11, -5, 1, 7, 13].map(offset => ({ x: x + offset, z: 16, height: 8.5 }))),
@@ -27,17 +47,48 @@ export const columns = [
         x: Math.sin(i / 12 * Math.PI * 2) * 14,
         z: -14 + Math.cos(i / 12 * Math.PI * 2) * 9, height: 7,
     })).filter(c => Math.abs(c.x) > 5),
+    // The Crypt's forest of squat columns.
+    ...[-4.5, 4.5].flatMap(x => [10, 5, 0].map(z => ({ x, z, height: 7.6 }))),
 ];
+
+export const statues = [-10, 10].flatMap(x => [-32, -37, -42].map(z => ({ x, z })));
 
 export const milestones = [
-    { x: 0, z: 23, radius: 5, label: 'Cross the forecourt' },
-    { x: 0, z: 4, radius: 4, label: 'Enter the fictional gallery' },
-    { x: 0, z: -16, radius: 5, label: 'Reach the Rotunda' },
-    { x: 0, z: -49, radius: 5, label: 'Reach the House chamber' },
+    { x: 0, z: 27, radius: 5, label: 'Pass the barricades' },
+    { x: 0, z: 9, radius: 4, label: 'Enter the Crypt' },
+    { x: 0, z: -12, radius: 5, label: 'Reach the Rotunda' },
+    { x: 0, z: -34, radius: 4, label: 'Enter Statuary Hall' },
+    { x: 0, z: -43, radius: 3, label: 'Cross Statuary Hall' },
+    { x: 0, z: -50, radius: 2.5, label: 'Reach the House chamber doors' },
 ];
 
-const difficulties = { story: { damage: 5, interval: 3.2 }, standard: { damage: 12, interval: 2 } };
-export const CROWD_SIZE = 100;
+// Police lines, front to back. Each seals a chokepoint for as long as it holds.
+export const lineDefs = [
+    { z: 33, x0: -13.5, x1: 13.5, officers: 14, barrier: 6, name: 'Bike-rack barricade' },
+    { z: 14, x0: -9, x1: 9, officers: 10, barrier: 4, name: 'Crypt doors' },
+    { z: -3, x0: -9, x1: 9, officers: 8, barrier: 2, name: 'Rotunda doors' },
+    { z: -27.5, x0: -4, x1: 4, officers: 6, barrier: 3, name: 'Statuary Hall doorway' },
+    { z: -47, x0: -4, x1: 4, officers: 6, barrier: 4, name: 'House corridor' },
+];
+
+export const CROWD_SIZE = 128;
+export const MAX_POLICE = 64;
+/** Staff and members sheltering in the chamber. Non-combatants: nothing can target or reach them. */
+export const CIVILIANS = 64;
+/** One real second is one minute of the day: 12:50 pm to the 6:00 pm curfew is 310 seconds. */
+export const CLOCK_START = 12 * 60 + 50;
+export const CURFEW_ELAPSED = 18 * 60 - CLOCK_START;
+export const aidStation = { x: -30, z: 62 };
+const reinforcementTimes = [55, 95, 135, 175, 215];
+const EVACUATION_STARTS = 85;
+const LINE_STANDOFF = 0.6;
+
+const difficulties = {
+    story: { hold: 1.2, baton: 4, spray: 3, gas: 0.8, interval: 3.2, playerBaton: 6, playerSpray: 4, playerGas: 3, wear: 0.34, tire: 55, shot: 4 },
+    standard: { hold: 1.6, baton: 7, spray: 5, gas: 1.5, interval: 2, playerBaton: 12, playerSpray: 8, playerGas: 6, wear: 0.28, tire: 80, shot: 7 },
+};
+const roles = ['raider', 'police', 'observer'];
+
 const inside = (x, z, r, margin = 0) =>
     Math.abs(x - r.x) <= r.w / 2 - margin && Math.abs(z - r.z) <= r.d / 2 - margin;
 
@@ -45,8 +96,8 @@ export function walkable(x, z) {
     // Both endpoints of each link overlap, leaving a continuous center aisle.
     return areas.some(a => inside(x, z, a, 0.4)) &&
         !obstacles.some(o => inside(x, z, o, -0.4)) &&
-        (z > -37 || !seats.some(s => inside(x, z, s, -0.4))) &&
-        !columns.some(c => Math.hypot(x - c.x, z - c.z) < 1.15);
+        !columns.some(c => Math.hypot(x - c.x, z - c.z) < 1.15) &&
+        !statues.some(s => Math.hypot(x - s.x, z - s.z) < 1);
 }
 
 export function clearLine(x, z, tx, tz) {
@@ -58,8 +109,22 @@ export function clearLine(x, z, tx, tz) {
     return true;
 }
 
-// A shared flow field routes the whole crowd around scenery without per-NPC path searches.
-const gridWidth = 75, gridDepth = 128, gridX = -37, gridZ = -60;
+export function clockLabel(elapsed) {
+    const minutes = CLOCK_START + Math.floor(elapsed);
+    const hour = Math.floor(minutes / 60), minute = minutes % 60;
+    return `${(hour + 11) % 12 + 1}:${String(minute).padStart(2, '0')} ${hour < 12 ? 'AM' : 'PM'}`;
+}
+
+// A shared flow field per destination routes everyone around scenery without per-NPC path
+// searches. Fields: one per milestone, then the aid station, then a rally point behind each
+// police line, then the last post outside the chamber doors.
+const gridWidth = 75, gridDepth = 170, gridX = -37, gridZ = -60;
+const AID_FIELD = milestones.length, LINE_FIELD = AID_FIELD + 1, LAST_POST_FIELD = LINE_FIELD + lineDefs.length;
+const destinations = [
+    ...milestones, aidStation,
+    ...lineDefs.map(line => ({ x: 0, z: Math.round(line.z - 2.5) })),
+    { x: 0, z: -51 },
+];
 let navigation = null;
 function navigationFields() {
     if (navigation) return navigation;
@@ -67,7 +132,7 @@ function navigationFields() {
     for (let z = 0; z < gridDepth; z++) for (let x = 0; x < gridWidth; x++) {
         open[z * gridWidth + x] = walkable(x + gridX, z + gridZ) ? 1 : 0;
     }
-    navigation = milestones.map(goal => {
+    navigation = destinations.map(goal => {
         const distance = new Int16Array(open.length).fill(-1);
         const queue = new Int32Array(open.length);
         let head = 0, tail = 0;
@@ -91,20 +156,25 @@ function routeCell(actor) {
     return x >= 0 && x < gridWidth && z >= 0 && z < gridDepth ? z * gridWidth + x : -1;
 }
 
-function routeTarget(actor) {
-    const milestone = milestones[actor.milestone];
-    if (!milestone) return actor;
-    const goal = { x: milestone.x + (actor.id % 7 - 3) * 0.45, z: milestone.z };
+/** The next point to walk to: the goal itself when in sight, else a few cells down the field. */
+function routeTarget(actor, field, goal) {
     if (clearLine(actor.x, actor.z, goal.x, goal.z)) return goal;
-    const distances = navigationFields()[actor.milestone], cell = routeCell(actor);
-    if (cell < 0) throw new Error('NPC left the scenario navigation bounds.');
-    let best = cell, distance = distances[cell] < 0 ? Infinity : distances[cell];
-    const x = cell % gridWidth;
-    for (const next of [x > 0 ? cell - 1 : -1, x < gridWidth - 1 ? cell + 1 : -1, cell - gridWidth, cell + gridWidth]) {
-        if (next < 0 || next >= distances.length || distances[next] < 0 || distances[next] >= distance) continue;
-        const target = { x: next % gridWidth + gridX, z: Math.floor(next / gridWidth) + gridZ };
-        if (!clearLine(actor.x, actor.z, target.x, target.z)) continue;
-        best = next; distance = distances[next];
+    const distances = navigationFields()[field];
+    let best = routeCell(actor);
+    if (best < 0) throw new Error('NPC left the scenario navigation bounds.');
+    let distance = distances[best] < 0 ? Infinity : distances[best];
+    // Looking a few cells ahead gives steering a waypoint worth steering toward, where a
+    // one-cell hop would have every figure zig-zagging between cell centers.
+    for (let hop = 0; hop < 4; hop++) {
+        const x = best % gridWidth;
+        let chosen = -1;
+        for (const next of [x > 0 ? best - 1 : -1, x < gridWidth - 1 ? best + 1 : -1, best - gridWidth, best + gridWidth]) {
+            if (next < 0 || next >= distances.length || distances[next] < 0 || distances[next] >= distance) continue;
+            if (!clearLine(actor.x, actor.z, next % gridWidth + gridX, Math.floor(next / gridWidth) + gridZ)) continue;
+            chosen = next; distance = distances[next];
+        }
+        if (chosen < 0) break;
+        best = chosen;
     }
     return { x: best % gridWidth + gridX, z: Math.floor(best / gridWidth) + gridZ };
 }
@@ -126,22 +196,66 @@ export function selectLeader(state) {
     return leader;
 }
 
-export function createAttempt(difficulty = 'standard', demo = false) {
+/** The police line the crowd is up against: the first one still holding, or null. */
+export function frontLine(state) {
+    const index = state.lines.findIndex(line => line.state === 'holding');
+    return index < 0 ? null : { ...lineDefs[index], ...state.lines[index] };
+}
+
+function temperamentOf(id) {
+    if (id % 20 === 6) return 'medic';
+    const k = id % 10;
+    return k < 3 ? 'pusher' : k < 7 ? 'follower' : 'bystander';
+}
+const baseMorale = { pusher: 0.85, follower: 0.6, bystander: 0.45, medic: 0.7 };
+
+function officer(id, line, x, z) {
+    return { id, x, z, health: 10, line, cooldown: 1 + id % 5 * 0.3, stagger: 0, attacking: 0, tool: '',
+        faction: 'capitol-police', heading: Math.PI, moving: false, row: 0, spray: 2 + id % 4 };
+}
+
+const steeringByAttempt = new WeakMap();
+
+export function createAttempt(difficulty = 'standard', demo = false, role = 'raider') {
     if (!Object.hasOwn(difficulties, difficulty)) throw new RangeError('Unknown difficulty.');
-    return {
-        status: 'active', difficulty, demo, health: 100, elapsed: 0, milestone: 0,
-        player: { x: 0, z: 58 }, cooldown: 0, shots: 0, hits: 0, damageFlash: 0,
-        enemies: [25, 20, -7, -21, -40, -51].flatMap((z, row) =>
-            [-1, 1].map(side => ({ id: row * 2 + (side > 0 ? 1 : 0), x: side * (row < 2 ? 4 : row < 4 ? 11 : 3.5),
-                z, health: 3, cooldown: 0.5 + row * 0.2, faction: 'capitol-police', heading: Math.PI }))),
-        companions: Array.from({ length: demo ? CROWD_SIZE : CROWD_SIZE - 1 }, (_, id) => ({
-            id, x: (id % 11 - 5) * 2.3, z: 43 + Math.floor(id / 11) * 2.2,
-            health: 30, milestone: 0, heading: 0, moving: false, attacking: 0,
-            cooldown: 0.5 + id % 7 * 0.13, delay: id % 9 * 0.12, speed: 3.2 + id % 7 * 0.16,
-            routeWait: 0, targetX: 0, targetZ: 23,
-        })),
-        projectiles: [],
+    if (!roles.includes(role)) throw new RangeError('Unknown role.');
+    role = demo ? 'none' : role;
+    let officerId = 0;
+    const state = {
+        status: 'active', outcome: '', difficulty, demo, role, health: 100, elapsed: 0, milestone: 0,
+        player: role === 'police' ? { x: 3, z: 30 } : role === 'observer' ? { x: 18, z: 52 } : { x: 0, z: 100 },
+        cooldown: 0, pushes: 0, staggers: 0, damageFlash: 0, playerPush: 0, sprayed: 0, gassed: false, flashed: 0,
+        lines: lineDefs.map((def, id) => ({ id, state: 'holding', integrity: 100, pressure: 0, hold: 0,
+            munition: 10 + id * 2, gasLeft: id === 0 ? 2 : 1, flashCooldown: 6, flashLeft: 1, brokenAt: -1, strain: 0 })),
+        enemies: lineDefs.flatMap((def, line) => Array.from({ length: def.officers }, (_, i) =>
+            officer(officerId++, line, def.x0 + (i + 0.5) * (def.x1 - def.x0) / def.officers, def.z - 0.4))),
+        companions: Array.from({ length: role === 'raider' ? CROWD_SIZE - 1 : CROWD_SIZE }, (_, id) => {
+            const temperament = temperamentOf(id);
+            return {
+                id, x: (id % 16 - 7.5) * 2.2, z: 80 + Math.floor(id / 16) * 2.4,
+                health: 30, milestone: 0, heading: 0, moving: false, attacking: 0,
+                cooldown: 0.5 + id % 7 * 0.13, delay: id % 9 * 0.12, speed: 3.2 + id % 7 * 0.16,
+                routeWait: 0, targetX: 0, targetZ: 27,
+                temperament, morale: baseMorale[temperament], retreating: false, milling: false,
+                anchorX: 0, anchorZ: 0, filming: temperament === 'bystander' || id % 4 === 1,
+                // Most of the crowd never goes far inside; only some drift past the doors.
+                reach: temperament === 'bystander' ? 1 + (id % 3 === 0 ? 1 : 0) : milestones.length,
+                sprayed: 0, stun: 0, surge: 0, downFor: 0, helped: false, resting: false, crowding: 0,
+            };
+        }),
+        effects: [], events: [], reinforcements: 0,
+        // Demo only: both sides are armed, and anyone brought to zero is out for the attempt.
+        armed: demo, shots: [],
+        // Seated or standing in the chamber until the evacuation; then out the rear doors.
+        civilians: Array.from({ length: CIVILIANS }, (_, id) => {
+            const seat = id < 50, side = id % 2 ? 1 : -1, n = Math.floor(id / 2);
+            return { id, x: seat ? side * (5.5 + n % 5 * 2.35) : (id - 56.5) * 0.95, z: seat ? -57.9 - Math.floor(n / 5) * 3.3 : -74,
+                heading: seat ? 0 : Math.PI, moving: false, evacuated: false };
+        }),
+        evacuation: -1,
     };
+    steeringByAttempt.set(state, createSteering(CROWD_SIZE));
+    return state;
 }
 
 export function setPaused(state, paused) {
@@ -149,32 +263,348 @@ export function setPaused(state, paused) {
     else if (!paused && state.status === 'paused') state.status = 'active';
 }
 
-export function fire(state, direction) {
+function nudge(actor, dx, dz, distance) {
+    const x = actor.x + dx * distance, z = actor.z + dz * distance;
+    if (walkable(x, actor.z)) actor.x = x;
+    if (walkable(actor.x, z)) actor.z = z;
+}
+
+/**
+ * The human's one action. A raider leans into the line and staggers the officer in front;
+ * an officer pushes back whoever is pressing. Nobody is shot: there are no firearms here.
+ */
+export function shove(state, direction) {
     if (!Number.isFinite(direction.x) || !Number.isFinite(direction.z)) throw new TypeError('Invalid direction.');
-    if (state.demo || state.status !== 'active' || state.cooldown > 0) return null;
+    if (state.status !== 'active' || state.cooldown > 0 || (state.role !== 'raider' && state.role !== 'police')) return null;
     const length = Math.hypot(direction.x, direction.z);
     if (length < 0.001) return null;
     const dx = direction.x / length, dz = direction.z / length;
-    let target = null, nearest = 40;
-    for (let distance = 0.25; distance <= nearest; distance += 0.25) {
-        if (!walkable(state.player.x + dx * distance, state.player.z + dz * distance)) {
-            nearest = distance;
-            break;
+    const inReach = actor => {
+        const x = actor.x - state.player.x, z = actor.z - state.player.z, distance = Math.hypot(x, z);
+        return actor.health > 0 && distance < 2.4 && distance > 0.01 && (x * dx + z * dz) / distance > 0.3 ? distance : Infinity;
+    };
+    let hit = null;
+    if (state.role === 'raider') {
+        let nearest = Infinity;
+        for (const enemy of state.enemies) {
+            const distance = inReach(enemy);
+            if (distance < nearest) { nearest = distance; hit = enemy; }
+        }
+        if (hit) { hit.stagger = 1.4; hit.health = Math.max(0, hit.health - 1); state.staggers++; }
+    } else {
+        const pressing = state.companions.filter(c => inReach(c) < Infinity).slice(0, 3);
+        for (const raider of pressing) {
+            raider.health = Math.max(0, raider.health - 6);
+            raider.stun = 0.7; raider.morale = Math.max(0, raider.morale - 0.2);
+            nudge(raider, dx, dz, 1.4);
+            state.staggers++;
+        }
+        hit = pressing[0] ?? null;
+    }
+    state.pushes++;
+    state.cooldown = 0.45;
+    state.playerPush = 0.6;
+    state.events.push({ type: 'shove', x: state.player.x, z: state.player.z, human: true });
+    return { hit: hit?.id ?? null, x: state.player.x + dx * 1.6, z: state.player.z + dz * 1.6 };
+}
+
+/** The z a raider is held at if this move would cross a line that still holds, else null. */
+function heldAt(state, x, fromZ, toZ) {
+    for (const [i, def] of lineDefs.entries()) {
+        if (state.lines[i].state !== 'holding') continue;
+        const limit = def.z + LINE_STANDOFF;
+        if (x >= def.x0 - 0.5 && x <= def.x1 + 0.5 && fromZ >= limit - 0.05 && toZ < limit) return limit;
+    }
+    return null;
+}
+
+/** Distance from a raider to the next line still holding in front of them. */
+function lineAhead(state, actor) {
+    for (const [i, def] of lineDefs.entries()) {
+        if (state.lines[i].state === 'holding' && actor.z >= def.z + LINE_STANDOFF - 0.05) return actor.z - def.z - LINE_STANDOFF;
+    }
+    return Infinity;
+}
+
+const inGas = (state, actor) => state.effects.some(e =>
+    e.type === 'gas' && Math.hypot(actor.x - e.x, actor.z - e.z) < e.r);
+
+function end(state, outcome) {
+    state.outcome = outcome;
+    const won = state.role === 'police' ? outcome === 'curfew' || outcome === 'dispersed' : outcome === 'doors';
+    state.status = won ? 'completed' : 'failed';
+}
+
+/**
+ * Staff and members leave by the rear doors: from about 2:15 pm, sooner if the building is
+ * entered, and at a run once the crowd reaches Statuary Hall. They are gone before anyone
+ * can reach the chamber doors, which stay shut regardless.
+ */
+function evacuate(state, dt) {
+    if (state.evacuation < 0 && (state.elapsed >= EVACUATION_STARTS || state.lines[1].state === 'broken')) {
+        state.evacuation = state.elapsed;
+        state.events.push({ type: 'evacuation', x: 0, z: -66 });
+    }
+    if (state.evacuation < 0) return;
+    const rush = state.lines[3].state === 'broken';
+    for (const person of state.civilians) {
+        person.moving = false;
+        if (person.evacuated || (!rush && state.elapsed < state.evacuation + person.id * 0.45)) continue;
+        const exitX = person.x < 0 ? -17 : 17, dx = exitX - person.x, dz = -77.5 - person.z, d = Math.hypot(dx, dz);
+        if (d < 0.6) { person.evacuated = true; continue; }
+        const step = Math.min(d, (rush ? 7 : 3.4) * dt);
+        person.x += dx / d * step; person.z += dz / d * step;
+        person.heading = Math.atan2(-dx, -dz); person.moving = true;
+    }
+}
+
+function updateLines(state, difficulty, dt) {
+    const humanRaider = state.role === 'raider' && state.health > 0;
+    const humanOfficer = state.role === 'police' && state.health > 0;
+    for (const [i, def] of lineDefs.entries()) {
+        const line = state.lines[i];
+        if (line.state !== 'holding') continue;
+        line.munition -= dt; line.flashCooldown -= dt;
+        const limit = def.z + LINE_STANDOFF;
+        const pressing = actor => actor.x >= def.x0 - 0.5 && actor.x <= def.x1 + 0.5 && actor.z >= limit - 0.1 && actor.z <= limit + 2.4;
+        let pressure = 0, sumX = 0, count = 0;
+        for (const c of state.companions) {
+            if (c.health <= 0 || c.retreating || c.stun > 0 || !pressing(c)) continue;
+            const weight = c.temperament === 'pusher' ? 1 : c.temperament === 'follower' && c.morale > 0.7 ? 0.5 : 0;
+            if (weight === 0) continue;
+            pressure += weight * (c.surge > 0 ? 1.3 : 1);
+            sumX += c.x; count++;
+        }
+        if (humanRaider && pressing(state.player)) pressure += state.playerPush > 0 ? 6 : 1;
+        let hold = def.barrier;
+        const frontSlots = Math.floor((def.x1 - def.x0) / 1.7);
+        let standing = 0;
+        for (const e of state.enemies) {
+            if (e.health <= 0 || e.line !== i || e.stagger > 0 || Math.abs(e.z - def.z) > 2.2) continue;
+            if (standing++ < frontSlots) hold += difficulty.hold;
+        }
+        if (humanOfficer && Math.abs(state.player.z - def.z) < 2.6 && state.player.x >= def.x0 - 1 && state.player.x <= def.x1 + 1) {
+            hold += state.playerPush > 0 ? 6 : 3;
+        }
+        // A line that has been leaned on for a long time tires, however many stand in it.
+        if (pressure > hold * 0.3) line.strain += dt;
+        hold *= 1 - Math.min(0.65, line.strain / difficulty.tire);
+        line.pressure = pressure; line.hold = hold;
+        line.integrity = Math.max(0, Math.min(100, line.integrity + (hold - pressure) * (pressure > hold ? 1.5 : 0.25) * dt));
+        const centerX = count ? Math.max(def.x0 + 2, Math.min(def.x1 - 2, sumX / count)) : 0;
+        if (pressure > hold * 0.6 && line.gasLeft > 0 && line.munition <= 0) {
+            line.gasLeft--; line.munition = 22;
+            // Gas hangs longer under a ceiling than in the open air.
+            const life = i === 0 ? 8 : 12;
+            state.effects.push({ type: 'gas', x: centerX, z: def.z + 3.4, r: 4, life, span: life });
+            state.events.push({ type: 'gas', x: centerX, z: def.z + 3.4 });
+        }
+        if (line.integrity < 40 && line.flashLeft > 0 && line.flashCooldown <= 0) {
+            line.flashLeft--; line.flashCooldown = 25;
+            const fx = centerX, fz = def.z + 2.6;
+            state.effects.push({ type: 'flash', x: fx, z: fz, r: 5, life: 0.5, span: 0.5 });
+            state.events.push({ type: 'flash', x: fx, z: fz });
+            for (const c of state.companions) {
+                if (c.health <= 0 || Math.hypot(c.x - fx, c.z - fz) > 5) continue;
+                c.stun = 1.5; c.morale = Math.max(0, c.morale - 0.3);
+            }
+            if (humanRaider && Math.hypot(state.player.x - fx, state.player.z - fz) < 5) state.flashed = 1.2;
+        }
+        if (line.integrity <= 0) {
+            line.state = 'broken'; line.brokenAt = state.elapsed; line.pressure = 0;
+            state.events.push({ type: 'break', x: 0, z: def.z, line: i });
+            // A line giving way is the moment a hesitant crowd surges.
+            for (const c of state.companions) {
+                if (c.health <= 0 || Math.abs(c.z - def.z) > 35) continue;
+                c.morale = Math.min(1, c.morale + 0.35); c.surge = 4; c.retreating = false;
+            }
         }
     }
-    for (const enemy of state.enemies) {
-        if (enemy.health <= 0) continue;
-        const x = enemy.x - state.player.x, z = enemy.z - state.player.z;
-        const along = x * dx + z * dz;
-        if (along <= 0 || along >= nearest || Math.abs(x * dz - z * dx) > 0.9) continue;
-        if (!clearLine(state.player.x, state.player.z, enemy.x, enemy.z)) continue;
-        target = enemy;
-        nearest = along;
+    const front = state.lines.findIndex(line => line.state === 'holding');
+    if (front >= 0 && state.reinforcements < reinforcementTimes.length &&
+        state.elapsed >= reinforcementTimes[state.reinforcements] && state.enemies.length + 4 <= MAX_POLICE) {
+        state.reinforcements++;
+        const def = lineDefs[front];
+        for (let i = 0; i < 4; i++) {
+            state.enemies.push(officer(state.enemies.length, front, (i - 1.5) * 1.1, Math.max(-51, def.z - 3 - (i % 2))));
+        }
+        state.events.push({ type: 'reinforce', x: 0, z: def.z - 3, line: front });
     }
-    if (target) { target.health--; state.hits++; }
-    state.shots++;
-    state.cooldown = 0.24;
-    return { hit: target?.id ?? null, x: state.player.x + dx * nearest, z: state.player.z + dz * nearest };
+}
+
+function updateOfficers(state, difficulty, dt) {
+    const humanRaider = state.role === 'raider' && state.health > 0;
+    // Slots: the front rank spreads along the line and bows back as the line weakens;
+    // anyone beyond the front rank stands in reserve behind it.
+    const ranks = lineDefs.map(() => 0), standing = lineDefs.map(() => 0);
+    for (const e of state.enemies) {
+        while (e.line < lineDefs.length && state.lines[e.line].state === 'broken') e.line++;
+        if (e.health > 0 && e.line < lineDefs.length) standing[e.line]++;
+    }
+    for (const e of state.enemies) {
+        e.attacking = Math.max(0, e.attacking - dt);
+        e.stagger = Math.max(0, e.stagger - dt);
+        e.cooldown -= dt;
+        e.moving = false;
+        const def = lineDefs[e.line], line = state.lines[e.line];
+        let slot, field;
+        if (e.health <= 0) {
+            // Pulled back behind the line they were holding, not left where they fell.
+            const back = lineDefs[Math.min(e.line, lineDefs.length - 1)];
+            slot = { x: e.x, z: Math.min(e.z, back.z - 4) }; field = -1;
+        } else if (!def) {
+            const rank = ranks[lineDefs.length - 1]++;
+            slot = { x: (rank % 5 - 2) * 1.3, z: -51 - Math.floor(rank / 5) * 0.9 }; field = LAST_POST_FIELD;
+        } else {
+            const rank = ranks[e.line]++, span = def.x1 - def.x0;
+            const perRow = Math.min(Math.floor(span / 1.7), standing[e.line]), row = Math.floor(rank / perRow);
+            const x = def.x0 + (rank % perRow + 0.5) * span / perRow;
+            const bow = (1 - line.integrity / 100) * 1.4 * Math.cos(Math.PI * (x - (def.x0 + def.x1) / 2) / span);
+            slot = { x, z: def.z - 0.4 - bow - row * 1.8 }; field = LINE_FIELD + e.line; e.row = row;
+        }
+        const distance = Math.hypot(slot.x - e.x, slot.z - e.z);
+        if (distance > 0.15) {
+            const target = field < 0 || distance < 3 ? slot : routeTarget(e, field, slot);
+            const dx = target.x - e.x, dz = target.z - e.z, d = Math.hypot(dx, dz) || 1;
+            const step = Math.min(d, (e.health <= 0 ? 1.5 : 4.6) * dt);
+            const x = e.x + dx / d * step, z = e.z + dz / d * step;
+            if (walkable(x, e.z)) e.x = x;
+            if (walkable(e.x, z)) e.z = z;
+            e.moving = distance > 0.6;
+            if (e.moving) e.heading = Math.atan2(-dx, -dz);
+        }
+        e.spray -= dt;
+        // Only the front rank can reach anyone; the ranks behind it are the reserve.
+        if (e.health <= 0 || !def || e.row > 0 || distance > 1.5 || e.stagger > 0) continue;
+        if (!e.moving) e.heading = Math.PI;
+        if (e.cooldown > 0) continue;
+        // Nearest person pressing from the front: baton at arm's length, spray beyond it.
+        let target = null, nearest = state.armed ? 24 : e.spray <= 0 ? 4.5 : 1.9;
+        for (const actor of humanRaider ? [state.player, ...state.companions] : state.companions) {
+            if (actor !== state.player && (actor.health <= 0 || actor.retreating)) continue;
+            if (actor.z < e.z) continue;
+            const d = Math.hypot(actor.x - e.x, actor.z - e.z);
+            if (d < nearest && d > 0.01) { nearest = d; target = actor; }
+        }
+        if (!target || (nearest > 1.9 && !clearLine(e.x, e.z, target.x, target.z))) { e.cooldown = 0.3; continue; }
+        const dx = (target.x - e.x) / nearest, dz = (target.z - e.z) / nearest;
+        const baton = nearest <= 1.9;
+        e.heading = Math.atan2(-dx, -dz);
+        e.cooldown = difficulty.interval + e.id % 3 * 0.25;
+        if (!baton && state.armed) {
+            e.attacking = 0.2; e.tool = 'gun';
+            state.shots.push({ x: e.x, z: e.z, dx, dz, life: 1.2, faction: 'police' });
+            state.events.push({ type: 'gunshot', x: e.x, z: e.z });
+            continue;
+        }
+        e.attacking = 0.3; e.tool = baton ? 'baton' : 'spray';
+        if (!baton) e.spray = difficulty.interval * 3;
+        if (target === state.player) {
+            state.health = Math.max(0, state.health - (baton ? difficulty.playerBaton : difficulty.playerSpray));
+            state.damageFlash = 0.22;
+            if (baton) nudge(state.player, dx, dz, 0.9); else state.sprayed = 4;
+        } else {
+            target.health = Math.max(0, target.health - (baton ? difficulty.baton : difficulty.spray));
+            target.morale = Math.max(0, target.morale - (baton ? 0.15 : 0.35));
+            if (baton) { nudge(target, dx, dz, 1.2); target.stun = 0.5; } else target.sprayed = 4;
+            if (target.health === 0) state.events.push({ type: 'down', x: target.x, z: target.z });
+        }
+        if (!baton) state.effects.push({ type: 'spray', x: e.x, z: e.z, tx: target.x, tz: target.z, life: 0.35, span: 0.35 });
+        state.events.push({ type: e.tool, x: e.x, z: e.z });
+    }
+}
+
+/** Decides what every raider wants this step; steering then works out how they move. */
+function planRaiders(state, difficulty, dt, agents, bodies) {
+    if (state.role !== 'none' && state.health > 0) bodies.push(state.player);
+    for (const e of state.enemies) if (e.health > 0) bodies.push(e);
+    const down = state.armed ? [] : state.companions.filter(c => c.health <= 0 && !c.helped);
+    for (const c of state.companions) {
+        c.attacking = Math.max(0, c.attacking - dt);
+        c.sprayed = Math.max(0, c.sprayed - dt);
+        c.stun = Math.max(0, c.stun - dt);
+        c.surge = Math.max(0, c.surge - dt);
+        c.cooldown -= dt;
+        c.moving = false;
+        let goal, field, speed = c.speed;
+        if (c.health <= 0) {
+            // Armed demo: eliminated, and they stay where they dropped.
+            if (state.armed) { bodies.push(c); continue; }
+            // Out of the scenario, not out of the world: they sit until a street medic (or
+            // time) gets them up, then walk back to the aid station and stay there.
+            if (!c.helped) {
+                c.downFor += dt;
+                if (c.downFor > 8) c.helped = true;
+                bodies.push(c); continue;
+            }
+            if (c.resting) { bodies.push(c); continue; }
+            if (Math.hypot(c.x - aidStation.x, c.z - aidStation.z) < 5 + c.id % 4) { c.resting = true; bodies.push(c); continue; }
+            goal = aidStation; field = AID_FIELD; speed = 1.5;
+        } else {
+            if (state.elapsed < c.delay) { bodies.push(c); continue; }
+            const gassed = inGas(state, c);
+            if (gassed) {
+                c.health = Math.max(0, c.health - difficulty.gas * dt);
+                c.morale = Math.max(0, c.morale - 0.18 * dt);
+                if (c.health === 0) { state.events.push({ type: 'down', x: c.x, z: c.z }); bodies.push(c); continue; }
+            } else {
+                const base = baseMorale[c.temperament];
+                c.morale += Math.sign(base - c.morale) * Math.min(Math.abs(base - c.morale), 0.08 * dt);
+            }
+            // Worn-out people drop back to catch their breath, then drift forward again.
+            if (!state.armed && (c.retreating || lineAhead(state, c) > 6)) c.health = Math.min(30, c.health + 1 * dt);
+            if (c.morale < 0.25 || (!state.armed && c.health < 6)) c.retreating = true;
+            else if (c.morale > 0.55 && (state.armed || c.health > 16)) c.retreating = false;
+            if (c.milestone < c.reach && milestones[c.milestone] &&
+                Math.hypot(c.x - milestones[c.milestone].x, c.z - milestones[c.milestone].z) <= milestones[c.milestone].radius) {
+                c.milestone++; c.routeWait = 0;
+                state.events.push({ type: 'advance', x: c.x, z: c.z });
+            }
+            const patient = c.temperament === 'medic' && !c.retreating ? down.reduce((best, d) => {
+                const distance = Math.hypot(d.x - c.x, d.z - c.z);
+                return distance < 14 && (!best || distance < best.distance) ? { actor: d, distance } : best;
+            }, null) : null;
+            const standoff = c.temperament === 'pusher' || (c.temperament === 'follower' && c.morale > 0.7) ? 0
+                : c.temperament === 'follower' ? 2.6 + c.id % 3 * 0.7 : c.temperament === 'medic' ? 6 : 9 + c.id % 6;
+            let stand = false;
+            if (c.stun > 0) stand = true;
+            else if (c.retreating) {
+                field = c.milestone > 0 ? c.milestone - 1 : AID_FIELD;
+                goal = c.milestone > 0 ? milestones[c.milestone - 1] : aidStation;
+                if (Math.hypot(c.x - goal.x, c.z - goal.z) < 4) stand = true;
+            } else if (patient && clearLine(c.x, c.z, patient.actor.x, patient.actor.z)) {
+                if (patient.distance < 1.6) { patient.actor.helped = true; stand = true; }
+                else { goal = patient.actor; field = -1; }
+            } else if (c.milestone >= c.reach || c.milestone >= milestones.length || lineAhead(state, c) <= standoff) {
+                // Nothing to push toward: mill about, the way most of a crowd does.
+                if (!c.milling) { c.milling = true; c.anchorX = c.x; c.anchorZ = c.z; }
+                goal = { x: c.anchorX + Math.sin(state.elapsed * 0.31 + c.id * 1.9) * 2.2,
+                    z: c.anchorZ + Math.cos(state.elapsed * 0.27 + c.id * 0.7) * 1.6 };
+                field = -1; speed = 1.1;
+                if (!walkable(goal.x, goal.z)) stand = true;
+            } else {
+                const milestone = milestones[c.milestone];
+                goal = { x: milestone.x + (c.id % 7 - 3) * 0.45, z: milestone.z }; field = c.milestone;
+            }
+            if (!(c.milestone >= c.reach || lineAhead(state, c) <= standoff) || c.retreating) c.milling = false;
+            if (stand) goal = null;
+            if (gassed) speed *= 0.7;
+            if (c.sprayed > 0) speed *= 0.5;
+            if (c.surge > 0) speed *= 1.25;
+            // People packed shoulder to shoulder shuffle; they do not stride.
+            speed /= 1 + 0.18 * Math.max(0, c.crowding - 2);
+        }
+        if (goal) {
+            c.routeWait -= dt;
+            if (field < 0) { c.targetX = goal.x; c.targetZ = goal.z; }
+            else if (c.routeWait <= 0 || Math.hypot(c.targetX - c.x, c.targetZ - c.z) < 0.4) {
+                const next = routeTarget(c, field, goal);
+                c.targetX = next.x; c.targetZ = next.z;
+                c.routeWait = 0.2;
+            }
+        } else { c.targetX = c.x; c.targetZ = c.z; speed = 0; }
+        agents.push({ id: c.id, x: c.x, z: c.z, targetX: c.targetX, targetZ: c.targetZ, speed, actor: c });
+    }
 }
 
 export function advance(state, input, seconds) {
@@ -183,112 +613,119 @@ export function advance(state, input, seconds) {
     if (!Number.isFinite(x) || !Number.isFinite(z)) throw new TypeError('Invalid movement input.');
     if (state.status !== 'active') return;
     const dt = Math.min(seconds, 0.05);
+    const difficulty = difficulties[state.difficulty];
+    state.events.length = 0;
     state.elapsed += dt;
     state.cooldown = Math.max(0, state.cooldown - dt);
     state.damageFlash = Math.max(0, state.damageFlash - dt);
-    const magnitude = Math.max(1, Math.hypot(x, z));
-    const speed = input.sprint ? 8 : 5;
-    const nx = state.player.x + (state.demo ? 0 : x) / magnitude * speed * dt;
-    const nz = state.player.z + (state.demo ? 0 : z) / magnitude * speed * dt;
-    if (walkable(nx, state.player.z)) state.player.x = nx;
-    if (walkable(state.player.x, nz)) state.player.z = nz;
+    state.playerPush = Math.max(0, state.playerPush - dt);
+    state.sprayed = Math.max(0, state.sprayed - dt);
+    state.flashed = Math.max(0, state.flashed - dt);
 
-    const difficulty = difficulties[state.difficulty];
-    for (const enemy of state.enemies) {
-        if (enemy.health <= 0) continue;
-        enemy.cooldown -= dt;
-        if (enemy.cooldown > 0) continue;
-        let target = null, distance = 23;
-        const candidates = state.demo ? state.companions : [state.player, ...state.companions];
-        for (const actor of candidates) {
-            if (actor.health <= 0) continue;
-            const d = Math.hypot(actor.x - enemy.x, actor.z - enemy.z);
-            if (d >= distance || d < 0.01 || !clearLine(enemy.x, enemy.z, actor.x, actor.z)) continue;
-            target = actor; distance = d;
+    if (state.role !== 'none' && state.health > 0) {
+        const magnitude = Math.max(1, Math.hypot(x, z));
+        const speed = (input.sprint ? 8 : 5) * (state.sprayed > 0 ? 0.6 : 1);
+        const nx = state.player.x + x / magnitude * speed * dt;
+        let nz = state.player.z + z / magnitude * speed * dt;
+        if (state.role === 'raider') nz = heldAt(state, nx, state.player.z, nz) ?? nz;
+        if (walkable(nx, state.player.z)) state.player.x = nx;
+        if (walkable(state.player.x, nz)) state.player.z = nz;
+        state.gassed = state.role === 'raider' && inGas(state, state.player);
+        if (state.gassed) {
+            state.health = Math.max(0, state.health - difficulty.playerGas * dt);
+            state.damageFlash = Math.max(state.damageFlash, 0.1);
         }
-        if (target) {
-            const dx = target.x - enemy.x, dz = target.z - enemy.z;
-            enemy.heading = Math.atan2(-dx, -dz);
-            state.projectiles.push({ x: enemy.x, z: enemy.z, dx: dx / distance, dz: dz / distance, life: 3, faction: 'police' });
-            enemy.cooldown = difficulty.interval;
-        } else enemy.cooldown = 0.2;
     }
-    for (const p of state.projectiles) {
-        p.x += p.dx * 16 * dt;
-        p.z += p.dz * 16 * dt;
-        p.life -= dt;
-        if (!walkable(p.x, p.z)) p.life = 0;
-        if (p.life > 0 && !state.demo && p.faction !== 'raider' && Math.hypot(p.x - state.player.x, p.z - state.player.z) < 0.65) {
-            state.health = Math.max(0, state.health - difficulty.damage);
-            state.damageFlash = 0.22;
-            p.life = 0;
-        }
-        if (p.life <= 0) continue;
-        const targets = p.faction === 'raider' ? state.enemies : state.companions;
-        for (const actor of targets) {
-            if (actor.health <= 0 || Math.hypot(p.x - actor.x, p.z - actor.z) >= 0.65) continue;
-            actor.health = Math.max(0, actor.health - (p.faction === 'raider' ? 1 : difficulty.damage));
-            p.life = 0;
+
+    evacuate(state, dt);
+    for (const effect of state.effects) effect.life -= dt;
+    state.effects = state.effects.filter(effect => effect.life > 0);
+    updateLines(state, difficulty, dt);
+    updateOfficers(state, difficulty, dt);
+    stepRaiders(state, difficulty, dt);
+
+    // Armed demo: rounds in flight. A hit takes stamina; nobody is hit by their own side.
+    for (const shot of state.shots) {
+        shot.x += shot.dx * 30 * dt; shot.z += shot.dz * 30 * dt; shot.life -= dt;
+        if (!walkable(shot.x, shot.z)) { shot.life = 0; continue; }
+        for (const actor of shot.faction === 'raider' ? state.enemies : state.companions) {
+            if (actor.health <= 0 || Math.hypot(shot.x - actor.x, shot.z - actor.z) >= 0.6) continue;
+            actor.health = Math.max(0, actor.health - (shot.faction === 'raider' ? 3.4 : difficulty.shot));
+            if (shot.faction === 'police') actor.morale = Math.max(0, actor.morale - 0.05);
+            if (actor.health === 0) state.events.push({ type: 'down', x: actor.x, z: actor.z });
+            shot.life = 0;
             break;
         }
     }
-    state.projectiles = state.projectiles.filter(p => p.life > 0);
-    for (const companion of state.companions) {
-        companion.attacking = Math.max(0, companion.attacking - dt);
-        companion.cooldown -= dt;
-        companion.moving = false;
-        if (companion.health <= 0 || state.elapsed < companion.delay) continue;
-        const goal = milestones[companion.milestone];
-        if (!goal) continue;
-        companion.routeWait -= dt;
-        if (companion.routeWait <= 0 || Math.hypot(companion.targetX - companion.x, companion.targetZ - companion.z) < 0.2) {
-            const next = routeTarget(companion);
-            companion.targetX = next.x; companion.targetZ = next.z;
-            companion.routeWait = 0.2;
+    state.shots = state.shots.filter(shot => shot.life > 0);
+
+    // Pushers lean on whoever is holding the line; this is what wears a line down.
+    const humanOfficer = state.role === 'police' && state.health > 0;
+    for (const c of state.companions) {
+        if (c.health <= 0 || c.cooldown > 0 || c.retreating || c.stun > 0) continue;
+        if (c.temperament !== 'pusher' && !(c.temperament === 'follower' && c.morale > 0.7)) continue;
+        let target = null, nearest = state.armed ? 16 : 1.9;
+        for (const e of state.enemies) {
+            if (e.health <= 0) continue;
+            const d = Math.hypot(e.x - c.x, e.z - c.z);
+            if (d < nearest && d > 0.01) { nearest = d; target = e; }
         }
-        const dx = companion.targetX - companion.x, dz = companion.targetZ - companion.z;
-        const d = Math.hypot(dx, dz);
-        if (d > 0.05) {
-            const step = Math.min(d, companion.speed * dt);
-            const cx = companion.x + dx / d * step, cz = companion.z + dz / d * step;
-            if (walkable(cx, companion.z)) companion.x = cx;
-            if (walkable(companion.x, cz)) companion.z = cz;
-            companion.heading = Math.atan2(-dx, -dz);
-            companion.moving = true;
+        if (state.armed) {
+            if (!target || !clearLine(c.x, c.z, target.x, target.z)) { c.cooldown = 0.3; continue; }
+            state.shots.push({ x: c.x, z: c.z, dx: (target.x - c.x) / nearest, dz: (target.z - c.z) / nearest, life: 0.9, faction: 'raider' });
+            state.events.push({ type: 'gunshot', x: c.x, z: c.z });
+            c.attacking = 0.2;
+            c.cooldown = 2.4 + c.id % 5 * 0.3;
+            continue;
         }
-        if (Math.hypot(companion.x - goal.x, companion.z - goal.z) <= goal.radius) {
-            companion.milestone++;
-            companion.routeWait = 0;
-        }
-        if (companion.cooldown <= 0) {
-            let target = null, nearest = 14;
-            for (const enemy of state.enemies) {
-                if (enemy.health <= 0) continue;
-                const distance = Math.hypot(enemy.x - companion.x, enemy.z - companion.z);
-                if (distance < nearest && distance > 0.01 && clearLine(companion.x, companion.z, enemy.x, enemy.z)) {
-                    nearest = distance; target = enemy;
-                }
-            }
-            if (target) {
-                state.projectiles.push({ x: companion.x, z: companion.z, dx: (target.x - companion.x) / nearest,
-                    dz: (target.z - companion.z) / nearest, life: 1.5, faction: 'raider' });
-                companion.attacking = 0.18;
-                companion.cooldown = 1.8 + companion.id % 5 * 0.2;
-            } else companion.cooldown = 0.2;
-        }
+        if (humanOfficer && Math.hypot(state.player.x - c.x, state.player.z - c.z) < nearest) target = state.player;
+        if (!target) { c.cooldown = 0.2; continue; }
+        if (target === state.player) {
+            state.health = Math.max(0, state.health - difficulty.playerSpray);
+            state.damageFlash = 0.22;
+        } else target.health = Math.max(0, target.health - difficulty.wear);
+        c.attacking = 0.18;
+        c.cooldown = 1.8 + c.id % 5 * 0.2;
+        state.events.push({ type: 'shove', x: c.x, z: c.z });
     }
-    if (state.demo) {
+
+    // Incapacitation is resolved before arrival so a final hit cannot also produce a win.
+    if (state.role !== 'none' && state.role !== 'observer' && state.health === 0) { end(state, 'overcome'); return; }
+    if (state.role === 'raider') {
+        const goal = milestones[state.milestone];
+        if (goal && Math.hypot(state.player.x - goal.x, state.player.z - goal.z) <= goal.radius) {
+            state.milestone++;
+            state.events.push({ type: 'milestone', x: state.player.x, z: state.player.z });
+            if (state.milestone === milestones.length) { end(state, 'doors'); return; }
+        }
+    } else {
         const leader = selectLeader(state);
-        if (!leader) { state.status = 'failed'; return; }
+        if (!leader) { end(state, 'dispersed'); return; }
+        if (leader.milestone > state.milestone) state.events.push({ type: 'milestone', x: leader.x, z: leader.z });
         state.milestone = leader.milestone;
-        if (state.milestone === milestones.length) state.status = 'completed';
-        return;
+        if (state.milestone === milestones.length) { end(state, 'doors'); return; }
     }
-    // Damage is resolved before arrival so a fatal hit cannot also produce a win.
-    if (state.health === 0) { state.status = 'failed'; return; }
-    const goal = milestones[state.milestone];
-    if (goal && Math.hypot(state.player.x - goal.x, state.player.z - goal.z) <= goal.radius) {
-        state.milestone++;
-        if (state.milestone === milestones.length) state.status = 'completed';
+    if (state.elapsed >= CURFEW_ELAPSED) end(state, 'curfew');
+}
+
+function stepRaiders(state, difficulty, dt) {
+    const steering = steeringByAttempt.get(state);
+    if (!steering) throw new Error('Attempt was not created by createAttempt.');
+    const agents = [], bodies = [];
+    planRaiders(state, difficulty, dt, agents, bodies);
+    steering.step(agents, bodies, dt);
+    for (const agent of agents) {
+        const actor = agent.actor, fromX = actor.x, fromZ = actor.z;
+        let nz = agent.nextZ;
+        const held = actor.health > 0 ? heldAt(state, agent.nextX, fromZ, nz) : null;
+        if (held !== null) nz = held;
+        if (walkable(agent.nextX, actor.z)) actor.x = agent.nextX;
+        if (walkable(actor.x, nz)) actor.z = nz;
+        const dx = actor.x - fromX, dz = actor.z - fromZ, moved = Math.hypot(dx, dz);
+        if (held !== null || moved < Math.hypot(agent.nextX - fromX, agent.nextZ - fromZ) * 0.5) steering.stop(actor.id);
+        actor.crowding = agent.crowding;
+        actor.moving = moved > 0.3 * dt;
+        if (moved > 0.6 * dt) actor.heading = Math.atan2(-dx, -dz);
+        else if (actor.health > 0 && !actor.retreating) actor.heading = 0;
     }
 }

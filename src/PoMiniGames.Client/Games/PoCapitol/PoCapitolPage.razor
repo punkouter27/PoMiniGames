@@ -10,7 +10,7 @@
 <PageTitle>PoCapitol · PoMiniGames</PageTitle>
 
 <GameShell Title="@TitleContent" Fullscreen="true" RequiresWebGl="true" Announcement="@_announcement">
-    <div class="pc-root">
+    <div class="pc-root @(_demo ? "pc-phonecam" : null)">
         <div id="pocapitol-scene" class="pc-scene" role="img" aria-label="Fictional Capitol grounds and interiors"></div>
         <div class="pc-film" aria-hidden="true"></div>
         <div class="pc-edition">PoCAPITOL <span>ALTERNATE HISTORY · FICTIONAL SCENARIO</span></div>
@@ -19,29 +19,52 @@
         @if (_status == "intro" && _ready)
         {
             <section class="pc-panel pc-intro" role="dialog" aria-modal="true" aria-labelledby="pc-heading">
-                <span class="pc-eyebrow">ONE SCENARIO. FOUR MILESTONES.</span>
-                <h2 id="pc-heading">Beyond the<br /><em>marble steps.</em></h2>
-                <p>One human, 99 computer-controlled raiders. Start outside, face Capitol Police, cross the forecourt, and reach the House chamber.</p>
-                <div class="pc-notice"><strong>Fiction, not a reconstruction.</strong> Inspired by January 6, 2021. Adult themes and non-graphic combat. Characters, pulse weapons, and interior connections are invented; this is not a real access plan.</div>
-                <div class="pc-controls"><kbd>W A S D</kbd> move <kbd>Mouse</kbd> look <kbd>Click / Space</kbd> fire<br /><kbd>Shift</kbd> sprint <kbd>← →</kbd> turn <kbd>Esc / P</kbd> pause</div>
-                <p class="pc-small">Click the scene after starting to capture the mouse. Touch: drag to look and use the on-screen controls. Controller: sticks, right trigger, Start.</p>
-                <label class="pc-small" for="pc-difficulty">Difficulty</label>
-                <RadzenSelectBar TValue="string" @bind-Value="_difficulty" id="pc-difficulty">
+                <span class="pc-eyebrow">ONE AFTERNOON. FIVE POLICE LINES.</span>
+                <h2 id="pc-heading">Beyond the <em>marble steps.</em></h2>
+                <p>128 protestors start out on the grass; most watch and film, a few push. 64 police hold five lines and fall back in stages. 64 staff and members shelter inside until evacuated. 12:50 pm to the 6:00 pm curfew.</p>
+                <div class="pc-notice"><strong>Fiction, not a reconstruction.</strong> Inspired by January 6, 2021. Adult themes; no injury is shown. Nobody is armed when you play; the Demo is a separate armed variant. The layout and police positions are invented.</div>
+                <label class="pc-small" for="pc-role">Who you are</label>
+                <RadzenSelectBar TValue="string" @bind-Value="_role" id="pc-role">
                     <Items>
-                        <RadzenSelectBarItem Text="Story" Value="@("story")" />
-                        <RadzenSelectBarItem Text="Standard" Value="@("standard")" />
+                        <RadzenSelectBarItem Text="In the crowd" Value="@("raider")" />
+                        <RadzenSelectBarItem Text="Police line" Value="@("police")" />
+                        <RadzenSelectBarItem Text="Observer" Value="@("observer")" />
                     </Items>
                 </RadzenSelectBar>
+                <p class="pc-small">@RoleBrief</p>
+                <div class="pc-controls"><kbd>W A S D</kbd> move <kbd>Mouse</kbd> look <kbd>Click / Space</kbd> push<br /><kbd>Shift</kbd> hurry <kbd>← →</kbd> turn <kbd>Esc / P</kbd> pause</div>
+                <div class="pc-options">
+                    <div>
+                        <label class="pc-small" for="pc-difficulty">Difficulty</label>
+                        <RadzenSelectBar TValue="string" @bind-Value="_difficulty" id="pc-difficulty">
+                            <Items>
+                                <RadzenSelectBarItem Text="Story" Value="@("story")" />
+                                <RadzenSelectBarItem Text="Standard" Value="@("standard")" />
+                            </Items>
+                        </RadzenSelectBar>
+                    </div>
+                    <div>
+                        <label class="pc-small" for="pc-graphics">Graphics</label>
+                        <RadzenSelectBar TValue="string" Value="@_graphics" Change="@(async (string value) => await SetGraphicsAsync(value))" id="pc-graphics">
+                            <Items>
+                                <RadzenSelectBarItem Text="Auto" Value="@("auto")" />
+                                <RadzenSelectBarItem Text="Low" Value="@("low")" />
+                                <RadzenSelectBarItem Text="High" Value="@("high")" />
+                            </Items>
+                        </RadzenSelectBar>
+                    </div>
+                </div>
                 <div class="pc-actions">
                     <RadzenButton Text="Begin scenario" Icon="arrow_forward" Click="@(_ => StartAsync())" />
                     <a href="/">All games</a>
                 </div>
+                <details><summary>Touch and controller</summary><p class="pc-small">Click the scene after starting to capture the mouse. Touch: drag to look and use the on-screen controls. Controller: sticks, right trigger, Start.</p></details>
                 <details><summary>Historical context and visual scope</summary>@ContextContent</details>
             </section>
         }
         else if (_status == "loading")
         {
-            <div class="pc-panel pc-centered" role="status"><h2>Preparing the scene</h2><p>Building the grounds, Rotunda, and chamber…</p></div>
+            <div class="pc-panel pc-centered" role="status"><h2>Preparing the scene</h2><p>Building the grounds, Crypt, Rotunda and Statuary Hall…</p></div>
         }
         else if (_status == "error")
         {
@@ -53,33 +76,42 @@
         else
         {
             <div class="pc-hud">
-                <div><span class="pc-eyebrow">OBJECTIVE @Math.Min(_milestone + 1, 4) / 4</span><strong>@Objective</strong></div>
-                @if (!_demo)
+                <div><span class="pc-eyebrow">@HudEyebrow</span><strong>@HudTitle</strong></div>
+                @if (_lineIndex >= 0)
                 {
-                    <div class="pc-health"><label for="pc-health">HEALTH @_health</label><progress id="pc-health" value="@_health" max="100"></progress></div>
+                    <div class="pc-line"><label for="pc-line">POLICE LINE · @LineNames[_lineIndex].ToUpperInvariant() @_lineIntegrity%</label><progress id="pc-line" value="@_lineIntegrity" max="100"></progress></div>
                 }
-                <div class="pc-crowd"><span>@_activeRaiders / 100 ACTIVE RAIDERS</span><span>@_activePolice / 12 CAPITOL POLICE</span>
+                @if (Playing)
+                {
+                    <div class="pc-health"><label for="pc-health">STAMINA @_health</label><progress id="pc-health" value="@_health" max="100"></progress></div>
+                }
+                <div class="pc-crowd"><span>@_activeRaiders / 128 IN THE CROWD</span><span>@_activePolice / @_totalPolice CAPITOL POLICE</span><span>@(_sheltering > 0 ? $"{_sheltering} / 64 STAFF AND MEMBERS SHELTERING" : "STAFF AND MEMBERS EVACUATED")</span>
                     @if (_demo)
                     {
                         <b>FOLLOWING @(_subject > 0 ? $"RAIDER {_subject:000}" : "NO ACTIVE RAIDER")</b>
                     }
                 </div>
-                <span class="pc-time">@TimeSpan.FromSeconds(_elapsed).ToString(@"mm\:ss")</span>
+                <span class="pc-time">@Clock</span>
                 <RadzenButton Text="Pause" Icon="pause" Size="ButtonSize.Small" Disabled="@(_status != "active")" Click="@(_ => PauseAsync(true))" />
             </div>
-            <div class="pc-progress" aria-label="@($"{_milestone} of 4 milestones complete")">
-                @for (var i = 0; i < 4; i++)
+            <div class="pc-progress" aria-label="@($"{_milestone} of {Objectives.Length} milestones complete")">
+                @for (var i = 0; i < Objectives.Length; i++)
                 {
                     <span class="@(i < _milestone ? "pc-done" : null)"></span>
                 }
             </div>
             @if (_status == "active")
             {
-                @if (!_demo)
+                @if (Playing)
                 {
                     <div class="pc-crosshair" aria-hidden="true">+</div>
                 }
-                <div class="pc-bottom"><span>GOLD BEACON · NEXT MILESTONE</span><span>@(_demo ? "AUTONOMOUS DEMO · P PAUSE" : _message.Length > 0 ? _message : "WASD move · Click scene to aim · Space fire · P pause")</span></div>
+                @if (_demo)
+                {
+                    <div class="pc-rec" aria-hidden="true"><i></i>REC · JAN 06 2021 · @Clock</div>
+                }
+                <div class="pc-onthisday"><span class="pc-eyebrow">ON THE DAY · @OnTheDay.Time (APPROX.)</span>@OnTheDay.Text</div>
+                <div class="pc-bottom"><span>@(_role == "raider" || _demo ? "GOLD BEACON · NEXT MILESTONE" : "")</span><span>@BottomHint</span></div>
                 @if (!_demo)
                 {
                     <div class="pc-touch" aria-label="Touch controls">
@@ -89,19 +121,30 @@
                             <button data-capitol-key="KeyS" aria-label="Move backward">↓</button>
                             <button data-capitol-key="KeyD" aria-label="Move right">→</button>
                         </div>
-                        <button class="pc-fire" data-capitol-key="Space" aria-label="Fire pulse">FIRE</button>
+                        @if (Playing)
+                        {
+                            <button class="pc-fire" data-capitol-key="Space" aria-label="Push">PUSH</button>
+                        }
                     </div>
                 }
                 else
                 {
-                    <div class="pc-demo-caption">DEMO · ALL 100 COMPUTER-CONTROLLED<br /><small>Camera follows the furthest eligible raider. No player results are saved.</small></div>
+                    <div class="pc-demo-caption">DEMO · ARMED VARIANT · ENTIRELY FICTIONAL<br /><small>Both sides fire and anyone hit drops out. This did not happen: on the day the crowd pushed and police used non-lethal tools. Camera follows the furthest raider still standing. Nothing is saved.</small></div>
                 }
             }
             else if (_status == "paused")
             {
                 <section class="pc-panel pc-centered" role="dialog" aria-modal="true" aria-labelledby="pc-paused">
                     <span class="pc-eyebrow">TAKE A BREATH</span><h2 id="pc-paused">Scenario paused.</h2>
-                    <p>Time, combat, and progression are stopped.</p>
+                    <p>The clock, the crowd and the lines are stopped.</p>
+                    <label class="pc-small" for="pc-graphics-paused">Graphics · now @_graphicsLabel</label>
+                    <RadzenSelectBar TValue="string" Value="@_graphics" Change="@(async (string value) => await SetGraphicsAsync(value))" id="pc-graphics-paused">
+                        <Items>
+                            <RadzenSelectBarItem Text="Auto" Value="@("auto")" />
+                            <RadzenSelectBarItem Text="Low" Value="@("low")" />
+                            <RadzenSelectBarItem Text="High" Value="@("high")" />
+                        </Items>
+                    </RadzenSelectBar>
                     <div class="pc-actions">
                         <RadzenButton Text="Resume" Click="@(_ => PauseAsync(false))" />
                         <RadzenButton Text="Restart" ButtonStyle="ButtonStyle.Secondary" Click="@(_ => StartAsync())" />
@@ -113,11 +156,15 @@
             else if (_status is "completed" or "failed")
             {
                 <section class="pc-panel pc-centered" role="dialog" aria-modal="true" aria-labelledby="pc-result">
-                    <span class="pc-eyebrow">SCENARIO @(_status == "completed" ? "COMPLETE" : "ENDED")</span>
-                    <h2 id="pc-result">@(_status == "completed" ? "Destination reached." : "Attempt ended.")</h2>
-                    <p>@(_demo ? "Demonstration ended. A fresh 100-raider attempt begins automatically in four seconds." : _status == "completed" ? "You reached the fictional House chamber. This game outcome does not represent a historical victory." : "You were incapacitated. A new attempt starts outside with full health.")</p>
-                    <div class="pc-result-stats"><span>@TimeSpan.FromSeconds(_elapsed).ToString(@"mm\:ss")<small>ACTIVE TIME</small></span><span>@_milestone / 4<small>MILESTONES</small></span></div>
-                    <p class="pc-small">@(_demo ? "Spectator mode never saves player results." : _resultWarning.Length > 0 ? _resultWarning : "Results stay in your local game stats. No public ranking or kill score.")</p>
+                    <span class="pc-eyebrow">SCENARIO ENDED · @Clock</span>
+                    <h2 id="pc-result">@ResultHeading</h2>
+                    <p>@ResultBody</p>
+                    <div class="pc-result-stats"><span>@Clock<small>TIME OF DAY</small></span><span>@_milestone / @Objectives.Length<small>MILESTONES</small></span><span>@_activeRaiders<small>STILL STANDING</small></span></div>
+                    <div class="pc-aftermath">
+                        <strong>What happened afterwards</strong>
+                        <p>The real building was cleared that evening and a citywide curfew began at 6:00 pm. The Senate reconvened at about 8:00 pm and Congress finished certifying the election at about 3:40 am on January 7. In the years that followed, federal prosecutors charged more than 1,500 people; in January 2025 nearly all of them were granted clemency.</p>
+                    </div>
+                    <p class="pc-small">@(_demo ? "Spectator mode never saves player results. A fresh attempt begins in six seconds." : _role != "raider" ? "Police-line and observer attempts are not saved." : _resultWarning.Length > 0 ? _resultWarning : "Results stay in your local game stats. No public ranking and no score for harming anyone.")</p>
                     <div class="pc-actions"><RadzenButton Text="Play again" Click="@(_ => StartAsync())" /><a href="/">Back to all games</a></div>
                     <details><summary>History and fictional departures</summary>@ContextContent</details>
                 </section>
@@ -129,17 +176,72 @@
 @code {
     [Parameter] public string? Mode { get; set; }
     private static RenderFragment TitleContent => GameCatalog.TitleFor(GameKeys.PoCapitol);
-    private static readonly string[] Objectives = ["Cross the forecourt", "Enter the fictional gallery", "Reach the Rotunda", "Reach the House chamber"];
+    private static readonly string[] Objectives =
+        ["Pass the barricades", "Enter the Crypt", "Reach the Rotunda", "Enter Statuary Hall", "Cross Statuary Hall", "Reach the House chamber doors"];
+    private static readonly string[] LineNames =
+        ["Bike-rack barricade", "Crypt doors", "Rotunda doors", "Statuary Hall doorway", "House corridor"];
+    // Approximate times from the public record (the Senate committees' June 2021 staff report
+    // and the Congressional Record). Shown beside the fictional clock, never driven by it.
+    private static readonly (int Minute, string Time, string Text)[] Timeline =
+    [
+        (12 * 60 + 50, "12:53 PM", "The crowd breaches the first barricade on the west side of the grounds."),
+        (13 * 60 + 5, "1:05 PM", "The joint session of Congress convenes to count electoral votes."),
+        (13 * 60 + 50, "1:50 PM", "A riot is declared as police lines on the west front are pressed."),
+        (14 * 60 + 12, "2:12 PM", "The first people enter the building through a broken window."),
+        (14 * 60 + 20, "2:20 PM", "The Senate and then the House go into recess; evacuations begin."),
+        (14 * 60 + 45, "2:45 PM", "The chambers are being emptied. The House chamber doors are barricaded from inside."),
+        (16 * 60 + 17, "4:17 PM", "A recorded message tells the crowd to go home."),
+        (17 * 60 + 40, "5:40 PM", "Police report the interior of the building cleared."),
+        (18 * 60, "6:00 PM", "The citywide curfew begins."),
+    ];
     private DotNetObjectReference<PoCapitolPage>? _reference;
     private string _status = "loading", _difficulty = "story", _error = "", _message = "", _announcement = "";
-    private string _resultWarning = "";
+    private string _resultWarning = "", _role = "raider", _outcome = "", _graphics = "auto", _graphicsLabel = "Auto";
     private int _health = 100, _milestone;
     private double _elapsed;
     private bool _ready, _disposed, _recorded;
     private bool _demo;
     private string? _mode;
-    private int _activeRaiders = 100, _activePolice = 12, _subject;
-    private string Objective => _milestone < Objectives.Length ? Objectives[_milestone] : "Destination reached";
+    private int _activeRaiders = 128, _activePolice = 44, _totalPolice = 44, _subject, _lineIndex, _lineIntegrity = 100, _sheltering = 64;
+    private bool Playing => !_demo && _role != "observer";
+    private string Objective => _milestone < Objectives.Length ? Objectives[_milestone] : "Chamber doors reached";
+    private string Clock => DateTime.Today.AddMinutes(12 * 60 + 50 + Math.Floor(_elapsed)).ToString("h:mm tt", System.Globalization.CultureInfo.InvariantCulture);
+    private (int Minute, string Time, string Text) OnTheDay =>
+        Timeline.Last(entry => entry.Minute <= Math.Max(Timeline[0].Minute, 12 * 60 + 50 + (int)_elapsed));
+    private string HudEyebrow => _role == "raider" || _demo ? $"OBJECTIVE {Math.Min(_milestone + 1, Objectives.Length)} / {Objectives.Length}"
+        : _role == "police" ? "HOLD UNTIL THE 6:00 PM CURFEW" : "OBSERVING · CROWD PROGRESS";
+    private string HudTitle => _role == "police" && !_demo
+        ? (_lineIndex >= 0 ? $"Hold the {LineNames[_lineIndex].ToLowerInvariant()}" : "Fall back to the chamber doors") : Objective;
+    private string RoleBrief => _role switch
+    {
+        "police" => "Stand in the line and push back. You win by keeping the crowd from the chamber doors until the curfew. Not saved to your stats.",
+        "observer" => "Walk anywhere and watch. Nobody targets you, you cannot push, and nothing is saved.",
+        _ => "Lean on a line with the crowd to tip it. Reach the House chamber doors before the curfew.",
+    };
+    private string BottomHint => _demo ? "AUTONOMOUS DEMO · P PAUSE"
+        : _message.Length > 0 ? _message
+        : _role == "observer" ? "WASD move · Click scene to look · P pause"
+        : "WASD move · Click scene to look · Space push · P pause";
+    private string ResultHeading => _outcome switch
+    {
+        "doors" => "The doors stayed shut.",
+        "curfew" => "Six o'clock. Curfew.",
+        "overcome" => _role == "police" ? "Pulled back from the line." : "Helped away.",
+        "dispersed" => "The crowd is spent.",
+        _ => "Attempt ended.",
+    };
+    private string ResultBody => _outcome switch
+    {
+        "doors" => "The crowd reached the House chamber doors and found them barricaded. The chamber behind them had been evacuated. "
+            + (_role == "police" ? "The lines did not hold long enough." : "Nobody in this scenario gets in, as nobody did. Reaching the doors ends the game; it is not a historical victory."),
+        "curfew" => _role == "police" ? "The lines held until the curfew and the building was cleared."
+            : "The lines held. At 6:00 pm the curfew began and the building was cleared.",
+        "overcome" => _role == "police" ? "You were worn down and pulled back behind the line. The scenario ends here."
+            : "Batons, spray and gas wore you down, and street medics walked you back to the aid station. A new attempt starts outside.",
+        "dispersed" => _demo ? "Every raider has been eliminated. The armed demo follows no record; it starts again shortly."
+            : "Nobody in the crowd is still on their feet. The building is cleared.",
+        _ => "The scenario has ended.",
+    };
 
     protected override async Task OnParametersSetAsync()
     {
@@ -178,6 +280,7 @@
                 throw new InvalidOperationException("The 3D assets could not be downloaded. Check your connection and retry.");
             _reference ??= DotNetObjectReference.Create(this);
             await JS.InvokeVoidAsync("PoCapitol.init", "pocapitol-scene", _reference);
+            _graphics = await JS.InvokeAsync<string>("PoCapitol.getGraphics");
             _ready = true;
             _status = "intro";
             if (_demo) await StartAsync();
@@ -195,12 +298,12 @@
     {
         try
         {
-            await JS.InvokeVoidAsync("PoCapitol.start", _difficulty, _demo);
+            await JS.InvokeVoidAsync("PoCapitol.start", _difficulty, _demo, _role);
             _recorded = false;
             _status = "active";
-            _health = 100; _milestone = 0; _elapsed = 0; _message = ""; _resultWarning = "";
-            _activeRaiders = 100; _activePolice = 12; _subject = 0;
-            _announcement = "Scenario started. " + Objective;
+            _health = 100; _milestone = 0; _elapsed = 0; _message = ""; _resultWarning = ""; _outcome = "";
+            _activeRaiders = 128; _activePolice = 44; _totalPolice = 44; _subject = 0; _lineIndex = 0; _lineIntegrity = 100; _sheltering = 64;
+            _announcement = "Scenario started. " + HudTitle;
         }
         catch (JSException ex) { await OnEngineError(ex.Message); }
     }
@@ -211,16 +314,28 @@
         catch (JSException ex) { await OnEngineError(ex.Message); }
     }
 
+    private async Task SetGraphicsAsync(string mode)
+    {
+        _graphics = mode;
+        try { _graphicsLabel = await JS.InvokeAsync<string>("PoCapitol.setGraphics", mode); }
+        catch (JSException ex) { await OnEngineError(ex.Message); }
+    }
+
     [JSInvokable]
-    public async Task OnUpdate(int health, int milestone, double elapsed, string status, int hits, int shots, string message,
-        int activeRaiders, int activePolice, int subject, bool demo)
+    public async Task OnUpdate(int health, int milestone, double elapsed, string status, int pushes, int staggers, string message,
+        int activeRaiders, int activePolice, int subject, bool demo, string outcome, int totalPolice, int lineIndex,
+        int lineIntegrity, string graphics, int sheltering)
     {
         if (_disposed || demo != _demo) return;
-        var changed = _milestone != milestone || _status != status;
+        var changed = _milestone != milestone || _status != status || _lineIndex != lineIndex;
+        var lineBroke = lineIndex != _lineIndex && _lineIndex >= 0 && status == "active";
         _health = health; _milestone = milestone; _elapsed = elapsed; _status = status; _message = message;
         _activeRaiders = activeRaiders; _activePolice = activePolice; _subject = subject;
-        if (changed) _announcement = status == "active" ? Objective : $"Scenario {status}.";
-        if (!_demo && !_recorded && status is "completed" or "failed")
+        _outcome = outcome; _totalPolice = totalPolice; _lineIndex = lineIndex; _lineIntegrity = lineIntegrity;
+        _graphicsLabel = graphics; _sheltering = sheltering;
+        if (changed) _announcement = status != "active" ? $"Scenario {status}. {ResultHeading}"
+            : lineBroke ? $"A police line has given way. {HudTitle}" : HudTitle;
+        if (_role == "raider" && !_demo && !_recorded && status is "completed" or "failed")
         {
             _recorded = true;
             try
@@ -260,10 +375,10 @@
     }
 
     private RenderFragment ContextContent => @<div class="pc-context">
-        <p>On January 6, 2021, Congress met to count and certify electoral votes, not to pass a law. The attack interrupted that proceeding; Congress later reconvened.</p>
-        <p>This alternate-history scenario invents its characters, pulse weapons, encounters, and room connections. It is not a documentary, a real building plan, or an endorsement of the attack.</p>
-        <p>Public references inform the ribbed dome and colonnaded drum, winter grounds, Rotunda floor rings and pilasters, and House rostrum and seating. Winter coats, U.S. and campaign flags, and police helmets, visors and shields evoke documented appearances, not specific people or an exact equipment inventory.</p>
-        <p>Scale, routes, abstract artwork, crowd counts, police positions and combat are fictional. This is a stylized procedural interpretation, not a photorealistic or security-accurate replica.</p>
+        <p>On January 6, 2021, Congress met to count and certify electoral votes, not to pass a law. The attack interrupted that proceeding; Congress reconvened that night and finished in the early hours of January 7.</p>
+        <p>What this scenario takes from the record is the shape of the day: a crowd that was mostly watching and filming, a minority pushing on police lines, police using shields, batons, chemical spray, gas and flash-bangs, lines that fell back in stages, staff and members who sheltered and were evacuated, a House chamber that was never entered, and a 6:00 pm curfew. The staff and members here are bystanders to the simulation: nothing can target or reach them. The "On the day" times are approximate and come from the Senate committees' June 2021 staff report and the Congressional Record.</p>
+        <p>What it invents: every character, the straight-line route and the way rooms connect, police numbers and positions, how fast anything happens, and who prevails. The clock runs one minute per second and is not synchronized with the real timeline. No real person is depicted. In solo play nobody is armed. The spectator Demo is different on purpose: both sides carry guns and those hit drop out, which is pure invention and the opposite of what the record shows. It is not a documentary, a real building plan, or an endorsement of the attack.</p>
+        <p>Public references inform the ribbed dome and colonnaded drum, winter grounds and inauguration stands, the Crypt's columns, Rotunda floor rings, Statuary Hall, and the House rostrum and seating. Clothing, flags, signs, phones and police equipment evoke documented appearances, not specific people or an exact inventory. This is a stylized procedural interpretation, not a photorealistic or security-accurate replica.</p>
         <a href="https://www.congress.gov/117/crec/2021/01/06/CREC-2021-01-06-pt1-PgS18-2.pdf" target="_blank" rel="noopener noreferrer">Congressional Record: January 6 Senate proceedings</a>
         <a href="https://www.aoc.gov/explore-capitol-campus/buildings-grounds/capitol-building/rotunda" target="_blank" rel="noopener noreferrer">Architect of the Capitol: Rotunda</a>
         <a href="https://www.aoc.gov/explore-capitol-campus/buildings-grounds/capitol-building/capitol-dome" target="_blank" rel="noopener noreferrer">Architect of the Capitol: Dome</a>

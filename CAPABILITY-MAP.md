@@ -9,15 +9,19 @@ Product requirements: [PoCapitol PRD](DOCS/20261109/PoCapitol-PRD.md).
 |---|---|---|
 | Recognized game identity | Domain `Primitives/GameKey.cs`, Client `Models/GameKey.cs` | `pocapitol`; included in the existing play-session allowlist |
 | Discovery and routing | Client `Models/GameCatalog.cs`, `Games/PoCapitol/PoCapitolPage.razor` | `/pocapitol`, `/pocapitol/1player`, `/pocapitol/demo`; shared mode switch and demo reel; no multiplayer |
-| Scenario rules | Client `wwwroot/js/pocapitol/world.js` | One human + 99 NPCs or 100 CPU raiders; obstacle-aware independent navigation, fictional police combat, ordered milestones and leader selection |
-| 3D presentation | Client `wwwroot/js/pocapitol/scene.js`, `crowd.js` | Public-reference architectural motifs; instanced winter clothing, flags, police shields/helmets; smooth demo leader camera; invented scale and layout |
-| Engine lifecycle and input | Client `wwwroot/js/pocapitol/index.js`, `engineLoader.js` | On-demand loading, keyboard/mouse/touch/gamepad, pause, disposal |
-| Start, HUD, pause and result | Client `Games/PoCapitol/` | Shared GameShell; Radzen controls; historical context and explicit fiction notice |
-| Local results | Existing `GameResultService.RecordAsync` | Solo local wins/losses only; demo never writes results; no leaderboard or new endpoint |
+| Scenario rules | Client `wwwroot/js/pocapitol/world.js` | 128 protestors, 64 police in five lines, 64 sheltering staff and members who are evacuated and cannot be harmed; pressure/integrity, morale, police tools, roles, clock and outcomes; the armed demo; flow-field routing and leader selection. Pure and JSON-serializable |
+| Crowd steering | Client `wwwroot/js/pocapitol/steering.js`, `wwwroot/lib/yuka/` | Yuka vehicles (seek + separation) propose each raider's step; holds no game state and no collision |
+| 3D presentation | Client `wwwroot/js/pocapitol/scene.js`, `crowd.js` | Architecture, time-of-day light, instanced crowd and dress, distant crowd, racks, litter, gas, tracers, closing shot; applies quality settings |
+| Sound | Client `wwwroot/js/pocapitol/audio.js` | Synthesized layers on the shared `PoAudioBus` sfx bus; owns no AudioContext |
+| Adaptive graphics | Client `wwwroot/js/pocapitol/quality.js` | Frame-time governor under the app's `PoQuality` tier; no DOM or three.js |
+| Engine lifecycle and input | Client `wwwroot/js/pocapitol/index.js`, `engineLoader.js` | On-demand loading, keyboard/mouse/touch/gamepad, pause, graphics choice, disposal |
+| Start, HUD, pause and result | Client `Games/PoCapitol/` | Shared GameShell; Radzen controls; role, difficulty and graphics; "On the day" strip; aftermath and fiction notices |
+| Local results | Existing `GameResultService.RecordAsync` | Crowd-role wins/losses only; police, observer and demo never write; no leaderboard or new endpoint |
 | Verification | `tests/pocapitol-world.test.mjs` | Focused Node tests without adding to capped .NET test tiers |
 
-No dependency, infrastructure, authorization, external service, or secret is added.
-The existing three-dimensional rendering dependency and shared Radzen loader are reused.
+One client dependency is added: Yuka 0.7.8 (MIT), vendored unmodified under
+`wwwroot/lib/yuka/` and mapped as `yuka` in `index.html`'s import map. No server
+dependency, infrastructure, authorization, external service, or secret is added.
 
 What each module owns, and where PoMule and Radzen land. `SPEC.md` holds the
 PoMule requirements; this file only says which module does what.

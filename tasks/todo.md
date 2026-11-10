@@ -70,3 +70,16 @@ host-output file locks, stale shared-mode selection and camera-blocking banners.
 The final checks above are green; no unrelated full suite or production deployment ran.
 The initial security-review result above belongs to the initial implementation, not a
 new claim that the expanded code received an additional security audit.
+
+## Realism, sound, steering, graphics and armed demo
+
+- [x] Vendor Yuka 0.7.8 and steer the crowd with seek + separation over the flow fields.
+- [x] Replace pulse combat with police lines, pressure, morale and non-lethal tools.
+- [x] Add temperaments, medics, the clock and curfew, three roles and four outcomes.
+- [x] Re-lay the route: stands, racks, Crypt, Statuary Hall, corridor, barricaded doors.
+- [x] Add distant crowd, dress, phones, breath, litter, time-of-day light, closing shot.
+- [x] Add synthesized layered sound on the shared audio bus.
+- [x] Add the frame-time graphics governor and the Auto/Low/High choice.
+- [x] Add the armed demo variant with on-screen "did not happen" labeling.
+- [x] Scale to 128 protestors, 64 police and 64 sheltering staff and members; start on the grass.
+- [x] Rewrite the focused tests (27) and update README, SPEC, capability map and PRD.

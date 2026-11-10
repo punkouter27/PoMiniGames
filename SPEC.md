@@ -2,66 +2,86 @@
 
 ## PoCapitol (2026-11-09)
 
-The owner requested implementation of the [PoCapitol PRD](DOCS/20261109/PoCapitol-PRD.md).
-The owner subsequently specified one human with exactly 99 autonomous NPC raiders,
-a 100-CPU demo with a leader-following camera, Capitol Police opposition, and improved
-historically referenced scenery, flags, clothing and riot equipment. Story/Standard
-difficulty, non-graphic fictional pulse combat, and a House-inspired chamber remain.
-These are not a documentary treatment or a security-accurate Capitol reconstruction.
+The owner requested implementation of the [PoCapitol PRD](DOCS/20261109/PoCapitol-PRD.md),
+then a realism pass, sound, library-based crowd steering, adaptive graphics, and an armed
+spectator demo. Solo play is a crowd-pressure simulation with no firearms. The demo is an
+armed variant that follows no record. Neither is a documentary or a security-accurate
+reconstruction.
 
-- **Journey:** hub -> content notice and controls -> forecourt -> fictional entrance
-  gallery -> Rotunda -> House chamber -> local result -> replay or hub.
+- **Journey:** hub -> content notice, role, difficulty and graphics -> the lawn, well back
+  from the building -> west-front grounds ->
+  Crypt -> Rotunda -> Statuary Hall -> House corridor -> barricaded chamber doors -> result
+  with aftermath -> replay or hub. The chamber is drawn but never entered.
 - **Routes:** `/pocapitol`, `/pocapitol/1player`, `/pocapitol/demo`. The shared mode switch
-  supports in-place mode changes; demo auto-starts, loops four seconds after a terminal
-  outcome and participates in the shared demo reel without resetting its dwell timer.
-  No multiplayer, public score,
-  purchases, named historical targets, or saved in-progress attempts.
-- **Architecture:** existing .NET 10 host and Blazor client; existing Three.js 0.165.0
-  import map and Radzen.Blazor 12.1.11. No package or configuration changes.
-  Module ownership is documented in `CAPABILITY-MAP.md`.
-- **Controls:** WASD movement, mouse capture and look, click/Space to fire, Shift to
-  sprint, arrow keys to turn, Esc/P to pause; touchscreen direction/fire buttons and
-  drag-to-look; standard gamepad sticks, right trigger, left-stick click, Start.
-- **Rules:** four ordered proximity milestones; player health starts at 100; only a
-  living human's arrival wins solo. The 99 NPCs move and fight independently and do not
-  obstruct the human. Demo has exactly 100 NPC raiders and no participating human;
-  a living NPC completing its own ordered milestones wins; all incapacitated means failure.
-  Twelve fictional Capitol Police defend the route and can incapacitate either kind of raider.
-  Incapacitation takes precedence over same-step arrival.
-  Pausing freezes all rules and active time. Terminal outcomes are immutable.
-  Restart resets the attempt and keeps the selected difficulty.
-- **Navigation/camera:** shared cached flow fields avoid obstacles, columns and chamber
-  seats. Demo follows the living NPC with most ordered milestones, then shortest remaining
-  navigable distance to its next milestone; deterministic ID tie-breaking. Camera position
-  and heading ease toward the selected actor. Human input cannot move or fire in demo.
-- **Presentation:** procedural public architectural motifs, not photorealistic assets:
-  ribbed dome, colonnaded/windowed drum and crowning silhouette; winter grounds; Rotunda
-  floor rings, pilasters, abstract framed art and high inner dome; House seating, gallery,
-  walnut-colored tiered rostrum and flag. Crowd parts are GPU-instanced; coats, beanies,
-  red caps, U.S./2020 campaign flags; police dark uniforms, helmets, visors and labeled
-  riot shields. Equipment/positions are illustrative, not an actual inventory.
-  Scale, room adjacency, art and encounters are fictional; gold objective beacons remain.
-  No camera shake or continuous flashing; existing shared audio and haptics preferences apply.
-- **Result:** exactly one local win/loss through the shared results service per finished
-  solo attempt; failed local persistence must be reported. Demo never records results.
-  No server leaderboard is invented.
+  changes mode in place; demo auto-starts, loops six seconds after a terminal outcome and
+  takes part in the shared demo reel. No multiplayer, public score, purchases, named
+  historical targets, or saved in-progress attempts.
+- **Roles (solo):** in the crowd (reach the doors before the curfew), police line (keep the
+  crowd from the doors until the curfew), observer (walk freely; no action, no outcome of
+  their own). Only the crowd role records a local result.
+- **Architecture:** existing .NET 10 host and Blazor client, Three.js 0.165.0 import map and
+  Radzen.Blazor 12.1.11. New dependency: Yuka 0.7.8 (MIT), vendored unmodified at
+  `wwwroot/lib/yuka/yuka.module.js` and mapped as `yuka` in the import map, so the Node
+  tests run the file the browser loads. No NuGet, server, or configuration change.
+  Module ownership is in `CAPABILITY-MAP.md`.
+- **Controls:** WASD movement, mouse capture and look, click/Space to push, Shift to hurry,
+  arrow keys to turn, Esc/P to pause; touchscreen direction/push buttons and drag-to-look;
+  standard gamepad sticks, right trigger, left-stick click, Start.
+- **Clock:** one real second is one minute of the day, 12:50 pm to the 6:00 pm curfew
+  (310 seconds). The curfew ends any attempt. Light fades through the afternoon.
+- **Crowd:** always exactly 128 protestors (1 human + 127, or 128 CPU), starting out on the
+  grass about 50 metres behind the first barricade. Deterministic
+  temperaments: about 30% pushers, 35% followers, 30% bystanders who film and stay shallow,
+  5% street medics. Morale falls under gas, spray, batons and flash-bangs and surges when a
+  line breaks; low morale or low stamina means retreat. Crowding slows movement.
+- **Police:** five lines (44 officers) each seal a chokepoint while their integrity lasts.
+  Integrity moves with crowd pressure against the officers holding it, and a line that is
+  leaned on tires. Officers use batons at arm's length and rationed spray; a line under
+  pressure throws gas, then a flash-bang. A broken line's officers fall back to the next,
+  and five waves of four reinforcements arrive (64 in all).
+- **Staff and members:** 64 non-combatants shelter in the chamber. They leave by the rear
+  doors from about 2:15 pm, sooner if the building is entered, and at a run once the crowd
+  reaches Statuary Hall. They have no health and no code path targets, reaches or harms
+  them, in any mode. The HUD shows how many are still sheltering.
+- **Solo rules:** stamina starts at 100; six ordered milestones; a holding line stops the
+  human like anyone else. Outcomes: `doors`, `curfew`, `overcome`, `dispersed`.
+  Incapacitation takes precedence over same-step arrival. Worn-out raiders sit, are helped
+  by a medic, and walk to the aid station. Pausing freezes everything; terminal outcomes
+  are immutable; restart keeps difficulty, role and graphics choice.
+- **Armed demo:** in `/pocapitol/demo` both sides carry guns. Rounds are projectiles with no
+  friendly fire; anyone brought to zero is eliminated and stays down, with no medics. The
+  HUD caption and result text say this did not happen. No injury is shown.
+- **Navigation/camera:** cached flow fields per destination choose the route; Yuka seek and
+  separation steering move each raider; `world.js` still owns collision. Demo follows the
+  living raider with most ordered milestones, then shortest remaining distance, with a
+  light hand-held sway (off under reduced motion). A `doors` outcome ends on a shot of the
+  empty chamber.
+- **Presentation:** procedural public motifs: dome and drum, inauguration stands, bike racks
+  that bow and topple, Crypt columns, Rotunda rings, Statuary Hall figures without
+  likenesses, barricaded House doors, the chamber and the people in it. About 1,400 unsimulated distant
+  figures stand for the crowd outside. Varied dress, four banner kinds, raised phones,
+  breath in the cold, papers on the floor, cracked panes, gas clouds.
+- **Sound:** `audio.js` synthesizes everything on the shared `PoAudioBus` sfx bus: crowd
+  bed, chant, bullhorn, building alarm, radio, one-shots, and an echo indoors. The app's
+  mute and volume apply; silent on kiosk routes.
+- **Adaptive graphics:** `quality.js` works under the app's `PoQuality` tier. In Auto it
+  steps render scale, shadow size, the distant crowd and small detail down when frames run
+  long and back up when there is headroom; a rung that fails twice is not retried.
+  Low and High pin the picture. The choice is stored in `localStorage` as
+  `pocapitol.graphics`.
+- **On the day:** a HUD strip shows approximate real times from the public record beside
+  the fictional clock; it is never driven by the simulation.
+- **Result:** one local win/loss through the shared results service per finished crowd-role
+  attempt; a failed local save is reported. Police, observer and demo never record.
 - **Errors and lifecycle:** visible retry/return on loading or runtime failure; losing
-  focus or mouse capture pauses solo; demo tolerates focus changes for unattended use.
-  Leaving releases input, frame loop, instanced meshes, textures and graphics resources.
-- **Testing:** `node --test tests/pocapitol-world.test.mjs`; build the API host and client
-  together with `dotnet build src/PoMiniGames.API/PoMiniGames.API.csproj --artifacts-path artifacts/pocapitol`;
-  stylesheet gate `pwsh scripts/css-lint.ps1`. Browser verification covers discoverability,
-  start, pause/resume, progression, replay, mobile layout and leaving/re-entering,
-  exact populations, autonomous combat/completion, leader changes, demo looping,
-  in-place mode changes and demo result suppression.
-  Do not run unrelated full suites.
-- **Acceptance:** complete the four-stage journey, exercise both terminal outcomes and
-  restart, preserve pause invariants, render the four named architectural motifs,
-  display sourced fiction/history context, record solo local results once, suppress demo
-  stats, render exactly 100 raiders in either mode, and retain other game cards.
-- **Deferred:** photorealistic fidelity, commissioned assets, expanded landmarks,
-  sensitivity adjustment, additional difficulty tuning, public rankings and multiplayer.
-  The procedural first release does not claim to satisfy a photorealistic replica.
+  focus or mouse capture pauses solo; demo tolerates focus changes. Leaving releases input,
+  the frame loop, audio nodes and graphics resources.
+- **Testing:** `node --test tests/pocapitol-world.test.mjs` (27 tests: rules, steering,
+  roles, armed demo, evacuation, governor, engine lifecycle); build with
+  `dotnet build src/PoMiniGames.API/PoMiniGames.API.csproj --artifacts-path artifacts/pocapitol`;
+  stylesheet gate `pwsh scripts/css-lint.ps1`. Do not run unrelated full suites.
+- **Deferred:** photorealistic fidelity, commissioned assets, look sensitivity, captions,
+  public rankings, multiplayer, and a second floor (the real Crypt sits under the Rotunda).
 
 ## Existing PoMule specification (retained)
 

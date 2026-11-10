@@ -1,6 +1,8 @@
 # PoCapitol — Product Requirements Document
 
-Status: Initial implementation and subsequent crowd/demo expansion requested on 2026-11-09.
+Status: Initial implementation, crowd/demo expansion, and the realism, sound, steering,
+graphics and armed-demo pass (section 13) requested on 2026-11-09. Section 13 governs where
+it conflicts with earlier sections.
 The delivered presentation is stylized, not a photorealistic reconstruction.
 Sensitivity adjustment and further difficulty/accessibility tuning remain follow-up scope.
 
@@ -239,3 +241,60 @@ Those are confirmed requirements, not pending choices.
 These references inform original simplified artwork. They do not establish that the
 scene is a measured reconstruction, that all police wore identical equipment, or that
 the fictional pulse combat and room connections occurred historically.
+
+## 13. Realism pass, sound, steering, graphics and armed demo (2026-11-09)
+
+The owner then requested, in order: sound, library-based crowd steering and adaptive
+graphics; all twenty items of a realism review; and an armed spectator demo. These are
+confirmed requirements. Where they conflict with earlier sections, this section governs.
+
+### What changed
+
+| Earlier requirement | Now |
+|---|---|
+| Fictional pulse combat on both sides | Solo play has no firearms: the crowd pushes, police use shields, batons, spray, gas and flash-bangs |
+| Twelve police at fixed posts | Five lines of 44 that hold, bow, break and fall back, with reinforcements to 64 |
+| Exactly 100 raiders (rules 16, 17) | Exactly 128 protestors: 1 + 127 in solo, 128 CPU in demo |
+| Start on the forecourt | Start out on the grass, well back from the building |
+| Nobody inside | 64 staff and members shelter in the chamber and are evacuated |
+| Every raider advances | About 30% push; the rest follow, film, mill about or act as street medics |
+| Four milestones ending inside the House chamber | Six milestones ending at barricaded chamber doors; the chamber was evacuated and is never entered |
+| Untimed attempt | A 12:50 pm to 6:00 pm clock at one minute per second; the curfew ends the attempt |
+| One solo role | Crowd, police line, or observer |
+| Demo: same rules as solo | Demo: armed variant, both sides fire, those hit are eliminated |
+| Demo restarts after four seconds | Six seconds, to allow the closing shot |
+| Rule 13/14 wording on combat scoring | Unchanged: still no score for harming anyone and no public ranking |
+
+### Confirmed additions
+
+- West-front setting: inauguration stands, bike-rack barricades, Crypt, Statuary Hall and a
+  House corridor, still on an invented straight-line route.
+- An unsimulated distant crowd for scale; varied dress, banners, signs and raised phones.
+- Morale, retreat and recovery; crowding that slows movement; medics and an aid station.
+- Building wear that follows progress: toppled racks and ropes, cracked panes, papers, gas haze.
+- Synthesized layered sound on the shared audio bus.
+- An "On the day" strip of approximate real times, shown beside the fictional clock.
+- An aftermath panel on every result: clearing, curfew, reconvening, certification, charges
+  and the January 2025 clemency.
+- Adaptive graphics with an Auto/Low/High choice that is remembered.
+
+### Limits that still hold
+
+- Staff and members are non-combatants. They cannot be targeted, reached or harmed in any
+  mode, including the armed demo; they are evacuated before the crowd can reach the doors,
+  and the doors never open. This limit is not open to tuning.
+- No real breach route, security-accurate layout or operational detail.
+- No identifiable real person, as a character, a likeness or a target.
+- No injury is depicted in any mode. Eliminated figures in the armed demo drop and stay down.
+- The armed demo is labeled on screen as something that did not happen.
+- Historical statements stay distinguishable from invention; if a source is unavailable the
+  claim is not made.
+
+### Open questions for the owner
+
+1. Should the armed variant remain demo-only, or also be offered as a solo option?
+2. Should Standard difficulty be winnable by the crowd without the human, or stay a
+   stalemate that usually ends at the curfew?
+3. Should the police-line and observer roles record local results?
+4. The armed demo's Standard difficulty usually ends with every protestor eliminated and
+   Story with every officer eliminated. Is that the balance you want to watch?

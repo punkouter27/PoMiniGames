@@ -38,13 +38,18 @@
          copy as "three-eco/webgpu" / "three-eco/tsl" / "three-eco/addons/". The scope makes the
          bare "three/webgpu" and "three/tsl" specifiers INSIDE that copy (three.tsl.js and the
          addons import them) resolve to the same r186 files, so there is one instance of it.
-         Bump the version and the integrity hashes together. -->
+         Bump the version and the integrity hashes together.
+
+         "yuka" (crowd steering, PoCapitol) is the one library served from this origin instead
+         of the CDN: lib/yuka/yuka.module.js is the unmodified 0.7.8 ESM build, kept in the
+         repo so the engine's Node tests run against the same file the browser loads. -->
     <script type="importmap">
     {
       "imports": {
         "three": "https://cdn.jsdelivr.net/npm/three@0.165.0/build/three.module.js",
         "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.165.0/examples/jsm/",
         "cannon-es": "https://cdn.jsdelivr.net/npm/cannon-es@0.20.0/dist/cannon-es.js",
+        "yuka": "/lib/yuka/yuka.module.js",
         "gaussian-splats-3d": "https://cdn.jsdelivr.net/npm/@mkkellogg/gaussian-splats-3d@0.4.7/build/gaussian-splats-3d.module.js",
         "three-eco/webgpu": "https://cdn.jsdelivr.net/npm/three@0.186.1/build/three.webgpu.js",
         "three-eco/tsl": "https://cdn.jsdelivr.net/npm/three@0.186.1/build/three.tsl.js",
