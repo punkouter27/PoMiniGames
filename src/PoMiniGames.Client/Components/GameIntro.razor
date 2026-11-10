@@ -128,6 +128,13 @@
                     @ref="_ok"
                     disabled="@(Mode == IntroMode.TwoPlayer && !StartEnabled)"
                     @onclick="StartAsync">OK</button>
+            @* The one gesture every game shares, learned once: Tab opens the live
+               stats panel (GameShell's GameDebugOverlay). Cascaded, so it disappears
+               on the two pages that already bind Tab themselves. *@
+            @if (TabStats)
+            {
+                <p class="gps-intro-hint"><kbd class="gps-kbd">Tab</kbd> shows live stats</p>
+            }
             @if (Mode == IntroMode.TwoPlayer && !string.IsNullOrWhiteSpace(StartHint))
             {
                 <p class="gps-intro-hint">@StartHint</p>
@@ -211,6 +218,13 @@
     [Parameter] public string? CueScope { get; set; }
 
     [Inject] private Services.Ui.UiFeedbackService Feedback { get; set; } = null!;
+
+    /// <summary>
+    /// True when the host GameShell answers Tab with the shared diagnostics panel.
+    /// Cascaded by GameShell; false when this card is rendered outside one (or on a
+    /// page that opts out), which is exactly when the hint must not appear.
+    /// </summary>
+    [CascadingParameter(Name = "TabStats")] private bool TabStats { get; set; }
 
     [Inject] private IJSRuntime JS { get; set; } = null!;
 

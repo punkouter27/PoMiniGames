@@ -45,6 +45,11 @@
 .pc-panel h2 em { color: #dabe87; }
 .pc-panel p { font-size: 14px; line-height: 1.6; margin: 10px 0; color: #d0d5da; }
 .pc-panel .pc-small { font-size: 11px; line-height: 1.5; color: #afbec9; }
+
+/* The start card sits on the themed surface, not the dark in-game panel: the tone above
+   was tuned for #1d3047 and lands around 1.6:1 on white. Shared-card small print uses the
+   theme's secondary text colour, which every other game's card already uses. */
+.gps-intro-card .pc-small { color: var(--color-text-secondary); font-size: 0.8rem; line-height: 1.45; }
 .pc-small { display: block; margin: 8px 0; }
 .pc-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 20px; margin: 18px 0 8px; }
 .pc-panel a { color: #e2c48a; font-size: 12px; }

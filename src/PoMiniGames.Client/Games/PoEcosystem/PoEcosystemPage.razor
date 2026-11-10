@@ -12,6 +12,8 @@
            GameKey="poecosystem"
            RequiresWebGl="true"
            TabDebug="false"
+           GameOver="@(_ended is not null)"
+           GameSummary="@SummaryContent"
            Fullscreen="true">
 
     @if (!_introDismissed)
@@ -25,7 +27,7 @@
     }
     else
     {
-        <PoEcosystemViewer VisitCode="@Island" />
+        <PoEcosystemViewer VisitCode="@Island" OnEnded="HandleEnded" />
     }
 </GameShell>
 
@@ -41,6 +43,12 @@
 
     private string _playerName = "";
     private bool _introDismissed;
+    private string? _ended;
+
+    // Ends the way every other game ends: the shared modal, one Back to main menu.
+    private void HandleEnded(string summary) => _ended = summary;
+
+    private RenderFragment? SummaryContent => _ended is null ? null : @<div>@_ended</div>;
 
     private static RenderFragment TitleContent => GameCatalog.TitleFor(GameKeys.PoEcosystem);
 

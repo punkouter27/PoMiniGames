@@ -94,7 +94,11 @@
         {
             @* A crash inside the game is caught here, so the Retry box sits in the game
                area and the top bar, title and swipe-back stay intact. *@
-            <GameErrorBoundary>@ChildContent</GameErrorBoundary>
+            @* The Tab-diagnostics setting is cascaded so the shared start card can
+               advertise the gesture without every page re-declaring it. *@
+            <CascadingValue Name="TabStats" Value="TabDebug" IsFixed="true">
+                <GameErrorBoundary>@ChildContent</GameErrorBoundary>
+            </CascadingValue>
             @* Laid over the area, not in place of the game: the engine's container is
                already mounted at its final size, so the shimmer is exactly the stage's
                size and nothing jumps when it goes. *@

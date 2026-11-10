@@ -28,6 +28,13 @@ public partial class PoEcosystemViewer : ComponentBase, IAsyncDisposable
     /// <summary>A shared island's code from <c>?island=CODE</c>: boot straight into a visit of it.</summary>
     [Parameter] public string? VisitCode { get; set; }
 
+    /// <summary>
+    /// Fired once when the world truly ends (every species silent, or all animals gone).
+    /// The page turns it into GameShell's shared end-of-game modal. A "last species
+    /// standing" moment is not an end and stays a toast.
+    /// </summary>
+    [Parameter] public EventCallback<string> OnEnded { get; set; }
+
     [Inject] private PoEcosystemInteropService Interop { get; set; } = default!;
     [Inject] private PoEcosystemApiClient Api { get; set; } = default!;
     [Inject] private BrowserViewport Viewport { get; set; } = default!;
@@ -54,6 +61,7 @@ public partial class PoEcosystemViewer : ComponentBase, IAsyncDisposable
     private EcoWorldMeta[] _worlds = [];
     private EcoSharedWorld[] _gallery = [];
     private string? _banner;
+    private string? _endedReported;
     private string? _error;
     private string? _cloudMessage;
     private string _seedInput = "";
@@ -213,9 +221,19 @@ public partial class PoEcosystemViewer : ComponentBase, IAsyncDisposable
         else if (stats.LastStanding >= 0 && stats.LastStanding != _lastStanding)
         {
             _lastStanding = stats.LastStanding;
-            _banner = $"Last species standing: {EcoSpeciesInfo.PluralOf(stats.LastStanding)} — year {stats.Year}";
+            // Not an end: the island is still running, so this is a toast, not the shared
+            // end-of-game modal. Only the true endings reach OnEnded below.
+            Toasts.Show($"🏝️ Last species standing: {EcoSpeciesInfo.PluralOf(stats.LastStanding)} — year {stats.Year}", ToastType.Success);
         }
         else if (stats.LastStanding < 0 && !stats.Silent && !allAnimalsDead) _banner = null;
+
+        // The one ending surface in every game: GameShell's GameOverModal, driven by the
+        // page. Reported once per world so a re-render cannot reopen it.
+        if (_banner is not null && (stats.Silent || allAnimalsDead) && _banner != _endedReported)
+        {
+            _endedReported = _banner;
+            _ = OnEnded.InvokeAsync(_banner);
+        }
 
         AnnounceNotes(_milestones.Observe(stats));
 
