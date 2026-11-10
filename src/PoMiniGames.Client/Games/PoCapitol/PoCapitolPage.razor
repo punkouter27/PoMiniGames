@@ -9,7 +9,13 @@
 
 <PageTitle>PoCapitol · PoMiniGames</PageTitle>
 
-<GameShell Title="@TitleContent" Fullscreen="true" RequiresWebGl="true" Announcement="@_announcement">
+<GameShell Title="@TitleContent" Fullscreen="true" RequiresWebGl="true" Announcement="@_announcement"
+           GameOver="@((_status is "completed" or "failed") && !_demo)"
+           GameOverDelayMs="1800"
+           Outcome="@ResultOutcome"
+           Stats="@ResultStats"
+           GameSummary="@ResultSummary"
+           Diagnostics="@DiagStats">
     <ErrorBoundary @ref="_errorBoundary">
         <ChildContent>
             <div class="pc-root @(_demo ? "pc-phonecam" : null)">
@@ -25,74 +31,21 @@
                     <div class="pc-mode"><ModeSwitch Current="@(_demo ? GameMode.Demo : GameMode.OnePlayer)" Reload="false" /></div>
                 </div>
 
+                @* The shared start card, like every other game: one OK, controls beside the
+                   rules, and this scenario's setup in the Options slot. It replaces a
+                   bespoke three-tab Radzen panel so the first thing a player sees is the
+                   same card shape they met on the other games. *@
                 @if (_status == "intro" && _ready)
                 {
-                    <section class="pc-panel pc-intro" role="dialog" aria-modal="true" aria-labelledby="pc-heading">
-                        <span class="pc-eyebrow">ONE AFTERNOON. FIVE POLICE LINES.</span>
-                        <h2 id="pc-heading">Beyond the <em>marble steps.</em></h2>
-                        
-                        <RadzenTabs @bind-SelectedIndex="_selectedIntroTab" TabPosition="TabPosition.Top" RenderMode="TabRenderMode.Client" Class="pc-tabs">
-                            <Tabs>
-                                <RadzenTabsItem Text="Briefing & Setup" Icon="assignment">
-                                    <p>128 protestors start out on the grass; most watch and film, a few push. 64 police hold five lines and fall back in stages. 64 staff and members shelter inside until evacuated. 12:50 pm to the 6:00 pm curfew.</p>
-                                    <div class="pc-notice"><strong>Fiction, not a reconstruction.</strong> Inspired by January 6, 2021. Adult themes; no injury is shown. Nobody is armed when you play; the Demo is a separate armed variant. The layout and police positions are invented.</div>
-                                    <label class="pc-small" for="pc-role">Who you are</label>
-                                    <RadzenSelectBar TValue="string" @bind-Value="_role" id="pc-role">
-                                        <Items>
-                                            <RadzenSelectBarItem Text="In the crowd" Value="@("raider")" />
-                                            <RadzenSelectBarItem Text="Police line" Value="@("police")" />
-                                            <RadzenSelectBarItem Text="Observer" Value="@("observer")" />
-                                        </Items>
-                                    </RadzenSelectBar>
-                                    <p class="pc-small">@RoleBrief</p>
-                                    <div class="pc-options">
-                                        <div>
-                                            <label class="pc-small" for="pc-difficulty">Difficulty</label>
-                                            <RadzenSelectBar TValue="string" @bind-Value="_difficulty" id="pc-difficulty">
-                                                <Items>
-                                                    <RadzenSelectBarItem Text="Story" Value="@("story")" />
-                                                    <RadzenSelectBarItem Text="Standard" Value="@("standard")" />
-                                                </Items>
-                                            </RadzenSelectBar>
-                                        </div>
-                                        <div>
-                                            <label class="pc-small" for="pc-graphics">Graphics</label>
-                                            <RadzenSelectBar TValue="string" Value="@_graphics" Change="@(async (string value) => await SetGraphicsAsync(value))" id="pc-graphics">
-                                                <Items>
-                                                    <RadzenSelectBarItem Text="Auto" Value="@("auto")" />
-                                                    <RadzenSelectBarItem Text="Low" Value="@("low")" />
-                                                    <RadzenSelectBarItem Text="High" Value="@("high")" />
-                                                </Items>
-                                            </RadzenSelectBar>
-                                        </div>
-                                    </div>
-                                    <div class="pc-actions">
-                                        <RadzenButton Text="Begin scenario" Icon="arrow_forward" ButtonStyle="ButtonStyle.Primary" Click="@(_ => StartAsync())" />
-                                        <a href="/" class="pc-subtle-link">All games</a>
-                                    </div>
-                                </RadzenTabsItem>
-                                <RadzenTabsItem Text="Field Controls" Icon="sports_esports">
-                                    <div class="pc-controls-deck">
-                                        <h4>Tactical Keybindings</h4>
-                                        <div class="pc-controls-grid">
-                                            <div><kbd>W</kbd> <kbd>A</kbd> <kbd>S</kbd> <kbd>D</kbd><span>Move raider / officer</span></div>
-                                            <div><kbd>Mouse</kbd><span>Look & aim (click to lock)</span></div>
-                                            <div><kbd>Space</kbd> / <kbd>Click</kbd><span>Push / shove line</span></div>
-                                            <div><kbd>Shift</kbd><span>Hurry / sprint</span></div>
-                                            <div><kbd>←</kbd> <kbd>→</kbd><span>Turn camera</span></div>
-                                            <div><kbd>Esc</kbd> / <kbd>P</kbd><span>Pause scenario</span></div>
-                                        </div>
-                                        <h4>Touch & Gamepad Support</h4>
-                                        <p class="pc-small"><strong>Touch:</strong> Use on-screen floating d-pad and push button. Drag anywhere across the viewport to orbit camera.</p>
-                                        <p class="pc-small"><strong>Gamepad:</strong> Left stick moves, right stick looks, right trigger pushes, Start pauses.</p>
-                                    </div>
-                                </RadzenTabsItem>
-                                <RadzenTabsItem Text="Historical Record" Icon="history_edu">
-                                    @ContextContent
-                                </RadzenTabsItem>
-                            </Tabs>
-                        </RadzenTabs>
-                    </section>
+                    <GameIntro CueScope="pocapitol"
+                               Title="@TitleContent"
+                               Objective="One afternoon, five police lines. Play it as the crowd, the line, or an observer."
+                               Controls="@IntroControls"
+                               HowToPlay="@IntroRules"
+                               Options="@IntroOptions"
+                               Mode="@(_demo ? GameIntro.IntroMode.Demo : GameIntro.IntroMode.OnePlayer)"
+                               Wide="true"
+                               OnStart="StartAsync" />
                 }
                 else if (_status == "loading")
                 {
@@ -302,19 +255,10 @@
                     }
                     else if (_status is "completed" or "failed")
                     {
-                        <section class="pc-panel pc-centered" role="dialog" aria-modal="true" aria-labelledby="pc-result">
-                            <span class="pc-eyebrow">SCENARIO ENDED · @Clock</span>
-                            <h2 id="pc-result">@ResultHeading</h2>
-                            <p>@ResultBody</p>
-                            <div class="pc-result-stats"><span>@Clock<small>TIME OF DAY</small></span><span>@_milestone / @Objectives.Length<small>MILESTONES</small></span><span>@_activeRaiders<small>STILL STANDING</small></span></div>
-                            <div class="pc-aftermath">
-                                <strong>What happened afterwards</strong>
-                                <p>The real building was cleared that evening and a citywide curfew began at 6:00 pm. The Senate reconvened at about 8:00 pm and Congress finished certifying the election at about 3:40 am on January 7. In the years that followed, federal prosecutors charged more than 1,500 people; in January 2025 nearly all of them were granted clemency.</p>
-                            </div>
-                            <p class="pc-small">@(_demo ? "Spectator mode never saves player results. A fresh attempt begins in six seconds." : _role != "raider" ? "Police-line and observer attempts are not saved." : _resultWarning.Length > 0 ? _resultWarning : "Results stay in your local game stats. No public ranking and no score for harming anyone.")</p>
-                            <div class="pc-actions"><RadzenButton Text="Play again" Icon="replay" Click="@(_ => StartAsync())" /><a href="/" class="pc-subtle-link">Back to all games</a></div>
-                            <details><summary>History and fictional departures</summary>@ContextContent</details>
-                        </section>
+                        @* The result is the shared end-of-game modal now (GameShell's
+                           GameOver → GameOverModal): the same card, the same one button,
+                           the same place in every game. Only the extra prose that is
+                           specific to this scenario is projected as the summary. *@
                     }
                 }
 
@@ -491,7 +435,6 @@
     private bool _showDiagnostics = true;
     private bool _showDrawer;
     private bool _radarNeedsInit = true;
-    private int _selectedIntroTab = 0;
     private int _debugFps = 60;
     private int _debugDrawCalls = 0;
     private string _debugKeys = "";
@@ -535,6 +478,95 @@
             : "Nobody in the crowd is still on their feet. The building is cleared.",
         _ => "The scenario has ended.",
     };
+
+    // ── Shared start and end cards ──
+    // The scenario used to carry its own three-tab start panel and its own result
+    // panel. Both are the shared components now, so PoCapitol opens and closes the
+    // way every other game does; only this scenario's own prose and numbers are fed in.
+
+    private List<StatItem> ResultStats =>
+    [
+        new() { Label = "TIME OF DAY", Value = Clock },
+        new() { Label = "MILESTONES", Value = $"{_milestone} / {Objectives.Length}" },
+        new() { Label = "STILL STANDING", Value = _activeRaiders.ToString() },
+    ];
+
+    private GameResult ResultOutcome => _status switch
+    {
+        "completed" => GameResult.Win,
+        "failed" => GameResult.Loss,
+        _ => GameResult.InProgress,
+    };
+
+    private string ResultNote =>
+        _role != "raider" ? "Police-line and observer attempts are not saved."
+        : _resultWarning.Length > 0 ? _resultWarning
+        : "Results stay in your local game stats. No public ranking and no score for harming anyone.";
+
+    private RenderFragment ResultSummary => @<div>
+        <div>@ResultBody</div>
+        <div>@ResultNote</div>
+        <div>What happened afterwards: the real building was cleared that evening, a citywide curfew began at 6:00 pm, the Senate reconvened at about 8:00 pm, and Congress finished certifying the election at about 3:40 am on January 7.</div>
+    </div>;
+
+    private IEnumerable<StatItem> DiagStats =>
+    [
+        new() { Label = "Status", Value = _status },
+        new() { Label = "Role", Value = _role },
+        new() { Label = "Clock", Value = $"{Clock} ({_elapsed:0.0}s)" },
+        new() { Label = "Crowd", Value = $"{_activeRaiders} up · {128 - _activeRaiders} down" },
+        new() { Label = "Police", Value = $"{_activePolice} up · {_totalPolice - _activePolice} down" },
+        new() { Label = "Line", Value = _lineIndex >= 0 ? $"{LineNames[_lineIndex]} {_lineIntegrity}%" : "None" },
+        new() { Label = "Sheltering", Value = _sheltering.ToString() },
+        new() { Label = "Tier", Value = _graphicsLabel },
+        new() { Label = "Keys", Value = _debugKeys.Length > 0 ? _debugKeys : "None" },
+    ];
+
+    private RenderFragment IntroControls => @<div>
+        <p><kbd>W</kbd> <kbd>A</kbd> <kbd>S</kbd> <kbd>D</kbd> move · <kbd>Mouse</kbd> look &amp; aim</p>
+        <p><kbd>Space</kbd> / <kbd>Click</kbd> push · <kbd>Shift</kbd> sprint · <kbd>←</kbd> <kbd>→</kbd> turn camera</p>
+        <p><kbd>Esc</kbd> / <kbd>P</kbd> pause</p>
+        <p class="touch-only">Touch: floating d-pad and push button, drag to orbit. Gamepad: sticks move and look, right trigger pushes, Start pauses.</p>
+    </div>;
+
+    private RenderFragment IntroRules => @<div>
+        <p>128 protestors start out on the grass; most watch and film, a few push. 64 police hold five lines and fall back in stages. 64 staff and members shelter inside until evacuated. 12:50 pm to the 6:00 pm curfew.</p>
+        <p><strong>Fiction, not a reconstruction.</strong> Inspired by January 6, 2021. Adult themes; no injury is shown. Nobody is armed when you play; the Demo is a separate armed variant. The layout and police positions are invented.</p>
+        <details><summary>Historical record</summary>@ContextContent</details>
+    </div>;
+
+    private RenderFragment IntroOptions => @<div>
+        <label class="pc-small" for="pc-role">Who you are</label>
+        <RadzenSelectBar TValue="string" @bind-Value="_role" id="pc-role">
+            <Items>
+                <RadzenSelectBarItem Text="In the crowd" Value="@("raider")" />
+                <RadzenSelectBarItem Text="Police line" Value="@("police")" />
+                <RadzenSelectBarItem Text="Observer" Value="@("observer")" />
+            </Items>
+        </RadzenSelectBar>
+        <p class="pc-small">@RoleBrief</p>
+        <div class="pc-options">
+            <div>
+                <label class="pc-small" for="pc-difficulty">Difficulty</label>
+                <RadzenSelectBar TValue="string" @bind-Value="_difficulty" id="pc-difficulty">
+                    <Items>
+                        <RadzenSelectBarItem Text="Story" Value="@("story")" />
+                        <RadzenSelectBarItem Text="Standard" Value="@("standard")" />
+                    </Items>
+                </RadzenSelectBar>
+            </div>
+            <div>
+                <label class="pc-small" for="pc-graphics">Graphics</label>
+                <RadzenSelectBar TValue="string" Value="@_graphics" Change="@(async (string value) => await SetGraphicsAsync(value))" id="pc-graphics">
+                    <Items>
+                        <RadzenSelectBarItem Text="Auto" Value="@("auto")" />
+                        <RadzenSelectBarItem Text="Low" Value="@("low")" />
+                        <RadzenSelectBarItem Text="High" Value="@("high")" />
+                    </Items>
+                </RadzenSelectBar>
+            </div>
+        </div>
+    </div>;
 
     protected override async Task OnParametersSetAsync()
     {

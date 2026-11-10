@@ -105,6 +105,12 @@
         }
     </div>
 
+    @* Tab diagnostics: the one stats/debug panel every game shares. The gesture
+       (Tab) is wired once in js/game-debug.js, so a game gets it by existing
+       inside this shell; a page adds its own numbers through `Diagnostics`.
+       Held outside `.gps-game-area` so a fullscreen renderer cannot replace it. *@
+    <GameDebugOverlay Enabled="@TabDebug" GameKey="@GameKey" Items="@Diagnostics" />
+
     @* End-of-game modal: the one centered, blocking dialog every game ends on.
        It surfaces the final result (GameSummary), the stats grid (Stats), this
        game's top 3 (fetched from GameKey) and its one button, Back to main menu.
@@ -183,6 +189,20 @@
     /// rendering here.
     /// </summary>
     [Parameter] public bool RequiresWebGl { get; set; }
+
+    /// <summary>
+    /// Off for the pages that already bind Tab themselves (PoEcosystem's world
+    /// dashboard, PoJevArena's stats sheet): two panels must never answer one Tab.
+    /// On everywhere else, which is what makes Tab mean the same thing in every game.
+    /// </summary>
+    [Parameter] public bool TabDebug { get; set; } = true;
+
+    /// <summary>
+    /// Per-game rows for the Tab diagnostics panel, in the same StatItem shape the
+    /// end modal takes. Optional: with nothing passed, the panel still shows live
+    /// frame rate, frame time, heap, viewport, game key and route.
+    /// </summary>
+    [Parameter] public IEnumerable<Models.StatItem>? Diagnostics { get; set; }
 
     [Parameter] public RenderFragment ChildContent { get; set; } = null!;
 
