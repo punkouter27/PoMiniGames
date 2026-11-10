@@ -72,9 +72,9 @@ export function surfaceTexture(size = 256) {
 
 // ---------------------------------------------------------------- triplanar surfaces
 
-export const SURFACE = { generic: 0, stone: 1, paving: 2, grass: 3 };
+export const SURFACE = { generic: 0, stone: 1, paving: 2, grass: 3, marble: 4, wood: 5, asphalt: 6 };
 // World metres covered by one tile of the shared texture, per kind.
-const TILE = [3, 4.8, 6.4, 9];
+const TILE = [3, 4.8, 6.4, 9, 5.6, 2.4, 7.2];
 
 /**
  * Adds world-space surface detail to a MeshStandardMaterial: tone variation, joints, a
@@ -122,6 +122,25 @@ export function addSurface(material, kind, texture, detail) {
                         float frost = smoothstep(0.55, 0.95, upNormal) * (0.6 + s.r * 0.4);
                         diffuseColor.rgb = mix(diffuseColor.rgb, vec3(0.94, 0.96, 0.98), frost * 0.35 * uSurfDetail);
                         surfRough = mix(surfRough, 0.45, frost * 0.4);
+                        // Water streaks gather below exposed ledges and toward the base of walls.
+                        float streak = pow(s.g, 3.0) * (1.0 - upNormal) * smoothstep(0.15, 0.85, s.r);
+                        diffuseColor.rgb *= 1.0 - streak * 0.16 * uSurfDetail;
+                    #elif SURF_KIND == 4
+                        float vein = smoothstep(0.72, 0.94, abs(sin((sp.x + sp.y) * 8.0 + s.g * 5.0)));
+                        diffuseColor.rgb *= 1.0 - vein * 0.12 * uSurfDetail;
+                        tone = mix(0.96, 1.04, s.r);
+                        surfHeight = s.r * 0.08;
+                        surfRough = 0.38 + s.g * 0.2;
+                    #elif SURF_KIND == 5
+                        float grain = sin(sp.y * 90.0 + s.g * 9.0) * 0.5 + 0.5;
+                        diffuseColor.rgb *= mix(0.78, 1.08, grain);
+                        surfHeight = grain * 0.18;
+                        surfRough = 0.48 + s.r * 0.25;
+                    #elif SURF_KIND == 6
+                        float aggregate = smoothstep(0.58, 0.82, s.r);
+                        diffuseColor.rgb *= mix(0.72, 1.18, aggregate);
+                        surfHeight = aggregate * 0.35;
+                        surfRough = 0.88 + s.g * 0.1;
                     #elif SURF_KIND == 2
                         tone = mix(0.84, 1.06, s.r * 0.5 + s.g * 0.5) * (1.0 - s.a * 0.15);
                         surfHeight = s.r * 0.3 - s.a * 0.6;

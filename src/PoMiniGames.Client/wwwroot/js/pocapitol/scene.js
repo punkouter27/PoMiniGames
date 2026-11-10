@@ -7,6 +7,7 @@ import { createBursts } from './bursts.js';
 import { createDecals } from './decals.js';
 import { createPost } from './post.js';
 import { createCampus } from './campus.js';
+import { addArchitecturalDetail } from './architecture.js';
 
 // The chamber is drawn but never walked: its doors stay barricaded, as they did. It is only
 // seen in the closing shot, empty.
@@ -28,6 +29,8 @@ const GRASS = new Set(['#657360', '#788168']);
 const PAVING = new Set(['#b8b2a5', '#93948c', '#c7bfad', '#d9d3c4', '#c6bca9']);
 // Plastic sheeting and painted seating: cloth-smooth, no stone coursing.
 const PLAIN = new Set(['#e6e4dc', '#e9e9e4', '#8d8f8a']);
+const MARBLE = new Set(['#eee7d8', '#e9e1cf', '#eeeadf', '#f1eadb', '#e1d7c6']);
+const WOOD = new Set(['#5a3d2b', '#6c4b35', '#72533d', '#805f43', '#70503b', '#9a7956']);
 const GLASS = new Set(['#435568', '#566371']);
 const METAL = new Map([['#5d6468', [0.65, 0.42]], ['#4c5c54', [0.55, 0.5]], ['#b99b62', [0.8, 0.35]], ['#a78c4d', [0.8, 0.35]], ['#2f3236', [0.5, 0.5]]]);
 
@@ -89,7 +92,8 @@ export function createScene(host, { figure } = {}) {
     sun.shadow.mapSize.set(2048, 2048);
     Object.assign(sun.shadow.camera, { left: -42, right: 42, top: 48, bottom: -48, near: 10, far: 210 });
     sun.shadow.bias = -0.0006;
-    sun.shadow.normalBias = 0.03;
+    sun.shadow.normalBias = 0.025;
+    sun.shadow.radius = 3;
     scene.add(sun);
     const sunDir = sunDirection(0);
     const placeSun = () => sun.position.copy(sun.target.position).addScaledVector(sunDir, 110);
@@ -117,6 +121,8 @@ export function createScene(host, { figure } = {}) {
         if (GRASS.has(color)) return SURFACE.grass;
         if (PAVING.has(color)) return SURFACE.paving;
         if (PLAIN.has(color)) return SURFACE.generic;
+        if (MARBLE.has(color)) return SURFACE.marble;
+        if (WOOD.has(color)) return SURFACE.wood;
         const c = new THREE.Color(color);
         return c.r * 0.3 + c.g * 0.59 + c.b * 0.11 > 0.45 ? SURFACE.stone : SURFACE.generic;
     }
@@ -330,7 +336,7 @@ export function createScene(host, { figure } = {}) {
             }
         }
         if (area.w < 10) continue;
-        const light = new THREE.PointLight('#ffe9bc', 65, 24, 1.5);
+        const light = new THREE.PointLight('#ffe9bc', 24, 20, 1.8);
         light.position.set(area.x, 6, area.z);
         scene.add(light);
     }
@@ -405,7 +411,7 @@ export function createScene(host, { figure } = {}) {
         box(side * 1.6, 0.7, CHAMBER_Z + 11.6, 2.6, 1.4, 1.1, '#805f43');
         box(side * 1.1, 1.75, CHAMBER_Z + 11.5, 1.8, 0.7, 0.9, '#72533d');
     }
-    const chamberLight = new THREE.PointLight('#ffe9bc', 90, 34, 1.4);
+    const chamberLight = new THREE.PointLight('#ffe9bc', 38, 30, 1.8);
     chamberLight.position.set(0, 6.5, CHAMBER_Z);
     scene.add(chamberLight);
     const flagMaterial = new THREE.MeshStandardMaterial({ map: flagTexture(), side: THREE.DoubleSide, roughness: 0.9 });
@@ -457,6 +463,9 @@ export function createScene(host, { figure } = {}) {
         mesh(new THREE.CylinderGeometry(0.06, 0.1, 3.4, 8), '#2f3236', x, 2, z);
         mesh(new THREE.SphereGeometry(0.24, 12, 8), '#f4ead2', x, 3.9, z).material = globeMaterial;
     }
+
+    const architecturalDetail = addArchitecturalDetail({ box, mesh, column, materials });
+    for (const light of architecturalDetail.interiorLights) scene.add(light);
 
     const architectureBatches = [];
     scene.updateMatrixWorld(true);
@@ -637,8 +646,8 @@ export function createScene(host, { figure } = {}) {
     beacon.material = marker.material;
 
     // OpenStreetMap 3D surrounding grounds and monumental structures
-    const campus = createCampus();
-    scene.add(campus);
+    const campus = createCampus({ surfaces, surfaceDetail });
+    scene.add(campus.group);
 
     // Tactical Unit Inspector target selection ring
     const selectRingGeo = new THREE.RingGeometry(0.65, 0.9, 32);
@@ -688,6 +697,7 @@ export function createScene(host, { figure } = {}) {
         bursts.setDensity(settings.extras ? 1 : 0.3);
         papers.visible = settings.extras;
         clutterPlacards.visible = settings.extras;
+        campus.setDetail(settings.extras);
         // Surface detail is a uniform, not a define: lowering it costs no recompile.
         surfaceDetail.value = settings.detail ?? 1;
         post.setLevel(settings.post ?? 0);
@@ -707,6 +717,7 @@ export function createScene(host, { figure } = {}) {
         clock += dt;
         time.value = clock;
         sky.uniforms.uTime.value = clock;
+        campus.update(clock);
         const spectating = state.role === 'none';
         const latched = options.latchedUnit;
         const inspected = options.inspectedUnit;
@@ -772,7 +783,9 @@ export function createScene(host, { figure } = {}) {
         const indoorGas = state.effects.some(e => e.type === 'gas' && e.z < 14);
         const baseFog = weather?.fogDensity ?? FOG_OUT;
         if (weather?.cloudCover !== undefined) sky.uniforms.uCloud.value = weather.cloudCover;
-        scene.fog.density += ((indoorGas ? FOG_GAS : baseFog) - scene.fog.density) * (1 - Math.exp(-dt * 1.5));
+        const indoors = subject?.z < 15;
+        const targetFog = indoorGas ? FOG_GAS : baseFog * (indoors ? 0.22 : 1);
+        scene.fog.density += (targetFog - scene.fog.density) * (1 - Math.exp(-dt * 1.5));
 
         const goal = state.role === 'raider' || spectating ? milestones[state.milestone] : null;
         marker.visible = beacon.visible = !!goal;
@@ -992,6 +1005,7 @@ export function createScene(host, { figure } = {}) {
         bursts.dispose(); decals.dispose();
         for (const light of flares) scene.remove(light);
         post.dispose();
+        campus.dispose();
         environment.dispose();
         scene.environment = null;
         sky.mesh.geometry.dispose(); sky.mesh.material.dispose();
