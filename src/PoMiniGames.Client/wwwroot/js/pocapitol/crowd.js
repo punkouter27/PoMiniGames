@@ -1,6 +1,7 @@
 import * as THREE from 'three';
 import { addWave, billboardChunk, createPolycarbonateMaterial, addSubsurfaceScattering } from './look.js';
 import { BONES as RIG_BONES, REGIONS, buildFigure } from './rig.js';
+import { collapseStage, tipAxes, impactFrame } from './collapse.js';
 
 // Original procedural artwork; references inform clothing and equipment, not real identities.
 export function flagTexture(kind = 'us') {
@@ -256,12 +257,7 @@ function poseFor(b, a, t, pose) {
             // round pushed it, then it settles and stops being recomputed.
             const f = b.fall ?? { t0: t, rel: Math.PI, seed: 0.5, zone: 'torso' };
             const age = Math.max(0, t - f.t0);
-            const p = Math.min(1, age / (f.zone === 'head' ? 0.55 : 0.9));
-            const ease = 1 - (1 - p) ** 3;
-            const brace = f.zone === 'head' ? 0 : Math.max(0, 1 - p / 0.32);
-            const tip = f.zone === 'head' ? ease : Math.max(0, Math.min(1, (p - 0.16) / 0.6));
-            const settle = Math.max(0, Math.min(1, (p - 0.7) / 0.3));
-            const flail = Math.sin(age * 15 + f.seed * 6.3) * (1 - tip) * (1 - settle);
+            const { ease, brace, tip, settle, flail, tipAngle } = collapseStage(age, f.zone, f.seed);
             // A last step under the falling weight, whichever way the body is going.
             for (const [s, side] of [['L', -1], ['R', 1]]) {
                 rot(pose, `thigh_${s}`, (0.3 + 0.55 * brace) - flail * side * 0.2, 0, side * 0.12 * tip);
@@ -275,9 +271,7 @@ function poseFor(b, a, t, pose) {
             rot(pose, 'foreArm_R', 0.25 * settle + 0.24 * tip);
             rot(pose, 'head', 0.15 * settle + 0.2 * flail, 0.4 * (f.seed - 0.5) * settle);
             // Tipping is about the body's own axes, so the same lean reads correctly at any heading.
-            // A positive Z rotation lays the figure to its left, hence the sign on the sideways part.
-            const tipAngle = Math.PI / 2 * tip;
-            return { drop: 0, fall: -Math.cos(f.rel) * tipAngle, lean: -Math.sin(f.rel) * tipAngle, lift: 0.2 * ease };
+            return { drop: 0, ...tipAxes(f.rel, tipAngle), lift: 0.2 * ease };
         }
         if (b.stooped) {
             // Being helped away: bent over, knees soft.
@@ -536,9 +530,8 @@ export function createCrowd(scene, capacity, { time, groundHeight, shadowTexture
             if (hlen > 0.01 || knock > 0.02) {
                 const dx = hlen > 0.01 ? hx / hlen : (a.kx ?? 0) / knock;
                 const dz = hlen > 0.01 ? hz / hlen : (a.kz ?? 0) / knock;
-                const h = a.heading || 0;
-                b.hitF = -(dx * Math.sin(h) + dz * Math.cos(h));
-                b.hitR = dx * Math.cos(h) - dz * Math.sin(h);
+                const push = impactFrame(dx, dz, a.heading || 0);
+                b.hitF = push.fw; b.hitR = push.rt;
                 b.hitK = a.hitPower ?? Math.min(1, knock * 2);
             } else b.hitK = 0;
             // Someone dropped next to you: a short lean away, with no effect on the simulation.
@@ -553,11 +546,9 @@ export function createCrowd(scene, capacity, { time, groundHeight, shadowTexture
                 let fall = falls.get(key);
                 if (!fall) {
                     const h = a.heading || 0;
-                    // The tip direction in the body's own frame: forward is -Z, right is +X.
-                    const fw = hlen > 0.01 ? -(hx * Math.sin(h) + hz * Math.cos(h)) : 0;
-                    const rt = hlen > 0.01 ? hx * Math.cos(h) - hz * Math.sin(h) : 0;
+                    const frame = impactFrame(hx, hz, h);
                     fall = {
-                        t0: now, rel: hlen > 0.01 ? Math.atan2(rt, fw) : Math.PI,
+                        t0: now, rel: frame.rel,
                         seed: trait(a.id, 5), zone: a.hitZone ?? 'torso', how: null,
                     };
                     falls.set(key, fall);

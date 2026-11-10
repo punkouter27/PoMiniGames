@@ -172,8 +172,7 @@ test('gas drives people back and worn-out raiders are helped away by street medi
     assert.equal(state.companions.length, 128);
 });
 
-test('staff and members are evacuated on the clock and can never be harmed', () => {
-    const state = createAttempt('standard', true);
+test('staff and members are evacuated on the clock and can never be harmed', () => {    const state = createAttempt('standard', true);
     const before = JSON.stringify(state.civilians);
     tick(state, {}, 20);
     assert.equal(JSON.stringify(state.civilians), before, 'Nobody moves before the evacuation');
@@ -610,4 +609,25 @@ test('demo engine ignores human input, reports its subject and line, loops, paus
     engine.api.dispose();
     assert.equal(engine.frames.size, 0);
     assert.equal(engine.errors.length, 0);
+});
+
+test('a round records where it landed, which way it came from, and who it disturbed', () => {
+    const state = createAttempt('standard', true);
+    state.companions = [];                       // nobody else firing this frame
+    const victim = state.enemies[0], neighbour = state.enemies[1];
+    Object.assign(victim, { x: 0, z: 30, health: 0.2, armor: 0, kx: 0, kz: 0, stagger: 0 });
+    Object.assign(neighbour, { x: 0.9, z: 30, health: 10, armor: 0, kx: 0, kz: 0 });
+    // A round travelling -Z, i.e. into the officer's front.
+    state.shots.push({ x: 0, z: 30, dx: 0, dz: -1, life: 1, faction: 'raider', y: 1.35, speed: 30 });
+    tick(state, {}, 2);
+
+    assert.equal(victim.hitZone, 'torso');
+    assert.ok(victim.iz < 0, 'the line of the round is remembered for the reaction');
+    assert.ok(victim.hitPower > 0 && victim.hitPower <= 1, 'impact strength is bounded');
+    assert.ok((victim.stagger ?? 0) > 0, 'a hit staggers before it drops');
+    assert.equal(victim.health, 0);
+    // The people pressed against the body check their step, and that costs the simulation nothing.
+    assert.ok(typeof neighbour.startle === 'number', 'a neighbour is marked startled');
+    assert.ok(neighbour.startleDx > 0.9, 'leaning away from the body, not into it');
+    assert.equal(neighbour.kx, 0, 'the flinch must not move anyone');
 });
