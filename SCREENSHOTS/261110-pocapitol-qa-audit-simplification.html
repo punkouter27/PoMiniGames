@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
 <meta charset="utf-8" />
-<title>PoCapitol UI/UX Simplification & QA Audit · Before vs After</title>
+<title>PoCapitol UI/UX Simplification & QA Audit · All Enhancements</title>
 <style>
   * { box-sizing: border-box; margin: 0; padding: 0; }
   body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; background: #0b1118; color: #dce5ee; padding: 32px 24px; }
@@ -46,7 +46,7 @@
 </head>
 <body>
   <h1>PoCapitol UI/UX Simplification & Functional QA Audit</h1>
-  <p class="subtitle">Layout de-clutter, streamlined navigation, tactical mini-map radar fix, and debug hook unification.</p>
+  <p class="subtitle">Layout de-clutter, streamlined navigation, tactical mini-map radar fix, auto-latch telemetry, and live weather polling.</p>
 
   <div class="grid">
     <!-- BEFORE -->
@@ -82,14 +82,14 @@
     <!-- AFTER -->
     <div class="card">
       <div class="card-header after">
-        <span>AFTER: Streamlined Layout & Functional Drawer</span>
-        <span>Build 261110.1</span>
+        <span>AFTER: Streamlined Layout, Auto-Latch & Live Radar</span>
+        <span>Build 261110.2</span>
       </div>
       <div class="preview-wrap">
         <div class="mock-hud">
           <div><strong>OBJECTIVE 4 / 6</strong> · Enter Statuary Hall</div>
           <div class="mock-top-actions">
-            <span class="mock-btn" title="Clickable weather">⛅ 42.4°F</span>
+            <span class="mock-btn" title="Clickable dynamic weather">⛅ 42.4°F (Live)</span>
             <span class="mock-btn">⚙ Options & Diagnostics</span>
             <span class="mock-btn">1P | Demo</span>
           </div>
@@ -105,7 +105,7 @@
             <div class="radar-dot dot-raider" style="left:48%; top:55%;"></div>
             <div class="radar-dot dot-raider" style="left:54%; top:65%;"></div>
           </div>
-          <div style="font-size:8px; color:#8ba4ba; text-align:center; margin-top:4px;">• Raider • Police • Crush</div>
+          <div style="font-size:8px; color:#8ba4ba; text-align:center; margin-top:4px;">Auto-latches on unit click</div>
         </div>
 
         <div class="mock-bottom">
@@ -124,7 +124,7 @@
         <tr>
           <th>Priority</th>
           <th>Component</th>
-          <th>Defect / Clutter Found</th>
+          <th>Defect / Enhancement</th>
           <th>Resolution</th>
           <th>Status</th>
         </tr>
@@ -133,8 +133,22 @@
         <tr>
           <td>P0</td>
           <td>Radar HUD</td>
-          <td>Canvas failed to initialize (black empty box) due to Task.Run delay race condition; createRadar lacked canvas reference.</td>
-          <td>Synchronized initialization via Blazor OnAfterRenderAsync lifecycle; returned canvas reference; applied high-contrast blueprint styling.</td>
+          <td>Canvas failed to initialize; default was hidden; lacked initial widescreen display.</td>
+          <td>Synchronized initialization via Blazor OnAfterRenderAsync lifecycle; defaulted radar to open on desktop with instant crisp rendering.</td>
+          <td><span class="badge badge-fixed">RESOLVED</span></td>
+        </tr>
+        <tr>
+          <td>P0</td>
+          <td>Unit Telemetry</td>
+          <td>Selecting unit required separate click to latch camera.</td>
+          <td>Enabled auto-latching on unit selection (click on mini-map or 3D scene immediately latches camera onto unit).</td>
+          <td><span class="badge badge-fixed">RESOLVED</span></td>
+        </tr>
+        <tr>
+          <td>P0</td>
+          <td>Weather System</td>
+          <td>Weather pill was static and live weather conditions did not refresh dynamically.</td>
+          <td>Made weather pill interactive; added background polling (every 5 min) for live DC Open-Meteo updates.</td>
           <td><span class="badge badge-fixed">RESOLVED</span></td>
         </tr>
         <tr>
@@ -149,20 +163,6 @@
           <td>Navigation Bar</td>
           <td>Two adjacent gear buttons in top-right (⚙️ DEBUG and ⚙ Options); ModeSwitch duplicated inside drawer.</td>
           <td>Consolidated diagnostics directly into Options Drawer under collapsible section; pruned duplicate top-bar debug button and drawer ModeSwitch.</td>
-          <td><span class="badge badge-pruned">PRUNED</span></td>
-        </tr>
-        <tr>
-          <td>P1</td>
-          <td>HUD Atmosphere</td>
-          <td>Weather pill was styled as interactive pill but had no click action.</td>
-          <td>Added click handler opening drawer directly to Atmospheric Weather options.</td>
-          <td><span class="badge badge-fixed">RESOLVED</span></td>
-        </tr>
-        <tr>
-          <td>P2</td>
-          <td>Bottom Status Strip</td>
-          <td>Colliding text cards (cluttered multi-line demo chip, hint chip, and bottom-right floating v261110 stamp).</td>
-          <td>Streamlined into slim, balanced status chips; moved build version neatly to drawer footer.</td>
           <td><span class="badge badge-pruned">PRUNED</span></td>
         </tr>
       </tbody>

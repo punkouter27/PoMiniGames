@@ -58,7 +58,7 @@ export function createInspector({ onTelemetryChange } = {}) {
         };
     }
 
-    function select(unit, state) {
+    function select(unit, state, autoLatch = true) {
         currentUnit = unit;
         if (!unit) {
             latched = false;
@@ -66,6 +66,7 @@ export function createInspector({ onTelemetryChange } = {}) {
             return;
         }
         currentFaction = unit.faction === 'capitol-police' || unit.faction === 'police' ? 'police' : 'raider';
+        if (autoLatch) latched = true;
         const tele = formatTelemetry(unit, state);
         onTelemetryChange?.(tele);
     }

@@ -454,7 +454,7 @@
     private string _status = "loading", _difficulty = "standard", _error = "", _message = "", _announcement = "";
     private string _resultWarning = "", _role = "raider", _outcome = "", _graphics = "auto", _graphicsLabel = "Auto";
     private string _weatherMode = "historical", _weatherCondition = "Jan 6 Archive · 42.4°F";
-    private bool _radarExpanded = false;
+    private bool _radarExpanded = true;
     private TelemetryDto? _selectedTelemetry;
     private int _health = 100, _milestone;
     private double _elapsed;
@@ -464,7 +464,7 @@
     private int _activeRaiders = 128, _activePolice = 44, _totalPolice = 44, _subject, _lineIndex, _lineIntegrity = 100, _sheltering = 64;
     private bool _showDiagnostics = true;
     private bool _showDrawer;
-    private bool _radarNeedsInit;
+    private bool _radarNeedsInit = true;
     private int _selectedIntroTab = 0;
     private int _debugFps = 60;
     private int _debugDrawCalls = 0;
@@ -730,6 +730,13 @@
     public Task OnTelemetryUpdate(TelemetryDto? telemetry)
     {
         _selectedTelemetry = telemetry;
+        return InvokeAsync(StateHasChanged);
+    }
+
+    [JSInvokable]
+    public Task OnWeatherUpdate(string condition)
+    {
+        _weatherCondition = condition;
         return InvokeAsync(StateHasChanged);
     }
 

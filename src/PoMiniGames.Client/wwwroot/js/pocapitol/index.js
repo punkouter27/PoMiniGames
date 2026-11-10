@@ -50,8 +50,12 @@ async function init(hostId, reference) {
     game = g;
     view.applyQuality?.(g.governor.settings());
 
-    // Weather API integration
-    fetchWeather(storedWeather()).then(w => { g.weather = w; }).catch(() => {});
+    // Weather API integration & dynamic updates
+    fetchWeather(storedWeather()).then(w => {
+        g.weather = w;
+        g.weatherRefreshAt = performance.now() + 300000;
+        reference?.invokeMethodAsync('OnWeatherUpdate', w.condition).catch(() => {});
+    }).catch(() => {});
 
     // Tactical Unit Inspector
     g.inspector = createInspector({
@@ -217,6 +221,14 @@ async function init(hostId, reference) {
                 const yaw = s.role === 'none' ? ear.heading ?? 0 : g.yaw;
                 g.audio.update({ ...g.mix, x: ear.x, z: ear.z, yaw, walking: moving, gassed: s.gassed, active: g.started && s.status === 'active' }, dt);
             }
+            if (g.weather?.mode === 'live' && now >= (g.weatherRefreshAt || 0)) {
+                g.weatherRefreshAt = now + 300000;
+                fetchWeather('live').then(w => {
+                    if (g.disposed) return;
+                    g.weather = w;
+                    reference?.invokeMethodAsync('OnWeatherUpdate', w.condition).catch(() => {});
+                }).catch(() => {});
+            }
             if (g.started && now >= g.notifyAt) { g.notifyAt = now + 200; notify(g); }
             g.frame = requestAnimationFrame(loop);
         } catch (error) {
@@ -327,6 +339,7 @@ async function setWeather(mode) {
     if (!game) return 'historical';
     const w = await fetchWeather(mode);
     game.weather = w;
+    game.weatherRefreshAt = performance.now() + 300000;
     try { window.localStorage?.setItem(WEATHER_KEY, mode); } catch {}
     return w.condition;
 }
