@@ -1,4 +1,4 @@
-import { createAttempt, advance, fire, setPaused } from './world.js';
+import { createAttempt, advance, fire, setPaused, selectLeader } from './world.js';
 import { createScene } from './scene.js';
 import { ensure, remove } from '../radzenTheme.js';
 import { connectedPads, stick, pressed, ButtonEdges } from '../gamepadBus.js';
@@ -15,7 +15,7 @@ async function init(hostId, reference) {
     const g = {
         host, view, reference, state: createAttempt(), started: false, disposed: false,
         yaw: 0, pitch: 0, keys: new Set(), firing: false, frame: 0, last: 0,
-        notifyAt: 0, notifying: false, message: '', drag: null, edges: new ButtonEdges(),
+        notifyAt: 0, notifying: false, message: '', drag: null, edges: new ButtonEdges(), restartAt: 0,
         events: new AbortController(),
     };
     game = g;
@@ -27,6 +27,7 @@ async function init(hostId, reference) {
         if (['Escape', 'KeyP'].includes(e.code) && !e.repeat) {
             pause(g.state.status === 'active'); e.preventDefault(); return;
         }
+        if (g.state.demo) return;
         if (g.state.status !== 'active') return;
         if (e.target.closest?.('button, a, summary, [role="radio"]')) return;
         if (['KeyW', 'KeyA', 'KeyS', 'KeyD', 'ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight', 'Space', 'ShiftLeft'].includes(e.code)) {
@@ -34,18 +35,18 @@ async function init(hostId, reference) {
         }
     });
     listen(window, 'keyup', e => g.keys.delete(e.code));
-    listen(window, 'blur', () => { clearInput(); pause(true); });
-    listen(document, 'visibilitychange', () => { if (document.hidden) { clearInput(); pause(true); } });
+    listen(window, 'blur', () => { clearInput(); if (!g.state.demo) pause(true); });
+    listen(document, 'visibilitychange', () => { if (document.hidden) { clearInput(); if (!g.state.demo) pause(true); } });
     listen(document, 'pointerlockchange', () => {
         if (document.pointerLockElement !== view.canvas && g.started) { clearInput(); pause(true); }
     });
     listen(document, 'mousemove', e => {
-        if (g.state.status !== 'active' || document.pointerLockElement !== view.canvas) return;
+        if (g.state.demo || g.state.status !== 'active' || document.pointerLockElement !== view.canvas) return;
         g.yaw -= e.movementX * 0.0025;
         g.pitch = Math.max(-0.45, Math.min(0.65, g.pitch + e.movementY * 0.003));
     });
     listen(view.canvas, 'pointerdown', e => {
-        if (!g.started || g.state.status !== 'active') return;
+        if (!g.started || g.state.demo || g.state.status !== 'active') return;
         if (e.pointerType === 'touch') {
             g.drag = { id: e.pointerId, x: e.clientX, y: e.clientY };
             view.canvas.setPointerCapture(e.pointerId);
@@ -80,7 +81,7 @@ async function init(hostId, reference) {
     });
     listen(host.parentElement, 'pointerdown', e => {
         const button = e.target.closest('[data-capitol-key]');
-        if (!button || g.state.status !== 'active') return;
+        if (!button || g.state.demo || g.state.status !== 'active') return;
         e.preventDefault();
         button.setPointerCapture(e.pointerId);
         g.keys.add(button.dataset.capitolKey);
@@ -100,10 +101,11 @@ async function init(hostId, reference) {
             const pad = connectedPads()[0];
             const edges = g.edges.update(pad);
             if (g.started && edges.includes(9)) pause(g.state.status === 'active');
+            if (g.started && g.state.demo && g.restartAt && now >= g.restartAt) start(g.state.difficulty, true);
             let x = 0, z = 0;
             if (g.started && g.state.status === 'active') {
-                const left = pad ? stick(pad) : { x: 0, y: 0 };
-                const right = pad ? stick(pad, 0.2, 1) : { x: 0, y: 0 };
+                const left = pad && !g.state.demo ? stick(pad) : { x: 0, y: 0 };
+                const right = pad && !g.state.demo ? stick(pad, 0.2, 1) : { x: 0, y: 0 };
                 g.yaw -= ((g.keys.has('ArrowRight') ? 1 : 0) - (g.keys.has('ArrowLeft') ? 1 : 0) + right.x) * dt * 2;
                 g.pitch = Math.max(-0.45, Math.min(0.65, g.pitch + right.y * dt));
                 const strafe = (g.keys.has('KeyD') ? 1 : 0) - (g.keys.has('KeyA') ? 1 : 0) + left.x;
@@ -112,12 +114,13 @@ async function init(hostId, reference) {
                 x = strafe * Math.cos(g.yaw) - forward * Math.sin(g.yaw);
                 z = -strafe * Math.sin(g.yaw) - forward * Math.cos(g.yaw);
                 advance(g.state, { x, z, sprint: g.keys.has('ShiftLeft') || pressed(pad, 10) }, dt);
-                if (g.firing || g.keys.has('Space') || pressed(pad, 7)) {
+                if (!g.state.demo && (g.firing || g.keys.has('Space') || pressed(pad, 7))) {
                     const shot = fire(g.state, view.aim(g.state, g.yaw));
                     if (shot) { view.trace(g.state, shot); window.PoCue?.fire('ui', shot.hit !== null ? 'confirm' : 'tap'); }
                 }
                 if (g.state.status === 'completed' || g.state.status === 'failed') {
                     clearInput();
+                    if (g.state.demo) g.restartAt = now + 4000;
                     if (document.pointerLockElement === view.canvas) document.exitPointerLock();
                 }
             }
@@ -138,7 +141,10 @@ function notify(g) {
     if (g.notifying || g.disposed) return;
     g.notifying = true;
     const s = g.state;
-    g.reference.invokeMethodAsync('OnUpdate', s.health, s.milestone, s.elapsed, s.status, s.hits, s.shots, g.message)
+    const leader = s.demo ? selectLeader(s) : null;
+    g.reference.invokeMethodAsync('OnUpdate', s.health, s.milestone, s.elapsed, s.status, s.hits, s.shots, g.message,
+        s.companions.filter(c => c.health > 0).length + (!s.demo && s.health > 0 ? 1 : 0),
+        s.enemies.filter(e => e.health > 0).length, leader ? leader.id + 1 : 0, s.demo)
         .catch(error => {
             if (!g.disposed) {
                 console.error('[PoCapitol] player interface update failed:', error);
@@ -150,12 +156,12 @@ function notify(g) {
         }).finally(() => { g.notifying = false; });
 }
 
-function start(difficulty) {
+function start(difficulty, demo = false) {
     if (!game) throw new Error('PoCapitol is not loaded.');
-    game.state = createAttempt(difficulty);
+    game.state = createAttempt(difficulty, demo);
     game.yaw = 0; game.pitch = 0; game.keys.clear(); game.firing = false;
-    game.started = true; game.message = ''; game.notifyAt = 0;
-    game.view.canvas.focus();
+    game.started = true; game.message = ''; game.notifyAt = 0; game.restartAt = 0;
+    if (!demo) game.view.canvas.focus();
 }
 
 function pause(value) {

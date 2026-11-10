@@ -3,14 +3,18 @@
 ## PoCapitol (2026-11-09)
 
 The owner requested implementation of the [PoCapitol PRD](DOCS/20261109/PoCapitol-PRD.md).
-The following defaults are adopted: adult alternate-history fiction, one human with
-four non-blocking companions, Story/Standard difficulty, non-graphic pulse combat
-against fictional opponents, and entry to a House-inspired chamber as the ending.
+The owner subsequently specified one human with exactly 99 autonomous NPC raiders,
+a 100-CPU demo with a leader-following camera, Capitol Police opposition, and improved
+historically referenced scenery, flags, clothing and riot equipment. Story/Standard
+difficulty, non-graphic fictional pulse combat, and a House-inspired chamber remain.
 These are not a documentary treatment or a security-accurate Capitol reconstruction.
 
 - **Journey:** hub -> content notice and controls -> forecourt -> fictional entrance
   gallery -> Rotunda -> House chamber -> local result -> replay or hub.
-- **Routes:** `/pocapitol`, `/pocapitol/1player`. No multiplayer, demo, public score,
+- **Routes:** `/pocapitol`, `/pocapitol/1player`, `/pocapitol/demo`. The shared mode switch
+  supports in-place mode changes; demo auto-starts, loops four seconds after a terminal
+  outcome and participates in the shared demo reel without resetting its dwell timer.
+  No multiplayer, public score,
   purchases, named historical targets, or saved in-progress attempts.
 - **Architecture:** existing .NET 10 host and Blazor client; existing Three.js 0.165.0
   import map and Radzen.Blazor 12.1.11. No package or configuration changes.
@@ -19,24 +23,42 @@ These are not a documentary treatment or a security-accurate Capitol reconstruct
   sprint, arrow keys to turn, Esc/P to pause; touchscreen direction/fire buttons and
   drag-to-look; standard gamepad sticks, right trigger, left-stick click, Start.
 - **Rules:** four ordered proximity milestones; player health starts at 100; only a
-  living player's arrival wins. Incapacitation takes precedence over same-step arrival.
+  living human's arrival wins solo. The 99 NPCs move and fight independently and do not
+  obstruct the human. Demo has exactly 100 NPC raiders and no participating human;
+  a living NPC completing its own ordered milestones wins; all incapacitated means failure.
+  Twelve fictional Capitol Police defend the route and can incapacitate either kind of raider.
+  Incapacitation takes precedence over same-step arrival.
   Pausing freezes all rules and active time. Terminal outcomes are immutable.
   Restart resets the attempt and keeps the selected difficulty.
-- **Presentation:** procedural public architectural motifs, not photorealistic assets;
-  fictional room adjacency; gold objective beacons, amber companions and blue opponents.
+- **Navigation/camera:** shared cached flow fields avoid obstacles, columns and chamber
+  seats. Demo follows the living NPC with most ordered milestones, then shortest remaining
+  navigable distance to its next milestone; deterministic ID tie-breaking. Camera position
+  and heading ease toward the selected actor. Human input cannot move or fire in demo.
+- **Presentation:** procedural public architectural motifs, not photorealistic assets:
+  ribbed dome, colonnaded/windowed drum and crowning silhouette; winter grounds; Rotunda
+  floor rings, pilasters, abstract framed art and high inner dome; House seating, gallery,
+  walnut-colored tiered rostrum and flag. Crowd parts are GPU-instanced; coats, beanies,
+  red caps, U.S./2020 campaign flags; police dark uniforms, helmets, visors and labeled
+  riot shields. Equipment/positions are illustrative, not an actual inventory.
+  Scale, room adjacency, art and encounters are fictional; gold objective beacons remain.
   No camera shake or continuous flashing; existing shared audio and haptics preferences apply.
 - **Result:** exactly one local win/loss through the shared results service per finished
-  attempt; failed local persistence must be reported. No server leaderboard is invented.
+  solo attempt; failed local persistence must be reported. Demo never records results.
+  No server leaderboard is invented.
 - **Errors and lifecycle:** visible retry/return on loading or runtime failure; losing
-  focus or mouse capture pauses; leaving releases input, frame loop and graphics resources.
+  focus or mouse capture pauses solo; demo tolerates focus changes for unattended use.
+  Leaving releases input, frame loop, instanced meshes, textures and graphics resources.
 - **Testing:** `node --test tests/pocapitol-world.test.mjs`; build the API host and client
   together with `dotnet build src/PoMiniGames.API/PoMiniGames.API.csproj --artifacts-path artifacts/pocapitol`;
   stylesheet gate `pwsh scripts/css-lint.ps1`. Browser verification covers discoverability,
-  start, pause/resume, progression, replay, mobile layout and leaving/re-entering.
+  start, pause/resume, progression, replay, mobile layout and leaving/re-entering,
+  exact populations, autonomous combat/completion, leader changes, demo looping,
+  in-place mode changes and demo result suppression.
   Do not run unrelated full suites.
 - **Acceptance:** complete the four-stage journey, exercise both terminal outcomes and
   restart, preserve pause invariants, render the four named architectural motifs,
-  display fiction/history context, record local results once, and retain other game cards.
+  display sourced fiction/history context, record solo local results once, suppress demo
+  stats, render exactly 100 raiders in either mode, and retain other game cards.
 - **Deferred:** photorealistic fidelity, commissioned assets, expanded landmarks,
   sensitivity adjustment, additional difficulty tuning, public rankings and multiplayer.
   The procedural first release does not claim to satisfy a photorealistic replica.

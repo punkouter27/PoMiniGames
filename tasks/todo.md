@@ -10,7 +10,7 @@
 - [x] Save before/after HTML and annotated comparison PNG.
 - [x] Rebuild host without warnings, rerun focused checks and verify restarted health.
 
-## Verification evidence
+## Initial implementation verification evidence
 
 | Requirement | Evidence |
 |---|---|
@@ -34,3 +34,39 @@ controller implementation and navigation routing were checked without claiming a
 hardware playtest.
 
 Only related tests are required. No push or production deployment is part of this task.
+
+## Crowd/demo expansion
+
+- [x] Establish six failing population, autonomy, leader and NPC damage checks.
+- [x] Implement exactly 99 solo NPCs or 100 demo NPCs with independent navigation/combat.
+- [x] Add police attacks against both human and NPC raiders, incapacitation and demo failure/reset.
+- [x] Add deterministic ordered-progress/remaining-route leader selection, including sub-cell ties.
+- [x] Add instanced winter clothing, U.S./campaign flags, helmets, visors and labeled police shields.
+- [x] Improve public-reference facade/dome, Rotunda floor/pilasters/dome and House rostrum/seating.
+- [x] Share seat collision/render data; batch repeated architecture; avoid camera-obscuring nearby flags.
+- [x] Wire shared mode switch/demo reel, automatic start/replay, spectator counts and solo-only stats.
+- [x] Update capability map, spec, README, PRD and plan; preserve existing game documentation.
+- [x] Verify exact requirements with focused tests, host build, formatting/CSS and real browser journeys.
+- [x] Save new before/after HTML and annotated PNG; restart app and verify both health endpoints.
+
+### Expansion verification evidence
+
+| Requirement | Evidence |
+|---|---|
+| Exact populations and independent progress | 20 passing focused Node tests; both Story and Standard demos finish; all NPCs remain walkable throughout |
+| Combat, failure and camera leadership | Police can incapacitate NPCs; solo human-only outcome preserved; all-dead demo fails; eligible leader changes, ignores incapacitated actors and uses stable ties |
+| Lifecycle and inputs | Engine preview/pause/dispose checks pass; human movement/fire ignored in demo; focus changes do not stop unattended playback; demo loops |
+| Host/client and styling | Final API/client build: zero warnings/errors; touched Razor/catalog formatting clean; all 65 stylesheets pass CSS gate |
+| Real browser demo | Headless Edge: starts automatically, completes, replays, follows three different subject IDs; stats unchanged; no touch/fire controls displayed |
+| Real browser solo | Full grounds-to-chamber human journey; win saved once; repeated notifications do not duplicate results; solo/demo switches work repeatedly without reload |
+| Real browser touch | 390 x 844 demo fits viewport; switching to solo and holding a real touch direction advances to the second objective; pause works |
+| Rendering budget | 112 simulation actors (100 raiders + 12 police); crowd uses 23 instanced batches; repeated scenery batching reduces observed initial scene calls from 509 to 129 |
+| Visual evidence | `SCREENSHOTS/261109-pocapitol-crowd.html` and annotated `.png`, plus current exterior, Rotunda, chamber, solo, mobile and touch captures |
+| Cleanup and reliability | One canvas after repeated switches; none after leaving; no console errors or unhandled browser exceptions in acceptance run |
+| Restart | Updated app responds at `http://localhost:5080`; `/health/live` OK and `/health` Healthy with Azurite |
+
+Expected red tests preceded implementation. Iteration found and corrected Razor nesting,
+host-output file locks, stale shared-mode selection and camera-blocking banners.
+The final checks above are green; no unrelated full suite or production deployment ran.
+The initial security-review result above belongs to the initial implementation, not a
+new claim that the expanded code received an additional security audit.

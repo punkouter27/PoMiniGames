@@ -1,10 +1,11 @@
 @page "/pocapitol"
-@page "/pocapitol/1player"
+@page "/pocapitol/{Mode}"
 @implements IAsyncDisposable
 @inject IJSRuntime JS
 @inject GameResultService Results
 @inject PlayerNameService PlayerNames
 @inject ILogger<PoCapitolPage> Logger
+@inject KioskCoordinator Kiosk
 
 <PageTitle>PoCapitol · PoMiniGames</PageTitle>
 
@@ -13,13 +14,14 @@
         <div id="pocapitol-scene" class="pc-scene" role="img" aria-label="Fictional Capitol grounds and interiors"></div>
         <div class="pc-film" aria-hidden="true"></div>
         <div class="pc-edition">PoCAPITOL <span>ALTERNATE HISTORY · FICTIONAL SCENARIO</span></div>
+        <div class="pc-mode"><ModeSwitch Current="@(_demo ? GameMode.Demo : GameMode.OnePlayer)" Reload="false" /></div>
 
         @if (_status == "intro" && _ready)
         {
             <section class="pc-panel pc-intro" role="dialog" aria-modal="true" aria-labelledby="pc-heading">
                 <span class="pc-eyebrow">ONE SCENARIO. FOUR MILESTONES.</span>
                 <h2 id="pc-heading">Beyond the<br /><em>marble steps.</em></h2>
-                <p>Start on the grounds with your group. Cross the forecourt, enter the Rotunda, and reach the House chamber.</p>
+                <p>One human, 99 computer-controlled raiders. Start outside, face Capitol Police, cross the forecourt, and reach the House chamber.</p>
                 <div class="pc-notice"><strong>Fiction, not a reconstruction.</strong> Inspired by January 6, 2021. Adult themes and non-graphic combat. Characters, pulse weapons, and interior connections are invented; this is not a real access plan.</div>
                 <div class="pc-controls"><kbd>W A S D</kbd> move <kbd>Mouse</kbd> look <kbd>Click / Space</kbd> fire<br /><kbd>Shift</kbd> sprint <kbd>← →</kbd> turn <kbd>Esc / P</kbd> pause</div>
                 <p class="pc-small">Click the scene after starting to capture the mouse. Touch: drag to look and use the on-screen controls. Controller: sticks, right trigger, Start.</p>
@@ -52,7 +54,16 @@
         {
             <div class="pc-hud">
                 <div><span class="pc-eyebrow">OBJECTIVE @Math.Min(_milestone + 1, 4) / 4</span><strong>@Objective</strong></div>
-                <div class="pc-health"><label for="pc-health">HEALTH @_health</label><progress id="pc-health" value="@_health" max="100"></progress></div>
+                @if (!_demo)
+                {
+                    <div class="pc-health"><label for="pc-health">HEALTH @_health</label><progress id="pc-health" value="@_health" max="100"></progress></div>
+                }
+                <div class="pc-crowd"><span>@_activeRaiders / 100 ACTIVE RAIDERS</span><span>@_activePolice / 12 CAPITOL POLICE</span>
+                    @if (_demo)
+                    {
+                        <b>FOLLOWING @(_subject > 0 ? $"RAIDER {_subject:000}" : "NO ACTIVE RAIDER")</b>
+                    }
+                </div>
                 <span class="pc-time">@TimeSpan.FromSeconds(_elapsed).ToString(@"mm\:ss")</span>
                 <RadzenButton Text="Pause" Icon="pause" Size="ButtonSize.Small" Disabled="@(_status != "active")" Click="@(_ => PauseAsync(true))" />
             </div>
@@ -64,17 +75,27 @@
             </div>
             @if (_status == "active")
             {
-                <div class="pc-crosshair" aria-hidden="true">+</div>
-                <div class="pc-bottom"><span>GOLD BEACON · NEXT MILESTONE</span><span>@(_message.Length > 0 ? _message : "WASD move · Click scene to aim · Space fire · P pause")</span></div>
-                <div class="pc-touch" aria-label="Touch controls">
-                    <div class="pc-dpad">
-                        <button data-capitol-key="KeyW" aria-label="Move forward">↑</button>
-                        <button data-capitol-key="KeyA" aria-label="Move left">←</button>
-                        <button data-capitol-key="KeyS" aria-label="Move backward">↓</button>
-                        <button data-capitol-key="KeyD" aria-label="Move right">→</button>
+                @if (!_demo)
+                {
+                    <div class="pc-crosshair" aria-hidden="true">+</div>
+                }
+                <div class="pc-bottom"><span>GOLD BEACON · NEXT MILESTONE</span><span>@(_demo ? "AUTONOMOUS DEMO · P PAUSE" : _message.Length > 0 ? _message : "WASD move · Click scene to aim · Space fire · P pause")</span></div>
+                @if (!_demo)
+                {
+                    <div class="pc-touch" aria-label="Touch controls">
+                        <div class="pc-dpad">
+                            <button data-capitol-key="KeyW" aria-label="Move forward">↑</button>
+                            <button data-capitol-key="KeyA" aria-label="Move left">←</button>
+                            <button data-capitol-key="KeyS" aria-label="Move backward">↓</button>
+                            <button data-capitol-key="KeyD" aria-label="Move right">→</button>
+                        </div>
+                        <button class="pc-fire" data-capitol-key="Space" aria-label="Fire pulse">FIRE</button>
                     </div>
-                    <button class="pc-fire" data-capitol-key="Space" aria-label="Fire pulse">FIRE</button>
-                </div>
+                }
+                else
+                {
+                    <div class="pc-demo-caption">DEMO · ALL 100 COMPUTER-CONTROLLED<br /><small>Camera follows the furthest eligible raider. No player results are saved.</small></div>
+                }
             }
             else if (_status == "paused")
             {
@@ -94,9 +115,9 @@
                 <section class="pc-panel pc-centered" role="dialog" aria-modal="true" aria-labelledby="pc-result">
                     <span class="pc-eyebrow">SCENARIO @(_status == "completed" ? "COMPLETE" : "ENDED")</span>
                     <h2 id="pc-result">@(_status == "completed" ? "Destination reached." : "Attempt ended.")</h2>
-                    <p>@(_status == "completed" ? "You reached the fictional House chamber. This game outcome does not represent a historical victory." : "You were incapacitated. A new attempt starts outside with full health.")</p>
+                    <p>@(_demo ? "Demonstration ended. A fresh 100-raider attempt begins automatically in four seconds." : _status == "completed" ? "You reached the fictional House chamber. This game outcome does not represent a historical victory." : "You were incapacitated. A new attempt starts outside with full health.")</p>
                     <div class="pc-result-stats"><span>@TimeSpan.FromSeconds(_elapsed).ToString(@"mm\:ss")<small>ACTIVE TIME</small></span><span>@_milestone / 4<small>MILESTONES</small></span></div>
-                    <p class="pc-small">@(_resultWarning.Length > 0 ? _resultWarning : "Results stay in your local game stats. No public ranking or kill score.")</p>
+                    <p class="pc-small">@(_demo ? "Spectator mode never saves player results." : _resultWarning.Length > 0 ? _resultWarning : "Results stay in your local game stats. No public ranking or kill score.")</p>
                     <div class="pc-actions"><RadzenButton Text="Play again" Click="@(_ => StartAsync())" /><a href="/">Back to all games</a></div>
                     <details><summary>History and fictional departures</summary>@ContextContent</details>
                 </section>
@@ -106,6 +127,7 @@
 </GameShell>
 
 @code {
+    [Parameter] public string? Mode { get; set; }
     private static RenderFragment TitleContent => GameCatalog.TitleFor(GameKeys.PoCapitol);
     private static readonly string[] Objectives = ["Cross the forecourt", "Enter the fictional gallery", "Reach the Rotunda", "Reach the House chamber"];
     private DotNetObjectReference<PoCapitolPage>? _reference;
@@ -114,7 +136,32 @@
     private int _health = 100, _milestone;
     private double _elapsed;
     private bool _ready, _disposed, _recorded;
+    private bool _demo;
+    private string? _mode;
+    private int _activeRaiders = 100, _activePolice = 12, _subject;
     private string Objective => _milestone < Objectives.Length ? Objectives[_milestone] : "Destination reached";
+
+    protected override async Task OnParametersSetAsync()
+    {
+        var mode = Mode ?? "";
+        if (_mode == mode) return;
+        _mode = mode;
+        _demo = GameModes.Parse(Mode) == GameMode.Demo;
+        if (_demo) Kiosk.SetCurrent("pocapitol-demo");
+        if (_ready)
+        {
+            if (_demo) await StartAsync();
+            else
+            {
+                try
+                {
+                    await JS.InvokeVoidAsync("PoCapitol.dispose");
+                    await LoadAsync();
+                }
+                catch (JSException ex) { await OnEngineError(ex.Message); }
+            }
+        }
+    }
 
     protected override async Task OnAfterRenderAsync(bool firstRender)
     {
@@ -133,6 +180,7 @@
             await JS.InvokeVoidAsync("PoCapitol.init", "pocapitol-scene", _reference);
             _ready = true;
             _status = "intro";
+            if (_demo) await StartAsync();
         }
         catch (Exception ex) when (ex is JSException or InvalidOperationException)
         {
@@ -147,10 +195,11 @@
     {
         try
         {
-            await JS.InvokeVoidAsync("PoCapitol.start", _difficulty);
+            await JS.InvokeVoidAsync("PoCapitol.start", _difficulty, _demo);
             _recorded = false;
             _status = "active";
             _health = 100; _milestone = 0; _elapsed = 0; _message = ""; _resultWarning = "";
+            _activeRaiders = 100; _activePolice = 12; _subject = 0;
             _announcement = "Scenario started. " + Objective;
         }
         catch (JSException ex) { await OnEngineError(ex.Message); }
@@ -163,13 +212,15 @@
     }
 
     [JSInvokable]
-    public async Task OnUpdate(int health, int milestone, double elapsed, string status, int hits, int shots, string message)
+    public async Task OnUpdate(int health, int milestone, double elapsed, string status, int hits, int shots, string message,
+        int activeRaiders, int activePolice, int subject, bool demo)
     {
-        if (_disposed) return;
+        if (_disposed || demo != _demo) return;
         var changed = _milestone != milestone || _status != status;
         _health = health; _milestone = milestone; _elapsed = elapsed; _status = status; _message = message;
+        _activeRaiders = activeRaiders; _activePolice = activePolice; _subject = subject;
         if (changed) _announcement = status == "active" ? Objective : $"Scenario {status}.";
-        if (!_recorded && status is "completed" or "failed")
+        if (!_demo && !_recorded && status is "completed" or "failed")
         {
             _recorded = true;
             try
@@ -211,7 +262,13 @@
     private RenderFragment ContextContent => @<div class="pc-context">
         <p>On January 6, 2021, Congress met to count and certify electoral votes, not to pass a law. The attack interrupted that proceeding; Congress later reconvened.</p>
         <p>This alternate-history scenario invents its characters, pulse weapons, encounters, and room connections. It is not a documentary, a real building plan, or an endorsement of the attack.</p>
-        <p>Visual references: the Capitol dome, classical facade, Rotunda-inspired hall, and House-inspired rostrum. This is a stylized procedural interpretation, not a photorealistic replica.</p>
+        <p>Public references inform the ribbed dome and colonnaded drum, winter grounds, Rotunda floor rings and pilasters, and House rostrum and seating. Winter coats, U.S. and campaign flags, and police helmets, visors and shields evoke documented appearances, not specific people or an exact equipment inventory.</p>
+        <p>Scale, routes, abstract artwork, crowd counts, police positions and combat are fictional. This is a stylized procedural interpretation, not a photorealistic or security-accurate replica.</p>
         <a href="https://www.congress.gov/117/crec/2021/01/06/CREC-2021-01-06-pt1-PgS18-2.pdf" target="_blank" rel="noopener noreferrer">Congressional Record: January 6 Senate proceedings</a>
+        <a href="https://www.aoc.gov/explore-capitol-campus/buildings-grounds/capitol-building/rotunda" target="_blank" rel="noopener noreferrer">Architect of the Capitol: Rotunda</a>
+        <a href="https://www.aoc.gov/explore-capitol-campus/buildings-grounds/capitol-building/capitol-dome" target="_blank" rel="noopener noreferrer">Architect of the Capitol: Dome</a>
+        <a href="https://history.house.gov/Exhibitions-and-Publications/House-Chamber/Rostrum/" target="_blank" rel="noopener noreferrer">House history: rostrum</a>
+        <a href="https://americanhistory.si.edu/press/releases/smithsonian-continues-collecting-artifacts-jan-6-capitol-attack-2" target="_blank" rel="noopener noreferrer">Smithsonian: flags and police equipment</a>
+        <a href="https://nsarchive.gwu.edu/briefing-book/foia/2021-05-04/capitol-riot-documents-you-should-read-part-3" target="_blank" rel="noopener noreferrer">National Security Archive: shield testimony</a>
     </div>;
 }

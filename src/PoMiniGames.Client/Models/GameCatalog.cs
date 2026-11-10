@@ -196,7 +196,11 @@ public static class GameCatalog
         [
             new(GameMode.OnePlayer, "/pocapitol/1player")
             {
-                ChipDescription = "Adult themes; fictional January 6-inspired action scenario",
+                ChipDescription = "One human and 99 NPCs; adult themes and fictional combat",
+            },
+            new(GameMode.Demo, "/pocapitol/demo")
+            {
+                ChipDescription = "100 computer-controlled raiders; leader-following spectator camera",
             },
         ]),
 
@@ -275,7 +279,7 @@ public static class GameCatalog
         .. new[]
         {
             GameKeys.TicTacToe, GameKeys.ConnectFive, GameKeys.PoRacer, GameKeys.PoMarbleRace,
-            GameKeys.PoVoxelStrike, GameKeys.PoBrawl,
+            GameKeys.PoVoxelStrike, GameKeys.PoBrawl, GameKeys.PoCapitol,
             GameKeys.PoCabinet, GameKeys.PoMule, GameKeys.PoEcosystem, GameKeys.SandPlayground,
         }
         .Select(key => All.First(g => g.Key == key))

@@ -13,4 +13,14 @@ defaults; preserve all existing games. No new dependencies, services, secrets, o
 | Evidence | Screenshot comparison HTML/PNG, `tasks/todo.md` | Before/after evidence and truthful completion status | Inspect generated artifacts | Documentation only |
 
 No actual access routes or security-sensitive building details are modeled.
-Photorealism, public rankings, multiplayer, and a spectator demo are excluded.
+Photorealism, public rankings and multiplayer are excluded.
+
+## Owner-requested crowd/demo expansion
+
+| Slice | Files (at most five) | Acceptance | Verification | Blast radius |
+|---|---|---|---|---|
+| Autonomous rules | `world.js`, `pocapitol-world.test.mjs` | Solo 1+99; demo 100 CPU; own milestones/combat; police attack both; deterministic eligible leader; failure/reset | Red population/demo tests followed by focused Node checks | PoCapitol rules |
+| Referenced presentation | `scene.js`, `crowd.js` | Instanced crowd and repeated scenery, winter clothes/flags, shields/helmets, public-reference architecture, smooth demo camera and nearby banner occlusion avoidance | Real browser actor/batch counts and exterior/interior captures | PoCapitol graphics |
+| Mode integration | `index.js`, page/style, `GameCatalog.cs` | Demo auto-start/loop, spectator HUD, shared switch/reel, no demo stats, cleanup | Lifecycle tests, build, CSS/format and browser | Catalog gains demo; other entries unchanged |
+| Documentation | capability map, spec, README, PRD | Confirmed additions and historical limitations agree | Diff review | Documentation |
+| Evidence | `tasks/todo.md`, local comparison HTML/PNG | Measured results, before/after annotated evidence, restarted healthy app | Focused checks and browser journeys | No production deployment |
