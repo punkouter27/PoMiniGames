@@ -80,8 +80,7 @@ test('bleeding accumulates with time and slows once the casualty is down', () =>
     assert.ok(down.lossMl < moving.lossMl, 'a body that has stopped loses volume more slowly');
 });
 
-test('an unhurt person reports a clean summary and injured ones escalate', () => {
-    const clean = harmSummary(undefined, 72);
+test('an unhurt person reports a clean summary and injured ones escalate', () => {    const clean = harmSummary(undefined, 72);
     assert.equal(clean.hits, 0);
     assert.equal(clean.triage, 'Minimal');
     assert.equal(clean.lossMl, 0);
@@ -94,4 +93,16 @@ test('an unhurt person reports a clean summary and injured ones escalate', () =>
     assert.ok(hurt.lossMl > 0);
     assert.ok(hurt.hemorrhage >= 1, 'ten minutes of untreated bleeding is measurable');
     assert.ok(Number.isInteger(hurt.volumeMl) && hurt.volumeMl > 0);
+});
+
+test('the summary carries exactly the fields the inspector telemetry copies', () => {
+    const summary = harmSummary(createHarm(), 80);
+    for (const key of ['hits', 'severity', 'lossMl', 'hemorrhage', 'triage']) {
+        assert.ok(key in summary, `inspector reads ${key}`);
+    }
+    assert.equal(typeof summary.triage, 'string');
+    assert.ok(Number.isInteger(summary.hits));
+    assert.ok(Number.isInteger(summary.severity));
+    assert.ok(Number.isInteger(summary.lossMl));
+    assert.ok(Number.isInteger(summary.hemorrhage));
 });

@@ -481,6 +481,29 @@ How a body answers a round, built on the existing mass and knockback model:
    that has settled reuses its cached pose, so a field of casualties costs nothing extra and the
    adaptive governor keeps its budget.
 
+### Harm measurement (2026-11-10)
+
+The demo quantifies harm as numbers, without drawing injury. `harm.js` is a coarse, explicitly
+non-clinical model; `world.js` applies it per hit and bleeds it forward each tick; `inspector.js`
+publishes it in the unit telemetry panel.
+
+1. **Injury severity (`harm.js`):** a 1..6 score in the spirit of AIS. Zone dominates (head beats
+   torso beats limb), impact energy raises it, and a vest lowers it for the body but never for the
+   head.
+2. **Estimated blood loss (`harm.js`):** an uncontrolled bleed rate in mL per minute per severity,
+   accumulated over the attempt. A casualty who is already down loses volume more slowly.
+3. **Haemorrhage class:** share of an estimated circulating volume (about 70 mL/kg) — none, I, II,
+   III or IV.
+4. **Triage category:** Minimal, Delayed or Immediate, driven by severity and by blood loss.
+5. **Field totals (`world.js`):** casualties, immediate casualties and total estimated loss for the
+   attempt, recalculated each step.
+6. **Telemetry (`inspector.js`, `PoCapitolPage.razor`):** selecting a unit shows hits, severity,
+   estimated mL, haemorrhage class and triage, as flat fields so the trimmed WASM build needs no
+   nested deserialisation.
+
+**This is not medical guidance.** It is a balance and reporting aid for a game, built from round
+numbers, and must not be used to predict or inform real clinical outcomes.
+
 ### Limits that still hold
 
 - Staff and members are non-combatants. They cannot be targeted, reached or harmed in any
