@@ -226,8 +226,11 @@ export function createBursts(scene, { capacity = 16000 } = {}) {
                     spray(e.tx ?? e.x, floor + 1.2, e.tz ?? e.z, Math.max(30, energy * 0.5), { calm });
                     break;
                 case 'impact':
-                    if (e.material === 'body') puff(e.x, y, e.z, energy);
-                    else if (e.spall) spall(e.x, floor + 1.2, e.z, e.dx ?? 0, e.dz ?? 1, e.material ?? 'marble');
+                    // A body hit kicks dust off clothing at the height it landed, not at the feet.
+                    if (e.material === 'body') {
+                        const at = e.zone === 'head' ? 1.62 : e.zone === 'limbs' ? 0.92 : 1.28;
+                        puff(e.x, floor + at, e.z, energy * 0.8, { tone: [0.66, 0.62, 0.56], lift: 0.35, size: 0.42 });
+                    } else if (e.spall) spall(e.x, floor + 1.2, e.z, e.dx ?? 0, e.dz ?? 1, e.material ?? 'marble');
                     else spray(e.x, floor + (e.round ? 1.3 : 0.9), e.z, energy, { color: e.material === 'metal' ? [3, 3.4, 4] : [4, 2.6, 1.1], calm });
                     break;
                 case 'gunshot':
@@ -253,7 +256,8 @@ export function createBursts(scene, { capacity = 16000 } = {}) {
                     puff(e.x, y, e.z, 500, { size: 1.2 });
                     break;
                 case 'down':
-                    puff(e.x, y, e.z, 60, { lift: 0.4 });
+                    // The body meeting the ground: a flat scuff of grit under it.
+                    puff(e.x, y, e.z, 110, { tone: [0.6, 0.57, 0.51], lift: 0.22, size: 0.8 });
                     break;
             }
         },

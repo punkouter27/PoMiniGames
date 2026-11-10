@@ -252,10 +252,32 @@ function poseFor(b, a, t, pose) {
     const id = a.id;
     if (a.health <= 0) {
         if (b.lying) {
-            rot(pose, 'upperArm_L', 0.2, 0, -0.55); rot(pose, 'upperArm_R', 0.3, 0, 0.5);
-            rot(pose, 'foreArm_L', 0.4); rot(pose, 'foreArm_R', 0.25);
-            rot(pose, 'thigh_L', 0.25); rot(pose, 'shin_L', -0.45); rot(pose, 'head', 0.15, 0.4 * (trait(id, 5) - 0.5));
-            return { drop: 0, fall: Math.PI / 2, lift: 0.2 };
+            // A collapse in stages: the weight goes, the knees buckle, the body tips the way the
+            // round pushed it, then it settles and stops being recomputed.
+            const f = b.fall ?? { t0: t, rel: Math.PI, seed: 0.5, zone: 'torso' };
+            const age = Math.max(0, t - f.t0);
+            const p = Math.min(1, age / (f.zone === 'head' ? 0.55 : 0.9));
+            const ease = 1 - (1 - p) ** 3;
+            const brace = f.zone === 'head' ? 0 : Math.max(0, 1 - p / 0.32);
+            const tip = f.zone === 'head' ? ease : Math.max(0, Math.min(1, (p - 0.16) / 0.6));
+            const settle = Math.max(0, Math.min(1, (p - 0.7) / 0.3));
+            const flail = Math.sin(age * 15 + f.seed * 6.3) * (1 - tip) * (1 - settle);
+            // A last step under the falling weight, whichever way the body is going.
+            for (const [s, side] of [['L', -1], ['R', 1]]) {
+                rot(pose, `thigh_${s}`, (0.3 + 0.55 * brace) - flail * side * 0.2, 0, side * 0.12 * tip);
+                rot(pose, `shin_${s}`, -0.5 - 0.95 * brace);
+                rot(pose, `foot_${s}`, 0.22 * brace);
+            }
+            rot(pose, 'spine', -0.14 * (1 - settle) + 0.1 * flail);
+            rot(pose, 'upperArm_L', 0.2 * settle - flail * 0.7, 0, -0.55 * settle - 0.4 * tip);
+            rot(pose, 'upperArm_R', 0.3 * settle + flail * 0.7, 0, 0.5 * settle + 0.35 * tip);
+            rot(pose, 'foreArm_L', 0.4 * settle + 0.3 * tip);
+            rot(pose, 'foreArm_R', 0.25 * settle + 0.24 * tip);
+            rot(pose, 'head', 0.15 * settle + 0.2 * flail, 0.4 * (f.seed - 0.5) * settle);
+            // Tipping is about the body's own axes, so the same lean reads correctly at any heading.
+            // A positive Z rotation lays the figure to its left, hence the sign on the sideways part.
+            const tipAngle = Math.PI / 2 * tip;
+            return { drop: 0, fall: -Math.cos(f.rel) * tipAngle, lean: -Math.sin(f.rel) * tipAngle, lift: 0.2 * ease };
         }
         if (b.stooped) {
             // Being helped away: bent over, knees soft.
@@ -307,9 +329,35 @@ function poseFor(b, a, t, pose) {
         if (a.attacking > 0 && a.tool === 'baton') arm('R', 1.75, 0.15);
         else if (a.attacking > 0) arm('R', 1.45, 0.05, -0.15); // spray, arm out
         else arm('R', 0.35, 0.45);
-        if (a.stagger > 0) { rot(pose, 'spine', 0.18); rot(pose, 'head', 0.2); }
     } else if (b.filming) { arm('R', 1.45, 0.75, -0.2); rot(pose, 'head', 0.06); }
     else if (b.bearer) arm('R', 0.35, 1.1);
+    // Taking a round: the body answers the impact before it answers the player.
+    if (a.stagger > 0 && b.hitK > 0) {
+        const s = Math.min(1, a.stagger * 2.2) * b.hitK;
+        const zone = a.hitZone ?? 'torso';
+        const weight = zone === 'head' ? 1.4 : zone === 'limbs' ? 0.7 : 1;
+        if (zone !== 'limbs') {
+            rot(pose, 'spine', -0.32 * b.hitF * s * weight, 0, 0.22 * b.hitR * s * weight);
+            rot(pose, 'chest', -0.18 * b.hitF * s * weight);
+            rot(pose, 'neck', -0.2 * b.hitF * s * weight);
+        }
+        rot(pose, 'head', -0.45 * b.hitF * s * weight, 0, 0.26 * b.hitR * s * weight);
+        rot(pose, 'upperArm_L', -0.55 * s, 0, -0.45 * s);
+        rot(pose, 'upperArm_R', -0.45 * s, 0, 0.4 * s);
+        rot(pose, 'foreArm_L', -0.2 * s); rot(pose, 'foreArm_R', -0.16 * s);
+        // A catch step on the back foot, so the hit reads as weight rather than a nudge.
+        if (s > 0.4) {
+            rot(pose, 'thigh_L', -0.32 * s); rot(pose, 'shin_L', 0.4 * s);
+            rot(pose, 'thigh_R', 0.24 * s); rot(pose, 'foot_R', -0.22 * s);
+        }
+    } else if (b.startleK > 0) {
+        // A neighbour has just gone down: lean away and half-raise an arm.
+        const s = b.startleK * 0.75;
+        rot(pose, 'spine', -0.16 * b.startleF * s, 0, 0.3 * b.startleR * s);
+        rot(pose, 'head', -0.22 * b.startleF * s, 0, 0.4 * b.startleR * s);
+        rot(pose, 'upperArm_L', -0.22 * s, 0, -0.5 * s);
+        rot(pose, 'upperArm_R', -0.18 * s, 0, 0.45 * s);
+    }
     return { drop: 0, fall: 0, lift: 0 };
 }
 
@@ -450,6 +498,8 @@ export function createCrowd(scene, capacity, { time, groundHeight, shadowTexture
 
     const pose = new Float32Array(RIG_BONES.length * 3);
     const slotFigure = Array.from({ length: capacity }, () => new THREE.Matrix4());
+    // Death dynamics per body, and the pose it settled into, so a field of bodies costs nothing.
+    const falls = new Map(), settledPose = new Map();
     function update(state, humanHeading, humanMoving, cameraPosition) {
         const actors = [
             ...(state.role !== 'none' ? [{ ...state.player, id: -1, health: state.health, heading: humanHeading,
@@ -461,6 +511,7 @@ export function createCrowd(scene, capacity, { time, groundHeight, shadowTexture
         ];
         if (actors.length > capacity) throw new RangeError('Crowd renderer capacity exceeded.');
         const active = state.status === 'active';
+        const now = state.elapsed ?? 0;
         // Per-actor body: build, ground, gait and pose. Worked out once, used by the body and every part.
         const people = [];
         for (const a of actors) {
@@ -477,9 +528,50 @@ export function createCrowd(scene, capacity, { time, groundHeight, shadowTexture
             b.slot = bodies.claim(key);
             const regionKey = `${key}${a.police ? 'p' : ''}${a.observer ? 'o' : ''}${a.temperament ?? ''}`;
             bodies.paint(b.slot, regionKey, region => color.set(regionColors[region](a)));
-            const how = poseFor(b, a, state.elapsed, pose);
+            // Where the round came from, in the body's own frame, so a flinch or a fall leans the
+            // way the impact did however the person happens to be facing.
+            const knock = Math.hypot(a.kx ?? 0, a.kz ?? 0);
+            const hx = a.ix ?? 0, hz = a.iz ?? 0;
+            const hlen = Math.hypot(hx, hz);
+            if (hlen > 0.01 || knock > 0.02) {
+                const dx = hlen > 0.01 ? hx / hlen : (a.kx ?? 0) / knock;
+                const dz = hlen > 0.01 ? hz / hlen : (a.kz ?? 0) / knock;
+                const h = a.heading || 0;
+                b.hitF = -(dx * Math.sin(h) + dz * Math.cos(h));
+                b.hitR = dx * Math.cos(h) - dz * Math.sin(h);
+                b.hitK = a.hitPower ?? Math.min(1, knock * 2);
+            } else b.hitK = 0;
+            // Someone dropped next to you: a short lean away, with no effect on the simulation.
+            if (a.startle !== undefined && now - a.startle >= 0 && now - a.startle < 0.55) {
+                const h = a.heading || 0;
+                const dx = a.startleDx ?? 0, dz = a.startleDz ?? 0;
+                b.startleK = 1 - (now - a.startle) / 0.55;
+                b.startleF = -(dx * Math.sin(h) + dz * Math.cos(h));
+                b.startleR = dx * Math.cos(h) - dz * Math.sin(h);
+            }
+            if (b.lying) {
+                let fall = falls.get(key);
+                if (!fall) {
+                    const h = a.heading || 0;
+                    // The tip direction in the body's own frame: forward is -Z, right is +X.
+                    const fw = hlen > 0.01 ? -(hx * Math.sin(h) + hz * Math.cos(h)) : 0;
+                    const rt = hlen > 0.01 ? hx * Math.cos(h) - hz * Math.sin(h) : 0;
+                    fall = {
+                        t0: now, rel: hlen > 0.01 ? Math.atan2(rt, fw) : Math.PI,
+                        seed: trait(a.id, 5), zone: a.hitZone ?? 'torso', how: null,
+                    };
+                    falls.set(key, fall);
+                }
+                b.fall = fall;
+            } else { falls.delete(key); settledPose.delete(key); }
+            // A body that has settled no longer needs its pose worked out again every frame.
+            const settled = b.fall && now - b.fall.t0 > 1.3 ? settledPose.get(key) : null;
+            const how = settled ? (pose.set(settled), b.fall.how) : poseFor(b, a, now, pose);
+            if (b.fall && !settled && now - b.fall.t0 > 1.3) {
+                settledPose.set(key, pose.slice()); b.fall.how = how;
+            }
             transform.position.set(a.x, b.ground - how.drop * tall + how.lift * wide, a.z);
-            transform.rotation.set(how.fall, a.heading || 0, 0);
+            transform.rotation.set(how.fall, a.heading || 0, how.lean || 0);
             transform.scale.set(wide, tall, wide);
             const figureMatrix = slotFigure[b.slot].compose(transform.position, transform.quaternion, transform.scale);
             bodies.pose(b.slot, figureMatrix, pose);

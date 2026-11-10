@@ -768,11 +768,27 @@ export function advance(state, input, seconds) {
             victim.health = Math.max(0, victim.health - dmg);
             if (shot.faction === 'police') victim.morale = Math.max(0, victim.morale - 0.25);
             victim.stagger = Math.max(victim.stagger ?? 0, 0.25);
+            // What the renderer needs to react to: where it landed, from which way, and how hard.
+            victim.hitZone = hitZone;
+            victim.hitAt = state.elapsed ?? 0;
+            victim.hitPower = Math.min(1, dmg / (shot.faction === 'raider' ? (difficulty.raiderShot ?? 3.4) : difficulty.shot));
+            victim.ix = shot.dx; victim.iz = shot.dz;
             // Slight kinetic momentum transfer
             victim.kx = (victim.kx ?? 0) + shot.dx * (shot.faction === 'raider' ? 0.8 : 0.3);
             victim.kz = (victim.kz ?? 0) + shot.dz * (shot.faction === 'raider' ? 0.8 : 0.3);
 
-            if (victim.health === 0) state.events.push({ type: 'down', x: victim.x, z: victim.z, energy: 30, material: 'body' });
+            if (victim.health === 0) {
+                state.events.push({ type: 'down', x: victim.x, z: victim.z, energy: 30, material: 'body' });
+                // A body dropping makes the people pressed against it check their step. This is a
+                // render-only flinch: nothing here touches position, momentum or line holding.
+                for (const other of [...(state.role !== 'none' && state.health > 0 ? [state.player] : []), ...state.companions, ...state.enemies]) {
+                    if (!other || other === victim || other.health <= 0) continue;
+                    const dx = other.x - victim.x, dz = other.z - victim.z, d = Math.hypot(dx, dz);
+                    if (d <= 0.01 || d >= 1.6) continue;
+                    other.startle = state.elapsed ?? 0;
+                    other.startleDx = dx / d; other.startleDz = dz / d;
+                }
+            }
             blow(state, 'impact', shot.x, shot.z, 520, 'body', { round: true, zone: hitZone });
             shot.life = 0;
         } else if (reach < 1 || !walkable(shot.x, shot.z)) {
