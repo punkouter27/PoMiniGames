@@ -1,3 +1,48 @@
+# SPEC: PoMiniGames game specifications
+
+## PoCapitol (2026-11-09)
+
+The owner requested implementation of the [PoCapitol PRD](DOCS/20261109/PoCapitol-PRD.md).
+The following defaults are adopted: adult alternate-history fiction, one human with
+four non-blocking companions, Story/Standard difficulty, non-graphic pulse combat
+against fictional opponents, and entry to a House-inspired chamber as the ending.
+These are not a documentary treatment or a security-accurate Capitol reconstruction.
+
+- **Journey:** hub -> content notice and controls -> forecourt -> fictional entrance
+  gallery -> Rotunda -> House chamber -> local result -> replay or hub.
+- **Routes:** `/pocapitol`, `/pocapitol/1player`. No multiplayer, demo, public score,
+  purchases, named historical targets, or saved in-progress attempts.
+- **Architecture:** existing .NET 10 host and Blazor client; existing Three.js 0.165.0
+  import map and Radzen.Blazor 12.1.11. No package or configuration changes.
+  Module ownership is documented in `CAPABILITY-MAP.md`.
+- **Controls:** WASD movement, mouse capture and look, click/Space to fire, Shift to
+  sprint, arrow keys to turn, Esc/P to pause; touchscreen direction/fire buttons and
+  drag-to-look; standard gamepad sticks, right trigger, left-stick click, Start.
+- **Rules:** four ordered proximity milestones; player health starts at 100; only a
+  living player's arrival wins. Incapacitation takes precedence over same-step arrival.
+  Pausing freezes all rules and active time. Terminal outcomes are immutable.
+  Restart resets the attempt and keeps the selected difficulty.
+- **Presentation:** procedural public architectural motifs, not photorealistic assets;
+  fictional room adjacency; gold objective beacons, amber companions and blue opponents.
+  No camera shake or continuous flashing; existing shared audio and haptics preferences apply.
+- **Result:** exactly one local win/loss through the shared results service per finished
+  attempt; failed local persistence must be reported. No server leaderboard is invented.
+- **Errors and lifecycle:** visible retry/return on loading or runtime failure; losing
+  focus or mouse capture pauses; leaving releases input, frame loop and graphics resources.
+- **Testing:** `node --test tests/pocapitol-world.test.mjs`; build the API host and client
+  together with `dotnet build src/PoMiniGames.API/PoMiniGames.API.csproj --artifacts-path artifacts/pocapitol`;
+  stylesheet gate `pwsh scripts/css-lint.ps1`. Browser verification covers discoverability,
+  start, pause/resume, progression, replay, mobile layout and leaving/re-entering.
+  Do not run unrelated full suites.
+- **Acceptance:** complete the four-stage journey, exercise both terminal outcomes and
+  restart, preserve pause invariants, render the four named architectural motifs,
+  display fiction/history context, record local results once, and retain other game cards.
+- **Deferred:** photorealistic fidelity, commissioned assets, expanded landmarks,
+  sensitivity adjustment, additional difficulty tuning, public rankings and multiplayer.
+  The procedural first release does not claim to satisfy a photorealistic replica.
+
+## Existing PoMule specification (retained)
+
 # SPEC: PoMule (Project Octo-M.U.L.E.)
 
 Game 15 of PoMiniGames, and the first screen built with Radzen. Module ownership is in

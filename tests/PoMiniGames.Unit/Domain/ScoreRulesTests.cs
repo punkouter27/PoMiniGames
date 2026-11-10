@@ -31,6 +31,7 @@ public sealed class ScoreRulesTests
     [InlineData("pomule", -1, 1_500, ScoreVerdict.OutOfRange)]
     // A board with no rules is never judged.
     [InlineData("poecosystem", int.MaxValue, 0, ScoreVerdict.Plausible)]
+    [InlineData("pocapitol", 0, 0, ScoreVerdict.Plausible)]
     public void CheckAgainstSession_JudgesScoreAgainstElapsedTime(
         string game, double score, double elapsedSeconds, ScoreVerdict expected)
     {

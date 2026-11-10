@@ -178,7 +178,7 @@ export class KeyBridge {
 
 // Canvas games: their engines read the pad (or the keyboard) themselves, so outside a modal the
 // D-pad is theirs. Everything else (hub, boards, quizzes, profile, leaderboards) is DOM.
-const CANVAS_GAMES = /^\/(pobrawl|pocabinet|poecosystem|pojevarena|pomarblerace|pomule|poracer|povoxelstrike|sandplayground)(\/|$)/i;
+const CANVAS_GAMES = /^\/(pobrawl|pocabinet|pocapitol|poecosystem|pojevarena|pomarblerace|pomule|poracer|povoxelstrike|sandplayground)(\/|$)/i;
 const FOCUSABLE = 'a[href], button:not([disabled]), input:not([disabled]):not([type="hidden"]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])';
 const NAV_DEADZONE = 0.5;
 const REPEAT_FIRST_MS = 380;

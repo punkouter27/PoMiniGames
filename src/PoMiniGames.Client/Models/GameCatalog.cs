@@ -192,6 +192,14 @@ public static class GameCatalog
             new(GameMode.Demo, "/pomule/demo"),
         ]),
 
+        new(GameKeys.PoCapitol, "PoCapitol", "🏛️",
+        [
+            new(GameMode.OnePlayer, "/pocapitol/1player")
+            {
+                ChipDescription = "Adult themes; fictional January 6-inspired action scenario",
+            },
+        ]),
+
         // Questions come from /api/funquiz/quiz/questions, so even solo needs a server.
         new(GameKeys.PoFunQuiz, "Fun Quiz", "🧠",
         [

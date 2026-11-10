@@ -1,5 +1,24 @@
 # Capability map
 
+## PoCapitol (2026-11-09)
+
+PoCapitol is an additional single-player game, not a replacement for PoMule or the shell.
+Product requirements: [PoCapitol PRD](DOCS/20261109/PoCapitol-PRD.md).
+
+| Capability | Owner | Boundary |
+|---|---|---|
+| Recognized game identity | Domain `Primitives/GameKey.cs`, Client `Models/GameKey.cs` | `pocapitol`; included in the existing play-session allowlist |
+| Discovery and routing | Client `Models/GameCatalog.cs`, `Games/PoCapitol/PoCapitolPage.razor` | `/pocapitol` and `/pocapitol/1player`; no demo or multiplayer |
+| Scenario rules | Client `wwwroot/js/pocapitol/world.js` | Pure local movement, collision, combat, four milestones and terminal outcomes |
+| 3D presentation | Client `wwwroot/js/pocapitol/scene.js` | Procedural, stylized facade, dome, Rotunda and House-inspired chamber; invented layout |
+| Engine lifecycle and input | Client `wwwroot/js/pocapitol/index.js`, `engineLoader.js` | On-demand loading, keyboard/mouse/touch/gamepad, pause, disposal |
+| Start, HUD, pause and result | Client `Games/PoCapitol/` | Shared GameShell; Radzen controls; historical context and explicit fiction notice |
+| Local results | Existing `GameResultService.RecordAsync` | Local wins/losses only; no high-score descriptor, leaderboard or new endpoint |
+| Verification | `tests/pocapitol-world.test.mjs` | Focused Node tests without adding to capped .NET test tiers |
+
+No dependency, infrastructure, authorization, external service, or secret is added.
+The existing three-dimensional rendering dependency and shared Radzen loader are reused.
+
 What each module owns, and where PoMule and Radzen land. `SPEC.md` holds the
 PoMule requirements; this file only says which module does what.
 

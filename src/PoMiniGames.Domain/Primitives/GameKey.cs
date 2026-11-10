@@ -122,6 +122,7 @@ public readonly record struct GameKey(string Value) : IComparable<GameKey>
     public static readonly GameKey PoJevArena = new("pojevarena");
 
     public static readonly GameKey PoMule = new("pomule");
+    public static readonly GameKey PoCapitol = new("pocapitol");
 
     // This catalogue gates PlayerStats reads/writes (PlayerStatsEndpoints uses TryParse as
     // the allowlist), so it must cover every game the client can mirror stats for —
@@ -132,7 +133,7 @@ public readonly record struct GameKey(string Value) : IComparable<GameKey>
         ConnectFive, TicTacToe, PoMarbleRace,
         PoRacer, PoBrawl, PoBrawlDemo, PoBrawlKo,
         PoVoxelStrike, PoEcosystem, SandPlayground,
-        PoCabinet, PoJevArena, PoMule,
+        PoCabinet, PoJevArena, PoMule, PoCapitol,
     };
 
     private static readonly string[] WellKnownNames = All.Select(k => k.Value).ToArray();

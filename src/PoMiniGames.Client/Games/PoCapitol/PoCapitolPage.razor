@@ -1,0 +1,217 @@
+@page "/pocapitol"
+@page "/pocapitol/1player"
+@implements IAsyncDisposable
+@inject IJSRuntime JS
+@inject GameResultService Results
+@inject PlayerNameService PlayerNames
+@inject ILogger<PoCapitolPage> Logger
+
+<PageTitle>PoCapitol · PoMiniGames</PageTitle>
+
+<GameShell Title="@TitleContent" Fullscreen="true" RequiresWebGl="true" Announcement="@_announcement">
+    <div class="pc-root">
+        <div id="pocapitol-scene" class="pc-scene" role="img" aria-label="Fictional Capitol grounds and interiors"></div>
+        <div class="pc-film" aria-hidden="true"></div>
+        <div class="pc-edition">PoCAPITOL <span>ALTERNATE HISTORY · FICTIONAL SCENARIO</span></div>
+
+        @if (_status == "intro" && _ready)
+        {
+            <section class="pc-panel pc-intro" role="dialog" aria-modal="true" aria-labelledby="pc-heading">
+                <span class="pc-eyebrow">ONE SCENARIO. FOUR MILESTONES.</span>
+                <h2 id="pc-heading">Beyond the<br /><em>marble steps.</em></h2>
+                <p>Start on the grounds with your group. Cross the forecourt, enter the Rotunda, and reach the House chamber.</p>
+                <div class="pc-notice"><strong>Fiction, not a reconstruction.</strong> Inspired by January 6, 2021. Adult themes and non-graphic combat. Characters, pulse weapons, and interior connections are invented; this is not a real access plan.</div>
+                <div class="pc-controls"><kbd>W A S D</kbd> move <kbd>Mouse</kbd> look <kbd>Click / Space</kbd> fire<br /><kbd>Shift</kbd> sprint <kbd>← →</kbd> turn <kbd>Esc / P</kbd> pause</div>
+                <p class="pc-small">Click the scene after starting to capture the mouse. Touch: drag to look and use the on-screen controls. Controller: sticks, right trigger, Start.</p>
+                <label class="pc-small" for="pc-difficulty">Difficulty</label>
+                <RadzenSelectBar TValue="string" @bind-Value="_difficulty" id="pc-difficulty">
+                    <Items>
+                        <RadzenSelectBarItem Text="Story" Value="@("story")" />
+                        <RadzenSelectBarItem Text="Standard" Value="@("standard")" />
+                    </Items>
+                </RadzenSelectBar>
+                <div class="pc-actions">
+                    <RadzenButton Text="Begin scenario" Icon="arrow_forward" Click="@(_ => StartAsync())" />
+                    <a href="/">All games</a>
+                </div>
+                <details><summary>Historical context and visual scope</summary>@ContextContent</details>
+            </section>
+        }
+        else if (_status == "loading")
+        {
+            <div class="pc-panel pc-centered" role="status"><h2>Preparing the scene</h2><p>Building the grounds, Rotunda, and chamber…</p></div>
+        }
+        else if (_status == "error")
+        {
+            <div class="pc-panel pc-centered" role="alert">
+                <h2>The scenario could not load</h2><p>@_error</p>
+                <RadzenButton Text="Retry" Click="@(_ => LoadAsync())" /><a href="/">All games</a>
+            </div>
+        }
+        else
+        {
+            <div class="pc-hud">
+                <div><span class="pc-eyebrow">OBJECTIVE @Math.Min(_milestone + 1, 4) / 4</span><strong>@Objective</strong></div>
+                <div class="pc-health"><label for="pc-health">HEALTH @_health</label><progress id="pc-health" value="@_health" max="100"></progress></div>
+                <span class="pc-time">@TimeSpan.FromSeconds(_elapsed).ToString(@"mm\:ss")</span>
+                <RadzenButton Text="Pause" Icon="pause" Size="ButtonSize.Small" Disabled="@(_status != "active")" Click="@(_ => PauseAsync(true))" />
+            </div>
+            <div class="pc-progress" aria-label="@($"{_milestone} of 4 milestones complete")">
+                @for (var i = 0; i < 4; i++)
+                {
+                    <span class="@(i < _milestone ? "pc-done" : null)"></span>
+                }
+            </div>
+            @if (_status == "active")
+            {
+                <div class="pc-crosshair" aria-hidden="true">+</div>
+                <div class="pc-bottom"><span>GOLD BEACON · NEXT MILESTONE</span><span>@(_message.Length > 0 ? _message : "WASD move · Click scene to aim · Space fire · P pause")</span></div>
+                <div class="pc-touch" aria-label="Touch controls">
+                    <div class="pc-dpad">
+                        <button data-capitol-key="KeyW" aria-label="Move forward">↑</button>
+                        <button data-capitol-key="KeyA" aria-label="Move left">←</button>
+                        <button data-capitol-key="KeyS" aria-label="Move backward">↓</button>
+                        <button data-capitol-key="KeyD" aria-label="Move right">→</button>
+                    </div>
+                    <button class="pc-fire" data-capitol-key="Space" aria-label="Fire pulse">FIRE</button>
+                </div>
+            }
+            else if (_status == "paused")
+            {
+                <section class="pc-panel pc-centered" role="dialog" aria-modal="true" aria-labelledby="pc-paused">
+                    <span class="pc-eyebrow">TAKE A BREATH</span><h2 id="pc-paused">Scenario paused.</h2>
+                    <p>Time, combat, and progression are stopped.</p>
+                    <div class="pc-actions">
+                        <RadzenButton Text="Resume" Click="@(_ => PauseAsync(false))" />
+                        <RadzenButton Text="Restart" ButtonStyle="ButtonStyle.Secondary" Click="@(_ => StartAsync())" />
+                        <a href="/">All games</a>
+                    </div>
+                    <details><summary>Historical context</summary>@ContextContent</details>
+                </section>
+            }
+            else if (_status is "completed" or "failed")
+            {
+                <section class="pc-panel pc-centered" role="dialog" aria-modal="true" aria-labelledby="pc-result">
+                    <span class="pc-eyebrow">SCENARIO @(_status == "completed" ? "COMPLETE" : "ENDED")</span>
+                    <h2 id="pc-result">@(_status == "completed" ? "Destination reached." : "Attempt ended.")</h2>
+                    <p>@(_status == "completed" ? "You reached the fictional House chamber. This game outcome does not represent a historical victory." : "You were incapacitated. A new attempt starts outside with full health.")</p>
+                    <div class="pc-result-stats"><span>@TimeSpan.FromSeconds(_elapsed).ToString(@"mm\:ss")<small>ACTIVE TIME</small></span><span>@_milestone / 4<small>MILESTONES</small></span></div>
+                    <p class="pc-small">@(_resultWarning.Length > 0 ? _resultWarning : "Results stay in your local game stats. No public ranking or kill score.")</p>
+                    <div class="pc-actions"><RadzenButton Text="Play again" Click="@(_ => StartAsync())" /><a href="/">Back to all games</a></div>
+                    <details><summary>History and fictional departures</summary>@ContextContent</details>
+                </section>
+            }
+        }
+    </div>
+</GameShell>
+
+@code {
+    private static RenderFragment TitleContent => GameCatalog.TitleFor(GameKeys.PoCapitol);
+    private static readonly string[] Objectives = ["Cross the forecourt", "Enter the fictional gallery", "Reach the Rotunda", "Reach the House chamber"];
+    private DotNetObjectReference<PoCapitolPage>? _reference;
+    private string _status = "loading", _difficulty = "story", _error = "", _message = "", _announcement = "";
+    private string _resultWarning = "";
+    private int _health = 100, _milestone;
+    private double _elapsed;
+    private bool _ready, _disposed, _recorded;
+    private string Objective => _milestone < Objectives.Length ? Objectives[_milestone] : "Destination reached";
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (firstRender) await LoadAsync();
+    }
+
+    private async Task LoadAsync()
+    {
+        _status = "loading";
+        StateHasChanged();
+        try
+        {
+            if (!await JS.InvokeAsync<bool>("loadEngine", "pocapitol"))
+                throw new InvalidOperationException("The 3D assets could not be downloaded. Check your connection and retry.");
+            _reference ??= DotNetObjectReference.Create(this);
+            await JS.InvokeVoidAsync("PoCapitol.init", "pocapitol-scene", _reference);
+            _ready = true;
+            _status = "intro";
+        }
+        catch (Exception ex) when (ex is JSException or InvalidOperationException)
+        {
+            Logger.LogError(ex, "PoCapitol could not initialize");
+            _error = "The 3D scene is unavailable. Check your connection and browser graphics support, then retry.";
+            _status = "error";
+        }
+        StateHasChanged();
+    }
+
+    private async Task StartAsync()
+    {
+        try
+        {
+            await JS.InvokeVoidAsync("PoCapitol.start", _difficulty);
+            _recorded = false;
+            _status = "active";
+            _health = 100; _milestone = 0; _elapsed = 0; _message = ""; _resultWarning = "";
+            _announcement = "Scenario started. " + Objective;
+        }
+        catch (JSException ex) { await OnEngineError(ex.Message); }
+    }
+
+    private async Task PauseAsync(bool paused)
+    {
+        try { await JS.InvokeVoidAsync("PoCapitol.pause", paused); }
+        catch (JSException ex) { await OnEngineError(ex.Message); }
+    }
+
+    [JSInvokable]
+    public async Task OnUpdate(int health, int milestone, double elapsed, string status, int hits, int shots, string message)
+    {
+        if (_disposed) return;
+        var changed = _milestone != milestone || _status != status;
+        _health = health; _milestone = milestone; _elapsed = elapsed; _status = status; _message = message;
+        if (changed) _announcement = status == "active" ? Objective : $"Scenario {status}.";
+        if (!_recorded && status is "completed" or "failed")
+        {
+            _recorded = true;
+            try
+            {
+                await Results.RecordAsync("pocapitol", PlayerNames.GetPlayerName(),
+                    _difficulty == "story" ? Difficulty.Easy : Difficulty.Medium,
+                    status == "completed" ? GameResult.Win : GameResult.Loss);
+            }
+            catch (JSException ex)
+            {
+                Logger.LogError(ex, "PoCapitol local result could not be saved");
+                _resultWarning = "Your result could not be saved locally.";
+            }
+        }
+        await InvokeAsync(StateHasChanged);
+    }
+
+    [JSInvokable]
+    public Task OnEngineError(string detail)
+    {
+        if (_disposed) return Task.CompletedTask;
+        Logger.LogError("PoCapitol engine error: {Detail}", detail);
+        _status = "error";
+        _error = "The scenario stopped unexpectedly. Retry to start a fresh attempt, or return to all games.";
+        return InvokeAsync(StateHasChanged);
+    }
+
+    public async ValueTask DisposeAsync()
+    {
+        _disposed = true;
+        if (_ready)
+        {
+            try { await JS.InvokeVoidAsync("PoCapitol.dispose"); }
+            catch (JSDisconnectedException ex) { Logger.LogDebug(ex, "PoCapitol browser disconnected during disposal"); }
+        }
+        _reference?.Dispose();
+    }
+
+    private RenderFragment ContextContent => @<div class="pc-context">
+        <p>On January 6, 2021, Congress met to count and certify electoral votes, not to pass a law. The attack interrupted that proceeding; Congress later reconvened.</p>
+        <p>This alternate-history scenario invents its characters, pulse weapons, encounters, and room connections. It is not a documentary, a real building plan, or an endorsement of the attack.</p>
+        <p>Visual references: the Capitol dome, classical facade, Rotunda-inspired hall, and House-inspired rostrum. This is a stylized procedural interpretation, not a photorealistic replica.</p>
+        <a href="https://www.congress.gov/117/crec/2021/01/06/CREC-2021-01-06-pt1-PgS18-2.pdf" target="_blank" rel="noopener noreferrer">Congressional Record: January 6 Senate proceedings</a>
+    </div>;
+}
