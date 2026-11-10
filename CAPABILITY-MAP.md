@@ -17,7 +17,7 @@ Product requirements: [PoCapitol PRD](DOCS/20261109/PoCapitol-PRD.md).
 | Sound | Client `wwwroot/js/pocapitol/audio.js` | Synthesized layers on the shared `PoAudioBus` sfx bus; owns no AudioContext |
 | Adaptive graphics | Client `wwwroot/js/pocapitol/quality.js` | Frame-time governor under the app's `PoQuality` tier; no DOM or three.js |
 | Engine lifecycle and input | Client `wwwroot/js/pocapitol/index.js`, `engineLoader.js` | On-demand loading, keyboard/mouse/touch/gamepad, pause, graphics choice, disposal |
-| Start, HUD, pause and result | Client `Games/PoCapitol/` | Shared GameShell; Radzen controls; role, difficulty and graphics; "On the day" strip; aftermath and fiction notices |
+| Start, HUD, pause and result | Client `Games/PoCapitol/` | Shared GameShell, GameIntro and GameOverModal; Radzen controls for setup; role, difficulty and graphics; "On the day" strip; aftermath and fiction notices |
 | Local results | Existing `GameResultService.RecordAsync` | Crowd-role wins/losses only; police, observer and demo never write; no leaderboard or new endpoint |
 | Verification | `tests/pocapitol-world.test.mjs` | Focused Node tests without adding to capped .NET test tiers |
 
@@ -76,7 +76,8 @@ for PoMule · **Deferred** = planned after PoMule v1.
 | Gamepad input | Client `wwwroot/js/gamepadBus.js` | Engines, DOM focus navigation and rumble; loaded on first `gamepadconnected` |
 | Multiplayer reconnect recovery | Client `HubConnectionFactory`, `LobbyClient<TPlayer>`, per-game hub clients | Automatic reconnect and seat rejoin where supported; shared lobby status offers manual retry and failed-rejoin feedback |
 | Ghost runs | Client `wwwroot/js/ghostTrack.js` | Compact best-run paths in localStorage; PoRacer and PoMarbleRace |
-| Start and end cards | Client `Components/GameIntro.razor`, `Components/GameOverModal.razor` | Every game opens on a card with one OK button (controls, a How to play tab, the setup) that fits without scrolling, and ends on one with one Back to main menu button |
+| Start and end cards | Client `Components/GameIntro.razor`, `Components/GameOverModal.razor` | Every game opens on a card with one OK button (controls, a How to play tab, the setup) that fits without scrolling, and ends on one with one Back to main menu button. Both share one card face (`--gps-card-radius`, `--gps-card-shadow` in `game-shell.css`). PoCapitol uses both, like every other game |
+| Tab diagnostics | Client `Components/GameDebugOverlay.razor`, `wwwroot/js/game-debug.js`, `GameShell.razor` | One gesture in every game: Tab shows live FPS, frame time, heap, viewport, game key and route, plus any `Diagnostics` rows the page passes to `GameShell`. Tab is only claimed inside the game area (never over a dialog, the intro card or a form control) and Escape closes. `TabDebug="false"` opts out a page that already binds Tab (PoEcosystem's dashboard, PoJevArena's stats sheet) |
 | Per-game palettes and cues | Client `wwwroot/js/paletteBus.js`, `gameCues.js` | Each game's colors and sound cues; no background music anywhere (event stingers and jingles only, e.g. Brawl's president motifs) |
 
 ## Existing games

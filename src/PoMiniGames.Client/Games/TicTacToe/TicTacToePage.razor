@@ -36,6 +36,7 @@
     GameKey="@(PlayMode == "ai" ? "tictactoe" : null)"
     Outcome="@OutcomeForCue"
     Stats="@(PlayMode == "ai" ? _statItems : null)"
+    Diagnostics="@(PlayMode == "ai" ? _statItems : null)"
     Elo="@(PlayMode == "ai" ? _rating.Elo : (int?)null)"
     Announcement="@Announcement"
     OptionsContent="@OptionsContent"
