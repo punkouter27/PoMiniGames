@@ -10,8 +10,9 @@ const client = new URL('../src/PoMiniGames.Client/wwwroot/', import.meta.url);
 const read = path => readFileSync(new URL(path, client), 'utf8');
 const url = text => `data:text/javascript;base64,${Buffer.from(text).toString('base64')}`;
 const yuka = url(read('lib/yuka/yuka.module.js'));
-const steering = url(read('js/pocapitol/steering.js').replace("'yuka'", `'${yuka}'`));
-const world = await import(url(read('js/pocapitol/world.js').replace("'./steering.js'", `'${steering}'`)));
+const physics = url(read('js/pocapitol/physics.js'));
+const steering = url(read('js/pocapitol/steering.js').replace("'yuka'", `'${yuka}'`).replace("'./physics.js'", `'${physics}'`));
+const world = await import(url(read('js/pocapitol/world.js').replace("'./steering.js'", `'${steering}'`).replace("'./physics.js'", `'${physics}'`)));
 const { createAttempt, advance, shove, setPaused, walkable, milestones, obstacles, columns, statues, lineDefs,
     selectLeader, frontLine, clockLabel, CROWD_SIZE, MAX_POLICE, CIVILIANS, CURFEW_ELAPSED } = world;
 const { createGovernor, RUNGS } = await import(url(read('js/pocapitol/quality.js')));
@@ -323,7 +324,9 @@ test('police role: the human holds the line, pushes raiders back, and wins at th
     const before = raider.z;
     const pushed = shove(state, { x: 0, z: 1 });
     assert.ok(pushed.hit !== null);
-    assert.ok(raider.z > before && raider.health < 30 && raider.stun > 0);
+    assert.ok(raider.health < 30 && raider.stun > 0 && raider.kz > 0, 'The shove did not pass momentum to the raider');
+    tick(state, {}, 0.3);
+    assert.ok(raider.z > before, 'The raider was not pushed back');
     state.elapsed = CURFEW_ELAPSED - 0.01;
     advance(state, {}, 1 / 60);
     assert.equal(state.outcome, 'curfew');
@@ -444,6 +447,7 @@ async function engineHarness(rejectUpdates = false) {
     }
     const window = new Target(), document = new Target(), host = new Target(), canvas = new Target();
     host.parentElement = new Target();
+    host.isConnected = true;
     document.getElementById = () => host;
     document.exitPointerLock = () => { document.pointerLockElement = null; };
     const stored = new Map();
@@ -453,7 +457,7 @@ async function engineHarness(rejectUpdates = false) {
     const view = { canvas, render() {}, aim: () => ({ x: 0, z: -1 }), applyQuality: s => quality.push(s), dispose() { disposed++; } };
     const context = vm.createContext({
         window, document, AbortController, createAttempt, advance, shove, setPaused, selectLeader, frontLine,
-        createScene: () => view, createGovernor, MODES: ['auto', 'low', 'high'],
+        createScene: () => view, loadFigure: async () => null, createUiFx: () => ({ dispose() {} }), createGovernor, MODES: ['auto', 'low', 'high'],
         createAudio: () => ({ update() {}, event: e => sounds.push(e.type), dispose() { audioDisposed++; } }),
         ensure: async () => true, remove() {},
         connectedPads: () => [], stick: () => ({ x: 0, y: 0 }), pressed: () => false,

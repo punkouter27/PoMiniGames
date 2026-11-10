@@ -2,6 +2,7 @@ import { createAttempt, advance, shove, setPaused, selectLeader, frontLine } fro
 import { createScene } from './scene.js';
 import { loadFigure } from './crowd.js';
 import { createAudio } from './audio.js';
+import { createUiFx } from './ui.js';
 import { createGovernor, MODES } from './quality.js';
 import { ensure, remove } from '../radzenTheme.js';
 import { connectedPads, stick, pressed, ButtonEdges } from '../gamepadBus.js';
@@ -31,11 +32,13 @@ async function init(hostId, reference) {
         host, view, reference, state: createAttempt(), started: false, disposed: false,
         yaw: 0, pitch: 0, keys: new Set(), firing: false, frame: 0, last: 0,
         notifyAt: 0, notifying: false, message: '', drag: null, edges: new ButtonEdges(), restartAt: 0,
-        events: new AbortController(), audio: null, mix: null, mixAt: 0,
+        events: new AbortController(), audio: null, ui: null, mix: null, mixAt: 0,
         governor: createGovernor({ tier, mode: storedGraphics() }), tier, tierAt: 0,
     };
     game = g;
     view.applyQuality?.(g.governor.settings());
+    // Menu sound, motion and the glass shader. Decoration only: if it cannot start, the game still can.
+    try { g.ui = createUiFx(host.parentElement); } catch (error) { console.warn('[PoCapitol] interface effects unavailable:', error); }
     const signal = g.events.signal;
     const listen = (target, type, fn, options = {}) => target.addEventListener(type, fn, { ...options, signal });
     const clearInput = () => { g.keys.clear(); g.firing = false; g.drag = null; };
@@ -145,7 +148,7 @@ async function init(hostId, reference) {
                 for (const event of g.state.events) g.audio?.event(event);
                 if (human() && (g.firing || g.keys.has('Space') || pressed(pad, 7))) {
                     const pushed = shove(g.state, view.aim(g.state, g.yaw));
-                    if (pushed) g.audio?.event({ type: 'shove', x: g.state.player.x, z: g.state.player.z, human: true });
+                    if (pushed) g.audio?.event(g.state.events.at(-1));
                 }
                 if (g.state.status === 'completed' || g.state.status === 'failed') {
                     clearInput();
@@ -161,7 +164,10 @@ async function init(hostId, reference) {
             host.dataset.flash = s.flashed > 0 && window.PoQuality?.reduceFlashing?.() !== true ? 'true' : 'false';
             if (g.audio) {
                 if (now >= g.mixAt) { g.mixAt = now + 200; g.mix = soundMix(s); }
-                g.audio.update({ ...g.mix, walking: moving, gassed: s.gassed, active: g.started && s.status === 'active' }, dt);
+                // Heading changes every frame; the 5 Hz crowd read does not carry it.
+                const ear = s.role === 'none' ? selectLeader(s) ?? s.player : s.player;
+                const yaw = s.role === 'none' ? ear.heading ?? 0 : g.yaw;
+                g.audio.update({ ...g.mix, x: ear.x, z: ear.z, yaw, walking: moving, gassed: s.gassed, active: g.started && s.status === 'active' }, dt);
             }
             if (g.started && now >= g.notifyAt) { g.notifyAt = now + 200; notify(g); }
             g.frame = requestAnimationFrame(loop);
@@ -174,23 +180,39 @@ async function init(hostId, reference) {
     g.frame = requestAnimationFrame(loop);
 }
 
-/** What the listener is standing in the middle of, for the sound layers. Cheap enough at 5 Hz. */
+/**
+ * What the listener is standing in the middle of, for the sound layers. Cheap enough at 5 Hz.
+ * `shear` is how fast a packed crowd is moving against itself (friction), `walkers` the nearest
+ * people on the move (each gets its own footfalls), `horn` where the nearest officer stands.
+ */
 function soundMix(s) {
     const ear = s.role === 'none' ? selectLeader(s) ?? s.player : s.player;
-    let crowd = 0, morale = 0;
+    let crowd = 0, morale = 0, shear = 0, packed = 0;
+    const near = [];
     for (const c of s.companions) {
-        if (c.health <= 0 || Math.hypot(c.x - ear.x, c.z - ear.z) > 22) continue;
+        const distance = Math.hypot(c.x - ear.x, c.z - ear.z);
+        if (c.health <= 0 || distance > 22) continue;
         crowd++; morale += c.morale;
+        const speed = Math.hypot(c.vx ?? 0, c.vz ?? 0);
+        if (c.crowding >= 3) { shear += speed * Math.min(1, c.crowding / 6); packed++; }
+        if (speed > 0.6 && distance < 30) near.push({ x: c.x, z: c.z, mass: c.mass, distance });
     }
-    let police = 0;
+    near.sort((a, b) => a.distance - b.distance);
+    let police = 0, horn = null, hornDistance = Infinity;
     for (const e of s.enemies) {
-        if (e.health > 0) police = Math.max(police, 1 / (1 + Math.hypot(e.x - ear.x, e.z - ear.z) / 6));
+        if (e.health <= 0) continue;
+        const distance = Math.hypot(e.x - ear.x, e.z - ear.z);
+        police = Math.max(police, 1 / (1 + distance / 6));
+        if (distance < hornDistance) { hornDistance = distance; horn = { x: e.x, z: e.z }; }
     }
     const front = frontLine(s);
     const pressure = front && Math.abs(front.z - ear.z) < 28 ? Math.min(1, front.pressure / 24) : 0;
-    return { x: ear.x, z: ear.z, crowd: Math.min(1, crowd / 35), morale: crowd ? morale / crowd : 0, police, pressure };
+    return {
+        x: ear.x, z: ear.z, crowd: Math.min(1, crowd / 35), morale: crowd ? morale / crowd : 0, police, pressure,
+        shear: packed ? Math.min(1, shear / packed / 2.5 * Math.min(1, packed / 8)) : 0,
+        walkers: near.slice(0, 6), horn,
+    };
 }
-
 function notify(g) {
     if (g.notifying || g.disposed) return;
     g.notifying = true;
@@ -246,6 +268,7 @@ function dispose() {
     g.disposed = true; g.events.abort(); cancelAnimationFrame(g.frame);
     if (document.pointerLockElement === g.view.canvas) document.exitPointerLock();
     g.audio?.dispose();
+    g.ui?.dispose();
     g.view.dispose(); remove(); game = null;
 }
 

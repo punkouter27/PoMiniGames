@@ -3,6 +3,8 @@ import { areas, obstacles, columns, statues, milestones, lineDefs, selectLeader,
 import { createCrowd, createDistantCrowd, flagTexture, coats } from './crowd.js';
 import { SURFACE, addSurface, surfaceTexture, createSky, setSkyColors, createEnvironment, addWave, softTexture } from './look.js';
 import { createParticles } from './particles.js';
+import { createBursts } from './bursts.js';
+import { createDecals } from './decals.js';
 import { createPost } from './post.js';
 
 // The chamber is drawn but never walked: its doors stay barricaded, as they did. It is only
@@ -565,6 +567,17 @@ export function createScene(host, { figure } = {}) {
     tracers.count = 0;
     const flashLight = new THREE.PointLight('#ffffff', 0, 45, 1.2);
     scene.add(flashLight);
+    // GPU bursts (sparks and dust solved in the vertex shader), wear that stays on the ground, and
+    // two flare lights that blaze where a spark shower lands. The lights exist from the start at
+    // zero so the light count never changes and no shader recompiles when one is needed.
+    const bursts = createBursts(scene);
+    const decals = createDecals(scene);
+    const flares = [0, 1].map(() => { const light = new THREE.PointLight('#ffb35c', 0, 14, 1.8); scene.add(light); return light; });
+    const reacted = new WeakSet();
+    function flare(x, y, z, intensity, color) {
+        const light = flares[0].intensity <= flares[1].intensity ? flares[0] : flares[1];
+        light.position.set(x, y, z); light.color.set(color); light.intensity = intensity;
+    }
 
     const crowd = createCrowd(scene, CROWD_SIZE + MAX_POLICE + CIVILIANS + 1, { time, groundHeight, shadowTexture: shadowBlob, figure });
     const marker = mesh(new THREE.TorusGeometry(1.1, 0.08, 8, 36), '#ebce77', 0, 0.2, 23);
@@ -611,6 +624,7 @@ export function createScene(host, { figure } = {}) {
         farCrowd.setCount(distant);
         farFlags.count = farPoles.count = Math.floor(70 * settings.distant);
         crowd.setExtras(settings.extras);
+        bursts.setDensity(settings.extras ? 1 : 0.3);
         papers.visible = settings.extras;
         // Surface detail is a uniform, not a define: lowering it costs no recompile.
         surfaceDetail.value = settings.detail ?? 1;
@@ -625,6 +639,8 @@ export function createScene(host, { figure } = {}) {
     let lastHealth = null, lastDaze = -99;
     const dazzled = new WeakSet();
     const lastFocus = { x: 0, z: 100 };
+    // Scenario time for the GPU bursts: it stops with the game, so a paused spark shower hangs in the air.
+    let fxClock = 0;
     function render(state, yaw, pitch, moving, dt) {
         clock += dt;
         time.value = clock;
@@ -707,6 +723,22 @@ export function createScene(host, { figure } = {}) {
 
         const quiet = calm();
         particles.update(state.effects, state.elapsed, daylight, quiet);
+        // World events become sparks, dust, wear and a flash of light, once each.
+        for (const e of state.events) {
+            if (reacted.has(e)) continue;
+            reacted.add(e);
+            const floor = groundHeight(e.x, e.z);
+            bursts.react(e, floor, quiet);
+            decals.react(e, floor);
+            const energy = e.energy ?? 0;
+            if (!quiet && (e.type === 'gunshot' || e.type === 'baton' || (e.type === 'impact' && e.material !== 'body' && energy > 60))) {
+                flare(e.tx ?? e.x, floor + 1.2, e.tz ?? e.z, e.type === 'gunshot' ? 120 : 40 + Math.min(200, energy), e.material === 'metal' ? '#9fc4ff' : '#ffb35c');
+            }
+        }
+        for (const light of flares) light.intensity *= Math.exp(-dt * 14);
+        if (state.status === 'active') fxClock += dt;
+        bursts.update(fxClock, camera, renderer.domElement.height, groundHeight(camera.position.x, camera.position.z));
+        decals.update(daylight);
         let flash = 0, flashAt = null;
         for (const effect of state.effects) {
             if (effect.type !== 'flash') continue;
@@ -800,6 +832,8 @@ export function createScene(host, { figure } = {}) {
         crowd.dispose();
         farCrowd.dispose();
         particles.dispose();
+        bursts.dispose(); decals.dispose();
+        for (const light of flares) scene.remove(light);
         post.dispose();
         environment.dispose();
         scene.environment = null;

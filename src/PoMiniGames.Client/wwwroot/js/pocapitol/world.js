@@ -9,6 +9,7 @@
 // The spectator demo is the exception, by the owner's request: an armed variant in which both
 // sides carry guns and whoever is hit drops out for good. That part follows no record at all.
 import { createSteering } from './steering.js';
+import { createGrid, sweep, segmentCircle, firstBlocked, strike, exchange, slide, bounce, massOf, MIN_GAP } from './physics.js';
 
 export const areas = [
     // The lawn runs well back from the building: the crowd starts out on the grass.
@@ -210,8 +211,10 @@ function temperamentOf(id) {
 const baseMorale = { pusher: 0.85, follower: 0.6, bystander: 0.45, medic: 0.7 };
 
 function officer(id, line, x, z) {
+    // Officers carry about 12 kg of gear on top of the body.
     return { id, x, z, health: 10, line, cooldown: 1 + id % 5 * 0.3, stagger: 0, attacking: 0, tool: '',
-        faction: 'capitol-police', heading: Math.PI, moving: false, row: 0, spray: 2 + id % 4 };
+        faction: 'capitol-police', heading: Math.PI, moving: false, row: 0, spray: 2 + id % 4,
+        mass: 90 + id * 7 % 5 * 3, vx: 0, vz: 0, kx: 0, kz: 0 };
 }
 
 const steeringByAttempt = new WeakMap();
@@ -223,7 +226,8 @@ export function createAttempt(difficulty = 'standard', demo = false, role = 'rai
     let officerId = 0;
     const state = {
         status: 'active', outcome: '', difficulty, demo, role, health: 100, elapsed: 0, milestone: 0,
-        player: role === 'police' ? { x: 3, z: 30 } : role === 'observer' ? { x: 18, z: 52 } : { x: 0, z: 100 },
+        player: { ...(role === 'police' ? { x: 3, z: 30 } : role === 'observer' ? { x: 18, z: 52 } : { x: 0, z: 100 }),
+            mass: role === 'police' ? 92 : 80, vx: 0, vz: 0, kx: 0, kz: 0 },
         cooldown: 0, pushes: 0, staggers: 0, damageFlash: 0, playerPush: 0, sprayed: 0, gassed: false, flashed: 0,
         lines: lineDefs.map((def, id) => ({ id, state: 'holding', integrity: 100, pressure: 0, hold: 0,
             munition: 10 + id * 2, gasLeft: id === 0 ? 2 : 1, flashCooldown: 6, flashLeft: 1, brokenAt: -1, strain: 0 })),
@@ -233,6 +237,7 @@ export function createAttempt(difficulty = 'standard', demo = false, role = 'rai
             const temperament = temperamentOf(id);
             return {
                 id, x: (id % 16 - 7.5) * 2.2, z: 80 + Math.floor(id / 16) * 2.4,
+                mass: 58 + id * 13 % 35, vx: 0, vz: 0, kx: 0, kz: 0,
                 health: 30, milestone: 0, heading: 0, moving: false, attacking: 0,
                 cooldown: 0.5 + id % 7 * 0.13, delay: id % 9 * 0.12, speed: 3.2 + id % 7 * 0.16,
                 routeWait: 0, targetX: 0, targetZ: 27,
@@ -263,11 +268,25 @@ export function setPaused(state, paused) {
     else if (!paused && state.status === 'paused') state.status = 'active';
 }
 
-function nudge(actor, dx, dz, distance) {
-    const x = actor.x + dx * distance, z = actor.z + dz * distance;
-    if (walkable(x, actor.z)) actor.x = x;
-    if (walkable(actor.x, z)) actor.z = z;
+const swept = {};
+/**
+ * Moves an actor with continuous collision: swept in small steps so no move, however fast,
+ * can end inside a column or on the far side of a wall. Raiders cannot cross a line that holds.
+ * Returns the sweep result (position and which axes were stopped), valid until the next call.
+ */
+function relocate(state, actor, nx, nz, crowd) {
+    if (crowd && (actor === state.player ? state.health : actor.health) > 0) nz = heldAt(state, nx, actor.z, nz) ?? nz;
+    sweep(actor.x, actor.z, nx, nz, walkable, swept);
+    actor.x = swept.x; actor.z = swept.z;
+    return swept;
 }
+
+/** Impact events carry joules and a material so sound and sparks can scale with the blow. */
+const blow = (state, type, x, z, energy, material, extra = {}) => state.events.push({ type, x, z, energy, material, ...extra });
+const MAX_IMPACTS = 4;
+
+/** A blow: momentum passes from the attacker to the target, who slides away under ground friction. */
+const deliver = strike;
 
 /**
  * The human's one action. A raider leans into the line and staggers the officer in front;
@@ -283,20 +302,23 @@ export function shove(state, direction) {
         const x = actor.x - state.player.x, z = actor.z - state.player.z, distance = Math.hypot(x, z);
         return actor.health > 0 && distance < 2.4 && distance > 0.01 && (x * dx + z * dz) / distance > 0.3 ? distance : Infinity;
     };
-    let hit = null;
+    let hit = null, energy = 0;
     if (state.role === 'raider') {
         let nearest = Infinity;
         for (const enemy of state.enemies) {
             const distance = inReach(enemy);
             if (distance < nearest) { nearest = distance; hit = enemy; }
         }
-        if (hit) { hit.stagger = 1.4; hit.health = Math.max(0, hit.health - 1); state.staggers++; }
+        if (hit) {
+            hit.stagger = 1.4; hit.health = Math.max(0, hit.health - 1); state.staggers++;
+            energy = deliver(state.player, hit, dx, dz, 'shove');
+        }
     } else {
         const pressing = state.companions.filter(c => inReach(c) < Infinity).slice(0, 3);
         for (const raider of pressing) {
             raider.health = Math.max(0, raider.health - 6);
             raider.stun = 0.7; raider.morale = Math.max(0, raider.morale - 0.2);
-            nudge(raider, dx, dz, 1.4);
+            energy = Math.max(energy, deliver(state.player, raider, dx, dz, 'shove'));
             state.staggers++;
         }
         hit = pressing[0] ?? null;
@@ -304,7 +326,8 @@ export function shove(state, direction) {
     state.pushes++;
     state.cooldown = 0.45;
     state.playerPush = 0.6;
-    state.events.push({ type: 'shove', x: state.player.x, z: state.player.z, human: true });
+    // A shove into thin air still has a body behind it: a lean of the shoulder, about 25 J.
+    blow(state, 'shove', state.player.x, state.player.z, energy || 25, 'body', { human: true });
     return { hit: hit?.id ?? null, x: state.player.x + dx * 1.6, z: state.player.z + dz * 1.6 };
 }
 
@@ -462,17 +485,16 @@ function updateOfficers(state, difficulty, dt) {
             const bow = (1 - line.integrity / 100) * 1.4 * Math.cos(Math.PI * (x - (def.x0 + def.x1) / 2) / span);
             slot = { x, z: def.z - 0.4 - bow - row * 1.8 }; field = LINE_FIELD + e.line; e.row = row;
         }
-        const distance = Math.hypot(slot.x - e.x, slot.z - e.z);
+        const distance = Math.hypot(slot.x - e.x, slot.z - e.z), fromX = e.x, fromZ = e.z;
         if (distance > 0.15) {
             const target = field < 0 || distance < 3 ? slot : routeTarget(e, field, slot);
             const dx = target.x - e.x, dz = target.z - e.z, d = Math.hypot(dx, dz) || 1;
             const step = Math.min(d, (e.health <= 0 ? 1.5 : 4.6) * dt);
-            const x = e.x + dx / d * step, z = e.z + dz / d * step;
-            if (walkable(x, e.z)) e.x = x;
-            if (walkable(e.x, z)) e.z = z;
+            relocate(state, e, e.x + dx / d * step, e.z + dz / d * step, false);
             e.moving = distance > 0.6;
             if (e.moving) e.heading = Math.atan2(-dx, -dz);
         }
+        e.vx = dt > 0 ? (e.x - fromX) / dt : 0; e.vz = dt > 0 ? (e.z - fromZ) / dt : 0;
         e.spray -= dt;
         // Only the front rank can reach anyone; the ranks behind it are the reserve.
         if (e.health <= 0 || !def || e.row > 0 || distance > 1.5 || e.stagger > 0) continue;
@@ -499,18 +521,19 @@ function updateOfficers(state, difficulty, dt) {
         }
         e.attacking = 0.3; e.tool = baton ? 'baton' : 'spray';
         if (!baton) e.spray = difficulty.interval * 3;
+        let energy = 0;
         if (target === state.player) {
             state.health = Math.max(0, state.health - (baton ? difficulty.playerBaton : difficulty.playerSpray));
             state.damageFlash = 0.22;
-            if (baton) nudge(state.player, dx, dz, 0.9); else state.sprayed = 4;
+            if (baton) energy = deliver(e, state.player, dx, dz, 'baton'); else state.sprayed = 4;
         } else {
             target.health = Math.max(0, target.health - (baton ? difficulty.baton : difficulty.spray));
             target.morale = Math.max(0, target.morale - (baton ? 0.15 : 0.35));
-            if (baton) { nudge(target, dx, dz, 1.2); target.stun = 0.5; } else target.sprayed = 4;
-            if (target.health === 0) state.events.push({ type: 'down', x: target.x, z: target.z });
+            if (baton) { energy = deliver(e, target, dx, dz, 'baton'); target.stun = 0.5; } else target.sprayed = 4;
+            if (target.health === 0) state.events.push({ type: 'down', x: target.x, z: target.z, energy: 30, material: 'body' });
         }
         if (!baton) state.effects.push({ type: 'spray', x: e.x, z: e.z, tx: target.x, tz: target.z, life: 0.35, span: 0.35 });
-        state.events.push({ type: e.tool, x: e.x, z: e.z });
+        blow(state, e.tool, e.x, e.z, energy, baton ? 'baton' : 'air', { tx: target.x, tz: target.z });
     }
 }
 
@@ -603,7 +626,7 @@ function planRaiders(state, difficulty, dt, agents, bodies) {
                 c.routeWait = 0.2;
             }
         } else { c.targetX = c.x; c.targetZ = c.z; speed = 0; }
-        agents.push({ id: c.id, x: c.x, z: c.z, targetX: c.targetX, targetZ: c.targetZ, speed, actor: c });
+        agents.push({ id: c.id, x: c.x, z: c.z, targetX: c.targetX, targetZ: c.targetZ, speed, mass: massOf(c), actor: c });
     }
 }
 
@@ -628,8 +651,10 @@ export function advance(state, input, seconds) {
         const nx = state.player.x + x / magnitude * speed * dt;
         let nz = state.player.z + z / magnitude * speed * dt;
         if (state.role === 'raider') nz = heldAt(state, nx, state.player.z, nz) ?? nz;
-        if (walkable(nx, state.player.z)) state.player.x = nx;
-        if (walkable(state.player.x, nz)) state.player.z = nz;
+        const fromX = state.player.x, fromZ = state.player.z;
+        relocate(state, state.player, nx, nz, false);
+        state.player.vx = dt > 0 ? (state.player.x - fromX) / dt : 0;
+        state.player.vz = dt > 0 ? (state.player.z - fromZ) / dt : 0;
         state.gassed = state.role === 'raider' && inGas(state, state.player);
         if (state.gassed) {
             state.health = Math.max(0, state.health - difficulty.playerGas * dt);
@@ -644,17 +669,28 @@ export function advance(state, input, seconds) {
     updateOfficers(state, difficulty, dt);
     stepRaiders(state, difficulty, dt);
 
-    // Armed demo: rounds in flight. A hit takes stamina; nobody is hit by their own side.
+    // Armed demo: rounds in flight, swept as segments so a 1.5 m step cannot skip a body or a
+    // wall. A hit takes stamina; nobody is hit by their own side.
     for (const shot of state.shots) {
-        shot.x += shot.dx * 30 * dt; shot.z += shot.dz * 30 * dt; shot.life -= dt;
-        if (!walkable(shot.x, shot.z)) { shot.life = 0; continue; }
+        const fromX = shot.x, fromZ = shot.z, toX = fromX + shot.dx * 30 * dt, toZ = fromZ + shot.dz * 30 * dt;
+        shot.life -= dt;
+        let reach = firstBlocked(fromX, fromZ, toX, toZ, walkable), victim = null;
+        if (reach < 0) reach = 1;
         for (const actor of shot.faction === 'raider' ? state.enemies : state.companions) {
-            if (actor.health <= 0 || Math.hypot(shot.x - actor.x, shot.z - actor.z) >= 0.6) continue;
-            actor.health = Math.max(0, actor.health - (shot.faction === 'raider' ? 3.4 : difficulty.shot));
-            if (shot.faction === 'police') actor.morale = Math.max(0, actor.morale - 0.05);
-            if (actor.health === 0) state.events.push({ type: 'down', x: actor.x, z: actor.z });
+            if (actor.health <= 0) continue;
+            const t = segmentCircle(fromX, fromZ, toX, toZ, actor.x, actor.z, 0.6);
+            if (t >= 0 && t <= reach) { reach = t; victim = actor; }
+        }
+        shot.x = fromX + (toX - fromX) * reach; shot.z = fromZ + (toZ - fromZ) * reach;
+        if (victim) {
+            victim.health = Math.max(0, victim.health - (shot.faction === 'raider' ? 3.4 : difficulty.shot));
+            if (shot.faction === 'police') victim.morale = Math.max(0, victim.morale - 0.05);
+            if (victim.health === 0) state.events.push({ type: 'down', x: victim.x, z: victim.z, energy: 30, material: 'body' });
+            blow(state, 'impact', shot.x, shot.z, 520, 'body', { round: true });
             shot.life = 0;
-            break;
+        } else if (reach < 1 || !walkable(shot.x, shot.z)) {
+            blow(state, 'impact', shot.x, shot.z, 520, 'marble', { round: true });
+            shot.life = 0;
         }
     }
     state.shots = state.shots.filter(shot => shot.life > 0);
@@ -719,13 +755,66 @@ function stepRaiders(state, difficulty, dt) {
         let nz = agent.nextZ;
         const held = actor.health > 0 ? heldAt(state, agent.nextX, fromZ, nz) : null;
         if (held !== null) nz = held;
-        if (walkable(agent.nextX, actor.z)) actor.x = agent.nextX;
-        if (walkable(actor.x, nz)) actor.z = nz;
+        relocate(state, actor, agent.nextX, nz, false);
         const dx = actor.x - fromX, dz = actor.z - fromZ, moved = Math.hypot(dx, dz);
         if (held !== null || moved < Math.hypot(agent.nextX - fromX, agent.nextZ - fromZ) * 0.5) steering.stop(actor.id);
         actor.crowding = agent.crowding;
         actor.moving = moved > 0.3 * dt;
+        // What the body is doing, in m/s, for the contact pass below and for the sound of a crowd's friction.
+        actor.vx = dt > 0 ? dx / dt : 0; actor.vz = dt > 0 ? dz / dt : 0;
         if (moved > 0.6 * dt) actor.heading = Math.atan2(-dx, -dz);
         else if (actor.health > 0 && !actor.retreating) actor.heading = 0;
+    }
+    stepContacts(state, dt);
+}
+
+const crowdMember = (state, actor) => actor === state.player ? state.role === 'raider' : actor.faction === undefined;
+const contactGrid = createGrid(), contactList = [];
+
+/**
+ * Everyone on the field is a body with a mass. Anyone knocked into motion slides until friction
+ * stops them (or a wall does, with a thud proportional to the energy). Anyone overlapping gives
+ * way in proportion to the other's mass and trades momentum when they were closing quickly.
+ */
+function stepContacts(state, dt) {
+    if (dt <= 0) return;
+    const list = contactList;
+    list.length = 0;
+    if (state.role !== 'none' && state.health > 0) list.push(state.player);
+    for (const e of state.enemies) if (e.health > 0) list.push(e);
+    for (const c of state.companions) list.push(c);
+    let impacts = 0;
+    for (const body of list) {
+        const speed = Math.hypot(body.kx ?? 0, body.kz ?? 0);
+        if (speed === 0) continue;
+        relocate(state, body, body.x + body.kx * dt, body.z + body.kz * dt, crowdMember(state, body));
+        const energy = bounce(body, swept.hitX, swept.hitZ, speed);
+        if (energy > 15 && impacts < MAX_IMPACTS) { impacts++; blow(state, 'impact', body.x, body.z, energy, 'marble'); }
+        slide(body, dt);
+    }
+    contactGrid.clear();
+    for (let i = 0; i < list.length; i++) contactGrid.insert(i, list[i].x, list[i].z);
+    const weight = body => body.health <= 0 ? massOf(body) * 4 : massOf(body);
+    for (let i = 0; i < list.length; i++) {
+        const a = list[i];
+        contactGrid.query(a.x, a.z, MIN_GAP, j => {
+            if (j <= i) return;
+            const b = list[j];
+            let dx = b.x - a.x, dz = b.z - a.z, d = Math.hypot(dx, dz);
+            if (d >= MIN_GAP) return;
+            // Exactly stacked bodies part along a direction fixed by who they are, never by chance.
+            if (d < 1e-4) { dx = Math.cos(i * 2.4 + j); dz = Math.sin(i * 2.4 + j); d = 1; }
+            const nx = dx / d, nz = dz / d, push = (MIN_GAP - d) * 0.6;
+            const ma = weight(a), mb = weight(b), total = ma + mb;
+            relocate(state, a, a.x - nx * push * mb / total, a.z - nz * push * mb / total, crowdMember(state, a));
+            relocate(state, b, b.x + nx * push * ma / total, b.z + nz * push * ma / total, crowdMember(state, b));
+            const closing = ((a.vx ?? 0) - (b.vx ?? 0)) * nx + ((a.vz ?? 0) - (b.vz ?? 0)) * nz;
+            if (closing <= 0.8) return;
+            const energy = exchange(a, b, nx, nz, closing);
+            if (energy > 12 && impacts < MAX_IMPACTS) {
+                impacts++;
+                blow(state, 'impact', (a.x + b.x) / 2, (a.z + b.z) / 2, energy, 'body');
+            }
+        });
     }
 }

@@ -319,6 +319,21 @@ The owner chose rigged models over stylized blocks, and depth of field during pl
    and when a flash-bang lands within 12 m (half strength under reduced flashing or motion).
    Top quality only, like every depth of field.
 
+### Advanced Graphics, Acoustics & Physics Overhaul (2026-11-10)
+
+Implemented all 10 areas of the graphics, audio, physics, and interface overhaul:
+
+1. **Web Audio Micro-cues (`ui.js`):** Positional UI audio for button hovers, taps, primary confirms, and menu slide whooshes with stereo panning based on on-screen position and pitch variation per button identity.
+2. **UI Micro-interactions (`ui.js`, `PoCapitolPage.razor.css`):** Button press squash and spring overshoot via Web Animations API, pointer coordinate shockwave ripples, and ghost element exit slides when Blazor unmounts panels.
+3. **Hardware-accelerated Shaders (`ui.js`):** WebGL2 background canvas with domain-warped FBM fluid dynamics, chromatic dispersion along panel boundaries, and procedural ripple propagation.
+4. **Glassmorphism (`PoCapitolPage.razor.css`):** Hardware-accelerated backdrop blur (`backdrop-filter: blur(16px) saturate(1.4)`), gold specular edge highlights, and reduced-transparency fallbacks.
+5. **Procedural Impact Synthesis (`audio.js`):** Physical modal impact synthesis (body, baton, marble, metal, ground) driven by collision kinetic energy (Joules), resonant modes, and target mass ratios.
+6. **Acoustic Spatialization & Geometric Reverb (`audio.js`):** True 3D HRTF listener panning, Sabine decay reverb impulse responses calculated from room dimensions (Crypt, Rotunda, Statuary Hall, outdoors slapback), wall transmission muffling, and crowd friction noise scaled by shear velocity.
+7. **Continuous Collision Detection & Real Mass Physics (`physics.js`, `steering.js`):** Sub-stepped sweep collision prevention, realistic mass distribution (58-92 kg raiders, 90-102 kg officers), momentum exchange with ground friction deceleration, and uniform spatial grid neighbor acceleration.
+8. **High-Density GPU Particle Bursts (`bursts.js`):** 16,000-particle vertex-shader closed-form physics (sparks, dust puffs, ground bounces, drag) running with zero per-frame CPU allocations.
+9. **Dynamic Wear Decals (`decals.js`):** Instanced scuffs, blast scorch marks, and chemical gas stains dynamically placed on surfaces upon physical impacts and tinted by daylight levels.
+10. **Dynamic Contact Lighting (`scene.js`):** Dynamic flare point lights synchronized to physical impacts and muzzle flashes with rapid exponential decay.
+
 ### Limits that still hold
 
 - Staff and members are non-combatants. They cannot be targeted, reached or harmed in any

@@ -9,6 +9,7 @@
 // raider's position in, reads the proposed position out, and still owns collision. That
 // keeps the attempt JSON-serializable and lets a test teleport a raider without desyncing.
 import { Vehicle, SeekBehavior, SeparationBehavior, GameEntity } from 'yuka';
+import { createGrid } from './physics.js';
 
 const NEIGHBOR_RADIUS = 1.25;
 
@@ -25,7 +26,7 @@ export function createSteering(capacity) {
         vehicle.seek = seek;
         return vehicle;
     });
-    const bodyPool = [];
+    const bodyPool = [], grid = createGrid(NEIGHBOR_RADIUS), bodyGrid = createGrid(NEIGHBOR_RADIUS);
 
     /**
      * Moves every agent one step. Agents are `{ id, x, z, targetX, targetZ, speed }` and gain
@@ -40,24 +41,31 @@ export function createSteering(capacity) {
             const vehicle = vehicles[agent.id];
             vehicle.position.set(agent.x, 0, agent.z);
             vehicle.maxSpeed = agent.speed;
+            // Heavier people speed up and turn more slowly for the same push (Yuka divides force by mass).
+            vehicle.mass = (agent.mass ?? 70) / 70;
             vehicle.seek.target.set(agent.targetX, 0, agent.targetZ);
             // Arrived (or told to stand): seeking a zero-length vector would yield NaN-free
             // but meaningless jitter, so the seek is switched off and the vehicle brakes.
             vehicle.seek.active = Math.hypot(agent.targetX - agent.x, agent.targetZ - agent.z) > 0.12 && agent.speed > 0;
             if (!vehicle.seek.active) vehicle.velocity.multiplyScalar(Math.max(0, 1 - dt * 8));
         }
+        // Neighbors come from a uniform grid, so each raider looks at the few people in its own
+        // cell and the next ones over instead of comparing itself with everyone on the field.
+        grid.clear(); bodyGrid.clear();
+        for (const agent of agents) grid.insert(agent, agent.x, agent.z);
+        for (let i = 0; i < bodies.length; i++) bodyGrid.insert(i, bodies[i].x, bodies[i].z);
         for (const agent of agents) {
             const vehicle = vehicles[agent.id], neighbors = vehicle.neighbors;
             neighbors.length = 0;
-            for (const other of agents) {
-                if (other === agent) continue;
+            grid.query(agent.x, agent.z, NEIGHBOR_RADIUS, other => {
+                if (other === agent) return;
                 const dx = other.x - agent.x, dz = other.z - agent.z;
                 if (dx * dx + dz * dz < NEIGHBOR_RADIUS * NEIGHBOR_RADIUS) neighbors.push(vehicles[other.id]);
-            }
-            for (let i = 0; i < bodies.length; i++) {
+            });
+            bodyGrid.query(agent.x, agent.z, NEIGHBOR_RADIUS, i => {
                 const dx = bodies[i].x - agent.x, dz = bodies[i].z - agent.z;
                 if (dx * dx + dz * dz < NEIGHBOR_RADIUS * NEIGHBOR_RADIUS) neighbors.push(bodyPool[i]);
-            }
+            });
             agent.crowding = neighbors.length;
         }
         for (const agent of agents) {

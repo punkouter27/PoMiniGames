@@ -21,10 +21,20 @@
 .pc-mode { position: absolute; z-index: 4; top: 20px; right: 32px; }
 .pc-crowd { display: grid; gap: 4px; font-size: 10px; letter-spacing: 0.06em; color: #e4d7ba; }
 .pc-crowd b { color: #f0c978; font-size: 11px; }
-.pc-demo-caption { position: absolute; bottom: 60px; left: 32px; padding: 12px 16px; background: #102131df; border-left: 2px solid #d5b77c; font-size: 12px; letter-spacing: 0.06em; }
+.pc-demo-caption { position: absolute; bottom: 60px; left: 32px; padding: 12px 16px; background: #102131b8; border-left: 2px solid #d5b77c; font-size: 12px; letter-spacing: 0.06em; }
 .pc-demo-caption small { display: block; margin-top: 6px; max-width: 290px; color: #b8c5cc; font-size: 10px; line-height: 1.5; }
 .pc-context a { display: block; margin-top: 8px; }
-.pc-panel { position: absolute; z-index: 3; padding: 28px; background: #142232ed; border: 1px solid #d5b77c50; border-radius: 10px; box-shadow: 0 22px 80px #06111b70; max-height: calc(100% - 110px); overflow-y: auto; }
+.pc-panel { position: absolute; z-index: 3; padding: 28px; background: linear-gradient(155deg, #1d3047c9, #101d2cb8); border: 1px solid #d5b77c50; border-radius: 10px; box-shadow: inset 0 1px 0 #ffffff2e, inset 0 0 0 1px #ffffff0d, inset 0 -22px 44px #00000033, 0 22px 80px #06111b70; max-height: calc(100% - 110px); overflow-y: auto; }
+/* Glass: whatever is behind a panel is blurred and warmed, and the menu shader in ui.js draws a
+   refracting rim around it. Opaque again where the viewer asked for less transparency. */
+.pc-panel, .pc-hud, .pc-demo-caption, .pc-onthisday { -webkit-backdrop-filter: blur(16px) saturate(1.4); backdrop-filter: blur(16px) saturate(1.4); }
+@media (prefers-reduced-transparency: reduce) {
+    .pc-panel, .pc-hud, .pc-demo-caption, .pc-onthisday { -webkit-backdrop-filter: none; backdrop-filter: none; background: #142232; }
+}
+/* Buttons: ui.js animates scale and lift with the Web Animations API; this is only the glow. */
+.pc-root ::deep .rz-button, .pc-root ::deep .rz-selectbar-item { transition: box-shadow 180ms ease, background-color 180ms ease; }
+.pc-root ::deep .rz-button:hover, .pc-root ::deep .rz-selectbar-item:hover { box-shadow: 0 0 0 1px #e4c48255, 0 8px 26px #b98c4550; }
+.pc-root ::deep .rz-button:active { box-shadow: 0 0 0 1px #f2d79a99, 0 2px 10px #b98c4570; }
 .pc-intro { left: 32px; top: 84px; width: min(520px, calc(100% - 64px)); padding: 20px 22px; }
 .pc-panel.pc-intro h2 { font-size: clamp(24px, 2.2vw, 30px); margin: 6px 0 8px; }
 .pc-panel.pc-intro p { margin: 6px 0; font-size: 13px; line-height: 1.5; }
@@ -48,7 +58,7 @@
 .pc-panel summary { cursor: pointer; color: #b7c4ce; }
 .pc-context p { font-size: 12px; }
 .pc-centered { top: 50%; left: 50%; transform: translate(-50%, -50%); width: min(520px, calc(100% - 36px)); }
-.pc-hud { position: absolute; z-index: 2; top: 80px; left: 32px; right: 32px; display: flex; align-items: center; gap: 24px; padding: 16px 20px; background: #102131df; border: 1px solid #d5b77c40; border-radius: 8px; }
+.pc-hud { position: absolute; z-index: 2; top: 80px; left: 32px; right: 32px; display: flex; align-items: center; gap: 24px; padding: 16px 20px; background: linear-gradient(160deg, #17293ccc, #0e1c2cc0); border: 1px solid #d5b77c40; border-radius: 8px; box-shadow: inset 0 1px 0 #ffffff24, 0 10px 40px #06111b55; }
 .pc-hud strong { display: block; margin-top: 7px; font-size: 16px; }
 .pc-health { margin-left: auto; min-width: 100px; width: 140px; }
 .pc-health label { display: block; font-size: 10px; letter-spacing: 0.1em; margin-bottom: 6px; }
@@ -74,7 +84,7 @@
 .pc-line { min-width: 150px; width: 230px; }
 .pc-line label { display: block; font-size: 10px; letter-spacing: 0.1em; margin-bottom: 6px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .pc-line progress { display: block; width: 100%; height: 7px; accent-color: #7fa9d6; }
-.pc-onthisday { position: absolute; z-index: 2; right: 32px; bottom: 60px; max-width: 340px; padding: 12px 16px; background: #102131df; border-right: 2px solid #7fa9d6; font-size: 12px; line-height: 1.5; color: #d7dde2; pointer-events: none; }
+.pc-onthisday { position: absolute; z-index: 2; right: 32px; bottom: 60px; max-width: 340px; padding: 12px 16px; background: #102131b8; border-right: 2px solid #7fa9d6; font-size: 12px; line-height: 1.5; color: #d7dde2; pointer-events: none; }
 .pc-onthisday .pc-eyebrow { margin-bottom: 6px; color: #9fc0e2; }
 .pc-aftermath { margin: 14px 0; padding: 12px 14px; border-left: 2px solid #7fa9d6; background: #ffffff07; }
 .pc-aftermath strong { font-size: 12px; letter-spacing: 0.06em; color: #cfe0f1; }
