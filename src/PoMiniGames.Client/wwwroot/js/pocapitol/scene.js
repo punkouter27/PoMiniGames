@@ -632,7 +632,7 @@ export function createScene(host, { figure } = {}) {
 
     const post = createPost(renderer, scene, camera, depthCamera);
     const raycaster = new THREE.Raycaster();
-    const target = new THREE.Vector3(), desired = new THREE.Vector3(), offset = new THREE.Vector3(), look = new THREE.Vector3();
+    const target = new THREE.Vector3(), desired = new THREE.Vector3(), offset = new THREE.Vector3(), look = new THREE.Vector3(), smoothLook = new THREE.Vector3();
     let renderScale = 1;
     function resize() {
         const w = Math.max(1, host.clientWidth), h = Math.max(1, host.clientHeight);
@@ -706,10 +706,22 @@ export function createScene(host, { figure } = {}) {
         host.dataset.cameraSubject = spectating ? subject?.id ?? 'none' : 'human';
         if (spectating || latched) {
             if (subject) {
-                const delta = (subject.heading ?? 0) - followYaw;
-                followYaw += Math.atan2(Math.sin(delta), Math.cos(delta)) * (1 - Math.exp(-dt * 3));
+                if (spectating && !latched) {
+                    // Demo mode: follow the general advance direction of the crowd towards the Capitol (-Z)
+                    // Blend individual heading with the broader march direction towards the facade
+                    const marchDir = Math.atan2(0 - subject.x, -50 - subject.z);
+                    const targetYaw = (subject.heading ?? 0) * 0.25 + marchDir * 0.75;
+                    const delta = targetYaw - followYaw;
+                    // Slower, cinematic heading rotation without sudden snaps or jitter
+                    followYaw += Math.atan2(Math.sin(delta), Math.cos(delta)) * (1 - Math.exp(-dt * 0.85));
+                    pitch = -0.16;
+                } else {
+                    const delta = (subject.heading ?? 0) - followYaw;
+                    followYaw += Math.atan2(Math.sin(delta), Math.cos(delta)) * (1 - Math.exp(-dt * 3));
+                    pitch = -0.12;
+                }
             }
-            yaw = followYaw; pitch = -0.12;
+            yaw = followYaw;
         } else followYaw = yaw;
 
         // The day: a raw overcast with a low sun that sinks south-west and is gone by five.
@@ -819,7 +831,10 @@ export function createScene(host, { figure } = {}) {
         sun.position.copy(sun.target.position).addScaledVector(sunDir, 110);
         const floor = groundHeight(focus.x, focus.z);
         target.set(focus.x, floor + 1.65, focus.z);
-        desired.set(focus.x + Math.sin(yaw) * 6.5, floor + 3.7 + pitch * 3, focus.z + Math.cos(yaw) * 6.5);
+        // In demo mode: higher, wider cinematic framing to capture crowd formations and advancing line
+        const camDist = (spectating && !latched) ? 9.2 : 6.5;
+        const camHeight = (spectating && !latched) ? 4.8 : 3.7;
+        desired.set(focus.x + Math.sin(yaw) * camDist, floor + camHeight + pitch * 3, focus.z + Math.cos(yaw) * camDist);
         // Walking: the camera rides the step a little, unless the viewer asked for less motion.
         if (!spectating && moving && !quiet && state.status === 'active') desired.y += Math.abs(Math.sin(clock * 8.5)) * 0.05;
         offset.copy(desired).sub(target);
@@ -836,21 +851,28 @@ export function createScene(host, { figure } = {}) {
             look.lerp(target.set(0, 1.4, CHAMBER_Z - 9), ease);
             camera.position.copy(desired);
             if (!wasClosing) post.rackFocus(14, 2.2, 0.7);
-        } else if (spectating && cameraReady && camera.position.distanceTo(desired) < 20) {
-            // A camera operator following someone: it trails, it does not snap.
-            camera.position.lerp(desired, 1 - Math.exp(-dt * 4));
+        } else if (spectating && cameraReady) {
+            // Slower, cinematic gliding crane/dolly: zero fast cuts or sudden snaps
+            const followSpeed = latched ? 3.0 : 1.35;
+            camera.position.lerp(desired, 1 - Math.exp(-dt * followSpeed));
         } else camera.position.copy(desired);
         cameraReady = true;
-        // Spectator view is hand-held: layered drift and sway, unless the viewer asked for less motion.
+        // Spectator view: gentle steadycam drift
         if (spectating && closing === 0 && !quiet) {
-            camera.position.x += Math.sin(clock * 0.63) * 0.05 + Math.sin(clock * 1.71 + 2) * 0.02;
-            camera.position.y += Math.sin(clock * 0.81 + 1) * 0.04;
-            look.x += Math.sin(clock * 2.3) * 0.12 + Math.sin(clock * 0.37) * 0.25;
-            look.y += Math.sin(clock * 3.1 + 1) * 0.08;
+            camera.position.x += Math.sin(clock * 0.35) * 0.03 + Math.sin(clock * 0.85 + 2) * 0.015;
+            camera.position.y += Math.sin(clock * 0.45 + 1) * 0.025;
         }
-        // A new subject gets a brief pull of focus, at most every twelve seconds.
-        if (spectating && subject && subject.id !== lastSubject && lastSubject !== null && clock - lastRack > 12) {
-            post.rackFocus(6.5, 0.7, 0.5); lastRack = clock;
+        // Smooth cinematic look-at: pans gracefully across subject changes instead of snapping
+        if (spectating && cameraReady) {
+            smoothLook.lerp(look, 1 - Math.exp(-dt * 2.0));
+            camera.lookAt(smoothLook);
+        } else {
+            smoothLook.copy(look);
+            camera.lookAt(look);
+        }
+        // A new subject gets a gentle, subtle pull of focus (no jarring blur)
+        if (spectating && subject && subject.id !== lastSubject && lastSubject !== null && clock - lastRack > 14) {
+            post.rackFocus(9.2, 1.2, 0.35); lastRack = clock;
         }
         lastSubject = subject?.id ?? lastSubject;
         // In play the eyes lose focus for a moment: a blow, a flash-bang close by, going down.
@@ -868,7 +890,6 @@ export function createScene(host, { figure } = {}) {
             }
         }
         lastHealth = spectating ? null : state.health;
-        camera.lookAt(look);
         // A nearby flash-bang jolts the camera.
         if (flashAt && !quiet) {
             const near = Math.max(0, 1 - Math.hypot(flashAt.x - camera.position.x, flashAt.z - camera.position.z) / 25);
