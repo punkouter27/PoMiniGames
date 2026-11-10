@@ -364,3 +364,7 @@
     display: flex;
     gap: 8px;
 }
+.pc-harm {
+    color: #8fd3c7;
+    letter-spacing: 0.02em;
+}

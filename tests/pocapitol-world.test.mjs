@@ -12,7 +12,8 @@ const url = text => `data:text/javascript;base64,${Buffer.from(text).toString('b
 const yuka = url(read('lib/yuka/yuka.module.js'));
 const physics = url(read('js/pocapitol/physics.js'));
 const steering = url(read('js/pocapitol/steering.js').replace("'yuka'", `'${yuka}'`).replace("'./physics.js'", `'${physics}'`));
-const world = await import(url(read('js/pocapitol/world.js').replace("'./steering.js'", `'${steering}'`).replace("'./physics.js'", `'${physics}'`)));
+const harm = url(read('js/pocapitol/harm.js'));
+const world = await import(url(read('js/pocapitol/world.js').replace("'./steering.js'", `'${steering}'`).replace("'./physics.js'", `'${physics}'`).replace("'./harm.js'", `'${harm}'`)));
 const { createAttempt, advance, shove, setPaused, walkable, milestones, obstacles, columns, statues, lineDefs,
     selectLeader, frontLine, clockLabel, CROWD_SIZE, MAX_POLICE, CIVILIANS, CURFEW_ELAPSED } = world;
 const { createGovernor, RUNGS } = await import(url(read('js/pocapitol/quality.js')));

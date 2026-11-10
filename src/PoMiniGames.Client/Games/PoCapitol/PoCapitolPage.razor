@@ -220,6 +220,14 @@
                                 {
                                     <span>Objective: @_selectedTelemetry.milestone</span>
                                 }
+                                @if (_selectedTelemetry.harmHits > 0)
+                                {
+                                    <span class="pc-harm">
+                                        HARM: severity @_selectedTelemetry.harmSeverity/6 · @_selectedTelemetry.harmLossMl mL est.
+                                        (@(_selectedTelemetry.harmHemorrhage == 0 ? "no class" : $"class {_selectedTelemetry.harmHemorrhage}")) ·
+                                        triage <b>@_selectedTelemetry.harmTriage</b>
+                                    </span>
+                                }
                             </div>
                             <div class="pc-inspector-actions">
                                 <RadzenButton Text="@(_selectedTelemetry.latched ? "Unlatch Camera" : "Latch Camera")" 
@@ -825,6 +833,11 @@
         public double x { get; set; }
         public double z { get; set; }
         public bool latched { get; set; }
+        public int harmHits { get; set; }
+        public int harmSeverity { get; set; }
+        public int harmLossMl { get; set; }
+        public int harmHemorrhage { get; set; }
+        public string harmTriage { get; set; } = "";
     }
 
     private sealed class DebugStatsDto

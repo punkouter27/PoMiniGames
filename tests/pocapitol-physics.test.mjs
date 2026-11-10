@@ -11,7 +11,8 @@ const yuka = url(read('lib/yuka/yuka.module.js'));
 const physicsUrl = url(read('js/pocapitol/physics.js'));
 const physics = await import(physicsUrl);
 const steering = url(read('js/pocapitol/steering.js').replace("'yuka'", `'${yuka}'`).replace("'./physics.js'", `'${physicsUrl}'`));
-const world = await import(url(read('js/pocapitol/world.js').replace("'./steering.js'", `'${steering}'`).replace("'./physics.js'", `'${physicsUrl}'`)));
+const harm = url(read('js/pocapitol/harm.js'));
+const world = await import(url(read('js/pocapitol/world.js').replace("'./steering.js'", `'${steering}'`).replace("'./physics.js'", `'${physicsUrl}'`).replace("'./harm.js'", `'${harm}'`)));
 const { createAttempt, advance, shove, walkable, columns } = world;
 const { sweep, segmentCircle, firstBlocked, exchange, strike, createGrid, massOf, slide, MIN_GAP } = physics;
 

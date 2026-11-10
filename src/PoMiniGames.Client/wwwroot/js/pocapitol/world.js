@@ -9,6 +9,7 @@
 // The spectator demo is the exception, by the owner's request: an armed variant in which both
 // sides carry guns and whoever is hit drops out for good. That part follows no record at all.
 import { createSteering } from './steering.js';
+import { createHarm, applyInjury, advanceHarm, harmSummary } from './harm.js';
 import { createGrid, sweep, segmentCircle, firstBlocked, strike, exchange, slide, bounce, massOf, MIN_GAP } from './physics.js';
 
 export const areas = [
@@ -669,6 +670,7 @@ export function advance(state, input, seconds) {
     state.playerPush = Math.max(0, state.playerPush - dt);
     state.sprayed = Math.max(0, state.sprayed - dt);
     state.flashed = Math.max(0, state.flashed - dt);
+    stepHarm(state, dt);
 
     if (state.role !== 'none' && state.health > 0) {
         const magnitude = Math.max(1, Math.hypot(x, z));
@@ -773,6 +775,9 @@ export function advance(state, input, seconds) {
             victim.hitAt = state.elapsed ?? 0;
             victim.hitPower = Math.min(1, dmg / (shot.faction === 'raider' ? (difficulty.raiderShot ?? 3.4) : difficulty.shot));
             victim.ix = shot.dx; victim.iz = shot.dz;
+            // The measurement layer: severity of this hit and the bleeding it starts.
+            victim.harm ??= createHarm();
+            applyInjury(victim.harm, { zone: hitZone, energy: 520, armor: (victim.armor ?? 0) > 0 ? 1 : 0 });
             // Slight kinetic momentum transfer
             victim.kx = (victim.kx ?? 0) + shot.dx * (shot.faction === 'raider' ? 0.8 : 0.3);
             victim.kz = (victim.kz ?? 0) + shot.dz * (shot.faction === 'raider' ? 0.8 : 0.3);
@@ -876,11 +881,28 @@ const crowdMember = (state, actor) => actor === state.player ? state.role === 'r
 const contactGrid = createGrid(), contactList = [];
 
 /**
+ * Bleeds every injured body forward, and keeps the field-wide totals the debrief reports.
+ * Values are estimates from a coarse model, not clinical measurements.
+ */
+function stepHarm(state, dt) {
+    let casualties = 0, immediate = 0, lossTotal = 0;
+    for (const actor of [...state.enemies, ...state.companions]) {
+        if (!actor.harm || actor.harm.hits === 0) continue;
+        advanceHarm(actor.harm, dt, { down: actor.health <= 0 });
+        const summary = harmSummary(actor.harm, actor.mass);
+        if (actor.health <= 0) { casualties++; if (summary.triage === 'Immediate') immediate++; }
+        lossTotal += summary.lossMl;
+    }
+    state.harmed = casualties;
+    state.immediate = immediate;
+    state.bloodLossTotal = Math.round(lossTotal);
+}
+
+/**
  * Everyone on the field is a body with a mass. Anyone knocked into motion slides until friction
  * stops them (or a wall does, with a thud proportional to the energy). Anyone overlapping gives
  * way in proportion to the other's mass and trades momentum when they were closing quickly.
- */
-function stepContacts(state, dt) {
+ */function stepContacts(state, dt) {
     if (dt <= 0) return;
     const list = contactList;
     list.length = 0;

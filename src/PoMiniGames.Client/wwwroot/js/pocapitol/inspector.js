@@ -3,6 +3,7 @@
 // and camera-latching for any demonstrator or police officer.
 
 import { lineDefs, milestones } from './world.js';
+import { harmSummary } from './harm.js';
 
 export function createInspector({ onTelemetryChange } = {}) {
     let currentUnit = null;
@@ -28,6 +29,7 @@ export function createInspector({ onTelemetryChange } = {}) {
 
         const line = isPolice && unit.line >= 0 && unit.line < lineDefs.length ? lineDefs[unit.line].name : null;
         const currentMilestone = !isPolice && unit.milestone >= 0 && unit.milestone < milestones.length ? milestones[unit.milestone].label : null;
+        const harm = harmSummary(unit.harm, unit.mass);
 
         let statusText = 'Active';
         if (unit.health <= 0) {
@@ -55,6 +57,12 @@ export function createInspector({ onTelemetryChange } = {}) {
             x: unit.x,
             z: unit.z,
             latched,
+            // Flat fields, so the trimmed WASM build needs no nested-deserialisation support.
+            harmHits: harm.hits,
+            harmSeverity: harm.severity,
+            harmLossMl: harm.lossMl,
+            harmHemorrhage: harm.hemorrhage,
+            harmTriage: harm.triage,
         };
     }
 
