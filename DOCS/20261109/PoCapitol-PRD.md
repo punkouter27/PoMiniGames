@@ -278,6 +278,27 @@ confirmed requirements. Where they conflict with earlier sections, this section 
   and the January 2025 clemency.
 - Adaptive graphics with an Auto/Low/High choice that is remembered.
 
+### Rendering realism (2026-11-09, second request)
+
+The owner asked for all ten items of a scene-realism review. Delivered, still stylized:
+
+1. Image-based light from the sky, so materials stop reading as plastic.
+2. Contact shadows under every near and far figure; feet sit on the actual floor height.
+3. Flags and banners ripple in the wind, and far flags have poles.
+4. A January overcast: cloud-deck sky dome, exponential haze, and a sun on its real path for the date.
+5. World-mapped surface detail: ashlar coursing, paving joints, patchy winter lawn.
+6. Figures with hip and shoulder joints, arms that swing, push or film, varied height and build,
+   puffers, hoods, scarves and bare heads; the far crowd as painted, swaying sprites.
+7. Gas, pepper spray and flash-bangs as soft sprites that drift with the wind.
+8. Post-processing: ambient occlusion, bloom, transient depth of field, a winter grade and grain.
+9. Architecture: 36-column peristyle, attic and dome windows, lantern colonnade, a robed bronze
+   figure (no likeness), roof balustrades, window pediments, wrapped and braced stands, branching
+   bare trees, grounds lamp posts.
+10. Camera: a narrower lens, a trailing hand-held spectator camera, a step bob, and a jolt from a
+    nearby flash-bang. Motion effects and grain respect reduced motion.
+
+All of it scales down with the existing graphics ladder (Auto, Low, High).
+
 ### Limits that still hold
 
 - Staff and members are non-combatants. They cannot be targeted, reached or harmed in any

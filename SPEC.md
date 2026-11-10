@@ -61,11 +61,18 @@ reconstruction.
   likenesses, barricaded House doors, the chamber and the people in it. About 1,400 unsimulated distant
   figures stand for the crowd outside. Varied dress, four banner kinds, raised phones,
   breath in the cold, papers on the floor, cracked panes, gas clouds.
+- **Rendering look:** a cloudy sky dome lights the scene as well as filling the background;
+  the sun follows its real 6 January path from about 29° up at 12:50 pm to sunset near five.
+  Stone, paving and lawn carry generated, world-mapped detail; flags ripple; every figure
+  has a contact shadow, a jointed walk, its own height and build, and winter clothes. The far
+  crowd is painted sprites. Gas, spray and flash-bangs are soft sprites. Frames go through a
+  composer: ambient occlusion, bloom, a brief depth of field on the closing shot and on a new
+  demo subject, then a cool winter grade with grain (none under reduced motion).
 - **Sound:** `audio.js` synthesizes everything on the shared `PoAudioBus` sfx bus: crowd
   bed, chant, bullhorn, building alarm, radio, one-shots, and an echo indoors. The app's
   mute and volume apply; silent on kiosk routes.
 - **Adaptive graphics:** `quality.js` works under the app's `PoQuality` tier. In Auto it
-  steps render scale, shadow size, the distant crowd and small detail down when frames run
+  steps render scale, shadow size, the distant crowd, post-processing, surface detail and small detail down when frames run
   long and back up when there is headroom; a rung that fails twice is not retried.
   Low and High pin the picture. The choice is stored in `localStorage` as
   `pocapitol.graphics`.

@@ -23,6 +23,8 @@ const ENV_STAGES = [0, 0.62, 0.78, 0.88, 0.96];
 // fine generic grain.
 const GRASS = new Set(['#657360', '#788168']);
 const PAVING = new Set(['#b8b2a5', '#93948c', '#c7bfad', '#d9d3c4', '#c6bca9']);
+// Plastic sheeting and painted seating: cloth-smooth, no stone coursing.
+const PLAIN = new Set(['#e6e4dc', '#e9e9e4', '#8d8f8a']);
 const GLASS = new Set(['#435568', '#566371']);
 const METAL = new Map([['#5d6468', [0.65, 0.42]], ['#4c5c54', [0.55, 0.5]], ['#b99b62', [0.8, 0.35]], ['#a78c4d', [0.8, 0.35]], ['#2f3236', [0.5, 0.5]]]);
 
@@ -110,6 +112,7 @@ export function createScene(host) {
     function surfaceKind(color) {
         if (GRASS.has(color)) return SURFACE.grass;
         if (PAVING.has(color)) return SURFACE.paving;
+        if (PLAIN.has(color)) return SURFACE.generic;
         const c = new THREE.Color(color);
         return c.r * 0.3 + c.g * 0.59 + c.b * 0.11 > 0.45 ? SURFACE.stone : SURFACE.generic;
     }
@@ -618,7 +621,7 @@ export function createScene(host) {
     }
 
     const calm = () => window.PoQuality?.reduceFlashing?.() === true || matchMedia('(prefers-reduced-motion: reduce)').matches;
-    let followYaw = 0, cameraReady = false, closing = 0, lastSubject = null, clock = 0;
+    let followYaw = 0, cameraReady = false, closing = 0, lastSubject = null, clock = 0, lastRack = -99;
     const lastFocus = { x: 0, z: 100 };
     function render(state, yaw, pitch, moving, dt) {
         clock += dt;
@@ -752,7 +755,10 @@ export function createScene(host) {
             look.x += Math.sin(clock * 2.3) * 0.12 + Math.sin(clock * 0.37) * 0.25;
             look.y += Math.sin(clock * 3.1 + 1) * 0.08;
         }
-        if (spectating && subject && subject.id !== lastSubject && lastSubject !== null) post.rackFocus(6.5, 0.7, 0.6);
+        // A new subject gets a brief pull of focus, at most every twelve seconds.
+        if (spectating && subject && subject.id !== lastSubject && lastSubject !== null && clock - lastRack > 12) {
+            post.rackFocus(6.5, 0.7, 0.5); lastRack = clock;
+        }
         lastSubject = subject?.id ?? lastSubject;
         camera.lookAt(look);
         // A nearby flash-bang jolts the camera.

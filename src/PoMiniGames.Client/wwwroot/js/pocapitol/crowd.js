@@ -286,55 +286,58 @@ export function createCrowd(scene, capacity, { time, groundHeight, shadowTexture
 
 // ---------------------------------------------------------------- the crowd that stayed outside
 
-const CELLS = 8;
+const CELLS = 8, COAT = 'coat';
 /**
- * Eight painted figures for the unsimulated far crowd. Coats are painted pure white and tinted
- * per instance in the shader; everything else (skin, jeans, hats, phones, flags) keeps its paint.
+ * Eight painted figures for the unsimulated far crowd, as two atlases: the paint (skin, jeans,
+ * hats, phones, flags) and a coat mask, so each instance can wear its own coat colour without
+ * a colour key that bleeds at the sprite's edge.
  */
 function peopleAtlas() {
-    const canvas = document.createElement('canvas');
-    canvas.width = 64 * CELLS; canvas.height = 128;
-    const ctx = canvas.getContext('2d');
-    const round = (x, y, w, h, r, fill) => { ctx.fillStyle = fill; ctx.beginPath(); ctx.roundRect(x, y, w, h, r); ctx.fill(); };
-    const circle = (x, y, r, fill) => { ctx.fillStyle = fill; ctx.beginPath(); ctx.arc(x, y, r, 0, Math.PI * 2); ctx.fill(); };
     const looks = [
         { hat: 'beanie', skin: 0, legs: 0, knit: 0 }, { hat: 'cap', skin: 1, legs: 1, phone: true },
         { hat: 'hood', skin: 2, legs: 3 }, { hat: 'none', skin: 3, legs: 2, hair: 1, flag: '#2b477a' },
         { hat: 'beanie', skin: 4, legs: 4, knit: 1, phone: true }, { hat: 'cap', skin: 0, legs: 5, flag: '#b23a40' },
         { hat: 'none', skin: 1, legs: 0, hair: 3 }, { hat: 'beanie', skin: 3, legs: 1, knit: 3, flag: '#e8c53a' },
     ];
-    looks.forEach((look, i) => {
-        const cx = i * 64 + 32, skinTone = skins[look.skin];
-        for (const side of [-1, 1]) {
-            round(cx + side * 5 - 4, 82, 8, 42, 3, pants[look.legs]);
-            round(cx + side * 5 - 5, 119, 10, 6, 2, '#1c1d1f');
-        }
-        round(cx - 15, 34, 30, 54, 9, '#ffffff');
-        round(cx - 21, 38, 8, 40, 4, '#ffffff');
-        circle(cx - 17, 80, 3.5, skinTone);
-        if (look.phone || look.flag) {
-            round(cx + 13, 8, 8, 34, 4, '#ffffff');
-            circle(cx + 17, 8, 3.5, skinTone);
-            if (look.phone) round(cx + 13, -1, 8, 10, 1, '#10161d');
-        } else {
-            round(cx + 13, 38, 8, 40, 4, '#ffffff');
-            circle(cx + 17, 80, 3.5, skinTone);
-        }
-        if (look.flag) {
-            ctx.fillStyle = '#8d7d62'; ctx.fillRect(cx + 16, 0, 2, 14);
-            ctx.fillStyle = look.flag; ctx.fillRect(cx + 18, 0, 24, 14);
-        }
-        round(cx - 4, 30, 8, 8, 2, skinTone);
-        circle(cx, 23, 9.5, skinTone);
-        if (look.hat === 'beanie') { round(cx - 10, 11, 20, 11, 5, knits[look.knit]); }
-        else if (look.hat === 'cap') { round(cx - 10, 12, 20, 9, 4, '#a93737'); ctx.fillStyle = '#a93737'; ctx.fillRect(cx - 14, 18, 8, 3); }
-        else if (look.hat === 'hood') { round(cx - 13, 10, 26, 26, 11, '#ffffff'); circle(cx, 25, 7.5, skinTone); }
-        else { round(cx - 10, 12, 20, 9, 5, hairs[look.hair]); }
-    });
-    const texture = new THREE.CanvasTexture(canvas);
-    texture.colorSpace = THREE.SRGBColorSpace;
-    texture.anisotropy = 4;
-    return texture;
+    const draw = mask => {
+        const canvas = document.createElement('canvas');
+        canvas.width = 64 * CELLS; canvas.height = 128;
+        const ctx = canvas.getContext('2d');
+        const paint = fill => mask ? (fill === COAT ? '#ffffff' : '#000000') : (fill === COAT ? '#8f8f8f' : fill);
+        const round = (x, y, w, h, r, fill) => { ctx.fillStyle = paint(fill); ctx.beginPath(); ctx.roundRect(x, y, w, h, r); ctx.fill(); };
+        const circle = (x, y, r, fill) => { ctx.fillStyle = paint(fill); ctx.beginPath(); ctx.arc(x, y, r, 0, Math.PI * 2); ctx.fill(); };
+        const rect = (x, y, w, h, fill) => { ctx.fillStyle = paint(fill); ctx.fillRect(x, y, w, h); };
+        looks.forEach((look, i) => {
+            const cx = i * 64 + 32, skinTone = skins[look.skin];
+            for (const side of [-1, 1]) {
+                round(cx + side * 5 - 4, 82, 8, 42, 3, pants[look.legs]);
+                round(cx + side * 5 - 5, 119, 10, 6, 2, '#1c1d1f');
+            }
+            round(cx - 15, 34, 30, 54, 9, COAT);
+            round(cx - 21, 38, 8, 40, 4, COAT);
+            circle(cx - 17, 80, 3.5, skinTone);
+            if (look.phone || look.flag) {
+                round(cx + 13, 8, 8, 34, 4, COAT);
+                circle(cx + 17, 8, 3.5, skinTone);
+                if (look.phone) round(cx + 13, -1, 8, 10, 1, '#10161d');
+            } else {
+                round(cx + 13, 38, 8, 40, 4, COAT);
+                circle(cx + 17, 80, 3.5, skinTone);
+            }
+            if (look.flag) { rect(cx + 16, 0, 2, 14, '#8d7d62'); rect(cx + 18, 0, 24, 14, look.flag); }
+            round(cx - 4, 30, 8, 8, 2, skinTone);
+            circle(cx, 23, 9.5, skinTone);
+            if (look.hat === 'beanie') round(cx - 10, 11, 20, 11, 5, knits[look.knit]);
+            else if (look.hat === 'cap') { round(cx - 10, 12, 20, 9, 4, '#a93737'); rect(cx - 14, 18, 8, 3, '#a93737'); }
+            else if (look.hat === 'hood') { round(cx - 13, 10, 26, 26, 11, COAT); circle(cx, 25, 7.5, skinTone); }
+            else round(cx - 10, 12, 20, 9, 5, hairs[look.hair]);
+        });
+        const texture = new THREE.CanvasTexture(canvas);
+        texture.colorSpace = mask ? THREE.NoColorSpace : THREE.SRGBColorSpace;
+        texture.anisotropy = 4;
+        return texture;
+    };
+    return { map: draw(false), mask: draw(true) };
 }
 
 /**
@@ -342,7 +345,7 @@ function peopleAtlas() {
  * contact shadows. Each sprite is turned to the camera in the vertex shader and sways a little.
  */
 export function createDistantCrowd(scene, spots, { time, shadowTexture }) {
-    const count = spots.length, map = peopleAtlas();
+    const count = spots.length, { map, mask } = peopleAtlas();
     const geometry = new THREE.PlaneGeometry(1, 1);
     geometry.translate(0, 0.5, 0);
     const cells = new Float32Array(count);
@@ -351,6 +354,7 @@ export function createDistantCrowd(scene, spots, { time, shadowTexture }) {
     material.onBeforeCompile = shader => {
         shader.uniforms.uTime = time;
         shader.uniforms.uLight = light;
+        shader.uniforms.uCoat = { value: mask };
         shader.vertexShader = shader.vertexShader
             .replace('#include <common>', '#include <common>\nattribute float aCell;\nuniform float uTime;')
             .replace('#include <uv_vertex>', `#include <uv_vertex>\nvMapUv.x = (vMapUv.x + aCell) / ${CELLS}.0;`)
@@ -360,11 +364,10 @@ export function createDistantCrowd(scene, spots, { time, shadowTexture }) {
                 transformed.y += max(0.0, sin(uTime * 2.2 + swayPhase * 3.0)) * 0.02;
                 ${billboardChunk(true)}`);
         shader.fragmentShader = shader.fragmentShader
-            .replace('#include <common>', '#include <common>\nuniform float uLight;')
+            .replace('#include <common>', '#include <common>\nuniform float uLight;\nuniform sampler2D uCoat;')
             .replace('#include <color_fragment>', `
                 #ifdef USE_COLOR
-                    float coatMask = smoothstep(0.86, 0.97, min(min(sampledDiffuseColor.r, sampledDiffuseColor.g), sampledDiffuseColor.b));
-                    diffuseColor.rgb = mix(diffuseColor.rgb, diffuseColor.rgb * vColor, coatMask);
+                    diffuseColor.rgb = mix(diffuseColor.rgb, vColor * 0.9, texture2D(uCoat, vMapUv).r);
                 #endif
                 diffuseColor.rgb *= uLight;`);
     };
@@ -396,7 +399,7 @@ export function createDistantCrowd(scene, spots, { time, shadowTexture }) {
         setLight(level) { light.value = level; },
         dispose() {
             for (const mesh of [people, shadows]) { scene.remove(mesh); mesh.dispose(); }
-            geometry.dispose(); shadowGeometry.dispose(); material.dispose(); shadowMaterial.dispose(); map.dispose();
+            geometry.dispose(); shadowGeometry.dispose(); material.dispose(); shadowMaterial.dispose(); map.dispose(); mask.dispose();
         },
     };
 }

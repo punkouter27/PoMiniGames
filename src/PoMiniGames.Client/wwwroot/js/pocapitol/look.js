@@ -114,12 +114,12 @@ export function addSurface(material, kind, texture, detail) {
                     vec4 s = texture2D(uSurf, sp.zy) * sb.x + texture2D(uSurf, sp.xz) * sb.y + texture2D(uSurf, sp.xy) * sb.z;
                     float tone = 1.0;
                     #if SURF_KIND == 1
-                        tone = mix(0.9, 1.05, s.r * 0.6 + s.g * 0.4) * (1.0 - s.b * 0.2);
-                        surfHeight = s.r * 0.35 - s.b;
+                        tone = mix(0.92, 1.04, s.r * 0.6 + s.g * 0.4) * (1.0 - s.b * 0.09);
+                        surfHeight = s.r * 0.35 - s.b * 0.6;
                         surfRough = 0.6 + s.r * 0.3;
                     #elif SURF_KIND == 2
-                        tone = mix(0.84, 1.06, s.r * 0.5 + s.g * 0.5) * (1.0 - s.a * 0.3);
-                        surfHeight = s.r * 0.3 - s.a;
+                        tone = mix(0.84, 1.06, s.r * 0.5 + s.g * 0.5) * (1.0 - s.a * 0.15);
+                        surfHeight = s.r * 0.3 - s.a * 0.6;
                         surfRough = 0.72 + s.g * 0.2;
                     #elif SURF_KIND == 3
                         diffuseColor.rgb *= mix(vec3(1.0), mix(vec3(0.82, 0.9, 0.76), vec3(1.32, 1.16, 0.82), s.g), uSurfDetail);
@@ -138,7 +138,7 @@ export function addSurface(material, kind, texture, detail) {
                 if (uSurfDetail > 0.0) {
                     // Screen-space bump from the height above (three.js's perturbNormalArb).
                     vec3 dpx = dFdx(-vViewPosition), dpy = dFdy(-vViewPosition);
-                    float hx = dFdx(surfHeight) * 0.035, hy = dFdy(surfHeight) * 0.035;
+                    float hx = dFdx(surfHeight) * 0.022, hy = dFdy(surfHeight) * 0.022;
                     vec3 r1 = cross(dpy, normal), r2 = cross(normal, dpx);
                     float det = dot(dpx, r1);
                     normal = normalize(abs(det) * normal - sign(det) * (hx * r1 + hy * r2));
