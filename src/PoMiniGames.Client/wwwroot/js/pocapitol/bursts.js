@@ -28,6 +28,7 @@ const VERTEX = /* glsl */`
         float drag = max(aLife.w, 0.0001);
         float travel = (1.0 - exp(-drag * age)) / drag;
         vec3 p = position + aVelocity * travel;
+        p.x += sin(age * 2.4 + position.z * 0.15) * 0.32 * min(1.0, age);
         p.y -= 0.5 * aGravity * age * age;
         // One soft bounce: fold whatever sank below the ground back up, losing most of its energy.
         if (p.y < uGround) p.y = uGround + (uGround - p.y) * 0.32;
@@ -140,6 +141,20 @@ export function createBursts(scene, { capacity = 16000 } = {}) {
         }
     }
 
+    /** Winter snow flurries and ice crystals drifting in the cold wind. */
+    function flurry(x, y, z, count = 20) {
+        const random = rng(serial++ * 541 + Math.round(x * 19 + z * 37));
+        for (let i = 0; i < count; i++) {
+            const angle = random() * Math.PI * 2, v = 0.8 + random() * 1.5;
+            dust.add(
+                x + (random() - 0.5) * 14, y + 2 + random() * 4, z + (random() - 0.5) * 14,
+                Math.cos(angle) * v + 0.8, -0.4 - random() * 0.5, Math.sin(angle) * v - 1.1,
+                now, 2.5 + random() * 2.0, 0.14 + random() * 0.1, 0.8, 0.2,
+                0.95, 0.98, 1.0, 0.5
+            );
+        }
+    }
+
     return {
         /** Advances the shader clock, and tells it the scale to size points by and the floor to bounce off. */
         update(time, camera, viewHeight, floor) {
@@ -151,7 +166,7 @@ export function createBursts(scene, { capacity = 16000 } = {}) {
             }
         },
         setDensity(value) { density = value; },
-        spray, puff,
+        spray, puff, flurry,
         /** One world event, thrown into the air. `calm` softens flashing for reduced-motion viewers. */
         react(e, floor, calm) {
             const energy = e.energy ?? 30, y = floor + 0.05;

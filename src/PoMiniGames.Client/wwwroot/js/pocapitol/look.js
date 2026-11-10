@@ -234,6 +234,65 @@ export function createEnvironment(renderer) {
 // ---------------------------------------------------------------- moving cloth and billboards
 
 /**
+ * Polycarbonate material for riot shields and tactical visors:
+ * Physical transmission with volumetric refraction, chromatic dispersion at angled edges,
+ * and edge absorption.
+ */
+export function createPolycarbonateMaterial({ color = '#c4e0ea', opacity = 0.42, roughness = 0.08, dispersion = 0.035 } = {}) {
+    const mat = new THREE.MeshPhysicalMaterial({
+        color: new THREE.Color(color),
+        transparent: true,
+        opacity,
+        roughness,
+        metalness: 0.05,
+        transmission: 0.88,
+        ior: 1.585,
+        thickness: 0.12,
+        attenuationColor: new THREE.Color('#94c2d4'),
+        attenuationDistance: 0.35,
+        depthWrite: false,
+    });
+    mat.onBeforeCompile = shader => {
+        shader.uniforms.uDispersion = { value: dispersion };
+        shader.fragmentShader = shader.fragmentShader
+            .replace('#include <common>', '#include <common>\nuniform float uDispersion;')
+            .replace('#include <transmission_fragment>', `#include <transmission_fragment>
+                // Volumetric chromatic dispersion at faceted edges
+                vec3 dispNormal = normalize(vNormal);
+                float dispEdge = 1.0 - abs(dot(dispNormal, vec3(0.0, 0.0, 1.0)));
+                diffuseColor.r += uDispersion * dispEdge * 0.4;
+                diffuseColor.b += uDispersion * dispEdge * 0.8;
+                diffuseColor.g += uDispersion * dispEdge * 0.2;`);
+    };
+    mat.customProgramCacheKey = () => 'pocapitol-polycarbonate';
+    return mat;
+}
+
+/**
+ * Screen-space wrap lighting and red dermis subsurface scattering (SSSS) for skin and woven fabric.
+ */
+export function addSubsurfaceScattering(material, { wrap = 0.38, scatterColor = '#d95a42', scatterIntensity = 0.45 } = {}) {
+    material.onBeforeCompile = shader => {
+        shader.uniforms.uSssColor = { value: new THREE.Color(scatterColor) };
+        shader.uniforms.uSssWrap = { value: wrap };
+        shader.uniforms.uSssIntensity = { value: scatterIntensity };
+        shader.fragmentShader = shader.fragmentShader
+            .replace('#include <common>', `#include <common>
+                uniform vec3 uSssColor;
+                uniform float uSssWrap;
+                uniform float uSssIntensity;`)
+            .replace('#include <lights_fragment_begin>', `#include <lights_fragment_begin>
+                // Wrap lighting with dermis scatter bleed at light-shadow terminator
+                float sssDot = dot(geometryNormal, directLight.direction);
+                float sssWrapVal = max(0.0, (sssDot + uSssWrap) / (1.0 + uSssWrap));
+                float terminator = smoothstep(-0.25, 0.25, -abs(sssDot));
+                reflectedLight.directDiffuse += uSssColor * directLight.color * terminator * uSssIntensity * sssWrapVal;`);
+    };
+    material.customProgramCacheKey = () => 'pocapitol-ssss';
+    return material;
+}
+
+/**
  * Makes a flag plane ripple: a travelling wave pinned at the pole edge, with gusts. Each
  * instance takes its phase from where it stands, so a field of flags never moves in step.
  */

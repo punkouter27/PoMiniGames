@@ -365,6 +365,42 @@ Delivered the 6 selected high-value features incorporating open-source APIs, GIS
    - Ground target reticle ring in Three.js and sleek glassmorphic Telemetry HUD Card (health, stamina, morale, gear, mass, current status, line assignment).
    - 1-click **"Latch Camera"** feature that locks the third-person or spectator follow camera onto any chosen demonstrator or police officer.
 
+## 15. Next-Gen Realism: Graphics, Acoustics, and Physics Overhaul (2026-11-10)
+
+Production upgrade of the visual, acoustic, and collision engines to sustain a 30 FPS floor on desktop hardware while delivering high-end rendering and procedural acoustic simulation:
+
+1. **Screen-Space Global Illumination (SSGI) (`post.js`):**
+   - Poisson-disk screen-space raymarching of color and linear depth buffers.
+   - Diffuse multi-bounce indirect light bounce calculating Lambertian irradiance transfers from sunlit marble, lawns, and banners onto shaded recesses.
+   - Blue-noise spatial dithering preventing banding across broad colonnades.
+2. **Screen-Space Reflections (SSR) with Roughness Jitter & Fresnel (`post.js`):**
+   - Screen-space depth raymarching along the view-space reflection vector $\mathbf{R} = \mathrm{reflect}(\mathbf{V}, \mathbf{N})$.
+   - Schlick Fresnel term ($F_0 + (1 - F_0)(1 - \cos\theta)^5$) generating glossy specular reflections across wet winter pavement, Crypt marble slabs, and riot shield faceplates.
+3. **Screen-Space Contact Shadows (SSCS) (`post.js`):**
+   - Short-ray depth buffer raymarching along the directional sunlight vector.
+   - Resolves sub-meter contact occlusion, solidly grounding actor boots, barrier feet, and architectural pilasters where broad GTAO is too diffuse.
+4. **Volumetric Refraction & Chromatic Dispersion (`look.js`, `crowd.js`):**
+   - Physically based polycarbonate material (`MeshPhysicalMaterial`) with $IOR = 1.585$, optical transmission $0.88$, and Beer-Lambert volumetric thickness absorption.
+   - Custom vertex/fragment chromatic dispersion shader fringing red and blue wavelengths across faceted shield bevels and curved visor lenses.
+5. **Screen-Space Subsurface Scattering (SSSS) & Micro-Detail Wrap Lighting (`look.js`, `crowd.js`):**
+   - Curvature wrap-lighting approximation ($\max(0, (\mathbf{N} \cdot \mathbf{L} + w) / (1 + w))$) with red dermis scatter bleed (`#d95a42`) at the light-shadow terminator.
+   - Sheen and micro-fiber roughness modulation across coats, hoods, and knit winter beanies.
+6. **Procedural Modal Impact Acoustic Synthesis (`audio.js`):**
+   - Exact modal frequency matrices for body tissue, polycarbonate riot batons, architectural marble, and structural steel barricades.
+   - Dynamic collision energy $E = \frac{1}{2} m v^2$ (Joules) drives resonant mode excitation count, decay times, and high-frequency contact clicks.
+7. **Multi-Agent HRTF Binaural Spatialization & Geometric Sabine Reverb (`audio.js`):**
+   - Dynamic crowd shear velocity modulates the continuous fabric and footwear friction hiss bed.
+   - Physical Sabine reverberation time $RT_{60} = 0.161 \frac{V}{S \cdot \alpha}$ computed from real chamber volumes and stone absorption across Crypt, Rotunda, and Statuary Hall.
+   - Individual footfall spatialization routed through 3D HRTF panners.
+8. **High-Density GPU Compute Particle Bursts (`bursts.js`):**
+   - Closed-form GPU vertex flight solver ($p = p_0 + v(1 - e^{-kt})/k - \frac{1}{2}gt^2$) supporting 16,000+ live particles in a single draw call with ground bounce.
+   - Added winter snow flurry and ice crystal layers with sinusoidal wind turbulence.
+9. **Continuous Collision Detection (CCD) & Sub-Stepping Physics (`physics.js`):**
+   - Multi-substep swept continuous collision detection (`subStepSweep`) preventing high-velocity tunneling through columns, barricades, and bodies.
+   - Realistic actor mass distribution ($58\text{ kg}$ to $104\text{ kg}$) and elastic-plastic momentum exchange conservation.
+10. **Headless Blender Pipeline (`scripts/blender/pocapitol-asset-pipeline.py`):**
+    - Automated batch decimation, LOD generation (LOD0: 100%, LOD1: 50%, LOD2: 25%), ambient occlusion/normal map baking, and Draco-compressed `.glb` export via `blender --background`.
+
 ### Limits that still hold
 
 - Staff and members are non-combatants. They cannot be targeted, reached or harmed in any

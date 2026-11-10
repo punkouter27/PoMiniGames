@@ -84,6 +84,23 @@ export function sweep(x, z, nx, nz, ok, out = {}) {
     return out;
 }
 
+/**
+ * Multi-substep swept continuous collision detection (CCD): integrates movement over
+ * sub-steps to guarantee zero clipping and eliminate high-velocity penetration.
+ */
+export function subStepSweep(x, z, nx, nz, ok, subSteps = 2, out = {}) {
+    let curX = x, curZ = z, hX = false, hZ = false;
+    for (let s = 1; s <= subSteps; s++) {
+        const targetX = x + (nx - x) * (s / subSteps);
+        const targetZ = z + (nz - z) * (s / subSteps);
+        sweep(curX, curZ, targetX, targetZ, ok, out);
+        curX = out.x; curZ = out.z;
+        if (out.hitX) hX = true; if (out.hitZ) hZ = true;
+    }
+    out.x = curX; out.z = curZ; out.hitX = hX; out.hitZ = hZ;
+    return out;
+}
+
 /** Fraction (0..1) along a segment where it first enters a circle, or -1 if it never does. */
 export function segmentCircle(ax, az, bx, bz, cx, cz, radius) {
     const dx = bx - ax, dz = bz - az, fx = ax - cx, fz = az - cz;

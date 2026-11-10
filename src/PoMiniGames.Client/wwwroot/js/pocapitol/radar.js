@@ -278,5 +278,5 @@ export function createRadar(canvas, { onSelectUnit } = {}) {
         // cleanup listeners
     }
 
-    return { render, destroy };
+    return { render, destroy, dispose: destroy };
 }

@@ -1,5 +1,5 @@
 import * as THREE from 'three';
-import { addWave, billboardChunk } from './look.js';
+import { addWave, billboardChunk, createPolycarbonateMaterial, addSubsurfaceScattering } from './look.js';
 import { BONES as RIG_BONES, REGIONS, buildFigure } from './rig.js';
 
 // Original procedural artwork; references inform clothing and equipment, not real identities.
@@ -175,7 +175,10 @@ function createBodies(scene, t, capacity) {
     geometry.setAttribute('color', color);
     geometry.setIndex(new THREE.BufferAttribute(index, 1));
     geometry.setDrawRange(0, 0);
-    const material = new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.88 });
+    const material = addSubsurfaceScattering(
+        new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.88 }),
+        { wrap: 0.35, scatterColor: '#d95a42', scatterIntensity: 0.42 }
+    );
     // The skeleton's bones are never posed through the scene graph: matrices are written straight
     // into its bone texture, so a single placeholder bone stands in for all of them.
     const placeholder = new THREE.Bone(), identity = new THREE.Matrix4();
@@ -377,9 +380,9 @@ export function createCrowd(scene, capacity, { time, groundHeight, shadowTexture
         hair: a => color.set(hairs[Math.abs(a.id * 3) % hairs.length]),
     };
 
-    const cloth = new THREE.MeshStandardMaterial({ color: '#ffffff', roughness: 0.95 });
+    const cloth = addSubsurfaceScattering(new THREE.MeshStandardMaterial({ color: '#ffffff', roughness: 0.92 }));
     const dark = new THREE.MeshStandardMaterial({ color: '#202830', roughness: 0.8 });
-    const knit = new THREE.MeshStandardMaterial({ color: '#ffffff', roughness: 1 });
+    const knit = addSubsurfaceScattering(new THREE.MeshStandardMaterial({ color: '#ffffff', roughness: 0.98 }), { wrap: 0.45 });
     const cube = new THREE.BoxGeometry(1, 1, 1);
     const dome = new THREE.SphereGeometry(0.26, 12, 6, 0, Math.PI * 2, 0, Math.PI / 2);
     const ring = new THREE.TorusGeometry(0.35, 0.035, 5, 16);
@@ -415,7 +418,7 @@ export function createCrowd(scene, capacity, { time, groundHeight, shadowTexture
         [-0.03, 0.09, -0.04], [0.1, 0.19, 0.02], filming, true, right);
     part('helmet', new THREE.SphereGeometry(0.29, 12, 8, 0, Math.PI * 2, 0, Math.PI * 0.65),
         new THREE.MeshStandardMaterial({ color: '#1d242c', roughness: 0.35, metalness: 0.2 }), [0, 1.91, 0], [0.9, 1, 0.95], a => a.police, false, head);
-    const clear = new THREE.MeshStandardMaterial({ color: '#c4e0ea', transparent: true, opacity: 0.4, roughness: 0.08, depthWrite: false });
+    const clear = createPolycarbonateMaterial({ color: '#c4e0ea', opacity: 0.42, roughness: 0.08, dispersion: 0.04 });
     part('visor', cube, clear, [0, 1.86, -0.25], [0.46, 0.32, 0.05], a => a.police, false, head);
     part('vest', cube, dark, [0, 1.2, -0.25], [0.67, 0.64, 0.12], a => a.police || (raider(a) && a.id >= 0 && a.id % 8 === 3));
     part('shield', cube, clear, [0.1, -0.1, -0.08], [0.9, 1.45, 0.09], a => a.police, false, left);

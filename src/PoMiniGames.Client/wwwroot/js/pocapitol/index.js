@@ -232,7 +232,7 @@ function initRadar(canvasId = 'pocapitol-radar') {
     if (!game) return;
     const canvas = document.getElementById(canvasId);
     if (canvas && (!game.radar || game.radar.canvas !== canvas)) {
-        game.radar?.destroy();
+        game.radar?.destroy?.();
         game.radar = createRadar(canvas, {
             onSelectUnit: unit => game.inspector?.select(unit, game.state),
         });
@@ -364,10 +364,10 @@ function dispose() {
     const g = game;
     g.disposed = true; g.events.abort(); cancelAnimationFrame(g.frame);
     if (document.pointerLockElement === g.view.canvas) document.exitPointerLock();
-    g.audio?.dispose();
-    g.ui?.dispose();
-    g.radar?.destroy();
-    g.inspector?.clear();
+    g.audio?.dispose?.();
+    g.ui?.dispose?.();
+    g.radar?.destroy?.();
+    g.inspector?.clear?.();
     g.view.dispose(); remove(); game = null;
 }
 

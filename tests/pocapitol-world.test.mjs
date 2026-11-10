@@ -458,6 +458,9 @@ async function engineHarness(rejectUpdates = false) {
     const context = vm.createContext({
         window, document, AbortController, createAttempt, advance, shove, setPaused, selectLeader, frontLine,
         createScene: () => view, loadFigure: async () => null, createUiFx: () => ({ dispose() {} }), createGovernor, MODES: ['auto', 'low', 'high'],
+        fetchWeather: async () => ({ temperature: 4.4, condition: 'Overcast', windSpeed: 14.5 }),
+        createRadar: () => ({ render() {}, update() {}, resize() {}, destroy() {}, dispose() {} }),
+        createInspector: () => ({ select() {}, clear() {}, update() {}, raycastFromCamera() { return null; }, getSelected() { return null; }, isLatched() { return false; }, toggleLatch() { return false; }, dispose() {} }),
         createAudio: () => ({ update() {}, event: e => sounds.push(e.type), dispose() { audioDisposed++; } }),
         ensure: async () => true, remove() {},
         connectedPads: () => [], stick: () => ({ x: 0, y: 0 }), pressed: () => false,

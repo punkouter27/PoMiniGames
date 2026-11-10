@@ -435,7 +435,7 @@ export function createAudio() {
         if (walkers?.length && clock >= footAt) {
             footAt = clock + 0.07 + Math.random() * 0.12;
             const w = walkers[walker++ % walkers.length];
-            strike({ material: indoors ? 'marble' : 'ground', energy: indoors ? 3 : 6, mass: w.mass ?? 75, gain: 0.7, to: place(w.x, w.z, 1, 0.1) });
+            strike({ material: indoors ? 'marble' : 'ground', energy: indoors ? 3 : 6, mass: w.mass ?? 75, gain: 0.7, dest: place(w.x, w.z, 1, 0.1) });
         }
         if (mix.gassed && clock >= coughAt) {
             coughAt = clock + 1.3 + Math.random();
