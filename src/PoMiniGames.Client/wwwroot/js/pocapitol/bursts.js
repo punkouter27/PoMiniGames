@@ -155,6 +155,27 @@ export function createBursts(scene, { capacity = 16000 } = {}) {
         }
     }
 
+    /** Soft translucent breath condensation vapor puffed in cold air. */
+    function breath(x, y, z, vx = 0, vz = -0.5) {
+        const random = rng(serial++ * 311 + Math.round(x * 23 + z * 41));
+        const count = Math.round(5 * density);
+        for (let i = 0; i < count; i++) {
+            const spread = (random() - 0.5) * 0.12;
+            dust.add(
+                x + spread, y + (random() - 0.5) * 0.06, z + spread,
+                vx * 0.35 + (random() - 0.5) * 0.06,
+                0.14 + random() * 0.12,
+                vz * 0.35 + (random() - 0.5) * 0.06,
+                now,
+                1.1 + random() * 0.5,
+                0.22 + random() * 0.12,
+                1.6,
+                -0.06,
+                0.94, 0.96, 1.0, 0.22
+            );
+        }
+    }
+
     return {
         /** Advances the shader clock, and tells it the scale to size points by and the floor to bounce off. */
         update(time, camera, viewHeight, floor) {
@@ -166,7 +187,7 @@ export function createBursts(scene, { capacity = 16000 } = {}) {
             }
         },
         setDensity(value) { density = value; },
-        spray, puff, flurry,
+        spray, puff, flurry, breath,
         /** One world event, thrown into the air. `calm` softens flashing for reduced-motion viewers. */
         react(e, floor, calm) {
             const energy = e.energy ?? 30, y = floor + 0.05;

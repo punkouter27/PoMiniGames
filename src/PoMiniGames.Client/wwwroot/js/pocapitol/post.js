@@ -215,24 +215,159 @@ const SSRShader = {
     `
 };
 
-// Display-space grade: clean tone mapping, realistic saturation, subtle vignette with zero artificial grain noise.
-const GradeShader = {
+// Volumetric Sun Shafts (Atmospheric God Rays)
+const VolumetricShaftsShader = {
     uniforms: {
-        tDiffuse: { value: null }, uTime: { value: 0 }, uGrain: { value: 0.0 },
-        uVignette: { value: 0.22 }, uSaturation: { value: 0.94 },
+        tDiffuse: { value: null },
+        tDepth: { value: null },
+        uSunPosScreen: { value: new THREE.Vector3(0.5, 0.5, 1.0) },
+        uExposure: { value: 0.18 },
+        uDecay: { value: 0.93 },
+        uDensity: { value: 0.8 },
+        uWeight: { value: 0.32 },
+        uCameraNear: { value: 0.1 },
+        uCameraFar: { value: 150.0 },
+    },
+    vertexShader: `
+        varying vec2 vUv;
+        void main() {
+            vUv = uv;
+            gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
+        }
+    `,
+    fragmentShader: `
+        uniform sampler2D tDiffuse;
+        uniform sampler2D tDepth;
+        uniform vec3 uSunPosScreen;
+        uniform float uExposure, uDecay, uDensity, uWeight, uCameraNear, uCameraFar;
+        varying vec2 vUv;
+
+        float readDepth(vec2 coord) {
+            float z = texture2D(tDepth, coord).r;
+            return (2.0 * uCameraNear) / (uCameraFar + uCameraNear - z * (uCameraFar - uCameraNear));
+        }
+
+        void main() {
+            vec4 col = texture2D(tDiffuse, vUv);
+            if (uSunPosScreen.z <= 0.0) {
+                gl_FragColor = col;
+                return;
+            }
+            vec2 sunUv = uSunPosScreen.xy;
+            vec2 deltaUv = (vUv - sunUv) * (1.0 / 14.0) * uDensity;
+            vec2 coord = vUv;
+            float illuminationDecay = 1.0;
+            vec3 rays = vec3(0.0);
+
+            for (int i = 0; i < 14; i++) {
+                coord -= deltaUv;
+                if (coord.x < 0.0 || coord.x > 1.0 || coord.y < 0.0 || coord.y > 1.0) break;
+                float d = readDepth(coord);
+                if (d > 0.94) {
+                    vec3 sCol = texture2D(tDiffuse, coord).rgb;
+                    rays += sCol * illuminationDecay * uWeight;
+                }
+                illuminationDecay *= uDecay;
+            }
+            vec3 sunTint = vec3(1.05, 0.98, 0.92);
+            col.rgb += rays * uExposure * sunTint;
+            gl_FragColor = col;
+        }
+    `
+};
+
+// Edge-preserving Fast Approximate Anti-Aliasing (FXAA)
+const FXAAShader = {
+    uniforms: {
+        tDiffuse: { value: null },
+        uResolution: { value: new THREE.Vector2(1, 1) },
     },
     vertexShader: `varying vec2 vUv; void main() { vUv = uv; gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0); }`,
     fragmentShader: `
-        uniform sampler2D tDiffuse; uniform float uTime, uGrain, uVignette, uSaturation;
+        uniform sampler2D tDiffuse;
+        uniform vec2 uResolution;
         varying vec2 vUv;
         void main() {
-            vec4 c = texture2D(tDiffuse, vUv);
-            float l = dot(c.rgb, vec3(0.2126, 0.7152, 0.0722));
-            c.rgb = mix(vec3(l), c.rgb, uSaturation);
-            c.rgb += vec3(-0.012, 0.0, 0.022) * (1.0 - l) + vec3(0.018, 0.006, -0.014) * l;
-            vec2 d = vUv - 0.5;
-            c.rgb *= 1.0 - uVignette * dot(d, d) * 1.5;
-            gl_FragColor = c;
+            vec2 r = 1.0 / uResolution;
+            vec4 col = texture2D(tDiffuse, vUv);
+            vec3 rgbNW = texture2D(tDiffuse, vUv + vec2(-r.x, -r.y)).rgb;
+            vec3 rgbNE = texture2D(tDiffuse, vUv + vec2(r.x, -r.y)).rgb;
+            vec3 rgbSW = texture2D(tDiffuse, vUv + vec2(-r.x, r.y)).rgb;
+            vec3 rgbSE = texture2D(tDiffuse, vUv + vec2(r.x, r.y)).rgb;
+            vec3 rgbM  = col.rgb;
+
+            vec3 luma = vec3(0.299, 0.587, 0.114);
+            float lumaNW = dot(rgbNW, luma);
+            float lumaNE = dot(rgbNE, luma);
+            float lumaSW = dot(rgbSW, luma);
+            float lumaSE = dot(rgbSE, luma);
+            float lumaM  = dot(rgbM,  luma);
+
+            float lumaMin = min(lumaM, min(min(lumaNW, lumaNE), min(lumaSW, lumaSE)));
+            float lumaMax = max(lumaM, max(max(lumaNW, lumaNE), max(lumaSW, lumaSE)));
+            if (lumaMax - lumaMin < max(0.04, lumaMax * 0.12)) {
+                gl_FragColor = col;
+                return;
+            }
+
+            vec2 dir = vec2(
+                -((lumaNW + lumaNE) - (lumaSW + lumaSE)),
+                ((lumaNW + lumaSW) - (lumaNE + lumaSE))
+            );
+            float dirReduce = max((lumaNW + lumaNE + lumaSW + lumaSE) * 0.03125, 0.0078125);
+            float rcpDirMin = 1.0 / (min(abs(dir.x), abs(dir.y)) + dirReduce);
+            dir = clamp(dir * rcpDirMin, -8.0, 8.0) * r;
+
+            vec3 rgbA = 0.5 * (
+                texture2D(tDiffuse, vUv + dir * (1.0 / 3.0 - 0.5)).rgb +
+                texture2D(tDiffuse, vUv + dir * (2.0 / 3.0 - 0.5)).rgb
+            );
+            vec3 rgbB = rgbA * 0.5 + 0.25 * (
+                texture2D(tDiffuse, vUv + dir * -0.5).rgb +
+                texture2D(tDiffuse, vUv + dir * 0.5).rgb
+            );
+            float lumaB = dot(rgbB, luma);
+            if ((lumaB < lumaMin) || (lumaB > lumaMax)) {
+                gl_FragColor = vec4(rgbA, col.a);
+            } else {
+                gl_FragColor = vec4(rgbB, col.a);
+            }
+        }
+    `
+};
+
+// Display-space grade: clean tone mapping, documentary saturation, subtle optical lens artifacts and fine sensor grain.
+const GradeShader = {
+    uniforms: {
+        tDiffuse: { value: null }, uTime: { value: 0 }, uGrain: { value: 0.024 },
+        uVignette: { value: 0.25 }, uSaturation: { value: 0.94 },
+        uDistortion: { value: 0.025 }, uChromatic: { value: 0.0025 },
+    },
+    vertexShader: `varying vec2 vUv; void main() { vUv = uv; gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0); }`,
+    fragmentShader: `
+        uniform sampler2D tDiffuse; uniform float uTime, uGrain, uVignette, uSaturation, uDistortion, uChromatic;
+        varying vec2 vUv;
+        void main() {
+            vec2 uv = vUv;
+            vec2 d = uv - 0.5;
+            float r2 = dot(d, d);
+            uv += d * (r2 * uDistortion);
+
+            float r = texture2D(tDiffuse, uv + d * uChromatic).r;
+            float g = texture2D(tDiffuse, uv).g;
+            float b = texture2D(tDiffuse, uv - d * uChromatic).b;
+            vec3 c = vec3(r, g, b);
+
+            float l = dot(c, vec3(0.2126, 0.7152, 0.0722));
+            c = mix(vec3(l), c, uSaturation);
+            c += vec3(-0.012, 0.0, 0.022) * (1.0 - l) + vec3(0.018, 0.006, -0.014) * l;
+            c *= 1.0 - uVignette * r2 * 1.5;
+
+            if (uGrain > 0.0) {
+                float noise = fract(sin(dot(uv * 980.0 + fract(uTime * 17.0), vec2(12.9898, 78.233))) * 43758.5453);
+                c += (noise - 0.5) * uGrain * (0.4 + 0.6 * (1.0 - l));
+            }
+            gl_FragColor = vec4(c, 1.0);
         }`,
 };
 
@@ -274,20 +409,31 @@ export function createPost(renderer, scene, camera, depthCamera) {
     const bloom = new UnrealBloomPass(new THREE.Vector2(1, 1), 0.45, 0.55, 1.15);
     composer.addPass(bloom);
 
+    const shaftsPass = new ShaderPass(VolumetricShaftsShader);
+    shaftsPass.uniforms.tDepth.value = depthTex;
+    composer.addPass(shaftsPass);
+
     const focus = createRackFocus(scene, depthCamera, 1, 1);
     composer.addPass(focus.pass);
 
     composer.addPass(new OutputPass());
+
+    const fxaaPass = new ShaderPass(FXAAShader);
+    composer.addPass(fxaaPass);
+
     const grade = new ShaderPass(GradeShader);
     composer.addPass(grade);
 
     let samples = 4, dofAllowed = true;
-    /** 3: everything clean; 2: bloom only; 1: MSAA and grade only; 0: grade only. */
+    const sunNDC = new THREE.Vector3();
+    /** 3: everything clean; 2: bloom and shafts; 1: MSAA, FXAA and grade; 0: grade only. */
     function setLevel(level) {
         ao.enabled = level >= 3;
-        sscsPass.enabled = false;
-        ssgiPass.enabled = false;
+        sscsPass.enabled = level >= 3;
+        ssgiPass.enabled = level >= 3;
         ssrPass.enabled = level >= 3;
+        shaftsPass.enabled = level >= 2;
+        fxaaPass.enabled = level >= 1;
         dofAllowed = level >= 3;
         bloom.enabled = level >= 2;
         const want = level >= 1 ? 4 : 0;
@@ -302,10 +448,19 @@ export function createPost(renderer, scene, camera, depthCamera) {
         composer.setSize(w, h);
         const pw = Math.max(1, Math.floor(w * ratio)), ph = Math.max(1, Math.floor(h * ratio));
         ssrPass.uniforms.uResolution.value.set(pw, ph);
+        fxaaPass.uniforms.uResolution.value.set(pw, ph);
     }
-    function render(dt, time, calm) {
+    function render(dt, time, calm, cam, sunPos) {
         grade.uniforms.uTime.value = time;
-        grade.uniforms.uGrain.value = 0.0;
+        grade.uniforms.uGrain.value = calm ? 0.0 : 0.024;
+        if (cam && sunPos && shaftsPass.enabled) {
+            sunNDC.copy(sunPos).project(cam);
+            shaftsPass.uniforms.uSunPosScreen.value.set(
+                (sunNDC.x + 1.0) * 0.5,
+                (sunNDC.y + 1.0) * 0.5,
+                sunNDC.z < 1.0 ? 1.0 : 0.0
+            );
+        }
         focus.update(dt);
         composer.render(dt);
     }

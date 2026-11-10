@@ -401,6 +401,33 @@ Production upgrade of the visual, acoustic, and collision engines to sustain a 3
 10. **Headless Blender Pipeline (`scripts/blender/pocapitol-asset-pipeline.py`):**
     - Automated batch decimation, LOD generation (LOD0: 100%, LOD1: 50%, LOD2: 25%), ambient occlusion/normal map baking, and Draco-compressed `.glb` export via `blender --background`.
 
+## 16. Comprehensive Scene Realism Overhaul (2026-11-10)
+
+Production delivery of the Top 10 realism upgrades across architectural detailing, physical lighting, weather shaders, atmospherics, and optics:
+
+1. **Dynamic Shadow Frustum & Contact Shadow Coupling (`scene.js`, `post.js`):**
+   - Focused $76\text{m} \times 88\text{m}$ shadow frustum smoothly tracking active camera target, quadrupling texel resolution.
+   - Screen-space contact shadows (SSCS) activated at quality $\ge 3$ for sub-meter grounding.
+2. **Classical Architectural Orders & Capitals (`scene.js`):**
+   - Columns upgraded with stepped Attic plinths, circular torus bases, 24-faceted fluted shafts, astragal collars, and Corinthian capitals.
+   - Added dentil molding blocks beneath the pediment cornice.
+3. **Slope-Aware Winter Frost & Snow Layer (`look.js`):**
+   - Normal slope dot-product detection deposing white frost along horizontal ledges, balustrades, capitals, and dead winter grass.
+4. **Puddle Pooling & Specular Wetness (`look.js`, `post.js`):**
+   - Plaza depression mask darkens paving albedo and drops surface roughness to $0.04$, generating glossy reflections of sky and police beacons via SSR.
+5. **Volumetric Sun Shafts / God Rays (`post.js`):**
+   - Radial depth raymarching from projected sun position creating atmospheric golden-grey sunbeams streaming across Capitol facades.
+6. **FXAA Sub-Pixel Edge Smoothing (`post.js`):**
+   - Dedicated edge-preserving anti-aliasing pass eliminating stair-stepping on bike racks, wires, and balusters.
+7. **Exhaled Winter Condensation Breath Vapor (`bursts.js`, `scene.js`):**
+   - GPU particle bursts emitting translucent condensation vapor puffs rising from player, demonstrator, and police faces.
+8. **Idle Cold Shivering & Ground IK (`crowd.js`):**
+   - High-frequency chest/head shivering tremors during idle state and grounded boot positioning.
+9. **Instanced Ground Clutter & Debris (`scene.js`):**
+   - 96 instanced protest placards, wooden stakes, and debris along exterior conflict paths with zero draw call bloat.
+10. **Documentary Camera Lens Simulation (`post.js`):**
+    - Barrel lens distortion, peripheral chromatic aberration fringing, and authentic 2021 news sensor grain.
+
 ### Limits that still hold
 
 - Staff and members are non-combatants. They cannot be targeted, reached or harmed in any

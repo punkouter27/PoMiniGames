@@ -113,22 +113,37 @@ export function addSurface(material, kind, texture, detail) {
                     vec3 sp = vSurfPos / uSurfTile;
                     vec4 s = texture2D(uSurf, sp.zy) * sb.x + texture2D(uSurf, sp.xz) * sb.y + texture2D(uSurf, sp.xy) * sb.z;
                     float tone = 1.0;
+                    float upNormal = clamp(vSurfNormal.y, 0.0, 1.0);
                     #if SURF_KIND == 1
                         tone = mix(0.92, 1.04, s.r * 0.6 + s.g * 0.4) * (1.0 - s.b * 0.09);
                         surfHeight = s.r * 0.35 - s.b * 0.6;
                         surfRough = 0.6 + s.r * 0.3;
+                        // Cold winter frost on horizontal stone ledges and capitals
+                        float frost = smoothstep(0.55, 0.95, upNormal) * (0.6 + s.r * 0.4);
+                        diffuseColor.rgb = mix(diffuseColor.rgb, vec3(0.94, 0.96, 0.98), frost * 0.35 * uSurfDetail);
+                        surfRough = mix(surfRough, 0.45, frost * 0.4);
                     #elif SURF_KIND == 2
                         tone = mix(0.84, 1.06, s.r * 0.5 + s.g * 0.5) * (1.0 - s.a * 0.15);
                         surfHeight = s.r * 0.3 - s.a * 0.6;
                         surfRough = 0.72 + s.g * 0.2;
+                        // Wet winter puddles in paving depressions
+                        float puddle = smoothstep(0.46, 0.85, s.g * 0.65 + (1.0 - s.r) * 0.35) * upNormal;
+                        diffuseColor.rgb *= (1.0 - puddle * 0.36 * uSurfDetail);
+                        surfRough = mix(surfRough, 0.04, puddle * uSurfDetail);
                     #elif SURF_KIND == 3
                         diffuseColor.rgb *= mix(vec3(1.0), mix(vec3(0.82, 0.9, 0.76), vec3(1.32, 1.16, 0.82), s.g), uSurfDetail);
                         tone = mix(0.78, 1.12, s.r);
                         surfHeight = s.r;
                         surfRough = 1.0;
+                        // January frost and frozen grass blade tips
+                        float grassFrost = smoothstep(0.48, 0.92, upNormal) * (0.5 + s.r * 0.5);
+                        diffuseColor.rgb = mix(diffuseColor.rgb, vec3(0.88, 0.92, 0.9), grassFrost * 0.42 * uSurfDetail);
+                        surfRough = mix(surfRough, 0.85, grassFrost * 0.5);
                     #else
                         tone = mix(0.93, 1.04, s.r * 0.7 + s.g * 0.3);
                         surfHeight = s.r * 0.5;
+                        float genFrost = smoothstep(0.65, 0.98, upNormal) * 0.3;
+                        diffuseColor.rgb = mix(diffuseColor.rgb, vec3(0.95, 0.96, 0.98), genFrost * uSurfDetail);
                     #endif
                     diffuseColor.rgb *= mix(1.0, tone, uSurfDetail);
                     surfHeight *= uSurfDetail;

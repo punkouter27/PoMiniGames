@@ -87,7 +87,7 @@ export function createScene(host, { figure } = {}) {
     scene.add(sun.target);
     sun.castShadow = true;
     sun.shadow.mapSize.set(2048, 2048);
-    Object.assign(sun.shadow.camera, { left: -70, right: 70, top: 85, bottom: -85, near: 1, far: 230 });
+    Object.assign(sun.shadow.camera, { left: -42, right: 42, top: 48, bottom: -48, near: 10, far: 210 });
     sun.shadow.bias = -0.0006;
     sun.shadow.normalBias = 0.03;
     scene.add(sun);
@@ -96,6 +96,7 @@ export function createScene(host, { figure } = {}) {
     placeSun();
 
     const time = { value: 0 };
+    let breathClock = 0;
     const surfaceDetail = { value: 1 };
     const sky = createSky();
     sky.mesh.layers.set(1);
@@ -149,9 +150,16 @@ export function createScene(host, { figure } = {}) {
         return mesh(new THREE.BoxGeometry(w, h, d), color, x, y, z, parent);
     }
     function column(x, z, height = 8, y = 0, girth = 1) {
-        mesh(new THREE.CylinderGeometry(0.5 * girth, 0.65 * girth, height, 16), '#e2d9c8', x, y + height / 2, z);
-        box(x, y + 0.25, z, 1.6 * girth, 0.5, 1.6 * girth, '#c6bca9');
-        box(x, y + height, z, 1.6 * girth, 0.5, 1.6 * girth, '#f1eadb');
+        // Stepped square plinth base
+        box(x, y + 0.14, z, 1.8 * girth, 0.28, 1.8 * girth, '#b8af9e');
+        // Circular molded torus base
+        mesh(new THREE.CylinderGeometry(0.72 * girth, 0.82 * girth, 0.26, 24), '#c6bca9', x, y + 0.41, z);
+        // Fluted entasised column shaft
+        mesh(new THREE.CylinderGeometry(0.52 * girth, 0.65 * girth, height - 1.2, 24), '#e2d9c8', x, y + 0.54 + (height - 1.2) / 2, z);
+        // Classical Corinthian / Composite capital: astragal collar, bell, and abacus
+        mesh(new THREE.CylinderGeometry(0.58 * girth, 0.53 * girth, 0.16, 24), '#d5cca9', x, y + height - 0.58, z);
+        mesh(new THREE.CylinderGeometry(0.78 * girth, 0.55 * girth, 0.38, 24), '#ede5d6', x, y + height - 0.31, z);
+        box(x, y + height - 0.06, z, 1.68 * girth, 0.16, 1.68 * girth, '#f1eadb');
     }
     function painted(draw, width, height, options = {}) {
         const canvas = document.createElement('canvas');
@@ -248,6 +256,10 @@ export function createScene(host, { figure } = {}) {
     const pediment = new THREE.Shape();
     pediment.moveTo(-12, 0); pediment.lineTo(12, 0); pediment.lineTo(0, 4); pediment.closePath();
     mesh(new THREE.ExtrudeGeometry(pediment, { depth: 1.2, bevelEnabled: false }), '#e7dfd0', 0, 10.6, 16.5);
+    // Classical dentil molding row under the pediment cornice
+    for (let dx = -11.2; dx <= 11.2; dx += 0.7) {
+        box(dx, 10.42, 16.55, 0.38, 0.24, 0.3, '#dcd4c3');
+    }
     for (const c of columns) column(c.x, c.z, c.height);
     label('PoCAPITOL', 0, 9.2, 17.7, 9);
     // The dome: drum and peristyle of 36 columns, attic, cast-iron shell with ribs and a ring
@@ -558,6 +570,24 @@ export function createScene(host, { figure } = {}) {
         }
     }
     papers.count = 0;
+    // Outdoor environmental debris & protest clutter: placards, stakes, and debris
+    const placardMaterial = new THREE.MeshStandardMaterial({ color: '#e8e0cc', roughness: 0.85 });
+    materials.set('placards', placardMaterial);
+    const CLUTTER_COUNT = 96;
+    const clutterPlacards = instanced(new THREE.BoxGeometry(0.75, 0.03, 0.55), placardMaterial, CLUTTER_COUNT);
+    clutterPlacards.receiveShadow = true;
+    clutterPlacards.castShadow = true;
+    for (let i = 0; i < CLUTTER_COUNT; i++) {
+        const cx = (random() * 2 - 1) * 36;
+        const cz = 22 + random() * 64;
+        const cy = groundHeight(cx, cz) + 0.04;
+        pose.position.set(cx, cy, cz);
+        pose.rotation.set((random() - 0.5) * 0.15, random() * Math.PI * 2, (random() - 0.5) * 0.15);
+        pose.scale.setScalar(0.75 + random() * 0.5);
+        pose.updateMatrix();
+        clutterPlacards.setMatrixAt(i, pose.matrix);
+    }
+    clutterPlacards.instanceMatrix.needsUpdate = true;
     // Gas, spray and flash-bangs: soft sprites, plus the flash's light.
     const particles = createParticles(scene);
     // Rounds in flight in the armed demo: short bright streaks, no impact effects.
@@ -639,6 +669,7 @@ export function createScene(host, { figure } = {}) {
         crowd.setExtras(settings.extras);
         bursts.setDensity(settings.extras ? 1 : 0.3);
         papers.visible = settings.extras;
+        clutterPlacards.visible = settings.extras;
         // Surface detail is a uniform, not a define: lowering it costs no recompile.
         surfaceDetail.value = settings.detail ?? 1;
         post.setLevel(settings.post ?? 0);
@@ -784,6 +815,8 @@ export function createScene(host, { figure } = {}) {
 
         if (subject) { lastFocus.x = subject.x; lastFocus.z = subject.z; }
         const focus = subject || lastFocus;
+        sun.target.position.lerp(new THREE.Vector3(focus.x, 0, focus.z), 0.08);
+        sun.position.copy(sun.target.position).addScaledVector(sunDir, 110);
         const floor = groundHeight(focus.x, focus.z);
         target.set(focus.x, floor + 1.65, focus.z);
         desired.set(focus.x + Math.sin(yaw) * 6.5, floor + 3.7 + pitch * 3, focus.z + Math.cos(yaw) * 6.5);
@@ -846,8 +879,25 @@ export function createScene(host, { figure } = {}) {
         depthCamera.copy(camera);
         depthCamera.layers.set(0);
         host.dataset.actorCount = crowd.update(state, spectating ? 0 : yaw, moving, camera.position);
+        breathClock += dt;
+        if (breathClock > 1.8 && !quiet) {
+            breathClock = 0;
+            const camPos = camera.position;
+            const nearby = [
+                ...(state.player ? [state.player] : []),
+                ...(state.companions || []).slice(0, 24),
+                ...(state.enemies || []).slice(0, 16),
+            ];
+            for (const a of nearby) {
+                if (a && a.health > 0 && Math.hypot(a.x - camPos.x, a.z - camPos.z) < 18) {
+                    const h = a.heading || 0;
+                    const fl = groundHeight(a.x, a.z);
+                    bursts.breath(a.x - Math.sin(h) * 0.22, fl + 1.62, a.z - Math.cos(h) * 0.22, -Math.sin(h), -Math.cos(h));
+                }
+            }
+        }
         renderer.info.reset();
-        post.render(dt, clock, quiet);
+        post.render(dt, clock, quiet, camera, sun.position);
         host.dataset.drawCalls = renderer.info.render.calls;
     }
     function aim(state, yaw) {

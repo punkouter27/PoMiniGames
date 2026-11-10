@@ -284,9 +284,10 @@ function poseFor(b, a, t, pose) {
         rot(pose, 'hips', 0, -0.08 * a0); rot(pose, 'chest', -0.04, 0.12 * a0);
     } else {
         const sway = Math.sin(t * 0.5 + id * 1.9);
-        rot(pose, 'hips', 0, 0, 0.03 * sway); rot(pose, 'chest', 0.012 * Math.sin(t * 1.5 + id), 0, -0.025 * sway);
+        const shiver = Math.sin(t * 14.0 + id * 3.7) * 0.012;
+        rot(pose, 'hips', 0, 0, 0.03 * sway); rot(pose, 'chest', 0.012 * Math.sin(t * 1.5 + id), 0, -0.025 * sway + shiver);
         rot(pose, 'thigh_L', 0, 0, -0.03 * sway); rot(pose, 'thigh_R', 0, 0, -0.03 * sway);
-        rot(pose, 'head', 0.04 * Math.sin(t * 0.37 + id), 0.35 * Math.sin(t * 0.21 + id * 1.3) + 0.1 * Math.sin(t * 0.9 + id), 0);
+        rot(pose, 'head', 0.04 * Math.sin(t * 0.37 + id) + shiver * 0.5, 0.35 * Math.sin(t * 0.21 + id * 1.3) + 0.1 * Math.sin(t * 0.9 + id), 0);
         rot(pose, 'foreArm_L', 0.15); rot(pose, 'foreArm_R', 0.15);
         rot(pose, 'upperArm_L', 0.03 * Math.sin(t * 0.8 + id), 0, -0.04); rot(pose, 'upperArm_R', 0.03 * Math.sin(t * 0.8 + id + 1), 0, 0.04);
     }
