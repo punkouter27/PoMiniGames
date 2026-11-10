@@ -453,6 +453,34 @@ Production delivery of the Top 10 tactical combat fidelity upgrades tuned to aut
 10. **Concussive Flash-Bangs & Aerodynamic CS Tear Gas Volumetrics (`bursts.js`, `post.js`, `audio.js`):**
     - Faithful crowd control munitions: flash-bang retinal whiteout bloom in `GradeShader` fading through burned after-images, and dense drifting CS tear gas particulate clouds.
 
+### Hit reactions and collapses (2026-11-10)
+
+How a body answers a round, built on the existing mass and knockback model:
+
+1. **Staged collapse instead of one rotation (`collapse.js`, `crowd.js`):** A downed figure used
+   to snap flat. It now goes through three beats — the weight goes, the knees buckle, the body
+   tips — then settles and holds, and a settled body stops being re-posed every frame.
+2. **Directional falls (`collapse.js`):** The tip axis is computed in the body's own frame from
+   the projectile's flight vector, so a person falls away from the round whichever way they were
+   facing. A figure struck from the front falls backwards; one struck from behind falls forward.
+3. **Hit-zone reactions (`world.js`, `crowd.js`):** Where the round lands is recorded and changes
+   the reading. A head hit folds immediately with no bracing; a torso hit buckles at the waist; a
+   limb hit staggers with less body rotation. Every zone adds a catch step on the back foot.
+4. **Impact flinch (`crowd.js`):** A survivor leans away from the round, folds at the spine and
+   half-raises an arm for a beat before recovering, scaled by impact strength.
+5. **Neighbour disturbance (`world.js`, `crowd.js`):** People pressed against a body that drops
+   check their step and lean away. This is render-only: it never touches position, momentum or
+   line holding, so crowd balance is unchanged.
+6. **Impulse-consistent ballistics (`world.js`):** Reaction direction, tip axis and impact
+   strength all derive from the same recorded shot vector and damage, so a hit never disagrees
+   with the round that caused it.
+7. **Height-correct impact feedback (`bursts.js`):** A body hit now kicks dust off clothing at
+   chest, head or leg height rather than at the feet, and the ground scuff on a fall is wider.
+   There is no blood and no dismemberment in any mode.
+8. **Performance (`crowd.js`):** Death dynamics are keyed per body and cleared on restart; a body
+   that has settled reuses its cached pose, so a field of casualties costs nothing extra and the
+   adaptive governor keeps its budget.
+
 ### Limits that still hold
 
 - Staff and members are non-combatants. They cannot be targeted, reached or harmed in any
@@ -460,7 +488,9 @@ Production delivery of the Top 10 tactical combat fidelity upgrades tuned to aut
   and the doors never open. This limit is not open to tuning.
 - No real breach route, security-accurate layout or operational detail.
 - No identifiable real person, as a character, a likeness or a target.
-- No injury is depicted in any mode. Eliminated figures in the armed demo drop and stay down.
+- No injury is depicted in any mode. Eliminated figures in the armed demo drop and stay down;
+  the drop is staged as weight, buckle and tip, and nothing further is shown. There is no blood,
+  no dismemberment and no wound detail, and that is not open to change.
 - The armed demo is labeled on screen as something that did not happen.
 - Historical statements stay distinguishable from invention; if a source is unavailable the
   claim is not made.
