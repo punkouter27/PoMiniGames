@@ -309,6 +309,7 @@ export function createAudio() {
                 }
                 strike({ material: 'marble', energy: 160, mass: 300, at: 0.2, dest });
                 burst({ frequency: 900, q: 0.6, volume: 0.3, attack: 0.4, seconds: 3.2, dest });
+                dispatchCallout("Perimeter line breach! All units fall back!");
                 break;
             }
             case 'milestone':
@@ -320,16 +321,46 @@ export function createAudio() {
                 tone({ from: 140, to: 60, volume: 0.07, seconds: 0.3, dest });
                 break;
             case 'reinforce':
-                radio(0.16, dest);
+                radio(0.16, dest, true);
                 break;
         }
     }
-    function radio(volume, dest = master) {
-        burst({ frequency: 1900, q: 5, volume, attack: 0.01, seconds: 0.22, dest });
-        for (let i = 0; i < 4; i++) {
-            burst({ frequency: 1300 + Math.random() * 900, q: 7, volume: volume * 0.9, seconds: 0.11, at: 0.24 + i * 0.13, dest });
+
+    const DISPATCH_CALLOUTS = [
+        "Command, perimeter line taking heavy pressure.",
+        "All units, hold the Crypt entrance. Defensive wedge.",
+        "Line breach reported. Staggered fallback in effect.",
+        "Deploying crowd dispersal fogger.",
+        "Reinforcements en route to east corridor.",
+        "Maintain shield formation, watch flanks."
+    ];
+    let lastDispatchAt = 0;
+
+    function dispatchCallout(text = null) {
+        if (quiet() || typeof window === 'undefined') return;
+        const now = performance.now();
+        if (now - lastDispatchAt < 12000) return;
+        lastDispatchAt = now;
+        const msg = text || DISPATCH_CALLOUTS[Math.floor(Math.random() * DISPATCH_CALLOUTS.length)];
+        if (window.speechSynthesis && !window.speechSynthesis.speaking) {
+            try {
+                const utterance = new SpeechSynthesisUtterance(msg);
+                utterance.rate = 1.15;
+                utterance.pitch = 0.9;
+                utterance.volume = Math.min(1, Math.max(0.2, (master.gain.value || 0.8) * 0.85));
+                window.speechSynthesis.speak(utterance);
+            } catch { /* graceful fallback */ }
         }
-        tone({ type: 'square', from: 1250, volume: volume * 0.35, seconds: 0.07, at: 0.8, dest });
+    }
+
+    function radio(volume, dest = master, callout = false) {
+        tone({ type: 'sine', from: 1350, to: 950, volume: volume * 0.8, seconds: 0.04, dest });
+        burst({ frequency: 1900, q: 5, volume, attack: 0.01, seconds: 0.18, dest });
+        for (let i = 0; i < 4; i++) {
+            burst({ frequency: 1300 + Math.random() * 900, q: 7, volume: volume * 0.9, seconds: 0.11, at: 0.2 + i * 0.12, dest });
+        }
+        tone({ type: 'square', from: 1250, volume: volume * 0.35, seconds: 0.07, at: 0.72, dest });
+        if (callout) dispatchCallout();
     }
     function bullhorn(volume, dest = master) {
         // Five syllables of a sliding sawtooth through a narrow band: speech-shaped, wordless.

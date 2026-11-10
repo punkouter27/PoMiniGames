@@ -334,6 +334,37 @@ Implemented all 10 areas of the graphics, audio, physics, and interface overhaul
 9. **Dynamic Wear Decals (`decals.js`):** Instanced scuffs, blast scorch marks, and chemical gas stains dynamically placed on surfaces upon physical impacts and tinted by daylight levels.
 10. **Dynamic Contact Lighting (`scene.js`):** Dynamic flare point lights synchronized to physical impacts and muzzle flashes with rapid exponential decay.
 
+### Atmospheric, Campus GIS, Formations & Telemetry Overhaul (Features 2, 3, 4, 5, 7, 8)
+
+Delivered the 6 selected high-value features incorporating open-source APIs, GIS spatial models, audio speech synthesis, and real-time tactical overlays:
+
+1. **Feature 2: Atmospheric Weather API (`weather.js`, `scene.js`):**
+   - Seamless integration of the Open-Meteo Historical Archive API (Jan 6, 2021) and Live Washington D.C. Weather API.
+   - Live wind vector, temperature, cloud cover deck, and fog density dynamically feed Three.js sky scattering, flag rippling, and particle physics.
+   - Includes instant built-in historical archive fallback if offline.
+2. **Feature 3: OpenStreetMap 3D Grounds Campus (`campus.js`, `scene.js`):**
+   - Procedural low-poly architectural reconstruction of authentic Capitol Hill campus surroundings matching OSM coordinates:
+   - Library of Congress (Thomas Jefferson Building) with reading room dome and pavilions.
+   - Supreme Court of the United States with hexastyle Corinthian pediment and marble approach.
+   - Capitol Reflecting Pool & Ulysses S. Grant Memorial on the West Lawn axis.
+   - Surrounding avenues (Constitution Ave, Independence Ave, First St) with curbs and stone balustrades.
+3. **Feature 4: Synthesized Tactical Police Radio & Crowd Acoustics (`audio.js`):**
+   - Procedural dual-tone squelch chirps (1350 Hz to 950 Hz) and bandpass transceiver filtering.
+   - Web Speech Synthesis API voice dispatcher callouts ("Command, perimeter line taking heavy pressure", "Hold the Crypt entrance", "Perimeter line breach! All units fall back!").
+   - Spatialized 3D HRTF crowd chanting bursts and radio audio pinned to squad leaders.
+4. **Feature 5: Coordinated Shield Formations & Dynamic Fallback (`steering.js`, `world.js`):**
+   - Coordinated Roman/Riot shield wall formation (`shield-lock`) with mutual lateral bracing.
+   - Staggered fighting fallback when line integrity drops below 30% to maintain rear guard.
+   - Crowd pressure waves: pushers intelligently funnel toward broken barrier seams and gaps.
+5. **Feature 7: Real-time Tactical Radar & Crowd Pressure Heatmap (`radar.js`, `PoCapitolPage.razor`):**
+   - Interactive HUD radar tablet overlay rendering full campus blueprint and police line integrity bars.
+   - Dynamic crowd pressure density heatmap gradient (cyan &rarr; yellow &rarr; crimson) highlighting crush zones and barrier stress points.
+   - Clickable radar sectors for immediate unit raycasting and inspection.
+6. **Feature 8: Deep Telemetry Unit Inspector & Camera Latching (`inspector.js`, `PoCapitolPage.razor`):**
+   - 3D viewport raycasting inspection on demonstrator or police officer click.
+   - Ground target reticle ring in Three.js and sleek glassmorphic Telemetry HUD Card (health, stamina, morale, gear, mass, current status, line assignment).
+   - 1-click **"Latch Camera"** feature that locks the third-person or spectator follow camera onto any chosen demonstrator or police officer.
+
 ### Limits that still hold
 
 - Staff and members are non-combatants. They cannot be targeted, reached or harmed in any

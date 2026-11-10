@@ -4,10 +4,14 @@ import { loadFigure } from './crowd.js';
 import { createAudio } from './audio.js';
 import { createUiFx } from './ui.js';
 import { createGovernor, MODES } from './quality.js';
+import { fetchWeather } from './weather.js';
+import { createRadar } from './radar.js';
+import { createInspector } from './inspector.js';
 import { ensure, remove } from '../radzenTheme.js';
 import { connectedPads, stick, pressed, ButtonEdges } from '../gamepadBus.js';
 
 const GRAPHICS_KEY = 'pocapitol.graphics';
+const WEATHER_KEY = 'pocapitol.weather';
 let game = null;
 
 function storedGraphics() {
@@ -15,6 +19,13 @@ function storedGraphics() {
         const value = window.localStorage?.getItem(GRAPHICS_KEY);
         return MODES.includes(value) ? value : 'auto';
     } catch { return 'auto'; }
+}
+
+function storedWeather() {
+    try {
+        const value = window.localStorage?.getItem(WEATHER_KEY);
+        return value || 'historical';
+    } catch { return 'historical'; }
 }
 
 async function init(hostId, reference) {
@@ -34,9 +45,25 @@ async function init(hostId, reference) {
         notifyAt: 0, notifying: false, message: '', drag: null, edges: new ButtonEdges(), restartAt: 0,
         events: new AbortController(), audio: null, ui: null, mix: null, mixAt: 0,
         governor: createGovernor({ tier, mode: storedGraphics() }), tier, tierAt: 0,
+        weather: null, radar: null, inspector: null,
     };
     game = g;
     view.applyQuality?.(g.governor.settings());
+
+    // Weather API integration
+    fetchWeather(storedWeather()).then(w => { g.weather = w; }).catch(() => {});
+
+    // Tactical Unit Inspector
+    g.inspector = createInspector({
+        onTelemetryChange: tele => {
+            reference.invokeMethodAsync('OnTelemetryUpdate', tele)
+                .catch(err => console.debug('[PoCapitol] telemetry update omitted:', err));
+        },
+    });
+
+    // Radar HUD
+    initRadar('pocapitol-radar');
+
     // Menu sound, motion and the glass shader. Decoration only: if it cannot start, the game still can.
     try { g.ui = createUiFx(host.parentElement); } catch (error) { console.warn('[PoCapitol] interface effects unavailable:', error); }
     const signal = g.events.signal;
@@ -67,7 +94,18 @@ async function init(hostId, reference) {
         g.pitch = Math.max(-0.45, Math.min(0.65, g.pitch + e.movementY * 0.003));
     });
     listen(view.canvas, 'pointerdown', e => {
-        if (!g.started || !human() || g.state.status !== 'active') return;
+        if (!g.started || g.state.status !== 'active') return;
+        
+        // Inspect unit on click if not pointer locked
+        if (document.pointerLockElement !== view.canvas && e.pointerType !== 'touch') {
+            const picked = view.pickUnit(e.clientX, e.clientY, g.state);
+            if (picked) {
+                g.inspector?.select(picked, g.state);
+                return;
+            }
+        }
+
+        if (!human()) return;
         if (e.pointerType === 'touch') {
             g.drag = { id: e.pointerId, x: e.clientX, y: e.clientY };
             view.canvas.setPointerCapture(e.pointerId);
@@ -157,7 +195,17 @@ async function init(hostId, reference) {
                 }
             }
             const moving = Math.hypot(x, z) > 0.1 && g.state.status === 'active';
-            view.render(g.state, g.yaw, g.pitch, moving, dt);
+
+            // Real-time Tactical Radar & Unit Inspector updates
+            if (g.radar) g.radar.render(g.state, g.inspector?.getSelected(), dt);
+            g.inspector?.update(g.state);
+
+            view.render(g.state, g.yaw, g.pitch, moving, dt, {
+                inspectedUnit: g.inspector?.getSelected(),
+                latchedUnit: g.inspector?.isLatched() ? g.inspector.getSelected() : null,
+                weather: g.weather,
+            });
+
             const s = g.state;
             host.dataset.damaged = s.damageFlash > 0 ? 'true' : 'false';
             host.dataset.hazard = s.gassed ? 'gas' : s.sprayed > 0 ? 'spray' : '';
@@ -178,6 +226,17 @@ async function init(hostId, reference) {
         }
     }
     g.frame = requestAnimationFrame(loop);
+}
+
+function initRadar(canvasId = 'pocapitol-radar') {
+    if (!game) return;
+    const canvas = document.getElementById(canvasId);
+    if (canvas && (!game.radar || game.radar.canvas !== canvas)) {
+        game.radar?.destroy();
+        game.radar = createRadar(canvas, {
+            onSelectUnit: unit => game.inspector?.select(unit, game.state),
+        });
+    }
 }
 
 /**
@@ -213,6 +272,7 @@ function soundMix(s) {
         walkers: near.slice(0, 6), horn,
     };
 }
+
 function notify(g) {
     if (g.notifying || g.disposed) return;
     g.notifying = true;
@@ -241,6 +301,7 @@ function start(difficulty, demo = false, role = 'raider') {
     game.yaw = role === 'police' && !demo ? Math.PI : 0;
     game.pitch = 0; game.keys.clear(); game.firing = false;
     game.started = true; game.message = ''; game.notifyAt = 0; game.restartAt = 0;
+    game.inspector?.clear();
     // Created on the first start, which follows a click: browsers keep audio shut until then.
     game.audio ??= createAudio();
     if (!demo) game.view.canvas.focus();
@@ -262,6 +323,23 @@ function setGraphics(mode) {
     return game.governor.label();
 }
 
+async function setWeather(mode) {
+    if (!game) return 'historical';
+    const w = await fetchWeather(mode);
+    game.weather = w;
+    try { window.localStorage?.setItem(WEATHER_KEY, mode); } catch {}
+    return w.condition;
+}
+
+function toggleUnitLatch() {
+    if (!game || !game.inspector) return false;
+    return game.inspector.toggleLatch(game.state);
+}
+
+function clearUnitInspect() {
+    game?.inspector?.clear();
+}
+
 function getDebugStats() {
     if (!game) return { fps: 60, drawCalls: 0, actors: 0, keys: [], mode: 'auto', label: 'Auto' };
     const r = game.view?.renderer;
@@ -277,6 +355,7 @@ function getDebugStats() {
         keys: Array.from(game.keys || []),
         mode: game.governor?.mode || 'auto',
         label: game.governor?.label() || 'Auto',
+        weather: game.weather?.condition || 'Historical Jan 6',
     };
 }
 
@@ -287,7 +366,12 @@ function dispose() {
     if (document.pointerLockElement === g.view.canvas) document.exitPointerLock();
     g.audio?.dispose();
     g.ui?.dispose();
+    g.radar?.destroy();
+    g.inspector?.clear();
     g.view.dispose(); remove(); game = null;
 }
 
-window.PoCapitol = { init, start, pause, dispose, setGraphics, getGraphics: storedGraphics, getDebugStats };
+window.PoCapitol = {
+    init, start, pause, dispose, setGraphics, getGraphics: storedGraphics, getDebugStats,
+    setWeather, getWeather: storedWeather, initRadar, toggleUnitLatch, clearUnitInspect,
+};

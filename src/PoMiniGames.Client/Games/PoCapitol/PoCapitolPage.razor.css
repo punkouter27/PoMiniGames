@@ -162,3 +162,193 @@
     .pc-panel h2 { font-size: 32px; margin: 8px 0; }
     .pc-notice { margin: 10px 0; }
 }
+
+/* Atmospheric Weather Pill */
+.pc-weather-pill {
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    padding: 4px 8px;
+    background: #0f1e2ec0;
+    border: 1px solid #d5b77c44;
+    border-radius: 4px;
+    color: #cad8e2;
+    font-size: 11px;
+    letter-spacing: 0.04em;
+    backdrop-filter: blur(8px);
+    white-space: nowrap;
+}
+
+/* Tactical Radar & Heatmap HUD */
+.pc-radar-anchor {
+    position: absolute;
+    top: 155px;
+    right: 32px;
+    z-index: 6;
+    display: flex;
+    flex-direction: column;
+    align-items: flex-end;
+    pointer-events: auto;
+}
+.pc-radar-header {
+    display: flex;
+    justify-content: flex-end;
+}
+.pc-radar-toggle {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    padding: 5px 10px;
+    background: #0d1a27e0;
+    border: 1px solid #d5b77c60;
+    border-radius: 6px;
+    color: #e4c793;
+    font-size: 10.5px;
+    font-weight: 700;
+    letter-spacing: 0.08em;
+    cursor: pointer;
+    backdrop-filter: blur(10px);
+    transition: all 180ms ease;
+    box-shadow: 0 4px 16px #00000055;
+}
+.pc-radar-toggle:hover {
+    background: #172d42;
+    border-color: #f2cf87;
+    transform: translateY(-1px);
+}
+.pc-radar-toggle small {
+    font-size: 9px;
+    color: #9ab2c4;
+    font-weight: normal;
+}
+.pc-radar-body {
+    margin-top: 6px;
+    padding: 8px;
+    background: #0a131df2;
+    border: 1px solid #d5b77c70;
+    border-radius: 8px;
+    box-shadow: 0 12px 32px #00000099;
+    backdrop-filter: blur(16px);
+    animation: pc-fade-in 180ms ease;
+}
+.pc-radar-canvas {
+    display: block;
+    width: 220px;
+    height: 310px;
+    border-radius: 4px;
+    border: 1px solid #ffffff14;
+    cursor: crosshair;
+}
+.pc-radar-legend {
+    display: flex;
+    justify-content: space-around;
+    gap: 6px;
+    margin-top: 6px;
+    font-size: 9.5px;
+    color: #a2b4c2;
+}
+.pc-radar-legend span {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+}
+.pc-radar-legend i {
+    display: inline-block;
+    width: 7px;
+    height: 7px;
+    border-radius: 50%;
+}
+.pc-radar-legend .dot-raider { background: #54a0ff; }
+.pc-radar-legend .dot-police { background: #00d2d3; }
+.pc-radar-legend .dot-heat { background: #ff4757; }
+
+/* Tactical Unit Inspector Card */
+.pc-inspector-card {
+    position: absolute;
+    bottom: 50px;
+    left: 32px;
+    z-index: 7;
+    width: min(340px, calc(100vw - 64px));
+    padding: 14px 16px;
+    background: #0c1825f4;
+    border: 1px solid #d5b77c90;
+    border-radius: 8px;
+    box-shadow: 0 16px 40px #000000aa, inset 0 1px 0 #ffffff22;
+    backdrop-filter: blur(16px);
+    color: #d1dbe2;
+    font-size: 11px;
+    animation: pc-slide-up 200ms ease;
+}
+@keyframes pc-slide-up {
+    from { transform: translateY(16px); opacity: 0; }
+    to { transform: translateY(0); opacity: 1; }
+}
+.pc-inspector-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    border-bottom: 1px solid #ffffff18;
+    padding-bottom: 6px;
+    margin-bottom: 6px;
+}
+.pc-inspector-title {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+.pc-inspector-title strong {
+    font-size: 12.5px;
+    color: #f6eedb;
+    letter-spacing: 0.05em;
+}
+.pc-badge {
+    padding: 2px 6px;
+    border-radius: 3px;
+    font-size: 9px;
+    font-weight: 800;
+    letter-spacing: 0.08em;
+}
+.pc-badge--police { background: #0984e3; color: #fff; }
+.pc-badge--raider { background: #d63031; color: #fff; }
+.pc-inspector-role {
+    font-size: 11px;
+    color: #dfc285;
+    font-weight: 600;
+    margin-bottom: 4px;
+}
+.pc-inspector-status {
+    font-size: 10.5px;
+    margin-bottom: 8px;
+    color: #a4b7c6;
+}
+.pc-inspector-status b {
+    color: #55efc4;
+    font-weight: normal;
+}
+.pc-inspector-metrics {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 10px;
+    margin-bottom: 8px;
+}
+.pc-inspector-metrics span {
+    display: block;
+    font-size: 9.5px;
+    color: #8fa5b5;
+    margin-bottom: 3px;
+}
+.pc-inspector-meta {
+    font-size: 10px;
+    line-height: 1.4;
+    color: #92a4b2;
+    border-top: 1px dotted #ffffff15;
+    padding-top: 6px;
+    margin-bottom: 10px;
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+}
+.pc-inspector-actions {
+    display: flex;
+    gap: 8px;
+}

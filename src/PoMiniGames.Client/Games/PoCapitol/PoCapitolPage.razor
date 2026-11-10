@@ -143,6 +143,7 @@
                                 <b>FOLLOWING @(_subject > 0 ? $"RAIDER {_subject:000}" : "NO ACTIVE RAIDER")</b>
                             }
                         </div>
+                        <span class="pc-weather-pill" title="Atmospheric Conditions: @_weatherCondition">⛅ @_weatherCondition</span>
                         <span class="pc-time">@Clock</span>
                         <RadzenButton Text="Pause" Icon="pause" Size="ButtonSize.Small" Disabled="@(_status != "active")" Click="@(_ => PauseAsync(true))" />
                     </div>
@@ -152,6 +153,76 @@
                             <span class="@(i < _milestone ? "pc-done" : null)"></span>
                         }
                     </div>
+
+                    @* Tactical Radar & Crowd Pressure Heatmap HUD *@
+                    <div class="pc-radar-anchor @(_radarExpanded ? "pc-radar--expanded" : null)">
+                        <div class="pc-radar-header">
+                            <button type="button" class="pc-radar-toggle" @onclick="ToggleRadar" title="Toggle Tactical Radar">
+                                <span>📡 RADAR</span>
+                                <small>@(_radarExpanded ? "▲" : "▼")</small>
+                            </button>
+                        </div>
+                        @if (_radarExpanded)
+                        {
+                            <div class="pc-radar-body">
+                                <canvas id="pocapitol-radar" class="pc-radar-canvas" width="220" height="310"></canvas>
+                                <div class="pc-radar-legend">
+                                    <span><i class="dot-raider"></i>Raider</span>
+                                    <span><i class="dot-police"></i>Police</span>
+                                    <span><i class="dot-heat"></i>Crush</span>
+                                </div>
+                            </div>
+                        }
+                    </div>
+
+                    @* Tactical Unit Inspector Telemetry Card *@
+                    @if (_selectedTelemetry != null)
+                    {
+                        <div class="pc-inspector-card" role="region" aria-label="Unit Telemetry">
+                            <div class="pc-inspector-header">
+                                <div class="pc-inspector-title">
+                                    <span class="pc-badge @(_selectedTelemetry.faction == "police" ? "pc-badge--police" : "pc-badge--raider")">
+                                        @_selectedTelemetry.faction.ToUpperInvariant()
+                                    </span>
+                                    <strong>@_selectedTelemetry.name</strong>
+                                </div>
+                                <button type="button" class="pc-debug-close" @onclick="ClearInspectAsync" aria-label="Close Inspector">✕</button>
+                            </div>
+                            <div class="pc-inspector-role">@_selectedTelemetry.role</div>
+                            <div class="pc-inspector-status"><span>STATUS:</span> <b>@_selectedTelemetry.status</b></div>
+                            <div class="pc-inspector-metrics">
+                                <div>
+                                    <span>STAMINA / HEALTH</span>
+                                    <RadzenProgressBar Value="@_selectedTelemetry.health" Max="100" Unit="%" ShowValue="true" 
+                                                       ProgressBarStyle="@GetHealthProgressStyle(_selectedTelemetry.health)" />
+                                </div>
+                                <div>
+                                    <span>MORALE</span>
+                                    <RadzenProgressBar Value="@_selectedTelemetry.stamina" Max="100" Unit="%" ShowValue="true" 
+                                                       ProgressBarStyle="ProgressBarStyle.Info" />
+                                </div>
+                            </div>
+                            <div class="pc-inspector-meta">
+                                <span>@_selectedTelemetry.gear</span>
+                                @if (!string.IsNullOrEmpty(_selectedTelemetry.lineAssignment))
+                                {
+                                    <span>Assignment: @_selectedTelemetry.lineAssignment</span>
+                                }
+                                @if (!string.IsNullOrEmpty(_selectedTelemetry.milestone))
+                                {
+                                    <span>Objective: @_selectedTelemetry.milestone</span>
+                                }
+                            </div>
+                            <div class="pc-inspector-actions">
+                                <RadzenButton Text="@(_selectedTelemetry.latched ? "Unlatch Camera" : "Latch Camera")" 
+                                              Icon="@(_selectedTelemetry.latched ? "videocam_off" : "videocam")"
+                                              Size="ButtonSize.ExtraSmall" 
+                                              ButtonStyle="@(_selectedTelemetry.latched ? ButtonStyle.Warning : ButtonStyle.Primary)"
+                                              Click="@ToggleLatchAsync" />
+                                <RadzenButton Text="Deselect" Size="ButtonSize.ExtraSmall" ButtonStyle="ButtonStyle.Secondary" Click="@ClearInspectAsync" />
+                            </div>
+                        </div>
+                    }
                     @if (_status == "active")
                     {
                         @if (Playing)
@@ -298,6 +369,17 @@
                                 </Items>
                             </RadzenSelectBar>
 
+                            <label class="pc-small" style="margin-top:14px;">Atmospheric Conditions (Open-Meteo)</label>
+                            <RadzenSelectBar TValue="string" Value="@_weatherMode" Change="@(async (string val) => await SetWeatherAsync(val))">
+                                <Items>
+                                    <RadzenSelectBarItem Text="Jan 6 Archive" Value="@("historical")" />
+                                    <RadzenSelectBarItem Text="Live D.C." Value="@("live")" />
+                                    <RadzenSelectBarItem Text="Clear" Value="@("clear")" />
+                                    <RadzenSelectBarItem Text="Winter Gale" Value="@("blizzard")" />
+                                </Items>
+                            </RadzenSelectBar>
+                            <p class="pc-small">@_weatherCondition</p>
+
                             <div style="margin-top:20px;">
                                 <RadzenButton Text="Close Options" Size="ButtonSize.Small" ButtonStyle="ButtonStyle.Secondary" Click="@ToggleDrawer" />
                             </div>
@@ -344,6 +426,9 @@
     private ErrorBoundary? _errorBoundary;
     private string _status = "loading", _difficulty = "story", _error = "", _message = "", _announcement = "";
     private string _resultWarning = "", _role = "raider", _outcome = "", _graphics = "auto", _graphicsLabel = "Auto";
+    private string _weatherMode = "historical", _weatherCondition = "Jan 6 Archive · 42.4°F";
+    private bool _radarExpanded = true;
+    private TelemetryDto? _selectedTelemetry;
     private int _health = 100, _milestone;
     private double _elapsed;
     private bool _ready, _disposed, _recorded;
@@ -435,6 +520,7 @@
             _reference ??= DotNetObjectReference.Create(this);
             await JS.InvokeVoidAsync("PoCapitol.init", "pocapitol-scene", _reference);
             _graphics = await JS.InvokeAsync<string>("PoCapitol.getGraphics");
+            try { _weatherMode = await JS.InvokeAsync<string>("PoCapitol.getWeather"); } catch {}
             _ready = true;
             _status = "intro";
             if (_demo) await StartAsync();
@@ -598,6 +684,72 @@
         <a href="https://americanhistory.si.edu/press/releases/smithsonian-continues-collecting-artifacts-jan-6-capitol-attack-2" target="_blank" rel="noopener noreferrer">Smithsonian: flags and police equipment</a>
         <a href="https://nsarchive.gwu.edu/briefing-book/foia/2021-05-04/capitol-riot-documents-you-should-read-part-3" target="_blank" rel="noopener noreferrer">National Security Archive: shield testimony</a>
     </div>;
+
+    [JSInvokable]
+    public Task OnTelemetryUpdate(TelemetryDto? telemetry)
+    {
+        _selectedTelemetry = telemetry;
+        return InvokeAsync(StateHasChanged);
+    }
+
+    private void ToggleRadar()
+    {
+        _radarExpanded = !_radarExpanded;
+        if (_radarExpanded)
+        {
+            _ = Task.Run(async () =>
+            {
+                await Task.Delay(50);
+                try { await JS.InvokeVoidAsync("PoCapitol.initRadar", "pocapitol-radar"); } catch {}
+            });
+        }
+    }
+
+    private async Task ToggleLatchAsync()
+    {
+        try
+        {
+            var isLatched = await JS.InvokeAsync<bool>("PoCapitol.toggleUnitLatch");
+            if (_selectedTelemetry != null) _selectedTelemetry.latched = isLatched;
+        }
+        catch (JSException) {}
+    }
+
+    private async Task ClearInspectAsync()
+    {
+        _selectedTelemetry = null;
+        try { await JS.InvokeVoidAsync("PoCapitol.clearUnitInspect"); }
+        catch (JSException) {}
+    }
+
+    private async Task SetWeatherAsync(string mode)
+    {
+        _weatherMode = mode;
+        try
+        {
+            _weatherCondition = await JS.InvokeAsync<string>("PoCapitol.setWeather", mode);
+        }
+        catch (JSException) {}
+    }
+
+    public sealed class TelemetryDto
+    {
+        public int id { get; set; }
+        public string faction { get; set; } = "";
+        public string name { get; set; } = "";
+        public string role { get; set; } = "";
+        public string gear { get; set; } = "";
+        public int health { get; set; }
+        public int stamina { get; set; }
+        public int mass { get; set; }
+        public string status { get; set; } = "";
+        public string? lineAssignment { get; set; }
+        public string? milestone { get; set; }
+        public int crowding { get; set; }
+        public double x { get; set; }
+        public double z { get; set; }
+        public bool latched { get; set; }
+    }
 
     private sealed class DebugStatsDto
     {

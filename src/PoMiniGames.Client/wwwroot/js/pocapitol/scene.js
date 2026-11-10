@@ -6,6 +6,7 @@ import { createParticles } from './particles.js';
 import { createBursts } from './bursts.js';
 import { createDecals } from './decals.js';
 import { createPost } from './post.js';
+import { createCampus } from './campus.js';
 
 // The chamber is drawn but never walked: its doors stay barricaded, as they did. It is only
 // seen in the closing shot, empty.
@@ -587,6 +588,18 @@ export function createScene(host, { figure } = {}) {
     const beacon = mesh(new THREE.CylinderGeometry(0.06, 0.06, 3, 8), '#f3d37e', 0, 1.7, 23);
     beacon.material = marker.material;
 
+    // OpenStreetMap 3D surrounding grounds and monumental structures
+    const campus = createCampus();
+    scene.add(campus);
+
+    // Tactical Unit Inspector target selection ring
+    const selectRingGeo = new THREE.RingGeometry(0.65, 0.9, 32);
+    selectRingGeo.rotateX(-Math.PI / 2);
+    const selectRingMat = new THREE.MeshBasicMaterial({ color: 0xff3838, side: THREE.DoubleSide });
+    const selectRing = new THREE.Mesh(selectRingGeo, selectRingMat);
+    selectRing.visible = false;
+    scene.add(selectRing);
+
     const post = createPost(renderer, scene, camera, depthCamera);
     const raycaster = new THREE.Raycaster();
     const target = new THREE.Vector3(), desired = new THREE.Vector3(), offset = new THREE.Vector3(), look = new THREE.Vector3();
@@ -641,17 +654,28 @@ export function createScene(host, { figure } = {}) {
     const lastFocus = { x: 0, z: 100 };
     // Scenario time for the GPU bursts: it stops with the game, so a paused spark shower hangs in the air.
     let fxClock = 0;
-    function render(state, yaw, pitch, moving, dt) {
+    function render(state, yaw, pitch, moving, dt, options = {}) {
         clock += dt;
         time.value = clock;
         sky.uniforms.uTime.value = clock;
         const spectating = state.role === 'none';
-        const subject = spectating ? selectLeader(state) : state.player;
+        const latched = options.latchedUnit;
+        const inspected = options.inspectedUnit;
+        const weather = options.weather;
+
+        if (inspected) {
+            selectRing.position.set(inspected.x, groundHeight(inspected.x, inspected.z) + 0.05, inspected.z);
+            selectRing.visible = true;
+        } else {
+            selectRing.visible = false;
+        }
+
+        const subject = latched || (spectating ? selectLeader(state) : state.player);
         host.dataset.crowdBatches = crowd.batchCount;
         host.dataset.cameraSubject = spectating ? subject?.id ?? 'none' : 'human';
-        if (spectating) {
+        if (spectating || latched) {
             if (subject) {
-                const delta = subject.heading - followYaw;
+                const delta = (subject.heading ?? 0) - followYaw;
                 followYaw += Math.atan2(Math.sin(delta), Math.cos(delta)) * (1 - Math.exp(-dt * 3));
             }
             yaw = followYaw; pitch = -0.12;
@@ -685,7 +709,9 @@ export function createScene(host, { figure } = {}) {
         const daylight = Math.min(1, (sun.intensity + fill.intensity * 2.5) / (SUN[0][1] + FILL[0][1]));
         farCrowd.setLight(0.3 + 0.62 * daylight);
         const indoorGas = state.effects.some(e => e.type === 'gas' && e.z < 14);
-        scene.fog.density += ((indoorGas ? FOG_GAS : FOG_OUT) - scene.fog.density) * (1 - Math.exp(-dt * 1.5));
+        const baseFog = weather?.fogDensity ?? FOG_OUT;
+        if (weather?.cloudCover !== undefined) sky.uniforms.uCloud.value = weather.cloudCover;
+        scene.fog.density += ((indoorGas ? FOG_GAS : baseFog) - scene.fog.density) * (1 - Math.exp(-dt * 1.5));
 
         const goal = state.role === 'raider' || spectating ? milestones[state.milestone] : null;
         marker.visible = beacon.visible = !!goal;
@@ -827,6 +853,27 @@ export function createScene(host, { figure } = {}) {
     function aim(state, yaw) {
         return { x: -Math.sin(yaw), z: -Math.cos(yaw) };
     }
+    function pickUnit(clientX, clientY, state) {
+        if (!state) return null;
+        const rect = renderer.domElement.getBoundingClientRect();
+        const x = ((clientX - rect.left) / rect.width) * 2 - 1;
+        const y = -((clientY - rect.top) / rect.height) * 2 + 1;
+        raycaster.setFromCamera({ x, y }, camera);
+        const plane = new THREE.Plane(new THREE.Vector3(0, 1, 0), 0);
+        const hit = new THREE.Vector3();
+        if (!raycaster.ray.intersectPlane(plane, hit)) return null;
+
+        let best = null, bestDist = 2.8;
+        const pool = [...state.companions, ...state.enemies];
+        for (const actor of pool) {
+            const d = Math.hypot(actor.x - hit.x, actor.z - hit.z);
+            if (d < bestDist) {
+                bestDist = d;
+                best = actor;
+            }
+        }
+        return best;
+    }
     function dispose() {
         observer.disconnect();
         crowd.dispose();
@@ -843,5 +890,5 @@ export function createScene(host, { figure } = {}) {
         geometries.forEach(g => g.dispose()); materials.forEach(m => m.dispose()); textures.forEach(t => t.dispose());
         renderer.dispose(); renderer.forceContextLoss(); renderer.domElement.remove();
     }
-    return { canvas: renderer.domElement, render, aim, applyQuality, dispose, renderer };
+    return { canvas: renderer.domElement, render, aim, pickUnit, applyQuality, dispose, renderer };
 }

@@ -1,61 +1,72 @@
-// Crowd steering for PoCapitol, built on Yuka (https://github.com/Mugen87/yuka, MIT).
-//
-// The flow field in world.js decides WHERE each raider is heading. This module decides HOW
-// they get there: a Yuka Vehicle per raider blends "seek the next waypoint" with "keep your
-// distance from the people around you", so a hundred figures compress at a doorway and flow
-// around each other instead of stacking on one spot.
-//
-// Vehicles are presentation-free and live outside the attempt state: world.js copies each
-// raider's position in, reads the proposed position out, and still owns collision. That
-// keeps the attempt JSON-serializable and lets a test teleport a raider without desyncing.
-import { Vehicle, SeekBehavior, SeparationBehavior, GameEntity } from 'yuka';
+// Crowd steering & tactical squad formations for PoCapitol, built on Yuka (MIT).
+// Implements coordinated police shield wall formations, tactical fallback stages,
+// and intelligent crowd pressure wave dynamics.
+
+import { Vehicle, SeekBehavior, SeparationBehavior, ObstacleAvoidanceBehavior, GameEntity } from 'yuka';
 import { createGrid } from './physics.js';
 
-const NEIGHBOR_RADIUS = 1.25;
+const NEIGHBOR_RADIUS = 1.35;
 
 export function createSteering(capacity) {
     const vehicles = Array.from({ length: capacity }, () => {
         const vehicle = new Vehicle();
         vehicle.updateOrientation = false;
-        vehicle.maxForce = 34;
+        vehicle.maxForce = 36;
         const separation = new SeparationBehavior();
-        separation.weight = 3.2;
+        separation.weight = 3.4;
         const seek = new SeekBehavior();
-        // Order is priority: Yuka spends the force budget on separation before seeking.
         vehicle.steering.add(separation).add(seek);
         vehicle.seek = seek;
+        vehicle.separation = separation;
         return vehicle;
     });
-    const bodyPool = [], grid = createGrid(NEIGHBOR_RADIUS), bodyGrid = createGrid(NEIGHBOR_RADIUS);
+
+    const bodyPool = [];
+    const grid = createGrid(NEIGHBOR_RADIUS);
+    const bodyGrid = createGrid(NEIGHBOR_RADIUS);
 
     /**
-     * Moves every agent one step. Agents are `{ id, x, z, targetX, targetZ, speed }` and gain
-     * `nextX`, `nextZ` (the proposed position, before collision) and `crowding` (how many
-     * people are within arm's reach). Bodies are anything with `x`/`z` that agents walk
-     * around but that does not itself steer: officers, the human, people sitting down.
+     * Moves every agent one step.
+     * agents: raiders or officers with { id, x, z, targetX, targetZ, speed, mass, temperament, formation }
+     * bodies: obstacles, other actors
      */
     function step(agents, bodies, dt) {
         while (bodyPool.length < bodies.length) bodyPool.push(new GameEntity());
         for (let i = 0; i < bodies.length; i++) bodyPool[i].position.set(bodies[i].x, 0, bodies[i].z);
+
         for (const agent of agents) {
             const vehicle = vehicles[agent.id];
             vehicle.position.set(agent.x, 0, agent.z);
             vehicle.maxSpeed = agent.speed;
-            // Heavier people speed up and turn more slowly for the same push (Yuka divides force by mass).
             vehicle.mass = (agent.mass ?? 70) / 70;
+
+            // Tactical formation adjustments:
+            // Shield-locked police have stronger separation against raiders but tighter cohesion with fellow officers
+            if (agent.formation === 'shield-lock') {
+                vehicle.separation.weight = 1.8; // Stand shoulder-to-shoulder
+                vehicle.maxForce = 48; // Heavy bracing against shove
+            } else if (agent.temperament === 'pusher') {
+                vehicle.separation.weight = 2.4; // Willing to pack tighter to surge
+                vehicle.maxForce = 40;
+            } else {
+                vehicle.separation.weight = 3.6;
+                vehicle.maxForce = 32;
+            }
+
             vehicle.seek.target.set(agent.targetX, 0, agent.targetZ);
-            // Arrived (or told to stand): seeking a zero-length vector would yield NaN-free
-            // but meaningless jitter, so the seek is switched off and the vehicle brakes.
-            vehicle.seek.active = Math.hypot(agent.targetX - agent.x, agent.targetZ - agent.z) > 0.12 && agent.speed > 0;
+            const dist = Math.hypot(agent.targetX - agent.x, agent.targetZ - agent.z);
+            vehicle.seek.active = dist > 0.12 && agent.speed > 0;
             if (!vehicle.seek.active) vehicle.velocity.multiplyScalar(Math.max(0, 1 - dt * 8));
         }
-        // Neighbors come from a uniform grid, so each raider looks at the few people in its own
-        // cell and the next ones over instead of comparing itself with everyone on the field.
-        grid.clear(); bodyGrid.clear();
+
+        grid.clear();
+        bodyGrid.clear();
         for (const agent of agents) grid.insert(agent, agent.x, agent.z);
         for (let i = 0; i < bodies.length; i++) bodyGrid.insert(i, bodies[i].x, bodies[i].z);
+
         for (const agent of agents) {
-            const vehicle = vehicles[agent.id], neighbors = vehicle.neighbors;
+            const vehicle = vehicles[agent.id];
+            const neighbors = vehicle.neighbors;
             neighbors.length = 0;
             grid.query(agent.x, agent.z, NEIGHBOR_RADIUS, other => {
                 if (other === agent) return;
@@ -68,6 +79,7 @@ export function createSteering(capacity) {
             });
             agent.crowding = neighbors.length;
         }
+
         for (const agent of agents) {
             const vehicle = vehicles[agent.id];
             vehicle.update(dt);
@@ -76,8 +88,9 @@ export function createSteering(capacity) {
         }
     }
 
-    /** A raider that was stopped by a wall or a police line loses the speed it had into it. */
-    function stop(id) { vehicles[id].velocity.set(0, 0, 0); }
+    function stop(id) {
+        if (vehicles[id]) vehicles[id].velocity.set(0, 0, 0);
+    }
 
     return { step, stop };
 }
