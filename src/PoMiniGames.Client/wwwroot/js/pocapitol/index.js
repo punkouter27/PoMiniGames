@@ -340,6 +340,12 @@ function clearUnitInspect() {
     game?.inspector?.clear();
 }
 
+function adjustHealth(delta) {
+    if (!game?.state) return;
+    game.state.health = Math.max(0, Math.min(100, Math.round((game.state.health ?? 100) + delta)));
+    notify(game);
+}
+
 function getDebugStats() {
     if (!game) return { fps: 60, drawCalls: 0, actors: 0, keys: [], mode: 'auto', label: 'Auto' };
     const r = game.view?.renderer;
@@ -374,4 +380,5 @@ function dispose() {
 window.PoCapitol = {
     init, start, pause, dispose, setGraphics, getGraphics: storedGraphics, getDebugStats,
     setWeather, getWeather: storedWeather, initRadar, toggleUnitLatch, clearUnitInspect,
+    adjustHealth,
 };

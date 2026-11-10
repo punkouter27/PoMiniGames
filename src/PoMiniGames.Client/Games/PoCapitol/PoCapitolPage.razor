@@ -21,11 +21,7 @@
                 }
                 
                 <div class="pc-top-actions">
-                    <button type="button" class="pc-debug-btn @(_showDebug ? "pc-debug-btn--active" : null)" 
-                            @onclick="ToggleDebug" title="Scenario & Engine Diagnostics" aria-label="Toggle Debug Diagnostics">
-                        ⚙️ DEBUG
-                    </button>
-                    <button type="button" class="pc-gear-btn" @onclick="ToggleDrawer" title="Scenario Options & Graphics" aria-label="Open Scenario Options">⚙</button>
+                    <button type="button" class="pc-gear-btn" @onclick="ToggleDrawer" title="Scenario Options & Diagnostics" aria-label="Open Scenario Options & Diagnostics">⚙</button>
                     <div class="pc-mode"><ModeSwitch Current="@(_demo ? GameMode.Demo : GameMode.OnePlayer)" Reload="false" /></div>
                 </div>
 
@@ -161,7 +157,7 @@
                                 <b>FOLLOWING RAIDER @_subject:000</b>
                             }
                         </div>
-                        <span class="pc-weather-pill" title="Atmospheric Conditions: @_weatherCondition">⛅ @_weatherCondition</span>
+                        <button type="button" class="pc-weather-pill" @onclick="OpenWeatherDrawer" title="Atmospheric Conditions: @_weatherCondition. Click to change.">⛅ @_weatherCondition</button>
                         <span class="pc-time">@Clock</span>
                         <RadzenButton Text="Pause" Icon="pause" Size="ButtonSize.Small" Disabled="@(_status != "active")" Click="@(_ => PauseAsync(true))" />
                     </div>
@@ -177,7 +173,7 @@
                         @if (_radarExpanded)
                         {
                             <div class="pc-radar-body">
-                                <canvas id="pocapitol-radar" class="pc-radar-canvas" width="220" height="310"></canvas>
+                                <canvas id="pocapitol-radar" class="pc-radar-canvas" width="200" height="270"></canvas>
                                 <div class="pc-radar-legend">
                                     <span><i class="dot-raider"></i>Raider</span>
                                     <span><i class="dot-police"></i>Police</span>
@@ -245,17 +241,17 @@
                             @if (_demo)
                             {
                                 <div class="pc-demo-chip" title="Armed demo variant for autonomous tactical simulation.">
-                                    <strong>DEMO · ARMED VARIANT</strong>
-                                    <span>Autonomous simulation</span>
+                                    <span class="pc-rec-pill" aria-hidden="true"><i></i>LIVE SIMULATION</span>
+                                    <strong>ARMED DEMO · @(_subject > 0 ? $"TRACKING RAIDER {_subject:000}" : "AUTONOMOUS")</strong>
                                 </div>
                             }
                             else if (_role == "raider")
                             {
-                                <div class="pc-beacon-chip">GOLD BEACON · NEXT MILESTONE</div>
+                                <div class="pc-beacon-chip">BEACON · @Objective.ToUpperInvariant()</div>
                             }
                             <div class="pc-hint-chip">@BottomHint</div>
                             <div class="pc-onthisday-chip" title="@OnTheDay.Text">
-                                <span class="pc-eyebrow">@OnTheDay.Time</span>
+                                <span class="pc-eyebrow">HISTORICAL RECORD · @OnTheDay.Time</span>
                                 <span>@OnTheDay.Text</span>
                             </div>
                         </div>
@@ -314,46 +310,7 @@
                     }
                 }
 
-                @* Debug Diagnostics Panel *@
-                @if (_showDebug)
-                {
-                    <div class="pc-debug-anchor">
-                        <div class="pc-debug-card" role="region" aria-label="Debug diagnostics panel">
-                            <div class="pc-debug-card-header">
-                                <strong>DIAGNOSTICS & TELEMETRY</strong>
-                                <button type="button" class="pc-debug-close" @onclick="ToggleDebug" aria-label="Close debug panel">✕</button>
-                            </div>
-                            <div class="pc-debug-grid">
-                                <div><span>SIMULATION FPS:</span><b>@_debugFps FPS</b></div>
-                                <div><span>STATUS / MODE:</span><b>@_status.ToUpperInvariant() / @(_demo ? "DEMO" : _role.ToUpperInvariant())</b></div>
-                                <div><span>SCENARIO CLOCK:</span><b>@Clock (@Math.Round(_elapsed, 1)s)</b></div>
-                                <div><span>MILESTONE:</span><b>@_milestone / @Objectives.Length</b></div>
-                                <div><span>CROWD (RAIDERS):</span><b>@_activeRaiders standing / @(128 - _activeRaiders) fallen</b></div>
-                                <div><span>CAPITOL POLICE:</span><b>@_activePolice standing / @(44 - _activePolice) down</b></div>
-                                <div><span>POLICE LINE:</span><b>@(_lineIndex >= 0 ? LineNames[_lineIndex] : "None") (@_lineIntegrity%)</b></div>
-                                <div><span>SHELTERING STAFF:</span><b>@_sheltering</b></div>
-                                <div><span>DRAW CALLS / TIER:</span><b>@_debugDrawCalls / @_graphicsLabel</b></div>
-                                <div><span>KEYS HELD:</span><b>@(_debugKeys.Length > 0 ? _debugKeys : "None")</b></div>
-                            </div>
-                            <div class="pc-debug-actions">
-                                <RadzenButton Text="Refresh Stats" Size="ButtonSize.ExtraSmall" Click="@RefreshDebugStatsAsync" />
-                                <RadzenButton Text="Force GC" Size="ButtonSize.ExtraSmall" ButtonStyle="ButtonStyle.Secondary" Click="@ForceGC" />
-                                @if (_status == "active")
-                                {
-                                    <RadzenButton Text="@(_health > 30 ? "Damage (-20)" : "Heal (+50)")" 
-                                                  Size="ButtonSize.ExtraSmall" ButtonStyle="ButtonStyle.Warning" Click="@DebugAdjustHealth" />
-                                }
-                            </div>
-                        </div>
-                    </div>
-                }
-
-                @* Lower-Right Pinned YYMMDD Build Stamp *@
-                <div class="pc-version-stamp" title="PoCapitol Engine Build 261110.1 · Alternate History Simulation">
-                    <span>v261110</span>
-                </div>
-
-                @* Slide-out Quick Drawer *@
+                @* Slide-out Scenario Options & Diagnostics Drawer *@
                 @if (_showDrawer)
                 {
                     <div class="pc-drawer-backdrop" @onclick="ToggleDrawer"></div>
@@ -363,41 +320,95 @@
                             <button type="button" class="pc-debug-close" @onclick="ToggleDrawer" aria-label="Close options drawer">✕</button>
                         </div>
                         <div class="pc-drawer-body">
-                            <label class="pc-small">Scenario Mode</label>
-                            <ModeSwitch Current="@(_demo ? GameMode.Demo : GameMode.OnePlayer)" Reload="false" />
-                            
-                            <label class="pc-small" style="margin-top:14px;">Graphics Quality</label>
-                            <RadzenSelectBar TValue="string" Value="@_graphics" Change="@(async (string value) => await SetGraphicsAsync(value))">
-                                <Items>
-                                    <RadzenSelectBarItem Text="Auto" Value="@("auto")" />
-                                    <RadzenSelectBarItem Text="Low" Value="@("low")" />
-                                    <RadzenSelectBarItem Text="High" Value="@("high")" />
-                                </Items>
-                            </RadzenSelectBar>
-                            <p class="pc-small">Active tier: @_graphicsLabel</p>
+                            <div class="pc-drawer-section">
+                                <span class="pc-drawer-section-title">Scenario Role & Difficulty</span>
+                                <label class="pc-small" for="pc-drawer-role">Active Role</label>
+                                <RadzenSelectBar TValue="string" Value="@_role" Change="@(async (string val) => await ChangeRoleInDrawer(val))" id="pc-drawer-role">
+                                    <Items>
+                                        <RadzenSelectBarItem Text="Raider" Value="@("raider")" />
+                                        <RadzenSelectBarItem Text="Police" Value="@("police")" />
+                                        <RadzenSelectBarItem Text="Observer" Value="@("observer")" />
+                                    </Items>
+                                </RadzenSelectBar>
 
-                            <label class="pc-small" style="margin-top:14px;">Switch Role</label>
-                            <RadzenSelectBar TValue="string" Value="@_role" Change="@(async (string val) => await ChangeRoleInDrawer(val))">
-                                <Items>
-                                    <RadzenSelectBarItem Text="Raider" Value="@("raider")" />
-                                    <RadzenSelectBarItem Text="Police" Value="@("police")" />
-                                    <RadzenSelectBarItem Text="Observer" Value="@("observer")" />
-                                </Items>
-                            </RadzenSelectBar>
+                                <label class="pc-small" for="pc-drawer-diff" style="margin-top:10px;">Difficulty</label>
+                                <RadzenSelectBar TValue="string" Value="@_difficulty" Change="@(async (string val) => await ChangeDifficultyInDrawer(val))" id="pc-drawer-diff">
+                                    <Items>
+                                        <RadzenSelectBarItem Text="Story" Value="@("story")" />
+                                        <RadzenSelectBarItem Text="Standard" Value="@("standard")" />
+                                    </Items>
+                                </RadzenSelectBar>
+                            </div>
 
-                            <label class="pc-small" style="margin-top:14px;">Atmospheric Conditions (Open-Meteo)</label>
-                            <RadzenSelectBar TValue="string" Value="@_weatherMode" Change="@(async (string val) => await SetWeatherAsync(val))">
-                                <Items>
-                                    <RadzenSelectBarItem Text="Jan 6 Archive" Value="@("historical")" />
-                                    <RadzenSelectBarItem Text="Live D.C." Value="@("live")" />
-                                    <RadzenSelectBarItem Text="Clear" Value="@("clear")" />
-                                    <RadzenSelectBarItem Text="Winter Gale" Value="@("blizzard")" />
-                                </Items>
-                            </RadzenSelectBar>
-                            <p class="pc-small">@_weatherCondition</p>
+                            <div class="pc-drawer-section">
+                                <span class="pc-drawer-section-title">Visuals & Environment</span>
+                                <label class="pc-small" for="pc-drawer-graphics">Graphics Quality</label>
+                                <RadzenSelectBar TValue="string" Value="@_graphics" Change="@(async (string value) => await SetGraphicsAsync(value))" id="pc-drawer-graphics">
+                                    <Items>
+                                        <RadzenSelectBarItem Text="Auto" Value="@("auto")" />
+                                        <RadzenSelectBarItem Text="Low" Value="@("low")" />
+                                        <RadzenSelectBarItem Text="High" Value="@("high")" />
+                                    </Items>
+                                </RadzenSelectBar>
+                                <p class="pc-small">Active tier: @_graphicsLabel</p>
 
-                            <div style="margin-top:20px;">
-                                <RadzenButton Text="Close Options" Size="ButtonSize.Small" ButtonStyle="ButtonStyle.Secondary" Click="@ToggleDrawer" />
+                                <label class="pc-small" for="pc-drawer-weather" style="margin-top:10px;">Atmospheric Conditions (Open-Meteo)</label>
+                                <RadzenSelectBar TValue="string" Value="@_weatherMode" Change="@(async (string val) => await SetWeatherAsync(val))" id="pc-drawer-weather">
+                                    <Items>
+                                        <RadzenSelectBarItem Text="Jan 6 Archive" Value="@("historical")" />
+                                        <RadzenSelectBarItem Text="Live D.C." Value="@("live")" />
+                                        <RadzenSelectBarItem Text="Clear" Value="@("clear")" />
+                                        <RadzenSelectBarItem Text="Winter Gale" Value="@("blizzard")" />
+                                    </Items>
+                                </RadzenSelectBar>
+                                <p class="pc-small">@_weatherCondition</p>
+                            </div>
+
+                            <div class="pc-drawer-section">
+                                <div class="pc-drawer-toggle-row">
+                                    <span class="pc-drawer-section-title">Tactical Radar</span>
+                                    <RadzenButton Text="@(_radarExpanded ? "Hide Radar" : "Show Radar")" 
+                                                  Icon="@(_radarExpanded ? "visibility_off" : "radar")"
+                                                  Size="ButtonSize.ExtraSmall" 
+                                                  ButtonStyle="@(_radarExpanded ? ButtonStyle.Warning : ButtonStyle.Primary)"
+                                                  Click="@ToggleRadar" />
+                                </div>
+                            </div>
+
+                            <div class="pc-drawer-section">
+                                <button type="button" class="pc-drawer-toggle-btn" @onclick="ToggleDiagnostics">
+                                    <span class="pc-drawer-section-title">Diagnostics & Telemetry</span>
+                                    <span class="pc-small">@(_showDiagnostics ? "▲ Collapse" : "▼ Expand")</span>
+                                </button>
+                                @if (_showDiagnostics)
+                                {
+                                    <div class="pc-debug-grid" style="margin-top:8px;">
+                                        <div><span>SIMULATION FPS:</span><b>@_debugFps FPS</b></div>
+                                        <div><span>STATUS / MODE:</span><b>@_status.ToUpperInvariant() / @(_demo ? "DEMO" : _role.ToUpperInvariant())</b></div>
+                                        <div><span>SCENARIO CLOCK:</span><b>@Clock (@Math.Round(_elapsed, 1)s)</b></div>
+                                        <div><span>MILESTONE:</span><b>@_milestone / @Objectives.Length</b></div>
+                                        <div><span>CROWD (RAIDERS):</span><b>@_activeRaiders standing / @(128 - _activeRaiders) down</b></div>
+                                        <div><span>CAPITOL POLICE:</span><b>@_activePolice standing / @(44 - _activePolice) down</b></div>
+                                        <div><span>POLICE LINE:</span><b>@(_lineIndex >= 0 ? LineNames[_lineIndex] : "None") (@_lineIntegrity%)</b></div>
+                                        <div><span>SHELTERING STAFF:</span><b>@_sheltering</b></div>
+                                        <div><span>DRAW CALLS / TIER:</span><b>@_debugDrawCalls / @_graphicsLabel</b></div>
+                                        <div><span>KEYS HELD:</span><b>@(_debugKeys.Length > 0 ? _debugKeys : "None")</b></div>
+                                    </div>
+                                    <div class="pc-debug-actions">
+                                        <RadzenButton Text="Refresh Stats" Size="ButtonSize.ExtraSmall" Click="@RefreshDebugStatsAsync" />
+                                        <RadzenButton Text="Force GC" Size="ButtonSize.ExtraSmall" ButtonStyle="ButtonStyle.Secondary" Click="@ForceGC" />
+                                        @if (_status == "active")
+                                        {
+                                            <RadzenButton Text="Damage (-20)" Size="ButtonSize.ExtraSmall" ButtonStyle="ButtonStyle.Warning" Click="@(() => DebugAdjustHealthAsync(-20))" />
+                                            <RadzenButton Text="Heal (+50)" Size="ButtonSize.ExtraSmall" ButtonStyle="ButtonStyle.Success" Click="@(() => DebugAdjustHealthAsync(50))" />
+                                        }
+                                    </div>
+                                }
+                            </div>
+
+                            <div class="pc-drawer-footer">
+                                <span class="pc-drawer-version">PoCapitol Build 261110.1 · Alternate History Simulation</span>
+                                <RadzenButton Text="Close" Size="ButtonSize.Small" ButtonStyle="ButtonStyle.Secondary" Click="@ToggleDrawer" />
                             </div>
                         </div>
                     </div>
@@ -451,8 +462,9 @@
     private bool _demo;
     private string? _mode;
     private int _activeRaiders = 128, _activePolice = 44, _totalPolice = 44, _subject, _lineIndex, _lineIntegrity = 100, _sheltering = 64;
-    private bool _showDebug;
+    private bool _showDiagnostics = true;
     private bool _showDrawer;
+    private bool _radarNeedsInit;
     private int _selectedIntroTab = 0;
     private int _debugFps = 60;
     private int _debugDrawCalls = 0;
@@ -523,6 +535,12 @@
     protected override async Task OnAfterRenderAsync(bool firstRender)
     {
         if (firstRender) await LoadAsync();
+        if (_radarNeedsInit && _radarExpanded)
+        {
+            _radarNeedsInit = false;
+            try { await JS.InvokeVoidAsync("PoCapitol.initRadar", "pocapitol-radar"); }
+            catch (JSException) {}
+        }
     }
 
     private async Task LoadAsync()
@@ -577,10 +595,24 @@
         catch (JSException ex) { await OnEngineError(ex.Message); }
     }
 
-    private void ToggleDebug()
+    private void ToggleDiagnostics()
     {
-        _showDebug = !_showDebug;
-        if (_showDebug) _ = RefreshDebugStatsAsync();
+        _showDiagnostics = !_showDiagnostics;
+        if (_showDiagnostics) _ = RefreshDebugStatsAsync();
+    }
+
+    private void OpenWeatherDrawer() => _showDrawer = true;
+
+    private async Task ChangeDifficultyInDrawer(string diff)
+    {
+        _difficulty = diff;
+        await StartAsync();
+    }
+
+    private async Task DebugAdjustHealthAsync(int delta)
+    {
+        try { await JS.InvokeVoidAsync("PoCapitol.adjustHealth", delta); }
+        catch (JSException) {}
     }
 
     private void ToggleDrawer() => _showDrawer = !_showDrawer;
@@ -612,13 +644,6 @@
     {
         GC.Collect();
         GC.WaitForPendingFinalizers();
-        StateHasChanged();
-    }
-
-    private void DebugAdjustHealth()
-    {
-        if (_health > 30) _health -= 20;
-        else _health = Math.Min(100, _health + 50);
         StateHasChanged();
     }
 
@@ -713,11 +738,7 @@
         _radarExpanded = !_radarExpanded;
         if (_radarExpanded)
         {
-            _ = Task.Run(async () =>
-            {
-                await Task.Delay(50);
-                try { await JS.InvokeVoidAsync("PoCapitol.initRadar", "pocapitol-radar"); } catch {}
-            });
+            _radarNeedsInit = true;
         }
     }
 

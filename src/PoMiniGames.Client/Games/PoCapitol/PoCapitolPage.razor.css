@@ -111,27 +111,24 @@
 .pc-aftermath { margin: 14px 0; padding: 12px 14px; border-left: 2px solid #7fa9d6; background: #ffffff07; }
 .pc-aftermath strong { font-size: 12px; letter-spacing: 0.06em; color: #cfe0f1; }
 .pc-aftermath p { font-size: 12px; margin: 6px 0 0; }
-.pc-debug-anchor { position: absolute; top: 68px; right: 32px; z-index: 10; display: flex; flex-direction: column; align-items: flex-end; gap: 8px; }
-.pc-debug-btn { display: inline-flex; align-items: center; gap: 6px; padding: 5px 10px; background: #0c1a29d9; border: 1px solid #d5b77c55; border-radius: 6px; color: #e7cd99; font-size: 10.5px; font-weight: 700; letter-spacing: 0.08em; cursor: pointer; backdrop-filter: blur(8px); transition: all 180ms ease; box-shadow: 0 4px 16px #00000060; }
-.pc-debug-btn:hover { background: #162c44; border-color: #f2cf87; transform: translateY(-1px); }
-.pc-debug-btn--active { background: #b98c4544; border-color: #dfc285; color: #fff; }
-.pc-debug-icon { font-size: 12px; }
-.pc-debug-card { width: min(340px, calc(100vw - 32px)); padding: 14px 16px; background: #0b1724f0; border: 1px solid #d5b77c80; border-radius: 8px; box-shadow: 0 12px 36px #000000aa; backdrop-filter: blur(16px); color: #cdd6dc; font-size: 11px; animation: pc-fade-in 180ms ease; }
-.pc-debug-card-header { display: flex; justify-content: space-between; align-items: center; border-bottom: 1px solid #ffffff18; padding-bottom: 8px; margin-bottom: 8px; font-size: 10.5px; color: #e7cd99; letter-spacing: 0.1em; }
-.pc-debug-close { background: none; border: none; color: #a4b3bf; cursor: pointer; font-size: 13px; padding: 2px 6px; }
-.pc-debug-close:hover { color: #fff; }
+.pc-drawer-backdrop { position: absolute; inset: 0; z-index: 8; background: #00000066; backdrop-filter: blur(4px); animation: pc-fade-in 200ms ease; }
+.pc-drawer { position: absolute; top: 0; right: 0; bottom: 0; width: min(380px, 88vw); z-index: 9; background: #0f1d2cf8; border-left: 1px solid #d5b77c55; box-shadow: -8px 0 32px #00000088; padding: 22px; display: flex; flex-direction: column; gap: 14px; animation: pc-slide-left 220ms ease; overflow-y: auto; }
+.pc-drawer-header { display: flex; justify-content: space-between; align-items: center; border-bottom: 1px solid #ffffff1a; padding-bottom: 10px; }
+.pc-drawer-header h3 { margin: 0; font-family: Georgia, serif; font-size: 19px; color: #f6f0e2; }
+.pc-drawer-body { display: flex; flex-direction: column; gap: 14px; }
+.pc-drawer-section { display: flex; flex-direction: column; gap: 8px; padding-bottom: 12px; border-bottom: 1px solid #ffffff10; }
+.pc-drawer-section-title { font-size: 11px; font-weight: 700; letter-spacing: 0.08em; color: #dfc285; text-transform: uppercase; }
+.pc-drawer-toggle-row { display: flex; justify-content: space-between; align-items: center; }
+.pc-drawer-toggle-btn { display: flex; justify-content: space-between; align-items: center; width: 100%; background: none; border: none; padding: 0; text-align: left; cursor: pointer; color: inherit; }
+.pc-drawer-footer { display: flex; flex-direction: column; gap: 10px; margin-top: 10px; padding-top: 12px; border-top: 1px solid #ffffff14; }
+.pc-drawer-version { font-size: 9.5px; font-family: ui-monospace, Consolas, monospace; color: #8fa1b1; }
 .pc-debug-grid { display: grid; grid-template-columns: 1fr; gap: 4px; font-family: ui-monospace, Consolas, monospace; font-size: 10px; }
 .pc-debug-grid div { display: flex; justify-content: space-between; gap: 8px; border-bottom: 1px dotted #ffffff10; padding: 2px 0; }
 .pc-debug-grid span { color: #8da2b3; }
 .pc-debug-grid b { color: #dfc285; font-weight: normal; }
 .pc-debug-actions { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 10px; padding-top: 8px; border-top: 1px solid #ffffff18; }
-.pc-version-stamp { position: absolute; bottom: 8px; right: 12px; z-index: 10; font: 700 10px/1 ui-monospace, Consolas, monospace; letter-spacing: 0.1em; color: #ffffff44; pointer-events: auto; user-select: none; transition: color 180ms ease, opacity 180ms ease; }
-.pc-version-stamp:hover { color: #d5b77c; opacity: 1; text-shadow: 0 0 8px #d5b77c66; }
-.pc-drawer-backdrop { position: absolute; inset: 0; z-index: 8; background: #00000066; backdrop-filter: blur(4px); animation: pc-fade-in 200ms ease; }
-.pc-drawer { position: absolute; top: 0; right: 0; bottom: 0; width: min(360px, 85vw); z-index: 9; background: #0f1d2cf8; border-left: 1px solid #d5b77c55; box-shadow: -8px 0 32px #00000088; padding: 24px; display: flex; flex-direction: column; gap: 16px; animation: pc-slide-left 220ms ease; overflow-y: auto; }
-.pc-drawer-header { display: flex; justify-content: space-between; align-items: center; border-bottom: 1px solid #ffffff1a; padding-bottom: 12px; }
-.pc-drawer-header h3 { margin: 0; font-family: Georgia, serif; font-size: 20px; color: #f6f0e2; }
-.pc-drawer-body { display: flex; flex-direction: column; gap: 10px; }
+.pc-debug-close { background: none; border: none; color: #a4b3bf; cursor: pointer; font-size: 13px; padding: 2px 6px; }
+.pc-debug-close:hover { color: #fff; }
 @keyframes pc-slide-left { from { transform: translateX(100%); } to { transform: translateX(0); } }
 @keyframes pc-fade-in { from { opacity: 0; } to { opacity: 1; } }
 @media (pointer: coarse) {
@@ -184,6 +181,14 @@
     letter-spacing: 0.04em;
     backdrop-filter: blur(8px);
     white-space: nowrap;
+    cursor: pointer;
+    transition: all 160ms ease;
+}
+.pc-weather-pill:hover {
+    background: #172d42;
+    border-color: #f2cf87;
+    color: #fff;
+    transform: translateY(-1px);
 }
 
 /* Tactical Radar & Heatmap HUD */
@@ -231,19 +236,19 @@
 .pc-radar-body {
     margin-top: 6px;
     padding: 8px;
-    background: #0a131df2;
-    border: 1px solid #d5b77c70;
+    background: #070e17f2;
+    border: 1px solid #d5b77c80;
     border-radius: 8px;
-    box-shadow: 0 12px 32px #00000099;
+    box-shadow: 0 12px 32px #000000aa;
     backdrop-filter: blur(16px);
     animation: pc-fade-in 180ms ease;
 }
 .pc-radar-canvas {
     display: block;
-    width: 220px;
-    height: 310px;
+    width: 200px;
+    height: 270px;
     border-radius: 4px;
-    border: 1px solid #ffffff14;
+    border: 1px solid #5a8bb855;
     cursor: crosshair;
 }
 .pc-radar-legend {

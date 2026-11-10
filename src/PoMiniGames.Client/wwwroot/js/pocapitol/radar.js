@@ -87,11 +87,11 @@ export function createRadar(canvas, { onSelectUnit } = {}) {
         ctx.clearRect(0, 0, width, height);
 
         // 1. Tactical Blueprint Background
-        ctx.fillStyle = '#0c1118';
+        ctx.fillStyle = '#070e17';
         ctx.fillRect(0, 0, width, height);
 
-        // Subtle tactical grid
-        ctx.strokeStyle = 'rgba(70, 100, 140, 0.12)';
+        // Crisp tactical grid
+        ctx.strokeStyle = 'rgba(70, 130, 200, 0.22)';
         ctx.lineWidth = 1 * cachedDpr;
         const stepX = width / 8, stepY = height / 14;
         ctx.beginPath();
@@ -100,9 +100,9 @@ export function createRadar(canvas, { onSelectUnit } = {}) {
         ctx.stroke();
 
         // 2. Blueprint Architectural Spaces
-        ctx.fillStyle = 'rgba(25, 36, 52, 0.7)';
-        ctx.strokeStyle = 'rgba(90, 140, 190, 0.35)';
-        ctx.lineWidth = 1.2 * cachedDpr;
+        ctx.fillStyle = 'rgba(22, 48, 80, 0.75)';
+        ctx.strokeStyle = 'rgba(110, 190, 255, 0.7)';
+        ctx.lineWidth = 1.4 * cachedDpr;
 
         for (const area of areas) {
             const p0 = toCanvas(area.x - area.w / 2, area.z - area.d / 2);
@@ -111,6 +111,12 @@ export function createRadar(canvas, { onSelectUnit } = {}) {
             ctx.fillRect(p0.x, p0.y, rw, rh);
             ctx.strokeRect(p0.x, p0.y, rw, rh);
 
+            // Room label
+            ctx.fillStyle = 'rgba(180, 220, 255, 0.7)';
+            ctx.font = `bold ${Math.round(7.5 * cachedDpr)}px sans-serif`;
+            const shortName = area.name.replace('West front grounds', 'Lawn').replace('Connecting doorway', 'Doorway');
+            ctx.fillText(shortName, p0.x + 4 * cachedDpr, p0.y + 10 * cachedDpr);
+
             // Special Rotunda circle highlight
             if (area.name === 'Rotunda') {
                 const center = toCanvas(area.x, area.z);
@@ -118,14 +124,14 @@ export function createRadar(canvas, { onSelectUnit } = {}) {
                 const ry = (area.d / 2 / WORLD_D) * height;
                 ctx.beginPath();
                 ctx.ellipse(center.x, center.y, rx, ry, 0, 0, Math.PI * 2);
-                ctx.strokeStyle = 'rgba(120, 180, 240, 0.4)';
+                ctx.strokeStyle = 'rgba(140, 210, 255, 0.85)';
                 ctx.stroke();
             }
         }
 
         // Obstacles (Inauguration bleachers)
-        ctx.fillStyle = 'rgba(60, 45, 35, 0.8)';
-        ctx.strokeStyle = 'rgba(160, 120, 80, 0.5)';
+        ctx.fillStyle = 'rgba(75, 55, 40, 0.85)';
+        ctx.strokeStyle = 'rgba(210, 160, 100, 0.7)';
         for (const obs of obstacles) {
             const p0 = toCanvas(obs.x - obs.w / 2, obs.z - obs.d / 2);
             const p1 = toCanvas(obs.x + obs.w / 2, obs.z + obs.d / 2);
@@ -198,9 +204,9 @@ export function createRadar(canvas, { onSelectUnit } = {}) {
 
             // Line label and integrity tag
             if (!broken) {
-                ctx.fillStyle = '#b0d0ff';
-                ctx.font = `${Math.round(8 * cachedDpr)}px monospace`;
-                ctx.fillText(`L${i + 1} ${Math.round(integrity)}%`, p1.x + 3 * cachedDpr, p1.y + 3 * cachedDpr);
+                ctx.fillStyle = '#d0e5ff';
+                ctx.font = `bold ${Math.round(8.5 * cachedDpr)}px monospace`;
+                ctx.fillText(`L${i + 1} ${Math.round(integrity)}%`, p1.x + 4 * cachedDpr, p1.y + 3 * cachedDpr);
             }
         }
 
@@ -214,14 +220,14 @@ export function createRadar(canvas, { onSelectUnit } = {}) {
             const downed = c.health <= 0;
 
             ctx.fillStyle = downed
-                ? 'rgba(120, 120, 130, 0.4)'
+                ? 'rgba(140, 140, 150, 0.45)'
                 : c.temperament === 'medic'
-                ? '#50ff90'
+                ? '#55efc4'
                 : c.temperament === 'pusher'
                 ? '#ff9f43'
                 : '#54a0ff';
 
-            const dotR = (downed ? 1.5 : 2.2) * cachedDpr;
+            const dotR = (downed ? 1.6 : 2.5) * cachedDpr;
             ctx.beginPath();
             ctx.arc(p.x, p.y, dotR, 0, Math.PI * 2);
             ctx.fill();
@@ -233,11 +239,16 @@ export function createRadar(canvas, { onSelectUnit } = {}) {
             const p = toCanvas(e.x, e.z);
             const downed = e.health <= 0;
 
-            ctx.fillStyle = downed ? 'rgba(90, 80, 90, 0.35)' : '#00d2d3';
-            const dotR = (downed ? 1.4 : 2.4) * cachedDpr;
+            ctx.fillStyle = downed ? 'rgba(100, 90, 100, 0.4)' : '#00d2d3';
+            const dotR = (downed ? 1.5 : 2.7) * cachedDpr;
             ctx.beginPath();
             ctx.arc(p.x, p.y, dotR, 0, Math.PI * 2);
             ctx.fill();
+            if (!downed) {
+                ctx.strokeStyle = '#ffffff88';
+                ctx.lineWidth = 0.6 * cachedDpr;
+                ctx.stroke();
+            }
         }
 
         // Player / Subject Beacon
@@ -246,14 +257,14 @@ export function createRadar(canvas, { onSelectUnit } = {}) {
             const p = toCanvas(playerOrSubject.x, playerOrSubject.z);
             const pulse = (Math.sin(pulseTime * 5) + 1) * 0.5;
             ctx.strokeStyle = '#feca57';
-            ctx.lineWidth = 1.5 * cachedDpr;
+            ctx.lineWidth = 1.8 * cachedDpr;
             ctx.beginPath();
-            ctx.arc(p.x, p.y, (4 + pulse * 4) * cachedDpr, 0, Math.PI * 2);
+            ctx.arc(p.x, p.y, (5 + pulse * 5) * cachedDpr, 0, Math.PI * 2);
             ctx.stroke();
 
-            ctx.fillStyle = '#feca57';
+            ctx.fillStyle = '#ffd32a';
             ctx.beginPath();
-            ctx.arc(p.x, p.y, 2.8 * cachedDpr, 0, Math.PI * 2);
+            ctx.arc(p.x, p.y, 3.2 * cachedDpr, 0, Math.PI * 2);
             ctx.fill();
         }
 
@@ -278,5 +289,5 @@ export function createRadar(canvas, { onSelectUnit } = {}) {
         // cleanup listeners
     }
 
-    return { render, destroy, dispose: destroy };
+    return { render, destroy, dispose: destroy, canvas };
 }
