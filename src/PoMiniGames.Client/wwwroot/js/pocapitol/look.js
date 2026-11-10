@@ -296,12 +296,16 @@ export function addSubsurfaceScattering(material, { wrap = 0.38, scatterColor = 
                 uniform vec3 uSssColor;
                 uniform float uSssWrap;
                 uniform float uSssIntensity;`)
-            .replace('#include <lights_fragment_begin>', `#include <lights_fragment_begin>
-                // Wrap lighting with dermis scatter bleed at light-shadow terminator
-                float sssDot = dot(geometryNormal, directLight.direction);
-                float sssWrapVal = max(0.0, (sssDot + uSssWrap) / (1.0 + uSssWrap));
-                float terminator = smoothstep(-0.25, 0.25, -abs(sssDot));
-                reflectedLight.directDiffuse += uSssColor * directLight.color * terminator * uSssIntensity * sssWrapVal;`);
+            .replace('#include <lights_fragment_end>', `#include <lights_fragment_end>
+                #if NUM_DIR_LIGHTS > 0
+                for ( int sssIdx = 0; sssIdx < NUM_DIR_LIGHTS; sssIdx ++ ) {
+                    vec3 sssLightDir = directionalLights[ sssIdx ].direction;
+                    float sssDot = dot( normal, sssLightDir );
+                    float sssWrapVal = max( 0.0, ( sssDot + uSssWrap ) / ( 1.0 + uSssWrap ) );
+                    float sssTerm = smoothstep( -0.28, 0.28, -abs( sssDot ) );
+                    reflectedLight.directDiffuse += uSssColor * directionalLights[ sssIdx ].color * sssTerm * uSssIntensity * sssWrapVal;
+                }
+                #endif`);
     };
     material.customProgramCacheKey = () => 'pocapitol-ssss';
     return material;

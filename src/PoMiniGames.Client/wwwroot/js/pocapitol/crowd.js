@@ -175,7 +175,7 @@ function createBodies(scene, t, capacity) {
     geometry.setAttribute('color', color);
     geometry.setIndex(new THREE.BufferAttribute(index, 1));
     geometry.setDrawRange(0, 0);
-    const material = new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.82 });
+    const material = addSubsurfaceScattering(new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.82 }));
     // The skeleton's bones are never posed through the scene graph: matrices are written straight
     // into its bone texture, so a single placeholder bone stands in for all of them.
     const placeholder = new THREE.Bone(), identity = new THREE.Matrix4();
