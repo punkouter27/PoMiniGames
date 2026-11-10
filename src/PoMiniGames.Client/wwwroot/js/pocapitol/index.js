@@ -1,5 +1,6 @@
 import { createAttempt, advance, shove, setPaused, selectLeader, frontLine } from './world.js';
 import { createScene } from './scene.js';
+import { loadFigure } from './crowd.js';
 import { createAudio } from './audio.js';
 import { createGovernor, MODES } from './quality.js';
 import { ensure, remove } from '../radzenTheme.js';
@@ -21,7 +22,10 @@ async function init(hostId, reference) {
     const host = document.getElementById(hostId);
     if (!host) throw new Error('PoCapitol scene container was not found.');
     delete host.dataset.interfaceError;
-    const view = createScene(host);
+    // The rigged figure: a small glb the service worker caches, built in code if it cannot load.
+    const figure = await loadFigure();
+    if (!host.isConnected) return;
+    const view = createScene(host, { figure });
     const tier = window.PoQuality?.tier?.() ?? 'high';
     const g = {
         host, view, reference, state: createAttempt(), started: false, disposed: false,

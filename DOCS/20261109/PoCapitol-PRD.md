@@ -299,6 +299,26 @@ The owner asked for all ten items of a scene-realism review. Delivered, still st
 
 All of it scales down with the existing graphics ladder (Auto, Low, High).
 
+### Rigged figures and in-play focus (2026-11-10, third request)
+
+The owner chose rigged models over stylized blocks, and depth of field during play.
+
+1. Near figures are one low-poly rigged person: 17 bones, six tinted regions (coat, sleeves,
+   trousers, skin, boots, gloves), about 900 vertices, no face. It ships as
+   `wwwroot/models/pocapitol/figure.glb` (41 KB), written by `scripts/pocapitol-figure.mjs` from
+   `js/pocapitol/rig.js`; if the file cannot load, the game builds the same figure in code.
+2. All near figures are one skinned mesh with a bone texture: one draw call per pass, and
+   shadows, ambient occlusion and depth of field all see the posed bodies.
+3. Poses: walking with bending knees and elbows, idle weight shifts and glances, pushing with a
+   forward lean, filming with the phone at eye level, flag poles in hand, shields on the forearm,
+   baton and spray, aiming in the armed demo, staggering, sitting when out, stooping when helped,
+   lying when hit in the armed demo.
+4. Hats, hoods, helmets, visors, scarves, vests and backpacks follow the head, neck and chest
+   bones; phones, flags, shields, batons and guns are held at the hand and stay upright.
+5. In play, the view loses focus briefly when the player is struck, for longer on going down,
+   and when a flash-bang lands within 12 m (half strength under reduced flashing or motion).
+   Top quality only, like every depth of field.
+
 ### Limits that still hold
 
 - Staff and members are non-combatants. They cannot be targeted, reached or harmed in any

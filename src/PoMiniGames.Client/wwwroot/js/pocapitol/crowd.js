@@ -1,5 +1,6 @@
 import * as THREE from 'three';
 import { addWave, billboardChunk } from './look.js';
+import { BONES as RIG_BONES, REGIONS, buildFigure } from './rig.js';
 
 // Original procedural artwork; references inform clothing and equipment, not real identities.
 export function flagTexture(kind = 'us') {
@@ -63,24 +64,282 @@ function trait(id, salt) {
     const v = Math.sin((id + 11) * 12.9898 + salt * 78.233) * 43758.5453;
     return v - Math.floor(v);
 }
-// Joint pivots in a 1.0-height, 1.0-build body: hips, and shoulders slightly forward.
-const HIP = 0.74, SHOULDER = 1.5, SHOULDER_Z = -0.12;
 
-export function createCrowd(scene, capacity, { time, groundHeight, shadowTexture }) {
+// ---------------------------------------------------------------- the rigged figure
+
+const FIGURE_URL = 'models/pocapitol/figure.glb';
+let figurePromise = null;
+/**
+ * The rigged figure (wwwroot/models/pocapitol/figure.glb, written by rig.js). If it cannot be
+ * fetched the same figure is built in code, so the game never waits on it or breaks without it.
+ */
+export function loadFigure() {
+    figurePromise ??= (async () => {
+        try {
+            const { GLTFLoader } = await import('three/addons/loaders/GLTFLoader.js');
+            return fromGltf(await new GLTFLoader().loadAsync(FIGURE_URL));
+        } catch (error) {
+            console.warn('PoCapitol: figure.glb unavailable, building the figure in code.', error);
+            return fromRig(buildFigure());
+        }
+    })();
+    return figurePromise;
+}
+function fromGltf(gltf) {
+    gltf.scene.updateMatrixWorld(true);
+    const meshes = [];
+    gltf.scene.traverse(o => { if (o.isSkinnedMesh) meshes.push(o); });
+    if (!meshes.length) throw new Error('figure.glb has no skinned mesh.');
+    const { bones, boneInverses } = meshes[0].skeleton;
+    const rest = new THREE.Matrix4(), point = new THREE.Vector3();
+    const heads = bones.map((_, i) => point.setFromMatrixPosition(rest.copy(boneInverses[i]).invert()).toArray());
+    const regions = meshes.map(m => {
+        if (m.skeleton.bones.some((b, i) => b !== bones[i])) throw new Error('figure.glb meshes must share one skeleton.');
+        const geometry = new THREE.BufferGeometry();
+        for (const name of ['position', 'normal', 'skinIndex', 'skinWeight']) {
+            const source = m.geometry.getAttribute(name);
+            if (!source) throw new Error(`figure.glb is missing ${name}.`);
+            geometry.setAttribute(name, source.clone());
+        }
+        geometry.setIndex(m.geometry.index.clone());
+        geometry.applyMatrix4(m.bindMatrix);
+        return { name: m.material.name, geometry };
+    });
+    return template(bones.map(b => b.name), bones.map(b => bones.indexOf(b.parent)), heads, regions);
+}
+function fromRig(figure) {
+    const names = figure.bones.map(b => b.name);
+    const regions = figure.regions.map(r => {
+        const geometry = new THREE.BufferGeometry();
+        geometry.setAttribute('position', new THREE.BufferAttribute(r.positions, 3));
+        geometry.setAttribute('normal', new THREE.BufferAttribute(r.normals, 3));
+        geometry.setAttribute('skinIndex', new THREE.BufferAttribute(r.joints, 4));
+        geometry.setAttribute('skinWeight', new THREE.BufferAttribute(r.weights, 4));
+        geometry.setIndex(new THREE.BufferAttribute(r.indices, 1));
+        return { name: r.name, geometry };
+    });
+    return template(names, figure.bones.map(b => names.indexOf(b.parent)), figure.bones.map(b => b.head), regions);
+}
+/** One figure flattened: vertex streams, its region per vertex, bones in parents-first order. */
+function template(names, parents, heads, regions) {
+    const order = [], seen = new Set();
+    const visit = i => { if (seen.has(i)) return; if (parents[i] >= 0) visit(parents[i]); seen.add(i); order.push(i); };
+    names.forEach((_, i) => visit(i));
+    let vertices = 0, indices = 0;
+    for (const r of regions) { vertices += r.geometry.attributes.position.count; indices += r.geometry.index.count; }
+    const t = {
+        bones: names.length, names, parents, order, heads: heads.map(h => new THREE.Vector3(...h)),
+        canon: names.map(n => RIG_BONES.findIndex(b => b.name === n)),
+        position: new Float32Array(vertices * 3), normal: new Float32Array(vertices * 3),
+        skinIndex: new Uint16Array(vertices * 4), skinWeight: new Float32Array(vertices * 4),
+        region: new Uint8Array(vertices), index: new Uint32Array(indices), vertices, indices,
+    };
+    let v = 0, k = 0;
+    for (const r of regions) {
+        const g = r.geometry, at = REGIONS.indexOf(r.name), base = v;
+        const { position, normal, skinIndex, skinWeight } = g.attributes;
+        for (let i = 0; i < position.count; i++, v++) {
+            t.position.set([position.getX(i), position.getY(i), position.getZ(i)], v * 3);
+            t.normal.set([normal.getX(i), normal.getY(i), normal.getZ(i)], v * 3);
+            t.skinIndex.set([skinIndex.getX(i), skinIndex.getY(i), skinIndex.getZ(i), skinIndex.getW(i)], v * 4);
+            t.skinWeight.set([skinWeight.getX(i), skinWeight.getY(i), skinWeight.getZ(i), skinWeight.getW(i)], v * 4);
+            t.region[v] = at < 0 ? 0 : at;
+        }
+        for (let i = 0; i < g.index.count; i++) t.index[k++] = base + g.index.getX(i);
+        g.dispose();
+    }
+    return t;
+}
+
+/**
+ * Every near figure in one skinned mesh: the template copied once per slot, each copy bound to
+ * its own run of bones in a single bone texture. One draw call per pass, and because it is a
+ * real SkinnedMesh the shadow, ambient-occlusion and depth-of-field passes all see the pose.
+ */
+function createBodies(scene, t, capacity) {
+    const V = t.vertices, B = t.bones;
+    const position = new Float32Array(V * capacity * 3), normal = new Float32Array(V * capacity * 3);
+    const skinIndex = new Uint16Array(V * capacity * 4), skinWeight = new Float32Array(V * capacity * 4);
+    const index = new Uint32Array(t.indices * capacity), colors = new Float32Array(V * capacity * 3);
+    for (let s = 0; s < capacity; s++) {
+        position.set(t.position, s * V * 3); normal.set(t.normal, s * V * 3); skinWeight.set(t.skinWeight, s * V * 4);
+        for (let i = 0; i < V * 4; i++) skinIndex[s * V * 4 + i] = t.skinIndex[i] + s * B;
+        for (let i = 0; i < t.indices; i++) index[s * t.indices + i] = t.index[i] + s * V;
+    }
+    const geometry = new THREE.BufferGeometry();
+    geometry.setAttribute('position', new THREE.BufferAttribute(position, 3));
+    geometry.setAttribute('normal', new THREE.BufferAttribute(normal, 3));
+    geometry.setAttribute('skinIndex', new THREE.BufferAttribute(skinIndex, 4));
+    geometry.setAttribute('skinWeight', new THREE.BufferAttribute(skinWeight, 4));
+    const color = new THREE.BufferAttribute(colors, 3).setUsage(THREE.DynamicDrawUsage);
+    geometry.setAttribute('color', color);
+    geometry.setIndex(new THREE.BufferAttribute(index, 1));
+    geometry.setDrawRange(0, 0);
+    const material = new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.88 });
+    // The skeleton's bones are never posed through the scene graph: matrices are written straight
+    // into its bone texture, so a single placeholder bone stands in for all of them.
+    const placeholder = new THREE.Bone(), identity = new THREE.Matrix4();
+    const skeleton = new THREE.Skeleton(new Array(B * capacity).fill(placeholder), new Array(B * capacity).fill(identity));
+    skeleton.computeBoneTexture();
+    skeleton.update = () => {};
+    const mesh = new THREE.SkinnedMesh(geometry, material);
+    mesh.bind(skeleton, new THREE.Matrix4());
+    mesh.frustumCulled = false;
+    mesh.castShadow = mesh.receiveShadow = true;
+    scene.add(mesh);
+
+    const S = Array.from({ length: B }, () => new THREE.Matrix4());
+    const local = new THREE.Matrix4(), euler = new THREE.Euler(), turned = new THREE.Vector3(), out = new THREE.Matrix4();
+    const keys = new Array(capacity).fill(null), looks = new Array(capacity).fill(null), slots = new Map();
+    let used = new Set();
+    return {
+        mesh,
+        boneOf(name) { return t.names.indexOf(name); },
+        /** A stable slot per person, so their colours are written once, not every frame. */
+        claim(key) {
+            let slot = slots.get(key);
+            if (slot === undefined) { slot = keys.indexOf(null); keys[slot] = key; slots.set(key, slot); }
+            used.add(slot);
+            return slot;
+        },
+        paint(slot, look, tint) {
+            if (looks[slot] === look) return;
+            looks[slot] = look;
+            for (let v = 0; v < V; v++) tint(t.region[v]).toArray(colors, (slot * V + v) * 3);
+            color.addUpdateRange(slot * V * 3, V * 3); color.needsUpdate = true;
+        },
+        /** World matrices of the slot's bones: figure × rest-to-posed for each joint. */
+        pose(slot, figure, pose) {
+            const bones = skeleton.boneMatrices;
+            for (const i of t.order) {
+                const c = t.canon[i], h = t.heads[i];
+                if (c >= 0) euler.set(pose[c * 3], pose[c * 3 + 1], pose[c * 3 + 2]); else euler.set(0, 0, 0);
+                local.makeRotationFromEuler(euler);
+                turned.copy(h).applyMatrix4(local);
+                local.setPosition(h.x - turned.x, h.y - turned.y, h.z - turned.z);
+                if (t.parents[i] >= 0) S[i].multiplyMatrices(S[t.parents[i]], local); else S[i].copy(local);
+                out.multiplyMatrices(figure, S[i]).toArray(bones, (slot * B + i) * 16);
+            }
+        },
+        boneMatrix(slot, bone, target) { return target.fromArray(skeleton.boneMatrices, (slot * B + bone) * 16); },
+        /** Frees the slots nobody used this frame and trims the draw to the highest one in use. */
+        finish() {
+            let top = -1;
+            for (let s = 0; s < capacity; s++) {
+                if (used.has(s)) { top = s; continue; }
+                if (keys[s] !== null) { slots.delete(keys[s]); keys[s] = null; looks[s] = null; }
+                skeleton.boneMatrices.fill(0, s * B * 16, (s + 1) * B * 16);
+            }
+            used = new Set();
+            geometry.setDrawRange(0, (top + 1) * t.indices);
+            skeleton.boneTexture.needsUpdate = true;
+        },
+        dispose() { scene.remove(mesh); geometry.dispose(); material.dispose(); skeleton.dispose(); },
+    };
+}
+
+// ---------------------------------------------------------------- poses
+
+const K = Object.fromEntries(RIG_BONES.map((b, i) => [b.name, i]));
+function rot(pose, name, x, y = 0, z = 0) { const i = K[name] * 3; pose[i] += x; pose[i + 1] += y; pose[i + 2] += z; }
+/**
+ * Joint angles (radians, rest-relative, about the figure's own axes) for one person this frame.
+ * Positive X swings a hanging limb forward and tips an upright part back. Returns how the whole
+ * figure sits: `drop` lowers it (sitting), `fall` lays it down.
+ */
+function poseFor(b, a, t, pose) {
+    pose.fill(0);
+    const id = a.id;
+    if (a.health <= 0) {
+        if (b.lying) {
+            rot(pose, 'upperArm_L', 0.2, 0, -0.55); rot(pose, 'upperArm_R', 0.3, 0, 0.5);
+            rot(pose, 'foreArm_L', 0.4); rot(pose, 'foreArm_R', 0.25);
+            rot(pose, 'thigh_L', 0.25); rot(pose, 'shin_L', -0.45); rot(pose, 'head', 0.15, 0.4 * (trait(id, 5) - 0.5));
+            return { drop: 0, fall: Math.PI / 2, lift: 0.2 };
+        }
+        if (b.stooped) {
+            // Being helped away: bent over, knees soft.
+            rot(pose, 'spine', -0.35); rot(pose, 'chest', -0.15); rot(pose, 'head', -0.2);
+            for (const s of ['L', 'R']) { rot(pose, `thigh_${s}`, 0.45); rot(pose, `shin_${s}`, -0.8); rot(pose, `foot_${s}`, 0.35); }
+            rot(pose, 'upperArm_L', 0.35); rot(pose, 'foreArm_L', 0.5); rot(pose, 'upperArm_R', 0.1, 0, 0.6);
+            return { drop: 0.1, fall: 0, lift: 0 };
+        }
+        // Sitting on the ground, knees up, forearms on the knees.
+        rot(pose, 'spine', -0.2); rot(pose, 'chest', -0.12); rot(pose, 'head', -0.3);
+        for (const s of ['L', 'R']) {
+            rot(pose, `thigh_${s}`, 2); rot(pose, `shin_${s}`, -1.5); rot(pose, `foot_${s}`, -0.5);
+            rot(pose, `upperArm_${s}`, 0.75); rot(pose, `foreArm_${s}`, 0.9);
+        }
+        return { drop: 0.6, fall: 0, lift: 0 };
+    }
+    // Legs and arms: a walking gait, or standing with the weight shifting.
+    if (b.moving) {
+        const p = b.phase, a0 = Math.sin(p) * 0.5;
+        rot(pose, 'thigh_L', a0); rot(pose, 'thigh_R', -a0);
+        const kneeL = 0.08 + 0.7 * Math.max(0, Math.cos(p)), kneeR = 0.08 + 0.7 * Math.max(0, -Math.cos(p));
+        rot(pose, 'shin_L', -kneeL); rot(pose, 'shin_R', -kneeR);
+        rot(pose, 'foot_L', -(a0 - kneeL) * 0.5); rot(pose, 'foot_R', -(-a0 - kneeR) * 0.5);
+        rot(pose, 'upperArm_L', -0.7 * a0); rot(pose, 'upperArm_R', 0.7 * a0);
+        rot(pose, 'foreArm_L', 0.15 + 0.35 * Math.max(0, -a0)); rot(pose, 'foreArm_R', 0.15 + 0.35 * Math.max(0, a0));
+        rot(pose, 'hips', 0, -0.08 * a0); rot(pose, 'chest', -0.04, 0.12 * a0);
+    } else {
+        const sway = Math.sin(t * 0.5 + id * 1.9);
+        rot(pose, 'hips', 0, 0, 0.03 * sway); rot(pose, 'chest', 0.012 * Math.sin(t * 1.5 + id), 0, -0.025 * sway);
+        rot(pose, 'thigh_L', 0, 0, -0.03 * sway); rot(pose, 'thigh_R', 0, 0, -0.03 * sway);
+        rot(pose, 'head', 0.04 * Math.sin(t * 0.37 + id), 0.35 * Math.sin(t * 0.21 + id * 1.3) + 0.1 * Math.sin(t * 0.9 + id), 0);
+        rot(pose, 'foreArm_L', 0.15); rot(pose, 'foreArm_R', 0.15);
+        rot(pose, 'upperArm_L', 0.03 * Math.sin(t * 0.8 + id), 0, -0.04); rot(pose, 'upperArm_R', 0.03 * Math.sin(t * 0.8 + id + 1), 0, 0.04);
+    }
+    // What the hands are doing overrides the swing.
+    const arm = (s, up, fore, z = 0) => {
+        const i = K[`upperArm_${s}`] * 3, j = K[`foreArm_${s}`] * 3;
+        pose[i] = up; pose[i + 1] = 0; pose[i + 2] = z; pose[j] = fore;
+    };
+    if (b.pushing) {
+        rot(pose, 'spine', -0.28); rot(pose, 'chest', -0.12); rot(pose, 'head', 0.25);
+        arm('L', 1.35, 0.3, 0.12); arm('R', 1.25, 0.35, -0.12);
+        if (!b.moving) { rot(pose, 'thigh_L', 0.4); rot(pose, 'shin_L', -0.25); rot(pose, 'thigh_R', -0.35); rot(pose, 'foot_R', 0.3); }
+    }
+    if (b.gun) { arm('R', 1.42, 0.08); arm('L', 1.2, 0.5, 0.4); rot(pose, 'head', -0.05, -0.1); }
+    else if (a.police) {
+        arm('L', 0.55, 1.0, 0.18); // shield up on the forearm
+        if (a.attacking > 0 && a.tool === 'baton') arm('R', 1.75, 0.15);
+        else if (a.attacking > 0) arm('R', 1.45, 0.05, -0.15); // spray, arm out
+        else arm('R', 0.35, 0.45);
+        if (a.stagger > 0) { rot(pose, 'spine', 0.18); rot(pose, 'head', 0.2); }
+    } else if (b.filming) { arm('R', 1.45, 0.75, -0.2); rot(pose, 'head', 0.06); }
+    else if (b.bearer) arm('R', 0.35, 1.1);
+    return { drop: 0, fall: 0, lift: 0 };
+}
+
+// Rest points of the hands' palms, where held things are anchored.
+const PALM_R = [0.483, 0.76, -0.12], PALM_L = [-0.483, 0.76, -0.12];
+
+export function createCrowd(scene, capacity, { time, groundHeight, shadowTexture, figure }) {
     const parts = [], resources = new Set(), textures = new Set();
     const transform = new THREE.Object3D(), color = new THREE.Color();
-    transform.rotation.order = 'YXZ'; // swing about the body's own axis, then face the heading
+    transform.rotation.order = 'YXZ';
+    const held = new THREE.Object3D(), worn = new THREE.Matrix4(), boneWorld = new THREE.Matrix4();
+    const anchor = new THREE.Vector3(), shift = new THREE.Vector3(), up = new THREE.Vector3(0, 1, 0);
     let extras = true;
-    // `extra` parts are the small ones nobody misses on a struggling device.
+    const rig = figure ?? fromRig(buildFigure());
+    const bodies = createBodies(scene, rig, capacity);
+    /**
+     * Clothing and kit on top of the rigged body. A worn part follows its bone completely
+     * (`offset` is its rest position on the figure). A held part (`anchor`) follows only the
+     * point where it is held and stays upright, facing the way the person faces.
+     * `extra` parts are the small ones nobody misses on a struggling device.
+     */
     function part(name, geometry, material, offset, scale = [1, 1, 1], filter = () => true, extra = false, more = {}) {
         resources.add(geometry); resources.add(material);
         const mesh = new THREE.InstancedMesh(geometry, material, capacity);
         mesh.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
         mesh.frustumCulled = false;
-        mesh.castShadow = ['coat', 'head', 'helmet', 'left-leg', 'right-leg'].includes(name);
+        mesh.castShadow = ['helmet', 'hood', 'hard-hat', 'backpack', 'shield', 'flag-pole', 'beanie', 'cap'].includes(name);
         mesh.receiveShadow = name !== 'contact';
         scene.add(mesh);
-        const item = { name, mesh, offset, scale, filter, extra, ...more };
+        const item = { name, mesh, offset, scale, filter, extra, bone: -1, ...more };
+        item.bone = bodies.boneOf(more.bone ?? 'chest');
         parts.push(item); return item;
     }
     const raider = a => !a.police && !a.civilian;
@@ -93,11 +352,21 @@ export function createCrowd(scene, capacity, { time, groundHeight, shadowTexture
     const hair = a => (bareish(a) && a.id % 3 === 2) || a.civilian;
     const bearer = a => raider(a) && a.id >= 0 && a.id % 3 === 0 && a.health > 0;
     const filming = a => raider(a) && a.filming && a.health > 0 && !a.retreating;
+    const gun = a => a.armed && a.health > 0 && (a.police || a.temperament === 'pusher' || (a.temperament === 'follower' && a.morale > 0.7));
 
     const coatColor = a => a.police ? '#24394d' : a.civilian ? suits[a.id % suits.length] : a.observer ? '#3f6f8f'
         : a.id < 0 ? '#bd713f' : coats[a.id % coats.length];
+    const skinColor = a => skins[Math.abs(a.id) % skins.length];
+    // Body regions, in rig.js REGIONS order. Hi-vis vests and medics' tabards are the coat's colour.
+    const regionColors = [
+        a => a.temperament === 'medic' ? '#f1efe8' : raider(a) && a.id >= 0 && a.id % 10 === 4 ? '#c9e23c' : coatColor(a),
+        coatColor,
+        a => a.police ? '#1f2833' : a.civilian ? suits[a.id % suits.length] : pants[Math.abs(a.id) % pants.length],
+        skinColor,
+        a => a.police ? '#15181c' : a.civilian ? '#121315' : ['#2a2620', '#3d2c1f', '#1c1d1f'][Math.abs(a.id) % 3],
+        a => a.police || (raider(a) && a.id % 3 === 0) ? '#202830' : skinColor(a),
+    ];
     const tints = {
-        coat: a => color.set(coatColor(a)), sleeve: a => color.set(coatColor(a)),
         hood: a => color.set(coatColor(a)).multiplyScalar(0.9),
         'puffer-band': a => color.set(coatColor(a)).multiplyScalar(0.72),
         cap: a => color.set(a.id % 5 === 0 ? '#24324f' : '#a93737'),
@@ -105,21 +374,14 @@ export function createCrowd(scene, capacity, { time, groundHeight, shadowTexture
         beanie: a => color.set(knits[(a.id * 7) % knits.length]),
         pom: a => color.set(knits[(a.id * 7 + 3) % knits.length]),
         scarf: a => color.set(knits[(a.id * 5 + 1) % knits.length]),
-        'left-leg': a => color.set(a.police ? '#1f2833' : a.civilian ? suits[a.id % suits.length] : pants[Math.abs(a.id) % pants.length]),
-        'right-leg': a => color.set(a.police ? '#1f2833' : a.civilian ? suits[a.id % suits.length] : pants[Math.abs(a.id) % pants.length]),
-        head: a => color.set(skins[Math.abs(a.id) % skins.length]),
         hair: a => color.set(hairs[Math.abs(a.id * 3) % hairs.length]),
     };
 
     const cloth = new THREE.MeshStandardMaterial({ color: '#ffffff', roughness: 0.95 });
-    const denim = new THREE.MeshStandardMaterial({ color: '#ffffff', roughness: 0.9 });
     const dark = new THREE.MeshStandardMaterial({ color: '#202830', roughness: 0.8 });
-    const skin = new THREE.MeshStandardMaterial({ color: '#ffffff', roughness: 0.7 });
     const knit = new THREE.MeshStandardMaterial({ color: '#ffffff', roughness: 1 });
     const cube = new THREE.BoxGeometry(1, 1, 1);
-    const capsule = new THREE.CapsuleGeometry(0.35, 0.72, 4, 10);
-    const limb = new THREE.CapsuleGeometry(0.35, 0.72, 3, 8);
-    const dome = new THREE.SphereGeometry(0.26, 10, 6, 0, Math.PI * 2, 0, Math.PI / 2);
+    const dome = new THREE.SphereGeometry(0.26, 12, 6, 0, Math.PI * 2, 0, Math.PI / 2);
     const ring = new THREE.TorusGeometry(0.35, 0.035, 5, 16);
 
     // A soft dark patch under every figure: what keeps a crowd standing on the ground.
@@ -128,51 +390,36 @@ export function createCrowd(scene, capacity, { time, groundHeight, shadowTexture
     const contact = part('contact', new THREE.PlaneGeometry(1, 1), shadowMaterial, [0, 0, 0], [0.95, 0.8, 1]);
     contact.mesh.layers.set(1);
 
-    part('coat', capsule, cloth, [0, 1.06, 0], [1, 1, 0.86]);
     // Quilted puffers: two darker bands round the coat.
-    for (const y of [0.9, 1.22]) part('puffer-band', ring, cloth, [0, y, 0], [1.02, 0.88, 1],
-        a => raider(a) && a.id % 4 === 0, true, { rot: Math.PI / 2 });
-    part('head', new THREE.SphereGeometry(0.23, 12, 8), skin, [0, 1.83, 0], [0.95, 1.05, 1]);
-    part('hair', dome, cloth, [0, 1.87, 0.02], [0.95, 0.75, 1], hair);
-    for (const side of [-1, 1]) {
-        part(side < 0 ? 'left-leg' : 'right-leg', cube, denim, [side * 0.18, 0.4, 0], [0.24, 0.68, 0.27], undefined, false, { joint: 'leg' });
-        part('boot', cube, dark, [side * 0.18, 0.1, -0.07], [0.28, 0.2, 0.43], undefined, true, { joint: 'leg' });
-        part('sleeve', limb, cloth, [side * 0.46, 1.1, -0.12], [0.42, 0.7, 0.5], undefined, false, { joint: 'arm' });
-        part('glove', cube, dark, [side * 0.47, 0.77, -0.12], [0.18, 0.18, 0.22], undefined, true, { joint: 'arm' });
-    }
-    part('beanie', dome, knit, [0, 1.9, 0], [1, 0.9, 1], beanie);
-    part('pom', new THREE.SphereGeometry(0.07, 6, 4), knit, [0, 2.12, 0], [1, 1, 1], a => beanie(a) && a.id % 6 === 1, true);
-    part('hood', dome, cloth, [0, 1.84, 0.05], [1.18, 1.12, 1.22], hood);
+    part('puffer-band', ring, cloth, [0, 0.9, 0], [1.02, 0.88, 1], a => raider(a) && a.id % 4 === 0, true, { rot: Math.PI / 2, bone: 'spine' });
+    part('puffer-band', ring, cloth, [0, 1.22, 0], [1.08, 0.9, 1], a => raider(a) && a.id % 4 === 0, true, { rot: Math.PI / 2 });
+    const head = { bone: 'head' };
+    part('hair', dome, cloth, [0, 1.87, 0.02], [0.84, 0.75, 0.92], hair, false, head);
+    part('beanie', dome, knit, [0, 1.9, 0.01], [0.86, 0.9, 0.9], beanie, false, head);
+    part('pom', new THREE.SphereGeometry(0.07, 6, 4), knit, [0, 2.12, 0.01], [1, 1, 1], a => beanie(a) && a.id % 6 === 1, true, head);
+    part('hood', dome, cloth, [0, 1.84, 0.05], [1.04, 1.12, 1.12], hood, false, head);
     part('scarf', new THREE.TorusGeometry(0.2, 0.065, 5, 12), knit, [0, 1.62, 0], [1, 1, 0.9],
-        a => raider(a) && a.id % 4 === 1, true, { rot: Math.PI / 2 });
-    part('cap', cube, cloth, [0, 2, 0], [0.48, 0.17, 0.47], ballCap);
-    part('cap-brim', cube, cloth, [0, 1.96, -0.28], [0.43, 0.06, 0.23], ballCap, true);
-    part('hard-hat', dome, new THREE.MeshStandardMaterial({ color: '#e7c531', roughness: 0.5 }), [0, 1.92, 0], [1.1, 0.95, 1.15], hardHat);
-    part('tricorn', new THREE.CylinderGeometry(0.36, 0.4, 0.13, 3), dark, [0, 2.02, 0], [1, 1, 1], tricorn);
-    // Vests and tabards are the coat's own capsule, a size up, so they read as worn not boxed.
-    part('hi-vis', capsule, new THREE.MeshStandardMaterial({ color: '#c9e23c', roughness: 0.9, emissive: '#3a4208' }),
-        [0, 1.14, 0], [1.07, 0.66, 0.93], a => raider(a) && a.id >= 0 && a.id % 10 === 4, true);
+        a => raider(a) && a.id % 4 === 1, true, { rot: Math.PI / 2, bone: 'neck' });
+    part('cap', dome, cloth, [0, 1.93, 0.015], [0.84, 0.62, 0.88], ballCap, false, head);
+    part('cap-brim', cube, cloth, [0, 1.94, -0.27], [0.34, 0.03, 0.2], ballCap, true, head);
+    part('hard-hat', dome, new THREE.MeshStandardMaterial({ color: '#e7c531', roughness: 0.5 }), [0, 1.92, 0.01], [0.98, 0.95, 1.02], hardHat, false, head);
+    part('tricorn', new THREE.CylinderGeometry(0.36, 0.4, 0.13, 3), dark, [0, 2.02, 0], [1, 1, 1], tricorn, false, head);
     part('backpack', cube, dark, [0, 1.28, 0.36], [0.5, 0.6, 0.24], a => raider(a) && a.id >= 0 && a.id % 5 === 2, true);
-    // Street medics: a white tabard with a red patch. A role in the crowd, not a uniform.
-    part('medic-tabard', capsule, new THREE.MeshStandardMaterial({ color: '#f1efe8', roughness: 0.9 }),
-        [0, 1.14, 0], [1.07, 0.66, 0.93], a => a.temperament === 'medic');
+    // Street medics: a red patch on the white tabard. A role in the crowd, not a uniform.
     part('medic-patch', cube, new THREE.MeshStandardMaterial({ color: '#c1373c', roughness: 0.9 }),
-        [0, 1.28, -0.36], [0.26, 0.26, 0.03], a => a.temperament === 'medic', true);
+        [0, 1.3, -0.262], [0.24, 0.24, 0.02], a => a.temperament === 'medic', true);
     // Phones held up to film, in the raised right hand: the single most common thing in every
     // photograph of the day. The screen glows enough to bloom.
+    const right = { bone: 'hand_R', anchor: PALM_R }, left = { bone: 'hand_L', anchor: PALM_L };
     part('phone', cube, new THREE.MeshStandardMaterial({ color: '#10161d', emissive: '#9cc8f0', emissiveIntensity: 1.6 }),
-        [0.44, 1.8, -0.86], [0.1, 0.19, 0.02], filming, true);
+        [-0.03, 0.09, -0.04], [0.1, 0.19, 0.02], filming, true, right);
     part('helmet', new THREE.SphereGeometry(0.29, 12, 8, 0, Math.PI * 2, 0, Math.PI * 0.65),
-        new THREE.MeshStandardMaterial({ color: '#1d242c', roughness: 0.35, metalness: 0.2 }), [0, 1.91, 0], [1, 1, 1], a => a.police);
+        new THREE.MeshStandardMaterial({ color: '#1d242c', roughness: 0.35, metalness: 0.2 }), [0, 1.91, 0], [0.9, 1, 0.95], a => a.police, false, head);
     const clear = new THREE.MeshStandardMaterial({ color: '#c4e0ea', transparent: true, opacity: 0.4, roughness: 0.08, depthWrite: false });
-    part('visor', cube, clear, [0, 1.86, -0.27], [0.5, 0.32, 0.06], a => a.police);
+    part('visor', cube, clear, [0, 1.86, -0.25], [0.46, 0.32, 0.05], a => a.police, false, head);
     part('vest', cube, dark, [0, 1.2, -0.25], [0.67, 0.64, 0.12], a => a.police || (raider(a) && a.id >= 0 && a.id % 8 === 3));
-    part('shield', cube, clear, [-0.38, 1.07, -0.56], [0.9, 1.45, 0.09], a => a.police);
-    part('shield-edge', cube, dark, [-0.38, 0.36, -0.56], [0.92, 0.07, 0.11], a => a.police, true);
-    part('baton', new THREE.CylinderGeometry(0.035, 0.035, 0.8, 6), dark, [0.5, 0.85, -0.32], [1, 1, 1], a => a.police && !a.armed);
-    // Armed demo only: a plain dark block held forward. No real model is depicted.
-    part('gun', cube, dark, [0.42, 1.2, -0.5], [0.07, 0.13, 0.5],
-        a => a.armed && a.health > 0 && (a.police || a.temperament === 'pusher' || (a.temperament === 'follower' && a.morale > 0.7)));
+    part('shield', cube, clear, [0.1, -0.1, -0.08], [0.9, 1.45, 0.09], a => a.police, false, left);
+    part('shield-edge', cube, dark, [0.1, -0.81, -0.08], [0.92, 0.07, 0.11], a => a.police, true, left);
     const shieldCanvas = document.createElement('canvas');
     shieldCanvas.width = 256; shieldCanvas.height = 64;
     const ctx = shieldCanvas.getContext('2d');
@@ -180,83 +427,90 @@ export function createCrowd(scene, capacity, { time, groundHeight, shadowTexture
     ctx.fillStyle = '#fff'; ctx.font = 'bold 46px sans-serif'; ctx.textAlign = 'center'; ctx.fillText('POLICE', 128, 49);
     const shieldTexture = new THREE.CanvasTexture(shieldCanvas); textures.add(shieldTexture);
     part('police-label', new THREE.PlaneGeometry(0.75, 0.2), new THREE.MeshBasicMaterial({ map: shieldTexture, side: THREE.DoubleSide }),
-        [-0.38, 1.22, -0.62], [1, 1, 1], a => a.police, true, { yaw: Math.PI });
+        [0.1, 0.05, -0.135], [1, 1, 1], a => a.police, true, { ...left, yaw: Math.PI });
+    part('baton', new THREE.CylinderGeometry(0.035, 0.035, 0.8, 6), dark, [0, 0, -0.04], [1, 1, 1], a => a.police && !a.armed,
+        false, { ...right, rot: -0.5 });
+    // Armed demo only: a plain dark block held forward. No real model is depicted.
+    part('gun', cube, dark, [-0.02, 0.05, -0.2], [0.07, 0.13, 0.5], gun, false, right);
     part('flag-pole', new THREE.CylinderGeometry(0.025, 0.025, 3.2, 5),
-        new THREE.MeshStandardMaterial({ color: '#b7a587' }), [0.6, 2.1, -0.1], [1, 1, 1], bearer);
+        new THREE.MeshStandardMaterial({ color: '#b7a587' }), [0, 0.95, 0], [1, 1, 1], bearer, false, right);
     for (const kind of new Set(banners)) {
         const texture = flagTexture(kind); textures.add(texture);
         const flag = part('flag', new THREE.PlaneGeometry(1.7, 1.1, 16, 6),
             addWave(new THREE.MeshStandardMaterial({ map: texture, side: THREE.DoubleSide, roughness: 0.9 }), time),
-            [1.46, 3.13, -0.1], [1, 1, 1], a => bearer(a) && banners[Math.floor(a.id / 3) % banners.length] === kind);
+            [0.86, 1.98, 0], [1, 1, 1], a => bearer(a) && banners[Math.floor(a.id / 3) % banners.length] === kind, false, right);
         flag.mesh.layers.set(1);
     }
     // Breath in the cold: a small puff in front of each face outdoors, there and gone.
     const breath = part('breath', new THREE.SphereGeometry(0.11, 6, 5),
         new THREE.MeshBasicMaterial({ color: '#f3f6f8', transparent: true, opacity: 0.2, depthWrite: false }),
-        [0, 1.8, -0.42], [1, 1, 1], a => a.health > 0 && a.z > 15.5, true);
+        [0, 0, -0.22], [1, 1, 1], a => a.health > 0 && a.z > 15.5, true, { bone: 'head', anchor: [0, 1.78, -0.2] });
     breath.mesh.layers.set(1);
 
+    const pose = new Float32Array(RIG_BONES.length * 3);
+    const slotFigure = Array.from({ length: capacity }, () => new THREE.Matrix4());
     function update(state, humanHeading, humanMoving, cameraPosition) {
         const actors = [
             ...(state.role !== 'none' ? [{ ...state.player, id: -1, health: state.health, heading: humanHeading,
-                moving: humanMoving, police: state.role === 'police', observer: state.role === 'observer' }] : []),
+                moving: humanMoving, police: state.role === 'police', observer: state.role === 'observer', key: 'h' }] : []),
             ...(state.armed ? state.companions.map(c => ({ ...c, armed: true })) : state.companions),
-            ...state.enemies.map(e => ({ ...e, police: true, armed: state.armed })),
+            ...state.enemies.map(e => ({ ...e, police: true, armed: state.armed, key: `p${e.id}` })),
             // Staff and members in the chamber: plain suits, no equipment, health never changes.
             ...state.civilians.filter(p => !p.evacuated).map(p => ({ ...p, id: p.id + 1000, health: 1, civilian: true })),
         ];
         if (actors.length > capacity) throw new RangeError('Crowd renderer capacity exceeded.');
         const active = state.status === 'active';
-        // Per-actor body: build, ground, gait. Worked out once, used by every part.
-        const bodies = actors.map(a => {
+        // Per-actor body: build, ground, gait and pose. Worked out once, used by the body and every part.
+        const people = [];
+        for (const a of actors) {
+            if (Math.hypot(a.x - cameraPosition.x, a.z - cameraPosition.z) < 1.1) continue;
             const tall = a.police ? 0.98 + trait(a.id, 1) * 0.09 : 0.93 + trait(a.id, 1) * 0.14;
             const wide = a.police ? 1.02 + trait(a.id, 2) * 0.1 : 0.9 + trait(a.id, 2) * 0.2;
             const moving = active && a.moving && a.health > 0;
             const phase = state.elapsed * 9 + a.id * 0.7;
-            const stride = moving ? Math.sin(phase) * 0.5 : 0;
-            const bob = moving ? Math.abs(Math.cos(phase)) * 0.045 : 0;
-            const pushing = raider(a) && a.attacking > 0 && a.health > 0;
             const floor = groundHeight(a.x, a.z);
-            return { a, tall, wide, stride, floor, ground: floor + bob, pushing, filming: filming(a),
-                hidden: Math.hypot(a.x - cameraPosition.x, a.z - cameraPosition.z) < 1.1 };
-        });
+            const b = { a, tall, wide, floor, moving, phase, ground: floor + (moving ? Math.abs(Math.cos(phase)) * 0.045 : 0),
+                pushing: raider(a) && a.attacking > 0 && a.health > 0, filming: filming(a), bearer: bearer(a), gun: gun(a),
+                lying: a.health <= 0 && state.armed, stooped: a.health <= 0 && !state.armed && a.helped && !a.resting };
+            const key = a.key ?? (a.civilian ? `s${a.id}` : `r${a.id}`);
+            b.slot = bodies.claim(key);
+            const regionKey = `${key}${a.police ? 'p' : ''}${a.observer ? 'o' : ''}${a.temperament ?? ''}`;
+            bodies.paint(b.slot, regionKey, region => color.set(regionColors[region](a)));
+            const how = poseFor(b, a, state.elapsed, pose);
+            transform.position.set(a.x, b.ground - how.drop * tall + how.lift * wide, a.z);
+            transform.rotation.set(how.fall, a.heading || 0, 0);
+            transform.scale.set(wide, tall, wide);
+            const figureMatrix = slotFigure[b.slot].compose(transform.position, transform.quaternion, transform.scale);
+            bodies.pose(b.slot, figureMatrix, pose);
+            people.push(b);
+        }
+        bodies.finish();
         for (const p of parts) {
             let count = 0;
             if (p.extra && !extras) { p.mesh.count = 0; continue; }
-            for (const b of bodies) {
+            for (const b of people) {
                 const a = b.a;
-                if (b.hidden || !p.filter(a)) continue;
-                const h = a.heading || 0, cs = Math.cos(h), sn = Math.sin(h), o = p.offset;
-                const low = a.health > 0 ? 1 : state.armed ? 0.22 : a.helped && !a.resting ? 0.82 : 0.4;
+                if (!p.filter(a)) continue;
+                const h = a.heading || 0;
                 if (p.name === 'contact') {
                     // Out of the scenario figures sit or lie, so their shadow spreads.
-                    const spread = a.health > 0 ? 1 : 1.35;
+                    const spread = a.health > 0 ? 1 : b.lying ? 1.6 : 1.3;
                     transform.position.set(a.x, b.floor + 0.015, a.z);
+                    if (b.lying) transform.position.add(shift.set(0, 0, 0.75 * b.tall).applyAxisAngle(up, h));
                     transform.rotation.set(-Math.PI / 2, h, 0);
-                    transform.scale.set(p.scale[0] * b.wide * spread, p.scale[1] * b.wide * spread, 1);
-                } else {
-                    let lx = o[0] * b.wide, ly = o[1] * b.tall, lz = o[2] * b.wide, rx = p.rot || 0;
-                    if (p.joint && a.health > 0) {
-                        const left = o[0] < 0;
-                        let angle, pivotY, pivotZ;
-                        if (p.joint === 'leg') {
-                            angle = left ? b.stride : -b.stride; pivotY = HIP * b.tall; pivotZ = 0;
-                        } else {
-                            angle = (left ? -0.7 : 0.7) * b.stride; pivotY = SHOULDER * b.tall; pivotZ = SHOULDER_Z * b.wide;
-                            if (b.pushing) angle = 1.3 + (left ? 0.1 : -0.1);
-                            else if (!left && b.filming) angle = 1.9;
-                            else if (left && a.police) angle = 0.55;
-                        }
-                        if (angle) {
-                            const dy = ly - pivotY, dz = lz - pivotZ, c = Math.cos(angle), s = Math.sin(angle);
-                            ly = pivotY + dy * c - dz * s; lz = pivotZ + dy * s + dz * c; rx += angle;
-                        }
-                    }
-                    transform.position.set(a.x + lx * cs + lz * sn, b.ground + ly * low, a.z - lx * sn + lz * cs);
+                    transform.scale.set(p.scale[0] * b.wide * (b.lying ? 1 : spread), p.scale[1] * b.wide * spread * (b.lying ? 1.5 : 1), 1);
+                    transform.updateMatrix();
+                    worn.copy(transform.matrix);
+                } else if (p.anchor) {
+                    if (a.health <= 0) continue;
+                    if (p.bone >= 0) bodies.boneMatrix(b.slot, p.bone, boneWorld); else boneWorld.copy(slotFigure[b.slot]);
+                    anchor.fromArray(p.anchor).applyMatrix4(boneWorld);
+                    shift.set(p.offset[0] * b.wide, p.offset[1] * b.tall, p.offset[2] * b.wide).applyAxisAngle(up, h);
+                    transform.position.copy(anchor).add(shift);
                     // Nearby banners must not fill the entire third-person camera.
                     if (p.name === 'flag' && transform.position.distanceTo(cameraPosition) < 4) continue;
-                    transform.rotation.set(rx, h + (p.yaw || 0), 0);
-                    transform.scale.set(p.scale[0] * b.wide, p.scale[1] * b.tall * low, p.scale[2] * b.wide);
+                    transform.rotation.set(p.rot || 0, h + (p.yaw || 0), 0);
+                    transform.scale.set(p.scale[0] * b.wide, p.scale[1] * b.tall, p.scale[2] * b.wide);
                     if (p.name === 'baton' && a.attacking > 0 && a.tool === 'baton') transform.rotation.x = -1.3;
                     if (p.name === 'breath') {
                         const phase = (state.elapsed * 0.45 + a.id * 0.37) % 1;
@@ -265,8 +519,17 @@ export function createCrowd(scene, capacity, { time, groundHeight, shadowTexture
                         transform.position.y += phase * 0.5;
                     }
                     if (p.name === 'flag') transform.rotation.y += 0.06 * Math.sin(state.elapsed * 0.7 + a.id);
+                    transform.updateMatrix();
+                    worn.copy(transform.matrix);
+                } else {
+                    if (p.bone >= 0) bodies.boneMatrix(b.slot, p.bone, boneWorld); else boneWorld.copy(slotFigure[b.slot]);
+                    held.position.fromArray(p.offset);
+                    held.rotation.set(p.rot || 0, p.yaw || 0, 0);
+                    held.scale.fromArray(p.scale);
+                    held.updateMatrix();
+                    worn.multiplyMatrices(boneWorld, held.matrix);
                 }
-                p.mesh.setMatrixAt(count, transform.matrix.compose(transform.position, transform.quaternion, transform.scale));
+                p.mesh.setMatrixAt(count, worn);
                 const tint = tints[p.name];
                 if (tint) { tint(a); p.mesh.setColorAt(count, color); }
                 count++;
@@ -278,10 +541,11 @@ export function createCrowd(scene, capacity, { time, groundHeight, shadowTexture
         return actors.length;
     }
     function dispose() {
+        bodies.dispose();
         parts.forEach(p => { scene.remove(p.mesh); p.mesh.dispose(); });
         resources.forEach(r => r.dispose()); textures.forEach(t => t.dispose());
     }
-    return { update, dispose, setExtras(value) { extras = value; }, batchCount: parts.length };
+    return { update, dispose, setExtras(value) { extras = value; }, batchCount: parts.length + 1 };
 }
 
 // ---------------------------------------------------------------- the crowd that stayed outside

@@ -58,7 +58,7 @@ export function sunDirection(day, out = new THREE.Vector3()) {
     return out.set(-Math.cos(azimuth) * Math.cos(altitude), Math.sin(altitude), -Math.sin(azimuth) * Math.cos(altitude));
 }
 
-export function createScene(host) {
+export function createScene(host, { figure } = {}) {
     const scene = new THREE.Scene();
     scene.fog = new THREE.FogExp2(SKY[0][1], FOG_OUT);
     // The composer does the anti-aliasing (MSAA on its own target), so the canvas needs none.
@@ -566,7 +566,7 @@ export function createScene(host) {
     const flashLight = new THREE.PointLight('#ffffff', 0, 45, 1.2);
     scene.add(flashLight);
 
-    const crowd = createCrowd(scene, CROWD_SIZE + MAX_POLICE + CIVILIANS + 1, { time, groundHeight, shadowTexture: shadowBlob });
+    const crowd = createCrowd(scene, CROWD_SIZE + MAX_POLICE + CIVILIANS + 1, { time, groundHeight, shadowTexture: shadowBlob, figure });
     const marker = mesh(new THREE.TorusGeometry(1.1, 0.08, 8, 36), '#ebce77', 0, 0.2, 23);
     marker.rotation.x = -Math.PI / 2;
     marker.material = new THREE.MeshStandardMaterial({ color: '#ebce77', emissive: '#c99a2e', emissiveIntensity: 0.6 });
@@ -622,6 +622,8 @@ export function createScene(host) {
 
     const calm = () => window.PoQuality?.reduceFlashing?.() === true || matchMedia('(prefers-reduced-motion: reduce)').matches;
     let followYaw = 0, cameraReady = false, closing = 0, lastSubject = null, clock = 0, lastRack = -99;
+    let lastHealth = null, lastDaze = -99;
+    const dazzled = new WeakSet();
     const lastFocus = { x: 0, z: 100 };
     function render(state, yaw, pitch, moving, dt) {
         clock += dt;
@@ -760,6 +762,21 @@ export function createScene(host) {
             post.rackFocus(6.5, 0.7, 0.5); lastRack = clock;
         }
         lastSubject = subject?.id ?? lastSubject;
+        // In play the eyes lose focus for a moment: a blow, a flash-bang close by, going down.
+        if (!spectating && state.status === 'active') {
+            const drop = lastHealth === null ? 0 : lastHealth - state.health;
+            const strength = quiet ? 0.5 : 1;
+            if (state.health <= 0 && lastHealth > 0) { post.rackFocus(1.2, 2.4, strength); lastDaze = clock; }
+            else if (drop >= 2.5 && clock - lastDaze > 1.2) { post.rackFocus(1.2, 0.25, 0.85 * strength); lastDaze = clock; }
+            for (const effect of state.effects) {
+                if (effect.type !== 'flash' || dazzled.has(effect)) continue;
+                dazzled.add(effect);
+                if (Math.hypot(effect.x - state.player.x, effect.z - state.player.z) < 12) {
+                    post.rackFocus(1, 0.9, 1.2 * strength); lastDaze = clock;
+                }
+            }
+        }
+        lastHealth = spectating ? null : state.health;
         camera.lookAt(look);
         // A nearby flash-bang jolts the camera.
         if (flashAt && !quiet) {
