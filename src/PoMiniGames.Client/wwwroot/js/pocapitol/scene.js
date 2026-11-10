@@ -843,5 +843,5 @@ export function createScene(host, { figure } = {}) {
         geometries.forEach(g => g.dispose()); materials.forEach(m => m.dispose()); textures.forEach(t => t.dispose());
         renderer.dispose(); renderer.forceContextLoss(); renderer.domElement.remove();
     }
-    return { canvas: renderer.domElement, render, aim, applyQuality, dispose };
+    return { canvas: renderer.domElement, render, aim, applyQuality, dispose, renderer };
 }

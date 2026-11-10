@@ -83,3 +83,18 @@ new claim that the expanded code received an additional security audit.
 - [x] Add the armed demo variant with on-screen "did not happen" labeling.
 - [x] Scale to 128 protestors, 64 police and 64 sheltering staff and members; start on the grass.
 - [x] Rewrite the focused tests (27) and update README, SPEC, capability map and PRD.
+
+## UI/UX Optimization pass (2026-11-10)
+
+- [x] Guard critical routes with localized `ErrorBoundary` and in-panel scenario retry controls.
+- [x] Replace dense intro `<details>` blocks with structured `RadzenTabs` (Briefing, Field Controls, Historical Record).
+- [x] Implement dynamic `RadzenProgressBar` components for Stamina and Police Line integrity with color-grading thresholds.
+- [x] Consolidate fragmented options into a slide-out drawer (Mode, Graphics tier, Role switching).
+- [x] Add interactive lower-left debug button & diagnostic telemetry panel (FPS, Draw Calls, Crowd Roster, Memory/GC).
+- [x] Pin subtle non-intrusive `v261110` build version stamp to the bottom-right viewport corner.
+- [x] Eliminate Cumulative Layout Shift (CLS) by pre-allocating HUD grid dimensions.
+- [x] Refactor mobile touch controls with iOS safe-area margins (`env(safe-area-inset-bottom)`) and zero viewport overflow.
+- [x] Validate end-to-end CRUD across player names, local result recording, and graphics preferences.
+- [x] Deliver before/after HTML mockup (`SCREENSHOTS/261110-ui-optimize.html`) and annotated PNG (`SCREENSHOTS/261110-ui-optimize.png`).
+- [x] Verify host/client builds with zero warnings, pass all 65 css-lint checks, and confirm restarted health on port 5080.
+

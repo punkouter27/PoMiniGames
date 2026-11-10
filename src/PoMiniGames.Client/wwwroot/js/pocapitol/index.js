@@ -262,6 +262,24 @@ function setGraphics(mode) {
     return game.governor.label();
 }
 
+function getDebugStats() {
+    if (!game) return { fps: 60, drawCalls: 0, actors: 0, keys: [], mode: 'auto', label: 'Auto' };
+    const r = game.view?.renderer;
+    const calls = r?.info?.render?.calls ?? parseInt(game.host?.dataset?.drawCalls || '0', 10);
+    const actors = parseInt(game.host?.dataset?.actorCount || '0', 10);
+    const now = performance.now();
+    const dt = Math.max(0.001, (now - (game.last || now)) / 1000);
+    const fps = Math.min(120, Math.round(1 / dt));
+    return {
+        fps: fps > 0 && fps < 200 ? fps : 60,
+        drawCalls: calls,
+        actors: actors,
+        keys: Array.from(game.keys || []),
+        mode: game.governor?.mode || 'auto',
+        label: game.governor?.label() || 'Auto',
+    };
+}
+
 function dispose() {
     if (!game) return;
     const g = game;
@@ -272,4 +290,4 @@ function dispose() {
     g.view.dispose(); remove(); game = null;
 }
 
-window.PoCapitol = { init, start, pause, dispose, setGraphics, getGraphics: storedGraphics };
+window.PoCapitol = { init, start, pause, dispose, setGraphics, getGraphics: storedGraphics, getDebugStats };
