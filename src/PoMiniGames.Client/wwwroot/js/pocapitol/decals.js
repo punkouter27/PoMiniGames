@@ -110,6 +110,8 @@ export function createDecals(scene, { capacity = 160 } = {}) {
                 scorch.add(e.x, y + 0.002, e.z, 3.2, rand() * Math.PI, 0.8);
             } else if (e.type === 'impact' && e.round) {
                 scorch.add(e.x, y + 0.002, e.z, 0.5 + rand() * 0.3, rand() * Math.PI, 0.7);
+            } else if (e.type === 'ricochet') {
+                scorch.add(e.x, y + 0.002, e.z, 0.35 + rand() * 0.25, rand() * Math.PI, 0.65);
             } else if (e.type === 'gas') {
                 stains.add(e.x, y + 0.001, e.z, 4.5, rand() * Math.PI, 0.55);
             } else if (e.type === 'break') {

@@ -342,10 +342,11 @@ const GradeShader = {
         tDiffuse: { value: null }, uTime: { value: 0 }, uGrain: { value: 0.024 },
         uVignette: { value: 0.25 }, uSaturation: { value: 0.94 },
         uDistortion: { value: 0.025 }, uChromatic: { value: 0.0025 },
+        uFlash: { value: 0.0 }, uSuppression: { value: 0.0 },
     },
     vertexShader: `varying vec2 vUv; void main() { vUv = uv; gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0); }`,
     fragmentShader: `
-        uniform sampler2D tDiffuse; uniform float uTime, uGrain, uVignette, uSaturation, uDistortion, uChromatic;
+        uniform sampler2D tDiffuse; uniform float uTime, uGrain, uVignette, uSaturation, uDistortion, uChromatic, uFlash, uSuppression;
         varying vec2 vUv;
         void main() {
             vec2 uv = vUv;
@@ -359,9 +360,15 @@ const GradeShader = {
             vec3 c = vec3(r, g, b);
 
             float l = dot(c, vec3(0.2126, 0.7152, 0.0722));
-            c = mix(vec3(l), c, uSaturation);
+            float sat = max(0.2, uSaturation - uSuppression * 0.45);
+            c = mix(vec3(l), c, sat);
             c += vec3(-0.012, 0.0, 0.022) * (1.0 - l) + vec3(0.018, 0.006, -0.014) * l;
-            c *= 1.0 - uVignette * r2 * 1.5;
+            float vig = uVignette + uSuppression * 0.75;
+            c *= 1.0 - vig * r2 * 1.6;
+
+            if (uFlash > 0.0) {
+                c = mix(c, vec3(1.15, 1.1, 0.98), clamp(uFlash, 0.0, 1.0));
+            }
 
             if (uGrain > 0.0) {
                 float noise = fract(sin(dot(uv * 980.0 + fract(uTime * 17.0), vec2(12.9898, 78.233))) * 43758.5453);
@@ -466,6 +473,11 @@ export function createPost(renderer, scene, camera, depthCamera) {
     }
     return {
         setLevel, setSize, render,
+        /** Updates retinal flash bloom and combat suppression stress. */
+        setCombatStress(flash, suppression) {
+            grade.uniforms.uFlash.value = flash;
+            grade.uniforms.uSuppression.value = suppression;
+        },
         /** Pulls focus onto a subject `distance` metres away for a moment (top quality only). */
         rackFocus(distance, hold, strength) { if (dofAllowed) focus.trigger(distance, hold, strength); },
         dispose() {

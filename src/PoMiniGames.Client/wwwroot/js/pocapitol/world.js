@@ -211,10 +211,10 @@ function temperamentOf(id) {
 const baseMorale = { pusher: 0.85, follower: 0.6, bystander: 0.45, medic: 0.7 };
 
 function officer(id, line, x, z) {
-    // Officers carry about 12 kg of gear on top of the body.
+    // Officers carry about 12 kg of gear on top of the body, including ballistic Kevlar and riot helmet.
     return { id, x, z, health: 10, line, cooldown: 1 + id % 5 * 0.3, stagger: 0, attacking: 0, tool: '',
         faction: 'capitol-police', heading: Math.PI, moving: false, row: 0, spray: 2 + id % 4,
-        mass: 90 + id * 7 % 5 * 3, vx: 0, vz: 0, kx: 0, kz: 0 };
+        mass: 90 + id * 7 % 5 * 3, vx: 0, vz: 0, kx: 0, kz: 0, armor: 4 };
 }
 
 const steeringByAttempt = new WeakMap();
@@ -229,6 +229,7 @@ export function createAttempt(difficulty = 'standard', demo = false, role = 'rai
         player: { ...(role === 'police' ? { x: 3, z: 30 } : role === 'observer' ? { x: 18, z: 52 } : { x: 0, z: 100 }),
             mass: role === 'police' ? 92 : 80, vx: 0, vz: 0, kx: 0, kz: 0 },
         cooldown: 0, pushes: 0, staggers: 0, damageFlash: 0, playerPush: 0, sprayed: 0, gassed: false, flashed: 0,
+        suppression: 0, recoil: 0,
         lines: lineDefs.map((def, id) => ({ id, state: 'holding', integrity: 100, pressure: 0, hold: 0,
             munition: 10 + id * 2, gasLeft: id === 0 ? 2 : 1, flashCooldown: 6, flashLeft: 1, brokenAt: -1, strain: 0 })),
         enemies: lineDefs.flatMap((def, line) => Array.from({ length: def.officers }, (_, i) =>
@@ -671,9 +672,18 @@ export function advance(state, input, seconds) {
 
     // Armed demo: rounds in flight, swept as segments so a 1.5 m step cannot skip a body or a
     // wall. A hit takes stamina; nobody is hit by their own side.
+    state.suppression = Math.max(0, (state.suppression ?? 0) - dt * 0.75);
+    const listenerX = state.role === 'none' ? (state.cameraLeader?.x ?? state.companions[0]?.x ?? 0) : state.player.x;
+    const listenerZ = state.role === 'none' ? (state.cameraLeader?.z ?? state.companions[0]?.z ?? 50) : state.player.z;
+
     for (const shot of state.shots) {
-        const fromX = shot.x, fromZ = shot.z, toX = fromX + shot.dx * 30 * dt, toZ = fromZ + shot.dz * 30 * dt;
+        shot.speed = shot.speed ?? 30;
+        const fromX = shot.x, fromZ = shot.z;
+        const toX = fromX + shot.dx * shot.speed * dt, toZ = fromZ + shot.dz * shot.speed * dt;
         shot.life -= dt;
+        shot.y = (shot.y ?? 1.35) - (shot.vy ?? 0.08) * dt;
+        shot.vy = (shot.vy ?? 0.08) + 1.8 * dt;
+
         let reach = firstBlocked(fromX, fromZ, toX, toZ, walkable), victim = null;
         if (reach < 0) reach = 1;
         for (const actor of shot.faction === 'raider' ? state.enemies : state.companions) {
@@ -681,16 +691,42 @@ export function advance(state, input, seconds) {
             const t = segmentCircle(fromX, fromZ, toX, toZ, actor.x, actor.z, 0.6);
             if (t >= 0 && t <= reach) { reach = t; victim = actor; }
         }
+
+        // Supersonic near-miss fly-by acoustics & suppression stress
+        if (!victim && reach >= 1 && !shot.whizzed) {
+            const nearT = segmentCircle(fromX, fromZ, toX, toZ, listenerX, listenerZ, 2.5);
+            if (nearT >= 0) {
+                shot.whizzed = true;
+                state.events.push({ type: 'whiz', x: shot.x, z: shot.z, dx: shot.dx, dz: shot.dz });
+                state.suppression = Math.min(1.0, (state.suppression ?? 0) + 0.28);
+            }
+        }
+
         shot.x = fromX + (toX - fromX) * reach; shot.z = fromZ + (toZ - fromZ) * reach;
         if (victim) {
             const dmg = shot.faction === 'raider' ? (difficulty.raiderShot ?? 3.4) : difficulty.shot;
+            const hitZone = (shot.y ?? 1.35) > 1.4 ? 'head' : (shot.y ?? 1.35) > 0.85 ? 'torso' : 'limbs';
+            if (victim.faction === 'capitol-police' && (victim.armor ?? 0) > 0) {
+                if (hitZone === 'head') {
+                    state.events.push({ type: 'ricochet', x: shot.x, z: shot.z, material: 'metal' });
+                } else if (hitZone === 'torso') {
+                    victim.armor = Math.max(0, victim.armor - 1);
+                    state.events.push({ type: 'armor_hit', x: shot.x, z: shot.z, material: 'kevlar' });
+                }
+            }
             victim.health = Math.max(0, victim.health - dmg);
             if (shot.faction === 'police') victim.morale = Math.max(0, victim.morale - 0.25);
+            victim.stagger = Math.max(victim.stagger ?? 0, 0.25);
+            // Slight kinetic momentum transfer
+            victim.kx = (victim.kx ?? 0) + shot.dx * (shot.faction === 'raider' ? 0.8 : 0.3);
+            victim.kz = (victim.kz ?? 0) + shot.dz * (shot.faction === 'raider' ? 0.8 : 0.3);
+
             if (victim.health === 0) state.events.push({ type: 'down', x: victim.x, z: victim.z, energy: 30, material: 'body' });
-            blow(state, 'impact', shot.x, shot.z, 520, 'body', { round: true });
+            blow(state, 'impact', shot.x, shot.z, 520, 'body', { round: true, zone: hitZone });
             shot.life = 0;
         } else if (reach < 1 || !walkable(shot.x, shot.z)) {
-            blow(state, 'impact', shot.x, shot.z, 520, 'marble', { round: true });
+            blow(state, 'impact', shot.x, shot.z, 520, 'marble', { round: true, spall: true });
+            state.events.push({ type: 'ricochet', x: shot.x, z: shot.z, dx: -shot.dz * 0.5, dz: shot.dx * 0.5, material: 'marble' });
             shot.life = 0;
         }
     }

@@ -176,6 +176,33 @@ export function createBursts(scene, { capacity = 16000 } = {}) {
         }
     }
 
+    /** Tumbling brass shell casing ejected laterally with ground bounce. */
+    function casing(x, y, z, vx = 1.6, vz = 0.5) {
+        const random = rng(serial++ * 619 + Math.round(x * 29 + z * 43));
+        sparks.add(
+            x, y + 1.25, z,
+            vx * (1.1 + random() * 0.6), 2.1 + random() * 0.8, vz * (1.1 + random() * 0.6),
+            now, 1.4 + random() * 0.4, 0.045, 0.4, 9.8,
+            2.8, 2.1, 0.6, 1.0
+        );
+    }
+
+    /** Surface fracture spall: limestone chips and pulverized marble dust from bullet impacts. */
+    function spall(x, y, z, nx = 0, nz = 1, material = 'marble') {
+        const random = rng(serial++ * 853 + Math.round(x * 37 + z * 19));
+        const count = material === 'marble' ? 36 : 24;
+        for (let i = 0; i < count; i++) {
+            const spreadX = (random() - 0.5) * 1.5, spreadZ = (random() - 0.5) * 1.5;
+            dust.add(
+                x, y, z,
+                (nx + spreadX) * (1.4 + random() * 2.8), 1.2 + random() * 2.2, (nz + spreadZ) * (1.4 + random() * 2.8),
+                now, 0.6 + random() * 0.7, 0.16 + random() * 0.18, 1.9, 8.5,
+                0.92, 0.90, 0.86, 0.65
+            );
+        }
+        spray(x, y, z, 130, { color: material === 'marble' ? [2.5, 2.4, 2.2] : [4.0, 2.8, 1.0], up: 2.0 });
+    }
+
     return {
         /** Advances the shader clock, and tells it the scale to size points by and the floor to bounce off. */
         update(time, camera, viewHeight, floor) {
@@ -187,7 +214,7 @@ export function createBursts(scene, { capacity = 16000 } = {}) {
             }
         },
         setDensity(value) { density = value; },
-        spray, puff, flurry, breath,
+        spray, puff, flurry, breath, casing, spall,
         /** One world event, thrown into the air. `calm` softens flashing for reduced-motion viewers. */
         react(e, floor, calm) {
             const energy = e.energy ?? 30, y = floor + 0.05;
@@ -200,10 +227,19 @@ export function createBursts(scene, { capacity = 16000 } = {}) {
                     break;
                 case 'impact':
                     if (e.material === 'body') puff(e.x, y, e.z, energy);
+                    else if (e.spall) spall(e.x, floor + 1.2, e.z, e.dx ?? 0, e.dz ?? 1, e.material ?? 'marble');
                     else spray(e.x, floor + (e.round ? 1.3 : 0.9), e.z, energy, { color: e.material === 'metal' ? [3, 3.4, 4] : [4, 2.6, 1.1], calm });
                     break;
                 case 'gunshot':
                     spray(e.x, floor + 1.4, e.z, 90, { color: [5, 3.4, 1.4], spread: 0.6, calm });
+                    puff(e.x, floor + 1.3, e.z, 50, { tone: [0.72, 0.70, 0.68], lift: 0.35, size: 0.45 });
+                    casing(e.x, floor, e.z);
+                    break;
+                case 'ricochet':
+                    spall(e.x, floor + 1.2, e.z, e.dx ?? 0, e.dz ?? 1, e.material ?? 'marble');
+                    break;
+                case 'armor_hit':
+                    puff(e.x, floor + 1.2, e.z, 80, { tone: [0.45, 0.44, 0.42], lift: 0.4, size: 0.5 });
                     break;
                 case 'flash':
                     spray(e.x, floor + 0.8, e.z, calm ? 60 : 900, { color: [5, 4.4, 3.6], spread: 2, up: 2.2, calm });

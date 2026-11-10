@@ -428,6 +428,31 @@ Production delivery of the Top 10 realism upgrades across architectural detailin
 10. **Documentary Camera Lens Simulation (`post.js`):**
     - Barrel lens distortion, peripheral chromatic aberration fringing, and authentic 2021 news sensor grain.
 
+## 17. Tactical Shooter & January 6 Combat Realism Pass (2026-11-10)
+
+Production delivery of the Top 10 tactical combat fidelity upgrades tuned to authentic January 6 conflict dynamics and modern tactical shooter physics:
+
+1. **Authentic Ballistics & Velocity Arc (`world.js`):**
+   - True 3D projectile trajectory with vertical gravity arc ($g = 9.8\text{ m/s}^2$) and sub-step swept segment ray intersection.
+2. **Supersonic Bullet Cracks & Near-Miss Spatial Fly-bys (`world.js`, `audio.js`):**
+   - Near-miss detection ($< 2.5\text{m}$) triggering a $1.2\text{ms}$ supersonic N-wave snap followed by Doppler-shifted pitch sweeps panned in 3D binaural space.
+3. **Battlefield Combat Suppression System (`world.js`, `post.js`, `scene.js`, `audio.js`):**
+   - Combat stress accumulator bleeding off with time; expands peripheral vignette, desaturates image color saturation, and induces high-frequency camera micro-tremors and auditory tinnitus.
+4. **Skeletal Multi-Zone Hitboxes & Tactical Armor (`world.js`):**
+   - Discrete hit zones (Head, Torso, Limbs); police wear tactical Kevlar vests absorbing damage and riot helmets deflecting glancing rounds with ricochet pings.
+5. **Surface Ricochets & Angle-Dependent Deflection (`world.js`, `audio.js`, `bursts.js`, `decals.js`):**
+   - Shallow-angle impacts on marble columns and metal bike-rack barricades spawn ricochet whine audio and spark streaks.
+6. **Procedural Weapon Recoil, Camera Punch & Shell Casings (`scene.js`, `bursts.js`):**
+   - Gunshots apply upward camera recoil pitch and backward dolly zoom with spring-damper recovery, ejecting tumbling brass shell casings with ground bounce.
+7. **Directed Impact Momentum Transfer & Kinematic Stagger (`world.js`, `physics.js`):**
+   - Kinetic momentum transfer $\vec{J} = m \cdot \vec{v}$ delivers physical knockback along projectile flight vectors, causing running targets to stumble dynamically.
+8. **Surface Fracture Spall Chunks & Impact Decals (`bursts.js`, `decals.js`):**
+   - Limestone chips and pulverized white marble dust burst outward from architectural strikes, leaving darkened bullet impact decals.
+9. **Volumetric Muzzle Flash Dynamic Point Light (`scene.js`, `bursts.js`):**
+   - Instantaneous $240\text{ lux}$ point light casting warm illumination across faces and columns for $30\text{ms}$, accompanied by drifting muzzle smoke puffs.
+10. **Concussive Flash-Bangs & Aerodynamic CS Tear Gas Volumetrics (`bursts.js`, `post.js`, `audio.js`):**
+    - Faithful crowd control munitions: flash-bang retinal whiteout bloom in `GradeShader` fading through burned after-images, and dense drifting CS tear gas particulate clouds.
+
 ### Limits that still hold
 
 - Staff and members are non-combatants. They cannot be targeted, reached or harmed in any

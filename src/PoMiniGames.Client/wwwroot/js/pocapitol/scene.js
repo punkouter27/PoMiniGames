@@ -598,6 +598,9 @@ export function createScene(host, { figure } = {}) {
     tracers.count = 0;
     const flashLight = new THREE.PointLight('#ffffff', 0, 45, 1.2);
     scene.add(flashLight);
+    const muzzleLight = new THREE.PointLight('#ffe494', 0, 16, 2.0);
+    scene.add(muzzleLight);
+    let recoilPitch = 0, recoilDolly = 0, retinalFlash = 0;
     // GPU bursts (sparks and dust solved in the vertex shader), wear that stays on the ground, and
     // two flare lights that blaze where a spark shower lands. The lights exist from the start at
     // zero so the light count never changes and no shader recompiles when one is needed.
@@ -800,11 +803,24 @@ export function createScene(host, { figure } = {}) {
             bursts.react(e, floor, quiet);
             decals.react(e, floor);
             const energy = e.energy ?? 0;
+            if (e.type === 'gunshot') {
+                muzzleLight.position.set(e.x, floor + 1.35, e.z);
+                muzzleLight.intensity = quiet ? 35 : 240;
+                recoilPitch += 0.035; recoilDolly += 0.07;
+            } else if (e.type === 'flash') {
+                retinalFlash = 1.0;
+            }
             if (!quiet && (e.type === 'gunshot' || e.type === 'baton' || (e.type === 'impact' && e.material !== 'body' && energy > 60))) {
                 flare(e.tx ?? e.x, floor + 1.2, e.tz ?? e.z, e.type === 'gunshot' ? 120 : 40 + Math.min(200, energy), e.material === 'metal' ? '#9fc4ff' : '#ffb35c');
             }
         }
         for (const light of flares) light.intensity *= Math.exp(-dt * 14);
+        muzzleLight.intensity *= Math.exp(-dt * 26);
+        retinalFlash = Math.max(0, retinalFlash - dt * 1.4);
+        recoilPitch *= Math.exp(-dt * 12);
+        recoilDolly *= Math.exp(-dt * 9);
+        post.setCombatStress?.(retinalFlash, state.suppression ?? 0);
+
         if (state.status === 'active') fxClock += dt;
         bursts.update(fxClock, camera, renderer.domElement.height, groundHeight(camera.position.x, camera.position.z));
         decals.update(daylight);
@@ -818,7 +834,7 @@ export function createScene(host, { figure } = {}) {
         const shots = Math.min(state.shots.length, 64);
         for (let i = 0; i < shots; i++) {
             const shot = state.shots[i];
-            pose.position.set(shot.x, 1.35, shot.z); pose.rotation.set(0, Math.atan2(shot.dx, shot.dz), 0);
+            pose.position.set(shot.x, shot.y ?? 1.35, shot.z); pose.rotation.set(0, Math.atan2(shot.dx, shot.dz), 0);
             pose.scale.setScalar(1); pose.updateMatrix();
             tracers.setMatrixAt(i, pose.matrix);
         }
@@ -835,6 +851,12 @@ export function createScene(host, { figure } = {}) {
         const camDist = (spectating && !latched) ? 9.2 : 6.5;
         const camHeight = (spectating && !latched) ? 4.8 : 3.7;
         desired.set(focus.x + Math.sin(yaw) * camDist, floor + camHeight + pitch * 3, focus.z + Math.cos(yaw) * camDist);
+        // Recoil kick and combat suppression jitter
+        if (!quiet) {
+            desired.y += recoilPitch * 1.5;
+            desired.x += Math.sin(yaw) * recoilDolly + ((state.suppression ?? 0) > 0 ? Math.sin(clock * 32) * 0.04 * state.suppression : 0);
+            desired.z += Math.cos(yaw) * recoilDolly;
+        }
         // Walking: the camera rides the step a little, unless the viewer asked for less motion.
         if (!spectating && moving && !quiet && state.status === 'active') desired.y += Math.abs(Math.sin(clock * 8.5)) * 0.05;
         offset.copy(desired).sub(target);

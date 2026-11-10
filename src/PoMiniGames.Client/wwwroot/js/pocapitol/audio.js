@@ -275,11 +275,28 @@ export function createAudio() {
                 strike({ material: e.material ?? 'body', energy, mass: e.material === 'marble' ? 200 : 75, dest });
                 if (e.round) tone({ from: 4200, to: 900, volume: 0.04, seconds: 0.18, at: 0.01, dest });
                 break;
+            case 'whiz':
+                // Supersonic bullet crack followed by Doppler pitch drop past listener
+                burst({ type: 'highpass', frequency: 4200, volume: 0.15, seconds: 0.03, dest });
+                tone({ from: 4800, to: 920, volume: 0.09, seconds: 0.08, dest });
+                break;
+            case 'ricochet':
+                // High-velocity metallic/stone deflection whine
+                tone({ type: 'sawtooth', from: 2400, to: 3600, volume: 0.08, seconds: 0.14, dest });
+                burst({ type: 'bandpass', frequency: 3800, q: 2.5, volume: 0.07, seconds: 0.07, dest });
+                break;
+            case 'armor_hit':
+                // Dull kinetic thud into tactical Kevlar ballistic plate carrier
+                strike({ material: 'body', energy: 110, mass: 95, dest });
+                burst({ type: 'lowpass', frequency: 750, volume: 0.16, seconds: 0.06, dest });
+                break;
             case 'gunshot':
                 if (clock - lastShot < 0.06) return;
                 lastShot = clock;
                 burst({ type: 'highpass', frequency: 900, volume: 0.5, seconds: 0.09, dest });
                 tone({ from: 180, to: 45, volume: 0.35, seconds: 0.12, dest });
+                // Outdoor Capitol plaza facade slap-back reflection
+                if (!indoors) strike({ material: 'marble', energy: 160, mass: 120, at: 0.07, gain: 0.32, dest });
                 break;
             case 'baton':
                 // The swing, then the blow on a body, then the stick itself ringing.
