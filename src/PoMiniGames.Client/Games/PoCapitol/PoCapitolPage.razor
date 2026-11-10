@@ -15,9 +15,16 @@
             <div class="pc-root @(_demo ? "pc-phonecam" : null)">
                 <div id="pocapitol-scene" class="pc-scene" role="img" aria-label="Fictional Capitol grounds and interiors"></div>
                 <div class="pc-film" aria-hidden="true"></div>
-                <div class="pc-edition">PoCAPITOL <span>ALTERNATE HISTORY · FICTIONAL SCENARIO</span></div>
+                @if (_status != "active")
+                {
+                    <div class="pc-edition">PoCAPITOL <span>ALTERNATE HISTORY · FICTIONAL SCENARIO</span></div>
+                }
                 
                 <div class="pc-top-actions">
+                    <button type="button" class="pc-debug-btn @(_showDebug ? "pc-debug-btn--active" : null)" 
+                            @onclick="ToggleDebug" title="Scenario & Engine Diagnostics" aria-label="Toggle Debug Diagnostics">
+                        ⚙️ DEBUG
+                    </button>
                     <button type="button" class="pc-gear-btn" @onclick="ToggleDrawer" title="Scenario Options & Graphics" aria-label="Open Scenario Options">⚙</button>
                     <div class="pc-mode"><ModeSwitch Current="@(_demo ? GameMode.Demo : GameMode.OnePlayer)" Reload="false" /></div>
                 </div>
@@ -109,8 +116,20 @@
                 {
                     <div class="pc-hud">
                         <div class="pc-hud-main">
-                            <span class="pc-eyebrow">@HudEyebrow</span>
+                            <div class="pc-hud-eyebrow-row">
+                                <span class="pc-eyebrow">@HudEyebrow</span>
+                                @if (_demo)
+                                {
+                                    <span class="pc-rec-pill" aria-hidden="true"><i></i>REC</span>
+                                }
+                            </div>
                             <strong>@HudTitle</strong>
+                            <div class="pc-progress" aria-label="@($"{_milestone} of {Objectives.Length} milestones complete")">
+                                @for (var i = 0; i < Objectives.Length; i++)
+                                {
+                                    <span class="@(i < _milestone ? "pc-done" : null)"></span>
+                                }
+                            </div>
                         </div>
                         @if (_lineIndex >= 0)
                         {
@@ -135,23 +154,16 @@
                             </div>
                         }
                         <div class="pc-crowd">
-                            <span>@_activeRaiders / 128 IN THE CROWD</span>
+                            <span>@_activeRaiders / 128 IN CROWD</span>
                             <span>@_activePolice / @_totalPolice CAPITOL POLICE</span>
-                            <span>@(_sheltering > 0 ? $"{_sheltering} / 64 SHELTERING" : "STAFF EVACUATED")</span>
-                            @if (_demo)
+                            @if (_demo && _subject > 0)
                             {
-                                <b>FOLLOWING @(_subject > 0 ? $"RAIDER {_subject:000}" : "NO ACTIVE RAIDER")</b>
+                                <b>FOLLOWING RAIDER @_subject:000</b>
                             }
                         </div>
                         <span class="pc-weather-pill" title="Atmospheric Conditions: @_weatherCondition">⛅ @_weatherCondition</span>
                         <span class="pc-time">@Clock</span>
                         <RadzenButton Text="Pause" Icon="pause" Size="ButtonSize.Small" Disabled="@(_status != "active")" Click="@(_ => PauseAsync(true))" />
-                    </div>
-                    <div class="pc-progress" aria-label="@($"{_milestone} of {Objectives.Length} milestones complete")">
-                        @for (var i = 0; i < Objectives.Length; i++)
-                        {
-                            <span class="@(i < _milestone ? "pc-done" : null)"></span>
-                        }
                     </div>
 
                     @* Tactical Radar & Crowd Pressure Heatmap HUD *@
@@ -229,12 +241,24 @@
                         {
                             <div class="pc-crosshair" aria-hidden="true">+</div>
                         }
-                        @if (_demo)
-                        {
-                            <div class="pc-rec" aria-hidden="true"><i></i>REC · JAN 06 2021 · @Clock</div>
-                        }
-                        <div class="pc-onthisday"><span class="pc-eyebrow">ON THE DAY · @OnTheDay.Time (APPROX.)</span>@OnTheDay.Text</div>
-                        <div class="pc-bottom"><span>@(_role == "raider" || _demo ? "GOLD BEACON · NEXT MILESTONE" : "")</span><span>@BottomHint</span></div>
+                        <div class="pc-bottom-bar">
+                            @if (_demo)
+                            {
+                                <div class="pc-demo-chip" title="Armed demo variant for autonomous tactical simulation.">
+                                    <strong>DEMO · ARMED VARIANT</strong>
+                                    <span>Autonomous simulation</span>
+                                </div>
+                            }
+                            else if (_role == "raider")
+                            {
+                                <div class="pc-beacon-chip">GOLD BEACON · NEXT MILESTONE</div>
+                            }
+                            <div class="pc-hint-chip">@BottomHint</div>
+                            <div class="pc-onthisday-chip" title="@OnTheDay.Text">
+                                <span class="pc-eyebrow">@OnTheDay.Time</span>
+                                <span>@OnTheDay.Text</span>
+                            </div>
+                        </div>
                         @if (!_demo)
                         {
                             <div class="pc-touch" aria-label="Touch controls">
@@ -249,10 +273,6 @@
                                     <button class="pc-fire" data-capitol-key="Space" aria-label="Push">PUSH</button>
                                 }
                             </div>
-                        }
-                        else
-                        {
-                            <div class="pc-demo-caption">DEMO · ARMED VARIANT · ENTIRELY FICTIONAL<br /><small>Both sides fire and anyone hit drops out. This did not happen: on the day the crowd pushed and police used non-lethal tools. Camera follows the furthest raider still standing. Nothing is saved.</small></div>
                         }
                     }
                     else if (_status == "paused")
@@ -294,14 +314,10 @@
                     }
                 }
 
-                @* Lower-Left Debug Diagnostics Button & Overlay *@
-                <div class="pc-debug-anchor">
-                    <button type="button" class="pc-debug-btn @(_showDebug ? "pc-debug-btn--active" : null)" 
-                            @onclick="ToggleDebug" title="Scenario & Engine Diagnostics" aria-label="Toggle Debug Diagnostics">
-                        <span class="pc-debug-icon">⚙️</span> DEBUG
-                    </button>
-                    @if (_showDebug)
-                    {
+                @* Debug Diagnostics Panel *@
+                @if (_showDebug)
+                {
+                    <div class="pc-debug-anchor">
                         <div class="pc-debug-card" role="region" aria-label="Debug diagnostics panel">
                             <div class="pc-debug-card-header">
                                 <strong>DIAGNOSTICS & TELEMETRY</strong>
@@ -329,8 +345,8 @@
                                 }
                             </div>
                         </div>
-                    }
-                </div>
+                    </div>
+                }
 
                 @* Lower-Right Pinned YYMMDD Build Stamp *@
                 <div class="pc-version-stamp" title="PoCapitol Engine Build 261110.1 · Alternate History Simulation">
@@ -424,10 +440,10 @@
     ];
     private DotNetObjectReference<PoCapitolPage>? _reference;
     private ErrorBoundary? _errorBoundary;
-    private string _status = "loading", _difficulty = "story", _error = "", _message = "", _announcement = "";
+    private string _status = "loading", _difficulty = "standard", _error = "", _message = "", _announcement = "";
     private string _resultWarning = "", _role = "raider", _outcome = "", _graphics = "auto", _graphicsLabel = "Auto";
     private string _weatherMode = "historical", _weatherCondition = "Jan 6 Archive · 42.4°F";
-    private bool _radarExpanded = true;
+    private bool _radarExpanded = false;
     private TelemetryDto? _selectedTelemetry;
     private int _health = 100, _milestone;
     private double _elapsed;

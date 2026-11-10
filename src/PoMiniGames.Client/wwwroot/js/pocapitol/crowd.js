@@ -175,10 +175,7 @@ function createBodies(scene, t, capacity) {
     geometry.setAttribute('color', color);
     geometry.setIndex(new THREE.BufferAttribute(index, 1));
     geometry.setDrawRange(0, 0);
-    const material = addSubsurfaceScattering(
-        new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.88 }),
-        { wrap: 0.35, scatterColor: '#d95a42', scatterIntensity: 0.42 }
-    );
+    const material = new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.82 });
     // The skeleton's bones are never posed through the scene graph: matrices are written straight
     // into its bone texture, so a single placeholder bone stands in for all of them.
     const placeholder = new THREE.Bone(), identity = new THREE.Matrix4();
@@ -380,9 +377,9 @@ export function createCrowd(scene, capacity, { time, groundHeight, shadowTexture
         hair: a => color.set(hairs[Math.abs(a.id * 3) % hairs.length]),
     };
 
-    const cloth = addSubsurfaceScattering(new THREE.MeshStandardMaterial({ color: '#ffffff', roughness: 0.92 }));
+    const cloth = new THREE.MeshStandardMaterial({ color: '#ffffff', roughness: 0.85 });
     const dark = new THREE.MeshStandardMaterial({ color: '#202830', roughness: 0.8 });
-    const knit = addSubsurfaceScattering(new THREE.MeshStandardMaterial({ color: '#ffffff', roughness: 0.98 }), { wrap: 0.45 });
+    const knit = new THREE.MeshStandardMaterial({ color: '#ffffff', roughness: 0.9 });
     const cube = new THREE.BoxGeometry(1, 1, 1);
     const dome = new THREE.SphereGeometry(0.26, 12, 6, 0, Math.PI * 2, 0, Math.PI / 2);
     const ring = new THREE.TorusGeometry(0.35, 0.035, 5, 16);

@@ -215,12 +215,11 @@ const SSRShader = {
     `
 };
 
-// Display-space grade: a touch of desaturation, cool shadows and warm highlights (a winter
-// news-camera look), a vignette and fine grain.
+// Display-space grade: clean tone mapping, realistic saturation, subtle vignette with zero artificial grain noise.
 const GradeShader = {
     uniforms: {
-        tDiffuse: { value: null }, uTime: { value: 0 }, uGrain: { value: 0.035 },
-        uVignette: { value: 0.32 }, uSaturation: { value: 0.88 },
+        tDiffuse: { value: null }, uTime: { value: 0 }, uGrain: { value: 0.0 },
+        uVignette: { value: 0.22 }, uSaturation: { value: 0.94 },
     },
     vertexShader: `varying vec2 vUv; void main() { vUv = uv; gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0); }`,
     fragmentShader: `
@@ -232,9 +231,7 @@ const GradeShader = {
             c.rgb = mix(vec3(l), c.rgb, uSaturation);
             c.rgb += vec3(-0.012, 0.0, 0.022) * (1.0 - l) + vec3(0.018, 0.006, -0.014) * l;
             vec2 d = vUv - 0.5;
-            c.rgb *= 1.0 - uVignette * dot(d, d) * 1.8;
-            float n = fract(sin(dot(vUv * 913.7 + fract(uTime) * 71.3, vec2(12.9898, 78.233))) * 43758.5453);
-            c.rgb += (n - 0.5) * uGrain;
+            c.rgb *= 1.0 - uVignette * dot(d, d) * 1.5;
             gl_FragColor = c;
         }`,
 };
@@ -285,11 +282,11 @@ export function createPost(renderer, scene, camera, depthCamera) {
     composer.addPass(grade);
 
     let samples = 4, dofAllowed = true;
-    /** 3: everything; 2: no AO or depth of field; 1: MSAA and grade only; 0: grade only. */
+    /** 3: everything clean; 2: bloom only; 1: MSAA and grade only; 0: grade only. */
     function setLevel(level) {
         ao.enabled = level >= 3;
-        sscsPass.enabled = level >= 2;
-        ssgiPass.enabled = level >= 3;
+        sscsPass.enabled = false;
+        ssgiPass.enabled = false;
         ssrPass.enabled = level >= 3;
         dofAllowed = level >= 3;
         bloom.enabled = level >= 2;
@@ -304,14 +301,11 @@ export function createPost(renderer, scene, camera, depthCamera) {
         composer.setPixelRatio(ratio);
         composer.setSize(w, h);
         const pw = Math.max(1, Math.floor(w * ratio)), ph = Math.max(1, Math.floor(h * ratio));
-        sscsPass.uniforms.uResolution.value.set(pw, ph);
-        ssgiPass.uniforms.uResolution.value.set(pw, ph);
         ssrPass.uniforms.uResolution.value.set(pw, ph);
     }
     function render(dt, time, calm) {
         grade.uniforms.uTime.value = time;
-        grade.uniforms.uGrain.value = calm ? 0 : 0.035;
-        ssgiPass.uniforms.uTime.value = time;
+        grade.uniforms.uGrain.value = 0.0;
         focus.update(dt);
         composer.render(dt);
     }

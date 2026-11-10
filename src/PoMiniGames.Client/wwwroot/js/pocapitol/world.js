@@ -86,7 +86,7 @@ const LINE_STANDOFF = 0.6;
 
 const difficulties = {
     story: { hold: 1.2, baton: 4, spray: 3, gas: 0.8, interval: 3.2, playerBaton: 6, playerSpray: 4, playerGas: 3, wear: 0.34, tire: 55, shot: 4 },
-    standard: { hold: 1.6, baton: 7, spray: 5, gas: 1.5, interval: 2, playerBaton: 12, playerSpray: 8, playerGas: 6, wear: 0.28, tire: 80, shot: 7 },
+    standard: { hold: 2.2, baton: 12, spray: 8, gas: 1.8, interval: 1.1, playerBaton: 14, playerSpray: 9, playerGas: 6, wear: 0.2, tire: 95, shot: 16, raiderShot: 1.6 },
 };
 const roles = ['raider', 'police', 'observer'];
 
@@ -496,8 +496,8 @@ function updateOfficers(state, difficulty, dt) {
         }
         e.vx = dt > 0 ? (e.x - fromX) / dt : 0; e.vz = dt > 0 ? (e.z - fromZ) / dt : 0;
         e.spray -= dt;
-        // Only the front rank can reach anyone; the ranks behind it are the reserve.
-        if (e.health <= 0 || !def || e.row > 0 || distance > 1.5 || e.stagger > 0) continue;
+        // Only the front rank reaches with melee. In standard difficulty, reserve ranks also provide fire support.
+        if (e.health <= 0 || !def || (e.row > (state.difficulty === 'standard' && state.armed ? 1 : 0)) || distance > 1.5 || e.stagger > 0) continue;
         if (!e.moving) e.heading = Math.PI;
         if (e.cooldown > 0) continue;
         // Nearest person pressing from the front: baton at arm's length, spray beyond it.
@@ -683,8 +683,9 @@ export function advance(state, input, seconds) {
         }
         shot.x = fromX + (toX - fromX) * reach; shot.z = fromZ + (toZ - fromZ) * reach;
         if (victim) {
-            victim.health = Math.max(0, victim.health - (shot.faction === 'raider' ? 3.4 : difficulty.shot));
-            if (shot.faction === 'police') victim.morale = Math.max(0, victim.morale - 0.05);
+            const dmg = shot.faction === 'raider' ? (difficulty.raiderShot ?? 3.4) : difficulty.shot;
+            victim.health = Math.max(0, victim.health - dmg);
+            if (shot.faction === 'police') victim.morale = Math.max(0, victim.morale - 0.25);
             if (victim.health === 0) state.events.push({ type: 'down', x: victim.x, z: victim.z, energy: 30, material: 'body' });
             blow(state, 'impact', shot.x, shot.z, 520, 'body', { round: true });
             shot.life = 0;
