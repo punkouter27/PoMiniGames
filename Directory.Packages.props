@@ -27,7 +27,7 @@
          / hedging) backed by Polly v8, registered via IHttpClientFactory. -->
     <PackageVersion Include="Microsoft.Extensions.Http.Resilience" Version="10.11.0" />
     <PackageVersion Include="Microsoft.Extensions.Configuration.Abstractions" Version="10.0.14" />
-    <PackageVersion Include="Microsoft.Extensions.Diagnostics.HealthChecks" Version="10.0.14" />
+    <PackageVersion Include="Microsoft.Extensions.Diagnostics.HealthChecks" Version="11.0.0" />
     <!-- Transitive pin: Microsoft.AspNetCore.OpenApi pulls Microsoft.OpenApi; with
          CentralPackageTransitivePinningEnabled this holds it at a current version so
          the NuGet CVE audit (which fails the build) can't be tripped by an old
