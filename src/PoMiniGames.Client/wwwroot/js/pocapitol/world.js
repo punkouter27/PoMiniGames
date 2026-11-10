@@ -249,7 +249,7 @@ export function createAttempt(difficulty = 'standard', demo = false, role = 'rai
                 sprayed: 0, stun: 0, surge: 0, downFor: 0, helped: false, resting: false, crowding: 0,
             };
         }),
-        effects: [], events: [], reinforcements: 0,
+        effects: [], events: [], reinforcements: 0, droppedShields: [],
         // Demo only: both sides are armed, and anyone brought to zero is out for the attempt.
         armed: demo, shots: [],
         // Seated or standing in the chamber until the evacuation; then out the rear doors.
@@ -437,6 +437,10 @@ function updateLines(state, difficulty, dt) {
         if (line.integrity <= 0) {
             line.state = 'broken'; line.brokenAt = state.elapsed; line.pressure = 0;
             state.events.push({ type: 'break', x: 0, z: def.z, line: i });
+            // Drop captured police shields along the broken line
+            state.droppedShields = state.droppedShields ?? [];
+            state.droppedShields.push({ x: (def.x0 + def.x1) * 0.5 - 2.5, z: def.z + 0.5 });
+            state.droppedShields.push({ x: (def.x0 + def.x1) * 0.5 + 2.5, z: def.z + 0.5 });
             // A line giving way is the moment a hesitant crowd surges.
             for (const c of state.companions) {
                 if (c.health <= 0 || Math.abs(c.z - def.z) > 35) continue;
@@ -454,6 +458,17 @@ function updateLines(state, difficulty, dt) {
         }
         state.events.push({ type: 'reinforce', x: 0, z: def.z - 3, line: front });
     }
+}
+
+export function blocksWithShield(target, fromX, fromZ) {
+    if (!target?.hasShield || (target.shieldHp ?? 0) <= 0) return false;
+    const heading = target.heading ?? 0;
+    const forwardX = -Math.sin(heading), forwardZ = -Math.cos(heading);
+    const attackDirX = target.x - fromX, attackDirZ = target.z - fromZ;
+    const dist = Math.hypot(attackDirX, attackDirZ);
+    if (dist < 1e-4) return false;
+    const dot = (attackDirX / dist) * forwardX + (attackDirZ / dist) * forwardZ;
+    return dot < -0.2;
 }
 
 function updateOfficers(state, difficulty, dt) {
@@ -523,7 +538,16 @@ function updateOfficers(state, difficulty, dt) {
         e.attacking = 0.3; e.tool = baton ? 'baton' : 'spray';
         if (!baton) e.spray = difficulty.interval * 3;
         let energy = 0;
-        if (target === state.player) {
+        const blocked = blocksWithShield(target, e.x, e.z);
+        if (blocked) {
+            target.shieldHp = (target.shieldHp ?? 8) - 1;
+            energy = 70;
+            state.events.push({ type: 'impact', x: target.x, z: target.z, material: 'metal', energy: 120 });
+            if (target.shieldHp <= 0) {
+                target.hasShield = false;
+                state.events.push({ type: 'break', x: target.x, z: target.z });
+            }
+        } else if (target === state.player) {
             state.health = Math.max(0, state.health - (baton ? difficulty.playerBaton : difficulty.playerSpray));
             state.damageFlash = 0.22;
             if (baton) energy = deliver(e, state.player, dx, dz, 'baton'); else state.sprayed = 4;
@@ -669,6 +693,33 @@ export function advance(state, input, seconds) {
     updateLines(state, difficulty, dt);
     updateOfficers(state, difficulty, dt);
     stepRaiders(state, difficulty, dt);
+
+    // Pick up fallen police riot shields
+    if (state.droppedShields?.length > 0) {
+        for (const c of state.companions) {
+            if (c.health <= 0 || c.hasShield) continue;
+            for (let i = 0; i < state.droppedShields.length; i++) {
+                const s = state.droppedShields[i];
+                if (Math.hypot(c.x - s.x, c.z - s.z) < 1.4) {
+                    c.hasShield = true; c.shieldHp = 8;
+                    state.droppedShields.splice(i, 1);
+                    state.events.push({ type: 'pickup', x: c.x, z: c.z, item: 'shield' });
+                    break;
+                }
+            }
+        }
+        if (state.role === 'raider' && state.health > 0 && !state.player.hasShield) {
+            for (let i = 0; i < state.droppedShields.length; i++) {
+                const s = state.droppedShields[i];
+                if (Math.hypot(state.player.x - s.x, state.player.z - s.z) < 1.4) {
+                    state.player.hasShield = true; state.player.shieldHp = 10;
+                    state.droppedShields.splice(i, 1);
+                    state.events.push({ type: 'pickup', x: state.player.x, z: state.player.z, item: 'shield' });
+                    break;
+                }
+            }
+        }
+    }
 
     // Armed demo: rounds in flight, swept as segments so a 1.5 m step cannot skip a body or a
     // wall. A hit takes stamina; nobody is hit by their own side.

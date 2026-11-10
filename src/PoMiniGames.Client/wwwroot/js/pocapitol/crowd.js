@@ -302,7 +302,7 @@ function poseFor(b, a, t, pose) {
         if (!b.moving) { rot(pose, 'thigh_L', 0.4); rot(pose, 'shin_L', -0.25); rot(pose, 'thigh_R', -0.35); rot(pose, 'foot_R', 0.3); }
     }
     if (b.gun) { arm('R', 1.42, 0.08); arm('L', 1.2, 0.5, 0.4); rot(pose, 'head', -0.05, -0.1); }
-    else if (a.police) {
+    else if (a.police || a.hasShield) {
         arm('L', 0.55, 1.0, 0.18); // shield up on the forearm
         if (a.attacking > 0 && a.tool === 'baton') arm('R', 1.75, 0.15);
         else if (a.attacking > 0) arm('R', 1.45, 0.05, -0.15); // spray, arm out
@@ -419,8 +419,8 @@ export function createCrowd(scene, capacity, { time, groundHeight, shadowTexture
     const clear = createPolycarbonateMaterial({ color: '#c4e0ea', opacity: 0.42, roughness: 0.08, dispersion: 0.04 });
     part('visor', cube, clear, [0, 1.86, -0.25], [0.46, 0.32, 0.05], a => a.police, false, head);
     part('vest', cube, dark, [0, 1.2, -0.25], [0.67, 0.64, 0.12], a => a.police || (raider(a) && a.id >= 0 && a.id % 8 === 3));
-    part('shield', cube, clear, [0.1, -0.1, -0.08], [0.9, 1.45, 0.09], a => a.police, false, left);
-    part('shield-edge', cube, dark, [0.1, -0.81, -0.08], [0.92, 0.07, 0.11], a => a.police, true, left);
+    part('shield', cube, clear, [0.1, -0.1, -0.08], [0.9, 1.45, 0.09], a => a.police || a.hasShield, false, left);
+    part('shield-edge', cube, dark, [0.1, -0.81, -0.08], [0.92, 0.07, 0.11], a => a.police || a.hasShield, true, left);
     const shieldCanvas = document.createElement('canvas');
     shieldCanvas.width = 256; shieldCanvas.height = 64;
     const ctx = shieldCanvas.getContext('2d');

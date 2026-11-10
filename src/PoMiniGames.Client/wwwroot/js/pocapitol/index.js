@@ -378,6 +378,14 @@ function getDebugStats() {
     };
 }
 
+function setTracerMode(mode) {
+    if (game?.view?.setTracerMode) game.view.setTracerMode(mode);
+}
+
+function setMotionReduction(calmVal) {
+    if (game?.view?.setMotionReduction) game.view.setMotionReduction(calmVal);
+}
+
 function dispose() {
     if (!game) return;
     const g = game;
@@ -393,5 +401,5 @@ function dispose() {
 window.PoCapitol = {
     init, start, pause, dispose, setGraphics, getGraphics: storedGraphics, getDebugStats,
     setWeather, getWeather: storedWeather, initRadar, toggleUnitLatch, clearUnitInspect,
-    adjustHealth,
+    adjustHealth, setTracerMode, setMotionReduction,
 };

@@ -596,6 +596,21 @@ export function createScene(host, { figure } = {}) {
     const tracers = instanced(new THREE.BoxGeometry(0.06, 0.06, 0.9), tracerMaterial, 64);
     tracers.layers.set(1);
     tracers.count = 0;
+    let tracerMode = 'luminous';
+    let motionReduction = false;
+    function setTracerMode(mode) {
+        if (['luminous', 'stealth', 'off'].includes(mode)) {
+            tracerMode = mode;
+            if (mode === 'stealth') {
+                tracerMaterial.color.set('#64748b');
+            } else {
+                tracerMaterial.color.set(new THREE.Color('#ffe9a8').multiplyScalar(3));
+            }
+        }
+    }
+    function setMotionReduction(calmVal) {
+        motionReduction = Boolean(calmVal);
+    }
     const flashLight = new THREE.PointLight('#ffffff', 0, 45, 1.2);
     scene.add(flashLight);
     const muzzleLight = new THREE.PointLight('#ffe494', 0, 16, 2.0);
@@ -816,10 +831,11 @@ export function createScene(host, { figure } = {}) {
         }
         for (const light of flares) light.intensity *= Math.exp(-dt * 14);
         muzzleLight.intensity *= Math.exp(-dt * 26);
+        const calmMode = quiet || motionReduction;
         retinalFlash = Math.max(0, retinalFlash - dt * 1.4);
         recoilPitch *= Math.exp(-dt * 12);
         recoilDolly *= Math.exp(-dt * 9);
-        post.setCombatStress?.(retinalFlash, state.suppression ?? 0);
+        post.setCombatStress?.(calmMode ? 0 : retinalFlash, calmMode ? ((state.suppression ?? 0) * 0.2) : (state.suppression ?? 0));
 
         if (state.status === 'active') fxClock += dt;
         bursts.update(fxClock, camera, renderer.domElement.height, groundHeight(camera.position.x, camera.position.z));
@@ -828,14 +844,15 @@ export function createScene(host, { figure } = {}) {
         for (const effect of state.effects) {
             if (effect.type !== 'flash') continue;
             flashLight.position.set(effect.x, 2.2, effect.z);
-            flash = (quiet ? 40 : 900) * effect.life / effect.span;
+            flash = (calmMode ? 35 : 900) * effect.life / effect.span;
             flashAt = effect;
         }
-        const shots = Math.min(state.shots.length, 64);
+        const shots = tracerMode === 'off' ? 0 : Math.min(state.shots.length, 64);
         for (let i = 0; i < shots; i++) {
             const shot = state.shots[i];
             pose.position.set(shot.x, shot.y ?? 1.35, shot.z); pose.rotation.set(0, Math.atan2(shot.dx, shot.dz), 0);
-            pose.scale.setScalar(1); pose.updateMatrix();
+            const scale = tracerMode === 'stealth' ? 0.45 : 1.0;
+            pose.scale.set(scale, scale, scale); pose.updateMatrix();
             tracers.setMatrixAt(i, pose.matrix);
         }
         tracers.count = shots; tracers.instanceMatrix.needsUpdate = true;
@@ -983,5 +1000,5 @@ export function createScene(host, { figure } = {}) {
         geometries.forEach(g => g.dispose()); materials.forEach(m => m.dispose()); textures.forEach(t => t.dispose());
         renderer.dispose(); renderer.forceContextLoss(); renderer.domElement.remove();
     }
-    return { canvas: renderer.domElement, render, aim, pickUnit, applyQuality, dispose, renderer };
+    return { canvas: renderer.domElement, render, aim, pickUnit, applyQuality, dispose, renderer, setTracerMode, setMotionReduction };
 }

@@ -362,6 +362,23 @@
                                     </Items>
                                 </RadzenSelectBar>
                                 <p class="pc-small">@_weatherCondition</p>
+
+                                <label class="pc-small" for="pc-drawer-tracers" style="margin-top:10px;">Ballistic Tracers</label>
+                                <RadzenSelectBar TValue="string" Value="@_tracerMode" Change="@(async (string val) => await SetTracerModeAsync(val))" id="pc-drawer-tracers">
+                                    <Items>
+                                        <RadzenSelectBarItem Text="Luminous" Value="@("luminous")" />
+                                        <RadzenSelectBarItem Text="Stealth" Value="@("stealth")" />
+                                        <RadzenSelectBarItem Text="Off" Value="@("off")" />
+                                    </Items>
+                                </RadzenSelectBar>
+
+                                <label class="pc-small" for="pc-drawer-motion" style="margin-top:10px;">Combat Motion & Shake</label>
+                                <RadzenSelectBar TValue="string" Value="@_motionMode" Change="@(async (string val) => await SetMotionModeAsync(val))" id="pc-drawer-motion">
+                                    <Items>
+                                        <RadzenSelectBarItem Text="Full Combat" Value="@("full")" />
+                                        <RadzenSelectBarItem Text="Reduced Motion" Value="@("reduced")" />
+                                    </Items>
+                                </RadzenSelectBar>
                             </div>
 
                             <div class="pc-drawer-section">
@@ -454,6 +471,7 @@
     private string _status = "loading", _difficulty = "standard", _error = "", _message = "", _announcement = "";
     private string _resultWarning = "", _role = "raider", _outcome = "", _graphics = "auto", _graphicsLabel = "Auto";
     private string _weatherMode = "historical", _weatherCondition = "Jan 6 Archive · 42.4°F";
+    private string _tracerMode = "luminous", _motionMode = "full";
     private bool _radarExpanded = true;
     private TelemetryDto? _selectedTelemetry;
     private int _health = 100, _milestone;
@@ -773,6 +791,20 @@
         {
             _weatherCondition = await JS.InvokeAsync<string>("PoCapitol.setWeather", mode);
         }
+        catch (JSException) {}
+    }
+
+    private async Task SetTracerModeAsync(string mode)
+    {
+        _tracerMode = mode;
+        try { await JS.InvokeVoidAsync("PoCapitol.setTracerMode", mode); }
+        catch (JSException) {}
+    }
+
+    private async Task SetMotionModeAsync(string mode)
+    {
+        _motionMode = mode;
+        try { await JS.InvokeVoidAsync("PoCapitol.setMotionReduction", mode == "reduced"); }
         catch (JSException) {}
     }
 

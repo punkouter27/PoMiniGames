@@ -262,6 +262,7 @@ export function createAudio() {
         if (!e.human && farAway(e)) return;
         const dest = place(e.x, e.z, e.type === 'gas' ? 3 : e.type === 'break' ? 4 : 2);
         const energy = e.energy ?? 30;
+        const isIndoors = (e.z ?? listener.z) < 14.5;
         switch (e.type) {
             case 'shove':
                 if (clock - lastShove < 0.09 && !e.human) return;
@@ -296,7 +297,7 @@ export function createAudio() {
                 burst({ type: 'highpass', frequency: 900, volume: 0.5, seconds: 0.09, dest });
                 tone({ from: 180, to: 45, volume: 0.35, seconds: 0.12, dest });
                 // Outdoor Capitol plaza facade slap-back reflection
-                if (!indoors) strike({ material: 'marble', energy: 160, mass: 120, at: 0.07, gain: 0.32, dest });
+                if (!isIndoors) strike({ material: 'marble', energy: 160, mass: 120, at: 0.07, gain: 0.32, dest });
                 break;
             case 'baton':
                 // The swing, then the blow on a body, then the stick itself ringing.
