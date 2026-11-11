@@ -205,9 +205,9 @@ jobs:
       # the C# half runs in the unit tier above. Node ships on ubuntu-latest.
       - name: Run PoBrawl rollback sim parity (JS)
         run: node --test tests/pobrawl-rollback.test.mjs
-      - name: Run PoCabinet race health (JS, 100-car field on Capitol and the Bedroom Floor GP)
+      - name: Run PoCabinet race health (JS, 100-car field on Capitol, Bedroom Floor GP and Rim to Rim Court)
         run: |
-          dotnet run scripts/pocabinet/dump.cs -- artifacts/pocabinet-worlds capitol bedroom
+          dotnet run scripts/pocabinet/dump.cs -- artifacts/pocabinet-worlds capitol bedroom court
           node --test tests/pocabinet-race-health.test.mjs
       # Every Marble Race course runs a full 101-marble race on the real engine, headless, plus
       # the speed-cap tunnelling check (scripts/pomarblerace/harness.mjs). Maps run in parallel.
@@ -303,6 +303,15 @@ jobs:
           # PoMiniGames.API.dll at the deployment root, not nested under publish/.
           # Combined with WEBSITE_RUN_FROM_PACKAGE=1 (set in resources.bicep), the
           # zip is mounted atomically — no file-copy step on the host.
+          pkg_setting=$(az webapp config appsettings list --resource-group "$AZURE_RESOURCE_GROUP" --name "$APP_NAME" --query "[?name=='WEBSITE_RUN_FROM_PACKAGE'].value | [0]" -o tsv)
+          if [ "$pkg_setting" != "1" ]; then
+            echo "Enabling WEBSITE_RUN_FROM_PACKAGE=1 on $APP_NAME..."
+            az webapp config appsettings set \
+              --resource-group "$AZURE_RESOURCE_GROUP" \
+              --name "$APP_NAME" \
+              --settings WEBSITE_RUN_FROM_PACKAGE=1 SCM_DO_BUILD_DURING_DEPLOYMENT=false ASPNETCORE_ENVIRONMENT=Production \
+              --output none
+          fi
           ( cd publish && zip -qr ../app-deploy.zip . )
           az webapp deploy \
             --resource-group "$AZURE_RESOURCE_GROUP" \

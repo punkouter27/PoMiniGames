@@ -131,6 +131,10 @@ resource webApp 'Microsoft.Web/sites@2022-09-01' = {
           name: 'PoMiniGames__MicrosoftAuth__Authority'
           value: '${environment().authentication.loginEndpoint}${microsoftAuthTenantId}/v2.0'
         }
+        {
+          name: 'PoVoxelStrike__ConvertedPath'
+          value: 'C:\\home\\data\\povoxelstrike\\converted'
+        }
       ]
     }
   }
