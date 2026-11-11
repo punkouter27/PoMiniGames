@@ -84,6 +84,7 @@ scores.
   action. Essential choices stay visible; longer explanations and customization belong
   in disclosures. Its body can scroll on unusually small screens while the action stays
   visible. Escape cancels the intro rather than silently starting play.
+  Choose 1P, 2P, Online or Demo on the main menu; intro modals do not repeat mode selection.
 - During gameplay, **Tab toggles stats**, and **Esc closes them**. Shift+Tab, forms and
   dialogs retain normal focus navigation. The visible Stats control supports touch.
   Ecosystem retains its observation dashboard and Jev retains its match inspector;

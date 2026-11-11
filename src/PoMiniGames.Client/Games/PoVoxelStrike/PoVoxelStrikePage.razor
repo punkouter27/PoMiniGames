@@ -50,8 +50,6 @@
                        Title="@TitleContent"
                        Objective="@StartObjective"
                        DialogLabel="Voxel Strike — start"
-                       CurrentMode="@(_tab == Tab.Online ? GameMode.Multiplayer : GameMode.OnePlayer)"
-                       OnModeSelect="OnModeAsync"
                        Controls="@(_tab == Tab.Solo || !_lobbyOpen || _runStarted ? ControlsContent : null)"
                        Options="@(_tab == Tab.Solo ? SoloOptions : null)"
                        Lobby="@(_tab == Tab.Online && _lobbyOpen && !_runStarted ? LobbyContent : null)"
@@ -508,13 +506,6 @@
         await InvokeAsync(StateHasChanged);
         if (!await EnsureEngineAsync()) return;
         await StartEngineAsync(demo: true, seed: 0, survival: false, playerNumber: 0, names: null);
-    }
-
-    private Task OnModeAsync(GameMode mode)
-    {
-        if (mode != GameMode.Demo) return SwitchTabAsync(mode == GameMode.Multiplayer ? Tab.Online : Tab.Solo);
-        Navigation.NavigateTo("/povoxelstrike/demo");
-        return Task.CompletedTask;
     }
 
     private async Task SwitchTabAsync(Tab tab)

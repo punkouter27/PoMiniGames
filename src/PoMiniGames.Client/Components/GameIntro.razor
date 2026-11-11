@@ -38,7 +38,7 @@
 @* Always shown: there is no opt-out. The one exception is the demo attract loop
    (?kiosk=N), which starts at once and renders nothing (_kiosk). *@
 @* One structure for every game, so no card ever scrolls:
-     header  – icon + title, the mode switch, one objective line;
+     header  – icon + title, one objective line;
      body    – the controls (with the longer rules behind a "How to play" tab when a game
                has them) and the game's setup (Options). Wide cards put the two side by side;
      footer  – exactly one button, OK, plus any setup toggles that belong beside it (Actions).
@@ -59,16 +59,6 @@
             @if (Title != null)
             {
                 <div class="gps-intro-title">@Title</div>
-            }
-
-            @* The game's other modes, one tap away, so changing mode does not mean going
-               back to the hub. Not on the demo card, which is gone in two seconds. Keydowns stop here so Enter on a mode button picks that mode
-               instead of also reaching HandleKey and starting this one. *@
-            @if (Mode != IntroMode.Demo)
-            {
-                <div class="gps-intro-modes" @onkeydown="HandleControlKey" @onkeydown:stopPropagation="true">
-                    <ModeSwitch Current="@CurrentMode" OnSelect="@OnModeSelect" />
-                </div>
             }
 
             @if (!string.IsNullOrWhiteSpace(Objective))
@@ -111,7 +101,7 @@
 
                 @if (Options != null)
                 {
-                    @* Keydowns stop here for the same reason as the mode switch above: Space
+                    @* Keydowns stop here so Space
                        on a checkbox in the options must tick it, not start the game. A select
                        driven by per-player keys (ForwardOptionKeys) lets them through to OnKey,
                        so its keys keep working once a tile inside it has focus. *@
@@ -190,10 +180,6 @@
     /// <summary>Optional status above the body and lobby content within it.</summary>
     [Parameter] public RenderFragment? Status { get; set; }
     [Parameter] public RenderFragment? Lobby { get; set; }
-
-    /// <summary>Override the mode switch for pages that switch modes in place.</summary>
-    [Parameter] public GameMode? CurrentMode { get; set; }
-    [Parameter] public EventCallback<GameMode> OnModeSelect { get; set; }
 
     /// <summary>
     /// Setup toggles that sit in the footer beside OK (PoBrawl's "Training first"), so the

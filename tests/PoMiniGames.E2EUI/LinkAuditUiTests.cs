@@ -53,6 +53,8 @@ public class LinkAuditUiTests
           const card = document.querySelector('.gps-intro-card');
           if (!card) return null;
           const out = [];
+          if (card.querySelector('.mode-switch, [role="tablist"][aria-label="Mode"]'))
+            out.push('repeats main-menu mode selection');
           for (const el of [card, card.querySelector('.gps-intro-body')]) {
             if (el && el.scrollHeight > el.clientHeight + 1)
               out.push(`${el.className.split(' ')[0]} scrolls (${el.scrollHeight}px of content in ${el.clientHeight}px)`);

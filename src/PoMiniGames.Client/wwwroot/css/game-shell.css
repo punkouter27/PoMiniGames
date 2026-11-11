@@ -364,12 +364,6 @@ dialog.gps-modal:has(.gps-summary--wide details[open], .pocabinet-results__detai
   color: #ffffff;
 }
 
-/* The shared mode switch, centred under the card's title. */
-.gps-intro-modes {
-  display: flex;
-  justify-content: center;
-}
-
 @keyframes gps-modal-fade {
   from { opacity: 0; }
   to   { opacity: 1; }
