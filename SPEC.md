@@ -76,6 +76,14 @@ reconstruction.
   cast-steel lantern, Car of History clock and relief eagle. Police wear two forces' dress,
   Capitol Police navy and Metropolitan Police hi-vis. Decorative only: the walkable
   footprint, collisions and objectives are unchanged.
+- **The city around it (2026-11-11):** the grounds run out to 420 m by 520 m and carry the
+  landmarks within about a mile of the Capitol, each on its true bearing with its real
+  distance compressed to fit (`campus.js`): the Washington Monument and the Mall museums to
+  the west, Union Station and the NoMa blocks north, Eastern Market, Lincoln Park and a
+  terrace of Capitol Hill row houses east, and L'Enfant Plaza, the Marine Barracks and the
+  Wharf south, with the House and Senate office buildings and the Botanic Garden conservatory
+  closer in. The campus batches its repeated blocks, windows and branches into instanced
+  meshes, so the aerial view costs fewer draw calls than before any of it was drawn.
 - **Rendering look:** a cloudy sky dome lights the scene as well as filling the background;
   the sun follows its real 6 January path from about 29° up at 12:50 pm to sunset near five.
   Stone, paving and lawn carry generated, world-mapped detail; flags ripple; every figure

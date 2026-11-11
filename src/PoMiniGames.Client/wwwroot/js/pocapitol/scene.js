@@ -19,7 +19,8 @@ const SUN = [[0, 1.6], [0.6, 1.35], [0.8, 0.8], [0.92, 0.3], [1, 0.08]];
 const FILL = [[0, 2.6], [0.8, 2.1], [1, 0.9]];
 const ENV = [[0, 0.75], [0.8, 0.6], [0.92, 0.32], [1, 0.12]];
 // Haze: thick enough that the far crowd and the dome sit in the air, as on a raw January day.
-const FOG_OUT = 0.0062, FOG_GAS = 0.024;
+// Kept light enough that the city a mile out still reads as silhouettes through it.
+const FOG_OUT = 0.0048, FOG_GAS = 0.024;
 // The environment light is re-baked only when the sky has visibly changed.
 const ENV_STAGES = [0, 0.62, 0.78, 0.88, 0.96];
 
@@ -78,7 +79,8 @@ export function createScene(host, { figure } = {}) {
     renderer.domElement.tabIndex = 0;
     renderer.domElement.setAttribute('aria-label', 'PoCapitol third-person scene. Click to look around.');
     host.append(renderer.domElement);
-    const camera = new THREE.PerspectiveCamera(52, 1, 0.1, 280);
+    // Far enough to hold the city ring a mile out; near stays 0.1 so contact detail reads.
+    const camera = new THREE.PerspectiveCamera(52, 1, 0.1, 420);
     // Everything see-through (sky, sprites, decals, cloth) lives on layer 1. The main camera
     // sees both layers; the depth camera used by AO and depth of field sees solids only.
     camera.layers.enable(1);
@@ -201,7 +203,9 @@ export function createScene(host, { figure } = {}) {
         return value;
     }
 
-    box(0, -0.3, 30, 230, 0.5, 270, '#657360');
+    // The grounds run out far enough to carry the city around the Capitol. The far edge sits in
+    // the haze, so the plane reads as ground to the horizon rather than a lawn with an end.
+    box(0, -0.3, 40, 420, 0.5, 520, '#657360');
     box(0, -0.04, 42, 24, 0.12, 60, '#b8b2a5');
     for (let z = 18; z < 70; z += 4) box(0, 0.03, z, 22, 0.015, 0.04, '#93948c');
     // Bare January trees: a trunk that forks three times, each fork a little thinner.
