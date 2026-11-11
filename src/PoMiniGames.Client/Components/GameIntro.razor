@@ -1,6 +1,9 @@
 @namespace PoMiniGamesClient.Components
 @using Microsoft.AspNetCore.Components
 @using Microsoft.AspNetCore.Components.Web
+@using Microsoft.Extensions.Logging
+@using PoMiniGamesClient.Models
+@using PoMiniGamesClient.Services.Ui
 @implements IDisposable
 
 @* ─────────────────────────────────────────────────────────────────────────
@@ -25,7 +28,7 @@
    ───────────────────────────────────────────────────────────────────────── *@
 
 @* This card sits between the player and every 1-player game, so dismissing it
-   must not require aiming. Keyboard users have Enter/Space/Escape (HandleKey);
+   must not require aiming. Keyboard users have Enter/Space; Escape returns home.
    pointer users have the OK button plus tap-to-dismiss on the BACKDROP — the
    whole screen outside the card, a generous target. Card taps do not dismiss:
    the card carries interactive controls (PoBrawl's "Training first" checkbox,
@@ -43,11 +46,14 @@
    and every game's content is cut to fit so it does not (LinkAuditUiTests holds the line). *@
 @if (!_kiosk)
 {
-<div class="gps-intro-overlay" role="dialog" aria-modal="true" aria-label="@(string.IsNullOrWhiteSpace(DialogLabel) ? "Game intro" : DialogLabel)"
-     @ref="_root" tabindex="0"
+<dialog class="gps-intro-overlay" aria-label="@(string.IsNullOrWhiteSpace(DialogLabel) ? "Game intro" : DialogLabel)"
+     style="width:100%;height:100%;max-width:none;max-height:none;margin:0;border:0;box-sizing:border-box;color:inherit"
+     @ref="_root"
      @onclick="HandleOverlayClick"
+     @oncancel="CancelAsync"
      @onkeydown="HandleKey" @onkeydown:preventDefault="CaptureKeys">
     <div class="gps-intro-card gps-intro-card--@ModeClass @(Wide ? "gps-intro-card--wide" : null)"
+        @ref="_focusRoot" tabindex="-1"
         @onclick:stopPropagation="true">
         <header class="gps-intro-head">
             @if (Title != null)
@@ -60,8 +66,8 @@
                instead of also reaching HandleKey and starting this one. *@
             @if (Mode != IntroMode.Demo)
             {
-                <div class="gps-intro-modes" @onkeydown:stopPropagation="true">
-                    <ModeSwitch />
+                <div class="gps-intro-modes" @onkeydown="HandleControlKey" @onkeydown:stopPropagation="true">
+                    <ModeSwitch Current="@CurrentMode" OnSelect="@OnModeSelect" />
                 </div>
             }
 
@@ -71,7 +77,12 @@
             }
         </header>
 
-        @if (Controls != null || HowToPlay != null || Options != null)
+        @if (Status != null)
+        {
+            @Status
+        }
+
+        @if (Controls != null || HowToPlay != null || Options != null || Lobby != null)
         {
             <div class="gps-intro-body">
                 @if (Controls != null || HowToPlay != null)
@@ -81,7 +92,7 @@
                         {
                             @* Two views of one panel, not two actions: a tab strip. Keydowns stop
                                so Enter on a tab switches it instead of starting the game. *@
-                            <div class="gps-intro-tabs" role="tablist" aria-label="Intro" @onkeydown:stopPropagation="true">
+                            <div class="gps-intro-tabs" role="tablist" aria-label="Intro" @onkeydown="HandleControlKey" @onkeydown:stopPropagation="true">
                                 <button type="button" role="tab" class="gps-intro-tab"
                                         aria-selected="@(!ShowingRules ? "true" : "false")"
                                         @onclick="() => _rules = false">Controls</button>
@@ -104,11 +115,17 @@
                        on a checkbox in the options must tick it, not start the game. A select
                        driven by per-player keys (ForwardOptionKeys) lets them through to OnKey,
                        so its keys keep working once a tile inside it has focus. *@
-                    <div class="gps-intro-options" @onkeydown:stopPropagation="@(!ForwardOptionKeys)">@Options</div>
+                    <div class="gps-intro-options" @onkeydown="HandleControlKey" @onkeydown:stopPropagation="@(!ForwardOptionKeys)">@Options</div>
+                }
+                @if (Lobby != null)
+                {
+                    <div @onkeydown="HandleControlKey" @onkeydown:stopPropagation="true">@Lobby</div>
                 }
             </div>
         }
 
+        @if (ShowStart)
+        {
         <footer class="gps-intro-actions">
             @if (Mode == IntroMode.Demo)
             {
@@ -121,12 +138,13 @@
             {
                 @* Setup toggles beside OK (Brawl's "Training first"). Keydowns stop so Space
                    on a checkbox ticks it. *@
-                <div class="gps-intro-actions-extra" @onkeydown:stopPropagation="true">@Actions</div>
+                <div class="gps-intro-actions-extra" @onkeydown="HandleControlKey" @onkeydown:stopPropagation="true">@Actions</div>
             }
             @* The card's one button. 1P and demo: focused on open, so Enter and Space take it. *@
             <button type="button" class="app-btn app-btn--lg app-btn--primary" data-intro-action
                     @ref="_ok"
-                    disabled="@(Mode == IntroMode.TwoPlayer && !StartEnabled)"
+                    disabled="@(!StartEnabled)"
+                    @onkeydown:stopPropagation="@(Mode != IntroMode.TwoPlayer)"
                     @onclick="StartAsync">OK</button>
             @* The one gesture every game shares, learned once: Tab opens the live
                stats panel (GameShell's GameDebugOverlay). Cascaded, so it disappears
@@ -135,13 +153,14 @@
             {
                 <p class="gps-intro-hint"><kbd class="gps-kbd">Tab</kbd> shows live stats</p>
             }
-            @if (Mode == IntroMode.TwoPlayer && !string.IsNullOrWhiteSpace(StartHint))
+            @if (!string.IsNullOrWhiteSpace(StartHint))
             {
-                <p class="gps-intro-hint">@StartHint</p>
+                <p class="gps-intro-hint" role="status">@StartHint</p>
             }
         </footer>
+        }
     </div>
-</div>
+</dialog>
 }
 
 @code {
@@ -168,6 +187,14 @@
     /// <summary>Optional extra content for TwoPlayer mode (e.g. character select).</summary>
     [Parameter] public RenderFragment? Options { get; set; }
 
+    /// <summary>Optional status above the body and lobby content within it.</summary>
+    [Parameter] public RenderFragment? Status { get; set; }
+    [Parameter] public RenderFragment? Lobby { get; set; }
+
+    /// <summary>Override the mode switch for pages that switch modes in place.</summary>
+    [Parameter] public GameMode? CurrentMode { get; set; }
+    [Parameter] public EventCallback<GameMode> OnModeSelect { get; set; }
+
     /// <summary>
     /// Setup toggles that sit in the footer beside OK (PoBrawl's "Training first"), so the
     /// start choice and OK read together. Inputs only: OK is the card's one button.
@@ -176,11 +203,20 @@
 
     [Parameter] public IntroMode Mode { get; set; } = IntroMode.OnePlayer;
 
-    /// <summary>In TwoPlayer mode, gates the OK button (both players ready).</summary>
+    /// <summary>Gates every way of starting, including demo and kiosk starts.</summary>
     [Parameter] public bool StartEnabled { get; set; } = true;
 
-    /// <summary>Optional helper line under the TwoPlayer OK button.</summary>
+    /// <summary>Optional helper line under the OK button.</summary>
     [Parameter] public string? StartHint { get; set; }
+
+    /// <summary>Hide start actions while a lobby owns the card.</summary>
+    [Parameter] public bool ShowStart { get; set; } = true;
+
+    /// <summary>Allow another start attempt when the host keeps the intro open.</summary>
+    [Parameter] public bool RepeatableStart { get; set; }
+
+    /// <summary>Whether the shared start cue should play before invoking the host.</summary>
+    [Parameter] public bool PlayStartCue { get; set; } = true;
 
     /// <summary>How long the demo card flashes before auto-starting.</summary>
     [Parameter] public int DemoDelayMs { get; set; } = 2000;
@@ -229,10 +265,16 @@
     [Inject] private IJSRuntime JS { get; set; } = null!;
 
     [Inject] private NavigationManager Navigation { get; set; } = null!;
+    [Inject] private ILogger<GameIntro> Logger { get; set; } = null!;
 
     private ElementReference _root;
+    private ElementReference _focusRoot;
     private ElementReference _ok;
     private bool _started;
+    private bool _disposed;
+    private bool _cancelled;
+    private bool _demoElapsed;
+    private bool _lastShowStart;
 
     // The "How to play" tab is showing instead of Controls.
     private bool _rules;
@@ -242,7 +284,7 @@
     // The demo attract loop (?kiosk=N) starts at once and never shows the card.
     private bool _kiosk;
 
-    protected override async Task OnInitializedAsync()
+    protected override void OnInitialized()
     {
         // When the URL carries ?kiosk=N (the "Watch all demos" attract loop) we skip
         // the intro card entirely, otherwise the same dialog would flash back at the
@@ -253,7 +295,7 @@
             new Uri(Navigation.Uri).Query.Contains("kiosk=", StringComparison.OrdinalIgnoreCase))
         {
             _kiosk = true;
-            await StartAsync();
+            _demoElapsed = true;
         }
     }
 
@@ -266,12 +308,36 @@
 
     protected override async Task OnAfterRenderAsync(bool firstRender)
     {
-        if (!firstRender) return;
+        if (!firstRender)
+        {
+            if (!_kiosk && ShowStart != _lastShowStart)
+            {
+                _lastShowStart = ShowStart;
+                try { await (ShowStart && StartEnabled ? _ok : _focusRoot).FocusAsync(); }
+                catch { /* dialog already gone */ }
+            }
+            if (_demoElapsed && StartEnabled && !_started) await StartAsync();
+            return;
+        }
 
-        // 1P and demo: focus OK, the card's default, so Enter/Space press it. 2P: focus the
-        // overlay, where the per-player select keys land (OK is disabled until both lock in,
-        // and a disabled button cannot hold focus).
-        try { await (Mode == IntroMode.TwoPlayer ? _root : _ok).FocusAsync(); } catch { /* headless / detached — fine */ }
+        if (_kiosk)
+        {
+            if (StartEnabled) await StartAsync();
+            return;
+        }
+
+        try
+        {
+            await JS.InvokeVoidAsync("PoDialogInterop.holdOpen", _root);
+            await _root.ShowModalAsync(JS);
+            _lastShowStart = ShowStart;
+            await (Mode == IntroMode.TwoPlayer || !StartEnabled || !ShowStart ? _focusRoot : _ok).FocusAsync();
+        }
+        catch (Exception ex)
+        {
+            Logger.LogWarning(ex, "Could not open the game intro modal for {Game}.", CueScope);
+            throw new InvalidOperationException("The game intro could not open safely.", ex);
+        }
 
         // The title swarm (gpuFxWebGPU.js): particles fall into the heading's letters and
         // burst away when this card leaves the DOM, which the module watches for itself.
@@ -281,7 +347,11 @@
 
         if (Mode == IntroMode.Demo && _demoTimer is null)
         {
-            _demoTimer = new Timer(async _ => await InvokeAsync(StartAsync),
+            _demoTimer = new Timer(async _ => await InvokeAsync(async () =>
+            {
+                _demoElapsed = true;
+                await StartAsync();
+            }),
                 null, DemoDelayMs, Timeout.Infinite);
         }
     }
@@ -307,8 +377,8 @@
 
     private async Task StartAsync()
     {
-        if (_started) return;
-        if (Mode == IntroMode.TwoPlayer && !StartEnabled) return;
+        if (_disposed || _cancelled || _started) return;
+        if (!StartEnabled || !ShowStart) return;
         _started = true;
         _demoTimer?.Dispose();
         _demoTimer = null;
@@ -317,12 +387,19 @@
         // audio the player never asked for, and on mobile the AudioContext is
         // still locked anyway (no gesture has happened), so it would be a no-op
         // that only looks like it works on desktop.
-        if (Mode != IntroMode.Demo)
+        if (Mode != IntroMode.Demo && PlayStartCue)
         {
             await Feedback.GameStartAsync(CueScope);
         }
 
-        if (OnStart.HasDelegate) await OnStart.InvokeAsync();
+        try
+        {
+            if (OnStart.HasDelegate) await OnStart.InvokeAsync();
+        }
+        finally
+        {
+            if (RepeatableStart) _started = false;
+        }
     }
 
     /// <summary>
@@ -330,7 +407,7 @@
     /// CARD stops propagation in every mode — it carries interactive controls
     /// in some games (TwoPlayer's character select, PoBrawl's Training-first
     /// checkbox) that a stray tap must not dismiss past — so the dismiss
-    /// surface is the screen outside the card, plus Escape/Enter.
+    /// surface is the screen outside the card, plus Enter.
     /// </summary>
     private async Task HandleOverlayClick()
     {
@@ -340,32 +417,41 @@
 
     private async Task HandleKey(KeyboardEventArgs e)
     {
+        if (e.Key == "Escape")
+        {
+            await CancelAsync();
+            return;
+        }
+
         if (Mode == IntroMode.TwoPlayer)
         {
-            // Escape is the one key the 2P card handles itself: this is a
-            // role="dialog" aria-modal="true", and a modal that ignores Escape
-            // is a keyboard trap. It still respects StartEnabled, so it cannot
-            // start a match before both players have picked.
-            if (e.Key == "Escape")
-            {
-                await StartAsync();
-                return;
-            }
-
             if (OnKey.HasDelegate) await OnKey.InvokeAsync(e);
             return;
         }
 
         // 1P: keyboard players can dismiss without reaching for the mouse.
-        // Escape included — see above.
-        if (e.Key is "Enter" or " " or "Spacebar" or "Escape")
+        if (e.Key is "Enter" or " " or "Spacebar")
         {
             await StartAsync();
         }
     }
 
+    private Task HandleControlKey(KeyboardEventArgs e) =>
+        e.Key == "Escape" ? CancelAsync() : Task.CompletedTask;
+
+    private async Task CancelAsync()
+    {
+        if (_disposed || _cancelled) return;
+        _cancelled = true;
+        _demoTimer?.Dispose();
+        _demoTimer = null;
+        await _root.CloseAsync(JS);
+        Navigation.NavigateTo("/");
+    }
+
     public void Dispose()
     {
+        _disposed = true;
         _demoTimer?.Dispose();
         _demoTimer = null;
     }

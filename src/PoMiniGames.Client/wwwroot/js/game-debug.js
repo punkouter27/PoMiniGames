@@ -24,7 +24,7 @@
 
   function isPlaying() {
     // A modal dialog, the start card or the end card is up: Tab must move focus there.
-    if (document.querySelector('dialog[open], .gps-intro-overlay')) return false;
+    if (document.querySelector('dialog[open], .gps-intro-overlay, [aria-modal="true"]')) return false;
 
     const el = document.activeElement;
     if (!el || el === document.body || el === document.documentElement) return true;
@@ -57,6 +57,8 @@
   function setOpen(next) {
     if (open === next) return;
     open = next;
+    window.poGameStatsOpen = open;
+    window.dispatchEvent(new CustomEvent('po-game-stats', { detail: { open } }));
     last = 0;
     frames = 0;
     elapsed = 0;
@@ -65,7 +67,7 @@
   }
 
   function onKeyDown(e) {
-    if (e.key !== 'Tab' || e.ctrlKey || e.altKey || e.metaKey) return;
+    if (e.key !== 'Tab' || e.shiftKey || e.ctrlKey || e.altKey || e.metaKey || e.repeat) return;
     if (e.defaultPrevented) return; // a game already claimed Tab (PoEcosystem, PoJevArena)
     if (!isPlaying()) return;
     e.preventDefault();
@@ -86,9 +88,14 @@
       window.removeEventListener('keydown', onKeyDown, true);
       window.removeEventListener('keyup', onKeyUp, true);
       open = false;
+      window.poGameStatsOpen = false;
+      window.dispatchEvent(new CustomEvent('po-game-stats', { detail: { open: false } }));
       if (raf) cancelAnimationFrame(raf);
       raf = 0;
       dotnetRef = null;
+    },
+    toggle() {
+      if (dotnetRef) setOpen(!open);
     },
     // One-shot environment read for the panel's static rows.
     env() {
@@ -98,7 +105,8 @@
         cores: navigator.hardwareConcurrency || 0,
         dpr: window.devicePixelRatio || 1,
         width: window.innerWidth,
-        height: window.innerHeight
+        height: window.innerHeight,
+        details: window.poGameStatsDetails || []
       };
     }
   };

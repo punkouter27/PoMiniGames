@@ -2,6 +2,7 @@
 @implements IAsyncDisposable
 @inject IJSRuntime JS
 @inject NavigationManager Nav
+@inject ILogger<GameDebugOverlay> Logger
 
 @* ─────────────────────────────────────────────────────────────────────────
    GameDebugOverlay — the one diagnostics panel every game shares.
@@ -19,15 +20,23 @@
    Escape closes the panel.
    ───────────────────────────────────────────────────────────────────────── *@
 
+@if (Enabled)
+{
+    <button type="button" class="gps-stats-toggle app-btn app-btn--secondary app-btn--sm"
+            aria-expanded="@(_open ? "true" : "false")" aria-controls="game-diagnostics"
+            @onclick="ToggleAsync">Stats <kbd class="gps-kbd">Tab</kbd></button>
+}
 @if (_open)
 {
-    <aside class="gps-debug" role="dialog" aria-label="Game diagnostics" data-glass>
+    <aside id="game-diagnostics" class="gps-debug" role="region" aria-label="Game diagnostics" data-glass>
         <header class="gps-debug-head">
             <span class="gps-debug-title">Diagnostics</span>
             <span class="gps-debug-keys">
                 <kbd class="gps-kbd">Tab</kbd> hide
                 <kbd class="gps-kbd">Esc</kbd>
             </span>
+            <button type="button" class="app-btn app-btn--ghost app-btn--sm" aria-label="Close stats"
+                    @onclick="ToggleAsync">Close</button>
         </header>
 
         <dl class="gps-debug-grid">
@@ -61,6 +70,11 @@
                     <dt>@item.Label</dt>
                     <dd>@item.Value</dd>
                 }
+                @foreach (var item in _details)
+                {
+                    <dt>@item.label</dt>
+                    <dd>@item.value</dd>
+                }
             }
         </dl>
     </aside>
@@ -83,6 +97,7 @@
     private IJSObjectReference? _module;
     private bool _open;
     private bool _wired;
+    private Task ToggleAsync() => JS.InvokeVoidAsync("poGameDebug.toggle").AsTask();
 
     private double _fps;
     private double _frameMs;
@@ -91,6 +106,7 @@
     private double _dpr = 1;
     private int _width;
     private int _height;
+    private DetailDto[] _details = [];
 
     private string _fpsTier => _fps >= 55 ? "gps-debug-ok" : _fps >= 30 ? "gps-debug-warn" : "gps-debug-bad";
 
@@ -104,9 +120,9 @@
             _ref ??= DotNetObjectReference.Create(this);
             await JS.InvokeVoidAsync("poGameDebug.start", _ref);
         }
-        catch
+        catch (JSException ex)
         {
-            // Diagnostics is never allowed to break a game (pre-render, blocked module).
+            Logger.LogWarning(ex, "Could not initialize game diagnostics");
             _wired = false;
         }
     }
@@ -120,11 +136,15 @@
     }
 
     [JSInvokable]
-    public void OnSample(double fps, double frameMs)
+    public async Task OnSample(double fps, double frameMs)
     {
         _fps = fps;
         _frameMs = frameMs;
-        if (_open) InvokeAsync(StateHasChanged);
+        if (_open)
+        {
+            await ReadEnvAsync();
+            StateHasChanged();
+        }
     }
 
     private async Task ReadEnvAsync()
@@ -137,8 +157,9 @@
             _dpr = env.dpr <= 0 ? 1 : env.dpr;
             _width = env.width;
             _height = env.height;
+            _details = env.details;
         }
-        catch (JSException) { /* module not loaded yet — the numeric rows simply stay blank */ }
+        catch (JSException ex) { Logger.LogWarning(ex, "Could not read game diagnostics"); }
     }
 
     public async ValueTask DisposeAsync()
@@ -164,5 +185,12 @@
         public double dpr { get; set; } = 1;
         public int width { get; set; }
         public int height { get; set; }
+        public DetailDto[] details { get; set; } = [];
+    }
+
+    private sealed class DetailDto
+    {
+        public string label { get; set; } = "";
+        public string value { get; set; } = "";
     }
 }

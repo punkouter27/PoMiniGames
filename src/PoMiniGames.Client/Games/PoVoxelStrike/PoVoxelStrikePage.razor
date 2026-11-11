@@ -45,90 +45,23 @@
     }
     else if (_phase == Phase.Intro)
     {
-        @* The start card: mode, run type, controls, settings and OK. The arena is already
-           built and rendering behind it, so OK is the one click the browser needs before it
-           will hand over Pointer Lock. It borrows the shared intro card's structure (head,
-           body, one-button footer) rather than the component: that card has no "not ready
-           yet" state for its button, and no slot for a lobby. Online, OK opens the lobby
-           (the squad's room) on this card; once the host starts, OK deploys. *@
-        <div class="gps-intro-overlay" role="dialog" aria-modal="true" aria-label="Voxel Strike — start">
-            <div class="gps-intro-card pvs-start">
-                <header class="gps-intro-head">
-                    <div class="gps-intro-title">@TitleContent</div>
-
-                    @* The shared mode switch. Solo and Online swap in place on this card (the
-                       address does not move), so the page tells it which is selected and
-                       makes the switch itself. *@
-                    <ModeSwitch Current="@(_tab == Tab.Online ? GameMode.Multiplayer : GameMode.OnePlayer)" OnSelect="OnModeAsync" />
-
-                    <p class="gps-intro-objective">@StartObjective</p>
-                </header>
-
-                @if (_fatalError is not null)
-                {
-                    <p class="pvs-start-error" role="alert">The arena could not start: @_fatalError</p>
-                }
-
-                <div class="gps-intro-body">
-                    @if (_tab == Tab.Solo)
-                    {
-                        <div class="app-seg app-seg--quiet" role="radiogroup" aria-label="Run type">
-                            @foreach (var run in Enum.GetValues<SoloRun>())
-                            {
-                                <button type="button" role="radio" class="app-seg__btn"
-                                        aria-checked="@Flag(_solo == run)" @onclick="() => SetSoloRunAsync(run)">@RunLabel(run)</button>
-                            }
-                        </div>
-                        <p class="pvs-start-note">@RunNote</p>
-                    }
-
-                    @if (_tab == Tab.Solo || !_lobbyOpen || _runStarted)
-                    {
-                        <div class="gps-intro-controls">
-                            <div class="gps-intro-section-label">Controls</div>
-                            @ControlsContent
-                        </div>
-                    }
-
-                    @if (_tab == Tab.Solo)
-                    {
-                        <details class="pvs-details">
-                            <summary>Settings</summary>
-                            @SettingsContent
-                        </details>
-                    }
-                    else if (_lobbyOpen && !_runStarted)
-                    {
-                        <LobbyPanel TPlayer="PoVoxelStrikeLobbyPlayer"
-                                    State="@Hub.Lobby.State"
-                                    LocalConnectionId="@Hub.LobbyConnectionId"
-                                    ConnectionState="@Hub.Lobby.ConnectionState"
-                                    Hint="One shared room — first to arrive hosts. Every wall one of you opens is open for all, and one hand on the chalice wins it for the squad."
-                                    MaxPlayersHint="6"
-                                    StartLabel="Start the Run"
-                                    OnReconnect="ConnectLobbyAsync"
-                                    OnReady="Hub.ToggleReadyAsync"
-                                    OnStart="Hub.StartGameAsync"
-                                    OnLeave="() => SwitchTabAsync(Tab.Solo)">
-                            <PlayerLabel Context="p">
-                                <span class="app-chip">P@(p.PlayerNumber)</span> @p.DisplayName
-                            </PlayerLabel>
-                        </LobbyPanel>
-                    }
-                </div>
-
-                @if (_tab == Tab.Solo || !_lobbyOpen || _runStarted)
-                {
-                    <footer class="gps-intro-actions">
-                        @if (StartStatus is { } status)
-                        {
-                            <p class="gps-intro-hint" role="status">@status</p>
-                        }
-                        <button type="button" class="app-btn app-btn--lg app-btn--primary" data-intro-action
-                                disabled="@(!CanPressOk)" @onclick="OkAsync">OK</button>
-                    </footer>
-                }
-            </div>
+        <div class="pvs-start">
+            <GameIntro CueScope="povoxelstrike"
+                       Title="@TitleContent"
+                       Objective="@StartObjective"
+                       DialogLabel="Voxel Strike — start"
+                       CurrentMode="@(_tab == Tab.Online ? GameMode.Multiplayer : GameMode.OnePlayer)"
+                       OnModeSelect="OnModeAsync"
+                       Controls="@(_tab == Tab.Solo || !_lobbyOpen || _runStarted ? ControlsContent : null)"
+                       Options="@(_tab == Tab.Solo ? SoloOptions : null)"
+                       Lobby="@(_tab == Tab.Online && _lobbyOpen && !_runStarted ? LobbyContent : null)"
+                       Status="@(_fatalError is not null ? ErrorContent : null)"
+                       ShowStart="@(_tab == Tab.Solo || !_lobbyOpen || _runStarted)"
+                       StartEnabled="@CanPressOk"
+                       StartHint="@StartStatus"
+                       RepeatableStart="true"
+                       PlayStartCue="false"
+                       OnStart="OkAsync" />
         </div>
     }
 
@@ -176,7 +109,7 @@
             @if (_phase == Phase.Paused)
             {
                 <div class="pvs-pause-backdrop">
-                    <dialog open class="pvs-pause" aria-modal="true" aria-label="Game paused">
+                    <GamePauseDialog Class="pvs-pause" Label="Game paused" OnResume="ResumeAsync">
                         <h2>Paused</h2>
                         <div class="pvs-pause-stats">
                             <div><span>@_score.ToString("N0")</span><small>score</small></div>
@@ -191,7 +124,7 @@
                             <button class="pvs-btn" @onclick="ToggleFullscreenAsync">Fullscreen</button>
                             <button class="pvs-btn" @onclick="@(() => Navigation.NavigateTo("/"))">Quit</button>
                         </div>
-                    </dialog>
+                    </GamePauseDialog>
                 </div>
             }
         </div>
@@ -300,6 +233,39 @@
 
     private string? StartStatus => CanPressOk ? null
         : _tab == Tab.Online ? "Building the squad's arena…" : "Building the arena…";
+
+    private RenderFragment ErrorContent => @<p class="pvs-start-error" role="alert">The arena could not start: @_fatalError</p>;
+
+    private RenderFragment SoloOptions => @<div>
+        <div class="app-seg app-seg--quiet" role="radiogroup" aria-label="Run type">
+            @foreach (var run in Enum.GetValues<SoloRun>())
+            {
+                <button type="button" role="radio" class="app-seg__btn"
+                        aria-checked="@Flag(_solo == run)" @onclick="() => SetSoloRunAsync(run)">@RunLabel(run)</button>
+            }
+        </div>
+        <p class="pvs-start-note">@RunNote</p>
+        <details class="pvs-details">
+            <summary>Settings</summary>
+            @SettingsContent
+        </details>
+    </div>;
+
+    private RenderFragment LobbyContent => @<LobbyPanel TPlayer="PoVoxelStrikeLobbyPlayer"
+                  State="@Hub.Lobby.State"
+                  LocalConnectionId="@Hub.LobbyConnectionId"
+                  ConnectionState="@Hub.Lobby.ConnectionState"
+                  Hint="One shared room — first to arrive hosts. Every wall one of you opens is open for all, and one hand on the chalice wins it for the squad."
+                  MaxPlayersHint="6"
+                  StartLabel="Start the Run"
+                  OnReconnect="ConnectLobbyAsync"
+                  OnReady="Hub.ToggleReadyAsync"
+                  OnStart="Hub.StartGameAsync"
+                  OnLeave="() => SwitchTabAsync(Tab.Solo)">
+        <PlayerLabel Context="p">
+            <span class="app-chip">P@(p.PlayerNumber)</span> @p.DisplayName
+        </PlayerLabel>
+    </LobbyPanel>;
 
     private async Task OkAsync()
     {

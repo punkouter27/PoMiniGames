@@ -282,12 +282,15 @@
         </div>
         @if (_cup is not null)
         {
+            <details>
+            <summary>Preview the draw</summary>
             <div class="pt-menu-bracket" aria-label="16-player tournament bracket">
                 @PreviewRound("Round of 16", _cup.Bouts.Take(8))
                 @PreviewRound("Quarterfinals", _cup.Bouts.Skip(8).Take(4))
                 @PreviewRound("Semifinals", _cup.Bouts.Skip(12).Take(2))
                 @PreviewRound("Final", _cup.Bouts.Skip(14).Take(1))
             </div>
+            </details>
             <p class="pt-draw-note">@(_ratingsLoaded ? $"{_cup.Field.Count} fighters · {PoBrawlTournament.Size} slots · BYEs advance automatically · Elo starts from the global fighter board." : "Loading ratings from the fighter board…")</p>
         }
         <p class="pt-draw-note">@(Auth.IsAuthenticated

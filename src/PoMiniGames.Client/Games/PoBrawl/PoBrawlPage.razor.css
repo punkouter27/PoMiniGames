@@ -760,7 +760,7 @@ button.pb-net-btn {
     }
 }
 
-.pb-pause {
+.pb-wrap ::deep .pb-pause {
     position: absolute;
     top: 50%;
     left: 50%;

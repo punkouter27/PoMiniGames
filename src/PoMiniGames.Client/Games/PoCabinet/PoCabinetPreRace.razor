@@ -33,7 +33,7 @@
         @switch (_tab)
         {
             case Tab.Track:
-                <PoCabinetTrackSelector SelectedTrackId="@TrackId" SelectedTrackIdChanged="TrackIdChanged" Campaign="true" />
+                <PoCabinetTrackSelector SelectedTrackId="@TrackId" SelectedTrackIdChanged="TrackIdChanged" Campaign="true" Compact="true" />
                 @if (HasRoomScan(TrackId))
                 {
                     @* The scanned room's own choice, beside the track it is for (the Settings tab has it too). *@

@@ -126,7 +126,7 @@
         {
             @* data-pb-pause: the engine leaves Escape alone under any other modal, but this one
                it closes with the same key (game.js _onPauseKey) — so the page handles no keys. *@
-            <div class="pb-pause" role="dialog" aria-modal="false" aria-labelledby="pb-pause-title" data-pb-pause>
+            <GamePauseDialog Class="pb-pause" LabelledBy="pb-pause-title" OnResume="ResumeAsync" data-pb-pause>
                 <h2 id="pb-pause-title" class="pb-pause-title">Paused</h2>
                 <div class="pb-pause-actions">
                     <button type="button" class="pb-pause-act pb-pause-act--go" @ref="_resumeButton"
@@ -135,7 +135,7 @@
                     <button type="button" class="pb-pause-act" @onclick="QuitFight">✕ Quit</button>
                 </div>
                 <p class="pb-pause-hint">Esc or P resumes</p>
-            </div>
+            </GamePauseDialog>
         }
 
         @* Training (1P, entered from the intro card's "Training first"). mousedown:preventDefault

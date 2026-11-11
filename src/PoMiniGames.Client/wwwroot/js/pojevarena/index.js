@@ -17,7 +17,7 @@
 //   OnInspector(json)                       per team: its selected unit + the Jev distribution governing it
 //   OnHud(json)                             ~4 Hz: clock, alive counts, HP shares, calls, notices, map, brain
 //   OnSelected(team)                        a unit was clicked (the phone layout follows that side)
-//   OnStats(open)                           Tab held / released during the live match: the stat HUD
+//   OnStats(open)                           live stats visibility
 //   OnMatchEnded(json)                      winner, reason, duration, debrief, careers, MVP, KOs → page reports
 //   OnBlackBox(json)                        replay position while scrubbing/playing
 //
@@ -124,17 +124,22 @@ function deploy(canvasId, dotnet, ticketJson, abilitiesJson, optionsJson) {
         if (idx >= 0) { select(idx); tell(m, 'OnSelected', m.world.units[idx].team); }
     });
     on(window, 'resize', () => renderer.resize());
-    // Tab holds the stat HUD open during play (a scoreboard key); releasing it, or losing focus
-    // mid-hold, hands the whole screen back to the arena.
-    on(window, 'keyup', (e) => { if (e.key === 'Tab' && m.statsHeld) { m.statsHeld = false; tell(m, 'OnStats', false); } });
     on(window, 'blur', () => { if (m.statsHeld) { m.statsHeld = false; tell(m, 'OnStats', false); } });
     on(document, 'visibilitychange', () => { m.paused = document.hidden; m.last = performance.now(); });
     on(window, 'keydown', (e) => {
         if (e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement || e.target instanceof HTMLSelectElement) return;
+        if (document.querySelector('dialog[open], [aria-modal="true"]')) return;
         if ((m.mode === 'killcam' || m.mode === 'ceremony') && (e.key === 'Escape' || e.key === 'Enter' || e.key === ' ')) { skipShow(m); e.preventDefault(); return; }
-        if (e.key === 'Tab' && m.mode === 'live') {
+        if (e.key === 'Escape' && m.statsHeld) {
+            m.statsHeld = false;
+            tell(m, 'OnStats', false);
+            return;
+        }
+        if (e.key === 'Tab' && m.mode === 'live' && !e.shiftKey && !e.ctrlKey && !e.altKey && !e.metaKey && !e.repeat &&
+            !e.target.closest?.('button, a[href], [contenteditable="true"]')) {
             e.preventDefault();
-            if (!m.statsHeld) { m.statsHeld = true; tell(m, 'OnStats', true); }
+            m.statsHeld = !m.statsHeld;
+            tell(m, 'OnStats', m.statsHeld);
             return;
         }
 
@@ -565,6 +570,11 @@ function jumpDecision(dir, team) {
 }
 
 function setAutoCamera(on) { if (match) match.autoCam = !!on; }
+function setStats(open) {
+    if (!match) return;
+    match.statsHeld = !!open;
+    tell(match, 'OnStats', match.statsHeld);
+}
 
 function skipIntro() { if (match) skipShow(match); }
 
@@ -681,7 +691,7 @@ function portrait(canvasId, creatureJson, team) {
 const api = {
     deploy, stop, select, cycle,
     scrub, play, pause, step, setSpeed, jumpDecision, jumpTo,
-    setAutoCamera, skipIntro, shareClip,
+    setAutoCamera, setStats, skipIntro, shareClip,
     preview, stopPreview, portrait,
     /** Test/diagnostic hook: frames recorded and calls made (read by the E2E-UI test). */
     state: () => (match ? { mode: match.mode, frames: match.blackbox.frames, calls: match.scheduler.calls, over: match.world.over, time: match.world.time, drawP95: drawP95(match) } : null),

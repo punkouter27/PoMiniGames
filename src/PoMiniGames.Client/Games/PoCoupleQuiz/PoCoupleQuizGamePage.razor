@@ -22,6 +22,7 @@
            GameKey="pocouplequiz"
            Announcement="@_announcement"
            GameSummary="@GameSummaryContent">
+    <InlineError Message="@_connectionError" OnRetry="ConnectAsync" />
     @if (_game is null)
     {
         @* If the player landed on /game without ever joining a lobby (deep-link,
@@ -38,7 +39,7 @@
         }
         else
         {
-            <p>Waiting for the round to start…</p>
+            <div class="app-loading" role="status"><span class="app-loading__spinner" aria-hidden="true"></span>Waiting for the round to start…</div>
         }
     }
     else
@@ -134,6 +135,8 @@
     // the lobby redirect hint instead of an infinite spinner.
     private bool _showLobbyHint;
     private CancellationTokenSource? _lobbyHintCts;
+    private string? _connectionError;
+    private bool _connecting;
 
     protected override async Task OnInitializedAsync()
     {
@@ -143,14 +146,7 @@
         Hub.OnRoundResult += HandleRoundResult;
         Hub.OnGameOver += HandleGameOver;
         Hub.OnGameError += HandleGameError;
-        try
-        {
-            await Hub.ConnectAsync();
-        }
-        catch
-        {
-            // If the hub isn't connected we just sit at "waiting for round to start".
-        }
+        await ConnectAsync();
 
         // GameStarted fired while the lobby was still mounted (it drove the navigation
         // here), so we won't see it as a live event. Hydrate from the buffered payload.
@@ -161,6 +157,25 @@
 
         _lobbyHintCts = new CancellationTokenSource();
         _ = WatchForLobbyHintAsync(_lobbyHintCts.Token);
+    }
+
+    private async Task ConnectAsync()
+    {
+        if (_connecting) return;
+        _connecting = true;
+        _connectionError = null;
+        try
+        {
+            await Hub.ConnectAsync();
+        }
+        catch (Exception ex)
+        {
+            _connectionError = $"Could not connect to the game: {ex.Message}";
+        }
+        finally
+        {
+            _connecting = false;
+        }
     }
 
     private async Task WatchForLobbyHintAsync(CancellationToken ct)

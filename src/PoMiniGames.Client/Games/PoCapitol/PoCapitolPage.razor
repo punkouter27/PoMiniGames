@@ -228,7 +228,8 @@
                     }
                     else if (_status == "paused")
                     {
-                        <section class="pc-panel pc-centered" role="dialog" aria-modal="true" aria-labelledby="pc-paused">
+                        <section class="pc-panel pc-centered">
+                        <GamePauseDialog LabelledBy="pc-paused" OnResume="() => PauseAsync(false)">
                             <span class="pc-eyebrow">TAKE A BREATH</span><h2 id="pc-paused">Scenario paused.</h2>
                             <p>The clock, the crowd and the lines are stopped.</p>
                             <label class="pc-small" for="pc-graphics-paused">Graphics · now @_graphicsLabel</label>
@@ -244,6 +245,7 @@
                                 <button type="button" class="app-btn" @onclick="StartAsync">Restart</button>
                             </div>
                             <details><summary>Historical context</summary>@ContextContent</details>
+                        </GamePauseDialog>
                         </section>
                     }
                     else if (_status is "completed" or "failed")

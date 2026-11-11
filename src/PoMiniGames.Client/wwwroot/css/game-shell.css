@@ -42,10 +42,10 @@ dialog.gps-modal {
   align-items: center;
   gap: 0.9rem;
   padding: 1.3rem 1.35rem 1.15rem;
-  background: rgba(18, 24, 38, 0.92);
+  background: var(--color-surface);
   backdrop-filter: blur(24px);
   -webkit-backdrop-filter: blur(24px);
-  border: 1px solid rgba(255, 255, 255, 0.12);
+  border: 1px solid var(--color-border);
   border-radius: var(--gps-card-radius);
   box-shadow: 
     0 24px 60px -8px rgba(0, 0, 0, 0.7),
@@ -97,7 +97,10 @@ dialog.gps-modal {
    the card's width, and the card widens to hold it. Make that root a <section>, not a
    <div>, or the small-print rule above restyles its children. */
 dialog.gps-modal:has(.gps-summary--wide) {
-  width: min(96vw, 960px);
+  width: min(94vw, 560px);
+}
+dialog.gps-modal:has(.gps-summary--wide details[open], .pocabinet-results__details--open) {
+  width: min(96vw, 860px);
 }
 
 .gps-summary--wide {
@@ -318,11 +321,23 @@ dialog.gps-modal:has(.gps-summary--wide) {
 /* ── Action ──
    The one button, Back to main menu, across the card's width. */
 .gps-play-again-actions {
+  position: sticky;
+  bottom: -1px;
+  flex: none;
   width: 100%;
   display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
   justify-content: center;
   margin-top: 0.4rem;
+  padding-top: 0.5rem;
+  background: var(--color-surface);
 }
+
+.gps-result-details { width: 100%; text-align: left; }
+.gps-result-details[open] { max-height: 40dvh; overflow: auto; }
+.gps-result-details summary { cursor: pointer; padding: 0.5rem; }
+.gps-play-again-actions > div { display: contents; }
 
 .gps-play-again-actions .app-btn {
   flex: 1 1 auto;
@@ -451,6 +466,9 @@ dialog.gps-modal {
   animation: gps-modal-fade 0.2s ease-out both;
 }
 
+dialog.gps-intro-overlay:not([open]) { display: none; }
+dialog.gps-intro-overlay::backdrop { background: transparent; }
+
 /* The card: header, body, footer in one flex column that never scrolls. Only the body may
    (a last resort on a screen smaller than any we test); each game's content is cut to fit. */
 .gps-intro-card {
@@ -471,7 +489,7 @@ dialog.gps-modal {
 }
 
 /* A game with a long setup (a track picker, the campaign rung, a species pick). */
-.gps-intro-card--wide { width: min(96vw, 980px); }
+.gps-intro-card--wide { width: min(96vw, 860px); }
 /* The two-player select wants room for its side-by-side rosters. */
 .gps-intro-card--twoplayer { width: min(96vw, 640px); }
 
@@ -506,19 +524,16 @@ dialog.gps-modal {
 
 @media (max-width: 520px) {
   .gps-intro-overlay {
-    align-items: flex-end;
-    padding: 0;
+    padding: 0.75rem;
   }
   .gps-intro-card,
   .gps-intro-card--wide,
   .gps-intro-card--twoplayer {
     width: 100%;
-    max-height: calc(100dvh - 0.5rem);
+    max-height: calc(100dvh - 1.5rem);
     gap: 0.6rem;
-    border-bottom-left-radius: 0;
-    border-bottom-right-radius: 0;
     padding: 1rem 1rem calc(0.75rem + env(safe-area-inset-bottom));
-    animation: gps-sheet-up 0.25s cubic-bezier(0.2, 0.8, 0.2, 1) both;
+    animation: gps-modal-pop 0.25s cubic-bezier(0.2, 0.8, 0.2, 1) both;
   }
 }
 
@@ -838,10 +853,17 @@ dialog.gps-modal {
    read something. Pointer-events are off for that reason — it is a readout.
    Styling matches the game chrome (same mono scale, radius and shadow tokens)
    so it reads as part of the shell rather than a game's own overlay. */
+.gps-stats-toggle {
+  position: fixed;
+  left: 0.75rem;
+  bottom: calc(0.75rem + env(safe-area-inset-bottom));
+  z-index: 20;
+}
+
 .gps-debug {
   position: fixed;
   left: 0.75rem;
-  bottom: 0.75rem;
+  bottom: 3.75rem;
   z-index: var(--z-overlay);
   width: min(19rem, calc(100vw - 1.5rem));
   max-height: min(60vh, 24rem);
@@ -849,7 +871,7 @@ dialog.gps-modal {
   padding: 0.55rem 0.7rem 0.6rem;
   border: 1px solid var(--color-border);
   border-radius: 12px;
-  background: rgba(10, 15, 26, 0.88);
+  background: var(--color-surface);
   color: var(--color-text-primary);
   font-family: var(--font-mono);
   font-size: 0.72rem;
@@ -857,7 +879,7 @@ dialog.gps-modal {
   box-shadow: var(--gps-card-shadow);
   backdrop-filter: blur(10px);
   -webkit-backdrop-filter: blur(10px);
-  pointer-events: none;
+  pointer-events: auto;
 }
 
 .gps-debug-head {
@@ -913,4 +935,3 @@ dialog.gps-modal {
 .gps-debug-ok { color: #4ade80; }
 .gps-debug-warn { color: #fbbf24; }
 .gps-debug-bad { color: #f87171; }
-

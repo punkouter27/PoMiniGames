@@ -12,6 +12,26 @@
 window.PoDialogInterop = (function () {
     function showModal(el) {
         if (!el || el.tagName !== 'DIALOG' || el.open) return;
+        if (!el.__poTabTrap) {
+            el.__poTabTrap = true;
+            el.addEventListener('keydown', function (event) {
+                if (event.key !== 'Tab' || !el.matches(':modal')) return;
+                var controls = Array.from(el.querySelectorAll('button, a[href], input, select, textarea, summary, [tabindex]'))
+                    .filter(function (control) {
+                        return !control.disabled && control.tabIndex >= 0 &&
+                            control.getClientRects().length > 0 &&
+                            !control.closest('[inert], [hidden]') &&
+                            getComputedStyle(control).visibility !== 'hidden';
+                    });
+                var index = controls.indexOf(document.activeElement);
+                if (!controls.length || index < 0 ||
+                    (!event.shiftKey && index === controls.length - 1) ||
+                    (event.shiftKey && index === 0)) {
+                    event.preventDefault();
+                    (event.shiftKey ? controls.at(-1) || el : controls[0] || el).focus();
+                }
+            });
+        }
         try { el.showModal(); } catch (_) { /* already open or detached */ }
     }
 

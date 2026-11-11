@@ -338,10 +338,10 @@
     z-index: 3;
 }
 
-/* A non-modal <dialog open>: the role and the semantics without showModal(), whose own
-   Esc-to-close would fight the Esc that just released the pointer. Glass card: the frozen
+/* The shared pause wrapper keeps Escape with the engine that just released the pointer.
+   Glass card: the frozen
    arena stays visible, blurred, behind the sheet. Actions are pinned; the body scrolls. */
-.pvs-pause {
+.pvs-pause-backdrop ::deep .pvs-pause {
     position: static;
     margin: 0;
     width: min(92%, 430px);

@@ -247,6 +247,54 @@ public class LinkAuditUiTests
             await page.WaitForTimeoutAsync(SettleMs);
             if (await page.EvaluateAsync<string?>(StartCardProblems) is { Length: > 0 } problems)
                 failures.Add($"{route}: at {Desktop.Width}×{Desktop.Height} the start card {problems}");
+            var intro = page.Locator("dialog.gps-intro-overlay[open]");
+            if (await intro.CountAsync() > 0)
+            {
+                var buttons = intro.Locator("button:enabled");
+                if (await buttons.CountAsync() > 0)
+                {
+                    await buttons.Last.FocusAsync();
+                    await page.Keyboard.PressAsync("Tab");
+                    if (!await intro.EvaluateAsync<bool>("el => el.contains(document.activeElement)"))
+                        failures.Add($"{route}: Tab escaped the intro");
+                    await buttons.First.FocusAsync();
+                    await page.Keyboard.PressAsync("Shift+Tab");
+                    if (!await intro.EvaluateAsync<bool>("el => el.contains(document.activeElement)"))
+                        failures.Add($"{route}: Shift+Tab escaped the intro");
+                    await buttons.First.FocusAsync();
+                    await page.Keyboard.PressAsync("Escape");
+                    try
+                    {
+                        await page.WaitForURLAsync(origin.ToString(), new PageWaitForURLOptions { Timeout = 5_000 });
+                    }
+                    catch (TimeoutException)
+                    {
+                        failures.Add($"{route}: Escape did not cancel the intro");
+                    }
+                }
+            }
+        }
+
+        current = "/tictactoe/2player";
+        await page.GotoAsync(new Uri(origin, current).ToString());
+        await page.Locator("dialog[open] [data-intro-action]").ClickAsync();
+        var cells = page.GetByRole(AriaRole.Gridcell);
+        foreach (var index in new[] { 0, 6, 1, 7, 2, 8, 3 })
+            await cells.Nth(index).ClickAsync();
+        var result = page.Locator("dialog.gps-modal[open]");
+        await result.WaitForAsync(new LocatorWaitForOptions { Timeout = 15_000 });
+        await result.Locator("[data-end-action]").FocusAsync();
+        await page.Keyboard.PressAsync("Tab");
+        if (!await result.EvaluateAsync<bool>("el => el.contains(document.activeElement)"))
+            failures.Add("Tic-Tac-Toe result: Tab escaped the dialog");
+        await page.Keyboard.PressAsync("Escape");
+        try
+        {
+            await page.WaitForURLAsync(origin.ToString(), new PageWaitForURLOptions { Timeout = 5_000 });
+        }
+        catch (TimeoutException)
+        {
+            failures.Add("Tic-Tac-Toe result: Escape did not return home");
         }
 
         lock (missing) failures.AddRange(missing);

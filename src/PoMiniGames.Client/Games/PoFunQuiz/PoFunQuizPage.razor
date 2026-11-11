@@ -67,16 +67,9 @@
                             : captured == pickIdx
                                 ? "fq-option--wrong"
                                 : "fq-option--muted";
-                    <button class="fq-option @optClass"
-                            disabled="@(showReveal || _playMode == "demo")"
-                            @onclick="() => SelectAnswer(captured)">
-                        <span class="fq-option__key" aria-hidden="true">@(captured + 1)</span>
-                        <span class="fq-option__label">@q.Options[i]</span>
-                        @if (showReveal && captured == correctIdx)
-                        {
-                            <span class="fq-option__badge" aria-hidden="true">✓</span>
-                        }
-                    </button>
+                    <QuizAnswer Index="captured" Label="@q.Options[i]" Class="@optClass"
+                                Disabled="@(showReveal || _playMode == "demo")"
+                                Correct="@(showReveal && captured == correctIdx)" OnSelect="SelectAnswer" />
                 }
             </div>
             <p>Score: <strong>@_score</strong> · Streak: @_streak</p>

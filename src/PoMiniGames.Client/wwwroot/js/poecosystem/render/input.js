@@ -109,7 +109,12 @@ export function createInput(canvas, { onAction = () => {}, onLook = () => {}, bi
   const onKeyDown = (e) => {
     if (isTyping(e) || disposed) return;
     const c = code(e);
-    if (c === 'Tab') { e.preventDefault(); onAction('dashboard'); return; }
+    if (c === 'Tab') {
+      if (e.shiftKey || e.ctrlKey || e.altKey || e.metaKey || e.repeat ||
+          e.target.closest?.('button, a[href], [contenteditable="true"]') ||
+          document.querySelector('dialog[open], [aria-modal="true"]')) return;
+      e.preventDefault(); onAction('dashboard'); return;
+    }
     if (c === 'Escape') { onAction('escape'); return; }
     // The finder's key is swallowed so the `/` that opened it is not typed into it.
     if (c === 'Slash' || (c === 'KeyK' && (e.ctrlKey || e.metaKey))) { e.preventDefault(); onAction('find'); return; }

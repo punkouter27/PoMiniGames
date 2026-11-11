@@ -75,6 +75,28 @@ scores.
 - **Works offline.** A score that cannot reach the server is parked in the browser and sent
   automatically later.
 
+### Shared game UI
+
+- `GameShell` owns the title, Settings entry point, diagnostics and result dialog.
+  Keep game artwork and HUDs game-specific, but do not override the shared dialogs'
+  theme, typography or geometry.
+- `GameIntro` owns modal focus containment, readiness, controls, setup and the one OK
+  action. Essential choices stay visible; longer explanations and customization belong
+  in disclosures. Its body can scroll on unusually small screens while the action stays
+  visible. Escape cancels the intro rather than silently starting play.
+- During gameplay, **Tab toggles stats**, and **Esc closes them**. Shift+Tab, forms and
+  dialogs retain normal focus navigation. The visible Stats control supports touch.
+  Ecosystem retains its observation dashboard and Jev retains its match inspector;
+  neither opens a second generic panel. Marble's physics/render metrics join the shared
+  stats panel instead of using a separate F3 overlay.
+- Results keep headline facts compact, with full standings/telemetry behind details.
+  Replay/rematch actions belong in the shared footer rather than the summary.
+  Demos and multi-race runs retain their existing progression.
+- Pause dialogs share focus handling and presentation; online menus explicitly say
+  when the match keeps running. Global preferences remain in Settings.
+- Input regression checks: `node --test tests/game-debug.test.mjs`. The existing
+  `LinkAuditUiTests` covers reachable routes and intro layout.
+
 ### Documentation
 
 | Document | What it covers |

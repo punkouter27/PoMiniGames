@@ -30,6 +30,7 @@
            Fullscreen="true"
            OptionsContent="@(_demo ? null : SettingsContent)"
            OptionsHeading="Race settings"
+           GameActions="@ResultActions"
            GameSummary="@GameSummaryContent">
     @* The one decision card: controls, and in 1P the track and your marble. Everything after it
        is the pre-race panel — there is nothing left to choose by then. *@
@@ -397,7 +398,7 @@
         @SettingSwitch("Ghost of your best run", "Replays your fastest finish on the authored courses (G)", p.GhostOn, v => SetPrefAsync("ghost", v))
         @SettingSwitch("Sound", "All race audio (M)", !p.Muted, v => SetPrefAsync("sound", v))
         @SettingSwitch("Announcer", "Calls lead changes, photo finishes and your top-10 moments", p.Announcer, v => SetPrefAsync("announcer", v))
-        @SettingSwitch("Performance overlay", "Frame rate, physics step time and draw calls", p.PerfHud, v => SetPrefAsync("perfHud", v))
+        <p class="mr-setting-hint">Tab or Stats opens frame rate, physics time and draw calls.</p>
         <div class="mr-setting">
             <span class="mr-setting-text">
                 <span class="mr-setting-name">Effects</span>
@@ -553,6 +554,8 @@
         {
             @TrackPicker
 
+            <details>
+            <summary>Marble finish and weight</summary>
             <div class="mr-setup-label">Your marble</div>
             <div class="mr-skins" role="radiogroup" aria-label="Marble finish">
                 @foreach (var k in _menu.Skins)
@@ -585,6 +588,7 @@
                     </button>
                 }
             </div>
+            </details>
         }
     </div>;
 
@@ -623,6 +627,10 @@
                 ? $"🏆 {Ordinal(_lastPlace)} place{(IsOnlineGuest ? "" : $" · +{_lastGained} points")}"
                 : IsOnlineGuest ? "💀 Outside the top 10" : $"💀 Run over · {(_lastPlace > 0 ? $"you placed {Ordinal(_lastPlace)}" : "you didn't finish")}")
         </div>
+        @ResultStandings
+    </div>;
+
+    private RenderFragment ResultActions => @<div class="mr-result-actions">
         @if (!_online)
         {
             <div class="mr-result-actions">
@@ -643,6 +651,9 @@
                 }
             </div>
         }
+    </div>;
+
+    private RenderFragment ResultStandings => @<div>
         @if (_podium.Count > 0 || _lastPlace > 0)
         {
             <table class="mr-result-table">
