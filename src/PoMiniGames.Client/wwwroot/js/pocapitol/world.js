@@ -159,8 +159,10 @@ function routeCell(actor) {
 }
 
 /** The next point to walk to: the goal itself when in sight, else a few cells down the field. */
-function routeTarget(actor, field, goal) {
-    if (clearLine(actor.x, actor.z, goal.x, goal.z)) return goal;
+function routeTarget(actor, field, goal, state = null) {
+    const gasEffects = state?.effects?.filter(e => e.type === 'gas') ?? [];
+    const crossesGas = (ax, az, bx, bz) => gasEffects.some(g => segmentCircle(ax, az, bx, bz, g.x, g.z, g.r * 0.85) >= 0);
+    if (clearLine(actor.x, actor.z, goal.x, goal.z) && !crossesGas(actor.x, actor.z, goal.x, goal.z)) return goal;
     const distances = navigationFields()[field];
     let best = routeCell(actor);
     if (best < 0) throw new Error('NPC left the scenario navigation bounds.');
@@ -169,14 +171,23 @@ function routeTarget(actor, field, goal) {
     // one-cell hop would have every figure zig-zagging between cell centers.
     for (let hop = 0; hop < 4; hop++) {
         const x = best % gridWidth;
-        let chosen = -1;
+        let chosen = -1, bestCost = distance;
         for (const next of [x > 0 ? best - 1 : -1, x < gridWidth - 1 ? best + 1 : -1, best - gridWidth, best + gridWidth]) {
-            if (next < 0 || next >= distances.length || distances[next] < 0 || distances[next] >= distance) continue;
-            if (!clearLine(actor.x, actor.z, next % gridWidth + gridX, Math.floor(next / gridWidth) + gridZ)) continue;
-            chosen = next; distance = distances[next];
+            if (next < 0 || next >= distances.length || distances[next] < 0) continue;
+            const nx = next % gridWidth + gridX, nz = Math.floor(next / gridWidth) + gridZ;
+            if (!clearLine(actor.x, actor.z, nx, nz)) continue;
+            let penalty = 0;
+            for (const g of gasEffects) {
+                const gd = Math.hypot(nx - g.x, nz - g.z);
+                if (gd < g.r + 1.5) penalty += 6 * (1 - gd / (g.r + 1.5));
+            }
+            const cost = distances[next] + penalty;
+            if (cost < bestCost) {
+                chosen = next; bestCost = cost;
+            }
         }
         if (chosen < 0) break;
-        best = chosen;
+        best = chosen; distance = distances[best];
     }
     return { x: best % gridWidth + gridX, z: Math.floor(best / gridWidth) + gridZ };
 }
@@ -392,13 +403,15 @@ function updateLines(state, difficulty, dt) {
         line.munition -= dt; line.flashCooldown -= dt;
         const limit = def.z + LINE_STANDOFF;
         const pressing = actor => actor.x >= def.x0 - 0.5 && actor.x <= def.x1 + 0.5 && actor.z >= limit - 0.1 && actor.z <= limit + 2.4;
-        let pressure = 0, sumX = 0, count = 0;
+        let pressure = 0, sumX = 0, count = 0, instigatorX = 0, instigatorWeight = 0;
         for (const c of state.companions) {
             if (c.health <= 0 || c.retreating || c.stun > 0 || !pressing(c)) continue;
             const weight = c.temperament === 'pusher' ? 1 : c.temperament === 'follower' && c.morale > 0.7 ? 0.5 : 0;
             if (weight === 0) continue;
             pressure += weight * (c.surge > 0 ? 1.3 : 1);
             sumX += c.x; count++;
+            const iw = (c.hasShield ? 2.5 : 1) * weight * (c.surge > 0 ? 1.5 : 1);
+            instigatorX += c.x * iw; instigatorWeight += iw;
         }
         if (humanRaider && pressing(state.player)) pressure += state.playerPush > 0 ? 6 : 1;
         let hold = def.barrier;
@@ -416,7 +429,8 @@ function updateLines(state, difficulty, dt) {
         hold *= 1 - Math.min(0.65, line.strain / difficulty.tire);
         line.pressure = pressure; line.hold = hold;
         line.integrity = Math.max(0, Math.min(100, line.integrity + (hold - pressure) * (pressure > hold ? 1.5 : 0.25) * dt));
-        const centerX = count ? Math.max(def.x0 + 2, Math.min(def.x1 - 2, sumX / count)) : 0;
+        const rawCenter = instigatorWeight > 0 ? instigatorX / instigatorWeight : count ? sumX / count : 0;
+        const centerX = count ? Math.max(def.x0 + 2, Math.min(def.x1 - 2, rawCenter)) : 0;
         if (pressure > hold * 0.6 && line.gasLeft > 0 && line.munition <= 0) {
             line.gasLeft--; line.munition = 22;
             // Gas hangs longer under a ceiling than in the open air.
