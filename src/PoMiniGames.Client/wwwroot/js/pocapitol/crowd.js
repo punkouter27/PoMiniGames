@@ -397,7 +397,10 @@ export function createCrowd(scene, capacity, { time, groundHeight, shadowTexture
     const filming = a => raider(a) && a.filming && a.health > 0 && !a.retreating;
     const gun = a => a.armed && a.health > 0 && (a.police || a.temperament === 'pusher' || (a.temperament === 'follower' && a.morale > 0.7));
 
-    const coatColor = a => a.police ? '#24394d' : a.civilian ? suits[a.id % suits.length] : a.observer ? '#3f6f8f'
+    // Two forces stood the line that day: Capitol Police in dark navy, and Metropolitan Police
+    // in hi-vis yellow-green outer jackets. Kit was mixed, so neither is uniform here.
+    const hiVis = a => a.police && a.id % 5 < 2;
+    const coatColor = a => a.police ? (hiVis(a) ? '#c8d43a' : '#24394d') : a.civilian ? suits[a.id % suits.length] : a.observer ? '#3f6f8f'
         : a.id < 0 ? '#bd713f' : coats[a.id % coats.length];
     const skinColor = a => skins[Math.abs(a.id) % skins.length];
     // Body regions, in rig.js REGIONS order. Hi-vis vests and medics' tabards are the coat's colour.
@@ -461,6 +464,10 @@ export function createCrowd(scene, capacity, { time, groundHeight, shadowTexture
     const clear = createPolycarbonateMaterial({ color: '#c4e0ea', opacity: 0.42, roughness: 0.08, dispersion: 0.04 });
     part('visor', cube, clear, [0, 1.86, -0.25], [0.46, 0.32, 0.05], a => a.police, false, head);
     part('vest', cube, dark, [0, 1.2, -0.25], [0.67, 0.64, 0.12], a => a.police || (raider(a) && a.id >= 0 && a.id % 8 === 3));
+    // Reflective bands on the hi-vis outer jackets.
+    const reflective = new THREE.MeshStandardMaterial({ color: '#eef1e6', roughness: 0.35, metalness: 0.25 });
+    part('hi-vis-band', ring, reflective, [0, 0.98, 0], [1.06, 0.92, 1], hiVis, true, { rot: Math.PI / 2, bone: 'spine' });
+    part('hi-vis-band', ring, reflective, [0, 1.24, 0], [1.1, 0.94, 1], hiVis, true, { rot: Math.PI / 2 });
     part('shield', cube, clear, [0.1, -0.1, -0.08], [0.9, 1.45, 0.09], a => a.police || a.hasShield, false, left);
     part('shield-edge', cube, dark, [0.1, -0.81, -0.08], [0.92, 0.07, 0.11], a => a.police || a.hasShield, true, left);
     const shieldCanvas = document.createElement('canvas');

@@ -61,6 +61,19 @@ reconstruction.
   likenesses, barricaded House doors, the chamber and the people in it. About 1,400 unsimulated distant
   figures stand for the crowd outside. Varied dress, four banner kinds, raised phones,
   breath in the cold, papers on the floor, cracked panes, gas clouds.
+- **Scenery accuracy (2026-11-11):** the west front and the three interiors are drawn
+  against the same public references. Exterior: the Olmsted terrace with raking marble
+  cheeks, balusters and newel standards; an elliptical sandstone arch with voussoirs and
+  keystone over the Lower West Terrace doorway; bronze lamp standards; bunting; green snow
+  fencing with fallen panels; "AREA CLOSED" boards; a scaffold press tower; and a masonry
+  drum under the dome so the Rotunda's inner sphere no longer shows from outside as a mound.
+  Interiors: the Rotunda's eight arched gilt frames, olive-wreath frieze, cornice, Frieze of
+  American History, Apotheosis canopy and brass-ringed marble centre; the Crypt's rows of
+  Aquia Creek Doric columns, Seneca paving, colony niches and eight-point compass stone; and
+  Statuary Hall's Breccia columns under Carrara capitals, black and white marble floor,
+  cast-steel lantern, Car of History clock and relief eagle. Police wear two forces' dress,
+  Capitol Police navy and Metropolitan Police hi-vis. Decorative only: the walkable
+  footprint, collisions and objectives are unchanged.
 - **Rendering look:** a cloudy sky dome lights the scene as well as filling the background;
   the sun follows its real 6 January path from about 29° up at 12:50 pm to sunset near five.
   Stone, paving and lawn carry generated, world-mapped detail; flags ripple; every figure

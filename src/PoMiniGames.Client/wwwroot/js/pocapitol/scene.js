@@ -155,17 +155,20 @@ export function createScene(host, { figure } = {}) {
     function box(x, y, z, w, h, d, color, parent) {
         return mesh(new THREE.BoxGeometry(w, h, d), color, x, y, z, parent);
     }
-    function column(x, z, height = 8, y = 0, girth = 1) {
+    // `palette` is for the one order in the building that is not white marble: Statuary Hall's
+    // variegated Breccia shaft under a Carrara capital.
+    function column(x, z, height = 8, y = 0, girth = 1, palette = null) {
+        const p = palette ?? { plinth: '#b8af9e', base: '#c6bca9', shaft: '#e2d9c8', collar: '#d5cca9', capital: '#ede5d6', abacus: '#f1eadb' };
         // Stepped square plinth base
-        box(x, y + 0.14, z, 1.8 * girth, 0.28, 1.8 * girth, '#b8af9e');
+        box(x, y + 0.14, z, 1.8 * girth, 0.28, 1.8 * girth, p.plinth);
         // Circular molded torus base
-        mesh(new THREE.CylinderGeometry(0.72 * girth, 0.82 * girth, 0.26, 24), '#c6bca9', x, y + 0.41, z);
+        mesh(new THREE.CylinderGeometry(0.72 * girth, 0.82 * girth, 0.26, 24), p.base, x, y + 0.41, z);
         // Fluted entasised column shaft
-        mesh(new THREE.CylinderGeometry(0.52 * girth, 0.65 * girth, height - 1.2, 24), '#e2d9c8', x, y + 0.54 + (height - 1.2) / 2, z);
+        mesh(new THREE.CylinderGeometry(0.52 * girth, 0.65 * girth, height - 1.2, 24), p.shaft, x, y + 0.54 + (height - 1.2) / 2, z);
         // Classical Corinthian / Composite capital: astragal collar, bell, and abacus
-        mesh(new THREE.CylinderGeometry(0.58 * girth, 0.53 * girth, 0.16, 24), '#d5cca9', x, y + height - 0.58, z);
-        mesh(new THREE.CylinderGeometry(0.78 * girth, 0.55 * girth, 0.38, 24), '#ede5d6', x, y + height - 0.31, z);
-        box(x, y + height - 0.06, z, 1.68 * girth, 0.16, 1.68 * girth, '#f1eadb');
+        mesh(new THREE.CylinderGeometry(0.58 * girth, 0.53 * girth, 0.16, 24), p.collar, x, y + height - 0.58, z);
+        mesh(new THREE.CylinderGeometry(0.78 * girth, 0.55 * girth, 0.38, 24), p.capital, x, y + height - 0.31, z);
+        box(x, y + height - 0.06, z, 1.68 * girth, 0.16, 1.68 * girth, p.abacus);
     }
     function painted(draw, width, height, options = {}) {
         const canvas = document.createElement('canvas');
@@ -268,6 +271,11 @@ export function createScene(host, { figure } = {}) {
     }
     for (const c of columns) column(c.x, c.z, c.height);
     label('PoCAPITOL', 0, 9.2, 17.7, 9);
+    // The drum's lower wall. The Rotunda's inner dome rises to 19 m, well above the wings'
+    // roofline, so without this the sphere shows from outside as a smooth mound under the dome.
+    mesh(new THREE.CylinderGeometry(11.9, 12.4, 9.2, 48), '#ded7c9', 0, 14.8, -14);
+    mesh(new THREE.CylinderGeometry(12.5, 12.6, 0.5, 48), '#e7e0d2', 0, 10.4, -14);
+    mesh(new THREE.CylinderGeometry(12.15, 12.15, 0.35, 48), '#e7e0d2', 0, 19.4, -14);
     // The dome: drum and peristyle of 36 columns, attic, cast-iron shell with ribs and a ring
     // of windows, lantern with its own colonnade, and a robed bronze figure on top.
     mesh(new THREE.CylinderGeometry(11, 12.5, 6, 48), '#d8d1c3', 0, 22, -14);
@@ -362,15 +370,10 @@ export function createScene(host, { figure } = {}) {
     for (const side of [-1, 1]) for (const z of [-5, -11, -17, -23]) {
         box(side * 16.65, 4, z, 0.25, 7.5, 1.1, '#e8dfc9');
         box(side * 16.4, 7.3, z, 0.55, 0.45, 1.6, '#baae97');
-        // Abstract panels do not pass invented artwork off as the actual historical paintings.
-        box(side * 16.5, 3.8, z + 2.1, 0.12, 3.7, 3.3, '#947544');
-        box(side * 16.4, 3.8, z + 2.1, 0.12, 3.25, 2.85, '#5d6665');
     }
     label('STATUARY HALL', 0, 6.6, -25.65, 7);
-    // Statuary Hall: plain figures on plinths (no likenesses) and a tiled floor.
-    for (let tx = -10; tx <= 10; tx += 4) for (let tz = -43; tz <= -31; tz += 4) {
-        if (((tx + 10) / 4 + (tz + 43) / 4) % 2 === 0) box(tx, 0.105, tz, 2, 0.02, 2, '#3c3f45');
-    }
+    // Statuary Hall's plain figures on plinths are drawn with the rest of its detail; the
+    // black and white marble floor is laid there too.
     for (const s of statues) {
         box(s.x, 0.75, s.z, 1.3, 1.5, 1.3, '#cfc6b3');
         mesh(new THREE.CapsuleGeometry(0.32, 1.1, 3, 8), '#6f5b44', s.x, 2.45, s.z);
@@ -464,7 +467,7 @@ export function createScene(host, { figure } = {}) {
         mesh(new THREE.SphereGeometry(0.24, 12, 8), '#f4ead2', x, 3.9, z).material = globeMaterial;
     }
 
-    const architecturalDetail = addArchitecturalDetail({ box, mesh, column, materials });
+    const architecturalDetail = addArchitecturalDetail({ box, mesh, column, materials, painted });
     for (const light of architecturalDetail.interiorLights) scene.add(light);
 
     const architectureBatches = [];
@@ -1014,5 +1017,5 @@ export function createScene(host, { figure } = {}) {
         geometries.forEach(g => g.dispose()); materials.forEach(m => m.dispose()); textures.forEach(t => t.dispose());
         renderer.dispose(); renderer.forceContextLoss(); renderer.domElement.remove();
     }
-    return { canvas: renderer.domElement, render, aim, pickUnit, applyQuality, dispose, renderer, setTracerMode, setMotionReduction };
+    return { canvas: renderer.domElement, render, aim, pickUnit, applyQuality, dispose, renderer, camera, setTracerMode, setMotionReduction };
 }
