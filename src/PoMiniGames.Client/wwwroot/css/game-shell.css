@@ -859,8 +859,8 @@ dialog.gps-intro-overlay::backdrop { background: transparent; }
   left: 0.75rem;
   bottom: 3.75rem;
   z-index: var(--z-overlay);
-  width: min(19rem, calc(100vw - 1.5rem));
-  max-height: min(60vh, 24rem);
+  width: min(21rem, calc(100vw - 1.5rem));
+  max-height: min(78vh, 42rem);
   overflow: auto;
   padding: 0.55rem 0.7rem 0.6rem;
   border: 1px solid var(--color-border);
@@ -874,6 +874,12 @@ dialog.gps-intro-overlay::backdrop { background: transparent; }
   backdrop-filter: blur(10px);
   -webkit-backdrop-filter: blur(10px);
   pointer-events: auto;
+}
+
+.gps-debug-extra {
+  margin-top: 0.5rem;
+  padding-top: 0.5rem;
+  border-top: 1px solid rgba(255, 255, 255, 0.12);
 }
 
 .gps-debug-head {

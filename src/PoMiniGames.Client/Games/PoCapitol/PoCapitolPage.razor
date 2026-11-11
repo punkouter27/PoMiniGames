@@ -19,7 +19,8 @@
            Outcome="@ResultOutcome"
            Stats="@ResultStats"
            GameSummary="@ResultSummary"
-           Diagnostics="@DiagStats">
+           Diagnostics="@DiagStats"
+           DiagnosticsContent="@TabHudContent">
     <ErrorBoundary @ref="_errorBoundary">
         <ChildContent>
             <div class="pc-root @(_demo ? "pc-phonecam" : null)">
@@ -59,79 +60,6 @@
                 }
                 else
                 {
-                    <div class="pc-hud">
-                        <div class="pc-hud-main">
-                            <div class="pc-hud-eyebrow-row">
-                                <span class="pc-eyebrow">@HudEyebrow</span>
-                                @if (_demo)
-                                {
-                                    <span class="pc-rec-pill" aria-hidden="true"><i></i>REC</span>
-                                }
-                            </div>
-                            <strong>@HudTitle</strong>
-                            <div class="pc-progress" aria-label="@($"{_milestone} of {Objectives.Length} milestones complete")">
-                                @for (var i = 0; i < Objectives.Length; i++)
-                                {
-                                    <span class="@(i < _milestone ? "pc-done" : null)"></span>
-                                }
-                            </div>
-                        </div>
-                        @if (_lineIndex >= 0)
-                        {
-                            <div class="pc-line">
-                                <div class="pc-line-header">
-                                    <span>LINE: @LineNames[_lineIndex].ToUpperInvariant()</span>
-                                    <span>@_lineIntegrity%</span>
-                                </div>
-                                <RadzenProgressBar Value="@_lineIntegrity" Max="100" Unit="" ShowValue="false" 
-                                                   ProgressBarStyle="@GetLineProgressStyle(_lineIntegrity)" Class="pc-progress-bar" />
-                            </div>
-                        }
-                        @if (Playing)
-                        {
-                            <div class="pc-health">
-                                <div class="pc-health-header">
-                                    <span>STAMINA</span>
-                                    <span>@_health%</span>
-                                </div>
-                                <RadzenProgressBar Value="@_health" Max="100" Unit="" ShowValue="false" 
-                                                   ProgressBarStyle="@GetHealthProgressStyle(_health)" Class="pc-progress-bar" />
-                            </div>
-                        }
-                        <div class="pc-crowd">
-                            <span>@_activeRaiders / 128 IN CROWD</span>
-                            <span>@_activePolice / @_totalPolice CAPITOL POLICE</span>
-                            @if (_demo && _subject > 0)
-                            {
-                                <b>FOLLOWING RAIDER @_subject:000</b>
-                            }
-                        </div>
-                        <span class="pc-weather-pill" title="Atmospheric conditions">⛅ @_weatherCondition</span>
-                        <span class="pc-time">@Clock</span>
-                        <button type="button" class="app-btn" @onclick="() => PauseAsync(true)" disabled="@(_status != "active")">Pause</button>
-                    </div>
-
-                    @* Tactical Radar & Crowd Pressure Heatmap HUD *@
-                    <div class="pc-radar-anchor @(_radarExpanded ? "pc-radar--expanded" : null)">
-                        <div class="pc-radar-header">
-                            <button type="button" class="pc-radar-toggle" @onclick="ToggleRadar" title="Toggle Tactical Radar">
-                                <span>📡 RADAR</span>
-                                <small>@(_radarExpanded ? "▲" : "▼")</small>
-                            </button>
-                        </div>
-                        @if (_radarExpanded)
-                        {
-                            <div class="pc-radar-body">
-                                <canvas id="pocapitol-radar" class="pc-radar-canvas" width="200" height="270"></canvas>
-                                <div class="pc-radar-legend">
-                                    <span><i class="dot-raider"></i>Raider</span>
-                                    <span><i class="dot-police"></i>Police</span>
-                                    <span><i class="dot-heat"></i>Crush</span>
-                                </div>
-                            </div>
-                        }
-                    </div>
-
                     @* Tactical Unit Inspector Telemetry Card *@
                     @if (_selectedTelemetry != null)
                     {
@@ -192,24 +120,6 @@
                         {
                             <div class="pc-crosshair" aria-hidden="true">+</div>
                         }
-                        <div class="pc-bottom-bar">
-                            @if (_demo)
-                            {
-                                <div class="pc-demo-chip" title="Armed demo variant for autonomous tactical simulation.">
-                                    <span class="pc-rec-pill" aria-hidden="true"><i></i>LIVE SIMULATION</span>
-                                    <strong>ARMED DEMO · @(_subject > 0 ? $"TRACKING RAIDER {_subject:000}" : "AUTONOMOUS")</strong>
-                                </div>
-                            }
-                            else if (_role == "raider")
-                            {
-                                <div class="pc-beacon-chip">BEACON · @Objective.ToUpperInvariant()</div>
-                            }
-                            <div class="pc-hint-chip">@BottomHint</div>
-                            <div class="pc-onthisday-chip" title="@OnTheDay.Text">
-                                <span class="pc-eyebrow">HISTORICAL RECORD · @OnTheDay.Time</span>
-                                <span>@OnTheDay.Text</span>
-                            </div>
-                        </div>
                         @if (!_demo)
                         {
                             <div class="pc-touch" aria-label="Touch controls">
@@ -305,7 +215,7 @@
     private bool _ready, _disposed, _recorded;
     private bool _demo;
     private string? _mode;
-    private int _activeRaiders = 128, _activePolice = 44, _totalPolice = 44, _subject, _lineIndex, _lineIntegrity = 100, _sheltering = 64;
+    private int _activeRaiders = 256, _activePolice = 44, _totalPolice = 44, _subject, _lineIndex, _lineIntegrity = 100, _sheltering = 64;
     private bool _radarNeedsInit = true;
 
     private bool Playing => !_demo && _role != "observer";
@@ -382,13 +292,115 @@
     [
         new() { Label = "Status", Value = _status },
         new() { Label = "Role", Value = _role },
+        new() { Label = "Objective", Value = $"{Math.Min(_milestone + 1, Objectives.Length)}/{Objectives.Length} · {HudTitle}" },
         new() { Label = "Clock", Value = $"{Clock} ({_elapsed:0.0}s)" },
-        new() { Label = "Crowd", Value = $"{_activeRaiders} up · {128 - _activeRaiders} down" },
-        new() { Label = "Police", Value = $"{_activePolice} up · {_totalPolice - _activePolice} down" },
+        new() { Label = "Weather", Value = _weatherCondition },
+        new() { Label = "Crowd", Value = $"{_activeRaiders} / 256 in crowd ({256 - _activeRaiders} down)" },
+        new() { Label = "Police", Value = $"{_activePolice} / {_totalPolice} Capitol Police" },
         new() { Label = "Line", Value = _lineIndex >= 0 ? $"{LineNames[_lineIndex]} {_lineIntegrity}%" : "None" },
         new() { Label = "Sheltering", Value = _sheltering.ToString() },
         new() { Label = "Tier", Value = _graphicsLabel },
     ];
+
+    private RenderFragment TabHudContent => @<div class="pc-tab-hud">
+        <div class="pc-tab-hud-head">
+            <div>
+                <div class="pc-hud-eyebrow-row">
+                    <span class="pc-eyebrow">@HudEyebrow</span>
+                    @if (_demo)
+                    {
+                        <span class="pc-rec-pill" aria-hidden="true"><i></i>REC</span>
+                    }
+                </div>
+                <strong>@HudTitle</strong>
+            </div>
+            <button type="button" class="app-btn app-btn--sm" @onclick="() => PauseAsync(true)" disabled="@(_status != "active")">Pause</button>
+        </div>
+
+        <div class="pc-progress" aria-label="@($"{_milestone} of {Objectives.Length} milestones complete")">
+            @for (var i = 0; i < Objectives.Length; i++)
+            {
+                <span class="@(i < _milestone ? "pc-done" : null)"></span>
+            }
+        </div>
+
+        @if (_lineIndex >= 0)
+        {
+            <div class="pc-tab-bar">
+                <div class="pc-line-header">
+                    <span>LINE: @LineNames[_lineIndex].ToUpperInvariant()</span>
+                    <span>@_lineIntegrity%</span>
+                </div>
+                <RadzenProgressBar Value="@_lineIntegrity" Max="100" Unit="" ShowValue="false"
+                                   ProgressBarStyle="@GetLineProgressStyle(_lineIntegrity)" Class="pc-progress-bar" />
+            </div>
+        }
+
+        @if (Playing)
+        {
+            <div class="pc-tab-bar">
+                <div class="pc-health-header">
+                    <span>STAMINA</span>
+                    <span>@_health%</span>
+                </div>
+                <RadzenProgressBar Value="@_health" Max="100" Unit="" ShowValue="false"
+                                   ProgressBarStyle="@GetHealthProgressStyle(_health)" Class="pc-progress-bar" />
+            </div>
+        }
+
+        <div class="pc-crowd">
+            <span>@_activeRaiders / 256 IN CROWD</span>
+            <span>@_activePolice / @_totalPolice CAPITOL POLICE</span>
+            @if (_demo && _subject > 0)
+            {
+                <b>FOLLOWING RAIDER @_subject:000</b>
+            }
+        </div>
+
+        <div class="pc-tab-meta">
+            <span class="pc-weather-pill" title="Atmospheric conditions">⛅ @_weatherCondition</span>
+            <span class="pc-time">@Clock</span>
+        </div>
+
+        @if (_demo)
+        {
+            <div class="pc-demo-chip" title="Armed demo variant for autonomous tactical simulation.">
+                <span class="pc-rec-pill" aria-hidden="true"><i></i>LIVE SIMULATION</span>
+                <strong>ARMED DEMO · @(_subject > 0 ? $"TRACKING RAIDER {_subject:000}" : "AUTONOMOUS")</strong>
+            </div>
+        }
+        else if (_role == "raider")
+        {
+            <div class="pc-beacon-chip">BEACON · @Objective.ToUpperInvariant()</div>
+        }
+
+        <div class="pc-hint-chip">@BottomHint</div>
+
+        <div class="pc-onthisday-chip" title="@OnTheDay.Text">
+            <span class="pc-eyebrow">HISTORICAL RECORD · @OnTheDay.Time</span>
+            <span>@OnTheDay.Text</span>
+        </div>
+
+        <div class="pc-tab-radar">
+            <div class="pc-radar-header">
+                <button type="button" class="pc-radar-toggle" @onclick="ToggleRadar" title="Toggle Tactical Radar">
+                    <span>📡 RADAR</span>
+                    <small>@(_radarExpanded ? "▲" : "▼")</small>
+                </button>
+            </div>
+            @if (_radarExpanded)
+            {
+                <div class="pc-radar-body">
+                    <canvas id="pocapitol-radar" class="pc-radar-canvas" width="200" height="270"></canvas>
+                    <div class="pc-radar-legend">
+                        <span><i class="dot-raider"></i>Raider</span>
+                        <span><i class="dot-police"></i>Police</span>
+                        <span><i class="dot-heat"></i>Crush</span>
+                    </div>
+                </div>
+            }
+        </div>
+    </div>;
 
     /// <summary>
     /// Mid-match options for GameShell's shared gear (GameOptionsSheet): the same drawer
@@ -450,7 +462,7 @@
     </div>;
 
     private RenderFragment IntroRules => @<div>
-        <p>128 protestors start out on the grass; most watch and film, a few push. 64 police hold five lines and fall back in stages. 64 staff and members shelter inside until evacuated. 12:50 pm to the 6:00 pm curfew.</p>
+        <p>256 protestors start out on the grass; most watch and film, a few push. 64 police hold five lines and fall back in stages. 64 staff and members shelter inside until evacuated. 12:50 pm to the 6:00 pm curfew.</p>
         <p><strong>Fiction, not a reconstruction.</strong> Inspired by January 6, 2021. Adult themes; no injury is shown. Nobody is armed when you play; the Demo is a separate armed variant. The layout and police positions are invented.</p>
         <details><summary>Historical record</summary>@ContextContent</details>
     </div>;
@@ -554,7 +566,7 @@
             _recorded = false;
             _status = "active";
             _health = 100; _milestone = 0; _elapsed = 0; _message = ""; _resultWarning = ""; _outcome = "";
-            _activeRaiders = 128; _activePolice = 44; _totalPolice = 44; _subject = 0; _lineIndex = 0; _lineIntegrity = 100; _sheltering = 64;
+            _activeRaiders = 256; _activePolice = 44; _totalPolice = 44; _subject = 0; _lineIndex = 0; _lineIntegrity = 100; _sheltering = 64;
             _announcement = "Scenario started. " + HudTitle;
         }
         catch (JSException ex) { await OnEngineError(ex.Message); }

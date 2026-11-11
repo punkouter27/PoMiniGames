@@ -77,6 +77,10 @@
                 }
             }
         </dl>
+        @if (ChildContent != null)
+        {
+            <div class="gps-debug-extra">@ChildContent</div>
+        }
     </aside>
 }
 
@@ -92,6 +96,9 @@
 
     /// <summary>Per-game detailed stats, in the same StatItem shape the end modal uses.</summary>
     [Parameter] public IEnumerable<Models.StatItem>? Items { get; set; }
+
+    /// <summary>Optional rich HUD/widgets rendered below the diagnostics rows inside the Tab panel.</summary>
+    [Parameter] public RenderFragment? ChildContent { get; set; }
 
     private DotNetObjectReference<GameDebugOverlay>? _ref;
     private IJSObjectReference? _module;

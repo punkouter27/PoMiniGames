@@ -117,7 +117,7 @@
        (Tab) is wired once in js/game-debug.js, so a game gets it by existing
        inside this shell; a page adds its own numbers through `Diagnostics`.
        Held outside `.gps-game-area` so a fullscreen renderer cannot replace it. *@
-    <GameDebugOverlay Enabled="@TabDebug" GameKey="@GameKey" Items="@Diagnostics" />
+    <GameDebugOverlay Enabled="@TabDebug" GameKey="@GameKey" Items="@Diagnostics">@DiagnosticsContent</GameDebugOverlay>
 
     @* End-of-game modal: the one centered, blocking dialog every game ends on.
        It surfaces the final result (GameSummary), the stats grid (Stats), this
@@ -215,6 +215,9 @@
     /// frame rate, frame time, heap, viewport, game key and route.
     /// </summary>
     [Parameter] public IEnumerable<Models.StatItem>? Diagnostics { get; set; }
+
+    /// <summary>Optional custom HUD/widgets rendered inside the Tab diagnostics panel.</summary>
+    [Parameter] public RenderFragment? DiagnosticsContent { get; set; }
 
     [Parameter] public RenderFragment ChildContent { get; set; } = null!;
 

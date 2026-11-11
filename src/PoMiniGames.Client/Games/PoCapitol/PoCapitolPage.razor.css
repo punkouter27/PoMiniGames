@@ -250,6 +250,42 @@
 .pc-radar-legend .dot-heat { background: #ff4757; }
 
 /* Tactical Unit Inspector Card */
+.pc-tab-hud {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+}
+.pc-tab-hud-head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+}
+.pc-tab-hud-head strong {
+    display: block;
+    margin-top: 2px;
+    font-size: 13px;
+}
+.pc-tab-bar {
+    width: 100%;
+}
+.pc-tab-meta {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+}
+.pc-tab-hud .pc-onthisday-chip {
+    max-width: none;
+}
+.pc-tab-radar {
+    display: flex;
+    flex-direction: column;
+    align-items: stretch;
+}
+.pc-tab-radar .pc-radar-canvas {
+    margin: 0 auto;
+}
 .pc-inspector-card {
     position: absolute;
     bottom: 50px;

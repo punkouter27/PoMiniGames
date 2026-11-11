@@ -73,7 +73,7 @@ export const lineDefs = [
     { z: -47, x0: -4, x1: 4, officers: 6, barrier: 4, name: 'House corridor' },
 ];
 
-export const CROWD_SIZE = 128;
+export const CROWD_SIZE = 256;
 export const MAX_POLICE = 64;
 /** Staff and members sheltering in the chamber. Non-combatants: nothing can target or reach them. */
 export const CIVILIANS = 64;
@@ -238,7 +238,7 @@ export function createAttempt(difficulty = 'standard', demo = false, role = 'rai
         companions: Array.from({ length: role === 'raider' ? CROWD_SIZE - 1 : CROWD_SIZE }, (_, id) => {
             const temperament = temperamentOf(id);
             return {
-                id, x: (id % 16 - 7.5) * 2.2, z: 80 + Math.floor(id / 16) * 2.4,
+                id, x: (id % 32 - 15.5) * 2.2, z: 80 + Math.floor(id / 32) * 2.4,
                 mass: 58 + id * 13 % 35, vx: 0, vz: 0, kx: 0, kz: 0,
                 health: 30, milestone: 0, heading: 0, moving: false, attacking: 0,
                 cooldown: 0.5 + id % 7 * 0.13, delay: id % 9 * 0.12, speed: 3.2 + id % 7 * 0.16,
