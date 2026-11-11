@@ -710,6 +710,15 @@ export function createScene(host, { figure } = {}) {
     }
 
     const calm = () => window.PoQuality?.reduceFlashing?.() === true || matchMedia('(prefers-reduced-motion: reduce)').matches;
+    // The opening establishing shot: five seconds high over the west front, sweeping across the
+    // grounds, the crowd and the whole building before the camera drops behind the player. It
+    // runs once per attempt, holds the world still so the opening costs no clock, and is skipped
+    // for anyone who asked for reduced motion.
+    const INTRO_SECONDS = 5, INTRO_RETURN = 1.6;
+    const intro = { active: false, t: 0 };
+    const introPos = new THREE.Vector3(), introLook = new THREE.Vector3(), introAim = new THREE.Vector3();
+    function startIntro() { intro.active = !calm(); intro.t = 0; }
+    const introActive = () => intro.active;
     let followYaw = 0, cameraReady = false, closing = 0, lastSubject = null, clock = 0, lastRack = -99;
     let lastHealth = null, lastDaze = -99;
     const dazzled = new WeakSet();
@@ -722,6 +731,23 @@ export function createScene(host, { figure } = {}) {
         sky.uniforms.uTime.value = clock;
         campus.update(clock);
         const spectating = state.role === 'none';
+        // How much of the establishing shot is on screen this frame, 0 when it is not running.
+        let introWeight = 0;
+        if (intro.active) {
+            intro.t += dt;
+            if (intro.t >= INTRO_SECONDS + INTRO_RETURN) intro.active = false;
+            else {
+                const p = Math.min(1, intro.t / INTRO_SECONDS);
+                const ease = p * p * (3 - 2 * p);
+                const fadeIn = Math.min(1, intro.t / 0.9);
+                const fadeOut = intro.t <= INTRO_SECONDS ? 1 : Math.max(0, 1 - (intro.t - INTRO_SECONDS) / INTRO_RETURN);
+                introWeight = fadeIn * fadeOut;
+                // A slow arc from the south-west of the lawn round to the north-east, looking back
+                // at the west front: the plaza, the two lines and the dome all stay in frame.
+                introPos.set(-62 + 118 * ease, 48 - 8 * ease, 118 - 22 * ease);
+                introLook.set(0, 24 - 2 * ease, 0);
+            }
+        }
         const latched = options.latchedUnit;
         const inspected = options.inspectedUnit;
         const weather = options.weather;
@@ -787,7 +813,8 @@ export function createScene(host, { figure } = {}) {
         const baseFog = weather?.fogDensity ?? FOG_OUT;
         if (weather?.cloudCover !== undefined) sky.uniforms.uCloud.value = weather.cloudCover;
         const indoors = subject?.z < 15;
-        const targetFog = indoorGas ? FOG_GAS : baseFog * (indoors ? 0.22 : 1);
+        // The establishing shot looks through thinner air, or the whole scene would be haze.
+        const targetFog = (indoorGas ? FOG_GAS : baseFog * (indoors ? 0.22 : 1)) * (1 - 0.4 * introWeight);
         scene.fog.density += (targetFog - scene.fog.density) * (1 - Math.exp(-dt * 1.5));
 
         const goal = state.role === 'raider' || spectating ? milestones[state.milestone] : null;
@@ -925,6 +952,13 @@ export function createScene(host, { figure } = {}) {
             smoothLook.copy(look);
             camera.lookAt(look);
         }
+        // The establishing shot blends position and aim together, so the camera glides up over
+        // the grounds and back down behind the player instead of cutting.
+        if (introWeight > 0) {
+            camera.position.lerp(introPos, introWeight);
+            introAim.copy(smoothLook).lerp(introLook, introWeight);
+            camera.lookAt(introAim);
+        }
         // A new subject gets a gentle, subtle pull of focus (no jarring blur)
         if (spectating && subject && subject.id !== lastSubject && lastSubject !== null && clock - lastRack > 14) {
             post.rackFocus(9.2, 1.2, 0.35); lastRack = clock;
@@ -1017,5 +1051,5 @@ export function createScene(host, { figure } = {}) {
         geometries.forEach(g => g.dispose()); materials.forEach(m => m.dispose()); textures.forEach(t => t.dispose());
         renderer.dispose(); renderer.forceContextLoss(); renderer.domElement.remove();
     }
-    return { canvas: renderer.domElement, render, aim, pickUnit, applyQuality, dispose, renderer, camera, setTracerMode, setMotionReduction };
+    return { canvas: renderer.domElement, render, aim, pickUnit, applyQuality, dispose, renderer, camera, startIntro, introActive, setTracerMode, setMotionReduction };
 }

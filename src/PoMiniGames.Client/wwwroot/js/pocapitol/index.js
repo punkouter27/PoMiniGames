@@ -172,8 +172,11 @@ async function init(hostId, reference) {
                 const current = window.PoQuality?.tier?.() ?? g.tier;
                 if (current !== g.tier) { g.tier = current; view.applyQuality?.(g.governor.setTier(current)); }
             }
+            // The opening establishing shot holds the world still, so the five seconds it lasts
+            // are not five minutes off the clock and the crowd has not moved before play begins.
+            const intro = g.view.introActive?.() === true;
             let x = 0, z = 0;
-            if (g.started && g.state.status === 'active') {
+            if (g.started && g.state.status === 'active' && !intro) {
                 const changed = g.governor.sample(elapsed);
                 if (changed) view.applyQuality?.(changed);
                 const left = pad && human() ? stick(pad) : { x: 0, y: 0 };
@@ -315,6 +318,9 @@ function start(difficulty, demo = false, role = 'raider') {
     game.pitch = 0; game.keys.clear(); game.firing = false;
     game.started = true; game.message = ''; game.notifyAt = 0; game.restartAt = 0;
     game.inspector?.clear();
+    // The opening establishing shot: five seconds over the Capitol before the player is behind
+    // the crowd. Skipped when reduced motion is asked for.
+    game.view.startIntro?.();
     // Created on the first start, which follows a click: browsers keep audio shut until then.
     game.audio ??= createAudio();
     if (!demo) game.view.canvas.focus();

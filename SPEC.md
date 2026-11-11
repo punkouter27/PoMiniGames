@@ -55,7 +55,9 @@ reconstruction.
   separation steering move each raider; `world.js` still owns collision. Demo follows the
   living raider with most ordered milestones, then shortest remaining distance, with a
   light hand-held sway (off under reduced motion). A `doors` outcome ends on a shot of the
-  empty chamber.
+  empty chamber. An attempt opens on a five-second establishing shot that cranes up above
+  the west front and pans across the grounds before settling behind the player; the world is
+  held still for it, so it costs nothing on the clock, and it is skipped under reduced motion.
 - **Presentation:** procedural public motifs: dome and drum, inauguration stands, bike racks
   that bow and topple, Crypt columns, Rotunda rings, Statuary Hall figures without
   likenesses, barricaded House doors, the chamber and the people in it. About 1,400 unsimulated distant
