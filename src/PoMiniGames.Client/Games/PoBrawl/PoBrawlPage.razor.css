@@ -1783,14 +1783,13 @@ button.pb-net-btn {
         gap: 5px;
     }
 
-    /* 56, not 60: with the live portrait stage on, four rows of 60 left the 2P card 7px too
-       tall at 1280×720 (444 of content in 437); the portraits still fit. */
+    /* Five roster rows must fit above the footer at 1280x720; keep 44px touch targets. */
     :root:not([data-gfx='low']) .pb-select:not([data-stage='off']) .pb-select-tile {
-        min-height: 56px;
+        min-height: 44px;
     }
 
     :root:not([data-gfx='low']) .pb-select:not([data-stage='off']) .pb-select-side {
-        min-height: 104px;
+        min-height: 96px;
     }
 
     .pb-dossier-disclosure {
