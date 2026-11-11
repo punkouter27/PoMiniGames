@@ -25,7 +25,7 @@
             @* Keyed on the mode: 1P and Demo share this page instance, and the same card
                shrinking from the 1P setup to the demo's few lines read as a layout shift. *@
             <GameIntro @key="_demo" CueScope="pomule"
-                       Title=@LogoContent
+                       Title=@TitleContent
                        Objective="Twelve months on planet Irata. Claim land, put M.U.L.E.s to work, trade on the floor. Richest colonist wins, if the colony survives."
                        Controls=@ControlsContent
                        HowToPlay=@RulesContent
@@ -87,17 +87,6 @@
 
 @code {
     private static RenderFragment TitleContent => GameCatalog.TitleFor(GameKeys.PoMule);
-
-    // The start card's heading, after the Atari title screen: the striped logo with three
-    // colonists marching under it.
-    private RenderFragment LogoContent => @<span class="pm-title">
-        <span class="pm-logo" aria-label="M.U.L.E.">M.U.L.E.</span>
-        <span class="pm-parade" aria-hidden="true">
-            <span class="pm-walker pm-walker--a"></span>
-            <span class="pm-walker pm-walker--b"></span>
-            <span class="pm-walker pm-walker--c"></span>
-        </span>
-    </span>;
 
     private RenderFragment ControlsContent => @<div>
         <p class="keys-only"><kbd>W</kbd><kbd>A</kbd><kbd>S</kbd><kbd>D</kbd> or arrows move · <kbd>Space</kbd> is the button (claim, install) · <kbd>Shift</kbd> dashes.</p>

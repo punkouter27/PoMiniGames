@@ -1,6 +1,7 @@
 @namespace PoMiniGamesClient.Components
 @inject IJSRuntime JS
 @inject NavigationManager Nav
+@inject SettingsService Settings
 @implements IDisposable
 
 @*
@@ -41,6 +42,7 @@
 
     /// <summary>The drawer's heading and the gear's accessible name.</summary>
     [Parameter] public string Heading { get; set; } = "Game options";
+    [Parameter] public bool GlobalSettings { get; set; }
 
     private ElementReference _dialog;
     private bool _open;
@@ -49,6 +51,11 @@
 
     private async Task OpenAsync()
     {
+        if (GlobalSettings)
+        {
+            Settings.RequestOpen();
+            return;
+        }
         _open = true;
         await _dialog.ShowModalAloneAsync(JS);
     }

@@ -31,13 +31,8 @@
     }
     else
     {
-    @if (!string.IsNullOrEmpty(_error))
-    {
-        <p class="gps-error" role="alert">
-            @_error
-            <button class="app-btn app-btn--secondary app-btn--sm" @onclick="ReconnectLobbyAsync">Retry</button>
-        </p>
-    }
+    @* One inline failure strip for every lobby: Components/InlineError. *@
+    <InlineError Message="@_error" OnRetry="ReconnectLobbyAsync" />
     @* One start path: the server starts the match the moment everyone is ready, so there
        is no Start button (ShowStart) and a ready cannot be taken back (CanReady). *@
     <LobbyPanel TPlayer="NamedLobbyPlayer"

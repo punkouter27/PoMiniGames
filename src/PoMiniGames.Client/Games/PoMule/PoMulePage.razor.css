@@ -122,17 +122,10 @@
     margin-right: 6px;
 }
 
-/* ── Start card, after the Atari title screen: flat orange-brown, the striped logo with
-   three colonists marching under it, block capitals. Only the shared card's colours and
-   type change; its structure and behaviour stay the shell's. ── */
 .pm-root ::deep .gps-intro-card {
-    background: var(--pm-card);
-    color: var(--pm-card-ink);
-    border: 4px solid var(--pm-ink);
-    border-radius: 0;
-    box-shadow: none;
-    font-family: inherit;
-    font-weight: 700;
+    color: var(--color-text-primary);
+    font-family: var(--font-body, system-ui, sans-serif);
+    font-weight: 400;
 }
 
 .pm-root ::deep .gps-intro-title {
@@ -221,41 +214,16 @@
 .pm-root ::deep .gps-intro-objective,
 .pm-root ::deep .gps-intro-controls,
 .pm-root ::deep .gps-intro-controls p {
-    color: var(--pm-card-ink);
-    font-size: 0.8rem;
+    color: var(--color-text-secondary);
 }
 
 .pm-root ::deep .gps-intro-section-label,
 .pm-root ::deep .pm-species-label {
-    color: var(--pm-blue);
-    font-weight: 900;
+    color: var(--color-text-secondary);
+    font-weight: 700;
     font-size: 0.75rem;
     letter-spacing: 0.08em;
     text-align: center;
-}
-
-.pm-root ::deep .gps-intro-controls kbd {
-    background: var(--pm-card-ink);
-    color: #f0b878;
-    border: 0;
-    border-radius: 0;
-    box-shadow: none;
-}
-
-.pm-root ::deep .gps-intro-actions {
-    background: var(--pm-card);
-    box-shadow: none;
-    border: 0;
-}
-
-.pm-root ::deep .gps-intro-card .app-btn--primary {
-    background: var(--pm-ink);
-    color: #f0b878;
-    border: 0;
-    border-radius: 0;
-    box-shadow: none;
-    text-transform: uppercase;
-    letter-spacing: 0.12em;
 }
 
 .pm-root ::deep .pm-species {
@@ -277,13 +245,14 @@
     align-items: center;
     gap: 0.35rem;
     padding: 0.2rem 0.6rem;
-    border: 2px solid var(--pm-ink);
+    border: 1px solid var(--color-border);
+    border-radius: var(--radius-sm);
     cursor: pointer;
 }
 
 .pm-root ::deep .pm-continue label:has(input:checked) {
-    background: var(--pm-ink);
-    color: #f0b878;
+    background: var(--accent-soft);
+    color: var(--color-text-primary);
 }
 
 /* Radzen lays a data list out as a column; the picker wants a grid so all eight species
@@ -312,27 +281,28 @@
     padding: 0.3rem 0.45rem;
     text-align: left;
     font: inherit;
-    text-transform: uppercase;
-    color: var(--pm-ink);
-    background: #8c5c08;
-    border: 2px solid var(--pm-card-ink);
+    color: var(--color-text-primary);
+    background: var(--color-surface);
+    border: 1px solid var(--color-border);
+    border-radius: var(--radius-sm);
     cursor: pointer;
 }
 
 .pm-root ::deep .pm-species-cash {
-    color: var(--pm-blue);
+    color: var(--color-text-secondary);
     font-size: 0.8rem;
 }
 
 .pm-root ::deep .pm-species-trait {
-    color: var(--pm-card-ink);
+    display: none;
+    color: var(--color-text-secondary);
     font-size: 0.68rem;
     line-height: 1.2;
     text-transform: none;
 }
 
 .pm-root ::deep .pm-species-picked {
-    display: none;
+    display: block;
     margin: 0;
     text-align: center;
     font-size: 0.75rem;
@@ -359,14 +329,14 @@
 }
 
 .pm-root ::deep .pm-species-card.pm-species-card--on {
-    background: var(--pm-ink);
-    border-color: #f0b878;
-    color: #f0b878;
+    background: var(--accent-soft);
+    border-color: var(--color-accent);
+    color: var(--color-text-primary);
 }
 
 .pm-root ::deep .pm-species-card.pm-species-card--on .pm-species-cash,
 .pm-root ::deep .pm-species-card.pm-species-card--on .pm-species-trait {
-    color: #f0b878;
+    color: var(--color-text-primary);
 }
 
 .pm-root ::deep .pm-standings-hint {
@@ -381,9 +351,9 @@
     justify-content: center;
     gap: 0.4rem;
     margin-bottom: 0.4rem;
-    color: var(--pm-ink);
+    color: var(--color-text-primary);
     font-size: 0.8rem;
-    font-weight: 900;
+    font-weight: 500;
     cursor: pointer;
 }
 

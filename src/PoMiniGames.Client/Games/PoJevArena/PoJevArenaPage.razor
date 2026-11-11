@@ -9,6 +9,7 @@
    Jev Arena board for the modal to read (the key that used to sit here 404ed once the modal
    could actually open). *@
 <GameShell Title="@TitleContent" Player="@_playerName" BackTo="/" Fullscreen="true"
+           TabDebug="false"
            GameOver="false">
     @if (_phase == Phase.Intro)
     {
@@ -119,9 +120,8 @@
                             </HudRegion>
                             @if (_phase == Phase.Battle)
                             {
-                                @* Hold Tab for the stat HUD; this is the same toggle for touch, where there is no Tab. *@
-                                <button type="button" class="jev-statsbtn" aria-pressed="@Pressed(_statsOpen)" @onclick="() => _statsOpen = !_statsOpen"
-                                        title="Hold Tab to show the stats">Stats <kbd>Tab</kbd></button>
+                                <button type="button" class="jev-statsbtn" aria-pressed="@Pressed(_statsOpen)" @onclick='() => SafeJsAsync("PoJevArena.setStats", !_statsOpen)'
+                                        title="Tab toggles stats; Esc closes">Stats <kbd>Tab</kbd></button>
                             }
                         </div>
 
@@ -171,7 +171,7 @@
 
     // The battle's keys: what the start card shows first.
     private static RenderFragment IntroControls => @<p>
-        Hold <kbd>Tab</kbd> for the stats · click a creature for Jev's odds ·
+        <kbd>Tab</kbd> toggles stats · click a creature for Jev's odds ·
         <kbd>[</kbd><kbd>]</kbd> cycle Blue · <kbd>;</kbd><kbd>'</kbd> cycle Red
     </p>;
 }

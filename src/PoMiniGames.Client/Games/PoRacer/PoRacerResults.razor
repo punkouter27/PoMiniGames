@@ -15,6 +15,9 @@
                 <span class="result-pb">@(PreviousBest > 0 ? $"Personal best, {PoRacerFormatting.Delta(lap - PreviousBest)} s" : "First lap on the board")</span>
             }
         </p>
+        @if (lap > 0) { <p>Best lap: @PoRacerFormatting.Time(lap)</p> }
+        <details>
+        <summary>Final standings</summary>
         <table>
             <caption>Final standings</caption>
             <thead><tr><th scope="col">Pos.</th><th scope="col">Driver</th><th scope="col">Race time</th><th scope="col">Best lap</th></tr></thead>
@@ -31,6 +34,7 @@
                 }
             </tbody>
         </table>
+        </details>
     }
     <p class="result-foot">
         @if (StatusText is { } status)

@@ -482,7 +482,7 @@ public partial class PoJevArenaPage : ComponentBase, IAsyncDisposable
         return InvokeAsync(StateHasChanged);
     }
 
-    /// <summary>Tab held (true) or released (false) during the live match: the stat HUD over the arena.</summary>
+    /// <summary>The live match's stats panel was toggled.</summary>
     [JSInvokable]
     public Task OnStats(bool open)
     {

@@ -201,6 +201,7 @@ async function init(hostId, reference) {
             const moving = Math.hypot(x, z) > 0.1 && g.state.status === 'active';
 
             // Real-time Tactical Radar & Unit Inspector updates
+            initRadar('pocapitol-radar');
             if (g.radar) g.radar.render(g.state, g.inspector?.getSelected(), dt);
             g.inspector?.update(g.state);
 

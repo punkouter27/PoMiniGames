@@ -1,0 +1,17 @@
+<button type="button" class="fq-option @Class" disabled="@Disabled" @onclick="() => OnSelect.InvokeAsync(Index)">
+    <span class="fq-option__key" aria-hidden="true">@(Index + 1)</span>
+    <span class="fq-option__label">@Label</span>
+    @if (Correct)
+    {
+        <span class="fq-option__badge" aria-hidden="true">✓</span>
+    }
+</button>
+
+@code {
+    [Parameter] public int Index { get; set; }
+    [Parameter] public string Label { get; set; } = "";
+    [Parameter] public string? Class { get; set; }
+    [Parameter] public bool Disabled { get; set; }
+    [Parameter] public bool Correct { get; set; }
+    [Parameter] public EventCallback<int> OnSelect { get; set; }
+}

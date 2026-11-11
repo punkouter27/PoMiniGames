@@ -457,7 +457,7 @@
 /* ─── Pause overlay ──────────────────────────────────────────────────────── */
 /* A modal <dialog> (showModal): the browser centres it in the top layer and makes the
    page behind inert. Reset the UA frame; the card is the visible surface. */
-.pocabinet-overlay {
+.pocabinet-root ::deep .pocabinet-overlay {
     /* Explicit: the app's reset zeroes dialog margins, which pinned the modal top-left. */
     margin: auto;
     padding: 0;
@@ -468,7 +468,7 @@
     color: inherit;
 }
 
-.pocabinet-overlay::backdrop {
+.pocabinet-root ::deep .pocabinet-overlay::backdrop {
     background: rgba(4, 8, 18, 0.62);
     -webkit-backdrop-filter: blur(3px);
     backdrop-filter: blur(3px);

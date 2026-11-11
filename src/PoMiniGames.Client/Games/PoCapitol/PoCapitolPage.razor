@@ -9,7 +9,18 @@
 
 <PageTitle>PoCapitol · PoMiniGames</PageTitle>
 
-<GameShell Title="@TitleContent" Fullscreen="true" RequiresWebGl="true" Announcement="@_announcement">
+<GameShell Title="@TitleContent" Fullscreen="true" RequiresWebGl="true" Announcement="@_announcement"
+           Loading="@(_status == "loading")"
+           LoadingLabel="Preparing the scene…"
+           OptionsContent="@ScenarioOptions"
+           OptionsHeading="Scenario options"
+           GameOver="@((_status is "completed" or "failed") && !_demo)"
+           GameOverDelayMs="1800"
+           Outcome="@ResultOutcome"
+           Stats="@ResultStats"
+           GameSummary="@ResultSummary"
+           Diagnostics="@DiagStats"
+           DiagnosticsContent="@TabHudContent">
     <ErrorBoundary @ref="_errorBoundary">
         <ChildContent>
             <div class="pc-root @(_demo ? "pc-phonecam" : null)">
@@ -20,169 +31,35 @@
                     <div class="pc-edition">PoCAPITOL <span>ALTERNATE HISTORY · FICTIONAL SCENARIO</span></div>
                 }
                 
-                <div class="pc-top-actions">
-                    <button type="button" class="pc-gear-btn" @onclick="ToggleDrawer" title="Scenario Options & Diagnostics" aria-label="Open Scenario Options & Diagnostics">⚙</button>
-                    <div class="pc-mode"><ModeSwitch Current="@(_demo ? GameMode.Demo : GameMode.OnePlayer)" Reload="false" /></div>
-                </div>
-
+                @* The shared start card, like every other game: one OK, controls beside the
+                   rules, and this scenario's setup in the Options slot. It replaces a
+                   bespoke three-tab Radzen panel so the first thing a player sees is the
+                   same card shape they met on the other games. *@
                 @if (_status == "intro" && _ready)
                 {
-                    <section class="pc-panel pc-intro" role="dialog" aria-modal="true" aria-labelledby="pc-heading">
-                        <span class="pc-eyebrow">ONE AFTERNOON. FIVE POLICE LINES.</span>
-                        <h2 id="pc-heading">Beyond the <em>marble steps.</em></h2>
-                        
-                        <RadzenTabs @bind-SelectedIndex="_selectedIntroTab" TabPosition="TabPosition.Top" RenderMode="TabRenderMode.Client" Class="pc-tabs">
-                            <Tabs>
-                                <RadzenTabsItem Text="Briefing & Setup" Icon="assignment">
-                                    <p>128 protestors start out on the grass; most watch and film, a few push. 64 police hold five lines and fall back in stages. 64 staff and members shelter inside until evacuated. 12:50 pm to the 6:00 pm curfew.</p>
-                                    <div class="pc-notice"><strong>Fiction, not a reconstruction.</strong> Inspired by January 6, 2021. Adult themes; no injury is shown. Nobody is armed when you play; the Demo is a separate armed variant. The layout and police positions are invented.</div>
-                                    <label class="pc-small" for="pc-role">Who you are</label>
-                                    <RadzenSelectBar TValue="string" @bind-Value="_role" id="pc-role">
-                                        <Items>
-                                            <RadzenSelectBarItem Text="In the crowd" Value="@("raider")" />
-                                            <RadzenSelectBarItem Text="Police line" Value="@("police")" />
-                                            <RadzenSelectBarItem Text="Observer" Value="@("observer")" />
-                                        </Items>
-                                    </RadzenSelectBar>
-                                    <p class="pc-small">@RoleBrief</p>
-                                    <div class="pc-options">
-                                        <div>
-                                            <label class="pc-small" for="pc-difficulty">Difficulty</label>
-                                            <RadzenSelectBar TValue="string" @bind-Value="_difficulty" id="pc-difficulty">
-                                                <Items>
-                                                    <RadzenSelectBarItem Text="Story" Value="@("story")" />
-                                                    <RadzenSelectBarItem Text="Standard" Value="@("standard")" />
-                                                </Items>
-                                            </RadzenSelectBar>
-                                        </div>
-                                        <div>
-                                            <label class="pc-small" for="pc-graphics">Graphics</label>
-                                            <RadzenSelectBar TValue="string" Value="@_graphics" Change="@(async (string value) => await SetGraphicsAsync(value))" id="pc-graphics">
-                                                <Items>
-                                                    <RadzenSelectBarItem Text="Auto" Value="@("auto")" />
-                                                    <RadzenSelectBarItem Text="Low" Value="@("low")" />
-                                                    <RadzenSelectBarItem Text="High" Value="@("high")" />
-                                                </Items>
-                                            </RadzenSelectBar>
-                                        </div>
-                                    </div>
-                                    <div class="pc-actions">
-                                        <RadzenButton Text="Begin scenario" Icon="arrow_forward" ButtonStyle="ButtonStyle.Primary" Click="@(_ => StartAsync())" />
-                                        <a href="/" class="pc-subtle-link">All games</a>
-                                    </div>
-                                </RadzenTabsItem>
-                                <RadzenTabsItem Text="Field Controls" Icon="sports_esports">
-                                    <div class="pc-controls-deck">
-                                        <h4>Tactical Keybindings</h4>
-                                        <div class="pc-controls-grid">
-                                            <div><kbd>W</kbd> <kbd>A</kbd> <kbd>S</kbd> <kbd>D</kbd><span>Move raider / officer</span></div>
-                                            <div><kbd>Mouse</kbd><span>Look & aim (click to lock)</span></div>
-                                            <div><kbd>Space</kbd> / <kbd>Click</kbd><span>Push / shove line</span></div>
-                                            <div><kbd>Shift</kbd><span>Hurry / sprint</span></div>
-                                            <div><kbd>←</kbd> <kbd>→</kbd><span>Turn camera</span></div>
-                                            <div><kbd>Esc</kbd> / <kbd>P</kbd><span>Pause scenario</span></div>
-                                        </div>
-                                        <h4>Touch & Gamepad Support</h4>
-                                        <p class="pc-small"><strong>Touch:</strong> Use on-screen floating d-pad and push button. Drag anywhere across the viewport to orbit camera.</p>
-                                        <p class="pc-small"><strong>Gamepad:</strong> Left stick moves, right stick looks, right trigger pushes, Start pauses.</p>
-                                    </div>
-                                </RadzenTabsItem>
-                                <RadzenTabsItem Text="Historical Record" Icon="history_edu">
-                                    @ContextContent
-                                </RadzenTabsItem>
-                            </Tabs>
-                        </RadzenTabs>
-                    </section>
-                }
-                else if (_status == "loading")
-                {
-                    <div class="pc-panel pc-centered" role="status"><h2>Preparing the scene</h2><p>Building the grounds, Crypt, Rotunda and Statuary Hall…</p></div>
+                    <GameIntro CueScope="pocapitol"
+                               Title="@TitleContent"
+                               Objective="One afternoon, five police lines. Play it as the crowd, the line, or an observer."
+                               Controls="@IntroControls"
+                               HowToPlay="@IntroRules"
+                               Options="@IntroOptions"
+                               Mode="@(_demo ? GameIntro.IntroMode.Demo : GameIntro.IntroMode.OnePlayer)"
+                               Wide="true"
+                               OnStart="StartAsync" />
                 }
                 else if (_status == "error")
                 {
-                    <div class="pc-panel pc-centered" role="alert">
-                        <h2>The scenario could not load</h2><p>@_error</p>
-                        <div class="pc-actions">
-                            <RadzenButton Text="Retry" Click="@(_ => LoadAsync())" />
-                            <a href="/" class="pc-subtle-link">All games</a>
-                        </div>
+                    @* The shared error view, inside the game area: same headline, message and
+                       one retry button as the rest of the app. `loading` renders nothing here —
+                       GameShell's skeleton already covers the stage while the engine boots. *@
+                    <div class="pc-panel pc-centered">
+                        <ErrorState Icon="⚠️" Title="The scenario could not load" OnRetry="LoadAsync">
+                            <p>@_error</p>
+                        </ErrorState>
                     </div>
                 }
                 else
                 {
-                    <div class="pc-hud">
-                        <div class="pc-hud-main">
-                            <div class="pc-hud-eyebrow-row">
-                                <span class="pc-eyebrow">@HudEyebrow</span>
-                                @if (_demo)
-                                {
-                                    <span class="pc-rec-pill" aria-hidden="true"><i></i>REC</span>
-                                }
-                            </div>
-                            <strong>@HudTitle</strong>
-                            <div class="pc-progress" aria-label="@($"{_milestone} of {Objectives.Length} milestones complete")">
-                                @for (var i = 0; i < Objectives.Length; i++)
-                                {
-                                    <span class="@(i < _milestone ? "pc-done" : null)"></span>
-                                }
-                            </div>
-                        </div>
-                        @if (_lineIndex >= 0)
-                        {
-                            <div class="pc-line">
-                                <div class="pc-line-header">
-                                    <span>LINE: @LineNames[_lineIndex].ToUpperInvariant()</span>
-                                    <span>@_lineIntegrity%</span>
-                                </div>
-                                <RadzenProgressBar Value="@_lineIntegrity" Max="100" Unit="" ShowValue="false" 
-                                                   ProgressBarStyle="@GetLineProgressStyle(_lineIntegrity)" Class="pc-progress-bar" />
-                            </div>
-                        }
-                        @if (Playing)
-                        {
-                            <div class="pc-health">
-                                <div class="pc-health-header">
-                                    <span>STAMINA</span>
-                                    <span>@_health%</span>
-                                </div>
-                                <RadzenProgressBar Value="@_health" Max="100" Unit="" ShowValue="false" 
-                                                   ProgressBarStyle="@GetHealthProgressStyle(_health)" Class="pc-progress-bar" />
-                            </div>
-                        }
-                        <div class="pc-crowd">
-                            <span>@_activeRaiders / 128 IN CROWD</span>
-                            <span>@_activePolice / @_totalPolice CAPITOL POLICE</span>
-                            @if (_demo && _subject > 0)
-                            {
-                                <b>FOLLOWING RAIDER @_subject:000</b>
-                            }
-                        </div>
-                        <button type="button" class="pc-weather-pill" @onclick="OpenWeatherDrawer" title="Atmospheric Conditions: @_weatherCondition. Click to change.">⛅ @_weatherCondition</button>
-                        <span class="pc-time">@Clock</span>
-                        <RadzenButton Text="Pause" Icon="pause" Size="ButtonSize.Small" Disabled="@(_status != "active")" Click="@(_ => PauseAsync(true))" />
-                    </div>
-
-                    @* Tactical Radar & Crowd Pressure Heatmap HUD *@
-                    <div class="pc-radar-anchor @(_radarExpanded ? "pc-radar--expanded" : null)">
-                        <div class="pc-radar-header">
-                            <button type="button" class="pc-radar-toggle" @onclick="ToggleRadar" title="Toggle Tactical Radar">
-                                <span>📡 RADAR</span>
-                                <small>@(_radarExpanded ? "▲" : "▼")</small>
-                            </button>
-                        </div>
-                        @if (_radarExpanded)
-                        {
-                            <div class="pc-radar-body">
-                                <canvas id="pocapitol-radar" class="pc-radar-canvas" width="200" height="270"></canvas>
-                                <div class="pc-radar-legend">
-                                    <span><i class="dot-raider"></i>Raider</span>
-                                    <span><i class="dot-police"></i>Police</span>
-                                    <span><i class="dot-heat"></i>Crush</span>
-                                </div>
-                            </div>
-                        }
-                    </div>
-
                     @* Tactical Unit Inspector Telemetry Card *@
                     @if (_selectedTelemetry != null)
                     {
@@ -230,12 +107,10 @@
                                 }
                             </div>
                             <div class="pc-inspector-actions">
-                                <RadzenButton Text="@(_selectedTelemetry.latched ? "Unlatch Camera" : "Latch Camera")" 
-                                              Icon="@(_selectedTelemetry.latched ? "videocam_off" : "videocam")"
-                                              Size="ButtonSize.ExtraSmall" 
-                                              ButtonStyle="@(_selectedTelemetry.latched ? ButtonStyle.Warning : ButtonStyle.Primary)"
-                                              Click="@ToggleLatchAsync" />
-                                <RadzenButton Text="Deselect" Size="ButtonSize.ExtraSmall" ButtonStyle="ButtonStyle.Secondary" Click="@ClearInspectAsync" />
+                                <button type="button" class="app-btn app-btn--primary" @onclick="ToggleLatchAsync">
+                                    @(_selectedTelemetry.latched ? "Unlatch camera" : "Latch camera")
+                                </button>
+                                <button type="button" class="app-btn" @onclick="ClearInspectAsync">Deselect</button>
                             </div>
                         </div>
                     }
@@ -245,24 +120,6 @@
                         {
                             <div class="pc-crosshair" aria-hidden="true">+</div>
                         }
-                        <div class="pc-bottom-bar">
-                            @if (_demo)
-                            {
-                                <div class="pc-demo-chip" title="Armed demo variant for autonomous tactical simulation.">
-                                    <span class="pc-rec-pill" aria-hidden="true"><i></i>LIVE SIMULATION</span>
-                                    <strong>ARMED DEMO · @(_subject > 0 ? $"TRACKING RAIDER {_subject:000}" : "AUTONOMOUS")</strong>
-                                </div>
-                            }
-                            else if (_role == "raider")
-                            {
-                                <div class="pc-beacon-chip">BEACON · @Objective.ToUpperInvariant()</div>
-                            }
-                            <div class="pc-hint-chip">@BottomHint</div>
-                            <div class="pc-onthisday-chip" title="@OnTheDay.Text">
-                                <span class="pc-eyebrow">HISTORICAL RECORD · @OnTheDay.Time</span>
-                                <span>@OnTheDay.Text</span>
-                            </div>
-                        </div>
                         @if (!_demo)
                         {
                             <div class="pc-touch" aria-label="Touch controls">
@@ -281,7 +138,8 @@
                     }
                     else if (_status == "paused")
                     {
-                        <section class="pc-panel pc-centered" role="dialog" aria-modal="true" aria-labelledby="pc-paused">
+                        <section class="pc-panel pc-centered">
+                        <GamePauseDialog LabelledBy="pc-paused" OnResume="() => PauseAsync(false)">
                             <span class="pc-eyebrow">TAKE A BREATH</span><h2 id="pc-paused">Scenario paused.</h2>
                             <p>The clock, the crowd and the lines are stopped.</p>
                             <label class="pc-small" for="pc-graphics-paused">Graphics · now @_graphicsLabel</label>
@@ -293,151 +151,22 @@
                                 </Items>
                             </RadzenSelectBar>
                             <div class="pc-actions">
-                                <RadzenButton Text="Resume" Icon="play_arrow" Click="@(_ => PauseAsync(false))" />
-                                <RadzenButton Text="Restart" Icon="replay" ButtonStyle="ButtonStyle.Secondary" Click="@(_ => StartAsync())" />
-                                <a href="/" class="pc-subtle-link">All games</a>
+                                <button type="button" class="app-btn app-btn--primary" @onclick="() => PauseAsync(false)">Resume</button>
+                                <button type="button" class="app-btn" @onclick="StartAsync">Restart</button>
                             </div>
                             <details><summary>Historical context</summary>@ContextContent</details>
+                        </GamePauseDialog>
                         </section>
                     }
                     else if (_status is "completed" or "failed")
                     {
-                        <section class="pc-panel pc-centered" role="dialog" aria-modal="true" aria-labelledby="pc-result">
-                            <span class="pc-eyebrow">SCENARIO ENDED · @Clock</span>
-                            <h2 id="pc-result">@ResultHeading</h2>
-                            <p>@ResultBody</p>
-                            <div class="pc-result-stats"><span>@Clock<small>TIME OF DAY</small></span><span>@_milestone / @Objectives.Length<small>MILESTONES</small></span><span>@_activeRaiders<small>STILL STANDING</small></span></div>
-                            <div class="pc-aftermath">
-                                <strong>What happened afterwards</strong>
-                                <p>The real building was cleared that evening and a citywide curfew began at 6:00 pm. The Senate reconvened at about 8:00 pm and Congress finished certifying the election at about 3:40 am on January 7. In the years that followed, federal prosecutors charged more than 1,500 people; in January 2025 nearly all of them were granted clemency.</p>
-                            </div>
-                            <p class="pc-small">@(_demo ? "Spectator mode never saves player results. A fresh attempt begins in six seconds." : _role != "raider" ? "Police-line and observer attempts are not saved." : _resultWarning.Length > 0 ? _resultWarning : "Results stay in your local game stats. No public ranking and no score for harming anyone.")</p>
-                            <div class="pc-actions"><RadzenButton Text="Play again" Icon="replay" Click="@(_ => StartAsync())" /><a href="/" class="pc-subtle-link">Back to all games</a></div>
-                            <details><summary>History and fictional departures</summary>@ContextContent</details>
-                        </section>
+                        @* The result is the shared end-of-game modal now (GameShell's
+                           GameOver → GameOverModal): the same card, the same one button,
+                           the same place in every game. Only the extra prose that is
+                           specific to this scenario is projected as the summary. *@
                     }
                 }
 
-                @* Slide-out Scenario Options & Diagnostics Drawer *@
-                @if (_showDrawer)
-                {
-                    <div class="pc-drawer-backdrop" @onclick="ToggleDrawer"></div>
-                    <div class="pc-drawer" role="dialog" aria-modal="true" aria-labelledby="pc-drawer-heading">
-                        <div class="pc-drawer-header">
-                            <h3 id="pc-drawer-heading">Scenario Options</h3>
-                            <button type="button" class="pc-debug-close" @onclick="ToggleDrawer" aria-label="Close options drawer">✕</button>
-                        </div>
-                        <div class="pc-drawer-body">
-                            <div class="pc-drawer-section">
-                                <span class="pc-drawer-section-title">Scenario Role & Difficulty</span>
-                                <label class="pc-small" for="pc-drawer-role">Active Role</label>
-                                <RadzenSelectBar TValue="string" Value="@_role" Change="@(async (string val) => await ChangeRoleInDrawer(val))" id="pc-drawer-role">
-                                    <Items>
-                                        <RadzenSelectBarItem Text="Raider" Value="@("raider")" />
-                                        <RadzenSelectBarItem Text="Police" Value="@("police")" />
-                                        <RadzenSelectBarItem Text="Observer" Value="@("observer")" />
-                                    </Items>
-                                </RadzenSelectBar>
-
-                                <label class="pc-small" for="pc-drawer-diff" style="margin-top:10px;">Difficulty</label>
-                                <RadzenSelectBar TValue="string" Value="@_difficulty" Change="@(async (string val) => await ChangeDifficultyInDrawer(val))" id="pc-drawer-diff">
-                                    <Items>
-                                        <RadzenSelectBarItem Text="Story" Value="@("story")" />
-                                        <RadzenSelectBarItem Text="Standard" Value="@("standard")" />
-                                    </Items>
-                                </RadzenSelectBar>
-                            </div>
-
-                            <div class="pc-drawer-section">
-                                <span class="pc-drawer-section-title">Visuals & Environment</span>
-                                <label class="pc-small" for="pc-drawer-graphics">Graphics Quality</label>
-                                <RadzenSelectBar TValue="string" Value="@_graphics" Change="@(async (string value) => await SetGraphicsAsync(value))" id="pc-drawer-graphics">
-                                    <Items>
-                                        <RadzenSelectBarItem Text="Auto" Value="@("auto")" />
-                                        <RadzenSelectBarItem Text="Low" Value="@("low")" />
-                                        <RadzenSelectBarItem Text="High" Value="@("high")" />
-                                    </Items>
-                                </RadzenSelectBar>
-                                <p class="pc-small">Active tier: @_graphicsLabel</p>
-
-                                <label class="pc-small" for="pc-drawer-weather" style="margin-top:10px;">Atmospheric Conditions (Open-Meteo)</label>
-                                <RadzenSelectBar TValue="string" Value="@_weatherMode" Change="@(async (string val) => await SetWeatherAsync(val))" id="pc-drawer-weather">
-                                    <Items>
-                                        <RadzenSelectBarItem Text="Jan 6 Archive" Value="@("historical")" />
-                                        <RadzenSelectBarItem Text="Live D.C." Value="@("live")" />
-                                        <RadzenSelectBarItem Text="Clear" Value="@("clear")" />
-                                        <RadzenSelectBarItem Text="Winter Gale" Value="@("blizzard")" />
-                                    </Items>
-                                </RadzenSelectBar>
-                                <p class="pc-small">@_weatherCondition</p>
-
-                                <label class="pc-small" for="pc-drawer-tracers" style="margin-top:10px;">Ballistic Tracers</label>
-                                <RadzenSelectBar TValue="string" Value="@_tracerMode" Change="@(async (string val) => await SetTracerModeAsync(val))" id="pc-drawer-tracers">
-                                    <Items>
-                                        <RadzenSelectBarItem Text="Luminous" Value="@("luminous")" />
-                                        <RadzenSelectBarItem Text="Stealth" Value="@("stealth")" />
-                                        <RadzenSelectBarItem Text="Off" Value="@("off")" />
-                                    </Items>
-                                </RadzenSelectBar>
-
-                                <label class="pc-small" for="pc-drawer-motion" style="margin-top:10px;">Combat Motion & Shake</label>
-                                <RadzenSelectBar TValue="string" Value="@_motionMode" Change="@(async (string val) => await SetMotionModeAsync(val))" id="pc-drawer-motion">
-                                    <Items>
-                                        <RadzenSelectBarItem Text="Full Combat" Value="@("full")" />
-                                        <RadzenSelectBarItem Text="Reduced Motion" Value="@("reduced")" />
-                                    </Items>
-                                </RadzenSelectBar>
-                            </div>
-
-                            <div class="pc-drawer-section">
-                                <div class="pc-drawer-toggle-row">
-                                    <span class="pc-drawer-section-title">Tactical Radar</span>
-                                    <RadzenButton Text="@(_radarExpanded ? "Hide Radar" : "Show Radar")" 
-                                                  Icon="@(_radarExpanded ? "visibility_off" : "radar")"
-                                                  Size="ButtonSize.ExtraSmall" 
-                                                  ButtonStyle="@(_radarExpanded ? ButtonStyle.Warning : ButtonStyle.Primary)"
-                                                  Click="@ToggleRadar" />
-                                </div>
-                            </div>
-
-                            <div class="pc-drawer-section">
-                                <button type="button" class="pc-drawer-toggle-btn" @onclick="ToggleDiagnostics">
-                                    <span class="pc-drawer-section-title">Diagnostics & Telemetry</span>
-                                    <span class="pc-small">@(_showDiagnostics ? "▲ Collapse" : "▼ Expand")</span>
-                                </button>
-                                @if (_showDiagnostics)
-                                {
-                                    <div class="pc-debug-grid" style="margin-top:8px;">
-                                        <div><span>SIMULATION FPS:</span><b>@_debugFps FPS</b></div>
-                                        <div><span>STATUS / MODE:</span><b>@_status.ToUpperInvariant() / @(_demo ? "DEMO" : _role.ToUpperInvariant())</b></div>
-                                        <div><span>SCENARIO CLOCK:</span><b>@Clock (@Math.Round(_elapsed, 1)s)</b></div>
-                                        <div><span>MILESTONE:</span><b>@_milestone / @Objectives.Length</b></div>
-                                        <div><span>CROWD (RAIDERS):</span><b>@_activeRaiders standing / @(128 - _activeRaiders) down</b></div>
-                                        <div><span>CAPITOL POLICE:</span><b>@_activePolice standing / @(44 - _activePolice) down</b></div>
-                                        <div><span>POLICE LINE:</span><b>@(_lineIndex >= 0 ? LineNames[_lineIndex] : "None") (@_lineIntegrity%)</b></div>
-                                        <div><span>SHELTERING STAFF:</span><b>@_sheltering</b></div>
-                                        <div><span>DRAW CALLS / TIER:</span><b>@_debugDrawCalls / @_graphicsLabel</b></div>
-                                        <div><span>KEYS HELD:</span><b>@(_debugKeys.Length > 0 ? _debugKeys : "None")</b></div>
-                                    </div>
-                                    <div class="pc-debug-actions">
-                                        <RadzenButton Text="Refresh Stats" Size="ButtonSize.ExtraSmall" Click="@RefreshDebugStatsAsync" />
-                                        <RadzenButton Text="Force GC" Size="ButtonSize.ExtraSmall" ButtonStyle="ButtonStyle.Secondary" Click="@ForceGC" />
-                                        @if (_status == "active")
-                                        {
-                                            <RadzenButton Text="Damage (-20)" Size="ButtonSize.ExtraSmall" ButtonStyle="ButtonStyle.Warning" Click="@(() => DebugAdjustHealthAsync(-20))" />
-                                            <RadzenButton Text="Heal (+50)" Size="ButtonSize.ExtraSmall" ButtonStyle="ButtonStyle.Success" Click="@(() => DebugAdjustHealthAsync(50))" />
-                                        }
-                                    </div>
-                                }
-                            </div>
-
-                            <div class="pc-drawer-footer">
-                                <span class="pc-drawer-version">PoCapitol Build 261110.1 · Alternate History Simulation</span>
-                                <RadzenButton Text="Close" Size="ButtonSize.Small" ButtonStyle="ButtonStyle.Secondary" Click="@ToggleDrawer" />
-                            </div>
-                        </div>
-                    </div>
-                }
             </div>
         </ChildContent>
         <ErrorContent Context="ex">
@@ -445,8 +174,7 @@
                 <h2>An interface error occurred</h2>
                 <p>The scenario encountered an unexpected error: @ex.Message</p>
                 <div class="pc-actions">
-                    <RadzenButton Text="Recover scenario" Click="@RecoverFromError" />
-                    <a href="/" class="pc-subtle-link">All games</a>
+                    <button type="button" class="app-btn app-btn--primary" @onclick="RecoverFromError">Recover scenario</button>
                 </div>
             </div>
         </ErrorContent>
@@ -487,14 +215,8 @@
     private bool _ready, _disposed, _recorded;
     private bool _demo;
     private string? _mode;
-    private int _activeRaiders = 128, _activePolice = 44, _totalPolice = 44, _subject, _lineIndex, _lineIntegrity = 100, _sheltering = 64;
-    private bool _showDiagnostics = true;
-    private bool _showDrawer;
+    private int _activeRaiders = 256, _activePolice = 44, _totalPolice = 44, _subject, _lineIndex, _lineIntegrity = 100, _sheltering = 64;
     private bool _radarNeedsInit = true;
-    private int _selectedIntroTab = 0;
-    private int _debugFps = 60;
-    private int _debugDrawCalls = 0;
-    private string _debugKeys = "";
 
     private bool Playing => !_demo && _role != "observer";
     private string Objective => _milestone < Objectives.Length ? Objectives[_milestone] : "Chamber doors reached";
@@ -535,6 +257,248 @@
             : "Nobody in the crowd is still on their feet. The building is cleared.",
         _ => "The scenario has ended.",
     };
+
+    // ── Shared start and end cards ──
+    // The scenario used to carry its own three-tab start panel and its own result
+    // panel. Both are the shared components now, so PoCapitol opens and closes the
+    // way every other game does; only this scenario's own prose and numbers are fed in.
+
+    private List<StatItem> ResultStats =>
+    [
+        new() { Label = "TIME OF DAY", Value = Clock },
+        new() { Label = "MILESTONES", Value = $"{_milestone} / {Objectives.Length}" },
+        new() { Label = "STILL STANDING", Value = _activeRaiders.ToString() },
+    ];
+
+    private GameResult ResultOutcome => _status switch
+    {
+        "completed" => GameResult.Win,
+        "failed" => GameResult.Loss,
+        _ => GameResult.InProgress,
+    };
+
+    private string ResultNote =>
+        _role != "raider" ? "Police-line and observer attempts are not saved."
+        : _resultWarning.Length > 0 ? _resultWarning
+        : "Results stay in your local game stats. No public ranking and no score for harming anyone.";
+
+    private RenderFragment ResultSummary => @<div>
+        <div>@ResultBody</div>
+        <div>@ResultNote</div>
+        <div>What happened afterwards: the real building was cleared that evening, a citywide curfew began at 6:00 pm, the Senate reconvened at about 8:00 pm, and Congress finished certifying the election at about 3:40 am on January 7.</div>
+    </div>;
+
+    private IEnumerable<StatItem> DiagStats =>
+    [
+        new() { Label = "Status", Value = _status },
+        new() { Label = "Role", Value = _role },
+        new() { Label = "Objective", Value = $"{Math.Min(_milestone + 1, Objectives.Length)}/{Objectives.Length} · {HudTitle}" },
+        new() { Label = "Clock", Value = $"{Clock} ({_elapsed:0.0}s)" },
+        new() { Label = "Weather", Value = _weatherCondition },
+        new() { Label = "Crowd", Value = $"{_activeRaiders} / 256 in crowd ({256 - _activeRaiders} down)" },
+        new() { Label = "Police", Value = $"{_activePolice} / {_totalPolice} Capitol Police" },
+        new() { Label = "Line", Value = _lineIndex >= 0 ? $"{LineNames[_lineIndex]} {_lineIntegrity}%" : "None" },
+        new() { Label = "Sheltering", Value = _sheltering.ToString() },
+        new() { Label = "Tier", Value = _graphicsLabel },
+    ];
+
+    private RenderFragment TabHudContent => @<div class="pc-tab-hud">
+        <div class="pc-tab-hud-head">
+            <div>
+                <div class="pc-hud-eyebrow-row">
+                    <span class="pc-eyebrow">@HudEyebrow</span>
+                    @if (_demo)
+                    {
+                        <span class="pc-rec-pill" aria-hidden="true"><i></i>REC</span>
+                    }
+                </div>
+                <strong>@HudTitle</strong>
+            </div>
+            <button type="button" class="app-btn app-btn--sm" @onclick="() => PauseAsync(true)" disabled="@(_status != "active")">Pause</button>
+        </div>
+
+        <div class="pc-progress" aria-label="@($"{_milestone} of {Objectives.Length} milestones complete")">
+            @for (var i = 0; i < Objectives.Length; i++)
+            {
+                <span class="@(i < _milestone ? "pc-done" : null)"></span>
+            }
+        </div>
+
+        @if (_lineIndex >= 0)
+        {
+            <div class="pc-tab-bar">
+                <div class="pc-line-header">
+                    <span>LINE: @LineNames[_lineIndex].ToUpperInvariant()</span>
+                    <span>@_lineIntegrity%</span>
+                </div>
+                <RadzenProgressBar Value="@_lineIntegrity" Max="100" Unit="" ShowValue="false"
+                                   ProgressBarStyle="@GetLineProgressStyle(_lineIntegrity)" Class="pc-progress-bar" />
+            </div>
+        }
+
+        @if (Playing)
+        {
+            <div class="pc-tab-bar">
+                <div class="pc-health-header">
+                    <span>STAMINA</span>
+                    <span>@_health%</span>
+                </div>
+                <RadzenProgressBar Value="@_health" Max="100" Unit="" ShowValue="false"
+                                   ProgressBarStyle="@GetHealthProgressStyle(_health)" Class="pc-progress-bar" />
+            </div>
+        }
+
+        <div class="pc-crowd">
+            <span>@_activeRaiders / 256 IN CROWD</span>
+            <span>@_activePolice / @_totalPolice CAPITOL POLICE</span>
+            @if (_demo && _subject > 0)
+            {
+                <b>FOLLOWING RAIDER @_subject:000</b>
+            }
+        </div>
+
+        <div class="pc-tab-meta">
+            <span class="pc-weather-pill" title="Atmospheric conditions">⛅ @_weatherCondition</span>
+            <span class="pc-time">@Clock</span>
+        </div>
+
+        @if (_demo)
+        {
+            <div class="pc-demo-chip" title="Armed demo variant for autonomous tactical simulation.">
+                <span class="pc-rec-pill" aria-hidden="true"><i></i>LIVE SIMULATION</span>
+                <strong>ARMED DEMO · @(_subject > 0 ? $"TRACKING RAIDER {_subject:000}" : "AUTONOMOUS")</strong>
+            </div>
+        }
+        else if (_role == "raider")
+        {
+            <div class="pc-beacon-chip">BEACON · @Objective.ToUpperInvariant()</div>
+        }
+
+        <div class="pc-hint-chip">@BottomHint</div>
+
+        <div class="pc-onthisday-chip" title="@OnTheDay.Text">
+            <span class="pc-eyebrow">HISTORICAL RECORD · @OnTheDay.Time</span>
+            <span>@OnTheDay.Text</span>
+        </div>
+
+        <div class="pc-tab-radar">
+            <div class="pc-radar-header">
+                <button type="button" class="pc-radar-toggle" @onclick="ToggleRadar" title="Toggle Tactical Radar">
+                    <span>📡 RADAR</span>
+                    <small>@(_radarExpanded ? "▲" : "▼")</small>
+                </button>
+            </div>
+            @if (_radarExpanded)
+            {
+                <div class="pc-radar-body">
+                    <canvas id="pocapitol-radar" class="pc-radar-canvas" width="200" height="270"></canvas>
+                    <div class="pc-radar-legend">
+                        <span><i class="dot-raider"></i>Raider</span>
+                        <span><i class="dot-police"></i>Police</span>
+                        <span><i class="dot-heat"></i>Crush</span>
+                    </div>
+                </div>
+            }
+        </div>
+    </div>;
+
+    /// <summary>
+    /// Mid-match options for GameShell's shared gear (GameOptionsSheet): the same drawer
+    /// every other game uses. Role and difficulty are *not* here — they belong on the
+    /// start card — and the diagnostics that used to live in this drawer are the Tab
+    /// panel now, in every game.
+    /// </summary>
+    private RenderFragment ScenarioOptions => @<div>
+        <label class="pc-small" for="pc-opt-graphics">Graphics quality</label>
+        <RadzenSelectBar TValue="string" Value="@_graphics" Change="@(async (string value) => await SetGraphicsAsync(value))" id="pc-opt-graphics">
+            <Items>
+                <RadzenSelectBarItem Text="Auto" Value="@("auto")" />
+                <RadzenSelectBarItem Text="Low" Value="@("low")" />
+                <RadzenSelectBarItem Text="High" Value="@("high")" />
+            </Items>
+        </RadzenSelectBar>
+        <p class="pc-small">Active tier: @_graphicsLabel</p>
+
+        <label class="pc-small" for="pc-opt-weather">Atmospheric conditions (Open-Meteo)</label>
+        <RadzenSelectBar TValue="string" Value="@_weatherMode" Change="@(async (string val) => await SetWeatherAsync(val))" id="pc-opt-weather">
+            <Items>
+                <RadzenSelectBarItem Text="Jan 6 Archive" Value="@("historical")" />
+                <RadzenSelectBarItem Text="Live D.C." Value="@("live")" />
+                <RadzenSelectBarItem Text="Clear" Value="@("clear")" />
+                <RadzenSelectBarItem Text="Winter Gale" Value="@("blizzard")" />
+            </Items>
+        </RadzenSelectBar>
+        <p class="pc-small">@_weatherCondition</p>
+
+        <label class="pc-small" for="pc-opt-tracers">Ballistic tracers</label>
+        <RadzenSelectBar TValue="string" Value="@_tracerMode" Change="@(async (string val) => await SetTracerModeAsync(val))" id="pc-opt-tracers">
+            <Items>
+                <RadzenSelectBarItem Text="Luminous" Value="@("luminous")" />
+                <RadzenSelectBarItem Text="Stealth" Value="@("stealth")" />
+                <RadzenSelectBarItem Text="Off" Value="@("off")" />
+            </Items>
+        </RadzenSelectBar>
+
+        <label class="pc-small" for="pc-opt-motion">Combat motion &amp; shake</label>
+        <RadzenSelectBar TValue="string" Value="@_motionMode" Change="@(async (string val) => await SetMotionModeAsync(val))" id="pc-opt-motion">
+            <Items>
+                <RadzenSelectBarItem Text="Full Combat" Value="@("full")" />
+                <RadzenSelectBarItem Text="Reduced Motion" Value="@("reduced")" />
+            </Items>
+        </RadzenSelectBar>
+
+        <button type="button" class="app-btn" @onclick="ToggleRadar">
+            @(_radarExpanded ? "Hide tactical radar" : "Show tactical radar")
+        </button>
+
+        <p class="pc-small">PoCapitol build 261110.1 · alternate history simulation</p>
+    </div>;
+
+    private RenderFragment IntroControls => @<div>
+        <p><kbd>W</kbd> <kbd>A</kbd> <kbd>S</kbd> <kbd>D</kbd> move · <kbd>Mouse</kbd> look &amp; aim</p>
+        <p><kbd>Space</kbd> / <kbd>Click</kbd> push · <kbd>Shift</kbd> sprint · <kbd>←</kbd> <kbd>→</kbd> turn camera</p>
+        <p><kbd>Esc</kbd> / <kbd>P</kbd> pause</p>
+        <p class="touch-only">Touch: floating d-pad and push button, drag to orbit. Gamepad: sticks move and look, right trigger pushes, Start pauses.</p>
+    </div>;
+
+    private RenderFragment IntroRules => @<div>
+        <p>256 protestors start out on the grass; most watch and film, a few push. 64 police hold five lines and fall back in stages. 64 staff and members shelter inside until evacuated. 12:50 pm to the 6:00 pm curfew.</p>
+        <p><strong>Fiction, not a reconstruction.</strong> Inspired by January 6, 2021. Adult themes; no injury is shown. Nobody is armed when you play; the Demo is a separate armed variant. The layout and police positions are invented.</p>
+        <details><summary>Historical record</summary>@ContextContent</details>
+    </div>;
+
+    private RenderFragment IntroOptions => @<div>
+        <label class="pc-small" for="pc-role">Who you are</label>
+        <RadzenSelectBar TValue="string" @bind-Value="_role" id="pc-role">
+            <Items>
+                <RadzenSelectBarItem Text="In the crowd" Value="@("raider")" />
+                <RadzenSelectBarItem Text="Police line" Value="@("police")" />
+                <RadzenSelectBarItem Text="Observer" Value="@("observer")" />
+            </Items>
+        </RadzenSelectBar>
+        <p class="pc-small">@RoleBrief</p>
+        <div class="pc-options">
+            <div>
+                <label class="pc-small" for="pc-difficulty">Difficulty</label>
+                <RadzenSelectBar TValue="string" @bind-Value="_difficulty" id="pc-difficulty">
+                    <Items>
+                        <RadzenSelectBarItem Text="Story" Value="@("story")" />
+                        <RadzenSelectBarItem Text="Standard" Value="@("standard")" />
+                    </Items>
+                </RadzenSelectBar>
+            </div>
+            <div>
+                <label class="pc-small" for="pc-graphics">Graphics</label>
+                <RadzenSelectBar TValue="string" Value="@_graphics" Change="@(async (string value) => await SetGraphicsAsync(value))" id="pc-graphics">
+                    <Items>
+                        <RadzenSelectBarItem Text="Auto" Value="@("auto")" />
+                        <RadzenSelectBarItem Text="Low" Value="@("low")" />
+                        <RadzenSelectBarItem Text="High" Value="@("high")" />
+                    </Items>
+                </RadzenSelectBar>
+            </div>
+        </div>
+    </div>;
 
     protected override async Task OnParametersSetAsync()
     {
@@ -602,7 +566,7 @@
             _recorded = false;
             _status = "active";
             _health = 100; _milestone = 0; _elapsed = 0; _message = ""; _resultWarning = ""; _outcome = "";
-            _activeRaiders = 128; _activePolice = 44; _totalPolice = 44; _subject = 0; _lineIndex = 0; _lineIntegrity = 100; _sheltering = 64;
+            _activeRaiders = 256; _activePolice = 44; _totalPolice = 44; _subject = 0; _lineIndex = 0; _lineIntegrity = 100; _sheltering = 64;
             _announcement = "Scenario started. " + HudTitle;
         }
         catch (JSException ex) { await OnEngineError(ex.Message); }
@@ -621,63 +585,11 @@
         catch (JSException ex) { await OnEngineError(ex.Message); }
     }
 
-    private void ToggleDiagnostics()
-    {
-        _showDiagnostics = !_showDiagnostics;
-        if (_showDiagnostics) _ = RefreshDebugStatsAsync();
-    }
-
-    private void OpenWeatherDrawer() => _showDrawer = true;
-
-    private async Task ChangeDifficultyInDrawer(string diff)
-    {
-        _difficulty = diff;
-        await StartAsync();
-    }
-
-    private async Task DebugAdjustHealthAsync(int delta)
-    {
-        try { await JS.InvokeVoidAsync("PoCapitol.adjustHealth", delta); }
-        catch (JSException) {}
-    }
-
-    private void ToggleDrawer() => _showDrawer = !_showDrawer;
-
     private void RecoverFromError()
     {
         _errorBoundary?.Recover();
         _status = "loading";
         _ = LoadAsync();
-    }
-
-    private async Task RefreshDebugStatsAsync()
-    {
-        try
-        {
-            var stats = await JS.InvokeAsync<DebugStatsDto?>("PoCapitol.getDebugStats");
-            if (stats != null)
-            {
-                _debugFps = stats.fps;
-                _debugDrawCalls = stats.drawCalls;
-                _debugKeys = stats.keys != null ? string.Join(", ", stats.keys) : "";
-                StateHasChanged();
-            }
-        }
-        catch (JSException) { }
-    }
-
-    private void ForceGC()
-    {
-        GC.Collect();
-        GC.WaitForPendingFinalizers();
-        StateHasChanged();
-    }
-
-    private async Task ChangeRoleInDrawer(string role)
-    {
-        _role = role;
-        _showDrawer = false;
-        await StartAsync();
     }
 
     private static ProgressBarStyle GetHealthProgressStyle(int health) =>
@@ -838,15 +750,5 @@
         public int harmLossMl { get; set; }
         public int harmHemorrhage { get; set; }
         public string harmTriage { get; set; } = "";
-    }
-
-    private sealed class DebugStatsDto
-    {
-        public int fps { get; set; }
-        public int drawCalls { get; set; }
-        public int actors { get; set; }
-        public string[]? keys { get; set; }
-        public string? mode { get; set; }
-        public string? label { get; set; }
     }
 }

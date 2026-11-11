@@ -97,7 +97,7 @@
             }
             @if (_pauseOpen)
             {
-                <div class="racer-pause" role="dialog" aria-modal="true" aria-label="@(CanPause ? "Paused" : "Race menu")">
+                <GamePauseDialog Class="racer-pause" Label="@(CanPause ? "Paused" : "Race menu")" OnResume="TogglePauseAsync">
                     <div class="racer-pause-card">
                         <h2>@(CanPause ? "Paused" : "Race menu")</h2>
                         @if (!CanPause) { <p class="racer-note">The race keeps running while this is open.</p> }
@@ -114,7 +114,7 @@
                         }
                         @if (!_isDemo) { <PoRacerControls /> }
                     </div>
-                </div>
+                </GamePauseDialog>
             }
         }
         @if (_phase == RacePhase.Finished && !_showResults && !_isDemo)
@@ -149,7 +149,7 @@
     // The solo race's choices, in the card's Options slot. .racer-card keeps them on the
     // Racer palette (the track cards and paint chips are drawn for a dark panel).
     private RenderFragment SoloSetup => @<div class="racer-card racer-setup">
-        <PoRacerTrackSelector SelectedTrackId="@_selectedTrackId" SelectedTrackIdChanged="SelectTrack" Bests="_bests" />
+        <PoRacerTrackSelector SelectedTrackId="@_selectedTrackId" SelectedTrackIdChanged="SelectTrack" Bests="_bests" Compact="true" />
         <div class="racer-options">
             <div class="racer-chips" role="radiogroup" aria-label="Race">
                 <span class="racer-chips-label">Race</span>
@@ -167,7 +167,10 @@
                 </div>
             }
         </div>
-        <PoRacerPaintShop @bind-Customization="_customization" EngineReady="_engineReady" />
+        <details>
+            <summary>Car paint and livery</summary>
+            <PoRacerPaintShop @bind-Customization="_customization" EngineReady="_engineReady" />
+        </details>
         <div class="racer-actions">
             <span class="racer-note">@(_trial ? $"Empty track · {PoRacerCatalog.TotalLaps} laps" : $"{PoRacerCatalog.SoloCarCount} cars · {PoRacerCatalog.TotalLaps} laps")</span>
         </div>

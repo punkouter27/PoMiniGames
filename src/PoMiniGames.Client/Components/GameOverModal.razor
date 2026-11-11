@@ -6,8 +6,8 @@
    The one end-of-game modal for every game in PoMiniGames.
 
    Centered, blocking, no backdrop-dismiss: the final result (GameSummary), the
-   stats grid (Stats), this game's top 3 (fetched from GameKey) and one button, Back to
-   main menu. There is no Play again: a player picks the game on the hub again.
+   stats grid (Stats), this game's top 3 (fetched from GameKey), optional actions and
+   details, and Back to main menu.
 
    It is also the one end-of-game MOMENT. When it opens it plays the result for
    every game at once (GameOverMoment): the outcome cue, confetti on a win or a new
@@ -25,9 +25,8 @@
 @* Option #9: native <dialog>. Replaces a custom <div role="dialog" aria-modal="true">
    wrapper. The native element gives us the top-layer rendering (no z-index fights
    with fx flashes, particles, or the toast stack), a built-in focus trap so Tab
-   cycles inside the dialog instead of leaking to the canvas behind, Escape-to-close
-   via the browser's native cancel event (the manual `@onkeydown` Escape branch is
-   removed), and the `:backdrop` pseudo-element for the dim layer (the
+   cycles inside the dialog instead of leaking to the canvas behind, and the
+   `:backdrop` pseudo-element for the dim layer (the
    `.gps-modal-overlay` rule below now styles it instead of a real div).
 
    `dialog.showModal()` is called from JS after first render, then `close()` is
@@ -37,7 +36,7 @@
    navigate rather than use the dialog's native "close + submit" semantics. *@
 @* data-glass: glassFx.js paints a blurred capture of the game's last frame under the card
    (game-shell.css keeps it faint; a DOM game with no canvas simply gets the plain card). *@
-<dialog class="gps-modal @(Moment.Vignette ? "gps-modal--loss" : null)" aria-label="Game over" data-fx-tilt="5" data-glass @ref="_dialog" @oncancel="HandleCancel">
+<dialog class="gps-modal @(Moment.Vignette ? "gps-modal--loss" : null)" aria-label="Game over" data-fx-tilt="5" data-glass @ref="_dialog" @oncancel="HandleCancel" @onkeydown="HandleKey">
         <header class="gps-modal-header">
             <div class="gps-modal-title">@Title</div>
         </header>
@@ -45,6 +44,14 @@
         @if (GameSummary != null)
         {
             <div class="gps-game-summary">@GameSummary</div>
+        }
+
+        @if (GameDetails != null)
+        {
+            <details class="gps-result-details">
+                <summary>More details</summary>
+                @GameDetails
+            </details>
         }
 
         @if (Stats != null && Stats.Any())
@@ -126,11 +133,10 @@
             </div>
         }
 
-        @* One way out, and only one: back to the main menu. Playing again means picking the
-           game on the hub again. Focused on open, so Enter takes it; Escape is the dialog's
-           cancel (HandleCancel). *@
+        @* The default exit remains focused on open and Escape maps to it. *@
         <footer class="gps-play-again-actions">
-            <button type="button" class="app-btn app-btn--primary" data-end-action
+            @GameActions
+            <button type="button" class="app-btn @(GameActions is null ? "app-btn--primary" : "app-btn--secondary")" data-end-action
                     @onclick="Back" autofocus>
                 <span>Back to main menu</span>
                 <kbd class="gps-kbd gps-kbd--primary">Esc</kbd>
@@ -144,6 +150,8 @@
 
     /// <summary>The result line(s): who won, the final score.</summary>
     [Parameter] public RenderFragment? GameSummary { get; set; }
+    [Parameter] public RenderFragment? GameActions { get; set; }
+    [Parameter] public RenderFragment? GameDetails { get; set; }
 
     /// <summary>Optional value-over-label stat cells.</summary>
     [Parameter] public List<Models.StatItem>? Stats { get; set; }
@@ -256,12 +264,13 @@
         {
             // ShowModal places the dialog in the top layer (above fx overlays,
             // toasts, the kiosk control bar) and traps focus inside it. The
-            // dialog's native Escape handler fires the `cancel` event, which
-            // we hook into in HandleCancel to map to our Back() callback.
+            // explicit Escape handler navigates before the modal disappears; native
+            // cancel does not reliably reach Blazor's delegated event handler.
             _dialogOpened = true;
             // Score count-up: started before the dialog opens, so the stats are already at
             // zero in its first painted frame instead of flashing their final values.
             try { await JS.InvokeVoidAsync("PoImpact.countUp", _dialog); } catch { /* feel layer missing: the numbers just show */ }
+            await JS.InvokeVoidAsync("PoDialogInterop.holdOpen", _dialog);
             await _dialog.ShowModalAsync(JS);
             // Confetti lands on the card instead of falling through it (high tier).
             await ScreenFx.CollideWithAsync(_dialog);
@@ -348,6 +357,7 @@
     // than `is not null`.
     private ElementReference _dialog;
     private bool _dialogOpened;
+    private bool _leaving;
 
     protected override async Task OnInitializedAsync()
     {
@@ -432,6 +442,8 @@
     /// <summary>The modal's one action: back to the main menu.</summary>
     private async Task Back()
     {
+        if (_leaving) return;
+        _leaving = true;
         // Option #9: close the native dialog before navigating. The dialog
         // sits in the top layer; if we navigate while it's still open, the
         // destination route mounts while the previous frame's modal is still
@@ -450,12 +462,14 @@
     /// Maps the native <c>cancel</c> event (fires when the user presses
     /// Escape with the dialog open) to our <see cref="Back"/> flow.
     /// Without this, Escape would only close the dialog and leave the page
-    /// in an inconsistent "modal is gone, game is over" state. We let the
-    /// default action run first (the dialog closes itself) by not calling
-    /// <c>event.preventDefault</c>, then we kick off navigation.
+    /// in an inconsistent "modal is gone, game is over" state. Keep the dialog
+    /// open until navigation, with keydown covering non-bubbling cancel events.
     /// </summary>
     private async Task HandleCancel(System.EventArgs e)
         => await Back();
+
+    private Task HandleKey(Microsoft.AspNetCore.Components.Web.KeyboardEventArgs e) =>
+        e.Key == "Escape" ? Back() : Task.CompletedTask;
 
     public async ValueTask DisposeAsync()
     {

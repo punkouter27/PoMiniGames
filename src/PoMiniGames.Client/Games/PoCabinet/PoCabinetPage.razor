@@ -6,13 +6,13 @@
 
 <PageTitle>Cabinet · PoMiniGames</PageTitle>
 
-@* The race ends on the shared end-of-game modal: the results are its summary, and its one
-   button goes back to the main menu. A demo has nobody to press it, so it loops instead.
+@* The race ends on the shared end-of-game modal, with race again and a way home.
+   A demo has nobody to press it, so it loops instead.
    No GameKey: the unified leaderboard has no Cabinet board, and the summary carries the podium. *@
 <GameShell Title="@TitleContent" Player="@_playerName" BackTo="/" Fullscreen="true" RequiresWebGl="true"
            GameOver="@(_phase == Phase.Finished && Mode != GameMode.Demo)"
            Outcome="@ResultsOutcome" NewBest="@_isPersonalBest"
-           GameSummary="@ResultsContent">
+           GameSummary="@ResultsContent" GameActions="@ResultActions">
     <div class="pocabinet-root">
         @if (_phase == Phase.Start)
         {
@@ -213,7 +213,7 @@
                            page behind inert. Esc is input.js's pause toggle, so the dialog's own Esc-close
                            is cancelled in JS to keep the two from fighting. The card is the race so far
                            and what to do next; the settings are one button away in the drawer. *@
-                        <dialog id="pocabinetPause" class="pocabinet-overlay" aria-labelledby="pocabinet-pause-title">
+                        <GamePauseDialog Native="true" Id="pocabinetPause" Class="pocabinet-overlay" LabelledBy="pocabinet-pause-title">
                             <div class="pocabinet-overlay__card">
                                 <header class="pocabinet-pause__head">
                                     <h2 id="pocabinet-pause-title">Paused</h2>
@@ -233,7 +233,7 @@
                                     <button class="app-btn app-btn--ghost" @onclick="QuitToMenuAsync">Quit to menu</button>
                                 </div>
                             </div>
-                        </dialog>
+                        </GamePauseDialog>
                     }
                 </ChildContent>
                 <ErrorContent Context="ex">
@@ -249,6 +249,7 @@
 </GameShell>
 
 @code {
+    private RenderFragment ResultActions => @<button type="button" class="app-btn app-btn--secondary" @onclick="RaceAgainAsync">@(IsMultiplayerMode ? "Back to lobby" : "Race again")</button>;
     // One line, for the device in hand (.keys-only / .touch-only, game-shell.css). It used to be
     // two bullets for every device, and the settings panel repeated the keyboard line.
     private RenderFragment ControlsContent => Mode == GameMode.Demo
@@ -325,8 +326,6 @@
                           TrackName="@TrackName" IsSpectating="IsSpectating" IsMultiplayer="IsMultiplayerMode"
                           AwaitingFinal="_awaitingFinal" IsPersonalBest="_isPersonalBest" PreviousBest="_previousBest"
                           CampaignNote="CampaignNote" Debrief="_debrief" TelemetrySummary="@_telemetrySummary"
-                          HasReferenceLap="_hasReferenceLap" Status="@_status" Dnf="_dnf"
-                          RaceAgainLabel="@(IsMultiplayerMode ? "Back to lobby" : "Race again")"
-                          OnRaceAgain="RaceAgainAsync" />
+                          HasReferenceLap="_hasReferenceLap" Status="@_status" Dnf="_dnf" />
     </section>;
 }

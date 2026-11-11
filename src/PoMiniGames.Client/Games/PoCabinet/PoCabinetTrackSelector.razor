@@ -23,9 +23,12 @@
     <label class="pocabinet-track-select">
         <span>Track</span>
         <select value="@SelectedTrackId" @onchange="e => SelectTrack(e.Value?.ToString() ?? PoCabinetCatalog.DefaultTrackId)">
-            @foreach (var track in AllTracks)
+            @for (var i = 0; i < AllTracks.Count; i++)
             {
-                <option value="@track.Id">@track.Name · @TrackMeta(track)</option>
+                var track = AllTracks[i];
+                var note = Campaign && i < PoCabinetCatalog.CampaignStages ? StageNote(i) : ((string Kind, string Text)?)null;
+                var best = _bestLaps.GetValueOrDefault(track.Id);
+                <option value="@track.Id">@track.Name · @TrackMeta(track)@(note is { } stage ? $" · {stage.Text}" : "")@(best > 0 ? $" · PB {PoCabinetCatalog.FormatLap(best)}" : "")</option>
             }
         </select>
     </label>
@@ -94,7 +97,7 @@ else
     protected override async Task OnInitializedAsync()
     {
         Career.Changed += OnCareerChanged;
-        if (Compact) return;
+        if (Compact && !Campaign) return;
         try { _bestLaps = PoCabinetPitWall.ParseBestLaps(await JS.InvokeAsync<string?>("localStorage.getItem", PoCabinetPitWall.RecordsKey)); }
         catch { /* storage unavailable: every row says "No lap yet" */ }
     }

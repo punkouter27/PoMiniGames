@@ -14,6 +14,16 @@
    GameSummary / GameKey to GameShell and inherit this.
    ───────────────────────────────────────────────────────────────────────── */
 
+/* ── The shared card face ──
+   The start card (GameIntro) and the end card (GameOverModal) are the same two
+   moments of every game, so they share one geometry: radius, border and shadow.
+   Only the fill differs — the intro sits on the themed surface, the end card is
+   a darker glass — and both take it from the same token family below. */
+:root {
+  --gps-card-radius: 18px;
+  --gps-card-shadow: 0 12px 40px rgba(0, 0, 0, 0.45);
+}
+
 /* ── Overlay ──
    A genuinely centered, blocking dialog: dimmed + blurred backdrop, clicks
    captured (no backdrop-dismiss — OK is the only exit), so the board behind it
@@ -30,13 +40,13 @@ dialog.gps-modal {
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: 1.1rem;
-  padding: 1.6rem 1.6rem 1.4rem;
-  background: rgba(18, 24, 38, 0.92);
+  gap: 0.9rem;
+  padding: 1.3rem 1.35rem 1.15rem;
+  background: var(--color-surface);
   backdrop-filter: blur(24px);
   -webkit-backdrop-filter: blur(24px);
-  border: 1px solid rgba(255, 255, 255, 0.12);
-  border-radius: 20px;
+  border: 1px solid var(--color-border);
+  border-radius: var(--gps-card-radius);
   box-shadow: 
     0 24px 60px -8px rgba(0, 0, 0, 0.7),
     0 0 0 1px rgba(255, 255, 255, 0.05),
@@ -53,7 +63,7 @@ dialog.gps-modal {
 }
 
 .gps-modal-title {
-  font-size: 1.35rem;
+  font-size: 1.2rem;
   font-weight: 800;
   text-align: center;
   letter-spacing: -0.015em;
@@ -87,7 +97,10 @@ dialog.gps-modal {
    the card's width, and the card widens to hold it. Make that root a <section>, not a
    <div>, or the small-print rule above restyles its children. */
 dialog.gps-modal:has(.gps-summary--wide) {
-  width: min(96vw, 960px);
+  width: min(94vw, 560px);
+}
+dialog.gps-modal:has(.gps-summary--wide details[open], .pocabinet-results__details--open) {
+  width: min(96vw, 860px);
 }
 
 .gps-summary--wide {
@@ -99,8 +112,8 @@ dialog.gps-modal:has(.gps-summary--wide) {
   width: 100%;
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(62px, 1fr));
-  gap: 0.5rem;
-  padding-top: 0.85rem;
+  gap: 0.4rem;
+  padding-top: 0.7rem;
   border-top: 1px solid rgba(255, 255, 255, 0.08);
 }
 
@@ -114,7 +127,7 @@ dialog.gps-modal:has(.gps-summary--wide) {
   align-items: center;
   justify-content: center;
   text-align: center;
-  padding: 0.55rem 0.35rem;
+  padding: 0.45rem 0.35rem;
   background: rgba(255, 255, 255, 0.035);
   border: 1px solid rgba(255, 255, 255, 0.06);
   border-radius: 12px;
@@ -308,11 +321,23 @@ dialog.gps-modal:has(.gps-summary--wide) {
 /* ── Action ──
    The one button, Back to main menu, across the card's width. */
 .gps-play-again-actions {
+  position: sticky;
+  bottom: -1px;
+  flex: none;
   width: 100%;
   display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
   justify-content: center;
   margin-top: 0.4rem;
+  padding-top: 0.5rem;
+  background: var(--color-surface);
 }
+
+.gps-result-details { width: 100%; text-align: left; }
+.gps-result-details[open] { max-height: 40dvh; overflow: auto; }
+.gps-result-details summary { cursor: pointer; padding: 0.5rem; }
+.gps-play-again-actions > div { display: contents; }
 
 .gps-play-again-actions .app-btn {
   flex: 1 1 auto;
@@ -337,12 +362,6 @@ dialog.gps-modal:has(.gps-summary--wide) {
   background: rgba(255, 255, 255, 0.25);
   border-color: rgba(255, 255, 255, 0.4);
   color: #ffffff;
-}
-
-/* The shared mode switch, centred under the card's title. */
-.gps-intro-modes {
-  display: flex;
-  justify-content: center;
 }
 
 @keyframes gps-modal-fade {
@@ -441,6 +460,9 @@ dialog.gps-modal {
   animation: gps-modal-fade 0.2s ease-out both;
 }
 
+dialog.gps-intro-overlay:not([open]) { display: none; }
+dialog.gps-intro-overlay::backdrop { background: transparent; }
+
 /* The card: header, body, footer in one flex column that never scrolls. Only the body may
    (a last resort on a screen smaller than any we test); each game's content is cut to fit. */
 .gps-intro-card {
@@ -450,18 +472,18 @@ dialog.gps-modal {
   overflow: hidden;
   display: flex;
   flex-direction: column;
-  gap: 0.75rem;
-  padding: 1.25rem 1.5rem 1rem;
+  gap: 0.6rem;
+  padding: 1.05rem 1.25rem 0.85rem;
   background: var(--color-surface);
   border: 1px solid var(--color-border);
-  border-radius: 16px;
-  box-shadow: 0 12px 40px rgba(0, 0, 0, 0.5);
+  border-radius: var(--gps-card-radius);
+  box-shadow: var(--gps-card-shadow);
   text-align: center;
   animation: gps-modal-pop 0.25s cubic-bezier(0.2, 0.8, 0.2, 1) both;
 }
 
 /* A game with a long setup (a track picker, the campaign rung, a species pick). */
-.gps-intro-card--wide { width: min(96vw, 980px); }
+.gps-intro-card--wide { width: min(96vw, 860px); }
 /* The two-player select wants room for its side-by-side rosters. */
 .gps-intro-card--twoplayer { width: min(96vw, 640px); }
 
@@ -480,7 +502,7 @@ dialog.gps-modal {
   display: flex;
   flex-direction: column;
   gap: 0.75rem;
-  padding-top: 0.75rem;
+  padding-top: 0.6rem;
   border-top: 1px solid var(--color-border);
 }
 
@@ -496,19 +518,16 @@ dialog.gps-modal {
 
 @media (max-width: 520px) {
   .gps-intro-overlay {
-    align-items: flex-end;
-    padding: 0;
+    padding: 0.75rem;
   }
   .gps-intro-card,
   .gps-intro-card--wide,
   .gps-intro-card--twoplayer {
     width: 100%;
-    max-height: calc(100dvh - 0.5rem);
+    max-height: calc(100dvh - 1.5rem);
     gap: 0.6rem;
-    border-bottom-left-radius: 0;
-    border-bottom-right-radius: 0;
     padding: 1rem 1rem calc(0.75rem + env(safe-area-inset-bottom));
-    animation: gps-sheet-up 0.25s cubic-bezier(0.2, 0.8, 0.2, 1) both;
+    animation: gps-modal-pop 0.25s cubic-bezier(0.2, 0.8, 0.2, 1) both;
   }
 }
 
@@ -518,7 +537,7 @@ dialog.gps-modal {
 }
 
 .gps-intro-title {
-  font-size: 1.4rem;
+  font-size: 1.25rem;
   font-weight: 800;
   line-height: 1.2;
   color: var(--color-text-primary);
@@ -820,3 +839,99 @@ dialog.gps-modal {
   .gps-intro-card { animation: none; }
   .gps-intro-spinner { animation: none; }
 }
+
+/* ── Tab diagnostics ──
+   The shared panel GameShell renders for every game (GameDebugOverlay). Fixed
+   to the bottom-left, above the game area, below the modal: it must never move
+   the layout, never take a click from the game, and never be the only way to
+   read something. Pointer-events are off for that reason — it is a readout.
+   Styling matches the game chrome (same mono scale, radius and shadow tokens)
+   so it reads as part of the shell rather than a game's own overlay. */
+.gps-stats-toggle {
+  position: fixed;
+  left: 0.75rem;
+  bottom: calc(0.75rem + env(safe-area-inset-bottom));
+  z-index: 20;
+}
+
+.gps-debug {
+  position: fixed;
+  left: 0.75rem;
+  bottom: 3.75rem;
+  z-index: var(--z-overlay);
+  width: min(21rem, calc(100vw - 1.5rem));
+  max-height: min(78vh, 42rem);
+  overflow: auto;
+  padding: 0.55rem 0.7rem 0.6rem;
+  border: 1px solid var(--color-border);
+  border-radius: 12px;
+  background: var(--color-surface);
+  color: var(--color-text-primary);
+  font-family: var(--font-mono);
+  font-size: 0.72rem;
+  line-height: 1.45;
+  box-shadow: var(--gps-card-shadow);
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
+  pointer-events: auto;
+}
+
+.gps-debug-extra {
+  margin-top: 0.5rem;
+  padding-top: 0.5rem;
+  border-top: 1px solid rgba(255, 255, 255, 0.12);
+}
+
+.gps-debug-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+  margin-bottom: 0.35rem;
+  padding-bottom: 0.3rem;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.12);
+}
+
+.gps-debug-title {
+  font-size: 0.68rem;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--color-text-secondary);
+}
+
+.gps-debug-keys {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.25rem;
+  font-size: 0.62rem;
+  color: var(--color-text-secondary);
+}
+
+.gps-debug-grid {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  gap: 0.05rem 0.6rem;
+  margin: 0;
+}
+
+.gps-debug-grid dt {
+  color: var(--color-text-secondary);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  font-size: 0.64rem;
+  white-space: nowrap;
+}
+
+.gps-debug-grid dd {
+  margin: 0;
+  text-align: right;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--color-text-primary);
+}
+
+.gps-debug-ok { color: #4ade80; }
+.gps-debug-warn { color: #fbbf24; }
+.gps-debug-bad { color: #f87171; }

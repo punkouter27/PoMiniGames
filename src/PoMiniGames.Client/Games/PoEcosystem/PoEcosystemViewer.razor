@@ -103,10 +103,8 @@
                               OnSelectKin="SelectKinAsync" />
         }
 
-        @if (_banner is not null)
-        {
-            <EndBanner Text="@_banner" OnRestart="() => NewWorldAsync(null)" />
-        }
+        @* The ending is the shared GameOverModal on the page, not a lower-third banner:
+           one end-of-game surface in every game. *@
 
         @if (_tourActive && !_dashboardOpen)
         {

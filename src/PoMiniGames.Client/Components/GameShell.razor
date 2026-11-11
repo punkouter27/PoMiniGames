@@ -8,7 +8,7 @@
    back-arrow: the top bar's brand covers navigation back to the home page, and
    the swipe-back gesture below still works. *@
 <SectionContent SectionName="game-header">
-    <div class="gps-header-slot @(OptionsContent != null ? "gps-header-slot--opts" : null)">
+    <div class="gps-header-slot gps-header-slot--opts">
         @* Game title — always rendered as the first child of the chrome slot so
            every game page identifies itself in the top bar. Renders as an
            <h1> so screen readers see a heading hierarchy, not a styled <span>.
@@ -27,6 +27,10 @@
         @if (OptionsContent != null)
         {
             <GameOptionsSheet Heading="@OptionsHeading">@OptionsContent</GameOptionsSheet>
+        }
+        else
+        {
+            <GameOptionsSheet Heading="Settings" GlobalSettings="true" />
         }
 
         @* The header has no "All games" pill: it would compete for width with the
@@ -94,7 +98,11 @@
         {
             @* A crash inside the game is caught here, so the Retry box sits in the game
                area and the top bar, title and swipe-back stay intact. *@
-            <GameErrorBoundary>@ChildContent</GameErrorBoundary>
+            @* The Tab-diagnostics setting is cascaded so the shared start card can
+               advertise the gesture without every page re-declaring it. *@
+            <CascadingValue Name="TabStats" Value="TabDebug" IsFixed="true">
+                <GameErrorBoundary>@ChildContent</GameErrorBoundary>
+            </CascadingValue>
             @* Laid over the area, not in place of the game: the engine's container is
                already mounted at its final size, so the shimmer is exactly the stage's
                size and nothing jumps when it goes. *@
@@ -105,9 +113,15 @@
         }
     </div>
 
+    @* Tab diagnostics: the one stats/debug panel every game shares. The gesture
+       (Tab) is wired once in js/game-debug.js, so a game gets it by existing
+       inside this shell; a page adds its own numbers through `Diagnostics`.
+       Held outside `.gps-game-area` so a fullscreen renderer cannot replace it. *@
+    <GameDebugOverlay Enabled="@TabDebug" GameKey="@GameKey" Items="@Diagnostics">@DiagnosticsContent</GameDebugOverlay>
+
     @* End-of-game modal: the one centered, blocking dialog every game ends on.
        It surfaces the final result (GameSummary), the stats grid (Stats), this
-       game's top 3 (fetched from GameKey) and its one button, Back to main menu.
+       game's top 3 (fetched from GameKey), optional actions and details, and Back to main menu.
        There is intentionally no
        backdrop-dismiss, so the flow is identical in every game. It also plays the
        shared end-of-game moment (cue, confetti, pulse, vignette); see GameOverModal.
@@ -121,6 +135,8 @@
     {
         <GameOverModal Title="@Title"
                        GameSummary="@GameSummary"
+                       GameActions="@GameActions"
+                       GameDetails="@GameDetails"
                        Stats="@Stats"
                        GameKey="@GameKey"
                        Player="@Player"
@@ -165,6 +181,8 @@
     // The run just saved was a personal best: the modal badges and celebrates it.
     [Parameter] public bool NewBest { get; set; }
     [Parameter] public RenderFragment? GameSummary { get; set; }
+    [Parameter] public RenderFragment? GameActions { get; set; }
+    [Parameter] public RenderFragment? GameDetails { get; set; }
 
     /// <summary>
     /// Sentence read aloud by the shared polite live region whenever it changes —
@@ -183,6 +201,23 @@
     /// rendering here.
     /// </summary>
     [Parameter] public bool RequiresWebGl { get; set; }
+
+    /// <summary>
+    /// Off for the pages that already bind Tab themselves (PoEcosystem's world
+    /// dashboard, PoJevArena's stats sheet): two panels must never answer one Tab.
+    /// On everywhere else, which is what makes Tab mean the same thing in every game.
+    /// </summary>
+    [Parameter] public bool TabDebug { get; set; } = true;
+
+    /// <summary>
+    /// Per-game rows for the Tab diagnostics panel, in the same StatItem shape the
+    /// end modal takes. Optional: with nothing passed, the panel still shows live
+    /// frame rate, frame time, heap, viewport, game key and route.
+    /// </summary>
+    [Parameter] public IEnumerable<Models.StatItem>? Diagnostics { get; set; }
+
+    /// <summary>Optional custom HUD/widgets rendered inside the Tab diagnostics panel.</summary>
+    [Parameter] public RenderFragment? DiagnosticsContent { get; set; }
 
     [Parameter] public RenderFragment ChildContent { get; set; } = null!;
 

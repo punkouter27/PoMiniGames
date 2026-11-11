@@ -40,33 +40,16 @@
 .pc-root ::deep .rz-button, .pc-root ::deep .rz-selectbar-item { transition: box-shadow 180ms ease, background-color 180ms ease, transform 150ms ease; }
 .pc-root ::deep .rz-button:hover, .pc-root ::deep .rz-selectbar-item:hover { box-shadow: 0 0 0 1px #e4c48255, 0 8px 26px #b98c4550; transform: translateY(-1px); }
 .pc-root ::deep .rz-button:active { box-shadow: 0 0 0 1px #f2d79a99, 0 2px 10px #b98c4570; transform: scale(0.98); }
-.pc-intro { left: 32px; top: 84px; width: min(580px, calc(100% - 64px)); padding: 22px 24px; }
-.pc-panel.pc-intro h2 { font-size: clamp(24px, 2.2vw, 30px); margin: 6px 0 12px; }
-.pc-panel.pc-intro p { margin: 6px 0; font-size: 13px; line-height: 1.5; }
-.pc-panel.pc-intro .pc-notice { margin: 8px 0; padding: 8px 12px; }
-.pc-panel.pc-intro .pc-controls { line-height: 2; }
-.pc-panel.pc-intro .pc-actions { margin: 12px 0 4px; }
-.pc-tabs { margin-top: 6px; }
-.pc-tabs ::deep .rz-tabview-nav { background: transparent; border-bottom: 1px solid #d5b77c33; margin-bottom: 14px; gap: 4px; padding: 0; }
-.pc-tabs ::deep .rz-tabview-nav li a { color: #a4b3bf; border-radius: 6px 6px 0 0; padding: 8px 14px; font-size: 12px; font-weight: 600; text-decoration: none; transition: all 180ms ease; }
-.pc-tabs ::deep .rz-tabview-nav li:not(.rz-tabview-selected) a:hover { color: #f2cf87; background: #ffffff08; }
-.pc-tabs ::deep .rz-tabview-nav li.rz-tabview-selected a { color: #f2cf87; background: #ffffff12; border-bottom: 2px solid #d5b77c; }
-.pc-tabs ::deep .rz-tabview-panel { padding: 4px 0 0; }
-.pc-controls-deck { display: flex; flex-direction: column; gap: 12px; }
-.pc-controls-deck h4 { margin: 0 0 4px; font-size: 11px; letter-spacing: 0.12em; color: #dfc285; text-transform: uppercase; font-weight: 700; }
-.pc-controls-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(210px, 1fr)); gap: 8px; font-size: 12px; }
-.pc-controls-grid div { display: flex; align-items: center; gap: 8px; padding: 4px 0; }
-.pc-controls-grid kbd { padding: 3px 6px; background: #ffffff12; border: 1px solid #ffffff24; border-radius: 4px; color: #f2cf87; font-family: ui-monospace, Consolas, monospace; font-size: 11px; }
-.pc-controls-grid span { color: #b7c4ce; }
 .pc-eyebrow { display: block; color: #d4b87b; font-size: 10px; letter-spacing: 0.17em; font-weight: 700; }
 .pc-panel h2 { font-family: Georgia, serif; font-weight: 400; font-size: clamp(32px, 3vw, 44px); line-height: 1.05; margin: 12px 0 15px; color: #f6f0e2; }
 .pc-panel h2 em { color: #dabe87; }
 .pc-panel p { font-size: 14px; line-height: 1.6; margin: 10px 0; color: #d0d5da; }
-.pc-notice { margin: 12px 0; padding: 10px 12px; border-left: 2px solid #c5a464; background: #ffffff07; font-size: 12px; line-height: 1.55; color: #c1cbd2; }
-.pc-notice strong { color: #eee0bf; }
-.pc-controls { font-size: 12px; line-height: 2.3; color: #cad3db; }
-.pc-controls kbd { padding: 3px 5px; background: #ffffff10; border: 1px solid #ffffff20; border-radius: 4px; color: #f0e4cd; font: inherit; }
 .pc-panel .pc-small { font-size: 11px; line-height: 1.5; color: #afbec9; }
+
+/* The start card sits on the themed surface, not the dark in-game panel: the tone above
+   was tuned for #1d3047 and lands around 1.6:1 on white. Shared-card small print uses the
+   theme's secondary text colour, which every other game's card already uses. */
+.gps-intro-card .pc-small { color: var(--color-text-secondary); font-size: 0.8rem; line-height: 1.45; }
 .pc-small { display: block; margin: 8px 0; }
 .pc-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 20px; margin: 18px 0 8px; }
 .pc-panel a { color: #e2c48a; font-size: 12px; }
@@ -97,8 +80,6 @@
 .pc-onthisday-chip { display: flex; flex-direction: column; max-width: 320px; padding: 6px 12px; background: #0c1a29d0; border-right: 2px solid #7fa9d6; border-radius: 6px; font-size: 11px; line-height: 1.4; color: #d7dde2; backdrop-filter: blur(10px); pointer-events: auto; }
 .pc-onthisday-chip .pc-eyebrow { font-size: 9px; color: #9fc0e2; margin-bottom: 2px; }
 .pc-onthisday-chip span { overflow: hidden; text-overflow: ellipsis; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; }
-.pc-result-stats { display: flex; flex-wrap: wrap; gap: 14px 36px; margin: 18px 0; font-size: 26px; color: #e7cd99; }
-.pc-result-stats small { display: block; font-size: 9px; letter-spacing: 0.12em; margin-top: 8px; color: #aabbc8; }
 .pc-touch { display: none; }
 .pc-scene[data-flash="true"]::after { content: ""; position: absolute; inset: 0; background: #fffdf2; opacity: 0.75; pointer-events: none; }
 .pc-scene[data-hazard="gas"]:not([data-interface-error])::before { content: ""; position: absolute; z-index: 1; inset: 0; background: #d7dacb59; backdrop-filter: blur(3px); pointer-events: none; }
@@ -108,9 +89,6 @@
 @media (prefers-reduced-motion: reduce) { .pc-rec-pill i { animation: none; } }
 .pc-options { display: flex; flex-wrap: wrap; gap: 4px 28px; }
 .pc-line { min-width: 150px; width: 230px; }
-.pc-aftermath { margin: 14px 0; padding: 12px 14px; border-left: 2px solid #7fa9d6; background: #ffffff07; }
-.pc-aftermath strong { font-size: 12px; letter-spacing: 0.06em; color: #cfe0f1; }
-.pc-aftermath p { font-size: 12px; margin: 6px 0 0; }
 .pc-drawer-backdrop { position: absolute; inset: 0; z-index: 8; background: #00000066; backdrop-filter: blur(4px); animation: pc-fade-in 200ms ease; }
 .pc-drawer { position: absolute; top: 0; right: 0; bottom: 0; width: min(380px, 88vw); z-index: 9; background: #0f1d2cf8; border-left: 1px solid #d5b77c55; box-shadow: -8px 0 32px #00000088; padding: 22px; display: flex; flex-direction: column; gap: 14px; animation: pc-slide-left 220ms ease; overflow-y: auto; }
 .pc-drawer-header { display: flex; justify-content: space-between; align-items: center; border-bottom: 1px solid #ffffff1a; padding-bottom: 10px; }
@@ -148,7 +126,6 @@
     .pc-crowd { font-size: 8px; }
     .pc-crowd b { font-size: 9px; }
     .pc-demo-caption { left: 16px; bottom: 55px; max-width: calc(100% - 32px); }
-    .pc-intro { left: 12px; top: 65px; width: calc(100% - 24px); padding: 18px; max-height: calc(100% - 78px); }
     .pc-panel h2 { font-size: 28px; }
     .pc-hud { left: 12px; right: 12px; top: 64px; padding: 10px 12px; gap: 8px; flex-wrap: wrap; }
     .pc-hud strong { font-size: 13px; }
@@ -162,9 +139,7 @@
     .pc-bottom span:last-child { display: none; }
 }
 @media (max-height: 650px) and (min-width: 651px) {
-    .pc-intro { top: 65px; padding: 18px 24px; max-height: calc(100% - 76px); }
     .pc-panel h2 { font-size: 32px; margin: 8px 0; }
-    .pc-notice { margin: 10px 0; }
 }
 
 /* Atmospheric Weather Pill */
@@ -275,6 +250,42 @@
 .pc-radar-legend .dot-heat { background: #ff4757; }
 
 /* Tactical Unit Inspector Card */
+.pc-tab-hud {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+}
+.pc-tab-hud-head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+}
+.pc-tab-hud-head strong {
+    display: block;
+    margin-top: 2px;
+    font-size: 13px;
+}
+.pc-tab-bar {
+    width: 100%;
+}
+.pc-tab-meta {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+}
+.pc-tab-hud .pc-onthisday-chip {
+    max-width: none;
+}
+.pc-tab-radar {
+    display: flex;
+    flex-direction: column;
+    align-items: stretch;
+}
+.pc-tab-radar .pc-radar-canvas {
+    margin: 0 auto;
+}
 .pc-inspector-card {
     position: absolute;
     bottom: 50px;

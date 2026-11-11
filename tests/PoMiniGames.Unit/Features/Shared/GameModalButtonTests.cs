@@ -76,6 +76,7 @@ public sealed class GameModalButtonTests
         services.AddSingleton(new ScreenFxService(js));
         services.AddSingleton(new OnlineStatusService(js));
         services.AddSingleton(new ApiService(new HttpClient { BaseAddress = new Uri("http://localhost/") }));
+        services.AddLogging();
         await using var provider = services.BuildServiceProvider();
         await using var renderer = new HtmlRenderer(provider, NullLoggerFactory.Instance);
         return await renderer.Dispatcher.InvokeAsync(async () =>

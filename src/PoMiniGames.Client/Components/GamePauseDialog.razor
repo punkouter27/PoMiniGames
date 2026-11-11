@@ -1,0 +1,54 @@
+@namespace PoMiniGamesClient.Components
+@inject IJSRuntime JS
+@implements IAsyncDisposable
+
+@if (Native)
+{
+    <dialog id="@Id" class="game-pause-dialog @Class" aria-labelledby="@LabelledBy" aria-label="@Label" @attributes="AdditionalAttributes">
+        @ChildContent
+    </dialog>
+}
+else
+{
+    <div id="@Id" class="game-pause-dialog @Class" role="dialog" aria-modal="true" tabindex="-1"
+         aria-labelledby="@LabelledBy" aria-label="@Label" @ref="_root" @attributes="AdditionalAttributes">
+        @ChildContent
+    </div>
+}
+
+@code {
+    [Parameter] public RenderFragment? ChildContent { get; set; }
+    [Parameter] public string? Id { get; set; }
+    [Parameter] public string? Class { get; set; }
+    [Parameter] public string? LabelledBy { get; set; }
+    [Parameter] public string? Label { get; set; }
+    [Parameter] public bool Native { get; set; }
+    [Parameter] public EventCallback OnResume { get; set; }
+    [Parameter(CaptureUnmatchedValues = true)] public Dictionary<string, object>? AdditionalAttributes { get; set; }
+
+    private ElementReference _root;
+    private IJSObjectReference? _module;
+    private DotNetObjectReference<GamePauseDialog>? _self;
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (!firstRender || Native) return;
+        _module = await JS.InvokeAsync<IJSObjectReference>("import", "./js/gamePauseDialog.js");
+        _self = DotNetObjectReference.Create(this);
+        await _module.InvokeVoidAsync("attach", _root, OnResume.HasDelegate ? _self : null);
+    }
+
+    [JSInvokable] public Task ResumeAsync() => OnResume.InvokeAsync();
+
+    public async ValueTask DisposeAsync()
+    {
+        if (_module is null) return;
+        try
+        {
+            await _module.InvokeVoidAsync("detach", _root);
+            await _module.DisposeAsync();
+        }
+        catch (JSDisconnectedException) { }
+        finally { _self?.Dispose(); }
+    }
+}

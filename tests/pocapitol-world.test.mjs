@@ -29,13 +29,13 @@ test('fresh attempt starts outside with a mostly passive crowd and five manned l
     assert.equal(a.role, 'raider');
     assert.equal(a.player.z, 100);
     assert.equal(a.health, 100);
-    assert.equal(a.companions.length, 127);
+    assert.equal(a.companions.length, 255);
     assert.equal(a.companions.length + 1, CROWD_SIZE);
-    assert.equal(new Set(a.companions.map(c => c.id)).size, 127);
+    assert.equal(new Set(a.companions.map(c => c.id)).size, 255);
     assert.ok(a.companions.every(c => c.z > 14 && walkable(c.x, c.z) && c.health > 0));
     const pushers = a.companions.filter(c => c.temperament === 'pusher').length;
-    assert.ok(pushers > 20 && pushers < 50, `Pushers should be a minority, got ${pushers}`);
-    assert.equal(CROWD_SIZE, 128);
+    assert.ok(pushers > 40 && pushers < 100, `Pushers should be a minority, got ${pushers}`);
+    assert.equal(CROWD_SIZE, 256);
     assert.equal(a.enemies.length + 20, MAX_POLICE);
     assert.equal(MAX_POLICE, 64);
     assert.equal(a.civilians.length, 64);
@@ -54,11 +54,11 @@ test('fresh attempt starts outside with a mostly passive crowd and five manned l
     assert.throws(() => createAttempt('story', false, 'general'), /role/i);
 });
 
-test('demo has exactly 128 CPU raiders and no participating human', () => {
+test('demo has exactly 256 CPU raiders and no participating human', () => {
     const state = createAttempt('story', true, 'police');
     assert.equal(state.demo, true);
     assert.equal(state.role, 'none');
-    assert.equal(state.companions.length, 128);
+    assert.equal(state.companions.length, 256);
     const player = { ...state.player };
     tick(state, { z: -1 }, 1);
     assert.deepEqual(state.player, player);
@@ -125,15 +125,15 @@ test('the armed story demo eliminates people on both sides, breaks every line in
     assert.equal(state.outcome, 'doors');
     assert.equal(state.milestone, milestones.length);
     assert.ok(state.elapsed < CURFEW_ELAPSED);
-    assert.equal(state.companions.length, 128);
+    assert.equal(state.companions.length, 256);
     assert.ok(state.companions.every(c => walkable(c.x, c.z)), 'NPC left navigable space');
     const out = state.companions.filter(c => c.health <= 0);
-    assert.ok(out.length > 0 && out.length < 128, `${out.length} raiders were eliminated`);
+    assert.ok(out.length > 0 && out.length < 256, `${out.length} raiders were eliminated`);
     assert.ok(out.every(c => !c.helped && !c.resting), 'Eliminated raiders must stay out, not walk away');
     assert.ok(state.enemies.some(e => e.health <= 0), 'No officer was eliminated');
     // Most of the crowd never goes deep into the building.
     const deep = state.companions.filter(c => c.milestone >= 3).length;
-    assert.ok(deep < 110 && deep > 0, `${deep} raiders went deep inside`);
+    assert.ok(deep < 220 && deep > 0, `${deep} raiders went deep inside`);
     assert.ok(state.companions.filter(c => c.temperament === 'bystander').every(c => c.milestone <= 2));
     assert.ok(state.companions.some((c, i) => c.z < start[i] - 80));
 });
@@ -170,7 +170,7 @@ test('gas drives people back and worn-out raiders are helped away by street medi
     tick(state, {}, 6);
     assert.ok(Math.hypot(down.x + 30, down.z - 62) < from - 4, 'Helped raider did not walk to the aid station');
     assert.equal(down.health, 0);
-    assert.equal(state.companions.length, 128);
+    assert.equal(state.companions.length, 256);
 });
 
 test('staff and members are evacuated on the clock and can never be harmed', () => {    const state = createAttempt('standard', true);
@@ -230,7 +230,7 @@ test('demo ends when nobody can continue or at the curfew, and restart restores 
     assert.equal(clockLabel(0), '12:50 PM');
     assert.equal(clockLabel(CURFEW_ELAPSED), '6:00 PM');
     const next = createAttempt('standard', true);
-    assert.equal(next.companions.length, 128);
+    assert.equal(next.companions.length, 256);
     assert.ok(next.companions.every(c => c.health > 0 && c.milestone === 0));
     assert.ok(next.lines.every(line => line.state === 'holding'));
 });
@@ -312,7 +312,7 @@ test('a raider shove staggers one officer in reach and adds weight to the line',
 
 test('police role: the human holds the line, pushes raiders back, and wins at the curfew', () => {
     const state = createAttempt('story', false, 'police');
-    assert.equal(state.companions.length, 128);
+    assert.equal(state.companions.length, 256);
     assert.ok(state.player.z < lineDefs[0].z, 'The officer starts behind the first line');
     const z = state.player.z;
     tick(state, { z: 1 }, 2);
@@ -578,7 +578,7 @@ test('demo engine ignores human input, reports its subject and line, loops, paus
     assert.equal(engine.state().player.z, 100);
     assert.equal(engine.state().pushes, 0);
     const update = engine.calls.find(call => call[0] === 'OnUpdate');
-    assert.equal(update[8], 128);
+    assert.equal(update[8], 256);
     assert.equal(update[9], 44);
     assert.ok(update[10] > 0);
     assert.equal(update[11], true);
@@ -597,11 +597,11 @@ test('demo engine ignores human input, reports its subject and line, loops, paus
     assert.equal(engine.state().status, 'completed');
     await engine.frame(7200);
     assert.equal(engine.state().status, 'active');
-    assert.equal(engine.state().companions.length, 128);
+    assert.equal(engine.state().companions.length, 256);
     assert.ok(engine.state().elapsed <= 0.05);
     engine.api.start('story');
     assert.equal(engine.state().demo, false);
-    assert.equal(engine.state().companions.length, 127);
+    assert.equal(engine.state().companions.length, 255);
     engine.api.start('standard', false, 'observer');
     assert.equal(engine.state().role, 'observer');
     engine.key('Space');

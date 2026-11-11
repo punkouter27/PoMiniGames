@@ -1,14 +1,4 @@
-/* The race is a dark surface in both colour schemes (it is a canvas with panels over it), so the
-   theme is pinned dark here for everything inside it: `color-scheme` settles every light-dark()
-   token, and the rest are the tokens app.css re-points under prefers-color-scheme: light, set
-   back to their :root values. Without this the Online tab's shared lobby panel was dark text,
-   a dark-green "connected" pill and a dark "Leave" on a dark card for anyone in light mode. */
 .racer-root { position: relative; width: 100%; height: max(480px, calc(100dvh - 100px)); overflow: hidden; background: var(--racer-bg); color: var(--racer-text);
-    color-scheme: dark;
-    --color-bg: #0f172a; --color-surface: #102033; --color-surface-hover: #334155; --color-border: #60839d66;
-    --color-text-primary: #e2e8f0; --color-text-secondary: #a8bacd; --color-accent: #818cf8; --color-accent-solid: #4f46e5;
-    --accent-ink: #c7d2fe; --accent-success-ink: #6ee7b7; --accent-warning-ink: #fcd34d; --accent-danger-ink: #fca5a5; --accent-amber-ink: #fcd34d;
-    --accent-soft: rgba(129, 140, 248, 0.16);
     /* The Racer palette, once. It is a per-game canvas palette (scheme-invariant, like the canvas
        itself), and every PoRacer stylesheet reads it from here rather than retyping raw hex. */
     --racer-bg: #09131e; --racer-text: #edf7ff; --racer-ink: #fff; --racer-muted: #cadbe9; --racer-faint: #a8bacd;
@@ -19,6 +9,8 @@
     --racer-lamp: #ff2a2a; --racer-lamp-glow: #ff2a2ad0; --racer-lamp-core: #ffb0b0; --racer-lamp-off: #2a0b0b; --racer-lamp-go: #123016;
     --racer-glass: #0b182eb8; --racer-edge: #9fd4f02e; }
 .racer-canvas { width: 100%; height: 100%; display: block; }
+.racer-root ::deep .gps-intro-card { color: var(--color-text-primary); }
+.racer-card ::deep .lobby { background: var(--color-surface); color: var(--color-text-primary); }
 .racer-start { position: absolute; inset: 0; display: grid; place-items: center; padding: 16px; overflow-y: auto; background: var(--racer-scrim); }
 .racer-card { width: min(860px, 100%); padding: clamp(14px, 2.2vw, 22px); background: var(--racer-panel); border: 1px solid var(--racer-line); border-radius: 18px; box-shadow: 0 20px 60px #0006; display: grid; gap: 14px; }
 .racer-card a { color: var(--racer-accent-line); text-underline-offset: 4px; }
@@ -99,7 +91,7 @@
 .racer-root ::deep .racer-controls .for-pad, .racer-root ::deep .racer-controls .for-tips { color: var(--color-text-secondary); font-size: 12px; }
 
 /* Pause / race menu */
-.racer-pause { position: absolute; inset: 0; display: grid; place-items: center; padding: 16px; background: var(--racer-veil); backdrop-filter: blur(6px); }
+.racer-root ::deep .racer-pause { position: absolute; inset: 0; display: grid; place-items: center; padding: 16px; background: var(--racer-veil); backdrop-filter: blur(6px); }
 .racer-pause-card { width: min(420px, 100%); padding: 20px; display: grid; gap: 14px; border-radius: 16px; background: var(--racer-panel); border: 1px solid var(--racer-line); box-shadow: 0 20px 60px #0008; }
 .racer-pause-card h2 { margin: 0; font-size: 22px; }
 .racer-ghost-toggle { display: flex; align-items: center; justify-content: center; gap: 8px; min-height: 44px; font-size: 15px; cursor: pointer; }

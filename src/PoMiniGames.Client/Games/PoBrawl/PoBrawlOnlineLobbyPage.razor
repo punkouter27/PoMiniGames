@@ -28,10 +28,7 @@
 }
 else if (_failed is { } why)
 {
-    <div class="pbl-failed" role="alert">
-        <p>@why</p>
-        <button type="button" class="app-btn app-btn--primary" @onclick="ConnectAsync">Try again</button>
-    </div>
+    <InlineError Message="@why" OnRetry="ConnectAsync" RetryLabel="Try again" />
 }
 else
 {

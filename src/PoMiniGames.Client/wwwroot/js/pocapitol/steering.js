@@ -53,8 +53,13 @@ export function createSteering(capacity) {
                 vehicle.maxForce = 32;
             }
 
-            vehicle.seek.target.set(agent.targetX, 0, agent.targetZ);
             const dist = Math.hypot(agent.targetX - agent.x, agent.targetZ - agent.z);
+            const inChokepoint = Math.abs(agent.x) < 4.5 &&
+                ((agent.z > -31 && agent.z < -24) || (agent.z > -51 && agent.z < -44) || (agent.z > 11 && agent.z < 17));
+            if (inChokepoint) {
+                vehicle.separation.weight *= 0.65;
+            }
+            vehicle.seek.target.set(agent.targetX, 0, agent.targetZ);
             vehicle.seek.active = dist > 0.12 && agent.speed > 0;
             if (!vehicle.seek.active) vehicle.velocity.multiplyScalar(Math.max(0, 1 - dt * 8));
         }
@@ -68,16 +73,32 @@ export function createSteering(capacity) {
             const vehicle = vehicles[agent.id];
             const neighbors = vehicle.neighbors;
             neighbors.length = 0;
+            let retreatingNear = 0, surgingNear = 0, aheadBlocking = 0;
+            const toTargetX = agent.targetX - agent.x, toTargetZ = agent.targetZ - agent.z;
+            const toTargetLen = Math.hypot(toTargetX, toTargetZ) || 1;
             grid.query(agent.x, agent.z, NEIGHBOR_RADIUS, other => {
                 if (other === agent) return;
                 const dx = other.x - agent.x, dz = other.z - agent.z;
-                if (dx * dx + dz * dz < NEIGHBOR_RADIUS * NEIGHBOR_RADIUS) neighbors.push(vehicles[other.id]);
+                const d2 = dx * dx + dz * dz;
+                if (d2 < NEIGHBOR_RADIUS * NEIGHBOR_RADIUS) {
+                    neighbors.push(vehicles[other.id]);
+                    if (other.actor?.retreating || (other.actor && other.actor.health <= 0)) retreatingNear++;
+                    if ((other.actor?.surge ?? 0) > 0) surgingNear++;
+                    const d = Math.sqrt(d2) || 1;
+                    const dot = (dx * toTargetX + dz * toTargetZ) / (d * toTargetLen);
+                    if (dot > 0.7 && d < 1.1) aheadBlocking++;
+                }
             });
             bodyGrid.query(agent.x, agent.z, NEIGHBOR_RADIUS, i => {
                 const dx = bodies[i].x - agent.x, dz = bodies[i].z - agent.z;
                 if (dx * dx + dz * dz < NEIGHBOR_RADIUS * NEIGHBOR_RADIUS) neighbors.push(bodyPool[i]);
             });
             agent.crowding = neighbors.length;
+            agent.retreatingNear = retreatingNear;
+            agent.surgingNear = surgingNear;
+            if (aheadBlocking > 0 && Math.abs(agent.x) < 4.5) {
+                vehicle.maxSpeed = agent.speed * Math.max(0.55, 1 - aheadBlocking * 0.15);
+            }
         }
 
         for (const agent of agents) {
