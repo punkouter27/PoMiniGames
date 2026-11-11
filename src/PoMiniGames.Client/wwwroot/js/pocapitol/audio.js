@@ -174,20 +174,29 @@ export function createAudio() {
     const listener = { x: 0, z: 100, yaw: 0 };
 
     // A sound placed in the world. Returns the node a voice should connect to; the whole chain is
-    // torn down after `life` seconds. Walls between the source and the listener muffle it.
+    // torn down after `life` seconds. Walls between the source and the listener muffle it, and
+    // the wave takes time to arrive: at 343 m/s a shout from the far end of the hall lands about
+    // a sixth of a second late, which is most of what makes a big room feel big.
     function place(x, z, life = 4, height = 1.3) {
         const panner = ctx.createPanner(), muffle = ctx.createBiquadFilter(), level = ctx.createGain();
+        const flight = ctx.createDelay(0.5);
         panner.panningModel = 'HRTF'; panner.distanceModel = 'inverse';
         panner.refDistance = 4; panner.rolloffFactor = 0.9; panner.maxDistance = 120;
         if (panner.positionX) {
             panner.positionX.value = x; panner.positionY.value = height; panner.positionZ.value = z;
         } else panner.setPosition(x, height, z);
         const walls = Math.abs(areaIndex(x, z) - areaIndex(listener.x, listener.z));
+        // Sound gets out through a doorway far better than through a wall: the connecting aisle
+        // is 9 m wide, so a source lined up with one is only partly screened.
+        const doorway = walls === 1 && Math.abs(x) < 4.5 && Math.abs(listener.x) < 8;
         muffle.type = 'lowpass';
-        muffle.frequency.value = walls === 0 ? 18000 : walls === 1 ? 3500 : 900;
-        level.gain.value = walls === 0 ? 1 : walls === 1 ? 0.75 : 0.4;
-        muffle.connect(level).connect(panner).connect(master);
-        setTimeout(() => { try { muffle.disconnect(); level.disconnect(); panner.disconnect(); } catch { /* gone */ } }, life * 1000 + 100);
+        muffle.frequency.value = walls === 0 ? 18000 : doorway ? 9000 : walls === 1 ? 3500 : 900;
+        level.gain.value = walls === 0 ? 1 : doorway ? 0.9 : walls === 1 ? 0.75 : 0.4;
+        flight.delayTime.value = Math.min(0.4, Math.hypot(x - listener.x, z - listener.z) / SPEED_OF_SOUND);
+        muffle.connect(level).connect(flight).connect(panner).connect(master);
+        setTimeout(() => {
+            try { muffle.disconnect(); level.disconnect(); flight.disconnect(); panner.disconnect(); } catch { /* gone */ }
+        }, life * 1000 + 100 + flight.delayTime.value * 1000);
         return muffle;
     }
     function aimListener() {

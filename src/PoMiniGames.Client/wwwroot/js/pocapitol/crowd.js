@@ -66,6 +66,25 @@ function trait(id, salt) {
     return v - Math.floor(v);
 }
 
+/**
+ * How this person walks. Stride length, cadence and a bad knee are drawn once from the same
+ * stable trait, so a crowd of a hundred breaks out of lockstep without any per-frame cost.
+ */
+const GAITS = new Map(), GAIT_DEFAULT = { stride: 0.5, cadence: 1, limp: 0 };
+function gaitOf(id) {
+    let gait = GAITS.get(id);
+    if (!gait) {
+        gait = {
+            stride: 0.36 + trait(id, 7) * 0.26,
+            cadence: 0.84 + trait(id, 8) * 0.3,
+            // About one in nine favours a knee; a few take short, careful steps.
+            limp: trait(id, 9) < 0.11 ? 0.16 + trait(id, 10) * 0.14 : 0,
+        };
+        GAITS.set(id, gait);
+    }
+    return gait;
+}
+
 // ---------------------------------------------------------------- the rigged figure
 
 const FIGURE_URL = 'models/pocapitol/figure.glb';
@@ -290,14 +309,22 @@ function poseFor(b, a, t, pose) {
     }
     // Legs and arms: a walking gait, or standing with the weight shifting.
     if (b.moving) {
-        const p = b.phase, a0 = Math.sin(p) * 0.5;
-        rot(pose, 'thigh_L', a0); rot(pose, 'thigh_R', -a0);
-        const kneeL = 0.08 + 0.7 * Math.max(0, Math.cos(p)), kneeR = 0.08 + 0.7 * Math.max(0, -Math.cos(p));
+        const stride = b.stride ?? 0.5, limp = b.limp ?? 0;
+        const p = b.phase, a0 = Math.sin(p) * stride;
+        rot(pose, 'thigh_L', a0 + limp * 0.55); rot(pose, 'thigh_R', -a0);
+        const kneeL = 0.08 + 0.7 * Math.max(0, Math.cos(p)) + limp * 1.6;
+        const kneeR = 0.08 + 0.7 * Math.max(0, -Math.cos(p));
         rot(pose, 'shin_L', -kneeL); rot(pose, 'shin_R', -kneeR);
         rot(pose, 'foot_L', -(a0 - kneeL) * 0.5); rot(pose, 'foot_R', -(-a0 - kneeR) * 0.5);
         rot(pose, 'upperArm_L', -0.7 * a0); rot(pose, 'upperArm_R', 0.7 * a0);
         rot(pose, 'foreArm_L', 0.15 + 0.35 * Math.max(0, -a0)); rot(pose, 'foreArm_R', 0.15 + 0.35 * Math.max(0, a0));
         rot(pose, 'hips', 0, -0.08 * a0); rot(pose, 'chest', -0.04, 0.12 * a0);
+        // A person favouring one knee leans away from it and drops that shoulder.
+        if (limp > 0) {
+            rot(pose, 'hips', 0, 0, -0.5 * limp);
+            rot(pose, 'spine', 0.4 * limp, 0, 0.35 * limp);
+            rot(pose, 'head', 0, 0, 0.3 * limp);
+        }
     } else {
         const sway = Math.sin(t * 0.5 + id * 1.9);
         const shiver = Math.sin(t * 14.0 + id * 3.7) * 0.012;
@@ -358,7 +385,7 @@ function poseFor(b, a, t, pose) {
 // Rest points of the hands' palms, where held things are anchored.
 const PALM_R = [0.483, 0.76, -0.12], PALM_L = [-0.483, 0.76, -0.12];
 
-export function createCrowd(scene, capacity, { time, groundHeight, shadowTexture, figure }) {
+export function createCrowd(scene, capacity, { time, groundHeight, shadowTexture, figure, wind = null }) {
     const parts = [], resources = new Set(), textures = new Set();
     const transform = new THREE.Object3D(), color = new THREE.Color();
     transform.rotation.order = 'YXZ';
@@ -487,10 +514,18 @@ export function createCrowd(scene, capacity, { time, groundHeight, shadowTexture
     for (const kind of new Set(banners)) {
         const texture = flagTexture(kind); textures.add(texture);
         const flag = part('flag', new THREE.PlaneGeometry(1.7, 1.1, 16, 6),
-            addWave(new THREE.MeshStandardMaterial({ map: texture, side: THREE.DoubleSide, roughness: 0.9 }), time),
+            addWave(new THREE.MeshStandardMaterial({ map: texture, side: THREE.DoubleSide, roughness: 0.9 }), time, { wind }),
             [0.86, 1.98, 0], [1, 1, 1], a => bearer(a) && banners[Math.floor(a.id / 3) % banners.length] === kind, false, right);
         flag.mesh.layers.set(1);
     }
+    // Snow settling on shoulders and hats: not falling snow, the thin rime that builds up on a
+    // person who has been out in it for an hour. A pale cap that grows with time outdoors.
+    const rime = new THREE.MeshBasicMaterial({ color: '#e9eef2', transparent: true, opacity: 0.5, depthWrite: false });
+    const rimeCap = part('rime', dome, rime, [0, 2.06, 0], [1, 1, 1], a => !a.police && a.health > 0 && (a.z ?? 0) > 15, true, head);
+    rimeCap.mesh.layers.set(1);
+    const rimeShoulders = part('rime-shoulders', new THREE.TorusGeometry(0.24, 0.035, 4, 12), rime, [0, 1.52, 0], [1, 1, 0.85],
+        a => a.health > 0 && (a.z ?? 0) > 15, true, { rot: Math.PI / 2, bone: 'chest' });
+    rimeShoulders.mesh.layers.set(1);
     // Breath in the cold: a small puff in front of each face outdoors, there and gone.
     const breath = part('breath', new THREE.SphereGeometry(0.11, 6, 5),
         new THREE.MeshBasicMaterial({ color: '#f3f6f8', transparent: true, opacity: 0.2, depthWrite: false }),
@@ -529,9 +564,10 @@ export function createCrowd(scene, capacity, { time, groundHeight, shadowTexture
             const tall = a.police ? 0.98 + trait(a.id, 1) * 0.09 : 0.93 + trait(a.id, 1) * 0.14;
             const wide = a.police ? 1.02 + trait(a.id, 2) * 0.1 : 0.9 + trait(a.id, 2) * 0.2;
             const moving = active && a.moving && a.health > 0;
-            const phase = state.elapsed * 9 + a.id * 0.7;
+            const gait = a.id >= 0 ? gaitOf(a.id) : GAIT_DEFAULT;
+            const phase = state.elapsed * 9 * gait.cadence + a.id * 0.7;
             const floor = groundHeight(a.x, a.z);
-            const b = { a, tall, wide, floor, moving, phase, ground: floor + (moving ? Math.abs(Math.cos(phase)) * 0.045 : 0),
+            const b = { a, tall, wide, floor, moving, phase, stride: gait.stride, limp: gait.limp, ground: floor + (moving ? Math.abs(Math.cos(phase)) * 0.045 : 0),
                 pushing: raider(a) && a.attacking > 0 && a.health > 0, filming: filming(a), bearer: bearer(a), gun: gun(a),
                 lying: a.health <= 0 && state.armed, stooped: a.health <= 0 && !state.armed && a.helped && !a.resting };
             const key = a.key ?? (a.civilian ? `s${a.id}` : `r${a.id}`);
@@ -634,8 +670,24 @@ export function createCrowd(scene, capacity, { time, groundHeight, shadowTexture
                         if (phase > 0.4) continue;
                         transform.scale.setScalar(0.5 + phase * 3);
                         transform.position.y += phase * 0.5;
+                        // Breath is warm air: the wind takes it before it has gone anywhere.
+                        transform.position.x += (wind?.x ?? 0) * phase * 0.35;
+                        transform.position.z += (wind?.z ?? 0) * phase * 0.35;
                     }
-                    if (p.name === 'flag') transform.rotation.y += 0.06 * Math.sin(state.elapsed * 0.7 + a.id);
+                    if (p.name === 'flag') {
+                        // A banner streams downwind, not the way the person carrying it faces.
+                        const wx = wind?.x ?? 0, wz = wind?.z ?? 0;
+                        const windYaw = Math.atan2(-wx, -wz);
+                        const blend = Math.min(0.85, Math.hypot(wx, wz) / 9);
+                        const dy = Math.atan2(Math.sin(windYaw - h), Math.cos(windYaw - h));
+                        transform.rotation.y = h + dy * blend + 0.05 * Math.sin(state.elapsed * 1.7 + a.id);
+                    }
+                    if (p.name === 'rime' || p.name === 'rime-shoulders') {
+                        // Rime builds on a person who has been out in it, then holds.
+                        const build = Math.min(1, Math.max(0, (state.elapsed - 20) / 400));
+                        if (build <= 0.01) continue;
+                        transform.scale.multiplyScalar(0.55 + 0.45 * build);
+                    }
                     transform.updateMatrix();
                     worn.copy(transform.matrix);
                 } else {

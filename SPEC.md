@@ -89,6 +89,10 @@ reconstruction.
   neighbours, lifted onto the layer below, rolled. A heap is at most three bodies deep. Heads and
   torsos turn smoothly and officers rock on their feet under load; the first line's bike racks bow,
   shove and rock with the crowd's pressure. No injury is shown: no blood, no severed limbs.
+- **Gunsmoke and stepping over the fallen:** muzzle smoke lives four times as long (3.6-9.2 s,
+  thinner and slower), so a firefight builds a haze over the line. In the armed demo the fallen
+  are neither steering obstacles nor separation partners: survivors walk over them and keep
+  advancing, and anyone shot on a heap settles onto it a layer higher.
 - **Rendering look:** a cloudy sky dome lights the scene as well as filling the background;
   the sun follows its real 6 January path from about 29° up at 12:50 pm to sunset near five.
   Stone, paving and lawn carry generated, world-mapped detail; flags ripple; every figure

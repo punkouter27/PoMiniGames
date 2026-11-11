@@ -99,6 +99,19 @@ test('the crowd keeps its distance from one another instead of stacking', () => 
     assert.ok(state.companions.some(c => c.crowding >= 3), 'Nobody registered a crush at the line');
 });
 
+test('the crowd steps over the fallen instead of stacking up behind them', () => {
+    const state = createAttempt('standard', true);
+    tick(state, {}, 40);
+    const dead = state.companions.filter(c => c.health <= 0);
+    const alive = state.companions.filter(c => c.health > 0);
+    assert.ok(dead.length > 10, 'nobody was shot down');
+    assert.ok(alive.length > 0, 'the whole crowd was eliminated');
+    // 0.55 m is inside MIN_GAP (0.68 m), so before this change no living raider could get there.
+    const over = alive.filter(a => dead.some(d => Math.hypot(d.x - a.x, d.z - a.z) < 0.55));
+    assert.ok(over.length > 0, 'living raiders never reach the bodies: the fallen still block the crowd');
+    assert.ok(Math.min(...alive.map(a => a.z)) < 78, 'the crowd stalled behind its own casualties');
+});
+
 test('the armed story demo eliminates people on both sides, breaks every line in order and ends at the doors', () => {
     const state = createAttempt('story', true);
     assert.equal(state.armed, true);

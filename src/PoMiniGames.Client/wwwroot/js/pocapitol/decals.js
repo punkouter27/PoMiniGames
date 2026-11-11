@@ -13,7 +13,7 @@ function mark(kind) {
     canvas.width = canvas.height = size;
     const g = canvas.getContext('2d'), image = g.createImageData(size, size);
     // Seeded so the texture is the same on every machine.
-    let s = kind === 'scuff' ? 7 : kind === 'scorch' ? 19 : 31;
+    let s = kind === 'scuff' ? 7 : kind === 'scorch' ? 19 : kind === 'print' ? 43 : 31;
     const rand = () => { s = (Math.imul(s, 1664525) + 1013904223) >>> 0; return s / 4294967296; };
     const grid = Array.from({ length: 17 * 17 }, rand);
     const noise = (x, y) => {
@@ -23,6 +23,21 @@ function mark(kind) {
     };
     for (let y = 0; y < size; y++) for (let x = 0; x < size; x++) {
         const u = x / (size - 1) * 2 - 1, v = y / (size - 1) * 2 - 1;
+        const i = (y * size + x) * 4;
+        if (kind === 'print') {
+            // A boot sole in snow or wet grit: a long forefoot, a narrow waist, a heel, and
+            // tread bars across the ball. Pressed, so the edge is soft and the middle deepest.
+            const toe = Math.hypot(u * 1.9, (v + 0.42) * 1.05) < 1;
+            const heel = Math.hypot(u * 2.1, (v - 0.62) * 1.35) < 1;
+            const waist = Math.abs(u) < 0.28 + 0.1 * (1 - Math.abs(v)) && Math.abs(v) < 0.66;
+            const tread = (Math.abs((v + 0.42) * 7.0) % 1) > 0.34 ? 1 : 0.35;
+            const inside = (toe || heel || waist) ? (toe ? tread : 1) : 0;
+            const grain = 0.7 + 0.3 * noise(x / size, y / size);
+            const alpha = Math.max(0, Math.min(1, inside * grain * 0.85));
+            image.data[i] = 44; image.data[i + 1] = 45; image.data[i + 2] = 48;
+            image.data[i + 3] = alpha * 255;
+            continue;
+        }
         // Scuffs are long streaks; scorch and residue are round.
         const r = kind === 'scuff' ? Math.hypot(u * 0.55, v * 1.6) : Math.hypot(u, v);
         const body = Math.max(0, 1 - r);
@@ -30,7 +45,6 @@ function mark(kind) {
         const edge = kind === 'scorch' ? Math.pow(body, 0.55) : Math.pow(body, 1.25);
         const alpha = Math.max(0, Math.min(1, edge * grain * (kind === 'stain' ? 0.5 : 1.15)));
         const shade = kind === 'scuff' ? 38 : kind === 'scorch' ? 14 : 226;
-        const i = (y * size + x) * 4;
         image.data[i] = shade * (0.8 + 0.4 * grain); image.data[i + 1] = shade * (0.78 + 0.4 * grain); image.data[i + 2] = shade * (0.72 + 0.4 * grain);
         image.data[i + 3] = alpha * 255;
     }
@@ -70,11 +84,12 @@ function ring(scene, kind, capacity) {
     mesh.count = 0;
     scene.add(mesh);
     const pose = new THREE.Object3D(), tint = new THREE.Color(0.85, 0.85, 0.85);
+    const stretch = kind === 'scuff' ? 2.6 : kind === 'print' ? 1.9 : 1;
     let head = 0, filled = 0, dirty = false;
     return {
         mesh,
         add(x, y, z, width, angle, opacity) {
-            pose.position.set(x, y, z); pose.rotation.set(0, angle, 0); pose.scale.set(width, 1, width * (kind === 'scuff' ? 2.6 : 1));
+            pose.position.set(x, y, z); pose.rotation.set(0, angle, 0); pose.scale.set(width, 1, width * stretch);
             pose.updateMatrix();
             mesh.setMatrixAt(head, pose.matrix);
             mesh.setColorAt(head, tint); mesh.instanceColor.needsUpdate = true;
@@ -98,9 +113,15 @@ function ring(scene, kind, capacity) {
 
 export function createDecals(scene, { capacity = 160 } = {}) {
     const scuffs = ring(scene, 'scuff', capacity), scorch = ring(scene, 'scorch', capacity / 2), stains = ring(scene, 'stain', capacity / 4);
+    const prints = ring(scene, 'print', capacity * 2);
+    const layers = [scuffs, scorch, stains, prints];
     let seed = 1, lightLevel = -1;
     const rand = () => { seed = (Math.imul(seed, 1664525) + 1013904223) >>> 0; return seed / 4294967296; };
     return {
+        /** One boot pressed into snow or wet grit. `angle` is the heading it was walking on. */
+        footprint(x, floor, z, angle, opacity = 0.5) {
+            prints.add(x, floor + 0.012, z, 0.2, angle, opacity);
+        },
         /** Turns one world event into wear on the ground at floor height `floor`. */
         react(e, floor) {
             const y = floor + 0.015, energy = e.energy ?? 30;
@@ -119,9 +140,9 @@ export function createDecals(scene, { capacity = 160 } = {}) {
             }
         },
         update(level) {
-            for (const l of [scuffs, scorch, stains]) l.flush();
-            if (Math.abs(level - lightLevel) > 0.02) { lightLevel = level; for (const l of [scuffs, scorch, stains]) l.light(level); }
+            for (const l of layers) l.flush();
+            if (Math.abs(level - lightLevel) > 0.02) { lightLevel = level; for (const l of layers) l.light(level); }
         },
-        dispose() { scuffs.dispose(); scorch.dispose(); stains.dispose(); },
+        dispose() { for (const l of layers) l.dispose(); },
     };
 }

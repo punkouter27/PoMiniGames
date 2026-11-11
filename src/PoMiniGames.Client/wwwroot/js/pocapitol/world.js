@@ -25,13 +25,48 @@ export const areas = [
 /**
  * Height of the walking surface the renderer draws at (x, z), so feet and contact shadows sit
  * on it: interior floors, the paved forecourt, the two planted beds, otherwise the lawn.
- * Visual only; the simulation stays flat.
+ *
+ * The simulation itself stays on a plane, but the terrace in the central gap is real: four
+ * stone steps up to the portico landing, the only climb on the route. Everyone has to make it,
+ * so the crowd bunches at the foot of the steps and drains through them slowly — the way a
+ * crowd behaves at a stairway, and the reason a packed line in front of it chokes.
  */
 export function groundHeight(x, z) {
     if (z < 15) return 0.1;
+    const central = Math.abs(x) <= 13.5;
+    if (central && z >= 15 && z < 17) return 0.38;
+    if (central && z >= 17 && z < 21) {
+        const step = Math.min(4, Math.floor(21 - z));
+        return 0.02 + step * 0.09;
+    }
     if (Math.abs(x) <= 12 && z >= 12 && z <= 72) return 0.02;
     if (Math.abs(Math.abs(x) - 30) <= 4.5 && z >= 38 && z <= 64) return 0.05;
     return -0.05;
+}
+
+/**
+ * Steepness of the ground under a body, as rise over run. A stair tread reads as much steeper
+ * than 9 cm per metre because the step is sampled at foot length, not at a metre.
+ */
+export function groundSlope(x, z) {
+    const here = groundHeight(x, z), probe = 0.18;
+    let worst = 0;
+    for (const [dx, dz] of [[probe, 0], [-probe, 0], [0, probe], [0, -probe]]) {
+        const rise = Math.abs(groundHeight(x + dx, z + dz) - here) / probe;
+        if (rise > worst) worst = rise;
+    }
+    return worst;
+}
+
+/**
+ * How hard the crowd is leaning on the day at this second of the scenario, 0.55..1.25.
+ * The record's shape: thin and milling at 12:50, a build through the early afternoon, the
+ * peak around 2:15 when the pressure was heaviest, then a thinning out after 3:00.
+ */
+export function crowdPressure(elapsed) {
+    const spread = 34;
+    const build = Math.exp(-((elapsed - 85) ** 2) / (2 * spread * spread));
+    return 0.55 + 0.7 * build;
 }
 
 export const obstacles = [
@@ -642,8 +677,9 @@ function planRaiders(state, difficulty, dt, agents, bodies) {
         c.moving = false;
         let goal, field, speed = c.speed;
         if (c.health <= 0) {
-            // Armed demo: eliminated, and they stay where they dropped.
-            if (state.armed) { bodies.push(c); continue; }
+            // Armed demo: eliminated and lying where they dropped. They are not steering
+            // obstacles, because the crowd walks over the fallen instead of around them.
+            if (state.armed) continue;
             // Out of the scenario, not out of the world: they sit until a street medic (or
             // time) gets them up, then walk back to the aid station and stay there.
             if (!c.helped) {
@@ -736,6 +772,12 @@ function planRaiders(state, difficulty, dt, agents, bodies) {
             if (c.surge > 0) speed *= 1.25;
             // People packed shoulder to shoulder shuffle; they do not stride.
             speed /= 1 + 0.18 * Math.max(0, c.crowding - 2);
+            // Stone steps cost time, and the terrace is the one climb on the whole route.
+            const slope = groundSlope(c.x, c.z);
+            if (slope > 0.06) speed /= 1 + 2.6 * Math.min(1.4, slope);
+            // The day has a shape: the pavement is thin at 12:50 and the surge is heaviest in
+            // the 2 o'clock hour. Willingness moves with it, so does the pace.
+            speed *= 0.75 + 0.25 * Math.min(1, (crowdPressure(state.elapsed) - 0.55) / 0.7);
         }
         if (goal) {
             c.routeWait -= dt;
@@ -768,7 +810,9 @@ export function advance(state, input, seconds) {
 
     if (state.role !== 'none' && state.health > 0) {
         const magnitude = Math.max(1, Math.hypot(x, z));
-        const speed = (input.sprint ? 8 : 5) * (state.sprayed > 0 ? 0.6 : 1);
+        // Climbing the terrace steps is slower than walking the pavement, for the human too.
+        const climb = 1 / (1 + 2.6 * Math.min(1.4, groundSlope(state.player.x, state.player.z)));
+        const speed = (input.sprint ? 8 : 5) * (state.sprayed > 0 ? 0.6 : 1) * climb;
         const nx = state.player.x + x / magnitude * speed * dt;
         let nz = state.player.z + z / magnitude * speed * dt;
         if (state.role === 'raider') nz = heldAt(state, nx, state.player.z, nz) ?? nz;
@@ -963,6 +1007,7 @@ function stepRaiders(state, difficulty, dt) {
         const dx = actor.x - fromX, dz = actor.z - fromZ, moved = Math.hypot(dx, dz);
         if (held !== null || moved < Math.hypot(agent.nextX - fromX, agent.nextZ - fromZ) * 0.5) steering.stop(actor.id);
         actor.crowding = agent.crowding;
+        actor.density = agent.density ?? 0;
         actor.retreatingNear = agent.retreatingNear ?? 0;
         actor.surgingNear = agent.surgingNear ?? 0;
         actor.moving = moved > 0.3 * dt;
@@ -1026,26 +1071,37 @@ function stepHarm(state, dt) {
     contactGrid.clear();
     for (let i = 0; i < list.length; i++) contactGrid.insert(i, list[i].x, list[i].z);
     const weight = body => body.health <= 0 ? massOf(body) * 4 : massOf(body);
-    for (let i = 0; i < list.length; i++) {
-        const a = list[i];
-        contactGrid.query(a.x, a.z, MIN_GAP, j => {
-            if (j <= i) return;
-            const b = list[j];
-            let dx = b.x - a.x, dz = b.z - a.z, d = Math.hypot(dx, dz);
-            if (d >= MIN_GAP) return;
-            // Exactly stacked bodies part along a direction fixed by who they are, never by chance.
-            if (d < 1e-4) { dx = Math.cos(i * 2.4 + j); dz = Math.sin(i * 2.4 + j); d = 1; }
-            const nx = dx / d, nz = dz / d, push = (MIN_GAP - d) * 0.6;
-            const ma = weight(a), mb = weight(b), total = ma + mb;
-            relocate(state, a, a.x - nx * push * mb / total, a.z - nz * push * mb / total, crowdMember(state, a));
-            relocate(state, b, b.x + nx * push * ma / total, b.z + nz * push * ma / total, crowdMember(state, b));
-            const closing = ((a.vx ?? 0) - (b.vx ?? 0)) * nx + ((a.vz ?? 0) - (b.vz ?? 0)) * nz;
-            if (closing <= 0.8) return;
-            const energy = exchange(a, b, nx, nz, closing);
-            if (energy > 12 && impacts < MAX_IMPACTS) {
-                impacts++;
-                blow(state, 'impact', (a.x + b.x) / 2, (a.z + b.z) / 2, energy, 'body');
-            }
-        });
+    // Two relaxation passes, because a shove travels through a line: the person you push leans
+    // on the person in front of them, who leans on the next. One pass only moves the first pair.
+    for (let pass = 0; pass < 2; pass++) {
+        for (let i = 0; i < list.length; i++) {
+            const a = list[i];
+            contactGrid.query(a.x, a.z, MIN_GAP, j => {
+                if (j <= i) return;
+                const b = list[j];
+                // The fallen are stepped over, not walked around: in the armed demo a body on the
+                // ground never separates against anyone, so a pile forms in place rather than a wall.
+                if (state.armed && (a.health <= 0 || b.health <= 0)) return;
+                let dx = b.x - a.x, dz = b.z - a.z, d = Math.hypot(dx, dz);
+                if (d >= MIN_GAP) return;
+                // Exactly stacked bodies part along a direction fixed by who they are, never by chance.
+                if (d < 1e-4) { dx = Math.cos(i * 2.4 + j); dz = Math.sin(i * 2.4 + j); d = 1; }
+                const nx = dx / d, nz = dz / d;
+                // A crowd is close to incompressible: the deeper the overlap, the harder it
+                // resists, so a packed middle cannot be squeezed into the same square metre.
+                const overlap = MIN_GAP - d;
+                const push = overlap * (0.62 + 0.3 * Math.min(1, overlap / 0.3));
+                const ma = weight(a), mb = weight(b), total = ma + mb;
+                relocate(state, a, a.x - nx * push * mb / total, a.z - nz * push * mb / total, crowdMember(state, a));
+                relocate(state, b, b.x + nx * push * ma / total, b.z + nz * push * ma / total, crowdMember(state, b));
+                const closing = ((a.vx ?? 0) - (b.vx ?? 0)) * nx + ((a.vz ?? 0) - (b.vz ?? 0)) * nz;
+                if (closing <= 0.8) return;
+                const energy = exchange(a, b, nx, nz, closing);
+                if (energy > 12 && impacts < MAX_IMPACTS) {
+                    impacts++;
+                    blow(state, 'impact', (a.x + b.x) / 2, (a.z + b.z) / 2, energy, 'body');
+                }
+            });
+        }
     }
 }

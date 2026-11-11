@@ -333,26 +333,39 @@ export function addSubsurfaceScattering(material, { wrap = 0.38, scatterColor = 
 /**
  * Makes a flag plane ripple: a travelling wave pinned at the pole edge, with gusts. Each
  * instance takes its phase from where it stands, so a field of flags never moves in step.
+ *
+ * `wind` is a shared `{ value: THREE.Vector2 }` in m/s, the same one the precipitation and the
+ * smoke read, so a gust that walks across the lawn also stiffens every banner on it. Its speed
+ * sets how hard the cloth blows out; its direction sets which way the crest travels.
  */
-export function addWave(material, time, { pin = -0.85, length = 1.7, amp = 0.15 } = {}) {
+export function addWave(material, time, { pin = -0.85, length = 1.7, amp = 0.15, wind = null } = {}) {
+    const windUniform = { value: wind?.value ?? new THREE.Vector2(0, 0) };
+    material.userData.wind = windUniform;
     material.onBeforeCompile = shader => {
         shader.uniforms.uTime = time;
+        shader.uniforms.uWind = windUniform;
         shader.vertexShader = shader.vertexShader
-            .replace('#include <common>', '#include <common>\nuniform float uTime;')
+            .replace('#include <common>', '#include <common>\nuniform float uTime;\nuniform vec2 uWind;')
             .replace('#include <beginnormal_vertex>', `#include <beginnormal_vertex>
                 float wPhase = 0.0;
                 #ifdef USE_INSTANCING
                     wPhase = dot(instanceMatrix[3].xz, vec2(0.37, 0.23));
                 #endif
+                float wSpeed = length(uWind);
+                float wSide = wSpeed > 0.001 ? dot(normalize(uWind), vec2(0.94, 0.34)) : 1.0;
                 float wAlong = clamp((position.x - (${pin.toFixed(3)})) / ${length.toFixed(3)}, 0.0, 1.0);
                 float wGust = 0.65 + 0.35 * sin(uTime * 0.8 + wPhase * 1.7);
-                float wArg = position.x * 3.4 - uTime * 6.0 + wPhase;
-                float wAmp = ${amp.toFixed(3)} * wAlong * wGust;
-                float wOff = sin(wArg) * wAmp + sin(wArg * 1.9 + position.y * 2.5) * wAmp * 0.3;
+                float wTravel = 6.0 + min(9.0, wSpeed * 0.55);
+                float wArg = position.x * 3.4 - uTime * wTravel + wPhase;
+                float wLoad = 0.55 + 0.45 * min(2.2, wSpeed / 6.7);
+                float wAmp = ${amp.toFixed(3)} * wAlong * wGust * wLoad;
+                float wOff = sin(wArg) * wAmp * (0.55 + 0.45 * abs(wSide)) + sin(wArg * 1.9 + position.y * 2.5) * wAmp * 0.3;
                 float wSlope = cos(wArg) * 3.4 * wAmp + cos(wArg * 1.9 + position.y * 2.5) * 6.4 * wAmp * 0.3;
                 objectNormal = normalize(vec3(-wSlope, 0.0, 1.0));`)
             .replace('#include <begin_vertex>', `#include <begin_vertex>
                 transformed.z += wOff;
+                // Cloth standing out downwind, and the lee edge sagging when the gust drops.
+                transformed.z += wAlong * wAlong * (0.06 + 0.1 * min(1.4, wSpeed / 6.7)) * sign(wSide);
                 transformed.y -= wAlong * wAlong * 0.12 * (1.0 - wGust);`);
     };
     material.customProgramCacheKey = () => 'pocapitol-wave';
