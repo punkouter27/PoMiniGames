@@ -205,9 +205,9 @@ jobs:
       # the C# half runs in the unit tier above. Node ships on ubuntu-latest.
       - name: Run PoBrawl rollback sim parity (JS)
         run: node --test tests/pobrawl-rollback.test.mjs
-      - name: Run PoCabinet race health (JS, 100-car field on Capitol and the Bedroom Floor GP)
+      - name: Run PoCabinet race health (JS, 100-car field on Capitol, Bedroom Floor GP and Rim to Rim Court)
         run: |
-          dotnet run scripts/pocabinet/dump.cs -- artifacts/pocabinet-worlds capitol bedroom
+          dotnet run scripts/pocabinet/dump.cs -- artifacts/pocabinet-worlds capitol bedroom court
           node --test tests/pocabinet-race-health.test.mjs
       # Every Marble Race course runs a full 101-marble race on the real engine, headless, plus
       # the speed-cap tunnelling check (scripts/pomarblerace/harness.mjs). Maps run in parallel.
