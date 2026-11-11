@@ -1,4 +1,4 @@
-"""PoCabinet "Rim to Rim": the court as a Gaussian splat, in the same court frame as court.glb.
+"""PoCabinet "Center Court": the court as a Gaussian splat, in the same court frame as court.glb.
 
 Headless Blender (5.x):
 

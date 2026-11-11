@@ -67,7 +67,7 @@ After pasting, dump the world and race it here (step 2) before shipping.
 ## Race health in CI
 
 `tests/pocabinet-race-health.test.mjs` races the 64-car field (clean and messy drivers) on
-Capitol, the Bedroom Floor GP and Rim to Rim through `harness.mjs` and fails on a jam, a wreck-fest or a
+Capitol, the Bedroom Floor GP and Center Court through `harness.mjs` and fails on a jam, a wreck-fest or a
 strung-out field. The bounds sit above today's numbers; the harness is deterministic.
 
 ```powershell
@@ -96,18 +96,18 @@ node scripts/pocabinet/ksplat.mjs <tmp>\bedroom-room.ply src/PoMiniGames.Client/
 which works with the three r165 PoCabinet uses). The low graphics tier keeps the mesh, which is
 also the fallback if the splat fails to load.
 
-## Rim to Rim (a track built from a basketball-court scan)
+## Center Court (a track built from a basketball-court scan)
 
 `scripts/blender/pocabinet-court.py` builds the court track in headless Blender from the
 photogrammetry mesh of an outdoor court (`mesh.glb`, kept out of the repo). It levels the scan
 into the court frame (fits the floor plane, finds both backboards between 3.2 and 4.0 m up; floor
 on z = 0, metres, x from board A to board B), crops it ~25 m round the court, drops the scraps
 floating in the air (never the hoops), decimates it and writes `wwwroot/models/court.glb`. The
-lap is laid from lines and arcs in `route_plan`: the start line over rim A, a corkscrew down round
-the centre circle under its own flyover, the climb onto rim B half way round, then the back leg.
-The script checks the car's space over every road sample is clear of the scan, nothing stands in
-the corridor (the road crosses each rim parallel to its board), the flyover clears the road under
-it by 0.6 m, and no grade passes 20%. It prints the knots, `KnotZ`, `KnotBank` and `KnotWidth`
+lap is waypoints on the court floor in `route_plan`: round both keys and most of the way round the
+centre circle, the road 13 cm up (clear of the scan floor's lumps) so the chase camera sits low
+among the hoops and trees. The script checks the car's space over every road sample is clear of
+the scan, nothing stands in the corridor, no two parts of the lap share a corridor, no corner is
+tighter than the road is wide and no grade passes 20%. It prints the knots, `KnotZ` and `KnotBank`
 for `PoCabinetTrackGeometry["court"]` at 100 sim units per metre:
 
 ```powershell

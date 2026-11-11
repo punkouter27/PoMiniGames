@@ -54,7 +54,7 @@ export function isRoom(track) {
     return themeOf(track) === 'bedroom';
 }
 
-/** A toy track laid over a scan (models.js SCANS): the bedroom, indoors, and Rim to Rim, the
+/** A toy track laid over a scan (models.js SCANS): the bedroom, indoors, and Center Court, the
  *  outdoor basketball court. The scan is the ground and the scenery; the road is moulded plastic,
  *  on stilts wherever it is off the floor. */
 export function isScan(track) {

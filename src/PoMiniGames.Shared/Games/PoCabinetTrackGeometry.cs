@@ -329,38 +329,29 @@ public static class PoCabinetTrackGeometry
                 KnotBank = [-0.06, 0, -0.06, -0.08, 0, 0, -0.06, -0.14, -0.08, 0, 0, 0, -0.08, -0.12, -0.06, 0, 0, 0, -0.06],
                 Theme = "bedroom",
             },
-            // A toy-car circuit over a scanned outdoor basketball court (wwwroot/models/court.glb,
-            // the splat wwwroot/models/court.ksplat): the start line is on top of rim A, the road
-            // drops off it in a banked left-hander, runs down the court and corkscrews once round
-            // the centre circle, down to the floor and back under its own flyover, then climbs the
-            // far side of the court in a spiral onto rim B, half way round. The back leg dips along
-            // the other sideline and climbs again onto rim A's start deck, where the grid stands.
-            // The road is grey plastic on stilts, crossing each rim parallel to its backboard.
+            // A toy-car circuit on the floor of a scanned outdoor basketball court
+            // (wwwroot/models/court.glb, the splat wwwroot/models/court.ksplat), down low so the
+            // court, the hoops and the trees round it fill the view: the start straight along the
+            // near sideline, a sweep up past key B and a hairpin round its top, back in and most of
+            // the way round the centre circle, out along the far sideline and a hairpin round key A.
             //
             // GENERATED, do not hand-edit: scripts/blender/pocabinet-court.py levels the scan into
             // the court frame (metres, floor at 0, x from board A to board B), lays the lap, checks
-            // it against the scan and prints these at 100 sim units per metre; scene.js COURT draws
-            // the model at 10x to match. KnotZ is the road's height (322 = 3.22 m, just over the
-            // 3.05 m rims); KnotBank is banked into each turn and flattened where the road lies on
-            // the court.
+            // it against the scan and prints these at 100 sim units per metre; models.js COURT
+            // draws the model at 10x to match. KnotZ is the road's 13 cm over the court (clear of
+            // the scan floor's lumps); KnotBank is the little bank that height allows.
             ["court"] = new(
                 "court",
                 TrackWidth: 84,
                 Knots:
                 [
-                    (-1213.1, 0), (-1213.1, 100), (-1191.8, 207.2), (-1131.1, 298), (-1040.2, 358.7), (-933.1, 380),
-                    (-794.8, 380), (-656.5, 380), (-518.3, 380), (-380, 380), (-253.3, 380), (-126.7, 380),
-                    (0, 380), (125.5, 358.7), (236.9, 297.1), (321.8, 202.2), (370.5, 84.6), (377.6, -42.5),
-                    (342.4, -164.9), (268.7, -268.7), (164.9, -342.4), (42.5, -377.6), (-84.6, -370.5), (-202.2, -321.8),
-                    (-297.1, -236.9), (-358.7, -125.5), (-380, 0), (-380, 126.7), (-380, 253.3), (-380, 380),
-                    (-380, 440), (-355.9, 530), (-290, 595.9), (-200, 620), (-76.3, 620), (47.3, 620),
-                    (171, 620), (294.7, 620), (418.4, 620), (542, 620), (665.7, 620), (789.4, 620),
-                    (913.1, 620), (1027.9, 597.2), (1125.2, 532.1), (1190.2, 434.8), (1213.1, 320), (1213.1, 213.3),
-                    (1213.1, 106.7), (1213.1, 0), (1213.1, -120), (1178.2, -250), (1083.1, -345.2), (953.1, -380),
-                    (823.1, -380), (693.1, -380), (590.5, -398.1), (500.2, -450.2), (433.3, -530), (366.3, -609.8),
-                    (276.1, -661.9), (173.5, -680), (0, -680), (-126.6, -680), (-253.3, -680), (-379.9, -680),
-                    (-506.5, -680), (-633.2, -680), (-759.8, -680), (-886.4, -680), (-1013.1, -680), (-1113.1, -653.2),
-                    (-1186.3, -580), (-1213.1, -480), (-1213.1, -360), (-1213.1, -240), (-1213.1, -120),
+                    (0, 530), (200, 530), (400, 520), (580, 480), (700, 370), (750, 220),
+                    (820, 90), (960, 40), (1090, -40), (1140, -190), (1090, -340), (960, -440),
+                    (800, -480), (640, -460), (500, -390), (390, -290), (270.5, -72.5), (263.1, 95.8),
+                    (160.6, 229.4), (0, 280), (-160.6, 229.4), (-263.1, 95.8), (-270.5, -72.5), (-180, -214.5),
+                    (-90, -310), (-80, -420), (-170, -500), (-320, -530), (-480, -520), (-650, -500),
+                    (-800, -430), (-940, -360), (-1070, -260), (-1130, -120), (-1110, 40), (-1010, 160),
+                    (-860, 210), (-740, 290), (-660, 420), (-550, 510), (-400, 530), (-200, 530),
                 ],
                 StepsPerSegment: 8,
                 Atmosphere: new PoCabinetAtmosphereWire
@@ -379,39 +370,20 @@ public static class PoCabinetTrackGeometry
             {
                 KnotZ =
                 [
-                    322, 311.7, 296.2, 276.5, 255.8, 235.3,
-                    215, 195, 175.8, 159.6, 148.1, 139.6,
-                    131.9, 124, 116, 108, 100, 92,
-                    84, 76, 68, 60, 52, 44,
-                    36, 28.3, 21.5, 16.2, 12.3, 10.3,
-                    12.9, 21.1, 33.2, 48.5, 67.2, 88.3,
-                    110, 131.7, 153.3, 175, 196.7, 218.2,
-                    239, 258.8, 278, 295.9, 309.6, 316.9,
-                    320, 322, 314.5, 302.4, 286.8, 270.6,
-                    255.2, 240.6, 226.8, 213.3, 200, 186.7,
-                    172.6, 158.3, 150.2, 155.2, 170, 187.5,
-                    205, 222.5, 240, 257.3, 273.8, 289.1,
-                    303, 313.9, 319.9, 321.8, 322,
+                    13, 13, 13, 13, 13, 13,
+                    13, 13, 13, 13, 13, 13,
+                    13, 13, 13, 13, 13, 13,
+                    13, 13, 13, 13, 13, 13,
+                    13, 13, 13, 13, 13, 13,
+                    13, 13, 13, 13, 13, 13,
+                    13, 13, 13, 13, 13, 13,
                 ],
                 KnotBank =
                 [
-                    0.042, 0.144, 0.222, 0.24, 0.216, 0.131, 0.036, 0, 0, 0, 0, 0.03,
-                    0.119, 0.208, 0.238, 0.238, 0.238, 0.238, 0.238, 0.238, 0.238, 0.238, 0.238, 0.238,
-                    0.238, 0.208, 0.119, 0.03, 0, 0.052, 0.092, 0.222, 0.234, 0.169, 0.054, 0,
-                    0, 0, 0, 0, 0, 0.037, 0.133, 0.217, 0.24, 0.22, 0.139, 0.04,
-                    0, 0.046, 0.153, 0.226, 0.224, 0.149, 0.011, -0.127, -0.214, -0.18, 0, 0.18,
-                    0.208, 0.117, 0.028, 0, 0, 0, 0, 0, 0, 0.051, 0.162, 0.231,
-                    0.233, 0.165, 0.053, 0, 0,
-                ],
-                KnotWidth =
-                [
-                    1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1.175,
-                    1.35, 1.35, 1.35, 1.35, 1.35, 1.35, 1.35, 1.35, 1.35, 1.35, 1.35, 1.35,
-                    1.35, 1.35, 1.35, 1.35, 1.35, 1.35, 1.175, 1, 1, 1, 1, 1,
-                    1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1,
-                    1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1,
-                    1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1,
-                    1, 1, 1, 1, 1,
+                    0.006, 0.031, 0.103, 0.103, 0.103, -0.051, -0.103, 0.062, 0.103, 0.103, 0.103, 0.103,
+                    0.103, 0.103, 0.103, 0.103, 0.077, -0.103, -0.103, -0.103, -0.103, -0.103, -0.103, -0.057,
+                    0.103, 0.103, 0.103, 0.103, 0.095, 0.097, 0.077, 0.103, 0.103, 0.103, 0.103, 0.103,
+                    -0.079, -0.103, 0.102, 0.103, 0.094, 0.017,
                 ],
                 Theme = "court",
             },

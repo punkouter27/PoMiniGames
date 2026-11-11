@@ -100,9 +100,9 @@ public static class PoCabinetCatalog
             "#ff7a1a", 1, "Medium"),
         new PoCabinetTrackInfo(
             "court",
-            "Rim to Rim",
-            "Toy-car circuit over a scanned basketball court: start on top of one rim, corkscrew down round the centre circle under your own flyover, climb onto the other rim half way round, then dip and climb back.",
-            "#e8712a", 1, "Hard"),
+            "Center Court",
+            "Toy-car circuit on the floor of a scanned outdoor basketball court: round the centre circle and both keys, the hoops and the trees towering over you.",
+            "#e8712a", 1, "Medium"),
     });
 
     /// <summary>The tracks that are campaign stages, in stage order (the first four of <see cref="Tracks"/>).</summary>

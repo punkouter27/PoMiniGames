@@ -1,9 +1,9 @@
 // PoCabinet race health: a 64-car field races Capitol (the reference), the Bedroom Floor GP (the
-// toy track laid in a room scan) and Rim to Rim (the toy track over a scanned basketball court) in
+// toy track laid in a room scan) and Center Court (the toy track on a scanned basketball court) in
 // the browser physics, and the race must flow: cars finish, nobody sits stalled for long, and the
 // field is not wrecked wholesale. The harness is deterministic (same world, same driver, same
 // numbers), so the bounds are fixed, with headroom over today's figures (capitol: 0 wrecks,
-// 0 stuck; bedroom: 4-6 wrecks, 0 stuck; court: 0-1 wrecks, 0 stuck, longest stall 1.6 s).
+// 0 stuck; bedroom: 4-6 wrecks, 0 stuck; court: 0 wrecks, 0-1 stuck, longest stall 4 s).
 //
 // Needs the worlds the page hands race.js, from the shared C#:
 //   dotnet run scripts/pocabinet/dump.cs -- artifacts/pocabinet-worlds capitol bedroom court

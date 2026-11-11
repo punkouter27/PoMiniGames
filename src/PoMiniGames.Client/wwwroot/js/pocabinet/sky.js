@@ -37,7 +37,7 @@ const PRESETS = {
     },
     // Bedroom Floor GP: indoors. The scan has no ceiling (it is cut off over the walls), so the
     // dome stands in for one: a dim warm grey, no clouds, the "sun" a ceiling light near overhead.
-    // Rim to Rim: an outdoor court on a sunny afternoon, the sun high and warm through the trees.
+    // Center Court: an outdoor court on a sunny afternoon, the sun high and warm through the trees.
     court: {
         zenith: '#3f80cf', sun: [0.42, 0.7, -0.35], sunColor: '#fff0d2', sunSize: 1.2,
         clouds: 0.3, cloudColor: '#ffffff',

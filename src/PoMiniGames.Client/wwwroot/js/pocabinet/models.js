@@ -2,7 +2,7 @@
 //
 // Tracks whose world is a loaded model rather than the scene's own terrain: the Playground
 // marble run (playground.glb) and the two scans (SCANS): the Bedroom Floor GP (bedroom.glb as the
-// collision model, the bedroom.ksplat Gaussian splat as what is drawn) and Rim to Rim (court.glb /
+// collision model, the bedroom.ksplat Gaussian splat as what is drawn) and Center Court (court.glb /
 // court.ksplat, an outdoor basketball court). MODEL_LOOKS is the one table scene.js asks
 // "does this track bring its own world, and how is it loaded". Every function takes the
 // SceneHandle first; scene.js keeps thin methods that call them. Render-only.
@@ -72,11 +72,11 @@ export const ROOM = {
     groundY: -0.2,       // scene units: the flat ground under the scan's floor
 };
 
-// Rim to Rim: wwwroot/models/court.glb, an outdoor basketball court that
+// Center Court: wwwroot/models/court.glb, an outdoor basketball court that
 // scripts/blender/pocabinet-court.py levels into the court frame (metres, floor on y = 0, x from
 // one backboard to the other), crops ~25 m round the court and checks the route against. Drawn at
 // 10x: 100 sim units per metre, the scale the track's knots were printed at, so a car is a ~28 cm
-// toy and the road crosses each 3.05 m rim on a deck just over it. The splat
+// toy racing on the court floor, under hoops ten times its length. The splat
 // (court.ksplat, scripts/blender/pocabinet-court-splat.py) is the same reconstruction as the mesh,
 // so it needs no registration, only the same frame. Past the scan the flat ground is lawn.
 export const COURT = {
@@ -87,7 +87,7 @@ export const COURT = {
     carpetHex: '#5d7a3a',
     lift: 1.0,
     splatLift: 0.82,
-    deckFrom: 14,        // the road lies on the court at 10 sim (8 cm): past this it stands on stilts
+    deckFrom: 20,        // the road lies on the court at 13 sim (13 cm): past this it would stand on stilts
     seam: 20,
     label: 'court',
     // The splat's court is fuzz a few centimetres either side of the floor: the lawn under it
@@ -240,8 +240,11 @@ export function buildRoomTrack(sh, group, atmosphere) {
     for (let i = 0; i < n; i++) { xs.push(t.x[i]); ys.push(t.y[i]); }
     const minX = Math.min(...xs), maxX = Math.max(...xs), minY = Math.min(...ys), maxY = Math.max(...ys);
     const w = (maxX - minX) / WORLD_SCALE + pad * 2, d = (maxY - minY) / WORLD_SCALE + pad * 2;
+    // No depth: it is transparent like the splat, and three sorts the two by distance every frame.
+    // Writing depth, whenever it drew first it hid the splat's floor just under it (half the
+    // floor's fuzz) and the ground below showed through, so the floor flickered with the camera.
     const catcher = new THREE.Mesh(new THREE.PlaneGeometry(w, d).rotateX(-Math.PI / 2),
-        new THREE.ShadowMaterial({ opacity: 0.32 }));
+        new THREE.ShadowMaterial({ opacity: 0.32, depthWrite: false }));
     catcher.position.set((minX + maxX) / 2 / WORLD_SCALE, 0.09, (minY + maxY) / 2 / WORLD_SCALE);
     catcher.receiveShadow = true;
     catcher.name = 'pocabinet-room-shadows';

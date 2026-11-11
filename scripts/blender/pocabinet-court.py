@@ -1,4 +1,4 @@
-"""PoCabinet "Rim to Rim": build the court model and the track from a scanned basketball court.
+"""PoCabinet "Center Court": build the court model and the track from a scanned basketball court.
 
 Headless Blender (5.x):
 
@@ -14,12 +14,10 @@ scan's up is -Y in its own frame, roughly a metre to the unit) and
 2. crops it to the court and its surroundings, drops the loose scraps the scan left floating in
    the air, decimates, shrinks the atlases and writes a Draco GLB to
    src/PoMiniGames.Client/wwwroot/models/court.glb (models.js COURT draws it at SIM_PER_M / 10);
-3. lays the lap (route_plan: lines and arcs from the start line over rim A, a corkscrew down
-   round the centre circle under its own flyover, the climb onto rim B half way round, and the
-   back leg down and up again to rim A) and checks it against the scan: the
-   car's space over every road sample is clear of the scan, nothing stands in the corridor, the
-   two levels of the flyover are far enough apart, no corner is tighter than the road is wide and
-   no grade is steeper than MAX_GRADE;
+3. lays the lap (route_plan: waypoints on the court floor, round both keys and most of the way
+   round the centre circle) and checks it against the scan: the car's space over every road
+   sample is clear of the scan, nothing stands in the corridor, no two parts of the lap share a
+   corridor, no corner is tighter than the road is wide and no grade is steeper than MAX_GRADE;
 4. prints the knots, KnotZ and KnotBank for
    PoCabinetTrackGeometry ("court"), already in sim units: x = SIM_PER_M * x, y = -SIM_PER_M * y
    (the GLB is Y-up, so court y is three's -z and the sim's y is three's z);
@@ -43,22 +41,13 @@ from mathutils.bvhtree import BVHTree
 REPO = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".."))
 OUT_GLB = os.path.join(REPO, "src", "PoMiniGames.Client", "wwwroot", "models", "court.glb")
 
-# 100 sim units per metre: a car (radius 14) is a ~28 cm toy, a little longer than the rim is
-# wide, and a lap round the court comes out near 9,400 units, about 75 s: three of them is a
-# four-minute race.
+# 100 sim units per metre: a car (radius 14) is a ~28 cm toy on the court, and a lap of the
+# middle of it comes out near 6,000 units, about 50 s: three of them is a 2.5-minute race.
 SIM_PER_M = 100.0
 TRACK_WIDTH = 84.0           # sim; PoCabinetTrackGeometry["court"].TrackWidth
 RUN_OFF = 26.0                # physics.js RUN_OFF: the barrier stands this far past the road edge
 STEPS = 8                     # StepsPerSegment
-KNOT_SPACING = 1.25           # metres between knots
-
-# Regulation hoop: the rim's centre is 15 cm + its 22.9 cm radius out from the board's face, and
-# 3.05 m up. The road crosses each rim parallel to its board, a little court-side of the rim's
-# centre so the barrier clears the board, and its deck sits just over the rim.
-RIM_FROM_BOARD = 0.38
-ROAD_FROM_BOARD = 0.8         # the corridor (road + run-off, 0.68 m each side) clears the board by 12 cm
-RIM_DECK = 3.22               # m: the road over the rims (start line and grid on A, half way on B)
-FLOOR_DECK = 0.08             # m: the road where it lies on the court
+FLOOR_DECK = 0.13             # m: the road lies on the court, clear of the scan floor's lumps
 
 # Where the scan is: rough positions of the two hoops in the scan's own (flipped) frame, used only
 # to find the court before the frame is known.
@@ -71,133 +60,43 @@ DECIMATE = 0.6
 TEXTURE_SHRINK = 2            # 2048x4096 atlases -> 1024x2048
 
 HEADROOM = 0.22               # m of scan-free space a toy car needs over the road
-CROSS_CLEAR = 0.6             # m between the two levels where the route crosses itself
+CROSS_CLEAR = 0.6             # m between two levels if the route ever crosses itself
 MAX_GRADE = 0.2
 
-LOOP_R = 3.8                  # m: the corkscrew round the centre circle
-# The corkscrew's road is this much wider than the rest (KnotWidth): at the normal width a 100-car
-# field runs wide all the way round it and a third of the laps break track limits.
-LOOP_WIDTH = 1.35
+LOOP_R = 2.8                  # m: the swing round the centre circle (its paint is 1.8 m out)
 
 
 def route_plan(half):
-    """The route as turtle moves from the start line, in court metres (x from board A to board B,
-    y to the left of that, z up). `half` is half the distance between the boards. Each move is
-    ("line", length, z_at_end), ("arc", radius, degrees (+ = left), z_at_end), ("line_to_x", x,
-    z_at_end) or ("line_to_start", z); a z of None holds the height. A trailing string marks the
-    knot the move ends on."""
-    xa, xb = -(half - ROAD_FROM_BOARD), half - ROAD_FROM_BOARD
-    start = (xa, 0.0, -90.0)          # over rim A, heading -y
-    moves = [
-        # Off the top of rim A and down: a left-hander onto the run in along y = -LOOP_R.
-        ("line", 1.0, RIM_DECK - 0.04),
-        ("arc", 2.8, 90, 2.35),
-        ("line", (xa + 2.8) * -1 - LOOP_R, 1.55, "flyover"),       # to where the loop comes back under
-        # The corkscrew: once round the centre circle, down to the floor, under the run in.
-        ("line", LOOP_R, 1.32, "loop"),
-        ("arc", LOOP_R, 270, 0.2),
-        ("line", LOOP_R, FLOOR_DECK, "underpass"),
-        # Out along the far side and the long climb, spiralling up onto rim B.
-        ("line", 6.2 - LOOP_R - 1.8, FLOOR_DECK),
-        ("arc", 1.8, 90, 0.45),
-        ("line", (xb - 3.0) - (-LOOP_R + 1.8), 2.4),
-        ("arc", 3.0, 90, RIM_DECK - 0.06),
-        ("line", 6.2 - 3.0, RIM_DECK, "mid"),
-        # Half way: over rim B, on past it and round to the left, dropping off the deck.
-        ("line", 1.2, RIM_DECK - 0.02),
-        ("arc", 2.6, 90, 2.7),
-        ("line", 2.6, 2.4),
-        # The back leg: out wide of the loop, down along the far side and the climb back up.
-        ("arc", 3.0, -60, 2.0),
-        ("arc", 3.0, 60, 1.6),
-        ("line_to_x", 0.0, 1.35),
-        ("line_to_x", xa + 2.0, 2.75),
-        # Round onto rim A's line and down the start deck the grid stands on, to the line.
-        ("arc", 2.0, 90, RIM_DECK - 0.04),
-        ("line_to_start", RIM_DECK),
+    """The lap as waypoints in court metres (x from board A to board B, y to the left of that),
+    every one a knot, all on the floor. Knot 0 is the start line, half way down the straight
+    along the near sideline; the grid stands behind it on the straight. Then a sweep up past
+    key B and a hairpin round its top, back in to the centre circle and once most of the way round
+    it, out along the far sideline, a hairpin round key A and back onto the straight. `half` (half
+    the board-to-board distance) is only checked: the hairpins stay inside the boards."""
+    loop = [(LOOP_R * math.cos(math.radians(a)), LOOP_R * math.sin(math.radians(a)))
+            for a in (15, -20, -55, -90, -125, -160, 165, 130)]
+    pts = [
+        (0.0, -5.3), (2.0, -5.3), (4.0, -5.2), (5.8, -4.8), (7.0, -3.7), (7.5, -2.2),
+        (8.2, -0.9), (9.6, -0.4), (10.9, 0.4), (11.4, 1.9), (10.9, 3.4), (9.6, 4.4),
+        (8.0, 4.8), (6.4, 4.6), (5.0, 3.9), (3.9, 2.9),
+        *loop,
+        (-0.9, 3.1), (-0.8, 4.2), (-1.7, 5.0), (-3.2, 5.3), (-4.8, 5.2), (-6.5, 5.0), (-8.0, 4.3),
+        (-9.4, 3.6), (-10.7, 2.6), (-11.3, 1.2), (-11.1, -0.4), (-10.1, -1.6), (-8.6, -2.1),
+        (-7.4, -2.9), (-6.6, -4.2), (-5.5, -5.1), (-4.0, -5.3), (-2.0, -5.3),
     ]
-    return start, moves
+    assert max(abs(x) for x, _ in pts) + (TRACK_WIDTH / 2 + RUN_OFF) / SIM_PER_M < half, "a hairpin reaches a backboard"
+    return pts
 
 
 def build_route(half):
-    """Knots [(x, y, z)] in court metres and the indices of the marked knots."""
-    (x, y, hd), moves = route_plan(half)
-    knots = [(x, y, RIM_DECK)]
-    marks = {}
-    z = RIM_DECK
-
-    def push(nx, ny, nz):
-        knots.append((nx, ny, nz))
-
-    for mv in moves:
-        kind = mv[0]
-        z0 = z
-        if kind == "line":
-            length, z = mv[1], (mv[2] if mv[2] is not None else z)
-            n = max(1, round(length / KNOT_SPACING))
-            dx, dy = math.cos(math.radians(hd)), math.sin(math.radians(hd))
-            for k in range(1, n + 1):
-                t = k / n
-                push(x + dx * length * t, y + dy * length * t, z0 + (z - z0) * t)
-            x, y = x + dx * length, y + dy * length
-        elif kind == "arc":
-            r, deg, z = mv[1], mv[2], (mv[3] if mv[3] is not None else z)
-            side = 1 if deg > 0 else -1
-            cx = x + r * math.cos(math.radians(hd + 90 * side))
-            cy = y + r * math.sin(math.radians(hd + 90 * side))
-            a0 = math.atan2(y - cy, x - cx)
-            # A knot at least every 30 degrees, or the spline cuts a tight bend's corner.
-            n = max(math.ceil(abs(deg) / 30), round(abs(math.radians(deg)) * r / KNOT_SPACING))
-            for k in range(1, n + 1):
-                t = k / n
-                a = a0 + math.radians(deg) * t
-                push(cx + r * math.cos(a), cy + r * math.sin(a), z0 + (z - z0) * t)
-            x, y = knots[-1][0], knots[-1][1]
-            hd += deg
-        elif kind == "line_to_x":
-            # Straight on (heading along ±x) until x reaches the target.
-            length = abs(mv[1] - x)
-            z = mv[2]
-            n = max(1, round(length / KNOT_SPACING))
-            dx, dy = math.cos(math.radians(hd)), math.sin(math.radians(hd))
-            for k in range(1, n + 1):
-                t = k / n
-                push(x + dx * length * t, y + dy * length * t, z0 + (z - z0) * t)
-            x, y = x + dx * length, y + dy * length
-        elif kind == "line_to_start":
-            # Straight down the start deck to the knot before knot 0 (the loop closes there).
-            sx, sy, _ = knots[0]
-            length = math.hypot(sx - x, sy - y)
-            n = max(1, round(length / KNOT_SPACING))
-            for k in range(1, n):
-                t = k / n
-                push(x + (sx - x) * t, y + (sy - y) * t, mv[1])
-        if isinstance(mv[-1], str):
-            marks[mv[-1]] = len(knots) - 1
-    # Round off the height profile's corners (where one grade meets the next), twice; the
-    # rims stay exactly at deck height.
-    pinned = {0, marks["mid"]}
-    for _ in range(2):
-        zs = [k[2] for k in knots]
-        n = len(zs)
-        knots = [(x, y, z if i in pinned else (zs[i - 1] + 2 * z + zs[(i + 1) % n]) / 4)
-                 for i, (x, y, z) in enumerate(knots)]
-    return knots, marks
+    """Knots [(x, y, z)] in court metres and the indices of any marked knots (none: a circuit
+    on one level)."""
+    return [(x, y, FLOOR_DECK) for x, y in route_plan(half)], {}
 
 
 def widths(knots, marks):
-    """Road width per knot as a share of TRACK_WIDTH: LOOP_WIDTH round the corkscrew, easing in
-    and out over a knot either side."""
-    lo, hi = marks["loop"], marks["underpass"]
-    out = []
-    for i in range(len(knots)):
-        if lo <= i <= hi:
-            out.append(LOOP_WIDTH)
-        elif i in (lo - 1, hi + 1):
-            out.append(round((1 + LOOP_WIDTH) / 2, 3))
-        else:
-            out.append(1.0)
-    return out
+    """Road width per knot as a share of TRACK_WIDTH: the same all the way round."""
+    return [1.0] * len(knots)
 
 
 def args():
@@ -445,9 +344,8 @@ def check_route(bvh, knots, marks):
                 problems.append(f"samples {a} and {b} share a corridor {gap:.2f} m apart in height")
             else:
                 crossings.add((a // STEPS, b // STEPS))
-    mid = length[marks["mid"] * STEPS]
     print(f"ROUTE {len(knots)} knots, {n} samples, lap {length[-1]:.1f} m = {length[-1] * SIM_PER_M:.0f} sim, "
-          f"rim B at {mid * SIM_PER_M:.0f} sim, road {min(zs):.2f}..{max(zs):.2f} m, "
+          f"road {min(zs):.2f}..{max(zs):.2f} m, "
           f"flyover knots {sorted(crossings)[:1]}..{sorted(crossings)[-1:] if crossings else ''}")
     for p in problems[:300]:
         print("PROBLEM", p)
@@ -473,10 +371,11 @@ def print_csharp(knots, marks):
     b = banks(sk, share)
     for i in range(0, len(b), 12):
         print("CSHARP     " + ", ".join(f"{v:g}" for v in b[i:i + 12]) + ",")
-    print("CSHARP KnotWidth:")
-    for i in range(0, len(share), 12):
-        print("CSHARP     " + ", ".join(f"{v:g}" for v in share[i:i + 12]) + ",")
-    print(f"CSHARP rim B (half way) is knot {marks['mid']}; StepsPerSegment {STEPS}")
+    if any(v != 1 for v in share):
+        print("CSHARP KnotWidth:")
+        for i in range(0, len(share), 12):
+            print("CSHARP     " + ", ".join(f"{v:g}" for v in share[i:i + 12]) + ",")
+    print(f"CSHARP StepsPerSegment {STEPS}")
 
 
 def write_fixture(path, knots):
@@ -542,8 +441,8 @@ def preview(path, sampled, marks):
         mesh.materials.append(mat)
         bpy.context.scene.collection.objects.link(bpy.data.objects.new(name, mesh))
     # Start and finish lines.
-    for key, color in (("start", (1, 1, 1, 1)), ("mid", (0.1, 0.1, 0.1, 1))):
-        i = 0 if key == "start" else marks["mid"] * STEPS
+    for key, color in (("start", (1, 1, 1, 1)),):
+        i = 0
         j = (i + 1) % n
         tx, ty = xs[j] - xs[i - 1], ys[j] - ys[i - 1]
         tl = math.hypot(tx, ty)

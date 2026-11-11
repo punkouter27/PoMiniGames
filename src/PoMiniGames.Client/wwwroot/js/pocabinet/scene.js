@@ -27,7 +27,7 @@
 //     boards and corner numbers (trackside.js)
 //   • sky dome (sky.js) and trackside scenery (scenery.js), dressed by track.theme
 //   • Playground only: the imported playground.glb (see PLAYGROUND)
-//   • Bedroom Floor GP and Rim to Rim: a scan the toy road is laid in (bedroom.glb / court.glb and
+//   • Bedroom Floor GP and Center Court: a scan the toy road is laid in (bedroom.glb / court.glb and
 //     their Gaussian splats, see models.js SCANS)
 //
 // World mapping: sim (x, y) → three (x / 10, h, y / 10). h is the road's height (track.z,
