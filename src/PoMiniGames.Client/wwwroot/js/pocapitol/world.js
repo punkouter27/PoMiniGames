@@ -490,10 +490,21 @@ function updateOfficers(state, difficulty, dt) {
     const humanRaider = state.role === 'raider' && state.health > 0;
     // Slots: the front rank spreads along the line and bows back as the line weakens;
     // anyone beyond the front rank stands in reserve behind it.
+    // Sort active officers per line so un-staggered officers fill the front rank first
+    // and sort laterally by X so neighbors slide smoothly to close gaps (#4).
     const ranks = lineDefs.map(() => 0), standing = lineDefs.map(() => 0);
+    const byLine = lineDefs.map(() => []);
     for (const e of state.enemies) {
         while (e.line < lineDefs.length && state.lines[e.line].state === 'broken') e.line++;
-        if (e.health > 0 && e.line < lineDefs.length) standing[e.line]++;
+        if (e.health > 0 && e.line < lineDefs.length) {
+            standing[e.line]++;
+            byLine[e.line].push(e);
+        }
+    }
+    const rankOf = new Map();
+    for (let i = 0; i < lineDefs.length; i++) {
+        byLine[i].sort((a, b) => ((a.stagger > 0 ? 1 : 0) - (b.stagger > 0 ? 1 : 0)) || (a.x - b.x));
+        byLine[i].forEach((e, idx) => rankOf.set(e, idx));
     }
     for (const e of state.enemies) {
         e.attacking = Math.max(0, e.attacking - dt);
@@ -510,7 +521,7 @@ function updateOfficers(state, difficulty, dt) {
             const rank = ranks[lineDefs.length - 1]++;
             slot = { x: (rank % 5 - 2) * 1.3, z: -51 - Math.floor(rank / 5) * 0.9 }; field = LAST_POST_FIELD;
         } else {
-            const rank = ranks[e.line]++, span = def.x1 - def.x0;
+            const rank = rankOf.get(e) ?? ranks[e.line]++, span = def.x1 - def.x0;
             const perRow = Math.min(Math.floor(span / 1.7), standing[e.line]), row = Math.floor(rank / perRow);
             const x = def.x0 + (rank % perRow + 0.5) * span / perRow;
             const bow = (1 - line.integrity / 100) * 1.4 * Math.cos(Math.PI * (x - (def.x0 + def.x1) / 2) / span);
@@ -518,7 +529,7 @@ function updateOfficers(state, difficulty, dt) {
         }
         const distance = Math.hypot(slot.x - e.x, slot.z - e.z), fromX = e.x, fromZ = e.z;
         if (distance > 0.15) {
-            const target = field < 0 || distance < 3 ? slot : routeTarget(e, field, slot);
+            const target = field < 0 || distance < 3 ? slot : routeTarget(e, field, slot, state);
             const dx = target.x - e.x, dz = target.z - e.z, d = Math.hypot(dx, dz) || 1;
             const step = Math.min(d, (e.health <= 0 ? 1.5 : 4.6) * dt);
             relocate(state, e, e.x + dx / d * step, e.z + dz / d * step, false);
@@ -532,12 +543,17 @@ function updateOfficers(state, difficulty, dt) {
         if (!e.moving) e.heading = Math.PI;
         if (e.cooldown > 0) continue;
         // Nearest person pressing from the front: baton at arm's length, spray beyond it.
-        let target = null, nearest = state.armed ? 24 : e.spray <= 0 ? 4.5 : 1.9;
+        // Prioritize shield-bearers & surging instigators within reach (#5).
+        let target = null, nearest = state.armed ? 24 : e.spray <= 0 ? 4.5 : 1.9, bestScore = Infinity;
         for (const actor of humanRaider ? [state.player, ...state.companions] : state.companions) {
             if (actor !== state.player && (actor.health <= 0 || actor.retreating)) continue;
             if (actor.z < e.z) continue;
             const d = Math.hypot(actor.x - e.x, actor.z - e.z);
-            if (d < nearest && d > 0.01) { nearest = d; target = actor; }
+            if (d < nearest && d > 0.01) {
+                const priority = (actor.hasShield ? -0.45 : 0) + ((actor.surge ?? 0) > 0 ? -0.25 : 0);
+                const score = d + priority;
+                if (score < bestScore) { bestScore = score; nearest = d; target = actor; }
+            }
         }
         if (!target || (nearest > 1.9 && !clearLine(e.x, e.z, target.x, target.z))) { e.cooldown = 0.3; continue; }
         const dx = (target.x - e.x) / nearest, dz = (target.z - e.z) / nearest;
@@ -577,16 +593,51 @@ function updateOfficers(state, difficulty, dt) {
     }
 }
 
+/** Finds the least-defended x segment along a holding police line (#2). */
+function weakestLineX(state, lineIndex, fallbackX = 0) {
+    const def = lineDefs[lineIndex];
+    if (!def || state.lines[lineIndex]?.state !== 'holding') return fallbackX;
+    const bins = 5, span = def.x1 - def.x0;
+    const strength = new Float32Array(bins);
+    for (const e of state.enemies) {
+        if (e.health <= 0 || e.line !== lineIndex) continue;
+        const b = Math.max(0, Math.min(bins - 1, Math.floor(((e.x - def.x0) / span) * bins)));
+        strength[b] += e.stagger > 0 ? 0.35 : 1;
+    }
+    let bestBin = 2, bestVal = strength[2];
+    for (let b = 0; b < bins; b++) {
+        if (strength[b] + 0.05 < bestVal) { bestVal = strength[b]; bestBin = b; }
+    }
+    return def.x0 + (bestBin + 0.5) * (span / bins);
+}
+
+/** Nearest cover point behind a column or statue relative to the line ahead (#6). */
+function nearestCoverPoint(actor) {
+    let best = null, bestD = 7;
+    for (const c of [...columns, ...statues]) {
+        const d = Math.hypot(c.x - actor.x, c.z - actor.z);
+        if (d < bestD && walkable(c.x, c.z + 1.35)) {
+            bestD = d;
+            best = { x: c.x, z: c.z + 1.35 };
+        }
+    }
+    return best;
+}
+
 /** Decides what every raider wants this step; steering then works out how they move. */
 function planRaiders(state, difficulty, dt, agents, bodies) {
     if (state.role !== 'none' && state.health > 0) bodies.push(state.player);
     for (const e of state.enemies) if (e.health > 0) bodies.push(e);
     const down = state.armed ? [] : state.companions.filter(c => c.health <= 0 && !c.helped);
+    const frontIdx = state.lines.findIndex(l => l.state === 'holding');
+    const weakX = frontIdx >= 0 ? weakestLineX(state, frontIdx, 0) : 0;
     for (const c of state.companions) {
         c.attacking = Math.max(0, c.attacking - dt);
         c.sprayed = Math.max(0, c.sprayed - dt);
         c.stun = Math.max(0, c.stun - dt);
         c.surge = Math.max(0, c.surge - dt);
+        c.suppression = Math.max(0, (c.suppression ?? 0) - dt * 0.65);
+        c.rallyCooldown = Math.max(0, (c.rallyCooldown ?? (5 + c.id % 11)) - dt);
         c.cooldown -= dt;
         c.moving = false;
         let goal, field, speed = c.speed;
@@ -614,6 +665,19 @@ function planRaiders(state, difficulty, dt, agents, bodies) {
                 const base = baseMorale[c.temperament];
                 c.morale += Math.sign(base - c.morale) * Math.min(Math.abs(base - c.morale), 0.08 * dt);
             }
+            // Social contagion (#7): nearby retreating/downed neighbors erode morale; surging neighbors boost it.
+            if ((c.retreatingNear ?? 0) >= 3 && c.temperament !== 'pusher') {
+                c.morale = Math.max(0, c.morale - 0.12 * dt);
+            } else if ((c.surgingNear ?? 0) >= 2 && !gassed && c.temperament !== 'bystander') {
+                c.morale = Math.min(1, c.morale + 0.1 * dt);
+                if (c.surge <= 0 && c.morale > 0.65) c.surge = 1.6;
+            }
+            // Coordinated surge waves (#3): high-morale pushers packed at the line trigger a local surge pulse.
+            if (c.temperament === 'pusher' && !c.retreating && !gassed && c.morale > 0.72 &&
+                c.crowding >= 3 && lineAhead(state, c) < 3.5 && c.rallyCooldown <= 0) {
+                c.surge = Math.max(c.surge, 2.8);
+                c.rallyCooldown = 14 + c.id % 9;
+            }
             // Worn-out people drop back to catch their breath, then drift forward again.
             if (!state.armed && (c.retreating || lineAhead(state, c) > 6)) c.health = Math.min(30, c.health + 1 * dt);
             if (c.morale < 0.25 || (!state.armed && c.health < 6)) c.retreating = true;
@@ -623,31 +687,47 @@ function planRaiders(state, difficulty, dt, agents, bodies) {
                 c.milestone++; c.routeWait = 0;
                 state.events.push({ type: 'advance', x: c.x, z: c.z });
             }
+            // Smarter street medic triage (#8): prioritize un-gassed or severely injured casualties & escort briefly.
             const patient = c.temperament === 'medic' && !c.retreating ? down.reduce((best, d) => {
                 const distance = Math.hypot(d.x - c.x, d.z - c.z);
-                return distance < 14 && (!best || distance < best.distance) ? { actor: d, distance } : best;
+                if (distance >= 14) return best;
+                const gasPenalty = inGas(state, d) ? 3.5 : 0;
+                const triageBonus = (d.harm?.hits ?? 0) * 1.2 + Math.min(2, d.downFor * 0.25);
+                const score = distance + gasPenalty - triageBonus;
+                return !best || score < best.score ? { actor: d, distance, score } : best;
             }, null) : null;
             const standoff = c.temperament === 'pusher' || (c.temperament === 'follower' && c.morale > 0.7) ? 0
                 : c.temperament === 'follower' ? 2.6 + c.id % 3 * 0.7 : c.temperament === 'medic' ? 6 : 9 + c.id % 6;
             let stand = false;
+            const cover = state.armed && (c.suppression ?? 0) > 0.65 && c.temperament !== 'pusher' ? nearestCoverPoint(c) : null;
             if (c.stun > 0) stand = true;
             else if (c.retreating) {
                 field = c.milestone > 0 ? c.milestone - 1 : AID_FIELD;
                 goal = c.milestone > 0 ? milestones[c.milestone - 1] : aidStation;
                 if (Math.hypot(c.x - goal.x, c.z - goal.z) < 4) stand = true;
+            } else if (cover) {
+                goal = cover; field = -1; speed *= 1.15;
             } else if (patient && clearLine(c.x, c.z, patient.actor.x, patient.actor.z)) {
-                if (patient.distance < 1.6) { patient.actor.helped = true; stand = true; }
+                if (patient.distance < 1.6) { patient.actor.helped = true; c.escortUntil = state.elapsed + 2.0; c.escortTarget = patient.actor; stand = true; }
                 else { goal = patient.actor; field = -1; }
+            } else if (c.temperament === 'medic' && (c.escortUntil ?? 0) > state.elapsed && c.escortTarget && !c.escortTarget.resting) {
+                goal = { x: c.escortTarget.x - 0.8, z: c.escortTarget.z + 0.6 }; field = -1; speed = 1.6;
             } else if (c.milestone >= c.reach || c.milestone >= milestones.length || lineAhead(state, c) <= standoff) {
                 // Nothing to push toward: mill about, the way most of a crowd does.
+                // Filming bystanders (#9) step back if the front line is too close and frame clear sightlines.
                 if (!c.milling) { c.milling = true; c.anchorX = c.x; c.anchorZ = c.z; }
+                const frontZ = frontIdx >= 0 ? lineDefs[frontIdx].z : -20;
+                const tooClose = c.filming && c.z - frontZ < 5.5 ? 2.0 : 0;
                 goal = { x: c.anchorX + Math.sin(state.elapsed * 0.31 + c.id * 1.9) * 2.2,
-                    z: c.anchorZ + Math.cos(state.elapsed * 0.27 + c.id * 0.7) * 1.6 };
+                    z: c.anchorZ + tooClose + Math.cos(state.elapsed * 0.27 + c.id * 0.7) * 1.6 };
                 field = -1; speed = 1.1;
                 if (!walkable(goal.x, goal.z)) stand = true;
             } else {
                 const milestone = milestones[c.milestone];
-                goal = { x: milestone.x + (c.id % 7 - 3) * 0.45, z: milestone.z }; field = c.milestone;
+                const flankX = c.temperament === 'pusher' && c.milestone === frontIdx
+                    ? weakX * 0.55 + (c.id % 7 - 3) * 0.45
+                    : milestone.x + (c.id % 7 - 3) * 0.45;
+                goal = { x: flankX, z: milestone.z }; field = c.milestone;
             }
             if (!(c.milestone >= c.reach || lineAhead(state, c) <= standoff) || c.retreating) c.milling = false;
             if (stand) goal = null;
@@ -661,12 +741,12 @@ function planRaiders(state, difficulty, dt, agents, bodies) {
             c.routeWait -= dt;
             if (field < 0) { c.targetX = goal.x; c.targetZ = goal.z; }
             else if (c.routeWait <= 0 || Math.hypot(c.targetX - c.x, c.targetZ - c.z) < 0.4) {
-                const next = routeTarget(c, field, goal);
+                const next = routeTarget(c, field, goal, state);
                 c.targetX = next.x; c.targetZ = next.z;
                 c.routeWait = 0.2;
             }
         } else { c.targetX = c.x; c.targetZ = c.z; speed = 0; }
-        agents.push({ id: c.id, x: c.x, z: c.z, targetX: c.targetX, targetZ: c.targetZ, speed, mass: massOf(c), actor: c });
+        agents.push({ id: c.id, x: c.x, z: c.z, targetX: c.targetX, targetZ: c.targetZ, speed, mass: massOf(c), temperament: c.temperament, actor: c });
     }
 }
 
@@ -806,6 +886,7 @@ export function advance(state, input, seconds) {
                     if (d <= 0.01 || d >= 1.6) continue;
                     other.startle = state.elapsed ?? 0;
                     other.startleDx = dx / d; other.startleDz = dz / d;
+                    other.suppression = Math.min(1, (other.suppression ?? 0) + 0.5);
                 }
             }
             blow(state, 'impact', shot.x, shot.z, 520, 'body', { round: true, zone: hitZone });
@@ -882,11 +963,21 @@ function stepRaiders(state, difficulty, dt) {
         const dx = actor.x - fromX, dz = actor.z - fromZ, moved = Math.hypot(dx, dz);
         if (held !== null || moved < Math.hypot(agent.nextX - fromX, agent.nextZ - fromZ) * 0.5) steering.stop(actor.id);
         actor.crowding = agent.crowding;
+        actor.retreatingNear = agent.retreatingNear ?? 0;
+        actor.surgingNear = agent.surgingNear ?? 0;
         actor.moving = moved > 0.3 * dt;
         // What the body is doing, in m/s, for the contact pass below and for the sound of a crowd's friction.
         actor.vx = dt > 0 ? dx / dt : 0; actor.vz = dt > 0 ? dz / dt : 0;
         if (moved > 0.6 * dt) actor.heading = Math.atan2(-dx, -dz);
-        else if (actor.health > 0 && !actor.retreating) actor.heading = 0;
+        else if (actor.health > 0 && !actor.retreating) {
+            // Filming bystanders (#9) orient their camera toward the active front line.
+            const frontIdx = state.lines.findIndex(l => l.state === 'holding');
+            if (actor.filming && frontIdx >= 0) {
+                actor.heading = Math.atan2(actor.x, actor.z - lineDefs[frontIdx].z);
+            } else {
+                actor.heading = 0;
+            }
+        }
     }
     stepContacts(state, dt);
 }
