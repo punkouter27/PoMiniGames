@@ -1,4 +1,4 @@
-// Node harness for PoCabinet: a full 100-car solo race on the repo's own physics.js/track.js,
+// Node harness for PoCabinet: a full 64-car solo race on the repo's own physics.js/track.js,
 // the same loop as race.js soloTick + lapBookkeeping (and PoCabinetLapVerifier.Replay).
 //
 //   node harness.mjs race <trackId> [driver=clean|messy|wild] [wet=0|1]   → stats + proof line
@@ -57,7 +57,7 @@ export function race(id, driver = 'clean', wet = false, opts = {}) {
         // Player controls, quantised before stepping exactly as race.js does.
         let c = ph.aiControls(track, player.body, persona, ph.MAX_SPEED, skill, bodies, grip);
         if (driver === 'wild') {
-            const t = elapsed % 8;
+            const t = elapsed % (opts.wildPeriod ?? 8);
             if (t < 0.6) c = { throttle: 1, brake: 0, steer: 0.8 };
         }
         const q = [Math.round(c.throttle * 1000), Math.round(c.brake * 1000), Math.round(c.steer * 1000)];

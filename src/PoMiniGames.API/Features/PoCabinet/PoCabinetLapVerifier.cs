@@ -7,7 +7,7 @@ namespace PoMiniGames.Features.PoCabinet;
 /// Server-side proof for a solo best lap. The browser runs solo races itself, so a
 /// bare "my best lap was 31.2 s" is just a number anyone can POST. Instead the page sends the
 /// player's controls for every race tick and this class re-runs the whole race — the player
-/// plus all 99 rivals, contacts included — through <see cref="PoCabinetPhysics"/> and
+/// plus all 63 rivals, contacts included — through <see cref="PoCabinetPhysics"/> and
 /// <see cref="PoCabinetAiDriver"/>. The lap time that gets stored is the one computed here.
 ///
 /// <para>

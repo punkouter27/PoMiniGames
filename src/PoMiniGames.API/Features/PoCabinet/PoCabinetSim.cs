@@ -354,7 +354,7 @@ public sealed record PoCabinetPersonality(
     ];
 
     /// <summary>
-    /// The 99 rivals of a solo race in grid order: the four officials, then 95 field racers from
+    /// The 63 rivals of a solo race in grid order: the four officials, then 59 field racers from
     /// the quickest to the slowest. Qualifying order on purpose: a grid sorted any other way has
     /// to overtake itself, and a hundred cars doing that on a 27-second lap is a traffic jam,
     /// not a race. A field racer's pace comes from its index; so does its personality, every

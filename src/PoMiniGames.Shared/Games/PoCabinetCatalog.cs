@@ -19,23 +19,23 @@ public static class PoCabinetCatalog
     /// budgeted for this many cars, which is why online did not grow with the solo field.</summary>
     public const int CarCount = 8;
 
-    /// <summary>Cars in a solo or demo race: 99 rivals and the player. The whole
+    /// <summary>Cars in a solo or demo race: 63 rivals and the player. The whole
     /// race runs in the browser, so only the lap verifier pays for it server-side.</summary>
-    public const int SoloCarCount = 100;
+    public const int SoloCarCount = 64;
 
     /// <summary>The player's grid slot in a solo race: mid-pack, quicker cars ahead and slower
     /// behind. Rival i takes slot i, or i + 1 from here back. Mirrors physics.js PLAYER_SLOT.</summary>
-    public const int SoloPlayerSlot = 50;
+    public const int SoloPlayerSlot = 32;
 
-    /// <summary>Solo places that mean something, now that "the podium" is 3 of 100 and the
-    /// player starts 51st: the top ten earn the fanfare and count as a win, a top-quarter finish
-    /// clears a campaign stage, and a top-ten finish in the final race wins the trophy. Set from
-    /// headless runs in the real page with the throttle held and both driver aids on, which
-    /// finished 4th-25th on the circuits and 15th on the Playground run: a stage takes a little
-    /// more than that, the trophy takes driving.</summary>
-    public const int SoloFrontRunners = 10;
-    public const int CampaignPassPlace = 25;
-    public const int CampaignTrophyPlace = 10;
+    /// <summary>Solo places that mean something, now that "the podium" is 3 of 64 and the
+    /// player starts 33rd: the top six earn the fanfare and count as a win, a top-quarter finish
+    /// clears a campaign stage, and a top-six finish in the final race wins the trophy. First set
+    /// for a 100-car field (top ten, top 25) from headless runs in the real page with the throttle
+    /// held and both driver aids on, and scaled with the field: a stage takes a little more than
+    /// the aids alone, the trophy takes driving.</summary>
+    public const int SoloFrontRunners = 6;
+    public const int CampaignPassPlace = 16;
+    public const int CampaignTrophyPlace = 6;
 
     /// <summary>Default track when none is specified (matches the championship opening leg).</summary>
     public const string DefaultTrackId = "capitol";
@@ -98,6 +98,11 @@ public static class PoCabinetCatalog
             "Bedroom Floor GP",
             "Toy-car circuit on a scanned bedroom floor: past the drum kit and the closet, a banked ramp up onto the floor cushion, a drop off its end and an S round the office chair.",
             "#ff7a1a", 1, "Medium"),
+        new PoCabinetTrackInfo(
+            "court",
+            "Rim to Rim",
+            "Toy-car circuit over a scanned basketball court: start on top of one rim, corkscrew down round the centre circle under your own flyover, climb onto the other rim half way round, then dip and climb back.",
+            "#e8712a", 1, "Hard"),
     });
 
     /// <summary>The tracks that are campaign stages, in stage order (the first four of <see cref="Tracks"/>).</summary>

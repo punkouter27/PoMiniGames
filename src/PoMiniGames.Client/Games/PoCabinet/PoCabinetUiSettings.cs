@@ -28,7 +28,7 @@ public sealed class PoCabinetUiSettings
     public string SteeringAssist { get; set; } = "light";
     public bool AutoBrake { get; set; }
     /// <summary>
-    /// The scanned rooms (the bedroom track): "splat" draws the Gaussian-splat scan (a 9.6 MB
+    /// The scanned tracks (the bedroom, the court): "splat" draws the Gaussian-splat scan (a 9.6 MB
     /// download, heavier on phones), "mesh" the lite mesh it collides with. JS key <c>roomDetail</c>.
     /// </summary>
     public string RoomDetail { get; set; } = "splat";

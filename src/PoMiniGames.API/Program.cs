@@ -402,7 +402,7 @@ app.Use(async (ctx, next) =>
 var contentTypeProvider = new Microsoft.AspNetCore.StaticFiles.FileExtensionContentTypeProvider();
 contentTypeProvider.Mappings[".glb"] = "model/gltf-binary";
 contentTypeProvider.Mappings[".gltf"] = "model/gltf+json";
-// PoCabinet's Bedroom Floor GP draws its room as a Gaussian splat (wwwroot/models/bedroom.ksplat).
+// PoCabinet's scanned tracks draw their scans as Gaussian splats (wwwroot/models/bedroom.ksplat, court.ksplat).
 contentTypeProvider.Mappings[".ksplat"] = "application/octet-stream";
 
 app.UseStaticFiles(new Microsoft.AspNetCore.Builder.StaticFileOptions

@@ -1,8 +1,9 @@
 // pocabinet/models.js
 //
 // Tracks whose world is a loaded model rather than the scene's own terrain: the Playground
-// marble run (playground.glb) and the Bedroom Floor GP (bedroom.glb as the collision model, the
-// bedroom.ksplat Gaussian splat as what is drawn). MODEL_LOOKS is the one table scene.js asks
+// marble run (playground.glb) and the two scans (SCANS): the Bedroom Floor GP (bedroom.glb as the
+// collision model, the bedroom.ksplat Gaussian splat as what is drawn) and Rim to Rim (court.glb /
+// court.ksplat, an outdoor basketball court). MODEL_LOOKS is the one table scene.js asks
 // "does this track bring its own world, and how is it loaded". Every function takes the
 // SceneHandle first; scene.js keeps thin methods that call them. Render-only.
 
@@ -67,7 +68,40 @@ export const ROOM = {
     splatLift: 0.78,      // the splat's, once linearized: it reads brighter than the mesh, so a touch down
     deckFrom: 8,         // sim height past which the road is off the carpet: decked, on stilts
     seam: 20,            // sim units between the toy track's moulded joints (= audio.js SEAM_SPACING)
+    label: 'room',
+    groundY: -0.2,       // scene units: the flat ground under the scan's floor
 };
+
+// Rim to Rim: wwwroot/models/court.glb, an outdoor basketball court that
+// scripts/blender/pocabinet-court.py levels into the court frame (metres, floor on y = 0, x from
+// one backboard to the other), crops ~25 m round the court and checks the route against. Drawn at
+// 10x: 100 sim units per metre, the scale the track's knots were printed at, so a car is a ~28 cm
+// toy and the road crosses each 3.05 m rim on a deck just over it. The splat
+// (court.ksplat, scripts/blender/pocabinet-court-splat.py) is the same reconstruction as the mesh,
+// so it needs no registration, only the same frame. Past the scan the flat ground is lawn.
+export const COURT = {
+    url: 'models/court.glb',
+    splat: 'models/court.ksplat',            // 400k splats, 9.6 MB
+    splatLow: 'models/court-low.ksplat',     // 100k, ~2.4 MB
+    scale: 10,
+    carpetHex: '#5d7a3a',
+    lift: 1.0,
+    splatLift: 0.82,
+    deckFrom: 14,        // the road lies on the court at 10 sim (8 cm): past this it stands on stilts
+    seam: 20,
+    label: 'court',
+    // The splat's court is fuzz a few centimetres either side of the floor: the lawn under it
+    // goes down out of its way (it only shows past the edge of the scan).
+    groundY: -1.5,
+};
+
+/** The scanned tracks, by scene theme (terrain.js isScan). */
+export const SCANS = { bedroom: ROOM, court: COURT };
+
+/** The scan the handle's track is laid over (the bedroom's when unsure). */
+export function scanOf(sh) {
+    return SCANS[sh?.theme] || ROOM;
+}
 
 /** Sim-unit ring of the model's footprint, or null on tracks without a model. */
 export function keepOutFor(trackId) {
@@ -122,13 +156,13 @@ function mouldingTexture() {
 }
 
 /** The moulding overlay: one strip over the road, u across its width, v one per seam. */
-function mouldingStrip(t) {
+function mouldingStrip(t, seam) {
     const n = t.count;
     const pos = [], uv = [], idx = [];
     for (let i = 0; i <= n; i++) {
         const k = i % n;
         const nx = -t.ty[k], ny = t.tx[k];
-        const v = (i === n ? t.length : t.cum[k]) / ROOM.seam;
+        const v = (i === n ? t.length : t.cum[k]) / seam;
         for (const [lat, u] of [[-t.hw[k], 0], [t.hw[k], 1]]) {
             pos.push((t.x[k] + nx * lat) / WORLD_SCALE, 0.035 + roadPlane(t, k, lat) / WORLD_SCALE, (t.y[k] + ny * lat) / WORLD_SCALE);
             uv.push(u, v);
@@ -149,14 +183,15 @@ function mouldingStrip(t) {
 export function buildRoomTrack(sh, group, atmosphere) {
     const t = sh.track;
     const n = t.count;
-    const overlay = new THREE.Mesh(mouldingStrip(t), new THREE.MeshBasicMaterial({
+    const scan = scanOf(sh);
+    const overlay = new THREE.Mesh(mouldingStrip(t, scan.seam), new THREE.MeshBasicMaterial({
         color: 0x000000, map: mouldingTexture(), transparent: true, depthWrite: false,
         polygonOffset: true, polygonOffsetFactor: -2, polygonOffsetUnits: -2, side: THREE.DoubleSide,
     }));
     overlay.name = 'pocabinet-room-moulding';
     overlay.renderOrder = 1;
     group.add(overlay);
-    const up = (i) => !!t.z && Math.min(t.z[i], t.z[(i + 1) % n]) > ROOM.deckFrom;
+    const up = (i) => !!t.z && Math.min(t.z[i], t.z[(i + 1) % n]) > scan.deckFrom;
     const deckMat = new THREE.MeshStandardMaterial({
         color: hex(atmosphere.roadHex, '#d9581a').multiplyScalar(0.62), roughness: 0.6, metalness: 0, side: THREE.DoubleSide,
     });
@@ -168,15 +203,25 @@ export function buildRoomTrack(sh, group, atmosphere) {
     }
     sh.roadMesh.castShadow = true;
 
-    // Stilts: a pair every few samples under the deck's edges, floor to deck.
+    // Stilts: a pair every few samples under the deck's edges, floor to deck; none where it would
+    // stand in a lower part of the lap (the court's flyover passes over its own road).
     const spots = [];
+    const onLowerRoad = (sx, sy, h, i) => {
+        for (let k = 0; k < n; k++) {
+            if (Math.abs(k - i) < 40 && Math.abs(k - i) < n - 40) continue;
+            const dx = t.x[k] - sx, dy = t.y[k] - sy;
+            if (t.z[k] < h - 20 && dx * dx + dy * dy < (wallFace(t, k, 1) + 4) ** 2) return true;
+        }
+        return false;
+    };
     for (let i = 0; i < n; i += 4) {
         if (!up(i)) continue;
         for (const s of [-1, 1]) {
             const lat = s * (wallFace(t, i, s) - 3);
             const h = roadPlane(t, i, lat) / WORLD_SCALE;
-            const x = (t.x[i] - t.ty[i] * lat) / WORLD_SCALE, z = (t.y[i] + t.tx[i] * lat) / WORLD_SCALE;
-            spots.push([x, h, z]);
+            const sx = t.x[i] - t.ty[i] * lat, sy = t.y[i] + t.tx[i] * lat;
+            if (onLowerRoad(sx, sy, h * WORLD_SCALE, i)) continue;
+            spots.push([sx / WORLD_SCALE, h, sy / WORLD_SCALE]);
         }
     }
     if (spots.length) {
@@ -267,12 +312,13 @@ export async function loadRoom(sh, group) {
     const detail = sh.roomDetail || (sh.roomDetail = storedRoomDetail());
     if (sh.quality !== 'low' && detail !== 'mesh' && await loadRoomSplat(sh, group)) return;
     if (sh.disposed || sh.trackGroup !== group) return;
-    await sh.loadModel(group, ROOM.url, ROOM.scale, 'pocabinet-room', (o) => {
+    const scan = scanOf(sh);
+    await sh.loadModel(group, scan.url, scan.scale, 'pocabinet-room', (o) => {
         o.castShadow = false;
         o.receiveShadow = false;
         for (const m of [o.material].flat()) {
             m.toneMapped = false;
-            m.color?.multiplyScalar(ROOM.lift);
+            m.color?.multiplyScalar(scan.lift);
         }
     });
 }
@@ -343,7 +389,7 @@ function progressBar(sh) {
     };
 }
 
-async function makeViewer(sh, group, GS, url, onProgress) {
+async function makeViewer(sh, group, GS, url, scale, onProgress) {
     const viewer = new GS.DropInViewer({
         gpuAcceleratedSort: false,
         sharedMemoryForWorkers: false,   // no cross-origin isolation on this site
@@ -360,7 +406,7 @@ async function makeViewer(sh, group, GS, url, onProgress) {
             progressiveLoad: false,
             position: [0, 0, 0],
             rotation: upright.toArray(),
-            scale: [ROOM.scale, ROOM.scale, ROOM.scale],
+            scale: [scale, scale, scale],
             onProgress: (percent) => onProgress?.(Number(percent) || 0),
         });
     } catch (e) {
@@ -382,18 +428,19 @@ async function makeViewer(sh, group, GS, url, onProgress) {
  * false (and nothing added) if the library, the file or the GPU says no, or the track changed.
  */
 export async function loadRoomSplat(sh, group) {
+    const scan = scanOf(sh);
     const bar = progressBar(sh);
     sh.roomProgress = bar;
     try {
         const GS = await import('gaussian-splats-3d');
         if (sh.disposed || sh.trackGroup !== group) return false;
-        const low = await makeViewer(sh, group, GS, ROOM.splatLow, (p) => bar.set(p * 0.25, 'Loading room'));
+        const low = await makeViewer(sh, group, GS, scan.splatLow, scan.scale, (p) => bar.set(p * 0.25, `Loading ${scan.label}`));
         if (!low) return false;
         low.name = 'pocabinet-room-splat';
         group.add(low);
         sh.roomSplat = low;
         // The sharp version, behind the light one; any failure just keeps the light one.
-        makeViewer(sh, group, GS, ROOM.splat, (p) => bar.set(25 + p * 0.75, 'Sharpening room'))
+        makeViewer(sh, group, GS, scan.splat, scan.scale, (p) => bar.set(25 + p * 0.75, `Sharpening ${scan.label}`))
             .then((full) => {
                 if (!full) return;
                 if (sh.roomSplat !== low) { disposeViewer(full); return; }
@@ -422,7 +469,7 @@ export function setRoomDetail(sh, detail) {
     if (sh.roomDetail === next) return;
     sh.roomDetail = next;
     const group = sh.trackGroup;
-    if (!sh.room || !group) return;
+    if (!sh.scan || !group) return;
     disposeRoomSplat(sh);
     const mesh = group.getObjectByName('pocabinet-room');
     if (mesh) {
@@ -440,6 +487,7 @@ export function setRoomDetail(sh, detail) {
 export const MODEL_LOOKS = {
     playground: { load: (sh, group) => sh.loadPlayground(group) },
     bedroom: { load: (sh, group) => sh.loadRoom(group) },
+    court: { load: (sh, group) => sh.loadRoom(group) },
 };
 
 /**
@@ -457,7 +505,7 @@ export function syncRoomSplat(sh) {
         const out = 'gl_FragColor = vec4(color.rgb, opacity);';
         if (!mat.fragmentShader.includes(out)) return;
         mat.uniforms.pcLinear = { value: 1 };
-        mat.uniforms.pcLift = { value: ROOM.splatLift };
+        mat.uniforms.pcLift = { value: scanOf(sh).splatLift };
         mat.fragmentShader = mat.fragmentShader
             .replace('void main () {', 'uniform float pcLinear;\nuniform float pcLift;\nvoid main () {')
             .replace(out, 'color = mix(color, pow(max(color, vec3(0.0)), vec3(2.2)) * pcLift, pcLinear);\n' + out);

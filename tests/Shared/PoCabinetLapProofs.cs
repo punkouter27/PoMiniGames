@@ -5,7 +5,7 @@ namespace PoMiniGames.TestUtilities;
 /// <c>track.js</c>, driven headlessly through the same loop as <c>race.js</c> soloTick), each
 /// with the best lap the JS side timed. PoCabinetLapVerifier must reproduce that time from
 /// the input log alone — these are the JS↔C# mirror contract pinned as data. Every run is the
-/// full 100-car solo race (the player from grid slot 50), so the AI, the grid and the hull
+/// full 64-car solo race (the player from grid slot 32), so the AI, the grid and the hull
 /// contacts are all in the replay; "wild" also throws itself at the barrier every eight
 /// seconds. Regenerate (don't hand-edit) if either physics copy changes on purpose.
 /// </summary>

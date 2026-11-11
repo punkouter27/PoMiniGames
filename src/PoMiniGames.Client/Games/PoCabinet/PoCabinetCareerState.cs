@@ -73,8 +73,8 @@ public sealed class PoCabinetCareerState
         }
     }
 
-    /// <summary>Advance to the next stage on a top-quarter finish in the 100-car field
-    /// (<see cref="PoCabinetCatalog.CampaignPassPlace"/>); a top-ten finish in the final race wins the trophy.</summary>
+    /// <summary>Advance to the next stage on a top-quarter finish in the 64-car field
+    /// (<see cref="PoCabinetCatalog.CampaignPassPlace"/>); a top-six finish in the final race wins the trophy.</summary>
     public async Task RecordStageResultAsync(int stageIndex, int finishPosition)
     {
         if (finishPosition <= PoCabinetCatalog.CampaignPassPlace && stageIndex == Current.CurrentStageIndex)

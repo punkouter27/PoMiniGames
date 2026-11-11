@@ -159,11 +159,11 @@ const BLUE_LIFT = 0.95;
 const WRONG_WAY = 2;
 const GRID_COLUMN = 22;
 const GRID_ROW = 50;
-/** Solo and demo races: 99 rivals and the player. */
-const SOLO_RIVALS = 99;
+/** Solo and demo races: 63 rivals and the player (PoCabinetCatalog.SoloCarCount - 1). */
+const SOLO_RIVALS = 63;
 /** The player's grid slot in a solo race: mid-pack, quicker cars ahead and slower behind.
  *  Rival i of soloField() takes slot i, or i + 1 from here back. */
-export const PLAYER_SLOT = 50;
+export const PLAYER_SLOT = 32;
 
 /** A driver's lapses are drawn once per stretch of road this long, and last this far into it (see lapse()). */
 const LAPSE_STRETCH = 380;
@@ -194,7 +194,7 @@ const FIELD_FIRST = ['Dana', 'Kyle', 'Priya', 'Omar', 'Lena', 'Marcus', 'Ines', 
 const FIELD_LAST = ['K.', 'R.', 'D.', 'W.', 'M.'];
 
 /**
- * The 99 rivals of a solo race in grid order: the four officials, then 95 field racers
+ * The 63 rivals of a solo race in grid order: the four officials, then 59 field racers
  * from the quickest to the slowest. Qualifying order on purpose: a grid sorted any other
  * way has to overtake itself, and a hundred cars doing that on a 27-second lap is a
  * traffic jam, not a race. A field racer's pace comes from its index; so does its
@@ -217,7 +217,7 @@ export function soloField() {
         const pace = 1 - i / (n - 1);
         field.push({
             // The surname rotates with the first name too: by i / 19 alone, the 19 quickest (the
-            // front of the grid, the timing tower) were all "K.". Still 95 distinct names.
+            // front of the grid, the timing tower) were all "K.". Still 59 distinct names.
             id: 'field', name: `${FIELD_FIRST[i % FIELD_FIRST.length]} ${FIELD_LAST[(i % FIELD_FIRST.length + Math.floor(i / FIELD_FIRST.length)) % FIELD_LAST.length]}`,
             color: `hsl(${Math.round(d * 360)}, ${55 + Math.round(a * 35)}%, ${32 + Math.round(b * 30)}%)`,
             maxSpeed: MAX_SPEED * (0.7 + 0.2 * pace + 0.03 * a),

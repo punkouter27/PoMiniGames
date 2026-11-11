@@ -5,7 +5,7 @@
 //   solo      — the whole race simulates here (physics.js, the same model the
 //               server runs), fixed 30 Hz ticks, rendered interpolated at the
 //               display rate. A HUD snapshot goes to Blazor every tick. The field
-//               is 100 cars: the player in grid slot 50 and the 99
+//               is 64 cars: the player in grid slot 32 and the 63
 //               rivals of physics.soloField(). Everything per-car below is sized
 //               for that: only the nearest cars are drawn in full (the rest are one
 //               instanced mesh, cars.js CarCrowd) or heard, and the HUD snapshot
@@ -1118,8 +1118,8 @@ class Race {
         if (me && me.finished && !m.finished) {
             m.finished = true;
             scenery?.exciteCrowd(1);
-            // The podium, or the top ten of the 100-car solo field (PoCabinetCatalog.SoloFrontRunners).
-            const front = me.position <= (this.cars.length > 8 ? 10 : 3);
+            // The podium, or the top six of the 64-car solo field (PoCabinetCatalog.SoloFrontRunners).
+            const front = me.position <= (this.cars.length > 8 ? 6 : 3);
             audio.cheer(front ? 1 : 0.5);
             this.cue('finish', front ? 1 : 0.5);
             if (front && !this.scene.fx.reduced) this.fx?.confetti(me.render.x / WS, me.render.y / WS, 160, me.render.h);

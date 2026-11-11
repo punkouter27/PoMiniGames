@@ -27,7 +27,8 @@
 //     boards and corner numbers (trackside.js)
 //   • sky dome (sky.js) and trackside scenery (scenery.js), dressed by track.theme
 //   • Playground only: the imported playground.glb (see PLAYGROUND)
-//   • Bedroom Floor GP: the imported bedroom.glb, a scanned room the road is laid in (see ROOM)
+//   • Bedroom Floor GP and Rim to Rim: a scan the toy road is laid in (bedroom.glb / court.glb and
+//     their Gaussian splats, see models.js SCANS)
 //
 // World mapping: sim (x, y) → three (x / 10, h, y / 10). h is the road's height (track.z,
 // tilted across by track.bank) on the road and its run-off out to the barriers, and the
@@ -70,12 +71,12 @@ import { Scenery } from './scenery.js';
 import { PostFx } from './postfx.js';
 import { Grass } from './grass.js';
 import { asphalt, grass as grassTextures, macro, clock, reflective } from './materials.js';
-import { Terrain, themeOf, isPlayground, isRoom, wallFace } from './terrain.js';
+import { Terrain, themeOf, isPlayground, isRoom, isScan, wallFace } from './terrain.js';
 import { Trackside } from './trackside.js';
 import { gravel, sand, limitStripes } from './surfaces.js';
 import { WORLD_SCALE } from './util.js';
 import { barrier, barrierTexture, disposeObject, flatGround, hex, ribbon, startLine } from './meshes.js';
-import { PLAYGROUND, ROOM, keepOutFor } from './models.js';
+import { PLAYGROUND, keepOutFor, scanOf } from './models.js';
 import { SHADOW_EXTENT } from './cameras.js';
 import * as cams from './cameras.js';
 import * as models from './models.js';
@@ -135,8 +136,9 @@ class SceneHandle {
         this.roadRefl = { value: 0.02 };   // the road's reflectivity for postfx.js, set by setWeather
         this.theme = 'capitol';
         this.playground = false;
-        this.room = false;        // a road laid in a scanned room (isRoom): the model is the world
-        this.roomSplat = null;    // the bedroom's Gaussian splat (DropInViewer), when it loaded
+        this.room = false;        // indoors (isRoom, the bedroom): no rain
+        this.scan = false;        // a toy road laid over a scan (isScan): the model is the world
+        this.roomSplat = null;    // the scan's Gaussian splat (DropInViewer), when it loaded
         this.roomProgress = null; // its loading bar over the canvas
         this.roomDetail = null;   // 'splat' | 'mesh' (lite); read from the stored settings when unset
         this.sky = null;
@@ -452,6 +454,7 @@ class SceneHandle {
         this.theme = themeOf(t);
         this.playground = isPlayground(t);
         this.room = isRoom(t);
+        this.scan = isScan(t);
         // Where a model is the world (the Playground, the bedroom) the scene adds no terrain,
         // trackside props or grass of its own.
         const modelWorld = this.playground || !!models.MODEL_LOOKS[this.theme];
@@ -479,10 +482,11 @@ class SceneHandle {
                 console.warn('pocabinet/scene: terrain skipped', e);
             }
         }
-        if (!ground && this.room) {
-            // Under the scan's floor (it dips to -0.07): shows only through holes in the scan.
-            ground = flatGround(world, new THREE.MeshStandardMaterial({ color: ROOM.carpetHex, roughness: 1, metalness: 0 }), reach, tile);
-            ground.position.y = -0.2;
+        if (!ground && this.scan) {
+            // Under the scan's floor (it dips to -0.07): shows through holes in the scan and, past
+            // the edge of an outdoor scan, runs on to the fog.
+            ground = flatGround(world, new THREE.MeshStandardMaterial({ color: scanOf(this).carpetHex, roughness: 1, metalness: 0 }), reach, tile);
+            ground.position.y = scanOf(this).groundY;
         }
         if (!ground) ground = flatGround(world, groundMat, reach, tile);
         group.add(ground);
@@ -493,8 +497,8 @@ class SceneHandle {
         const built = (i) => t.built(i);
         // The Playground keeps the straight-up normals it always had; a hill shades as one.
         const flat = this.playground;
-        // The bedroom's road is a toy track: smooth moulded plastic, not tarmac.
-        const roadMat = this.room
+        // A scan's road is a toy track: smooth moulded plastic, not tarmac.
+        const roadMat = this.scan
             ? models.toyRoadMaterial(atmosphere)
             : reflective(macro(new THREE.MeshStandardMaterial({
                 color: hex(atmosphere.roadHex, '#393b42'), roughness: 1, metalness: 0,
@@ -534,7 +538,7 @@ class SceneHandle {
                     group.add(chute);
                 }
             }
-        } else if (this.room) {
+        } else if (this.scan) {
             this.buildRoomTrack(group, atmosphere);
         } else {
             this.buildRunoff(group, atmosphere, groundMat, tile);
@@ -690,7 +694,7 @@ class SceneHandle {
         }
         this.grass = null;
         const blades = GRASS_BLADES[this.quality] || 0;
-        if (!this.track || !blades || this.theme === 'pressbriefing' || this.room) return;
+        if (!this.track || !blades || this.theme === 'pressbriefing' || this.scan) return;
         try {
             this.grass = new Grass(this.track, hex(this.baseAtmosphere?.groundHex, '#2a3a24'), blades, {
                 keepOut: keepOutFor(this.track.id), terrain: this.terrain, playground: this.playground,
@@ -710,7 +714,7 @@ class SceneHandle {
         return models.syncRoomSplat(this);
     }
 
-    /** 'splat' (full) or 'mesh' (lite) for the room scan: swaps it live on the bedroom. */
+    /** 'splat' (full) or 'mesh' (lite) for the scan: swaps it live on a scanned track. */
     setRoomDetail(detail) {
         return models.setRoomDetail(this, detail);
     }

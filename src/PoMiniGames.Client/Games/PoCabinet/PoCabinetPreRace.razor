@@ -36,9 +36,9 @@
                 <PoCabinetTrackSelector SelectedTrackId="@TrackId" SelectedTrackIdChanged="TrackIdChanged" Campaign="true" />
                 @if (HasRoomScan(TrackId))
                 {
-                    @* The scanned room's own choice, beside the track it is for (the Settings tab has it too). *@
-                    <div class="pocabinet-prerace__room" role="radiogroup" aria-label="Room scan">
-                        <span>Room scan <small>Full is a 9.6 MB download; Lite is lighter on phones</small></span>
+                    @* The scanned track's own choice, beside the track it is for (the Settings tab has it too). *@
+                    <div class="pocabinet-prerace__room" role="radiogroup" aria-label="Scan detail">
+                        <span>Scan detail <small>Full is a 9.6 MB download; Lite is lighter on phones</small></span>
                         <span class="pocabinet-prerace__pills">
                             @foreach (var (value, text) in RoomOptions)
                             {
@@ -84,9 +84,10 @@
     /// <summary>An arrow key moved the selection: focus follows it after the render.</summary>
     private bool _focusTab;
 
-    /// <summary>The tracks drawn from a room scan (scene.js loads its splat): the bedroom.</summary>
+    /// <summary>The tracks drawn from a scan (scene.js loads its splat): the bedroom and the court.</summary>
     public static bool HasRoomScan(string? trackId) =>
-        string.Equals(trackId, "bedroom", StringComparison.OrdinalIgnoreCase);
+        string.Equals(trackId, "bedroom", StringComparison.OrdinalIgnoreCase)
+        || string.Equals(trackId, "court", StringComparison.OrdinalIgnoreCase);
 
     private async Task SetRoomDetailAsync(string value)
     {

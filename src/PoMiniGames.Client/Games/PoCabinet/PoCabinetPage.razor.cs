@@ -128,10 +128,10 @@ public partial class PoCabinetPageBase : ComponentBase, IAsyncDisposable
         ? $"A hundred cars race themselves, covered like TV: the director cuts to the closest battles. {RaceLength}."
         : IsMultiplayerMode
             ? $"Everyone who joins lands in one lobby — first in hosts and picks the track. {RaceLength}."
-            : $"Pick a track and take on 99 rivals from the middle of the grid. {RaceLength}; a top-{PoCabinetCatalog.CampaignPassPlace} finish moves the campaign on.";
+            : $"Pick a track and take on {PoCabinetCatalog.SoloCarCount - 1} rivals from the middle of the grid. {RaceLength}; a top-{PoCabinetCatalog.CampaignPassPlace} finish moves the campaign on.";
 
     /// <summary>The place that earns the fanfare and counts as a win: the podium in a
-    /// multiplayer-sized field, the top ten of the 100-car solo field.</summary>
+    /// multiplayer-sized field, the top six of the 64-car solo field.</summary>
     private int FrontRunnerCut => _totalCars > PoCabinetCatalog.CarCount ? PoCabinetCatalog.SoloFrontRunners : 3;
 
     /// <summary>"3 laps" on a circuit; the Playground run is point-to-point, once.</summary>

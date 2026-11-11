@@ -94,8 +94,8 @@ public class PoCabinetRouteUiTests
             await page.Locator(".pocabinet-track").First.WaitForAsync(new() { Timeout = 30_000 });
             var ids = await page.Locator(".pocabinet-track").EvaluateAllAsync<string[]>(
                 "els => els.map(e => e.getAttribute('data-track-id'))");
-            ids.Should().Equal(["capitol", "maralago", "pressbriefing", "playground", "senate", "bedroom", PoMiniGames.Shared.Games.PoCabinetDailyTrack.TodayId(DateTime.UtcNow)],
-                "the track selector renders the six themed tracks and today's daily circuit, in campaign order");
+            ids.Should().Equal(["capitol", "maralago", "pressbriefing", "playground", "senate", "bedroom", "court", PoMiniGames.Shared.Games.PoCabinetDailyTrack.TodayId(DateTime.UtcNow)],
+                "the track selector renders the seven themed tracks and today's daily circuit, in campaign order");
         }
     }
 }

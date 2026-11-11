@@ -1,12 +1,12 @@
-// PoCabinet race health: a 100-car field races Capitol (the reference) and the Bedroom Floor GP
-// (the toy track laid in a room scan) in the browser physics, and the race must flow: cars
-// finish, nobody sits stalled for long, and the field is not wrecked wholesale. The harness is
-// deterministic (same world, same driver, same numbers), so the bounds are fixed, with headroom
-// over today's figures (capitol clean: 1 wreck, 2 stuck; bedroom clean: 12 wrecks, 0 stuck;
-// bedroom messy: 23 wrecks, 8 stuck, longest stall 15 s).
+// PoCabinet race health: a 64-car field races Capitol (the reference), the Bedroom Floor GP (the
+// toy track laid in a room scan) and Rim to Rim (the toy track over a scanned basketball court) in
+// the browser physics, and the race must flow: cars finish, nobody sits stalled for long, and the
+// field is not wrecked wholesale. The harness is deterministic (same world, same driver, same
+// numbers), so the bounds are fixed, with headroom over today's figures (capitol: 0 wrecks,
+// 0 stuck; bedroom: 4-6 wrecks, 0 stuck; court: 0-1 wrecks, 0 stuck, longest stall 1.6 s).
 //
 // Needs the worlds the page hands race.js, from the shared C#:
-//   dotnet run scripts/pocabinet/dump.cs -- artifacts/pocabinet-worlds capitol bedroom
+//   dotnet run scripts/pocabinet/dump.cs -- artifacts/pocabinet-worlds capitol bedroom court
 //   node --test tests/pocabinet-race-health.test.mjs
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
@@ -16,6 +16,7 @@ const { race } = await import(new URL('../scripts/pocabinet/harness.mjs', import
 const BOUNDS = {
     capitol: { wrecked: 5, stuckEvents: 15, maxStuck: 10 },
     bedroom: { wrecked: 30, stuckEvents: 25, maxStuck: 30 },
+    court: { wrecked: 10, stuckEvents: 15, maxStuck: 15 },
 };
 
 for (const [id, max] of Object.entries(BOUNDS)) {

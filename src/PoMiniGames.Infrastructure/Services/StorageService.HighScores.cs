@@ -387,7 +387,8 @@ public partial class StorageService
             // will fall through to default as well until the descriptor is updated.
             TrackId = string.IsNullOrWhiteSpace(e.TrackId) ? "capitol" : e.TrackId.Trim().ToLowerInvariant(),
             BestLapSeconds = double.IsFinite(e.BestLapSeconds) ? Math.Clamp(e.BestLapSeconds, 0.001, 3600) : 0,
-            FinalPosition = e.FinalPosition is >= 1 and <= 100 ? e.FinalPosition : 1, // PoCabinetCatalog.SoloCarCount
+            // 100, not PoCabinetCatalog.SoloCarCount (64): rows posted from the old 100-car field keep their place.
+            FinalPosition = e.FinalPosition is >= 1 and <= 100 ? e.FinalPosition : 1,
             IsGuest = e.IsGuest,
             Date = DefaultDate(e.Date),
             GameCode = SanitizeName(e.GameCode),

@@ -140,13 +140,13 @@ public class PoCabinetTests
     /// <summary>
     /// Every catalog track (and today's daily circuit) has its own geometry, not the fallback,
     /// and a theme the scene dresses (terrain.js THEMES); an AI official drives one full lap of
-    /// each under the server physics; and the bedroom's centerline is the one
-    /// scripts/blender/pocabinet-bedroom.py checked against the room scan (its --fixture output),
+    /// each under the server physics; and the bedroom's and the court's centerlines are the ones
+    /// scripts/blender/pocabinet-bedroom.py and pocabinet-court.py checked against their scans (--fixture),
     /// so the road the script cleared of furniture is the road the race is run on.
     /// </summary>
     private static void EveryTrack_IsDefinedAndThemed_AnOfficialFinishesALap_AndTheBlenderRouteIsTheRaceRoad()
     {
-        string[] sceneThemes = ["capitol", "maralago", "pressbriefing", "senate", "playground", "bedroom"];
+        string[] sceneThemes = ["capitol", "maralago", "pressbriefing", "senate", "playground", "bedroom", "court"];
         var ids = PoCabinetCatalog.Tracks.Select(t => t.Id).Append(PoCabinetDailyTrack.TodayId(DateTime.UtcNow)).ToList();
         var official = PoCabinetPersonality.Roster[0];
         foreach (var id in ids)
@@ -163,14 +163,19 @@ public class PoCabinetTests
             car.LapsDone.Should().BeGreaterThanOrEqualTo(1, $"an official completes a full lap of {id}");
         }
 
-        using var fixture = System.Text.Json.JsonDocument.Parse(
-            File.ReadAllText(Path.Combine(AppContext.BaseDirectory, "Fixtures", "pocabinet-bedroom-centerline.json")));
-        var script = fixture.RootElement.GetProperty("centerXY").EnumerateArray().Select(e => e.GetDouble()).ToArray();
-        var game = PoCabinetTrackGeometry.BuildCenterlineXY(PoCabinetTrackGeometry.Get("bedroom"));
-        game.Should().HaveSameCount(script, "the script and the game sample the same knots at the same steps");
-        // The knots are printed to 0.1 sim unit, so the two splines agree to well under a unit.
-        Enumerable.Range(0, game.Length).Max(i => Math.Abs(game[i] - script[i])).Should().BeLessThan(0.5,
-            "the bedroom route the Blender script checked is the road PoCabinet races");
+        // The scanned tracks: pocabinet-bedroom.py and pocabinet-court.py each write the centerline
+        // they checked against their scan.
+        foreach (var scanned in new[] { "bedroom", "court" })
+        {
+            using var fixture = System.Text.Json.JsonDocument.Parse(
+                File.ReadAllText(Path.Combine(AppContext.BaseDirectory, "Fixtures", $"pocabinet-{scanned}-centerline.json")));
+            var script = fixture.RootElement.GetProperty("centerXY").EnumerateArray().Select(e => e.GetDouble()).ToArray();
+            var game = PoCabinetTrackGeometry.BuildCenterlineXY(PoCabinetTrackGeometry.Get(scanned));
+            game.Should().HaveSameCount(script, $"the {scanned} script and the game sample the same knots at the same steps");
+            // The knots are printed to 0.1 sim unit, so the two splines agree to well under a unit.
+            Enumerable.Range(0, game.Length).Max(i => Math.Abs(game[i] - script[i])).Should().BeLessThan(0.5,
+                $"the {scanned} route the Blender script checked is the road PoCabinet races");
+        }
     }
 
     private static void EachOfficial_LapsOnItsOwnLine_AndAHumanCarObeysInputsAndTheBarrier()

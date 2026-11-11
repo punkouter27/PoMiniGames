@@ -1,14 +1,19 @@
 // Regenerates tests/Shared/Fixtures/pocabinet-lap-proofs.txt from the browser physics.
 // PoCabinetScoreStorageTests needs capitol messy < clean < wild; the field is chaotic, so the
-// messy driver's line offset is searched until that holds.
+// wild driver's swerve period and the messy driver's line offset are searched until that holds.
 import fs from 'node:fs';
 import { race } from './harness.mjs';
 
 const out = process.argv[2];
 const line = (name, r) => `${name} ${r.id} ${r.wet ? 1 : 0} ${r.inputs} ${r.playerBest}`;
 const clean = race('capitol', 'clean');
-const wild = race('capitol', 'wild');
-if (!(wild.playerBest > clean.playerBest)) throw new Error(`wild ${wild.playerBest} not slower than clean ${clean.playerBest}`);
+let wild = null;
+for (const period of [8, 6, 5, 7, 4, 9, 10, 3]) {
+    const r = race('capitol', 'wild', false, { wildPeriod: period });
+    console.log('wild period', period, r.playerBest);
+    if (r.playerBest > clean.playerBest) { wild = r; break; }
+}
+if (!wild) throw new Error(`no wild swerve period is slower than clean ${clean.playerBest}`);
 let messy = null;
 for (const off of [0.3, 0.2, 0.4, 0.1, 0.5, 0.6, -0.1, -0.2, 0.7, 0.15, 0.25, 0.35, 0.45, -0.3, 0.05]) {
     const r = race('capitol', 'messy', false, { messyOffset: off });

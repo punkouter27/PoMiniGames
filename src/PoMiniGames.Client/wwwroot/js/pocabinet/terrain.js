@@ -38,7 +38,7 @@ const HILLS = {
     senate: { near: 170, far: 400 },
 };
 
-const THEMES = new Set(['capitol', 'maralago', 'pressbriefing', 'senate', 'playground', 'bedroom']);
+const THEMES = new Set(['capitol', 'maralago', 'pressbriefing', 'senate', 'playground', 'bedroom', 'court']);
 
 /** The scenery theme a track is dressed in: its own word, else its id, else Capitol. */
 export function themeOf(track) {
@@ -52,6 +52,14 @@ export function themeOf(track) {
  *  scenery, the road is plastic on the carpet and up on stilts where it climbs. */
 export function isRoom(track) {
     return themeOf(track) === 'bedroom';
+}
+
+/** A toy track laid over a scan (models.js SCANS): the bedroom, indoors, and Rim to Rim, the
+ *  outdoor basketball court. The scan is the ground and the scenery; the road is moulded plastic,
+ *  on stilts wherever it is off the floor. */
+export function isScan(track) {
+    const t = themeOf(track);
+    return t === 'bedroom' || t === 'court';
 }
 
 /** The Playground run: a road in the air over a model, with its own (older) staging. */
