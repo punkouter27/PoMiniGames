@@ -316,14 +316,25 @@
         {
             await JS.InvokeVoidAsync("PoDialogInterop.holdOpen", _root);
             await _root.ShowModalAsync(JS);
-            _lastShowStart = ShowStart;
-            await (Mode == IntroMode.TwoPlayer || !StartEnabled || !ShowStart ? _focusRoot : _ok).FocusAsync();
         }
-        catch (Exception ex)
+        catch (Exception ex) when (!_disposed)
         {
             Logger.LogWarning(ex, "Could not open the game intro modal for {Game}.", CueScope);
             throw new InvalidOperationException("The game intro could not open safely.", ex);
         }
+        catch (Exception)
+        {
+            // Torn down mid-open: nothing left to show.
+            return;
+        }
+
+        _lastShowStart = ShowStart;
+        // Best-effort, like the re-render path above: a page that starts on its own
+        // (PoCapitol's demo) can drop this card between showModal and focus, and a
+        // missing focus target must not take the whole game down with it.
+        try { await (Mode == IntroMode.TwoPlayer || !StartEnabled || !ShowStart ? _focusRoot : _ok).FocusAsync(); }
+        catch (Exception ex) { Logger.LogDebug(ex, "Intro focus skipped for {Game}; the card is already gone.", CueScope); }
+        if (_disposed) return;
 
         // The title swarm (gpuFxWebGPU.js): particles fall into the heading's letters and
         // burst away when this card leaves the DOM, which the module watches for itself.
