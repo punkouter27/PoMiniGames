@@ -53,13 +53,8 @@
                     @(!_isConnected ? "Connecting…" : _busy ? "Joining…" : "Join the lobby")
                 </button>
             </div>
-            @if (!string.IsNullOrEmpty(_error))
-            {
-                <p class="fq-error" role="alert">
-                    @_error
-                    <button class="app-btn app-btn--secondary app-btn--sm" @onclick="RetryConnect">Retry</button>
-                </p>
-            }
+            @* One inline failure strip for every lobby: Components/InlineError. *@
+            <InlineError Message="@_error" OnRetry="RetryConnect" />
         </div>
     }
     else if (IsWaiting)

@@ -1,0 +1,36 @@
+@namespace PoMiniGamesClient.Components
+
+@*
+    Compact, inline recoverable-failure strip.
+
+    The page-level failure view is <ErrorState /> (a centred card). This is the other
+    shape a failure takes: one line inside a card that is still usable — a lobby whose
+    hub dropped, a quiz that could not connect. Three lobbies each hand-rolled it
+    (`pbl-failed`, `fq-error`, a bare `gps-error` p), so the markup and the retry button
+    now live here once and every lobby looks the same when the network stumbles.
+
+    Renders `role="alert"`, because a connection drop is news. Callers pass the sentence
+    and, when a retry makes sense, an `OnRetry` callback (a non-retryable failure omits it
+    and the button is not rendered).
+*@
+
+@if (!string.IsNullOrWhiteSpace(Message))
+{
+    <p class="app-error-inline" role="alert">
+        <span class="app-error-inline__text">@Message</span>
+        @if (OnRetry.HasDelegate)
+        {
+            <button type="button" class="app-btn app-btn--secondary app-btn--sm" @onclick="OnRetry">@RetryLabel</button>
+        }
+    </p>
+}
+
+@code {
+    /// <summary>The sentence to show. Nothing renders when it is null or blank.</summary>
+    [Parameter] public string? Message { get; set; }
+
+    /// <summary>Renders a retry button when set. Leave unset for a non-retryable failure.</summary>
+    [Parameter] public EventCallback OnRetry { get; set; }
+
+    [Parameter] public string RetryLabel { get; set; } = "Retry";
+}

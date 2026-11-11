@@ -15,6 +15,8 @@
 <PageTitle>Fun Quiz · PoMiniGames</PageTitle>
 
 <GameShell Title=@TitleContent Player="@_playerName" BackTo="/"
+           Loading="@_isLoading"
+           LoadingLabel="Loading questions…"
            GameOver="@IsGameOver"
            GameKey="@(_playMode == "solo" ? "pofunquiz" : null)"
            Stats="@_statItems"
@@ -31,18 +33,13 @@
     @* No setup card: the player's name comes from their stored profile, Player 2
        keeps its default label, and the category defaults to General; the quiz loads
        and starts on navigation (see OnInitializedAsync). This block is only the
-       load / load-failed state. *@
-    @if (_isLoading)
+       load-failed state — the loading state is the shell's shared skeleton
+       (GameShell Loading), and the failure is the app's shared error view. *@
+    @if (!_isLoading && _questions.Count == 0)
     {
-        <div class="app-loading"><span class="app-loading__spinner" aria-hidden="true"></span><span>Loading questions…</span></div>
-    }
-    else if (_questions.Count == 0)
-    {
-        <div class="gps-game-card">
-            <h2 class="gps-phase-h">Couldn't start the quiz</h2>
-            <p class="gps-error">@(_error ?? "No questions available right now.")</p>
-            <button class="app-btn app-btn--primary app-btn--lg" @onclick="StartGame">Retry</button>
-        </div>
+        <ErrorState Icon="⚠️" Title="Couldn't start the quiz" OnRetry="StartGame" RetryLabel="Retry">
+            @(_error ?? "No questions available right now.")
+        </ErrorState>
     }
     else if (_currentIndex < _questions.Count && !_splitScreen)
     {
