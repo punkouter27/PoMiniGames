@@ -828,14 +828,20 @@ export function createScene(host, { figure } = {}) {
             beacon.position.set(goal.x, 1.7, goal.z);
         }
 
-        // The first line's racks.
+        // The first line's racks. They are driven by the crowd, not by integrity alone: the harder
+        // the crowd leans, the further they are shoved back and the more they rock on their feet.
         const first = state.lines[0], firstDef = lineDefs[0];
+        const strain = 1 - first.integrity / 100;
+        const shove = Math.min(1, (first.pressure ?? 0) / Math.max(1, first.hold ?? 1));
         for (let i = 0; i < RACKS; i++) {
             const x = firstDef.x0 + (i + 0.5) * rackSpan / RACKS;
+            const centre = Math.cos(Math.PI * x / rackSpan);
             if (first.state === 'holding') {
-                const bow = (1 - first.integrity / 100) * 1.4 * Math.cos(Math.PI * x / rackSpan);
-                pose.position.set(x, 0.62, firstDef.z + 0.35 - bow);
-                pose.rotation.set(-(1 - first.integrity / 100) * 0.25, 0, 0);
+                const bow = strain * 1.4 * centre;
+                const push = (0.12 + 0.55 * shove) * strain * centre;
+                const rock = Math.sin(clock * (1.8 + strain * 3.4) + i * 0.85) * (0.035 + 0.075 * shove);
+                pose.position.set(x + rock * 0.9, 0.62 - 0.1 * strain, firstDef.z + 0.35 - bow - push);
+                pose.rotation.set(-strain * 0.25 - shove * 0.12 + rock, rock * 0.6, rock * 0.5);
             } else {
                 pose.position.set(x + (i % 3 - 1) * 0.7, 0.08, firstDef.z - 0.6 - (i % 4) * 0.9);
                 pose.rotation.set(-Math.PI / 2, 0, (i * 37 % 11 - 5) * 0.12);

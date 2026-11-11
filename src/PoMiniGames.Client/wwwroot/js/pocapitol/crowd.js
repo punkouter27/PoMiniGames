@@ -1,7 +1,7 @@
 import * as THREE from 'three';
 import { addWave, billboardChunk, createPolycarbonateMaterial, addSubsurfaceScattering } from './look.js';
 import { BONES as RIG_BONES, REGIONS, buildFigure } from './rig.js';
-import { collapseStage, tipAxes, impactFrame } from './collapse.js';
+import { collapseStage, tipAxes, impactFrame, restPlace } from './collapse.js';
 
 // Original procedural artwork; references inform clothing and equipment, not real identities.
 export function flagTexture(kind = 'us') {
@@ -499,8 +499,15 @@ export function createCrowd(scene, capacity, { time, groundHeight, shadowTexture
 
     const pose = new Float32Array(RIG_BONES.length * 3);
     const slotFigure = Array.from({ length: capacity }, () => new THREE.Matrix4());
-    // Death dynamics per body, and the pose it settled into, so a field of bodies costs nothing.
-    const falls = new Map(), settledPose = new Map();
+    // Death dynamics per body, the pose it settled into, the spot it came to rest on, and the
+    // heading the eye sees, so a field of bodies costs nothing and a heap does not lie in one place.
+    const falls = new Map(), settledPose = new Map(), restSpots = new Map(), yawOf = new Map();
+    let lastNow = 0;
+    /** How hard the line an officer stands in is being leaned on, 0..1. */
+    function officerStrain(state, a) {
+        const line = state.lines?.[a.line];
+        return line ? Math.min(1, (line.pressure ?? 0) / Math.max(1, line.hold ?? 1)) : 0;
+    }
     function update(state, humanHeading, humanMoving, cameraPosition) {
         const actors = [
             ...(state.role !== 'none' ? [{ ...state.player, id: -1, health: state.health, heading: humanHeading,
@@ -513,6 +520,8 @@ export function createCrowd(scene, capacity, { time, groundHeight, shadowTexture
         if (actors.length > capacity) throw new RangeError('Crowd renderer capacity exceeded.');
         const active = state.status === 'active';
         const now = state.elapsed ?? 0;
+        const dt = Math.min(0.1, Math.max(0.008, now - lastNow));
+        lastNow = now;
         // Per-actor body: build, ground, gait and pose. Worked out once, used by the body and every part.
         const people = [];
         for (const a of actors) {
@@ -527,6 +536,11 @@ export function createCrowd(scene, capacity, { time, groundHeight, shadowTexture
                 lying: a.health <= 0 && state.armed, stooped: a.health <= 0 && !state.armed && a.helped && !a.resting };
             const key = a.key ?? (a.civilian ? `s${a.id}` : `r${a.id}`);
             b.slot = bodies.claim(key);
+            // People turn rather than snap: the simulated heading is eased for the eye only.
+            const wantYaw = a.heading || 0, wasYaw = yawOf.get(key);
+            b.yaw = wasYaw === undefined ? wantYaw
+                : wasYaw + Math.atan2(Math.sin(wantYaw - wasYaw), Math.cos(wantYaw - wasYaw)) * (1 - Math.exp(-dt * 8));
+            yawOf.set(key, b.yaw);
             const regionKey = `${key}${a.police ? 'p' : ''}${a.observer ? 'o' : ''}${a.temperament ?? ''}`;
             bodies.paint(b.slot, regionKey, region => color.set(regionColors[region](a)));
             // Where the round came from, in the body's own frame, so a flinch or a fall leans the
@@ -554,22 +568,34 @@ export function createCrowd(scene, capacity, { time, groundHeight, shadowTexture
                 if (!fall) {
                     const h = a.heading || 0;
                     const frame = impactFrame(hx, hz, h);
+                    // Bodies already on the ground nearby decide the heap this one joins.
+                    const rest = restPlace(a.x, a.z, [...restSpots.values()]);
                     fall = {
-                        t0: now, rel: frame.rel,
+                        t0: now, rel: frame.rel, rest,
                         seed: trait(a.id, 5), zone: a.hitZone ?? 'torso', how: null,
                     };
+                    restSpots.set(key, { x: a.x, z: a.z, layer: rest.layer });
                     falls.set(key, fall);
                 }
                 b.fall = fall;
-            } else { falls.delete(key); settledPose.delete(key); }
+            } else { falls.delete(key); settledPose.delete(key); restSpots.delete(key); }
             // A body that has settled no longer needs its pose worked out again every frame.
             const settled = b.fall && now - b.fall.t0 > 1.3 ? settledPose.get(key) : null;
             const how = settled ? (pose.set(settled), b.fall.how) : poseFor(b, a, now, pose);
             if (b.fall && !settled && now - b.fall.t0 > 1.3) {
                 settledPose.set(key, pose.slice()); b.fall.how = how;
             }
-            transform.position.set(a.x, b.ground - how.drop * tall + how.lift * wide, a.z);
-            transform.rotation.set(how.fall, a.heading || 0, how.lean || 0);
+            // A body that has fallen rests where the heap allows: pushed out of its neighbours,
+            // lifted onto the layer beneath it, and rolled. A standing officer rocks on his feet
+            // under the weight of the line, harder the more he is being leaned on.
+            const rest = b.fall?.rest;
+            const strain = a.police && a.health > 0 && !b.moving ? officerStrain(state, a) : 0;
+            const brace = strain ? Math.sin(now * (1.4 + strain * 2.5) + (a.id || 0) * 1.7) * (0.012 + strain * 0.045) : 0;
+            transform.position.set(
+                a.x + (rest?.dx ?? 0),
+                b.ground - how.drop * tall + how.lift * wide + (rest?.height ?? 0),
+                a.z + (rest?.dz ?? 0));
+            transform.rotation.set(how.fall + brace, b.yaw, (how.lean || 0) + (rest?.roll ?? 0));
             transform.scale.set(wide, tall, wide);
             const figureMatrix = slotFigure[b.slot].compose(transform.position, transform.quaternion, transform.scale);
             bodies.pose(b.slot, figureMatrix, pose);
@@ -582,7 +608,7 @@ export function createCrowd(scene, capacity, { time, groundHeight, shadowTexture
             for (const b of people) {
                 const a = b.a;
                 if (!p.filter(a)) continue;
-                const h = a.heading || 0;
+                const h = b.yaw ?? (a.heading || 0);
                 if (p.name === 'contact') {
                     // Out of the scenario figures sit or lie, so their shadow spreads.
                     const spread = a.health > 0 ? 1 : b.lying ? 1.6 : 1.3;

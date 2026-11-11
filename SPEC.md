@@ -84,6 +84,11 @@ reconstruction.
   Wharf south, with the House and Senate office buildings and the Botanic Garden conservatory
   closer in. The campus batches its repeated blocks, windows and branches into instanced
   meshes, so the aerial view costs fewer draw calls than before any of it was drawn.
+- **Bodies (2026-11-11):** a person brought down falls in stages — weight, knees, tip in the
+  direction of the round, settle — and comes to rest on the heap around them: pushed clear of
+  neighbours, lifted onto the layer below, rolled. A heap is at most three bodies deep. Heads and
+  torsos turn smoothly and officers rock on their feet under load; the first line's bike racks bow,
+  shove and rock with the crowd's pressure. No injury is shown: no blood, no severed limbs.
 - **Rendering look:** a cloudy sky dome lights the scene as well as filling the background;
   the sun follows its real 6 January path from about 29° up at 12:50 pm to sunset near five.
   Stone, paving and lawn carry generated, world-mapped detail; flags ripple; every figure
