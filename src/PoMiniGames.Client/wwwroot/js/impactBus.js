@@ -33,7 +33,7 @@
 // The loop only runs while something is actually decaying. An idle page costs
 // zero — no rAF is scheduled at all.
 
-const HAPTICS_KEY = 'pomini_haptics';
+const HAPTICS_KEY = 'pominigames:haptics';
 
 // Per-kind presets. Tuned so `light` is felt-but-not-noticed and `heavy` is
 // unmistakable without being nauseating; anything above 0.7 trauma starts to
@@ -383,7 +383,7 @@ export function getTimeScale() { return _timeScale; }
 //   • navigator.vibrate on phones — on/off millisecond patterns, no magnitude.
 //
 // Every rumble in the app goes through one gate (gateRumble), whoever asks:
-//   • the Haptics setting (Settings sheet, `pomini_haptics`, on by default) — off means off,
+//   • the Haptics setting (Settings sheet, `pominigames:haptics`, on by default) — off means off,
 //     and switching it off mid-effect stops the motors;
 //   • reduced motion (user toggle or OS) means REDUCED haptics, not none: half the magnitude,
 //     shorter, and "ambient" effects (a charge build-up) are dropped entirely;

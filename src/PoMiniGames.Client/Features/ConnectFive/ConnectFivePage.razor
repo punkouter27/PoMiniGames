@@ -1,0 +1,932 @@
+@page "/connectfive"
+@page "/connectfive/{Mode}"
+@implements IDisposable;
+@using PoMiniGamesClient.Features.Shared;
+@using PoMiniGamesClient.Models;
+@using PoMiniGamesClient.Features.ConnectFive;
+@using PoMiniGamesClient.Services;
+@using PoMiniGames.Shared.Games;
+@inject NavigationManager Navigation;
+@inject ApiEndpoints Endpoints;
+@inject AuthStateService AuthState;
+@inject ToastService Toasts;
+@inject PlayerNameService PlayerNameService;
+@inject MatchHistoryService MatchHistory;
+@inject KioskCoordinator Kiosk;
+@inject UiFeedbackService Feedback;
+@inject GameResultService GameResults;
+@inject IJSRuntime JS;
+
+<PageTitle>Connect Five · PoMiniGames</PageTitle>
+
+@* Hold the modal for 5 s after a win so the cascading
+   highlight can play out on the board before the dialog covers it. The
+   cascade is a 0.45 s keyframe; 5 s leaves generous room for the eye to
+   track the line and for the end-of-game ELO change to register. Razor
+   block comments placed between attributes of an element are parsed
+   as attribute names and crash the page at runtime, so this comment
+   lives OUTSIDE the tag. *@
+<GameShell
+    Title=@TitleContent
+    Player="@_playerName"
+    BackTo="@_backTo"
+    GameOver="@_isGameOver"
+    GameOverDelayMs="5000"
+    Elo="@(PlayMode == "ai" ? _rating.Elo : (int?)null)"
+    GameKey="@(PlayMode == "ai" ? "connectfive" : null)"
+    Outcome="@OutcomeForCue"
+    Stats="@(PlayMode == "ai" ? _statItems : null)"
+    Announcement="@Announcement"
+    GameSummary="@GameSummaryContent">
+
+    @if (!_introDone)
+    {
+        <GameIntro CueScope="connectfive"
+                   Title="@TitleContent"
+                   Objective="Connect five of your discs in a row — horizontal, vertical or diagonal — before your opponent."
+                   Controls="@HowToPlayContent"
+                   Mode="@_introMode"
+                   OnStart="DismissIntro" />
+    }
+
+    <div class="cf-layout">
+        @* Online quick-match status (searching, dropped opponent) — the shared
+           card, sized to the board. During normal play it renders nothing and the status
+           bar below carries the turn. *@
+        @if (IsOnline)
+        {
+            <div class="cf-online-slot">
+                <QuickMatchPanel Session="@_online" OnCancel="LeaveOnline" OnRetry="RetryOnlineAsync" OnFindAnother="FindOpponentSafeAsync" />
+            </div>
+        }
+        @* Online, before there is an opponent (connecting, searching, connection lost),
+           the card above is the whole page: the strip and an empty board under it would
+           push the board's bottom rows 140px below the fold on a laptop, for a board
+           nobody can play on yet. *@
+        @if (!OnlineWaiting)
+        {
+        @* Visible turn/status strip: whose turn, the CPU thinking, which colour is
+           whose (GameShell's sr-only live region carries the same text for screen readers). *@
+        <div class="cf-status-slot">
+            <TurnStrip LeftName="@RedName" RightName="@YellowName" Text="@StatusText"
+                       LeftActive="@IsRedTurn" RightActive="@IsYellowTurn"
+                       LeftColor="var(--disc-red-mid)" RightColor="var(--disc-yellow-mid)"
+                       TextClass="cf-status-text" />
+        </div>
+        @* Hover-ghost: pointerleave on the board clears the column preview so
+           the ghost disc never sticks when the cursor exits the grid. *@
+        <div class="cf-board" role="grid" aria-label="Connect Five game board"
+             @onpointerleave="ClearHover">
+            @* role="grid" requires role="row" between it and its gridcells.
+               `display: contents` keeps all 81 cells as
+               direct grid items of .cf-board, so the 9×9 template, the drop
+               animation and the GL overlay alignment are unchanged. *@
+            @for (int r = 0; r < ConnectFiveBoard.Rows; r++)
+            {
+                var rowIndex = r;
+                <div class="cf-row" role="row" aria-rowindex="@(rowIndex + 1)">
+                @for (int c = 0; c < ConnectFiveBoard.Cols; c++)
+                {
+                    var row = r;
+                    var col = c;
+                    var piece = _board.Get(r, c);
+                    var winIndex = _winCells.FindIndex(wc => wc.Row == r && wc.Col == c);
+                    var isWinCell = winIndex >= 0;
+                    // Once the cascade has played, freeze the visual in its final
+                    // state. Re-renders after the 0.45s animation finishes (e.g.
+                    // ghost clears after game over) would otherwise replay the
+                    // cascade because the same .win-cell class triggers the
+                    // keyframe again.
+                    var winCellClass = !isWinCell ? ""
+                        : _winCascadePlayed ? "win-cell-static"
+                        : "win-cell";
+                    var ghostKey = GhostRenderKey(col, row, CanPreview);
+                    var isGhost = piece == Piece.None && CanPreview && col == _hoverCol && row == _hoverTargetRow && ghostKey >= 0;
+
+                    <div class="cf-cell @GetPieceClass(piece) @(winCellClass) @(_gameResult != GameResult.InProgress ? "disabled" : "")"
+                         style="@(isWinCell ? $"--win-i: {winIndex};" : null)"
+                         @onclick="() => HandleDrop(col)"
+                         @onkeydown="e => HandleDropKey(e, col)"
+                         @onfocus="() => SetHover(col)"
+                         @onpointerenter="() => SetHover(col)"
+                         tabindex="@(row == 0 && _gameResult == GameResult.InProgress ? 0 : -1)"
+                         role="gridcell"
+                         aria-colindex="@(col + 1)"
+                         aria-label="@GetPieceAriaLabel(piece)">
+                        @* The disc IS the piece: a single glossy CSS disc drops in
+                           from above the board. --drop-rows sets how far it falls:
+                           from above the board down to its resting row (row index + 1
+                           strides). No emoji + cell-fill double-circle. *@
+                        @* --drop-rows is not per-cell. The .cf-layout defines
+                           --cf-drop-rows: 9 (board depth), and every disc drops the
+                           full distance from above the board, so each disc travels
+                           the same drop length regardless of its landing row. *@
+                        @if (piece == Piece.Red)
+                        {
+                            <span class="piece red-piece" aria-hidden="true"></span>
+                        }
+                        else if (piece == Piece.Yellow)
+                        {
+                            <span class="piece yellow-piece" aria-hidden="true"></span>
+                        }
+                        else if (isGhost)
+                        {
+                            @* Column-drop preview — colourless of drop animation; CSS
+                               hides it entirely on coarse/touch pointers. *@
+                            <span class="piece ghost-piece @GhostColorClass" aria-hidden="true"></span>
+                        }
+                    </div>
+                }
+                </div>
+            }
+        </div>
+        }
+    </div>
+</GameShell>
+
+@code {
+    /// <summary>Route mode segment. Parsed by <see cref="GameModes.Parse"/>, which
+    /// owns every accepted spelling and legacy form — see GameMode.cs.</summary>
+    [Parameter] public string? Mode { get; set; }
+    [SupplyParameterFromQuery(Name = "kiosk")] public int KioskNext { get; set; } = -1;
+
+    private GameMode RouteMode => GameModes.Parse(Mode);
+    private bool IsDemo => RouteMode == GameMode.Demo;
+
+    private ConnectFiveBoard _board = new();
+    private ConnectFiveAI _ai = new();
+    // Demo mode (CPU vs CPU) plays BOTH sides at full strength — the 4-ply
+    // alpha-beta negamax "Hard" rung — so the attract-mode game is genuinely
+    // smart. 1-player difficulty is driven by the adaptive ELO (see _cpuElo).
+    // Ply counter + opening-randomisation window: the Hard search is fully
+    // deterministic, so without varying the first couple of plies every demo
+    // loop would replay the identical game. See DemoMove.
+    private int _demoPly;
+    private const int DemoOpeningRandomPlies = 2;
+    private GameResult _gameResult = GameResult.InProgress;
+
+    // Outcome for the end-of-game cue (GameOverModal picks the sound from this).
+    // Only the vs-CPU mode reports one: in local 2-player "you" is ambiguous —
+    // one of the two people at the keyboard just won — so it stays InProgress and
+    // the modal sounds the neutral round-over instead of celebrating at someone.
+    private GameResult OutcomeForCue => PlayMode is "ai" or "online" ? _gameResult : GameResult.InProgress;
+
+    // Spoken by GameShell's shared live region. The board is a
+    // role="grid" of labelled cells, so a screen reader can read the position —
+    // what it could not tell was whose turn it is or that the game had ended.
+    // Demo drives itself with nobody listening, so it announces nothing.
+    private string? Announcement => PlayMode == "demo" ? null
+        : IsOnline ? OnlineStatusText
+        : _gameResult switch
+    {
+        GameResult.Win => "You win.",
+        GameResult.Loss => PlayMode == "ai" ? "You lose." : "Yellow wins.",
+        GameResult.Draw => "It's a draw.",
+        _ when _isAiTurn => "Opponent is thinking.",
+        _ => "Your turn.",
+    };
+
+    // ── Visible status bar (see .cf-status in the markup) ────────────────────
+    // Deliberately derived from the SAME state the sr-only Announcement reads,
+    // rather than tracking its own: two turn indicators that can disagree is
+    // worse than one that is only spoken.
+    private string RedName => PlayMode switch
+    {
+        "demo" => "Red",
+        "online" => OnlineSeatName(TurnMatchSide.First),
+        // Against the CPU there is one person at the board. Their display name adds
+        // nothing, and a guest's is 21 characters that wrapped the strip to three lines.
+        "ai" => "You",
+        _ => P1Name,
+    };
+    private string YellowName => PlayMode switch
+    {
+        "ai" => "CPU",
+        "demo" => "Yellow",
+        "online" => OnlineSeatName(TurnMatchSide.Second),
+        _ => _player2Name,
+    };
+
+    // Demo plays itself, so neither side is "waiting on you" and nothing is
+    // highlighted. Red moves in 1P whenever the CPU is not thinking.
+    private bool IsRedTurn => _gameResult == GameResult.InProgress && PlayMode switch
+    {
+        "demo" => false,
+        "ai" => !_isAiTurn,
+        "online" => OnlinePlaying && OnlineTurn == TurnMatchSide.First,
+        _ => _current2pPlayer == Player.Red,
+    };
+
+    private bool IsYellowTurn => _gameResult == GameResult.InProgress && PlayMode switch
+    {
+        "demo" => false,
+        "ai" => _isAiTurn,
+        "online" => OnlinePlaying && OnlineTurn == TurnMatchSide.Second,
+        _ => _current2pPlayer == Player.Yellow,
+    };
+
+    private string StatusText => IsOnline ? OnlineStatusText : _gameResult switch
+    {
+        GameResult.Win => PlayMode == "ai" ? "You win!" : $"{RedName} wins!",
+        GameResult.Loss => PlayMode == "ai" ? "You lose" : $"{YellowName} wins!",
+        GameResult.Draw => "Draw",
+        _ when PlayMode == "demo" => "Demo — CPU vs CPU",
+        _ when _isAiTurn => "CPU thinking…",
+        _ when PlayMode == "ai" => "Your turn",
+        _ => $"{(_current2pPlayer == Player.Red ? RedName : YellowName)}'s turn",
+    };
+
+    private bool _isAiTurn;
+    // "ai" (vs CPU) or "2p" (local pass-and-play); "demo" is driven by the route param.
+    private string _playMode = "ai";
+    private string PlayMode => IsDemo ? "demo" : _playMode;
+    // 2-player turn state is a Player record, not a raw
+    // Piece. The only valid values are Player.Red / Player.Yellow; the empty
+    // player can never appear here, so wrong-state bugs (e.g. styling a "ghost"
+    // disc with no current player) fail at construction time, not at render.
+    private Player _current2pPlayer = Player.Red; // whose turn in 2-player mode
+    // Shared by both board games: the second player on this device is usually the same person.
+    private const string Player2Key = "pominigames:player2";
+    private string _player2Name = LocalStorageService.GetItem<string>(Player2Key) is { Length: > 0 } saved ? saved : "Player 2";
+    private bool _matchRecorded;
+    private string _playerName = "";
+    // Player 1's display name resolves asynchronously; fall back to "Player 1" until it does.
+    private string P1Name => string.IsNullOrWhiteSpace(_playerName) ? "Player 1" : _playerName;
+    private List<(int Row, int Col)> _winCells = new();
+    // matter.js physics drop. True once engineLoader has fetched
+    // matter-js (CDN classic script) and our connectfive/index.js has set up
+    // the engine + measured the live grid. Until then, the existing CSS
+    // cf-slide-down keyframe runs unchanged — and continues to run as the
+    // fallback on every failure path (CDN blocked, reduced motion, low tier).
+    private bool _engineReady;
+    // vs-AI W/L/D/ELO stats surfaced in the end-of-game modal (1-player only).
+    private List<StatItem> _statItems = new();
+    // Adaptive 1-player rating. The CPU is matched to _cpuElo — the player's
+    // rating at the start of this game — so a win raises the rating (next CPU is
+    // tougher) and a loss lowers it (next CPU is easier). See GameStatsService.
+    private AdaptiveRating _rating = new();
+    private int _cpuElo = AdaptiveRating.StartingElo;
+    // ELO change from the just-finished game, shown on the game-over panel.
+    private int? _lastEloDelta;
+    private readonly GameStatsService _gameStats = new();
+    private CancellationTokenSource? _demoCts;
+    // BUG FIX (#1): _kioskTimer removed; KioskCoordinator owns the timer.
+
+    // Column-preview ghost. _hoverCol is the column under the pointer (-1 = none).
+    // The landing row is derived from the live board (never stored), so it stays
+    // correct after the AI or the other player fills a slot without a re-hover.
+    private int _hoverCol = -1;
+    // Ghost-row memoization. We track the last *rendered* landing
+    // row for the hovered column so any state change that mutates the board
+    // (AI drop, opponent drop) forces a single re-render and prevents the
+    // "ghost floating mid-air after the column grew shorter" flicker.
+    private int _lastGhostRenderKey = -1; // negative = no ghost rendered yet
+    private int _hoverTargetRow => _hoverCol >= 0 ? _board.GetTargetRow(_hoverCol) : -1;
+    // The ghost only makes sense on a live human turn — not while the AI thinks,
+    // not in demo, not after the game ends. CSS additionally hides it on touch.
+    private bool CanPreview => IsOnline
+        ? IsMyOnlineTurn
+        : _gameResult == GameResult.InProgress && !_isAiTurn && PlayMode != "demo";
+    // The ghost wears the colour of whoever is about to move.
+    private string GhostColorClass => PlayMode switch
+    {
+        "2p" => _current2pPlayer == Player.Red ? "red-piece" : "yellow-piece",
+        "online" => _mySide == TurnMatchSide.First ? "red-piece" : "yellow-piece",
+        _ => "red-piece",
+    };
+
+    private void SetHover(int col)
+    {
+        if (!CanPreview || _hoverCol == col) return;
+        _hoverCol = col;
+        _lastGhostRenderKey = -1; // invalidate the memo so the new column renders a fresh ghost
+        StateHasChanged();
+    }
+
+    private void ClearHover()
+    {
+        if (_hoverCol == -1) return;
+        _hoverCol = -1;
+        _lastGhostRenderKey = -1;
+        StateHasChanged();
+    }
+
+    /// <summary>
+    /// Called from the cell-render loop. If the ghost's target row
+    /// changed (because the AI or opponent dropped a piece while the pointer
+    /// was still over the column) we memoize the new key so Blazor's diff
+    /// emits a clean add/remove of the ghost span instead of leaving a stale
+    /// one in the wrong cell. The re-render then paints the ghost in the new
+    /// landing row on the same frame.
+    /// </summary>
+    private int GhostRenderKey(int col, int targetRow, bool canPreview)
+    {
+        if (!canPreview || targetRow < 0) return -1;
+        var key = (col * 17) + targetRow;
+        if (_lastGhostRenderKey != key)
+        {
+            _lastGhostRenderKey = key;
+            return key;
+        }
+        return key;
+    }
+
+    private string _backTo => "/";
+    private bool _isGameOver => _gameResult != GameResult.InProgress && PlayMode != "demo";
+
+    // Intro/welcome gate: the board is blocked behind the intro card until the
+    // player dismisses it (OK), or the demo flashes it for 2s. Nothing on this
+    // board auto-moves in human modes, so the overlay alone gates play.
+    // The intro branches on PlayMode so each variant shows the controls that
+    // actually apply (the 1P "CPU is matched to your ELO…" copy is wrong for 2P).
+    private bool _introDone;
+    private GameIntro.IntroMode _introMode => PlayMode switch
+    {
+        "demo" => GameIntro.IntroMode.Demo,
+        "2p"   => GameIntro.IntroMode.TwoPlayer,
+        _      => GameIntro.IntroMode.OnePlayer,
+    };
+    private void DismissIntro()
+    {
+        _introDone = true;
+        // Online connects only once the player has read the intro: the queue is a
+        // promise to play, and nobody should be paired while still reading the rules.
+        if (IsOnline) _ = StartOnlineAsync();
+    }
+
+
+    // No mode suffix: "Connect Five · 1 Player" does not fit a phone's top
+    // bar and is cut at "· 1"; the mode is the selected button on the intro card's
+    // switch and the first segment after the game in the address.
+    private static RenderFragment TitleContent => GameCatalog.TitleFor(GameKeys.ConnectFive);
+
+    // Mode-specific HowToPlay. 1P talks about the CPU and ELO, 2P
+    // talks about two players and a hot seat, and the demo explains it is a
+    // CPU-vs-CPU exhibition.
+    // Each variant says only what its mode adds: the intro card prints the objective
+    // ("connect five in a row…") directly above.
+    private RenderFragment HowToPlayContent => PlayMode switch
+    {
+        "demo" => @<div>
+            <p>Watch two CPUs play Connect Five.</p>
+            <ul>
+                <li>No input — the board runs itself for the duration of the demo reel</li>
+                <li>The demo loops on the post-game screen until the reel advances</li>
+            </ul>
+        </div>,
+        "online" => @<div>
+            <p>Play another person over the internet.</p>
+            <ul>
+                <li>You're paired with the next player who picks Online — no lobby, no codes</li>
+                <li>Who goes first is drawn at random</li>
+                <li>The board lives on the server: drop a disc on your turn, then wait for theirs</li>
+            </ul>
+        </div>,
+        "2p" => @<div>
+            <p>Two players, one device — pass it back and forth.</p>
+            <ul>
+                <li>Player 1 drops 🔴, then Player 2 drops 🟡, and so on</li>
+                <li>No CPU and no rating: just take turns</li>
+            </ul>
+        </div>,
+        _ => @<div>
+            <ul>
+                <li>Click or tap a column to drop your disc</li>
+                <li>The CPU is matched to your ELO: win and it gets stronger, lose and it eases off</li>
+                <li>Your rating and the CPU's show in the header — climb as high as you can</li>
+            </ul>
+        </div>,
+    };
+
+    private RenderFragment? GameSummaryContent => !_isGameOver ? null
+        : PlayMode == "2p" ? TwoPlayerSummary
+        : PlayMode == "online" ? OnlineSummary
+        : AiSummary;
+
+    private RenderFragment OnlineSummary => @<div class="cf-ai-summary">
+        @if (_gameResult == GameResult.Win)
+        {
+            <div class="cf-result cf-result--win">🎉 You beat @OpponentName!</div>
+        }
+        else if (_gameResult == GameResult.Loss)
+        {
+            <div class="cf-result cf-result--loss">@OpponentName wins this one.</div>
+        }
+        else
+        {
+            <div class="cf-result cf-result--draw">🤝 It’s a draw!</div>
+        }
+        @if (OnlineEndReason == TurnMatchEndReason.Forfeit)
+        {
+            <div class="cf-online-note">@OpponentName left the game.</div>
+        }
+        else if (OnlineEndReason == TurnMatchEndReason.Disconnect)
+        {
+            <div class="cf-online-note">@OpponentName lost their connection.</div>
+        }
+    </div>;
+
+    private RenderFragment TwoPlayerSummary => _gameResult switch
+    {
+        GameResult.Win  => @<div class="cf-result cf-result--win">🔴 @P1Name won! Nice game.</div>,
+        GameResult.Loss => @<div class="cf-result cf-result--win">🟡 @_player2Name won! Nice game.</div>,
+        GameResult.Draw => @<div class="cf-result cf-result--draw">🤝 It’s a draw!</div>,
+        _               => @<text></text>
+    };
+
+    // 1-player: result banner plus the ELO change from this game. _lastEloDelta is
+    // set by ApplyAdaptiveResult, so the panel shows the new rating and +/- swing.
+    private RenderFragment AiSummary => @<div class="cf-ai-summary">
+        @if (_gameResult == GameResult.Win)
+        {
+            <div class="cf-result cf-result--win">🎉 You won! Great game, @_playerName!</div>
+        }
+        else if (_gameResult == GameResult.Loss)
+        {
+            <div class="cf-result cf-result--loss">🤖 CPU wins this round — try again!</div>
+        }
+        else if (_gameResult == GameResult.Draw)
+        {
+            <div class="cf-result cf-result--draw">🤝 It’s a draw!</div>
+        }
+        @if (_lastEloDelta is int d)
+        {
+            <div class="cf-elo-change">
+                <span class="cf-elo-now">ELO @_rating.Elo</span>
+                <span class="cf-elo-delta @(d > 0 ? "cf-elo-delta--up" : d < 0 ? "cf-elo-delta--down" : "cf-elo-delta--flat")">@(d >= 0 ? $"+{d}" : d.ToString())</span>
+                <span class="cf-elo-cpu">vs CPU @_cpuElo</span>
+            </div>
+        }
+    </div>;
+
+    protected override void OnInitialized()
+    {
+        _playerName = PlayerNameService.GetPlayerName();
+        if (RouteMode == GameMode.TwoPlayer) _playMode = "2p";
+        else if (RouteMode == GameMode.Multiplayer) _playMode = "online";
+        ResetGame();
+        if (IsDemo) Kiosk.SetCurrent("connectfive-demo");
+    }
+
+    private void OnPlayer2NameChange(ChangeEventArgs e)
+    {
+        var name = e.Value?.ToString();
+        _player2Name = string.IsNullOrWhiteSpace(name) ? "Player 2" : name.Trim();
+        LocalStorageService.SetItem(Player2Key, _player2Name);
+    }
+
+    // Rebuild the ELO/CPU/W/L/D/Rate tiles from the adaptive rating so the stats
+    // drawer and end-of-game panel reflect the result that was just recorded.
+    private void UpdateStats() => _statItems = GameStatsPanel.Build(_rating, _cpuElo);
+
+    // Apply the finished game's result to the adaptive rating, remember the ELO
+    // delta for the game-over panel, and refresh the stat tiles.
+    private void ApplyAdaptiveResult(GameResult result)
+    {
+        var before = _rating.Elo;
+        _rating = _gameStats.RecordAdaptiveResult("connectfive", _playerName, _cpuElo, result);
+        _lastEloDelta = _rating.Elo - before;
+        UpdateStats();
+        // Single pipeline: GameResultService mirrors the rating into the stats
+        // shape and PUTs it; failures land in the offline sync queue.
+        _ = GameResults.SubmitAdaptiveStatsAsync("connectfive", _playerName, _rating);
+    }
+
+    private void ResetGame()
+    {
+        _demoCts?.Cancel();
+        // Cancel any in-flight AI move so the player isn't
+        // stuck on "🤖 AI thinking…" after pressing New Game.
+        _aiMoveCts?.Cancel();
+        _aiMoveCts?.Dispose();
+        _aiMoveCts = null;
+        _board = new ConnectFiveBoard();
+        _gameResult = GameResult.InProgress;
+        _winCells = new();
+        _isAiTurn = false;
+        _current2pPlayer = Player.Red;
+        _matchRecorded = false;
+        // A fresh game must play the cascade again on its next win.
+        _winCascadePlayed = false;
+        _lastEloDelta = null;
+        // Load the adaptive rating and match the CPU to the player's current ELO,
+        // so this game is a ~50/50 challenge that ramps as the player improves.
+        _rating = _gameStats.GetAdaptiveRating("connectfive", _playerName);
+        _cpuElo = _rating.Elo;
+        UpdateStats();
+
+        if (PlayMode == "demo")
+        {
+            _demoPly = 0;
+            _demoCts = new CancellationTokenSource();
+            // Kick off the CPU-vs-CPU auto-play loop. This call was dropped in
+            // the KioskCoordinator refactor, which left demo mode showing an
+            // empty board — the kiosk timer moved out, but the per-game loop
+            // must still start here.
+            _ = RunDemoLoop(_demoCts.Token);
+        }
+        else
+        {
+            // Save last played game (UX 10)
+            _gameStats.SaveLastPlayedGame("connectfive");
+        }
+    }
+
+    private async Task RunDemoLoop(CancellationToken ct)
+    {
+        await Task.Delay(700, ct);
+        while (!ct.IsCancellationRequested && _gameResult == GameResult.InProgress)
+        {
+            // 850ms cadence. The drop animation is 0.55s (CSS cf-slide-down), so
+            // 850ms gives each piece ~300ms of calm between drops: the disc lands
+            // cleanly and sits still long enough for the eye to register before
+            // the next piece starts falling.
+            const int demoStepMs = 850;
+            // Red (CPU1) move — full-strength Hard play (see DemoMove).
+            var (rr, rc) = DemoMove(_board, Player.Red);
+            _board = _board.Place(rr, rc, Player.Red);
+            _demoPly++;
+            _ = Feedback.ChipDropAsync(rr, UiFeedbackService.BoardPan(rc, ConnectFiveBoard.Cols)); // demo was silent before — now each CPU drop plays the slide + thud
+            TryDrop(rc, rr, "red"); // §CF-1 physics-driven visual drop (demo Red)
+            var redWin = _board.CheckWin(Player.Red);
+            if (redWin.Won) { _gameResult = GameResult.Win; _winCells = redWin.Cells; OnWinDetected(); }
+            else if (_board.IsFull()) { _gameResult = GameResult.Draw; }
+            await InvokeAsync(StateHasChanged);
+            if (_gameResult != GameResult.InProgress) break;
+            await Task.Delay(demoStepMs, ct);
+
+            // Yellow (CPU2) move — full-strength Hard play (see DemoMove).
+            var (yr, yc) = DemoMove(_board, Player.Yellow);
+            _board = _board.Place(yr, yc, Player.Yellow);
+            _demoPly++;
+            TryDrop(yc, yr, "yellow"); // §CF-1 physics-driven visual drop (demo Yellow)
+            _ = Feedback.ChipDropAsync(yr, UiFeedbackService.BoardPan(yc, ConnectFiveBoard.Cols)); // demo CPU #2 — same realistic cue
+            var yellowWin = _board.CheckWin(Player.Yellow);
+            if (yellowWin.Won) { _gameResult = GameResult.Loss; _winCells = yellowWin.Cells; OnWinDetected(); }
+            else if (_board.IsFull()) { _gameResult = GameResult.Draw; }
+            await InvokeAsync(StateHasChanged);
+            if (_gameResult != GameResult.InProgress) break;
+            await Task.Delay(demoStepMs, ct);
+        }
+        if (!ct.IsCancellationRequested && _gameResult != GameResult.InProgress)
+        {
+            // No Kiosk.MarkFinished here: the board resets and plays again, so the reel
+            // keeps this demo up for its full dwell instead of leaving after one match.
+            // Keep the 3-second "view the win" window; the win cascade is a
+            // one-shot (.cf-cell.win-cell animation runs once and settles via
+            // `forwards`). After 3s the page resets and the next demo's
+            // `win-cell` cells get a fresh animation run.
+            await Task.Delay(3000, ct);
+            if (!ct.IsCancellationRequested)
+                await InvokeAsync(ResetGame);
+        }
+    }
+
+    /// <summary>
+    /// Demo-mode move selection for a CPU side. Plays the 4-ply alpha-beta negamax
+    /// "Hard" rung so both CPUs play a genuinely smart game. The first
+    /// <see cref="DemoOpeningRandomPlies"/> plies are randomised across the central
+    /// columns: the Hard search is deterministic, so without this every demo loop
+    /// would replay the identical game. An empty / near-empty board carries no
+    /// tactical threats, so a varied central opening diversifies which strong game
+    /// is played out without ever making a blunder.
+    /// </summary>
+    private (int Row, int Col) DemoMove(ConnectFiveBoard board, Player player)
+    {
+        if (_demoPly < DemoOpeningRandomPlies)
+        {
+            var cols = board.GetAvailableCols();
+            var center = ConnectFiveBoard.Cols / 2;
+            var band = cols.Where(c => Math.Abs(c - center) <= 2).ToList();
+            var pickFrom = band.Count > 0 ? band : cols;
+            if (pickFrom.Count == 0) return (0, 0);
+            var pick = pickFrom[Random.Shared.Next(pickFrom.Count)];
+            return (board.GetTargetRow(pick), pick);
+        }
+
+        return _ai.GetMove(board, player, Difficulty.Hard);
+    }
+
+    // Lazy-load the matter.js physics engine on first render. Failure is
+    // silent — the CSS keyframe drop is the fallback in every error case.
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (!firstRender || _engineReady) return;
+        try
+        {
+            // loadEngine injects the matter.js classic <script> from CDN, then
+            // dynamically imports js/connectfive/index.js which registers
+            // window.PoConnectFive.
+            await JS.InvokeAsync<object>("loadEngine", "connectfive");
+            await JS.InvokeAsync<object>("PoConnectFive.init", ".cf-board");
+            _engineReady = true;
+        }
+        catch
+        {
+            // matter.js unavailable (CDN blocked / offline / old browser) —
+            // leave _engineReady false; every drop falls through to the CSS keyframe.
+        }
+    }
+
+    /// <summary>
+    /// Fire-and-forget the JS-side physics for a placed disc. Visual only; the
+    /// C# chip-drop audio is already in flight from <see cref="UiFeedbackService"/>.
+    /// Returns immediately; failures (engine torn down, etc.) are silently
+    /// absorbed because the CSS keyframe is the implicit fallback — the cell
+    /// will reveal its static disc whether or not JS takes ownership of the drop.
+    /// </summary>
+    private void TryDrop(int col, int targetRow, string color)
+    {
+        if (!_engineReady) return;
+        _ = JS.InvokeVoidAsync("PoConnectFive.dropDisc", col, targetRow, color);
+    }
+
+    // Reset the physics engine when the page tears down. Fire-and-forget;
+    // a navigation that wins the race against the JS call is fine because the
+    // engine's bodies are recreated on the next init() anyway.
+    public void Dispose()
+    {
+        // Online: tell the server we left (forfeits an in-progress game) and drop
+        // the hub. Fire-and-forget — the server's disconnect grace is the fallback.
+        _ = TearDownOnlineAsync();
+        _demoCts?.Cancel();
+        _aiMoveCts?.Cancel();
+        _aiMoveCts?.Dispose();
+        if (_engineReady)
+        {
+            try { _ = JS.InvokeVoidAsync("PoConnectFive.reset"); }
+            catch { /* page is going away */ }
+            _engineReady = false;
+        }
+        // BUG FIX (#1): _kioskTimer removed; KioskCoordinator owns it.
+    }
+
+    // The top cell of each column is a tab stop; Enter or Space drops a disc there.
+    private void HandleDropKey(KeyboardEventArgs e, int col)
+    {
+        if (e.Key is "Enter" or " ") HandleDrop(col);
+    }
+
+    private void HandleDrop(int col)
+    {
+        if (PlayMode == "demo") return;
+        if (IsOnline)
+        {
+            // The server decides; the local board only gates obvious no-ops.
+            // Row is resolved by the server (gravity); any value is accepted.
+            if (IsMyOnlineTurn && _board.GetTargetRow(col) >= 0) _ = _online!.PlaceAsync(0, col);
+            return;
+        }
+        if (_gameResult != GameResult.InProgress || _isAiTurn) return;
+
+        var targetRow = _board.GetTargetRow(col);
+        if (targetRow < 0) return;
+
+        if (PlayMode == "2p") { HandleTwoPlayerDrop(targetRow, col); return; }
+
+        _board = _board.Place(targetRow, col, Player.Red);
+        _ = Feedback.ChipDropAsync(targetRow, UiFeedbackService.BoardPan(col, ConnectFiveBoard.Cols)); // realistic slide + thud, synced to the drop animation
+        TryDrop(col, targetRow, "red"); // §CF-1 physics-driven visual drop
+
+        var winCheck = _board.CheckWin(Player.Red);
+        if (winCheck.Won)
+        {
+            _gameResult = GameResult.Win;
+            _winCells = winCheck.Cells;
+            OnWinDetected();
+            _ = Feedback.CompleteAsync(); // §4 victory chord
+            ApplyAdaptiveResult(GameResult.Win);
+            return;
+        }
+
+        if (_board.IsFull())
+        {
+            _gameResult = GameResult.Draw;
+            ApplyAdaptiveResult(GameResult.Draw);
+            return;
+        }
+
+        // AI turn — Bug fix QA #9: cancel the prior AI think if still in flight,
+        // and start a fresh token. The 8 s budget below surfaces a "still
+        // thinking…" recovery action if the AI hangs longer than that.
+        _isAiTurn = true;
+        _aiMoveCts?.Cancel();
+        _aiMoveCts?.Dispose();
+        _aiMoveCts = new CancellationTokenSource();
+        StateHasChanged();
+
+        _ = RunAiTurnAsync(_aiMoveCts.Token);
+    }
+
+    // Bug fix QA #9: explicit AI-turn task with a hard 8 s ceiling. If the
+    // search exceeds the budget the loop is cancelled, the AI flag clears,
+    // and the player gets a toast with a Retry button rather than being
+    // stuck on "🤖 AI thinking…".
+    private const int AiMoveBudgetMs = 8_000;
+    private CancellationTokenSource? _aiMoveCts;
+
+    private async Task RunAiTurnAsync(CancellationToken ct)
+    {
+        try
+        {
+            await Task.Delay(300, ct);
+            // Strength scales with the CPU's ELO (matched to the player's rating).
+            var (ar, ac) = _ai.GetAdaptiveMove(_board, Player.Yellow, _cpuElo);
+            _board = _board.Place(ar, ac, Player.Yellow);
+            _ = Feedback.ChipDropAsync(ar, UiFeedbackService.BoardPan(ac, ConnectFiveBoard.Cols)); // AI's disc lands with the same realistic cue
+            TryDrop(ac, ar, "yellow"); // §CF-1 physics-driven visual drop (AI)
+            var aiWin = _board.CheckWin(Player.Yellow);
+            if (aiWin.Won)
+            {
+                _gameResult = GameResult.Loss;
+                _winCells = aiWin.Cells;
+                _isAiTurn = false;
+                OnWinDetected();
+                _ = Feedback.ErrorAsync(); // §4 low buzz on defeat
+                ApplyAdaptiveResult(GameResult.Loss);
+            }
+            else if (_board.IsFull())
+            {
+                _gameResult = GameResult.Draw;
+                _isAiTurn = false;
+                ApplyAdaptiveResult(GameResult.Draw);
+            }
+            else
+            {
+                _isAiTurn = false;
+            }
+            await InvokeAsync(StateHasChanged);
+        }
+        catch (OperationCanceledException)
+        {
+            _isAiTurn = false;
+            await InvokeAsync(StateHasChanged);
+        }
+    }
+
+    // Local pass-and-play: Red = Player 1 (the local player), Yellow = Player 2.
+    private void HandleTwoPlayerDrop(int targetRow, int col)
+    {
+        var player = _current2pPlayer;
+        _board = _board.Place(targetRow, col, player);
+        _ = Feedback.ChipDropAsync(targetRow, UiFeedbackService.BoardPan(col, ConnectFiveBoard.Cols)); // realistic slide + thud, 2P
+        TryDrop(col, targetRow, player == Player.Red ? "red" : "yellow"); // §CF-1 physics-driven visual drop
+
+        var winCheck = _board.CheckWin(player);
+        if (winCheck.Won)
+        {
+            _winCells = winCheck.Cells;
+            _gameResult = player == Player.Red ? GameResult.Win : GameResult.Loss;
+            OnWinDetected();
+            _ = Feedback.CompleteAsync(); // §4 victory chord for whoever connected five
+            RecordLocalMatch();
+            return;
+        }
+
+        if (_board.IsFull())
+        {
+            _gameResult = GameResult.Draw;
+            RecordLocalMatch();
+            return;
+        }
+
+        // Player.Other proves at the type level that we never advance to an empty player.
+        _current2pPlayer = player.Other;
+    }
+
+    /// <summary>
+    /// Shared post-win hook. Marks the win so the cascade is a
+    /// one-shot. Without this, the .win-cell CSS animation could replay on
+    /// any Blazor re-render that preserved the win-cell class (e.g. when the
+    /// ghost preview cleared after game-over), causing a visible flicker.
+    /// </summary>
+    private void OnWinDetected()
+    {
+        _winCascadePlayed = true;
+    }
+    private bool _winCascadePlayed;
+
+    // Record the 2-player outcome to the head-to-head history (owner's perspective:
+    // Win = Player 1 won, Loss = Player 2 won). Local vs-AI stats are left untouched.
+    private void RecordLocalMatch()
+    {
+        if (_matchRecorded) return;
+        _matchRecorded = true;
+        var outcome = _gameResult switch
+        {
+            GameResult.Win => MatchOutcome.Win,
+            GameResult.Loss => MatchOutcome.Loss,
+            _ => MatchOutcome.Draw
+        };
+        _ = MatchHistory.RecordAsync("connectfive", MatchMode.Local2P, _player2Name, outcome);
+    }
+
+    private string GetPieceClass(Piece piece) => piece switch
+    {
+        Piece.Red => "red",
+        Piece.Yellow => "yellow",
+        _ => ""
+    };
+
+    private string GetPieceAriaLabel(Piece piece) => piece switch
+    {
+        Piece.Red => "Red piece",
+        Piece.Yellow => "Yellow piece",
+        _ => "Empty cell"
+    };
+
+    /// <summary>Clear the board and every per-game flag; shared by the first game and the online (re)start.</summary>
+    private void ResetBoardState()
+    {
+        _board = new ConnectFiveBoard();
+        _gameResult = GameResult.InProgress;
+        _winCells = new();
+        _winCascadePlayed = false;
+        _isAiTurn = false;
+        _matchRecorded = false;
+        _current2pPlayer = Player.Red;
+        _hoverCol = -1;
+        _lastGhostRenderKey = -1;
+    }
+
+    // ── Online (quick-match over /connectfive/hub) ───────────────────────────
+    // OnlineTurnSession owns the whole server conversation (queue, seat, moves, rematch,
+    // reconnect, match history); this page only draws and sounds what it is told.
+    // Side mapping is fixed: First = Red, Second = Yellow — Red always opens, and a
+    // rematch swaps seats.
+    private OnlineTurnSession? _online;
+
+    private bool IsOnline => PlayMode == "online";
+    private bool IsMyOnlineTurn => _online?.IsMyTurn ?? false;
+    private bool OnlinePlaying => _online?.Phase == QuickMatchPhase.Playing;
+    // No opponent yet (or the connection is gone): the quick-match card stands alone.
+    private bool OnlineWaiting => IsOnline && _online?.Phase is not (QuickMatchPhase.Playing or QuickMatchPhase.Over);
+    private TurnMatchSide _mySide => _online?.MySide ?? TurnMatchSide.First;
+    private TurnMatchSide OnlineTurn => _online?.Turn ?? TurnMatchSide.First;
+    private string OpponentName => _online?.OpponentName ?? "Opponent";
+    private TurnMatchEndReason OnlineEndReason => _online?.EndReason ?? TurnMatchEndReason.None;
+    private string OnlineStatusText => _online?.StatusText ?? "Connecting…";
+    // Your own seat is "You" on the strip: the session's "<name> (you)" is 27 characters
+    // for a guest, and two of those wrapped the strip to three lines on a phone.
+    private string OnlineSeatName(TurnMatchSide side) =>
+        _online is { Seat: not null } && side == _mySide ? "You"
+        : _online?.SeatName(side, "Red", "Yellow") ?? (side == TurnMatchSide.First ? "Red" : "Yellow");
+
+    private Task StartOnlineAsync()
+    {
+        if (_online is null)
+        {
+            _online = new OnlineTurnSession(Endpoints, AuthState, Toasts, MatchHistory, "connectfive/hub", "connectfive", P1Name);
+            _online.Changed += () => _ = InvokeAsync(StateHasChanged);
+            _online.GameStarted += _ => ResetBoardState();
+            _online.MoveApplied += OnOnlineMove;
+            _online.BoardRebuilt += OnOnlineBoard;
+            _online.GameEnded += OnOnlineGameEnded;
+        }
+        return _online.StartAsync();
+    }
+
+    private Task RetryOnlineAsync() => _online?.RetryAsync() ?? Task.CompletedTask;
+    private Task FindOpponentSafeAsync() => _online?.FindOpponentSafeAsync() ?? Task.CompletedTask;
+
+    // Exactly one move behind the server: place it so the drop animates and sounds.
+    private void OnOnlineMove(TurnMatchMove move)
+    {
+        if (_board.Get(move.Row, move.Col) != Piece.None) return;
+        var player = move.Side == TurnMatchSide.First ? Player.Red : Player.Yellow;
+        _board = _board.Place(move.Row, move.Col, player);
+        _hoverCol = -1;
+        _lastGhostRenderKey = -1;
+        _ = Feedback.ChipDropAsync(move.Row, UiFeedbackService.BoardPan(move.Col, ConnectFiveBoard.Cols));
+        TryDrop(move.Col, move.Row, player == Player.Red ? "red" : "yellow");
+    }
+
+    // Rejoin or a missed broadcast: rebuild silently, nothing to animate.
+    private void OnOnlineBoard(byte[] cells)
+    {
+        _board = ConnectFiveBoard.FromCells(cells);
+        _winCells = new();
+        _winCascadePlayed = false;
+        _gameResult = GameResult.InProgress;
+        _hoverCol = -1;
+        _lastGhostRenderKey = -1;
+    }
+
+    private void OnOnlineGameEnded(GameResult result, int[] winCells)
+    {
+        _gameResult = result;
+        _winCells = winCells.Select(i => (i / ConnectFiveBoard.Cols, i % ConnectFiveBoard.Cols)).ToList();
+        if (_winCells.Count > 0) OnWinDetected();
+        if (result == GameResult.Win) _ = Feedback.CompleteAsync();
+        else if (result == GameResult.Loss) _ = Feedback.ErrorAsync();
+    }
+
+    private void LeaveOnline() => Navigation.NavigateTo("/");
+
+    private Task TearDownOnlineAsync()
+    {
+        var online = _online;
+        _online = null;
+        return online?.TearDownAsync() ?? Task.CompletedTask;
+    }
+}

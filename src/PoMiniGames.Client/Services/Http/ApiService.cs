@@ -1,3 +1,4 @@
+using PoMiniGames.Shared.Dtos;
 using PoMiniGames.Shared.Games;
 using System.Net.Http.Json;
 // Alias, not a namespace import: PoMiniGamesClient.Models mirrors several other Domain
@@ -76,6 +77,7 @@ public class ApiService
                 // a stale identity.
                 reauth = new AuthHandshakeReauthRequiredException("Auth cookie no longer decryptable");
             }
+            if (reauth is not null) throw reauth;
             if (!response.IsSuccessStatusCode)
             {
                 return null;
@@ -95,10 +97,7 @@ public class ApiService
             // before: clear state and let the caller re-hydrate.
             return null;
         }
-        finally
-        {
-            if (reauth is not null) throw reauth;
-        }
+
     }
 
     /// <summary>
@@ -773,4 +772,54 @@ public class ApiService
             return null;
         }
     }
+
+    /// <summary>GET /api/health — reads the JSON health report (including 503 degraded/unhealthy bodies).</summary>
+    public async Task<(HealthReportDto? Report, string? Error)> GetHealthReportAsync(CancellationToken ct = default)
+    {
+        try
+        {
+            using var response = await _http.GetAsync("/api/health", ct);
+            var report = await response.Content.ReadFromJsonAsync(
+                ApiJsonContext.Default.HealthReportDto, ct);
+            return (report, null);
+        }
+        catch (OperationCanceledException)
+        {
+            return (null, null);
+        }
+        catch (Exception ex)
+        {
+            return (null, ex.Message);
+        }
+    }
+
+    /// <summary>GET /api/funquiz/quiz/questions — fetches trivia questions preserving Retry-After throttling.</summary>
+    public async Task<FunQuizQuestionsResult> GetFunQuizQuestionsAsync(string category, int count = 10, CancellationToken ct = default)
+    {
+        var url = $"/api/funquiz/quiz/questions?count={count}&category={Uri.EscapeDataString(category)}";
+        using var response = await _http.GetAsync(url, ct);
+        if ((int)response.StatusCode == 429)
+        {
+            var retry = 3;
+            if (response.Headers.TryGetValues("Retry-After", out var vals)
+                && int.TryParse(vals.FirstOrDefault(), out var secs) && secs > 0)
+            {
+                retry = secs;
+            }
+            return new FunQuizQuestionsResult([], 429, retry, "Rate limited");
+        }
+        if (!response.IsSuccessStatusCode)
+        {
+            var msg = await ProblemDetailsParser.ReadMessageAsync(response, $"HTTP {(int)response.StatusCode}", ct);
+            return new FunQuizQuestionsResult([], (int)response.StatusCode, 0, msg);
+        }
+        var questions = await response.Content.ReadFromJsonAsync(ApiJsonContext.Default.ListQuizQuestion, ct);
+        return new FunQuizQuestionsResult(questions ?? [], (int)response.StatusCode, 0, null);
+    }
 }
+
+public sealed record FunQuizQuestionsResult(
+    List<QuizQuestion> Questions,
+    int StatusCode,
+    int RetryAfterSeconds,
+    string? ErrorMessage);

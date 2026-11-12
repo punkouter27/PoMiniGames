@@ -15,7 +15,7 @@
 // only the semantic gain/loss green/red are fixed, matching the sector chips.
 
 const BINS = 200;
-const TRACE_KEY = 'pocabinet.traces.v1';
+const TRACE_KEY = 'pominigames:pocabinet-traces-v1';
 
 /**
  * Resample every completed lap of the local car.

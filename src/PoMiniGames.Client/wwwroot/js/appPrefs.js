@@ -12,7 +12,7 @@
 
 import * as AudioBus from './audioBus.js';
 
-const THEME_KEY = 'pomini_theme';
+const THEME_KEY = 'pominigames:theme';
 
 let _mediaQuery = null;
 let _mediaListener = null;
@@ -122,7 +122,7 @@ export function applyColorSafe(on) {
 
 /**
  * Haptics (controller rumble and phone vibration), on by default. SettingsService owns the
- * `pomini_haptics` key; this hands the change to impactBus's live gate, which every rumble in
+ * `pominigames:haptics` key; this hands the change to impactBus's live gate, which every rumble in
  * the app goes through, so switching it off also stops a motor that is already running.
  * @param {boolean} on
  */
@@ -146,7 +146,7 @@ export function applyVolume(volume) {
 
 /**
  * Effects volume, 0..1: UI clicks and every game's sound effects, under the master.
- * The bus persists it as `pomini_sfx_volume` (integer percent, default 100).
+ * The bus persists it as `pominigames:sfx-volume` (integer percent, default 100).
  * @param {number} volume
  */
 export function applySfxVolume(volume) {
@@ -157,7 +157,7 @@ export function applySfxVolume(volume) {
 
 /**
  * Music volume, 0..1: the adaptive layers PoRacer and PoBrawl build up as a race or round
- * heats up (musicLayers.js). Persisted as `pomini_music_volume`, default 0 — music is
+ * heats up (musicLayers.js). Persisted as `pominigames:music-volume`, default 0 — music is
  * opt-in, so nothing plays until the player raises it.
  * @param {number} volume
  */
@@ -202,8 +202,8 @@ export function applyGraphicsTier(tier) {
     }
     // qualityTiers.js not loaded yet: leave the choice where it will find it.
     try {
-        if (value) localStorage.setItem('poFx.tier', value);
-        else localStorage.removeItem('poFx.tier');
+        if (value) localStorage.setItem('pominigames:fx-tier', value);
+        else localStorage.removeItem('pominigames:fx-tier');
     } catch { /* private mode: nothing to persist */ }
 }
 

@@ -1,7 +1,7 @@
 using FluentAssertions;
 using PoMiniGames.Features.PoCabinet;
 using PoMiniGames.Shared.Games;
-using PoMiniGamesClient.Games.PoCabinet;
+using PoMiniGamesClient.Features.PoCabinet;
 using Xunit;
 
 namespace PoMiniGames.Unit.Features.PoCabinet;
@@ -10,6 +10,15 @@ namespace PoMiniGames.Unit.Features.PoCabinet;
 /// physics under it, the one lobby, and the per-tick wire budget.</summary>
 public class PoCabinetTests
 {
+    private static readonly string[] ExpectedMoments = ["finish", "lead", "passed", "preRace"];
+    private static readonly System.Text.Json.JsonSerializerOptions SnapshotJsonOptions = CreateSnapshotOptions();
+
+    private static System.Text.Json.JsonSerializerOptions CreateSnapshotOptions()
+    {
+        var o = new System.Text.Json.JsonSerializerOptions(System.Text.Json.JsonSerializerDefaults.Web);
+        o.Converters.Add(new System.Text.Json.Serialization.JsonStringEnumConverter(System.Text.Json.JsonNamingPolicy.CamelCase));
+        return o;
+    }
     /// <summary>
     /// Each row runs one scenario: a private method below, named after what it checks.
     /// </summary>
@@ -33,7 +42,7 @@ public class PoCabinetTests
     {
         PoCabinetTalk.Banter.Keys.Should().BeEquivalentTo(PoCabinetCatalog.Officials.Select(o => o.Id));
         PoCabinetTalk.Banter.Values.Should().OnlyContain(byMoment =>
-            byMoment.Keys.Order().SequenceEqual(new[] { "finish", "lead", "passed", "preRace" }) && byMoment.Values.All(lines => lines.Count > 0));
+            byMoment.Keys.Order().SequenceEqual(ExpectedMoments) && byMoment.Values.All(lines => lines.Count > 0));
 
         var line = PoCabinetDialogue.PickLine("sean-s", DialogueKind.PreRace, 12);
         Enumerable.Range(0, 50).Should().OnlyContain(_ => PoCabinetDialogue.PickLine("sean-s", DialogueKind.PreRace, 12) == line,
@@ -384,9 +393,7 @@ public class PoCabinetTests
             // just past 2 KB at eight full-precision-looking cars).
             LatestDialogue = null,
         };
-        var options = new System.Text.Json.JsonSerializerOptions(System.Text.Json.JsonSerializerDefaults.Web);
-        options.Converters.Add(new System.Text.Json.Serialization.JsonStringEnumConverter(System.Text.Json.JsonNamingPolicy.CamelCase));
-        var bytes = System.Text.Json.JsonSerializer.SerializeToUtf8Bytes(snapshot, options);
+        var bytes = System.Text.Json.JsonSerializer.SerializeToUtf8Bytes(snapshot, SnapshotJsonOptions);
         bytes.Length.Should().BeLessThanOrEqualTo(2048, $"the per-tick broadcast fits one frame; measured {bytes.Length} bytes");
     }
 }

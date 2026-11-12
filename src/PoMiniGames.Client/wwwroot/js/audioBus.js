@@ -8,7 +8,7 @@
 //   2. There was no global mix. Nothing could duck music under a cue, because
 //      "music" and "cue" lived in different graphs that never met.
 //   3. Mute would be enforced separately by each module
-//      string-matching `localStorage['pomini_muted']` at the call site. Miss one
+//      string-matching `localStorage['pominigames:muted']` at the call site. Miss one
 //      call path and a muted player still hears it.
 //
 // THE GRAPH
@@ -30,12 +30,12 @@
 // EVERY node here is created lazily on first use and the context starts
 // suspended until a user gesture — mobile autoplay policy is not negotiable.
 
-const MUTE_KEY = 'pomini_muted';
-const VOLUME_KEY = 'pomini_volume';
+const MUTE_KEY = 'pominigames:muted';
+const VOLUME_KEY = 'pominigames:volume';
 // Per-category levels, integer percent like VOLUME_KEY. Music defaults to 0: background
 // music is off app-wide unless the player turns it up, so a fresh install stays as quiet
 // as it was before the music stage existed.
-const BUS_VOLUME_KEYS = { sfx: 'pomini_sfx_volume', music: 'pomini_music_volume' };
+const BUS_VOLUME_KEYS = { sfx: 'pominigames:sfx-volume', music: 'pominigames:music-volume' };
 const BUS_VOLUME_DEFAULTS = { sfx: 1, music: 0 };
 
 let _ctx = null;

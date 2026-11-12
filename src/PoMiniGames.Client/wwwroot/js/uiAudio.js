@@ -270,7 +270,7 @@ export async function vibrate(pattern) {
         // Read straight from storage rather than caching: this fires at most
         // once per interaction, and a stale cache would ignore the toggle until
         // the next reload.
-        if (localStorage.getItem('pomini_haptics') === '0') return;
+        if (localStorage.getItem('pominigames:haptics') === '0') return;
         // The kiosk attract reel runs without a user gesture, so every
         // navigator.vibrate call below this guard would emit "Blocked call to
         // navigator.vibrate because user hasn't tapped" to the console — a dozen

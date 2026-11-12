@@ -16,7 +16,7 @@ public sealed class PoRacerPendingScoreTests
         {
             var store = new PendingScoreStore();
             store.Save([new() { Kind = PendingScoreKind.PoRacer, PayloadJson = "{\"totalTimeSeconds\":42.125}", Attempts = 2 }]);
-            browser.Values.Should().ContainKey("pomini_pending_scores");
+            browser.Values.Should().ContainKey("pominigames:pending-scores");
             var restored = new PendingScoreStore().Load().Should().ContainSingle().Subject;
             restored.Kind.Should().Be(PendingScoreKind.PoRacer);
             restored.PayloadJson.Should().Contain("42.125");

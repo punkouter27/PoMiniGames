@@ -1,0 +1,648 @@
+@page "/leaderboards"
+@inject ApiService ApiService
+@inject NavigationManager NavigationManager
+@inject PlayerNameService PlayerNameService
+@inject UiFeedbackService Feedback
+@inject ScreenFxService ScreenFx
+@inject AchievementService Achievements
+@inject IJSRuntime JS
+@implements IAsyncDisposable
+
+<PageTitle>Leaderboards · PoMiniGames</PageTitle>
+
+<div class="lb-page">
+    @* The head is a fixed frame rendered from the first paint: the title and a meta line
+       that is always reserved, so nothing moves when the boards arrive. The player's best placing is a compact chip on that meta
+       line (it used to be a hero card that pushed the page down once loaded). *@
+    <header class="lb-head">
+        <h1 class="lb-title">Leaderboards</h1>
+        <div class="lb-meta">
+            @if (!_loading && _boards.Count > 0)
+            {
+                // A count of boards, said as boards, not games. They measure different
+                // things: Racer is three boards (one per track), Brawl is two, Online MMR
+                // is none of the games, and four games have no board. This week shows
+                // only the score boards; ratings and win rates have no week.
+                <span class="lb-count">@_boards.Count @(_weekly ? "score boards this week" : "boards")</span>
+            }
+            @if (!_loading && !_error && _topGameKey is not null)
+            {
+                <button type="button" class="lb-me-chip" @onclick="() => SelectAsync(_topGameKey)">
+                    <span class="lb-me-chip-k">@(_weekly ? "Your best this week" : "Your best")</span>
+                    <span class="lb-me-chip-v">@_topGameTitle #@_topRank</span>
+                    <span class="lb-sr-only">, @_topValue. Show that board.</span>
+                </button>
+            }
+        </div>
+    </header>
+
+    @* One compact toolbar row: which board, which period, and a player search. Radzen,
+       loaded on demand like Brawl HQ (its theme is global CSS, so it is in the document
+       only while this page is). Radzen's components call its script as they mount, so they
+       render once the theme and script have landed; the row's height is reserved from the
+       first paint, so that moves nothing. *@
+    <div class="lb-toolbar" role="toolbar" aria-label="Leaderboard filters">
+        @if (_radzenReady)
+        {
+            <RadzenDropDown TValue="string" Data="@_pickItems" TextProperty="Label" ValueProperty="Key"
+                            Value="@_selectedGame" Change="@(v => SelectAsync(v as string))"
+                            Disabled="@(_loading || _error || _pickItems.Count == 0)"
+                            Placeholder="Pick a game" class="lb-tb-game"
+                            InputAttributes="@(new Dictionary<string, object> { ["aria-label"] = "Pick a game" })">
+                <Template Context="item">
+                    @{ var pick = (PickItem)(object)item; }
+                    <span class="lb-tb-opt">
+                        <span class="lb-tb-opt-group">@pick.Group</span>
+                        <span class="lb-tb-opt-name">@pick.Title</span>
+                        @if (pick.Rank is int r)
+                        {
+                            <span class="lb-pick-rank" title="Your rank">#@r</span>
+                        }
+                    </span>
+                </Template>
+            </RadzenDropDown>
+            <RadzenSelectBar TValue="bool" Value="@_weekly" Change="@(v => SetPeriodAsync(v))"
+                             Size="ButtonSize.Small" AriaLabel="Period" class="lb-tb-period">
+                <Items>
+                    <RadzenSelectBarItem Text="All time" Value="false" />
+                    <RadzenSelectBarItem Text="This week" Value="true" />
+                </Items>
+            </RadzenSelectBar>
+            <RadzenTextBox Value="@_search" Change="@(v => SearchAsync(v))" Immediate="true"
+                           Placeholder="Find a player" class="lb-tb-search" MaxLength="40"
+                           aria-label="Find a player on this board" autocomplete="off" />
+        }
+    </div>
+
+    @if (!_loading && !_error && _boards.Count == 0)
+    {
+        @* Shared <EmptyState> primitive, so a tweak to empty-state copy / icon
+           lands in one place. *@
+        <EmptyState Icon="🏆"
+                    Title="No scores yet">
+            <ChildContent>
+                Be the first on the board. Play any 1-player mode to claim a spot —
+                your best score auto-submits when you finish.
+            </ChildContent>
+            <Action>
+                <button class="app-btn app-btn--primary"
+                        type="button"
+                        @onclick='() => NavigationManager.NavigateTo("/")'>
+                    Pick a game
+                </button>
+            </Action>
+        </EmptyState>
+    }
+
+    @if (_loading)
+    {
+        <div class="lb-skeletons">
+            @for (var i = 0; i < 6; i++)
+            {
+                <div class="lb-skel"></div>
+            }
+        </div>
+    }
+    else if (_error)
+    {
+        @* Shared <ErrorState> with a Retry callback. The retry button uses the
+           universal `.app-btn--primary` so the call to action matches every other
+           failure surface in the app. *@
+        <ErrorState Icon="📡"
+                    Title="Backend offline"
+                    OnRetry="Load">
+            Leaderboards can't load right now. Your scores are safe — they'll
+            sync the next time the API is reachable.
+        </ErrorState>
+    }
+    else if (_boards.Count > 0)
+    {
+        @* One board at a time. Laying every board out at once would be fourteen
+           cards, each showing what the end-of-game modal already shows, and
+           2,600px of them on a phone. The toolbar's picker is the page's navigation
+           and the one board it selects is ten rows deep, with the player's own line
+           added when they rank below that. *@
+        <div class="lb-layout">
+            @if (Selected is { } board)
+            {
+                var searching = _search.Trim().Length > 0;
+                var rows = searching ? SearchRows(board) : VisibleRows(board);
+                <article class="lb-board" aria-label="@($"{board.Title} leaderboard, scored by {board.Unit}")">
+                    <h2 class="lb-board-title">@board.Title</h2>
+
+                    @if (searching && _searchLoading)
+                    {
+                        <p class="lb-board-empty" role="status">Searching @board.Title…</p>
+                    }
+                    else if (searching && rows.Count == 0)
+                    {
+                        <p class="lb-board-empty" role="status">Nobody matching “@_search.Trim()” in the top @RankSearchDepth.</p>
+                    }
+                    else if (rows.Count == 0)
+                    {
+                        <p class="lb-board-empty">No scores @(_weekly ? "this week" : "yet"). Play @board.Title to claim #1.</p>
+                    }
+                    else
+                    {
+                        // The data is tabular (rank + player + score), so the grid
+                        // carries table roles and assistive tech can navigate it by
+                        // column. The unit is the value column's header.
+                        <div role="table"
+                             aria-label="@($"{board.Title} top {rows.Count}, scored by {board.Unit}")"
+                             class="lb-rows">
+                            <div role="row" class="lb-row lb-row--head">
+                                <span role="columnheader" class="lb-rank" aria-label="Rank">#</span>
+                                @* The header is per-board, because the Brawl Demo board
+                                   ranks fighters. *@
+                                <span role="columnheader" class="lb-name">@NameLabelFor(board.GameKey)</span>
+                                <span role="columnheader" class="lb-value">@board.Unit</span>
+                            </div>
+                            @foreach (var e in rows)
+                            {
+                                @RankRow(board, e)
+                            }
+                            @if (!searching && _myRow.GetValueOrDefault(board.GameKey) is { } mine)
+                            {
+                                <div class="lb-row lb-row--gap" aria-hidden="true">⋯</div>
+                                @RankRow(board, mine)
+                            }
+                        </div>
+                    }
+                </article>
+            }
+        </div>
+    }
+</div>
+
+@code {
+    // lb-row--me / data-lb-me: the player's own row is both the row they look for
+    // first and the anchor the rank-change burst fires from, so it needs a class for
+    // the highlight and an addressable attribute for the FX pass.
+    private RenderFragment RankRow(GameLeaderboardDto board, LeaderboardEntryDto e) =>
+        @<div role="row"
+              class="lb-row @(e.Rank <= 3 ? $"lb-row--top lb-row--{e.Rank} fx-holo-card" : null) @(IsMe(e.Name) ? "lb-row--me" : null)"
+              data-fx-holo="@(e.Rank <= 3 ? "6" : null)"
+              data-lb-me="@(IsMe(e.Name) ? board.GameKey : null)">
+            <span role="cell" class="lb-rank" aria-label="@($"Rank {e.Rank}")">@e.Rank</span>
+            <span role="cell" class="lb-name">@LeaderboardNames.Pretty(e.Name)</span>
+            <span role="cell" class="lb-value">@e.DisplayValue</span>
+        </div>;
+
+    private bool _loading = true;
+    private bool _error;
+    private List<GameLeaderboardDto> _boards = [];
+
+    // "This week": the score boards' current ISO week (the server keeps a weekly copy of
+    // every high-score save). Ratings and win rates are cumulative and are not listed.
+    private bool _weekly;
+
+    private async Task SetPeriodAsync(bool weekly)
+    {
+        if (weekly == _weekly || _loading) return;
+        _weekly = weekly;
+        // Rows below the fold were looked up for the other period's boards.
+        _myRow.Clear();
+        _deep.Clear();
+        await Load();
+        await LoadDeepAsync();
+    }
+
+    // ── Toolbar ────────────────────────────────────────────────────────────
+    /// <summary>One entry in the toolbar's board picker. Public: Radzen reads Label/Key by name.</summary>
+    public sealed record PickItem(string Key, string Label, string Group, string Title, int? Rank);
+
+    private List<PickItem> _pickItems = [];
+    private bool _radzenReady;
+    private IJSObjectReference? _theme;
+
+    // The player search runs over the selected board's top RankSearchDepth rows (one read per
+    // board and period), because the ten on screen are rarely where a looked-up name sits.
+    private string _search = "";
+    private bool _searchLoading;
+    private readonly Dictionary<string, GameLeaderboardDto?> _deep = [];
+
+    private async Task SearchAsync(string? text)
+    {
+        _search = text ?? "";
+        await LoadDeepAsync();
+    }
+
+    private async Task LoadDeepAsync()
+    {
+        if (_search.Trim().Length == 0 || _selectedGame is not { } key || _deep.ContainsKey(key)) return;
+        _searchLoading = true;
+        StateHasChanged();
+        _deep[key] = await ApiService.GetGameLeaderboardAsync(key, limit: RankSearchDepth, weekly: _weekly);
+        _searchLoading = false;
+        StateHasChanged();
+    }
+
+    private List<LeaderboardEntryDto> SearchRows(GameLeaderboardDto board)
+    {
+        var needle = _search.Trim();
+        var source = _deep.GetValueOrDefault(board.GameKey)?.Entries ?? board.Entries;
+        return source
+            .Where(e => e.Name != PlaceholderName)
+            .Where(e => LeaderboardNames.Pretty(e.Name).Contains(needle, StringComparison.OrdinalIgnoreCase)
+                        || e.Name.Contains(needle, StringComparison.OrdinalIgnoreCase))
+            .Take(RowLimit)
+            .ToList();
+    }
+
+    private void BuildPickItems() =>
+        _pickItems = _groupedBoards
+            .SelectMany(g => g.Boards.Select(b => new PickItem(b.GameKey, OptionLabel(b), g.Title, b.Title, MyRank(b))))
+            .ToList();
+
+    // The chip on the head's meta line: the player's best placing.
+    private string? _topGameKey;
+    private string _topGameTitle = "";
+    private int _topRank;
+    private string _topValue = "";
+
+    private record BoardGroup(string Key, string Title, IReadOnlyList<GameLeaderboardDto> Boards);
+    private List<BoardGroup> _groupedBoards = new();
+
+    private string? _selectedGame;
+    private const string LastBoardKey = "pominigames:lb-board";
+
+    private GameLeaderboardDto? Selected => _boards.FirstOrDefault(b => b.GameKey == _selectedGame);
+
+    /// <summary>How many rows the selected board shows, and how deep the all-boards read goes.</summary>
+    private const int RowLimit = 10;
+
+    /// <summary>How far down a single board is searched for the player's own row (the server's cap).</summary>
+    private const int RankSearchDepth = 100;
+
+    /// <summary>
+    /// The player's own row on a board where they rank below <see cref="RowLimit"/>, keyed by
+    /// board. A key with a null value means "asked, nothing to add".
+    /// </summary>
+    private readonly Dictionary<string, LeaderboardEntryDto?> _myRow = [];
+
+    private int? MyRank(GameLeaderboardDto board) =>
+        board.Entries.FirstOrDefault(e => IsMe(e.Name))?.Rank ?? _myRow.GetValueOrDefault(board.GameKey)?.Rank;
+
+    private string OptionLabel(GameLeaderboardDto board) =>
+        MyRank(board) is int rank ? $"{board.Title} · you #{rank}" : board.Title;
+
+    private async Task SelectAsync(string? gameKey)
+    {
+        if (string.IsNullOrEmpty(gameKey)) return;
+        _selectedGame = gameKey;
+        LocalStorageService.SetItem(LastBoardKey, gameKey);
+        await LoadDeepAsync();
+        await LoadMyRowAsync(gameKey);
+    }
+
+    /// <summary>
+    /// Find the player below the fold of a board. Only asked when it can matter: the board
+    /// is full of real rows and none of them is the player's. One read per board per visit.
+    /// </summary>
+    private async Task LoadMyRowAsync(string gameKey)
+    {
+        if (_myNameLower.Length == 0 || _myRow.ContainsKey(gameKey)) return;
+        _myRow[gameKey] = null;
+
+        var board = _boards.FirstOrDefault(b => b.GameKey == gameKey);
+        if (board is null
+            || board.Entries.Any(e => IsMe(e.Name))
+            || board.Entries.Count(e => e.Name != PlaceholderName) < RowLimit)
+        {
+            return;
+        }
+
+        var deep = await ApiService.GetGameLeaderboardAsync(gameKey, limit: RankSearchDepth, weekly: _weekly);
+        _myRow[gameKey] = deep?.Entries.FirstOrDefault(e => IsMe(e.Name));
+        // The same read answers a later player search on this board.
+        _deep.TryAdd(gameKey, deep);
+        // The picker shows the player's rank, which this read may just have found.
+        BuildPickItems();
+        StateHasChanged();
+    }
+
+    // The server pads every unified board to the requested limit with dummy
+    // "XXX" rows. This page shows real players only (see VisibleRows).
+    private const string PlaceholderName = "XXX";
+
+    // Column header must match what the row actually represents. The Brawl Demo
+    // board ranks fighters, not players. Every other board shows a person, so
+    // "Player" stays the default.
+    private static string NameLabelFor(string gameKey) => gameKey switch
+    {
+        "pobrawldemo"  => "Fighter",
+        _              => "Player",
+    };
+
+    private static List<LeaderboardEntryDto> VisibleRows(GameLeaderboardDto board)
+        // Filter out the server's XXX padding rows so the
+        // leaderboards look like real populated boards rather than a
+        // 3/5/10-deep graveyard of placeholder names. The server still pads
+        // for callers that want a uniform rank list (e.g. GameOverModal),
+        // but this view only shows real players.
+        => board.Entries
+            .Where(e => e.Name != PlaceholderName)
+            .Take(RowLimit)
+            .ToList();
+
+    protected override async Task OnInitializedAsync() => await Load();
+
+    // ── Rank-change feedback ────────────────────────────────────────────────
+    // Rank movement is the whole emotional point of a leaderboard, so a climb gets
+    // sound, particles and a highlight on the player's own row.
+    //
+    // "Changed since when?" is answered by localStorage: the rank the player was
+    // last *shown* per board. That makes the comparison honest about what the
+    // player has actually seen, which a server-side diff could not be — they may
+    // have climbed three places across two sessions and a week.
+    private const string RankMemoryKey = "pominigames:seen-ranks";
+
+    /// <summary>Boards where the player climbed since they last looked, and by how much.</summary>
+    private readonly Dictionary<string, int> _rankGains = [];
+    private bool _rankFxPending;
+    private string _myNameLower = "";
+
+    /// <summary>
+    /// True if a leaderboard row belongs to the signed-in player. Reuses
+    /// <see cref="NameMatches"/> so the row highlight and the hero card agree on
+    /// identity — the board stores whatever the submitter passed (display name,
+    /// email slug or id slug), so neither can demand an exact match.
+    /// </summary>
+    private bool IsMe(string leaderName) =>
+        leaderName != PlaceholderName
+        && _myNameLower.Length > 0
+        && NameMatches(leaderName, _myNameLower);
+
+    /// <summary>
+    /// Compare every board's current personal rank against the last one shown,
+    /// record the climbs, and persist the new ranks.
+    /// </summary>
+    /// <remarks>
+    /// Only improvements are collected. A drop is deliberately silent: someone
+    /// else outscoring you is not your achievement to be notified about, and a
+    /// sad noise on a page you opened voluntarily is a reason not to open it again.
+    /// A board's first appearance is also silent — there is no "gain" from
+    /// unranked to ranked that this page can honestly quantify.
+    /// </remarks>
+    private void DetectRankChanges()
+    {
+        _rankGains.Clear();
+        _myNameLower = PlayerNameService.GetPlayerName()?.Trim().ToLowerInvariant() ?? string.Empty;
+        if (_myNameLower.Length == 0) return;
+
+        var seen = ParseSeenRanks(LocalStorageService.GetItem<string>(RankMemoryKey));
+        var next = new List<string>();
+
+        foreach (var board in _boards)
+        {
+            var mine = board.Entries.FirstOrDefault(e => IsMe(e.Name));
+            if (mine is null) continue;
+
+            if (seen.TryGetValue(board.GameKey, out var before) && mine.Rank < before)
+            {
+                _rankGains[board.GameKey] = before - mine.Rank;
+            }
+            next.Add($"{board.GameKey}:{mine.Rank}");
+        }
+
+        // Plain "key:rank|key:rank" rather than JSON: LocalStorageService's generic
+        // overloads go through reflection-based serialization that the trim
+        // analyzer rejects, and the string path is the documented safe one.
+        LocalStorageService.SetItem(RankMemoryKey, string.Join("|", next));
+        _rankFxPending = _rankGains.Count > 0;
+
+        // Open on the news. Only one board is on screen, so a climb on any other would
+        // get its cue with no row to burst from.
+        if (_rankFxPending) _selectedGame = _rankGains.MaxBy(kv => kv.Value).Key;
+    }
+
+    private static Dictionary<string, int> ParseSeenRanks(string? raw)
+    {
+        var map = new Dictionary<string, int>(StringComparer.Ordinal);
+        if (string.IsNullOrWhiteSpace(raw)) return map;
+        foreach (var pair in raw.Split('|', StringSplitOptions.RemoveEmptyEntries))
+        {
+            var sep = pair.LastIndexOf(':');
+            if (sep <= 0) continue;
+            if (int.TryParse(pair.AsSpan(sep + 1), out var rank))
+            {
+                map[pair[..sep]] = rank;
+            }
+        }
+        return map;
+    }
+
+    /// <summary>
+    /// Play the climbs: one rising cue per board, pitched by how far the player
+    /// moved, with a spark burst on their own row.
+    /// </summary>
+    /// <remarks>
+    /// Pitch carries the size of the climb so several boards in one visit are
+    /// distinguishable by ear, and the cues are staggered — fired together they
+    /// would sum into one chord rather than reading as separate achievements. The
+    /// whole pass is capped at three boards: past that it stops being a
+    /// celebration and becomes a jingle the player has to sit through.
+    /// </remarks>
+    private async Task PlayRankGainsAsync()
+    {
+        if (_rankGains.Count == 0) return;
+
+        // Note: only the selected board is rendered, so a climb on any other gets
+        // the cue but no burst — the selector simply matches nothing and gpuFx
+        // no-ops. That is the right degradation: the sound is the message, the
+        // particles are the decoration.
+        var climbs = _rankGains.OrderByDescending(kv => kv.Value).Take(3).ToList();
+        foreach (var (gameKey, places) in climbs)
+        {
+            // 1 place ≈ unison, a 10-place jump ≈ just over an octave. Capped so a
+            // first-time entry at rank 1 cannot shriek.
+            var pitch = Math.Min(2.1, 1.0 + (places * 0.11));
+            await Feedback.CueAtAsync("ui", "chime", pitch: pitch, gain: 0.9);
+            await ScreenFx.BurstAtAsync($"[data-lb-me='{gameKey}']", ScreenFxService.Sparks, 0.8);
+            await Task.Delay(220);
+        }
+
+        // The biggest climb of the visit also earns the accent pulse, which is what
+        // tints the whole app for a moment (paletteBus).
+        if (climbs[0].Value >= 3)
+        {
+            await ScreenFx.PulseAsync(ScreenFxService.Win);
+        }
+    }
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (firstRender)
+        {
+            try
+            {
+                _theme = await JS.InvokeAsync<IJSObjectReference>("import", "./js/radzenTheme.js");
+                await _theme.InvokeVoidAsync("ensure");
+            }
+            catch (JSException ex)
+            {
+                Console.Error.WriteLine($"[leaderboards] Radzen theme failed: {ex.Message}");
+            }
+            _radzenReady = true;
+            StateHasChanged();
+        }
+
+        // After render, because the burst targets the player's own row and that row
+        // has to exist in the DOM first. The flag is lowered before awaiting so a
+        // re-render during the staggered playback cannot start it a second time.
+        if (_rankFxPending)
+        {
+            _rankFxPending = false;
+            await PlayRankGainsAsync();
+        }
+    }
+
+    public async ValueTask DisposeAsync()
+    {
+        if (_theme is null) return;
+        try
+        {
+            await _theme.InvokeVoidAsync("remove");
+            await _theme.DisposeAsync();
+        }
+        catch (JSDisconnectedException) { }
+        catch (JSException) { }
+    }
+
+    private async Task Load()
+    {
+        _loading = true;
+        _error = false;
+        StateHasChanged();
+
+        var boards = await ApiService.GetAllLeaderboardsAsync(limit: RowLimit, weekly: _weekly);
+        if (boards is null)
+        {
+            _error = true;
+        }
+        else
+        {
+            _boards = boards.ToList();
+            // A board picked under the other period may not exist in this one (the week
+            // has score boards only); let BuildGrouped seed a fresh pick.
+            if (_selectedGame is not null && _boards.All(b => b.GameKey != _selectedGame)) _selectedGame = null;
+            _myNameLower = PlayerNameService.GetPlayerName()?.Trim().ToLowerInvariant() ?? string.Empty;
+            // Before the first render of the rows: IsMe() drives a class on every
+            // row, so _myNameLower has to be populated by the time they render.
+            // Rank memory and its climb cues are about the all-time boards; a weekly rank
+            // resets every Monday and would read as a fall, then a climb, every week.
+            if (!_weekly) DetectRankChanges();
+            BuildGrouped();
+            BuildPickItems();
+            BuildHero();
+            if (!_weekly && _topGameKey is not null) Achievements.NoteBoardRank(_topRank);
+        }
+
+        _loading = false;
+        StateHasChanged();
+
+        if (_selectedGame is not null) await LoadMyRowAsync(_selectedGame);
+    }
+
+    private void BuildGrouped()
+    {
+        // The leaderboard API returns a flat list; map each game key to a
+        // category based on GameCatalog membership. Anything not in the
+        // catalog lands in the "Other" bucket so the page never silently
+        // drops a board.
+        var spKeys = GameCatalog.SinglePlayer.Select(g => g.Key).ToHashSet();
+        var lpKeys = GameCatalog.LocalTwoPlayer.Select(g => g.Key).ToHashSet();
+        var mpKeys = GameCatalog.Multiplayer.Select(g => g.Key).ToHashSet();
+
+        // The Brawl Demo board (fighter ELO from CPU-vs-CPU matches) is
+        // an associative view of the Brawl game — its rows are characters, not the
+        // player's own performance — so it isn't a 1P "achievement" board the way
+        // the presidents ladder is. But it IS the Brawl game's sibling board, and
+        // dropping it into 1P keeps the Brawl pair together in the picker, so a
+        // visitor walking through the Brawl presidents ladder sees the demo ELO
+        // board right next to it rather than alone at the bottom under "Other".
+        var brawlDemoKey = "pobrawldemo";
+
+        // Storage keeps a single global board per game (no 1P/2P/multiplayer
+        // partition), so a game listed in several catalogs would render the SAME rows
+        // in each column. Each board is therefore assigned exactly one owning section,
+        // most specific first. A section with nothing left is suppressed; the
+        // empty-state hint below explains why.
+        var claimed = new HashSet<GameKey>();
+        // Alphabetical within a section: the picker is a list to scan, and it keeps
+        // Racer's per-track boards together as one run of entries.
+        List<GameLeaderboardDto> Claim(Func<GameLeaderboardDto, bool> belongs) =>
+            _boards.Where(b => belongs(b) && claimed.Add(b.GameKey))
+                .OrderBy(b => b.Title, StringComparer.OrdinalIgnoreCase).ToList();
+
+        // Racer has one board per track ("poracer", "poracer-neonskyline", …). They are all the
+        // Racer game's, so they group by its catalog key; without this the two newer tracks fell
+        // to "Other" at the bottom of the page, away from the Grand Prix board.
+        static GameKey Game(GameLeaderboardDto b) =>
+            b.GameKey.StartsWith("poracer-", StringComparison.OrdinalIgnoreCase) ? GameKeys.PoRacer : (GameKey)b.GameKey;
+
+        _groupedBoards = new List<BoardGroup>
+        {
+            new BoardGroup("1p",      "1 Player",       Claim(b => spKeys.Contains(Game(b)) || string.Equals(b.GameKey, brawlDemoKey, StringComparison.OrdinalIgnoreCase))),
+            new BoardGroup("2p",      "2 Player",       Claim(b => lpKeys.Contains(Game(b)))),
+            new BoardGroup("multi",   "Multiplayer",    Claim(b => mpKeys.Contains(Game(b)))),
+            new BoardGroup("other",   "Other",          Claim(_ => true)),
+        }.Where(g => g.Boards.Count > 0).ToList();
+
+        // Seed the picker here, with the boards in hand: a picker seeded before
+        // they land stays null and the page shows no board.
+        // The first board with a real score, so the page never opens on an empty one.
+        var flat = _groupedBoards.SelectMany(g => g.Boards).ToList();
+        // The board the player last chose, if it still exists; a rank climb picked above wins.
+        var last = LocalStorageService.GetItem<string>(LastBoardKey);
+        _selectedGame ??= flat.FirstOrDefault(b => b.GameKey == last)?.GameKey;
+        _selectedGame ??= (flat.FirstOrDefault(b => b.Entries.Any(e => e.Name != PlaceholderName)) ?? flat.FirstOrDefault())?.GameKey;
+    }
+
+    private void BuildHero()
+    {
+        // The hero card must not pick the GLOBAL rank-1 row across every board: a
+        // high score left by another session would be attributed to whichever guest
+        // is signed in. Filter to entries whose Name matches the current PlayerName
+        // (case-insensitive, contains — the score submit may use the display name,
+        // an email slug, or the bare id).
+        var me = PlayerNameService.GetPlayerName();
+        var meLower = me?.Trim().ToLowerInvariant() ?? string.Empty;
+
+        var personalEntries = _boards
+            .SelectMany(b => b.Entries.Select(e => (Board: b, Entry: e)))
+            .Where(t => t.Entry.Name != PlaceholderName) // never hero the XXX padding
+            .Where(t => NameMatches(t.Entry.Name, meLower))
+            .OrderBy(t => t.Entry.Rank)
+            .FirstOrDefault();
+
+        if (personalEntries.Board is null)
+        {
+            _topGameKey = null;
+            return;
+        }
+        _topGameKey = personalEntries.Board.GameKey;
+        _topGameTitle = personalEntries.Board.Title;
+        _topRank = personalEntries.Entry.Rank;
+        _topValue = personalEntries.Entry.DisplayValue;
+    }
+
+    // Display-name comparison. Names on the leaderboard can be one of:
+    //   • the player's DisplayName   ("Guest342812")
+    //   • their email slug           ("guest342812@local.dev" → already shown verbatim)
+    //   • their id slug              ("dev-guest342812")
+    // The server writes whatever the submitter passed, so we accept any case-
+    // insensitive substring overlap with the local PlayerName rather than
+    // demanding an exact match.
+    private static bool NameMatches(string leaderName, string localLower)
+    {
+        if (string.IsNullOrEmpty(localLower)) return false;
+        var ln = leaderName?.Trim().ToLowerInvariant() ?? string.Empty;
+        if (ln.Length == 0) return false;
+        return ln == localLower
+            || ln.StartsWith(localLower + "@", StringComparison.Ordinal)
+            || ln.StartsWith(localLower + "-", StringComparison.Ordinal)
+            || localLower.StartsWith(ln + "@", StringComparison.Ordinal)
+            || localLower.StartsWith(ln + "-", StringComparison.Ordinal);
+    }
+}

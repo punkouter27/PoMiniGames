@@ -84,7 +84,7 @@ jobs:
       # Release adds trimming at publish time; both must pass.
       - name: Trim audit (WASM client)
         run: |
-          dotnet publish src/PoMiniGames.Client/PoMiniGamesClient.csproj \
+          dotnet publish src/PoMiniGames.Client/PoMiniGames.Client.csproj \
             -c ${{ github.event_name == 'pull_request' && 'Debug' || 'Release' }} \
             -p:PublishTrimmed=true \
             -p:TrimMode=partial \
@@ -136,9 +136,9 @@ jobs:
 
       - name: Publish (push-to-master only)
         if: github.event_name == 'push' && github.ref == 'refs/heads/master'
-        run: dotnet publish src/PoMiniGames.API/PoMiniGames.API.csproj -c Release -o ./publish
+        run: dotnet publish src/PoMiniGames.Api/PoMiniGames.Api.csproj -c Release -o ./publish
 
-      # The documentation suite under DOCS/ ships with the app as static files, so
+      # The documentation suite under docs/ ships with the app as static files, so
       # it has a public URL of its own and is deployed by the same CI pass that
       # deploys the app. It is copied into the publish output after the publish
       # step - nothing in the app's build or its runtime changes.
@@ -148,10 +148,10 @@ jobs:
         run: |
           set -euo pipefail
           mkdir -p ./publish/wwwroot/docs
-          cp -r DOCS/. ./publish/wwwroot/docs/
-          LATEST=$(ls -1 DOCS | grep -E '^[0-9]{8}$' | sort | tail -1 || true)
+          cp -r docs/. ./publish/wwwroot/docs/
+          LATEST=$(ls -1 docs | grep -E '^[0-9]{8}$' | sort | tail -1 || true)
           if [ -z "$LATEST" ]; then
-            echo "::warning::No dated documentation suite found under DOCS/; nothing to link to."
+            echo "::warning::No dated documentation suite found under docs/; nothing to link to."
             exit 0
           fi
           echo "Latest documentation suite: $LATEST"
@@ -300,7 +300,7 @@ jobs:
           echo "Resolved App Service: $APP_NAME"
           echo "APP_NAME=$APP_NAME" >> "$GITHUB_ENV"
           # Zip the publish *contents* (not the parent folder) so the host finds
-          # PoMiniGames.API.dll at the deployment root, not nested under publish/.
+          # PoMiniGames.Api.dll at the deployment root, not nested under publish/.
           # Combined with WEBSITE_RUN_FROM_PACKAGE=1 (set in resources.bicep), the
           # zip is mounted atomically — no file-copy step on the host.
           pkg_setting=$(az webapp config appsettings list --resource-group "$AZURE_RESOURCE_GROUP" --name "$APP_NAME" --query "[?name=='WEBSITE_RUN_FROM_PACKAGE'].value | [0]" -o tsv)

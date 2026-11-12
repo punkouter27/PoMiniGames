@@ -1,0 +1,139 @@
+@namespace PoMiniGamesClient.Features.Shared
+@using PoMiniGamesClient.Services
+@using Microsoft.AspNetCore.Components.Routing
+@inject AuthStateService AuthState
+@inject NavigationManager Navigation
+@implements IDisposable
+
+@if (AuthState.IsLoading)
+{
+    <div class="login-page">
+        <span class="login-mesh" aria-hidden="true"></span>
+        <div class="login-card">
+            <div class="login-spinner" aria-label="Loading"></div>
+            <p class="login-sub">Loading…</p>
+        </div>
+    </div>
+}
+else if (IsAuthExemptRoute())
+{
+    @* The OAuth landing routes (/auth/callback, /auth/login/microsoft) MUST
+       render while signed out — AuthCallbackPage is what drains the MSAL auth
+       code from the URL and completes the session. Gating them would deadlock
+       sign-in: no session, so the gate shows the login screen; login redirects
+       back here; the page that would have created the session never renders. *@
+    @ChildContent
+}
+else if (!AuthState.IsAuthenticated && !_silentDevLoginInFlight)
+{
+    @* Demo URLs stay zero-friction for the attraction/kiosk loop: they mint a
+       Guest session in the background rather than stopping on the login screen.
+       That is still an authenticated session — it just isn't hand-typed. Dev
+       only, because the silent path goes through the dev-login endpoint. *@
+    if (AuthState.DevLoginEnabled && IsDemoRoute())
+    {
+        _ = EnsureDemoGuestAsync();
+    }
+    else
+    {
+        @* The app is gated: everyone signs in — Guest or Microsoft in dev,
+           Microsoft in production — before any route renders. A bare login
+           screen can make /leaderboards and friends look broken to a first-time
+           visitor, so LoginScreen's copy explains it rather than letting the
+           page through. Deep links still work: the requested URL is untouched,
+           so completing sign-in lands the user exactly where they were headed. *@
+        <LoginScreen />
+    }
+}
+else
+{
+    @ChildContent
+}
+
+@code {
+    // InitializeAsync (below) restores an existing cookie/MSAL session so a
+    // returning signed-in player keeps their identity.
+    [Parameter] public RenderFragment ChildContent { get; set; } = default!;
+
+    // Demo-route silent dev-login: gate flips to true only while we're
+    // background-minting a guest session on a demo URL. Prevents the
+    // LoginScreen from flashing on top of the spinner during the ~50ms
+    // between dev-login kicking off and the cookie landing.
+    private bool _silentDevLoginInFlight;
+    private bool _demoGuestStarted;
+
+    /// <summary>
+    /// Routes that must render without a session. Only the OAuth landing pages
+    /// qualify — see the note in the markup for why gating them deadlocks
+    /// sign-in. Both of AuthCallbackPage's @@page templates are listed; adding a
+    /// third there means adding it here too.
+    /// </summary>
+    private static readonly string[] AuthExemptPaths =
+    [
+        "/auth/callback",
+        "/auth/login/microsoft",
+    ];
+
+    private bool IsAuthExemptRoute()
+    {
+        var path = new Uri(Navigation.Uri).AbsolutePath.TrimEnd('/');
+        if (path.Length == 0) return false;
+        foreach (var exempt in AuthExemptPaths)
+        {
+            if (string.Equals(path, exempt, StringComparison.OrdinalIgnoreCase)) return true;
+        }
+        return false;
+    }
+
+    protected override async Task OnInitializedAsync()
+    {
+        AuthState.StateChanged += OnAuthStateChanged;
+        // Both gate decisions (IsAuthExemptRoute, IsDemoRoute) read the current
+        // URL, but this component sits ABOVE the Router, so a navigation does not
+        // re-render it on its own — without this subscription the gate would keep
+        // acting on the URL the app was first loaded with.
+        Navigation.LocationChanged += OnLocationChanged;
+        var query = new Uri(Navigation.Uri).Query;
+        await AuthState.InitializeAsync(query);
+    }
+
+    private void OnAuthStateChanged() => InvokeAsync(StateHasChanged);
+
+    private void OnLocationChanged(object? sender, LocationChangedEventArgs e) => InvokeAsync(StateHasChanged);
+
+    /// <summary>Demo routes are zero-friction: any path ending in <c>/demo</c>.</summary>
+    private bool IsDemoRoute() =>
+        new Uri(Navigation.Uri).AbsolutePath.TrimEnd('/').EndsWith("/demo", StringComparison.OrdinalIgnoreCase);
+
+    private async Task EnsureDemoGuestAsync()
+    {
+        // Idempotent: only one in-flight attempt per gate instance. Subsequent
+        // OnAuthStateChanged events that arrive while we're authenticating will
+        // see the in-flight flag and skip the LoginScreen render entirely.
+        if (_demoGuestStarted) return;
+        _demoGuestStarted = true;
+        _silentDevLoginInFlight = true;
+        try
+        {
+            await AuthState.SignInAsync();
+        }
+        catch
+        {
+            // AuthState swallows errors internally; nothing to do here. Worst
+            // case the LoginScreen re-appears for one frame on a hard failure.
+        }
+        finally
+        {
+            _silentDevLoginInFlight = false;
+            // Force a re-render so the gate re-evaluates IsAuthenticated now
+            // that the dev-login has settled.
+            await InvokeAsync(StateHasChanged);
+        }
+    }
+
+    public void Dispose()
+    {
+        AuthState.StateChanged -= OnAuthStateChanged;
+        Navigation.LocationChanged -= OnLocationChanged;
+    }
+}

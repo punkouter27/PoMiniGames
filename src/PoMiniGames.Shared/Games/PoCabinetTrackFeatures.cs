@@ -27,7 +27,7 @@ public static class PoCabinetTrackFeatures
         int steps = def.StepsPerSegment;
         var cum = centerline.Cum;
         double length = centerline.Length;
-        var curv = centerline.Curvature(unsigned: false);
+        var curv = centerline.Curvature(magnitudeOnly: false);
 
         int hiddenFrom = def.HiddenFromKnot * steps, hiddenTo = def.HiddenToKnot * steps;
         bool Drawn(int i) => !(i >= hiddenFrom && i < hiddenTo);

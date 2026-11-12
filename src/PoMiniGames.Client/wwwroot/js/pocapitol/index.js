@@ -10,8 +10,8 @@ import { createInspector } from './inspector.js';
 import { ensure, remove } from '../radzenTheme.js';
 import { connectedPads, stick, pressed, ButtonEdges } from '../gamepadBus.js';
 
-const GRAPHICS_KEY = 'pocapitol.graphics';
-const WEATHER_KEY = 'pocapitol.weather';
+const GRAPHICS_KEY = 'pominigames:pocapitol-graphics';
+const WEATHER_KEY = 'pominigames:pocapitol-weather';
 let game = null;
 
 function storedGraphics() {

@@ -68,10 +68,10 @@ test('invalid results cannot change standings and corrupted saves are not overwr
   assert.throws(() => season.record(results.map((r) => ({ ...r, place: 1 }))), /unique/);
   assert.throws(() => season.record(results.map((r) => ({ ...r, damage: -1 }))), /unique/);
   assert.equal(season.state.totalRounds, 0);
-  store.setItem('pobrawl.ffa.seasons.v1', '{broken');
+  store.setItem('pominigames:pobrawl-ffa-seasons-v1', '{broken');
   const damaged = new Season(roster, store, (error) => errors.push(error));
   damaged.record(results);
-  assert.equal(store.getItem('pobrawl.ffa.seasons.v1'), '{broken');
+  assert.equal(store.getItem('pominigames:pobrawl-ffa-seasons-v1'), '{broken');
   assert.equal(damaged.writable, false);
   assert.equal(errors.length, 1);
   damaged.reset();
@@ -137,7 +137,7 @@ test('invalid saved evaluation reports block writes and old benchmark revisions 
     seed, candidate: { place: 6, damage: 90, knockouts: 1 }, incumbent: { place: 8, damage: 100, knockouts: 1 },
   }));
   loaded.evaluateAgentCandidate(evaluation, pairs);
-  const saved = store.getItem('pobrawl.ffa.seasons.v1');
+  const saved = store.getItem('pominigames:pobrawl-ffa-seasons-v1');
   for (const corrupt of [
     (report) => { report.promoted = false; },
     (report) => { report.characterId = 'bob'; },
@@ -149,19 +149,19 @@ test('invalid saved evaluation reports block writes and old benchmark revisions 
     const parsed = JSON.parse(saved);
     corrupt(parsed.agentLab.report);
     const damagedValue = JSON.stringify(parsed);
-    store.setItem('pobrawl.ffa.seasons.v1', damagedValue);
+    store.setItem('pominigames:pobrawl-ffa-seasons-v1', damagedValue);
     const errors = [];
     const damaged = new Season(roster, store, (message) => errors.push(message));
     damaged.record(results);
     assert.equal(damaged.writable, false);
     assert.equal(errors.length, 1);
-    assert.equal(store.getItem('pobrawl.ffa.seasons.v1'), damagedValue);
+    assert.equal(store.getItem('pominigames:pobrawl-ffa-seasons-v1'), damagedValue);
   }
 });
 
 test('invalid saved agent presets are treated as corruption and never overwritten', () => {
   const store = storage();
-  store.setItem('pobrawl.ffa.seasons.v1', JSON.stringify({
+  store.setItem('pominigames:pobrawl-ffa-seasons-v1', JSON.stringify({
     version: 1, totalRounds: 0, season: 1, completed: 0, profile: 'balanced',
     history: [], records: roster.map(({ id, name }) => ({
       id, name, rating: 1000, rounds: 0, wins: 0, places: 0, damage: 0,
@@ -174,7 +174,7 @@ test('invalid saved agent presets are treated as corruption and never overwritte
   damaged.record(results);
   assert.equal(damaged.writable, false);
   assert.match(errors[0], /damaged/);
-  assert.equal(JSON.parse(store.getItem('pobrawl.ffa.seasons.v1')).agentLab.incumbents.trump, 'not-a-preset');
+  assert.equal(JSON.parse(store.getItem('pominigames:pobrawl-ffa-seasons-v1')).agentLab.incumbents.trump, 'not-a-preset');
 });
 
 test('season storage keys isolate human play from CPU seasons', () => {
@@ -185,7 +185,7 @@ test('season storage keys isolate human play from CPU seasons', () => {
   const humanRoster = [...roster, { id: 'bob', name: 'Bob' }];
   const human = new Season(humanRoster, store, (message) => errors.push(message), 'pobrawl.ffa.player.seasons.v1');
   human.record([...results, { id: 'bob', place: 17, damage: 0, knockouts: 0, rearHitsTaken: 0 }]);
-  assert.ok(store.getItem('pobrawl.ffa.seasons.v1'));
+  assert.ok(store.getItem('pominigames:pobrawl-ffa-seasons-v1'));
   assert.ok(store.getItem('pobrawl.ffa.player.seasons.v1'));
   assert.equal(new Season(roster, store, () => {}).state.totalRounds, 1);
   assert.equal(new Season(humanRoster, store, () => {}, 'pobrawl.ffa.player.seasons.v1').state.totalRounds, 1);

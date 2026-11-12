@@ -1,0 +1,268 @@
+@namespace PoMiniGamesClient.Features.Shared
+@using Microsoft.AspNetCore.SignalR.Client
+@using PoMiniGames.Shared.Games
+@typeparam TPlayer where TPlayer : ILobbyPlayer
+@inject UiFeedbackService Feedback
+@inject ScreenFxService ScreenFx
+@inject IJSRuntime JS
+@implements IAsyncDisposable
+
+@* The one ready/start lobby card. Racer, Sports, Voxel Strike and Brawl each hand-rolled
+   this (status pill, "Players · N/M" roster with host/guest/ready pills, Ready / Start /
+   Leave) under three different class vocabularies; the Brawl copy borrowed Racer's
+   scoped class names and so rendered unstyled. A game supplies its start label, its
+   gate, and optionally a picker section and per-player badges — nothing else.
+
+   The hub readout is ConnectionStateStrip: a separate status pill and a
+   "Connecting to the lobby hub…" line would both answer "is the hub up?" and could
+   disagree. The strip plus the roster's "Loading players…" spinner say it once.
+
+   Couple Quiz and Fun Quiz use this card too, which is what ShowReady / ShowStart
+   are for. The status strip rides the roster's heading line. *@
+<div class="sp-page">
+    <div class="sp-card lobby">
+        <section class="lobby__section">
+            <div class="lobby__head">
+                <h2 class="gps-phase-h">Players · @(State?.Players.Count ?? 0)@(MaxPlayers > 0 ? $"/{MaxPlayers}" : "")</h2>
+                <ConnectionStateStrip State="ConnectionState"
+                                      Pending="State is null && ConnectionState == HubConnectionState.Connecting"
+                                      OnRetry="OnReconnect" />
+            </div>
+            <p class="lobby__hint">@Hint</p>
+            @if (State is null)
+            {
+                <div class="app-loading"><span class="app-loading__spinner" aria-hidden="true"></span><span>Loading players…</span></div>
+            }
+            else if (State.Players.Count == 0)
+            {
+                <p class="lobby__empty">No one's here yet. Be the first.</p>
+            }
+            else
+            {
+                <ol class="lobby__list">
+                    @foreach (var p in State.Players)
+                    {
+                        var isYou = p.ConnectionId == LocalConnectionId;
+                        var isHost = p.ConnectionId == State.HostConnectionId;
+                        <li class="lobby__player @(isYou ? "is-you" : "") @(isHost ? "is-host" : "")" data-lobby-seat="@p.ConnectionId">
+                            <span class="lobby__name">
+                                @if (PlayerLabel is not null)
+                                {
+                                    @PlayerLabel(p)
+                                }
+                                else
+                                {
+                                    @p.DisplayName
+                                }
+                                @if (isYou)
+                                {
+                                    <span class="lobby__you">(you)</span>
+                                }
+                            </span>
+                            @if (isHost)
+                            {
+                                <span class="app-chip app-chip--accent">host</span>
+                            }
+                            @if (p.IsGuest)
+                            {
+                                <span class="app-chip">guest</span>
+                            }
+                            @if (PlayerBadges is not null)
+                            {
+                                @PlayerBadges(p)
+                            }
+                            @if (p.IsReady)
+                            {
+                                <span class="app-chip app-chip--success">ready</span>
+                            }
+                        </li>
+                    }
+                </ol>
+            }
+        </section>
+
+        @if (Picker is not null)
+        {
+            <section class="lobby__section">
+                @if (!string.IsNullOrEmpty(PickerTitle))
+                {
+                    <h2 class="gps-phase-h">@PickerTitle</h2>
+                }
+                @Picker
+            </section>
+        }
+
+        <section class="lobby__actions">
+            @if (State is not null)
+            {
+                @if (ShowStart && IsHost && !EffectiveCanStart)
+                {
+                    <p class="lobby__hint">@WaitingHint</p>
+                }
+                @if (ShowReady && (!IsHost || HostReadies))
+                {
+                    @* "Ready ✓" is a ready that cannot be taken back (Couple Quiz starts the
+                       moment everyone is in): the button is disabled, so it must not read
+                       as the "Not Ready" action it cannot perform. *@
+                    <button type="button" class="app-btn app-btn--primary" disabled="@(!CanReady || _busy)" @onclick="ReadyAsync">
+                        @(MyReady ? (CanReady ? "Not Ready" : "Ready ✓") : "Ready!")
+                    </button>
+                }
+                @if (ShowStart && IsHost)
+                {
+                    <button type="button" class="app-btn app-btn--primary" disabled="@(!EffectiveCanStart || _busy)" @onclick="StartAsync">@StartLabel</button>
+                }
+                <button type="button" class="app-btn app-btn--secondary" @onclick="OnLeave">Leave</button>
+                <InviteLink />
+            }
+            @* State null: the strip above already says "connecting…" — rendering a
+               second copy here was the drift the strip exists to kill. *@
+        </section>
+
+        @if (HowTo is not null)
+        {
+            @* The lobby pages used to gate this card behind the shared intro card, two
+               screens before a match. The how-to rides along here instead, folded. *@
+            <details class="lobby__howto">
+                <summary>How to play</summary>
+                @HowTo
+            </details>
+        }
+    </div>
+</div>
+
+@code {
+    [Parameter] public LobbyState<TPlayer>? State { get; set; }
+    [Parameter] public string LocalConnectionId { get; set; } = "";
+    [Parameter] public HubConnectionState ConnectionState { get; set; }
+
+    /// <summary>Copy under the status line. Every lobby is the single shared room, so the default says so.</summary>
+    [Parameter] public string Hint { get; set; } = "Single shared room — first to arrive becomes host.";
+    /// <summary>Shown as the roster cap until the first state arrives. 0 (with a state that also says 0) shows no cap.</summary>
+    [Parameter] public int MaxPlayersHint { get; set; } = 2;
+
+    [Parameter, EditorRequired] public string StartLabel { get; set; } = "Start";
+    /// <summary>
+    /// The host's start gate. Null uses the shared rule (someone is here and every non-host
+    /// seat is ready); a game with more to check (a character picked) passes its own.
+    /// </summary>
+    [Parameter] public bool? CanStart { get; set; }
+    [Parameter] public string WaitingHint { get; set; } = "Waiting for everyone to mark Ready…";
+    /// <summary>False disables the Ready button (e.g. until the player has picked).</summary>
+    [Parameter] public bool CanReady { get; set; } = true;
+    /// <summary>True when the host must also ready up (Brawl's 1v1); by default the host only starts.</summary>
+    [Parameter] public bool HostReadies { get; set; }
+    /// <summary>False for a lobby with no ready step: the host just starts (Fun Quiz).</summary>
+    [Parameter] public bool ShowReady { get; set; } = true;
+    /// <summary>False for a lobby the server starts by itself once everyone is ready (Couple Quiz).</summary>
+    [Parameter] public bool ShowStart { get; set; } = true;
+    /// <summary>The game's rules and controls, folded under the buttons.</summary>
+    [Parameter] public RenderFragment? HowTo { get; set; }
+
+    /// <summary>Replaces the plain display name in the roster (e.g. an emoji + name).</summary>
+    [Parameter] public RenderFragment<TPlayer>? PlayerLabel { get; set; }
+    /// <summary>Extra pills after host/guest — use the shared <c>app-chip app-chip--*</c> classes.</summary>
+    [Parameter] public RenderFragment<TPlayer>? PlayerBadges { get; set; }
+    /// <summary>A picker section between the roster and the buttons — use <c>lobby-pick-grid</c> / <c>lobby-pick-card</c>.</summary>
+    [Parameter] public RenderFragment? Picker { get; set; }
+    [Parameter] public string? PickerTitle { get; set; }
+
+    [Parameter] public EventCallback OnReady { get; set; }
+    [Parameter] public EventCallback OnStart { get; set; }
+    [Parameter] public EventCallback OnLeave { get; set; }
+    [Parameter] public EventCallback OnReconnect { get; set; }
+
+    private int MaxPlayers => State?.MaxPlayers ?? MaxPlayersHint;
+
+    private bool IsHost =>
+        State is not null && !string.IsNullOrEmpty(LocalConnectionId) && State.HostConnectionId == LocalConnectionId;
+
+    private bool MyReady =>
+        State?.Players.FirstOrDefault(p => p.ConnectionId == LocalConnectionId)?.IsReady ?? false;
+
+    private bool EffectiveCanStart => CanStart ?? (
+        State is not null
+        && State.Players.Count > 0
+        && State.Players.All(p => p.ConnectionId == State.HostConnectionId || p.IsReady));
+
+    // ── Lobby moments ────────────────────────────────────────────────────────────
+    // A second player arriving, readying up or leaving changes one row of text, which a
+    // host with the tab in the corner of their eye would miss, so each gets a cue. Each
+    // state is diffed against the last one; the first state that lands is only
+    // remembered, so walking into a full room is not a burst of chimes.
+    private HashSet<string>? _seats;
+    private HashSet<string> _ready = [];
+    private readonly List<string> _arrived = [];
+    private string? _cue;
+
+    protected override void OnParametersSet()
+    {
+        if (State is null) return;
+        var seats = State.Players.Select(p => p.ConnectionId).ToHashSet();
+        var ready = State.Players.Where(p => p.IsReady).Select(p => p.ConnectionId).ToHashSet();
+        if (_seats is not null)
+        {
+            _arrived.AddRange(seats.Where(id => !_seats.Contains(id) && id != LocalConnectionId));
+            if (_arrived.Count > 0) _cue = "join";
+            else if (_seats.Any(id => !seats.Contains(id))) _cue = "close";
+            else if (ready.Any(id => !_ready.Contains(id) && id != LocalConnectionId)) _cue = "confirm";
+        }
+        _seats = seats;
+        _ready = ready;
+    }
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (firstRender)
+        {
+            // The --audio-* bands the card's glow reads (LobbyPanel.razor.css), driven by
+            // cues (a seat filling, Ready) and pointer movement in visualRuntime.js.
+            try { await JS.InvokeVoidAsync("PoVisualRuntime.enableAudioReactive", true); } catch { /* not loaded */ }
+        }
+
+        if (_cue is { } cue)
+        {
+            _cue = null;
+            await Feedback.CueAsync("ui", cue);
+        }
+
+        if (_arrived.Count == 0) return;
+        foreach (var id in _arrived)
+        {
+            var seat = $"[data-lobby-seat=\"{id}\"]";
+            await ScreenFx.PopAsync(seat);
+            await ScreenFx.BurstAtAsync(seat, ScreenFxService.Sparks, 0.6);
+        }
+        _arrived.Clear();
+    }
+
+    // One hub call at a time. Every lobby passes its hub call straight through, so
+    // without this a double tap on Ready toggles it back and Start can fire twice.
+    private bool _busy;
+
+    private Task ReadyAsync() => RunOnceAsync("toggle", OnReady);
+
+    private Task StartAsync() => RunOnceAsync("confirm", OnStart);
+
+    private async Task RunOnceAsync(string cue, EventCallback action)
+    {
+        if (_busy) return;
+        _busy = true;
+        try
+        {
+            await Feedback.CueAsync("ui", cue);
+            await action.InvokeAsync();
+        }
+        finally
+        {
+            _busy = false;
+        }
+    }
+
+    public async ValueTask DisposeAsync()
+    {
+        // The room is over: the match starts, or the player left.
+        try { await JS.InvokeVoidAsync("PoVisualRuntime.enableAudioReactive", false); }
+        catch { /* page unloading or module missing */ }
+    }
+}

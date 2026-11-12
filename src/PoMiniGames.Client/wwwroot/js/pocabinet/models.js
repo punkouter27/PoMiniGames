@@ -301,7 +301,7 @@ export async function loadModel(sh, group, url, scale, name, prepare) {
  */
 export function storedRoomDetail() {
     try {
-        const s = JSON.parse(localStorage.getItem('pocabinet.settings.v1') || '{}');
+        const s = JSON.parse(localStorage.getItem('pominigames:pocabinet-settings-v1') || '{}');
         const v = String(s.roomDetail ?? s.RoomDetail ?? '').toLowerCase();
         return v === 'mesh' ? 'mesh' : 'splat';
     } catch {

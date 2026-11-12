@@ -1,0 +1,255 @@
+@page "/pobrawl/hq"
+@using PoMiniGamesClient.Features.Shared
+@using PoMiniGamesClient.Models
+@using PoMiniGamesClient.Services
+@using PoBrawlRoster = PoMiniGames.Domain.Primitives.PoBrawlRoster
+@implements IAsyncDisposable
+@inject PlayerNameService PlayerNameService
+@inject ApiService ApiService
+@inject IJSRuntime JS
+
+<PageTitle>Brawl HQ · PoMiniGames</PageTitle>
+
+@* Brawl HQ: everything Brawl keeps about a player, on one page. Before it the numbers lived in
+   five places: the 1P ladder rung, fastest KO and clears (this browser, and /api/pobrawl/progress
+   when signed in), the 1P Elo in the result modal, the three server boards on /leaderboards, and
+   the Cup titles, which no screen listed at all (HQ is now their one list). The data surfaces are Radzen (the tabs,
+   the select bar, the grid, the chart), loaded on demand the way PoMule does it: Radzen's theme is global
+   CSS, so it is only on the page while this page is. The fight HUD stays custom. *@
+<GameShell Title=@TitleContent BackTo="/">
+    <div class="hq">
+        <section class="hq-play" aria-label="Play">
+            <a class="app-btn app-btn--primary hq-continue" href="/pobrawl/1player">
+                🥊 @(_ladder == 0 && _rating.Wins == 0 ? "Start the ladder" : $"Continue the ladder · rung {_ladder + 1}")
+            </a>
+            @* The ladder's intro card carries the other modes' pills (2P, Online, Demo); the Cup
+               gets its own way in here, where its titles are kept. *@
+            <a class="app-btn app-btn--ghost hq-modes" href="/pobrawl/demo?autoGuest=1">🏆 Watch the Cup</a>
+        </section>
+
+        @* Four tabs, one surface at a time, so HQ fits a laptop screen without scrolling. It
+           used to stack the record, the map and the boards card in two long columns.
+           Radzen's components call its script as they mount, so the tabs wait for it (the
+           page loads it on first render); the box holds their place meanwhile. *@
+        @if (_radzenReady)
+        {
+            <RadzenTabs @bind-SelectedIndex="_tab" AriaLabel="Brawl HQ" class="hq-tabs">
+                <Tabs>
+                    <RadzenTabsItem Text="Ladder">
+                        <dl class="hq-stats" aria-label="Your Brawl record">
+                            <div><dt>Ladder</dt><dd>@_ladder<small>/@PoBrawlRoster.Count</small></dd></div>
+                            <div><dt>Elo</dt><dd>@_rating.Elo</dd></div>
+                            <div><dt>Fastest KO</dt><dd>@(_bestKo > 0 ? $"{_bestKo:0.00}s" : "—")</dd></div>
+                            <div><dt>Record</dt><dd>@_rating.Wins<small>–@_rating.Losses</small></dd></div>
+                            <div><dt>Clears</dt><dd>@_clears</dd></div>
+                            <div><dt>Cup titles</dt><dd>@_titles.Values.Sum()</dd></div>
+                        </dl>
+                    </RadzenTabsItem>
+                    <RadzenTabsItem Text="Map">
+                        <div class="hq-map">
+                            <PoBrawlCampaignMap Beaten="@_ladder" Variant="status" />
+                        </div>
+                    </RadzenTabsItem>
+                    <RadzenTabsItem Text="Boards">
+                        <section class="hq-boards" aria-label="Boards">
+                            <RadzenSelectBar TValue="string" @bind-Value="_board" Size="ButtonSize.Medium" class="hq-select" aria-label="Board">
+                                <Items>
+                                    <RadzenSelectBarItem Text="Ladder" Value="@("pobrawl")" />
+                                    <RadzenSelectBarItem Text="Fastest KO" Value="@("pobrawlko")" />
+                                    <RadzenSelectBarItem Text="Fighters" Value="@("pobrawldemo")" />
+                                </Items>
+                            </RadzenSelectBar>
+                            <p class="hq-board-note">@BoardNote</p>
+
+                            @if (!_boardsLoaded)
+                            {
+                                <div class="app-loading"><span class="app-loading__spinner" aria-hidden="true"></span><span>Loading the boards…</span></div>
+                            }
+                            else if (Rows.Count == 0)
+                            {
+                                <p class="hq-empty">Nobody is on this board yet.</p>
+                            }
+                            else if (_board == "pobrawldemo")
+                            {
+                                @* The fighter board ranks presidents, not players: a chart reads it better. *@
+                                <RadzenChart class="hq-chart" Style="@($"height: {Math.Max(220, Rows.Count * 26 + 40)}px")">
+                                    <RadzenBarSeries Data="@Rows" CategoryProperty="Name" ValueProperty="Value" Title="Elo" Fill="#6366f1">
+                                        <RadzenSeriesDataLabels Visible="true" />
+                                    </RadzenBarSeries>
+                                    <RadzenValueAxis Min="@AxisMin">
+                                        <RadzenGridLines Visible="true" />
+                                    </RadzenValueAxis>
+                                    <RadzenCategoryAxis />
+                                    <RadzenLegend Visible="false" />
+                                </RadzenChart>
+                            }
+                            else
+                            {
+                                <RadzenDataGrid Data="@Rows" TItem="BoardRow" Density="Density.Compact" AllowSorting="false" AllowPaging="false"
+                                                RowRender="@MarkMe" class="hq-grid-table">
+                                    <Columns>
+                                        <RadzenDataGridColumn TItem="BoardRow" Title="#" Width="52px">
+                                            <Template Context="r">@r.Rank</Template>
+                                        </RadzenDataGridColumn>
+                                        <RadzenDataGridColumn TItem="BoardRow" Title="Player">
+                                            <Template Context="r">@r.Name@(r.Me ? " (you)" : "")</Template>
+                                        </RadzenDataGridColumn>
+                                        <RadzenDataGridColumn TItem="BoardRow" Title="@Unit" Width="110px" TextAlign="TextAlign.Right">
+                                            <Template Context="r"><strong>@r.Display</strong></Template>
+                                        </RadzenDataGridColumn>
+                                    </Columns>
+                                </RadzenDataGrid>
+                            }
+                        </section>
+                    </RadzenTabsItem>
+                    <RadzenTabsItem Text="Titles">
+                        <p class="hq-board-note">Cups won in this browser.</p>
+                        @if (_titles.Count == 0)
+                        {
+                            <p class="hq-empty">No Cup won in this browser yet. <a href="/pobrawl/demo?autoGuest=1">Watch the Cup</a>.</p>
+                        }
+                        else
+                        {
+                            <ol class="hq-titles">
+                                @foreach (var (id, n) in _titles.OrderByDescending(kv => kv.Value).ThenBy(kv => FighterName(kv.Key)))
+                                {
+                                    <li><span>@FighterName(id)</span><b>@n @(n == 1 ? "title" : "titles")</b></li>
+                                }
+                            </ol>
+                        }
+                    </RadzenTabsItem>
+                </Tabs>
+            </RadzenTabs>
+        }
+        else
+        {
+            <div class="hq-tabs-pending app-loading"><span class="app-loading__spinner" aria-hidden="true"></span><span>Loading HQ…</span></div>
+        }
+    </div>
+</GameShell>
+
+@code {
+    /// <summary>One board row, shaped for the grid and the chart.</summary>
+    public sealed record BoardRow(int Rank, string Name, double Value, string Display, bool Me);
+
+    private static RenderFragment TitleContent => GameCatalog.TitleFor(GameKeys.PoBrawl);
+
+    private readonly GameStatsService _gameStats = new();
+    private string _playerName = "";
+    private int _ladder;
+    private int _clears;
+    private double _bestKo;
+    private AdaptiveRating _rating = new();
+    private Dictionary<string, int> _titles = [];
+
+    private string _board = "pobrawl";
+    private int _tab;
+    private readonly Dictionary<string, GameLeaderboardDto?> _boards = [];
+    private bool _boardsLoaded;
+    private bool _radzenReady;
+    private IJSObjectReference? _theme;
+
+    private GameLeaderboardDto? Current => _boards.GetValueOrDefault(_board);
+
+    private string Unit => Current?.Unit ?? "";
+
+    private string BoardNote => _board switch
+    {
+        "pobrawl" => "Most presidents beaten in one run, everyone who has climbed the ladder.",
+        "pobrawlko" => "The fastest knockouts on the 1P ladder.",
+        _ => "The presidents themselves, rated by every Cup bout.",
+    };
+
+    private List<BoardRow> Rows => Current?.Entries
+        .Select(e => new BoardRow(e.Rank, LeaderboardNames.Pretty(e.Name), e.Value, e.DisplayValue,
+            !string.IsNullOrEmpty(_playerName) && string.Equals(e.Name, _playerName, StringComparison.OrdinalIgnoreCase)))
+        .ToList() ?? [];
+
+    // Elo bars start under the weakest fighter, not at zero, so the gaps between them show.
+    private double AxisMin => Rows.Count == 0 ? 0 : Math.Max(0, Math.Floor((Rows.Min(r => r.Value) - 60) / 100) * 100);
+
+    private static string FighterName(string id) => PoBrawlRoster.NameOf(id) ?? id;
+
+    private static void MarkMe(RowRenderEventArgs<BoardRow> args)
+    {
+        if (args.Data?.Me == true) args.Attributes["class"] = "hq-row-me";
+    }
+
+    protected override void OnInitialized()
+    {
+        LoadLocal();
+        _titles = PoBrawlProgressBook.LoadTitles();
+        // On a hard refresh the page can initialise before the stored (then signed-in) name
+        // arrives, and everything above is keyed by it — re-read when it settles, as PoBrawlPage does.
+        PlayerNameService.StateChanged += OnPlayerNameChanged;
+    }
+
+    private void LoadLocal()
+    {
+        _playerName = PlayerNameService.GetPlayerName();
+        Show(PoBrawlProgressBook.Load(_playerName));
+        _rating = _gameStats.GetAdaptiveRating("pobrawl", _playerName);
+    }
+
+    private void OnPlayerNameChanged()
+    {
+        if (PlayerNameService.GetPlayerName() == _playerName) return;
+        _ = InvokeAsync(() =>
+        {
+            LoadLocal();
+            StateHasChanged();
+        });
+    }
+
+    private void Show(PoMiniGames.Shared.Games.PoBrawlProgressDto progress)
+    {
+        _ladder = progress.Rung;
+        _clears = progress.Clears;
+        _bestKo = progress.BestKoSeconds;
+    }
+
+    protected override async Task OnInitializedAsync()
+    {
+        // The signed-in copy of the ladder (another device) can be ahead of this browser's.
+        var progressTask = ApiService.GetPoBrawlProgressAsync();
+        var keys = new[] { "pobrawl", "pobrawlko", "pobrawldemo" };
+        var boardTasks = keys.Select(k => ApiService.GetGameLeaderboardAsync(k, k == "pobrawldemo" ? PoBrawlRoster.Count : 10)).ToArray();
+        var remote = await progressTask;
+        // The merge is stored under the player's name, so never under a placeholder.
+        await PlayerNameService.Initialized;
+        if (PlayerNameService.GetPlayerName() != _playerName) LoadLocal();
+        if (remote is not null) Show(PoBrawlProgressBook.Adopt(_playerName, remote));
+        var boards = await Task.WhenAll(boardTasks);
+        for (var i = 0; i < keys.Length; i++) _boards[keys[i]] = boards[i];
+        _boardsLoaded = true;
+    }
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (!firstRender) return;
+        try
+        {
+            _theme = await JS.InvokeAsync<IJSObjectReference>("import", "./js/radzenTheme.js");
+            await _theme.InvokeVoidAsync("ensure");
+        }
+        catch (JSException ex)
+        {
+            Console.Error.WriteLine($"[pobrawl-hq] Radzen theme failed: {ex.Message}");
+        }
+        _radzenReady = true;
+        StateHasChanged();
+    }
+
+    public async ValueTask DisposeAsync()
+    {
+        PlayerNameService.StateChanged -= OnPlayerNameChanged;
+        if (_theme is null) return;
+        try
+        {
+            await _theme.InvokeVoidAsync("remove");
+            await _theme.DisposeAsync();
+        }
+        catch (JSDisconnectedException) { }
+        catch (JSException) { }
+    }
+}

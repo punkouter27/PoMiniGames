@@ -1,3 +1,4 @@
+using PoMiniGames.Shared.Dtos;
 using System.Text.Json.Serialization;
 // Alias, not a namespace import: PoMiniGamesClient.Models mirrors several other Domain
 // types by name, so importing the namespace wholesale would make them all ambiguous.
@@ -36,6 +37,7 @@ namespace PoMiniGamesClient.Services.Http;
 [JsonSerializable(typeof(AntiforgeryTokenDto))]
 // /health status page
 [JsonSerializable(typeof(HealthReportDto))]
+[JsonSerializable(typeof(ProblemDetailsDto))]
 // Score integrity + account data. Source-generated like everything else on this path:
 // the mint runs on the WASM HttpClient pipeline and the erase result is read back on the
 // profile page, both of which the trim analyzer sees.
@@ -97,6 +99,6 @@ namespace PoMiniGamesClient.Services.Http;
 [JsonSerializable(typeof(List<PoMiniGames.Shared.Games.PoBrawlDossierDto>))]
 // Player Card & Online MMR
 [JsonSerializable(typeof(PoMiniGames.Domain.Models.PlayerCardDto))]
-internal partial class ApiJsonContext : JsonSerializerContext
+internal sealed partial class ApiJsonContext : JsonSerializerContext
 {
 }

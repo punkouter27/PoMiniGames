@@ -39,6 +39,7 @@ public class PoMuleUiTests
         // ── Desktop, keyboard ──
         var desktop = await browser.NewContextAsync(new() { ViewportSize = new() { Width = 1280, Height = 720 } });
         var page = await desktop.NewPageAsync();
+        await using var desktopGuard = PlaywrightErrorGuard.Watch(page);
         var errors = new List<string>();
         page.PageError += (_, err) => errors.Add(err);
         await page.GotoAsync($"{origin}/pomule/1player?autoGuest=1", new() { WaitUntil = WaitUntilState.NetworkIdle, Timeout = 60_000 });
@@ -122,11 +123,13 @@ public class PoMuleUiTests
         (await page.EvaluateAsync<int>("() => window.__pomule().owner.filter(o => o >= 0).length"))
             .Should().BeGreaterThanOrEqualTo(8, "month 1's land is still owned");
         errors.Should().BeEmpty();
+        await desktopGuard.DisposeAsync();
         await desktop.CloseAsync();
 
         // ── Phone in landscape, touch ──
         var phone = await browser.NewContextAsync(new() { ViewportSize = new() { Width = 844, Height = 390 }, HasTouch = true, IsMobile = true });
         var mobile = await phone.NewPageAsync();
+        await using var mobileGuard = PlaywrightErrorGuard.Watch(mobile);
         await mobile.GotoAsync($"{origin}/pomule/1player?autoGuest=1", new() { WaitUntil = WaitUntilState.NetworkIdle, Timeout = 60_000 });
         await mobile.Locator(".pm-species-card").First.WaitForAsync(new() { Timeout = 60_000 });
         await mobile.GetByRole(AriaRole.Button, new() { Name = "OK", Exact = true }).TapAsync();
@@ -163,6 +166,7 @@ public class PoMuleUiTests
         await using var browser = await playwright.Chromium.LaunchAsync(BrowserLaunch.Options());
         var context = await browser.NewContextAsync(new() { ViewportSize = new() { Width = 1280, Height = 720 } });
         var page = await context.NewPageAsync();
+        await using var guard = PlaywrightErrorGuard.Watch(page);
         var errors = new List<string>();
         var scorePosts = 0;
         page.Console += (_, msg) => { if (msg.Type is "error") errors.Add(msg.Text); };

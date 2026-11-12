@@ -34,7 +34,7 @@ public class PoBrawlLobbyServiceTests
 
     // Host assignment and the cap-2 bounce share one arrangement, so they are one
     // fact.
-    private void Open_AssignsFirstArrivalAsHost_AndBouncesThirdAtCap()
+    private static void Open_AssignsFirstArrivalAsHost_AndBouncesThirdAtCap()
     {
         var lobby = new PoBrawlLobbyService();
         lobby.Open("conn-1", "alice", "Alice", isGuest: false, AnyFighter);
@@ -47,7 +47,7 @@ public class PoBrawlLobbyServiceTests
         msg.Should().Contain("full");
     }
 
-    private void RejoinSameConnection_RefreshesPlayerRow_PreservesHost()
+    private static void RejoinSameConnection_RefreshesPlayerRow_PreservesHost()
     {
         var lobby = new PoBrawlLobbyService();
         lobby.Open("conn-1", "alice", "Alice", isGuest: false, AnyFighter);
@@ -58,7 +58,7 @@ public class PoBrawlLobbyServiceTests
         state.Players[0].DisplayName.Should().Be("Alice2");
     }
 
-    private void TryStart_RequiresHostAndAllReady_AndIsIdempotent()
+    private static void TryStart_RequiresHostAndAllReady_AndIsIdempotent()
     {
         var lobby = new PoBrawlLobbyService();
         lobby.Open("conn-1", "alice", "Alice", isGuest: false, AnyFighter);
@@ -75,7 +75,7 @@ public class PoBrawlLobbyServiceTests
     /// The one shared room: each start mints a fresh match
     /// code and the room frees up, so the next two arrivals fight alongside the first pair.
     /// </summary>
-    private void Start_MintsFreshMatchCode_SoTheNextPairFightsAlongside()
+    private static void Start_MintsFreshMatchCode_SoTheNextPairFightsAlongside()
     {
         var lobby = new PoBrawlLobbyService();
         var matches = new PoBrawlMatchRegistry();
@@ -106,7 +106,7 @@ public class PoBrawlLobbyServiceTests
         lobby.State.GameCode.Should().Be(PoBrawlLobbyService.GlobalCode);
     }
 
-    private void EndMatch_ResetsReadyFlags_AndClearsStaleMatch()
+    private static void EndMatch_ResetsReadyFlags_AndClearsStaleMatch()
     {
         var lobby = new PoBrawlLobbyService();
         lobby.Open("conn-1", "alice", "Alice", isGuest: false, AnyFighter);
@@ -123,7 +123,7 @@ public class PoBrawlLobbyServiceTests
     /// One player in two tabs used to fill both seats (seats key on connection) and fight
     /// themselves, holding the only room. The newer connection takes over instead.
     /// </summary>
-    private void SamePrincipal_OnASecondConnection_TakesOverTheSeat_NeverASecondOne()
+    private static void SamePrincipal_OnASecondConnection_TakesOverTheSeat_NeverASecondOne()
     {
         var lobby = new PoBrawlLobbyService();
         lobby.Open("tab-1", "Alice-Id", "Alice", isGuest: false, AnyFighter);
@@ -141,7 +141,7 @@ public class PoBrawlLobbyServiceTests
     /// A parked tab cannot hold the room: a seat that has done nothing for IdleSeatMs gives way to a
     /// newcomer — but only when the room is full, and never a ready guest waiting on the host.
     /// </summary>
-    private void IdleSeat_GivesWay_OnlyWhenSomeoneNeedsTheRoom()
+    private static void IdleSeat_GivesWay_OnlyWhenSomeoneNeedsTheRoom()
     {
         var clock = new FakeTimeProvider(DateTimeOffset.UtcNow);
         var lobby = new PoBrawlLobbyService(clock);
@@ -170,7 +170,7 @@ public class PoBrawlLobbyServiceTests
     /// The start gate and the roster the game is built from are one step under the room lock, so a
     /// seat that leaves right after the start cannot leave the match with a short roster.
     /// </summary>
-    private void TryStartWithRoster_HandsBackTheRosterTheGatePassed()
+    private static void TryStartWithRoster_HandsBackTheRosterTheGatePassed()
     {
         var lobby = new PoBrawlLobbyService();
         lobby.Open("conn-1", "alice", "Alice", isGuest: false, AnyFighter);

@@ -5,6 +5,6 @@ namespace PoMiniGames.Infrastructure.Serialization;
 
 [JsonSourceGenerationOptions(GenerationMode = JsonSourceGenerationMode.Metadata)]
 [JsonSerializable(typeof(PlayerStats))]
-internal partial class StorageJsonContext : JsonSerializerContext
+internal sealed partial class StorageJsonContext : JsonSerializerContext
 {
 }

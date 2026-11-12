@@ -20,8 +20,8 @@
   </ItemGroup>
 
   <ItemGroup>
-    <ProjectReference Include="..\..\src\PoMiniGames.API\PoMiniGames.API.csproj" />
-    <ProjectReference Include="..\..\src\PoMiniGames.Client\PoMiniGamesClient.csproj" />
+    <ProjectReference Include="..\..\src\PoMiniGames.Api\PoMiniGames.Api.csproj" />
+    <ProjectReference Include="..\..\src\PoMiniGames.Client\PoMiniGames.Client.csproj" />
     <!-- TierCeilingGuard (the 100/50/25/25 assertion, shared by all four tiers). -->
     <ProjectReference Include="..\Shared\PoMiniGames.TestUtilities.csproj" />
   </ItemGroup>

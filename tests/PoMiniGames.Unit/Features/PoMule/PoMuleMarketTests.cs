@@ -33,7 +33,7 @@ public sealed class PoMuleMarketTests
     [InlineData(nameof(AtMonthEnd_TheStoreBuildsMulesFromSmithore_RepricesThem_AndCrystiteFindsANewPrice))]
     public Task Scenario(string name) => Scenarios.RunAsync(this, name);
 
-    private void Open_PutsThoseWithSpareAtTheTopAsSellers_ThoseShortAtTheBottomAsBuyers()
+    private static void Open_PutsThoseWithSpareAtTheTopAsSellers_ThoseShortAtTheBottomAsBuyers()
     {
         var match = FoodMarket(m =>
         {
@@ -63,7 +63,7 @@ public sealed class PoMuleMarketTests
         (match.LaneRole[0], match.LanePrice[0]).Should().Be((PoMuleMarket.Seller, ceiling));
     }
 
-    private void WhenBidMeetsAsk_UnitsTradeAtThatPrice_FourASecond_UntilSomeoneRunsOutOrWalksAway()
+    private static void WhenBidMeetsAsk_UnitsTradeAtThatPrice_FourASecond_UntilSomeoneRunsOutOrWalksAway()
     {
         var match = FoodMarket(m =>
         {
@@ -107,7 +107,7 @@ public sealed class PoMuleMarketTests
         Enumerable.Range(0, 20).SelectMany(_ => PoMuleMarket.Tick(match, Still)).Should().BeEmpty();
     }
 
-    private void TheStore_SellsAtTheCeilingWhileItHasStock_BuysAtTheFloor_AndColonistsTradeWithEachOtherFirst()
+    private static void TheStore_SellsAtTheCeilingWhileItHasStock_BuysAtTheFloor_AndColonistsTradeWithEachOtherFirst()
     {
         var match = FoodMarket(m =>
         {
@@ -150,7 +150,7 @@ public sealed class PoMuleMarketTests
     public void StorePrice_RisesWhenTheColonyIsShort_FallsInAGlut_WithinItsLimits(Good good, int price, int supply, int need, int next) =>
         PoMuleMarket.NextPrice(good, price, supply, need).Should().Be(next);
 
-    private void AtMonthEnd_TheStoreBuildsMulesFromSmithore_RepricesThem_AndCrystiteFindsANewPrice()
+    private static void AtMonthEnd_TheStoreBuildsMulesFromSmithore_RepricesThem_AndCrystiteFindsANewPrice()
     {
         var match = FoodMarket();
         match.Store.Stock[(int)Good.Smithore] = 5;

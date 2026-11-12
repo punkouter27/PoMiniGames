@@ -29,16 +29,27 @@ public class HomePageUiTests
         // entirely. This keeps the E2E-UI suite deterministic across cookie-domain
         // edge cases (loopback vs explicit IP) and matches the integration suite's
         // header-based harness.
+        var origin = new Uri(_fixture.ServerAddress);
         var context = await browser.NewContextAsync(new BrowserNewContextOptions
         {
             ViewportSize = MobileViewport.Portrait,
         });
-        await context.SetExtraHTTPHeadersAsync(new Dictionary<string, string>
+        await context.RouteAsync("**/*", async route =>
         {
-            ["X-Fake-User"] = "test-user",
-            ["X-Fake-Roles"] = "Player",
+            if (new Uri(route.Request.Url).Authority != origin.Authority)
+            {
+                await route.ContinueAsync();
+                return;
+            }
+            var headers = new Dictionary<string, string>(route.Request.Headers)
+            {
+                ["X-Fake-User"] = "test-user",
+                ["X-Fake-Roles"] = "Player",
+            };
+            await route.ContinueAsync(new RouteContinueOptions { Headers = headers });
         });
         var page = await context.NewPageAsync();
+        await using var guard = PlaywrightErrorGuard.Watch(page);
 
         await page.GotoAsync($"{_fixture.ServerAddress}?autoGuest=1", new PageGotoOptions
         {

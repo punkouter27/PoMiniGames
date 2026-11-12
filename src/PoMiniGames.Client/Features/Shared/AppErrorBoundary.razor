@@ -1,0 +1,126 @@
+@namespace PoMiniGamesClient.Features.Shared
+@*
+    Custom ErrorBoundary: replaces the default Blazor `#blazor-error-ui` overlay
+    with an actionable, environment-aware banner.
+
+    • In Development: shows the exception type + message + a generated error
+      id (CorrelationId) users can quote in bug reports. Includes a "Copy" button
+      that puts the full diagnostic blob on the clipboard.
+
+    • In Production: keeps the banner visible but scrubs the stack trace to a
+      generic "Something went wrong on this page. The team has been notified."
+      message, and adds a "Reload" button. The telemetry pipeline (see
+      AddPoMiniGamesTelemetry) correlates the error id to logs via the
+      CorrelationId from the BFF handshake.
+
+    Pattern: Decorator over <ErrorBoundary> — we keep the recovery semantics
+    (Recover() resets the inner content) and just override the recovered-content
+    and exception-content fragments.
+*@
+@using System.Text
+@using Microsoft.AspNetCore.Components.Web
+@using Microsoft.Extensions.Logging
+@inject ILogger<AppErrorBoundary> Logger
+@inject PoMiniGamesClient.Services.Auth.AuthStateService AuthState
+@inject IJSRuntime JSRuntime
+
+<ErrorBoundary @ref="_boundary">
+    <ChildContent>@ChildContent</ChildContent>
+    <ErrorContent Context="ex">
+        @{
+            // Generate a stable per-error id so the same exception across
+            // re-renders is reported once. Logger attaches it to telemetry.
+            var errorId = Guid.NewGuid().ToString("N")[..12];
+            var isDev = System.Diagnostics.Debugger.IsAttached
+                        || Environment.GetEnvironmentVariable("ASPNETCORE_ENVIRONMENT") == "Development"
+                        || Environment.GetEnvironmentVariable("DOTNET_ENVIRONMENT") == "Development";
+            Logger.LogError(ex, "Unhandled UI exception (id={ErrorId})", errorId);
+        }
+        <div class="app-error-boundary" role="alert" aria-live="polite">
+            <div class="app-error-boundary__icon" aria-hidden="true">⚠️</div>
+            <h2 class="app-error-boundary__title">
+                @if (isDev)
+                {
+                    <text>Unhandled exception</text>
+                }
+                else
+                {
+                    <text>Something went wrong on this page</text>
+                }
+            </h2>
+            @if (isDev)
+            {
+                <p class="app-error-boundary__message">
+                    <code>@ex.GetType().Name</code>: @ex.Message
+                </p>
+                <details class="app-error-boundary__details">
+                    <summary>Stack trace (Dev only)</summary>
+                    <pre>@ex.StackTrace</pre>
+                </details>
+            }
+            else
+            {
+                <p class="app-error-boundary__message">
+                    The team has been notified. You can keep playing other games while
+                    we get this fixed — your progress and high scores are safe.
+                </p>
+            }
+            <p class="app-error-boundary__id">
+                Error ID: <code>@errorId</code>
+                @if (isDev)
+                {
+                    <button type="button" class="app-error-boundary__copy" @onclick="() => Copy(ex, errorId)">
+                        @(_copied ? "✓ Copied" : "Copy diagnostic")
+                    </button>
+                }
+            </p>
+            <div class="app-error-boundary__actions">
+                <button type="button" class="app-btn app-btn--primary" @onclick="Recover">
+                    Try again
+                </button>
+                <a class="app-btn app-btn--ghost" href="/">
+                    Back to home
+                </a>
+            </div>
+        </div>
+    </ErrorContent>
+</ErrorBoundary>
+
+@code {
+    [Parameter] public RenderFragment? ChildContent { get; set; }
+    private ErrorBoundary? _boundary;
+    private bool _copied;
+
+    private void Recover()
+    {
+        _copied = false;
+        _boundary?.Recover();
+    }
+
+    private async Task Copy(Exception ex, string errorId)
+    {
+        var sb = new StringBuilder();
+        sb.AppendLine($"Error ID:    {errorId}");
+        sb.AppendLine($"Time (UTC):  {DateTime.UtcNow:O}");
+        if (AuthState.User is { } u)
+        {
+            sb.AppendLine($"User:        {u.UserId} ({u.DisplayName})");
+        }
+        sb.AppendLine($"Exception:   {ex.GetType().FullName}");
+        sb.AppendLine($"Message:     {ex.Message}");
+        sb.AppendLine("Stack:");
+        sb.AppendLine(ex.StackTrace);
+        try
+        {
+            // Use the browser clipboard when available; fall back to a temp
+            // textarea so the click still feels responsive on older browsers.
+            await JSRuntime.InvokeVoidAsync("navigator.clipboard.writeText", sb.ToString());
+        }
+        catch
+        {
+            try { await JSRuntime.InvokeVoidAsync("poCopyToClipboard", sb.ToString()); }
+            catch { /* clipboard unavailable in this context */ }
+        }
+        _copied = true;
+    }
+}

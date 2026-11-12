@@ -5,7 +5,7 @@
             "name": "API + Client (F5)",
             "type": "dotnet",
             "request": "launch",
-            "projectPath": "${workspaceFolder}/src/PoMiniGames.API/PoMiniGames.API.csproj",
+            "projectPath": "${workspaceFolder}/src/PoMiniGames.Api/PoMiniGames.Api.csproj",
             "preLaunchTask": "prelaunch",
             "env": {
                 "ASPNETCORE_ENVIRONMENT": "Development"

@@ -1,6 +1,6 @@
 name: Publish docs
 
-# The documentation suite under DOCS/ is a static site. This workflow publishes it
+# The documentation suite under docs/ is a static site. This workflow publishes it
 # to GitHub Pages so there is one hosted URL for the whole suite, and it does so
 # from CI - nothing about the docs is deployed by hand.
 #
@@ -11,7 +11,7 @@ on:
   push:
     branches: [ master ]
     paths:
-      - 'DOCS/**'
+      - 'docs/**'
       - '.github/workflows/docs.yml'
   workflow_dispatch:
 
@@ -63,8 +63,8 @@ jobs:
         run: |
           set -euo pipefail
           mkdir -p _site
-          cp -r DOCS/. _site/
-          LATEST=$(ls -1 DOCS | grep -E '^[0-9]{8}$' | sort | tail -1)
+          cp -r docs/. _site/
+          LATEST=$(ls -1 docs | grep -E '^[0-9]{8}$' | sort | tail -1)
           echo "Latest suite: $LATEST"
           echo "LATEST=$LATEST" >> "$GITHUB_ENV"
           cat > _site/index.html <<HTML
@@ -103,13 +103,13 @@ jobs:
             echo "- Site root: $URL"
             echo "- Tabbed shell: $URL${LATEST:-latest}/artifact.html"
             echo "- Overview: $URL${LATEST:-latest}/index.html"
-            echo "- In the repository: \`DOCS/\`"
+            echo "- In the repository: \`docs/\`"
             if [ "${{ steps.deploy.outcome }}" = "success" ]; then
               echo
               echo "Pages deployment succeeded."
             else
               echo
-              echo "::warning::The Pages deployment did not run. The suite is still in the repository under DOCS/."
+              echo "::warning::The Pages deployment did not run. The suite is still in the repository under docs/."
               echo "::warning::A Pages site that has never been enabled can only be created by a repository admin: Settings > Pages > Source: GitHub Actions."
             fi
           } >> "$GITHUB_STEP_SUMMARY"

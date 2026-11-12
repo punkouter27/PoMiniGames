@@ -49,16 +49,16 @@ public sealed class PoCabinetCenterline
     /// Signed curvature per sample (+ = a right-hander, heading increasing): the heading change
     /// across it over the mean adjacent segment length, smoothed over three samples. The raw
     /// spline samples are noisy enough that the AI would otherwise brake for kinks.
-    /// <paramref name="unsigned"/> takes the magnitude before smoothing (the AI's braking).
+    /// <paramref name="magnitudeOnly"/> takes the magnitude before smoothing (the AI's braking).
     /// </summary>
-    public double[] Curvature(bool unsigned)
+    public double[] Curvature(bool magnitudeOnly)
     {
         var raw = new double[Count];
         for (int i = 0; i < Count; i++)
         {
             int p = (i - 1 + Count) % Count;
             double d = PoCabinetDetMath.WrapAngle(PoCabinetDetMath.Atan2(Ty[i], Tx[i]) - PoCabinetDetMath.Atan2(Ty[p], Tx[p]));
-            raw[i] = (unsigned ? Math.Abs(d) : d) / Math.Max(1e-6, (SegLen[p] + SegLen[i]) * 0.5);
+            raw[i] = (magnitudeOnly ? Math.Abs(d) : d) / Math.Max(1e-6, (SegLen[p] + SegLen[i]) * 0.5);
         }
         var curv = new double[Count];
         for (int i = 0; i < Count; i++) curv[i] = (raw[(i - 1 + Count) % Count] + raw[i] + raw[(i + 1) % Count]) / 3.0;

@@ -1,7 +1,7 @@
 using FluentAssertions;
 using PoMiniGames.Domain.Primitives;
 using PoMiniGames.Shared.Games;
-using PoMiniGamesClient.Games.PoBrawl;
+using PoMiniGamesClient.Features.PoBrawl;
 using PoMiniGamesClient.Models;
 
 namespace PoMiniGames.Unit.Features.PoBrawl;
@@ -27,7 +27,7 @@ public sealed class PoBrawlTournamentTests
     private static PoBrawlTournament NewCup(int seed = 7, IReadOnlyDictionary<string, int>? ratings = null) =>
         PoBrawlTournament.Draw(PoBrawlRoster.Fighters, new Random(seed), ratings);
 
-    private void Catalog_HasTwoDistinctDemoModesAndReelEntries()
+    private static void Catalog_HasTwoDistinctDemoModesAndReelEntries()
     {
         var game = GameCatalog.All.Single(g => g.Key == GameKeys.PoBrawl);
         var demos = game.Modes.Where(mode => mode.Mode == GameMode.Demo).ToArray();
@@ -40,7 +40,7 @@ public sealed class PoBrawlTournamentTests
         game.Primary.Mode.Should().Be(GameMode.OnePlayer);
     }
 
-    private void Draw_PicksAllPresidents_AndSeedsUnratedAtTheBoardSeed()
+    private static void Draw_PicksAllPresidents_AndSeedsUnratedAtTheBoardSeed()
     {
         var cup = NewCup(ratings: new Dictionary<string, int> { ["fdr"] = 1400 });
         cup.Field.Should().HaveCount(PoBrawlRoster.Count).And.OnlyHaveUniqueItems(f => f.Id);
@@ -59,7 +59,7 @@ public sealed class PoBrawlTournamentTests
         NewCup(seed: 8).Field.Select(f => f.Id).Should().NotEqual(NewCup().Field.Select(f => f.Id));
     }
 
-    private void Byes_FillTheBracketAndAdvanceWithoutChangingElo()
+    private static void Byes_FillTheBracketAndAdvanceWithoutChangingElo()
     {
         var cup = PoBrawlTournament.Draw(PoBrawlRoster.Fighters.Take(5).ToArray(), new Random(2));
         cup.Entrants.Count(id => id == PoBrawlTournament.ByeId).Should().Be(11);
@@ -84,7 +84,7 @@ public sealed class PoBrawlTournamentTests
         cup.ChampionId.Should().NotBe(PoBrawlTournament.ByeId);
     }
 
-    private void Winners_AdvanceIntoTheirSlots_UntilTheFinalCrownsAChampion()
+    private static void Winners_AdvanceIntoTheirSlots_UntilTheFinalCrownsAChampion()
     {
         var cup = NewCup();
         var opening = cup.Bouts.Take(8).Where(b => !b.IsBye).ToArray();
@@ -115,7 +115,7 @@ public sealed class PoBrawlTournamentTests
         cup.Standings[0].Id.Should().Be(champion);
     }
 
-    private void Elo_IsZeroSum_AndAnUpsetPaysMoreThanAFavouriteWinning()
+    private static void Elo_IsZeroSum_AndAnUpsetPaysMoreThanAFavouriteWinning()
     {
         var even = NewCup();
         var b = even.Current!;
@@ -132,7 +132,7 @@ public sealed class PoBrawlTournamentTests
         (favourite + upset).Should().Be(24, because: "the two expectations sum to one");
     }
 
-    private void Expectation_FavoursTheHigherRating_AndOnlyAnUnderdogWinIsAnUpset()
+    private static void Expectation_FavoursTheHigherRating_AndOnlyAnUnderdogWinIsAnUpset()
     {
         var first = NewCup().Current!;
         var ratings = new Dictionary<string, int> { [first.P1Id!] = 1200, [first.P2Id!] = 1000 };
@@ -150,7 +150,7 @@ public sealed class PoBrawlTournamentTests
         NewCup().Bouts[0].IsUpset.Should().BeFalse(because: "an undecided bout is no upset yet");
     }
 
-    private void Results_AreRefused_WhenNotASide_OrOnceDecided()
+    private static void Results_AreRefused_WhenNotASide_OrOnceDecided()
     {
         var cup = NewCup();
         FluentActions.Invoking(() => cup.RecordResult(0, 60, knockout: false))
@@ -162,7 +162,7 @@ public sealed class PoBrawlTournamentTests
     }
 
     // The 1P ladder's campaign map (PoBrawlCampaign) shares this theory: one row, no new method.
-    private void CampaignTrail_Crosses270_OnlyOnTheLastRung()
+    private static void CampaignTrail_Crosses270_OnlyOnTheLastRung()
     {
         PoBrawlCampaign.States.Should().HaveCount(51).And.OnlyHaveUniqueItems(s => s.Code)
             .And.OnlyHaveUniqueItems(s => (s.Row * 100) + s.Col);
@@ -185,7 +185,7 @@ public sealed class PoBrawlTournamentTests
     }
 
     /// <summary>The one merge rule the server store and the browser's PoBrawlProgressBook both use.</summary>
-    private void Progress_Merge_TakesTheNewerRung_TheFastestKo_AndTheMostClears()
+    private static void Progress_Merge_TakesTheNewerRung_TheFastestKo_AndTheMostClears()
     {
         var older = new PoBrawlProgressDto { Rung = 9, BestKoSeconds = 12.5, Clears = 3, UpdatedAtUnixMs = 1_000 };
         var newer = new PoBrawlProgressDto { Rung = 2, BestKoSeconds = 0, Clears = 1, UpdatedAtUnixMs = 2_000 };

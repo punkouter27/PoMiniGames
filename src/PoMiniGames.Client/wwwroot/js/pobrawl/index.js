@@ -41,10 +41,10 @@ window.PoBrawl = {
       ? new BrawlFfaGame(el, dotnetRef, { ...options })
       : new BrawlGame(el, dotnetRef, { ...options });
     game.start();
-    // Headless harnesses: ?debug (or localStorage pobrawl.debug) exposes the live engine as
+    // Headless harnesses: ?debug (or localStorage pominigames:pobrawl-debug) exposes the live engine as
     // window.__pobrawl(). The sign-in redirect can drop the query, hence the storage flag.
     let debug = /[?&]debug/.test(location.search);
-    try { debug ||= !!localStorage.getItem('pobrawl.debug'); } catch { /* storage blocked */ }
+    try { debug ||= !!localStorage.getItem('pominigames:pobrawl-debug'); } catch { /* storage blocked */ }
     if (debug) window.__pobrawl = () => game;
   },
   /**

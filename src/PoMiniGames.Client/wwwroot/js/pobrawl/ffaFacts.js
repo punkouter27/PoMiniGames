@@ -1,5 +1,5 @@
 // Optional, structured Wikidata facts; no article abstracts or copied prose.
-const CACHE_KEY = 'pomini_pobrawl_ffa_facts_v1';
+const CACHE_KEY = 'pominigames:pobrawl-ffa-facts-v1';
 const CACHE_LIMIT = 24;
 const CACHE_MAX_AGE = 90 * 24 * 60 * 60 * 1000;
 const WIKIDATA_API = 'https://www.wikidata.org/w/api.php';

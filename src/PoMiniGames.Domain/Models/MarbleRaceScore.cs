@@ -34,5 +34,5 @@ public readonly record struct MarbleRaceScore
 
     public static implicit operator int(MarbleRaceScore score) => score.Value;
 
-    public override string ToString() => Value.ToString();
+    public override string ToString() => Value.ToString(System.Globalization.CultureInfo.InvariantCulture);
 }

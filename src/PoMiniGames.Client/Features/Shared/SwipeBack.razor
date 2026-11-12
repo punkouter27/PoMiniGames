@@ -1,0 +1,67 @@
+@namespace PoMiniGamesClient.Features.Shared
+@inject NavigationManager Nav
+@inject UiFeedbackService Feedback
+@implements IAsyncDisposable
+
+@*
+    SwipeBack gesture wrapper. Listens for a horizontal swipe ≥ 60 px in the
+    leftward direction and navigates to BackTo. Pure native pointer events — no
+    JS bundle change. Works on touch (pointerdown/move/up) and mouse.
+*@
+
+<div class="swipe-area @Class"
+     @onpointerdown="OnStart" @onpointermove="OnMove" @onpointerup="OnEnd"
+     @onpointercancel="OnCancel">
+    @ChildContent
+</div>
+
+@code {
+    [Parameter] public string? BackTo { get; set; }
+    [Parameter] public string? Class { get; set; }
+    [Parameter] public RenderFragment? ChildContent { get; set; }
+
+    /// <summary>Minimum horizontal travel (px) before the gesture fires. Default 60.</summary>
+    [Parameter] public int Threshold { get; set; } = 60;
+
+    /// <summary>Maximum vertical drift allowed during the gesture. Default 40.</summary>
+    [Parameter] public int VerticalTolerance { get; set; } = 40;
+
+    private double _startX;
+    private double _startY;
+    private bool _tracking;
+
+    private void OnStart(PointerEventArgs e)
+    {
+        _startX = e.ClientX;
+        _startY = e.ClientY;
+        _tracking = true;
+    }
+
+    private void OnMove()
+    {
+        // Intent: do nothing on every pointermove. The check is on pointerup so we
+        // only commit to a navigation when the user lifts. This matches the iOS
+        // back-swipe idiom and avoids accidental navigation during a drag/scroll.
+    }
+
+    private void OnCancel() => _tracking = false;
+
+    private void OnEnd(PointerEventArgs e)
+    {
+        if (!_tracking) return;
+        _tracking = false;
+        if (string.IsNullOrEmpty(BackTo)) return;
+        var dx = e.ClientX - _startX;
+        var dy = Math.Abs(e.ClientY - _startY);
+        if (dx <= -Threshold && dy <= VerticalTolerance)
+        {
+            // Native Web Audio swipe-back whoosh — a downsweep reinforces
+            // the directional gesture so the user gets a tactile confirmation
+            // before the page changes under their finger.
+            _ = Feedback.SwipeBackAsync();
+            Nav.NavigateTo(BackTo);
+        }
+    }
+
+    public ValueTask DisposeAsync() => ValueTask.CompletedTask;
+}

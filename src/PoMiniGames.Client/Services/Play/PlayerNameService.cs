@@ -10,7 +10,7 @@ namespace PoMiniGamesClient.Services.Play;
 
 public class PlayerNameService
 {
-    private const string StorageKey = "pomini_player";
+    private const string StorageKey = "pominigames:player";
     private static readonly string[] Adjectives = ["Swift", "Bold", "Brave", "Cool", "Fast", "Wild", "Sharp", "Calm", "Sly", "Keen"];
     private static readonly string[] Nouns = ["Fox", "Bear", "Wolf", "Hawk", "Panda", "Tiger", "Lynx", "Raven", "Otter", "Gecko"];
 

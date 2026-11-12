@@ -1,43 +1,11 @@
-# Line endings — the arbiter between .editorconfig and git's autocrlf.
-#
-# Why this file exists: .editorconfig declares `end_of_line = lf`, which is what
-# `dotnet format` enforces. Development here is on Windows, where `core.autocrlf=true`
-# rewrites every checked-out file to CRLF. With no .gitattributes to override it, the
-# two settings contradicted each other and `dotnet format --verify-no-changes` failed
-# on ~150 files on any fresh clone — permanently, and with no way for a developer to
-# fix it that survived the next `git checkout`.
-#
-# `eol=lf` pins the working-tree ending to LF regardless of the machine's autocrlf,
-# so the formatter's expectation and the file on disk finally agree.
+# Normalise line endings: LF in the repo, LF in the working tree on every OS.
 * text=auto eol=lf
+*.ps1 text eol=crlf
+*.bat text eol=crlf
+*.cmd text eol=crlf
 
-# Binary assets: never touch these. Newline translation corrupts them outright, and
-# the sprite/audio payload here is large enough that a spurious rewrite is expensive.
+# Binary assets
 *.png binary
 *.jpg binary
-*.jpeg binary
-*.gif binary
 *.ico binary
-*.webp binary
-*.woff binary
 *.woff2 binary
-*.ttf binary
-*.eot binary
-*.wasm binary
-*.dll binary
-*.pdb binary
-*.zip binary
-*.mp3 binary
-*.wav binary
-*.ogg binary
-# 3D assets: track models, the bedroom's Gaussian splat and the scan sources it is built from.
-*.glb binary
-*.ksplat binary
-*.ply binary
-*.sog binary
-*.spz binary
-
-# Windows-only scripts. PowerShell itself handles LF fine, but these are the files
-# most likely to be opened in a tool that does not, so keep them CRLF.
-*.cmd text eol=crlf
-*.bat text eol=crlf

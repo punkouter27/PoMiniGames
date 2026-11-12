@@ -1,0 +1,359 @@
+@namespace PoMiniGamesClient.Features.Shared
+@implements IDisposable
+@* The whole shell is wrapped in a SwipeBack so every game gets a leftward
+   swipe-back gesture without each game page having to wire it. *@
+
+@* The game's title and rating are projected into the app top bar (see
+   MainLayout's SectionOutlet) rather than a separate second row. There is no
+   back-arrow: the top bar's brand covers navigation back to the home page, and
+   the swipe-back gesture below still works. *@
+<SectionContent SectionName="game-header">
+    <div class="gps-header-slot gps-header-slot--opts">
+        @* Game title — always rendered as the first child of the chrome slot so
+           every game page identifies itself in the top bar. Renders as an
+           <h1> so screen readers see a heading hierarchy, not a styled <span>.
+           The page's `Title` fragment may compose an icon + name. The H1 uses
+           --font-display / 0.95rem styling with browser-default margins
+           stripped. *@
+        @if (Title != null)
+        {
+            <h1 class="gps-game-title">@Title</h1>
+        }
+
+        @* Per-game mid-match options (mode, online): a gear beside the title that opens
+           a side drawer, the same kind of sheet Settings is. Difficulty belongs on the
+           start card (GameIntro Options), not here. Only for a page that passes
+           OptionsContent; every other game's header is unchanged. *@
+        @if (OptionsContent != null)
+        {
+            <GameOptionsSheet Heading="@OptionsHeading">@OptionsContent</GameOptionsSheet>
+        }
+        else
+        {
+            <GameOptionsSheet Heading="Settings" GlobalSettings="true" />
+        }
+
+        @* The header has no "All games" pill: it would compete for width with the
+           game title on a phone. Leaving a game is one tap on the brand, plus the
+           swipe-back gesture below.
+
+           `BackTo` drives SwipeBack; <GameOverModal> always goes home. *@
+
+        @* Live rating badge for single-player, ELO-rated modes: the page passes
+           its current rating via Elo and it renders next to the signed-in
+           identity (see MainLayout's "game-elo" outlet), so the player can see
+           their standing throughout the match. Left null in 2-player / demo /
+           unrated modes, which emits nothing. *@
+    </div>
+</SectionContent>
+
+@if (Elo is int elo)
+{
+    <SectionContent SectionName="game-elo">
+        <span class="gps-elo-badge" title="Your current ELO rating">ELO @elo</span>
+    </SectionContent>
+}
+
+<SwipeBack BackTo="@BackTo" Class="gps-shell-wrap">
+<div class="gps-shell">
+    @* Every game's state lives only in pixels — on a canvas, or in DOM that
+       changes without announcing itself — so a screen reader user would get no
+       turn, score or result. This is the one polite live region every game
+       shares; a page opts in by passing `Announcement`, and
+       whatever it sets is read out on change. Visually hidden (`.gps-sr-only`),
+       never a layout concern. Kept OUTSIDE `.gps-game-area` so a game that
+       replaces its whole area (fullscreen renderers) can't tear the region out
+       of the DOM — a live region that gets removed and re-added is not announced. *@
+    <div class="gps-sr-only" role="status" aria-live="polite" aria-atomic="true">@Announcement</div>
+
+    <div class="gps-game-area @(Fullscreen ? "gps-game-area--fullscreen" : "")">
+        @* Games that cannot render without WebGL get an explanation instead of a
+           crash. ChildContent is not rendered at all, so the engine's container
+           never exists and its `init` bails on "container not found" rather than
+           throwing from inside three.js.
+
+           "← Back to all games" alone would drop the player on the catalog grid to
+           re-pick a game, and a phone user who came from a deep link would have to
+           back up twice to find a non-WebGL game. So the two 2D classics are
+           offered right in the alert, sparing the player a second choice. *@
+        @if (RequiresWebGl && _webGlChecked && !_webGlAvailable)
+        {
+            <div class="gps-nogl" role="alert">
+                <div class="gps-nogl-icon" aria-hidden="true">🎮</div>
+                <h2 class="gps-nogl-title">This game needs 3D graphics</h2>
+                <p class="gps-nogl-body">
+                    Your browser could not start WebGL, which this game renders with.
+                    Turning on hardware acceleration in your browser settings usually
+                    fixes it — or try a different browser or device.
+                </p>
+                <div class="gps-nogl-actions">
+                    <a class="gps-nogl-link" href="/">← Back to all games</a>
+                    <span class="gps-nogl-or">or play a 2D game now:</span>
+                    <a class="gps-nogl-link gps-nogl-link--chip" href="/tictactoe/1player">❌ Tic-Tac-Toe</a>
+                    <a class="gps-nogl-link gps-nogl-link--chip" href="/connectfive/1player">🔴 Connect Five</a>
+                </div>
+            </div>
+        }
+        else
+        {
+            @* A crash inside the game is caught here, so the Retry box sits in the game
+               area and the top bar, title and swipe-back stay intact. *@
+            @* The Tab-diagnostics setting is cascaded so the shared start card can
+               advertise the gesture without every page re-declaring it. *@
+            <CascadingValue Name="TabStats" Value="TabDebug" IsFixed="true">
+                <GameErrorBoundary>@ChildContent</GameErrorBoundary>
+            </CascadingValue>
+            @* Laid over the area, not in place of the game: the engine's container is
+               already mounted at its final size, so the shimmer is exactly the stage's
+               size and nothing jumps when it goes. *@
+            @if (Loading)
+            {
+                <GameSkeleton Label="@(LoadingLabel ?? "Loading game…")" />
+            }
+        }
+    </div>
+
+    @* Tab diagnostics: the one stats/debug panel every game shares. The gesture
+       (Tab) is wired once in js/game-debug.js, so a game gets it by existing
+       inside this shell; a page adds its own numbers through `Diagnostics`.
+       Held outside `.gps-game-area` so a fullscreen renderer cannot replace it. *@
+    <GameDebugOverlay Enabled="@TabDebug" GameKey="@GameKey" Items="@Diagnostics">@DiagnosticsContent</GameDebugOverlay>
+
+    @* End-of-game modal: the one centered, blocking dialog every game ends on.
+       It surfaces the final result (GameSummary), the stats grid (Stats), this
+       game's top 3 (fetched from GameKey), optional actions and details, and Back to main menu.
+       There is intentionally no
+       backdrop-dismiss, so the flow is identical in every game. It also plays the
+       shared end-of-game moment (cue, confetti, pulse, vignette); see GameOverModal.
+
+       GameOverDelayMs lets a game wait a few seconds after the
+       result is decided before the modal appears, so the winning move can
+       flash / highlight on the board. The win-cascade animation finishes
+       well inside the default 5s window; games that don't care (or want
+       immediate feedback) pass 0. *@
+    @if (GameOver && _showGameOver)
+    {
+        <GameOverModal Title="@Title"
+                       GameSummary="@GameSummary"
+                       GameActions="@GameActions"
+                       GameDetails="@GameDetails"
+                       Stats="@Stats"
+                       GameKey="@GameKey"
+                       Player="@Player"
+                       Outcome="@Outcome"
+                       NewBest="@NewBest" />
+    }
+</div>
+</SwipeBack>
+
+@code {
+    [Parameter] public RenderFragment? Title { get; set; }
+    // Display name credited on the end-of-game modal's leaderboard submission.
+    // Passed straight through to GameOverModal — this shell renders it nowhere
+    // itself, which is why it looks unused at a glance.
+    [Parameter] public string? Player { get; set; }
+    // Current ELO for single-player, rated modes. When set, it renders as a
+    // small badge beside the signed-in identity in the top bar (via the
+    // "game-elo" section outlet in MainLayout). Leave null for 2-player, demo
+    // and other unrated modes — nothing is projected.
+    [Parameter] public int? Elo { get; set; }
+    [Parameter] public List<Models.StatItem>? Stats { get; set; }
+    [Parameter] public bool Fullscreen { get; set; }
+    // Where the swipe-back gesture goes. Default is the home page ("/"). The end-of-game
+    // modal always goes home, whatever this says.
+    [Parameter] public string BackTo { get; set; } = "/";
+    [Parameter] public bool GameOver { get; set; }
+    /// <summary>
+    /// Milliseconds to wait after <see cref="GameOver"/> flips to
+    /// true before the modal actually renders. Gives the board's win-cascade
+    /// / highlight animation time to finish before the modal covers it.
+    /// Default is 0 (no delay); Connect Five passes 5000.
+    /// </summary>
+    [Parameter] public int GameOverDelayMs { get; set; } = 0;
+    // Catalog key for this game's unified leaderboard (e.g. "connectfive").
+    // When set, the end-of-game modal fetches and renders that game's top 3.
+    // Leave null for modes with no meaningful board (local 2-player, demo).
+    [Parameter] public string? GameKey { get; set; }
+    // How the match ended, forwarded to GameOverModal so the closing cue matches
+    // the result. Left Unknown by games that do not report it, which sounds a
+    // neutral round-over instead of guessing.
+    [Parameter] public Models.GameResult Outcome { get; set; } = Models.GameResult.InProgress;
+    // The run just saved was a personal best: the modal badges and celebrates it.
+    [Parameter] public bool NewBest { get; set; }
+    [Parameter] public RenderFragment? GameSummary { get; set; }
+    [Parameter] public RenderFragment? GameActions { get; set; }
+    [Parameter] public RenderFragment? GameDetails { get; set; }
+
+    /// <summary>
+    /// Sentence read aloud by the shared polite live region whenever it changes —
+    /// whose turn it is, the score, how the round ended. Plain prose, not a label:
+    /// it is spoken, so "Your turn" beats "TURN: X". Leave null in modes with
+    /// nothing meaningful to announce (demos nobody is driving); an unset value
+    /// renders an empty region, which is silent.
+    /// </summary>
+    [Parameter] public string? Announcement { get; set; }
+
+    /// <summary>
+    /// Set by games whose renderer is three.js and therefore cannot run at all
+    /// without a WebGL context (PoBrawl, PoMarbleRace, PoRacer). Leave false for
+    /// games that only use GL as an enhancement over a working DOM/2D board —
+    /// TicTacToe and ConnectFive both degrade cleanly on their own and must keep
+    /// rendering here.
+    /// </summary>
+    [Parameter] public bool RequiresWebGl { get; set; }
+
+    /// <summary>
+    /// Off for the pages that already bind Tab themselves (PoEcosystem's world
+    /// dashboard, PoJevArena's stats sheet): two panels must never answer one Tab.
+    /// On everywhere else, which is what makes Tab mean the same thing in every game.
+    /// </summary>
+    [Parameter] public bool TabDebug { get; set; } = true;
+
+    /// <summary>
+    /// Per-game rows for the Tab diagnostics panel, in the same StatItem shape the
+    /// end modal takes. Optional: with nothing passed, the panel still shows live
+    /// frame rate, frame time, heap, viewport, game key and route.
+    /// </summary>
+    [Parameter] public IEnumerable<Models.StatItem>? Diagnostics { get; set; }
+
+    /// <summary>Optional custom HUD/widgets rendered inside the Tab diagnostics panel.</summary>
+    [Parameter] public RenderFragment? DiagnosticsContent { get; set; }
+
+    [Parameter] public RenderFragment ChildContent { get; set; } = null!;
+
+    /// <summary>
+    /// True while the game's engine is still loading: a skeleton covers the game area
+    /// (sized to it, so nothing jumps) until the page sets it back to false. Off by
+    /// default, so a page that never passes it renders exactly as before.
+    /// </summary>
+    [Parameter] public bool Loading { get; set; }
+
+    /// <summary>Words under the loading skeleton. Defaults to "Loading game…".</summary>
+    [Parameter] public string? LoadingLabel { get; set; }
+
+    /// <summary>
+    /// The game's mid-match options (mode, online). Difficulty is picked on the start card
+    /// through <see cref="GameIntro.Options"/> instead. When set, a gear appears beside
+    /// the title in the top bar and opens them in a side drawer, like the Settings sheet.
+    /// Null, the default, renders no gear.
+    /// </summary>
+    [Parameter] public RenderFragment? OptionsContent { get; set; }
+
+    /// <summary>Heading of the options drawer.</summary>
+    [Parameter] public string OptionsHeading { get; set; } = "Game options";
+
+    [Inject] private IJSRuntime JS { get; set; } = null!;
+    [Inject] private NavigationManager Nav { get; set; } = null!;
+    [Inject] private Services.Play.AchievementService Achievements { get; set; } = null!;
+
+    // ── Session count ──
+    // Every game page sits in this shell, so this is the one place a game session can be
+    // counted for all of them: the profile's "N sessions" for the games with no W/L record
+    // (Ecosystem, Sand Playground, Cabinet, Mule, Jev Arena) and the achievements that count
+    // games played. Once per address, so a mode switch (/pomule/1player → /pomule/demo) is a
+    // new session but a re-render is not. The unattended kiosk reel is not anyone playing.
+    private string? _sessionPath;
+    // The address CountSession last looked at. OnParametersSet runs on every parent
+    // render, and the address rarely changes between them, so an unchanged Uri skips the
+    // base-relative path and the split altogether.
+    private string? _sessionUri;
+
+    private void CountSession()
+    {
+        var uri = Nav.Uri;
+        if (uri == _sessionUri) return;
+        _sessionUri = uri;
+        var path = Nav.ToBaseRelativePath(uri);
+        var bare = path.AsSpan().IndexOfAny('?', '#') is var cut and >= 0 ? path[..cut] : path;
+        if (bare == _sessionPath) return;
+        _sessionPath = bare;
+        if (path.Contains("kiosk=", StringComparison.OrdinalIgnoreCase)) return;
+        if (Services.Play.GameStatsService.PlayKeyForPath(bare) is { } key)
+        {
+            Achievements.NoteSession(key);
+        }
+    }
+
+    private bool _webGlChecked;
+    private bool _webGlAvailable = true;
+
+    // Probed once, after the first render (JS interop is not available before
+    // it). Defaults to "available" so the game renders normally on the first
+    // pass and in any host where interop fails — the fallback notice is for a
+    // confirmed negative, never for an inconclusive probe.
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (!firstRender || !RequiresWebGl || _webGlChecked) return;
+
+        try
+        {
+            _webGlAvailable = await JS.InvokeAsync<bool>("isWebGlAvailable");
+        }
+        catch
+        {
+            _webGlAvailable = true;
+        }
+
+        _webGlChecked = true;
+        StateHasChanged();
+    }
+
+    // The top-3 fetch and the OK action live in GameOverModal — this shell just
+    // decides when to show it and passes the game's data through.
+
+    // GameOverDelayMs support. _showGameOver is the gated view of
+    // GameOver; the modal only mounts once it's true AND the delay has elapsed.
+    // A CancellationToken cancels any in-flight delay when the page tears down
+    // (mode change, navigation) so we don't show a stale modal.
+    private bool _showGameOver;
+    private CancellationTokenSource? _gameOverCts;
+
+    protected override void OnParametersSet()
+    {
+        CountSession();
+
+        if (GameOver && !_showGameOver && _gameOverCts is null)
+        {
+            if (GameOverDelayMs <= 0)
+            {
+                _showGameOver = true;
+                return;
+            }
+
+            _gameOverCts = new CancellationTokenSource();
+            _ = DelayThenShowAsync(_gameOverCts.Token);
+        }
+        else if (!GameOver)
+        {
+            // Result was reset (Play Again, navigate away) — drop the modal, and cancel a
+            // delay still in flight: left running it set _showGameOver after the reset, so the
+            // NEXT result's modal skipped its delay and covered that game's KO/win beat.
+            _showGameOver = false;
+            _gameOverCts?.Cancel();
+            _gameOverCts?.Dispose();
+            _gameOverCts = null;
+        }
+    }
+
+    private async Task DelayThenShowAsync(CancellationToken ct)
+    {
+        try
+        {
+            await Task.Delay(GameOverDelayMs, ct);
+            if (!ct.IsCancellationRequested)
+            {
+                _showGameOver = true;
+                _gameOverCts?.Dispose();
+                _gameOverCts = null;
+                await InvokeAsync(StateHasChanged);
+            }
+        }
+        catch (OperationCanceledException) { /* normal on tear-down / reset */ }
+    }
+
+    public void Dispose()
+    {
+        _gameOverCts?.Cancel();
+        _gameOverCts?.Dispose();
+    }
+}

@@ -43,7 +43,7 @@ param(
 
 $ErrorActionPreference = 'Stop'
 $repoRoot = Split-Path -Parent $PSScriptRoot
-$client = Join-Path $repoRoot 'src/PoMiniGames.Client/PoMiniGamesClient.csproj'
+$client = Join-Path $repoRoot 'src/PoMiniGames.Client/PoMiniGames.Client.csproj'
 $publishDir = Join-Path $repoRoot 'src/PoMiniGames.Client/bin/Release/net10.0/wwwroot/_framework'
 $cssRoot = Join-Path $repoRoot 'src/PoMiniGames.Client'
 

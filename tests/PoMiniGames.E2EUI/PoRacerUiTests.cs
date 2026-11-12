@@ -5,6 +5,7 @@ namespace PoMiniGames.E2EUI;
 [Collection(KestrelServerCollection.Name)]
 public sealed class PoRacerUiTests(KestrelServerFixture fixture)
 {
+    private static readonly int[] ZeroAllocations = [0, 0, 0];
     [Theory]
     [InlineData("circuit")]
     [InlineData("neonskyline")]
@@ -17,12 +18,13 @@ public sealed class PoRacerUiTests(KestrelServerFixture fixture)
         await using var browser = await playwright.Chromium.LaunchAsync(launch);
         await using var context = await browser.NewContextAsync(new() { ViewportSize = new() { Width = 1440, Height = 900 } });
         var page = await context.NewPageAsync();
+        await using var guard = PlaywrightErrorGuard.Watch(page);
         var errors = new List<string>();
         page.PageError += (_, error) => errors.Add(error);
         var driver = new PoRacerDriver(page);
         await page.GotoAsync($"{fixture.ServerAddress.TrimEnd('/')}/poracer/1player?autoGuest=1");
         await page.GetByRole(AriaRole.Button, new() { Name = "OK", Exact = true }).WaitForAsync(new() { Timeout = 60000 });
-        await page.Locator($"input[name=poracer-track][value={track}]").CheckAsync();
+        await page.Locator(".track-select select").SelectOptionAsync(track);
         // Isolate lap timing and persistence from 99-car traffic: the keyboard driver
         // follows the centerline and does not plan overtakes. Full-field input is tested below.
         await page.GetByText("Time trial", new() { Exact = true }).ClickAsync();
@@ -40,6 +42,7 @@ public sealed class PoRacerUiTests(KestrelServerFixture fixture)
         result.Standings.Where(s => s.Finished).Select(s => s.TotalTimeSeconds).Should().BeInAscendingOrder();
         (await save).Status.Should().Be(201);
         await page.GetByText("Best lap saved to the leaderboard.", new() { Exact = true }).WaitForAsync();
+        await page.Locator(".race-results details summary").ClickAsync();
         (await page.Locator(".race-results .local-driver").InnerTextAsync()).Should().NotContain("DNF");
         await page.ScreenshotAsync(new() { Path = $"artifacts/poracer-{track}-results.png" });
         // Return to the hub; visiting the racer again opens the start card.
@@ -47,8 +50,10 @@ public sealed class PoRacerUiTests(KestrelServerFixture fixture)
         await page.WaitForURLAsync(url => new Uri(url).AbsolutePath == "/");
         await page.GotoAsync($"{fixture.ServerAddress.TrimEnd('/')}/poracer/1player");
         await page.GetByRole(AriaRole.Button, new() { Name = "OK", Exact = true }).WaitForAsync(new() { Timeout = 60000 });
-        // The lap just driven is on its track card as a personal best.
-        (await page.Locator(".track-card.selected .track-best").InnerTextAsync()).Should().Contain("Your best");
+        // The lap just driven is shown in Track details as a personal best.
+        var trackDetails = page.Locator(".racer-setup details", new() { HasText = "Track details" });
+        await trackDetails.Locator("summary").ClickAsync();
+        (await trackDetails.InnerTextAsync()).Should().Contain("Your best");
         driver.Reset();
         await page.GetByRole(AriaRole.Button, new() { Name = "OK", Exact = true }).ClickAsync();
         await page.Locator(".race-metrics").WaitForAsync();
@@ -63,6 +68,7 @@ public sealed class PoRacerUiTests(KestrelServerFixture fixture)
         var launch = BrowserLaunch.Options(); launch.SlowMo = 0;
         await using var browser = await playwright.Chromium.LaunchAsync(launch);
         var page = await browser.NewPageAsync();
+        await using var guard = PlaywrightErrorGuard.Watch(page);
         var errors = new List<string>(); page.PageError += (_, error) => errors.Add(error);
         var driver = new PoRacerDriver(page);
         await page.GotoAsync($"{fixture.ServerAddress.TrimEnd('/')}/poracer/1player?autoGuest=1");
@@ -70,6 +76,7 @@ public sealed class PoRacerUiTests(KestrelServerFixture fixture)
         await driver.DriveAsync(page, "dnf", drive: false);
         driver.Result!.Standings.Single(s => s.CarId == driver.LocalId).Finished.Should().BeFalse();
         await page.Locator(".race-results").WaitForAsync();
+        await page.Locator(".race-results details summary").ClickAsync();
         (await page.Locator(".race-results .local-driver").InnerTextAsync()).Should().Contain("DNF");
         // The end card's one button.
         (await page.Locator("dialog.gps-modal[open] button").CountAsync()).Should().Be(1);
@@ -86,7 +93,9 @@ public sealed class PoRacerUiTests(KestrelServerFixture fixture)
         await using var first = await browser.NewContextAsync();
         await using var second = await browser.NewContextAsync();
         var host = await first.NewPageAsync();
+        await using var hostGuard = PlaywrightErrorGuard.Watch(host);
         var guest = await second.NewPageAsync();
+        await using var guestGuard = PlaywrightErrorGuard.Watch(guest);
         var url = $"{fixture.ServerAddress.TrimEnd('/')}/poracer/multi?autoGuest=1";
         // Each browser opens on the game's card; its button is what takes the lobby seat.
         await host.GotoAsync(url);
@@ -126,13 +135,28 @@ public sealed class PoRacerUiTests(KestrelServerFixture fixture)
     {
         using var playwright = await Playwright.CreateAsync();
         await using var browser = await playwright.Chromium.LaunchAsync(BrowserLaunch.Options());
+        var origin = new Uri(fixture.ServerAddress);
         await using var context = await browser.NewContextAsync(new()
         {
             ViewportSize = touch ? new() { Width = 390, Height = 844 } : new() { Width = 1280, Height = 900 },
             HasTouch = touch,
-            ExtraHTTPHeaders = new Dictionary<string, string> { ["X-Fake-User"] = "racer-user", ["X-Fake-Roles"] = "Player" }
+        });
+        await context.RouteAsync("**/*", async route =>
+        {
+            if (new Uri(route.Request.Url).Authority != origin.Authority)
+            {
+                await route.ContinueAsync();
+                return;
+            }
+            var headers = new Dictionary<string, string>(route.Request.Headers)
+            {
+                ["X-Fake-User"] = "racer-user",
+                ["X-Fake-Roles"] = "Player",
+            };
+            await route.ContinueAsync(new() { Headers = headers });
         });
         var page = await context.NewPageAsync();
+        await using var guard = PlaywrightErrorGuard.Watch(page);
         var errors = new List<string>();
         page.PageError += (_, error) => errors.Add(error);
         await page.GotoAsync($"{fixture.ServerAddress.TrimEnd('/')}/poracer?autoGuest=1");
@@ -207,7 +231,7 @@ public sealed class PoRacerUiTests(KestrelServerFixture fixture)
                 }
             }
             """);
-        allocations.Should().Equal(new[] { 0, 0, 0 },
+        allocations.Should().Equal(ZeroAllocations,
             "camera movement and finish zoom must reuse warmed bitmaps at sub-1x, 1x and high DPR");
     }
 }

@@ -4,7 +4,7 @@ using Microsoft.AspNetCore.Components.Web;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.JSInterop;
-using PoMiniGamesClient.Components;
+using PoMiniGamesClient.Features.Shared;
 using PoMiniGamesClient.Services.Http;
 using PoMiniGamesClient.Services.Ui;
 

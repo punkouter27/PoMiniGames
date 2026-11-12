@@ -1,0 +1,406 @@
+/* PoMiniGames Design Tokens & Fonts (Rule 5 & Rule 6) */
+@font-face {
+  font-family: 'Material Symbols Outlined';
+  src: url('/_content/Radzen.Blazor/fonts/MaterialSymbolsOutlined.woff2') format('woff2');
+  font-weight: 100 700;
+  font-style: normal;
+  font-display: block;
+}
+
+.material-symbols-outlined {
+  font-family: 'Material Symbols Outlined';
+  font-weight: normal;
+  font-style: normal;
+  font-size: 20px;
+  line-height: 1;
+  display: inline-block;
+  white-space: nowrap;
+  word-wrap: normal;
+  direction: ltr;
+  -webkit-font-smoothing: antialiased;
+}
+
+:root {
+  /* Slate surfaces, a darker indigo accent, and grounded status hues — less
+     neon, more studio. Every value clears WCAG AA on its pair (text on surface,
+     accent text on accent fill). */
+  --color-bg: #0f172a;
+  --color-surface: #1e293b;
+  --color-surface-hover: #334155;
+  --color-border: #334155;
+  --color-text-primary: #e2e8f0;
+  --color-text-secondary: #94a3b8;
+  --color-accent: #818cf8;
+  /* Foreground for anything sitting ON --color-accent. Consumed by
+     `.gps-back-link:hover` (games.css). Scheme-invariant: the accent itself
+     does not change between light and dark, so neither does the text that sits
+     on it. */
+  --color-accent-contrast: #ffffff;
+  /* Accent for SOLID fills that carry --color-accent-contrast text on top.
+     --color-accent itself is left alone: it is also the link colour, the
+     focus ring and a border hue, none of which want to shift.
+
+     White on #4f46e5 is 6.3:1; on #6366f1 it would be 4.47:1, a hair UNDER the
+     4.5:1 AA floor. Not a TEXT colour on a dark surface (it is
+     darker than the accent on purpose); that is --color-accent. */
+  --color-accent-solid: #4f46e5;
+  --color-warning: #f59e0b;
+  --color-error: #ef4444;
+  /* ── Tiered accent bag (Fix #8 — single source of truth for status colour) ──
+     Each game's own brand colour (PoEcosystem amber,
+     etc.) stays scoped to its theme root, but every chip / button / focus ring
+     reads from one of the tokens below so the universal chrome is identical.
+     Slugs reflect semantic intent, not raw colour, so swapping palettes is a
+     1-line change to the named hex. */
+  --accent: var(--color-accent);
+  --accent-bg: rgba(129, 140, 248, 0.16);             /* hover-backdrop for primary actions */
+  --accent-soft: rgba(129, 140, 248, 0.10);           /* empty-state badges, etc. */
+  /* Names stylesheets were already using that were never defined, so the text
+     silently inherited its colour. Aliases, so both themes follow for free. */
+  --color-accent-soft: var(--accent-soft);
+  --color-text-muted: var(--color-text-secondary);
+  --color-text-soft: var(--color-text-secondary);
+  --border-subtle: var(--color-border);
+  --accent-ring: rgba(129, 140, 248, 0.45);           /* :focus-visible */
+  --accent-success: #34d399;
+  --accent-success-soft: rgba(52, 211, 153, 0.16);
+  --accent-warning: #fbbf24;
+  --accent-warning-soft: rgba(251, 191, 36, 0.16);
+  --accent-danger: #f87171;
+  --accent-danger-soft: rgba(248, 113, 113, 0.16);
+  --accent-cyan: #22d3ee;
+  --accent-amber: #fbbf24;
+  --accent-gold: #ca8a04;
+
+  /* ── Player identity ───────────────────────────────────────────────────
+     The two sides of any local-versus screen. They exist so the 2P surfaces
+     do not each pick their own raw hex: saturated, unrelated hues on one screen
+     read as an arcade cabinet rather than a product.
+
+     Chosen as a muted pair a step off the existing indigo accent: still clearly
+     two different people at a glance (and never the ONLY signal — side, name
+     and key hints all carry it too), but low enough in saturation to sit inside
+     the slate/indigo system instead of fighting it. Scheme-invariant, like every
+     other accent hue. Anything showing "player 1 vs player 2" reads these. */
+  --player-1: #7f9cf5;
+  --player-2: #d98aa8;
+  /* Ink variants, same reasoning as the --accent-*-ink block below: the two hues
+     above are tuned as FILLS (a 4px border, a chip) against a dark page. Used as
+     TEXT on a white surface they collapse — the split-screen score measured
+     2.63:1 in light mode. These are the only player tokens that re-point per
+     scheme; the hues themselves stay scheme-invariant. Anything drawing a
+     player's colour as text reads an -ink token, never the raw hue. */
+  --player-1-ink: var(--player-1);
+  --player-2-ink: var(--player-2);
+
+  /* ── "Ink" variants: the same status hues, but safe as TEXT ────────────────
+     The --accent-* values above are tuned as FILLS (chip
+     backgrounds, glows, borders) against a dark page. Used as a text colour on
+     the matching --accent-*-soft tint they collapse: measured in light mode,
+     --accent-amber on the ELO badge was 1.38:1 and --accent-success on the
+     health badge 1.48:1, against a 4.5:1 floor.
+
+     A tint that light needs dark ink, so these are the only accent tokens that
+     legitimately re-point per scheme (the hues themselves stay scheme-invariant
+     per the theming rules). Anything rendering status text on a *-soft tint must
+     read from an -ink token, never from the raw hue. */
+  --accent-ink: #c7d2fe;
+  --accent-success-ink: #6ee7b7;
+  --accent-warning-ink: #fcd34d;
+  --accent-danger-ink: #fca5a5;
+  --accent-amber-ink: #fde68a;
+
+  /* ── GFX FX triad ─────────────────────────────────────────────────────────
+     fx.css and the ray-marched background (particlesCore.js) both need "the
+     two or three colours this screen is about". Hard-coded fallbacks in each
+     would let a game retheme its whole UI while the glow behind it stayed
+     indigo.
+     Declaring the triad here and re-pointing it inside a game's theme root
+     (e.g. `.mygame-root { --fx-accent: var(--accent-gold); }`) retints every
+     glass edge, aurora ring, impact flash and background curtain at once.
+     Kept as plain colours, not gradients: the shader parses these through
+     getComputedStyle and needs something that resolves to rgb(). */
+  --fx-accent: var(--accent);
+  --fx-accent-2: var(--accent-cyan);
+  --fx-accent-3: var(--accent-amber);
+  /* Typography (Suggestion #4) */
+  /* "InterVariable" is the family name the self-hosted variable file declares
+     (css/fonts.css). It was 'Inter' while the app loaded rsms.me's stylesheet,
+     which declared BOTH a static `Inter` and a variable `InterVariable`; only
+     the variable file is vendored, so naming the static family here would have
+     silently fallen through to system-ui on every heading. */
+  --font-display: 'InterVariable', system-ui, -apple-system, sans-serif;
+  --font-body: system-ui, -apple-system, sans-serif;
+  /* Single source of truth for monospace UI (FPS counter, diagnostics, code).
+     Previously each component hand-rolled its own mono stack. */
+  --font-mono: ui-monospace, 'Cascadia Code', 'Consolas', 'SFMono-Regular', 'Menlo', monospace;
+
+  /* Type scale — fluid (Option #6).
+     clamp(min, fluid, max) so headings grow with the viewport between phone
+     and desktop without per-component media queries. Floor values hold at 360px
+     (xs phone), ceiling at 1280px (small desktop). Above 1280 the type stops
+     growing — a 27" monitor should not render headings larger than a 24". */
+  --text-xs:   0.75rem;
+  --text-sm:   clamp(0.85rem, 0.83rem + 0.1vw, 0.9rem);
+  --text-base: clamp(0.95rem, 0.92rem + 0.15vw, 1rem);
+  --text-lg:   clamp(1.1rem, 1.05rem + 0.25vw, 1.25rem);
+  --text-xl:   clamp(1.3rem, 1.2rem + 0.5vw, 1.5rem);
+  --text-2xl:  clamp(1.65rem, 1.45rem + 1vw, 2rem);
+  --text-3xl:  clamp(2rem, 1.6rem + 2vw, 3rem);
+
+  /* ── Tints & hairlines ─────────────────────────────────────────────────────
+     Zebra striping, inset meter tracks and 1px separators were authored across
+     the page stylesheets as rgba(255,255,255,0.02…0.08) — a white film that is
+     literally invisible on a light surface, so tables lost their striping and
+     meters lost their track. Option #2: each is a light-dark() pair so the
+     light-theme override below no longer needs to mirror them. */
+  --tint-subtle: light-dark(rgba(15,23,42,0.03), rgba(255,255,255,0.02));
+  --tint-soft:   light-dark(rgba(15,23,42,0.05), rgba(255,255,255,0.04));
+  --tint-medium: light-dark(rgba(15,23,42,0.09), rgba(255,255,255,0.08));
+  --hairline:    light-dark(rgba(15,23,42,0.08), rgba(255,255,255,0.06));
+
+  /* Podium ranks. Semantic (gold/silver/bronze reads as 1st/2nd/3rd), but unlike
+     the status accents these are NOT legible on both surfaces — pale gold on
+     white is roughly 1.5:1 — so the light block re-points them to the same hue
+     at a darker value rather than leaving them scheme-invariant. */
+  --rank-gold:   #fcd34d;
+  --rank-silver: #cbd5e1;
+  --rank-bronze: #d8a06a;
+
+  /* Translucent surfaces (single source of truth — replaces scattered raw rgba).
+     Option #2: each surface is a light-dark() pair declared ONCE; the
+     `:root[data-theme="light"]` override no longer has to mirror them.
+     `light-dark(light, dark)` resolves against the element's `color-scheme`,
+     which we set to "light dark" below — so the browser picks the right half
+     automatically. Tokens that need to stay identical across schemes
+     (the accent hues, the toast hues) keep their plain declarations. */
+  --surface-1: light-dark(rgba(255,255,255,0.7), rgba(15,23,42,0.65));
+  --surface-2: light-dark(rgba(255,255,255,0.92), rgba(30,41,59,0.85));
+  --surface-3: light-dark(rgba(241,245,249,0.85), rgba(30,41,59,0.65));
+  --surface-bar: light-dark(rgba(255,255,255,0.95), rgba(15,23,42,0.92));
+  --surface-raised: light-dark(rgba(255,255,255,0.98), rgba(51,65,85,0.75));
+
+  /* Radius scale (Design Token Unification) */
+  --radius-sm: 0.5rem;
+  --radius-md: 0.75rem;
+  --radius-lg: 1rem;
+  --radius-xl: 1.25rem;
+  --radius-pill: 9999px;
+
+  /* Elevation scale (Option #2: light-dark() pairs) */
+  --elevation-1: light-dark(0 4px 20px rgba(15,23,42,0.08), 0 4px 20px rgba(0,0,0,0.35));
+  --elevation-2: light-dark(0 8px 30px rgba(99,102,241,0.12), 0 8px 30px rgba(99,102,241,0.12));
+  --elevation-3: light-dark(0 20px 60px rgba(15,23,42,0.12), 0 20px 60px rgba(0,0,0,0.4));
+
+  /* Spacing scale */
+  --space-0: 0;
+  --space-1: 0.25rem;
+  --space-2: 0.5rem;
+  --space-3: 0.75rem;
+  --space-4: 1rem;
+  --space-5: 1.5rem;
+  --space-6: 2rem;
+  --space-7: 2.5rem;
+  --space-8: 3rem;
+
+  /* Z-index scale (single source of truth — replaces scattered raw z-index values) */
+  --z-base: 1;
+  --z-sticky: 50;
+  --z-kiosk: 60;
+  --z-btb: 70;
+  --z-dropdown: 100;
+  --z-overlay: 500;
+  --z-modal: 1000;
+  --z-banner: 2000;
+  --z-toast: 3000;
+  --z-toast-stack: 3000;
+  /* GFX overlays. Above the modal/toast layers on purpose: confetti that
+     stops at the edge of the "You win!" dialog reads as a z-index bug, and the
+     impact flash has to cover whatever is on screen or it is not a flash.
+     Both are pointer-events:none, so sitting on top costs no interactivity.
+     Still below the error overlay — a crash report must never be confettied. */
+  --z-fx-flash: 9990;
+  --z-fx-particles: 9991;
+  --z-error-overlay: 9999;
+
+  /* Glassmorphism primitives (one source of truth for translucent chrome).
+     The blur strengths are scheme-invariant; only the tint flips per scheme. */
+  --glass-1: blur(8px) saturate(140%);
+  --glass-2: blur(12px) saturate(160%);
+  --glass-3: blur(20px) saturate(180%);
+  --glass-tint: light-dark(rgba(255,255,255,0.6), rgba(15, 23, 42, 0.6));
+
+  /* Motion tokens (paired with the prefers-reduced-motion guard below) */
+  --dur-fast: 0.15s;
+  --dur-base: 0.25s;
+  --dur-slow: 0.4s;
+  --ease-standard: cubic-bezier(0.4, 0, 0.2, 1);
+  --ease-out: cubic-bezier(0, 0, 0.2, 1);
+  /* A lightly under-damped spring as a linear() curve: one overshoot of about 4%,
+     settled by 60%. For things that land (a released button, a dialog opening),
+     not for things that merely fade. */
+  --ease-spring: linear(0, 0.21 6%, 0.62 14%, 0.88 21%, 1.02 29%, 1.045 36%, 1.03 44%, 1.005 56%, 0.996 70%, 1);
+  --dur-spring: 0.45s;
+
+  /* Toast colors */
+  --toast-info-bg: #1e3a5f;
+  --toast-info-border: #3b82f6;
+  --toast-info-text: #bfdbfe;
+  --toast-error-bg: #450a0a;
+  --toast-error-border: #ef4444;
+  --toast-error-text: #fecaca;
+  --toast-success-bg: #052e16;
+  --toast-success-border: #22c55e;
+  --toast-success-text: #bbf7d0;
+  --toast-warning-bg: #451a03;
+  --toast-warning-border: #f59e0b;
+  --toast-warning-text: #fde68a;
+
+  /* Game-piece tokens (single source of truth for
+     the disc colours / gloss / win-glow shared by Connect Five's board and any
+     future disc game). Discs are lit spheres: a light rim → mid → dark core. */
+  --disc-red-lit: #ff8a80;
+  --disc-red-mid: #f44336;
+  --disc-red-core: #c62828;
+  --disc-yellow-lit: #fffde7;
+  --disc-yellow-mid: #ffee58;
+  --disc-yellow-core: #f9a825;
+  /* Each disc rule writes its own radial-gradient from the *-lit/-mid/-core
+     tokens above — a shared gradient template can't live here because its inner
+     var()s would resolve against :root (out of scope) and compute to empty. */
+  --disc-shadow: inset 0 -3px 6px rgba(0,0,0,0.32), 0 2px 5px rgba(0,0,0,0.4);
+  --accent-glow: rgba(0,229,255,0.5);
+  /* (--accent-cyan was re-declared here, identically to its definition in the
+     accent bag above. A second declaration in the same rule is dead weight and
+     an invitation to change one copy and not the other.) */
+
+  /* ── Breakpoint scale (documentation, not consumable) ───────────────────────
+     Media queries cannot read custom properties, so these cannot be var()'d into
+     an `@media` — they are recorded here so the canonical widths have one home
+     and a reviewer can see the whole scale at a glance:
+
+       360px  xs  tiny phone (game boards only — never chrome)
+       480px  sm  compact phone portrait
+       640px  md  phone / small tablet portrait
+       960px  lg  tablet landscape / small desktop
+
+     One scale keeps a component from reflowing at a different width depending
+     on which page it is on.
+
+     Prefer a container query (`@container`) over any of these for a component
+     that should react to its own slot rather than to the viewport. */
+
+  /* Tell the UA which schemes this document supports, so native chrome the
+     stylesheet cannot reach — scrollbars, <select> popups, date pickers, form
+     control borders, the canvas behind an overscroll — is painted to match
+     instead of staying stark white against a dark page.
+     Option #2: `light dark` (not just `dark`) is the prerequisite for
+     `light-dark()` to resolve — see the surface/tint/elevation/glass tokens
+     above. The user-facing light-mode toggle (Profile → Preferences) still
+     flips `data-theme` and overrides the few tokens that can't be expressed as
+     light-dark pairs below. */
+  color-scheme: light dark;
+}
+
+/* ── Light theme ─────────────────────────────────────────────────────────
+   Overrides ONLY the surface/text/elevation tokens. Every component in the app
+   reads its colour through these variables, so re-pointing them here is the
+   whole light theme — no component rule is duplicated, and a new component is
+   themed correctly the moment it uses the tokens rather than raw hex.
+
+   Deliberately NOT overridden:
+     • Accent hues (--accent, --accent-success/warning/danger, --accent-cyan…).
+       They carry semantic meaning and are already AA-legible on both surfaces;
+       re-hueing them per scheme would fork the status vocabulary in two.
+     • Game-piece and per-game theme tokens (--disc-*, PoEcosystem's
+       amber). Those paint inside a canvas or a self-contained board that sets its
+       own backdrop, so a light page around them changes nothing they render.
+
+   Shadows drop to near-black at low alpha: the dark theme's heavy rgba(0,0,0,.35)
+   reads as dirt rather than depth on a light surface.
+
+   ── Why an attribute and not `@media (prefers-color-scheme: light)` ──
+   Preferences (Profile page) has a manual Auto/Light/Dark switch. A media query
+   cannot be overridden by a user choice — the OS would always win — and
+   duplicating the palette into a second `[data-theme="light"]` rule would leave
+   two copies to drift apart.
+   So the OS preference is resolved to a concrete value exactly once, by the
+   inline script in index.html, which stamps `<html data-theme="light|dark">`
+   before first paint. "auto" still tracks the OS: appPrefs.js re-stamps on
+   matchMedia change. Blazor WASM is required to run this app at all, so there is
+   no no-JS path left to serve. */
+:root[data-theme="light"] {
+    color-scheme: light;
+
+    /* Calmer off-white base + softer slate text: keeps the page looking
+       professional rather than crisp-but-cold. */
+    --color-bg: #f1f5f9;
+    --color-surface: #ffffff;
+    --color-surface-hover: #e2e8f0;
+    --color-border: #cbd5e1;
+    --color-text-primary: #0f172a;
+    --color-text-secondary: #475569;
+    --color-accent: #4f46e5;
+    --color-accent-solid: #4338ca;
+
+    /* Player ink on a white surface — same hue family as --player-1/2, pushed
+       down in lightness until each clears its floor as text. */
+    --player-1-ink: #4338ca;
+    --player-2-ink: #be123c;
+
+    /* Status text on a pale tint needs dark ink — see the --accent-*-ink note in
+       the :root block. Each value is the same hue pushed down in lightness until
+       it clears 4.5:1 on its own --accent-*-soft tint over a white surface. */
+    --accent-ink: #3730a3;
+    /* #15803d computes to exactly 4.50:1 on --accent-success-soft over a white
+       surface — mathematically at the floor, which axe still reports as a failure
+       once it rounds. One step darker gives ~6.3:1 and real headroom. */
+    --accent-success-ink: #166534;
+    /* Same story as --accent-success-ink above: #a16207 on --accent-warning-soft
+       composites to 4.17:1 over a light surface, which axe reports as a failure.
+       One step darker measures ~5.6:1. */
+    --accent-warning-ink: #845104;
+    --accent-danger-ink: #b91c1c;
+    --accent-amber-ink: #854d0e;
+
+    /* Option #2: --surface-*, --tint-*, --elevation-*, --glass-tint no longer
+       need to be re-declared here. They are `light-dark()` pairs in :root,
+       which resolve against the element's `color-scheme` — and the very first
+       rule in this block sets `color-scheme: light`, so each token picks the
+       light half automatically. */
+
+    /* Darkened to keep the podium readable on a light surface (see note above). */
+    --rank-gold:   #b45309;
+    --rank-silver: #64748b;
+    --rank-bronze: #9a5b2d;
+
+    /* Toasts keep their hue but invert lightness: the dark theme's near-black
+       tinted backgrounds with pale text are unreadable on a light page. */
+    --toast-info-bg: #eff6ff;
+    --toast-info-text: #1e3a5f;
+    --toast-error-bg: #fef2f2;
+    --toast-error-text: #7f1d1d;
+    --toast-success-bg: #f0fdf4;
+    --toast-success-text: #14532d;
+    --toast-warning-bg: #fffbeb;
+    --toast-warning-text: #78350f;
+}
+
+/* ── Radzen variable mappings ─────────────────────────────────────────────── */
+:root {
+  --rz-primary: var(--color-accent-solid);
+  --rz-on-primary: var(--color-accent-contrast);
+  --rz-primary-lighter: color-mix(in srgb, var(--color-accent) 16%, transparent);
+  --rz-secondary: var(--accent-cyan);
+  --rz-danger: var(--accent-danger);
+  --rz-success: var(--accent-success);
+  --rz-warning: var(--accent-warning);
+  --rz-base-background-color: var(--color-bg);
+  --rz-body-background-color: var(--color-bg);
+  --rz-card-background-color: var(--color-surface);
+  --rz-grid-background-color: var(--color-surface);
+  --rz-grid-header-background-color: var(--color-surface);
+  --rz-text-color: var(--color-text-primary);
+  --rz-text-secondary-color: var(--color-text-secondary);
+  --rz-border-color: var(--color-border);
+}

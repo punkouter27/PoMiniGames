@@ -1,0 +1,395 @@
+@page "/funquiz/multi"
+@using PoMiniGamesClient.Features.Shared
+@using Microsoft.AspNetCore.SignalR.Client
+@using PoMiniGamesClient.Features.PoFunQuiz.Services
+@inject FunQuizHubService Hub
+@inject PlayerNameService PlayerNameService
+@inject MatchHistoryService MatchHistory
+@inject NavigationManager Navigation
+@implements IAsyncDisposable
+
+<PageTitle>Fun Quiz — Multiplayer · PoMiniGames</PageTitle>
+
+@* Every game opens and ends the same way: the opening card sits in front of the lobby,
+   with the one real choice, the category, as its option; its button joins. The match
+   ends on the shared end-of-game modal. *@
+<GameShell Title=@TitleContent Player="@_playerName" BackTo="/"
+           GameOver="@(_finished is not null)"
+           Outcome="@Outcome"
+           GameSummary="@GameSummaryContent">
+    @if (!_introDone)
+    {
+        <GameIntro CueScope="quiz"
+                   Title="@TitleContent"
+                   Objective="Two players, the same ten questions. Correct answers score; a streak scores more."
+                   Controls="@HowToPlayContent"
+                   Options="@CategoryContent"
+                   OnStart="OnIntroStartAsync" />
+    }
+    @if (_reconnecting)
+    {
+        <div class="fq-reconnecting" role="status" aria-live="polite">
+            <span class="fq-reconnecting__pulse" aria-hidden="true"></span>
+            Reconnecting to lobby…
+        </div>
+    }
+    @if (_state is null)
+    {
+        @* There is exactly one lobby, so there is nothing to name and nothing to look up
+           one button seats you with whoever is waiting, and opens the lobby if nobody
+           is. *@
+        <div class="fq-join">
+            <h2 class="gps-phase-h">Online · Fun Quiz</h2>
+            @* Only seen when the card's own join could not happen (still connecting, or
+               it failed): the same category choice and a button to try again. *@
+            @CategoryContent
+            <div class="fq-actions">
+                @* Bug fix QA #6: aria-busy + disabled state while the SignalR handshake
+                   is in flight, so the primary button cannot fire twice on touch. *@
+                <button class="app-btn app-btn--primary"
+                        aria-busy="@(_busy ? "true" : "false")"
+                        disabled="@(_busy || !_isConnected)"
+                        @onclick="OnJoin">
+                    @(!_isConnected ? "Connecting…" : _busy ? "Joining…" : "Join the lobby")
+                </button>
+            </div>
+            @* One inline failure strip for every lobby: Components/InlineError. *@
+            <InlineError Message="@_error" OnRetry="RetryConnect" />
+        </div>
+    }
+    else if (IsWaiting)
+    {
+        @* No ready step: two seats, and the host starts once both are filled. *@
+        <LobbyPanel TPlayer="NamedLobbyPlayer"
+                    State="@LobbyState"
+                    LocalConnectionId="@_playerName"
+                    ConnectionState="@(_isConnected ? HubConnectionState.Connected : HubConnectionState.Reconnecting)"
+                    Hint="@($"Category: {CategoryLabel}. The host starts once both players are in.")"
+                    MaxPlayersHint="2"
+                    StartLabel="Start game"
+                    ShowReady="false"
+                    CanStart="@(_state.Players.Count >= 2)"
+                    WaitingHint="Waiting for an opponent to join…"
+                    HowTo="@HowToPlayContent"
+                    OnStart="OnStart"
+                    OnLeave="Leave" />
+    }
+    else
+    {
+        <div class="fq-multi">
+            <h2 class="gps-phase-h">Fun Quiz · @CategoryLabel</h2>
+            @if (IsInProgress && _currentQuestion is not null)
+            {
+                <div class="fq-question">
+                    <h3>Question @(_state.CurrentQuestionIndex + 1) of @_state.Questions.Count</h3>
+                    <p>@_currentQuestion.Text</p>
+                    <div class="fq-options">
+                        @for (var i = 0; i < _currentQuestion.Options.Count; i++)
+                        {
+                            var captured = i;
+                            <QuizAnswer Index="captured" Label="@_currentQuestion.Options[i]"
+                                        Class="@AnswerClass(captured)" Disabled="@_hasAnswered"
+                                        Correct="@(_hasAnswered && captured == _currentQuestion.CorrectOptionIndex)" OnSelect="Select" />
+                        }
+                    </div>
+                    @if (_hasAnswered)
+                    {
+                        <p>Answered. Waiting for opponent… (@_finishedThisQuestion / @_state.Players.Count)</p>
+                    }
+                    else
+                    {
+                        <p class="fq-2p-scores">@_playerName: <strong>@MyScore</strong> · @OpponentName: <strong>@OpponentScore</strong></p>
+                    }
+                    <p class="fq-credit">Questions: Open Trivia DB (CC BY-SA 4.0)</p>
+                </div>
+            }
+        </div>
+    }
+</GameShell>
+
+@code {
+    private static RenderFragment TitleContent => GameCatalog.TitleFor(GameKeys.PoFunQuiz);
+
+    private RenderFragment CategoryContent => @<label class="fq-join__field">
+        <span class="fq-join__label">Category <span class="fq-join__hint">used if you're first in</span></span>
+        <select @bind="_category" @bind:after="RememberCategory" disabled="@_busy" aria-describedby="fq-category-hint">
+            <option value="General" selected>General</option>
+            <option value="Science">Science</option>
+            <option value="History">History</option>
+            <option value="Geography">Geography</option>
+            <option value="Sports">Sports</option>
+            <option value="Entertainment">Entertainment</option>
+            <option value="Technology">Technology</option>
+            <option value="ArtCulture">Art &amp; Culture</option>
+        </select>
+        @* Say this out loud rather than silently discarding the joiner's pick —
+           the same honesty fix made for Couple Quiz's host-only round count. *@
+        <span id="fq-category-hint" class="fq-join__help">If someone is already waiting, you'll play their category.</span>
+    </label>;
+
+    private RenderFragment GameSummaryContent => @<div>
+        @if (_finished is { } f)
+        {
+            <div>🏁 @(f.IsTie ? "It's a tie!" : f.Winner?.Name + " wins!")</div>
+            @foreach (var kv in f.FinalScores.OrderByDescending(x => x.Value))
+            {
+                <div>@kv.Key — @kv.Value</div>
+            }
+        }
+    </div>;
+
+    // The closing cue: mine if my name is the winner's, a draw on a tie.
+    private PoMiniGamesClient.Models.GameResult Outcome => _finished is not { } f ? PoMiniGamesClient.Models.GameResult.InProgress
+        : f.IsTie ? PoMiniGamesClient.Models.GameResult.Draw
+        : f.Winner?.Name == _playerName ? PoMiniGamesClient.Models.GameResult.Win
+        : PoMiniGamesClient.Models.GameResult.Loss;
+
+    private RenderFragment HowToPlayContent => @<div>
+        <ul>
+            <li>Tap or click the answer you think is right</li>
+            <li>The host starts once both players are in</li>
+        </ul>
+    </div>;
+
+    private bool _introDone;
+    private string _playerName = string.Empty;
+    private const string CategoryKey = "pominigames:funquiz-category";
+    // An unknown stored value is harmless: the server falls back to General.
+    private string _category = LocalStorageService.GetItem<string>(CategoryKey) is { Length: > 0 } saved ? saved : "General";
+
+    private void RememberCategory() => LocalStorageService.SetItem(CategoryKey, _category);
+    private string? _error;
+    private bool _isConnected;
+    private bool _reconnecting;
+    private bool _busy;
+    private FunQuizGameStateDto? _state;
+    private FunQuizGameFinishedDto? _finished;
+    private FunQuizQuestionDto? _currentQuestion;
+    private bool _hasAnswered;
+    private int _selectedOption = -1;
+    private int _finishedThisQuestion;
+
+    // The hub serialises the GameState enum with a camelCase policy (see Program.cs
+    // AddJsonProtocol), so the wire value is "waiting" / "inProgress" — compare
+    // case-insensitively rather than against a PascalCase literal.
+    private bool IsWaiting => string.Equals(_state?.State, "Waiting", StringComparison.OrdinalIgnoreCase);
+    private bool IsInProgress => string.Equals(_state?.State, "InProgress", StringComparison.OrdinalIgnoreCase);
+
+    // "ArtCulture" is the wire value; spell it the way the picker does.
+    private string CategoryLabel => _state?.Category == "ArtCulture" ? "Art & Culture" : (_state?.Category ?? "General");
+
+    private int MyScore => _state?.Players.FirstOrDefault(p => p.Name == _playerName)?.Score ?? 0;
+    private int OpponentScore => _state?.Players.FirstOrDefault(p => p.Name != _playerName)?.Score ?? 0;
+    private string OpponentName => _state?.Players.FirstOrDefault(p => p.Name != _playerName)?.Name ?? "Opponent";
+
+    /// <summary>The hub's game state, in the shape the shared lobby card draws. Seats are keyed by name.</summary>
+    private PoMiniGames.Shared.Games.LobbyState<NamedLobbyPlayer>? LobbyState => _state is null
+        ? null
+        : new PoMiniGames.Shared.Games.LobbyState<NamedLobbyPlayer>(
+            _state.Players.Select(p => new NamedLobbyPlayer(p.Name, IsReady: false)).ToList(),
+            _state.HostName, _state.GameId, MaxPlayers: 2, DateTimeOffset.UtcNow);
+
+    protected override async Task OnInitializedAsync()
+    {
+        _playerName = PlayerNameService.GetPlayerName();
+        Hub.OnGameCreated += HandleState;
+        Hub.OnGameJoined += HandleState;
+        Hub.OnGameUpdated += HandleState;
+        Hub.OnGameStarted += HandleState;
+        Hub.OnScoreUpdated += HandleScoreUpdate;
+        Hub.OnPlayerFinishedQuestion += HandlePlayerFinishedQuestion;
+        Hub.OnGameFinished += HandleFinished;
+        Hub.OnLobbyError += HandleError;
+        Hub.OnReconnecting += HandleReconnecting;
+        Hub.OnReconnected += HandleReconnected;
+        Hub.OnClosed += HandleClosed;
+        await RetryConnect();
+    }
+
+    // DisposeAsync drops the hub connection, which is what gives the seat back.
+    private void Leave() => Navigation.NavigateTo("/");
+
+    private void HandleReconnecting(Exception? ex)
+    {
+        // Show a "Reconnecting…" banner so the player knows the lobby is healing.
+        // A common cause on a fresh tab is the browser tearing down the WebSocket
+        // when the BFF cookie hasn't finished propagating yet — the
+        // WithAutomaticReconnect() schedule above retries 0/1/3/5s.
+        _isConnected = false;
+        _reconnecting = true;
+        InvokeAsync(StateHasChanged);
+    }
+
+    private void HandleReconnected(string? connectionId)
+    {
+        _isConnected = true;
+        _reconnecting = false;
+        InvokeAsync(StateHasChanged);
+    }
+
+    private void HandleClosed(Exception? ex)
+    {
+        _isConnected = false;
+        _reconnecting = false;
+        // If we were mid-game (Waiting or InProgress), the server has already
+        // torn the session down via OnDisconnectedAsync — so the lobby state
+        // we're holding is stale and will never receive another broadcast.
+        // Reset to the lobby screen so the player can re-create or re-join
+        // instead of staring at a phantom "Start game" button that never works.
+        if (_state is not null && _finished is null)
+        {
+            _error = "Lost connection to the lobby. The game was closed.";
+            _state = null;
+            _currentQuestion = null;
+            _hasAnswered = false;
+            _selectedOption = -1;
+            _finishedThisQuestion = 0;
+        }
+        InvokeAsync(StateHasChanged);
+    }
+
+    /// <summary>The opening card was dismissed: join with the category picked on it. Still
+    /// connecting (or it failed): the join form underneath takes over.</summary>
+    private async Task OnIntroStartAsync()
+    {
+        _introDone = true;
+        StateHasChanged();
+        if (_isConnected) await OnJoin();
+    }
+
+    private async Task OnJoin()
+    {
+        if (_busy || _state is not null) return;
+        _busy = true;
+        _error = null;
+        StateHasChanged();
+        try
+        {
+            await Hub.JoinLobby(_playerName, _category, 10);
+        }
+        catch (Exception ex)
+        {
+            _error = $"Could not join the lobby: {ex.Message}";
+        }
+        finally
+        {
+            _busy = false;
+            StateHasChanged();
+        }
+    }
+
+    private async Task RetryConnect()
+    {
+        _error = null;
+        try
+        {
+            await Hub.ConnectAsync();
+            _isConnected = true;
+        }
+        catch (Exception ex)
+        {
+            _error = $"Could not connect: {ex.Message}";
+        }
+        StateHasChanged();
+    }
+
+    private async Task OnStart()
+    {
+        if (_state is null) return;
+        await Hub.StartGame();
+    }
+
+    private void HandleState(FunQuizGameStateDto s)
+    {
+        // If the question index advanced (or the game restarted), clear the
+        // per-question "answered" flag so the player can submit again.
+        if (_state is null || s.CurrentQuestionIndex != _state.CurrentQuestionIndex)
+        {
+            _hasAnswered = false;
+            _finishedThisQuestion = 0;
+        }
+        _state = s;
+        _currentQuestion = s.Questions.Count > s.CurrentQuestionIndex ? s.Questions[s.CurrentQuestionIndex] : null;
+        // SignalR `.On` callbacks run outside the render loop — repaint explicitly.
+        // Without this the opponent's join, the host's Start, and each question
+        // advance would not reach the non-initiating player until another event fired.
+        InvokeAsync(StateHasChanged);
+    }
+
+    private void HandlePlayerFinishedQuestion(FunQuizPlayerFinishedQuestionDto p)
+    {
+        _finishedThisQuestion = p.FinishedCount;
+        InvokeAsync(StateHasChanged);
+    }
+
+    private void HandleScoreUpdate(FunQuizScoreUpdateDto u)
+    {
+        if (_state is null) return;
+        var updated = _state.Players.Select(p => p.Name == u.PlayerName
+            ? new FunQuizPlayerStateDto(p.Name, u.TotalScore, u.Streak)
+            : p).ToList();
+        _state = _state with { Players = updated };
+        InvokeAsync(StateHasChanged);
+    }
+
+    private void HandleFinished(FunQuizGameFinishedDto f)
+    {
+        _finished = f;
+        InvokeAsync(StateHasChanged);
+        _ = RecordOutcomesAsync(f);
+    }
+
+    // Record a head-to-head result against every other player, scored by final points.
+    private async Task RecordOutcomesAsync(FunQuizGameFinishedDto f)
+    {
+        if (!f.FinalScores.TryGetValue(_playerName, out var myScore)) return;
+        foreach (var (name, score) in f.FinalScores)
+        {
+            if (name == _playerName) continue;
+            var outcome = myScore > score ? MatchOutcome.Win
+                        : myScore < score ? MatchOutcome.Loss
+                        : MatchOutcome.Draw;
+            await MatchHistory.RecordAsync("pofunquiz", MatchMode.Multiplayer, name, outcome);
+        }
+    }
+
+    private void HandleError(FunQuizLobbyErrorDto e)
+    {
+        _error = e.Message;
+        InvokeAsync(StateHasChanged);
+    }
+
+    private string AnswerClass(int option) => !_hasAnswered ? ""
+        : option == _currentQuestion?.CorrectOptionIndex ? "fq-option--correct"
+        : option == _selectedOption ? "fq-option--wrong" : "fq-option--muted";
+
+    private async Task Select(int option)
+    {
+        if (_state is null || _currentQuestion is null || _hasAnswered) return;
+        var isCorrect = option == _currentQuestion.CorrectOptionIndex;
+        _hasAnswered = true;
+        _selectedOption = option;
+        // For the consolidation MVP we treat every answer as 1.0× speed (no timer running yet).
+        await Hub.UpdateScore(isCorrect, speedMultiplier: 1.0, secondsRemaining: 0);
+        // Mark the local player as finished for this question — once both
+        // players finish, the server advances to the next question (or ends
+        // the game on the last one).
+        await Hub.PlayerFinished();
+    }
+
+    public async ValueTask DisposeAsync()
+    {
+        Hub.OnGameCreated -= HandleState;
+        Hub.OnGameJoined -= HandleState;
+        Hub.OnGameUpdated -= HandleState;
+        Hub.OnGameStarted -= HandleState;
+        Hub.OnScoreUpdated -= HandleScoreUpdate;
+        Hub.OnPlayerFinishedQuestion -= HandlePlayerFinishedQuestion;
+        Hub.OnGameFinished -= HandleFinished;
+        Hub.OnLobbyError -= HandleError;
+        Hub.OnReconnecting -= HandleReconnecting;
+        Hub.OnReconnected -= HandleReconnected;
+        Hub.OnClosed -= HandleClosed;
+        await Hub.DisposeAsync();
+    }
+}

@@ -85,11 +85,11 @@ public sealed class HealthEndpointTests : IClassFixture<TestWebApplicationFactor
         // since before that policy landed and could never have passed.
         json["Environment"]!["Name"]!.GetValue<string>().Should().Be("Test");
         // ApplicationName comes from IWebHostEnvironment, which the framework derives from the
-        // ENTRY ASSEMBLY name — so this tracks the host project rename to PoMiniGames.API.
+        // ENTRY ASSEMBLY name — so this tracks the host project rename to PoMiniGames.Api.
         // Note this is display-only. The identity that actually matters, Data Protection's
         // SetApplicationName("PoMiniGames"), is a hardcoded constant and deliberately did NOT
         // move with the assembly; had it, the rename would have invalidated every auth cookie.
-        json["Environment"]!["ApplicationName"]!.GetValue<string>().Should().Be("PoMiniGames.API");
+        json["Environment"]!["ApplicationName"]!.GetValue<string>().Should().Be("PoMiniGames.Api");
         body.Should().NotContain("APPLICATIONINSIGHTS_CONNECTION_STRING");
         body.Should().NotContain("InstrumentationKey", because: "diag should not expose raw secret values");
     }

@@ -4,7 +4,7 @@
 // The tier used to be reachable only through ?gfx= on the URL; that flag still wins (it is
 // how a pass is A/B'd), and 'auto' here means "let quality.js decide".
 
-const KEY = 'pvs:settings';
+const KEY = 'pominigames:pvs-settings';
 const TIERS = ['auto', 'low', 'medium', 'high', 'ultra'];
 
 function clean(s) {

@@ -391,6 +391,7 @@ public static class PoBrawlRollbackSim
 /// <summary>
 /// The whole fight in 26 ints. A value type, so a copy is a clone and history is an array of them.
 /// </summary>
+#pragma warning disable CA1051 // Value-type rollback snapshot mutates fields directly for zero-alloc simulation.
 public struct PoBrawlSimState : IEquatable<PoBrawlSimState>
 {
     /// <summary>Frames stepped since the match was created.</summary>

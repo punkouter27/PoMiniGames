@@ -3,7 +3,7 @@ using System.Text.Json;
 using Microsoft.AspNetCore.SignalR;
 using Microsoft.AspNetCore.SignalR.Protocol;
 using PoMiniGames.Shared.Games;
-using PoMiniGamesClient.Games.PoRacer;
+using PoMiniGamesClient.Features.PoRacer;
 
 namespace PoMiniGames.Unit.Features.PoRacer;
 

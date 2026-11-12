@@ -58,14 +58,14 @@ public sealed class HighScoreDescriptorTests
     [InlineData(nameof(EveryBoard_MapsDefaultEntryAndDeclaresValidRowKeyFields))]
     public Task Scenario(string name) => Scenarios.RunAsync(this, name);
 
-    private void EveryBoard_IsDiscovered()
+    private static void EveryBoard_IsDiscovered()
     {
         // Guards the reflection above: if the descriptors are renamed or restructured, the other
         // tests would silently pass over an empty set.
         Boards.Select(b => b.Name).Should().Contain(["MarbleRaceScores", "PoBrawlScores", "PoRacerScores"]);
     }
 
-    private void EveryBoard_MapsDefaultEntryAndDeclaresValidRowKeyFields()
+    private static void EveryBoard_MapsDefaultEntryAndDeclaresValidRowKeyFields()
     {
         foreach (var board in Boards)
         {

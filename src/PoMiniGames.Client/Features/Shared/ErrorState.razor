@@ -1,0 +1,65 @@
+@namespace PoMiniGamesClient.Features.Shared
+
+@*
+    Universal recoverable-failure view.
+
+    Drop-in primitive for any page that needs to surface an API failure,
+    empty-after-fetch, or unrecoverable state with a retry affordance.
+    Composes: icon + headline + body + retry button that calls `OnRetry`
+    when supplied. Without `OnRetry`, the retry button is omitted (some
+    failures are non-retryable — a 401 should redirect, not retry).
+
+    Renders as `role="alert"` so an SR user hears the error as soon as it
+    mounts, with the message inside an `aria-describedby` linkage to the
+    heading. The wrapper itself uses `.app-error-state` from app.css; the
+    caller never needs to write per-page error styles.
+
+    Deliberately NOT used for AppErrorBoundary — that's a different surface
+    (a process-level crash, not a per-call failure), and it has its own
+    component-level copy under Components/AppErrorBoundary.razor.css.
+*@
+
+<div class="app-error-state" role="alert" aria-labelledby="@_titleId" aria-describedby="@_bodyId">
+    @if (!string.IsNullOrEmpty(Icon))
+    {
+        <div class="app-error-state__icon" aria-hidden="true">@Icon</div>
+    }
+    @if (!string.IsNullOrEmpty(Title))
+    {
+        <h3 id="@_titleId" class="app-error-state__title">@Title</h3>
+    }
+    @if (ChildContent != null)
+    {
+        <div id="@_bodyId" class="app-error-state__body">@ChildContent</div>
+    }
+    @if (OnRetry.HasDelegate)
+    {
+        <div class="app-error-state__action">
+            <button class="app-btn app-btn--primary"
+                    type="button"
+                    @onclick="HandleRetry">
+                @RetryLabel
+            </button>
+        </div>
+    }
+</div>
+
+@code {
+    [Parameter] public string? Icon { get; set; } = "⚠️";
+    [Parameter] public string? Title { get; set; }
+    [Parameter] public RenderFragment? ChildContent { get; set; }
+
+    /// <summary>
+    /// When set, renders a "Retry" button at the bottom of the card. Pass
+    /// null/empty for non-retryable failures (auth, malformed input) where
+    /// the user should be redirected or corrected, not retried.
+    /// </summary>
+    [Parameter] public EventCallback OnRetry { get; set; }
+
+    [Parameter] public string RetryLabel { get; set; } = "Try again";
+
+    private readonly string _titleId = $"err-title-{Guid.NewGuid():N}";
+    private readonly string _bodyId = $"err-body-{Guid.NewGuid():N}";
+
+    private Task HandleRetry() => OnRetry.InvokeAsync();
+}

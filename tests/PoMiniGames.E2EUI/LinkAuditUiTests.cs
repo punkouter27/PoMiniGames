@@ -123,6 +123,7 @@ public class LinkAuditUiTests
         });
         await context.AddInitScriptAsync(ShiftObserver);
         var page = await context.NewPageAsync();
+        await using var guard = PlaywrightErrorGuard.Watch(page);
         page.Dialog += async (_, dialog) => await dialog.AcceptAsync();
 
         var current = "/";

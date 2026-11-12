@@ -23,9 +23,9 @@ public sealed class MultiplayerLobbyServiceTests
             new FunQuizQuestionService().GetQuestionsAsync(category, count, cancellationToken);
     }
 
-    private MultiplayerLobbyService NewLobby() => new(new StubQuestions(), NullLogger<MultiplayerLobbyService>.Instance);
+    private static MultiplayerLobbyService NewLobby() => new(new StubQuestions(), NullLogger<MultiplayerLobbyService>.Instance);
 
-    private Task<(MultiplayerGame Game, bool Created)> JoinAsync(
+    private static Task<(MultiplayerGame Game, bool Created)> JoinAsync(
         MultiplayerLobbyService lobby, string conn, string name, QuestionCategory category = QuestionCategory.General, int questions = 5) =>
         lobby.JoinOrCreateAsync(conn, name, category, questions, default);
 
@@ -111,7 +111,7 @@ public sealed class MultiplayerLobbyServiceTests
     [InlineData(nameof(Survivor_Rejoin_And_ClientBonuses_AreAllBounded))]
     public Task Scenario(string name) => Scenarios.RunAsync(this, name);
 
-    private async Task FirstPlayer_OpensLobby_AndIsHostPlayerOne()
+    private static async Task FirstPlayer_OpensLobby_AndIsHostPlayerOne()
     {
         foreach (var (hostConn, hostName) in new[] { ("conn1", "Alice"), ("conn7", "Eve") })
         {
@@ -125,7 +125,7 @@ public sealed class MultiplayerLobbyServiceTests
         }
     }
 
-    private async Task ThirdPlayer_OpensAFreshLobby_RatherThanOverfillingAFullOne()
+    private static async Task ThirdPlayer_OpensAFreshLobby_RatherThanOverfillingAFullOne()
     {
         var lobby = NewLobby();
         var (first, _) = await JoinAsync(lobby, "conn1", "Alice");
@@ -157,7 +157,7 @@ public sealed class MultiplayerLobbyServiceTests
         remaining!.HostConnectionId.Should().Be(expectedNewHost);
     }
 
-    private async Task RemoveLastPlayer_DeletesSession()
+    private static async Task RemoveLastPlayer_DeletesSession()
     {
         var lobby = NewLobby();
         await JoinAsync(lobby, "conn1", "Alice");
@@ -166,7 +166,7 @@ public sealed class MultiplayerLobbyServiceTests
         lobby.GetByConnection("conn1").Should().BeNull();
     }
 
-    private async Task Survivor_Rejoin_And_ClientBonuses_AreAllBounded()
+    private static async Task Survivor_Rejoin_And_ClientBonuses_AreAllBounded()
     {
         var lobby = NewLobby();
         var (first, _) = await JoinAsync(lobby, "conn1", "Alice");

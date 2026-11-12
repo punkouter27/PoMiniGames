@@ -24,7 +24,7 @@ public class PoRacerSimAiTests
     [InlineData(nameof(HundredCarSimulation_UsesNearbyCollisionCandidates))]
     public Task Scenario(string name) => Scenarios.RunAsync(this, name);
 
-    private void SoloAndDemoFields_HaveOneHundredCars_WhileOnlineFieldStaysAtEight()
+    private static void SoloAndDemoFields_HaveOneHundredCars_WhileOnlineFieldStaysAtEight()
     {
         var player = new PoRacerLobbyPlayer("connection", "Player", true, true, "owner");
         var online = new PoRacerSim([player]);

@@ -33,6 +33,7 @@ public class PoJevArenaUiTests
         // No context-wide fake-auth headers: they ride along on the MSAL CDN script and fail its CORS
         // preflight (a harness error, not the page's). ?autoGuest=1 below signs the browser in.
         var page = await context.NewPageAsync();
+        await using var guard = PlaywrightErrorGuard.Watch(page, "/api/play/sessions/");
         var errors = new List<string>();
         // Generic "Failed to load resource" console lines are covered, with their URL, by the
         // response hook. The play-session mint is excluded: under ?autoGuest=1 it races the guest
@@ -78,14 +79,14 @@ public class PoJevArenaUiTests
         await page.GetByRole(AriaRole.Button, new() { Name = "Deploy battle" }).ClickAsync();
         await page.WaitForFunctionAsync("() => (window.PoJevArena?.state()?.frames ?? 0) > 300", null,
             new() { Timeout = 60_000 });
-        // The battle runs full screen; holding Tab lays the stat HUD over the arena.
+        // The battle runs full screen; pressing Tab toggles the stat HUD over the arena.
         await page.ScreenshotAsync(new() { Path = Path.Combine(shots, "battle.png") });
-        await page.Keyboard.DownAsync("Tab");
+        await page.Keyboard.PressAsync("Tab");
         await page.Locator(".jev-root[data-stats='on'] .jev-inspector--blue").WaitForAsync(new() { Timeout = 5_000 });
         await page.ScreenshotAsync(new() { Path = Path.Combine(shots, "battle-stats.png") });
         (await page.Locator(".jev-inspector--blue").InnerTextAsync()).Should().Contain("melee_charge",
             "the blue inspector shows the distribution the stub returned");
-        await page.Keyboard.UpAsync("Tab");
+        await page.Keyboard.PressAsync("Tab");
         await page.Locator(".jev-root[data-stats='off']").WaitForAsync(new() { Timeout = 5_000 });
 
 

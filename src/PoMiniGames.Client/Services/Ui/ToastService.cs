@@ -106,7 +106,7 @@ public class ToastService
     /// statement, not an operation — and feedback is best-effort anyway:
     /// <see cref="UiFeedbackService"/> swallows its own failures.
     /// </summary>
-    private void Announce(ToastType type) => _ = _feedback.CueAsync("ui", CueFor(type));
+    private void Announce(ToastType type) => _ = _feedback.CueAsync("ui", CueFor(type)).AsTask();
 
     /// <summary>
     /// A toast the user must act on or dismiss — it never auto-expires.

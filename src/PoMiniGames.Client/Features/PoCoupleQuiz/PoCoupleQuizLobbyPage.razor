@@ -1,0 +1,267 @@
+@* The ONE Couple Quiz lobby page: /couplequiz, /couplequiz/multi and /couplequiz/lobby
+   are all bound to this single component, so the join buttons' busy-state guards, the
+   retry path when the hub is wedged and the ready tick in the player list live in one
+   place, and the hub is connected only after the player has dismissed the intro.
+
+   Couple Quiz is multiplayer-only: there is no solo mode and no kiosk demo (the game
+   is not in GameCatalog.Demo's reel). *@
+@page "/couplequiz"
+@page "/couplequiz/multi"
+@using PoMiniGamesClient.Features.PoCoupleQuiz.Services
+@using PoMiniGamesClient.Features.Shared
+@using Microsoft.AspNetCore.SignalR.Client
+@inject CoupleQuizHubService Hub
+@inject PlayerNameService PlayerNameService
+@inject NavigationManager Navigation
+@implements IAsyncDisposable
+
+<PageTitle>Couple Quiz · PoMiniGames</PageTitle>
+
+@* The lobby is the shared LobbyPanel, with Leave and Invite. Every way into a game opens
+   on the same card: the opening card comes first, and the seat is taken when it is
+   dismissed. *@
+<GameShell Title=@TitleContent Player="@_playerName" BackTo="/">
+    @if (!_introDone)
+    {
+        <GameIntro CueScope="pocouplequiz"
+                   Title="@TitleContent"
+                   Objective="Answer questions about each other. Each round one of you is the King and locks a secret answer; match it to score."
+                   Controls="@HowToPlayContent"
+                   OnStart="OnIntroStartAsync" />
+    }
+    else
+    {
+    @* One inline failure strip for every lobby: Components/InlineError. *@
+    <InlineError Message="@_error" OnRetry="ReconnectLobbyAsync" />
+    @* One start path: the server starts the match the moment everyone is ready, so there
+       is no Start button (ShowStart) and a ready cannot be taken back (CanReady). *@
+    <LobbyPanel TPlayer="NamedLobbyPlayer"
+                State="@LobbyState"
+                LocalConnectionId="@(_lobby?.PlayerName ?? "")"
+                ConnectionState="@Hub.ConnectionState"
+                Hint="@(_lobby is { Players.Count: >= 2 }
+                        ? "One shared room. The match starts as soon as everyone is ready."
+                        : "One shared room. Waiting for another player to join…")"
+                MaxPlayersHint="0"
+                StartLabel="Start"
+                ShowStart="false"
+                HostReadies="true"
+                CanReady="@(!_ready)"
+                PickerTitle="Rounds"
+                HowTo="@HowToPlayContent"
+                OnReconnect="ReconnectLobbyAsync"
+                OnReady="OnReady"
+                OnLeave="Leave">
+        <Picker>
+            @* Rounds is host-only. It used to be a "Difficulty" select every player saw,
+               which mapped to nothing but the round count — and belonged to whoever created
+               the lobby, so a joiner picked "Hard", had it silently discarded, and got no
+               hint why. Non-hosts now read the value instead of setting it. *@
+            @if (_lobby is { IsHost: true })
+            {
+                <select aria-label="Rounds" value="@_lobby.MaxRounds" @onchange="OnRoundsChanged">
+                    @foreach (var n in RoundChoices)
+                    {
+                        <option value="@n">@n rounds</option>
+                    }
+                </select>
+            }
+            else
+            {
+                <p class="lobby__hint">@(_lobby?.MaxRounds ?? 5) rounds, set by the host.</p>
+            }
+        </Picker>
+    </LobbyPanel>
+    }
+</GameShell>
+
+@code {
+    private static readonly int[] RoundChoices = [3, 5, 7];
+
+    // Multiplayer-only route, so the title carries the mode like every other lobby
+    // title rather than reading as the game's whole name.
+    private static RenderFragment TitleContent => GameCatalog.TitleFor(GameKeys.PoCoupleQuiz);
+
+    private RenderFragment HowToPlayContent => @<div>
+        <ul>
+            <li>Type your answer and submit — the round scores itself once everyone is in</li>
+            <li>The King seat rotates every round, so you both get asked about</li>
+            <li>Rounds are timed; whatever you've typed when the clock runs out is what counts</li>
+        </ul>
+    </div>;
+
+    private string _playerName = string.Empty;
+    private string? _error;
+    private bool _isConnected;
+    private bool _introDone;
+    private bool _busy;
+    private bool _ready;
+    private CoupleQuizLobbyEventPayload? _lobby;
+
+    /// <summary>The hub's lobby payload, in the shape the shared lobby card draws.</summary>
+    private PoMiniGames.Shared.Games.LobbyState<NamedLobbyPlayer>? LobbyState => _lobby is null
+        ? null
+        : new PoMiniGames.Shared.Games.LobbyState<NamedLobbyPlayer>(
+            _lobby.Players.Select(p => new NamedLobbyPlayer(p, _lobby.ReadyPlayers.Contains(p))).ToList(),
+            _lobby.HostName, GameCode: "", MaxPlayers: 0, DateTimeOffset.UtcNow);
+
+    protected override void OnInitialized()
+    {
+        _playerName = PlayerNameService.GetPlayerName();
+        Hub.OnLobbyJoined += HandleLobbyJoined;
+        Hub.OnLobbyUpdated += HandleLobbyUpdated;
+        Hub.OnPlayerDisconnected += HandleLobbyUpdated;
+        Hub.OnLobbyError += HandleError;
+        Hub.OnGameStarted += HandleGameStarted;
+        Hub.ConnectionChanged += HandleConnectionChanged;
+    }
+
+    /// <summary>The opening card was dismissed: connect and take a seat.</summary>
+    private async Task OnIntroStartAsync()
+    {
+        _introDone = true;
+        StateHasChanged();
+        await ConnectAndJoinAsync();
+    }
+
+    // Also the Retry button's handler: the hub service's connect is idempotent.
+    private async Task ConnectAndJoinAsync()
+    {
+        if (_busy || _lobby is not null) return;
+        _busy = true;
+        _error = null;
+        try
+        {
+            await Hub.ConnectAsync();
+            _isConnected = true;
+            StateHasChanged();
+            await Hub.JoinAsync(_playerName);
+        }
+        catch (Exception ex)
+        {
+            _error = $"Could not reach the lobby: {ex.Message}";
+        }
+        finally
+        {
+            _busy = false;
+            StateHasChanged();
+        }
+    }
+
+    private async Task ReconnectLobbyAsync()
+    {
+        if (_busy) return;
+        _busy = true;
+        _error = null;
+        try
+        {
+            await Hub.ConnectAsync();
+            _isConnected = true;
+            await Hub.JoinAsync(_playerName);
+        }
+        catch (Exception ex) when (ex is HttpRequestException or InvalidOperationException or Microsoft.AspNetCore.SignalR.HubException or OperationCanceledException or IOException)
+        {
+            _error = $"Could not rejoin the lobby: {ex.Message}";
+        }
+        finally
+        {
+            _busy = false;
+            await InvokeAsync(StateHasChanged);
+        }
+    }
+
+    private void HandleConnectionChanged(HubConnectionState state)
+    {
+        _isConnected = state == HubConnectionState.Connected;
+        if (state == HubConnectionState.Disconnected && _lobby is not null)
+        {
+            _lobby = null;
+            _ready = false;
+            _error = "Connection lost. Rejoin the lobby to continue.";
+        }
+        _ = InvokeAsync(StateHasChanged);
+    }
+
+    // The hub connection is app-lifetime and shared with the game page (see DisposeAsync),
+    // so leaving the page does not drop the seat by itself; a full load does.
+    private void Leave() => Navigation.NavigateTo("/", forceLoad: true);
+
+    private async Task OnReady()
+    {
+        if (_lobby is null || _ready) return;
+        _ready = true;
+        await Hub.SetReadyAsync();
+    }
+
+    private async Task OnRoundsChanged(ChangeEventArgs e)
+    {
+        if (_lobby is null || !int.TryParse(e.Value?.ToString(), out var rounds)) return;
+        await Hub.SetRoundsAsync(rounds);
+    }
+
+    // NB: SignalR `.On` callbacks run outside Blazor's render loop, so each handler
+    // must marshal a StateHasChanged onto the renderer's context — otherwise the UI
+    // only repaints when some *other* UI event happens to fire (a latent race that
+    // left the lobby stuck on the join card even after the server created it).
+    private void HandleLobbyJoined(CoupleQuizLobbyEventPayload p)
+    {
+        // A malformed payload would overwrite _lobby with null and trigger a
+        // NullReferenceException render loop.
+        if (p is null)
+        {
+            _error = "The server returned an empty lobby. Please try again.";
+            _ = InvokeAsync(StateHasChanged);
+            return;
+        }
+        _lobby = p;
+        _ = InvokeAsync(StateHasChanged);
+    }
+
+    private void HandleLobbyUpdated(CoupleQuizLobbyUpdatedPayload p)
+    {
+        if (p is null || _lobby is null) return;
+        _lobby = _lobby with
+        {
+            Players = p.Players,
+            ReadyPlayers = p.ReadyPlayers,
+            HostName = p.HostName,
+            MaxRounds = p.MaxRounds,
+            // The host can leave, and whoever is promoted needs the rounds control.
+            IsHost = string.Equals(p.HostName, _lobby.PlayerName, StringComparison.Ordinal),
+        };
+        // The server clears ready flags when a match ends and the lobby reopens.
+        _ready = p.ReadyPlayers.Contains(_lobby.PlayerName);
+        _ = InvokeAsync(StateHasChanged);
+    }
+
+    private void HandleError(string? message)
+    {
+        // Null/empty guard — the UI renders @_error directly and crashes on
+        // null string interpolation otherwise.
+        _error = string.IsNullOrEmpty(message)
+            ? "An unknown error occurred. Please try again."
+            : message;
+        _ = InvokeAsync(StateHasChanged);
+    }
+
+    // The match auto-starts once everyone readies up, which broadcasts GameStarted to the
+    // whole lobby. Move every player to the board; the hub service buffers the payload so
+    // the game page hydrates from it on mount.
+    private void HandleGameStarted(CoupleQuizGameStartedPayload _) =>
+        Navigation.NavigateTo("/couplequiz/game");
+
+    // NOTE: do NOT dispose the hub here. CoupleQuizHubService is a scoped (app-lifetime)
+    // singleton shared with the game page — disposing it on navigation would tear down
+    // the live SignalR connection the game page depends on. We only detach our handlers;
+    // the DI container owns the connection's lifetime.
+    public ValueTask DisposeAsync()
+    {
+        Hub.OnLobbyJoined -= HandleLobbyJoined;
+        Hub.OnLobbyUpdated -= HandleLobbyUpdated;
+        Hub.OnPlayerDisconnected -= HandleLobbyUpdated;
+        Hub.OnLobbyError -= HandleError;
+        Hub.OnGameStarted -= HandleGameStarted;
+        Hub.ConnectionChanged -= HandleConnectionChanged;
+        return ValueTask.CompletedTask;
+    }
+}

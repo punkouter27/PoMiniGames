@@ -20,16 +20,16 @@ public enum ThemeMode
 /// <summary>
 /// Global app settings shared by every game: colour scheme, master mute and
 /// volume, haptics and reduced motion. Persisted as plain localStorage values
-/// (<c>pomini_muted</c>, <c>pomini_theme</c>, <c>pomini_volume</c>,
-/// <c>pomini_sfx_volume</c>, <c>pomini_music_volume</c>,
-/// <c>pomini_haptics</c>, <c>pomini_reducedmotion</c>) so JS modules (uiAudio.js,
+/// (<c>pominigames:muted</c>, <c>pominigames:theme</c>, <c>pominigames:volume</c>,
+/// <c>pominigames:sfx-volume</c>, <c>pominigames:music-volume</c>,
+/// <c>pominigames:haptics</c>, <c>pominigames:reduced-motion</c>) so JS modules (uiAudio.js,
 /// audioBus.js, the index.html pre-paint theme script, game engines) can read
 /// them directly without an interop round-trip.
 /// </summary>
 /// <remarks>
 /// <para>
 /// The setters sit behind <c>Components/SettingsSheet.razor</c>, a dialog rather
-/// than a page, which also covers <c>pomini_colorsafe</c>. A fresh browser gets
+/// than a page, which also covers <c>pominigames:color-safe</c>. A fresh browser gets
 /// the defaults below (Auto theme, unmuted, full volume, haptics on, motion
 /// unreduced, standard palettes).
 /// </para>
@@ -47,16 +47,16 @@ public enum ThemeMode
 /// </remarks>
 public sealed class SettingsService : IAsyncDisposable
 {
-    private const string MutedKey = "pomini_muted";
-    private const string ThemeKey = "pomini_theme";
-    private const string VolumeKey = "pomini_volume";
-    private const string SfxVolumeKey = "pomini_sfx_volume";
-    private const string MusicVolumeKey = "pomini_music_volume";
-    private const string HapticsKey = "pomini_haptics";
-    private const string ReducedMotionKey = "pomini_reducedmotion";
-    private const string ColorSafeKey = "pomini_colorsafe";
+    private const string MutedKey = "pominigames:muted";
+    private const string ThemeKey = "pominigames:theme";
+    private const string VolumeKey = "pominigames:volume";
+    private const string SfxVolumeKey = "pominigames:sfx-volume";
+    private const string MusicVolumeKey = "pominigames:music-volume";
+    private const string HapticsKey = "pominigames:haptics";
+    private const string ReducedMotionKey = "pominigames:reduced-motion";
+    private const string ColorSafeKey = "pominigames:color-safe";
     // Owned by wwwroot/js/qualityTiers.js; read here only to show the current choice.
-    private const string GraphicsKey = "poFx.tier";
+    private const string GraphicsKey = "pominigames:fx-tier";
 
     /// <summary>The graphics choices the sheet offers. "auto" lets the device decide.</summary>
     public static readonly string[] GraphicsTiers = ["auto", "low", "medium", "high"];

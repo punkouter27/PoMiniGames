@@ -1,0 +1,128 @@
+@namespace PoMiniGamesClient.Features.PoMule
+@using PoMiniGames.Shared.Games.PoMule
+@using PoMiniGamesClient.Services.Ui
+@inject IJSRuntime JS
+
+@* Phase 6 of every month, and the final results: who is worth what, how each colonist's
+   Net Worth has moved, and whether the colony as a whole is holding together.
+
+   A native <dialog>. While a human is playing it opens with showModal(), so focus is
+   trapped inside it, the page behind is inert, and Space or Enter on "Next month" carries
+   on. A demo nobody is driving gets a plain open dialog instead: it has nothing to focus,
+   and a modal would lock the speed buttons and the top bar for the length of the table.
+   Escape is the same as "Next month" rather than closing a table the match still needs. *@
+<dialog @ref="_dialog" class="pm-standings" aria-labelledby="pm-standings-title"
+        aria-modal="@(Modal ? "true" : "false")" open="@(!Modal)"
+        @oncancel="OnCancelAsync">
+    <RadzenMediaQuery Query="(max-width: 640px)" Change="@(narrow => _narrow = narrow)" />
+    <RadzenCard Variant="Variant.Filled" class="pm-standings-card">
+        <div class="pm-standings-head">
+            <h2 class="pm-standings-title" id="pm-standings-title">@(Final ? "Final results" : $"Month {State.Month} standings")</h2>
+            <RadzenBadge BadgeStyle="@(Survives ? BadgeStyle.Success : BadgeStyle.Danger)"
+                         Text="@ColonyLine" />
+        </div>
+
+        <div class="pm-standings-body">
+            <RadzenDataGrid Data="@Rows" TItem="PoMuleRow" Density="Density.Compact" AllowSorting="false" AllowPaging="false">
+                <Columns>
+                    <RadzenDataGridColumn TItem="PoMuleRow" Title="#" Width="40px">
+                        <Template Context="r">@r.Rank</Template>
+                    </RadzenDataGridColumn>
+                    <RadzenDataGridColumn TItem="PoMuleRow" Title="Colonist">
+                        <Template Context="r">
+                            <span class="pm-dot" style="background: @r.Color"></span>
+                            <span>@r.Name</span>
+                            @if (Final && r.Rank == 1)
+                            {
+                                <RadzenBadge BadgeStyle="BadgeStyle.Warning" Text="First Founder" class="rz-ml-2" />
+                            }
+                        </Template>
+                    </RadzenDataGridColumn>
+                    @* The first column to go on a narrow screen: the colour dot and the name
+                       already say who is who, and the number columns are the point. *@
+                    <RadzenDataGridColumn TItem="PoMuleRow" Title="Species" Width="150px" Visible="@(!_narrow)">
+                        <Template Context="r">@r.SpeciesName</Template>
+                    </RadzenDataGridColumn>
+                    <RadzenDataGridColumn TItem="PoMuleRow" Title="Plots" Width="60px" TextAlign="TextAlign.Right">
+                        <Template Context="r">@r.Plots</Template>
+                    </RadzenDataGridColumn>
+                    <RadzenDataGridColumn TItem="PoMuleRow" Title="Net Worth" Width="110px" TextAlign="TextAlign.Right">
+                        <Template Context="r"><strong>@r.NetWorth.ToString("N0")</strong></Template>
+                    </RadzenDataGridColumn>
+                </Columns>
+            </RadzenDataGrid>
+
+            @if (State.History.Count > 1)
+            {
+                @* Sized to the screen rather than a fixed 220px: a landscape phone is about
+                   390px tall, and a fixed chart pushed the table's own rows off it. *@
+                <RadzenChart Style="height: clamp(130px, 28vh, 220px)">
+                    @foreach (var p in State.Players)
+                    {
+                        var seat = p.Seat;
+                        <RadzenLineSeries Data="@Line(seat)" CategoryProperty="Month" ValueProperty="Worth" Title="@p.Name"
+                                          Stroke="@PoMuleUi.SeatColors[seat]" StrokeWidth="@(seat == 0 ? 4 : 2)" />
+                    }
+                    <RadzenCategoryAxis Step="1" />
+                    <RadzenValueAxis>
+                        <RadzenGridLines Visible="true" />
+                    </RadzenValueAxis>
+                    <RadzenLegend Visible="false" />
+                </RadzenChart>
+            }
+        </div>
+
+        @if (!Final && CanContinue)
+        {
+            <div class="pm-standings-actions">
+                <RadzenButton Text="Next month" ButtonStyle="ButtonStyle.Warning" autofocus
+                              Click="@(_ => OnContinue.InvokeAsync())" />
+                <span class="pm-standings-hint">or press Space</span>
+            </div>
+        }
+    </RadzenCard>
+</dialog>
+
+@code {
+    [Parameter, EditorRequired] public MatchState State { get; set; } = null!;
+    [Parameter, EditorRequired] public List<PoMuleRow> Rows { get; set; } = [];
+    [Parameter] public bool Final { get; set; }
+    [Parameter] public bool CanContinue { get; set; }
+    [Parameter] public EventCallback OnContinue { get; set; }
+
+    private ElementReference _dialog;
+    private bool _narrow;
+
+    // A human's match: the table blocks the board until they carry on.
+    private bool Modal => CanContinue;
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (firstRender && Modal)
+        {
+            try
+            {
+                await JS.InvokeVoidAsync("PoDialogInterop.holdOpen", _dialog);
+                await _dialog.ShowModalAsync(JS);
+            }
+            catch (JSException) { /* the dialog still renders in flow; only the trap is lost */ }
+        }
+    }
+
+    private async Task OnCancelAsync()
+    {
+        if (!Final && CanContinue) await OnContinue.InvokeAsync();
+    }
+
+    // Mid-match the wealth target is still ahead; only the crisis count can already be lost.
+    private bool Survives => Final
+        ? PoMuleScoring.ColonySurvives(Rows.Sum(r => r.NetWorth), State.CrisisMonths)
+        : State.CrisisMonths <= PoMuleTuning.MaxCrisisMonths;
+
+    private string ColonyLine => Final
+        ? (Survives ? "The colony survives" : "The colony collapsed")
+        : $"Crisis months: {State.CrisisMonths} of {PoMuleTuning.MaxCrisisMonths} allowed";
+
+    private IEnumerable<WorthPoint> Line(int seat) =>
+        State.History.Select((worths, i) => new WorthPoint(i + 1, worths[seat]));
+}

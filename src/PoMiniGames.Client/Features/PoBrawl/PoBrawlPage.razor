@@ -1,0 +1,419 @@
+@page "/pobrawl"
+@page "/pobrawl/{Mode}"
+@using PoMiniGamesClient.Features.Shared
+@using PoMiniGamesClient.Models
+@using PoMiniGamesClient.Services
+@* Aliases, not namespace imports: PoMiniGamesClient.Models mirrors Domain types by
+   name (PlayerStats), so importing either namespace wholesale makes them ambiguous.
+   Same convention as ApiService.cs. *@
+@using PoBrawlFighter = PoMiniGames.Domain.Primitives.PoBrawlFighter
+@using PoBrawlRoster = PoMiniGames.Domain.Primitives.PoBrawlRoster
+@implements IAsyncDisposable
+@inject PlayerNameService PlayerNameService
+@inject ApiService ApiService
+@inject GameResultService GameResults
+@inject IJSRuntime JSRuntime
+@inject SettingsService Settings
+@inject AuthStateService Auth
+@inject ApiEndpoints Endpoints
+@inject NavigationManager Nav
+@inject ToastService Toasts
+
+<PageTitle>Brawl · PoMiniGames</PageTitle>
+
+<GameShell Title=@TitleContent
+           Player="@_playerName"
+           Elo="@(_mode == "1p" ? _rating.Elo : (int?)null)"
+           BackTo="@(_mode == "online" ? "/pobrawl/multi" : "/")"
+           GameOver="@(_phase == "result")"
+           GameOverDelayMs="@LadderResultHoldMs"
+           Fullscreen="true"
+           GameKey="@(_mode == "1p" ? "pobrawlko" : null)"
+           Outcome="@OutcomeForCue"
+           RequiresWebGl="true"
+           GameSummary="@GameSummaryContent"
+           Announcement="@_announcement">
+    @if (!_introDone)
+    {
+        @* .pb-intro is display:contents — it exists so this page's scoped CSS can reach the
+           shared card (::deep) and give Brawl's long 1P card its wide two-column layout. *@
+        <div class="pb-intro">
+            <GameIntro CueScope="pobrawl"
+                       Title="@TitleContent"
+                       Objective="@IntroObjective"
+                       Controls="@IntroControlsContent"
+                       HowToPlay="@IntroTipsContent"
+                       Mode="@_introMode"
+                       Options="@IntroOptions"
+                       Actions="@IntroActions"
+                       Wide="true"
+                       StartEnabled="@(_mode != "2p" || (_p1Locked && _p2Locked))"
+                       StartHint="@(_mode == "2p" && !BothLocked ? "Lock in both fighters to start" : null)"
+                       DialogLabel="@IntroDialogLabel"
+                       CaptureKeys="false"
+                       ForwardOptionKeys="@(_mode == "2p")"
+                       OnKey="OnIntroKey"
+                       OnStart="OnIntroStartAsync" />
+        </div>
+    }
+    <div class="pb-wrap">
+        @* The engine appends its <canvas> here, so this is the only node this component
+           can attach an accessible name to. *@
+        <div id="pobrawl-container" class="pb-canvas-host"
+             role="img" aria-label="Brawl arena — the fight renders here"></div>
+
+        @* Top of the arena: the HUD, whose centre plate carries the mode's readout (ladder
+           rung and votes, online signal), and under it only what has to be said in words. *@
+        <div class="pb-top">
+            @if (_phase == "fighting")
+            {
+                @* Its own component, so the engine's 4×/sec pump re-renders it alone. *@
+                <PoBrawlHud @ref="_hud"
+                            P1Name="@HudName(1)" P2Name="@HudName(2)"
+                            P1Fighter="@CharName(_p1Char)" P2Fighter="@CharName(_p2Char)"
+                            Training="_training"
+                            LocalSide="@HudLocalSide"
+                            Below="@HudBelow" />
+            }
+
+            @* Touch players have no Esc or P: the pause button (the CSS hides it for a mouse). *@
+            @if (PauseAvailable && !_paused)
+            {
+                <button type="button" class="pb-pause-btn" aria-label="Pause" title="Pause (Esc or P)"
+                        @onmousedown:preventDefault="true" @onclick="PauseAsync">⏸</button>
+            }
+
+            @* Online: joining, and anything the network is doing to the fight. *@
+            @if (_mode == "online" && !_netMissing && !_netConnectFailed && (!_everJoined || NetNotice is not null))
+            {
+                <div class="pb-net-status" role="status">
+                    <span class="pb-net-pill @(_everJoined && !NetWaiting ? "pb-net-pill--warn" : "")">@(_everJoined ? NetNotice : "Joining the fight…")</span>
+                </div>
+            }
+        </div>
+
+        @* Between rungs: the campaign map — the beaten rung's states flip and the bus drives
+           to the next opponent's home state. Shown for the roll's hold (CampaignInterludeMs). *@
+        @if (_campaignBeaten is int beaten)
+        {
+            <PoBrawlCampaignMap @key="beaten" Beaten="beaten" Variant="interlude" />
+        }
+
+        @if (_mode == "online" && _netConnectFailed)
+        {
+            @* The hub never answered (network, auth): the fight may well be there — offer a retry. *@
+            <div class="pb-net-missing" role="alert">
+                <h2>Couldn't connect</h2>
+                <p>@_netConnectError</p>
+                <div class="pb-net-actions">
+                    <button type="button" class="pb-net-btn" @onclick="RetryConnectAsync">↻ Retry</button>
+                    <a class="pb-net-btn pb-net-btn--ghost" href="/pobrawl/multi">Back to the lobby</a>
+                </div>
+            </div>
+        }
+        else if (_mode == "online" && _netMissing)
+        {
+            <div class="pb-net-missing" role="status">
+                <h2>No fight here</h2>
+                <p>It already ended, or it never started.</p>
+                <a class="pb-net-btn" href="/pobrawl/multi">Back to the lobby</a>
+            </div>
+        }
+
+        @* Paused (1P, training, 2P): the engine froze the fight; it reports every change through
+           OnPauseChanged, its own Esc / P keys and the auto-pause on a hidden tab included. *@
+        @if (PauseAvailable && _paused)
+        {
+            @* data-pb-pause: the engine leaves Escape alone under any other modal, but this one
+               it closes with the same key (game.js _onPauseKey) — so the page handles no keys. *@
+            <GamePauseDialog Class="pb-pause" LabelledBy="pb-pause-title" OnResume="ResumeAsync" data-pb-pause>
+                <h2 id="pb-pause-title" class="pb-pause-title">Paused</h2>
+                <div class="pb-pause-actions">
+                    <button type="button" class="pb-pause-act pb-pause-act--go" @ref="_resumeButton"
+                            @onclick="ResumeAsync">▶ Resume</button>
+                    <button type="button" class="pb-pause-act" @onclick="RestartFightAsync">↺ Restart fight</button>
+                    <button type="button" class="pb-pause-act" @onclick="QuitFight">✕ Quit</button>
+                </div>
+                <p class="pb-pause-hint">Esc or P resumes</p>
+            </GamePauseDialog>
+        }
+
+        @* Training (1P, entered from the intro card's "Training first"). mousedown:preventDefault
+           keeps a clicked button from taking focus — the fight reads keys off window, and a
+           focused button would turn the next Space or Enter into a second click. *@
+        @if (_training)
+        {
+            <div class="pb-trainbar" role="group" aria-label="Training" @onmousedown:preventDefault="true">
+                <button type="button" class="pb-seg" title="Put both fighters back on their marks"
+                        @onclick="ResetTrainingAsync">↺ Reset</button>
+                <button type="button" class="pb-seg pb-seg--ladder"
+                        title="@($"Leave training and fight {CharName(_p2Char)} for the rung")"
+                        @onclick="LeaveTrainingAsync">⬅ Back to the ladder</button>
+            </div>
+        }
+    </div>
+
+</GameShell>
+
+@code {
+    private static RenderFragment TitleContent => GameCatalog.TitleFor(GameKeys.PoBrawl);
+
+    private string IntroDialogLabel => _mode == "2p" ? "Brawl two-player setup" : "Brawl intro";
+
+    // Whose pick a tap on the grid makes: player 1 until they lock, then player 2.
+    private string SelectPrompt =>
+        !_p1Locked ? "Player 1 — tap your fighter (or A / D, then F)"
+        : !_p2Locked ? "Player 2 — tap your fighter (or ← / →, then K)"
+        : "Both locked in — fight!";
+
+    // One legend for every mode (PoBrawlControls): 2P's split keys, 1P's grid.
+    private RenderFragment IntroControlsContent => @<PoBrawlControls Mode="@_mode" Part="keys" />;
+    private RenderFragment IntroTipsContent => @<PoBrawlControls Mode="@_mode" Part="tips" />;
+
+    // 2P gets the fighter select, 1P the training choice and its rung.
+    private RenderFragment? IntroOptions => _mode switch
+    {
+        "2p" => SelectContent,
+        "1p" => ScoutingContent,
+        _ => null,
+    };
+
+    // 1P: where the campaign stands (the map's head names the rung and the next stop) beside
+    // who the rung is. The compact dossier keeps the card inside one screen.
+    private RenderFragment ScoutingContent => @<div class="pb-scout">
+        <PoBrawlCampaignMap Beaten="@_ladder" Variant="status" />
+        <PoBrawlDossierCard FighterId="@_p2Char" Compact="true" />
+    </div>;
+
+    // 1P: the start choice, beside OK.
+    private RenderFragment? IntroActions => _mode == "1p"
+        ? @<label class="pb-intro-train" title="No clock, no KO; the room's bar has the exit.">
+            <input type="checkbox" @bind="_training" />
+            <span><b>🥋 Training first</b> <small>· no clock, no KO</small></span>
+        </label>
+        : null;
+
+    // Two-player fighter select: one shared 4×4 grid with a cursor per player. Each player
+    // drives their cursor with their in-game keys (see OnIntroKey) or a tap; the side cards
+    // are the lock toggles, and locking in both sides starts the fight.
+    // The empty .pb-select-portrait / .pb-select-hero spans are where selectStage.js paints
+    // each president's live rig (one shared canvas over #pb-select-stage); without WebGL2 or
+    // on the low tier they collapse and the tiles stay plain glass buttons.
+    // mousedown:preventDefault keeps a clicked tile or card from taking focus: the overlay keeps
+    // it, so both players' keys go on working and the arrows never scroll the card.
+    private RenderFragment SelectContent => @<div class="pb-select" id="@SelectStageId" @onmousedown:preventDefault="true">
+        <div class="pb-select-sides">
+            @SideCard(1)
+            <span class="pb-select-vs" aria-hidden="true">VS</span>
+            @SideCard(2)
+        </div>
+        <p class="pb-select-prompt">@SelectPrompt</p>
+        <PoBrawlFighterGrid Fighters="@PickableRoster" P1Index="@_p1Sel" P2Index="@_p2Sel" OnPick="TapFighter" />
+        @* Each corner's highlighted fighter. Collapsed by default: the 2P card is already long.
+           The cards only exist while it is open, so a closed disclosure fetches nothing. *@
+        <details class="pb-dossier-disclosure" open="@_dossiersOpen">
+            <summary @onclick="() => _dossiersOpen = !_dossiersOpen" @onclick:preventDefault="true">📁 Dossiers</summary>
+            @if (_dossiersOpen)
+            {
+                <div class="pb-dossier-pair">
+                    <PoBrawlDossierCard FighterId="@PickableRoster[_p1Sel].Id" Compact="true" />
+                    <PoBrawlDossierCard FighterId="@PickableRoster[_p2Sel].Id" Compact="true" />
+                </div>
+            }
+        </details>
+    </div>;
+
+    private bool _dossiersOpen;
+
+    private RenderFragment SideCard(int side)
+    {
+        var locked = side == 1 ? _p1Locked : _p2Locked;
+        var fighter = PickableRoster[side == 1 ? _p1Sel : _p2Sel];
+        var pick = fighter.Name;
+        return @<button type="button" class="pb-select-side pb-select-side--p@(side) @(locked ? "pb-select-side--locked" : "")"
+                        aria-pressed="@(locked ? "true" : "false")"
+                        aria-label="Player @side: @pick, @(locked ? "locked in — press to change" : "press to lock in")"
+                        @onclick="() => ToggleLock(side)">
+            <span class="pb-select-hero" aria-hidden="true" data-fighter="@fighter.Id" data-side="@side"></span>
+            <span class="pb-select-who">Player @side</span>
+            <span class="pb-select-plate">
+                <span class="pb-select-pick">@pick</span>
+                <span class="pb-select-state">@(locked ? "✓ Ready" : "Lock in")</span>
+            </span>
+            @if (locked)
+            {
+                @* The presidential seal stamps down on lock-in (CSS animation on insert). *@
+                <span class="pb-select-seal" aria-hidden="true">@SealSvg</span>
+            }
+        </button>;
+    }
+
+    // ── Under the HUD clock (PoBrawlHud.Below) ──────────────────────────────
+    private int HudLocalSide => _mode != "online" || _isSpectator || _localSide is null ? 0
+        : _localSide == PoMiniGames.Shared.Games.PoBrawlSide.Player1 ? 1 : 2;
+
+    private RenderFragment? HudBelow => _mode switch
+    {
+        "1p" when !_training => LadderChip,
+        "online" when _everJoined => NetChip,
+        _ => null,
+    };
+
+    // The 1P run: presidents beaten and the electoral votes they hold (PoBrawlCampaign).
+    private RenderFragment LadderChip => @<span class="pb-chip" role="img"
+        aria-label="Ladder: @_ladder of @Roster.Length presidents beaten. @PoBrawlCampaign.VotesAfter(_ladder) of @PoBrawlCampaign.ToWin electoral votes."
+        title="Presidents beaten · electoral votes">
+        <span><b>@_ladder</b>/@Roster.Length</span>
+        <span class="pb-chip-ev"><b>@PoBrawlCampaign.VotesAfter(_ladder)</b> EV</span>
+    </span>;
+
+    // Online: the signal meter (pushed at 2 Hz, its own component), and a spectator's badge.
+    private RenderFragment NetChip => @<span class="pb-chip-stack">
+        @if (_isSpectator)
+        {
+            <span class="pb-chip">👀 Watching</span>
+        }
+        <PoBrawlNetMeter @ref="_netMeter" />
+    </span>;
+
+    // The result: one headline, the numbers that changed, then the detail behind tabs
+    // (recap, the press conference, the ladder ending) so the shared modal stays short.
+    // GameOverModal renders the board (1P: "pobrawlko", top 3 by fastest KO) below this.
+    // No stats grid in any mode: 1P's Elo and record ride the facts line (the rest is Brawl HQ),
+    // and 2P and online keep no record of their own — the 1P numbers would be someone else's.
+    private RenderFragment GameSummaryContent => @<div class="pb-result">
+        <div class="pb-result-line">@ResultLine()</div>
+        @if (_mode == "1p")
+        {
+            <div class="pb-result-facts">
+                @if (_winner == 1)
+                {
+                    <span>KO <b>@_lastKo.ToString("0.00")s</b>@(_newRecord ? " 🏆 record" : "")</span>
+                }
+                <span>Elo <b>@_rating.Elo</b> (@(_lastEloDelta >= 0 ? "+" : "")@_lastEloDelta) vs @CharName(_p2Char) @PresidentElo(LadderRungOf(_p2Char))</span>
+                <span>W–L <b>@_record</b></span>
+                @if (!_champion)
+                {
+                    <span>Next: <b>@Roster[_ladder].Name</b> (@(_ladder + 1)/@Roster.Length)</span>
+                }
+            </div>
+        }
+
+        @if (ResultTabs().Count > 1)
+        {
+            <div class="pb-tabs" role="tablist" aria-label="Fight details">
+                @foreach (var t in ResultTabs())
+                {
+                    var tab = t;
+                    <button type="button" role="tab" id="pb-tab-@tab" class="pb-tab"
+                            aria-selected="@(tab == ActiveTab ? "true" : "false")" aria-controls="pb-tabpanel"
+                            tabindex="@(tab == ActiveTab ? 0 : -1)"
+                            @onclick="() => _resultTab = tab">@TabLabel(tab)</button>
+                }
+            </div>
+        }
+        @if (ActiveTab is not null)
+        {
+            <div class="pb-tabpanel" id="pb-tabpanel" role="@(ResultTabs().Count > 1 ? "tabpanel" : null)"
+                 aria-labelledby="@(ResultTabs().Count > 1 ? $"pb-tab-{ActiveTab}" : null)">
+                @if (ActiveTab == "ending")
+                {
+                    @EndingCard
+                }
+                else if (ActiveTab == "recap" && _recap is { } rc)
+                {
+                    @RecapBars(rc)
+                }
+                else if (_presser is { } pp)
+                {
+                    @PressLine(pp)
+                }
+            </div>
+        }
+
+    </div>;
+
+    private string? _resultTab;
+    private string? ActiveTab
+    {
+        get
+        {
+            var tabs = ResultTabs();
+            return _resultTab is { } t && tabs.Contains(t) ? t : tabs.FirstOrDefault();
+        }
+    }
+
+    private List<string> ResultTabs()
+    {
+        var tabs = new List<string>(3);
+        if (_mode == "1p" && _champion) tabs.Add("ending");
+        if (_recap is not null) tabs.Add("recap");
+        if (_presser is not null) tabs.Add("press");
+        return tabs;
+    }
+
+    private static string TabLabel(string tab) => tab switch
+    {
+        "ending" => "🏆 Ending",
+        "recap" => "📊 Recap",
+        _ => "🎤 Press",
+    };
+
+    // The scorecard as mirrored bars: each stat's two values share one track, so who won the
+    // exchange reads at a glance. In 1P the right column is every president the run faced.
+    private RenderFragment RecapBars(PoBrawlMatchRecap r) => @<div class="pb-rc">
+        <div class="pb-rc-names" aria-hidden="true">
+            <span class="pb-rc-p1">@HudName(1)</span>
+            <span class="pb-rc-p2">@(_mode == "1p" ? "Presidents" : HudName(2))</span>
+        </div>
+        <ul class="pb-rc-rows">
+            @RecapRow("Hits landed", r.P1Hits, r.P2Hits)
+            @RecapRow("Blocks", r.P1Blocks, r.P2Blocks)
+            @RecapRow("Best combo", r.P1BestCombo, r.P2BestCombo)
+            @RecapRow("Biggest hit", r.P1BiggestHit, r.P2BiggestHit)
+        </ul>
+    </div>;
+
+    private RenderFragment RecapRow(string label, int a, int b)
+    {
+        // Nothing on either side (a quiet round) splits the track evenly.
+        var left = a + b == 0 ? 50 : (int)Math.Round(100.0 * a / (a + b));
+        var who2 = _mode == "1p" ? "the presidents" : HudName(2);
+        return @<li class="pb-rc-row" aria-label="@label: @HudName(1) @a, @who2 @b">
+            <span class="pb-rc-label" aria-hidden="true">@label</span>
+            <span class="pb-rc-v pb-rc-v--p1 @(a > b ? "pb-rc-v--lead" : "")" aria-hidden="true">@a</span>
+            <span class="pb-rc-track" aria-hidden="true" style="--left: @(left)%"></span>
+            <span class="pb-rc-v pb-rc-v--p2 @(b > a ? "pb-rc-v--lead" : "")" aria-hidden="true">@b</span>
+        </li>;
+    }
+
+    // One line from the podium, read out by the PA. Flavour only — the result above is final.
+    private static RenderFragment PressLine(PoBrawlPressLine p) => @<figure class="pb-presser">
+        <blockquote class="pb-presser-line">“@p.Text”</blockquote>
+        <figcaption class="pb-presser-who">— @p.Speaker, at the post-fight press conference</figcaption>
+    </figure>;
+
+    // The ladder ending (full clear): the roll of fifteen KOs, the run's numbers, and the belt
+    // going back on the line at rung 1.
+    private RenderFragment EndingCard => @<section class="pb-ending" aria-label="Ladder complete">
+        <PoBrawlCampaignMap Beaten="@Roster.Length" Variant="ending" />
+        <h3 class="pb-ending-title">Commander-in-Chief of the Ring</h3>
+        <p class="pb-ending-line">Fifteen presidents, fifteen trips to the canvas. BOB loosens his tie, clocks back in at the office, and never mentions it again.</p>
+        <ol class="pb-ending-roll">
+            @foreach (var f in Roster)
+            {
+                <li><span class="pb-ending-ko">KO</span> @f.Name</li>
+            }
+        </ol>
+        <dl class="pb-ending-stats">
+            <div><dt>Elo</dt><dd>@_rating.Elo</dd></div>
+            <div><dt>Fastest KO</dt><dd>@(_bestKo > 0 ? $"{_bestKo:0.00}s" : "—")</dd></div>
+            <div><dt>Ladder clears</dt><dd>@_clears</dd></div>
+            @if (_recap is { } run)
+            {
+                <div><dt>Hits this run</dt><dd>@run.P1Hits</dd></div>
+            }
+        </dl>
+        <p class="pb-ending-next">The belt goes back on the line — @Roster[0].Name is waiting at rung 1.</p>
+    </section>;
+}

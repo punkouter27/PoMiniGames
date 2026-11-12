@@ -412,7 +412,7 @@ public partial class StorageService : IStorageService
                     var mergedJson = JsonSerializer.Serialize(merged, StorageJsonContext.Default.PlayerStats);
                     if (existingJson == mergedJson) return false; // idempotent no-op
                     e["StatsJson"] = mergedJson;
-                    e["UpdatedAt"] = DateTime.UtcNow.ToString("yyyy-MM-ddTHH:mm:ssZ");
+                    e["UpdatedAt"] = DateTime.UtcNow.ToString("yyyy-MM-ddTHH:mm:ssZ", System.Globalization.CultureInfo.InvariantCulture);
                     return true;
                 });
         }
@@ -538,7 +538,7 @@ public partial class StorageService : IStorageService
 
     private static string DefaultDate(string? date) =>
         string.IsNullOrWhiteSpace(date)
-            ? DateTime.UtcNow.ToString("yyyy-MM-ddTHH:mm:ssZ")
+            ? DateTime.UtcNow.ToString("yyyy-MM-ddTHH:mm:ssZ", System.Globalization.CultureInfo.InvariantCulture)
             : date;
 
     // Full display name, capped for table hygiene. Boards show the same name the

@@ -56,7 +56,7 @@ public sealed class PoMuleDevelopmentTests
     [InlineData(nameof(Crystite_IsHiddenUntilAssayed_ExceptFromTheCrystiteWeaver))]
     public Task Scenario(string name) => Scenarios.RunAsync(this, name);
 
-    private void BuyOutfitInstall_MovesCashStockAndTheMule_AndInstallingOnAWorkedPlotSwaps()
+    private static void BuyOutfitInstall_MovesCashStockAndTheMule_AndInstallingOnAWorkedPlotSwaps()
     {
         var match = Started();
         var you = match.Players[0];
@@ -113,13 +113,13 @@ public sealed class PoMuleDevelopmentTests
 
         actual.Should().Be(expected);
         // Asking again changes nothing either.
-        if (scenario.StartsWith("mule")) PoMuleDevelopment.BuyMule(match, 0).Should().Be(expected);
+        if (scenario.StartsWith("mule", StringComparison.Ordinal)) PoMuleDevelopment.BuyMule(match, 0).Should().Be(expected);
         (you.Cash, match.Store.Mules, you.HasMule).Should().Be((cash, mules, towing));
         you.Cash.Should().BeGreaterThanOrEqualTo(0);
         match.Installed[plot].Should().Be(MatchState.Nobody);
     }
 
-    private void AMuleBolts_OnADashBump_OnSomeoneElsesLand_AndWhenTheClockRunsOut()
+    private static void AMuleBolts_OnADashBump_OnSomeoneElsesLand_AndWhenTheClockRunsOut()
     {
         MatchState Towing(Species species = Species.Humanoid)
         {
@@ -183,7 +183,7 @@ public sealed class PoMuleDevelopmentTests
         match.Players[0].Cash.Should().Be(cash + payout);
     }
 
-    private void Crystite_IsHiddenUntilAssayed_ExceptFromTheCrystiteWeaver()
+    private static void Crystite_IsHiddenUntilAssayed_ExceptFromTheCrystiteWeaver()
     {
         var match = Started();
         var plot = PoMuleMap.Index(6, 6);

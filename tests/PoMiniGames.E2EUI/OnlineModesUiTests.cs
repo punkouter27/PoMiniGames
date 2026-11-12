@@ -32,8 +32,10 @@ public class OnlineModesUiTests
     {
         using var playwright = await Playwright.CreateAsync();
         await using var browser = await LaunchAsync(playwright);
-        var a = await OpenAsGuestAsync(browser, $"/{game}/multi", "A");
-        var b = await OpenAsGuestAsync(browser, $"/{game}/multi", "B");
+        var (a, guardA) = await OpenAsGuestAsync(browser, $"/{game}/multi", "A");
+        await using var _a = guardA;
+        var (b, guardB) = await OpenAsGuestAsync(browser, $"/{game}/multi", "B");
+        await using var _b = guardB;
 
         // Who opens is drawn server-side, so wait for whichever browser is told it is on.
         var mover = await WaitForTurnAsync(a, b, status);
@@ -60,8 +62,10 @@ public class OnlineModesUiTests
     {
         using var playwright = await Playwright.CreateAsync();
         await using var browser = await LaunchAsync(playwright);
-        var first = await OpenAsGuestAsync(browser, lobby, "A");
-        var second = await OpenAsGuestAsync(browser, lobby, "B");
+        var (first, guardFirst) = await OpenAsGuestAsync(browser, lobby, "A");
+        await using var _first = guardFirst;
+        var (second, guardSecond) = await OpenAsGuestAsync(browser, lobby, "B");
+        await using var _second = guardSecond;
 
         // Both listed, on both screens.
         foreach (var page in new[] { first, second })
@@ -114,8 +118,10 @@ public class OnlineModesUiTests
     {
         using var playwright = await Playwright.CreateAsync();
         await using var browser = await LaunchAsync(playwright);
-        var first = await OpenAsGuestAsync(browser, "/pomarblerace/multi", "A");
-        var second = await OpenAsGuestAsync(browser, "/pomarblerace/multi", "B");
+        var (first, guardFirst) = await OpenAsGuestAsync(browser, "/pomarblerace/multi", "A");
+        await using var _first = guardFirst;
+        var (second, guardSecond) = await OpenAsGuestAsync(browser, "/pomarblerace/multi", "B");
+        await using var _second = guardSecond;
 
         // Pairing boots both engines on the dealt seed: the host lands on its countdown card
         // (red marble), the guest on the waiting card (white marble). Both need the GLB course
@@ -151,13 +157,14 @@ public class OnlineModesUiTests
     }
 
     /// <summary>A fresh context (own cookies → own guest session), landed on the page with the intro dismissed.</summary>
-    private async Task<IPage> OpenAsGuestAsync(IBrowser browser, string path, string tag)
+    private async Task<(IPage Page, PlaywrightErrorGuard Guard)> OpenAsGuestAsync(IBrowser browser, string path, string tag)
     {
         var context = await browser.NewContextAsync(new BrowserNewContextOptions
         {
             ViewportSize = new ViewportSize { Width = 1280, Height = 900 },
         });
         var page = await context.NewPageAsync();
+        var guard = PlaywrightErrorGuard.Watch(page);
         page.Console += (_, msg) =>
         {
             if (msg.Type is "error") _output.WriteLine($"[{tag}:browser] {msg.Text}");
@@ -182,7 +189,7 @@ public class OnlineModesUiTests
             throw new XunitException($"[{tag}] no intro card or lobby at {page.Url}. {await DescribeAsync(page)}");
         }
         if (await start.CountAsync() > 0) await start.ClickAsync();
-        return page;
+        return (page, guard);
     }
 
     private static async Task DismissIntroIfShownAsync(IPage page, int timeoutMs)

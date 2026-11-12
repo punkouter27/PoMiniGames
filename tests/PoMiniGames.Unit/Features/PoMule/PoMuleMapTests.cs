@@ -34,7 +34,7 @@ public sealed class PoMuleMapTests
     [InlineData(nameof(SameSeed_GivesTheSamePlanet_AndTheRngResumesFromItsSavedState))]
     public Task Scenario(string name) => Scenarios.RunAsync(this, name);
 
-    private void Generate_BuildsAPlanetWithTheSpecifiedMix_ForEverySeed()
+    private static void Generate_BuildsAPlanetWithTheSpecifiedMix_ForEverySeed()
     {
         for (ulong seed = 1; seed <= 50; seed++)
         {
@@ -57,7 +57,7 @@ public sealed class PoMuleMapTests
         }
     }
 
-    private void SameSeed_GivesTheSamePlanet_AndTheRngResumesFromItsSavedState()
+    private static void SameSeed_GivesTheSamePlanet_AndTheRngResumesFromItsSavedState()
     {
         PoMuleMap.Generate(new PoMuleRng(42)).Plots
             .Should().Equal(PoMuleMap.Generate(new PoMuleRng(42)).Plots);

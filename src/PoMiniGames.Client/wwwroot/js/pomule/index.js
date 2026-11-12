@@ -31,13 +31,13 @@ function ensureRadzen() {
     const link = document.createElement('link');
     link.id = RADZEN_CSS_ID;
     link.rel = 'stylesheet';
-    link.href = new URL('_content/Radzen.Blazor/css/material-dark-base.css', base).href;
+    link.href = new URL('_content/Radzen.Blazor/css/material-dark-base.css?v=12.1.12', base).href;
     link.onload = link.onerror = () => done();
     document.head.appendChild(link);
   });
   const js = window.Radzen ? Promise.resolve() : new Promise((done) => {
     const script = document.createElement('script');
-    script.src = new URL('_content/Radzen.Blazor/Radzen.Blazor.js', base).href;
+    script.src = new URL('_content/Radzen.Blazor/Radzen.Blazor.js?v=12.1.12', base).href;
     script.onload = script.onerror = () => done();
     document.head.appendChild(script);
   });

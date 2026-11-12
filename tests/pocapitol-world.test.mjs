@@ -526,7 +526,7 @@ test('engine applies and remembers the graphics choice', async () => {
     assert.equal(engine.quality.at(-1), RUNGS[0]);
     assert.match(engine.api.setGraphics('low'), /^Low/);
     assert.equal(engine.quality.at(-1), RUNGS[3]);
-    assert.equal(engine.stored.get('pocapitol.graphics'), 'low');
+    assert.equal(engine.stored.get('pominigames:pocapitol-graphics'), 'low');
     assert.equal(engine.api.getGraphics(), 'low');
     assert.throws(() => engine.api.setGraphics('ultra'), /mode/i);
     engine.api.dispose();

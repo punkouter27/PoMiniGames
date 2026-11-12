@@ -48,6 +48,11 @@ public readonly record struct GameKey(string Value) : IComparable<GameKey>
     public int CompareTo(GameKey other) =>
         string.Compare(Value, other.Value, StringComparison.OrdinalIgnoreCase);
 
+    public static bool operator <(GameKey left, GameKey right) => left.CompareTo(right) < 0;
+    public static bool operator <=(GameKey left, GameKey right) => left.CompareTo(right) <= 0;
+    public static bool operator >(GameKey left, GameKey right) => left.CompareTo(right) > 0;
+    public static bool operator >=(GameKey left, GameKey right) => left.CompareTo(right) >= 0;
+
     public override string ToString() => Value;
 
     /// <summary>

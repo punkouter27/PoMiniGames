@@ -43,6 +43,8 @@ public readonly record struct ScoreSubmitResult<T>(ScoreSubmitOutcome Outcome, T
     /// <summary>True when parking the payload for a later retry could plausibly succeed.</summary>
     public bool ShouldRetry => Outcome == ScoreSubmitOutcome.Unavailable;
 
+#pragma warning disable CA1000 // Convenience factory helpers mirror Result<T> creation pattern.
+#pragma warning disable CA1000 // Convenience factory helpers mirror Result<T> creation pattern.
     public static ScoreSubmitResult<T> Saved(T? value) => new(ScoreSubmitOutcome.Saved, value, HttpStatusCode.Created);
     public static ScoreSubmitResult<T> Rejected(HttpStatusCode status) => new(ScoreSubmitOutcome.Rejected, null, status);
     public static ScoreSubmitResult<T> Unavailable(HttpStatusCode? status) => new(ScoreSubmitOutcome.Unavailable, null, status);

@@ -1,13 +1,14 @@
+using FluentValidation;
 using Blazored.LocalStorage;
 using Microsoft.AspNetCore.Components.Authorization;
 using Microsoft.AspNetCore.Components.Web;
 using Microsoft.AspNetCore.Components.WebAssembly.Hosting;
 using Microsoft.JSInterop;
 using PoMiniGamesClient;
-using PoMiniGamesClient.Games.PoCoupleQuiz.Services;
-using PoMiniGamesClient.Games.PoFunQuiz.Services;
-using PoMiniGamesClient.Games.PoCabinet;
-using PoMiniGamesClient.Games.PoRacer;
+using PoMiniGamesClient.Features.PoCoupleQuiz.Services;
+using PoMiniGamesClient.Features.PoFunQuiz.Services;
+using PoMiniGamesClient.Features.PoCabinet;
+using PoMiniGamesClient.Features.PoRacer;
 using PoMiniGamesClient.Services.Auth;
 using PoMiniGamesClient.Services.Http;
 using PoMiniGamesClient.Services.Interop;
@@ -72,9 +73,12 @@ builder.Services.AddScoped(sp => new HttpClient(
         {
             InnerHandler = new AntiforgeryHandler
             {
-                InnerHandler = new IncludeCredentialsHandler
+                InnerHandler = new DevFakeUserHandler
                 {
-                    InnerHandler = new HttpClientHandler()
+                    InnerHandler = new IncludeCredentialsHandler
+                    {
+                        InnerHandler = new HttpClientHandler()
+                    }
                 }
             }
         }
@@ -137,9 +141,11 @@ builder.Services.AddBlazoredLocalStorage();
 // Radzen dialog / notification / tooltip services. Only PoMule uses them so far; its
 // page loads the Radzen stylesheet itself so the other games keep their plain CSS.
 builder.Services.AddRadzenComponents();
-builder.Services.AddScoped<PoMiniGamesClient.Games.PoMule.PoMuleSaveStore>();
+builder.Services.AddScoped<DialogNotificationHelper>();
+builder.Services.AddValidatorsFromAssemblyContaining<PoMiniGames.Shared.Validation.PlayerDisplayNameValidator>();
+builder.Services.AddScoped<PoMiniGamesClient.Features.PoMule.PoMuleSaveStore>();
 // PoBrawl fighter dossiers: fetched once per app life, static facts until (or unless) they land.
-builder.Services.AddScoped<PoMiniGamesClient.Games.PoBrawl.PoBrawlDossierService>();
+builder.Services.AddScoped<PoMiniGamesClient.Features.PoBrawl.PoBrawlDossierService>();
 // Viewport-width helper so leaderboards can render
 // top-3 on mobile and top-10 on desktop without a JS-only media query.
 builder.Services.AddScoped<BrowserViewport>();
@@ -159,13 +165,13 @@ builder.Services.AddScoped<FunQuizHubService>();
 // PoVoxelStrike co-op: SignalR client wrapper for /povoxelstrike/lobby-hub +
 // /povoxelstrike/lockstep-hub. Scoped like every other hub service so the connection
 // is bound to the user's Blazor session lifetime.
-builder.Services.AddScoped<PoMiniGamesClient.Games.PoVoxelStrike.Services.PoVoxelStrikeMultiplayerClient>();
+builder.Services.AddScoped<PoMiniGamesClient.Features.PoVoxelStrike.Services.PoVoxelStrikeMultiplayerClient>();
 builder.Services.AddScoped<PoEcosystemInteropService>();
 // PoEcosystem's server surface: cloud world slots and the gallery.
-builder.Services.AddScoped<PoMiniGamesClient.Games.PoEcosystem.Services.PoEcosystemApiClient>();
+builder.Services.AddScoped<PoMiniGamesClient.Features.PoEcosystem.Services.PoEcosystemApiClient>();
 // PoJevArena's server surface: status, the creature library, match registration and
 // the Jev decision round trip (every call on the shared HttpClient pipeline).
-builder.Services.AddScoped<PoMiniGamesClient.Games.PoJevArena.PoJevArenaApiClient>();
+builder.Services.AddScoped<PoMiniGamesClient.Features.PoJevArena.PoJevArenaApiClient>();
 
 var host = builder.Build();
 

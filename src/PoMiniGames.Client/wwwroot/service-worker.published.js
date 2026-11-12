@@ -33,7 +33,7 @@ const offlineAssetsExclude = [
     // Radzen ships thirty theme stylesheets (1.3 MB compressed). PoMule loads one theme and
     // Radzen's script; nothing else from the package is ever requested, so nothing else is
     // worth a first-visit download.
-    /^_content\/Radzen\.Blazor\/(?!css\/material-dark-base\.css$|Radzen\.Blazor\.js$)/,
+    /^_content\/Radzen\.Blazor\/(?!(?:css\/material-dark-base\.css|Radzen\.Blazor\.js|fonts\/(?:InterVariable|MaterialSymbolsOutlined)\.woff2)(?:\?.*)?$)/,
 ];
 
 // ── Never-cache list ──────────────────────────────────────────────────────────

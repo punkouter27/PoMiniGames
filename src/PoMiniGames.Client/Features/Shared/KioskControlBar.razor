@@ -1,0 +1,118 @@
+@namespace PoMiniGamesClient.Features.Shared
+@using PoMiniGamesClient.Services
+@inject KioskCoordinator Kiosk
+@inject UiFeedbackService Feedback
+@inject SettingsService Settings
+@implements IDisposable
+
+@* ─────────────────────────────────────────────────────────────────────────
+   Kiosk controls — pause / skip / exit for the "Watch all demos" reel.
+
+   This is the UI for KioskCoordinator's TogglePause, SkipNext, Exit, IsPaused,
+   SecondsUntilAdvance and CurrentGameName. Without it a player who started the
+   reel has no way out of the 60-second auto-rotation except the browser's back
+   button. It renders only while the reel is actually running, and disappears
+   the moment it stops.
+   ───────────────────────────────────────────────────────────────────────── *@
+
+@if (Kiosk.IsActive)
+{
+    <div class="kiosk-bar" role="toolbar" aria-label="Demo reel controls">
+        <span class="kiosk-bar-now">
+            <span class="kiosk-bar-dot @(Kiosk.IsPaused ? "kiosk-bar-dot--paused" : null)" aria-hidden="true"></span>
+            @* CurrentGameName is null until a demo page reports itself via
+               SetCurrent, so fall back rather than rendering an empty pill. *@
+            <span class="kiosk-bar-title">@(Kiosk.CurrentGameName ?? "Demo reel")</span>
+        </span>
+
+        @* aria-live on the countdown would announce a new number every second,
+           which is unusable with a screen reader. The number is decoration; the
+           buttons carry the actual affordances. *@
+        <span class="kiosk-bar-count" aria-hidden="true">
+            @(Kiosk.IsPaused ? "paused" : $"{Kiosk.SecondsUntilAdvance}s")
+        </span>
+
+        @* Demo N of M pill: anchors repeat viewers on where they are in the loop.
+           Hidden until a demo page reports itself via SetCurrent (so we don't
+           show "0 of 9" for the first paint before the destination page boots). *@
+        @if (Kiosk.CurrentIndex >= 0 && Kiosk.TotalCount > 0)
+        {
+            <span class="kiosk-bar-progress" aria-hidden="true">
+                Demo @(Kiosk.CurrentIndex + 1) of @(Kiosk.TotalCount)
+            </span>
+        }
+
+        <button type="button" class="kiosk-bar-btn"
+                aria-label="Go to the previous demo" title="Previous demo"
+                @onclick="PreviousAsync">⏮</button>
+
+        <button type="button" class="kiosk-bar-btn"
+                aria-label="@(Kiosk.IsPaused ? "Resume the demo reel" : "Pause the demo reel")"
+                title="@(Kiosk.IsPaused ? "Resume" : "Pause")"
+                @onclick="TogglePauseAsync">@(Kiosk.IsPaused ? "▶" : "❚❚")</button>
+
+        <button type="button" class="kiosk-bar-btn"
+                aria-label="Skip to the next demo" title="Next demo"
+                @onclick="SkipAsync">⏭</button>
+
+        @* Audio mute toggle. Persistent via localStorage so a 5-minute museum loop
+           at full volume doesn't become a problem on the second run. *@
+        <button type="button" class="kiosk-bar-btn kiosk-bar-btn--mute"
+                aria-label="@(Settings.Muted ? "Unmute audio" : "Mute audio")"
+                title="@(Settings.Muted ? "Unmute" : "Mute")"
+                @onclick="ToggleMuteAsync">@(Settings.Muted ? "🔇" : "🔊")</button>
+
+        <button type="button" class="kiosk-bar-btn kiosk-bar-btn--exit"
+                aria-label="Stop watching demos and return home" title="Exit"
+                @onclick="ExitAsync">✕</button>
+    </div>
+}
+
+@code {
+    private Action? _onChanged;
+
+    protected override void OnInitialized()
+    {
+        // Changed fires from the coordinator's System.Threading.Timer thread, so
+        // the re-render has to be marshalled back onto the renderer's context —
+        // calling StateHasChanged directly from the tick would throw.
+        _onChanged = () => InvokeAsync(StateHasChanged);
+        Kiosk.Changed += _onChanged;
+        Settings.Changed += _onChanged;
+    }
+
+    private async Task TogglePauseAsync()
+    {
+        await Feedback.ClickAsync();
+        Kiosk.TogglePause();
+    }
+
+    private async Task SkipAsync()
+    {
+        await Feedback.TapAsync();
+        Kiosk.SkipNext();
+    }
+
+    private async Task ExitAsync()
+    {
+        await Feedback.SwipeBackAsync();
+        Kiosk.Exit();
+    }
+
+    private async Task PreviousAsync()
+    {
+        await Feedback.TapAsync();
+        Kiosk.PreviousDemo();
+    }
+
+    // The mute button is a second door onto the one global sound setting, so it goes
+    // through SettingsService like the settings sheet does and the two never disagree.
+    private Task ToggleMuteAsync() => Settings.SetMutedAsync(!Settings.Muted);
+
+    public void Dispose()
+    {
+        if (_onChanged is null) return;
+        Kiosk.Changed -= _onChanged;
+        Settings.Changed -= _onChanged;
+    }
+}

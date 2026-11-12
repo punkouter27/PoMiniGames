@@ -1,0 +1,98 @@
+@namespace PoMiniGamesClient.Features.Shared
+@using PoMiniGamesClient.Services
+@inject AuthStateService AuthState
+
+<div class="login-page">
+    <span class="login-mesh" aria-hidden="true"></span>
+    <div class="login-card">
+        @* An <h1>, not a <div>: this screen IS the whole page until a session
+           exists, so it needs a heading for a screen reader to announce as the page
+           and for App.razor's <FocusOnNavigate Selector="h1"> to focus. The
+           .login-brand class already carries the size and weight. *@
+        <h1 class="login-brand">
+            <svg width="40" height="40" viewBox="0 0 40 40" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
+                <rect x="3" y="5" width="14" height="14" rx="2" fill="currentColor" opacity="0.8"/>
+                <rect x="23" y="5" width="14" height="14" rx="2" fill="currentColor" opacity="0.5"/>
+                <rect x="3" y="23" width="14" height="14" rx="2" fill="currentColor" opacity="0.5"/>
+                <rect x="23" y="23" width="14" height="14" rx="2" fill="currentColor" opacity="0.8"/>
+            </svg>
+            <span>PoMiniGames</span>
+        </h1>
+        <p class="login-sub">Sign in to play</p>
+
+        @if (AuthState.MicrosoftEnabled || AuthState.DevLoginEnabled)
+        {
+            <button type="button"
+                    class="login-btn login-btn--ms"
+                    disabled="@(_busy || (AuthState.MicrosoftEnabled && !AuthState.MicrosoftConfigured))"
+                    title="@(AuthState.MicrosoftEnabled && !AuthState.MicrosoftConfigured ? "Microsoft sign-in is enabled but ClientId/ApiClientId are not wired. Set them in appsettings.Development.json or Key Vault." : null)"
+                    @onclick="SignInMicrosoft">
+                <svg width="18" height="18" viewBox="0 0 21 21" aria-hidden="true">
+                    <rect x="1" y="1" width="9" height="9" fill="#f25022"/>
+                    <rect x="11" y="1" width="9" height="9" fill="#7fba00"/>
+                    <rect x="1" y="11" width="9" height="9" fill="#00a4ef"/>
+                    <rect x="11" y="11" width="9" height="9" fill="#ffb900"/>
+                </svg>
+                Sign in with Microsoft
+            </button>
+        }
+
+        @if (AuthState.DevLoginEnabled)
+        {
+            <button type="button" class="login-btn login-btn--guest" disabled="@_busy" @onclick="SignInGuest">
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                    <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/>
+                    <circle cx="12" cy="7" r="4"/>
+                </svg>
+                Continue as Guest
+            </button>
+        }
+
+        @if (!AuthState.MicrosoftEnabled && !AuthState.DevLoginEnabled)
+        {
+            <p class="login-error">Authentication is not configured on the server.</p>
+        }
+
+        @if (AuthState.MicrosoftEnabled && !AuthState.MicrosoftConfigured)
+        {
+            <p class="login-error login-error--hint">
+                Microsoft sign-in is enabled but not yet wired. Set
+                <code>PoMiniGames:MicrosoftAuth:ClientId</code> and <code>ApiClientId</code>
+                in <code>appsettings.Development.json</code> or Key Vault, then restart the API.
+            </p>
+        }
+
+        @if (!string.IsNullOrEmpty(AuthState.Error))
+        {
+            <p class="login-error">@AuthState.Error</p>
+        }
+
+        @* Tells a visitor who deep-linked to /leaderboards or /profile that the
+           page is there and they are not lost. Without it a bare sign-in form
+           replacing a requested page reads as "that page is broken". *@
+        <p class="login-env-note">
+            @(AuthState.DevLoginEnabled
+                ? "Development — sign in with Microsoft or continue as a guest."
+                : "A Microsoft account is required to play.")
+            You'll land on the page you were heading to.
+        </p>
+    </div>
+</div>
+
+@code {
+    private bool _busy;
+
+    private async Task SignInMicrosoft()
+    {
+        _busy = true;
+        try { await AuthState.SignInMicrosoftAsync(); }
+        finally { _busy = false; }
+    }
+
+    private async Task SignInGuest()
+    {
+        _busy = true;
+        try { await AuthState.SignInGuestAsync(); }
+        finally { _busy = false; }
+    }
+}

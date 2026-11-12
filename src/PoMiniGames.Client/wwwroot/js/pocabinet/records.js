@@ -1,12 +1,12 @@
 // pocabinet/records.js
 //
 // Per-track records (personal bests) for PoCabinet, in localStorage under
-// pocabinet.records.v1: { [trackId]: { bestLap: number, sectors: [s1,s2,s3] } }.
+// pominigames:pocabinet-records-v1: { [trackId]: { bestLap: number, sectors: [s1,s2,s3] } }.
 // The page's start card reads the same store (PoCabinetPitWall.ParseBestLaps).
 // Player settings are not here: Blazor owns that store (PoCabinetUiSettings) and
 // hands the engine plain values.
 
-const RECORDS_KEY = 'pocabinet.records.v1';
+const RECORDS_KEY = 'pominigames:pocabinet-records-v1';
 
 function readRecords() {
     try {

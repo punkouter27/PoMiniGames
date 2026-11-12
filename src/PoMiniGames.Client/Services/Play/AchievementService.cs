@@ -43,7 +43,7 @@ public sealed record Achievement(string Id, string Icon, string Title, string Hi
 /// numbers the games already keep (local W/L records and ratings, session counts, the
 /// the Brawl ladder), plus two facts pages report when they have them
 /// (a leaderboard rank, online wins). An unlock is sticky and lives in localStorage
-/// <c>pomini_achievements</c>, so it outlives the stat that earned it.
+/// <c>pominigames:achievements</c>, so it outlives the stat that earned it.
 /// </summary>
 /// <remarks>
 /// Evaluated whenever a result is recorded (<see cref="GameStatsService.ResultRecorded"/>,
@@ -54,7 +54,7 @@ public sealed record Achievement(string Id, string Icon, string Title, string Hi
 /// </remarks>
 public sealed class AchievementService : IDisposable
 {
-    private const string StorageKey = "pomini_achievements";
+    private const string StorageKey = "pominigames:achievements";
 
     // The games whose record is a single adaptive rating (see ProfilePage.Kinds).
     private static readonly HashSet<string> AdaptiveGames = new(StringComparer.OrdinalIgnoreCase)
@@ -160,7 +160,7 @@ public sealed class AchievementService : IDisposable
         var firstRun = !_seeded;
         if (fresh.Count == 0 && !firstRun) return;
 
-        var stamp = DateTime.Now.ToString("yyyy-MM-dd");
+        var stamp = DateTime.Now.ToString("yyyy-MM-dd", System.Globalization.CultureInfo.InvariantCulture);
         foreach (var a in fresh) _unlocked![a.Id] = stamp;
         _seeded = true;
         Save();
@@ -172,7 +172,7 @@ public sealed class AchievementService : IDisposable
             ? $"{fresh[0].Icon} Achievement unlocked: {fresh[0].Title}"
             : $"🏆 {fresh.Count} achievements unlocked: {string.Join(", ", fresh.Select(a => a.Title))}";
         _toasts.Show(message, ToastType.Info);
-        _ = _feedback.AchievementPingAsync();
+        _ = _feedback.AchievementPingAsync().AsTask();
     }
 
     private AchievementFacts Gather()
@@ -207,7 +207,7 @@ public sealed class AchievementService : IDisposable
             if (played > 0 || plays > 0) tried++;
         }
 
-        var brawl = PoMiniGamesClient.Games.PoBrawl.PoBrawlProgressBook.Load(name);
+        var brawl = PoMiniGamesClient.Features.PoBrawl.PoBrawlProgressBook.Load(name);
         return new AchievementFacts
         {
             Wins = wins,
@@ -227,9 +227,9 @@ public sealed class AchievementService : IDisposable
     private void TouchDay(DateTime today)
     {
         _ = Unlocked; // load first
-        var todayKey = today.ToString("yyyy-MM-dd");
+        var todayKey = today.ToString("yyyy-MM-dd", System.Globalization.CultureInfo.InvariantCulture);
         if (_lastDay == todayKey) return;
-        _dayStreak = _lastDay == today.AddDays(-1).ToString("yyyy-MM-dd") ? _dayStreak + 1 : 1;
+        _dayStreak = _lastDay == today.AddDays(-1).ToString("yyyy-MM-dd", System.Globalization.CultureInfo.InvariantCulture) ? _dayStreak + 1 : 1;
         _lastDay = todayKey;
         Save();
     }

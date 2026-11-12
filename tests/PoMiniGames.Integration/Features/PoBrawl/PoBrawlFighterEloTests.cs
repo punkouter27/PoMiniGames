@@ -28,6 +28,7 @@ namespace PoMiniGames.Integration;
 /// </remarks>
 public sealed class PoBrawlFighterEloTests : IClassFixture<TestWebApplicationFactory>
 {
+    private static readonly string[] ExpectedDemoFighters = ["FDR", "Truman"];
     private readonly TestWebApplicationFactory _factory;
 
     public PoBrawlFighterEloTests(TestWebApplicationFactory factory) => _factory = factory;
@@ -140,7 +141,7 @@ public sealed class PoBrawlFighterEloTests : IClassFixture<TestWebApplicationFac
         var demoElos = demoEntries.Select(e => e.GetProperty("value").GetDouble()).ToList();
         demoElos.Should().BeInDescendingOrder(because: "highest ELO ranks first");
         demoEntries.Take(2).Select(e => e.GetProperty("name").GetString())
-            .Should().BeEquivalentTo(new[] { "FDR", "Truman" },
+            .Should().BeEquivalentTo(ExpectedDemoFighters,
                 because: "the two fighters under test are the only real rows on this pass");
 
         // Same board must also appear in the all-boards response, alongside the

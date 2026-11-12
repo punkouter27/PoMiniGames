@@ -1,6 +1,6 @@
 import { createFfaAgentEvaluation, createFfaAgentState, evaluateFfaAgentPairs, isValidFfaAgentState, FFA_AGENT_CHARACTER_IDS } from './ffaAgents.js';
 
-const STORE_KEY = 'pobrawl.ffa.seasons.v1';
+const STORE_KEY = 'pominigames:pobrawl-ffa-seasons-v1';
 export const SEASON_ROUNDS = 20;
 export const FFA_PROFILES = {
   balanced: { pace: 1, guard: 1.4, weak: 0.2 },

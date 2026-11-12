@@ -1,18 +1,10 @@
+using PoMiniGames.Shared.Dtos;
+
 namespace PoMiniGamesClient.Models;
 
 // ---------------------------------------------------------------------------
 // PoFunQuiz
 // ---------------------------------------------------------------------------
-
-/// <summary>A single trivia question returned by /api/funquiz/quiz/questions.</summary>
-public class QuizQuestion
-{
-    public string Text { get; set; } = string.Empty;
-    public List<string> Options { get; set; } = new();
-    public int CorrectOptionIndex { get; set; }
-    public string Category { get; set; } = "General";
-    public int BasePoints { get; set; } = 2;
-}
 
 /// <summary>One ranked row on GET /api/funquiz/leaderboard. Mirrors the server's LeaderboardEntry.</summary>
 public class FunQuizLeaderboardRow

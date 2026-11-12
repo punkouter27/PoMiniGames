@@ -49,6 +49,7 @@ public class PoCabinetRouteUiTests
             await route.ContinueAsync(new RouteContinueOptions { Headers = headers });
         });
         var page = await context.NewPageAsync();
+        await using var guard = PlaywrightErrorGuard.Watch(page);
         page.Console += (_, msg) => { if (msg.Type is "error") Console.WriteLine($"[browser:error] {msg.Text}"); };
         page.PageError += (_, err) => Console.WriteLine($"[pageerror] {err}");
 
@@ -91,9 +92,9 @@ public class PoCabinetRouteUiTests
         }
         else
         {
-            await page.Locator(".pocabinet-track").First.WaitForAsync(new() { Timeout = 30_000 });
-            var ids = await page.Locator(".pocabinet-track").EvaluateAllAsync<string[]>(
-                "els => els.map(e => e.getAttribute('data-track-id'))");
+            await page.Locator(".pocabinet-track-select select").WaitForAsync(new() { Timeout = 30_000 });
+            var ids = await page.Locator(".pocabinet-track-select option").EvaluateAllAsync<string[]>(
+                "els => els.map(e => e.getAttribute('value') ?? '')");
             ids.Should().Equal(["capitol", "maralago", "pressbriefing", "playground", "senate", "bedroom", "court", PoMiniGames.Shared.Games.PoCabinetDailyTrack.TodayId(DateTime.UtcNow)],
                 "the track selector renders the seven themed tracks and today's daily circuit, in campaign order");
         }

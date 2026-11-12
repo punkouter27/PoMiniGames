@@ -25,6 +25,7 @@ public class SandPlaygroundUiTests
         await using var browser = await playwright.Chromium.LaunchAsync(options);
         var context = await browser.NewContextAsync();
         var page = await context.NewPageAsync();
+        await using var guard = PlaywrightErrorGuard.Watch(page);
         var errors = new List<string>();
         page.Console += (_, msg) => { if (msg.Type is "error") errors.Add(msg.Text); };
         page.PageError += (_, err) => errors.Add(err);

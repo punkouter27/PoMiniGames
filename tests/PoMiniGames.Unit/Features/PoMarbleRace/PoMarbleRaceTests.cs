@@ -77,7 +77,7 @@ public class PoMarbleRaceTests
             MarbleRaceRunRace[] parsed = races.Length == 0 ? [] : races.Split('|').Select(r =>
             {
                 var p = r.Split(':');
-                return new MarbleRaceRunRace(int.Parse(p[0]), double.Parse(p[1], System.Globalization.CultureInfo.InvariantCulture), double.Parse(p[2], System.Globalization.CultureInfo.InvariantCulture));
+                return new MarbleRaceRunRace(int.Parse(p[0], System.Globalization.CultureInfo.InvariantCulture), double.Parse(p[1], System.Globalization.CultureInfo.InvariantCulture), double.Parse(p[2], System.Globalization.CultureInfo.InvariantCulture));
             }).ToArray();
 
             MarbleRaceRunVerifier.Score(mapId, parsed).Should().Be(expected < 0 ? (int?)null : expected, $"map {mapId} [{races}]: {why}");

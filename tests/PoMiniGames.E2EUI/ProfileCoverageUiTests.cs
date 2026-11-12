@@ -28,14 +28,24 @@ public class ProfileCoverageUiTests
 
     private async Task<IPage> NewSignedInPageAsync(IBrowser browser)
     {
+        var origin = new Uri(_fixture.ServerAddress);
         var context = await browser.NewContextAsync(new BrowserNewContextOptions
         {
             ViewportSize = MobileViewport.Portrait,
         });
-        await context.SetExtraHTTPHeadersAsync(new Dictionary<string, string>
+        await context.RouteAsync("**/*", async route =>
         {
-            ["X-Fake-User"] = "test-user",
-            ["X-Fake-Roles"] = "Player",
+            if (new Uri(route.Request.Url).Authority != origin.Authority)
+            {
+                await route.ContinueAsync();
+                return;
+            }
+            var headers = new Dictionary<string, string>(route.Request.Headers)
+            {
+                ["X-Fake-User"] = "test-user",
+                ["X-Fake-Roles"] = "Player",
+            };
+            await route.ContinueAsync(new RouteContinueOptions { Headers = headers });
         });
         return await context.NewPageAsync();
     }
@@ -46,6 +56,7 @@ public class ProfileCoverageUiTests
         using var playwright = await Playwright.CreateAsync();
         await using var browser = await playwright.Chromium.LaunchAsync(BrowserLaunch.Options());
         var page = await NewSignedInPageAsync(browser);
+        await using var guard = PlaywrightErrorGuard.Watch(page);
 
         await page.GotoAsync($"{_fixture.ServerAddress}profile?autoGuest=1",
             new PageGotoOptions { WaitUntil = WaitUntilState.NetworkIdle });
@@ -58,12 +69,12 @@ public class ProfileCoverageUiTests
         // name, this key can be reproduced here exactly. Reading the id rather than
         // hardcoding it keeps the test honest if the scheme changes.
         var playerId = await page.EvaluateAsync<string?>(
-            "() => localStorage.getItem('pomini_player_id')");
+            "() => localStorage.getItem('pominigames:player-id')");
         playerId.Should().NotBeNullOrWhiteSpace(
             because: "rendering the profile resolves the player id that play counts are keyed by");
 
         await page.EvaluateAsync(
-            "id => localStorage.setItem(`pomini_plays_poecosystem_${id}`, '3')", playerId);
+            "id => localStorage.setItem(`pominigames:plays:poecosystem_${id}`, '3')", playerId);
 
         await page.ReloadAsync(new PageReloadOptions { WaitUntil = WaitUntilState.NetworkIdle });
         await page.Locator(".prf-game-name").First.WaitForAsync(
@@ -93,6 +104,7 @@ public class ProfileCoverageUiTests
         using var playwright = await Playwright.CreateAsync();
         await using var browser = await playwright.Chromium.LaunchAsync(BrowserLaunch.Options());
         var page = await NewSignedInPageAsync(browser);
+        await using var guard = PlaywrightErrorGuard.Watch(page);
 
         await page.GotoAsync($"{_fixture.ServerAddress}?autoGuest=1",
             new PageGotoOptions { WaitUntil = WaitUntilState.NetworkIdle });

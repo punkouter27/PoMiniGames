@@ -1,0 +1,222 @@
+@using PoMiniGames.Shared.Games.PoEcosystem
+@using PoMiniGamesClient.Features.PoEcosystem.Models
+@using PoMiniGamesClient.Services.Ui
+@inject UiFeedbackService Feedback
+
+<div class="poeco-diplomacy-web" role="region" aria-label="Interactive Diplomacy & Trade Network">
+    <h3 title="Each line is how two clans stand with each other; click one for the detail. The moving dots are caravans.">Diplomacy and trade</h3>
+
+    <div class="poeco-diplomacy-canvas-wrap">
+        <svg viewBox="0 0 400 320" class="poeco-diplomacy-svg" preserveAspectRatio="xMidYMid meet">
+            <!-- Ambient network grid / background -->
+            <defs>
+                <radialGradient id="webCenterGlow" cx="50%" cy="50%" r="50%">
+                    <stop offset="0%" stop-color="rgba(255,255,255,0.06)" />
+                    <stop offset="100%" stop-color="rgba(0,0,0,0)" />
+                </radialGradient>
+                <filter id="glow">
+                    <feGaussianBlur stdDeviation="2.5" result="coloredBlur"/>
+                    <feMerge>
+                        <feMergeNode in="coloredBlur"/>
+                        <feMergeNode in="SourceGraphic"/>
+                    </feMerge>
+                </filter>
+            </defs>
+            <circle cx="200" cy="160" r="140" fill="url(#webCenterGlow)" />
+
+            @if (Tribes is not null && Tribes.Count >= 2)
+            {
+                var n = Tribes.Count;
+                var coords = GetTribeCoordinates(n, 200, 160, 110);
+
+                <!-- 1. Connection Lines / Chords -->
+                @for (var i = 0; i < n; i++)
+                {
+                    for (var j = i + 1; j < n; j++)
+                    {
+                        var tA = Tribes[i];
+                        var tB = Tribes[j];
+                        var (x1, y1) = coords[i];
+                        var (x2, y2) = coords[j];
+                        var mx = (x1 + x2) / 2;
+                        var my = (y1 + y2) / 2;
+                        var rel = GetRelation(tA, tB);
+
+                        var (stroke, strokeWidth, dash) = rel switch
+                        {
+                            TribeDiplomacy.Allied => ("#2ecc71", 3.0, "none"),
+                            TribeDiplomacy.War => ("#e74c3c", 3.5, "none"),
+                            TribeDiplomacy.Rival => ("#e67e22", 2.2, "6,4"),
+                            _ => ("#7f8c8d", 1.5, "4,4"),
+                        };
+
+                        var isSelected = (_selectedPair != null &&
+                            ((_selectedPair.Value.A == tA.Id && _selectedPair.Value.B == tB.Id) ||
+                             (_selectedPair.Value.A == tB.Id && _selectedPair.Value.B == tA.Id)));
+
+                        <g class="poeco-diplomacy-link @(isSelected ? "poeco-diplomacy-link--selected" : "")"
+                           @onclick="() => SelectPair(tA, tB)"
+                           style="cursor: pointer;">
+                            <line x1="@x1" y1="@y1" x2="@x2" y2="@y2"
+                                  stroke="@stroke"
+                                  stroke-width="@(isSelected ? strokeWidth + 2 : strokeWidth)"
+                                  stroke-dasharray="@dash"
+                                  opacity="@(isSelected ? 1.0 : 0.75)"
+                                  filter="@(rel == TribeDiplomacy.Allied || rel == TribeDiplomacy.War ? "url(#glow)" : "none")" />
+
+                            <!-- Midpoint relationship badge -->
+                            <circle cx="@mx" cy="@my" r="12" fill="#141c2b" stroke="@stroke" stroke-width="1.5" />
+                            <text x="@mx" y="@(my + 4)" fill="#fff" font-size="9" text-anchor="middle" font-weight="bold">
+                                @(rel switch
+                                {
+                                    TribeDiplomacy.Allied => "🤝",
+                                    TribeDiplomacy.War => "⚔️",
+                                    TribeDiplomacy.Rival => "⚡",
+                                    _ => "🕊️"
+                                })
+                            </text>
+                        </g>
+                    }
+                }
+
+                <!-- 2. Active Trade Caravans in Transit -->
+                @if (Caravans is not null)
+                {
+                    @foreach (var c in Caravans)
+                    {
+                        var fromIdx = GetTribeIndex(c.FromTribeId);
+                        var toIdx = GetTribeIndex(c.ToTribeId);
+                        if (fromIdx >= 0 && toIdx >= 0)
+                        {
+                            var (fx, fy) = coords[fromIdx];
+                            var (tx, ty) = coords[toIdx];
+                            var cx = fx + (tx - fx) * c.Progress;
+                            var cy = fy + (ty - fy) * c.Progress;
+                            var icon = c.CargoKind == "wood" ? "🪵" : (c.CargoKind == "stone" ? "🪨" : "🌾");
+
+                            <g class="poeco-caravan-marker" transform="translate(@cx.ToString("F1", System.Globalization.CultureInfo.InvariantCulture), @cy.ToString("F1", System.Globalization.CultureInfo.InvariantCulture))">
+                                <circle r="10" fill="#f39c12" stroke="#fff" stroke-width="1.2" filter="url(#glow)">
+                                    <animate attributeName="r" values="8;11;8" dur="1.8s" repeatCount="indefinite" />
+                                </circle>
+                                <text x="0" y="3.5" font-size="9" text-anchor="middle">@icon</text>
+                            </g>
+                        }
+                    }
+                }
+
+                <!-- 3. Tribe Node Anchors -->
+                @for (var i = 0; i < n; i++)
+                {
+                    var tribe = Tribes[i];
+                    var (x, y) = coords[i];
+
+                    @* The label is the clan's first word: "Amber Clan" at this size ran past the
+                       node on both sides, white on the panel's light ground. The full name and
+                       the numbers are the tooltip. *@
+                    <g class="poeco-tribe-node" @onclick="() => OnFocusTribe.InvokeAsync(tribe.Id)" style="cursor: pointer;">
+                        <title>@tribe.Name — @tribe.Population people, @tribe.Warriors warriors. Click to fly there.</title>
+                        <circle cx="@x" cy="@y" r="28" fill="#1b2838" stroke="@tribe.BannerColor" stroke-width="3" />
+                        <circle cx="@x" cy="@y" r="24" fill="@tribe.BannerColor" fill-opacity="0.3" />
+                        <text x="@x" y="@(y - 5)" fill="#fff" font-size="11" font-weight="bold" text-anchor="middle">
+                            @tribe.Name.Split(' ')[0]
+                        </text>
+                        <text x="@x" y="@(y + 9)" fill="#ccc" font-size="9" text-anchor="middle">
+                            @tribe.Population pop
+                        </text>
+                        <text x="@x" y="@(y + 20)" fill="@tribe.BannerColor" font-size="8" text-anchor="middle" font-weight="bold">
+                            @tribe.Tech
+                        </text>
+                    </g>
+                }
+            }
+        </svg>
+    </div>
+
+    <!-- Relationship Inspector Drawer -->
+    @if (_selectedTribeA != null && _selectedTribeB != null)
+    {
+        var rel = GetRelation(_selectedTribeA, _selectedTribeB);
+        <div class="poeco-diplomacy-detail-card" style="border-left: 4px solid @(rel == TribeDiplomacy.War ? "#e74c3c" : (rel == TribeDiplomacy.Allied ? "#2ecc71" : "#f39c12"));">
+            <div class="poeco-diplomacy-detail-head">
+                <strong>@_selectedTribeA.Name & @_selectedTribeB.Name</strong>
+                <span class="poeco-badge @(rel == TribeDiplomacy.War ? "poeco-badge--danger" : (rel == TribeDiplomacy.Allied ? "poeco-badge--success" : "poeco-badge--neutral"))">
+                    @rel
+                </span>
+            </div>
+            <p class="poeco-diplomacy-detail-text">
+                @if (rel == TribeDiplomacy.Allied)
+                {
+                    <span>Mutual alliance secured. Active trade pact exchanges grain and timber with zero border hostility.</span>
+                }
+                else if (rel == TribeDiplomacy.War)
+                {
+                    <span>Active state of war! Territorial skirmishes in effect. Trade caravans crossing buffer zones are actively ambushed.</span>
+                }
+                else if (rel == TribeDiplomacy.Rival)
+                {
+                    <span>Simmering border friction and resource scarcity. Raids possible if tensions escalate further.</span>
+                }
+                else
+                {
+                    <span>Peaceful coexistence. Neutral borders with occasional resource caravans.</span>
+                }
+            </p>
+        </div>
+    }
+</div>
+
+@code {
+    [Parameter] public IReadOnlyList<TribeStateDto>? Tribes { get; set; }
+    [Parameter] public IReadOnlyList<TradeCaravanDto>? Caravans { get; set; }
+    [Parameter] public EventCallback<int> OnFocusTribe { get; set; }
+
+    private (int A, int B)? _selectedPair;
+    private TribeStateDto? _selectedTribeA;
+    private TribeStateDto? _selectedTribeB;
+
+    private static (double X, double Y)[] GetTribeCoordinates(int count, double cx, double cy, double radius)
+    {
+        var result = new (double, double)[count];
+        for (var i = 0; i < count; i++)
+        {
+            var angle = (i * 2.0 * Math.PI / count) - (Math.PI / 2.0);
+            result[i] = (cx + radius * Math.Cos(angle), cy + radius * Math.Sin(angle));
+        }
+        return result;
+    }
+
+    private int GetTribeIndex(int tribeId)
+    {
+        if (Tribes is null) return -1;
+        for (var i = 0; i < Tribes.Count; i++)
+        {
+            if (Tribes[i].Id == tribeId) return i;
+        }
+        return -1;
+    }
+
+    private TribeDiplomacy GetRelation(TribeStateDto a, TribeStateDto b)
+    {
+        var bIdx = GetTribeIndex(b.Id);
+        if (a.Relations is not null && bIdx >= 0 && bIdx < a.Relations.Length)
+        {
+            return (TribeDiplomacy)a.Relations[bIdx];
+        }
+        return TribeDiplomacy.Neutral;
+    }
+
+    private async Task SelectPair(TribeStateDto a, TribeStateDto b)
+    {
+        _selectedPair = (a.Id, b.Id);
+        _selectedTribeA = a;
+        _selectedTribeB = b;
+        var rel = GetRelation(a, b);
+        var cue = rel switch
+        {
+            TribeDiplomacy.War => "diplomacyWar",
+            TribeDiplomacy.Allied => "diplomacyAllied",
+            _ => "diplomacyTrade"
+        };
+        await Feedback.CueAsync("poecosystem", cue);
+    }
+}

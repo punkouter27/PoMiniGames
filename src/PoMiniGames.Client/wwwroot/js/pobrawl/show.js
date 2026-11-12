@@ -64,7 +64,7 @@ function loadFullShow() {
 
 /** True when the player chose the Full show in the settings sheet; Simple otherwise (and by default). */
 export function fullShow() {
-  try { return localStorage.getItem('pobrawl_show') === 'full'; } catch { return false; }
+  try { return localStorage.getItem('pominigames:pobrawl-show') === 'full'; } catch { return false; }
 }
 
 function guard(label, fn, ...args) {

@@ -89,6 +89,7 @@ public class MarbleRaceMapCertificationTests
         options.Args = ["--enable-unsafe-swiftshader", "--use-gl=angle", "--use-angle=swiftshader"];
         await using var browser = await playwright.Chromium.LaunchAsync(options);
         var page = await (await browser.NewContextAsync()).NewPageAsync();
+        await using var guard = PlaywrightErrorGuard.Watch(page);
         page.PageError += (_, err) => _output.WriteLine($"[pageerror] {err}");
 
         var origin = _fixture.ServerAddress.TrimEnd('/');

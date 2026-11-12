@@ -1,7 +1,7 @@
 using FluentAssertions;
 using PoMiniGames.Features.PoEcosystem;
 using PoMiniGames.Shared.Games.PoEcosystem;
-using PoMiniGamesClient.Games.PoEcosystem.Models;
+using PoMiniGamesClient.Features.PoEcosystem.Models;
 
 namespace PoMiniGames.Unit.Features.PoEcosystem;
 

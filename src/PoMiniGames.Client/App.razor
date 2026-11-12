@@ -1,4 +1,4 @@
-﻿@using Microsoft.AspNetCore.Components.Authorization
+@using Microsoft.AspNetCore.Components.Authorization
 @* Scoped trim suppression (was a project-wide NoWarn). The generated render code below sets
    LayoutView.Layout and Router.NotFoundPage, whose [DynamicallyAccessedMembers] setters the
    Razor generator dispatches by reflection. The layout and page types are app-assembly types,
@@ -19,7 +19,7 @@
                  for the public games suite). *@
             <AuthorizeRouteView RouteData="@routeData" DefaultLayout="@typeof(Layout.MainLayout)">
                 <NotAuthorized>
-                    <PageTitle>Not authorized</PageTitle>
+                    <PageTitle>Not authorized · PoMiniGames</PageTitle>
                     <LayoutView Layout="@typeof(Layout.MainLayout)">
                         <div class="app-fallback">
                             <h1>Sign in required</h1>
@@ -39,11 +39,7 @@
                focus, and a link home so the page is not a dead end. *@
             <PageTitle>Page not found · PoMiniGames</PageTitle>
             <LayoutView Layout="@typeof(Layout.MainLayout)">
-                <div class="app-notfound">
-                    <h1 class="app-notfound__title">Page not found</h1>
-                    <p class="app-fallback--plain">Sorry, there's nothing at this address.</p>
-                    <a class="app-notfound__link" href="/">← Back to all games</a>
-                </div>
+                <NotFound />
             </LayoutView>
         </NotFound>
     </Router>

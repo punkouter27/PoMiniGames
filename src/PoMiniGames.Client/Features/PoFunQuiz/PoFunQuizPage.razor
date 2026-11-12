@@ -1,0 +1,734 @@
+@page "/funquiz"
+@page "/funquiz/{Mode}"
+@using PoMiniGamesClient.Features.Shared
+@using PoMiniGamesClient.Models
+@using PoMiniGamesClient.Services
+@inject ApiService Api
+@inject PlayerNameService PlayerNameService
+@inject MatchHistoryService MatchHistory
+@inject GameStatsService GameStats
+@inject UiFeedbackService Feedback
+@inject NavigationManager Navigation
+@implements IAsyncDisposable
+
+<PageTitle>Fun Quiz · PoMiniGames</PageTitle>
+
+<GameShell Title=@TitleContent Player="@_playerName" BackTo="/"
+           Loading="@_isLoading"
+           LoadingLabel="Loading questions…"
+           GameOver="@IsGameOver"
+           GameKey="@(_playMode == "solo" ? "pofunquiz" : null)"
+           Stats="@_statItems"
+           GameSummary="@GameSummaryContent">
+    @if (!_introDone)
+    {
+        <GameIntro CueScope="quiz"
+                   Title="@TitleContent"
+                   Objective="Answer the multiple-choice questions — chain correct answers for a streak bonus."
+                   Controls="@HowToPlayContent"
+                   Mode="@_introMode"
+                   OnStart="DismissIntro" />
+    }
+    @* No setup card: the player's name comes from their stored profile, Player 2
+       keeps its default label, and the category defaults to General; the quiz loads
+       and starts on navigation (see OnInitializedAsync). This block is only the
+       load-failed state — the loading state is the shell's shared skeleton
+       (GameShell Loading), and the failure is the app's shared error view. *@
+    @if (!_isLoading && _questions.Count == 0)
+    {
+        <ErrorState Icon="⚠️" Title="Couldn't start the quiz" OnRetry="StartGame" RetryLabel="Retry">
+            @(_error ?? "No questions available right now.")
+        </ErrorState>
+    }
+    else if (_currentIndex < _questions.Count && !_splitScreen)
+    {
+        var q = _questions[_currentIndex];
+        var showReveal = _selected.ContainsKey(_currentIndex) && _playMode != "demo";
+        var pickIdx = showReveal ? _selected[_currentIndex].selected : -1;
+        var correctIdx = showReveal ? q.CorrectOptionIndex : -1;
+        <div class="fq-question gps-game-card">
+            <h2 class="gps-phase-h">Question @(_currentIndex + 1) of @_questions.Count</h2>
+            <p class="fq-text">@q.Text</p>
+            @* Solo/2P-shared-screen options now share the same numbered-key
+               affordance as the split-screen board so the two modes look like
+               one product. Solo also borrows the split-screen's correct/wrong
+               highlight classes (--correct / --wrong) so a wrong answer is
+               visible to the eye, not only to the next question. Demo mode
+               suppresses both — the kiosk never pauses for a reveal. *@
+            <div class="fq-options">
+                @for (var i = 0; i < q.Options.Count; i++)
+                {
+                    var captured = i;
+                    var optClass = !showReveal
+                        ? ""
+                        : captured == correctIdx
+                            ? "fq-option--correct"
+                            : captured == pickIdx
+                                ? "fq-option--wrong"
+                                : "fq-option--muted";
+                    <QuizAnswer Index="captured" Label="@q.Options[i]" Class="@optClass"
+                                Disabled="@(showReveal || _playMode == "demo")"
+                                Correct="@(showReveal && captured == correctIdx)" OnSelect="SelectAnswer" />
+                }
+            </div>
+            <p>Score: <strong>@_score</strong> · Streak: @_streak</p>
+            @* Solo-mode reveal line: shows the correct option and your pick
+               after a wrong answer. The line fades out on the advance timer so
+               the quiz never stops moving. *@
+            @if (showReveal)
+            {
+                var picked = _selected[_currentIndex];
+                var streakText = _streak > 1 ? $"Streak {_streak} 🔥" : "";
+                <p class="fq-solo-reveal" role="status">
+                    @if (picked.correct)
+                    {
+                        <strong>Correct!</strong> @streakText
+                    }
+                    else
+                    {
+                        var revealLabel = q.Options[correctIdx];
+                        <text><strong>Not quite.</strong> The answer was <em>@revealLabel</em>.</text>
+                    }
+                </p>
+            }
+        </div>
+    }
+    else if (_currentIndex < _questions.Count && _splitScreen)
+    {
+        // Split-screen local 2P — one question, two players
+        // answer simultaneously on a shared display. Each side has its own
+        // 4 option buttons (1/2/3/4 on left, 6/7/8/9 on right) plus a per-player
+        // status badge (locked / waiting). Hotkeys register via JS interop
+        // on first render and the same @onclick handlers let mouse players
+        // join in. The reveal overlay flashes the correct option after both
+        // players lock in, then advances on a short timer.
+        var q = _questions[_currentIndex];
+        // Per-player reveal class: each side colours its OWN pick (--picked)
+        // and tints the actual correct option green if neither side got it.
+        // This is the 2P counterpart of the solo --correct/--wrong/--muted
+        // treatment — the audit found both modes showed the same amber for
+        // every pick, with no signal for "which one was actually right".
+        Func<int, int, int, string> SplitOptClass = (side, captured, correctIdx) =>
+        {
+            if (_splitPicks[side] < 0) return "";
+            if (captured == correctIdx) return "fq-split__opt--correct";
+            return captured == _splitPicks[side]
+                ? (_splitResults[side] ? "fq-split__opt--picked" : "fq-split__opt--wrong")
+                : "fq-split__opt--muted";
+        };
+        <div class="fq-split">
+            <div class="fq-split__header">
+                <h2 class="gps-phase-h">Question @(_currentIndex + 1) of @_questions.Count</h2>
+                <p class="fq-split__prompt">@q.Text</p>
+            </div>
+            <div class="fq-split__board">
+                <div class="fq-split__player fq-split__player--left" data-player="1">
+                    <div class="fq-split__name">@_playerName</div>
+                    <div class="fq-split__score">@_score1 <span class="fq-split__streak">streak @_streak1</span></div>
+                    <div class="fq-split__keys">Keys: <kbd>1</kbd><kbd>2</kbd><kbd>3</kbd><kbd>4</kbd></div>
+                    <div class="fq-split__options">
+                        @for (var i = 0; i < q.Options.Count; i++)
+                        {
+                            var captured = i;
+                            var picked = _splitPicks[1] == captured;
+                            <button class="fq-split__opt @SplitOptClass(1, captured, q.CorrectOptionIndex)"
+                                    disabled="@(_splitPicks[1] >= 0)"
+                                    @onclick="() => SelectSplitAnswer(1, captured)">
+                                <span class="fq-split__key">@(captured + 1)</span>
+                                <span class="fq-split__label">@q.Options[i]</span>
+                                @if (picked && _splitResults[1])
+                                {
+                                    <span class="fq-split__badge">✓</span>
+                                }
+                                else if (picked && !_splitResults[1])
+                                {
+                                    <span class="fq-split__badge fq-split__badge--wrong" aria-hidden="true">✗</span>
+                                }
+                            </button>
+                        }
+                    </div>
+                    <div class="fq-split__status">@(_splitPicks[1] >= 0 ? "Locked ✓" : "Pick 1-4")</div>
+                </div>
+                <div class="fq-split__vs">VS</div>
+                <div class="fq-split__player fq-split__player--right" data-player="2">
+                    <div class="fq-split__name">@_player2Name</div>
+                    <div class="fq-split__score">@_score2 <span class="fq-split__streak">streak @_streak2</span></div>
+                    <div class="fq-split__keys">Keys: <kbd>6</kbd><kbd>7</kbd><kbd>8</kbd><kbd>9</kbd></div>
+                    <div class="fq-split__options">
+                        @for (var i = 0; i < q.Options.Count; i++)
+                        {
+                            var captured = i;
+                            var picked = _splitPicks[2] == captured;
+                            <button class="fq-split__opt @SplitOptClass(2, captured, q.CorrectOptionIndex)"
+                                    disabled="@(_splitPicks[2] >= 0)"
+                                    @onclick="() => SelectSplitAnswer(2, captured)">
+                                <span class="fq-split__key">@(captured + 6)</span>
+                                <span class="fq-split__label">@q.Options[i]</span>
+                                @if (picked && _splitResults[2])
+                                {
+                                    <span class="fq-split__badge">✓</span>
+                                }
+                                else if (picked && !_splitResults[2])
+                                {
+                                    <span class="fq-split__badge fq-split__badge--wrong" aria-hidden="true">✗</span>
+                                }
+                            </button>
+                        }
+                    </div>
+                    <div class="fq-split__status">@(_splitPicks[2] >= 0 ? "Locked ✓" : "Pick 6-9")</div>
+                </div>
+            </div>
+            @if (_splitPicks[1] >= 0 && _splitPicks[2] >= 0)
+            {
+                <div class="fq-split__reveal" role="status">
+                    <strong>@_playerName</strong>: @(_splitResults[1] ? "✓ correct" : "✗ wrong") ·
+                    <strong>@_player2Name</strong>: @(_splitResults[2] ? "✓ correct" : "✗ wrong")
+                    — next question in a moment…
+                </div>
+            }
+        </div>
+    }
+    @if (_questions.Count > 0 && !_isLoading)
+    {
+        @* CC BY-SA 4.0 attribution: the bank holds Open Trivia DB questions. *@
+        <p class="fq-credit">Questions: Open Trivia DB (CC BY-SA 4.0)</p>
+    }
+    @* Quiz completion is shown in the shared end-of-game modal (GameSummaryContent). *@
+</GameShell>
+
+@code {
+    /// <summary>Route mode segment. Parsed by <see cref="GameModes.Parse"/>, which
+    /// owns every accepted spelling and legacy form — see GameMode.cs.</summary>
+    [Parameter] public string? Mode { get; set; }
+    // Split-screen local 2P. Two players share
+    // one keyboard + one display. Left side keys 1/2/3/4, right side keys
+    // 6/7/8/9 (the 5 is unused — it's where a USB keyboard's gap sits, so
+    // leaving it free avoids accidental cross-side hits). Both players see
+    // the same question simultaneously and answer independently; after both
+    // lock in, the correct answer reveals and the round advances.
+    private bool _splitScreen;
+
+    private static RenderFragment TitleContent => GameCatalog.TitleFor(GameKeys.PoFunQuiz);
+
+    // Intro/welcome gate — overlay blocks the quiz until dismissed (OK); demo
+    // flashes it for 2s. Questions load behind the card, so no extra gating.
+    private bool _introDone;
+    private GameIntro.IntroMode _introMode => _playMode == "demo"
+        ? GameIntro.IntroMode.Demo
+        : GameIntro.IntroMode.OnePlayer;
+    private void DismissIntro() => _introDone = true;
+
+    private RenderFragment HowToPlayContent => _playMode switch
+    {
+        // 2P intro used to say "players 1 & 2 use their own keys" without
+        // listing them, so the keyboard layout was undiscoverable until the
+        // player stumbled onto a button mid-round.
+        "2ps" => @<div>
+            <p>Both players see the same question and lock in their answer at the same time.</p>
+            <ul>
+                <li>Player 1 (left): keys <kbd>1</kbd> <kbd>2</kbd> <kbd>3</kbd> <kbd>4</kbd></li>
+                <li>Player 2 (right): keys <kbd>6</kbd> <kbd>7</kbd> <kbd>8</kbd> <kbd>9</kbd></li>
+                <li>Mouse works too — click any option on your side</li>
+            </ul>
+        </div>,
+        _ => @<div>
+            <ul>
+                <li>Tap or click an answer, or use keys <kbd>1</kbd>–<kbd>4</kbd></li>
+                <li>The correct option highlights green; a wrong pick goes red</li>
+            </ul>
+        </div>,
+    };
+
+    private RenderFragment GameSummaryContent => _playMode switch
+    {
+        "2ps" => @<div>
+            <div class="fq-2p-finale">
+                @if (_score1 == _score2)
+                {
+                    <strong>It's a tie! 🤝</strong>
+                }
+                else if (_score1 > _score2)
+                {
+                    <strong>@_playerName wins! 🏆</strong>
+                }
+                else
+                {
+                    <strong>@_player2Name wins! 🏆</strong>
+                }
+            </div>
+            <div>@_playerName: <strong>@_score1</strong> (best streak @_maxStreak1)</div>
+            <div>@_player2Name: <strong>@_score2</strong> (best streak @_maxStreak2)</div>
+        </div>,
+        @* The "View leaderboard" link that used to sit here is redundant now that
+           the shared modal renders this game's top 3 inline. *@
+        _ => @<div>
+            <div>Final score: <strong>@_score</strong></div>
+            <div>Max streak: @_maxStreak</div>
+        </div>,
+    };
+
+    private string _playerName = string.Empty;
+    private string _player2Name = "Player 2";
+    private string _category = "General";
+    private string? _error;
+    // Starts true: the quiz auto-loads on navigation, so the very first render
+    // is the loading state, never the "couldn't start" card.
+    private bool _isLoading = true;
+    private List<QuizQuestion> _questions = new();
+    private int _currentIndex;
+    private int _score;
+    private int _streak;
+    private int _maxStreak;
+    private int _score1;
+    private int _score2;
+    private int _streak1;
+    private int _streak2;
+    private int _maxStreak1;
+    private int _maxStreak2;
+    private bool _scoreSubmitted;
+    // Split-screen local 2P state. _splitPicks
+    // holds the picked option index (-1 = none) for each player. The reveal
+    // overlay fires when both >= 0; a short timer advances to the next
+    // question. State is per-question (reset in ResetSplitState()).
+    private readonly int[] _splitPicks = { -1, -1, -1 };
+    private readonly bool[] _splitResults = { false, false, false };
+    private string _playMode = "solo";
+    private readonly Dictionary<int, (int selected, bool correct)> _selected = new();
+    private List<StatItem>? _statItems;
+    // Set on Dispose so a late demo auto-pick callback doesn't touch disposed state.
+    private bool _disposed;
+
+    private bool IsGameOver => _questions.Count > 0
+        && _currentIndex >= _questions.Count
+        && _playMode != "demo"; // demo mode replays forever; never surface GameOver modal
+
+    // Split-screen simultaneous-answer logic.
+    // Each player can lock in their pick independently; once both are locked,
+    // score them against the correct answer, flash the reveal overlay, and
+    // advance on a short delay. Per-question state lives in _splitPicks /
+    // _splitResults so reset is a single line at the top of each round.
+    private void SelectSplitAnswer(int player, int optionIndex)
+    {
+        if (_currentIndex >= _questions.Count) return;
+        var q = _questions[_currentIndex];
+        if (optionIndex < 0 || optionIndex >= q.Options.Count) return;
+        if (_splitPicks[player] >= 0) return; // already locked
+
+        _splitPicks[player] = optionIndex;
+        var correct = optionIndex == q.CorrectOptionIndex;
+        _splitResults[player] = correct;
+
+        if (correct)
+        {
+            if (player == 1)
+            {
+                _score1 += q.BasePoints + StreakBonusFor(_streak1);
+                _streak1++;
+                if (_streak1 > _maxStreak1) _maxStreak1 = _streak1;
+            }
+            else
+            {
+                _score2 += q.BasePoints + StreakBonusFor(_streak2);
+                _streak2++;
+                if (_streak2 > _maxStreak2) _maxStreak2 = _streak2;
+            }
+        }
+        else
+        {
+            if (player == 1) _streak1 = 0;
+            else _streak2 = 0;
+        }
+
+        if (_splitPicks[1] >= 0 && _splitPicks[2] >= 0)
+        {
+            // Both locked in — advance on a short reveal timer. Detached so
+            // the UI can render the reveal overlay before the question flips.
+            _ = AdvanceAfterRevealAsync();
+        }
+    }
+
+    private async Task AdvanceAfterRevealAsync()
+    {
+        try { await Feedback.CompleteAsync(); } catch { /* best-effort */ }
+        await Task.Delay(1500);
+        ResetSplitState();
+        _currentIndex++;
+        if (IsGameOver)
+        {
+            // Local split-screen result recorded for head-to-head feed.
+            _ = RecordLocalTwoPlayerAsync();
+            _statItems = new()
+            {
+                new StatItem { Label = "P1 score", Value = _score1.ToString() },
+                new StatItem { Label = "P1 streak", Value = _maxStreak1.ToString() },
+                new StatItem { Label = "P2 score", Value = _score2.ToString() },
+                new StatItem { Label = "P2 streak", Value = _maxStreak2.ToString() },
+            };
+        }
+        StateHasChanged();
+    }
+
+    private void ResetSplitState()
+    {
+        _splitPicks[1] = -1;
+        _splitPicks[2] = -1;
+        _splitResults[1] = false;
+        _splitResults[2] = false;
+    }
+
+    protected override void OnInitialized()
+    {
+        // Demo runs forever (GameOver stays suppressed), so it is resolved first and
+        // wins. /funquiz/2player is the split-screen board.
+        var routeMode = GameModes.Parse(Mode);
+        _playMode = routeMode switch
+        {
+            GameMode.Demo => "demo",
+            GameMode.TwoPlayer => "2ps",
+            _ => "solo",
+        };
+        _splitScreen = _playMode == "2ps";
+        _playerName = PlayerNameService.GetPlayerName();
+    }
+
+    // Load the questions and start playing on navigation — there is no longer a
+    // setup card to click through.
+    protected override async Task OnInitializedAsync() => await StartGame();
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (!firstRender) return;
+        if (_splitScreen)
+        {
+            // Register a window-level keydown listener via a tiny JS interop. We
+            // can't do this purely in Blazor because Razor can't subscribe to
+            // global keyboard events without a DOM hook.
+            // Imported here rather than loaded eagerly from index.html, so the
+            // other ~25 pages in the app do not fetch a split-screen quiz hotkey
+            // handler.
+            await JS.InvokeAsync<IJSObjectReference>("import", "./js/poFunQuizSplitHotkeys.js");
+            await JS.InvokeVoidAsync("poFunQuizSplitHotkeys.register", _selfRef ??= DotNetObjectReference.Create(this));
+        }
+        // Solo mode reuses the same hotkey bridge by registering with side="S"
+        // (solo); the script already routes 1-4 to whatever side is registered and
+        // ignores inputs/textareas. A second DotNetObjectReference would be
+        // wasted — the same instance handles both invocations.
+        else if (_playMode == "solo")
+        {
+            await JS.InvokeAsync<IJSObjectReference>("import", "./js/poFunQuizSplitHotkeys.js");
+            await JS.InvokeVoidAsync("poFunQuizSplitHotkeys.registerSolo", _selfRef ??= DotNetObjectReference.Create(this));
+        }
+    }
+
+    [Inject] private IJSRuntime JS { get; set; } = default!;
+
+    // The one reference the hotkey bridge calls back through; released in DisposeAsync.
+    private DotNetObjectReference<PoFunQuizPage>? _selfRef;
+
+    /// <summary>
+    /// Invoked from JS (poFunQuizSplitHotkeys.js) when a split-screen hotkey
+    /// fires. Side 'L' keys 1/2/3/4, side 'R' keys 6/7/8/9, index 0-3 maps to
+    /// options A-D. No-op outside split-screen mode.
+    /// </summary>
+    [JSInvokable]
+    public Task OnSplitHotkeyAsync(string side, int optionIndex)
+    {
+        if (!_splitScreen) return Task.CompletedTask;
+        if (_currentIndex >= _questions.Count) return Task.CompletedTask;
+        var q = _questions[_currentIndex];
+        if (optionIndex < 0 || optionIndex >= q.Options.Count) return Task.CompletedTask;
+        SelectSplitAnswer(side == "L" ? 1 : 2, optionIndex);
+        InvokeAsync(StateHasChanged);
+        return Task.CompletedTask;
+    }
+
+    /// <summary>
+    /// Invoked from JS when a solo / shared-screen-2P hotkey fires. Routes
+    /// the digit to SelectAnswer for whichever 2P turn is active. Side 'L'
+    /// keys 1-4 (used by both solo and the alternating-turns 2p variant).
+    /// 'S' (solo) and 'L' (2p) share the same key range deliberately.
+    /// </summary>
+    [JSInvokable]
+    public Task OnSoloHotkeyAsync(string side, int optionIndex)
+    {
+        if (_splitScreen) return Task.CompletedTask;
+        if (_playMode != "solo") return Task.CompletedTask;
+        if (_currentIndex >= _questions.Count) return Task.CompletedTask;
+        if (_selected.ContainsKey(_currentIndex)) return Task.CompletedTask; // already revealed
+        var q = _questions[_currentIndex];
+        if (optionIndex < 0 || optionIndex >= q.Options.Count) return Task.CompletedTask;
+        SelectAnswer(optionIndex);
+        InvokeAsync(StateHasChanged);
+        return Task.CompletedTask;
+    }
+
+    public async ValueTask DisposeAsync()
+    {
+        _disposed = true;
+        if (_demoTimer is not null)
+        {
+            await _demoTimer.DisposeAsync();
+            _demoTimer = null;
+        }
+        try { await JS.InvokeVoidAsync("poFunQuizSplitHotkeys.unregister"); } catch { /* disposed */ }
+        _selfRef?.Dispose();
+        _selfRef = null;
+    }
+
+    private async Task StartGame()
+    {
+        // The name inputs are gone, so there is nothing to validate: _playerName
+        // comes from the stored profile and _player2Name / _category carry their
+        // defaults. Guard only against an empty stored profile.
+        if (string.IsNullOrWhiteSpace(_playerName)) _playerName = "Player 1";
+        _error = null;
+        _isLoading = true;
+        try
+        {
+            var fetch = await Api.GetFunQuizQuestionsAsync(_category, 10);
+            if (fetch.StatusCode == 429)
+            {
+                var wait = fetch.RetryAfterSeconds;
+                if (wait <= AutoRetryMaxWaitSeconds && _autoRetries < MaxAutoRetries)
+                {
+                    _autoRetries++;
+                    _error = $"The quiz service is busy. Retrying in {wait}s…";
+                    _isLoading = false;
+                    StateHasChanged();
+                    await Task.Delay(TimeSpan.FromSeconds(wait));
+                    if (_disposed) return;
+                    await StartGame();
+                    return;
+                }
+
+                _error = $"Too many quiz requests from this device. Wait about {wait}s, then hit Retry.";
+                _isLoading = false;
+                return;
+            }
+
+            if (fetch.StatusCode < 200 || fetch.StatusCode >= 300)
+            {
+                _error = $"Couldn't reach the quiz service ({fetch.StatusCode}). Hit Retry in a moment.";
+                _isLoading = false;
+                return;
+            }
+
+            var questions = fetch.Questions;
+            if (questions is null || questions.Count == 0)
+            {
+                _error = "No questions available. Try a different category.";
+                _isLoading = false;
+                return;
+            }
+            _autoRetries = 0;
+            _questions = questions;
+            ResetSplitState();
+            _currentIndex = 0;
+            _score = 0;
+            _streak = 0;
+            _maxStreak = 0;
+            _score1 = _score2 = 0;
+            _streak1 = _streak2 = 0;
+            _maxStreak1 = _maxStreak2 = 0;
+            _selected.Clear();
+            _scoreSubmitted = false;
+            _statItems = null;
+            // /funquiz/demo: SelectAnswer only fires on a real click and the
+            // kiosk has no one to click, so spawn a detached loop that auto-picks
+            // an answer every few seconds and rolls through all 10 questions,
+            // so the attract reel shows question variety instead of a stuck
+            // first question.
+            if (_playMode == "demo" && _demoTimer is null)
+            {
+                _demoTimer = new System.Threading.Timer(
+                    async _ => await InvokeAsync(DemoAdvanceAsync),
+                    null,
+                    DemoAutoPickDelayMs,
+                    DemoAutoPickDelayMs);
+            }
+        }
+        catch (Exception ex)
+        {
+            _error = $"Failed to load questions: {ex.Message}";
+        }
+        finally
+        {
+            _isLoading = false;
+        }
+    }
+
+    // Bounded so a genuinely saturated window cannot turn into an unattended poll loop:
+    // two automatic attempts, then the card goes back to a manual Retry.
+    private const int MaxAutoRetries = 2;
+    private const int AutoRetryMaxWaitSeconds = 15;
+    private int _autoRetries;
+
+    /// <summary>
+    /// Seconds to wait before replaying a rejected request. The API sets Retry-After from the
+    /// rate limiter's own replenishment clock; the clamp covers a missing or absurd header
+    /// (a proxy's HTTP-date form parses as no delta at all) so the countdown stays believable.
+    /// </summary>
+    private static int RetryAfterSeconds(HttpResponseMessage response)
+    {
+        var delta = response.Headers.RetryAfter?.Delta?.TotalSeconds;
+        if (delta is null && response.Headers.RetryAfter?.Date is { } date)
+        {
+            delta = (date - DateTimeOffset.UtcNow).TotalSeconds;
+        }
+        return (int)Math.Clamp(Math.Ceiling(delta ?? 5), 3, 60);
+    }
+
+    // Demo auto-pick loop. Picks a random option, reveals, advances.
+    private System.Threading.Timer? _demoTimer;
+    private const int DemoAutoPickDelayMs = 2800;
+    private async Task DemoAdvanceAsync()
+    {
+        if (_playMode != "demo" || _disposed) return;
+        if (_isLoading || _questions.Count == 0) return;
+        if (_currentIndex >= _questions.Count)
+        {
+            // End of the deck — reshuffle and start over so the reel keeps
+            // cycling without a network round-trip.
+            _currentIndex = 0;
+            _score = 0;
+            _streak = 0;
+            _maxStreak = 0;
+            _selected.Clear();
+            _scoreSubmitted = false;
+            await InvokeAsync(StateHasChanged);
+            return;
+        }
+        if (!_selected.ContainsKey(_currentIndex))
+        {
+            var q = _questions[_currentIndex];
+            var pick = Random.Shared.Next(q.Options.Count);
+            SelectAnswer(pick);
+            await InvokeAsync(StateHasChanged);
+            return;
+        }
+        // SelectAnswer schedules its own reveal-timer advance
+        // (AdvanceAfterSoloRevealAsync) for every play mode including demo,
+        // so the demo timer just has to wait for that to land.
+    }
+
+    private void SelectAnswer(int option)
+    {
+        if (_currentIndex >= _questions.Count) return;
+        var q = _questions[_currentIndex];
+        if (_selected.ContainsKey(_currentIndex)) return;
+        var correct = option == q.CorrectOptionIndex;
+        _selected[_currentIndex] = (option, correct);
+
+        if (correct)
+        {
+            _score += q.BasePoints + StreakBonus();
+            _streak++;
+            if (_streak > _maxStreak) _maxStreak = _streak;
+            if (_streak >= 3)
+            {
+                _ = Feedback.CueAsync("quiz", "streakChime");
+            }
+            else
+            {
+                _ = Feedback.CueAsync("quiz", "correct");
+            }
+        }
+        else
+        {
+            _streak = 0;
+            _ = Feedback.CueAsync("quiz", "wrong");
+        }
+
+        // The advance runs on a short timer, not synchronously: advancing
+        // _currentIndex here would show the reveal highlight and the "Not quite /
+        // correct was X" line for zero frames before the page re-rendered Q2.
+        // The timer is long enough for the player to read the highlight, short
+        // enough that the quiz never feels stuck. Demo mode also routes through
+        // the timer so its auto-pick loop can pick up the revealed state on the
+        // next tick.
+        _ = AdvanceAfterSoloRevealAsync();
+    }
+
+    // Reveal delay for solo / alternating-turns 2P. Detached: SelectAnswer is
+    // a void handler, and we need StateHasChanged to fire on the reveal tick
+    // before the advance. 1.2s matches the split-screen reveal overlay so the
+    // two modes feel like one product.
+    private const int SoloRevealDelayMs = 1200;
+    private async Task AdvanceAfterSoloRevealAsync()
+    {
+        try { await Feedback.CompleteAsync(); } catch { /* best-effort */ }
+        await Task.Delay(SoloRevealDelayMs);
+        if (_disposed) return;
+        _currentIndex++;
+        if (IsGameOver && _playMode == "solo" && !_scoreSubmitted)
+        {
+            _scoreSubmitted = true;
+            _ = SubmitSoloOutcomeAsync();
+        }
+        await InvokeAsync(StateHasChanged);
+    }
+
+    private int StreakBonus() => _streak switch
+    {
+        >= 5 => 3,
+        >= 3 => 2,
+        >= 2 => 1,
+        _ => 0
+    };
+
+    private int StreakBonusFor(int streak) => streak switch
+    {
+        >= 5 => 3,
+        >= 3 => 2,
+        >= 2 => 1,
+        _ => 0
+    };
+
+    private bool HasAnswered(int option)
+    {
+        if (_currentIndex >= _questions.Count) return true;
+        return _selected.ContainsKey(_currentIndex);
+    }
+
+    // Submit the final solo score to the server leaderboard. Best-effort:
+    // never throws to the UI; a failed POST just means the run won't show up
+    // on the public board. Local GameStats are written unconditionally.
+    private async Task SubmitSoloOutcomeAsync()
+    {
+        var localStats = await GameStats.RecordResult(
+            "pofunquiz", _playerName, Difficulty.Medium,
+            _maxStreak > 0 ? GameResult.Win : GameResult.Loss);
+        _statItems = new()
+        {
+            new StatItem { Label = "Score", Value = _score.ToString() },
+            new StatItem { Label = "Best streak", Value = _maxStreak.ToString() },
+            new StatItem { Label = "Total plays", Value = localStats.TotalGames.ToString() },
+        };
+        try
+        {
+            var submitted = await Api.SubmitFunQuizScoreAsync(new FunQuizLeaderboardSubmission
+            {
+                Category = _category,
+                Score = _score,
+                MaxStreak = _maxStreak,
+            });
+            if (submitted) await Feedback.CompleteAsync();
+            else await Feedback.TapAsync();
+        }
+        catch
+        {
+            // Silent best-effort; the local stat row above is the durable record.
+        }
+        StateHasChanged();
+    }
+
+    private async Task RecordLocalTwoPlayerAsync()
+    {
+        var winner = _score1 == _score2 ? null : (_score1 > _score2 ? _playerName : _player2Name);
+        var outcome = winner is null
+            ? MatchOutcome.Draw
+            : (winner == _playerName ? MatchOutcome.Win : MatchOutcome.Loss);
+        try { await MatchHistory.RecordAsync("pofunquiz", MatchMode.Local2P, _player2Name, outcome); }
+        catch { /* best-effort */ }
+    }
+}

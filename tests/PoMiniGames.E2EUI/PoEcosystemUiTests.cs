@@ -39,6 +39,7 @@ public class PoEcosystemUiTests
             await route.ContinueAsync(new RouteContinueOptions { Headers = headers });
         });
         var page = await context.NewPageAsync();
+        await using var guard = PlaywrightErrorGuard.Watch(page);
         page.Console += (_, msg) => { if (msg.Type is "error") Console.WriteLine($"[browser:error] {msg.Text}"); };
         page.PageError += (_, err) => Console.WriteLine($"[pageerror] {err}");
 

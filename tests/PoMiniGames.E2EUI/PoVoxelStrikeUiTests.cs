@@ -45,6 +45,7 @@ public class PoVoxelStrikeUiTests
             await route.ContinueAsync(new RouteContinueOptions { Headers = headers });
         });
         var page = await context.NewPageAsync();
+        await using var guard = PlaywrightErrorGuard.Watch(page);
         page.Console += (_, msg) =>
         {
             if (msg.Type is "error" or "warning")

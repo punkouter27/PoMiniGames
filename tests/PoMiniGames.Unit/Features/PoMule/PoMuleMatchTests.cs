@@ -23,7 +23,7 @@ public sealed class PoMuleMatchTests
     [InlineData(nameof(WithARenderer_TheMatchWaitsForArrivals_AndFeedsOneFlatSnapshot))]
     public Task Scenario(string name) => Scenarios.RunAsync(this, name);
 
-    private void AMonth_RunsItsPhasesInOrder_WithAnAuctionOnlyOnEvenMonths_ForTwelveMonths()
+    private static void AMonth_RunsItsPhasesInOrder_WithAnAuctionOnlyOnEvenMonths_ForTwelveMonths()
     {
         var match = PoMuleMatch.New(seed: 42, humanSpecies: null, headless: true, fast: true);
         var phases = new Dictionary<int, List<Phase>>();
@@ -48,7 +48,7 @@ public sealed class PoMuleMatchTests
         demoMinutes.Should().BeInRange(5, 8);
     }
 
-    private void TheSameSeed_PlaysTheSameMatch_AndADifferentSeedDoesNot()
+    private static void TheSameSeed_PlaysTheSameMatch_AndADifferentSeedDoesNot()
     {
         var first = PoMuleSave.ToJson(PoMuleMatch.RunToEnd(1234).State);
 
@@ -70,7 +70,7 @@ public sealed class PoMuleMatchTests
         });
     }
 
-    private void ASaveTakenAtTheStartOfAMonth_RestoresItExactly_AndPlaysOnIdentically()
+    private static void ASaveTakenAtTheStartOfAMonth_RestoresItExactly_AndPlaysOnIdentically()
     {
         var original = PoMuleMatch.New(seed: 77, humanSpecies: Species.Humanoid, headless: true, fast: true);
         var stops = 0;
@@ -99,7 +99,7 @@ public sealed class PoMuleMatchTests
         PoMuleSave.FromJson(json.Replace("\"Version\":1", "\"Version\":0")).Should().BeNull("an older rules version is discarded");
     }
 
-    private void OverAHundredSeededMatches_NothingGoesNegative_TheStoreKeepsMules_AndNoPersonalityDominates()
+    private static void OverAHundredSeededMatches_NothingGoesNegative_TheStoreKeepsMules_AndNoPersonalityDominates()
     {
         var wins = new Dictionary<Archetype, int>();
         var survived = 0;
@@ -128,7 +128,7 @@ public sealed class PoMuleMatchTests
         wins.Values.Max().Should().BeLessThanOrEqualTo(40, summary);
     }
 
-    private void TheLandGrant_SweepsAHighlighterRowByRow_AndGivesThePlotToWhoeverPressesOnIt()
+    private static void TheLandGrant_SweepsAHighlighterRowByRow_AndGivesThePlotToWhoeverPressesOnIt()
     {
         var match = PoMuleMatch.New(seed: 8, humanSpecies: Species.Humanoid);
         var state = match.State;
@@ -171,7 +171,7 @@ public sealed class PoMuleMatchTests
     }
 
     /// <summary>The touches carried over from the 1983 game.</summary>
-    private void LuckTheMeteorTheWampusAndThePlotByPlotCount_WorkAsInTheOriginal()
+    private static void LuckTheMeteorTheWampusAndThePlotByPlotCount_WorkAsInTheOriginal()
     {
         // Personal luck: good luck never finds the leader, bad luck never the colonist in
         // last place, nobody is ever pushed below zero, and every line fits the message bar.
@@ -291,7 +291,7 @@ public sealed class PoMuleMatchTests
         else (replayed == played).Should().Be(matches.Value, $"{variant}: played {played}, replayed {replayed}");
     }
 
-    private void WithARenderer_TheMatchWaitsForArrivals_AndFeedsOneFlatSnapshot()
+    private static void WithARenderer_TheMatchWaitsForArrivals_AndFeedsOneFlatSnapshot()
     {
         var match = PoMuleMatch.New(seed: 8, humanSpecies: Species.Humanoid);
         var state = match.State;

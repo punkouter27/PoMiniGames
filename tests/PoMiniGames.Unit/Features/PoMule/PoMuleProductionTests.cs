@@ -87,7 +87,7 @@ public sealed class PoMuleProductionTests
     [InlineData(nameof(Events_HitOneFoodPlot_StealCrystite_BurnTheStore_AndComeUpAboutThreeMonthsInFour))]
     public Task Scenario(string name) => Scenarios.RunAsync(this, name);
 
-    private void ShortOfEnergy_TheLeastValuableMulesGoIdle_AndThreeShortColonistsMakeACrisisMonth()
+    private static void ShortOfEnergy_TheLeastValuableMulesGoIdle_AndThreeShortColonistsMakeACrisisMonth()
     {
         var match = Match();
         var food = Work(match, 0, Terrain.River, Good.Food);                    // 4 × 30 = 120
@@ -124,7 +124,7 @@ public sealed class PoMuleProductionTests
     public void Spoilage_TakesHalfTheSpareFood_AQuarterOfTheSpareEnergy_AndCapsOreAt50(Good good, int held, int need, int left) =>
         PoMuleProduction.AfterSpoilage(good, held, need).Should().Be(left);
 
-    private void Events_HitOneFoodPlot_StealCrystite_BurnTheStore_AndComeUpAboutThreeMonthsInFour()
+    private static void Events_HitOneFoodPlot_StealCrystite_BurnTheStore_AndComeUpAboutThreeMonthsInFour()
     {
         var pest = Match();
         Work(pest, 0, Terrain.River, Good.Food);

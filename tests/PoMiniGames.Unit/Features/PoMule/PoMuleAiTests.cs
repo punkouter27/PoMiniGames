@@ -78,7 +78,7 @@ public sealed class PoMuleAiTests
     [InlineData(nameof(AtAuction_TheSpeculatorOutbidsTheFarmer_AndNobodyBidsPastTheirMeans))]
     public Task Scenario(string name) => Scenarios.RunAsync(this, name);
 
-    private void Goals_WalkThroughBuyInstallPub_WhileTheGamblerQuitsEarlyAndTheAgitatorHunts()
+    private static void Goals_WalkThroughBuyInstallPub_WhileTheGamblerQuitsEarlyAndTheAgitatorHunts()
     {
         var farmer = Match(Archetype.Farmer);
         var plot = Own(farmer, 0, Terrain.River);
@@ -160,7 +160,7 @@ public sealed class PoMuleAiTests
         PoMuleAi.MarketInput(match, Ai).Should().Be(leaving);
     }
 
-    private void AtAuction_TheSpeculatorOutbidsTheFarmer_AndNobodyBidsPastTheirMeans()
+    private static void AtAuction_TheSpeculatorOutbidsTheFarmer_AndNobodyBidsPastTheirMeans()
     {
         var match = Match(Archetype.Speculator);
         match.Players[2].Archetype = Archetype.Farmer;

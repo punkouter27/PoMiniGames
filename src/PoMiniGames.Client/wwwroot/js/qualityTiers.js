@@ -4,7 +4,7 @@
 // attribute this module writes on <html>, gpuFx/weather/glass read the exports
 // below. This module is the only owner of the tier.
 //
-// Selection order: URL `?fx=high|medium|low` > localStorage `poFx.tier` >
+// Selection order: URL `?fx=high|medium|low` > localStorage `pominigames:fx-tier` >
 // computed from the device. `prefers-reduced-motion` caps the tier at medium
 // AND enables the flashing guard; a battery-saving state drops one tier for
 // the session. A frame-time watchdog demotes high → medium after 12 s of
@@ -14,8 +14,8 @@
 (function () {
     'use strict';
 
-    const STORE_TIER = 'poFx.tier';
-    const STORE_FLASH = 'poFx.reduceFlashing';
+    const STORE_TIER = 'pominigames:fx-tier';
+    const STORE_FLASH = 'pominigames:fx-reduce-flashing';
     const WATCHDOG_MS = 12000;
     const WATCHDOG_FPS = 25;
 

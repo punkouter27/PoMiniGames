@@ -583,7 +583,7 @@ export function undo() {
     return true;
 }
 
-const SLOT_KEY = n => `sandplayground.slot.${n}`;
+const SLOT_KEY = n => `pominigames:sandplayground:slot.${n}`;
 const SLOT_INDEX = 'sandplayground.slots';
 
 async function gzip(bytes, pack) {
@@ -1346,7 +1346,7 @@ const CHALLENGES = {
     },
 };
 
-const BEST_KEY = id => `sandplayground.best.${id}`;
+const BEST_KEY = id => `pominigames:sandplayground:best.${id}`;
 function bestOf(id) { try { return +(localStorage.getItem(BEST_KEY(id)) || 0); } catch { return 0; } }
 
 function countIn(def) {

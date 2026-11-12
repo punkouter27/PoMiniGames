@@ -29,10 +29,12 @@ public sealed class PoCabinetTwoBrowserRaceTests(KestrelServerFixture fixture)
         await using var browser = await playwright.Chromium.LaunchAsync(launch);
 
         var pageErrors = new List<string>();
-        var host = await JoinLobbyAsync(browser, "cabinet-host", pageErrors);
+        var (host, hostGuard) = await JoinLobbyAsync(browser, "cabinet-host", pageErrors);
+        await using var _host = hostGuard;
         await host.Locator(".pocabinet-lobby__start").WaitForAsync(new() { Timeout = 30_000 });
 
-        var guest = await JoinLobbyAsync(browser, "cabinet-guest", pageErrors);
+        var (guest, guestGuard) = await JoinLobbyAsync(browser, "cabinet-guest", pageErrors);
+        await using var _guest = guestGuard;
         await guest.Locator(".pocabinet-lobby__ready").WaitForAsync(new() { Timeout = 30_000 });
 
         // Both browsers see the same two humans: the host's seat plus the guest's.
@@ -48,7 +50,7 @@ public sealed class PoCabinetTwoBrowserRaceTests(KestrelServerFixture fixture)
     }
 
     /// <summary>A fresh context with its own fake identity, on the multiplayer start screen, past its OK.</summary>
-    private async Task<IPage> JoinLobbyAsync(IBrowser browser, string user, List<string> pageErrors)
+    private async Task<(IPage Page, PlaywrightErrorGuard Guard)> JoinLobbyAsync(IBrowser browser, string user, List<string> pageErrors)
     {
         var ctx = await browser.NewContextAsync(new() { ViewportSize = MobileViewport.Portrait });
         // Per-request headers for the app origin only — context-wide headers
@@ -66,6 +68,7 @@ public sealed class PoCabinetTwoBrowserRaceTests(KestrelServerFixture fixture)
         });
 
         var page = await ctx.NewPageAsync();
+        var guard = PlaywrightErrorGuard.Watch(page);
         page.Console += (_, msg) => { if (msg.Type is "error") Console.WriteLine($"[{user}:error] {msg.Text}"); };
         page.PageError += (_, err) => pageErrors.Add($"{user}: {err}");
 
@@ -75,6 +78,6 @@ public sealed class PoCabinetTwoBrowserRaceTests(KestrelServerFixture fixture)
         await join.WaitForAsync(new() { Timeout = 60_000 });
         await join.ClickAsync();
         await page.Locator(".pocabinet-lobby").WaitForAsync(new() { Timeout = 30_000 });
-        return page;
+        return (page, guard);
     }
 }

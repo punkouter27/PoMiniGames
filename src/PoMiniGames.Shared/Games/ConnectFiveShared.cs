@@ -32,7 +32,7 @@ public abstract class GridGameRules
     /// </summary>
     public abstract int ResolveRow(ReadOnlySpan<byte> cells, int row, int col);
 
-    public bool IsFull(ReadOnlySpan<byte> cells)
+    public static bool IsFull(ReadOnlySpan<byte> cells)
     {
         foreach (var cell in cells)
         {

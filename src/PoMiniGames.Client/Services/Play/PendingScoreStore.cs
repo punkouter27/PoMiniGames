@@ -1,3 +1,4 @@
+#pragma warning disable CA1822 // Preserved as scoped service instance API.
 using PoMiniGamesClient.Services.Http;
 
 namespace PoMiniGamesClient.Services.Play;
@@ -8,7 +9,7 @@ namespace PoMiniGamesClient.Services.Play;
 /// </summary>
 public sealed class PendingScoreStore
 {
-    private const string StorageKey = "pomini_pending_scores";
+    private const string StorageKey = "pominigames:pending-scores";
 
     public List<PendingScore> Load() =>
         LocalStorageService.GetItem(StorageKey, ApiJsonContext.Default.ListPendingScore) ?? [];

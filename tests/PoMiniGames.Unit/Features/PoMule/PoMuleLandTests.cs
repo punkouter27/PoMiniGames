@@ -20,7 +20,7 @@ public sealed class PoMuleLandTests
     [InlineData(nameof(Auction_RunsOnEvenMonths_IsWalkedNoHigherThanYourCash_AndChargesTheWinner))]
     public Task Scenario(string name) => Scenarios.RunAsync(this, name);
 
-    private void Grant_GivesAContestedPlotToOneClaimant_AndTheLosersTheNearestFreePlots()
+    private static void Grant_GivesAContestedPlotToOneClaimant_AndTheLosersTheNearestFreePlots()
     {
         var match = Match();
         var contested = PoMuleMap.Index(11, 6);
@@ -45,7 +45,7 @@ public sealed class PoMuleLandTests
             match.Owner[awarded[seat]].Should().Be((sbyte)seat);
     }
 
-    private void Grant_NeverGivesOnePlotToTwoColonists_OverAThousandSeededMatches()
+    private static void Grant_NeverGivesOnePlotToTwoColonists_OverAThousandSeededMatches()
     {
         for (ulong seed = 1; seed <= 1000; seed++)
         {
@@ -66,7 +66,7 @@ public sealed class PoMuleLandTests
         }
     }
 
-    private void NearestFree_SearchesAcrossTheSeam_AndGivesUpWhenThePlanetIsFull()
+    private static void NearestFree_SearchesAcrossTheSeam_AndGivesUpWhenThePlanetIsFull()
     {
         var match = Match();
         var corner = PoMuleMap.Index(23, 0);
@@ -85,7 +85,7 @@ public sealed class PoMuleLandTests
         PoMuleLand.Grant(match, [corner, -1, -1, -1, -1, -1, -1, -1]).Should().OnlyContain(a => a == -1);
     }
 
-    private void Auction_RunsOnEvenMonths_IsWalkedNoHigherThanYourCash_AndChargesTheWinner()
+    private static void Auction_RunsOnEvenMonths_IsWalkedNoHigherThanYourCash_AndChargesTheWinner()
     {
         Enumerable.Range(1, 12).Where(PoMuleLand.IsAuctionMonth).Should().Equal(2, 4, 6, 8, 10, 12);
 

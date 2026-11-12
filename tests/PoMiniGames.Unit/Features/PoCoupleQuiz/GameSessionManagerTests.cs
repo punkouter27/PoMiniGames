@@ -15,6 +15,7 @@ namespace PoMiniGames.Unit.Features.PoCoupleQuiz;
 /// </remarks>
 public sealed class GameSessionManagerTests
 {
+    private static readonly string[] ExpectedReadyPlayers = ["Alice", "Bob"];
     /// <summary>A lobby with the given names, in join order. The first is the host.</summary>
     private static GameSessionManager LobbyOf(params string[] names)
     {
@@ -40,7 +41,7 @@ public sealed class GameSessionManagerTests
     [InlineData(nameof(Game_ScoreboardIncludesEveryPlayer))]
     public Task Scenario(string name) => Scenarios.RunAsync(this, name);
 
-    private void Join_OpensOneLobby_ReusesIt_AndDisambiguatesNames()
+    private static void Join_OpensOneLobby_ReusesIt_AndDisambiguatesNames()
     {
         var mgr = new GameSessionManager();
 
@@ -74,7 +75,7 @@ public sealed class GameSessionManagerTests
         mgr.Current!.HostConnectionId.Should().Be(expectedHostConn);
     }
 
-    private void RemovePlayer_PrunesTheLiveRoster_AndClosesTheLobbyWhenTheLastPlayerLeaves()
+    private static void RemovePlayer_PrunesTheLiveRoster_AndClosesTheLobbyWhenTheLastPlayerLeaves()
     {
         var mgr = LobbyOf("Alice", "Bob", "Carla");
         var game = mgr.StartGame("Q?", "Hobbies");
@@ -93,7 +94,7 @@ public sealed class GameSessionManagerTests
 
     // ─── Game lifecycle ─────────────────────────────────────────────────
 
-    private void GameLifecycle_StartAndAdvanceRound_IncrementsRoundAndRotatesKing()
+    private static void GameLifecycle_StartAndAdvanceRound_IncrementsRoundAndRotatesKing()
     {
         var empty = new GameSessionManager();
         var act = () => empty.StartGame("Q?", "Hobbies");
@@ -115,7 +116,7 @@ public sealed class GameSessionManagerTests
         next.KingPlayer!.Name.Should().Be("Bob", "the King seat moves round the table every round");
     }
 
-    private void RoundCompletion_RoutesTheKingToTheSecret_WaitsForGuesses_AndAppliesScores()
+    private static void RoundCompletion_RoutesTheKingToTheSecret_WaitsForGuesses_AndAppliesScores()
     {
         var mgr = LobbyOf("Alice", "Bob", "Carla"); // Alice is King for round 0
         var game = mgr.StartGame("Q?", "Hobbies");
@@ -150,7 +151,7 @@ public sealed class GameSessionManagerTests
 
     // ─── Lobby orchestration ────────────────────────────────────────────
 
-    private void ReadyState_NeedsEnoughPlayers_AndResetToLobbyKeepsThem()
+    private static void ReadyState_NeedsEnoughPlayers_AndResetToLobbyKeepsThem()
     {
         var mgr = LobbyOf("Alice");
 
@@ -162,7 +163,7 @@ public sealed class GameSessionManagerTests
         mgr.MarkPlayerReady("conn2");
         var ready = mgr.GetLobbyReadyState()!;
         ready.AllReady.Should().BeTrue();
-        ready.ReadyPlayers.Should().BeEquivalentTo(new[] { "Alice", "Bob" });
+        ready.ReadyPlayers.Should().BeEquivalentTo(ExpectedReadyPlayers);
 
         mgr.StartGame("Q?", "Hobbies");
         mgr.FinishGame();
@@ -198,7 +199,7 @@ public sealed class GameSessionManagerTests
 
     // ─── Game scoring ───────────────────────────────────────────────────
 
-    private void Game_ScoreboardIncludesEveryPlayer()
+    private static void Game_ScoreboardIncludesEveryPlayer()
     {
         // Previously the scoreboard EXCLUDED the King. Combined with a King seat pinned to
         // index 0 for the whole match, that meant one player in a two-player couple game

@@ -1,0 +1,46 @@
+@inject NavigationManager Navigation
+@implements IDisposable
+
+<nav class="app-bottom-nav" aria-label="Mobile navigation">
+    <a class="app-bottom-nav__item @(IsActive("/") ? "app-bottom-nav__item--active" : null)" href="/">
+        <span class="material-symbols-outlined" aria-hidden="true">sports_esports</span>
+        <span>Games</span>
+    </a>
+    <a class="app-bottom-nav__item @(IsActive("/leaderboards") ? "app-bottom-nav__item--active" : null)" href="/leaderboards">
+        <span class="material-symbols-outlined" aria-hidden="true">leaderboard</span>
+        <span>Boards</span>
+    </a>
+    <a class="app-bottom-nav__item @(IsActive("/profile") ? "app-bottom-nav__item--active" : null)" href="/profile">
+        <span class="material-symbols-outlined" aria-hidden="true">person</span>
+        <span>Stats</span>
+    </a>
+    <a class="app-bottom-nav__item @(IsActive("/health") ? "app-bottom-nav__item--active" : null)" href="/health">
+        <span class="material-symbols-outlined" aria-hidden="true">monitor_heart</span>
+        <span>Status</span>
+    </a>
+</nav>
+
+@code {
+    private EventHandler<LocationChangedEventArgs>? _onLocationChanged;
+
+    protected override void OnInitialized()
+    {
+        _onLocationChanged = (_, _) => InvokeAsync(StateHasChanged);
+        Navigation.LocationChanged += _onLocationChanged;
+    }
+
+    private bool IsActive(string path)
+    {
+        var current = new Uri(Navigation.Uri).AbsolutePath.TrimEnd('/');
+        if (string.IsNullOrEmpty(current)) current = "/";
+        return string.Equals(current, path, StringComparison.OrdinalIgnoreCase);
+    }
+
+    public void Dispose()
+    {
+        if (_onLocationChanged is not null)
+        {
+            Navigation.LocationChanged -= _onLocationChanged;
+        }
+    }
+}

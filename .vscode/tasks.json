@@ -4,7 +4,7 @@
 		{
 			"label": "kill-dotnet",
 			"type": "shell",
-			"command": "Get-Process -Name 'PoMiniGames.API' -ErrorAction SilentlyContinue | Stop-Process -Force -ErrorAction SilentlyContinue; $p=(netstat -aon | Select-String ':5080 ') -replace '.*\\s+(\\d+)$','$1' | Select-Object -First 1; if ($p -and $p -ne '0') { Stop-Process -Id $p -Force -ErrorAction SilentlyContinue }; exit 0",
+			"command": "Get-Process -Name 'PoMiniGames.Api' -ErrorAction SilentlyContinue | Stop-Process -Force -ErrorAction SilentlyContinue; $p=(netstat -aon | Select-String ':5080 ') -replace '.*\\s+(\\d+)$','$1' | Select-Object -First 1; if ($p -and $p -ne '0') { Stop-Process -Id $p -Force -ErrorAction SilentlyContinue }; exit 0",
 			"presentation": {
 				"reveal": "silent",
 				"panel": "dedicated",
@@ -26,7 +26,7 @@
 		{
 			"label": "start-api",
 			"type": "shell",
-			"command": "dotnet run --project ${workspaceFolder}/src/PoMiniGames.API/PoMiniGames.API.csproj",
+			"command": "dotnet run --project ${workspaceFolder}/src/PoMiniGames.Api/PoMiniGames.Api.csproj",
 			"isBackground": true,
 			"problemMatcher": {
 				"pattern": {
@@ -49,7 +49,7 @@
 			"type": "process",
 			"args": [
 				"build",
-				"${workspaceFolder}/src/PoMiniGames.API/PoMiniGames.API.csproj",
+				"${workspaceFolder}/src/PoMiniGames.Api/PoMiniGames.Api.csproj",
 				"/property:GenerateFullPaths=true",
 				"/consoleloggerparameters:NoSummary"
 			],
@@ -79,7 +79,7 @@
 			"type": "process",
 			"args": [
 				"build",
-				"${workspaceFolder}/src/PoMiniGames.Client/PoMiniGamesClient.csproj",
+				"${workspaceFolder}/src/PoMiniGames.Client/PoMiniGames.Client.csproj",
 				"/property:GenerateFullPaths=true",
 				"/consoleloggerparameters:NoSummary"
 			],

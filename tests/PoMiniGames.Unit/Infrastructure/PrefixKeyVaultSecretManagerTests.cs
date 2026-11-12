@@ -1,6 +1,7 @@
 using Azure.Security.KeyVault.Secrets;
 using FluentAssertions;
 using Microsoft.Extensions.Configuration;
+using PoMiniGames.Infrastructure;
 
 namespace PoMiniGames.Unit;
 

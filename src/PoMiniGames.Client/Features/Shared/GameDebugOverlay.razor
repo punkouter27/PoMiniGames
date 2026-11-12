@@ -1,0 +1,203 @@
+@namespace PoMiniGamesClient.Features.Shared
+@implements IAsyncDisposable
+@inject IJSRuntime JS
+@inject NavigationManager Nav
+@inject ILogger<GameDebugOverlay> Logger
+
+@* ─────────────────────────────────────────────────────────────────────────
+   GameDebugOverlay — the one diagnostics panel every game shares.
+
+   Games used to disagree about this: PoEcosystem and PoJevArena each bound Tab
+   to their own stats view, and every other game had nothing (or hid an FPS
+   readout inside a one-off options drawer). Now GameShell renders this for every
+   game, and Tab means the same thing everywhere: show/hide live frame rate,
+   frame time, heap and viewport, plus any per-game rows the page passes through
+   GameShell's `Diagnostics` slot.
+
+   Gesture rules live in wwwroot/js/game-debug.js: Tab is only claimed while the
+   player is in the game area — never while a dialog, the intro card or a form
+   control has focus — so it stays the browser's focus mover everywhere else.
+   Escape closes the panel.
+   ───────────────────────────────────────────────────────────────────────── *@
+
+@if (Enabled)
+{
+    <button type="button" class="gps-stats-toggle app-btn app-btn--secondary app-btn--sm"
+            aria-expanded="@(_open ? "true" : "false")" aria-controls="game-diagnostics"
+            @onclick="ToggleAsync">Stats <kbd class="gps-kbd">Tab</kbd></button>
+}
+@if (_open)
+{
+    <aside id="game-diagnostics" class="gps-debug" role="region" aria-label="Game diagnostics" data-glass>
+        <header class="gps-debug-head">
+            <span class="gps-debug-title">Diagnostics</span>
+            <span class="gps-debug-keys">
+                <kbd class="gps-kbd">Tab</kbd> hide
+                <kbd class="gps-kbd">Esc</kbd>
+            </span>
+            <button type="button" class="app-btn app-btn--ghost app-btn--sm" aria-label="Close stats"
+                    @onclick="ToggleAsync">Close</button>
+        </header>
+
+        <dl class="gps-debug-grid">
+            <dt>FPS</dt>
+            <dd class="@_fpsTier">@_fps</dd>
+            <dt>Frame</dt>
+            <dd>@_frameMs ms</dd>
+            @if (_heapMb >= 0)
+            {
+                <dt>Heap</dt>
+                <dd>@_heapMb.ToString("0.0") MB</dd>
+            }
+            @if (_cores > 0)
+            {
+                <dt>Cores</dt>
+                <dd>@_cores</dd>
+            }
+            <dt>Viewport</dt>
+            <dd>@_width×@_height @(_dpr != 1 ? $"· {_dpr:0.##}×" : null)</dd>
+            @if (!string.IsNullOrWhiteSpace(GameKey))
+            {
+                <dt>Game</dt>
+                <dd>@GameKey</dd>
+            }
+            <dt>Route</dt>
+            <dd>@Nav.ToBaseRelativePath(Nav.Uri)</dd>
+            @if (Items != null)
+            {
+                foreach (var item in Items)
+                {
+                    <dt>@item.Label</dt>
+                    <dd>@item.Value</dd>
+                }
+                @foreach (var item in _details)
+                {
+                    <dt>@item.label</dt>
+                    <dd>@item.value</dd>
+                }
+            }
+        </dl>
+        @if (ChildContent != null)
+        {
+            <div class="gps-debug-extra">@ChildContent</div>
+        }
+    </aside>
+}
+
+@code {
+    /// <summary>
+    /// Off for a page that already has its own Tab binding (PoEcosystem's world
+    /// dashboard, PoJevArena's stats sheet), so Tab never opens two panels.
+    /// </summary>
+    [Parameter] public bool Enabled { get; set; } = true;
+
+    /// <summary>Catalog key of the game, shown as a row. Optional.</summary>
+    [Parameter] public string? GameKey { get; set; }
+
+    /// <summary>Per-game detailed stats, in the same StatItem shape the end modal uses.</summary>
+    [Parameter] public IEnumerable<Models.StatItem>? Items { get; set; }
+
+    /// <summary>Optional rich HUD/widgets rendered below the diagnostics rows inside the Tab panel.</summary>
+    [Parameter] public RenderFragment? ChildContent { get; set; }
+
+    private DotNetObjectReference<GameDebugOverlay>? _ref;
+    private IJSObjectReference? _module;
+    private bool _open;
+    private bool _wired;
+    private Task ToggleAsync() => JS.InvokeVoidAsync("poGameDebug.toggle").AsTask();
+
+    private double _fps;
+    private double _frameMs;
+    private double _heapMb = -1;
+    private int _cores;
+    private double _dpr = 1;
+    private int _width;
+    private int _height;
+    private DetailDto[] _details = [];
+
+    private string _fpsTier => _fps >= 55 ? "gps-debug-ok" : _fps >= 30 ? "gps-debug-warn" : "gps-debug-bad";
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (!firstRender || !Enabled || _wired) return;
+        try
+        {
+            _wired = true;
+            _module ??= await JS.InvokeAsync<IJSObjectReference>("import", "./js/game-debug.js");
+            _ref ??= DotNetObjectReference.Create(this);
+            await JS.InvokeVoidAsync("poGameDebug.start", _ref);
+        }
+        catch (JSException ex)
+        {
+            Logger.LogWarning(ex, "Could not initialize game diagnostics");
+            _wired = false;
+        }
+    }
+
+    [JSInvokable]
+    public async Task OnToggle(bool open)
+    {
+        _open = open;
+        if (open) await ReadEnvAsync();
+        StateHasChanged();
+    }
+
+    [JSInvokable]
+    public async Task OnSample(double fps, double frameMs)
+    {
+        _fps = fps;
+        _frameMs = frameMs;
+        if (_open)
+        {
+            await ReadEnvAsync();
+            StateHasChanged();
+        }
+    }
+
+    private async Task ReadEnvAsync()
+    {
+        try
+        {
+            var env = await JS.InvokeAsync<EnvDto>("poGameDebug.env");
+            _heapMb = env.heapMb;
+            _cores = env.cores;
+            _dpr = env.dpr <= 0 ? 1 : env.dpr;
+            _width = env.width;
+            _height = env.height;
+            _details = env.details;
+        }
+        catch (JSException ex) { Logger.LogWarning(ex, "Could not read game diagnostics"); }
+    }
+
+    public async ValueTask DisposeAsync()
+    {
+        if (_wired)
+        {
+            try { await JS.InvokeVoidAsync("poGameDebug.stop"); } catch { /* page gone */ }
+            _wired = false;
+        }
+        _ref?.Dispose();
+        _ref = null;
+        if (_module is not null)
+        {
+            try { await _module.DisposeAsync(); } catch (JSDisconnectedException) { }
+            _module = null;
+        }
+    }
+
+    private sealed class EnvDto
+    {
+        public double heapMb { get; set; } = -1;
+        public int cores { get; set; }
+        public double dpr { get; set; } = 1;
+        public int width { get; set; }
+        public int height { get; set; }
+        public DetailDto[] details { get; set; } = [];
+    }
+
+    private sealed class DetailDto
+    {
+        public string label { get; set; } = "";
+        public string value { get; set; } = "";
+    }
+}

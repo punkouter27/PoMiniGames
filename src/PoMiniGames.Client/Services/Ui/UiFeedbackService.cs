@@ -63,6 +63,10 @@ public sealed class UiFeedbackService : IAsyncDisposable
     private static readonly int[] HapticComplete = { 12, 28, 12 };
     private static readonly int[] HapticError = { 40 };
     private static readonly int[] HapticStart = { 10, 30, 16 };
+    private static readonly double[] CompleteChordNotes = [523.25, 659.25, 783.99];
+    private static readonly double[] StartChordNotes = [392.00, 523.25, 659.25];
+    private static readonly int[] MilestoneHaptic = [12, 40, 18];
+    private static readonly int[] MilestoneDurations = [80, 80, 180];
 
     /// <summary>
     /// Fire a named cue from the shared vocabulary, with the game's own timbre.
@@ -172,7 +176,7 @@ public sealed class UiFeedbackService : IAsyncDisposable
     {
         if (!await CueAsync("ui", "confirm", HapticComplete))
         {
-            await PlayChordAsync(new[] { 523.25, 659.25, 783.99 }, 220, 0.12);
+            await PlayChordAsync(CompleteChordNotes, 220, 0.12);
             await VibrateAsync(HapticComplete);
         }
     }
@@ -198,7 +202,7 @@ public sealed class UiFeedbackService : IAsyncDisposable
         if (scope is not null && await CueAsync(scope, "start", HapticStart)) return;
         if (!await CueAsync("ui", "open", HapticStart))
         {
-            await PlayChordAsync(new[] { 392.00, 523.25, 659.25 }, 280, 0.15);
+            await PlayChordAsync(StartChordNotes, 280, 0.15);
             await VibrateAsync(HapticStart);
         }
     }
@@ -280,17 +284,18 @@ public sealed class UiFeedbackService : IAsyncDisposable
     /// with a short vibration burst on supporting devices. The audio is the
     /// milestone cue; the haptic reinforces it for tactile-first users.
     /// </summary>
+#pragma warning disable CA1822 // Preserved as scoped service instance method for DI callers.
     public async ValueTask PersonalBestAsync()
     {
         // "ui/confirm" carries the milestone; the win-scale haptic distinguishes it
         // from an ordinary confirmation on tactile-first devices.
-        if (!await CueAsync("ui", "confirm", new[] { 12, 40, 18 }))
+        if (!await CueAsync("ui", "confirm", MilestoneHaptic))
         {
             await PlayArpeggioAsync(
-                new[] { 523.25, 659.25, 783.99 },
-                new[] { 80, 80, 180 },
+                CompleteChordNotes,
+                MilestoneDurations,
                 0.16,
-                vibrate: new[] { 12, 40, 18 });
+                vibrate: MilestoneHaptic);
         }
     }
 

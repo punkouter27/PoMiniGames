@@ -22,6 +22,7 @@ namespace PoMiniGames.Unit.Features.PoBrawl;
 /// </remarks>
 public class PoBrawlMatchServiceTests
 {
+    private static readonly string[] ExpectedConnIds = ["conn-1", "conn-2"];
     // ── The golden script — must match tests/pobrawl-rollback.test.mjs (GOLDEN) ──
     private static readonly JsonElement Contract =
         JsonDocument.Parse(File.ReadAllText(Path.Combine(AppContext.BaseDirectory, "pobrawl-rollback-golden.json"))).RootElement;
@@ -279,7 +280,7 @@ public class PoBrawlMatchServiceTests
         p1Result.OpponentId.Should().Be("bob");
         p2Result.OpponentId.Should().Be("alice");
         // The pump sends results to these, not to the lobby roster's connection ids.
-        match.ConnectionIds.Should().BeEquivalentTo(new[] { "conn-1", "conn-2" });
+        match.ConnectionIds.Should().BeEquivalentTo(ExpectedConnIds);
     }
 
     /// <summary>

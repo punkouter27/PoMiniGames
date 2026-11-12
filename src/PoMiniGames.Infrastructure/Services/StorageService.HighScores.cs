@@ -51,7 +51,7 @@ public partial class StorageService
             ["BestScore"] = e.BestScore,
             // Stored as an ISO-8601 string, not a native DateTimeOffset: legacy rows wrote a
             // string, and a column holding both types breaks GetString on read.
-            ["Date"] = e.AchievedAtUtc.ToString("yyyy-MM-ddTHH:mm:ssZ"),
+            ["Date"] = e.AchievedAtUtc.ToString("yyyy-MM-ddTHH:mm:ssZ", System.Globalization.CultureInfo.InvariantCulture),
         },
         FromEntity: e => new MarbleRaceHighScore
         {
@@ -97,7 +97,7 @@ public partial class StorageService
             ["PlayerName"] = e.PlayerName,
             ["UserId"] = e.UserId,
             ["IsGuest"] = e.IsGuest,
-            ["Date"] = e.AchievedAtUtc.ToString("yyyy-MM-ddTHH:mm:ssZ"),
+            ["Date"] = e.AchievedAtUtc.ToString("yyyy-MM-ddTHH:mm:ssZ", System.Globalization.CultureInfo.InvariantCulture),
         },
         FromEntity: e => new MarbleRaceMapRecord
         {
@@ -204,7 +204,7 @@ public partial class StorageService
             ["VoxelsDestroyed"] = e.VoxelsDestroyed,
             ["Won"] = e.Won,
             // ISO-8601 string, matching every sibling board's date convention.
-            ["Date"] = e.AchievedAtUtc.ToString("yyyy-MM-ddTHH:mm:ssZ"),
+            ["Date"] = e.AchievedAtUtc.ToString("yyyy-MM-ddTHH:mm:ssZ", System.Globalization.CultureInfo.InvariantCulture),
         },
         FromEntity: e => new PoVoxelStrikeHighScore
         {
@@ -264,7 +264,7 @@ public partial class StorageService
             ["NetWorth"] = e.NetWorth,
             ["Species"] = e.Species,
             ["ColonySurvived"] = e.ColonySurvived,
-            ["Date"] = e.AchievedAtUtc.ToString("yyyy-MM-ddTHH:mm:ssZ"),
+            ["Date"] = e.AchievedAtUtc.ToString("yyyy-MM-ddTHH:mm:ssZ", System.Globalization.CultureInfo.InvariantCulture),
         },
         FromEntity: e => new PoMuleHighScore
         {

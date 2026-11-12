@@ -44,5 +44,5 @@ public readonly record struct PoVoxelStrikeScore
 
     public static implicit operator int(PoVoxelStrikeScore score) => score.Value;
 
-    public override string ToString() => Value.ToString();
+    public override string ToString() => Value.ToString(System.Globalization.CultureInfo.InvariantCulture);
 }

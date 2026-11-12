@@ -1,7 +1,7 @@
 using System.Text.Json;
 using Microsoft.JSInterop;
 using PoMiniGames.Shared.Games.PoEcosystem;
-using PoMiniGamesClient.Games.PoEcosystem.Models;
+using PoMiniGamesClient.Features.PoEcosystem.Models;
 
 using PoMiniGamesClient.Services.Auth;
 using PoMiniGamesClient.Services.Http;

@@ -1,0 +1,68 @@
+/* PoMiniGames Motion & Reduced-Motion Tokens (Rule 5) */
+/* ── Reduce motion (single source of truth) ─────────────────────────────────
+   `data-motion="reduce"` is set when EITHER the user opted in (Profile →
+   Preferences) OR the OS asks for reduced motion. Both are resolved to this one
+   attribute by the pre-paint script in index.html and kept live by appPrefs.js,
+   mirroring how `data-theme` resolves `prefers-color-scheme`. Resolving in JS is
+   what lets the two sources share one rule instead of needing a duplicate
+   `@media (prefers-reduced-motion)` copy of every declaration below — see the
+   note at the foot of this file.
+
+   Collapsing the motion tokens is most of the job, since animated components
+   read their timing from them. The blanket rule catches the hand-rolled keyframe
+   animations that predate the tokens. `!important` is load-bearing: it has to
+   beat per-component scoped-CSS animation declarations it knows nothing about. */
+:root[data-motion="reduce"] {
+  --dur-fast: 0s;
+  --dur-base: 0s;
+  --dur-slow: 0s;
+  --dur-spring: 0s;
+}
+
+:root[data-motion="reduce"] *,
+:root[data-motion="reduce"] *::before,
+:root[data-motion="reduce"] *::after {
+  animation-duration: 0.001s !important;
+  animation-iteration-count: 1 !important;
+  transition-duration: 0.001s !important;
+  scroll-behavior: auto !important;
+}
+:root[data-motion="reduce"] .login-mesh,
+:root[data-motion="reduce"] .skeleton {
+  animation: none !important;
+}
+
+/* Cross-document navigation transition — uses the browser's native
+   View Transitions API where supported (Chrome/Edge 111+). */
+@view-transition {
+  navigation: auto;
+}
+
+::view-transition-old(root),
+::view-transition-new(root) {
+  animation-duration: var(--dur-fast);
+  animation-timing-function: var(--ease-standard);
+}
+
+/* Card-to-game morph. js/app.js names the pressed hub card's heading `po-hero` and, once the
+   router has swapped the page in place, the game's title in the top bar, so the card's icon
+   and title travel into the title instead of cross-fading with the page. */
+
+::view-transition-group(po-hero) {
+  animation-duration: 420ms;
+  animation-timing-function: cubic-bezier(0.2, 0.9, 0.25, 1);
+}
+:root[data-motion='reduce']::view-transition-group(po-hero),
+:root[data-motion='reduce']::view-transition-old(po-hero),
+:root[data-motion='reduce']::view-transition-new(po-hero) {
+  animation: none;
+}
+
+/* a11y: honour reduced-motion for the cross-document transition too — the
+   root cross-fade is motion the user opted out of. Skipping the animation makes
+   the swap instant (the API still no-ops gracefully where unsupported). */
+@media (prefers-reduced-motion: reduce) {
+  ::view-transition-old(root),
+  ::view-transition-new(root) {
+    animation: none;
+  }}

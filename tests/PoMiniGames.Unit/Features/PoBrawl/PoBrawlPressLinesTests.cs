@@ -1,7 +1,7 @@
 using System.Text.RegularExpressions;
 using FluentAssertions;
 using PoMiniGames.Shared.Games;
-using PoMiniGamesClient.Games.PoBrawl;
+using PoMiniGamesClient.Features.PoBrawl;
 
 namespace PoMiniGames.Unit.Features.PoBrawl;
 

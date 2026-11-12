@@ -10,7 +10,7 @@ using PoMiniGamesClient.Services.Ui;
 
 namespace PoMiniGamesClient.Services.Auth;
 
-public class AuthStateService
+public sealed class AuthStateService : IDisposable
 {
     private readonly ApiService _api;
     private readonly IJSRuntime _js;
@@ -598,4 +598,10 @@ public class AuthStateService
     }
 
     private void NotifyStateChanged() => StateChanged?.Invoke();
+
+    public void Dispose()
+    {
+        _initGate.Dispose();
+        GC.SuppressFinalize(this);
+    }
 }

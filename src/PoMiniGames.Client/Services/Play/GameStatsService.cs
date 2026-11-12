@@ -1,3 +1,4 @@
+#pragma warning disable CA1822 // Preserved as scoped service instance API for injected callers and tests.
 using Microsoft.JSInterop;
 using PoMiniGamesClient.Models;
 using System.Text.Json;
@@ -14,9 +15,9 @@ namespace PoMiniGamesClient.Services.Play;
 public class GameStatsService
 {
     private static readonly Dictionary<string, PlayerStats> _statsCache = new();
-    private const string StorageKeyPrefix = "pomini_stats_";
-    private const string AdaptiveKeyPrefix = "pomini_adaptive_";
-    private const string LastGameKey = "pomini_last_game";
+    private const string StorageKeyPrefix = "pominigames:stats:";
+    private const string AdaptiveKeyPrefix = "pominigames:adaptive:";
+    private const string LastGameKey = "pominigames:last-game";
 
     public PlayerStats GetStats(string gameKey, string playerName)
     {
@@ -165,7 +166,7 @@ public class GameStatsService
     // Games with no outcome and no score (the simulations) carry neither a W/L record nor a leaderboard entry. A session count is
     // the only honest thing the profile can report for them — inventing a score
     // would be a new feature, not stats coverage.
-    private const string PlayCountKeyPrefix = "pomini_plays_";
+    private const string PlayCountKeyPrefix = "pominigames:plays:";
 
     /// <remarks>
     /// Keyed by the stable player id, NOT the display name. The name is mutable and
@@ -199,7 +200,7 @@ public class GameStatsService
     public int RecordPlay(string gameKey)
     {
         var next = GetPlayCount(gameKey) + 1;
-        LocalStorageService.SetItem(PlayCountKey(gameKey), next.ToString());
+        LocalStorageService.SetItem(PlayCountKey(gameKey), next.ToString(System.Globalization.CultureInfo.InvariantCulture));
         return next;
     }
 
@@ -274,7 +275,7 @@ public class GameStatsService
 
     private string GetOrCreatePlayerId()
     {
-        const string StorageKey = "pomini_player_id";
+        const string StorageKey = "pominigames:player-id";
         var playerId = LocalStorageService.GetItem<string>(StorageKey);
         if (string.IsNullOrEmpty(playerId))
         {
@@ -327,7 +328,7 @@ public static class LocalStorageService
             return;
         }
 
-        _jsRuntime?.InvokeVoidAsync("window.localStorage.setItem", key, value);
+        _ = _jsRuntime?.InvokeVoidAsync("window.localStorage.setItem", key, value).AsTask();
     }
 
     public static T? GetItem<T>(string key, JsonTypeInfo<T>? typeInfo = null)
