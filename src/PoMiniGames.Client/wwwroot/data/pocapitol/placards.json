@@ -1,0 +1,29 @@
+{
+  "note": "Short crowd signage drawn on the boards carried by protesters. Neutral, non-partisan phrases only: the scenario is fiction and the project rules keep it free of real political messaging. Replace or extend this array with your own and the game picks it up on the next load.",
+  "placards": [
+    "WE ARE HERE",
+    "LET US IN",
+    "JANUARY 6",
+    "DC 2021",
+    "PRESS",
+    "WE THE PEOPLE",
+    "FREE SPEECH",
+    "PEACE",
+    "USA",
+    "OUR HOUSE",
+    "CITIZEN",
+    "HEAR US",
+    "ONE NATION",
+    "LIBERTY",
+    "WITNESS",
+    "FILMING",
+    "HISTORY",
+    "REMEMBER",
+    "WE CAME",
+    "FAMILIES",
+    "NEIGHBORS",
+    "VETERAN",
+    "CIVIC",
+    "ASSEMBLY"
+  ]
+}

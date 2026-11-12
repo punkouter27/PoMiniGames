@@ -29,7 +29,7 @@ reconstruction.
   standard gamepad sticks, right trigger, left-stick click, Start.
 - **Clock:** one real second is one minute of the day, 12:50 pm to the 6:00 pm curfew
   (310 seconds). The curfew ends any attempt. Light fades through the afternoon.
-- **Crowd:** always exactly 128 protestors (1 human + 127, or 128 CPU), starting out on the
+- **Crowd:** always exactly 512 protestors (1 human + 511, or 512 CPU), starting out on the
   grass about 50 metres behind the first barricade. Deterministic
   temperaments: about 30% pushers, 35% followers, 30% bystanders who film and stay shallow,
   5% street medics. Morale falls under gas, spray, batons and flash-bangs and surges when a
@@ -55,12 +55,44 @@ reconstruction.
   separation steering move each raider; `world.js` still owns collision. Demo follows the
   living raider with most ordered milestones, then shortest remaining distance, with a
   light hand-held sway (off under reduced motion). A `doors` outcome ends on a shot of the
-  empty chamber.
+  empty chamber. An attempt opens on a five-second establishing shot that cranes up above
+  the west front and pans across the grounds before settling behind the player; the world is
+  held still for it, so it costs nothing on the clock, and it is skipped under reduced motion.
 - **Presentation:** procedural public motifs: dome and drum, inauguration stands, bike racks
   that bow and topple, Crypt columns, Rotunda rings, Statuary Hall figures without
   likenesses, barricaded House doors, the chamber and the people in it. About 1,400 unsimulated distant
   figures stand for the crowd outside. Varied dress, four banner kinds, raised phones,
   breath in the cold, papers on the floor, cracked panes, gas clouds.
+- **Scenery accuracy (2026-11-11):** the west front and the three interiors are drawn
+  against the same public references. Exterior: the Olmsted terrace with raking marble
+  cheeks, balusters and newel standards; an elliptical sandstone arch with voussoirs and
+  keystone over the Lower West Terrace doorway; bronze lamp standards; bunting; green snow
+  fencing with fallen panels; "AREA CLOSED" boards; a scaffold press tower; and a masonry
+  drum under the dome so the Rotunda's inner sphere no longer shows from outside as a mound.
+  Interiors: the Rotunda's eight arched gilt frames, olive-wreath frieze, cornice, Frieze of
+  American History, Apotheosis canopy and brass-ringed marble centre; the Crypt's rows of
+  Aquia Creek Doric columns, Seneca paving, colony niches and eight-point compass stone; and
+  Statuary Hall's Breccia columns under Carrara capitals, black and white marble floor,
+  cast-steel lantern, Car of History clock and relief eagle. Police wear two forces' dress,
+  Capitol Police navy and Metropolitan Police hi-vis. Decorative only: the walkable
+  footprint, collisions and objectives are unchanged.
+- **The city around it (2026-11-11):** the grounds run out to 420 m by 520 m and carry the
+  landmarks within about a mile of the Capitol, each on its true bearing with its real
+  distance compressed to fit (`campus.js`): the Washington Monument and the Mall museums to
+  the west, Union Station and the NoMa blocks north, Eastern Market, Lincoln Park and a
+  terrace of Capitol Hill row houses east, and L'Enfant Plaza, the Marine Barracks and the
+  Wharf south, with the House and Senate office buildings and the Botanic Garden conservatory
+  closer in. The campus batches its repeated blocks, windows and branches into instanced
+  meshes, so the aerial view costs fewer draw calls than before any of it was drawn.
+- **Bodies (2026-11-11):** a person brought down falls in stages — weight, knees, tip in the
+  direction of the round, settle — and comes to rest on the heap around them: pushed clear of
+  neighbours, lifted onto the layer below, rolled. A heap is at most three bodies deep. Heads and
+  torsos turn smoothly and officers rock on their feet under load; the first line's bike racks bow,
+  shove and rock with the crowd's pressure. No injury is shown: no blood, no severed limbs.
+- **Gunsmoke and stepping over the fallen:** muzzle smoke lives four times as long (3.6-9.2 s,
+  thinner and slower), so a firefight builds a haze over the line. In the armed demo the fallen
+  are neither steering obstacles nor separation partners: survivors walk over them and keep
+  advancing, and anyone shot on a heap settles onto it a layer higher.
 - **Rendering look:** a cloudy sky dome lights the scene as well as filling the background;
   the sun follows its real 6 January path from about 29° up at 12:50 pm to sunset near five.
   Stone, paving and lawn carry generated, world-mapped detail; flags ripple; every figure

@@ -19,7 +19,8 @@ const SUN = [[0, 1.6], [0.6, 1.35], [0.8, 0.8], [0.92, 0.3], [1, 0.08]];
 const FILL = [[0, 2.6], [0.8, 2.1], [1, 0.9]];
 const ENV = [[0, 0.75], [0.8, 0.6], [0.92, 0.32], [1, 0.12]];
 // Haze: thick enough that the far crowd and the dome sit in the air, as on a raw January day.
-const FOG_OUT = 0.0062, FOG_GAS = 0.024;
+// Kept light enough that the city a mile out still reads as silhouettes through it.
+const FOG_OUT = 0.0048, FOG_GAS = 0.024;
 // The environment light is re-baked only when the sky has visibly changed.
 const ENV_STAGES = [0, 0.62, 0.78, 0.88, 0.96];
 
@@ -64,7 +65,7 @@ export function sunDirection(day, out = new THREE.Vector3()) {
     return out.set(-Math.cos(azimuth) * Math.cos(altitude), Math.sin(altitude), -Math.sin(azimuth) * Math.cos(altitude));
 }
 
-export function createScene(host, { figure } = {}) {
+export function createScene(host, { figure, osm, signs = [] } = {}) {
     const scene = new THREE.Scene();
     scene.fog = new THREE.FogExp2(SKY[0][1], FOG_OUT);
     // The composer does the anti-aliasing (MSAA on its own target), so the canvas needs none.
@@ -78,7 +79,8 @@ export function createScene(host, { figure } = {}) {
     renderer.domElement.tabIndex = 0;
     renderer.domElement.setAttribute('aria-label', 'PoCapitol third-person scene. Click to look around.');
     host.append(renderer.domElement);
-    const camera = new THREE.PerspectiveCamera(52, 1, 0.1, 280);
+    // Far enough to hold the city ring a mile out; near stays 0.1 so contact detail reads.
+    const camera = new THREE.PerspectiveCamera(52, 1, 0.1, 420);
     // Everything see-through (sky, sprites, decals, cloth) lives on layer 1. The main camera
     // sees both layers; the depth camera used by AO and depth of field sees solids only.
     camera.layers.enable(1);
@@ -100,6 +102,15 @@ export function createScene(host, { figure } = {}) {
     placeSun();
 
     const time = { value: 0 };
+    // One wind for the whole scene, in m/s: banners, cloth, smoke, gas, breath and the snow all
+    // read the same vector, set once a frame from the weather. `uniform` is what the flag shader
+    // reads, so a gust crossing the lawn stiffens every banner on it in the same frame.
+    const wind = { x: 0, z: 0, uniform: { value: new THREE.Vector2(0, 0) } };
+    // Current tone-mapping exposure, eased toward whatever the eye would have adapted to.
+    let exposure = 1.1;
+    // Where each person last left a footprint, so prints fall about a stride apart.
+    const prints = new Map();
+    let phone = 0;
     let breathClock = 0;
     const surfaceDetail = { value: 1 };
     const sky = createSky();
@@ -155,17 +166,20 @@ export function createScene(host, { figure } = {}) {
     function box(x, y, z, w, h, d, color, parent) {
         return mesh(new THREE.BoxGeometry(w, h, d), color, x, y, z, parent);
     }
-    function column(x, z, height = 8, y = 0, girth = 1) {
+    // `palette` is for the one order in the building that is not white marble: Statuary Hall's
+    // variegated Breccia shaft under a Carrara capital.
+    function column(x, z, height = 8, y = 0, girth = 1, palette = null) {
+        const p = palette ?? { plinth: '#b8af9e', base: '#c6bca9', shaft: '#e2d9c8', collar: '#d5cca9', capital: '#ede5d6', abacus: '#f1eadb' };
         // Stepped square plinth base
-        box(x, y + 0.14, z, 1.8 * girth, 0.28, 1.8 * girth, '#b8af9e');
+        box(x, y + 0.14, z, 1.8 * girth, 0.28, 1.8 * girth, p.plinth);
         // Circular molded torus base
-        mesh(new THREE.CylinderGeometry(0.72 * girth, 0.82 * girth, 0.26, 24), '#c6bca9', x, y + 0.41, z);
+        mesh(new THREE.CylinderGeometry(0.72 * girth, 0.82 * girth, 0.26, 24), p.base, x, y + 0.41, z);
         // Fluted entasised column shaft
-        mesh(new THREE.CylinderGeometry(0.52 * girth, 0.65 * girth, height - 1.2, 24), '#e2d9c8', x, y + 0.54 + (height - 1.2) / 2, z);
+        mesh(new THREE.CylinderGeometry(0.52 * girth, 0.65 * girth, height - 1.2, 24), p.shaft, x, y + 0.54 + (height - 1.2) / 2, z);
         // Classical Corinthian / Composite capital: astragal collar, bell, and abacus
-        mesh(new THREE.CylinderGeometry(0.58 * girth, 0.53 * girth, 0.16, 24), '#d5cca9', x, y + height - 0.58, z);
-        mesh(new THREE.CylinderGeometry(0.78 * girth, 0.55 * girth, 0.38, 24), '#ede5d6', x, y + height - 0.31, z);
-        box(x, y + height - 0.06, z, 1.68 * girth, 0.16, 1.68 * girth, '#f1eadb');
+        mesh(new THREE.CylinderGeometry(0.58 * girth, 0.53 * girth, 0.16, 24), p.collar, x, y + height - 0.58, z);
+        mesh(new THREE.CylinderGeometry(0.78 * girth, 0.55 * girth, 0.38, 24), p.capital, x, y + height - 0.31, z);
+        box(x, y + height - 0.06, z, 1.68 * girth, 0.16, 1.68 * girth, p.abacus);
     }
     function painted(draw, width, height, options = {}) {
         const canvas = document.createElement('canvas');
@@ -198,7 +212,9 @@ export function createScene(host, { figure } = {}) {
         return value;
     }
 
-    box(0, -0.3, 30, 230, 0.5, 270, '#657360');
+    // The grounds run out far enough to carry the city around the Capitol. The far edge sits in
+    // the haze, so the plane reads as ground to the horizon rather than a lawn with an end.
+    box(0, -0.3, 40, 420, 0.5, 520, '#657360');
     box(0, -0.04, 42, 24, 0.12, 60, '#b8b2a5');
     for (let z = 18; z < 70; z += 4) box(0, 0.03, z, 22, 0.015, 0.04, '#93948c');
     // Bare January trees: a trunk that forks three times, each fork a little thinner.
@@ -258,6 +274,14 @@ export function createScene(host, { figure } = {}) {
     for (let step = 0; step < 5; step++) {
         for (const x of [-22, 22]) box(x, step * 0.12, 17.8 - step * 0.5, 28, 0.2, 1, '#d9d3c4');
     }
+    // The central terrace: four worn treads up to the portico landing, in the gap between the
+    // stands. The heights match groundHeight() exactly, so a boot lands on the stone it appears
+    // to land on — and the crowd has to climb it to reach the doors.
+    for (let tread = 1; tread <= 4; tread++) {
+        const top = 0.02 + tread * 0.09;
+        box(0, top / 2, 20.5 - (tread - 1), 18, top, 1.02, '#d9d3c4');
+    }
+    box(0, 0.19, 16, 18, 0.38, 2, '#d5cfc0');
     box(0, 10, 13, 23, 1.2, 8, '#e5ddcd');
     const pediment = new THREE.Shape();
     pediment.moveTo(-12, 0); pediment.lineTo(12, 0); pediment.lineTo(0, 4); pediment.closePath();
@@ -268,6 +292,11 @@ export function createScene(host, { figure } = {}) {
     }
     for (const c of columns) column(c.x, c.z, c.height);
     label('PoCAPITOL', 0, 9.2, 17.7, 9);
+    // The drum's lower wall. The Rotunda's inner dome rises to 19 m, well above the wings'
+    // roofline, so without this the sphere shows from outside as a smooth mound under the dome.
+    mesh(new THREE.CylinderGeometry(11.9, 12.4, 9.2, 48), '#ded7c9', 0, 14.8, -14);
+    mesh(new THREE.CylinderGeometry(12.5, 12.6, 0.5, 48), '#e7e0d2', 0, 10.4, -14);
+    mesh(new THREE.CylinderGeometry(12.15, 12.15, 0.35, 48), '#e7e0d2', 0, 19.4, -14);
     // The dome: drum and peristyle of 36 columns, attic, cast-iron shell with ribs and a ring
     // of windows, lantern with its own colonnade, and a robed bronze figure on top.
     mesh(new THREE.CylinderGeometry(11, 12.5, 6, 48), '#d8d1c3', 0, 22, -14);
@@ -362,15 +391,10 @@ export function createScene(host, { figure } = {}) {
     for (const side of [-1, 1]) for (const z of [-5, -11, -17, -23]) {
         box(side * 16.65, 4, z, 0.25, 7.5, 1.1, '#e8dfc9');
         box(side * 16.4, 7.3, z, 0.55, 0.45, 1.6, '#baae97');
-        // Abstract panels do not pass invented artwork off as the actual historical paintings.
-        box(side * 16.5, 3.8, z + 2.1, 0.12, 3.7, 3.3, '#947544');
-        box(side * 16.4, 3.8, z + 2.1, 0.12, 3.25, 2.85, '#5d6665');
     }
     label('STATUARY HALL', 0, 6.6, -25.65, 7);
-    // Statuary Hall: plain figures on plinths (no likenesses) and a tiled floor.
-    for (let tx = -10; tx <= 10; tx += 4) for (let tz = -43; tz <= -31; tz += 4) {
-        if (((tx + 10) / 4 + (tz + 43) / 4) % 2 === 0) box(tx, 0.105, tz, 2, 0.02, 2, '#3c3f45');
-    }
+    // Statuary Hall's plain figures on plinths are drawn with the rest of its detail; the
+    // black and white marble floor is laid there too.
     for (const s of statues) {
         box(s.x, 0.75, s.z, 1.3, 1.5, 1.3, '#cfc6b3');
         mesh(new THREE.CapsuleGeometry(0.32, 1.1, 3, 8), '#6f5b44', s.x, 2.45, s.z);
@@ -464,7 +488,7 @@ export function createScene(host, { figure } = {}) {
         mesh(new THREE.SphereGeometry(0.24, 12, 8), '#f4ead2', x, 3.9, z).material = globeMaterial;
     }
 
-    const architecturalDetail = addArchitecturalDetail({ box, mesh, column, materials });
+    const architecturalDetail = addArchitecturalDetail({ box, mesh, column, materials, painted });
     for (const light of architecturalDetail.interiorLights) scene.add(light);
 
     const architectureBatches = [];
@@ -620,6 +644,14 @@ export function createScene(host, { figure } = {}) {
     function setMotionReduction(calmVal) {
         motionReduction = Boolean(calmVal);
     }
+    /** Lens width in degrees. The comfort setting widens it; the depth camera copies each frame. */
+    function setFov(value) {
+        const fov = Number(value);
+        if (!Number.isFinite(fov)) return camera.fov;
+        camera.fov = Math.min(85, Math.max(50, fov));
+        camera.updateProjectionMatrix();
+        return camera.fov;
+    }
     const flashLight = new THREE.PointLight('#ffffff', 0, 45, 1.2);
     scene.add(flashLight);
     const muzzleLight = new THREE.PointLight('#ffe494', 0, 16, 2.0);
@@ -637,7 +669,7 @@ export function createScene(host, { figure } = {}) {
         light.position.set(x, y, z); light.color.set(color); light.intensity = intensity;
     }
 
-    const crowd = createCrowd(scene, CROWD_SIZE + MAX_POLICE + CIVILIANS + 1, { time, groundHeight, shadowTexture: shadowBlob, figure });
+    const crowd = createCrowd(scene, CROWD_SIZE + MAX_POLICE + CIVILIANS + 1, { time, groundHeight, shadowTexture: shadowBlob, figure, wind, signs });
     const marker = mesh(new THREE.TorusGeometry(1.1, 0.08, 8, 36), '#ebce77', 0, 0.2, 23);
     marker.rotation.x = -Math.PI / 2;
     marker.material = new THREE.MeshStandardMaterial({ color: '#ebce77', emissive: '#c99a2e', emissiveIntensity: 0.6 });
@@ -646,7 +678,7 @@ export function createScene(host, { figure } = {}) {
     beacon.material = marker.material;
 
     // OpenStreetMap 3D surrounding grounds and monumental structures
-    const campus = createCampus({ surfaces, surfaceDetail });
+    const campus = createCampus({ surfaces, surfaceDetail, osm });
     scene.add(campus.group);
 
     // Tactical Unit Inspector target selection ring
@@ -707,6 +739,15 @@ export function createScene(host, { figure } = {}) {
     }
 
     const calm = () => window.PoQuality?.reduceFlashing?.() === true || matchMedia('(prefers-reduced-motion: reduce)').matches;
+    // The opening establishing shot: five seconds high over the west front, sweeping across the
+    // grounds, the crowd and the whole building before the camera drops behind the player. It
+    // runs once per attempt, holds the world still so the opening costs no clock, and is skipped
+    // for anyone who asked for reduced motion.
+    const INTRO_SECONDS = 5, INTRO_RETURN = 1.6;
+    const intro = { active: false, t: 0 };
+    const introPos = new THREE.Vector3(), introLook = new THREE.Vector3(), introAim = new THREE.Vector3();
+    function startIntro() { intro.active = !calm(); intro.t = 0; }
+    const introActive = () => intro.active;
     let followYaw = 0, cameraReady = false, closing = 0, lastSubject = null, clock = 0, lastRack = -99;
     let lastHealth = null, lastDaze = -99;
     const dazzled = new WeakSet();
@@ -719,6 +760,23 @@ export function createScene(host, { figure } = {}) {
         sky.uniforms.uTime.value = clock;
         campus.update(clock);
         const spectating = state.role === 'none';
+        // How much of the establishing shot is on screen this frame, 0 when it is not running.
+        let introWeight = 0;
+        if (intro.active) {
+            intro.t += dt;
+            if (intro.t >= INTRO_SECONDS + INTRO_RETURN) intro.active = false;
+            else {
+                const p = Math.min(1, intro.t / INTRO_SECONDS);
+                const ease = p * p * (3 - 2 * p);
+                const fadeIn = Math.min(1, intro.t / 0.9);
+                const fadeOut = intro.t <= INTRO_SECONDS ? 1 : Math.max(0, 1 - (intro.t - INTRO_SECONDS) / INTRO_RETURN);
+                introWeight = fadeIn * fadeOut;
+                // A slow arc from the south-west of the lawn round to the north-east, looking back
+                // at the west front: the plaza, the two lines and the dome all stay in frame.
+                introPos.set(-62 + 118 * ease, 48 - 8 * ease, 118 - 22 * ease);
+                introLook.set(0, 24 - 2 * ease, 0);
+            }
+        }
         const latched = options.latchedUnit;
         const inspected = options.inspectedUnit;
         const weather = options.weather;
@@ -730,9 +788,13 @@ export function createScene(host, { figure } = {}) {
             selectRing.visible = false;
         }
 
-        const subject = latched || (spectating ? selectLeader(state) : state.player);
+        const subject = latched || (spectating ? (options.director ?? selectLeader(state)) : state.player);
         host.dataset.crowdBatches = crowd.batchCount;
         host.dataset.cameraSubject = spectating ? subject?.id ?? 'none' : 'human';
+        // Phone POV: most of what the day looks like is footage from phones held up in the crowd.
+        // When the spectator camera settles on someone filming, cut to their screen for a beat.
+        const wantPhone = spectating && !latched && subject?.filming && state.status === 'active' && !calm() ? 1 : 0;
+        phone += (wantPhone - phone) * (1 - Math.exp(-dt * (wantPhone > phone ? 2.6 : 1.6)));
         if (spectating || latched) {
             if (subject) {
                 if (spectating && !latched) {
@@ -781,10 +843,24 @@ export function createScene(host, { figure } = {}) {
         const daylight = Math.min(1, (sun.intensity + fill.intensity * 2.5) / (SUN[0][1] + FILL[0][1]));
         farCrowd.setLight(0.3 + 0.62 * daylight);
         const indoorGas = state.effects.some(e => e.type === 'gas' && e.z < 14);
+        // The day's wind, gusting: the same vector drives the banners, the gas, the breath, the
+        // snow and the flags, so one weather system moves the whole scene together.
+        const gust = 1 + 0.25 * Math.sin(clock * 0.31) + 0.12 * Math.sin(clock * 1.7);
+        wind.x = (weather?.windX ?? -6.07) * gust;
+        wind.z = (weather?.windZ ?? 2.83) * gust;
+        wind.uniform.value.set(wind.x, wind.z);
         const baseFog = weather?.fogDensity ?? FOG_OUT;
         if (weather?.cloudCover !== undefined) sky.uniforms.uCloud.value = weather.cloudCover;
         const indoors = subject?.z < 15;
-        const targetFog = indoorGas ? FOG_GAS : baseFog * (indoors ? 0.22 : 1);
+        // Eye adaptation: the pupil takes a beat to catch up when you walk out of flat overcast
+        // light into stone, and a slower beat coming back out. This is most of what makes a
+        // doorway read as a threshold instead of a texture swap.
+        const wantedExposure = (indoors ? 1.62 : 1.1) * (1 + 0.1 * dusk);
+        const adaptRate = wantedExposure < exposure ? 2.2 : 1.05;
+        exposure += (wantedExposure - exposure) * (1 - Math.exp(-dt * adaptRate));
+        renderer.toneMappingExposure = exposure;
+        // The establishing shot looks through thinner air, or the whole scene would be haze.
+        const targetFog = (indoorGas ? FOG_GAS : baseFog * (indoors ? 0.22 : 1)) * (1 - 0.4 * introWeight);
         scene.fog.density += (targetFog - scene.fog.density) * (1 - Math.exp(-dt * 1.5));
 
         const goal = state.role === 'raider' || spectating ? milestones[state.milestone] : null;
@@ -794,14 +870,28 @@ export function createScene(host, { figure } = {}) {
             beacon.position.set(goal.x, 1.7, goal.z);
         }
 
-        // The first line's racks.
+        // The first line's racks. Each one is a real object in the simulation: it takes the crowd's
+        // weight, leans, rocks, and goes over when it has been leaned on long enough, sliding aside
+        // so the crowd can press up to the officers where it stood.
         const first = state.lines[0], firstDef = lineDefs[0];
+        const strain = 1 - first.integrity / 100;
+        const shove = Math.min(1, (first.pressure ?? 0) / Math.max(1, first.hold ?? 1));
         for (let i = 0; i < RACKS; i++) {
             const x = firstDef.x0 + (i + 0.5) * rackSpan / RACKS;
-            if (first.state === 'holding') {
-                const bow = (1 - first.integrity / 100) * 1.4 * Math.cos(Math.PI * x / rackSpan);
-                pose.position.set(x, 0.62, firstDef.z + 0.35 - bow);
-                pose.rotation.set(-(1 - first.integrity / 100) * 0.25, 0, 0);
+            const centre = Math.cos(Math.PI * x / rackSpan);
+            const rack = state.racks?.[i];
+            const lean = rack?.tip ?? 0, slide = rack?.slide ?? 0;
+            if (first.state === 'holding' && !rack?.fallen) {
+                const bow = strain * 1.4 * centre;
+                const push = (0.12 + 0.55 * shove) * strain * centre;
+                const rock = Math.sin(clock * (1.8 + strain * 3.4) + i * 0.85) * (0.035 + 0.075 * shove);
+                pose.position.set(x + rock * 0.9 + slide * 0.3, 0.62 - 0.1 * lean, firstDef.z + 0.35 - bow - push - lean * 0.8);
+                pose.rotation.set(-strain * 0.25 - shove * 0.12 + rock - lean * 0.5, rock * 0.6, rock * 0.5 + lean * 0.3);
+            } else if (first.state === 'holding') {
+                // Shoved over: it lies where the crowd dragged it, still rocking a little.
+                const rock = Math.sin(clock * 1.6 + i) * 0.02;
+                pose.position.set(x + slide, 0.1, firstDef.z + 0.1 + Math.abs(slide) * 0.2);
+                pose.rotation.set(-Math.PI / 2 + 0.06 + rock, slide * 0.5, rack?.id % 2 ? 0.1 : -0.1);
             } else {
                 pose.position.set(x + (i % 3 - 1) * 0.7, 0.08, firstDef.z - 0.6 - (i % 4) * 0.9);
                 pose.rotation.set(-Math.PI / 2, 0, (i * 37 % 11 - 5) * 0.12);
@@ -822,7 +912,21 @@ export function createScene(host, { figure } = {}) {
         papers.count = visiblePapers;
 
         const quiet = calm();
-        particles.update(state.effects, state.elapsed, daylight, quiet);
+        particles.update(state.effects, state.elapsed, daylight, quiet, wind);
+        // Footprints: a few hundred people walking wet grit and thin snow leave a record of
+        // where the crowd went, one boot at a time, about a stride apart.
+        if (state.status === 'active') {
+            for (const actor of state.companions) {
+                if (actor.health <= 0 || actor.z < 15.5) continue;
+                let last = prints.get(actor.id);
+                if (!last) { prints.set(actor.id, { x: actor.x, z: actor.z, side: 1 }); continue; }
+                if (Math.hypot(actor.x - last.x, actor.z - last.z) < 0.72) continue;
+                const h = actor.heading ?? 0;
+                const rx = Math.cos(h) * 0.13 * last.side, rz = -Math.sin(h) * 0.13 * last.side;
+                decals.footprint(actor.x + rx, groundHeight(actor.x + rx, actor.z + rz), actor.z + rz, h, 0.34);
+                last.x = actor.x; last.z = actor.z; last.side = -last.side;
+            }
+        }
         // World events become sparks, dust, wear and a flash of light, once each.
         for (const e of state.events) {
             if (reacted.has(e)) continue;
@@ -881,6 +985,15 @@ export function createScene(host, { figure } = {}) {
         const camDist = (spectating && !latched) ? 9.2 : 6.5;
         const camHeight = (spectating && !latched) ? 4.8 : 3.7;
         desired.set(focus.x + Math.sin(yaw) * camDist, floor + camHeight + pitch * 3, focus.z + Math.cos(yaw) * camDist);
+        // Phone POV rides at the eye of the person holding it, not on a crane behind them.
+        if (phone > 0.01 && subject) {
+            const h = subject.heading ?? 0;
+            const ex = focus.x - Math.sin(h) * 0.18, ez = focus.z - Math.cos(h) * 0.18;
+            const w = phone * 0.85;
+            desired.x += (ex - desired.x) * w;
+            desired.y += ((floor + 1.62) - desired.y) * w;
+            desired.z += (ez - desired.z) * w;
+        }
         // Recoil kick and combat suppression jitter
         if (!quiet) {
             desired.y += recoilPitch * 1.5;
@@ -921,6 +1034,13 @@ export function createScene(host, { figure } = {}) {
         } else {
             smoothLook.copy(look);
             camera.lookAt(look);
+        }
+        // The establishing shot blends position and aim together, so the camera glides up over
+        // the grounds and back down behind the player instead of cutting.
+        if (introWeight > 0) {
+            camera.position.lerp(introPos, introWeight);
+            introAim.copy(smoothLook).lerp(introLook, introWeight);
+            camera.lookAt(introAim);
         }
         // A new subject gets a gentle, subtle pull of focus (no jarring blur)
         if (spectating && subject && subject.id !== lastSubject && lastSubject !== null && clock - lastRack > 14) {
@@ -970,6 +1090,7 @@ export function createScene(host, { figure } = {}) {
             }
         }
         renderer.info.reset();
+        post.setPhone(phone);
         post.render(dt, clock, quiet, camera, sun.position);
         host.dataset.drawCalls = renderer.info.render.calls;
     }
@@ -1014,5 +1135,5 @@ export function createScene(host, { figure } = {}) {
         geometries.forEach(g => g.dispose()); materials.forEach(m => m.dispose()); textures.forEach(t => t.dispose());
         renderer.dispose(); renderer.forceContextLoss(); renderer.domElement.remove();
     }
-    return { canvas: renderer.domElement, render, aim, pickUnit, applyQuality, dispose, renderer, setTracerMode, setMotionReduction };
+    return { canvas: renderer.domElement, render, aim, pickUnit, applyQuality, dispose, renderer, camera, startIntro, introActive, setTracerMode, setMotionReduction, setFov };
 }

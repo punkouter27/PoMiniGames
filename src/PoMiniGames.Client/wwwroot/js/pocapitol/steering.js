@@ -8,6 +8,7 @@ import { createGrid } from './physics.js';
 const NEIGHBOR_RADIUS = 1.35;
 
 export function createSteering(capacity) {
+    let ticks = 0;
     const vehicles = Array.from({ length: capacity }, () => {
         const vehicle = new Vehicle();
         vehicle.updateOrientation = false;
@@ -31,6 +32,7 @@ export function createSteering(capacity) {
      * bodies: obstacles, other actors
      */
     function step(agents, bodies, dt) {
+        ticks++;
         while (bodyPool.length < bodies.length) bodyPool.push(new GameEntity());
         for (let i = 0; i < bodies.length; i++) bodyPool[i].position.set(bodies[i].x, 0, bodies[i].z);
 
@@ -96,6 +98,9 @@ export function createSteering(capacity) {
             agent.crowding = neighbors.length;
             agent.retreatingNear = retreatingNear;
             agent.surgingNear = surgingNear;
+            // People per square metre under this agent's own feet: what a crowd is actually
+            // compressed to, which is what carries someone along when they stop walking.
+            agent.density = neighbors.length / (Math.PI * NEIGHBOR_RADIUS * NEIGHBOR_RADIUS);
             if (aheadBlocking > 0 && Math.abs(agent.x) < 4.5) {
                 vehicle.maxSpeed = agent.speed * Math.max(0.55, 1 - aheadBlocking * 0.15);
             }
@@ -103,6 +108,18 @@ export function createSteering(capacity) {
 
         for (const agent of agents) {
             const vehicle = vehicles[agent.id];
+            // Squeezed past about 4 people/m^2 nobody is steering: the body is carried by the
+            // people behind it. Add a lateral shove the agent did not ask for, deterministic in
+            // id and step so a replay looks the same, and larger the tighter the pack.
+            if (agent.crowding > 5 && agent.speed > 0) {
+                const load = Math.min(1, (agent.crowding - 5) / 7);
+                const phase = agent.id * 2.399963 + ticks * 0.17;
+                const jitter = Math.sin(phase) * load * 0.9;
+                const dx = agent.targetX - agent.x, dz = agent.targetZ - agent.z;
+                const d = Math.hypot(dx, dz) || 1;
+                vehicle.seek.target.x += (-dz / d) * jitter;
+                vehicle.seek.target.z += (dx / d) * jitter;
+            }
             vehicle.update(dt);
             agent.nextX = vehicle.position.x;
             agent.nextZ = vehicle.position.z;

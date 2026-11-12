@@ -4,7 +4,7 @@ import { test } from 'node:test';
 // How a body answers a hit, tested without a renderer: collapse timing, tip direction and the
 // body-frame split of an impact. The crowd renderer reads exactly these helpers.
 const client = new URL('../src/PoMiniGames.Client/wwwroot/', import.meta.url);
-const { collapseStage, tipAxes, impactFrame } = await import(new URL('js/pocapitol/collapse.js', client));
+const { collapseStage, tipAxes, impactFrame, restPlace } = await import(new URL('js/pocapitol/collapse.js', client));
 
 test('a torso hit braces before it tips; a head hit folds straight away', () => {
     const early = collapseStage(0.1, 'torso');
@@ -76,4 +76,42 @@ test('a head hit reaches the ground sooner than a body hit', () => {
         if (torsoDone === null && collapseStage(age, 'torso').tip === 1) torsoDone = age;
     }
     assert.ok(headDone < torsoDone, `head ${headDone}s should beat torso ${torsoDone}s`);
+});
+
+test('a body on clear ground lies exactly where it fell', () => {
+    const rest = restPlace(4, -2, []);
+    assert.equal(rest.layer, 0);
+    assert.equal(rest.dx, 0);
+    assert.equal(rest.dz, 0);
+    assert.equal(rest.height, 0, 'nothing lifts it off the floor');
+    assert.equal(rest.roll, 0);
+});
+
+test('bodies falling in the same spot pile up and splay apart', () => {
+    const ground = [];
+    const first = restPlace(0, 0, ground);
+    ground.push({ x: 0, z: 0, layer: first.layer });
+    const second = restPlace(0.1, 0.05, ground);
+    assert.equal(second.layer, 1, 'the second body lies on top of the first');
+    assert.ok(second.height > 0.1, 'a body in a heap is lifted clear of the floor');
+    assert.ok(Math.hypot(second.dx, second.dz) > 0.05, 'it is also pushed clear of the body beneath');
+    assert.ok(second.roll > 0, 'and rolled off the flat');
+    ground.push({ x: 0.1, z: 0.05, layer: second.layer });
+    const third = restPlace(-0.05, 0.1, ground);
+    assert.ok(third.layer >= 2, 'a third body goes higher still');
+    assert.ok(third.roll > second.roll, 'higher bodies roll further');
+});
+
+test('a body outside the heap is not lifted by it, and a crowd of bodies stays bounded', () => {
+    const far = restPlace(9, 9, [{ x: 0, z: 0, layer: 3 }]);
+    assert.equal(far.layer, 0);
+    assert.equal(far.height, 0);
+    const ground = [];
+    let last = null;
+    for (let i = 0; i < 40; i++) {
+        last = restPlace(0, 0, ground);
+        ground.push({ x: 0, z: 0, layer: last.layer });
+        assert.ok(Number.isFinite(last.height) && last.height < 0.7, 'the heap stacks a few deep but does not grow into a tower');
+    }
+    assert.ok(Math.hypot(last.dx, last.dz) <= 0.5, 'bodies are never shoved further than half a metre');
 });

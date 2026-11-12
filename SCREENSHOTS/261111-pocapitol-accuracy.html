@@ -1,0 +1,194 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>PoCapitol: Battlescene and Capitol Scenery Accuracy (2026-11-11)</title>
+<style>
+  body { margin: 0; padding: 32px; background: #0c1219; color: #eceff1; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; }
+  h1 { font-size: 26px; color: #f59e0b; margin: 0 0 8px; font-weight: 700; letter-spacing: 0.03em; }
+  p.subtitle { color: #94a3b8; font-size: 14px; margin: 0 0 28px; line-height: 1.5; max-width: 1000px; }
+  .grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 24px; margin-bottom: 32px; }
+  .card { background: #151e29; border: 1px solid #334155; border-radius: 12px; overflow: hidden; box-shadow: 0 16px 40px rgba(0,0,0,0.5); }
+  .card-header { padding: 14px 18px; background: #1e293b; border-bottom: 1px solid #334155; display: flex; justify-content: space-between; align-items: center; gap: 12px; }
+  .card-header h3 { margin: 0; font-size: 15px; color: #f8fafc; font-weight: 600; }
+  .badge { font-size: 10px; font-weight: 700; letter-spacing: 0.08em; text-transform: uppercase; padding: 4px 8px; border-radius: 4px; white-space: nowrap; }
+  .badge-ext { background: #1d4ed833; color: #60a5fa; border: 1px solid #2563eb66; }
+  .badge-crowd { background: #d9770633; color: #fbbf24; border: 1px solid #d9770666; }
+  .badge-int { background: #05966933; color: #34d399; border: 1px solid #05966966; }
+  .badge-dome { background: #7c3aed33; color: #a78bfa; border: 1px solid #7c3aed66; }
+  .card-body { padding: 18px; }
+  .comparison { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; margin-top: 4px; }
+  .comp-box { padding: 12px 14px; border-radius: 8px; font-size: 12.5px; line-height: 1.55; }
+  .comp-before { background: #1e293b88; border-left: 3px solid #ef4444; color: #cbd5e1; }
+  .comp-after { background: #064e3b44; border-left: 3px solid #10b981; color: #e2e8f0; }
+  .comp-title { font-weight: 700; text-transform: uppercase; font-size: 10px; margin-bottom: 5px; letter-spacing: 0.06em; }
+  .comp-before .comp-title { color: #f87171; }
+  .comp-after .comp-title { color: #34d399; }
+  .summary-box { background: #131d28; border: 1px solid #f59e0b44; border-left: 5px solid #f59e0b; padding: 20px 24px; border-radius: 8px; margin-top: 24px; }
+  .summary-box h2 { font-size: 18px; color: #f59e0b; margin: 0 0 10px; }
+  .summary-box ul { margin: 0; padding-left: 20px; font-size: 13px; color: #cbd5e1; line-height: 1.7; }
+  code { background: #1e293b; padding: 1px 5px; border-radius: 3px; font-size: 12px; color: #a5b4fc; }
+</style>
+</head>
+<body>
+  <h1>PoCapitol: Battlescene and Capitol Scenery Accuracy</h1>
+  <p class="subtitle">The west front and the three interiors are redrawn against the Architect of the Capitol and House history references the PRD cites. Playable footprint, collisions and objectives are unchanged: this is decoration in <code>architecture.js</code>, plus the Statue of Freedom's drum in <code>scene.js</code> and two-force police dress in <code>crowd.js</code>. Annotated before/after captures: <code>SCREENSHOTS/261111-pocapitol-accuracy.png</code>.</p>
+
+  <div class="grid">
+    <div class="card">
+      <div class="card-header">
+        <h3>1. West front terrace, stairs and the doorway</h3>
+        <span class="badge badge-ext">Exterior</span>
+      </div>
+      <div class="card-body">
+        <div class="comparison">
+          <div class="comp-box comp-before">
+            <div class="comp-title">Before</div>
+            Two flat step blocks, no parapets, an open wall between the portico columns, and a plain empty plaza.
+          </div>
+          <div class="comp-box comp-after">
+            <div class="comp-title">After</div>
+            Raking marble cheeks with balusters climb beside both flights, newel piers carry bronze standards, and a
+            sandstone elliptical arch with voussoirs and a gilt keystone frames the Lower West Terrace doorway.
+            Bronze lamp standards flank the steps; bunting hangs on the rails.
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="card-header">
+        <h3>2. The grounds as they were dressed</h3>
+        <span class="badge badge-ext">Exterior</span>
+      </div>
+      <div class="card-body">
+        <div class="comparison">
+          <div class="comp-box comp-before">
+            <div class="comp-title">Before</div>
+            Two inaugural stands on a bare lawn; nothing marking the perimeter.
+          </div>
+          <div class="comp-box comp-after">
+            <div class="comp-title">After</div>
+            Green snow fencing runs down both lawn edges with fallen panels, "AREA CLOSED" boards stand on the
+            barricade line, and a scaffold press tower with two decks and a camera stands out on the west lawn.
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="card-header">
+        <h3>3. Two forces on the line</h3>
+        <span class="badge badge-crowd">Battlescene</span>
+      </div>
+      <div class="card-body">
+        <div class="comparison">
+          <div class="comp-box comp-before">
+            <div class="comp-title">Before</div>
+            Every officer in the same dark navy coat and helmet.
+          </div>
+          <div class="comp-box comp-after">
+            <div class="comp-title">After</div>
+            Capitol Police stay dark navy; about two in five are Metropolitan Police in hi-vis yellow-green outer
+            jackets with reflective bands. Same helmets, shields, batons and spray as before.
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="card-header">
+        <h3>4. Rotunda</h3>
+        <span class="badge badge-int">Interior</span>
+      </div>
+      <div class="card-body">
+        <div class="comparison">
+          <div class="comp-box comp-before">
+            <div class="comp-title">Before</div>
+            Plain sandstone walls, one flat brown panel per painting position, ring floor, coffered dome.
+          </div>
+          <div class="comp-box comp-after">
+            <div class="comp-title">After</div>
+            Eight arched gilt frames with painted canvases, olive wreaths in the frieze over each pilaster, a
+            proper cornice, the Frieze of American History in the belt under the windows, the Apotheosis painted
+            in the canopy around the oculus, and a brass ring round the white marble centre of the floor.
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="card-header">
+        <h3>5. Crypt</h3>
+        <span class="badge badge-int">Interior</span>
+      </div>
+      <div class="card-body">
+        <div class="comparison">
+          <div class="comp-box comp-before">
+            <div class="comp-title">Before</div>
+            Six squat columns, a grey floor, a two-tone compass disc.
+          </div>
+          <div class="comp-box comp-after">
+            <div class="comp-title">After</div>
+            Rows of Aquia Creek sandstone Doric columns against both walls, Seneca paving with visible joints and
+            wear, wall niches holding draped figures for the original colonies, and an eight-point white marble
+            compass stone with a brass centre.
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="card-header">
+        <h3>6. Statuary Hall</h3>
+        <span class="badge badge-int">Interior</span>
+      </div>
+      <div class="card-body">
+        <div class="comparison">
+          <div class="comp-box comp-before">
+            <div class="comp-title">Before</div>
+            A rectangular room: white columns, scattered dark mats on the floor, six cone statues.
+          </div>
+          <div class="comp-box comp-after">
+            <div class="comp-title">After</div>
+            Variegated Breccia marble columns under Carrara capitals, a full black and white marble floor, the
+            cast-steel ceiling lantern, the Car of History clock over the Rotunda door, the sandstone relief eagle
+            in the frieze, and more of the collection on plinths in wall niches.
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="card-header">
+        <h3>7. Dome and drum</h3>
+        <span class="badge badge-dome">Silhouette</span>
+      </div>
+      <div class="card-body">
+        <div class="comparison">
+          <div class="comp-box comp-before">
+            <div class="comp-title">Before</div>
+            The Rotunda's inner dome rose to 19 m with nothing outside it, so from a raised camera it showed as a
+            smooth pale mound under the peristyle.
+          </div>
+          <div class="comp-box comp-after">
+            <div class="comp-title">After</div>
+            A drum wall and two cornice bands enclose it, so the dome now sits on a masonry drum as it does in
+            the building.
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="summary-box">
+    <h2>What did not change</h2>
+    <ul>
+      <li>The walkable footprint, milestone order, police lines, collisions and every outcome stay in <code>world.js</code>, untouched.</li>
+      <li>No new dependency, configuration key or endpoint. No image downloads: every new surface is painted to a canvas at load.</li>
+      <li>All new detail follows the existing graphics ladder; small detail disappears with the <code>extras</code> rung as before.</li>
+      <li>No likenesses: paintings, statues and the canopy are abstract compositions, as the PRD requires.</li>
+    </ul>
+  </div>
+</body>
+</html>

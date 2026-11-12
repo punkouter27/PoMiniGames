@@ -2,7 +2,7 @@ import * as THREE from 'three';
 import { SURFACE, addSurface } from './look.js';
 
 // Public-reference massing and landscape detail. The playable footprint remains fictional.
-export function createCampus({ surfaces, surfaceDetail } = {}) {
+export function createCampus({ surfaces, surfaceDetail, osm } = {}) {
     const group = new THREE.Group();
     group.name = 'capitol-campus-reference';
     const geometries = new Set(), materials = new Set();
@@ -114,6 +114,170 @@ export function createCampus({ surfaces, surfaceDetail } = {}) {
     pediment(30, 5, 2.2, 0, 16.8, 17.2, court);
     for (const x of [-18, 18]) box(x, 20.2, 0, 3, 1.2, 36, marble, court);
 
+    // The office buildings that ring Capitol Hill: three south of the Capitol (House) and three
+    // north (Senate). Long classical fronts with a rusticated base, a colonnaded centre, a heavy
+    // cornice and a parapet, so the skyline either side of the west front is not empty.
+    // +x is south, -x is north and +z is west in this scene, so their fronts face the Capitol.
+    const officeBuilding = (x, z, { w = 60, d = 24, h = 19, rot = 0, mansard = false } = {}) => {
+        const block = new THREE.Group();
+        block.position.set(x, 0, z); block.rotation.y = rot;
+        group.add(block);
+        box(0, 0.8, 0, w + 2.4, 1.6, d + 2.4, darkStone, block);
+        box(0, h / 2 + 1.6, 0, w, h, d, stone, block);
+        box(0, h + 2.1, 0, w + 1.6, 1, d + 1.6, marble, block);
+        box(0, h + 2.9, 0, w + 0.8, 0.6, d + 0.8, marble, block);
+        box(0, h + 3.5, 0, w, 0.6, d, stone, block);
+        for (const side of [-1, 1]) {
+            for (let i = 0, n = Math.floor(w / 6); i < n; i++) {
+                const wx = -w / 2 + 3 + i * 6;
+                for (const wy of [h * 0.52, h * 0.82]) {
+                    box(wx, wy + 1.6, side * (d / 2 + 0.1), 1.5, 2.6, 0.16, glass, block);
+                    box(wx, wy + 0.35, side * (d / 2 + 0.2), 2, 0.24, 0.42, marble, block);
+                }
+            }
+        }
+        const cw = Math.min(w * 0.44, 18);
+        for (let i = 0; i < 6; i++) column(-cw / 2 + i * cw / 5, d / 2 + 3.4, h * 0.66, block, 1.6);
+        box(0, 1.6 + h * 0.66 + 0.8, d / 2 + 1.8, cw + 2.6, 1.5, 5, marble, block);
+        pediment(cw + 3.4, 3.2, 1.4, 0, 1.6 + h * 0.66 + 1.55, d / 2 + 1.8, block, stone);
+        box(0, 1.1, d / 2 + 1.2, cw * 0.6, 0.35, 4.8, marble, block);
+        if (mansard) box(0, h + 4.6, 0, w - 5, 2, d - 5, roof, block);
+        return block;
+    };
+    officeBuilding(97, 18, { w: 52, rot: -Math.PI / 2 });                          // Cannon
+    officeBuilding(97, 78, { w: 64, rot: -Math.PI / 2 });                          // Longworth
+    officeBuilding(97, 138, { w: 58, h: 21, rot: -Math.PI / 2, mansard: true });   // Rayburn
+    officeBuilding(-97, -14, { w: 64, rot: Math.PI / 2 });                         // Russell
+    officeBuilding(-97, 48, { w: 62, h: 21, rot: Math.PI / 2 });                   // Dirksen
+    officeBuilding(-97, 104, { w: 56, rot: Math.PI / 2, mansard: true });          // Hart
+
+    // The Botanic Garden conservatory at the foot of the hill: glass under a ribbed dome.
+    const greenhouse = new THREE.MeshStandardMaterial({ color: '#cfe0e2', roughness: 0.12, metalness: 0.05, transparent: true, opacity: 0.72, envMapIntensity: 1.7 });
+    materials.add(greenhouse);
+    const garden = new THREE.Group(); garden.position.set(54, 0, 16); garden.rotation.y = -0.3; group.add(garden);
+    box(0, 0.6, 0, 27, 1.2, 15, marble, garden);
+    box(0, 4.1, 0, 25, 6, 13, greenhouse, garden);
+    for (let i = -4; i <= 4; i++) for (const side of [-1, 1]) box(i * 3, 4.1, side * 6.55, 0.22, 6, 0.22, marble, garden);
+    for (let i = -4; i <= 4; i++) box(0, 4.1, i * 1.45, 0.2, 6, 0.2, marble, garden);
+    box(0, 7.3, 0, 26, 0.7, 14, marble, garden);
+    const conservatoryDome = mesh(new THREE.SphereGeometry(6.8, 24, 14, 0, Math.PI * 2, 0, Math.PI / 2), greenhouse, 0, 7.6, 0, garden);
+    conservatoryDome.scale.set(1.25, 0.7, 0.85);
+    for (let i = 0; i < 10; i++) {
+        const a = i / 10 * Math.PI;
+        const rib = box(Math.sin(a) * 6.8 * 1.25, 7.6 + 3.4, Math.cos(a) * 6.8 * 0.85, 0.18, 6.6, 0.18, marble, garden);
+        rib.rotation.set(Math.PI / 2 - 0.4, a, 0, 'YXZ');
+    }
+    cylinder(0, 12.5, 0, 0.9, 1.2, 2, copper, garden, 12);
+    mesh(new THREE.ConeGeometry(1, 1.8, 10), copper, 0, 14.4, 0, garden);
+
+    // The city within about a mile of the Capitol, each landmark on its true bearing and its
+    // real distance compressed to fit the scene (+x south, -x north, +z west, -z east):
+    //   west   Washington Monument 1.41 mi, National Gallery 0.59, Natural History 0.91,
+    //          Air and Space 0.59, Smithsonian Castle 0.91
+    //   north  Union Station 0.56 mi, NoMa towers 1.09
+    //   east   Eastern Market 0.73 mi, Lincoln Park 1.22, Capitol Hill row houses
+    //   south  L'Enfant Plaza 0.74 mi, Marine Barracks 0.81, the Wharf and Navy Yard 1.1-1.2
+    const brick = mat('#8d5f52', 0.92, 0, SURFACE.generic);
+    const tower = (x, z, w, d, h, material = darkStone) => {
+        box(x, h / 2, z, w, h, d, material);
+        box(x, h + 0.6, z, w + 1, 1.2, d + 1, marble);
+        for (let i = 0; i < Math.floor(h / 7); i++) for (const side of [-1, 1]) {
+            box(x, 4 + i * 6.5, z + side * (d / 2 + 0.1), w - 3, 1.5, 0.2, glass);
+        }
+    };
+
+    // West: the Washington Monument on its knoll, and the Mall's museums flanking the axis.
+    box(0, 0.7, 238, 30, 1.4, 30, stone);
+    box(0, 12, 238, 12, 22, 12, marble);
+    box(0, 30, 238, 9.6, 14, 9.6, marble);
+    box(0, 43, 238, 8.2, 12, 8.2, marble);
+    mesh(new THREE.ConeGeometry(5.4, 6.4, 4), marble, 0, 52.2, 238).rotation.y = Math.PI / 4;
+    const museum = (x, w, h, dome) => {
+        box(x, h / 2, 194, w, h, 28, stone);
+        box(x, h + 0.6, 194, w + 2, 1.2, 30, marble);
+        for (let i = 0, n = Math.floor(w / 9); i < n; i++) box(x - w / 2 + 5 + i * 9, h * 0.58, 208.1, 2.4, 3.6, 0.2, glass);
+        if (dome) mesh(new THREE.SphereGeometry(h * 0.42, 16, 10, 0, Math.PI * 2, 0, Math.PI / 2), copper, x, h + 1.2, 194);
+    };
+    museum(-52, 44, 15);            // National Gallery of Art
+    museum(0, 54, 17, true);        // Natural History
+    museum(52, 40, 13);             // Air and Space
+
+    // North: Union Station's long colonnade and central pavilion, then the NoMa blocks.
+    const station = new THREE.Group(); station.position.set(-168, 0, -18); station.rotation.y = Math.PI / 2; group.add(station);
+    box(0, 0.7, 0, 124, 1.4, 26, stone, station);
+    box(0, 9, 0, 120, 16, 22, stone, station);
+    box(0, 17.6, 0, 122, 1.4, 24, marble, station);
+    box(0, 12, 0, 32, 24, 24, stone, station);
+    box(0, 25.2, 0, 36, 2.4, 28, marble, station);
+    for (let i = 0; i < 8; i++) column(-48 + i * 13.7, 12.5, 12, station, 0);
+    box(0, 13.6, 12.5, 112, 1.8, 4, marble, station);
+    tower(-186, -96, 26, 26, 34);
+    tower(-188, -64, 20, 20, 27);
+    tower(-190, -128, 22, 22, 40);
+
+    // East: the terrace of Capitol Hill row houses, then Eastern Market beyond them.
+    for (let i = 0; i < 15; i++) {
+        const hx = -66 + i * 9.2, hh = 11 + (i % 3) * 1.4;
+        box(hx, hh / 2, -158, 8.6, hh, 14, i % 3 ? brick : stone);
+        box(hx, hh + 0.5, -158, 9, 0.9, 14.6, roof);
+        for (let f = 0; f < 3; f++) box(hx, 3 + f * 3.4, -150.9, 1.7, 2.1, 0.2, glass);
+    }
+    const market = new THREE.Group(); market.position.set(30, 0, -186); group.add(market);
+    box(0, 0.6, 0, 42, 1.2, 22, stone, market);
+    box(0, 5.4, 0, 40, 9.6, 20, brick, market);
+    box(0, 10.6, 0, 42, 1.2, 22, marble, market);
+    box(0, 12.6, 0, 13, 2.8, 13, marble, market);
+    mesh(new THREE.ConeGeometry(9.5, 3, 4), roof, 0, 15.5, 0, market).rotation.y = Math.PI / 4;
+    for (const side of [-1, 1]) box(0, 4.4, side * 10.1, 38, 5, 0.3, glass, market);
+    // Lincoln Park at the far end of the terrace: a raised green with its low wall.
+    box(-12, 0.35, -214, 44, 0.7, 34, stone);
+    box(-12, 0.75, -214, 42, 0.2, 32, paving);
+    box(-12, 2.2, -214, 3.4, 3.4, 3.4, marble);
+
+    // South: L'Enfant Plaza's slabs, the Marine Barracks wall, and the Wharf beyond.
+    tower(148, 92, 24, 24, 38);
+    tower(154, 126, 20, 20, 30);
+    tower(140, 58, 22, 18, 26, stone);
+    box(112, 2.2, -96, 8, 4.4, 62, brick);
+    box(123, 5, -96, 12, 10, 42, brick);
+    box(123, 10.4, -96, 13, 0.8, 43, roof);
+    tower(172, 168, 26, 26, 34, stone);
+    tower(176, 198, 22, 22, 28);
+    tower(150, 202, 20, 20, 24);
+
+    // Real footprints from OpenStreetMap (scripts/pocapitol-campus.mjs), outside the radius the
+    // hand-built grounds own. Instanced off one unit box so 700 buildings cost four draw calls:
+    // the terraces, office slabs and named blocks that the itemised model does not cover.
+    const osmBatches = [];
+    if (osm?.buildings?.length) {
+        const unit = new THREE.BoxGeometry(1, 1, 1); geometries.add(unit);
+        const place = new THREE.Object3D();
+        const walls = new Map();
+        for (const footprint of osm.buildings) {
+            const wall = footprint.h > 5.5 ? stone : footprint.h > 3 ? brick : darkStone;
+            if (!walls.has(wall)) walls.set(wall, []);
+            walls.get(wall).push(footprint);
+        }
+        for (const [material, list] of walls) {
+            const batch = new THREE.InstancedMesh(unit, material, list.length);
+            list.forEach((footprint, i) => {
+                place.position.set(footprint.x, footprint.h / 2, footprint.z);
+                place.rotation.set(0, footprint.rot ?? 0, 0);
+                place.scale.set(footprint.w, footprint.h, footprint.d);
+                place.updateMatrix(); batch.setMatrixAt(i, place.matrix);
+            });
+            batch.castShadow = true; batch.receiveShadow = true; group.add(batch); osmBatches.push(batch);
+        }
+        const roofline = new THREE.InstancedMesh(unit, roof, osm.buildings.length);
+        osm.buildings.forEach((footprint, i) => {
+            place.position.set(footprint.x, footprint.h + 0.12, footprint.z);
+            place.rotation.set(0, footprint.rot ?? 0, 0);
+            place.scale.set(footprint.w + 0.3, 0.26, footprint.d + 0.3);
+            place.updateMatrix(); roofline.setMatrixAt(i, place.matrix);
+        });
+        roofline.castShadow = true; group.add(roofline); osmBatches.push(roofline);
+    }
+
     // Roads, sidewalks, curbs, markings and patched asphalt establish human scale.
     for (const x of [-68, 68]) {
         box(x, -0.08, 30, 16, 0.12, 230, asphalt);
@@ -184,10 +348,39 @@ export function createCampus({ surfaces, surfaceDetail } = {}) {
     }
     leaves.receiveShadow = true; group.add(leaves);
 
+    // One draw call per window and per tree branch would cost far more than the detail is worth:
+    // everything here is the same handful of boxes and cylinders, so identical pieces with the
+    // same material become instanced batches. This is what lets the ring of office buildings and
+    // the whole tree line exist without doubling the frame's draw calls.
+    const batches = [];
+    group.updateMatrixWorld(true);
+    const pieces = [];
+    group.traverse(object => { if (object.isMesh && !object.isInstancedMesh) pieces.push(object); });
+    const buckets = new Map();
+    for (const piece of pieces) {
+        const params = piece.geometry.parameters;
+        const shape = params?.shapes ? piece.geometry.uuid : `${piece.geometry.type}:${JSON.stringify(params ?? {})}`;
+        const key = `${piece.material.uuid}|${shape}`;
+        if (!buckets.has(key)) buckets.set(key, []);
+        buckets.get(key).push(piece);
+    }
+    for (const members of buckets.values()) {
+        if (members.length < 2) continue;
+        const batch = new THREE.InstancedMesh(members[0].geometry, members[0].material, members.length);
+        batch.castShadow = true; batch.receiveShadow = true;
+        members.forEach((piece, i) => { batch.setMatrixAt(i, piece.matrixWorld); piece.parent.remove(piece); });
+        group.add(batch);
+        batches.push(batch);
+    }
+
     return {
         group,
         update(time) { waterUniforms.uTime.value = time; },
         setDetail(value) { leaves.visible = value; },
-        dispose() { geometries.forEach(g => g.dispose()); materials.forEach(m => m.dispose()); leaves.dispose(); },
+        dispose() {
+            batches.forEach(b => b.dispose());
+            osmBatches.forEach(b => b.dispose());
+            geometries.forEach(g => g.dispose()); materials.forEach(m => m.dispose()); leaves.dispose();
+        },
     };
 }

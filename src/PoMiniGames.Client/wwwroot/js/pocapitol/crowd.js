@@ -1,10 +1,37 @@
 import * as THREE from 'three';
 import { addWave, billboardChunk, createPolycarbonateMaterial, addSubsurfaceScattering } from './look.js';
 import { BONES as RIG_BONES, REGIONS, buildFigure } from './rig.js';
-import { collapseStage, tipAxes, impactFrame } from './collapse.js';
+import { collapseStage, tipAxes, impactFrame, restPlace } from './collapse.js';
 
 // Original procedural artwork; references inform clothing and equipment, not real identities.
-export function flagTexture(kind = 'us') {
+/** Fit a short phrase onto a board in at most three lines, shrinking until it fits. */
+function drawBoardText(ctx, text) {
+    const words = String(text ?? '').toUpperCase().split(/\s+/).filter(Boolean).slice(0, 8);
+    if (words.length === 0) return;
+    const wrap = size => {
+        ctx.font = `bold ${size}px sans-serif`;
+        const lines = [];
+        let line = '';
+        for (const word of words) {
+            const next = line ? `${line} ${word}` : word;
+            if (line && ctx.measureText(next).width > 336) { lines.push(line); line = word; }
+            else line = next;
+        }
+        if (line) lines.push(line);
+        return lines;
+    };
+    let size = 72, lines = wrap(size);
+    while (size > 22 && (lines.length > 3 || lines.some(l => ctx.measureText(l).width > 336))) {
+        size -= 2; lines = wrap(size);
+    }
+    ctx.textAlign = 'center';
+    ctx.fillStyle = '#233d78';
+    const step = size * 1.16, total = lines.length * step;
+    let y = 130 - total / 2 + size * 0.86;
+    for (const line of lines) { ctx.fillText(line, 195, y); y += step; }
+}
+
+export function flagTexture(kind = 'us', text = '') {
     const canvas = document.createElement('canvas');
     canvas.width = 390; canvas.height = 260;
     const ctx = canvas.getContext('2d');
@@ -36,6 +63,11 @@ export function flagTexture(kind = 'us') {
         ctx.fillText('STOP', 195, 100);
         ctx.fillStyle = '#233d78'; ctx.font = 'bold 58px sans-serif';
         ctx.fillText('THE STEAL', 195, 185);
+    } else if (kind === 'text') {
+        // A board from data/pocapitol/placards.json: plain card, fitted phrase, red rule.
+        ctx.fillStyle = '#f3f1ea'; ctx.fillRect(0, 0, 390, 260);
+        ctx.strokeStyle = '#a9353e'; ctx.lineWidth = 10; ctx.strokeRect(10, 10, 370, 240);
+        drawBoardText(ctx, text);
     } else {
         ctx.fillStyle = '#233d78'; ctx.fillRect(0, 0, 390, 260);
         ctx.strokeStyle = '#fff'; ctx.lineWidth = 6; ctx.strokeRect(12, 12, 366, 236);
@@ -53,17 +85,48 @@ export function flagTexture(kind = 'us') {
 // puffers, knit hats and hoods.
 export const coats = ['#715945', '#303c4b', '#645f4d', '#793d34', '#8b775b', '#373c38', '#405576', '#434047',
     '#2d3a2a', '#8a8f96', '#1a1c20', '#5a1f24'];
-const banners = ['us', 'campaign', 'us', 'gadsden', 'sign', 'us'];
 const suits = ['#27303f', '#3a3f48', '#1f2a3a', '#4a4650', '#2f3b33'];
 const pants = ['#3b4a63', '#2a2f38', '#6b6250', '#1d1f22', '#4d5560', '#34405a'];
 const hairs = ['#2b2118', '#4a3524', '#6e5a43', '#9a8f84', '#b89a64', '#1c1a18'];
 const knits = ['#a93737', '#2b3f66', '#3a3a3a', '#7d7f45', '#c9c3b5', '#5a2d3c'];
 const skins = ['#d4b28e', '#b98f6c', '#90694e', '#debfa3', '#73533e'];
 
+/**
+ * A random slice of the placard list for this scene. Every distinct board costs one instanced
+ * draw call, so the slice is bounded; across launches the whole list still gets used.
+ */
+function shuffledSigns(signs, limit = 14) {
+    const list = [...new Set((signs ?? []).filter(text => typeof text === 'string' && text.length > 0))];
+    for (let i = list.length - 1; i > 0; i--) {
+        const j = Math.floor(Math.random() * (i + 1));
+        [list[i], list[j]] = [list[j], list[i]];
+    }
+    return list.slice(0, limit);
+}
+
 /** A stable 0..1 trait per actor, so a person keeps their height and build all day. */
 function trait(id, salt) {
     const v = Math.sin((id + 11) * 12.9898 + salt * 78.233) * 43758.5453;
     return v - Math.floor(v);
+}
+
+/**
+ * How this person walks. Stride length, cadence and a bad knee are drawn once from the same
+ * stable trait, so a crowd of a hundred breaks out of lockstep without any per-frame cost.
+ */
+const GAITS = new Map(), GAIT_DEFAULT = { stride: 0.5, cadence: 1, limp: 0 };
+function gaitOf(id) {
+    let gait = GAITS.get(id);
+    if (!gait) {
+        gait = {
+            stride: 0.36 + trait(id, 7) * 0.26,
+            cadence: 0.84 + trait(id, 8) * 0.3,
+            // About one in nine favours a knee; a few take short, careful steps.
+            limp: trait(id, 9) < 0.11 ? 0.16 + trait(id, 10) * 0.14 : 0,
+        };
+        GAITS.set(id, gait);
+    }
+    return gait;
 }
 
 // ---------------------------------------------------------------- the rigged figure
@@ -290,14 +353,22 @@ function poseFor(b, a, t, pose) {
     }
     // Legs and arms: a walking gait, or standing with the weight shifting.
     if (b.moving) {
-        const p = b.phase, a0 = Math.sin(p) * 0.5;
-        rot(pose, 'thigh_L', a0); rot(pose, 'thigh_R', -a0);
-        const kneeL = 0.08 + 0.7 * Math.max(0, Math.cos(p)), kneeR = 0.08 + 0.7 * Math.max(0, -Math.cos(p));
+        const stride = b.stride ?? 0.5, limp = b.limp ?? 0;
+        const p = b.phase, a0 = Math.sin(p) * stride;
+        rot(pose, 'thigh_L', a0 + limp * 0.55); rot(pose, 'thigh_R', -a0);
+        const kneeL = 0.08 + 0.7 * Math.max(0, Math.cos(p)) + limp * 1.6;
+        const kneeR = 0.08 + 0.7 * Math.max(0, -Math.cos(p));
         rot(pose, 'shin_L', -kneeL); rot(pose, 'shin_R', -kneeR);
         rot(pose, 'foot_L', -(a0 - kneeL) * 0.5); rot(pose, 'foot_R', -(-a0 - kneeR) * 0.5);
         rot(pose, 'upperArm_L', -0.7 * a0); rot(pose, 'upperArm_R', 0.7 * a0);
         rot(pose, 'foreArm_L', 0.15 + 0.35 * Math.max(0, -a0)); rot(pose, 'foreArm_R', 0.15 + 0.35 * Math.max(0, a0));
         rot(pose, 'hips', 0, -0.08 * a0); rot(pose, 'chest', -0.04, 0.12 * a0);
+        // A person favouring one knee leans away from it and drops that shoulder.
+        if (limp > 0) {
+            rot(pose, 'hips', 0, 0, -0.5 * limp);
+            rot(pose, 'spine', 0.4 * limp, 0, 0.35 * limp);
+            rot(pose, 'head', 0, 0, 0.3 * limp);
+        }
     } else {
         const sway = Math.sin(t * 0.5 + id * 1.9);
         const shiver = Math.sin(t * 14.0 + id * 3.7) * 0.012;
@@ -358,7 +429,7 @@ function poseFor(b, a, t, pose) {
 // Rest points of the hands' palms, where held things are anchored.
 const PALM_R = [0.483, 0.76, -0.12], PALM_L = [-0.483, 0.76, -0.12];
 
-export function createCrowd(scene, capacity, { time, groundHeight, shadowTexture, figure }) {
+export function createCrowd(scene, capacity, { time, groundHeight, shadowTexture, figure, wind = null, signs = [] }) {
     const parts = [], resources = new Set(), textures = new Set();
     const transform = new THREE.Object3D(), color = new THREE.Color();
     transform.rotation.order = 'YXZ';
@@ -394,10 +465,18 @@ export function createCrowd(scene, capacity, { time, groundHeight, shadowTexture
     const beanie = a => bareish(a) && a.id % 3 !== 2;
     const hair = a => (bareish(a) && a.id % 3 === 2) || a.civilian;
     const bearer = a => raider(a) && a.id >= 0 && a.id % 3 === 0 && a.health > 0;
+    // Carried signage: the national and Gadsden flags plus a random slice of the placard list.
+    // One instanced mesh per distinct board keeps the draw-call count bounded, and each bearer's
+    // board is fixed for the attempt by the same stable trait that sets their height.
+    const bannerKinds = [{ kind: 'us' }, { kind: 'gadsden' }, ...shuffledSigns(signs).map(text => ({ kind: 'text', text }))];
+    const bannerIndex = a => Math.min(bannerKinds.length - 1, Math.floor(trait(a.id, 7) * bannerKinds.length));
     const filming = a => raider(a) && a.filming && a.health > 0 && !a.retreating;
     const gun = a => a.armed && a.health > 0 && (a.police || a.temperament === 'pusher' || (a.temperament === 'follower' && a.morale > 0.7));
 
-    const coatColor = a => a.police ? '#24394d' : a.civilian ? suits[a.id % suits.length] : a.observer ? '#3f6f8f'
+    // Two forces stood the line that day: Capitol Police in dark navy, and Metropolitan Police
+    // in hi-vis yellow-green outer jackets. Kit was mixed, so neither is uniform here.
+    const hiVis = a => a.police && a.id % 5 < 2;
+    const coatColor = a => a.police ? (hiVis(a) ? '#c8d43a' : '#24394d') : a.civilian ? suits[a.id % suits.length] : a.observer ? '#3f6f8f'
         : a.id < 0 ? '#bd713f' : coats[a.id % coats.length];
     const skinColor = a => skins[Math.abs(a.id) % skins.length];
     // Body regions, in rig.js REGIONS order. Hi-vis vests and medics' tabards are the coat's colour.
@@ -461,6 +540,10 @@ export function createCrowd(scene, capacity, { time, groundHeight, shadowTexture
     const clear = createPolycarbonateMaterial({ color: '#c4e0ea', opacity: 0.42, roughness: 0.08, dispersion: 0.04 });
     part('visor', cube, clear, [0, 1.86, -0.25], [0.46, 0.32, 0.05], a => a.police, false, head);
     part('vest', cube, dark, [0, 1.2, -0.25], [0.67, 0.64, 0.12], a => a.police || (raider(a) && a.id >= 0 && a.id % 8 === 3));
+    // Reflective bands on the hi-vis outer jackets.
+    const reflective = new THREE.MeshStandardMaterial({ color: '#eef1e6', roughness: 0.35, metalness: 0.25 });
+    part('hi-vis-band', ring, reflective, [0, 0.98, 0], [1.06, 0.92, 1], hiVis, true, { rot: Math.PI / 2, bone: 'spine' });
+    part('hi-vis-band', ring, reflective, [0, 1.24, 0], [1.1, 0.94, 1], hiVis, true, { rot: Math.PI / 2 });
     part('shield', cube, clear, [0.1, -0.1, -0.08], [0.9, 1.45, 0.09], a => a.police || a.hasShield, false, left);
     part('shield-edge', cube, dark, [0.1, -0.81, -0.08], [0.92, 0.07, 0.11], a => a.police || a.hasShield, true, left);
     const shieldCanvas = document.createElement('canvas');
@@ -477,13 +560,20 @@ export function createCrowd(scene, capacity, { time, groundHeight, shadowTexture
     part('gun', cube, dark, [-0.02, 0.05, -0.2], [0.07, 0.13, 0.5], gun, false, right);
     part('flag-pole', new THREE.CylinderGeometry(0.025, 0.025, 3.2, 5),
         new THREE.MeshStandardMaterial({ color: '#b7a587' }), [0, 0.95, 0], [1, 1, 1], bearer, false, right);
-    for (const kind of new Set(banners)) {
-        const texture = flagTexture(kind); textures.add(texture);
+    for (let i = 0; i < bannerKinds.length; i++) {
+        const { kind, text } = bannerKinds[i];
+        const texture = flagTexture(kind, text); textures.add(texture);
         const flag = part('flag', new THREE.PlaneGeometry(1.7, 1.1, 16, 6),
-            addWave(new THREE.MeshStandardMaterial({ map: texture, side: THREE.DoubleSide, roughness: 0.9 }), time),
-            [0.86, 1.98, 0], [1, 1, 1], a => bearer(a) && banners[Math.floor(a.id / 3) % banners.length] === kind, false, right);
+            addWave(new THREE.MeshStandardMaterial({ map: texture, side: THREE.DoubleSide, roughness: 0.9 }), time, { wind }),
+            [0.86, 1.98, 0], [1, 1, 1], a => bearer(a) && bannerIndex(a) === i, false, right);
         flag.mesh.layers.set(1);
     }
+    // Snow settling on shoulders and hats: not falling snow, the thin rime that builds up on a
+    // person who has been out in it for an hour. A pale cap that grows with time outdoors.
+    const rime = new THREE.MeshStandardMaterial({ color: '#e9eef2', transparent: true, opacity: 0.34, roughness: 0.92 });
+    part('rime', dome, rime, [0, 1.96, 0.01], [1.03, 1.02, 1.02], a => !a.police && a.health > 0 && (a.z ?? 0) > 15, true, head);
+    part('rime-shoulders', new THREE.TorusGeometry(0.24, 0.035, 4, 12), rime, [0, 1.46, 0], [1, 1, 0.85],
+        a => a.health > 0 && (a.z ?? 0) > 15, true, { rot: Math.PI / 2 });
     // Breath in the cold: a small puff in front of each face outdoors, there and gone.
     const breath = part('breath', new THREE.SphereGeometry(0.11, 6, 5),
         new THREE.MeshBasicMaterial({ color: '#f3f6f8', transparent: true, opacity: 0.2, depthWrite: false }),
@@ -492,8 +582,15 @@ export function createCrowd(scene, capacity, { time, groundHeight, shadowTexture
 
     const pose = new Float32Array(RIG_BONES.length * 3);
     const slotFigure = Array.from({ length: capacity }, () => new THREE.Matrix4());
-    // Death dynamics per body, and the pose it settled into, so a field of bodies costs nothing.
-    const falls = new Map(), settledPose = new Map();
+    // Death dynamics per body, the pose it settled into, the spot it came to rest on, and the
+    // heading the eye sees, so a field of bodies costs nothing and a heap does not lie in one place.
+    const falls = new Map(), settledPose = new Map(), restSpots = new Map(), yawOf = new Map();
+    let lastNow = 0;
+    /** How hard the line an officer stands in is being leaned on, 0..1. */
+    function officerStrain(state, a) {
+        const line = state.lines?.[a.line];
+        return line ? Math.min(1, (line.pressure ?? 0) / Math.max(1, line.hold ?? 1)) : 0;
+    }
     function update(state, humanHeading, humanMoving, cameraPosition) {
         const actors = [
             ...(state.role !== 'none' ? [{ ...state.player, id: -1, health: state.health, heading: humanHeading,
@@ -506,6 +603,8 @@ export function createCrowd(scene, capacity, { time, groundHeight, shadowTexture
         if (actors.length > capacity) throw new RangeError('Crowd renderer capacity exceeded.');
         const active = state.status === 'active';
         const now = state.elapsed ?? 0;
+        const dt = Math.min(0.1, Math.max(0.008, now - lastNow));
+        lastNow = now;
         // Per-actor body: build, ground, gait and pose. Worked out once, used by the body and every part.
         const people = [];
         for (const a of actors) {
@@ -513,13 +612,19 @@ export function createCrowd(scene, capacity, { time, groundHeight, shadowTexture
             const tall = a.police ? 0.98 + trait(a.id, 1) * 0.09 : 0.93 + trait(a.id, 1) * 0.14;
             const wide = a.police ? 1.02 + trait(a.id, 2) * 0.1 : 0.9 + trait(a.id, 2) * 0.2;
             const moving = active && a.moving && a.health > 0;
-            const phase = state.elapsed * 9 + a.id * 0.7;
+            const gait = a.id >= 0 ? gaitOf(a.id) : GAIT_DEFAULT;
+            const phase = state.elapsed * 9 * gait.cadence + a.id * 0.7;
             const floor = groundHeight(a.x, a.z);
-            const b = { a, tall, wide, floor, moving, phase, ground: floor + (moving ? Math.abs(Math.cos(phase)) * 0.045 : 0),
+            const b = { a, tall, wide, floor, moving, phase, stride: gait.stride, limp: gait.limp, ground: floor + (moving ? Math.abs(Math.cos(phase)) * 0.045 : 0),
                 pushing: raider(a) && a.attacking > 0 && a.health > 0, filming: filming(a), bearer: bearer(a), gun: gun(a),
                 lying: a.health <= 0 && state.armed, stooped: a.health <= 0 && !state.armed && a.helped && !a.resting };
             const key = a.key ?? (a.civilian ? `s${a.id}` : `r${a.id}`);
             b.slot = bodies.claim(key);
+            // People turn rather than snap: the simulated heading is eased for the eye only.
+            const wantYaw = a.heading || 0, wasYaw = yawOf.get(key);
+            b.yaw = wasYaw === undefined ? wantYaw
+                : wasYaw + Math.atan2(Math.sin(wantYaw - wasYaw), Math.cos(wantYaw - wasYaw)) * (1 - Math.exp(-dt * 8));
+            yawOf.set(key, b.yaw);
             const regionKey = `${key}${a.police ? 'p' : ''}${a.observer ? 'o' : ''}${a.temperament ?? ''}`;
             bodies.paint(b.slot, regionKey, region => color.set(regionColors[region](a)));
             // Where the round came from, in the body's own frame, so a flinch or a fall leans the
@@ -547,22 +652,34 @@ export function createCrowd(scene, capacity, { time, groundHeight, shadowTexture
                 if (!fall) {
                     const h = a.heading || 0;
                     const frame = impactFrame(hx, hz, h);
+                    // Bodies already on the ground nearby decide the heap this one joins.
+                    const rest = restPlace(a.x, a.z, [...restSpots.values()]);
                     fall = {
-                        t0: now, rel: frame.rel,
+                        t0: now, rel: frame.rel, rest,
                         seed: trait(a.id, 5), zone: a.hitZone ?? 'torso', how: null,
                     };
+                    restSpots.set(key, { x: a.x, z: a.z, layer: rest.layer });
                     falls.set(key, fall);
                 }
                 b.fall = fall;
-            } else { falls.delete(key); settledPose.delete(key); }
+            } else { falls.delete(key); settledPose.delete(key); restSpots.delete(key); }
             // A body that has settled no longer needs its pose worked out again every frame.
             const settled = b.fall && now - b.fall.t0 > 1.3 ? settledPose.get(key) : null;
             const how = settled ? (pose.set(settled), b.fall.how) : poseFor(b, a, now, pose);
             if (b.fall && !settled && now - b.fall.t0 > 1.3) {
                 settledPose.set(key, pose.slice()); b.fall.how = how;
             }
-            transform.position.set(a.x, b.ground - how.drop * tall + how.lift * wide, a.z);
-            transform.rotation.set(how.fall, a.heading || 0, how.lean || 0);
+            // A body that has fallen rests where the heap allows: pushed out of its neighbours,
+            // lifted onto the layer beneath it, and rolled. A standing officer rocks on his feet
+            // under the weight of the line, harder the more he is being leaned on.
+            const rest = b.fall?.rest;
+            const strain = a.police && a.health > 0 && !b.moving ? officerStrain(state, a) : 0;
+            const brace = strain ? Math.sin(now * (1.4 + strain * 2.5) + (a.id || 0) * 1.7) * (0.012 + strain * 0.045) : 0;
+            transform.position.set(
+                a.x + (rest?.dx ?? 0),
+                b.ground - how.drop * tall + how.lift * wide + (rest?.height ?? 0),
+                a.z + (rest?.dz ?? 0));
+            transform.rotation.set(how.fall + brace, b.yaw, (how.lean || 0) + (rest?.roll ?? 0));
             transform.scale.set(wide, tall, wide);
             const figureMatrix = slotFigure[b.slot].compose(transform.position, transform.quaternion, transform.scale);
             bodies.pose(b.slot, figureMatrix, pose);
@@ -575,7 +692,7 @@ export function createCrowd(scene, capacity, { time, groundHeight, shadowTexture
             for (const b of people) {
                 const a = b.a;
                 if (!p.filter(a)) continue;
-                const h = a.heading || 0;
+                const h = b.yaw ?? (a.heading || 0);
                 if (p.name === 'contact') {
                     // Out of the scenario figures sit or lie, so their shadow spreads.
                     const spread = a.health > 0 ? 1 : b.lying ? 1.6 : 1.3;
@@ -601,8 +718,18 @@ export function createCrowd(scene, capacity, { time, groundHeight, shadowTexture
                         if (phase > 0.4) continue;
                         transform.scale.setScalar(0.5 + phase * 3);
                         transform.position.y += phase * 0.5;
+                        // Breath is warm air: the wind takes it before it has gone anywhere.
+                        transform.position.x += (wind?.x ?? 0) * phase * 0.35;
+                        transform.position.z += (wind?.z ?? 0) * phase * 0.35;
                     }
-                    if (p.name === 'flag') transform.rotation.y += 0.06 * Math.sin(state.elapsed * 0.7 + a.id);
+                    if (p.name === 'flag') {
+                        // A banner streams downwind, not the way the person carrying it faces.
+                        const wx = wind?.x ?? 0, wz = wind?.z ?? 0;
+                        const windYaw = Math.atan2(-wx, -wz);
+                        const blend = Math.min(0.85, Math.hypot(wx, wz) / 9);
+                        const dy = Math.atan2(Math.sin(windYaw - h), Math.cos(windYaw - h));
+                        transform.rotation.y = h + dy * blend + 0.05 * Math.sin(state.elapsed * 1.7 + a.id);
+                    }
                     transform.updateMatrix();
                     worn.copy(transform.matrix);
                 } else {
@@ -610,6 +737,12 @@ export function createCrowd(scene, capacity, { time, groundHeight, shadowTexture
                     held.position.fromArray(p.offset);
                     held.rotation.set(p.rot || 0, p.yaw || 0, 0);
                     held.scale.fromArray(p.scale);
+                    if (p.name === 'rime' || p.name === 'rime-shoulders') {
+                        // Rime builds on a person who has been out in it, then holds.
+                        const build = Math.min(1, Math.max(0, (state.elapsed - 20) / 400));
+                        if (build <= 0.01) continue;
+                        held.scale.multiplyScalar(0.55 + 0.45 * build);
+                    }
                     held.updateMatrix();
                     worn.multiplyMatrices(boneWorld, held.matrix);
                 }

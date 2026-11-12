@@ -129,15 +129,15 @@ export function createBursts(scene, { capacity = 16000 } = {}) {
                 color[0] * (0.6 + random() * 0.6), color[1] * (0.5 + random() * 0.7), color[2] * (0.5 + random() * 0.5), 1);
         }
     }
-    /** A puff of grit and grey dust kicked up at the feet. */
-    function puff(x, y, z, energy, { tone = [0.62, 0.58, 0.5], lift = 0.7, size = 0.55 } = {}) {
+    /** A puff of grit and grey dust kicked up at the feet. `life` stretches how long it hangs. */
+    function puff(x, y, z, energy, { tone = [0.62, 0.58, 0.5], lift = 0.7, size = 0.55, life = 1, alpha = 1, drag = 2.2 } = {}) {
         const random = rng(serial++ * 733 + Math.round(x * 13 + z * 29));
         const count = Math.round(Math.min(120, 4 + Math.sqrt(energy) * 1.6) * density);
         for (let i = 0; i < count; i++) {
             const angle = random() * Math.PI * 2, v = 0.3 + random() * 1.6;
             dust.add(x + (random() - 0.5) * 0.3, y, z + (random() - 0.5) * 0.3, Math.cos(angle) * v, lift * (0.4 + random()), Math.sin(angle) * v,
-                now, 0.9 + random() * 1.4, size * (0.5 + random() * 0.8), 2.2, -0.15,
-                tone[0], tone[1], tone[2], 0.16 + random() * 0.14);
+                now, (0.9 + random() * 1.4) * life, size * (0.5 + random() * 0.8), drag, -0.15,
+                tone[0], tone[1], tone[2], (0.16 + random() * 0.14) * alpha);
         }
     }
 
@@ -235,7 +235,10 @@ export function createBursts(scene, { capacity = 16000 } = {}) {
                     break;
                 case 'gunshot':
                     spray(e.x, floor + 1.4, e.z, 90, { color: [5, 3.4, 1.4], spread: 0.6, calm });
-                    puff(e.x, floor + 1.3, e.z, 50, { tone: [0.72, 0.70, 0.68], lift: 0.35, size: 0.45 });
+                    // Gunsmoke hangs in cold air. Each puff is twice the size it was and hangs for
+                    // eight times as long, so a volley leaves a rolling haze over the line instead
+                    // of a blink: at this density the far ranks stop reading as people.
+                    puff(e.x, floor + 1.3, e.z, 50, { tone: [0.72, 0.70, 0.68], lift: 0.5, size: 1, life: 32, alpha: 0.8, drag: 1.5 });
                     casing(e.x, floor, e.z);
                     break;
                 case 'ricochet':

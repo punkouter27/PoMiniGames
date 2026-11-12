@@ -37,7 +37,11 @@ export function createInspector({ onTelemetryChange } = {}) {
         } else if (isPolice) {
             statusText = unit.stagger > 0 ? 'Staggered by Impact' : unit.attacking > 0 ? 'Engaging with Baton / Spray' : 'Holding Defensive Line';
         } else {
-            statusText = unit.retreating ? 'Falling Back to Catch Breath' : unit.sprayed > 0 ? 'Disoriented by Pepper Spray' : unit.crowding > 3 ? 'Surging at Barrier' : unit.filming ? 'Filming Scene' : 'Advancing';
+            statusText = unit.retreating ? 'Falling Back to Catch Breath'
+                : unit.sprayed > 0 ? 'Disoriented by Pepper Spray'
+                : (unit.density ?? 0) >= 2 ? 'Packed in a Crush'
+                : unit.crowding > 3 ? 'Surging at Barrier'
+                : unit.filming ? 'Filming Scene' : 'Advancing';
         }
 
         return {
@@ -54,6 +58,7 @@ export function createInspector({ onTelemetryChange } = {}) {
             lineAssignment: line,
             milestone: currentMilestone,
             crowding: unit.crowding || 0,
+            density: Math.round((unit.density ?? 0) * 10) / 10,
             x: unit.x,
             z: unit.z,
             latched,

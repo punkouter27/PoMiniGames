@@ -25,13 +25,48 @@ export const areas = [
 /**
  * Height of the walking surface the renderer draws at (x, z), so feet and contact shadows sit
  * on it: interior floors, the paved forecourt, the two planted beds, otherwise the lawn.
- * Visual only; the simulation stays flat.
+ *
+ * The simulation itself stays on a plane, but the terrace in the central gap is real: four
+ * stone steps up to the portico landing, the only climb on the route. Everyone has to make it,
+ * so the crowd bunches at the foot of the steps and drains through them slowly — the way a
+ * crowd behaves at a stairway, and the reason a packed line in front of it chokes.
  */
 export function groundHeight(x, z) {
     if (z < 15) return 0.1;
+    const central = Math.abs(x) <= 9;
+    if (central && z >= 15 && z < 17) return 0.38;
+    if (central && z >= 17 && z < 21) {
+        const step = Math.min(4, Math.floor(21 - z));
+        return 0.02 + step * 0.09;
+    }
     if (Math.abs(x) <= 12 && z >= 12 && z <= 72) return 0.02;
     if (Math.abs(Math.abs(x) - 30) <= 4.5 && z >= 38 && z <= 64) return 0.05;
     return -0.05;
+}
+
+/**
+ * Steepness of the ground under a body, as rise over run. A stair tread reads as much steeper
+ * than 9 cm per metre because the step is sampled at foot length, not at a metre.
+ */
+export function groundSlope(x, z) {
+    const here = groundHeight(x, z), probe = 0.18;
+    let worst = 0;
+    for (const [dx, dz] of [[probe, 0], [-probe, 0], [0, probe], [0, -probe]]) {
+        const rise = Math.abs(groundHeight(x + dx, z + dz) - here) / probe;
+        if (rise > worst) worst = rise;
+    }
+    return worst;
+}
+
+/**
+ * How hard the crowd is leaning on the day at this second of the scenario, 0.55..1.25.
+ * The record's shape: thin and milling at 12:50, a build through the early afternoon, the
+ * peak around 2:15 when the pressure was heaviest, then a thinning out after 3:00.
+ */
+export function crowdPressure(elapsed) {
+    const spread = 34;
+    const build = Math.exp(-((elapsed - 85) ** 2) / (2 * spread * spread));
+    return 0.55 + 0.7 * build;
 }
 
 export const obstacles = [
@@ -73,7 +108,7 @@ export const lineDefs = [
     { z: -47, x0: -4, x1: 4, officers: 6, barrier: 4, name: 'House corridor' },
 ];
 
-export const CROWD_SIZE = 256;
+export const CROWD_SIZE = 512;
 export const MAX_POLICE = 64;
 /** Staff and members sheltering in the chamber. Non-combatants: nothing can target or reach them. */
 export const CIVILIANS = 64;
@@ -84,6 +119,11 @@ export const aidStation = { x: -30, z: 62 };
 const reinforcementTimes = [55, 95, 135, 175, 215];
 const EVACUATION_STARTS = 85;
 const LINE_STANDOFF = 0.6;
+// The bike racks strung across the first line: movable, and the crowd can lean one over.
+const RACK_ROWS = 9, RACK_SPAN = lineDefs[0].x1 - lineDefs[0].x0, RACK_WIDTH = RACK_SPAN / RACK_ROWS;
+const RACK_GIVE = 6;             // raider-seconds of leaning before a rack goes over
+const RACK_PRESS = 0.2;          // how much closer than the rack line the crowd gets once it is down
+const rackCentres = Array.from({ length: RACK_ROWS }, (_, i) => lineDefs[0].x0 + (i + 0.5) * RACK_WIDTH);
 
 const difficulties = {
     story: { hold: 1.2, baton: 4, spray: 3, gas: 0.8, interval: 3.2, playerBaton: 6, playerSpray: 4, playerGas: 3, wear: 0.34, tire: 55, shot: 4 },
@@ -244,12 +284,17 @@ export function createAttempt(difficulty = 'standard', demo = false, role = 'rai
         suppression: 0, recoil: 0,
         lines: lineDefs.map((def, id) => ({ id, state: 'holding', integrity: 100, pressure: 0, hold: 0,
             munition: 10 + id * 2, gasLeft: id === 0 ? 2 : 1, flashCooldown: 6, flashLeft: 1, brokenAt: -1, strain: 0 })),
+        // The racks of the first line as objects, not decoration: each takes the crowd's weight,
+        // leans, and goes over when it has been leaned on long enough.
+        racks: rackCentres.map((x, id) => ({ id, x, push: 0, tip: 0, slide: 0, fallen: false })),
         enemies: lineDefs.flatMap((def, line) => Array.from({ length: def.officers }, (_, i) =>
             officer(officerId++, line, def.x0 + (i + 0.5) * (def.x1 - def.x0) / def.officers, def.z - 0.4))),
         companions: Array.from({ length: role === 'raider' ? CROWD_SIZE - 1 : CROWD_SIZE }, (_, id) => {
             const temperament = temperamentOf(id);
             return {
-                id, x: (id % 32 - 15.5) * 2.2, z: 80 + Math.floor(id / 32) * 2.4,
+                // 36 across, packed back from the grass line: 512 people fit inside the
+                // navigation grid (x -37..37, z -60..109) without spilling off its far edge.
+                id, x: (id % 36 - 17.5) * 2.05, z: 80 + Math.floor(id / 36) * 1.9,
                 mass: 58 + id * 13 % 35, vx: 0, vz: 0, kx: 0, kz: 0,
                 health: 30, milestone: 0, heading: 0, moving: false, attacking: 0,
                 cooldown: 0.5 + id % 7 * 0.13, delay: id % 9 * 0.12, speed: 3.2 + id % 7 * 0.16,
@@ -344,11 +389,21 @@ export function shove(state, direction) {
     return { hit: hit?.id ?? null, x: state.player.x + dx * 1.6, z: state.player.z + dz * 1.6 };
 }
 
+/** True where a bike rack has been shoved over and the crowd may press up to the officers. */
+function rackGapAt(state, x) {
+    return state.racks.some(rack => rack.fallen && Math.abs(x - rack.x) <= RACK_WIDTH / 2);
+}
+
+/** How close the crowd may get to a line at `x`: the rack line, or the officers where a rack is down. */
+function lineLimit(state, index, x) {
+    return lineDefs[index].z + (index === 0 && rackGapAt(state, x) ? -RACK_PRESS : LINE_STANDOFF);
+}
+
 /** The z a raider is held at if this move would cross a line that still holds, else null. */
 function heldAt(state, x, fromZ, toZ) {
     for (const [i, def] of lineDefs.entries()) {
         if (state.lines[i].state !== 'holding') continue;
-        const limit = def.z + LINE_STANDOFF;
+        const limit = lineLimit(state, i, x);
         if (x >= def.x0 - 0.5 && x <= def.x1 + 0.5 && fromZ >= limit - 0.05 && toZ < limit) return limit;
     }
     return null;
@@ -356,8 +411,10 @@ function heldAt(state, x, fromZ, toZ) {
 
 /** Distance from a raider to the next line still holding in front of them. */
 function lineAhead(state, actor) {
-    for (const [i, def] of lineDefs.entries()) {
-        if (state.lines[i].state === 'holding' && actor.z >= def.z + LINE_STANDOFF - 0.05) return actor.z - def.z - LINE_STANDOFF;
+    for (const [i] of lineDefs.entries()) {
+        if (state.lines[i].state !== 'holding') continue;
+        const limit = lineLimit(state, i, actor.x);
+        if (actor.z >= limit - 0.05) return actor.z - limit;
     }
     return Infinity;
 }
@@ -401,19 +458,43 @@ function updateLines(state, difficulty, dt) {
         const line = state.lines[i];
         if (line.state !== 'holding') continue;
         line.munition -= dt; line.flashCooldown -= dt;
-        const limit = def.z + LINE_STANDOFF;
-        const pressing = actor => actor.x >= def.x0 - 0.5 && actor.x <= def.x1 + 0.5 && actor.z >= limit - 0.1 && actor.z <= limit + 2.4;
+        const pressing = actor => actor.x >= def.x0 - 0.5 && actor.x <= def.x1 + 0.5 &&
+            actor.z >= lineLimit(state, i, actor.x) - 0.1 && actor.z <= lineLimit(state, i, actor.x) + 2.4;
         let pressure = 0, sumX = 0, count = 0, instigatorX = 0, instigatorWeight = 0;
+        const rackForce = i === 0 ? new Float32Array(RACK_ROWS) : null;
         for (const c of state.companions) {
             if (c.health <= 0 || c.retreating || c.stun > 0 || !pressing(c)) continue;
             const weight = c.temperament === 'pusher' ? 1 : c.temperament === 'follower' && c.morale > 0.7 ? 0.5 : 0;
             if (weight === 0) continue;
             pressure += weight * (c.surge > 0 ? 1.3 : 1);
             sumX += c.x; count++;
+            if (rackForce) {
+                const slot = Math.floor((c.x - def.x0) / RACK_WIDTH);
+                if (slot >= 0 && slot < RACK_ROWS) rackForce[slot] += weight * (c.surge > 0 ? 1.5 : 1);
+            }
             const iw = (c.hasShield ? 2.5 : 1) * weight * (c.surge > 0 ? 1.5 : 1);
             instigatorX += c.x * iw; instigatorWeight += iw;
         }
-        if (humanRaider && pressing(state.player)) pressure += state.playerPush > 0 ? 6 : 1;
+        if (humanRaider && pressing(state.player)) {
+            pressure += state.playerPush > 0 ? 6 : 1;
+            const slot = Math.floor((state.player.x - def.x0) / RACK_WIDTH);
+            if (rackForce && slot >= 0 && slot < RACK_ROWS) rackForce[slot] += state.playerPush > 0 ? 3 : 0.8;
+        }
+        // The racks take the weight first: lean on one long enough and it goes over, leaving a gap
+        // where the crowd can press right up to the officers behind it.
+        if (rackForce) {
+            for (let r = 0; r < state.racks.length; r++) {
+                const rack = state.racks[r];
+                if (rack.fallen) continue;
+                rack.push = Math.max(0, rack.push + rackForce[r] * dt - 0.5 * dt);
+                rack.tip = Math.min(1, rack.push / RACK_GIVE);
+                if (rack.push >= RACK_GIVE) {
+                    rack.fallen = true; rack.tip = 1;
+                    rack.slide = (r % 2 ? 1 : -1) * 0.85;
+                    state.events.push({ type: 'rack', x: rack.x, z: def.z });
+                }
+            }
+        }
         let hold = def.barrier;
         const frontSlots = Math.floor((def.x1 - def.x0) / 1.7);
         let standing = 0;
@@ -642,8 +723,9 @@ function planRaiders(state, difficulty, dt, agents, bodies) {
         c.moving = false;
         let goal, field, speed = c.speed;
         if (c.health <= 0) {
-            // Armed demo: eliminated, and they stay where they dropped.
-            if (state.armed) { bodies.push(c); continue; }
+            // Armed demo: eliminated and lying where they dropped. They are not steering
+            // obstacles, because the crowd walks over the fallen instead of around them.
+            if (state.armed) continue;
             // Out of the scenario, not out of the world: they sit until a street medic (or
             // time) gets them up, then walk back to the aid station and stay there.
             if (!c.helped) {
@@ -736,6 +818,12 @@ function planRaiders(state, difficulty, dt, agents, bodies) {
             if (c.surge > 0) speed *= 1.25;
             // People packed shoulder to shoulder shuffle; they do not stride.
             speed /= 1 + 0.18 * Math.max(0, c.crowding - 2);
+            // Stone steps cost time, and the terrace is the one climb on the whole route.
+            const slope = groundSlope(c.x, c.z);
+            if (slope > 0.06) speed /= 1 + 2.6 * Math.min(1.4, slope);
+            // The day has a shape: the pavement is thin at 12:50 and the surge is heaviest in
+            // the 2 o'clock hour. Willingness moves with it, so does the pace.
+            speed *= 0.75 + 0.25 * Math.min(1, (crowdPressure(state.elapsed) - 0.55) / 0.7);
         }
         if (goal) {
             c.routeWait -= dt;
@@ -768,7 +856,9 @@ export function advance(state, input, seconds) {
 
     if (state.role !== 'none' && state.health > 0) {
         const magnitude = Math.max(1, Math.hypot(x, z));
-        const speed = (input.sprint ? 8 : 5) * (state.sprayed > 0 ? 0.6 : 1);
+        // Climbing the terrace steps is slower than walking the pavement, for the human too.
+        const climb = 1 / (1 + 2.6 * Math.min(1.4, groundSlope(state.player.x, state.player.z)));
+        const speed = (input.sprint ? 8 : 5) * (state.sprayed > 0 ? 0.6 : 1) * climb;
         const nx = state.player.x + x / magnitude * speed * dt;
         let nz = state.player.z + z / magnitude * speed * dt;
         if (state.role === 'raider') nz = heldAt(state, nx, state.player.z, nz) ?? nz;
@@ -963,6 +1053,7 @@ function stepRaiders(state, difficulty, dt) {
         const dx = actor.x - fromX, dz = actor.z - fromZ, moved = Math.hypot(dx, dz);
         if (held !== null || moved < Math.hypot(agent.nextX - fromX, agent.nextZ - fromZ) * 0.5) steering.stop(actor.id);
         actor.crowding = agent.crowding;
+        actor.density = agent.density ?? 0;
         actor.retreatingNear = agent.retreatingNear ?? 0;
         actor.surgingNear = agent.surgingNear ?? 0;
         actor.moving = moved > 0.3 * dt;
@@ -1026,26 +1117,37 @@ function stepHarm(state, dt) {
     contactGrid.clear();
     for (let i = 0; i < list.length; i++) contactGrid.insert(i, list[i].x, list[i].z);
     const weight = body => body.health <= 0 ? massOf(body) * 4 : massOf(body);
-    for (let i = 0; i < list.length; i++) {
-        const a = list[i];
-        contactGrid.query(a.x, a.z, MIN_GAP, j => {
-            if (j <= i) return;
-            const b = list[j];
-            let dx = b.x - a.x, dz = b.z - a.z, d = Math.hypot(dx, dz);
-            if (d >= MIN_GAP) return;
-            // Exactly stacked bodies part along a direction fixed by who they are, never by chance.
-            if (d < 1e-4) { dx = Math.cos(i * 2.4 + j); dz = Math.sin(i * 2.4 + j); d = 1; }
-            const nx = dx / d, nz = dz / d, push = (MIN_GAP - d) * 0.6;
-            const ma = weight(a), mb = weight(b), total = ma + mb;
-            relocate(state, a, a.x - nx * push * mb / total, a.z - nz * push * mb / total, crowdMember(state, a));
-            relocate(state, b, b.x + nx * push * ma / total, b.z + nz * push * ma / total, crowdMember(state, b));
-            const closing = ((a.vx ?? 0) - (b.vx ?? 0)) * nx + ((a.vz ?? 0) - (b.vz ?? 0)) * nz;
-            if (closing <= 0.8) return;
-            const energy = exchange(a, b, nx, nz, closing);
-            if (energy > 12 && impacts < MAX_IMPACTS) {
-                impacts++;
-                blow(state, 'impact', (a.x + b.x) / 2, (a.z + b.z) / 2, energy, 'body');
-            }
-        });
+    // Two relaxation passes, because a shove travels through a line: the person you push leans
+    // on the person in front of them, who leans on the next. One pass only moves the first pair.
+    for (let pass = 0; pass < 2; pass++) {
+        for (let i = 0; i < list.length; i++) {
+            const a = list[i];
+            contactGrid.query(a.x, a.z, MIN_GAP, j => {
+                if (j <= i) return;
+                const b = list[j];
+                // The fallen are stepped over, not walked around: in the armed demo a body on the
+                // ground never separates against anyone, so a pile forms in place rather than a wall.
+                if (state.armed && (a.health <= 0 || b.health <= 0)) return;
+                let dx = b.x - a.x, dz = b.z - a.z, d = Math.hypot(dx, dz);
+                if (d >= MIN_GAP) return;
+                // Exactly stacked bodies part along a direction fixed by who they are, never by chance.
+                if (d < 1e-4) { dx = Math.cos(i * 2.4 + j); dz = Math.sin(i * 2.4 + j); d = 1; }
+                const nx = dx / d, nz = dz / d;
+                // A crowd is close to incompressible: the deeper the overlap, the harder it
+                // resists, so a packed middle cannot be squeezed into the same square metre.
+                const overlap = MIN_GAP - d;
+                const push = overlap * (0.62 + 0.3 * Math.min(1, overlap / 0.3));
+                const ma = weight(a), mb = weight(b), total = ma + mb;
+                relocate(state, a, a.x - nx * push * mb / total, a.z - nz * push * mb / total, crowdMember(state, a));
+                relocate(state, b, b.x + nx * push * ma / total, b.z + nz * push * ma / total, crowdMember(state, b));
+                const closing = ((a.vx ?? 0) - (b.vx ?? 0)) * nx + ((a.vz ?? 0) - (b.vz ?? 0)) * nz;
+                if (closing <= 0.8) return;
+                const energy = exchange(a, b, nx, nz, closing);
+                if (energy > 12 && impacts < MAX_IMPACTS) {
+                    impacts++;
+                    blow(state, 'impact', (a.x + b.x) / 2, (a.z + b.z) / 2, energy, 'body');
+                }
+            });
+        }
     }
 }

@@ -1,0 +1,91 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>PoCapitol: Bodies Fall, Collide and Pile (2026-11-11)</title>
+<style>
+  body { margin: 0; padding: 32px; background: #0c1219; color: #eceff1; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; }
+  h1 { font-size: 26px; color: #f59e0b; margin: 0 0 8px; font-weight: 700; letter-spacing: 0.03em; }
+  p.subtitle { color: #94a3b8; font-size: 14px; margin: 0 0 26px; line-height: 1.5; max-width: 1000px; }
+  .card { background: #151e29; border: 1px solid #334155; border-radius: 12px; overflow: hidden; margin-bottom: 22px; }
+  .card-header { padding: 13px 18px; background: #1e293b; border-bottom: 1px solid #334155; }
+  .card-header h3 { margin: 0; font-size: 15px; color: #f8fafc; font-weight: 600; }
+  .card-body { padding: 18px; }
+  .comparison { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; }
+  .comp-box { padding: 12px 14px; border-radius: 8px; font-size: 12.5px; line-height: 1.55; }
+  .comp-before { background: #1e293b88; border-left: 3px solid #ef4444; color: #cbd5e1; }
+  .comp-after { background: #064e3b44; border-left: 3px solid #10b981; color: #e2e8f0; }
+  .comp-title { font-weight: 700; text-transform: uppercase; font-size: 10px; margin-bottom: 5px; letter-spacing: 0.06em; }
+  .comp-before .comp-title { color: #f87171; }
+  .comp-after .comp-title { color: #34d399; }
+  .summary-box { background: #131d28; border: 1px solid #f59e0b44; border-left: 5px solid #f59e0b; padding: 18px 22px; border-radius: 8px; }
+  .summary-box h2 { font-size: 17px; color: #f59e0b; margin: 0 0 10px; }
+  .summary-box ul { margin: 0; padding-left: 20px; font-size: 13px; color: #cbd5e1; line-height: 1.7; }
+  code { background: #1e293b; padding: 1px 5px; border-radius: 3px; font-size: 12px; color: #a5b4fc; }
+  .no { background: #2a1418; border: 1px solid #7f1d1d; border-left: 5px solid #ef4444; padding: 16px 20px; border-radius: 8px; margin-bottom: 22px; font-size: 13px; line-height: 1.7; color: #e7d6d6; }
+  .no b { color: #fca5a5; }
+</style>
+</head>
+<body>
+  <h1>PoCapitol: Bodies Fall, Collide and Pile</h1>
+  <p class="subtitle">Fallen bodies no longer lie in the exact spot they fell on top of each other. Annotated capture: <code>SCREENSHOTS/261111-pocapitol-bodies.png</code>.</p>
+
+  <div class="card">
+    <div class="card-header"><h3>Falling and heaping</h3></div>
+    <div class="card-body">
+      <div class="comparison">
+        <div class="comp-box comp-before">
+          <div class="comp-title">Before</div>
+          Each body tipped over about its own feet and the pose settled there. Two people shot in the same
+          square metre ended up lying through each other, flat on the same plane, all facing the same way.
+        </div>
+        <div class="comp-box comp-after">
+          <div class="comp-title">After</div>
+          A body comes to rest on the heap around it. People already on the ground within 1.25 m decide the
+          layer this one joins: it is pushed clear of them, lifted onto the layer below and rolled. A heap
+          stacks at most three bodies deep, then further bodies splay outward instead of climbing.
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="card">
+    <div class="card-header"><h3>Where it lives</h3></div>
+    <div class="card-body">
+      <div class="comparison">
+        <div class="comp-box comp-after">
+          <div class="comp-title">Pure, and tested</div>
+          <code>restPlace(x, z, downs)</code> in <code>collapse.js</code> returns the offset, height, roll and
+          layer. It has no three.js and no state, so three new cases in
+          <code>tests/pocapitol-collapse.test.mjs</code> cover it: clear ground, a heap that splays and lifts,
+          and a bounded heap.
+        </div>
+        <div class="comp-box comp-after">
+          <div class="comp-title">Render only</div>
+          <code>crowd.js</code> keeps the spots of the fallen and asks <code>restPlace</code> once, when a body
+          first goes down. The result is cached with the settled pose, so a field of bodies costs nothing
+          extra per frame. Standing crowd collision in <code>world.js</code> is untouched.
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="no">
+    <b>Not implemented: dismemberment and blood spray.</b> I did not add severed limbs or blood particles.
+    The game's own specification says of the armed demo that <em>"no injury is shown"</em>, and it is a
+    fictional reconstruction of the January 6 attack on the Capitol — an event at which people died.
+    Detached limbs and arterial spray are the one thing this scene should not depict. What can be done
+    instead, on request: a hit reaction (jolt, stagger, clutch), limp limbs during the fall, and a
+    fabric-tear or scuff decal where someone went down.
+  </div>
+
+  <div class="summary-box">
+    <h2>Also in this change</h2>
+    <ul>
+      <li>People now <strong>turn smoothly</strong>: the simulated heading is eased for the eye, so officers and raiders pivot instead of snapping.</li>
+      <li>Officers <strong>rock on their feet</strong> under load — a small lean whose rate and depth grow with how hard their line is being leaned on.</li>
+      <li>The <strong>bike racks are driven by the crowd</strong>: bow, shove and rock now scale with pressure against the line, not with integrity alone.</li>
+    </ul>
+  </div>
+</body>
+</html>

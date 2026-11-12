@@ -4,11 +4,37 @@
 
 import { areas, lineDefs, obstacles, milestones } from './world.js';
 
+/**
+ * Two palettes: the tablet's own, and the Okabe–Ito set the rest of the app switches to when
+ * <html data-colorsafe> is present (appPrefs.applyColorSafe). `setPalette` pins one for this
+ * canvas from the game's settings; 'auto' follows the document.
+ */
+const PALETTES = {
+    default: {
+        raider: '#54a0ff', pusher: '#ff9f43', medic: '#55efc4', police: '#00d2d3',
+        hot: 'rgba(255, 60, 40, 0.45)', warm: 'rgba(255, 180, 0, 0.25)',
+        mid: 'rgba(255, 190, 20, 0.35)', cool: 'rgba(60, 220, 100, 0.15)',
+        low: 'rgba(40, 180, 240, 0.22)', low2: 'rgba(20, 120, 220, 0.08)',
+        line: 'rgba(70, 160, 255, 0.95)', warn: 'rgba(255, 200, 40, 0.95)', critical: 'rgba(255, 60, 50, 0.95)',
+    },
+    colorsafe: {
+        raider: '#0072B2', pusher: '#E69F00', medic: '#009E73', police: '#56B4E9',
+        hot: 'rgba(213, 94, 0, 0.45)', warm: 'rgba(230, 159, 0, 0.25)',
+        mid: 'rgba(240, 228, 66, 0.35)', cool: 'rgba(0, 158, 115, 0.16)',
+        low: 'rgba(86, 180, 233, 0.22)', low2: 'rgba(0, 114, 178, 0.08)',
+        line: 'rgba(0, 114, 178, 0.95)', warn: 'rgba(230, 159, 0, 0.95)', critical: 'rgba(213, 94, 0, 0.95)',
+    },
+};
+
 export function createRadar(canvas, { onSelectUnit } = {}) {
     if (!canvas) return null;
     const ctx = canvas.getContext('2d');
     let width = canvas.width, height = canvas.height;
     let cachedDpr = 1;
+    let paletteMode = 'auto';
+    const colors = () => PALETTES[paletteMode === 'auto'
+        ? (document.documentElement.hasAttribute('data-colorsafe') ? 'colorsafe' : 'default')
+        : paletteMode] ?? PALETTES.default;
 
     // Mapping from world coordinates (x in [-40, 40], z in [-75, 110]) to canvas coords
     const WORLD_X_MIN = -45, WORLD_X_MAX = 45;
@@ -81,6 +107,7 @@ export function createRadar(canvas, { onSelectUnit } = {}) {
 
     function render(state, selectedUnit = null, dt = 0.016) {
         if (!state) return;
+        const C = colors();
         resize();
         pulseTime += dt;
         ctx.save();
@@ -155,14 +182,14 @@ export function createRadar(canvas, { onSelectUnit } = {}) {
 
             const grad = heatCtx.createRadialGradient(hx, hy, 1, hx, hy, rad);
             if (pressure > 0.7) {
-                grad.addColorStop(0, 'rgba(255, 60, 40, 0.45)');
-                grad.addColorStop(0.5, 'rgba(255, 180, 0, 0.25)');
+                grad.addColorStop(0, C.hot);
+                grad.addColorStop(0.5, C.warm);
             } else if (pressure > 0.35) {
-                grad.addColorStop(0, 'rgba(255, 190, 20, 0.35)');
-                grad.addColorStop(0.6, 'rgba(60, 220, 100, 0.15)');
+                grad.addColorStop(0, C.mid);
+                grad.addColorStop(0.6, C.cool);
             } else {
-                grad.addColorStop(0, 'rgba(40, 180, 240, 0.22)');
-                grad.addColorStop(0.7, 'rgba(20, 120, 220, 0.08)');
+                grad.addColorStop(0, C.low);
+                grad.addColorStop(0.7, C.low2);
             }
             grad.addColorStop(1, 'rgba(0, 0, 0, 0)');
 
@@ -192,10 +219,10 @@ export function createRadar(canvas, { onSelectUnit } = {}) {
             ctx.strokeStyle = broken
                 ? 'rgba(180, 50, 50, 0.4)'
                 : integrity > 60
-                ? 'rgba(70, 160, 255, 0.95)'
+                ? C.line
                 : integrity > 25
-                ? 'rgba(255, 200, 40, 0.95)'
-                : 'rgba(255, 60, 50, 0.95)';
+                ? C.warn
+                : C.critical;
 
             ctx.beginPath();
             ctx.moveTo(p0.x, p0.y);
@@ -222,10 +249,10 @@ export function createRadar(canvas, { onSelectUnit } = {}) {
             ctx.fillStyle = downed
                 ? 'rgba(140, 140, 150, 0.45)'
                 : c.temperament === 'medic'
-                ? '#55efc4'
+                ? C.medic
                 : c.temperament === 'pusher'
-                ? '#ff9f43'
-                : '#54a0ff';
+                ? C.pusher
+                : C.raider;
 
             const dotR = (downed ? 1.6 : 2.5) * cachedDpr;
             ctx.beginPath();
@@ -239,7 +266,7 @@ export function createRadar(canvas, { onSelectUnit } = {}) {
             const p = toCanvas(e.x, e.z);
             const downed = e.health <= 0;
 
-            ctx.fillStyle = downed ? 'rgba(100, 90, 100, 0.4)' : '#00d2d3';
+            ctx.fillStyle = downed ? 'rgba(100, 90, 100, 0.4)' : C.police;
             const dotR = (downed ? 1.5 : 2.7) * cachedDpr;
             ctx.beginPath();
             ctx.arc(p.x, p.y, dotR, 0, Math.PI * 2);
@@ -289,5 +316,5 @@ export function createRadar(canvas, { onSelectUnit } = {}) {
         // cleanup listeners
     }
 
-    return { render, destroy, dispose: destroy, canvas };
+    return { render, destroy, dispose: destroy, canvas, setPalette(mode) { paletteMode = mode ?? 'auto'; } };
 }

@@ -526,3 +526,99 @@ numbers, and must not be used to predict or inform real clinical outcomes.
 3. Should the police-line and observer roles record local results?
 4. The armed demo's Standard difficulty usually ends with every protestor eliminated and
    Story with every officer eliminated. Is that the balance you want to watch?
+
+## 18. Crowd physics, verticality, sound, light and camera realism pass (2026-11-11)
+
+Ten changes, all presentational or crowd-physics fidelity. None of them touch the limits in
+section 17: no injury is depicted, no real person appears, and there is no real access plan.
+
+1. **The terrace is real (`world.js`, `scene.js`).** The central approach between the stands is
+   now four stone treads rising 0.38 m to the portico landing, drawn to match `groundHeight()`
+   exactly. Agents have a `groundSlope()` and move slower on it, so the crowd bunches at the foot
+   of the steps and drains through them slowly — the choke point a stairway creates in a real
+   crowd. The simulation itself is still planar; the height is visual plus a speed cost.
+2. **The crowd is incompressible (`world.js`).** Body separation now runs two relaxation passes
+   with a stiffness that rises with overlap depth, so a shove travels down a line instead of
+   moving one pair. Mass still decides who gives way, and the fallen are still stepped over.
+3. **Density is a mechanic, not a heatmap (`steering.js`, `inspector.js`).** Every agent carries
+   `density` in people per square metre from the same neighbour query the radar already read.
+   Above about 4 people/m² the agent's steering authority is perturbed deterministically, so
+   someone packed in the middle is carried by people they cannot see. Telemetry and the
+   inspector's status line report it.
+4. **Sound is occluded and delayed (`audio.js`).** One-shots are low-passed and attenuated by the
+   walls between source and listener, are only partly screened when lined up with a doorway, and
+   arrive after `distance / 343` seconds — the propagation delay that makes a big stone room feel
+   big.
+5. **The eye adapts (`scene.js`).** Tone-mapping exposure eases toward 1.62 indoors and 1.1 out,
+   faster going darker than coming back out, and lifts slightly at dusk. A doorway now reads as a
+   threshold rather than a texture swap.
+6. **One wind moves the scene (`look.js`, `crowd.js`, `particles.js`, `scene.js`).** The weather's
+   wind vector is shared by the banner shader, the banners' own orientation, the gas and smoke
+   drift and the breath vapour, gusting on top of the mean.
+7. **Footprints and rime (`decals.js`, `scene.js`, `crowd.js`).** A boot-sole decal ring records
+   where people walked, one print per stride outdoors, and a pale rime builds on hats and
+   shoulders over the first several minutes outside.
+8. **Everyone walks their own way (`crowd.js`).** Stride length, cadence and an occasionally
+   favoured knee are drawn once per person from the same stable trait that already sets their
+   height and build.
+9. **Phone POV (`scene.js`, `post.js`).** When the spectator camera settles on one of the many
+   people filming, it cuts to their screen: portrait crop, hand shake, rolling-shutter skew,
+   autofocus hunt and metering pumping, then back out. Disabled under reduced motion.
+10. **The day has a shape (`world.js`).** `crowdPressure(elapsed)` peaks around 2:15 pm and falls
+    away after 3:00, modulating crowd pace and willingness against the existing 12:50-to-6:00
+    clock rather than against frame count.
+
+Verified with the Node engine tests (`tests/pocapitol-*.test.mjs`, 58 passing) and a zero-warning
+`dotnet build`.
+
+## 19. Spectator direction, after-action reporting, comfort and reliability (2026-11-11)
+
+Five owner-selected additions. None of them touch the limits in section 17: still no injury
+depicted, no real person, no breach route, no score, and no public ranking.
+
+1. **Auto-director for the demo (`director.js`, `scene.js`, `index.js`).** The spectator camera
+   no longer follows only the raider closest to the doors. A coarse 10 m heat grid is fed by the
+   impact events the simulation already emits, decays over ~4.5 s, and scores each living raider
+   by nearby heat, milestone progress, crowding and proximity to the holding line. The camera
+   cuts on a 4-8 s dwell with hysteresis, so it does not flap between two equally interesting
+   people. "Follow leader" remains one choice away in the options sheet, and the HUD and radar
+   beacon both name the subject actually on screen.
+2. **After-action report (`report.js`, `index.js`, page).** Every attempt is sampled once a
+   second: police-line integrity, the pressure against it, raiders and police standing,
+   casualties, and the time each milestone was crossed. The end card gains a chart of integrity
+   against pressure with milestone ticks, six flat figures, and **Export CSV**, **Save chart
+   (PNG)** and **Copy summary**. The same report is available from the Tab panel for the demo,
+   which has no end card. It is a record of a fictional attempt, not a score.
+3. **Comfort and access (`prefs.js`, page, `radar.js`).** Camera sensitivity and field of view,
+   captions for the synthesized radio traffic, a high-contrast HUD, a tablet or Okabe-Ito radar
+   palette, and a key map with the arrows hard-wired as a fallback. Reduced motion, reduced
+   flashing and the app-wide colour-safe palette are still owned by the shared app settings and
+   are respected rather than duplicated. Settings persist per browser.
+4. **Real Capitol Hill footprints (`scripts/pocapitol-campus.mjs`, `campus.js`,
+   `campusData.js`).** The city around the hand-built grounds now uses 700 real building
+   footprints from OpenStreetMap, pulled once from the Overpass API at build time, projected onto
+   the scene's compressed bearings, and committed as `wwwroot/data/pocapitol/campus-osm.json`.
+   They are instanced off one unit box (four draw calls) and start outside the 150 m radius the
+   hand model owns. Data (c) OpenStreetMap contributors, ODbL. A missing file changes nothing.
+5. **Reliability and diagnostics (`index.js`, page).** Frame-time p50/p95, frames over 55 ms,
+   draw calls, triangles, actor count, footprint count, weather source and the last ten engine
+   events are collected in memory and copied with one button. Engine init, context loss, frame
+   failure and attempt end are emitted to `window.appInsights` when the host wires it up; the
+   ring buffer works without it. Export helpers fall back to `execCommand` where the clipboard
+   API is blocked.
+
+Verified with the Node engine tests (`tests/pocapitol-*.test.mjs`, including new report, director and preference suites) and a zero-warning `dotnet build`.
+
+### Gunsmoke and carried signage (2026-11-11, follow-up)
+
+- **Muzzle smoke (`bursts.js`).** Each gunsmoke puff is twice the size and hangs eight times as
+  long. A volley now leaves a drifting grey bank along the line instead of a blink, which is the
+  point: past a few seconds the far ranks stop reading as people.
+- **Carried boards (`wwwroot/data/pocapitol/placards.json`, `signs.js`, `crowd.js`).** Signage is
+  data, not code. The national and Gadsden flags stay in the mix; up to fourteen distinct placard
+  texts join them per scene, each bearer's board fixed for the attempt by the same stable trait
+  that sets their height and build, and one instanced mesh per board so the draw-call count stays
+  flat. Across launches the whole list is used.
+- **Content.** The shipped list is deliberately non-partisan. The scenario is fiction and the
+  product rules keep it free of real campaign messaging or identifiable people, so the array is
+  the owner's to fill rather than something generated here.

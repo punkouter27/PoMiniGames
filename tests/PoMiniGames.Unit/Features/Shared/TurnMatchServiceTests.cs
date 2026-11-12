@@ -1,9 +1,7 @@
 using FluentAssertions;
 using Microsoft.AspNetCore.SignalR;
 using Microsoft.Extensions.Logging.Abstractions;
-using PoMiniGames.Features.ConnectFive;
 using PoMiniGames.Features.Shared.TurnMatch;
-using PoMiniGames.Features.TicTacToe;
 using PoMiniGames.Shared.Games;
 
 namespace PoMiniGames.Unit.Features.Shared;

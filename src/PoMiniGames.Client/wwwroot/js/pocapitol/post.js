@@ -343,13 +343,26 @@ const GradeShader = {
         uVignette: { value: 0.25 }, uSaturation: { value: 0.94 },
         uDistortion: { value: 0.025 }, uChromatic: { value: 0.0025 },
         uFlash: { value: 0.0 }, uSuppression: { value: 0.0 },
+        // How much of this frame is shot on a phone held up in the crowd, 0..1.
+        uPhone: { value: 0.0 }, uPhoneTime: { value: 0.0 },
     },
     vertexShader: `varying vec2 vUv; void main() { vUv = uv; gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0); }`,
     fragmentShader: `
-        uniform sampler2D tDiffuse; uniform float uTime, uGrain, uVignette, uSaturation, uDistortion, uChromatic, uFlash, uSuppression;
+        uniform sampler2D tDiffuse; uniform float uTime, uGrain, uVignette, uSaturation, uDistortion, uChromatic, uFlash, uSuppression, uPhone, uPhoneTime;
         varying vec2 vUv;
         void main() {
             vec2 uv = vUv;
+            // A phone in the crowd frames portrait, and the hand holding it shakes.
+            bool cropped = false;
+            if (uPhone > 0.001) {
+                vec2 p = uv - 0.5;
+                p.x *= 0.56;
+                p.y += p.x * 0.02 * uPhone;                                  // rolling shutter skew
+                p.x += sin(uPhoneTime * 11.0) * 0.0016 * uPhone;              // hand
+                p.y += cos(uPhoneTime * 8.3) * 0.0016 * uPhone;
+                uv = p + 0.5;
+                cropped = abs(vUv.x - 0.5) > 0.28;
+            }
             vec2 d = uv - 0.5;
             float r2 = dot(d, d);
             uv += d * (r2 * uDistortion);
@@ -373,6 +386,17 @@ const GradeShader = {
             if (uGrain > 0.0) {
                 float noise = fract(sin(dot(uv * 980.0 + fract(uTime * 17.0), vec2(12.9898, 78.233))) * 43758.5453);
                 c += (noise - 0.5) * uGrain * (0.4 + 0.6 * (1.0 - l));
+            }
+            if (uPhone > 0.001) {
+                // Autofocus hunting, then metering pumping as the sky comes into frame.
+                float hunt = 0.0016 * uPhone * (0.5 + 0.5 * sin(uPhoneTime * 3.7));
+                vec3 soft = texture2D(tDiffuse, uv + vec2(hunt, 0.0)).rgb
+                    + texture2D(tDiffuse, uv - vec2(hunt, 0.0)).rgb
+                    + texture2D(tDiffuse, uv + vec2(0.0, hunt)).rgb
+                    + texture2D(tDiffuse, uv - vec2(0.0, hunt)).rgb;
+                c = mix(c, soft * 0.25, 0.55 * uPhone);
+                c *= 1.0 + 0.09 * uPhone * sin(uPhoneTime * 1.9);
+                if (cropped) c = vec3(0.015);
             }
             gl_FragColor = vec4(c, 1.0);
         }`,
@@ -459,6 +483,7 @@ export function createPost(renderer, scene, camera, depthCamera) {
     }
     function render(dt, time, calm, cam, sunPos) {
         grade.uniforms.uTime.value = time;
+        grade.uniforms.uPhoneTime.value = time;
         grade.uniforms.uGrain.value = calm ? 0.0 : 0.024;
         if (cam && sunPos && shaftsPass.enabled) {
             sunNDC.copy(sunPos).project(cam);
@@ -477,6 +502,10 @@ export function createPost(renderer, scene, camera, depthCamera) {
         setCombatStress(flash, suppression) {
             grade.uniforms.uFlash.value = flash;
             grade.uniforms.uSuppression.value = suppression;
+        },
+        /** Cuts to (or out of) a phone held up in the crowd, 0..1, with its own lens artefacts. */
+        setPhone(amount) {
+            grade.uniforms.uPhone.value = Math.max(0, Math.min(1, amount));
         },
         /** Pulls focus onto a subject `distance` metres away for a moment (top quality only). */
         rackFocus(distance, hold, strength) { if (dofAllowed) focus.trigger(distance, hold, strength); },

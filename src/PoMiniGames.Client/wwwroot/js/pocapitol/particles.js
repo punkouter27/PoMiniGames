@@ -8,7 +8,8 @@ import { billboardChunk, softTexture } from './look.js';
 // and a paused game shows a paused cloud.
 
 const GAS_PUFFS = 14, SPRAY_DROPS = 18, FLASH_SPRITES = 6;
-const WIND = { x: 0.32, z: -0.12 }; // a light westerly drifting toward the building, m/s
+/** Calm-day fallback. The scene replaces this with the weather's own wind vector when it has one. */
+const CALM = { x: 0.32, z: -0.12 };
 
 function frac(v) { return v - Math.floor(v); }
 
@@ -56,9 +57,13 @@ export function createParticles(scene, capacity = 320) {
      * @param time    seconds of scenario time (stops when paused)
      * @param level   0..1 brightness of the day, so smoke darkens at dusk
      * @param calm    reduced flashing: the flash-bang core stays dim
+     * @param wind    the weather's own wind, m/s: gas drifts and thins with it
      */
-    function update(effects, time, level, calm) {
+    function update(effects, time, level, calm, wind = null) {
         n = 0; light = 0.35 + level * 0.65;
+        const wx = wind?.x ?? CALM.x, wz = wind?.z ?? CALM.z;
+        // A stiffer wind tears a cloud apart and carries it further before it fades.
+        const spread = 1 + Math.min(1.2, Math.hypot(wx, wz) / 8);
         for (const e of effects) {
             const age = e.span - e.life, seed = e.x * 1.37 + e.z * 0.71;
             if (e.type === 'gas') {
@@ -66,11 +71,11 @@ export function createParticles(scene, capacity = 320) {
                 for (let i = 0; i < GAS_PUFFS; i++) {
                     const r1 = frac(Math.sin(seed + i * 12.9898) * 43758.55), r2 = frac(Math.sin(seed + i * 78.233) * 12543.1);
                     const angle = r1 * Math.PI * 2 + age * 0.08 * (r2 - 0.5);
-                    const reach = e.r * (0.15 + 0.85 * Math.sqrt(r2)) * (0.45 + 0.55 * grow);
+                    const reach = e.r * (0.15 + 0.85 * Math.sqrt(r2)) * (0.45 + 0.55 * grow) * spread;
                     const rise = 0.35 + (i % 4) * 0.4 + age * (0.05 + r1 * 0.08);
                     const size = e.r * (0.55 + 0.35 * r1) * (0.5 + 0.5 * grow) + age * 0.12;
-                    add(e.x + Math.cos(angle) * reach + WIND.x * age, rise + size * 0.25, e.z + Math.sin(angle) * reach + WIND.z * age,
-                        size, gas, 0.3 * fadeIn * fadeOut * (0.6 + 0.4 * r2));
+                    add(e.x + Math.cos(angle) * reach + wx * age, rise + size * 0.25, e.z + Math.sin(angle) * reach + wz * age,
+                        size, gas, 0.3 * fadeIn * fadeOut * (0.6 + 0.4 * r2) / spread);
                 }
             } else if (e.type === 'spray') {
                 const dx = e.tx - e.x, dz = e.tz - e.z, len = Math.hypot(dx, dz) || 1;

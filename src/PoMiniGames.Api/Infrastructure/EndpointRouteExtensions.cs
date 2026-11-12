@@ -1,7 +1,6 @@
 using PoMiniGames.Features.Account;
 using PoMiniGames.Features.Auth;
-using PoMiniGames.Features.ConnectFive;  // ConnectFiveHub (the slice's only server surface)
-using PoMiniGames.Features.TicTacToe;    // TicTacToeHub (same)
+using PoMiniGames.Features.Shared.TurnMatch; // ConnectFiveHub + TicTacToeHub (shared turn-match hubs)
 using PoMiniGames.Features.Health;
 using PoMiniGames.Features.Integrity;
 using PoMiniGames.Features.Invites;       // push subscriptions + game invites (2026-10-01)

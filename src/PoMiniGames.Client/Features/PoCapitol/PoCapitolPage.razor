@@ -19,13 +19,20 @@
            Outcome="@ResultOutcome"
            Stats="@ResultStats"
            GameSummary="@ResultSummary"
+           GameDetails="@ResultDetails"
            Diagnostics="@DiagStats"
            DiagnosticsContent="@TabHudContent">
     <ErrorBoundary @ref="_errorBoundary">
         <ChildContent>
-            <div class="pc-root @(_demo ? "pc-phonecam" : null)">
+            <div class="pc-root @(_demo ? "pc-phonecam" : null) @(_prefs.contrast == "high" ? "pc-contrast" : null)">
                 <div id="pocapitol-scene" class="pc-scene" role="img" aria-label="Fictional Capitol grounds and interiors"></div>
                 <div class="pc-film" aria-hidden="true"></div>
+                @if (_status == "active" && _caption.Length > 0)
+                {
+                    <div class="pc-caption" role="status" aria-live="polite">
+                        <span class="pc-caption-tag">RADIO</span> @_caption
+                    </div>
+                }
                 @if (_status != "active")
                 {
                     <div class="pc-edition">PoCAPITOL <span>ALTERNATE HISTORY · FICTIONAL SCENARIO</span></div>
@@ -89,6 +96,7 @@
                             </div>
                             <div class="pc-inspector-meta">
                                 <span>@_selectedTelemetry.gear</span>
+                                <span>Crowd density: @_selectedTelemetry.density.ToString("0.0") people/m²</span>
                                 @if (!string.IsNullOrEmpty(_selectedTelemetry.lineAssignment))
                                 {
                                     <span>Assignment: @_selectedTelemetry.lineAssignment</span>
@@ -217,6 +225,24 @@
     private string? _mode;
     private int _activeRaiders = 256, _activePolice = 44, _totalPolice = 44, _subject, _lineIndex, _lineIntegrity = 100, _sheltering = 64;
     private bool _radarNeedsInit = true;
+    private PrefsDto _prefs = new();
+    private ReportDto? _report;
+    private string _caption = "";
+    private DateTime _captionStamp;
+
+    private static readonly string[] KeyChoices =
+        ["KeyW", "KeyA", "KeyS", "KeyD", "KeyQ", "KeyE", "KeyI", "KeyJ", "KeyK", "KeyL", "KeyF", "KeyR", "Space", "ShiftLeft", "ControlLeft", "KeyP"];
+
+    private IEnumerable<(string Action, string Label, string Code)> KeyRows =>
+    [
+        ("forward", "Move forward", _prefs.forward),
+        ("back", "Move back", _prefs.back),
+        ("left", "Move left", _prefs.left),
+        ("right", "Move right", _prefs.right),
+        ("push", "Push", _prefs.push),
+        ("sprint", "Sprint", _prefs.sprint),
+        ("pause", "Pause", _prefs.pause),
+    ];
 
     private bool Playing => !_demo && _role != "observer";
     private string Objective => _milestone < Objectives.Length ? Objectives[_milestone] : "Chamber doors reached";
@@ -288,6 +314,31 @@
         <div>What happened afterwards: the real building was cleared that evening, a citywide curfew began at 6:00 pm, the Senate reconvened at about 8:00 pm, and Congress finished certifying the election at about 3:40 am on January 7.</div>
     </div>;
 
+    /// <summary>
+    /// The after-action report, below the result summary: what the attempt actually looked like,
+    /// from the sampled series the engine already keeps. Charts and files only — no score, and
+    /// nothing leaves the browser unless the player exports it.
+    /// </summary>
+    private RenderFragment ResultDetails => @<div class="pc-report">
+        @if (_report is { svg.Length: > 0 } report)
+        {
+            <div class="pc-report-chart">@((MarkupString)report.svg)</div>
+            <dl class="pc-report-facts">
+                <div><dt>Milestones</dt><dd>@report.milestones / @Objectives.Length</dd></div>
+                <div><dt>Lowest line</dt><dd>@report.lowestIntegrity%</dd></div>
+                <div><dt>Peak pressure</dt><dd>@report.peakPressure.ToString("0.0")</dd></div>
+                <div><dt>First break</dt><dd>@(report.firstBreak < 0 ? "never" : $"{report.firstBreak:0}s")</dd></div>
+                <div><dt>Casualties</dt><dd>@report.casualties (@report.immediate immediate)</dd></div>
+                <div><dt>Standing</dt><dd>@report.standing raiders · @report.police police</dd></div>
+            </dl>
+            <div class="pc-report-actions">
+                <button type="button" class="app-btn app-btn--sm" @onclick="ExportCsvAsync">Export CSV</button>
+                <button type="button" class="app-btn app-btn--sm" @onclick="ExportPngAsync">Save chart (PNG)</button>
+                <button type="button" class="app-btn app-btn--sm" @onclick="CopySummaryAsync">Copy summary</button>
+            </div>
+        }
+    </div>;
+
     private IEnumerable<StatItem> DiagStats =>
     [
         new() { Label = "Status", Value = _status },
@@ -302,7 +353,7 @@
         new() { Label = "Tier", Value = _graphicsLabel },
     ];
 
-    private RenderFragment TabHudContent => @<div class="pc-tab-hud">
+    private RenderFragment TabHudContent => @<div class="pc-tab-hud @(_prefs.contrast == "high" ? "pc-contrast" : null)">
         <div class="pc-tab-hud-head">
             <div>
                 <div class="pc-hud-eyebrow-row">
@@ -400,6 +451,20 @@
                 </div>
             }
         </div>
+
+        @if (_report is { } report)
+        {
+            <div class="pc-tab-report">
+                <strong>Last attempt</strong>
+                <p class="pc-small">@report.mode · @report.outcome · @report.milestones milestones · lowest line @report.lowestIntegrity% · @report.casualties casualties</p>
+                <div class="pc-report-actions">
+                    <button type="button" class="app-btn app-btn--sm" @onclick="ExportCsvAsync">Export CSV</button>
+                    <button type="button" class="app-btn app-btn--sm" @onclick="CopySummaryAsync">Copy summary</button>
+                </div>
+            </div>
+        }
+
+        <button type="button" class="app-btn app-btn--sm" @onclick="CopyDiagnosticsAsync">Copy diagnostics</button>
     </div>;
 
     /// <summary>
@@ -446,6 +511,68 @@
                 <RadzenSelectBarItem Text="Reduced Motion" Value="@("reduced")" />
             </Items>
         </RadzenSelectBar>
+
+        <h4 class="pc-section-head">Comfort &amp; access</h4>
+        <label class="pc-small" for="pc-opt-sens">Camera sensitivity · @_prefs.sensitivity.ToString("0.00")×</label>
+        <input id="pc-opt-sens" class="pc-range" type="range" min="0.4" max="2.5" step="0.05"
+               value="@_prefs.sensitivity" @onchange="OnSensitivityChanged" />
+
+        <label class="pc-small" for="pc-opt-fov">Field of view · @_prefs.fov°</label>
+        <input id="pc-opt-fov" class="pc-range" type="range" min="50" max="85" step="1"
+               value="@_prefs.fov" @onchange="OnFovChanged" />
+
+        <label class="pc-small" for="pc-opt-captions">Captions for spoken radio</label>
+        <RadzenSelectBar TValue="bool" Value="@_prefs.captions" Change="@(async (bool value) => await SavePrefsAsync(captions: value))" id="pc-opt-captions">
+            <Items>
+                <RadzenSelectBarItem Text="Off" Value="@false" />
+                <RadzenSelectBarItem Text="On" Value="@true" />
+            </Items>
+        </RadzenSelectBar>
+
+        <label class="pc-small" for="pc-opt-contrast">HUD contrast</label>
+        <RadzenSelectBar TValue="string" Value="@_prefs.contrast" Change="@(async (string value) => await SavePrefsAsync(contrast: value))" id="pc-opt-contrast">
+            <Items>
+                <RadzenSelectBarItem Text="Normal" Value="@("normal")" />
+                <RadzenSelectBarItem Text="High" Value="@("high")" />
+            </Items>
+        </RadzenSelectBar>
+
+        <label class="pc-small" for="pc-opt-radar-palette">Radar palette</label>
+        <RadzenSelectBar TValue="string" Value="@_prefs.radar" Change="@(async (string value) => await SavePrefsAsync(radar: value))" id="pc-opt-radar-palette">
+            <Items>
+                <RadzenSelectBarItem Text="Auto" Value="@("auto")" />
+                <RadzenSelectBarItem Text="Tablet" Value="@("default")" />
+                <RadzenSelectBarItem Text="Colour-safe" Value="@("colorsafe")" />
+            </Items>
+        </RadzenSelectBar>
+
+        @if (_demo)
+        {
+            <label class="pc-small" for="pc-opt-director">Spectator camera</label>
+            <RadzenSelectBar TValue="bool" Value="@_prefs.director" Change="@(async (bool value) => await SavePrefsAsync(director: value))" id="pc-opt-director">
+                <Items>
+                    <RadzenSelectBarItem Text="Auto-director" Value="@true" />
+                    <RadzenSelectBarItem Text="Follow leader" Value="@false" />
+                </Items>
+            </RadzenSelectBar>
+        }
+
+        <details class="pc-keymap">
+            <summary>Key bindings</summary>
+            <p class="pc-small">Arrow keys always steer, whatever is bound here.</p>
+            @foreach (var row in KeyRows)
+            {
+                <div class="pc-key-row">
+                    <span>@row.Label</span>
+                    <select class="pc-key-select" value="@row.Code" @onchange="@(e => SetKeyAsync(row.Action, e.Value))">
+                        @foreach (var option in KeyChoices)
+                        {
+                            <option value="@option" selected="@(option == row.Code)">@DescribeKey(option)</option>
+                        }
+                    </select>
+                </div>
+            }
+        </details>
 
         <button type="button" class="app-btn" @onclick="ToggleRadar">
             @(_radarExpanded ? "Hide tactical radar" : "Show tactical radar")
@@ -547,6 +674,7 @@
             try { _weatherMode = await JS.InvokeAsync<string>("PoCapitol.getWeather"); } catch {}
             _ready = true;
             _status = "intro";
+            try { _prefs = await JS.InvokeAsync<PrefsDto>("PoCapitol.getPrefs"); } catch { }
             if (_demo) await StartAsync();
         }
         catch (Exception ex) when (ex is JSException or InvalidOperationException)
@@ -564,6 +692,8 @@
         {
             await JS.InvokeVoidAsync("PoCapitol.start", _difficulty, _demo, _role);
             _recorded = false;
+            _report = null;
+            _caption = "";
             _status = "active";
             _health = 100; _milestone = 0; _elapsed = 0; _message = ""; _resultWarning = ""; _outcome = "";
             _activeRaiders = 256; _activePolice = 44; _totalPolice = 44; _subject = 0; _lineIndex = 0; _lineIntegrity = 100; _sheltering = 64;
@@ -604,12 +734,15 @@
         int lineIntegrity, string graphics, int sheltering)
     {
         if (_disposed || demo != _demo) return;
+        var previousStatus = _status;
         var changed = _milestone != milestone || _status != status || _lineIndex != lineIndex;
         var lineBroke = lineIndex != _lineIndex && _lineIndex >= 0 && status == "active";
         _health = health; _milestone = milestone; _elapsed = elapsed; _status = status; _message = message;
         _activeRaiders = activeRaiders; _activePolice = activePolice; _subject = subject;
         _outcome = outcome; _totalPolice = totalPolice; _lineIndex = lineIndex; _lineIntegrity = lineIntegrity;
         _graphicsLabel = graphics; _sheltering = sheltering;
+        // Each attempt that ends refreshes the report, including the demo's repeated runs.
+        if (previousStatus is not "completed" and not "failed" && status is "completed" or "failed") _ = LoadReportAsync();
         if (changed) _announcement = status != "active" ? $"Scenario {status}. {ResultHeading}"
             : lineBroke ? $"A police line has given way. {HudTitle}" : HudTitle;
         if (_role == "raider" && !_demo && !_recorded && status is "completed" or "failed")
@@ -728,6 +861,189 @@
         catch (JSException) {}
     }
 
+    private async Task OnSensitivityChanged(ChangeEventArgs e)
+    {
+        if (double.TryParse(e.Value?.ToString(), System.Globalization.NumberStyles.Float,
+                System.Globalization.CultureInfo.InvariantCulture, out var value))
+        {
+            await SavePrefsAsync(sensitivity: value);
+        }
+    }
+
+    private async Task OnFovChanged(ChangeEventArgs e)
+    {
+        if (int.TryParse(e.Value?.ToString(), out var value)) await SavePrefsAsync(fov: value);
+    }
+
+    private Task SetKeyAsync(string action, object? value) => SavePrefsAsync(keyAction: action, keyCode: value?.ToString());
+
+    private static string DescribeKey(string code) => code switch
+    {
+        "Space" => "Space",
+        "ShiftLeft" => "Shift",
+        "ControlLeft" => "Ctrl",
+        _ => code.StartsWith("Key") ? code[3..] : code,
+    };
+
+    /// <summary>
+    /// Save one or more comfort settings. Values are echoed back from the engine sanitised, so
+    /// a slider that leaves the allowed range snaps to the clamped value rather than drifting.
+    /// </summary>
+    private async Task SavePrefsAsync(double? sensitivity = null, int? fov = null, bool? captions = null,
+        string? contrast = null, string? radar = null, bool? director = null, string? keyAction = null, string? keyCode = null)
+    {
+        if (sensitivity is not null) _prefs.sensitivity = sensitivity.Value;
+        if (fov is not null) _prefs.fov = fov.Value;
+        if (captions is not null)
+        {
+            _prefs.captions = captions.Value;
+            if (!_prefs.captions) _caption = "";
+        }
+        if (contrast is not null) _prefs.contrast = contrast;
+        if (radar is not null) _prefs.radar = radar;
+        if (director is not null) _prefs.director = director.Value;
+        if (keyAction is not null && !string.IsNullOrEmpty(keyCode))
+        {
+            switch (keyAction)
+            {
+                case "forward": _prefs.forward = keyCode; break;
+                case "back": _prefs.back = keyCode; break;
+                case "left": _prefs.left = keyCode; break;
+                case "right": _prefs.right = keyCode; break;
+                case "push": _prefs.push = keyCode; break;
+                case "sprint": _prefs.sprint = keyCode; break;
+                case "pause": _prefs.pause = keyCode; break;
+            }
+        }
+        try
+        {
+            _prefs = await JS.InvokeAsync<PrefsDto>("PoCapitol.setPrefs", new
+            {
+                sensitivity = _prefs.sensitivity,
+                fov = _prefs.fov,
+                captions = _prefs.captions,
+                contrast = _prefs.contrast,
+                radar = _prefs.radar,
+                director = _prefs.director,
+                keys = new
+                {
+                    forward = _prefs.forward,
+                    back = _prefs.back,
+                    left = _prefs.left,
+                    right = _prefs.right,
+                    push = _prefs.push,
+                    sprint = _prefs.sprint,
+                    pause = _prefs.pause,
+                },
+            });
+        }
+        catch (JSException ex)
+        {
+            // A comfort setting is not worth ending the scenario for: keep the local value and move on.
+            Logger.LogWarning(ex, "PoCapitol could not persist comfort settings");
+        }
+        StateHasChanged();
+    }
+
+    private async Task LoadReportAsync()
+    {
+        try { _report = await JS.InvokeAsync<ReportDto>("PoCapitol.getReportView"); }
+        catch (JSException ex) { Logger.LogDebug(ex, "PoCapitol report unavailable"); }
+        await InvokeAsync(StateHasChanged);
+    }
+
+    private string ReportFileName(string extension) =>
+        $"pocapitol-{DateTime.Now:yyyyMMdd-HHmm}-{(_report is { mode.Length: > 0 } r ? r.mode : "attempt")}.{extension}";
+
+    private async Task ExportCsvAsync()
+    {
+        if (_report is null) return;
+        try { await JS.InvokeVoidAsync("PoCapitol.download", ReportFileName("csv"), _report.csv); }
+        catch (JSException ex) { Logger.LogDebug(ex, "PoCapitol CSV export unavailable"); }
+    }
+
+    private async Task ExportPngAsync()
+    {
+        if (_report is null) return;
+        try { await JS.InvokeAsync<bool>("PoCapitol.exportPng", "pocapitol-report-chart", ReportFileName("png")); }
+        catch (JSException ex) { Logger.LogDebug(ex, "PoCapitol PNG export unavailable"); }
+    }
+
+    private async Task CopySummaryAsync()
+    {
+        if (_report is null) return;
+        try { await JS.InvokeAsync<bool>("PoCapitol.copyText", _report.text); }
+        catch (JSException ex) { Logger.LogDebug(ex, "PoCapitol clipboard unavailable"); }
+    }
+
+    private async Task CopyDiagnosticsAsync()
+    {
+        try
+        {
+            var text = await JS.InvokeAsync<string>("PoCapitol.getDiagnosticsText");
+            await JS.InvokeAsync<bool>("PoCapitol.copyText", text);
+        }
+        catch (JSException ex) { Logger.LogDebug(ex, "PoCapitol diagnostics unavailable"); }
+    }
+
+    /// <summary>Spoken radio arrives as a caption when the player has asked for them.</summary>
+    [JSInvokable]
+    public Task OnCaption(string text)
+    {
+        if (_disposed || !_prefs.captions || string.IsNullOrWhiteSpace(text)) return Task.CompletedTask;
+        _caption = text;
+        var stamp = _captionStamp = DateTime.UtcNow;
+        _ = ClearCaptionAsync(stamp);
+        return InvokeAsync(StateHasChanged);
+    }
+
+    private async Task ClearCaptionAsync(DateTime stamp)
+    {
+        await Task.Delay(6000);
+        if (_disposed || _captionStamp != stamp) return;
+        _caption = "";
+        await InvokeAsync(StateHasChanged);
+    }
+
+    public sealed class PrefsDto
+    {
+        public double sensitivity { get; set; } = 1;
+        public int fov { get; set; } = 62;
+        public bool captions { get; set; }
+        public string contrast { get; set; } = "normal";
+        public string radar { get; set; } = "auto";
+        public bool director { get; set; } = true;
+        public string forward { get; set; } = "KeyW";
+        public string back { get; set; } = "KeyS";
+        public string left { get; set; } = "KeyA";
+        public string right { get; set; } = "KeyD";
+        public string push { get; set; } = "Space";
+        public string sprint { get; set; } = "ShiftLeft";
+        public string pause { get; set; } = "KeyP";
+    }
+
+    public sealed class ReportDto
+    {
+        public string svg { get; set; } = "";
+        public string csv { get; set; } = "";
+        public string text { get; set; } = "";
+        public string mode { get; set; } = "";
+        public string role { get; set; } = "";
+        public string difficulty { get; set; } = "";
+        public string outcome { get; set; } = "";
+        public string status { get; set; } = "";
+        public string clock { get; set; } = "";
+        public int standing { get; set; }
+        public int police { get; set; }
+        public int casualties { get; set; }
+        public int immediate { get; set; }
+        public int lowestIntegrity { get; set; }
+        public double peakPressure { get; set; }
+        public double firstBreak { get; set; } = -1;
+        public int milestones { get; set; }
+        public int minutes { get; set; }
+    }
+
     public sealed class TelemetryDto
     {
         public int id { get; set; }
@@ -742,6 +1058,7 @@
         public string? lineAssignment { get; set; }
         public string? milestone { get; set; }
         public int crowding { get; set; }
+        public double density { get; set; }
         public double x { get; set; }
         public double z { get; set; }
         public bool latched { get; set; }

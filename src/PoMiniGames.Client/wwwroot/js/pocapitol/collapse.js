@@ -41,3 +41,31 @@ export function impactFrame(dx, dz, heading = 0) {
     const rt = x * Math.cos(heading) - z * Math.sin(heading);
     return { fw, rt, rel: Math.atan2(rt, fw) };
 }
+
+/** How far apart two bodies count as the same heap, how thick a body lies, and how deep a heap forms. */
+export const PILE_REACH = 1.25;
+const PILE_LIFT = 0.17, PILE_DEPTH = 3;
+
+/**
+ * Where a body comes to rest when people fall on top of one another. `downs` are the bodies
+ * already on the ground near it, each `{ x, z, layer }` from an earlier call. Returns the offset
+ * from where this person fell, the height the body lies at, and a roll, so a heap stacks and
+ * splays outward instead of every body lying in the same place. Pure: no three.js, no state.
+ */
+export function restPlace(x, z, downs = [], reach = PILE_REACH) {
+    let layer = 0, sumX = 0, sumZ = 0, found = 0;
+    for (const down of downs) {
+        if (Math.hypot(down.x - x, down.z - z) > reach) continue;
+        // A heap is a heap, not a tower: past three bodies a new one splays out rather than climbs.
+        layer = Math.min(PILE_DEPTH, Math.max(layer, (down.layer ?? 0) + 1));
+        sumX += down.x; sumZ += down.z; found++;
+    }
+    let dx = 0, dz = 0;
+    if (found) {
+        const len = Math.hypot(x - sumX / found, z - sumZ / found);
+        const push = Math.min(0.45, 0.2 + found * 0.08);
+        if (len > 1e-3) { dx = (x - sumX / found) / len * push; dz = (z - sumZ / found) / len * push; }
+        else { dx = push; dz = 0; }
+    }
+    return { dx, dz, layer, height: layer * PILE_LIFT + (layer ? 0.02 : 0), roll: layer ? Math.min(0.5, 0.16 + layer * 0.12) : 0 };
+}
