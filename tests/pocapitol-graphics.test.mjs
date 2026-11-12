@@ -157,6 +157,35 @@ test('a thrown grenade lifts the people around it off their feet', () => {
     assert.ok((victim.y ?? 0) > 0 || (victim.vy ?? 0) > 0, 'The blast did not throw anyone into the air');
 });
 
+test('a smoke grenade hides the street and hurts nobody', () => {
+    const state = world.createAttempt('standard', false, 'raider');
+    assert.equal(state.playerSmoke, 2, 'The solo raider should carry two smoke grenades');
+    assert.ok([...state.companions, ...state.enemies].some(a => a.grenadeType === 'smoke'), 'Nobody carries smoke');
+    state.player.x = 0; state.player.z = 20;
+    const thrown = world.throwPlayerGrenade(state, { x: 0, z: -1 }, 'smoke');
+    assert.ok(thrown, 'The smoke grenade was not thrown');
+    assert.equal(state.playerSmoke, 1);
+    let smoked = false;
+    for (let i = 0; i < 160 && state.status === 'active'; i++) {
+        world.advance(state, {}, 1 / 60);
+        if (state.events.some(e => e.type === 'smoke')) { smoked = true; break; }
+    }
+    assert.ok(smoked, 'The smoke never vented');
+    const cloud = state.effects.find(e => e.type === 'smoke');
+    assert.ok(cloud && cloud.life > 10, 'The cloud did not linger');
+    assert.ok(world.smokeObscures(state.effects, 0, 12, 0, -6), 'The cloud does not block a sight line');
+    assert.ok(!world.smokeObscures(state.effects, 30, 12, 30, -6), 'A cloud blocked a line nowhere near it');
+    assert.ok(!state.events.some(e => e.type === 'grenade'), 'Smoke detonated as a blast');
+});
+
+test('a corpse thrown into the air comes back down', () => {
+    const state = world.createAttempt('standard', true);
+    const officer = state.enemies[0];
+    officer.health = 0; officer.y = 0; officer.vy = 6;
+    for (let i = 0; i < 150; i++) world.advance(state, {}, 1 / 60);
+    assert.equal(officer.y ?? 0, 0, 'The body is still floating');
+});
+
 test('a walker rises over a body instead of clipping through it', () => {
     const state = world.createAttempt('standard', true);
     const fallen = state.companions[0], walker = state.companions[1];

@@ -7,7 +7,7 @@ import { billboardChunk, softTexture } from './look.js';
 // sprite here is a pure function of (effect, index, time): nothing to spawn, nothing to leak,
 // and a paused game shows a paused cloud.
 
-const GAS_PUFFS = 14, SPRAY_DROPS = 18, FLASH_SPRITES = 6;
+const GAS_PUFFS = 14, SPRAY_DROPS = 18, FLASH_SPRITES = 6, SMOKE_PUFFS = 26;
 /** Calm-day fallback. The scene replaces this with the weather's own wind vector when it has one. */
 const CALM = { x: 0.32, z: -0.12 };
 
@@ -82,6 +82,21 @@ export function createParticles(scene, capacity = 320) {
                 const k = Math.min(1, 1 - e.life / e.span);
                 const blink = 0.5 + 0.5 * Math.sin(time * 26 + seed);
                 add(e.x, 1.1 + Math.sin(Math.PI * k) * 3.2, e.z, 0.16, canister, 1, 0.8 + blink * 1.8);
+            } else if (e.type === 'smoke') {
+                // A smoke grenade: dozens of big, slow puffs that grow to fill the street and
+                // hang until the wind takes them. Much denser than the gas cloud.
+                const age = e.span - e.life, grow = Math.min(1, age / 2.4);
+                const fade = Math.min(1, e.life / 3.2), fill = Math.min(1, age / 1.1);
+                const radius = e.r ?? 7.5;
+                for (let i = 0; i < SMOKE_PUFFS; i++) {
+                    const r1 = frac(Math.sin(seed + i * 12.9898) * 43758.55), r2 = frac(Math.sin(seed + i * 78.233) * 12543.1);
+                    const angle = r1 * Math.PI * 2 + age * 0.05 * (r2 - 0.5);
+                    const reach = radius * (0.1 + 0.9 * Math.sqrt(r2)) * (0.35 + 0.65 * grow) * spread;
+                    const size = radius * (0.5 + 0.45 * r1) * (0.7 + 0.5 * grow);
+                    add(e.x + Math.cos(angle) * reach + wx * age * 0.6, 0.9 + (i % 5) * 0.45 + age * 0.16,
+                        e.z + Math.sin(angle) * reach + wz * age * 0.6, size, smoke,
+                        Math.min(1, 0.92 * fill * fade * (0.6 + 0.4 * r2) / spread), 1.15);
+                }
             } else if (e.type === 'spray') {
                 const dx = e.tx - e.x, dz = e.tz - e.z, len = Math.hypot(dx, dz) || 1;
                 const sx = -dz / len, sz = dx / len;

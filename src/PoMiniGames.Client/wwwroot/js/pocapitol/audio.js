@@ -366,6 +366,11 @@ export function createAudio({ onCaption } = {}) {
                 tone({ from: 3800, to: 3700, volume: 0.05, seconds: 1.6, at: 0.1, dest: master });
                 Promise.resolve().then(() => bus.duck?.(0.5 * Math.min(1, 1 / (1 + Math.hypot(e.x - listener.x, e.z - listener.z) / 7)), 900)).catch(() => { /* a duck is a nicety */ });
                 break;
+            case 'smoke':
+                // A long, dry hiss as the canister vents and the cloud builds.
+                burst({ type: 'bandpass', frequency: 2400, q: 0.5, volume: 0.3, attack: 0.05, seconds: 1.8, sweep: 650, dest });
+                tone({ from: 150, to: 60, volume: 0.22, seconds: 0.18, dest });
+                break;
             case 'grenade':
                 // Concussion, not fragmentation: a hard slap and a long, low pressure wave.
                 burst({ type: 'lowpass', frequency: 320, volume: 0.9, attack: 0.002, seconds: 0.45, sweep: 70, dest });

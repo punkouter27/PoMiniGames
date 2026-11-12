@@ -652,14 +652,25 @@ no real person, no breach route, no score.
    there is no blood: the product rules in section 17 make that non-negotiable in every mode.
 4. **One-player firepower (`world.js`, `index.js`, page).** A solo raider carries a machine gun
    (`fire()`, about twelve hit-scan rounds a second with a spread that opens as the trigger is
-   held) and five concussion grenades thrown with **G** toward the aim (`throwPlayerGrenade()`),
-   with the remaining count in the Tab panel. Police keep batons, spray and their own grenades,
-   so the human is by far the strongest actor on the field.
-5. **Bodies can be crossed, not clipped (`world.js`, `crowd.js`).** A living walker that overlaps
+   held), five concussion grenades (**G**) and two smoke grenades (**H**), each thrown toward the
+   aim by `throwPlayerGrenade(state, direction, kind)`, with the counts in the Tab panel. Police
+   keep batons, spray and their own grenades, so the human is by far the strongest actor.
+5. **Smoke grenades (`world.js`, `particles.js`, `bursts.js`, `audio.js`, `scene.js`).** One
+   carrier in two on the police side and alternating raider carriers lob a smoke canister instead
+   of a blast. It detonates into a `{ type: 'smoke' }` effect: a 7.5 m cloud that lasts 15 s,
+   drawn as 26 large slow puffs and matched by a thick local fog while the camera is inside it.
+   Sight lines through it are blocked (`smokeObscures()` gates officer targeting and the player's
+   machine gun), and anyone inside walks at 60–65% speed. It does no damage.
+6. **Bodies can be crossed, not clipped (`world.js`, `crowd.js`).** A living walker that overlaps
    a body on the ground gets a `step` lift so its feet clear the heap and it loses a little pace,
    instead of passing through the mesh; anyone airborne passes over on their own arc. Contact
    separation ignores airborne bodies so a body in flight does not shove people it flies over.
-6. **Signage is rarer (`crowd.js`).** One person in twenty carries a board (`id % 20 === 0`),
+   Gravity is stepped over every body, dead or alive, because the dead are excluded from contact
+   resolution and would otherwise hang where a blast left them.
+7. **Corpses go slack (`crowd.js`).** The lying pose now blends a limp pass as the collapse
+   settles: knees and elbows give, arms splay on the ground, one leg falls open and the head
+   lolls to the side, with per-body asymmetry from the body's seed. No gore, no limb separation.
+8. **Signage is rarer (`crowd.js`).** One person in twenty carries a board (`id % 20 === 0`),
    down from one in three, so the crowd reads as a crowd and the signs read as signs.
 
 Verified with `tests/pocapitol-graphics.test.mjs` (nine tests covering rooms, blast falloff,

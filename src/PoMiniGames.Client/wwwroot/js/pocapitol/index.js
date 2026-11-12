@@ -123,11 +123,12 @@ async function init(hostId, reference) {
         }
     });
     listen(window, 'keyup', e => g.keys.delete(e.code));
-    // G lobs one of the one-player raider's five concussion grenades toward the aim.
+    // G lobs one of the one-player raider's concussion grenades, H a smoke grenade.
     listen(window, 'keydown', e => {
         if (e.repeat || e.target.closest?.('button, a, summary, [role="radio"]')) return;
-        if (e.code !== 'KeyG' || !human() || g.state.status !== 'active') return;
-        const thrown = throwPlayerGrenade(g.state, view.aim(g.state, g.yaw));
+        if (e.code !== 'KeyG' && e.code !== 'KeyH') return;
+        if (!human() || g.state.status !== 'active') return;
+        const thrown = throwPlayerGrenade(g.state, view.aim(g.state, g.yaw), e.code === 'KeyH' ? 'smoke' : 'concussion');
         if (thrown) {
             g.audio?.event(g.state.events.at(-1));
             e.preventDefault();
@@ -377,7 +378,7 @@ function notify(g) {
         s.companions.filter(c => c.health > 0).length + (s.role === 'raider' && s.health > 0 ? 1 : 0),
         s.enemies.filter(e => e.health > 0).length, leader ? leader.id + 1 : 0, s.demo,
         s.outcome, s.enemies.length, front ? front.id : -1, front ? Math.round(front.integrity) : 0, g.governor.label(),
-        s.civilians.filter(p => !p.evacuated).length, s.playerGrenades ?? 0)
+        s.civilians.filter(p => !p.evacuated).length, s.playerGrenades ?? 0, s.playerSmoke ?? 0)
         .catch(error => {
             if (!g.disposed) {
                 console.error('[PoCapitol] player interface update failed:', error);

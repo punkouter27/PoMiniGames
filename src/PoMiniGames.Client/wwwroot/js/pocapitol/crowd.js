@@ -321,18 +321,22 @@ function poseFor(b, a, t, pose) {
             const f = b.fall ?? { t0: t, rel: Math.PI, seed: 0.5, zone: 'torso' };
             const age = Math.max(0, t - f.t0);
             const { ease, brace, tip, settle, flail, tipAngle } = collapseStage(age, f.zone, f.seed);
-            // A last step under the falling weight, whichever way the body is going.
+            // A last step under the falling weight, whichever way the body is going. As the
+            // collapse settles the limbs stop bracing and go slack: knees and elbows give, arms
+            // splay on the ground, one leg falls open and the head lolls to the side.
+            const limp = settle;
+            const sway = (f.seed - 0.5) * 2;
             for (const [s, side] of [['L', -1], ['R', 1]]) {
-                rot(pose, `thigh_${s}`, (0.3 + 0.55 * brace) - flail * side * 0.2, 0, side * 0.12 * tip);
-                rot(pose, `shin_${s}`, -0.5 - 0.95 * brace);
-                rot(pose, `foot_${s}`, 0.22 * brace);
+                rot(pose, `thigh_${s}`, (0.3 + 0.55 * brace) - flail * side * 0.2, 0, side * (0.12 * tip + 0.3 * limp));
+                rot(pose, `shin_${s}`, -0.5 - 0.95 * brace + limp * (0.4 + 0.12 * side * sway));
+                rot(pose, `foot_${s}`, 0.22 * brace - limp * 0.15);
             }
             rot(pose, 'spine', -0.14 * (1 - settle) + 0.1 * flail);
-            rot(pose, 'upperArm_L', 0.2 * settle - flail * 0.7, 0, -0.55 * settle - 0.4 * tip);
-            rot(pose, 'upperArm_R', 0.3 * settle + flail * 0.7, 0, 0.5 * settle + 0.35 * tip);
-            rot(pose, 'foreArm_L', 0.4 * settle + 0.3 * tip);
-            rot(pose, 'foreArm_R', 0.25 * settle + 0.24 * tip);
-            rot(pose, 'head', 0.15 * settle + 0.2 * flail, 0.4 * (f.seed - 0.5) * settle);
+            rot(pose, 'upperArm_L', 0.2 * settle - flail * 0.7, 0, -0.55 * settle - 0.4 * tip - 0.6 * limp);
+            rot(pose, 'upperArm_R', 0.3 * settle + flail * 0.7, 0, 0.5 * settle + 0.35 * tip + 0.6 * limp);
+            rot(pose, 'foreArm_L', 0.4 * settle + 0.3 * tip - 0.3 * limp);
+            rot(pose, 'foreArm_R', 0.25 * settle + 0.24 * tip - 0.25 * limp);
+            rot(pose, 'head', 0.15 * settle + 0.2 * flail - 0.1 * limp, 0.4 * (f.seed - 0.5) * settle + 0.35 * limp * sway);
             // Tipping is about the body's own axes, so the same lean reads correctly at any heading.
             return { drop: 0, ...tipAxes(f.rel, tipAngle), lift: 0.2 * ease };
         }

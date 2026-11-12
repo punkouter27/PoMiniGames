@@ -291,6 +291,10 @@ export function createBursts(scene, { capacity = 16000 } = {}) {
                     // The small kick of a throw, so a lob reads before the canister lands.
                     puff(e.x, floor + 1.25, e.z, 12, { tone: [0.72, 0.7, 0.66], lift: 0.2, size: 0.28, life: 0.5, alpha: 0.5 });
                     break;
+                case 'smoke':
+                    // A smoke grenade's hiss and the first dense puffs at the feet.
+                    puff(e.x, y, e.z, 1600, { tone: [0.78, 0.78, 0.76], lift: 1.4, size: 2.4, life: 16, alpha: 0.85, drag: 1.2 });
+                    break;
                 case 'gas':
                     puff(e.x, y, e.z, 900, { tone: [0.83, 0.86, 0.8], lift: 1.6, size: 1.6 });
                     break;

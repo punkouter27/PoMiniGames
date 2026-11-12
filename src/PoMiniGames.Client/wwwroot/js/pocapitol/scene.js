@@ -749,6 +749,8 @@ export function createScene(host, { figure, osm, signs = [] } = {}) {
     function startIntro() { intro.active = !calm(); intro.t = 0; }
     const introActive = () => intro.active;
     let followYaw = 0, cameraReady = false, closing = 0, lastSubject = null, clock = 0, lastRack = -99;
+    // Demo camera shot state: which side of the line the camera stands behind, and when it cut.
+    let demoSide = 'crowd', demoSideAt = 0;
     let lastHealth = null, lastDaze = -99;
     const dazzled = new WeakSet();
     const lastFocus = { x: 0, z: 100 };
@@ -760,6 +762,10 @@ export function createScene(host, { figure, osm, signs = [] } = {}) {
         sky.uniforms.uTime.value = clock;
         campus.update(clock);
         const spectating = state.role === 'none';
+        // Demo camera: long, high shots that alternate between standing behind the crowd and
+        // standing behind the police line, cut every twelve seconds.
+        if (clock - demoSideAt > 12) { demoSide = demoSide === 'crowd' ? 'police' : 'crowd'; demoSideAt = clock; }
+        const sinceCut = clock - demoSideAt;
         // How much of the establishing shot is on screen this frame, 0 when it is not running.
         let introWeight = 0;
         if (intro.active) {
@@ -983,10 +989,19 @@ export function createScene(host, { figure, osm, signs = [] } = {}) {
         sun.position.copy(sun.target.position).addScaledVector(sunDir, 110);
         const floor = groundHeight(focus.x, focus.z);
         target.set(focus.x, floor + 1.65, focus.z);
-        // In demo mode: higher, wider cinematic framing to capture crowd formations and advancing line
-        const camDist = (spectating && !latched) ? 9.2 : 6.5;
-        const camHeight = (spectating && !latched) ? 4.8 : 3.7;
-        desired.set(focus.x + Math.sin(yaw) * camDist, floor + camHeight + pitch * 3, focus.z + Math.cos(yaw) * camDist);
+        if (spectating && !latched) {
+            // Two shots, both from high and back, so the formations read instead of a scrum of hats.
+            const holding = state.lines.find(line => line.state === 'holding');
+            if (demoSide === 'police' && holding) {
+                const midX = (holding.x0 + holding.x1) / 2;
+                const cameraZ = holding.z - 13.5;
+                const lineFloor = groundHeight(midX, cameraZ);
+                desired.set(midX + Math.sin(yaw * 0.25) * 3, lineFloor + 9.8, cameraZ);
+                target.set(focus.x, floor + 1.2, focus.z);
+            } else {
+                desired.set(focus.x + Math.sin(yaw) * 21, floor + 14 + pitch * 4, focus.z + Math.cos(yaw) * 21);
+            }
+        } else desired.set(focus.x + Math.sin(yaw) * 6.5, floor + 3.7 + pitch * 3, focus.z + Math.cos(yaw) * 6.5);
         // Phone POV rides at the eye of the person holding it, not on a crane behind them.
         if (phone > 0.01 && subject) {
             const h = subject.heading ?? 0;
@@ -1019,8 +1034,9 @@ export function createScene(host, { figure, osm, signs = [] } = {}) {
             camera.position.copy(desired);
             if (!wasClosing) post.rackFocus(14, 2.2, 0.7);
         } else if (spectating && cameraReady) {
-            // Slower, cinematic gliding crane/dolly: zero fast cuts or sudden snaps
-            const followSpeed = latched ? 3.0 : 1.35;
+            // Slower, cinematic gliding crane/dolly. A demo cut moves faster for a beat so the
+            // change of side reads as a sweep, not a jump.
+            const followSpeed = latched ? 3.0 : sinceCut < 1.2 ? 5.0 : 1.35;
             camera.position.lerp(desired, 1 - Math.exp(-dt * followSpeed));
         } else camera.position.copy(desired);
         cameraReady = true;

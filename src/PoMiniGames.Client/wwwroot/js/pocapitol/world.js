@@ -301,8 +301,9 @@ function officer(id, line, x, z) {
     return { id, x, z, health: 10, line, cooldown: 1 + id % 5 * 0.3, stagger: 0, attacking: 0, tool: '',
         faction: 'capitol-police', heading: Math.PI, moving: false, row: 0, spray: 2 + id % 4,
         mass: 90 + id * 7 % 5 * 3, vx: 0, vz: 0, kx: 0, kz: 0, armor: 4,
-        // A few officers carry three concussion grenades each; the rest do not.
-        grenades: id % 16 === 5 ? 3 : 0, grenadeCooldown: 4 + id % 6 };
+        // A few officers carry three grenades each; two in three of those are smoke.
+        grenades: id % 16 === 5 ? 3 : 0, grenadeCooldown: 4 + id % 6,
+        grenadeType: id % 32 === 5 ? 'smoke' : 'concussion' };
 }
 
 const steeringByAttempt = new WeakMap();
@@ -341,8 +342,9 @@ export function createAttempt(difficulty = 'standard', demo = false, role = 'rai
                 room: interiorRoomFor(id), exploring: false,
                 // Most of the crowd never goes far inside; only some drift past the doors.
                 reach: temperament === 'bystander' ? 1 + (id % 3 === 0 ? 1 : 0) : milestones.length,
-                // A few of the crowd carry three concussion grenades; the rest are empty-handed.
+                // A few of the crowd carry three grenades; the rest are empty-handed.
                 grenades: id % 80 === 7 ? 3 : 0, grenadeCooldown: 3 + id % 5,
+                grenadeType: id % 160 === 7 ? 'smoke' : 'concussion',
                 sprayed: 0, stun: 0, surge: 0, downFor: 0, helped: false, resting: false, crowding: 0,
             };
         }),
@@ -363,6 +365,7 @@ export function createAttempt(difficulty = 'standard', demo = false, role = 'rai
     if (role === 'raider' && !demo) {
         state.weapon = 'mg';
         state.playerGrenades = 5;
+        state.playerSmoke = 2;
         state.mgReady = 0;
     }
     return state;
@@ -486,6 +489,8 @@ function wandering(c, state) {
 
 const inGas = (state, actor) => state.effects.some(e =>
     e.type === 'gas' && Math.hypot(actor.x - e.x, actor.z - e.z) < e.r);
+const inSmoke = (state, actor) => state.effects.some(e =>
+    e.type === 'smoke' && Math.hypot(actor.x - e.x, actor.z - e.z) < (e.r ?? SMOKE_RADIUS));
 
 function end(state, outcome) {
     state.outcome = outcome;
@@ -680,7 +685,7 @@ function updateOfficers(state, difficulty, dt) {
         if (distance > 0.15) {
             const target = field < 0 || distance < 3 ? slot : routeTarget(e, field, slot, state);
             const dx = target.x - e.x, dz = target.z - e.z, d = Math.hypot(dx, dz) || 1;
-            const step = Math.min(d, (e.health <= 0 ? 1.5 : 4.6) * dt);
+            const step = Math.min(d, (e.health <= 0 ? 1.5 : 4.6) * (inSmoke(state, e) ? 0.6 : 1) * dt);
             relocate(state, e, e.x + dx / d * step, e.z + dz / d * step, false);
             e.moving = distance > 0.6;
             if (e.moving) e.heading = Math.atan2(-dx, -dz);
@@ -705,7 +710,8 @@ function updateOfficers(state, difficulty, dt) {
                 if (score < bestScore) { bestScore = score; nearest = d; target = actor; }
             }
         }
-        if (!target || (nearest > 1.9 && !clearLine(e.x, e.z, target.x, target.z))) { e.cooldown = 0.3; continue; }
+        if (!target || (nearest > 1.9 && !clearLine(e.x, e.z, target.x, target.z))
+            || (target && smokeObscures(state.effects, e.x, e.z, target.x, target.z))) { e.cooldown = 0.3; continue; }
         const dx = (target.x - e.x) / nearest, dz = (target.z - e.z) / nearest;
         const baton = nearest <= 1.9;
         e.heading = Math.atan2(-dx, -dz);
@@ -906,6 +912,8 @@ function planRaiders(state, difficulty, dt, agents, bodies) {
             // The day has a shape: the pavement is thin at 12:50 and the surge is heaviest in
             // the 2 o'clock hour. Willingness moves with it, so does the pace.
             speed *= 0.75 + 0.25 * Math.min(1, (crowdPressure(state.elapsed) - 0.55) / 0.7);
+            // A smoke cloud is blinding, not solid: people slow down and feel their way through.
+            if (inSmoke(state, c)) speed *= 0.65;
         }
         if (goal) {
             c.routeWait -= dt;
@@ -921,18 +929,44 @@ function planRaiders(state, difficulty, dt, agents, bodies) {
 }
 
 /**
- * Concussion grenades. A few people on each side carry three. The blast is overpressure, not
- * fragments: anyone close is thrown off their feet, stunned and knocked down, and the room gets
- * dust, smoke and one bright flash. Nothing is drawn but that — the product rules forbid
- * depicted injury in every mode, so there is no gore and no dismemberment.
+ * Concussion and smoke grenades. A few people on each side carry three. The concussion blast is
+ * overpressure, not fragments: anyone close is thrown off their feet, stunned and knocked down,
+ * and the room gets dust, smoke and one bright flash. A smoke grenade instead lays a dense cloud
+ * that blocks sight lines and slows anyone groping through it. Nothing is drawn but dust, smoke
+ * and one bright flash — the product rules forbid depicted injury in every mode.
  */
 const GRENADE_RADIUS = 6.5, GRENADE_FUSE = 1.4, GRENADE_RANGE = 26, GRENADE_BLAST = 520;
+const SMOKE_RADIUS = 7.5, SMOKE_LIFE = 15;
 
-function throwGrenade(state, from, toX, toZ) {
+/**
+ * Whether a straight line passes through enough of a smoke cloud to hide what is behind it.
+ * A cloud is not a wall, so the effective radius is a little smaller than the drawn cloud.
+ */
+export function smokeObscures(effects, ax, az, bx, bz) {
+    for (const e of effects) {
+        if (e.type !== 'smoke') continue;
+        if (segmentCircle(ax, az, bx, bz, e.x, e.z, (e.r ?? SMOKE_RADIUS) * 0.7) >= 0) return true;
+    }
+    return false;
+}
+
+function throwGrenade(state, from, toX, toZ, kind = 'concussion') {
     const effect = { type: 'grenade', x: from.x, z: from.z, life: GRENADE_FUSE, span: GRENADE_FUSE };
-    state.grenades.push({ fromX: from.x, fromZ: from.z, x: from.x, z: from.z, toX, toZ, t: 0, fuse: GRENADE_FUSE, effect });
+    state.grenades.push({ fromX: from.x, fromZ: from.z, x: from.x, z: from.z, toX, toZ, t: 0, fuse: GRENADE_FUSE, kind, effect });
     state.effects.push(effect);
     state.events.push({ type: 'throw', x: from.x, z: from.z, energy: 12 });
+}
+
+function detonate(state, g) {
+    const x = g.toX, z = g.toZ;
+    if (g.effect) g.effect.life = 0;
+    if (g.kind === 'smoke') {
+        // A long, thick cloud: it hides the line, makes the far side guess, and leaves with the wind.
+        state.events.push({ type: 'smoke', x, z, energy: 200, radius: SMOKE_RADIUS });
+        state.effects.push({ type: 'smoke', x, z, r: SMOKE_RADIUS, life: SMOKE_LIFE, span: SMOKE_LIFE });
+        return;
+    }
+    explodeConcussion(state, g);
 }
 
 function explodeConcussion(state, g) {
@@ -993,7 +1027,7 @@ function stepGrenades(state, dt) {
         }
         if (!target) continue;
         c.grenades--; c.grenadeCooldown = 11 + c.id % 7;
-        throwGrenade(state, c, target.x, target.z);
+        throwGrenade(state, c, target.x, target.z, c.grenadeType);
     }
     for (const e of state.enemies) {
         if (!(e.grenades > 0) || e.health <= 0 || e.stagger > 0) continue;
@@ -1007,7 +1041,7 @@ function stepGrenades(state, dt) {
         }
         if (!target) continue;
         e.grenades--; e.grenadeCooldown = 14 + e.id % 6;
-        throwGrenade(state, e, target.x, target.z);
+        throwGrenade(state, e, target.x, target.z, e.grenadeType);
     }
     for (let i = state.grenades.length - 1; i >= 0; i--) {
         const g = state.grenades[i];
@@ -1018,7 +1052,7 @@ function stepGrenades(state, dt) {
         if (g.effect) { g.effect.x = g.x; g.effect.z = g.z; }
         if (g.t < g.fuse) continue;
         state.grenades.splice(i, 1);
-        explodeConcussion(state, g);
+        detonate(state, g);
     }
 }
 
@@ -1053,6 +1087,7 @@ export function fire(state, direction) {
         const d = t * reach;
         if (d < best && firstBlocked(px, pz, e.x, e.z, walkable) < 0) { best = d; hit = e; }
     }
+    if (hit && smokeObscures(state.effects, px, pz, hit.x, hit.z)) hit = null;
     if (hit) {
         if (blocksWithShield(hit, px, pz)) {
             hit.shieldHp = (hit.shieldHp ?? 8) - 1;
@@ -1076,9 +1111,11 @@ export function fire(state, direction) {
     return { x: px + ax * best, z: pz + az * best };
 }
 
-/** The human's five concussion grenades: one per press, thrown to where the aim points. */
-export function throwPlayerGrenade(state, direction) {
-    if (state.status !== 'active' || state.health <= 0 || !(state.playerGrenades > 0)) return null;
+/** The human's grenades: five concussion and two smoke, one per press, thrown toward the aim. */
+export function throwPlayerGrenade(state, direction, kind = 'concussion') {
+    if (state.status !== 'active' || state.health <= 0) return null;
+    const smoke = kind === 'smoke';
+    if (smoke ? !(state.playerSmoke > 0) : !(state.playerGrenades > 0)) return null;
     const now = state.elapsed ?? 0;
     if (now < (state.grenadeReady ?? 0)) return null;
     const length = Math.hypot(direction?.x ?? 0, direction?.z ?? 0);
@@ -1088,9 +1125,9 @@ export function throwPlayerGrenade(state, direction) {
     const range = 18;
     const stop = firstBlocked(px, pz, px + dx * range, pz + dz * range, walkable);
     const reach = stop < 0 ? range : Math.max(2, stop * range - 0.8);
-    state.playerGrenades--;
+    if (smoke) state.playerSmoke--; else state.playerGrenades--;
     state.grenadeReady = now + 1.1;
-    throwGrenade(state, state.player, px + dx * reach, pz + dz * reach);
+    throwGrenade(state, state.player, px + dx * reach, pz + dz * reach, kind);
     return { x: px + dx * reach, z: pz + dz * reach };
 }
 
@@ -1364,8 +1401,10 @@ function stepHarm(state, dt) {
     for (const e of state.enemies) if (e.health > 0) list.push(e);
     for (const c of state.companions) list.push(c);
     let impacts = 0;
-    // Bodies thrown into the air by a blast arc, tumble and come back down under gravity.
-    for (const body of list) {
+    // Bodies thrown into the air by a blast arc, tumble and come back down under gravity. Every
+    // body is stepped here, including the dead: a corpse left out of the list would hang in the
+    // air forever with the velocity the blast gave it.
+    for (const body of [...state.enemies, ...state.companions]) {
         const vy = body.vy ?? 0;
         if (vy === 0 && !((body.y ?? 0) > 0)) continue;
         const next = (body.y ?? 0) + vy * dt;
