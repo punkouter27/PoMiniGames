@@ -232,7 +232,7 @@
     private string? StartStatus => CanPressOk ? null
         : _tab == Tab.Online ? "Building the squad's arena…" : "Building the arena…";
 
-    private RenderFragment ErrorContent => @<p class="pvs-start-error" role="alert">The arena could not start: @_fatalError</p>;
+    private RenderFragment ErrorContent => @<InlineError Message="@($"The arena could not start: {_fatalError}")" />;
 
     private RenderFragment SoloOptions => @<div>
         <div class="app-seg app-seg--quiet" role="radiogroup" aria-label="Run type">
@@ -860,6 +860,8 @@
     public Task OnVictory(int score, double survivalSeconds, int kills, int bruteKills,
         int crushKills, int voxelsDestroyed, string seed, int gunsSilenced, int gunsTotal, int damageTaken)
     {
+        // A run ends once: a late victory after the death that already recorded it is ignored.
+        if (_phase == Phase.Dead && !_demo) return Task.CompletedTask;
         _won = true;
         return OnGameOver(score, survivalSeconds, kills, bruteKills, crushKills, voxelsDestroyed, seed,
             gunsSilenced, gunsTotal, damageTaken);
@@ -869,6 +871,8 @@
     public async Task OnGameOver(int score, double survivalSeconds, int kills, int bruteKills,
         int crushKills, int voxelsDestroyed, string seed, int gunsSilenced, int gunsTotal, int damageTaken)
     {
+        // Guard a duplicate end callback: the result is recorded and submitted once per run.
+        if (_phase == Phase.Dead && !_demo) return;
         _phase = Phase.Dead;
         _score = score;
         _kills = kills;

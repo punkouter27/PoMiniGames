@@ -90,10 +90,10 @@ export class VoxelAudio {
     if (this.ctx) return !this._failed;
     if (this._failed) return false;
     try {
-      const Ctor = window.AudioContext || window.webkitAudioContext;
-      if (!Ctor) { this._failed = true; return false; }
+      // The shared bus or silence: a private AudioContext would ignore the app's mute and volume.
       const bus = window.PoAudioBus;
-      const ctx = (bus && bus.contextSync()) || new Ctor();
+      const ctx = bus?.contextSync?.();
+      if (!ctx || !bus.busSync('sfx')) return false;  // not up yet (or no Web Audio): retry on the next call
       this.ctx = ctx;
 
       this.master = ctx.createGain();
@@ -104,7 +104,7 @@ export class VoxelAudio {
       comp.ratio.value = 5;
       comp.attack.value = 0.003;
       comp.release.value = 0.2;
-      this.master.connect(comp).connect((bus && bus.busSync('sfx')) || ctx.destination);
+      this.master.connect(comp).connect(bus.busSync('sfx'));
 
       // 20 kHz open corner (transparent), swept down by concussion().
       this.filter = ctx.createBiquadFilter();

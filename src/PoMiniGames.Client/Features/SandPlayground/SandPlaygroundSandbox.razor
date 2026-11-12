@@ -14,7 +14,8 @@
    picked, sound follows the app's own volume, and brush size is the chip / the
    wheel / [ ]. *@
 
-<div class="sand-playground-root" @onpointerdown="WakeDock">
+@* Escape closes the menu from anywhere in the sandbox (the ⋯ button keeps focus when it opens it). *@
+<div class="sand-playground-root" @onpointerdown="WakeDock" @onkeydown="OnMenuKey">
     <div class="sand-playground-viewport">
         @* Fixed 800x600 simulation. The engine resizes both drawing buffers to the
            displayed size (the width/height here are only the first frame's).
@@ -24,6 +25,23 @@
         <canvas @ref="_overlay" width="800" height="600" class="sand-playground-overlay"
                 aria-label="Sand Playground sandbox — drag to paint, drag in open air to slingshot ordnance"></canvas>
 
+        @if (_failed)
+        {
+            <div class="sp-failed">
+                <ErrorState Title="The sandbox could not start" OnRetry="StartEngineAsync" RetryLabel="Retry">
+                    The simulation engine did not load. Check your connection and try again.
+                </ErrorState>
+            </div>
+        }
+        else if (_module is null)
+        {
+            <GameSkeleton Label="Loading sandbox…" />
+        }
+
+        @* One column floats over the sky: the dock, its tray under it and the menu
+           under both. The column stacks them, so a dock that wraps to two rows on a
+           narrow phone pushes the tray and menu down instead of hiding behind them. *@
+        <div class="sp-chrome">
         @* In the attract reel the whole view is the simulation; the dock arrives
            with the first touch. *@
         @if (DockShown)
@@ -115,8 +133,7 @@
 
         @if (MenuOpen)
         {
-            <div id="sand-playground-menu" class="sand-playground-menu" role="dialog" aria-label="Sand Playground menu"
-                 @onkeydown="OnMenuKey">
+            <div id="sand-playground-menu" class="sand-playground-menu" role="dialog" aria-label="Sand Playground menu">
                 <section>
                     <h2>World</h2>
                     <div class="sp-row">
@@ -235,6 +252,7 @@
                 </section>
             </div>
         }
+        </div>
 
         @* One transient line: a tool's hint when it is picked, a save confirmation,
            a challenge result. Keyed so each message restarts the fade. *@

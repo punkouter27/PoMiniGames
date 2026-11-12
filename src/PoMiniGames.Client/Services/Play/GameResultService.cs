@@ -252,6 +252,55 @@ public sealed class GameResultService
             },
             () => _sync.EnqueuePoMule(run));
 
+    /// <summary>
+    /// PoMarbleRace: submits the per-map best-time record. It has no feedback of its own (the
+    /// race's high-score submit carries the chime/toast); a retriable failure is parked.
+    /// </summary>
+    public async Task SubmitMarbleRaceMapRecordAsync(MarbleRaceRecordRequest record)
+    {
+        var submitted = await _api.SubmitMarbleRaceMapRecordAsync(record);
+        if (!submitted.IsSaved && submitted.ShouldRetry) _sync.EnqueueMarbleRaceMapRecord(record);
+    }
+
+    /// <summary>
+    /// PoFunQuiz solo: records the local outcome and submits the run to the category board in
+    /// one awaited call; an offline or server failure parks it in the retry queue.
+    /// </summary>
+    public Task<PlayerStats> RecordAndSubmitFunQuizAsync(
+        string playerName, GameResult result, FunQuizLeaderboardSubmission submission) =>
+        RecordAndSubmitCoreAsync("pofunquiz", playerName, result, true,
+            async () =>
+            {
+                var submitted = await _api.SubmitFunQuizScoreAsync(submission);
+                if (submitted.IsSaved) return SubmitOutcome.Saved;
+                return submitted.ShouldRetry ? SubmitOutcome.Park : SubmitOutcome.Rejected;
+            },
+            () => _sync.EnqueueFunQuiz(submission));
+
+    /// <summary>
+    /// PoRacer: submits the best lap of a finished race. The local win/loss is recorded
+    /// separately through <see cref="RecordAsync"/> because a time trial moves no record but
+    /// still submits a lap. A retriable failure (or leaving the page mid-submit) parks the lap
+    /// in the offline queue. Returns "Saved", "Queued" or "Rejected" for the results card.
+    /// </summary>
+    public async Task<string> SubmitPoRacerLapAsync(PoRacerScoreDto score, CancellationToken cancellationToken)
+    {
+        try
+        {
+            var submitted = await _api.SubmitPoRacerScoreAsync(score, cancellationToken);
+            if (submitted.IsSaved) return "Saved";
+            if (!submitted.ShouldRetry) return "Rejected";
+        }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+            // Left the page mid-submit: park it quietly, no nudge for a page that is gone.
+            _sync.EnqueuePoRacer(score);
+            return "Queued";
+        }
+        _sync.EnqueuePoRacer(score);
+        return "Queued";
+    }
+
     /// <summary>Records the PoBrawl outcome locally and submits the fastest-KO score together.</summary>
     public Task<PlayerStats> RecordAndSubmitPoBrawlAsync(
         string playerName, GameResult result, PoBrawlHighScore? highScore) =>

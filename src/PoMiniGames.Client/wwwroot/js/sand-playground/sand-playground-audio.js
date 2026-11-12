@@ -10,15 +10,15 @@
 // The graph hangs off the app's shared AudioContext (audioBus.js 'sfx' bus),
 // so the app-level volume and mute apply and the context is suspended with
 // the tab. This module must NEVER close that context: dispose() stops its own
-// sources and disconnects. It only owns (and closes) a context of its own in
-// the fallback case where the bus is missing.
+// sources and disconnects. Without the bus it stays silent rather than open a
+// context of its own that would bypass the app's mute.
 //
 // Every one-shot takes the event's sim-space x (0..800) and is panned to it.
 // ===========================================================================
 
 const W = 800;
 
-let ctx = null, ownCtx = false;
+let ctx = null;
 let master, duckFilter, limiter, dryBus, verbBus;
 let noiseBuf = null, brownBuf = null;
 let clipCurve = null;
@@ -40,7 +40,6 @@ export function dispose() {
     for (const n of live) { try { n.stop(); } catch { /* never started */ } }
     live = [];
     try { limiter.disconnect(); master.disconnect(); } catch { /* already gone */ }
-    if (ownCtx) { try { ctx.close(); } catch { /* already closed */ } }
     ctx = null; beds = null; whistle = null;
 }
 
@@ -98,11 +97,9 @@ function build() {
     let dest = null;
     ctx = bus?.contextSync?.() ?? null;
     if (ctx) dest = bus.busSync('sfx');
-    if (!ctx || !dest) {
-        ctx = new (window.AudioContext || window.webkitAudioContext)();
-        dest = ctx.destination;
-        ownCtx = true;
-    }
+    // No shared bus, no sound: a private context would ignore the app's mute and volume.
+    // unlock() catches this and leaves ctx null, which every sound call treats as silence.
+    if (!ctx || !dest) throw new Error('audio bus unavailable');
 
     limiter = ctx.createDynamicsCompressor();
     limiter.threshold.value = -12;

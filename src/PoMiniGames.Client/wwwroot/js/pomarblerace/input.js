@@ -72,6 +72,8 @@ export class InputMixin {
 
   _bindKeys() {
     this._keyHandler = (e) => {
+      // Typing (the online join code, a settings field) and browser shortcuts (Ctrl+R) are not race keys.
+      if (e.ctrlKey || e.metaKey || e.altKey || e.target?.closest?.('input, textarea, select, [contenteditable]')) return;
       if (e.key === 'r' || e.key === 'R') { e.preventDefault(); this.regenerate(); }
       if (e.key === 'm' || e.key === 'M') {
         e.preventDefault();

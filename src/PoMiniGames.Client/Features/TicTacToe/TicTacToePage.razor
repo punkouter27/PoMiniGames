@@ -549,24 +549,27 @@
 
     // Apply the finished game's result to the adaptive rating, remember the ELO
     // delta for the game-over panel, and refresh the stat tiles.
-    private void ApplyAdaptiveResult(GameResult result)
+    // Guarded by _matchRecorded so a second terminal path in the same game can never
+    // count it twice, and awaited so the local save and the PUT finish in order.
+    private async Task ApplyAdaptiveResultAsync(GameResult result)
     {
+        if (_matchRecorded) return;
+        _matchRecorded = true;
         var before = _rating.Elo;
         _rating = _gameStats.RecordAdaptiveResult("tictactoe", _playerName, _cpuElo, result);
         _lastEloDelta = _rating.Elo - before;
         UpdateStats();
         // Single pipeline: GameResultService mirrors the rating into the stats
         // shape and PUTs it; failures land in the offline sync queue.
-        _ = GameResults.SubmitAdaptiveStatsAsync("tictactoe", _playerName, _rating);
+        try { await GameResults.SubmitAdaptiveStatsAsync("tictactoe", _playerName, _rating); }
+        catch (Exception ex) { Console.Error.WriteLine($"[TicTacToe] stats sync failed: {ex.Message}"); }
     }
     
     // Enter or Space on a focused cell plays it, so the board works without a mouse.
-    private void HandleCellKey(KeyboardEventArgs e, int row, int col)
-    {
-        if (e.Key is "Enter" or " ") HandleCellClick(row, col);
-    }
+    private Task HandleCellKey(KeyboardEventArgs e, int row, int col) =>
+        e.Key is "Enter" or " " ? HandleCellClick(row, col) : Task.CompletedTask;
 
-    private void HandleCellClick(int row, int col)
+    private async Task HandleCellClick(int row, int col)
     {
         if (PlayMode == "demo") return;
         if (IsOnline)
@@ -594,7 +597,7 @@
             _gameResult = GameResult.Win;
             _winCells = winCheck.Cells;
             _ = Feedback.PersonalBestAsync();
-            ApplyAdaptiveResult(GameResult.Win);
+            await ApplyAdaptiveResultAsync(GameResult.Win);
             return;
         }
 
@@ -602,43 +605,40 @@
         {
             _gameResult = GameResult.Draw;
             _ = Feedback.CompleteAsync();
-            ApplyAdaptiveResult(GameResult.Draw);
+            await ApplyAdaptiveResultAsync(GameResult.Draw);
             return;
         }
-        
-        // AI turn
+
+        // AI turn. Awaited on the renderer's context (not a ContinueWith on the thread
+        // pool); the game id stamp drops a reply that belongs to a board that has gone.
         _isAiTurn = true;
         StateHasChanged();
-        
-        _ = Task.Delay(200).ContinueWith(_prev =>
+        var gameId = _gameId;
+        await Task.Delay(200);
+        if (gameId != _gameId || _gameResult != GameResult.InProgress) return;
+
+        // CPU strength is matched to the player's rating at game start.
+        var (ar, ac) = _ai.GetAdaptiveMove(_board, CellValue.O, _cpuElo);
+        _board = _board.Place(ar, ac, CellValue.O);
+        _lastMove = (ar, ac);
+        _ = Feedback.DiscDropAsync(UiFeedbackService.BoardPan(ac, TicTacToeBoard.Size));
+        var aiWin = _board.CheckWin(CellValue.O);
+        _isAiTurn = false;
+        if (aiWin.Won)
         {
-            // CPU strength is matched to the player's rating at game start.
-            var (ar, ac) = _ai.GetAdaptiveMove(_board, CellValue.O, _cpuElo);
-            _board = _board.Place(ar, ac, CellValue.O);
-            _lastMove = (ar, ac);
-            _ = Feedback.DiscDropAsync(UiFeedbackService.BoardPan(ac, TicTacToeBoard.Size));
-            var aiWin = _board.CheckWin(CellValue.O);
-            if (aiWin.Won)
-            {
-                _gameResult = GameResult.Loss;
-                _winCells = aiWin.Cells;
-                _isAiTurn = false;
-                _ = Feedback.ErrorAsync();
-                ApplyAdaptiveResult(GameResult.Loss);
-            }
-            else if (_board.IsFull())
-            {
-                _gameResult = GameResult.Draw;
-                _isAiTurn = false;
-                _ = Feedback.CompleteAsync();
-                ApplyAdaptiveResult(GameResult.Draw);
-            }
-            else
-            {
-                _isAiTurn = false;
-            }
-            InvokeAsync(StateHasChanged);
-        });
+            _gameResult = GameResult.Loss;
+            _winCells = aiWin.Cells;
+            _ = Feedback.ErrorAsync();
+            StateHasChanged();
+            await ApplyAdaptiveResultAsync(GameResult.Loss);
+        }
+        else if (_board.IsFull())
+        {
+            _gameResult = GameResult.Draw;
+            _ = Feedback.CompleteAsync();
+            StateHasChanged();
+            await ApplyAdaptiveResultAsync(GameResult.Draw);
+        }
     }
     
     // Local pass-and-play: X = Player 1 (the local player), O = Player 2.

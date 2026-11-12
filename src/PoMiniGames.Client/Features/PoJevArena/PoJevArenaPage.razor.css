@@ -44,8 +44,8 @@
     font-weight: 600;
 }
 
-.jev-status.is-ok { background: var(--accent-success-soft); color: var(--accent-success); }
-.jev-status.is-off { background: var(--accent-danger-soft); color: var(--accent-danger); }
+.jev-status.is-ok { background: var(--accent-success-soft); color: var(--accent-success-ink); }
+.jev-status.is-off { background: var(--accent-danger-soft); color: var(--accent-danger-ink); }
 
 
 .jev-banner {
@@ -182,7 +182,7 @@
 
 .jev-resultbar__text { display: flex; align-items: baseline; gap: 0.25rem 0.75rem; flex-wrap: wrap; min-width: 0; }
 .jev-resultbar__head { font-size: 1.125rem; }
-.jev-resultbar__mvp { font-size: 0.875rem; font-weight: 600; color: var(--accent-warning); }
+.jev-resultbar__mvp { font-size: 0.875rem; font-weight: 600; color: var(--accent-warning-ink); }
 .jev-resultbar__actions { display: flex; align-items: center; gap: 0.5rem; flex-wrap: wrap; }
 
 .jev-root ::deep .jev-segmented,
@@ -252,8 +252,8 @@
 
 .jev-root ::deep .jev-muted { color: var(--color-text-secondary); }
 .jev-root ::deep .jev-small { font-size: 0.8125rem; }
-.jev-root ::deep .jev-warn { color: var(--accent-warning); margin: 0; }
-.jev-root ::deep .jev-danger { color: var(--accent-danger); }
+.jev-root ::deep .jev-warn { color: var(--accent-warning-ink); margin: 0; }
+.jev-root ::deep .jev-danger { color: var(--accent-danger-ink); }
 
 .jev-root ::deep .jev-visually-hidden {
     position: absolute;
@@ -664,7 +664,7 @@
 .jev-root ::deep .jev-budget__bar { height: 10px; border-radius: 5px; background: var(--color-surface-hover); overflow: hidden; }
 .jev-root ::deep .jev-budget__bar > span { display: block; width: var(--pct); height: 100%; background: var(--color-accent); }
 .jev-root ::deep .jev-budget.is-over .jev-budget__bar > span { background: var(--accent-danger); }
-.jev-root ::deep .jev-budget.is-over strong { color: var(--accent-danger); }
+.jev-root ::deep .jev-budget.is-over strong { color: var(--accent-danger-ink); }
 
 /* ── black box ── */
 
@@ -696,16 +696,22 @@
 
 .jev-root ::deep .jev-mark--blue { background: var(--player-1); }
 .jev-root ::deep .jev-mark--red { background: var(--player-2); }
-.jev-root ::deep .jev-mark--moment { width: auto; height: auto; bottom: -2px; font-size: var(--text-xs); line-height: 1; color: var(--accent-warning); }
+.jev-root ::deep .jev-mark--moment { width: auto; height: auto; bottom: -2px; font-size: var(--text-xs); line-height: 1; color: var(--accent-warning-ink); }
 
 /* ── phones and narrow windows: arena first, the two inspectors side by side beneath ── */
 
 @media (max-width: 56rem) {
-    .jev-root { height: auto; }
-
+    /* The root keeps the shell's height (the rule above), so the page itself never scrolls;
+       the stacked layout under the top bar is the one scroll container. Its rows are sized
+       to their content (max-content), or the grid would squeeze the centre and the team
+       columns into scrollers of their own inside the fixed height. */
     .jev-layout {
         grid-template-columns: repeat(2, minmax(0, 1fr));
         grid-template-areas: "center center" "blue red";
+        grid-auto-rows: max-content;
+        align-content: start;
+        overflow-y: auto;
+        overscroll-behavior: contain;
     }
 
     .jev-center { grid-area: center; }
@@ -874,7 +880,7 @@
 .jev-root ::deep .jev-story--blue { border-left-color: var(--player-1); }
 .jev-root ::deep .jev-story--red { border-left-color: var(--player-2); }
 .jev-root ::deep .jev-story__head { display: flex; justify-content: space-between; gap: 0.5rem; flex-wrap: wrap; }
-.jev-root ::deep .jev-story__ok { color: var(--accent-success); font-weight: 700; }
+.jev-root ::deep .jev-story__ok { color: var(--accent-success-ink); font-weight: 700; }
 .jev-root ::deep .jev-story__text { margin: 0; font-size: 0.875rem; line-height: 1.45; }
 .jev-root ::deep .jev-story__foot { display: flex; justify-content: space-between; align-items: center; }
 .jev-root ::deep .jev-story__foot .jev-link { min-height: 32px; }
@@ -893,3 +899,23 @@
 /* The energy reserve under the inspector's HP bar (the arena draws the same strip on the canvas). */
 .jev-root ::deep .jev-stamina { height: 4px; margin-top: 0.25rem; border-radius: 2px; background: var(--color-surface-hover); overflow: hidden; }
 .jev-root ::deep .jev-stamina > span { display: block; width: var(--pct); height: 100%; background: var(--accent-warning); transition: width 0.3s ease-out; }
+
+/* ── touch: every control reaches the 44px floor on a coarse pointer ──
+   Desktop keeps its density; a finger gets the full target. Grow the control itself
+   (min-height / min-width), never an invisible hit-box that overlaps a neighbour. */
+@media (pointer: coarse) {
+    .jev-hud__cam,
+    .jev-statsbtn,
+    .jev-segmented button,
+    .jev-mobiletabs button,
+    .jev-root ::deep :is(.jev-btn--sm, .jev-input, .jev-add, .jev-chip-pick, .jev-link,
+                         .jev-slider input, .jev-blackbox__slider) {
+        min-height: 44px;
+    }
+
+    /* The row-scoped rules above set these lower with more specificity; match it. */
+    .jev-root ::deep :is(.jev-squads__row, .jev-story__foot, .jev-card__menu) .jev-link,
+    .jev-root ::deep .jev-squads__save .jev-input { min-height: 44px; }
+
+    .jev-root ::deep .jev-card__more > summary { min-width: 44px; min-height: 44px; }
+}

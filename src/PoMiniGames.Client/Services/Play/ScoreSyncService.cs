@@ -66,6 +66,12 @@ public sealed class ScoreSyncService
     public void EnqueuePoCabinet(PoCabinetHighScoreRequest entry) =>
         Enqueue(PendingScoreKind.PoCabinet, JsonSerializer.Serialize(entry, ApiJsonContext.Default.PoCabinetHighScoreRequest));
 
+    public void EnqueueFunQuiz(FunQuizLeaderboardSubmission entry) =>
+        Enqueue(PendingScoreKind.PoFunQuiz, JsonSerializer.Serialize(entry, ApiJsonContext.Default.FunQuizLeaderboardSubmission));
+
+    public void EnqueueMarbleRaceMapRecord(MarbleRaceRecordRequest entry) =>
+        Enqueue(PendingScoreKind.MarbleRaceMapRecord, JsonSerializer.Serialize(entry, ApiJsonContext.Default.MarbleRaceRecordRequest));
+
     public void EnqueuePlayerStats(PendingPlayerStats entry) =>
         Enqueue(PendingScoreKind.PlayerStats, JsonSerializer.Serialize(entry, ApiJsonContext.Default.PendingPlayerStats));
 
@@ -165,8 +171,34 @@ public sealed class ScoreSyncService
         PendingScoreKind.PoVoxelStrike => await SubmitPoVoxelStrikeAsync(item.PayloadJson),
         PendingScoreKind.PoCabinet => await SubmitPoCabinetAsync(item.PayloadJson),
         PendingScoreKind.PoMule => await SubmitPoMuleAsync(item.PayloadJson),
+        PendingScoreKind.PoFunQuiz => await SubmitFunQuizAsync(item.PayloadJson),
+        PendingScoreKind.MarbleRaceMapRecord => await SubmitMarbleRaceMapRecordAsync(item.PayloadJson),
         _ => Disposition.Drop, // unknown kind: drop rather than wedge the queue forever
     };
+
+    private async Task<Disposition> SubmitMarbleRaceMapRecordAsync(string payloadJson)
+    {
+        MarbleRaceRecordRequest? entry;
+        try { entry = JsonSerializer.Deserialize(payloadJson, ApiJsonContext.Default.MarbleRaceRecordRequest); }
+        catch (JsonException) { return Disposition.Drop; } // malformed: unreplayable
+        if (entry is null) return Disposition.Drop;
+        var result = await _api.SubmitMarbleRaceMapRecordAsync(entry);
+        return result.IsSaved ? Disposition.Synced
+            : result.ShouldRetry ? Disposition.Retry
+            : Disposition.Drop;
+    }
+
+    private async Task<Disposition> SubmitFunQuizAsync(string payloadJson)
+    {
+        FunQuizLeaderboardSubmission? entry;
+        try { entry = JsonSerializer.Deserialize(payloadJson, ApiJsonContext.Default.FunQuizLeaderboardSubmission); }
+        catch (JsonException) { return Disposition.Drop; } // malformed: unreplayable
+        if (entry is null) return Disposition.Drop;
+        var result = await _api.SubmitFunQuizScoreAsync(entry);
+        return result.IsSaved ? Disposition.Synced
+            : result.ShouldRetry ? Disposition.Retry
+            : Disposition.Drop;
+    }
 
     private async Task<Disposition> SubmitPoCabinetAsync(string payloadJson)
     {

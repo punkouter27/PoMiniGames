@@ -458,18 +458,7 @@ public partial class PoRacerPage
         StateHasChanged();
         try
         {
-            var submitted = await Api.SubmitPoRacerScoreAsync(_score, _lifetime.Token);
-            if (submitted.IsSaved) _submitStatus = "Saved";
-            else if (submitted.ShouldRetry)
-            {
-                ScoreSync.EnqueuePoRacer(_score);
-                _submitStatus = "Queued";
-            }
-            else _submitStatus = "Rejected";
-        }
-        catch (OperationCanceledException) when (_lifetime.IsCancellationRequested)
-        {
-            ScoreSync.EnqueuePoRacer(_score);
+            _submitStatus = await GameResults.SubmitPoRacerLapAsync(_score, _lifetime.Token);
         }
         finally { _submitting = false; if (!_disposed) StateHasChanged(); }
     }

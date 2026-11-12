@@ -59,16 +59,14 @@
                     @if (_engineError is not null)
                     {
                         <div class="mr-scrim">
-                            <div class="mr-prerace mr-prerace--center" role="alert">
-                                <p class="mr-prerace-title">The race didn't start</p>
-                                <p class="mr-prerace-line">@_engineError</p>
-                                <div class="mr-prerace-actions">
-                                    <button type="button" class="app-btn app-btn--primary" @onclick="ReloadEngineAsync">Reload engine</button>
+                            <div class="mr-error">
+                                <ErrorState Title="The race didn't start" OnRetry="ReloadEngineAsync" RetryLabel="Reload engine">
+                                    <p class="mr-error-line">@_engineError</p>
                                     @if (!_online)
                                     {
                                         <button type="button" class="app-btn app-btn--secondary" @onclick="ChangeTrackAsync">Change track</button>
                                     }
-                                </div>
+                                </ErrorState>
                             </div>
                         </div>
                     }
@@ -163,6 +161,8 @@
                     @* Standings: one chip. Racing, it is your place, with the latest split inline and
                        the winner's line once someone has finished. The full podium waits for the
                        race to end (or a demo, where there is no place of yours to show). *@
+                    @* A HUD island: the race tick (ten a second) refreshes only this chip. *@
+                    <HudRegion @ref="_hud">
                     @if (ShowPlace || _podium.Count > 0)
                     {
                         <div class="mr-place" role="status" aria-label="@StandingsLabel">
@@ -205,6 +205,7 @@
                             }
                         </div>
                     }
+                    </HudRegion>
 
                     @* Hold-to-steer pads for touch screens (CSS shows them on a coarse pointer, or
                        whenever the last input was a touch). *@
@@ -228,12 +229,10 @@
                 </ChildContent>
                 <ErrorContent Context="ex">
                     <div class="mr-scrim">
-                        <div class="mr-prerace mr-prerace--center" role="alert">
-                            <p class="mr-prerace-title">The race view hit a problem</p>
-                            <p class="mr-prerace-line">Your run and scores are safe. Reload the engine to carry on.</p>
-                            <div class="mr-prerace-actions">
-                                <button type="button" class="app-btn app-btn--primary" @onclick="ReloadEngineAsync">Reload engine</button>
-                            </div>
+                        <div class="mr-error">
+                            <ErrorState Title="The race view hit a problem" OnRetry="ReloadEngineAsync" RetryLabel="Reload engine">
+                                Your run and scores are safe. Reload the engine to carry on.
+                            </ErrorState>
                         </div>
                     </div>
                 </ErrorContent>
@@ -257,11 +256,14 @@
     private int _best;
     private int _streak;
     private int _myPlace = -1;
+    private HudRegion? _hud;
     private int _myField = MarbleCount;
     private bool _lastWon;
     private int _lastPlace;
     private int _lastGained;
     private int _submittedBest;
+    // One record per race: set when a result is taken, cleared when the next race sets up.
+    private bool _raceRecorded;
 
     private List<PodiumRow> _podium = new();
     private List<StatItem> _statItems = new();
@@ -1143,6 +1145,8 @@
         if (!IsOnlineGuest) return;
         _ = InvokeAsync(async () =>
         {
+            if (_raceRecorded) return;
+            _raceRecorded = true;
             _lastWon = result.GuestWon;
             _lastPlace = result.GuestPlace;
             _lastGained = 0;
@@ -1332,6 +1336,7 @@
         _streak = streak;
         if (phase == "pick")
         {
+            _raceRecorded = false;
             _loading = false;
             _myPlace = -1;
             _podium.Clear();   // hide the previous race's podium as the next race sets up
@@ -1414,7 +1419,8 @@
     {
         _myPlace = myPlace;
         _myField = myField > 0 ? myField : MarbleCount;
-        await InvokeAsync(StateHasChanged);
+        if (_hud is { } hud) hud.Refresh();
+        else await InvokeAsync(StateHasChanged);
     }
 
     private static double At(double[] values, int i) => i < values.Length ? values[i] : 0;
@@ -1427,6 +1433,9 @@
     public async Task OnRaceResult(bool won, int place, int score, int gained, int streak, int best,
                                    int mapId, int[] runPlaces, double[] runTimes, double[] runLeads, double myTime)
     {
+        // A repeated callback for the same race must not record (or submit) it twice.
+        if (_raceRecorded) return;
+        _raceRecorded = true;
         _lastWon = won;
         _lastPlace = place;
         _lastGained = gained;
@@ -1455,7 +1464,7 @@
 
             if (place > 0 && myTime > 0)
             {
-                _ = ApiService.SubmitMarbleRaceMapRecordAsync(new MarbleRaceRecordRequest(mapId, myTime));
+                await GameResults.SubmitMarbleRaceMapRecordAsync(new MarbleRaceRecordRequest(mapId, myTime));
             }
 
             // One intake records local stats and submits the high score together — no desync.

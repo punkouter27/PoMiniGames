@@ -311,3 +311,21 @@
     .pffa-fighter, .pffa-tools button, .pffa-studio button, .pffa-studio select, .pffa-studio a { transition: none; }
     .pffa-tools button:active, .pffa-studio button:active, .pffa-studio a:active { transform: none; }
 }
+
+/* Touch: the tool bar and studio controls reach the 44px target on a coarse pointer
+   (GAME-CONSISTENCY rule 8), including the compact player-mode bar above. */
+@media (pointer: coarse) {
+    .pffa-tools button,
+    .pffa-tools a,
+    .pffa-studio button,
+    .pffa-studio select,
+    .pffa-studio a {
+        min-height: 44px;
+    }
+
+    .pffa-tools a,
+    .pffa-studio a {
+        display: inline-flex;
+        align-items: center;
+    }
+}

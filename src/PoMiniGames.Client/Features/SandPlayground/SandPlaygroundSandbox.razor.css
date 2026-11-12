@@ -49,16 +49,39 @@
     cursor: crosshair;
 }
 
+/* ── Chrome column ────────────────────────────────────────────────────── */
+
+/* Dock, tray and menu stack in one column pinned to the top of the view, so a
+   dock that wraps to two rows pushes the others down. The column spans the view
+   but lets every touch through to the canvas except on its own panels. */
+.sp-chrome {
+    position: absolute;
+    top: 8px;
+    left: 8px;
+    right: 8px;
+    max-height: calc(100% - 16px);
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    /* Keeps the tray where it always sat on a laptop: 56px down, 2px under the dock. */
+    gap: 2px;
+    pointer-events: none;
+}
+
+.sp-chrome > * {
+    pointer-events: auto;
+}
+
 /* ── Dock ─────────────────────────────────────────────────────────────── */
 
 .sand-playground-dock {
-    position: absolute;
-    top: 8px;
-    left: 50%;
     display: flex;
+    flex-wrap: wrap;
+    justify-content: center;
     align-items: center;
+    flex: 0 0 auto;
     gap: 4px;
-    max-width: calc(100% - 16px);
+    max-width: 100%;
     padding: 5px 7px;
     border-radius: 14px;
     border: 1px solid color-mix(in srgb, var(--color-border) 70%, transparent);
@@ -69,7 +92,7 @@
         0 6px 22px rgba(0, 0, 0, 0.35),
         0 0 calc(var(--sp-flash) * 46px) color-mix(in srgb, var(--accent-amber) calc(var(--sp-flash) * 90%), transparent),
         inset 0 1px 0 rgba(255, 255, 255, 0.1);
-    transform: translate(calc(-50% + var(--sp-shake-x)), var(--sp-shake-y));
+    transform: translate(var(--sp-shake-x), var(--sp-shake-y));
 }
 
 .sp-btn {
@@ -154,15 +177,13 @@
 
 /* The tray: what the active tool carries, on its own row under the dock. */
 .sand-playground-tray {
-    position: absolute;
-    top: 56px;
-    left: 50%;
     display: flex;
+    flex: 0 0 auto;
     align-items: center;
     flex-wrap: wrap;
     justify-content: center;
     gap: 4px;
-    max-width: calc(100% - 16px);
+    max-width: 100%;
     padding: 4px 6px;
     border-radius: 11px;
     border: 1px solid color-mix(in srgb, var(--color-border) 70%, transparent);
@@ -171,18 +192,20 @@
     backdrop-filter: blur(18px) saturate(1.5);
     color: var(--color-text-primary);
     font-size: var(--text-xs);
-    transform: translate(calc(-50% + var(--sp-shake-x)), var(--sp-shake-y));
+    transform: translate(var(--sp-shake-x), var(--sp-shake-y));
 }
 
 /* ── Menu ─────────────────────────────────────────────────────────────── */
 
+/* Under the dock and tray, against the right edge (where the ⋯ button sits);
+   the column caps its height, so it scrolls inside itself, never the page. */
 .sand-playground-menu {
-    position: absolute;
-    top: 58px;
-    right: 8px;
-    width: min(300px, calc(100% - 16px));
-    max-height: calc(100% - 66px);
+    align-self: flex-end;
+    flex: 0 1 auto;
+    min-height: 0;
+    width: min(300px, 100%);
     overflow-y: auto;
+    overscroll-behavior: contain;
     padding: 4px 10px 10px;
     border-radius: 14px;
     border: 1px solid color-mix(in srgb, var(--color-border) 70%, transparent);
@@ -336,8 +359,15 @@
         border: none;
     }
 
-    .sand-playground-dock {
+    .sp-chrome {
         top: calc(4px + env(safe-area-inset-top, 0px));
+        left: 4px;
+        right: 4px;
+        max-height: calc(100% - 8px - env(safe-area-inset-top, 0px));
+        gap: 4px;
+    }
+
+    .sand-playground-dock {
         gap: 1px;
         padding: 3px 4px;
     }
@@ -353,12 +383,7 @@
         margin: 0 1px;
     }
 
-    .sand-playground-menu {
-        top: 48px;
-    }
-
     .sand-playground-tray {
-        top: 44px;
         gap: 2px;
         padding: 3px 4px;
     }
@@ -376,5 +401,46 @@
 
     .sand-playground-toast {
         animation-duration: 6s;
+    }
+}
+
+/* The engine failed to start: the shared error card over the (empty) viewport. */
+.sp-failed {
+    position: absolute;
+    inset: 0;
+    z-index: 3;
+    display: grid;
+    place-items: center;
+    padding: 1rem;
+    background: var(--color-bg);
+    color: var(--color-text-primary);
+    font-family: var(--font-body, system-ui, sans-serif);
+}
+
+/* The toast's Undo stays clear of the home bar. */
+.sand-playground-toast {
+    bottom: calc(34px + env(safe-area-inset-bottom, 0px));
+}
+
+/* ── Coarse pointers: every tap target at least 44px ──
+   Menu, tray and dock all wrap, so their targets simply grow: on a narrow phone in
+   portrait the dock's nine chips take two rows and the tray and menu follow below. */
+@media (pointer: coarse) {
+    .sp-pill,
+    .sp-line {
+        min-height: 44px;
+    }
+
+    .sp-pill {
+        min-width: 44px;
+    }
+
+    .sp-row input[type="range"] {
+        min-height: 44px;
+    }
+
+    .sp-btn {
+        min-width: 44px;
+        height: 44px;
     }
 }

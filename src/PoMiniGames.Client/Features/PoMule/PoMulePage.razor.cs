@@ -38,6 +38,7 @@ public partial class PoMulePage : IAsyncDisposable
     [Inject] private PoMuleSaveStore Saves { get; set; } = null!;
 
     private DotNetObjectReference<PoMulePage>? _ref;
+    private Shared.HudRegion? _hud;
     private PoMuleMatch? _match;
     private MatchState? _saved;
     private List<PoMuleRow> _rows = [];
@@ -167,7 +168,8 @@ public partial class PoMulePage : IAsyncDisposable
             _ = Saves.SaveAsync(state);
         }
 
-        if (state.Phase != _shownPhase)
+        var phaseChanged = state.Phase != _shownPhase;
+        if (phaseChanged)
         {
             _shownPhase = state.Phase;
             _announcement = $"Month {state.Month}, {PoMuleUi.PhaseName(state.Phase)}.";
@@ -192,7 +194,10 @@ public partial class PoMulePage : IAsyncDisposable
         {
             _lastRender = now;
             _rows = PoMuleUi.Rows(state);
-            StateHasChanged();
+            // A phase change also moves the shell's announcement, so the page renders; otherwise
+            // only the HUD island (bars, standings) does.
+            if (!phaseChanged && _hud is { } hud) hud.Refresh();
+            else StateHasChanged();
         }
         return match.Snapshot();
     }

@@ -132,14 +132,14 @@
                         {
                             <div class="pc-touch" aria-label="Touch controls">
                                 <div class="pc-dpad">
-                                    <button data-capitol-key="KeyW" aria-label="Move forward">↑</button>
-                                    <button data-capitol-key="KeyA" aria-label="Move left">←</button>
-                                    <button data-capitol-key="KeyS" aria-label="Move backward">↓</button>
-                                    <button data-capitol-key="KeyD" aria-label="Move right">→</button>
+                                    <button data-capitol-action="forward" aria-label="Move forward">↑</button>
+                                    <button data-capitol-action="left" aria-label="Move left">←</button>
+                                    <button data-capitol-action="back" aria-label="Move backward">↓</button>
+                                    <button data-capitol-action="right" aria-label="Move right">→</button>
                                 </div>
                                 @if (Playing)
                                 {
-                                    <button class="pc-fire" data-capitol-key="Space" aria-label="Push">PUSH</button>
+                                    <button class="pc-fire" data-capitol-action="push" aria-label="Push">PUSH</button>
                                 }
                             </div>
                         }
@@ -178,12 +178,12 @@
             </div>
         </ChildContent>
         <ErrorContent Context="ex">
-            <div class="pc-panel pc-centered" role="alert">
-                <h2>An interface error occurred</h2>
-                <p>The scenario encountered an unexpected error: @ex.Message</p>
-                <div class="pc-actions">
-                    <button type="button" class="app-btn app-btn--primary" @onclick="RecoverFromError">Recover scenario</button>
-                </div>
+            @* The shared error view, the same one the load failure uses; the exception text
+               goes to the log, not the player. *@
+            <div class="pc-panel pc-centered">
+                <ErrorState Icon="⚠️" Title="An interface error occurred" OnRetry="RecoverFromError" RetryLabel="Recover scenario">
+                    <p>The scenario hit an unexpected error. Recover to reload it, or return to all games.</p>
+                </ErrorState>
             </div>
         </ErrorContent>
     </ErrorBoundary>
@@ -262,7 +262,7 @@
     private string BottomHint => _demo ? "AUTONOMOUS DEMO · P PAUSE"
         : _message.Length > 0 ? _message
         : _role == "observer" ? "WASD move · Click scene to look · P pause"
-        : "WASD move · Click scene to look · Space fire · G grenade · H smoke · P pause";
+        : "WASD move · Click scene to look · Space push / fire · G grenade · H smoke · P pause";
     private string ResultHeading => _outcome switch
     {
         "doors" => "The doors stayed shut.",
@@ -597,7 +597,7 @@
 
     private RenderFragment IntroControls => @<div>
         <p><kbd>W</kbd> <kbd>A</kbd> <kbd>S</kbd> <kbd>D</kbd> move · <kbd>Mouse</kbd> look &amp; aim</p>
-        <p><kbd>Space</kbd> / <kbd>Click</kbd> fire the machine gun · <kbd>G</kbd> concussion grenade · <kbd>H</kbd> smoke grenade · <kbd>Shift</kbd> sprint · <kbd>←</kbd> <kbd>→</kbd> turn camera</p>
+        <p><kbd>Space</kbd> / <kbd>Click</kbd> push / fire the machine gun · <kbd>G</kbd> concussion grenade · <kbd>H</kbd> smoke grenade · <kbd>Shift</kbd> sprint · <kbd>←</kbd> <kbd>→</kbd> turn camera</p>
         <p><kbd>Esc</kbd> / <kbd>P</kbd> pause</p>
         <p class="touch-only">Touch: floating d-pad and push button, drag to orbit. Gamepad: sticks move and look, right trigger pushes, Start pauses.</p>
     </div>;

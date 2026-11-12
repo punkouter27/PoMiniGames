@@ -320,3 +320,30 @@
     text-transform: uppercase;
     color: var(--color-text-secondary);
 }
+
+/* Keyboard / gamepad focus on a cell. The cell's own border and win glow would
+   otherwise hide the shell's shared focus shadow, so the ring is an outline. */
+.ttt-cell:focus-visible {
+    outline: 2px solid var(--accent-cyan, #22d3ee);
+    outline-offset: 1px;
+}
+
+/* Touch: every cell is at least the 44px target (GAME-CONSISTENCY rule 8). The
+   phone and landscape rules above go as low as 30px for a fine pointer (the base
+   clamp already floors at 44px). On a landscape phone the one-line rule under the
+   strip gives up its row instead. */
+@media (pointer: coarse) and (max-width: 640px) {
+    .ttt-slot,
+    .ttt-board {
+        --ttt-cell: max(44px, min(13.5vw, 52px));
+        --ttt-gap: 3px;
+        --ttt-pad: 6px;
+    }
+}
+
+@media (pointer: coarse) and (max-height: 500px) {
+    .ttt-slot,
+    .ttt-board { --ttt-cell: 44px; }
+    .ttt-board { margin: 0.25rem auto; }
+    .ttt-goal { display: none; }
+}

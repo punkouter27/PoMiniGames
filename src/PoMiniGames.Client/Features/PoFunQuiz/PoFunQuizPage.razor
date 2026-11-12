@@ -6,7 +6,7 @@
 @inject ApiService Api
 @inject PlayerNameService PlayerNameService
 @inject MatchHistoryService MatchHistory
-@inject GameStatsService GameStats
+@inject GameResultService GameResults
 @inject UiFeedbackService Feedback
 @inject NavigationManager Navigation
 @implements IAsyncDisposable
@@ -351,6 +351,7 @@
     {
         try { await Feedback.CompleteAsync(); } catch { /* best-effort */ }
         await Task.Delay(1500);
+        if (_disposed) return;
         ResetSplitState();
         _currentIndex++;
         if (IsGameOver)
@@ -433,7 +434,9 @@
     [JSInvokable]
     public Task OnSplitHotkeyAsync(string side, int optionIndex)
     {
-        if (!_splitScreen) return Task.CompletedTask;
+        // The window-level listener is live from first render, behind the start card: a digit
+        // pressed while the card is still up must not answer the question waiting under it.
+        if (!_splitScreen || !_introDone) return Task.CompletedTask;
         if (_currentIndex >= _questions.Count) return Task.CompletedTask;
         var q = _questions[_currentIndex];
         if (optionIndex < 0 || optionIndex >= q.Options.Count) return Task.CompletedTask;
@@ -451,7 +454,7 @@
     [JSInvokable]
     public Task OnSoloHotkeyAsync(string side, int optionIndex)
     {
-        if (_splitScreen) return Task.CompletedTask;
+        if (_splitScreen || !_introDone) return Task.CompletedTask;
         if (_playMode != "solo") return Task.CompletedTask;
         if (_currentIndex >= _questions.Count) return Task.CompletedTask;
         if (_selected.ContainsKey(_currentIndex)) return Task.CompletedTask; // already revealed
@@ -660,12 +663,10 @@
         await Task.Delay(SoloRevealDelayMs);
         if (_disposed) return;
         _currentIndex++;
-        if (IsGameOver && _playMode == "solo" && !_scoreSubmitted)
-        {
-            _scoreSubmitted = true;
-            _ = SubmitSoloOutcomeAsync();
-        }
+        var finished = IsGameOver && _playMode == "solo" && !_scoreSubmitted;
+        if (finished) _scoreSubmitted = true;   // guarded before the first await: recorded once
         await InvokeAsync(StateHasChanged);
+        if (finished) await SubmitSoloOutcomeAsync();
     }
 
     private int StreakBonus() => _streak switch
@@ -690,30 +691,29 @@
         return _selected.ContainsKey(_currentIndex);
     }
 
-    // Submit the final solo score to the server leaderboard. Best-effort:
-    // never throws to the UI; a failed POST just means the run won't show up
-    // on the public board. Local GameStats are written unconditionally.
+    // Record the solo outcome and submit it to the server leaderboard. Never throws to
+    // the UI; a failed POST is parked in the offline queue by GameResultService.
     private async Task SubmitSoloOutcomeAsync()
     {
-        var localStats = await GameStats.RecordResult(
-            "pofunquiz", _playerName, Difficulty.Medium,
-            _maxStreak > 0 ? GameResult.Win : GameResult.Loss);
-        _statItems = new()
-        {
-            new StatItem { Label = "Score", Value = _score.ToString() },
-            new StatItem { Label = "Best streak", Value = _maxStreak.ToString() },
-            new StatItem { Label = "Total plays", Value = localStats.TotalGames.ToString() },
-        };
         try
         {
-            var submitted = await Api.SubmitFunQuizScoreAsync(new FunQuizLeaderboardSubmission
+            // The local outcome goes through the one results intake every game reports to.
+            // One awaited call records the local outcome and submits the run; a failed submit
+            // is parked in the offline queue and retried, never lost.
+            var localStats = await GameResults.RecordAndSubmitFunQuizAsync(
+                _playerName, _maxStreak > 0 ? GameResult.Win : GameResult.Loss,
+                new FunQuizLeaderboardSubmission
+                {
+                    Category = _category,
+                    Score = _score,
+                    MaxStreak = _maxStreak,
+                });
+            _statItems = new()
             {
-                Category = _category,
-                Score = _score,
-                MaxStreak = _maxStreak,
-            });
-            if (submitted) await Feedback.CompleteAsync();
-            else await Feedback.TapAsync();
+                new StatItem { Label = "Score", Value = _score.ToString() },
+                new StatItem { Label = "Best streak", Value = _maxStreak.ToString() },
+                new StatItem { Label = "Total plays", Value = localStats.TotalGames.ToString() },
+            };
         }
         catch
         {

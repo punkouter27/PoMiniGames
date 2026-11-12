@@ -9,7 +9,12 @@
 // button or, on a touch-only device, from the start card. Pause is then a button (Start,
 // or the on-screen one) rather than the lock being lost.
 
+import { connectedPads, BUTTONS } from '../gamepadBus.js';
+
 const DEADZONE = 0.18;
+// A trigger counts as held a little earlier than the bus's half-travel `pressed()`: DIG on RT
+// and BLAST on LT were tuned to this, so the threshold and edge memory stay local.
+const TRIGGER_DOWN = 0.35;
 // A full stick deflection turns at this many mouse pixels per second (x 0.0025 rad/px in
 // game.js = 2.4 rad/s), before the player's own look-speed setting.
 const PAD_LOOK_PX_S = 960;
@@ -51,22 +56,20 @@ export class AltInput {
     this._tap.alt = this._tap.jump = false;
 
     // First connected pad with the standard mapping; a wheel or a flight stick is ignored.
-    let pad = null;
-    for (const p of navigator.getGamepads?.() ?? []) {
-      if (p && p.connected && p.mapping === 'standard') { pad = p; break; }
-    }
+    const pad = connectedPads().find((p) => p.mapping === 'standard') ?? null;
     if (!pad) { this._padPrev.length = 0; return out; }
 
-    const down = (i) => !!pad.buttons[i] && (pad.buttons[i].pressed || pad.buttons[i].value > 0.35);
+    const down = (i) => !!pad.buttons[i] && (pad.buttons[i].pressed || pad.buttons[i].value > TRIGGER_DOWN);
     const edge = (i) => down(i) && !this._padPrev[i];
+    // Per-axis deadzone (not the bus's radial stick()): each axis is shaped on its own, as tuned.
     out.moveX += shape(pad.axes[0] ?? 0);
     out.moveY += -shape(pad.axes[1] ?? 0);
     out.lookX += shape(pad.axes[2] ?? 0) * PAD_LOOK_PX_S * dt;
     out.lookY += shape(pad.axes[3] ?? 0) * PAD_LOOK_PX_S * dt;
-    out.fire = out.fire || down(7);                 // RT
-    out.alt = out.alt || edge(6) || edge(5);        // LT or RB
-    out.jump = out.jump || edge(0);                 // A
-    out.pause = edge(9);                            // Start
+    out.fire = out.fire || down(BUTTONS.rt);
+    out.alt = out.alt || edge(BUTTONS.lt) || edge(BUTTONS.rb);
+    out.jump = out.jump || edge(BUTTONS.south);
+    out.pause = edge(BUTTONS.start);
     for (let i = 0; i < pad.buttons.length; i++) {
       if (edge(i)) out.any = true;
       this._padPrev[i] = down(i);

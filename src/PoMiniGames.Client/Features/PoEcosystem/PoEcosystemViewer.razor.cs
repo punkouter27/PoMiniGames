@@ -4,6 +4,7 @@ using PoMiniGames.Shared.Games.PoEcosystem;
 using PoMiniGamesClient.Features.PoEcosystem.Components;
 using PoMiniGamesClient.Features.PoEcosystem.Models;
 using PoMiniGamesClient.Features.PoEcosystem.Services;
+using PoMiniGamesClient.Features.Shared;
 using PoMiniGamesClient.Services.Auth;
 using PoMiniGamesClient.Services.Http;
 using PoMiniGamesClient.Services.Interop;
@@ -63,6 +64,7 @@ public partial class PoEcosystemViewer : ComponentBase, IAsyncDisposable
     private string? _banner;
     private string? _endedReported;
     private string? _error;
+    private bool _startFailed;
     private string? _cloudMessage;
     private string _seedInput = "";
     private bool _booted;
@@ -83,6 +85,7 @@ public partial class PoEcosystemViewer : ComponentBase, IAsyncDisposable
 
     // ── finder, lenses, map layers, ambient, time machine, wagers, alerts ──
     private HudBar? _hudBar;
+    private HudRegion? _hudRegion;
     private int _lens = EcoLens.None;
     private string _layer = "none";
     private bool _ambient;
@@ -170,7 +173,11 @@ public partial class PoEcosystemViewer : ComponentBase, IAsyncDisposable
             demo: true,
             // The island is a demo: it runs, and nothing it does is written to this browser.
             ephemeral: true);
-        if (!ok) _error = "The island engine could not start. Your browser may not support WebGL2.";
+        if (!ok)
+        {
+            _startFailed = true;
+            _error = "The island engine could not start. Your browser may not support WebGL2.";
+        }
         _sound = await Interop.SoundEnabledAsync();
         _viewSettings = await Interop.SettingsAsync();
         StartTourIfNew();
@@ -262,7 +269,10 @@ public partial class PoEcosystemViewer : ComponentBase, IAsyncDisposable
         var now = DateTime.UtcNow;
         if ((now - _statsRenderedAt).TotalMilliseconds < StatsRenderMs) return;
         _statsRenderedAt = now;
-        InvokeAsync(StateHasChanged);
+        // The HUD strip is the only always-on reader of the stats; the finder and the dashboard
+        // read them too, so while either is open the whole viewer re-renders as before.
+        if (_hudRegion is not null && !_dashboardOpen && !_finderOpen) _hudRegion.Refresh();
+        else InvokeAsync(StateHasChanged);
     }
 
     private void OnHistory(EcoHistory history)

@@ -37,12 +37,6 @@
     color: var(--color-text-secondary);
 }
 
-.pvs-start-error {
-    margin: 0;
-    font-size: var(--text-sm);
-    color: var(--accent-danger-ink);
-}
-
 .pvs-details {
     align-self: stretch;
     text-align: left;
@@ -735,10 +729,17 @@
 .pvs-canvas-host ::deep .pvs-tbtn-jump { bottom: 1.4rem; right: calc(6.4rem + env(safe-area-inset-right, 0px)); }
 
 .pvs-canvas-host ::deep .pvs-tbtn-pause {
-    top: 3.4rem;
+    top: calc(3.4rem + env(safe-area-inset-top, 0px));
     width: 2.6rem;
     height: 2.6rem;
     font-size: 0.8rem;
+}
+
+/* Coarse pointers: the strip's fullscreen button (30px) and the touch pause button (42px)
+   are the two touch controls under the 44px floor. */
+@media (pointer: coarse) {
+    .pvs-hud-btn { width: 44px; height: 44px; }
+    .pvs-canvas-host ::deep .pvs-tbtn-pause { width: 44px; height: 44px; }
 }
 
 /* Reduced motion: the engine already skips shake, the damage flash, the hit-stop, the

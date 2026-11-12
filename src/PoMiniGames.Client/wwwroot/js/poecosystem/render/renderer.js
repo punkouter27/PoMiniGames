@@ -51,6 +51,7 @@ import { createTrails } from './trails.js';
 import { createGrass } from './grass.js';
 import { GOAL } from '../sim/behavior/utility.js';
 import { createSceneRenderer } from './backend.js';
+import { connectedPads, rumble as padRumble } from '../../gamepadBus.js';
 
 const TAU = Math.PI * 2;
 // What the auto-director calls a cut to an event tile.
@@ -702,19 +703,19 @@ export function createRenderer(container, {
     }
   }
 
-  /** A connected gamepad rumbles for a near blast (the phone path is impactBus's). */
+  /**
+   * A connected gamepad rumbles for a near blast (the phone path is impactBus's). Through
+   * gamepadBus, so the app's Haptics setting and duty caps apply. The bus has no startDelay, so
+   * the sound-travel delay is a timer instead.
+   */
   function rumble(strength, delayMs = 0) {
-    if (motionReduced || strength < 0.05 || !navigator.getGamepads) return;
-    try {
-      for (const pad of navigator.getGamepads() ?? []) {
-        const act = pad?.vibrationActuator;
-        if (!act?.playEffect) continue;
-        act.playEffect('dual-rumble', {
-          startDelay: Math.round(delayMs), duration: Math.round(180 + strength * 520),
-          strongMagnitude: Math.min(1, strength), weakMagnitude: Math.min(1, strength * 0.6),
-        })?.catch?.(() => {});
-      }
-    } catch { /* haptics are never load-bearing */ }
+    if (motionReduced || strength < 0.05) return;
+    const ms = Math.round(180 + strength * 520);
+    const fire = () => {
+      if (disposed) return;
+      for (const pad of connectedPads()) padRumble(pad, Math.min(1, strength), Math.min(1, strength * 0.6), ms);
+    };
+    if (delayMs > 0) setTimeout(fire, Math.round(delayMs)); else fire();
   }
 
   /** Rain and snow, emitted in a column above the god so the weather is always on screen. */

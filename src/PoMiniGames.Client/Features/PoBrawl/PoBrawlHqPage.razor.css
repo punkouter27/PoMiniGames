@@ -227,3 +227,12 @@
         justify-content: center;
     }
 }
+
+/* Touch: the Cup link and the board picker reach the 44px target on a coarse pointer
+   (GAME-CONSISTENCY rule 8). */
+@media (pointer: coarse) {
+    .hq-modes,
+    .hq-boards ::deep .hq-select .rz-button {
+        min-height: 44px;
+    }
+}

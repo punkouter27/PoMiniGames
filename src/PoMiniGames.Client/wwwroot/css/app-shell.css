@@ -398,3 +398,20 @@
    While js/app.js runs the card-to-title view transition it sets data-hero-nav on the root;
    routeFx's colour wipe would otherwise sweep over the morph on the same frames. */
 :root[data-hero-nav] .po-route-wipe { display: none; }
+
+/* -- Build-date stamp on game pages --
+   Layout/BuildVersion draws it; these rules are global because they key off a GameShell
+   rendered by another component. Off on game pages: a GameShell has controls in its corners,
+   and on phones the stamp sits in the page flow and would make the game page scroll. */
+.gl-page:has(.gps-shell) .gl-build-stamp {
+  display: none;
+}
+
+/* Marble Race keeps it on wider screens: its canvas leaves the bottom-right corner clear
+   (the steer pads sit above it). Raised over the race overlays. */
+@media (min-width: 769px) {
+  .gl-page:has(.gps-shell .mr-wrap) .gl-build-stamp {
+    display: block;
+    z-index: 6;
+  }
+}

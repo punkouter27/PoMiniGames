@@ -238,6 +238,8 @@
 
     private void HandleGameOver(CoupleQuizGameOverPayload p)
     {
+        // One terminal result per match: a re-delivered GameOver must not record it twice.
+        if (_gameOver is not null) return;
         _gameOver = p;
         _phase = Phase.GameOver;
         _announcement = "The match is over.";
@@ -293,7 +295,18 @@
     {
         if (_game is null || _submitted || string.IsNullOrWhiteSpace(_myAnswer)) return;
         _submitted = true;
-        await Hub.SubmitAnswerAsync(_myAnswer.Trim());
+        _connectionError = null;
+        try
+        {
+            await Hub.SubmitAnswerAsync(_myAnswer.Trim());
+        }
+        catch (Exception ex)
+        {
+            // Never leave "Submitted ✓" on an answer the server didn't get: unlock it so the
+            // player can send it again once the connection is back.
+            _submitted = false;
+            _connectionError = $"Your answer didn't send: {ex.Message}";
+        }
     }
 
     // Detach handlers only — the scoped hub service (shared with the lobby) owns the

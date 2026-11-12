@@ -91,7 +91,7 @@ public partial class PoJevArenaPage : ComponentBase, IAsyncDisposable
             ? string.Create(CultureInfo.InvariantCulture, $"{_hud.Calls:N0} moves · local brain, free")
         : "Local brain ready · free";
 
-    private string? Banner => _error ?? NoticeBanner ?? _toast;
+    private string? Banner => NoticeBanner ?? _toast;
 
     private string? NoticeBanner
     {
@@ -226,6 +226,15 @@ public partial class PoJevArenaPage : ComponentBase, IAsyncDisposable
 
     private async Task StartAsync()
     {
+        _phase = Phase.Draft;
+        await RunDemoAsync();
+    }
+
+    /// <summary>The failure strip's retry: drop whatever the engine holds and run the demo loop afresh.</summary>
+    private async Task RetryDemoAsync()
+    {
+        _error = null;
+        await StopEngineAsync();
         _phase = Phase.Draft;
         await RunDemoAsync();
     }
@@ -501,6 +510,9 @@ public partial class PoJevArenaPage : ComponentBase, IAsyncDisposable
     [JSInvokable]
     public async Task OnMatchEnded(string json)
     {
+        // The whistle is reported once per match: a repeated callback (a replay ending, a
+        // re-entrant engine) must not post the same result to the server twice.
+        if (_phase != Phase.Battle || _result is not null) return;
         _result = JsonSerializer.Deserialize(json, ArenaUiJsonContext.Default.ArenaMatchEndView);
         _phase = Phase.Replay;
         // The demo goes straight to its highlight replay: the debrief is a player's read-out.

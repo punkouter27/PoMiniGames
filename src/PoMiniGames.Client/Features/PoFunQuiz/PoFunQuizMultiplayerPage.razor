@@ -92,6 +92,7 @@
                                         Correct="@(_hasAnswered && captured == _currentQuestion.CorrectOptionIndex)" OnSelect="Select" />
                         }
                     </div>
+                    <InlineError Message="@_error" />
                     @if (_hasAnswered)
                     {
                         <p>Answered. Waiting for opponent… (@_finishedThisQuestion / @_state.Players.Count)</p>
@@ -334,6 +335,9 @@
 
     private void HandleFinished(FunQuizGameFinishedDto f)
     {
+        // One terminal result per match: a re-delivered GameFinished must not record the
+        // head-to-head rows a second time.
+        if (_finished is not null) return;
         _finished = f;
         InvokeAsync(StateHasChanged);
         _ = RecordOutcomesAsync(f);
@@ -369,12 +373,30 @@
         var isCorrect = option == _currentQuestion.CorrectOptionIndex;
         _hasAnswered = true;
         _selectedOption = option;
-        // For the consolidation MVP we treat every answer as 1.0× speed (no timer running yet).
-        await Hub.UpdateScore(isCorrect, speedMultiplier: 1.0, secondsRemaining: 0);
-        // Mark the local player as finished for this question — once both
-        // players finish, the server advances to the next question (or ends
-        // the game on the last one).
-        await Hub.PlayerFinished();
+        _error = null;
+        var scored = false;
+        try
+        {
+            // For the consolidation MVP we treat every answer as 1.0× speed (no timer running yet).
+            await Hub.UpdateScore(isCorrect, speedMultiplier: 1.0, secondsRemaining: 0);
+            scored = true;
+            // Mark the local player as finished for this question — once both
+            // players finish, the server advances to the next question (or ends
+            // the game on the last one).
+            await Hub.PlayerFinished();
+        }
+        catch (Exception ex)
+        {
+            // Never show an answer the server didn't get as locked in. If the score never
+            // landed, unlock the options so the player can answer again; if only the
+            // "finished" mark failed, keep the pick (re-answering would score it twice).
+            if (!scored)
+            {
+                _hasAnswered = false;
+                _selectedOption = -1;
+            }
+            _error = $"Your answer didn't reach the server: {ex.Message}";
+        }
     }
 
     public async ValueTask DisposeAsync()

@@ -874,3 +874,30 @@
     .mr-chip-btn:active,
     .mr-nudge-pad:active { transform: none; }
 }
+
+/* An engine failure: the shared error card, on an opaque backing so it reads over any frame. */
+.mr-error {
+    width: min(420px, 100%);
+    border-radius: var(--radius-lg);
+    background: var(--color-bg);
+}
+
+.mr-error-line {
+    margin: 0 0 var(--space-2);
+}
+
+/* The steer pads keep clear of the home bar and a landscape notch. */
+.mr-nudge-pads {
+    margin-bottom: env(safe-area-inset-bottom, 0px);
+    padding-left: max(16px, env(safe-area-inset-left, 0px));
+    padding-right: max(16px, env(safe-area-inset-right, 0px));
+}
+
+/* Coarse pointers: chips and segmented choices at least 44px tall. */
+@media (pointer: coarse) {
+    .mr-chip-btn,
+    .mr-seg-btn {
+        min-height: 44px;
+        min-width: 44px;
+    }
+}

@@ -21,11 +21,15 @@
             </div>
 
             <div class="poeco-hud-top">
+                @* Its own render region: the stats tick re-renders this strip, not the whole viewer
+                   (see RenderStats). *@
+                <HudRegion @ref="_hudRegion">
                 <HudBar @ref="_hudBar" Stats="_stats" Sound="_sound" Director="_directorOn" Pip="_pipOn" Ambient="_ambient" Keys="_showKeys"
                         Lens="_lens" HasSubject="@(_selected >= 0)"
                         OnSound="ToggleSoundAsync" OnDashboard="ToggleDashboard" OnDirector="ToggleDirectorAsync" OnPip="TogglePipAsync"
                         OnReel="ToggleReelAsync" OnAmbient="ToggleAmbientAsync" OnKeys="ToggleKeys" OnFind="OpenFinder"
                         OnSpeed="SetSpeedAsync" OnLens="SetLensAsync" />
+                </HudRegion>
             </div>
 
             @if (_directorOn)
@@ -170,8 +174,19 @@
         }
     }
 
-    @if (_error is not null)
+    @* The engine not starting at all is a page failure (the shared ErrorState, no retry: a
+       browser without WebGL2 will not grow one). A fault while the island runs is a card-level
+       failure on a world that is still on screen: the shared inline strip. *@
+    @if (_startFailed)
     {
-        <p class="poeco-error" role="alert">@_error</p>
+        <div class="poeco-error poeco-error--page">
+            <ErrorState Title="The island couldn't start">@_error</ErrorState>
+        </div>
+    }
+    else if (_error is not null)
+    {
+        <div class="poeco-error">
+            <InlineError Message="@_error" />
+        </div>
     }
 </div>

@@ -4,6 +4,7 @@
 // gamepad adds an analog steer / throttle / brake. The server lets a non-zero analog value
 // win over its key, so the two never have to be reconciled here.
 import * as Render from './renderer.js';
+import { connectedPads, pressed, rumble as padRumble, BUTTONS } from '../gamepadBus.js';
 
 let canvas = null, reference = null, listeners = null, enabled = false;
 let input = { up: false, down: false, left: false, right: false, space: false, steer: 0, throttle: 0, brake: 0 };
@@ -78,24 +79,25 @@ function pointerUp(event) {
  * call: an unquantized stick would send sixty packets a second to say almost nothing.
  */
 export function pollPad() {
-    const pads = typeof navigator.getGamepads === 'function' ? navigator.getGamepads() : [];
+    const gp = connectedPads()[0];
     let next = null;
-    for (const gp of pads || []) {
-        if (!gp || !gp.connected) continue;
+    if (gp) {
+        // Steering reads one axis with its own deadzone and a 1.4 response curve, not the bus's
+        // radial two-axis stick(), and the pedals keep their analogue trigger value (the bus only
+        // offers a pressed/not-pressed button), so those two stay local.
         const ax = Number(gp.axes?.[0]) || 0;
         const mag = Math.abs(ax) < PAD_DEADZONE ? 0 : (Math.abs(ax) - PAD_DEADZONE) / (1 - PAD_DEADZONE);
         const b = gp.buttons || [];
         const val = i => Number(b[i]?.value) || (b[i]?.pressed ? 1 : 0);
-        const start = !!b[9]?.pressed;
+        const start = pressed(gp, BUTTONS.start);
         if (start && !padStartWas) reference?.invokeMethodAsync('OnPauseKey').catch(() => {});
         padStartWas = start;
         next = {
             steer: Math.round(Math.sign(ax) * Math.pow(mag, 1.4) * 10) / 10,
-            throttle: Math.round(Math.max(val(7), val(0)) * 5) / 5,
-            brake: Math.round(Math.max(val(6), val(1)) * 5) / 5,
-            space: !!b[2]?.pressed,
+            throttle: Math.round(Math.max(val(BUTTONS.rt), val(BUTTONS.south)) * 5) / 5,
+            brake: Math.round(Math.max(val(BUTTONS.lt), val(BUTTONS.east)) * 5) / 5,
+            space: pressed(gp, BUTTONS.west),
         };
-        break;
     }
     next ??= { steer: 0, throttle: 0, brake: 0, space: false };
     if (next.steer === pad.steer && next.throttle === pad.throttle && next.brake === pad.brake && next.space === pad.space) return;
@@ -109,12 +111,8 @@ export function rumble(strength) {
     if (now - lastRumble < 180) return;
     lastRumble = now;
     const s = Math.max(0.1, Math.min(1, strength));
-    const pads = typeof navigator.getGamepads === 'function' ? navigator.getGamepads() : [];
-    for (const gp of pads || []) {
-        try {
-            gp?.vibrationActuator?.playEffect?.('dual-rumble', { startDelay: 0, duration: 90 + s * 140, weakMagnitude: s * 0.6, strongMagnitude: s });
-        } catch { /* unsupported */ }
-    }
+    // Through the bus, so the Haptics setting and impactBus's duty caps apply to the car too.
+    for (const gp of connectedPads()) padRumble(gp, s, s * 0.6, 90 + s * 140);
 }
 
 export function startInput(canvasId, dotnetReference) {

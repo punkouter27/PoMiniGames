@@ -17,6 +17,8 @@
            GameKey="@(_demo ? null : "pomule")"
            Stats="@_endStats"
            GameSummary="@EndSummary"
+           Loading="@(_stage == Stage.Loading)"
+           LoadingLabel="Loading Irata…"
            Announcement="@_announcement">
 
     <div class="pm-root">
@@ -36,9 +38,10 @@
         }
         else if (_stage == Stage.Failed)
         {
-            <div class="pm-failed" role="alert">
-                <p>The game could not load.</p>
-                <RadzenButton Text="Retry" Click="@(_ => RetryAsync())" />
+            <div class="pm-failed">
+                <ErrorState Title="The game could not load" OnRetry="RetryAsync" RetryLabel="Retry">
+                    Check your connection and try again.
+                </ErrorState>
             </div>
         }
 
@@ -47,6 +50,9 @@
         <div id="pomule-canvas" class="pm-canvas-host" role="img"
              aria-label="Planet Irata: plots, towns and colonists, with each colonist's money and goods below"></div>
 
+        @* The bars and standings change with the match, several times a second: they are an
+           island, refreshed on their own from OnTick instead of re-rendering the whole page. *@
+        <HudRegion @ref="_hud">
         @if (_match is { } match && _stage == Stage.Playing && _radzenReady)
         {
             var state = match.State;
@@ -82,6 +88,7 @@
 
             <div class="pm-rotate" role="status">Turn your phone sideways to play.</div>
         }
+        </HudRegion>
     </div>
 </GameShell>
 
@@ -89,7 +96,7 @@
     private static RenderFragment TitleContent => GameCatalog.TitleFor(GameKeys.PoMule);
 
     private RenderFragment ControlsContent => @<div>
-        <p class="keys-only"><kbd>W</kbd><kbd>A</kbd><kbd>S</kbd><kbd>D</kbd> or arrows move · <kbd>Space</kbd> is the button (claim, install) · <kbd>Shift</kbd> dashes.</p>
+        <p class="keys-only"><kbd>W</kbd><kbd>A</kbd><kbd>S</kbd><kbd>D</kbd> or arrows move · <kbd>Space</kbd> is the button (claim, install) · <kbd>Shift</kbd> dashes. A pad works too: stick or D-pad moves, <kbd>A</kbd> is the button, <kbd>B</kbd> dashes.</p>
         <p class="touch-only">Stick moves · <strong>Act</strong> is the button (claim, install) · <strong>Dash</strong> sprints.</p>
     </div>;
 

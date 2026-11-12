@@ -25,3 +25,20 @@ game mechanics and art direction.
    assistive tech updates, and reduced motion. Route sound to the shared audio bus.
 10. **Diagnostics & Verification:** Toggle diagnostics with Tab during play; Escape closes panels.
     Preserve specialized panels and run game-debug/LinkAudit verification checks.
+
+## Documented exceptions
+
+- **PoEcosystem:** DEMO only and observation-only. It records no result (continuous sandbox),
+  keeps its own Tab world dashboard (`TabDebug` off), and keeps its own `AudioContext` because
+  its sounds are positioned in 3D world space; it follows the app-wide mute and volume.
+- **PoJevArena:** DEMO only. Keeps its own stats sheet (`TabDebug` off). Match outcomes are
+  creature records posted to the server, not a player win/loss.
+- **PoCabinet:** keeps its own `AudioContext` for the 3D listener; it follows the app-wide mute
+  and volume.
+- **SandPlayground:** sandbox with no results (challenge bests stay local) and pointer/touch
+  only; there is no gamepad path for a painting tool.
+- **PoBrawl FFA:** seasons and ratings are local to the browser (`ffaSeason.js`) and do not go
+  through `GameResultService`.
+- **ConnectFive:** nine columns cannot be 44px wide on a phone. The touch target is the whole
+  column (any tap in it drops a piece), so each target is full board height and ~36–40px wide.
+- **PoCoupleQuiz:** Online only.

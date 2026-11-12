@@ -1,4 +1,4 @@
-.racer-root { position: relative; width: 100%; height: max(480px, calc(100dvh - 100px)); overflow: hidden; background: var(--racer-bg); color: var(--racer-text);
+.racer-root { position: relative; width: 100%; height: var(--gps-area-h); overflow: hidden; background: var(--racer-bg); color: var(--racer-text);
     /* The Racer palette, once. It is a per-game canvas palette (scheme-invariant, like the canvas
        itself), and every PoRacer stylesheet reads it from here rather than retyping raw hex. */
     --racer-bg: #09131e; --racer-text: #edf7ff; --racer-ink: #fff; --racer-muted: #cadbe9; --racer-faint: #a8bacd;
@@ -50,7 +50,8 @@
     .racer-intro ::deep .track-card strong { font-size: 13px; }
     .racer-intro ::deep .track-medals { font-size: 11px; }
 }
-.racer-error { margin: 0; color: var(--accent-danger-ink); }
+/* A failed start (InlineError) inside the dark Racer panel: its text follows the panel, not the theme. */
+.racer-card ::deep .app-error-inline { color: var(--racer-text); }
 
 /* Chip groups (race type, pace, livery): radios that look like segmented buttons. ::deep because
    the paint shop is a child component and uses the same class. */
@@ -105,6 +106,9 @@
 @keyframes race-flag-sweep { from { mask-position: 110% 0; } to { mask-position: -10% 0; } }
 
 @media (pointer: coarse) {
+    /* The 44px floor for the start card's chips and paint swatches (34px and 30px for a mouse). */
+    .racer-card ::deep .racer-chips label { min-height: 44px; }
+    .racer-card ::deep .paint-swatch { width: 44px; height: 44px; }
     .racer-root ::deep .racer-controls .for-keys, .racer-root ::deep .racer-controls .for-pad { display: none; }
     .racer-root ::deep .racer-controls .for-touch { display: inline; }
 }

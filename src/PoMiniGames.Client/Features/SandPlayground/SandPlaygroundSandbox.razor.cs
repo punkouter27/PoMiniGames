@@ -22,6 +22,7 @@ public partial class SandPlaygroundSandbox : ComponentBase, IAsyncDisposable
     private ElementReference _overlay;
     private IJSObjectReference? _module;
     private DotNetObjectReference<SandPlaygroundSandbox>? _ref;
+    private bool _failed;
 
     /// <summary>
     /// Demo (kiosk/attract) mode: ordnance rains from the sky on its own so a
@@ -155,15 +156,30 @@ public partial class SandPlaygroundSandbox : ComponentBase, IAsyncDisposable
 
     protected override async Task OnAfterRenderAsync(bool firstRender)
     {
-        if (!firstRender) return;
+        if (firstRender) await StartEngineAsync();
+    }
 
-        _ref = DotNetObjectReference.Create(this);
-        _module = await JS.InvokeAsync<IJSObjectReference>("import", "./js/sand-playground/sand-playground-engine.js");
-        await _module.InvokeVoidAsync("init", _canvas, _overlay, _ref);
-        await _module.InvokeVoidAsync("setTool", ActiveTool);
-        await _module.InvokeVoidAsync("setBrush", BrushSize);
-        await _module.InvokeVoidAsync("setDemo", DemoOn);
-        await _module.InvokeVoidAsync("lockInput", IsDemo);
+    /// <summary>Imports and starts the engine. A failure shows the shared error card with a Retry.</summary>
+    private async Task StartEngineAsync()
+    {
+        _failed = false;
+        _ref ??= DotNetObjectReference.Create(this);
+        try
+        {
+            var module = await JS.InvokeAsync<IJSObjectReference>("import", "./js/sand-playground/sand-playground-engine.js");
+            await module.InvokeVoidAsync("init", _canvas, _overlay, _ref);
+            await module.InvokeVoidAsync("setTool", ActiveTool);
+            await module.InvokeVoidAsync("setBrush", BrushSize);
+            await module.InvokeVoidAsync("setDemo", DemoOn);
+            await module.InvokeVoidAsync("lockInput", IsDemo);
+            _module = module;
+        }
+        catch (JSException ex)
+        {
+            Console.Error.WriteLine($"[SandPlayground] engine failed to start: {ex.Message}");
+            _failed = true;
+        }
+        StateHasChanged();
     }
 
     // ── Engine → Blazor ──────────────────────────────────────────────────

@@ -31,6 +31,8 @@
            GameKey="@(_mode == "1p" ? "pobrawlko" : null)"
            Outcome="@OutcomeForCue"
            RequiresWebGl="true"
+           Loading="@_engineLoading"
+           LoadingLabel="Loading the arena…"
            GameSummary="@GameSummaryContent"
            Announcement="@_announcement">
     @if (!_introDone)
@@ -99,7 +101,15 @@
             <PoBrawlCampaignMap @key="beaten" Beaten="beaten" Variant="interlude" />
         }
 
-        @if (_mode == "online" && _netConnectFailed)
+        @if (_engineFailed)
+        {
+            <div class="pb-net-missing">
+                <ErrorState Icon="🥊" Title="The arena didn't load" OnRetry="ReloadPage" RetryLabel="Reload">
+                    The fight engine couldn't start. Check your connection and reload the page.
+                </ErrorState>
+            </div>
+        }
+        else if (_mode == "online" && _netConnectFailed)
         {
             @* The hub never answered (network, auth): the fight may well be there — offer a retry. *@
             <div class="pb-net-missing" role="alert">

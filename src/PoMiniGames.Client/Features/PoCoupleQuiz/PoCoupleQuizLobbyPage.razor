@@ -190,13 +190,30 @@
     {
         if (_lobby is null || _ready) return;
         _ready = true;
-        await Hub.SetReadyAsync();
+        _error = null;
+        try
+        {
+            await Hub.SetReadyAsync();
+        }
+        catch (Exception ex)
+        {
+            // The server never saw the ready: don't show it as ticked.
+            _ready = false;
+            _error = $"Couldn't mark you ready: {ex.Message}";
+        }
     }
 
     private async Task OnRoundsChanged(ChangeEventArgs e)
     {
         if (_lobby is null || !int.TryParse(e.Value?.ToString(), out var rounds)) return;
-        await Hub.SetRoundsAsync(rounds);
+        try
+        {
+            await Hub.SetRoundsAsync(rounds);
+        }
+        catch (Exception ex)
+        {
+            _error = $"Couldn't change the rounds: {ex.Message}";
+        }
     }
 
     // NB: SignalR `.On` callbacks run outside Blazor's render loop, so each handler

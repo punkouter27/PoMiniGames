@@ -187,6 +187,8 @@ public partial class PoCabinetPageBase : ComponentBase, IAsyncDisposable
     protected bool _lastLapInvalid;
     private int _lastLapCount;
     private long _lastHudRender;
+    /// <summary>The HUD islands a routine tick refreshes instead of the whole page.</summary>
+    protected Shared.HudRegion? _hudBadge, _hudStrip;
     private GameMode? _lastMode;
 
     protected override async Task OnInitializedAsync()
@@ -769,7 +771,9 @@ public partial class PoCabinetPageBase : ComponentBase, IAsyncDisposable
             }
             forceRender = true;
         }
-        _showGo = _goUntilElapsed > 0 && snap.ElapsedRaceTime <= _goUntilElapsed;
+        var showGo = _goUntilElapsed > 0 && snap.ElapsedRaceTime <= _goUntilElapsed;
+        if (showGo != _showGo) forceRender = true; // GO! lives outside the HUD islands
+        _showGo = showGo;
 
         var cars = snap.Cars ?? Array.Empty<PoCabinetCarState>();
         // Solo snapshots carry the whole field only on the first tick and at the finish
@@ -808,6 +812,7 @@ public partial class PoCabinetPageBase : ComponentBase, IAsyncDisposable
                 {
                     _placeAnnouncedAt = nowMs;
                     _liveAnnouncement = $"Position {localCar.Position} of {_totalCars}.";
+                    forceRender = true; // the live region is page markup
                 }
             }
             _position = localCar.Position;
@@ -858,7 +863,14 @@ public partial class PoCabinetPageBase : ComponentBase, IAsyncDisposable
         if (forceRender || now - _lastHudRender >= 66)
         {
             _lastHudRender = now;
-            InvokeAsync(StateHasChanged);
+            // A routine tick moves only the lap strip and the place badge; anything else
+            // (countdown, laps, the finish, a radio line) renders the page.
+            if (!forceRender && _hudStrip is not null)
+            {
+                _hudStrip.Refresh();
+                _hudBadge?.Refresh();
+            }
+            else InvokeAsync(StateHasChanged);
         }
     }
 

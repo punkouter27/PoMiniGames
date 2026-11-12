@@ -325,15 +325,20 @@ public class ApiService
     /// Offers one finish as a map record. Fire-and-forget by design: a record that fails to post is
     /// not parked for retry the way a run score is — the next good finish offers itself anyway.
     /// </summary>
-    public async Task SubmitMarbleRaceMapRecordAsync(MarbleRaceRecordRequest request)
+    public async Task<ScoreSubmitResult<object>> SubmitMarbleRaceMapRecordAsync(MarbleRaceRecordRequest request)
     {
         try
         {
-            using var _ = await _http.PostAsJsonAsync("/api/marblerace/records", request, ApiJsonContext.Default.MarbleRaceRecordRequest);
+            using var response = await _http.PostAsJsonAsync("/api/marblerace/records", request, ApiJsonContext.Default.MarbleRaceRecordRequest);
+            if (response.IsSuccessStatusCode)
+                return ScoreSubmitResult<object>.Saved(null);
+            if ((int)response.StatusCode is >= 400 and < 500)
+                return ScoreSubmitResult<object>.Rejected(response.StatusCode);
+            return ScoreSubmitResult<object>.Unavailable(response.StatusCode);
         }
         catch
         {
-            // Offline: nothing to do.
+            return ScoreSubmitResult<object>.Unavailable(null);
         }
     }
 
@@ -723,17 +728,21 @@ public class ApiService
     /// 0..10_000 and overrides PlayerName with the authenticated identity, so a
     /// spoof attempt from the client can't poison the board.
     /// </summary>
-    public async Task<bool> SubmitFunQuizScoreAsync(FunQuizLeaderboardSubmission entry)
+    public async Task<ScoreSubmitResult<object>> SubmitFunQuizScoreAsync(FunQuizLeaderboardSubmission entry)
     {
         try
         {
             var response = await _http.PostAsJsonAsync(
                 "/api/funquiz/leaderboard", entry, ApiJsonContext.Default.FunQuizLeaderboardSubmission);
-            return response.IsSuccessStatusCode;
+            if (response.IsSuccessStatusCode)
+                return ScoreSubmitResult<object>.Saved(null);
+            if ((int)response.StatusCode is >= 400 and < 500)
+                return ScoreSubmitResult<object>.Rejected(response.StatusCode);
+            return ScoreSubmitResult<object>.Unavailable(response.StatusCode);
         }
         catch
         {
-            return false;
+            return ScoreSubmitResult<object>.Unavailable(null);
         }
     }
 

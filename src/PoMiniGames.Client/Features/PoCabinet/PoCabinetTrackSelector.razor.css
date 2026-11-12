@@ -174,6 +174,35 @@
     .pocabinet-track__map { width: 2rem; height: 1.4rem; }
 }
 
+/* A finger: every row and the dropdown reach the 44px floor. To keep the start card from
+   growing (it must fit without scrolling), the phone's two-line row folds back to one line:
+   name and campaign tag. Length, difficulty and best lap leave the eye but stay in the row's
+   accessible name. Must follow the two width/height queries above, which set the rows lower. */
+@media (pointer: coarse) {
+    .pocabinet-track-select select { min-height: 44px; }
+    .pocabinet-track { min-height: 44px; }
+}
+
+@media (pointer: coarse) and (max-width: 640px) {
+    .pocabinet-track {
+        grid-template-columns: 6px 2rem minmax(0, 1fr) auto;
+        grid-template-areas: "sw map title stage";
+        padding-block: 0.2rem;
+    }
+    .pocabinet-track__title { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    /* Out of sight, still read out with the row. */
+    .pocabinet-track { position: relative; }
+    .pocabinet-track__meta,
+    .pocabinet-track__best {
+        position: absolute;
+        width: 1px;
+        height: 1px;
+        overflow: hidden;
+        clip-path: inset(50%);
+    }
+    .pocabinet-track__map { width: 2rem; height: 1.4rem; }
+}
+
 @media (prefers-reduced-motion: reduce) {
     .pocabinet-track { transition: none; }
     .pocabinet-track:hover,

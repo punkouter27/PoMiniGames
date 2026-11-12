@@ -131,7 +131,6 @@ export function createAudio() {
   let reverbSend = null, convolver = null;
   let rollSrc = null, rollFilter = null, rollGain = null;
   let rollTrem = null, tremOsc = null, tremDepth = null, rollKind = 'surface';
-  let ownsCtx = false;
   let crowdSrc = null, crowdFilter = null, crowdGain = null;
   let droneOscs = null, droneFilter = null, droneGain = null, droneBase = null;
   let noiseBuf = null;
@@ -528,17 +527,19 @@ export function createAudio() {
 
   function ensure() {
     if (!ctx) {
-      const AC = window.AudioContext || window.webkitAudioContext;
-      if (!AC) return null;
-      // Shared context (js/audioBus.js) — one AudioContext for the whole app. `ownsCtx` records
-      // whether this module made its own, because only then may dispose() close it: closing the
-      // shared one silenced every other game (and the music) for the rest of the visit.
-      ctx = (window.PoAudioBus && window.PoAudioBus.contextSync()) || null;
-      if (!ctx) { ctx = new AC(); ownsCtx = true; }
+      // Shared context only (js/audioBus.js) — one AudioContext for the whole app, so dispose()
+      // never closes it. No shared bus, no sound: a private context would ignore the app's mute
+      // and volume. ensure() then returns null, which every caller treats as silence, and the
+      // next call tries the bus again.
+      const bus = window.PoAudioBus;
+      const shared = bus && typeof bus.contextSync === 'function' ? bus.contextSync() : null;
+      const sfxOut = shared && typeof bus.busSync === 'function' ? bus.busSync('sfx') : null;
+      if (!shared || !sfxOut) return null;
+      ctx = shared;
 
-      // #7 — master → compressor → destination. The compressor is the safety net that the old
-      // single-gain graph never had: it catches the gun, a sting and a burst of impacts landing
-      // together instead of letting them sum past full scale.
+      // #7 — master → compressor → the app's sfx bus. The compressor is the safety net that the
+      // old single-gain graph never had: it catches the gun, a sting and a burst of impacts
+      // landing together instead of letting them sum past full scale.
       master = ctx.createGain();
       master.gain.value = muted ? 0 : 1;
       comp = ctx.createDynamicsCompressor();
@@ -547,8 +548,7 @@ export function createAudio() {
       comp.ratio.value = 4;
       comp.attack.value = 0.004;
       comp.release.value = 0.18;
-      master.connect(comp).connect(
-        (window.PoAudioBus && window.PoAudioBus.busSync('sfx')) || ctx.destination);
+      master.connect(comp).connect(sfxOut);
 
       // Two buses so the beds can be ducked independently of the one-shots.
       bedBus = ctx.createGain();
@@ -950,11 +950,11 @@ export function createAudio() {
         try { slipSrc && slipSrc.stop(); } catch { }
         for (const x of impactVoices) { try { x.src.stop(); } catch { } }
         if (rivals) for (const r of rivals) { try { r.src.stop(); r.panner.disconnect(); } catch { } }
-        if (!ownsCtx) resetListener();
+        resetListener();
         // The shared context outlives this game: detach our graph from it instead of closing it.
-        if (ownsCtx) { try { ctx.close().catch(() => { }); } catch { } } else { try { master && master.disconnect(); } catch { } }
+        try { master && master.disconnect(); } catch { }
         ctx = null; master = null; comp = null; bedBus = null; sfxBus = null;
-        rollTrem = null; tremOsc = null; tremDepth = null; ownsCtx = false;
+        rollTrem = null; tremOsc = null; tremDepth = null;
         reverbSend = null; convolver = null;
         rollSrc = null; crowdSrc = null; rollGain = null; crowdGain = null;
         droneOscs = null; droneGain = null; droneFilter = null; droneBase = null;

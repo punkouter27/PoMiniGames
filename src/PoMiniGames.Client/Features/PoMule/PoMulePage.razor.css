@@ -527,3 +527,35 @@
     bottom: auto;
     transform: none;
 }
+/* ── Phones: keep the touch pad clear of the notch and home bar, and every tap target
+   at least 44px on a coarse pointer ── */
+.pm-canvas-host ::deep .pm-stick {
+    left: max(14px, env(safe-area-inset-left));
+    bottom: max(14px, env(safe-area-inset-bottom));
+}
+
+.pm-canvas-host ::deep .pm-touch-dash {
+    right: calc(82px + max(14px, env(safe-area-inset-right)));
+    bottom: max(14px, env(safe-area-inset-bottom));
+}
+
+.pm-canvas-host ::deep .pm-touch-act {
+    right: max(14px, env(safe-area-inset-right));
+    bottom: calc(22px + max(14px, env(safe-area-inset-bottom)));
+}
+
+.pm-bar:not(.pm-bar--speed) {
+    left: max(8px, env(safe-area-inset-left));
+}
+
+@media (pointer: coarse) {
+    .pm-root ::deep .pm-bar .rz-button,
+    .pm-root ::deep .pm-bar .rz-selectbar .rz-button,
+    .pm-root ::deep .pm-standings-actions .rz-button,
+    .pm-root ::deep .pm-species-card,
+    .pm-root ::deep .pm-continue label,
+    .pm-root ::deep .pm-classic {
+        min-height: 44px;
+        min-width: 44px;
+    }
+}

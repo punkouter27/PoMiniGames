@@ -16,6 +16,8 @@
 // or more KeyboardEvent.code values (Settings → Controls rebinds the first of each), and a
 // gamepad is polled in consume() (left stick moves, right stick looks). Tab, Escape
 // and the speed digits stay fixed: they are the HUD's own shortcuts and the page's docs.
+import { BUTTONS, ButtonEdges, connectedPads, pressed } from '../../gamepadBus.js';
+
 export const DEFAULT_BINDINGS = Object.freeze({
   forward: ['KeyW', 'ArrowUp'], back: ['KeyS', 'ArrowDown'], left: ['KeyA', 'ArrowLeft'], right: ['KeyD', 'ArrowRight'],
   run: ['ShiftLeft', 'ShiftRight'], rise: ['Space'], sink: ['ControlLeft', 'ControlRight'],
@@ -42,8 +44,11 @@ export function mergeBindings(overrides) {
 }
 
 // Gamepad (standard mapping): A inspect, B float/walk, X follow, Y dashboard, LB/RB sink/rise,
-// triggers run, Start cinematic.
-const PAD = Object.freeze({ A: 0, B: 1, X: 2, Y: 3, LB: 4, RB: 5, LT: 6, RT: 7, START: 9, UP: 12, DOWN: 13 });
+// triggers run, Start cinematic. Read through the shared gamepadBus.
+const PAD = Object.freeze({
+  A: BUTTONS.south, B: BUTTONS.east, X: BUTTONS.west, Y: BUTTONS.north, LB: BUTTONS.lb, RB: BUTTONS.rb,
+  LT: BUTTONS.lt, RT: BUTTONS.rt, START: BUTTONS.start, UP: BUTTONS.up, DOWN: BUTTONS.down,
+});
 const PAD_DEADZONE = 0.18;
 const PAD_LOOK_PX = 13;   // pixels of mouse-look per frame at full stick deflection
 
@@ -54,7 +59,7 @@ export function createInput(canvas, { onAction = () => {}, onLook = () => {}, bi
   const reindex = () => { codeToAction = new Map(); for (const a of BINDABLE) for (const c of binds[a]) codeToAction.set(c, a); };
   reindex();
   const held = (action) => binds[action].some(c => keys.has(c));
-  const pad = { buttons: [], look: false };
+  const pad = { edges: new ButtonEdges(), look: false };
   const intent = { forward: 0, right: 0, run: false, jump: false, up: 0 };
   const touch = { active: false, moveId: null, lookId: null, mx: 0, mz: 0, lastX: 0, lastY: 0 };
   // Left-button drag-look. `moved` latches once the press travels past the slop, which is
@@ -83,13 +88,14 @@ export function createInput(canvas, { onAction = () => {}, onLook = () => {}, bi
    * actually in use, so a pad resting on the desk never fights the keyboard.
    */
   function pollPad() {
-    const pads = typeof navigator !== 'undefined' && navigator.getGamepads ? navigator.getGamepads() : null;
-    let gp = null;
-    if (pads) for (const p of pads) if (p && p.connected) { gp = p; break; }
+    const gp = connectedPads()[0];
     if (!gp) return;
+    // Per-axis deadzone with no rescale, not the bus's radial stick(): a slight diagonal keeps
+    // reading as a straight walk, and the look speed stays what it was tuned at.
     const axis = (k) => { const v = gp.axes[k] ?? 0; return Math.abs(v) < PAD_DEADZONE ? 0 : v; };
-    const btn = (k) => { const b = gp.buttons[k]; return !!b && (b.pressed || b.value > 0.5); };
-    const edge = (k) => { const now = btn(k); const was = !!pad.buttons[k]; pad.buttons[k] = now; return now && !was; };
+    const btn = (k) => pressed(gp, k);
+    const down = pad.edges.update(gp);
+    const edge = (k) => down.includes(k);
     const lx = axis(0); const ly = axis(1); const rx = axis(2); const ry = axis(3);
     if (lx || ly) { intent.right = lx; intent.forward = -ly; }
     if (btn(PAD.LT) || btn(PAD.RT)) intent.run = true;

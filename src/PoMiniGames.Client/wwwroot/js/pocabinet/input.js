@@ -9,7 +9,9 @@
 //                 C cycles the camera, Esc / P pause.
 //   • gamepad   — Gamepad API, standard mapping: left stick steers (deadzone +
 //                 response curve), RT/LT or A/B are gas/brake, Start pauses.
-//                 Wall hits rumble through vibrationActuator when present.
+//                 Wall hits rumble. All pad reads go through ../gamepadBus.js;
+//                 only the analog trigger values are read off the pad object,
+//                 because the bus exposes buttons as pressed/not.
 //   • touch     — on-screen controls rendered by the page (#pocabinetTouch):
 //                 a steer pad on the left (drag), gas + brake on the right.
 //                 "Tilt" mode steers with DeviceOrientation instead; iOS needs
@@ -18,6 +20,8 @@
 // The page owns the overlay markup (so its scoped CSS applies); this module only
 // attaches listeners and flips data-* attributes Blazor never renders, so a
 // re-render can't wipe them.
+
+import { BUTTONS, connectedPads, pressed, rumble as padRumble } from '../gamepadBus.js';
 
 const KEY_STEER_RATE = 4.5;     // lock per second while a steer key is held
 const KEY_CENTER_RATE = 7.5;    // lock per second back to centre
@@ -61,6 +65,8 @@ export function attachInput(opts) {
             return;
         }
         if (k === 'c') {
+            // Ctrl+C / Cmd+C / Alt+C belong to the browser and the OS, not the camera.
+            if (e.ctrlKey || e.metaKey || e.altKey) return;
             if (down && !e.repeat) o.onCamera?.();
             return;
         }
@@ -169,24 +175,26 @@ export function attachInput(opts) {
 
     // ── Gamepad ───────────────────────────────────────────────────────────
     const readPad = () => {
-        const pads = typeof navigator.getGamepads === 'function' ? navigator.getGamepads() : [];
-        for (const gp of pads || []) {
-            if (!gp || !gp.connected) continue;
-            const ax = Number(gp.axes?.[0]) || 0;
-            const mag = Math.abs(ax) < PAD_DEADZONE ? 0 : (Math.abs(ax) - PAD_DEADZONE) / (1 - PAD_DEADZONE);
-            const steer = Math.sign(ax) * Math.pow(mag, 1.4);
-            const b = gp.buttons || [];
-            const val = (i) => Number(b[i]?.value) || (b[i]?.pressed ? 1 : 0);
-            const throttle = Math.max(val(7), val(0));
-            const brake = Math.max(val(6), val(1));
-            const start = !!b[9]?.pressed;
-            if (start && !state.padStartWas) o.onPause?.();
-            state.padStartWas = start;
-            if (b[3]?.pressed && !state.padCamWas) o.onCamera?.();
-            state.padCamWas = !!b[3]?.pressed;
-            return { gp, throttle, brake, steer };
-        }
-        return null;
+        const gp = connectedPads()[0];
+        if (!gp) return null;
+        // Steering is one axis with its own deadzone and response curve, not the bus's radial
+        // stick(): a radial deadzone would let up/down stick travel change the steer.
+        const ax = Number(gp.axes?.[0]) || 0;
+        const mag = Math.abs(ax) < PAD_DEADZONE ? 0 : (Math.abs(ax) - PAD_DEADZONE) / (1 - PAD_DEADZONE);
+        const steer = Math.sign(ax) * Math.pow(mag, 1.4);
+        // Analog pedals: the bus has no analog-button reader (pressed() is a threshold), so the
+        // trigger travel is read off the pad the bus handed us.
+        const b = gp.buttons || [];
+        const val = (i) => Number(b[i]?.value) || (b[i]?.pressed ? 1 : 0);
+        const throttle = Math.max(val(BUTTONS.rt), val(BUTTONS.south));
+        const brake = Math.max(val(BUTTONS.lt), val(BUTTONS.east));
+        const start = pressed(gp, BUTTONS.start);
+        if (start && !state.padStartWas) o.onPause?.();
+        state.padStartWas = start;
+        const cam = pressed(gp, BUTTONS.north);
+        if (cam && !state.padCamWas) o.onCamera?.();
+        state.padCamWas = cam;
+        return { gp, throttle, brake, steer };
     };
 
     refreshTouchVisibility();
@@ -219,14 +227,8 @@ export function attachInput(opts) {
             if (now - state.lastRumble < 180) return;
             state.lastRumble = now;
             const s = Math.max(0.1, Math.min(1, strength));
-            const pads = typeof navigator.getGamepads === 'function' ? navigator.getGamepads() : [];
-            for (const gp of pads || []) {
-                try {
-                    gp?.vibrationActuator?.playEffect?.('dual-rumble', {
-                        startDelay: 0, duration: 90 + s * 120, weakMagnitude: s * 0.6, strongMagnitude: s,
-                    });
-                } catch { /* unsupported */ }
-            }
+            // Through the bus, so the app's Haptics setting and duty caps apply.
+            for (const gp of connectedPads()) padRumble(gp, s, s * 0.6, 90 + s * 120);
             if (state.touch.used && typeof navigator.vibrate === 'function') {
                 try { navigator.vibrate(Math.round(20 + s * 40)); } catch { /* unsupported */ }
             }

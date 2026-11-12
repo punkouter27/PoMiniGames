@@ -174,12 +174,9 @@
         <div class="racer-actions">
             <span class="racer-note">@(_trial ? $"Empty track · {PoRacerCatalog.TotalLaps} laps" : $"{PoRacerCatalog.SoloCarCount} cars · {PoRacerCatalog.TotalLaps} laps")</span>
         </div>
-        @if (_error is not null)
-        {
-            <p class="racer-error" role="alert">@_error</p>
-        }
+        <InlineError Message="@_error" />
     </div>;
 
     // Online and demo have nothing to choose on the card; it only carries a failed start.
-    private RenderFragment? StartError => _error is null ? null : @<p class="racer-error" role="alert">@_error</p>;
+    private RenderFragment? StartError => _error is null ? null : @<InlineError Message="@_error" />;
 }

@@ -310,3 +310,10 @@
     --cf-cell: clamp(24px, min(calc((100dvh - 176px) / 9), calc((100dvw - 100px) / 9)), 84px);
   }
 }
+
+/* Keyboard / gamepad focus on a column's top cell. The socket's own inset shadow
+   outranks the shell's shared focus shadow, so the ring is an outline. */
+.cf-cell:focus-visible {
+  outline: 2px solid var(--accent-cyan, #22d3ee);
+  outline-offset: 1px;
+}

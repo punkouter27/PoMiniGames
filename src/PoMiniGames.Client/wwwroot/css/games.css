@@ -42,6 +42,13 @@
   --gps-area-h: min(100dvh, max(18rem, 100dvh - var(--gps-topbar-h) - var(--gps-bar-h, 0px)));
 }
 
+/* Phones show the fixed bottom nav (Layout/BottomNav), and .gl-content reserves its height
+   as bottom padding. Subtract the same amount here, or every game sized to --gps-area-h
+   spills under the nav and scrolls the page. Keep in step with MainLayout.razor.css. */
+@media (max-width: 768px) {
+  .gps-shell { --gps-bar-h: calc(4.25rem + env(safe-area-inset-bottom)); }
+}
+
 /* Universal game title — every game page binds `<Title>` to a fragment that
    reads "🔴 Connect Five" / "❌ Tic Tac Toe" / etc. Renders as the first child
    of the chrome slot so the user can always identify which game they're in
@@ -328,7 +335,8 @@
   background: linear-gradient(180deg, rgba(251, 191, 36, 0.12), rgba(251, 191, 36, 0.04));
   border: 1px solid rgba(251, 191, 36, 0.45);
   border-radius: 10px;
-  color: #fde68a;
+  /* Ink token, not the raw pale amber: #fde68a on the light theme's near-white was ~1.3:1. */
+  color: var(--accent-amber-ink);
   font-size: 13px;
   font-weight: 600;
 }
@@ -565,7 +573,8 @@
   border-radius: 10px;
   background: rgba(34, 197, 94, 0.12);
   border: 1px solid rgba(34, 197, 94, 0.4);
-  color: #bbf7d0;
+  /* Ink token: the old pale green vanished on the light theme. */
+  color: var(--accent-success-ink);
   font-weight: 600;
   animation: fq-split-pulse 1.2s ease-in-out infinite;
 }
@@ -640,7 +649,10 @@
    Was scattered as `box-shadow: 0 0 0 3px rgba(99,102,241,0.35);` in a half-
    dozen places — now derives from --accent-ring so a palette swap is one rule. */
 .gps-shell :focus-visible {
-  outline: none;
+  /* The outline survives a game's own box-shadow (board cells, sockets), which would
+     otherwise replace the ring at equal specificity and hide focus entirely. */
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
   box-shadow: 0 0 0 3px var(--accent-ring);
   border-color: var(--accent);
 }
@@ -719,7 +731,8 @@
   padding: 0.5rem 0.75rem;
   border-radius: var(--radius-sm);
   font-size: 0.9rem;
-  color: var(--accent-amber);
+  /* Text on an amber tint reads from the -ink token (the raw hue is ~1.4:1 in light mode). */
+  color: var(--accent-amber-ink);
   background: rgba(250, 204, 21, 0.08);
   border: 1px solid rgba(250, 204, 21, 0.3);
 }
@@ -730,6 +743,11 @@
   color: var(--color-text-primary);
   border-radius: 6px;
   font-size: 0.9rem;
+}
+/* The answer box and the lobby's category picker on a phone: the 44px touch floor. */
+@media (pointer: coarse) {
+  .cq-game input,
+  .fq-join select { min-height: 44px; }
 }
 .cq-results,
 .cq-gameover {
@@ -804,7 +822,9 @@
   transform: translateY(-1px);
   border-color: var(--accent-cyan);
 }
-.fq-option:disabled { opacity: 0.5; cursor: not-allowed; }
+/* 0.72, not 0.5: a disabled option is still text the player reads (the reveal), and
+   lower opacity drops it under the 4.5:1 floor. */
+.fq-option:disabled { opacity: 0.72; cursor: not-allowed; }
 
 /* Solo/2p-shared-screen answer reveal: --correct = green, --wrong = red,
    --muted = dim the un-picked options so the eye finds the answer. Demo mode
@@ -821,7 +841,13 @@
   box-shadow: 0 0 14px rgba(248, 113, 113, 0.35);
   color: var(--color-text-primary);
 }
-.fq-option--muted { opacity: 0.45; }
+/* The reveal states are disabled buttons too, and `.fq-option:disabled` outranks a single
+   class — so the correct / wrong answer used to render at half opacity. Restate them at
+   full strength; un-picked options recede to 0.72 (0.45 was 2.8:1, the same failure the
+   split-screen's --muted fixed). */
+.fq-option.fq-option--correct,
+.fq-option.fq-option--wrong { opacity: 1; }
+.fq-option--muted { opacity: 0.72; }
 
 /* Numbered-key prefix on every fq-option button — solo and 2P-shared-screen
    now match the split-screen layout's "1 Berlin / 2 Madrid" affordance. The
@@ -870,7 +896,7 @@
   animation: fq-solo-reveal-in 0.18s ease-out both;
 }
 .fq-solo-reveal strong { color: var(--color-text-primary); }
-.fq-solo-reveal em { font-style: normal; font-weight: 700; color: var(--accent-success); }
+.fq-solo-reveal em { font-style: normal; font-weight: 700; color: var(--accent-success-ink); }
 @keyframes fq-solo-reveal-in {
   from { opacity: 0; transform: translateY(-2px); }
   to   { opacity: 1; transform: none; }

@@ -570,6 +570,14 @@ public partial class PoBrawlPage
             ? (snap.LocalSide == PoMiniGames.Shared.Games.PoBrawlSide.Player1 ? 1 : 2)
             : 0;
         var introLine = IntroLine();
+        _engineFailed = false;
+        // The skeleton covers the first boot only; a restart or the next rung reuses the
+        // loaded module and should not flash it.
+        if (!_engineBooted)
+        {
+            _engineLoading = true;
+            StateHasChanged();
+        }
         try
         {
             // Route-gated engine load (wwwroot/js/engineLoader.js): it has to be pulled in
@@ -577,6 +585,7 @@ public partial class PoBrawlPage
             if (!await JSRuntime.InvokeAsync<bool>("loadEngine", "pobrawl"))
             {
                 Console.Error.WriteLine("[pobrawl] engine failed to load");
+                _engineFailed = true;
                 return;
             }
 
@@ -596,12 +605,31 @@ public partial class PoBrawlPage
             {
                 await JSRuntime.InvokeVoidAsync("PoBrawl.setMuted", true);
             }
+            _engineBooted = true;
         }
         catch (Exception ex)
         {
             Console.Error.WriteLine($"[PoBrawl] JS init failed: {ex.Message}");
+            _engineFailed = true;
+        }
+        finally
+        {
+            if (_engineLoading || _engineFailed)
+            {
+                _engineLoading = false;
+                StateHasChanged();
+            }
         }
     }
+
+    // The engine never came up (module fetch failed, or init threw): an empty arena would read
+    // as a fight that is about to start, so the page says so. A fresh load is the retry, since a
+    // half-initialised engine is not safe to init twice.
+    private bool _engineLoading;
+    private bool _engineFailed;
+    private bool _engineBooted;
+
+    private void ReloadPage() => Nav.NavigateTo(Nav.Uri, forceLoad: true);
 
     // ── Online ───────────────────────────────────────────────────────────
     private async Task StartOnlineAsync()

@@ -193,16 +193,26 @@ async function init(hostId, reference) {
         reference.invokeMethodAsync('OnEngineError', 'The browser lost its 3D graphics context.')
             .catch(error => console.error('[PoCapitol] graphics error notification failed:', error));
     });
+    // Touch buttons name an action, not a key: the code injected is whatever that action is bound
+    // to now, so a rebind moves the d-pad and PUSH with it. The code pressed is remembered per
+    // button so a release always lifts the same key, even if the map changed mid-hold.
+    const touchHeld = new WeakMap();
     listen(host.parentElement, 'pointerdown', e => {
-        const button = e.target.closest('[data-capitol-key]');
+        const button = e.target.closest('[data-capitol-action]');
         if (!button || !human() || g.state.status !== 'active') return;
+        const code = g.prefs.keys[button.dataset.capitolAction];
+        if (!code) return;
         e.preventDefault();
         button.setPointerCapture(e.pointerId);
-        g.keys.add(button.dataset.capitolKey);
+        touchHeld.set(button, code);
+        g.keys.add(code);
     });
     const releaseButton = e => {
-        const button = e.target.closest('[data-capitol-key]');
-        if (button) g.keys.delete(button.dataset.capitolKey);
+        const button = e.target.closest('[data-capitol-action]');
+        const code = button && touchHeld.get(button);
+        if (!code) return;
+        touchHeld.delete(button);
+        g.keys.delete(code);
     };
     listen(host.parentElement, 'pointerup', releaseButton);
     listen(host.parentElement, 'pointercancel', releaseButton);

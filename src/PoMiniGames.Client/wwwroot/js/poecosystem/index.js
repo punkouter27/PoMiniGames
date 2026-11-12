@@ -6,6 +6,7 @@ import { createSimHost } from './host/simHost.js';
 import { fetchSpeciesInfo } from './host/naturalist.js';
 import { createRenderer } from './render/renderer.js';
 import { BINDABLE, DEFAULT_BINDINGS, mergeBindings } from './render/input.js';
+import { connectedPads } from '../gamepadBus.js';
 import { createAudio } from './render/audio.js';
 import { createMusic } from './render/music.js';
 import { createLeitmotif } from './render/leitmotif.js';
@@ -464,7 +465,7 @@ function createEngine(container, dotnetRef, opts) {
     bindings: mergeBindings(state.prefs?.get('bindings')),
     defaults: DEFAULT_BINDINGS,
     bindable: BINDABLE,
-    gamepad: typeof navigator !== 'undefined' && !!navigator.getGamepads && [...(navigator.getGamepads() ?? [])].some(p => p?.connected),
+    gamepad: connectedPads().length > 0,
   });
 
   extend(api, {

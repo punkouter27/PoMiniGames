@@ -721,9 +721,9 @@
    view instead of under it. Touch controls, the cluster and the broadcast graphics all key off
    this one variable. --pocabinet-topbar-h is the bar's MEASURED height (pocabinet/index.js): a
    fixed 3.35rem was 10px short of the phone bar, so the race page scrolled and the Gas pedal
-   was cut off at the bottom. */
+   was cut off at the bottom. --gps-bar-h (games.css) reserves the phone bottom nav. */
 .pocabinet-race {
-    --pocabinet-canvas-h: max(280px, calc(100dvh - var(--pocabinet-topbar-h, 3.35rem) - var(--safe-bottom, 0px)));
+    --pocabinet-canvas-h: max(280px, calc(100dvh - var(--pocabinet-topbar-h, 3.35rem) - max(var(--gps-bar-h, 0px), var(--safe-bottom, 0px))));
 }
 
 /* The start card's setup: the track list, and a failed start's line under it. */
@@ -1050,25 +1050,20 @@
 .pocabinet-crash {
     display: grid;
     place-items: center;
-    min-height: max(280px, calc(100dvh - var(--pocabinet-topbar-h, 3.35rem) - var(--safe-bottom, 0px)));
+    min-height: max(280px, calc(100dvh - var(--pocabinet-topbar-h, 3.35rem) - max(var(--gps-bar-h, 0px), var(--safe-bottom, 0px))));
     padding: 1rem;
 }
 
+/* Holds the shared ErrorState card (its own tint, border and Retry), on an opaque backing. */
 .pocabinet-crash__card {
-    display: grid;
-    gap: 0.6rem;
     width: min(100%, 30rem);
-    padding: 1.25rem 1.4rem;
-    border: 1px solid var(--color-border, transparent);
     border-radius: var(--radius-lg, 12px);
     background: var(--color-surface);
     box-shadow: 0 12px 36px rgba(0, 0, 0, 0.3);
     animation: pocabinet-hud-fade 0.25s ease both;
 }
 
-.pocabinet-crash__card h2 { margin: 0; font-size: 1.2rem; }
-
-.pocabinet-crash__card p { margin: 0; line-height: 1.45; }
+.pocabinet-crash__card p { margin: 0 0 0.5rem; line-height: 1.45; }
 
 .pocabinet-crash__detail {
     font-size: 0.85rem;
@@ -1078,6 +1073,7 @@
 .pocabinet-crash__actions {
     display: flex;
     flex-wrap: wrap;
+    justify-content: center;
     gap: 0.5rem;
     margin-top: 0.4rem;
 }
@@ -1134,4 +1130,10 @@
 @keyframes pocabinet-hud-fade {
     from { opacity: 0; }
     to { opacity: 1; }
+}
+
+/* The wheel and pedals keep clear of a landscape phone's notch and rounded corners. */
+.pocabinet-touch {
+    padding-left: max(0.75rem, env(safe-area-inset-left, 0px));
+    padding-right: max(0.75rem, env(safe-area-inset-right, 0px));
 }

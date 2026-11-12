@@ -13,6 +13,8 @@ public enum PendingScoreKind
     PoRacer,
     PoCabinet,
     PoMule,
+    PoFunQuiz,
+    MarbleRaceMapRecord,
 }
 
 /// <summary>

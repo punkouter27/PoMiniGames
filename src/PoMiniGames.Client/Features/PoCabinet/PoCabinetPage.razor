@@ -12,7 +12,8 @@
 <GameShell Title="@TitleContent" Player="@_playerName" BackTo="/" Fullscreen="true" RequiresWebGl="true"
            GameOver="@(_phase == Phase.Finished && Mode != GameMode.Demo)"
            Outcome="@ResultsOutcome" NewBest="@_isPersonalBest"
-           GameSummary="@ResultsContent" GameActions="@ResultActions">
+           GameSummary="@ResultsContent" GameActions="@ResultActions"
+           Loading="@(_phase == Phase.Loading)" LoadingLabel="Building the track…">
     <div class="pocabinet-root">
         @if (_phase == Phase.Start)
         {
@@ -112,9 +113,12 @@
                             }
                             @* @key re-creates the badge on every place change, so its swoosh replays. Prefixed:
                                the countdown sibling keys on its number, and a bare 3 here collided with it. *@
-                            <div @key="PosBadgeKey" class="pocabinet-posbadge @PosBadgeClass" aria-hidden="true">
-                                <span class="pocabinet-posbadge__p">P</span>@_position<span class="pocabinet-posbadge__of">/@_totalCars</span>
-                            </div>
+                            @* HUD islands (this badge and the lap strip): the ~15 Hz tick refreshes them alone. *@
+                            <HudRegion @ref="_hudBadge">
+                                <div @key="PosBadgeKey" class="pocabinet-posbadge @PosBadgeClass" aria-hidden="true">
+                                    <span class="pocabinet-posbadge__p">P</span>@_position<span class="pocabinet-posbadge__of">/@_totalCars</span>
+                                </div>
+                            </HudRegion>
                         }
                         <div id="pocabinetDialogueLayer" class="pocabinet-dialogue-layer" aria-hidden="true"></div>
 
@@ -153,15 +157,17 @@
                                Speed and place live on the gauge and badge. Not a live region: it
                                re-renders ~15 times a second; the announcer below speaks laps, places
                                and the finish instead. *@
-                            <div class="pocabinet-hud">
-                                <span class="pocabinet-hud__stats">
-                                    <span>Lap <strong>@Math.Min(_lap, _totalLaps)</strong>/@_totalLaps</span>
-                                    <span>Time <strong>@PoCabinetCatalog.FormatLap(_lapSeconds)</strong></span>
-                                    <span>Last <strong class="@(_lastLapInvalid ? "pocabinet-lap--deleted" : null)" title="@(_lastLapInvalid ? "Deleted: track limits" : null)">@PoCabinetCatalog.FormatLap(_laps.LastLapSeconds)</strong></span>
-                                    <span>Best <strong>@PoCabinetCatalog.FormatLap(_laps.BestLapShown)</strong></span>
-                                </span>
-                                @SectorChips
-                            </div>
+                            <HudRegion @ref="_hudStrip">
+                                <div class="pocabinet-hud">
+                                    <span class="pocabinet-hud__stats">
+                                        <span>Lap <strong>@Math.Min(_lap, _totalLaps)</strong>/@_totalLaps</span>
+                                        <span>Time <strong>@PoCabinetCatalog.FormatLap(_lapSeconds)</strong></span>
+                                        <span>Last <strong class="@(_lastLapInvalid ? "pocabinet-lap--deleted" : null)" title="@(_lastLapInvalid ? "Deleted: track limits" : null)">@PoCabinetCatalog.FormatLap(_laps.LastLapSeconds)</strong></span>
+                                        <span>Best <strong>@PoCabinetCatalog.FormatLap(_laps.BestLapShown)</strong></span>
+                                    </span>
+                                    @SectorChips
+                                </div>
+                            </HudRegion>
                         }
                         <span class="pocabinet-hudbar">
                             <button type="button" class="pocabinet-iconbtn" @onclick="CycleCameraAsync"
@@ -303,19 +309,19 @@
     /// The race view could not start, or threw while it ran: a card where the race would be,
     /// with a plain retry and one on lite graphics (the mesh room, the low tier), not a dead page.
     /// </summary>
-    private RenderFragment CrashCard(string? message) => @<div class="pocabinet-crash" role="alert" aria-labelledby="pocabinet-crash-title">
+    private RenderFragment CrashCard(string? message) => @<div class="pocabinet-crash">
         <div class="pocabinet-crash__card">
-            <h2 id="pocabinet-crash-title">The race view stopped</h2>
-            <p>Cabinet's 3D view hit a problem on this device. Try again, or try with lite graphics: the low quality tier and the plain room instead of the room scan.</p>
-            @if (!string.IsNullOrWhiteSpace(message))
-            {
-                <p class="pocabinet-crash__detail pocabinet-muted">@message</p>
-            }
-            <div class="pocabinet-crash__actions">
-                <button type="button" class="app-btn app-btn--primary" @onclick="RetryRaceAsync">Retry</button>
-                <button type="button" class="app-btn app-btn--secondary" @onclick="RetryLiteAsync">Retry with lite graphics</button>
-                <button type="button" class="app-btn app-btn--ghost" @onclick="LeaveCrashAsync">@(IsMultiplayerMode ? "Back to lobby" : "Back")</button>
-            </div>
+            <ErrorState Title="The race view stopped" OnRetry="RetryRaceAsync" RetryLabel="Retry">
+                <p>Cabinet's 3D view hit a problem on this device. Try again, or try with lite graphics: the low quality tier and the plain room instead of the room scan.</p>
+                @if (!string.IsNullOrWhiteSpace(message))
+                {
+                    <p class="pocabinet-crash__detail pocabinet-muted">@message</p>
+                }
+                <div class="pocabinet-crash__actions">
+                    <button type="button" class="app-btn app-btn--secondary" @onclick="RetryLiteAsync">Retry with lite graphics</button>
+                    <button type="button" class="app-btn app-btn--ghost" @onclick="LeaveCrashAsync">@(IsMultiplayerMode ? "Back to lobby" : "Back")</button>
+                </div>
+            </ErrorState>
         </div>
     </div>;
 

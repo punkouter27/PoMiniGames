@@ -190,3 +190,11 @@
         grid-column: 1 / -1;
     }
 }
+
+/* Touch: the slim side cards are the ready toggles, so they keep the 44px target on a
+   coarse pointer (GAME-CONSISTENCY rule 8). */
+@media (pointer: coarse) {
+    .pb-lobby .pb-select-side {
+        min-height: 44px;
+    }
+}

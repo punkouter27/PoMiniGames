@@ -659,3 +659,23 @@
 @media (max-height: 560px) {
     .pt-draw-note { display: none; }
 }
+
+/* Touch: the speed chips, tabs, drawer close, Bracket/Camera and the HQ link reach the
+   44px target on a coarse pointer (GAME-CONSISTENCY rule 8); a mouse keeps the slimmer bar. */
+@media (pointer: coarse) {
+    .pt-speed-btn,
+    .pt-btn,
+    .pt-tab,
+    .pt-hq-link {
+        min-height: 44px;
+    }
+
+    .pt-speed-btn {
+        min-width: 44px;
+    }
+
+    .pt-drawer-close {
+        width: 44px;
+        height: 44px;
+    }
+}

@@ -42,6 +42,9 @@
                 }
             </header>
 
+            @* A failure that stopped the demo is the shared inline failure strip, with a retry that
+               restarts the loop; notices and toasts keep the arena's own banner. *@
+            <InlineError Message="@_error" OnRetry="RetryDemoAsync" RetryLabel="Restart demo" />
             @if (Banner is not null)
             {
                 <div class="jev-banner" role="alert">@Banner</div>

@@ -11,6 +11,7 @@ import * as P from './physics.js';
 import * as Sfx from './audio.js';
 import { drawFrame, frameLayout, SCREEN_W, MAP_Y } from './render.js';
 import { buildTouchControls, isTouchDevice } from './touch.js';
+import { KeyBridge, BUTTONS, pressed, stick } from '../gamepadBus.js';
 
 const TICK = 0.1;
 const HEADER = 23, PER = 16;
@@ -20,6 +21,19 @@ const RADZEN_CSS_ID = 'pomule-radzen-css';
 const MOVE_KEYS = { KeyW: [0, -1], ArrowUp: [0, -1], KeyS: [0, 1], ArrowDown: [0, 1], KeyA: [-1, 0], ArrowLeft: [-1, 0], KeyD: [1, 0], ArrowRight: [1, 0] };
 
 let g = null;
+
+/** A pad drives the same keys the keyboard does: stick or D-pad moves, A is the button, B or a bumper dashes. */
+function padCodes(pad) {
+  const codes = new Set();
+  const s = stick(pad, 0.35);
+  if (s.y < -0.5 || pressed(pad, BUTTONS.up)) codes.add('ArrowUp');
+  if (s.y > 0.5 || pressed(pad, BUTTONS.down)) codes.add('ArrowDown');
+  if (s.x < -0.5 || pressed(pad, BUTTONS.left)) codes.add('ArrowLeft');
+  if (s.x > 0.5 || pressed(pad, BUTTONS.right)) codes.add('ArrowRight');
+  if (pressed(pad, BUTTONS.south)) codes.add('Space');
+  if (pressed(pad, BUTTONS.east) || pressed(pad, BUTTONS.lb) || pressed(pad, BUTTONS.rb)) codes.add('ShiftLeft');
+  return codes;
+}
 
 /**
  * Radzen's theme is global CSS, and until the rest of the app moves to Radzen it must only
@@ -263,6 +277,7 @@ function frame(now) {
   g.raf = requestAnimationFrame(frame);
   const dt = Math.min(0.1, (now - g.last) / 1000);
   g.last = now;
+  g.pad?.poll();
   // A phone held upright shows the rotate prompt; the match waits.
   g.paused = g.touch && window.matchMedia('(orientation: portrait)').matches;
   if (!g.paused) {
@@ -389,7 +404,10 @@ window.PoMule = {
       g.touch = true;
       g.removeTouch = buildTouchControls(host);
     }
-    if (g.human) Sfx.tune();
+    if (g.human) {
+      Sfx.tune();
+      g.pad = new KeyBridge([0], padCodes);
+    }
     // The host shakes with the cues' impact feel (a meteor, a claim).
     g.unstage = window.PoImpact?.registerStage?.(host);
     g.last = performance.now();
@@ -454,6 +472,7 @@ window.PoMule = {
     if (!g) return;
     g.running = false;
     cancelAnimationFrame(g.raf);
+    g.pad?.dispose(); // releases any key a held pad pressed, while the listeners still hear it
     g.resizeObserver.disconnect();
     window.removeEventListener('resize', g.onResize);
     window.removeEventListener('keydown', onKeyDown);

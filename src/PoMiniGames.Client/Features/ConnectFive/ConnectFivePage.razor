@@ -36,6 +36,7 @@
     GameKey="@(PlayMode == "ai" ? "connectfive" : null)"
     Outcome="@OutcomeForCue"
     Stats="@(PlayMode == "ai" ? _statItems : null)"
+    Diagnostics="@(PlayMode == "ai" ? _statItems : null)"
     Announcement="@Announcement"
     GameSummary="@GameSummaryContent">
 
@@ -481,15 +482,20 @@
 
     // Apply the finished game's result to the adaptive rating, remember the ELO
     // delta for the game-over panel, and refresh the stat tiles.
-    private void ApplyAdaptiveResult(GameResult result)
+    // Guarded by _matchRecorded so a second terminal path in the same game can never
+    // count it twice, and awaited so the local save and the PUT finish in order.
+    private async Task ApplyAdaptiveResultAsync(GameResult result)
     {
+        if (_matchRecorded) return;
+        _matchRecorded = true;
         var before = _rating.Elo;
         _rating = _gameStats.RecordAdaptiveResult("connectfive", _playerName, _cpuElo, result);
         _lastEloDelta = _rating.Elo - before;
         UpdateStats();
         // Single pipeline: GameResultService mirrors the rating into the stats
         // shape and PUTs it; failures land in the offline sync queue.
-        _ = GameResults.SubmitAdaptiveStatsAsync("connectfive", _playerName, _rating);
+        try { await GameResults.SubmitAdaptiveStatsAsync("connectfive", _playerName, _rating); }
+        catch (Exception ex) { Console.Error.WriteLine($"[ConnectFive] stats sync failed: {ex.Message}"); }
     }
 
     private void ResetGame()
@@ -662,12 +668,10 @@
     }
 
     // The top cell of each column is a tab stop; Enter or Space drops a disc there.
-    private void HandleDropKey(KeyboardEventArgs e, int col)
-    {
-        if (e.Key is "Enter" or " ") HandleDrop(col);
-    }
+    private Task HandleDropKey(KeyboardEventArgs e, int col) =>
+        e.Key is "Enter" or " " ? HandleDrop(col) : Task.CompletedTask;
 
-    private void HandleDrop(int col)
+    private async Task HandleDrop(int col)
     {
         if (PlayMode == "demo") return;
         if (IsOnline)
@@ -695,14 +699,14 @@
             _winCells = winCheck.Cells;
             OnWinDetected();
             _ = Feedback.CompleteAsync(); // §4 victory chord
-            ApplyAdaptiveResult(GameResult.Win);
+            await ApplyAdaptiveResultAsync(GameResult.Win);
             return;
         }
 
         if (_board.IsFull())
         {
             _gameResult = GameResult.Draw;
-            ApplyAdaptiveResult(GameResult.Draw);
+            await ApplyAdaptiveResultAsync(GameResult.Draw);
             return;
         }
 
@@ -743,19 +747,19 @@
                 _isAiTurn = false;
                 OnWinDetected();
                 _ = Feedback.ErrorAsync(); // §4 low buzz on defeat
-                ApplyAdaptiveResult(GameResult.Loss);
             }
             else if (_board.IsFull())
             {
                 _gameResult = GameResult.Draw;
                 _isAiTurn = false;
-                ApplyAdaptiveResult(GameResult.Draw);
             }
             else
             {
                 _isAiTurn = false;
             }
             await InvokeAsync(StateHasChanged);
+            // Recorded after the board shows the result, so a slow PUT never holds the render.
+            if (_gameResult != GameResult.InProgress) await ApplyAdaptiveResultAsync(_gameResult);
         }
         catch (OperationCanceledException)
         {

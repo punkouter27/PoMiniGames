@@ -1,6 +1,6 @@
 /* Glass panels over the race: a blurred, lightly tinted fill with a lit edge. --racer-glass and
    --racer-edge come from .racer-root (PoRacerPage.razor.css). */
-.race-hud { position: absolute; inset: 12px; pointer-events: none; color: var(--racer-ink); }
+.race-hud { position: absolute; inset: max(12px, env(safe-area-inset-top)) max(12px, env(safe-area-inset-right)) max(12px, env(safe-area-inset-bottom)) max(12px, env(safe-area-inset-left)); pointer-events: none; color: var(--racer-ink); }
 .race-strip { position: absolute; top: 0; left: 0; display: grid; gap: 6px; width: max-content; max-width: 100%; }
 .race-metrics, .race-laps, .race-standings {
     background: var(--racer-glass); border: 1px solid var(--racer-edge); border-radius: 12px;
@@ -38,14 +38,14 @@
 .race-standings li { display: flex; justify-content: space-between; gap: 12px; padding: 2px 0; }
 .race-standings li span:first-child { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .local-driver { color: var(--racer-accent-line); font-weight: 700; }
-.race-touch { display: none; position: absolute; bottom: 14px; inset-inline: 12px; justify-content: space-between; gap: 12px; }
+.race-touch { display: none; position: absolute; bottom: max(14px, env(safe-area-inset-bottom)); left: max(12px, env(safe-area-inset-left)); right: max(12px, env(safe-area-inset-right)); justify-content: space-between; gap: 12px; }
 .race-touch > div { display: flex; gap: 8px; align-items: end; }
 .race-touch button { min-width: 56px; min-height: 64px; border: 1px solid var(--racer-accent-line); border-radius: 14px; background: var(--racer-control); color: var(--racer-ink); font: inherit; font-weight: 700; touch-action: none; user-select: none; }
 .race-touch button.is-pressed { background: var(--racer-accent); color: var(--racer-on-accent); }
 .race-touch button:focus-visible { outline: 3px solid var(--racer-ink); }
 @media (pointer: coarse) { .race-touch { display: flex; } }
 @media (max-width: 600px) {
-    .race-hud { inset: 8px; }
+    .race-hud { inset: max(8px, env(safe-area-inset-top)) max(8px, env(safe-area-inset-right)) max(8px, env(safe-area-inset-bottom)) max(8px, env(safe-area-inset-left)); }
     .race-strip { max-width: calc(100% - 52px); }
     .race-metrics { gap: 2px 9px; padding: 6px 8px; font-size: 13px; }
     .race-laps { font-size: 12px; gap: 0 10px; }
