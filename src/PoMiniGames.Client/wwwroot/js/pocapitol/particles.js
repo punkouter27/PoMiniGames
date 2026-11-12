@@ -40,7 +40,7 @@ export function createParticles(scene, capacity = 320) {
     scene.add(mesh);
 
     const pose = new THREE.Object3D(), color = new THREE.Color();
-    const gas = new THREE.Color('#d9dccd'), spray = new THREE.Color('#eaa24a'), smoke = new THREE.Color('#bfc0b8');
+    const gas = new THREE.Color('#d9dccd'), spray = new THREE.Color('#eaa24a'), smoke = new THREE.Color('#bfc0b8'), canister = new THREE.Color('#40454c');
     let n = 0, light = 1;
     function add(x, y, z, size, c, a, boost = 1) {
         if (n >= capacity || a <= 0.003) return;
@@ -77,6 +77,11 @@ export function createParticles(scene, capacity = 320) {
                     add(e.x + Math.cos(angle) * reach + wx * age, rise + size * 0.25, e.z + Math.sin(angle) * reach + wz * age,
                         size, gas, 0.3 * fadeIn * fadeOut * (0.6 + 0.4 * r2) / spread);
                 }
+            } else if (e.type === 'grenade') {
+                // In flight: a small dark canister on an arc, blinking hotter as the fuse runs.
+                const k = Math.min(1, 1 - e.life / e.span);
+                const blink = 0.5 + 0.5 * Math.sin(time * 26 + seed);
+                add(e.x, 1.1 + Math.sin(Math.PI * k) * 3.2, e.z, 0.16, canister, 1, 0.8 + blink * 1.8);
             } else if (e.type === 'spray') {
                 const dx = e.tx - e.x, dz = e.tz - e.z, len = Math.hypot(dx, dz) || 1;
                 const sx = -dz / len, sz = dx / len;

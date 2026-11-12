@@ -157,6 +157,13 @@ export function createUiFx(root) {
                 voice(o, { from: 1568 * k, volume: 0.025, seconds: 0.4, at: 0.07, pan });
             } else voice(o, { from: 660 * k, to: 940 * k, type: 'triangle', volume: 0.07, seconds: 0.09, pan });
         },
+        /** A switch, radio or checkbox latches: two short notes falling over each other. */
+        toggle(el) {
+            const o = live(); if (!o) return;
+            const k = pitchOf(el), pan = panOf(el);
+            voice(o, { from: 880 * k, to: 660 * k, type: 'triangle', volume: 0.06, seconds: 0.07, pan });
+            voice(o, { from: 440 * k, type: 'sine', volume: 0.045, seconds: 0.1, at: 0.04, pan });
+        },
         open(pan) {
             const o = live(); if (!o) return;
             whoosh(o, { rising: true, pan });
@@ -319,11 +326,43 @@ export function createUiFx(root) {
         if (!el || el.disabled || el.contains(e.relatedTarget)) return;
         lift(el, true); cue.hover(el);
     });
-    on_('pointerout', e => { const el = target(e); if (el && !el.contains(e.relatedTarget)) { lift(el, false); release(el); } });
+    on_('pointerout', e => { const el = target(e); if (el && !el.contains(e.relatedTarget)) { lift(el, false); release(el); el.style.rotate = ''; } });
     on_('pointerdown', e => { const el = target(e); if (el && !el.disabled && el.getAttribute('aria-disabled') !== 'true') { dip(el, e); cue.press(el); } });
     on_('pointerup', e => { const el = target(e); if (el) release(el); });
     on_('pointercancel', e => { const el = target(e); if (el) release(el); });
-    on_('click', e => { const el = target(e); if (el && !el.disabled) cue.confirm(el); });
+    // A control leans a couple of degrees toward the cursor: enough to feel alive, not enough to
+    // move its hit box. Mice only; a finger would drag the control under itself.
+    const TILT = 3.2;
+    on_('pointermove', e => {
+        if (e.pointerType !== 'mouse' || calm()) return;
+        const el = target(e);
+        if (!el || el.disabled) return;
+        const r = el.getBoundingClientRect();
+        const lean = ((e.clientX - r.left) / Math.max(1, r.width) - 0.5) * TILT;
+        el.style.rotate = `${lean.toFixed(2)}deg`;
+    });
+    on_('click', e => {
+        const el = target(e);
+        if (!el || el.disabled) return;
+        // A control that latches should sound like it latched, not like it navigated.
+        if (el.matches('[role="switch"], [role="radio"], [aria-checked], input[type="checkbox"]')) cue.toggle(el);
+        else cue.confirm(el);
+    });
+    // Keyboard users get the same press: Enter or Space dips the control from its own centre,
+    // so the microinteraction is not mouse-only.
+    on_('keydown', e => {
+        if (e.repeat || (e.key !== 'Enter' && e.key !== ' ')) return;
+        const el = target(e);
+        if (!el || el.disabled) return;
+        const r = el.getBoundingClientRect();
+        dip(el, { clientX: r.left + r.width / 2, clientY: r.top + r.height / 2 });
+        cue.press(el);
+    }, { capture: true });
+    on_('keyup', e => {
+        if (e.key !== 'Enter' && e.key !== ' ') return;
+        const el = target(e);
+        if (el) release(el);
+    });
 
     let lastPanel = null, lastBox = null;
     // The last good position of the menu: when it is removed it is already out of the document.

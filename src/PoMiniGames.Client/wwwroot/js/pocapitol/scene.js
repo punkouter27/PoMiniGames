@@ -956,13 +956,15 @@ export function createScene(host, { figure, osm, signs = [] } = {}) {
 
         if (state.status === 'active') fxClock += dt;
         bursts.update(fxClock, camera, renderer.domElement.height, groundHeight(camera.position.x, camera.position.z));
-        decals.update(daylight);
+        decals.update(daylight, dt);
         let flash = 0, flashAt = null;
         for (const effect of state.effects) {
-            if (effect.type !== 'flash') continue;
+            if (effect.type !== 'flash' && effect.type !== 'grenadeBlast') continue;
+            const blast = effect.type === 'grenadeBlast';
             flashLight.position.set(effect.x, 2.2, effect.z);
-            flash = (calmMode ? 35 : 900) * effect.life / effect.span;
-            flashAt = effect;
+            const peak = blast ? (calmMode ? 45 : 1500) : (calmMode ? 35 : 900);
+            const level = peak * effect.life / effect.span;
+            if (level > flash) { flash = level; flashAt = effect; }
         }
         const shots = tracerMode === 'off' ? 0 : Math.min(state.shots.length, 64);
         for (let i = 0; i < shots; i++) {
@@ -1065,7 +1067,7 @@ export function createScene(host, { figure, osm, signs = [] } = {}) {
         // A nearby flash-bang jolts the camera.
         if (flashAt && !quiet) {
             const near = Math.max(0, 1 - Math.hypot(flashAt.x - camera.position.x, flashAt.z - camera.position.z) / 25);
-            const jolt = near * (flashAt.life / flashAt.span) ** 2 * 0.25;
+            const jolt = near * (flashAt.life / flashAt.span) ** 2 * (flashAt.type === 'grenadeBlast' ? 0.5 : 0.25);
             camera.translateX(Math.sin(clock * 47) * jolt); camera.translateY(Math.sin(clock * 61 + 1) * jolt);
         }
         sky.mesh.position.copy(camera.position);
@@ -1091,7 +1093,10 @@ export function createScene(host, { figure, osm, signs = [] } = {}) {
         }
         renderer.info.reset();
         post.setPhone(phone);
-        post.render(dt, clock, quiet, camera, sun.position);
+        post.render(dt, clock, quiet, camera, sun.position, {
+            sunlight: daylight,
+            indoors: camera.position.z < 14.5,
+        });
         host.dataset.drawCalls = renderer.info.render.calls;
     }
     function aim(state, yaw) {

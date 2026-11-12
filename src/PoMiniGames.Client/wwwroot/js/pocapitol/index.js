@@ -1,9 +1,9 @@
-import { createAttempt, advance, shove, setPaused, selectLeader, frontLine, milestones, clockLabel } from './world.js';
+import { createAttempt, advance, shove, fire, throwPlayerGrenade, setPaused, selectLeader, frontLine, milestones, clockLabel } from './world.js';
 import { createScene } from './scene.js';
 import { loadFigure } from './crowd.js';
 import { createAudio } from './audio.js';
 import { createUiFx } from './ui.js';
-import { createGovernor, MODES } from './quality.js';
+import { createGovernor, preferredMode, detectTier } from './quality.js';
 import { fetchWeather } from './weather.js';
 import { createRadar } from './radar.js';
 import { createInspector } from './inspector.js';
@@ -24,8 +24,7 @@ const nowMs = () => globalThis.performance?.now?.() ?? Date.now();
 
 function storedGraphics() {
     try {
-        const value = window.localStorage?.getItem(GRAPHICS_KEY);
-        return MODES.includes(value) ? value : 'auto';
+        return preferredMode(window.localStorage?.getItem(GRAPHICS_KEY));
     } catch { return 'auto'; }
 }
 
@@ -49,7 +48,15 @@ async function init(hostId, reference) {
     const [figure, osm, signs] = await Promise.all([loadFigure(), loadCampusData(), loadSigns()]);
     if (!host.isConnected) return;
     const view = createScene(host, { figure, osm, signs });
-    const tier = window.PoQuality?.tier?.() ?? 'high';
+    // The app's own quality tier is a device guess made elsewhere. When it says nothing, fall back
+    // to what this browser actually reports rather than assuming the best GPU.
+    const caps = view.renderer?.capabilities;
+    const tier = window.PoQuality?.tier?.() ?? detectTier({
+        webgl2: caps?.isWebGL2 ?? true,
+        maxTexture: caps?.maxTextureSize ?? 4096,
+        memory: navigator.deviceMemory ?? 4,
+        cores: navigator.hardwareConcurrency ?? 4,
+    });
     const prefs = loadPrefs();
     view.setFov?.(prefs.fov);
     const g = {
@@ -116,6 +123,16 @@ async function init(hostId, reference) {
         }
     });
     listen(window, 'keyup', e => g.keys.delete(e.code));
+    // G lobs one of the one-player raider's five concussion grenades toward the aim.
+    listen(window, 'keydown', e => {
+        if (e.repeat || e.target.closest?.('button, a, summary, [role="radio"]')) return;
+        if (e.code !== 'KeyG' || !human() || g.state.status !== 'active') return;
+        const thrown = throwPlayerGrenade(g.state, view.aim(g.state, g.yaw));
+        if (thrown) {
+            g.audio?.event(g.state.events.at(-1));
+            e.preventDefault();
+        }
+    });
     listen(window, 'blur', () => { clearInput(); if (human()) pause(true); });
     listen(document, 'visibilitychange', () => { if (document.hidden) { clearInput(); if (human()) pause(true); } });
     listen(document, 'pointerlockchange', () => {
@@ -163,6 +180,9 @@ async function init(hostId, reference) {
     });
     listen(window, 'pointerup', () => { g.firing = false; g.drag = null; });
     listen(window, 'pointercancel', clearInput);
+    // A backgrounded tab is throttled; those long frames must not be read as a slow scene and
+    // walk the quality ladder down while nobody is watching.
+    listen(document, 'visibilitychange', () => g.governor.suspend(document.hidden));
     listen(view.canvas, 'contextmenu', e => e.preventDefault());
     listen(view.canvas, 'webglcontextlost', e => {
         e.preventDefault();
@@ -234,7 +254,8 @@ async function init(hostId, reference) {
                 g.recorder.step(g.state);
                 g.director.observe(g.state, now);
                 if (human() && (g.firing || held('push') || pressed(pad, 7))) {
-                    const pushed = shove(g.state, view.aim(g.state, g.yaw));
+                    const aim = view.aim(g.state, g.yaw);
+                    const pushed = g.state.weapon === 'mg' ? fire(g.state, aim) : shove(g.state, aim);
                     if (pushed) g.audio?.event(g.state.events.at(-1));
                 }
                 if (g.state.status === 'completed' || g.state.status === 'failed') {
@@ -352,11 +373,11 @@ function notify(g) {
         ? (s.subject >= 0 ? s.companions.find(c => c.id === s.subject) ?? selectLeader(s) : selectLeader(s))
         : null;
     const front = frontLine(s);
-    g.reference.invokeMethodAsync('OnUpdate', s.health, s.milestone, s.elapsed, s.status, s.pushes, s.staggers, g.message,
+    g.reference.invokeMethodAsync('OnUpdate', Math.round(s.health), s.milestone, s.elapsed, s.status, s.pushes, s.staggers, g.message,
         s.companions.filter(c => c.health > 0).length + (s.role === 'raider' && s.health > 0 ? 1 : 0),
         s.enemies.filter(e => e.health > 0).length, leader ? leader.id + 1 : 0, s.demo,
         s.outcome, s.enemies.length, front ? front.id : -1, front ? Math.round(front.integrity) : 0, g.governor.label(),
-        s.civilians.filter(p => !p.evacuated).length)
+        s.civilians.filter(p => !p.evacuated).length, s.playerGrenades ?? 0)
         .catch(error => {
             if (!g.disposed) {
                 console.error('[PoCapitol] player interface update failed:', error);

@@ -166,6 +166,11 @@ export function addSurface(material, kind, texture, detail) {
                     #endif
                     diffuseColor.rgb *= mix(1.0, tone, uSurfDetail);
                     surfHeight *= uSurfDetail;
+                    // Micro-detail: a second, finer triplanar tap gives stone a tooth, breaks up
+                    // the joint edges and stops large flat panels reading as smooth plastic.
+                    float micro = texture2D(uSurf, sp.xz * 5.3 + sp.yx * 2.9).r;
+                    surfHeight += (micro - 0.5) * 0.22 * uSurfDetail;
+                    surfRough = clamp(surfRough + (micro - 0.5) * 0.1 * uSurfDetail, 0.04, 1.0);
                 }`)
             .replace('#include <roughnessmap_fragment>', '#include <roughnessmap_fragment>\nroughnessFactor = mix(roughnessFactor, surfRough, uSurfDetail);')
             .replace('#include <normal_fragment_maps>', `#include <normal_fragment_maps>
@@ -272,7 +277,16 @@ export function createEnvironment(renderer) {
  * Physical transmission with volumetric refraction, chromatic dispersion at angled edges,
  * and edge absorption.
  */
-export function createPolycarbonateMaterial({ color = '#c4e0ea', opacity = 0.42, roughness = 0.08, dispersion = 0.035 } = {}) {
+export function createPolycarbonateMaterial({ color = '#c4e0ea', opacity = 0.42, roughness = 0.08, dispersion = 0.035, quality = null } = {}) {
+    const tier = quality ?? (typeof window === 'undefined' ? 'high' : window.PoQuality?.tier?.() ?? 'high');
+    // Physical transmission costs a colour-buffer copy plus refraction samples. On the lowest tier
+    // the shield stays tinted and see-through, but as a plain alpha blend.
+    if (tier === 'low') {
+        return new THREE.MeshStandardMaterial({
+            color: new THREE.Color(color), transparent: true, opacity: Math.min(0.6, opacity + 0.14),
+            roughness: 0.2, metalness: 0.05, depthWrite: false,
+        });
+    }
     const mat = new THREE.MeshPhysicalMaterial({
         color: new THREE.Color(color),
         transparent: true,
@@ -291,12 +305,14 @@ export function createPolycarbonateMaterial({ color = '#c4e0ea', opacity = 0.42,
         shader.fragmentShader = shader.fragmentShader
             .replace('#include <common>', '#include <common>\nuniform float uDispersion;')
             .replace('#include <transmission_fragment>', `#include <transmission_fragment>
-                // Volumetric chromatic dispersion at faceted edges
+                // Chromatic dispersion grows toward grazing angles, where light crosses the most
+                // plastic: the edge of a shield splits into a thin warm and cool fringe.
                 vec3 dispNormal = normalize(vNormal);
-                float dispEdge = 1.0 - abs(dot(dispNormal, vec3(0.0, 0.0, 1.0)));
+                float dispEdge = pow(1.0 - abs(dot(dispNormal, normalize(vViewPosition))), 1.6);
                 diffuseColor.r += uDispersion * dispEdge * 0.4;
                 diffuseColor.b += uDispersion * dispEdge * 0.8;
-                diffuseColor.g += uDispersion * dispEdge * 0.2;`);
+                diffuseColor.g += uDispersion * dispEdge * 0.2;
+                totalEmissiveRadiance += vec3(0.035, 0.06, 0.075) * dispEdge;`);
     };
     mat.customProgramCacheKey = () => 'pocapitol-polycarbonate';
     return mat;
@@ -322,7 +338,10 @@ export function addSubsurfaceScattering(material, { wrap = 0.38, scatterColor = 
                     float sssDot = dot( normal, sssLightDir );
                     float sssWrapVal = max( 0.0, ( sssDot + uSssWrap ) / ( 1.0 + uSssWrap ) );
                     float sssTerm = smoothstep( -0.28, 0.28, -abs( sssDot ) );
-                    reflectedLight.directDiffuse += uSssColor * directionalLights[ sssIdx ].color * sssTerm * uSssIntensity * sssWrapVal;
+                    // Light that passed through the far side glows most when it is behind the
+                    // viewer's line of sight: cloth and ears rim-brighten against the low sun.
+                    float sssBack = pow( clamp( dot( -normal, normalize( vViewPosition ) ), 0.0, 1.0 ), 2.0 );
+                    reflectedLight.directDiffuse += uSssColor * directionalLights[ sssIdx ].color * sssTerm * uSssIntensity * sssWrapVal * ( 0.55 + 0.45 * sssBack );
                 }
                 #endif`);
     };

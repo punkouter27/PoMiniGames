@@ -223,7 +223,7 @@
     private bool _ready, _disposed, _recorded;
     private bool _demo;
     private string? _mode;
-    private int _activeRaiders = 256, _activePolice = 44, _totalPolice = 44, _subject, _lineIndex, _lineIntegrity = 100, _sheltering = 64;
+    private int _activeRaiders = 256, _activePolice = 44, _totalPolice = 44, _subject, _lineIndex, _lineIntegrity = 100, _sheltering = 64, _grenades;
     private bool _radarNeedsInit = true;
     private PrefsDto _prefs = new();
     private ReportDto? _report;
@@ -262,7 +262,7 @@
     private string BottomHint => _demo ? "AUTONOMOUS DEMO · P PAUSE"
         : _message.Length > 0 ? _message
         : _role == "observer" ? "WASD move · Click scene to look · P pause"
-        : "WASD move · Click scene to look · Space push · P pause";
+        : "WASD move · Click scene to look · Space fire · G grenade · P pause";
     private string ResultHeading => _outcome switch
     {
         "doors" => "The doors stayed shut.",
@@ -396,6 +396,13 @@
                 </div>
                 <RadzenProgressBar Value="@_health" Max="100" Unit="" ShowValue="false"
                                    ProgressBarStyle="@GetHealthProgressStyle(_health)" Class="pc-progress-bar" />
+                @if (_grenades > 0)
+                {
+                    <div class="pc-health-header" style="margin-top:.5rem;">
+                        <span>GRENADES · G</span>
+                        <span>@_grenades</span>
+                    </div>
+                }
             </div>
         }
 
@@ -583,14 +590,14 @@
 
     private RenderFragment IntroControls => @<div>
         <p><kbd>W</kbd> <kbd>A</kbd> <kbd>S</kbd> <kbd>D</kbd> move · <kbd>Mouse</kbd> look &amp; aim</p>
-        <p><kbd>Space</kbd> / <kbd>Click</kbd> push · <kbd>Shift</kbd> sprint · <kbd>←</kbd> <kbd>→</kbd> turn camera</p>
+        <p><kbd>Space</kbd> / <kbd>Click</kbd> fire the machine gun · <kbd>G</kbd> throw a grenade · <kbd>Shift</kbd> sprint · <kbd>←</kbd> <kbd>→</kbd> turn camera</p>
         <p><kbd>Esc</kbd> / <kbd>P</kbd> pause</p>
         <p class="touch-only">Touch: floating d-pad and push button, drag to orbit. Gamepad: sticks move and look, right trigger pushes, Start pauses.</p>
     </div>;
 
     private RenderFragment IntroRules => @<div>
         <p>256 protestors start out on the grass; most watch and film, a few push. 64 police hold five lines and fall back in stages. 64 staff and members shelter inside until evacuated. 12:50 pm to the 6:00 pm curfew.</p>
-        <p><strong>Fiction, not a reconstruction.</strong> Inspired by January 6, 2021. Adult themes; no injury is shown. Nobody is armed when you play; the Demo is a separate armed variant. The layout and police positions are invented.</p>
+        <p><strong>Fiction, not a reconstruction.</strong> Inspired by January 6, 2021. Adult themes; no injury is shown. As a solo raider you carry a machine gun and five concussion grenades; police hold with batons, spray, gas and a few grenades. The Demo is a separate armed variant in which both sides fire. The layout and police positions are invented.</p>
         <details><summary>Historical record</summary>@ContextContent</details>
     </div>;
 
@@ -731,7 +738,7 @@
     [JSInvokable]
     public async Task OnUpdate(int health, int milestone, double elapsed, string status, int pushes, int staggers, string message,
         int activeRaiders, int activePolice, int subject, bool demo, string outcome, int totalPolice, int lineIndex,
-        int lineIntegrity, string graphics, int sheltering)
+        int lineIntegrity, string graphics, int sheltering, int grenades = 0)
     {
         if (_disposed || demo != _demo) return;
         var previousStatus = _status;
@@ -740,7 +747,7 @@
         _health = health; _milestone = milestone; _elapsed = elapsed; _status = status; _message = message;
         _activeRaiders = activeRaiders; _activePolice = activePolice; _subject = subject;
         _outcome = outcome; _totalPolice = totalPolice; _lineIndex = lineIndex; _lineIntegrity = lineIntegrity;
-        _graphicsLabel = graphics; _sheltering = sheltering;
+        _graphicsLabel = graphics; _sheltering = sheltering; _grenades = grenades;
         // Each attempt that ends refreshes the report, including the demo's repeated runs.
         if (previousStatus is not "completed" and not "failed" && status is "completed" or "failed") _ = LoadReportAsync();
         if (changed) _announcement = status != "active" ? $"Scenario {status}. {ResultHeading}"

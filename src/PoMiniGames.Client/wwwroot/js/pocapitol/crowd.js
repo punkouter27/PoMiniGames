@@ -464,7 +464,7 @@ export function createCrowd(scene, capacity, { time, groundHeight, shadowTexture
     const bareish = a => raider(a) && !ballCap(a) && !hardHat(a) && !tricorn(a) && !hood(a);
     const beanie = a => bareish(a) && a.id % 3 !== 2;
     const hair = a => (bareish(a) && a.id % 3 === 2) || a.civilian;
-    const bearer = a => raider(a) && a.id >= 0 && a.id % 3 === 0 && a.health > 0;
+    const bearer = a => raider(a) && a.id >= 0 && a.id % 20 === 0 && a.health > 0;
     // Carried signage: the national and Gadsden flags plus a random slice of the placard list.
     // One instanced mesh per distinct board keeps the draw-call count bounded, and each bearer's
     // board is fixed for the attempt by the same stable trait that sets their height.
@@ -675,11 +675,14 @@ export function createCrowd(scene, capacity, { time, groundHeight, shadowTexture
             const rest = b.fall?.rest;
             const strain = a.police && a.health > 0 && !b.moving ? officerStrain(state, a) : 0;
             const brace = strain ? Math.sin(now * (1.4 + strain * 2.5) + (a.id || 0) * 1.7) * (0.012 + strain * 0.045) : 0;
+            // Blast lift and the rise over a body on the ground: feet clear what is underfoot.
+            const lift = Math.max(0, a.y ?? 0) + Math.max(0, a.step ?? 0);
+            const tumble = (a.y ?? 0) > 0.05 ? (a.spin ?? 0) * 0.5 : 0;
             transform.position.set(
                 a.x + (rest?.dx ?? 0),
-                b.ground - how.drop * tall + how.lift * wide + (rest?.height ?? 0),
+                b.ground + lift - how.drop * tall + how.lift * wide + (rest?.height ?? 0),
                 a.z + (rest?.dz ?? 0));
-            transform.rotation.set(how.fall + brace, b.yaw, (how.lean || 0) + (rest?.roll ?? 0));
+            transform.rotation.set(how.fall + brace + tumble, b.yaw, (how.lean || 0) + (rest?.roll ?? 0));
             transform.scale.set(wide, tall, wide);
             const figureMatrix = slotFigure[b.slot].compose(transform.position, transform.quaternion, transform.scale);
             bodies.pose(b.slot, figureMatrix, pose);

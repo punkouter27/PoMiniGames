@@ -25,7 +25,7 @@
 // single slap-back from the building's facade at the right delay.
 //
 // Silent on kiosk routes, where the attract reel runs without anyone having asked for sound.
-import { areas } from './world.js';
+import { areas, groundHeight } from './world.js';
 
 const quiet = () => /[?&]kiosk=/.test(location.search);
 const SPEED_OF_SOUND = 343;
@@ -50,6 +50,34 @@ function areaIndex(x, z) {
         if (Math.abs(x - a.x) <= a.w / 2 && Math.abs(z - a.z) <= a.d / 2) return i;
     }
     return 0;
+}
+
+/**
+ * What a foot lands on, from where it lands. It reads the same `groundHeight()` the renderer
+ * uses, so a footfall cannot disagree with the surface under the feet: anything raised (the
+ * portico, the terrace treads, the paved approach) is stone, and the lawn is turf.
+ */
+export function footstepMaterial(x, z) {
+    if (z < 15) return 'marble';
+    return groundHeight(x, z) >= 0.019 ? 'marble' : 'ground';
+}
+
+/** Air soaks up the highs: the further away a source is, the duller its low-pass cutoff. */
+export function airAbsorption(distance) {
+    return Math.max(2200, 18000 - Math.max(0, distance) * 190);
+}
+
+/**
+ * How a blow is voiced. Energy wakes a bright crack; a heavy target adds a sub layer under the
+ * material's own resonances, so a rammed barricade and a shoved person never sound alike even
+ * when they cost the same joules.
+ */
+export function impactLayers(energy, mass) {
+    const e = Math.max(0, energy), m = Math.max(20, mass);
+    return {
+        sub: m >= 120 ? Math.min(0.5, 0.16 + (m - 120) / 500) : 0,
+        crack: e >= 150 ? Math.min(0.5, 0.2 + (e - 150) / 1200) : 0,
+    };
 }
 /** Ceiling heights, meters: the crypt is low, the rotunda a dome, the statuary hall tall. */
 const CEILING = [0, 9, 24, 4, 14, 5];
@@ -181,7 +209,8 @@ export function createAudio({ onCaption } = {}) {
     function place(x, z, life = 4, height = 1.3) {
         const panner = ctx.createPanner(), muffle = ctx.createBiquadFilter(), level = ctx.createGain();
         const flight = ctx.createDelay(0.5);
-        panner.panningModel = 'HRTF'; panner.distanceModel = 'inverse';
+        try { panner.panningModel = 'HRTF'; } catch { panner.panningModel = 'equalpower'; }
+        panner.distanceModel = 'inverse';
         panner.refDistance = 4; panner.rolloffFactor = 0.9; panner.maxDistance = 120;
         if (panner.positionX) {
             panner.positionX.value = x; panner.positionY.value = height; panner.positionZ.value = z;
@@ -191,7 +220,10 @@ export function createAudio({ onCaption } = {}) {
         // is 9 m wide, so a source lined up with one is only partly screened.
         const doorway = walls === 1 && Math.abs(x) < 4.5 && Math.abs(listener.x) < 8;
         muffle.type = 'lowpass';
-        muffle.frequency.value = walls === 0 ? 18000 : doorway ? 9000 : walls === 1 ? 3500 : 900;
+        const away = Math.hypot(x - listener.x, z - listener.z);
+        // Stone between the pair dulls the sound far more than distance does; take the lower of
+        // the wall cutoff and the air's own absorption at this range.
+        muffle.frequency.value = Math.min(airAbsorption(away), walls === 0 ? 18000 : doorway ? 9000 : walls === 1 ? 3500 : 900);
         level.gain.value = walls === 0 ? 1 : doorway ? 0.9 : walls === 1 ? 0.75 : 0.4;
         flight.delayTime.value = Math.min(0.4, Math.hypot(x - listener.x, z - listener.z) / SPEED_OF_SOUND);
         muffle.connect(level).connect(flight).connect(panner).connect(master);
@@ -264,6 +296,11 @@ export function createAudio({ onCaption } = {}) {
         // The contact click: brighter and longer the harder it lands.
         burst({ type: 'bandpass', frequency: surface.click * (0.7 + 0.5 * Math.min(1, drive)), q: 0.9, volume: 0.16 * drive, attack: 0.001, seconds: 0.012 + 0.03 * Math.min(1, drive), at, dest });
         if (surface.thud) tone({ from: surface.thud * size * 1.6, to: surface.thud * size * 0.5, volume: 0.3 * drive, seconds: 0.07 + 0.08 * Math.min(1, drive), at, dest });
+        const layers = impactLayers(energy, mass);
+        // A heavy target (a barrier, a body in gear) puts a low thump under the material.
+        if (layers.sub > 0) tone({ from: 74 * size, to: 38 * size, volume: layers.sub * drive, seconds: 0.16 + 0.12 * Math.min(1, drive), at, dest });
+        // A hard blow cracks before it rings.
+        if (layers.crack > 0) burst({ type: 'highpass', frequency: 2600, q: 0.6, volume: layers.crack * drive, attack: 0.001, seconds: 0.03, at, dest });
     }
 
     let lastShove = 0, lastShot = 0, lastHit = 0, chantAt = 0, alarmAt = 0, radioAt = 3, hornAt = 6, stepAt = 0, coughAt = 0, footAt = 0, clock = 0, walker = 0;
@@ -328,6 +365,18 @@ export function createAudio({ onCaption } = {}) {
                 // The ringing afterwards, and everything else ducked under it.
                 tone({ from: 3800, to: 3700, volume: 0.05, seconds: 1.6, at: 0.1, dest: master });
                 Promise.resolve().then(() => bus.duck?.(0.5 * Math.min(1, 1 / (1 + Math.hypot(e.x - listener.x, e.z - listener.z) / 7)), 900)).catch(() => { /* a duck is a nicety */ });
+                break;
+            case 'grenade':
+                // Concussion, not fragmentation: a hard slap and a long, low pressure wave.
+                burst({ type: 'lowpass', frequency: 320, volume: 0.9, attack: 0.002, seconds: 0.45, sweep: 70, dest });
+                tone({ from: 92, to: 26, volume: 0.75, seconds: 0.7, dest });
+                burst({ type: 'highpass', frequency: 3600, volume: 0.12, seconds: 0.05, dest });
+                strike({ material: 'ground', energy: 320, mass: 260, at: 0.02, dest });
+                // The ringing that follows a blast close by, and a duck under it.
+                if (Math.hypot(e.x - listener.x, e.z - listener.z) < 22) {
+                    tone({ from: 3700, to: 3600, volume: 0.04, seconds: 1.8, at: 0.12, dest: master });
+                    Promise.resolve().then(() => bus.duck?.(0.6, 1100)).catch(() => { /* a duck is a nicety */ });
+                }
                 break;
             case 'break': {
                 // Racks and barriers giving way: metal on metal, then stone, then the surge.
@@ -458,14 +507,14 @@ export function createAudio({ onCaption } = {}) {
         }
         if (mix.walking && clock >= stepAt) {
             stepAt = clock + 0.36;
-            strike({ material: 'ground', energy: indoors ? 14 : 9, mass: 80, gain: 0.8 });
+            strike({ material: footstepMaterial(mix.x, mix.z), energy: indoors ? 14 : 9, mass: 80, gain: 0.8 });
         }
         // The nearest walkers, one footfall at a time, each from where its feet are.
         const walkers = mix.walkers;
         if (walkers?.length && clock >= footAt) {
             footAt = clock + 0.07 + Math.random() * 0.12;
             const w = walkers[walker++ % walkers.length];
-            strike({ material: indoors ? 'marble' : 'ground', energy: indoors ? 3 : 6, mass: w.mass ?? 75, gain: 0.7, dest: place(w.x, w.z, 1, 0.1) });
+            strike({ material: footstepMaterial(w.x, w.z), energy: indoors ? 3 : 6, mass: w.mass ?? 75, gain: 0.7, dest: place(w.x, w.z, 1, 0.1) });
         }
         if (mix.gassed && clock >= coughAt) {
             coughAt = clock + 1.3 + Math.random();

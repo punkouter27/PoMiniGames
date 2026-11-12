@@ -24,6 +24,7 @@ const SSCSShader = {
         uLightDir: { value: new THREE.Vector3(0.5, 0.8, 0.3).normalize() },
         uIntensity: { value: 0.65 },
         uResolution: { value: new THREE.Vector2(1, 1) },
+        uStepScale: { value: 1 },
     },
     vertexShader: `
         varying vec2 vUv;
@@ -35,7 +36,7 @@ const SSCSShader = {
     fragmentShader: `
         uniform sampler2D tDiffuse;
         uniform sampler2D tDepth;
-        uniform float uCameraNear, uCameraFar, uIntensity;
+        uniform float uCameraNear, uCameraFar, uIntensity, uStepScale;
         uniform vec3 uLightDir;
         uniform vec2 uResolution;
         varying vec2 vUv;
@@ -52,7 +53,7 @@ const SSCSShader = {
                 gl_FragColor = col;
                 return;
             }
-            vec2 stepUv = (uLightDir.xz * vec2(1.0, -1.0) / uResolution) * (3.5 + (1.0 - depth) * 10.0);
+            vec2 stepUv = (uLightDir.xz * vec2(1.0, -1.0) / uResolution) * (3.5 + (1.0 - depth) * 10.0) * uStepScale;
             float shadow = 0.0;
             for (int i = 1; i <= 6; i++) {
                 vec2 sampleUv = vUv + stepUv * float(i);
@@ -80,6 +81,7 @@ const SSGIShader = {
         uBounceIntensity: { value: 0.35 },
         uResolution: { value: new THREE.Vector2(1, 1) },
         uTime: { value: 0 },
+        uRadius: { value: 26 },
     },
     vertexShader: `
         varying vec2 vUv;
@@ -91,7 +93,7 @@ const SSGIShader = {
     fragmentShader: `
         uniform sampler2D tDiffuse;
         uniform sampler2D tDepth;
-        uniform float uCameraNear, uCameraFar, uBounceIntensity, uTime;
+        uniform float uCameraNear, uCameraFar, uBounceIntensity, uTime, uRadius;
         uniform vec2 uResolution;
         varying vec2 vUv;
 
@@ -116,7 +118,7 @@ const SSGIShader = {
             }
             vec3 bounceAcc = vec3(0.0);
             float totalWeight = 0.0;
-            float radius = (1.0 - depth * 0.65) * 26.0 / uResolution.y;
+            float radius = (1.0 - depth * 0.65) * uRadius / uResolution.y;
 
             float rot = fract(sin(dot(vUv * uResolution + fract(uTime) * 11.0, vec2(12.9898, 78.233))) * 43758.5453) * 6.28318;
             mat2 rotMat = mat2(cos(rot), -sin(rot), sin(rot), cos(rot));
@@ -456,6 +458,27 @@ export function createPost(renderer, scene, camera, depthCamera) {
     composer.addPass(grade);
 
     let samples = 4, dofAllowed = true;
+    // Cinematic light response. The same passes read differently under the low winter sun and in
+    // a marble room, so their strength follows the light instead of being one fixed grade. Only
+    // uniforms move here, so a change of light never recompiles a shader.
+    let lightKey = -1, interior = null;
+    function setEnvironment({ sunlight = 1, indoors = false } = {}) {
+        const key = Math.round(Math.max(0, Math.min(1, sunlight)) * 20) / 20;
+        if (key === lightKey && indoors === interior) return;
+        lightKey = key; interior = indoors;
+        const dusk = 1 - key;
+        sscsPass.uniforms.uIntensity.value = (indoors ? 0.48 : 0.55) + key * 0.22;
+        // Indoors the light comes in from high windows: a tighter, softer contact shadow.
+        sscsPass.uniforms.uStepScale.value = indoors ? 0.75 : 1;
+        // Two-bounce diffuse light matters most in the rotunda, where marble returns it all.
+        ssgiPass.uniforms.uBounceIntensity.value = indoors ? 0.55 : 0.24 + dusk * 0.26;
+        ssgiPass.uniforms.uRadius.value = indoors ? 18 : 26;
+        // Polished interior floors and wet paving reflect; grass does not.
+        ssrPass.uniforms.uIntensity.value = indoors ? 0.62 : 0.3 + dusk * 0.4;
+        shaftsPass.uniforms.uDensity.value = indoors ? 0.45 : 0.8;
+        bloom.threshold = 1.2 - dusk * 0.32;
+        grade.uniforms.uSaturation.value = indoors ? 0.9 : 0.94;
+    }
     const sunNDC = new THREE.Vector3();
     /** 3: everything clean; 2: bloom and shafts; 1: MSAA, FXAA and grade; 0: grade only. */
     function setLevel(level) {
@@ -481,7 +504,8 @@ export function createPost(renderer, scene, camera, depthCamera) {
         ssrPass.uniforms.uResolution.value.set(pw, ph);
         fxaaPass.uniforms.uResolution.value.set(pw, ph);
     }
-    function render(dt, time, calm, cam, sunPos) {
+    function render(dt, time, calm, cam, sunPos, environment) {
+        if (environment) setEnvironment(environment);
         grade.uniforms.uTime.value = time;
         grade.uniforms.uPhoneTime.value = time;
         grade.uniforms.uGrain.value = calm ? 0.0 : 0.024;
@@ -497,7 +521,7 @@ export function createPost(renderer, scene, camera, depthCamera) {
         composer.render(dt);
     }
     return {
-        setLevel, setSize, render,
+        setLevel, setSize, render, setEnvironment,
         /** Updates retinal flash bloom and combat suppression stress. */
         setCombatStress(flash, suppression) {
             grade.uniforms.uFlash.value = flash;

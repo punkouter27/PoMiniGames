@@ -203,6 +203,34 @@ export function createBursts(scene, { capacity = 16000 } = {}) {
         spray(x, y, z, 130, { color: material === 'marble' ? [2.5, 2.4, 2.2] : [4.0, 2.8, 1.0], up: 2.0 });
     }
 
+    /** A shockwave along the ground: grit driven outward in a ring that thins as it grows. */
+    function ring(x, y, z, radius, energy, { calm = false, tone = [0.68, 0.64, 0.57] } = {}) {
+        const random = rng(serial++ * 431 + Math.round(x * 11 + z * 23));
+        const count = Math.round(Math.min(320, 24 + energy * 0.2) * density * (calm ? 0.5 : 1));
+        const speed = 3 + Math.min(11, Math.sqrt(Math.max(0, energy)) * 0.5);
+        for (let i = 0; i < count; i++) {
+            const angle = i / Math.max(1, count) * Math.PI * 2 + random() * 0.14;
+            const v = speed * (0.55 + random() * 0.75), r0 = radius * (0.12 + random() * 0.12);
+            dust.add(x + Math.cos(angle) * r0, y + 0.04, z + Math.sin(angle) * r0,
+                Math.cos(angle) * v, 0.2 + random() * 0.55, Math.sin(angle) * v,
+                now, 0.7 + random() * 0.9, 0.45 + random() * 0.85, 2.6, 1.4,
+                tone[0], tone[1], tone[2], 0.12 + random() * 0.1);
+        }
+    }
+
+    /** Chunks thrown out of whatever broke: small, heavy and short-lived. */
+    function debris(x, y, z, energy, { calm = false } = {}) {
+        const random = rng(serial++ * 271 + Math.round(x * 17 + z * 13));
+        const count = Math.round(Math.min(240, 10 + energy * 0.16) * density * (calm ? 0.3 : 1));
+        for (let i = 0; i < count; i++) {
+            const angle = random() * Math.PI * 2, v = 2 + Math.sqrt(Math.max(0, energy)) * 0.22 * (0.4 + random());
+            dust.add(x + (random() - 0.5) * 2, y + 0.3 + random() * 0.9, z + (random() - 0.5) * 0.6,
+                Math.cos(angle) * v, 1.4 + random() * 2.4, Math.sin(angle) * v * 0.5,
+                now, 0.5 + random() * 0.5, 0.06 + random() * 0.09, 0.7, 9.8,
+                0.42, 0.42, 0.44, 0.9);
+        }
+    }
+
     return {
         /** Advances the shader clock, and tells it the scale to size points by and the floor to bounce off. */
         update(time, camera, viewHeight, floor) {
@@ -214,7 +242,7 @@ export function createBursts(scene, { capacity = 16000 } = {}) {
             }
         },
         setDensity(value) { density = value; },
-        spray, puff, flurry, breath, casing, spall,
+        spray, puff, flurry, breath, casing, spall, ring, debris,
         /** One world event, thrown into the air. `calm` softens flashing for reduced-motion viewers. */
         react(e, floor, calm) {
             const energy = e.energy ?? 30, y = floor + 0.05;
@@ -250,6 +278,18 @@ export function createBursts(scene, { capacity = 16000 } = {}) {
                 case 'flash':
                     spray(e.x, floor + 0.8, e.z, calm ? 60 : 900, { color: [5, 4.4, 3.6], spread: 2, up: 2.2, calm });
                     puff(e.x, y, e.z, 600, { tone: [0.7, 0.7, 0.68], lift: 1.1, size: 1.3 });
+                    ring(e.x, y, e.z, 1.2, 420, { calm });
+                    break;
+                case 'grenade':
+                    // Overpressure only: dust, grit and smoke, and a bright core for the bloom pass.
+                    spray(e.x, floor + 0.9, e.z, calm ? 120 : 560, { color: [5, 3.1, 1.1], spread: 2.2, up: 2, calm });
+                    puff(e.x, y, e.z, 1400, { tone: [0.66, 0.64, 0.6], lift: 1.6, size: 1.9, life: 2.2 });
+                    debris(e.x, floor, e.z, 900, { calm });
+                    ring(e.x, y, e.z, 2.4, 780, { calm });
+                    break;
+                case 'throw':
+                    // The small kick of a throw, so a lob reads before the canister lands.
+                    puff(e.x, floor + 1.25, e.z, 12, { tone: [0.72, 0.7, 0.66], lift: 0.2, size: 0.28, life: 0.5, alpha: 0.5 });
                     break;
                 case 'gas':
                     puff(e.x, y, e.z, 900, { tone: [0.83, 0.86, 0.8], lift: 1.6, size: 1.6 });
@@ -257,10 +297,13 @@ export function createBursts(scene, { capacity = 16000 } = {}) {
                 case 'break':
                     for (let i = 0; i < 6; i++) spray(e.x + (i - 2.5) * 2.4, floor + 0.7, e.z, 260, { color: [3, 3.2, 3.8], calm });
                     puff(e.x, y, e.z, 500, { size: 1.2 });
+                    debris(e.x, floor, e.z, 320, { calm });
+                    ring(e.x, y, e.z, 3, 360, { calm });
                     break;
                 case 'down':
                     // The body meeting the ground: a flat scuff of grit under it.
                     puff(e.x, y, e.z, 110, { tone: [0.6, 0.57, 0.51], lift: 0.22, size: 0.8 });
+                    ring(e.x, y, e.z, 0.5, 60, { calm, tone: [0.62, 0.59, 0.53] });
                     break;
             }
         },

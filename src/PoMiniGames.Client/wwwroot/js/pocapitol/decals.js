@@ -54,7 +54,7 @@ function mark(kind) {
     return texture;
 }
 
-function ring(scene, kind, capacity) {
+function ring(scene, kind, capacity, hold = 40) {
     const texture = mark(kind);
     const geometry = new THREE.PlaneGeometry(1, 1);
     geometry.rotateX(-Math.PI / 2);
@@ -85,7 +85,11 @@ function ring(scene, kind, capacity) {
     scene.add(mesh);
     const pose = new THREE.Object3D(), tint = new THREE.Color(0.85, 0.85, 0.85);
     const stretch = kind === 'scuff' ? 2.6 : kind === 'print' ? 1.9 : 1;
-    let head = 0, filled = 0, dirty = false;
+    // Wear that stays does not stay forever: each mark holds for `hold` seconds, then thins out,
+    // so a long session accumulates history at its edges instead of turning into one dark floor.
+    const FADE = 70;
+    const base = new Float32Array(capacity), age = new Float32Array(capacity).fill(Infinity);
+    let head = 0, filled = 0, dirty = false, fading = false;
     return {
         mesh,
         add(x, y, z, width, angle, opacity) {
@@ -94,14 +98,32 @@ function ring(scene, kind, capacity) {
             mesh.setMatrixAt(head, pose.matrix);
             mesh.setColorAt(head, tint); mesh.instanceColor.needsUpdate = true;
             alpha.array[head] = opacity;
+            base[head] = opacity; age[head] = 0;
             head = (head + 1) % capacity; filled = Math.min(capacity, filled + 1);
             mesh.count = filled; dirty = true;
+            fading = true;
         },
         /** Marks do not glow at dusk: the whole ring is tinted by the day's light. */
         light(level) {
             tint.setScalar(0.3 + 0.7 * level);
             for (let i = 0; i < filled; i++) mesh.setColorAt(i, tint);
             if (filled) mesh.instanceColor.needsUpdate = true;
+        },
+        /** Ages every live mark. Scuffs fade; boot prints linger longest. */
+        fade(dt) {
+            if (!fading || dt <= 0) return;
+            let live = false;
+            for (let i = 0; i < filled; i++) {
+                const a = age[i];
+                if (a === Infinity) continue;
+                const next = a + dt;
+                if (next <= hold) { age[i] = next; live = true; continue; }
+                const left = 1 - (next - hold) / FADE;
+                if (left <= 0) { age[i] = Infinity; alpha.array[i] = 0; continue; }
+                age[i] = next; alpha.array[i] = base[i] * left; live = true;
+            }
+            alpha.needsUpdate = true;
+            fading = live;
         },
         flush() {
             if (!dirty) return;
@@ -113,7 +135,7 @@ function ring(scene, kind, capacity) {
 
 export function createDecals(scene, { capacity = 160 } = {}) {
     const scuffs = ring(scene, 'scuff', capacity), scorch = ring(scene, 'scorch', capacity / 2), stains = ring(scene, 'stain', capacity / 4);
-    const prints = ring(scene, 'print', capacity * 2);
+    const prints = ring(scene, 'print', capacity * 2, 70);
     const layers = [scuffs, scorch, stains, prints];
     let seed = 1, lightLevel = -1;
     const rand = () => { seed = (Math.imul(seed, 1664525) + 1013904223) >>> 0; return seed / 4294967296; };
@@ -126,9 +148,17 @@ export function createDecals(scene, { capacity = 160 } = {}) {
         react(e, floor) {
             const y = floor + 0.015, energy = e.energy ?? 30;
             if (e.type === 'shove' || e.type === 'down' || (e.type === 'impact' && e.material === 'body')) {
-                if (energy > 18) scuffs.add(e.x + (rand() - 0.5) * 0.5, y, e.z + (rand() - 0.5) * 0.5, 0.45 + Math.min(0.5, energy / 400), rand() * Math.PI, 0.35 + Math.min(0.4, energy / 300));
+                if (energy > 18) {
+                    // Wear follows the direction the blow travelled, so a shove leaves a streak
+                    // pointing the way the person actually went.
+                    const angle = e.type === 'down' ? rand() * Math.PI : Math.atan2(e.dz ?? 0, e.dx ?? 0) + (rand() - 0.5) * 0.5;
+                    scuffs.add(e.x + (rand() - 0.5) * 0.5, y, e.z + (rand() - 0.5) * 0.5, 0.45 + Math.min(0.5, energy / 400), angle, 0.35 + Math.min(0.4, energy / 300));
+                }
             } else if (e.type === 'flash') {
                 scorch.add(e.x, y + 0.002, e.z, 3.2, rand() * Math.PI, 0.8);
+            } else if (e.type === 'grenade') {
+                scorch.add(e.x, y + 0.003, e.z, 5.5, rand() * Math.PI, 0.9);
+                for (let i = 0; i < 4; i++) scuffs.add(e.x + (rand() - 0.5) * 7, y, e.z + (rand() - 0.5) * 7, 1.1 + rand() * 0.7, rand() * Math.PI, 0.5);
             } else if (e.type === 'impact' && e.round) {
                 scorch.add(e.x, y + 0.002, e.z, 0.5 + rand() * 0.3, rand() * Math.PI, 0.7);
             } else if (e.type === 'ricochet') {
@@ -139,8 +169,8 @@ export function createDecals(scene, { capacity = 160 } = {}) {
                 for (let i = 0; i < 5; i++) scuffs.add(e.x + (rand() - 0.5) * 12, y, e.z + (rand() - 0.5) * 3, 0.8 + rand() * 0.6, rand() * Math.PI, 0.5);
             }
         },
-        update(level) {
-            for (const l of layers) l.flush();
+        update(level, dt = 0) {
+            for (const l of layers) { l.fade(dt); l.flush(); }
             if (Math.abs(level - lightLevel) > 0.02) { lightLevel = level; for (const l of layers) l.light(level); }
         },
         dispose() { for (const l of layers) l.dispose(); },

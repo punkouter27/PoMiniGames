@@ -114,6 +114,29 @@ export function segmentCircle(ax, az, bx, bz, cx, cz, radius) {
     return t >= 0 && t <= 1 ? t : -1;
 }
 
+/** Above this speed a body is swept against other bodies, not just placed at its end point. */
+export const SWEPT_BODY_SPEED = 2.5;
+/** Radius a swept body is treated as having against another body. */
+export const SWEPT_RADIUS = MIN_GAP / 2;
+
+/**
+ * The first body along a fast body's path, or null.
+ *
+ * End-point contact resolution is enough for walking, but a knockback can cover more than a
+ * shoulder width in one frame and would pass clean through whoever it was aimed at. This tests
+ * the whole segment instead, so a fast body stops at the first person it would have crossed.
+ * `t` is where along the path the contact happens, in 0..1.
+ */
+export function firstBodyHit(ax, az, bx, bz, bodies, { radius = SWEPT_RADIUS, skip = null } = {}) {
+    let best = null;
+    for (const body of bodies) {
+        if (body === skip || body.health <= 0) continue;
+        const t = segmentCircle(ax, az, bx, bz, body.x, body.z, radius);
+        if (t >= 0 && (!best || t < best.t)) best = { t, body };
+    }
+    return best;
+}
+
 /** Fraction (0..1) along a segment up to the last point that is still open, or -1 if all of it is. */
 export function firstBlocked(ax, az, bx, bz, ok, step = 0.2) {
     const steps = Math.max(1, Math.ceil(Math.hypot(bx - ax, bz - az) / step));
@@ -145,6 +168,19 @@ function addKnock(actor, vx, vz) {
     const x = (actor.kx ?? 0) + vx, z = (actor.kz ?? 0) + vz;
     const speed = Math.hypot(x, z), scale = speed > MAX_KNOCK ? MAX_KNOCK / speed : 1;
     actor.kx = x * scale; actor.kz = z * scale;
+}
+
+/** Public form of the knockback clamp, for blasts that are not a body-to-body collision. */
+export const knockback = addKnock;
+
+/**
+ * Share of a blast's force that reaches a body `distance` metres from its centre: 1 at the
+ * centre, 0 at `radius`, falling off with the square so the edge is a shove not a wallop.
+ */
+export function blastFalloff(distance, radius = 6.5) {
+    if (!(distance >= 0) || !(radius > 0) || distance >= radius) return 0;
+    const k = 1 - distance / radius;
+    return k * k;
 }
 
 /**

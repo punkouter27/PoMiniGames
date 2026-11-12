@@ -10,7 +10,7 @@
 // sides carry guns and whoever is hit drops out for good. That part follows no record at all.
 import { createSteering } from './steering.js';
 import { createHarm, applyInjury, advanceHarm, harmSummary } from './harm.js';
-import { createGrid, sweep, segmentCircle, firstBlocked, strike, exchange, slide, bounce, massOf, MIN_GAP } from './physics.js';
+import { createGrid, sweep, segmentCircle, firstBlocked, firstBodyHit, strike, exchange, slide, bounce, knockback, blastFalloff, massOf, MIN_GAP, SWEPT_BODY_SPEED } from './physics.js';
 
 export const areas = [
     // The lawn runs well back from the building: the crowd starts out on the grass.
@@ -98,6 +98,40 @@ export const milestones = [
     { x: 0, z: -43, radius: 3, label: 'Cross Statuary Hall' },
     { x: 0, z: -50, radius: 2.5, label: 'Reach the House chamber doors' },
 ];
+
+/**
+ * Places inside the building that a loose crowd drifts into, one fixed point per pocket of a
+ * room so a group spreads out instead of stacking on one spot. They sit clear of the columns
+ * (x +/-4.5 in the Crypt) and the statues (x +/-10 in Statuary Hall), and off the centre line
+ * the player's route uses.
+ */
+export const interiorRooms = [
+    { name: 'Crypt', x: 0, z: 12 },
+    { name: 'Crypt', x: -7.5, z: 6 },
+    { name: 'Crypt', x: 7.5, z: 2 },
+    { name: 'Rotunda', x: -12, z: -8 },
+    { name: 'Rotunda', x: 12, z: -8 },
+    { name: 'Rotunda', x: 0, z: -22 },
+    { name: 'Rotunda', x: -13, z: -21 },
+    { name: 'Rotunda', x: 13, z: -21 },
+    { name: 'Statuary Hall', x: -6, z: -31 },
+    { name: 'Statuary Hall', x: 6, z: -31 },
+    { name: 'Statuary Hall', x: -6, z: -43 },
+    { name: 'Statuary Hall', x: 6, z: -43 },
+];
+
+/**
+ * Which room, if any, a person breaks into once they are inside: about one in three goes
+ * looking for a room of their own rather than queueing for the chamber, and the pick is stable
+ * for the attempt. The rest keep pressing, so a line still gets the crowd it needs.
+ */
+export function interiorRoomFor(id) {
+    if (id % 3 !== 0) return -1;
+    // Scrambled, so neighbours in the crowd do not all choose neighbouring rooms.
+    let h = Math.imul(id + 1, 2654435761) >>> 0;
+    h = (h ^ (h >>> 15)) >>> 0;
+    return h % interiorRooms.length;
+}
 
 // Police lines, front to back. Each seals a chokepoint for as long as it holds.
 export const lineDefs = [
@@ -266,7 +300,9 @@ function officer(id, line, x, z) {
     // Officers carry about 12 kg of gear on top of the body, including ballistic Kevlar and riot helmet.
     return { id, x, z, health: 10, line, cooldown: 1 + id % 5 * 0.3, stagger: 0, attacking: 0, tool: '',
         faction: 'capitol-police', heading: Math.PI, moving: false, row: 0, spray: 2 + id % 4,
-        mass: 90 + id * 7 % 5 * 3, vx: 0, vz: 0, kx: 0, kz: 0, armor: 4 };
+        mass: 90 + id * 7 % 5 * 3, vx: 0, vz: 0, kx: 0, kz: 0, armor: 4,
+        // A few officers carry three concussion grenades each; the rest do not.
+        grenades: id % 16 === 5 ? 3 : 0, grenadeCooldown: 4 + id % 6 };
 }
 
 const steeringByAttempt = new WeakMap();
@@ -282,7 +318,7 @@ export function createAttempt(difficulty = 'standard', demo = false, role = 'rai
             mass: role === 'police' ? 92 : 80, vx: 0, vz: 0, kx: 0, kz: 0 },
         cooldown: 0, pushes: 0, staggers: 0, damageFlash: 0, playerPush: 0, sprayed: 0, gassed: false, flashed: 0,
         suppression: 0, recoil: 0,
-        lines: lineDefs.map((def, id) => ({ id, state: 'holding', integrity: 100, pressure: 0, hold: 0,
+        lines: lineDefs.map((def, id) => ({ id, state: 'holding', integrity: 100, pressure: 0, hold: 0, support: 0,
             munition: 10 + id * 2, gasLeft: id === 0 ? 2 : 1, flashCooldown: 6, flashLeft: 1, brokenAt: -1, strain: 0 })),
         // The racks of the first line as objects, not decoration: each takes the crowd's weight,
         // leans, and goes over when it has been leaned on long enough.
@@ -301,12 +337,16 @@ export function createAttempt(difficulty = 'standard', demo = false, role = 'rai
                 routeWait: 0, targetX: 0, targetZ: 27,
                 temperament, morale: baseMorale[temperament], retreating: false, milling: false,
                 anchorX: 0, anchorZ: 0, filming: temperament === 'bystander' || id % 4 === 1,
+                // Some break off into a room once they are inside; the rest keep pressing.
+                room: interiorRoomFor(id), exploring: false,
                 // Most of the crowd never goes far inside; only some drift past the doors.
                 reach: temperament === 'bystander' ? 1 + (id % 3 === 0 ? 1 : 0) : milestones.length,
+                // A few of the crowd carry three concussion grenades; the rest are empty-handed.
+                grenades: id % 80 === 7 ? 3 : 0, grenadeCooldown: 3 + id % 5,
                 sprayed: 0, stun: 0, surge: 0, downFor: 0, helped: false, resting: false, crowding: 0,
             };
         }),
-        effects: [], events: [], reinforcements: 0, droppedShields: [],
+        effects: [], events: [], reinforcements: 0, droppedShields: [], grenades: [],
         // Demo only: both sides are armed, and anyone brought to zero is out for the attempt.
         armed: demo, shots: [],
         // Seated or standing in the chamber until the evacuation; then out the rear doors.
@@ -318,6 +358,13 @@ export function createAttempt(difficulty = 'standard', demo = false, role = 'rai
         evacuation: -1,
     };
     steeringByAttempt.set(state, createSteering(CROWD_SIZE));
+    // One-player raider: the human is the heavy element of the crowd, with a machine gun and
+    // five concussion grenades. The demo and the observer/police roles keep their own rules.
+    if (role === 'raider' && !demo) {
+        state.weapon = 'mg';
+        state.playerGrenades = 5;
+        state.mgReady = 0;
+    }
     return state;
 }
 
@@ -409,14 +456,32 @@ function heldAt(state, x, fromZ, toZ) {
     return null;
 }
 
-/** Distance from a raider to the next line still holding in front of them. */
-function lineAhead(state, actor) {
+/** Index of the next line still holding in front of a raider, or -1 when none is. */
+function lineAheadIndex(state, actor) {
     for (const [i] of lineDefs.entries()) {
         if (state.lines[i].state !== 'holding') continue;
         const limit = lineLimit(state, i, actor.x);
-        if (actor.z >= limit - 0.05) return actor.z - limit;
+        if (actor.z >= limit - 0.05) return i;
     }
-    return Infinity;
+    return -1;
+}
+
+/** Distance from a raider to the next line still holding in front of them. */
+function lineAhead(state, actor) {
+    const i = lineAheadIndex(state, actor);
+    return i < 0 ? Infinity : actor.z - lineLimit(state, i, actor.x);
+}
+
+/**
+ * Whether one of the people who came inside has broken off to look through the rooms. They only
+ * do it while the next standing line already has enough people on it, so a line is never
+ * stripped of the crowd it needs to give way.
+ */
+function wandering(c, state) {
+    if (c.room < 0 || c.z >= 10) return false;
+    if (c.exploring) return true;
+    const gate = lineAheadIndex(state, c);
+    return gate < 0 || state.lines[gate].support >= 8;
 }
 
 const inGas = (state, actor) => state.effects.some(e =>
@@ -458,14 +523,17 @@ function updateLines(state, difficulty, dt) {
         const line = state.lines[i];
         if (line.state !== 'holding') continue;
         line.munition -= dt; line.flashCooldown -= dt;
-        const pressing = actor => actor.x >= def.x0 - 0.5 && actor.x <= def.x1 + 0.5 &&
+        const pressing = actor => (actor.y ?? 0) < 0.35 && (actor.step ?? 0) < 0.3 &&
+            actor.x >= def.x0 - 0.5 && actor.x <= def.x1 + 0.5 &&
             actor.z >= lineLimit(state, i, actor.x) - 0.1 && actor.z <= lineLimit(state, i, actor.x) + 2.4;
         let pressure = 0, sumX = 0, count = 0, instigatorX = 0, instigatorWeight = 0;
         const rackForce = i === 0 ? new Float32Array(RACK_ROWS) : null;
+        let support = 0;
         for (const c of state.companions) {
             if (c.health <= 0 || c.retreating || c.stun > 0 || !pressing(c)) continue;
             const weight = c.temperament === 'pusher' ? 1 : c.temperament === 'follower' && c.morale > 0.7 ? 0.5 : 0;
             if (weight === 0) continue;
+            support++;
             pressure += weight * (c.surge > 0 ? 1.3 : 1);
             sumX += c.x; count++;
             if (rackForce) {
@@ -508,7 +576,7 @@ function updateLines(state, difficulty, dt) {
         // A line that has been leaned on for a long time tires, however many stand in it.
         if (pressure > hold * 0.3) line.strain += dt;
         hold *= 1 - Math.min(0.65, line.strain / difficulty.tire);
-        line.pressure = pressure; line.hold = hold;
+        line.pressure = pressure; line.hold = hold; line.support = support;
         line.integrity = Math.max(0, Math.min(100, line.integrity + (hold - pressure) * (pressure > hold ? 1.5 : 0.25) * dt));
         const rawCenter = instigatorWeight > 0 ? instigatorX / instigatorWeight : count ? sumX / count : 0;
         const centerX = count ? Math.max(def.x0 + 2, Math.min(def.x1 - 2, rawCenter)) : 0;
@@ -619,6 +687,7 @@ function updateOfficers(state, difficulty, dt) {
         }
         e.vx = dt > 0 ? (e.x - fromX) / dt : 0; e.vz = dt > 0 ? (e.z - fromZ) / dt : 0;
         e.spray -= dt;
+        e.step = Math.max(0, (e.step ?? 0) - dt * 1.8);
         // Only the front rank reaches with melee. In standard difficulty, reserve ranks also provide fire support.
         if (e.health <= 0 || !def || (e.row > (state.difficulty === 'standard' && state.armed ? 1 : 0)) || distance > 1.5 || e.stagger > 0) continue;
         if (!e.moving) e.heading = Math.PI;
@@ -716,6 +785,7 @@ function planRaiders(state, difficulty, dt, agents, bodies) {
         c.attacking = Math.max(0, c.attacking - dt);
         c.sprayed = Math.max(0, c.sprayed - dt);
         c.stun = Math.max(0, c.stun - dt);
+        c.step = Math.max(0, (c.step ?? 0) - dt * 1.8);
         c.surge = Math.max(0, c.surge - dt);
         c.suppression = Math.max(0, (c.suppression ?? 0) - dt * 0.65);
         c.rallyCooldown = Math.max(0, (c.rallyCooldown ?? (5 + c.id % 11)) - dt);
@@ -794,6 +864,18 @@ function planRaiders(state, difficulty, dt, agents, bodies) {
                 else { goal = patient.actor; field = -1; }
             } else if (c.temperament === 'medic' && (c.escortUntil ?? 0) > state.elapsed && c.escortTarget && !c.escortTarget.resting) {
                 goal = { x: c.escortTarget.x - 0.8, z: c.escortTarget.z + 0.6 }; field = -1; speed = 1.6;
+            } else if (wandering(c, state)) {
+                // Loose inside the building: pick a room and work through it, instead of forming
+                // one patient queue for the chamber. The sway keeps a room from looking like a
+                // parade ground while still holding everyone inside its walls.
+                const room = interiorRooms[c.room];
+                c.exploring = true;
+                goal = { x: room.x + Math.sin(state.elapsed * 0.23 + c.id * 1.7) * 1.5,
+                    z: room.z + Math.cos(state.elapsed * 0.19 + c.id) * 1.3 };
+                field = -1; speed = 1.35;
+                if (Math.hypot(c.x - room.x, c.z - room.z) < 2.6) {
+                    c.milling = true; c.anchorX = room.x; c.anchorZ = room.z; speed = 1.0;
+                }
             } else if (c.milestone >= c.reach || c.milestone >= milestones.length || lineAhead(state, c) <= standoff) {
                 // Nothing to push toward: mill about, the way most of a crowd does.
                 // Filming bystanders (#9) step back if the front line is too close and frame clear sightlines.
@@ -811,7 +893,7 @@ function planRaiders(state, difficulty, dt, agents, bodies) {
                     : milestone.x + (c.id % 7 - 3) * 0.45;
                 goal = { x: flankX, z: milestone.z }; field = c.milestone;
             }
-            if (!(c.milestone >= c.reach || lineAhead(state, c) <= standoff) || c.retreating) c.milling = false;
+            if (!c.exploring && (!(c.milestone >= c.reach || lineAhead(state, c) <= standoff) || c.retreating)) c.milling = false;
             if (stand) goal = null;
             if (gassed) speed *= 0.7;
             if (c.sprayed > 0) speed *= 0.5;
@@ -838,6 +920,180 @@ function planRaiders(state, difficulty, dt, agents, bodies) {
     }
 }
 
+/**
+ * Concussion grenades. A few people on each side carry three. The blast is overpressure, not
+ * fragments: anyone close is thrown off their feet, stunned and knocked down, and the room gets
+ * dust, smoke and one bright flash. Nothing is drawn but that — the product rules forbid
+ * depicted injury in every mode, so there is no gore and no dismemberment.
+ */
+const GRENADE_RADIUS = 6.5, GRENADE_FUSE = 1.4, GRENADE_RANGE = 26, GRENADE_BLAST = 520;
+
+function throwGrenade(state, from, toX, toZ) {
+    const effect = { type: 'grenade', x: from.x, z: from.z, life: GRENADE_FUSE, span: GRENADE_FUSE };
+    state.grenades.push({ fromX: from.x, fromZ: from.z, x: from.x, z: from.z, toX, toZ, t: 0, fuse: GRENADE_FUSE, effect });
+    state.effects.push(effect);
+    state.events.push({ type: 'throw', x: from.x, z: from.z, energy: 12 });
+}
+
+function explodeConcussion(state, g) {
+    const x = g.toX, z = g.toZ;
+    if (g.effect) g.effect.life = 0;
+    state.events.push({ type: 'grenade', x, z, energy: GRENADE_BLAST, radius: GRENADE_RADIUS });
+    state.effects.push({ type: 'grenadeBlast', x, z, life: 0.4, span: 0.4 });
+    for (const e of state.enemies) {
+        if (e.health <= 0) continue;
+        const fall = blastFalloff(Math.hypot(e.x - x, e.z - z), GRENADE_RADIUS);
+        if (fall <= 0) continue;
+        const dx = e.x - x, dz = e.z - z, d = Math.hypot(dx, dz) || 1;
+        knockback(e, dx / d * 7 * fall, dz / d * 7 * fall);
+        e.vy = Math.max(e.vy ?? 0, 1.8 + 5.2 * fall);
+        e.spin = ((e.id * 29) % 5 - 2) * (0.4 + fall);
+        e.stagger = Math.max(e.stagger, 1.4 * fall);
+        e.health = Math.max(0, e.health - 5 * fall);
+        if (e.health === 0) state.events.push({ type: 'down', x: e.x, z: e.z, energy: 40, material: 'body' });
+    }
+    for (const c of state.companions) {
+        if (c.health <= 0) continue;
+        const fall = blastFalloff(Math.hypot(c.x - x, c.z - z), GRENADE_RADIUS);
+        if (fall <= 0) continue;
+        const dx = c.x - x, dz = c.z - z, d = Math.hypot(dx, dz) || 1;
+        knockback(c, dx / d * 7 * fall, dz / d * 7 * fall);
+        // Close enough and the blast lifts them off their feet: they arc, tumble and land.
+        c.vy = Math.max(c.vy ?? 0, 2.4 + 6.6 * fall);
+        c.spin = ((c.id * 37) % 7 - 3) * (0.5 + fall);
+        c.stun = Math.max(c.stun, 2.4 * fall);
+        c.health = Math.max(0, c.health - 9 * fall);
+        c.morale = Math.max(0, c.morale - 0.3 * fall);
+        c.surge = 0;
+        if (c.health === 0) state.events.push({ type: 'down', x: c.x, z: c.z, energy: 40, material: 'body' });
+    }
+    if (state.role !== 'none' && state.health > 0) {
+        const fall = blastFalloff(Math.hypot(state.player.x - x, state.player.z - z), GRENADE_RADIUS);
+        if (fall > 0) {
+            const dx = state.player.x - x, dz = state.player.z - z, d = Math.hypot(dx, dz) || 1;
+            knockback(state.player, dx / d * 7 * fall, dz / d * 7 * fall);
+            state.health = Math.max(0, state.health - 22 * fall);
+            state.damageFlash = Math.max(state.damageFlash, 0.65 * fall);
+            state.flashed = Math.max(state.flashed ?? 0, 0.55 * fall);
+        }
+    }
+}
+
+/** Carriers lob one at the other side, then wait out a fuse's worth of nerve before the next. */
+function stepGrenades(state, dt) {
+    for (const c of state.companions) {
+        if (!(c.grenades > 0) || c.health <= 0 || c.retreating || c.stun > 0) continue;
+        c.grenadeCooldown = Math.max(0, (c.grenadeCooldown ?? 0) - dt);
+        if (c.grenadeCooldown > 0) continue;
+        let best = GRENADE_RANGE, target = null;
+        for (const e of state.enemies) {
+            if (e.health <= 0) continue;
+            const d = Math.hypot(e.x - c.x, e.z - c.z);
+            if (d < best && clearLine(c.x, c.z, e.x, e.z)) { best = d; target = e; }
+        }
+        if (!target) continue;
+        c.grenades--; c.grenadeCooldown = 11 + c.id % 7;
+        throwGrenade(state, c, target.x, target.z);
+    }
+    for (const e of state.enemies) {
+        if (!(e.grenades > 0) || e.health <= 0 || e.stagger > 0) continue;
+        e.grenadeCooldown = Math.max(0, (e.grenadeCooldown ?? 0) - dt);
+        if (e.grenadeCooldown > 0) continue;
+        let best = GRENADE_RANGE, target = null;
+        for (const c of state.companions) {
+            if (c.health <= 0 || c.retreating) continue;
+            const d = Math.hypot(c.x - e.x, c.z - e.z);
+            if (d < best) { best = d; target = c; }
+        }
+        if (!target) continue;
+        e.grenades--; e.grenadeCooldown = 14 + e.id % 6;
+        throwGrenade(state, e, target.x, target.z);
+    }
+    for (let i = state.grenades.length - 1; i >= 0; i--) {
+        const g = state.grenades[i];
+        g.t += dt;
+        const k = Math.min(1, g.t / g.fuse);
+        g.x = g.fromX + (g.toX - g.fromX) * k;
+        g.z = g.fromZ + (g.toZ - g.fromZ) * k;
+        if (g.effect) { g.effect.x = g.x; g.effect.z = g.z; }
+        if (g.t < g.fuse) continue;
+        state.grenades.splice(i, 1);
+        explodeConcussion(state, g);
+    }
+}
+
+/**
+ * The one-player raider's machine gun. A hit-scan burst at roughly 12 rounds a second: the first
+ * officer in the line of fire takes the round (shield first), and stone behind the aim point
+ * spalls. It is deliberately the heaviest thing on the field; police keep their batons, spray and
+ * the occasional concussion grenade.
+ */
+export function fire(state, direction) {
+    if (state.weapon !== 'mg' || state.status !== 'active' || state.health <= 0) return null;
+    if (!Number.isFinite(direction?.x) || !Number.isFinite(direction?.z)) throw new TypeError('Invalid direction.');
+    const length = Math.hypot(direction.x, direction.z);
+    if (length < 1e-6) return null;
+    const now = state.elapsed ?? 0;
+    if (now < (state.mgReady ?? 0)) return null;
+    state.mgReady = now + 0.085;
+    const px = state.player.x, pz = state.player.z, reach = 46;
+    const heat = Math.min(1, (state.mgHeat = (state.mgHeat ?? 0) + 0.06));
+    // Spray opens up as the burst goes on, then tightens again when the trigger is released.
+    const spread = (Math.random() - 0.5) * (0.03 + heat * 0.1);
+    const base = Math.atan2(direction.x / length, direction.z / length);
+    const ax = Math.sin(base + spread), az = Math.cos(base + spread);
+    const ox = px + ax * 0.8, oz = pz + az * 0.8;
+    state.shots.push({ x: ox, z: oz, dx: ax, dz: az, life: 0.5, faction: 'raider', y: 1.32 });
+    state.events.push({ type: 'gunshot', x: ox, z: oz, energy: 70 });
+    let hit = null, best = reach;
+    for (const e of state.enemies) {
+        if (e.health <= 0) continue;
+        const t = segmentCircle(px, pz, px + ax * reach, pz + az * reach, e.x, e.z, 0.55);
+        if (t < 0) continue;
+        const d = t * reach;
+        if (d < best && firstBlocked(px, pz, e.x, e.z, walkable) < 0) { best = d; hit = e; }
+    }
+    if (hit) {
+        if (blocksWithShield(hit, px, pz)) {
+            hit.shieldHp = (hit.shieldHp ?? 8) - 1;
+            state.events.push({ type: 'impact', x: px + ax * best, z: pz + az * best, material: 'metal', energy: 150 });
+            if (hit.shieldHp <= 0) { hit.hasShield = false; state.events.push({ type: 'break', x: hit.x, z: hit.z }); }
+        } else {
+            hit.health = Math.max(0, hit.health - 3.4);
+            hit.stagger = Math.max(hit.stagger, 0.45);
+            knockback(hit, ax * 0.8, az * 0.8);
+            state.events.push({ type: 'impact', x: hit.x, z: hit.z, material: 'body', energy: 90 });
+            if (hit.health === 0) state.events.push({ type: 'down', x: hit.x, z: hit.z, energy: 40, material: 'body' });
+        }
+    } else {
+        const stop = firstBlocked(px, pz, px + ax * reach, pz + az * reach, walkable);
+        if (stop >= 0) {
+            const d = stop * reach;
+            state.events.push({ type: 'impact', x: px + ax * d, z: pz + az * d, energy: 70, material: 'marble', spall: true, dx: -ax, dz: -az });
+        }
+    }
+    state.pushes++;
+    return { x: px + ax * best, z: pz + az * best };
+}
+
+/** The human's five concussion grenades: one per press, thrown to where the aim points. */
+export function throwPlayerGrenade(state, direction) {
+    if (state.status !== 'active' || state.health <= 0 || !(state.playerGrenades > 0)) return null;
+    const now = state.elapsed ?? 0;
+    if (now < (state.grenadeReady ?? 0)) return null;
+    const length = Math.hypot(direction?.x ?? 0, direction?.z ?? 0);
+    if (length < 1e-6) return null;
+    const px = state.player.x, pz = state.player.z;
+    const dx = direction.x / length, dz = direction.z / length;
+    const range = 18;
+    const stop = firstBlocked(px, pz, px + dx * range, pz + dz * range, walkable);
+    const reach = stop < 0 ? range : Math.max(2, stop * range - 0.8);
+    state.playerGrenades--;
+    state.grenadeReady = now + 1.1;
+    throwGrenade(state, state.player, px + dx * reach, pz + dz * reach);
+    return { x: px + dx * reach, z: pz + dz * reach };
+}
+
 export function advance(state, input, seconds) {
     if (!Number.isFinite(seconds) || seconds < 0) throw new RangeError('Invalid time step.');
     const x = input.x ?? 0, z = input.z ?? 0;
@@ -852,6 +1108,7 @@ export function advance(state, input, seconds) {
     state.playerPush = Math.max(0, state.playerPush - dt);
     state.sprayed = Math.max(0, state.sprayed - dt);
     state.flashed = Math.max(0, state.flashed - dt);
+    state.mgHeat = Math.max(0, (state.mgHeat ?? 0) - dt * 0.7);
     stepHarm(state, dt);
 
     if (state.role !== 'none' && state.health > 0) {
@@ -879,6 +1136,7 @@ export function advance(state, input, seconds) {
     updateLines(state, difficulty, dt);
     updateOfficers(state, difficulty, dt);
     stepRaiders(state, difficulty, dt);
+    stepGrenades(state, dt);
 
     // Pick up fallen police riot shields
     if (state.droppedShields?.length > 0) {
@@ -1106,10 +1364,31 @@ function stepHarm(state, dt) {
     for (const e of state.enemies) if (e.health > 0) list.push(e);
     for (const c of state.companions) list.push(c);
     let impacts = 0;
+    // Bodies thrown into the air by a blast arc, tumble and come back down under gravity.
+    for (const body of list) {
+        const vy = body.vy ?? 0;
+        if (vy === 0 && !((body.y ?? 0) > 0)) continue;
+        const next = (body.y ?? 0) + vy * dt;
+        body.vy = vy - 9.8 * dt;
+        if (next <= 0) {
+            body.y = 0; body.vy = 0; body.spin = 0;
+            if (vy < -2.5) state.events.push({ type: 'down', x: body.x, z: body.z, energy: 34, material: 'body' });
+        } else body.y = next;
+    }
     for (const body of list) {
         const speed = Math.hypot(body.kx ?? 0, body.kz ?? 0);
         if (speed === 0) continue;
-        relocate(state, body, body.x + body.kx * dt, body.z + body.kz * dt, crowdMember(state, body));
+        let tx = body.x + body.kx * dt, tz = body.z + body.kz * dt;
+        if (speed > SWEPT_BODY_SPEED) {
+            // A hard knockback covers more than a shoulder width in one frame, so it is swept
+            // against everyone standing in its way rather than sampled at the end point.
+            const hit = firstBodyHit(body.x, body.z, tx, tz, list, { skip: body });
+            if (hit && hit.t > 0.02) {
+                tx = body.x + (tx - body.x) * (hit.t - 0.02);
+                tz = body.z + (tz - body.z) * (hit.t - 0.02);
+            }
+        }
+        relocate(state, body, tx, tz, crowdMember(state, body));
         const energy = bounce(body, swept.hitX, swept.hitZ, speed);
         if (energy > 15 && impacts < MAX_IMPACTS) { impacts++; blow(state, 'impact', body.x, body.z, energy, 'marble'); }
         slide(body, dt);
@@ -1119,15 +1398,27 @@ function stepHarm(state, dt) {
     const weight = body => body.health <= 0 ? massOf(body) * 4 : massOf(body);
     // Two relaxation passes, because a shove travels through a line: the person you push leans
     // on the person in front of them, who leans on the next. One pass only moves the first pair.
+    // The direction alternates each frame, so the pair that happens to come first in the list
+    // does not win every shove (a bias that looks like one side of the crowd being heavier).
+    state.contactFrame = (state.contactFrame ?? 0) + 1;
+    const reverse = state.contactFrame % 2 === 0;
     for (let pass = 0; pass < 2; pass++) {
-        for (let i = 0; i < list.length; i++) {
+        for (let step = 0; step < list.length; step++) {
+            const i = reverse ? list.length - 1 - step : step;
             const a = list[i];
             contactGrid.query(a.x, a.z, MIN_GAP, j => {
-                if (j <= i) return;
+                if (reverse ? j >= i : j <= i) return;
                 const b = list[j];
-                // The fallen are stepped over, not walked around: in the armed demo a body on the
-                // ground never separates against anyone, so a pile forms in place rather than a wall.
-                if (state.armed && (a.health <= 0 || b.health <= 0)) return;
+                // A body on the ground has a height: a walker crossing it rises over it instead
+                // of clipping through, and gives up a little pace doing it. Anything already in
+                // the air passes over on its own arc.
+                if (a.health <= 0 || b.health <= 0) {
+                    const walker = a.health <= 0 ? b : a;
+                    if (walker.health > 0 && (walker.y ?? 0) < 0.05) walker.step = Math.max(walker.step ?? 0, 0.34);
+                    if (state.armed) return;
+                }
+                // Airborne bodies do not shove anyone they fly over.
+                if ((a.y ?? 0) > 0.4 || (b.y ?? 0) > 0.4) return;
                 let dx = b.x - a.x, dz = b.z - a.z, d = Math.hypot(dx, dz);
                 if (d >= MIN_GAP) return;
                 // Exactly stacked bodies part along a direction fixed by who they are, never by chance.

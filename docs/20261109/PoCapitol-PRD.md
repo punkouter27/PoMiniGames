@@ -619,6 +619,93 @@ Verified with the Node engine tests (`tests/pocapitol-*.test.mjs`, including new
   texts join them per scene, each bearer's board fixed for the attempt by the same stable trait
   that sets their height and build, and one instanced mesh per board so the draw-call count stays
   flat. Across launches the whole list is used.
-- **Content.** The shipped list is deliberately non-partisan. The scenario is fiction and the
-  product rules keep it free of real campaign messaging or identifiable people, so the array is
-  the owner's to fill rather than something generated here.
+- **Content.** The shipped list is now short historical signage: one to six words drawn from
+  phrases photographed on boards and flags at the Capitol that day, in the owner's chosen set,
+  with the in-game notice still marking the scenario as fiction. `signs.js` enforces the
+  one-to-six-word budget so a longer line cannot be printed on a board.
+
+## 21. Room scatter, historic signage and concussion grenades (2026-11-11)
+
+Three owner-requested changes. None touches the limits in section 17: still no injury depicted,
+no real person, no breach route, no score.
+
+1. **The crowd breaks into rooms (`world.js`).** About one person in three is marked, once, as
+   the sort who goes looking through the building; the rest keep pressing the line. Once inside
+   (`z < 10`) a marked person leaves the single-file route for a stable anchor in the Crypt, the
+   Rotunda or Statuary Hall, then mills there with a slow sway. Anchors sit clear of the columns
+   and statues and off the player's centre line. A guard on `support` stops anyone breaking off
+   while the next standing line has fewer than eight people on it, so a line is never starved of
+   the crowd it needs to give way. Every anchor is checked as walkable by the test suite.
+2. **Historic signage (`wwwroot/data/pocapitol/placards.json`, `signs.js`).** The carried boards
+   use real, short phrases recorded on signs and flags that day, all within `MAX_WORDS = 6`.
+   The scenario remains explicitly fictional and the in-game notice says so.
+3. **Concussion grenades (`world.js`, `audio.js`, `bursts.js`, `particles.js`, `decals.js`,
+   `scene.js`).** A few people on each side carry three each (raiders `id % 80 === 7`, officers
+   `id % 16 === 5`). A carrier lobs one at the nearest opponent within 26 m when it has line of
+   sight, on an eleven-to-fourteen second nerve timer. The canister arcs in as a blinking sprite,
+   then detonates after 1.4 s: `blastFalloff()` shares the overpressure by the square of distance
+   out to 6.5 m, throwing bodies back (`knockback()`), lifting anyone close off their feet
+   (`vy` then gravity in `stepContacts`), tumbling them and knocking them down. The room gets a
+   bright light, a camera jolt, a shock ring, dust, debris and a large scorch; the sound is a
+   synthesized low boom with a pressure tail and a duck.
+   **The blast is overpressure, not fragmentation.** Limbs never separate, no wound is drawn and
+   there is no blood: the product rules in section 17 make that non-negotiable in every mode.
+4. **One-player firepower (`world.js`, `index.js`, page).** A solo raider carries a machine gun
+   (`fire()`, about twelve hit-scan rounds a second with a spread that opens as the trigger is
+   held) and five concussion grenades thrown with **G** toward the aim (`throwPlayerGrenade()`),
+   with the remaining count in the Tab panel. Police keep batons, spray and their own grenades,
+   so the human is by far the strongest actor on the field.
+5. **Bodies can be crossed, not clipped (`world.js`, `crowd.js`).** A living walker that overlaps
+   a body on the ground gets a `step` lift so its feet clear the heap and it loses a little pace,
+   instead of passing through the mesh; anyone airborne passes over on their own arc. Contact
+   separation ignores airborne bodies so a body in flight does not shove people it flies over.
+6. **Signage is rarer (`crowd.js`).** One person in twenty carries a board (`id % 20 === 0`),
+   down from one in three, so the crowd reads as a crowd and the signs read as signs.
+
+Verified with `tests/pocapitol-graphics.test.mjs` (nine tests covering rooms, blast falloff,
+grenade carriers, collision, audio and quality behaviour), the existing room, line and armed-demo
+world tests, and a zero-warning `dotnet build`.
+
+## 20. Graphics, audio and physics depth pass (2026-11-11)
+
+Ten owner-selected upgrades across rendering, sound, materials, wear and performance. Every one
+builds on a system sections 18 and 19 already shipped rather than replacing it, and none touches
+the limits in section 17.
+
+1. **Swept body-vs-body collision (`physics.js`, `world.js`).** Knockback above 2.5 m/s is now
+   tested along its whole path, not just at the frame's end point, so a hard shove cannot pass
+   through the person it was aimed at. Separation still shares the correction by mass, but the
+   two relaxation passes now alternate direction each frame, so the pair that happens to sit
+   first in the list no longer wins every contact.
+2. **Light-aware post (`post.js`, `scene.js`).** Contact-shadow strength and step scale, SSGI
+   bounce strength and radius, SSR intensity, sun-shaft density, bloom threshold and saturation
+   now follow the daylight level and whether the camera is inside, so the rotunda's marble reads
+   differently from the overcast lawn. Uniforms only: no shader recompiles.
+3. **Impact synthesis depth (`audio.js`).** `impactLayers()` adds a sub layer for heavy targets
+   and a bright crack for hard blows on top of the existing material modes, so a barricade and a
+   person differ even at equal energy. Air absorption now caps the low-pass with distance.
+4. **Surface-aware footsteps (`audio.js`).** `footstepMaterial()` picks marble, paving or turf
+   from the same coordinates the renderer draws, for the listener and for nearby walkers.
+5. **Burst shapes (`bursts.js`).** Ground shockwave rings (flash-bangs, breaking lines, falls) and
+   short-lived barrier debris join the existing sprays, puffs and spalls, all still one draw call
+   per layer and still a pure function of the shader clock.
+6. **UI microinteractions (`ui.js`).** Keyboards get the same dip-and-ripple as pointers, switch
+   and radio controls have their own latch cue, and controls lean a few degrees toward a mouse
+   cursor. All of it stays off under reduced motion.
+7. **Procedural micro-detail (`look.js`).** A second, finer triplanar tap adds height and
+   roughness at a smaller scale than the joints, so large stone panels stop reading as smooth
+   plastic. Subsurface scattering gains a view-dependent backlight term.
+8. **Wear that ages (`decals.js`).** Every mark holds for a while, then thins out, so a long
+   session keeps history at the edges of the floor instead of saturating it. Shove streaks now
+   point the way the blow travelled.
+9. **Glass with edges (`look.js`).** Polycarbonate dispersion is view-dependent and adds a thin
+   emissive fringe at grazing angles; the lowest tier falls back to a plain alpha blend instead
+   of paying for physical transmission.
+10. **Performance and compatibility (`quality.js`, `index.js`).** `detectTier()` reads the actual
+    WebGL 2 support, texture limit, memory and core count instead of trusting one of them, a
+    stored mode from another build is validated, and a hidden tab suspends the governor so
+    throttled frames cannot force a downgrade. `governor.why()` reports the reason for the rung.
+
+Verified with the Node engine tests (`tests/pocapitol-*.test.mjs`, including a new graphics/physics
+suite) and a zero-warning `dotnet build`.
+
