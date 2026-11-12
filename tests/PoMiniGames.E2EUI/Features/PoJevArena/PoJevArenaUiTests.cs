@@ -1,3 +1,4 @@
+using System.Net;
 using Microsoft.Playwright;
 
 namespace PoMiniGames.E2EUI.Features.PoJevArena;
@@ -33,17 +34,19 @@ public class PoJevArenaUiTests
         // No context-wide fake-auth headers: they ride along on the MSAL CDN script and fail its CORS
         // preflight (a harness error, not the page's). ?autoGuest=1 below signs the browser in.
         var page = await context.NewPageAsync();
-        await using var guard = PlaywrightErrorGuard.Watch(page, "/api/play/sessions/");
+        await using var guard = PlaywrightErrorGuard.Watch(page);
+        guard.AllowHttp(HttpStatusCode.Forbidden, "/api/play/sessions/");
         var errors = new List<string>();
         // Generic "Failed to load resource" console lines are covered, with their URL, by the
-        // response hook. The play-session mint is excluded: under ?autoGuest=1 it races the guest
-        // sign-in (its antiforgery token predates the identity) and 403s on every game page — a
-        // known framework issue, tolerated by PlaySessionService, not this page's.
+        // response hook. Only the expected play-session 403 is allowed: under ?autoGuest=1 its
+        // antiforgery token can predate guest sign-in. Other statuses and request failures still fail.
         page.Console += (_, msg) => { if (msg.Type is "error" && !msg.Text.StartsWith("Failed to load resource", StringComparison.Ordinal)) errors.Add(msg.Text); };
         page.PageError += (_, err) => errors.Add(err);
         page.Response += (_, r) =>
         {
-            if (r.Status >= 400 && !r.Url.Contains("/api/play/sessions/", StringComparison.Ordinal))
+            if (r.Status >= 400
+                && !(r.Status == (int)HttpStatusCode.Forbidden
+                    && r.Url.Contains("/api/play/sessions/", StringComparison.Ordinal)))
                 errors.Add($"HTTP {r.Status} {r.Request.Method} {r.Url}");
         };
 

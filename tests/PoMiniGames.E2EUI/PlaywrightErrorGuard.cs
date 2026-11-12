@@ -1,3 +1,4 @@
+using System.Net;
 using Microsoft.Playwright;
 
 namespace PoMiniGames.E2EUI;
@@ -9,13 +10,12 @@ namespace PoMiniGames.E2EUI;
 internal sealed class PlaywrightErrorGuard : IAsyncDisposable
 {
     private readonly IPage _page;
-    private readonly string[] _allowedErrorUrlSubstrings;
+    private readonly List<(int Status, string UrlContains)> _allowedStatuses = [];
     private readonly List<string> _failures = [];
 
-    private PlaywrightErrorGuard(IPage page, string[] allowedErrorUrlSubstrings)
+    private PlaywrightErrorGuard(IPage page)
     {
         _page = page;
-        _allowedErrorUrlSubstrings = allowedErrorUrlSubstrings;
         _page.Console += OnConsole;
         _page.PageError += OnPageError;
         _page.Crash += OnCrash;
@@ -23,8 +23,10 @@ internal sealed class PlaywrightErrorGuard : IAsyncDisposable
         _page.Response += OnResponse;
     }
 
-    public static PlaywrightErrorGuard Watch(IPage page, params string[] allowedErrorUrlSubstrings) =>
-        new(page, allowedErrorUrlSubstrings);
+    public static PlaywrightErrorGuard Watch(IPage page) => new(page);
+
+    public void AllowHttp(HttpStatusCode status, string urlContains)
+        => _allowedStatuses.Add(((int)status, urlContains));
 
     private void OnConsole(object? sender, IConsoleMessage msg)
     {
@@ -42,10 +44,6 @@ internal sealed class PlaywrightErrorGuard : IAsyncDisposable
 
     private void OnRequestFailed(object? sender, IRequest request)
     {
-        if (_allowedErrorUrlSubstrings.Any(s => request.Url.Contains(s, StringComparison.OrdinalIgnoreCase)))
-        {
-            return;
-        }
         if (string.Equals(request.Failure, "net::ERR_ABORTED", StringComparison.OrdinalIgnoreCase))
         {
             return;
@@ -55,16 +53,16 @@ internal sealed class PlaywrightErrorGuard : IAsyncDisposable
 
     private void OnResponse(object? sender, IResponse response)
     {
-        if (response.Status < 400)
-        {
-            return;
-        }
-        if (_allowedErrorUrlSubstrings.Any(s => response.Url.Contains(s, StringComparison.OrdinalIgnoreCase)))
+        if (response.Status < 400 || IsAllowedStatus(response.Status, response.Url))
         {
             return;
         }
         _failures.Add($"HTTP {response.Status}: {response.Request.Method} {response.Url}");
     }
+
+    private bool IsAllowedStatus(int status, string url)
+        => _allowedStatuses.Any(rule =>
+            rule.Status == status && url.Contains(rule.UrlContains, StringComparison.OrdinalIgnoreCase));
 
     public async ValueTask DisposeAsync()
     {
