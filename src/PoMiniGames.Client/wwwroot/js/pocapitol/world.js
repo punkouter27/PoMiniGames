@@ -292,7 +292,9 @@ export function createAttempt(difficulty = 'standard', demo = false, role = 'rai
         companions: Array.from({ length: role === 'raider' ? CROWD_SIZE - 1 : CROWD_SIZE }, (_, id) => {
             const temperament = temperamentOf(id);
             return {
-                id, x: (id % 32 - 15.5) * 2.2, z: 80 + Math.floor(id / 32) * 2.4,
+                // 36 across, packed back from the grass line: 512 people fit inside the
+                // navigation grid (x -37..37, z -60..109) without spilling off its far edge.
+                id, x: (id % 36 - 17.5) * 2.05, z: 80 + Math.floor(id / 36) * 1.9,
                 mass: 58 + id * 13 % 35, vx: 0, vz: 0, kx: 0, kz: 0,
                 health: 30, milestone: 0, heading: 0, moving: false, attacking: 0,
                 cooldown: 0.5 + id % 7 * 0.13, delay: id % 9 * 0.12, speed: 3.2 + id % 7 * 0.16,

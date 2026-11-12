@@ -1,0 +1,102 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>PoCapitol: 512 Raiders, Movable Barricades (2026-11-11)</title>
+<style>
+  body { margin: 0; padding: 32px; background: #0c1219; color: #eceff1; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; }
+  h1 { font-size: 26px; color: #f59e0b; margin: 0 0 8px; font-weight: 700; letter-spacing: 0.03em; }
+  p.subtitle { color: #94a3b8; font-size: 14px; margin: 0 0 26px; line-height: 1.5; max-width: 1000px; }
+  .card { background: #151e29; border: 1px solid #334155; border-radius: 12px; overflow: hidden; margin-bottom: 22px; }
+  .card-header { padding: 13px 18px; background: #1e293b; border-bottom: 1px solid #334155; }
+  .card-header h3 { margin: 0; font-size: 15px; color: #f8fafc; font-weight: 600; }
+  .card-body { padding: 18px; }
+  .comparison { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; }
+  .comp-box { padding: 12px 14px; border-radius: 8px; font-size: 12.5px; line-height: 1.55; }
+  .comp-before { background: #1e293b88; border-left: 3px solid #ef4444; color: #cbd5e1; }
+  .comp-after { background: #064e3b44; border-left: 3px solid #10b981; color: #e2e8f0; }
+  .comp-title { font-weight: 700; text-transform: uppercase; font-size: 10px; margin-bottom: 5px; letter-spacing: 0.06em; }
+  .comp-before .comp-title { color: #f87171; }
+  .comp-after .comp-title { color: #34d399; }
+  .summary-box { background: #131d28; border: 1px solid #f59e0b44; border-left: 5px solid #f59e0b; padding: 18px 22px; border-radius: 8px; }
+  .summary-box h2 { font-size: 17px; color: #f59e0b; margin: 0 0 10px; }
+  .summary-box ul { margin: 0; padding-left: 20px; font-size: 13px; color: #cbd5e1; line-height: 1.7; }
+  code { background: #1e293b; padding: 1px 5px; border-radius: 3px; font-size: 12px; color: #a5b4fc; }
+</style>
+</head>
+<body>
+  <h1>PoCapitol: 512 Raiders and Movable Barricades</h1>
+  <p class="subtitle">Annotated capture: <code>SCREENSHOTS/261111-pocapitol-crowd512.png</code>.</p>
+
+  <div class="card">
+    <div class="card-header"><h3>1. The crowd doubled</h3></div>
+    <div class="card-body">
+      <div class="comparison">
+        <div class="comp-box comp-before">
+          <div class="comp-title">Before</div>
+          <code>CROWD_SIZE = 256</code>, spawned in a 32-wide grid eight rows deep.
+        </div>
+        <div class="comp-box comp-after">
+          <div class="comp-title">After</div>
+          <code>CROWD_SIZE = 512</code>. Doubling the grid rows alone pushed the back rank to z = 116,
+          past the navigation grid's edge at 109, and the renderer threw <em>“NPC left the scenario
+          navigation bounds”</em> on the first step. The formation is now 36 across by 15 rows
+          (2.05 m by 1.9 m), so all 512 start on the grass inside x −37…37, z −60…109.
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="card">
+    <div class="card-header"><h3>2. Nobody gets stuck on the pile</h3></div>
+    <div class="card-body">
+      <div class="comparison">
+        <div class="comp-box comp-after">
+          <div class="comp-title">Rule</div>
+          In the armed demo a body at zero health is neither a steering obstacle nor a separation
+          partner, so a heap of 268 casualties is something people walk <strong>onto and over</strong>.
+          With twice the crowd, that is what keeps the column moving: the demo still breaks all five
+          lines in order and reaches the chamber doors before the curfew.
+        </div>
+        <div class="comp-box comp-after">
+          <div class="comp-title">Evidence</div>
+          The right-hand capture is 95 s in with 268 down. The left is 45 s in with 175 down, taken
+          from above the crowd: living raiders are standing among and over the bodies and are already
+          well up the plaza.
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="card">
+    <div class="card-header"><h3>3. The bike racks are objects now</h3></div>
+    <div class="card-body">
+      <div class="comparison">
+        <div class="comp-box comp-before">
+          <div class="comp-title">Before</div>
+          The racks were decoration drawn from the line's integrity: they bowed, but nothing could
+          move them and they changed nothing.
+        </div>
+        <div class="comp-box comp-after">
+          <div class="comp-title">After</div>
+          Nine racks live in the simulation. Each takes the crowd's weight in its own slot, leans,
+          rocks, and goes over once it has been leaned on for six raider-seconds, then is dragged
+          aside. Where a rack is down the crowd may press <strong>0.8 m closer</strong>, right up to the
+          officers — so shoving a rack over genuinely increases the pressure on the line and tires it
+          faster. Losing a rack is not losing the line: the officers still hold.
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="summary-box">
+    <h2>Verification</h2>
+    <ul>
+      <li><code>pocapitol-world</code>: <strong>30/30 pass</strong> at 512 (205 s run).</li>
+      <li>New test: <em>the crowd can shove a bike rack over and press up to the officers behind it</em> — a rack falls, only the local racks fall, the crowd gets past the rack line but never past the officers, and the line is still holding.</li>
+      <li>Updated the holding-line test to its new invariant: the officers stop the crowd, not the rack.</li>
+      <li>Build: 0 warnings, 0 errors. Host restarted and healthy.</li>
+    </ul>
+  </div>
+</body>
+</html>
