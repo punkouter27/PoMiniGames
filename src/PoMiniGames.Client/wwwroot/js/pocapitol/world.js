@@ -350,7 +350,7 @@ export function createAttempt(difficulty = 'standard', demo = false, role = 'rai
         }),
         effects: [], events: [], reinforcements: 0, droppedShields: [], grenades: [],
         // Demo only: both sides are armed, and anyone brought to zero is out for the attempt.
-        armed: demo, shots: [],
+        armed: demo, shots: [], openedFire: false,
         // Seated or standing in the chamber until the evacuation; then out the rear doors.
         civilians: Array.from({ length: CIVILIANS }, (_, id) => {
             const seat = id < 50, side = id % 2 ? 1 : -1, n = Math.floor(id / 2);
@@ -697,6 +697,8 @@ function updateOfficers(state, difficulty, dt) {
         if (e.health <= 0 || !def || (e.row > (state.difficulty === 'standard' && state.armed ? 1 : 0)) || distance > 1.5 || e.stagger > 0) continue;
         if (!e.moving) e.heading = Math.PI;
         if (e.cooldown > 0) continue;
+        // Before the opening volley the line only stands there; nobody fires for seven seconds.
+        if (state.armed && !state.openedFire) { e.cooldown = 0.3; continue; }
         // Nearest person pressing from the front: baton at arm's length, spray beyond it.
         // Prioritize shield-bearers & surging instigators within reach (#5).
         let target = null, nearest = state.armed ? 24 : e.spray <= 0 ? 4.5 : 1.9, bestScore = Infinity;
@@ -858,7 +860,13 @@ function planRaiders(state, difficulty, dt, agents, bodies) {
                 : c.temperament === 'follower' ? 2.6 + c.id % 3 * 0.7 : c.temperament === 'medic' ? 6 : 9 + c.id % 6;
             let stand = false;
             const cover = state.armed && (c.suppression ?? 0) > 0.65 && c.temperament !== 'pusher' ? nearestCoverPoint(c) : null;
-            if (c.stun > 0) stand = true;
+            if ((c.panic ?? 0) > 0) {
+                // The first volley: the front of the crowd turns and runs before anyone fires back.
+                c.panic -= dt;
+                const front = frontLine(state);
+                goal = { x: c.x + Math.sin(c.id * 1.7) * 7, z: (front ? front.z + 12 : c.z + 10) + (c.id % 5) };
+                field = -1; speed = Math.max(speed, c.speed) * 1.5;
+            } else if (c.stun > 0) stand = true;
             else if (c.retreating) {
                 field = c.milestone > 0 ? c.milestone - 1 : AID_FIELD;
                 goal = c.milestone > 0 ? milestones[c.milestone - 1] : aidStation;
@@ -1080,8 +1088,9 @@ export function fire(state, direction) {
     state.shots.push({ x: ox, z: oz, dx: ax, dz: az, life: 0.5, faction: 'raider', y: 1.32 });
     state.events.push({ type: 'gunshot', x: ox, z: oz, energy: 70 });
     let hit = null, best = reach;
-    for (const e of state.enemies) {
-        if (e.health <= 0) continue;
+    // A machine-gun round does not pick sides: whoever is in the line of fire takes it first.
+    for (const e of [...state.enemies, ...state.companions]) {
+        if (e.health <= 0 || e === state.player) continue;
         const t = segmentCircle(px, pz, px + ax * reach, pz + az * reach, e.x, e.z, 0.55);
         if (t < 0) continue;
         const d = t * reach;
@@ -1097,6 +1106,7 @@ export function fire(state, direction) {
             hit.health = Math.max(0, hit.health - 3.4);
             hit.stagger = Math.max(hit.stagger, 0.45);
             knockback(hit, ax * 0.8, az * 0.8);
+            if (hit.temperament) hit.morale = Math.max(0, hit.morale - 0.2);
             state.events.push({ type: 'impact', x: hit.x, z: hit.z, material: 'body', energy: 90 });
             if (hit.health === 0) state.events.push({ type: 'down', x: hit.x, z: hit.z, energy: 40, material: 'body' });
         }
@@ -1142,6 +1152,19 @@ export function advance(state, input, seconds) {
     state.elapsed += dt;
     state.cooldown = Math.max(0, state.cooldown - dt);
     state.damageFlash = Math.max(0, state.damageFlash - dt);
+    // The first seven seconds are the calm before it: nobody fires. Then the police open up,
+    // the front of the crowd breaks and runs, and those with the nerve fire back.
+    if (state.armed && !state.openedFire && state.elapsed >= 7) {
+        state.openedFire = true;
+        const front = frontLine(state);
+        state.events.push({ type: 'openfire', x: 0, z: front ? front.z : 30 });
+        for (const c of state.companions) {
+            if (c.health <= 0) continue;
+            c.panic = 1.5 + (c.id % 6) * 0.14;
+            c.morale = Math.max(0, c.morale - 0.3);
+            c.surge = 0;
+        }
+    }
     state.playerPush = Math.max(0, state.playerPush - dt);
     state.sprayed = Math.max(0, state.sprayed - dt);
     state.flashed = Math.max(0, state.flashed - dt);
@@ -1218,8 +1241,13 @@ export function advance(state, input, seconds) {
 
         let reach = firstBlocked(fromX, fromZ, toX, toZ, walkable), victim = null;
         if (reach < 0) reach = 1;
-        for (const actor of shot.faction === 'raider' ? state.enemies : state.companions) {
+        // A protestor's round can hit the crowd in front of it: whoever meets the bullet first
+        // takes it, police or protestor. Police fire meets the crowd. Nobody is hit by their own
+        // round, and the shooter's own body does not block the shot.
+        const targets = shot.faction === 'raider' ? [...state.enemies, ...state.companions] : state.companions;
+        for (const actor of targets) {
             if (actor.health <= 0) continue;
+            if (shot.faction === 'raider' && shot.owner !== undefined && actor.id === shot.owner) continue;
             const t = segmentCircle(fromX, fromZ, toX, toZ, actor.x, actor.z, 0.6);
             if (t >= 0 && t <= reach) { reach = t; victim = actor; }
         }
@@ -1296,8 +1324,9 @@ export function advance(state, input, seconds) {
             if (d < nearest && d > 0.01) { nearest = d; target = e; }
         }
         if (state.armed) {
+            if (!state.openedFire || (c.panic ?? 0) > 0) { c.cooldown = 0.4; continue; }
             if (!target || !clearLine(c.x, c.z, target.x, target.z)) { c.cooldown = 0.3; continue; }
-            state.shots.push({ x: c.x, z: c.z, dx: (target.x - c.x) / nearest, dz: (target.z - c.z) / nearest, life: 0.9, faction: 'raider' });
+            state.shots.push({ x: c.x, z: c.z, dx: (target.x - c.x) / nearest, dz: (target.z - c.z) / nearest, life: 0.9, faction: 'raider', owner: c.id });
             state.events.push({ type: 'gunshot', x: c.x, z: c.z });
             c.attacking = 0.2;
             c.cooldown = 2.4 + c.id % 5 * 0.3;

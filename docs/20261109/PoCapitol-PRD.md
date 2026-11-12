@@ -672,6 +672,13 @@ no real person, no breach route, no score.
    lolls to the side, with per-body asymmetry from the body's seed. No gore, no limb separation.
 8. **Signage is rarer (`crowd.js`).** One person in twenty carries a board (`id % 20 === 0`),
    down from one in three, so the crowd reads as a crowd and the signs read as signs.
+9. **Friendly fire (`world.js`).** A protestor's round resolves against the crowd as well as the
+   police: whoever meets the bullet first takes it, and the shooter's own body is skipped. A
+   protestor standing in front of an officer now absorbs the round.
+10. **The opening volley (`world.js`, `audio.js`, `index.js`).** The first seven seconds of the
+    armed demo are calm — the police hold and nobody fires. At seven seconds the line opens up
+    (a volley cue and a caption), every protestor panics, runs back from the line for ~1.5 s and
+    then those with the nerve fire back.
 
 Verified with `tests/pocapitol-graphics.test.mjs` (nine tests covering rooms, blast falloff,
 grenade carriers, collision, audio and quality behaviour), the existing room, line and armed-demo

@@ -186,6 +186,35 @@ test('a corpse thrown into the air comes back down', () => {
     assert.equal(officer.y ?? 0, 0, 'The body is still floating');
 });
 
+test('the demo holds fire for seven seconds, then the police open up and the crowd scatters', () => {
+    const state = world.createAttempt('standard', true);
+    const officer = state.enemies[0], spot = state.companions[0];
+    spot.x = officer.x; spot.z = officer.z + 3; spot.health = 30;
+    for (let i = 0; i < 60 * 6 && state.status === 'active'; i++) world.advance(state, {}, 1 / 60);
+    assert.equal(state.openedFire, false, 'The volley came before the seven seconds were up');
+    assert.equal(state.shots.length, 0, 'Someone fired during the calm');
+    let volley = false, panic = false;
+    for (let i = 0; i < 60 * 2 && state.status === 'active'; i++) {
+        world.advance(state, {}, 1 / 60);
+        if (state.events.some(e => e.type === 'openfire')) volley = true;
+        if (state.companions.some(c => (c.panic ?? 0) > 0)) panic = true;
+    }
+    assert.equal(state.openedFire, true, 'The police never opened fire');
+    assert.ok(volley, 'No opening-volley event was raised');
+    assert.ok(panic, 'The crowd did not scatter');
+});
+
+test('a protestor round can hit another protestor', () => {
+    const state = world.createAttempt('standard', true);
+    const mate = state.companions[3];
+    mate.x = 0; mate.z = 38; mate.health = 30;
+    const before = mate.health;
+    state.openedFire = true;
+    state.shots.push({ x: 0, z: 40, dx: 0, dz: -1, life: 1, faction: 'raider', owner: state.companions[0].id });
+    for (let i = 0; i < 30 && state.status === 'active'; i++) world.advance(state, {}, 1 / 60);
+    assert.ok(mate.health < before, 'The round passed through the protestor in front of it');
+});
+
 test('a walker rises over a body instead of clipping through it', () => {
     const state = world.createAttempt('standard', true);
     const fallen = state.companions[0], walker = state.companions[1];

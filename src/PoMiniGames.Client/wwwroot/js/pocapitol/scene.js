@@ -1,5 +1,5 @@
 import * as THREE from 'three';
-import { areas, obstacles, columns, statues, milestones, lineDefs, selectLeader, groundHeight, CROWD_SIZE, MAX_POLICE, CIVILIANS, CURFEW_ELAPSED } from './world.js';
+import { areas, obstacles, columns, statues, milestones, lineDefs, selectLeader, groundHeight, walkable, CROWD_SIZE, MAX_POLICE, CIVILIANS, CURFEW_ELAPSED } from './world.js';
 import { createCrowd, createDistantCrowd, flagTexture, coats } from './crowd.js';
 import { SURFACE, addSurface, surfaceTexture, createSky, setSkyColors, createEnvironment, addWave, softTexture } from './look.js';
 import { createParticles } from './particles.js';
@@ -989,19 +989,37 @@ export function createScene(host, { figure, osm, signs = [] } = {}) {
         sun.position.copy(sun.target.position).addScaledVector(sunDir, 110);
         const floor = groundHeight(focus.x, focus.z);
         target.set(focus.x, floor + 1.65, focus.z);
+        // Demo camera: long, high shots behind the crowd and behind the police line. Indoors the
+        // crane would sit in the ceiling, so it drops to a lower, shorter follow instead.
+        const focusIndoors = focus.z < 14.5;
+        let policeShot = false;
         if (spectating && !latched) {
-            // Two shots, both from high and back, so the formations read instead of a scrum of hats.
             const holding = state.lines.find(line => line.state === 'holding');
-            if (demoSide === 'police' && holding) {
+            const behindLine = holding ? holding.z - 6.5 : 0;
+            if (!focusIndoors && demoSide === 'police' && holding && behindLine > 24) {
+                // Stand in the central gap behind the line, where there is no bleacher back to
+                // fill the frame, and look diagonally back into the crowd.
                 const midX = (holding.x0 + holding.x1) / 2;
-                const cameraZ = holding.z - 13.5;
-                const lineFloor = groundHeight(midX, cameraZ);
-                desired.set(midX + Math.sin(yaw * 0.25) * 3, lineFloor + 9.8, cameraZ);
-                target.set(focus.x, floor + 1.2, focus.z);
+                const side = Math.round(demoSideAt / 12) % 2 ? 1 : -1;
+                const cameraX = midX + side * 5;
+                if (walkable(cameraX, behindLine)) {
+                    policeShot = true;
+                    desired.set(cameraX, groundHeight(cameraX, behindLine) + 7.5, behindLine);
+                    target.set(focus.x, floor + 1.2, focus.z);
+                } else {
+                    desired.set(focus.x + Math.sin(yaw) * 21, floor + 14 + pitch * 4, focus.z + Math.cos(yaw) * 21);
+                }
+            } else if (focusIndoors) {
+                desired.set(focus.x + Math.sin(yaw) * 10, floor + 4.6 + pitch * 3, focus.z + Math.cos(yaw) * 10);
             } else {
                 desired.set(focus.x + Math.sin(yaw) * 21, floor + 14 + pitch * 4, focus.z + Math.cos(yaw) * 21);
             }
         } else desired.set(focus.x + Math.sin(yaw) * 6.5, floor + 3.7 + pitch * 3, focus.z + Math.cos(yaw) * 6.5);
+        // A bad number here used to paint the whole frame black, so fall back to a sane shot.
+        if (!Number.isFinite(desired.x) || !Number.isFinite(desired.y) || !Number.isFinite(desired.z)) {
+            desired.set(focus.x + Math.sin(yaw) * 12, floor + 6, focus.z + Math.cos(yaw) * 12);
+        }
+        desired.y = Math.max(desired.y, groundHeight(desired.x, desired.z) + 2);
         // Phone POV rides at the eye of the person holding it, not on a crane behind them.
         if (phone > 0.01 && subject) {
             const h = subject.heading ?? 0;
@@ -1022,8 +1040,15 @@ export function createScene(host, { figure, osm, signs = [] } = {}) {
         offset.copy(desired).sub(target);
         raycaster.set(target, offset.clone().normalize());
         const hit = raycaster.intersectObjects(walls, false)[0];
-        if (hit && hit.distance < offset.length()) desired.copy(target).addScaledVector(offset.normalize(), Math.max(0.3, hit.distance - 0.3));
+        // Only pull the camera in for a wall that is actually in front of it. A hit a metre or two
+        // from the subject used to drop the camera inside the subject, which rendered as black.
+        if (hit && hit.distance > 3 && hit.distance < offset.length()) {
+            desired.copy(target).addScaledVector(offset.normalize(), Math.max(3, hit.distance - 0.4));
+            desired.y = Math.max(desired.y, groundHeight(desired.x, desired.z) + 2);
+        }
         look.set(focus.x - Math.sin(yaw) * 10, floor + 1.5 - pitch * 5, focus.z - Math.cos(yaw) * 10);
+        // From behind the line the camera looks back into the crowd, not down the empty plaza.
+        if (policeShot) look.set(focus.x, floor + 1.5, focus.z + 4);
         // Closing shot: past the doors nobody got through, into the chamber they had emptied.
         const wasClosing = closing > 0;
         closing = state.outcome === 'doors' && state.status !== 'active' ? Math.min(1, closing + dt / 2.5) : 0;

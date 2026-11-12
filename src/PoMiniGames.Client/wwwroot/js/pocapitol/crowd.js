@@ -567,8 +567,17 @@ export function createCrowd(scene, capacity, { time, groundHeight, shadowTexture
     for (let i = 0; i < bannerKinds.length; i++) {
         const { kind, text } = bannerKinds[i];
         const texture = flagTexture(kind, text); textures.add(texture);
-        const flag = part('flag', new THREE.PlaneGeometry(1.7, 1.1, 16, 6),
-            addWave(new THREE.MeshStandardMaterial({ map: texture, side: THREE.DoubleSide, roughness: 0.9 }), time, { wind }),
+        const board = addWave(new THREE.MeshStandardMaterial({ map: texture, side: THREE.DoubleSide, roughness: 0.9 }), time, { wind });
+        // One double-sided plane means the face seen from behind shows the texture mirrored, so
+        // every slogan read backwards from behind the crowd. Flip the sample on back faces only.
+        const wave = board.onBeforeCompile;
+        board.onBeforeCompile = (shader, renderer) => {
+            wave?.call(board, shader, renderer);
+            shader.fragmentShader = shader.fragmentShader.replace('#include <map_fragment>', `#include <map_fragment>
+                if (!gl_FrontFacing) diffuseColor.rgb = texture2D(map, vec2(1.0 - vMapUv.x, vMapUv.y)).rgb;`);
+        };
+        board.customProgramCacheKey = () => 'pocapitol-wave-board';
+        const flag = part('flag', new THREE.PlaneGeometry(1.7, 1.1, 16, 6), board,
             [0.86, 1.98, 0], [1, 1, 1], a => bearer(a) && bannerIndex(a) === i, false, right);
         flag.mesh.layers.set(1);
     }

@@ -35,7 +35,9 @@ export async function loadSigns(url = DEFAULT_URL, { timeout = 2000, fetchImpl =
     const controller = typeof AbortController === 'function' ? new AbortController() : null;
     const timer = controller ? setTimeout(() => controller.abort(), timeout) : null;
     try {
-        const response = await fetchImpl(url, { signal: controller?.signal, cache: 'force-cache' });
+        // Revalidate rather than force the HTTP cache: a stale force-cache entry meant an edited
+        // placard list never reached a returning player, however many times the page reloaded.
+        const response = await fetchImpl(url, { signal: controller?.signal, cache: 'no-cache' });
         if (!response?.ok) return [];
         return sanitizeSigns(await response.json());
     } catch {

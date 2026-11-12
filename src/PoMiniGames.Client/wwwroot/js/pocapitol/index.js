@@ -247,6 +247,7 @@ async function init(hostId, reference) {
                     g.audio?.event(event);
                     // A shield shatters with the same type; only a line break carries `line`.
                     if (event.type === 'break' && event.line !== undefined) g.caption('A police line has given way.');
+                    if (event.type === 'openfire') g.caption('The police opened fire. The crowd breaks and runs.');
                 }
                 if (g.state.milestone !== g.lastMilestone) {
                     g.lastMilestone = g.state.milestone;

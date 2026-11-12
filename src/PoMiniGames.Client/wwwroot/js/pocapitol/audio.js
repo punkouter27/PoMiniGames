@@ -366,6 +366,16 @@ export function createAudio({ onCaption } = {}) {
                 tone({ from: 3800, to: 3700, volume: 0.05, seconds: 1.6, at: 0.1, dest: master });
                 Promise.resolve().then(() => bus.duck?.(0.5 * Math.min(1, 1 / (1 + Math.hypot(e.x - listener.x, e.z - listener.z) / 7)), 900)).catch(() => { /* a duck is a nicety */ });
                 break;
+            case 'openfire': {
+                // The opening volley, then the crowd's roar under it.
+                for (let i = 0; i < 5; i++) {
+                    const at = place(e.x + (Math.random() - 0.5) * 14, e.z + (Math.random() - 0.5) * 4, 2);
+                    burst({ type: 'highpass', frequency: 900, volume: 0.3, seconds: 0.09, at: i * 0.07, dest: at });
+                    tone({ from: 180, to: 50, volume: 0.2, seconds: 0.1, at: i * 0.07, dest: at });
+                }
+                burst({ type: 'bandpass', frequency: 900, q: 0.7, volume: 0.16, attack: 0.3, seconds: 2.4, dest: master });
+                break;
+            }
             case 'smoke':
                 // A long, dry hiss as the canister vents and the cloud builds.
                 burst({ type: 'bandpass', frequency: 2400, q: 0.5, volume: 0.3, attack: 0.05, seconds: 1.8, sweep: 650, dest });
