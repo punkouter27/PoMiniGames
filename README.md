@@ -102,6 +102,7 @@ scores.
 
 | Document | What it covers |
 |---|---|
+| [Game consistency rules](GAME-CONSISTENCY.md) | Required game workflow, shared UI, controls, accessibility, and verification conventions |
 | [Documentation overview](DOCS/20261029/index.html) | Index of the current documentation suite |
 | [Visual architecture dashboard](DOCS/20261029/VISUAL_ARCHITECTURE_DASHBOARD.html) | Visual map of the app's architecture and major flows |
 | [User journeys](DOCS/20261029/USER_WORKFLOW.html) | Player-facing workflows through the app |

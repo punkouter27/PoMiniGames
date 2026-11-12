@@ -47,6 +47,10 @@ Rules for any AI agent working in this repository.
 - **Consolidate When Practical:** Prefer consolidating reusable functionality and UI into shared
   components when it meaningfully reduces duplication without obscuring game-specific behavior.
 
+## 6. Game Workflow and UI/UX (PoMiniGames Only)
+
+Follow [GAME-CONSISTENCY.md](GAME-CONSISTENCY.md) for all game workflow and UI/UX changes.
+
 ## CI/CD and Azure (same section in every Po repo)
 
 - A push to `master` builds, tests, deploys and health-gates (`.github/workflows/deploy.yml`). Nothing is deployed by hand.
