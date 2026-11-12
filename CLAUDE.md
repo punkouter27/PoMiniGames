@@ -40,7 +40,7 @@ node --test tests/pomule-world.test.mjs                        # JS engine tests
   **E2EAPI** runs HTTP contract tests against the compose Azurite. **E2EUI** runs C# Playwright
   against a Kestrel host in the `Test` environment.
 - Each tier has a ceiling on its test-method count, enforced by `*CeilingTests.cs` via
-  `tests/Shared/TierCeilingGuard.cs`: Unit 100, Integration 50, E2EAPI 25, E2EUI 25. When a tier
+  `tests/Shared/TierCeilingGuard.cs`: Unit 85, Integration 34, E2EAPI 18, E2EUI 22. When a tier
   is full, fold facts into the class's `Scenario` theory (`tests/PoMiniGames.Unit/Scenarios.cs`)
   or move a test to another tier rather than raising the cap.
 - Every fixture applies `tests/Shared/TestBudgetGuard.cs`, which forces mock or stub AI and

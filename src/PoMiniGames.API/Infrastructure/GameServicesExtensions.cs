@@ -167,14 +167,14 @@ internal static class GameServicesExtensions
         // authoritative board; there is no lobby service because a two-seat turn game
         // has nothing to configure before play. The rules instance is the only thing
         // that differs. See Features/Shared/TurnMatch for the reconnect contract.
-        services.AddSingleton(sp => new PoMiniGames.Features.Shared.TurnMatch.TurnMatchService<PoMiniGames.Features.ConnectFive.ConnectFiveHub>(
+        services.AddSingleton(sp => new PoMiniGames.Features.Shared.TurnMatch.TurnMatchService<PoMiniGames.Features.Shared.TurnMatch.ConnectFiveHub>(
             PoMiniGames.Shared.Games.ConnectFiveRules.Instance,
-            sp.GetRequiredService<Microsoft.AspNetCore.SignalR.IHubContext<PoMiniGames.Features.ConnectFive.ConnectFiveHub>>(),
-            sp.GetRequiredService<ILogger<PoMiniGames.Features.Shared.TurnMatch.TurnMatchService<PoMiniGames.Features.ConnectFive.ConnectFiveHub>>>()));
-        services.AddSingleton(sp => new PoMiniGames.Features.Shared.TurnMatch.TurnMatchService<PoMiniGames.Features.TicTacToe.TicTacToeHub>(
+            sp.GetRequiredService<Microsoft.AspNetCore.SignalR.IHubContext<PoMiniGames.Features.Shared.TurnMatch.ConnectFiveHub>>(),
+            sp.GetRequiredService<ILogger<PoMiniGames.Features.Shared.TurnMatch.TurnMatchService<PoMiniGames.Features.Shared.TurnMatch.ConnectFiveHub>>>()));
+        services.AddSingleton(sp => new PoMiniGames.Features.Shared.TurnMatch.TurnMatchService<PoMiniGames.Features.Shared.TurnMatch.TicTacToeHub>(
             PoMiniGames.Shared.Games.TicTacToeRules.Instance,
-            sp.GetRequiredService<Microsoft.AspNetCore.SignalR.IHubContext<PoMiniGames.Features.TicTacToe.TicTacToeHub>>(),
-            sp.GetRequiredService<ILogger<PoMiniGames.Features.Shared.TurnMatch.TurnMatchService<PoMiniGames.Features.TicTacToe.TicTacToeHub>>>()));
+            sp.GetRequiredService<Microsoft.AspNetCore.SignalR.IHubContext<PoMiniGames.Features.Shared.TurnMatch.TicTacToeHub>>(),
+            sp.GetRequiredService<ILogger<PoMiniGames.Features.Shared.TurnMatch.TurnMatchService<PoMiniGames.Features.Shared.TurnMatch.TicTacToeHub>>>()));
 
         // PoMarbleRace online — host-authoritative 2-player race. The service is only a
         // pairing registry and relay table: the host BROWSER is the simulation (see
