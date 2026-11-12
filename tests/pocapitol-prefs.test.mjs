@@ -4,7 +4,7 @@ import { test } from 'node:test';
 // PoCapitol's own comfort preferences: sanitising stored values, the key map, and the
 // arrow-key fallback that must survive any remap.
 const client = new URL('../src/PoMiniGames.Client/wwwroot/', import.meta.url);
-const { sanitizePrefs, loadPrefs, savePrefs, matches, describeCode, DEFAULTS, ACTIONS } =
+const { sanitizePrefs, loadPrefs, savePrefs, matches, rebind, describeCode, DEFAULTS, ACTIONS } =
     await import(new URL('js/pocapitol/prefs.js', client));
 
 const storage = () => {
@@ -70,4 +70,32 @@ test('codes read back as something a person can recognise', () => {
     assert.equal(describeCode('Space'), 'Space');
     assert.equal(describeCode('ArrowLeft'), 'LEFT');
     assert.equal(describeCode(undefined), '—');
+});
+
+test('tracer style, combat shake and the debrief writer are remembered and whitelisted', () => {
+    const store = storage();
+    const saved = savePrefs({ tracers: 'off', motion: 'reduced', debrief: 'ollama', debriefModel: 'qwen2.5:3b' }, store);
+    assert.deepEqual([saved.tracers, saved.motion, saved.debrief, saved.debriefModel], ['off', 'reduced', 'ollama', 'qwen2.5:3b']);
+    assert.deepEqual(loadPrefs(store), saved);
+    const bad = sanitizePrefs({ tracers: 'laser', motion: 'none', debrief: 'cloud', debriefModel: 'x; rm -rf' });
+    assert.deepEqual([bad.tracers, bad.motion, bad.debrief, bad.debriefModel],
+        [DEFAULTS.tracers, DEFAULTS.motion, DEFAULTS.debrief, DEFAULTS.debriefModel]);
+});
+
+test('binding a key another action holds swaps the two, so no key does two things', () => {
+    const prefs = sanitizePrefs(null);
+    const swapped = rebind(prefs, 'push', 'KeyW');
+    assert.equal(swapped.keys.push, 'KeyW');
+    assert.equal(swapped.keys.forward, 'Space');
+    assert.equal(new Set(Object.values(swapped.keys)).size, ACTIONS.length, 'every action still has its own key');
+    assert.equal(rebind(prefs, 'push', '</script>'), prefs, 'a bad code changes nothing');
+    assert.equal(rebind(prefs, 'jump', 'KeyJ'), prefs, 'an unknown action changes nothing');
+    assert.equal(prefs.keys.push, 'Space', 'the original map is not mutated');
+});
+
+test('the footage look defaults to a trace, can be full or off, and rejects anything else', () => {
+    assert.equal(sanitizePrefs(null).footage, 'light');
+    assert.equal(savePrefs({ footage: 'off' }, storage()).footage, 'off');
+    assert.equal(savePrefs({ footage: 'on' }, storage()).footage, 'on');
+    assert.equal(sanitizePrefs({ footage: 'vhs' }).footage, DEFAULTS.footage);
 });

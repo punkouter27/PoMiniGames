@@ -347,10 +347,13 @@ const GradeShader = {
         uFlash: { value: 0.0 }, uSuppression: { value: 0.0 },
         // How much of this frame is shot on a phone held up in the crowd, 0..1.
         uPhone: { value: 0.0 }, uPhoneTime: { value: 0.0 },
+        // The footage look, 0..1: the frame as a small sensor behind a wide plastic lens sees it.
+        uFootage: { value: 0.0 }, uTexel: { value: new THREE.Vector2(1 / 1280, 1 / 720) },
     },
     vertexShader: `varying vec2 vUv; void main() { vUv = uv; gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0); }`,
     fragmentShader: `
-        uniform sampler2D tDiffuse; uniform float uTime, uGrain, uVignette, uSaturation, uDistortion, uChromatic, uFlash, uSuppression, uPhone, uPhoneTime;
+        uniform sampler2D tDiffuse; uniform float uTime, uGrain, uVignette, uSaturation, uDistortion, uChromatic, uFlash, uSuppression, uPhone, uPhoneTime, uFootage;
+        uniform vec2 uTexel;
         varying vec2 vUv;
         void main() {
             vec2 uv = vUv;
@@ -367,13 +370,35 @@ const GradeShader = {
             }
             vec2 d = uv - 0.5;
             float r2 = dot(d, d);
-            uv += d * (r2 * uDistortion);
+            // A phone's wide lens bows straight lines more than a cinema lens does, and its
+            // sensor reads top to bottom, so a moving hand leans the picture.
+            uv += d * (r2 * (uDistortion + 0.05 * uFootage));
+            uv.x += sin(uv.y * 5.0 + uTime * 6.3) * 0.0007 * uFootage;
 
             float r = texture2D(tDiffuse, uv + d * uChromatic).r;
             float g = texture2D(tDiffuse, uv).g;
             float b = texture2D(tDiffuse, uv - d * uChromatic).b;
             vec3 c = vec3(r, g, b);
 
+            if (uFootage > 0.001) {
+                // Over-sharpening: the halo a phone draws round every hard edge.
+                vec3 around = texture2D(tDiffuse, uv + vec2(uTexel.x * 1.5, 0.0)).rgb + texture2D(tDiffuse, uv - vec2(uTexel.x * 1.5, 0.0)).rgb
+                    + texture2D(tDiffuse, uv + vec2(0.0, uTexel.y * 1.5)).rgb + texture2D(tDiffuse, uv - vec2(0.0, uTexel.y * 1.5)).rgb;
+                c += (c - around * 0.25) * 0.4 * uFootage;
+                // Lens smear: bright things drag a faint horizontal streak across greasy glass.
+                vec3 streak = vec3(0.0);
+                for (int i = 1; i <= 4; i++) {
+                    float reach = float(i) * uTexel.x * 9.0;
+                    streak += max(texture2D(tDiffuse, uv + vec2(reach, 0.0)).rgb - 0.82, 0.0)
+                        + max(texture2D(tDiffuse, uv - vec2(reach, 0.0)).rgb - 0.82, 0.0);
+                }
+                c += streak * 0.11 * uFootage;
+                // Metering that never settles, a sky that clips early, and shadows that sit up grey.
+                c *= 1.0 + 0.05 * uFootage * sin(uTime * 0.83) * sin(uTime * 0.31 + 1.0);
+                c = mix(c, min(c * 1.08, vec3(1.0)), 0.6 * uFootage);
+                c = mix(c, c * 0.96 + 0.02, 0.6 * uFootage);
+                c *= mix(vec3(1.0), vec3(0.985, 1.0, 1.02), uFootage);
+            }
             float l = dot(c, vec3(0.2126, 0.7152, 0.0722));
             float sat = max(0.2, uSaturation - uSuppression * 0.45);
             c = mix(vec3(l), c, sat);
@@ -501,6 +526,7 @@ export function createPost(renderer, scene, camera, depthCamera) {
         composer.setPixelRatio(ratio);
         composer.setSize(w, h);
         const pw = Math.max(1, Math.floor(w * ratio)), ph = Math.max(1, Math.floor(h * ratio));
+        grade.uniforms.uTexel.value.set(1 / pw, 1 / ph);
         ssrPass.uniforms.uResolution.value.set(pw, ph);
         fxaaPass.uniforms.uResolution.value.set(pw, ph);
     }
@@ -508,7 +534,8 @@ export function createPost(renderer, scene, camera, depthCamera) {
         if (environment) setEnvironment(environment);
         grade.uniforms.uTime.value = time;
         grade.uniforms.uPhoneTime.value = time;
-        grade.uniforms.uGrain.value = calm ? 0.0 : 0.024;
+        // A small sensor in flat light is noisy; reduced flashing keeps the frame still either way.
+        grade.uniforms.uGrain.value = calm ? 0.0 : 0.024 + 0.045 * grade.uniforms.uFootage.value;
         if (cam && sunPos && shaftsPass.enabled) {
             sunNDC.copy(sunPos).project(cam);
             shaftsPass.uniforms.uSunPosScreen.value.set(
@@ -530,6 +557,10 @@ export function createPost(renderer, scene, camera, depthCamera) {
         /** Cuts to (or out of) a phone held up in the crowd, 0..1, with its own lens artefacts. */
         setPhone(amount) {
             grade.uniforms.uPhone.value = Math.max(0, Math.min(1, amount));
+        },
+        /** The footage look, 0..1: wide-lens bow, sharpening halo, smear, clipped sky, sensor noise. */
+        setFootage(amount) {
+            grade.uniforms.uFootage.value = Math.max(0, Math.min(1, amount));
         },
         /** Pulls focus onto a subject `distance` metres away for a moment (top quality only). */
         rackFocus(distance, hold, strength) { if (dofAllowed) focus.trigger(distance, hold, strength); },

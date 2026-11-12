@@ -223,3 +223,71 @@ test('a walker rises over a body instead of clipping through it', () => {
     world.advance(state, {}, 1 / 60);
     assert.ok((walker.step ?? 0) > 0.2, 'The walker did not step over the body');
 });
+
+test('a wall takes most of a blast: the same distance hurts far less from the next room', () => {
+    const { blastExposure, BLAST_SHADOW, walkable } = world;
+    // Inside the Rotunda, open floor between the two points.
+    assert.ok(walkable(-13, -20) && walkable(-10, -20));
+    assert.equal(blastExposure(-13, -20, -10, -20), 1);
+    // The Crypt is 18 m wide and the Rotunda 34 m: x = -13 is behind the Crypt's side wall.
+    assert.ok(walkable(-8, -1) && walkable(-11, -3.5));
+    assert.equal(blastExposure(-8, -1, -11, -3.5), BLAST_SHADOW);
+    assert.ok(BLAST_SHADOW > 0 && BLAST_SHADOW < 0.5, "pressure still gets round a corner, just much less of it");
+
+    // Two blasts at the same 3.9 m: one across open floor, one through the Crypt wall.
+    const open = world.createAttempt("standard", false, "raider");
+    const shielded = world.createAttempt("standard", false, "raider");
+    for (const state of [open, shielded]) {
+        state.companions.length = 1; state.enemies.length = 0;
+        state.lines.forEach(line => { line.state = "broken"; });
+    }
+    Object.assign(open.companions[0], { x: -10, z: -20, health: 30, stun: 0 });
+    Object.assign(shielded.companions[0], { x: -11, z: -3.5, health: 30, stun: 0 });
+    for (const [state, at] of [[open, { x: -13.9, z: -20 }], [shielded, { x: -8, z: -1 }]]) {
+        state.grenades.push({ fromX: at.x, fromZ: at.z, x: at.x, z: at.z, toX: at.x, toZ: at.z, t: 0, fuse: 0.01, kind: "concussion" });
+        world.advance(state, {}, 1 / 60); world.advance(state, {}, 1 / 60);
+    }
+    const openLoss = 30 - open.companions[0].health, shieldedLoss = 30 - shielded.companions[0].health;
+    assert.ok(openLoss > 0, 'an open blast should hurt');
+    assert.ok(shieldedLoss > 0, 'some pressure still gets round the wall');
+    assert.ok(shieldedLoss < openLoss * 0.5, `the wall did not shield anyone (${shieldedLoss} vs ${openLoss})`);
+});
+
+test('every chant beat is a vowel the choir can shape', () => {
+    assert.ok(audio.CHANTS.length >= 2, 'The crowd only knows one chant');
+    for (const chant of audio.CHANTS) {
+        assert.equal(chant.length, 3, 'A chant is three beats and a rest');
+        for (const beat of chant) {
+            for (const vowel of [beat.from, beat.to]) {
+                const formants = audio.VOWELS[vowel];
+                assert.ok(formants, `No formants for the vowel "${vowel}"`);
+                assert.ok(formants[0] < formants[1] && formants[1] < formants[2], 'Formants are out of order');
+            }
+        }
+    }
+});
+
+test('the helicopter stays high over the grounds and keeps moving', () => {
+    const a = audio.helicopterAt(0), b = audio.helicopterAt(20);
+    assert.ok(Math.hypot(a.x - b.x, a.z - b.z) > 30, 'The helicopter is hovering in one spot');
+    for (let t = 0; t < 400; t += 7) {
+        const at = audio.helicopterAt(t);
+        assert.ok(at.y >= 90 && at.y <= 130, 'The helicopter left its altitude band');
+        assert.ok(Math.hypot(at.x, at.z - 35) <= 100, 'The helicopter wandered off the grounds');
+    }
+});
+
+test('wind on the microphone rises with the wind and never clips', () => {
+    assert.equal(audio.micBuffet(0, 3), 0, 'Still air buffeted the microphone');
+    for (let t = 0; t < 30; t += 0.37) {
+        const calm = audio.micBuffet(3, t), gale = audio.micBuffet(12, t);
+        assert.ok(gale >= calm, 'A stronger wind buffeted less');
+        assert.ok(gale >= 0 && gale <= 1, 'Buffet left 0..1');
+    }
+});
+
+test('the curfew alert lands in the afternoon, before the curfew itself', () => {
+    assert.ok(audio.CURFEW_ALERT_ELAPSED > 0, 'The alert fires before the scenario starts');
+    assert.ok(audio.CURFEW_ALERT_ELAPSED < world.CURFEW_ELAPSED, 'The alert fires after the curfew it announces');
+    assert.equal(world.clockLabel(audio.CURFEW_ALERT_ELAPSED), '2:31 PM');
+});

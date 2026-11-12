@@ -98,6 +98,9 @@ node --test tests/pomule-world.test.mjs                        # JS engine tests
     `AnswerMatcher`.
   - PoJevArena's only brain is the free `LocalJevClient`. Ecosystem, Brawl and Cabinet are
     scripted. Do not add AI services back without being asked.
+  - PoCapitol's after-action debrief (`wwwroot/js/pocapitol/debrief.js`) is client-only: a
+    built-in deterministic writer by default, or, if the player opts in, a model on their own
+    machine through Ollama. It has no server side, no key and no paid boundary; keep it that way.
 - **Constraints:**
   - PoEcosystem is observation-only: never add controls that change its world.
   - Every in-app `<a>` goes through the Blazor router. Hub links marked `data-hub-nav` are

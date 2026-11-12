@@ -4,7 +4,8 @@
  * Reduced motion, reduced flashing, the colour-safe palette and the volume buses are
  * app-wide and already live on <html> or in the shared audio bus (appPrefs.js). This module
  * holds only what is specific to this game: how fast the view turns, how wide the lens is,
- * whether spoken radio is captioned, HUD contrast, radar palette and the key map itself.
+ * whether spoken radio is captioned, HUD contrast, radar palette, tracer style, combat shake,
+ * the phone-footage look and sound, and the key map itself.
  */
 const STORE = 'pocapitol.prefs.v1';
 
@@ -23,6 +24,7 @@ const ALWAYS = { forward: ['ArrowUp'], back: ['ArrowDown'], left: ['ArrowLeft'],
 
 export const DEFAULTS = Object.freeze({
     sensitivity: 1, fov: 62, captions: false, contrast: 'normal', radar: 'auto', director: true,
+    tracers: 'luminous', motion: 'full', footage: 'light', debrief: 'rules', debriefModel: 'llama3.2',
 });
 
 const clamp = (value, low, high, fallback) =>
@@ -52,6 +54,15 @@ export function sanitizePrefs(raw) {
         contrast: oneOf(value.contrast, ['normal', 'high'], DEFAULTS.contrast),
         radar: oneOf(value.radar, ['auto', 'default', 'colorsafe'], DEFAULTS.radar),
         director: value.director !== false,
+        tracers: oneOf(value.tracers, ['luminous', 'stealth', 'off'], DEFAULTS.tracers),
+        motion: oneOf(value.motion, ['full', 'reduced'], DEFAULTS.motion),
+        // How much of the picture is a phone in the crowd: all of it (with the phone's microphone
+        // on the sound as well), a trace of it on the picture only, or none.
+        footage: oneOf(value.footage, ['on', 'light', 'off'], DEFAULTS.footage),
+        // Who writes the after-action debrief: the built-in writer, or a model on this machine.
+        debrief: oneOf(value.debrief, ['rules', 'ollama'], DEFAULTS.debrief),
+        debriefModel: typeof value.debriefModel === 'string' && /^[\w.:\/-]{1,60}$/.test(value.debriefModel)
+            ? value.debriefModel : DEFAULTS.debriefModel,
         keys,
     };
 }
@@ -71,6 +82,19 @@ export function savePrefs(prefs, storage) {
     const clean = sanitizePrefs(prefs);
     try { (storage ?? globalThis.localStorage)?.setItem(STORE, JSON.stringify(clean)); } catch { /* private mode: this visit only */ }
     return clean;
+}
+
+/**
+ * Bind `code` to `action`. A key can only do one thing: if another action already holds it, the
+ * two swap, so a remap can never leave one key firing two actions or an action with no key.
+ */
+export function rebind(prefs, action, code) {
+    const keys = { ...prefs.keys };
+    if (!(action in keys) || !isCode(code) || keys[action] === code) return prefs;
+    const holder = Object.keys(keys).find(other => other !== action && keys[other] === code);
+    if (holder) keys[holder] = keys[action];
+    keys[action] = code;
+    return { ...prefs, keys };
 }
 
 /** True when `code` is bound to `action`, including the arrows that always steer. */

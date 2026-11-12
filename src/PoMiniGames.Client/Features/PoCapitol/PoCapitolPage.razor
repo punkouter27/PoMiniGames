@@ -1,11 +1,13 @@
 @page "/pocapitol"
 @page "/pocapitol/{Mode}"
-@implements IAsyncDisposable
 @inject IJSRuntime JS
 @inject GameResultService Results
 @inject PlayerNameService PlayerNames
 @inject ILogger<PoCapitolPage> Logger
 @inject KioskCoordinator Kiosk
+
+@* State, engine calls and the engine's records are in PoCapitolPage.razor.cs. This file is
+   the markup and the render fragments handed to the shared shell. *@
 
 <PageTitle>PoCapitol · PoMiniGames</PageTitle>
 
@@ -27,21 +29,24 @@
             <div class="pc-root @(_demo ? "pc-phonecam" : null) @(_prefs.contrast == "high" ? "pc-contrast" : null)">
                 <div id="pocapitol-scene" class="pc-scene" role="img" aria-label="Fictional Capitol grounds and interiors"></div>
                 <div class="pc-film" aria-hidden="true"></div>
-                @if (_status == "active" && _caption.Length > 0)
+                @* Always in the tree while play is live, so a caption arriving or clearing
+                   never inserts or removes a node over the scene. *@
+                @if (_status == "active")
                 {
-                    <div class="pc-caption" role="status" aria-live="polite">
-                        <span class="pc-caption-tag">RADIO</span> @_caption
+                    <div class="pc-caption @(_caption.Length == 0 ? "pc-caption--idle" : null)" role="status" aria-live="polite">
+                        @if (_caption.Length > 0)
+                        {
+                            <span class="pc-caption-tag">RADIO</span> @_caption
+                        }
                     </div>
                 }
                 @if (_status != "active")
                 {
                     <div class="pc-edition">PoCAPITOL <span>ALTERNATE HISTORY · FICTIONAL SCENARIO</span></div>
                 }
-                
+
                 @* The shared start card, like every other game: one OK, controls beside the
-                   rules, and this scenario's setup in the Options slot. It replaces a
-                   bespoke three-tab Radzen panel so the first thing a player sees is the
-                   same card shape they met on the other games. *@
+                   rules, and this scenario's setup in the Options slot. *@
                 @if (_status == "intro" && _ready)
                 {
                     <GameIntro CueScope="pocapitol"
@@ -67,7 +72,6 @@
                 }
                 else
                 {
-                    @* Tactical Unit Inspector Telemetry Card *@
                     @if (_selectedTelemetry != null)
                     {
                         <div class="pc-inspector-card" role="region" aria-label="Unit Telemetry">
@@ -85,12 +89,12 @@
                             <div class="pc-inspector-metrics">
                                 <div>
                                     <span>STAMINA / HEALTH</span>
-                                    <RadzenProgressBar Value="@_selectedTelemetry.health" Max="100" Unit="%" ShowValue="true" 
+                                    <RadzenProgressBar Value="@_selectedTelemetry.health" Max="100" Unit="%" ShowValue="true"
                                                        ProgressBarStyle="@GetHealthProgressStyle(_selectedTelemetry.health)" />
                                 </div>
                                 <div>
                                     <span>MORALE</span>
-                                    <RadzenProgressBar Value="@_selectedTelemetry.stamina" Max="100" Unit="%" ShowValue="true" 
+                                    <RadzenProgressBar Value="@_selectedTelemetry.stamina" Max="100" Unit="%" ShowValue="true"
                                                        ProgressBarStyle="ProgressBarStyle.Info" />
                                 </div>
                             </div>
@@ -132,14 +136,25 @@
                         {
                             <div class="pc-touch" aria-label="Touch controls">
                                 <div class="pc-dpad">
-                                    <button data-capitol-action="forward" aria-label="Move forward">↑</button>
-                                    <button data-capitol-action="left" aria-label="Move left">←</button>
-                                    <button data-capitol-action="back" aria-label="Move backward">↓</button>
-                                    <button data-capitol-action="right" aria-label="Move right">→</button>
+                                    <button type="button" data-capitol-action="forward" aria-label="Move forward">↑</button>
+                                    <button type="button" data-capitol-action="left" aria-label="Move left">←</button>
+                                    <button type="button" data-capitol-action="back" aria-label="Move backward">↓</button>
+                                    <button type="button" data-capitol-action="right" aria-label="Move right">→</button>
                                 </div>
                                 @if (Playing)
                                 {
-                                    <button class="pc-fire" data-capitol-action="push" aria-label="Push">PUSH</button>
+                                    <div class="pc-touch-actions">
+                                        @if (Armed)
+                                        {
+                                            @* The same grenades as G and H, with what is left on the button. *@
+                                            <button type="button" class="pc-throw" data-capitol-throw="concussion" disabled="@(_grenades == 0)"
+                                                    aria-label="@($"Throw a concussion grenade, {_grenades} left")">GREN<small>@_grenades</small></button>
+                                            <button type="button" class="pc-throw" data-capitol-throw="smoke" disabled="@(_smoke == 0)"
+                                                    aria-label="@($"Throw a smoke grenade, {_smoke} left")">SMOKE<small>@_smoke</small></button>
+                                        }
+                                        <button type="button" class="pc-fire" data-capitol-action="push"
+                                                aria-label="@(Armed ? "Fire" : "Push")">@(Armed ? "FIRE" : "PUSH")</button>
+                                    </div>
                                 }
                             </div>
                         }
@@ -151,13 +166,7 @@
                             <span class="pc-eyebrow">TAKE A BREATH</span><h2 id="pc-paused">Scenario paused.</h2>
                             <p>The clock, the crowd and the lines are stopped.</p>
                             <label class="pc-small" for="pc-graphics-paused">Graphics · now @_graphicsLabel</label>
-                            <RadzenSelectBar TValue="string" Value="@_graphics" Change="@(async (string value) => await SetGraphicsAsync(value))" id="pc-graphics-paused">
-                                <Items>
-                                    <RadzenSelectBarItem Text="Auto" Value="@("auto")" />
-                                    <RadzenSelectBarItem Text="Low" Value="@("low")" />
-                                    <RadzenSelectBarItem Text="High" Value="@("high")" />
-                                </Items>
-                            </RadzenSelectBar>
+                            @GraphicsPicker("pc-graphics-paused")
                             <div class="pc-actions">
                                 <button type="button" class="app-btn app-btn--primary" @onclick="() => PauseAsync(false)">Resume</button>
                                 <button type="button" class="app-btn" @onclick="StartAsync">Restart</button>
@@ -166,13 +175,8 @@
                         </GamePauseDialog>
                         </section>
                     }
-                    else if (_status is "completed" or "failed")
-                    {
-                        @* The result is the shared end-of-game modal now (GameShell's
-                           GameOver → GameOverModal): the same card, the same one button,
-                           the same place in every game. Only the extra prose that is
-                           specific to this scenario is projected as the summary. *@
-                    }
+                    @* completed / failed: the result is the shared end-of-game modal (GameShell's
+                       GameOver → GameOverModal). Only this scenario's prose is projected into it. *@
                 }
 
             </div>
@@ -190,128 +194,29 @@
 </GameShell>
 
 @code {
-    [Parameter] public string? Mode { get; set; }
-    private static RenderFragment TitleContent => GameCatalog.TitleFor(GameKeys.PoCapitol);
-    private static readonly string[] Objectives =
-        ["Pass the barricades", "Enter the Crypt", "Reach the Rotunda", "Enter Statuary Hall", "Cross Statuary Hall", "Reach the House chamber doors"];
-    private static readonly string[] LineNames =
-        ["Bike-rack barricade", "Crypt doors", "Rotunda doors", "Statuary Hall doorway", "House corridor"];
-    // Approximate times from the public record (the Senate committees' June 2021 staff report
-    // and the Congressional Record). Shown beside the fictional clock, never driven by it.
-    private static readonly (int Minute, string Time, string Text)[] Timeline =
-    [
-        (12 * 60 + 50, "12:53 PM", "The crowd breaches the first barricade on the west side of the grounds."),
-        (13 * 60 + 5, "1:05 PM", "The joint session of Congress convenes to count electoral votes."),
-        (13 * 60 + 50, "1:50 PM", "A riot is declared as police lines on the west front are pressed."),
-        (14 * 60 + 12, "2:12 PM", "The first people enter the building through a broken window."),
-        (14 * 60 + 20, "2:20 PM", "The Senate and then the House go into recess; evacuations begin."),
-        (14 * 60 + 45, "2:45 PM", "The chambers are being emptied. The House chamber doors are barricaded from inside."),
-        (16 * 60 + 17, "4:17 PM", "A recorded message tells the crowd to go home."),
-        (17 * 60 + 40, "5:40 PM", "Police report the interior of the building cleared."),
-        (18 * 60, "6:00 PM", "The citywide curfew begins."),
-    ];
-    private DotNetObjectReference<PoCapitolPage>? _reference;
-    private ErrorBoundary? _errorBoundary;
-    private string _status = "loading", _difficulty = "standard", _error = "", _message = "", _announcement = "";
-    private string _resultWarning = "", _role = "raider", _outcome = "", _graphics = "auto", _graphicsLabel = "Auto";
-    private string _weatherMode = "historical", _weatherCondition = "Jan 6 Archive · 42.4°F";
-    private string _tracerMode = "luminous", _motionMode = "full";
-    private bool _radarExpanded = true;
-    private TelemetryDto? _selectedTelemetry;
-    private int _health = 100, _milestone;
-    private double _elapsed;
-    private bool _ready, _disposed, _recorded;
-    private bool _demo;
-    private string? _mode;
-    private int _activeRaiders = 256, _activePolice = 44, _totalPolice = 44, _subject, _lineIndex, _lineIntegrity = 100, _sheltering = 64, _grenades, _smoke;
-    private bool _radarNeedsInit = true;
-    private PrefsDto _prefs = new();
-    private ReportDto? _report;
-    private string _caption = "";
-    private DateTime _captionStamp;
-
-    private static readonly string[] KeyChoices =
-        ["KeyW", "KeyA", "KeyS", "KeyD", "KeyQ", "KeyE", "KeyI", "KeyJ", "KeyK", "KeyL", "KeyF", "KeyR", "Space", "ShiftLeft", "ControlLeft", "KeyP"];
-
-    private IEnumerable<(string Action, string Label, string Code)> KeyRows =>
-    [
-        ("forward", "Move forward", _prefs.forward),
-        ("back", "Move back", _prefs.back),
-        ("left", "Move left", _prefs.left),
-        ("right", "Move right", _prefs.right),
-        ("push", "Push", _prefs.push),
-        ("sprint", "Sprint", _prefs.sprint),
-        ("pause", "Pause", _prefs.pause),
-    ];
-
-    private bool Playing => !_demo && _role != "observer";
-    private string Objective => _milestone < Objectives.Length ? Objectives[_milestone] : "Chamber doors reached";
-    private string Clock => DateTime.Today.AddMinutes(12 * 60 + 50 + Math.Floor(_elapsed)).ToString("h:mm tt", System.Globalization.CultureInfo.InvariantCulture);
-    private (int Minute, string Time, string Text) OnTheDay =>
-        Timeline.Last(entry => entry.Minute <= Math.Max(Timeline[0].Minute, 12 * 60 + 50 + (int)_elapsed));
-    private string HudEyebrow => _role == "raider" || _demo ? $"OBJECTIVE {Math.Min(_milestone + 1, Objectives.Length)} / {Objectives.Length}"
-        : _role == "police" ? "HOLD UNTIL THE 6:00 PM CURFEW" : "OBSERVING · CROWD PROGRESS";
-    private string HudTitle => _role == "police" && !_demo
-        ? (_lineIndex >= 0 ? $"Hold the {LineNames[_lineIndex].ToLowerInvariant()}" : "Fall back to the chamber doors") : Objective;
-    private string RoleBrief => _role switch
-    {
-        "police" => "Stand in the line and push back. You win by keeping the crowd from the chamber doors until the curfew. Not saved to your stats.",
-        "observer" => "Walk anywhere and watch. Nobody targets you, you cannot push, and nothing is saved.",
-        _ => "Lean on a line with the crowd to tip it. Reach the House chamber doors before the curfew.",
-    };
-    private string BottomHint => _demo ? "AUTONOMOUS DEMO · P PAUSE"
-        : _message.Length > 0 ? _message
-        : _role == "observer" ? "WASD move · Click scene to look · P pause"
-        : "WASD move · Click scene to look · Space push / fire · G grenade · H smoke · P pause";
-    private string ResultHeading => _outcome switch
-    {
-        "doors" => "The doors stayed shut.",
-        "curfew" => "Six o'clock. Curfew.",
-        "overcome" => _role == "police" ? "Pulled back from the line." : "Helped away.",
-        "dispersed" => "The crowd is spent.",
-        _ => "Attempt ended.",
-    };
-    private string ResultBody => _outcome switch
-    {
-        "doors" => "The crowd reached the House chamber doors and found them barricaded. The chamber behind them had been evacuated. "
-            + (_role == "police" ? "The lines did not hold long enough." : "Nobody in this scenario gets in, as nobody did. Reaching the doors ends the game; it is not a historical victory."),
-        "curfew" => _role == "police" ? "The lines held until the curfew and the building was cleared."
-            : "The lines held. At 6:00 pm the curfew began and the building was cleared.",
-        "overcome" => _role == "police" ? "You were worn down and pulled back behind the line. The scenario ends here."
-            : "Batons, spray and gas wore you down, and street medics walked you back to the aid station. A new attempt starts outside.",
-        "dispersed" => _demo ? "Every raider has been eliminated. The armed demo follows no record; it starts again shortly."
-            : "Nobody in the crowd is still on their feet. The building is cleared.",
-        _ => "The scenario has ended.",
-    };
-
-    // ── Shared start and end cards ──
-    // The scenario used to carry its own three-tab start panel and its own result
-    // panel. Both are the shared components now, so PoCapitol opens and closes the
-    // way every other game does; only this scenario's own prose and numbers are fed in.
-
-    private List<StatItem> ResultStats =>
-    [
-        new() { Label = "TIME OF DAY", Value = Clock },
-        new() { Label = "MILESTONES", Value = $"{_milestone} / {Objectives.Length}" },
-        new() { Label = "STILL STANDING", Value = _activeRaiders.ToString() },
-    ];
-
-    private GameResult ResultOutcome => _status switch
-    {
-        "completed" => GameResult.Win,
-        "failed" => GameResult.Loss,
-        _ => GameResult.InProgress,
-    };
-
-    private string ResultNote =>
-        _role != "raider" ? "Police-line and observer attempts are not saved."
-        : _resultWarning.Length > 0 ? _resultWarning
-        : "Results stay in your local game stats. No public ranking and no score for harming anyone.";
+    /// <summary>The one graphics picker, used on the start card, the pause dialog and the options sheet.</summary>
+    private RenderFragment<string> GraphicsPicker => id => @<RadzenSelectBar TValue="string" Value="@_graphics" Change="@(async (string value) => await SetGraphicsAsync(value))" id="@id">
+        <Items>
+            <RadzenSelectBarItem Text="Auto" Value="@("auto")" />
+            <RadzenSelectBarItem Text="Low" Value="@("low")" />
+            <RadzenSelectBarItem Text="High" Value="@("high")" />
+        </Items>
+    </RadzenSelectBar>;
 
     private RenderFragment ResultSummary => @<div>
         <div>@ResultBody</div>
         <div>@ResultNote</div>
         <div>What happened afterwards: the real building was cleared that evening, a citywide curfew began at 6:00 pm, the Senate reconvened at about 8:00 pm, and Congress finished certifying the election at about 3:40 am on January 7.</div>
+    </div>;
+
+    /// <summary>
+    /// The debrief paragraph and, under it, what wrote it. The block keeps its height while a
+    /// local model is still writing, so the card does not jump when the text lands.
+    /// </summary>
+    private RenderFragment DebriefBlock => @<div class="pc-debrief" aria-live="polite" aria-busy="@(_debriefBusy ? "true" : "false")">
+        <span class="pc-debrief-head">Debrief</span>
+        <p>@(_debrief is { text.Length: > 0 } d ? d.text : "Writing the debrief…")</p>
+        <span class="pc-debrief-meta @(_debrief is { fallback: true } ? "pc-debrief-meta--warn" : null)">@DebriefMeta</span>
     </div>;
 
     /// <summary>
@@ -322,6 +227,7 @@
     private RenderFragment ResultDetails => @<div class="pc-report">
         @if (_report is { svg.Length: > 0 } report)
         {
+            @DebriefBlock
             <div class="pc-report-chart">@((MarkupString)report.svg)</div>
             <dl class="pc-report-facts">
                 <div><dt>Milestones</dt><dd>@report.milestones / @Objectives.Length</dd></div>
@@ -338,20 +244,6 @@
             </div>
         }
     </div>;
-
-    private IEnumerable<StatItem> DiagStats =>
-    [
-        new() { Label = "Status", Value = _status },
-        new() { Label = "Role", Value = _role },
-        new() { Label = "Objective", Value = $"{Math.Min(_milestone + 1, Objectives.Length)}/{Objectives.Length} · {HudTitle}" },
-        new() { Label = "Clock", Value = $"{Clock} ({_elapsed:0.0}s)" },
-        new() { Label = "Weather", Value = _weatherCondition },
-        new() { Label = "Crowd", Value = $"{_activeRaiders} / 256 in crowd ({256 - _activeRaiders} down)" },
-        new() { Label = "Police", Value = $"{_activePolice} / {_totalPolice} Capitol Police" },
-        new() { Label = "Line", Value = _lineIndex >= 0 ? $"{LineNames[_lineIndex]} {_lineIntegrity}%" : "None" },
-        new() { Label = "Sheltering", Value = _sheltering.ToString() },
-        new() { Label = "Tier", Value = _graphicsLabel },
-    ];
 
     private RenderFragment TabHudContent => @<div class="pc-tab-hud @(_prefs.contrast == "high" ? "pc-contrast" : null)">
         <div class="pc-tab-hud-head">
@@ -396,16 +288,13 @@
                 </div>
                 <RadzenProgressBar Value="@_health" Max="100" Unit="" ShowValue="false"
                                    ProgressBarStyle="@GetHealthProgressStyle(_health)" Class="pc-progress-bar" />
-                @if (_grenades > 0)
+                @if (Armed)
                 {
-                    <div class="pc-health-header" style="margin-top:.5rem;">
+                    <div class="pc-health-header pc-ammo">
                         <span>GRENADES · G</span>
                         <span>@_grenades</span>
                     </div>
-                }
-                @if (_smoke > 0)
-                {
-                    <div class="pc-health-header" style="margin-top:.35rem;">
+                    <div class="pc-health-header pc-ammo">
                         <span>SMOKE · H</span>
                         <span>@_smoke</span>
                     </div>
@@ -414,11 +303,11 @@
         }
 
         <div class="pc-crowd">
-            <span>@_activeRaiders / 256 IN CROWD</span>
+            <span>@_activeRaiders / @_crowdTotal IN CROWD</span>
             <span>@_activePolice / @_totalPolice CAPITOL POLICE</span>
             @if (_demo && _subject > 0)
             {
-                <b>FOLLOWING RAIDER @_subject:000</b>
+                <b>FOLLOWING RAIDER @_subject.ToString("000")</b>
             }
         </div>
 
@@ -448,7 +337,7 @@
 
         <div class="pc-tab-radar">
             <div class="pc-radar-header">
-                <button type="button" class="pc-radar-toggle" @onclick="ToggleRadar" title="Toggle Tactical Radar">
+                <button type="button" class="pc-radar-toggle" @onclick="ToggleRadar" title="Toggle Tactical Radar" aria-expanded="@(_radarExpanded ? "true" : "false")">
                     <span>📡 RADAR</span>
                     <small>@(_radarExpanded ? "▲" : "▼")</small>
                 </button>
@@ -471,6 +360,7 @@
             <div class="pc-tab-report">
                 <strong>Last attempt</strong>
                 <p class="pc-small">@report.mode · @report.outcome · @report.milestones milestones · lowest line @report.lowestIntegrity% · @report.casualties casualties</p>
+                @DebriefBlock
                 <div class="pc-report-actions">
                     <button type="button" class="app-btn app-btn--sm" @onclick="ExportCsvAsync">Export CSV</button>
                     <button type="button" class="app-btn app-btn--sm" @onclick="CopySummaryAsync">Copy summary</button>
@@ -482,129 +372,161 @@
     </div>;
 
     /// <summary>
-    /// Mid-match options for GameShell's shared gear (GameOptionsSheet): the same drawer
-    /// every other game uses. Role and difficulty are *not* here — they belong on the
-    /// start card — and the diagnostics that used to live in this drawer are the Tab
-    /// panel now, in every game.
+    /// Mid-match options for GameShell's shared gear (GameOptionsSheet): the same drawer every
+    /// other game uses, split into four tabs so nothing needs a long scroll. Role and difficulty
+    /// are *not* here — they belong on the start card — and diagnostics are the Tab panel.
     /// </summary>
-    private RenderFragment ScenarioOptions => @<div>
-        <label class="pc-small" for="pc-opt-graphics">Graphics quality</label>
-        <RadzenSelectBar TValue="string" Value="@_graphics" Change="@(async (string value) => await SetGraphicsAsync(value))" id="pc-opt-graphics">
-            <Items>
-                <RadzenSelectBarItem Text="Auto" Value="@("auto")" />
-                <RadzenSelectBarItem Text="Low" Value="@("low")" />
-                <RadzenSelectBarItem Text="High" Value="@("high")" />
-            </Items>
-        </RadzenSelectBar>
-        <p class="pc-small">Active tier: @_graphicsLabel</p>
+    private RenderFragment ScenarioOptions => @<div class="pc-opts">
+        <RadzenTabs RenderMode="TabRenderMode.Client">
+            <Tabs>
+                <RadzenTabsItem Text="Display">
+                    <label class="pc-small" for="pc-opt-graphics">Graphics quality · now @_graphicsLabel</label>
+                    @GraphicsPicker("pc-opt-graphics")
 
-        <label class="pc-small" for="pc-opt-weather">Atmospheric conditions (Open-Meteo)</label>
-        <RadzenSelectBar TValue="string" Value="@_weatherMode" Change="@(async (string val) => await SetWeatherAsync(val))" id="pc-opt-weather">
-            <Items>
-                <RadzenSelectBarItem Text="Jan 6 Archive" Value="@("historical")" />
-                <RadzenSelectBarItem Text="Live D.C." Value="@("live")" />
-                <RadzenSelectBarItem Text="Clear" Value="@("clear")" />
-                <RadzenSelectBarItem Text="Winter Gale" Value="@("blizzard")" />
-            </Items>
-        </RadzenSelectBar>
-        <p class="pc-small">@_weatherCondition</p>
+                    <label class="pc-small" for="pc-opt-weather">Atmospheric conditions (Open-Meteo)</label>
+                    <RadzenSelectBar TValue="string" Value="@_weatherMode" Change="@(async (string val) => await SetWeatherAsync(val))" id="pc-opt-weather">
+                        <Items>
+                            <RadzenSelectBarItem Text="Jan 6 Archive" Value="@("historical")" />
+                            <RadzenSelectBarItem Text="Live D.C." Value="@("live")" />
+                            <RadzenSelectBarItem Text="Clear" Value="@("clear")" />
+                            <RadzenSelectBarItem Text="Winter Gale" Value="@("blizzard")" />
+                        </Items>
+                    </RadzenSelectBar>
+                    <p class="pc-small">@_weatherCondition</p>
 
-        <label class="pc-small" for="pc-opt-tracers">Ballistic tracers</label>
-        <RadzenSelectBar TValue="string" Value="@_tracerMode" Change="@(async (string val) => await SetTracerModeAsync(val))" id="pc-opt-tracers">
-            <Items>
-                <RadzenSelectBarItem Text="Luminous" Value="@("luminous")" />
-                <RadzenSelectBarItem Text="Stealth" Value="@("stealth")" />
-                <RadzenSelectBarItem Text="Off" Value="@("off")" />
-            </Items>
-        </RadzenSelectBar>
+                    <label class="pc-small" for="pc-opt-tracers">Ballistic tracers</label>
+                    <RadzenSelectBar TValue="string" Value="@_prefs.tracers" Change="@(async (string val) => await SavePrefsAsync(tracers: val))" id="pc-opt-tracers">
+                        <Items>
+                            <RadzenSelectBarItem Text="Luminous" Value="@("luminous")" />
+                            <RadzenSelectBarItem Text="Stealth" Value="@("stealth")" />
+                            <RadzenSelectBarItem Text="Off" Value="@("off")" />
+                        </Items>
+                    </RadzenSelectBar>
 
-        <label class="pc-small" for="pc-opt-motion">Combat motion &amp; shake</label>
-        <RadzenSelectBar TValue="string" Value="@_motionMode" Change="@(async (string val) => await SetMotionModeAsync(val))" id="pc-opt-motion">
-            <Items>
-                <RadzenSelectBarItem Text="Full Combat" Value="@("full")" />
-                <RadzenSelectBarItem Text="Reduced Motion" Value="@("reduced")" />
-            </Items>
-        </RadzenSelectBar>
+                    <label class="pc-small" for="pc-opt-radar-palette">Radar palette</label>
+                    <RadzenSelectBar TValue="string" Value="@_prefs.radar" Change="@(async (string value) => await SavePrefsAsync(radar: value))" id="pc-opt-radar-palette">
+                        <Items>
+                            <RadzenSelectBarItem Text="Auto" Value="@("auto")" />
+                            <RadzenSelectBarItem Text="Tablet" Value="@("default")" />
+                            <RadzenSelectBarItem Text="Colour-safe" Value="@("colorsafe")" />
+                        </Items>
+                    </RadzenSelectBar>
 
-        <h4 class="pc-section-head">Comfort &amp; access</h4>
-        <label class="pc-small" for="pc-opt-sens">Camera sensitivity · @_prefs.sensitivity.ToString("0.00")×</label>
-        <input id="pc-opt-sens" class="pc-range" type="range" min="0.4" max="2.5" step="0.05"
-               value="@_prefs.sensitivity" @onchange="OnSensitivityChanged" />
+                    <button type="button" class="app-btn pc-opt-button" @onclick="ToggleRadar">
+                        @(_radarExpanded ? "Hide tactical radar" : "Show tactical radar")
+                    </button>
+                </RadzenTabsItem>
 
-        <label class="pc-small" for="pc-opt-fov">Field of view · @_prefs.fov°</label>
-        <input id="pc-opt-fov" class="pc-range" type="range" min="50" max="85" step="1"
-               value="@_prefs.fov" @onchange="OnFovChanged" />
+                <RadzenTabsItem Text="Comfort">
+                    <label class="pc-small" for="pc-opt-sens">Camera sensitivity · @_prefs.sensitivity.ToString("0.00")×</label>
+                    <input id="pc-opt-sens" class="pc-range" type="range" min="0.4" max="2.5" step="0.05"
+                           value="@_prefs.sensitivity.ToString(System.Globalization.CultureInfo.InvariantCulture)" @onchange="OnSensitivityChanged" />
 
-        <label class="pc-small" for="pc-opt-captions">Captions for spoken radio</label>
-        <RadzenSelectBar TValue="bool" Value="@_prefs.captions" Change="@(async (bool value) => await SavePrefsAsync(captions: value))" id="pc-opt-captions">
-            <Items>
-                <RadzenSelectBarItem Text="Off" Value="@false" />
-                <RadzenSelectBarItem Text="On" Value="@true" />
-            </Items>
-        </RadzenSelectBar>
+                    <label class="pc-small" for="pc-opt-fov">Field of view · @_prefs.fov°</label>
+                    <input id="pc-opt-fov" class="pc-range" type="range" min="50" max="85" step="1"
+                           value="@_prefs.fov" @onchange="OnFovChanged" />
 
-        <label class="pc-small" for="pc-opt-contrast">HUD contrast</label>
-        <RadzenSelectBar TValue="string" Value="@_prefs.contrast" Change="@(async (string value) => await SavePrefsAsync(contrast: value))" id="pc-opt-contrast">
-            <Items>
-                <RadzenSelectBarItem Text="Normal" Value="@("normal")" />
-                <RadzenSelectBarItem Text="High" Value="@("high")" />
-            </Items>
-        </RadzenSelectBar>
+                    <label class="pc-small" for="pc-opt-footage">Picture &amp; sound</label>
+                    <RadzenSelectBar TValue="string" Value="@_prefs.footage" Change="@(async (string val) => await SavePrefsAsync(footage: val))" id="pc-opt-footage">
+                        <Items>
+                            <RadzenSelectBarItem Text="Phone footage" Value="@("on")" />
+                            <RadzenSelectBarItem Text="Light" Value="@("light")" />
+                            <RadzenSelectBarItem Text="Clean" Value="@("off")" />
+                        </Items>
+                    </RadzenSelectBar>
 
-        <label class="pc-small" for="pc-opt-radar-palette">Radar palette</label>
-        <RadzenSelectBar TValue="string" Value="@_prefs.radar" Change="@(async (string value) => await SavePrefsAsync(radar: value))" id="pc-opt-radar-palette">
-            <Items>
-                <RadzenSelectBarItem Text="Auto" Value="@("auto")" />
-                <RadzenSelectBarItem Text="Tablet" Value="@("default")" />
-                <RadzenSelectBarItem Text="Colour-safe" Value="@("colorsafe")" />
-            </Items>
-        </RadzenSelectBar>
+                    <label class="pc-small" for="pc-opt-motion">Combat motion &amp; shake</label>
+                    <RadzenSelectBar TValue="string" Value="@_prefs.motion" Change="@(async (string val) => await SavePrefsAsync(motion: val))" id="pc-opt-motion">
+                        <Items>
+                            <RadzenSelectBarItem Text="Full" Value="@("full")" />
+                            <RadzenSelectBarItem Text="Reduced" Value="@("reduced")" />
+                        </Items>
+                    </RadzenSelectBar>
 
-        @if (_demo)
-        {
-            <label class="pc-small" for="pc-opt-director">Spectator camera</label>
-            <RadzenSelectBar TValue="bool" Value="@_prefs.director" Change="@(async (bool value) => await SavePrefsAsync(director: value))" id="pc-opt-director">
-                <Items>
-                    <RadzenSelectBarItem Text="Auto-director" Value="@true" />
-                    <RadzenSelectBarItem Text="Follow leader" Value="@false" />
-                </Items>
-            </RadzenSelectBar>
-        }
+                    <label class="pc-small" for="pc-opt-captions">Captions for spoken radio</label>
+                    <RadzenSelectBar TValue="bool" Value="@_prefs.captions" Change="@(async (bool value) => await SavePrefsAsync(captions: value))" id="pc-opt-captions">
+                        <Items>
+                            <RadzenSelectBarItem Text="Off" Value="@false" />
+                            <RadzenSelectBarItem Text="On" Value="@true" />
+                        </Items>
+                    </RadzenSelectBar>
 
-        <details class="pc-keymap">
-            <summary>Key bindings</summary>
-            <p class="pc-small">Arrow keys always steer, whatever is bound here.</p>
-            @foreach (var row in KeyRows)
-            {
-                <div class="pc-key-row">
-                    <span>@row.Label</span>
-                    <select class="pc-key-select" value="@row.Code" @onchange="@(e => SetKeyAsync(row.Action, e.Value))">
-                        @foreach (var option in KeyChoices)
-                        {
-                            <option value="@option" selected="@(option == row.Code)">@DescribeKey(option)</option>
-                        }
-                    </select>
-                </div>
-            }
-        </details>
+                    <label class="pc-small" for="pc-opt-contrast">HUD contrast</label>
+                    <RadzenSelectBar TValue="string" Value="@_prefs.contrast" Change="@(async (string value) => await SavePrefsAsync(contrast: value))" id="pc-opt-contrast">
+                        <Items>
+                            <RadzenSelectBarItem Text="Normal" Value="@("normal")" />
+                            <RadzenSelectBarItem Text="High" Value="@("high")" />
+                        </Items>
+                    </RadzenSelectBar>
 
-        <button type="button" class="app-btn" @onclick="ToggleRadar">
-            @(_radarExpanded ? "Hide tactical radar" : "Show tactical radar")
-        </button>
+                    @if (_demo)
+                    {
+                        <label class="pc-small" for="pc-opt-director">Spectator camera</label>
+                        <RadzenSelectBar TValue="bool" Value="@_prefs.director" Change="@(async (bool value) => await SavePrefsAsync(director: value))" id="pc-opt-director">
+                            <Items>
+                                <RadzenSelectBarItem Text="Auto-director" Value="@true" />
+                                <RadzenSelectBarItem Text="Follow leader" Value="@false" />
+                            </Items>
+                        </RadzenSelectBar>
+                    }
+                </RadzenTabsItem>
 
-        <p class="pc-small">PoCapitol build 261110.1 · alternate history simulation</p>
+                <RadzenTabsItem Text="Controls">
+                    <p class="pc-small">Arrow keys always steer, whatever is bound here. Picking a key another action uses swaps the two. G throws a concussion grenade and H a smoke grenade; on a gamepad, X and Y.</p>
+                    @foreach (var row in KeyRows)
+                    {
+                        <div class="pc-key-row">
+                            <label for="@($"pc-key-{row.Action}")">@row.Label</label>
+                            <select id="@($"pc-key-{row.Action}")" class="pc-key-select" value="@row.Code" @onchange="@(e => SetKeyAsync(row.Action, e.Value))">
+                                @foreach (var option in KeyChoices)
+                                {
+                                    <option value="@option" selected="@(option == row.Code)">@DescribeKey(option)</option>
+                                }
+                            </select>
+                        </div>
+                    }
+                </RadzenTabsItem>
+
+                <RadzenTabsItem Text="Debrief">
+                    <label class="pc-small" for="pc-opt-debrief">Who writes the after-action debrief</label>
+                    <RadzenSelectBar TValue="string" Value="@_prefs.debrief" Change="@(async (string value) => await SavePrefsAsync(debrief: value))" id="pc-opt-debrief">
+                        <Items>
+                            <RadzenSelectBarItem Text="Built-in" Value="@("rules")" />
+                            <RadzenSelectBarItem Text="Local model" Value="@("ollama")" />
+                        </Items>
+                    </RadzenSelectBar>
+                    @if (_prefs.debrief == "ollama")
+                    {
+                        <p class="pc-small">Uses a model running on this computer through Ollama (localhost:11434). Nothing is sent to the internet and nothing costs money. If it does not answer, the built-in writer takes over after one retry.</p>
+                        <div class="pc-key-row">
+                            <label for="pc-opt-debrief-model">Model</label>
+                            <input id="pc-opt-debrief-model" class="pc-key-select pc-model-input" type="text" maxlength="60" spellcheck="false"
+                                   value="@_prefs.debriefModel" @onchange="OnDebriefModelChanged" />
+                        </div>
+                        <button type="button" class="app-btn pc-opt-button" @onclick="ProbeDebriefAsync">Check connection</button>
+                        <p class="pc-small pc-probe" role="status">@_probeStatus</p>
+                    }
+                    else
+                    {
+                        <p class="pc-small">Instant, and written on this device from the attempt's own numbers.</p>
+                    }
+                    <p class="pc-small">Last debrief: @DebriefMeta</p>
+                </RadzenTabsItem>
+            </Tabs>
+        </RadzenTabs>
     </div>;
 
     private RenderFragment IntroControls => @<div>
-        <p><kbd>W</kbd> <kbd>A</kbd> <kbd>S</kbd> <kbd>D</kbd> move · <kbd>Mouse</kbd> look &amp; aim</p>
-        <p><kbd>Space</kbd> / <kbd>Click</kbd> push / fire the machine gun · <kbd>G</kbd> concussion grenade · <kbd>H</kbd> smoke grenade · <kbd>Shift</kbd> sprint · <kbd>←</kbd> <kbd>→</kbd> turn camera</p>
+        <p><kbd>W</kbd> <kbd>A</kbd> <kbd>S</kbd> <kbd>D</kbd> move · <kbd>Mouse</kbd> look &amp; aim · <kbd>←</kbd> <kbd>→</kbd> turn camera · <kbd>Shift</kbd> sprint</p>
+        <p><kbd>Space</kbd> / <kbd>Click</kbd> fire (in the crowd) or push (police line) · <kbd>G</kbd> concussion grenade · <kbd>H</kbd> smoke grenade</p>
         <p><kbd>Esc</kbd> / <kbd>P</kbd> pause</p>
-        <p class="touch-only">Touch: floating d-pad and push button, drag to orbit. Gamepad: sticks move and look, right trigger pushes, Start pauses.</p>
+        <p class="touch-only">Touch: d-pad to move, drag to look, FIRE / PUSH, and grenade buttons that show what is left.</p>
+        <p>Gamepad: sticks move and look, right trigger fires or pushes, X grenade, Y smoke, Start pauses.</p>
     </div>;
 
     private RenderFragment IntroRules => @<div>
-        <p>256 protestors start out on the grass; most watch and film, a few push. 64 police hold five lines and fall back in stages. 64 staff and members shelter inside until evacuated. 12:50 pm to the 6:00 pm curfew.</p>
-        <p><strong>Fiction, not a reconstruction.</strong> Inspired by January 6, 2021. Adult themes; no injury is shown. As a solo raider you carry a machine gun and five concussion grenades; police hold with batons, spray, gas and a few grenades. The Demo is a separate armed variant in which both sides fire. The layout and police positions are invented.</p>
+        <p>@_crowdTotal protestors start out on the grass; most watch and film, a few push. 44 police hold five lines, are reinforced to 64, and fall back in stages. 64 staff and members shelter inside until evacuated. 12:50 pm to the 6:00 pm curfew.</p>
+        <p><strong>Fiction, not a reconstruction.</strong> Inspired by January 6, 2021. Adult themes; no injury is shown. As a solo raider you carry a machine gun, five concussion grenades and two smoke grenades; police hold with batons, spray, gas and a few grenades. The Demo is a separate armed variant in which both sides fire. The layout and police positions are invented.</p>
         <details><summary>Historical record</summary>@ContextContent</details>
     </div>;
 
@@ -617,7 +539,7 @@
                 <RadzenSelectBarItem Text="Observer" Value="@("observer")" />
             </Items>
         </RadzenSelectBar>
-        <p class="pc-small">@RoleBrief</p>
+        <p class="pc-small pc-role-brief">@RoleBrief</p>
         <div class="pc-options">
             <div>
                 <label class="pc-small" for="pc-difficulty">Difficulty</label>
@@ -630,178 +552,15 @@
             </div>
             <div>
                 <label class="pc-small" for="pc-graphics">Graphics</label>
-                <RadzenSelectBar TValue="string" Value="@_graphics" Change="@(async (string value) => await SetGraphicsAsync(value))" id="pc-graphics">
-                    <Items>
-                        <RadzenSelectBarItem Text="Auto" Value="@("auto")" />
-                        <RadzenSelectBarItem Text="Low" Value="@("low")" />
-                        <RadzenSelectBarItem Text="High" Value="@("high")" />
-                    </Items>
-                </RadzenSelectBar>
+                @GraphicsPicker("pc-graphics")
             </div>
         </div>
     </div>;
 
-    protected override async Task OnParametersSetAsync()
-    {
-        var mode = Mode ?? "";
-        if (_mode == mode) return;
-        _mode = mode;
-        _demo = GameModes.Parse(Mode) == GameMode.Demo;
-        if (_demo) Kiosk.SetCurrent("pocapitol-demo");
-        if (_ready)
-        {
-            if (_demo) await StartAsync();
-            else
-            {
-                try
-                {
-                    await JS.InvokeVoidAsync("PoCapitol.dispose");
-                    await LoadAsync();
-                }
-                catch (JSException ex) { await OnEngineError(ex.Message); }
-            }
-        }
-    }
-
-    protected override async Task OnAfterRenderAsync(bool firstRender)
-    {
-        if (firstRender) await LoadAsync();
-        if (_radarNeedsInit && _radarExpanded)
-        {
-            _radarNeedsInit = false;
-            try { await JS.InvokeVoidAsync("PoCapitol.initRadar", "pocapitol-radar"); }
-            catch (JSException) {}
-        }
-    }
-
-    private async Task LoadAsync()
-    {
-        _status = "loading";
-        StateHasChanged();
-        try
-        {
-            if (!await JS.InvokeAsync<bool>("loadEngine", "pocapitol"))
-                throw new InvalidOperationException("The 3D assets could not be downloaded. Check your connection and retry.");
-            _reference ??= DotNetObjectReference.Create(this);
-            await JS.InvokeVoidAsync("PoCapitol.init", "pocapitol-scene", _reference);
-            _graphics = await JS.InvokeAsync<string>("PoCapitol.getGraphics");
-            try { _weatherMode = await JS.InvokeAsync<string>("PoCapitol.getWeather"); } catch {}
-            _ready = true;
-            _status = "intro";
-            try { _prefs = await JS.InvokeAsync<PrefsDto>("PoCapitol.getPrefs"); } catch { }
-            if (_demo) await StartAsync();
-        }
-        catch (Exception ex) when (ex is JSException or InvalidOperationException)
-        {
-            Logger.LogError(ex, "PoCapitol could not initialize");
-            _error = "The 3D scene is unavailable. Check your connection and browser graphics support, then retry.";
-            _status = "error";
-        }
-        StateHasChanged();
-    }
-
-    private async Task StartAsync()
-    {
-        try
-        {
-            await JS.InvokeVoidAsync("PoCapitol.start", _difficulty, _demo, _role);
-            _recorded = false;
-            _report = null;
-            _caption = "";
-            _status = "active";
-            _health = 100; _milestone = 0; _elapsed = 0; _message = ""; _resultWarning = ""; _outcome = "";
-            _activeRaiders = 256; _activePolice = 44; _totalPolice = 44; _subject = 0; _lineIndex = 0; _lineIntegrity = 100; _sheltering = 64;
-            _announcement = "Scenario started. " + HudTitle;
-        }
-        catch (JSException ex) { await OnEngineError(ex.Message); }
-    }
-
-    private async Task PauseAsync(bool paused)
-    {
-        try { await JS.InvokeVoidAsync("PoCapitol.pause", paused); }
-        catch (JSException ex) { await OnEngineError(ex.Message); }
-    }
-
-    private async Task SetGraphicsAsync(string mode)
-    {
-        _graphics = mode;
-        try { _graphicsLabel = await JS.InvokeAsync<string>("PoCapitol.setGraphics", mode); }
-        catch (JSException ex) { await OnEngineError(ex.Message); }
-    }
-
-    private void RecoverFromError()
-    {
-        _errorBoundary?.Recover();
-        _status = "loading";
-        _ = LoadAsync();
-    }
-
-    private static ProgressBarStyle GetHealthProgressStyle(int health) =>
-        health > 50 ? ProgressBarStyle.Success : health > 25 ? ProgressBarStyle.Warning : ProgressBarStyle.Danger;
-
-    private static ProgressBarStyle GetLineProgressStyle(int integrity) =>
-        integrity > 50 ? ProgressBarStyle.Info : integrity > 25 ? ProgressBarStyle.Warning : ProgressBarStyle.Danger;
-
-    [JSInvokable]
-    public async Task OnUpdate(int health, int milestone, double elapsed, string status, int pushes, int staggers, string message,
-        int activeRaiders, int activePolice, int subject, bool demo, string outcome, int totalPolice, int lineIndex,
-        int lineIntegrity, string graphics, int sheltering, int grenades = 0, int smoke = 0)
-    {
-        if (_disposed || demo != _demo) return;
-        var previousStatus = _status;
-        var changed = _milestone != milestone || _status != status || _lineIndex != lineIndex;
-        var lineBroke = lineIndex != _lineIndex && _lineIndex >= 0 && status == "active";
-        _health = health; _milestone = milestone; _elapsed = elapsed; _status = status; _message = message;
-        _activeRaiders = activeRaiders; _activePolice = activePolice; _subject = subject;
-        _outcome = outcome; _totalPolice = totalPolice; _lineIndex = lineIndex; _lineIntegrity = lineIntegrity;
-        _graphicsLabel = graphics; _sheltering = sheltering; _grenades = grenades; _smoke = smoke;
-        // Each attempt that ends refreshes the report, including the demo's repeated runs.
-        if (previousStatus is not "completed" and not "failed" && status is "completed" or "failed") _ = LoadReportAsync();
-        if (changed) _announcement = status != "active" ? $"Scenario {status}. {ResultHeading}"
-            : lineBroke ? $"A police line has given way. {HudTitle}" : HudTitle;
-        if (_role == "raider" && !_demo && !_recorded && status is "completed" or "failed")
-        {
-            _recorded = true;
-            try
-            {
-                await Results.RecordAsync("pocapitol", PlayerNames.GetPlayerName(),
-                    _difficulty == "story" ? Difficulty.Easy : Difficulty.Medium,
-                    status == "completed" ? GameResult.Win : GameResult.Loss);
-            }
-            catch (JSException ex)
-            {
-                Logger.LogError(ex, "PoCapitol local result could not be saved");
-                _resultWarning = "Your result could not be saved locally.";
-            }
-        }
-        await InvokeAsync(StateHasChanged);
-    }
-
-    [JSInvokable]
-    public Task OnEngineError(string detail)
-    {
-        if (_disposed) return Task.CompletedTask;
-        Logger.LogError("PoCapitol engine error: {Detail}", detail);
-        _status = "error";
-        _error = "The scenario stopped unexpectedly. Retry to start a fresh attempt, or return to all games.";
-        return InvokeAsync(StateHasChanged);
-    }
-
-    public async ValueTask DisposeAsync()
-    {
-        _disposed = true;
-        if (_ready)
-        {
-            try { await JS.InvokeVoidAsync("PoCapitol.dispose"); }
-            catch (JSDisconnectedException ex) { Logger.LogDebug(ex, "PoCapitol browser disconnected during disposal"); }
-        }
-        _reference?.Dispose();
-    }
-
     private RenderFragment ContextContent => @<div class="pc-context">
         <p>On January 6, 2021, Congress met to count and certify electoral votes, not to pass a law. The attack interrupted that proceeding; Congress reconvened that night and finished in the early hours of January 7.</p>
         <p>What this scenario takes from the record is the shape of the day: a crowd that was mostly watching and filming, a minority pushing on police lines, police using shields, batons, chemical spray, gas and flash-bangs, lines that fell back in stages, staff and members who sheltered and were evacuated, a House chamber that was never entered, and a 6:00 pm curfew. The staff and members here are bystanders to the simulation: nothing can target or reach them. The "On the day" times are approximate and come from the Senate committees' June 2021 staff report and the Congressional Record.</p>
-        <p>What it invents: every character, the straight-line route and the way rooms connect, police numbers and positions, how fast anything happens, and who prevails. The clock runs one minute per second and is not synchronized with the real timeline. No real person is depicted. In solo play nobody is armed. The spectator Demo is different on purpose: both sides carry guns and those hit drop out, which is pure invention and the opposite of what the record shows. It is not a documentary, a real building plan, or an endorsement of the attack.</p>
+        <p>What it invents: every character, the straight-line route and the way rooms connect, police numbers and positions, how fast anything happens, and who prevails. The clock runs one minute per second and is not synchronized with the real timeline. No real person is depicted. The weapons are invention too, and the opposite of what the record shows: a solo player in the crowd carries a machine gun and grenades while the rest of that crowd is unarmed, and in the spectator Demo both sides carry guns and those hit drop out. It is not a documentary, a real building plan, or an endorsement of the attack.</p>
         <p>Public references inform the ribbed dome and colonnaded drum, winter grounds and inauguration stands, the Crypt's columns, Rotunda floor rings, Statuary Hall, and the House rostrum and seating. Clothing, flags, signs, phones and police equipment evoke documented appearances, not specific people or an exact inventory. This is a stylized procedural interpretation, not a photorealistic or security-accurate replica.</p>
         <a href="https://www.congress.gov/117/crec/2021/01/06/CREC-2021-01-06-pt1-PgS18-2.pdf" target="_blank" rel="noopener noreferrer">Congressional Record: January 6 Senate proceedings</a>
         <a href="https://www.aoc.gov/explore-capitol-campus/buildings-grounds/capitol-building/rotunda" target="_blank" rel="noopener noreferrer">Architect of the Capitol: Rotunda</a>
@@ -810,276 +569,4 @@
         <a href="https://americanhistory.si.edu/press/releases/smithsonian-continues-collecting-artifacts-jan-6-capitol-attack-2" target="_blank" rel="noopener noreferrer">Smithsonian: flags and police equipment</a>
         <a href="https://nsarchive.gwu.edu/briefing-book/foia/2021-05-04/capitol-riot-documents-you-should-read-part-3" target="_blank" rel="noopener noreferrer">National Security Archive: shield testimony</a>
     </div>;
-
-    [JSInvokable]
-    public Task OnTelemetryUpdate(TelemetryDto? telemetry)
-    {
-        _selectedTelemetry = telemetry;
-        return InvokeAsync(StateHasChanged);
-    }
-
-    [JSInvokable]
-    public Task OnWeatherUpdate(string condition)
-    {
-        _weatherCondition = condition;
-        return InvokeAsync(StateHasChanged);
-    }
-
-    private void ToggleRadar()
-    {
-        _radarExpanded = !_radarExpanded;
-        if (_radarExpanded)
-        {
-            _radarNeedsInit = true;
-        }
-    }
-
-    private async Task ToggleLatchAsync()
-    {
-        try
-        {
-            var isLatched = await JS.InvokeAsync<bool>("PoCapitol.toggleUnitLatch");
-            if (_selectedTelemetry != null) _selectedTelemetry.latched = isLatched;
-        }
-        catch (JSException) {}
-    }
-
-    private async Task ClearInspectAsync()
-    {
-        _selectedTelemetry = null;
-        try { await JS.InvokeVoidAsync("PoCapitol.clearUnitInspect"); }
-        catch (JSException) {}
-    }
-
-    private async Task SetWeatherAsync(string mode)
-    {
-        _weatherMode = mode;
-        try
-        {
-            _weatherCondition = await JS.InvokeAsync<string>("PoCapitol.setWeather", mode);
-        }
-        catch (JSException) {}
-    }
-
-    private async Task SetTracerModeAsync(string mode)
-    {
-        _tracerMode = mode;
-        try { await JS.InvokeVoidAsync("PoCapitol.setTracerMode", mode); }
-        catch (JSException) {}
-    }
-
-    private async Task SetMotionModeAsync(string mode)
-    {
-        _motionMode = mode;
-        try { await JS.InvokeVoidAsync("PoCapitol.setMotionReduction", mode == "reduced"); }
-        catch (JSException) {}
-    }
-
-    private async Task OnSensitivityChanged(ChangeEventArgs e)
-    {
-        if (double.TryParse(e.Value?.ToString(), System.Globalization.NumberStyles.Float,
-                System.Globalization.CultureInfo.InvariantCulture, out var value))
-        {
-            await SavePrefsAsync(sensitivity: value);
-        }
-    }
-
-    private async Task OnFovChanged(ChangeEventArgs e)
-    {
-        if (int.TryParse(e.Value?.ToString(), out var value)) await SavePrefsAsync(fov: value);
-    }
-
-    private Task SetKeyAsync(string action, object? value) => SavePrefsAsync(keyAction: action, keyCode: value?.ToString());
-
-    private static string DescribeKey(string code) => code switch
-    {
-        "Space" => "Space",
-        "ShiftLeft" => "Shift",
-        "ControlLeft" => "Ctrl",
-        _ => code.StartsWith("Key") ? code[3..] : code,
-    };
-
-    /// <summary>
-    /// Save one or more comfort settings. Values are echoed back from the engine sanitised, so
-    /// a slider that leaves the allowed range snaps to the clamped value rather than drifting.
-    /// </summary>
-    private async Task SavePrefsAsync(double? sensitivity = null, int? fov = null, bool? captions = null,
-        string? contrast = null, string? radar = null, bool? director = null, string? keyAction = null, string? keyCode = null)
-    {
-        if (sensitivity is not null) _prefs.sensitivity = sensitivity.Value;
-        if (fov is not null) _prefs.fov = fov.Value;
-        if (captions is not null)
-        {
-            _prefs.captions = captions.Value;
-            if (!_prefs.captions) _caption = "";
-        }
-        if (contrast is not null) _prefs.contrast = contrast;
-        if (radar is not null) _prefs.radar = radar;
-        if (director is not null) _prefs.director = director.Value;
-        if (keyAction is not null && !string.IsNullOrEmpty(keyCode))
-        {
-            switch (keyAction)
-            {
-                case "forward": _prefs.forward = keyCode; break;
-                case "back": _prefs.back = keyCode; break;
-                case "left": _prefs.left = keyCode; break;
-                case "right": _prefs.right = keyCode; break;
-                case "push": _prefs.push = keyCode; break;
-                case "sprint": _prefs.sprint = keyCode; break;
-                case "pause": _prefs.pause = keyCode; break;
-            }
-        }
-        try
-        {
-            _prefs = await JS.InvokeAsync<PrefsDto>("PoCapitol.setPrefs", new
-            {
-                sensitivity = _prefs.sensitivity,
-                fov = _prefs.fov,
-                captions = _prefs.captions,
-                contrast = _prefs.contrast,
-                radar = _prefs.radar,
-                director = _prefs.director,
-                keys = new
-                {
-                    forward = _prefs.forward,
-                    back = _prefs.back,
-                    left = _prefs.left,
-                    right = _prefs.right,
-                    push = _prefs.push,
-                    sprint = _prefs.sprint,
-                    pause = _prefs.pause,
-                },
-            });
-        }
-        catch (JSException ex)
-        {
-            // A comfort setting is not worth ending the scenario for: keep the local value and move on.
-            Logger.LogWarning(ex, "PoCapitol could not persist comfort settings");
-        }
-        StateHasChanged();
-    }
-
-    private async Task LoadReportAsync()
-    {
-        try { _report = await JS.InvokeAsync<ReportDto>("PoCapitol.getReportView"); }
-        catch (JSException ex) { Logger.LogDebug(ex, "PoCapitol report unavailable"); }
-        await InvokeAsync(StateHasChanged);
-    }
-
-    private string ReportFileName(string extension) =>
-        $"pocapitol-{DateTime.Now:yyyyMMdd-HHmm}-{(_report is { mode.Length: > 0 } r ? r.mode : "attempt")}.{extension}";
-
-    private async Task ExportCsvAsync()
-    {
-        if (_report is null) return;
-        try { await JS.InvokeVoidAsync("PoCapitol.download", ReportFileName("csv"), _report.csv); }
-        catch (JSException ex) { Logger.LogDebug(ex, "PoCapitol CSV export unavailable"); }
-    }
-
-    private async Task ExportPngAsync()
-    {
-        if (_report is null) return;
-        try { await JS.InvokeAsync<bool>("PoCapitol.exportPng", "pocapitol-report-chart", ReportFileName("png")); }
-        catch (JSException ex) { Logger.LogDebug(ex, "PoCapitol PNG export unavailable"); }
-    }
-
-    private async Task CopySummaryAsync()
-    {
-        if (_report is null) return;
-        try { await JS.InvokeAsync<bool>("PoCapitol.copyText", _report.text); }
-        catch (JSException ex) { Logger.LogDebug(ex, "PoCapitol clipboard unavailable"); }
-    }
-
-    private async Task CopyDiagnosticsAsync()
-    {
-        try
-        {
-            var text = await JS.InvokeAsync<string>("PoCapitol.getDiagnosticsText");
-            await JS.InvokeAsync<bool>("PoCapitol.copyText", text);
-        }
-        catch (JSException ex) { Logger.LogDebug(ex, "PoCapitol diagnostics unavailable"); }
-    }
-
-    /// <summary>Spoken radio arrives as a caption when the player has asked for them.</summary>
-    [JSInvokable]
-    public Task OnCaption(string text)
-    {
-        if (_disposed || !_prefs.captions || string.IsNullOrWhiteSpace(text)) return Task.CompletedTask;
-        _caption = text;
-        var stamp = _captionStamp = DateTime.UtcNow;
-        _ = ClearCaptionAsync(stamp);
-        return InvokeAsync(StateHasChanged);
-    }
-
-    private async Task ClearCaptionAsync(DateTime stamp)
-    {
-        await Task.Delay(6000);
-        if (_disposed || _captionStamp != stamp) return;
-        _caption = "";
-        await InvokeAsync(StateHasChanged);
-    }
-
-    public sealed class PrefsDto
-    {
-        public double sensitivity { get; set; } = 1;
-        public int fov { get; set; } = 62;
-        public bool captions { get; set; }
-        public string contrast { get; set; } = "normal";
-        public string radar { get; set; } = "auto";
-        public bool director { get; set; } = true;
-        public string forward { get; set; } = "KeyW";
-        public string back { get; set; } = "KeyS";
-        public string left { get; set; } = "KeyA";
-        public string right { get; set; } = "KeyD";
-        public string push { get; set; } = "Space";
-        public string sprint { get; set; } = "ShiftLeft";
-        public string pause { get; set; } = "KeyP";
-    }
-
-    public sealed class ReportDto
-    {
-        public string svg { get; set; } = "";
-        public string csv { get; set; } = "";
-        public string text { get; set; } = "";
-        public string mode { get; set; } = "";
-        public string role { get; set; } = "";
-        public string difficulty { get; set; } = "";
-        public string outcome { get; set; } = "";
-        public string status { get; set; } = "";
-        public string clock { get; set; } = "";
-        public int standing { get; set; }
-        public int police { get; set; }
-        public int casualties { get; set; }
-        public int immediate { get; set; }
-        public int lowestIntegrity { get; set; }
-        public double peakPressure { get; set; }
-        public double firstBreak { get; set; } = -1;
-        public int milestones { get; set; }
-        public int minutes { get; set; }
-    }
-
-    public sealed class TelemetryDto
-    {
-        public int id { get; set; }
-        public string faction { get; set; } = "";
-        public string name { get; set; } = "";
-        public string role { get; set; } = "";
-        public string gear { get; set; } = "";
-        public int health { get; set; }
-        public int stamina { get; set; }
-        public int mass { get; set; }
-        public string status { get; set; } = "";
-        public string? lineAssignment { get; set; }
-        public string? milestone { get; set; }
-        public int crowding { get; set; }
-        public double density { get; set; }
-        public double x { get; set; }
-        public double z { get; set; }
-        public bool latched { get; set; }
-        public int harmHits { get; set; }
-        public int harmSeverity { get; set; }
-        public int harmLossMl { get; set; }
-        public int harmHemorrhage { get; set; }
-        public string harmTriage { get; set; } = "";
-    }
 }

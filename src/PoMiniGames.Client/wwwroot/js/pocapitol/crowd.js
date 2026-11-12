@@ -544,6 +544,18 @@ export function createCrowd(scene, capacity, { time, groundHeight, shadowTexture
     const clear = createPolycarbonateMaterial({ color: '#c4e0ea', opacity: 0.42, roughness: 0.08, dispersion: 0.04 });
     part('visor', cube, clear, [0, 1.86, -0.25], [0.46, 0.32, 0.05], a => a.police, false, head);
     part('vest', cube, dark, [0, 1.2, -0.25], [0.67, 0.64, 0.12], a => a.police || (raider(a) && a.id >= 0 && a.id % 8 === 3));
+    // Gas masks: about one officer in three had one on once the gas was out, and so did a few
+    // in the crowd who had come expecting it. A dark facepiece with a filter on the left cheek.
+    const masked = a => a.health > 0 && ((a.police && a.id % 3 === 0) || (raider(a) && a.id >= 0 && a.id % 23 === 9));
+    part('gas-mask', cube, dark, [0, 1.76, -0.245], [0.24, 0.19, 0.1], masked, false, head);
+    part('gas-mask-filter', new THREE.CylinderGeometry(0.055, 0.055, 0.1, 8), new THREE.MeshStandardMaterial({ color: '#4a4f45', roughness: 0.6 }),
+        [0.1, 1.71, -0.29], [1, 1, 1], masked, true, head);
+    // Flags worn as capes, knotted at the neck: as common in the photographs as flags on poles.
+    const cape = a => raider(a) && a.id >= 0 && a.id % 11 === 6 && a.id % 5 !== 2;
+    for (const [kind, pick] of [['us', a => cape(a) && a.id % 3 !== 0], ['gadsden', a => cape(a) && a.id % 3 === 0]]) {
+        const texture = flagTexture(kind); textures.add(texture);
+        part('cape', cube, new THREE.MeshStandardMaterial({ map: texture, roughness: 0.9 }), [0, 1.14, 0.235], [0.62, 0.86, 0.025], pick, true);
+    }
     // Reflective bands on the hi-vis outer jackets.
     const reflective = new THREE.MeshStandardMaterial({ color: '#eef1e6', roughness: 0.35, metalness: 0.25 });
     part('hi-vis-band', ring, reflective, [0, 0.98, 0], [1.06, 0.92, 1], hiVis, true, { rot: Math.PI / 2, bone: 'spine' });

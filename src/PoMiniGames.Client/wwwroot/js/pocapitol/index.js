@@ -9,7 +9,8 @@ import { createRadar } from './radar.js';
 import { createInspector } from './inspector.js';
 import { createRecorder, toCsv, toText, toSvg } from './report.js';
 import { createDirector } from './director.js';
-import { loadPrefs, savePrefs, matches } from './prefs.js';
+import { loadPrefs, savePrefs, matches, rebind } from './prefs.js';
+import { createDebriefRouter } from './debrief.js';
 import { loadCampusData } from './campusData.js';
 import { loadSigns } from './signs.js';
 import { ensure, remove } from '../radzenTheme.js';
@@ -58,7 +59,7 @@ async function init(hostId, reference) {
         cores: navigator.hardwareConcurrency ?? 4,
     });
     const prefs = loadPrefs();
-    view.setFov?.(prefs.fov);
+    applyViewPrefs(view, prefs);
     const g = {
         host, view, reference, state: createAttempt(), started: false, disposed: false,
         yaw: 0, pitch: 0, keys: new Set(), firing: false, frame: 0, last: 0,
@@ -69,7 +70,7 @@ async function init(hostId, reference) {
         prefs, recorder: createRecorder({ labels: milestones.map(m => m.label) }), director: createDirector(),
         frames: [], longFrames: 0, captionAt: 0, initMs: Math.round(nowMs() - bootAt),
         osmBuildings: osm?.buildings?.length ?? 0, osmAttribution: osm?.attribution ?? '',
-        lastMilestone: 0, telemetry: [],
+        lastMilestone: 0, telemetry: [], debrief: createDebriefRouter(),
     };
     game = g;
     view.applyQuality?.(g.governor.settings());
@@ -123,16 +124,20 @@ async function init(hostId, reference) {
         }
     });
     listen(window, 'keyup', e => g.keys.delete(e.code));
-    // G lobs one of the one-player raider's concussion grenades, H a smoke grenade.
-    listen(window, 'keydown', e => {
-        if (e.repeat || e.target.closest?.('button, a, summary, [role="radio"]')) return;
-        if (e.code !== 'KeyG' && e.code !== 'KeyH') return;
-        if (!human() || g.state.status !== 'active') return;
-        const thrown = throwPlayerGrenade(g.state, view.aim(g.state, g.yaw), e.code === 'KeyH' ? 'smoke' : 'concussion');
+    // One grenade per press, from any input: G / H, the pad's X / Y, or the touch buttons.
+    const lob = kind => {
+        if (!human() || g.state.status !== 'active') return false;
+        const thrown = throwPlayerGrenade(g.state, view.aim(g.state, g.yaw), kind);
         if (thrown) {
             g.audio?.event(g.state.events.at(-1));
-            e.preventDefault();
+            navigator.vibrate?.(kind === 'smoke' ? 12 : 25);
         }
+        return Boolean(thrown);
+    };
+    listen(window, 'keydown', e => {
+        if (e.repeat || e.target.closest?.('button, a, summary, input, select, textarea, [role="radio"]')) return;
+        if (e.code !== 'KeyG' && e.code !== 'KeyH') return;
+        if (lob(e.code === 'KeyH' ? 'smoke' : 'concussion')) e.preventDefault();
     });
     listen(window, 'blur', () => { clearInput(); if (human()) pause(true); });
     listen(document, 'visibilitychange', () => { if (document.hidden) { clearInput(); if (human()) pause(true); } });
@@ -198,6 +203,8 @@ async function init(hostId, reference) {
     // button so a release always lifts the same key, even if the map changed mid-hold.
     const touchHeld = new WeakMap();
     listen(host.parentElement, 'pointerdown', e => {
+        const thrower = e.target.closest('[data-capitol-throw]');
+        if (thrower) { e.preventDefault(); lob(thrower.dataset.capitolThrow); return; }
         const button = e.target.closest('[data-capitol-action]');
         if (!button || !human() || g.state.status !== 'active') return;
         const code = g.prefs.keys[button.dataset.capitolAction];
@@ -229,6 +236,9 @@ async function init(hostId, reference) {
             const pad = connectedPads()[0];
             const edges = g.edges.update(pad);
             if (g.started && edges.includes(9)) pause(g.state.status === 'active');
+            // X lobs a concussion grenade, Y a smoke grenade.
+            if (edges.includes(2)) lob('concussion');
+            if (edges.includes(3)) lob('smoke');
             if (g.started && g.state.demo && g.restartAt && now >= g.restartAt) start(g.state.difficulty, true);
             // The app's tier can change mid-session (Settings, battery); the governor works under it.
             if (now >= g.tierAt) {
@@ -267,8 +277,11 @@ async function init(hostId, reference) {
                 g.director.observe(g.state, now);
                 if (human() && (g.firing || held('push') || pressed(pad, 7))) {
                     const aim = view.aim(g.state, g.yaw);
-                    const pushed = g.state.weapon === 'mg' ? fire(g.state, aim) : shove(g.state, aim);
-                    if (pushed) g.audio?.event(g.state.events.at(-1));
+                    // Everything the action adds is heard: a burst is a gunshot and its impact,
+                    // not just whichever of the two happened to be appended last.
+                    const mark = g.state.events.length;
+                    if (g.state.weapon === 'mg') fire(g.state, aim); else shove(g.state, aim);
+                    for (let i = mark; i < g.state.events.length; i++) g.audio?.event(g.state.events[i]);
                 }
                 if (g.state.status === 'completed' || g.state.status === 'failed') {
                     clearInput();
@@ -309,7 +322,7 @@ async function init(hostId, reference) {
                 // Heading changes every frame; the 5 Hz crowd read does not carry it.
                 const ear = s.role === 'none' ? selectLeader(s) ?? s.player : s.player;
                 const yaw = s.role === 'none' ? ear.heading ?? 0 : g.yaw;
-                g.audio.update({ ...g.mix, x: ear.x, z: ear.z, yaw, walking: moving, gassed: s.gassed, active: g.started && s.status === 'active' }, dt);
+                g.audio.update({ ...g.mix, x: ear.x, z: ear.z, yaw, walking: moving, gassed: s.gassed, wind: g.weather?.windSpeed, active: g.started && s.status === 'active' }, dt);
             }
             if (g.weather?.mode === 'live' && now >= (g.weatherRefreshAt || 0)) {
                 g.weatherRefreshAt = now + 300000;
@@ -370,10 +383,15 @@ function soundMix(s) {
     }
     const front = frontLine(s);
     const pressure = front && Math.abs(front.z - ear.z) < 28 ? Math.min(1, front.pressure / 24) : 0;
+    // A door the crowd is held at gets pounded on: the Crypt and Rotunda doors while their lines
+    // hold and are being leaned on, and the chamber doors once the crowd is in the last corridor.
+    let door = null;
+    if (front && /doors$/i.test(front.name ?? '') && pressure > 0.25) door = { x: 0, z: front.z - 0.6 };
+    else if (ear.z < -44 && crowd > 3) door = { x: 0, z: -52.7 };
     return {
         x: ear.x, z: ear.z, crowd: Math.min(1, crowd / 35), morale: crowd ? morale / crowd : 0, police, pressure,
         shear: packed ? Math.min(1, shear / packed / 2.5 * Math.min(1, packed / 8)) : 0,
-        walkers: near.slice(0, 6), horn,
+        walkers: near.slice(0, 6), horn, door, elapsed: s.elapsed,
     };
 }
 
@@ -385,7 +403,8 @@ function notify(g) {
         ? (s.subject >= 0 ? s.companions.find(c => c.id === s.subject) ?? selectLeader(s) : selectLeader(s))
         : null;
     const front = frontLine(s);
-    g.reference.invokeMethodAsync('OnUpdate', Math.round(s.health), s.milestone, s.elapsed, s.status, s.pushes, s.staggers, g.message,
+    g.reference.invokeMethodAsync('OnUpdate', Math.round(s.health), s.milestone, s.elapsed, s.status,
+        s.companions.length + (s.role === 'raider' ? 1 : 0), g.message,
         s.companions.filter(c => c.health > 0).length + (s.role === 'raider' && s.health > 0 ? 1 : 0),
         s.enemies.filter(e => e.health > 0).length, leader ? leader.id + 1 : 0, s.demo,
         s.outcome, s.enemies.length, front ? front.id : -1, front ? Math.round(front.integrity) : 0, g.governor.label(),
@@ -418,6 +437,7 @@ function start(difficulty, demo = false, role = 'raider') {
     if (!game.audio) {
         const current = game;
         game.audio = createAudio({ onCaption: text => current.caption?.(text, 'radio') });
+        game.audio.setFootage?.(game.prefs.footage === 'on');
     }
     if (!demo) game.view.canvas.focus();
 }
@@ -456,31 +476,6 @@ function clearUnitInspect() {
     game?.inspector?.clear();
 }
 
-function adjustHealth(delta) {
-    if (!game?.state) return;
-    game.state.health = Math.max(0, Math.min(100, Math.round((game.state.health ?? 100) + delta)));
-    notify(game);
-}
-
-function getDebugStats() {
-    if (!game) return { fps: 60, drawCalls: 0, actors: 0, keys: [], mode: 'auto', label: 'Auto' };
-    const r = game.view?.renderer;
-    const calls = r?.info?.render?.calls ?? parseInt(game.host?.dataset?.drawCalls || '0', 10);
-    const actors = parseInt(game.host?.dataset?.actorCount || '0', 10);
-    const now = nowMs();
-    const dt = Math.max(0.001, (now - (game.last || now)) / 1000);
-    const fps = Math.min(120, Math.round(1 / dt));
-    return {
-        fps: fps > 0 && fps < 200 ? fps : 60,
-        drawCalls: calls,
-        actors: actors,
-        keys: Array.from(game.keys || []),
-        mode: game.governor?.mode || 'auto',
-        label: game.governor?.label() || 'Auto',
-        weather: game.weather?.condition || 'Historical Jan 6',
-    };
-}
-
 /**
  * One event for the app's telemetry sink. `window.appInsights` is only present when the host
  * wires it up, so this is fire-and-forget: the ring buffer on `game.telemetry` is what the
@@ -506,7 +501,8 @@ const percentile = (values, p) => {
 function getDiagnostics() {
     const renderer = game?.view?.renderer;
     return {
-        build: '261111.1',
+        // The app's own build stamp (Layout/BuildVersion), so this never drifts from what shipped.
+        build: document.querySelector?.('.app-build-version')?.textContent?.trim() || 'dev',
         status: game?.state?.status ?? 'idle',
         initMs: game?.initMs ?? null,
         tier: game?.governor?.label?.() ?? 'none',
@@ -550,21 +546,20 @@ function buildReport(state) {
     });
 }
 
-function getReport() {
-    if (!game) return null;
-    return buildReport(game.state);
-}
-
 /**
  * The end-of-attempt panel in the shape the page wants: SVG, CSV and text, plus flat numbers.
  * The demo restarts six seconds after it ends, so the finished attempt is remembered before
  * the recorder is cleared.
  */
-function getReportView() {
-    if (!game) return null;
+function currentReport() {
     const state = game.state;
     const finished = state.status === 'completed' || state.status === 'failed';
-    const report = finished || !game.lastReport ? buildReport(state) : game.lastReport;
+    return finished || !game.lastReport ? buildReport(state) : game.lastReport;
+}
+
+function getReportView() {
+    if (!game) return null;
+    const report = currentReport();
     return {
         svg: toSvg(report),
         csv: toCsv(report),
@@ -579,9 +574,6 @@ function getReportView() {
         minutes: Math.round(report.elapsed / 60),
     };
 }
-
-function getReportCsv() { const report = getReport(); return report ? toCsv(report) : ''; }
-function getReportText() { const report = getReport(); return report ? toText(report) : ''; }
 
 /** Copy text, falling back to the old selection trick where the clipboard API is blocked. */
 async function copyText(text) {
@@ -641,6 +633,8 @@ function prefsView(prefs) {
     return {
         sensitivity: prefs.sensitivity, fov: prefs.fov, captions: prefs.captions,
         contrast: prefs.contrast, radar: prefs.radar, director: prefs.director,
+        tracers: prefs.tracers, motion: prefs.motion, footage: prefs.footage,
+        debrief: prefs.debrief, debriefModel: prefs.debriefModel,
         forward: prefs.keys.forward, back: prefs.keys.back, left: prefs.keys.left, right: prefs.keys.right,
         push: prefs.keys.push, sprint: prefs.keys.sprint, pause: prefs.keys.pause,
     };
@@ -652,20 +646,48 @@ function setPrefs(patch = {}) {
     const merged = savePrefs({ ...base, ...patch, keys: { ...base.keys, ...(patch.keys ?? {}) } });
     if (game) {
         game.prefs = merged;
-        game.view.setFov?.(merged.fov);
+        applyViewPrefs(game.view, merged);
+        game.audio?.setFootage?.(merged.footage === 'on');
         game.radar?.setPalette?.(merged.radar);
     }
     return prefsView(merged);
 }
 
-function setDirector(on) { return setPrefs({ director: !!on }).director; }
-
-function setTracerMode(mode) {
-    if (game?.view?.setTracerMode) game.view.setTracerMode(mode);
+/** Bind one key. If another action already holds it the two swap; the page gets the new map. */
+function rebindKey(action, code) {
+    const base = game?.prefs ?? loadPrefs();
+    return setPrefs({ keys: rebind(base, action, code).keys });
 }
 
-function setMotionReduction(calmVal) {
-    if (game?.view?.setMotionReduction) game.view.setMotionReduction(calmVal);
+/** How strongly each footage setting grades and sways the picture, 0..1. */
+const FOOTAGE_AMOUNT = { on: 1, light: 0.35, off: 0 };
+
+/** The comfort settings the live scene reads: lens, tracer style, combat shake and the footage look. */
+function applyViewPrefs(view, prefs) {
+    view.setFov?.(prefs.fov);
+    view.setTracerMode?.(prefs.tracers);
+    view.setMotionReduction?.(prefs.motion === 'reduced');
+    view.setFootage?.(FOOTAGE_AMOUNT[prefs.footage] ?? 0);
+}
+
+/**
+ * Write the debrief for the last attempt with whichever provider the player chose. Always
+ * resolves: a local model that is missing or slow falls back to the built-in writer, and the
+ * result says so.
+ */
+async function getDebrief() {
+    if (!game) return null;
+    const g = game;
+    const result = await g.debrief.write(currentReport(), { provider: g.prefs.debrief, model: g.prefs.debriefModel });
+    track('debrief', { provider: result.provider, ms: result.ms, tokens: result.tokens, retries: result.retries, fallback: result.fallback });
+    return result;
+}
+
+/** Is a local model answering? For the options sheet's "Check" button. */
+async function probeDebrief() {
+    const router = game?.debrief ?? createDebriefRouter();
+    const probe = await router.probe();
+    return { available: probe.available, models: probe.models.slice(0, 12).join(', '), error: probe.error ?? '' };
 }
 
 function dispose() {
@@ -681,10 +703,9 @@ function dispose() {
 }
 
 window.PoCapitol = {
-    init, start, pause, dispose, setGraphics, getGraphics: storedGraphics, getDebugStats,
+    init, start, pause, dispose, setGraphics, getGraphics: storedGraphics,
     setWeather, getWeather: storedWeather, initRadar, toggleUnitLatch, clearUnitInspect,
-    adjustHealth, setTracerMode, setMotionReduction,
-    getPrefs, setPrefs, setDirector,
-    getReport, getReportView, getReportCsv, getReportText, download, exportPng, copyText,
-    getDiagnostics, getDiagnosticsText, track,
+    getPrefs, setPrefs, rebindKey,
+    getReportView, getDebrief, probeDebrief, download, exportPng, copyText,
+    getDiagnostics, getDiagnosticsText,
 };

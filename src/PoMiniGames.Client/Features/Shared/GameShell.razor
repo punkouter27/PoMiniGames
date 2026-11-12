@@ -1,4 +1,5 @@
 @namespace PoMiniGamesClient.Features.Shared
+@using Microsoft.AspNetCore.Components.Rendering
 @implements IDisposable
 @* The whole shell is wrapped in a SwipeBack so every game gets a leftward
    swipe-back gesture without each game page having to wire it. *@
@@ -7,45 +8,11 @@
    MainLayout's SectionOutlet) rather than a separate second row. There is no
    back-arrow: the top bar's brand covers navigation back to the home page, and
    the swipe-back gesture below still works. *@
-<SectionContent SectionName="game-header">
-    <div class="gps-header-slot gps-header-slot--opts">
-        @* Game title — always rendered as the first child of the chrome slot so
-           every game page identifies itself in the top bar. Renders as an
-           <h1> so screen readers see a heading hierarchy, not a styled <span>.
-           The page's `Title` fragment may compose an icon + name. The H1 uses
-           --font-display / 0.95rem styling with browser-default margins
-           stripped. *@
-        @if (Title != null)
-        {
-            <h1 class="gps-game-title">@Title</h1>
-        }
-
-        @* Per-game mid-match options (mode, online): a gear beside the title that opens
-           a side drawer, the same kind of sheet Settings is. Difficulty belongs on the
-           start card (GameIntro Options), not here. Only for a page that passes
-           OptionsContent; every other game's header is unchanged. *@
-        @if (OptionsContent != null)
-        {
-            <GameOptionsSheet Heading="@OptionsHeading">@OptionsContent</GameOptionsSheet>
-        }
-        else
-        {
-            <GameOptionsSheet Heading="Settings" GlobalSettings="true" />
-        }
-
-        @* The header has no "All games" pill: it would compete for width with the
-           game title on a phone. Leaving a game is one tap on the brand, plus the
-           swipe-back gesture below.
-
-           `BackTo` drives SwipeBack; <GameOverModal> always goes home. *@
-
-        @* Live rating badge for single-player, ELO-rated modes: the page passes
-           its current rating via Elo and it renders next to the signed-in
-           identity (see MainLayout's "game-elo" outlet), so the player can see
-           their standing throughout the match. Left null in 2-player / demo /
-           unrated modes, which emits nothing. *@
-    </div>
-</SectionContent>
+@* The fragment handed to the outlet is one delegate for the life of the shell. SectionOutlet
+   keys what it renders on that delegate, so an inline fragment (a new one every render) made
+   it tear the whole header slot down and build it again each time the game re-rendered: a game
+   that updates five times a second closed its own options sheet 200 ms after it opened. *@
+<SectionContent SectionName="game-header" ChildContent="@(_header ??= RenderHeader)" />
 
 @if (Elo is int elo)
 {
@@ -147,6 +114,50 @@
 </SwipeBack>
 
 @code {
+    private RenderFragment? _header;
+
+    /// <summary>The top-bar slot: title and the options gear. Reads the current parameters each time it runs.</summary>
+    private void RenderHeader(RenderTreeBuilder __builder)
+    {
+        <div class="gps-header-slot gps-header-slot--opts">
+            @* Game title — always rendered as the first child of the chrome slot so
+               every game page identifies itself in the top bar. Renders as an
+               <h1> so screen readers see a heading hierarchy, not a styled <span>.
+               The page's `Title` fragment may compose an icon + name. The H1 uses
+               --font-display / 0.95rem styling with browser-default margins
+               stripped. *@
+            @if (Title != null)
+            {
+                <h1 class="gps-game-title">@Title</h1>
+            }
+
+            @* Per-game mid-match options (mode, online): a gear beside the title that opens
+               a side drawer, the same kind of sheet Settings is. Difficulty belongs on the
+               start card (GameIntro Options), not here. Only for a page that passes
+               OptionsContent; every other game's header is unchanged. *@
+            @if (OptionsContent != null)
+            {
+                <GameOptionsSheet Heading="@OptionsHeading">@OptionsContent</GameOptionsSheet>
+            }
+            else
+            {
+                <GameOptionsSheet Heading="Settings" GlobalSettings="true" />
+            }
+
+            @* The header has no "All games" pill: it would compete for width with the
+               game title on a phone. Leaving a game is one tap on the brand, plus the
+               swipe-back gesture below.
+
+               `BackTo` drives SwipeBack; <GameOverModal> always goes home. *@
+
+            @* Live rating badge for single-player, ELO-rated modes: the page passes
+               its current rating via Elo and it renders next to the signed-in
+               identity (see MainLayout's "game-elo" outlet), so the player can see
+               their standing throughout the match. Left null in 2-player / demo /
+               unrated modes, which emits nothing. *@
+        </div>
+    }
+
     [Parameter] public RenderFragment? Title { get; set; }
     // Display name credited on the end-of-game modal's leaderboard submission.
     // Passed straight through to GameOverModal — this shell renders it nowhere

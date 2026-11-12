@@ -449,12 +449,29 @@ function lineLimit(state, index, x) {
     return lineDefs[index].z + (index === 0 && rackGapAt(state, x) ? -RACK_PRESS : LINE_STANDOFF);
 }
 
+/**
+ * The limit that applies to someone standing at (x, z) in front of line `index`, or null if they
+ * are already behind it. The rack line differs by column: where a rack still stands the crowd
+ * stops short of it, and where one is down they press up to the officers. Whoever has stepped
+ * through a gap is still in front of the officers whichever column they drift into next, so the
+ * officers' own line is checked as well. Without that, sidestepping out of a gap read as
+ * "already past" and let people walk through a line that was holding.
+ */
+function limitInFront(state, index, x, z) {
+    const limit = lineLimit(state, index, x);
+    if (z >= limit - 0.05) return limit;
+    if (index !== 0) return null;
+    const officers = lineDefs[0].z - RACK_PRESS;
+    return z >= officers - 0.05 ? officers : null;
+}
+
 /** The z a raider is held at if this move would cross a line that still holds, else null. */
 function heldAt(state, x, fromZ, toZ) {
     for (const [i, def] of lineDefs.entries()) {
         if (state.lines[i].state !== 'holding') continue;
-        const limit = lineLimit(state, i, x);
-        if (x >= def.x0 - 0.5 && x <= def.x1 + 0.5 && fromZ >= limit - 0.05 && toZ < limit) return limit;
+        if (x < def.x0 - 0.5 || x > def.x1 + 0.5) continue;
+        const limit = limitInFront(state, i, x, fromZ);
+        if (limit !== null && toZ < limit) return limit;
     }
     return null;
 }
@@ -463,8 +480,7 @@ function heldAt(state, x, fromZ, toZ) {
 function lineAheadIndex(state, actor) {
     for (const [i] of lineDefs.entries()) {
         if (state.lines[i].state !== 'holding') continue;
-        const limit = lineLimit(state, i, actor.x);
-        if (actor.z >= limit - 0.05) return i;
+        if (limitInFront(state, i, actor.x, actor.z) !== null) return i;
     }
     return -1;
 }
@@ -472,7 +488,7 @@ function lineAheadIndex(state, actor) {
 /** Distance from a raider to the next line still holding in front of them. */
 function lineAhead(state, actor) {
     const i = lineAheadIndex(state, actor);
-    return i < 0 ? Infinity : actor.z - lineLimit(state, i, actor.x);
+    return i < 0 ? Infinity : Math.max(0, actor.z - limitInFront(state, i, actor.x, actor.z));
 }
 
 /**
@@ -977,14 +993,28 @@ function detonate(state, g) {
     explodeConcussion(state, g);
 }
 
+/** How much of a blast gets round a wall, pillar or stand: the rest is taken by the stone. */
+export const BLAST_SHADOW = 0.25;
+
+/** The share of overpressure that reaches (tx, tz) from a blast at (x, z): all of it in the open. */
+export function blastExposure(x, z, tx, tz) {
+    return clearLine(x, z, tx, tz) ? 1 : BLAST_SHADOW;
+}
+
 function explodeConcussion(state, g) {
     const x = g.toX, z = g.toZ;
+    // Distance sets the pressure and what stands in between takes most of it away, so a blast in
+    // one room no longer throws people on the far side of its wall.
+    const reach = (tx, tz) => {
+        const fall = blastFalloff(Math.hypot(tx - x, tz - z), GRENADE_RADIUS);
+        return fall > 0 ? fall * blastExposure(x, z, tx, tz) : 0;
+    };
     if (g.effect) g.effect.life = 0;
     state.events.push({ type: 'grenade', x, z, energy: GRENADE_BLAST, radius: GRENADE_RADIUS });
     state.effects.push({ type: 'grenadeBlast', x, z, life: 0.4, span: 0.4 });
     for (const e of state.enemies) {
         if (e.health <= 0) continue;
-        const fall = blastFalloff(Math.hypot(e.x - x, e.z - z), GRENADE_RADIUS);
+        const fall = reach(e.x, e.z);
         if (fall <= 0) continue;
         const dx = e.x - x, dz = e.z - z, d = Math.hypot(dx, dz) || 1;
         knockback(e, dx / d * 7 * fall, dz / d * 7 * fall);
@@ -996,7 +1026,7 @@ function explodeConcussion(state, g) {
     }
     for (const c of state.companions) {
         if (c.health <= 0) continue;
-        const fall = blastFalloff(Math.hypot(c.x - x, c.z - z), GRENADE_RADIUS);
+        const fall = reach(c.x, c.z);
         if (fall <= 0) continue;
         const dx = c.x - x, dz = c.z - z, d = Math.hypot(dx, dz) || 1;
         knockback(c, dx / d * 7 * fall, dz / d * 7 * fall);
@@ -1010,7 +1040,7 @@ function explodeConcussion(state, g) {
         if (c.health === 0) state.events.push({ type: 'down', x: c.x, z: c.z, energy: 40, material: 'body' });
     }
     if (state.role !== 'none' && state.health > 0) {
-        const fall = blastFalloff(Math.hypot(state.player.x - x, state.player.z - z), GRENADE_RADIUS);
+        const fall = reach(state.player.x, state.player.z);
         if (fall > 0) {
             const dx = state.player.x - x, dz = state.player.z - z, d = Math.hypot(dx, dz) || 1;
             knockback(state.player, dx / d * 7 * fall, dz / d * 7 * fall);

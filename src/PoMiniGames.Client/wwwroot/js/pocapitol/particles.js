@@ -8,12 +8,26 @@ import { billboardChunk, softTexture } from './look.js';
 // and a paused game shows a paused cloud.
 
 const GAS_PUFFS = 14, SPRAY_DROPS = 18, FLASH_SPRITES = 6, SMOKE_PUFFS = 26;
+// What a cloud leaves behind: gas and smoke do not vanish when the canister is spent, they thin
+// into a low haze that hangs for most of a minute and slides off with the wind.
+const HAZE_SECONDS = 50, HAZE_PUFFS = 4, HAZE_MAX = 8;
+// A dry-powder extinguisher let off in a doorway: a hard white jet, then a cloud that sits.
+const PLUME_SECONDS = 11, PLUME_PUFFS = 12, PLUME_MAX = 6;
+
+/**
+ * How dense a spent cloud's haze is `age` seconds after the cloud itself went, 0..1: it settles in
+ * over the first few seconds and thins steadily to nothing at HAZE_SECONDS.
+ */
+function hazeDensity(age) {
+    if (!(age >= 0) || age >= HAZE_SECONDS) return 0;
+    return Math.min(1, age / 4) * (1 - age / HAZE_SECONDS) ** 1.5;
+}
 /** Calm-day fallback. The scene replaces this with the weather's own wind vector when it has one. */
 const CALM = { x: 0.32, z: -0.12 };
 
 function frac(v) { return v - Math.floor(v); }
 
-export function createParticles(scene, capacity = 320) {
+export function createParticles(scene, capacity = 430) {
     const texture = softTexture('smoke');
     const geometry = new THREE.PlaneGeometry(1, 1);
     const alpha = new THREE.InstancedBufferAttribute(new Float32Array(capacity), 1);
@@ -41,7 +55,12 @@ export function createParticles(scene, capacity = 320) {
 
     const pose = new THREE.Object3D(), color = new THREE.Color();
     const gas = new THREE.Color('#d9dccd'), spray = new THREE.Color('#eaa24a'), smoke = new THREE.Color('#bfc0b8'), canister = new THREE.Color('#40454c');
+    const residue = new THREE.Color('#cfd1c6'), powder = new THREE.Color('#f2f4f3');
     let n = 0, light = 1;
+    // The only memory here: where clouds were, and where an extinguisher went off. Both are keyed
+    // to scenario time, so they hold still while the game is paused and clear on a new attempt.
+    const hazes = [], plumes = [], seen = new WeakSet();
+    let lastTime = 0;
     function add(x, y, z, size, c, a, boost = 1) {
         if (n >= capacity || a <= 0.003) return;
         pose.position.set(x, y, z); pose.scale.set(size, size, 1); pose.updateMatrix();
@@ -62,6 +81,45 @@ export function createParticles(scene, capacity = 320) {
     function update(effects, time, level, calm, wind = null) {
         n = 0; light = 0.35 + level * 0.65;
         const wx = wind?.x ?? CALM.x, wz = wind?.z ?? CALM.z;
+        // The clock running backwards is a new attempt: yesterday's air does not carry over.
+        if (time < lastTime) { hazes.length = 0; plumes.length = 0; }
+        lastTime = time;
+        for (const e of effects) {
+            if ((e.type !== 'gas' && e.type !== 'smoke') || seen.has(e)) continue;
+            seen.add(e);
+            // The haze takes over as the cloud itself fades out.
+            hazes.push({ x: e.x, z: e.z, r: (e.r ?? 7) * (e.type === 'smoke' ? 1.5 : 1.25), born: time + Math.max(0, e.life - 2.5), indoors: e.z < 14 });
+            if (hazes.length > HAZE_MAX) hazes.shift();
+        }
+        while (hazes.length && time - hazes[0].born >= HAZE_SECONDS) hazes.shift();
+        while (plumes.length && time - plumes[0].born >= PLUME_SECONDS) plumes.shift();
+        for (const h of hazes) {
+            const age = time - h.born, density = hazeDensity(age);
+            if (density <= 0) continue;
+            // Indoors there is no wind to take it; outdoors it slides away, slower than the wind.
+            const drift = h.indoors ? 0.02 : 0.12, seed = h.x * 0.93 + h.z * 1.61;
+            for (let i = 0; i < HAZE_PUFFS; i++) {
+                const r1 = frac(Math.sin(seed + i * 12.9898) * 43758.55), r2 = frac(Math.sin(seed + i * 78.233) * 12543.1);
+                const angle = r1 * Math.PI * 2, reach = h.r * (0.2 + 0.8 * r2) * (1 + age / HAZE_SECONDS);
+                const size = h.r * (1.3 + 0.5 * r1) * (1 + age / HAZE_SECONDS * 0.6);
+                add(h.x + Math.cos(angle) * reach + wx * age * drift, 0.75 + r2 * 0.7, h.z + Math.sin(angle) * reach + wz * age * drift,
+                    size, residue, 0.2 * density * (0.6 + 0.4 * r1));
+            }
+        }
+        for (const p of plumes) {
+            const age = time - p.born;
+            if (age < 0) continue;
+            const jet = Math.min(1, age / 1.4), fade = Math.min(1, (PLUME_SECONDS - age) / 5);
+            for (let i = 0; i < PLUME_PUFFS; i++) {
+                const r1 = frac(Math.sin(p.seed + i * 12.9898) * 43758.55), r2 = frac(Math.sin(p.seed + i * 78.233) * 12543.1);
+                // Each puff leaves the nozzle in turn, flies out along the jet and then stalls.
+                const along = (0.6 + 5.4 * (i + 1) / PLUME_PUFFS) * jet;
+                const side = (r1 - 0.5) * (0.4 + along * 0.55) * (1 + age * 0.12);
+                const size = 0.5 + along * 0.42 + age * 0.3 * (0.5 + r2);
+                add(p.x + p.dx * along - p.dz * side, 1.25 + (r2 - 0.35) * along * 0.3 + age * 0.05, p.z + p.dz * along + p.dx * side,
+                    size, powder, Math.min(1, 0.75 * fade * Math.min(1, age * 3 + 0.2) * (0.55 + 0.45 * r2)), 1.2);
+            }
+        }
         // A stiffer wind tears a cloud apart and carries it further before it fades.
         const spread = 1 + Math.min(1.2, Math.hypot(wx, wz) / 8);
         for (const e of effects) {
@@ -124,8 +182,16 @@ export function createParticles(scene, capacity = 320) {
         mesh.instanceColor.needsUpdate = true;
         alpha.needsUpdate = true;
     }
+    /**
+     * An extinguisher discharged at (x, z) along the unit direction (dx, dz), at scenario time
+     * `time`. Purely a cloud: it obscures, and nothing in the simulation reads it.
+     */
+    function plume(x, z, dx, dz, time) {
+        plumes.push({ x, z, dx, dz, born: time, seed: x * 1.37 + z * 0.71 + time });
+        if (plumes.length > PLUME_MAX) plumes.shift();
+    }
     function dispose() {
         scene.remove(mesh); mesh.dispose(); geometry.dispose(); material.dispose(); texture.dispose();
     }
-    return { update, dispose };
+    return { update, plume, dispose };
 }

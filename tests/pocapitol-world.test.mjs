@@ -14,12 +14,13 @@ const physics = url(read('js/pocapitol/physics.js'));
 const steering = url(read('js/pocapitol/steering.js').replace("'yuka'", `'${yuka}'`).replace("'./physics.js'", `'${physics}'`));
 const harm = url(read('js/pocapitol/harm.js'));
 const world = await import(url(read('js/pocapitol/world.js').replace("'./steering.js'", `'${steering}'`).replace("'./physics.js'", `'${physics}'`).replace("'./harm.js'", `'${harm}'`)));
-const { createAttempt, advance, shove, setPaused, walkable, milestones, obstacles, columns, statues, lineDefs,
+const { createAttempt, advance, shove, fire, throwPlayerGrenade, setPaused, walkable, milestones, obstacles, columns, statues, lineDefs,
     selectLeader, frontLine, clockLabel, CROWD_SIZE, MAX_POLICE, CIVILIANS, CURFEW_ELAPSED } = world;
-const { createGovernor, RUNGS } = await import(url(read('js/pocapitol/quality.js')));
+const { createGovernor, RUNGS, preferredMode, detectTier } = await import(url(read('js/pocapitol/quality.js')));
 const report = await import(url(read('js/pocapitol/report.js')));
 const director = await import(url(read('js/pocapitol/director.js')));
 const prefs = await import(url(read('js/pocapitol/prefs.js')));
+const debrief = await import(url(read('js/pocapitol/debrief.js')));
 const campusData = await import(url(read('js/pocapitol/campusData.js')));
 const signsData = await import(url(read('js/pocapitol/signs.js')));
 
@@ -496,12 +497,15 @@ async function engineHarness(rejectUpdates = false) {
     document.getElementById = () => host;
     document.exitPointerLock = () => { document.pointerLockElement = null; };
     const stored = new Map();
+    // The app's own device tier; without it the engine falls back to what the browser reports.
+    window.PoQuality = { tier: () => 'high' };
     window.localStorage = { getItem: key => stored.get(key) ?? null, setItem: (key, value) => stored.set(key, value) };
     const frames = new Map(), calls = [], errors = [], sounds = [], quality = [];
     let frameId = 0, disposed = 0, audioDisposed = 0;
     const view = { canvas, render() {}, aim: () => ({ x: 0, z: -1 }), applyQuality: s => quality.push(s), dispose() { disposed++; } };
     const context = vm.createContext({
-        window, document, AbortController, createAttempt, advance, shove, setPaused, selectLeader, frontLine,
+        window, document, AbortController, createAttempt, advance, shove, fire, throwPlayerGrenade, setPaused, selectLeader, frontLine,
+        preferredMode, detectTier, rebind: prefs.rebind, createDebriefRouter: debrief.createDebriefRouter,
         milestones, clockLabel,
         createRecorder: report.createRecorder, toCsv: report.toCsv, toText: report.toText, toSvg: report.toSvg,
         createDirector: director.createDirector,
@@ -562,7 +566,7 @@ test('engine preview never advances; live movement, pushing, pause and disposal 
     engine.key('Space');
     await engine.frame(2017);
     assert.equal(engine.state().pushes, 1);
-    assert.ok(engine.sounds.includes('shove'), 'The push made no sound');
+    assert.ok(engine.sounds.includes('gunshot'), 'The solo raider fired and the shot made no sound');
     engine.api.dispose();
     assert.equal(engine.frames.size, 0);
     assert.equal(engine.disposed(), 1);
@@ -631,15 +635,16 @@ test('demo engine ignores human input, reports its subject and line, loops, paus
     assert.equal(engine.state().player.z, 100);
     assert.equal(engine.state().pushes, 0);
     const update = engine.calls.find(call => call[0] === 'OnUpdate');
-    assert.equal(update[8], 512);
-    assert.equal(update[9], 44);
-    assert.ok(update[10] > 0);
-    assert.equal(update[11], true);
-    assert.equal(update[12], '');
-    assert.equal(update[13], 44);
-    assert.equal(update[14], 0);
-    assert.equal(update[15], 100);
-    assert.match(update[16], /^Auto · 100%$/);
+    assert.equal(update[5], 512, 'the page is told the size of the crowd instead of assuming it');
+    assert.equal(update[7], 512);
+    assert.equal(update[8], 44);
+    assert.ok(update[9] > 0);
+    assert.equal(update[10], true);
+    assert.equal(update[11], '');
+    assert.equal(update[12], 44);
+    assert.equal(update[13], 0);
+    assert.equal(update[14], 100);
+    assert.match(update[15], /^Auto · 100%$/);
     engine.api.pause(true);
     const frozen = JSON.stringify(engine.state());
     await engine.frame(1100);
@@ -697,6 +702,9 @@ test('comfort prefs, the after-action report and diagnostics are exposed to the 
     assert.equal(saved.fov, 72);
     assert.equal(saved.push, 'KeyF', 'a remap survives the round trip');
     assert.equal(saved.forward, 'KeyW', 'untouched bindings are kept');
+    const swapped = engine.window.PoCapitol.rebindKey('sprint', 'KeyF');
+    assert.equal(swapped.sprint, 'KeyF');
+    assert.equal(swapped.push, 'ShiftLeft', 'a key already in use swaps instead of doing two things');
 
     engine.api.start('story');
     await engine.frame(1000); await engine.frame(1017); await engine.frame(1034);
@@ -710,5 +718,10 @@ test('comfort prefs, the after-action report and diagnostics are exposed to the 
     const diagnostics = engine.window.PoCapitol.getDiagnosticsText();
     assert.match(diagnostics, /PoCapitol build/);
     assert.match(diagnostics, /Director on/);
+
+    const written = await engine.window.PoCapitol.getDebrief();
+    assert.equal(written.provider, 'rules', 'the built-in writer is the default: nothing leaves the page');
+    assert.equal(written.fallback, false);
+    assert.match(written.text, /attempt/i);
     engine.api.dispose();
 });

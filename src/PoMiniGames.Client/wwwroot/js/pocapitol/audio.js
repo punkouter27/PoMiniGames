@@ -7,7 +7,12 @@
 //   crowd bed   filtered noise that swells with how many people are pressing a line
 //   friction    a second noise bed whose pitch and level follow how fast a packed crowd is
 //               shearing past itself: shuffling is quiet, a surge is a hiss
-//   chant       a three-beat rhythm on a rough vowel, when the crowd is confident
+//   chant       a choir of ten detuned throats through three formant bands, so the three beats
+//               are vowels ("U! S! A!", "Stop the steal!") and not a tone; the back of the crowd
+//               answers a beat late, and the same choir roars when a line gives way
+//   air horn    hand-held horns somewhere in the crowd, outdoors
+//   helicopter  one circling high over the grounds all afternoon: rotor chop under everything
+//   sirens      a far wail from the avenues now and then
 //   bullhorn    a garbled, band-limited voice from where the police actually are
 //   alarm       a two-tone building alarm once the crowd is inside
 //   radio       squelch-and-beep bursts from the nearest officer
@@ -17,6 +22,11 @@
 //               into a barricade rings and a bump in a crowd only thuds
 //   footfalls   the nearest walkers, one at a time, each from its own position
 //   one-shots   spray, gas, the flash-bang, a line giving way, and gunfire in the armed demo
+//   doors       glass going at the first doors, an extinguisher let off in the doorway, fists and
+//               boots on whichever door the crowd is held at
+//   alert       the curfew alert, on every phone at once and none of them in time
+//   footage     optional: the whole mix through a phone's microphone (wind buffeting the capsule,
+//               a hard limiter that pumps after every bang, no low end)
 //
 // Space: every one-shot is placed in the world with an HRTF panner relative to the listener's
 // position and heading, attenuated by distance, and muffled when walls stand between it and the
@@ -25,7 +35,7 @@
 // single slap-back from the building's facade at the right delay.
 //
 // Silent on kiosk routes, where the attract reel runs without anyone having asked for sound.
-import { areas, groundHeight } from './world.js';
+import { areas, groundHeight, CLOCK_START } from './world.js';
 
 const quiet = () => /[?&]kiosk=/.test(location.search);
 const SPEED_OF_SOUND = 343;
@@ -41,7 +51,42 @@ export const MATERIALS = {
     marble: { modes: [[1450, 0.45, 1], [2620, 0.32, 0.7], [3980, 0.22, 0.5], [5510, 0.15, 0.35]], click: 5200, thud: 0 },
     metal: { modes: [[640, 0.9, 1], [1450, 0.65, 0.8], [2250, 0.55, 0.6], [3720, 0.4, 0.4]], click: 6500, thud: 0 },
     ground: { modes: [[140, 0.05, 1], [310, 0.03, 0.4]], click: 480, thud: 80 },
+    glass: { modes: [[2150, 0.09, 1], [3380, 0.07, 0.8], [4720, 0.05, 0.6], [6450, 0.04, 0.4]], click: 7200, thud: 0 },
+    wood: { modes: [[112, 0.17, 1], [208, 0.11, 0.6], [345, 0.07, 0.3]], click: 900, thud: 72 },
 };
+
+/** The first three formants of the vowels a chanting crowd uses, Hz (adult averages). */
+export const VOWELS = {
+    ee: [270, 2290, 3010], eh: [530, 1840, 2480], ah: [730, 1090, 2440],
+    oh: [570, 840, 2410], oo: [300, 870, 2240], uh: [640, 1190, 2390],
+};
+
+/**
+ * Chants as beats: the vowel a beat opens on, the vowel it glides to, and whether it starts or
+ * ends on a sibilant. Three beats and a rest each, as they were shouted.
+ */
+export const CHANTS = [
+    [{ from: 'ee', to: 'oo' }, { from: 'eh', to: 'eh', hiss: 'end' }, { from: 'eh', to: 'ee' }],
+    [{ from: 'ah', to: 'ah', hiss: 'start' }, { from: 'uh', to: 'uh' }, { from: 'ee', to: 'ee', hiss: 'start' }],
+];
+
+/**
+ * Scenario minutes at which the city's 6 pm curfew, ordered that afternoon, reaches the phones in
+ * the crowd. The order is history; the minute it is heard here is approximate.
+ */
+export const CURFEW_ALERT_ELAPSED = 14 * 60 + 31 - CLOCK_START;
+
+/** Where the helicopter is `t` seconds in: a slow, slightly uneven circuit high over the lawn. */
+export function helicopterAt(t) {
+    const angle = t * (Math.PI * 2 / 85);
+    return { x: Math.sin(angle) * 95, y: 110 + Math.sin(t * 0.07) * 15, z: 35 + Math.cos(angle) * 80 };
+}
+
+/** How hard the wind buffets a phone's microphone, 0..1, from wind speed (m/s) and the clock. */
+export function micBuffet(windSpeed, t) {
+    const gust = Math.max(0, Math.sin(t * 0.9) * Math.sin(t * 2.3 + 1));
+    return clamp(windSpeed / 9, 0, 1) * (0.25 + 0.75 * gust);
+}
 
 /** Which room the point is in: an index into world.js `areas`, or 0 (the grounds) outside all. */
 function areaIndex(x, z) {
@@ -129,11 +174,24 @@ export function createAudio({ onCaption } = {}) {
     const bus = window.PoAudioBus;
     let out = null;
     try { out = quiet() || !bus ? null : bus.busSync?.('sfx') ?? null; } catch { out = null; }
-    if (!out) return { update() {}, event() {}, dispose() {}, caption };
+    if (!out) return { update() {}, event() {}, dispose() {}, setFootage() {}, caption };
     const ctx = out.context;
     const master = ctx.createGain();
     master.gain.value = 0.9;
-    master.connect(out);
+    // Two ways out: straight to the bus, or through a phone's microphone. Only one is open at a
+    // time, cross-faded, so turning the footage sound on never clicks.
+    const nodes = [];
+    const dry = ctx.createGain(), mic = ctx.createGain();
+    mic.gain.value = 0;
+    const micTone = ctx.createBiquadFilter(), micPeak = ctx.createBiquadFilter(), micLimit = ctx.createDynamicsCompressor();
+    micTone.type = 'highpass'; micTone.frequency.value = 190;
+    micPeak.type = 'peaking'; micPeak.frequency.value = 2800; micPeak.Q.value = 0.8; micPeak.gain.value = 5;
+    micLimit.threshold.value = -34; micLimit.knee.value = 4; micLimit.ratio.value = 14;
+    micLimit.attack.value = 0.002; micLimit.release.value = 0.38;
+    master.connect(dry).connect(out);
+    master.connect(micTone).connect(micPeak).connect(micLimit).connect(mic).connect(out);
+    nodes.push(dry, mic, micTone, micPeak, micLimit);
+    let footage = false;
 
     // Reverb: two convolvers that cross-fade, so moving between rooms never clicks.
     const wetSend = ctx.createGain();
@@ -169,31 +227,82 @@ export function createAudio({ onCaption } = {}) {
     const samples = noise.getChannelData(0);
     for (let i = 0; i < samples.length; i++) samples[i] = Math.random() * 2 - 1;
     const running = [];
-    function loop(type, frequency, q) {
+    function loop(type, frequency, q, dest = master) {
         const source = ctx.createBufferSource(), filter = ctx.createBiquadFilter(), gain = ctx.createGain();
         source.buffer = noise; source.loop = true;
         source.playbackRate.value = 0.8 + running.length * 0.13;
         filter.type = type; filter.frequency.value = frequency; filter.Q.value = q;
         gain.gain.value = 0;
-        source.connect(filter).connect(gain).connect(master);
+        source.connect(filter).connect(gain).connect(dest);
         source.start();
         running.push(source);
+        nodes.push(gain);
         return { gain, filter };
     }
     const murmur = loop('bandpass', 420, 0.5).gain;
     const roar = loop('bandpass', 1150, 0.9).gain;
     const friction = loop('bandpass', 900, 1.4);
-    // The chant's voice: three detuned saws through a vowel-ish band, gated by a rhythm.
-    const chant = ctx.createGain(), vowel = ctx.createBiquadFilter();
-    chant.gain.value = 0;
-    vowel.type = 'bandpass'; vowel.frequency.value = 720; vowel.Q.value = 2.2;
-    for (const frequency of [118, 149, 177, 236]) {
-        const voice = ctx.createOscillator();
+    // Wind on the phone's capsule: it goes in after the microphone's own filter, because it is
+    // the capsule moving, not a sound in the air.
+    const buffet = loop('lowpass', 120, 0.7, micLimit).gain;
+    // The crowd's voice: ten throats at unrelated pitches, each wandering a little, so together
+    // they are a crowd and not a chord. Vowels are made after them, by the formant banks.
+    const choir = ctx.createGain();
+    choir.gain.value = 0.16;
+    [97, 109, 118, 127, 139, 151, 166, 183, 204, 229].forEach((frequency, i) => {
+        const voice = ctx.createOscillator(), drift = ctx.createOscillator(), depth = ctx.createGain();
         voice.type = 'sawtooth'; voice.frequency.value = frequency;
-        voice.detune.value = (frequency % 7 - 3) * 9;
-        voice.connect(vowel); voice.start(); running.push(voice);
+        drift.frequency.value = 3.1 + i * 0.37; depth.gain.value = 5 + (i % 3) * 4;
+        drift.connect(depth).connect(voice.detune);
+        voice.connect(choir);
+        voice.start(); drift.start(); running.push(voice, drift);
+    });
+    /** Three band-passes at a vowel's formants over the choir. `shape` moves them to another vowel. */
+    function formantBank() {
+        const level = ctx.createGain();
+        level.gain.value = 0;
+        const bands = [[5, 1], [8, 0.55], [9, 0.22]].map(([q, gain], i) => {
+            const band = ctx.createBiquadFilter(), share = ctx.createGain();
+            band.type = 'bandpass'; band.Q.value = q; band.frequency.value = VOWELS.ah[i];
+            share.gain.value = gain;
+            choir.connect(band).connect(share).connect(level);
+            return band;
+        });
+        nodes.push(level);
+        return {
+            level,
+            shape(vowel, at, glide = 0.03) {
+                (VOWELS[vowel] ?? VOWELS.ah).forEach((hz, i) => bands[i].frequency.setTargetAtTime(hz, at, glide));
+            },
+        };
     }
-    vowel.connect(chant).connect(master);
+    // The chant up close, and the same chant from the back of the crowd: late, duller, quieter.
+    const chant = formantBank(), cheer = formantBank();
+    const echo = ctx.createDelay(0.5), echoTone = ctx.createBiquadFilter(), echoLevel = ctx.createGain();
+    echo.delayTime.value = 0.23; echoTone.type = 'lowpass'; echoTone.frequency.value = 1400; echoLevel.gain.value = 0.5;
+    chant.level.connect(master);
+    chant.level.connect(echo).connect(echoTone).connect(echoLevel).connect(master);
+    cheer.level.connect(master);
+    nodes.push(choir, echo, echoLevel);
+    // The helicopter: rotor wash chopped at the blade rate, placed high overhead and moved a
+    // little every frame. It is there from the start and simply gets louder outdoors.
+    const heli = ctx.createGain(), heliPan = ctx.createPanner(), chop = ctx.createGain();
+    const blades = ctx.createOscillator(), bladeDepth = ctx.createGain();
+    heli.gain.value = 0; chop.gain.value = 0.5;
+    blades.type = 'sawtooth'; blades.frequency.value = 13; bladeDepth.gain.value = 0.5;
+    blades.connect(bladeDepth).connect(chop.gain);
+    blades.start(); running.push(blades);
+    try { heliPan.panningModel = 'HRTF'; } catch { heliPan.panningModel = 'equalpower'; }
+    heliPan.distanceModel = 'inverse'; heliPan.refDistance = 40; heliPan.rolloffFactor = 1; heliPan.maxDistance = 400;
+    chop.connect(heli).connect(heliPan).connect(master);
+    for (const [type, frequency, q, share] of [['lowpass', 420, 0.7, 1], ['bandpass', 900, 0.8, 0.35]]) {
+        const source = ctx.createBufferSource(), filter = ctx.createBiquadFilter(), gain = ctx.createGain();
+        source.buffer = noise; source.loop = true; source.playbackRate.value = 0.7 + share * 0.2;
+        filter.type = type; filter.frequency.value = frequency; filter.Q.value = q; gain.gain.value = share;
+        source.connect(filter).connect(gain).connect(chop);
+        source.start(); running.push(source);
+    }
+    nodes.push(heli, heliPan, chop);
     const alarm = ctx.createGain(), siren = ctx.createOscillator(), alarmTone = ctx.createBiquadFilter();
     alarm.gain.value = 0; siren.type = 'square'; siren.frequency.value = 880;
     alarmTone.type = 'lowpass'; alarmTone.frequency.value = 1700;
@@ -303,7 +412,84 @@ export function createAudio({ onCaption } = {}) {
         if (layers.crack > 0) burst({ type: 'highpass', frequency: 2600, q: 0.6, volume: layers.crack * drive, attack: 0.001, seconds: 0.03, at, dest });
     }
 
+    /** The crowd's roar as a line goes: the choir on an open vowel, swelling and sagging. */
+    function roarUp(volume, seconds = 3.2) {
+        const t = ctx.currentTime;
+        cheer.shape('ah', t, 0.05);
+        cheer.shape('oh', t + seconds * 0.45, 0.6);
+        cheer.level.gain.cancelScheduledValues(t);
+        cheer.level.gain.setTargetAtTime(volume, t, 0.18);
+        cheer.level.gain.setTargetAtTime(0, t + seconds * 0.4, seconds * 0.3);
+    }
+    /** A hand-held air horn: one harsh reed, a touch flat as it starts, cut off dead. */
+    function airhorn(dest, seconds = 0.6, at = 0) {
+        const filter = ctx.createBiquadFilter(), gain = ctx.createGain();
+        const t = ctx.currentTime + at, pitch = 395 + Math.random() * 60;
+        filter.type = 'bandpass'; filter.frequency.value = 1400; filter.Q.value = 0.7;
+        gain.gain.setValueAtTime(0, t);
+        gain.gain.linearRampToValueAtTime(0.085, t + 0.025);
+        gain.gain.setValueAtTime(0.085, t + seconds);
+        gain.gain.linearRampToValueAtTime(0, t + seconds + 0.07);
+        for (const [type, ratio] of [['sawtooth', 1], ['square', 1.008]]) {
+            const reed = ctx.createOscillator();
+            reed.type = type;
+            reed.frequency.setValueAtTime(pitch * ratio * 0.94, t);
+            reed.frequency.linearRampToValueAtTime(pitch * ratio, t + 0.06);
+            reed.connect(filter);
+            reed.start(t); reed.stop(t + seconds + 0.1);
+        }
+        filter.connect(gain).connect(dest);
+    }
+    /** A siren on an avenue well off the grounds: two slow sweeps, already dull with distance. */
+    function wail(dest, volume = 0.5) {
+        const voice = ctx.createOscillator(), tone = ctx.createBiquadFilter(), gain = ctx.createGain();
+        const t = ctx.currentTime;
+        voice.type = 'triangle';
+        voice.frequency.setValueAtTime(700, t);
+        for (let i = 0; i < 4; i++) voice.frequency.linearRampToValueAtTime(i % 2 ? 700 : 1250, t + (i + 1) * 1.6);
+        tone.type = 'lowpass'; tone.frequency.value = 1100;
+        gain.gain.setValueAtTime(0, t);
+        gain.gain.linearRampToValueAtTime(volume, t + 1.2);
+        gain.gain.setValueAtTime(volume, t + 5);
+        gain.gain.linearRampToValueAtTime(0, t + 6.4);
+        voice.connect(tone).connect(gain).connect(dest);
+        voice.start(t); voice.stop(t + 6.5);
+    }
+    /** A pane going: the crack, the sheet ringing as it breaks up, then the pieces landing. */
+    function glass(dest, at = 0) {
+        burst({ type: 'highpass', frequency: 4500, volume: 0.34, attack: 0.001, seconds: 0.08, at, dest });
+        for (let i = 0; i < 5; i++) {
+            strike({ material: 'glass', energy: 60 + Math.random() * 160, mass: 20 + Math.random() * 30, at: at + 0.02 + Math.random() * 0.45, dest, gain: 0.5 });
+        }
+        burst({ type: 'bandpass', frequency: 6200, q: 3, volume: 0.06, attack: 0.05, seconds: 0.6, at: at + 0.15, dest });
+    }
+    /** Fists and boots on a heavy door: three or four blows, never quite even. */
+    function pound(dest) {
+        const blows = 3 + (Math.random() < 0.4 ? 1 : 0);
+        for (let i = 0; i < blows; i++) {
+            strike({ material: 'wood', energy: 150 + Math.random() * 120, mass: 320, at: i * 0.21 + Math.random() * 0.05, dest });
+        }
+    }
+    /** The attention signal of a wireless emergency alert: 853 and 960 Hz together, in bursts. */
+    function alertTone(dest, at = 0) {
+        const tone = ctx.createBiquadFilter(), gain = ctx.createGain(), t = ctx.currentTime + at;
+        tone.type = 'highpass'; tone.frequency.value = 600;
+        gain.gain.setValueAtTime(0, t);
+        for (let i = 0; i < 4; i++) {
+            gain.gain.setValueAtTime(0.06, t + i * 0.62);
+            gain.gain.setValueAtTime(0, t + i * 0.62 + 0.5);
+        }
+        for (const frequency of [853, 960]) {
+            const voice = ctx.createOscillator();
+            voice.type = 'square'; voice.frequency.value = frequency;
+            voice.connect(tone);
+            voice.start(t); voice.stop(t + 2.6);
+        }
+        tone.connect(gain).connect(dest);
+    }
+
     let lastShove = 0, lastShot = 0, lastHit = 0, chantAt = 0, alarmAt = 0, radioAt = 3, hornAt = 6, stepAt = 0, coughAt = 0, footAt = 0, clock = 0, walker = 0;
+    let chantCount = 0, airhornAt = 9, wailAt = 20, poundAt = 0, alerted = false;
 
     function event(e) {
         if (!e.human && farAway(e)) return;
@@ -401,6 +587,13 @@ export function createAudio({ onCaption } = {}) {
                 }
                 strike({ material: 'marble', energy: 160, mass: 300, at: 0.2, dest });
                 burst({ frequency: 900, q: 0.6, volume: 0.3, attack: 0.4, seconds: 3.2, dest });
+                // A whole line going (not one shield) is what the crowd roars at. At a doorway
+                // someone lets off an extinguisher; at the first doors the panes go as well.
+                if (Number.isInteger(e.line)) {
+                    roarUp(0.34);
+                    if (e.line === 1) for (const x of [-12, 12]) glass(place(x, e.z, 3, 3), 0.15 + Math.random() * 0.5);
+                    if (e.line >= 1) burst({ type: 'highpass', frequency: 2600, q: 0.4, volume: 0.26, attack: 0.04, seconds: 1.5, at: 0.9, sweep: 1700, dest });
+                }
                 dispatchCallout("Perimeter line breach! All units fall back!");
                 break;
             }
@@ -484,6 +677,14 @@ export function createAudio({ onCaption } = {}) {
         aimListener();
         const indoors = mix.z < 14.5, live = mix.active && !bus.isMuted?.();
         ease(master.gain, live ? 0.9 : 0, 0.25);
+        // Overhead all afternoon. Through the roof it is a faint thud; outdoors it is the floor
+        // under every other sound.
+        const overhead = helicopterAt(clock);
+        if (heliPan.positionX) {
+            heliPan.positionX.value = overhead.x; heliPan.positionY.value = overhead.y; heliPan.positionZ.value = overhead.z;
+        } else heliPan.setPosition(overhead.x, overhead.y, overhead.z);
+        ease(heli.gain, live ? (indoors ? 0.08 : 1.4) : 0, 0.8);
+        ease(buffet.gain, live && footage && !indoors ? micBuffet(mix.wind ?? 6.7, clock) * 0.5 : 0, 0.08);
         tuneRoom(listener);
         ease(wetSend.gain, indoors ? 0.55 : 0.12);
         ease(murmur.gain, live ? 0.07 + mix.crowd * 0.1 : 0);
@@ -494,16 +695,55 @@ export function createAudio({ onCaption } = {}) {
         ease(friction.filter.frequency, 520 + shear * 2600, 0.12);
         if (!live) return;
         const t = ctx.currentTime;
-        // "U! S! A!": three beats and a rest, only while the crowd has its nerve.
+        // Three beats and a rest, only while the crowd has its nerve. Four rounds of one chant,
+        // then the other takes over.
         if (clock >= chantAt) {
             chantAt = clock + 1.75;
             if (mix.morale > 0.55 && mix.crowd > 0.25) {
-                const level = 0.05 * mix.crowd * (indoors ? 0.7 : 1);
-                for (let beat = 0; beat < 3; beat++) {
-                    chant.gain.setTargetAtTime(level, t + beat * 0.42, 0.03);
-                    chant.gain.setTargetAtTime(0, t + beat * 0.42 + 0.24, 0.05);
-                    vowel.frequency.setValueAtTime([560, 900, 760][beat], t + beat * 0.42);
+                const level = 0.32 * mix.crowd * (indoors ? 0.7 : 1);
+                const beats = CHANTS[Math.floor(chantCount++ / 4) % CHANTS.length];
+                beats.forEach((beat, i) => {
+                    const at = t + i * 0.42;
+                    chant.shape(beat.from, at, 0.012);
+                    if (beat.to !== beat.from) chant.shape(beat.to, at + 0.07, 0.05);
+                    chant.level.gain.setTargetAtTime(level, at, 0.03);
+                    chant.level.gain.setTargetAtTime(0, at + 0.24, 0.05);
+                    if (beat.hiss) {
+                        burst({ type: 'highpass', frequency: 5200, volume: level * 0.09, attack: 0.02, seconds: 0.11, at: i * 0.42 + (beat.hiss === 'end' ? 0.2 : 0) });
+                    }
+                });
+            }
+        }
+        if (!indoors && clock >= airhornAt) {
+            airhornAt = clock + 14 + Math.random() * 16;
+            if (mix.crowd > 0.3 && mix.morale > 0.4) {
+                // Somewhere back in the crowd, never right at the ear.
+                const angle = Math.random() * Math.PI * 2, reach = 7 + Math.random() * 12;
+                const dest = place(mix.x + Math.sin(angle) * reach, mix.z + Math.abs(Math.cos(angle)) * reach, 3, 2);
+                airhorn(dest, 0.35 + Math.random() * 0.7);
+                if (Math.random() < 0.4) airhorn(dest, 0.3, 1.1);
+            }
+        }
+        if (!indoors && clock >= wailAt) {
+            wailAt = clock + 28 + Math.random() * 30;
+            wail(place(Math.random() < 0.5 ? -115 : 115, 40 + Math.random() * 50, 7, 1.5));
+        }
+        // Whichever door the crowd is held at takes a beating for as long as it is held.
+        if (mix.door && clock >= poundAt) {
+            poundAt = clock + 1.5 + Math.random() * 1.8;
+            pound(place(mix.door.x + (Math.random() - 0.5) * 3, mix.door.z, 2, 1.4));
+        }
+        // The curfew alert: every phone near you, each a fraction of a second out from the next.
+        const elapsed = mix.elapsed ?? 0;
+        if (elapsed < CURFEW_ALERT_ELAPSED) alerted = false;
+        else if (!alerted) {
+            alerted = true;
+            // Joining late (a restored or fast-forwarded attempt) does not replay it.
+            if (elapsed < CURFEW_ALERT_ELAPSED + 5) {
+                for (let i = 0; i < 4; i++) {
+                    alertTone(place(mix.x + (Math.random() - 0.5) * 9, mix.z + (Math.random() - 0.5) * 9, 4, 1.2), i ? Math.random() * 0.7 : 0);
                 }
+                caption('Emergency alert: citywide curfew from 6:00 PM.');
             }
         }
         if (indoors && clock >= alarmAt) {
@@ -540,11 +780,18 @@ export function createAudio({ onCaption } = {}) {
     function dispose() {
         for (const source of running) { try { source.stop(); } catch { /* already stopped */ } }
         try {
+            for (const node of nodes) node.disconnect();
             master.disconnect(); wetSend.disconnect();
             for (const slot of slots) { slot.convolver.disconnect(); slot.level.disconnect(); }
         } catch { /* already disconnected */ }
         // Leave the listener where the rest of the app expects it: the origin, looking down -Z.
         listener.x = 0; listener.z = 0; listener.yaw = 0; aimListener();
     }
-    return { update, event, dispose };
+    /** Routes the whole mix through a phone's microphone (or back out of it). */
+    function setFootage(on) {
+        footage = on === true;
+        ease(dry.gain, footage ? 0 : 1, 0.15);
+        ease(mic.gain, footage ? 1.5 : 0, 0.15);
+    }
+    return { update, event, dispose, setFootage };
 }

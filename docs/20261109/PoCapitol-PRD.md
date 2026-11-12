@@ -398,8 +398,8 @@ Production upgrade of the visual, acoustic, and collision engines to sustain a 3
 9. **Continuous Collision Detection (CCD) & Sub-Stepping Physics (`physics.js`):**
    - Multi-substep swept continuous collision detection (`subStepSweep`) preventing high-velocity tunneling through columns, barricades, and bodies.
    - Realistic actor mass distribution ($58\text{ kg}$ to $104\text{ kg}$) and elastic-plastic momentum exchange conservation.
-10. **Headless Blender Pipeline (`scripts/blender/pocapitol-asset-pipeline.py`):**
-    - Automated batch decimation, LOD generation (LOD0: 100%, LOD1: 50%, LOD2: 25%), ambient occlusion/normal map baking, and Draco-compressed `.glb` export via `blender --background`.
+10. **Headless Blender Pipeline:** removed on 2026-11-12 (section 22). Nothing in the game ever
+    loaded its output; the one model, `figure.glb`, is written by `scripts/pocapitol-figure.mjs`.
 
 ## 16. Comprehensive Scene Realism Overhaul (2026-11-10)
 
@@ -732,3 +732,144 @@ the limits in section 17.
 Verified with the Node engine tests (`tests/pocapitol-*.test.mjs`, including a new graphics/physics
 suite) and a zero-warning `dotnet build`.
 
+## 22. Cleanup, input parity, tabbed options, debrief and blast shadow (2026-11-12)
+
+A five-phase pass over the existing game. Nothing here touches the limits in section 17.
+
+### Cleanup and structure
+
+- The page is split: `PoCapitolPage.razor` is markup and render fragments, and
+  `PoCapitolPage.razor.cs` holds state, engine calls and the engine's records.
+- Dead engine API removed (`adjustHealth`, `getDebugStats`, `setDirector`, `getReport`,
+  `getReportCsv`, `getReportText`, `setTracerMode`, `setMotionReduction`), along with 27 unused
+  CSS selectors from the old floating HUD, top bar, bottom bar and bespoke drawer, the unused
+  Blender pipeline script, and two hard-coded build strings. Diagnostics now read the app's own
+  build stamp.
+- The HUD no longer assumes a crowd of 256. The engine reports the crowd's size with every
+  update, so the Tab panel, diagnostics and the start card all show the real 512.
+- The engine harness in `tests/pocapitol-world.test.mjs` had fallen behind the engine's imports
+  and six of its tests could not start. It is repaired.
+
+### Input parity
+
+- Grenades and smoke are no longer keyboard-only. Touch gets two buttons beside FIRE that show
+  what is left and disable at zero; a gamepad throws with X and Y. All three paths call the same
+  function as G and H.
+- The touch button says FIRE for an armed solo raider and PUSH for the police line.
+- Tracer style and combat shake are saved with the other comfort settings instead of being lost
+  on reload.
+- Binding a key that another action already uses swaps the two, so one key can never do two
+  things and no action is left without a key.
+
+### Interface
+
+- Scenario options are four tabs (Display, Comfort, Controls, Debrief) instead of one long
+  scroll, and the three copies of the graphics picker are one fragment.
+- Copy that contradicted the game is corrected: the historical-context text said nobody is armed
+  in solo play, while a solo raider carries a machine gun and grenades. Headcounts and the
+  control list on the start card now match what the engine does.
+- Layout stability: the caption strip stays in the tree while play is live, and the role
+  brief, connection status and debrief hold their height, so text arriving late moves nothing.
+- On a touchscreen the unit inspector opens at the top instead of on top of the d-pad.
+
+### Debrief
+
+- Every finished attempt gets three plain sentences on the end card and in the Tab panel.
+- `debrief.js` is a small inference router. **Built-in** (default) is deterministic, instant
+  and never touches the network. **Local model** is opt-in and calls Ollama on the player's own
+  machine; it is retried once and then falls back to the built-in writer.
+- Under the text is what actually ran: provider, model, tokens per second, token count, time,
+  retries, and the reason for any fallback. The same line is in the diagnostics list.
+- There is deliberately no cloud provider: the app has no paid AI boundary and this does not
+  justify one. Model output is treated as untrusted text: markup stripped, 600 characters at most.
+
+### Bugs found while verifying
+
+- **A holding line could be walked through.** Where a rack is down the crowd presses up to the
+  officers; where one stands they stop short of it. Sidestepping from a gap into a standing-rack
+  column read as "already past the line", so the human (and the crowd) could walk on while the
+  line was still at full integrity. `limitInFront()` now also checks the officers' own line.
+- **The options sheet closed itself during play.** Blazor's `SectionOutlet` keys its content on
+  the fragment delegate, and `GameShell` handed it a new one every render, so the whole header
+  slot was rebuilt five times a second while an attempt ran. `GameShell` now passes one stable
+  delegate. This fixes every game's header, not only this one.
+- **The solo raider's gunshot was often silent.** Only the last event an action appended was
+  sent to the audio layer, and a burst appends a gunshot and then its impact. All of them are
+  sent now.
+- **Check connection picks a model that exists.** If the model named in the Debrief tab is not
+  installed, the first installed one is used and the status line says so. Reasoning models are
+  asked not to think (`think: false`), since they otherwise spend the token budget and answer
+  with nothing.
+
+### Still open
+
+- `tests/pocapitol-world.test.mjs` "the armed story demo ... ends at the doors" fails on the
+  commit before this pass and still fails: the demo now ends after the third line breaks. That
+  is the balance question already listed as open question 4, not a regression from this pass.
+
+### Physics
+
+- A concussion blast is now shadowed by walls, pillars and the stands. Anyone without a clear
+  line to the blast takes a quarter of the overpressure (`BLAST_SHADOW`), so a grenade in the
+  Crypt no longer throws people on the far side of its wall.
+
+Verified with the Node engine tests (`tests/pocapitol-*.test.mjs`, including the new debrief
+suite and the repaired engine harness), `scripts/css-lint.ps1`, and a zero-warning build.
+
+## 23. Picture and sound authenticity pass (2026-11-12)
+
+Requested as "more realistic and authentic to January 6". Everything here is presentation: the
+simulation, its rules and the limits in section 17 are untouched, and nothing is downloaded or
+sampled.
+
+### Sound
+
+- **Voiced chants.** The chant is now ten detuned voices through three formant bands, so each
+  beat is a vowel. "U! S! A!" and "Stop the steal!" alternate four rounds at a time, and the back
+  of the crowd answers a beat late. The same choir roars when a whole line gives way.
+- **The air over the grounds.** A helicopter circles overhead for the whole attempt (faint
+  through the roof indoors), hand-held air horns go off in the crowd, and a siren passes on a far
+  avenue now and then.
+- **Doors.** Glass goes when the Crypt doors line breaks, an extinguisher hisses in each doorway
+  that falls, and whichever door the crowd is held at is pounded on for as long as it is held.
+- **Curfew alert.** At 2:31 PM on the scenario clock the phones near the listener sound an
+  emergency-alert tone, slightly out of time with each other, with the caption "Emergency alert:
+  citywide curfew from 6:00 PM." The 6 pm curfew order is history; the minute the tone is heard
+  in the game is approximate.
+
+### Picture
+
+- **Footage look.** A new option, Options -> Picture & sound, with three values: Phone footage,
+  Light (default) and Clean. Light keeps about a third of the picture treatment and leaves the
+  sound clean. Phone footage adds a wider lens bow, a sharpening halo, streaks off bright
+  lights, a sky that clips early, lifted shadows, heavier sensor noise, exposure that dips after a
+  flash-bang, and a handheld sway. Reduced motion and reduced flashing switch off the sway and the
+  noise. Phone footage also routes sound through a phone microphone: no low end, a limiter that
+  pumps after every bang, and wind on the capsule outdoors. Stored as `footage` in
+  `pocapitol.prefs.v1`.
+- **Haze and extinguishers.** Gas and smoke now leave a low haze that hangs for about fifty
+  seconds and slides off with the wind. When a doorway line breaks, two dry-powder extinguisher
+  clouds are let off in the opening. Both are clouds only; nothing in the simulation reads them.
+- **Kit.** About one officer in three wears a gas mask, as do a few in the crowd. Some of the
+  crowd wear a flag as a cape.
+- **What is left behind.** Water bottles and dropped flags appear behind each line once it has
+  fallen, indoors and out.
+- **Dusk.** Work lights on the inauguration scaffold come on as the light goes.
+
+### Bug found while verifying
+
+- The spectator camera's phone cut was meant to last six seconds. Once its cooldown had expired it
+  re-armed itself every frame, so a subject who kept filming held the phone view indefinitely.
+  It now lasts six seconds.
+
+### Already present, so not rebuilt
+
+The request's list also named the afternoon-to-dusk light, mixed police kit, winter dress, the
+press tower and "AREA CLOSED" boards. Those were already in the game and were left as they were.
+
+Verified with `tests/pocapitol-graphics.test.mjs` and `tests/pocapitol-prefs.test.mjs` (31 pass,
+five of them new), a zero-warning build,
+chant, roar, helicopter and air-horn levels cut by about a third at the owner's request, and the demo and solo play in headless Chromium with no
+shader or script errors. The sound was not listened to by a person in this pass; levels are set
+by calculation and may want trimming by ear. Before and after:
+`SCREENSHOTS/261112-pocapitol-realism.png`.

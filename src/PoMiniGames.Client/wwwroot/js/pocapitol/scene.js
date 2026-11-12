@@ -490,6 +490,28 @@ export function createScene(host, { figure, osm, signs = [] } = {}) {
         mesh(new THREE.SphereGeometry(0.24, 12, 8), '#f4ead2', x, 3.9, z).material = globeMaterial;
     }
 
+    // Work lights on the inauguration scaffold. Dark all afternoon; once the light goes they are
+    // the brightest thing on the west front, and the gas hanging in front of them shows as beams.
+    const floodMaterial = new THREE.MeshStandardMaterial({ color: '#e8edf2', emissive: '#dfe9ff', emissiveIntensity: 0, roughness: 0.3 });
+    materials.set('flood-heads', floodMaterial);
+    const floodHead = new THREE.BoxGeometry(0.7, 0.45, 0.22);
+    for (const o of obstacles) {
+        if (o.kind !== 'bleacher') continue;
+        for (const dx of [-o.w / 2 + 1.2, o.w / 2 - 1.2]) {
+            box(o.x + dx, 7.3, o.z + o.d / 2, 0.1, 2, 0.1, '#5d6468');
+            for (const side of [-0.42, 0.42]) {
+                const head = mesh(floodHead, '#e8edf2', o.x + dx + side, 8.35, o.z + o.d / 2 + 0.1);
+                head.material = floodMaterial;
+                head.rotation.x = 0.5;
+                head.castShadow = false;
+            }
+        }
+    }
+    // One light stands in for all eight heads: every extra light costs every lit pixel.
+    const flood = new THREE.PointLight('#dfe9ff', 0, 70, 1.5);
+    flood.position.set(0, 12, 38);
+    scene.add(flood);
+
     const architecturalDetail = addArchitecturalDetail({ box, mesh, column, materials, painted });
     for (const light of architecturalDetail.interiorLights) scene.add(light);
 
@@ -623,6 +645,41 @@ export function createScene(host, { figure, osm, signs = [] } = {}) {
         clutterPlacards.setMatrixAt(i, pose.matrix);
     }
     clutterPlacards.instanceMatrix.needsUpdate = true;
+    // What a crowd leaves where it has been: water bottles and dropped flags, appearing behind
+    // each line as it goes, the same way the papers do indoors. Nothing here is simulated.
+    const bottleMaterial = new THREE.MeshStandardMaterial({ color: '#cfe3ee', roughness: 0.25, transparent: true, opacity: 0.7 });
+    materials.set('bottles', bottleMaterial);
+    const droppedMaterial = new THREE.MeshStandardMaterial({ map: flagTexture(), side: THREE.DoubleSide, roughness: 0.95 });
+    textures.add(droppedMaterial.map); materials.set('dropped-flags', droppedMaterial);
+    const BOTTLES_PER_LINE = 22, FLAGS_PER_LINE = 4;
+    const bottles = instanced(new THREE.CylinderGeometry(0.033, 0.033, 0.21, 7), bottleMaterial, lineDefs.length * BOTTLES_PER_LINE);
+    const droppedFlags = instanced(new THREE.PlaneGeometry(1.5, 0.95, 6, 4), droppedMaterial, lineDefs.length * FLAGS_PER_LINE);
+    bottles.receiveShadow = droppedFlags.receiveShadow = true;
+    lineDefs.forEach((def, line) => {
+        // Outdoors the crowd spreads across the lawn; indoors it is held to the room's width.
+        const reach = line === 0 ? 20 : Math.min(8, (def.x1 - def.x0) / 2 + 1), depth = line === 0 ? 16 : 7;
+        const spot = () => {
+            for (let tries = 0; tries < 8; tries++) {
+                const x = (def.x0 + def.x1) / 2 + (random() * 2 - 1) * reach, z = def.z + 1 + random() * depth;
+                if (walkable(x, z)) return { x, z };
+            }
+            return { x: (def.x0 + def.x1) / 2, z: def.z + 2 };
+        };
+        for (let i = 0; i < BOTTLES_PER_LINE; i++) {
+            const { x, z } = spot();
+            pose.position.set(x, groundHeight(x, z) + 0.036, z);
+            pose.rotation.set(Math.PI / 2, 0, random() * Math.PI * 2); pose.scale.setScalar(0.9 + random() * 0.3); pose.updateMatrix();
+            bottles.setMatrixAt(line * BOTTLES_PER_LINE + i, pose.matrix);
+        }
+        for (let i = 0; i < FLAGS_PER_LINE; i++) {
+            const { x, z } = spot();
+            pose.position.set(x, groundHeight(x, z) + 0.028 + i * 0.002, z);
+            pose.rotation.set(-Math.PI / 2 + (random() - 0.5) * 0.06, 0, random() * Math.PI * 2); pose.scale.setScalar(1); pose.updateMatrix();
+            droppedFlags.setMatrixAt(line * FLAGS_PER_LINE + i, pose.matrix);
+        }
+    });
+    bottles.instanceMatrix.needsUpdate = droppedFlags.instanceMatrix.needsUpdate = true;
+    bottles.count = droppedFlags.count = 0;
     // Gas, spray and flash-bangs: soft sprites, plus the flash's light.
     const particles = createParticles(scene);
     // Rounds in flight in the armed demo: short bright streaks, no impact effects.
@@ -646,6 +703,10 @@ export function createScene(host, { figure, osm, signs = [] } = {}) {
     function setMotionReduction(calmVal) {
         motionReduction = Boolean(calmVal);
     }
+    // The footage look: the frame as a phone held up in the crowd records it. `footage` is eased
+    // so switching it in Options cross-fades instead of popping.
+    let footageWanted = 0, footage = 0, footageDip = 0;
+    function setFootage(amount) { footageWanted = Math.max(0, Math.min(1, Number(amount) || 0)); }
     /** Lens width in degrees. The comfort setting widens it; the depth camera copies each frame. */
     function setFov(value) {
         const fov = Number(value);
@@ -730,6 +791,7 @@ export function createScene(host, { figure, osm, signs = [] } = {}) {
         crowd.setExtras(settings.extras);
         bursts.setDensity(settings.extras ? 1 : 0.3);
         papers.visible = settings.extras;
+        bottles.visible = droppedFlags.visible = settings.extras;
         clutterPlacards.visible = settings.extras;
         campus.setDetail(settings.extras);
         // Surface detail is a uniform, not a define: lowering it costs no recompile.
@@ -807,7 +869,7 @@ export function createScene(host, { figure, osm, signs = [] } = {}) {
         // When the spectator camera settles on someone filming, cut to their screen for a beat —
         // six seconds, then back to the crane and a long wait before the next one.
         const wantsPhone = spectating && !latched && subject?.filming && state.status === 'active' && !calm();
-        if (wantsPhone && clock >= phoneCooldownUntil) phoneUntil = Math.max(phoneUntil, clock + 6);
+        if (wantsPhone && !wasPhone && clock >= phoneCooldownUntil) phoneUntil = clock + 6;
         const inPhone = clock < phoneUntil;
         if (wasPhone && !inPhone) phoneCooldownUntil = clock + 35;
         wasPhone = inPhone;
@@ -858,6 +920,8 @@ export function createScene(host, { figure, osm, signs = [] } = {}) {
         const dusk = Math.max(0, Math.min(1, (day - 0.75) / 0.15));
         for (const lamp of lamps) lamp.intensity = dusk * 70;
         globeMaterial.emissiveIntensity = 0.2 + dusk * 4;
+        flood.intensity = dusk * 170;
+        floodMaterial.emissiveIntensity = dusk * 7;
         const daylight = Math.min(1, (sun.intensity + fill.intensity * 2.5) / (SUN[0][1] + FILL[0][1]));
         farCrowd.setLight(0.3 + 0.62 * daylight);
         const indoorGas = state.effects.some(e => e.type === 'gas' && e.z < 14);
@@ -873,7 +937,10 @@ export function createScene(host, { figure, osm, signs = [] } = {}) {
         // Eye adaptation: the pupil takes a beat to catch up when you walk out of flat overcast
         // light into stone, and a slower beat coming back out. This is most of what makes a
         // doorway read as a threshold instead of a texture swap.
-        const wantedExposure = (indoors ? 1.62 : 1.1) * (1 + 0.1 * dusk);
+        // A phone's metering overreacts: a flash-bang slams the exposure shut and it creeps back.
+        footage += (footageWanted - footage) * (1 - Math.exp(-dt * 3));
+        footageDip *= Math.exp(-dt * 0.9);
+        const wantedExposure = (indoors ? 1.62 : 1.1) * (1 + 0.1 * dusk) * (1 - 0.45 * footage * footageDip);
         const adaptRate = wantedExposure < exposure ? 2.2 : 1.05;
         exposure += (wantedExposure - exposure) * (1 - Math.exp(-dt * adaptRate));
         renderer.toneMappingExposure = exposure;
@@ -928,6 +995,10 @@ export function createScene(host, { figure, osm, signs = [] } = {}) {
         let visiblePapers = 0;
         while (visiblePapers < paperGates.length && state.lines[paperGates[visiblePapers]].state === 'broken') visiblePapers++;
         papers.count = visiblePapers;
+        let brokenLines = 0;
+        while (brokenLines < state.lines.length && state.lines[brokenLines].state === 'broken') brokenLines++;
+        bottles.count = brokenLines * BOTTLES_PER_LINE;
+        droppedFlags.count = brokenLines * FLAGS_PER_LINE;
 
         const quiet = calm();
         particles.update(state.effects, state.elapsed, daylight, quiet, wind);
@@ -959,6 +1030,13 @@ export function createScene(host, { figure, osm, signs = [] } = {}) {
                 recoilPitch += 0.035; recoilDolly += 0.07;
             } else if (e.type === 'flash') {
                 retinalFlash = 1.0;
+                footageDip = 1;
+            } else if (e.type === 'break' && e.line >= 1) {
+                // Someone in the doorway lets off an extinguisher at the retreating line. One from
+                // each side of the opening, a beat apart, so it reads as people and not an effect.
+                const span = (lineDefs[e.line].x1 - lineDefs[e.line].x0) / 2;
+                particles.plume(-span * 0.5, e.z + 1.5, 0.2, -0.98, state.elapsed + 0.9);
+                particles.plume(span * 0.55, e.z + 2.2, -0.26, -0.966, state.elapsed + 1.7);
             }
             if (!quiet && (e.type === 'gunshot' || e.type === 'baton' || (e.type === 'impact' && e.material !== 'body' && energy > 60))) {
                 flare(e.tx ?? e.x, floor + 1.2, e.tz ?? e.z, e.type === 'gunshot' ? 120 : 40 + Math.min(200, energy), e.material === 'metal' ? '#9fc4ff' : '#ffb35c');
@@ -1127,6 +1205,14 @@ export function createScene(host, { figure, osm, signs = [] } = {}) {
             introAim.copy(smoothLook).lerp(introLook, introWeight);
             camera.lookAt(introAim);
         }
+        // Footage is handheld: the frame breathes, rolls a little and never quite stops. Walking
+        // doubles it. A crane shot keeps a trace of it; reduced motion keeps none.
+        if (footage > 0.01 && !quiet && !motionReduction && closing === 0 && introWeight === 0) {
+            const hand = footage * (spectating ? 0.35 : moving ? 1.6 : 1) * (1 - phone);
+            camera.rotateZ((Math.sin(clock * 0.9) * 0.006 + Math.sin(clock * 2.3 + 1.3) * 0.003) * hand);
+            camera.rotateX((Math.sin(clock * 1.7 + 0.4) * 0.004 + Math.sin(clock * 5.1) * 0.0012) * hand);
+            camera.rotateY((Math.sin(clock * 1.3 + 2.1) * 0.004 + Math.sin(clock * 4.3 + 0.7) * 0.0012) * hand);
+        }
         // A new subject gets a gentle, subtle pull of focus (no jarring blur)
         if (spectating && subject && subject.id !== lastSubject && lastSubject !== null && clock - lastRack > 14) {
             post.rackFocus(9.2, 1.2, 0.35); lastRack = clock;
@@ -1176,6 +1262,7 @@ export function createScene(host, { figure, osm, signs = [] } = {}) {
         }
         renderer.info.reset();
         post.setPhone(phone);
+        post.setFootage(footage);
         post.render(dt, clock, quiet, camera, sun.position, {
             sunlight: daylight,
             indoors: camera.position.z < 14.5,
@@ -1223,5 +1310,5 @@ export function createScene(host, { figure, osm, signs = [] } = {}) {
         geometries.forEach(g => g.dispose()); materials.forEach(m => m.dispose()); textures.forEach(t => t.dispose());
         renderer.dispose(); renderer.forceContextLoss(); renderer.domElement.remove();
     }
-    return { canvas: renderer.domElement, render, aim, pickUnit, applyQuality, dispose, renderer, camera, startIntro, introActive, setTracerMode, setMotionReduction, setFov };
+    return { canvas: renderer.domElement, render, aim, pickUnit, applyQuality, dispose, renderer, camera, startIntro, introActive, setTracerMode, setMotionReduction, setFov, setFootage };
 }
