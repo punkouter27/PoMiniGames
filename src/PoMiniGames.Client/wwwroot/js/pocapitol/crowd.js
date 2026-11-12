@@ -338,7 +338,7 @@ function poseFor(b, a, t, pose) {
             rot(pose, 'foreArm_R', 0.25 * settle + 0.24 * tip - 0.25 * limp);
             rot(pose, 'head', 0.15 * settle + 0.2 * flail - 0.1 * limp, 0.4 * (f.seed - 0.5) * settle + 0.35 * limp * sway);
             // Tipping is about the body's own axes, so the same lean reads correctly at any heading.
-            return { drop: 0, ...tipAxes(f.rel, tipAngle), lift: 0.2 * ease };
+            return { drop: 0, ...tipAxes(f.rel, tipAngle), lift: 0.06 * ease };
         }
         if (b.stooped) {
             // Being helped away: bent over, knees soft.
@@ -689,13 +689,14 @@ export function createCrowd(scene, capacity, { time, groundHeight, shadowTexture
             const strain = a.police && a.health > 0 && !b.moving ? officerStrain(state, a) : 0;
             const brace = strain ? Math.sin(now * (1.4 + strain * 2.5) + (a.id || 0) * 1.7) * (0.012 + strain * 0.045) : 0;
             // Blast lift and the rise over a body on the ground: feet clear what is underfoot.
+            // A body that has fallen lies on the deck: its height is the floor plus the thickness
+            // of one body, whatever the heap maths or a blast arc wanted to add.
             const lift = Math.max(0, a.y ?? 0) + Math.max(0, a.step ?? 0);
-            const tumble = (a.y ?? 0) > 0.05 ? (a.spin ?? 0) * 0.5 : 0;
-            transform.position.set(
-                a.x + (rest?.dx ?? 0),
-                b.ground + lift - how.drop * tall + how.lift * wide + (rest?.height ?? 0),
-                a.z + (rest?.dz ?? 0));
-            transform.rotation.set(how.fall + brace + tumble, b.yaw, (how.lean || 0) + (rest?.roll ?? 0));
+            const y = b.lying
+                ? b.ground + 0.06 + Math.min(0.12, rest?.height ?? 0)
+                : b.ground + lift - how.drop * tall + how.lift * wide + (rest?.height ?? 0);
+            transform.position.set(a.x + (rest?.dx ?? 0), y, a.z + (rest?.dz ?? 0));
+            transform.rotation.set(how.fall + brace + ((a.y ?? 0) > 0.05 && !b.lying ? (a.spin ?? 0) * 0.5 : 0), b.yaw, (how.lean || 0) + (rest?.roll ?? 0));
             transform.scale.set(wide, tall, wide);
             const figureMatrix = slotFigure[b.slot].compose(transform.position, transform.quaternion, transform.scale);
             bodies.pose(b.slot, figureMatrix, pose);

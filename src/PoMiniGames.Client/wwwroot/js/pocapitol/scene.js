@@ -111,6 +111,8 @@ export function createScene(host, { figure, osm, signs = [] } = {}) {
     // Where each person last left a footprint, so prints fall about a stride apart.
     const prints = new Map();
     let phone = 0;
+    // The phone cut is a beat, not a home: six seconds at most, then a long wait before another.
+    let phoneUntil = 0, phoneCooldownUntil = 0, wasPhone = false;
     let breathClock = 0;
     const surfaceDetail = { value: 1 };
     const sky = createSky();
@@ -798,8 +800,14 @@ export function createScene(host, { figure, osm, signs = [] } = {}) {
         host.dataset.crowdBatches = crowd.batchCount;
         host.dataset.cameraSubject = spectating ? subject?.id ?? 'none' : 'human';
         // Phone POV: most of what the day looks like is footage from phones held up in the crowd.
-        // When the spectator camera settles on someone filming, cut to their screen for a beat.
-        const wantPhone = spectating && !latched && subject?.filming && state.status === 'active' && !calm() ? 1 : 0;
+        // When the spectator camera settles on someone filming, cut to their screen for a beat —
+        // six seconds, then back to the crane and a long wait before the next one.
+        const wantsPhone = spectating && !latched && subject?.filming && state.status === 'active' && !calm();
+        if (wantsPhone && clock >= phoneCooldownUntil) phoneUntil = Math.max(phoneUntil, clock + 6);
+        const inPhone = clock < phoneUntil;
+        if (wasPhone && !inPhone) phoneCooldownUntil = clock + 35;
+        wasPhone = inPhone;
+        const wantPhone = inPhone ? 1 : 0;
         phone += (wantPhone - phone) * (1 - Math.exp(-dt * (wantPhone > phone ? 2.6 : 1.6)));
         if (spectating || latched) {
             if (subject) {
@@ -995,16 +1003,18 @@ export function createScene(host, { figure, osm, signs = [] } = {}) {
         let policeShot = false;
         if (spectating && !latched) {
             const holding = state.lines.find(line => line.state === 'holding');
-            const behindLine = holding ? holding.z - 6.5 : 0;
+            const behindLine = holding ? holding.z - 5 : 0;
             if (!focusIndoors && demoSide === 'police' && holding && behindLine > 24) {
                 // Stand in the central gap behind the line, where there is no bleacher back to
                 // fill the frame, and look diagonally back into the crowd.
                 const midX = (holding.x0 + holding.x1) / 2;
                 const side = Math.round(demoSideAt / 12) % 2 ? 1 : -1;
-                const cameraX = midX + side * 5;
+                const cameraX = midX + side * 4;
                 if (walkable(cameraX, behindLine)) {
                     policeShot = true;
-                    desired.set(cameraX, groundHeight(cameraX, behindLine) + 7.5, behindLine);
+                    // High enough to clear the terrace and portico roofs; the line sits in the
+                    // lower frame with the crowd beyond it, never with the camera inside a wall.
+                    desired.set(cameraX, groundHeight(cameraX, behindLine) + 16, behindLine);
                     target.set(focus.x, floor + 1.2, focus.z);
                 } else {
                     desired.set(focus.x + Math.sin(yaw) * 21, floor + 14 + pitch * 4, focus.z + Math.cos(yaw) * 21);

@@ -44,7 +44,7 @@ export function impactFrame(dx, dz, heading = 0) {
 
 /** How far apart two bodies count as the same heap, how thick a body lies, and how deep a heap forms. */
 export const PILE_REACH = 1.25;
-const PILE_LIFT = 0.17, PILE_DEPTH = 3;
+const PILE_LIFT = 0.12, PILE_DEPTH = 2;
 
 /**
  * Where a body comes to rest when people fall on top of one another. `downs` are the bodies
