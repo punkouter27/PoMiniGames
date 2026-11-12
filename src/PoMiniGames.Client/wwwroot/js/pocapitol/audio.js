@@ -96,11 +96,12 @@ export function roomImpulse(listener, rate = 44100, random = Math.random) {
     return { buffer, rt, index };
 }
 
-export function createAudio() {
+export function createAudio({ onCaption } = {}) {
+    const caption = text => { try { onCaption?.(String(text)); } catch { /* captions are decoration */ } };
     const bus = window.PoAudioBus;
     let out = null;
     try { out = quiet() || !bus ? null : bus.busSync?.('sfx') ?? null; } catch { out = null; }
-    if (!out) return { update() {}, event() {}, dispose() {} };
+    if (!out) return { update() {}, event() {}, dispose() {}, caption };
     const ctx = out.context;
     const master = ctx.createGain();
     master.gain.value = 0.9;
@@ -364,11 +365,13 @@ export function createAudio() {
     let lastDispatchAt = 0;
 
     function dispatchCallout(text = null) {
-        if (quiet() || typeof window === 'undefined') return;
+        if (typeof window === 'undefined') return;
         const now = performance.now();
         if (now - lastDispatchAt < 12000) return;
         lastDispatchAt = now;
         const msg = text || DISPATCH_CALLOUTS[Math.floor(Math.random() * DISPATCH_CALLOUTS.length)];
+        caption(msg);
+        if (quiet()) return;
         if (window.speechSynthesis && !window.speechSynthesis.speaking) {
             try {
                 const utterance = new SpeechSynthesisUtterance(msg);

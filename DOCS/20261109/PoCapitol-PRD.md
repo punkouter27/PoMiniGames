@@ -570,3 +570,55 @@ section 17: no injury is depicted, no real person appears, and there is no real 
 
 Verified with the Node engine tests (`tests/pocapitol-*.test.mjs`, 58 passing) and a zero-warning
 `dotnet build`.
+
+## 19. Spectator direction, after-action reporting, comfort and reliability (2026-11-11)
+
+Five owner-selected additions. None of them touch the limits in section 17: still no injury
+depicted, no real person, no breach route, no score, and no public ranking.
+
+1. **Auto-director for the demo (`director.js`, `scene.js`, `index.js`).** The spectator camera
+   no longer follows only the raider closest to the doors. A coarse 10 m heat grid is fed by the
+   impact events the simulation already emits, decays over ~4.5 s, and scores each living raider
+   by nearby heat, milestone progress, crowding and proximity to the holding line. The camera
+   cuts on a 4-8 s dwell with hysteresis, so it does not flap between two equally interesting
+   people. "Follow leader" remains one choice away in the options sheet, and the HUD and radar
+   beacon both name the subject actually on screen.
+2. **After-action report (`report.js`, `index.js`, page).** Every attempt is sampled once a
+   second: police-line integrity, the pressure against it, raiders and police standing,
+   casualties, and the time each milestone was crossed. The end card gains a chart of integrity
+   against pressure with milestone ticks, six flat figures, and **Export CSV**, **Save chart
+   (PNG)** and **Copy summary**. The same report is available from the Tab panel for the demo,
+   which has no end card. It is a record of a fictional attempt, not a score.
+3. **Comfort and access (`prefs.js`, page, `radar.js`).** Camera sensitivity and field of view,
+   captions for the synthesized radio traffic, a high-contrast HUD, a tablet or Okabe-Ito radar
+   palette, and a key map with the arrows hard-wired as a fallback. Reduced motion, reduced
+   flashing and the app-wide colour-safe palette are still owned by the shared app settings and
+   are respected rather than duplicated. Settings persist per browser.
+4. **Real Capitol Hill footprints (`scripts/pocapitol-campus.mjs`, `campus.js`,
+   `campusData.js`).** The city around the hand-built grounds now uses 700 real building
+   footprints from OpenStreetMap, pulled once from the Overpass API at build time, projected onto
+   the scene's compressed bearings, and committed as `wwwroot/data/pocapitol/campus-osm.json`.
+   They are instanced off one unit box (four draw calls) and start outside the 150 m radius the
+   hand model owns. Data (c) OpenStreetMap contributors, ODbL. A missing file changes nothing.
+5. **Reliability and diagnostics (`index.js`, page).** Frame-time p50/p95, frames over 55 ms,
+   draw calls, triangles, actor count, footprint count, weather source and the last ten engine
+   events are collected in memory and copied with one button. Engine init, context loss, frame
+   failure and attempt end are emitted to `window.appInsights` when the host wires it up; the
+   ring buffer works without it. Export helpers fall back to `execCommand` where the clipboard
+   API is blocked.
+
+Verified with the Node engine tests (`tests/pocapitol-*.test.mjs`, including new report, director and preference suites) and a zero-warning `dotnet build`.
+
+### Gunsmoke and carried signage (2026-11-11, follow-up)
+
+- **Muzzle smoke (`bursts.js`).** Each gunsmoke puff is twice the size and hangs eight times as
+  long. A volley now leaves a drifting grey bank along the line instead of a blink, which is the
+  point: past a few seconds the far ranks stop reading as people.
+- **Carried boards (`wwwroot/data/pocapitol/placards.json`, `signs.js`, `crowd.js`).** Signage is
+  data, not code. The national and Gadsden flags stay in the mix; up to fourteen distinct placard
+  texts join them per scene, each bearer's board fixed for the attempt by the same stable trait
+  that sets their height and build, and one instanced mesh per board so the draw-call count stays
+  flat. Across launches the whole list is used.
+- **Content.** The shipped list is deliberately non-partisan. The scenario is fiction and the
+  product rules keep it free of real campaign messaging or identifiable people, so the array is
+  the owner's to fill rather than something generated here.

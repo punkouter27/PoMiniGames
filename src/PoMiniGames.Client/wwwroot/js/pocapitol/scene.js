@@ -65,7 +65,7 @@ export function sunDirection(day, out = new THREE.Vector3()) {
     return out.set(-Math.cos(azimuth) * Math.cos(altitude), Math.sin(altitude), -Math.sin(azimuth) * Math.cos(altitude));
 }
 
-export function createScene(host, { figure } = {}) {
+export function createScene(host, { figure, osm, signs = [] } = {}) {
     const scene = new THREE.Scene();
     scene.fog = new THREE.FogExp2(SKY[0][1], FOG_OUT);
     // The composer does the anti-aliasing (MSAA on its own target), so the canvas needs none.
@@ -644,6 +644,14 @@ export function createScene(host, { figure } = {}) {
     function setMotionReduction(calmVal) {
         motionReduction = Boolean(calmVal);
     }
+    /** Lens width in degrees. The comfort setting widens it; the depth camera copies each frame. */
+    function setFov(value) {
+        const fov = Number(value);
+        if (!Number.isFinite(fov)) return camera.fov;
+        camera.fov = Math.min(85, Math.max(50, fov));
+        camera.updateProjectionMatrix();
+        return camera.fov;
+    }
     const flashLight = new THREE.PointLight('#ffffff', 0, 45, 1.2);
     scene.add(flashLight);
     const muzzleLight = new THREE.PointLight('#ffe494', 0, 16, 2.0);
@@ -661,7 +669,7 @@ export function createScene(host, { figure } = {}) {
         light.position.set(x, y, z); light.color.set(color); light.intensity = intensity;
     }
 
-    const crowd = createCrowd(scene, CROWD_SIZE + MAX_POLICE + CIVILIANS + 1, { time, groundHeight, shadowTexture: shadowBlob, figure, wind });
+    const crowd = createCrowd(scene, CROWD_SIZE + MAX_POLICE + CIVILIANS + 1, { time, groundHeight, shadowTexture: shadowBlob, figure, wind, signs });
     const marker = mesh(new THREE.TorusGeometry(1.1, 0.08, 8, 36), '#ebce77', 0, 0.2, 23);
     marker.rotation.x = -Math.PI / 2;
     marker.material = new THREE.MeshStandardMaterial({ color: '#ebce77', emissive: '#c99a2e', emissiveIntensity: 0.6 });
@@ -670,7 +678,7 @@ export function createScene(host, { figure } = {}) {
     beacon.material = marker.material;
 
     // OpenStreetMap 3D surrounding grounds and monumental structures
-    const campus = createCampus({ surfaces, surfaceDetail });
+    const campus = createCampus({ surfaces, surfaceDetail, osm });
     scene.add(campus.group);
 
     // Tactical Unit Inspector target selection ring
@@ -780,7 +788,7 @@ export function createScene(host, { figure } = {}) {
             selectRing.visible = false;
         }
 
-        const subject = latched || (spectating ? selectLeader(state) : state.player);
+        const subject = latched || (spectating ? (options.director ?? selectLeader(state)) : state.player);
         host.dataset.crowdBatches = crowd.batchCount;
         host.dataset.cameraSubject = spectating ? subject?.id ?? 'none' : 'human';
         // Phone POV: most of what the day looks like is footage from phones held up in the crowd.
@@ -1127,5 +1135,5 @@ export function createScene(host, { figure } = {}) {
         geometries.forEach(g => g.dispose()); materials.forEach(m => m.dispose()); textures.forEach(t => t.dispose());
         renderer.dispose(); renderer.forceContextLoss(); renderer.domElement.remove();
     }
-    return { canvas: renderer.domElement, render, aim, pickUnit, applyQuality, dispose, renderer, camera, startIntro, introActive, setTracerMode, setMotionReduction };
+    return { canvas: renderer.domElement, render, aim, pickUnit, applyQuality, dispose, renderer, camera, startIntro, introActive, setTracerMode, setMotionReduction, setFov };
 }

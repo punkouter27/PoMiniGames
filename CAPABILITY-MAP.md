@@ -20,6 +20,11 @@ Product requirements: [PoCapitol PRD](DOCS/20261109/PoCapitol-PRD.md).
 | Start, HUD, pause and result | Client `Games/PoCapitol/` | Shared GameShell, GameIntro and GameOverModal; Radzen controls for setup; role, difficulty and graphics; "On the day" strip; aftermath and fiction notices |
 | Local results | Existing `GameResultService.RecordAsync` | Crowd-role wins/losses only; police, observer and demo never write; no leaderboard or new endpoint |
 | Verification | `tests/pocapitol-world.test.mjs` | Focused Node tests without adding to capped .NET test tiers |
+| Comfort and access | Client `wwwroot/js/pocapitol/prefs.js`, `Games/PoCapitol/`, `radar.js` | Camera sensitivity and FOV, radio captions, high-contrast HUD, tablet/colour-safe radar palette, remappable keys with arrows as a hard-wired fallback. Motion, flashing and the app-wide palette stay owned by the shared settings |
+| Spectator auto-director | Client `wwwroot/js/pocapitol/director.js`, `scene.js` | 4-8 s cuts scored on a decaying impact heat grid with hysteresis; "Follow leader" remains selectable; the HUD and radar name the subject on screen |
+| After-action report | Client `wwwroot/js/pocapitol/report.js`, `Games/PoCapitol/` | One sample per second of line integrity, pressure, standing figures, casualties and milestone times; SVG chart on the end card, CSV/PNG/text export, and a compact copy in the Tab panel for the demo. No score |
+| Campus footprints | Client `wwwroot/js/pocapitol/campus.js`, `campusData.js`, `wwwroot/data/pocapitol/campus-osm.json`, `scripts/pocapitol-campus.mjs` | 700 OpenStreetMap building footprints (ODbL, attributed) outside the hand-built 150 m radius, projected at build time by the Overpass script and instanced in four draw calls. Absent file = hand-built campus only |
+| Diagnostics and telemetry | Client `wwwroot/js/pocapitol/index.js`, `Games/PoCapitol/` | Frame p50/p95, long frames, draw calls, triangles, actors, footprint count, weather source, last ten engine events; one-click copy; init/context-loss/frame/end events go to `window.appInsights` when present |
 
 One client dependency is added: Yuka 0.7.8 (MIT), vendored unmodified under
 `wwwroot/lib/yuka/` and mapped as `yuka` in `index.html`'s import map. No server

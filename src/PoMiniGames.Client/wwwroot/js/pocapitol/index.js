@@ -1,4 +1,4 @@
-import { createAttempt, advance, shove, setPaused, selectLeader, frontLine } from './world.js';
+import { createAttempt, advance, shove, setPaused, selectLeader, frontLine, milestones, clockLabel } from './world.js';
 import { createScene } from './scene.js';
 import { loadFigure } from './crowd.js';
 import { createAudio } from './audio.js';
@@ -7,12 +7,20 @@ import { createGovernor, MODES } from './quality.js';
 import { fetchWeather } from './weather.js';
 import { createRadar } from './radar.js';
 import { createInspector } from './inspector.js';
+import { createRecorder, toCsv, toText, toSvg } from './report.js';
+import { createDirector } from './director.js';
+import { loadPrefs, savePrefs, matches } from './prefs.js';
+import { loadCampusData } from './campusData.js';
+import { loadSigns } from './signs.js';
 import { ensure, remove } from '../radzenTheme.js';
 import { connectedPads, stick, pressed, ButtonEdges } from '../gamepadBus.js';
 
 const GRAPHICS_KEY = 'pocapitol.graphics';
 const WEATHER_KEY = 'pocapitol.weather';
 let game = null;
+
+/** Hosts without performance (and the Node harness) still need a clock. */
+const nowMs = () => globalThis.performance?.now?.() ?? Date.now();
 
 function storedGraphics() {
     try {
@@ -30,15 +38,20 @@ function storedWeather() {
 
 async function init(hostId, reference) {
     dispose();
+    const bootAt = nowMs();
     await ensure();
     const host = document.getElementById(hostId);
     if (!host) throw new Error('PoCapitol scene container was not found.');
     delete host.dataset.interfaceError;
     // The rigged figure: a small glb the service worker caches, built in code if it cannot load.
-    const figure = await loadFigure();
+    // The footprint layer is decoration and resolves to null if it is missing, so it can only
+    // delay the scene by its own timeout.
+    const [figure, osm, signs] = await Promise.all([loadFigure(), loadCampusData(), loadSigns()]);
     if (!host.isConnected) return;
-    const view = createScene(host, { figure });
+    const view = createScene(host, { figure, osm, signs });
     const tier = window.PoQuality?.tier?.() ?? 'high';
+    const prefs = loadPrefs();
+    view.setFov?.(prefs.fov);
     const g = {
         host, view, reference, state: createAttempt(), started: false, disposed: false,
         yaw: 0, pitch: 0, keys: new Set(), firing: false, frame: 0, last: 0,
@@ -46,14 +59,20 @@ async function init(hostId, reference) {
         events: new AbortController(), audio: null, ui: null, mix: null, mixAt: 0,
         governor: createGovernor({ tier, mode: storedGraphics() }), tier, tierAt: 0,
         weather: null, radar: null, inspector: null,
+        prefs, recorder: createRecorder({ labels: milestones.map(m => m.label) }), director: createDirector(),
+        frames: [], longFrames: 0, captionAt: 0, initMs: Math.round(nowMs() - bootAt),
+        osmBuildings: osm?.buildings?.length ?? 0, osmAttribution: osm?.attribution ?? '',
+        lastMilestone: 0, telemetry: [],
     };
     game = g;
     view.applyQuality?.(g.governor.settings());
+    track('init', { ms: g.initMs, tier,
+        footprints: g.osmBuildings, signs: signs.length });
 
     // Weather API integration & dynamic updates
     fetchWeather(storedWeather()).then(w => {
         g.weather = w;
-        g.weatherRefreshAt = performance.now() + 300000;
+        g.weatherRefreshAt = nowMs() + 300000;
         reference?.invokeMethodAsync('OnWeatherUpdate', w.condition).catch(() => {});
     }).catch(() => {});
 
@@ -74,15 +93,25 @@ async function init(hostId, reference) {
     const listen = (target, type, fn, options = {}) => target.addEventListener(type, fn, { ...options, signal });
     const clearInput = () => { g.keys.clear(); g.firing = false; g.drag = null; };
     const human = () => g.state.role !== 'none';
+    const held = action => { for (const code of g.keys) if (matches(g.prefs, action, code)) return true; return false; };
+    // Strafe only follows the binding itself: the arrows are reserved for turning the view.
+    const bound = action => { for (const code of g.keys) if (g.prefs.keys[action] === code) return true; return false; };
+    g.caption = (text, kind = 'radio') => {
+        if (!g.prefs.captions || !text) return;
+        const now = nowMs();
+        if (kind === 'radio' && now - g.captionAt < 400) return;
+        g.captionAt = now;
+        reference?.invokeMethodAsync('OnCaption', String(text)).catch(() => { /* no page listening */ });
+    };
     listen(window, 'keydown', e => {
         if (!g.started || e.target.closest?.('input, select, textarea, [role="slider"]')) return;
-        if (['Escape', 'KeyP'].includes(e.code) && !e.repeat) {
+        if ((e.code === 'Escape' || matches(g.prefs, 'pause', e.code)) && !e.repeat) {
             pause(g.state.status === 'active'); e.preventDefault(); return;
         }
         if (!human()) return;
         if (g.state.status !== 'active') return;
         if (e.target.closest?.('button, a, summary, [role="radio"]')) return;
-        if (['KeyW', 'KeyA', 'KeyS', 'KeyD', 'ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight', 'Space', 'ShiftLeft'].includes(e.code)) {
+        if (['forward', 'back', 'left', 'right', 'push', 'sprint'].some(action => matches(g.prefs, action, e.code))) {
             g.keys.add(e.code); e.preventDefault();
         }
     });
@@ -94,8 +123,8 @@ async function init(hostId, reference) {
     });
     listen(document, 'mousemove', e => {
         if (!human() || g.state.status !== 'active' || document.pointerLockElement !== view.canvas) return;
-        g.yaw -= e.movementX * 0.0025;
-        g.pitch = Math.max(-0.45, Math.min(0.65, g.pitch + e.movementY * 0.003));
+        g.yaw -= e.movementX * 0.0025 * g.prefs.sensitivity;
+        g.pitch = Math.max(-0.45, Math.min(0.65, g.pitch + e.movementY * 0.003 * g.prefs.sensitivity));
     });
     listen(view.canvas, 'pointerdown', e => {
         if (!g.started || g.state.status !== 'active') return;
@@ -128,8 +157,8 @@ async function init(hostId, reference) {
     });
     listen(view.canvas, 'pointermove', e => {
         if (!g.drag || g.drag.id !== e.pointerId || g.state.status !== 'active') return;
-        g.yaw -= (e.clientX - g.drag.x) * 0.006;
-        g.pitch = Math.max(-0.45, Math.min(0.65, g.pitch + (e.clientY - g.drag.y) * 0.004));
+        g.yaw -= (e.clientX - g.drag.x) * 0.006 * g.prefs.sensitivity;
+        g.pitch = Math.max(-0.45, Math.min(0.65, g.pitch + (e.clientY - g.drag.y) * 0.004 * g.prefs.sensitivity));
         g.drag = { id: e.pointerId, x: e.clientX, y: e.clientY };
     });
     listen(window, 'pointerup', () => { g.firing = false; g.drag = null; });
@@ -139,6 +168,7 @@ async function init(hostId, reference) {
         e.preventDefault();
         pause(true);
         g.started = false;
+        track('context-lost', { tier: g.governor.label() });
         reference.invokeMethodAsync('OnEngineError', 'The browser lost its 3D graphics context.')
             .catch(error => console.error('[PoCapitol] graphics error notification failed:', error));
     });
@@ -162,6 +192,9 @@ async function init(hostId, reference) {
             const elapsed = Math.max(0, (now - (g.last || now)) / 1000);
             const dt = Math.min(0.05, elapsed);
             g.last = now;
+            const frameMs = elapsed * 1000;
+            g.frames.push(frameMs); if (g.frames.length > 240) g.frames.shift();
+            if (frameMs > 55) g.longFrames++;
             const pad = connectedPads()[0];
             const edges = g.edges.update(pad);
             if (g.started && edges.includes(9)) pause(g.state.status === 'active');
@@ -183,20 +216,34 @@ async function init(hostId, reference) {
                 const right = pad && human() ? stick(pad, 0.2, 1) : { x: 0, y: 0 };
                 g.yaw -= ((g.keys.has('ArrowRight') ? 1 : 0) - (g.keys.has('ArrowLeft') ? 1 : 0) + right.x) * dt * 2;
                 g.pitch = Math.max(-0.45, Math.min(0.65, g.pitch + right.y * dt));
-                const strafe = (g.keys.has('KeyD') ? 1 : 0) - (g.keys.has('KeyA') ? 1 : 0) + left.x;
-                const forward = (g.keys.has('KeyW') || g.keys.has('ArrowUp') ? 1 : 0) -
-                    (g.keys.has('KeyS') || g.keys.has('ArrowDown') ? 1 : 0) - left.y;
+                const strafe = (bound('right') ? 1 : 0) - (bound('left') ? 1 : 0) + left.x;
+                const forward = (held('forward') ? 1 : 0) - (held('back') ? 1 : 0) - left.y;
                 x = strafe * Math.cos(g.yaw) - forward * Math.sin(g.yaw);
                 z = -strafe * Math.sin(g.yaw) - forward * Math.cos(g.yaw);
-                advance(g.state, { x, z, sprint: g.keys.has('ShiftLeft') || pressed(pad, 10) }, dt);
+                advance(g.state, { x, z, sprint: held('sprint') || pressed(pad, 10) }, dt);
                 // Read this step's events before a shove appends its own.
-                for (const event of g.state.events) g.audio?.event(event);
-                if (human() && (g.firing || g.keys.has('Space') || pressed(pad, 7))) {
+                for (const event of g.state.events) {
+                    g.audio?.event(event);
+                    // A shield shatters with the same type; only a line break carries `line`.
+                    if (event.type === 'break' && event.line !== undefined) g.caption('A police line has given way.');
+                }
+                if (g.state.milestone !== g.lastMilestone) {
+                    g.lastMilestone = g.state.milestone;
+                    g.caption(milestones[g.state.milestone - 1]?.label ?? 'Objective reached', 'event');
+                }
+                g.recorder.step(g.state);
+                g.director.observe(g.state, now);
+                if (human() && (g.firing || held('push') || pressed(pad, 7))) {
                     const pushed = shove(g.state, view.aim(g.state, g.yaw));
                     if (pushed) g.audio?.event(g.state.events.at(-1));
                 }
                 if (g.state.status === 'completed' || g.state.status === 'failed') {
                     clearInput();
+                    if (!g.ended) {
+                        g.ended = true;
+                        g.lastReport = buildReport(g.state);
+                        track('end', { mode: g.state.demo ? 'demo' : 'solo', outcome: g.state.outcome, seconds: Math.round(g.state.elapsed) });
+                    }
                     if (g.state.demo) g.restartAt = now + 6000;
                     if (document.pointerLockElement === view.canvas) document.exitPointerLock();
                 }
@@ -208,10 +255,16 @@ async function init(hostId, reference) {
             if (g.radar) g.radar.render(g.state, g.inspector?.getSelected(), dt);
             g.inspector?.update(g.state);
 
+            // The auto-director only cuts while the demo is running; a paused or finished attempt
+            // holds the last subject so the closing shot does not jump.
+            const directed = g.state.demo && g.prefs.director && g.state.status === 'active'
+                ? g.director.pick(g.state) : null;
+            if (directed) g.state.subject = directed.id;
             view.render(g.state, g.yaw, g.pitch, moving, dt, {
                 inspectedUnit: g.inspector?.getSelected(),
                 latchedUnit: g.inspector?.isLatched() ? g.inspector.getSelected() : null,
                 weather: g.weather,
+                director: directed,
             });
 
             const s = g.state;
@@ -237,6 +290,7 @@ async function init(hostId, reference) {
             g.frame = requestAnimationFrame(loop);
         } catch (error) {
             console.error('[PoCapitol] frame failed:', error);
+            track('frame-error', { message: String(error?.message ?? error) });
             g.started = false;
             reference.invokeMethodAsync('OnEngineError', error.message).catch(err => console.error('[PoCapitol] error notification failed:', err));
         }
@@ -252,6 +306,7 @@ function initRadar(canvasId = 'pocapitol-radar') {
         game.radar = createRadar(canvas, {
             onSelectUnit: unit => game.inspector?.select(unit, game.state),
         });
+        game.radar.setPalette?.(game.prefs.radar);
     }
 }
 
@@ -293,7 +348,9 @@ function notify(g) {
     if (g.notifying || g.disposed) return;
     g.notifying = true;
     const s = g.state;
-    const leader = s.role === 'none' ? selectLeader(s) : null;
+    const leader = s.role === 'none'
+        ? (s.subject >= 0 ? s.companions.find(c => c.id === s.subject) ?? selectLeader(s) : selectLeader(s))
+        : null;
     const front = frontLine(s);
     g.reference.invokeMethodAsync('OnUpdate', s.health, s.milestone, s.elapsed, s.status, s.pushes, s.staggers, g.message,
         s.companions.filter(c => c.health > 0).length + (s.role === 'raider' && s.health > 0 ? 1 : 0),
@@ -318,11 +375,17 @@ function start(difficulty, demo = false, role = 'raider') {
     game.pitch = 0; game.keys.clear(); game.firing = false;
     game.started = true; game.message = ''; game.notifyAt = 0; game.restartAt = 0;
     game.inspector?.clear();
+    game.recorder.reset(); game.director.reset();
+    game.lastMilestone = 0; game.ended = false; game.state.subject = -1;
+    track('start', { mode: demo ? 'demo' : 'solo', role, difficulty, tier: game.governor.label() });
     // The opening establishing shot: five seconds over the Capitol before the player is behind
     // the crowd. Skipped when reduced motion is asked for.
     game.view.startIntro?.();
     // Created on the first start, which follows a click: browsers keep audio shut until then.
-    game.audio ??= createAudio();
+    if (!game.audio) {
+        const current = game;
+        game.audio = createAudio({ onCaption: text => current.caption?.(text, 'radio') });
+    }
     if (!demo) game.view.canvas.focus();
 }
 
@@ -346,7 +409,7 @@ async function setWeather(mode) {
     if (!game) return 'historical';
     const w = await fetchWeather(mode);
     game.weather = w;
-    game.weatherRefreshAt = performance.now() + 300000;
+    game.weatherRefreshAt = nowMs() + 300000;
     try { window.localStorage?.setItem(WEATHER_KEY, mode); } catch {}
     return w.condition;
 }
@@ -371,7 +434,7 @@ function getDebugStats() {
     const r = game.view?.renderer;
     const calls = r?.info?.render?.calls ?? parseInt(game.host?.dataset?.drawCalls || '0', 10);
     const actors = parseInt(game.host?.dataset?.actorCount || '0', 10);
-    const now = performance.now();
+    const now = nowMs();
     const dt = Math.max(0.001, (now - (game.last || now)) / 1000);
     const fps = Math.min(120, Math.round(1 / dt));
     return {
@@ -384,6 +447,185 @@ function getDebugStats() {
         weather: game.weather?.condition || 'Historical Jan 6',
     };
 }
+
+/**
+ * One event for the app's telemetry sink. `window.appInsights` is only present when the host
+ * wires it up, so this is fire-and-forget: the ring buffer on `game.telemetry` is what the
+ * diagnostics copy actually reads.
+ */
+function track(name, properties = {}) {
+    const entry = { name, at: new Date().toISOString(), ...properties };
+    if (game) {
+        game.telemetry.push(entry);
+        if (game.telemetry.length > 60) game.telemetry.shift();
+    }
+    try { window.appInsights?.trackEvent?.({ name: `pocapitol.${name}`, properties }); } catch { /* not wired */ }
+    return entry;
+}
+
+const round = value => Math.round(value * 10) / 10;
+const percentile = (values, p) => {
+    if (!values.length) return 0;
+    const sorted = [...values].sort((a, b) => a - b);
+    return sorted[Math.min(sorted.length - 1, Math.floor(sorted.length * p))];
+};
+
+function getDiagnostics() {
+    const renderer = game?.view?.renderer;
+    return {
+        build: '261111.1',
+        status: game?.state?.status ?? 'idle',
+        initMs: game?.initMs ?? null,
+        tier: game?.governor?.label?.() ?? 'none',
+        frameMsP50: round(percentile(game?.frames ?? [], 0.5)),
+        frameMsP95: round(percentile(game?.frames ?? [], 0.95)),
+        longFrames: game?.longFrames ?? 0,
+        drawCalls: renderer?.info?.render?.calls ?? 0,
+        triangles: renderer?.info?.render?.triangles ?? 0,
+        actors: Number.parseInt(game?.host?.dataset?.actorCount ?? '0', 10),
+        footprints: game?.osmBuildings ?? 0,
+        weather: game?.weather?.condition ?? '',
+        director: game?.prefs?.director ?? false,
+        captions: game?.prefs?.captions ?? false,
+        canvas: game?.view?.canvas ? { width: game.view.canvas.width, height: game.view.canvas.height } : null,
+        devicePixelRatio: window.devicePixelRatio ?? 1,
+        userAgent: navigator.userAgent,
+        url: location.href,
+        events: game?.telemetry?.slice(-10) ?? [],
+    };
+}
+
+function getDiagnosticsText() {
+    const d = getDiagnostics();
+    return [
+        `PoCapitol build ${d.build} · ${d.status}`,
+        `Init ${d.initMs ?? '—'} ms · tier ${d.tier} · ${d.drawCalls} draw calls · ${d.triangles} triangles`,
+        `Frame ${d.frameMsP50} ms p50 / ${d.frameMsP95} ms p95 · ${d.longFrames} frames over 55 ms`,
+        `Actors ${d.actors} · OSM footprints ${d.footprints} · weather ${d.weather || 'n/a'}`,
+        `Director ${d.director ? 'on' : 'off'} · captions ${d.captions ? 'on' : 'off'}`,
+        `Canvas ${d.canvas ? `${d.canvas.width}×${d.canvas.height}` : 'none'} @ ${d.devicePixelRatio}x`,
+        `URL ${d.url}`,
+        `UA ${d.userAgent}`,
+    ].join('\n');
+}
+
+function buildReport(state) {
+    return game.recorder.build(state, {
+        mode: state.demo ? 'demo' : 'solo',
+        role: state.role,
+        clock: clockLabel(state.elapsed),
+    });
+}
+
+function getReport() {
+    if (!game) return null;
+    return buildReport(game.state);
+}
+
+/**
+ * The end-of-attempt panel in the shape the page wants: SVG, CSV and text, plus flat numbers.
+ * The demo restarts six seconds after it ends, so the finished attempt is remembered before
+ * the recorder is cleared.
+ */
+function getReportView() {
+    if (!game) return null;
+    const state = game.state;
+    const finished = state.status === 'completed' || state.status === 'failed';
+    const report = finished || !game.lastReport ? buildReport(state) : game.lastReport;
+    return {
+        svg: toSvg(report),
+        csv: toCsv(report),
+        text: toText(report),
+        mode: report.mode, role: report.role, difficulty: report.difficulty,
+        outcome: report.outcome || report.status, status: report.status, clock: report.clock,
+        standing: report.standing, police: report.police,
+        casualties: report.casualties, immediate: report.immediate,
+        lowestIntegrity: report.lowestIntegrity, peakPressure: report.peakPressure,
+        firstBreak: report.firstBreak ?? -1,
+        milestones: report.milestones.length,
+        minutes: Math.round(report.elapsed / 60),
+    };
+}
+
+function getReportCsv() { const report = getReport(); return report ? toCsv(report) : ''; }
+function getReportText() { const report = getReport(); return report ? toText(report) : ''; }
+
+/** Copy text, falling back to the old selection trick where the clipboard API is blocked. */
+async function copyText(text) {
+    try {
+        await navigator.clipboard.writeText(String(text));
+        return true;
+    } catch {
+        try {
+            const area = document.createElement('textarea');
+            area.value = String(text);
+            area.setAttribute('readonly', '');
+            area.style.position = 'fixed';
+            area.style.opacity = '0';
+            document.body.append(area);
+            area.select();
+            const copied = document.execCommand('copy');
+            area.remove();
+            return Boolean(copied);
+        } catch { return false; }
+    }
+}
+
+function download(name, data) {
+    const blob = typeof data === 'string' ? new Blob([data], { type: 'text/plain;charset=utf-8' }) : data;
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url; link.download = name;
+    document.body.append(link); link.click(); link.remove();
+    setTimeout(() => URL.revokeObjectURL(url), 4000);
+}
+
+/** Serialise a report chart to PNG. The SVG carries its own background and literal colours. */
+async function exportPng(svgId, name = 'pocapitol-report.png') {
+    const svg = document.getElementById(svgId);
+    if (!svg) return false;
+    const box = svg.viewBox?.baseVal;
+    const width = Math.round(box?.width || 640), height = Math.round(box?.height || 220);
+    const url = URL.createObjectURL(new Blob([new XMLSerializer().serializeToString(svg)], { type: 'image/svg+xml;charset=utf-8' }));
+    try {
+        const image = new Image();
+        await new Promise((resolve, reject) => { image.onload = resolve; image.onerror = reject; image.src = url; });
+        const canvas = document.createElement('canvas');
+        canvas.width = width * 2; canvas.height = height * 2;
+        const ctx = canvas.getContext('2d');
+        ctx.scale(2, 2);
+        ctx.drawImage(image, 0, 0, width, height);
+        const png = await new Promise(resolve => canvas.toBlob(resolve, 'image/png'));
+        if (png) download(name, png);
+        return Boolean(png);
+    } catch { return false; } finally { URL.revokeObjectURL(url); }
+}
+
+function getPrefs() { return prefsView(game?.prefs ?? loadPrefs()); }
+
+/** The page wants one flat record; storage keeps the key map nested. */
+function prefsView(prefs) {
+    return {
+        sensitivity: prefs.sensitivity, fov: prefs.fov, captions: prefs.captions,
+        contrast: prefs.contrast, radar: prefs.radar, director: prefs.director,
+        forward: prefs.keys.forward, back: prefs.keys.back, left: prefs.keys.left, right: prefs.keys.right,
+        push: prefs.keys.push, sprint: prefs.keys.sprint, pause: prefs.keys.pause,
+    };
+}
+
+/** Save the comfort settings and apply the ones the live scene reads immediately. */
+function setPrefs(patch = {}) {
+    const base = game?.prefs ?? loadPrefs();
+    const merged = savePrefs({ ...base, ...patch, keys: { ...base.keys, ...(patch.keys ?? {}) } });
+    if (game) {
+        game.prefs = merged;
+        game.view.setFov?.(merged.fov);
+        game.radar?.setPalette?.(merged.radar);
+    }
+    return prefsView(merged);
+}
+
+function setDirector(on) { return setPrefs({ director: !!on }).director; }
 
 function setTracerMode(mode) {
     if (game?.view?.setTracerMode) game.view.setTracerMode(mode);
@@ -409,4 +651,7 @@ window.PoCapitol = {
     init, start, pause, dispose, setGraphics, getGraphics: storedGraphics, getDebugStats,
     setWeather, getWeather: storedWeather, initRadar, toggleUnitLatch, clearUnitInspect,
     adjustHealth, setTracerMode, setMotionReduction,
+    getPrefs, setPrefs, setDirector,
+    getReport, getReportView, getReportCsv, getReportText, download, exportPng, copyText,
+    getDiagnostics, getDiagnosticsText, track,
 };

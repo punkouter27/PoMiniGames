@@ -379,3 +379,54 @@
     color: #8fd3c7;
     letter-spacing: 0.02em;
 }
+
+/* ── Comfort, captions and the after-action report ── */
+
+.pc-caption {
+    position: absolute;
+    z-index: 6;
+    left: 50%;
+    bottom: 96px;
+    transform: translateX(-50%);
+    max-width: min(720px, calc(100% - 48px));
+    padding: 8px 14px;
+    color: #f7f2e6;
+    background: #0b1622e8;
+    border-left: 3px solid #d5b77c;
+    border-radius: 4px;
+    font-size: 13px;
+    line-height: 1.45;
+    text-align: center;
+    pointer-events: none;
+}
+.pc-caption-tag { margin-right: 8px; color: #9fc0e2; font-size: 9px; letter-spacing: 0.16em; font-weight: 700; }
+
+.pc-section-head { display: block; margin: 18px 0 6px; font-size: 11px; letter-spacing: 0.14em; text-transform: uppercase; color: #d4b87b; }
+.pc-range { display: block; width: 100%; margin: 2px 0 10px; accent-color: #b98c45; }
+.pc-keymap { border-top: 1px solid #ffffff1a; padding-top: 10px; margin-top: 12px; }
+.pc-keymap summary { cursor: pointer; color: #b7c4ce; font-size: 11px; }
+.pc-key-row { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-top: 6px; font-size: 11px; color: #d7dde2; }
+.pc-key-select { min-width: 92px; padding: 3px 6px; color: #f3ead8; background: #16273a; border: 1px solid #d5b77c55; border-radius: 4px; font-size: 11px; }
+
+/* High contrast raises the HUD text and chip faces without recolouring the world. */
+.pc-contrast .pc-hint-chip,
+.pc-contrast .pc-crowd,
+.pc-contrast .pc-time { color: #fff; text-shadow: 0 0 4px #000, 0 1px 2px #000; }
+.pc-contrast .pc-hint-chip { font-weight: 700; letter-spacing: 0.1em; }
+.pc-contrast .pc-onthisday-chip { background: #04101ef2; border-right-color: #cfe3ff; }
+.pc-contrast .pc-demo-chip,
+.pc-contrast .pc-beacon-chip { background: #04101ef2; }
+
+.pc-report { display: grid; gap: 10px; margin-top: 14px; }
+.pc-report-chart { width: 100%; overflow: hidden; border-radius: 6px; border: 1px solid #88888855; }
+.pc-report-chart svg { display: block; width: 100%; height: auto; }
+.pc-report-facts { display: grid; grid-template-columns: repeat(auto-fit, minmax(120px, 1fr)); gap: 8px 14px; margin: 0; }
+.pc-report-facts dt { font-size: 9px; letter-spacing: 0.12em; text-transform: uppercase; color: var(--color-text-secondary); }
+.pc-report-facts dd { margin: 2px 0 0; font-size: 13px; }
+.pc-report-actions { display: flex; flex-wrap: wrap; gap: 8px; }
+.pc-tab-report { margin-top: 12px; padding-top: 10px; border-top: 1px solid #ffffff1a; }
+.pc-tab-report .pc-small { margin: 4px 0 8px; }
+
+@media (max-width: 650px) {
+    .pc-caption { bottom: 128px; font-size: 12px; }
+}

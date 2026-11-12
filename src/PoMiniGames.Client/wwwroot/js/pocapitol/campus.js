@@ -2,7 +2,7 @@ import * as THREE from 'three';
 import { SURFACE, addSurface } from './look.js';
 
 // Public-reference massing and landscape detail. The playable footprint remains fictional.
-export function createCampus({ surfaces, surfaceDetail } = {}) {
+export function createCampus({ surfaces, surfaceDetail, osm } = {}) {
     const group = new THREE.Group();
     group.name = 'capitol-campus-reference';
     const geometries = new Set(), materials = new Set();
@@ -245,6 +245,39 @@ export function createCampus({ surfaces, surfaceDetail } = {}) {
     tower(176, 198, 22, 22, 28);
     tower(150, 202, 20, 20, 24);
 
+    // Real footprints from OpenStreetMap (scripts/pocapitol-campus.mjs), outside the radius the
+    // hand-built grounds own. Instanced off one unit box so 700 buildings cost four draw calls:
+    // the terraces, office slabs and named blocks that the itemised model does not cover.
+    const osmBatches = [];
+    if (osm?.buildings?.length) {
+        const unit = new THREE.BoxGeometry(1, 1, 1); geometries.add(unit);
+        const place = new THREE.Object3D();
+        const walls = new Map();
+        for (const footprint of osm.buildings) {
+            const wall = footprint.h > 5.5 ? stone : footprint.h > 3 ? brick : darkStone;
+            if (!walls.has(wall)) walls.set(wall, []);
+            walls.get(wall).push(footprint);
+        }
+        for (const [material, list] of walls) {
+            const batch = new THREE.InstancedMesh(unit, material, list.length);
+            list.forEach((footprint, i) => {
+                place.position.set(footprint.x, footprint.h / 2, footprint.z);
+                place.rotation.set(0, footprint.rot ?? 0, 0);
+                place.scale.set(footprint.w, footprint.h, footprint.d);
+                place.updateMatrix(); batch.setMatrixAt(i, place.matrix);
+            });
+            batch.castShadow = true; batch.receiveShadow = true; group.add(batch); osmBatches.push(batch);
+        }
+        const roofline = new THREE.InstancedMesh(unit, roof, osm.buildings.length);
+        osm.buildings.forEach((footprint, i) => {
+            place.position.set(footprint.x, footprint.h + 0.12, footprint.z);
+            place.rotation.set(0, footprint.rot ?? 0, 0);
+            place.scale.set(footprint.w + 0.3, 0.26, footprint.d + 0.3);
+            place.updateMatrix(); roofline.setMatrixAt(i, place.matrix);
+        });
+        roofline.castShadow = true; group.add(roofline); osmBatches.push(roofline);
+    }
+
     // Roads, sidewalks, curbs, markings and patched asphalt establish human scale.
     for (const x of [-68, 68]) {
         box(x, -0.08, 30, 16, 0.12, 230, asphalt);
@@ -346,6 +379,7 @@ export function createCampus({ surfaces, surfaceDetail } = {}) {
         setDetail(value) { leaves.visible = value; },
         dispose() {
             batches.forEach(b => b.dispose());
+            osmBatches.forEach(b => b.dispose());
             geometries.forEach(g => g.dispose()); materials.forEach(m => m.dispose()); leaves.dispose();
         },
     };

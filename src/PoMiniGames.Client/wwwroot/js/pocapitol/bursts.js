@@ -235,9 +235,10 @@ export function createBursts(scene, { capacity = 16000 } = {}) {
                     break;
                 case 'gunshot':
                     spray(e.x, floor + 1.4, e.z, 90, { color: [5, 3.4, 1.4], spread: 0.6, calm });
-                    // Gunsmoke hangs in cold air: thinner than a kick of dust, but it lingers four
-                    // times as long, so a volley leaves a haze over the line instead of a blink.
-                    puff(e.x, floor + 1.3, e.z, 50, { tone: [0.72, 0.70, 0.68], lift: 0.5, size: 0.5, life: 4, alpha: 0.8, drag: 1.5 });
+                    // Gunsmoke hangs in cold air. Each puff is twice the size it was and hangs for
+                    // eight times as long, so a volley leaves a rolling haze over the line instead
+                    // of a blink: at this density the far ranks stop reading as people.
+                    puff(e.x, floor + 1.3, e.z, 50, { tone: [0.72, 0.70, 0.68], lift: 0.5, size: 1, life: 32, alpha: 0.8, drag: 1.5 });
                     casing(e.x, floor, e.z);
                     break;
                 case 'ricochet':

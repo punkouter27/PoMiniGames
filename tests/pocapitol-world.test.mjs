@@ -17,6 +17,11 @@ const world = await import(url(read('js/pocapitol/world.js').replace("'./steerin
 const { createAttempt, advance, shove, setPaused, walkable, milestones, obstacles, columns, statues, lineDefs,
     selectLeader, frontLine, clockLabel, CROWD_SIZE, MAX_POLICE, CIVILIANS, CURFEW_ELAPSED } = world;
 const { createGovernor, RUNGS } = await import(url(read('js/pocapitol/quality.js')));
+const report = await import(url(read('js/pocapitol/report.js')));
+const director = await import(url(read('js/pocapitol/director.js')));
+const prefs = await import(url(read('js/pocapitol/prefs.js')));
+const campusData = await import(url(read('js/pocapitol/campusData.js')));
+const signsData = await import(url(read('js/pocapitol/signs.js')));
 
 function tick(state, input = {}, seconds = 1) {
     for (let i = 0; i < Math.round(seconds * 60); i++) advance(state, input, 1 / 60);
@@ -497,6 +502,12 @@ async function engineHarness(rejectUpdates = false) {
     const view = { canvas, render() {}, aim: () => ({ x: 0, z: -1 }), applyQuality: s => quality.push(s), dispose() { disposed++; } };
     const context = vm.createContext({
         window, document, AbortController, createAttempt, advance, shove, setPaused, selectLeader, frontLine,
+        milestones, clockLabel,
+        createRecorder: report.createRecorder, toCsv: report.toCsv, toText: report.toText, toSvg: report.toSvg,
+        createDirector: director.createDirector,
+        loadPrefs: prefs.loadPrefs, savePrefs: prefs.savePrefs, matches: prefs.matches,
+        loadCampusData: campusData.loadCampusData,
+        loadSigns: signsData.loadSigns,
         createScene: () => view, loadFigure: async () => null, createUiFx: () => ({ dispose() {} }), createGovernor, MODES: ['auto', 'low', 'high'],
         fetchWeather: async () => ({ temperature: 4.4, condition: 'Overcast', windSpeed: 14.5 }),
         createRadar: () => ({ render() {}, update() {}, resize() {}, destroy() {}, dispose() {} }),
@@ -507,6 +518,8 @@ async function engineHarness(rejectUpdates = false) {
         ButtonEdges: class { update() { return []; } },
         requestAnimationFrame: callback => { frames.set(++frameId, callback); return frameId; },
         cancelAnimationFrame: id => frames.delete(id),
+        navigator: { userAgent: 'node-test' },
+        location: { href: 'http://localhost/pocapitol' },
         console: { warn: (...args) => errors.push(args), error: (...args) => errors.push(args) },
     });
     vm.runInContext(read('js/pocapitol/index.js').replace(/^import .*;\r?$/gm, ''), context);
@@ -671,4 +684,31 @@ test('a round records where it landed, which way it came from, and who it distur
     assert.ok(typeof neighbour.startle === 'number', 'a neighbour is marked startled');
     assert.ok(neighbour.startleDx > 0.9, 'leaning away from the body, not into it');
     assert.equal(neighbour.kx, 0, 'the flinch must not move anyone');
+});
+
+test('comfort prefs, the after-action report and diagnostics are exposed to the page', async () => {
+    const engine = await engineHarness();
+    const defaults = engine.window.PoCapitol.getPrefs();
+    assert.equal(defaults.fov, 62, 'the page gets one flat record, not the nested key map');
+    assert.equal(defaults.forward, 'KeyW');
+
+    const saved = engine.window.PoCapitol.setPrefs({ sensitivity: 1.5, fov: 72, captions: true, keys: { push: 'KeyF' } });
+    assert.equal(saved.sensitivity, 1.5);
+    assert.equal(saved.fov, 72);
+    assert.equal(saved.push, 'KeyF', 'a remap survives the round trip');
+    assert.equal(saved.forward, 'KeyW', 'untouched bindings are kept');
+
+    engine.api.start('story');
+    await engine.frame(1000); await engine.frame(1017); await engine.frame(1034);
+    const report = engine.window.PoCapitol.getReportView();
+    assert.equal(report.mode, 'solo');
+    assert.equal(report.role, 'raider');
+    assert.match(report.csv, /^minute,line_integrity/);
+    assert.match(report.text, /PoCapitol solo/);
+    assert.equal(typeof report.svg, 'string');
+
+    const diagnostics = engine.window.PoCapitol.getDiagnosticsText();
+    assert.match(diagnostics, /PoCapitol build/);
+    assert.match(diagnostics, /Director on/);
+    engine.api.dispose();
 });

@@ -4,7 +4,34 @@ import { BONES as RIG_BONES, REGIONS, buildFigure } from './rig.js';
 import { collapseStage, tipAxes, impactFrame, restPlace } from './collapse.js';
 
 // Original procedural artwork; references inform clothing and equipment, not real identities.
-export function flagTexture(kind = 'us') {
+/** Fit a short phrase onto a board in at most three lines, shrinking until it fits. */
+function drawBoardText(ctx, text) {
+    const words = String(text ?? '').toUpperCase().split(/\s+/).filter(Boolean).slice(0, 8);
+    if (words.length === 0) return;
+    const wrap = size => {
+        ctx.font = `bold ${size}px sans-serif`;
+        const lines = [];
+        let line = '';
+        for (const word of words) {
+            const next = line ? `${line} ${word}` : word;
+            if (line && ctx.measureText(next).width > 336) { lines.push(line); line = word; }
+            else line = next;
+        }
+        if (line) lines.push(line);
+        return lines;
+    };
+    let size = 72, lines = wrap(size);
+    while (size > 22 && (lines.length > 3 || lines.some(l => ctx.measureText(l).width > 336))) {
+        size -= 2; lines = wrap(size);
+    }
+    ctx.textAlign = 'center';
+    ctx.fillStyle = '#233d78';
+    const step = size * 1.16, total = lines.length * step;
+    let y = 130 - total / 2 + size * 0.86;
+    for (const line of lines) { ctx.fillText(line, 195, y); y += step; }
+}
+
+export function flagTexture(kind = 'us', text = '') {
     const canvas = document.createElement('canvas');
     canvas.width = 390; canvas.height = 260;
     const ctx = canvas.getContext('2d');
@@ -36,6 +63,11 @@ export function flagTexture(kind = 'us') {
         ctx.fillText('STOP', 195, 100);
         ctx.fillStyle = '#233d78'; ctx.font = 'bold 58px sans-serif';
         ctx.fillText('THE STEAL', 195, 185);
+    } else if (kind === 'text') {
+        // A board from data/pocapitol/placards.json: plain card, fitted phrase, red rule.
+        ctx.fillStyle = '#f3f1ea'; ctx.fillRect(0, 0, 390, 260);
+        ctx.strokeStyle = '#a9353e'; ctx.lineWidth = 10; ctx.strokeRect(10, 10, 370, 240);
+        drawBoardText(ctx, text);
     } else {
         ctx.fillStyle = '#233d78'; ctx.fillRect(0, 0, 390, 260);
         ctx.strokeStyle = '#fff'; ctx.lineWidth = 6; ctx.strokeRect(12, 12, 366, 236);
@@ -53,12 +85,24 @@ export function flagTexture(kind = 'us') {
 // puffers, knit hats and hoods.
 export const coats = ['#715945', '#303c4b', '#645f4d', '#793d34', '#8b775b', '#373c38', '#405576', '#434047',
     '#2d3a2a', '#8a8f96', '#1a1c20', '#5a1f24'];
-const banners = ['us', 'campaign', 'us', 'gadsden', 'sign', 'us'];
 const suits = ['#27303f', '#3a3f48', '#1f2a3a', '#4a4650', '#2f3b33'];
 const pants = ['#3b4a63', '#2a2f38', '#6b6250', '#1d1f22', '#4d5560', '#34405a'];
 const hairs = ['#2b2118', '#4a3524', '#6e5a43', '#9a8f84', '#b89a64', '#1c1a18'];
 const knits = ['#a93737', '#2b3f66', '#3a3a3a', '#7d7f45', '#c9c3b5', '#5a2d3c'];
 const skins = ['#d4b28e', '#b98f6c', '#90694e', '#debfa3', '#73533e'];
+
+/**
+ * A random slice of the placard list for this scene. Every distinct board costs one instanced
+ * draw call, so the slice is bounded; across launches the whole list still gets used.
+ */
+function shuffledSigns(signs, limit = 14) {
+    const list = [...new Set((signs ?? []).filter(text => typeof text === 'string' && text.length > 0))];
+    for (let i = list.length - 1; i > 0; i--) {
+        const j = Math.floor(Math.random() * (i + 1));
+        [list[i], list[j]] = [list[j], list[i]];
+    }
+    return list.slice(0, limit);
+}
 
 /** A stable 0..1 trait per actor, so a person keeps their height and build all day. */
 function trait(id, salt) {
@@ -385,7 +429,7 @@ function poseFor(b, a, t, pose) {
 // Rest points of the hands' palms, where held things are anchored.
 const PALM_R = [0.483, 0.76, -0.12], PALM_L = [-0.483, 0.76, -0.12];
 
-export function createCrowd(scene, capacity, { time, groundHeight, shadowTexture, figure, wind = null }) {
+export function createCrowd(scene, capacity, { time, groundHeight, shadowTexture, figure, wind = null, signs = [] }) {
     const parts = [], resources = new Set(), textures = new Set();
     const transform = new THREE.Object3D(), color = new THREE.Color();
     transform.rotation.order = 'YXZ';
@@ -421,6 +465,11 @@ export function createCrowd(scene, capacity, { time, groundHeight, shadowTexture
     const beanie = a => bareish(a) && a.id % 3 !== 2;
     const hair = a => (bareish(a) && a.id % 3 === 2) || a.civilian;
     const bearer = a => raider(a) && a.id >= 0 && a.id % 3 === 0 && a.health > 0;
+    // Carried signage: the national and Gadsden flags plus a random slice of the placard list.
+    // One instanced mesh per distinct board keeps the draw-call count bounded, and each bearer's
+    // board is fixed for the attempt by the same stable trait that sets their height.
+    const bannerKinds = [{ kind: 'us' }, { kind: 'gadsden' }, ...shuffledSigns(signs).map(text => ({ kind: 'text', text }))];
+    const bannerIndex = a => Math.min(bannerKinds.length - 1, Math.floor(trait(a.id, 7) * bannerKinds.length));
     const filming = a => raider(a) && a.filming && a.health > 0 && !a.retreating;
     const gun = a => a.armed && a.health > 0 && (a.police || a.temperament === 'pusher' || (a.temperament === 'follower' && a.morale > 0.7));
 
@@ -511,11 +560,12 @@ export function createCrowd(scene, capacity, { time, groundHeight, shadowTexture
     part('gun', cube, dark, [-0.02, 0.05, -0.2], [0.07, 0.13, 0.5], gun, false, right);
     part('flag-pole', new THREE.CylinderGeometry(0.025, 0.025, 3.2, 5),
         new THREE.MeshStandardMaterial({ color: '#b7a587' }), [0, 0.95, 0], [1, 1, 1], bearer, false, right);
-    for (const kind of new Set(banners)) {
-        const texture = flagTexture(kind); textures.add(texture);
+    for (let i = 0; i < bannerKinds.length; i++) {
+        const { kind, text } = bannerKinds[i];
+        const texture = flagTexture(kind, text); textures.add(texture);
         const flag = part('flag', new THREE.PlaneGeometry(1.7, 1.1, 16, 6),
             addWave(new THREE.MeshStandardMaterial({ map: texture, side: THREE.DoubleSide, roughness: 0.9 }), time, { wind }),
-            [0.86, 1.98, 0], [1, 1, 1], a => bearer(a) && banners[Math.floor(a.id / 3) % banners.length] === kind, false, right);
+            [0.86, 1.98, 0], [1, 1, 1], a => bearer(a) && bannerIndex(a) === i, false, right);
         flag.mesh.layers.set(1);
     }
     // Snow settling on shoulders and hats: not falling snow, the thin rime that builds up on a
