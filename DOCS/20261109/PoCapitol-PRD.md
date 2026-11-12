@@ -526,3 +526,47 @@ numbers, and must not be used to predict or inform real clinical outcomes.
 3. Should the police-line and observer roles record local results?
 4. The armed demo's Standard difficulty usually ends with every protestor eliminated and
    Story with every officer eliminated. Is that the balance you want to watch?
+
+## 18. Crowd physics, verticality, sound, light and camera realism pass (2026-11-11)
+
+Ten changes, all presentational or crowd-physics fidelity. None of them touch the limits in
+section 17: no injury is depicted, no real person appears, and there is no real access plan.
+
+1. **The terrace is real (`world.js`, `scene.js`).** The central approach between the stands is
+   now four stone treads rising 0.38 m to the portico landing, drawn to match `groundHeight()`
+   exactly. Agents have a `groundSlope()` and move slower on it, so the crowd bunches at the foot
+   of the steps and drains through them slowly — the choke point a stairway creates in a real
+   crowd. The simulation itself is still planar; the height is visual plus a speed cost.
+2. **The crowd is incompressible (`world.js`).** Body separation now runs two relaxation passes
+   with a stiffness that rises with overlap depth, so a shove travels down a line instead of
+   moving one pair. Mass still decides who gives way, and the fallen are still stepped over.
+3. **Density is a mechanic, not a heatmap (`steering.js`, `inspector.js`).** Every agent carries
+   `density` in people per square metre from the same neighbour query the radar already read.
+   Above about 4 people/m² the agent's steering authority is perturbed deterministically, so
+   someone packed in the middle is carried by people they cannot see. Telemetry and the
+   inspector's status line report it.
+4. **Sound is occluded and delayed (`audio.js`).** One-shots are low-passed and attenuated by the
+   walls between source and listener, are only partly screened when lined up with a doorway, and
+   arrive after `distance / 343` seconds — the propagation delay that makes a big stone room feel
+   big.
+5. **The eye adapts (`scene.js`).** Tone-mapping exposure eases toward 1.62 indoors and 1.1 out,
+   faster going darker than coming back out, and lifts slightly at dusk. A doorway now reads as a
+   threshold rather than a texture swap.
+6. **One wind moves the scene (`look.js`, `crowd.js`, `particles.js`, `scene.js`).** The weather's
+   wind vector is shared by the banner shader, the banners' own orientation, the gas and smoke
+   drift and the breath vapour, gusting on top of the mean.
+7. **Footprints and rime (`decals.js`, `scene.js`, `crowd.js`).** A boot-sole decal ring records
+   where people walked, one print per stride outdoors, and a pale rime builds on hats and
+   shoulders over the first several minutes outside.
+8. **Everyone walks their own way (`crowd.js`).** Stride length, cadence and an occasionally
+   favoured knee are drawn once per person from the same stable trait that already sets their
+   height and build.
+9. **Phone POV (`scene.js`, `post.js`).** When the spectator camera settles on one of the many
+   people filming, it cuts to their screen: portrait crop, hand shake, rolling-shutter skew,
+   autofocus hunt and metering pumping, then back out. Disabled under reduced motion.
+10. **The day has a shape (`world.js`).** `crowdPressure(elapsed)` peaks around 2:15 pm and falls
+    away after 3:00, modulating crowd pace and willingness against the existing 12:50-to-6:00
+    clock rather than against frame count.
+
+Verified with the Node engine tests (`tests/pocapitol-*.test.mjs`, 58 passing) and a zero-warning
+`dotnet build`.

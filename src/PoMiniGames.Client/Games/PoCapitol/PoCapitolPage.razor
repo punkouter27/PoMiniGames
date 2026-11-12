@@ -89,6 +89,7 @@
                             </div>
                             <div class="pc-inspector-meta">
                                 <span>@_selectedTelemetry.gear</span>
+                                <span>Crowd density: @_selectedTelemetry.density.ToString("0.0") people/m²</span>
                                 @if (!string.IsNullOrEmpty(_selectedTelemetry.lineAssignment))
                                 {
                                     <span>Assignment: @_selectedTelemetry.lineAssignment</span>
@@ -742,6 +743,7 @@
         public string? lineAssignment { get; set; }
         public string? milestone { get; set; }
         public int crowding { get; set; }
+        public double density { get; set; }
         public double x { get; set; }
         public double z { get; set; }
         public bool latched { get; set; }

@@ -520,12 +520,10 @@ export function createCrowd(scene, capacity, { time, groundHeight, shadowTexture
     }
     // Snow settling on shoulders and hats: not falling snow, the thin rime that builds up on a
     // person who has been out in it for an hour. A pale cap that grows with time outdoors.
-    const rime = new THREE.MeshBasicMaterial({ color: '#e9eef2', transparent: true, opacity: 0.5, depthWrite: false });
-    const rimeCap = part('rime', dome, rime, [0, 2.06, 0], [1, 1, 1], a => !a.police && a.health > 0 && (a.z ?? 0) > 15, true, head);
-    rimeCap.mesh.layers.set(1);
-    const rimeShoulders = part('rime-shoulders', new THREE.TorusGeometry(0.24, 0.035, 4, 12), rime, [0, 1.52, 0], [1, 1, 0.85],
-        a => a.health > 0 && (a.z ?? 0) > 15, true, { rot: Math.PI / 2, bone: 'chest' });
-    rimeShoulders.mesh.layers.set(1);
+    const rime = new THREE.MeshStandardMaterial({ color: '#e9eef2', transparent: true, opacity: 0.34, roughness: 0.92 });
+    part('rime', dome, rime, [0, 1.96, 0.01], [1.03, 1.02, 1.02], a => !a.police && a.health > 0 && (a.z ?? 0) > 15, true, head);
+    part('rime-shoulders', new THREE.TorusGeometry(0.24, 0.035, 4, 12), rime, [0, 1.46, 0], [1, 1, 0.85],
+        a => a.health > 0 && (a.z ?? 0) > 15, true, { rot: Math.PI / 2 });
     // Breath in the cold: a small puff in front of each face outdoors, there and gone.
     const breath = part('breath', new THREE.SphereGeometry(0.11, 6, 5),
         new THREE.MeshBasicMaterial({ color: '#f3f6f8', transparent: true, opacity: 0.2, depthWrite: false }),
@@ -682,12 +680,6 @@ export function createCrowd(scene, capacity, { time, groundHeight, shadowTexture
                         const dy = Math.atan2(Math.sin(windYaw - h), Math.cos(windYaw - h));
                         transform.rotation.y = h + dy * blend + 0.05 * Math.sin(state.elapsed * 1.7 + a.id);
                     }
-                    if (p.name === 'rime' || p.name === 'rime-shoulders') {
-                        // Rime builds on a person who has been out in it, then holds.
-                        const build = Math.min(1, Math.max(0, (state.elapsed - 20) / 400));
-                        if (build <= 0.01) continue;
-                        transform.scale.multiplyScalar(0.55 + 0.45 * build);
-                    }
                     transform.updateMatrix();
                     worn.copy(transform.matrix);
                 } else {
@@ -695,6 +687,12 @@ export function createCrowd(scene, capacity, { time, groundHeight, shadowTexture
                     held.position.fromArray(p.offset);
                     held.rotation.set(p.rot || 0, p.yaw || 0, 0);
                     held.scale.fromArray(p.scale);
+                    if (p.name === 'rime' || p.name === 'rime-shoulders') {
+                        // Rime builds on a person who has been out in it, then holds.
+                        const build = Math.min(1, Math.max(0, (state.elapsed - 20) / 400));
+                        if (build <= 0.01) continue;
+                        held.scale.multiplyScalar(0.55 + 0.45 * build);
+                    }
                     held.updateMatrix();
                     worn.multiplyMatrices(boneWorld, held.matrix);
                 }

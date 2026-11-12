@@ -29,7 +29,7 @@ reconstruction.
   standard gamepad sticks, right trigger, left-stick click, Start.
 - **Clock:** one real second is one minute of the day, 12:50 pm to the 6:00 pm curfew
   (310 seconds). The curfew ends any attempt. Light fades through the afternoon.
-- **Crowd:** always exactly 128 protestors (1 human + 127, or 128 CPU), starting out on the
+- **Crowd:** always exactly 512 protestors (1 human + 511, or 512 CPU), starting out on the
   grass about 50 metres behind the first barricade. Deterministic
   temperaments: about 30% pushers, 35% followers, 30% bystanders who film and stay shallow,
   5% street medics. Morale falls under gas, spray, batons and flash-bangs and surges when a

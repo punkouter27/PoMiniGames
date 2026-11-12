@@ -33,7 +33,7 @@ export const areas = [
  */
 export function groundHeight(x, z) {
     if (z < 15) return 0.1;
-    const central = Math.abs(x) <= 13.5;
+    const central = Math.abs(x) <= 9;
     if (central && z >= 15 && z < 17) return 0.38;
     if (central && z >= 17 && z < 21) {
         const step = Math.min(4, Math.floor(21 - z));
@@ -108,7 +108,7 @@ export const lineDefs = [
     { z: -47, x0: -4, x1: 4, officers: 6, barrier: 4, name: 'House corridor' },
 ];
 
-export const CROWD_SIZE = 256;
+export const CROWD_SIZE = 512;
 export const MAX_POLICE = 64;
 /** Staff and members sheltering in the chamber. Non-combatants: nothing can target or reach them. */
 export const CIVILIANS = 64;
@@ -119,6 +119,11 @@ export const aidStation = { x: -30, z: 62 };
 const reinforcementTimes = [55, 95, 135, 175, 215];
 const EVACUATION_STARTS = 85;
 const LINE_STANDOFF = 0.6;
+// The bike racks strung across the first line: movable, and the crowd can lean one over.
+const RACK_ROWS = 9, RACK_SPAN = lineDefs[0].x1 - lineDefs[0].x0, RACK_WIDTH = RACK_SPAN / RACK_ROWS;
+const RACK_GIVE = 6;             // raider-seconds of leaning before a rack goes over
+const RACK_PRESS = 0.2;          // how much closer than the rack line the crowd gets once it is down
+const rackCentres = Array.from({ length: RACK_ROWS }, (_, i) => lineDefs[0].x0 + (i + 0.5) * RACK_WIDTH);
 
 const difficulties = {
     story: { hold: 1.2, baton: 4, spray: 3, gas: 0.8, interval: 3.2, playerBaton: 6, playerSpray: 4, playerGas: 3, wear: 0.34, tire: 55, shot: 4 },
@@ -279,6 +284,9 @@ export function createAttempt(difficulty = 'standard', demo = false, role = 'rai
         suppression: 0, recoil: 0,
         lines: lineDefs.map((def, id) => ({ id, state: 'holding', integrity: 100, pressure: 0, hold: 0,
             munition: 10 + id * 2, gasLeft: id === 0 ? 2 : 1, flashCooldown: 6, flashLeft: 1, brokenAt: -1, strain: 0 })),
+        // The racks of the first line as objects, not decoration: each takes the crowd's weight,
+        // leans, and goes over when it has been leaned on long enough.
+        racks: rackCentres.map((x, id) => ({ id, x, push: 0, tip: 0, slide: 0, fallen: false })),
         enemies: lineDefs.flatMap((def, line) => Array.from({ length: def.officers }, (_, i) =>
             officer(officerId++, line, def.x0 + (i + 0.5) * (def.x1 - def.x0) / def.officers, def.z - 0.4))),
         companions: Array.from({ length: role === 'raider' ? CROWD_SIZE - 1 : CROWD_SIZE }, (_, id) => {
@@ -379,11 +387,21 @@ export function shove(state, direction) {
     return { hit: hit?.id ?? null, x: state.player.x + dx * 1.6, z: state.player.z + dz * 1.6 };
 }
 
+/** True where a bike rack has been shoved over and the crowd may press up to the officers. */
+function rackGapAt(state, x) {
+    return state.racks.some(rack => rack.fallen && Math.abs(x - rack.x) <= RACK_WIDTH / 2);
+}
+
+/** How close the crowd may get to a line at `x`: the rack line, or the officers where a rack is down. */
+function lineLimit(state, index, x) {
+    return lineDefs[index].z + (index === 0 && rackGapAt(state, x) ? -RACK_PRESS : LINE_STANDOFF);
+}
+
 /** The z a raider is held at if this move would cross a line that still holds, else null. */
 function heldAt(state, x, fromZ, toZ) {
     for (const [i, def] of lineDefs.entries()) {
         if (state.lines[i].state !== 'holding') continue;
-        const limit = def.z + LINE_STANDOFF;
+        const limit = lineLimit(state, i, x);
         if (x >= def.x0 - 0.5 && x <= def.x1 + 0.5 && fromZ >= limit - 0.05 && toZ < limit) return limit;
     }
     return null;
@@ -391,8 +409,10 @@ function heldAt(state, x, fromZ, toZ) {
 
 /** Distance from a raider to the next line still holding in front of them. */
 function lineAhead(state, actor) {
-    for (const [i, def] of lineDefs.entries()) {
-        if (state.lines[i].state === 'holding' && actor.z >= def.z + LINE_STANDOFF - 0.05) return actor.z - def.z - LINE_STANDOFF;
+    for (const [i] of lineDefs.entries()) {
+        if (state.lines[i].state !== 'holding') continue;
+        const limit = lineLimit(state, i, actor.x);
+        if (actor.z >= limit - 0.05) return actor.z - limit;
     }
     return Infinity;
 }
@@ -436,19 +456,43 @@ function updateLines(state, difficulty, dt) {
         const line = state.lines[i];
         if (line.state !== 'holding') continue;
         line.munition -= dt; line.flashCooldown -= dt;
-        const limit = def.z + LINE_STANDOFF;
-        const pressing = actor => actor.x >= def.x0 - 0.5 && actor.x <= def.x1 + 0.5 && actor.z >= limit - 0.1 && actor.z <= limit + 2.4;
+        const pressing = actor => actor.x >= def.x0 - 0.5 && actor.x <= def.x1 + 0.5 &&
+            actor.z >= lineLimit(state, i, actor.x) - 0.1 && actor.z <= lineLimit(state, i, actor.x) + 2.4;
         let pressure = 0, sumX = 0, count = 0, instigatorX = 0, instigatorWeight = 0;
+        const rackForce = i === 0 ? new Float32Array(RACK_ROWS) : null;
         for (const c of state.companions) {
             if (c.health <= 0 || c.retreating || c.stun > 0 || !pressing(c)) continue;
             const weight = c.temperament === 'pusher' ? 1 : c.temperament === 'follower' && c.morale > 0.7 ? 0.5 : 0;
             if (weight === 0) continue;
             pressure += weight * (c.surge > 0 ? 1.3 : 1);
             sumX += c.x; count++;
+            if (rackForce) {
+                const slot = Math.floor((c.x - def.x0) / RACK_WIDTH);
+                if (slot >= 0 && slot < RACK_ROWS) rackForce[slot] += weight * (c.surge > 0 ? 1.5 : 1);
+            }
             const iw = (c.hasShield ? 2.5 : 1) * weight * (c.surge > 0 ? 1.5 : 1);
             instigatorX += c.x * iw; instigatorWeight += iw;
         }
-        if (humanRaider && pressing(state.player)) pressure += state.playerPush > 0 ? 6 : 1;
+        if (humanRaider && pressing(state.player)) {
+            pressure += state.playerPush > 0 ? 6 : 1;
+            const slot = Math.floor((state.player.x - def.x0) / RACK_WIDTH);
+            if (rackForce && slot >= 0 && slot < RACK_ROWS) rackForce[slot] += state.playerPush > 0 ? 3 : 0.8;
+        }
+        // The racks take the weight first: lean on one long enough and it goes over, leaving a gap
+        // where the crowd can press right up to the officers behind it.
+        if (rackForce) {
+            for (let r = 0; r < state.racks.length; r++) {
+                const rack = state.racks[r];
+                if (rack.fallen) continue;
+                rack.push = Math.max(0, rack.push + rackForce[r] * dt - 0.5 * dt);
+                rack.tip = Math.min(1, rack.push / RACK_GIVE);
+                if (rack.push >= RACK_GIVE) {
+                    rack.fallen = true; rack.tip = 1;
+                    rack.slide = (r % 2 ? 1 : -1) * 0.85;
+                    state.events.push({ type: 'rack', x: rack.x, z: def.z });
+                }
+            }
+        }
         let hold = def.barrier;
         const frontSlots = Math.floor((def.x1 - def.x0) / 1.7);
         let standing = 0;

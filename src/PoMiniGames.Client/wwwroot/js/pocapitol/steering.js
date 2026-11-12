@@ -100,7 +100,7 @@ export function createSteering(capacity) {
             agent.surgingNear = surgingNear;
             // People per square metre under this agent's own feet: what a crowd is actually
             // compressed to, which is what carries someone along when they stop walking.
-            agent.density = neighbors.length / (Math.PI * NEIGHBOR_RADIUS * NEIGHBOR_RADIUS) * 0.5;
+            agent.density = neighbors.length / (Math.PI * NEIGHBOR_RADIUS * NEIGHBOR_RADIUS);
             if (aheadBlocking > 0 && Math.abs(agent.x) < 4.5) {
                 vehicle.maxSpeed = agent.speed * Math.max(0.55, 1 - aheadBlocking * 0.15);
             }

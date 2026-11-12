@@ -102,6 +102,15 @@ export function createScene(host, { figure } = {}) {
     placeSun();
 
     const time = { value: 0 };
+    // One wind for the whole scene, in m/s: banners, cloth, smoke, gas, breath and the snow all
+    // read the same vector, set once a frame from the weather. `uniform` is what the flag shader
+    // reads, so a gust crossing the lawn stiffens every banner on it in the same frame.
+    const wind = { x: 0, z: 0, uniform: { value: new THREE.Vector2(0, 0) } };
+    // Current tone-mapping exposure, eased toward whatever the eye would have adapted to.
+    let exposure = 1.1;
+    // Where each person last left a footprint, so prints fall about a stride apart.
+    const prints = new Map();
+    let phone = 0;
     let breathClock = 0;
     const surfaceDetail = { value: 1 };
     const sky = createSky();
@@ -265,6 +274,14 @@ export function createScene(host, { figure } = {}) {
     for (let step = 0; step < 5; step++) {
         for (const x of [-22, 22]) box(x, step * 0.12, 17.8 - step * 0.5, 28, 0.2, 1, '#d9d3c4');
     }
+    // The central terrace: four worn treads up to the portico landing, in the gap between the
+    // stands. The heights match groundHeight() exactly, so a boot lands on the stone it appears
+    // to land on — and the crowd has to climb it to reach the doors.
+    for (let tread = 1; tread <= 4; tread++) {
+        const top = 0.02 + tread * 0.09;
+        box(0, top / 2, 20.5 - (tread - 1), 18, top, 1.02, '#d9d3c4');
+    }
+    box(0, 0.19, 16, 18, 0.38, 2, '#d5cfc0');
     box(0, 10, 13, 23, 1.2, 8, '#e5ddcd');
     const pediment = new THREE.Shape();
     pediment.moveTo(-12, 0); pediment.lineTo(12, 0); pediment.lineTo(0, 4); pediment.closePath();
@@ -644,7 +661,7 @@ export function createScene(host, { figure } = {}) {
         light.position.set(x, y, z); light.color.set(color); light.intensity = intensity;
     }
 
-    const crowd = createCrowd(scene, CROWD_SIZE + MAX_POLICE + CIVILIANS + 1, { time, groundHeight, shadowTexture: shadowBlob, figure });
+    const crowd = createCrowd(scene, CROWD_SIZE + MAX_POLICE + CIVILIANS + 1, { time, groundHeight, shadowTexture: shadowBlob, figure, wind });
     const marker = mesh(new THREE.TorusGeometry(1.1, 0.08, 8, 36), '#ebce77', 0, 0.2, 23);
     marker.rotation.x = -Math.PI / 2;
     marker.material = new THREE.MeshStandardMaterial({ color: '#ebce77', emissive: '#c99a2e', emissiveIntensity: 0.6 });
@@ -766,6 +783,10 @@ export function createScene(host, { figure } = {}) {
         const subject = latched || (spectating ? selectLeader(state) : state.player);
         host.dataset.crowdBatches = crowd.batchCount;
         host.dataset.cameraSubject = spectating ? subject?.id ?? 'none' : 'human';
+        // Phone POV: most of what the day looks like is footage from phones held up in the crowd.
+        // When the spectator camera settles on someone filming, cut to their screen for a beat.
+        const wantPhone = spectating && !latched && subject?.filming && state.status === 'active' && !calm() ? 1 : 0;
+        phone += (wantPhone - phone) * (1 - Math.exp(-dt * (wantPhone > phone ? 2.6 : 1.6)));
         if (spectating || latched) {
             if (subject) {
                 if (spectating && !latched) {
@@ -814,9 +835,22 @@ export function createScene(host, { figure } = {}) {
         const daylight = Math.min(1, (sun.intensity + fill.intensity * 2.5) / (SUN[0][1] + FILL[0][1]));
         farCrowd.setLight(0.3 + 0.62 * daylight);
         const indoorGas = state.effects.some(e => e.type === 'gas' && e.z < 14);
+        // The day's wind, gusting: the same vector drives the banners, the gas, the breath, the
+        // snow and the flags, so one weather system moves the whole scene together.
+        const gust = 1 + 0.25 * Math.sin(clock * 0.31) + 0.12 * Math.sin(clock * 1.7);
+        wind.x = (weather?.windX ?? -6.07) * gust;
+        wind.z = (weather?.windZ ?? 2.83) * gust;
+        wind.uniform.value.set(wind.x, wind.z);
         const baseFog = weather?.fogDensity ?? FOG_OUT;
         if (weather?.cloudCover !== undefined) sky.uniforms.uCloud.value = weather.cloudCover;
         const indoors = subject?.z < 15;
+        // Eye adaptation: the pupil takes a beat to catch up when you walk out of flat overcast
+        // light into stone, and a slower beat coming back out. This is most of what makes a
+        // doorway read as a threshold instead of a texture swap.
+        const wantedExposure = (indoors ? 1.62 : 1.1) * (1 + 0.1 * dusk);
+        const adaptRate = wantedExposure < exposure ? 2.2 : 1.05;
+        exposure += (wantedExposure - exposure) * (1 - Math.exp(-dt * adaptRate));
+        renderer.toneMappingExposure = exposure;
         // The establishing shot looks through thinner air, or the whole scene would be haze.
         const targetFog = (indoorGas ? FOG_GAS : baseFog * (indoors ? 0.22 : 1)) * (1 - 0.4 * introWeight);
         scene.fog.density += (targetFog - scene.fog.density) * (1 - Math.exp(-dt * 1.5));
@@ -828,20 +862,28 @@ export function createScene(host, { figure } = {}) {
             beacon.position.set(goal.x, 1.7, goal.z);
         }
 
-        // The first line's racks. They are driven by the crowd, not by integrity alone: the harder
-        // the crowd leans, the further they are shoved back and the more they rock on their feet.
+        // The first line's racks. Each one is a real object in the simulation: it takes the crowd's
+        // weight, leans, rocks, and goes over when it has been leaned on long enough, sliding aside
+        // so the crowd can press up to the officers where it stood.
         const first = state.lines[0], firstDef = lineDefs[0];
         const strain = 1 - first.integrity / 100;
         const shove = Math.min(1, (first.pressure ?? 0) / Math.max(1, first.hold ?? 1));
         for (let i = 0; i < RACKS; i++) {
             const x = firstDef.x0 + (i + 0.5) * rackSpan / RACKS;
             const centre = Math.cos(Math.PI * x / rackSpan);
-            if (first.state === 'holding') {
+            const rack = state.racks?.[i];
+            const lean = rack?.tip ?? 0, slide = rack?.slide ?? 0;
+            if (first.state === 'holding' && !rack?.fallen) {
                 const bow = strain * 1.4 * centre;
                 const push = (0.12 + 0.55 * shove) * strain * centre;
                 const rock = Math.sin(clock * (1.8 + strain * 3.4) + i * 0.85) * (0.035 + 0.075 * shove);
-                pose.position.set(x + rock * 0.9, 0.62 - 0.1 * strain, firstDef.z + 0.35 - bow - push);
-                pose.rotation.set(-strain * 0.25 - shove * 0.12 + rock, rock * 0.6, rock * 0.5);
+                pose.position.set(x + rock * 0.9 + slide * 0.3, 0.62 - 0.1 * lean, firstDef.z + 0.35 - bow - push - lean * 0.8);
+                pose.rotation.set(-strain * 0.25 - shove * 0.12 + rock - lean * 0.5, rock * 0.6, rock * 0.5 + lean * 0.3);
+            } else if (first.state === 'holding') {
+                // Shoved over: it lies where the crowd dragged it, still rocking a little.
+                const rock = Math.sin(clock * 1.6 + i) * 0.02;
+                pose.position.set(x + slide, 0.1, firstDef.z + 0.1 + Math.abs(slide) * 0.2);
+                pose.rotation.set(-Math.PI / 2 + 0.06 + rock, slide * 0.5, rack?.id % 2 ? 0.1 : -0.1);
             } else {
                 pose.position.set(x + (i % 3 - 1) * 0.7, 0.08, firstDef.z - 0.6 - (i % 4) * 0.9);
                 pose.rotation.set(-Math.PI / 2, 0, (i * 37 % 11 - 5) * 0.12);
@@ -862,7 +904,21 @@ export function createScene(host, { figure } = {}) {
         papers.count = visiblePapers;
 
         const quiet = calm();
-        particles.update(state.effects, state.elapsed, daylight, quiet);
+        particles.update(state.effects, state.elapsed, daylight, quiet, wind);
+        // Footprints: a few hundred people walking wet grit and thin snow leave a record of
+        // where the crowd went, one boot at a time, about a stride apart.
+        if (state.status === 'active') {
+            for (const actor of state.companions) {
+                if (actor.health <= 0 || actor.z < 15.5) continue;
+                let last = prints.get(actor.id);
+                if (!last) { prints.set(actor.id, { x: actor.x, z: actor.z, side: 1 }); continue; }
+                if (Math.hypot(actor.x - last.x, actor.z - last.z) < 0.72) continue;
+                const h = actor.heading ?? 0;
+                const rx = Math.cos(h) * 0.13 * last.side, rz = -Math.sin(h) * 0.13 * last.side;
+                decals.footprint(actor.x + rx, groundHeight(actor.x + rx, actor.z + rz), actor.z + rz, h, 0.34);
+                last.x = actor.x; last.z = actor.z; last.side = -last.side;
+            }
+        }
         // World events become sparks, dust, wear and a flash of light, once each.
         for (const e of state.events) {
             if (reacted.has(e)) continue;
@@ -921,6 +977,15 @@ export function createScene(host, { figure } = {}) {
         const camDist = (spectating && !latched) ? 9.2 : 6.5;
         const camHeight = (spectating && !latched) ? 4.8 : 3.7;
         desired.set(focus.x + Math.sin(yaw) * camDist, floor + camHeight + pitch * 3, focus.z + Math.cos(yaw) * camDist);
+        // Phone POV rides at the eye of the person holding it, not on a crane behind them.
+        if (phone > 0.01 && subject) {
+            const h = subject.heading ?? 0;
+            const ex = focus.x - Math.sin(h) * 0.18, ez = focus.z - Math.cos(h) * 0.18;
+            const w = phone * 0.85;
+            desired.x += (ex - desired.x) * w;
+            desired.y += ((floor + 1.62) - desired.y) * w;
+            desired.z += (ez - desired.z) * w;
+        }
         // Recoil kick and combat suppression jitter
         if (!quiet) {
             desired.y += recoilPitch * 1.5;
@@ -1017,6 +1082,7 @@ export function createScene(host, { figure } = {}) {
             }
         }
         renderer.info.reset();
+        post.setPhone(phone);
         post.render(dt, clock, quiet, camera, sun.position);
         host.dataset.drawCalls = renderer.info.render.calls;
     }

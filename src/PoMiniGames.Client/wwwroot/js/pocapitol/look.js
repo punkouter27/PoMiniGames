@@ -339,7 +339,7 @@ export function addSubsurfaceScattering(material, { wrap = 0.38, scatterColor = 
  * sets how hard the cloth blows out; its direction sets which way the crest travels.
  */
 export function addWave(material, time, { pin = -0.85, length = 1.7, amp = 0.15, wind = null } = {}) {
-    const windUniform = { value: wind?.value ?? new THREE.Vector2(0, 0) };
+    const windUniform = wind?.uniform ?? { value: new THREE.Vector2(0, 0) };
     material.userData.wind = windUniform;
     material.onBeforeCompile = shader => {
         shader.uniforms.uTime = time;

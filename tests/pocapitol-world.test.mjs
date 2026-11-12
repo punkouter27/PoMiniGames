@@ -70,15 +70,19 @@ test('a holding line stops the crowd and the human; a broken one lets them throu
     state.enemies.forEach(e => { e.cooldown = 999; });
     state.lines[0].integrity = 100;
     const limit = lineDefs[0].z + 0.6;
+    // Leaning on a rack long enough puts it over, so the line that cannot be crossed is the
+    // officers, 0.8 m behind where the rack stood. Nobody may pass that.
+    const officers = lineDefs[0].z - 0.2;
     for (let i = 0; i < 1500; i++) {
         advance(state, { z: -1 }, 1 / 60);
         state.lines[0].integrity = 100;
     }
-    assert.ok(state.player.z >= limit - 1e-6, 'The human walked through a holding line');
-    assert.ok(state.companions.every(c => c.z >= limit - 1e-6), 'A raider walked through a holding line');
+    assert.ok(state.player.z >= officers - 1e-6, 'The human walked through the officers');
+    assert.ok(state.companions.every(c => c.z >= officers - 1e-6), 'A raider walked through the officers');
     assert.equal(state.milestone, 0);
     assert.ok(state.companions.filter(c => c.z < limit + 2.5).length >= 10, 'Nobody pressed the line');
     assert.ok(state.lines[0].pressure > 0);
+    assert.ok(state.racks.some(r => r.fallen), 'Nobody shoved a rack over in 25 seconds of leaning');
     state.lines[0].state = 'broken';
     tick(state, { z: -1 }, 3);
     assert.ok(state.player.z < limit);
@@ -97,6 +101,28 @@ test('the crowd keeps its distance from one another instead of stacking', () => 
     assert.ok(tight <= 2, `${tight} pairs of raiders are standing on the same spot`);
     assert.ok(state.companions.every(c => walkable(c.x, c.z)), 'NPC left navigable space');
     assert.ok(state.companions.some(c => c.crowding >= 3), 'Nobody registered a crush at the line');
+});
+
+test('the crowd can shove a bike rack over and press up to the officers behind it', () => {
+    const state = createAttempt('story');
+    state.enemies.forEach(e => { e.cooldown = 999; });
+    // A block of pushers leaning on the middle racks.
+    state.companions.forEach((c, i) => {
+        if (i >= 12) return;
+        c.x = -6 + (i % 6) * 1.2; c.z = 34.2; c.temperament = 'pusher'; c.morale = 1;
+        c.retreating = false; c.stun = 0; c.delay = 0;
+    });
+    const lineZ = lineDefs[0].z, rackLine = lineZ + 0.6;
+    let closest = Infinity;
+    for (let i = 0; i < 8 * 60; i++) {
+        advance(state, {}, 1 / 60);
+        for (const c of state.companions) closest = Math.min(closest, c.z);
+    }
+    assert.ok(state.racks.some(r => r.fallen), 'no rack was shoved over');
+    assert.ok(state.racks.some(r => !r.fallen), 'every rack went over from one local push');
+    assert.ok(closest < rackLine, 'the crowd never got past the racks it pushed over');
+    assert.ok(closest > lineZ - 0.25, 'the crowd walked through the officers');
+    assert.equal(state.lines[0].state, 'holding', 'losing a rack is not the same as losing the line');
 });
 
 test('the crowd steps over the fallen instead of stacking up behind them', () => {
