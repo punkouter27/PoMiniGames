@@ -679,6 +679,11 @@ no real person, no breach route, no score.
     armed demo are calm — the police hold and nobody fires. At seven seconds the line opens up
     (a volley cue and a caption), every protestor panics, runs back from the line for ~1.5 s and
     then those with the nerve fire back.
+11. **Close orbit shot (`scene.js`).** The demo camera now cycles three shots every twelve
+    seconds: a high crane behind the crowd, a **close orbit around the crowd**, and a shot from
+    behind the police line. The orbit walks an 11 m circle at 5.4 m around the crowd's eased
+    centroid, with a slow vertical breathe, falling back to 8 m or 14 m where 11 m is blocked, so
+    it sweeps past faces, boards and shoving instead of sitting on a crane.
 
 Verified with `tests/pocapitol-graphics.test.mjs` (nine tests covering rooms, blast falloff,
 grenade carriers, collision, audio and quality behaviour), the existing room, line and armed-demo

@@ -751,8 +751,8 @@ export function createScene(host, { figure, osm, signs = [] } = {}) {
     function startIntro() { intro.active = !calm(); intro.t = 0; }
     const introActive = () => intro.active;
     let followYaw = 0, cameraReady = false, closing = 0, lastSubject = null, clock = 0, lastRack = -99;
-    // Demo camera shot state: which side of the line the camera stands behind, and when it cut.
-    let demoSide = 'crowd', demoSideAt = 0;
+    // Demo camera shot state: which shot the camera is on, when it cut, and the orbit it walks.
+    let demoSide = 'crowd', demoSideAt = 0, orbitAngle = 0.7, orbitX = 0, orbitZ = 0, orbitReady = false;
     let lastHealth = null, lastDaze = -99;
     const dazzled = new WeakSet();
     const lastFocus = { x: 0, z: 100 };
@@ -764,9 +764,13 @@ export function createScene(host, { figure, osm, signs = [] } = {}) {
         sky.uniforms.uTime.value = clock;
         campus.update(clock);
         const spectating = state.role === 'none';
-        // Demo camera: long, high shots that alternate between standing behind the crowd and
-        // standing behind the police line, cut every twelve seconds.
-        if (clock - demoSideAt > 12) { demoSide = demoSide === 'crowd' ? 'police' : 'crowd'; demoSideAt = clock; }
+        // Demo camera: long shots that alternate between behind the crowd, a close orbit around
+        // it, and behind the police line, cut every twelve seconds.
+        const DEMO_SHOTS = ['crowd', 'orbit', 'police'];
+        if (clock - demoSideAt > 12) {
+            demoSide = DEMO_SHOTS[(DEMO_SHOTS.indexOf(demoSide) + 1) % DEMO_SHOTS.length];
+            demoSideAt = clock;
+        }
         const sinceCut = clock - demoSideAt;
         // How much of the establishing shot is on screen this frame, 0 when it is not running.
         let introWeight = 0;
@@ -1000,7 +1004,7 @@ export function createScene(host, { figure, osm, signs = [] } = {}) {
         // Demo camera: long, high shots behind the crowd and behind the police line. Indoors the
         // crane would sit in the ceiling, so it drops to a lower, shorter follow instead.
         const focusIndoors = focus.z < 14.5;
-        let policeShot = false;
+        let policeShot = false, orbitShot = false;
         if (spectating && !latched) {
             const holding = state.lines.find(line => line.state === 'holding');
             const behindLine = holding ? holding.z - 5 : 0;
@@ -1019,6 +1023,34 @@ export function createScene(host, { figure, osm, signs = [] } = {}) {
                 } else {
                     desired.set(focus.x + Math.sin(yaw) * 21, floor + 14 + pitch * 4, focus.z + Math.cos(yaw) * 21);
                 }
+            } else if (!focusIndoors && demoSide === 'orbit') {
+                // A close, slow orbit around the crowd's own centre: the camera walks a circle at
+                // head height, so faces, boards and the shoving read at arm's length instead of
+                // from a crane. The centre itself is eased, so the shot never twitches.
+                let cx = 0, cz = 0, n = 0;
+                for (let i = 0; i < state.companions.length; i += 12) {
+                    const c = state.companions[i];
+                    if (c.health <= 0 || c.z > 62) continue;
+                    cx += c.x; cz += c.z; n++;
+                }
+                if (n) {
+                    cx /= n; cz /= n;
+                    if (!orbitReady) { orbitX = cx; orbitZ = cz; orbitReady = true; }
+                    const k = 1 - Math.exp(-dt * 1.2);
+                    orbitX += (cx - orbitX) * k; orbitZ += (cz - orbitZ) * k;
+                }
+                orbitAngle += dt * 0.26;
+                let radius = 11;
+                for (const candidate of [11, 8, 14]) {
+                    const px = orbitX + Math.sin(orbitAngle) * candidate;
+                    const pz = orbitZ + Math.cos(orbitAngle) * candidate;
+                    if (walkable(px, pz)) { radius = candidate; break; }
+                }
+                const ox = orbitX + Math.sin(orbitAngle) * radius;
+                const oz = orbitZ + Math.cos(orbitAngle) * radius;
+                desired.set(ox, groundHeight(ox, oz) + 5.4 + Math.sin(clock * 0.55) * 0.45, oz);
+                target.set(orbitX, groundHeight(orbitX, orbitZ) + 1.5, orbitZ);
+                orbitShot = true;
             } else if (focusIndoors) {
                 desired.set(focus.x + Math.sin(yaw) * 10, floor + 4.6 + pitch * 3, focus.z + Math.cos(yaw) * 10);
             } else {
@@ -1057,8 +1089,8 @@ export function createScene(host, { figure, osm, signs = [] } = {}) {
             desired.y = Math.max(desired.y, groundHeight(desired.x, desired.z) + 2);
         }
         look.set(focus.x - Math.sin(yaw) * 10, floor + 1.5 - pitch * 5, focus.z - Math.cos(yaw) * 10);
-        // From behind the line the camera looks back into the crowd, not down the empty plaza.
-        if (policeShot) look.set(focus.x, floor + 1.5, focus.z + 4);
+        // From behind the line, or around the crowd, the camera aims at the crowd itself.
+        if (policeShot || orbitShot) look.copy(target);
         // Closing shot: past the doors nobody got through, into the chamber they had emptied.
         const wasClosing = closing > 0;
         closing = state.outcome === 'doors' && state.status !== 'active' ? Math.min(1, closing + dt / 2.5) : 0;
