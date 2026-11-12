@@ -33,6 +33,8 @@ const REGISTRY = {
     povoxelstrike: ['js/povoxelstrike/index.js', 'PoVoxelStrike'],
     pomule: ['js/pomule/index.js', 'PoMule'],
     pocapitol: ['js/pocapitol/index.js', 'PoCapitol'],
+    // PoFighter — Canvas 2D practice room; sprites cut from video (scripts/pofighter/).
+    pofighter: ['js/pofighter/index.js', 'PoFighter'],
     poecosystem: ['js/poecosystem/index.js', 'PoEcosystem'],
     // ConnectFive physics. matter.js drives the disc drop + chain-reaction
     // collision with existing discs in the same column; the CSS keyframe drop

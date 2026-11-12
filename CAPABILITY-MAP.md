@@ -1,5 +1,19 @@
 # Capability map
 
+## PoFighter (2026-11-12, preview)
+
+One filmed fighter in a practice room. No server slice, no score, no leaderboard.
+Product requirements: [PoFighter PRD](DOCS/20261112/PoFighter-PRD.md).
+
+| Capability | Owner | Boundary |
+|---|---|---|
+| Recognized game identity | Domain `Primitives/GameKey.cs`, Client `Models/GameKey.cs` | `pofighter`; listed only so play sessions accept it |
+| Discovery and routing | Client `Models/GameCatalog.cs`, `Features/PoFighter/PoFighterPage.razor` | `/pofighter`, `/pofighter/1player`; one "Practice · Preview" chip; not in the kiosk reel |
+| Practice-room rules | Client `wwwroot/js/pofighter/sim.js` | Move states, walking limits, one hit per attack, bag swing. Pure; covered by `tests/pofighter-sim.test.mjs` |
+| Presentation and input | Client `wwwroot/js/pofighter/index.js` | Canvas 2D stage, keyboard, gamepad and touch; writes the hit counter and lit move row into the page's static markup |
+| Fighter assets | Client `wwwroot/data/pofighter/<id>.webp` and `<id>.json` | One sprite sheet and its frame table per fighter. Generated, not hand-edited |
+| Video to fighter | `scripts/pofighter/cutout.py`, `pack.py`, `<id>.moves.json` | Offline only, never in CI. The source video and intermediate frames stay under the ignored `artifacts/pofighter/`; only the performer's cut-outs are committed |
+
 ## PoCapitol (2026-11-09)
 
 PoCapitol adds solo and autonomous spectator modes, not a replacement for PoMule or the shell.
@@ -96,7 +110,7 @@ All thirteen are retained and still evolving; none is pruned or reworked by this
 | Group | Games |
 |---|---|
 | Racers | PoRacer, PoCabinet, PoMarbleRace |
-| Action and sims | PoBrawl, PoVoxelStrike, PoJevArena, PoEcosystem, PoMule, SandPlayground |
+| Action and sims | PoBrawl, PoVoxelStrike, PoJevArena, PoEcosystem, PoMule, SandPlayground, PoFighter |
 | Quiz and AI | PoCoupleQuiz, PoFunQuiz |
 | Board | TicTacToe, ConnectFive |
 

@@ -1,5 +1,25 @@
 # SPEC: PoMiniGames game specifications
 
+## PoFighter (2026-11-12, preview)
+
+The owner requested a one-on-one 2D fighter whose characters are real people cut from phone
+video ([PoFighter PRD](DOCS/20261112/PoFighter-PRD.md)). The first milestone is one fighter in
+a practice room; matches, opponents and more fighters wait for the owner's approval of it.
+It is an original game: no characters, names, stages or music from any existing fighter.
+
+- **Journey:** hub -> start card with the controls -> practice room -> back to the hub.
+  There is no win, loss or end screen.
+- **Moves:** stance, walk forward, walk backward, crouch, jump, punch, high punch, kick.
+  Block, hit reaction, knockdown and victory are not filmed yet and show the stance.
+- **Rules:** a jump or an attack always plays to its end; jump beats an attack pressed with
+  it; opposite directions cancel; the fighter stops where the raised guard touches the bag;
+  one attack scores at most one hit, only while the limb is extended and reaches the bag.
+- **Likeness:** only a performer who agreed to appear is published, bystanders are removed
+  from every picture, and the source video never enters the repository.
+- **Making a fighter:** extract frames with ffmpeg, run `scripts/pofighter/cutout.py`, choose
+  each move's frame range in `scripts/pofighter/<id>.moves.json`, run `pack.py`, and approve
+  the generated `review.html` before copying the sheet into `wwwroot/data/pofighter/`.
+
 ## PoCapitol (2026-11-09)
 
 The owner requested implementation of the [PoCapitol PRD](DOCS/20261109/PoCapitol-PRD.md),

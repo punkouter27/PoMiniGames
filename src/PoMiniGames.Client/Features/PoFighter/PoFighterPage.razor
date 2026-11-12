@@ -1,0 +1,145 @@
+@page "/pofighter"
+@page "/pofighter/{Mode}"
+@implements IAsyncDisposable
+@using PoMiniGamesClient.Features.Shared
+@using PoMiniGamesClient.Models
+@using PoMiniGamesClient.Services
+@inject IJSRuntime JS
+@inject PlayerNameService PlayerNameService
+@inject ILogger<PoFighterPage> Logger
+
+<PageTitle>PoFighter · PoMiniGames</PageTitle>
+
+@* PoFighter (preview): one fighter cut from a filmed performer, in a practice room.
+   Blazor owns only this static markup. wwwroot/js/pofighter/index.js runs the loop, reads
+   keyboard, gamepad and the touch buttons, and writes the hit counter and the lit move row
+   straight into the elements marked data-pf-*; there are no .NET callbacks and nothing is
+   scored or sent. Product requirements: DOCS/20261112/PoFighter-PRD.md. *@
+<GameShell Title=@TitleContent
+           Player="@_playerName"
+           BackTo="/"
+           GameKey="pofighter"
+           Fullscreen="true">
+    @if (!_introDismissed)
+    {
+        <GameIntro CueScope="pofighter"
+                   Title=@TitleContent
+                   Objective="Preview: a practice room. Try every move on the bag."
+                   Controls="@ControlsContent"
+                   Mode="GameIntro.IntroMode.OnePlayer"
+                   OnStart="@(() => _introDismissed = true)" />
+    }
+    else
+    {
+        <div class="pf-room" @ref="_room" data-pf-device="keys">
+            <canvas class="pf-canvas" data-pf-canvas
+                    aria-label="Practice room: your fighter on the left, a punching bag on the right"></canvas>
+
+            @if (_failed)
+            {
+                <p class="pf-error" role="alert">The fighter could not be loaded. Check your connection and reopen the game.</p>
+            }
+
+            <div class="pf-panel pf-moves" aria-label="Moves and their controls">
+                <ul>
+                    @foreach (var m in Moves)
+                    {
+                        <li data-pf-move="@m.Id">
+                            <span class="pf-name">@m.Name</span>
+                            <span class="pf-ctl pf-ctl-keys">@m.Keys</span>
+                            <span class="pf-ctl pf-ctl-pad">@m.Pad</span>
+                        </li>
+                    }
+                    <li class="pf-missing">
+                        <span class="pf-name">Block · hit · knockdown · victory</span>
+                        <span class="pf-ctl">missing</span>
+                    </li>
+                </ul>
+            </div>
+
+            <div class="pf-panel pf-status">
+                <span class="pf-hits" role="status">Hits <strong data-pf-hits>0</strong></span>
+                <button type="button" class="pf-chip" data-pf-action="reset" title="Reset the room (R)">Reset</button>
+                <button type="button" class="pf-chip" data-pf-action="slow" aria-pressed="false"
+                        title="Quarter speed, to judge a move picture by picture (T)">Slow</button>
+            </div>
+
+            <div class="pf-touch pf-touch-move" aria-label="Movement">
+                <button type="button" data-pf-btn="left" aria-label="Walk backward">◀</button>
+                <div class="pf-touch-stack">
+                    <button type="button" data-pf-btn="up" aria-label="Jump">▲</button>
+                    <button type="button" data-pf-btn="down" aria-label="Crouch">▼</button>
+                </div>
+                <button type="button" data-pf-btn="right" aria-label="Walk forward">▶</button>
+            </div>
+            <div class="pf-touch pf-touch-attack" aria-label="Attacks">
+                <button type="button" data-pf-btn="punchMid">Punch</button>
+                <button type="button" data-pf-btn="punchHigh">High</button>
+                <button type="button" data-pf-btn="kick">Kick</button>
+            </div>
+        </div>
+    }
+</GameShell>
+
+@code {
+    [Parameter] public string? Mode { get; set; }
+
+    private sealed record MoveRow(string Id, string Name, string Keys, string Pad);
+
+    // Ids match the move names in wwwroot/data/pofighter/p1.json.
+    private static readonly MoveRow[] Moves =
+    [
+        new("idle", "Stance", "—", "—"),
+        new("walkF", "Walk forward", "→ / D", "D-pad →"),
+        new("walkB", "Walk backward", "← / A", "D-pad ←"),
+        new("crouch", "Crouch", "↓ / S", "D-pad ↓"),
+        new("jump", "Jump", "↑ / W", "D-pad ↑"),
+        new("punchMid", "Punch", "J", "X"),
+        new("punchHigh", "High punch", "K", "Y"),
+        new("kick", "Kick", "L", "A"),
+    ];
+
+    private ElementReference _room;
+    private string _playerName = "";
+    private bool _introDismissed;
+    private bool _started;
+    private bool _failed;
+
+    private static RenderFragment TitleContent => GameCatalog.TitleFor(GameKeys.PoFighter);
+
+    private static RenderFragment ControlsContent => @<div>
+        <p><kbd>←</kbd> <kbd>→</kbd> walk · <kbd>↑</kbd> jump · <kbd>↓</kbd> crouch · <kbd>J</kbd> punch · <kbd>K</kbd> high punch · <kbd>L</kbd> kick.</p>
+        <p><kbd>R</kbd> resets the room and <kbd>T</kbd> slows it down. A gamepad works too, and a phone gets on-screen buttons.</p>
+    </div>;
+
+    protected override void OnInitialized() => _playerName = PlayerNameService.GetPlayerName();
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (!_introDismissed || _started) return;
+        _started = true;
+        try
+        {
+            if (await JS.InvokeAsync<bool>("loadEngine", "pofighter")
+                && await JS.InvokeAsync<bool>("PoFighter.start", _room))
+            {
+                return;
+            }
+        }
+        catch (JSException ex)
+        {
+            Logger.LogWarning(ex, "PoFighter failed to start");
+        }
+
+        _failed = true;
+        StateHasChanged();
+    }
+
+    public async ValueTask DisposeAsync()
+    {
+        if (!_started) return;
+        try { await JS.InvokeVoidAsync("PoFighter.stop"); }
+        catch (JSDisconnectedException) { }
+        catch (JSException) { }
+    }
+}

@@ -128,6 +128,7 @@ scores.
 | PoMule | Eight-player M.U.L.E.: claim land, work M.U.L.E.s and trade on a walking-floor market for twelve months vs seven AI personalities; all-AI demo |
 | PoEcosystem | Watch-only island simulation: species, tribes and chronicle cards for landmark events; cloud save slots and a shared gallery |
 | SandPlayground | GPU sand-and-water sandbox |
+| PoFighter | Preview. A 2D fighter whose character is cut from a phone video of a real person. `/pofighter/1player` is a practice room: walk, crouch, jump, punch, high punch and kick against a punching bag that counts hits; keyboard, gamepad or touch. Nothing is scored or sent. New fighters are made offline with `scripts/pofighter/` (see `DOCS/20261112/PoFighter-PRD.md`) |
 
 In PoBrawl FFA, knockouts use the same jointed physics ragdolls as 1v1: fighters
 fall from their current pose with the final hit's momentum instead of snapping
