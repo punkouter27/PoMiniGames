@@ -342,7 +342,10 @@ class Race {
             // Body style by car id: the player's (0) is the coupe, the field takes the styles in turn.
             car.mesh = mountCar(this.scene.scene, { id: meta.officialId === 'player' ? undefined : meta.officialId, name: meta.name, color: meta.color, style: meta.id });
             car.mesh.group.visible = !meta.isLocal;
-        } catch { car.mesh = null; }
+        } catch (err) {
+            console.warn('[pocabinet] mountCar failed:', err);
+            car.mesh = null;
+        }
         return car;
     }
 

@@ -228,15 +228,16 @@ function contactShadowTexture() {
 
 // Shared (colour-independent) materials.
 let SHARED = null;
+let coneTex = null;
 function brakeConeTexture() {
-    return cacheTex('brake-cone', 64, 64, (g) => {
+    return coneTex || (coneTex = canvasTexture(64, 64, (g) => {
         const grad = g.createRadialGradient(32, 8, 2, 32, 30, 32);
         grad.addColorStop(0.0, 'rgba(255, 70, 50, 0.92)');
         grad.addColorStop(0.4, 'rgba(255, 32, 18, 0.36)');
         grad.addColorStop(1.0, 'rgba(180, 10, 0, 0.0)');
         g.fillStyle = grad;
         g.fillRect(0, 0, 64, 64);
-    });
+    }));
 }
 function shared() {
     if (SHARED) return SHARED;
