@@ -169,9 +169,6 @@ builder.Services.AddScoped<PoMiniGamesClient.Features.PoVoxelStrike.Services.PoV
 builder.Services.AddScoped<PoEcosystemInteropService>();
 // PoEcosystem's server surface: cloud world slots and the gallery.
 builder.Services.AddScoped<PoMiniGamesClient.Features.PoEcosystem.Services.PoEcosystemApiClient>();
-// PoJevArena's server surface: status, the creature library, match registration and
-// the Jev decision round trip (every call on the shared HttpClient pipeline).
-builder.Services.AddScoped<PoMiniGamesClient.Features.PoJevArena.PoJevArenaApiClient>();
 
 var host = builder.Build();
 

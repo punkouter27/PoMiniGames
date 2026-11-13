@@ -1,5 +1,47 @@
-/* PoCabinetPaintShop — its own scoped styles (split from PoCabinetPage.razor.css). Shared
-   bits (muted text, status lines, sector chips, screen-reader text) stay on the page as ::deep. */
+/* PoCabinetPaintShop — scoped styles for live 3D preview turntable, swatches, and livery chips. */
+
+.pocabinet-paintshop-wrap {
+    display: flex;
+    flex-direction: column;
+    gap: 0.7rem;
+}
+
+.pocabinet-paintshop__stage {
+    position: relative;
+    width: 100%;
+    height: 128px;
+    border-radius: var(--radius-md, 8px);
+    background:
+        radial-gradient(ellipse at 50% 62%, rgba(56, 189, 248, 0.16) 0%, rgba(14, 18, 28, 0.75) 68%, rgba(8, 10, 16, 0.92) 100%);
+    border: 1px solid rgba(255, 255, 255, 0.12);
+    box-shadow:
+        inset 0 1px 0 rgba(255, 255, 255, 0.14),
+        0 8px 20px rgba(0, 0, 0, 0.25);
+    overflow: hidden;
+}
+
+.pocabinet-paintshop__canvas {
+    display: block;
+    width: 100%;
+    height: 100%;
+    cursor: grab;
+    touch-action: pan-y;
+}
+
+.pocabinet-paintshop__canvas:active {
+    cursor: grabbing;
+}
+
+.pocabinet-paintshop__hint {
+    position: absolute;
+    right: 0.5rem;
+    bottom: 0.35rem;
+    font-size: 0.68rem;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+    color: rgba(255, 255, 255, 0.55);
+    pointer-events: none;
+}
 
 /* ─── Paint shop: four colour swatches in a row ───────────────────────────── */
 .pocabinet-paintshop {
@@ -12,19 +54,52 @@
     aspect-ratio: 1 / 1;
     width: 100%;
     min-height: 32px;
-    border: 1px solid var(--color-border, transparent);
-    background: var(--swatch);
+    border: 1px solid rgba(255, 255, 255, 0.18);
+    background: linear-gradient(145deg, rgba(255, 255, 255, 0.28) 0%, rgba(255, 255, 255, 0) 48%), var(--swatch);
     border-radius: var(--radius-md, 6px);
     cursor: pointer;
     padding: 0;
     color: inherit;
+    transition: transform 0.14s ease, border-color 0.14s ease, box-shadow 0.14s ease;
 }
 
 .pocabinet-swatch:hover {
     border-color: var(--color-primary);
+    transform: translateY(-1px);
 }
 
 .pocabinet-swatch--selected {
     outline: 2px solid var(--color-primary);
     outline-offset: 2px;
+    box-shadow: 0 0 12px color-mix(in srgb, var(--swatch) 55%, transparent);
+}
+
+/* ─── Procedural livery selector pills ────────────────────────────────────── */
+.pocabinet-liveries {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.35rem;
+}
+
+.pocabinet-livery {
+    font-size: 0.74rem;
+    font-weight: 600;
+    padding: 0.28rem 0.6rem;
+    border-radius: 999px;
+    border: 1px solid rgba(255, 255, 255, 0.16);
+    background: rgba(255, 255, 255, 0.05);
+    color: inherit;
+    cursor: pointer;
+    transition: background 0.14s ease, border-color 0.14s ease, transform 0.12s ease;
+}
+
+.pocabinet-livery:hover {
+    background: rgba(255, 255, 255, 0.12);
+    border-color: var(--color-primary);
+}
+
+.pocabinet-livery--selected {
+    background: rgba(56, 189, 248, 0.22);
+    border-color: rgba(56, 189, 248, 0.75);
+    color: #fff;
 }

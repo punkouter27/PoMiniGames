@@ -53,8 +53,9 @@ export const PROP_SIZES = Object.freeze([
   [1.00, 1.00, 1.00], // 7 boulder
 ]);
 
-// ── External modules (workers have no import map; see plan decision 2) ───
-export const CANNON_CDN_URL = 'https://cdn.jsdelivr.net/npm/cannon-es@0.20.0/dist/cannon-es.js';
+// ── External modules (workers have no import map; vendored locally under wwwroot/lib) ──
+export const CANNON_LOCAL_URL = new URL('../../../../lib/cannon-es/cannon-es.js', import.meta.url).href;
+export const CANNON_CDN_URL = CANNON_LOCAL_URL;
 
 // ── Flora ────────────────────────────────────────────────────
 export const FLORA = Object.freeze({

@@ -170,7 +170,7 @@ void main() {
     gl_FragColor = vec4(wsum > 0.0 ? sum / wsum : c.x, c.y, 0.0, 1.0);
 }`;
 
-// ── Screen-space reflections ──
+// ── Screen-space reflections (wet asphalt, puddles, and clearcoat car paint/glass #3) ──
 const SSR_FRAG = /* glsl */ `
 ${DEPTH_GLSL}
 uniform sampler2D tScene;
@@ -221,11 +221,11 @@ void main() {
     vec3 P = viewPosAt(vUv, vz);
     vec3 up = normalize((uView * vec4(0.0, 1.0, 0.0, 0.0)).xyz);
     vec3 Nd = normalAt(vUv, P);
-    // Reflections only on the ground: a billboard with a see-through texture is not water.
-    // The depth normal is noisy far off, so lean on the world's up (banking stays in it).
-    if (dot(Nd, up) < 0.3) { gl_FragColor = vec4(0.0); return; }
-    vec3 N = normalize(mix(Nd, up, 0.85));
-    if (uWet > 0.01) {
+    bool isClearcoat = dot(Nd, up) < 0.35 && refl > 0.14;
+    if (!isClearcoat && dot(Nd, up) < 0.3) { gl_FragColor = vec4(0.0); return; }
+    // Ground leans heavily on world-up; car bodies/glass trace along true geometry normal (#3).
+    vec3 N = isClearcoat ? Nd : normalize(mix(Nd, up, 0.85));
+    if (uWet > 0.01 && !isClearcoat) {
         vec3 W = (uInvView * vec4(P, 1.0)).xyz;
         vec2 g = ripples(W.xz, uTime) * (refl > 0.7 ? 1.0 : 0.1) * uWet;
         N = normalize(N + (uView * vec4(g.x, 0.0, g.y, 0.0)).xyz);
@@ -233,14 +233,14 @@ void main() {
     vec3 V = normalize(P);
     vec3 R = reflect(V, N);
     float cosV = clamp(dot(-V, N), 0.0, 1.0);
-    float F = 0.02 + 0.98 * pow(1.0 - cosV, 5.0);
-    // Pushed past physical: a racing game's wet track reads as a mirror.
-    float wetW = refl > 0.05 ? min(1.0, refl * (F * 1.6 + 0.12)) : 0.0;
-    float mirW = uMirage * (1.0 - uWet) * smoothstep(45.0, 150.0, -vz) * pow(1.0 - cosV, 10.0) * 0.8;
-    if (wetW + mirW < 0.004 || R.z > 0.1) { gl_FragColor = vec4(0.0); return; }
+    float F = 0.03 + 0.97 * pow(1.0 - cosV, 5.0);
+    float coatW = isClearcoat ? min(0.75, refl * (F * 1.4 + 0.18)) : 0.0;
+    float wetW = (!isClearcoat && uWet > 0.01 && refl > 0.05) ? min(1.0, refl * (F * 1.6 + 0.12)) : 0.0;
+    float mirW = (!isClearcoat) ? uMirage * (1.0 - uWet) * smoothstep(45.0, 150.0, -vz) * pow(1.0 - cosV, 10.0) * 0.8 : 0.0;
+    if (coatW + wetW + mirW < 0.004 || R.z > 0.15) { gl_FragColor = vec4(0.0); return; }
 
     // March the reflected ray in screen space, perspective-correct in depth.
-    float L = 140.0;
+    float L = isClearcoat ? 75.0 : 140.0;
     if (P.z + R.z * L > -uProj.z) L = (-uProj.z * 1.5 - P.z) / R.z;
     vec3 E = P + R * L;
     vec4 H0 = uProjM * vec4(P, 1.0), H1 = uProjM * vec4(E, 1.0);
@@ -273,31 +273,41 @@ void main() {
         vec2 uv = mix(S0, S1, b);
         col = min(texture2D(tScene, uv).rgb, vec3(8.0));
         vec2 e = smoothstep(vec2(0.0), vec2(0.07), uv) * smoothstep(vec2(0.0), vec2(0.07), 1.0 - uv);
-        conf = e.x * e.y * (1.0 - b * b) * smoothstep(0.1, -0.15, R.z);
+        conf = e.x * e.y * (1.0 - b * b) * smoothstep(0.15, -0.15, R.z);
     }
-    float w = wetW * conf + mirW * (tHit > 0.0 ? conf : 1.0);
+    float w = (wetW + coatW) * conf + coatW * (tHit < 0.0 ? 0.28 : 0.0) + mirW * (tHit > 0.0 ? conf : 1.0);
     gl_FragColor = vec4(col, clamp(w, 0.0, 1.0));
 }`;
 
-// ── Lighting: occlusion and reflections onto the scene ──
+const MAX_DYN_LIGHTS = 12;
+// ── Lighting: occlusion, contact shadows, 1-bounce SSGI, 12 dynamic lights & SSR ──
 const LIGHT_FRAG = /* glsl */ `
 ${DEPTH_GLSL}
 uniform sampler2D tScene;
 uniform sampler2D tAO;
 uniform sampler2D tSSR;
+uniform mat4 uProjM;
+uniform vec3 uSunDir;
 uniform vec2 uHalfTexel;
 uniform float uAO;
 uniform float uSSR;
+uniform float uContact;
+uniform float uGI;
 uniform vec2 uRes;
+uniform int uLightCount;
+uniform vec4 uLightPos[${MAX_DYN_LIGHTS}];
+uniform vec4 uLightCol[${MAX_DYN_LIGHTS}];
+uniform vec3 uLightDir[${MAX_DYN_LIGHTS}];
 varying vec2 vUv;
 void main() {
     vec4 sc = texture2D(tScene, vUv);
     vec3 col = sc.rgb;
     if (any(isnan(col)) || any(isinf(col))) col = vec3(0.0);
+    float z = -viewZAt(vUv);
+    vec3 P = viewPosAt(vUv, -z);
+    vec3 Nd = (uLightCount > 0 && z < 95.0) ? normalAt(vUv, P) : vec3(0.0, 1.0, 0.0);
     if (uAO > 0.0) {
-        float z = -viewZAt(vUv);
-        // Depth-aware upsample of the half-res occlusion: the four nearest texels, each
-        // weighted bilinearly and by how close its depth is to this pixel's.
+        // Depth-aware upsample of the half-res occlusion.
         vec2 base = vUv / uHalfTexel - 0.5;
         vec2 f = fract(base);
         vec2 b0 = (floor(base) + 0.5) * uHalfTexel;
@@ -312,22 +322,89 @@ void main() {
                 wsum += w;
             }
         }
-        // Contrast: GTAO's cosine-weighted visibility rarely drops below 0.6 on open ground.
         float ao = pow(sum / wsum, 1.8);
-        // Fade out before the depth buffer runs short of precision (it bands past ~60 units);
-        // lift it under bright direct light (the occlusion is of the sky, and the scene colour
-        // carries the sun too).
         ao = mix(1.0, ao, uAO * (1.0 - smoothstep(35.0, 90.0, z)));
         float luma = dot(col, vec3(0.2126, 0.7152, 0.0722));
         ao = mix(ao, 1.0, 0.35 * smoothstep(0.8, 3.0, luma));
         col *= ao;
+
+        // Screen-space contact shadow short raymarch along view-space sun vector (#4).
+        if (uContact > 0.0 && z < 55.0) {
+            float occ = 0.0;
+            float jit = bayer4(gl_FragCoord.xy);
+            for (int s = 1; s <= 6; s++) {
+                float dist = (float(s) - 0.5 + jit) * 0.14;
+                vec3 samplePos = P + uSunDir * dist;
+                vec4 clip = uProjM * vec4(samplePos, 1.0);
+                vec2 suv = clip.xy / clip.w * 0.5 + 0.5;
+                if (suv.x < 0.0 || suv.x > 1.0 || suv.y < 0.0 || suv.y > 1.0) break;
+                float hitZ = -viewZAt(suv);
+                float rayZ = -samplePos.z;
+                float diff = rayZ - hitZ;
+                if (diff > 0.03 && diff < 0.42) {
+                    occ = max(occ, 1.0 - smoothstep(0.22, 0.42, diff));
+                }
+            }
+            float fade = 1.0 - smoothstep(32.0, 55.0, z);
+            col *= 1.0 - occ * 0.42 * uContact * fade;
+        }
+
+        // 1-bounce Screen-Space Global Illumination (#4)
+        if (uGI > 0.0 && z < 75.0) {
+            vec3 gi = vec3(0.0);
+            float wgi = 0.0;
+            float phi0 = bayer4(gl_FragCoord.xy) * 6.28318;
+            vec2 px = 1.0 / max(uRes, vec2(1.0));
+            for (int t = 0; t < 8; t++) {
+                float ft = (float(t) + 0.5) / 8.0;
+                float ang = phi0 + float(t) * 2.399963;
+                float rad = mix(8.0, 38.0, ft);
+                vec2 suv = vUv + vec2(cos(ang), sin(ang)) * rad * px;
+                if (suv.x < 0.0 || suv.x > 1.0 || suv.y < 0.0 || suv.y > 1.0) continue;
+                float sz = -viewZAt(suv);
+                float dw = 1.0 / (1.0 + abs(sz - z) * 0.65);
+                vec3 scTap = max(vec3(0.0), texture2D(tScene, suv).rgb);
+                float tapLum = dot(scTap, vec3(0.2126, 0.7152, 0.0722));
+                float boost = smoothstep(0.35, 1.8, tapLum);
+                gi += scTap * (0.28 + boost * 0.9) * dw;
+                wgi += dw;
+            }
+            if (wgi > 1e-4) {
+                vec3 bounce = min(gi / wgi, vec3(1.6));
+                col += bounce * (0.14 * uGI * (1.0 - smoothstep(45.0, 75.0, z)));
+            }
+        }
+    }
+    // Clustered 12 dynamic point/spot lights: impact spark flashes, brake glow, headlights (#10).
+    if (uLightCount > 0 && z < 95.0) {
+        float refl = clamp(1.0 - sc.a, 0.0, 1.0);
+        vec3 V = normalize(-P);
+        vec3 dyn = vec3(0.0);
+        float shininess = mix(16.0, 64.0, refl);
+        for (int i = 0; i < ${MAX_DYN_LIGHTS}; i++) {
+            if (i >= uLightCount) break;
+            vec4 lp = uLightPos[i];
+            vec4 lc = uLightCol[i];
+            vec3 toL = lp.xyz - P;
+            float dist = length(toL);
+            if (dist >= lp.w || dist < 0.01) continue;
+            vec3 L = toL / dist;
+            float att = 1.0 - dist / lp.w;
+            att = att * att;
+            if (lc.w > 0.01) {
+                float spotCos = dot(-L, uLightDir[i]);
+                att *= smoothstep(lc.w, min(0.99, lc.w + 0.25), spotCos);
+            }
+            float ndl = max(dot(Nd, L), 0.14);
+            vec3 H = normalize(L + V);
+            float spec = pow(max(dot(Nd, H), 0.0), shininess) * (0.08 + refl * 0.55);
+            dyn += lc.rgb * att * (ndl * 0.35 + spec);
+        }
+        col += dyn;
     }
     if (uSSR > 0.0) {
         float refl = clamp(1.0 - sc.a, 0.0, 1.0);
-        // Wet asphalt blurs its reflections down the screen; a puddle keeps them sharp.
         float spread = (1.0 - smoothstep(0.6, 0.9, refl)) * 7.0;
-        // Each tap's colour weighted by its own confidence, so a miss never darkens a hit; three
-        // columns wide to average out the march's 4×4 jitter.
         vec4 acc = vec4(0.0);
         for (int j = -1; j <= 1; j++) {
             for (int i = -2; i <= 2; i++) {
@@ -345,18 +422,31 @@ void main() {
     gl_FragColor = vec4(col, sc.a);
 }`;
 
-// ── Velocity of the cars in full ──
+// ── Velocity of the cars in full (supports single meshes + InstancedMesh CarCrowd #14) ──
 const VEL_VERT = /* glsl */ `
+attribute vec4 aPrevCol0;
+attribute vec4 aPrevCol1;
+attribute vec4 aPrevCol2;
+attribute vec4 aPrevCol3;
 uniform mat4 uPrevModel;
 uniform mat4 uPrevViewProj;
+uniform float uIsInstanced;
 varying vec4 vCur;
 varying vec4 vPrev;
 varying float vDepth;
 void main() {
-    vec4 vp = viewMatrix * modelMatrix * vec4(position, 1.0);
+    mat4 curM = modelMatrix;
+    mat4 prevM = uPrevModel;
+    if (uIsInstanced > 0.5) {
+        #ifdef USE_INSTANCING
+        curM = modelMatrix * instanceMatrix;
+        prevM = modelMatrix * mat4(aPrevCol0, aPrevCol1, aPrevCol2, aPrevCol3);
+        #endif
+    }
+    vec4 vp = viewMatrix * curM * vec4(position, 1.0);
     gl_Position = projectionMatrix * vp;
     vCur = gl_Position;
-    vPrev = uPrevViewProj * (uPrevModel * vec4(position, 1.0));
+    vPrev = uPrevViewProj * (prevM * vec4(position, 1.0));
     vDepth = -vp.z;
 }`;
 const VEL_FRAG = /* glsl */ `
@@ -546,10 +636,86 @@ void main() {
     #include <colorspace_fragment>
 }`;
 
+// ── Quarter-res depth-occluded crepuscular light shafts (#17) ──
+const VOL_FRAG = /* glsl */ `
+${DEPTH_GLSL}
+uniform vec3 uSun;
+uniform vec2 uRes;
+varying vec2 vUv;
+void main() {
+    if (uSun.z <= 0.002) { gl_FragColor = vec4(0.0); return; }
+    vec2 sp = uSun.xy;
+    vec2 delta = (sp - vUv) / 16.0;
+    vec2 p = vUv + delta * bayer4(gl_FragCoord.xy);
+    float occ = 0.0, decay = 1.0;
+    for (int i = 0; i < 16; i++) {
+        if (p.x >= 0.0 && p.x <= 1.0 && p.y >= 0.0 && p.y <= 1.0) {
+            float z = -viewZAt(p);
+            float skyMask = smoothstep(55.0, 140.0, z);
+            occ += skyMask * decay;
+        }
+        p += delta;
+        decay *= 0.91;
+    }
+    vec2 d = (vUv - sp) * vec2(uRes.x / max(uRes.y, 1.0), 1.0);
+    float mie = exp(-length(d) * 2.2) * 0.7 + 0.3;
+    gl_FragColor = vec4(vec3(occ / 16.0 * mie), 1.0);
+}`;
+
+// ── Temporal Anti-Aliasing with YCoCg 3x3 variance clipping (#1) ──
+const TAA_FRAG = /* glsl */ `
+${DEPTH_GLSL}
+uniform sampler2D tCur;
+uniform sampler2D tHist;
+uniform mat4 uInvViewProj;
+uniform mat4 uPrevViewProj;
+uniform vec2 uTexel;
+uniform vec2 uJitterUV;
+uniform float uBlend;
+varying vec2 vUv;
+vec3 toYCoCg(vec3 c) {
+    return vec3(0.25 * c.r + 0.5 * c.g + 0.25 * c.b, 0.5 * c.r - 0.5 * c.b, -0.25 * c.r + 0.5 * c.g - 0.25 * c.b);
+}
+vec3 toRGB(vec3 y) {
+    float t = y.x - y.z;
+    return max(vec3(0.0), vec3(t + y.y, y.x + y.z, t - y.y));
+}
+void main() {
+    vec2 uv = vUv - uJitterUV;
+    vec3 cur = texture2D(tCur, uv).rgb;
+    if (any(isnan(cur)) || any(isinf(cur))) cur = vec3(0.0);
+    if (uBlend <= 0.01) { gl_FragColor = vec4(cur, 1.0); return; }
+    float d = texture2D(tDepth, vUv).x;
+    vec4 w = uInvViewProj * vec4(vUv * 2.0 - 1.0, d * 2.0 - 1.0, 1.0);
+    w /= w.w;
+    vec4 p = uPrevViewProj * w;
+    vec2 prevUv = p.xy / p.w * 0.5 + 0.5;
+    if (prevUv.x < 0.002 || prevUv.x > 0.998 || prevUv.y < 0.002 || prevUv.y > 0.998) {
+        gl_FragColor = vec4(cur, 1.0); return;
+    }
+    vec3 m1 = vec3(0.0), m2 = vec3(0.0);
+    for (int y = -1; y <= 1; y++) {
+        for (int x = -1; x <= 1; x++) {
+            vec3 tap = toYCoCg(max(vec3(0.0), texture2D(tCur, uv + vec2(float(x), float(y)) * uTexel).rgb));
+            m1 += tap;
+            m2 += tap * tap;
+        }
+    }
+    m1 /= 9.0;
+    vec3 sig = sqrt(max(vec3(0.0), m2 / 9.0 - m1 * m1));
+    vec3 lo = m1 - sig * 1.15, hi = m1 + sig * 1.15;
+    vec3 hist = toYCoCg(max(vec3(0.0), texture2D(tHist, prevUv).rgb));
+    hist = clamp(hist, lo, hi);
+    vec3 res = mix(cur, toRGB(hist), uBlend);
+    gl_FragColor = vec4(res, 1.0);
+}`;
+
 const COMPOSITE_FRAG = /* glsl */ `
 uniform sampler2D tScene;
 uniform sampler2D tBloom;
 uniform sampler2D tDepth;
+uniform sampler2D tVol;
+uniform float uHasVol;
 uniform vec4 uProj;
 uniform vec2 uRes;
 uniform float uTime;
@@ -601,7 +767,7 @@ vec2 haze(vec2 uv, vec2 asp) {
         if (i >= uHazeCount) break;
         vec4 h = uHaze[i];
         vec3 s = uHazeShape[i];
-        if (z < s.x - 0.4) continue;
+        if (z < s.x - 0.15) continue;
         vec2 d = (uv - h.xy) * asp;
         vec2 dir = normalize(s.yz * asp + vec2(1e-5));
         float along = dot(d, dir);
@@ -613,7 +779,7 @@ vec2 haze(vec2 uv, vec2 asp) {
         if (m < 0.002) continue;
         vec2 q = vec2(across, along) / r * 3.0;
         vec2 n = vec2(vnoise(q * 1.7 + vec2(0.0, -uTime * 4.0)), vnoise(q * 2.3 + vec2(5.2, -uTime * 5.5))) - 0.5;
-        off += n * m * h.w * r * 0.09;
+        off += n * m * h.w * r * 0.032;
     }
     if (uMirage > 0.0) {
         float far = smoothstep(55.0, 140.0, z) * (1.0 - smoothstep(380.0, 700.0, z));
@@ -681,22 +847,27 @@ void main() {
         col = mix(col, dropCol, m) * (1.0 - m * (1.0 - m) * 1.0);
     }
 
-    // ── Bloom + light shafts toward the sun ──
+    // ── Bloom + depth-occluded volumetric light shafts toward the sun ──
     vec3 bloom = texture2D(tBloom, uv).rgb;
     col += bloom * uBloom;
     if (uSun.z > 0.001) {
         vec2 sp = uSun.xy;
-        vec2 dlt = (sp - uv) / 28.0;
-        vec2 p = uv;
-        vec3 shafts = vec3(0.0);
-        float decay = 1.0;
-        for (int i = 0; i < 28; i++) {
-            p += dlt;
-            vec3 b = texture2D(tBloom, p).rgb;
-            shafts += b * decay;
-            decay *= 0.95;
+        if (uHasVol > 0.5) {
+            float volShaft = texture2D(tVol, uv).r;
+            col += uSunColor * volShaft * uSun.z * 0.62;
+        } else {
+            vec2 dlt = (sp - uv) / 28.0;
+            vec2 p = uv;
+            vec3 shafts = vec3(0.0);
+            float decay = 1.0;
+            for (int i = 0; i < 28; i++) {
+                p += dlt;
+                vec3 b = texture2D(tBloom, p).rgb;
+                shafts += b * decay;
+                decay *= 0.95;
+            }
+            col += shafts / 28.0 * uSunColor * uSun.z * 0.9;
         }
-        col += shafts / 28.0 * uSunColor * uSun.z * 0.9;
         vec2 ds = (uv - sp) * asp;
         float glare = exp(-length(ds) * 7.0) * 0.35 + exp(-abs(ds.y) * 90.0) * exp(-abs(ds.x) * 3.0) * 0.12;
         // A few ghosts along the line through the centre.
@@ -741,10 +912,14 @@ const LEVELS = { low: 3, medium: 4, high: 5 };
 // mirage are off on every tier: the wavy refraction read as a smeared, hazy picture (2026-11-04).
 // The shader paths stay; flip haze/mirage back on here to restore them.
 const PASSES = {
-    low: { ao: false, ssr: false, haze: false, blur: false, mirage: false },
-    medium: { ao: true, ssr: true, haze: false, blur: false, mirage: false },
-    high: { ao: true, ssr: true, haze: false, blur: true, mirage: false },
+    low: { ao: false, ssr: false, haze: false, blur: false, mirage: false, contact: false, ssgi: false, taa: false, vol: false },
+    medium: { ao: true, ssr: true, haze: false, blur: false, mirage: false, contact: true, ssgi: false, taa: false, vol: true },
+    high: { ao: true, ssr: true, haze: true, blur: true, mirage: false, contact: true, ssgi: true, taa: true, vol: true },
 };
+const HALTON8 = [
+    [0.5, 0.333333], [0.25, 0.666667], [0.75, 0.111111], [0.125, 0.444444],
+    [0.625, 0.777778], [0.375, 0.222222], [0.875, 0.555556], [0.0625, 0.888889],
+];
 const AO_RADIUS = 1.6;        // world units (a car is 3.9 long)
 const AO_STRENGTH = 0.9;
 const SHUTTER = 1 / 60;       // seconds of motion each frame smears (a 180° shutter at 30 fps)
@@ -801,7 +976,21 @@ export class PostFx {
         });
         this.lightMat = mat(LIGHT_FRAG, {
             ...depthUniforms(), tScene: { value: this.sceneTarget.texture }, tAO: { value: null }, tSSR: { value: null },
-            uHalfTexel: { value: new THREE.Vector2() }, uAO: { value: 0 }, uSSR: { value: 0 }, uRes: { value: new THREE.Vector2() },
+            uProjM: { value: new THREE.Matrix4() }, uSunDir: { value: new THREE.Vector3(0.4, 0.8, 0.44).normalize() },
+            uHalfTexel: { value: new THREE.Vector2() }, uAO: { value: 0 }, uSSR: { value: 0 },
+            uContact: { value: 0 }, uGI: { value: 0 }, uRes: { value: new THREE.Vector2() },
+            uLightCount: { value: 0 },
+            uLightPos: { value: Array.from({ length: MAX_DYN_LIGHTS }, () => new THREE.Vector4()) },
+            uLightCol: { value: Array.from({ length: MAX_DYN_LIGHTS }, () => new THREE.Vector4()) },
+            uLightDir: { value: Array.from({ length: MAX_DYN_LIGHTS }, () => new THREE.Vector3()) },
+        });
+        this.volMat = mat(VOL_FRAG, {
+            ...depthUniforms(), uSun: { value: new THREE.Vector3() }, uRes: { value: new THREE.Vector2() },
+        });
+        this.taaMat = mat(TAA_FRAG, {
+            ...depthUniforms(), tCur: { value: null }, tHist: { value: null },
+            uInvViewProj: { value: new THREE.Matrix4() }, uPrevViewProj: { value: new THREE.Matrix4() },
+            uTexel: { value: new THREE.Vector2() }, uJitterUV: { value: new THREE.Vector2() }, uBlend: { value: 0.84 },
         });
         this.tileMat = mat(TILE_FRAG, { tVel: { value: null }, uVelTexel: { value: new THREE.Vector2() }, uTileUV: { value: new THREE.Vector2() } });
         this.neighborMat = mat(NEIGHBOR_FRAG, { tTile: { value: null }, uTexel: { value: new THREE.Vector2() } });
@@ -814,6 +1003,8 @@ export class PostFx {
             tScene: { value: this.sceneTarget.texture },
             tBloom: { value: null },
             tDepth: { value: this.sceneTarget.depthTexture },
+            tVol: { value: null },
+            uHasVol: { value: 0 },
             uProj: { value: new THREE.Vector4() },
             uRes: { value: new THREE.Vector2(this.size.x, this.size.y) },
             uTime: { value: 0 },
@@ -844,7 +1035,11 @@ export class PostFx {
         // with its own copy of the material so its last-frame matrix rides in its uniforms.
         this.velMat = new THREE.ShaderMaterial({
             vertexShader: VEL_VERT, fragmentShader: VEL_FRAG, side: THREE.DoubleSide,
-            uniforms: { uPrevModel: { value: new THREE.Matrix4() }, uPrevViewProj: { value: new THREE.Matrix4() } },
+            uniforms: {
+                uPrevModel: { value: new THREE.Matrix4() },
+                uPrevViewProj: { value: new THREE.Matrix4() },
+                uIsInstanced: { value: 0 },
+            },
         });
         this.velScene = new THREE.Scene();
         this.velScene.matrixWorldAutoUpdate = false;
@@ -856,6 +1051,11 @@ export class PostFx {
         this.prevCamPos = new THREE.Vector3();
         this.prevCamDir = new THREE.Vector3();
         this.hasPrev = false;
+        this.taaTargets = [];
+        this.taaIdx = 0;
+        this.taaValid = false;
+        this.volTarget = null;
+        this.jitterUV = new THREE.Vector2();
         this.lastTime = null;
         this.allProxies = new Set();
         this._v = new THREE.Vector3();
@@ -895,6 +1095,10 @@ export class PostFx {
         this.aoBlurTarget = p.ao ? keep(nearestTarget(hw, hh)) : null;
         this.ssrTarget = p.ssr ? keep(target(hw, hh)) : null;
         this.litTarget = p.ao || p.ssr ? keep(target(fw, fh)) : null;
+        this.volTarget = p.vol ? keep(target(Math.max(1, fw >> 2), Math.max(1, fh >> 2))) : null;
+        this.taaTargets = p.taa ? [keep(target(fw, fh)), keep(target(fw, fh))] : [];
+        this.taaValid = false;
+        this.taaIdx = 0;
         if (p.blur) {
             this.velTarget = keep(nearestTarget(hw, hh));
             this.velTarget.depthBuffer = true;
@@ -927,7 +1131,7 @@ export class PostFx {
     setDepthUniforms(camera) {
         const e = camera.projectionMatrix.elements;
         const w = this.sceneTarget.width, h = this.sceneTarget.height;
-        for (const m of [this.aoMat, this.ssrMat, this.lightMat, this.motionMat, this.material]) {
+        for (const m of [this.aoMat, this.ssrMat, this.lightMat, this.motionMat, this.volMat, this.taaMat, this.material]) {
             const u = m.uniforms;
             u.uProj.value.set(e[0], e[5], camera.near, camera.far);
             u.uDepthTexel?.value.set(1 / w, 1 / h);
@@ -939,13 +1143,32 @@ export class PostFx {
         const dt = this.lastTime === null ? 1 / 60 : Math.min(0.1, Math.max(1 / 240, timeSeconds - this.lastTime));
         this.lastTime = timeSeconds;
         this.frame++;
-        r.setRenderTarget(this.sceneTarget);
-        r.render(scene, camera);
-
         const p = this.passes;
         const motion = !fx.reduced;
-        const deep = this.depthOk && (p.ao || p.ssr || p.haze || p.blur);
+        const useTaa = this.depthOk && p.taa && motion && this.taaTargets.length === 2;
+        const pe = camera.projectionMatrix.elements;
+        const p8 = pe[8], p9 = pe[9];
+        if (useTaa) {
+            const h = HALTON8[this.frame & 7];
+            const jx = h[0] - 0.5, jy = h[1] - 0.5;
+            const fw = this.sceneTarget.width, fh = this.sceneTarget.height;
+            pe[8] = p8 + (2 * jx) / fw;
+            pe[9] = p9 + (2 * jy) / fh;
+            this.jitterUV.set(jx / fw, jy / fh);
+        } else {
+            this.jitterUV.set(0, 0);
+        }
+        r.setRenderTarget(this.sceneTarget);
+        try {
+            r.render(scene, camera);
+        } finally {
+            pe[8] = p8;
+            pe[9] = p9;
+        }
+
+        const deep = this.depthOk && (p.ao || p.ssr || p.haze || p.blur || p.vol || p.taa);
         let src = this.sceneTarget;
+        let hasVol = false;
         if (deep) {
             try {
                 camera.updateMatrixWorld();
@@ -955,6 +1178,30 @@ export class PostFx {
                 if (p.ao || p.ssr) src = this.lighting(camera, fx, timeSeconds) || src;
                 if (p.blur && motion) src = this.motionBlur(camera, fx, src, dt, cut) || src;
                 else this.forgetMovers();
+                if (useTaa) {
+                    const readIdx = this.taaIdx, writeIdx = readIdx ^ 1;
+                    const t = this.taaMat.uniforms;
+                    t.tCur.value = src.texture;
+                    t.tHist.value = this.taaTargets[readIdx].texture;
+                    t.uInvViewProj.value.copy(this.viewProj).invert();
+                    t.uPrevViewProj.value.copy(cut ? this.viewProj : this.prevViewProj);
+                    t.uTexel.value.set(1 / src.width, 1 / src.height);
+                    t.uJitterUV.value.copy(this.jitterUV);
+                    t.uBlend.value = cut || !this.taaValid ? 0 : 0.84;
+                    this.pass(this.taaMat, this.taaTargets[writeIdx]);
+                    src = this.taaTargets[writeIdx];
+                    this.taaIdx = writeIdx;
+                    this.taaValid = true;
+                } else {
+                    this.taaValid = false;
+                }
+                if (p.vol && this.volTarget && fx.sun?.v > 0.002) {
+                    const v = this.volMat.uniforms;
+                    v.uSun.value.set(fx.sun.x, fx.sun.y, fx.sun.v);
+                    v.uRes.value.set(this.volTarget.width, this.volTarget.height);
+                    this.pass(this.volMat, this.volTarget);
+                    hasVol = true;
+                }
                 this.prevViewProj.copy(this.viewProj);
                 this.prevCamPos.copy(camera.position);
                 camera.getWorldDirection(this.prevCamDir);
@@ -962,6 +1209,7 @@ export class PostFx {
             } catch (e) {
                 // A driver that cannot sample the resolved depth: drop back to the plain frame for good.
                 this.depthOk = false;
+                this.taaValid = false;
                 src = this.sceneTarget;
                 console.warn('pocabinet/postfx: depth passes off', e);
             }
@@ -992,11 +1240,13 @@ export class PostFx {
         const u = this.material.uniforms;
         u.tScene.value = src.texture;
         u.tBloom.value = acc.texture;
+        u.tVol.value = hasVol ? this.volTarget.texture : null;
+        u.uHasVol.value = hasVol ? 1 : 0;
         u.uTime.value = timeSeconds % 1000;
         u.uSpeed.value = Math.min(1, Math.max(0, fx.speed || 0));
         u.uMotion.value = motion ? 1 : 0;
         // With real motion blur the radial streak only has to add the stylised rush.
-        u.uRadial.value = src === this.motionTarget ? 0.55 : 1;
+        u.uRadial.value = src === this.motionTarget || (useTaa && p.blur) ? 0.55 : 1;
         u.uRain.value = fx.rain || 0;
         u.uFlash.value = fx.flash || 0;
         u.uSlow.value = fx.slow || 0;
@@ -1013,17 +1263,22 @@ export class PostFx {
 
     /**
      * A second view (scene.js's picture-in-picture) into the canvas rectangle x, y, w, h (CSS px,
-     * y from the bottom): rendered into a linear HDR target, so it shares every program the main
-     * pass compiled, then tone-mapped into place.
+     * y from the bottom): rendered into a lightweight 0.75x non-MSAA linear HDR target reusing shadows (#19).
      */
     drawInset(scene, camera, x, y, w, h, exposure) {
         const r = this.renderer;
         const pr = r.getPixelRatio();
-        const tw = Math.max(1, Math.round(w * pr)), th = Math.max(1, Math.round(h * pr));
-        if (!this.insetTarget) this.insetTarget = target(tw, th, 4);
+        const tw = Math.max(1, Math.round(w * pr * 0.75)), th = Math.max(1, Math.round(h * pr * 0.75));
+        if (!this.insetTarget) this.insetTarget = target(tw, th, 0);
         else if (this.insetTarget.width !== tw || this.insetTarget.height !== th) this.insetTarget.setSize(tw, th);
+        const prevShadow = r.shadowMap.autoUpdate;
+        r.shadowMap.autoUpdate = false;
         r.setRenderTarget(this.insetTarget);
-        r.render(scene, camera);
+        try {
+            r.render(scene, camera);
+        } finally {
+            r.shadowMap.autoUpdate = prevShadow;
+        }
         this.insetMat.uniforms.tSrc.value = this.insetTarget.texture;
         this.insetMat.uniforms.uExposure.value = exposure;
         const full = r.getSize(this._full || (this._full = new THREE.Vector2()));
@@ -1049,13 +1304,13 @@ export class PostFx {
         return moved > 6 || dir.dot(this.prevCamDir) < 0.94;
     }
 
-    /** GTAO + SSR onto the scene colour; returns the lit target, or null when neither ran. */
+    /** GTAO + SSR + clustered dynamic lights onto the scene colour; returns the lit target, or null when inactive. */
     lighting(camera, fx, timeSeconds) {
         const p = this.passes;
         const ao = p.ao && this.aoTarget;
         const wet = Math.min(1, Math.max(0, fx.rain || 0));
         const mirage = p.mirage && !wet ? Math.max(0, Math.min(1, fx.mirage ?? 0)) : 0;
-        const ssr = p.ssr && this.ssrTarget && (wet > 0.01 || mirage > 0.01);
+        const ssr = p.ssr && this.ssrTarget && (wet > 0.01 || mirage > 0.01 || this.quality === 'high');
         if (!ao && !ssr) return null;
         if (ao) {
             const a = this.aoMat.uniforms;
@@ -1080,10 +1335,32 @@ export class PostFx {
         const l = this.lightMat.uniforms;
         l.tAO.value = ao ? this.aoBlurTarget.texture : null;
         l.tSSR.value = ssr ? this.ssrTarget.texture : null;
+        l.uProjM.value.copy(camera.projectionMatrix);
+        const sunW = fx.sunDir || this._v.set(0.42, 0.80, 0.42);
+        this._w.copy(sunW).normalize().transformDirection(camera.matrixWorldInverse);
+        l.uSunDir.value.copy(this._w);
         l.uAO.value = ao ? AO_STRENGTH : 0;
         l.uSSR.value = ssr ? 1 : 0;
+        l.uContact.value = p.contact && ao ? 1 : 0;
+        l.uGI.value = p.ssgi && ao ? 1 : 0;
+        l.uRes.value.set(this.litTarget.width, this.litTarget.height);
         const half = this.aoTarget || this.ssrTarget;
         l.uHalfTexel.value.set(1 / half.width, 1 / half.height);
+
+        // Clustered 12 dynamic lights (view space) (#10).
+        const lights = fx.lights;
+        const nL = Array.isArray(lights) ? Math.min(MAX_DYN_LIGHTS, lights.length) : 0;
+        l.uLightCount.value = nL;
+        for (let i = 0; i < nL; i++) {
+            const lt = lights[i];
+            this._v.set(lt.x, lt.y, lt.z).applyMatrix4(camera.matrixWorldInverse);
+            l.uLightPos.value[i].set(this._v.x, this._v.y, this._v.z, lt.radius || 8);
+            l.uLightCol.value[i].set(lt.r || 1, lt.g || 1, lt.b || 1, lt.spot || 0);
+            if (lt.spot > 0.01) {
+                this._w.set(lt.dx || 0, lt.dy || 0, lt.dz || -1).normalize().transformDirection(camera.matrixWorldInverse);
+                l.uLightDir.value[i].copy(this._w);
+            }
+        }
         this.pass(this.lightMat, this.litTarget);
         return this.litTarget;
     }
@@ -1122,7 +1399,7 @@ export class PostFx {
         return this.motionTarget;
     }
 
-    /** Point the velocity scene at this frame's visible car meshes. */
+    /** Point the velocity scene at this frame's visible car meshes (including CarCrowd instanced meshes #14). */
     updateProxies(movers, cut) {
         const list = this.proxyList;
         list.length = 0;
@@ -1131,9 +1408,48 @@ export class PostFx {
             for (const g of movers) {
                 if (!g || !g.visible) continue;
                 g.traverseVisible((o) => {
-                    if (!o.isMesh || o.isInstancedMesh || o.isSkinnedMesh) return;
+                    if (!o.isMesh || o.isSkinnedMesh) return;
                     const m = o.material;
                     if (!m || (Array.isArray(m) ? m[0]?.depthWrite === false : m.depthWrite === false)) return;
+                    if (o.isInstancedMesh) {
+                        if (!o.count || !o.userData?.prevInstanceMatrix) return;
+                        let p = this.proxies.get(o);
+                        if (!p) {
+                            const maxInst = o.instanceMatrix.count;
+                            const pGeom = o.geometry.clone();
+                            const prevArr = new Float32Array(maxInst * 16);
+                            const ibuf = new THREE.InstancedInterleavedBuffer(prevArr, 16, 1).setUsage(THREE.DynamicDrawUsage);
+                            pGeom.setAttribute('aPrevCol0', new THREE.InterleavedBufferAttribute(ibuf, 4, 0));
+                            pGeom.setAttribute('aPrevCol1', new THREE.InterleavedBufferAttribute(ibuf, 4, 4));
+                            pGeom.setAttribute('aPrevCol2', new THREE.InterleavedBufferAttribute(ibuf, 4, 8));
+                            pGeom.setAttribute('aPrevCol3', new THREE.InterleavedBufferAttribute(ibuf, 4, 12));
+                            const mat = this.velMat.clone();
+                            mat.uniforms.uIsInstanced.value = 1;
+                            p = new THREE.InstancedMesh(pGeom, mat, maxInst);
+                            p.matrixAutoUpdate = false;
+                            p.matrixWorldAutoUpdate = false;
+                            p.parent = this.velScene;
+                            p.prevInstArr = prevArr;
+                            p.prevIBuf = ibuf;
+                            p.seen = -1;
+                            this.proxies.set(o, p);
+                            this.allProxies.add(p);
+                        }
+                        p.count = Math.min(p.instanceMatrix.count, o.count);
+                        p.frustumCulled = o.frustumCulled;
+                        p.matrixWorld.copy(o.matrixWorld);
+                        p.instanceMatrix.array.set(o.instanceMatrix.array);
+                        p.instanceMatrix.needsUpdate = true;
+                        const srcPrev = (cut || p.seen !== this.frame - 1) ? o.instanceMatrix.array : o.userData.prevInstanceMatrix;
+                        p.prevInstArr.set(srcPrev.subarray(0, p.prevInstArr.length));
+                        p.prevIBuf.needsUpdate = true;
+                        const u = p.material.uniforms;
+                        u.uIsInstanced.value = 1;
+                        u.uPrevViewProj.value.copy(prevVP);
+                        p.material.uniformsNeedUpdate = true;
+                        list.push(p);
+                        return;
+                    }
                     let p = this.proxies.get(o);
                     if (!p) {
                         const mat = this.velMat.clone();
@@ -1150,6 +1466,7 @@ export class PostFx {
                     p.frustumCulled = o.frustumCulled;
                     p.matrixWorld.copy(o.matrixWorld);
                     const u = p.material.uniforms;
+                    u.uIsInstanced.value = 0;
                     // A mesh not drawn last frame has no motion yet.
                     u.uPrevModel.value.copy(cut || p.seen !== this.frame - 1 ? o.matrixWorld : p.prev);
                     u.uPrevViewProj.value.copy(prevVP);
@@ -1163,7 +1480,7 @@ export class PostFx {
 
     storeProxies() {
         for (const p of this.proxyList) {
-            p.prev.copy(p.matrixWorld);
+            if (p.prev) p.prev.copy(p.matrixWorld);
             p.seen = this.frame;
         }
     }
@@ -1227,8 +1544,11 @@ export class PostFx {
         this.insetMat.dispose();
         for (const t of [...this.down, ...this.up, ...this.depthTargets]) t.dispose();
         for (const m of [this.brightMat, this.downMat, this.upMat, this.material, this.aoMat, this.aoBlurMat,
-            this.ssrMat, this.lightMat, this.tileMat, this.neighborMat, this.motionMat, this.velMat]) m.dispose();
-        for (const p of this.allProxies) p.material.dispose();
+            this.ssrMat, this.lightMat, this.volMat, this.taaMat, this.tileMat, this.neighborMat, this.motionMat, this.velMat]) m.dispose();
+        for (const p of this.allProxies) {
+            p.material.dispose();
+            if (p.isInstancedMesh) p.geometry.dispose();
+        }
         this.allProxies.clear();
         this.quad.geometry.dispose();
     }

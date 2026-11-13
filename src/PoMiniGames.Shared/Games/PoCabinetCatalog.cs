@@ -15,9 +15,13 @@ public static class PoCabinetCatalog
     /// point-to-point Playground run is 1.</summary>
     public const int TotalLaps = 3;
 
-    /// <summary>Seats in a multiplayer race (players + AI officials). The per-tick snapshot is
-    /// budgeted for this many cars, which is why online did not grow with the solo field.</summary>
+    /// <summary>Driver seats in a multiplayer lobby: the most humans in one race.</summary>
     public const int CarCount = 8;
+
+    /// <summary>Cars on a multiplayer grid: the drivers plus the AI that fills it out
+    /// (<see cref="MaxBots"/>). The server simulates every one and sends each in the 30 Hz
+    /// snapshot (about 250 bytes a car), which is what keeps online well under the solo field.</summary>
+    public const int OnlineGridSize = 16;
 
     /// <summary>Cars in a solo or demo race: 63 rivals and the player. The whole
     /// race runs in the browser, so only the lap verifier pays for it server-side.</summary>
@@ -40,8 +44,10 @@ public static class PoCabinetCatalog
     /// <summary>Default track when none is specified (matches the championship opening leg).</summary>
     public const string DefaultTrackId = "capitol";
 
-    /// <summary>AI officials a multiplayer host can add to the grid.</summary>
-    public const int MaxBots = 4;
+    /// <summary>AI drivers a multiplayer host can add to the grid: the four officials first,
+    /// then field racers (<see cref="BotName"/>). The race seats as many as fit beside the
+    /// drivers (<see cref="OnlineGridSize"/>).</summary>
+    public const int MaxBots = 12;
 
     /// <summary>A multiplayer seat's paint when the player sent none.</summary>
     public const string DefaultSeatColor = "#3a7d44";
@@ -65,6 +71,23 @@ public static class PoCabinetCatalog
         }
         return id ?? "";
     }
+
+    private static readonly string[] FieldFirst = ["Dana", "Kyle", "Priya", "Omar", "Lena", "Marcus", "Ines", "Tobias", "Yuki", "Carla",
+        "Dmitri", "Aisha", "Hank", "Noor", "Felix", "Greta", "Ravi", "Sofia", "Walt"];
+    private static readonly string[] FieldLast = ["K.", "R.", "D.", "W.", "M."];
+
+    /// <summary>A field racer's name by its index in the field (0 = the quickest). Mirrors
+    /// physics.js <c>soloField</c>, so the same car has the same name solo and online.</summary>
+    public static string FieldRacerName(int index) =>
+        $"{FieldFirst[index % FieldFirst.Length]} {FieldLast[(index % FieldFirst.Length + index / FieldFirst.Length) % FieldLast.Length]}";
+
+    /// <summary>The name of a multiplayer grid's AI driver number <paramref name="index"/>
+    /// (0-based): the officials in seat order, then the field racers from the quickest.</summary>
+    public static string BotName(int index) =>
+        index < Officials.Count ? Officials[index].Name : FieldRacerName(index - Officials.Count);
+
+    /// <summary>The <c>OfficialId</c> a field racer carries on the wire (physics.js <c>soloField</c>'s id).</summary>
+    public const string FieldRacerId = "field";
 
     public static IReadOnlyList<PoCabinetTrackInfo> Tracks { get; } = Array.AsReadOnly(new[]
     {

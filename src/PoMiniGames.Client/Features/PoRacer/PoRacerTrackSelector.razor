@@ -11,9 +11,14 @@
             }
         </select>
     </label>
+    var selected = PoRacerCatalog.GetTrack(SelectedTrackId);
+    var best = Bests.GetValueOrDefault(selected.Id);
+    @if (PoRacerWeather.Note(PoRacerWeather.Today(selected.Id)) is { } today)
+    {
+        <p class="track-weather">Today here: @today</p>
+    }
     <details>
         <summary>Track details</summary>
-        @{ var selected = PoRacerCatalog.GetTrack(SelectedTrackId); var best = Bests.GetValueOrDefault(selected.Id); }
         <p>@selected.Description</p>
         @if (best > 0) { <p>Your best @PoRacerFormatting.Time(best) @PoRacerFormatting.MedalLabel(selected.Medal(best))</p> }
         <p>Best-lap targets: 🥇 @Seconds(selected.Gold) · 🥈 @Seconds(selected.Silver) · 🥉 @Seconds(selected.Bronze) seconds</p>
@@ -39,6 +44,10 @@ else
                         <span>Your best <b>@PoRacerFormatting.Time(best)</b> @PoRacerFormatting.MedalLabel(track.Medal(best))</span>
                     }
                     <span class="track-medals" title="Best-lap targets, in seconds">🥇 @Seconds(track.Gold) · 🥈 @Seconds(track.Silver) · 🥉 @Seconds(track.Bronze)</span>
+                    @if (PoRacerWeather.Note(PoRacerWeather.Today(track.Id)) is { } today)
+                    {
+                        <span class="track-weather">Today: @today</span>
+                    }
                 </span>
             </span>
         </label>

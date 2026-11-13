@@ -29,9 +29,11 @@ precision highp float;
 precision highp int;
 
 uniform sampler2D u_state;
+uniform sampler2D u_aux;      // full-res auxiliary physics fields (fill, temp, shock, turbidity)
 uniform sampler2D u_light;    // half-res propagated light field
 uniform sampler2D u_heights;  // 800x1: column surface height / 600
 uniform sampler2D u_smoke;    // half-res advected field: R = smoke, G = vapour
+uniform sampler2D u_temp;     // half-res thermal/humidity field: R = temp, G = vapor
 uniform float u_time;
 uniform vec4 u_sky;           // sun elevation -1..1, overcast 0..1, lightning 0..1, sun x 0..1
 uniform int u_view;           // 0 = normal, 1 = support, 2 = water pressure, 3 = moisture
@@ -49,16 +51,37 @@ vec4 get(ivec2 p) {
     return texelFetch(u_state, p, 0);
 }
 
+vec4 getAux(ivec2 p) {
+    if (p.y < 0 || p.x < 0 || p.x >= W || p.y >= H) return vec4(0.5, 0.25, 0.0, 0.0);
+    return texelFetch(u_aux, p, 0);
+}
+
 int matOf(vec4 c) { return (int(floor(c.r * 255.0 + 0.5)) + 30) / 60; }
 bool solidM(int m) { return m == SAND || m == CONCRETE || m == BEDROCK; }
+int soilOf(vec4 c) {
+    float rb = floor(c.r * 255.0 + 0.5);
+    if (rb >= 81.0 && rb <= 84.0) return 4;
+    if (rb == 86.0 || rb < 40.0) return 0;
+    if (rb == 87.0 || rb < 50.0) return 1;
+    if (rb == 88.0 || rb < 60.0) return 2;
+    return 3;
+}
 float wetOf(vec4 c) {
     if (matOf(c) != SAND) return 0.0;
     float rb = floor(c.r * 255.0 + 0.5);
     if (rb >= 85.0) return 20.0;
-    float w = rb - 60.0;
-    return (w <= 20.0) ? w : 0.0;
+    if (rb >= 81.0) return 0.0;
+    if (rb >= 60.0) return rb - 60.0;
+    if (rb >= 50.0) return (rb - 50.0) * 2.0;
+    if (rb >= 40.0) return (rb - 40.0) * 2.0;
+    return max(0.0, (rb - 30.0) * 2.0);
 }
-float shockOf(vec4 c) { return matOf(c) == AIR ? c.b : 0.0; }
+float shockOf(vec4 c, vec4 a) {
+    int m = matOf(c);
+    if (m == AIR) return c.b;
+    if (m == WATER) return a.b;
+    return 0.0;
+}
 
 float waterMask(ivec2 p) { return matOf(get(p)) == WATER ? 1.0 : 0.0; }
 vec2 waterNormal(ivec2 p) {
@@ -66,6 +89,9 @@ vec2 waterNormal(ivec2 p) {
              - waterMask(p + ivec2( 2, 0)) - 2.0 * waterMask(p + ivec2( 1, 0));
     float gy = waterMask(p + ivec2(0, -2)) + 2.0 * waterMask(p + ivec2(0, -1))
              - waterMask(p + ivec2(0,  2)) - 2.0 * waterMask(p + ivec2(0,  1));
+    float fL = matOf(get(p + ivec2(-1, 0))) == WATER ? getAux(p + ivec2(-1, 0)).r : 0.0;
+    float fR = matOf(get(p + ivec2( 1, 0))) == WATER ? getAux(p + ivec2( 1, 0)).r : 0.0;
+    gx += (fL - fR) * 1.5;
     return normalize(vec2(gx, gy) + vec2(0.0, 0.001));
 }
 
@@ -122,6 +148,7 @@ void main() {
     p = clamp(p, ivec2(0), ivec2(W - 1, H - 1));
 
     vec4 self = get(p);
+    vec4 selfA = getAux(p);
     int m = matOf(self);
     float g = hash(vec2(p) * 0.7131); // static per-position grain seed
 
@@ -188,22 +215,25 @@ void main() {
             vec3 caveCol = vec3(0.072, 0.068, 0.084) * (0.8 + 0.5 * g);
             col = mix(col, caveCol, cave * 0.94);
         }
-        // Sub-cell volume reconstruction: an air notch supported by water
-        // below and beside it is the upper fraction of the free surface, not
-        // a square hole. This visually preserves thin sheets and menisci while
-        // the conservative occupancy grid remains one-material-per-cell.
-        float partialWater = waterMask(p + ivec2(0, -1)) *
-            (0.28 + 0.22 * max(waterMask(p + ivec2(-1, 0)), waterMask(p + ivec2(1, 0))));
-        col = mix(col, vec3(0.30, 0.62, 0.82) * dayTint, partialWater);
+        // Sub-cell volume reconstruction + trapped underwater air bubbles.
+        float rbAir = floor(self.r * 255.0 + 0.5);
+        if (rbAir >= 6.0 && rbAir <= 12.0 && self.g <= 2.0 / 255.0) {
+            col = mix(vec3(0.32, 0.65, 0.86), vec3(0.88, 0.96, 1.0), 0.55 + 0.35 * speck) * dayTint;
+            emis += 0.08;
+        } else {
+            float fillBelow = waterMask(p + ivec2(0, -1)) * clamp(getAux(p + ivec2(0, -1)).r, 0.15, 1.0);
+            float partialWater = fillBelow * (0.24 + 0.24 * max(waterMask(p + ivec2(-1, 0)), waterMask(p + ivec2(1, 0))));
+            col = mix(col, vec3(0.30, 0.62, 0.82) * dayTint, partialWater);
+        }
     } else if (m == SAND) {
         float rb = floor(self.r * 255.0 + 0.5);
+        int soil = soilOf(self);
         float depth = clamp(1.0 - float(p.y) / 360.0, 0.0, 1.0);
         col = mix(vec3(0.78, 0.60, 0.33), vec3(0.47, 0.34, 0.19), depth * 0.55);
-        // Geology strata: clay band and bedrock-adjacent gravel.
-        float band1 = 120.0 + 18.0 * sin(float(p.x) * 0.011 + 2.1);
-        float band2 = 45.0 + 12.0 * sin(float(p.x) * 0.017);
-        if (float(p.y) < band2) col = mix(col, vec3(0.42, 0.40, 0.38), 0.45 + 0.2 * speck);
-        else if (float(p.y) < band1) col = mix(col, vec3(0.55, 0.38, 0.28), 0.4);
+        // Intrinsic per-grain soil colour (travels with dug/blasted soil).
+        if (soil == 0) col = mix(vec3(0.46, 0.44, 0.41), vec3(0.34, 0.32, 0.30), speck);
+        else if (soil == 1) col = mix(vec3(0.56, 0.36, 0.25), vec3(0.46, 0.28, 0.20), depth * 0.4);
+        else if (soil == 2) col = mix(vec3(0.72, 0.64, 0.48), vec3(0.58, 0.50, 0.36), depth * 0.4);
         col *= 0.90 + 0.14 * speck;
         if (self.a < COHESION_THRESH) col *= 1.10;
         // Damp sand reads darker and slightly richer.
@@ -274,18 +304,21 @@ void main() {
                             + waterMask(p + ivec2(0, -1)) + waterMask(p + ivec2(0, 1)) - 3.0);
         float foam = surface * smoothstep(0.35, 1.35, speed + curvature * 0.18);
         col = mix(col, vec3(0.72, 0.86, 0.94), foam * 0.72);
-        // Bed contact under energetic flow entrains a visible turbidity veil.
+        // Bed contact under energetic flow + advection-carried turbidity plume.
         float bedContact = float(md == SAND || ml == SAND || mr == SAND);
-        col = mix(col, vec3(0.34, 0.29, 0.20), bedContact * smoothstep(0.25, 1.1, speed) * 0.35);
+        float turb = max(selfA.a, bedContact * smoothstep(0.25, 1.1, speed) * 0.5);
+        col = mix(col, vec3(0.36, 0.30, 0.20), clamp(turb * 0.68, 0.0, 0.68));
         // Animated sparkle, advected with the flow.
         float sp = fract(g * 91.7 + u_time * (0.35 + speed * 0.5) + float(p.x) * 0.013 - vx * 1.7);
         if (sp > 0.96) { col = mix(col, vec3(0.62, 0.85, 0.98), 0.8); emis += 0.10; }
-        // Free surface: bright rim with a moving glint (cheap Fresnel).
+        // Free surface: sub-cell VOF fill height + Fresnel reflection.
         if (mu == AIR) {
             float glint = 0.75 + 0.25 * sin(float(p.x) * 0.35 + u_time * 2.4 + g * 6.28);
             float fresnel = 0.02 + 0.98 * pow(1.0 - clamp(normal.y, 0.0, 1.0), 5.0);
             vec3 skyReflection = mix(skyColor(0.75), skyColor(0.05) + 0.1, glint) / max(dayTint, vec3(0.3));
             col = mix(col, skyReflection, clamp(fresnel + 0.18, 0.0, 0.82));
+            float fill = clamp(selfA.r > 0.05 ? selfA.r : 1.0, 0.2, 1.0);
+            if (fill < 0.85) col = mix(skyReflection * 0.85, col, fill);
             emis += 0.12 * glint;
         } else if (ml == AIR || mr == AIR) {
             col = mix(col, vec3(0.55, 0.80, 0.95), 0.4);
@@ -326,16 +359,21 @@ void main() {
         emis += llum * 0.35;
     }
 
-    // Lingering smoke and vapour, lit by whatever is burning inside it.
+    // Lingering smoke, vapour, and atmospheric humidity haze.
     vec2 sm = texture(u_smoke, v_uv).rg;
+    float humid = texture(u_temp, v_uv).g;
     vec3 smokeCol = mix(vec3(0.10, 0.10, 0.11), vec3(0.42, 0.40, 0.38), day) + light * 0.9;
     col = mix(col, smokeCol, clamp(sm.r * 1.25, 0.0, 0.82));
-    col = mix(col, vec3(0.90, 0.93, 0.96) * max(dayTint, vec3(0.45)), clamp(sm.g * 0.8, 0.0, 0.55));
+    col = mix(col, vec3(0.90, 0.93, 0.96) * max(dayTint, vec3(0.45)), clamp(sm.g * 0.8 + humid * 0.18, 0.0, 0.62));
 
-    // Acoustic blast flash rings.
-    float s = shockOf(self);
-    float ns = max(max(shockOf(up), shockOf(dn)), max(shockOf(lf), shockOf(rt)));
-    if (s > 0.02) {
+    // Acoustic blast flash rings (air fireballs + underwater cyan shock pulses).
+    float s = shockOf(self, selfA);
+    float ns = max(max(shockOf(up, getAux(p + ivec2(0, 1))), shockOf(dn, getAux(p + ivec2(0, -1)))),
+                   max(shockOf(lf, getAux(p + ivec2(-1, 0))), shockOf(rt, getAux(p + ivec2(1, 0)))));
+    if (m == WATER && s > 0.04) {
+        col = mix(col, vec3(0.65, 0.92, 1.0), smoothstep(0.04, 0.65, s) * 0.8);
+        emis += smoothstep(0.08, 0.7, s) * 0.45;
+    } else if (s > 0.02) {
         col = mix(col, vec3(1.0, 0.62, 0.18), smoothstep(0.05, 0.35, s));
         col = mix(col, vec3(1.0, 0.93, 0.62), smoothstep(0.35, 0.62, s));
         col = mix(col, vec3(1.0), smoothstep(0.62, 0.9, s));
@@ -482,6 +520,78 @@ void main() {
         d.r += e.w * exp(-q * q / (e.z * e.z)) * u_k;
     }
     outColor = vec4(clamp(d, 0.0, 1.0), 0.0, 1.0);
+}
+
+//====== TEMP ======
+#version 300 es
+// Half-res thermal & humidity field (400x300, ping-pong).
+//   R = temperature (0.25 ~ 20C, >0.45 evaporates surface water)
+//   G = atmospheric vapor humidity (0..1)
+precision highp float;
+precision highp int;
+
+uniform sampler2D u_state;
+uniform sampler2D u_prev;
+uniform sampler2D u_heights;
+uniform vec4 u_src[8];
+uniform int u_nsrc;
+uniform float u_wind;
+uniform vec4 u_sky;
+uniform float u_k;
+uniform float u_seed;
+in vec2 v_uv;
+out vec4 outColor;
+
+float hash(vec2 q) { return fract(sin(dot(q, vec2(127.1, 311.7))) * 43758.5453123); }
+int matOf(vec4 c) { return (int(floor(c.r * 255.0 + 0.5)) + 30) / 60; }
+
+void main() {
+    vec2 texel = vec2(1.0 / 400.0, 1.0 / 300.0);
+    vec4 s = texture(u_state, v_uv);
+    int m = matOf(s);
+
+    float sunWarm = clamp(u_sky.x, 0.0, 1.0) * (1.0 - 0.6 * u_sky.y);
+    float ambientT = 0.22 + 0.10 * sunWarm - 0.05 * smoothstep(0.65, 1.0, v_uv.y);
+
+    vec2 prev = texture(u_prev, v_uv).rg;
+    float curT = prev.r > 0.01 ? prev.r : ambientT;
+    float buoy = clamp((curT - ambientT) * 2.2, -0.35, 1.4);
+    vec2 vel = (m == 0 ? vec2(u_wind * 0.45, buoy) : vec2(0.0)) * u_k;
+    vec2 from = clamp(v_uv - vel * texel, vec2(0.0), vec2(1.0));
+
+    vec2 c = texture(u_prev, from).rg;
+    vec2 n = (texture(u_prev, from + vec2(texel.x, 0.0)).rg + texture(u_prev, from - vec2(texel.x, 0.0)).rg
+            + texture(u_prev, from + vec2(0.0, texel.y)).rg + texture(u_prev, from - vec2(0.0, texel.y)).rg) * 0.25;
+    float diff = (m == 0) ? 0.35 : 0.12;
+    vec2 th = mix(c, n, diff * min(u_k, 1.0));
+
+    float colTop = texture(u_heights, vec2(v_uv.x, 0.5)).r;
+    float depthFrac = max(0.0, colTop - v_uv.y);
+    float targetT = ambientT - min(0.08, depthFrac * 0.18);
+    if (depthFrac < 0.01 && sunWarm > 0.1) targetT += sunWarm * 0.16;
+    if (c.r < 0.01) th.r = targetT;
+    else th.r = mix(th.r, targetT, 0.025 * min(u_k, 1.0));
+
+    // Heat sources: embers, blast shockwaves, steam latent heat, and fire/blast emitters.
+    if (m == 1 && s.g > 0.08) th.r = max(th.r, 0.45 + s.g * 0.55);
+    if (m == 0 && s.g >= 136.0 / 255.0) {
+        th.r = max(th.r, 0.48);
+        th.g = max(th.g, 0.65);
+    }
+    if (m == 0 && s.b > 0.1) th.r = max(th.r, 0.50 + s.b * 0.45);
+    if (m == 3 && th.r > 0.42) th.g = min(1.0, th.g + 0.015 * u_k);
+
+    vec2 px = v_uv * vec2(800.0, 600.0);
+    for (int i = 0; i < 8; i++) {
+        if (i >= u_nsrc) break;
+        vec4 e = u_src[i];
+        float q = distance(px, e.xy);
+        th.r += e.w * 2.2 * exp(-q * q / (e.z * e.z)) * u_k;
+    }
+
+    float rq = hash(gl_FragCoord.xy * 0.41 + vec2(u_seed, u_seed * 1.9));
+    if (rq < 0.35 * u_k) th.g = max(th.g - 1.0 / 255.0, 0.0);
+    outColor = vec4(clamp(th, 0.0, 1.0), 0.0, 1.0);
 }
 
 //====== COPY ======

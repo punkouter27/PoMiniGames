@@ -155,15 +155,24 @@ export function applyFx(sh, dt) {
         sh.camera.fov = next;
         sh.camera.updateProjectionMatrix();
     }
-    const amp = motion ? Math.min(1, fx.shake + fx.rumble * 0.35) : 0;
-    if (amp > 0.002) {
-        const r = () => Math.random() - 0.5;
-        sh.camera.position.x += r() * 0.06 * amp;
-        sh.camera.position.y += r() * 0.08 * amp;
-        sh.camera.rotateX(r() * 0.012 * amp);
-        sh.camera.rotateZ(r() * 0.016 * amp);
+    const trauma = motion ? Math.min(1, fx.shake + fx.rumble * 0.4) : 0;
+    const traumaSq = trauma * trauma;
+    const now = (sh._camClock = (sh._camClock || 0) + (dt || 0.016));
+    if (traumaSq > 0.001) {
+        // Multi-octave harmonic spring trauma (#14) — crisp suspension feel without white-noise strobe
+        const n1 = Math.sin(now * 37.3) * 0.6 + Math.sin(now * 61.9) * 0.4;
+        const n2 = Math.cos(now * 43.1) * 0.6 + Math.sin(now * 73.7) * 0.4;
+        const n3 = Math.sin(now * 29.5 + 1.1) * 0.65 + Math.cos(now * 53.3) * 0.35;
+        sh.camera.position.x += n1 * 0.065 * traumaSq;
+        sh.camera.position.y += (n2 * 0.075 - (fx.susp || 0) * 0.045) * traumaSq;
+        sh.camera.rotateX(n2 * 0.011 * traumaSq);
+        sh.camera.rotateZ(n3 * 0.015 * traumaSq);
     }
-    const decay = dt > 0 ? Math.exp(-dt * 7) : 1;
+    if (motion && Math.abs(fx.latG || 0) > 0.001) {
+        sh._camRoll = (sh._camRoll || 0) + ((fx.latG * 0.032) - (sh._camRoll || 0)) * k;
+        sh.camera.rotateZ(sh._camRoll);
+    }
+    const decay = dt > 0 ? Math.exp(-dt * 6.5) : 1;
     fx.shake *= decay;
     fx.flash *= dt > 0 ? Math.exp(-dt * 4.5) : 1;
     if (fx.flash < 0.004) fx.flash = 0;

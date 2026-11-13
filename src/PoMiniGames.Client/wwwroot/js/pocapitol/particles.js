@@ -13,6 +13,8 @@ const GAS_PUFFS = 14, SPRAY_DROPS = 18, FLASH_SPRITES = 6, SMOKE_PUFFS = 26;
 const HAZE_SECONDS = 50, HAZE_PUFFS = 4, HAZE_MAX = 8;
 // A dry-powder extinguisher let off in a doorway: a hard white jet, then a cloud that sits.
 const PLUME_SECONDS = 11, PLUME_PUFFS = 12, PLUME_MAX = 6;
+// Banks of lit haze over the west front once the light has gone.
+const DUSK_BANKS = 12;
 
 /**
  * How dense a spent cloud's haze is `age` seconds after the cloud itself went, 0..1: it settles in
@@ -78,9 +80,21 @@ export function createParticles(scene, capacity = 430) {
      * @param calm    reduced flashing: the flash-bang core stays dim
      * @param wind    the weather's own wind, m/s: gas drifts and thins with it
      */
-    function update(effects, time, level, calm, wind = null) {
+    function update(effects, time, level, calm, wind = null, dusk = 0) {
         n = 0; light = 0.35 + level * 0.65;
         const wx = wind?.x ?? CALM.x, wz = wind?.z ?? CALM.z;
+        // After dark the afternoon's gas and powder is still in the air over the west front, and
+        // the scaffold floodlights are behind it: slow banks that glow where the light comes through.
+        if (dusk > 0.05) {
+            for (let i = 0; i < DUSK_BANKS; i++) {
+                const r1 = frac(Math.sin(i * 12.9898 + 4.1) * 43758.55), r2 = frac(Math.sin(i * 78.233 + 1.7) * 12543.1);
+                // Each bank crosses the front on the wind, fading in at one side and out at the other.
+                const travel = frac(time * (0.006 + r2 * 0.004) + r1);
+                const x = (r1 * 2 - 1) * 26 + (travel - 0.5) * Math.sign(wx || 1) * 14;
+                const z = 24 + r2 * 16 + (travel - 0.5) * Math.sign(wz || 1) * 6;
+                add(x, 2.2 + r1 * 4.5, z, 9 + r2 * 7, powder, 0.11 * dusk * Math.sin(travel * Math.PI), 1 + dusk * 1.5);
+            }
+        }
         // The clock running backwards is a new attempt: yesterday's air does not carry over.
         if (time < lastTime) { hazes.length = 0; plumes.length = 0; }
         lastTime = time;

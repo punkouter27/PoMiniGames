@@ -69,14 +69,16 @@
                 <div class="pocabinet-seat pocabinet-seat--bot">
                     <span class="pocabinet-seat__chip pocabinet-seat__chip--bot" aria-hidden="true"></span>
                     <span class="pocabinet-seat__who">
-                        <strong>@bot</strong>
-                        <span class="pocabinet-seat__state">AI official</span>
+                        <strong>@bot.Name</strong>
+                        <span class="pocabinet-seat__state">@(bot.Official ? "AI official" : "AI racer")</span>
                     </span>
                 </div>
             }
-            @for (var i = view.Players.Count + view.BotSeats; i < PoCabinetCatalog.CarCount; i++)
+            @* The AI never takes a driver's seat: the grid holds all eight drivers and the AI beside them.
+               One tile for the free seats, so a full AI grid does not push the race setup off the screen. *@
+            @if (PoCabinetCatalog.CarCount - view.Players.Count is > 0 and var open)
             {
-                <div class="pocabinet-seat pocabinet-seat--empty"><span>Open seat</span></div>
+                <div class="pocabinet-seat pocabinet-seat--empty"><span>@open open seat@(open == 1 ? "" : "s") for drivers</span></div>
             }
         </section>
 
@@ -85,11 +87,11 @@
             {
                 <PoCabinetTrackSelector SelectedTrackId="@view.TrackId" SelectedTrackIdChanged="SetTrackAsync" Compact="true" />
                 <div class="pocabinet-lobby__bots">
-                    <span id="pocabinet-bots-label">AI officials</span>
+                    <span id="pocabinet-bots-label">AI drivers</span>
                     <div class="pocabinet-stepper" role="group" aria-labelledby="pocabinet-bots-label">
-                        <button type="button" aria-label="Fewer AI officials" disabled="@(view.BotCount <= 0)" @onclick="() => SetBotsAsync(view.BotCount - 1)">−</button>
+                        <button type="button" aria-label="Fewer AI drivers" disabled="@(view.BotCount <= 0)" @onclick="() => SetBotsAsync(view.BotCount - 1)">−</button>
                         <output aria-live="polite">@view.BotCount</output>
-                        <button type="button" aria-label="More AI officials" disabled="@(view.BotCount >= PoCabinetCatalog.MaxBots)" @onclick="() => SetBotsAsync(view.BotCount + 1)">+</button>
+                        <button type="button" aria-label="More AI drivers" disabled="@(view.BotCount >= PoCabinetCatalog.MaxBots)" @onclick="() => SetBotsAsync(view.BotCount + 1)">+</button>
                     </div>
                 </div>
                 <button class="app-btn app-btn--primary pocabinet-lobby__start" disabled="@(!view.Startable || _busy)" @onclick="StartAsync">
@@ -98,7 +100,7 @@
             }
             else if (MySeat(view) is not null)
             {
-                <p class="pocabinet-lobby__track">Track <strong>@PoCabinetCatalog.GetTrack(view.TrackId).Name</strong> · @view.BotCount AI official@(view.BotCount == 1 ? "" : "s") · the host starts</p>
+                <p class="pocabinet-lobby__track">Track <strong>@PoCabinetCatalog.GetTrack(view.TrackId).Name</strong> · @view.BotSeats AI driver@(view.BotSeats == 1 ? "" : "s") · the host starts</p>
                 <button class="app-btn app-btn--primary pocabinet-lobby__ready" disabled="@(view.InRace || _busy)" @onclick="ToggleReadyAsync"
                         title="After a race, ready up within @ReadyTimeoutSeconds seconds or the seat is freed for someone else">
                     @(MySeat(view)?.IsReady == true ? "Ready ✓ — tap to cancel" : "Ready up")
@@ -243,16 +245,17 @@
 
     private PoCabinetLobbySeat? MySeat(PoCabinetLobbyView view) => MySeatIn(view, Session.MySeatId);
 
-    /// <summary>The officials the server will seat (it says how many fit), by name.</summary>
-    private static IEnumerable<string> BotSeats(PoCabinetLobbyView view) =>
-        PoCabinetCatalog.Officials.Take(view.BotSeats).Select(o => o.Name);
+    /// <summary>The AI the server will seat (it says how many fit), by name: the officials, then field racers.</summary>
+    private static IEnumerable<(string Name, bool Official)> BotSeats(PoCabinetLobbyView view) =>
+        Enumerable.Range(0, Math.Min(view.BotSeats, PoCabinetCatalog.MaxBots))
+            .Select(i => (PoCabinetCatalog.BotName(i), i < PoCabinetCatalog.Officials.Count));
 
     /// <summary>The server's sanitised hex, or the grid's default green when the player sent none.</summary>
     private static string SeatColor(string? hex) => string.IsNullOrEmpty(hex) ? PoCabinetCatalog.DefaultSeatColor : hex;
 
     private static string StartLabel(PoCabinetLobbyView view) =>
         view.InRace ? "Race running…"
-        : view.Players.Count + view.BotSeats < 2 ? "Add an AI official or wait for a friend"
+        : view.Players.Count + view.BotSeats < 2 ? "Add an AI driver or wait for a friend"
         : view.Players.All(p => p.IsReady) ? "Start race"
         : "Waiting for everyone to ready up…";
 

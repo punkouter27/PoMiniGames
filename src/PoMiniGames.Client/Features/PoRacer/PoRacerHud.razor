@@ -37,13 +37,23 @@
                 <span class="race-chip race-chip--drift" hidden>Drift</span>
             </div>
         }
+        @if (PoRacerWeather.Note(Weather) is { } weatherNote)
+        {
+            @* Not drawn by JS and not hidden from readers: with motion reduced there is no rain
+               on screen, and this is then the only thing that says the road is slippery. *@
+            <div class="race-chips">
+                <span class="race-chip race-chip--weather" role="note" title="@weatherNote" aria-label="@weatherNote">@weatherNote.Split(':')[0]</span>
+            </div>
+        }
         @if (Roster.Count > 1)
         {
             <ol class="race-standings" aria-label="Race standings">
                 @foreach (var car in Rows())
                 {
-                    var name = Roster.FirstOrDefault(r => r.Id == car.Id)?.Name ?? "";
-                    <li class="@(car.Id == PlayerId ? "local-driver" : "")" title="@name">
+                    var info = Roster.FirstOrDefault(r => r.Id == car.Id);
+                    var name = info?.Name ?? "";
+                    @* A rival's driving style (Heavy Bumper, Late Braker, …) is in the tooltip; the results list it in full. *@
+                    <li class="@(car.Id == PlayerId ? "local-driver" : "")" title="@(string.IsNullOrEmpty(info?.Trait) ? name : $"{name} · {info.Trait}")">
                         <span>@car.Position. @(car.Id == PlayerId ? "YOU" : name)</span><span>@(car.Finished ? "FIN" : $"L{car.Lap}")</span>
                     </li>
                 }
@@ -72,6 +82,8 @@
     [Parameter] public int? PlayerId { get; set; }
     [Parameter] public int TotalLaps { get; set; }
     [Parameter] public bool IsDemo { get; set; }
+    /// <summary>The race's weather (<see cref="PoRacerWeather"/>); a chip says so unless it is clear.</summary>
+    [Parameter] public string Weather { get; set; } = PoRacerWeather.Clear;
     [Parameter] public EventCallback OnPause { get; set; }
     private PoRacerCarState? Player => Cars.FirstOrDefault(c => c.Id == PlayerId);
 

@@ -38,7 +38,7 @@
                 {
                     @* The scanned track's own choice, beside the track it is for (the Settings tab has it too). *@
                     <div class="pocabinet-prerace__room" role="radiogroup" aria-label="Scan detail">
-                        <span>Scan detail <small>Full is a 9.6 MB download; Lite is lighter on phones</small></span>
+                        <span>Scan detail <small>Auto picks for this device; Full is a 9.6 MB download; Lite is the plain room</small></span>
                         <span class="pocabinet-prerace__pills">
                             @foreach (var (value, text) in RoomOptions)
                             {
@@ -53,9 +53,10 @@
                 }
                 break;
             case Tab.Car:
-                <section class="pocabinet-prerace__car" aria-label="Car colour">
-                    <h3>Car colour <span class="pocabinet-muted">@Color</span></h3>
-                    <PoCabinetPaintShop SelectedColor="@Color" SelectionChanged="PaintChanged" />
+                <section class="pocabinet-prerace__car" aria-label="Car colour and livery">
+                    <h3>Car colour &amp; livery <span class="pocabinet-muted">@Color</span></h3>
+                    <PoCabinetPaintShop SelectedColor="@Color" SelectionChanged="PaintChanged"
+                                        SelectedLivery="@Livery" LiveryChanged="LiveryChanged" />
                     <p class="pocabinet-muted">A change applies from the next race.</p>
                 </section>
                 break;
@@ -70,7 +71,7 @@
     private enum Tab { Track, Car, Settings }
 
     private static readonly (Tab Tab, string Label)[] Tabs = [(Tab.Track, "Track"), (Tab.Car, "Car"), (Tab.Settings, "Settings")];
-    private static readonly (string Value, string Text)[] RoomOptions = [("splat", "Full"), ("mesh", "Lite")];
+    private static readonly (string Value, string Text)[] RoomOptions = [("auto", "Auto"), ("splat", "Full"), ("mesh", "Lite")];
 
     [Parameter] public string? TrackId { get; set; }
     [Parameter] public EventCallback<string> TrackIdChanged { get; set; }
@@ -78,6 +79,8 @@
     [Parameter] public EventCallback<PoCabinetUiSettings> SettingsChanged { get; set; }
     [Parameter] public string? Color { get; set; }
     [Parameter] public EventCallback<string> PaintChanged { get; set; }
+    [Parameter] public int Livery { get; set; } = 1;
+    [Parameter] public EventCallback<int> LiveryChanged { get; set; }
 
     private Tab _tab = Tab.Track;
     private readonly ElementReference[] _tabRefs = new ElementReference[Tabs.Length];

@@ -88,6 +88,22 @@ public sealed class PoEcosystemInteropService : IAsyncDisposable
     }
 
     public ValueTask SetSpeedAsync(int speed) => SafeInvokeAsync("PoEcosystem.setSpeed", speed);
+    public ValueTask FastForwardAsync(double years) => SafeInvokeAsync("PoEcosystem.fastForward", years);
+    public async ValueTask<bool> GetLocalPersistAsync()
+    {
+        try { return await LoadEngineAsync() && await _js.InvokeAsync<bool>("PoEcosystem.getLocalPersist"); }
+        catch (JSException) { return false; }
+        catch (JSDisconnectedException) { return false; }
+    }
+    public ValueTask SetLocalPersistAsync(bool persist) => SafeInvokeAsync("PoEcosystem.setLocalPersist", persist);
+    public ValueTask SetFovAsync(double fov) => SafeInvokeAsync("PoEcosystem.setFov", fov);
+    public async ValueTask<bool> ExportPostcardAsync(string? headline = null)
+    {
+        if (!_started) return false;
+        try { return await _js.InvokeAsync<bool>("PoEcosystem.exportPostcard", headline ?? string.Empty); }
+        catch (JSException) { return false; }
+        catch (JSDisconnectedException) { return false; }
+    }
     public ValueTask SelectAsync(int handle) => SafeInvokeAsync("PoEcosystem.select", handle);
     public ValueTask FollowAsync(int handle) => SafeInvokeAsync("PoEcosystem.follow", handle);
     public ValueTask NewWorldAsync(string? seed) => SafeInvokeAsync("PoEcosystem.newWorld", seed ?? string.Empty);

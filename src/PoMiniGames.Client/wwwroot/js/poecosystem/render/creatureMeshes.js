@@ -164,6 +164,7 @@ export function createCreatureMeshes(scene, cap) {
     draw(view, count, time, speeds, handles, heightAt = null) {
       for (const g of groups) if (g) g.count = 0;
       const paint = tint >= 0 || repaint;
+      let sickPainted = false;
       for (let k = 0; k < count; k++) {
         const o = k * FRAME.CREATURE_STRIDE;
         const species = view[o + 5] | 0;
@@ -171,13 +172,21 @@ export function createCreatureMeshes(scene, cap) {
         if (!g) continue;
         const scale = g.rig.scale * (view[o + 7] === 0 ? JUVENILE_SCALE : 1) * (view[o + 4] || 1);
         const swing = Math.sin(time * 9 + k) * Math.min(0.5, (speeds?.[k] ?? 0) * 0.12);
+        const flags = view[o + FRAME.STATE] | 0;
+        const isSickFlag = (flags & FRAME.C_SICK) !== 0;
+        const isTamedFlag = (flags & FRAME.C_TAMED) !== 0;
         const i = g.count++;
-        if (paint) {
-          if (tint < 0) tintColour.setRGB(1, 1, 1);
+        if (paint || isSickFlag || isTamedFlag) {
+          if (tint < 0) {
+            tintColour.setRGB(1, 1, 1);
+            if (isSickFlag) tintColour.lerp(SICK, 0.55);
+            else if (isTamedFlag) tintColour.setRGB(1.08, 0.96, 0.72);
+            sickPainted = true;
+          }
           else if (tint < 5) tintColour.copy(TINT_LOW).lerp(TINT_HIGH, Math.max(0, Math.min(1, view[o + FRAME.TRAIT_OFFSET + tint])));
           else if (tint === LENS.HUNGER) tintColour.copy(FED).lerp(STARVING, Math.max(0, Math.min(1, view[o + FRAME.HUNGER])));
           else if (tint === LENS.HEALTH) {
-            if ((view[o + FRAME.STATE] | 0) & FRAME.C_SICK) tintColour.copy(SICK);
+            if (isSickFlag) tintColour.copy(SICK);
             else tintColour.copy(DYING).lerp(HEALTHY, Math.max(0, Math.min(1, view[o + FRAME.HEALTH])));
           } else if (tint === LENS.THERMAL) thermal((BODY_HEAT[species] ?? 0.4) + Math.min(0.55, (speeds?.[k] ?? 0) * 0.11));
           else {
@@ -187,7 +196,7 @@ export function createCreatureMeshes(scene, cap) {
           }
           for (const part of g.parts) part.mesh.setColorAt(i, tintColour);
         }
-        let pitch = 0; let roll = 0;
+        let pitch = isSickFlag ? 0.14 : 0; let roll = 0;
         const feet = g.rig.feet;
         if (feet && heightAt) {
           const x = view[o]; const y = view[o + 1]; const z = view[o + 2];
@@ -220,7 +229,7 @@ export function createCreatureMeshes(scene, cap) {
         if (!g) continue;
         for (const part of g.parts) {
           part.mesh.count = g.count; part.mesh.instanceMatrix.needsUpdate = true;
-          if (paint && part.mesh.instanceColor) part.mesh.instanceColor.needsUpdate = true;
+          if ((paint || sickPainted) && part.mesh.instanceColor) part.mesh.instanceColor.needsUpdate = true;
         }
       }
       if (tint < 0) repaint = false;

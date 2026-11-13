@@ -110,6 +110,7 @@ export function attachInput(opts) {
             on(pad, 'pointerdown', e => {
                 pointer = e.pointerId;
                 state.touch.used = true;
+                pad.dataset.pressed = 'true';
                 try { pad.setPointerCapture(e.pointerId); } catch { /* old browsers */ }
                 move(e);
                 e.preventDefault();
@@ -119,6 +120,7 @@ export function attachInput(opts) {
                 if (e.pointerId !== pointer) return;
                 pointer = null;
                 state.touch.steer = 0;
+                pad.dataset.pressed = 'false';
                 pad.style.setProperty('--pocabinet-steer', '0');
             };
             on(pad, 'pointerup', release);

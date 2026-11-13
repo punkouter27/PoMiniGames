@@ -85,6 +85,11 @@ export function createTrails(size) {
     /** The WEAR grid (width × width floats, 0..1) — the minimap's traffic layer reads it. */
     get wear() { return wear; },
     get width() { return W; },
+    /** Stamp an individual traffic weight (used by active tribal caravans for road wear #15). */
+    stampPoint(x, z, weight, dt) {
+      if (dt <= 0) return;
+      stampAt(x, z, weight, dt);
+    },
     /**
      * Per rendered frame. `rows` is the renderer's interpolated creature buffer; `speeds`
      * its per-row ground speed (m/s).

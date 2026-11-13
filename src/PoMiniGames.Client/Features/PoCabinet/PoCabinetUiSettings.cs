@@ -28,10 +28,17 @@ public sealed class PoCabinetUiSettings
     public string SteeringAssist { get; set; } = "light";
     public bool AutoBrake { get; set; }
     /// <summary>
-    /// The scanned tracks (the bedroom, the court): "splat" draws the Gaussian-splat scan (a 9.6 MB
-    /// download, heavier on phones), "mesh" the lite mesh it collides with. JS key <c>roomDetail</c>.
+    /// The scanned tracks (the bedroom, the court): "splat" draws the full Gaussian-splat scan (a
+    /// 9.6 MB download, heavier on phones), "mesh" the lite mesh it collides with, and "auto" (the
+    /// default) the full scan on a desktop but only its light 2.4 MB version on a phone, a slow
+    /// link or a data-saving browser (models.js <c>roomPlan</c>). JS key <c>roomDetail</c>.
     /// </summary>
-    public string RoomDetail { get; set; } = "splat";
+    public string RoomDetail { get; set; } = "auto";
+    /// <summary>
+    /// Opt-in hardware compute &amp; UI shader backend: "auto" (WebGPU WGSL when available with
+    /// WebGL2 fallback), "webgpu", or "webgl" (force WebGL2 path). JS key <c>gpuCompute</c>.
+    /// </summary>
+    public string GpuCompute { get; set; } = "auto";
 
     /// <summary>Parse the stored JSON; defaults for anything missing or out of range, unknown keys ignored.</summary>
     public static PoCabinetUiSettings FromJson(string? json)
@@ -46,7 +53,8 @@ public sealed class PoCabinetUiSettings
         s.TouchControls = OneOf(s.TouchControls, d.TouchControls, "auto", "on", "off");
         s.SteerMode = OneOf(s.SteerMode, d.SteerMode, "pad", "tilt");
         s.SteeringAssist = OneOf(s.SteeringAssist, d.SteeringAssist, "off", "light", "strong");
-        s.RoomDetail = OneOf(s.RoomDetail, d.RoomDetail, "splat", "mesh");
+        s.RoomDetail = OneOf(s.RoomDetail, d.RoomDetail, "auto", "splat", "mesh");
+        s.GpuCompute = OneOf(s.GpuCompute, d.GpuCompute, "auto", "webgpu", "webgl");
         s.HudScale = Clamp(s.HudScale, 0.8, 1.3, d.HudScale);
         s.SteerSensitivity = Clamp(s.SteerSensitivity, 0.5, 1.5, d.SteerSensitivity);
         return s;

@@ -158,7 +158,7 @@ class VfxMethods {
     if (swinging) {
       // fistR is unregistered when the right arm is torn off (see _severArm),
       // which can happen mid-swing — there's nothing left to trail.
-      const joint = f.rig.joints[f.state === 'kick' ? 'footR' : 'fistR'];
+      const joint = f.rig.joints[f.state === 'kick' ? 'footR' : f.strike === 'punchL' ? 'fistL' : 'fistR'];
       if (!joint) { t.points.length = 0; t.mesh.visible = false; return; }
       joint.getWorldPosition(_trailPos);
       // Per-point limb speed widens and brightens the ribbon (see below).

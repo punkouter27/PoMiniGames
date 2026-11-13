@@ -39,14 +39,16 @@ import * as THREE from 'three';
 import { wrapAngle } from './track.js';
 import { throwChunks } from './debris.js';
 import { noise } from './materials.js';
-import { GRIP_ACCEL, CAR_RADIUS, hullContact, wallAt, surfaceAt, SURF_GRASS, SURF_GRAVEL, SURF_SAUSAGE } from './physics.js';
+import { GpuParticleStepper } from './gpucompute.js';
+import { GRIP_ACCEL, CAR_RADIUS, hullContact, wallAt, surfaceAt, SURF_ROAD, SURF_GRASS, SURF_GRAVEL, SURF_SAUSAGE } from './physics.js';
 import { WORLD_SCALE as WS } from './util.js';
 
 const MAX_SMOKE = 4096;         // the high tier's two puffs per request at a 100-car start
 const SMOKE_RANGE = 180;        // world units from the camera: further off, a wreck's smoke is not drawn
 const PUFF_RANGE = 250;         // and no puff of any kind is emitted
-const MAX_SPARKS = 360;
+const MAX_SPARKS = 1200;
 const MAX_SKID = 2600;          // quads in the skid-mark ring buffer
+const MAX_DECALS = 1800;        // quads in the dynamic wear decal ring buffer (paint transfer, mud, oil/scorch)
 const SKID_W = 0.14;            // half tyre width, world units
 const SKID_Y = 0.055;
 const REAR = 1.2, TRACK_HALF = 0.72;
@@ -64,40 +66,70 @@ const KIND = [
     { n: 2, life: 1.5, size: 1.2, alpha: 0.75, spread: 0.3 },     // wreck smoke
 ];
 
-const POINT_VERT = /* glsl */ `
+const QUAD_VERT = /* glsl */ `
+attribute vec3 aPos;
+attribute vec3 aVel;
 attribute float aSize;
 attribute float aAlpha;
 attribute vec3 aColor;
 attribute float aSeed;
-uniform float uScale;
+attribute float aFloor;
+uniform float uStretch;
+varying vec2 vUv;
 varying float vAlpha;
 varying vec3 vColor;
 varying float vSeed;
+varying float vGroundGap;
 void main() {
+    vUv = uv;
     vColor = aColor;
     vSeed = aSeed;
-    vec4 mv = modelViewMatrix * vec4(position, 1.0);
+    if (aAlpha <= 0.002 || aSize <= 0.001) {
+        vAlpha = 0.0;
+        gl_Position = vec4(2.0, 2.0, 2.0, 1.0);
+        return;
+    }
+    vec4 mv = viewMatrix * vec4(aPos, 1.0);
     // Fade out right at the lens: a puff beside the cockpit would otherwise fill the screen.
     vAlpha = aAlpha * smoothstep(1.2, 4.5, -mv.z);
-    gl_PointSize = aAlpha > 0.0 ? aSize * uScale / max(-mv.z, 0.1) : 0.0;
+    vGroundGap = max(0.0, aPos.y - aFloor) / max(0.3, aSize * 0.48);
+
+    vec2 rightV = vec2(1.0, 0.0);
+    vec2 upV = vec2(0.0, 1.0);
+    float wx = aSize;
+    float hy = aSize;
+    if (uStretch > 0.0) {
+        vec3 vv = mat3(viewMatrix) * aVel;
+        float sp2 = dot(vv.xy, vv.xy);
+        float lenScale = clamp(length(vv) * uStretch, 1.0, 7.5);
+        if (sp2 > 0.02) {
+            upV = normalize(vv.xy);
+            rightV = vec2(-upV.y, upV.x);
+        }
+        wx = aSize * 0.42;
+        hy = aSize * lenScale;
+    }
+    vec3 offsetV = vec3(rightV * (position.x * wx) + upV * (position.y * hy), 0.0);
+    mv.xyz += offsetV;
     gl_Position = projectionMatrix * mv;
 }`;
 
 // A puff (vSeed >= 0): a soft ball whose edge and density the noise texture breaks up, a
-// different patch of it per particle, turning as it fades, lit from above. A solid bit
-// (vSeed < 0: stones, flakes, confetti) stays a plain soft dot.
+// different patch of it per particle, turning as it fades, lit from above, plus soft floor contact.
 const SMOKE_FRAG = /* glsl */ `
 uniform sampler2D uNoise;
+varying vec2 vUv;
 varying float vAlpha;
 varying vec3 vColor;
 varying float vSeed;
+varying float vGroundGap;
 void main() {
-    vec2 c = gl_PointCoord - 0.5;
+    vec2 c = vUv - 0.5;
     float d = length(c);
     float a, lit;
     if (vSeed < 0.0) {
         a = smoothstep(0.5, 0.05, d);
-        lit = 0.85 + 0.25 * (0.5 - c.y);
+        lit = 0.85 + 0.25 * (0.5 - vUv.y);
     } else {
         float ang = vSeed * 6.2831853 + vAlpha * 1.5;
         vec2 q = mat2(cos(ang), -sin(ang), sin(ang), cos(ang)) * c;
@@ -105,7 +137,9 @@ void main() {
         vec4 m = texture2D(uNoise, q * 1.3 + vSeed * vec2(5.13, 23.7));
         float edge = 0.5 - 0.2 * (1.0 - n.r);
         a = smoothstep(edge, edge * 0.15, d) * (0.6 + 0.8 * n.g * (0.5 + m.a));
-        lit = 0.78 + 0.32 * (0.5 - c.y) + 0.18 * (m.b - 0.5);
+        // Soft analytical ground intersection fade (#17) — zero depth feedback loop.
+        a *= mix(0.32, 1.0, smoothstep(0.0, 0.75, vGroundGap));
+        lit = 0.78 + 0.32 * (0.5 - vUv.y) + 0.18 * (m.b - 0.5);
     }
     a *= vAlpha;
     if (a < 0.004) discard;
@@ -114,19 +148,20 @@ void main() {
 }`;
 
 const SPARK_FRAG = /* glsl */ `
+varying vec2 vUv;
 varying float vAlpha;
 varying vec3 vColor;
 void main() {
-    float d = length(gl_PointCoord - 0.5);
-    float a = smoothstep(0.5, 0.0, d);
-    a = a * a * vAlpha;
+    vec2 c = (vUv - 0.5) * 2.0;
+    float core = smoothstep(1.0, 0.0, length(vec2(c.x * 1.35, c.y * 0.78)));
+    float a = core * core * vAlpha;
     if (a < 0.004) discard;
-    gl_FragColor = vec4(vColor * (1.0 + 2.0 * a), a);
+    gl_FragColor = vec4(vColor * (1.35 + 2.6 * core), a);
     #include <colorspace_fragment>
 }`;
 
 class Pool {
-    constructor(max, frag, blending) {
+    constructor(max, frag, blending, stretch = 0) {
         this.max = max;
         this.pos = new Float32Array(max * 3);
         this.vel = new Float32Array(max * 3);
@@ -142,27 +177,53 @@ class Pool {
         this.grav = new Float32Array(max);
         this.floor = new Float32Array(max);
         this.seed = new Float32Array(max).fill(-1);
+        this.slotEpoch = new Uint32Array(max);
+        this.gpu = null;
         this.next = 0;
         this.live = 0;
         this.spawned = false;
-        const geom = new THREE.BufferGeometry();
-        geom.setAttribute('position', new THREE.BufferAttribute(this.pos, 3).setUsage(THREE.DynamicDrawUsage));
-        geom.setAttribute('aSize', new THREE.BufferAttribute(this.size, 1).setUsage(THREE.DynamicDrawUsage));
-        geom.setAttribute('aAlpha', new THREE.BufferAttribute(this.alpha, 1).setUsage(THREE.DynamicDrawUsage));
-        geom.setAttribute('aColor', new THREE.BufferAttribute(this.color, 3).setUsage(THREE.DynamicDrawUsage));
-        geom.setAttribute('aSeed', new THREE.BufferAttribute(this.seed, 1).setUsage(THREE.DynamicDrawUsage));
+        const base = new THREE.PlaneGeometry(1, 1);
+        const geom = new THREE.InstancedBufferGeometry();
+        geom.index = base.index;
+        geom.attributes.position = base.attributes.position;
+        geom.attributes.uv = base.attributes.uv;
+        base.dispose();
+        geom.instanceCount = max;
+        geom.setAttribute('aPos', new THREE.InstancedBufferAttribute(this.pos, 3).setUsage(THREE.DynamicDrawUsage));
+        geom.setAttribute('aVel', new THREE.InstancedBufferAttribute(this.vel, 3).setUsage(THREE.DynamicDrawUsage));
+        geom.setAttribute('aSize', new THREE.InstancedBufferAttribute(this.size, 1).setUsage(THREE.DynamicDrawUsage));
+        geom.setAttribute('aAlpha', new THREE.InstancedBufferAttribute(this.alpha, 1).setUsage(THREE.DynamicDrawUsage));
+        geom.setAttribute('aColor', new THREE.InstancedBufferAttribute(this.color, 3).setUsage(THREE.DynamicDrawUsage));
+        geom.setAttribute('aSeed', new THREE.InstancedBufferAttribute(this.seed, 1).setUsage(THREE.DynamicDrawUsage));
+        geom.setAttribute('aFloor', new THREE.InstancedBufferAttribute(this.floor, 1).setUsage(THREE.DynamicDrawUsage));
         this.material = new THREE.ShaderMaterial({
-            vertexShader: POINT_VERT,
+            vertexShader: QUAD_VERT,
             fragmentShader: frag,
-            uniforms: { uScale: { value: 400 }, uNoise: { value: noise() } },
+            uniforms: { uNoise: { value: noise() }, uStretch: { value: stretch } },
             transparent: true,
             depthWrite: false,
+            depthTest: true,
             blending,
         });
-        this.points = new THREE.Points(geom, this.material);
-        this.points.frustumCulled = false;
-        this.points.renderOrder = 5;
+        this.mesh = new THREE.Mesh(geom, this.material);
+        this.points = this.mesh;
+        this.mesh.frustumCulled = false;
+        this.mesh.renderOrder = 5;
         this.geom = geom;
+    }
+
+    syncAttributes() {
+        const a = this.geom.attributes;
+        a.aPos.needsUpdate = true;
+        a.aVel.needsUpdate = true;
+        a.aSize.needsUpdate = true;
+        a.aAlpha.needsUpdate = true;
+        if (this.spawned) {
+            a.aColor.needsUpdate = true;
+            a.aSeed.needsUpdate = true;
+            a.aFloor.needsUpdate = true;
+            this.spawned = false;
+        }
     }
 
     /**
@@ -173,6 +234,7 @@ class Pool {
         const i = this.next;
         this.floor[i] = floor + 0.02;
         this.seed[i] = seed;
+        this.slotEpoch[i]++;
         this.spawned = true;
         this.next = (this.next + 1) % this.max;
         const k = i * 3;
@@ -184,8 +246,14 @@ class Pool {
         this.drag[i] = drag; this.grav[i] = grav;
     }
 
-    step(dt) {
+    step(dt, useGpu = false) {
         if (!this.live && !this.spawned) return;
+        if (useGpu) {
+            if (!this.gpu) this.gpu = new GpuParticleStepper(this.max);
+            const applied = this.gpu.consumeLatest(this);
+            const dispatched = this.gpu.dispatch(this, dt);
+            if (applied && dispatched) return;
+        }
         let live = 0;
         for (let i = 0; i < this.max; i++) {
             if (this.life[i] <= 0) { this.alpha[i] = 0; continue; }
@@ -202,15 +270,11 @@ class Pool {
             this.alpha[i] = this.a0[i] * (f < 0.12 ? f / 0.12 : 1 - (f - 0.12) / 0.88);
         }
         this.live = live;
-        const a = this.geom.attributes;
-        a.position.needsUpdate = true;
-        a.aSize.needsUpdate = true;
-        a.aAlpha.needsUpdate = true;
-        if (this.spawned) { a.aColor.needsUpdate = true; a.aSeed.needsUpdate = true; }
-        this.spawned = false;
+        this.syncAttributes();
     }
 
     dispose() {
+        this.gpu?.dispose();
         this.geom.dispose();
         this.material.dispose();
     }
@@ -219,19 +283,43 @@ class Pool {
 class SkidMarks {
     constructor() {
         this.pos = new Float32Array(MAX_SKID * 4 * 3);
+        const uv = new Float32Array(MAX_SKID * 4 * 2);
         const idx = new Uint32Array(MAX_SKID * 6);
         for (let q = 0; q < MAX_SKID; q++) {
-            const v = q * 4, k = q * 6;
+            const v = q * 4, k = q * 6, u = q * 8;
+            uv[u] = 0; uv[u + 1] = 0;
+            uv[u + 2] = 1; uv[u + 3] = 0;
+            uv[u + 4] = 0; uv[u + 5] = 1;
+            uv[u + 6] = 1; uv[u + 7] = 1;
             idx[k] = v; idx[k + 1] = v + 1; idx[k + 2] = v + 2;
             idx[k + 3] = v + 1; idx[k + 4] = v + 3; idx[k + 5] = v + 2;
         }
         this.geom = new THREE.BufferGeometry();
         this.attr = new THREE.BufferAttribute(this.pos, 3).setUsage(THREE.DynamicDrawUsage);
         this.geom.setAttribute('position', this.attr);
+        this.geom.setAttribute('uv', new THREE.BufferAttribute(uv, 2));
         this.geom.setIndex(new THREE.BufferAttribute(idx, 1));
         this.geom.setDrawRange(0, 0);
-        this.material = new THREE.MeshBasicMaterial({
-            color: 0x0b0b0b, transparent: true, opacity: 0.5, depthWrite: false,
+        this.material = new THREE.ShaderMaterial({
+            uniforms: { uOpacity: { value: 0.54 } },
+            vertexShader: /* glsl */ `
+                varying float vU;
+                void main() {
+                    vU = uv.x;
+                    gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
+                }`,
+            fragmentShader: /* glsl */ `
+                uniform float uOpacity;
+                varying float vU;
+                void main() {
+                    float edge = smoothstep(0.0, 0.24, vU) * smoothstep(1.0, 0.76, vU);
+                    float groove = 0.78 + 0.22 * cos((vU - 0.5) * 12.566);
+                    float a = uOpacity * edge * groove;
+                    if (a < 0.005) discard;
+                    gl_FragColor = vec4(0.015, 0.015, 0.018, a);
+                    #include <colorspace_fragment>
+                }`,
+            transparent: true, depthWrite: false,
             polygonOffset: true, polygonOffsetFactor: -2, polygonOffsetUnits: -4, side: THREE.DoubleSide,
         });
         this.mesh = new THREE.Mesh(this.geom, this.material);
@@ -274,22 +362,192 @@ class SkidMarks {
         this.dirtyFrom = this.dirtyTo = -1;
     }
 
+    snapshot() {
+        return this.count > 0 ? {
+            pos: this.pos.slice(0, this.count * 12),
+            count: this.count,
+            next: this.next,
+        } : null;
+    }
+
+    restore(snap) {
+        if (!snap?.count || !snap.pos) return;
+        const n = Math.min(MAX_SKID, snap.count);
+        this.pos.set(snap.pos.subarray(0, n * 12));
+        this.count = n;
+        this.next = snap.next % MAX_SKID;
+        this.dirtyFrom = 0;
+        this.dirtyTo = n - 1;
+        this.flush();
+    }
+
     dispose() {
         this.geom.dispose();
         this.material.dispose();
     }
 }
 
+/**
+ * Dynamic wear decal ring buffer (#2):
+ * - Barrier paint-transfer scrapes (colored by the car's livery along vertical wall faces)
+ * - Wreck oil/carbon scorch pools on tarmac
+ * - Gravel/mud tyre tracks dragged onto road surfaces after leaving run-off traps
+ */
+class WearDecals {
+    constructor() {
+        this.pos = new Float32Array(MAX_DECALS * 4 * 3);
+        this.col = new Float32Array(MAX_DECALS * 4 * 4);
+        const idx = new Uint32Array(MAX_DECALS * 6);
+        for (let q = 0; q < MAX_DECALS; q++) {
+            const v = q * 4, k = q * 6;
+            idx[k] = v; idx[k + 1] = v + 1; idx[k + 2] = v + 2;
+            idx[k + 3] = v + 1; idx[k + 4] = v + 3; idx[k + 5] = v + 2;
+        }
+        this.geom = new THREE.BufferGeometry();
+        this.posAttr = new THREE.BufferAttribute(this.pos, 3).setUsage(THREE.DynamicDrawUsage);
+        this.colAttr = new THREE.BufferAttribute(this.col, 4).setUsage(THREE.DynamicDrawUsage);
+        this.geom.setAttribute('position', this.posAttr);
+        this.geom.setAttribute('color', this.colAttr);
+        this.geom.setIndex(new THREE.BufferAttribute(idx, 1));
+        this.geom.setDrawRange(0, 0);
+        this.material = new THREE.MeshBasicMaterial({
+            vertexColors: true, transparent: true, depthWrite: false,
+            polygonOffset: true, polygonOffsetFactor: -3, polygonOffsetUnits: -6, side: THREE.DoubleSide,
+        });
+        this.mesh = new THREE.Mesh(this.geom, this.material);
+        this.mesh.frustumCulled = false;
+        this.mesh.renderOrder = 2;
+        this.next = 0;
+        this.count = 0;
+        this.dirtyFrom = -1;
+        this.dirtyTo = -1;
+        this._c = new THREE.Color();
+    }
+
+    pushQuad(x0, y0, z0, x1, y1, z1, x2, y2, z2, x3, y3, z3, r, g, b, a) {
+        const q = this.next;
+        const kp = q * 12, kc = q * 16;
+        const p = this.pos, c = this.col;
+        p[kp] = x0; p[kp + 1] = y0; p[kp + 2] = z0;
+        p[kp + 3] = x1; p[kp + 4] = y1; p[kp + 5] = z1;
+        p[kp + 6] = x2; p[kp + 7] = y2; p[kp + 8] = z2;
+        p[kp + 9] = x3; p[kp + 10] = y3; p[kp + 11] = z3;
+        for (let i = 0; i < 4; i++) {
+            const ci = kc + i * 4;
+            c[ci] = r; c[ci + 1] = g; c[ci + 2] = b; c[ci + 3] = a;
+        }
+        if (this.dirtyFrom < 0) { this.dirtyFrom = q; this.dirtyTo = q; }
+        else { this.dirtyFrom = Math.min(this.dirtyFrom, q); this.dirtyTo = Math.max(this.dirtyTo, q); }
+        this.next = (q + 1) % MAX_DECALS;
+        this.count = Math.min(MAX_DECALS, this.count + 1);
+    }
+
+    /** Horizontal road decal from (ax,az)->(bx,bz) at ground height `y`, width `w`, RGBA. */
+    addStrip(ax, az, bx, bz, y, w, r, g, b, a) {
+        const dx = bx - ax, dz = bz - az;
+        const len = Math.hypot(dx, dz);
+        if (len < 1e-4) return;
+        const nx = -dz / len * w, nz = dx / len * w;
+        const py = y + SKID_Y + 0.008;
+        this.pushQuad(
+            ax - nx, py, az - nz,
+            ax + nx, py, az + nz,
+            bx - nx, py, bz - nz,
+            bx + nx, py, bz + nz,
+            r, g, b, a
+        );
+    }
+
+    /** Vertical paint-transfer streak on a barrier facing (-nx, -nz), stretching along tangent. */
+    addWallPaint(x, y, z, nx, nz, tx, tz, len, h, hex, strength) {
+        this._c.set(hex || '#d0d0d0');
+        const offX = x - nx * 0.04, offZ = z - nz * 0.04;
+        const hl = len * 0.5, hh = h * 0.5;
+        const cy = y + 0.36;
+        this.pushQuad(
+            offX - tx * hl, cy - hh, offZ - tz * hl,
+            offX - tx * hl, cy + hh, offZ - tz * hl,
+            offX + tx * hl, cy - hh, offZ + tz * hl,
+            offX + tx * hl, cy + hh, offZ + tz * hl,
+            this._c.r, this._c.g, this._c.b, Math.min(0.85, 0.35 + strength * 0.5)
+        );
+    }
+
+    /** Oval carbon/oil scorch patch under a wreck or heavy blowout. */
+    addScorch(x, y, z, heading, radius = 1.15) {
+        const fx = Math.cos(heading) * radius * 1.4, fz = Math.sin(heading) * radius * 1.4;
+        const rx = -Math.sin(heading) * radius, rz = Math.cos(heading) * radius;
+        const py = y + SKID_Y + 0.012;
+        this.pushQuad(
+            x - fx - rx, py, z - fz - rz,
+            x - fx + rx, py, z - fz + rz,
+            x + fx - rx, py, z + fz - rz,
+            x + fx + rx, py, z + fz + rz,
+            0.03, 0.03, 0.04, 0.72
+        );
+    }
+
+    flush() {
+        if (this.dirtyFrom < 0) return;
+        const span = this.dirtyTo - this.dirtyFrom + 1;
+        if (typeof this.posAttr.addUpdateRange === 'function') {
+            this.posAttr.clearUpdateRanges?.();
+            this.posAttr.addUpdateRange(this.dirtyFrom * 12, span * 12);
+            this.colAttr.clearUpdateRanges?.();
+            this.colAttr.addUpdateRange(this.dirtyFrom * 16, span * 16);
+        }
+        this.posAttr.needsUpdate = true;
+        this.colAttr.needsUpdate = true;
+        this.geom.setDrawRange(0, this.count * 6);
+        this.dirtyFrom = this.dirtyTo = -1;
+    }
+
+    snapshot() {
+        return this.count > 0 ? {
+            pos: this.pos.slice(0, this.count * 12),
+            col: this.col.slice(0, this.count * 16),
+            count: this.count,
+            next: this.next,
+        } : null;
+    }
+
+    restore(snap) {
+        if (!snap?.count || !snap.pos || !snap.col) return;
+        const n = Math.min(MAX_DECALS, snap.count);
+        this.pos.set(snap.pos.subarray(0, n * 12));
+        this.col.set(snap.col.subarray(0, n * 16));
+        this.count = n;
+        this.next = snap.next % MAX_DECALS;
+        this.dirtyFrom = 0;
+        this.dirtyTo = n - 1;
+        this.flush();
+    }
+
+    dispose() {
+        this.geom.dispose();
+        this.material.dispose();
+    }
+}
+
+let trackWearCache = null;
+
+/** Clear accumulated skid/paint/scorch wear cache (called when switching campaign stages or leaving a track). */
+export function clearTrackWear(trackId = null) {
+    if (!trackWearCache) return;
+    if (!trackId || trackWearCache.trackId === trackId) trackWearCache = null;
+}
+
 class CarFx {
     /**
      * @param sceneHandle scene.js SceneHandle
      * @param track       runtime track (track.js)
-     * @param opts        { grip, groundHex } (race.js keeps `grip` current)
+     * @param opts        { grip, groundHex, persistWear } (race.js keeps `grip` current)
      */
     constructor(sceneHandle, track, opts = {}) {
         this.sh = sceneHandle;
         this.track = track;
         this.grip = Number(opts.grip) || 1;
+        this.persistWear = !!opts.persistWear;
         this.dust = new THREE.Color(opts.groundHex || '#6b6040').lerp(new THREE.Color('#c8b890'), 0.45);
         // Bedroom Floor GP: the toy track's run-off kicks up carpet fluff and lint, not dirt.
         if (track.theme === 'bedroom') this.dust = new THREE.Color('#e2ddd4');
@@ -297,15 +555,23 @@ class CarFx {
         this.beach = track.theme === 'maralago';
         this.stone = new THREE.Color(this.beach ? '#d9c79c' : '#8d8577');
         this.grit = new THREE.Color(this.beach ? '#efe2c2' : '#c9bba0');
-        this.smoke = new Pool(MAX_SMOKE, SMOKE_FRAG, THREE.NormalBlending);
-        this.sparks = new Pool(MAX_SPARKS, SPARK_FRAG, THREE.AdditiveBlending);
+        this.smoke = new Pool(MAX_SMOKE, SMOKE_FRAG, THREE.NormalBlending, 0);
+        this.sparks = new Pool(MAX_SPARKS, SPARK_FRAG, THREE.AdditiveBlending, 0.085);
         this.skids = new SkidMarks();
+        this.decals = new WearDecals();
+        if (this.persistWear && trackWearCache && trackWearCache.trackId === track.id) {
+            this.skids.restore(trackWearCache.skids);
+            this.decals.restore(trackWearCache.decals);
+        } else if (trackWearCache && trackWearCache.trackId !== track.id) {
+            trackWearCache = null;
+        }
         this.group = new THREE.Group();
         this.group.name = 'pocabinet-fx';
-        this.group.add(this.skids.mesh, this.smoke.points, this.sparks.points);
+        this.group.add(this.skids.mesh, this.decals.mesh, this.smoke.mesh, this.sparks.mesh);
         sceneHandle.scene.add(this.group);
         this.state = new Map();
         this.pairs = new Map();
+        this.lightPulses = [];
         this.size = new THREE.Vector2();
         this.disposed = false;
     }
@@ -346,7 +612,20 @@ class CarFx {
     }
 
     newState() {
-        return { h: null, x: 0, y: 0, up: 0, v: 0, lat: 0, hint: -1, skid: [null, null], launch: 0, launchStrength: 1, acc: 0, walled: false, wallAt: 0, off: null, out: 0, hl: null, sacc: 0, wreckT: 0, surf: 0, gacc: 0 };
+        return { h: null, x: 0, y: 0, up: 0, v: 0, lat: 0, hint: -1, skid: [null, null], mudPrev: [null, null], mud: 0, scorched: false, launch: 0, launchStrength: 1, acc: 0, walled: false, wallAt: 0, paintAt: 0, off: null, out: 0, hl: null, sacc: 0, wreckT: 0, surf: 0, gacc: 0 };
+    }
+
+    /** Stamp barrier paint transfer at world contact `(x,y,z)` along tangent `(tx,tz)`. */
+    paintTransfer(x, y, z, nx, nz, colorHex, strength = 0.6) {
+        if (this.disposed) return;
+        const tx = -nz, tz = nx;
+        this.decals.addWallPaint(x, y, z, nx, nz, tx, tz, 1.4 + strength * 1.8, 0.24 + strength * 0.22, colorHex, strength);
+    }
+
+    /** Stamp an oil/carbon scorch pool beneath a wrecked or damaged car. */
+    scorchMark(x, y, z, heading) {
+        if (this.disposed) return;
+        this.decals.addScorch(x, y, z, heading);
     }
 
     /** A flame out of the tail of car `id` (its last pose), `strength` 0..1. */
@@ -532,6 +811,27 @@ class CarFx {
                     this.puff(PUFF.SPRAY, wx, up + 0.2, wz, vx * 0.35 + (rnd() - 0.5), 0.6 + rnd() * 0.5, vz * 0.35 + (rnd() - 0.5),
                         0.55, 0.6, 2.6, 0.11, 0.8, 0.84, 0.88, 2.2, 0.4, up);
                 }
+                // Gravel/mud tyre tracks dragged onto the tarmac (#2).
+                if (onGrass || onGravel) {
+                    s.mud = Math.min(1, s.mud + dt * 2.8);
+                    s.mudPrev[w] = [wx, wz];
+                } else if (skidsOn && s.mud > 0.06 && surface === SURF_ROAD) {
+                    const mprev = s.mudPrev[w];
+                    if (mprev) {
+                        const d2 = (wx - mprev[0]) ** 2 + (wz - mprev[1]) ** 2;
+                        if (d2 > 0.4 * 0.4) {
+                            if (d2 < 9) {
+                                const mc = this.beach ? this.stone : this.dust;
+                                this.decals.addStrip(mprev[0], mprev[1], wx, wz, up, 0.14, mc.r * 0.55, mc.g * 0.52, mc.b * 0.48, s.mud * 0.48);
+                            }
+                            s.mudPrev[w] = [wx, wz];
+                        }
+                    } else {
+                        s.mudPrev[w] = [wx, wz];
+                    }
+                } else {
+                    s.mudPrev[w] = null;
+                }
                 // Skid marks.
                 if (skidsOn && slip > 0.45 && !onGrass && !onGravel) {
                     const prev = s.skid[w];
@@ -547,6 +847,13 @@ class CarFx {
                 } else {
                     s.skid[w] = null;
                 }
+            }
+            if (!onGrass && !onGravel && s.mud > 0) s.mud = Math.max(0, s.mud - dt * (0.28 + v * 0.004));
+            // High-tier aerodynamic draft wake wisps at high speed (#3).
+            if (this.sh.quality === 'high' && v > 105 && !this.raining && rnd() < dt * 8) {
+                this.puff(PUFF.SPRAY, x - fx * 1.9, up + 0.55, z - fz * 1.9,
+                    vx * 0.25 + (rnd() - 0.5) * 0.5, 0.25 + rnd() * 0.35, vz * 0.25 + (rnd() - 0.5) * 0.5,
+                    0.28, 0.35, 1.35, 0.05, 0.85, 0.88, 0.92, 3.0, 0.1, up);
             }
 
             // How fast the car was closing on the barrier and which way it pointed, both trailing
@@ -572,16 +879,25 @@ class CarFx {
                     this.spark(px, up + 0.35, pz, -vx * 0.5 + (rnd() - 0.5) * 4 - nx * 2, 1.5 + rnd() * 3.5, -vz * 0.5 + (rnd() - 0.5) * 4 - nz * 2);
                 }
                 events.scraping.set(c.id, Math.min(1, v / 100));
-                // First touch of a stint along the wall is the hit; riding it is only the scrape.
                 const now = performance.now();
+                // Barrier paint transfer streaks along contact face (#2).
+                if (skidsOn && c.color && now - s.paintAt > 120) {
+                    s.paintAt = now;
+                    this.paintTransfer(px, up, pz, nx, nz, c.color, Math.min(1, 0.3 + v / 110));
+                }
+                // First touch of a stint along the wall is the hit; riding it is only the scrape.
                 if (!s.walled && now - s.wallAt > 500) {
                     s.wallAt = now;
                     // Strength is the speed INTO the wall (a glancing scrape at full speed is a
                     // scuff, a square hit at half of it is a wreck), and the hit lands on the
                     // part of the body that was facing the wall as the car went in.
                     const ahead = nx * Math.cos(hl) + nz * Math.sin(hl), across = nz * Math.cos(hl) - nx * Math.sin(hl);
+                    const strength = Math.min(1, Math.max(0, out) / 55);
+                    if (strength > 0.25) {
+                        this.pushLight(px, up + 0.65, pz, 1.0, 0.72, 0.25, 1.2 + strength * 2.4, 10, 0.16);
+                    }
                     events.walls.push({
-                        id: c.id, strength: Math.min(1, Math.max(0, out) / 55),
+                        id: c.id, strength,
                         x: x + fx * ahead * 1.9 + rx * across * 0.83, z: z + fz * ahead * 1.9 + rz * across * 0.83,
                     });
                 }
@@ -591,7 +907,13 @@ class CarFx {
             // Damage: a hurt engine smokes out of the bonnet, grey and then black as it goes; a
             // wreck pours black smoke and burns for a while, then smoulders.
             const engine = c.wrecked ? 1 : Math.max(0, ((Number(c.engine) || 0) - 0.4) / 0.6);
-            if (c.wrecked) s.wreckT += dt;
+            if (c.wrecked) {
+                s.wreckT += dt;
+                if (skidsOn && !s.scorched) {
+                    s.scorched = true;
+                    this.scorchMark(x, up, z, c.heading);
+                }
+            }
             const cam = this.sh.camera?.position;
             const inRange = !cam || (x - cam.x) ** 2 + (z - cam.z) ** 2 < SMOKE_RANGE * SMOKE_RANGE;
             if (engine > 0 && inRange) {
@@ -612,6 +934,9 @@ class CarFx {
                     this.sparks.spawn(bx + (rnd() - 0.5) * 0.6, up + 0.6 + rnd() * 0.2, bz + (rnd() - 0.5) * 0.6,
                         (rnd() - 0.5) * 0.8, 1.5 + rnd() * 1.8, (rnd() - 0.5) * 0.8,
                         0.3 + rnd() * 0.35, 0.7 + rnd() * 0.5, 0.2, 1, 1, 0.35 + k * 0.4, 0.06, 2, -2.5, up);
+                }
+                if (burning && rnd() < dt * 12) {
+                    this.pushLight(bx, up + 0.9, bz, 1.0, 0.42 + rnd() * 0.18, 0.08, 2.2, 9.5, 0.16);
                 }
             }
         }
@@ -635,6 +960,7 @@ class CarFx {
                 for (let k = 0; k < n; k++) {
                     this.spark(mx, up + 0.45, mz, (rnd() - 0.5) * 6, 1 + rnd() * 3, (rnd() - 0.5) * 6);
                 }
+                if (rel > 12) this.pushLight(mx, up + 0.75, mz, 1.0, 0.62, 0.22, Math.min(3.5, 0.9 + rel / 22), 11, 0.18);
                 const key = a.id < b.id ? `${a.id}:${b.id}` : `${b.id}:${a.id}`;
                 if (now - (this.pairs.get(key) || 0) > 350) {
                     this.pairs.set(key, now);
@@ -643,11 +969,64 @@ class CarFx {
             }
         }
 
-        this.smoke.step(dt);
-        this.sparks.step(dt);
+        for (let i = this.lightPulses.length - 1; i >= 0; i--) {
+            this.lightPulses[i].life -= dt;
+            if (this.lightPulses[i].life <= 0) this.lightPulses.splice(i, 1);
+        }
+
+        const useGpu = this.sh.quality === 'high';
+        this.smoke.step(dt, useGpu);
+        this.sparks.step(dt, useGpu);
         this.skids.flush();
-        this.updateScale();
+        this.decals.flush();
         return events;
+    }
+
+    pushLight(x, y, z, r, g, b, intensity, radius, life) {
+        for (let i = 0; i < this.lightPulses.length; i++) {
+            const p = this.lightPulses[i];
+            if ((p.x - x) ** 2 + (p.z - z) ** 2 < 4) {
+                p.x = (p.x + x) * 0.5; p.y = (p.y + y) * 0.5; p.z = (p.z + z) * 0.5;
+                p.intensity = Math.max(p.intensity, intensity);
+                p.life = Math.max(p.life, life);
+                p.maxLife = Math.max(p.maxLife, life);
+                return;
+            }
+        }
+        if (this.lightPulses.length >= 16) this.lightPulses.shift();
+        this.lightPulses.push({ x, y, z, r, g, b, intensity, radius, life, maxLife: life });
+    }
+
+    /** Gather up to `max` nearest dynamic lights (spark flashes + active car lights) for PostFx. */
+    collectLights(cars, out = [], camPos = this.sh.camera?.position, max = 12) {
+        out.length = 0;
+        for (let i = 0; i < this.lightPulses.length; i++) {
+            const p = this.lightPulses[i];
+            const fade = Math.max(0, p.life / p.maxLife);
+            const dist2 = camPos ? (p.x - camPos.x) ** 2 + (p.z - camPos.z) ** 2 : 0;
+            out.push({ x: p.x, y: p.y, z: p.z, r: p.r * p.intensity * fade, g: p.g * p.intensity * fade, b: p.b * p.intensity * fade, radius: p.radius, dx: 0, dy: -1, dz: 0, spot: 0, dist2 });
+        }
+        if (cars?.length) {
+            for (let i = 0; i < cars.length; i++) {
+                const c = cars[i];
+                if (c.wrecked) continue;
+                const cx = c.x / WS, cz = c.y / WS, cy = (Number(c.h) || 0) + 0.55;
+                const dist2 = camPos ? (cx - camPos.x) ** 2 + (cz - camPos.z) ** 2 : 0;
+                if (dist2 > 85 * 85) continue;
+                const hx = Math.cos(c.heading), hz = Math.sin(c.heading);
+                if (c.braking) {
+                    out.push({ x: cx - hx * 1.9, y: cy, z: cz - hz * 1.9, r: 1.9, g: 0.14, b: 0.06, radius: 6.5, dx: -hx, dy: -0.1, dz: -hz, spot: 0.25, dist2 });
+                }
+                if (this.raining || this.sh.darkTrack) {
+                    out.push({ x: cx + hx * 2.0, y: cy, z: cz + hz * 2.0, r: 2.2, g: 2.05, b: 1.75, radius: 18.0, dx: hx, dy: -0.08, dz: hz, spot: 0.55, dist2: dist2 * 0.9 });
+                }
+            }
+        }
+        if (out.length > max) {
+            out.sort((a, b) => a.dist2 - b.dist2);
+            out.length = max;
+        }
+        return out;
     }
 
     spark(x, y, z, vx, vy, vz) {
@@ -656,21 +1035,21 @@ class CarFx {
             1.0, 0.55 + r * 0.3, 0.18 + r * 0.1, 0.6, 9.8);
     }
 
-    updateScale() {
-        const r = this.sh.renderer, cam = this.sh.camera;
-        r.getDrawingBufferSize(this.size);
-        const scale = this.size.y / (2 * Math.tan(THREE.MathUtils.degToRad(cam.fov) / 2));
-        this.smoke.material.uniforms.uScale.value = scale;
-        this.sparks.material.uniforms.uScale.value = scale;
-    }
+    updateScale() {}
 
     dispose() {
         if (this.disposed) return;
         this.disposed = true;
+        if (this.persistWear && this.track?.id) {
+            const skids = this.skids.snapshot();
+            const decals = this.decals.snapshot();
+            trackWearCache = (skids || decals) ? { trackId: this.track.id, skids, decals } : null;
+        }
         this.group.parent?.remove(this.group);
         this.smoke.dispose();
         this.sparks.dispose();
         this.skids.dispose();
+        this.decals.dispose();
         this.state.clear();
     }
 }

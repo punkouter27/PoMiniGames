@@ -22,8 +22,8 @@
 //   quiz        bright bell-tones, unambiguous right/wrong
 //   pomule      an Atari 800 sound chip — bare square waves, exact pitches, no jitter
 //
-// Two scopes have NO voices: pocabinet and pojevarena. Both synthesise their own sound
-// (Cabinet in its own world-space AudioContext, JevArena per creature in its audio.js),
+// One scope has NO voices: pocabinet. It synthesises its own sound
+// (Cabinet in its own world-space AudioContext),
 // so their cues carry only the feel — impact, hitstop, haptics — fired with the sound
 // that already plays. One table still describes every game's feel in one place.
 //
@@ -644,16 +644,6 @@ const CUES = {
         contact: { voices: [], feel: 'medium', scale: 0.8 },
         overtake: { voices: [], feel: 'select' },
         finish: { voices: [], feel: 'win', scale: 0.7 },
-    },
-
-    // ── PoJevArena — feel only (sound: pojevarena/audio.js) ────────────
-    // The arena already rings every hit and KO per creature. These add the weight: a
-    // big hit leans on the impact envelope the renderer shakes with (getPunch) and a
-    // knockout gets a hitstop. Small hits stay feel-free — a 20-unit melee would buzz.
-    pojevarena: {
-        hitBig: { voices: [], feel: 'light', scale: 0.8 },
-        boulder: { voices: [], feel: 'medium', scale: 0.7 },
-        ko: { voices: [], feel: 'medium' },
     },
 };
 

@@ -62,6 +62,16 @@ let world = null;              // the race (track, cars, scene, fx), from update
 let acc = 0;
 let kinds = null;              // the instanced meshes, built on the first throw
 let sparkBudget = 0;
+let clatterAt = 0;
+
+function emitClatter(b, strength) {
+    if (!world?.onClatter || strength < 0.08) return;
+    const now = performance.now();
+    if (now - clatterAt < 75 || (b.clatterAt && now - b.clatterAt < 140)) return;
+    clatterAt = b.clatterAt = now;
+    const mat = b.kind === GLASS ? 'glass_shard' : b.metal ? 'debris_metal' : 'bedroom_plastic';
+    world.onClatter(mat, Math.min(1, strength), b.p);
+}
 
 // ── Instanced kinds ─────────────────────────────────────────────────────
 
@@ -438,6 +448,7 @@ function stepBody(b, h) {
 
     // Sequential impulses: normal (accumulated, never pulling), then friction in the contact's plane.
     const v = b.v, w = b.w;
+    const impactSpeed = nc ? Math.abs(v.dot(n)) : 0;
     for (let it = 0; it < ITERATIONS && nc; it++) {
         for (let i = 0; i < nc; i++) {
             const c = C[i];
@@ -456,6 +467,9 @@ function stepBody(b, h) {
             d = jn - c.j2; c.j2 = jn;
             v.addScaledVector(c.t2, d); w.addScaledVector(c.i2, d);
         }
+    }
+    if (deepest > 0.008 && impactSpeed > 2.6) {
+        emitClatter(b, (impactSpeed - 2.2) / 10);
     }
 
     if (grounded) {
@@ -566,7 +580,69 @@ function kicks(dt) {
                 sparkBudget -= 1;
                 for (let k = 0; k < 3; k++) world.fx.spark(b.p.x, b.p.y + 0.05, b.p.z, b.v.x * 0.5 + (rnd() - 0.5) * 2, 0.6 + rnd() * 1.5, b.v.z * 0.5 + (rnd() - 0.5) * 2);
             }
+            emitClatter(b, Math.min(1, hard * 0.85));
             break;
+        }
+    }
+}
+
+const GRID_CELL = 0.9;
+const hashGrid = new Map();
+
+/** Spatial-hash debris-to-debris impulse resolution & acoustic clatter (#9). */
+function collidePieces() {
+    if (bodies.length < 2) return;
+    hashGrid.clear();
+    for (let i = 0; i < bodies.length; i++) {
+        const b = bodies[i];
+        if (b.sink >= 0) continue;
+        const cx = Math.floor(b.p.x / GRID_CELL);
+        const cz = Math.floor(b.p.z / GRID_CELL);
+        const key = (cx + 16384) * 32768 + (cz + 16384);
+        let bucket = hashGrid.get(key);
+        if (!bucket) { bucket = []; hashGrid.set(key, bucket); }
+        bucket.push(i);
+    }
+    for (const bucket of hashGrid.values()) {
+        for (const i of bucket) {
+            const a = bodies[i];
+            if (a.asleep || a.sink >= 0) continue;
+            const cx = Math.floor(a.p.x / GRID_CELL);
+            const cz = Math.floor(a.p.z / GRID_CELL);
+            for (let dz = -1; dz <= 1; dz++) {
+                for (let dx = -1; dx <= 1; dx++) {
+                    const nb = hashGrid.get((cx + dx + 16384) * 32768 + (cz + dz + 16384));
+                    if (!nb) continue;
+                    for (const j of nb) {
+                        if (j <= i) continue;
+                        const b = bodies[j];
+                        if (b.sink >= 0) continue;
+                        const rx = b.p.x - a.p.x, ry = b.p.y - a.p.y, rz = b.p.z - a.p.z;
+                        const rSum = (a.rad + b.rad) * 0.82;
+                        const d2 = rx * rx + ry * ry + rz * rz;
+                        if (d2 >= rSum * rSum || d2 < 1e-8) continue;
+                        const d = Math.sqrt(d2);
+                        const nx = rx / d, ny = ry / d, nz = rz / d;
+                        const rvx = a.v.x - b.v.x, rvy = a.v.y - b.v.y, rvz = a.v.z - b.v.z;
+                        const closing = rvx * nx + rvy * ny + rvz * nz;
+                        const pen = rSum - d;
+                        if (pen > SLOP) {
+                            const push = (pen - SLOP) * 0.5;
+                            a.p.x -= nx * push; a.p.y -= ny * push; a.p.z -= nz * push;
+                            b.p.x += nx * push; b.p.y += ny * push; b.p.z += nz * push;
+                        }
+                        if (closing <= 0.25) continue;
+                        const jn = 0.5 * (1 + Math.min(0.7, (a.e + b.e) * 0.5)) * closing;
+                        a.v.x -= nx * jn; a.v.y -= ny * jn; a.v.z -= nz * jn;
+                        b.v.x += nx * jn; b.v.y += ny * jn; b.v.z += nz * jn;
+                        const spinKick = Math.min(6, closing * 1.4);
+                        a.w.x += nz * spinKick; a.w.z -= nx * spinKick;
+                        b.w.x -= nz * spinKick; b.w.z += nx * spinKick;
+                        if (b.asleep && closing > 1.2) { b.asleep = false; b.still = 0; b.rest = 0; }
+                        if (closing > 2.2) emitClatter(a, Math.min(1, (closing - 1.5) / 10));
+                    }
+                }
+            }
         }
     }
 }
@@ -625,6 +701,7 @@ export function updateDebris(dt, race) {
         let steps = 0;
         while (acc >= STEP && steps < MAX_STEPS) {
             for (const b of bodies) if (!b.asleep && b.sink < 0) stepBody(b, STEP);
+            collidePieces();
             acc -= STEP;
             steps++;
         }

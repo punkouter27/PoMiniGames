@@ -12,7 +12,7 @@ namespace PoMiniGames.Integration.Features.PoCabinet;
 
 /// <summary>
 /// PoCabinet score round-trip against a real Azurite container: submitted through the full HTTP
-/// path, read back from storage (the app has no read endpoint: there is no Cabinet board). Four claims:
+/// path, read back from storage and from the unified leaderboard's per-track boards. Five claims:
 /// <list type="number">
 ///   <item>Only verified laps are stored: a bare claim with no input log is refused (422),
 ///         and a proof's stored time and place are the server's replay, whatever the claim says.</item>
@@ -22,6 +22,8 @@ namespace PoMiniGames.Integration.Features.PoCabinet;
 ///         Mar-a-Lago board.</item>
 ///   <item>ETag-update overwrite is ratcheting: a worse later lap does not erase a
 ///         better PB, and a faster lap does.</item>
+///   <item>The stored laps are what <c>GET /api/leaderboards/pocabinet-{track}</c> ranks:
+///         fastest first, in m:ss.fff; an unknown track has no board (404).</item>
 /// </list>
 /// <para>
 /// <b>Test identity.</b> The test signs in as a fresh FakeAuth user per run, and the server
@@ -30,7 +32,7 @@ namespace PoMiniGames.Integration.Features.PoCabinet;
 /// not the randomized wire name — the wire name is the issue PoRacer had to
 /// fix for the same reason (see PoRacerScoreEndpoints.cs header comment).
 /// </para>
-/// One method, four claims. The Integration tier is at its 50 cap (per
+/// One method, five claims. The Integration tier is at its 50 cap (per
 /// <see cref="IntegrationTestCountCeilingTests"/>) and the rule is to consolidate
 /// rather than raise.
 /// </summary>
@@ -126,5 +128,26 @@ public sealed class PoCabinetScoreStorageTests : IClassFixture<TestWebApplicatio
             .Should().Be(HttpStatusCode.Created);
         (await StoredAsync("capitol")).Should().BeApproximately(Lap("capitol-messy"), 0.001,
             "a faster lap must replace the stored PB");
+
+        // ── The boards: one per track, read anonymously through the unified leaderboard ──
+        foreach (var (key, track) in new[] { ("pocabinet", "capitol"), ("pocabinet-maralago", "maralago") })
+        {
+            var board = await client.GetFromJsonAsync<GameLeaderboardDto>($"/api/leaderboards/{key}?limit=100");
+            board!.GameKey.Should().Be(key);
+            board.Unit.Should().Be("Best lap");
+            board.HigherIsBetter.Should().BeFalse("the fastest lap is rank 1");
+            var real = board.Entries.Where(e => e.Name != "XXX").ToList();
+            real.Should().NotBeEmpty().And.BeInAscendingOrder(e => e.Value);
+            real.Should().OnlyContain(e => System.Text.RegularExpressions.Regex.IsMatch(e.DisplayValue, @"^\d+:\d\d\.\d{3}$"));
+            // This tier's Azurite can hold rows from earlier runs: only a board short enough
+            // to show every row is sure to show this run's.
+            if ((await BoardAsync(track)).Count <= 100)
+            {
+                var expected = Lap(track == "capitol" ? "capitol-messy" : "maralago-clean");
+                real.Should().Contain(e => e.Name == resolvedPlayer && Math.Abs(e.Value - expected) < 0.001);
+            }
+        }
+        (await client.GetAsync("/api/leaderboards/pocabinet-daily")).StatusCode.Should().Be(HttpStatusCode.OK, "today's circuit always has a board");
+        (await client.GetAsync("/api/leaderboards/pocabinet-nosuchtrack")).StatusCode.Should().Be(HttpStatusCode.NotFound);
     }
 }

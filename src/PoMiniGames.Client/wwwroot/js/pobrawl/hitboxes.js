@@ -72,6 +72,17 @@ const ATTACK_CAPSULES = {
       forearm: { jointA: 'elbowR', jointB: 'fistR', radius: 0.08 },
     },
   },
+  // The left hand (combat.js pickPunchArm): the same shapes on the other arm.
+  punchL: {
+    active: {
+      forearm: { jointA: 'elbowL', jointB: 'fistL', radius: 0.11 },
+      fist:    { jointA: 'fistL',  jointB: 'fistL', radius: 0.12,
+                 forwardReach: 0.06 },
+    },
+    recover: {
+      forearm: { jointA: 'elbowL', jointB: 'fistL', radius: 0.08 },
+    },
+  },
   kick: {
     active: {
       shin: { jointA: 'kneeR', jointB: 'footR', radius: 0.13 },

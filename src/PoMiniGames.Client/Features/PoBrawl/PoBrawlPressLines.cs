@@ -30,9 +30,9 @@ public static class PoBrawlPressLines
         if (left is null || right is null) return null;
         string[] lines =
         [
-            $"In the left corner, {left}! In the right corner, {right}! Sixty seconds, one round — let's get ready to brawl!",
+            $"In the left corner, {left}! In the right corner, {right}! Sixty seconds a round — let's get ready to brawl!",
             $"Ladies and gentlemen, from the left, {left}! And from the right, the one and only {right}! Touch gloves and come out swinging!",
-            $"Tonight's main event: {left} versus {right}! One round, no recounts. Fighters, to your marks!",
+            $"Tonight's main event: {left} versus {right}! No recounts. Fighters, to your marks!",
         ];
         return new PoBrawlPressLine(Announcer, Pick(lines, $"{left}|{right}"));
     }

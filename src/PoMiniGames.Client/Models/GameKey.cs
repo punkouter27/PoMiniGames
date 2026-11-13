@@ -60,8 +60,4 @@ public static class GameKeys
 
     // Practice-room preview: no score, no leaderboard, no PlayerStats.
     public static readonly GameKey PoFighter = new("pofighter");
-
-    // Also in the Domain allowlist, because play sessions are minted for every catalogue game;
-    // PoJevArena itself records no PlayerStats and has no leaderboard.
-    public static readonly GameKey PoJevArena = new("pojevarena");
 }

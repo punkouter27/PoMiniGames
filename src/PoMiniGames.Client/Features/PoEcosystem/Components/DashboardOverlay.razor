@@ -81,6 +81,7 @@
         {
             <WorldsPanel Stats="@Stats" Worlds="@Worlds" Gallery="@Gallery" SignedIn="@SignedIn" Busy="@CloudBusy" Message="@CloudMessage"
                          Visiting="@ReadOnly" CurrentSeed="@CurrentSeed" Seed="@Seed" SeedChanged="@SeedChanged" DailySeed="@DailySeed"
+                         LocalPersist="@LocalPersist" OnLocalPersistChanged="@OnLocalPersistChanged"
                          Thumbs="@Thumbs" MyYears="@(History?.Years ?? [])" Compare="@Compare"
                          OnNewWorld="@OnNewWorld" OnTodaysIsland="@OnTodaysIsland" OnReturn="@OnReturn"
                          OnRefresh="@OnCloudRefresh" OnSave="@OnCloudSave" OnLoad="@OnCloudLoad" OnDelete="@OnCloudDelete" OnShare="@OnCloudShare"
@@ -130,6 +131,8 @@
     [Parameter] public int CurrentSeed { get; set; }
     /// <summary>A visited island or a past decade: nothing is saved or wagered.</summary>
     [Parameter] public bool ReadOnly { get; set; }
+    [Parameter] public bool LocalPersist { get; set; }
+    [Parameter] public EventCallback<bool> OnLocalPersistChanged { get; set; }
     [Parameter] public EventCallback<string> SeedChanged { get; set; }
     [Parameter] public EventCallback OnClose { get; set; }
     [Parameter] public EventCallback<int> OnFocusTribe { get; set; }

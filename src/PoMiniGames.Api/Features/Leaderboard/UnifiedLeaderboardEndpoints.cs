@@ -5,6 +5,8 @@ using PoMiniGames.Features.PoFunQuiz;
 using PoMiniGames.Features.PoFunQuiz.Storage;
 using PoMiniGames.Domain.Primitives;
 using PoMiniGames.Domain.Services;
+using PoCabinetCatalog = PoMiniGames.Shared.Games.PoCabinetCatalog;
+using PoCabinetDailyTrack = PoMiniGames.Shared.Games.PoCabinetDailyTrack;
 using PoRacerCatalog = PoMiniGames.Shared.Games.PoRacerCatalog;
 
 namespace PoMiniGames.Features.Leaderboard;
@@ -104,6 +106,9 @@ public static class UnifiedLeaderboardEndpoints
         // measures, and every track's partition has to be read or its laps are stored and
         // then shown nowhere.
         var racerTasks = PoRacerCatalog.Tracks.Select(t => SafeBuildPoRacerAsync(storage, limit, t.Id));
+        // Cabinet the same way: one board per fixed track, and today's daily circuit.
+        var cabinetTasks = PoCabinetCatalog.Tracks.Select(t => t.Id).Append(PoCabinetDailyKey)
+            .Select(k => SafeBuildPoCabinetAsync(storage, limit, k));
         var boardTasks = new[]
         {
             SafeBuildMarbleAsync(storage, limit),
@@ -118,7 +123,7 @@ public static class UnifiedLeaderboardEndpoints
             SafeBuildOnlineMmrAsync(storage, limit),
         };
 
-        var result = (await Task.WhenAll(winRateTasks.Concat(racerTasks).Concat(boardTasks))).ToList();
+        var result = (await Task.WhenAll(winRateTasks.Concat(racerTasks).Concat(cabinetTasks).Concat(boardTasks))).ToList();
 
         // Boards with at least one REAL entry float to the top (every board is now
         // padded to `limit` with XXX placeholders, so raw count no longer ranks).
@@ -144,6 +149,14 @@ public static class UnifiedLeaderboardEndpoints
     {
         try { return await BuildPoRacerAsync(storage, limit, trackId, weekly); }
         catch { return EmptyBoard(PoRacerTitle(trackId)); }
+    }
+    /// <param name="track">A fixed track id, or <see cref="PoCabinetDailyKey"/> for today's circuit.</param>
+    private static async Task<GameLeaderboardDto> SafeBuildPoCabinetAsync(IStorageService storage, int limit, string track)
+    {
+        var trackId = track == PoCabinetDailyKey ? PoCabinetDailyTrack.TodayId(DateTime.UtcNow) : track;
+        var key = track == PoCabinetDailyKey ? PoCabinetBoardPrefix + PoCabinetDailyKey : PoCabinetBoardKey(trackId);
+        try { return await BuildPoCabinetAsync(storage, limit, trackId, key); }
+        catch { return EmptyBoard(PoCabinetTitle(trackId)); }
     }
     private static async Task<GameLeaderboardDto> SafeBuildPoBrawlAsync(IStorageService storage, int limit)
     {
@@ -201,6 +214,19 @@ public static class UnifiedLeaderboardEndpoints
             return track is null ? null : await BuildPoRacerAsync(storage, limit, track.Id);
         }
 
+        // "pocabinet-{track}" likewise; "pocabinet-daily" is today's circuit, and a dated
+        // "pocabinet-daily-yyyyMMdd" is the day a race was run on (the results' Top 3), while
+        // that day can still be raced.
+        if (key.StartsWith(PoCabinetBoardPrefix, StringComparison.Ordinal))
+        {
+            var track = key[PoCabinetBoardPrefix.Length..];
+            if (track == PoCabinetDailyKey) track = PoCabinetDailyTrack.TodayId(DateTime.UtcNow);
+            var known = PoCabinetDailyTrack.TryParse(track, out _)
+                ? PoCabinetDailyTrack.IsCurrent(track, DateTime.UtcNow)
+                : PoCabinetCatalog.Tracks.Any(t => t.Id == track);
+            return known ? await BuildPoCabinetAsync(storage, limit, track, key) : null;
+        }
+
         var canonical = Domain.Primitives.GameKey.TryParse(key);
         if (canonical is not { } id) return null;
 
@@ -208,6 +234,7 @@ public static class UnifiedLeaderboardEndpoints
         {
             "pomarblerace" => await BuildMarbleAsync(storage, limit),
             "poracer" => await BuildPoRacerAsync(storage, limit, PoRacerCatalog.DefaultTrackId),
+            "pocabinet" => await BuildPoCabinetAsync(storage, limit, PoCabinetCatalog.DefaultTrackId, "pocabinet"),
             "pobrawl" => await BuildPoBrawlAsync(storage, limit),
             // By-id only, not in BuildAllAsync — see BuildPoBrawlKoAsync's remarks. This is
             // the board the 1P end-of-match modal renders.
@@ -372,6 +399,42 @@ public static class UnifiedLeaderboardEndpoints
             .ToList();
         PadWithPlaceholders(entries, limit, "—");
         return new GameLeaderboardDto(PoRacerBoardKey(trackId), PoRacerTitle(trackId), "Best lap", HigherIsBetter: false, entries);
+    }
+
+    private const string PoCabinetBoardPrefix = "pocabinet-";
+    private const string PoCabinetDailyKey = "daily";
+
+    /// <summary>
+    /// The board key for a Cabinet track, the Racer way: the default track (Capitol) is bare
+    /// "pocabinet", the others append the track id. The client's page passes the same key as
+    /// GameShell's GameKey.
+    /// </summary>
+    private static string PoCabinetBoardKey(string trackId) =>
+        trackId == PoCabinetCatalog.DefaultTrackId ? "pocabinet" : PoCabinetBoardPrefix + trackId;
+
+    private static string PoCabinetTitle(string trackId) => $"Cabinet · {PoCabinetCatalog.GetTrack(trackId).Name}";
+
+    /// <summary>
+    /// Best lap per player (lower is better) on one Cabinet track. Every stored lap is
+    /// server-computed (a replay of the solo input log, or the online sim's own timing), and
+    /// the table keeps one ratcheted row per player and track, so the read is already ranked.
+    /// </summary>
+    private static async Task<GameLeaderboardDto> BuildPoCabinetAsync(IStorageService storage, int limit, string trackId, string key)
+    {
+        var scores = await storage.GetPoCabinetHighScoresAsync(limit, trackId);
+        var entries = scores
+            .Where(s => s.BestLapSeconds > 0)
+            .Select((s, i) => new LeaderboardEntryDto(i + 1, s.PlayerName, s.BestLapSeconds, FormatLapTime(s.BestLapSeconds)))
+            .ToList();
+        PadWithPlaceholders(entries, limit, "—");
+        return new GameLeaderboardDto(key, PoCabinetTitle(trackId), "Best lap", HigherIsBetter: false, entries);
+    }
+
+    /// <summary>A lap as m:ss.fff: Cabinet laps run past a minute, and tenths would tie half the board.</summary>
+    private static string FormatLapTime(double seconds)
+    {
+        var minutes = (int)(seconds / 60);
+        return $"{minutes}:{(seconds - minutes * 60).ToString("00.000", CultureInfo.InvariantCulture)}";
     }
 
     /// <summary>

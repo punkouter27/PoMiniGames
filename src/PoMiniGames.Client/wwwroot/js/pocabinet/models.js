@@ -294,26 +294,55 @@ export async function loadModel(sh, group, url, scale, name, prepare) {
  * shadows (the catcher does). Its textures are already the room as the camera saw it, so they
  * skip the filmic curve (which would grey them) and get a little lift for the post grade.
  */
+/** The "Room scans" values (PoCabinetUiSettings.RoomDetail); anything else reads as 'auto'. */
+function roomDetailOf(v) {
+    const d = String(v ?? '').toLowerCase();
+    return d === 'mesh' || d === 'splat' ? d : 'auto';
+}
+
 /**
- * The player's "Room scans" setting (PoCabinetUiSettings.RoomDetail): 'splat' (full) or 'mesh'
- * (lite). applySettings sets it on the handle; before the first applySettings (the track is built
- * inside mount) it is read from the stored settings so a lite player never downloads the splat.
+ * The player's "Room scans" setting (PoCabinetUiSettings.RoomDetail): 'auto' (the default),
+ * 'splat' (full) or 'mesh' (lite). applySettings sets it on the handle; before the first
+ * applySettings (the track is built inside mount) it is read from the stored settings so a lite
+ * player never downloads the splat.
  */
 export function storedRoomDetail() {
     try {
         const s = JSON.parse(localStorage.getItem('pominigames:pocabinet-settings-v1') || '{}');
-        const v = String(s.roomDetail ?? s.RoomDetail ?? '').toLowerCase();
-        return v === 'mesh' ? 'mesh' : 'splat';
+        return roomDetailOf(s.roomDetail ?? s.RoomDetail);
     } catch {
-        return 'splat';
+        return 'auto';
     }
+}
+
+/**
+ * A device or a connection the 9.6 MB scan is too much for: a phone (a touch screen under
+ * tablet size), a browser asked to save data, a slow link, or little memory. 'auto' stops at
+ * the light scan (2.4 MB, a quarter of the splats to sort) on these.
+ */
+function lightDevice() {
+    try {
+        const conn = navigator.connection;
+        if (conn?.saveData || /(^|-)(2g|3g)$/.test(conn?.effectiveType || '')) return true;
+        if ((navigator.deviceMemory || 8) <= 4) return true;
+        return window.matchMedia('(pointer: coarse)').matches && Math.min(window.screen.width, window.screen.height) < 700;
+    } catch {
+        return false;
+    }
+}
+
+/** What a "Room scans" value draws on this device: 'mesh', 'light' (the 100k scan) or 'full'. */
+function roomPlan(detail) {
+    if (detail === 'mesh') return 'mesh';
+    if (detail === 'splat') return 'full';
+    return lightDevice() ? 'light' : 'full';
 }
 
 export async function loadRoom(sh, group) {
     // The splat (400k, sorted every frame) costs ~a third of the frame rate: the low tier and the
     // "lite" setting keep the mesh. A tier change mid-race does not swap it; the setting does.
-    const detail = sh.roomDetail || (sh.roomDetail = storedRoomDetail());
-    if (sh.quality !== 'low' && detail !== 'mesh' && await loadRoomSplat(sh, group)) return;
+    const plan = roomPlan(sh.roomDetail || (sh.roomDetail = storedRoomDetail()));
+    if (sh.quality !== 'low' && plan !== 'mesh' && await loadRoomSplat(sh, group, plan === 'full')) return;
     if (sh.disposed || sh.trackGroup !== group) return;
     const scan = scanOf(sh);
     await sh.loadModel(group, scan.url, scan.scale, 'pocabinet-room', (o) => {
@@ -427,21 +456,35 @@ async function makeViewer(sh, group, GS, url, scale, onProgress) {
  * The bedroom as a Gaussian splat, in the room frame (z up) turned to three's y up and scaled
  * like the mesh, in two steps: the light splat (ROOM.splatLow, 100k, ~2.4 MB) goes in first so
  * the room appears within a second or two, then the full one (ROOM.splat, 400k) loads behind it
- * and replaces it. A bar over the canvas shows both downloads. True once a splat is in the scene;
- * false (and nothing added) if the library, the file or the GPU says no, or the track changed.
+ * and replaces it, unless `full` is false (roomPlan: 'auto' on a phone or a slow link), where the
+ * light one is the room. A bar over the canvas shows the downloads. True once a splat is in the
+ * scene; false (and nothing added) if the library, the file or the GPU says no, or the track changed.
  */
-export async function loadRoomSplat(sh, group) {
+export async function loadRoomSplat(sh, group, full = true) {
     const scan = scanOf(sh);
     const bar = progressBar(sh);
     sh.roomProgress = bar;
     try {
         const GS = await import('gaussian-splats-3d');
-        if (sh.disposed || sh.trackGroup !== group) return false;
-        const low = await makeViewer(sh, group, GS, scan.splatLow, scan.scale, (p) => bar.set(p * 0.25, `Loading ${scan.label}`));
-        if (!low) return false;
+        if (sh.disposed || sh.trackGroup !== group) {
+            bar.remove();
+            if (sh.roomProgress === bar) sh.roomProgress = null;
+            return false;
+        }
+        const low = await makeViewer(sh, group, GS, scan.splatLow, scan.scale, (p) => bar.set(p * (full ? 0.25 : 1), `Loading ${scan.label}`));
+        if (!low) {
+            bar.remove();
+            if (sh.roomProgress === bar) sh.roomProgress = null;
+            return false;
+        }
         low.name = 'pocabinet-room-splat';
         group.add(low);
         sh.roomSplat = low;
+        if (!full) {
+            bar.remove();
+            if (sh.roomProgress === bar) sh.roomProgress = null;
+            return true;
+        }
         // The sharp version, behind the light one; any failure just keeps the light one.
         makeViewer(sh, group, GS, scan.splat, scan.scale, (p) => bar.set(25 + p * 0.75, `Sharpening ${scan.label}`))
             .then((full) => {
@@ -464,15 +507,18 @@ export async function loadRoomSplat(sh, group) {
 }
 
 /**
- * "Room scans: Full / Lite" changed: on the bedroom, swap what draws the room (splat <-> mesh)
- * without rebuilding the track. Elsewhere just remembered for the next room track.
+ * "Room scans: Auto / Full / Lite" changed: on a scanned track, swap what draws the room (the
+ * full scan, the light one or the mesh) without rebuilding the track. Elsewhere just remembered
+ * for the next room track. A change that draws the same thing here (Auto to Full on a desktop)
+ * reloads nothing.
  */
 export function setRoomDetail(sh, detail) {
-    const next = detail === 'mesh' ? 'mesh' : 'splat';
+    const next = roomDetailOf(detail);
     if (sh.roomDetail === next) return;
+    const same = sh.roomDetail && roomPlan(sh.roomDetail) === roomPlan(next);
     sh.roomDetail = next;
     const group = sh.trackGroup;
-    if (!sh.scan || !group) return;
+    if (same || !sh.scan || !group) return;
     disposeRoomSplat(sh);
     const mesh = group.getObjectByName('pocabinet-room');
     if (mesh) {

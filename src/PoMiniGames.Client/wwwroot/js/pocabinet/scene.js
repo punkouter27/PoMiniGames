@@ -70,7 +70,7 @@ import { Sky } from './sky.js';
 import { Scenery } from './scenery.js';
 import { PostFx } from './postfx.js';
 import { Grass } from './grass.js';
-import { asphalt, grass as grassTextures, macro, clock, reflective } from './materials.js';
+import { asphalt, grass as grassTextures, macro, clock, reflective, puddlePorosity, sunDirUniform } from './materials.js';
 import { Terrain, themeOf, isPlayground, isRoom, isScan, wallFace } from './terrain.js';
 import { Trackside } from './trackside.js';
 import { gravel, sand, limitStripes } from './surfaces.js';
@@ -140,7 +140,7 @@ class SceneHandle {
         this.scan = false;        // a toy road laid over a scan (isScan): the model is the world
         this.roomSplat = null;    // the scan's Gaussian splat (DropInViewer), when it loaded
         this.roomProgress = null; // its loading bar over the canvas
-        this.roomDetail = null;   // 'splat' | 'mesh' (lite); read from the stored settings when unset
+        this.roomDetail = null;   // 'auto' | 'splat' (full) | 'mesh' (lite); read from the stored settings when unset
         this.sky = null;
         this.envSky = null;
         this.envTarget = null;
@@ -157,11 +157,13 @@ class SceneHandle {
         this.sunDirVisual = null;
         this.sunVisibility = 0;
         this.raining = false;
+        this.wetUniform = { value: 0 };
         this.rain = null;         // the falling-rain streaks while it rains (setRainStreaks)
         this.fx = {
             speed: 0, rain: 0, flash: 0, slow: 0,
-            shake: 0, rumble: 0, reduced: false, focus: null,
-            exposure: 1, bloom: 0.7, bloomThreshold: 1, sun: null, sunColor: new THREE.Color(1, 0.9, 0.75),
+            shake: 0, rumble: 0, latG: 0, susp: 0, reduced: false, focus: null,
+            exposure: 1, bloom: 0.7, bloomThreshold: 1, sun: null, sunDir: this.sunDir,
+            sunColor: new THREE.Color(1, 0.9, 0.75), lights: null,
         };
         this.baseAtmosphere = null;
         this._frameCbs = new Set();
@@ -306,6 +308,7 @@ class SceneHandle {
     /** Rain or clear: fog and sky colour, light levels, the sky's clouds, and a fresh IBL capture. */
     setWeather(rain) {
         this.raining = !!rain;
+        this.wetUniform.value = rain ? 1 : 0;
         const base = this.baseAtmosphere || {};
         const fog = hex(base.fogHex, '#14233f');
         if (rain) fog.lerp(new THREE.Color('#4d545c'), 0.35);
@@ -500,11 +503,11 @@ class SceneHandle {
         // A scan's road is a toy track: smooth moulded plastic, not tarmac.
         const roadMat = this.scan
             ? models.toyRoadMaterial(atmosphere)
-            : reflective(macro(new THREE.MeshStandardMaterial({
+            : reflective(puddlePorosity(macro(new THREE.MeshStandardMaterial({
                 color: hex(atmosphere.roadHex, '#393b42'), roughness: 1, metalness: 0,
                 map: tar.map, normalMap: tar.normalMap, normalScale: new THREE.Vector2(0.8, 0.8), roughnessMap: tar.roughnessMap,
                 side: THREE.DoubleSide,
-            }), 30, 0.2), this.roadRefl);
+            }), 30, 0.2), this.wetUniform), this.roadRefl);
         this.roadMesh = new THREE.Mesh(ribbon(t, (i) => -t.hw[i], (i) => t.hw[i], 0.02, 45, built, { flat }), roadMat);
         this.roadMesh.receiveShadow = true;
         group.add(this.roadMesh);
@@ -587,6 +590,8 @@ class SceneHandle {
             this.sunDir = new THREE.Vector3(...this.sky.preset.sun).normalize();
             const light = this.sky.lightDirection();
             this.sunDir.copy(light);
+            this.fx.sunDir = this.sunDir;
+            sunDirUniform.value.copy(this.sunDir);
             this.sun.color.copy(new THREE.Color(this.sky.preset.sunSize > 0 ? this.sky.preset.sunColor : '#b8a8ff').lerp(new THREE.Color('#ffffff'), 0.55));
             this.fx.sunColor.copy(new THREE.Color(this.sky.preset.sunColor));
             this.sunDirVisual = new THREE.Vector3(...this.sky.preset.sun).normalize();

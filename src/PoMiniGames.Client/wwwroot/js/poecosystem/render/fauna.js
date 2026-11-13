@@ -101,7 +101,7 @@ export function createFauna(scene, terrainApi, { tier = 'high' } = {}) {
     fish = { mesh };
   }
 
-  function stepBirds(dt, time, night, storm) {
+  function stepBirds(dt, time, night, storm, focus = null) {
     const { mesh, pos, vel, phase } = birds;
     // Roost at night and in a storm: the flock fades out rather than vanishing mid-air.
     const want = night > 0.72 || storm > 0.5 ? 0 : 1;
@@ -110,10 +110,13 @@ export function createFauna(scene, terrainApi, { tier = 'high' } = {}) {
     mesh.visible = true;
     const centre = size / 2;
     for (let f = 0; f < flockCount; f++) {
-      // Each flock chases its own slow loop over the island.
+      // Scavenger flock (flock 0) circles near active carcasses/caravan hubs when signaled (#9).
       const a = time * (0.045 + f * 0.012) + f * 2.1;
-      const tx = centre + Math.cos(a) * (55 + f * 12);
-      const tz = centre + Math.sin(a * 1.3) * (45 + f * 10);
+      const fxBase = (f === 0 && focus) ? focus.x : centre;
+      const fzBase = (f === 0 && focus) ? focus.z : centre;
+      const rSpan = (f === 0 && focus) ? 18 : (55 + f * 12);
+      const tx = fxBase + Math.cos(a) * rSpan;
+      const tz = fzBase + Math.sin(a * 1.3) * (rSpan * 0.82);
       const ty = Math.max(16, terrainApi.heightAt(tx, tz) + 18) + f * 3;
       const lo = f * BIRDS_PER_FLOCK; const hi = lo + BIRDS_PER_FLOCK;
       let mx = 0, my = 0, mz = 0, ax = 0, ay = 0, az = 0;
@@ -173,8 +176,8 @@ export function createFauna(scene, terrainApi, { tier = 'high' } = {}) {
   }
 
   return {
-    update(dt, time, { player, night = 0, storm = 0 } = {}) {
-      if (birds) stepBirds(Math.min(dt, 0.05), time, night, storm);
+    update(dt, time, { player, night = 0, storm = 0, focus = null } = {}) {
+      if (birds) stepBirds(Math.min(dt, 0.05), time, night, storm, focus);
       if (fish && player) stepFish(time, player);
     },
     get birdCount() { return birdTotal; },

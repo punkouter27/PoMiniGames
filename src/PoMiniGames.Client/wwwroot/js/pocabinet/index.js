@@ -30,6 +30,10 @@
 
 import { mount as sceneMount, unmount as sceneUnmount } from './scene.js';
 import { mount as mountDialogue, unmount as unmountDialogue, show } from './dialogue.js';
+import { clearTrackWear } from './fx.js';
+import { setComputeMode, getGpuStats } from './gpucompute.js';
+import { mountUiShader, unmountUiShader, setUiShaderMode, pulseUiShader } from './uishader.js';
+import { mountCarPreview, updateCarPreview, unmountCarPreview } from './car-preview.js';
 import {
     startRace, stopRace, pauseRace, resumeRace, pushServerSnapshot, updateRaceSettings, cycleCamera,
     showTelemetry, startReplay, replayCommand, stopReplay, recordClip, lapProof, setBanter,
@@ -53,6 +57,7 @@ const api = {
     /** Every race starts audible: Restart, Race again, Next stage and the online rematch all
      *  follow a stopRace (which suspended the audio) without another Start click. */
     startRace(dotnetRef, sceneHandle, minimapHandle, opts) {
+        setComputeMode(opts?.settings?.gpuCompute || 'auto');
         const r = startRace(dotnetRef, sceneHandle, minimapHandle, opts);
         audio.setSuspended(false);
         return r;
@@ -107,14 +112,24 @@ const api = {
 
     mountEnvironment,
     unmountEnvironment,
+    mountUiShader,
+    unmountUiShader,
+    pulseUiShader,
+    mountCarPreview,
+    updateCarPreview,
+    unmountCarPreview,
+    clearTrackWear,
+    getGpuStats,
 
     /** Push the player's settings into the live scene, audio graph and race driver. */
     applySettings(sceneHandle, settings) {
         if (sceneHandle && !sceneHandle.disposed) {
             sceneHandle.applyView(settings);
-            // "Room scans": full splat or lite mesh (PoCabinetUiSettings.RoomDetail).
+            // "Room scans": auto, the full splat or the lite mesh (PoCabinetUiSettings.RoomDetail).
             if (settings?.roomDetail) sceneHandle.setRoomDetail(settings.roomDetail);
         }
+        setComputeMode(settings?.gpuCompute || 'auto');
+        setUiShaderMode(settings?.gpuCompute || 'auto');
         audio.setMusicEnabled(settings?.music !== false);
         updateRaceSettings(settings);
     },

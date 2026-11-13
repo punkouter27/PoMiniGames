@@ -92,6 +92,7 @@ export function createTribeStore(terrain, streams) {
       traits: def.traits,
       casualtyCount: 0,
       warCooldownTicks: 0,
+      elderCount: 1,
     });
   }
 
@@ -128,29 +129,167 @@ export function createTribeStore(terrain, streams) {
       return false;
     },
 
+    getGatherMultiplier(tribeId, resourceKind) {
+      const tribe = this.getTribe(tribeId);
+      return tribe ? techLadder.getGatherMultiplier(tribe, resourceKind) : 1.0;
+    },
+
+    getCombatMultiplier(tribeId, x = null, z = null) {
+      const tribe = this.getTribe(tribeId);
+      if (!tribe) return 1.0;
+      let mult = techLadder.getCombatMultiplier(tribe);
+      if (x !== null && z !== null) {
+        const totemSpec = BUILDING_SPECS[BUILDING_KIND.WAR_TOTEM];
+        const towerSpec = BUILDING_SPECS[BUILDING_KIND.WATCHTOWER];
+        for (const b of tribe.buildings) {
+          if (!b.isComplete) continue;
+          const d = Math.hypot(b.x - x, b.z - z);
+          if (b.kind === BUILDING_KIND.WAR_TOTEM && d <= totemSpec.combatBonusRadius) {
+            mult *= totemSpec.combatDamageMultiplier;
+          } else if (b.kind === BUILDING_KIND.WATCHTOWER && d <= towerSpec.visionRadius) {
+            mult *= (1 + towerSpec.defenseBonus);
+          }
+        }
+      }
+      return mult;
+    },
+
+    hasHygiene(tribeId) {
+      const tribe = this.getTribe(tribeId);
+      return Boolean(tribe && tribe.tech >= TECH_TIER.AGRARIAN);
+    },
+
+    isHostile(tribeA, tribeB) {
+      if (tribeA < 0 || tribeB < 0 || tribeA === tribeB) return false;
+      const a = this.getTribe(tribeA);
+      if (!a) return false;
+      return a.relations[tribeB] === TRIBE_DIPLOMACY.WAR || a.relations[tribeB] === TRIBE_DIPLOMACY.RIVAL;
+    },
+
+    isAtWar(tribeA, tribeB) {
+      if (tribeA < 0 || tribeB < 0 || tribeA === tribeB) return false;
+      const a = this.getTribe(tribeA);
+      return Boolean(a && a.relations[tribeB] === TRIBE_DIPLOMACY.WAR);
+    },
+
+    syncPopulation(popCounts, elderCounts, warriorCounts) {
+      for (const t of placedTribes) {
+        t.population = popCounts[t.id] ?? 0;
+        t.elderCount = elderCounts[t.id] ?? 0;
+        t.warriors = warriorCounts[t.id] ?? 0;
+      }
+    },
+
+    recordCasualty(tribeId, amount = 1) {
+      const t = this.getTribe(tribeId);
+      if (!t) return;
+      t.casualtyCount = (t.casualtyCount ?? 0) + amount;
+      t.population = Math.max(0, t.population - amount);
+    },
+
+    nearestIncompleteBuilding(tribeId, x, z) {
+      const tribe = this.getTribe(tribeId);
+      if (!tribe) return null;
+      let best = null; let bestD = Infinity;
+      for (const b of tribe.buildings) {
+        if (b.isComplete) continue;
+        const d = Math.hypot(b.x - x, b.z - z);
+        if (d < bestD) { bestD = d; best = b; }
+      }
+      return best;
+    },
+
+    deliverWork(tribeId, buildingId, woodWork, stoneWork, log = null, tick = 0) {
+      const tribe = this.getTribe(tribeId);
+      if (!tribe) return false;
+      const b = tribe.buildings.find(item => item.id === buildingId);
+      if (!b || b.isComplete) return false;
+      const wasComplete = b.isComplete;
+      construction.deliverMaterial(b, woodWork, stoneWork, tribe);
+      if (!wasComplete && b.isComplete && log) {
+        const spec = BUILDING_SPECS[b.kind];
+        log.push({ tick, kind: 'construction', text: `${tribe.name} completed a ${spec?.name ?? 'structure'}` });
+      }
+      return true;
+    },
+
+    nearestHostileBuilding(tribeId, x, z, maxDist = 45) {
+      if (tribeId < 0) return null;
+      let best = null; let bestD = maxDist;
+      for (const b of construction.buildings) {
+        if (!this.isAtWar(tribeId, b.tribeId)) continue;
+        const d = Math.hypot(b.x - x, b.z - z);
+        if (d < bestD) { bestD = d; best = b; }
+      }
+      return best;
+    },
+
+    damageBuilding(buildingId, damage, attackerTribeId = -1, log = null, tick = 0) {
+      const idx = construction.buildings.findIndex(b => b.id === buildingId);
+      if (idx < 0) return false;
+      const b = construction.buildings[idx];
+      const owner = this.getTribe(b.tribeId);
+      // Watchtower nearby cushions raid damage (#5).
+      let defense = 1;
+      if (owner) {
+        const towerSpec = BUILDING_SPECS[BUILDING_KIND.WATCHTOWER];
+        for (const ob of owner.buildings) {
+          if (ob.isComplete && ob.kind === BUILDING_KIND.WATCHTOWER && Math.hypot(ob.x - b.x, ob.z - b.z) <= towerSpec.visionRadius) {
+            defense += towerSpec.defenseBonus;
+            break;
+          }
+        }
+      }
+      b.health -= damage / defense;
+      if (b.health > 0) return false;
+
+      // Destroyed in raid (#5)
+      construction.buildings.splice(idx, 1);
+      if (owner) {
+        owner.buildings = owner.buildings.filter(x => x.id !== b.id);
+        owner.huts = owner.huts.filter(x => x.id !== b.id);
+      }
+      const attacker = this.getTribe(attackerTribeId);
+      if (attacker && owner) {
+        const spec = BUILDING_SPECS[b.kind];
+        const woodPlunder = Math.min(owner.wood, 15);
+        const stonePlunder = Math.min(owner.stone, 8);
+        owner.wood -= woodPlunder; owner.stone -= stonePlunder;
+        attacker.wood += woodPlunder; attacker.stone += stonePlunder;
+        if (log) log.push({ tick, kind: 'war', text: `${attacker.name} razed ${owner.name}'s ${spec?.name ?? 'building'}` });
+      }
+      return true;
+    },
+
     stepDiplomacy(log = null, tick = 0) {
       return diplomacy.step(placedTribes, territory, log, tick);
     },
 
-    stepTech(log = null, tick = 0) {
+    stepTech(log = null, tick = 0, elderCounts = null) {
       for (const tribe of placedTribes) {
-        const event = techLadder.step(tribe, 1);
+        const elders = elderCounts ? (elderCounts[tribe.id] ?? 0) : (tribe.elderCount ?? 1);
+        const event = techLadder.step(tribe, elders);
         if (event && log) {
           log.push({ tick, kind: 'tech', text: `${tribe.name} advanced to ${event.techName}` });
         }
       }
     },
 
-    stepConstruction(terrain, tileState, rng, log = null, tick = 0) {
+    stepConstruction(terrain, tileState, rng, log = null, tick = 0, options = null) {
       construction.step(placedTribes);
+      const physicalBuilders = Boolean(options?.physicalBuilders);
 
       // Evaluate whether to start new construction
       for (const tribe of placedTribes) {
+        if (tribe.population <= 0) continue;
         const totalBeds = tribe.huts.length * 4;
+        const atWarOrRival = tribe.relations.some((rel, idx) => idx !== tribe.id && (rel === TRIBE_DIPLOMACY.WAR || rel === TRIBE_DIPLOMACY.RIVAL));
         let neededKind = null;
 
         if (tribe.population > totalBeds) {
           neededKind = BUILDING_KIND.HUT;
+        } else if (atWarOrRival && tribe.wood >= 40 && tribe.stone >= 40 && tribe.buildings.filter(b => b.kind === BUILDING_KIND.WAR_TOTEM).length === 0) {
+          neededKind = BUILDING_KIND.WAR_TOTEM;
         } else if (tribe.wood >= 60 && tribe.stone >= 35 && tribe.buildings.filter(b => b.kind === BUILDING_KIND.WATCHTOWER).length === 0) {
           neededKind = BUILDING_KIND.WATCHTOWER;
         } else if (tribe.wood >= 50 && tribe.stone >= 20 && tribe.buildings.filter(b => b.kind === BUILDING_KIND.GRANARY).length === 0) {
@@ -164,7 +303,7 @@ export function createTribeStore(terrain, streams) {
             if (site !== null) {
               tribe.wood -= spec.cost.wood;
               tribe.stone -= spec.cost.stone;
-              const building = construction.createBuilding(tribe, neededKind, site, terrain);
+              construction.createBuilding(tribe, neededKind, site, terrain);
               if (log) {
                 log.push({ tick, kind: 'construction', text: `${tribe.name} began raising a ${spec.name}` });
               }
@@ -172,10 +311,13 @@ export function createTribeStore(terrain, streams) {
           }
         }
 
-        // Progress incomplete buildings
-        for (const b of tribe.buildings) {
-          if (!b.isComplete) {
-            construction.deliverMaterial(b, 0.5, 0.25, tribe);
+        // Physical human builders drive building progress in live worlds (#3);
+        // keep passive progress only for standalone calls without physical builders.
+        if (!physicalBuilders) {
+          for (const b of tribe.buildings) {
+            if (!b.isComplete) {
+              construction.deliverMaterial(b, 0.5, 0.25, tribe);
+            }
           }
         }
       }

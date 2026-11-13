@@ -6,7 +6,8 @@ namespace PoMiniGames.Features.PoCabinet;
 
 /// <summary>
 /// The one in-memory PoCabinet lobby: whoever arrives first hosts, the next arrivals take the
-/// free seats up to eight, the host starts, and optional AI officials fill the rest. The lobby
+/// free seats up to eight, the host starts, and optional AI drivers (the officials, then field
+/// racers) fill the grid out to <see cref="PoCabinetCatalog.OnlineGridSize"/> cars. The lobby
 /// outlives its race — when the race ends it reopens with the same roster, which is what
 /// "rematch" means. There are no join codes: everyone who opens the
 /// multiplayer page lands in this lobby.
@@ -108,7 +109,7 @@ public sealed class PoCabinetLobbyService(TimeProvider? time = null)
         }
     }
 
-    /// <summary>Host-only: how many AI officials fill free seats (0–4).</summary>
+    /// <summary>Host-only: how many AI drivers join the grid (0 to <see cref="PoCabinetCatalog.MaxBots"/>).</summary>
     public bool SetBots(string hostId, int count)
     {
         lock (_gate)
@@ -272,7 +273,7 @@ public sealed class PoCabinetLobbyService(TimeProvider? time = null)
     }
 
     /// <summary>
-    /// The race grid for the started lobby: humans in seat order, then as many AI officials as
+    /// The race grid for the started lobby: humans in seat order, then as many AI drivers as
     /// asked for and fit. Snapshot taken under the lock so a late leave cannot tear it.
     /// </summary>
     public IReadOnlyList<PoCabinetDriver> BuildGrid()
@@ -284,11 +285,11 @@ public sealed class PoCabinetLobbyService(TimeProvider? time = null)
                 .Select(p => new PoCabinetDriver(p.PlayerId, p.DisplayName, IsPlayer: true,
                     Color: string.IsNullOrEmpty(p.Color) ? PoCabinetCatalog.DefaultSeatColor : p.Color, Personality: null))
                 .ToList();
-            var roster = PoCabinetPersonality.Roster;
+            var bots = PoCabinetPersonality.OnlineBots;
             for (int i = 0; i < EffectiveBots(lobby); i++)
             {
-                var o = roster[i];
-                grid.Add(new PoCabinetDriver($"bot-{i}", PoCabinetCatalog.OfficialName(o.Id), IsPlayer: false, o.Color, o.Personality,
+                var o = bots[i];
+                grid.Add(new PoCabinetDriver($"bot-{i}", o.Name, IsPlayer: false, o.Color, o.Personality,
                     o.MaxSpeed, o.CorneringSkill, o.Id));
             }
             return grid;
@@ -303,7 +304,7 @@ public sealed class PoCabinetLobbyService(TimeProvider? time = null)
     }
 
     private static int EffectiveBots(Lobby lobby) =>
-        Math.Min(lobby.BotCount, Math.Max(0, MaxPlayers - lobby.Players.Count));
+        Math.Min(lobby.BotCount, Math.Max(0, PoCabinetCatalog.OnlineGridSize - lobby.Players.Count));
 
     /// <summary>The host can begin: every seated human is ready and the grid would hold at least
     /// two cars once the AI officials are counted (a lone host with bots on can race).</summary>

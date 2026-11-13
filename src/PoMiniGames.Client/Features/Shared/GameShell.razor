@@ -215,7 +215,7 @@
 
     /// <summary>
     /// Off for the pages that already bind Tab themselves (PoEcosystem's world
-    /// dashboard, PoJevArena's stats sheet): two panels must never answer one Tab.
+    /// dashboard): two panels must never answer one Tab.
     /// On everywhere else, which is what makes Tab mean the same thing in every game.
     /// </summary>
     [Parameter] public bool TabDebug { get; set; } = true;
@@ -260,7 +260,7 @@
     // ── Session count ──
     // Every game page sits in this shell, so this is the one place a game session can be
     // counted for all of them: the profile's "N sessions" for the games with no W/L record
-    // (Ecosystem, Sand Playground, Cabinet, Mule, Jev Arena) and the achievements that count
+    // (Ecosystem, Sand Playground, Cabinet, Mule) and the achievements that count
     // games played. Once per address, so a mode switch (/pomule/1player → /pomule/demo) is a
     // new session but a re-render is not. The unattended kiosk reel is not anyone playing.
     private string? _sessionPath;

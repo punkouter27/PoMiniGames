@@ -11,6 +11,7 @@ public static class PoCabinetPitWall
 {
     public const string RecordsKey = "pominigames:pocabinet-records-v1";
     public const string PaintKey = "pominigames:pocabinet-paintshop-v1";
+    public const string LiveryKey = "pominigames:pocabinet-livery-v1";
 
     /// <summary>Best lap per track id from records.js's store; unset or corrupt tracks are left out.</summary>
     public static Dictionary<string, double> ParseBestLaps(string? json)
@@ -45,5 +46,12 @@ public static class PoCabinetPitWall
         if (string.IsNullOrWhiteSpace(raw)) return null;
         var color = raw[(raw.LastIndexOf('|') + 1)..].Trim();
         return color.Length > 0 ? color : null;
+    }
+
+    /// <summary>The paint shop's stored livery pattern index (0..4), defaulting to 1 (Twin Stripes).</summary>
+    public static int ParseLivery(string? raw)
+    {
+        if (string.IsNullOrWhiteSpace(raw)) return 1;
+        return int.TryParse(raw.Trim(), out var index) && index is >= 0 and <= 4 ? index : 1;
     }
 }

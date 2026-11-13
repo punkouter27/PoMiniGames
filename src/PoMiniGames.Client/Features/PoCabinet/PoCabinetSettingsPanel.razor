@@ -44,7 +44,9 @@
         @Pills("gfx", "Graphics quality", GraphicsOptions, AppSettings.Graphics, SetGraphicsAsync,
                "Every game's setting. Lower is smoother on a slow device.")
         @Pills("room", "Room scans", RoomOptions, Value.RoomDetail, v => RaiseAsync(s => s.RoomDetail = v),
-               "Full is a 9.6 MB scan and heavier on phones; Lite draws the plain room.")
+               "Auto is the full 9.6 MB scan on a computer and a light 2.4 MB one on a phone or a slow link; Lite draws the plain room.")
+        @Pills("gpu", "GPU shaders", GpuOptions, Value.GpuCompute, v => RaiseAsync(s => s.GpuCompute = v),
+               "Uses WebGPU WGSL compute and fluid UI shaders when supported, with automatic WebGL2 fallback.")
         @if (OnCycleCamera.HasDelegate)
         {
             <div class="pocabinet-settings__row">
@@ -105,7 +107,8 @@
     private static readonly (string Value, string Text)[] TouchOptions = [("auto", "Auto"), ("on", "Always"), ("off", "Hide")];
     private static readonly (string Value, string Text)[] SteerOptions = [("pad", "Steer pad"), ("tilt", "Tilt")];
     private static readonly (string Value, string Text)[] GraphicsOptions = [("auto", "Auto"), ("low", "Low"), ("medium", "Med"), ("high", "High")];
-    private static readonly (string Value, string Text)[] RoomOptions = [("splat", "Full"), ("mesh", "Lite")];
+    private static readonly (string Value, string Text)[] RoomOptions = [("auto", "Auto"), ("splat", "Full"), ("mesh", "Lite")];
+    private static readonly (string Value, string Text)[] GpuOptions = [("auto", "Auto"), ("webgpu", "WebGPU"), ("webgl", "WebGL2")];
 
     /// <summary>One labelled row of radio pills; the group name keeps each row its own radio set.</summary>
     private RenderFragment Pills(string name, string label, (string Value, string Text)[] options, string current, Func<string, Task> onPick, string? hint = null) => __builder =>

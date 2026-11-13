@@ -103,6 +103,37 @@ const TRACKS = {
   ],
 };
 
+// The left hand's punch is the right's, mirrored: swap the L/R joints and flip
+// the yaw and roll (pitch is the same on both sides of the body).
+function mirrorPose(pose) {
+  if (pose === GUARD) return GUARD;
+  const out = {};
+  for (const [n, p] of Object.entries(pose)) {
+    const m = n.endsWith('L') ? n.slice(0, -1) + 'R' : n.endsWith('R') ? n.slice(0, -1) + 'L' : n;
+    out[m] = { x: p.x, y: -p.y, z: -p.z };
+  }
+  return out;
+}
+TRACKS.punchL = TRACKS.punch.map(([pose, dur, opts]) => [mirrorPose(pose), dur, opts]);
+
+// Flat on the back (knockdown.js): the hips group pitches the whole body over and
+// Animator drops it to the canvas. Legs keyed, so the foot stepper lets go of them.
+const DOWN_POSE = {
+  hips: { x: -1.5, y: 0, z: 0 },
+  torso: { x: -0.06, y: 0, z: 0 },
+  head: { x: 0.12, y: 0, z: 0 },
+  shoulderL: { x: 0.2, y: 0, z: 0.95 },
+  shoulderR: { x: 0.15, y: 0, z: -0.85 },
+  elbowL: { x: -0.35, y: 0, z: 0 },
+  elbowR: { x: -0.5, y: 0, z: 0 },
+  hipL: { x: 0.06, y: 0, z: 0.1 },
+  hipR: { x: -0.35, y: 0, z: -0.08 },
+  kneeL: { x: 0.12, y: 0, z: 0 },
+  kneeR: { x: 0.85, y: 0, z: 0 },
+};
+// How far the hips sink from standing height (1.0) to lying on the canvas.
+const DOWN_DROP = 0.76;
+
 // ── Charge poses: held coils for hold-to-charge (see setCharge) ─────────
 const CHARGE_POSES = {
   // Legs unkeyed so the foot-IK keeps the stance planted.
@@ -409,6 +440,10 @@ export class Animator {
     this._legDriven = { L: false, R: false };
     // Set by the ragdolls so the pose-lerp doesn't fight their solvers.
     this.frozen = false;
+    // Knocked down (setDown): the pose is DOWN_POSE and `_drop` (0..1) eases the hips
+    // to the canvas and back up.
+    this.down = false;
+    this._drop = 0;
   }
 
   play(name) {
@@ -427,6 +462,17 @@ export class Animator {
 
   setBlocking(on) {
     this.base = on ? BLOCK : this.guard;
+  }
+
+  /** On the canvas (true) or getting back up (false). Drops whatever track was playing. */
+  setDown(on) {
+    this.down = !!on;
+    if (on) {
+      this.track = null;
+      this.chargeName = null;
+      this.chargeAmt = 0;
+      this.base = this.guard;
+    }
   }
 
   // Head-tracking targets (root-local yaw/pitch toward the opponent).
@@ -508,6 +554,20 @@ export class Animator {
       this._legDriven.L = !!(pose.hipL || pose.kneeL);
       this._legDriven.R = !!(pose.hipR || pose.kneeR);
       trackK = 16;
+    }
+    // On the canvas: nothing else has a say in the pose.
+    if (this.down) {
+      target = DOWN_POSE;
+      trackK = 13;
+      this._legDriven.L = true;
+      this._legDriven.R = true;
+    }
+    this._drop += ((this.down ? 1 : 0) - this._drop) * Math.min(1, dt * (this.down ? 10 : 7));
+    // Rising: keep the legs off the stepper until the hips are most of the way up,
+    // or the IK reaches for the floor from a body still lying on it.
+    if (!this.down && this._drop > 0.35) {
+      this._legDriven.L = true;
+      this._legDriven.R = true;
     }
     const snappy = trackK > 0;
     const tremble = (this.chargeName && this.chargeAmt > 0.1)
@@ -594,7 +654,7 @@ export class Animator {
       joint.rotation.y = lerpAngle(joint.rotation.y, py, k);
       joint.rotation.z = lerpAngle(joint.rotation.z, pz, k);
       if (name === 'hips') {
-        joint.position.y = 1.0 + bob;
+        joint.position.y = 1.0 + bob - DOWN_DROP * this._drop;
         joint.position.x = Math.sin(this.walkPhase) * 0.05 * ctx.speed;
       }
     }

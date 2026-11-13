@@ -24,6 +24,13 @@ import { PERSONALITIES } from './personalities.js';
 //   • spammers get guarded and whiff-punished more often.
 // And a read of the scoreboard (`_mood`): hurt → careful, ahead late → protect
 // the lead, behind late → press.
+//
+// The canvas (knockdown.js) sits ahead of all of it. Knocked down, the CPU picks
+// one get-up per knockdown — when to rise and whether to roll, rise guarding or
+// rise swinging — and a higher rung picks later and less predictably. Standing
+// over a downed opponent it stops swinging at a body it cannot hit, takes its
+// range and its breath back behind the guard, and on a rung-scaled roll times a
+// coil to land as they stand.
 
 // Sixteen rungs for the 1-player presidents ladder. Difficulty is the PRODUCT of
 // the columns, so keep each column strictly monotone and lift them together.
@@ -187,6 +194,12 @@ export class AiController {
     // Held escape direction off the ropes (+1/−1, 0 = none), with hysteresis.
     this._escSide = 0;
     this.superCooldownUntil = 0;
+    // The canvas: `_rise` is this knockdown's get-up plan ({ at, how, side }),
+    // `_meaty` whether we are timing a coil on the opponent's rise (one roll per
+    // knockdown, `_meatyRolled`).
+    this._rise = null;
+    this._meaty = false;
+    this._meatyRolled = false;
 
     // Footwork is deliberately NOT scaled by rung: the dance is who he is, and
     // a tempo that moved with the ladder would invalidate an earlier read.
@@ -231,12 +244,104 @@ export class AiController {
   }
 
   /**
-   * ctx shape (built by game.js _aiContext):
+   * We were just put on the canvas (fighterTick.js _knockDown): every plan is gone,
+   * and the get-up is chosen now, once. Rung 1 lies there until it is stood up;
+   * up the ladder the rise comes sooner, at a time the player cannot count, and
+   * more often as a roll or straight into the guard.
+   */
+  notifyKnockdown() {
+    this.holdName = null;
+    this._queued = null;
+    this.comboAt = 0;
+    this.comboUntil = 0;
+    this.baitArmed = false;
+    this._guardSince = -1;
+    this._pat = null;
+    this._meaty = false;
+    const k = (this.level - 1) / (MAX_RUNG - 1);
+    const r = this.rng.random();
+    const guardP = 0.55 * this.blockP;
+    const rollP = 0.1 + 0.3 * k;
+    const strikeP = 0.12 * Math.min(1, this.aggro);
+    this._rise = {
+      // Seconds on the canvas before asking to rise (the engine allows it from 0.7 s
+      // and stands a fighter up at 2 s regardless).
+      at: this.level <= 2 ? Infinity : 0.7 + this.rng.random() * (1.2 - 0.9 * k),
+      how: r < guardP ? 'guard' : r < guardP + rollP ? 'roll' : r < guardP + rollP + strikeP ? 'strike' : 'plain',
+      side: this.rng.random() < 0.5 ? 1 : -1,
+    };
+  }
+
+  // On the canvas: wait out the plan's delay, then ask to rise the way it says.
+  _onCanvas(ctx) {
+    const plan = this._rise;
+    this.current = { ...NEUTRAL };
+    this._footLive = false;
+    if (!plan || (ctx.selfDownT ?? 0) < plan.at) return { ...NEUTRAL, super: false };
+    switch (plan.how) {
+      // Away from them, or out to a side: _ringSafe turns a roll into the ropes sideways.
+      case 'roll': return { ...NEUTRAL, move: -1, side: plan.side, super: false };
+      case 'strike': return { ...NEUTRAL, kick: true, super: false };
+      // 'guard' and 'plain' both rise on the guard button; only 'guard' keeps it held.
+      default: return { ...NEUTRAL, block: true, super: false };
+    }
+  }
+
+  // Rising: a 'guard' plan holds the button through the rise so the guard is up the
+  // instant the feet land (a strike timed on the rise meets a perfect guard).
+  _rising() {
+    this.sinceDecision = 1e9;   // decide on the first standing tick
+    if (this._rise?.how !== 'guard') {
+      this.current = { ...NEUTRAL };
+      return { ...NEUTRAL, super: false };
+    }
+    this._guardSince = this.t;
+    this._guardSloppy = false;
+    this._guardUntil = this.t + 0.45;
+    this._stunRolled = false;
+    this.current = { ...NEUTRAL, block: true };
+    return { ...this.current };
+  }
+
+  // Standing over a floored opponent. Nothing lands on them, so: take kick range,
+  // get the bar back behind the guard, and — one roll per knockdown — load a coil
+  // as they start to rise so it arrives when they are hittable again.
+  _overFloored(ctx) {
+    this._pat = null;
+    this._queued = null;
+    this.comboAt = 0;
+    this.comboUntil = 0;
+    this.baitArmed = false;
+    this._footLive = false;
+    this._guardSince = -1;
+    this.sinceDecision = 1e9;   // decide the moment they are up
+    if (!this._meatyRolled) {
+      this._meatyRolled = true;
+      this._meaty = this.rng.random() < Math.min(0.9, this.chargeP * 1.5);
+    }
+    const far = ctx.distance > ctx.kickRange * 0.95;
+    const move = far ? 1 : ctx.distance < ctx.kickRange * 0.6 ? -1 : 0;
+    if (this._meaty && ctx.opponentState === 'getup') {
+      if (ctx.selfState === 'idle' && !far) {
+        this._meaty = false;
+        return this._loadCharge(0.6, 0.2);
+      }
+      // Drop the guard (one tick) so the coil's press is taken, still closing if far.
+      this.current = { ...NEUTRAL, move };
+      return { ...this.current };
+    }
+    this.current = { ...NEUTRAL, move, block: true };
+    return { ...this.current };
+  }
+
+  /**
+   * ctx shape (built by fighterTick.js _aiContext):
    *   { dt, distance, kickRange,
    *     opponentState, opponentWindup, opponentActive, opponentRecover,
    *     opponentSwingLeft, opponentCharging, opponentChargeT,
    *     opponentBlockStun, opponentHitstunLeft,       // frame data
    *     selfState, selfCharge, selfExhausted, opponentExhausted, canSuper,
+   *     opponentFloored, opponentRiseIn, selfDownT,   // the canvas (knockdown.js)
    *     backRoom, sideRoomPos, sideRoomNeg, ropeDist, // ring sense (metres)
    *     selfHp, opponentHp, clock, timeLimit,         // scoreboard
    *     ownAttacks: { punch: {...}, kick: {...} } }
@@ -559,6 +664,11 @@ export class AiController {
     const effPunishP = Math.min(0.95, this.punishP + spam * 0.4 * this.adapt);
     const effBaitP = Math.min(0.5, this.baitP + turtle * 0.4 * this.adapt);
 
+    // ── The canvas ──────────────────────────────────────────────────────
+    // Ahead of everything: a fighter on the floor has one decision, the get-up.
+    if (ctx.selfState === 'down') return this._onCanvas(ctx);
+    if (ctx.selfState === 'getup') return this._rising();
+
     // Edge-triggered flags are consumed each read; holds (move/side/block) persist.
     const intent = { ...this.current, punch: false, kick: false };
 
@@ -577,6 +687,16 @@ export class AiController {
       const backoff = ctx.distance < ctx.kickRange * 0.9 ? -1 : 0;
       this.current = { ...NEUTRAL, move: backoff, block: true };
       return { ...this.current, super: false };
+    }
+
+    // ── Opponent on the canvas ──────────────────────────────────────────
+    // After the gas check (a gassed CPU guards either way) and not while a coil
+    // is already loading for their rise.
+    if (ctx.opponentFloored) {
+      if (!this.holdName) return this._overFloored(ctx);
+    } else {
+      this._meatyRolled = false;
+      this._meaty = false;
     }
 
     // ── Signature pattern ───────────────────────────────────────────

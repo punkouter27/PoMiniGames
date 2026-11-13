@@ -1,0 +1,162 @@
+<!DOCTYPE html>
+<html lang="en" data-tier="2" data-theme="light">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>PoMiniGames — Interactive Documentation Shell (2026-11-12)</title>
+  <style>
+    :root {
+      --bg: #f6f8fb; --surface: #ffffff; --surface-alt: #f0f4f9;
+      --text: #0f172a; --text-muted: #475569; --border: #dbe3ee;
+      --accent: #2563eb; --accent-soft: #dbeafe;
+      --shadow: 0 2px 10px rgba(15, 23, 42, 0.06);
+    }
+    html[data-theme="dark"] {
+      --bg: #0b1120; --surface: #111827; --surface-alt: #1e293b;
+      --text: #f1f5f9; --text-muted: #94a3b8; --border: #334155;
+      --accent: #60a5fa; --accent-soft: #1e3a8a;
+      --shadow: 0 4px 16px rgba(0, 0, 0, 0.35);
+    }
+    * { box-sizing: border-box; }
+    html, body { height: 100%; margin: 0; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Inter, sans-serif; background: var(--bg); color: var(--text); overflow-x: hidden; }
+    .shell { display: flex; flex-direction: column; height: 100vh; }
+    .topbar {
+      background: var(--surface);
+      border-bottom: 1px solid var(--border);
+      padding: 0.65rem 1rem;
+      display: flex;
+      flex-wrap: wrap;
+      align-items: center;
+      justify-content: space-between;
+      gap: 0.6rem;
+      box-shadow: var(--shadow);
+      z-index: 10;
+    }
+    .brand { display: flex; align-items: center; gap: 0.5rem; font-weight: 700; font-size: 1rem; }
+    .brand-badge { background: var(--accent); color: #fff; font-size: 0.72rem; padding: 0.16rem 0.48rem; border-radius: 999px; }
+    .tabs { display: flex; flex-wrap: wrap; gap: 0.35rem; }
+    .tab-btn {
+      border: 1px solid var(--border);
+      background: var(--surface-alt);
+      color: var(--text-muted);
+      font-size: 0.84rem;
+      font-weight: 600;
+      padding: 0.38rem 0.75rem;
+      border-radius: 8px;
+      cursor: pointer;
+    }
+    .tab-btn.active { background: var(--accent); color: #fff; border-color: var(--accent); }
+    .controls { display: flex; flex-wrap: wrap; align-items: center; gap: 0.5rem; }
+    .tier-group { display: inline-flex; background: var(--surface-alt); border: 1px solid var(--border); border-radius: 999px; padding: 2px; }
+    .tier-btn { border: none; background: transparent; color: var(--text-muted); font-size: 0.76rem; font-weight: 600; padding: 0.28rem 0.6rem; border-radius: 999px; cursor: pointer; }
+    .tier-btn.active { background: var(--accent); color: #fff; }
+    .theme-btn { border: 1px solid var(--border); background: var(--surface-alt); color: var(--text); font-size: 0.78rem; padding: 0.3rem 0.6rem; border-radius: 8px; cursor: pointer; }
+    .frame-wrap { flex: 1; min-height: 0; position: relative; }
+    iframe { width: 100%; height: 100%; border: none; display: block; background: var(--bg); }
+    .shell-footer {
+      background: var(--surface);
+      border-top: 1px solid var(--border);
+      padding: 0.4rem 1rem;
+      font-size: 0.78rem;
+      color: var(--text-muted);
+      display: flex;
+      flex-wrap: wrap;
+      justify-content: space-between;
+      gap: 0.5rem;
+    }
+  </style>
+</head>
+<body>
+  <div class="shell">
+    <header class="topbar">
+      <div class="brand">
+        <span>PoMiniGames Suite</span>
+        <span class="brand-badge">2026-11-12</span>
+      </div>
+      <div class="tabs" role="tablist" aria-label="Documentation Reports">
+        <button class="tab-btn active" role="tab" data-src="index.html">1. Overview</button>
+        <button class="tab-btn" role="tab" data-src="USER_WORKFLOW.html">2. User Journeys</button>
+        <button class="tab-btn" role="tab" data-src="VISUAL_ARCHITECTURE_DASHBOARD.html">3. Architecture</button>
+        <button class="tab-btn" role="tab" data-src="AI_SERVICES_REPORT.html">4. AI &amp; External</button>
+        <button class="tab-btn" role="tab" data-src="AUTH_SECURITY_REPORT.html">5. Auth &amp; Security</button>
+      </div>
+      <div class="controls">
+        <div class="tier-group" role="group" aria-label="Detail level">
+          <button class="tier-btn" data-set-tier="1">L1 Simple</button>
+          <button class="tier-btn" data-set-tier="2">L2 Standard</button>
+          <button class="tier-btn" data-set-tier="3">L3 Deep-Dive</button>
+        </div>
+        <button class="theme-btn" id="themeToggle" type="button">Theme: Light</button>
+      </div>
+    </header>
+
+    <div class="frame-wrap">
+      <iframe id="reportFrame" src="index.html" title="PoMiniGames Documentation Report"></iframe>
+    </div>
+
+    <footer class="shell-footer">
+      <span>Generated: 2026-11-12 &bull; Target Commit: <code>1e937297</code></span>
+      <span>Standalone Tabbed Shell &bull; Zero External Backend Required</span>
+    </footer>
+  </div>
+
+  <script>
+    (function () {
+      const root = document.documentElement;
+      const frame = document.getElementById('reportFrame');
+      const tabBtns = document.querySelectorAll('.tab-btn');
+      const tierBtns = document.querySelectorAll('[data-set-tier]');
+      const themeBtn = document.getElementById('themeToggle');
+
+      function syncFrame() {
+        try {
+          const doc = frame.contentDocument;
+          if (!doc) return;
+          const tier = root.getAttribute('data-tier') || '2';
+          const theme = root.getAttribute('data-theme') || 'light';
+          doc.documentElement.setAttribute('data-tier', tier);
+          doc.documentElement.setAttribute('data-theme', theme);
+          const innerTierBtn = doc.querySelector('[data-set-tier="' + tier + '"]');
+          if (innerTierBtn) innerTierBtn.click();
+          const innerTheme = doc.documentElement.getAttribute('data-theme');
+          const innerThemeBtn = doc.getElementById('themeToggle');
+          if (innerTheme !== theme && innerThemeBtn) innerThemeBtn.click();
+        } catch (_) {
+          // Ignore if cross-origin under restricted preview
+        }
+      }
+
+      function applyTier(t) {
+        const tier = ['1', '2', '3'].includes(String(t)) ? String(t) : '2';
+        root.setAttribute('data-tier', tier);
+        localStorage.setItem('pomini_docs_tier', tier);
+        tierBtns.forEach(b => b.classList.toggle('active', b.dataset.setTier === tier));
+        syncFrame();
+      }
+
+      function applyTheme(th) {
+        const theme = th === 'dark' ? 'dark' : 'light';
+        root.setAttribute('data-theme', theme);
+        localStorage.setItem('pomini_docs_theme', theme);
+        themeBtn.textContent = 'Theme: ' + (theme === 'dark' ? 'Dark' : 'Light');
+        syncFrame();
+      }
+
+      tabBtns.forEach(btn => {
+        btn.addEventListener('click', () => {
+          tabBtns.forEach(b => b.classList.remove('active'));
+          btn.classList.add('active');
+          frame.src = btn.dataset.src;
+        });
+      });
+
+      frame.addEventListener('load', syncFrame);
+      tierBtns.forEach(btn => btn.addEventListener('click', () => applyTier(btn.dataset.setTier)));
+      themeBtn.addEventListener('click', () => applyTheme(root.getAttribute('data-theme') === 'dark' ? 'light' : 'dark'));
+
+      applyTier(localStorage.getItem('pomini_docs_tier') || '2');
+      applyTheme(localStorage.getItem('pomini_docs_theme') || 'light');
+    })();
+  </script>
+</body>
+</html>

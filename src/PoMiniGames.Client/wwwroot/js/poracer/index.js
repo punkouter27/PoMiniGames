@@ -243,15 +243,16 @@ window.PoRacer = {
     getPerformanceProfile: () => profiling ? lastProfile : null,
 
     /** Track geometry, once per race. */
-    setStatic(center, width, walls, boostPads, surfaceZones, theme, laps) {
+    setStatic(center, width, walls, boostPads, surfaceZones, theme, laps, weather) {
         Render.setStatic(center, width, walls, boostPads, surfaceZones, theme);
         Audio.start(laps);
-        // Weather of the day (weather.js): one seed per track and UTC day, so everyone on a track
-        // drives under the same sky. A 2D overlay directly above the track canvas, under the HUD;
-        // it changes nothing the server simulates.
+        // Weather of the day: the server picks it per track and UTC day (PoRacerWeather) and races
+        // in it (rain and snow cost grip), so the overlay draws the type it is told. A 2D overlay
+        // directly above the track canvas, under the HUD. With motion reduced there is no overlay;
+        // the HUD's weather chip still says what the road is like.
         const track = document.getElementById(mainId);
         if (track && !reducedMotion()) {
-            window.PoWeather?.apply({ seed: JSON.stringify(theme) + new Date().toISOString().slice(0, 10), after: track });
+            window.PoWeather?.apply({ type: weather || 'clear', after: track });
         }
     },
 

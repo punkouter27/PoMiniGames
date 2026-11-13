@@ -9,12 +9,23 @@ import { TRAITS } from './config.js';
 
 export const NONE = -1;
 
+export const ROLE = Object.freeze({
+  NORMAL: 0,
+  FORAGER: 1,
+  BUILDER: 2,
+  WARRIOR: 3,
+  TRADER: 4,
+  TAMED_HOUND: 5,
+});
+
 const F32 = ['x', 'y', 'z', 'yaw', 'vx', 'vz', 'age', 'hunger', 'thirst', 'health', 'scale', 'dist'];
-const U8 = ['species', 'lifeStage', 'state', 'goal', 'sex', 'alive'];
+const U8 = ['species', 'lifeStage', 'state', 'goal', 'sex', 'alive', 'role'];
 const U16 = ['offspring'];              // children ever born to this creature (telemetry)
 const I32 = ['mother', 'father', 'target', 'leader', 'homeTile', 'memFoodTile', 'memFoodTick', 'memWaterTile', 'memWaterTick', 'birthTick', 'gestationEndTick', 'lastMateTick', 'goalSince', 'alertTick', 'pendingFather',
   // Disease (creatures/disease.js): sick while tick < sickUntil, immune while tick < immuneUntil.
-  'sickUntil', 'immuneUntil'];
+  'sickUntil', 'immuneUntil',
+  // Tribe membership (-1 = unaffiliated / wild; 0..N-1 = tribe index)
+  'tribeId'];
 const F32_EXTRA = ['alertX', 'alertZ'];   // where the alarm came from (see behavior/social.js)
 
 export function createEntities(cap) {

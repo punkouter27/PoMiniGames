@@ -231,9 +231,9 @@ public sealed class PoCabinetLobbyView
     /// <summary>Internal id of the lobby's race (what <c>JoinRace</c> takes). Never shown — there are no join codes.</summary>
     public string Code { get; set; } = "";
     public string TrackId { get; set; } = PoCabinetCatalog.DefaultTrackId;
-    /// <summary>AI officials the host asked for; the race seats <see cref="BotSeats"/> of them.</summary>
+    /// <summary>AI drivers the host asked for; the race seats <see cref="BotSeats"/> of them.</summary>
     public int BotCount { get; set; }
-    /// <summary>The officials that fit: min(BotCount, free seats).</summary>
+    /// <summary>The AI drivers that fit: min(BotCount, grid slots the drivers leave free).</summary>
     public int BotSeats { get; set; }
     /// <summary>The host may start: everyone is ready and there are two cars, counting the AI.</summary>
     public bool Startable { get; set; }

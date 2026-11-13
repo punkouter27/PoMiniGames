@@ -106,33 +106,6 @@ internal static class RateLimitingExtensions
                         QueueLimit = 0,
                     }));
 
-            // PoJevArena: library writes, match registration and status share a
-            // modest cap; the decision proxy gets its own because a live match sends a batch
-            // every 250 ms (240/min). Spend is bounded separately by the daily Jev allowance —
-            // these only shape bursts.
-            opts.AddPolicy("pojevarena", ctx =>
-                RateLimitPartition.GetFixedWindowLimiter(
-                    partitionKey: BuildPartitionKey(ctx),
-                    factory: _ => new FixedWindowRateLimiterOptions
-                    {
-                        Window = TimeSpan.FromMinutes(1),
-                        PermitLimit = 30,
-                        AutoReplenishment = true,
-                        QueueProcessingOrder = QueueProcessingOrder.OldestFirst,
-                        QueueLimit = 0,
-                    }));
-            opts.AddPolicy("pojevarena-decide", ctx =>
-                RateLimitPartition.GetFixedWindowLimiter(
-                    partitionKey: BuildPartitionKey(ctx),
-                    factory: _ => new FixedWindowRateLimiterOptions
-                    {
-                        Window = TimeSpan.FromMinutes(1),
-                        PermitLimit = 300,
-                        AutoReplenishment = true,
-                        QueueProcessingOrder = QueueProcessingOrder.OldestFirst,
-                        QueueLimit = 0,
-                    }));
-
             // PoBrawl demo fighter Elo. Its own bucket so a kiosk (or a 4x tournament) reporting
             // bouts cannot starve the same player's KO and ladder posts in "highscores". The real
             // per-identity limits (a bout every 3 s, 40 a day) are PoBrawlDemoEloGate's; this

@@ -2,16 +2,21 @@
 // what the creature perceives (`ctx`, built by world.js each re-score); the best wins
 // unless the current goal is within the hysteresis margin, which stops dithering.
 import { BEHAVIOR, TICK_SECONDS } from '../core/config.js';
-import { NONE } from '../core/entities.js';
+import { NONE, ROLE } from '../core/entities.js';
 import { LIFE_STAGE } from '../creatures/lifecycle.js';
 import { SPECIES } from '../creatures/species.js';
 import { TRAIT, baseTrait } from '../creatures/traits.js';
 
 export const GOAL = Object.freeze({
   WANDER: 0, EAT: 1, DRINK: 2, FLEE: 3, HUNT: 4, MATE: 5, FOLLOW_PARENT: 6, RETURN_HOME: 7, CHOP: 8, BUILD: 9, REST: 10,
+  FIGHT_RIVAL: 11, TEND_FIELD: 12, PATROL: 13,
 });
-export const GOAL_NAMES = Object.freeze(['Wandering', 'Eating', 'Drinking', 'Fleeing', 'Hunting', 'Seeking a mate', 'Following a parent', 'Heading home', 'Chopping wood', 'Building a hut', 'Resting']);
-const GOAL_COUNT = 11;
+export const GOAL_NAMES = Object.freeze([
+  'Wandering', 'Eating', 'Drinking', 'Fleeing', 'Hunting', 'Seeking a mate', 'Following a parent',
+  'Heading home', 'Chopping wood', 'Building', 'Resting',
+  'Fighting rival', 'Tending fields', 'Patrolling',
+]);
+const GOAL_COUNT = 14;
 
 const near = (d, radius) => (d === Infinity || d === undefined ? 0 : d <= 0 ? 1 : d >= radius ? 0 : 1 - d / radius);
 
@@ -66,13 +71,44 @@ export function scoreGoals(e, i, ctx) {
   }
 
   if (sp.builds && ctx.hasHome) {
-    // Home at night, but never on an empty stomach: a hungry villager keeps foraging.
-    s[GOAL.RETURN_HOME] = ctx.night ? (0.35 + 0.2 * near(ctx.homeDist, 60)) * (1 - Math.max(h, t)) : 0.05;
-    if (ctx.needsHut) {
+    const role = e.role ? e.role[i] : ROLE.NORMAL;
+    // Home at night, or when chilled by winter snow/storms (#10).
+    const chillBoost = (ctx.chill ?? 0) > 0.4 ? 0.35 : 0;
+    s[GOAL.RETURN_HOME] = ctx.night || chillBoost > 0
+      ? (0.35 + chillBoost + 0.2 * near(ctx.homeDist, 60)) * (1 - 0.6 * Math.max(h, t))
+      : 0.05;
+
+    if (ctx.needsHut || ctx.hasTribeProject) {
       const logs = ctx.logsCarried ?? 0;
-      if (logs >= 3) s[GOAL.BUILD] = 0.6 + 0.2 * near(ctx.homeDist, 50);
-      else s[GOAL.CHOP] = (0.3 + 0.3 * near(ctx.treeDist, 50)) * (0.4 + 0.8 * diligent);
+      const builderBoost = role === ROLE.BUILDER ? 0.25 : 0;
+      if (ctx.hasTribeProject || logs >= 3) {
+        s[GOAL.BUILD] = 0.58 + builderBoost + 0.22 * near(ctx.projectDist ?? ctx.homeDist, 50);
+      }
+      if (logs < 3 && ctx.treeDist !== Infinity) {
+        s[GOAL.CHOP] = (0.32 + 0.3 * near(ctx.treeDist, 50)) * (0.4 + 0.8 * diligent);
+      }
     }
+
+    // Tribal defense & border combat (#5, #8)
+    const fightDist = Math.min(ctx.rivalDist ?? Infinity, ctx.hostileBuildingDist ?? Infinity);
+    if (fightDist !== Infinity) {
+      const warriorBoost = role === ROLE.WARRIOR ? 0.32 : 0;
+      s[GOAL.FIGHT_RIVAL] = (0.42 + warriorBoost + 0.45 * near(fightDist, 28)) * (0.7 + 0.6 * bold) * (1 - 0.5 * h);
+    }
+
+    // Cultivated field tending (#8)
+    if (ctx.fieldDist !== Infinity && h < 0.75) {
+      const foragerBoost = role === ROLE.FORAGER ? 0.18 : 0;
+      s[GOAL.TEND_FIELD] = (0.28 + foragerBoost + 0.24 * near(ctx.fieldDist, 30)) * (0.5 + 0.6 * diligent);
+    }
+
+    // Perimeter patrol for warriors (#8, #9)
+    if (role === ROLE.WARRIOR && h < 0.65 && t < 0.65) {
+      s[GOAL.PATROL] = 0.36 + 0.14 * bold;
+    }
+  } else if (e.role && e.role[i] === ROLE.TAMED_HOUND && h < 0.7 && t < 0.7) {
+    // Tamed hounds patrol around their bonded settlement (#9)
+    s[GOAL.PATROL] = 0.42 + 0.15 * near(ctx.homeDist, 40);
   }
   return s;
 }

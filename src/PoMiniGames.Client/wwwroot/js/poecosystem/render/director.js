@@ -23,9 +23,10 @@ export const DIRECTOR = Object.freeze({
   minClearance: 2.2,        // metres above the ground the camera never dips below
 });
 
-// What makes a creature worth watching. Anything unlisted is background.
+// What makes a creature worth watching (#13 story-aware weights).
 const PRIORITY = {
-  [GOAL.HUNT]: 6, [GOAL.FLEE]: 5, [GOAL.BUILD]: 4, [GOAL.MATE]: 3, [GOAL.CHOP]: 3,
+  [GOAL.FIGHT_RIVAL]: 8, [GOAL.HUNT]: 6, [GOAL.FLEE]: 5, [GOAL.BUILD]: 4.5,
+  [GOAL.MATE]: 3.5, [GOAL.PATROL]: 2.8, [GOAL.CHOP]: 2.5, [GOAL.TEND_FIELD]: 2.2,
   [GOAL.FOLLOW_PARENT]: 2, [GOAL.EAT]: 1, [GOAL.DRINK]: 1,
 };
 
@@ -36,23 +37,36 @@ export function createDirector({ onSubject = () => {}, onCaption = () => {}, ran
   let shot = null;
   let angle = 0;
   let justCut = 0;      // seconds of fast easing left after a cut
+  let lastHandle = -1;
+  let lastSpecies = -1;
 
   const rowOf = (handles, count, handle) => { for (let k = 0; k < count; k++) if (handles[k] === handle) return k; return -1; };
 
   function choose(interp, handles, count, now) {
     if (count === 0) { shot = null; return; }
-    let best = -1; let bestScore = -1;
+    let best = -1; let bestScore = -1e9;
     for (let k = 0; k < count; k++) {
-      const goal = interp[k * FRAME.CREATURE_STRIDE + 6] | 0;
-      // Random jitter breaks ties so the same rabbit is not chosen every time.
-      const score = (PRIORITY[goal] ?? 0) + random() * 0.9;
+      const o = k * FRAME.CREATURE_STRIDE;
+      const species = interp[o + 5] | 0;
+      const goal = interp[o + 6] | 0;
+      const flags = interp[o + FRAME.STATE] | 0;
+      const sickBonus = (flags & FRAME.C_SICK) ? 2.4 : 0;
+      const watchBonus = (flags & FRAME.C_WATCHED) ? 2.2 : 0;
+      const tamedBonus = (flags & FRAME.C_TAMED) ? 1.5 : 0;
+      const repeatPenalty = (handles[k] === lastHandle ? -4.5 : 0) + (species === lastSpecies ? -1.4 : 0);
+      const score = (PRIORITY[goal] ?? 0) + sickBonus + watchBonus + tamedBonus + repeatPenalty + random() * 0.9;
       if (score > bestScore) { bestScore = score; best = k; }
     }
     if (best < 0) { shot = null; return; }
-    const goal = interp[best * FRAME.CREATURE_STRIDE + 6] | 0;
+    const bo = best * FRAME.CREATURE_STRIDE;
+    const goal = interp[bo + 6] | 0;
+    const flags = interp[bo + FRAME.STATE] | 0;
+    lastHandle = handles[best];
+    lastSpecies = interp[bo + 5] | 0;
+    const captionTag = (flags & FRAME.C_SICK) ? ' · Outbreak' : (flags & FRAME.C_TAMED) ? ' · Village Hound' : '';
     shot = {
       kind: 'creature', handle: handles[best], until: now + DIRECTOR.shotSeconds,
-      radius: DIRECTOR.creatureRadius, height: DIRECTOR.creatureHeight, caption: GOAL_NAMES[goal] ?? '',
+      radius: DIRECTOR.creatureRadius, height: DIRECTOR.creatureHeight, caption: (GOAL_NAMES[goal] ?? '') + captionTag,
     };
     angle = random() * TAU;
     justCut = 1.2;

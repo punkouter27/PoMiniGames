@@ -40,8 +40,8 @@ public sealed class PoCabinetSim
     {
         if (drivers is null || drivers.Count == 0)
             throw new ArgumentException("at least one driver is required", nameof(drivers));
-        if (drivers.Count > PoCabinetCatalog.CarCount)
-            throw new ArgumentException($"max {PoCabinetCatalog.CarCount} drivers", nameof(drivers));
+        if (drivers.Count > PoCabinetCatalog.OnlineGridSize)
+            throw new ArgumentException($"max {PoCabinetCatalog.OnlineGridSize} drivers", nameof(drivers));
 
         _track = PoCabinetTrack.Get(trackId);
         TotalLaps = _track.Laps;
@@ -63,6 +63,7 @@ public sealed class PoCabinetSim
                 CorneringSkill = d.CorneringSkill,
                 Position = i + 1,
             };
+            PoCabinetPhysics.SetStyle(car, i);
             PoCabinetPhysics.GridSlot(_track, car, i);
             _cars.Add(car);
             if (d.IsPlayer) _byOwnerId[d.OwnerId] = car;
@@ -215,19 +216,22 @@ public sealed class PoCabinetSim
 
     private int Rank(SimCar car) => Standings().IndexOf(car) + 1;
 
+    /// <summary>An AI with something to say: the officials have radio lines, the field racers none.</summary>
     private SimCar? BotAt(int index)
     {
-        var bots = _cars.Where(c => !c.IsPlayer).ToList();
+        var bots = _cars.Where(c => !c.IsPlayer && c.OfficialId != PoCabinetCatalog.FieldRacerId).ToList();
         return bots.Count == 0 ? null : bots[index % bots.Count];
     }
 
     private void Say(DialogueKind kind, SimCar? speaker)
     {
         if (speaker is null || speaker.IsPlayer) return;
+        var text = PoCabinetDialogue.PickLine(speaker.OfficialId, kind, _tickCount);
+        if (text.Length == 0) return; // a field racer leading the lap: no line, not an empty bubble
         _pendingDialogue = new PoCabinetDialogueEvent
         {
             OfficialId = speaker.OfficialId,
-            Text = PoCabinetDialogue.PickLine(speaker.OfficialId, kind, _tickCount),
+            Text = text,
             RaceTick = _tickCount,
         };
     }
@@ -352,6 +356,39 @@ public sealed record PoCabinetPersonality(
         ("bill-b", "#a02c2c", Officials.BillB, PoCabinetPhysics.MaxSpeed * 0.91, 0.70),
         ("mike-p", "#1c8054", Officials.MikeP, PoCabinetPhysics.MaxSpeed * 0.96, 0.60),
     ];
+
+    /// <summary>
+    /// The AI a multiplayer host can add, in the order it is seated: the four officials, then
+    /// the eight quickest field racers of <see cref="SoloField"/>, each with the name and the
+    /// paint it has in a solo race (physics.js <c>soloField</c>).
+    /// </summary>
+    public static IReadOnlyList<(string Id, string Name, string Color, PoCabinetPersonality Personality, double MaxSpeed, double CorneringSkill)> OnlineBots => LazyOnlineBots.Value;
+
+    // Lazy: SoloField is declared below, and static initializers run in textual order.
+    private static readonly Lazy<(string, string, string, PoCabinetPersonality, double, double)[]> LazyOnlineBots = new(BuildOnlineBots);
+
+    private static (string, string, string, PoCabinetPersonality, double, double)[] BuildOnlineBots()
+    {
+        var bots = new (string, string, string, PoCabinetPersonality, double, double)[PoCabinetCatalog.MaxBots];
+        for (int i = 0; i < bots.Length; i++)
+        {
+            if (i < Roster.Count)
+            {
+                var o = Roster[i];
+                bots[i] = (o.Id, PoCabinetCatalog.OfficialName(o.Id), o.Color, o.Personality, o.MaxSpeed, o.CorneringSkill);
+                continue;
+            }
+            int n = i - Roster.Count;
+            var f = SoloField[i];
+            // The paint soloField() gives the same car: hue, saturation and lightness from three bytes of its hash.
+            uint h = unchecked((uint)(n + 1) * 0x9E3779B1u);
+            double a = (h & 0xff) / 255.0, b = ((h >> 8) & 0xff) / 255.0, d = (h >> 24) / 255.0;
+            var color = string.Create(System.Globalization.CultureInfo.InvariantCulture,
+                $"hsl({Math.Round(d * 360, MidpointRounding.AwayFromZero)}, {55 + Math.Round(a * 35, MidpointRounding.AwayFromZero)}%, {32 + Math.Round(b * 30, MidpointRounding.AwayFromZero)}%)");
+            bots[i] = (PoCabinetCatalog.FieldRacerId, PoCabinetCatalog.FieldRacerName(n), color, f.Personality, f.MaxSpeed, f.CorneringSkill);
+        }
+        return bots;
+    }
 
     /// <summary>
     /// The 63 rivals of a solo race in grid order: the four officials, then 59 field racers from

@@ -238,16 +238,6 @@ public static class GameCatalog
             new(GameMode.Multiplayer, "/couplequiz", RequiresNetwork: true),
         ]),
 
-        // PoJevArena: design creatures, draft 10 v 10, and watch TypeSafe's Jev
-        // decide every move. Needs sign-in (guests included) and a Jev key on the server;
-        // not in the kiosk rotation, because an unattended loop spends Jev calls.
-        // Demo only: the arena runs itself, so there is no solo or hot-seat draft to pick
-        // and no match to win — the visitor watches the brain play.
-        new(GameKeys.PoJevArena, "Jev Arena", "⚔️",
-        [
-            new(GameMode.Demo, "/pojevarena/demo", RequiresNetwork: true),
-        ]),
-
         // PoEcosystem is an autonomous simulation that is watched, never played. Demo only:
         // a fresh island every time, never saved in this browser.
         new(GameKeys.PoEcosystem, "Ecosystem", "🌿",
@@ -283,7 +273,6 @@ public static class GameCatalog
     /// from <see cref="For"/>: the reel opens on the two quickest-to-read board games so a
     /// passer-by sees a full round early, and the longer 3D matches sit late. The two
     /// simulations close the lap: they never finish, so they just run out their dwell.
-    /// PoJevArena has a demo mode but stays out, because an unattended loop spends Jev calls.
     /// </summary>
     public static readonly IReadOnlyList<CatalogEntry> Demo =
     [

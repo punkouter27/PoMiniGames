@@ -107,12 +107,18 @@
     padding: 0 0.8rem;
     border-radius: 999px;
     font-size: 0.85rem;
+    transition: background-color 0.16s ease, color 0.16s ease, transform 0.14s cubic-bezier(0.22, 1, 0.36, 1), box-shadow 0.18s ease;
+}
+
+.pocabinet-prerace__pill:active span {
+    transform: scale(0.95);
 }
 
 .pocabinet-prerace__pill input:checked + span {
     background: var(--color-primary);
     color: var(--color-on-primary, white);
     font-weight: 600;
+    box-shadow: 0 2px 10px color-mix(in srgb, var(--color-primary) 40%, transparent);
 }
 
 .pocabinet-prerace__pill input:focus-visible + span {

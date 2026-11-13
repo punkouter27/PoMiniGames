@@ -790,6 +790,15 @@ export function createRenderer(container, {
       creatures.draw(interp, interpCount, timeSec, speeds, curr.views.handles, terrainApi?.heightAt);
       kinThreads.update(interp, curr.views.handles, interpCount, timeSec);
       trails?.stamp(interp, interpCount, speeds, dt);
+      if (trails && stats?.caravans?.length && stats?.tribes?.length) {
+        const tribeMap = new Map(stats.tribes.map(t => [t.id, t]));
+        for (const c of stats.caravans) {
+          const a = tribeMap.get(c.fromTribeId); const b = tribeMap.get(c.toTribeId);
+          if (!a || !b) continue;
+          const p = Math.max(0, Math.min(1, c.progress ?? 0));
+          trails.stampPoint(a.centerX + (b.centerX - a.centerX) * p, a.centerZ + (b.centerZ - a.centerZ) * p, 2.2, dt);
+        }
+      }
       props.draw(curr.views.props, propCount);
       // Only on a frame the sim actually produced: see eventFx.props for why feeding it
       // repeated rows would read every falling body as one that had just landed.
@@ -886,8 +895,9 @@ export function createRenderer(container, {
       }
       if (s) { decideSpectacle(s); decideMood(s); }
       if (island && s?.tribes) island.setTribes(s.tribes, (id) => bannerColour(palette, id));
-      if (settlementMeshes && s?.buildings) {
-        settlementMeshes.syncBuildings(s.buildings);
+      if (settlementMeshes) {
+        if (s?.buildings) settlementMeshes.syncBuildings(s.buildings, s.tribes);
+        if (s?.caravans && s?.tribes) settlementMeshes.syncCaravans(s.caravans, s.tribes);
       }
     },
     /** A drained sim event: routed to particles, the camera, the ear and the director. */
@@ -958,6 +968,39 @@ export function createRenderer(container, {
       } finally {
         if (scale > 1) { renderer.setPixelRatio(base); post.setPixelRatio(base); resize(); }
       }
+    },
+    setFov(fov) {
+      const clamped = Math.max(28, Math.min(95, Number(fov) || 60));
+      camera.fov = clamped;
+      camera.updateProjectionMatrix();
+      return clamped;
+    },
+    get fov() { return camera.fov; },
+    /** Postcard still (#18): crisp capture framed cleanly with island metadata banner. */
+    postcard({ seed = '', year = 0, season = '', headline = 'Naturalist Field Note' } = {}) {
+      const snap = this.photo();
+      if (!snap) return null;
+      const border = Math.max(24, Math.round(snap.width * 0.018));
+      const footerH = Math.max(64, Math.round(snap.height * 0.085));
+      const card = document.createElement('canvas');
+      card.width = snap.width + border * 2;
+      card.height = snap.height + border * 2 + footerH;
+      const ctx = card.getContext('2d');
+      ctx.fillStyle = '#f5efe2';
+      ctx.fillRect(0, 0, card.width, card.height);
+      ctx.drawImage(snap, border, border);
+      ctx.strokeStyle = 'rgba(40, 32, 22, 0.25)';
+      ctx.lineWidth = 2;
+      ctx.strokeRect(border, border, snap.width, snap.height);
+      const textY = border + snap.height + Math.round(footerH * 0.45);
+      ctx.fillStyle = '#241e17';
+      ctx.font = `600 ${Math.max(18, Math.round(footerH * 0.30))}px Georgia, serif`;
+      ctx.fillText(headline, border, textY);
+      ctx.fillStyle = '#625647';
+      ctx.font = `${Math.max(14, Math.round(footerH * 0.22))}px system-ui, sans-serif`;
+      const meta = `Seed ${seed}  •  Year ${year}${season ? ` (${season})` : ''}`;
+      ctx.fillText(meta, border, textY + Math.round(footerH * 0.34));
+      return card;
     },
     get surface() { return { ...surface }; },
     // Selection is the sim's and the page's business, not the renderer's: nothing is

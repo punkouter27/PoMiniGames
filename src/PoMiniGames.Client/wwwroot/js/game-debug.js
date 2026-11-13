@@ -68,7 +68,7 @@
 
   function onKeyDown(e) {
     if (e.key !== 'Tab' || e.shiftKey || e.ctrlKey || e.altKey || e.metaKey || e.repeat) return;
-    if (e.defaultPrevented) return; // a game already claimed Tab (PoEcosystem, PoJevArena)
+    if (e.defaultPrevented) return; // a game already claimed Tab (PoEcosystem)
     if (!isPlaying()) return;
     e.preventDefault();
     setOpen(!open);

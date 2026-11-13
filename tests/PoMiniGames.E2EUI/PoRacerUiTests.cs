@@ -10,6 +10,7 @@ public sealed class PoRacerUiTests(KestrelServerFixture fixture)
     [InlineData("circuit")]
     [InlineData("neonskyline")]
     [InlineData("desertdustway")]
+    [InlineData("crossfire")]
     public async Task SoloTimeTrial_CompletesSavesAndShowsTheLapOnTheNextVisit(string track)
     {
         using var playwright = await Playwright.CreateAsync();

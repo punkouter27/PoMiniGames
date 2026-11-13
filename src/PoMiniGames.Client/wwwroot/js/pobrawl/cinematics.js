@@ -7,6 +7,8 @@ import * as THREE from 'three';
 import { RING_HALF } from './arena.js';
 import { setExpression } from './fighters.js';
 import { REGIONS } from './combat.js';
+import { recordRound, matchVerdict, wouldDecide, firstRoundKo, ROUNDS_TO_WIN } from './rounds.js';
+import { TIME_LIMIT } from './constants.js';
 
 const _koHead = new THREE.Vector3();
 
@@ -122,6 +124,7 @@ class CinematicsMethods {
     if (wf) { setExpression(wf.rig, 'grin'); wf.expressionT = 0; }
     this._startCelebration(wf && this.rng.random() < 0.55 ? wf : null);
     this._setBanner(bannerText);
+    if (this._roundOver(winner)) return;
     this._reportResult();
   }
 
@@ -131,7 +134,96 @@ class CinematicsMethods {
     this.phase = 'result';
     this.phaseT = 0;
     this._startCelebration(this.pendingCelebration);
+    if (this._roundOver(this.winner)) return;
     this._reportResult();
+  }
+
+  // ── Best of three (rounds.js) ─────────────────────────────────────────────
+  // The 1P ladder and 2P local fight first-to-two. Everything the page hears is
+  // still one OnMatchEnd per MATCH: a round that leaves it open stays inside the
+  // engine — the banner names the round's winner, the pips fill, and after a beat
+  // the next round respawns both fighters fresh.
+
+  /** Does this mode fight best of three? */
+  _roundsMode() {
+    const m = this.options?.mode;
+    return (m === '1p' && !this.training) || m === '2p';
+  }
+
+  /** Would a round won by `winner` end the match? Always true outside a best-of-three. */
+  _roundDecides(winner) {
+    return !this.match || wouldDecide(this.match, winner);
+  }
+
+  /**
+   * A round just ended with `winner` (1, 2, or 0 for a bell too close to call).
+   * Returns true when the match goes on — the caller must NOT report a result —
+   * and false when this was the last round (or the mode has no rounds), having
+   * set `this.winner` to the MATCH winner.
+   */
+  _roundOver(winner) {
+    const m = this.match;
+    if (!m) return false;
+    recordRound(m, winner, this.fighters.map((f) => f.stats),
+      { ko: this.fighters.some((f) => f.state === 'ko'), secs: this.clock });
+    this._renderRounds(true);
+    const verdict = matchVerdict(m);
+    if (verdict) {
+      this.winner = verdict.winner;
+      return false;
+    }
+    this._roundBreak = true;
+    const name = winner ? this.fighters[winner - 1].rig.config.name.toUpperCase() : null;
+    this._setBanner(name ? `ROUND ${m.played} · ${name}` : `ROUND ${m.played} · DRAW`);
+    this._caption(name ? `Round ${m.played} to ${this.fighters[winner - 1].rig.config.name}.`
+      : `Round ${m.played} is too close to call.`);
+    // Hold the normal framing on the round's winner, as the result does.
+    this._setCameraMode('normal', { force: true });
+    return true;
+  }
+
+  /** The round break is over: both fighters back fresh, the score kept. */
+  _nextRound() {
+    this._roundBreak = false;
+    // Trump's KO stacks are "for the rest of the match": they outlive the respawn.
+    const stacks = this.fighters.map((f) => f.personality?.koStacks || 0);
+    this.resetMatch({ nextRound: true });
+    this.fighters.forEach((f, i) => {
+      if (stacks[i] && f.personality) f.personality.koStacks = stacks[i];
+    });
+  }
+
+  /**
+   * The round pips under the HUD: two per corner, lit as rounds are won. Engine DOM.
+   * `over` = the round just ended: the label keeps naming it until the next one spawns.
+   */
+  _renderRounds(over = false) {
+    const m = this.match;
+    if (!m) {
+      if (this._roundsEl) this._roundsEl.hidden = true;
+      return;
+    }
+    if (!this._roundsEl) {
+      if (!this.container) return;
+      const el = document.createElement('div');
+      el.className = 'pb-rounds';
+      el.setAttribute('role', 'img');
+      const side = () => `<span class="pb-rounds__side">${'<i class="pb-rounds__pip"></i>'.repeat(ROUNDS_TO_WIN)}</span>`;
+      el.innerHTML = `${side()}<span class="pb-rounds__label"></span>${side()}`;
+      this.container.appendChild(el);
+      this._roundsEl = el;
+    }
+    const el = this._roundsEl;
+    el.hidden = false;
+    const sides = el.querySelectorAll('.pb-rounds__side');
+    sides.forEach((s, i) => {
+      // The right corner fills from the outside in, mirroring the left.
+      const pips = [...s.children];
+      if (i === 1) pips.reverse();
+      pips.forEach((pip, n) => pip.classList.toggle('pb-rounds__pip--on', n < m.wins[i]));
+    });
+    el.querySelector('.pb-rounds__label').textContent = `ROUND ${Math.max(1, over ? m.played : m.played + 1)}`;
+    el.setAttribute('aria-label', `Best of three — rounds won: left corner ${m.wins[0]}, right corner ${m.wins[1]}`);
   }
 
   // Victory hops + entrance gesture replay. Cleared in _startCountdown.
@@ -160,19 +252,30 @@ class CinematicsMethods {
     this._setBanner(name);
     // Result holds the normal framing so the player can read it without the view moving.
     this._setCameraMode('normal', { force: true });
+    // A best-of-three reports the whole match's scorecard, not its last round's.
+    const st = this.match ? this.match.stats : this.fighters.map((f) => f.stats);
+    // The time the page files on the fastest-KO board. In a best-of-three only a ROUND ONE
+    // knockout by the match winner counts; anything else reports the full clock, which the
+    // page reads as "no KO time" (it is how a decision at the bell already reports).
+    const koSecs = this.match
+      ? (this.winner && firstRoundKo(this.match, this.winner)) || TIME_LIMIT
+      : this.clock;
     if (this.dotnet) {
       // Recap is ONE object, not more positional args: invokeMethodAsync fails silently
       // on an arity mismatch (see OnHud), while an object grows by adding properties.
       // camelCase here binds to PascalCase on the C# record.
-      this.dotnet.invokeMethodAsync('OnMatchEnd', this.winner, Math.round(this.clock * 100) / 100, {
-        p1Hits: this.fighters[0].stats.hits,
-        p2Hits: this.fighters[1].stats.hits,
-        p1Blocks: this.fighters[0].stats.blocks,
-        p2Blocks: this.fighters[1].stats.blocks,
-        p1BestCombo: this.fighters[0].stats.bestCombo,
-        p2BestCombo: this.fighters[1].stats.bestCombo,
-        p1BiggestHit: Math.round(this.fighters[0].stats.biggestHit),
-        p2BiggestHit: Math.round(this.fighters[1].stats.biggestHit),
+      this.dotnet.invokeMethodAsync('OnMatchEnd', this.winner, Math.round(koSecs * 100) / 100, {
+        p1Hits: st[0].hits,
+        p2Hits: st[1].hits,
+        p1Blocks: st[0].blocks,
+        p2Blocks: st[1].blocks,
+        p1BestCombo: st[0].bestCombo,
+        p2BestCombo: st[1].bestCombo,
+        p1BiggestHit: Math.round(st[0].biggestHit),
+        p2BiggestHit: Math.round(st[1].biggestHit),
+        // Best of three: rounds each corner took (0 in the one-round modes).
+        p1Rounds: this.match ? this.match.wins[0] : 0,
+        p2Rounds: this.match ? this.match.wins[1] : 0,
       }).catch(() => {});
     }
     this._show('result', { winner: this.winner, ko: this.fighters.some((f) => f.state === 'ko') });

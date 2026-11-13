@@ -8,7 +8,7 @@
 // Out: probeResult · ready · terrain · frame (transferred) · tiles · stats · events ·
 //      thoughts · detail · saved · debugResult · telemetry · lineage ·
 //      snapshotBytes (transferred) · history · found · kin · heat (transferred) · keyframes · error
-import { CREATURE_CAP, HOST, LOW_END_CREATURE_CAP, PROP_CAP } from '../sim/core/config.js';
+import { CREATURE_CAP, HOST, LOW_END_CREATURE_CAP, PROP_CAP, TICK_SECONDS, YEAR_SECONDS } from '../sim/core/config.js';
 import { NONE } from '../sim/core/entities.js';
 import { createFrameBuffer, encodeFrame } from '../sim/frame.js';
 import { createWorld } from '../sim/world.js';
@@ -252,6 +252,28 @@ export function createSimRuntime(post, deps = {}) {
           }).catch((err) => post({ type: 'error', where: 'import', message: String(err?.message ?? err) }));
           return;
         case 'setSpeed': world?.applyCommand({ type: 'setSpeed', speed: msg.speed }); return;
+        case 'setPersistence':
+          ephemeral = !msg.persist;
+          if (!ephemeral && idb && world) save('optin');
+          return;
+        case 'fastForward': {
+          if (!world) return;
+          const years = Math.max(0.25, Math.min(15, Number(msg.years) || 1));
+          const totalTicks = Math.min(36000, Math.round((years * YEAR_SECONDS) / TICK_SECONDS));
+          const keyInterval = Math.round(KEYFRAME_YEARS * YEAR_SECONDS / TICK_SECONDS);
+          for (let k = 0; k < totalTicks; k++) {
+            world.step();
+            const tk = world.clock.tick;
+            if (!ephemeral && idb && tk % keyInterval === 0) {
+              const yr = world.clock.year();
+              if (yr !== lastYear) { lastYear = yr; keyframe(); }
+            }
+          }
+          postStats(); postEvents(); postThoughts(); postTiles(); postFrame();
+          if (selected !== NONE) postDetail();
+          post({ type: 'fastForwardDone', years, year: world.clock.year(), tick: world.clock.tick });
+          return;
+        }
         case 'pause': paused = true; return;
         case 'resume': paused = false; lastWall = now(); return;
         case 'select': selected = msg.handle ?? NONE; if (world) postDetail(); return;

@@ -1147,6 +1147,54 @@ button.pb-net-btn {
     font-size: 0.78rem;
 }
 
+/* Best of three: the round pips under the HUD clock. Engine DOM (cinematics.js
+   _renderRounds), hence ::deep. Two pips a corner, lit gold as rounds are won. */
+.pb-canvas-host ::deep .pb-rounds {
+    position: absolute;
+    top: 84px;
+    left: 50%;
+    translate: -50% 0;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 4px 10px;
+    border-radius: 999px;
+    background: rgba(8, 12, 28, 0.62);
+    color: var(--pb-ink-soft);
+    font-family: var(--pb-display);
+    font-size: 0.75rem;
+    letter-spacing: 0.08em;
+    pointer-events: none;
+    white-space: nowrap;
+}
+
+.pb-canvas-host ::deep .pb-rounds[hidden] {
+    display: none;
+}
+
+.pb-canvas-host ::deep .pb-rounds__side {
+    display: flex;
+    gap: 5px;
+}
+
+.pb-canvas-host ::deep .pb-rounds__pip {
+    width: 10px;
+    height: 10px;
+    border-radius: 50%;
+    border: 1.5px solid var(--pb-ink-dim);
+    background: transparent;
+}
+
+.pb-canvas-host ::deep .pb-rounds__pip--on {
+    border-color: var(--pb-gold);
+    background: var(--pb-gold);
+    box-shadow: 0 0 6px var(--pb-gold);
+}
+
+@media (max-width: 640px) {
+    .pb-canvas-host ::deep .pb-rounds { top: 74px; gap: 7px; padding: 3px 8px; }
+}
+
 /* The training readout is engine DOM (training.js), hence ::deep. */
 .pb-canvas-host ::deep .pb-train {
     position: absolute;

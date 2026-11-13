@@ -118,9 +118,6 @@ public sealed class PlayerDataService(
         new("PoCabinetHighScores", ["pocabinet"], ["PlayerName"]),
         // One partition per category; rows carry a display name only.
         new("PoFunQuizPlayers", null, ["PlayerName"]),
-        // Creatures the player designed: one shared partition, owner stored as a hash of the claim id.
-        new("PoJevArenaCreatures", null, [], UserIdField: "OwnerKey",
-            MapId: PoJevArena.CreatureLibraryStore.OwnerKeyFor),
         // Saved islands: the slots live in a partition named by the same hash, and each shared
         // one has a mirror row in the public partition carrying it as OwnerKey.
         new("PoEcosystemWorlds", null, [], UserIdField: "OwnerKey",

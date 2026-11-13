@@ -67,7 +67,7 @@
     private const int EnergyHotPct = 50;
 
     private const string EnergyTip =
-        "Energy — strike power and stamina. Attacking drains it; blocking refills it, and a block timed on their wind-up refills it fastest. Too low and you cannot punch or kick.";
+        "Energy — strike power and stamina. Attacking drains it; blocking refills it, and a block timed on their wind-up refills it fastest. Too low and you cannot punch or kick. Body shots slow its return.";
 
     // Mirrors game.js DANGER_HP (0.25): the plate cracks as the engine starts the heartbeat.
     public const int DangerHpPct = 25;
@@ -126,14 +126,15 @@
         : "";
 
     // ── Region-damage body diagram ────────────────────────────────────────
-    // Mirrors the engine's per-region damage model (combat.js regionEffect): head ≥70 → extra
-    // hitstun taken, arms ≥70 → weaker attacks, legs ≥70 → slower movement (milder steps at
-    // 30/40). The tint is CSS (color-mix over --dmg, see .pb-body in the .razor.css) — the
+    // Mirrors the engine's per-region damage model (combat.js regionEffect), each region in two
+    // steps (30 or 40, then 70): head → stunned longer and knocked down sooner, torso → energy
+    // returns slower, arms → weaker strikes and a guard that leaks, legs → slower on the feet and
+    // slower off the canvas. The tint is CSS (color-mix over --dmg, see .pb-body in the .razor.css) — the
     // page passes only the number, per the repo's style="" rule.
     private static RenderFragment BodyDiagram(int[] regions) =>
         @<svg class="pb-body" viewBox="0 0 40 64" role="img"
               aria-label="Body damage — head @(regions[0]), torso @(regions[1]), arms @(regions[2]), legs @(regions[3])">
-            <title>Head @(regions[0]) · Torso @(regions[1]) · Arms @(regions[2]) · Legs @(regions[3])</title>
+            <title>Head @(regions[0]) (stun, knockdowns) · Torso @(regions[1]) (energy regen) · Arms @(regions[2]) (strike power, guard) · Legs @(regions[3]) (speed, get-up)</title>
             <circle cx="20" cy="8" r="7" class="@RegionClass(regions[0])" style="--dmg: @(regions[0])" />
             <rect x="12" y="17" width="16" height="20" rx="3" class="@RegionClass(regions[1])" style="--dmg: @(regions[1])" />
             <rect x="4"  y="17" width="6"  height="18" rx="3" class="@RegionClass(regions[2])" style="--dmg: @(regions[2])" />

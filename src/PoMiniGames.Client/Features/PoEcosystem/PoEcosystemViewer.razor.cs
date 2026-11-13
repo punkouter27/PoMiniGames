@@ -89,6 +89,9 @@ public partial class PoEcosystemViewer : ComponentBase, IAsyncDisposable
     private int _lens = EcoLens.None;
     private string _layer = "none";
     private bool _ambient;
+    private bool _photoMode;
+    private double _photoFov = 60;
+    private bool _localPersist;
     private bool _finderOpen;
     private IReadOnlyList<EcoFound> _found = [];
     private int _seed;                              // the running world's seed, as the sim has it
@@ -163,16 +166,17 @@ public partial class PoEcosystemViewer : ComponentBase, IAsyncDisposable
     private async Task BootAsync()
     {
         _booted = true;
+        _localPersist = string.IsNullOrWhiteSpace(VisitCode) && await Interop.GetLocalPersistAsync();
         await InvokeAsync(StateHasChanged);   // the container must exist before the engine starts
         var ok = await Interop.StartAsync(
             containerId: "poeco-world",
             minimapId: "poeco-minimap",
             seed: string.IsNullOrWhiteSpace(_seedInput) ? null : _seedInput,
-            resume: false,
+            resume: _localPersist,
             lowEnd: _narrow,
             demo: true,
-            // The island is a demo: it runs, and nothing it does is written to this browser.
-            ephemeral: true);
+            // Opt-in local persistence (#16): stays fast & ephemeral by default unless enabled.
+            ephemeral: !_localPersist);
         if (!ok)
         {
             _startFailed = true;
@@ -449,6 +453,45 @@ public partial class PoEcosystemViewer : ComponentBase, IAsyncDisposable
 
     private Task ToggleAmbientAsync() => Interop.SetAmbientAsync(!_ambient).AsTask();
     private void ToggleKeys() => _showKeys = !_showKeys;
+
+    private async Task FastForwardAsync(double years)
+    {
+        await Interop.FastForwardAsync(years);
+        Ticker($"⏩ Skipped {years:0.#} year{(years == 1 ? "" : "s")}");
+    }
+
+    private async Task SetLocalPersistAsync(bool persist)
+    {
+        _localPersist = persist;
+        await Interop.SetLocalPersistAsync(persist);
+        Toasts.Show(persist ? "Browser auto-save enabled for this island." : "Browser auto-save disabled.", ToastType.Info);
+    }
+
+    private async Task TogglePhotoModeAsync()
+    {
+        _photoMode = !_photoMode;
+        if (!_photoMode)
+        {
+            _photoFov = 60;
+            await Interop.SetFovAsync(60);
+        }
+    }
+
+    private Task OnPhotoFovInputAsync(ChangeEventArgs e)
+    {
+        if (double.TryParse(e.Value?.ToString(), System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out var fov))
+        {
+            _photoFov = Math.Clamp(fov, 30, 95);
+            return Interop.SetFovAsync(_photoFov).AsTask();
+        }
+        return Task.CompletedTask;
+    }
+
+    private async Task CapturePostcardAsync()
+    {
+        var ok = await Interop.ExportPostcardAsync();
+        Toasts.Show(ok ? "Postcard PNG downloaded!" : "Could not capture postcard.", ok ? ToastType.Success : ToastType.Warning);
+    }
 
     // ── lenses · map layers · finder ─────────────────────────────────────
     private Task SetLensAsync(int lens)

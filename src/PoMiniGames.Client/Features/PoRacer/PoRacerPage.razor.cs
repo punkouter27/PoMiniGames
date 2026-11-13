@@ -41,6 +41,8 @@ public partial class PoRacerPage
     // What the race in progress actually is. The start card can change underneath it (the
     // server picks an online race's track), and results must describe the race that was run.
     private string _raceTrackId = PoRacerCatalog.DefaultTrackId;
+    // The weather the server is racing this race in (PoRacerWeather); the HUD says so.
+    private string _raceWeather = PoRacerWeather.Clear;
     private bool _raceTrial, _raceOnline;
     private double _previousBest;
     private int? _localCarId;
@@ -309,8 +311,9 @@ public partial class PoRacerPage
         {
             _raceTrackId = world.TrackId;
             _totalLaps = world.TotalLaps;
+            _raceWeather = world.Weather;
             await JS.InvokeVoidAsync("PoRacer.setStatic", world.CenterXY, world.TrackWidth, world.WallsXY,
-                world.BoostPads, world.SurfaceZones, world.Theme, world.TotalLaps);
+                world.BoostPads, world.SurfaceZones, world.Theme, world.TotalLaps, world.Weather);
             await JS.InvokeVoidAsync("PoRacer.setGhost", CanGhost ? world.TrackId : null, _ghost);
             await ApplyRosterAsync(world.Roster);
         }

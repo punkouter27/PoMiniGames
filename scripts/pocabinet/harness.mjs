@@ -29,10 +29,12 @@ export function race(id, driver = 'clean', wet = false, opts = {}) {
     const mk = (meta) => ({ ...meta, body: ph.createBody(), lapsDone: 0, lapStart: 0, bestLap: 0, lastLap: 0, finished: false, finishOrder: 0, prevDistance: 0, invalid: false, invalidLaps: 0 });
     const cars = [];
     const player = mk({ id: 0, isPlayer: true });
+    ph.setBodyStyle(player.body, 0);
     ph.gridSlot(track, player.body, ph.PLAYER_SLOT);
     cars.push(player);
     ph.soloField().forEach((o, i) => {
         const c = mk({ id: i + 1, persona: o.persona, maxSpeed: o.maxSpeed, corneringSkill: o.corneringSkill, name: o.name });
+        ph.setBodyStyle(c.body, i + 1);
         ph.gridSlot(track, c.body, i < ph.PLAYER_SLOT ? i : i + 1);
         cars.push(c);
     });

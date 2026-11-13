@@ -293,12 +293,24 @@
     // and 2P and online keep no record of their own — the 1P numbers would be someone else's.
     private RenderFragment GameSummaryContent => @<div class="pb-result">
         <div class="pb-result-line">@ResultLine()</div>
+        @* Best of three: the round score (the engine reports it once, with the match). *@
+        @if (_mode == "2p" && _lastRecap is { } rr && rr.P1Rounds + rr.P2Rounds > 0)
+        {
+            <div class="pb-result-facts">
+                <span>Rounds <b>@rr.P1Rounds–@rr.P2Rounds</b></span>
+            </div>
+        }
         @if (_mode == "1p")
         {
             <div class="pb-result-facts">
-                @if (_winner == 1)
+                @if (_lastRecap is { } lr && lr.P1Rounds + lr.P2Rounds > 0)
                 {
-                    <span>KO <b>@_lastKo.ToString("0.00")s</b>@(_newRecord ? " 🏆 record" : "")</span>
+                    <span>Rounds <b>@lr.P1Rounds–@lr.P2Rounds</b></span>
+                }
+                @* The engine reports a round-one knockout's time, or the full clock when there was none. *@
+                @if (_winner == 1 && _lastKo < 59.9)
+                {
+                    <span>Round 1 KO <b>@_lastKo.ToString("0.00")s</b>@(_newRecord ? " 🏆 record" : "")</span>
                 }
                 <span>Elo <b>@_rating.Elo</b> (@(_lastEloDelta >= 0 ? "+" : "")@_lastEloDelta) vs @CharName(_p2Char) @PresidentElo(LadderRungOf(_p2Char))</span>
                 <span>W–L <b>@_record</b></span>

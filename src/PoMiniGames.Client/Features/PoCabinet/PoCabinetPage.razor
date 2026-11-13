@@ -8,13 +8,17 @@
 
 @* The race ends on the shared end-of-game modal, with race again and a way home.
    A demo has nobody to press it, so it loops instead.
-   No GameKey: the unified leaderboard has no Cabinet board, and the summary carries the podium. *@
+   GameKey is the raced track's board (BoardKey), withheld while the lap is being checked. *@
 <GameShell Title="@TitleContent" Player="@_playerName" BackTo="/" Fullscreen="true" RequiresWebGl="true"
-           GameOver="@(_phase == Phase.Finished && Mode != GameMode.Demo)"
+           GameOver="@(_phase == Phase.Finished && Mode != GameMode.Demo)" GameKey="@BoardKey"
            Outcome="@ResultsOutcome" NewBest="@_isPersonalBest"
            GameSummary="@ResultsContent" GameActions="@ResultActions"
            Loading="@(_phase == Phase.Loading)" LoadingLabel="Building the track…">
     <div class="pocabinet-root">
+        @if (_phase is Phase.Start or Phase.Lobby && _loaded)
+        {
+            <canvas id="pocabinetUiBg" class="pocabinet-ui-bg" aria-hidden="true"></canvas>
+        }
         @if (_phase == Phase.Start)
         {
             @* The shared opening card, like every other game. Not until the stored
@@ -82,13 +86,20 @@
                                replacing it breaks the renderer's diff ("reading 'Symbol()'"). aria-hidden:
                                the live announcer below covers what matters. *@
                             <div class="pocabinet-cluster" aria-hidden="true">
-                                <div id="pocabinetGauge" class="pocabinet-gauge">
+                                <div id="pocabinetGauge" class="pocabinet-gauge" data-shift="0">
                                     <span class="pocabinet-gauge__track"></span>
                                     <span class="pocabinet-gauge__ring"></span>
                                     <span class="pocabinet-gauge__tow"></span>
+                                    <span class="pocabinet-gauge__leds"><i></i><i></i><i></i><i></i><i></i></span>
                                     <span class="pocabinet-gauge__speed" data-gauge="speed"></span>
                                     <span class="pocabinet-gauge__unit">km/h</span>
+                                    <span class="pocabinet-gauge__gtrack"><span class="pocabinet-gauge__gdot"></span></span>
                                     <span class="pocabinet-gauge__gear" data-gauge="gear"></span>
+                                    <span class="pocabinet-telemetry">
+                                        <span class="pocabinet-telemetry__bar pocabinet-telemetry__bar--thr"><i></i></span>
+                                        <span class="pocabinet-telemetry__bar pocabinet-telemetry__bar--brk"><i></i></span>
+                                        <span class="pocabinet-telemetry__bar pocabinet-telemetry__bar--slip"><i></i></span>
+                                    </span>
                                 </div>
                                 @* Damage panel: race.js writes the --dmg-* zones (0..1) and data-state
                                    (ok | hurt | critical | wrecked) straight to the DOM, like the gauge; the
@@ -164,6 +175,11 @@
                                         <span>Time <strong>@PoCabinetCatalog.FormatLap(_lapSeconds)</strong></span>
                                         <span>Last <strong class="@(_lastLapInvalid ? "pocabinet-lap--deleted" : null)" title="@(_lastLapInvalid ? "Deleted: track limits" : null)">@PoCabinetCatalog.FormatLap(_laps.LastLapSeconds)</strong></span>
                                         <span>Best <strong>@PoCabinetCatalog.FormatLap(_laps.BestLapShown)</strong></span>
+                                        @* Live delta: this lap against the lap to beat (your stored best here, or a
+                                           quicker lap of this race), from the second lap on. race.js writes the value
+                                           and data-state (none | gain | loss) straight to the DOM, like the gauge; the
+                                           value is rendered EMPTY so Blazor owns no text node inside it. *@
+                                        <span id="pocabinetDelta" class="pocabinet-delta" data-state="none" title="This lap against your best lap, at this point of the track">Δ <strong data-delta="value"></strong></span>
                                     </span>
                                     @SectorChips
                                 </div>
@@ -249,6 +265,7 @@
         }
         <PoCabinetDrawer @ref="_drawer" Settings="Settings" SettingsChanged="OnSettingsChangedAsync"
                          Color="@_color" PaintChanged="OnPaintChanged"
+                         Livery="@_livery" LiveryChanged="OnLiveryChanged"
                          ShowWeather="@(!IsMultiplayerMode)" WeatherNextRace="@(_phase is Phase.Racing or Phase.Finished)"
                          ShowCamera="@(_phase is Phase.Racing)" OnCycleCamera="CycleCameraAsync" />
     </div>
@@ -295,7 +312,8 @@
         ? @<div class="pocabinet-start">
             <PoCabinetPreRace TrackId="@_trackId" TrackIdChanged="OnTrackChanged"
                               Settings="Settings" SettingsChanged="OnSettingsChangedAsync"
-                              Color="@_color" PaintChanged="OnPaintChanged" />
+                              Color="@_color" PaintChanged="OnPaintChanged"
+                              Livery="@_livery" LiveryChanged="OnLiveryChanged" />
             @if (!string.IsNullOrEmpty(_status))
             {
                 @StatusLine
