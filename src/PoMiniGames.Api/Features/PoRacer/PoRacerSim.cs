@@ -29,6 +29,8 @@ internal sealed class PoRacerSim
     /// </summary>
     public const double DefaultBotCaution = 0.58;
     private readonly double _botCaution;
+    // Tyre grip from the weather: 1 dry, 0.90 rain, 0.80 snow. Every car carries it (SimCar.Wet).
+    private readonly double _wet;
 
     // What moves a car's top speed: a boost pad or drift payout, a tow, and Damage. Each one
     // changes the ceiling itself, not just how hard the car pushes toward it.
@@ -56,6 +58,7 @@ internal sealed class PoRacerSim
     private int _usedSpatialBuckets;
     private double[] _segmentHeadings = [];
     private double[] _bendPrefix = [];
+    private double[] _turnPrefix = [];
     internal int LastCollisionCandidateCount => _collisionCandidates.Count;
 
     private readonly Stopwatch _wallClock = Stopwatch.StartNew();
@@ -74,13 +77,16 @@ internal sealed class PoRacerSim
     /// <param name="bots">False for a time trial: only the human cars take the grid. Ignored with no humans.</param>
     /// <param name="botPace">Scales every bot's top speed and acceleration (the solo difficulty tier).</param>
     /// <param name="botCaution">How much speed a bot gives up for a bend, 0-1. See <see cref="DefaultBotCaution"/>.</param>
+    /// <param name="weather">The day's weather on this track (<see cref="PoRacerWeather"/>). Rain and snow
+    /// lower every car's grip; the default is a dry track, which is what the tests race on.</param>
     /// <param name="seed">Seeds the bots' steering wobble. Null (live races): Random.Shared, every
     /// race different. Tests pass one so a race is the same race every run (a lucky miss of
     /// every boost pad used to fail CI now and then).</param>
     public PoRacerSim(IReadOnlyList<PoRacerLobbyPlayer> players, string? trackId = null, int countdownSeconds = 0,
         bool bots = true, double botPace = 1.0, double botCaution = DefaultBotCaution,
-        int carCount = PoRacerCatalog.CarCount, int? seed = null)
+        int carCount = PoRacerCatalog.CarCount, int? seed = null, string weather = PoRacerWeather.Clear)
     {
+        _wet = PoRacerWeather.Grip(weather);
         _rng = seed is { } fixedSeed ? new Random(fixedSeed) : Random.Shared;
         ArgumentOutOfRangeException.ThrowIfLessThan(carCount, 1);
         ArgumentOutOfRangeException.ThrowIfGreaterThan(carCount, PoRacerCatalog.SoloCarCount);
@@ -121,6 +127,7 @@ internal sealed class PoRacerSim
             TrackId = track.Id,
             TrackName = track.DisplayName,
             Theme = track.EnvironmentTheme,
+            Weather = weather,
             CenterXY = centerArr,
             WallsXY = wallsArr,
             TrackWidth = _trackWidth,
@@ -203,6 +210,8 @@ internal sealed class PoRacerSim
                 Acceleration = personality is null ? prof.accel : personality.Acceleration * botPace,
                 Handling = personality?.Handling ?? prof.handling,
                 CorneringSkill = personality?.CorneringSkill ?? prof.skill,
+                Lane = personality?.LateralOffsetRatio ?? 0,
+                Wet = _wet,
                 Lap = 1,
                 LastCheckpoint = 0,
                 CheckpointT = 0,
@@ -438,8 +447,9 @@ internal sealed class PoRacerSim
         if (steerInput == 0) c.Steer *= Math.Max(0, 1 - 2.0 * dt);
 
         double before = c.Speed;
-        double engine = c.Acceleration * c.AccelerationModifier * throttle;
-        engine -= c.Acceleration * (c.Speed > 1 ? 1.6 : 0.6) * braking;
+        // A wet or snowy road (c.Wet under 1) spins some of the push away and lengthens every stop.
+        double engine = c.Acceleration * c.AccelerationModifier * throttle * (0.6 + 0.4 * c.Wet);
+        engine -= c.Acceleration * (c.Speed > 1 ? 1.6 : 0.6) * braking * c.Wet;
         c.Speed += engine * dt;
         double drag = 0.6 + Math.Abs(c.Speed) * 0.004;
         c.Speed -= Math.Sign(c.Speed) * drag * dt;
@@ -477,11 +487,15 @@ internal sealed class PoRacerSim
 
         double speedFactor = Math.Min(1, Math.Abs(c.Speed) / 80);
         double turnRate = (c.Speed / 60.0) * c.Steer * (1.0 - 0.3 * speedFactor) * (drift ? 1.5 : 1.0);
+        // Less grip is understeer, and more of it the faster the car is going: at top speed in
+        // the rain a car turns 10% less, in snow 20% less. It also starts to slide sooner and
+        // slides further. Dry (Wet = 1) every one of these is the number it always was.
+        turnRate *= 1 - (1 - c.Wet) * Math.Min(1, Math.Abs(c.Speed) / c.MaxSpeed);
         double desiredHeading = c.Heading + turnRate * dt;
-        bool sliding = !drift && (handbrake || onSand || (Math.Abs(c.Steer) > 0.35 && Math.Abs(c.Speed) > c.MaxSpeed * 0.45));
+        bool sliding = !drift && (handbrake || onSand || (Math.Abs(c.Steer) > 0.35 && Math.Abs(c.Speed) > c.MaxSpeed * 0.45 * c.Wet));
         if (sliding)
         {
-            double slideStrength = handbrake ? 0.7 : (onSand ? 0.55 : 0.4);
+            double slideStrength = handbrake ? 0.7 : (onSand ? 0.55 : 0.4 + (1 - c.Wet) * 0.5);
             c.Heading = desiredHeading * (1 - slideStrength) + c.Heading * slideStrength;
             c.SkidIntensity = Math.Min(1, c.SkidIntensity + dt * (onSand ? 5 : 4));
         }
@@ -538,19 +552,66 @@ internal sealed class PoRacerSim
 
         double speedFrac = Math.Clamp(Math.Abs(c.Speed) / c.MaxSpeed, 0, 1);
 
-        // Aim a few nodes down the track, taking personality lookahead and lateral offset into account
+        // How hard the track bends over a speed-scaled window ahead, and which way. The late
+        // braker looks a little less far, so it finds out about a bend later than the others.
+        var style = c.Personality?.Style ?? PoRacerAiStyle.Steady;
+        int scan = (int)(9 + speedFrac * 15);
+        if (style == PoRacerAiStyle.LateBraker) scan = (int)(scan * 0.85);
+        double bend = UpcomingBend(c.LastCheckpoint, scan);
+        double turn = UpcomingTurn(c.LastCheckpoint, scan);
+
+        // Which lane to drive in: -1 is the left edge of the usable road, 1 the right. Each
+        // style picks its own, from the track and from the cars around it.
+        Nearby(c, out var ahead, out double aheadGap, out double aheadSide, out var beside, out double besideSide);
+        double laneWidth = _trackWidth * 0.35;
+        double lane = c.Personality?.LateralOffsetRatio ?? 0;
+        double LaneOf(double side) => (c.ProjSide + side) / laneWidth;
+        switch (style)
+        {
+            case PoRacerAiStyle.ApexHugger:
+                if (Math.Abs(turn) > 0.25) lane = 0.75 * Math.Sign(turn);        // the inside of the bend
+                break;
+            case PoRacerAiStyle.Bruiser:
+                if (beside is not null) lane = LaneOf(besideSide);               // into the car alongside
+                break;
+            case PoRacerAiStyle.Cautious:
+                if (beside is not null) lane = besideSide > 0 ? -0.7 : 0.7;      // away from it
+                break;
+            case PoRacerAiStyle.DraftHunter:
+                if (ahead is not null) lane = LaneOf(aheadSide);                 // into its tow
+                break;
+            case PoRacerAiStyle.Slingshot:
+                // In the tow until it is a car length off, then out of it and past.
+                if (ahead is not null) lane = LaneOf(aheadSide) + (aheadGap > 60 ? 0 : LaneOf(aheadSide) > 0 ? -0.7 : 0.7);
+                break;
+            case PoRacerAiStyle.Wildcard:
+                c.WhimTimer -= dt;
+                if (c.WhimTimer <= 0)
+                {
+                    c.WhimTimer = 2 + _rng.NextDouble() * 3;
+                    c.Whim = _rng.NextDouble() * 1.4 - 0.7;
+                    if (_rng.NextDouble() < 0.25) c.HotTimer = 0.7;              // forgets the next bend
+                }
+                lane = c.Whim;
+                break;
+        }
+        // Caught a slower car: go round it. The bruiser drives into the back of it instead, and
+        // the two drafters have their own plan for a car ahead.
+        bool blocked = ahead is not null && aheadGap < 70 && Math.Abs(aheadSide) < 30 && c.Speed > ahead.Speed;
+        if (blocked && style is not (PoRacerAiStyle.Bruiser or PoRacerAiStyle.DraftHunter or PoRacerAiStyle.Slingshot))
+            lane = LaneOf(aheadSide) + (LaneOf(aheadSide) > 0 ? -0.75 : 0.75);
+        // Eased, so a change of mind is a lane change and not a swerve.
+        c.Lane += (Math.Clamp(lane, -0.9, 0.9) - c.Lane) * Math.Min(1, 2.5 * dt);
+
+        // Aim a few nodes down the track, in that lane.
         double lookFactor = c.Personality?.LookaheadFactor ?? 1.0;
         int steerLook = (int)((3 + speedFrac * 6 + c.CorneringSkill * 3) * lookFactor);
         int aimIdx = (c.LastCheckpoint + steerLook) % n;
         var target = _centerline[aimIdx];
-
-        if (c.Personality is { } pers && pers.LateralOffsetRatio != 0)
+        if (c.Lane != 0)
         {
-            var a = _centerline[aimIdx];
-            var b = _centerline[(aimIdx + 1) % n];
-            var nrm = PoRacerTrackRegistry.ComputeNormal(a, b);
-            target = new Vec2(target.X + nrm.X * (pers.LateralOffsetRatio * _trackWidth * 0.35),
-                              target.Y + nrm.Y * (pers.LateralOffsetRatio * _trackWidth * 0.35));
+            var nrm = PoRacerTrackRegistry.ComputeNormal(target, _centerline[(aimIdx + 1) % n]);
+            target = new Vec2(target.X + nrm.X * (c.Lane * laneWidth), target.Y + nrm.Y * (c.Lane * laneWidth));
         }
 
         // (The tow is worked out for every car in UpdateSurfaceAndBoost.)
@@ -558,18 +619,20 @@ internal sealed class PoRacerSim
         double desired = Math.Atan2(target.Y - c.Pos.Y, target.X - c.Pos.X);
         double diff = ShortAngleDiff(desired, c.Heading);
 
-        // Predictive corner speed: measure how hard the track bends over a
-        // speed-scaled window ahead and slow to a speed the car can actually hold
-        // through it. Straights → near top speed; tight bends → a small fraction.
-        int scan = (int)(9 + speedFrac * 15);
-        double bend = UpcomingBend(c.LastCheckpoint, scan);
+        // Predictive corner speed: slow to a speed the car can actually hold through the bend
+        // ahead. Straights are near top speed; tight bends a small fraction. How much a bot
+        // lifts is the race's caution (the solo tier) times its own.
         double curviness = Math.Clamp(bend / 0.85, 0, 1);
         double aggression = c.Personality?.Aggression ?? 0.5;
+        double caution = Math.Min(0.9, _botCaution * (c.Personality?.Caution ?? 1.0));
+        if (c.HotTimer > 0) { c.HotTimer -= dt; caution *= 0.35; }
         // Scaled from the car's top speed of the moment, not its nominal one: on a boost pad a
         // bot is well over MaxSpeed, and measured against that it would brake for the boost.
         double top = TopSpeed(c);
-        double cornerSpeed = top * (1.0 - _botCaution * curviness) * (0.90 + 0.12 * c.CorneringSkill + 0.08 * aggression);
-        cornerSpeed = Math.Clamp(cornerSpeed, c.MaxSpeed * 0.36, top);
+        double cornerSpeed = top * (1.0 - caution * curviness) * (0.90 + 0.12 * c.CorneringSkill + 0.08 * aggression);
+        // In the wet a bend is worth less speed still; a straight is worth what it always was.
+        cornerSpeed *= 1 - (1 - c.Wet) * 0.5 * Math.Min(1, curviness * 2);
+        cornerSpeed = Math.Clamp(cornerSpeed, c.MaxSpeed * 0.36 * c.Wet, top);
 
         const double deadband = 0.05;
         bool accel, brake = false, handbrake = false;
@@ -590,6 +653,13 @@ internal sealed class PoRacerSim
         else if (c.Speed > cornerSpeed * 1.05) { accel = false; brake = true; }   // shed speed
         else if (c.Speed > cornerSpeed) { accel = false; }                 // coast to target
         else { accel = true; }                 // power on
+
+        // The cautious driver will not touch the car in front: it lifts, and brakes if that is not enough.
+        if (style == PoRacerAiStyle.Cautious && blocked && c.StuckTimer <= 0.7 && Math.Abs(c.Speed) >= c.MaxSpeed * 0.18)
+        {
+            accel = false;
+            if (aheadGap < 45) brake = true;
+        }
 
         // Badly misaligned at speed (nose toward a wall) → brake to bleed it off.
         if (c.StuckTimer <= 0.7 && Math.Abs(c.Speed) >= c.MaxSpeed * 0.18 && Math.Abs(diff) > 1.25)
@@ -616,6 +686,52 @@ internal sealed class PoRacerSim
         return _bendPrefix[start + span] - _bendPrefix[start];
     }
 
+    /// <summary>The same window as <see cref="UpcomingBend"/>, signed: positive is a bend to the
+    /// car's right (the side the track normal points to), negative to its left. A left-right
+    /// chicane sums to about nothing, which is right: it has no inside to hug.</summary>
+    private double UpcomingTurn(int startIdx, int span)
+    {
+        int n = _segmentHeadings.Length;
+        if (n == 0 || span <= 0) return 0;
+        int start = (startIdx % n + n) % n;
+        return _turnPrefix[start + span] - _turnPrefix[start];
+    }
+
+    /// <summary>
+    /// The nearest car ahead of this one (8 to 150 units up the road, within 60 to either side)
+    /// and the nearest alongside (within 44 fore and aft, 80 to the side), measured in this car's
+    /// own frame: <paramref name="aheadSide"/> and <paramref name="besideSide"/> are positive to
+    /// its right. Reads the 160-unit grid Tick builds before anything moves.
+    /// </summary>
+    private void Nearby(SimCar c, out SimCar? ahead, out double aheadGap, out double aheadSide, out SimCar? beside, out double besideSide)
+    {
+        ahead = null; beside = null; aheadGap = double.MaxValue; aheadSide = 0; besideSide = 0;
+        double cos = Math.Cos(c.Heading), sin = Math.Sin(c.Heading), nearest = double.MaxValue;
+        var cell = SpatialCell(c.Pos, 160);
+        for (int x = cell.X - 1; x <= cell.X + 1; x++)
+        {
+            for (int y = cell.Y - 1; y <= cell.Y + 1; y++)
+            {
+                if (!_spatialGrid.TryGetValue((x, y), out var bucket)) continue;
+                foreach (var index in bucket)
+                {
+                    var other = _cars[index];
+                    if (other.Id == c.Id) continue;
+                    double dx = other.Pos.X - c.Pos.X, dy = other.Pos.Y - c.Pos.Y;
+                    double fwd = dx * cos + dy * sin, side = dy * cos - dx * sin;
+                    if (fwd > 8 && fwd <= 150 && fwd < aheadGap && Math.Abs(side) < 60)
+                    {
+                        ahead = other; aheadGap = fwd; aheadSide = side;
+                    }
+                    if (Math.Abs(fwd) <= 44 && Math.Abs(side) is > 1 and < 80 && Math.Abs(side) < nearest)
+                    {
+                        beside = other; besideSide = side; nearest = Math.Abs(side);
+                    }
+                }
+            }
+        }
+    }
+
     private void BuildBendPrefix()
     {
         int n = _centerline.Count;
@@ -628,10 +744,12 @@ internal sealed class PoRacerSim
         }
 
         _bendPrefix = new double[n * 2 + 1];
+        _turnPrefix = new double[n * 2 + 1];
         for (int i = 0; i < n * 2; i++)
         {
-            double bend = Math.Abs(ShortAngleDiff(_segmentHeadings[(i + 1) % n], _segmentHeadings[i % n]));
-            _bendPrefix[i + 1] = _bendPrefix[i] + bend;
+            double turn = ShortAngleDiff(_segmentHeadings[(i + 1) % n], _segmentHeadings[i % n]);
+            _bendPrefix[i + 1] = _bendPrefix[i] + Math.Abs(turn);
+            _turnPrefix[i + 1] = _turnPrefix[i] + turn;
         }
     }
 
@@ -1007,5 +1125,10 @@ internal sealed class PoRacerSim
         public bool BotDriven;      // ...or ever did: this car's laps do not go on the board
         public double StuckTimer;   // seconds without track progress — drives the AI unstick maneuver
         public double ProgressMark; // last DistanceAlongTrack the car meaningfully advanced past
+        public double Wet = 1.0;    // grip from the weather: 1 dry, less in rain and snow
+        public double Lane;         // bots: the lane being driven, -1 (left) to 1 (right), eased toward the style's pick
+        public double Whim;         // the wildcard's lane of the moment
+        public double WhimTimer;    // ...and the seconds until it picks another
+        public double HotTimer;     // seconds left of a bot ignoring most of its caution (the wildcard's mistake)
     }
 }

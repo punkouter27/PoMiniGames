@@ -8,8 +8,9 @@ using Xunit.Abstractions;
 namespace PoMiniGames.Unit.Features.PoRacer;
 
 /// <summary>
-/// Headless multi-track simulation tests. Verifies all 3 tracks (circuit, neonskyline, desertdustway),
-/// surface physics detection (sand grip reduction), boost pad triggering, and AI lap completion.
+/// Headless multi-track simulation tests. Verifies all 4 tracks (circuit, neonskyline, desertdustway,
+/// crossfire), surface physics detection (sand grip reduction), boost pad triggering, AI lap
+/// completion, and that the field still gets round in rain and snow.
 /// </summary>
 public class PoRacerSimAiTests
 {
@@ -124,12 +125,17 @@ public class PoRacerSimAiTests
     [InlineData("circuit")]
     [InlineData("neonskyline")]
     [InlineData("desertdustway")]
+    [InlineData("crossfire")]
     [InlineData("circuit", true)]
-    public void RaceCompletion_FinishesBotsOrSerializesDnf(string trackId, bool expireRace = false)
+    // Weather: every bot must still get round with less grip, including the tightest track in snow.
+    [InlineData("neonskyline", false, "rain")]
+    [InlineData("crossfire", false, "snow")]
+    public void RaceCompletion_FinishesBotsOrSerializesDnf(string trackId, bool expireRace = false, string weather = "clear")
     {
         PrecomputedUpcomingBend_MatchesCenterlineCalculation(trackId);
         // Seeded: the boost/sand/finish assertions below hold for this race every run.
-        var sim = new PoRacerSim(Array.Empty<PoRacerLobbyPlayer>(), trackId, seed: 7);
+        var sim = new PoRacerSim(Array.Empty<PoRacerLobbyPlayer>(), trackId, seed: 7, weather: weather);
+        sim.Static.Weather.Should().Be(weather, "the client draws the weather the sim raced in");
         var noInput = new Dictionary<string, PoRacerInput>();
         if (expireRace)
         {
@@ -180,7 +186,7 @@ public class PoRacerSimAiTests
         int finished = final.Cars.Count(c => c.Finished);
         double raceSeconds = (tick + 1) * dt;
 
-        _out.WriteLine($"track={trackId} cars={carCount} finished={finished} raceSeconds={raceSeconds:0.0}");
+        _out.WriteLine($"track={trackId} weather={weather} cars={carCount} finished={finished} raceSeconds={raceSeconds:0.0}");
         foreach (var kv in finishSec.OrderBy(k => k.Value))
             _out.WriteLine($"  car {kv.Key} finished at {kv.Value:0.0}s");
         foreach (var c in final.Cars.Where(c => !c.Finished))
@@ -197,7 +203,9 @@ public class PoRacerSimAiTests
         double last = times.Last();
         _out.WriteLine($"winner={winner:0.0}s last={last:0.0}s spread={last - winner:0.0}s");
 
-        winner.Should().BeLessThan(140, "the leading bot should not crawl");
+        // Wet: slower, but the leader is still home inside the race's 180 s safety cap.
+        winner.Should().BeLessThan(weather == "clear" ? 140 : 175, "the leading bot should not crawl");
+        if (weather != "clear") DryWinnerSeconds(trackId).Should().BeLessThan(winner, "rain and snow cost grip, so the same field is slower");
         (last - winner).Should().BeGreaterThan(0.2, "racing should produce a spread");
 
         // Verify boost pad triggering on all tracks
@@ -213,6 +221,19 @@ public class PoRacerSimAiTests
         {
             anyCarHitSand.Should().BeTrue("desert dustway must trigger sand surface physics during cornering");
         }
+    }
+
+    /// <summary>The same seeded race on a dry track: what a wet one is measured against.</summary>
+    private static double DryWinnerSeconds(string trackId)
+    {
+        var sim = new PoRacerSim(Array.Empty<PoRacerLobbyPlayer>(), trackId, seed: 7);
+        var noInput = new Dictionary<string, PoRacerInput>();
+        for (int tick = 1; tick <= 12_000; tick++)
+        {
+            sim.Tick(0.02, noInput);
+            if (tick % 10 == 0 && sim.Snapshot("dry").Cars.Any(c => c.Finished)) return tick * 0.02;
+        }
+        return double.MaxValue;
     }
 
     private static void VerifyCountdownAndRankings()

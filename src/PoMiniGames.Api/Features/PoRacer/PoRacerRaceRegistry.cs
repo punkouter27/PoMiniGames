@@ -21,10 +21,14 @@ public sealed class PoRacerRaceRegistry : IAsyncDisposable
     private readonly CancellationTokenSource _shutdown = new();
     private readonly Task _expiry;
     private readonly VerifiedResultStore? _store;
+    // "daily" (the default): each track's own draw for the UTC day. Any weather name instead
+    // fixes it for every race, which is what the test hosts do so a race does not depend on the date.
+    private readonly string _weather;
 
     public PoRacerRaceRegistry(PoRacerLobbyService lobby, IHubContext<PoRacerRaceHub> hub, ILoggerFactory logs,
-        VerifiedResultStore? store = null)
+        VerifiedResultStore? store = null, IConfiguration? config = null)
     {
+        _weather = config?["PoMiniGames:PoRacer:Weather"] is { Length: > 0 } fixedWeather ? fixedWeather.ToLowerInvariant() : "daily";
         _lobby = lobby;
         _hub = hub;
         _logs = logs;
@@ -72,8 +76,11 @@ public sealed class PoRacerRaceRegistry : IAsyncDisposable
             ObjectDisposedException.ThrowIf(_shutdown.IsCancellationRequested, this);
             if (_races.TryGetValue(code, out var existing)) return existing;
             if (_races.Count >= 64) throw new HubException("The race grid is busy. Try again shortly.");
+            // The weather is the track's for today (UTC): the same for every race on it, solo,
+            // online and demo, and fixed for the race from here even if midnight passes during it.
+            var weather = _weather == "daily" ? PoRacerWeather.Today(PoRacerCatalog.GetTrack(trackId).Id) : _weather;
             var race = new PoRacerRaceService(code, players, _logs.CreateLogger<PoRacerRaceService>(), trackId,
-                bots, botPace, botCaution, carCount);
+                bots, botPace, botCaution, carCount, weather);
             race.SnapshotReady += snapshot => BroadcastAsync(code, "raceSnapshot", snapshot);
             race.Finished += result =>
             {

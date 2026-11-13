@@ -78,7 +78,7 @@
         }
         @if (_phase == RacePhase.Racing)
         {
-            <PoRacerHud Cars="_cars" Roster="_roster" PlayerId="_localCarId" TotalLaps="_totalLaps" IsDemo="_isDemo" OnPause="TogglePauseAsync" />
+            <PoRacerHud Cars="_cars" Roster="_roster" PlayerId="_localCarId" TotalLaps="_totalLaps" IsDemo="_isDemo" Weather="@_raceWeather" OnPause="TogglePauseAsync" />
             @if (!_raceStarted || _elapsed < 0.9)
             {
                 @* Five lamps come on one at a time over the last 2.5 s, hold, and go out together:
@@ -144,6 +144,8 @@
     private static RenderFragment TipsContent => @<ul>
         <li>Hold Drift through a bend and let go for a boost.</li>
         <li>Tuck in behind a car for a tow; arrows on the road are boost pads.</li>
+        <li>Each track has its own weather for the day. Rain and snow mean less grip: brake earlier.</li>
+        <li>Rivals drive in character: bruisers lean on you, late brakers dive in, cautious ones lift.</li>
     </ul>;
 
     // The solo race's choices, in the card's Options slot. .racer-card keeps them on the

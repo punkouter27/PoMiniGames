@@ -143,6 +143,8 @@ public sealed class PoRacerStaticWorld
     public string TrackId { get; set; } = "circuit";
     public string TrackName { get; set; } = "Grand Prix Circuit";
     public string Theme { get; set; } = "circuit";
+    /// <summary>The race's weather (<see cref="PoRacerWeather"/>): the sim's grip and the client's overlay both come from it.</summary>
+    public string Weather { get; set; } = PoRacerWeather.Clear;
     public IReadOnlyList<double> CenterXY { get; set; } = new List<double>();
     public IReadOnlyList<double> WallsXY { get; set; } = new List<double>();
     public IReadOnlyList<PoRacerBoostPadWire> BoostPads { get; set; } = new List<PoRacerBoostPadWire>();

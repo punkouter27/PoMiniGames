@@ -17,5 +17,7 @@ legend { padding: 0; margin-bottom: 6px; font-size: 13px; color: var(--racer-fai
 .track-best { display: grid; font-size: 12px; color: var(--racer-muted); font-variant-numeric: tabular-nums; }
 .track-best b { color: var(--racer-gold); }
 .track-medals { opacity: .8; }
+/* The day's weather on a track, when it is not clear: it changes the grip, so it is said before the race. */
+.track-weather { margin: 0; font-size: 12px; color: var(--racer-accent-line); }
 .track-card:focus-within { outline: 2px solid var(--racer-ink); outline-offset: 3px; }
 @media (max-width: 760px) { .track-picker { grid-template-columns: 1fr; gap: 6px; } .track-card { padding: 8px 10px; } .track-card small { display: none; } }

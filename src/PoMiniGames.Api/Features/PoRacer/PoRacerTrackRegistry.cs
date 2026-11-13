@@ -11,6 +11,7 @@ public static class PoRacerTrackRegistry
         Register(BuildCircuit());
         Register(BuildNeonSkyline());
         Register(BuildDesertDustway());
+        Register(BuildCrossfire());
     }
 
     private static void Register(PoRacerTrackData track) => _tracks[track.Id] = track;
@@ -101,6 +102,38 @@ public static class PoRacerTrackRegistry
             BoostPads = [PadAt(centerline, 0.07), PadAt(centerline, 0.46)],
             SurfaceZones = surfaces,
             EnvironmentTheme = "desertdustway"
+        };
+    }
+
+    private static PoRacerTrackData BuildCrossfire()
+    {
+        // Narrower than the other three: the four legs are 320 apart, and 180 leaves grass between them.
+        const double trackWidth = 180.0;
+        // Six steps per knot: the knots are 130 apart, so a node every 22 units, about half the
+        // other tracks' spacing. The bots judge the bend ahead over a window counted in nodes, and
+        // here a hairpin is never far off: at the usual spacing that window always held one, and
+        // the whole field crawled round at its slowest corner speed (a 136 s race; this is 114 s).
+        var centerline = ResampleClosedSpline(Knots("crossfire"), 6);
+        var walls = GenerateWalls(centerline, trackWidth);
+
+        var surfaces = new List<PoRacerSurfaceZoneDefinition>
+        {
+            new() { Name = "Yard Tarmac", SurfaceType = SurfaceKind.Asphalt, Center = new Vec2(0, 0), Radius = 2000.0, GripMultiplier = 1.0 }
+        };
+
+        return new PoRacerTrackData
+        {
+            Id = "crossfire",
+            DisplayName = PoRacerCatalog.GetTrack("crossfire").Name,
+            Description = PoRacerCatalog.GetTrack("crossfire").Description,
+            TrackWidth = trackWidth,
+            Centerline = centerline,
+            Walls = walls,
+            // The middle of the main straight (between the second and third crossing) and the
+            // run down to the last hairpin.
+            BoostPads = [PadAt(centerline, 0.108), PadAt(centerline, 0.90)],
+            SurfaceZones = surfaces,
+            EnvironmentTheme = "crossfire"
         };
     }
 

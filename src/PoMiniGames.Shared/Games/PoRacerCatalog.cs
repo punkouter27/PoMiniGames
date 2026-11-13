@@ -52,8 +52,58 @@ public static class PoRacerCatalog
             Gold: 17.0, Silver: 21.5, Bronze: 27.5,
             Knots: [(0, 0), (700, 0), (1400, 0), (1750, 200), (1850, 500), (1750, 800), (1200, 950), (600, 950),
                 (100, 950), (-150, 800), (-300, 600), (-100, 400), (-300, 200), (-200, 50)]),
+        // Switchbacks: four legs joined by hairpins, and a main straight along y = 0 that cuts
+        // across all four of them at right angles (x = -480, -160, 160, 480). Seven turns and
+        // four crossings. The knots are 130 units apart along that path, so the spline keeps
+        // every hairpin's radius at about half the track width or more. The centerline flat out
+        // is 21.1 s, which no car can do through the hairpins; the scripted keyboard driver's
+        // time-trial lap through the real page is 29.2 s. Gold is a lap that takes the hairpins
+        // tighter than that driver does, silver is about its lap with a few hits.
+        new PoRacerTrackInfo("crossfire", "Crossfire Switchbacks", "Seven tight turns, and a main straight that cuts across all four legs.",
+            Gold: 28.0, Silver: 32.0, Bronze: 40.0,
+            Knots: [(-710, 0), (-580, 0), (-450, 0), (-320, 0), (-190, 0), (-60, 0), (70, 0), (200, 0), (330, 0), (460, 0),
+                (590, 0), (720, 0), (850, -1), (956, -68), (973, -196), (888, -288), (760, -300), (630, -300),
+                (515, -240), (480, -120), (480, 10), (480, 140), (479, 270), (415, 379), (293, 408), (184, 335),
+                (160, 210), (160, 80), (160, -50), (160, -180), (149, -308), (61, -398), (-65, -396), (-152, -299),
+                (-160, -170), (-160, -40), (-160, 90), (-160, 220), (-190, 343), (-298, 408), (-419, 376), (-479, 265),
+                (-480, 130), (-480, 0), (-480, -130), (-522, -248), (-635, -300), (-765, -300), (-897, -284),
+                (-975, -187), (-953, -64), (-845, -1)]),
     });
 
     public static PoRacerTrackInfo GetTrack(string? id) =>
         Tracks.FirstOrDefault(t => string.Equals(t.Id, id?.Trim(), StringComparison.OrdinalIgnoreCase)) ?? Tracks[0];
+}
+
+/// <summary>
+/// The weather of the day on a Racer track: one draw per track and UTC day, so everyone who races
+/// a track on the same day drives it in the same conditions. The server decides it (the sim turns
+/// it into grip) and sends it with the track; the start card calls the same function to say what
+/// is coming. The hash and the shares are the ones js/weather.js has always used for the overlay
+/// (FNV-1a over <c>"trackId"yyyy-MM-dd</c>: 58% clear, 25% rain, 11% snow, 6% fog).
+/// </summary>
+public static class PoRacerWeather
+{
+    public const string Clear = "clear", Rain = "rain", Snow = "snow", Fog = "fog";
+
+    public static string For(string trackId, DateOnly utcDay)
+    {
+        var seed = "\"" + trackId + "\"" + utcDay.ToString("yyyy-MM-dd", System.Globalization.CultureInfo.InvariantCulture);
+        uint h = 2166136261;
+        foreach (var ch in seed) { h ^= ch; unchecked { h *= 16777619; } }
+        return (h % 100) switch { < 58 => Clear, < 83 => Rain, < 94 => Snow, _ => Fog };
+    }
+
+    public static string Today(string trackId) => For(trackId, DateOnly.FromDateTime(DateTime.UtcNow));
+
+    /// <summary>Tyre grip, 1 = dry. Rain and snow cost braking, turn-in and traction; fog is only harder to see through.</summary>
+    public static double Grip(string? weather) => weather switch { Rain => 0.90, Snow => 0.80, _ => 1.0 };
+
+    /// <summary>What a driver is told, or null when there is nothing to say (a clear day).</summary>
+    public static string? Note(string? weather) => weather switch
+    {
+        Rain => "Rain: longer braking, less grip",
+        Snow => "Snow: very little grip",
+        Fog => "Fog: full grip, harder to see",
+        _ => null,
+    };
 }

@@ -1,5 +1,6 @@
 // Canvas scene renderer for PoRacer: a flat top-down drawing of the race the server is
-// running. Lifecycle is owned by index.js; nothing in here listens, schedules or fetches.
+// running. Lifecycle is owned by index.js; nothing in here listens or schedules, and the only
+// thing it fetches is the trackside sprites (see "Trackside props" below).
 
 let centerXY = null;
 let centerN = 0, wallsXY = null, wallsM = 0, trackWidth = 0;
@@ -177,6 +178,140 @@ function drawPads(g, cars, camX, camY, scale, w, h, now) {
     }
 }
 
+// ── Trackside props ─────────────────────────────────────────────────────────
+// Grandstands by the start, tyre walls round the outside of the tight bends, cones on the
+// inside, and trees, rocks, tents and barrels on the ground between. The sprites are Kenney's
+// "Racing Pack" (kenney.nl, CC0; licence beside them in img/poracer/). They are scenery only:
+// every one is placed clear of every stretch of road, the sim knows nothing about them, and
+// they are baked into the track bitmap, so they cost nothing per frame. The cars stay vector
+// drawings because a driver's paint and livery are any colour, and the pack's cars are five.
+const PROP_SIZE = {   // width on the track, in world units (a car is 32 long)
+    tribune_full: 300, tires_red: 24, tires_white: 24, cone_straight: 16, tree_large: 120, tree_small: 78,
+    tent_blue: 96, tent_red: 96, rock1: 46, rock2: 38, barrel_blue: 22, barrier_red_race: 84, barrier_white_race: 84,
+};
+// What is scattered on the open ground, by theme: [sprite, share]. No trees in the city.
+const PROP_MIX = {
+    circuit: [['tree_large', 4], ['tree_small', 4], ['rock1', 1], ['tent_blue', 1], ['tent_red', 1]],
+    desertdustway: [['rock1', 4], ['rock2', 4], ['barrel_blue', 1], ['tent_red', 1], ['tree_small', 1]],
+    neonskyline: [['barrier_red_race', 3], ['barrier_white_race', 3], ['barrel_blue', 3], ['tent_blue', 1], ['tent_red', 1]],
+    crossfire: [['tree_small', 3], ['tree_large', 2], ['tent_blue', 1], ['tent_red', 1], ['barrel_blue', 2], ['rock2', 2]],
+};
+const propImgs = {};
+let propsState = 0;          // 0 not asked for, 1 loading, 2 loaded (or failed: a missing sprite is skipped)
+let props = [];              // [{ name, x, y, rot }] for the current track, in world space
+
+function loadProps() {
+    if (propsState || typeof Image === 'undefined') return;
+    propsState = 1;
+    let left = Object.keys(PROP_SIZE).length;
+    for (const name of Object.keys(PROP_SIZE)) {
+        const img = new Image();
+        // The track bitmap is built without them if they are late, and once more when they land.
+        img.onload = img.onerror = () => { if (--left === 0) { propsState = 2; trackTex = null; } };
+        img.src = new URL('../../img/poracer/' + name + '.png', import.meta.url).href;
+        propImgs[name] = img;
+    }
+}
+
+/** Place this track's props. Seeded by the theme, so a track looks the same every race. */
+function layoutProps() {
+    props = [];
+    if (!centerXY || centerN < 8) return;
+    const half = trackWidth * 0.5, n = centerN;
+    const cx = i => centerXY[((i % n) + n) % n * 2], cy = i => centerXY[((i % n) + n) % n * 2 + 1];
+    // Distance from a point to the road's centerline, optionally ignoring the stretch round `own`.
+    const roadGap = (x, y, own) => {
+        let best = 1e12;
+        for (let j = 0; j < n; j++) {
+            if (own >= 0) { const apart = Math.abs(j - own); if (Math.min(apart, n - apart) < 12) continue; }
+            const dx = centerXY[j * 2] - x, dy = centerXY[j * 2 + 1] - y, d = dx * dx + dy * dy;
+            if (d < best) best = d;
+        }
+        return Math.sqrt(best);
+    };
+    const free = (x, y, r) => props.every(p => Math.hypot(p.x - x, p.y - y) > r + PROP_SIZE[p.name] * 0.5);
+    const heading = i => Math.atan2(cy(i + 1) - cy(i - 1), cx(i + 1) - cx(i - 1));
+    const wrap = a => Math.atan2(Math.sin(a), Math.cos(a));
+
+    // Grandstands: one each side of the road a little way past the line, facing it.
+    const standDepth = PROP_SIZE.tribune_full * 223 / 448;
+    const at = Math.round(n * 0.035), h0 = heading(at), nx = -Math.sin(h0), ny = Math.cos(h0);
+    for (const side of [-1, 1]) {
+        const off = half + 26 + standDepth * 0.5, x = cx(at) + nx * off * side, y = cy(at) + ny * off * side;
+        const ends = [-1, 0, 1].map(k => [x + Math.cos(h0) * k * 130, y + Math.sin(h0) * k * 130]);
+        if (ends.every(e => roadGap(e[0], e[1], at) > half + standDepth * 0.5 + 10)) {
+            props.push({ name: 'tribune_full', x, y, rot: h0 + (side > 0 ? Math.PI : 0) });
+        }
+    }
+
+    // Tyre walls and cones. A bend is "tight" when the road turns more than 0.2 rad over the
+    // six nodes round a point; tyres go a stack every 26 units round its outside, a cone every
+    // 70 on the inside kerb.
+    let sinceTyre = 1e9, sinceCone = 1e9, colour = 0;
+    for (let i = 0; i < n; i++) {
+        const step = Math.hypot(cx(i + 1) - cx(i), cy(i + 1) - cy(i));
+        sinceTyre += step; sinceCone += step;
+        const turn = wrap(heading(i + 3) - heading(i - 3));
+        if (Math.abs(turn) < 0.2) continue;
+        const h = heading(i), ox = -Math.sin(h), oy = Math.cos(h), out = turn > 0 ? -1 : 1;   // the normal points right
+        if (sinceTyre >= 26) {
+            const x = cx(i) + ox * out * (half + 22), y = cy(i) + oy * out * (half + 22);
+            if (roadGap(x, y, i) > half + 24 && free(x, y, 12)) {
+                props.push({ name: (colour++ & 1) ? 'tires_white' : 'tires_red', x, y, rot: 0 });
+                sinceTyre = 0;
+            }
+        }
+        if (sinceCone >= 70) {
+            const x = cx(i) - ox * out * (half + 14), y = cy(i) - oy * out * (half + 14);
+            if (roadGap(x, y, i) > half + 18 && free(x, y, 8)) {
+                props.push({ name: 'cone_straight', x, y, rot: 0 });
+                sinceCone = 0;
+            }
+        }
+    }
+
+    // Scatter on the open ground: inside the track's own bounding box plus a margin, never
+    // nearer the road than its own half width plus 50.
+    const mix = PROP_MIX[currentTheme] || PROP_MIX.circuit;
+    const total = mix.reduce((s, m) => s + m[1], 0);
+    let seed = 7; for (let i = 0; i < currentTheme.length; i++) seed = Math.imul(seed ^ currentTheme.charCodeAt(i), 16777619);
+    const rng = mulberry32(seed);
+    let minX = 1e9, minY = 1e9, maxX = -1e9, maxY = -1e9;
+    for (let i = 0; i < n; i++) { minX = Math.min(minX, cx(i)); maxX = Math.max(maxX, cx(i)); minY = Math.min(minY, cy(i)); maxY = Math.max(maxY, cy(i)); }
+    const pad = trackWidth * 0.9;
+    minX -= pad; minY -= pad; maxX += pad; maxY += pad;
+    const want = Math.min(70, Math.round((maxX - minX) * (maxY - minY) / 62000));
+    for (let tries = 0, placed = 0; tries < want * 12 && placed < want; tries++) {
+        let pick = rng() * total, name = mix[0][0];
+        for (const m of mix) { pick -= m[1]; if (pick <= 0) { name = m[0]; break; } }
+        const r = PROP_SIZE[name] * 0.5, x = minX + r + rng() * (maxX - minX - 2 * r), y = minY + r + rng() * (maxY - minY - 2 * r);
+        const rot = name.startsWith('tent') ? Math.floor(rng() * 4) * Math.PI / 2 : rng() * Math.PI * 2;
+        if (roadGap(x, y, -1) < half + 50 + r || !free(x, y, r + 14)) continue;
+        props.push({ name, x, y, rot });
+        placed++;
+    }
+}
+
+function drawProps(g, scale) {
+    if (propsState !== 2) return;
+    // The night track's ground is nearly black; daylight sprites at full strength would glow on it.
+    g.globalAlpha = currentTheme === 'neonskyline' ? 0.72 : 1;
+    for (const p of props) {
+        const img = propImgs[p.name];
+        if (!img || !img.naturalWidth) continue;
+        const w = PROP_SIZE[p.name] * scale, h = w * img.naturalHeight / img.naturalWidth;
+        const [x, y] = trackTx(p.x, p.y);
+        g.save();
+        g.translate(x, y);
+        // A soft ground shadow under anything tall enough to cast one.
+        if (PROP_SIZE[p.name] >= 70) { g.fillStyle = 'rgba(0,0,0,0.22)'; g.beginPath(); g.ellipse(w * 0.06, h * 0.08, w * 0.5, h * 0.5, p.rot, 0, Math.PI * 2); g.fill(); }
+        g.rotate(p.rot);
+        g.drawImage(img, -w / 2, -h / 2, w, h);
+        g.restore();
+    }
+    g.globalAlpha = 1;
+}
+
 function project(x, y, camX, camY, scale, w, h) {
     return [w * 0.5 + (x - camX) * scale, h * 0.5 + (y - camY) * scale];
 }
@@ -342,6 +477,14 @@ function ensureGrass(w, h, dpr) {
         for (let y = 0; y < h; y += 20) {
             for (let x = (y % 40 === 0 ? 0 : 10); x < w; x += 20) { g.fillRect(x, y, 2.5, 2.5); }
         }
+    } else if (currentTheme === 'crossfire') {
+        // A works yard: worn grass the colour of moss, with a faint slab grid.
+        const grad = g.createRadialGradient(w / 2, h / 2, 0, w / 2, h / 2, Math.max(w, h) * 0.75);
+        grad.addColorStop(0, '#4c6b4a'); grad.addColorStop(0.5, '#38523a'); grad.addColorStop(1, '#22352a');
+        g.fillStyle = grad; g.fillRect(0, 0, w, h);
+        g.strokeStyle = 'rgba(255, 255, 255, 0.045)'; g.lineWidth = 1;
+        for (let x = 0; x < w; x += 44) { g.beginPath(); g.moveTo(x, 0); g.lineTo(x, h); g.stroke(); }
+        for (let y = 0; y < h; y += 44) { g.beginPath(); g.moveTo(0, y); g.lineTo(w, y); g.stroke(); }
     } else {
         const grad = g.createRadialGradient(w / 2, h / 2, 0, w / 2, h / 2, Math.max(w, h) * 0.7);
         grad.addColorStop(0, '#1f5a2f'); grad.addColorStop(0.5, '#163f20'); grad.addColorStop(1, '#0c2412');
@@ -434,6 +577,8 @@ function buildTrackBitmap(scale, dpr) {
         grad.addColorStop(0, '#161922'); grad.addColorStop(0.5, '#10121a'); grad.addColorStop(1, '#090b10');
     } else if (currentTheme === 'desertdustway') {
         grad.addColorStop(0, '#554230'); grad.addColorStop(0.5, '#423324'); grad.addColorStop(1, '#2f2216');
+    } else if (currentTheme === 'crossfire') {
+        grad.addColorStop(0, '#474b52'); grad.addColorStop(0.5, '#383c43'); grad.addColorStop(1, '#2b2f36');
     } else {
         grad.addColorStop(0, '#3d424a'); grad.addColorStop(0.5, '#2a2e36'); grad.addColorStop(1, '#1f242c');
     }
@@ -452,6 +597,11 @@ function buildTrackBitmap(scale, dpr) {
         g.strokeStyle = '#b85d19'; g.lineWidth = wpx + 14; g.stroke();
         g.strokeStyle = '#f3cf7a'; g.lineWidth = wpx + 10; g.stroke();
         g.lineCap = 'butt'; g.setLineDash([16, 16]); g.strokeStyle = '#b85d19'; g.lineWidth = wpx + 10; g.stroke(); g.setLineDash([]);
+    } else if (currentTheme === 'crossfire') {
+        // Hazard kerbs, yellow and black: this is the track where the road crosses itself.
+        g.strokeStyle = '#16181c'; g.lineWidth = wpx + 14; g.stroke();
+        g.strokeStyle = '#f2c230'; g.lineWidth = wpx + 10; g.stroke();
+        g.lineCap = 'butt'; g.setLineDash([16, 16]); g.strokeStyle = '#16181c'; g.lineWidth = wpx + 10; g.stroke(); g.setLineDash([]);
     } else {
         g.strokeStyle = '#cc2222'; g.lineWidth = wpx + 14; g.stroke();
         g.strokeStyle = '#ffffff'; g.lineWidth = wpx + 10; g.stroke();
@@ -604,6 +754,7 @@ function buildTrackBitmap(scale, dpr) {
     const [bx, by] = trackTx(centerXY[2], centerXY[3]);
     const ddx = bx - ax, ddy = by - ay, llen = Math.hypot(ddx, ddy) || 1;
     const nx = -ddy / llen, ny = ddx / llen, half = wpx * 0.5;
+    drawProps(g, scale);
     for (let i = 0; i < 10; i++) { const t0 = i / 10, t1 = (i + 1) / 10; g.fillStyle = (i % 2 === 0) ? '#fff' : '#111'; g.beginPath(); g.moveTo(ax + nx * (-half + t0 * wpx), ay + ny * (-half + t0 * wpx)); g.lineTo(bx + nx * (-half + t0 * wpx), by + ny * (-half + t0 * wpx)); g.lineTo(bx + nx * (-half + t1 * wpx), by + ny * (-half + t1 * wpx)); g.lineTo(ax + nx * (-half + t1 * wpx), ay + ny * (-half + t1 * wpx)); g.closePath(); g.fill(); }
 
     trackTex = off;
@@ -766,6 +917,7 @@ export function dispose() {
     // reads as one still running.
     if (mainCtx && mainCanvas) { mainCtx.save(); mainCtx.setTransform(1, 0, 0, 1, 0, 0); mainCtx.clearRect(0, 0, mainCanvas.width, mainCanvas.height); mainCtx.restore(); }
     centerXY = wallsXY = null;
+    props = [];
     mainCanvas = mainCtx = null;
     trackTex = grassTex = parallaxFar = parallaxMid = vignetteTex = null;
     carSprites.clear();
@@ -781,6 +933,8 @@ export function setStatic(center, width, walls, boostPads, surfaceZones, theme) 
     boostPadsData = Array.isArray(boostPads) ? boostPads : [];
     surfaceZonesData = Array.isArray(surfaceZones) ? surfaceZones : [];
     currentTheme = (typeof theme === 'string' && theme) ? theme.toLowerCase() : 'circuit';
+    loadProps();
+    layoutProps();
     trackTex = null;
     carSprites.clear();
     grassTex = null; parallaxFar = null; parallaxMid = null;
@@ -790,7 +944,7 @@ export function setStatic(center, width, walls, boostPads, surfaceZones, theme) 
     clearFx();
 }
 
-/** 'circuit' | 'neonskyline' | 'desertdustway'. */
+/** 'circuit' | 'neonskyline' | 'desertdustway' | 'crossfire'. */
 export function theme() { return currentTheme; }
 
 // Also clears the per-layer dpr keys. input.js calls this when the backing

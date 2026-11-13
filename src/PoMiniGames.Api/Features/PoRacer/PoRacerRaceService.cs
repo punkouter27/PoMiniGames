@@ -25,12 +25,13 @@ public sealed class PoRacerRaceService : IAsyncDisposable
     /// <param name="bots">False for a time trial (humans only on the grid).</param>
     /// <param name="botPace">Bot speed scale, the solo difficulty tier.</param>
     /// <param name="botCaution">How much the bots slow for bends (see <see cref="PoRacerSim.DefaultBotCaution"/>).</param>
+    /// <param name="weather">The race's weather (<see cref="PoRacerWeather"/>); dry unless the registry says otherwise.</param>
     public PoRacerRaceService(string code, IReadOnlyList<PoRacerLobbyPlayer> players, ILogger<PoRacerRaceService> log,
         string? trackId = null, bool bots = true, double botPace = 1.0, double botCaution = PoRacerSim.DefaultBotCaution,
-        int carCount = PoRacerCatalog.CarCount)
+        int carCount = PoRacerCatalog.CarCount, string weather = PoRacerWeather.Clear)
     {
         GameCode = code;
-        _sim = new PoRacerSim(players, trackId, countdownSeconds: 3, bots, botPace, botCaution, carCount);
+        _sim = new PoRacerSim(players, trackId, countdownSeconds: 3, bots, botPace, botCaution, carCount, weather: weather);
         _log = log;
         // A shared race: a seat nobody is connected to is driven by the stand-in bot, from the
         // lights (a lobby player who never arrived) or from the moment its driver drops. Solo

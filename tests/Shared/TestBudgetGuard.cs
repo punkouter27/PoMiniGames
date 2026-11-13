@@ -28,6 +28,9 @@ public static class TestBudgetGuard
     {
         // PoBrawl dossiers: free, but a live call to en.wikipedia.org. Tests serve the static facts.
         ["PoMiniGames:PoBrawl:Dossier:FetchWikipedia"] = "false",
+        // Not a cost: Racer draws each track's weather from the date, and rain or snow changes
+        // the grip. Tests race on a dry track whatever day they run.
+        ["PoMiniGames:PoRacer:Weather"] = "clear",
         ["KeyVault:Uri"] = "",
     };
 
