@@ -359,9 +359,21 @@
     private bool _dialogOpened;
     private bool _leaving;
 
-    protected override async Task OnInitializedAsync()
+    /// <summary>The board key the last fetch was for (null: none yet, or the key was withdrawn).</summary>
+    private string? _loadedKey;
+
+    // On parameters, not just on init: a game whose score is still being checked when the
+    // modal opens (Cabinet's lap replay) passes no key until it is stored, then the key, so
+    // the Top 3 is read once the new row can be in it.
+    protected override async Task OnParametersSetAsync()
     {
-        if (string.IsNullOrEmpty(GameKey)) return;
+        if (string.IsNullOrEmpty(GameKey))
+        {
+            _loadedKey = null;
+            return;
+        }
+        if (GameKey == _loadedKey) return;
+        _loadedKey = GameKey;
 
         _loading = true;
         try

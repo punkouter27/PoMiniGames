@@ -96,6 +96,18 @@ export function debriefFacts(current, reference) {
     };
 }
 
+/**
+ * Seconds into a lap at which `trace` was `frac` (0..1) of the way round: the live delta's
+ * reference time. Each bin holds the time at its start, so the point is interpolated to the
+ * next bin (the lap time, past the last one).
+ */
+export function traceTimeAt(trace, frac) {
+    const x = Math.max(0, Math.min(BINS - 1e-6, frac * BINS));
+    const i = Math.floor(x);
+    const t0 = trace.t[i], t1 = i + 1 < BINS ? trace.t[i + 1] : trace.time;
+    return t0 + (t1 - t0) * (x - i);
+}
+
 export function bestTrace(traces) {
     let best = null;
     for (const tr of traces) if (!best || tr.time < best.time) best = tr;

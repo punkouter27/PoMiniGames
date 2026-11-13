@@ -397,8 +397,8 @@ public sealed class PoCabinetRaceRegistry : IAsyncDisposable
     private static PoCabinetRaceSnapshot BuildSnapshot(RaceSession session, PoCabinetDialogueEvent? dialogue)
     {
         var sim = session.Sim;
-        // Rounded on purpose: 30 Hz × 8 cars of full-precision doubles blew the 2 KB frame
-        // budget in practice, and a hundredth of a unit is far below one pixel.
+        // Rounded on purpose: at 30 Hz, full-precision doubles blew the frame budget (2 KB at
+        // 8 cars, 4 KB at the full 16-car grid), and a hundredth of a unit is far below one pixel.
         var cars = sim.SnapshotCars().Select(c => new PoCabinetCarState
         {
             Id = c.Id,

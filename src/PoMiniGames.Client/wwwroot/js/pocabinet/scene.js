@@ -140,7 +140,7 @@ class SceneHandle {
         this.scan = false;        // a toy road laid over a scan (isScan): the model is the world
         this.roomSplat = null;    // the scan's Gaussian splat (DropInViewer), when it loaded
         this.roomProgress = null; // its loading bar over the canvas
-        this.roomDetail = null;   // 'splat' | 'mesh' (lite); read from the stored settings when unset
+        this.roomDetail = null;   // 'auto' | 'splat' (full) | 'mesh' (lite); read from the stored settings when unset
         this.sky = null;
         this.envSky = null;
         this.envTarget = null;

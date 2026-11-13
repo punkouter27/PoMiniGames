@@ -103,6 +103,10 @@ let hidden = false;        // the tab is in the background
 let slowAmount = 0;
 let lastShutter = 0;
 let lastImpact = 0;
+let hrtfPool = [];         // fixed pooled HRTF PannerNode bank for one-shots (#1)
+const impactTags = new Map();
+let lastKerbThud = 0;
+let wasRaisedKerb = false;
 let roomMode = false;      // the bedroom toy track (setRoom): plastic seams, plastic impacts
 let seamBus = null;        // seam clicks of the ear car: sfx bus + a little room
 let seamClicks = null;     // a few pre-rendered plastic ticks (AudioBuffers)
@@ -216,6 +220,11 @@ function buildPlayerEngine() {
     shaper.curve = driveCurve;
     shaper.oversample = '2x';
     const lp = filter('lowpass', 600, 1.1);
+    // Directional intake vs exhaust voice: intake howl forward (~1.8k), warm exhaust bass astern (#8).
+    const dirPeak = filter('peaking', 1650, 0.9);
+    dirPeak.gain.value = 0;
+    const dirShelf = filter('lowshelf', 240, 0.7);
+    dirShelf.gain.value = 2;
     const shift = gainNode(1);       // shift dips
     const out = gainNode(0);         // engine level
 
@@ -239,7 +248,9 @@ function buildPlayerEngine() {
     gritBand.connect(gritGain);
     gritGain.connect(lp);
 
-    lp.connect(shift);
+    lp.connect(dirPeak);
+    dirPeak.connect(dirShelf);
+    dirShelf.connect(shift);
     shift.connect(out);
     out.connect(bus);
     out.connect(verb.send);
@@ -252,21 +263,36 @@ function buildPlayerEngine() {
     whine.connect(whineGain);
     whineGain.connect(bus);
 
-    // Barrier slapback: a short feedback delay fed from the engine, panned to the wall side.
+    // Dual-tap stereo canyon/barrier early reflections: fast slap L (19ms) & R (34ms) (#8).
     const delay = ctx.createDelay(0.2);
-    delay.delayTime.value = 0.028;
+    delay.delayTime.value = 0.022;
+    const delayR = ctx.createDelay(0.2);
+    delayR.delayTime.value = 0.036;
+    const reflLp = filter('lowpass', 3200, 0.7);
     const fb = gainNode(0.32);
     const wet = gainNode(0);
+    const wetR = gainNode(0);
     const pan = ctx.createStereoPanner ? ctx.createStereoPanner() : null;
-    out.connect(delay);
+    const panR = ctx.createStereoPanner ? ctx.createStereoPanner() : null;
+    out.connect(reflLp);
+    reflLp.connect(delay);
+    reflLp.connect(delayR);
     delay.connect(fb);
     fb.connect(delay);
     delay.connect(wet);
-    if (pan) { wet.connect(pan); pan.connect(bus); } else wet.connect(bus);
-    wallFx = { wet, pan };
+    delayR.connect(wetR);
+    if (pan && panR) {
+        wet.connect(pan); pan.connect(bus);
+        panR.pan.value = 0.7;
+        wetR.connect(panR); panR.connect(bus);
+    } else {
+        wet.connect(bus);
+        wetR.connect(bus);
+    }
+    wallFx = { wet, wetR, pan, panR };
 
     for (const s of [osc, osc2, grit, am, whine]) s.start();
-    return { osc, osc2, pre, lp, shift, out, gritGain, am, amDepth, gritBand, whine, whineGain };
+    return { osc, osc2, pre, lp, dirPeak, dirShelf, shift, out, gritGain, am, amDepth, gritBand, whine, whineGain };
 }
 
 function buildBeds() {
@@ -792,21 +818,46 @@ export function setScrape(amount) {
     scrape.gain.gain.setTargetAtTime(clamp01(amount) * 0.06, ctx.currentTime, 0.05);
 }
 
-/** Kerb buzz. The rate follows speed, as stripes pass under the tyres faster. */
-export function setKerb(on, speedKmh) {
+/** Kerb buzz + suspension/tyre-cavity thuds over raised kerbs (#8). The rate follows speed. */
+export function setKerb(on, speedKmh, raised = false) {
     if (!ctx || !kerb) return;
     const t = ctx.currentTime;
-    kerb.osc.frequency.setTargetAtTime((22 + (Number(speedKmh) || 0) * 0.18) * (1 - slowAmount * 0.4), t, 0.03);
-    kerb.gain.gain.setTargetAtTime(on ? 0.1 : 0, t, on ? 0.015 : 0.05);
+    const sp = Number(speedKmh) || 0;
+    kerb.osc.frequency.setTargetAtTime((22 + sp * 0.18) * (1 - slowAmount * 0.4), t, 0.03);
+    kerb.gain.gain.setTargetAtTime(on ? (raised ? 0.12 : 0.09) : 0, t, on ? 0.015 : 0.05);
+    const isRaised = !!(on && raised && sp > 25);
+    if (isRaised && (!wasRaisedKerb || t - lastKerbThud > 0.16)) {
+        lastKerbThud = t;
+        const thump = Math.min(1, sp / 180);
+        sweep(115 * (0.9 + thump * 0.25), 42, 0.085, 'sine', 0.14 * thump, t, bus);
+        burst('lowpass', 320, 0.8, 0.04, 0.07 * thump, t, bus);
+    }
+    wasRaisedKerb = isRaised;
 }
 
-/** Barrier proximity: 0..1 slapback, panned to `side` (−1 left … +1 right). */
-export function setWallProximity(amount, side) {
+/** Camera-relative engine perspective (#8): rearDot +1 = chase (exhaust bass), -1 = nose-on (intake howl). */
+export function setEnginePerspective(rearDot = 1, crest = 0) {
+    if (!ctx || !engine) return;
+    const t = ctx.currentTime;
+    const d = Math.max(-1, Math.min(1, Number(rearDot) || 0));
+    const front = Math.max(0, -d);
+    const back = Math.max(0, d);
+    engine.dirPeak?.gain.setTargetAtTime(front * 6.5 - back * 1.5, t, 0.08);
+    engine.dirShelf?.gain.setTargetAtTime(back * 3.5 - front * 2.0, t, 0.08);
+    if (road && crest > 0) {
+        road.roadGain.gain.setTargetAtTime(Math.max(0, road.roadGain.gain.value * (1 - 0.35 * Math.min(1, crest))), t, 0.06);
+    }
+}
+
+/** Barrier proximity: 0..1 slapback + canyon early reflections, panned to `side` (−1 left … +1 right). */
+export function setWallProximity(amount, side, canyon = 0) {
     if (!ctx || !wallFx) return;
     const t = ctx.currentTime;
     const a = clamp01(Number(amount) || 0);
-    wallFx.wet.gain.setTargetAtTime(a * 0.55, t, 0.08);
-    if (wallFx.pan) wallFx.pan.pan.setTargetAtTime(Math.max(-1, Math.min(1, Number(side) || 0)) * 0.8, t, 0.1);
+    const c = clamp01(Number(canyon) || 0);
+    wallFx.wet.gain.setTargetAtTime(Math.max(a * 0.55, c * 0.38), t, 0.08);
+    wallFx.wetR?.gain.setTargetAtTime(c * 0.34, t, 0.09);
+    if (wallFx.pan) wallFx.pan.pan.setTargetAtTime(Math.max(-1, Math.min(1, Number(side) || 0)) * (c > 0.2 ? -0.75 : 0.8), t, 0.1);
 }
 
 /** Rain on the roof, 0..1. */
@@ -1183,46 +1234,95 @@ export function cheer(strength = 1, pos = null) {
     }
 }
 
-// ── One-shots ────────────────────────────────────────────────────────────────
+// ── One-shots & Material-Matrix Modal Audio (#1, #9) ────────────────────────
 
-/** Route a one-shot through a temporary panner when it has a world position. */
-function oneShotDest(pos) {
-    if (!pos) return null;
-    const p = makePanner();
-    setPannerPosition(p, pos.x, pos.y ?? 0.5, pos.z);
-    p.connect(hitBus || bus);
-    window.setTimeout(() => { try { p.disconnect(); } catch { /* gone */ } }, 1500);
-    return p;
+const MODAL_BANK = {
+    wall: { thump: [115, 42], modes: [310, 840, 1680, 2950], decays: [0.16, 0.11, 0.075, 0.04], amps: [0.06, 0.048, 0.032, 0.02], band: 2250, ring: 'triangle' },
+    divider: { thump: [92, 34], modes: [185, 440, 920], decays: [0.14, 0.09, 0.045], amps: [0.085, 0.055, 0.026], band: 1450, ring: 'sine' },
+    car_0: { thump: [168, 66], modes: [620, 1340, 2480], decays: [0.11, 0.08, 0.045], amps: [0.045, 0.036, 0.022], band: 2900, ring: 'triangle' },
+    car_1: { thump: [182, 74], modes: [710, 1520, 2780], decays: [0.095, 0.068, 0.038], amps: [0.042, 0.034, 0.02], band: 3200, ring: 'triangle' },
+    car_2: { thump: [142, 54], modes: [460, 1020, 2060], decays: [0.135, 0.095, 0.055], amps: [0.055, 0.04, 0.024], band: 2350, ring: 'triangle' },
+    car_3: { thump: [128, 48], modes: [380, 860, 1780], decays: [0.15, 0.105, 0.06], amps: [0.06, 0.042, 0.025], band: 2100, ring: 'triangle' },
+    car_4: { thump: [154, 60], modes: [530, 1180, 2320], decays: [0.12, 0.085, 0.05], amps: [0.05, 0.038, 0.022], band: 2650, ring: 'triangle' },
+    bedroom_plastic: { thump: [240, 110], modes: [640, 1390, 2280], decays: [0.055, 0.035, 0.02], amps: [0.075, 0.045, 0.025], band: 2400, ring: 'triangle' },
+    glass_shard: { thump: [900, 620], modes: [2850, 4420, 6180], decays: [0.055, 0.04, 0.025], amps: [0.04, 0.034, 0.024], band: 4800, ring: 'sine' },
+    debris_metal: { thump: [380, 210], modes: [1320, 2680, 4120], decays: [0.085, 0.058, 0.032], amps: [0.048, 0.036, 0.022], band: 3300, ring: 'triangle' },
+};
+const HRTF_POOL_SIZE = 10;
+
+/** Route a one-shot through a fixed pooled HRTF panner (zero alloc/timeout churn). */
+function oneShotDest(pos, holdSec = 0.4) {
+    if (!pos || !ctx) return null;
+    if (!hrtfPool.length) {
+        for (let i = 0; i < HRTF_POOL_SIZE; i++) {
+            const p = makePanner();
+            p.connect(hitBus || bus);
+            hrtfPool.push({ panner: p, busyUntil: 0 });
+        }
+    }
+    const now = ctx.currentTime;
+    let slot = hrtfPool[0];
+    for (let i = 1; i < hrtfPool.length; i++) {
+        if (hrtfPool[i].busyUntil < slot.busyUntil) slot = hrtfPool[i];
+    }
+    slot.busyUntil = now + holdSec;
+    setPannerPosition(slot.panner, pos.x, pos.y ?? 0.5, pos.z, true);
+    return slot.panner;
 }
 
 /**
- * A crash. `strength` 0..1 is the impact energy as race.js scales it (wall closing speed, or the
- * contact's relative speed); kind 'wall' | 'car'. Loudness, brightness, pitch and length all
- * follow it: a brush is a dull, short, low tap, a big hit a bright, long crunch. The material is
- * the track's: tarmac-and-steel (a thump, a crunch, a metal ring) or, on the bedroom's toy
- * track, plastic on plastic (plasticImpact). `pos` (world units) makes it positional — a rival's
- * shunt heard from where it happened.
+ * Physics-driven impact synthesis driven by collision energy, material matrix, graze velocity,
+ * and pooled HRTF spatialization.
  */
-export function impact(strength, kind = 'wall', pos = null) {
+export function impact(strength, kind = 'wall', pos = null, meta = null) {
     if (!ctx) return;
     const t = ctx.currentTime;
-    if (t - lastImpact < 0.09) return;
+    const tag = meta?.tag || (pos ? 'remote' : 'local');
+    const last = impactTags.get(tag) || 0;
+    if (t - last < (tag === 'local' ? 0.045 : 0.08)) return;
+    impactTags.set(tag, t);
+    if (impactTags.size > 48) impactTags.clear();
     lastImpact = t;
-    const s = Math.min(1, Math.max(0.1, Number(strength) || 0));
-    const dest = oneShotDest(pos);
+
+    const s = Math.min(1, Math.max(0.08, Number(strength) || 0));
+    const dest = oneShotDest(pos, 0.45);
     const car = kind === 'car';
-    // The score flinches with a hit near the ear (one heard from afar barely moves it).
     music?.hit(pos ? s * 0.35 : s);
     if (roomMode) { plasticImpact(s, car, t, dest); return; }
-    // Energy shapes the timbre around the old fixed voicing (which it matches near s ≈ 0.65).
-    const pitch = 0.85 + 0.25 * s;          // harder → the thump lands higher
-    const bright = 0.55 + 0.7 * s;          // and the crunch opens up
-    const len = 0.7 + 0.5 * s;              // and rings on longer
-    sweep((car ? 170 : 115) * pitch, car ? 70 : 42, 0.2 * len, 'sine', 0.3 * s, t, dest);
-    burst('lowpass', (car ? 2400 : 1600) * bright, 0.7, 0.14 * len, 0.28 * s, t, dest);
-    burst('bandpass', (car ? 3200 : 2300) * (0.8 + 0.35 * s), 6, (car ? 0.12 : 0.08) * len, 0.12 * s * (0.5 + 0.6 * s), t + 0.01, dest);
-    if (car) sweep(2100, 1900, 0.18 * len, 'triangle', 0.02 * s, t + 0.01, dest);
-    else if (s > 0.6) burst('bandpass', 4200, 3, 0.18 * len, 0.05 * (s - 0.6) / 0.4, t + 0.02, dest);  // a big hit's barrier shudder
+
+    const matKey = car ? `car_${((meta?.style ?? 0) % 5 + 5) % 5}` : (kind === 'divider' ? 'divider' : 'wall');
+    const m = MODAL_BANK[matKey] || MODAL_BANK.wall;
+    const pitch = 0.88 + 0.24 * s;
+    const bright = 0.6 + 0.65 * s;
+    const len = 0.65 + 0.55 * s;
+
+    sweep(m.thump[0] * pitch, m.thump[1], 0.18 * len, 'sine', 0.28 * s, t, dest);
+    burst('lowpass', (car ? 2400 : 1650) * bright, 0.7, 0.12 * len, 0.24 * s, t, dest);
+    burst('bandpass', m.band * (0.85 + 0.3 * s), 5.5, 0.09 * len, 0.11 * s, t + 0.008, dest);
+    for (let k = 0; k < m.modes.length; k++) {
+        const f = m.modes[k] * pitch * (0.97 + Math.random() * 0.06);
+        sweep(f, f * 0.96, m.decays[k] * len, m.ring, m.amps[k] * s, t + 0.002 * k, dest);
+    }
+    const graze = Math.min(1, (Number(meta?.graze) || 0) / 55);
+    if (graze > 0.15) {
+        burst('bandpass', 3200 + graze * 1400, 3.5, 0.06 + 0.14 * graze, 0.09 * graze * (0.4 + 0.6 * s), t + 0.01, dest);
+    }
+    if (!car && s > 0.6) burst('bandpass', 4200, 3, 0.16 * len, 0.05 * (s - 0.6) / 0.4, t + 0.018, dest);
+}
+
+/** Synthesize crisp spatialized clatter for tumbling/colliding debris pieces (#9). */
+export function debrisHit(mat = 'debris_metal', strength = 0.35, pos = null) {
+    if (!ctx) return;
+    const t = ctx.currentTime;
+    const s = Math.min(1, Math.max(0.06, Number(strength) || 0));
+    const m = MODAL_BANK[roomMode ? 'bedroom_plastic' : mat] || MODAL_BANK.debris_metal;
+    const dest = oneShotDest(pos, 0.25);
+    const pitch = 0.9 + Math.random() * 0.22;
+    burst('bandpass', m.band * pitch, 2.2, 0.025 + 0.02 * s, 0.12 * s, t, dest);
+    for (let k = 0; k < m.modes.length; k++) {
+        const f = m.modes[k] * pitch;
+        sweep(f, f * 0.97, m.decays[k] * (0.6 + 0.5 * s), m.ring, m.amps[k] * s * 0.85, t, dest);
+    }
 }
 
 /**

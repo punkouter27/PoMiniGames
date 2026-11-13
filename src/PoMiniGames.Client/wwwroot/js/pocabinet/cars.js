@@ -228,14 +228,29 @@ function contactShadowTexture() {
 
 // Shared (colour-independent) materials.
 let SHARED = null;
+function brakeConeTexture() {
+    return cacheTex('brake-cone', 64, 64, (g) => {
+        const grad = g.createRadialGradient(32, 8, 2, 32, 30, 32);
+        grad.addColorStop(0.0, 'rgba(255, 70, 50, 0.92)');
+        grad.addColorStop(0.4, 'rgba(255, 32, 18, 0.36)');
+        grad.addColorStop(1.0, 'rgba(180, 10, 0, 0.0)');
+        g.fillStyle = grad;
+        g.fillRect(0, 0, 64, 64);
+    });
+}
 function shared() {
     if (SHARED) return SHARED;
     SHARED = {
-        glass: new THREE.MeshPhysicalMaterial({ color: '#0c1116', roughness: 0.18, metalness: 0.1, clearcoat: 0.5, clearcoatRoughness: 0.15 }),
+        glass: new THREE.MeshPhysicalMaterial({
+            color: '#0c1116', roughness: 0.12, metalness: 0.14,
+            clearcoat: 0.85, clearcoatRoughness: 0.08, iridescence: 0.45, iridescenceIOR: 1.48,
+        }),
         trim: new THREE.MeshStandardMaterial({ color: '#15171a', roughness: 0.55, metalness: 0.2 }),
         tyre: new THREE.MeshStandardMaterial({ color: '#141414', roughness: 0.92, metalness: 0 }),
         rim: new THREE.MeshStandardMaterial({ color: '#c9ccd2', roughness: 0.5, metalness: 0.7 }),
         shadow: new THREE.MeshBasicMaterial({ map: contactShadowTexture(), transparent: true, depthWrite: false, opacity: 0.75 }),
+        coneGeom: new THREE.PlaneGeometry(0.95, 1.55),
+        coneTex: brakeConeTexture(),
     };
     return SHARED;
 }
@@ -485,12 +500,13 @@ function spawnDebris(handle, id, hang) {
 }
 
 class CarHandle {
-    constructor(group, chassis, mats, dmg, wheels, style) {
+    constructor(group, chassis, mats, dmg, wheels, style, cones) {
         this.group = group;
         this.chassis = chassis;
         this.mats = mats;               // this car's own materials, all damaged from `dmg`
         this.paint = mats.paint;
         this.tailMat = mats.tail;
+        this.cones = cones || [];       // left & right volumetric additive brake light cones
         this.dmg = dmg;                 // the uniforms damageable() shares across them
         this.wheels = wheels;
         this.style = style;             // index into STYLES (the crowd draws by it)
@@ -784,6 +800,17 @@ class CarHandle {
     applyLights() {
         // A smashed lamp stays dark (the shader draws the hole); the other one still brakes.
         this.tailMat.color.copy(TAIL).multiplyScalar(this.braking ? 3.1 : 1.2);
+        const coneOp = this.braking ? 0.52 : 0.14;
+        const coneScale = this.braking ? 1.15 : 0.7;
+        for (let i = 0; i < this.cones.length; i++) {
+            const c = this.cones[i];
+            const broken = i === 0 ? this.lamps.tailL : this.lamps.tailR;
+            c.visible = !broken;
+            if (!broken) {
+                c.material.opacity = coneOp;
+                c.scale.set(coneScale, coneScale, 1);
+            }
+        }
     }
 
     dispose() {
@@ -791,6 +818,7 @@ class CarHandle {
         this.disposed = true;
         if (this.group.parent) this.group.parent.remove(this.group);
         for (const m of Object.values(this.mats)) m.dispose();
+        for (const c of this.cones) c.material.dispose();
     }
 }
 
@@ -868,13 +896,27 @@ export function mountCar(parent, opts) {
         wheels.push({ pivot, tyre, rim, front, bent: 0 });
     }
 
+    const cones = [-0.56, 0.56].map((zOff) => {
+        const mat = new THREE.MeshBasicMaterial({
+            map: m.coneTex, color: 0xff2b16, transparent: true, opacity: 0.14,
+            blending: THREE.AdditiveBlending, depthWrite: false, side: THREE.DoubleSide,
+        });
+        const cone = new THREE.Mesh(m.coneGeom, mat);
+        cone.rotation.x = -Math.PI * 0.44;
+        cone.rotation.z = -Math.PI * 0.5;
+        cone.position.set(-2.55, 0.34, zOff);
+        cone.renderOrder = 3;
+        chassis.add(cone);
+        return cone;
+    });
+
     const shadow = new THREE.Mesh(g.shadow, m.shadow);
     shadow.position.y = 0.03;
     shadow.renderOrder = 1;
     group.add(shadow);
 
     parent.add(group);
-    const handle = new CarHandle(group, chassis, mats, dmg, wheels, style);
+    const handle = new CarHandle(group, chassis, mats, dmg, wheels, style, cones);
     handle.livery = livery;
     return handle;
 }

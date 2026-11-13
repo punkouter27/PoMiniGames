@@ -39,14 +39,16 @@ import * as THREE from 'three';
 import { wrapAngle } from './track.js';
 import { throwChunks } from './debris.js';
 import { noise } from './materials.js';
-import { GRIP_ACCEL, CAR_RADIUS, hullContact, wallAt, surfaceAt, SURF_GRASS, SURF_GRAVEL, SURF_SAUSAGE } from './physics.js';
+import { GpuParticleStepper } from './gpucompute.js';
+import { GRIP_ACCEL, CAR_RADIUS, hullContact, wallAt, surfaceAt, SURF_ROAD, SURF_GRASS, SURF_GRAVEL, SURF_SAUSAGE } from './physics.js';
 import { WORLD_SCALE as WS } from './util.js';
 
 const MAX_SMOKE = 4096;         // the high tier's two puffs per request at a 100-car start
 const SMOKE_RANGE = 180;        // world units from the camera: further off, a wreck's smoke is not drawn
 const PUFF_RANGE = 250;         // and no puff of any kind is emitted
-const MAX_SPARKS = 360;
+const MAX_SPARKS = 1200;
 const MAX_SKID = 2600;          // quads in the skid-mark ring buffer
+const MAX_DECALS = 1800;        // quads in the dynamic wear decal ring buffer (paint transfer, mud, oil/scorch)
 const SKID_W = 0.14;            // half tyre width, world units
 const SKID_Y = 0.055;
 const REAR = 1.2, TRACK_HALF = 0.72;
@@ -142,6 +144,8 @@ class Pool {
         this.grav = new Float32Array(max);
         this.floor = new Float32Array(max);
         this.seed = new Float32Array(max).fill(-1);
+        this.slotEpoch = new Uint32Array(max);
+        this.gpu = null;
         this.next = 0;
         this.live = 0;
         this.spawned = false;
@@ -173,6 +177,7 @@ class Pool {
         const i = this.next;
         this.floor[i] = floor + 0.02;
         this.seed[i] = seed;
+        this.slotEpoch[i]++;
         this.spawned = true;
         this.next = (this.next + 1) % this.max;
         const k = i * 3;
@@ -184,8 +189,14 @@ class Pool {
         this.drag[i] = drag; this.grav[i] = grav;
     }
 
-    step(dt) {
+    step(dt, useGpu = false) {
         if (!this.live && !this.spawned) return;
+        if (useGpu) {
+            if (!this.gpu) this.gpu = new GpuParticleStepper(this.max);
+            const applied = this.gpu.consumeLatest(this);
+            const dispatched = this.gpu.dispatch(this, dt);
+            if (applied && dispatched) return;
+        }
         let live = 0;
         for (let i = 0; i < this.max; i++) {
             if (this.life[i] <= 0) { this.alpha[i] = 0; continue; }
@@ -211,6 +222,7 @@ class Pool {
     }
 
     dispose() {
+        this.gpu?.dispose();
         this.geom.dispose();
         this.material.dispose();
     }
@@ -274,22 +286,192 @@ class SkidMarks {
         this.dirtyFrom = this.dirtyTo = -1;
     }
 
+    snapshot() {
+        return this.count > 0 ? {
+            pos: this.pos.slice(0, this.count * 12),
+            count: this.count,
+            next: this.next,
+        } : null;
+    }
+
+    restore(snap) {
+        if (!snap?.count || !snap.pos) return;
+        const n = Math.min(MAX_SKID, snap.count);
+        this.pos.set(snap.pos.subarray(0, n * 12));
+        this.count = n;
+        this.next = snap.next % MAX_SKID;
+        this.dirtyFrom = 0;
+        this.dirtyTo = n - 1;
+        this.flush();
+    }
+
     dispose() {
         this.geom.dispose();
         this.material.dispose();
     }
 }
 
+/**
+ * Dynamic wear decal ring buffer (#2):
+ * - Barrier paint-transfer scrapes (colored by the car's livery along vertical wall faces)
+ * - Wreck oil/carbon scorch pools on tarmac
+ * - Gravel/mud tyre tracks dragged onto road surfaces after leaving run-off traps
+ */
+class WearDecals {
+    constructor() {
+        this.pos = new Float32Array(MAX_DECALS * 4 * 3);
+        this.col = new Float32Array(MAX_DECALS * 4 * 4);
+        const idx = new Uint32Array(MAX_DECALS * 6);
+        for (let q = 0; q < MAX_DECALS; q++) {
+            const v = q * 4, k = q * 6;
+            idx[k] = v; idx[k + 1] = v + 1; idx[k + 2] = v + 2;
+            idx[k + 3] = v + 1; idx[k + 4] = v + 3; idx[k + 5] = v + 2;
+        }
+        this.geom = new THREE.BufferGeometry();
+        this.posAttr = new THREE.BufferAttribute(this.pos, 3).setUsage(THREE.DynamicDrawUsage);
+        this.colAttr = new THREE.BufferAttribute(this.col, 4).setUsage(THREE.DynamicDrawUsage);
+        this.geom.setAttribute('position', this.posAttr);
+        this.geom.setAttribute('color', this.colAttr);
+        this.geom.setIndex(new THREE.BufferAttribute(idx, 1));
+        this.geom.setDrawRange(0, 0);
+        this.material = new THREE.MeshBasicMaterial({
+            vertexColors: true, transparent: true, depthWrite: false,
+            polygonOffset: true, polygonOffsetFactor: -3, polygonOffsetUnits: -6, side: THREE.DoubleSide,
+        });
+        this.mesh = new THREE.Mesh(this.geom, this.material);
+        this.mesh.frustumCulled = false;
+        this.mesh.renderOrder = 2;
+        this.next = 0;
+        this.count = 0;
+        this.dirtyFrom = -1;
+        this.dirtyTo = -1;
+        this._c = new THREE.Color();
+    }
+
+    pushQuad(x0, y0, z0, x1, y1, z1, x2, y2, z2, x3, y3, z3, r, g, b, a) {
+        const q = this.next;
+        const kp = q * 12, kc = q * 16;
+        const p = this.pos, c = this.col;
+        p[kp] = x0; p[kp + 1] = y0; p[kp + 2] = z0;
+        p[kp + 3] = x1; p[kp + 4] = y1; p[kp + 5] = z1;
+        p[kp + 6] = x2; p[kp + 7] = y2; p[kp + 8] = z2;
+        p[kp + 9] = x3; p[kp + 10] = y3; p[kp + 11] = z3;
+        for (let i = 0; i < 4; i++) {
+            const ci = kc + i * 4;
+            c[ci] = r; c[ci + 1] = g; c[ci + 2] = b; c[ci + 3] = a;
+        }
+        if (this.dirtyFrom < 0) { this.dirtyFrom = q; this.dirtyTo = q; }
+        else { this.dirtyFrom = Math.min(this.dirtyFrom, q); this.dirtyTo = Math.max(this.dirtyTo, q); }
+        this.next = (q + 1) % MAX_DECALS;
+        this.count = Math.min(MAX_DECALS, this.count + 1);
+    }
+
+    /** Horizontal road decal from (ax,az)->(bx,bz) at ground height `y`, width `w`, RGBA. */
+    addStrip(ax, az, bx, bz, y, w, r, g, b, a) {
+        const dx = bx - ax, dz = bz - az;
+        const len = Math.hypot(dx, dz);
+        if (len < 1e-4) return;
+        const nx = -dz / len * w, nz = dx / len * w;
+        const py = y + SKID_Y + 0.008;
+        this.pushQuad(
+            ax - nx, py, az - nz,
+            ax + nx, py, az + nz,
+            bx - nx, py, bz - nz,
+            bx + nx, py, bz + nz,
+            r, g, b, a
+        );
+    }
+
+    /** Vertical paint-transfer streak on a barrier facing (-nx, -nz), stretching along tangent. */
+    addWallPaint(x, y, z, nx, nz, tx, tz, len, h, hex, strength) {
+        this._c.set(hex || '#d0d0d0');
+        const offX = x - nx * 0.04, offZ = z - nz * 0.04;
+        const hl = len * 0.5, hh = h * 0.5;
+        const cy = y + 0.36;
+        this.pushQuad(
+            offX - tx * hl, cy - hh, offZ - tz * hl,
+            offX - tx * hl, cy + hh, offZ - tz * hl,
+            offX + tx * hl, cy - hh, offZ + tz * hl,
+            offX + tx * hl, cy + hh, offZ + tz * hl,
+            this._c.r, this._c.g, this._c.b, Math.min(0.85, 0.35 + strength * 0.5)
+        );
+    }
+
+    /** Oval carbon/oil scorch patch under a wreck or heavy blowout. */
+    addScorch(x, y, z, heading, radius = 1.15) {
+        const fx = Math.cos(heading) * radius * 1.4, fz = Math.sin(heading) * radius * 1.4;
+        const rx = -Math.sin(heading) * radius, rz = Math.cos(heading) * radius;
+        const py = y + SKID_Y + 0.012;
+        this.pushQuad(
+            x - fx - rx, py, z - fz - rz,
+            x - fx + rx, py, z - fz + rz,
+            x + fx - rx, py, z + fz - rz,
+            x + fx + rx, py, z + fz + rz,
+            0.03, 0.03, 0.04, 0.72
+        );
+    }
+
+    flush() {
+        if (this.dirtyFrom < 0) return;
+        const span = this.dirtyTo - this.dirtyFrom + 1;
+        if (typeof this.posAttr.addUpdateRange === 'function') {
+            this.posAttr.clearUpdateRanges?.();
+            this.posAttr.addUpdateRange(this.dirtyFrom * 12, span * 12);
+            this.colAttr.clearUpdateRanges?.();
+            this.colAttr.addUpdateRange(this.dirtyFrom * 16, span * 16);
+        }
+        this.posAttr.needsUpdate = true;
+        this.colAttr.needsUpdate = true;
+        this.geom.setDrawRange(0, this.count * 6);
+        this.dirtyFrom = this.dirtyTo = -1;
+    }
+
+    snapshot() {
+        return this.count > 0 ? {
+            pos: this.pos.slice(0, this.count * 12),
+            col: this.col.slice(0, this.count * 16),
+            count: this.count,
+            next: this.next,
+        } : null;
+    }
+
+    restore(snap) {
+        if (!snap?.count || !snap.pos || !snap.col) return;
+        const n = Math.min(MAX_DECALS, snap.count);
+        this.pos.set(snap.pos.subarray(0, n * 12));
+        this.col.set(snap.col.subarray(0, n * 16));
+        this.count = n;
+        this.next = snap.next % MAX_DECALS;
+        this.dirtyFrom = 0;
+        this.dirtyTo = n - 1;
+        this.flush();
+    }
+
+    dispose() {
+        this.geom.dispose();
+        this.material.dispose();
+    }
+}
+
+let trackWearCache = null;
+
+/** Clear accumulated skid/paint/scorch wear cache (called when switching campaign stages or leaving a track). */
+export function clearTrackWear(trackId = null) {
+    if (!trackWearCache) return;
+    if (!trackId || trackWearCache.trackId === trackId) trackWearCache = null;
+}
+
 class CarFx {
     /**
      * @param sceneHandle scene.js SceneHandle
      * @param track       runtime track (track.js)
-     * @param opts        { grip, groundHex } (race.js keeps `grip` current)
+     * @param opts        { grip, groundHex, persistWear } (race.js keeps `grip` current)
      */
     constructor(sceneHandle, track, opts = {}) {
         this.sh = sceneHandle;
         this.track = track;
         this.grip = Number(opts.grip) || 1;
+        this.persistWear = !!opts.persistWear;
         this.dust = new THREE.Color(opts.groundHex || '#6b6040').lerp(new THREE.Color('#c8b890'), 0.45);
         // Bedroom Floor GP: the toy track's run-off kicks up carpet fluff and lint, not dirt.
         if (track.theme === 'bedroom') this.dust = new THREE.Color('#e2ddd4');
@@ -300,9 +482,16 @@ class CarFx {
         this.smoke = new Pool(MAX_SMOKE, SMOKE_FRAG, THREE.NormalBlending);
         this.sparks = new Pool(MAX_SPARKS, SPARK_FRAG, THREE.AdditiveBlending);
         this.skids = new SkidMarks();
+        this.decals = new WearDecals();
+        if (this.persistWear && trackWearCache && trackWearCache.trackId === track.id) {
+            this.skids.restore(trackWearCache.skids);
+            this.decals.restore(trackWearCache.decals);
+        } else if (trackWearCache && trackWearCache.trackId !== track.id) {
+            trackWearCache = null;
+        }
         this.group = new THREE.Group();
         this.group.name = 'pocabinet-fx';
-        this.group.add(this.skids.mesh, this.smoke.points, this.sparks.points);
+        this.group.add(this.skids.mesh, this.decals.mesh, this.smoke.points, this.sparks.points);
         sceneHandle.scene.add(this.group);
         this.state = new Map();
         this.pairs = new Map();
@@ -346,7 +535,20 @@ class CarFx {
     }
 
     newState() {
-        return { h: null, x: 0, y: 0, up: 0, v: 0, lat: 0, hint: -1, skid: [null, null], launch: 0, launchStrength: 1, acc: 0, walled: false, wallAt: 0, off: null, out: 0, hl: null, sacc: 0, wreckT: 0, surf: 0, gacc: 0 };
+        return { h: null, x: 0, y: 0, up: 0, v: 0, lat: 0, hint: -1, skid: [null, null], mudPrev: [null, null], mud: 0, scorched: false, launch: 0, launchStrength: 1, acc: 0, walled: false, wallAt: 0, paintAt: 0, off: null, out: 0, hl: null, sacc: 0, wreckT: 0, surf: 0, gacc: 0 };
+    }
+
+    /** Stamp barrier paint transfer at world contact `(x,y,z)` along tangent `(tx,tz)`. */
+    paintTransfer(x, y, z, nx, nz, colorHex, strength = 0.6) {
+        if (this.disposed) return;
+        const tx = -nz, tz = nx;
+        this.decals.addWallPaint(x, y, z, nx, nz, tx, tz, 1.4 + strength * 1.8, 0.24 + strength * 0.22, colorHex, strength);
+    }
+
+    /** Stamp an oil/carbon scorch pool beneath a wrecked or damaged car. */
+    scorchMark(x, y, z, heading) {
+        if (this.disposed) return;
+        this.decals.addScorch(x, y, z, heading);
     }
 
     /** A flame out of the tail of car `id` (its last pose), `strength` 0..1. */
@@ -532,6 +734,27 @@ class CarFx {
                     this.puff(PUFF.SPRAY, wx, up + 0.2, wz, vx * 0.35 + (rnd() - 0.5), 0.6 + rnd() * 0.5, vz * 0.35 + (rnd() - 0.5),
                         0.55, 0.6, 2.6, 0.11, 0.8, 0.84, 0.88, 2.2, 0.4, up);
                 }
+                // Gravel/mud tyre tracks dragged onto the tarmac (#2).
+                if (onGrass || onGravel) {
+                    s.mud = Math.min(1, s.mud + dt * 2.8);
+                    s.mudPrev[w] = [wx, wz];
+                } else if (skidsOn && s.mud > 0.06 && surface === SURF_ROAD) {
+                    const mprev = s.mudPrev[w];
+                    if (mprev) {
+                        const d2 = (wx - mprev[0]) ** 2 + (wz - mprev[1]) ** 2;
+                        if (d2 > 0.4 * 0.4) {
+                            if (d2 < 9) {
+                                const mc = this.beach ? this.stone : this.dust;
+                                this.decals.addStrip(mprev[0], mprev[1], wx, wz, up, 0.14, mc.r * 0.55, mc.g * 0.52, mc.b * 0.48, s.mud * 0.48);
+                            }
+                            s.mudPrev[w] = [wx, wz];
+                        }
+                    } else {
+                        s.mudPrev[w] = [wx, wz];
+                    }
+                } else {
+                    s.mudPrev[w] = null;
+                }
                 // Skid marks.
                 if (skidsOn && slip > 0.45 && !onGrass && !onGravel) {
                     const prev = s.skid[w];
@@ -547,6 +770,13 @@ class CarFx {
                 } else {
                     s.skid[w] = null;
                 }
+            }
+            if (!onGrass && !onGravel && s.mud > 0) s.mud = Math.max(0, s.mud - dt * (0.28 + v * 0.004));
+            // High-tier aerodynamic draft wake wisps at high speed (#3).
+            if (this.sh.quality === 'high' && v > 105 && !this.raining && rnd() < dt * 8) {
+                this.puff(PUFF.SPRAY, x - fx * 1.9, up + 0.55, z - fz * 1.9,
+                    vx * 0.25 + (rnd() - 0.5) * 0.5, 0.25 + rnd() * 0.35, vz * 0.25 + (rnd() - 0.5) * 0.5,
+                    0.28, 0.35, 1.35, 0.05, 0.85, 0.88, 0.92, 3.0, 0.1, up);
             }
 
             // How fast the car was closing on the barrier and which way it pointed, both trailing
@@ -572,8 +802,13 @@ class CarFx {
                     this.spark(px, up + 0.35, pz, -vx * 0.5 + (rnd() - 0.5) * 4 - nx * 2, 1.5 + rnd() * 3.5, -vz * 0.5 + (rnd() - 0.5) * 4 - nz * 2);
                 }
                 events.scraping.set(c.id, Math.min(1, v / 100));
-                // First touch of a stint along the wall is the hit; riding it is only the scrape.
                 const now = performance.now();
+                // Barrier paint transfer streaks along contact face (#2).
+                if (skidsOn && c.color && now - s.paintAt > 120) {
+                    s.paintAt = now;
+                    this.paintTransfer(px, up, pz, nx, nz, c.color, Math.min(1, 0.3 + v / 110));
+                }
+                // First touch of a stint along the wall is the hit; riding it is only the scrape.
                 if (!s.walled && now - s.wallAt > 500) {
                     s.wallAt = now;
                     // Strength is the speed INTO the wall (a glancing scrape at full speed is a
@@ -591,7 +826,13 @@ class CarFx {
             // Damage: a hurt engine smokes out of the bonnet, grey and then black as it goes; a
             // wreck pours black smoke and burns for a while, then smoulders.
             const engine = c.wrecked ? 1 : Math.max(0, ((Number(c.engine) || 0) - 0.4) / 0.6);
-            if (c.wrecked) s.wreckT += dt;
+            if (c.wrecked) {
+                s.wreckT += dt;
+                if (skidsOn && !s.scorched) {
+                    s.scorched = true;
+                    this.scorchMark(x, up, z, c.heading);
+                }
+            }
             const cam = this.sh.camera?.position;
             const inRange = !cam || (x - cam.x) ** 2 + (z - cam.z) ** 2 < SMOKE_RANGE * SMOKE_RANGE;
             if (engine > 0 && inRange) {
@@ -643,9 +884,11 @@ class CarFx {
             }
         }
 
-        this.smoke.step(dt);
-        this.sparks.step(dt);
+        const useGpu = this.sh.quality === 'high';
+        this.smoke.step(dt, useGpu);
+        this.sparks.step(dt, useGpu);
         this.skids.flush();
+        this.decals.flush();
         this.updateScale();
         return events;
     }
@@ -667,10 +910,16 @@ class CarFx {
     dispose() {
         if (this.disposed) return;
         this.disposed = true;
+        if (this.persistWear && this.track?.id) {
+            const skids = this.skids.snapshot();
+            const decals = this.decals.snapshot();
+            trackWearCache = (skids || decals) ? { trackId: this.track.id, skids, decals } : null;
+        }
         this.group.parent?.remove(this.group);
         this.smoke.dispose();
         this.sparks.dispose();
         this.skids.dispose();
+        this.decals.dispose();
         this.state.clear();
     }
 }

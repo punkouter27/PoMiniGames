@@ -38,7 +38,7 @@
                 {
                     @* The scanned track's own choice, beside the track it is for (the Settings tab has it too). *@
                     <div class="pocabinet-prerace__room" role="radiogroup" aria-label="Scan detail">
-                        <span>Scan detail <small>Full is a 9.6 MB download; Lite is lighter on phones</small></span>
+                        <span>Scan detail <small>Auto picks for this device; Full is a 9.6 MB download; Lite is the plain room</small></span>
                         <span class="pocabinet-prerace__pills">
                             @foreach (var (value, text) in RoomOptions)
                             {
@@ -70,7 +70,7 @@
     private enum Tab { Track, Car, Settings }
 
     private static readonly (Tab Tab, string Label)[] Tabs = [(Tab.Track, "Track"), (Tab.Car, "Car"), (Tab.Settings, "Settings")];
-    private static readonly (string Value, string Text)[] RoomOptions = [("splat", "Full"), ("mesh", "Lite")];
+    private static readonly (string Value, string Text)[] RoomOptions = [("auto", "Auto"), ("splat", "Full"), ("mesh", "Lite")];
 
     [Parameter] public string? TrackId { get; set; }
     [Parameter] public EventCallback<string> TrackIdChanged { get; set; }

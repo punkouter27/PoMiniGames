@@ -8,13 +8,17 @@
 
 @* The race ends on the shared end-of-game modal, with race again and a way home.
    A demo has nobody to press it, so it loops instead.
-   No GameKey: the unified leaderboard has no Cabinet board, and the summary carries the podium. *@
+   GameKey is the raced track's board (BoardKey), withheld while the lap is being checked. *@
 <GameShell Title="@TitleContent" Player="@_playerName" BackTo="/" Fullscreen="true" RequiresWebGl="true"
-           GameOver="@(_phase == Phase.Finished && Mode != GameMode.Demo)"
+           GameOver="@(_phase == Phase.Finished && Mode != GameMode.Demo)" GameKey="@BoardKey"
            Outcome="@ResultsOutcome" NewBest="@_isPersonalBest"
            GameSummary="@ResultsContent" GameActions="@ResultActions"
            Loading="@(_phase == Phase.Loading)" LoadingLabel="Building the track…">
     <div class="pocabinet-root">
+        @if (_phase is Phase.Start or Phase.Lobby && _loaded)
+        {
+            <canvas id="pocabinetUiBg" class="pocabinet-ui-bg" aria-hidden="true"></canvas>
+        }
         @if (_phase == Phase.Start)
         {
             @* The shared opening card, like every other game. Not until the stored
@@ -164,6 +168,11 @@
                                         <span>Time <strong>@PoCabinetCatalog.FormatLap(_lapSeconds)</strong></span>
                                         <span>Last <strong class="@(_lastLapInvalid ? "pocabinet-lap--deleted" : null)" title="@(_lastLapInvalid ? "Deleted: track limits" : null)">@PoCabinetCatalog.FormatLap(_laps.LastLapSeconds)</strong></span>
                                         <span>Best <strong>@PoCabinetCatalog.FormatLap(_laps.BestLapShown)</strong></span>
+                                        @* Live delta: this lap against the lap to beat (your stored best here, or a
+                                           quicker lap of this race), from the second lap on. race.js writes the value
+                                           and data-state (none | gain | loss) straight to the DOM, like the gauge; the
+                                           value is rendered EMPTY so Blazor owns no text node inside it. *@
+                                        <span id="pocabinetDelta" class="pocabinet-delta" data-state="none" title="This lap against your best lap, at this point of the track">Δ <strong data-delta="value"></strong></span>
                                     </span>
                                     @SectorChips
                                 </div>

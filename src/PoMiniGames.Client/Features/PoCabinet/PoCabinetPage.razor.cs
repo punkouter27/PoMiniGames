@@ -132,8 +132,18 @@ public partial class PoCabinetPageBase : ComponentBase, IAsyncDisposable
             : $"Pick a track and take on {PoCabinetCatalog.SoloCarCount - 1} rivals from the middle of the grid. {RaceLength}; a top-{PoCabinetCatalog.CampaignPassPlace} finish moves the campaign on.";
 
     /// <summary>The place that earns the fanfare and counts as a win: the podium in a
-    /// multiplayer-sized field, the top six of the 64-car solo field.</summary>
-    private int FrontRunnerCut => _totalCars > PoCabinetCatalog.CarCount ? PoCabinetCatalog.SoloFrontRunners : 3;
+    /// multiplayer-sized field (16 cars at most), the top six of the 64-car solo field.</summary>
+    private int FrontRunnerCut => _totalCars > PoCabinetCatalog.OnlineGridSize ? PoCabinetCatalog.SoloFrontRunners : 3;
+
+    /// <summary>
+    /// The raced track's board for the results' Top 3 (UnifiedLeaderboardEndpoints): Capitol is
+    /// bare "pocabinet", the others "pocabinet-{trackId}", a daily circuit by its dated id.
+    /// Null while the lap is with the server (a solo lap is replayed there, which takes a
+    /// moment), so the board is read once the new row can be on it; and for a spectator.
+    /// </summary>
+    protected string? BoardKey => _submitting || _awaitingFinal || IsSpectating || Mode == GameMode.Demo ? null
+        : (_trackId ?? PoCabinetCatalog.DefaultTrackId) is var track && track == PoCabinetCatalog.DefaultTrackId
+            ? "pocabinet" : "pocabinet-" + track;
 
     /// <summary>"3 laps" on a circuit; the Playground run is point-to-point, once.</summary>
     private string RaceLength => PoCabinetTrackGeometry.Get(_trackId).Laps is var laps && laps == 1
@@ -169,6 +179,7 @@ public partial class PoCabinetPageBase : ComponentBase, IAsyncDisposable
     private IJSObjectReference? _dialogueHandle;
     private IJSObjectReference? _minimapHandle;
     private IJSObjectReference? _envHandle;
+    private IJSObjectReference? _uiShader;
     private string? _lastDialogueKey;
     /// <summary>Bumped by every teardown; keys the race section so a restart mounts on new canvases.</summary>
     protected int _raceSerial;
@@ -180,6 +191,8 @@ public partial class PoCabinetPageBase : ComponentBase, IAsyncDisposable
     private bool _wiredSessionHandlers;
     private bool _mountStarted;
     private bool _submitted;
+    /// <summary>The score submit is in flight: the results hold their Top 3 until it lands.</summary>
+    private bool _submitting;
     private double _submittedBestLap;
     private bool _wreckAnnounced;
     /// <summary>The lap in progress has broken track limits; the last one did.</summary>
@@ -218,6 +231,7 @@ public partial class PoCabinetPageBase : ComponentBase, IAsyncDisposable
     /// <summary>Back on the start card (the track list re-reads the best laps the race just set).</summary>
     private Task ReturnToStartAsync()
     {
+        Fire("PoCabinet.clearTrackWear");
         _phase = Phase.Start;
         return InvokeAsync(StateHasChanged);
     }
@@ -244,6 +258,15 @@ public partial class PoCabinetPageBase : ComponentBase, IAsyncDisposable
     /// </summary>
     protected override async Task OnAfterRenderAsync(bool firstRender)
     {
+        if (_loaded && _phase is Phase.Start or Phase.Lobby)
+        {
+            await EnsureUiShaderMountedAsync();
+        }
+        else if (_uiShader is not null)
+        {
+            await UnmountUiShaderAsync();
+        }
+
         if (_phase == Phase.Loading && !_mountStarted)
         {
             _mountStarted = true;
@@ -288,6 +311,8 @@ public partial class PoCabinetPageBase : ComponentBase, IAsyncDisposable
 
     protected Task OnTrackChanged(string trackId)
     {
+        if (!string.Equals(_trackId, trackId, StringComparison.Ordinal))
+            Fire("PoCabinet.clearTrackWear");
         _trackId = trackId;
         return Task.CompletedTask;
     }
@@ -547,7 +572,7 @@ public partial class PoCabinetPageBase : ComponentBase, IAsyncDisposable
             e.Name,
             // The server calls the race once every human is home, so unfinished officials
             // were simply still lapping — "DNF" read as if they had crashed out.
-            e.Finished && e.TotalTimeSeconds > 0 ? PoCabinetCatalog.FormatLap(e.TotalTimeSeconds) : e.Wrecked ? "wrecked · DNF" : e.IsPlayer ? "did not finish" : "AI official · still on track",
+            e.Finished && e.TotalTimeSeconds > 0 ? PoCabinetCatalog.FormatLap(e.TotalTimeSeconds) : e.Wrecked ? "wrecked · DNF" : e.IsPlayer ? "did not finish" : "AI driver · still on track",
             e.CarId == _localCarId)).ToList();
         var mine = result.Standings.FirstOrDefault(e => e.CarId == _localCarId);
         if (mine is not null) _position = mine.Position;
@@ -913,6 +938,7 @@ public partial class PoCabinetPageBase : ComponentBase, IAsyncDisposable
     {
         if (_submitted || IsSpectating || Mode == GameMode.Demo) return;
         _submitted = true;
+        _submitting = true;
         _submittedBestLap = lapSeconds;
         var position = _position;
         var dnf = _dnf;
@@ -985,6 +1011,15 @@ public partial class PoCabinetPageBase : ComponentBase, IAsyncDisposable
         {
             if (Current()) _status = $"Score submit failed: {ex.Message}";
         }
+        finally
+        {
+            // Rendered here too: the no-lap path above returns before the method's last render.
+            if (Current())
+            {
+                _submitting = false;
+                _ = InvokeAsync(StateHasChanged);
+            }
+        }
         if (Current()) await InvokeAsync(StateHasChanged);
     }
 
@@ -1011,6 +1046,7 @@ public partial class PoCabinetPageBase : ComponentBase, IAsyncDisposable
     private void ResetTelemetry()
     {
         _laps = new PoCabinetLapBook();
+        _totalCars = IsMultiplayerMode ? 0 : PoCabinetCatalog.SoloCarCount;
         _lastCountdown = -1;
         _goUntilElapsed = 0;
         _showGo = false;
@@ -1022,6 +1058,7 @@ public partial class PoCabinetPageBase : ComponentBase, IAsyncDisposable
         _previousBest = -1;
         _pingMs = null;
         _submitted = false;
+        _submitting = false;
         _submittedBestLap = 0;
         _wreckAnnounced = false;
         _lapInvalid = false;
@@ -1134,11 +1171,32 @@ public partial class PoCabinetPageBase : ComponentBase, IAsyncDisposable
         {
             await JS.InvokeVoidAsync("localStorage.setItem", PoCabinetUiSettings.StorageKey, Settings.ToJson());
             if (_sceneHandle is not null) await JS.InvokeVoidAsync("PoCabinet.applySettings", _sceneHandle, Settings.ToJs());
+            if (_uiShader is not null && _phase is Phase.Start or Phase.Lobby)
+            {
+                await _uiShader.InvokeVoidAsync("setUiShaderMode", Settings.GpuCompute);
+                await _uiShader.InvokeVoidAsync("pulseUiShader", 0.85);
+            }
         }
         catch { /* cosmetic */ }
         // The weather is not re-mounted mid-race: the race holds its weather from the lights
         // (grip and the lap proof's wet flag), so a change is for the next race and says so.
         await InvokeAsync(StateHasChanged);
+    }
+
+    private async Task EnsureUiShaderMountedAsync()
+    {
+        try
+        {
+            _uiShader ??= await JS.InvokeAsync<IJSObjectReference>("import", "./js/pocabinet/uishader.js");
+            await _uiShader.InvokeAsync<string?>("mountUiShader", "pocabinetUiBg", Settings.GpuCompute);
+        }
+        catch { /* backdrop shader is decorative, never fatal */ }
+    }
+
+    private async Task UnmountUiShaderAsync()
+    {
+        if (_uiShader is null) return;
+        try { await _uiShader.InvokeVoidAsync("unmountUiShader"); } catch { }
     }
 
     /// <summary>Fire-and-forget interop for cues that must never stall the HUD.</summary>
@@ -1155,6 +1213,12 @@ public partial class PoCabinetPageBase : ComponentBase, IAsyncDisposable
     public async ValueTask DisposeAsync()
     {
         _disposed = true;
+        await UnmountUiShaderAsync();
+        if (_uiShader is not null)
+        {
+            try { await _uiShader.DisposeAsync(); } catch { }
+            _uiShader = null;
+        }
         await TeardownRaceAsync();
         // The results modal's one button leaves the page, and the session outlives the page:
         // without this the seat stayed taken in the lobby. (The old "Back to start" button did it.)

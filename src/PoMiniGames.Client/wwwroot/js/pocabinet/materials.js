@@ -114,11 +114,12 @@ export function macro(material, scale = 60, amount = 0.25) {
 }
 
 /**
- * Foliage sway. Geometry is authored with its root at the local origin and the
- * free end along +`axis` ('y' for trees, 'x' for palm fronds); the bend grows
- * with distance² (× `reach`). Instances sway out of phase by position.
+ * Foliage sway + wrapped subsurface scattering translucency (#5). Geometry is authored with
+ * its root at the local origin and the free end along +`axis` ('y' for trees, 'x' for palm
+ * fronds); the bend grows with distance² (× `reach`). Instances sway out of phase by position.
  */
 export function wind(material, amount = 0.12, axis = 'y', reach = 1) {
+    subsurface(material, 0x86c45a, 0.28);
     return addHook(material, `wind${amount}${axis}${reach}`, (shader) => {
         shader.uniforms.uPcTime = clock;
         shader.vertexShader = 'uniform float uPcTime;\n' + shader.vertexShader.replace('#include <begin_vertex>', `#include <begin_vertex>
@@ -135,6 +136,24 @@ export function wind(material, amount = 0.12, axis = 'y', reach = 1) {
             transformed.x += sx * ${amount.toFixed(3)} * h * h * gust;
             transformed.z += sz * ${amount.toFixed(3)} * h * h * gust;
             transformed.y += (sx + sz) * ${(amount * 0.4).toFixed(3)} * h * h * gust;
+        }`);
+    });
+}
+
+/**
+ * Wrapped subsurface scattering (#5): backlit sun transmission + soft wrap lighting for
+ * foliage crowns, palms, and translucent painted plastics.
+ */
+export function subsurface(material, tintHex = 0x90c864, strength = 0.26) {
+    const c = new THREE.Color(tintHex);
+    return addHook(material, `sss${c.getHexString()}:${strength}`, (shader) => {
+        if (!shader.fragmentShader.includes('#include <lights_fragment_end>')) return;
+        shader.fragmentShader = shader.fragmentShader.replace('#include <lights_fragment_end>', `#include <lights_fragment_end>
+        {
+            vec3 sssL = normalize(vec3(0.35, 0.75, 0.45));
+            float sssBack = pow(clamp(dot(geometryViewDir, -sssL) * 0.5 + 0.5, 0.0, 1.0), 2.5);
+            float sssRim = 1.0 - saturate(dot(geometryNormal, geometryViewDir));
+            reflectedLight.directDiffuse += diffuseColor.rgb * vec3(${c.r.toFixed(3)}, ${c.g.toFixed(3)}, ${c.b.toFixed(3)}) * (sssBack * 0.65 + sssRim * 0.35) * ${strength.toFixed(3)};
         }`);
     });
 }

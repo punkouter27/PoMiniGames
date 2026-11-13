@@ -279,15 +279,19 @@ void main() {
     gl_FragColor = vec4(col, clamp(w, 0.0, 1.0));
 }`;
 
-// ── Lighting: occlusion and reflections onto the scene ──
+// ── Lighting: occlusion, screen-space contact shadows, 1-bounce SSGI & SSR onto the scene ──
 const LIGHT_FRAG = /* glsl */ `
 ${DEPTH_GLSL}
 uniform sampler2D tScene;
 uniform sampler2D tAO;
 uniform sampler2D tSSR;
+uniform mat4 uProjM;
+uniform vec3 uSunDir;
 uniform vec2 uHalfTexel;
 uniform float uAO;
 uniform float uSSR;
+uniform float uContact;
+uniform float uGI;
 uniform vec2 uRes;
 varying vec2 vUv;
 void main() {
@@ -321,6 +325,55 @@ void main() {
         float luma = dot(col, vec3(0.2126, 0.7152, 0.0722));
         ao = mix(ao, 1.0, 0.35 * smoothstep(0.8, 3.0, luma));
         col *= ao;
+
+        // Screen-space contact shadow short raymarch along view-space sun vector (#4).
+        if (uContact > 0.0 && z < 55.0) {
+            vec3 P = viewPosAt(vUv, -z);
+            float occ = 0.0;
+            float jit = bayer4(gl_FragCoord.xy);
+            for (int s = 1; s <= 6; s++) {
+                float dist = (float(s) - 0.5 + jit) * 0.14;
+                vec3 samplePos = P + uSunDir * dist;
+                vec4 clip = uProjM * vec4(samplePos, 1.0);
+                vec2 suv = clip.xy / clip.w * 0.5 + 0.5;
+                if (suv.x < 0.0 || suv.x > 1.0 || suv.y < 0.0 || suv.y > 1.0) break;
+                float hitZ = -viewZAt(suv);
+                float rayZ = -samplePos.z;
+                float diff = rayZ - hitZ;
+                if (diff > 0.03 && diff < 0.42) {
+                    occ = max(occ, 1.0 - smoothstep(0.22, 0.42, diff));
+                }
+            }
+            float fade = 1.0 - smoothstep(32.0, 55.0, z);
+            col *= 1.0 - occ * 0.42 * uContact * fade;
+        }
+
+        // 1-bounce Screen-Space Global Illumination (#4): gather depth-weighted nearby irradiance
+        // (tinted by sunlit paint, brake lamps, and kerbs) using 8 rotated Fibonacci taps.
+        if (uGI > 0.0 && z < 75.0) {
+            vec3 gi = vec3(0.0);
+            float wgi = 0.0;
+            float phi0 = bayer4(gl_FragCoord.xy) * 6.28318;
+            vec2 px = 1.0 / max(uRes, vec2(1.0));
+            for (int t = 0; t < 8; t++) {
+                float ft = (float(t) + 0.5) / 8.0;
+                float ang = phi0 + float(t) * 2.399963;
+                float rad = mix(8.0, 38.0, ft);
+                vec2 suv = vUv + vec2(cos(ang), sin(ang)) * rad * px;
+                if (suv.x < 0.0 || suv.x > 1.0 || suv.y < 0.0 || suv.y > 1.0) continue;
+                float sz = -viewZAt(suv);
+                float dw = 1.0 / (1.0 + abs(sz - z) * 0.65);
+                vec3 scTap = max(vec3(0.0), texture2D(tScene, suv).rgb);
+                float tapLum = dot(scTap, vec3(0.2126, 0.7152, 0.0722));
+                float boost = smoothstep(0.35, 1.8, tapLum);
+                gi += scTap * (0.28 + boost * 0.9) * dw;
+                wgi += dw;
+            }
+            if (wgi > 1e-4) {
+                vec3 bounce = min(gi / wgi, vec3(1.6));
+                col += bounce * (0.14 * uGI * (1.0 - smoothstep(45.0, 75.0, z)));
+            }
+        }
     }
     if (uSSR > 0.0) {
         float refl = clamp(1.0 - sc.a, 0.0, 1.0);
@@ -601,7 +654,7 @@ vec2 haze(vec2 uv, vec2 asp) {
         if (i >= uHazeCount) break;
         vec4 h = uHaze[i];
         vec3 s = uHazeShape[i];
-        if (z < s.x - 0.4) continue;
+        if (z < s.x - 0.15) continue;
         vec2 d = (uv - h.xy) * asp;
         vec2 dir = normalize(s.yz * asp + vec2(1e-5));
         float along = dot(d, dir);
@@ -613,7 +666,7 @@ vec2 haze(vec2 uv, vec2 asp) {
         if (m < 0.002) continue;
         vec2 q = vec2(across, along) / r * 3.0;
         vec2 n = vec2(vnoise(q * 1.7 + vec2(0.0, -uTime * 4.0)), vnoise(q * 2.3 + vec2(5.2, -uTime * 5.5))) - 0.5;
-        off += n * m * h.w * r * 0.09;
+        off += n * m * h.w * r * 0.032;
     }
     if (uMirage > 0.0) {
         float far = smoothstep(55.0, 140.0, z) * (1.0 - smoothstep(380.0, 700.0, z));
@@ -741,9 +794,9 @@ const LEVELS = { low: 3, medium: 4, high: 5 };
 // mirage are off on every tier: the wavy refraction read as a smeared, hazy picture (2026-11-04).
 // The shader paths stay; flip haze/mirage back on here to restore them.
 const PASSES = {
-    low: { ao: false, ssr: false, haze: false, blur: false, mirage: false },
-    medium: { ao: true, ssr: true, haze: false, blur: false, mirage: false },
-    high: { ao: true, ssr: true, haze: false, blur: true, mirage: false },
+    low: { ao: false, ssr: false, haze: false, blur: false, mirage: false, contact: false, ssgi: false },
+    medium: { ao: true, ssr: true, haze: false, blur: false, mirage: false, contact: true, ssgi: false },
+    high: { ao: true, ssr: true, haze: true, blur: true, mirage: false, contact: true, ssgi: true },
 };
 const AO_RADIUS = 1.6;        // world units (a car is 3.9 long)
 const AO_STRENGTH = 0.9;
@@ -801,7 +854,9 @@ export class PostFx {
         });
         this.lightMat = mat(LIGHT_FRAG, {
             ...depthUniforms(), tScene: { value: this.sceneTarget.texture }, tAO: { value: null }, tSSR: { value: null },
-            uHalfTexel: { value: new THREE.Vector2() }, uAO: { value: 0 }, uSSR: { value: 0 }, uRes: { value: new THREE.Vector2() },
+            uProjM: { value: new THREE.Matrix4() }, uSunDir: { value: new THREE.Vector3(0.4, 0.8, 0.44).normalize() },
+            uHalfTexel: { value: new THREE.Vector2() }, uAO: { value: 0 }, uSSR: { value: 0 },
+            uContact: { value: 0 }, uGI: { value: 0 }, uRes: { value: new THREE.Vector2() },
         });
         this.tileMat = mat(TILE_FRAG, { tVel: { value: null }, uVelTexel: { value: new THREE.Vector2() }, uTileUV: { value: new THREE.Vector2() } });
         this.neighborMat = mat(NEIGHBOR_FRAG, { tTile: { value: null }, uTexel: { value: new THREE.Vector2() } });
@@ -1080,8 +1135,15 @@ export class PostFx {
         const l = this.lightMat.uniforms;
         l.tAO.value = ao ? this.aoBlurTarget.texture : null;
         l.tSSR.value = ssr ? this.ssrTarget.texture : null;
+        l.uProjM.value.copy(camera.projectionMatrix);
+        const sunW = fx.sunDir || this._v.set(0.42, 0.80, 0.42);
+        this._w.copy(sunW).normalize().transformDirection(camera.matrixWorldInverse);
+        l.uSunDir.value.copy(this._w);
         l.uAO.value = ao ? AO_STRENGTH : 0;
         l.uSSR.value = ssr ? 1 : 0;
+        l.uContact.value = p.contact && ao ? 1 : 0;
+        l.uGI.value = p.ssgi && ao ? 1 : 0;
+        l.uRes.value.set(this.litTarget.width, this.litTarget.height);
         const half = this.aoTarget || this.ssrTarget;
         l.uHalfTexel.value.set(1 / half.width, 1 / half.height);
         this.pass(this.lightMat, this.litTarget);

@@ -373,6 +373,22 @@ float pcWetCoat = 0.0;
         }
     }
 #endif
+#ifdef PC_GLASS
+    // Chromatic dispersion & thin-film spectral rim on windscreens/side glass (#5).
+    {
+        float cosTheta = clamp(abs(dot(normalize(vViewPosition), normalize(normal))), 0.0, 1.0);
+        float rim = pow(1.0 - cosTheta, 3.2);
+        vec3 disp = 0.5 + 0.5 * cos(6.28318 * (cosTheta * 1.45 + vec3(0.0, 0.33, 0.67)));
+        totalEmissiveRadiance += disp * rim * (0.11 - 0.07 * uPcWet);
+    }
+#endif
+#ifdef PC_PAINT
+    // Subtle wrapped clearcoat/toy-enamel scatter along steep silhouette rims (#5).
+    if (uPcQuality > 0.5) {
+        float wrap = pow(1.0 - clamp(abs(dot(normalize(vViewPosition), normalize(normal))), 0.0, 1.0), 2.5);
+        totalEmissiveRadiance += diffuseColor.rgb * wrap * (0.045 * (1.0 - dirt));
+    }
+#endif
 }`;
 
 const GLSL_COAT = /* glsl */`

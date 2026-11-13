@@ -61,7 +61,7 @@ import { mountCar, unmountCar, CarCrowd } from './cars.js';
 import { updateDebris, clearDebris } from './debris.js';
 import * as audio from './audio.js';
 import { currentEnvironment } from './environment.js';
-import { lapTraces, bestTrace, loadPbTrace, savePbTrace, renderTelemetry, debriefFacts } from './telemetry.js';
+import { lapTraces, bestTrace, loadPbTrace, savePbTrace, renderTelemetry, debriefFacts, traceTimeAt } from './telemetry.js';
 import { createFx } from './fx.js';
 import { getRecords } from './records.js';
 import { WetReflections } from './reflections.js';
@@ -195,6 +195,10 @@ class Race {
         if (this.mode !== 'net') ph.reportHits(this.hits);
         this.wreckAt = -1;           // sim clock the local car was wrecked at
         this.damageHud = null;
+        // Live delta (updateDelta): the lap to beat is the stored personal-best trace, or a
+        // quicker lap of this race once there is one (adoptDeltaRef).
+        this.deltaRef = this.mode === 'demo' ? null : loadPbTrace(this.track.id);
+        this.recT = 0;               // the race time of the last recorded frame
         this.dragPoints = [];
 
         // A solo race pauses when the tab is hidden (the frame loop stops with it anyway, and the
@@ -234,7 +238,11 @@ class Race {
 
         // Feel layer.
         try {
-            this.fx = createFx(this.scene, this.track, { grip: this.grip, groundHex: this.world?.atmosphere?.groundHex });
+            this.fx = createFx(this.scene, this.track, {
+                grip: this.grip,
+                groundHex: this.world?.atmosphere?.groundHex,
+                persistWear: this.mode === 'solo',
+            });
         } catch { this.fx = null; }
         const pb = getRecords(this.track.id).bestLap;
         this.pbLap = pb > 0 ? pb : -1;
@@ -317,9 +325,11 @@ class Race {
     }
 
     makeCar(meta) {
+        const body = ph.setBodyStyle(ph.createBody(), meta.id);
+        body.color = meta.color || null;
         const car = {
             ...meta,
-            body: ph.createBody(),
+            body,
             prev: { x: 0, y: 0, heading: 0, along: 0 },
             render: { x: 0, y: 0, heading: 0, speed: 0, along: 0, h: 0, pitch: 0, roll: 0 },
             persona: null, maxSpeed: ph.MAX_SPEED, corneringSkill: 0.7,
@@ -525,6 +535,7 @@ class Race {
                 const valid = !car.lapInvalid;
                 if (car.isLocal && this.rec) {
                     this.rec.laps.push({ lap: car.lapsDone + 1, startT: car.lapStart, endT: crossedAt, time: lapTime, valid });
+                    this.adoptDeltaRef();
                 }
                 car.lapStart = crossedAt;
                 car.lastLap = lapTime;
@@ -582,6 +593,15 @@ class Race {
                 const b = car.body, ch = Math.cos(b.heading), sh = Math.sin(b.heading);
                 const x = (b.x + ch * h.fwd - sh * h.side) / WS, z = (b.y + sh * h.fwd + ch * h.side) / WS;
                 this.fx?.debris(x, z, car.mesh.paintHex, s, car.render.h, car.render);
+                if (h.kind !== 'car' && s > 0.25) {
+                    const wnx = -(ch * h.nx - sh * h.ny), wnz = -(sh * h.nx + ch * h.ny);
+                    this.fx?.paintTransfer(x, car.render.h || 0, z, wnx, wnz, car.mesh.paintHex, s);
+                }
+                if (car === this.viewCar && h.closing > 18) {
+                    audio.impact(Math.min(1, s * 0.9), h.kind || 'wall', null, {
+                        style: h.otherStyle ?? 0, graze: h.graze ?? 0, tag: car.isLocal ? 'local' : `car-${car.id}`,
+                    });
+                }
             }
             hits.length = 0;
         }
@@ -1026,21 +1046,37 @@ class Race {
 
             const kerb = racing && Math.abs(b.speed) > 15 && b.segHint >= 0 ? ph.surfaceAt(this.track, b.segHint, b.lateral) : -1;
             const kerbOn = kerb === ph.SURF_KERB || kerb === ph.SURF_SAUSAGE;
-            audio.setKerb(kerbOn, kmh);
+            audio.setKerb(kerbOn, kmh, kerb === ph.SURF_SAUSAGE);
             fx.rumble = kerbOn ? 0.3 + 0.7 * Math.min(1, Math.abs(b.speed) / ph.MAX_SPEED) : 0;
             if (kerbOn && this.mode !== 'demo') this.input.rumble(0.2 + 0.3 * fx.rumble);
 
             const gap = ph.wallLateral(this.track) - Math.abs(b.lateral);
             const near = racing ? Math.max(0, 1 - gap / 45) * Math.min(1, Math.abs(b.speed) / 60) : 0;
-            audio.setWallProximity(near, b.lateral > 0 ? 1 : -1);
+            const segW = b.segHint >= 0 ? ph.wallAt(this.track, b.segHint, -1) + ph.wallAt(this.track, b.segHint, 1) : 200;
+            const canyon = racing ? Math.max(0, Math.min(1, (140 - segW) / 70)) * Math.min(1, Math.abs(b.speed) / 60) : 0;
+            audio.setWallProximity(near, b.lateral > 0 ? 1 : -1, canyon);
             audio.setScrape(racing ? (events?.scraping.get(ear.id) || 0) : 0);
+
+            if (racing && !dead && this.scene.camera) {
+                const fwd = this.camForward || (this.camForward = new THREE.Vector3());
+                this.scene.camera.getWorldDirection(fwd);
+                const ch = Math.cos(ear.render.heading), sh = Math.sin(ear.render.heading);
+                const rearDot = fwd.x * ch + fwd.z * sh;
+                const gradeNow = b.segHint >= 0 ? this.track.grade(b.segHint) : 0;
+                const crest = Math.max(0, ((this.lastEarGrade ?? gradeNow) - gradeNow) * 18) * Math.min(1, Math.abs(b.speed) / 100);
+                this.lastEarGrade = gradeNow;
+                audio.setEnginePerspective(rearDot, crest);
+            }
         } else {
             fx.rumble = 0;
         }
 
         for (const c of events?.contacts || []) {
+            const firstCar = this.cars.find(x => x.id === c.ids[0]);
+            const secondCar = this.cars.find(x => x.id === c.ids[1]);
+            const style = secondCar?.mesh?.style ?? firstCar?.mesh?.style ?? 0;
             if (ear && c.ids.includes(ear.id)) {
-                audio.impact(c.strength, 'car');
+                audio.impact(c.strength, 'car', null, { style, tag: 'local' });
                 // Once per shunt, not per frame of a grinding side-by-side: the hitstop would chain.
                 if (performance.now() - (this.lastContactCueAt || 0) > 450) {
                     this.lastContactCueAt = performance.now();
@@ -1049,7 +1085,7 @@ class Race {
                 if (this.mode !== 'demo') this.input.rumble(c.strength);
                 fx.shake = Math.max(fx.shake, 0.3 + 0.5 * c.strength);
             } else {
-                audio.impact(c.strength * 0.8, 'car', { x: c.x, y: 0.5, z: c.z });
+                audio.impact(c.strength * 0.8, 'car', { x: c.x, y: 0.5, z: c.z }, { style, tag: `net-${c.ids[0]}-${c.ids[1]}` });
             }
             for (const id of c.ids) this.damage(id, c.x, c.z, c.strength * 0.8);
         }
@@ -1064,6 +1100,7 @@ class Race {
         this.crowdAndMoments(focus, racing, preStart, speed01);
         try { this.acoustics?.update(ear, racing, preStart); } catch { /* sound is never fatal */ }
         this.updateGauge(racing || preStart);
+        this.updateDelta(racing);
         this.updateDamageHud(focus);
         if (dt > 0 && !this.paused) this.dragSparks(dt);
         this.reflections?.update(performance.now() / 1000, this.cars.map(c => c.mesh));
@@ -1118,8 +1155,9 @@ class Race {
         if (me && me.finished && !m.finished) {
             m.finished = true;
             scenery?.exciteCrowd(1);
-            // The podium, or the top six of the 64-car solo field (PoCabinetCatalog.SoloFrontRunners).
-            const front = me.position <= (this.cars.length > 8 ? 6 : 3);
+            // The podium (online: 16 cars at most), or the top six of the 64-car solo field
+            // (PoCabinetCatalog.SoloFrontRunners).
+            const front = me.position <= (this.cars.length > 16 ? 6 : 3);
             audio.cheer(front ? 1 : 0.5);
             this.cue('finish', front ? 1 : 0.5);
             if (front && !this.scene.fx.reduced) this.fx?.confetti(me.render.x / WS, me.render.y / WS, 160, me.render.h);
@@ -1185,6 +1223,59 @@ class Race {
         if (el.dataset.state !== state) el.dataset.state = state;
     }
 
+    /**
+     * The lap just finished becomes the lap to beat when it is the quickest so far (and
+     * counted: a lap deleted for track limits is no reference).
+     */
+    adoptDeltaRef() {
+        const lap = this.rec?.laps[this.rec.laps.length - 1];
+        if (!lap || lap.valid === false || this.mode === 'demo') return;
+        if (this.deltaRef && this.deltaRef.time <= lap.time) return;
+        const trace = lapTraces({ ...this.rec, laps: [lap] })[0];
+        if (trace) this.deltaRef = trace;
+    }
+
+    /**
+     * Seconds the local car is up (negative) or down on the lap to beat, at this point of the
+     * lap; null when there is nothing to compare. The first lap of a circuit race is a standing
+     * start from the grid against a flying lap, so it shows nothing; a one-run track (the
+     * Playground) compares from the start, run against run.
+     */
+    liveDelta() {
+        const car = this.local, ref = this.deltaRef, rec = this.rec;
+        if (!car || !ref || !rec || car.finished || car.body.wrecked || this.replay) return null;
+        // Laps and their start times as the recording has them (online they come from the
+        // local car's own distance), so the delta is cut the way the reference trace was.
+        const done = rec.laps.length;
+        if (done === 0 && this.totalLaps > 1) return null;
+        const L = this.track.lapLength;
+        const frac = (car.body.distance - done * L) / L;
+        if (!(frac >= 0 && frac < 1)) return null;
+        const lapT = this.recT - (done ? rec.laps[done - 1].endT : 0);
+        return lapT - traceTimeAt(ref, frac);
+    }
+
+    /**
+     * The HUD's live delta (#pocabinetDelta in the lap strip), written straight to the DOM like
+     * the gauge, ten times a second: "−0.42" (green, up on the lap to beat) or "+0.42" (red).
+     */
+    updateDelta(racing) {
+        const now = performance.now();
+        if (now - (this.deltaAt || 0) < 100) return;
+        this.deltaAt = now;
+        if (!this.deltaEl?.isConnected) {
+            this.deltaEl = document.getElementById('pocabinetDelta');
+            this.deltaValue = this.deltaEl?.querySelector('[data-delta="value"]') || null;
+        }
+        const el = this.deltaEl;
+        if (!el || !this.deltaValue) return;
+        const d = racing ? this.liveDelta() : null;
+        const state = d === null ? 'none' : d <= 0 ? 'gain' : 'loss';
+        const text = d === null ? '—' : `${d <= 0 ? '−' : '+'}${Math.abs(d).toFixed(2)}`;
+        if (el.dataset.state !== state) el.dataset.state = state;
+        if (this.deltaValue.textContent !== text) this.deltaValue.textContent = text;
+    }
+
     /** The glass gauge: speed, gear and RPM written straight into the page's markup. */
     updateGauge(live) {
         // Blazor renders the gauge with the racing phase, which can land after startRace,
@@ -1208,12 +1299,18 @@ class Race {
         if (this.gaugeGear && this.gaugeGear.textContent !== gear) this.gaugeGear.textContent = gear;
     }
 
+    /** Positional acoustic clatter callback invoked by debris.js when shards bounce or collide. */
+    onClatter(mat, strength, pos) {
+        audio.debrisHit(mat, strength, pos);
+    }
+
     /** Car poses for fx.js, in sim units. Locally simulated cars report their exact slide flag. */
     fxCars() {
         const exact = this.mode !== 'net';
         return this.cars.map(c => ({
             id: c.id, x: c.render.x, y: c.render.y, h: c.render.h, heading: c.render.heading, speed: c.render.speed,
             sliding: (exact || c.isLocal) ? !!c.body.sliding : false,
+            color: c.mesh?.paintHex || null,
             // Where the sim has the car on the road, when it knows (fx.js would otherwise
             // search blind, and on a course that crosses itself find the wrong level).
             hint: (exact || c.isLocal) ? c.body.segHint : -1,
@@ -1371,6 +1468,7 @@ class Race {
             frame[k * 5] = p.x; frame[k * 5 + 1] = p.y; frame[k * 5 + 2] = p.heading; frame[k * 5 + 3] = p.speed; frame[k * 5 + 4] = p.along;
         });
         r.t.push(raceTime);
+        this.recT = raceTime;
         r.poses.push(frame);
         const l = this.local;
         r.local.dist.push(l ? l.body.distance : 0);
@@ -1389,6 +1487,7 @@ class Race {
                 const time = raceTime - startT;
                 const raceBest = done > 0 && r.laps.every(x => time < x.time);
                 r.laps.push({ lap: done + 1, startT, endT: raceTime, time });
+                this.adoptDeltaRef();
                 this.onLocalLap(time, raceBest);
             }
         }

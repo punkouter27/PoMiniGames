@@ -578,8 +578,11 @@
         // Racer has one board per track ("poracer", "poracer-neonskyline", …). They are all the
         // Racer game's, so they group by its catalog key; without this the two newer tracks fell
         // to "Other" at the bottom of the page, away from the Grand Prix board.
+        // Cabinet the same: "pocabinet", "pocabinet-senate", …, "pocabinet-daily".
         static GameKey Game(GameLeaderboardDto b) =>
-            b.GameKey.StartsWith("poracer-", StringComparison.OrdinalIgnoreCase) ? GameKeys.PoRacer : (GameKey)b.GameKey;
+            b.GameKey.StartsWith("poracer-", StringComparison.OrdinalIgnoreCase) ? GameKeys.PoRacer
+            : b.GameKey.StartsWith("pocabinet-", StringComparison.OrdinalIgnoreCase) ? GameKeys.PoCabinet
+            : (GameKey)b.GameKey;
 
         _groupedBoards = new List<BoardGroup>
         {

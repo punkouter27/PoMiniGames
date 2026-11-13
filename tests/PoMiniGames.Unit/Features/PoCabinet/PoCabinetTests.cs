@@ -259,6 +259,28 @@ public class PoCabinetTests
         below.Along = 500;
         PoCabinetPhysics.ResolveContacts(track, [above, below]);
         (above.Speed, below.Speed).Should().Be((100d, 60d), "two levels of a crossing never touch");
+
+        // Heavier van (style 3, mass 1.35) vs lighter hatchback (style 1, mass 0.90): momentum conserved, van loses less speed.
+        var van = Car(0, 0, 100);
+        PoCabinetPhysics.SetStyle(van, 3);
+        var hatch = Car(36, 0, 60);
+        PoCabinetPhysics.SetStyle(hatch, 1);
+        double momentumBefore = van.Mass * van.Speed + hatch.Mass * hatch.Speed;
+        PoCabinetPhysics.ResolveContacts(track, [van, hatch]);
+        (van.Mass * van.Speed + hatch.Mass * hatch.Speed).Should().BeApproximately(momentumBefore, 1e-6);
+        (100 - van.Speed).Should().BeLessThan(hatch.Speed - 60, "heavier style transfers more delta-v to lighter style");
+
+        // Continuous 2-substep integration keeps a flat-out car inside barrier limits without tunneling.
+        var senate = PoCabinetTrack.Get("senate");
+        var wallCar = Car(0, 0, PoCabinetPhysics.MaxSpeed);
+        PoCabinetPhysics.GridSlot(senate, wallCar, 0);
+        wallCar.Speed = PoCabinetPhysics.MaxSpeed;
+        for (int t = 0; t < 90; t++)
+        {
+            PoCabinetPhysics.Step(senate, wallCar, new PoCabinetControls(1, 0, 1), PoCabinetPhysics.TickSeconds, 1);
+            double limit = PoCabinetPhysics.WallAt(senate, wallCar.SegHint, wallCar.Lateral > 0 ? 1 : -1);
+            Math.Abs(wallCar.Lateral).Should().BeLessThanOrEqualTo(limit + 1e-6, "2-substep CCD stops barrier clipping");
+        }
     }
 
     /// <summary>
@@ -314,6 +336,22 @@ public class PoCabinetTests
         var grid = service.BuildGrid();
         grid.Should().HaveCount(4, "two humans plus the two officials asked for");
         grid.Skip(2).Select(d => d.Name).Should().Equal("Sean S.", "Steve B.");
+        // A full AI grid: the four officials, then field racers under the names and paint they
+        // have in a solo race, and never more cars than the online grid holds.
+        var full = new PoCabinetLobbyService();
+        full.Join("h", "Host");
+        full.SetBots("h", 99).Should().BeTrue();
+        full.View()!.BotCount.Should().Be(PoCabinetCatalog.MaxBots, "the request is clamped");
+        full.Start("h").Should().NotBeNull();
+        var fullGrid = full.BuildGrid();
+        fullGrid.Should().HaveCount(1 + PoCabinetCatalog.MaxBots);
+        fullGrid.Select(d => d.Name).Should().OnlyHaveUniqueItems();
+        fullGrid.Skip(1).Take(4).Select(d => d.OfficialId).Should().Equal(PoCabinetCatalog.Officials.Select(o => o.Id));
+        fullGrid[5].Should().Match<PoCabinetDriver>(d => d.Name == "Dana K." && d.OfficialId == PoCabinetCatalog.FieldRacerId && d.Color.StartsWith("hsl("));
+        full.MarkRaceFinished().Should().NotBeNull("the lobby reopens for a rematch");
+        for (var i = 2; i <= PoCabinetCatalog.CarCount; i++) full.Join($"d{i}", $"Driver{i}").Should().NotBeNull();
+        full.View()!.BotSeats.Should().Be(PoCabinetCatalog.OnlineGridSize - PoCabinetCatalog.CarCount, "eight drivers leave room for eight AI");
+        new PoCabinetSim("capitol", 1, full.BuildGrid()).SnapshotCars().Should().HaveCount(PoCabinetCatalog.OnlineGridSize);
         service.DropConnection("c-g1").Should().BeTrue();
         service.View()!.Players.Should().HaveCount(2, "a drop mid-race keeps the seat until the race ends");
         service.Join("g1", "Gil", connectionId: "c-g1b").Should().NotBeNull("rejoining your own seat works mid-race");
@@ -361,19 +399,28 @@ public class PoCabinetTests
     }
 
     /// <summary>
-    /// The 30 Hz race broadcast at eight cars fits one 2 KB frame in the hub's JSON (camelCase,
-    /// string enums). The static world goes once, on join, not per tick.
+    /// The 30 Hz race broadcast fits its frame in the hub's JSON (camelCase, string enums):
+    /// 2 KB at eight cars, 4 KB at the full sixteen-car grid. The static world goes once, on
+    /// join, not per tick.
     /// </summary>
     private static void PerTickSnapshot_FitsTwoKilobytes_AtEightCars()
     {
-        var snapshot = new PoCabinetRaceSnapshot
+        foreach (var (count, budget) in new[] { (PoCabinetCatalog.CarCount, 2048), (PoCabinetCatalog.OnlineGridSize, 4096) })
+        {
+            var bytes = System.Text.Json.JsonSerializer.SerializeToUtf8Bytes(TickSnapshot(count), SnapshotJsonOptions);
+            bytes.Length.Should().BeLessThanOrEqualTo(budget, $"the per-tick broadcast fits one frame at {count} cars; measured {bytes.Length} bytes");
+        }
+    }
+
+    private static PoCabinetRaceSnapshot TickSnapshot(int carCount) =>
+        new PoCabinetRaceSnapshot
         {
             GameCode = "cabinet",
             ServerTimeMs = 1_700_000_000_000,
             ElapsedRaceTime = 95.42,
             Started = true,
             LocalCarId = 0,
-            Cars = Enumerable.Range(0, PoCabinetCatalog.CarCount).Select(i => new PoCabinetCarState
+            Cars = Enumerable.Range(0, carCount).Select(i => new PoCabinetCarState
             {
                 Id = i,
                 Name = "Player " + i,
@@ -393,7 +440,4 @@ public class PoCabinetTests
             // just past 2 KB at eight full-precision-looking cars).
             LatestDialogue = null,
         };
-        var bytes = System.Text.Json.JsonSerializer.SerializeToUtf8Bytes(snapshot, SnapshotJsonOptions);
-        bytes.Length.Should().BeLessThanOrEqualTo(2048, $"the per-tick broadcast fits one frame; measured {bytes.Length} bytes");
-    }
 }

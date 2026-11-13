@@ -78,6 +78,7 @@ public static class PoCabinetLapVerifier
 
         var cars = new List<Car>();
         var player = new Car { IsPlayer = true };
+        PoCabinetPhysics.SetStyle(player, 0);
         PoCabinetPhysics.GridSlot(track, player, PoCabinetCatalog.SoloPlayerSlot);
         cars.Add(player);
         var field = PoCabinetPersonality.SoloField;
@@ -85,6 +86,7 @@ public static class PoCabinetLapVerifier
         {
             var o = field[i];
             var car = new Car { Persona = o.Personality, MaxSpeed = o.MaxSpeed, CorneringSkill = o.CorneringSkill };
+            PoCabinetPhysics.SetStyle(car, i + 1);
             PoCabinetPhysics.GridSlot(track, car, i < PoCabinetCatalog.SoloPlayerSlot ? i : i + 1);
             cars.Add(car);
         }

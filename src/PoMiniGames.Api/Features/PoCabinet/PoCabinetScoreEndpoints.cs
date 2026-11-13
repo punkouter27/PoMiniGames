@@ -10,8 +10,9 @@ namespace PoMiniGames.Features.PoCabinet;
 
 /// <summary>
 /// PoCabinet's score endpoint: authenticated best-lap submissions guarded by the
-/// <c>pocabinet</c> rate-limit policy. There is no read of
-/// the stored laps: the app has no Cabinet board.
+/// <c>pocabinet</c> rate-limit policy. The stored laps are read by the unified
+/// leaderboard (<c>GET /api/leaderboards/pocabinet</c>, <c>pocabinet-{track}</c>,
+/// <c>pocabinet-daily</c>): one board per track.
 ///
 /// <para>
 /// <b>Every stored lap and place is server-computed.</b> A solo submission carries its
