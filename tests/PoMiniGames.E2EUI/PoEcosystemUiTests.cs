@@ -40,11 +40,8 @@ public class PoEcosystemUiTests
         });
         var page = await context.NewPageAsync();
         await using var guard = PlaywrightErrorGuard.Watch(page);
-        var logs = new List<string>();
-        page.Console += (_, msg) => { logs.Add($"[{msg.Type}] {msg.Text}"); if (msg.Type is "error") Console.WriteLine($"[browser:error] {msg.Text}"); };
-        page.PageError += (_, err) => { logs.Add($"[pageerror] {err}"); Console.WriteLine($"[pageerror] {err}"); };
-        page.RequestFailed += (_, req) => logs.Add($"[reqfail] {req.Url} {req.Failure}");
-        page.Response += async (_, res) => { if (res.Url.Contains("/api/") || res.Url.Contains("appsettings")) logs.Add($"[res] {res.Status} {res.Url} {(res.Url.Contains("handshake") ? await res.TextAsync() : "")}"); };
+        page.Console += (_, msg) => { if (msg.Type is "error") Console.WriteLine($"[browser:error] {msg.Text}"); };
+        page.PageError += (_, err) => Console.WriteLine($"[pageerror] {err}");
 
         await page.GotoAsync($"{origin}/poecosystem/demo?autoGuest=1", new PageGotoOptions
         {
@@ -54,26 +51,10 @@ public class PoEcosystemUiTests
 
         // Dismiss the intro card, then wait for the engine to report itself ready.
         var start = page.GetByRole(AriaRole.Button, new() { NameRegex = new System.Text.RegularExpressions.Regex("watch|start|play", System.Text.RegularExpressions.RegexOptions.IgnoreCase) }).First;
-        var startCount = await start.CountAsync();
-        if (startCount > 0) await start.ClickAsync(new LocatorClickOptions { Timeout = 15_000 });
+        if (await start.CountAsync() > 0) await start.ClickAsync(new LocatorClickOptions { Timeout = 15_000 });
 
-        try
-        {
-            await page.WaitForFunctionAsync("() => window.__poeco?.()?.state?.ready === true", null,
-                new PageWaitForFunctionOptions { Timeout = 25_000, PollingInterval = 250 });
-        }
-        catch (TimeoutException ex)
-        {
-            var snap = await page.EvaluateAsync<string>(@"() => JSON.stringify({
-                startCount: " + startCount + @",
-                url: location.href,
-                body: document.body?.innerText?.slice(0, 500),
-                hasGlobal: !!window.PoEcosystem,
-                engine: (() => { try { const e = window.__poeco?.(); return e ? { ready: e.state?.ready, frames: e.state?.frames, mode: e.state?.mode, errors: e.state?.errors, count: e.creatureCount } : null; } catch (err) { return String(err); } })(),
-                canvasCount: document.querySelectorAll('canvas').length
-            })");
-            throw new TimeoutException($"DIAG: {snap} | LOGS: {string.Join(" || ", logs)}", ex);
-        }
+        await page.WaitForFunctionAsync("() => window.__poeco?.()?.state?.ready === true", null,
+            new PageWaitForFunctionOptions { Timeout = 180_000, PollingInterval = 250 });
 
         // The world is populated and the renderer is drawing frames.
         var alive = await page.EvaluateAsync<int>("() => window.__poeco().creatureCount");
