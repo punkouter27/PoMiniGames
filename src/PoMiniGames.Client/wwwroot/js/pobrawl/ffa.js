@@ -52,6 +52,7 @@ export class BrawlFfaGame {
     this.elapsed = 0;
     this.phase = 'intro';
     this.round = 0;
+    this.roundId = 0;
     this.disposed = false;
     this.started = false;
     this.resultTimer = 0;
@@ -205,6 +206,7 @@ export class BrawlFfaGame {
     this.pendingChampion = null;
     this.replayVictim = null;
     this.round++;
+    this.roundId++;
     this.roundProfile = this.seasons?.state.profile || this.options.profile || 'balanced';
     this.roundAgentPresets = Object.freeze(this.options.agentPresets ? { ...this.options.agentPresets }
       : Object.fromEntries(this.options.fighters.map(({ id }) => [id, this.seasons?.getAgentPreset(id) ?? 'native'])));
@@ -265,7 +267,7 @@ export class BrawlFfaGame {
       fighter.idleT = index * 0.6;
       if (!this.options.headless) setExpression(fighter.rig, 'neutral');
     });
-    this._notify('OnFfaRoundStarted', this.round);
+    this._notify('OnFfaRoundStarted', this.round, this.roundId);
     this._publishDashboard();
   }
 
@@ -670,7 +672,7 @@ export class BrawlFfaGame {
     champion.animator.play(champion.rig.config.entrance);
     if (!this.options.headless) setExpression(champion.rig, 'grin');
     this.audio?.crowdSwell(1);
-    this._notify('OnFfaChampion', champion.id);
+    this._notify('OnFfaChampion', champion.id, this.roundId);
     if (this.options.headless) return;
     this.highlights?.mark({ type: 'champion', label: `Round ${this.round}: ${champion.name} wins` });
     if (this.factsEnabled) void this.facts.loadFighter(champion.id, champion.name);

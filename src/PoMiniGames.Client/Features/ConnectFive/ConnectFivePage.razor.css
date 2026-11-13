@@ -317,3 +317,35 @@
   outline: 2px solid var(--accent-cyan, #22d3ee);
   outline-offset: 1px;
 }
+
+.cf-touch-controls { display: none; }
+
+@media (pointer: coarse) {
+  .cf-layout { position: relative; }
+  .cf-board { pointer-events: none; }
+  .cf-touch-controls {
+    display: flex;
+    justify-content: center;
+    gap: 8px;
+  }
+  .cf-touch-controls button {
+    min-width: 44px;
+    min-height: 44px;
+  }
+}
+
+@media (pointer: coarse) and (max-width: 640px) {
+  .cf-layout {
+    --cf-cell: clamp(22px, min(calc((100dvh - 276px) / 9), calc((100dvw - 86px) / 9)), 44px);
+  }
+}
+
+@media (pointer: coarse) and (max-height: 500px) and (orientation: landscape) {
+  .cf-touch-controls {
+    position: absolute;
+    right: 0;
+    top: 50%;
+    transform: translateY(-50%);
+    flex-direction: column;
+  }
+}

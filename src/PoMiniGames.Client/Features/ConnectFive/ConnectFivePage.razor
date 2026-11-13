@@ -141,11 +141,20 @@
                 </div>
             }
         </div>
+        @if (PlayMode != "demo")
+        {
+            <div class="cf-touch-controls" role="group" aria-label="Choose a column">
+                <button type="button" aria-label="Previous column" @onclick="() => _touchColumn = Math.Max(0, _touchColumn - 1)" disabled="@(_touchColumn == 0)">◀</button>
+                <button type="button" aria-label="@($"Drop in column {_touchColumn + 1}")" @onclick="() => HandleDrop(_touchColumn)">Drop @(_touchColumn + 1)</button>
+                <button type="button" aria-label="Next column" @onclick="() => _touchColumn = Math.Min(ConnectFiveBoard.Cols - 1, _touchColumn + 1)" disabled="@(_touchColumn == ConnectFiveBoard.Cols - 1)">▶</button>
+            </div>
+        }
         }
     </div>
 </GameShell>
 
 @code {
+    private int _touchColumn = ConnectFiveBoard.Cols / 2;
     /// <summary>Route mode segment. Parsed by <see cref="GameModes.Parse"/>, which
     /// owns every accepted spelling and legacy form — see GameMode.cs.</summary>
     [Parameter] public string? Mode { get; set; }
@@ -392,7 +401,7 @@
         </div>,
         _ => @<div>
             <ul>
-                <li>Click or tap a column to drop your disc</li>
+                <li>Click a column, or use the touch controls to choose a column and drop your disc</li>
                 <li>The CPU is matched to your ELO: win and it gets stronger, lose and it eases off</li>
                 <li>Your rating and the CPU's show in the header — climb as high as you can</li>
             </ul>

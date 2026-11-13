@@ -1,6 +1,7 @@
 @page "/pobrawl/ffa"
 @page "/pobrawl/ffa/{Mode}"
 @using PoMiniGames.Domain.Primitives
+@using PoMiniGamesClient.Models
 @using PoMiniGamesClient.Features.Shared
 @using PoMiniGamesClient.Services
 @using PoMiniGamesClient.Services.Play
@@ -11,6 +12,8 @@
 @inject SettingsService Settings
 @inject KioskCoordinator Kiosk
 @inject NavigationManager Navigation
+@inject PlayerNameService PlayerNameService
+@inject GameResultService GameResults
 
 <PageTitle>Brawl FFA · PoMiniGames</PageTitle>
 
@@ -249,6 +252,8 @@
     private string? _engineError;
     private string _announcement = "Sixteen presidents enter the ring. Last one standing wins.";
     private int _round;
+    private int _roundId;
+    private int _recordedRound = -1;
     private int _generation;
     private bool _introDone;
     private bool _disposed;
@@ -292,6 +297,9 @@
         _paused = false;
         _replaying = false;
         _champion = null;
+        _round = 0;
+        _roundId = 0;
+        _recordedRound = -1;
         _places.Clear();
         _health.Clear();
         foreach (var fighter in Roster) _health[fighter.Id] = 100;
@@ -341,10 +349,11 @@
     }
 
     [JSInvokable]
-    public Task OnFfaRoundStarted(int round)
+    public Task OnFfaRoundStarted(int round, int roundId)
     {
-        if (_disposed) return Task.CompletedTask;
+        if (_disposed || roundId <= _roundId) return Task.CompletedTask;
         _round = round;
+        _roundId = roundId;
         _champion = null;
         _replaying = false;
         _broadcast = new();
@@ -374,13 +383,20 @@
     }
 
     [JSInvokable]
-    public Task OnFfaChampion(string fighterId)
+    public async Task OnFfaChampion(string fighterId, int roundId)
     {
-        if (_disposed || !_health.ContainsKey(fighterId)) return Task.CompletedTask;
+        if (_disposed || roundId != _roundId || _champion is not null || !_health.ContainsKey(fighterId)) return;
         _champion = fighterId;
         _places[fighterId] = 1;
         _announcement = $"{NameOf(fighterId)} wins Round {_round}. The next free-for-all starts in five seconds.";
-        return InvokeAsync(StateHasChanged);
+        if (IsHuman && _recordedRound != roundId)
+        {
+            _recordedRound = roundId;
+            await PlayerNameService.Initialized;
+            await GameResults.RecordAsync("pobrawl-ffa", PlayerNameService.GetPlayerName(), Difficulty.Medium,
+                string.Equals(fighterId, "bob", StringComparison.OrdinalIgnoreCase) ? GameResult.Win : GameResult.Loss);
+        }
+        await InvokeAsync(StateHasChanged);
     }
 
     private static string NameOf(string fighterId) =>

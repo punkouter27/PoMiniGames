@@ -120,5 +120,47 @@ public class MobileGoldenPathTests
         // The router mounted a new page into #app; it must contain rendered markup.
         var appHtml = await page.Locator("#app").InnerHTMLAsync();
         appHtml.Should().NotBeNullOrWhiteSpace();
+
+        await VerifyConnectFiveTouchAsync(browser);
+    }
+
+    private async Task VerifyConnectFiveTouchAsync(IBrowser browser)
+    {
+        foreach (var viewport in new[] { Portrait, new ViewportSize { Width = 844, Height = 390 } })
+        {
+            await using var context = await browser.NewContextAsync(new()
+            {
+                ViewportSize = viewport,
+                HasTouch = true,
+                IsMobile = true,
+            });
+            var page = await context.NewPageAsync();
+            await page.GotoAsync($"{_fixture.ServerAddress}connectfive/2player?autoGuest=1", new()
+            {
+                WaitUntil = WaitUntilState.NetworkIdle,
+                Timeout = 60_000,
+            });
+            await page.Locator("[data-intro-action]").ClickAsync(new() { Timeout = 60_000 });
+            var controls = page.Locator(".cf-touch-controls button");
+            await controls.First.WaitForAsync();
+            for (var i = 0; i < 3; i++)
+            {
+                var box = await controls.Nth(i).BoundingBoxAsync();
+                box.Should().NotBeNull();
+                box!.Width.Should().BeGreaterThanOrEqualTo(44);
+                box.Height.Should().BeGreaterThanOrEqualTo(44);
+                box.X.Should().BeGreaterThanOrEqualTo(0);
+                box.Y.Should().BeGreaterThanOrEqualTo(0);
+                (box.X + box.Width).Should().BeLessThanOrEqualTo(viewport.Width);
+                (box.Y + box.Height).Should().BeLessThanOrEqualTo(viewport.Height);
+            }
+            (await page.EvaluateAsync<bool>("() => document.documentElement.scrollWidth <= innerWidth && document.documentElement.scrollHeight <= innerHeight")).Should().BeTrue();
+            for (var i = 0; i < 4; i++) await controls.Nth(0).TapAsync();
+            await page.GetByRole(AriaRole.Button, new() { Name = "Drop in column 1" }).TapAsync();
+            (await page.Locator(".cf-cell.red[aria-colindex='1']").CountAsync()).Should().Be(1);
+            for (var i = 0; i < 8; i++) await controls.Nth(2).TapAsync();
+            await page.GetByRole(AriaRole.Button, new() { Name = "Drop in column 9" }).TapAsync();
+            (await page.Locator(".cf-cell.yellow[aria-colindex='9']").CountAsync()).Should().Be(1);
+        }
     }
 }

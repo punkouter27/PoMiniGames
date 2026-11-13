@@ -40,8 +40,6 @@ game mechanics and art direction.
 - **PoFighter:** preview with one mode, a 1 player practice room. It is a sandbox with no end
   state and records no result. Its HUD is static markup the engine writes into (no per-tick
   Blazor render, so no `HudRegion`), and it has no sound yet.
-- **PoBrawl FFA:** seasons and ratings are local to the browser (`ffaSeason.js`) and do not go
-  through `GameResultService`.
-- **ConnectFive:** nine columns cannot be 44px wide on a phone. The touch target is the whole
-  column (any tap in it drops a piece), so each target is full board height and ~36–40px wide.
+- **PoBrawl FFA:** seasons and ratings remain local to the browser (`ffaSeason.js`), separate
+  from player results recorded via `GameResultService`; CPU-only rounds record no player result.
 - **PoCoupleQuiz:** Online only.

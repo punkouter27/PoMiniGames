@@ -302,6 +302,9 @@ test('16 fighters reach one champion, unique places 1–16, and a five-second au
     assert.deepEqual(game.fighters.map((fighter) => fighter.place).sort((a, b) => a - b), Array.from({ length: 16 }, (_, i) => i + 1));
     assert.equal(events.filter((event) => event.method === 'OnFfaEliminated').length, 15);
     assert.equal(events.filter((event) => event.method === 'OnFfaChampion').length, 1);
+    const started = events.find((event) => event.method === 'OnFfaRoundStarted');
+    const champion = events.find((event) => event.method === 'OnFfaChampion');
+    assert.equal(started.args[1], champion.args[1]);
     assert.equal(timers.length, 1);
     assert.equal(timers[0].delay, 5000);
     for (let frame = 0; frame < 60 * 4; frame++) game._animateFalls(1 / 60);
@@ -311,6 +314,7 @@ test('16 fighters reach one champion, unique places 1–16, and a five-second au
     assert.ok(knockedOut.every((fighter) => fighter.velocity.length() === 0));
     timers[0].callback();
     assert.equal(game.round, 2);
+    assert.equal(events.filter((event) => event.method === 'OnFfaRoundStarted')[1].args[1], started.args[1] + 1);
     assert.equal(game.phase, 'fighting');
     assert.ok(game.fighters.every((fighter) => fighter.alive && fighter.hp === 100 && fighter.place === 0));
     assert.equal(game.fighters.filter((fighter) => fighter.swing).length, 0);
