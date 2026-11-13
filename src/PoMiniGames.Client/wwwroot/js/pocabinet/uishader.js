@@ -310,7 +310,11 @@ export async function mountUiShader(canvasId, mode = 'auto') {
     root.addEventListener('pointermove', onMove, { passive: true });
     root.addEventListener('pointerdown', onDown, { passive: true });
     if (typeof ResizeObserver === 'function') {
-        state.ro = new ResizeObserver(resize);
+        let roRaf = 0;
+        state.ro = new ResizeObserver(() => {
+            if (roRaf) cancelAnimationFrame(roRaf);
+            roRaf = requestAnimationFrame(() => { roRaf = 0; resize(); });
+        });
         state.ro.observe(canvas);
     }
 
