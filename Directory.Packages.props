@@ -28,7 +28,7 @@
     <!-- Native .NET 10 resilience pipelines (retry / circuit-breaker / timeout
          / hedging) backed by Polly v8, registered via IHttpClientFactory. -->
     <PackageVersion Include="Microsoft.Extensions.Http.Resilience" Version="10.11.0" />
-    <PackageVersion Include="Microsoft.Extensions.Configuration.Abstractions" Version="10.0.14" />
+    <PackageVersion Include="Microsoft.Extensions.Configuration.Abstractions" Version="11.0.0" />
     <PackageVersion Include="Microsoft.Extensions.Diagnostics.HealthChecks" Version="10.0.14" />
     <!-- Transitive pin: Microsoft.AspNetCore.OpenApi pulls Microsoft.OpenApi; with
          CentralPackageTransitivePinningEnabled this holds it at a current version so
