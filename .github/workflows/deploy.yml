@@ -1,286 +1,137 @@
-name: Deploy to Azure
+name: Build & Deploy
 
-# Build and unit tests gate deployment. All four test ceilings run without infrastructure.
-# Provision resources with azd; this workflow deploys application code only.
+# SAME FILE IN EVERY PO .NET WEB REPO. The reference copy is PoTraffic's. Never edit it in one
+# repo only: change PoTraffic's, then copy it everywhere with PoPunkouterSoftware/scripts/sync-ci.ps1.
+# The weekly conventions check (PoPunkouterSoftware) fails any repo whose copy differs.
+#
+# Everything that differs between repos lives outside this file:
+#   repo variables  AZURE_CLIENT_ID, AZURE_TENANT_ID, AZURE_SUBSCRIPTION_ID   GitHub OIDC sign-in
+#                   AZURE_WEBAPP_NAME, AZURE_RESOURCE_GROUP                    what is deployed, where
+#                   HEALTH_PATH (optional, default /health)                    the dependency-health JSON route
+#   hook scripts    scripts/ci-checks.ps1                 extra build-time checks, after the unit tests
+#                   scripts/ci-package.ps1 -PublishDir    adds files to the package before upload
+#                   scripts/pre-deploy.ps1 -BaseUrl       optional live-site preparation after quota check
+#                   scripts/post-deploy-smoke.ps1 -BaseUrl  checks the live site after the health gate
+#                   (each hook is optional: the step is skipped when the file does not exist)
+# Layout it relies on: one *.slnx at the root, global.json, src/*.Api/*.csproj, tests/*.Unit/*.csproj.
+
 on:
   push:
-    branches: [ master ]
+    branches: [master]
+  # Pull requests (Dependabot's too) get the build and tests; only master deploys.
   pull_request:
-    branches: [ master ]
   workflow_dispatch:
 
 permissions:
   contents: read
-  id-token: write
 
 concurrency:
-  group: deploy-${{ github.repository }}-${{ github.ref }}
-  cancel-in-progress: true
+  group: deploy-${{ github.ref }}
+  # A newer PR build may replace an older one. A deploy is never cancelled part-way: that could
+  # leave a half-deployed site that nothing rolls back.
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 env:
-  AZURE_RESOURCE_GROUP: 'PoMiniGames'
+  DOTNET_NOLOGO: 'true'
+  DOTNET_CLI_TELEMETRY_OPTOUT: 'true'
 
 jobs:
   build:
-    name: Build and validate
+    name: Build & test
     runs-on: ubuntu-latest
     timeout-minutes: 30
-
     steps:
-      - name: Checkout
-        uses: actions/checkout@v7
+      - uses: actions/checkout@v7
         with:
-          fetch-depth: 0
-
-      - name: Check MinVer v* tag at HEAD
-        shell: bash
-        run: |
-          TAGS=$(git tag --points-at HEAD | grep -E '^v[0-9]' || true)
-          if [ -z "$TAGS" ]; then
-            echo "::warning::No v* tag at HEAD ($(git rev-parse --short HEAD)). MinVer will stamp this build with a pre-release version."
-            echo "::warning::To create a release build: git tag -a vX.Y.Z <sha> && git push origin vX.Y.Z"
-          else
-            echo "MinVer will resolve to: $TAGS"
-          fi
-
-      - name: Setup .NET
-        uses: actions/setup-dotnet@v5
+          fetch-depth: 0   # MinVer versions the build from git tags; a shallow clone has none
+      - uses: actions/setup-dotnet@v6
         with:
           global-json-file: global.json
-
-      - name: Cache NuGet packages
-        uses: actions/cache@v6
+      - uses: actions/cache@v6
         with:
           path: ~/.nuget/packages
-          key: ${{ runner.os }}-nuget-${{ hashFiles('**/Directory.Packages.props', '**/global.json') }}
-          restore-keys: |
-            ${{ runner.os }}-nuget-
-
-      - name: Restore
-        run: dotnet restore PoMiniGames.slnx
-
-      # Compile every project in the solution — src + tests — so a broken test
-      # file cannot slip into master. TreatWarningsAsErrors=true (Directory.Build.props)
-      # ensures zero warnings reach the artifact stage.
-      #
-      # PR builds stay in Debug to keep CI fast (no publish, no artifact upload);
-      # only push-to-master runs the Release publish + upload that feeds the
-      # deploy job. This halves PR build minutes without sacrificing the
-      # "broken test file fails master" guarantee.
+          key: nuget-${{ runner.os }}-${{ hashFiles('**/*.csproj', '**/Directory.Packages.props', 'global.json') }}
+          restore-keys: nuget-${{ runner.os }}-
       - name: Build
-        run: |
-          if [ "${{ github.event_name }}" = "pull_request" ]; then
-            dotnet build PoMiniGames.slnx --no-restore --configuration Debug
-          else
-            dotnet build PoMiniGames.slnx --no-restore --configuration Release
-          fi
-
-      # Trim-audit for the WASM client. The host's `dotnet publish`
-      # exercises server-side AOT but never compiles the Blazor client with trimming
-      # on, so a regression in PoShared / PoMiniGamesClient trim safety would only
-      # surface at the consumer's first deploy. This step runs the same
-      # PublishTrimmed + EnableTrimAnalyzer pipeline locally — if the analyzer
-      # surfaces IL2xxx warnings under Debug, TreatWarningsAsErrors fails the build.
-      # Release adds trimming at publish time; both must pass.
-      - name: Trim audit (WASM client)
-        run: |
-          dotnet publish src/PoMiniGames.Client/PoMiniGames.Client.csproj \
-            -c ${{ github.event_name == 'pull_request' && 'Debug' || 'Release' }} \
-            -p:PublishTrimmed=true \
-            -p:TrimMode=partial \
-            -o ./client-trim-audit \
-            --no-restore
-
-      # Mobile-first budget: the trimmed WASM _framework payload gates first
-      # paint on phones. Fail the build if it regresses past the budget so a new
-      # reflection-heavy DTO can't silently bloat the download.
-      #
-      # The baseline is about 20 MB uncompressed (20,156 KB), and the bytes are the
-      # runtime itself, not game code: dotnet.native.wasm ~2.9 MB, System.Private.CoreLib
-      # ~1.7 MB, the three icudt*.dat globalization bundles ~3 MB combined, and the
-      # pre-compressed .gz/.br twin of every one of those. PoMiniGamesClient.wasm is
-      # 1.4 MB of that 20 — deleting game code will not move this number much, so a
-      # regression here almost always means a new dependency or a lost trim.
-      #
-      # Re-baselined to ~29 MB when PoMule brought in Radzen.Blazor (1.4 MB plus
-      # System.Linq.Expressions, Microsoft.CSharp and System.Private.Xml behind it) and
-      # the client assembly grew to ~3 MB with the Mule rules. Budget is 35 MB: ~6 MB of
-      # headroom to catch regression, not to squeeze the baseline.
-      - name: WASM bundle-size budget
-        shell: bash
-        env:
-          FRAMEWORK_BUDGET_MB: 35
-        run: |
-          SIZE_MB=$(du -sm ./client-trim-audit/wwwroot/_framework | cut -f1)
-          echo "Trimmed _framework size: ${SIZE_MB} MB (budget ${FRAMEWORK_BUDGET_MB} MB)"
-          if [ "$SIZE_MB" -gt "$FRAMEWORK_BUDGET_MB" ]; then
-            echo "::error::WASM _framework ${SIZE_MB} MB exceeds budget ${FRAMEWORK_BUDGET_MB} MB."
-            exit 1
-          fi
-
-      - name: Verify formatting
-        run: dotnet format PoMiniGames.slnx --verify-no-changes --no-restore --verbosity minimal
-
-      - name: Validate infrastructure
-        run: az bicep build --file infra/main.bicep --stdout > /dev/null
-
-      # No build needed: a text check for comments that swallowed rules and for
-      # unbalanced braces. See the header of the script for the damage it is for.
-      - name: Check stylesheets
+        run: dotnet build *.slnx -c Release
+      - name: Unit tests
+        run: for p in tests/*.Unit/*.csproj; do dotnet test "$p" -c Release --no-build; done
+      - name: Repo checks (scripts/ci-checks.ps1)
+        if: hashFiles('scripts/ci-checks.ps1') != ''
         shell: pwsh
-        run: ./scripts/css-lint.ps1
-
-      - name: Enforce all four test ceilings
+        run: ./scripts/ci-checks.ps1
+      - name: Publish
+        run: dotnet publish src/*.Api/*.csproj -c Release --no-build -o publish
+      - name: Package extras (scripts/ci-package.ps1)
+        if: hashFiles('scripts/ci-package.ps1') != ''
         shell: pwsh
-        run: ./scripts/test-ceilings.ps1 -Configuration ${{ github.event_name == 'pull_request' && 'Debug' || 'Release' }} -NoBuild
-
-      - name: Publish (push-to-master only)
-        if: github.event_name == 'push' && github.ref == 'refs/heads/master'
-        run: dotnet publish src/PoMiniGames.Api/PoMiniGames.Api.csproj -c Release -o ./publish
-
-      # The documentation suite under docs/ ships with the app as static files, so
-      # it has a public URL of its own and is deployed by the same CI pass that
-      # deploys the app. It is copied into the publish output after the publish
-      # step - nothing in the app's build or its runtime changes.
-      - name: Stage the documentation suite into the publish output
-        if: github.event_name == 'push' && github.ref == 'refs/heads/master'
-        shell: bash
-        run: |
-          set -euo pipefail
-          mkdir -p ./publish/wwwroot/docs
-          cp -r docs/. ./publish/wwwroot/docs/
-          LATEST=$(ls -1 docs | grep -E '^[0-9]{8}$' | sort | tail -1 || true)
-          if [ -z "$LATEST" ]; then
-            echo "::warning::No dated documentation suite found under docs/; nothing to link to."
-            exit 0
-          fi
-          echo "Latest documentation suite: $LATEST"
-          cat > ./publish/wwwroot/docs/index.html <<HTML
-          <!doctype html>
-          <html lang="en">
-          <head>
-          <meta charset="utf-8">
-          <meta http-equiv="refresh" content="0; url=$LATEST/artifact.html">
-          <link rel="canonical" href="$LATEST/artifact.html">
-          <title>PoMiniGames documentation</title>
-          </head>
-          <body style="font:16px system-ui,sans-serif;padding:2rem">
-          <p>Opening <a href="$LATEST/artifact.html">the PoMiniGames documentation suite</a>&hellip;</p>
-          <p><a href="$LATEST/index.html">Or start with the plain-English overview</a>.</p>
-          </body>
-          </html>
-          HTML
-
-      - name: Upload publish artifact (push-to-master only)
-        if: github.event_name == 'push' && github.ref == 'refs/heads/master'
-        uses: actions/upload-artifact@v7
+        run: ./scripts/ci-package.ps1 -PublishDir publish
+      - uses: actions/upload-artifact@v7
+        if: github.ref == 'refs/heads/master' && github.event_name != 'pull_request'
         with:
-          name: api-publish
-          path: ./publish
-
-  test:
-    name: Unit tests (no infra)
-    runs-on: ubuntu-latest
-    # 25, not 15: the PoMarbleRace map health step races all five courses (~8-10 min on 4 cores).
-    timeout-minutes: 25
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v7
-      - name: Setup .NET
-        uses: actions/setup-dotnet@v5
-        with:
-          global-json-file: global.json
-      - name: Cache NuGet packages
-        uses: actions/cache@v6
-        with:
-          path: ~/.nuget/packages
-          key: ${{ runner.os }}-nuget-${{ hashFiles('**/Directory.Packages.props', '**/global.json') }}
-          restore-keys: |
-            ${{ runner.os }}-nuget-
-      # Unit tier only — zero external dependencies. Integration/E2E stay local
-      # (Azurite + Playwright). See the CI/CD policy header.
-      - name: Run unit tests
-        run: dotnet test tests/PoMiniGames.Unit/PoMiniGames.Unit.csproj --configuration Debug
-      # The JS half of the PoBrawl rollback contract (tests/pobrawl-rollback-golden.json);
-      # the C# half runs in the unit tier above. Node ships on ubuntu-latest.
-      - name: Run PoBrawl rollback sim parity (JS)
-        run: node --test tests/pobrawl-rollback.test.mjs
-      - name: Run PoCabinet race health (JS, 100-car field on Capitol, Bedroom Floor GP and Rim to Rim Court)
-        run: |
-          dotnet run scripts/pocabinet/dump.cs -- artifacts/pocabinet-worlds capitol bedroom court
-          node --test tests/pocabinet-race-health.test.mjs
-      # Every Marble Race course runs a full 101-marble race on the real engine, headless, plus
-      # the speed-cap tunnelling check (scripts/pomarblerace/harness.mjs). Maps run in parallel.
-      - name: Run PoMarbleRace map health (JS, 101-marble field on every course)
-        run: |
-          npm ci --prefix scripts/pomarblerace --no-audit --no-fund
-          node --test tests/pomarblerace-map-health.test.mjs
+          name: webapp
+          path: publish
+          retention-days: 1
 
   deploy:
-    name: Deploy to Azure App Service
-    needs: [build, test]
-    if: github.event_name == 'push' && github.ref == 'refs/heads/master'
+    name: Deploy
+    needs: build
+    if: github.ref == 'refs/heads/master' && github.event_name != 'pull_request'
     runs-on: ubuntu-latest
-    timeout-minutes: 20
+    timeout-minutes: 40
+    permissions:
+      contents: read
+      id-token: write   # azure/login OIDC (federated, no stored secret)
     environment:
       name: production
-    permissions:
-      id-token: write
-      contents: read
+      url: https://${{ vars.AZURE_WEBAPP_NAME }}.azurewebsites.net
+    env:
+      APP: ${{ vars.AZURE_WEBAPP_NAME }}
+      RG: ${{ vars.AZURE_RESOURCE_GROUP }}
+      BASE_URL: https://${{ vars.AZURE_WEBAPP_NAME }}.azurewebsites.net
+      HEALTH_PATH: ${{ vars.HEALTH_PATH || '/health' }}
     steps:
-      # No checkout: this job only ships the artifact the build job published.
-      - name: Download publish artifact
-        uses: actions/download-artifact@v8
-        with:
-          name: api-publish
-          path: ./publish
+      - name: Check the repo variables
+        run: |
+          [ -n "$APP" ] || { echo "::error::Repo variable AZURE_WEBAPP_NAME is not set."; exit 1; }
+          [ -n "$RG" ]  || { echo "::error::Repo variable AZURE_RESOURCE_GROUP is not set."; exit 1; }
 
-      - name: Azure Login
-        uses: azure/login@v3
+      # Only scripts/: the deploy job needs the smoke hook and nothing else.
+      - uses: actions/checkout@v7
+        with:
+          sparse-checkout: scripts
+      - uses: actions/download-artifact@v8
+        with:
+          name: webapp
+          path: publish
+      - uses: azure/login@v3
         with:
           client-id: ${{ vars.AZURE_CLIENT_ID }}
           tenant-id: ${{ vars.AZURE_TENANT_ID }}
           subscription-id: ${{ vars.AZURE_SUBSCRIPTION_ID }}
 
-      # Same step in every Po web repo. F1 gives the app about 60 CPU-minutes a day; once spent, Azure stops the
-      # site (usageState Exceeded) until 00:00 UTC and refuses the package with a bare 403. Say what it is.
+      # F1 gives the app about 60 CPU-minutes a day; once spent, Azure stops the site (usageState
+      # Exceeded) until 00:00 UTC and refuses the package with a bare 403. Say what it is.
       - name: Check the F1 daily CPU quota
         run: |
-          usage=$(az webapp show -g "${{ github.event.repository.name }}" -n "${{ vars.AZURE_WEBAPP_NAME }}" --query usageState -o tsv)
+          usage=$(az webapp show -g "$RG" -n "$APP" --query usageState -o tsv)
           if [ "$usage" = "Exceeded" ]; then
-            echo "::error::${{ vars.AZURE_WEBAPP_NAME }} has used up its F1 daily CPU quota, so Azure refuses the package until 00:00 UTC. Rerun after that."
+            echo "::error::$APP has used up its F1 daily CPU quota, so Azure refuses the package until 00:00 UTC. Rerun after that."
             exit 1
           fi
 
-      # This app's package is ~100 MB, and on the Windows F1 instance Kudu leaves each zip deploy's upload and
-      # unpacked copy in C:\local\Temp\zipdeploy. Two of them fill the small local disk and the next deploy fails
-      # with "There is not enough space on the disk" (2026-10-28). Clear them first; a missing folder is fine.
-      - name: Clear stale zip-deploy temp files
-        run: |
-          token=$(az account get-access-token --query accessToken -o tsv)
-          # Kudu answers 200 even when the command itself fails; the verdict is ExitCode in the JSON body.
-          if ! body=$(curl -fsS --max-time 120 -X POST -H "Authorization: Bearer $token" -H 'Content-Type: application/json' \
-            "https://${{ vars.AZURE_WEBAPP_NAME }}.scm.azurewebsites.net/api/command" \
-            -d '{"command":"cmd /c if exist C:\\local\\Temp\\zipdeploy rd /s /q C:\\local\\Temp\\zipdeploy","dir":"C:\\local\\Temp"}'); then
-            echo "::warning::Could not clear the zip-deploy temp folder; the deploy may run out of local disk."
-            exit 0
-          fi
-          exit_code=$(printf '%s' "$body" | jq -r '.ExitCode // "unknown"' 2>/dev/null || echo unknown)
-          if [ "$exit_code" != "0" ]; then
-            error=$(printf '%s' "$body" | jq -r '.Error // empty' 2>/dev/null | tr '\r\n' '  ' | cut -c1-300 || true)
-            echo "::warning::Clearing the zip-deploy temp folder exited ${exit_code}${error:+: $error}; the deploy may run out of local disk."
-          else
-            echo "Cleared the zip-deploy temp folder."
-          fi
+      - name: Prepare the live site (scripts/pre-deploy.ps1)
+        if: hashFiles('scripts/pre-deploy.ps1') != ''
+        shell: pwsh
+        run: ./scripts/pre-deploy.ps1 -BaseUrl "$env:BASE_URL"
 
-      # Same pair in every Po web repo: keep the live build, and put it back if anything fails once the
-      # new package is live (see "Roll back to the previous build" at the end of this job).
+      # Keep the live build so it can be put back if anything fails once the new one is live.
       - name: Back up the live site
         id: backup
         run: |
           token=$(az account get-access-token --query accessToken -o tsv)
           if curl -fsS --max-time 300 -H "Authorization: Bearer $token" -o previous.zip \
-               "https://${{ vars.AZURE_WEBAPP_NAME }}.scm.azurewebsites.net/api/zip/site/wwwroot/" && [ -s previous.zip ]; then
+               "https://$APP.scm.azurewebsites.net/api/zip/site/wwwroot/" && [ -s previous.zip ]; then
             echo "ok=true" >> "$GITHUB_OUTPUT"
             echo "Backed up $(du -h previous.zip | cut -f1) of the live site."
           else
@@ -288,79 +139,48 @@ jobs:
             echo "ok=false" >> "$GITHUB_OUTPUT"
           fi
 
-      - name: Deploy to App Service
+      - uses: azure/webapps-deploy@v3
         id: deploy
-        shell: bash
-        run: |
-          # Self-healing target resolution: discover the API web app from its
-          # resource group instead of hard-coding a name. A future resource
-          # rename can no longer silently 404 the deploy (the original failure mode).
-          APP_NAME="${{ vars.AZURE_WEBAPP_NAME }}"
-          if [ -z "$APP_NAME" ]; then echo "::error::No web app found in the configured resource group"; exit 1; fi
-          echo "Resolved App Service: $APP_NAME"
-          echo "APP_NAME=$APP_NAME" >> "$GITHUB_ENV"
-          # Zip the publish *contents* (not the parent folder) so the host finds
-          # PoMiniGames.Api.dll at the deployment root, not nested under publish/.
-          # Combined with WEBSITE_RUN_FROM_PACKAGE=1 (set in resources.bicep), the
-          # zip is mounted atomically — no file-copy step on the host.
-          pkg_setting=$(az webapp config appsettings list --resource-group "$AZURE_RESOURCE_GROUP" --name "$APP_NAME" --query "[?name=='WEBSITE_RUN_FROM_PACKAGE'].value | [0]" -o tsv)
-          if [ "$pkg_setting" != "1" ]; then
-            echo "Enabling WEBSITE_RUN_FROM_PACKAGE=1 on $APP_NAME..."
-            az webapp config appsettings set \
-              --resource-group "$AZURE_RESOURCE_GROUP" \
-              --name "$APP_NAME" \
-              --settings WEBSITE_RUN_FROM_PACKAGE=1 SCM_DO_BUILD_DURING_DEPLOYMENT=false ASPNETCORE_ENVIRONMENT=Production \
-              --output none
-          fi
-          ( cd publish && zip -qr ../app-deploy.zip . )
-          az webapp deploy \
-            --resource-group "$AZURE_RESOURCE_GROUP" \
-            --name "$APP_NAME" \
-            --src-path app-deploy.zip \
-            --type zip \
-            --track-status true
+        with:
+          app-name: ${{ vars.AZURE_WEBAPP_NAME }}
+          resource-group-name: ${{ vars.AZURE_RESOURCE_GROUP }}
+          package: publish
 
-      # One loop both absorbs the F1 cold start (the retries) and is the smoke test (the exit).
-      # Same gate in every Po web repo: the new build is the one answering (X-Commit on /health/live is this
-      # commit, not the old instance still serving), then its dependencies answer (/health).
-      - name: Health gate (this commit on /health/live, then /health)
-        shell: bash
+      # The deploy step succeeds once App Service accepts the package, which says nothing about
+      # whether the app starts. First the new build must be the one answering (X-Commit on
+      # /health/live is this commit, not the old instance), then its dependencies must answer.
+      - name: Health gate (this commit on /health/live, then HEALTH_PATH)
         run: |
-          base="https://${{ vars.AZURE_WEBAPP_NAME }}.azurewebsites.net"
-          for attempt in $(seq 1 60); do
-            # Only a timeout (28) is a cold start worth waiting out. DNS, connect and TLS failures
-            # (6, 7, 35, 60) will not fix themselves in 15 minutes, so they fail the step now.
-            rc=0
-            headers=$(curl -s -D - -o /dev/null --max-time 30 "$base/health/live") || rc=$?
-            case "$rc" in
-              0|28) ;;
-              6|7|35|60) echo "::error::curl could not reach $base/health/live (curl exit $rc)"; exit 1 ;;
-              *) echo "::warning::curl exit $rc on /health/live (attempt $attempt); retrying" ;;
-            esac
-            commit=$(printf '%s' "$headers" | tr -d '\r' | awk -F': ' 'tolower($1)=="x-commit" {print $2}')
+          for attempt in $(seq 1 40); do
+            commit=$(curl -s -D - -o /dev/null --max-time 20 "$BASE_URL/health/live" | tr -d '\r' | awk -F': ' 'tolower($1)=="x-commit" {print $2}' || true)
             [ "$commit" = "$GITHUB_SHA" ] && { echo "/health/live serves $GITHUB_SHA (attempt $attempt)"; break; }
-            [ "$attempt" = "60" ] && { echo "::error::/health/live still serves ${commit:-no X-Commit header}, not $GITHUB_SHA"; exit 1; }
-            sleep 15
+            [ "$attempt" = "40" ] && { echo "::error::/health/live still serves ${commit:-no X-Commit header}, not $GITHUB_SHA"; exit 1; }
+            sleep 10
           done
-          for attempt in $(seq 1 20); do
-            code=$(curl -s -o /dev/null -w '%{http_code}' --max-time 30 "$base/health") || true
-            [ "$code" = "200" ] && { echo "/health -> 200 (attempt $attempt)"; exit 0; }
-            sleep 15
+          for attempt in $(seq 1 10); do
+            code=$(curl -s -o /dev/null -w '%{http_code}' --max-time 20 "$BASE_URL$HEALTH_PATH" || echo 000)
+            [ "$code" = "200" ] && { echo "$HEALTH_PATH -> 200 (attempt $attempt)"; exit 0; }
+            sleep 10
           done
-          echo "::error::/health never returned 200 (last: $code)"; exit 1
+          echo "::error::$HEALTH_PATH never returned 200 (last: $code)"; exit 1
 
-      - name: Smoke tests (health, diag)
-        shell: bash
-        run: |
-          for path in "/api/health/ping" "/api/health" "/api/diag"; do
-            echo "Smoke testing ${path}..."
-            curl -fsS --retry 10 --retry-all-errors --retry-delay 5 \
-              "https://${APP_NAME}.azurewebsites.net${path}" || exit 1
-          done
+      - name: Post-deploy smoke (scripts/post-deploy-smoke.ps1)
+        if: hashFiles('scripts/post-deploy-smoke.ps1') != ''
+        shell: pwsh
+        run: ./scripts/post-deploy-smoke.ps1 -BaseUrl "$env:BASE_URL"
 
+      # Runs on a cancel or a timeout too, not only on a failure: either can strand a half-good build.
       - name: Roll back to the previous build
-        if: failure() && steps.deploy.outcome == 'success' && steps.backup.outputs.ok == 'true'
+        if: (failure() || cancelled()) && steps.deploy.outcome == 'success' && steps.backup.outputs.ok == 'true'
         run: |
-          az webapp deploy -g "${{ github.event.repository.name }}" -n "${{ vars.AZURE_WEBAPP_NAME }}" \
-            --src-path previous.zip --type zip --clean true
+          az webapp deploy -g "$RG" -n "$APP" --src-path previous.zip --type zip --clean true
           echo "::error title=Rolled back::${{ github.sha }} failed after it went live; the previous build is live again."
+
+      - name: Tell ntfy about the rollback
+        if: (failure() || cancelled()) && steps.deploy.outcome == 'success' && steps.backup.outputs.ok == 'true'
+        env:
+          NTFY_TOPIC: ${{ secrets.NTFY_TOPIC }}
+        run: |
+          [ -n "$NTFY_TOPIC" ] || { echo "No NTFY_TOPIC secret; the CI watcher will still report the red run."; exit 0; }
+          curl -fsS -H "Title: ${{ github.event.repository.name }} rolled back" -H "Tags: rewind" \
+            -d "${{ github.sha }} failed after going live; the previous build is back." "https://ntfy.sh/$NTFY_TOPIC" > /dev/null
