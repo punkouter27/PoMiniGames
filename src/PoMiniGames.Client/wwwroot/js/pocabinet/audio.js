@@ -72,18 +72,24 @@ import { KMH_PER_UNIT, MAX_SPEED } from './physics.js';
 let ctx = null;            // AudioContext, created on first user gesture
 let master = null;         // master GainNode (mix level, app volume / mute, pause duck)
 let bus = null;            // everything feeds this
+let envFilter = null;      // canyon / bridge low-pass acoustic occlusion (#20)
 let slowFilter = null;     // slow-mo lowpass
 let noiseBuffer = null;    // 2 s of white noise, shared by every noise source
-let engineWave = null;     // PeriodicWave shared by player + rival engines
+let engineWave = null;     // default V8 PeriodicWave
+let engineWaves = null;    // 5 style-specific PeriodicWaves (#9)
+let playerStyle = 0;
 let driveCurve = null;     // WaveShaper curve for the player engine
 let engine = null;         // player engine voice
 let road = null;           // { roadGain, windGain, windPan }
-let squeal = null;         // { gain, band }
+let squeal = null;         // { gain, band, scrubGain, scrubBand }
 let scrape = null;         // { gain }
 let kerb = null;           // { osc, gain }
 let rain = null;           // { gain }
-let wallFx = null;         // { wet, pan }
+let wallFx = null;         // { wet, wetR, pan, panR }
 let crowd = null;          // { gain, panner, f1 } grandstand murmur
+let packChorus = null;     // aggregate distant pack-chorus drone (#20)
+let modalNode = null;      // AudioWorkletNode ('pocabinet-modal-bank') (#6)
+let modalReady = false;
 let musicBus = null;       // the score's bus (joins the sfx bus at the slow-mo lowpass)
 let music = null;          // music.js Music
 let musicEnabled = true;   // the `music` setting (applied whenever the score exists)
@@ -94,6 +100,7 @@ let surf = null;           // tyre-surface beds (setSurface)
 let draftAmt = 0;          // slipstream 0..1 (setDraft)
 let draftPeak = 0;
 let lastWhoosh = 0;
+let lastFlutter = 0;
 const rivals = new Map();  // id -> rival voice
 const pops = [];           // exhaust-pop events for the flame visuals: { id, strength }
 
@@ -153,23 +160,35 @@ function makeNoiseBuffer(context) {
 }
 
 /**
- * The engine timbre. Fundamental = one cam cycle (RPM / 120), so a V8's four
- * firings per crank turn land on harmonic 8. The half-orders (2, 4, 6, 12…) are
- * what a cross-plane crank's uneven firing adds: that is the burble.
+ * 5 distinct engine harmonic architectures keyed by car style (#9):
+ *   0: Cross-plane V8 Muscle (strong 4th/8th + odd half-orders)
+ *   1: High-rev V10 Formula GP (strong 10th/12th/20th screamer)
+ *   2: Unequal-length Flat-4 Boxer Rally (deep 2nd/4th/6th throb)
+ *   3: Heavy V8 Truck/Sedan (low fundamental torque + blower 16th)
+ *   4: Twin-cam Inline-6 / Turbo Touring (6th/12th/18th rasp)
  */
-function makeEngineWave(context) {
-    const N = 64;
-    const real = new Float32Array(N);
-    const imag = new Float32Array(N);
-    const strong = { 1: 0.08, 2: 0.25, 3: 0.12, 4: 0.55, 5: 0.1, 6: 0.3, 7: 0.1, 8: 1.0, 10: 0.3, 12: 0.45, 14: 0.2, 16: 0.6, 20: 0.18, 24: 0.35, 32: 0.25, 40: 0.12, 48: 0.1 };
-    let seed = 7;
-    for (let n = 1; n < N; n++) {
-        seed = (seed * 16807) % 2147483647;
-        const sign = (seed & 1) ? 1 : -1;
-        const amp = strong[n] ?? 0.15 / Math.pow(n, 1.1);
-        imag[n] = amp * sign;
-    }
-    return context.createPeriodicWave(real, imag);
+const ENGINE_TABLES = [
+    { 1: 0.08, 2: 0.25, 3: 0.12, 4: 0.55, 5: 0.10, 6: 0.30, 8: 1.0, 10: 0.30, 12: 0.45, 16: 0.60, 24: 0.35, 32: 0.25 },
+    { 2: 0.12, 4: 0.18, 5: 0.45, 6: 0.22, 10: 1.0, 12: 0.65, 15: 0.45, 20: 0.72, 24: 0.42, 30: 0.35, 36: 0.22, 44: 0.14 },
+    { 1: 0.22, 2: 0.85, 3: 0.32, 4: 1.0, 5: 0.28, 6: 0.48, 8: 0.45, 12: 0.32, 16: 0.20 },
+    { 1: 0.30, 2: 0.68, 4: 1.0, 6: 0.42, 8: 0.72, 12: 0.30, 16: 0.48, 20: 0.20, 28: 0.12 },
+    { 2: 0.18, 3: 0.48, 6: 1.0, 9: 0.32, 12: 0.78, 15: 0.28, 18: 0.52, 24: 0.36, 30: 0.20, 36: 0.14 },
+];
+
+function makeEngineWaves(context) {
+    return ENGINE_TABLES.map((strong, idx) => {
+        const N = 64;
+        const real = new Float32Array(N);
+        const imag = new Float32Array(N);
+        let seed = 7 + idx * 19;
+        for (let n = 1; n < N; n++) {
+            seed = (seed * 16807) % 2147483647;
+            const sign = (seed & 1) ? 1 : -1;
+            const amp = strong[n] ?? 0.14 / Math.pow(n, 1.15);
+            imag[n] = amp * sign;
+        }
+        return context.createPeriodicWave(real, imag);
+    });
 }
 
 function makeDriveCurve() {
@@ -308,13 +327,26 @@ function buildBeds() {
     src.start();
     road = { roadGain, windGain, windBand, windLp };
 
-    // Tire squeal: noise through a resonant bandpass whose centre wobbles.
+    // Dual-band Tire squeal (#12): resonant chirp + low-frequency tread scrub rumble.
     const sq = noiseSource();
     const band = filter('bandpass', 1700, 7);
     const sqGain = gainNode(0);
+    const scrubBand = filter('bandpass', 540, 2.2);
+    const scrubGain = gainNode(0);
     sq.connect(band); band.connect(sqGain); sqGain.connect(bus); sqGain.connect(verb.send);
+    sq.connect(scrubBand); scrubBand.connect(scrubGain); scrubGain.connect(bus);
     sq.start();
-    squeal = { gain: sqGain, band };
+    squeal = { gain: sqGain, band, scrubGain, scrubBand };
+
+    // Distant pack chorus bed (#20): smooths beyond-8th swarm cars without panning/oscillator churn.
+    const packOsc = ctx.createOscillator();
+    packOsc.type = 'sawtooth';
+    packOsc.frequency.value = 135;
+    const packLp = filter('lowpass', 380, 0.8);
+    const packGain = gainNode(0);
+    packOsc.connect(packLp); packLp.connect(packGain); packGain.connect(bus);
+    packOsc.start();
+    packChorus = { osc: packOsc, lp: packLp, gain: packGain };
 
     // Wall scrape: bright grinding noise.
     const sc = noiseSource();
@@ -569,6 +601,16 @@ function applyRoomTimbre() {
     scrape.band.Q.setTargetAtTime(roomMode ? 1.5 : 2.5, t, 0.05);
 }
 
+/** Set the player's car style (`0..4`) so engine timbre switches dynamically (#9). */
+export function setPlayerStyle(style = 0) {
+    playerStyle = ((style | 0) % 5 + 5) % 5;
+    if (!engineWaves || !engine) return;
+    const wave = engineWaves[playerStyle] || engineWave;
+    engineWave = wave;
+    engine.osc.setPeriodicWave(wave);
+    engine.osc2.setPeriodicWave(wave);
+}
+
 /** Create/resume the AudioContext. Must be called from a user-gesture call path. */
 export function init() {
     try {
@@ -577,7 +619,8 @@ export function init() {
             if (!Ctx) return false;
             ctx = new Ctx();
             noiseBuffer = makeNoiseBuffer(ctx);
-            engineWave = makeEngineWave(ctx);
+            engineWaves = makeEngineWaves(ctx);
+            engineWave = engineWaves[playerStyle % engineWaves.length];
             driveCurve = makeDriveCurve();
 
             master = gainNode(0);
@@ -588,9 +631,11 @@ export function init() {
             comp.ratio.value = 4;
             comp.attack.value = 0.004;
             comp.release.value = 0.2;
+            envFilter = filter('lowpass', 20000, 0.65);
             slowFilter = filter('lowpass', 20000, 0.7);
             bus = gainNode(1);
-            bus.connect(slowFilter);
+            bus.connect(envFilter);
+            envFilter.connect(slowFilter);
             slowFilter.connect(comp);
             comp.connect(master);
             master.connect(ctx.destination);
@@ -604,6 +649,15 @@ export function init() {
             buildSeams();
             buildCrowd();
             applyRoomTimbre();
+            if (ctx.audioWorklet) {
+                const url = new URL('./audio-worklet.js', import.meta.url);
+                ctx.audioWorklet.addModule(url).then(() => {
+                    if (!ctx) return;
+                    modalNode = new AudioWorkletNode(ctx, 'pocabinet-modal-bank');
+                    modalNode.connect(hitBus || bus);
+                    modalReady = true;
+                }).catch(() => { modalReady = false; });
+            }
             try {
                 music = new Music(ctx, noiseBuffer, musicBus);
                 music.setEnabled(musicEnabled);
@@ -697,8 +751,10 @@ export function updateEngine(speedKmh, throttle = 0, phase = 'race') {
     engine.lp.frequency.setTargetAtTime((320 + rpm * 0.22 + load * rpm * 0.34) * (1 + draftAmt * 0.18), t, 0.06);
     engine.pre.gain.setTargetAtTime((0.55 + load * 1.3) * (1 - draftAmt * 0.16), t, 0.06);
     engine.amDepth.gain.setTargetAtTime(0.02 + load * 0.07, t, 0.08);
-    const level = player.active ? (0.09 + r01 * 0.06) * (0.55 + load * 0.45) : 0;
-    engine.out.gain.setTargetAtTime(level, t, player.active ? 0.08 : 0.25);
+    // Ignition-cut redline limiter stutter (#9)
+    const revCut = player.active && phase === 'race' && rpm > REDLINE * 0.96 && thr > 0.7 && Math.sin(t * 95) > 0.35 ? 0.32 : 1.0;
+    const level = player.active ? (0.09 + r01 * 0.06) * (0.55 + load * 0.45) * revCut : 0;
+    engine.out.gain.setTargetAtTime(level, t, player.active ? (revCut < 1 ? 0.015 : 0.08) : 0.25);
 
     const s01 = Math.min(1, kmh / 280);
     engine.whine.frequency.setTargetAtTime((180 + s01 * 1100) * pitch, t, 0.08);
@@ -712,8 +768,10 @@ export function updateEngine(speedKmh, throttle = 0, phase = 'race') {
     if (shifted > 0 && player.active) {
         engine.shift.gain.cancelScheduledValues(t);
         engine.shift.gain.setValueAtTime(1, t);
-        engine.shift.gain.linearRampToValueAtTime(0.3, t + 0.04);
+        engine.shift.gain.linearRampToValueAtTime(0.28, t + 0.04);
         engine.shift.gain.linearRampToValueAtTime(1, t + 0.14);
+        // Dog-box mechanical shift clunk (#9)
+        burst('bandpass', 520, 2.0, 0.032, 0.095, t, bus);
         crackle(2, 0.06, 0.7);
         pops.push({ id: 'player', strength: 0.5 });
     }
@@ -727,15 +785,24 @@ export function updateEngine(speedKmh, throttle = 0, phase = 'race') {
         engine.osc.detune.setValueAtTime(0, t);
         engine.osc.detune.linearRampToValueAtTime(260, t + 0.04);
         engine.osc.detune.linearRampToValueAtTime(0, t + 0.2);
+        burst('bandpass', 620, 2.2, 0.025, 0.075, t, bus);
         crackle(3, 0.12, 0.65);
         pops.push({ id: 'player', strength: 0.6 });
     }
-    // Lift-off overrun: throttle snapped shut at high RPM → exhaust crackle.
-    if (player.active && phase === 'race' && player.lastThrottle > 0.55 && thr < 0.1 && rpm > 4800
-        && t - player.lastCrackle > 0.8) {
-        player.lastCrackle = t;
-        crackle(4 + Math.floor(Math.random() * 5), 0.55, 1);
-        pops.push({ id: 'player', strength: 1 });
+    // Lift-off overrun + turbo wastegate flutter (#9)
+    if (player.active && phase === 'race' && player.lastThrottle > 0.55 && thr < 0.1 && rpm > 4800) {
+        if (t - player.lastCrackle > 0.8) {
+            player.lastCrackle = t;
+            crackle(4 + Math.floor(Math.random() * 5), 0.55, 1);
+            pops.push({ id: 'player', strength: 1 });
+        }
+        if ((playerStyle === 1 || playerStyle === 4) && t - lastFlutter > 1.1) {
+            lastFlutter = t;
+            for (let k = 0; k < 3; k++) {
+                const at = t + k * 0.055;
+                sweep(2900 - k * 340, 1450 - k * 180, 0.048, 'sine', 0.045 * (1 - k * 0.25), at, bus);
+            }
+        }
     }
     player.lastThrottle = thr;
 }
@@ -802,20 +869,34 @@ function burst(type, freq, q, dur, peak, at, dest) {
 
 // ── Continuous effects ───────────────────────────────────────────────────────
 
-/** Tire squeal. `amount` 0..1 (true = 1); pitch rises with speed. */
-export function setSqueal(amount, speedKmh = 150) {
+/** Dual-band continuous slip-ratio tire squeal + tread scrub (#12). */
+export function setSqueal(amount, speedKmh = 150, slipRatio = amount) {
     if (!ctx || !squeal) return;
     const a = amount === true ? 1 : clamp01(Number(amount) || 0);
+    const slip = slipRatio === true ? 1 : clamp01(Number(slipRatio) || a);
     const t = ctx.currentTime;
-    squeal.gain.gain.setTargetAtTime(a * 0.07, t, 0.06);
     const s01 = Math.min(1, (Number(speedKmh) || 0) / 280);
-    squeal.band.frequency.setTargetAtTime((1350 + s01 * 700 + Math.sin(t * 23) * 90) * (1 - slowAmount * 0.4), t, 0.05);
+    const slow = 1 - slowAmount * 0.4;
+    squeal.gain.gain.setTargetAtTime(a * 0.072, t, 0.05);
+    squeal.band.frequency.setTargetAtTime((1320 + s01 * 740 + Math.sin(t * 23) * 95) * slow, t, 0.05);
+    if (squeal.scrubGain) {
+        const scrubAmt = Math.min(1, slip * 1.4) * Math.min(1, (Number(speedKmh) || 0) / 45);
+        squeal.scrubGain.gain.setTargetAtTime(scrubAmt * 0.055, t, 0.05);
+        squeal.scrubBand.frequency.setTargetAtTime((420 + slip * 340 + s01 * 180) * slow, t, 0.06);
+    }
+    if (modalReady && modalNode) {
+        modalNode.port.postMessage({ type: 'slip', slip: a > 0.02 || slip > 0.15 ? Math.max(a, slip) : 0 });
+    }
 }
 
-/** Metal-on-barrier grind while the car rides the wall. */
+/** Metal-on-barrier grind while the car rides the wall + worklet stick-slip chatter (#12). */
 export function setScrape(amount) {
     if (!ctx || !scrape) return;
-    scrape.gain.gain.setTargetAtTime(clamp01(amount) * 0.06, ctx.currentTime, 0.05);
+    const a = clamp01(amount);
+    scrape.gain.gain.setTargetAtTime(a * 0.06, ctx.currentTime, 0.05);
+    if (modalReady && modalNode) {
+        modalNode.port.postMessage({ type: 'scrape', level: a, room: roomMode });
+    }
 }
 
 /** Kerb buzz + suspension/tyre-cavity thuds over raised kerbs (#8). The rate follows speed. */
@@ -908,7 +989,7 @@ export function musicStinger() {
  * A new zone loads into the convolver that has been silent at least a second, then the two
  * crossfade; the switch is held off until then, so flicking between zones never clicks.
  */
-export function setAcoustics(zone, wet) {
+export function setAcoustics(zone, wet, occlusion = 0) {
     if (!ctx || !verb || !irs?.[zone]) return;
     const t = ctx.currentTime;
     const w = clamp01(Number(wet) || 0);
@@ -920,6 +1001,10 @@ export function setAcoustics(zone, wet) {
         verb.switchAt = t;
     }
     verb.slots.forEach((s, i) => s.wet.gain.setTargetAtTime(i === verb.active ? w : 0, t, 0.18));
+    if (envFilter) {
+        const occ = clamp01(Number(occlusion) || (zone === 'metal' ? w * 0.75 : 0));
+        envFilter.frequency.setTargetAtTime(20000 * Math.pow(3600 / 20000, occ), t, 0.12);
+    }
 }
 
 /**
@@ -1057,19 +1142,21 @@ const SEAM_RIVALS = 2;            // and at most this many at once
 const spareRivals = [];
 let lastRivalStamp = 0;
 
-/** A rival engine: oscillator → lowpass → gain → HRTF panner. Reuses a parked voice when one is spare. */
+/** A rival engine: style-matched PeriodicWave → lowpass → gain → HRTF panner. Reuses a parked voice when one is spare. */
 function makeRivalVoice(r) {
+    const wave = engineWaves ? engineWaves[((r.style ?? 0) % 5 + 5) % 5] : engineWave;
     const spare = spareRivals.pop();
     if (spare) {
         clearTimeout(spare.detachTimer);
         if (spare.detached) { spare.g.connect(spare.panner); spare.detached = false; }
+        spare.osc.setPeriodicWave(wave);
         spare.state = { gear: 1, rpm: IDLE_RPM };
         spare.lastKmh = 0; spare.seamAcc = 0; spare.doppler = 1;
         setPannerPosition(spare.panner, r.x, r.y || 0.5, r.z, true);   // no sweep from where it was last
         return spare;
     }
     const osc = ctx.createOscillator();
-    osc.setPeriodicWave(engineWave);
+    osc.setPeriodicWave(wave);
     osc.frequency.value = IDLE_RPM / 120;
     const lp = filter('lowpass', 900, 0.9);
     const g = gainNode(0);
@@ -1110,11 +1197,22 @@ export function updateRivals(list) {
     lastRivalStamp = stamp;
     const t = ctx.currentTime;
     let clicking = 0;
+    let idx = 0;
+    let packCount = 0, packRpmSum = 0;
     for (const r of list || []) {
+        idx++;
+        const dx = r.x - listenerPos.x, dy = (r.y || 0) - listenerPos.y, dz = r.z - listenerPos.z;
+        const d = Math.hypot(dx, dy, dz) || 1;
+        const kmh = Math.max(0, Number(r.kmh) || 0);
+        // Nearest 8 rivals get dedicated HRTF Doppler voices; distant swarm feeds Pack Chorus (#20).
+        if (idx > 8 || d > 130) {
+            packCount++;
+            packRpmSum += kmh;
+            continue;
+        }
         let v = rivals.get(r.id);
         if (!v) { v = makeRivalVoice(r); rivals.set(r.id, v); }
         v.seen = stamp;
-        const kmh = Math.max(0, Number(r.kmh) || 0);
         const accel = kmh - v.lastKmh;
         v.lastKmh = kmh;
         const shift = gearbox(v.state, kmh, accel > 0 ? 1 : 0);
@@ -1124,8 +1222,6 @@ export function updateRivals(list) {
             pops.push({ id: r.id, strength: 0.6 });
         }
 
-        const dx = r.x - listenerPos.x, dy = (r.y || 0) - listenerPos.y, dz = r.z - listenerPos.z;
-        const d = Math.hypot(dx, dy, dz) || 1;
         const nx = dx / d, ny = dy / d, nz = dz / d;
         // Radial speeds along listener → car: the car receding (vs > 0) drops the note, the
         // listener closing on it (vl > 0) raises it. Smoothed a touch so a close pass bends, not snaps.
@@ -1155,6 +1251,12 @@ export function updateRivals(list) {
                 seamRun(n, u, dt, 0.1 * (1 - d / SEAM_NEAR * 0.5), v.panner);
             }
         }
+    }
+    if (packChorus) {
+        const avgKmh = packCount > 0 ? packRpmSum / packCount : 0;
+        const lvl = packCount > 0 ? Math.min(0.055, packCount * 0.008) : 0;
+        packChorus.osc.frequency.setTargetAtTime((95 + avgKmh * 0.65) * (1 - slowAmount * 0.4), t, 0.25);
+        packChorus.gain.gain.setTargetAtTime(lvl, t, 0.2);
     }
     for (const [id, v] of rivals) if (v.seen !== stamp) dropRival(id, v);
 }
@@ -1290,22 +1392,36 @@ export function impact(strength, kind = 'wall', pos = null, meta = null) {
     music?.hit(pos ? s * 0.35 : s);
     if (roomMode) { plasticImpact(s, car, t, dest); return; }
 
-    const matKey = car ? `car_${((meta?.style ?? 0) % 5 + 5) % 5}` : (kind === 'divider' ? 'divider' : 'wall');
+    const matKey = roomMode ? 'bedroom_plastic' : (car ? `car_${((meta?.style ?? 0) % 5 + 5) % 5}` : (kind === 'divider' ? 'divider' : 'wall'));
     const m = MODAL_BANK[matKey] || MODAL_BANK.wall;
     const pitch = 0.88 + 0.24 * s;
     const bright = 0.6 + 0.65 * s;
     const len = 0.65 + 0.55 * s;
 
+    // Low-end kinetic body thump + transient crunch stays on Web Audio; resonant modes go to AudioWorklet (#6).
     sweep(m.thump[0] * pitch, m.thump[1], 0.18 * len, 'sine', 0.28 * s, t, dest);
     burst('lowpass', (car ? 2400 : 1650) * bright, 0.7, 0.12 * len, 0.24 * s, t, dest);
+    const graze = Math.min(1, (Number(meta?.graze) || 0) / 55);
+    if (graze > 0.15) {
+        burst('bandpass', 3200 + graze * 1400, 3.5, 0.06 + 0.14 * graze, 0.09 * graze * (0.4 + 0.6 * s), t + 0.01, dest);
+    }
+    if (modalReady && modalNode) {
+        modalNode.port.postMessage({
+            type: 'strike',
+            mat: matKey,
+            zone: meta?.zone || (car ? 'side' : 'front'),
+            strength: pos ? s * 0.65 : s,
+            pitch,
+            glassCrack: meta?.glass ?? (s > 0.65 ? s : 0),
+            graze,
+        });
+        return;
+    }
+
     burst('bandpass', m.band * (0.85 + 0.3 * s), 5.5, 0.09 * len, 0.11 * s, t + 0.008, dest);
     for (let k = 0; k < m.modes.length; k++) {
         const f = m.modes[k] * pitch * (0.97 + Math.random() * 0.06);
         sweep(f, f * 0.96, m.decays[k] * len, m.ring, m.amps[k] * s, t + 0.002 * k, dest);
-    }
-    const graze = Math.min(1, (Number(meta?.graze) || 0) / 55);
-    if (graze > 0.15) {
-        burst('bandpass', 3200 + graze * 1400, 3.5, 0.06 + 0.14 * graze, 0.09 * graze * (0.4 + 0.6 * s), t + 0.01, dest);
     }
     if (!car && s > 0.6) burst('bandpass', 4200, 3, 0.16 * len, 0.05 * (s - 0.6) / 0.4, t + 0.018, dest);
 }
@@ -1315,7 +1431,20 @@ export function debrisHit(mat = 'debris_metal', strength = 0.35, pos = null) {
     if (!ctx) return;
     const t = ctx.currentTime;
     const s = Math.min(1, Math.max(0.06, Number(strength) || 0));
-    const m = MODAL_BANK[roomMode ? 'bedroom_plastic' : mat] || MODAL_BANK.debris_metal;
+    const matKey = roomMode ? 'bedroom_plastic' : mat;
+    if (modalReady && modalNode) {
+        modalNode.port.postMessage({
+            type: 'strike',
+            mat: matKey,
+            zone: 'side',
+            strength: s * 0.52,
+            pitch: 0.9 + Math.random() * 0.22,
+            glassCrack: mat === 'glass_shard' ? s * 0.65 : 0,
+            graze: 0,
+        });
+        return;
+    }
+    const m = MODAL_BANK[matKey] || MODAL_BANK.debris_metal;
     const dest = oneShotDest(pos, 0.25);
     const pitch = 0.9 + Math.random() * 0.22;
     burst('bandpass', m.band * pitch, 2.2, 0.025 + 0.02 * s, 0.12 * s, t, dest);

@@ -330,6 +330,9 @@ export class Broadcast {
         const shown = order.slice(0, TOWER_ROWS);
         const extra = focus && focus.position > TOWER_ROWS ? focus : null;
         const rows = d.rows;
+        const prevPos = this.prevRowPos || (this.prevRowPos = new Map());
+        const nextPos = new Map();
+        const moved = [];
         // Each car is timed at its own last checkpoint, so a car that just crossed one can read
         // closer than the car ahead that has not yet (P3 +1.700 under P2 +1.833). The tower
         // never shows that: a gap is at least the gap of the row above.
@@ -341,7 +344,26 @@ export class Broadcast {
             else if (i === TOWER_ROWS + 1 && extra) car = extra;
             const sep = i === TOWER_ROWS && !!extra;
             setData(row.li, 'state', car ? 'car' : sep ? 'sep' : 'off');
-            if (!car) { setText(row.pos, ''); setText(row.code, ''); setText(row.gap, ''); continue; }
+            if (!car) {
+                setText(row.pos, ''); setText(row.code, ''); setText(row.gap, '');
+                setData(row.li, 'move', 'none');
+                continue;
+            }
+            if (i < TOWER_ROWS) {
+                nextPos.set(car.id, i);
+                const oldIdx = prevPos.get(car.id);
+                if (oldIdx !== undefined && oldIdx !== i) {
+                    const rowH = row.li.offsetHeight || 22;
+                    row.li.style.transition = 'none';
+                    row.li.style.transform = `translateY(${(oldIdx - i) * rowH}px)`;
+                    setData(row.li, 'move', oldIdx > i ? 'up' : 'down');
+                    moved.push(row.li);
+                } else {
+                    setData(row.li, 'move', 'none');
+                }
+            } else {
+                setData(row.li, 'move', 'none');
+            }
             const gap = this.gapSeconds(car, leader, elapsed);
             if (gap !== null) floor = Math.max(floor, gap);
             gapText = gap !== null ? '+' + formatGap(floor) : this.gapText(car, leader, elapsed);
@@ -351,6 +373,15 @@ export class Broadcast {
             if (row.chip.dataset.c !== car.color) { row.chip.dataset.c = car.color; row.chip.style.background = car.color; }
             setData(row.li, 'focus', car === focus || car === sh?.rival ? 'on' : 'off');
             setData(row.li, 'out', car.body.wrecked && !car.finished ? 'on' : 'off');
+        }
+        this.prevRowPos = nextPos;
+        if (moved.length) {
+            // Single layout flush so all displaced rows animate cleanly in parallel (FLIP).
+            void moved[0].offsetHeight;
+            for (const li of moved) {
+                li.style.transition = '';
+                li.style.transform = '';
+            }
         }
 
         // Caption.

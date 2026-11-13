@@ -70,11 +70,21 @@ const FLOW_WRAP = 8;
 /** One car's paint state: what it has picked up, how fast the water on it is running. */
 export class LivingPaint {
     /** `dents` is the car's dent array (cars.js uDentP): the scars read only the slots in use. */
-    constructor(seed, dents) {
+    constructor(seed, dents, livery = 0, accentHex = '#f4f6fa') {
         this.dents = dents || [];
         this.dirt = new THREE.Vector4(0, 0, 0, 0);      // road grime, grass, gravel dust, —
         this.car = new THREE.Vector4(0, seed, 0, 0);    // speed (world units/s), seed, flow, dent slots in use
-        this.uniforms = { uPcDirt: { value: this.dirt }, uPcCar: { value: this.car } };
+        const ac = new THREE.Color(accentHex || '#f4f6fa');
+        this.livery = new THREE.Vector4(Number(livery) || 0, ac.r, ac.g, ac.b);
+        this.uniforms = { uPcDirt: { value: this.dirt }, uPcCar: { value: this.car }, uPcLivery: { value: this.livery } };
+    }
+
+    setLivery(mode, accentHex = null) {
+        this.livery.x = Number(mode) || 0;
+        if (accentHex) {
+            const ac = new THREE.Color(accentHex);
+            this.livery.y = ac.r; this.livery.z = ac.g; this.livery.w = ac.b;
+        }
     }
 
     /** A rendered frame: `surface` is physics.js's SURF_* under the car, `speed` world units/s. */
@@ -109,6 +119,7 @@ const GLSL_COMMON = /* glsl */`
 uniform sampler2D uPcNoise;
 uniform vec4 uPcDirt;
 uniform vec4 uPcCar;
+uniform vec4 uPcLivery;
 uniform float uPcWet;
 uniform float uPcQuality;
 uniform float uPcTime;
@@ -205,6 +216,51 @@ float pcWetCoat = 0.0;
     vec3 pcN = normalize(vPcN);
     vec3 pcW = pcN * pcN; pcW *= pcW; pcW /= (pcW.x + pcW.y + pcW.z);
     float pcSeed = uPcCar.y;
+#ifdef PC_PAINT
+    // Procedural Motorsport Livery Layer (#13): rendered beneath dirt & scars so mud/wear
+    // naturally overlays stripes, number roundels, checkers, and exposed carbon weave.
+    if (uPcLivery.x > 0.5) {
+        int liv = int(uPcLivery.x + 0.5);
+        vec3 acCol = uPcLivery.yzw;
+        float topMask = smoothstep(0.35, 0.7, pcN.y + 0.25 * abs(pcN.x));
+        float fwS = max(fwidth(pcP.z), fwidth(pcP.x));
+        if (liv == 1) {
+            // Twin Le Mans racing stripes + pin-stripe borders
+            float az = abs(pcP.z);
+            float stripe = (1.0 - smoothstep(0.055, 0.055 + fwS, abs(az - 0.14))) * topMask;
+            float pin = (1.0 - smoothstep(0.012, 0.012 + fwS, abs(az - 0.235))) * topMask;
+            diffuseColor.rgb = mix(diffuseColor.rgb, acCol, max(stripe, pin * 0.7));
+        } else if (liv == 2) {
+            // Apex diagonal aero slash + door number roundel
+            float diag = pcP.x * 0.72 + abs(pcP.z) * 0.9 - pcP.y * 0.5;
+            float slash = (1.0 - smoothstep(0.11, 0.11 + fwS, abs(diag - 0.45))) * smoothstep(0.24, 0.3, pcP.y);
+            float doorD = length(vec2(pcP.x + 0.05, pcP.y - 0.52)) * step(0.55, abs(pcN.z));
+            float roundel = step(0.55, abs(pcN.z)) * (1.0 - smoothstep(0.19, 0.19 + fwS, doorD));
+            float numRing = step(0.55, abs(pcN.z)) * (1.0 - smoothstep(0.03, 0.03 + fwS, abs(doorD - 0.11)));
+            diffuseColor.rgb = mix(diffuseColor.rgb, acCol, slash);
+            diffuseColor.rgb = mix(diffuseColor.rgb, vec3(0.95), roundel);
+            diffuseColor.rgb = mix(diffuseColor.rgb, vec3(0.08, 0.1, 0.14), numRing);
+        } else if (liv == 3) {
+            // Checkered rear quarter + sill splitter band
+            float sillBand = (1.0 - smoothstep(0.31, 0.34, pcP.y)) * smoothstep(0.2, 0.24, pcP.y);
+            float rearZone = smoothstep(-0.35, -0.65, pcP.x) * (1.0 - smoothstep(0.68, 0.74, pcP.y));
+            float chk = mod(floor(pcP.x * 9.0) + floor(pcP.y * 9.0) + floor(pcP.z * 9.0), 2.0);
+            diffuseColor.rgb = mix(diffuseColor.rgb, acCol, sillBand);
+            diffuseColor.rgb = mix(diffuseColor.rgb, mix(vec3(0.08), vec3(0.94), chk), rearZone * 0.92);
+        } else if (liv >= 4) {
+            // Heritage tri-band flank + satin carbon weave bonnet
+            float flank = 1.0 - smoothstep(0.075, 0.08 + fwS, abs(pcP.y - 0.48 - 0.08 * pcP.x));
+            diffuseColor.rgb = mix(diffuseColor.rgb, acCol, flank * smoothstep(0.35, 0.65, abs(pcN.z)));
+            float hood = smoothstep(0.45, 0.85, pcP.x) * smoothstep(0.45, 0.75, pcN.y);
+            if (hood > 0.05) {
+                float weave = mod(floor(pcP.x * 80.0) + floor(pcP.z * 80.0), 2.0);
+                vec3 carbon = vec3(0.055 + 0.025 * weave);
+                diffuseColor.rgb = mix(diffuseColor.rgb, carbon, hood * 0.92);
+                roughnessFactor = mix(roughnessFactor, 0.42, hood);
+            }
+        }
+    }
+#endif
     vec2 so = vec2(pcSeed * 0.37, pcSeed * 0.71);
     // Triplanar fbm, a fetch only for the faces that count (an explicit LOD, so the branches are safe).
     vec3 pcFw = fwidth(pcP) * 70.4;
@@ -374,12 +430,29 @@ float pcWetCoat = 0.0;
     }
 #endif
 #ifdef PC_GLASS
-    // Chromatic dispersion & thin-film spectral rim on windscreens/side glass (#5).
+    // Analytical 3-layer parallax cabin interior (#5) + chromatic thin-film Fresnel rim.
     {
-        float cosTheta = clamp(abs(dot(normalize(vViewPosition), normalize(normal))), 0.0, 1.0);
+        vec3 viewV = normalize(vViewPosition);
+        vec3 nView = normalize(normal);
+        float cosTheta = clamp(abs(dot(viewV, nView)), 0.0, 1.0);
+        // Estimate cabin depth offset in view-aligned local coordinates (approximate ray parallax)
+        vec3 rayLocal = normalize(vec3(-viewV.x, -viewV.y, viewV.z));
+        vec3 cabinHit = pcP + rayLocal * (0.28 / max(0.35, abs(dot(pcN, rayLocal))));
+        // Roll-cage hoop + diagonal brace + racing headrest + steering wheel rim silhouettes
+        float hoop = 1.0 - smoothstep(0.035, 0.055, abs(cabinHit.x + 0.18)) * smoothstep(0.035, 0.055, abs(abs(cabinHit.z) - 0.46));
+        float seat = (1.0 - smoothstep(0.14, 0.19, abs(cabinHit.z - 0.18))) * smoothstep(0.68, 0.74, cabinHit.y) * smoothstep(-0.35, -0.1, cabinHit.x);
+        float wheelRim = 1.0 - smoothstep(0.025, 0.04, abs(length(vec2(cabinHit.y - 0.74, cabinHit.z - 0.18)) - 0.14));
+        float wheelMask = wheelRim * smoothstep(0.05, 0.2, cabinHit.x) * (1.0 - smoothstep(0.28, 0.45, cabinHit.x));
+        float rollDiag = 1.0 - smoothstep(0.025, 0.045, abs(cabinHit.y - 0.88 - cabinHit.z * 0.45));
+        float depthFade = mix(0.25, 0.9, cosTheta);
+        vec3 cabinCol = vec3(0.025, 0.03, 0.04);
+        cabinCol = mix(cabinCol, vec3(0.075, 0.085, 0.105), clamp(seat, 0.0, 1.0));
+        cabinCol = mix(cabinCol, vec3(0.18, 0.20, 0.24), clamp(max(hoop * 0.7, rollDiag * 0.45), 0.0, 1.0));
+        cabinCol = mix(cabinCol, vec3(0.24, 0.19, 0.14), clamp(wheelMask, 0.0, 1.0));
+        diffuseColor.rgb = mix(diffuseColor.rgb, cabinCol, depthFade * 0.78);
         float rim = pow(1.0 - cosTheta, 3.2);
         vec3 disp = 0.5 + 0.5 * cos(6.28318 * (cosTheta * 1.45 + vec3(0.0, 0.33, 0.67)));
-        totalEmissiveRadiance += disp * rim * (0.11 - 0.07 * uPcWet);
+        totalEmissiveRadiance += disp * rim * (0.14 - 0.07 * uPcWet);
     }
 #endif
 #ifdef PC_PAINT

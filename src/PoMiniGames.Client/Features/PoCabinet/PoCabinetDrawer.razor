@@ -22,9 +22,10 @@
         <div class="pocabinet-drawer__body">
             @if (_open)
             {
-                <section class="pocabinet-drawer__section" aria-label="Car colour">
-                    <h3>Car colour <span class="pocabinet-muted">@Color</span></h3>
-                    <PoCabinetPaintShop SelectedColor="@Color" SelectionChanged="PaintChanged" />
+                <section class="pocabinet-drawer__section" aria-label="Car colour and livery">
+                    <h3>Car colour &amp; livery <span class="pocabinet-muted">@Color</span></h3>
+                    <PoCabinetPaintShop SelectedColor="@Color" SelectionChanged="PaintChanged"
+                                        SelectedLivery="@Livery" LiveryChanged="LiveryChanged" />
                 </section>
                 <PoCabinetSettingsPanel Value="Settings" ValueChanged="SettingsChanged"
                                         ShowWeather="ShowWeather" WeatherNextRace="WeatherNextRace"
@@ -39,6 +40,8 @@
     [Parameter] public EventCallback<PoCabinetUiSettings> SettingsChanged { get; set; }
     [Parameter] public string? Color { get; set; }
     [Parameter] public EventCallback<string> PaintChanged { get; set; }
+    [Parameter] public int Livery { get; set; } = 1;
+    [Parameter] public EventCallback<int> LiveryChanged { get; set; }
     [Parameter] public bool ShowWeather { get; set; } = true;
     [Parameter] public bool WeatherNextRace { get; set; }
     /// <summary>A race is mounted: the settings offer its camera cycle.</summary>

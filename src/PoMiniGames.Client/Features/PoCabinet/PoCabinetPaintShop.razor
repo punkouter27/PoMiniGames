@@ -1,28 +1,52 @@
 @*
-    PoCabinetPaintShop — the car's colour, four swatches. The page reads the stored choice
-    (PoCabinetPitWall.PaintKey) before the first render and passes it in; this component saves
-    each pick through Blazored.LocalStorage (the framework's preference per Program.cs) and
-    raises it. (Until 2026-10-19 it offered 4 liveries × 4 colours, but only the colour ever
-    reached the car: the patterns were swatches and nothing else.)
+    PoCabinetPaintShop — the car's colour swatches, procedural livery selector, and live 3D
+    turntable preview (car-preview.js). The page reads the stored choices before the first render
+    and passes them in; this component persists each pick through Blazored.LocalStorage and raises it.
 *@
 
 @using Blazored.LocalStorage
+@using Microsoft.JSInterop
+@implements IAsyncDisposable
 @inject ILocalStorageService LocalStorage
+@inject IJSRuntime JS
 
-<div class="pocabinet-paintshop" role="radiogroup" aria-label="Pick a colour">
-    @foreach (var (name, hex) in COLORS)
-    {
-        var isSelected = string.Equals(name, SelectedColor, StringComparison.OrdinalIgnoreCase);
-        <button type="button"
-                class="pocabinet-swatch @(isSelected ? "pocabinet-swatch--selected" : null)"
-                role="radio"
-                aria-checked="@(isSelected ? "true" : "false")"
-                aria-label="@name"
-                title="@name"
-                style="--swatch: @hex;"
-                @onclick="() => Select(name)">
-        </button>
-    }
+<div class="pocabinet-paintshop-wrap">
+    <div class="pocabinet-paintshop__stage">
+        <canvas id="@_previewCanvasId" class="pocabinet-paintshop__canvas" aria-label="3D preview of your car paint and livery"></canvas>
+        <span class="pocabinet-paintshop__hint">Drag to spin</span>
+    </div>
+
+    <div class="pocabinet-paintshop" role="radiogroup" aria-label="Pick a colour">
+        @foreach (var (name, hex) in COLORS)
+        {
+            var isSelected = string.Equals(name, SelectedColor, StringComparison.OrdinalIgnoreCase);
+            <button type="button"
+                    class="pocabinet-swatch @(isSelected ? "pocabinet-swatch--selected" : null)"
+                    role="radio"
+                    aria-checked="@(isSelected ? "true" : "false")"
+                    aria-label="@name"
+                    title="@name"
+                    style="--swatch: @hex;"
+                    @onclick="() => Select(name)">
+            </button>
+        }
+    </div>
+
+    <div class="pocabinet-liveries" role="radiogroup" aria-label="Pick a livery pattern">
+        @for (var i = 0; i < LIVERIES.Length; i++)
+        {
+            var idx = i;
+            var label = LIVERIES[idx];
+            var isSelected = SelectedLivery == idx;
+            <button type="button"
+                    class="pocabinet-livery @(isSelected ? "pocabinet-livery--selected" : null)"
+                    role="radio"
+                    aria-checked="@(isSelected ? "true" : "false")"
+                    @onclick="() => SelectLivery(idx)">
+                @label
+            </button>
+        }
+    </div>
 </div>
 
 @code {
@@ -32,6 +56,15 @@
         ("Crimson",  "#c0392b"),
         ("Forest",   "#2e7d4f"),
         ("Gold",     "#d4af37"),
+    };
+
+    private static readonly string[] LIVERIES =
+    {
+        "Solid",
+        "Twin Stripes",
+        "Apex Side",
+        "Checkered",
+        "Tri-Aero",
     };
 
     /// <summary>Hex for a paint name — what the car mesh, minimap and the server grid use.</summary>
@@ -46,6 +79,45 @@
 
     [Parameter] public string? SelectedColor { get; set; }
     [Parameter] public EventCallback<string> SelectionChanged { get; set; }
+    [Parameter] public int SelectedLivery { get; set; } = 1;
+    [Parameter] public EventCallback<int> LiveryChanged { get; set; }
+
+    private readonly string _previewCanvasId = $"pocabinet-preview-{Guid.NewGuid():N}";
+    private IJSObjectReference? _previewMod;
+    private IJSObjectReference? _previewHandle;
+    private bool _disposed;
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (firstRender && !_disposed)
+        {
+            try
+            {
+                _previewMod = await JS.InvokeAsync<IJSObjectReference>("import", "./js/pocabinet/car-preview.js");
+                if (!_disposed)
+                {
+                    _previewHandle = await _previewMod.InvokeAsync<IJSObjectReference?>(
+                        "mountCarPreview", _previewCanvasId, HexFor(SelectedColor), SelectedLivery);
+                }
+            }
+            catch
+            {
+                // 3D preview is decorative; colour/livery selectors still work cleanly without WebGL.
+            }
+        }
+    }
+
+    protected override async Task OnParametersSetAsync()
+    {
+        if (_previewMod is not null && _previewHandle is not null && !_disposed)
+        {
+            try
+            {
+                await _previewMod.InvokeVoidAsync("updateCarPreview", _previewHandle, HexFor(SelectedColor), SelectedLivery);
+            }
+            catch { }
+        }
+    }
 
     private async Task Select(string color)
     {
@@ -57,6 +129,45 @@
         {
             // ignore — the page keeps the choice for the rest of the session
         }
+        if (_previewMod is not null && _previewHandle is not null && !_disposed)
+        {
+            try { await _previewMod.InvokeVoidAsync("updateCarPreview", _previewHandle, HexFor(color), SelectedLivery); }
+            catch { }
+        }
         await SelectionChanged.InvokeAsync(color);
+    }
+
+    private async Task SelectLivery(int livery)
+    {
+        try
+        {
+            await LocalStorage.SetItemAsStringAsync(PoCabinetPitWall.LiveryKey, livery.ToString());
+        }
+        catch
+        {
+            // ignore — the page keeps the choice for the rest of the session
+        }
+        if (_previewMod is not null && _previewHandle is not null && !_disposed)
+        {
+            try { await _previewMod.InvokeVoidAsync("updateCarPreview", _previewHandle, HexFor(SelectedColor), livery); }
+            catch { }
+        }
+        await LiveryChanged.InvokeAsync(livery);
+    }
+
+    public async ValueTask DisposeAsync()
+    {
+        _disposed = true;
+        if (_previewMod is not null && _previewHandle is not null)
+        {
+            try { await _previewMod.InvokeVoidAsync("unmountCarPreview", _previewHandle); } catch { }
+            try { await _previewHandle.DisposeAsync(); } catch { }
+            _previewHandle = null;
+        }
+        if (_previewMod is not null)
+        {
+            try { await _previewMod.DisposeAsync(); } catch { }
+            _previewMod = null;
+        }
     }
 }

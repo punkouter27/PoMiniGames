@@ -86,13 +86,20 @@
                                replacing it breaks the renderer's diff ("reading 'Symbol()'"). aria-hidden:
                                the live announcer below covers what matters. *@
                             <div class="pocabinet-cluster" aria-hidden="true">
-                                <div id="pocabinetGauge" class="pocabinet-gauge">
+                                <div id="pocabinetGauge" class="pocabinet-gauge" data-shift="0">
                                     <span class="pocabinet-gauge__track"></span>
                                     <span class="pocabinet-gauge__ring"></span>
                                     <span class="pocabinet-gauge__tow"></span>
+                                    <span class="pocabinet-gauge__leds"><i></i><i></i><i></i><i></i><i></i></span>
                                     <span class="pocabinet-gauge__speed" data-gauge="speed"></span>
                                     <span class="pocabinet-gauge__unit">km/h</span>
+                                    <span class="pocabinet-gauge__gtrack"><span class="pocabinet-gauge__gdot"></span></span>
                                     <span class="pocabinet-gauge__gear" data-gauge="gear"></span>
+                                    <span class="pocabinet-telemetry">
+                                        <span class="pocabinet-telemetry__bar pocabinet-telemetry__bar--thr"><i></i></span>
+                                        <span class="pocabinet-telemetry__bar pocabinet-telemetry__bar--brk"><i></i></span>
+                                        <span class="pocabinet-telemetry__bar pocabinet-telemetry__bar--slip"><i></i></span>
+                                    </span>
                                 </div>
                                 @* Damage panel: race.js writes the --dmg-* zones (0..1) and data-state
                                    (ok | hurt | critical | wrecked) straight to the DOM, like the gauge; the
@@ -258,6 +265,7 @@
         }
         <PoCabinetDrawer @ref="_drawer" Settings="Settings" SettingsChanged="OnSettingsChangedAsync"
                          Color="@_color" PaintChanged="OnPaintChanged"
+                         Livery="@_livery" LiveryChanged="OnLiveryChanged"
                          ShowWeather="@(!IsMultiplayerMode)" WeatherNextRace="@(_phase is Phase.Racing or Phase.Finished)"
                          ShowCamera="@(_phase is Phase.Racing)" OnCycleCamera="CycleCameraAsync" />
     </div>
@@ -304,7 +312,8 @@
         ? @<div class="pocabinet-start">
             <PoCabinetPreRace TrackId="@_trackId" TrackIdChanged="OnTrackChanged"
                               Settings="Settings" SettingsChanged="OnSettingsChangedAsync"
-                              Color="@_color" PaintChanged="OnPaintChanged" />
+                              Color="@_color" PaintChanged="OnPaintChanged"
+                              Livery="@_livery" LiveryChanged="OnLiveryChanged" />
             @if (!string.IsNullOrEmpty(_status))
             {
                 @StatusLine

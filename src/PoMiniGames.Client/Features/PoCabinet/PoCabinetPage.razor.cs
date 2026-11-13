@@ -57,6 +57,7 @@ public partial class PoCabinetPageBase : ComponentBase, IAsyncDisposable
     protected bool _loaded;
     protected string? _trackId = PoCabinetCatalog.DefaultTrackId;
     protected string? _color = "Indigo";
+    protected int _livery = 1;
 
     protected int _lap = 1;
     protected int _position = 1;
@@ -213,9 +214,10 @@ public partial class PoCabinetPageBase : ComponentBase, IAsyncDisposable
             // Straight from localStorage: the settings are this page's (PoCabinetUiSettings),
             // and window.PoCabinet does not exist until the engine is imported at race start.
             Settings = PoCabinetUiSettings.FromJson(await JS.InvokeAsync<string?>("localStorage.getItem", PoCabinetUiSettings.StorageKey));
-            // The paint shop's stored colour, so the first race is in it.
+            // The paint shop's stored colour and livery, so the first race matches.
             if (PoCabinetPitWall.ParsePaint(await JS.InvokeAsync<string?>("localStorage.getItem", PoCabinetPitWall.PaintKey)) is { } color)
                 _color = color;
+            _livery = PoCabinetPitWall.ParseLivery(await JS.InvokeAsync<string?>("localStorage.getItem", PoCabinetPitWall.LiveryKey));
         }
         catch { /* storage unavailable or corrupt — defaults are fine */ }
         _loaded = true;
@@ -330,6 +332,12 @@ public partial class PoCabinetPageBase : ComponentBase, IAsyncDisposable
         await InvokeAsync(StateHasChanged);
     }
 
+    protected Task OnLiveryChanged(int livery)
+    {
+        _livery = Math.Clamp(livery, 0, 4);
+        return InvokeAsync(StateHasChanged);
+    }
+
     /// <summary>The opening card's Start (or a demo card timing out): multiplayer joins the lobby; everything else races.</summary>
     protected async Task StartRaceAsync()
     {
@@ -414,6 +422,7 @@ public partial class PoCabinetPageBase : ComponentBase, IAsyncDisposable
                 world = _world,
                 playerName = _playerName,
                 color = PlayerColorHex,
+                livery = _livery,
                 settings = Settings.ToJs(),
             });
             // The officials' scripted line pool, built in the browser (PoCabinetTalk).
@@ -503,6 +512,7 @@ public partial class PoCabinetPageBase : ComponentBase, IAsyncDisposable
                 mode = "net",
                 world = _world,
                 localCarId = snap.LocalCarId,
+                livery = _livery,
                 initialSnapshot = snap,
                 settings = Settings.ToJs(),
             });

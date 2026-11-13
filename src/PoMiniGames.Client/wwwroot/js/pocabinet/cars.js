@@ -52,8 +52,13 @@ import * as THREE from 'three';
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
 import { TessellateModifier } from 'three/addons/modifiers/TessellateModifier.js';
 import { LivingPaint, livingPaint, paintSeed } from './paint.js';
+import { reflective } from './materials.js';
 import { throwPiece } from './debris.js';
 import { WORLD_SCALE as WS, addHook, canvasTexture } from './util.js';
+
+const CAR_PAINT_REFL = { value: 0.28 };
+const CAR_GLASS_REFL = { value: 0.68 };
+const CROWD_PAINT_REFL = { value: 0.20 };
 
 const WHEEL_R = 0.36;
 const WHEELS = [[1.2, 0.8, true], [1.2, -0.8, true], [-1.22, 0.8, false], [-1.22, -0.8, false]];
@@ -773,7 +778,8 @@ class CarHandle {
         const zn = this.zones, sag = (v) => Math.min(1, v * 0.5);
         this.chassis.rotation.x = this.roll + 0.035 * (sag(zn.right) - sag(zn.left));
         this.chassis.rotation.z = this.pitch + 0.03 * (sag(zn.rear) - sag(zn.front));
-        this.chassis.position.y = -0.04 * Math.max(sag(zn.front), sag(zn.rear), sag(zn.left), sag(zn.right));
+        const suspDrop = Math.max(-0.08, Math.min(0.08, Number(snap.susp) || 0)) * 0.09;
+        this.chassis.position.y = -0.04 * Math.max(sag(zn.front), sag(zn.rear), sag(zn.left), sag(zn.right)) - suspDrop;
         for (const w of this.wheels) {
             // The car's right is +Z: a bent wheel leans in at the top, points away from the car
             // and wobbles as it turns.
@@ -799,10 +805,10 @@ class CarHandle {
     }
 
     applyLights() {
-        // A smashed lamp stays dark (the shader draws the hole); the other one still brakes.
-        this.tailMat.color.copy(TAIL).multiplyScalar(this.braking ? 3.1 : 1.2);
-        const coneOp = this.braking ? 0.52 : 0.14;
-        const coneScale = this.braking ? 1.15 : 0.7;
+        // A smashed lamp stays dark (the shader draws the hole); HDR emissive drives tail bloom & wash (#3).
+        this.tailMat.color.copy(TAIL).multiplyScalar(this.braking ? 3.8 : 1.35);
+        const coneOp = this.braking ? 0.34 : 0.08;
+        const coneScale = this.braking ? 1.05 : 0.55;
         for (let i = 0; i < this.cones.length; i++) {
             const c = this.cones[i];
             const broken = i === 0 ? this.lamps.tailL : this.lamps.tailR;
@@ -812,6 +818,10 @@ class CarHandle {
                 c.scale.set(coneScale, coneScale, 1);
             }
         }
+    }
+
+    setLivery(mode, accentHex = null) {
+        this.livery?.setLivery(mode, accentHex);
     }
 
     dispose() {
@@ -861,12 +871,15 @@ export function mountCar(parent, opts) {
     };
     // Only the glass crazes: the others read a crack that stays 0.
     const noCrack = { value: 0 };
-    // Living paint (paint.js) over the dents: dirt, rain, scars and flake on the body; dirt and
-    // rain on the glass; dirt on the trim. The lamps stay as they are.
-    const livery = new LivingPaint(paintSeed(opts.id || opts.name), dmg.dentP.value);
+    // Living paint (paint.js) over the dents: dirt, rain, scars and flake on the body; dirt,
+    // parallax cabin & rain on the glass; dirt on the trim; clearcoat SSR masks (#3/#5).
+    const livMode = opts.livery ?? (opts.id === 'player' ? 0 : Math.abs(paintSeed(opts.id || opts.name) * 10 | 0) % 5);
+    const livery = new LivingPaint(paintSeed(opts.id || opts.name), dmg.dentP.value, livMode, opts.liveryAccent || '#f4f6fa');
     for (const [key, mat] of Object.entries(mats)) {
         damageable(mat, key === 'glass' ? dmg : { ...dmg, crack: noCrack }, mat.userData.lamp);
         if (key === 'paint' || key === 'glass' || key === 'trim') livingPaint(mat, key, livery);
+        if (key === 'paint') reflective(mat, CAR_PAINT_REFL);
+        else if (key === 'glass') reflective(mat, CAR_GLASS_REFL);
     }
 
     const group = new THREE.Group();
@@ -945,7 +958,7 @@ export class CarCrowd {
             if (!c.attributes.aPart) c.setAttribute('aPart', new THREE.Float32BufferAttribute(new Float32Array(c.attributes.position.count * 2), 2));
             return c;
         };
-        this.material = new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.6, metalness: 0.15 });
+        this.material = reflective(new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.55, metalness: 0.18 }), CROWD_PAINT_REFL);
         // Per instance: the parts it has lost (bit id − 1) fold away, and a wreck is sooted.
         addHook(this.material, 'pocabinet-crowd', (shader) => {
             shader.vertexShader = shader.vertexShader
@@ -984,22 +997,31 @@ diffuseColor.rgb *= 1.0 - 0.55 * vScorch;`);
             mesh.receiveShadow = true;
             mesh.frustumCulled = false;   // its bounds are wherever the field is
             mesh.count = 0;
+            mesh.userData.prevInstanceMatrix = new Float32Array(max * 16);
             parent.add(mesh);
             return mesh;
         });
     }
 
-    begin() { for (const m of this.meshes) m.count = 0; }
+    begin() {
+        for (const m of this.meshes) {
+            m.count = 0;
+        }
+    }
 
     /** Draw `handle`'s car here this frame (its own group should be hidden). */
     add(handle) {
         const mesh = this.meshes[handle.style];
         if (handle.disposed || mesh.count >= this.max) return;
+        const idx = mesh.count;
         handle.group.updateMatrix();
-        mesh.setMatrixAt(mesh.count, handle.group.matrix);
-        mesh.setColorAt(mesh.count, handle.paint.color);
-        mesh.geometry.attributes.aLost.array[mesh.count] = handle.lost;
-        mesh.geometry.attributes.aScorch.array[mesh.count] = handle.scorch;
+        mesh.setMatrixAt(idx, handle.group.matrix);
+        const pm = handle._prevCrowdM || (handle._prevCrowdM = new THREE.Matrix4().copy(handle.group.matrix));
+        pm.toArray(mesh.userData.prevInstanceMatrix, idx * 16);
+        pm.copy(handle.group.matrix);
+        mesh.setColorAt(idx, handle.paint.color);
+        mesh.geometry.attributes.aLost.array[idx] = handle.lost;
+        mesh.geometry.attributes.aScorch.array[idx] = handle.scorch;
         mesh.count++;
     }
 

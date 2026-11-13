@@ -82,7 +82,7 @@ export class Acoustics {
         const kmh = Math.abs(ear.render.speed) * ph.KMH_PER_UNIT;
 
         const z = this.zone(ear, i);
-        audio.setAcoustics(z.zone, z.wet);
+        audio.setAcoustics(z.zone, z.wet, z.occ || 0);
 
         const kind = racing ? this.surface(b, i) : 'road';
         audio.setSurface(kind, racing ? kmh : 0, this.wet, racing ? this.puddle(i, b.lateral) : 0);
@@ -187,11 +187,11 @@ export class Acoustics {
             const d = Math.hypot(rd.x / WS - c.x, rd.y / WS - c.z);
             stand = Math.min(1, Math.max(0, 1 - (d - STAND_NEAR) / (STAND_FAR - STAND_NEAR)));
         }
-        if (metal > 0.3 && metal >= stand) return { zone: 'metal', wet: 0.16 + 0.24 * metal };
-        if (stand > 0.15) return { zone: 'stand', wet: 0.12 + 0.3 * stand };
+        if (metal > 0.3 && metal >= stand) return { zone: 'metal', wet: 0.16 + 0.24 * metal, occ: metal * 0.65 };
+        if (stand > 0.15) return { zone: 'stand', wet: 0.12 + 0.3 * stand, occ: 0 };
         // Open air: a little ground bloom, less of it up on a hill.
         const hill = t.z && this.zSpan > 1 ? (t.z[i] - this.zLo) / this.zSpan : 0;
-        return { zone: 'open', wet: 0.08 - 0.05 * hill };
+        return { zone: 'open', wet: 0.08 - 0.05 * hill, occ: 0 };
     }
 
     surface(body, i) {

@@ -33,6 +33,7 @@ import { mount as mountDialogue, unmount as unmountDialogue, show } from './dial
 import { clearTrackWear } from './fx.js';
 import { setComputeMode, getGpuStats } from './gpucompute.js';
 import { mountUiShader, unmountUiShader, setUiShaderMode, pulseUiShader } from './uishader.js';
+import { mountCarPreview, updateCarPreview, unmountCarPreview } from './car-preview.js';
 import {
     startRace, stopRace, pauseRace, resumeRace, pushServerSnapshot, updateRaceSettings, cycleCamera,
     showTelemetry, startReplay, replayCommand, stopReplay, recordClip, lapProof, setBanter,
@@ -114,6 +115,9 @@ const api = {
     mountUiShader,
     unmountUiShader,
     pulseUiShader,
+    mountCarPreview,
+    updateCarPreview,
+    unmountCarPreview,
     clearTrackWear,
     getGpuStats,
 

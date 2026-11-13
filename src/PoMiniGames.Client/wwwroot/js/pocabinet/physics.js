@@ -67,7 +67,17 @@ const SLIP_DECEL = 120;
 const SPIN_DECEL = 5;
 const MAX_SLIP = 60;
 const MAX_SPIN = 2.5;
+const MAX_CONTACT_SPIN = 4.0;
 const SLIP_SLIDING = 8;
+const WALL_SCRAPE_TORQUE = 0.65;
+const WALL_SLIP_RETAIN = 0.35;
+const CONTACT_FRICTION = 0.16;
+const VERTICAL_CLEARANCE = 16.0;
+const GRAVITY_Z = 98.1;
+const SUSP_K = 48.0;
+const SUSP_DAMP = 9.0;
+const SOLVER_ITERATIONS = 3;
+const CCD_SPEED_SQ = 4900.0;
 /** Cars further apart than this along the road never touch: where the Playground run
  *  crosses over itself they are on different levels. */
 const SAME_ROAD = 120;
@@ -319,8 +329,8 @@ function beyondLimits(track, i, lateral) {
 }
 
 /** Body style mass & yaw inertia ratios (indices 0..4: coupe, hatchback, pickup, van, muscle). Mirrors PoCabinetPhysics.SetStyle. */
-const STYLE_MASS = [1.0, 0.94, 1.14, 1.20, 1.06];
-const STYLE_INERTIA = [YAW_INERTIA, 140, 172, 182, 160];
+const STYLE_MASS = [1.0, 0.90, 1.18, 1.35, 1.08];
+const STYLE_INERTIA = [YAW_INERTIA, 132, 184, 212, 165];
 
 /** Assign deterministic mass & yaw inertia from car body style (0..4). Mirrors PoCabinetPhysics.SetStyle. */
 export function setBodyStyle(body, style) {
@@ -344,6 +354,7 @@ export function createBody() {
         surface: SURF_ROAD, wide: false,
         // Body style physics properties (defaults preserve equal-mass unit contract).
         style: 0, mass: 1, inertia: YAW_INERTIA, color: null,
+        z: 0, vz: 0, susp: 0,
     };
 }
 
@@ -357,6 +368,7 @@ export function copyBody(src, dst) {
     d.surface = src.surface ?? SURF_ROAD; d.wide = !!src.wide;
     d.style = src.style ?? 0; d.mass = src.mass ?? 1; d.inertia = src.inertia ?? YAW_INERTIA;
     d.color = src.color ?? null;
+    d.z = src.z ?? 0; d.vz = src.vz ?? 0; d.susp = src.susp ?? 0;
     return d;
 }
 
@@ -389,12 +401,12 @@ function hurt(car, closing, fwd, side, nx, ny, kind = 'wall', graze = 0, otherSt
 }
 
 // step()'s scratch for the barrier bounces: where the car ends up and how it is moving.
-const ST = { x: 0, y: 0, heading: 0, v2: 0, slip: 0 };
+const ST = { x: 0, y: 0, heading: 0, v2: 0, slip: 0, spin: 0 };
 
 /**
  * The car has gone `excess` into a barrier that lies on side `s` of it (+1: toward +lateral at
  * the projection `proj`): put it back on the barrier's face, and if it was closing, damage it
- * where it hit and take the closing speed off (a little comes back, the rest scrubs along).
+ * where it hit and take the closing speed off while preserving tangential scrape slip and induced yaw torque.
  * Shared by the edge barriers and the road dividers. Mirrors PoCabinetPhysics.Bounce.
  */
 function bounce(car, proj, s, excess, st, kind = 'wall') {
@@ -413,9 +425,16 @@ function bounce(car, proj, s, excess, st, kind = 'wall') {
         vx = tx * WALL_FRICTION - nx * vn * WALL_RESTITUTION;
         vy = ty * WALL_FRICTION - ny * vn * WALL_RESTITUTION;
         const speed = Math.sqrt(vx * vx + vy * vy);
-        if (speed > 1) st.heading = st.v2 >= 0 ? atan2(vy, vx) : atan2(-vy, -vx);
-        st.v2 = st.v2 >= 0 ? speed : -speed;
-        st.slip = 0;   // the car leaves the barrier pointing the way it is going
+        if (speed > 1) {
+            const travelH = st.v2 >= 0 ? atan2(vy, vx) : atan2(-vy, -vx);
+            st.heading = wrapAngle(st.heading + wrapAngle(travelH - st.heading) * 0.35);
+        }
+        const ch2 = cos(st.heading), sh2 = sin(st.heading);
+        st.v2 = ch2 * vx + sh2 * vy;
+        const newSlip = (-sh2 * vx + ch2 * vy) * WALL_SLIP_RETAIN;
+        st.slip = Math.min(MAX_SLIP, Math.max(-MAX_SLIP, newSlip));
+        const torque = sn * WALL_SCRAPE_TORQUE * Math.min(1.5, vn / 50.0);
+        st.spin = Math.min(MAX_CONTACT_SPIN, Math.max(-MAX_CONTACT_SPIN, st.spin + torque));
         car.wallImpact = Math.max(car.wallImpact, vn);
     }
 }
@@ -439,9 +458,13 @@ function stepSub(track, car, c, dt, grip, cond) {
     // patches, the rubber and the kerbs there give.
     const seg = car.segHint;
     const surf = car.surface;
+    if (seg < 0) car.z = track.heightAt(car.along);
     let surfaceGrip = surf === SURF_GRASS ? GRASS_GRIP : surf === SURF_GRAVEL ? GRAVEL_GRIP
         : surf === SURF_KERB ? (cond.wet ? KERB_WET_GRIP : KERB_GRIP) : surf === SURF_SAUSAGE ? SAUSAGE_GRIP : 1;
     if (seg >= 0) surfaceGrip *= track.gripAt(seg, car.lateral, cond.wet, cond.rubber);
+    const groundNow = track.heightAt(car.along);
+    const airborne = car.z > groundNow + 2.2;
+    if (airborne) surfaceGrip *= 0.7;
     // What the hits have cost: a wrecked engine gives only a limp, and only until the car is
     // clear of the tarmac; a bent car pulls and has lost lock, power, top speed and grip.
     if (car.wrecked) {
@@ -485,11 +508,12 @@ function stepSub(track, car, c, dt, grip, cond) {
     const speedAbs = Math.abs(v2);
     const lockScale = Math.min(1, speedAbs / STEER_FULL_SPEED);
     const omegaWanted = steer * STEER_RATE * lockScale * (v2 < 0 ? -1 : 1);
-    // Grip to turn with: more in a turn banked into it, less off-camber, and less again for
-    // what the brakes are using (the friction circle).
+    // Grip to turn with: banked load + dynamic longitudinal weight transfer + friction circle.
     const camber = omegaWanted > 0 ? -bank : bank;
+    const longLoad = Math.min(0.35, Math.max(-0.35, (v2 - v) / (ACCEL * dt + 1e-6)));
+    const loadFactor = Math.max(0.68, 1.0 - TRAIL_LOSS * brake * brake - Math.max(0, longLoad) * 0.04 + (brake > 0.05 && brake < 0.65 ? 0.04 : 0.0));
     const omegaGrip = GRIP_ACCEL * grip * surfaceGrip * (1 + BANK_GRIP * Math.min(1, Math.max(-0.5, camber)))
-        * (1 - TRAIL_LOSS * brake * brake) / Math.max(speedAbs, 1);
+        * loadFactor / Math.max(speedAbs, 1);
     const omega = Math.min(omegaGrip, Math.max(-omegaGrip, omegaWanted));
     car.sliding = Math.abs(omegaWanted) > omegaGrip * 1.02 && speedAbs > 30;
     if (car.sliding) {
@@ -512,6 +536,7 @@ function stepSub(track, car, c, dt, grip, cond) {
     st.heading = heading;
     st.v2 = v2;
     st.slip = slip;
+    st.spin = spin;
 
     // The barriers: at the edge of the run-off (deeper where it is gravel or tarmac), and a
     // road divider, faced from whichever side the car is on.
@@ -537,13 +562,38 @@ function stepSub(track, car, c, dt, grip, cond) {
     car.heading = wrapAngle(st.heading);
     car.speed = st.v2;
     car.slip = st.slip;
-    car.spin = spin;
+    car.spin = st.spin;
     car.segHint = proj.index;
     car.lateral = proj.lateral;
     car.onGrass = Math.abs(proj.lateral) > track.hwAt(proj.index);
     car.surface = surfaceAt(track, proj.index, proj.lateral);
     car.wide = beyondLimits(track, proj.index, proj.lateral);
     advanceDistance(track, car, proj.along);
+
+    // 2.5D vertical clearance & suspension spring-damper integration
+    const groundZ = track.heightAt(car.along) + (car.surface === SURF_SAUSAGE ? 0.55 : 0.0);
+    const targetZ = groundZ;
+    const dz = car.z - targetZ;
+    if (dz > 0.8) {
+        car.vz -= GRAVITY_Z * dt;
+        car.z += car.vz * dt;
+        if (car.z <= targetZ) {
+            const impactV = -car.vz;
+            car.z = targetZ;
+            car.vz = 0;
+            car.susp = Math.min(1, Math.max(-1, impactV * 0.08));
+        } else {
+            car.susp += (-0.35 - car.susp) * Math.min(1, dt * 8.0);
+        }
+    } else {
+        const gradeVz = track.grade(proj.index) * Math.max(0, car.speed) * roadDot;
+        const compAccel = -SUSP_K * dz - SUSP_DAMP * (car.vz - gradeVz);
+        car.vz += compAccel * dt;
+        car.z += car.vz * dt;
+        if (car.z < targetZ - 0.8) { car.z = targetZ - 0.8; if (car.vz < 0) car.vz = 0; }
+        if (Math.abs(car.z - targetZ) < 1e-7 && Math.abs(car.vz) < 1e-5) { car.z = targetZ; car.vz = 0; }
+        car.susp = Math.min(1, Math.max(-1, (targetZ - car.z) * 1.4));
+    }
 }
 
 function advanceDistance(track, car, along) {
@@ -602,8 +652,49 @@ export function hullContact(a, b, slack) {
  */
 let sortOrder = new Int32Array(64);
 
+function clampBarrier(track, car) {
+    let proj = track.project(car.x, car.y, car.segHint);
+    const side = proj.lateral > 0 ? 1 : -1;
+    const wallLat = wallAt(track, proj.index, side);
+    const absLat = Math.abs(proj.lateral);
+    if (absLat > wallLat) {
+        const excess = absLat - wallLat;
+        const nx = -proj.ty * side, ny = proj.tx * side;
+        car.x -= nx * excess;
+        car.y -= ny * excess;
+        const ch = cos(car.heading), sh = sin(car.heading);
+        let vx = ch * car.speed - sh * car.slip, vy = sh * car.speed + ch * car.slip;
+        const vn = vx * nx + vy * ny;
+        if (vn > 0) {
+            vx -= nx * vn * (1 + WALL_RESTITUTION);
+            vy -= ny * vn * (1 + WALL_RESTITUTION);
+            car.speed = ch * vx + sh * vy;
+            car.slip = Math.min(MAX_SLIP, Math.max(-MAX_SLIP, (-sh * vx + ch * vy) * WALL_SLIP_RETAIN));
+        }
+        proj = track.project(car.x, car.y, proj.index);
+    }
+    if (track.islandOf[proj.index] >= 0) {
+        const lo = track.islandLo[proj.index] - CAR_RADIUS * 0.5, hi = track.islandHi[proj.index] + CAR_RADIUS * 0.5;
+        if (proj.lateral > lo && proj.lateral < hi) {
+            const toLo = proj.lateral - lo, toHi = hi - proj.lateral;
+            const iside = toLo < toHi ? 1 : -1;
+            const excess = toLo < toHi ? toLo : toHi;
+            const nx = -proj.ty * iside, ny = proj.tx * iside;
+            car.x -= nx * excess;
+            car.y -= ny * excess;
+            proj = track.project(car.x, car.y, proj.index);
+        }
+    }
+    car.segHint = proj.index;
+    car.lateral = proj.lateral;
+    car.along = proj.along;
+}
+
+const CCD_BACK_FRACS = [0.75, 0.50, 0.25];
+
 /**
- * Broadphase sort-and-sweep + swept-capsule midpoint CCD + style-weighted mass/inertia impulse.
+ * Broadphase sort-and-sweep + multi-iteration PGS solver with swept TOI CCD, tangential friction,
+ * velocity-adaptive crush restitution, 2.5D vertical clearance, and simultaneous wall projection.
  * Mirrors PoCabinetPhysics.ResolveContacts.
  */
 export function resolveContacts(track, cars) {
@@ -625,78 +716,132 @@ export function resolveContacts(track, cars) {
         sortOrder[p + 1] = key;
     }
 
-    const halfDt = TICK_SECONDS * 0.5;
-    for (let ii = 0; ii < n; ii++) {
-        const aIdx = sortOrder[ii];
-        const a = cars[aIdx];
-        if (track.parked(a.distance)) continue;
-        for (let step = 1; step < n; step++) {
-            let jj = ii + step;
-            if (jj >= n) jj -= n;
-            const bIdx = sortOrder[jj];
-            const b = cars[bIdx];
-            let gap = b.along - a.along;
-            if (gap < 0) gap += track.length;
-            if (gap > SAME_ROAD) break;
-            if ((gap === 0 && bIdx <= aIdx) || track.parked(b.distance)) continue;
+    for (let iter = 0; iter < SOLVER_ITERATIONS; iter++) {
+        let anyMoved = false;
+        for (let ii = 0; ii < n; ii++) {
+            const aIdx = sortOrder[ii];
+            const a = cars[aIdx];
+            if (track.parked(a.distance)) continue;
+            for (let step = 1; step < n; step++) {
+                let jj = ii + step;
+                if (jj >= n) jj -= n;
+                const bIdx = sortOrder[jj];
+                const b = cars[bIdx];
+                let gap = b.along - a.along;
+                if (gap < 0) gap += track.length;
+                if (gap > SAME_ROAD) break;
+                if ((gap === 0 && bIdx <= aIdx) || track.parked(b.distance)) continue;
+                if (Math.abs((a.z ?? 0) - (b.z ?? 0)) > VERTICAL_CLEARANCE) continue;
 
-            const ahx = cos(a.heading), ahy = sin(a.heading);
-            const bhx = cos(b.heading), bhy = sin(b.heading);
-            let hit = hullContact(a, b, 0);
-            if (!hit) {
-                const avx = ahx * a.speed - ahy * a.slip, avy = ahy * a.speed + ahx * a.slip;
-                const bvx = bhx * b.speed - bhy * b.slip, bvy = bhy * b.speed + bhx * b.slip;
-                const rvx = avx - bvx, rvy = avy - bvy;
-                if (rvx * rvx + rvy * rvy > 6400) {
-                    a.x -= avx * halfDt; a.y -= avy * halfDt;
-                    b.x -= bvx * halfDt; b.y -= bvy * halfDt;
-                    hit = hullContact(a, b, 0);
-                    if (!hit) {
-                        a.x += avx * halfDt; a.y += avy * halfDt;
-                        b.x += bvx * halfDt; b.y += bvy * halfDt;
+                let ahx = cos(a.heading), ahy = sin(a.heading);
+                let bhx = cos(b.heading), bhy = sin(b.heading);
+                let hit = hullContact(a, b, 0);
+                let toiBack = 0;
+                if (!hit && iter === 0) {
+                    const avx = ahx * a.speed - ahy * a.slip, avy = ahy * a.speed + ahx * a.slip;
+                    const bvx = bhx * b.speed - bhy * b.slip, bvy = bhy * b.speed + bhx * b.slip;
+                    const rvx0 = avx - bvx, rvy0 = avy - bvy;
+                    if (rvx0 * rvx0 + rvy0 * rvy0 > CCD_SPEED_SQ) {
+                        const ax0 = a.x, ay0 = a.y, ah0 = a.heading;
+                        const bx0 = b.x, by0 = b.y, bh0 = b.heading;
+                        for (let c = 0; c < CCD_BACK_FRACS.length; c++) {
+                            const tb = CCD_BACK_FRACS[c] * TICK_SECONDS;
+                            a.x = ax0 - avx * tb; a.y = ay0 - avy * tb; a.heading = wrapAngle(ah0 - a.spin * tb);
+                            b.x = bx0 - bvx * tb; b.y = by0 - bvy * tb; b.heading = wrapAngle(bh0 - b.spin * tb);
+                            hit = hullContact(a, b, 0);
+                            if (hit) {
+                                toiBack = tb;
+                                ahx = cos(a.heading); ahy = sin(a.heading);
+                                bhx = cos(b.heading); bhy = sin(b.heading);
+                                break;
+                            }
+                        }
+                        if (!hit) {
+                            a.x = ax0; a.y = ay0; a.heading = ah0;
+                            b.x = bx0; b.y = by0; b.heading = bh0;
+                        }
                     }
                 }
+                if (!hit) continue;
+
+                const nx = hit.nx, ny = hit.ny;
+                const rax = hit.x - a.x, ray = hit.y - a.y;
+                const rbx = hit.x - b.x, rby = hit.y - b.y;
+                const invMa = 1 / (a.mass || 1), invMb = 1 / (b.mass || 1);
+                const invIa = 1 / (a.inertia || YAW_INERTIA), invIb = 1 / (b.inertia || YAW_INERTIA);
+                const invMassSum = invMa + invMb;
+                const shareA = invMa / invMassSum, shareB = invMb / invMassSum;
+                a.x -= nx * hit.depth * shareA; a.y -= ny * hit.depth * shareA;
+                b.x += nx * hit.depth * shareB; b.y += ny * hit.depth * shareB;
+
+                const vax = ahx * a.speed - ahy * a.slip - a.spin * ray, vay = ahy * a.speed + ahx * a.slip + a.spin * rax;
+                const vbx = bhx * b.speed - bhy * b.slip - b.spin * rby, vby = bhy * b.speed + bhx * b.slip + b.spin * rbx;
+                const rvx = vax - vbx, rvy = vay - vby;
+                const closing = rvx * nx + rvy * ny;
+                if (closing <= 0) {
+                    if (toiBack > 0) {
+                        a.x += (ahx * a.speed - ahy * a.slip) * toiBack;
+                        a.y += (ahy * a.speed + ahx * a.slip) * toiBack;
+                        a.heading = wrapAngle(a.heading + a.spin * toiBack);
+                        b.x += (bhx * b.speed - bhy * b.slip) * toiBack;
+                        b.y += (bhy * b.speed + bhx * b.slip) * toiBack;
+                        b.heading = wrapAngle(b.heading + b.spin * toiBack);
+                    }
+                    continue;
+                }
+                const rest = closing <= 42 ? CONTACT_RESTITUTION : Math.max(0.08, CONTACT_RESTITUTION - (closing - 42) * 0.002);
+                const graze = Math.abs(-rvx * ny + rvy * nx);
+                const armA = rax * ny - ray * nx, armB = rbx * ny - rby * nx;
+                const impulse = (1 + rest) * closing / (invMassSum + armA * armA * invIa + armB * armB * invIb);
+
+                const tx = -ny, ty = nx;
+                const vt = rvx * tx + rvy * ty;
+                const armTa = rax * ty - ray * tx, armTb = rbx * ty - rby * tx;
+                const denomT = invMassSum + armTa * armTa * invIa + armTb * armTb * invIb;
+                const jt = Math.min(impulse * CONTACT_FRICTION, Math.max(-impulse * CONTACT_FRICTION, -vt / denomT));
+
+                const jx = impulse * nx + jt * tx, jy = impulse * ny + jt * ty;
+                a.speed -= invMa * (jx * ahx + jy * ahy);
+                a.slip -= invMa * (jy * ahx - jx * ahy);
+                a.spin -= (impulse * armA + jt * armTa) * invIa;
+                b.speed += invMb * (jx * bhx + jy * bhy);
+                b.slip += invMb * (jy * bhx - jx * bhy);
+                b.spin += (impulse * armB + jt * armTb) * invIb;
+
+                a.speed = Math.min(MAX_SPEED * 1.08, Math.max(-CONTACT_SPEED_FLOOR, a.speed));
+                b.speed = Math.min(MAX_SPEED * 1.08, Math.max(-CONTACT_SPEED_FLOOR, b.speed));
+                a.slip = Math.min(MAX_SLIP, Math.max(-MAX_SLIP, a.slip));
+                b.slip = Math.min(MAX_SLIP, Math.max(-MAX_SLIP, b.slip));
+                a.spin = Math.min(MAX_CONTACT_SPIN, Math.max(-MAX_CONTACT_SPIN, a.spin));
+                b.spin = Math.min(MAX_CONTACT_SPIN, Math.max(-MAX_CONTACT_SPIN, b.spin));
+
+                if (toiBack > 0) {
+                    const ah1 = wrapAngle(a.heading + a.spin * toiBack);
+                    const bh1 = wrapAngle(b.heading + b.spin * toiBack);
+                    const ac1 = cos(ah1), as1 = sin(ah1);
+                    const bc1 = cos(bh1), bs1 = sin(bh1);
+                    a.x += (ac1 * a.speed - as1 * a.slip) * toiBack;
+                    a.y += (as1 * a.speed + ac1 * a.slip) * toiBack;
+                    a.heading = ah1;
+                    b.x += (bc1 * b.speed - bs1 * b.slip) * toiBack;
+                    b.y += (bs1 * b.speed + bc1 * b.slip) * toiBack;
+                    b.heading = bh1;
+                }
+
+                if (iter === 0) {
+                    const fa = nx * ahx + ny * ahy, sa = ny * ahx - nx * ahy;
+                    const fb = nx * bhx + ny * bhy, sb = ny * bhx - nx * bhy;
+                    hurt(a, closing * Math.sqrt(2 * shareA), rax * ahx + ray * ahy, ray * ahx - rax * ahy, -fa, -sa, 'car', graze, b.style ?? 0, b.color ?? null);
+                    hurt(b, closing * Math.sqrt(2 * shareB), rbx * bhx + rby * bhy, rby * bhx - rbx * bhy, fb, sb, 'car', graze, a.style ?? 0, a.color ?? null);
+                }
+                if (n > 2) {
+                    clampBarrier(track, a);
+                    clampBarrier(track, b);
+                }
+                anyMoved = true;
             }
-            if (!hit) continue;
-
-            const nx = hit.nx, ny = hit.ny;
-            const rax = hit.x - a.x, ray = hit.y - a.y;
-            const rbx = hit.x - b.x, rby = hit.y - b.y;
-            const invMa = 1 / (a.mass || 1), invMb = 1 / (b.mass || 1);
-            const invIa = 1 / (a.inertia || YAW_INERTIA), invIb = 1 / (b.inertia || YAW_INERTIA);
-            const invMassSum = invMa + invMb;
-            const shareA = invMa / invMassSum, shareB = invMb / invMassSum;
-            a.x -= nx * hit.depth * shareA; a.y -= ny * hit.depth * shareA;
-            b.x += nx * hit.depth * shareB; b.y += ny * hit.depth * shareB;
-
-            // Each hull's velocity at the contact point: forward speed, slip to its right, spin.
-            const vax = ahx * a.speed - ahy * a.slip - a.spin * ray, vay = ahy * a.speed + ahx * a.slip + a.spin * rax;
-            const vbx = bhx * b.speed - bhy * b.slip - b.spin * rby, vby = bhy * b.speed + bhx * b.slip + b.spin * rbx;
-            const rvx = vax - vbx, rvy = vay - vby;
-            const closing = rvx * nx + rvy * ny;
-            if (closing <= 0) continue;
-            const graze = Math.abs(-rvx * ny + rvy * nx);
-            const armA = rax * ny - ray * nx, armB = rbx * ny - rby * nx;
-            const impulse = (1 + CONTACT_RESTITUTION) * closing / (invMassSum + armA * armA * invIa + armB * armB * invIb);
-            a.speed -= impulse * invMa * (nx * ahx + ny * ahy);
-            a.slip -= impulse * invMa * (ny * ahx - nx * ahy);
-            a.spin -= impulse * armA * invIa;
-            b.speed += impulse * invMb * (nx * bhx + ny * bhy);
-            b.slip += impulse * invMb * (ny * bhx - nx * bhy);
-            b.spin += impulse * armB * invIb;
-            // Bounded so a shove can't launch a car past what its own engine could do.
-            a.speed = Math.min(MAX_SPEED * 1.08, Math.max(-CONTACT_SPEED_FLOOR, a.speed));
-            b.speed = Math.min(MAX_SPEED * 1.08, Math.max(-CONTACT_SPEED_FLOOR, b.speed));
-            a.slip = Math.min(MAX_SLIP, Math.max(-MAX_SLIP, a.slip));
-            b.slip = Math.min(MAX_SLIP, Math.max(-MAX_SLIP, b.slip));
-            a.spin = Math.min(MAX_SPIN, Math.max(-MAX_SPIN, a.spin));
-            b.spin = Math.min(MAX_SPIN, Math.max(-MAX_SPIN, b.spin));
-            // Both bodies take the hit where they touched, scaled by mass resistance (energy-balanced sqrt).
-            const fa = nx * ahx + ny * ahy, sa = ny * ahx - nx * ahy;
-            const fb = nx * bhx + ny * bhy, sb = ny * bhx - nx * bhy;
-            hurt(a, closing * Math.sqrt(2 * shareA), rax * ahx + ray * ahy, ray * ahx - rax * ahy, -fa, -sa, 'car', graze, b.style ?? 0, b.color ?? null);
-            hurt(b, closing * Math.sqrt(2 * shareB), rbx * bhx + rby * bhy, rby * bhx - rbx * bhy, fb, sb, 'car', graze, a.style ?? 0, a.color ?? null);
         }
+        if (!anyMoved) break;
     }
 }
 
@@ -742,6 +887,9 @@ export function gridSlot(track, car, slot) {
     car.segHint = proj.index;
     car.along = proj.along;
     car.lateral = proj.lateral;
+    car.z = track.heightAt(proj.along);
+    car.vz = 0;
+    car.susp = 0;
     car.onGrass = false;
     car.surface = SURF_ROAD;
     car.wide = false;

@@ -66,40 +66,70 @@ const KIND = [
     { n: 2, life: 1.5, size: 1.2, alpha: 0.75, spread: 0.3 },     // wreck smoke
 ];
 
-const POINT_VERT = /* glsl */ `
+const QUAD_VERT = /* glsl */ `
+attribute vec3 aPos;
+attribute vec3 aVel;
 attribute float aSize;
 attribute float aAlpha;
 attribute vec3 aColor;
 attribute float aSeed;
-uniform float uScale;
+attribute float aFloor;
+uniform float uStretch;
+varying vec2 vUv;
 varying float vAlpha;
 varying vec3 vColor;
 varying float vSeed;
+varying float vGroundGap;
 void main() {
+    vUv = uv;
     vColor = aColor;
     vSeed = aSeed;
-    vec4 mv = modelViewMatrix * vec4(position, 1.0);
+    if (aAlpha <= 0.002 || aSize <= 0.001) {
+        vAlpha = 0.0;
+        gl_Position = vec4(2.0, 2.0, 2.0, 1.0);
+        return;
+    }
+    vec4 mv = viewMatrix * vec4(aPos, 1.0);
     // Fade out right at the lens: a puff beside the cockpit would otherwise fill the screen.
     vAlpha = aAlpha * smoothstep(1.2, 4.5, -mv.z);
-    gl_PointSize = aAlpha > 0.0 ? aSize * uScale / max(-mv.z, 0.1) : 0.0;
+    vGroundGap = max(0.0, aPos.y - aFloor) / max(0.3, aSize * 0.48);
+
+    vec2 rightV = vec2(1.0, 0.0);
+    vec2 upV = vec2(0.0, 1.0);
+    float wx = aSize;
+    float hy = aSize;
+    if (uStretch > 0.0) {
+        vec3 vv = mat3(viewMatrix) * aVel;
+        float sp2 = dot(vv.xy, vv.xy);
+        float lenScale = clamp(length(vv) * uStretch, 1.0, 7.5);
+        if (sp2 > 0.02) {
+            upV = normalize(vv.xy);
+            rightV = vec2(-upV.y, upV.x);
+        }
+        wx = aSize * 0.42;
+        hy = aSize * lenScale;
+    }
+    vec3 offsetV = vec3(rightV * (position.x * wx) + upV * (position.y * hy), 0.0);
+    mv.xyz += offsetV;
     gl_Position = projectionMatrix * mv;
 }`;
 
 // A puff (vSeed >= 0): a soft ball whose edge and density the noise texture breaks up, a
-// different patch of it per particle, turning as it fades, lit from above. A solid bit
-// (vSeed < 0: stones, flakes, confetti) stays a plain soft dot.
+// different patch of it per particle, turning as it fades, lit from above, plus soft floor contact.
 const SMOKE_FRAG = /* glsl */ `
 uniform sampler2D uNoise;
+varying vec2 vUv;
 varying float vAlpha;
 varying vec3 vColor;
 varying float vSeed;
+varying float vGroundGap;
 void main() {
-    vec2 c = gl_PointCoord - 0.5;
+    vec2 c = vUv - 0.5;
     float d = length(c);
     float a, lit;
     if (vSeed < 0.0) {
         a = smoothstep(0.5, 0.05, d);
-        lit = 0.85 + 0.25 * (0.5 - c.y);
+        lit = 0.85 + 0.25 * (0.5 - vUv.y);
     } else {
         float ang = vSeed * 6.2831853 + vAlpha * 1.5;
         vec2 q = mat2(cos(ang), -sin(ang), sin(ang), cos(ang)) * c;
@@ -107,7 +137,9 @@ void main() {
         vec4 m = texture2D(uNoise, q * 1.3 + vSeed * vec2(5.13, 23.7));
         float edge = 0.5 - 0.2 * (1.0 - n.r);
         a = smoothstep(edge, edge * 0.15, d) * (0.6 + 0.8 * n.g * (0.5 + m.a));
-        lit = 0.78 + 0.32 * (0.5 - c.y) + 0.18 * (m.b - 0.5);
+        // Soft analytical ground intersection fade (#17) — zero depth feedback loop.
+        a *= mix(0.32, 1.0, smoothstep(0.0, 0.75, vGroundGap));
+        lit = 0.78 + 0.32 * (0.5 - vUv.y) + 0.18 * (m.b - 0.5);
     }
     a *= vAlpha;
     if (a < 0.004) discard;
@@ -116,19 +148,20 @@ void main() {
 }`;
 
 const SPARK_FRAG = /* glsl */ `
+varying vec2 vUv;
 varying float vAlpha;
 varying vec3 vColor;
 void main() {
-    float d = length(gl_PointCoord - 0.5);
-    float a = smoothstep(0.5, 0.0, d);
-    a = a * a * vAlpha;
+    vec2 c = (vUv - 0.5) * 2.0;
+    float core = smoothstep(1.0, 0.0, length(vec2(c.x * 1.35, c.y * 0.78)));
+    float a = core * core * vAlpha;
     if (a < 0.004) discard;
-    gl_FragColor = vec4(vColor * (1.0 + 2.0 * a), a);
+    gl_FragColor = vec4(vColor * (1.35 + 2.6 * core), a);
     #include <colorspace_fragment>
 }`;
 
 class Pool {
-    constructor(max, frag, blending) {
+    constructor(max, frag, blending, stretch = 0) {
         this.max = max;
         this.pos = new Float32Array(max * 3);
         this.vel = new Float32Array(max * 3);
@@ -149,24 +182,48 @@ class Pool {
         this.next = 0;
         this.live = 0;
         this.spawned = false;
-        const geom = new THREE.BufferGeometry();
-        geom.setAttribute('position', new THREE.BufferAttribute(this.pos, 3).setUsage(THREE.DynamicDrawUsage));
-        geom.setAttribute('aSize', new THREE.BufferAttribute(this.size, 1).setUsage(THREE.DynamicDrawUsage));
-        geom.setAttribute('aAlpha', new THREE.BufferAttribute(this.alpha, 1).setUsage(THREE.DynamicDrawUsage));
-        geom.setAttribute('aColor', new THREE.BufferAttribute(this.color, 3).setUsage(THREE.DynamicDrawUsage));
-        geom.setAttribute('aSeed', new THREE.BufferAttribute(this.seed, 1).setUsage(THREE.DynamicDrawUsage));
+        const base = new THREE.PlaneGeometry(1, 1);
+        const geom = new THREE.InstancedBufferGeometry();
+        geom.index = base.index;
+        geom.attributes.position = base.attributes.position;
+        geom.attributes.uv = base.attributes.uv;
+        base.dispose();
+        geom.instanceCount = max;
+        geom.setAttribute('aPos', new THREE.InstancedBufferAttribute(this.pos, 3).setUsage(THREE.DynamicDrawUsage));
+        geom.setAttribute('aVel', new THREE.InstancedBufferAttribute(this.vel, 3).setUsage(THREE.DynamicDrawUsage));
+        geom.setAttribute('aSize', new THREE.InstancedBufferAttribute(this.size, 1).setUsage(THREE.DynamicDrawUsage));
+        geom.setAttribute('aAlpha', new THREE.InstancedBufferAttribute(this.alpha, 1).setUsage(THREE.DynamicDrawUsage));
+        geom.setAttribute('aColor', new THREE.InstancedBufferAttribute(this.color, 3).setUsage(THREE.DynamicDrawUsage));
+        geom.setAttribute('aSeed', new THREE.InstancedBufferAttribute(this.seed, 1).setUsage(THREE.DynamicDrawUsage));
+        geom.setAttribute('aFloor', new THREE.InstancedBufferAttribute(this.floor, 1).setUsage(THREE.DynamicDrawUsage));
         this.material = new THREE.ShaderMaterial({
-            vertexShader: POINT_VERT,
+            vertexShader: QUAD_VERT,
             fragmentShader: frag,
-            uniforms: { uScale: { value: 400 }, uNoise: { value: noise() } },
+            uniforms: { uNoise: { value: noise() }, uStretch: { value: stretch } },
             transparent: true,
             depthWrite: false,
+            depthTest: true,
             blending,
         });
-        this.points = new THREE.Points(geom, this.material);
-        this.points.frustumCulled = false;
-        this.points.renderOrder = 5;
+        this.mesh = new THREE.Mesh(geom, this.material);
+        this.points = this.mesh;
+        this.mesh.frustumCulled = false;
+        this.mesh.renderOrder = 5;
         this.geom = geom;
+    }
+
+    syncAttributes() {
+        const a = this.geom.attributes;
+        a.aPos.needsUpdate = true;
+        a.aVel.needsUpdate = true;
+        a.aSize.needsUpdate = true;
+        a.aAlpha.needsUpdate = true;
+        if (this.spawned) {
+            a.aColor.needsUpdate = true;
+            a.aSeed.needsUpdate = true;
+            a.aFloor.needsUpdate = true;
+            this.spawned = false;
+        }
     }
 
     /**
@@ -213,12 +270,7 @@ class Pool {
             this.alpha[i] = this.a0[i] * (f < 0.12 ? f / 0.12 : 1 - (f - 0.12) / 0.88);
         }
         this.live = live;
-        const a = this.geom.attributes;
-        a.position.needsUpdate = true;
-        a.aSize.needsUpdate = true;
-        a.aAlpha.needsUpdate = true;
-        if (this.spawned) { a.aColor.needsUpdate = true; a.aSeed.needsUpdate = true; }
-        this.spawned = false;
+        this.syncAttributes();
     }
 
     dispose() {
@@ -231,19 +283,43 @@ class Pool {
 class SkidMarks {
     constructor() {
         this.pos = new Float32Array(MAX_SKID * 4 * 3);
+        const uv = new Float32Array(MAX_SKID * 4 * 2);
         const idx = new Uint32Array(MAX_SKID * 6);
         for (let q = 0; q < MAX_SKID; q++) {
-            const v = q * 4, k = q * 6;
+            const v = q * 4, k = q * 6, u = q * 8;
+            uv[u] = 0; uv[u + 1] = 0;
+            uv[u + 2] = 1; uv[u + 3] = 0;
+            uv[u + 4] = 0; uv[u + 5] = 1;
+            uv[u + 6] = 1; uv[u + 7] = 1;
             idx[k] = v; idx[k + 1] = v + 1; idx[k + 2] = v + 2;
             idx[k + 3] = v + 1; idx[k + 4] = v + 3; idx[k + 5] = v + 2;
         }
         this.geom = new THREE.BufferGeometry();
         this.attr = new THREE.BufferAttribute(this.pos, 3).setUsage(THREE.DynamicDrawUsage);
         this.geom.setAttribute('position', this.attr);
+        this.geom.setAttribute('uv', new THREE.BufferAttribute(uv, 2));
         this.geom.setIndex(new THREE.BufferAttribute(idx, 1));
         this.geom.setDrawRange(0, 0);
-        this.material = new THREE.MeshBasicMaterial({
-            color: 0x0b0b0b, transparent: true, opacity: 0.5, depthWrite: false,
+        this.material = new THREE.ShaderMaterial({
+            uniforms: { uOpacity: { value: 0.54 } },
+            vertexShader: /* glsl */ `
+                varying float vU;
+                void main() {
+                    vU = uv.x;
+                    gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
+                }`,
+            fragmentShader: /* glsl */ `
+                uniform float uOpacity;
+                varying float vU;
+                void main() {
+                    float edge = smoothstep(0.0, 0.24, vU) * smoothstep(1.0, 0.76, vU);
+                    float groove = 0.78 + 0.22 * cos((vU - 0.5) * 12.566);
+                    float a = uOpacity * edge * groove;
+                    if (a < 0.005) discard;
+                    gl_FragColor = vec4(0.015, 0.015, 0.018, a);
+                    #include <colorspace_fragment>
+                }`,
+            transparent: true, depthWrite: false,
             polygonOffset: true, polygonOffsetFactor: -2, polygonOffsetUnits: -4, side: THREE.DoubleSide,
         });
         this.mesh = new THREE.Mesh(this.geom, this.material);
@@ -479,8 +555,8 @@ class CarFx {
         this.beach = track.theme === 'maralago';
         this.stone = new THREE.Color(this.beach ? '#d9c79c' : '#8d8577');
         this.grit = new THREE.Color(this.beach ? '#efe2c2' : '#c9bba0');
-        this.smoke = new Pool(MAX_SMOKE, SMOKE_FRAG, THREE.NormalBlending);
-        this.sparks = new Pool(MAX_SPARKS, SPARK_FRAG, THREE.AdditiveBlending);
+        this.smoke = new Pool(MAX_SMOKE, SMOKE_FRAG, THREE.NormalBlending, 0);
+        this.sparks = new Pool(MAX_SPARKS, SPARK_FRAG, THREE.AdditiveBlending, 0.085);
         this.skids = new SkidMarks();
         this.decals = new WearDecals();
         if (this.persistWear && trackWearCache && trackWearCache.trackId === track.id) {
@@ -491,10 +567,11 @@ class CarFx {
         }
         this.group = new THREE.Group();
         this.group.name = 'pocabinet-fx';
-        this.group.add(this.skids.mesh, this.decals.mesh, this.smoke.points, this.sparks.points);
+        this.group.add(this.skids.mesh, this.decals.mesh, this.smoke.mesh, this.sparks.mesh);
         sceneHandle.scene.add(this.group);
         this.state = new Map();
         this.pairs = new Map();
+        this.lightPulses = [];
         this.size = new THREE.Vector2();
         this.disposed = false;
     }
@@ -815,8 +892,12 @@ class CarFx {
                     // scuff, a square hit at half of it is a wreck), and the hit lands on the
                     // part of the body that was facing the wall as the car went in.
                     const ahead = nx * Math.cos(hl) + nz * Math.sin(hl), across = nz * Math.cos(hl) - nx * Math.sin(hl);
+                    const strength = Math.min(1, Math.max(0, out) / 55);
+                    if (strength > 0.25) {
+                        this.pushLight(px, up + 0.65, pz, 1.0, 0.72, 0.25, 1.2 + strength * 2.4, 10, 0.16);
+                    }
                     events.walls.push({
-                        id: c.id, strength: Math.min(1, Math.max(0, out) / 55),
+                        id: c.id, strength,
                         x: x + fx * ahead * 1.9 + rx * across * 0.83, z: z + fz * ahead * 1.9 + rz * across * 0.83,
                     });
                 }
@@ -854,6 +935,9 @@ class CarFx {
                         (rnd() - 0.5) * 0.8, 1.5 + rnd() * 1.8, (rnd() - 0.5) * 0.8,
                         0.3 + rnd() * 0.35, 0.7 + rnd() * 0.5, 0.2, 1, 1, 0.35 + k * 0.4, 0.06, 2, -2.5, up);
                 }
+                if (burning && rnd() < dt * 12) {
+                    this.pushLight(bx, up + 0.9, bz, 1.0, 0.42 + rnd() * 0.18, 0.08, 2.2, 9.5, 0.16);
+                }
             }
         }
 
@@ -876,6 +960,7 @@ class CarFx {
                 for (let k = 0; k < n; k++) {
                     this.spark(mx, up + 0.45, mz, (rnd() - 0.5) * 6, 1 + rnd() * 3, (rnd() - 0.5) * 6);
                 }
+                if (rel > 12) this.pushLight(mx, up + 0.75, mz, 1.0, 0.62, 0.22, Math.min(3.5, 0.9 + rel / 22), 11, 0.18);
                 const key = a.id < b.id ? `${a.id}:${b.id}` : `${b.id}:${a.id}`;
                 if (now - (this.pairs.get(key) || 0) > 350) {
                     this.pairs.set(key, now);
@@ -884,13 +969,64 @@ class CarFx {
             }
         }
 
+        for (let i = this.lightPulses.length - 1; i >= 0; i--) {
+            this.lightPulses[i].life -= dt;
+            if (this.lightPulses[i].life <= 0) this.lightPulses.splice(i, 1);
+        }
+
         const useGpu = this.sh.quality === 'high';
         this.smoke.step(dt, useGpu);
         this.sparks.step(dt, useGpu);
         this.skids.flush();
         this.decals.flush();
-        this.updateScale();
         return events;
+    }
+
+    pushLight(x, y, z, r, g, b, intensity, radius, life) {
+        for (let i = 0; i < this.lightPulses.length; i++) {
+            const p = this.lightPulses[i];
+            if ((p.x - x) ** 2 + (p.z - z) ** 2 < 4) {
+                p.x = (p.x + x) * 0.5; p.y = (p.y + y) * 0.5; p.z = (p.z + z) * 0.5;
+                p.intensity = Math.max(p.intensity, intensity);
+                p.life = Math.max(p.life, life);
+                p.maxLife = Math.max(p.maxLife, life);
+                return;
+            }
+        }
+        if (this.lightPulses.length >= 16) this.lightPulses.shift();
+        this.lightPulses.push({ x, y, z, r, g, b, intensity, radius, life, maxLife: life });
+    }
+
+    /** Gather up to `max` nearest dynamic lights (spark flashes + active car lights) for PostFx. */
+    collectLights(cars, out = [], camPos = this.sh.camera?.position, max = 12) {
+        out.length = 0;
+        for (let i = 0; i < this.lightPulses.length; i++) {
+            const p = this.lightPulses[i];
+            const fade = Math.max(0, p.life / p.maxLife);
+            const dist2 = camPos ? (p.x - camPos.x) ** 2 + (p.z - camPos.z) ** 2 : 0;
+            out.push({ x: p.x, y: p.y, z: p.z, r: p.r * p.intensity * fade, g: p.g * p.intensity * fade, b: p.b * p.intensity * fade, radius: p.radius, dx: 0, dy: -1, dz: 0, spot: 0, dist2 });
+        }
+        if (cars?.length) {
+            for (let i = 0; i < cars.length; i++) {
+                const c = cars[i];
+                if (c.wrecked) continue;
+                const cx = c.x / WS, cz = c.y / WS, cy = (Number(c.h) || 0) + 0.55;
+                const dist2 = camPos ? (cx - camPos.x) ** 2 + (cz - camPos.z) ** 2 : 0;
+                if (dist2 > 85 * 85) continue;
+                const hx = Math.cos(c.heading), hz = Math.sin(c.heading);
+                if (c.braking) {
+                    out.push({ x: cx - hx * 1.9, y: cy, z: cz - hz * 1.9, r: 1.9, g: 0.14, b: 0.06, radius: 6.5, dx: -hx, dy: -0.1, dz: -hz, spot: 0.25, dist2 });
+                }
+                if (this.raining || this.sh.darkTrack) {
+                    out.push({ x: cx + hx * 2.0, y: cy, z: cz + hz * 2.0, r: 2.2, g: 2.05, b: 1.75, radius: 18.0, dx: hx, dy: -0.08, dz: hz, spot: 0.55, dist2: dist2 * 0.9 });
+                }
+            }
+        }
+        if (out.length > max) {
+            out.sort((a, b) => a.dist2 - b.dist2);
+            out.length = max;
+        }
+        return out;
     }
 
     spark(x, y, z, vx, vy, vz) {
@@ -899,13 +1035,7 @@ class CarFx {
             1.0, 0.55 + r * 0.3, 0.18 + r * 0.1, 0.6, 9.8);
     }
 
-    updateScale() {
-        const r = this.sh.renderer, cam = this.sh.camera;
-        r.getDrawingBufferSize(this.size);
-        const scale = this.size.y / (2 * Math.tan(THREE.MathUtils.degToRad(cam.fov) / 2));
-        this.smoke.material.uniforms.uScale.value = scale;
-        this.sparks.material.uniforms.uScale.value = scale;
-    }
+    updateScale() {}
 
     dispose() {
         if (this.disposed) return;

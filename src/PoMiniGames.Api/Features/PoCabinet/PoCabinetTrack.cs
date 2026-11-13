@@ -188,6 +188,16 @@ public sealed class PoCabinetTrack
     /// <summary>Cross slope at sample <paramref name=i/> (+ = right side higher); 0 when unbanked. Mirrors track.js <c>bankOf</c>.</summary>
     public double Bank(int i) => _bank is null ? 0 : _bank[i];
 
+    /// <summary>Road height (sim units) at <paramref name=distance/> along the loop; 0 on a flat track. Mirrors track.js <c>heightAt</c>.</summary>
+    public double HeightAt(double distance)
+    {
+        if (_z is null) return 0;
+        int i = IndexAt(distance);
+        double f = _segLen[i] > 1e-9 ? (Wrap(distance) - _cum[i]) / _segLen[i] : 0;
+        double a = _z[i], b = _z[(i + 1) % Count];
+        return a + (b - a) * f;
+    }
+
     /// <summary>Unit tangent of segment <paramref name=i/>.</summary>
     public double TangentX(int i) => _tx[i];
 

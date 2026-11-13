@@ -53,9 +53,10 @@
                 }
                 break;
             case Tab.Car:
-                <section class="pocabinet-prerace__car" aria-label="Car colour">
-                    <h3>Car colour <span class="pocabinet-muted">@Color</span></h3>
-                    <PoCabinetPaintShop SelectedColor="@Color" SelectionChanged="PaintChanged" />
+                <section class="pocabinet-prerace__car" aria-label="Car colour and livery">
+                    <h3>Car colour &amp; livery <span class="pocabinet-muted">@Color</span></h3>
+                    <PoCabinetPaintShop SelectedColor="@Color" SelectionChanged="PaintChanged"
+                                        SelectedLivery="@Livery" LiveryChanged="LiveryChanged" />
                     <p class="pocabinet-muted">A change applies from the next race.</p>
                 </section>
                 break;
@@ -78,6 +79,8 @@
     [Parameter] public EventCallback<PoCabinetUiSettings> SettingsChanged { get; set; }
     [Parameter] public string? Color { get; set; }
     [Parameter] public EventCallback<string> PaintChanged { get; set; }
+    [Parameter] public int Livery { get; set; } = 1;
+    [Parameter] public EventCallback<int> LiveryChanged { get; set; }
 
     private Tab _tab = Tab.Track;
     private readonly ElementReference[] _tabRefs = new ElementReference[Tabs.Length];

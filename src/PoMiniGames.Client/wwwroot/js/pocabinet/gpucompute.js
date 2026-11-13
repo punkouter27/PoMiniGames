@@ -212,7 +212,9 @@ export class GpuParticleStepper {
         this.uniformArr = new ArrayBuffer(16);
         this.uniformF32 = new Float32Array(this.uniformArr);
         this.uniformU32 = new Uint32Array(this.uniformArr);
-        this.pendingRead = [null, null];
+        this.readBufs = [new Float32Array(maxParticles * 16), new Float32Array(maxParticles * 16)];
+        this.epochSnaps = [new Uint32Array(maxParticles), new Uint32Array(maxParticles)];
+        this.hasRead = [false, false];
         this.dispatchedEpoch = [null, null];
     }
 
@@ -297,7 +299,8 @@ export class GpuParticleStepper {
         state.dispatches++;
 
         this.mapped[slot] = true;
-        const epochSnap = pool.slotEpoch ? new Uint32Array(pool.slotEpoch) : null;
+        const epochSnap = pool.slotEpoch ? this.epochSnaps[slot] : null;
+        if (epochSnap) epochSnap.set(pool.slotEpoch);
         this.staging[slot].mapAsync(GPUMapMode.READ).then(() => {
             if (this.disposed) {
                 this.staging[slot]?.unmap();
@@ -305,7 +308,8 @@ export class GpuParticleStepper {
                 return;
             }
             const view = new Float32Array(this.staging[slot].getMappedRange());
-            this.pendingRead[slot] = new Float32Array(view);
+            this.readBufs[slot].set(view);
+            this.hasRead[slot] = true;
             this.dispatchedEpoch[slot] = epochSnap;
             this.staging[slot].unmap();
             this.mapped[slot] = false;
@@ -317,12 +321,14 @@ export class GpuParticleStepper {
 
     /** Drain the freshest GPU-computed particle snapshot into `pool` if available. */
     consumeLatest(pool) {
-        const readSlot = this.pendingRead[(this.writeIdx + 1) & 1] ? ((this.writeIdx + 1) & 1) : (this.writeIdx & 1);
-        const arr = this.pendingRead[readSlot];
-        if (!arr) return false;
+        const alt = (this.writeIdx + 1) & 1;
+        const cur = this.writeIdx & 1;
+        const readSlot = this.hasRead[alt] ? alt : (this.hasRead[cur] ? cur : -1);
+        if (readSlot < 0) return false;
+        const arr = this.readBufs[readSlot];
         const epochs = this.dispatchedEpoch[readSlot];
-        this.pendingRead[0] = null;
-        this.pendingRead[1] = null;
+        this.hasRead[0] = false;
+        this.hasRead[1] = false;
         this.dispatchedEpoch[0] = null;
         this.dispatchedEpoch[1] = null;
         const curEpoch = pool.slotEpoch;
@@ -348,11 +354,19 @@ export class GpuParticleStepper {
             pool.alpha[i] = arr[o + 15];
         }
         pool.live = live;
-        const a = pool.geom.attributes;
-        a.position.needsUpdate = true;
-        a.aSize.needsUpdate = true;
-        a.aAlpha.needsUpdate = true;
-        if (pool.spawned) { a.aColor.needsUpdate = true; a.aSeed.needsUpdate = true; pool.spawned = false; }
+        if (typeof pool.syncAttributes === 'function') {
+            pool.syncAttributes();
+        } else {
+            const a = pool.geom.attributes;
+            if (a.position) a.position.needsUpdate = true;
+            if (a.aSize) a.aSize.needsUpdate = true;
+            if (a.aAlpha) a.aAlpha.needsUpdate = true;
+            if (pool.spawned) {
+                if (a.aColor) a.aColor.needsUpdate = true;
+                if (a.aSeed) a.aSeed.needsUpdate = true;
+                pool.spawned = false;
+            }
+        }
         return true;
     }
 

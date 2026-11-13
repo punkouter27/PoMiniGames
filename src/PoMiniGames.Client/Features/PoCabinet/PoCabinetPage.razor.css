@@ -86,9 +86,12 @@
     border-radius: var(--radius-md, 10px);
     font-size: calc(0.92rem * var(--pocabinet-hud, 1));
     color: var(--pocabinet-glass-text);
-    background: var(--pocabinet-glass-fill), rgba(6, 10, 22, 0.5);
+    background: var(--pocabinet-glass-fill), rgba(6, 10, 22, 0.56);
     border: 1px solid var(--pocabinet-glass-edge);
-    box-shadow: 0 8px 22px rgba(0, 0, 0, 0.3);
+    box-shadow:
+        inset 0 1px 0 rgba(255, 255, 255, 0.36),
+        inset 0 -1px 0 rgba(255, 255, 255, 0.08),
+        0 10px 28px rgba(0, 0, 0, 0.38);
     -webkit-backdrop-filter: var(--pocabinet-glass-blur);
     backdrop-filter: var(--pocabinet-glass-blur);
     text-shadow: 0 1px 3px rgba(0, 0, 0, 0.5);
@@ -154,6 +157,9 @@
     border-radius: var(--radius-md, 6px);
     background: var(--pocabinet-glass-shade);
     border: 1px solid var(--pocabinet-glass-edge);
+    box-shadow:
+        inset 0 1px 0 rgba(255, 255, 255, 0.3),
+        0 10px 26px rgba(0, 0, 0, 0.34);
     -webkit-backdrop-filter: var(--pocabinet-glass-blur);
     backdrop-filter: var(--pocabinet-glass-blur);
     pointer-events: none;
@@ -312,6 +318,128 @@
     text-align: center;
     background: rgba(255, 255, 255, 0.16);
     border: 1px solid var(--pocabinet-glass-edge);
+}
+
+/* ─── Shift LEDs (5-pip RPM ladder driven by data-shift="0..5") ─────────── */
+.pocabinet-gauge__leds {
+    position: absolute;
+    top: 15%;
+    left: 50%;
+    transform: translateX(-50%);
+    display: flex;
+    gap: 4px;
+    pointer-events: none;
+}
+
+.pocabinet-gauge__leds i {
+    display: block;
+    width: 6px;
+    height: 6px;
+    border-radius: 50%;
+    background: rgba(255, 255, 255, 0.16);
+    border: 1px solid rgba(255, 255, 255, 0.14);
+    transition: background-color 0.08s ease, box-shadow 0.08s ease, transform 0.08s ease;
+}
+
+.pocabinet-gauge[data-shift="1"] .pocabinet-gauge__leds i:nth-child(-n+1),
+.pocabinet-gauge[data-shift="2"] .pocabinet-gauge__leds i:nth-child(-n+2),
+.pocabinet-gauge[data-shift="3"] .pocabinet-gauge__leds i:nth-child(-n+3),
+.pocabinet-gauge[data-shift="4"] .pocabinet-gauge__leds i:nth-child(-n+4),
+.pocabinet-gauge[data-shift="5"] .pocabinet-gauge__leds i:nth-child(-n+5) {
+    background: #35d07f;
+    box-shadow: 0 0 8px rgba(53, 208, 127, 0.85);
+}
+
+.pocabinet-gauge[data-shift="3"] .pocabinet-gauge__leds i:nth-child(3),
+.pocabinet-gauge[data-shift="4"] .pocabinet-gauge__leds i:nth-child(n+3),
+.pocabinet-gauge[data-shift="5"] .pocabinet-gauge__leds i:nth-child(n+3) {
+    background: #f5c542;
+    box-shadow: 0 0 8px rgba(245, 197, 66, 0.85);
+}
+
+.pocabinet-gauge[data-shift="5"] .pocabinet-gauge__leds i:nth-child(5),
+.pocabinet-gauge[data-redline="on"] .pocabinet-gauge__leds i {
+    background: #ff4d4d;
+    box-shadow: 0 0 10px rgba(255, 77, 77, 0.95);
+    animation: pocabinet-redline 0.12s steps(2) infinite;
+}
+
+/* ─── Lateral G-meter ball inside bottom half of dial ────────────────────── */
+.pocabinet-gauge__gtrack {
+    position: relative;
+    width: calc(var(--size) * 0.34);
+    height: 4px;
+    margin-top: 2px;
+    border-radius: 999px;
+    background: rgba(255, 255, 255, 0.14);
+    overflow: visible;
+}
+
+.pocabinet-gauge__gdot {
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    width: 6px;
+    height: 6px;
+    border-radius: 50%;
+    background: #7fe3ff;
+    box-shadow: 0 0 7px rgba(127, 227, 255, 0.9);
+    transform: translate(calc(-50% + var(--g-lat, 0) * var(--size) * 0.14), -50%);
+    transition: transform 0.06s linear;
+}
+
+/* ─── Compact Throttle / Brake / Slip micro-bars to the left of dial ─────── */
+.pocabinet-telemetry {
+    position: absolute;
+    right: calc(100% + 0.45rem);
+    bottom: 0.35rem;
+    display: flex;
+    align-items: flex-end;
+    gap: 4px;
+    height: calc(var(--size) * 0.56);
+    padding: 6px 5px;
+    border-radius: 10px;
+    background: var(--pocabinet-glass-fill), var(--pocabinet-glass-shade);
+    border: 1px solid var(--pocabinet-glass-edge);
+    box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.3), 0 8px 18px rgba(0, 0, 0, 0.3);
+    -webkit-backdrop-filter: var(--pocabinet-glass-blur);
+    backdrop-filter: var(--pocabinet-glass-blur);
+}
+
+.pocabinet-telemetry__bar {
+    position: relative;
+    width: 5px;
+    height: 100%;
+    border-radius: 999px;
+    background: rgba(255, 255, 255, 0.12);
+    overflow: hidden;
+    display: flex;
+    align-items: flex-end;
+}
+
+.pocabinet-telemetry__bar i {
+    display: block;
+    width: 100%;
+    border-radius: inherit;
+    transition: height 0.05s linear;
+}
+
+.pocabinet-telemetry__bar--thr i {
+    height: calc(var(--throttle, 0) * 100%);
+    background: linear-gradient(to top, #22c55e, #86efac);
+    box-shadow: 0 0 8px rgba(34, 197, 94, 0.65);
+}
+
+.pocabinet-telemetry__bar--brk i {
+    height: calc(var(--brake, 0) * 100%);
+    background: linear-gradient(to top, #ef4444, #fca5a5);
+    box-shadow: 0 0 8px rgba(239, 68, 68, 0.65);
+}
+
+.pocabinet-telemetry__bar--slip i {
+    height: calc(var(--slip, 0) * 100%);
+    background: linear-gradient(to top, #38bdf8, #fde047);
+    box-shadow: 0 0 8px rgba(56, 189, 248, 0.65);
 }
 
 /* ─── Position badge: re-created per place change (@key), so it swooshes in ─ */
@@ -611,10 +739,21 @@
     width: min(46vw, 260px);
     height: 84px;
     border-radius: 42px;
-    background: rgba(8, 12, 24, 0.45);
+    background: rgba(8, 12, 24, 0.48);
     border: 2px solid rgba(255, 255, 255, 0.35);
+    box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.25), 0 8px 20px rgba(0, 0, 0, 0.3);
+    -webkit-backdrop-filter: blur(10px);
+    backdrop-filter: blur(10px);
     pointer-events: auto;
     touch-action: none;
+    transition: transform 0.12s cubic-bezier(0.22, 1, 0.36, 1), border-color 0.14s ease, box-shadow 0.14s ease;
+    overflow: hidden;
+}
+
+.pocabinet-touch__steer[data-pressed="true"] {
+    border-color: var(--color-primary);
+    box-shadow: inset 0 0 18px rgba(99, 102, 241, 0.35), 0 0 16px rgba(99, 102, 241, 0.35);
+    transform: scale(0.985);
 }
 
 .pocabinet-touch__knob {
@@ -624,9 +763,14 @@
     width: 64px;
     height: 64px;
     border-radius: 50%;
-    background: var(--color-primary);
-    opacity: 0.85;
+    background: radial-gradient(circle at 35% 30%, rgba(255, 255, 255, 0.45), transparent 55%), var(--color-primary);
+    opacity: 0.9;
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.35);
     transform: translate(calc(-50% + var(--pocabinet-steer) * min(19vw, 98px)), -50%);
+}
+
+.pocabinet-touch__steer[data-pressed="true"] .pocabinet-touch__knob {
+    box-shadow: 0 0 20px rgba(99, 102, 241, 0.8), 0 4px 12px rgba(0, 0, 0, 0.4);
 }
 
 .pocabinet-touch[data-steer="tilt"] .pocabinet-touch__steer {
@@ -656,17 +800,35 @@
 }
 
 .pocabinet-touch__pedal {
+    position: relative;
     display: flex;
     align-items: center;
     justify-content: center;
     width: 84px;
     height: 110px;
     border-radius: 16px;
-    background: rgba(8, 12, 24, 0.45);
+    background: rgba(8, 12, 24, 0.48);
     border: 2px solid rgba(255, 255, 255, 0.35);
+    box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.25), 0 8px 20px rgba(0, 0, 0, 0.3);
+    -webkit-backdrop-filter: blur(10px);
+    backdrop-filter: blur(10px);
     color: #ffffff;
     font-weight: 700;
     touch-action: none;
+    overflow: hidden;
+    transition: transform 0.1s cubic-bezier(0.22, 1, 0.36, 1), background-color 0.12s ease, box-shadow 0.14s ease;
+}
+
+.pocabinet-touch__pedal::after {
+    content: "";
+    position: absolute;
+    inset: 0;
+    border-radius: inherit;
+    background: radial-gradient(circle at center, rgba(255, 255, 255, 0.45) 0%, transparent 65%);
+    opacity: 0;
+    transform: scale(0.45);
+    transition: transform 0.22s ease-out, opacity 0.22s ease-out;
+    pointer-events: none;
 }
 
 .pocabinet-touch__pedal--gas { height: 132px; border-color: #2ecc71; }
@@ -674,7 +836,22 @@
 .pocabinet-touch__pedal--brake { border-color: #e74c3c; }
 
 .pocabinet-touch__pedal[data-pressed="true"] {
-    background: rgba(255, 255, 255, 0.28);
+    background: rgba(255, 255, 255, 0.26);
+    transform: scale(0.94);
+    box-shadow: inset 0 0 16px rgba(255, 255, 255, 0.35), 0 0 18px rgba(255, 255, 255, 0.25);
+}
+
+.pocabinet-touch__pedal--gas[data-pressed="true"] {
+    box-shadow: inset 0 0 18px rgba(46, 204, 113, 0.55), 0 0 18px rgba(46, 204, 113, 0.45);
+}
+
+.pocabinet-touch__pedal--brake[data-pressed="true"] {
+    box-shadow: inset 0 0 18px rgba(231, 76, 60, 0.55), 0 0 18px rgba(231, 76, 60, 0.45);
+}
+
+.pocabinet-touch__pedal[data-pressed="true"]::after {
+    opacity: 0.7;
+    transform: scale(1.1);
 }
 
 /* ─── Spectator badge ───────────────────────────────────────────────── */
