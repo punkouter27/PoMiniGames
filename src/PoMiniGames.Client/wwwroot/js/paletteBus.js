@@ -29,6 +29,7 @@
         pomule:        ['#e0701a', '#9050d0'],   // Atari orange / Crystite purple
         poecosystem:   ['#4ade80', '#0ea5e9'],   // canopy green / lagoon
         sandplayground: ['#e9b872', '#22b8cf'],  // dune sand / water
+        pofighter:     ['#b3372f', '#4a5580'],   // bag red / gym wall
     };
 
     const MOODS = {

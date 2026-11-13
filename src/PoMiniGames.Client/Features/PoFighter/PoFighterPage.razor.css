@@ -1,0 +1,193 @@
+/* PoFighter practice room. The canvas takes the whole game area; the move list, the hit
+   counter and the touch buttons float over the stage wall. The stage is always dark, so the
+   panels use their own light-on-dark colours instead of the app theme's text tokens. The engine sets data-pf-device on the root (keys, pad or touch) and the is-active class on the move being played. */
+
+.pf-room {
+    position: relative;
+    width: 100%;
+    height: var(--gps-area-h, 80vh);
+    overflow: hidden;
+    background: #232a45;
+    user-select: none;
+    -webkit-user-select: none;
+}
+
+.pf-canvas {
+    position: absolute;
+    inset: 0;
+    display: block;
+    width: 100%;
+    height: 100%;
+    touch-action: none;
+}
+
+.pf-error {
+    position: absolute;
+    inset: 40% 16px auto;
+    margin: 0;
+    text-align: center;
+    color: #e8eaf2;
+}
+
+.pf-panel {
+    position: absolute;
+    top: 10px;
+    padding: 8px 10px;
+    border: 1px solid rgba(255, 255, 255, 0.22);
+    border-radius: 10px;
+    background: rgba(12, 15, 28, 0.72);
+    color: #e8eaf2;
+    font-size: var(--text-xs);
+}
+
+.pf-moves {
+    left: calc(10px + env(safe-area-inset-left));
+}
+
+.pf-moves ul {
+    margin: 0;
+    padding: 0;
+    list-style: none;
+}
+
+.pf-moves li {
+    display: flex;
+    justify-content: space-between;
+    gap: 18px;
+    padding: 2px 6px;
+    border-radius: 6px;
+}
+
+.pf-moves li.is-active {
+    background: var(--accent-amber);
+    color: #1a1304;
+    font-weight: 700;
+}
+
+.pf-ctl {
+    font-family: var(--font-mono);
+    opacity: 0.8;
+}
+
+.pf-missing {
+    margin-top: 4px;
+    color: #9aa3b8;
+    font-style: italic;
+}
+
+/* One control column at a time: keyboard by default, gamepad once a pad is used, none on touch. */
+.pf-ctl-pad,
+.pf-room[data-pf-device="pad"] .pf-ctl-keys,
+.pf-room[data-pf-device="touch"] .pf-ctl-keys {
+    display: none;
+}
+
+.pf-room[data-pf-device="pad"] .pf-ctl-pad {
+    display: inline;
+}
+
+.pf-status {
+    right: calc(10px + env(safe-area-inset-right));
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
+.pf-hits strong {
+    display: inline-block;
+    min-width: 2ch;
+    font-size: 20px;
+    font-variant-numeric: tabular-nums;
+    color: var(--accent-amber);
+}
+
+.pf-chip {
+    min-height: 32px;
+    padding: 4px 12px;
+    border: 1px solid rgba(255, 255, 255, 0.35);
+    border-radius: 999px;
+    background: rgba(255, 255, 255, 0.08);
+    color: #e8eaf2;
+    font: inherit;
+    cursor: pointer;
+}
+
+.pf-chip[aria-pressed="true"] {
+    border-color: var(--accent-amber);
+    color: var(--accent-amber);
+}
+
+/* Touch buttons: only where there is no keyboard, or once a touch button has been used. */
+.pf-touch {
+    position: absolute;
+    bottom: 14px;
+    display: none;
+    align-items: center;
+    gap: 8px;
+}
+
+/* Sits above the shell's Stats chip in the bottom-left corner. */
+.pf-touch-move {
+    left: calc(14px + env(safe-area-inset-left));
+    bottom: 58px;
+}
+
+.pf-touch-attack {
+    right: calc(14px + env(safe-area-inset-right));
+}
+
+.pf-touch-stack {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+}
+
+.pf-touch button {
+    min-width: 58px;
+    min-height: 52px;
+    padding: 0 12px;
+    border: 1px solid rgba(255, 255, 255, 0.35);
+    border-radius: 14px;
+    background: rgba(12, 15, 28, 0.6);
+    color: #fff;
+    font: inherit;
+    font-weight: 700;
+    touch-action: none;
+}
+
+.pf-touch button:active {
+    background: var(--accent-amber);
+    color: #1a1304;
+}
+
+.pf-room[data-pf-device="touch"] .pf-touch {
+    display: flex;
+}
+
+@media (pointer: coarse) {
+    .pf-touch {
+        display: flex;
+    }
+
+    .pf-chip {
+        min-width: 44px;
+        min-height: 44px;
+    }
+
+    .pf-ctl-keys {
+        display: none;
+    }
+}
+
+/* Small screens: the touch buttons already name the moves, so the list shrinks to the one
+   move being played and leaves the stage clear. */
+@media (max-width: 640px), (max-height: 480px) {
+    .pf-panel {
+        top: 6px;
+        padding: 5px 7px;
+    }
+
+    .pf-moves li:not(.is-active) {
+        display: none;
+    }
+}

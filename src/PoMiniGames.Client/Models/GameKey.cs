@@ -57,4 +57,7 @@ public static class GameKeys
     public static readonly GameKey PoCabinet = new("pocabinet");
     public static readonly GameKey PoMule = new("pomule");
     public static readonly GameKey PoCapitol = new("pocapitol");
+
+    // Practice-room preview: no score, no leaderboard, no PlayerStats.
+    public static readonly GameKey PoFighter = new("pofighter");
 }

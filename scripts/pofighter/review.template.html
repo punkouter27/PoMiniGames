@@ -1,0 +1,88 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>PoFighter move review</title>
+<style>
+  :root { color-scheme: dark; --bg: #14161b; --panel: #1e222a; --line: #333a46; --text: #e8eaee; --dim: #9aa3b2; --accent: #ffb020; }
+  * { box-sizing: border-box; }
+  body { margin: 0; padding: 24px 16px 48px; background: var(--bg); color: var(--text); font: 15px/1.5 system-ui, sans-serif; }
+  main { max-width: 1200px; margin: 0 auto; }
+  h1 { margin: 0 0 4px; font-size: 24px; }
+  p.lead { margin: 0 0 20px; color: var(--dim); max-width: 70ch; }
+  .controls { display: flex; flex-wrap: wrap; gap: 16px; align-items: center; margin-bottom: 20px; color: var(--dim); }
+  .move { display: grid; grid-template-columns: 300px 1fr; gap: 16px; background: var(--panel); border: 1px solid var(--line); border-radius: 10px; padding: 14px; margin-bottom: 14px; }
+  .move h2 { margin: 0; font-size: 17px; }
+  .move .meta { color: var(--dim); font-size: 13px; margin-bottom: 8px; }
+  canvas { background: linear-gradient(#39465c 0 82%, #5b4a3a 82%); border-radius: 8px; display: block; }
+  canvas.play { width: 300px; height: 280px; }
+  .strip { overflow-x: auto; padding-bottom: 6px; }
+  .strip canvas { height: 230px; }
+  @media (max-width: 760px) { .move { grid-template-columns: 1fr; } }
+</style>
+</head>
+<body>
+<main>
+  <h1>PoFighter move review</h1>
+  <p class="lead">Each row is one move: the animation as the game will play it on the left, and every picture in order on the right (the number is the source video frame). The orange cross marks the point that stays on the fighter's ground position.</p>
+  <div class="controls">
+    <label>Speed <input id="speed" type="range" min="0.1" max="1" step="0.1" value="1"> <span id="speedText">100%</span></label>
+    <label><input id="cross" type="checkbox" checked> Show ground point</label>
+  </div>
+  <div id="moves"></div>
+</main>
+<script>
+const DATA = /*DATA*/null;
+const TITLES = { idle: 'Idle stance', walkF: 'Walk forward', walkB: 'Walk backward', crouch: 'Crouch', jump: 'Jump', punchMid: 'Mid punch', punchHigh: 'High punch', kick: 'Kick' };
+const sheet = new Image();
+sheet.src = DATA.sheet;
+const speed = document.getElementById('speed'), cross = document.getElementById('cross');
+speed.oninput = () => document.getElementById('speedText').textContent = Math.round(speed.value * 100) + '%';
+
+function draw(ctx, f, gx, gy, s) {
+  ctx.drawImage(sheet, f.x, f.y, f.w, f.h, gx - f.ax * s, gy - f.ay * s, f.w * s, f.h * s);
+  if (cross.checked) { ctx.fillStyle = '#ffb020'; ctx.fillRect(gx - 8, gy - 1, 16, 2); ctx.fillRect(gx - 1, gy - 8, 2, 16); }
+}
+function order(move) {
+  const n = move.frames.length, idx = [...Array(n).keys()];
+  return move.loop === 'pingpong' ? idx.concat(idx.slice(1, -1).reverse()) : idx;
+}
+
+sheet.onload = () => {
+  const players = [];
+  for (const [name, move] of Object.entries(DATA.moves)) {
+    const first = move.frames[0].src, last = move.frames.at(-1).src;
+    const row = document.createElement('section');
+    row.className = 'move';
+    row.innerHTML = `<div><h2>${TITLES[name] ?? name}</h2><div class="meta">${move.frames.length} pictures · video ${(first / 30).toFixed(1)}–${(last / 30).toFixed(1)} s · ${move.fps} per second</div><canvas class="play" width="600" height="560"></canvas></div><div class="strip"><canvas></canvas></div>`;
+    document.getElementById('moves').append(row);
+
+    const strip = row.querySelector('.strip canvas'), cell = 300;
+    strip.width = cell * move.frames.length; strip.height = 460;
+    const sctx = strip.getContext('2d');
+    sctx.font = '16px system-ui';
+    move.frames.forEach((f, i) => {
+      draw(sctx, f, i * cell + 110, 420, 1);
+      sctx.fillStyle = '#ffe680'; sctx.fillText(f.src, i * cell + 8, 20);
+    });
+    players.push({ ctx: row.querySelector('canvas.play').getContext('2d'), move, seq: order(move), t: 0, strip, redraw: () => { sctx.clearRect(0, 0, strip.width, strip.height); move.frames.forEach((f, i) => { draw(sctx, f, i * cell + 110, 420, 1); sctx.fillStyle = '#ffe680'; sctx.fillText(f.src, i * cell + 8, 20); }); } });
+  }
+  cross.onchange = () => players.forEach(p => p.redraw());
+  let prev = performance.now();
+  (function tick(now) {
+    const dt = (now - prev) / 1000 * speed.value; prev = now;
+    for (const p of players) {
+      p.t += dt * p.move.fps;
+      // One-shot moves rest on the last picture for a moment before replaying.
+      const hold = p.move.loop === 'once' || p.move.loop === 'hold' ? 8 : 0;
+      const i = Math.floor(p.t) % (p.seq.length + hold);
+      p.ctx.clearRect(0, 0, 600, 560);
+      draw(p.ctx, p.move.frames[p.seq[Math.min(i, p.seq.length - 1)]], 220, 459, 1);
+    }
+    requestAnimationFrame(tick);
+  })(prev);
+};
+</script>
+</body>
+</html>

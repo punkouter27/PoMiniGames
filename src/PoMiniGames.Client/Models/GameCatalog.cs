@@ -204,6 +204,17 @@ public static class GameCatalog
             },
         ]),
 
+        // PoFighter (preview): a fighter cut from a filmed performer, in a practice room.
+        // No score and no demo, so it stays out of the kiosk reel below.
+        new(GameKeys.PoFighter, "PoFighter", "🥋",
+        [
+            new(GameMode.OnePlayer, "/pofighter/1player")
+            {
+                ChipLabel = "Practice · Preview",
+                ChipDescription = "Preview: try every move on a punching bag; nothing is scored",
+            },
+        ]),
+
         // Questions come from /api/funquiz/quiz/questions, so even solo needs a server.
         new(GameKeys.PoFunQuiz, "Fun Quiz", "🧠",
         [
