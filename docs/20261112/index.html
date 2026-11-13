@@ -1,0 +1,564 @@
+<!DOCTYPE html>
+<html lang="en" data-tier="2" data-theme="light">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>PoMiniGames — Executive &amp; Plain-English Overview (2026-11-12)</title>
+  <script src="https://cdn.jsdelivr.net/npm/mermaid@10.9.0/dist/mermaid.min.js"></script>
+  <style>
+    :root {
+      --bg: #f6f8fb;
+      --surface: #ffffff;
+      --surface-alt: #f0f4f9;
+      --text: #0f172a;
+      --text-muted: #475569;
+      --border: #dbe3ee;
+      --accent: #2563eb;
+      --accent-soft: #dbeafe;
+      --green: #059669;
+      --green-soft: #d1fae5;
+      --amber: #d97706;
+      --amber-soft: #fef3c7;
+      --purple: #7c3aed;
+      --purple-soft: #ede9fe;
+      --code-bg: #0f172a;
+      --code-text: #e2e8f0;
+      --shadow: 0 2px 10px rgba(15, 23, 42, 0.06);
+      --radius: 12px;
+    }
+    html[data-theme="dark"] {
+      --bg: #0b1120;
+      --surface: #111827;
+      --surface-alt: #1e293b;
+      --text: #f1f5f9;
+      --text-muted: #94a3b8;
+      --border: #334155;
+      --accent: #60a5fa;
+      --accent-soft: #1e3a8a;
+      --green: #34d399;
+      --green-soft: #064e3b;
+      --amber: #fbbf24;
+      --amber-soft: #78350f;
+      --purple: #a78bfa;
+      --purple-soft: #4c1d95;
+      --code-bg: #020617;
+      --code-text: #e2e8f0;
+      --shadow: 0 4px 16px rgba(0, 0, 0, 0.35);
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Inter, sans-serif;
+      background: var(--bg);
+      color: var(--text);
+      line-height: 1.6;
+      overflow-x: hidden;
+    }
+    .topbar {
+      position: sticky;
+      top: 0;
+      z-index: 100;
+      background: var(--surface);
+      border-bottom: 1px solid var(--border);
+      padding: 0.75rem 1.25rem;
+      display: flex;
+      flex-wrap: wrap;
+      align-items: center;
+      justify-content: space-between;
+      gap: 0.75rem;
+      box-shadow: var(--shadow);
+    }
+    .brand {
+      display: flex;
+      align-items: center;
+      gap: 0.6rem;
+      font-weight: 700;
+      font-size: 1.05rem;
+    }
+    .brand-badge {
+      background: var(--accent);
+      color: #fff;
+      font-size: 0.72rem;
+      padding: 0.18rem 0.5rem;
+      border-radius: 999px;
+      letter-spacing: 0.04em;
+    }
+    .nav-links {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 0.4rem;
+    }
+    .nav-links a {
+      text-decoration: none;
+      color: var(--text-muted);
+      font-size: 0.85rem;
+      padding: 0.35rem 0.65rem;
+      border-radius: 8px;
+      border: 1px solid transparent;
+    }
+    .nav-links a.active, .nav-links a:hover {
+      color: var(--accent);
+      background: var(--accent-soft);
+      border-color: var(--border);
+    }
+    .controls {
+      display: flex;
+      flex-wrap: wrap;
+      align-items: center;
+      gap: 0.5rem;
+    }
+    .tier-group {
+      display: inline-flex;
+      background: var(--surface-alt);
+      border: 1px solid var(--border);
+      border-radius: 999px;
+      padding: 2px;
+    }
+    .tier-btn {
+      border: none;
+      background: transparent;
+      color: var(--text-muted);
+      font-size: 0.78rem;
+      font-weight: 600;
+      padding: 0.3rem 0.65rem;
+      border-radius: 999px;
+      cursor: pointer;
+    }
+    .tier-btn.active {
+      background: var(--accent);
+      color: #fff;
+    }
+    .theme-btn {
+      border: 1px solid var(--border);
+      background: var(--surface-alt);
+      color: var(--text);
+      font-size: 0.8rem;
+      padding: 0.32rem 0.65rem;
+      border-radius: 8px;
+      cursor: pointer;
+    }
+    .container {
+      max-width: 1200px;
+      margin: 0 auto;
+      padding: 1.5rem 1.25rem 3rem;
+    }
+    .hero {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      padding: 1.5rem;
+      box-shadow: var(--shadow);
+      margin-bottom: 1.5rem;
+    }
+    .hero h1 {
+      margin: 0 0 0.5rem;
+      font-size: clamp(1.4rem, 2.5vw, 2rem);
+    }
+    .eli5 {
+      background: var(--accent-soft);
+      border-left: 4px solid var(--accent);
+      padding: 0.85rem 1rem;
+      border-radius: 0 8px 8px 0;
+      margin: 0.75rem 0 1rem;
+      font-size: 0.98rem;
+    }
+    .kpi-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+      gap: 0.9rem;
+      margin: 1.25rem 0;
+    }
+    .kpi-card {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      padding: 1rem;
+      box-shadow: var(--shadow);
+    }
+    .kpi-val {
+      font-size: 1.65rem;
+      font-weight: 800;
+      color: var(--accent);
+      line-height: 1.1;
+    }
+    .kpi-label {
+      font-size: 0.82rem;
+      color: var(--text-muted);
+      margin-top: 0.25rem;
+    }
+    .section {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      padding: 1.35rem;
+      margin-bottom: 1.25rem;
+      box-shadow: var(--shadow);
+    }
+    .section h2 {
+      margin: 0 0 0.5rem;
+      font-size: 1.22rem;
+    }
+    .analogy-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(230px, 1fr));
+      gap: 0.85rem;
+      margin-top: 0.75rem;
+    }
+    .analogy-card {
+      background: var(--surface-alt);
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      padding: 0.9rem;
+    }
+    .analogy-card .tag {
+      display: inline-block;
+      font-size: 0.72rem;
+      font-weight: 700;
+      text-transform: uppercase;
+      padding: 0.15rem 0.45rem;
+      border-radius: 6px;
+      background: var(--purple-soft);
+      color: var(--purple);
+      margin-bottom: 0.35rem;
+    }
+    .narrative-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+      gap: 0.75rem;
+      margin-top: 1rem;
+    }
+    .step-card {
+      background: var(--surface-alt);
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      padding: 0.85rem;
+    }
+    .step-num {
+      display: inline-flex;
+      width: 24px;
+      height: 24px;
+      align-items: center;
+      justify-content: center;
+      border-radius: 50%;
+      background: var(--accent);
+      color: #fff;
+      font-size: 0.78rem;
+      font-weight: 700;
+      margin-right: 0.4rem;
+    }
+    .table-wrap {
+      overflow-x: auto;
+      margin-top: 0.75rem;
+    }
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 0.88rem;
+    }
+    th, td {
+      text-align: left;
+      padding: 0.55rem 0.7rem;
+      border-bottom: 1px solid var(--border);
+    }
+    th {
+      background: var(--surface-alt);
+      font-weight: 700;
+    }
+    .mermaid {
+      background: var(--surface-alt);
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      padding: 1rem;
+      overflow-x: auto;
+      margin-top: 0.75rem;
+    }
+    pre {
+      background: var(--code-bg);
+      color: var(--code-text);
+      padding: 0.85rem 1rem;
+      border-radius: 8px;
+      overflow-x: auto;
+      font-size: 0.8rem;
+      line-height: 1.45;
+    }
+    code {
+      font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+      font-size: 0.85em;
+    }
+    .cite {
+      font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+      font-size: 0.78rem;
+      background: var(--green-soft);
+      color: var(--green);
+      padding: 0.12rem 0.4rem;
+      border-radius: 5px;
+      white-space: nowrap;
+    }
+    .pill {
+      display: inline-block;
+      font-size: 0.75rem;
+      font-weight: 600;
+      padding: 0.12rem 0.5rem;
+      border-radius: 999px;
+      background: var(--amber-soft);
+      color: var(--amber);
+    }
+    footer {
+      margin-top: 2rem;
+      padding-top: 1rem;
+      border-top: 1px solid var(--border);
+      font-size: 0.82rem;
+      color: var(--text-muted);
+      display: flex;
+      flex-wrap: wrap;
+      justify-content: space-between;
+      gap: 0.5rem;
+    }
+
+    /* 3-Tier Visibility Rules */
+    html[data-tier="1"] .tier-2,
+    html[data-tier="1"] .tier-3,
+    html[data-tier="2"] .tier-3 {
+      display: none !important;
+    }
+  </style>
+</head>
+<body>
+  <header class="topbar">
+    <div class="brand">
+      <span>PoMiniGames Docs</span>
+      <span class="brand-badge">2026-11-12</span>
+    </div>
+    <nav class="nav-links" aria-label="Documentation sections">
+      <a href="index.html" class="active">Overview</a>
+      <a href="USER_WORKFLOW.html">User Journeys</a>
+      <a href="VISUAL_ARCHITECTURE_DASHBOARD.html">Architecture</a>
+      <a href="AI_SERVICES_REPORT.html">AI &amp; External</a>
+      <a href="AUTH_SECURITY_REPORT.html">Auth &amp; Security</a>
+      <a href="artifact.html">Tabbed Shell</a>
+    </nav>
+    <div class="controls">
+      <div class="tier-group" role="group" aria-label="Detail level">
+        <button class="tier-btn" data-set-tier="1" title="Plain English only">L1 Simple</button>
+        <button class="tier-btn" data-set-tier="2" title="Add architecture diagrams">L2 Standard</button>
+        <button class="tier-btn" data-set-tier="3" title="Add file:line citations and schemas">L3 Deep-Dive</button>
+      </div>
+      <button class="theme-btn" id="themeToggle" type="button">Theme: Light</button>
+    </div>
+  </header>
+
+  <main class="container">
+    <section class="hero">
+      <h1>PoMiniGames — Executive &amp; Plain-English Overview</h1>
+      <div class="eli5">
+        <strong>In plain English:</strong> PoMiniGames is a single website hosting 14 instant-play browser mini-games. Your browser runs the game graphics, sound, and computer opponents locally, while one .NET 10 server handles player sign-in, live multiplayer rooms, and saving high scores.
+      </div>
+      <p>
+        Built as a single-origin platform, the backend serves the Blazor WebAssembly frontend directly on port <code>5080</code> so there is no cross-site friction in production. If your internet drops, finished scores are safely parked in your browser and sent automatically when you reconnect.
+      </p>
+      <div class="tier-3">
+        <span class="cite">README.md:3-6</span>
+        <span class="cite">src/PoMiniGames.API/Program.cs:14</span>
+        <span class="cite">src/PoMiniGames.Client/Program.cs:23-37</span>
+      </div>
+    </section>
+
+    <div class="kpi-grid">
+      <div class="kpi-card">
+        <div class="kpi-val">14</div>
+        <div class="kpi-label">Instant-Play Browser Games</div>
+      </div>
+      <div class="kpi-card">
+        <div class="kpi-val">13</div>
+        <div class="kpi-label">Live SignalR Multiplayer Hubs <span class="tier-3 cite">EndpointRouteExtensions.cs:121-143</span></div>
+      </div>
+      <div class="kpi-card">
+        <div class="kpi-val">0</div>
+        <div class="kpi-label">Paid AI / LLM APIs Used</div>
+      </div>
+      <div class="kpi-card">
+        <div class="kpi-val">1</div>
+        <div class="kpi-label">Same-Origin .NET 10 Host</div>
+      </div>
+    </div>
+
+    <section class="section">
+      <h2>Everyday Analogies: How the Platform Works</h2>
+      <div class="eli5">
+        <strong>In plain English:</strong> Think of PoMiniGames like an arcade inside a shopping mall: there is one front desk for passes, a central tool shed for shared gear, security checkpoints at every door, and a digital filing cabinet for high-score records.
+      </div>
+      <div class="analogy-grid">
+        <div class="analogy-card">
+          <div class="tag">Middleware</div>
+          <strong>Security Checkpoint &amp; Assembly Line</strong>
+          <p>Every incoming web request passes through ordered checkpoints (compression, security headers, login check, rate limit, anti-forgery) before reaching a game endpoint.</p>
+          <div class="tier-3"><span class="cite">Program.cs:206-433</span></div>
+        </div>
+        <div class="analogy-card">
+          <div class="tag">Dependency Injection</div>
+          <strong>Central Supply Closet / Tool Shed</strong>
+          <p>Shared tools (storage clients, Elo calculators, score guards, HTTP clients) are stocked once at startup so any game feature can grab them without building its own.</p>
+          <div class="tier-3"><span class="cite">GameServicesExtensions.cs:21-205</span></div>
+        </div>
+        <div class="analogy-card">
+          <div class="tag">Azure Table &amp; Blob Storage</div>
+          <strong>Digital Filing Cabinet &amp; Record Keeper</strong>
+          <p>No SQL database is used. High scores, player stats, and match histories live in Azure Table Storage drawers, while PoEcosystem worlds live in Blob Storage folders.</p>
+          <div class="tier-3"><span class="cite">StorageService.cs:23-49</span> <span class="cite">StorageInitializer.cs:26-49</span></div>
+        </div>
+        <div class="analogy-card">
+          <div class="tag">APIs &amp; SignalR Hubs</div>
+          <strong>Order Counter / Front Desk</strong>
+          <p>HTTP <code>/api/*</code> endpoints take score submissions and profile requests, while 13 SignalR hubs keep live multiplayer rooms talking in real time.</p>
+          <div class="tier-3"><span class="cite">EndpointRouteExtensions.cs:41-145</span></div>
+        </div>
+        <div class="analogy-card">
+          <div class="tag">JWT &amp; Dev Cookies</div>
+          <strong>Visitor Badge / Security Pass</strong>
+          <p>Microsoft Entra issues a signed JWT badge in production; local development issues a same-origin guest cookie so developers can test without OAuth.</p>
+          <div class="tier-3"><span class="cite">AuthExtensions.cs:36-137</span></div>
+        </div>
+      </div>
+    </section>
+
+    <section class="section tier-2">
+      <h2>High-Level System Snapshot</h2>
+      <div class="eli5">
+        <strong>In plain English:</strong> Your browser loads the Blazor app and JavaScript game engines from the .NET server, talks over WebSockets for live matches, and saves scores into Azure Storage.
+      </div>
+      <div class="mermaid">
+flowchart LR
+  Player["Player Browser\n(Blazor WASM + 14 JS Engines)"] -->|"1. Same-Origin HTTPS /api/*"| Checkpoint["Security Checkpoint\n(Auth + Rate Limit + CSRF)"]
+  Player -->|"2. Live WebSockets"| Hubs["13 SignalR Hubs\n(In-Memory Lobbies & Matches)"]
+  Checkpoint -->|"3. Validated Requests"| Services["Supply Closet\n(Score Guard, Elo, Match History)"]
+  Services -->|"4. Save & Read"| Storage["Digital Filing Cabinet\n(Azure Table & Blob Storage)"]
+  Player -.->|"Offline Park"| Local["Browser localStorage\n(PendingScoreStore)"]
+      </div>
+      <div class="narrative-grid">
+        <div class="step-card">
+          <div><span class="step-num">1</span><strong>Single Front Door</strong></div>
+          <p>The browser fetches the Blazor app and game assets from the same origin, avoiding CORS complexity in production.</p>
+        </div>
+        <div class="step-card">
+          <div><span class="step-num">2</span><strong>Live Match Relay</strong></div>
+          <p>Multiplayer games connect to dedicated SignalR hubs for turn-based moves, rollback fighting, or 30 Hz racing.</p>
+        </div>
+        <div class="step-card">
+          <div><span class="step-num">3</span><strong>Plausibility &amp; Integrity</strong></div>
+          <p>Submitted scores pass range checks and play-session timing checks before touching any leaderboard.</p>
+        </div>
+        <div class="step-card">
+          <div><span class="step-num">4</span><strong>Offline-First Resilience</strong></div>
+          <p>If the API or Azure Storage is unreachable, scores wait in <code>localStorage</code> and sync automatically later.</p>
+        </div>
+      </div>
+    </section>
+
+    <section class="section">
+      <h2>The 14 Games &amp; Core Capabilities</h2>
+      <div class="eli5">
+        <strong>In plain English:</strong> Every game runs its core gameplay loop inside your browser, with optional online multiplayer, solo ladders, or spectator demos.
+      </div>
+      <div class="table-wrap">
+        <table>
+          <thead>
+            <tr>
+              <th>Game</th>
+              <th>Genre &amp; Experience</th>
+              <th>Multiplayer / Online Surface</th>
+              <th class="tier-3">Source Slice</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr><td><strong>PoCapitol</strong></td><td>Third-person crowd simulation (512 crowd, 64 police)</td><td>Solo &amp; armed demo loop (saves nothing)</td><td class="tier-3"><code>Client/Features/PoCapitol</code></td></tr>
+            <tr><td><strong>TicTacToe</strong></td><td>6&times;6 four-in-a-row vs AI, hot-seat, or online</td><td>SignalR <code>/tictactoe/hub</code></td><td class="tier-3"><code>API/Features/Shared/TurnMatch</code></td></tr>
+            <tr><td><strong>ConnectFive</strong></td><td>Five-in-a-row vs AI, hot-seat, or online</td><td>SignalR <code>/connectfive/hub</code></td><td class="tier-3"><code>API/Features/Shared/TurnMatch</code></td></tr>
+            <tr><td><strong>PoBrawl</strong></td><td>Physics brawler, 16-president Cup, FFA, Brawl HQ</td><td>Rollback 1v1 via <code>/pobrawl/lobby-hub</code> &amp; <code>match-hub</code></td><td class="tier-3"><code>API/Features/PoBrawl</code></td></tr>
+            <tr><td><strong>PoCoupleQuiz</strong></td><td>Two-player realtime couples quiz</td><td>SignalR <code>/couplequiz/hubs/game</code></td><td class="tier-3"><code>API/Features/PoCoupleQuiz</code></td></tr>
+            <tr><td><strong>PoFunQuiz</strong></td><td>Multiplayer trivia (~7,800 JSON questions)</td><td>SignalR <code>/funquiz/gamehub</code> + REST</td><td class="tier-3"><code>API/Features/PoFunQuiz</code></td></tr>
+            <tr><td><strong>PoMarbleRace</strong></td><td>Steer 1 red marble in a 101-marble field + ghost</td><td>2P host-authoritative via <code>/pomarblerace/hub</code></td><td class="tier-3"><code>API/Features/PoMarbleRace</code></td></tr>
+            <tr><td><strong>PoRacer</strong></td><td>Canvas + WebGL racer (99 AI rivals, solo/online)</td><td>SignalR <code>/poracer/lobby-hub</code> &amp; <code>race-hub</code></td><td class="tier-3"><code>API/Features/PoRacer</code></td></tr>
+            <tr><td><strong>PoCabinet</strong></td><td>3D circuit racer with Gaussian splat scanned tracks</td><td>30 Hz server sim via <code>/pocabinet/lobby-hub</code> &amp; <code>race-hub</code></td><td class="tier-3"><code>API/Features/PoCabinet</code></td></tr>
+            <tr><td><strong>PoVoxelStrike</strong></td><td>Third-person destructible voxel shooter</td><td>Co-op lockstep via <code>/povoxelstrike/lobby-hub</code> &amp; <code>lockstep-hub</code></td><td class="tier-3"><code>API/Features/PoVoxelStrike</code></td></tr>
+            <tr><td><strong>PoJevArena</strong></td><td>10v10 creature arena + Black Box scrubber</td><td>Local rule brain (<code>LocalJevClient</code>) + library API</td><td class="tier-3"><code>API/Features/PoJevArena</code></td></tr>
+            <tr><td><strong>PoMule</strong></td><td>8-player M.U.L.E. economy &amp; land trading</td><td>Deterministic C# rules + server replay verifier</td><td class="tier-3"><code>Shared/Games/PoMule</code></td></tr>
+            <tr><td><strong>PoEcosystem</strong></td><td>Watch-only island simulation (Three.js r186 WebGPU/WebGL2)</td><td>Cloud save slots &amp; public gallery (Blob + Table)</td><td class="tier-3"><code>API/Features/PoEcosystem</code></td></tr>
+            <tr><td><strong>SandPlayground</strong></td><td>GPU sand-and-water physics sandbox</td><td>Client-only sandbox</td><td class="tier-3"><code>Client/Features/SandPlayground</code></td></tr>
+          </tbody>
+        </table>
+      </div>
+      <div class="tier-3" style="margin-top:0.75rem;">
+        <span class="pill">Truth-Check Note</span>
+        <code>README.md:18</code> mentions "15 SignalR hubs", while the authoritative route table in
+        <code>EndpointRouteExtensions.cs:121-143</code> registers exactly <strong>13</strong> SignalR hubs.
+      </div>
+    </section>
+
+    <section class="section tier-3">
+      <h2>Deep-Dive: Solution &amp; Project Topology</h2>
+      <div class="eli5">
+        <strong>In plain English:</strong> The codebase is split into five .NET projects so game rules, data models, storage code, the web API, and the browser app stay cleanly separated.
+      </div>
+      <pre>PoMiniGames.slnx
+├── src/PoMiniGames.API/            # .NET 10 Minimal API host + vertical feature slices + 13 SignalR hubs
+├── src/PoMiniGames.Client/         # Blazor WebAssembly SPA + wwwroot/js/&lt;game&gt;/ engines
+├── src/PoMiniGames.Infrastructure/ # Azure Table &amp; Blob Storage + HealthChecks + Source-Gen JSON
+├── src/PoMiniGames.Domain/         # Domain models, GameKey, EloCalculator, ScoreRules
+└── src/PoMiniGames.Shared/         # Shared DTOs, PoMule C# sim, PoBrawlRollbackSim, HubJsonContext</pre>
+      <p>
+        <span class="cite">README.md:240-247</span>
+        <span class="cite">src/PoMiniGames.API/Program.cs:1-14</span>
+      </p>
+    </section>
+
+    <footer>
+      <span>Generated: 2026-11-12 &bull; Target Commit: <code>1e937297</code></span>
+      <span>PoMiniGames Documentation Suite &bull; Standalone HTML</span>
+    </footer>
+  </main>
+
+  <script>
+    (function () {
+      const root = document.documentElement;
+      const tierBtns = document.querySelectorAll('[data-set-tier]');
+      const themeBtn = document.getElementById('themeToggle');
+
+      function applyTier(t) {
+        const tier = ['1', '2', '3'].includes(String(t)) ? String(t) : '2';
+        root.setAttribute('data-tier', tier);
+        localStorage.setItem('pomini_docs_tier', tier);
+        tierBtns.forEach(b => b.classList.toggle('active', b.dataset.setTier === tier));
+      }
+
+      function renderMermaid(theme) {
+        if (!window.mermaid) return;
+        mermaid.initialize({
+          startOnLoad: false,
+          theme: theme === 'dark' ? 'dark' : 'default',
+          securityLevel: 'loose'
+        });
+        document.querySelectorAll('.mermaid').forEach(el => {
+          if (!el.dataset.src) el.dataset.src = el.textContent;
+          el.removeAttribute('data-processed');
+          el.textContent = el.dataset.src;
+        });
+        mermaid.run({ querySelector: '.mermaid' });
+      }
+
+      function applyTheme(th) {
+        const theme = th === 'dark' ? 'dark' : 'light';
+        root.setAttribute('data-theme', theme);
+        localStorage.setItem('pomini_docs_theme', theme);
+        themeBtn.textContent = 'Theme: ' + (theme === 'dark' ? 'Dark' : 'Light');
+        renderMermaid(theme);
+      }
+
+      tierBtns.forEach(btn => btn.addEventListener('click', () => applyTier(btn.dataset.setTier)));
+      themeBtn.addEventListener('click', () => applyTheme(root.getAttribute('data-theme') === 'dark' ? 'light' : 'dark'));
+
+      applyTier(localStorage.getItem('pomini_docs_tier') || '2');
+      applyTheme(localStorage.getItem('pomini_docs_theme') || 'light');
+    })();
+  </script>
+</body>
+</html>

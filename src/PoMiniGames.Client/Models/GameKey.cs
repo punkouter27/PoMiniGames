@@ -57,8 +57,4 @@ public static class GameKeys
     public static readonly GameKey PoCabinet = new("pocabinet");
     public static readonly GameKey PoMule = new("pomule");
     public static readonly GameKey PoCapitol = new("pocapitol");
-
-    // Also in the Domain allowlist, because play sessions are minted for every catalogue game;
-    // PoJevArena itself records no PlayerStats and has no leaderboard.
-    public static readonly GameKey PoJevArena = new("pojevarena");
 }

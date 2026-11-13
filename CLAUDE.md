@@ -96,7 +96,7 @@ node --test tests/pomule-world.test.mjs                        # JS engine tests
   - PoFunQuiz and PoCoupleQuiz pick random questions from in-memory banks loaded once from
     `Features/*/Data/questions.json` (no table, no network). Couple answers use the free
     `AnswerMatcher`.
-  - PoJevArena's only brain is the free `LocalJevClient`. Ecosystem, Brawl and Cabinet are
+  - Ecosystem, Brawl and Cabinet are
     scripted. Do not add AI services back without being asked.
   - PoCapitol's after-action debrief (`wwwroot/js/pocapitol/debrief.js`) is client-only: a
     built-in deterministic writer by default, or, if the player opts in, a model on their own

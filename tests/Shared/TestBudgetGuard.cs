@@ -26,9 +26,6 @@ public static class TestBudgetGuard
     /// </summary>
     public static IReadOnlyDictionary<string, string?> Overrides { get; } = new Dictionary<string, string?>
     {
-        // PoJevArena: honoured only when the host environment is "Test"; swaps in the
-        // deterministic StubJevClient for the local brain.
-        ["PoMiniGames:Jev:UseStub"] = "true",
         // PoBrawl dossiers: free, but a live call to en.wikipedia.org. Tests serve the static facts.
         ["PoMiniGames:PoBrawl:Dossier:FetchWikipedia"] = "false",
         ["KeyVault:Uri"] = "",

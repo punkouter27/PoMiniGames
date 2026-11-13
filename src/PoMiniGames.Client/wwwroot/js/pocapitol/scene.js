@@ -1,6 +1,6 @@
 import * as THREE from 'three';
 import { areas, obstacles, columns, statues, milestones, lineDefs, selectLeader, groundHeight, walkable, CROWD_SIZE, MAX_POLICE, CIVILIANS, CURFEW_ELAPSED } from './world.js';
-import { createCrowd, createDistantCrowd, flagTexture, coats } from './crowd.js';
+import { createCrowd, createDistantCrowd, bakeImpostors, flagTexture, coats } from './crowd.js';
 import { SURFACE, addSurface, surfaceTexture, createSky, setSkyColors, createEnvironment, addWave, softTexture } from './look.js';
 import { createParticles } from './particles.js';
 import { createBursts } from './bursts.js';
@@ -8,6 +8,7 @@ import { createDecals } from './decals.js';
 import { createPost } from './post.js';
 import { createCampus } from './campus.js';
 import { addArchitecturalDetail } from './architecture.js';
+import { createWear } from './ground.js';
 
 // The chamber is drawn but never walked: its doors stay barricaded, as they did. It is only
 // seen in the closing shot, empty.
@@ -125,11 +126,20 @@ export function createScene(host, { figure, osm, signs = [] } = {}) {
     scene.environment = environment.build();
     let envStage = 0;
 
-    const materials = new Map(), geometries = new Set(), textures = new Set(), walls = [], loose = [];
+    const materials = new Map(), geometries = new Set(), textures = new Set(), walls = [], loose = [], glassMaterials = [];
     const surfaces = surfaceTexture();
     textures.add(surfaces);
     const shadowBlob = softTexture('shadow');
     textures.add(shadowBlob);
+    // Where the crowd has walked, as a texture the lawn and paving shaders read (ground.js).
+    const wear = createWear();
+    const wearTexture = new THREE.DataTexture(wear.bytes, wear.size, wear.size, THREE.RedFormat);
+    wearTexture.magFilter = wearTexture.minFilter = THREE.LinearFilter;
+    wearTexture.needsUpdate = true;
+    textures.add(wearTexture);
+    const wearUniforms = { map: { value: wearTexture },
+        rect: { value: new THREE.Vector4(wear.rect.x0, wear.rect.z0, 1 / wear.rect.w, 1 / wear.rect.d) } };
+    let wearClock = 0, wearElapsed = 0;
     function surfaceKind(color) {
         if (GRASS.has(color)) return SURFACE.grass;
         if (PAVING.has(color)) return SURFACE.paving;
@@ -144,13 +154,35 @@ export function createScene(host, { figure, osm, signs = [] } = {}) {
         if (!materials.has(key)) {
             let value;
             if (GLASS.has(color)) {
-                // Old window glass: dark, smooth, and it shows the overcast.
-                value = new THREE.MeshStandardMaterial({ color: '#2a3542', roughness: 0.08, metalness: 0.1, envMapIntensity: 1.6 });
+                // Old window glass: dark, smooth, and it shows the overcast. After dark the rooms
+                // behind it are lit, but not all of them: the glow is switched per window.
+                value = new THREE.MeshStandardMaterial({ color: '#2a3542', roughness: 0.08, metalness: 0.1, envMapIntensity: 1.6,
+                    emissive: '#ffcf8a', emissiveIntensity: 0 });
+                value.onBeforeCompile = shader => {
+                    shader.vertexShader = shader.vertexShader
+                        .replace('#include <common>', '#include <common>\nvarying vec3 vPanePos;')
+                        .replace('#include <worldpos_vertex>', `#include <worldpos_vertex>
+                            // The pane's own centre, so the whole window is lit or dark together.
+                            vec4 paneP = vec4(0.0, 0.0, 0.0, 1.0);
+                            #ifdef USE_INSTANCING
+                                paneP = instanceMatrix * paneP;
+                            #endif
+                            vPanePos = (modelMatrix * paneP).xyz;`);
+                    shader.fragmentShader = shader.fragmentShader
+                        .replace('#include <common>', '#include <common>\nvarying vec3 vPanePos;')
+                        .replace('#include <emissivemap_fragment>', `#include <emissivemap_fragment>
+                            float paneLit = fract(sin(dot(floor(vPanePos * 2.0 + 0.5), vec3(12.9898, 78.233, 37.719))) * 43758.5453);
+                            totalEmissiveRadiance *= step(0.42, paneLit) * (0.55 + 0.45 * fract(paneLit * 7.3));`);
+                };
+                value.customProgramCacheKey = () => 'pocapitol-pane';
+                glassMaterials.push(value);
             } else if (METAL.has(color)) {
                 const [metal, rough] = METAL.get(color);
                 value = new THREE.MeshStandardMaterial({ color, roughness: rough, metalness: metal });
             } else {
-                value = addSurface(new THREE.MeshStandardMaterial({ color, roughness: 0.78, metalness }), surfaceKind(color), surfaces, surfaceDetail);
+                const kind = surfaceKind(color);
+                value = addSurface(new THREE.MeshStandardMaterial({ color, roughness: 0.78, metalness }), kind, surfaces, surfaceDetail,
+                    kind === SURFACE.grass || kind === SURFACE.paving ? wearUniforms : null);
             }
             materials.set(key, value);
         }
@@ -301,7 +333,7 @@ export function createScene(host, { figure, osm, signs = [] } = {}) {
     mesh(new THREE.CylinderGeometry(12.15, 12.15, 0.35, 48), '#e7e0d2', 0, 19.4, -14);
     // The dome: drum and peristyle of 36 columns, attic, cast-iron shell with ribs and a ring
     // of windows, lantern with its own colonnade, and a robed bronze figure on top.
-    mesh(new THREE.CylinderGeometry(11, 12.5, 6, 48), '#d8d1c3', 0, 22, -14);
+    const domeDrum = mesh(new THREE.CylinderGeometry(11, 12.5, 6, 48), '#d8d1c3', 0, 22, -14);
     for (let i = 0; i < 36; i++) {
         const angle = i / 36 * Math.PI * 2, between = angle + Math.PI / 36;
         column(Math.sin(angle) * 11.9, -14 + Math.cos(angle) * 11.9, 5, 19, 0.75);
@@ -312,10 +344,10 @@ export function createScene(host, { figure, osm, signs = [] } = {}) {
     }
     for (const [radius, y] of [[12.6, 19], [12.6, 24.7], [11.25, 26.4]])
         mesh(new THREE.CylinderGeometry(radius, radius, 0.55, 64), '#ede5d6', 0, y, -14);
-    mesh(new THREE.CylinderGeometry(11.12, 11.12, 1.5, 64), '#e2dacb', 0, 25.6, -14);
+    const domeAttic = mesh(new THREE.CylinderGeometry(11.12, 11.12, 1.5, 64), '#e2dacb', 0, 25.6, -14);
     const domePoints = [[11, 0], [10.7, 2], [9.5, 5], [7, 8], [3, 10.5], [1.8, 11]]
         .map(([r, y]) => new THREE.Vector2(r, y));
-    mesh(new THREE.LatheGeometry(domePoints, 64), '#ede5d6', 0, 26.7, -14);
+    const domeShell = mesh(new THREE.LatheGeometry(domePoints, 64), '#ede5d6', 0, 26.7, -14);
     for (let i = 0; i < 36; i++) {
         const angle = i / 36 * Math.PI * 2;
         const points = domePoints.map(p => new THREE.Vector3(Math.sin(angle) * (p.x + 0.04), p.y + 26.7, -14 + Math.cos(angle) * (p.x + 0.04)));
@@ -324,7 +356,13 @@ export function createScene(host, { figure, osm, signs = [] } = {}) {
         const dormer = box(Math.sin(between) * 10.92, 27.7, -14 + Math.cos(between) * 10.92, 0.45, 0.9, 0.08, '#566371');
         dormer.rotation.set(-0.1, between, 0, 'YXZ');
     }
-    mesh(new THREE.CylinderGeometry(1.3, 1.8, 2.8, 24), '#c9c4b8', 0, 39, -14);
+    const domeLantern = mesh(new THREE.CylinderGeometry(1.3, 1.8, 2.8, 24), '#c9c4b8', 0, 39, -14);
+    // The dome is floodlit after dark. Its shell, drum, attic and lantern share one material of
+    // their own, so the glow can be raised at dusk without lighting every cornice in the building.
+    const domeLit = addSurface(new THREE.MeshStandardMaterial({ color: '#ede5d6', roughness: 0.78, emissive: '#ffe9c6', emissiveIntensity: 0 }),
+        SURFACE.stone, surfaces, surfaceDetail);
+    materials.set('dome-lit', domeLit);
+    for (const lit of [domeDrum, domeAttic, domeShell, domeLantern]) lit.material = domeLit;
     for (let i = 0; i < 12; i++) {
         const angle = i / 12 * Math.PI * 2;
         mesh(new THREE.CylinderGeometry(0.09, 0.11, 2.6, 6), '#ede5d6', Math.sin(angle) * 1.95, 39, -14 + Math.cos(angle) * 1.95);
@@ -512,6 +550,31 @@ export function createScene(host, { figure, osm, signs = [] } = {}) {
     flood.position.set(0, 12, 38);
     scene.add(flood);
 
+    // Police vehicles drawn up off the lawn on both sides, light bars going. Plain white boxes
+    // with a stripe: no make and no markings. One real light stands in for all the bars.
+    const barRed = new THREE.MeshStandardMaterial({ color: '#3a0d0d', emissive: '#ff2a1c', emissiveIntensity: 0.3, roughness: 0.4 });
+    const barBlue = new THREE.MeshStandardMaterial({ color: '#0d1a3a', emissive: '#2a5cff', emissiveIntensity: 0.3, roughness: 0.4 });
+    materials.set('bar-red', barRed); materials.set('bar-blue', barBlue);
+    for (const [vx, vz, turn] of [[-43.6, 27, 0.12], [-44.6, 36.5, -0.08], [43.6, 30, -0.1], [44.3, 41, 0.15]]) {
+        const cos = Math.cos(turn), sin = Math.sin(turn), base = groundHeight(vx, vz);
+        const park = (part, lx, lz) => {
+            part.position.x = vx + lx * cos + lz * sin; part.position.z = vz - lx * sin + lz * cos;
+            part.position.y += base; part.rotation.y = turn;
+            return part;
+        };
+        park(box(0, 0.8, 0, 1.95, 0.9, 4.9, '#e9e9e4'), 0, 0);
+        park(box(0, 0.82, 0, 1.97, 0.18, 4.92, '#2b477a'), 0, 0);
+        park(box(0, 1.56, 0, 1.8, 0.62, 2.7, '#20262c'), 0, 0.25);
+        for (const sx of [-1, 1]) for (const sz of [-1.55, 1.55]) {
+            park(mesh(new THREE.CylinderGeometry(0.36, 0.36, 0.24, 12), '#1c1d1f', 0, 0.36, 0), sx * 0.95, sz).rotation.z = Math.PI / 2;
+        }
+        park(box(0, 1.94, 0, 0.7, 0.13, 0.3, '#3a0d0d'), -0.42, 0.25).material = barRed;
+        park(box(0, 1.94, 0, 0.7, 0.13, 0.3, '#0d1a3a'), 0.42, 0.25).material = barBlue;
+    }
+    const strobe = new THREE.PointLight('#ff2a1c', 0, 55, 1.6);
+    strobe.position.set(-40, 2.6, 31.5);
+    scene.add(strobe);
+
     const architecturalDetail = addArchitecturalDetail({ box, mesh, column, materials, painted });
     for (const light of architecturalDetail.interiorLights) scene.add(light);
 
@@ -542,33 +605,129 @@ export function createScene(host, { figure, osm, signs = [] } = {}) {
         scene.add(value); loose.push(value);
         return value;
     }
-    // The thousands who stayed outside: painted figures turned to the camera, never simulated.
+    // The thousands who stayed outside: sprites of the game's own figure, never simulated. They
+    // are placed here and drawn further down, once the scene they are photographed in is complete.
     const DISTANT = 1400;
     const farSpots = [];
     for (let i = 0; i < DISTANT; i++) {
         const behind = random() < 0.55;
-        const x = behind ? (random() * 2 - 1) * 82 : (random() < 0.5 ? -1 : 1) * (40.5 + random() ** 1.6 * 46);
+        let x = behind ? (random() * 2 - 1) * 82 : (random() < 0.5 ? -1 : 1) * (40.5 + random() ** 1.6 * 46);
         const z = behind ? 110 + random() ** 1.5 * 44 : 18 + random() * 92;
+        // Nobody stands inside the police vehicles parked off the lawn.
+        if (!behind && Math.abs(x) < 47.5 && z > 22 && z < 46) x += Math.sign(x) * 7;
+        // Most face the building; everyone is turned a little their own way.
         farSpots.push({ x, z, y: groundHeight(x, z), scale: 0.92 + random() * 0.16,
-            coat: Math.floor(random() * coats.length), cell: Math.floor(random() * 8) });
+            coat: Math.floor(random() * coats.length), cell: Math.floor(random() * 12),
+            face: Math.atan2(x * 0.35, z + 14) + (random() - 0.5) * 0.9 });
     }
-    const farCrowd = createDistantCrowd(scene, farSpots, { time, shadowTexture: shadowBlob });
-    const farFlagMaterial = addWave(new THREE.MeshLambertMaterial({ map: flagTexture(), side: THREE.DoubleSide }), time);
-    textures.add(farFlagMaterial.map); materials.set('far-flags', farFlagMaterial);
-    const farFlags = instanced(new THREE.PlaneGeometry(1.7, 1.1, 12, 4), farFlagMaterial, 70);
-    farFlags.layers.set(1);
+    // The stands, the press tower and the scaffold fill with people once the first line is gone:
+    // the pictures of the day are of a crowd standing on the inauguration platform's own seating.
+    // The first few are on the press tower from the start; the rest climb up in the order below.
+    const perchSpots = [];
+    const perch = (x, y, z, face) => perchSpots.push({ x, y, z, scale: 0.92 + random() * 0.14,
+        coat: Math.floor(random() * coats.length), cell: Math.floor(random() * 12), face: face + (random() - 0.5) * 1.1 });
+    for (const [dx, dz, y] of [[-1.2, -1, 3.48], [0.9, 0.6, 3.48], [-0.3, 1.3, 3.48], [1.2, -1.2, 3.48], [0.8, -0.9, 6.68], [-1.3, 0.9, 6.68]]) {
+        perch(-44 + dx, y, 58 + dz, Math.PI * 0.75);
+    }
+    const PERCH_ALWAYS = perchSpots.length;
+    const climbers = [];
+    for (const o of obstacles) {
+        if (o.kind !== 'bleacher') continue;
+        for (let tier = 0; tier < 4; tier++) {
+            for (let x = o.x - o.w / 2 + 0.7; x < o.x + o.w / 2 - 0.5; x += 0.78) {
+                if (random() < 0.24) continue;
+                // Half watch the line below them, half have turned to look at the building.
+                climbers.push([x + (random() - 0.5) * 0.3, (tier + 1) * 1.1, o.z + 2.25 - tier * 1.5 + (random() - 0.5) * 0.7,
+                    random() < 0.5 ? Math.PI : Math.atan2(-o.x * 0.4, -20), random() + tier * 0.22]);
+            }
+        }
+        // And a few on top of the sheeted roof, at the front edge.
+        for (let i = 0; i < 5; i++) climbers.push([o.x + (random() - 0.5) * (o.w - 3), 6.38, o.z + o.d / 2 - 0.5 - random() * 1.2, Math.PI, 1.2 + random()]);
+    }
+    // Lower tiers fill first, the roof last.
+    climbers.sort((a, b) => a[4] - b[4]);
+    for (const [x, y, z, face] of climbers) perch(x, y, z, face);
+    // Flags over the far crowd, in about the mix the photographs show, on poles of every length.
+    const FAR_FLAGS = [['us', 46], ['trump', 44], ['gadsden', 14], ['trump-red', 16]];
     const poleMaterial = new THREE.MeshStandardMaterial({ color: '#b7a587', roughness: 0.6 });
     materials.set('far-poles', poleMaterial);
-    const farPoles = instanced(new THREE.CylinderGeometry(0.025, 0.03, 1, 5), poleMaterial, 70);
-    for (let i = 0; i < 70; i++) {
-        const spot = farSpots[i * 20], yaw = random() * 0.6 - 0.3, top = 3.3 + random() * 0.6;
-        pose.position.set(spot.x, spot.y + top, spot.z); pose.rotation.set(0, yaw, 0);
-        pose.scale.setScalar(1); pose.updateMatrix();
-        farFlags.setMatrixAt(i, pose.matrix);
-        const poleX = spot.x - Math.cos(yaw) * 0.85, poleZ = spot.z + Math.sin(yaw) * 0.85;
-        pose.position.set(poleX, spot.y + (top + 0.55) / 2, poleZ); pose.rotation.set(0, 0, 0);
-        pose.scale.set(1, top + 0.55, 1); pose.updateMatrix();
-        farPoles.setMatrixAt(i, pose.matrix);
+    const farPoles = instanced(new THREE.CylinderGeometry(0.025, 0.03, 1, 5), poleMaterial, FAR_FLAGS.reduce((n, f) => n + f[1], 0));
+    const farFlagGeometry = new THREE.PlaneGeometry(1.7, 1.1, 12, 4);
+    const farFlags = [];
+    let farPole = 0;
+    for (const [kind, count] of FAR_FLAGS) {
+        const flagMaterial = addWave(new THREE.MeshLambertMaterial({ map: flagTexture(kind), side: THREE.DoubleSide }), time, { wind });
+        textures.add(flagMaterial.map); materials.set(`far-flags-${kind}`, flagMaterial);
+        const flags = instanced(farFlagGeometry, flagMaterial, count);
+        flags.layers.set(1);
+        farFlags.push({ flags, count });
+        for (let i = 0; i < count; i++, farPole++) {
+            const spot = farSpots[(farPole * 11) % DISTANT], yaw = random() * 0.6 - 0.3, top = 3.1 + random() ** 1.5 * 2.6;
+            pose.position.set(spot.x, spot.y + top, spot.z); pose.rotation.set(0, yaw, 0);
+            pose.scale.setScalar(1); pose.updateMatrix();
+            flags.setMatrixAt(i, pose.matrix);
+            const poleX = spot.x - Math.cos(yaw) * 0.85, poleZ = spot.z + Math.sin(yaw) * 0.85;
+            pose.position.set(poleX, spot.y + (top + 0.55) / 2, poleZ); pose.rotation.set(0, 0, 0);
+            pose.scale.set(1, top + 0.55, 1); pose.updateMatrix();
+            farPoles.setMatrixAt(farPole, pose.matrix);
+        }
+    }
+    // Banners hung on the stands once the crowd has them: a long one across the top of each open
+    // front, and the national flag down the end that faces the approach. They unroll from the top.
+    const drapes = [];
+    const banner = (text, field, ink) => painted(ctx => {
+        ctx.fillStyle = field; ctx.fillRect(0, 0, 768, 128);
+        ctx.strokeStyle = ink; ctx.lineWidth = 6; ctx.strokeRect(9, 9, 750, 110);
+        ctx.fillStyle = ink; ctx.textAlign = 'center'; ctx.font = 'bold 84px sans-serif';
+        ctx.fillText(text, 384, 94, 700);
+    }, 768, 128, { lit: true, material: { roughness: 0.92 } });
+    const hungFlag = new THREE.MeshStandardMaterial({ map: flagTexture('us'), side: THREE.DoubleSide, roughness: 0.92 });
+    textures.add(hungFlag.map); materials.set('hung-flag', hungFlag);
+    for (const o of obstacles) {
+        if (o.kind !== 'bleacher') continue;
+        const side = Math.sign(o.x);
+        const hang = (geometry, mat, x, top, z, yaw) => {
+            geometries.add(geometry);
+            const cloth = new THREE.Mesh(geometry, mat);
+            cloth.position.set(x, top, z); cloth.rotation.y = yaw; cloth.receiveShadow = true; cloth.visible = false;
+            scene.add(cloth);
+            drapes.push({ cloth, top, height: geometry.parameters.height });
+        };
+        hang(new THREE.PlaneGeometry(9.5, 1.55), side < 0 ? banner('TRUMP 2020', '#233d78', '#ffffff') : banner('STOP THE STEAL', '#f1efe8', '#a9353e'),
+            o.x - side * 2.5, 6.2, o.z + o.d / 2 + 0.16, 0);
+        hang(new THREE.PlaneGeometry(4.2, 2.8), hungFlag, o.x - side * (o.w / 2 + 0.15), 6.0, o.z + 0.3, -side * Math.PI / 2);
+    }
+    // The outer line of green snow fencing across the lawn. It is standing when the day starts
+    // and goes down, panel by panel, as the front of the crowd walks into it.
+    const FENCE_Z = 74, FENCE_PANELS = 8;
+    const fenceGeometry = new THREE.PlaneGeometry(6, 1.35);
+    fenceGeometry.translate(0, 0.675, 0);
+    const fence = instanced(fenceGeometry, materials.get('snow-fence'), FENCE_PANELS);
+    fence.receiveShadow = true;
+    const fenceFell = new Array(FENCE_PANELS).fill(-1);
+    const fenceX = i => (i - (FENCE_PANELS - 1) / 2) * 6;
+    // What a crowd drops and does not go back for: hats and gloves, more of them as the day goes.
+    const LOST = 84;
+    const lostHatMaterial = new THREE.MeshStandardMaterial({ color: '#ffffff', roughness: 0.9 });
+    const lostGloveMaterial = new THREE.MeshStandardMaterial({ color: '#23262b', roughness: 0.85 });
+    materials.set('lost-hats', lostHatMaterial); materials.set('lost-gloves', lostGloveMaterial);
+    const lostHats = instanced(new THREE.SphereGeometry(0.13, 8, 4, 0, Math.PI * 2, 0, Math.PI / 2), lostHatMaterial, LOST / 2);
+    const lostGloves = instanced(new THREE.BoxGeometry(0.1, 0.035, 0.2), lostGloveMaterial, LOST / 2);
+    lostHats.receiveShadow = lostGloves.receiveShadow = true;
+    {
+        // Furthest from the building first: that is the ground the crowd crosses first.
+        const where = Array.from({ length: LOST }, () => ({ x: (random() * 2 - 1) * 27, z: 23 + random() * 56, turn: random() * Math.PI * 2, pick: random() }))
+            .sort((a, b) => b.z - a.z);
+        const hatColors = ['#a93737', '#a93737', '#24324f', '#3a3a3a', '#7d7f45', '#c9c3b5'];
+        where.forEach((spot, i) => {
+            const hat = i % 2 === 0, n = Math.floor(i / 2);
+            pose.position.set(spot.x, groundHeight(spot.x, spot.z) + (hat ? 0.01 : 0.03), spot.z);
+            pose.rotation.set(hat ? (spot.pick - 0.5) * 0.9 : 0, spot.turn, hat ? (spot.pick - 0.5) * 0.6 : 0);
+            pose.scale.set(1, hat ? 0.7 : 1, 1); pose.updateMatrix();
+            (hat ? lostHats : lostGloves).setMatrixAt(n, pose.matrix);
+            if (hat) lostHats.setColorAt(n, tint.set(hatColors[Math.floor(spot.pick * hatColors.length)]));
+        });
+        lostHats.count = lostGloves.count = 0;
     }
     // Bike racks along the first line. They bow with the line and go over when it breaks.
     const rackMaterial = painted(ctx => {
@@ -732,7 +891,15 @@ export function createScene(host, { figure, osm, signs = [] } = {}) {
         light.position.set(x, y, z); light.color.set(color); light.intensity = intensity;
     }
 
-    const crowd = createCrowd(scene, CROWD_SIZE + MAX_POLICE + CIVILIANS + 1, { time, groundHeight, shadowTexture: shadowBlob, figure, wind, signs });
+    const crowd = createCrowd(scene, CROWD_SIZE + MAX_POLICE + CIVILIANS + 1, { time, groundHeight, shadowTexture: shadowBlob, figure, wind, signs, detail: surfaceDetail });
+    // The far crowd is photographed from the rigged figure, here, now that every light the scene
+    // will ever have exists: the pictures are then lit and compiled exactly as the near crowd is.
+    // A device on the lowest tier keeps the painted far crowd: the bake costs memory it does not have.
+    const impostors = figure && window.PoQuality?.tier?.() !== 'low' ? bakeImpostors(renderer, scene, figure, { detail: surfaceDetail }) : null;
+    const farCrowd = createDistantCrowd(scene, farSpots, { time, shadowTexture: shadowBlob, atlas: impostors });
+    const perchCrowd = createDistantCrowd(scene, perchSpots, { time, shadowTexture: shadowBlob, atlas: impostors });
+    perchCrowd.setCount(PERCH_ALWAYS);
+    let perchShare = 1, standsTaken = -1;
     const marker = mesh(new THREE.TorusGeometry(1.1, 0.08, 8, 36), '#ebce77', 0, 0.2, 23);
     marker.rotation.x = -Math.PI / 2;
     marker.material = new THREE.MeshStandardMaterial({ color: '#ebce77', emissive: '#c99a2e', emissiveIntensity: 0.6 });
@@ -787,7 +954,13 @@ export function createScene(host, { figure, osm, signs = [] } = {}) {
         }
         const distant = Math.floor(DISTANT * settings.distant);
         farCrowd.setCount(distant);
-        farFlags.count = farPoles.count = Math.floor(70 * settings.distant);
+        let poles = 0;
+        for (const f of farFlags) { f.flags.count = Math.floor(f.count * settings.distant); poles += f.count; }
+        // Poles are laid out kind by kind, so trimming each kind would leave bare poles behind:
+        // below the top rung the poles go and the flags that remain simply fly.
+        farPoles.count = settings.distant >= 0.99 ? poles : 0;
+        perchShare = settings.distant >= 0.4 ? 1 : 0.5;
+        lostHats.visible = lostGloves.visible = settings.extras;
         crowd.setExtras(settings.extras);
         bursts.setDensity(settings.extras ? 1 : 0.3);
         papers.visible = settings.extras;
@@ -922,6 +1095,9 @@ export function createScene(host, { figure, osm, signs = [] } = {}) {
         globeMaterial.emissiveIntensity = 0.2 + dusk * 4;
         flood.intensity = dusk * 170;
         floodMaterial.emissiveIntensity = dusk * 7;
+        // After dark: the dome under its floodlights, and lamps on behind about half the windows.
+        domeLit.emissiveIntensity = dusk * 0.4;
+        for (const glass of glassMaterials) glass.emissiveIntensity = dusk * 1.7;
         const daylight = Math.min(1, (sun.intensity + fill.intensity * 2.5) / (SUN[0][1] + FILL[0][1]));
         farCrowd.setLight(0.3 + 0.62 * daylight);
         const indoorGas = state.effects.some(e => e.type === 'gas' && e.z < 14);
@@ -1001,7 +1177,57 @@ export function createScene(host, { figure, osm, signs = [] } = {}) {
         droppedFlags.count = brokenLines * FLAGS_PER_LINE;
 
         const quiet = calm();
-        particles.update(state.effects, state.elapsed, daylight, quiet, wind);
+        particles.update(state.effects, state.elapsed, daylight, quiet, wind, dusk);
+        // Light bars: two quick flashes of red, then two of blue. Dim by day, and after dark the
+        // colour washes over the wet stone and the backs of the crowd. Steady for anyone who
+        // asked for less flashing.
+        const bars = 0.3 + 0.7 * dusk;
+        if (quiet || motionReduction) {
+            barRed.emissiveIntensity = barBlue.emissiveIntensity = 1.4 * bars;
+            strobe.color.set('#a04a9a'); strobe.intensity = dusk * 22;
+        } else {
+            const beat = clock * 1.3 % 2, red = beat < 1, within = beat % 1;
+            const lit = within < 0.14 || (within > 0.26 && within < 0.4);
+            barRed.emissiveIntensity = red && lit ? 9 * bars : 0.3;
+            barBlue.emissiveIntensity = !red && lit ? 9 * bars : 0.3;
+            strobe.color.set(red ? '#ff2a1c' : '#2a5cff');
+            strobe.intensity = lit ? dusk * 150 : 0;
+        }
+        // The lawn under the crowd. A new attempt starts on clean grass, with the fence back up.
+        if (state.elapsed < wearElapsed) { wear.reset(); fenceFell.fill(-1); standsTaken = -1; wearClock = 0; }
+        wearElapsed = state.elapsed;
+        const afoot = state.companions;
+        if (state.status === 'active' && state.elapsed - wearClock >= 0.25) {
+            const tick = Math.min(0.5, state.elapsed - wearClock);
+            wearClock = state.elapsed;
+            wear.tread(afoot.filter(actor => actor.health > 0 && actor.z > 14.5), tick);
+            if (state.role === 'raider') wear.tread([{ x: state.player.x, z: state.player.z, moving: true }], tick);
+        }
+        if (wear.dirty) { wear.dirty = false; wearTexture.needsUpdate = true; }
+        // The outer fence: a panel goes over when the first people reach it, and stays down.
+        for (let i = 0; i < FENCE_PANELS; i++) {
+            const x = fenceX(i);
+            if (fenceFell[i] < 0 && afoot.some(actor => actor.health > 0 && actor.z < FENCE_Z + 1.1 && Math.abs(actor.x - x) < 3.3)) fenceFell[i] = clock;
+            const fall = fenceFell[i] < 0 ? 0 : Math.min(1, (clock - fenceFell[i]) / 0.7);
+            pose.position.set(x, groundHeight(x, FENCE_Z) + 0.02 + 0.03 * fall, FENCE_Z);
+            pose.rotation.set(-(Math.PI / 2 - 0.05) * fall * fall, (i * 37 % 7 - 3) * 0.02 * fall, 0);
+            pose.scale.setScalar(1); pose.updateMatrix();
+            fence.setMatrixAt(i, pose.matrix);
+        }
+        fence.instanceMatrix.needsUpdate = true;
+        // Once the bike racks are gone the stands are taken: people climb the tiers over the
+        // next minute and hang their banners from the scaffold.
+        if (standsTaken < 0 && first.state === 'broken') standsTaken = state.elapsed;
+        const taken = standsTaken < 0 ? 0 : Math.min(1, (state.elapsed - standsTaken) / 45);
+        perchCrowd.setCount(Math.floor((PERCH_ALWAYS + (perchSpots.length - PERCH_ALWAYS) * taken * (2 - taken)) * perchShare));
+        perchCrowd.setLight(0.3 + 0.62 * daylight);
+        for (const drape of drapes) {
+            const unrolled = Math.min(1, Math.max(0, taken * 9 - 0.6));
+            drape.cloth.visible = unrolled > 0;
+            drape.cloth.scale.y = Math.max(0.02, unrolled);
+            drape.cloth.position.y = drape.top - drape.height * unrolled / 2;
+        }
+        lostHats.count = lostGloves.count = Math.floor(Math.min(1, state.elapsed / 170) * LOST / 2);
         // Footprints: a few hundred people walking wet grit and thin snow leave a record of
         // where the crowd went, one boot at a time, about a stride apart.
         if (state.status === 'active') {
@@ -1297,6 +1523,8 @@ export function createScene(host, { figure, osm, signs = [] } = {}) {
         observer.disconnect();
         crowd.dispose();
         farCrowd.dispose();
+        perchCrowd.dispose();
+        impostors?.dispose();
         particles.dispose();
         bursts.dispose(); decals.dispose();
         for (const light of flares) scene.remove(light);

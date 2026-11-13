@@ -14,7 +14,6 @@ public sealed class ProfileProgressTests
     [InlineData("/poecosystem/demo", "poecosystem")]
     [InlineData("sandplayground/1player", "sandplayground")]
     [InlineData("pocabinet/multi#lobby", "pocabinet")]
-    [InlineData("pojevarena/2player", "pojevarena")]
     // The route and the stat key differ for Fun Quiz: the stat key is what is counted.
     [InlineData("funquiz/1player", "pofunquiz")]
     [InlineData("couplequiz", "pocouplequiz")]

@@ -1,0 +1,256 @@
+<!DOCTYPE html>
+<html lang="en" data-tier="2" data-theme="light">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>PoMiniGames — User Journeys &amp; Experience (2026-11-12)</title>
+  <script src="https://cdn.jsdelivr.net/npm/mermaid@10.9.0/dist/mermaid.min.js"></script>
+  <style>
+    :root {
+      --bg: #f6f8fb; --surface: #ffffff; --surface-alt: #f0f4f9;
+      --text: #0f172a; --text-muted: #475569; --border: #dbe3ee;
+      --accent: #2563eb; --accent-soft: #dbeafe;
+      --green: #059669; --green-soft: #d1fae5;
+      --amber: #d97706; --amber-soft: #fef3c7;
+      --purple: #7c3aed; --purple-soft: #ede9fe;
+      --code-bg: #0f172a; --code-text: #e2e8f0;
+      --shadow: 0 2px 10px rgba(15, 23, 42, 0.06); --radius: 12px;
+    }
+    html[data-theme="dark"] {
+      --bg: #0b1120; --surface: #111827; --surface-alt: #1e293b;
+      --text: #f1f5f9; --text-muted: #94a3b8; --border: #334155;
+      --accent: #60a5fa; --accent-soft: #1e3a8a;
+      --green: #34d399; --green-soft: #064e3b;
+      --amber: #fbbf24; --amber-soft: #78350f;
+      --purple: #a78bfa; --purple-soft: #4c1d95;
+      --code-bg: #020617; --code-text: #e2e8f0;
+      --shadow: 0 4px 16px rgba(0, 0, 0, 0.35);
+    }
+    * { box-sizing: border-box; }
+    body { margin: 0; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Inter, sans-serif; background: var(--bg); color: var(--text); line-height: 1.6; overflow-x: hidden; }
+    .topbar { position: sticky; top: 0; z-index: 100; background: var(--surface); border-bottom: 1px solid var(--border); padding: 0.75rem 1.25rem; display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 0.75rem; box-shadow: var(--shadow); }
+    .brand { display: flex; align-items: center; gap: 0.6rem; font-weight: 700; font-size: 1.05rem; }
+    .brand-badge { background: var(--accent); color: #fff; font-size: 0.72rem; padding: 0.18rem 0.5rem; border-radius: 999px; }
+    .nav-links { display: flex; flex-wrap: wrap; gap: 0.4rem; }
+    .nav-links a { text-decoration: none; color: var(--text-muted); font-size: 0.85rem; padding: 0.35rem 0.65rem; border-radius: 8px; border: 1px solid transparent; }
+    .nav-links a.active, .nav-links a:hover { color: var(--accent); background: var(--accent-soft); border-color: var(--border); }
+    .controls { display: flex; flex-wrap: wrap; align-items: center; gap: 0.5rem; }
+    .tier-group { display: inline-flex; background: var(--surface-alt); border: 1px solid var(--border); border-radius: 999px; padding: 2px; }
+    .tier-btn { border: none; background: transparent; color: var(--text-muted); font-size: 0.78rem; font-weight: 600; padding: 0.3rem 0.65rem; border-radius: 999px; cursor: pointer; }
+    .tier-btn.active { background: var(--accent); color: #fff; }
+    .theme-btn { border: 1px solid var(--border); background: var(--surface-alt); color: var(--text); font-size: 0.8rem; padding: 0.32rem 0.65rem; border-radius: 8px; cursor: pointer; }
+    .container { max-width: 1200px; margin: 0 auto; padding: 1.5rem 1.25rem 3rem; }
+    .hero, .section { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); padding: 1.35rem; margin-bottom: 1.25rem; box-shadow: var(--shadow); }
+    .hero h1 { margin: 0 0 0.5rem; font-size: clamp(1.35rem, 2.5vw, 1.9rem); }
+    .section h2 { margin: 0 0 0.5rem; font-size: 1.2rem; }
+    .eli5 { background: var(--accent-soft); border-left: 4px solid var(--accent); padding: 0.85rem 1rem; border-radius: 0 8px 8px 0; margin: 0.75rem 0 1rem; }
+    .mermaid { background: var(--surface-alt); border: 1px solid var(--border); border-radius: 10px; padding: 1rem; overflow-x: auto; margin-top: 0.75rem; }
+    .narrative-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 0.75rem; margin-top: 1rem; }
+    .step-card { background: var(--surface-alt); border: 1px solid var(--border); border-radius: 10px; padding: 0.85rem; }
+    .step-num { display: inline-flex; width: 24px; height: 24px; align-items: center; justify-content: center; border-radius: 50%; background: var(--accent); color: #fff; font-size: 0.78rem; font-weight: 700; margin-right: 0.4rem; }
+    .cite { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size: 0.78rem; background: var(--green-soft); color: var(--green); padding: 0.12rem 0.4rem; border-radius: 5px; white-space: nowrap; }
+    code { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size: 0.85em; }
+    pre { background: var(--code-bg); color: var(--code-text); padding: 0.85rem 1rem; border-radius: 8px; overflow-x: auto; font-size: 0.8rem; }
+    footer { margin-top: 2rem; padding-top: 1rem; border-top: 1px solid var(--border); font-size: 0.82rem; color: var(--text-muted); display: flex; flex-wrap: wrap; justify-content: space-between; gap: 0.5rem; }
+    html[data-tier="1"] .tier-2, html[data-tier="1"] .tier-3, html[data-tier="2"] .tier-3 { display: none !important; }
+  </style>
+</head>
+<body>
+  <header class="topbar">
+    <div class="brand"><span>PoMiniGames Docs</span><span class="brand-badge">2026-11-12</span></div>
+    <nav class="nav-links">
+      <a href="index.html">Overview</a>
+      <a href="USER_WORKFLOW.html" class="active">User Journeys</a>
+      <a href="VISUAL_ARCHITECTURE_DASHBOARD.html">Architecture</a>
+      <a href="AI_SERVICES_REPORT.html">AI &amp; External</a>
+      <a href="AUTH_SECURITY_REPORT.html">Auth &amp; Security</a>
+      <a href="artifact.html">Tabbed Shell</a>
+    </nav>
+    <div class="controls">
+      <div class="tier-group">
+        <button class="tier-btn" data-set-tier="1">L1 Simple</button>
+        <button class="tier-btn" data-set-tier="2">L2 Standard</button>
+        <button class="tier-btn" data-set-tier="3">L3 Deep-Dive</button>
+      </div>
+      <button class="theme-btn" id="themeToggle" type="button">Theme: Light</button>
+    </div>
+  </header>
+
+  <main class="container">
+    <section class="hero">
+      <h1>User Journeys &amp; Experience</h1>
+      <div class="eli5">
+        <strong>In plain English:</strong> Players can browse leaderboards immediately, sign in with a Microsoft pass (or Guest pass in dev) to play, and never lose a finished score even if their Wi-Fi drops mid-game.
+      </div>
+    </section>
+
+    <section class="section">
+      <h2>Journey 1: Arriving, Signing In &amp; Launching a Game</h2>
+      <div class="eli5">
+        <strong>In plain English:</strong> When you open PoMiniGames, the browser performs one quick handshake with the front desk to check your visitor badge, then loads the game hub without reloading the page.
+      </div>
+      <div class="mermaid tier-2">
+flowchart TD
+  Start["Player opens /"] --> Handshake["GET /api/auth/handshake\n(Single-RTT auth + config check)"]
+  Handshake -->|"Signed in"| Hub["Game Hub + Watch All Demos"]
+  Handshake -->|"Anonymous"| Gate["AuthGate: Sign in with Microsoft\n(or Guest in Dev/Test)"]
+  Gate -->|"Browse only"| Boards["Public Leaderboards\n(Anonymous GET /api/leaderboards)"]
+  Gate -->|"Sign in"| Hub
+  Hub -->|"Pick a game"| Intro["GameIntro Modal\n(Controls + Setup + OK)"]
+  Intro -->|"Click OK"| Play["Lazy-load JS Engine\n&amp; Mint Play Session"]
+      </div>
+      <div class="narrative-grid">
+        <div class="step-card">
+          <div><span class="step-num">1</span><strong>Single-Trip Handshake</strong></div>
+          <p>The app asks <code>/api/auth/handshake</code> for both sign-in configuration and the current user in one round-trip.</p>
+          <div class="tier-3"><span class="cite">AuthEndpoints.cs:127-140</span></div>
+        </div>
+        <div class="step-card">
+          <div><span class="step-num">2</span><strong>Guest-First Reading</strong></div>
+          <p>Even before signing in, visitors can view public leaderboards, PoBrawl fighter dossiers, and shared PoEcosystem islands.</p>
+          <div class="tier-3"><span class="cite">EndpointRouteExtensions.cs:58-77</span></div>
+        </div>
+        <div class="step-card">
+          <div><span class="step-num">3</span><strong>One-Button Start Card</strong></div>
+          <p>Every game opens a consistent <code>GameIntro</code> modal showing controls and setup, with a single <strong>OK</strong> button to begin.</p>
+          <div class="tier-3"><span class="cite">README.md:83-87</span> <span class="cite">README.md:320</span></div>
+        </div>
+        <div class="step-card">
+          <div><span class="step-num">4</span><strong>On-Demand Engine Load</strong></div>
+          <p>The browser loads only the selected game's JavaScript module (<code>wwwroot/js/&lt;game&gt;/</code>) and mints a signed play session.</p>
+          <div class="tier-3"><span class="cite">README.md:16-17</span> <span class="cite">PlaySessionService.cs:48-54</span></div>
+        </div>
+      </div>
+    </section>
+
+    <section class="section">
+      <h2>Journey 2: Finishing a Run &amp; Offline Score Durability</h2>
+      <div class="eli5">
+        <strong>In plain English:</strong> When you finish a game, your score is sent with a time-stamped play session and anti-forgery token; if the server is offline, your browser parks the score in local storage and retries automatically later.
+      </div>
+      <div class="mermaid tier-2">
+flowchart LR
+  Finish["Game Over\n(GameOverModal)"] --> Submit["POST /api/{game}/scores\n(X-Play-Session + X-CSRF-TOKEN)"]
+  Submit -->|"200/201 OK"| Saved["Saved to Azure Table Storage\n&amp; Leaderboard Updated"]
+  Submit -->|"Network / 503 Error"| Park["Parked in localStorage\n(pominigames:pending-scores)"]
+  Park -->|"App Start / Reconnect"| Sync["ScoreSyncService.FlushAsync()\nReplays Queue in Order"]
+  Sync --> Saved
+      </div>
+      <div class="narrative-grid">
+        <div class="step-card">
+          <div><span class="step-num">1</span><strong>Automatic Header Stamping</strong></div>
+          <p>The client HTTP pipeline automatically attaches credentials, CSRF tokens, and the active <code>X-Play-Session</code> header.</p>
+          <div class="tier-3"><span class="cite">Client/Program.cs:55-88</span></div>
+        </div>
+        <div class="step-card">
+          <div><span class="step-num">2</span><strong>Two-Tier Score Check</strong></div>
+          <p>The server always checks absolute score bounds, and logs/verifies play-session elapsed time (Observe mode by default).</p>
+          <div class="tier-3"><span class="cite">ScoreIntegrityGuard.cs:59-90</span> <span class="cite">IntegrityOptions.cs:39-40</span></div>
+        </div>
+        <div class="step-card">
+          <div><span class="step-num">3</span><strong>Durable Offline Queue</strong></div>
+          <p>If the write fails, <code>PendingScoreStore</code> saves the JSON payload under <code>pominigames:pending-scores</code>.</p>
+          <div class="tier-3"><span class="cite">PendingScoreStore.cs:10-19</span></div>
+        </div>
+        <div class="step-card">
+          <div><span class="step-num">4</span><strong>Celebrated Sync</strong></div>
+          <p>When connectivity returns, <code>ScoreSyncService</code> flushes queued scores and fires a notification badge update.</p>
+          <div class="tier-3"><span class="cite">ScoreSyncService.cs:15-48</span></div>
+        </div>
+      </div>
+    </section>
+
+    <section class="section">
+      <h2>Journey 3: Live Multiplayer &amp; Reconnect Recovery</h2>
+      <div class="eli5">
+        <strong>In plain English:</strong> Online games use real-time SignalR rooms; if your connection blips, shared lobbies automatically rejoin you or offer a visible manual retry button.
+      </div>
+      <div class="mermaid tier-2">
+sequenceDiagram
+  actor P1 as Player 1 Browser
+  participant Hub as SignalR Lobby / Match Hub
+  actor P2 as Player 2 Browser
+  P1->>Hub: Connect (?access_token=... or DevCookie)
+  P2->>Hub: Connect &amp; Join Seat
+  Hub-->>P1: GameStarted / RaceStarting(code)
+  loop Active Match
+    P1->>Hub: Input / Move (60 Hz Rollback or Turn)
+    Hub-->>P2: Relayed Input / Authoritative State
+  end
+  Note over P1,Hub: On WebSocket drop: WithAutomaticReconnect() + visible rejoin
+      </div>
+      <div class="narrative-grid">
+        <div class="step-card">
+          <div><span class="step-num">1</span><strong>Lobby &amp; Match Split</strong></div>
+          <p>Fast action games (PoBrawl, PoRacer, PoCabinet, PoVoxelStrike) separate lobby seating from the high-frequency match hub.</p>
+          <div class="tier-3"><span class="cite">EndpointRouteExtensions.cs:123-136</span></div>
+        </div>
+        <div class="step-card">
+          <div><span class="step-num">2</span><strong>Rollback &amp; Prediction</strong></div>
+          <p>PoBrawl applies your own keys 2 frames ahead and re-simulates if the opponent's real input differs, showing a brief visual smear.</p>
+          <div class="tier-3"><span class="cite">README.md:23-33</span></div>
+        </div>
+        <div class="step-card">
+          <div><span class="step-num">3</span><strong>Host-Independent Timers</strong></div>
+          <p>PoCoupleQuiz, PoCabinet, and PoVoxelStrike drive match clocks from server singletons/hosted pumps so a player reconnect won't kill the room.</p>
+          <div class="tier-3"><span class="cite">GameServicesExtensions.cs:84-86,126-130,193-196</span></div>
+        </div>
+      </div>
+    </section>
+
+    <section class="section tier-3">
+      <h2>Deep-Dive: Shared Game Controls &amp; HUD Contract</h2>
+      <div class="eli5">
+        <strong>In plain English:</strong> Every game shares the same keyboard shortcuts for stats, pause, and modals so players never have to re-learn the interface.
+      </div>
+      <pre>Tab       → Toggle live stats panel (Esc closes)
+Esc / P   → Pause local gameplay (online menus warn that match keeps running)
+Space/G/H → PoCapitol fire, concussion grenade, smoke grenade
+Gamepad   → Supported across all 14 games + Home hub
+Haptics   → Gated by impactBus.js (pomini_haptics, reduced-motion aware)
+Audio     → Single AudioContext in audioBus.js (pomini_volume, sfx=100, music=0)</pre>
+      <p><span class="cite">README.md:34-45</span> <span class="cite">README.md:80-98</span></p>
+    </section>
+
+    <footer>
+      <span>Generated: 2026-11-12 &bull; Target Commit: <code>1e937297</code></span>
+      <span>PoMiniGames Documentation Suite &bull; User Journeys</span>
+    </footer>
+  </main>
+
+  <script>
+    (function () {
+      const root = document.documentElement;
+      const tierBtns = document.querySelectorAll('[data-set-tier]');
+      const themeBtn = document.getElementById('themeToggle');
+      function applyTier(t) {
+        const tier = ['1', '2', '3'].includes(String(t)) ? String(t) : '2';
+        root.setAttribute('data-tier', tier);
+        localStorage.setItem('pomini_docs_tier', tier);
+        tierBtns.forEach(b => b.classList.toggle('active', b.dataset.setTier === tier));
+      }
+      function renderMermaid(theme) {
+        if (!window.mermaid) return;
+        mermaid.initialize({ startOnLoad: false, theme: theme === 'dark' ? 'dark' : 'default', securityLevel: 'loose' });
+        document.querySelectorAll('.mermaid').forEach(el => {
+          if (!el.dataset.src) el.dataset.src = el.textContent;
+          el.removeAttribute('data-processed');
+          el.textContent = el.dataset.src;
+        });
+        mermaid.run({ querySelector: '.mermaid' });
+      }
+      function applyTheme(th) {
+        const theme = th === 'dark' ? 'dark' : 'light';
+        root.setAttribute('data-theme', theme);
+        localStorage.setItem('pomini_docs_theme', theme);
+        themeBtn.textContent = 'Theme: ' + (theme === 'dark' ? 'Dark' : 'Light');
+        renderMermaid(theme);
+      }
+      tierBtns.forEach(btn => btn.addEventListener('click', () => applyTier(btn.dataset.setTier)));
+      themeBtn.addEventListener('click', () => applyTheme(root.getAttribute('data-theme') === 'dark' ? 'light' : 'dark'));
+      applyTier(localStorage.getItem('pomini_docs_tier') || '2');
+      applyTheme(localStorage.getItem('pomini_docs_theme') || 'light');
+    })();
+  </script>
+</body>
+</html>

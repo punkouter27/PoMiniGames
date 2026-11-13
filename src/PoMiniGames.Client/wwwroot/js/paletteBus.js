@@ -27,7 +27,6 @@
         funquiz:       ['#fbbf24', '#818cf8'],
         pocabinet:     ['#f5c542', '#3b6fd8'],   // marquee gold / Capitol blue
         pomule:        ['#e0701a', '#9050d0'],   // Atari orange / Crystite purple
-        pojevarena:    ['#5b8cff', '#f0524f'],   // blue corner / red corner
         poecosystem:   ['#4ade80', '#0ea5e9'],   // canopy green / lagoon
         sandplayground: ['#e9b872', '#22b8cf'],  // dune sand / water
     };

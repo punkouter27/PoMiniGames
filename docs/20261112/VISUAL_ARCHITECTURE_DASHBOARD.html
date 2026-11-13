@@ -1,0 +1,303 @@
+<!DOCTYPE html>
+<html lang="en" data-tier="2" data-theme="light">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>PoMiniGames — Visual Architecture Dashboard (2026-11-12)</title>
+  <script src="https://cdn.jsdelivr.net/npm/mermaid@10.9.0/dist/mermaid.min.js"></script>
+  <style>
+    :root {
+      --bg: #f6f8fb; --surface: #ffffff; --surface-alt: #f0f4f9;
+      --text: #0f172a; --text-muted: #475569; --border: #dbe3ee;
+      --accent: #2563eb; --accent-soft: #dbeafe;
+      --green: #059669; --green-soft: #d1fae5;
+      --amber: #d97706; --amber-soft: #fef3c7;
+      --purple: #7c3aed; --purple-soft: #ede9fe;
+      --code-bg: #0f172a; --code-text: #e2e8f0;
+      --shadow: 0 2px 10px rgba(15, 23, 42, 0.06); --radius: 12px;
+    }
+    html[data-theme="dark"] {
+      --bg: #0b1120; --surface: #111827; --surface-alt: #1e293b;
+      --text: #f1f5f9; --text-muted: #94a3b8; --border: #334155;
+      --accent: #60a5fa; --accent-soft: #1e3a8a;
+      --green: #34d399; --green-soft: #064e3b;
+      --amber: #fbbf24; --amber-soft: #78350f;
+      --purple: #a78bfa; --purple-soft: #4c1d95;
+      --code-bg: #020617; --code-text: #e2e8f0;
+      --shadow: 0 4px 16px rgba(0, 0, 0, 0.35);
+    }
+    * { box-sizing: border-box; }
+    body { margin: 0; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Inter, sans-serif; background: var(--bg); color: var(--text); line-height: 1.6; overflow-x: hidden; }
+    .topbar { position: sticky; top: 0; z-index: 100; background: var(--surface); border-bottom: 1px solid var(--border); padding: 0.75rem 1.25rem; display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 0.75rem; box-shadow: var(--shadow); }
+    .brand { display: flex; align-items: center; gap: 0.6rem; font-weight: 700; font-size: 1.05rem; }
+    .brand-badge { background: var(--accent); color: #fff; font-size: 0.72rem; padding: 0.18rem 0.5rem; border-radius: 999px; }
+    .nav-links { display: flex; flex-wrap: wrap; gap: 0.4rem; }
+    .nav-links a { text-decoration: none; color: var(--text-muted); font-size: 0.85rem; padding: 0.35rem 0.65rem; border-radius: 8px; border: 1px solid transparent; }
+    .nav-links a.active, .nav-links a:hover { color: var(--accent); background: var(--accent-soft); border-color: var(--border); }
+    .controls { display: flex; flex-wrap: wrap; align-items: center; gap: 0.5rem; }
+    .tier-group { display: inline-flex; background: var(--surface-alt); border: 1px solid var(--border); border-radius: 999px; padding: 2px; }
+    .tier-btn { border: none; background: transparent; color: var(--text-muted); font-size: 0.78rem; font-weight: 600; padding: 0.3rem 0.65rem; border-radius: 999px; cursor: pointer; }
+    .tier-btn.active { background: var(--accent); color: #fff; }
+    .theme-btn { border: 1px solid var(--border); background: var(--surface-alt); color: var(--text); font-size: 0.8rem; padding: 0.32rem 0.65rem; border-radius: 8px; cursor: pointer; }
+    .container { max-width: 1200px; margin: 0 auto; padding: 1.5rem 1.25rem 3rem; }
+    .hero, .section { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); padding: 1.35rem; margin-bottom: 1.25rem; box-shadow: var(--shadow); }
+    .hero h1 { margin: 0 0 0.5rem; font-size: clamp(1.35rem, 2.5vw, 1.9rem); }
+    .section h2 { margin: 0 0 0.5rem; font-size: 1.2rem; }
+    .eli5 { background: var(--accent-soft); border-left: 4px solid var(--accent); padding: 0.85rem 1rem; border-radius: 0 8px 8px 0; margin: 0.75rem 0 1rem; }
+    .mermaid { background: var(--surface-alt); border: 1px solid var(--border); border-radius: 10px; padding: 1rem; overflow-x: auto; margin-top: 0.75rem; }
+    .narrative-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 0.75rem; margin-top: 1rem; }
+    .step-card { background: var(--surface-alt); border: 1px solid var(--border); border-radius: 10px; padding: 0.85rem; }
+    .step-num { display: inline-flex; width: 24px; height: 24px; align-items: center; justify-content: center; border-radius: 50%; background: var(--accent); color: #fff; font-size: 0.78rem; font-weight: 700; margin-right: 0.4rem; }
+    .table-wrap { overflow-x: auto; margin-top: 0.75rem; }
+    table { width: 100%; border-collapse: collapse; font-size: 0.86rem; }
+    th, td { text-align: left; padding: 0.55rem 0.7rem; border-bottom: 1px solid var(--border); }
+    th { background: var(--surface-alt); font-weight: 700; }
+    .cite { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size: 0.78rem; background: var(--green-soft); color: var(--green); padding: 0.12rem 0.4rem; border-radius: 5px; white-space: nowrap; }
+    code { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size: 0.85em; }
+    pre { background: var(--code-bg); color: var(--code-text); padding: 0.85rem 1rem; border-radius: 8px; overflow-x: auto; font-size: 0.8rem; }
+    footer { margin-top: 2rem; padding-top: 1rem; border-top: 1px solid var(--border); font-size: 0.82rem; color: var(--text-muted); display: flex; flex-wrap: wrap; justify-content: space-between; gap: 0.5rem; }
+    html[data-tier="1"] .tier-2, html[data-tier="1"] .tier-3, html[data-tier="2"] .tier-3 { display: none !important; }
+  </style>
+</head>
+<body>
+  <header class="topbar">
+    <div class="brand"><span>PoMiniGames Docs</span><span class="brand-badge">2026-11-12</span></div>
+    <nav class="nav-links">
+      <a href="index.html">Overview</a>
+      <a href="USER_WORKFLOW.html">User Journeys</a>
+      <a href="VISUAL_ARCHITECTURE_DASHBOARD.html" class="active">Architecture</a>
+      <a href="AI_SERVICES_REPORT.html">AI &amp; External</a>
+      <a href="AUTH_SECURITY_REPORT.html">Auth &amp; Security</a>
+      <a href="artifact.html">Tabbed Shell</a>
+    </nav>
+    <div class="controls">
+      <div class="tier-group">
+        <button class="tier-btn" data-set-tier="1">L1 Simple</button>
+        <button class="tier-btn" data-set-tier="2">L2 Standard</button>
+        <button class="tier-btn" data-set-tier="3">L3 Deep-Dive</button>
+      </div>
+      <button class="theme-btn" id="themeToggle" type="button">Theme: Light</button>
+    </div>
+  </header>
+
+  <main class="container">
+    <section class="hero">
+      <h1>Visual Architecture Dashboard</h1>
+      <div class="eli5">
+        <strong>In plain English:</strong> PoMiniGames uses a single .NET 10 web host that serves the Blazor WebAssembly browser app, routes API calls through a strict security assembly line, and stores all records in Azure Table and Blob Storage.
+      </div>
+    </section>
+
+    <section class="section">
+      <h2>C4 Level 2: Container &amp; Runtime Map</h2>
+      <div class="eli5">
+        <strong>In plain English:</strong> Inside the browser lives the Blazor shell and 14 JavaScript game engines; on the server lives one .NET 10 process that talks to Azure Storage (or local Azurite) and optional external services.
+      </div>
+      <div class="mermaid tier-2">
+flowchart TB
+  subgraph Browser["Player Browser (Same Origin)"]
+    Blazor["Blazor WASM Client\n(PoMiniGames.Client)"]
+    Engines["14 JS Game Engines\n(Three.js r165 &amp; r186, Web Audio, Canvas)"]
+    LS["localStorage\n(PendingScoreStore, Settings)"]
+    Blazor --- Engines
+    Blazor --- LS
+  end
+
+  subgraph Server["PoMiniGames.API (.NET 10 Host)"]
+    MW["Middleware Pipeline\n(Compression, Headers, Auth, RateLimit, CSRF)"]
+    API["Vertical Feature Slices\n(/api/* Minimal APIs)"]
+    Hubs["13 SignalR Hubs\n(In-Memory Lobbies &amp; Sim Pumps)"]
+    MW --> API
+    MW --> Hubs
+  end
+
+  subgraph Data["Azure Storage / Azurite Emulator"]
+    Tables["Azure Table Storage\n(17+ Tables, Partition-Keyed)"]
+    Blobs["Azure Blob Storage\n(poecosystem-worlds + DataProtection)"]
+  end
+
+  Blazor -->|"HTTPS JSON + X-CSRF-TOKEN"| MW
+  Blazor <-->|"WebSockets"| Hubs
+  API --> Tables
+  API --> Blobs
+      </div>
+      <div class="narrative-grid">
+        <div class="step-card">
+          <div><span class="step-num">1</span><strong>Same-Origin Serving</strong></div>
+          <p><code>UseBlazorFrameworkFiles()</code> and <code>MapFallbackToFile("index.html")</code> serve the SPA from the API host.</p>
+          <div class="tier-3"><span class="cite">Program.cs:318,455</span></div>
+        </div>
+        <div class="step-card">
+          <div><span class="step-num">2</span><strong>Dual Three.js Pinning</strong></div>
+          <p>PoEcosystem uses Three.js r186 (<code>WebGPURenderer</code> + WebGL2 fallback); other 3D games stay on r165.</p>
+          <div class="tier-3"><span class="cite">README.md:272-276</span></div>
+        </div>
+        <div class="step-card">
+          <div><span class="step-num">3</span><strong>Ordered Middleware</strong></div>
+          <p>Compression runs first, followed by security headers, static files, auth, rate limiting, and antiforgery.</p>
+          <div class="tier-3"><span class="cite">Program.cs:206-433</span></div>
+        </div>
+        <div class="step-card">
+          <div><span class="step-num">4</span><strong>Catch-All API Guard</strong></div>
+          <p>Unmatched <code>/api/*</code> paths return typed 404 JSON instead of accidentally serving the HTML SPA shell.</p>
+          <div class="tier-3"><span class="cite">Program.cs:447-452</span></div>
+        </div>
+      </div>
+    </section>
+
+    <section class="section">
+      <h2>C4 Level 3: Client &amp; Server Request Pipeline</h2>
+      <div class="eli5">
+        <strong>In plain English:</strong> Every API call passes through five protective wrappers in the browser before leaving, and five checkpoints on the server before touching data.
+      </div>
+      <div class="mermaid tier-2">
+sequenceDiagram
+  participant App as Blazor Service
+  participant Retry as TransientRetryHandler
+  participant Sess as PlaySessionHandler
+  participant Csrf as AntiforgeryHandler
+  participant Cred as IncludeCredentialsHandler
+  participant Srv as API Middleware + Endpoint
+
+  App->>Retry: SendAsync(POST /api/poracer/scores)
+  Retry->>Sess: Forward request
+  Sess->>Csrf: Stamp X-Play-Session header
+  Csrf->>Cred: Attach X-CSRF-TOKEN (auto-fetch if needed)
+  Cred->>Srv: Send with credentials: include
+  Srv-->>App: 200 OK (or 403 antiforgery_validation_failed -> replay once)
+      </div>
+      <div class="narrative-grid">
+        <div class="step-card">
+          <div><span class="step-num">1</span><strong>Client Handler Chain</strong></div>
+          <p>Outer retry wraps play-session stamping, CSRF token injection, dev fake-user header, and credential inclusion.</p>
+          <div class="tier-3"><span class="cite">Client/Program.cs:55-88</span></div>
+        </div>
+        <div class="step-card">
+          <div><span class="step-num">2</span><strong>Server Auth &amp; Limiter</strong></div>
+          <p><code>UseAuthentication()</code> establishes claims before <code>UseRateLimiter()</code> partitions by IP + identity.</p>
+          <div class="tier-3"><span class="cite">Program.cs:424-425</span> <span class="cite">RateLimitingExtensions.cs:23-29</span></div>
+        </div>
+        <div class="step-card">
+          <div><span class="step-num">3</span><strong>CSRF After Auth</strong></div>
+          <p><code>UsePoMiniGamesAntiforgery()</code> runs after auth and rate-limiting so tokens bind to the user's claims.</p>
+          <div class="tier-3"><span class="cite">Program.cs:428-433</span> <span class="cite">AntiforgeryExtensions.cs:74-114</span></div>
+        </div>
+      </div>
+    </section>
+
+    <section class="section">
+      <h2>Digital Filing Cabinet: Azure Table &amp; Blob Storage Map</h2>
+      <div class="eli5">
+        <strong>In plain English:</strong> Instead of a traditional SQL database, PoMiniGames organizes data into named Azure Table Storage drawers (each board in one partition for fast reads) and Blob Storage folders for large world files.
+      </div>
+      <div class="mermaid tier-2">
+erDiagram
+  PlayerStats {
+    string PartitionKey
+    string RowKey "UserId"
+  }
+  HighScoreTables {
+    string PartitionKey "GameKey (e.g. marblerace, pobrawl)"
+    string RowKey "Player / Run Id"
+    double Score
+  }
+  PoBrawlPlayerRatings {
+    string PartitionKey "pobrawlplayerelo"
+    string RowKey "UserId"
+    int Elo
+  }
+  PoEcosystemWorlds {
+    string PartitionKey "Owner / Gallery"
+    string RowKey "SlotId"
+    string BlobRef "poecosystem-worlds container"
+  }
+  VerifiedResults {
+    string PartitionKey "GameKey"
+    string RowKey "ResultId"
+  }
+  PushInvites {
+    string PartitionKey "UserId / VAPID"
+    string RowKey "Subscription / InviteId"
+  }
+  PoEcosystemWorlds ||--o| BlobContainer_poecosystem_worlds : "stores gzip JSON"
+      </div>
+      <div class="table-wrap tier-3">
+        <table>
+          <thead>
+            <tr><th>Table / Container</th><th>Purpose</th><th>Source Citation</th></tr>
+          </thead>
+          <tbody>
+            <tr><td><code>PlayerStats</code></td><td>Per-player cross-game statistics</td><td><span class="cite">StorageService.cs:25</span></td></tr>
+            <tr><td><code>MarbleRaceHighScores</code>, <code>MarbleRaceMapRecords</code></td><td>Marble Race boards &amp; per-map ghost records</td><td><span class="cite">StorageService.cs:26-27</span></td></tr>
+            <tr><td><code>PoBrawlHighScores</code>, <code>PoBrawlLadder</code>, <code>PoBrawlFighterRatings</code>, <code>PoBrawlPlayerRatings</code></td><td>Fastest KO, 1P ladder, CPU fighter Elo, online 1v1 player Elo</td><td><span class="cite">StorageService.cs:28-34</span></td></tr>
+            <tr><td><code>PoRacerHighScores</code>, <code>PoVoxelStrikeHighScores</code>, <code>PoCabinetHighScores</code>, <code>PoMuleHighScores</code></td><td>Per-game high-score leaderboards</td><td><span class="cite">StorageService.cs:35-38</span></td></tr>
+            <tr><td><code>PoFunQuizPlayers</code>, <code>PoEcosystemWorlds</code>, <code>PoJevArenaCreatures</code>, <code>VerifiedResults</code>, <code>PushInvites</code></td><td>Consolidated game stores, verified race results, Web Push + VAPID keys</td><td><span class="cite">StorageInitializer.cs:26-41</span></td></tr>
+            <tr><td><code>poecosystem-worlds</code> (Blob)</td><td>Gzipped JSON snapshots of shared island worlds</td><td><span class="cite">StorageInitializer.cs:44-49</span></td></tr>
+          </tbody>
+        </table>
+      </div>
+    </section>
+
+    <section class="section tier-3">
+      <h2>Deep-Dive: DI Supply Closet &amp; Storage Resilience</h2>
+      <div class="eli5">
+        <strong>In plain English:</strong> All storage clients fail fast in 2 seconds if Azurite or Azure is unreachable, flipping the app into a graceful degraded mode instead of hanging for 30+ seconds.
+      </div>
+      <pre>// StorageExtensions.cs:101-104
+var options = new TableClientOptions
+{
+    Retry = { MaxRetries = 0, NetworkTimeout = TimeSpan.FromSeconds(2) },
+};
+
+// StorageService.cs:65-67
+private volatile bool _isStorageAvailable = true;
+private readonly TimeSpan _probeBackoff = TimeSpan.FromSeconds(10);</pre>
+      <p>
+        <span class="cite">StorageExtensions.cs:101-135</span>
+        <span class="cite">StorageService.cs:58-82</span>
+        <span class="cite">GameServicesExtensions.cs:21-205</span>
+      </p>
+    </section>
+
+    <footer>
+      <span>Generated: 2026-11-12 &bull; Target Commit: <code>1e937297</code></span>
+      <span>PoMiniGames Documentation Suite &bull; Visual Architecture</span>
+    </footer>
+  </main>
+
+  <script>
+    (function () {
+      const root = document.documentElement;
+      const tierBtns = document.querySelectorAll('[data-set-tier]');
+      const themeBtn = document.getElementById('themeToggle');
+      function applyTier(t) {
+        const tier = ['1', '2', '3'].includes(String(t)) ? String(t) : '2';
+        root.setAttribute('data-tier', tier);
+        localStorage.setItem('pomini_docs_tier', tier);
+        tierBtns.forEach(b => b.classList.toggle('active', b.dataset.setTier === tier));
+      }
+      function renderMermaid(theme) {
+        if (!window.mermaid) return;
+        mermaid.initialize({ startOnLoad: false, theme: theme === 'dark' ? 'dark' : 'default', securityLevel: 'loose' });
+        document.querySelectorAll('.mermaid').forEach(el => {
+          if (!el.dataset.src) el.dataset.src = el.textContent;
+          el.removeAttribute('data-processed');
+          el.textContent = el.dataset.src;
+        });
+        mermaid.run({ querySelector: '.mermaid' });
+      }
+      function applyTheme(th) {
+        const theme = th === 'dark' ? 'dark' : 'light';
+        root.setAttribute('data-theme', theme);
+        localStorage.setItem('pomini_docs_theme', theme);
+        themeBtn.textContent = 'Theme: ' + (theme === 'dark' ? 'Dark' : 'Light');
+        renderMermaid(theme);
+      }
+      tierBtns.forEach(btn => btn.addEventListener('click', () => applyTier(btn.dataset.setTier)));
+      themeBtn.addEventListener('click', () => applyTheme(root.getAttribute('data-theme') === 'dark' ? 'light' : 'dark'));
+      applyTier(localStorage.getItem('pomini_docs_tier') || '2');
+      applyTheme(localStorage.getItem('pomini_docs_theme') || 'light');
+    })();
+  </script>
+</body>
+</html>

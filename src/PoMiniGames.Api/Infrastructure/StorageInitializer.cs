@@ -29,9 +29,6 @@ public sealed class StorageInitializer
         // PoEcosystem cloud slots + the public gallery index. Name must match
         // EcosystemWorldStore.TableName.
         "PoEcosystemWorlds",
-        // PoJevArena public creature library (one partition). Name must match
-        // CreatureLibraryStore.TableName.
-        "PoJevArenaCreatures",
         // Server-timed race results kept past a recycle. Name must match
         // VerifiedResultStore.TableName.
         "VerifiedResults",

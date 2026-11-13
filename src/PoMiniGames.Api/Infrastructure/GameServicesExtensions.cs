@@ -4,8 +4,6 @@ using PoMiniGames.Features.PoCoupleQuiz;
 using PoMiniGames.Features.PoFunQuiz;
 using PoMiniGames.Features.PoFunQuiz.Storage;
 using PoMiniGames.Features.PoEcosystem;
-using PoMiniGames.Features.PoJevArena;
-using PoMiniGames.Features.PoJevArena.Jev;
 using PoMiniGames.Features.PoRacer;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 using Microsoft.Extensions.Options;
@@ -98,22 +96,6 @@ internal static class GameServicesExtensions
         // PoEcosystem — cloud world slots + gallery (blob + table). The store degrades to
         // empty when storage is unreachable.
         services.AddSingleton<EcosystemWorldStore>();
-
-        // PoJevArena — the free rule-based LocalJevClient is the only brain, so the arena always
-        // plays. The scripted stub is selected only under the Test environment.
-        services.AddOptions<JevOptions>()
-            .BindConfiguration(JevOptions.SectionName);
-        services.AddSingleton<StubJevClient>();
-        services.AddSingleton<LocalJevClient>();
-        services.AddTransient<IJevClient>(sp =>
-        {
-            var options = sp.GetRequiredService<IOptions<JevOptions>>().Value;
-            return options.UseStub && sp.GetRequiredService<IHostEnvironment>().IsEnvironment("Test")
-                ? sp.GetRequiredService<StubJevClient>()
-                : sp.GetRequiredService<LocalJevClient>();
-        });
-        services.AddSingleton<ArenaMatchRegistry>();
-        services.AddSingleton<CreatureLibraryStore>();
 
         // PoRacer — multiplayer racing. The lobby service is the in-memory
         // registry; the race registry + service own the per-game simulation

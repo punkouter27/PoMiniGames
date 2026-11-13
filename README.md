@@ -51,8 +51,7 @@ scores.
 - **No AI services.** PoFunQuiz and PoCoupleQuiz pick random questions from JSON banks
   (`Features/PoFunQuiz/Data/questions.json`, `Features/PoCoupleQuiz/Data/questions.json`)
   loaded into memory once at startup; PoCoupleQuiz matches answers with free fuzzy matching
-  (`AnswerMatcher`). PoJevArena's battle calls come from a free local rules brain. Ecosystem,
-  Brawl and Cabinet commentary is scripted.
+  (`AnswerMatcher`). Ecosystem, Brawl and Cabinet commentary is scripted.
 - **Around the games.** The hub is the game cards plus *Watch all demos* (the Today card,
   streak, Continue strip, pins and filters were cut on 2026-10-19), and it launches games
   without rebooting the app. Leaderboards have all-time and weekly boards. The profile shows
@@ -87,8 +86,7 @@ scores.
   Choose 1P, 2P, Online or Demo on the main menu; intro modals do not repeat mode selection.
 - During gameplay, **Tab toggles stats**, and **Esc closes them**. Shift+Tab, forms and
   dialogs retain normal focus navigation. The visible Stats control supports touch.
-  Ecosystem retains its observation dashboard and Jev retains its match inspector;
-  neither opens a second generic panel. Marble's physics/render metrics join the shared
+  Ecosystem retains its observation dashboard and does not open a second generic panel. Marble's physics/render metrics join the shared
   stats panel instead of using a separate F3 overlay.
 - Results keep headline facts compact, with full standings/telemetry behind details.
   Replay/rematch actions belong in the shared footer rather than the summary.
@@ -103,11 +101,12 @@ scores.
 | Document | What it covers |
 |---|---|
 | [Game consistency rules](GAME-CONSISTENCY.md) | Required game workflow, shared UI, controls, accessibility, and verification conventions |
-| [Documentation overview](DOCS/20261029/index.html) | Index of the current documentation suite |
-| [Visual architecture dashboard](DOCS/20261029/VISUAL_ARCHITECTURE_DASHBOARD.html) | Visual map of the app's architecture and major flows |
-| [User journeys](DOCS/20261029/USER_WORKFLOW.html) | Player-facing workflows through the app |
-| [Auth and security report](DOCS/20261029/AUTH_SECURITY_REPORT.html) | Authentication and access-control overview |
-| [AI and external services report](DOCS/20261029/AI_SERVICES_REPORT.html) | Current AI and external-service boundaries |
+| [Documentation overview](DOCS/20261112/index.html) | Index of the current documentation suite |
+| [Visual architecture dashboard](DOCS/20261112/VISUAL_ARCHITECTURE_DASHBOARD.html) | Visual map of the app's architecture and major flows |
+| [User journeys](DOCS/20261112/USER_WORKFLOW.html) | Player-facing workflows through the app |
+| [Auth and security report](DOCS/20261112/AUTH_SECURITY_REPORT.html) | Authentication and access-control overview |
+| [AI and external services report](DOCS/20261112/AI_SERVICES_REPORT.html) | Current AI and external-service boundaries |
+| [Interactive tabbed shell](DOCS/20261112/artifact.html) | All five reports in one standalone tabbed frame |
 | [Architecture map](https://claude.ai/artifact/HGHLwMdGyveqtknNC1o5ar) | Component diagrams, request flows and the data model (private link; share it from the page to give others access) |
 
 ## Games (`src/PoMiniGames.Client/Games/`)
@@ -124,7 +123,6 @@ scores.
 | PoRacer | Canvas racer with WebGL effects, solo races, and a multiplayer lobby |
 | PoCabinet | 3D circuit racer: solo career across four tracks, plus Senate Hill, Bedroom Floor GP (a toy-car track laid in a scanned bedroom: `wwwroot/models/bedroom.glb`, built by `scripts/blender/pocabinet-bedroom.py` in headless Blender, on stilts ~2 ft up, threading round the desks and drum kit, the room drawn as a Gaussian splat (`wwwroot/models/bedroom.ksplat`, registered onto the mesh by `scripts/blender/pocabinet-bedroom-splat.py`; the mesh is the collision model and the low-tier fallback)), Center Court (a toy-car circuit on the floor of a scanned outdoor basketball court, round the centre circle and both keys, the court drawn as a Gaussian splat; `wwwroot/models/court.glb` and `court.ksplat`, built by `scripts/blender/pocabinet-court.py` and `pocabinet-court-splat.py`) and a seeded daily circuit (a new layout every UTC day, the same for everyone, with its own board), AI officials, and a server-simulated online lobby; tracks have hills and banking, pinch points and wide braking zones, a bus-stop chicane with raised kerbs, gravel traps and tarmac run-off, grip patches (resurfaced, dusty, bumpy, puddles in the rain), a racing line that rubbers in over the race (and dries first in the rain), split sections with a shorter joker lane, braking boards and corner numbers; track limits are enforced (all four wheels off and the lap does not count, here and on the server); a 64-car field where every driver has its own personality (bruisers, late brakers, wild cards…) and runs off the road now and then; damage is real: hits dent the body where they land, knock bumpers, wings and mirrors loose and off, break lamps and glass, and cost the car power, grip and alignment until it is wrecked and out; hills and banking are real physics (cars run faster downhill, slower uphill, banked turns hold them in, hard braking mid-corner washes wide); the demo is covered like a TV race: a director cuts to the closest battles, with a timing tower, callouts (lead changes, passes, fastest laps, wrecks, the flag), a caption for the car on screen and a rear-cam / onboard picture-in-picture; graphics on medium/high add ambient occlusion, wet-road and puddle reflections with raindrop ripples, per-object motion blur, 32k lit GPU smoke and fire that cars part, rigid-body crash debris (bumpers, wheels, shards), cars that get dirty, wet and scarred, and a felt slipstream (a tow arc on the gauge; the heat-haze shimmer and road mirage are switched off); sound adds an adaptive synthesized score (settings: **Music**), reverb zones (grandstand, gantry, open country) and gravel/sand/wet tyre sounds |
 | PoVoxelStrike | Third-person survival shooter with fully destructible voxel structures |
-| PoJevArena | Design creatures, draft 10 v 10, and watch the arena brain (free local rules, or TypeSafe's Jev when picked in Settings) make every tactical call; post-match Black Box scrubber |
 | PoMule | Eight-player M.U.L.E.: claim land, work M.U.L.E.s and trade on a walking-floor market for twelve months vs seven AI personalities; all-AI demo |
 | PoEcosystem | Watch-only island simulation: species, tribes and chronicle cards for landmark events; cloud save slots and a shared gallery |
 | SandPlayground | GPU sand-and-water sandbox |
@@ -302,7 +300,7 @@ CI validates Bicep and deploys application code; use `azd up` for resource provi
 
 | Key | Meaning |
 |---|---|
-| (AI keys removed) | `PoFunQuiz:QuestionSource/AllowFreshAi/OpenTriviaDb`, `PoCoupleQuiz:Features:*AI*`, `PoMiniGames:AI:*`, `PoMiniGames:Jev:Brain` and `PoMiniGames:Diag:AiUsageAdmins` no longer exist; the quizzes read their JSON banks and Jev uses the local brain only |
+| (AI keys removed) | `PoFunQuiz:QuestionSource/AllowFreshAi/OpenTriviaDb`, `PoCoupleQuiz:Features:*AI*`, `PoMiniGames:AI:*` and `PoMiniGames:Diag:AiUsageAdmins` no longer exist; the quizzes read their JSON banks only |
 | `PoMiniGames:PoBrawl:Dossier:FetchWikipedia`, `CacheHours` | Fighter dossiers: enrich the static facts from the free Wikimedia REST API (default `true`), cached 24 h; off or failing, static facts are served. Tests pin it to `false` |
 
 | Endpoint | Change |

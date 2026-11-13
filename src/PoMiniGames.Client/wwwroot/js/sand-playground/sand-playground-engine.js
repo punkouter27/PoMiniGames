@@ -31,9 +31,10 @@ const BLAST_SOLID_BUDGET = 120;
 const BALLOON_R = 13;
 
 let gl = null, canvas = null, overlay = null, octx = null;
-let progSupport, progRelax, progMove, progFall, progSurge, progRender;
+let progSupport, progPressure, progRelax, progMove, progFall, progSurge, progRender;
 let progLight, progBright, progBlur, progComposite, progParticle;
-let tex = [null, null], fbo = [null, null], front = 0;
+let progTemp;
+let tex = [null, null], texAux = [null, null], fbo = [null, null], front = 0;
 let mirror = new Uint8Array(W * H * 4);
 let packTex, packFbo;             // RGBA8 copy of the state: the CPU mirror is read back as bytes
 let useFloatState = false;
@@ -112,6 +113,7 @@ const reducedMotion = (typeof document !== 'undefined' && document.documentEleme
 // --- GFX pass (same day): GPU particles, smoke field, sky, x-ray, reset transition
 let progPUpdate, progSmoke, progCopy;
 let smokeTex = [null, null], smokeFbo = [null, null], smokeFront = 0;
+let tempTex = [null, null], tempFbo = [null, null], tempFront = 0;
 let emitters = [];             // smoke sources {x, y, r, amt, life, life0}
 let meltTex, meltFbo, melt = 0; // reset transition: (0,1] old world drains out, (1,2] new one pours in
 let view = 0;                  // x-ray: 0 off, 1 support, 2 water pressure, 3 moisture
@@ -185,15 +187,16 @@ async function setupGl(gen) {
     // would resolve against the route and 404.
     const phys = parseSections(physicsSource);
     const rend = parseSections(renderSource);
-    [progSupport, progRelax, progMove, progFall, progSurge, progRender,
+    [progSupport, progPressure, progRelax, progMove, progFall, progSurge, progRender,
         progLight, progBright, progBlur, progComposite, progParticle,
-        progPUpdate, progSmoke, progCopy] = await buildPrograms([
-        [phys.VERTEX, phys.SUPPORT], [phys.VERTEX, phys.RELAX], [phys.VERTEX, phys.MOVE],
-        [phys.VERTEX, phys.FALL], [phys.VERTEX, phys.SURGE],
+        progPUpdate, progSmoke, progTemp, progCopy] = await buildPrograms([
+        [phys.VERTEX, phys.SUPPORT], [phys.VERTEX, phys.PRESSURE], [phys.VERTEX, phys.RELAX],
+        [phys.VERTEX, phys.MOVE], [phys.VERTEX, phys.FALL], [phys.VERTEX, phys.SURGE],
         [rend.VERTEX, rend.RENDER], [rend.VERTEX, rend.LIGHT],
         [rend.VERTEX, rend.BRIGHT], [rend.VERTEX, rend.BLUR],
         [rend.VERTEX, rend.COMPOSITE], [rend.PVERTEX, rend.PFRAG],
-        [rend.PUPDATE, rend.PNULL, ['o_pv', 'o_meta']], [rend.VERTEX, rend.SMOKE], [rend.VERTEX, rend.COPY],
+        [rend.PUPDATE, rend.PNULL, ['o_pv', 'o_meta']], [rend.VERTEX, rend.SMOKE],
+        [rend.VERTEX, rend.TEMP], [rend.VERTEX, rend.COPY],
     ]);
     // buildPrograms yields to the event loop, so the component may have been
     // disposed (navigated away) while the driver was linking.
@@ -229,18 +232,25 @@ async function setupGl(gen) {
     // CPU mirror intentionally remains byte-packed for the existing material
     // ledger and collision code; only readback/upload boundaries quantize.
     useFloatState = !!gl.getExtension('EXT_color_buffer_float');
-    for (let i = 0; i < 2; i++) {
-        tex[i] = gl.createTexture();
-        gl.bindTexture(gl.TEXTURE_2D, tex[i]);
+    const mkStateTex = () => {
+        const tx = gl.createTexture();
+        gl.bindTexture(gl.TEXTURE_2D, tx);
         gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.NEAREST);
         gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.NEAREST);
         gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
         gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
         gl.texImage2D(gl.TEXTURE_2D, 0, useFloatState ? gl.RGBA16F : gl.RGBA8,
             W, H, 0, gl.RGBA, useFloatState ? gl.HALF_FLOAT : gl.UNSIGNED_BYTE, null);
+        return tx;
+    };
+    for (let i = 0; i < 2; i++) {
+        tex[i] = mkStateTex();
+        texAux[i] = mkStateTex();
         fbo[i] = gl.createFramebuffer();
         gl.bindFramebuffer(gl.FRAMEBUFFER, fbo[i]);
         gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, tex[i], 0);
+        gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT1, gl.TEXTURE_2D, texAux[i], 0);
+        gl.drawBuffers([gl.COLOR_ATTACHMENT0, gl.COLOR_ATTACHMENT1]);
     }
 
     // Post-processing render targets (linear-filtered for smooth sampling).
@@ -262,6 +272,7 @@ async function setupGl(gen) {
         [lightTex[i], lightFbo[i]] = mkTarget(LW, LH);
         [blurTex[i], blurFbo[i]] = mkTarget(LW, LH);
         [smokeTex[i], smokeFbo[i]] = mkTarget(LW, LH);
+        [tempTex[i], tempFbo[i]] = mkTarget(LW, LH);
     }
     [meltTex, meltFbo] = mkTarget(W, H);
     [packTex, packFbo] = mkTarget(W, H);
@@ -283,8 +294,10 @@ async function setupGl(gen) {
     })) {
         useFloatState = false;
         for (let i = 0; i < 2; i++) {
-            gl.bindTexture(gl.TEXTURE_2D, tex[i]);
-            gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA8, W, H, 0, gl.RGBA, gl.UNSIGNED_BYTE, null);
+            for (const t of [tex[i], texAux[i]]) {
+                gl.bindTexture(gl.TEXTURE_2D, t);
+                gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA8, W, H, 0, gl.RGBA, gl.UNSIGNED_BYTE, null);
+            }
         }
     }
     gl.bindFramebuffer(gl.FRAMEBUFFER, null);
@@ -548,6 +561,26 @@ function pushUndo() {
     notify('undo', undoStack.length);
 }
 
+function defaultAuxForMat(m) {
+    if (m === WATER) return [255, 64, 0, 0];
+    if (m === AIR) return [0, 64, 0, 0];
+    return [128, 64, 0, 0];
+}
+
+function buildAuxForState(stateBytes) {
+    const aux = new Uint8Array(stateBytes.length);
+    const gi = uploadSwapsGB ? 2 : 1, bi2 = uploadSwapsGB ? 1 : 2;
+    for (let i = 0; i < stateBytes.length; i += 4) {
+        const m = (stateBytes[i] + 30) / 60 | 0;
+        const d = defaultAuxForMat(m);
+        aux[i] = d[0];
+        aux[i + gi] = d[1];
+        aux[i + bi2] = d[2];
+        aux[i + 3] = d[3];
+    }
+    return aux;
+}
+
 // Whole-grid upload of the CPU mirror, with the same G/B compensation stampRegion
 // applies (reset() gets away without it only because a fresh scene has G == B).
 function uploadMirror() {
@@ -556,9 +589,12 @@ function uploadMirror() {
         bytes = mirror.slice();
         for (let i = 0; i < bytes.length; i += 4) { const g = bytes[i + 1]; bytes[i + 1] = bytes[i + 2]; bytes[i + 2] = g; }
     }
+    const aux = buildAuxForState(mirror);
     gl.activeTexture(gl.TEXTURE0);
     uploadStateBytes(tex[0], 0, 0, W, H, bytes);
     uploadStateBytes(tex[1], 0, 0, W, H, bytes);
+    uploadStateBytes(texAux[0], 0, 0, W, H, aux);
+    uploadStateBytes(texAux[1], 0, 0, W, H, aux);
     front = 0;
 }
 
@@ -732,8 +768,11 @@ export function loadWorld(name, seed, keepChallenge = false) {
     const data = PRESETS[preset]();
     rnd = Math.random;
     mirror.set(data);
+    const aux = buildAuxForState(data);
     uploadStateBytes(tex[0], 0, 0, W, H, data);
     uploadStateBytes(tex[1], 0, 0, W, H, data);
+    uploadStateBytes(texAux[0], 0, 0, W, H, aux);
+    uploadStateBytes(texAux[1], 0, 0, W, H, aux);
     front = 0;
     for (const b of bodies) stampBody(b); // embed the concrete bars
     if (!keepChallenge) endChallenge();
@@ -751,7 +790,7 @@ function parseSections(src) {
     return sections;
 }
 
-const UNIFORM_NAMES = ['u_state', 'u_seed', 'u_parity', 'u_time', 'u_dt', 'u_wind', 'u_disable', 'u_surgeDir',
+const UNIFORM_NAMES = ['u_state', 'u_aux', 'u_temp', 'u_seed', 'u_parity', 'u_time', 'u_dt', 'u_wind', 'u_disable', 'u_surgeDir',
     'u_light', 'u_heights', 'u_prev', 'u_lights', 'u_nlights',
     'u_scene', 'u_bloom', 'u_dir', 'u_texel', 'u_rings', 'u_nrings',
     'u_shake', 'u_flash',
@@ -818,23 +857,41 @@ function drawPass(pr, setUniforms) {
     gl.activeTexture(gl.TEXTURE0);
     gl.bindTexture(gl.TEXTURE_2D, tex[front]);
     gl.uniform1i(pr.u_state, 0);
+    if (pr.u_aux !== null) {
+        gl.activeTexture(gl.TEXTURE1);
+        gl.bindTexture(gl.TEXTURE_2D, texAux[front]);
+        gl.uniform1i(pr.u_aux, 1);
+    }
     if (setUniforms) setUniforms(pr);
     gl.drawArrays(gl.TRIANGLES, 0, 3);
 }
 
 function runSubstep() {
     gl.viewport(0, 0, W, H);
-    // Support / shockwave pass.
+    // Support / geotechnical / thermal-coupling pass.
     gl.bindFramebuffer(gl.FRAMEBUFFER, fbo[1 - front]);
-    drawPass(progSupport, pr => gl.uniform1f(pr.u_seed, Math.random() * 97.0));
+    drawPass(progSupport, pr => {
+        gl.uniform1f(pr.u_seed, Math.random() * 97.0);
+        if (pr.u_wind !== null) gl.uniform1f(pr.u_wind, windNow());
+        if (pr.u_temp !== null) {
+            gl.activeTexture(gl.TEXTURE2);
+            gl.bindTexture(gl.TEXTURE_2D, tempTex[tempFront]);
+            gl.uniform1i(pr.u_temp, 2);
+        }
+    });
     front = 1 - front;
-    // A small Eulerian relaxation pass retains the robust cellular material
-    // moves while smoothing velocity, hydrostatic head and divergence across
-    // connected water. This is the continuous-fluid half of the hybrid.
+    // Multi-iteration Poisson pressure projection + sub-cell VOF fill leveling.
+    const pIters = useFloatState ? 4 : 2;
+    for (let pi = 0; pi < pIters; pi++) {
+        gl.bindFramebuffer(gl.FRAMEBUFFER, fbo[1 - front]);
+        drawPass(progPressure, null);
+        front = 1 - front;
+    }
+    // 2D semi-Lagrangian velocity advection, pressure gradient, vorticity.
     gl.bindFramebuffer(gl.FRAMEBUFFER, fbo[1 - front]);
     drawPass(progRelax, pr => gl.uniform1f(pr.u_dt, 1 / SAND_PLAYGROUND_CALIBRATION.physicsHz));
     front = 1 - front;
-    // Margolus movement pass.
+    // Margolus movement pass (swaps state + aux in lockstep).
     gl.bindFramebuffer(gl.FRAMEBUFFER, fbo[1 - front]);
     drawPass(progMove, pr => {
         gl.uniform1i(pr.u_parity, parity);
@@ -843,17 +900,13 @@ function runSubstep() {
         gl.uniform1i(pr.u_disable, moveDisable);
     });
     front = 1 - front;
-    // Inertial fast-fall pass (sand with a built-up fall speed drops an
-    // extra cell per sub-step).
+    // Inertial fast-fall pass.
     if (!disableFall) {
         gl.bindFramebuffer(gl.FRAMEBUFFER, fbo[1 - front]);
         drawPass(progFall, null);
         front = 1 - front;
     }
-    // Horizontal surge pass: water carrying real momentum runs two extra
-    // cells, so fronts out-pace the automaton and the fluid gets waves
-    // instead of diffusion. One direction per sub-step keeps the gather
-    // unambiguous; alternating keeps it even-handed.
+    // Horizontal inertial surge pass (water + fast granular sand).
     if (!disableSurge) {
         gl.bindFramebuffer(gl.FRAMEBUFFER, fbo[1 - front]);
         drawPass(progSurge, pr => gl.uniform1i(pr.u_surgeDir, surgeDir));
@@ -920,6 +973,10 @@ function stampRegion(x0, y0, w, h, fn) {
     w = x1 - x0; h = y1 - y0;
     if (w <= 0 || h <= 0) return;
     let changed = false;
+    const auxMask = new Uint8Array(w * h);
+    const auxRows = new Uint8Array(w * h * 4);
+    const gi = uploadSwapsGB ? 2 : 1, bi2 = uploadSwapsGB ? 1 : 2;
+    let auxDirty = false;
     for (let y = 0; y < h; y++) {
         for (let x = 0; x < w; x++) {
             const mi = ((y0 + y) * W + (x0 + x)) * 4;
@@ -930,26 +987,28 @@ function stampRegion(x0, y0, w, h, fn) {
                 mirror[mi + 3] = 0;
             } else if (res) {
                 changed = true;
-                if (m === WATER && res[0] !== WATER) audit.stampWater--;
-                else if (m !== WATER && res[0] === WATER) audit.stampWater++;
-                const rest = res[0] === WATER ? 128 : 0;
-                // res[0] <= 4: material id; larger values are raw R bytes
-                // (sand variants such as vitrified glass).
-                mirror[mi] = res[0] > 10 ? res[0] : MATBYTE[res[0]];
+                const newMat = res[0] > 4 ? (res[0] + 30) / 60 | 0 : res[0];
+                if (m === WATER && newMat !== WATER) audit.stampWater--;
+                else if (m !== WATER && newMat === WATER) audit.stampWater++;
+                const rest = newMat === WATER ? 128 : 0;
+                mirror[mi] = res[0] > 4 ? res[0] : MATBYTE[res[0]];
                 mirror[mi + 1] = res[3] !== undefined ? res[3] : rest;
                 mirror[mi + 2] = res[2] !== undefined ? res[2] : rest;
                 mirror[mi + 3] = res[1];
+                const d = res[4] || defaultAuxForMat(newMat);
+                const idx = y * w + x;
+                const ao = idx * 4;
+                auxMask[idx] = 1;
+                auxRows[ao] = d[0];
+                auxRows[ao + gi] = d[1];
+                auxRows[ao + bi2] = d[2];
+                auxRows[ao + 3] = d[3];
+                auxDirty = true;
             }
         }
     }
     if (!changed) return; // no-op stamp: skip the GPU upload entirely
-    // Upload the exact dirty rect, pinned to texture unit 0, compensating
-    // the driver's upload byte order if the init-time probe detected that
-    // texSubImage2D swaps G and B (seen on SwiftShader: fall speed bled
-    // into the scorch channel, phantom-scorching sand that flash-boiled
-    // passing water; blast shock bytes became phantom steam).
     const buf = new Uint8Array(w * h * 4);
-    const gi = uploadSwapsGB ? 2 : 1, bi2 = uploadSwapsGB ? 1 : 2;
     for (let y = 0; y < h; y++) {
         for (let x = 0; x < w; x++) {
             const mi = ((y0 + y) * W + (x0 + x)) * 4;
@@ -962,6 +1021,20 @@ function stampRegion(x0, y0, w, h, fn) {
     }
     gl.activeTexture(gl.TEXTURE0);
     uploadStateBytes(tex[front], x0, y0, w, h, buf);
+    if (auxDirty) {
+        // Upload only contiguous changed horizontal spans so untouched corner cells keep their aux fields.
+        for (let y = 0; y < h; y++) {
+            let x = 0;
+            while (x < w) {
+                while (x < w && !auxMask[y * w + x]) x++;
+                if (x >= w) break;
+                const sx = x;
+                while (x < w && auxMask[y * w + x]) x++;
+                const span = auxRows.subarray((y * w + sx) * 4, (y * w + x) * 4);
+                uploadStateBytes(texAux[front], x0 + sx, y0 + y, x - sx, 1, span);
+            }
+        }
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -1001,13 +1074,39 @@ function carveNest(carve, ax, yTop, yBot) {
     }
 }
 
+function soilByteAt(x, y) {
+    const band1 = 120 + 18 * Math.sin(x * 0.011 + 2.1);
+    const band2 = 45 + 12 * Math.sin(x * 0.017);
+    if (y < band2) return 30;                  // gravel
+    if (y < band1) return 40;                  // clay
+    if (y < band1 + 14) return 50;             // silt transition
+    return 60;                                 // quartz sand
+}
+
+function sandWetByte(r) {
+    if (r >= 85 && r <= 88) return 20;
+    if (r >= 81 && r <= 84) return 0;
+    if (r >= 60) return r - 60;
+    if (r >= 50) return (r - 50) * 2;
+    if (r >= 40) return (r - 40) * 2;
+    return Math.max(0, (r - 30) * 2);
+}
+
+function sandSoilName(r) {
+    if (r >= 81 && r <= 84) return 'Glass (fused sand)';
+    if (r === 86 || (r >= 30 && r < 40)) return 'Gravel';
+    if (r === 87 || (r >= 40 && r < 50)) return 'Clay';
+    if (r === 88 || (r >= 50 && r < 60)) return 'Silt';
+    return 'Sand';
+}
+
 function buildScene() {
     const data = new Uint8Array(W * H * 4);
 
     const set = (x, y, m, a) => {
         const i = (y * W + x) * 4;
         const rest = m === WATER ? 128 : 0; // zero velocity for water
-        data[i] = MATBYTE[m];
+        data[i] = m === SAND ? soilByteAt(x, y) : MATBYTE[m];
         data[i + 1] = rest;
         data[i + 2] = rest;
         data[i + 3] = a;
@@ -1155,7 +1254,7 @@ function buildScene() {
                 if ((x - cx2) * (x - cx2) + (y - cy2) * (y - cy2) > r * r) continue;
                 if (avoid(x, y)) continue;
                 const i = (y * W + x) * 4;
-                if (data[i] === MATBYTE[SAND]) { data[i] = 0; data[i + 1] = 0; data[i + 2] = 0; data[i + 3] = 0; }
+                if (((data[i] + 30) / 60 | 0) === SAND) { data[i] = 0; data[i + 1] = 0; data[i + 2] = 0; data[i + 3] = 0; }
             }
     };
     // Nests, in lanes across the map. The ones under the reservoir stop a safe
@@ -1185,7 +1284,8 @@ function blankWorld(surf) {
     const set = (x, y, m, a = 0) => {
         if (x < 0 || x >= W || y < 0 || y >= H) return;
         const i = (y * W + x) * 4, rest = m === WATER ? 128 : 0;
-        data[i] = MATBYTE[m]; data[i + 1] = rest; data[i + 2] = rest; data[i + 3] = a;
+        data[i] = m === SAND ? soilByteAt(x, y) : MATBYTE[m];
+        data[i + 1] = rest; data[i + 2] = rest; data[i + 3] = a;
     };
     const matOf = (x, y) => (data[(y * W + x) * 4] + 30) / 60 | 0;
     for (let y = 0; y < H; y++)
@@ -1487,6 +1587,10 @@ function stampBody(b) {
     // Conserve displaced water: splash a few droplets on a hard entry, seat
     // the rest in the open cells just above the body.
     if (displaced > 0) {
+        if (Math.abs(b.vy) > 2.2) {
+            spawnFoam(b.cx, y1 + 1, b.vx);
+            spawnMist(b.cx, y1 + 1, Math.min(5, Math.max(1, displaced >> 2)));
+        }
         if (Math.abs(b.vy) > 2.5) {
             const drops = Math.min(6, displaced);
             for (let k = 0; k < drops; k++) {
@@ -1552,6 +1656,7 @@ function bodyAtCell(k, skip) {
 function ejectSandCell(x, y, vx, vy, spawnX = x) {
     if (x < 0 || x >= W || y < BEDROCK_TOP || y >= H) return false;
     const wet = isWetCell(x, y);
+    const soil = mirror[(y * W + x) * 4];
     let ok = false;
     stampRegion(x, y, 1, 1, m => {
         if (m !== SAND) return null;
@@ -1559,7 +1664,7 @@ function ejectSandCell(x, y, vx, vy, spawnX = x) {
         return [AIR, 0];
     });
     if (ok) {
-        grains.push({ x: spawnX, y, vx, vy, mat: SAND });
+        grains.push({ x: spawnX, y, vx, vy, mat: SAND, soil });
         // Saturated ground sprays its pore water out with the grain.
         if (wet) grains.push({ x: spawnX, y, vx: vx * 0.7, vy: vy * 1.1, mat: WATER });
     }
@@ -1686,23 +1791,64 @@ function bodyContacts(b) {
     return contacts;
 }
 
+// Sample submerged cells & perimeter water flow around a rigid body for
+// Archimedes buoyancy, rotational buoyancy torque, and hydrodynamic drag.
+function sampleBodyWater(b) {
+    let sub = 0, total = 0, sumX = 0, wvx = 0, wvy = 0, torque = 0;
+    const st = b.stamped;
+    for (let i = 0; i < st.length; i += 2) {
+        total++;
+        const x = st[i], y = st[i + 1];
+        for (const [ox, oy] of [[0, 1], [0, -1], [-1, 0], [1, 0]]) {
+            const nx = x + ox, ny = y + oy;
+            if (nx < 0 || nx >= W || ny < 0 || ny >= H) continue;
+            if (matAt(nx, ny) !== WATER) continue;
+            const mi = (ny * W + nx) * 4;
+            const vx = (mirror[mi + 1] - 128) / 62;
+            const vy = (mirror[mi + 2] - 128) / 62; // y-up in grid
+            sub++;
+            sumX += x;
+            wvx += vx;
+            wvy += vy;
+            torque += (x - b.cx) * (-vy) - (y - b.cy) * vx;
+            break;
+        }
+    }
+    if (!sub) return { subFrac: 0, buoyX: b.cx, wvx: 0, wvy: 0, torque: 0 };
+    return {
+        subFrac: Math.min(1, sub / Math.max(1, total)),
+        buoyX: sumX / sub,
+        wvx: (wvx / sub) * 2.4,
+        wvy: (wvy / sub) * 2.4,
+        torque: (torque / sub) * 0.0008,
+    };
+}
+
 function stepBody(b, bi) {
     const contacts = bodyContacts(b);
-    const inWater = matAt(Math.round(b.cx), Math.round(b.cy)) === WATER;
+    const w = sampleBodyWater(b);
+    const inWater = w.subFrac > 0.05;
 
     if (contacts.length === 0 && b.stamped.length) {
-        // Free flight: gravity, drag/buoyancy, tumbling. Light debris is
-        // buoyant and bobs up to float at the surface.
-        if (inWater && b.buoyant) b.vy = Math.max(b.vy - 0.35, -2.2);
-        else b.vy = Math.min(b.vy + (inWater ? 0.12 : 0.55) * (GRAVITY / GRAVITY0), inWater ? 2 : 8);
-        if (inWater) { b.vx *= 0.9; b.omega *= 0.9; }
+        // Free flight: gravity, Archimedes buoyancy, hydrodynamic drag/current push.
+        const gScale = GRAVITY / GRAVITY0;
+        if (inWater) {
+            const rho = b.buoyant ? 0.62 : 2.15;
+            const netG = 0.55 * (1 - w.subFrac / rho) * gScale;
+            b.vy = Math.max(-2.6, Math.min(2.6, b.vy + netG));
+            b.vx += (w.wvx - b.vx) * (0.09 * w.subFrac);
+            b.vy += (-w.wvy - b.vy) * (0.05 * w.subFrac);
+            b.omega += (w.buoyX - b.cx) * w.subFrac * 0.0018 + w.torque * w.subFrac;
+            b.vx *= 1 - 0.08 * w.subFrac;
+            b.omega *= 1 - 0.10 * w.subFrac;
+        } else {
+            b.vy = Math.min(b.vy + 0.55 * gScale, 8);
+        }
         const n = Math.max(1, Math.ceil(Math.max(Math.abs(b.vx), Math.abs(b.vy), Math.abs(b.omega) * b.len)));
         for (let s = 0; s < n; s++) {
             if (tryPose(b, b.cx + b.vx / n, b.cy - b.vy / n, b.angle + b.omega / n)) continue;
             if (tryPose(b, b.cx + b.vx / n, b.cy - b.vy / n, b.angle)) { b.omega *= -0.1; continue; }
             if (tryPose(b, b.cx, b.cy - b.vy / n, b.angle)) { b.vx *= -0.3; continue; }
-            // Vertical contact: momentum transfer, ground shock, bedding in,
-            // and brittle failure (bodyImpact returns true if b broke apart).
             if (bodyImpact(b, bi)) return;
             break;
         }
@@ -1711,7 +1857,15 @@ function stepBody(b, bi) {
 
     if (!contacts.length) return; // fully out of bounds
 
-    // Grounded: friction, then check static stability (COM over support?).
+    // Grounded: hydrodynamic surge current can shove or lift submerged bodies.
+    if (inWater && (Math.abs(w.wvx) > 0.25 || b.buoyant)) {
+        b.vx += (w.wvx - b.vx) * (0.06 * w.subFrac);
+        b.omega += w.torque * w.subFrac * 0.6;
+        if (b.buoyant && w.subFrac > 0.35) {
+            b.vy = -0.8;
+            tryPose(b, b.cx, b.cy + 1, b.angle);
+        }
+    }
     b.vy = 0;
     b.vx *= 0.8;
     if (Math.abs(b.vx) > 0.3 && !tryPose(b, b.cx + Math.sign(b.vx), b.cy, b.angle)) b.vx = 0;
@@ -1984,7 +2138,7 @@ function detonate(cx, cy, size = 1) {
             // shallower water is thrown as spray.
             if (m === WATER && Math.random() < 0.55) return [AIR, 222, shock, 235]; // marked steam
             if (m === SAND || m === WATER) {
-                ejecta.push([x, y, d, m]);
+                ejecta.push([x, y, d, m, m === SAND ? mirror[(y * W + x) * 4] : undefined]);
                 // Wet ground throws its pore water out along with the grain.
                 if (m === SAND && isWetCell(x, y)) ejecta.push([x, y, d, WATER]);
                 return [AIR, 0, shock];
@@ -2017,7 +2171,8 @@ function detonate(cx, cy, size = 1) {
         if (m === WATER) {
             const g = Math.max(0, Math.min(255, Math.round(128 + ox * 62 * fall)));
             const bv = Math.max(0, Math.min(255, Math.round(128 + oy * 62 * fall)));
-            return [WATER, 0, bv, g];
+            const wShock = Math.max(0, Math.min(255, Math.round(255 * fall)));
+            return [WATER, 0, bv, g, [255, 80, wShock, 80]];
         }
         if (m === SAND && Math.random() < 0.4 * fall &&
             (matAt(x, y + 1) === AIR || matAt(x - 1, y) === AIR || matAt(x + 1, y) === AIR)) {
@@ -2041,7 +2196,7 @@ function detonate(cx, cy, size = 1) {
         const hx = Math.max(0, Math.min(W - 1, Math.round(x0)));
         depositGrain({ x: hx, y: colH[hx], vx: 0, vy: 0, mat: SAND });
     };
-    for (const [x, y, d, m] of ejecta) {
+    for (const [x, y, d, m, soil] of ejecta) {
         if (m === SAND && Math.random() > vent) {
             heave(cx + (Math.random() + Math.random() - 1) * R * 1.3);
             continue;
@@ -2057,7 +2212,7 @@ function detonate(cx, cy, size = 1) {
         // Blast sand flies as red-hot embers and lands as scorched, slowly
         // cooling ground.
         grains.push({
-            x, y, mat: m, hot: m === SAND,
+            x, y, mat: m, hot: m === SAND, soil,
             vx: Math.cos(ang) * side * spd + (Math.random() - 0.5),
             vy: Math.sin(ang) * spd + 1.0 + Math.random(),
             delay: Math.round(t * 8 + Math.random() * 2),
@@ -2128,7 +2283,11 @@ function updateQuakes() {
             if (m !== SAND) return null;
             const d = Math.hypot(x - q.cx, y - q.cy);
             if (d < rad - 8 || d > rad) return null;
-            return Math.random() < prob ? 'loosen' : null;
+            // Cyclic liquefaction: saturated or very wet sand loses effective stress far easier.
+            const rb = mirror[(y * W + x) * 4];
+            const wet = sandWetByte(rb);
+            const liqBoost = wet >= 12 ? 2.6 : 1.0;
+            return Math.random() < prob * liqBoost ? 'loosen' : null;
         });
         if (q.f >= 10) quakes.splice(i, 1);
     }
@@ -2153,8 +2312,11 @@ function depositGrain(g) {
         // starts raining back down through the steam cloud.
         const displacedWater = matAt(x, y) === WATER || isSteamCell(x, y);
         // Hot ejecta lands as scorched sand (G = ember intensity, cools on
-        // the GPU); ordinary grains land as plain loose sand.
-        stampRegion(x, y, 1, 1, () => g.hot ? [SAND, 0, 0, 230] : [SAND, 0]);
+        // the GPU); ordinary grains land preserving soil type and residual vx.
+        const sByte = (g.soil >= 30 && g.soil <= 80) ? g.soil : SAND;
+        const svx = Math.max(16, Math.min(240, Math.round(128 + (g.vx || 0) * 14)));
+        const fallB = Math.min(255, Math.round(Math.abs(g.vy || 0) * 18));
+        stampRegion(x, y, 1, 1, () => [sByte, 0, fallB, g.hot ? 230 : 0, [svx, g.hot ? 210 : 64, 0, 0]]);
         SFX.grainLand(!!g.hot, x);
         // Debris ringing off a vitrified crater lining.
         const under = y > BEDROCK_TOP ? mirror[((y - 1) * W + x) * 4] : 0;
@@ -2523,8 +2685,8 @@ function torchBrush(cx, cy, r) {
             const R = mirror[mi], heat = mirror[mi + 1];
             if (R >= 81 && R <= 84) return null;                              // already glass
             // Only dry grains fuse: a wet one holds pore water that would be lost.
-            if (heat > 200 && R <= 62 && Math.random() < 0.05) return [82, a, 0, 250];
-            return Math.random() < 0.45 ? [R, a, mirror[mi + 2], Math.min(250, heat + 70)] : null;
+            if (heat > 200 && sandWetByte(R) <= 2 && Math.random() < 0.05) return [82, a, 0, 250, [128, 240, 0, 0]];
+            return Math.random() < 0.45 ? [R, a, mirror[mi + 2], Math.min(250, heat + 70), [128, 220, 0, 0]] : null;
         }
         if (m === WATER && Math.random() < 0.10) { boiled++; return [AIR, 222, 0, 205]; }
         if (m === AIR && mirror[mi + 1] < 20 && mirror[mi + 3] < 200 && Math.random() < 0.02) return [AIR, 0, 0, 90]; // a wisp of smoke
@@ -3051,6 +3213,8 @@ function sceneUniforms(t) {
     gl.uniform1i(progRender.u_light, 1);
     gl.uniform1i(progRender.u_heights, 2);
     gl.uniform1i(progRender.u_smoke, 3);
+    if (progRender.u_aux !== null) gl.uniform1i(progRender.u_aux, 4);
+    if (progRender.u_temp !== null) gl.uniform1i(progRender.u_temp, 5);
     gl.uniform1f(progRender.u_time, t / 1000);
     // Sun elevation -1..1 from the engine's 0..1 daylight, cloud, lightning, sun column.
     gl.uniform4f(progRender.u_sky, sun * 2 - 1, overcast, skyFlash, sunX);
@@ -3059,6 +3223,8 @@ function sceneUniforms(t) {
     bindTex(1, lightTex[lightFront]);
     bindTex(2, heightTex);
     bindTex(3, smokeTex[smokeFront]);
+    bindTex(4, texAux[front]);
+    bindTex(5, tempTex[tempFront]);
 }
 
 // Post-processed present: sim state -> light field + smoke field -> scene FBO
@@ -3125,6 +3291,24 @@ function present(t) {
     bindTex(1, smokeTex[smokeFront]);
     gl.drawArrays(gl.TRIANGLES, 0, 3);
     smokeFront = 1 - smokeFront;
+
+    // Half-res thermal & humidity field: solar heating, fire/blast sources, buoyant convection.
+    gl.useProgram(progTemp.prog);
+    gl.uniform1i(progTemp.u_state, 0);
+    gl.uniform1i(progTemp.u_prev, 1);
+    if (progTemp.u_heights !== null) gl.uniform1i(progTemp.u_heights, 2);
+    gl.uniform1f(progTemp.u_wind, windNow());
+    gl.uniform4f(progTemp.u_sky, sun * 2 - 1, overcast, skyFlash, sunX);
+    gl.uniform1f(progTemp.u_k, simK);
+    gl.uniform1f(progTemp.u_seed, Math.random() * 97.0);
+    gl.uniform1i(progTemp.u_nsrc, nsrc);
+    gl.uniform4fv(progTemp.u_src, src);
+    gl.bindFramebuffer(gl.FRAMEBUFFER, tempFbo[1 - tempFront]);
+    bindTex(0, tex[front]);
+    bindTex(1, tempTex[tempFront]);
+    bindTex(2, heightTex);
+    gl.drawArrays(gl.TRIANGLES, 0, 3);
+    tempFront = 1 - tempFront;
 
     stepParticles(simK);
 
@@ -3566,14 +3750,15 @@ function inspectLines(x, y) {
     const depth = Math.max(0, colH[x] - y);
     const out = [`${MAT_NAMES[m] || '?'}  (${x}, ${y})`];
     if (m === SAND) {
-        if (r >= 81 && r <= 84) out[0] = `Glass (fused sand)  (${x}, ${y})`;
-        out.push(isSaturatedByte(r) ? 'pores: saturated' : `damp: ${Math.round(Math.max(0, Math.min(20, r - 60)) * 5)}%`);
+        out[0] = `${sandSoilName(r)}  (${x}, ${y})`;
+        out.push(isSaturatedByte(r) ? 'pores: saturated' : `damp: ${Math.round(sandWetByte(r) * 5)}%`);
         out.push(`cohesion: ${Math.round(a / 2.55)}%${a < 64 ? ' (loose)' : ''}`);
         if (g > 5) out.push(`ember heat: ${Math.round(g / 2.55)}%`);
     } else if (m === WATER) {
         out.push(`flow: ${((g - 128) / 62).toFixed(2)}, ${((b - 128) / 62).toFixed(2)}`);
         out.push(`pressure head: ${(a * 0.025).toFixed(2)} m`);
     } else if (m === AIR) {
+        if (r >= 6 && r <= 12 && g <= 2) out[0] = `Air bubble  (${x}, ${y})`;
         if (isSteamCell(x, y)) out.push('steam (carries water)');
         else if (g > 5) out.push(`smoke: ${Math.round(g / 1.36)}%`);
         if (b > 8) out.push(`shock: ${Math.round(b / 2.55)}%`);

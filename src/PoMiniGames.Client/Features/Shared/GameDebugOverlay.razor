@@ -7,8 +7,8 @@
 @* ─────────────────────────────────────────────────────────────────────────
    GameDebugOverlay — the one diagnostics panel every game shares.
 
-   Games used to disagree about this: PoEcosystem and PoJevArena each bound Tab
-   to their own stats view, and every other game had nothing (or hid an FPS
+   Games used to disagree about this: PoEcosystem bound Tab
+   to its own stats view, and every other game had nothing (or hid an FPS
    readout inside a one-off options drawer). Now GameShell renders this for every
    game, and Tab means the same thing everywhere: show/hide live frame rate,
    frame time, heap and viewport, plus any per-game rows the page passes through
@@ -87,7 +87,7 @@
 @code {
     /// <summary>
     /// Off for a page that already has its own Tab binding (PoEcosystem's world
-    /// dashboard, PoJevArena's stats sheet), so Tab never opens two panels.
+    /// dashboard), so Tab never opens two panels.
     /// </summary>
     [Parameter] public bool Enabled { get; set; } = true;
 

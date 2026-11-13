@@ -80,13 +80,21 @@ const TILE = [3, 4.8, 6.4, 9, 5.6, 2.4, 7.2];
  * Adds world-space surface detail to a MeshStandardMaterial: tone variation, joints, a
  * roughness spread and a bump from the same height. `detail` is a shared uniform (0..1) so the
  * quality governor can turn it down without recompiling a shader.
+ *
+ * `wear` (ground.js) is optional: a map of where the crowd has walked. Grass under it turns to
+ * churned mud, paving picks up a wet film of tracked dirt.
  */
-export function addSurface(material, kind, texture, detail) {
+export function addSurface(material, kind, texture, detail, wear = null) {
     material.onBeforeCompile = shader => {
         shader.uniforms.uSurf = { value: texture };
         shader.uniforms.uSurfTile = { value: TILE[kind] };
         shader.uniforms.uSurfDetail = detail;
         shader.defines = { ...shader.defines, SURF_KIND: kind };
+        if (wear) {
+            shader.uniforms.uWear = wear.map;
+            shader.uniforms.uWearRect = wear.rect;
+            shader.defines.SURF_WEAR = 1;
+        }
         shader.vertexShader = shader.vertexShader
             .replace('#include <common>', '#include <common>\nvarying vec3 vSurfPos;\nvarying vec3 vSurfNormal;')
             .replace('#include <worldpos_vertex>', `#include <worldpos_vertex>
@@ -104,7 +112,11 @@ export function addSurface(material, kind, texture, detail) {
                 varying vec3 vSurfNormal;
                 uniform sampler2D uSurf;
                 uniform float uSurfTile;
-                uniform float uSurfDetail;`)
+                uniform float uSurfDetail;
+                #ifdef SURF_WEAR
+                    uniform sampler2D uWear;
+                    uniform vec4 uWearRect;
+                #endif`)
             .replace('#include <map_fragment>', `#include <map_fragment>
                 float surfHeight = 0.0, surfRough = roughness;
                 if (uSurfDetail > 0.0) {
@@ -114,6 +126,14 @@ export function addSurface(material, kind, texture, detail) {
                     vec4 s = texture2D(uSurf, sp.zy) * sb.x + texture2D(uSurf, sp.xz) * sb.y + texture2D(uSurf, sp.xy) * sb.z;
                     float tone = 1.0;
                     float upNormal = clamp(vSurfNormal.y, 0.0, 1.0);
+                    float worn = 0.0;
+                    #ifdef SURF_WEAR
+                        vec2 wearUv = (vSurfPos.xz - uWearRect.xy) * uWearRect.zw;
+                        if (wearUv.x > 0.0 && wearUv.x < 1.0 && wearUv.y > 0.0 && wearUv.y < 1.0) {
+                            // The noise breaks the edge up, so a path frays out instead of ending in a line.
+                            worn = smoothstep(0.1, 0.72, texture2D(uWear, wearUv).r * (0.6 + 0.8 * s.r)) * upNormal;
+                        }
+                    #endif
                     #if SURF_KIND == 1
                         tone = mix(0.92, 1.04, s.r * 0.6 + s.g * 0.4) * (1.0 - s.b * 0.09);
                         surfHeight = s.r * 0.35 - s.b * 0.6;
@@ -149,6 +169,9 @@ export function addSurface(material, kind, texture, detail) {
                         float puddle = smoothstep(0.46, 0.85, s.g * 0.65 + (1.0 - s.r) * 0.35) * upNormal;
                         diffuseColor.rgb *= (1.0 - puddle * 0.36 * uSurfDetail);
                         surfRough = mix(surfRough, 0.04, puddle * uSurfDetail);
+                        // Mud walked in off the lawn: a dark wet film where the crowd has been.
+                        diffuseColor.rgb *= mix(vec3(1.0), vec3(0.6, 0.54, 0.47), worn * 0.85);
+                        surfRough = mix(surfRough, 0.22, worn * 0.55);
                     #elif SURF_KIND == 3
                         diffuseColor.rgb *= mix(vec3(1.0), mix(vec3(0.82, 0.9, 0.76), vec3(1.32, 1.16, 0.82), s.g), uSurfDetail);
                         tone = mix(0.78, 1.12, s.r);
@@ -158,6 +181,12 @@ export function addSurface(material, kind, texture, detail) {
                         float grassFrost = smoothstep(0.48, 0.92, upNormal) * (0.5 + s.r * 0.5);
                         diffuseColor.rgb = mix(diffuseColor.rgb, vec3(0.88, 0.92, 0.9), grassFrost * 0.42 * uSurfDetail);
                         surfRough = mix(surfRough, 0.85, grassFrost * 0.5);
+                        // A lawn under a few hundred boots in January: the frost goes first, then
+                        // the grass, and what is left is dark, wet and shines where it has pooled.
+                        vec3 mud = vec3(0.11, 0.076, 0.046) * (0.7 + 0.6 * s.g);
+                        diffuseColor.rgb = mix(diffuseColor.rgb, mud, worn * 0.94);
+                        surfRough = mix(surfRough, 0.2 + 0.5 * s.r, worn);
+                        surfHeight = mix(surfHeight, s.g * 1.6 - s.r * 0.5, worn);
                     #else
                         tone = mix(0.93, 1.04, s.r * 0.7 + s.g * 0.3);
                         surfHeight = s.r * 0.5;
@@ -183,7 +212,7 @@ export function addSurface(material, kind, texture, detail) {
                     normal = normalize(abs(det) * normal - sign(det) * (hx * r1 + hy * r2));
                 }`);
     };
-    material.customProgramCacheKey = () => `pocapitol-surface-${kind}`;
+    material.customProgramCacheKey = () => `pocapitol-surface-${kind}${wear ? '-wear' : ''}`;
     return material;
 }
 
@@ -346,6 +375,137 @@ export function addSubsurfaceScattering(material, { wrap = 0.38, scatterColor = 
                 #endif`);
     };
     material.customProgramCacheKey = () => 'pocapitol-ssss';
+    return material;
+}
+
+/** What each part of a person is made of. The fabric shader draws the weave, quilting or print. */
+export const CLOTH = { plain: 0, quilt: 1, fleece: 2, denim: 3, camo: 4, plaid: 5, canvas: 6, hiVis: 7, skin: 8, hide: 9, duty: 10, hair: 11 };
+
+/**
+ * Cloth on the rigged figures. Each vertex carries a CLOTH kind (`aCloth`), and the pattern is
+ * drawn in the figure's rest pose, so quilting and plaid stay sewn to the coat while it moves.
+ * Fine detail fades out with distance instead of shimmering. Call after any other shader hook
+ * on the material: it keeps the earlier one.
+ */
+export function addFabric(material, detail = { value: 1 }) {
+    const before = material.onBeforeCompile, key = material.customProgramCacheKey?.() ?? '';
+    material.onBeforeCompile = (shader, renderer) => {
+        before?.call(material, shader, renderer);
+        shader.uniforms.uClothDetail = detail;
+        shader.vertexShader = shader.vertexShader
+            .replace('#include <common>', '#include <common>\nattribute float aCloth;\nvarying float vCloth;\nvarying vec3 vRest;')
+            .replace('#include <begin_vertex>', '#include <begin_vertex>\nvCloth = aCloth;\nvRest = position;');
+        shader.fragmentShader = shader.fragmentShader
+            .replace('#include <common>', `#include <common>
+                varying float vCloth;
+                varying vec3 vRest;
+                uniform float uClothDetail;
+                float fabHash(vec3 p) { p = fract(p * 0.3183099 + 0.1); p *= 17.0; return fract(p.x * p.y * p.z * (p.x + p.y + p.z)); }
+                float fabNoise(vec3 x) {
+                    vec3 i = floor(x), f = fract(x); f = f * f * (3.0 - 2.0 * f);
+                    return mix(mix(mix(fabHash(i), fabHash(i + vec3(1, 0, 0)), f.x), mix(fabHash(i + vec3(0, 1, 0)), fabHash(i + vec3(1, 1, 0)), f.x), f.y),
+                        mix(mix(fabHash(i + vec3(0, 0, 1)), fabHash(i + vec3(1, 0, 1)), f.x), mix(fabHash(i + vec3(0, 1, 1)), fabHash(i + vec3(1, 1, 1)), f.x), f.y), f.z);
+                }`)
+            .replace('#include <color_fragment>', `#include <color_fragment>
+                float fabHeight = 0.0, fabRough = roughness;
+                if (uClothDetail > 0.0) {
+                    int fabKind = int(vCloth + 0.5);
+                    vec3 fp = vRest;
+                    // Metres of cloth under one pixel: what decides which detail can still be drawn.
+                    float fabPx = length(fwidth(fp));
+                    float fineFade = 1.0 - smoothstep(0.003, 0.009, fabPx);
+                    float bandFade = 1.0 - smoothstep(0.03, 0.08, fabPx);
+                    // Noise is the expensive part, and most of a crowd is too far away to show it:
+                    // it is only worked out for the people close enough to need it.
+                    bool fabNear = bandFade > 0.0;
+                    float fine = fineFade > 0.0 ? fabNoise(fp * 160.0) * fineFade + 0.5 * (1.0 - fineFade) : 0.5;
+                    float fabTone = 1.0;
+                    if (fabKind == 1) {
+                        // Quilted puffer: horizontal baffles, stitched in at the seams.
+                        float band = fract(fp.y * 9.5 + 0.2);
+                        float seam = 1.0 - smoothstep(0.0, 0.09, min(band, 1.0 - band));
+                        fabTone = 1.0 - 0.3 * seam * bandFade;
+                        fabHeight = sin(band * 3.14159) * 0.013 * bandFade;
+                        fabRough = 0.46 + 0.16 * fine;
+                    } else if (fabKind == 2) {
+                        fabTone = 0.93 + 0.14 * fine;
+                        fabHeight = fine * 0.0012;
+                        fabRough = 0.98;
+                    } else if (fabKind == 3) {
+                        // Denim: a diagonal twill, faded down the front of the thigh and at the knee.
+                        float twill = sin((fp.x + fp.y + fp.z) * 520.0) * fineFade;
+                        float fade = smoothstep(0.05, -0.1, fp.z) * smoothstep(0.25, 0.42, fp.y) * (1.0 - smoothstep(0.62, 0.84, fp.y));
+                        fabTone = 0.9 + 0.1 * (fabNear ? fabNoise(fp * 11.0) : 0.5) + 0.05 * twill + 0.22 * fade;
+                        fabHeight = twill * 0.0006;
+                        fabRough = 0.9;
+                    } else if (fabKind == 4) {
+                        // Camouflage: three tones in soft blotches.
+                        float blot = fabNear ? fabNoise(fp * 13.0 + 3.1) : 0.5, spot = fabNear ? fabNoise(fp * 21.0 + 11.7) : 0.5;
+                        float darkPatch = smoothstep(0.52, 0.58, blot), palePatch = smoothstep(0.6, 0.66, spot) * (1.0 - darkPatch);
+                        fabTone = mix(1.0, 1.0 - 0.45 * darkPatch + 0.4 * palePatch, bandFade);
+                        diffuseColor.rgb = mix(diffuseColor.rgb, diffuseColor.rgb * vec3(1.18, 1.0, 0.72), darkPatch * 0.5 * bandFade);
+                        fabRough = 0.92;
+                    } else if (fabKind == 5) {
+                        // Flannel plaid: crossing bands, darker where two meet, a thin light line through.
+                        float px = fract((fp.x * 0.9 + fp.z * 0.6) * 7.0), py = fract(fp.y * 7.0);
+                        float bars = step(0.5, px) + step(0.5, py);
+                        float line = (1.0 - smoothstep(0.0, 0.03, abs(px - 0.25))) + (1.0 - smoothstep(0.0, 0.03, abs(py - 0.25)));
+                        fabTone = mix(0.78, 1.0 - 0.26 * bars + 0.22 * line, bandFade);
+                        fabHeight = fine * 0.0008;
+                        fabRough = 0.96;
+                    } else if (fabKind == 6) {
+                        fabTone = 0.92 + 0.14 * fine + 0.06 * (fabNear ? fabNoise(fp * 6.0) : 0.5);
+                        fabHeight = fine * 0.001;
+                        fabRough = 0.94;
+                    } else if (fabKind == 7) {
+                        // Hi-vis: two reflective bands round the body and one round each arm.
+                        float tape = max((1.0 - smoothstep(0.0, 0.006, abs(fp.y - 0.98) - 0.028)), (1.0 - smoothstep(0.0, 0.006, abs(fp.y - 1.24) - 0.028)));
+                        diffuseColor.rgb = mix(diffuseColor.rgb, vec3(0.82, 0.84, 0.8), tape);
+                        fabRough = mix(0.7, 0.28, tape);
+                        fabTone = 0.96 + 0.08 * fine;
+                    } else if (fabKind == 8) {
+                        // Skin, and what a raw afternoon does to it: nose and cheeks go red.
+                        float cold = smoothstep(-0.13, -0.2, fp.z) * smoothstep(1.7, 1.75, fp.y) * (1.0 - smoothstep(1.81, 1.85, fp.y));
+                        diffuseColor.rgb = mix(diffuseColor.rgb, diffuseColor.rgb * vec3(1.14, 0.88, 0.86), cold * 0.55);
+                        fabTone = 0.97 + 0.06 * (fabNear ? fabNoise(fp * 40.0) : 0.5);
+                        fabRough = 0.62;
+                    } else if (fabKind == 9) {
+                        // Leather, rubber, and the eye: smooth, and a boot has a darker sole.
+                        fabTone = fp.y < 0.035 ? 0.55 : 0.94 + 0.1 * fine;
+                        fabRough = 0.42;
+                    } else if (fabKind == 10) {
+                        // Duty uniform: plain dark cloth under a wide leather belt.
+                        float belt = 1.0 - smoothstep(0.0, 0.006, abs(fp.y - 0.93) - 0.03);
+                        fabTone = mix(0.95 + 0.1 * fine, 0.35, belt);
+                        fabRough = mix(0.86, 0.4, belt);
+                    } else if (fabKind == 11) {
+                        fabTone = 0.82 + 0.3 * fine;
+                        fabHeight = fine * 0.0015;
+                        fabRough = 0.97;
+                    } else {
+                        fabTone = 0.95 + 0.1 * fine;
+                        fabHeight = fine * 0.0006;
+                    }
+                    // A zip or a button placket down the front of anything worn on the body.
+                    if (fabKind != 8 && fabKind != 9 && fabKind != 11 && fp.z < 0.0 && fp.y > 0.6 && fp.y < 1.58) {
+                        float placket = (1.0 - smoothstep(0.004, 0.01, abs(fp.x))) * bandFade;
+                        fabTone *= 1.0 - 0.4 * placket;
+                        fabHeight -= placket * 0.002;
+                    }
+                    diffuseColor.rgb *= mix(1.0, fabTone, uClothDetail);
+                    fabHeight *= uClothDetail;
+                }`)
+            .replace('#include <roughnessmap_fragment>', '#include <roughnessmap_fragment>\nroughnessFactor = mix(roughnessFactor, fabRough, uClothDetail);')
+            .replace('#include <normal_fragment_maps>', `#include <normal_fragment_maps>
+                if (uClothDetail > 0.0) {
+                    vec3 fdx = dFdx(-vViewPosition), fdy = dFdy(-vViewPosition);
+                    float fhx = dFdx(fabHeight), fhy = dFdy(fabHeight);
+                    vec3 fr1 = cross(fdy, normal), fr2 = cross(normal, fdx);
+                    float fdet = dot(fdx, fr1);
+                    normal = normalize(abs(fdet) * normal - sign(fdet) * (fhx * fr1 + fhy * fr2));
+                }`);
+    };
+    material.customProgramCacheKey = () => `${key}-fabric`;
     return material;
 }
 

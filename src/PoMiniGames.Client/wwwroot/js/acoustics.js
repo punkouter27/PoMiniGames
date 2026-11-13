@@ -111,12 +111,6 @@ const SPACES = {
         taps: [[36, 0.18], [118, 0.22], [171, 0.10]],
         send: 0.13,
     },
-    /** PoJevArena. An open-air pit with a packed-dirt floor: big, sparse, soaked up low. */
-    pit: {
-        seconds: 2.0, decay: 2.9, damping: 0.62, predelay: 26,
-        taps: [[29, 0.34], [54, 0.27], [91, 0.20], [139, 0.12]],
-        send: 0.24,
-    },
     /** PoEcosystem. An island under open sky: far, soft, damp — foliage eats the highs. */
     island: {
         seconds: 1.1, decay: 4.6, damping: 0.9, predelay: 46,
@@ -250,7 +244,6 @@ const GAME_SPACES = {
     povoxelstrike: 'dry',
     pocabinet: 'grandstand',
     pomule: 'crt',
-    pojevarena: 'pit',
     poecosystem: 'island',
     sandplayground: 'sandbox',
 };
