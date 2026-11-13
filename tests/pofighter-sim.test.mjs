@@ -32,8 +32,15 @@ test('walking stops at the bag and at the left edge, and releasing returns to id
     assert.equal(s.move, 'walkF');
     step(s, NONE, DT, data);
     assert.equal(s.move, 'idle');
-    runFor(s, { ...NONE, left: true }, 5);
+    runFor(s, { ...NONE, left: true }, 10);
     assert.equal(s.x, WORLD.minX);
+});
+
+test('walks travel at the speed measured from the footage', () => {
+    assert.ok(data.moves.walkF.speed > 0);
+    assert.ok(data.moves.walkB.speed < 0);
+    const s = runFor(createState(), { ...NONE, right: true }, 1);
+    assert.ok(Math.abs(s.x - WORLD.startX - data.moves.walkF.speed) < 6);
 });
 
 test('opposite directions cancel out', () => {

@@ -11,7 +11,6 @@ export const WORLD = {
     bagX: 800, bagHalf: 48,
     // The fighter stops where the raised guard just touches the bag; only an attack reaches it.
     standOff: 150,
-    walkF: 210, walkB: 170,
     jumpLift: 120,
 };
 
@@ -88,14 +87,14 @@ export function step(state, input, dt, data) {
     const def = moves[state.move];
     const { index } = frameAt(def, state.t);
 
-    if (state.move === 'walkF') state.x += WORLD.walkF * dt;
-    else if (state.move === 'walkB') state.x -= WORLD.walkB * dt;
+    // A walk carries its own speed, measured from the footage so the feet do not slide.
+    if (def.speed) state.x += def.speed * dt;
     state.x = Math.min(maxX(), Math.max(WORLD.minX, state.x));
 
     if (state.move === 'jump') {
-        // The first quarter of the pictures is the wind-up on the ground.
+        // The first pictures are the wind-up on the ground.
         const p = Math.min(1, (state.t * def.fps) / def.frames.length);
-        const a = Math.min(1, Math.max(0, (p - 0.25) / 0.65));
+        const a = Math.min(1, Math.max(0, (p - 0.15) / 0.75));
         state.lift = WORLD.jumpLift * 4 * a * (1 - a);
     }
 

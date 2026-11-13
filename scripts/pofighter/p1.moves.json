@@ -6,12 +6,12 @@
   "scale": 0.5,
   "moves": {
     "idle":      { "from": 243, "to": 257, "step": 2, "anchor": "world", "loop": "pingpong" },
-    "walkF":     { "from": 258, "to": 291, "step": 3, "anchor": "track", "loop": "loop" },
-    "walkB":     { "from": 207, "to": 249, "step": 3, "anchor": "track", "loop": "loop" },
+    "walkF":     { "from": 258, "to": 291, "step": 3, "anchor": "track", "loop": "loop", "rate": 1.6 },
+    "walkB":     { "from": 207, "to": 249, "step": 3, "anchor": "track", "loop": "loop", "rate": 2.0 },
     "crouch":    { "from": 357, "to": 371, "step": 2, "anchor": "world", "loop": "hold" },
-    "jump":      { "from": 333, "to": 349, "step": 2, "anchor": "world", "loop": "once" },
-    "punchMid":  { "from": 469, "to": 485, "step": 2, "anchor": "world", "loop": "once", "attack": true },
-    "punchHigh": { "from": 527, "to": 545, "step": 2, "anchor": "world", "loop": "once", "attack": true },
-    "kick":      { "from": 583, "to": 603, "step": 2, "anchor": "world", "loop": "once", "attack": true }
+    "jump":      { "from": 335, "to": 349, "step": 2, "anchor": "world", "loop": "once" },
+    "punchMid":  { "from": 469, "to": 485, "step": 2, "anchor": "world", "loop": "once", "attack": true, "rate": 1.25 },
+    "punchHigh": { "from": 527, "to": 545, "step": 2, "anchor": "world", "loop": "once", "attack": true, "rate": 1.25 },
+    "kick":      { "from": 583, "to": 603, "step": 2, "anchor": "world", "loop": "once", "attack": true, "rate": 1.25 }
   }
 }

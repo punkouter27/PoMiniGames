@@ -6,7 +6,8 @@ Outputs <fighter>.webp (sheet), <fighter>.json (frame rects and anchors) and rev
 Every frame's anchor is the point that sits on the fighter's ground position in the game:
 x = the body's centre line, y = the ground line. "world" moves keep the body motion that
 was filmed (one anchor for the whole move); "track" moves (walks) are re-centred per frame
-so the game supplies the travel.
+so the game supplies the travel, at the "speed" measured from the footage. "rate" plays a
+move faster than it was filmed (and scales a walk's speed with it).
 """
 import json
 import pathlib
@@ -35,6 +36,10 @@ def main() -> None:
         imgs = [Image.open(cut / f"f{i:04d}.png") for i in ids]
         alphas = [np.array(im)[..., 3] for im in imgs]
         xs = [torso_x(a, ground, stand) for a in alphas]
+        # Walks travel at the speed the performer really moved, so the feet do not slide.
+        rate = mv.get("rate", 1)
+        seconds = (ids[-1] - ids[0]) / cfg["sourceFps"]
+        travel = (xs[-1] - xs[0]) * scale / seconds * rate if mv["anchor"] == "track" else None
         if mv["anchor"] == "world":
             xs = [xs[0]] * len(xs)
         else:  # light smoothing so the walk does not jitter
@@ -50,7 +55,9 @@ def main() -> None:
             frames.append({"src": i, "ax": round((ax - x0) * scale, 1), "ay": round((ground - y0) * scale, 1),
                            "r": round((x1 - ax) * scale, 1)})
             cells.append((crop, frames[-1]))
-        meta[name] = {"loop": mv["loop"], "fps": cfg["sourceFps"] / mv["step"], "frames": frames}
+        meta[name] = {"loop": mv["loop"], "fps": cfg["sourceFps"] / mv["step"] * rate, "frames": frames}
+        if travel is not None:
+            meta[name]["speed"] = round(travel, 1)
         if mv.get("attack"):
             # A picture can hit once the limb is past 60% of its full extension.
             reach = [f["r"] for f in frames]
