@@ -205,7 +205,7 @@ jobs:
       # the C# half runs in the unit tier above. Node ships on ubuntu-latest.
       - name: Run PoBrawl rollback sim parity (JS)
         run: node --test tests/pobrawl-rollback.test.mjs
-      - name: Run PoBrawl 1v1 core rules (JS: combat, energy, knockdowns, rounds, CPU)
+      - name: Run PoBrawl 1v1 core rules (JS, combat, energy, knockdowns, rounds and the CPU)
         run: node --test tests/pobrawl-core.test.mjs
       - name: Run PoEcosystem simulation tests (JS)
         run: node --test tests/poecosystem-sim.test.mjs
