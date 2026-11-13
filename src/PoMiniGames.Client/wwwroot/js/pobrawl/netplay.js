@@ -40,6 +40,7 @@ import { regionEffect } from './combat.js';
 import { RollbackSession, HISTORY } from './rollbackSession.js';
 import {
   HZ, ENERGY_MAX, HELD_IDLE, HELD_FORWARD, HELD_BACK, HELD_BLOCK,
+  FLOOR_NONE, FLOOR_DOWN, ARM_LEFT,
   PRESS_PUNCH, PRESS_KICK, PRESS_SPECIAL, PRESS_NONE,
 } from './rollbackSim.js';
 
@@ -412,7 +413,11 @@ class NetplayMethods {
           continue;
         }
         o.thrown.set(key, fr);
-        this._netSwing(f, SWING[c.swing], { key, frame: fr, outcome, damage: c.damage, special: c.swing === PRESS_SPECIAL });
+        this._netSwing(f, SWING[c.swing], {
+          key, frame: fr, outcome, damage: c.damage, special: c.swing === PRESS_SPECIAL,
+          // The hand the sim threw (rollbackSim.js: jab left, cross right).
+          arm: c.swing === PRESS_PUNCH && c.arm === ARM_LEFT ? 'L' : 'R',
+        });
       }
     }
     for (const [f, c] of corners) {
@@ -435,6 +440,28 @@ class NetplayMethods {
         if (Math.abs(player.health - want) > 0.01) { player.health = want; this.hudDirty = true; }
       }
     }
+
+    // ── The canvas: the sim says who is down, rising or standing ──
+    // Idempotent, so a rollback that changes its mind is simply followed. The knockdown waits
+    // for the blow that caused it to land on screen (the attacker's verdict still in the air).
+    for (const [f, c] of corners) {
+      if (f.state === 'ko') continue;
+      const opp = f === this.fighters[0] ? this.fighters[1] : this.fighters[0];
+      if (c.floor === FLOOR_DOWN) {
+        if (f.state === 'down') continue;
+        if (f.state === 'getup') { f.state = 'down'; f.stateT = 0; f.animator.setDown(true); continue; }
+        if (opp.netVerdict && opp.netVerdict.outcome !== 'whiff') continue;
+        const dx = f.rig.root.position.x - opp.rig.root.position.x;
+        this._knockDown(f, opp, new THREE.Vector3(dx >= 0 ? 1 : -1, 0, 0));
+        f.knockback.set(0, 0, 0);   // the sim's X already carries the slide
+      } else if (c.floor !== FLOOR_NONE) {
+        if (f.state === 'down') { f.state = 'getup'; f.stateT = 0; f.animator.setDown(false); }
+      } else if (f.state === 'down' || f.state === 'getup') {
+        f.state = 'idle';
+        f.stateT = 0;
+        f.animator.setDown(false);
+      }
+    }
   }
 
   /** Throw the swing the sim fired. Any verdict still in the air lands first. */
@@ -446,6 +473,9 @@ class NetplayMethods {
     f.blockStunT = 0;
     f.animator.setBlocking(false);
     f.animator.setCharge(null, 0);
+    // On screen the fighter may still be finishing a rise the sim already ended.
+    if (f.state === 'down' || f.state === 'getup') f.animator.setDown(false);
+    f.netArm = verdict.arm;   // _enterAttack swings this hand
     // A special is the kick at full charge: the gold trail, the big lunge, the heavy whoosh.
     this._enterAttack(f, attackName, verdict.special ? 1 : 0);
     if (verdict.special) {
@@ -466,7 +496,7 @@ class NetplayMethods {
     const wMul = attacker.swingWindupMul ?? 1.0;
     const aMul = attacker.swingActiveMul ?? 1.0;
     const phase = attacker.stateT > attack.windup * wMul + attack.active * aMul ? 'recover' : 'active';
-    const hit = testAttackHit(attacker.rig, attack.name, phase, defender.rig);
+    const hit = testAttackHit(attacker.rig, attacker.strike || attack.name, phase, defender.rig);
     if (!hit) return;
     this._presentNetVerdict(attacker, defender, attack, v, hit);
   }

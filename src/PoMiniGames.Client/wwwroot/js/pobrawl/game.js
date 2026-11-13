@@ -1,7 +1,9 @@
 // game.js — PoBrawl match orchestrator.
-// Owns: scene, camera, fixed-timestep sim, per-fighter state machine, momentum +
-// per-region damage + hit-pause + screen shake + cinematic camera,
-// audio bus, and the Blazor interop callbacks.
+// Owns: scene, camera, the fixed-timestep match loop (countdown, the fight tick, ring
+// clamp and push-apart, KO, result), spawning, hit-pause + screen shake, the audio bus
+// and the Blazor interop callbacks. One fighter's own turn — movement, energy and the
+// state machine — is fighterTick.js; the rules it applies are energy.js, knockdown.js
+// and combat.js; best-of-three is rounds.js.
 import * as THREE from 'three';
 import { buildArena, animateCrowd, updateAtmosphere, updateRopes, updateBanners, twangRope, damagePost, disposeArenaReflector, RING_HALF } from './arena.js';
 import { buildProps, resetProps, updateProps, disposeProps } from './props.js';
@@ -10,7 +12,7 @@ import { Animator } from './animation.js';
 import { KeyboardController, buildTouchControls, LAYOUTS, padCodes } from './input.js';
 import { AiController } from './ai.js';
 import { RandomGenerator } from './rng.js';
-import { CombatPlay, regionEffect } from './combat.js';
+import { CombatPlay } from './combat.js';
 import { PERSONALITIES, makePersonalityState } from './personalities.js';
 import * as PostFx from '../postFx.js';
 import * as VisualRuntime from '../visualRuntime.js';
@@ -31,7 +33,10 @@ import { Blood } from './blood.js';
 import { Cinematics, BASE_FOV } from './cinematics.js';
 import { HitResolution } from './hitResolution.js';
 import { Training } from './training.js';
-import { SIM_DT, MAX_HP, ATTACKS, TIME_LIMIT, MAT_HALF } from './constants.js';
+import { SIM_DT, MAX_HP, TIME_LIMIT, MAT_HALF } from './constants.js';
+import { ENERGY_DEFAULT } from './energy.js';
+import { FighterTick } from './fighterTick.js';
+import { newMatch, roundLabel } from './rounds.js';
 import { SceneSetup, ENV_INTENSITY } from './sceneSetup.js';
 import { KeyBridge } from '../gamepadBus.js';
 import { BrawlHaptics } from './haptics.js';
@@ -66,12 +71,6 @@ function motionReduced() {
 }
 
 
-// Lateral orbit speed for the circle keys, in the same units as the 2.4 / 1.9
-// forward / backward walk. Slightly under the advance so that closing distance
-// is still the faster way to cross the ring and circling reads as positioning
-// rather than a second, better run.
-const CIRCLE_SPEED = 2.0;
-
 // How close the two health bars have to be at TIME! for the decision to be a
 // draw rather than a win, in HP points out of MAX_HP (100) — so this reads as
 // "within a tenth of a bar". A band, not an exact tie: exact ties are
@@ -96,65 +95,12 @@ const MIN_SEPARATION = 0.95;
 // fighters one behind the other. tan(30°).
 const SIDE_VIEW_DEPTH_RATIO = 0.577;
 
-const HITSTUN = 0.35;
-
-// ── Hold-to-charge (Urban Champion style) ────────────────────────────────
-// Press-and-hold punch/kick winds the attack up; release throws it. Charge
-// scales damage/knockback from a quick tap (1x) to a full hold (CHARGE_MAX_MUL)
-// over CHARGE_TIME seconds. Held attacks are intentionally a huge upgrade over
-// quick taps, so committing to a full charge is worth the risk.
-const CHARGE_TIME = 1.0;
-const CHARGE_MAX_MUL = 4.0;
-
-
-// ── Energy meter ─────────────────────────────────────────────────────────
-// One 0..1 pool per fighter — the blue bar under the HP bar in the Blazor HUD.
-// It is BOTH how hard this fighter's strikes land and whether they are allowed
-// to throw one at all. Design goal: blocking is rewarded and pure offence is a
-// losing strategy.
-//
-//   • winding up drains the pool into the strike (chargeAmt), so the coil is
-//     paid for out of the bar and the bar visibly empties as you load up;
-//   • releasing costs a further flat ATTACK_ENERGY_COST, which is what taxes
-//     tap-spam — a jab banks almost no charge but still pays the toll;
-//   • dropping under the floor GASSES the fighter: no punch, no kick, at all,
-//     until they have recovered back up to ENERGY_RECOVER_TO (see _canAttack);
-//   • blocking refills it fast, idling refills it slowly, and swinging refills
-//     it not at all.
-//
-// Fighters open with a full bar — roughly four spammed punches, or one fully
-// committed haymaker. Less would gas a fighter out after two jabs.
-const ENERGY_DEFAULT = 1.0;
-
-// Flat toll charged on every swing release, on top of whatever the wind-up
-// already drained. This is the anti-spam term: at 0.22 a fighter who only ever
-// taps gets roughly four KICKS from a full bar before gassing out, and the idle
-// regen below cannot keep up with continuous mashing. Each attack scales it by
-// its own `energyMul`, so a punch pays half (≈ eight jabs to a bar) — see the
-// ATTACKS table for why the two buttons are priced apart.
-const ATTACK_ENERGY_COST = 0.22;
-
-// Hysteresis band for the gate. Falling below ENERGY_ATTACK_FLOOR sets the
-// gassed flag; clearing it needs ENERGY_RECOVER_TO, which is deliberately
-// higher so an exhausted fighter cannot chip out one more jab the instant a
-// single frame of regen lands. That gap is the punishment window.
-const ENERGY_ATTACK_FLOOR = 0.22;
-const ENERGY_RECOVER_TO = 0.40;
-
-// Regen, as a fraction of a full bar per second, by state. Blocking is ~3.4x
-// idle: guarding is the deliberate, rewarded way back into the fight. Swinging
-// (the punch/kick states) regenerates
-// nothing — you do not catch your breath mid-combination. The KO state is
-// exempt entirely; a bar still moving behind the K.O. banner reads as a bug.
-const ENERGY_REGEN_PER_SEC = 0.16;
-const ENERGY_BLOCK_REGEN_PER_SEC = 0.55;
-const ENERGY_HITSTUN_REGEN_PER_SEC = 0.08;
-
-
-
 
 // VS splash hold, shared by the first match and resetMatch.
 const SPLASH_HOLD_MS = 1300;
+
+// How long the ring holds on a round's winner before the next round's splash.
+const ROUND_BREAK_SECS = 2.4;
 
 // Mirror match (2P, both players on one president): player 2 wears the alternate kit, the
 // suit and tie turned round the colour wheel (and the suit lifted a touch, since most are near
@@ -276,6 +222,9 @@ export class BrawlGame {
     this.training = options && options.training && options.mode === '1p'
       ? this._makeTraining()
       : null;
+    // Best of three (rounds.js) where a human fights: the 1P ladder and 2P local. Null in
+    // the Cup, online and the training room, which stay one round.
+    this.match = this._roundsMode() ? newMatch() : null;
   }
 
   start() {
@@ -562,9 +511,10 @@ export class BrawlGame {
       ready.then(() => { if (!this.disposed) this._startCountdown(); });
     } else {
       this._beginWithSplash(this.fighters[0].charId, this.fighters[1].charId,
-        this.options.mode === '2p' ? 'ONE ROUND · 60 SECONDS'
+        this.options.mode === '2p' ? 'BEST OF 3 · ROUND 1'
           : this.options.mode === 'tournament' ? (this.options.roundLabel || 'TOURNAMENT')
           : this.options.mode === 'online' ? (spectating ? 'LIVE · SPECTATING' : 'ONLINE · 60 SECONDS')
+          : this.match ? 'MAIN EVENT · BEST OF 3'
           : 'MAIN EVENT');
     }
 
@@ -799,7 +749,7 @@ export class BrawlGame {
     // A fresh match starts on a clean canvas — the accumulated blood
     // stains belong to the fight that produced them. Not in the tournament:
     // there the ring keeps the tournament's bouts' blood, scuffs and sweat (cup.js).
-    const keepWear = this.options.mode === 'tournament';
+    const keepWear = this.options.mode === 'tournament' || (this.match?.played ?? 0) > 0;
     if (!keepWear) this._clearBlood();
     // …and so do the scuffs, skids and sweat.
     if (this.matWear && !keepWear) this.matWear.clear();
@@ -916,6 +866,16 @@ export class BrawlGame {
         chargeMul: 1,      // damage/knockback multiplier of the current swing
         energy: ENERGY_DEFAULT, // 0..1 strike power AND stamina (see the ENERGY_* block)
         gassed: false,     // true while under the floor: no punch, no kick (see _canAttack)
+        // ── Both hands (combat.js pickPunchArm) ───────────────────────
+        strike: null,       // 'punch' | 'punchL' | 'kick': hitbox set + track of the live swing
+        armMul: 1,          // damage multiplier of that swing's hand (jab / cross)
+        lastPunchArm: null, // 'L' | 'R' of the previous punch
+        lastPunchT: -99,    // engine time it was thrown
+        // ── The canvas (knockdown.js) ─────────────────────────────────
+        daze: 0,              // fills on landed hits, drains fast; full = knocked down
+        dazeImmuneUntil: -99, // no daze builds until this time (just got up)
+        getupTime: 0,         // seconds this rise takes (hurt legs add to it)
+        wakeStrike: null,     // 'punch' | 'kick' pressed on the way up
         // ── Guard timing (see the PERFECT_GUARD_* block) ──────────────
         // Engine time the guard last went UP. Every route into the 'block'
         // state stamps it, and _applyHit compares it against the moment the
@@ -931,7 +891,7 @@ export class BrawlGame {
         // Counters for the end-of-fight recap and the on-screen combo readout.
         // Every round (including a best-of-3 rematch) goes through
         // _spawnFighters, so initialising here IS the per-round reset.
-        stats: { hits: 0, blocks: 0, biggestHit: 0, bestCombo: 0 },
+        stats: { hits: 0, blocks: 0, biggestHit: 0, bestCombo: 0, knockdowns: 0 },
         comboN: 0,      // consecutive landed hits inside COMBO_WINDOW
         comboT: -99,    // engine time of this fighter's last landed hit
         chargeCued: false, // full-charge audio cue fired
@@ -1180,9 +1140,13 @@ export class BrawlGame {
    * options, then the VS splash and the count. `splash: false` (the pause menu's restart) goes
    * straight back to the count once the new rigs have compiled.
    */
-  resetMatch({ splash = true } = {}) {
+  resetMatch({ splash = true, nextRound = false } = {}) {
     // Out of 'result' (or a paused fight) at once, before anything below can tick.
     this.setPaused(false);
+    // A new bout starts a new best-of-three; only the engine's own round break keeps the score.
+    this._roundBreak = false;
+    if (!nextRound) this.match = this._roundsMode() ? newMatch() : null;
+    this._renderRounds();
     this.phase = 'intro';
     this.phaseT = 0;
     this.hitstopT = 0;
@@ -1221,6 +1185,7 @@ export class BrawlGame {
     // The tournament page names every bout ('QUARTERFINAL 2 OF 4') through PoBrawl.matchup.
     label ||= this.training ? 'TRAINING'
       : this._roundLabel ? this._roundLabel
+      : this.match ? roundLabel(this.match)
       : 'NEXT ROUND';
     this.splash.querySelector('.pb-splash__round').textContent = label;
     this.splash.querySelector('.pb-splash__p1').textContent = p1;
@@ -1336,7 +1301,9 @@ export class BrawlGame {
         this.timeScale = 1;
         // The instant replay (replay.js) runs between the fall and the result when it
         // can, and calls _koResult itself once it is done.
-        if (!this._replayBegin?.()) this._koResult();
+        // A round that leaves the match open goes straight to the break: the replay
+        // is for the knockout that ends it.
+        if (!this._roundDecides(this.winner) || !this._replayBegin?.()) this._koResult();
       }
     } else if (this.phase === 'result') {
       this._buildPendingKO();
@@ -1344,6 +1311,8 @@ export class BrawlGame {
       if (this._physics) stepWorld(this._physics.world, dt);
       this._tickKoFall(dt);
       this._tickCelebration(dt);
+      // Between rounds (cinematics.js _roundOver): hold on the round's winner, then go again.
+      if (this._roundBreak && this.phaseT >= ROUND_BREAK_SECS) this._nextRound();
     }
 
     // Hit-pause countdown: skip sim while paused but still advance render rate later.
@@ -1676,7 +1645,7 @@ export class BrawlGame {
     // spins the defender off-facing, then they recover square.
     for (const f of this.fighters) {
       const opp = f === f1 ? f2 : f1;
-      if (f.state !== 'ko') {
+      if (f.state !== 'ko' && f.state !== 'down') {
         if (f.spinVel !== 0 || f.spinYaw !== 0) {
           f.spinYaw += f.spinVel * dt;
           f.spinYaw = THREE.MathUtils.clamp(f.spinYaw, -0.7, 0.7);
@@ -1692,471 +1661,6 @@ export class BrawlGame {
           p.x - f.rig.root.position.x, p.z - f.rig.root.position.z) + f.spinYaw;
       }
     }
-  }
-
-  _aiContext(f, opp, dt) {
-    const dist = f.rig.root.position.distanceTo(opp.rig.root.position);
-    const oppAttack = (opp.state === 'punch' || opp.state === 'kick') ? opp.attack : null;
-    // A charging opponent reads as windup — the coil is the tell to block.
-    const oppInWindup = opp.state === 'charge'
-      || (!!oppAttack && opp.stateT < oppAttack.windup);
-    const oppInActive = !!oppAttack && opp.stateT >= oppAttack.windup
-      && opp.stateT <= oppAttack.windup + oppAttack.active;
-    const oppInRecover = !!oppAttack && opp.stateT > oppAttack.windup + oppAttack.active;
-    // Seconds until the opponent's live swing stops being able to hurt us, with
-    // the per-swing timing muls _tryHit uses (Eisenhower stretches his wind-up).
-    const oppSwingLeft = oppAttack
-      ? Math.max(0, oppAttack.windup * (opp.swingWindupMul ?? 1)
-        + oppAttack.active * (opp.swingActiveMul ?? 1) - opp.stateT)
-      : 0;
-    // ── Ring sense ────────────────────────────────────────────────────
-    // Metres of canvas ahead of us along a direction before the ring clamp.
-    // Without it every retreat and every gassed back-off walked the CPU
-    // straight into the ropes; with it the AI can tell "give ground" from
-    // "slide out sideways". `side` +1 follows _circleAxis (see _tickFighter).
-    const pos = f.rig.root.position;
-    const room = (dx, dz) => {
-      let t = Infinity;
-      if (dx > 1e-4) t = Math.min(t, (RING_HALF - pos.x) / dx);
-      else if (dx < -1e-4) t = Math.min(t, (-RING_HALF - pos.x) / dx);
-      if (dz > 1e-4) t = Math.min(t, (RING_HALF - pos.z) / dz);
-      else if (dz < -1e-4) t = Math.min(t, (-RING_HALF - pos.z) / dz);
-      return Math.max(0, t === Infinity ? RING_HALF * 2 : t);
-    };
-    const tx = opp.rig.root.position.x - pos.x;
-    const tz = opp.rig.root.position.z - pos.z;
-    const tl = Math.hypot(tx, tz) || 1;
-    const ux = tx / tl, uz = tz / tl;
-    return {
-      dt,
-      distance: dist,
-      // Ring and scoreboard, for the AI's footwork and risk (ai.js). Rooms are
-      // metres to the ropes going backward / circling +side / circling −side.
-      backRoom: room(-ux, -uz),
-      sideRoomPos: room(-uz, ux),
-      sideRoomNeg: room(uz, -ux),
-      ropeDist: RING_HALF - Math.max(Math.abs(pos.x), Math.abs(pos.z)),
-      selfHp: this._hp(f) / MAX_HP,
-      opponentHp: this._hp(opp) / MAX_HP,
-      clock: this.clock || 0,
-      timeLimit: this.training ? Infinity : TIME_LIMIT,
-      // Frame data the guard and the punish need: how long the opponent's
-      // swing can still hurt, whether they are coiling (and for how long), and
-      // how long a blocked or stunned opponent stays unable to answer.
-      opponentSwingLeft: oppSwingLeft,
-      opponentCharging: opp.state === 'charge',
-      opponentChargeT: opp.state === 'charge' ? opp.stateT : 0,
-      opponentBlockStun: opp.blockStunT || 0,
-      opponentHitstunLeft: opp.state === 'hitstun'
-        ? Math.max(0, HITSTUN + (opp.hitstunBonus || 0) - opp.stateT) : 0,
-      selfState: f.state,
-      // How full our own coil is (0..1): ai.js lets go at its rung's maxCharge.
-      selfCharge: f.state === 'charge' ? f.chargeAmt : 0,
-      // The super fires only from idle (the 'idle' case of _tickFighter), so
-      // the AI asks only when it will actually go off — a request from the
-      // guard was dropped on the floor while ai.js still spent its cooldown.
-      canSuper: f.state === 'idle' && !(f.blockStunT > 0)
-        && (f.personality?.superMeter || 0) >= 1.0 && !!PERSONALITIES[f.charId]?.onSuper,
-      // Sign of (opponent.x − self.x): +1 when the opponent is to our right,
-      // −1 when to our left. The keyboard controller uses this to keep the
-      // left/right keys screen-relative regardless of which side we're on.
-      towardX: Math.sign(opp.rig.root.position.x - f.rig.root.position.x) || 1,
-      kickRange: ATTACKS.kick.reach * opp.rig.config.heightScale + 0.3,
-      opponentWindup: oppInWindup,
-      opponentActive: oppInActive,
-      opponentRecover: oppInRecover,
-      opponentState: opp.state,
-      ownAttacks: ATTACKS,
-      // Super meter full? Only the AI reads this; players fire on the key.
-      superMeterFull: (f.personality?.superMeter || 0) >= 1.0,
-      // Energy gate. The engine enforces this regardless — a
-      // gassed fighter's punch/kick intent is simply dropped in _tickFighter —
-      // but the AI needs to KNOW, or it spends the whole recovery mashing
-      // attack inputs into a closed gate and standing there wide open. Reading
-      // it lets the CPU do what a player should do here: put the guard up and
-      // earn the bar back.
-      selfExhausted: !!f.gassed,
-      selfEnergy: f.energy,
-      // The same gate read from the other side. A gassed opponent cannot throw
-      // anything until the bar recovers, and the guard is the fastest way back
-      // up it — so this is the AI's cue to load a full coil (ai.js `punishGas`)
-      // and ask the player whether they have learned to block yet.
-      opponentExhausted: !!opp.gassed,
-    };
-  }
-
-  _tickFighter(f, opp, intent, dt) {
-    f.stateT += dt;
-
-    // ── Energy regen ──────────────────────────────────────────────────
-    // See the ENERGY_* block: guarding refills fast, standing refills slowly, swinging refills
-    // nothing, and the charge state is exempt because it is actively DRAINING
-    // the pool into the strike — regenerating there would refund the wind-up.
-    //
-    // No hudDirty here on purpose: _pushHud already flushes every 0.25 s, so a
-    // continuous change reaches the HUD four times a second without flagging a
-    // push on every single frame.
-    //
-    // Biden's "THE BIG GUY" super is exempt for its lock window: its payload
-    // is a *guaranteed* max-power strike, so neither regen nor the gassed
-    // bookkeeping may touch the bar before he throws it.
-    const bigGuyLocked = f.personality?._bigGuyLockUntil
-      && this.t < f.personality._bigGuyLockUntil;
-    if (f.state !== 'charge' && f.state !== 'ko' && !bigGuyLocked) {
-      let regen = 0;
-      if (f.state === 'block') regen = ENERGY_BLOCK_REGEN_PER_SEC;
-      else if (f.state === 'hitstun') regen = ENERGY_HITSTUN_REGEN_PER_SEC;
-      else if (f.state !== 'punch' && f.state !== 'kick') regen = ENERGY_REGEN_PER_SEC;
-      if (regen > 0) f.energy = Math.min(1, f.energy + dt * regen);
-    }
-    // Gassed-out bookkeeping, with the hysteresis band from ENERGY_RECOVER_TO.
-    // Kept outside the exempt branch so a fighter can never be left flagged
-    // gassed while sitting on a full bar.
-    if (f.gassed) {
-      if (f.energy >= ENERGY_RECOVER_TO) { f.gassed = false; this.hudDirty = true; }
-    } else if (f.energy < ENERGY_ATTACK_FLOOR) {
-      f.gassed = true;
-      this.hudDirty = true;
-    }
-    const pos = f.rig.root.position;
-    const effect = regionEffect(f.regionDmg);
-    const moveSpeed = intent.move > 0 ? 2.4 : 1.9;
-    const moveAccel = f.rig.config.moveAccel * 0.5; // tune base accel
-
-    f.speedAmt = 0;
-
-    // ── Movement with momentum ────────────────────────────────────────
-    // Compute a desired world velocity from intent, lerp `vel` toward it,
-    // and integrate. Knockback is added directly and decays.
-    const desired = new THREE.Vector3();
-    const incapacitated = f.state === 'ko';
-    // Charging roots the fighter — all the weight is loaded into the coil.
-    const rooted = f.state === 'charge';
-    const canSteer = !incapacitated && !rooted;
-
-    // Unit vector toward the opponent. Hoisted out of the move branch below
-    // because circling needs it too: an orbit is defined by the line between
-    // the fighters, so both axes of movement derive from it.
-    const toward = opp.rig.root.position.clone().sub(pos);
-    toward.y = 0;
-    if (toward.lengthSq() > 1e-6) toward.normalize();
-
-    // Speed modifiers, hoisted for the same reason — a slowed or dashing
-    // fighter should circle slowed or dashing too.
-    // Biden "The Big Guy" slow-on-charge: halved moveMul while the slow
-    // window is live. Defaults to 1.0 (no slowdown).
-    // JFK "PT-109 Survivor" dash speed boost: +30% for 4 s when below 50%.
-    // FDR "Four-Term Foundation" startup boost: +10% for first 3 s.
-    const slow = f.slowMul || 1.0;
-    let passiveMul = 1.0;
-    const per = f.personality;
-    if (per?.jfkDashUntil && this.t < per.jfkDashUntil) passiveMul *= 1.30;
-    if (per?.fdrStartupUntil && this.t < per.fdrStartupUntil
-        && PERSONALITIES.fdr?.startupBoost) {
-      passiveMul *= PERSONALITIES.fdr.startupBoost.speedMul || 1.10;
-    }
-
-    if (intent.move !== 0 && canSteer) {
-      desired.add(toward.clone().multiplyScalar(
-        intent.move * moveSpeed * effect.moveMul * slow * passiveMul));
-      f.speedAmt = Math.min(1, Math.abs(intent.move));
-    }
-
-    // ── Circling (camera depth) ───────────────────────────────────────
-    // `intent.side` is a HELD direction along the CAMERA's forward axis
-    // (W/↑ = +1, into the screen; S/↓ = −1, out toward the viewer). Because the
-    // fighters stand side-on to the camera, walking that axis carries you
-    // around your opponent. Screen-relative, deliberately: an axis derived
-    // from the fighters' line flips on screen whenever they swap sides.
-    // It feeds `desired` (the same lerped velocity `move` uses), not an
-    // impulse — a held impulse accumulates against its own decay.
-    // The CPU has no screen: it circles on the axis perpendicular to the line
-    // between the fighters (_circleAxis). On the camera axis its orbit turned
-    // with every director cut, and near-parallel shots made it a lunge or a
-    // retreat; its ring sense (_aiContext sideRoom*) is measured on this axis.
-    if (intent.side !== 0 && canSteer) {
-      const camFwd = f.controller instanceof AiController
-        ? this._circleAxis(toward) : this._cameraForward();
-      desired.add(camFwd.multiplyScalar(
-        intent.side * CIRCLE_SPEED * effect.moveMul * slow * passiveMul));
-      f.speedAmt = Math.max(f.speedAmt, Math.min(1, Math.abs(intent.side)));
-    }
-    // Move slowly even in hitstun/attack windup — the player is "shuffling".
-    if (f.state === 'hitstun') desired.multiplyScalar(0.2);
-
-    // Lerp velocity toward desired — mass-scaled accel; heavier fighters feel weightier.
-    const a = moveAccel * (1 / f.rig.config.mass);
-    const k = 1 - Math.exp(-dt * a);
-    f.vel.lerp(desired, k);
-
-    // Knockback impulse decays.
-    f.knockback.multiplyScalar(Math.max(0, 1 - dt * 8));
-
-    // Integrate position.
-    pos.x += (f.vel.x + f.knockback.x) * dt;
-    pos.z += (f.vel.z + f.knockback.z) * dt;
-
-    // ── State machine ────────────────────────────────────────────────
-    switch (f.state) {
-      case 'idle': {
-        // Energy regenerates slowly here and fast in the 'block' case; the
-        // wind-up spends it and every release costs a flat toll on top. The
-        // regen itself is applied once, above the state machine.
-        // A punch needs the striking (right) arm — a fighter that lost it can
-        // only kick. Kick input still works with no arms.
-        // The energy gate sits ahead of both: a gassed fighter throws nothing.
-        const hasEnergy = this._canAttack(f);
-        const canPunch = intent.punch && hasEnergy && this._canPunch(f);
-        if (canPunch || (intent.kick && hasEnergy)) {
-          const name = canPunch ? 'punch' : 'kick';
-          this._enterCharge(f, name);
-          break;
-        }
-        // Signature super activation: only from idle so the pose read is clean
-        // ("He lines up. He fires."). No-op if the meter isn't full or this
-        // fighter has no onSuper config. A HUMAN fighter has no super key and
-        // fires the instant the meter fills; the AI keeps its own gate (ai.js:
-        // rung-scaled chance plus a cooldown) because that pacing is a
-        // DIFFICULTY knob.
-        if (intent.super || this._autoSuperReady(f)) this._fireSuper(f);
-        if (intent.block) {
-          f.state = 'block';
-          // Stamp the moment the guard went up — this is what separates a read
-          // from a camp when a strike lands on it. See PERFECT_GUARD_WINDOW.
-          f.guardAt = this.t;
-          f.animator.setBlocking(true);
-        }
-        break;
-      }
-      case 'charge': {
-        // Winding up: charge accrues while the button is held (capped at
-        // CHARGE_TIME; you can hold at max forever). Release throws the
-        // attack scaled by the stored charge.
-        const held = f.chargeName === 'punch' ? intent.punchHeld : intent.kickHeld;
-        // Holding POURS the pool into the strike: the bar
-        // drains at the same rate the coil loads, so a fighter watching their
-        // own energy bar can see exactly what the swing is costing them, and a
-        // full-power release is only available to someone who banked a full
-        // bar by guarding for it. The drain is clamped to what is actually left,
-        // so the coil simply stops growing on an empty bar rather than loading
-        // power that was never paid for.
-        // Biden's "THE BIG GUY" coil arrives pre-loaded (_enterCharge) and paid
-        // for, so it pours nothing more out of the bar.
-        const drain = bigGuyLocked ? 0 : Math.min(dt / CHARGE_TIME, f.energy);
-        f.energy -= drain;
-        f.chargeAmt = Math.min(1, f.chargeAmt + drain);
-        f.animator.setCharge(f.chargeName, f.chargeAmt);
-        // The coil in the hand: a pulse train that rises with it (haptics.js).
-        this.haptics?.charge(f, f.chargeAmt);
-        // Full-charge cue: one audible snap when the coil tops out.
-        if (f.chargeAmt >= 1 && !f.chargeCued) {
-          f.chargeCued = true;
-          this.audio.whoosh();
-        }
-        // Spark motes at the loaded fist/foot once the charge means something.
-        f.chargeSparkT -= dt;
-        if (f.chargeAmt > 0.25 && f.chargeSparkT <= 0) {
-          f.chargeSparkT = 0.16 - 0.08 * f.chargeAmt;
-          const anchor = f.rig.joints[f.chargeName === 'punch' ? 'fistR' : 'footR'];
-          if (anchor) {
-            const p = new THREE.Vector3();
-            anchor.getWorldPosition(p);
-            this._spawnSparks(p, 0xffd257, 2, 0.4 + 0.5 * f.chargeAmt);
-          }
-        }
-        if (!held) {
-          const amt = f.chargeAmt;
-          f.animator.setCharge(null, 0);
-          this._enterAttack(f, f.chargeName, amt);
-        }
-        break;
-      }
-      case 'block': {
-        if (!intent.block) {
-          f.state = 'idle';
-          f.animator.setBlocking(false);
-        }
-        break;
-      }
-      case 'punch':
-      case 'kick': {
-        const a = ATTACKS[f.state];
-        const inActive = f.stateT >= a.windup && f.stateT <= a.windup + a.active;
-        // Queued for the end of the tick when _tickFighting is collecting
-        // (see _pendingHits there), so a same-frame trade is fair to both.
-        if (inActive && !f.hasHit) {
-          if (this._pendingHits) this._pendingHits.push([f, opp, a]);
-          else this._tryHit(f, opp, a);
-        }
-
-        // Cancel windows: if the player input another action and we're past the
-        // configured stateT threshold for that target, transition immediately.
-        // Attack cancels re-enter the charge state so a held follow-up charges too.
-        if (intent.punch && this._canAttack(f) && this._canPunch(f) && f.stateT >= a.cancelInto.punch) this._enterCharge(f, 'punch');
-        else if (intent.kick && this._canAttack(f) && f.stateT >= a.cancelInto.kick) this._enterCharge(f, 'kick');
-        else if (intent.block && f.stateT >= a.cancelInto.block) {
-          f.state = 'block'; f.stateT = 0; f.guardAt = this.t;
-          f.animator.setBlocking(true);
-        } else if (f.stateT >= a.windup + a.active + a.recover) {
-          f.state = 'idle'; f.stateT = 0; f.attack = null;
-        }
-        break;
-      }
-      case 'hitstun': {
-        // hitstunBonus: a rattled head stuns longer (hitResolution.js _landHit).
-        if (f.stateT >= HITSTUN + (f.hitstunBonus || 0)) f.state = 'idle';
-        break;
-      }
-    }
-  }
-
-  // Start winding an attack up. The fighter is rooted until the button is
-  // released (see the 'charge' case in _tickFighter), then _enterAttack
-  // throws the strike scaled by the stored charge.
-  _enterCharge(f, name) {
-    this.haptics?.chargeEnd(f);
-    f.state = 'charge';
-    f.stateT = 0;
-    f.chargeName = name;
-    // Coil starts EMPTY and is filled out of the energy bar while the button is
-    // held (see the 'charge' case) — except inside Biden's "THE BIG GUY" lock,
-    // whose whole payload is a guaranteed full-power strike: resetting it here
-    // threw that charge away on the very swing the super armed.
-    const bigGuy = f.personality?._bigGuyLockUntil && this.t < f.personality._bigGuyLockUntil;
-    f.chargeAmt = bigGuy ? 1 : 0;
-    f.chargeCued = false;
-    f.chargeSparkT = 0;
-    f.animator.setBlocking(false);
-    f.animator.setCharge(name, f.chargeAmt);
-    this._show('chargeStart', { f, name });
-  }
-
-  _enterAttack(f, name, chargeAmt = 0) {
-    // A punch needs the striking (right) arm; if it was torn off mid-charge,
-    // drop back to idle rather than swinging a missing limb.
-    if (name === 'punch' && !this._canPunch(f)) {
-      f.state = 'idle';
-      f.stateT = 0;
-      f.chargeName = null;
-      f.animator.setCharge(null, 0);
-      return;
-    }
-    f.state = name;
-    f.stateT = 0;
-    f.hasHit = false;
-    f.attack = ATTACKS[name];
-    f.chargeName = null;
-    f.chargeMul = 1 + (CHARGE_MAX_MUL - 1) * chargeAmt;
-    this._show('release', { f, name, chargeAmt });
-    // Per-swing timing multipliers (Eisenhower "Operation Overlord": 1.5×
-    // windup, 0.5× active; cleared at swing completion). Read by _tryHit
-    // for the phase boundary check.
-    f.swingWindupMul = 1.0;
-    f.swingActiveMul = 1.0;
-    if (f.personality?.id === 'eisenhower' && PERSONALITIES.eisenhower?.onSwingP) {
-      f.swingWindupMul = PERSONALITIES.eisenhower.onSwingP.overWindupMul || 1.0;
-      f.swingActiveMul = PERSONALITIES.eisenhower.onSwingP.overActiveMul || 1.0;
-    }
-    // The flat swing toll. The wind-up has already drained
-    // whatever charge this strike carries; this is the additional per-swing cost
-    // that makes tap-spam unsustainable, since a jab banks almost no charge but
-    // still pays the toll. Scaled by the attack's own energyMul — a punch pays
-    // half a kick's, which is what makes it the tempo move. Blocking and
-    // standing are what refill the bar — see the ENERGY_* block and the regen
-    // in _tickFighter.
-    f.energy = Math.max(0, f.energy - ATTACK_ENERGY_COST * (f.attack.energyMul ?? 1));
-    if (f.energy < ENERGY_ATTACK_FLOOR) f.gassed = true;
-    this.hudDirty = true;
-    f.animator.play(name);
-
-    // ── On-swing personality flags (consumed at hit landing) ─────────
-    // Trump "THE WALL" haymaker: 18% of swings commit to a heavy right with
-    // 1.5× damage and 1.3× knockback. We tag the swing here; the hit handler
-    // multiplies base damage by the mul and clears the flag.
-    const per = f.personality;
-    if (per?.id === 'trump' && PERSONALITIES.trump?.onSwingP
-        && !per._haymakerSuppressedThisSwing
-        && this.rng.random() < PERSONALITIES.trump.onSwingP.haymakerChance) {
-      f._trumpHaymaker = true;
-    }
-    // Nixon "Tricky Dick": 25% of swings carry a dirty tag — when the hit
-    // is blocked, ~40% of the time the block lets the damage slip through.
-    // SUPER override: when "I Am Not a Crook" is active, ALL swings in the
-    // remaining counter carry the dirty tag (decays per swing via the
-    // superDirtySwingsLeft counter).
-    const nixonDirtyChance = per?.id === 'nixon'
-      ? (per.superDirtySwingsLeft > 0
-          ? 1.0
-          : PERSONALITIES.nixon.onSwingP.dirtyChance)
-      : 0;
-    if (per?.id === 'nixon' && PERSONALITIES.nixon?.onSwingP
-        && !f._dirtySwing
-        && this.rng.random() < nixonDirtyChance) {
-      f._dirtySwing = true;
-      if (per.superDirtySwingsLeft > 0) {
-        per.superDirtySwingsLeft = Math.max(0, per.superDirtySwingsLeft - 1);
-      }
-    }
-    // Bush Sr. "VOODOO ECONOMICS": next 3 swings after a super each carry
-    // 1.4× damage on top of whatever else is going on. The flag flips off
-    // one swing at a time.
-    if (per?.id === 'bushsr' && per.superPumpSwingsLeft > 0) {
-      f._bushsrSuperPump = true;
-      per.superPumpSwingsLeft = Math.max(0, per.superPumpSwingsLeft - 1);
-    }
-    // Ford "Ford Stumble": 15% of swings self-stun for 0.6 s — abort the
-    // committed swing mid-air and route the fighter to 'idle' briefly.
-    if (per?.id === 'ford' && PERSONALITIES.ford?.onSwingP) {
-      const cfg = PERSONALITIES.ford.onSwingP;
-      if (this.rng.random() < cfg.stumbleChance) {
-        per.stumbleUntil = this.t + cfg.stumbleSelfStunSecs;
-        f.state = 'idle';
-        f.stateT = 0;
-        f.attack = null;
-        f.animator.play('stumble');
-        return;
-      }
-    }
-    // Trail color: cool steel normally, hot gold on a well-charged release, so
-    // gold reads as earned bonus power rather than lighting up every tap.
-    if (f.trail) f.trail.color.setHex(chargeAmt > 0.65 ? 0xffd257 : 0xcfe0ff);
-    this.audio.whoosh();
-    if (name === 'kick' || chargeAmt > 0.65) this.audio.effort(f.charId, chargeAmt);
-    // Attack lunge: a real step into the strike, scaled by charge. This is
-    // where the "reach" lives, since the hitboxes track the actual limb.
-    const opp = this.fighters.find((o) => o !== f);
-    if (opp) {
-      const dir = new THREE.Vector3().subVectors(opp.rig.root.position, f.rig.root.position);
-      dir.y = 0;
-      if (dir.lengthSq() > 1e-6) {
-        dir.normalize();
-        // FDR "Fireside Chat" reach bonus: his next swing's lunge is scaled
-        // by the per-fighter fdrNextSwingReachMul (set during a chat iframe).
-        // (Was `(x && x > 1) || 1`, which yields `true`, i.e. 1 — never the bonus.)
-        const reachMul = Math.max(1.0, f.personality?.fdrNextSwingReachMul || 1.0);
-        if (reachMul > 1.0) f.personality.fdrNextSwingReachMul = 1.0; // consumed
-        const lunge = (name === 'kick' ? 2.2 : 1.8) * (1 + 1.4 * chargeAmt) * reachMul;
-        f.knockback.add(dir.multiplyScalar(lunge));
-      }
-    }
-  }
-
-  // The CPU's circling axis: the line between the fighters turned 90° (left of
-  // `toward`, a unit XZ vector). +1 on `intent.side` follows it.
-  _circleAxis(toward) {
-    return new THREE.Vector3(-toward.z, 0, toward.x);
-  }
-
-  // The camera's forward direction, flattened to the ground plane: the axis the
-  // circle keys walk along. +1 on `intent.side` follows this vector (into the
-  // screen, away from the viewer); −1 walks back against it, toward the viewer.
-  // The fallback covers the first frames before the camera is aimed; a zero
-  // vector would drop the input silently.
-  _cameraForward() {
-    const dir = new THREE.Vector3();
-    this.camera.getWorldDirection(dir);
-    dir.y = 0;
-    return dir.lengthSq() > 1e-6 ? dir.normalize() : new THREE.Vector3(0, 0, -1);
   }
 
   // Decay the post-FX pulses and push them into the passes.
@@ -2454,45 +1958,6 @@ export class BrawlGame {
     f.rigBody = null;
   }
 
-  // Should this fighter's signature super fire on its own this frame? True
-  // only for HUMAN-driven fighters with a full meter (there is no super key).
-  // AI fighters fire through `intent.super`, keeping ai.js's rung-scaled
-  // pacing. `_fireSuper` no-ops without an onSuper config (BOB has none).
-  _autoSuperReady(f) {
-    return f?.controller?.isHuman === true
-      && (f.personality?.superMeter || 0) >= 1.0;
-  }
-
-  // Can this fighter still throw a punch? The engine only ever swings the RIGHT
-  // arm, so a punch needs the right arm attached. (The left arm always tears off
-  // first — see _severArm — so a one-armed fighter punches with its right; once
-  // the right is gone too it can only kick.)
-  _canPunch(f) {
-    return !f.armsLost || !f.armsLost.has('R');
-  }
-
-  /**
-   * The energy gate. False means this fighter may not START a
-   * punch or kick — not a weaker one, none at all — because they have gassed
-   * themselves out. Blocking and movement are deliberately still allowed: the
-   * guard is the way back up the bar, so the punishment is "you must defend
-   * now", not "you are a statue".
-   *
-   * Checked on the three routes a fighter takes into a normal attack: the idle
-   * branch and the two mid-swing cancel-into-punch/kick windows.
-   *
-   * Deliberately NOT checked in _enterAttack. Supers go straight there, and a
-   * signature move is a rare earned payoff that should never be swallowed by
-   * the stamina economy — Biden's "THE BIG GUY" in particular sets energy to
-   * 1.0 and swings on the same frame, before the gassed flag has been
-   * recomputed, so a flag check there would eat exactly the strike the super
-   * exists to guarantee.
-   */
-  _canAttack(f) {
-    return !f.gassed;
-  }
-
-
   _updateEffects(dt) {
     this._updateParticles(dt);
     this._updateSeveredLimbs(dt);
@@ -2649,6 +2114,7 @@ export class BrawlGame {
     if (this.banner) this.banner.remove();
     if (this.flash) this.flash.remove();
     if (this.splash) this.splash.remove();
+    if (this._roundsEl) { this._roundsEl.remove(); this._roundsEl = null; }
     // Removing the fx layer takes its damage numbers and combo badges with it;
     // dropping the node list too so a disposed game holds no detached elements.
     if (this.fx) this.fx.remove();
@@ -2661,5 +2127,5 @@ export class BrawlGame {
 // is constructed. index.js only ever imports BrawlGame from here, so by the time
 // `new BrawlGame()` can be reached these methods are already on the prototype. The Full-show
 // layers are the exception: show.js mixes them in when they first load.
-mixin(BrawlGame.prototype, SceneSetup, PersonalityEffects, Vfx, Blood, Cinematics, HitResolution, Training, Netplay, Commentary, Spectacle, Cup, Ceremony, Director, Show, ...SHOW_MODULES,
+mixin(BrawlGame.prototype, SceneSetup, FighterTick, PersonalityEffects, Vfx, Blood, Cinematics, HitResolution, Training, Netplay, Commentary, Spectacle, Cup, Ceremony, Director, Show, ...SHOW_MODULES,
   ReactiveArena, Lighting, HudFeedback);

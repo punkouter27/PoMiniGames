@@ -30,6 +30,24 @@
     "KICK_DAMAGE": 10,
     "SPECIAL_DAMAGE": 18,
     "DAMAGE_VARIANCE_PCT": 20,
+    "ONE_TWO_FRAMES": 42,
+    "JAB_DAMAGE_PCT": 90,
+    "CROSS_DAMAGE_PCT": 120,
+    "ARM_NONE": 0,
+    "ARM_LEFT": 1,
+    "ARM_RIGHT": 2,
+    "DAZE_PER_DAMAGE": 10,
+    "DAZE_AT": 140,
+    "DOWN_MIN_FRAMES": 42,
+    "DOWN_MAX_FRAMES": 120,
+    "GETUP_FRAMES": 27,
+    "DAZE_IMMUNE_FRAMES": 96,
+    "KNOCKDOWN_SLIDE_MM": 500,
+    "ROLL_STEP_MM": 45,
+    "FLOOR_NONE": 0,
+    "FLOOR_DOWN": 1,
+    "FLOOR_GETUP": 2,
+    "FLOOR_ROLL": 3,
     "HELD_IDLE": 0,
     "HELD_FORWARD": 1,
     "HELD_BACK": 2,
@@ -45,7 +63,8 @@
     "REASON_NONE": 0,
     "REASON_KO": 1,
     "REASON_TIME": 2,
-    "PACKED_LENGTH": 26
+    "CORNER_LENGTH": 16,
+    "PACKED_LENGTH": 38
   },
   "golden": {
     "matchId": "golden-0f8a3c",
@@ -54,11 +73,11 @@
     "heldPick": [0, 1, 1, 1, 2, 3],
     "pressPick": [0, 0, 0, 0, 0, 4, 5, 6],
     "seed": 382267504,
-    "frame": 739,
-    "checksum": 2463409506,
-    "p1Hp": 0,
-    "p2Hp": 7,
+    "frame": 1039,
+    "checksum": 277418122,
+    "p1Hp": 37,
+    "p2Hp": 0,
     "reason": 1,
-    "winner": 2
+    "winner": 1
   }
 }

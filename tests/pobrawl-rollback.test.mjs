@@ -209,3 +209,126 @@ test('snapshots that overtake input echoes, and a stalled first ping, still conv
     assert.ok(session.rtt < 1000, `side ${session.localSide}: the stalled ping was ignored (${session.rtt} ms)`);
   }
 });
+
+// ── Both hands and the canvas ────────────────────────────────────────────────
+
+/** A live fight with the corners `gapMm` apart and P1 on a full bar. */
+function closeFight(gapMm = 1200) {
+  const s = sim.createState(7, 0);
+  s.p1.x = -gapMm / 2;
+  s.p2.x = gapMm / 2;
+  s.p1.energy = sim.ENERGY_MAX;
+  return s;
+}
+const press = (p) => sim.encodeInput(-1, p);
+const idle = (s, n) => { for (let i = 0; i < n; i++) sim.step(s, 0, 0); };
+
+test('both hands: jab, then the cross inside the window, then a stale punch is a jab again', () => {
+  const T = sim.TUNING;
+  const s = closeFight();
+  s.p2.immune = 9999;                              // keep P2 on their feet: this test is about the hands
+  sim.step(s, press(sim.PRESS_PUNCH), 0);
+  assert.equal(s.p1.arm, sim.ARM_LEFT);
+  const jab = s.p1.damage;
+  idle(s, T.PUNCH_COOLDOWN);
+  sim.step(s, press(sim.PRESS_PUNCH), 0);
+  assert.equal(s.p1.arm, sim.ARM_RIGHT);
+  const cross = s.p1.damage;
+  // 90% and 120% of 6, each ±20%: the ranges do not overlap.
+  assert.ok(jab >= 4 && jab <= 6, `jab ${jab}`);
+  assert.ok(cross >= 6 && cross <= 8, `cross ${cross}`);
+  idle(s, T.PUNCH_COOLDOWN);
+  sim.step(s, press(sim.PRESS_PUNCH), 0);
+  assert.equal(s.p1.arm, sim.ARM_LEFT, 'after a cross the next is a jab');
+  idle(s, T.ONE_TWO_FRAMES + 1);
+  sim.step(s, press(sim.PRESS_PUNCH), 0);
+  assert.equal(s.p1.arm, sim.ARM_LEFT, 'a jab long after a jab is still a jab');
+});
+
+test('knockdown: the special drops a standing corner, which then cannot be hit', () => {
+  const T = sim.TUNING;
+  const s = closeFight();
+  const x0 = s.p2.x;
+  sim.step(s, press(sim.PRESS_SPECIAL), 0);
+  assert.equal(s.p1.outcome, sim.OUTCOME_HIT);
+  assert.equal(s.p2.floor, sim.FLOOR_DOWN);
+  assert.ok(s.p2.x >= x0 + T.SPECIAL_KNOCKBACK_MM + T.KNOCKDOWN_SLIDE_MM - 1, 'carried off their feet');
+  const hp = s.p2.hp;
+  // Walk back into range and kick the body: a whiff, no damage, and the RNG does not move.
+  while (s.p2.x - s.p1.x > T.KICK_REACH_MM - 100) sim.step(s, sim.encodeInput(sim.HELD_FORWARD, 0), 0);
+  const rng = s.rng;
+  sim.step(s, sim.encodeInput(sim.HELD_IDLE, sim.PRESS_KICK), 0);
+  while (s.p1.swing !== sim.PRESS_KICK) sim.step(s, 0, 0);   // the press waits out the special's cooldown
+  assert.equal(s.p2.floor, sim.FLOOR_DOWN, 'still down when the kick arrives');
+  assert.equal(s.p1.outcome, sim.OUTCOME_WHIFF);
+  assert.equal(s.p2.hp, hp);
+  assert.equal(s.rng, rng);
+});
+
+test('knockdown: a jab a second never drops anyone; three quick ones in the head do', () => {
+  const T = sim.TUNING;
+  const slow = closeFight();
+  for (let i = 0; i < 12; i++) {
+    slow.p1.energy = sim.ENERGY_MAX; slow.p2.hp = 100;
+    slow.p1.x = -600; slow.p2.x = 600;
+    sim.step(slow, press(sim.PRESS_PUNCH), 0);
+    assert.equal(slow.p2.floor, sim.FLOOR_NONE, `jab ${i}`);
+    idle(slow, 60);
+  }
+  // Kicks on cooldown: the second or third puts them down.
+  const fast = closeFight();
+  let n = 0;
+  while (fast.p2.floor === sim.FLOOR_NONE && n < 4) {
+    fast.p1.energy = sim.ENERGY_MAX;
+    fast.p1.x = -600; fast.p2.x = 600;
+    sim.step(fast, press(sim.PRESS_KICK), 0);
+    n++;
+    if (fast.p2.floor === sim.FLOOR_NONE) idle(fast, T.KICK_COOLDOWN);
+  }
+  assert.ok(n >= 2 && n <= 3, `${n} kicks`);
+  assert.equal(fast.p2.floor, sim.FLOOR_DOWN);
+});
+
+test('get-up: stood up at the maximum, sooner on an input, a roll with BACK, and no knockdown loop', () => {
+  const T = sim.TUNING;
+  const floored = () => { const s = closeFight(); sim.step(s, press(sim.PRESS_SPECIAL), 0); return s; };
+  const framesToStand = (s, input2) => { let n = 0; while (s.p2.floor !== sim.FLOOR_NONE && n < 400) { sim.step(s, 0, n === 0 ? input2 : 0); n++; } return n; };
+
+  // Nothing pressed: down for the maximum, then the rise.
+  assert.equal(framesToStand(floored(), 0), T.DOWN_MAX_FRAMES - 1 + T.GETUP_FRAMES);
+  // Guard held: up at the minimum, and guarding the moment they stand.
+  const g = floored();
+  assert.equal(framesToStand(g, sim.encodeInput(sim.HELD_BLOCK, 0)), T.DOWN_MIN_FRAMES - 1 + T.GETUP_FRAMES);
+  assert.equal(g.p2.immune, T.DAZE_IMMUNE_FRAMES - 1, 'the immunity starts on the standing frame');
+  // BACK held: the same timing, rolled away by the whole get-up.
+  const r = floored();
+  const x0 = r.p2.x;
+  framesToStand(r, sim.encodeInput(sim.HELD_BACK, 0));
+  assert.equal(r.p2.x - x0, Math.min(T.ROLL_STEP_MM * T.GETUP_FRAMES, T.RING_HALF_MM - x0));
+  // A press on the canvas is kept and thrown on standing: the wake-up strike.
+  const w = floored();
+  framesToStand(w, press(sim.PRESS_KICK));
+  assert.equal(w.p2.swingFrame, -1, 'not yet: standing this frame');
+  sim.step(w, 0, 0);
+  assert.equal(w.p2.swing, sim.PRESS_KICK);
+  assert.equal(w.p2.swingFrame, w.frame);
+  // Just up: a second special inside the immunity does not drop them again.
+  const again = floored();
+  framesToStand(again, sim.encodeInput(sim.HELD_BLOCK, 0));
+  sim.step(again, 0, sim.encodeInput(sim.HELD_IDLE, 0));
+  again.p1.energy = sim.ENERGY_MAX; again.p1.cooldown = 0;
+  again.p1.x = -600; again.p2.x = 600;
+  sim.step(again, press(sim.PRESS_SPECIAL), 0);
+  assert.equal(again.p1.outcome, sim.OUTCOME_HIT);
+  assert.equal(again.p2.floor, sim.FLOOR_NONE);
+});
+
+test('the killing blow is a KO, never a knockdown', () => {
+  const s = closeFight();
+  s.p2.hp = 3;
+  sim.step(s, press(sim.PRESS_SPECIAL), 0);
+  assert.equal(s.p2.hp, 0);
+  assert.equal(s.p2.floor, sim.FLOOR_NONE);
+  assert.equal(s.over, 1);
+  assert.equal(s.reason, sim.REASON_KO);
+});

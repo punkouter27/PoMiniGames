@@ -50,12 +50,37 @@ const KICK_DAMAGE = 10;
 const SPECIAL_DAMAGE = 18;
 const DAMAGE_VARIANCE_PCT = 20;
 
+// ── Both hands ──────────────────────────────────────────────────────────────
+// A punch leads with the left (the jab); another inside ONE_TWO_FRAMES of a jab is the right
+// (the cross). The jab gives a little damage away and the cross takes it back.
+const ONE_TWO_FRAMES = 42;
+const JAB_DAMAGE_PCT = 90;
+const CROSS_DAMAGE_PCT = 120;
+export const ARM_NONE = 0, ARM_LEFT = 1, ARM_RIGHT = 2;
+
+// ── The canvas ──────────────────────────────────────────────────────────────
+// Every point of damage taken adds DAZE_PER_DAMAGE daze, and one drains a frame. At DAZE_AT the
+// corner is knocked down: it cannot be hit, walk or swing. From DOWN_MIN_FRAMES it rises on any
+// input (anything held, or a press, which is kept and thrown as it stands); at DOWN_MAX_FRAMES it
+// rises regardless. Holding BACK as it rises rolls it away. Standing again, no daze builds for
+// DAZE_IMMUNE_FRAMES.
+const DAZE_PER_DAMAGE = 10;
+const DAZE_AT = 140;
+const DOWN_MIN_FRAMES = 42;
+const DOWN_MAX_FRAMES = 120;
+export const GETUP_FRAMES = 27;
+const DAZE_IMMUNE_FRAMES = 96;
+const KNOCKDOWN_SLIDE_MM = 500;
+const ROLL_STEP_MM = 45;
+export const FLOOR_NONE = 0, FLOOR_DOWN = 1, FLOOR_GETUP = 2, FLOOR_ROLL = 3;
+
 export const HELD_IDLE = 0, HELD_FORWARD = 1, HELD_BACK = 2, HELD_BLOCK = 3;
 export const PRESS_NONE = 0, PRESS_PUNCH = 4, PRESS_KICK = 5, PRESS_SPECIAL = 6;
 export const OUTCOME_NONE = 0, OUTCOME_HIT = 1, OUTCOME_BLOCKED = 2, OUTCOME_WHIFF = 3;
 export const REASON_NONE = 0, REASON_KO = 1, REASON_TIME = 2;
 
-const PACKED_LENGTH = 26;
+const CORNER_LENGTH = 16;
+const PACKED_LENGTH = 6 + 2 * CORNER_LENGTH;
 
 /** Every rule constant, keyed as tests/pobrawl-rollback-golden.json keys them (the C# twin's parity check). */
 export const TUNING = Object.freeze({
@@ -67,15 +92,19 @@ export const TUNING = Object.freeze({
   ENERGY_SCALE, ENERGY_MAX, ENERGY_REGEN_IDLE, ENERGY_REGEN_WALK,
   PUNCH_ENERGY_COST, KICK_ENERGY_COST, ENERGY_ON_HIT,
   PUNCH_DAMAGE, KICK_DAMAGE, SPECIAL_DAMAGE, DAMAGE_VARIANCE_PCT,
+  ONE_TWO_FRAMES, JAB_DAMAGE_PCT, CROSS_DAMAGE_PCT, ARM_NONE, ARM_LEFT, ARM_RIGHT,
+  DAZE_PER_DAMAGE, DAZE_AT, DOWN_MIN_FRAMES, DOWN_MAX_FRAMES, GETUP_FRAMES, DAZE_IMMUNE_FRAMES,
+  KNOCKDOWN_SLIDE_MM, ROLL_STEP_MM, FLOOR_NONE, FLOOR_DOWN, FLOOR_GETUP, FLOOR_ROLL,
   HELD_IDLE, HELD_FORWARD, HELD_BACK, HELD_BLOCK,
   PRESS_NONE, PRESS_PUNCH, PRESS_KICK, PRESS_SPECIAL,
   OUTCOME_NONE, OUTCOME_HIT, OUTCOME_BLOCKED, OUTCOME_WHIFF,
   REASON_NONE, REASON_KO, REASON_TIME,
-  PACKED_LENGTH,
+  CORNER_LENGTH, PACKED_LENGTH,
 });
 
 function newCorner(x) {
-  return { hp: MAX_HP, energy: 0, x, held: HELD_IDLE, pending: PRESS_NONE, cooldown: 0, swingFrame: -1, swing: 0, outcome: 0, damage: 0 };
+  return { hp: MAX_HP, energy: 0, x, held: HELD_IDLE, pending: PRESS_NONE, cooldown: 0, swingFrame: -1, swing: 0, outcome: 0, damage: 0,
+    daze: 0, floor: FLOOR_NONE, floorT: 0, immune: 0, arm: ARM_NONE, armFrame: 0 };
 }
 
 /** A fresh fight: both corners on their marks, `fightStart` frames of pre-roll. */
@@ -134,9 +163,33 @@ function regen(c) {
     : (c.held === HELD_FORWARD || c.held === HELD_BACK) ? ENERGY_REGEN_WALK : 0;
   c.energy = Math.min(ENERGY_MAX, c.energy + r);
   if (c.cooldown > 0) c.cooldown--;
+  if (c.daze > 0) c.daze--;
+  if (c.immune > 0) c.immune--;
+}
+
+/** One frame on the canvas: lie, start to rise (rolling if BACK is held), stand. `away` is -1 for P1, +1 for P2. */
+function tickFloor(c, away) {
+  if (c.floor === FLOOR_NONE) return;
+  c.floorT++;
+  if (c.floor === FLOOR_DOWN) {
+    const wants = c.held !== HELD_IDLE || c.pending !== PRESS_NONE;
+    if (c.floorT >= DOWN_MAX_FRAMES || (wants && c.floorT >= DOWN_MIN_FRAMES)) {
+      c.floor = c.held === HELD_BACK ? FLOOR_ROLL : FLOOR_GETUP;
+      c.floorT = 0;
+    }
+    return;
+  }
+  if (c.floor === FLOOR_ROLL) c.x += away * ROLL_STEP_MM;
+  if (c.floorT >= GETUP_FRAMES) {
+    c.floor = FLOOR_NONE;
+    c.floorT = 0;
+    c.immune = DAZE_IMMUNE_FRAMES;
+  }
 }
 
 function takeSwing(c) {
+  // On the canvas nothing swings; the press waits and is thrown on standing (the wake-up strike).
+  if (c.floor !== FLOOR_NONE) return PRESS_NONE;
   const swing = c.pending;
   if (swing === PRESS_NONE || c.cooldown > 0) return PRESS_NONE;
   c.pending = PRESS_NONE;
@@ -162,7 +215,14 @@ function resolveSwing(s, attacker, defender, swing, guarded, gap, shoveDir) {
   attacker.swingFrame = s.frame;
   attacker.swing = swing;
   attacker.damage = 0;
-  if (gap > reach) {
+  if (swing === PRESS_PUNCH) {
+    const cross = attacker.arm === ARM_LEFT && s.frame - attacker.armFrame <= ONE_TWO_FRAMES;
+    attacker.arm = cross ? ARM_RIGHT : ARM_LEFT;
+    attacker.armFrame = s.frame;
+    baseDmg = ((PUNCH_DAMAGE * (cross ? CROSS_DAMAGE_PCT : JAB_DAMAGE_PCT) + 50) / 100) | 0;
+  }
+  // Out of reach, or over a corner on the canvas: nothing lands and the RNG does not move.
+  if (gap > reach || defender.floor !== FLOOR_NONE) {
     attacker.outcome = OUTCOME_WHIFF;
     return;
   }
@@ -179,6 +239,16 @@ function resolveSwing(s, attacker, defender, swing, guarded, gap, shoveDir) {
   defender.hp -= dealt;
   attacker.damage = dealt;
   attacker.energy = Math.min(ENERGY_MAX, attacker.energy + ENERGY_ON_HIT);
+  // Daze, and the knockdown: never the killing blow (that is the KO), never inside the immunity.
+  if (defender.immune === 0) {
+    defender.daze += dealt * DAZE_PER_DAMAGE;
+    if (defender.daze >= DAZE_AT && defender.hp > 0) {
+      defender.floor = FLOOR_DOWN;
+      defender.floorT = 0;
+      defender.daze = 0;
+      defender.x += shoveDir * KNOCKDOWN_SLIDE_MM;
+    }
+  }
 }
 
 function clamp(v, lo, hi) { return v < lo ? lo : v > hi ? hi : v; }
@@ -211,12 +281,14 @@ export function step(s, input1, input2) {
   const gap = s.p2.x - s.p1.x;
   const a1 = takeSwing(s.p1);
   const a2 = takeSwing(s.p2);
-  const p1Guarding = a1 === PRESS_NONE && s.p1.held === HELD_BLOCK;
-  const p2Guarding = a2 === PRESS_NONE && s.p2.held === HELD_BLOCK;
+  const p1Guarding = a1 === PRESS_NONE && s.p1.held === HELD_BLOCK && s.p1.floor === FLOOR_NONE;
+  const p2Guarding = a2 === PRESS_NONE && s.p2.held === HELD_BLOCK && s.p2.floor === FLOOR_NONE;
   if (a1 !== PRESS_NONE) { resolveSwing(s, s.p1, s.p2, a1, p2Guarding, gap, 1); enforceSpacing(s); }
   if (a2 !== PRESS_NONE) { resolveSwing(s, s.p2, s.p1, a2, p1Guarding, gap, -1); enforceSpacing(s); }
-  if (a1 === PRESS_NONE) s.p1.x += walkStep(s.p1.held);
-  if (a2 === PRESS_NONE) s.p2.x -= walkStep(s.p2.held);
+  if (a1 === PRESS_NONE && s.p1.floor === FLOOR_NONE) s.p1.x += walkStep(s.p1.held);
+  if (a2 === PRESS_NONE && s.p2.floor === FLOOR_NONE) s.p2.x -= walkStep(s.p2.held);
+  tickFloor(s.p1, -1);
+  tickFloor(s.p2, 1);
   enforceSpacing(s);
   regen(s.p1);
   regen(s.p2);
@@ -233,11 +305,13 @@ export function step(s, input1, input2) {
 function packCorner(a, o, c) {
   a[o] = c.hp; a[o + 1] = c.energy; a[o + 2] = c.x; a[o + 3] = c.held; a[o + 4] = c.pending;
   a[o + 5] = c.cooldown; a[o + 6] = c.swingFrame; a[o + 7] = c.swing; a[o + 8] = c.outcome; a[o + 9] = c.damage;
+  a[o + 10] = c.daze; a[o + 11] = c.floor; a[o + 12] = c.floorT; a[o + 13] = c.immune; a[o + 14] = c.arm; a[o + 15] = c.armFrame;
 }
 
 function unpackCorner(a, o) {
   return { hp: a[o] | 0, energy: a[o + 1] | 0, x: a[o + 2] | 0, held: a[o + 3] | 0, pending: a[o + 4] | 0,
-    cooldown: a[o + 5] | 0, swingFrame: a[o + 6] | 0, swing: a[o + 7] | 0, outcome: a[o + 8] | 0, damage: a[o + 9] | 0 };
+    cooldown: a[o + 5] | 0, swingFrame: a[o + 6] | 0, swing: a[o + 7] | 0, outcome: a[o + 8] | 0, damage: a[o + 9] | 0,
+    daze: a[o + 10] | 0, floor: a[o + 11] | 0, floorT: a[o + 12] | 0, immune: a[o + 13] | 0, arm: a[o + 14] | 0, armFrame: a[o + 15] | 0 };
 }
 
 /** The wire layout (C# PoBrawlRollbackSim.Pack). */
@@ -245,14 +319,14 @@ export function pack(s) {
   const a = new Array(PACKED_LENGTH);
   a[0] = s.frame; a[1] = s.fightStart; a[2] = s.rng; a[3] = s.over; a[4] = s.winner; a[5] = s.reason;
   packCorner(a, 6, s.p1);
-  packCorner(a, 16, s.p2);
+  packCorner(a, 6 + CORNER_LENGTH, s.p2);
   return a;
 }
 
 export function unpack(a) {
   if (!a || a.length !== PACKED_LENGTH) throw new Error(`rollbackSim: expected ${PACKED_LENGTH} ints`);
   return { frame: a[0] | 0, fightStart: a[1] | 0, rng: a[2] | 0, over: a[3] | 0, winner: a[4] | 0, reason: a[5] | 0,
-    p1: unpackCorner(a, 6), p2: unpackCorner(a, 16) };
+    p1: unpackCorner(a, 6), p2: unpackCorner(a, 6 + CORNER_LENGTH) };
 }
 
 /** FNV-1a over the packed ints, one 32-bit word at a time. Unsigned. */

@@ -4,7 +4,7 @@
 // reactions, dismemberment, and the KO hand-off.
 //
 // _tryHit is a short pipeline over named steps (_resolveBlock, _rollHitDamage,
-// _landHit, _resolveCombatEvents, _heavyHitStagger). Mixed into BrawlGame's
+// _landHit, _resolveCombatEvents, _heavyHitStagger, _knockdownCheck). Mixed into BrawlGame's
 // prototype like the other subsystems (see mixin.js), so `this` is the live game.
 //
 // ORDER IS LOAD-BEARING. The seeded RNG draws in this file (Obama's dodge, Nixon's
@@ -14,7 +14,8 @@
 
 import * as THREE from 'three';
 import { setExpression } from './fighters.js';
-import { COMBAT_EVENTS, REGIONS, regionEffect } from './combat.js';
+import { COMBAT_EVENTS, REGIONS, regionEffect, regionTier, REGION_CALLOUTS } from './combat.js';
+import { addDaze, isKnockdown, isFloored } from './knockdown.js';
 import { PERSONALITIES } from './personalities.js';
 import { testAttackHit, guardCovers, testAttackClash, regionForHurtBone } from './hitboxes.js';
 import { SIM_DT, MAX_HP, ATTACKS, HEAVY_HIT_DMG } from './constants.js';
@@ -111,6 +112,13 @@ const PERFECT_GUARD_STUN = 0.65;
 const COUNTER_WINDOW = 1.5;
 const COUNTER_ATK_MUL = 1.5;
 
+// ── A guard is only as good as the arms holding it ───────────────────────
+// Every strike an ORDINARY guard absorbs bruises the arms by this share of what
+// it would have dealt, so a fighter who sits behind the guard all round ends up
+// with arms that leak (combat.js regionEffect guardLeak). A perfect guard is a
+// read, not a soak, and costs the arms nothing.
+const BLOCK_ARM_WEAR = 0.3;
+
 // Super meter per unit of HP lost (see _rollHitDamage). 1.6 fills it after
 // ~60 HP of damage: a comeback for the fighter who is losing, with the fight
 // still live enough for the super to matter.
@@ -132,7 +140,7 @@ class HitResolutionMethods {
       && f.stateT <= f.attack.windup + f.attack.active + 0.04;
     if (!inActive(fa) || !inActive(fb)) return;
     const phase = (f) => f.stateT > f.attack.windup + f.attack.active ? 'recover' : 'active';
-    const mid = testAttackClash(fa.rig, fa.state, phase(fa), fb.rig, fb.state, phase(fb));
+    const mid = testAttackClash(fa.rig, fa.strike || fa.state, phase(fa), fb.rig, fb.strike || fb.state, phase(fb));
     if (!mid) return;
     this._clashCooldown = 0.35;
 
@@ -205,6 +213,9 @@ class HitResolutionMethods {
     if (defender.state === 'ko' || attacker.state === 'ko') return;
     // Online the server already decided this swing (netplay.js): land its verdict instead.
     if (this.online) return this._tryHitNet(attacker, defender, attack);
+    // A fighter on the canvas, or still rising, cannot be hit (knockdown.js): the
+    // swing passes over them and stays live, so one timed for the rise can land.
+    if (isFloored(defender.state)) return;
 
     // Phase detection honors per-fighter swing timing multipliers (Eisenhower
     // "Overlord" stretches windup and compresses active). windup and active
@@ -213,7 +224,8 @@ class HitResolutionMethods {
     const aMul = attacker.swingActiveMul ?? 1.0;
     const phase = (attacker.stateT > attack.windup * wMul + attack.active * aMul)
       ? 'recover' : 'active';
-    let hit = testAttackHit(attacker.rig, attack.name, phase, defender.rig);
+    // `strike` is the hand that is actually swinging (punch = right, punchL = left).
+    let hit = testAttackHit(attacker.rig, attacker.strike || attack.name, phase, defender.rig);
     // ── Obama "no-drama open" passive dodge ──────────────────────────
     // ~22% of incoming attacks simply miss against Obama — a casual lean
     // that the engine realizes as a hit-test miss returning false.
@@ -283,12 +295,13 @@ class HitResolutionMethods {
     this._landHit(s);
     this._resolveCombatEvents(s);
     this._heavyHitStagger(s);
+    this._knockdownCheck(s);
   }
 
   // The guard branch. True when the swing was stopped (ordinary or perfect guard)
   // and the strike is fully resolved; false when it goes on to the damage roll.
   _resolveBlock(s) {
-    const { attacker, defender, attack, hit, knockDir, chargeMul, defMass } = s;
+    const { attacker, defender, attack, hit, knockDir, chargeMul, defMass, powerScale } = s;
     // A held guard stops anything thrown from inside its arc (hitboxes.js
     // guardCovers): what you pressed decides it, not whether the fist happened
     // to graze a forearm. Only a strike from the flank or behind gets round it.
@@ -331,6 +344,26 @@ class HitResolutionMethods {
       }
       // EVERY blocked swing freezes the attacker (see BLOCK_STUN); a perfect
       // guard freezes them longer still, so the read stays the better outcome.
+      // An ordinary guard soaks the blow on the arms: they bruise, and bruised
+      // arms let part of the next one through (see BLOCK_ARM_WEAR). The chip can
+      // never be the knockout — the guard always leaves a point of health.
+      if (!perfect) {
+        const leak = regionEffect(defender.regionDmg).guardLeak;
+        const tierBefore = regionTier(REGIONS.ARMS, defender.regionDmg.arms);
+        const soaked = attack.dmg * chargeMul;
+        defender.regionDmg.arms = Math.min(100, defender.regionDmg.arms + soaked * BLOCK_ARM_WEAR);
+        if (leak > 0) {
+          const hp = this.combat.getPlayer(defender.playerId)?.health ?? 0;
+          const chip = Math.min(soaked * powerScale * leak, Math.max(0, hp - 1));
+          if (chip > 0.5) {
+            if (this.training) this._trainingCushion(defender, chip);
+            this.combat.damage({ playerId: defender.playerId, amount: chip, sourceId: attacker.playerId });
+            this._spawnSparks(hit.point, 0xff7a5a, 5, 1.0);
+          }
+        }
+        this._applyDamageWear(defender);
+        this._regionCallout(defender, REGIONS.ARMS, tierBefore, hit.point);
+      }
       attacker.blockStunT = perfect ? PERFECT_GUARD_STUN : BLOCK_STUN;
       attacker.state = 'idle';
       attacker.stateT = 0;
@@ -362,8 +395,9 @@ class HitResolutionMethods {
       }
       // Visible absorb: the attacker's arm bounces off the guard; the
       // defender's guard compresses under the impact.
-      attacker.animator.applyReaction('shoulderR', 4, 0, -3);
-      attacker.animator.applyReaction('elbowR', -6, 0, 0);
+      const hand = attacker.strike === 'punchL' ? 'L' : 'R';
+      attacker.animator.applyReaction('shoulder' + hand, 4, 0, hand === 'L' ? 3 : -3);
+      attacker.animator.applyReaction('elbow' + hand, -6, 0, 0);
       defender.animator.applyReaction('elbowL', -3.5, 0, 0);
       defender.animator.applyReaction('elbowR', -3.5, 0, 0);
       defender.animator.applyReaction('torso', -1.5, 0, 0);
@@ -384,7 +418,8 @@ class HitResolutionMethods {
     const { attacker, defender, attack, hit, region, regionMod, atkMul, chargeMul, powerScale } = s;
     // Damage rolls: ±1 variance, scaled by charge, mass ratio, attack power,
     // the struck region and the attacker's own arm wear.
-    let baseDmg = (attack.dmg * chargeMul + this.rng.randint(-1, 1))
+    // `armMul` is the hand: the lead jab gives a little, the cross behind it takes it back.
+    let baseDmg = (attack.dmg * chargeMul * (attacker.armMul ?? 1) + this.rng.randint(-1, 1))
       * atkMul * regionMod * powerScale;
 
     // ── Per-hit personality modifiers ─────────────────────────────────
@@ -566,6 +601,8 @@ class HitResolutionMethods {
     // full-charge flurry to one section reddens it on the body diagram and can
     // tear the limb off before the KO (chargeMul 1 → CHARGE_MAX_MUL).
     const limbChargeMul = 1 + REGION_CHARGE_BONUS * (chargeMul - 1);
+    const tierBefore = regionTier(region, defender.regionDmg[region]);
+    const armTierBefore = regionTier(REGIONS.ARMS, defender.regionDmg.arms);
     defender.regionDmg[region] = Math.min(100,
       defender.regionDmg[region] + Math.max(2, baseDmg) * limbChargeMul);
     // Blows that land elsewhere still rattle the defender's guarding arms: a
@@ -577,6 +614,16 @@ class HitResolutionMethods {
       defender.regionDmg.arms = Math.min(100, defender.regionDmg.arms + bleed);
     }
     this._applyDamageWear(defender);
+    // A region that just got worse costs its owner something new (combat.js
+    // regionEffect): say which, once, where the blow landed.
+    if (!this._regionCallout(defender, region, tierBefore, hit.point)) {
+      this._regionCallout(defender, REGIONS.ARMS, armTierBefore, hit.point);
+    }
+    // Daze: how hard you have just been hit (knockdown.js). Offline only — the
+    // online sim has no canvas. Nothing builds for a moment after getting up.
+    if (!this.online && this.t >= (defender.dazeImmuneUntil ?? -99)) {
+      defender.daze = addDaze(defender.daze || 0, baseDmg, effect?.dazeMul ?? 1);
+    }
 
     // Dismemberment: once the arms region reddens, an arm tears off. Left first
     // (keeps the striking arm), right only at near-max once the left is gone.
@@ -755,9 +802,9 @@ class HitResolutionMethods {
   _heavyHitStagger(s) {
     const { defender, baseDmg, knockDir, atkMass, defMass } = s;
     // ── Heavy-hit stagger ─────────────────────────────────────────────
-    // Fighters stay on their feet until the killing blow: a heavy hit
-    // (most kicks, clean head punches) that doesn't kill gets an amplified
-    // stagger — extra knockback and a deep lean — but never a knockdown.
+    // A heavy hit (most kicks, clean head punches) that doesn't kill gets an
+    // amplified stagger — extra knockback and a deep lean. Enough of them close
+    // together is a knockdown (_knockdownCheck).
     if (defender.state !== 'ko' && baseDmg >= HEAVY_HIT_DMG) {
       defender.knockback.add(knockDir.clone().multiplyScalar(3.0 * (atkMass / defMass)));
       defender.animator.applyLean(knockDir.z * 0.2, -knockDir.x * 0.2);
@@ -777,6 +824,25 @@ class HitResolutionMethods {
         this._staggerFlail(defender, knockDir);
       }
     }
+  }
+
+  // The last step of a landed hit: enough daze and the defender goes down
+  // (fighterTick.js _knockDown). Not the killing blow — that is the KO's ragdoll.
+  _knockdownCheck(s) {
+    const { attacker, defender, knockDir } = s;
+    if (defender.state === 'ko' || this.phase !== 'fighting') return;
+    if (isKnockdown(defender.daze || 0, this.t, defender.dazeImmuneUntil ?? -99)) {
+      this._knockDown(defender, attacker, knockDir);
+    }
+  }
+
+  /** Call out a region crossing into a worse tier. True when it did. */
+  _regionCallout(defender, region, tierBefore, point) {
+    const tier = regionTier(region, defender.regionDmg[region]);
+    if (tier <= tierBefore) return false;
+    this._spawnCallout(point, REGION_CALLOUTS[region][tier - 1]);
+    this.hudDirty = true;
+    return true;
   }
 
   // A short, recoverable "partial ragdoll": a burst of reaction-spring impulses

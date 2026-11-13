@@ -36,7 +36,10 @@ export const ATTACKS = {
            cancelInto: { idle: 0.42, punch: 0.34, kick: 0.36, block: 0.40 } },
 };
 
-// Fighters never leave their feet before the final blow — heavy hits get a
-// hard stagger (extra knockback + lean) instead of a mid-fight knockdown.
-// The KO ragdoll is the only way to the canvas.
+// A heavy hit gets a hard stagger (extra knockback + lean). Enough damage in a
+// short space puts a fighter on the canvas for a get-up (knockdown.js); the KO
+// ragdoll is still the only way to stay there.
 export const HEAVY_HIT_DMG = 13; // threshold for the amplified stagger reaction
+
+/** Seconds a landed hit stuns for (a rattled head adds to it: combat.js flinchBonus). */
+export const HITSTUN = 0.35;

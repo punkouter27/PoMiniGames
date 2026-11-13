@@ -20,6 +20,19 @@ scores.
 - **Lobby recovery is visible.** Shared lobbies automatically rejoin after SignalR reconnects
   when the game supports it, report a failed rejoin, and offer a manual retry after reconnect
   attempts are exhausted.
+- **PoBrawl's 1P ladder and 2P local are best of three.** First to two rounds (60 seconds
+  each; a bell too close to call is nobody's round), with round pips under the clock. The Cup,
+  online and the training room stay one round. A hard enough beating in a short space is a
+  **knockdown**: the fighter cannot be hit on the canvas and picks a get-up (plain, a roll,
+  rising into the guard, or a wake-up strike). Taps punch left-right-left (jab, cross); a coil
+  is the right hand. Body damage costs each region something different: head = stunned longer
+  and down sooner, torso = slower energy regen, arms = weaker strikes and a guard that leaks,
+  legs = slower on the feet and off the canvas. The rules are pure modules
+  (`js/pobrawl/energy.js`, `knockdown.js`, `rounds.js`, `combat.js`; the per-fighter state
+  machine is `fighterTick.js`), tested headless by `tests/pobrawl-core.test.mjs`, which CI runs.
+  The fastest-KO board takes a round-one knockout only. Online has the knockdown and both hands
+  too, in the rollback sim's own integer terms (daze, down / rising / rolling, jab and cross), so
+  the packed state is 38 ints (16 a corner), not 26.
 - **PoBrawl's online 1v1 uses rollback netcode.** Both browsers and the server run the same
   integer, 60 Hz fight sim, written twice to give bit-identical results
   (`Shared/Games/PoBrawlRollbackSim.cs` and `wwwroot/js/pobrawl/rollbackSim.js`). Your own
@@ -330,7 +343,7 @@ CI validates Bicep and deploys application code; use `azd up` for resource provi
 | `GET /api/pobrawl/dossier` | 2026-10-19: answers within 4 s (static facts when Wikipedia is slow, enriched in the background; one 4 s Wikimedia attempt) |
 | `/pocabinet/lobby-hub`, `/pocabinet/race-hub` (SignalR) | 2026-10-19: every race gets its own 8-hex code (`RaceStarting(code, trackId)`, lobby `Code`), so a results screen never picks up the next race; new lobby method `Kick(seatId)` (host, between races) and events `Kicked(reason)`, `LobbyNotice(text)`; a rematch seat not ready 90 s after the lobby reopens is freed. Race hub: `JoinRace` returns null (not an error) when the race is over, new `LeaveRace()` (forfeit: the car coasts, later joins spectate), new event `RaceAborted(code)` when three ticks in a row fail; a car with no input for 0.5 s coasts; a race every human left is called |
 | `POST /api/pocabinet/scores` | 2026-10-19: `GameCode` at most 32 letters, digits, `-` or `_`; input log length checked before decoding; the play-session preflight runs before a replay; at most two replays at once (`503` + `Retry-After: 5` after a 2 s wait); an online lap is spent only after the score is stored, so a retried `503` still verifies |
-| `/pobrawl/match-hub` (SignalR) | Rollback protocol: `SubmitInput` takes `{ frame, held, press, sequence }`; new `matchInput` event (each accepted input with the frame the server used) and `Ping` method (clock sync); `matchState` now carries `frame`, `sim` (26 packed ints) and `checksum` in place of the per-tick swing fields |
+| `/pobrawl/match-hub` (SignalR) | Rollback protocol: `SubmitInput` takes `{ frame, held, press, sequence }`; new `matchInput` event (each accepted input with the frame the server used) and `Ping` method (clock sync); `matchState` now carries `frame`, `sim` (38 packed ints, was 26 before 2026-11-13) and `checksum` in place of the per-tick swing fields |
 
 PoBrawl's fighter dossiers quote summaries and portraits from [Wikipedia](https://en.wikipedia.org/)
 (text CC BY-SA 4.0); each card links its article with a "From Wikipedia" attribution.

@@ -76,8 +76,8 @@ public partial class PoBrawlPage
     // The 60-second limit belongs in the objective: a player who does not know the clock is
     // a deadline reads a decision loss as the game ending arbitrarily.
     private string IntroObjective => _mode == "2p"
-        ? "Two fighters enter — one round, 60 seconds. Each player picks below."
-        : "KO inside 60 seconds — closest health at the bell is a draw.";
+        ? "Two fighters enter — best of three rounds, 60 seconds each. Each player picks below."
+        : "Best of three rounds, 60 seconds each — take a round by KO or on health at the bell.";
     // "fighting" | "result".
     private string _phase = "fighting";
     private string _p1Char = "trump";
@@ -210,7 +210,9 @@ public partial class PoBrawlPage
         int P1Hits, int P2Hits,
         int P1Blocks, int P2Blocks,
         int P1BestCombo, int P2BestCombo,
-        int P1BiggestHit, int P2BiggestHit);
+        int P1BiggestHit, int P2BiggestHit,
+        // Best of three (js/pobrawl/rounds.js): rounds each corner took. 0–0 in the one-round modes.
+        int P1Rounds = 0, int P2Rounds = 0);
 
     // Totals for counts, best-of for peaks — a "biggest hit" summed across rounds
     // would be a number that never happened.

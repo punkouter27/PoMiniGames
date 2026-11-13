@@ -86,14 +86,43 @@ public static class PoBrawlRollbackSim
     /// <summary>Each landed hit rolls ±this percent.</summary>
     public const int DamageVariancePct = 20;
 
+    // ── Both hands ───────────────────────────────────────────────────────
+    /// <summary>A punch within this many frames of a jab is the cross (the right hand).</summary>
+    public const int OneTwoFrames = 42;
+    /// <summary>The lead jab's and the cross's share of <see cref="PunchDamage"/>, percent.</summary>
+    public const int JabDamagePct = 90;
+    public const int CrossDamagePct = 120;
+    public const int ArmNone = 0, ArmLeft = 1, ArmRight = 2;
+
+    // ── The canvas ───────────────────────────────────────────────────────
+    /// <summary>Daze added per point of damage taken; one drains every frame.</summary>
+    public const int DazePerDamage = 10;
+    /// <summary>Daze at which a corner is knocked down.</summary>
+    public const int DazeAt = 140;
+    /// <summary>Earliest a downed corner may rise (on any input), and when it rises regardless.</summary>
+    public const int DownMinFrames = 42;
+    public const int DownMaxFrames = 120;
+    /// <summary>Frames from starting to rise to standing.</summary>
+    public const int GetupFrames = 27;
+    /// <summary>Frames after standing in which no daze builds.</summary>
+    public const int DazeImmuneFrames = 96;
+    /// <summary>Extra shove on the blow that knocks a corner down.</summary>
+    public const int KnockdownSlideMm = 500;
+    /// <summary>Distance a get-up roll (BACK held while rising) covers each frame.</summary>
+    public const int RollStepMm = 45;
+    public const int FloorNone = 0, FloorDown = 1, FloorGetup = 2, FloorRoll = 3;
+
     // ── Codes (the PoBrawlMatchAction values) ────────────────────────────
     public const int HeldIdle = 0, HeldForward = 1, HeldBack = 2, HeldBlock = 3;
     public const int PressNone = 0, PressPunch = 4, PressKick = 5, PressSpecial = 6;
     public const int OutcomeNone = 0, OutcomeHit = 1, OutcomeBlocked = 2, OutcomeWhiff = 3;
     public const int ReasonNone = 0, ReasonKo = 1, ReasonTime = 2;
 
-    /// <summary>Length of <see cref="Pack"/>'s array (6 globals + 10 per corner).</summary>
-    public const int PackedLength = 26;
+    /// <summary>Ints per corner in <see cref="Pack"/>'s array.</summary>
+    public const int CornerLength = 16;
+
+    /// <summary>Length of <see cref="Pack"/>'s array (6 globals + <see cref="CornerLength"/> per corner).</summary>
+    public const int PackedLength = 6 + (2 * CornerLength);
 
     /// <summary>A fresh fight: both corners on their marks, <paramref name="fightStartFrame"/> frames of pre-roll.</summary>
     public static PoBrawlSimState Create(uint seed, int fightStartFrame) => new()
@@ -174,14 +203,16 @@ public static class PoBrawlRollbackSim
         var gap = s.P2.X - s.P1.X;
         var a1 = TakeSwing(ref s.P1);
         var a2 = TakeSwing(ref s.P2);
-        var p1Guarding = a1 == PressNone && s.P1.Held == HeldBlock;
-        var p2Guarding = a2 == PressNone && s.P2.Held == HeldBlock;
+        var p1Guarding = a1 == PressNone && s.P1.Held == HeldBlock && s.P1.Floor == FloorNone;
+        var p2Guarding = a2 == PressNone && s.P2.Held == HeldBlock && s.P2.Floor == FloorNone;
         if (a1 != PressNone) ResolveSwing(ref s, a1, attackerIsP1: true, p2Guarding, gap);
         if (a2 != PressNone) ResolveSwing(ref s, a2, attackerIsP1: false, p1Guarding, gap);
 
-        // 2. Footwork. A guard plants you; a swing roots you for its frame.
-        if (a1 == PressNone) s.P1.X += WalkStep(s.P1.Held);
-        if (a2 == PressNone) s.P2.X -= WalkStep(s.P2.Held);
+        // 2. Footwork. A guard plants you; a swing roots you for its frame; the canvas holds you.
+        if (a1 == PressNone && s.P1.Floor == FloorNone) s.P1.X += WalkStep(s.P1.Held);
+        if (a2 == PressNone && s.P2.Floor == FloorNone) s.P2.X -= WalkStep(s.P2.Held);
+        TickFloor(ref s.P1, -1);
+        TickFloor(ref s.P2, +1);
         EnforceSpacing(ref s);
 
         // 3. Energy regen from what is held, and the cooldown clocks.
@@ -231,11 +262,42 @@ public static class PoBrawlRollbackSim
         };
         c.Energy = Math.Min(EnergyMax, c.Energy + regen);
         if (c.Cooldown > 0) c.Cooldown--;
+        if (c.Daze > 0) c.Daze--;
+        if (c.Immune > 0) c.Immune--;
+    }
+
+    /// <summary>
+    /// One frame on the canvas: lie, start to rise (rolling if BACK is held), stand.
+    /// <paramref name="away"/> is -1 for P1 and +1 for P2.
+    /// </summary>
+    private static void TickFloor(ref PoBrawlSimCorner c, int away)
+    {
+        if (c.Floor == FloorNone) return;
+        c.FloorT++;
+        if (c.Floor == FloorDown)
+        {
+            var wants = c.Held != HeldIdle || c.Pending != PressNone;
+            if (c.FloorT >= DownMaxFrames || (wants && c.FloorT >= DownMinFrames))
+            {
+                c.Floor = c.Held == HeldBack ? FloorRoll : FloorGetup;
+                c.FloorT = 0;
+            }
+            return;
+        }
+        if (c.Floor == FloorRoll) c.X += away * RollStepMm;
+        if (c.FloorT >= GetupFrames)
+        {
+            c.Floor = FloorNone;
+            c.FloorT = 0;
+            c.Immune = DazeImmuneFrames;
+        }
     }
 
     /// <summary>The buffered press, if this corner may swing this frame; consumes it, starts the cooldown, spends the energy.</summary>
     private static int TakeSwing(ref PoBrawlSimCorner c)
     {
+        // On the canvas nothing swings; the press waits and is thrown on standing (the wake-up strike).
+        if (c.Floor != FloorNone) return PressNone;
         var swing = c.Pending;
         if (swing == PressNone || c.Cooldown > 0) return PressNone;
         c.Pending = PressNone;
@@ -279,7 +341,16 @@ public static class PoBrawlRollbackSim
         attacker.SwingFrame = frame;
         attacker.Swing = swing;
         attacker.Damage = 0;
-        if (gap > reach)
+        if (swing == PressPunch)
+        {
+            var cross = attacker.Arm == ArmLeft && frame - attacker.ArmFrame <= OneTwoFrames;
+            attacker.Arm = cross ? ArmRight : ArmLeft;
+            attacker.ArmFrame = frame;
+            baseDmg = ((PunchDamage * (cross ? CrossDamagePct : JabDamagePct)) + 50) / 100;
+        }
+
+        // Out of reach, or over a corner on the canvas: nothing lands and the RNG does not move.
+        if (gap > reach || defender.Floor != FloorNone)
         {
             attacker.Outcome = OutcomeWhiff;
             return;
@@ -312,6 +383,19 @@ public static class PoBrawlRollbackSim
         defender.Hp -= dealt;
         attacker.Damage = dealt;
         attacker.Energy = Math.Min(EnergyMax, attacker.Energy + EnergyOnHit);
+
+        // Daze, and the knockdown: never the killing blow (that is the KO), never inside the immunity.
+        if (defender.Immune == 0)
+        {
+            defender.Daze += dealt * DazePerDamage;
+            if (defender.Daze >= DazeAt && defender.Hp > 0)
+            {
+                defender.Floor = FloorDown;
+                defender.FloorT = 0;
+                defender.Daze = 0;
+                defender.X += shoveDir * KnockdownSlideMm;
+            }
+        }
     }
 
     /// <summary>Ring clamp, then the minimum gap, split between the corners (a corner pinned on the rope yields nothing).</summary>
@@ -336,7 +420,7 @@ public static class PoBrawlRollbackSim
         var a = new int[PackedLength];
         a[0] = s.Frame; a[1] = s.FightStart; a[2] = s.Rng; a[3] = s.Over; a[4] = s.Winner; a[5] = s.Reason;
         PackCorner(a, 6, s.P1);
-        PackCorner(a, 16, s.P2);
+        PackCorner(a, 6 + CornerLength, s.P2);
         return a;
     }
 
@@ -352,7 +436,7 @@ public static class PoBrawlRollbackSim
             Winner = a[4],
             Reason = a[5],
             P1 = UnpackCorner(a, 6),
-            P2 = UnpackCorner(a, 16),
+            P2 = UnpackCorner(a, 6 + CornerLength),
         };
     }
 
@@ -360,6 +444,7 @@ public static class PoBrawlRollbackSim
     {
         a[o] = c.Hp; a[o + 1] = c.Energy; a[o + 2] = c.X; a[o + 3] = c.Held; a[o + 4] = c.Pending;
         a[o + 5] = c.Cooldown; a[o + 6] = c.SwingFrame; a[o + 7] = c.Swing; a[o + 8] = c.Outcome; a[o + 9] = c.Damage;
+        a[o + 10] = c.Daze; a[o + 11] = c.Floor; a[o + 12] = c.FloorT; a[o + 13] = c.Immune; a[o + 14] = c.Arm; a[o + 15] = c.ArmFrame;
     }
 
     private static PoBrawlSimCorner UnpackCorner(IReadOnlyList<int> a, int o) => new()
@@ -374,6 +459,12 @@ public static class PoBrawlRollbackSim
         Swing = a[o + 7],
         Outcome = a[o + 8],
         Damage = a[o + 9],
+        Daze = a[o + 10],
+        Floor = a[o + 11],
+        FloorT = a[o + 12],
+        Immune = a[o + 13],
+        Arm = a[o + 14],
+        ArmFrame = a[o + 15],
     };
 
     /// <summary>FNV-1a over the packed ints (one 32-bit word at a time) — what a snapshot carries for desync detection.</summary>
@@ -389,7 +480,7 @@ public static class PoBrawlRollbackSim
 }
 
 /// <summary>
-/// The whole fight in 26 ints. A value type, so a copy is a clone and history is an array of them.
+/// The whole fight in <see cref="PoBrawlRollbackSim.PackedLength"/> ints. A value type, so a copy is a clone and history is an array of them.
 /// </summary>
 #pragma warning disable CA1051 // Value-type rollback snapshot mutates fields directly for zero-alloc simulation.
 public struct PoBrawlSimState : IEquatable<PoBrawlSimState>
@@ -441,4 +532,18 @@ public struct PoBrawlSimCorner
     public int Outcome;
     /// <summary>Damage that swing dealt (0 for a block or a whiff).</summary>
     public int Damage;
+    // ── The canvas ──
+    /// <summary>How hard this corner has just been hit; <see cref="PoBrawlRollbackSim.DazeAt"/> knocks it down.</summary>
+    public int Daze;
+    /// <summary>Standing, down, rising, or rising with a roll (<see cref="PoBrawlRollbackSim.FloorNone"/>…).</summary>
+    public int Floor;
+    /// <summary>Frames in the current <see cref="Floor"/> state.</summary>
+    public int FloorT;
+    /// <summary>Frames left in which no daze builds (just got up).</summary>
+    public int Immune;
+    // ── Both hands ──
+    /// <summary>The arm of the latest punch (<see cref="PoBrawlRollbackSim.ArmLeft"/> / <see cref="PoBrawlRollbackSim.ArmRight"/>), 0 before the first.</summary>
+    public int Arm;
+    /// <summary>Frame that punch fired on.</summary>
+    public int ArmFrame;
 }
