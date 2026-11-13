@@ -6,12 +6,12 @@ import { SPECIES } from './species.js';
 export const LIFE_STAGE = Object.freeze({ JUVENILE: 0, ADULT: 1, ELDER: 2 });
 
 export const DEATH_CAUSE = Object.freeze({
-  STARVATION: 'starvation', DEHYDRATION: 'dehydration', OLD_AGE: 'old_age', PREDATION: 'predation',
+  STARVATION: 'starvation', DEHYDRATION: 'dehydration', OLD_AGE: 'old_age', PREDATION: 'predation', COMBAT: 'combat',
   FIRE: 'fire', LIGHTNING: 'lightning', ROCKFALL: 'rockfall', ERUPTION: 'eruption', DROWNING: 'drowning', DISEASE: 'disease', DEBUG: 'debug',
 });
 
 export const CAUSE_TEXT = Object.freeze({
-  starvation: 'starved', dehydration: 'died of thirst', old_age: 'died of old age', predation: 'was killed',
+  starvation: 'starved', dehydration: 'died of thirst', old_age: 'died of old age', predation: 'was killed', combat: 'fell in battle',
   fire: 'burned', lightning: 'was struck by lightning', rockfall: 'was crushed by a rock',
   eruption: 'was caught in the eruption', drowning: 'drowned', disease: 'succumbed to sickness',
   debug: 'vanished (debug)',

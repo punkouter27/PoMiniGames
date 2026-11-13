@@ -39,6 +39,10 @@
                     title="@(s == 0 ? "Pause (0)" : $"{s}× speed ({(s == 4 ? 3 : s)})")" aria-label="@(s == 0 ? "Pause" : $"{s} times speed")"
                     @onclick="() => OnSpeed.InvokeAsync(s)">@(s == 0 ? "⏸" : $"{s}×")</button>
         }
+        <button type="button" class="poeco-pill" title="Fast-forward the island by 1 year" aria-label="Skip 1 year"
+                @onclick="() => OnFastForward.InvokeAsync(1)">+1y</button>
+        <button type="button" class="poeco-pill" title="Fast-forward the island by 5 years" aria-label="Skip 5 years"
+                @onclick="() => OnFastForward.InvokeAsync(5)">+5y</button>
     </div>
 
     <button type="button" class="poeco-pill poeco-sound-btn" aria-pressed="@(Sound ? "true" : "false")"
@@ -76,6 +80,7 @@
         @if (_menu == "more")
         {
             <div class="poeco-menu-panel" role="menu" aria-label="More views">
+                <button type="button" role="menuitemcheckbox" aria-checked="@(PhotoMode ? "true" : "false")" class="poeco-menu-item @(PhotoMode ? "poeco-menu-item--on" : "")" @onclick="@(() => Run(OnPhotoMode))">📷 Photo mode <span class="poeco-menu-hint">FOV slider · stamped postcard PNG</span></button>
                 <button type="button" role="menuitem" class="poeco-menu-item" @onclick="@(() => Run(OnReel))">🎞 Island reel <span class="poeco-menu-hint">replays · photos · long exposure</span></button>
                 <button type="button" role="menuitemcheckbox" aria-checked="@(Pip ? "true" : "false")" class="poeco-menu-item @(Pip ? "poeco-menu-item--on" : "")" @onclick="@(() => Run(OnPip))">⧉ Pop out <kbd>P</kbd> <span class="poeco-menu-hint">a small always-on-top window</span></button>
                 <button type="button" role="menuitemcheckbox" aria-checked="@(Ambient ? "true" : "false")" class="poeco-menu-item @(Ambient ? "poeco-menu-item--on" : "")" @onclick="@(() => Run(OnAmbient))">🌙 Ambient mode <span class="poeco-menu-hint">director on, HUD off, screen kept awake</span></button>
@@ -114,6 +119,7 @@
     [Parameter] public bool Director { get; set; }
     [Parameter] public bool Pip { get; set; }
     [Parameter] public bool Ambient { get; set; }
+    [Parameter] public bool PhotoMode { get; set; }
     [Parameter] public bool Keys { get; set; }
     [Parameter] public int Lens { get; set; } = EcoLens.None;
     /// <summary>Is a creature inspected or followed? The kin lens has nothing to show without one.</summary>
@@ -123,10 +129,12 @@
     [Parameter] public EventCallback OnDirector { get; set; }
     [Parameter] public EventCallback OnPip { get; set; }
     [Parameter] public EventCallback OnReel { get; set; }
+    [Parameter] public EventCallback OnPhotoMode { get; set; }
     [Parameter] public EventCallback OnAmbient { get; set; }
     [Parameter] public EventCallback OnKeys { get; set; }
     [Parameter] public EventCallback OnFind { get; set; }
     [Parameter] public EventCallback<int> OnSpeed { get; set; }
+    [Parameter] public EventCallback<double> OnFastForward { get; set; }
     [Parameter] public EventCallback<int> OnLens { get; set; }
 
     private string? _menu;

@@ -22,8 +22,11 @@ export const FRAME = Object.freeze({
   PROP_STRIDE,
   TRAIT_OFFSET: 8,
   HUNGER: 13, HEALTH: 14, STATE: 15,
-  // Bits of the per-creature STATE word.
-  C_SICK: 1, C_WATCHED: 2,
+  // Bits of the per-creature STATE word (fits cleanly in Float32 mantissa).
+  // bit 0: sick, bit 1: watched, bit 2: tamed hound, bits 3..4: tribeId+1 (0..3), bits 5..7: role (0..7)
+  C_SICK: 1, C_WATCHED: 2, C_TAMED: 4,
+  TRIBE_SHIFT: 3, TRIBE_MASK: 3,
+  ROLE_SHIFT: 5, ROLE_MASK: 7,
   bytes(cap, propCap) { return 8 * 4 + cap * 4 + cap * CREATURE_STRIDE * 4 + propCap * PROP_STRIDE * 4; },
 });
 

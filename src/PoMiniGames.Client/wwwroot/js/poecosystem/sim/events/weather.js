@@ -9,6 +9,18 @@ import { TICK_SECONDS, WEATHER } from '../core/config.js';
 
 export const WEATHER_KIND = Object.freeze({ CLEAR: 0, RAIN: 1, STORM: 2, DROUGHT: 3, SNOW: 4 });
 export const WEATHER_NAMES = Object.freeze(['Clear', 'Rain', 'Storm', 'Drought', 'Snow']);
+
+/** Seasonal biology multipliers: Spring boom, Summer thirst, Autumn harvest, Winter dormancy (#7, #10). */
+const SEASON_TABLE = Object.freeze([
+  Object.freeze({ grass: 1.35, bush: 1.25, thirst: 0.90, hungerDrain: 0.92, breed: 1.40, chill: 0.00 }), // Spring
+  Object.freeze({ grass: 1.00, bush: 1.35, thirst: 1.35, hungerDrain: 1.00, breed: 1.05, chill: 0.00 }), // Summer
+  Object.freeze({ grass: 0.85, bush: 1.20, thirst: 1.00, hungerDrain: 0.95, breed: 0.85, chill: 0.25 }), // Autumn
+  Object.freeze({ grass: 0.22, bush: 0.30, thirst: 0.75, hungerDrain: 1.25, breed: 0.35, chill: 1.60 }), // Winter
+]);
+
+export function seasonEffects(season) {
+  return SEASON_TABLE[season] ?? SEASON_TABLE[0];
+}
 const OPENERS = Object.freeze([
   'The sky cleared', 'Rain began to fall', 'A storm rolled in', 'A drought settled over the island', 'Snow began to fall',
 ]);
@@ -20,7 +32,8 @@ export function createWeather() {
     kind: WEATHER_KIND.CLEAR, since: 0, endTick: secs(WEATHER.spellSeconds[0]),
     intensity: 0, wetness: 0.5, lastSeason: 0,
     // The multipliers the rest of the sim reads, refreshed on every step.
-    effects: { grass: 1, bush: 1, thirst: 1, fireBurnout: 1, fireSpread: 1 },
+    effects: { grass: 1, bush: 1, thirst: 1, fireBurnout: 1, fireSpread: 1, chill: 0 },
+    season: SEASON_TABLE[0],
     counts: [0, 0, 0, 0, 0],   // spells begun, by kind (almanac + milestones)
   };
 }
@@ -49,14 +62,19 @@ function begin(world, weather, kind, seconds) {
 
 const lerp1 = (table, kind, t) => 1 + ((table[kind] ?? 1) - 1) * t;
 
-/** The multipliers follow (kind, intensity) alone, so a restored world recomputes them exactly. */
-function refreshEffects(w) {
+/** The multipliers follow (kind, intensity, season) alone, so a restored world recomputes them exactly. */
+function refreshEffects(w, season = w.lastSeason) {
   const t = w.intensity;
+  const se = seasonEffects(season);
+  w.season = se;
   w.effects.grass = lerp1(WEATHER.grassGrowth, w.kind, t);
   w.effects.bush = lerp1(WEATHER.bushRipen, w.kind, t);
   w.effects.thirst = lerp1(WEATHER.thirst, w.kind, t);
   w.effects.fireBurnout = lerp1(WEATHER.fireBurnout, w.kind, t);
   w.effects.fireSpread = lerp1(WEATHER.fireSpread, w.kind, t);
+  // Cold spells (Snow / Storm) combine with winter chill (#10).
+  const weatherChill = w.kind === WEATHER_KIND.SNOW ? 1.8 * t : w.kind === WEATHER_KIND.STORM ? 0.9 * t : 0;
+  w.effects.chill = se.chill + weatherChill;
 }
 
 /** Once a second. Rolls the next spell, eases intensity, and refreshes the multipliers. */
@@ -82,7 +100,7 @@ export function stepWeather(world) {
   w.intensity = w.kind === WEATHER_KIND.CLEAR ? 0 : Math.max(0, Math.min(rise, fall));
 
   const t = w.intensity;
-  refreshEffects(w);
+  refreshEffects(w, season);
 
   // Soil moisture: rain soaks, drought bakes, clear skies drift back to the middle.
   const dw = w.kind === WEATHER_KIND.CLEAR ? (0.5 - w.wetness) * 0.01 : (WEATHER.wetnessPerSecond[w.kind] ?? 0) * t;

@@ -184,3 +184,13 @@ export function campfireDistance(world, x, z) {
 }
 
 export const hasTower = (settlement) => settlement.tech >= TECH_LEVEL.WATCHTOWER && settlement.towerTile !== NONE;
+
+/** Unify village works with the highest tribal tech tier so campfire/palisade/fields/tower keep pace (#2). */
+export function syncTechFromTribes(world, tribes) {
+  if (!tribes?.tribes?.length) return null;
+  let maxTribeTech = 0;
+  for (const t of tribes.tribes) if (t.population > 0 && t.tech > maxTribeTech) maxTribeTech = t.tech;
+  const targetLevel = Math.min(TECH_LEVEL.WATCHTOWER, maxTribeTech + 1); // tier 0->1 fire, 1->2 palisade, 2->3 farming, 3->4 watchtower
+  if (world.settlement.tech >= targetLevel) return null;
+  return advanceTech(world, { hutsBuilt: 99, humans: 99, year: 99 }, tribes.tribes[0]?.name ?? 'Island');
+}

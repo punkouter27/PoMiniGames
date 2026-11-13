@@ -212,7 +212,7 @@ function createEngine(container, dotnetRef, opts) {
         state.errors.push(`${msg.where}: ${msg.message}`);
         invoke('OnEngineError', msg.where, msg.message);
         return;
-      case 'debugResult': case 'probeResult':
+      case 'debugResult': case 'probeResult': case 'fastForwardDone':
         return;
       default:
         return;
@@ -574,6 +574,34 @@ function createEngine(container, dotnetRef, opts) {
     follow: (handle) => state.renderer?.follow(handle ?? state.selected),
     newWorld: (seed) => state.host?.send({ type: 'newWorld', seed: hashString(seed ?? '') }),
     saveNow: () => state.host?.send({ type: 'saveNow', reason: 'manual' }),
+    fastForward: (years = 1) => state.host?.send({ type: 'fastForward', years }),
+    setPersistence: (persist) => state.host?.send({ type: 'setPersistence', persist: !!persist }),
+    setFov: (fov) => state.renderer?.setFov?.(fov) ?? 60,
+    exportPostcard(headline) {
+      const r = state.renderer;
+      if (!r?.postcard) return false;
+      const st = state.stats;
+      const SEASON_LABELS = ['Spring', 'Summer', 'Autumn', 'Winter'];
+      const card = r.postcard({
+        seed: st?.seed ?? '',
+        year: st?.year ?? 0,
+        season: SEASON_LABELS[st?.season ?? 0] ?? '',
+        headline: headline || r.directorCaption || 'Naturalist Field Note',
+      });
+      if (!card) return false;
+      card.toBlob((blob) => {
+        if (!blob) return;
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = `poecosystem-y${st?.year ?? 0}-seed${st?.seed ?? 0}.png`;
+        document.body.appendChild(a);
+        a.click();
+        a.remove();
+        setTimeout(() => URL.revokeObjectURL(url), 5000);
+      }, 'image/png');
+      return true;
+    },
     exportSnapshot: (slot) => state.host?.send({ type: 'exportSnapshot', slot }),
     importSnapshot(bytes, ephemeral) {
       const u8 = bytes instanceof Uint8Array ? bytes : Uint8Array.from(bytes ?? []);
@@ -756,6 +784,12 @@ const PoEcosystem = {
   select: (h) => engine?.select(h),
   newWorld: (seed) => engine?.newWorld(seed),
   saveNow: () => engine?.saveNow(),
+  fastForward: (years) => engine?.fastForward(years),
+  setPersistence: (persist) => engine?.setPersistence(persist),
+  setFov: (fov) => engine?.setFov(fov) ?? 60,
+  exportPostcard: (headline) => engine?.exportPostcard(headline) ?? false,
+  getLocalPersist: () => { try { return localStorage.getItem('poeco:persist') === '1'; } catch { return false; } },
+  setLocalPersist: (on) => { try { localStorage.setItem('poeco:persist', on ? '1' : '0'); } catch {} engine?.setPersistence(!!on); },
   debug: (op, arg) => engine?.debug(op, arg),
   exportTelemetry: () => engine?.exportTelemetry(),
   setSound: (on) => engine?.setSound(on),

@@ -4,9 +4,10 @@
 // Determinism contract: every rule below reads only sim state
 // and the seeded streams. `physics` is write-only — the world tells it about deaths,
 // felled trees and rocks and reads back prop poses for the frame, never for a rule.
-import { BEHAVIOR, CREATURE_CAP, EVENTS, FLORA, HISTORY, POPULATION, TECH, THOUGHTS, TICK_SECONDS, TRAITS, VARIETY, WORLD } from './core/config.js';
+import { BEHAVIOR, CREATURE_CAP, EVENTS, FLORA, HISTORY, POPULATION, TECH, THOUGHTS, TICK_SECONDS, TRAITS, TRIBES, VARIETY, WORLD } from './core/config.js';
 import { createClock } from './core/clock.js';
-import { NONE, createEntities } from './core/entities.js';
+import { NONE, ROLE, createEntities } from './core/entities.js';
+import { FRAME } from './frame.js';
 import { createBus, createEventLog } from './core/events.js';
 import { createStreams } from './core/prng.js';
 import { createSpatialHash } from './core/spatial.js';
@@ -29,7 +30,7 @@ import { canStand, fleeFrom, lipOf, moveCreature, refuge, seekTo, stop, wander }
 import { GOAL, GOAL_NAMES, chooseGoal } from './behavior/utility.js';
 import { herdCohesion, isAlerted, isOrphan, packLeader, raiseAlarm, scatterDirection, shareKill } from './behavior/social.js';
 import { addHut, buildHut, chooseHutSite, createSettlement, giveLogs, isNight, nearestHut, needsHut } from './behavior/humans.js';
-import { TECH_NAMES, advanceTech, campfireDistance, hasTower, maintainWorks, tribeName } from './behavior/tech.js';
+import { TECH_NAMES, advanceTech, campfireDistance, hasTower, maintainWorks, syncTechFromTribes, tribeName } from './behavior/tech.js';
 import { EVENT_KIND, createEventScheduler } from './events/scheduler.js';
 import { pickStrikeTile, strikeLightning } from './events/lightning.js';
 import { stepCorridors, triggerRockslide } from './events/rockslide.js';
@@ -131,13 +132,20 @@ export function createWorld({ seed = 1, caps = {}, physics = null, terrain: supp
   // handles so a target that died in between resolves to NONE and forces a rescore.
   const plans = Array.from({ length: cap }, () => ({}));
   const dirty = new Uint8Array(cap);
-  const PLAN_KEYS = ['foodDist', 'foodKind', 'foodTile', 'foodIdx', 'carcassDist', 'carcassId', 'threatDist', 'threatX', 'threatZ', 'parentDist', 'homeDist', 'treeIdx'];
+  const PLAN_KEYS = [
+    'foodDist', 'foodKind', 'foodTile', 'foodIdx', 'carcassDist', 'carcassId',
+    'threatDist', 'threatX', 'threatZ', 'parentDist', 'homeDist', 'treeIdx',
+    'hasTribeProject', 'projectDist', 'tribeProjectId',
+    'rivalDist', 'rivalHandle', 'hostileBuildingDist', 'hostileBuildingId',
+    'fieldDist', 'fieldTile', 'chill',
+  ];
   function commitPlan(i, c) {
     const p = plans[i];
     for (const k of PLAN_KEYS) p[k] = c[k];
     p.prey = c.preyIdx === NONE ? NONE : e.handle(c.preyIdx);
     p.mate = c.mateIdx === NONE ? NONE : e.handle(c.mateIdx);
     p.parent = c.parentIdx === NONE ? NONE : e.handle(c.parentIdx);
+    p.rival = c.rivalHandle ?? NONE;
     dirty[i] = 0;
   }
   const carcassIndex = (id) => { for (let k = 0; k < carcasses.length; k++) if (carcasses[k].id === id) return k; return -1; };
@@ -225,7 +233,17 @@ export function createWorld({ seed = 1, caps = {}, physics = null, terrain: supp
     e.forEachAlive((i) => { counts[e.species[i]]++; almanac.stages[e.species[i] * 3 + e.lifeStage[i]]++; });
   }
 
-  function spawn(speciesId, x, z, { age = 0, traits = null, mother = NONE, father = NONE } = {}) {
+  function humanCasteFromTraits(i) {
+    const bold = baseTrait(e, i, TRAIT.BOLDNESS);
+    const dil = baseTrait(e, i, TRAIT.DILIGENCE);
+    const cur = baseTrait(e, i, TRAIT.CURIOSITY);
+    if (bold >= 0.62) return ROLE.WARRIOR;
+    if (dil >= 0.60) return ROLE.BUILDER;
+    if (cur >= 0.62) return ROLE.TRADER;
+    return ROLE.FORAGER;
+  }
+
+  function spawn(speciesId, x, z, { age = 0, traits = null, mother = NONE, father = NONE, tribeId = NONE, role = ROLE.NORMAL } = {}) {
     const i = spawnCreature(e, {
       speciesId, x, z, tick: clock.tick, age, mother, father,
       sex: chooseSex(streams.genetics),
@@ -240,7 +258,21 @@ export function createWorld({ seed = 1, caps = {}, physics = null, terrain: supp
     }
     e.y[i] = terrain.heightAt(x, z);
     e.yaw[i] = streams.genetics.range(0, Math.PI * 2);
-    if (speciesId === SPECIES_ID.HUMAN) { const h = nearestHut(settlement, x, z); e.homeTile[i] = h ? h.tile : NONE; }
+    if (speciesId === SPECIES_ID.HUMAN) {
+      let tid = tribeId;
+      if (tid === NONE && tribeStore?.tribes?.length) {
+        const at = tribeStore.getTribeAt?.(x, z);
+        tid = at ? at.id : tribeStore.tribes[0].id;
+      }
+      e.tribeId[i] = tid;
+      e.role[i] = role !== ROLE.NORMAL ? role : humanCasteFromTraits(i);
+      const tObj = tid !== NONE ? tribeStore?.getTribe?.(tid) : null;
+      const h = nearestHut(settlement, x, z);
+      e.homeTile[i] = h ? h.tile : (tObj?.centerTile ?? NONE);
+    } else {
+      e.tribeId[i] = tribeId;
+      e.role[i] = role;
+    }
     counts[speciesId]++;
     dirty[i] = 1;
     lineage.born({ handle: e.handle(i), name: e.names[i], species: speciesId, sex: e.sex[i], mother, father, tick: clock.tick });
@@ -366,6 +398,9 @@ export function createWorld({ seed = 1, caps = {}, physics = null, terrain: supp
     carcasses.push({ id: nextCarcassId++, x: e.x[i], z: e.z[i], species: sp.id, food: sp.foodValue * WORLD.carcassFoodFraction, expires: clock.tick + Math.round(WORLD.carcassSeconds / TICK_SECONDS) });
     phys.onDeath({ x: e.x[i], y: e.y[i], z: e.z[i], yaw: e.yaw[i], species: sp.id, scale: e.scale[i], handle: e.handle(i) }, cause, streams.cosmetic);
     bus.emit('death', { index: i, handle: e.handle(i), species: sp.id, cause });
+    if (sp.id === SPECIES_ID.HUMAN && e.tribeId[i] !== NONE && tribeStore) {
+      tribeStore.recordCasualty?.(e.tribeId[i], 1);
+    }
     killCreature(e, i, cause, log, clock.tick, extra);
     settlement.carried[i] = 0;
     counts[sp.id]--;
@@ -418,8 +453,46 @@ export function createWorld({ seed = 1, caps = {}, physics = null, terrain: supp
         if (isWalkable(terrain.type[t]) && tileState[t] === TILE_STATE.NORMAL && !ground.closed[t]) village.push(t);
       }
     }
-    place(SPECIES_ID.HUMAN, POPULATION.humans, village.length ? village : grassTiles);
+    if (tribeStore?.tribes?.length) {
+      const roleCycle = [ROLE.FORAGER, ROLE.BUILDER, ROLE.WARRIOR, ROLE.TRADER, ROLE.FORAGER, ROLE.BUILDER];
+      for (const tr of tribeStore.tribes) {
+        const camp = [];
+        const cx0 = Math.round(tr.centerX); const cz0 = Math.round(tr.centerZ);
+        for (let dz = -4; dz <= 4; dz++) for (let dx = -4; dx <= 4; dx++) {
+          const x = cx0 + dx; const z = cz0 + dz;
+          if (x < 1 || z < 1 || x >= size - 1 || z >= size - 1) continue;
+          const t = z * size + x;
+          if (isWalkable(terrain.type[t]) && tileState[t] === TILE_STATE.NORMAL && !ground.closed[t]) camp.push(t);
+        }
+        const pool = camp.length ? camp : (village.length ? village : grassTiles);
+        for (let k = 0; k < TRIBES.humansPerTribe; k++) {
+          const t = pool[streams.terrain.int(pool.length)];
+          const [hx, hz] = centre(t);
+          spawn(SPECIES_ID.HUMAN, hx + streams.terrain.range(-0.4, 0.4), hz + streams.terrain.range(-0.4, 0.4), {
+            age: streams.genetics.range(0, SPECIES[SPECIES_ID.HUMAN].maxAgeYears * POPULATION.initialAgeFraction),
+            tribeId: tr.id,
+            role: roleCycle[k % roleCycle.length],
+          });
+        }
+      }
+    } else {
+      place(SPECIES_ID.HUMAN, POPULATION.humans, village.length ? village : grassTiles);
+    }
     recount();
+    if (tribeStore?.tribes?.length) {
+      const n = tribeStore.tribes.length;
+      const p = new Array(n).fill(0); const el = new Array(n).fill(0); const w = new Array(n).fill(0);
+      e.forEachAlive((i) => {
+        if (e.species[i] !== SPECIES_ID.HUMAN) return;
+        const tid = e.tribeId[i];
+        if (tid >= 0 && tid < n) {
+          p[tid]++;
+          if (e.age[i] >= TRIBES.elderAgeYears) el[tid]++;
+          if (e.role[i] === ROLE.WARRIOR) w[tid]++;
+        }
+      });
+      tribeStore.syncPopulation?.(p, el, w);
+    }
     popHistory.push(counts.slice());
     sampleTraits();
   }
@@ -439,6 +512,11 @@ export function createWorld({ seed = 1, caps = {}, physics = null, terrain: supp
     ctx.carcassDist = Infinity; ctx.carcassId = NONE;
     ctx.waterDist = Infinity; ctx.homeDist = Infinity; ctx.hasHome = false; ctx.needsHut = false; ctx.logsCarried = 0;
     ctx.treeDist = Infinity; ctx.treeIdx = NONE;
+    ctx.hasTribeProject = false; ctx.projectDist = Infinity; ctx.tribeProjectId = NONE;
+    ctx.rivalDist = Infinity; ctx.rivalHandle = NONE;
+    ctx.hostileBuildingDist = Infinity; ctx.hostileBuildingId = NONE;
+    ctx.fieldDist = Infinity; ctx.fieldTile = NONE;
+    ctx.chill = weather.effects.chill ?? 0;
     ctx.night = isNight(clock.dayFraction());
     ctx.fear = fear[t];
 
@@ -446,6 +524,8 @@ export function createWorld({ seed = 1, caps = {}, physics = null, terrain: supp
     const juvenile = e.lifeStage[i] === LIFE_STAGE.JUVENILE;
     const mother = juvenile ? e.resolve(e.mother[i]) : NONE;
     const father = juvenile ? e.resolve(e.father[i]) : NONE;
+    const myTribeId = e.tribeId[i];
+    const isHound = sp.id === SPECIES_ID.WOLF && e.role[i] === ROLE.TAMED_HOUND;
     // The watchtower (behavior/tech.js) lets the tribe see further while it stands.
     const perception = sp.builds && hasTower(settlement) ? sp.perception * TECH.towerPerceptionMultiplier : sp.perception;
     spatial.forEachInRadius(x, z, perception, (j, d2) => {
@@ -453,17 +533,28 @@ export function createWorld({ seed = 1, caps = {}, physics = null, terrain: supp
       const d = Math.sqrt(d2);
       const sj = e.species[j];
       const fleeAt = flees[sj];
-      if (fleeAt !== undefined && d <= fleeAt && d < ctx.threatDist) { ctx.threatDist = d; ctx.threatX = e.x[j]; ctx.threatZ = e.z[j]; }
-      if (prey.includes(sj) && d < ctx.preyDist) { ctx.preyDist = d; ctx.preyIdx = j; }
+      if (!isHound && fleeAt !== undefined && d <= fleeAt && d < ctx.threatDist) {
+        ctx.threatDist = d; ctx.threatX = e.x[j]; ctx.threatZ = e.z[j];
+      }
+      if (isHound) {
+        const huntTarget = (sj === SPECIES_ID.WOLF && e.role[j] !== ROLE.TAMED_HOUND)
+          || (sj === SPECIES_ID.HUMAN && tribeStore?.isAtWar?.(myTribeId, e.tribeId[j]));
+        if (huntTarget && d < ctx.preyDist) { ctx.preyDist = d; ctx.preyIdx = j; }
+      } else if (prey.includes(sj) && d < ctx.preyDist && e.role[j] !== ROLE.TAMED_HOUND) {
+        ctx.preyDist = d; ctx.preyIdx = j;
+      }
+      if (sp.builds && sj === SPECIES_ID.HUMAN && myTribeId !== NONE && e.tribeId[j] !== NONE
+        && tribeStore?.isAtWar?.(myTribeId, e.tribeId[j]) && d < ctx.rivalDist) {
+        ctx.rivalDist = d; ctx.rivalHandle = e.handle(j);
+      }
       if (sj === sp.id && e.sex[j] !== e.sex[i] && d < ctx.mateDist && !juvenile && canMate(e, i, j, tick)) { ctx.mateDist = d; ctx.mateIdx = j; }
       if ((j === mother || j === father) && d < ctx.parentDist) { ctx.parentDist = d; ctx.parentIdx = j; }
     });
     // Carnivores remember where they last saw prey, so a hungry wolf with nothing in
     // sight roams back toward the herds instead of random-walking the beach.
     if (ctx.preyIdx !== NONE) remember(e, i, MEMORY_KIND.FOOD, tileOf(ctx.preyIdx), tick);
-    // A lit campfire scares wolves off the village (behavior/tech.js FIRE). Only wolves:
-    // the herds are not afraid of a hearth, and the humans built it.
-    if (sp.id === SPECIES_ID.WOLF) {
+    // A lit campfire scares wolves off the village (behavior/tech.js FIRE); tamed hounds tolerate the hearth (#9).
+    if (sp.id === SPECIES_ID.WOLF && !isHound) {
       const cd = campfireDistance(world, x, z);
       if (cd <= TECH.campfireScareRadius && cd < ctx.threatDist) { const [cx, cz] = campfireXZ(); ctx.threatDist = Math.max(1, cd); ctx.threatX = cx; ctx.threatZ = cz; }
     }
@@ -533,21 +624,45 @@ export function createWorld({ seed = 1, caps = {}, physics = null, terrain: supp
       const mem = recall(e, i, MEMORY_KIND.WATER, tick);
       if (mem !== NONE) { const [cx, cz] = centre(mem); ctx.waterDist = dist(i, cx, cz); }
     }
-    if (sp.builds) {
+    if (sp.builds || isHound) {
+      const trObj = myTribeId !== NONE ? tribeStore?.getTribe?.(myTribeId) : null;
       const h = nearestHut(settlement, x, z);
-      ctx.hasHome = !!h;
-      if (h) ctx.homeDist = dist(i, h.x, h.z);
-      ctx.needsHut = needsHut(settlement, counts[SPECIES_ID.HUMAN]);
-      ctx.logsCarried = settlement.carried[i];
-      if (ctx.needsHut && ctx.logsCarried < FLORA.logsPerTree) {
-        const tx = tileX(t, size); const tz = tileZ(t, size); const r = WORLD.treeScanTiles;
-        for (let dz = -r; dz <= r; dz++) for (let dx = -r; dx <= r; dx++) {
-          const xx = tx + dx; const zz = tz + dz;
-          if (xx < 0 || zz < 0 || xx >= size || zz >= size) continue;
-          const k = trees.byTile[zz * size + xx];
-          if (k < 0 || trees.state[k] !== TREE_STATE.STANDING) continue;
-          const d = Math.hypot(dx, dz);
-          if (d < ctx.treeDist && ground.clearLine(x, z, xx + 0.5, zz + 0.5, 1)) { ctx.treeDist = d; ctx.treeIdx = k; }
+      if (trObj) {
+        ctx.hasHome = true;
+        ctx.homeDist = dist(i, trObj.centerX, trObj.centerZ);
+      } else {
+        ctx.hasHome = !!h;
+        if (h) ctx.homeDist = dist(i, h.x, h.z);
+      }
+      if (sp.builds) {
+        ctx.needsHut = needsHut(settlement, counts[SPECIES_ID.HUMAN]);
+        ctx.logsCarried = settlement.carried[i];
+        const proj = myTribeId !== NONE ? tribeStore?.nearestIncompleteBuilding?.(myTribeId, x, z) : null;
+        if (proj) {
+          ctx.hasTribeProject = true;
+          ctx.tribeProjectId = proj.id;
+          ctx.projectDist = dist(i, proj.x, proj.z);
+        }
+        const hostileB = myTribeId !== NONE ? tribeStore?.nearestHostileBuilding?.(myTribeId, x, z, perception * 1.5) : null;
+        if (hostileB) {
+          ctx.hostileBuildingId = hostileB.id;
+          ctx.hostileBuildingDist = dist(i, hostileB.x, hostileB.z);
+        }
+        for (const ft of settlement.fieldTiles) {
+          const [fx, fz] = centre(ft);
+          const fd = dist(i, fx, fz);
+          if (fd < ctx.fieldDist) { ctx.fieldDist = fd; ctx.fieldTile = ft; }
+        }
+        if ((ctx.needsHut || ctx.hasTribeProject) && ctx.logsCarried < FLORA.logsPerTree) {
+          const tx = tileX(t, size); const tz = tileZ(t, size); const r = WORLD.treeScanTiles;
+          for (let dz = -r; dz <= r; dz++) for (let dx = -r; dx <= r; dx++) {
+            const xx = tx + dx; const zz = tz + dz;
+            if (xx < 0 || zz < 0 || xx >= size || zz >= size) continue;
+            const k = trees.byTile[zz * size + xx];
+            if (k < 0 || trees.state[k] !== TREE_STATE.STANDING) continue;
+            const d = Math.hypot(dx, dz);
+            if (d < ctx.treeDist && ground.clearLine(x, z, xx + 0.5, zz + 0.5, 1)) { ctx.treeDist = d; ctx.treeIdx = k; }
+          }
         }
       }
     }
@@ -619,7 +734,10 @@ export function createWorld({ seed = 1, caps = {}, physics = null, terrain: supp
         if (c.foodKind === 'bush') {
           const [cx, cz] = centre(c.foodTile);
           if (dist(i, cx, cz) <= WORLD.interactDistance) {
-            feed(e, i, stripBush(bushes, c.foodIdx));
+            const gMult = sp.builds && e.tribeId[i] !== NONE ? (tribeStore?.getGatherMultiplier?.(e.tribeId[i], 'food') ?? 1) : 1;
+            const gained = stripBush(bushes, c.foodIdx) * Math.min(1.5, gMult);
+            feed(e, i, gained);
+            if (sp.builds && e.tribeId[i] !== NONE) tribeStore?.addResource?.(e.tribeId[i], 'food', 4 * gMult);
             remember(e, i, MEMORY_KIND.FOOD, c.foodTile, tick);
             dirty[i] = 1;
             stop(e, i);
@@ -724,6 +842,14 @@ export function createWorld({ seed = 1, caps = {}, physics = null, terrain: supp
         return;
       }
       case GOAL.RETURN_HOME: {
+        const trObj = e.tribeId[i] !== NONE ? tribeStore?.getTribe?.(e.tribeId[i]) : null;
+        const hx = trObj ? trObj.centerX : null;
+        const hz = trObj ? trObj.centerZ : null;
+        if (hx !== null) {
+          if (dist(i, hx, hz) <= FOOTPRINT.hut + WORLD.interactDistance + 1.5) { stop(e, i); return; }
+          seekTo(e, i, hx, hz, sp.walkSpeed);
+          return;
+        }
         const h = nearestHut(settlement, e.x[i], e.z[i]);
         // Home is the hut's wall, not its centre: nobody can stand inside its footprint.
         if (!h || dist(i, h.x, h.z) <= FOOTPRINT.hut + WORLD.interactDistance) { stop(e, i); return; }
@@ -736,9 +862,16 @@ export function createWorld({ seed = 1, caps = {}, physics = null, terrain: supp
         const [cx, cz] = centre(trees.tile[k]);
         if (dist(i, cx, cz) <= WORLD.interactDistance) {
           stop(e, i);
-          if (tick - e.goalSince[i] >= Math.round(WORLD.chopSeconds / TICK_SECONDS)) {
+          const mult = e.tribeId[i] !== NONE ? (tribeStore?.getGatherMultiplier?.(e.tribeId[i], 'wood') ?? 1) : 1;
+          const chopTicks = Math.max(20, Math.round((WORLD.chopSeconds / TICK_SECONDS) / mult));
+          if (tick - e.goalSince[i] >= chopTicks) {
             if (chopTree(trees, k, tileState)) {
               giveLogs(settlement, i, FLORA.logsPerTree);
+              if (e.tribeId[i] !== NONE && tribeStore) {
+                const stoneMult = tribeStore.getGatherMultiplier?.(e.tribeId[i], 'stone') ?? mult;
+                tribeStore.addResource(e.tribeId[i], 'wood', 10 * mult);
+                tribeStore.addResource(e.tribeId[i], 'stone', 3 * stoneMult);
+              }
               phys.fellTree({ x: cx, y: terrain.heightAt(cx, cz), z: cz, dirX: cx - e.x[i], dirZ: cz - e.z[i] }, streams.cosmetic);
               log.push({ tick, kind: 'chop', text: `${nameOf(i)} felled a tree`, tile: trees.tile[k] });
               almanac.treesFelled++;
@@ -749,6 +882,17 @@ export function createWorld({ seed = 1, caps = {}, physics = null, terrain: supp
         return;
       }
       case GOAL.BUILD: {
+        // Physical builders construct active tribe projects first (#3), then standalone huts.
+        const proj = e.tribeId[i] !== NONE ? tribeStore?.nearestIncompleteBuilding?.(e.tribeId[i], e.x[i], e.z[i]) : null;
+        if (proj) {
+          if (dist(i, proj.x, proj.z) <= BEHAVIOR.hutSiteRadius + 0.5) {
+            stop(e, i);
+            const workRate = e.role[i] === ROLE.BUILDER ? 1.5 : 0.9;
+            tribeStore.deliverWork(e.tribeId[i], proj.id, 0.08 * workRate, 0.04 * workRate, log, tick);
+            if (proj.isComplete) dirty[i] = 1;
+          } else seekTo(e, i, proj.x, proj.z, sp.walkSpeed);
+          return;
+        }
         const o = settlement.huts[0];
         if (!o) { stop(e, i); return; }
         if (dist(i, o.x, o.z) <= BEHAVIOR.hutSiteRadius) {
@@ -756,6 +900,59 @@ export function createWorld({ seed = 1, caps = {}, physics = null, terrain: supp
           if (buildHut(e, i, settlement, terrain, tileState, streams.behavior, log, tick, ground.closed)) { almanac.hutsBuilt++; rebuildShoreField(); }
           dirty[i] = 1;
         } else seekTo(e, i, o.x, o.z, sp.walkSpeed);
+        return;
+      }
+      case GOAL.FIGHT_RIVAL: {
+        const rival = e.resolve(c.rival ?? NONE);
+        const cMult = e.tribeId[i] !== NONE ? (tribeStore?.getCombatMultiplier?.(e.tribeId[i], e.x[i], e.z[i]) ?? 1) : 1;
+        if (rival !== NONE && tribeStore?.isAtWar?.(e.tribeId[i], e.tribeId[rival])) {
+          const d = dist(i, e.x[rival], e.z[rival]);
+          if (d <= 2.4) {
+            stop(e, i);
+            const dmg = (e.role[i] === ROLE.WARRIOR ? 0.55 : 0.35) * cMult * dt;
+            e.health[rival] -= dmg;
+            if (e.health[rival] <= 0) {
+              kill(rival, DEATH_CAUSE.COMBAT, ` by ${nameOf(i)}`, i);
+              dirty[i] = 1;
+            }
+          } else seekTo(e, i, e.x[rival], e.z[rival], sp.runSpeed);
+          return;
+        }
+        const hb = e.tribeId[i] !== NONE ? tribeStore?.nearestHostileBuilding?.(e.tribeId[i], e.x[i], e.z[i], 45) : null;
+        if (hb) {
+          if (dist(i, hb.x, hb.z) <= 2.6) {
+            stop(e, i);
+            const destroyed = tribeStore.damageBuilding(hb.id, 14 * cMult * dt, e.tribeId[i], log, tick);
+            if (destroyed) dirty[i] = 1;
+          } else seekTo(e, i, hb.x, hb.z, sp.runSpeed);
+          return;
+        }
+        dirty[i] = 1;
+        stop(e, i);
+        return;
+      }
+      case GOAL.TEND_FIELD: {
+        if (c.fieldTile === NONE || c.fieldTile === undefined) { dirty[i] = 1; stop(e, i); return; }
+        const [fx, fz] = centre(c.fieldTile);
+        if (dist(i, fx, fz) <= WORLD.interactDistance + 0.5) {
+          stop(e, i);
+          const b = bushes.byTile[c.fieldTile];
+          if (b >= 0 && bushes.ripeness[b] < 1) bushes.ripeness[b] = Math.min(1, bushes.ripeness[b] + 0.15 * dt);
+          if (e.tribeId[i] !== NONE && tribeStore) {
+            const gMult = tribeStore.getGatherMultiplier?.(e.tribeId[i], 'food') ?? 1;
+            tribeStore.addResource(e.tribeId[i], 'food', 0.4 * gMult * dt);
+          }
+        } else seekTo(e, i, fx, fz, sp.walkSpeed * 0.9);
+        return;
+      }
+      case GOAL.PATROL: {
+        const trObj = e.tribeId[i] !== NONE ? tribeStore?.getTribe?.(e.tribeId[i]) : null;
+        if (!trObj) { wander(e, i, streams.behavior, sp.walkSpeed * 0.6); return; }
+        const ang = (tick * 0.015 + (i % 7)) % (Math.PI * 2);
+        const radius = e.role[i] === ROLE.TAMED_HOUND ? 9 : 13;
+        const tx = trObj.centerX + Math.cos(ang) * radius;
+        const tz = trObj.centerZ + Math.sin(ang) * radius;
+        seekTo(e, i, tx, tz, sp.walkSpeed * 0.8);
         return;
       }
       default: stop(e, i);
@@ -782,7 +979,7 @@ export function createWorld({ seed = 1, caps = {}, physics = null, terrain: supp
       let x = e.x[mother] + Math.cos(a) * WORLD.birthOffset; let z = e.z[mother] + Math.sin(a) * WORLD.birthOffset;
       if (!isWalkable(terrain.type[tileIndex(x, z, size)]) || ground.closed[tileIndex(x, z, size)]) { x = e.x[mother]; z = e.z[mother]; }
       const traits = inheritTraits(e, mother, father, streams.genetics);
-      const i = spawn(sp.id, x, z, { traits, mother: motherHandle, father: fatherHandle });
+      const i = spawn(sp.id, x, z, { traits, mother: motherHandle, father: fatherHandle, tribeId: e.tribeId[mother] });
       if (i < 0) break;
       log.push({ tick: clock.tick, kind: 'birth', species: sp.id, creature: e.handle(i), mother: motherHandle, father: fatherHandle, text: `${nameOf(i)} (${sp.name.toLowerCase()}) born to ${nameOf(mother)}${fatherName ? ' + ' + fatherName : ''}` });
       bus.emit('birth', { index: i, mother });
@@ -797,24 +994,35 @@ export function createWorld({ seed = 1, caps = {}, physics = null, terrain: supp
   function step() {
     clock.step();
     const dt = TICK_SECONDS; const tick = clock.tick;
-    stepGrass(grass, terrain, tileState, dt * weather.effects.grass);
-    stepBushes(bushes, dt * weather.effects.bush, TECH.fieldRipenMultiplier);
+    const se = weather.season ?? { grass: 1, bush: 1, hungerDrain: 1, breed: 1, chill: 0 };
+    stepGrass(grass, terrain, tileState, dt * weather.effects.grass * se.grass);
+    stepBushes(bushes, dt * weather.effects.bush * se.bush, TECH.fieldRipenMultiplier);
     const thirstExtra = weather.effects.thirst - 1;
-    stepTrees(trees, tileState, dt, weather.effects.grass);
+    stepTrees(trees, tileState, dt, weather.effects.grass * se.grass);
     spatial.rebuild(e);
     const hearth = settlement.campfireTile !== NONE && isNight(clock.dayFraction());
+    const chill = weather.effects.chill ?? se.chill ?? 0;
 
     for (let i = 0; i < e.high; i++) {
       if (!e.alive[i]) continue;
       const sp = SPECIES[e.species[i]];
       stepDrives(e, i, sp, dt);
+      if (se.hungerDrain !== 1) e.hunger[i] = Math.min(1, e.hunger[i] + sp.hungerRate * dt * (se.hungerDrain - 1));
       if (thirstExtra !== 0) { const th = e.thirst[i] + sp.thirstRate * dt * thirstExtra; e.thirst[i] = th < 0 ? 0 : th > 1 ? 1 : th; }
       if (isOrphan(e, i)) e.hunger[i] = Math.min(1, e.hunger[i] + sp.hungerRate * dt * (BEHAVIOR.orphanHungerMultiplier - 1));
       updateLifeStage(e, i, sp);
       if (e.age[i] > almanac.oldestAge) { almanac.oldestAge = e.age[i]; almanac.oldestName = nameOf(i); almanac.oldestSpecies = sp.id; }
       if (tileState[tileOf(i)] === TILE_STATE.FIRE || tileState[tileOf(i)] === TILE_STATE.LAVA) e.health[i] -= 0.5 * dt;
-      // Warmth: a villager by the fire at night heals (behavior/tech.js FIRE).
-      else if (hearth && sp.builds && campfireDistance(world, e.x[i], e.z[i]) <= TECH.campfireWarmRadius) e.health[i] = Math.min(1, e.health[i] + TECH.campfireRegenPerSecond * dt);
+      // Warmth vs cold/storm shelter (#10): campfire or home village warms villagers; exposed creatures chill during blizzards/storms.
+      else if (hearth && sp.builds && campfireDistance(world, e.x[i], e.z[i]) <= TECH.campfireWarmRadius) {
+        e.health[i] = Math.min(1, e.health[i] + TECH.campfireRegenPerSecond * dt);
+      } else if (chill > 0.35) {
+        const nearCamp = sp.builds && (campfireDistance(world, e.x[i], e.z[i]) <= TECH.campfireWarmRadius || (e.tribeId[i] !== NONE && (() => { const tr = tribeStore?.getTribe?.(e.tribeId[i]); return tr && dist(i, tr.centerX, tr.centerZ) <= 6; })()));
+        if (!nearCamp) {
+          e.hunger[i] = Math.min(1, e.hunger[i] + sp.hungerRate * 0.25 * chill * dt);
+          if (weather.kind === 4 && weather.intensity > 0.55) e.health[i] -= 0.008 * chill * dt;
+        }
+      }
       const vital = checkVitals(e, i);
       if (vital) {
         const here = tileState[tileOf(i)];
@@ -913,10 +1121,54 @@ export function createWorld({ seed = 1, caps = {}, physics = null, terrain: supp
       }
 
       if (tribeStore) {
+        // Unify tribe counts, elders (#4), war/diplomacy, tech (#2), physical building (#3) & tamed hounds (#9).
+        const tCount = tribeStore.tribes.length;
+        const popCounts = new Array(tCount).fill(0);
+        const elderCounts = new Array(tCount).fill(0);
+        const warriorCounts = new Array(tCount).fill(0);
+        const houndCounts = new Array(tCount).fill(0);
+        let hasAliveHumans = false;
+        e.forEachAlive((i) => {
+          const tid = e.tribeId[i];
+          if (tid < 0 || tid >= tCount) return;
+          if (e.species[i] === SPECIES_ID.HUMAN) {
+            hasAliveHumans = true;
+            popCounts[tid]++;
+            if (e.age[i] >= TRIBES.elderAgeYears) elderCounts[tid]++;
+            if (e.role[i] === ROLE.WARRIOR) warriorCounts[tid]++;
+          } else if (e.species[i] === SPECIES_ID.WOLF && e.role[i] === ROLE.TAMED_HOUND) {
+            houndCounts[tid]++;
+          }
+        });
+        tribeStore.syncPopulation?.(popCounts, elderCounts, warriorCounts);
         if (tribeStore.stepDiplomacy) tribeStore.stepDiplomacy(log, tick);
-        if (tribeStore.stepTech) tribeStore.stepTech(log, tick);
-        if (tribeStore.stepConstruction) tribeStore.stepConstruction(terrain, tileState, streams.behavior, log, tick);
+        if (tribeStore.stepTech) tribeStore.stepTech(log, tick, elderCounts);
+        const unifiedTech = syncTechFromTribes(world, tribeStore);
+        if (unifiedTech) {
+          log.push({ tick, kind: 'tech', level: unifiedTech.level, tile: unifiedTech.tile, text: unifiedTech.text });
+          bus.emit('tech', unifiedTech);
+          if (unifiedTech.solidChanged) rebuildShoreField();
+        }
+        if (tribeStore.stepConstruction) tribeStore.stepConstruction(terrain, tileState, streams.behavior, log, tick, { physicalBuilders: hasAliveHumans });
         if (tribeStore.stepCaravans) tribeStore.stepCaravans(log, tick);
+
+        // Occasional wolf taming for Agrarian+ tribes (#9).
+        if (tick % 100 === 0) {
+          for (const tr of tribeStore.tribes) {
+            if (tr.tech < 2 || popCounts[tr.id] <= 0 || houndCounts[tr.id] >= 2) continue;
+            let tamed = false;
+            spatial.forEachInRadius(tr.centerX, tr.centerZ, 18, (j) => {
+              if (tamed || e.species[j] !== SPECIES_ID.WOLF || e.role[j] === ROLE.TAMED_HOUND) return;
+              if (streams.behavior.next() < 0.08) {
+                e.role[j] = ROLE.TAMED_HOUND;
+                e.tribeId[j] = tr.id;
+                houndCounts[tr.id]++;
+                tamed = true;
+                log.push({ tick, kind: 'tech', text: `${tr.name} tamed ${nameOf(j)} as a village hound` });
+              }
+            });
+          }
+        }
       }
       // A tier's works, a planted field, a tribe's new building: the footprints follow,
       // and the shore field with them when a building closed a tile it routed through.
@@ -965,9 +1217,15 @@ export function createWorld({ seed = 1, caps = {}, physics = null, terrain: supp
     return { landmarks: landmarks.all(), years: yearHistory.map(r => r.slice()) };
   }
 
-  /** The per-creature STATE word of the render frame (sim/frame.js): sick, watched. */
+  /** The per-creature STATE word of the render frame (sim/frame.js): sick, watched, tamed, tribe, role. */
   function frameState(i) {
-    return (isSick(e, i, clock.tick) ? 1 : 0) | (watched.has(e.handle(i)) ? 2 : 0);
+    const tribeBits = e.tribeId[i] >= 0 ? ((e.tribeId[i] + 1) & FRAME.TRIBE_MASK) << FRAME.TRIBE_SHIFT : 0;
+    const roleBits = ((e.role[i] ?? 0) & FRAME.ROLE_MASK) << FRAME.ROLE_SHIFT;
+    return (isSick(e, i, clock.tick) ? FRAME.C_SICK : 0)
+      | (watched.has(e.handle(i)) ? FRAME.C_WATCHED : 0)
+      | (e.role[i] === ROLE.TAMED_HOUND ? FRAME.C_TAMED : 0)
+      | tribeBits
+      | roleBits;
   }
 
   /**
@@ -1074,6 +1332,10 @@ export function createWorld({ seed = 1, caps = {}, physics = null, terrain: supp
       lastThought: e.lastThought[i],
       mother: parentName(e.mother[i]), father: parentName(e.father[i]), x: e.x[i], y: e.y[i], z: e.z[i],
       sick: isSick(e, i, tick),
+      tribeId: e.tribeId[i],
+      tribeName: e.tribeId[i] !== NONE ? (tribeStore?.getTribe?.(e.tribeId[i])?.name ?? '') : '',
+      role: e.role[i] ?? ROLE.NORMAL,
+      tamed: e.role[i] === ROLE.TAMED_HOUND,
     };
   }
 

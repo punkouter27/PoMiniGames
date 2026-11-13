@@ -36,20 +36,38 @@ export function stepDisease(world, counts) {
   const caught = [];
   for (let i = 0; i < e.high; i++) {
     if (!e.alive[i] || e.sickUntil[i] === NONE) continue;
+    // Agrarian+ tribes have herbal hygiene & shelter care: faster recovery and halved transmission (#11).
+    const tidyHuman = e.species[i] === 3 && world.tribeStore?.hasHygiene?.(e.tribeId[i]);
+    if (tidyHuman) e.sickUntil[i] -= Math.round(0.4 / TICK_SECONDS);
     if (tick >= e.sickUntil[i]) {
       e.sickUntil[i] = NONE;
       e.immuneUntil[i] = tick + secs(DISEASE.immuneSeconds);
       continue;
     }
     sick[e.species[i]]++;
-    e.health[i] -= DISEASE.damagePerSecond;
+    e.health[i] -= DISEASE.damagePerSecond * (tidyHuman ? 0.65 : 1);
     const s = e.species[i];
     spatial.forEachInRadius(e.x[i], e.z[i], DISEASE.spreadRadius, (j) => {
       if (j === i || e.species[j] !== s || isSick(e, j, tick) || isImmune(e, j, tick)) return;
-      if (rng.next() < spreadP) caught.push(j);
+      const p = e.species[j] === 3 && world.tribeStore?.hasHygiene?.(e.tribeId[j]) ? spreadP * 0.45 : spreadP;
+      if (rng.next() < p) caught.push(j);
     });
   }
   for (const j of caught) if (infect(e, j, tick)) sick[e.species[j]]++;
+
+  // Carcass miasma: creatures lingering near rotting carcasses risk sporadic contagion (#11).
+  const carcasses = Array.isArray(world.carcasses) ? world.carcasses : null;
+  if (carcasses && carcasses.length > 0 && tick % secs(2) < secs(1)) {
+    for (const c of carcasses) {
+      spatial.forEachInRadius(c.x, c.z, 3.2, (j) => {
+        if (!e.alive[j] || isSick(e, j, tick) || isImmune(e, j, tick)) return;
+        const miasmaP = e.species[j] === 3 && world.tribeStore?.hasHygiene?.(e.tribeId[j]) ? 0.008 : 0.025;
+        if (rng.next() < miasmaP && infect(e, j, tick)) {
+          sick[e.species[j]]++;
+        }
+      });
+    }
+  }
 
   // Outbreaks: only a crowded species with no sickness already running can start one.
   if (tick % secs(DISEASE.checkEverySeconds) < secs(1)) {
