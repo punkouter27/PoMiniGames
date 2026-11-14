@@ -242,13 +242,58 @@
 }
 
 .pvs-hud-score {
+    display: inline-flex;
+    align-items: baseline;
     font-size: clamp(1rem, 2.6vw, var(--text-xl));
     font-weight: 700;
     color: #f4f7fd;
     font-variant-numeric: tabular-nums;
+    transition: transform 0.22s cubic-bezier(0.22, 1.4, 0.36, 1), color 0.22s ease-out;
 }
 
-/* "+N" kill popups drifting up and away from the score. */
+.pvs-hud-score-bump {
+    transform: scale(1.12);
+    color: #ffd97a;
+}
+
+/* Odometer rolling digit columns (#20): the real digit character stays in the DOM for
+   screen readers and text queries, while ::before rolls a 0-9 vertical ribbon. */
+.pvs-odo-digit {
+    position: relative;
+    display: inline-block;
+    width: 1ch;
+    height: 1.15em;
+    line-height: 1.15em;
+    overflow: hidden;
+    vertical-align: bottom;
+    color: transparent;
+}
+
+.pvs-odo-digit::before {
+    content: "0\A 1\A 2\A 3\A 4\A 5\A 6\A 7\A 8\A 9";
+    position: absolute;
+    left: 0;
+    top: 0;
+    width: 100%;
+    white-space: pre;
+    line-height: 1.15em;
+    color: #f4f7fd;
+    transform: translateY(calc(var(--d, 0) * -1.15em));
+    transition: transform 0.28s cubic-bezier(0.22, 1, 0.36, 1);
+    will-change: transform;
+}
+
+.pvs-hud-score-bump .pvs-odo-digit::before {
+    color: #ffd97a;
+}
+
+.pvs-odo-sep {
+    display: inline-block;
+    line-height: 1.15em;
+    vertical-align: bottom;
+}
+
+/* "+N" kill popups arcing from the arena toward the score counter (#20). */
 .pvs-pop {
     position: absolute;
     right: 0;
@@ -257,19 +302,31 @@
     font-weight: 700;
     color: var(--accent-warning);
     font-variant-numeric: tabular-nums;
-    animation: pvs-pop-drift 0.85s ease-out forwards;
+    animation: pvs-pop-arc 0.85s cubic-bezier(0.22, 1, 0.36, 1) forwards;
     pointer-events: none;
 }
 
-@keyframes pvs-pop-drift {
-    from { transform: translateY(0); opacity: 1; }
-    to { transform: translateY(-1.6rem); opacity: 0; }
+@keyframes pvs-pop-arc {
+    0% {
+        transform: translate(var(--arc-x, -36px), 1.1rem) scale(0.75);
+        opacity: 0;
+    }
+    28% {
+        transform: translate(calc(var(--arc-x, -36px) * 0.55), -0.45rem) scale(1.16);
+        opacity: 1;
+    }
+    100% {
+        transform: translate(0, -1.55rem) scale(0.88);
+        opacity: 0;
+    }
 }
 
 /* Fullscreen lives on the strip now, not floating over the arena's corner. Under Pointer
    Lock nothing on the strip can be clicked (there is no cursor), so the pause dialog
    carries a second one; this is the one a touch player reaches. */
 .pvs-hud-btn {
+    position: relative;
+    overflow: hidden;
     pointer-events: auto;
     width: 1.9rem;
     height: 1.9rem;
@@ -281,9 +338,15 @@
     color: rgba(232, 238, 248, 0.8);
     font-size: 0.95rem;
     cursor: pointer;
+    transform: perspective(420px) rotateX(var(--tx, 0deg)) rotateY(var(--ty, 0deg));
+    transition: transform 0.16s cubic-bezier(0.22, 1, 0.36, 1), background 0.16s ease, color 0.16s ease;
 }
 
 .pvs-hud-btn:hover { color: #f4f7fd; background: rgba(15, 23, 42, 0.8); }
+
+.pvs-hud-btn:active {
+    transform: perspective(420px) rotateX(var(--tx, 0deg)) rotateY(var(--ty, 0deg)) scale(0.94);
+}
 
 .pvs-hud-btn:focus-visible {
     outline: 2px solid var(--accent-ring);
@@ -321,7 +384,69 @@
 
 .pvs-down .pvs-bar-track { align-self: stretch; flex: none; }
 
-/* ── Pause dialog ───────────────────────────────────────────────────────── */
+/* ── Pause dialog & Canvas Backdrop Ramp (#19) ─────────────────────────── */
+
+.pvs-canvas-host ::deep canvas {
+    transition: filter 0.32s cubic-bezier(0.22, 1, 0.36, 1), transform 0.32s cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+.pvs-canvas-host.pvs-is-paused ::deep canvas {
+    filter: blur(6px) saturate(0.35) brightness(0.76);
+    transform: scale(1.015);
+}
+
+/* Circular iris wipe when resuming play from pause (#19). */
+.pvs-canvas-host.pvs-iris-opening ::deep canvas {
+    animation: pvs-iris-wipe 0.48s cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+@keyframes pvs-iris-wipe {
+    0% {
+        clip-path: circle(16% at 50% 50%);
+        filter: blur(4px) saturate(0.5);
+    }
+    100% {
+        clip-path: circle(135% at 50% 50%);
+        filter: none;
+    }
+}
+
+/* Start card voxel-dissolve transition overlay (#20): spawned by index.js when OK is clicked. */
+.pvs-canvas-host ::deep .pvs-voxel-dissolve {
+    position: absolute;
+    inset: 0;
+    display: grid;
+    grid-template-columns: repeat(8, 1fr);
+    grid-template-rows: repeat(5, 1fr);
+    gap: 2px;
+    pointer-events: none;
+    z-index: 4;
+    perspective: 720px;
+}
+
+.pvs-canvas-host ::deep .pvs-voxel-cell {
+    display: block;
+    border-radius: 4px;
+    background: var(--voxel-bg, rgba(30, 41, 59, 0.9));
+    border: 1px solid rgba(255, 217, 122, 0.22);
+    box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.16), 0 8px 18px rgba(0, 0, 0, 0.42);
+    animation: pvs-voxel-burst 0.56s cubic-bezier(0.22, 1, 0.36, 1) var(--delay, 0ms) forwards;
+    will-change: transform, opacity;
+}
+
+@keyframes pvs-voxel-burst {
+    0% {
+        transform: translate3d(0, 0, 0) rotateZ(0deg) scale(1);
+        opacity: 0.95;
+    }
+    40% {
+        opacity: 0.85;
+    }
+    100% {
+        transform: translate3d(var(--dx, 0px), var(--dy, 60px), 90px) rotateZ(var(--rz, 45deg)) scale(0.18);
+        opacity: 0;
+    }
+}
 
 .pvs-pause-backdrop {
     position: absolute;
@@ -330,6 +455,18 @@
     place-items: center;
     background: rgba(15, 23, 42, 0.45);
     z-index: 3;
+    animation: pvs-backdrop-in 0.26s cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+@keyframes pvs-backdrop-in {
+    from {
+        opacity: 0;
+        backdrop-filter: blur(0px);
+    }
+    to {
+        opacity: 1;
+        backdrop-filter: blur(4px);
+    }
 }
 
 /* The shared pause wrapper keeps Escape with the engine that just released the pointer.
@@ -354,6 +491,18 @@
     box-shadow: 0 18px 50px rgba(0, 0, 0, 0.45);
     color: var(--color-text-primary);
     text-align: center;
+    animation: pvs-pause-card-in 0.28s cubic-bezier(0.22, 1.25, 0.36, 1);
+}
+
+@keyframes pvs-pause-card-in {
+    from {
+        transform: translateY(10px) scale(0.95);
+        opacity: 0;
+    }
+    to {
+        transform: translateY(0) scale(1);
+        opacity: 1;
+    }
 }
 
 .pvs-pause h2 {
@@ -444,6 +593,8 @@
 }
 
 .pvs-tile {
+    position: relative;
+    overflow: hidden;
     display: flex;
     flex-direction: column;
     align-items: center;
@@ -452,7 +603,28 @@
     border-radius: 10px;
     background: color-mix(in srgb, var(--color-surface-hover) 70%, transparent);
     border: 1px solid var(--color-border);
+    transform: perspective(520px) rotateX(var(--tx, 0deg)) rotateY(var(--ty, 0deg));
+    transition: transform 0.18s cubic-bezier(0.22, 1, 0.36, 1), border-color 0.18s ease, box-shadow 0.18s ease;
     animation: pvs-tile-in 0.35s ease-out backwards;
+}
+
+.pvs-tile:hover {
+    border-color: color-mix(in srgb, var(--accent-warning) 55%, var(--color-border));
+    box-shadow: 0 6px 18px rgba(0, 0, 0, 0.22);
+}
+
+.pvs-tile::before {
+    content: "";
+    position: absolute;
+    inset: 0;
+    background: radial-gradient(circle at var(--rx, 50%) var(--ry, 50%), rgba(255, 217, 122, 0.16), transparent 65%);
+    opacity: 0;
+    transition: opacity 0.2s ease;
+    pointer-events: none;
+}
+
+.pvs-tile:hover::before {
+    opacity: 1;
 }
 
 .pvs-tile:nth-child(2) { animation-delay: 0.05s; }
@@ -515,6 +687,17 @@
     color: var(--color-text-primary);
 }
 
+/* ── Button Micro-interactions (#19): 3D tilt, radial ripple & light-sweep sheen ── */
+
+.pvs-btn,
+.pvs-start ::deep .gps-intro-ok,
+.pvs-start ::deep .app-seg__btn {
+    position: relative;
+    overflow: hidden;
+    transform: perspective(520px) rotateX(var(--tx, 0deg)) rotateY(var(--ty, 0deg));
+    transition: transform 0.16s cubic-bezier(0.22, 1, 0.36, 1), background 0.18s ease, border-color 0.18s ease, box-shadow 0.18s ease, filter 0.18s ease;
+}
+
 .pvs-btn {
     padding: 0.45rem 1.1rem;
     border-radius: 8px;
@@ -525,7 +708,52 @@
     cursor: pointer;
 }
 
+/* Pointer-origin radial ripple glow */
+.pvs-btn::before,
+.pvs-start ::deep .gps-intro-ok::before,
+.pvs-start ::deep .app-seg__btn::before {
+    content: "";
+    position: absolute;
+    inset: 0;
+    background: radial-gradient(circle 90px at var(--rx, 50%) var(--ry, 50%), rgba(255, 255, 255, 0.24), transparent 70%);
+    opacity: 0;
+    transition: opacity 0.18s ease;
+    pointer-events: none;
+}
+
+/* Hover light-sweep sheen */
+.pvs-btn::after,
+.pvs-start ::deep .gps-intro-ok::after {
+    content: "";
+    position: absolute;
+    top: -20%;
+    bottom: -20%;
+    left: -130%;
+    width: 65%;
+    background: linear-gradient(115deg, transparent 20%, rgba(255, 255, 255, 0.28) 50%, transparent 80%);
+    transform: skewX(-18deg);
+    transition: left 0.45s cubic-bezier(0.22, 1, 0.36, 1);
+    pointer-events: none;
+}
+
+.pvs-btn:hover::before,
+.pvs-start ::deep .gps-intro-ok:hover::before,
+.pvs-start ::deep .app-seg__btn:hover::before {
+    opacity: 1;
+}
+
+.pvs-btn:hover::after,
+.pvs-start ::deep .gps-intro-ok:hover::after {
+    left: 145%;
+}
+
 .pvs-btn:hover { background: var(--color-border); }
+
+.pvs-btn:active,
+.pvs-start ::deep .gps-intro-ok:active,
+.pvs-start ::deep .app-seg__btn:active {
+    transform: perspective(520px) rotateX(var(--tx, 0deg)) rotateY(var(--ty, 0deg)) scale(0.96);
+}
 
 .pvs-btn:focus-visible {
     outline: 2px solid var(--accent-ring);
@@ -536,6 +764,7 @@
     background: var(--color-accent-solid);
     border-color: var(--color-accent-solid);
     color: var(--color-accent-contrast);
+    box-shadow: 0 4px 14px color-mix(in srgb, var(--color-accent-solid) 38%, transparent);
 }
 
 .pvs-btn-primary:hover { filter: brightness(1.1); }
@@ -748,7 +977,11 @@
    fades rather than moves. */
 @media (prefers-reduced-motion: reduce) {
     .pvs-bar-low,
-    .pvs-canvas-host ::deep .pvs-ring-heat.pvs-ring-locked {
+    .pvs-canvas-host ::deep .pvs-ring-heat.pvs-ring-locked,
+    .pvs-canvas-host.pvs-iris-opening ::deep canvas,
+    .pvs-canvas-host ::deep .pvs-voxel-cell,
+    .pvs-pause-backdrop,
+    .pvs-pause-backdrop ::deep .pvs-pause {
         animation: none;
     }
 
@@ -759,7 +992,44 @@
         animation: none;
     }
 
+    .pvs-odo-digit::before,
+    .pvs-hud-score,
+    .pvs-canvas-host ::deep canvas,
+    .pvs-btn,
+    .pvs-hud-btn,
+    .pvs-tile,
+    .pvs-start ::deep .gps-intro-ok,
+    .pvs-start ::deep .app-seg__btn,
+    .pvs-btn::after,
+    .pvs-start ::deep .gps-intro-ok::after {
+        transition: none;
+        transform: none;
+    }
+
+    .pvs-odo-digit {
+        color: #f4f7fd;
+    }
+
+    .pvs-odo-digit::before {
+        display: none;
+    }
+
     .pvs-pop { opacity: 0; } /* no drift animation → don't stack static +N labels */
+}
+
+:global([data-motion="reduce"]) .pvs-odo-digit::before {
+    display: none;
+}
+
+:global([data-motion="reduce"]) .pvs-odo-digit {
+    color: #f4f7fd;
+}
+
+:global([data-motion="reduce"]) .pvs-canvas-host.pvs-iris-opening ::deep canvas,
+:global([data-motion="reduce"]) .pvs-canvas-host ::deep .pvs-voxel-cell,
+:global([data-motion="reduce"]) .pvs-pause-backdrop,
+:global([data-motion="reduce"]) .pvs-pause-backdrop ::deep .pvs-pause {
+    animation: none;
 }
 
 @media (max-width: 520px) {

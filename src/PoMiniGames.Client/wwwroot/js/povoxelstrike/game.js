@@ -56,6 +56,8 @@ import { Avatar } from './avatar.js';
 import { AltInput } from './input.js';
 import { Weather } from './weather.js';
 import { loadSettings } from './settings.js';
+import { Foliage } from './foliage.js';
+import { AcousticProbe } from './acousticsProbe.js';
 
 const CAM_DISTANCE = 7;
 // How close the chase camera may be pushed by a wall before the avatar is hidden — inside
@@ -98,6 +100,10 @@ const winBonus = (seconds) => Math.max(5000, 25000 - 40 * Math.floor(seconds));
 // Seconds the win is held before the summary: the slow orbit, the flare, the fanfare.
 const VICTORY_SHOW_S = 4;
 const VICTORY_TIME_SCALE = 0.35;
+// The death beat: world slows, colour drains, the camera rises and circles the body.
+// Solo only for the time scale — in co-op the lockstep sim must never be slowed locally.
+const DEATH_SHOW_S = 2.6;
+const DEATH_TIME_SCALE = 0.3;
 // Collapses at least this big (voxels) get the hit-stop, the sub drop and the dust front.
 const BIG_COLLAPSE_VOXELS = 400;
 const HIT_STOP_S = 0.28;
@@ -220,6 +226,7 @@ export class Engine {
     this._hitStopT = 0;
     this._hitStopCd = 0;
     this.wonAt = -1;
+    this.diedAt = -1;
 
     this._onKeyDown = (e) => {
       if (e.repeat) return;
@@ -315,6 +322,24 @@ export class Engine {
     this.scene.add(sun);
     this.scene.add(sun.target);
 
+    // Coarse outer shadow cascade (#5): fixed on the arena origin so distant fortress
+    // towers outside the 90 m near shadow box still cast shadows on high/ultra tiers.
+    const farSun = new THREE.DirectionalLight(0xfff2df, this.q.farShadows && this.q.shadows ? 0.6 : 0);
+    farSun.position.set(60, 120, 40);
+    farSun.castShadow = !!(this.q.farShadows && this.q.shadows);
+    farSun.shadow.mapSize.set(1024, 1024);
+    farSun.shadow.camera.left = -165;
+    farSun.shadow.camera.right = 165;
+    farSun.shadow.camera.top = 165;
+    farSun.shadow.camera.bottom = -165;
+    farSun.shadow.camera.near = 10;
+    farSun.shadow.camera.far = 360;
+    farSun.shadow.bias = -0.0008;
+    farSun.shadow.normalBias = 1.1;
+    this.scene.add(farSun);
+    this.scene.add(farSun.target);
+    this.farSun = farSun;
+
     this.camera = new THREE.PerspectiveCamera(this.settings.fov, width / height, 0.1, 500);
 
     this.vfx = new Vfx(this.renderer, this.scene, this.camera, this.host, this.q);
@@ -323,11 +348,26 @@ export class Engine {
     // colour and intensity every frame, so the literals set above are only the values
     // that hold for the first frame.
     this.sun = sun;
-    this.vfx.attachSun(sun, hemi, ambient);
+    this.vfx.attachSun(sun, hemi, ambient, farSun);
     this.skyEnv = new SkyEnvironment(this.renderer, this.scene, this.q);
     this.skyEnv.update(0, this.vfx.skyKey, this.vfx._sunDir, true);
     this.particles = new ParticleSystem(this.scene, this.q.particles);
-    this.particles.setViewportHeight(this.renderer.getDrawingBufferSize(new THREE.Vector2()).y);
+    const drawSize = this.renderer.getDrawingBufferSize(new THREE.Vector2());
+    this.particles.setViewportHeight(drawSize.y, drawSize.x);
+    this.particles.setSoftLighting({
+      depthTexture: this.vfx.sceneTarget?.depthTexture,
+      near: this.camera.near,
+      far: this.camera.far,
+      sunDir: this.vfx._sunDir,
+      sunColor: this.vfx.skyKey?.sun,
+      enabled: !!this.q.softSmoke,
+    });
+    this.vfx.onSmoke = (pt, rad) => {
+      this.particles.emit(pt, Math.min(28, Math.round(rad * 4)), {
+        color: 0x3b3530, speed: 3.2, spread: rad * 0.45, size: Math.max(0.9, rad * 0.28),
+        life: 2.2, upward: 1.5,
+      });
+    };
     this.decals = new DecalField(this.scene, this.q.decals);
     this._spaceClock = 0;
     // Demo (kiosk) keeps the visuals but stays silent — there is no user gesture to
@@ -355,9 +395,11 @@ export class Engine {
     this.structures = structures;
     this.terrain = terrain;
     this.spawnPoint = spawn;
+    this.audio?.setWorld(new AcousticProbe(this.terrain, this.structures));
 
     this.shrapnel = new ShrapnelField(this.scene, this.physicsWorld, this.q.shrapnel,
       { terrain: this.terrain, structures: this.structures }, this.physicsMaterials.stone);
+    this.shrapnel.onHit = (pos, speed, size, mat) => this.audio?.rubbleTick(pos, speed, size, mat);
     this.debris = new DebrisManager(this.scene, this.physicsWorld, {
       collapse: (voxels, position) => {
         this.audio?.collapse(voxels, position);
@@ -376,11 +418,14 @@ export class Engine {
         if (d < 24) this.vfx.lensDust(Math.min(0.9, voxels / 450) * (1 - d / 24));
         if (voxels >= BIG_COLLAPSE_VOXELS) this._bigCollapse(voxels, position, proximity);
       },
-      impact: (mass, position) => {
-        this.audio?.debrisHit(mass, position);
+      impact: (mass, position, speed, material) => {
+        this.audio?.debrisHit(mass, position, speed, material);
         this.particles.emit(position, Math.min(10, 2 + (mass / 60) | 0), {
           color: 0x9c8f79, speed: 1.1, spread: 1, size: 0.5, life: 1.1, upward: 0.5,
         });
+        if (speed > 6.5 || mass > 120) {
+          this.vfx.dustSkirt(position, Math.min(4.2, 1.4 + Math.sqrt(mass) * 0.06));
+        }
       },
     }, this.physicsMaterials);
     this.debris.structures = this.structures; // blast shielding needs the occluders
@@ -394,6 +439,8 @@ export class Engine {
           this.debris.spawnCluster(structure, c);
         }
       };
+      // Crack telegraph (structure.js): stone about to fail creaks where it is.
+      s.onCrack = (pos, count) => this.audio?.creak?.(pos, Math.min(1, count / 40));
     }
     this.enemies = new EnemyManager(this.scene, this.structures, this.debris, this.terrain, {
       enabled: this.survival,
@@ -428,6 +475,8 @@ export class Engine {
           const near = Math.max(0, 1 - this.player.position.distanceTo(point) / 55);
           this.audio?.explosion(point, near);
           this.vfx.shockwave(point);
+          this.vfx.sparks(point, null, 28);
+          this.vfx.dustSkirt(point, 5.2);
           // Scaled by distance now that a squadmate's blast across the arena lands here too.
           this.vfx.addShake(0.45 * near);
           markHotCarve(point, 6);
@@ -443,11 +492,13 @@ export class Engine {
         // leaves a visible trench rather than a clean hole.
         impact: (point, kind, normal, radius) => {
           markHotCarve(point, radius);
+          const surfNorm = normal ?? this._surfaceNormal(point);
+          if (kind === 'structure') this.vfx.sparks(point, surfNorm, 12);
           this.particles.emit(point, 6, {
             color: kind === 'terrain' ? 0x6d5138 : 0xc9c6c0,
             speed: 2.2, spread: 0.6, size: 0.32, life: 0.8, upward: 0.9,
           });
-          this.decals.stamp(point, normal ?? this._surfaceNormal(point),
+          this.decals.stamp(point, surfNorm,
             { radius: 0.85, color: 0x1c1712, life: 26 });
         },
       },
@@ -481,7 +532,7 @@ export class Engine {
             color: 0xffd9a0, speed: 3.4, spread: 0.4, size: 0.35, life: 0.4, upward: 0.6,
           });
         },
-        whiz: (position) => this.audio?.whiz(position),
+        whiz: (position, velocity) => this.audio?.whiz(position, velocity),
         hit: (position) => {
           this.particles.emit(position, 7, {
             color: 0xc9c6c0, speed: 2.6, spread: 0.5, size: 0.3, life: 0.6, upward: 1.0,
@@ -505,6 +556,12 @@ export class Engine {
       overcast: (amount) => { this.vfx.overcast = amount; },
       flash: (amount) => this.vfx.flash(amount),
       thunder: (delay) => this.audio?.thunder(delay),
+    });
+    this.audio?.setWeather(this.weather.kind);
+    // Grass + banners: presentation only, bent by wind and blast fronts (foliage.js).
+    this.foliage = new Foliage(this.scene, {
+      terrain: this.terrain, structures: this.structures, arenaHalf: ARENA_HALF,
+      seed: this.seed, quality: this.q,
     });
 
     this._buildCrosshair();
@@ -596,6 +653,7 @@ export class Engine {
 
     this.input?.dispose();
     this.weather?.dispose();
+    this.foliage?.dispose();
     for (const peer of this.peers.values()) peer.avatar.dispose();
     this.peers.clear();
     this.avatar?.dispose();
@@ -653,7 +711,15 @@ export class Engine {
     let scale = 1;
     if (this._hitStopT > 0) { this._hitStopT -= dt; scale = HIT_STOP_SCALE; }
     if (this._hitStopCd > 0) this._hitStopCd -= dt;
-    if (this.wonAt >= 0 && this.wonAt < VICTORY_SHOW_S) scale = Math.min(scale, VICTORY_TIME_SCALE);
+    const solo = this.mode !== 'multi';
+    if (solo && this.wonAt >= 0 && this.wonAt < VICTORY_SHOW_S) scale = Math.min(scale, VICTORY_TIME_SCALE);
+    if (this.diedAt >= 0) {
+      this.diedAt += dt;
+      // Ease back to real time across the beat instead of snapping out of slow motion.
+      const k = Math.min(1, this.diedAt / DEATH_SHOW_S);
+      if (solo && k < 1) scale = Math.min(scale, DEATH_TIME_SCALE + (1 - DEATH_TIME_SCALE) * k * k);
+      this.vfx.setDesat(Math.min(0.92, 0.25 + 0.67 * Math.min(1, this.diedAt / 1.4)));
+    }
     const sdt = dt * scale;
 
     const pad = this.input.poll(dt);
@@ -731,19 +797,30 @@ export class Engine {
 
     // The figure walks at the speed the body is actually making, not the speed asked for.
     const bv = this.playerBody.velocity;
+    const hSpeed = simulating ? Math.hypot(bv.x, bv.z) : 0;
     this._firedT = Math.max(0, (this._firedT ?? 0) - dt);
-    this.avatar.update(sdt, simulating ? Math.hypot(bv.x, bv.z) : 0, this._firedT > 0, this.weapon.heat);
+    this.avatar.update(sdt, hSpeed, this._firedT > 0, this.weapon.heat);
 
     this._followCamera(dt);
     this.vfx.setHeat(this.weapon.heat);
+    this.vfx.setPlayerSpeed(hSpeed, this.keys.has('ShiftLeft') || this.keys.has('ShiftRight'));
     this.vfx.update(dt);
     tickMaterials(this.vfx.time);
     this.vfx.applyShake(); // AFTER lookAt so the shake never fights the follow lerp
+    this.particles.setSoftLighting({
+      depthTexture: this.vfx.sceneTarget?.depthTexture,
+      near: this.camera.near,
+      far: this.camera.far,
+      sunDir: this.vfx._sunDir,
+      sunColor: this.vfx.skyKey?.sun,
+      enabled: !!this.q.softSmoke,
+    });
     this.particles.update(sdt);
     this.decals.update(dt);
     this.shrapnel.update(sdt);
     this._updateSpace(dt);
     this.weather.update(dt, this.camera.position, this.indoors);
+    this.foliage?.update(dt, this.vfx.time);
     this._updateShadowCamera();
     this._streamColliders(dt);
     this._updateRenderScale(frameDt);
@@ -960,7 +1037,9 @@ export class Engine {
 
     // Nearly dead: colour drains, the mix goes dull, a heartbeat that quickens as HP falls.
     const low = !this.demo && this.hp > 0 && this.hp <= LOW_HP;
-    this.vfx.setDesat(low ? 0.25 + 0.45 * (1 - this.hp / LOW_HP) : 0);
+    const lowRatio = low ? 1 - this.hp / LOW_HP : 0;
+    this.vfx.setDesat(low ? 0.25 + 0.45 * lowRatio : 0);
+    this.vfx.setLowHp(lowRatio);
     this.audio?.setLowHp(low);
     if (low) {
       this._heartClock -= dt;
@@ -1198,6 +1277,7 @@ export class Engine {
     this.audio?.explosion(this.chalice.position, 0.6);
     this.audio?.fanfare();
     this.audio?.setLowHp(false);
+    this.vfx.setLowHp(0);
     this.vfx.setDesat(0);
     this.cracks.style.opacity = '0';   // the visor is whole again for the victory lap
     this.vfx.addShake(0.6);
@@ -1300,7 +1380,8 @@ export class Engine {
     this.downed = false;
     this.state = 'dead';
     this.audio?.death();
-    this.vfx.setDesat(0.8);
+    this.vfx.setDesat(0.25);   // ramps to full grey across the death beat (_frame)
+    this.diedAt = 0;
     this.vfx.addShake(0.8);
     this._endControl();
     this._pumpHud();
@@ -1644,9 +1725,25 @@ export class Engine {
       const c = this.chalice.position;
       const a = this.yaw + this.wonAt * 0.4;
       const orbit = this._orbitVec ??= new THREE.Vector3();
-      orbit.set(c.x + Math.sin(a) * 84, c.y + 62, c.z + Math.cos(a) * 84);
+      // Open tight on the chalice, then pull out to the whole keep as the slow beat ends.
+      const pull = THREE.MathUtils.smoothstep(this.wonAt, 0.4, VICTORY_SHOW_S);
+      const r = 16 + 68 * pull, h = 7 + 55 * pull;
+      orbit.set(c.x + Math.sin(a) * r, c.y + h, c.z + Math.cos(a) * r);
       this.camera.position.lerp(orbit, 1 - Math.exp(-2.2 * dt));
-      this.camera.lookAt(c.x, c.y + 14, c.z);
+      this.camera.lookAt(c.x, c.y + 2 + 12 * THREE.MathUtils.smoothstep(this.wonAt, 0.4, VICTORY_SHOW_S), c.z);
+      this.player.visible = true;
+      return;
+    }
+
+    // Kill-cam: rise off the body and circle it while the world slows and greys out.
+    if (this.diedAt >= 0 && !this.won && !this.q.reducedMotion) {
+      const k = Math.min(1, this.diedAt / DEATH_SHOW_S);
+      const a = this.yaw + Math.PI + this.diedAt * 0.35;
+      const r = 5 + 6 * k, h = 2.5 + 7 * k;
+      const orbit = this._orbitVec ??= new THREE.Vector3();
+      orbit.set(p.x + Math.sin(a) * r, Math.max(eyeY, this.terrain.heightAt(p.x, p.z)) + h, p.z + Math.cos(a) * r);
+      this.camera.position.lerp(orbit, 1 - Math.exp(-3 * dt));
+      this.camera.lookAt(p.x, p.y + 0.3, p.z);
       this.player.visible = true;
       return;
     }
@@ -1702,7 +1799,8 @@ export class Engine {
     this.camera.updateProjectionMatrix();
     this.renderer.setSize(width, height);
     this.vfx?.resize(width, height);
-    this.particles?.setViewportHeight(height * this.renderer.getPixelRatio());
+    const ratio = this.renderer.getPixelRatio();
+    this.particles?.setViewportHeight(height * ratio, width * ratio);
   }
 
   // ── Pointer lock ───────────────────────────────────────────────────────

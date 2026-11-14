@@ -25,6 +25,8 @@ const VERTEX = /* glsl */`
   varying vec3 vColor;
   varying float vAge;
   varying float vSeed;
+  varying float vViewZ;
+  varying vec3 vWorldPos;
 
   void main() {
     float age = (uTime - aSeed.x) / max(0.0001, aSeed.y);
@@ -33,6 +35,8 @@ const VERTEX = /* glsl */`
     vSeed = aSeed.w;
     if (age < 0.0 || age > 1.0) {
       // Dead: collapse to a degenerate point behind the camera so it costs no fill.
+      vViewZ = 1.0;
+      vWorldPos = vec3(0.0);
       gl_Position = vec4(0.0, 0.0, 2.0, 1.0);
       gl_PointSize = 0.0;
       return;
@@ -41,8 +45,10 @@ const VERTEX = /* glsl */`
     // Drag: puffs slow down as they expand, or every plume looks like a firework.
     float drag = 1.0 - exp(-2.2 * t);
     vec3 pos = position + aVelocity * (drag / 2.2) + vec3(0.0, 0.5 * uGravity * t * t, 0.0);
+    vWorldPos = (modelMatrix * vec4(pos, 1.0)).xyz;
 
     vec4 mv = modelViewMatrix * vec4(pos, 1.0);
+    vViewZ = -mv.z;
     gl_Position = projectionMatrix * mv;
     // Smoke grows as it ages; the 1/-z term is standard perspective size attenuation.
     float grow = aSeed.z * (0.45 + age * 1.6);
@@ -50,9 +56,23 @@ const VERTEX = /* glsl */`
   }`;
 
 const FRAGMENT = /* glsl */`
+  uniform sampler2D uDepthTex;
+  uniform vec2 uResolution;
+  uniform float uNear;
+  uniform float uFar;
+  uniform float uSoftSmoke;
+  uniform vec3 uSunDir;
+  uniform vec3 uSunColor;
   varying vec3 vColor;
   varying float vAge;
   varying float vSeed;
+  varying float vViewZ;
+  varying vec3 vWorldPos;
+
+  float linearizeDepth(float d) {
+    float z = d * 2.0 - 1.0;
+    return (2.0 * uNear * uFar) / max(0.0001, uFar + uNear - z * (uFar - uNear));
+  }
 
   void main() {
     // Soft round sprite, generated rather than sampled — no texture to load, decode,
@@ -64,7 +84,26 @@ const FRAGMENT = /* glsl */`
     // Fade in fast, out slow: a puff should appear instantly and linger.
     float fade = smoothstep(0.0, 0.08, vAge) * (1.0 - smoothstep(0.45, 1.0, vAge));
     float flicker = 0.85 + 0.15 * sin(vSeed * 30.0 + vAge * 12.0);
-    gl_FragColor = vec4(vColor * flicker, soft * fade * 0.55);
+    vec3 col = vColor * flicker;
+
+    if (uSoftSmoke > 0.5) {
+      // Soft depth fade against scene geometry intersections (#3)
+      vec2 screenUv = gl_FragCoord.xy / max(vec2(1.0), uResolution);
+      float rawDepth = texture2D(uDepthTex, screenUv).x;
+      if (rawDepth < 0.9999 && rawDepth > 0.0) {
+        float sceneZ = linearizeDepth(rawDepth);
+        fade *= clamp((sceneZ - vViewZ) * 0.85, 0.0, 1.0);
+      }
+      // Directional sun-backlit forward scattering + rim glow (#3)
+      vec3 viewDir = normalize(vWorldPos - cameraPosition);
+      float fwd = max(0.0, dot(viewDir, normalize(uSunDir)));
+      float scatter = pow(fwd, 4.0) * 0.65 + (1.0 - soft) * pow(fwd, 2.0) * 0.35;
+      // Top-hemisphere normal approximation on the puff sprite
+      float topLight = clamp(0.5 - d.y * 0.9, 0.0, 1.0) * max(0.0, uSunDir.y);
+      col += uSunColor * (scatter + topLight * 0.22);
+    }
+
+    gl_FragColor = vec4(col, soft * fade * 0.55);
   }`;
 
 export class ParticleSystem {
@@ -103,6 +142,13 @@ export class ParticleSystem {
         uTime: { value: 0 },
         uGravity: { value: -3.2 },  // lighter than the physics world: dust hangs
         uPixelScale: { value: 600 },
+        uDepthTex: { value: null },
+        uResolution: { value: new THREE.Vector2(800, 480) },
+        uNear: { value: 0.1 },
+        uFar: { value: 500 },
+        uSoftSmoke: { value: 0 },
+        uSunDir: { value: new THREE.Vector3(0.4, 0.8, 0.25) },
+        uSunColor: { value: new THREE.Color(0xfff2df) },
       },
       vertexShader: VERTEX,
       fragmentShader: FRAGMENT,
@@ -120,8 +166,23 @@ export class ParticleSystem {
   }
 
   /** Keep point size independent of canvas height / device pixel ratio. */
-  setViewportHeight(pixels) {
-    if (this.enabled) this.material.uniforms.uPixelScale.value = Math.max(1, pixels) * 0.5;
+  setViewportHeight(pixels, width = 0) {
+    if (!this.enabled) return;
+    const h = Math.max(1, pixels);
+    this.material.uniforms.uPixelScale.value = h * 0.5;
+    this.material.uniforms.uResolution.value.set(Math.max(1, width || h * 1.6), h);
+  }
+
+  /** Wire scene depth + sun uniforms for soft depth intersections and sunlit scattering (#3). */
+  setSoftLighting({ depthTexture = null, near = 0.1, far = 500, sunDir = null, sunColor = null, enabled = true } = {}) {
+    if (!this.enabled) return;
+    const u = this.material.uniforms;
+    if (depthTexture !== undefined) u.uDepthTex.value = depthTexture;
+    u.uNear.value = near;
+    u.uFar.value = far;
+    if (sunDir) u.uSunDir.value.copy(sunDir);
+    if (sunColor) u.uSunColor.value.copy(sunColor);
+    u.uSoftSmoke.value = enabled && u.uDepthTex.value ? 1 : 0;
   }
 
   /**

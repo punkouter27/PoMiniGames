@@ -486,7 +486,7 @@ export class FortressGuns {
           && (playerPosition.x - p.x) * b.vel.x + (playerPosition.y - p.y) * b.vel.y
             + (playerPosition.z - p.z) * b.vel.z < 0) {
           b.whizzed = true;
-          this.opts.fx?.whiz?.(p);
+          this.opts.fx?.whiz?.(p, b.vel);
         }
         if (p.y <= this.terrain.heightAt(p.x, p.z)
           || this.structures.some(st => st.solidAtWorld(p))) {

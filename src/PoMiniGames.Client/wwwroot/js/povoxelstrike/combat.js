@@ -7,6 +7,7 @@
 // debris pieces, enemies.
 
 import * as THREE from 'three';
+import { markBlast } from './foliage.js';
 
 const PRIMARY_INTERVAL_S = 0.14;
 const PRIMARY_CARVE_RADIUS = 1.8;   // world units, into structures
@@ -235,6 +236,8 @@ export class Weapon {
     // deliberately skips frozen bodies.
     this.debris.wakeNear(point, ALT_BLAST_RADIUS);
     this.debris.applyBlast(point, ALT_BLAST_RADIUS, ALT_BLAST_STRENGTH);
+    this.shrapnel?.applyBlast(point, ALT_BLAST_RADIUS, 14);
+    markBlast(point, ALT_BLAST_RADIUS * 1.6, 1);
     this.enemies.applyBlast(point, ALT_BLAST_RADIUS, ALT_ENEMY_DAMAGE);
     this.debris.burstAt(point, new THREE.Color(0xffb066), 24, 0.5);
     this._spawnBlastShell(point);
@@ -278,6 +281,10 @@ export class Weapon {
       PRIMARY_SHRAPNEL_POWER, PRIMARY_SHRAPNEL_BUDGET);
     this.debris.burstAt(point, new THREE.Color(0xd9d9df), 4, 0.35);
     this.debris.wakeNear(point, PRIMARY_CARVE_RADIUS + 3); // ledge shot from under a resting chunk
+    // A dig shot is a small blast: settled chips nearby jump, loose chunks rock.
+    this.debris.applyBlast(point, PRIMARY_CARVE_RADIUS + 2, 1.2);
+    this.shrapnel?.applyBlast(point, PRIMARY_CARVE_RADIUS + 2, 3);
+    markBlast(point, PRIMARY_CARVE_RADIUS + 3, 0.35);
     this.fx?.impact(point, 'structure', normal, PRIMARY_CARVE_RADIUS);
   }
 
@@ -296,6 +303,8 @@ export class Weapon {
     }
     this.debris.burstAt(point, new THREE.Color(0x6d5138), 5, 0.4); // dirt spray
     this.debris.wakeNear(point, PRIMARY_DIG_RADIUS + 3); // dug the floor from under debris
+    this.shrapnel?.applyBlast(point, PRIMARY_DIG_RADIUS + 2, 3);
+    markBlast(point, PRIMARY_DIG_RADIUS + 3, 0.35);
     this.fx?.impact(point, 'terrain', normal, PRIMARY_DIG_RADIUS);
   }
 

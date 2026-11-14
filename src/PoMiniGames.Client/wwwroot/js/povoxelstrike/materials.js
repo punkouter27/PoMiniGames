@@ -70,6 +70,17 @@ const hot = {
   time: { value: 0 },
 };
 let hotNext = 0;
+// Crack telegraph: voxels the support solver just pushed into the top stress band get a
+// world-space crack pattern (dark fissures + a faint red pulse) for CRACK_LIFE_S. Purely
+// presentation — the solver's verdict is never delayed, so co-op determinism is untouched.
+// Shares the hot-carve program (same cache key), so it costs no extra compile.
+const CRACKS = 8;
+const CRACK_LIFE_S = 1.6;
+const crack = {
+  spheres: { value: Array.from({ length: CRACKS }, () => new THREE.Vector4(0, -9999, 0, 0)) },
+  births: { value: new Float32Array(CRACKS).fill(-1000) },
+};
+let crackNext = 0;
 const voxelMaterials = new Set();
 let wetness = 0;
 
@@ -78,6 +89,8 @@ function hookHotCarve(material) {
     shader.uniforms.uHot = hot.spheres;
     shader.uniforms.uHotBirth = hot.births;
     shader.uniforms.uHotTime = hot.time;
+    shader.uniforms.uCrack = crack.spheres;
+    shader.uniforms.uCrackBirth = crack.births;
     shader.vertexShader = shader.vertexShader
       .replace('#include <common>', '#include <common>\nvarying vec3 vPvsWorld;')
       .replace('#include <project_vertex>', /* glsl */`#include <project_vertex>
@@ -91,8 +104,30 @@ function hookHotCarve(material) {
         varying vec3 vPvsWorld;
         uniform vec4 uHot[${HOT_CARVES}];
         uniform float uHotBirth[${HOT_CARVES}];
-        uniform float uHotTime;`)
+        uniform float uHotTime;
+        uniform vec4 uCrack[${CRACKS}];
+        uniform float uCrackBirth[${CRACKS}];
+        float pvsCrackAt(vec3 p) {
+          float c = 0.0;
+          for (int i = 0; i < ${CRACKS}; i++) {
+            float age = uHotTime - uCrackBirth[i];
+            if (age < 0.0 || age > ${CRACK_LIFE_S.toFixed(1)}) continue;
+            float d = distance(p, uCrack[i].xyz);
+            float reach = uCrack[i].w * smoothstep(0.0, 0.35, age);   // fissures spread out
+            if (d > reach) continue;
+            vec3 q = p * 3.1;
+            float n = abs(sin(dot(q, vec3(1.7, 9.2, 3.1)) + 2.3 * sin(dot(q, vec3(4.1, -2.7, 6.3)))));
+            float line = 1.0 - smoothstep(0.0, 0.09, n);
+            float fade = 1.0 - smoothstep(${(CRACK_LIFE_S * 0.7).toFixed(2)}, ${CRACK_LIFE_S.toFixed(1)}, age);
+            c = max(c, line * fade * (1.0 - d / max(reach, 0.001)));
+          }
+          return c;
+        }`)
+      .replace('#include <color_fragment>', /* glsl */`#include <color_fragment>
+        float pvsCrack = pvsCrackAt(vPvsWorld);
+        diffuseColor.rgb *= 1.0 - 0.75 * pvsCrack;`)
       .replace('#include <emissivemap_fragment>', /* glsl */`#include <emissivemap_fragment>
+        totalEmissiveRadiance += vec3(0.9, 0.12, 0.03) * pvsCrack * (0.5 + 0.5 * sin(uHotTime * 18.0));
         for (int i = 0; i < ${HOT_CARVES}; i++) {
           float pvsAge = uHotTime - uHotBirth[i];
           if (pvsAge < 0.0 || pvsAge > ${HOT_LIFE_S.toFixed(1)}) continue;
@@ -111,8 +146,23 @@ export function markHotCarve(point, radius) {
   hotNext = (hotNext + 1) % HOT_CARVES;
 }
 
+/** Stone about to give way here: dark fissures spread over `radius` and pulse, then fade. */
+export function markCrack(point, radius) {
+  crack.spheres.value[crackNext].set(point.x, point.y, point.z, radius);
+  crack.births.value[crackNext] = hot.time.value;
+  crackNext = (crackNext + 1) % CRACKS;
+}
+
 /** Advance the glow clock. Call once per frame with the engine's running time. */
 export function tickMaterials(time) { hot.time.value = time; }
+
+/** Read-only access to the live hot-carve sphere ring buffer for screen-space heat haze. */
+export function getHotCarves() {
+  return { spheres: hot.spheres.value, births: hot.births.value, time: hot.time.value, life: HOT_LIFE_S };
+}
+
+/** Current surface wetness (0 = dry, 1 = soaked) for screen-space puddle reflections. */
+export function getWetness() { return wetness; }
 
 function applyWetness(material) {
   // Wet stone is darker and shinier. Lambert has no roughness, so it only darkens.
@@ -134,6 +184,7 @@ export function resetMaterials() {
   voxelMaterials.clear();
   wetness = 0;
   hot.births.value.fill(-1000);
+  crack.births.value.fill(-1000);
 }
 
 /** Solid-colour material for actors (player capsule, enemies). */

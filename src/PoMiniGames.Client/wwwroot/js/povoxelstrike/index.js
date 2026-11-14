@@ -15,6 +15,239 @@ let startToken = 0;
 // manifest fetch and a decode. stop() drops it, so a later visit sees late-ingested assets.
 let volumesPromise = null;
 
+// ── Synthesized UI micro-sounds & cinematic DOM helpers (#19, #20) ───────────
+let _lastHoverSound = 0;
+let _lastTickSound = 0;
+let _uiListenersInstalled = false;
+
+function isReducedMotion() {
+  try {
+    if (document.documentElement?.dataset?.motion === 'reduce') return true;
+    return !!window.matchMedia?.('(prefers-reduced-motion: reduce)')?.matches;
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * Synthesize lightweight UI micro-sounds on the shared PoAudioBus ('ui' / 'sfx' stage)
+ * so global mute and volume settings apply automatically.
+ */
+function playUiSound(kind, step = 0) {
+  try {
+    const bus = window.PoAudioBus;
+    if (!bus || bus.isMuted?.()) return;
+    const ctx = bus.contextSync?.();
+    const dest = bus.busSync?.('ui') || bus.busSync?.('sfx');
+    if (!ctx || !dest) {
+      bus.context?.().catch?.(() => { });
+      return;
+    }
+    if (ctx.state === 'suspended') ctx.resume?.().catch?.(() => { });
+    const now = ctx.currentTime;
+    const wall = performance.now();
+
+    if (kind === 'hover') {
+      if (wall - _lastHoverSound < 42) return;
+      _lastHoverSound = wall;
+      const osc = ctx.createOscillator();
+      const gain = ctx.createGain();
+      osc.type = 'sine';
+      osc.frequency.setValueAtTime(1380, now);
+      osc.frequency.exponentialRampToValueAtTime(1860, now + 0.018);
+      gain.gain.setValueAtTime(0.038, now);
+      gain.gain.exponentialRampToValueAtTime(0.0008, now + 0.02);
+      osc.connect(gain).connect(dest);
+      osc.start(now);
+      osc.stop(now + 0.022);
+    } else if (kind === 'click') {
+      const osc = ctx.createOscillator();
+      const gain = ctx.createGain();
+      osc.type = 'triangle';
+      osc.frequency.setValueAtTime(760, now);
+      osc.frequency.exponentialRampToValueAtTime(340, now + 0.035);
+      gain.gain.setValueAtTime(0.085, now);
+      gain.gain.exponentialRampToValueAtTime(0.001, now + 0.038);
+      osc.connect(gain).connect(dest);
+      osc.start(now);
+      osc.stop(now + 0.04);
+    } else if (kind === 'launch') {
+      // Siege launch: low stone thud + warm brass fifth + metallic lock click.
+      const freqs = [110, 165, 660];
+      freqs.forEach((f, idx) => {
+        const osc = ctx.createOscillator();
+        const gain = ctx.createGain();
+        osc.type = idx === 2 ? 'triangle' : 'sawtooth';
+        osc.frequency.setValueAtTime(f, now);
+        osc.frequency.exponentialRampToValueAtTime(idx === 2 ? f * 1.35 : f * 0.72, now + 0.22);
+        const peak = idx === 0 ? 0.14 : idx === 1 ? 0.09 : 0.06;
+        gain.gain.setValueAtTime(peak, now);
+        gain.gain.exponentialRampToValueAtTime(0.001, now + 0.24);
+        osc.connect(gain).connect(dest);
+        osc.start(now);
+        osc.stop(now + 0.25);
+      });
+    } else if (kind === 'pause') {
+      const osc = ctx.createOscillator();
+      const filter = ctx.createBiquadFilter();
+      const gain = ctx.createGain();
+      osc.type = 'sawtooth';
+      osc.frequency.setValueAtTime(420, now);
+      osc.frequency.exponentialRampToValueAtTime(140, now + 0.16);
+      filter.type = 'lowpass';
+      filter.frequency.setValueAtTime(1100, now);
+      filter.frequency.exponentialRampToValueAtTime(220, now + 0.16);
+      gain.gain.setValueAtTime(0.09, now);
+      gain.gain.exponentialRampToValueAtTime(0.001, now + 0.17);
+      osc.connect(filter).connect(gain).connect(dest);
+      osc.start(now);
+      osc.stop(now + 0.18);
+    } else if (kind === 'resume') {
+      const osc = ctx.createOscillator();
+      const gain = ctx.createGain();
+      osc.type = 'triangle';
+      osc.frequency.setValueAtTime(260, now);
+      osc.frequency.exponentialRampToValueAtTime(920, now + 0.17);
+      gain.gain.setValueAtTime(0.095, now);
+      gain.gain.exponentialRampToValueAtTime(0.001, now + 0.18);
+      osc.connect(gain).connect(dest);
+      osc.start(now);
+      osc.stop(now + 0.19);
+    } else if (kind === 'tick') {
+      if (wall - _lastTickSound < 48) return;
+      _lastTickSound = wall;
+      const osc = ctx.createOscillator();
+      const gain = ctx.createGain();
+      osc.type = 'sine';
+      const pitch = Math.min(1900, 920 + step * 38);
+      osc.frequency.setValueAtTime(pitch, now);
+      osc.frequency.exponentialRampToValueAtTime(pitch * 1.12, now + 0.02);
+      gain.gain.setValueAtTime(0.05, now);
+      gain.gain.exponentialRampToValueAtTime(0.0008, now + 0.024);
+      osc.connect(gain).connect(dest);
+      osc.start(now);
+      osc.stop(now + 0.026);
+    } else if (kind === 'medal') {
+      [587.33, 880].forEach((f, idx) => {
+        const osc = ctx.createOscillator();
+        const gain = ctx.createGain();
+        osc.type = 'triangle';
+        const t0 = now + idx * 0.055;
+        osc.frequency.setValueAtTime(f, t0);
+        gain.gain.setValueAtTime(0.08, t0);
+        gain.gain.exponentialRampToValueAtTime(0.001, t0 + 0.22);
+        osc.connect(gain).connect(dest);
+        osc.start(t0);
+        osc.stop(t0 + 0.23);
+      });
+    }
+  } catch { /* audio never blocks UI */ }
+}
+
+/**
+ * Spawn a transient grid of tumbling voxel tiles over the arena host when the start card
+ * dissolves into active play (#20). Runs after engine.enter() so Pointer Lock is already
+ * requested synchronously inside the click gesture.
+ */
+function spawnVoxelDissolve(host) {
+  if (!host || isReducedMotion()) return;
+  try {
+    host.querySelector('.pvs-voxel-dissolve')?.remove();
+    const wrap = document.createElement('div');
+    wrap.className = 'pvs-voxel-dissolve';
+    wrap.setAttribute('aria-hidden', 'true');
+    const cols = 8;
+    const rows = 5;
+    const shades = [
+      'rgba(30, 41, 59, 0.92)',
+      'rgba(51, 65, 85, 0.88)',
+      'rgba(71, 85, 105, 0.86)',
+      'rgba(232, 161, 28, 0.78)',
+      'rgba(15, 23, 42, 0.94)',
+    ];
+    for (let r = 0; r < rows; r++) {
+      for (let c = 0; c < cols; c++) {
+        const cell = document.createElement('span');
+        cell.className = 'pvs-voxel-cell';
+        const nx = (c + 0.5) / cols - 0.5;
+        const ny = (r + 0.5) / rows - 0.5;
+        const dist = Math.hypot(nx, ny);
+        const dx = (nx * 180 + (Math.random() - 0.5) * 36).toFixed(1);
+        const dy = (ny * 150 + 48 + Math.random() * 40).toFixed(1);
+        const rz = ((nx * 95) + (Math.random() - 0.5) * 50).toFixed(1);
+        const delay = (dist * 140 + Math.random() * 45).toFixed(0);
+        const shade = shades[(r * cols + c) % shades.length];
+        cell.style.setProperty('--dx', `${dx}px`);
+        cell.style.setProperty('--dy', `${dy}px`);
+        cell.style.setProperty('--rz', `${rz}deg`);
+        cell.style.setProperty('--delay', `${delay}ms`);
+        cell.style.setProperty('--voxel-bg', shade);
+        wrap.appendChild(cell);
+      }
+    }
+    host.appendChild(wrap);
+    setTimeout(() => wrap.remove(), 680);
+  } catch { /* non-critical visual */ }
+}
+
+function triggerIrisResume(host) {
+  if (!host || isReducedMotion()) return;
+  host.classList.remove('pvs-iris-opening');
+  // Force style recalc so repeated resumes replay the circular clip-path wipe.
+  void host.offsetWidth;
+  host.classList.add('pvs-iris-opening');
+  setTimeout(() => host.classList.remove('pvs-iris-opening'), 540);
+}
+
+/**
+ * Delegated pointer tracking for button/card 3D tilt (--tx, --ty), radial ripple origin
+ * (--rx, --ry), and hover/press micro-sounds (#19).
+ */
+function installUiMicroInteractions() {
+  if (_uiListenersInstalled || typeof document === 'undefined') return;
+  _uiListenersInstalled = true;
+
+  const interactiveSel = '.pvs-btn, .pvs-hud-btn, .pvs-start .gps-intro-ok, .pvs-start .app-seg__btn, .pvs-tile';
+  const buttonSel = '.pvs-btn, .pvs-hud-btn, .pvs-start .gps-intro-ok, .pvs-start .app-seg__btn';
+
+  document.addEventListener('pointermove', (e) => {
+    const el = e.target?.closest?.(interactiveSel);
+    if (!el || isReducedMotion()) return;
+    const rect = el.getBoundingClientRect();
+    if (rect.width <= 0 || rect.height <= 0) return;
+    const px = (e.clientX - rect.left) / rect.width;
+    const py = (e.clientY - rect.top) / rect.height;
+    el.style.setProperty('--rx', `${(px * 100).toFixed(1)}%`);
+    el.style.setProperty('--ry', `${(py * 100).toFixed(1)}%`);
+    el.style.setProperty('--tx', `${((0.5 - py) * 7).toFixed(2)}deg`);
+    el.style.setProperty('--ty', `${((px - 0.5) * 7).toFixed(2)}deg`);
+  }, { passive: true });
+
+  document.addEventListener('pointerover', (e) => {
+    const btn = e.target?.closest?.(buttonSel);
+    if (!btn || btn.contains(e.relatedTarget)) return;
+    playUiSound('hover');
+  }, { passive: true });
+
+  document.addEventListener('pointerdown', (e) => {
+    const btn = e.target?.closest?.(buttonSel);
+    if (!btn) return;
+    const rect = btn.getBoundingClientRect();
+    if (rect.width > 0 && rect.height > 0) {
+      btn.style.setProperty('--rx', `${(((e.clientX - rect.left) / rect.width) * 100).toFixed(1)}%`);
+      btn.style.setProperty('--ry', `${(((e.clientY - rect.top) / rect.height) * 100).toFixed(1)}%`);
+    }
+    if (!btn.classList.contains('gps-intro-ok')) playUiSound('click');
+  }, { passive: true });
+
+  document.addEventListener('pointerout', (e) => {
+    const el = e.target?.closest?.(interactiveSel);
+    if (!el || el.contains(e.relatedTarget)) return;
+    el.style.setProperty('--tx', '0deg');
+    el.style.setProperty('--ty', '0deg');
+  }, { passive: true });
+}
+
 function volumes() {
   volumesPromise ??= loadAssets().catch((err) => {
     // Manifest unreachable (offline, cold server). The procedural fallback world in
@@ -75,6 +308,7 @@ window.PoVoxelStrike = {
    * @param names online: display names, indexed by player number − 1
    */
   async start(containerId, dotnetRef, demo, seed, survival, playerNumber, names) {
+    installUiMicroInteractions();
     const token = ++startToken;
     if (engine) { engine.dispose(); engine = null; }
 
@@ -89,8 +323,16 @@ window.PoVoxelStrike = {
     boot(host, dotnetRef, demo, loaded, online, { seed, survival: !!survival });
   },
 
-  /** The start card's button (a click, so the Pointer Lock request is legal). */
-  enter() { engine?.enter(); },
+  /**
+   * The start card's button (a click, so the Pointer Lock request is legal).
+   * engine.enter() MUST run synchronously first so the browser honours requestPointerLock;
+   * the voxel-dissolve burst and launch sound run immediately after.
+   */
+  enter() {
+    engine?.enter();
+    playUiSound('launch');
+    spawnVoxelDissolve(engine?.host || document.getElementById('povoxelstrike-container'));
+  },
 
   /** Online: a relayed lockstep frame (every peer's latest batch) for the engine to apply. */
   applyFrame(frame) { engine?.applyLockstepFrame(frame); },
@@ -103,7 +345,52 @@ window.PoVoxelStrike = {
   /** Online: a squadmate took the chalice. */
   squadWon() { engine?.squadWin(); },
 
-  resume() { engine?.resume(); },
+  resume() {
+    engine?.resume();
+    playUiSound('resume');
+    triggerIrisResume(engine?.host || document.getElementById('povoxelstrike-container'));
+  },
+
+  /** Play a synthesized UI micro-sound ('hover' | 'click' | 'launch' | 'pause' | 'resume' | 'tick' | 'medal'). */
+  uiSound(kind) { playUiSound(kind); },
+
+  /**
+   * Animate the end-of-run summary stat tiles from 0 up to their recorded targets with
+   * subtle synthesized audio ticks (#20). Respects prefers-reduced-motion.
+   */
+  animateSummary() {
+    if (isReducedMotion() || typeof document === 'undefined') return;
+    const nodes = Array.from(document.querySelectorAll('.pvs-summary .pvs-tile-value[data-count-target]'));
+    if (!nodes.length) return;
+    const duration = 780;
+    const t0 = performance.now();
+    let step = 0;
+
+    const fmtTime = (s) => `${Math.floor(s / 60)}:${String(Math.floor(s % 60)).padStart(2, '0')}`;
+    const tick = (now) => {
+      const p = Math.min(1, (now - t0) / duration);
+      const ease = 1 - Math.pow(1 - p, 3);
+      for (const el of nodes) {
+        const target = Number(el.dataset.countTarget || 0);
+        const mode = el.dataset.countMode || 'int';
+        const suffix = el.dataset.countSuffix || '';
+        const cur = Math.round(target * ease);
+        if (mode === 'time') el.textContent = fmtTime(cur);
+        else if (mode === 'ratio') el.textContent = `${cur}${suffix}`;
+        else el.textContent = cur.toLocaleString() + suffix;
+      }
+      if (p < 1) {
+        playUiSound('tick', step++);
+        requestAnimationFrame(tick);
+      } else {
+        for (const el of nodes) {
+          if (el.dataset.countFinal) el.textContent = el.dataset.countFinal;
+        }
+        playUiSound('medal');
+      }
+    };
+    requestAnimationFrame(tick);
+  },
 
   /** Settings as "sens|invertY|fov|gfx" — a string, so the page needs no DTO to read it. */
   getSettings() {

@@ -160,7 +160,7 @@ export class DebrisManager {
       // Landing thud + dust kick — the audio side throttles itself, so calling from
       // every contact is safe.
       if (rel > 4 && piece.age > 0.15) {
-        this.fx?.impact(piece.body.mass, piece.body.position, rel);
+        this.fx?.impact(piece.body.mass, piece.body.position, rel, piece.material);
         if (rel > 6.5) {
           this.dustAt(new THREE.Vector3(
             piece.body.position.x, piece.body.position.y, piece.body.position.z),

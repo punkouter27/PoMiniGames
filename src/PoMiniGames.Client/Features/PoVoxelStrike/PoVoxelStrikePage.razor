@@ -64,7 +64,7 @@
     }
 
     <div class="pvs-wrap">
-        <div id="povoxelstrike-container" class="pvs-canvas-host"
+        <div id="povoxelstrike-container" class="pvs-canvas-host @(_phase == Phase.Paused ? "pvs-is-paused" : null)"
              role="img" aria-label="Voxel arena — the game renders here">
 
             @* One strip while control is (or was) live. Heat and blast are not on it: the
@@ -85,9 +85,21 @@
                         <div class="pvs-hud-score-wrap">
                             @foreach (var pop in _popups)
                             {
-                                <span class="pvs-pop" @key="pop.Id">+@pop.Amount</span>
+                                <span class="pvs-pop" @key="pop.Id" style="--arc-x: @(pop.OffsetX)px">+@pop.Amount</span>
                             }
-                            <div class="pvs-hud-score">@_score.ToString("N0")</div>
+                            <div class="pvs-hud-score @(_scoreBump ? "pvs-hud-score-bump" : null)" aria-label="@($"Score {_score:N0}")">
+                                @foreach (var (ch, place) in ScoreDigits(_score))
+                                {
+                                    @if (char.IsDigit(ch))
+                                    {
+                                        <span class="pvs-odo-digit" @key="@($"d-{place}")" style="--d: @(ch - '0')" data-d="@ch">@ch</span>
+                                    }
+                                    else
+                                    {
+                                        <span class="pvs-odo-sep" @key="@($"s-{place}")">@ch</span>
+                                    }
+                                }
+                            </div>
                         </div>
                         <button class="pvs-hud-btn" type="button" title="Fullscreen"
                                 aria-label="Toggle fullscreen" @onclick="ToggleFullscreenAsync">⛶</button>
@@ -207,10 +219,21 @@
     // Floating "+N" score popups. Spawned on HUD ticks whose score delta beats the
     // passive time drip (kills/crushes, not the +10/s clock), pruned on later ticks
     // after their CSS animation has finished.
-    private readonly record struct ScorePop(long Id, int Amount, long BornAt);
+    private readonly record struct ScorePop(long Id, int Amount, long BornAt, int OffsetX);
     private readonly List<ScorePop> _popups = new();
     private long _popId;
     private int _lastScore;
+    private long _lastScoreBumpAt;
+    private bool _scoreBump => Environment.TickCount64 - _lastScoreBumpAt < 280;
+
+    private static IEnumerable<(char Ch, int Place)> ScoreDigits(int score)
+    {
+        var text = score.ToString("N0", CultureInfo.InvariantCulture);
+        for (var i = 0; i < text.Length; i++)
+        {
+            yield return (text[i], text.Length - 1 - i);
+        }
+    }
 
     private static RenderFragment TitleContent => GameCatalog.TitleFor(GameKeys.PoVoxelStrike);
 
@@ -319,16 +342,16 @@
             </div>
         }
         <div class="pvs-tiles">
-            <div class="pvs-tile"><span class="pvs-tile-icon">💀</span><span class="pvs-tile-value">@_score.ToString("N0")</span><span class="pvs-tile-label">score</span></div>
-            <div class="pvs-tile"><span class="pvs-tile-icon">⏱️</span><span class="pvs-tile-value">@FormatTime((int)_finalSurvival)</span><span class="pvs-tile-label">@(_won ? "to the chalice" : "survived")</span></div>
-            <div class="pvs-tile"><span class="pvs-tile-icon">🔇</span><span class="pvs-tile-value">@_gunsSilenced/@_gunsTotal</span><span class="pvs-tile-label">guns silenced</span></div>
-            <div class="pvs-tile"><span class="pvs-tile-icon">⛏️</span><span class="pvs-tile-value">@_finalVoxels.ToString("N0")</span><span class="pvs-tile-label">voxels</span></div>
+            <div class="pvs-tile"><span class="pvs-tile-icon">💀</span><span class="pvs-tile-value" data-count-target="@_score" data-count-mode="int" data-count-final="@_score.ToString("N0")">@_score.ToString("N0")</span><span class="pvs-tile-label">score</span></div>
+            <div class="pvs-tile"><span class="pvs-tile-icon">⏱️</span><span class="pvs-tile-value" data-count-target="@((int)_finalSurvival)" data-count-mode="time" data-count-final="@FormatTime((int)_finalSurvival)">@FormatTime((int)_finalSurvival)</span><span class="pvs-tile-label">@(_won ? "to the chalice" : "survived")</span></div>
+            <div class="pvs-tile"><span class="pvs-tile-icon">🔇</span><span class="pvs-tile-value" data-count-target="@_gunsSilenced" data-count-mode="ratio" data-count-suffix="@($"/{_gunsTotal}")" data-count-final="@($"{_gunsSilenced}/{_gunsTotal}")">@_gunsSilenced/@_gunsTotal</span><span class="pvs-tile-label">guns silenced</span></div>
+            <div class="pvs-tile"><span class="pvs-tile-icon">⛏️</span><span class="pvs-tile-value" data-count-target="@_finalVoxels" data-count-mode="int" data-count-final="@_finalVoxels.ToString("N0")">@_finalVoxels.ToString("N0")</span><span class="pvs-tile-label">voxels</span></div>
             @* The horde's tiles only when there was a horde: in a Siege all three read 0. *@
             @if (_kills > 0)
             {
-                <div class="pvs-tile"><span class="pvs-tile-icon">⚔️</span><span class="pvs-tile-value">@_kills</span><span class="pvs-tile-label">kills</span></div>
-                <div class="pvs-tile"><span class="pvs-tile-icon">🟣</span><span class="pvs-tile-value">@_finalBruteKills</span><span class="pvs-tile-label">brutes</span></div>
-                <div class="pvs-tile"><span class="pvs-tile-icon">🧱</span><span class="pvs-tile-value">@_finalCrushKills</span><span class="pvs-tile-label">crushed</span></div>
+                <div class="pvs-tile"><span class="pvs-tile-icon">⚔️</span><span class="pvs-tile-value" data-count-target="@_kills" data-count-mode="int" data-count-final="@_kills.ToString()">@_kills</span><span class="pvs-tile-label">kills</span></div>
+                <div class="pvs-tile"><span class="pvs-tile-icon">🟣</span><span class="pvs-tile-value" data-count-target="@_finalBruteKills" data-count-mode="int" data-count-final="@_finalBruteKills.ToString()">@_finalBruteKills</span><span class="pvs-tile-label">brutes</span></div>
+                <div class="pvs-tile"><span class="pvs-tile-icon">🧱</span><span class="pvs-tile-value" data-count-target="@_finalCrushKills" data-count-mode="int" data-count-final="@_finalCrushKills.ToString()">@_finalCrushKills</span><span class="pvs-tile-label">crushed</span></div>
             }
         </div>
         @if (Medals().ToList() is { Count: > 0 } medals)
@@ -822,7 +845,10 @@
         _lastScore = score;
         if (delta > 20)
         {
-            _popups.Add(new ScorePop(++_popId, delta, Environment.TickCount64));
+            var nowTick = Environment.TickCount64;
+            var offsetX = -28 - (int)((_popId % 4) * 12);
+            _popups.Add(new ScorePop(++_popId, delta, nowTick, offsetX));
+            _lastScoreBumpAt = nowTick;
         }
         _popups.RemoveAll(p => Environment.TickCount64 - p.BornAt > 900);
         _score = score;
@@ -845,6 +871,7 @@
         {
             _phase = Phase.Paused;
             _focusResume = true;
+            _ = CallEngineAsync("PoVoxelStrike.uiSound", "pause");
         }
         StateHasChanged();
     }
@@ -885,6 +912,7 @@
         _finalDamage = damageTaken;
         _down = false;
         StateHasChanged();
+        if (!_demo) _ = TriggerSummaryCountUpAsync(_won ? 4560 : 1260);
 
         // Close the run so the shared lobby reopens for the next squad instead of reading
         // "in progress" until everyone leaves this page. The hub honours the host's call only.
@@ -925,6 +953,19 @@
     }
 
     private static string FormatTime(int seconds) => $"{seconds / 60}:{seconds % 60:00}";
+
+    private async Task TriggerSummaryCountUpAsync(int delayMs)
+    {
+        try
+        {
+            await Task.Delay(delayMs);
+            if (_phase == Phase.Dead && !_demo)
+            {
+                await CallEngineAsync("PoVoxelStrike.animateSummary");
+            }
+        }
+        catch { /* component disposed */ }
+    }
 
     public async ValueTask DisposeAsync()
     {

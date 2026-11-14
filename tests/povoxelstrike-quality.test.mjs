@@ -248,3 +248,28 @@ test('low render profile skips auxiliary draw passes and preserves the main scen
     vfx.render();
     assert.deepEqual(calls, ['target', 'scene', 'screen', 'composer']);
 });
+
+test('new graphics flags tier-gate properly and demote under applyRenderTier', () => {
+    const high = resolveQuality('high');
+    assert.equal(high.temporalAo, true);
+    assert.equal(high.contactShadows, true);
+    assert.equal(high.farShadows, true);
+    assert.equal(high.heatHaze, true);
+    assert.equal(high.wetReflections, true);
+    assert.equal(high.motionBlur, true);
+    assert.equal(high.lensEffects, true);
+    assert.equal(high.softSmoke, true);
+    assert.equal(high.fireball, true);
+    assert.equal(high.sparks, 320);
+
+    applyRenderTier(high, 'low');
+    assert.equal(high.temporalAo, false);
+    assert.equal(high.contactShadows, false);
+    assert.equal(high.farShadows, false);
+    assert.equal(high.heatHaze, false);
+    assert.equal(high.wetReflections, false);
+    assert.equal(high.motionBlur, false);
+    assert.equal(high.lensEffects, false);
+    assert.equal(high.softSmoke, false);
+    assert.equal(high.sparks, 0);
+});

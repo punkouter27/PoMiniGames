@@ -10,7 +10,7 @@
 
 import * as THREE from 'three';
 import * as CANNON from 'cannon-es';
-import { createVoxelMaterial } from './materials.js';
+import { createVoxelMaterial, markCrack } from './materials.js';
 import { greedyBoxes } from './voxelboxes.js';
 import { greedyMesh } from './greedymesh.js';
 import { GRAVITY, materialFor, surfaceOf, MATERIAL_PRESETS } from './physics.js';
@@ -247,6 +247,7 @@ export class Structure {
     // (The stress fields themselves are initialised near the top of the constructor —
     // meshing reads them from the very first rebuild.)
     this.onClusters = null;
+    this.onCrack = null;     // (worldPos, voxelCount) — engine hook for the creak cue
     this.solveGeneration = 0;
     this.solveInFlight = false;
     this.solveAgain = false;
@@ -677,8 +678,21 @@ export class Structure {
         if (d > TINT_ONSET && d > (next.get(i) ?? 0)) next.set(i, d);
       }
     }
+    // Crack telegraph: voxels that just climbed into the top band are the ones about to
+    // go. Presentation only — bucketed per render chunk so a stressed tower throws a few
+    // fissure patches (and creaks), not one per voxel.
+    let crackBuckets = null;
     for (const [i, r] of next) {
       const band = this._bandOf(r);
+      if (band === 4 && (this._stressBands.get(i) ?? 0) < 4) {
+        crackBuckets ??= new Map();
+        const [nx, ny] = this.dims;
+        const x = i % nx, y = ((i / nx) | 0) % ny, z = (i / (nx * ny)) | 0;
+        const key = `${Math.floor(x / CHUNK)},${Math.floor(y / CHUNK)},${Math.floor(z / CHUNK)}`;
+        const b = crackBuckets.get(key) ?? { x: 0, y: 0, z: 0, n: 0 };
+        b.x += x; b.y += y; b.z += z; b.n++;
+        crackBuckets.set(key, b);
+      }
       if ((this._stressBands.get(i) ?? 0) !== band) {
         this._stressBands.set(i, band);
         this._dirtyTintChunk(i);
@@ -688,6 +702,20 @@ export class Structure {
       if (!next.has(i)) { this._stressBands.delete(i); this._dirtyTintChunk(i); }
     }
     this.stress = next;
+    if (crackBuckets) this._telegraphCracks(crackBuckets);
+  }
+
+  /** Mark each stressed patch with a spreading crack; the engine hears it via onCrack. */
+  _telegraphCracks(buckets) {
+    if (!this.group?.matrixWorld || typeof THREE === 'undefined') return;
+    const top = [...buckets.values()].sort((a, b) => b.n - a.n).slice(0, 4);
+    for (const b of top) {
+      const w = new THREE.Vector3(b.x / b.n + 0.5 - this.cx, b.y / b.n + 0.5, b.z / b.n + 0.5 - this.cz)
+        .applyMatrix4(this.group.matrixWorld);
+      const radius = Math.min(3.5, 0.6 + Math.cbrt(b.n) * this.scale * 1.6);
+      if (typeof markCrack === 'function') markCrack(w, radius);
+      this.onCrack?.(w, b.n);
+    }
   }
 
   /** Tint bands are coarse on purpose: re-mesh only on a visible step, not every ratio wiggle. */

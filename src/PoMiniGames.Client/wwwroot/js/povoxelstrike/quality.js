@@ -82,7 +82,14 @@ export function resolveQuality(tier) {
     smaa: at('medium'),             // edge shimmer is worst at high voxel density
     ssao: at('medium'),
     ssaoHalfRes: !at('ultra'),      // AO at half resolution below ultra
+    temporalAo: at('medium'),       // temporal reprojection smoothing of AO (#7)
     godRays: at('high'),
+    contactShadows: at('medium'),   // screen-space contact shadows (#5)
+    farShadows: at('high'),         // coarse outer shadow cascade for distant fortress (#5)
+    heatHaze: at('medium') && !reducedMotion, // screen-space refractive heat haze (#2)
+    wetReflections: at('high'),     // screen-space wet puddle reflections (#6)
+    motionBlur: at('medium') && !reducedMotion, // per-pixel velocity motion blur (#8)
+    lensEffects: at('medium'),      // chromatic aberration, anamorphic flare, film grain (#10)
     // Scene
     pbr: at('medium'),              // MeshStandardMaterial + env map vs MeshLambert
     envMap: at('high'),
@@ -94,6 +101,9 @@ export function resolveQuality(tier) {
     dynamicResolution: choice.auto || !at('ultra'),
     // Content
     particles: at('low') ? (at('high') ? 4000 : 1200) : 0,
+    softSmoke: at('medium'),        // depth-fade + sunlit forward scattering on smoke (#3)
+    fireball: at('low'),            // volumetric FBM fireball (#1)
+    sparks: at('medium') ? (at('high') ? 320 : 140) : 0, // velocity-stretched sparks & dust skirt (#9)
     decals: at('medium') ? (at('ultra') ? 120 : 48) : 0,
     // Simulated voxels in flight. These are real rigid bodies, so this is the single
     // most CPU-expensive setting in the file: every one of them is a broadphase entry
@@ -109,13 +119,21 @@ export function resolveQuality(tier) {
     // Audio (cost is CPU on the audio thread, not GPU, but it tiers the same way)
     spatialAudio: true,
     convolutionReverb: at('medium'),
+    audioOcclusion: at('medium'),
+    earlyReflections: at('high'),
+    rubbleTicks: at('medium'),
   };
 }
 
 /** Demotion keeps structural bodies/materials intact; chips are sampled visual effects. */
 export function applyRenderTier(quality, tier) {
   const next = resolveQuality(tier);
-  for (const key of ['ssao', 'ssaoHalfRes', 'godRays', 'smaa', 'shadowMapSize']) {
+  for (const key of [
+    'ssao', 'ssaoHalfRes', 'temporalAo', 'godRays', 'smaa', 'shadowMapSize',
+    'contactShadows', 'farShadows', 'heatHaze', 'wetReflections', 'motionBlur',
+    'lensEffects', 'softSmoke', 'fireball', 'sparks',
+    'audioOcclusion', 'earlyReflections', 'rubbleTicks',
+  ]) {
     quality[key] = next[key];
   }
   quality.renderTier = tier;

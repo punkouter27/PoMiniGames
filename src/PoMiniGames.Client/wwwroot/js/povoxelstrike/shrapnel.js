@@ -49,6 +49,7 @@ export class ShrapnelField {
     this.world = physicsWorld;
     this.collision = collision;
     this.physicsMaterial = physicsMaterial;
+    this.onHit = null;
     this.capacity = Math.max(0, capacity | 0);
     this.budget = this.capacity;
     this.enabled = this.capacity > 0;
@@ -86,7 +87,13 @@ export class ShrapnelField {
       });
       body.sleepSpeedLimit = 0.4;
       body.sleepTimeLimit = 0.6;
-      this.slots.push({ body, live: false, age: 0, size: 1 });
+      const slot = { body, live: false, age: 0, size: 1, material: this.physicsMaterial };
+      body.addEventListener('collide', (e) => {
+        if (!slot.live || !this.onHit) return;
+        const impactSpeed = Math.abs(e.contact.getImpactVelocityAlongNormal());
+        if (impactSpeed >= 1.5) this.onHit(slot.body.position, impactSpeed, slot.size, slot.material);
+      });
+      this.slots.push(slot);
       this.mesh.setMatrixAt(i, this._zero);
     }
     this.mesh.instanceMatrix.needsUpdate = true;
@@ -100,7 +107,7 @@ export class ShrapnelField {
    * @param color THREE.Color
    * @param velocity THREE.Vector3 initial velocity (clamped to MAX_SPEED)
    */
-  spawn(position, size, color, velocity, density = MATERIAL_PRESETS.stone.density) {
+  spawn(position, size, color, velocity, density = MATERIAL_PRESETS.stone.density, material = null) {
     if (!this.enabled || this.budget === 0) return;
     const i = this.cursor;
     this.cursor = (this.cursor + 1) % this.budget;
@@ -132,6 +139,7 @@ export class ShrapnelField {
     slot.live = true;
     slot.age = 0;
     slot.size = size;
+    slot.material = material ?? this.physicsMaterial;
     this.mesh.setColorAt(i, color);
     if (this.mesh.instanceColor) this.mesh.instanceColor.needsUpdate = true;
   }
@@ -168,7 +176,7 @@ export class ShrapnelField {
       vel.y += speed * 0.45 + Math.random() * 1.5;
       paletteColor(structure.palette, v.value, color);
       const m = materialFor(structure.volume, v.value);
-      this.spawn(world, structure.scale, color, vel, m.density);
+      this.spawn(world, structure.scale, color, vel, m.density, m);
     }
   }
 
@@ -243,6 +251,30 @@ export class ShrapnelField {
       } else {
         slot.body.velocity.set(v.x * 0.2, v.y * 0.2, v.z * 0.2);
       }
+    }
+  }
+
+  /**
+   * Blast wave through settled rubble: wake every live chip within `radius` and push it
+   * outward (1/r² falloff, plus a little lift so a pile visibly hops and scatters). The
+   * input is only the blast point and live body positions, so lockstep peers agree.
+   */
+  applyBlast(center, radius, strength) {
+    if (!this.enabled) return;
+    const r2 = radius * radius;
+    for (const slot of this.slots) {
+      if (!slot.live) continue;
+      const p = slot.body.position;
+      const dx = p.x - center.x, dy = p.y - center.y, dz = p.z - center.z;
+      const d2 = dx * dx + dy * dy + dz * dz;
+      if (d2 > r2) continue;
+      const d = Math.sqrt(d2) || 0.001;
+      const falloff = 1 / (1 + (d / radius) * 3) ** 2;
+      const dv = Math.min(MAX_SPEED, strength * falloff);
+      slot.body.wakeUp();
+      const v = slot.body.velocity;
+      v.set(v.x + (dx / d) * dv, v.y + (dy / d) * dv + dv * 0.5, v.z + (dz / d) * dv);
+      slot.body.angularVelocity.set(dz * dv * 0.6, dv * 0.3, -dx * dv * 0.6);
     }
   }
 

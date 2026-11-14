@@ -28,6 +28,9 @@ import { UnrealBloomPass } from 'three/addons/postprocessing/UnrealBloomPass.js'
 import { OutputPass } from 'three/addons/postprocessing/OutputPass.js';
 import { SMAAPass } from 'three/addons/postprocessing/SMAAPass.js';
 import { Pass, FullScreenQuad } from 'three/addons/postprocessing/Pass.js';
+import { getHotCarves, getWetness } from './materials.js';
+import { FireballPool } from './fireball.js';
+import { SparkSystem } from './sparks.js';
 
 const SHOCK_LIFE_S = 0.45;
 
@@ -76,9 +79,14 @@ const SKY_KEYS = [
 const SSAO_SHADER = {
   uniforms: {
     tDepth: { value: null },
+    tHistory: { value: null },
     resolution: { value: new THREE.Vector2() },
     sceneProjection: { value: new THREE.Matrix4() },
     sceneProjectionInverse: { value: new THREE.Matrix4() },
+    cameraMatrixWorld: { value: new THREE.Matrix4() },
+    uPrevViewProj: { value: new THREE.Matrix4() },
+    uTemporalBlend: { value: 0 },
+    uFrame: { value: 0 },
     radius: { value: 1.4 },
     intensity: { value: 1.0 },
     bias: { value: 0.035 },
@@ -88,10 +96,13 @@ const SSAO_SHADER = {
     void main() { vUv = uv; gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0); }`,
   fragmentShader: /* glsl */`
     uniform sampler2D tDepth;
+    uniform sampler2D tHistory;
     uniform vec2 resolution;
-    uniform float radius, intensity, bias;
+    uniform float radius, intensity, bias, uTemporalBlend, uFrame;
     uniform mat4 sceneProjection;
     uniform mat4 sceneProjectionInverse;
+    uniform mat4 cameraMatrixWorld;
+    uniform mat4 uPrevViewProj;
     varying vec2 vUv;
 
     float readDepth(vec2 uv) { return texture2D(tDepth, uv).x; }
@@ -118,8 +129,8 @@ const SSAO_SHADER = {
       vec3 dy = abs(pU.z - p.z) < abs(p.z - pD.z) ? (pU - p) : (p - pD);
       vec3 n = normalize(cross(dx, dy));
 
-      // Interleaved gradient noise: one rotation per pixel, no random texture to bind.
-      float rot = fract(52.9829189 * fract(dot(gl_FragCoord.xy, vec2(0.06711056, 0.00583715))));
+      // Interleaved gradient noise + temporal Golden Ratio frame offset (#7).
+      float rot = fract(52.9829189 * fract(dot(gl_FragCoord.xy, vec2(0.06711056, 0.00583715))) + uFrame * 0.6180339);
       float ca = cos(rot * 6.2831853), sa = sin(rot * 6.2831853);
 
       const int SAMPLES = 12;
@@ -146,8 +157,19 @@ const SSAO_SHADER = {
           occlusion += clamp(radius / max(0.0001, abs(p.z - sp.z)), 0.0, 1.0);
         }
       }
-      float ao = 1.0 - (occlusion / float(SAMPLES)) * intensity;
-      gl_FragColor = vec4(vec3(clamp(ao, 0.0, 1.0)), 1.0);
+      float ao = clamp(1.0 - (occlusion / float(SAMPLES)) * intensity, 0.0, 1.0);
+      if (uTemporalBlend > 0.001) {
+        vec4 worldPos = cameraMatrixWorld * vec4(p, 1.0);
+        vec4 prevClip = uPrevViewProj * worldPos;
+        if (prevClip.w > 0.0001) {
+          vec2 prevUv = (prevClip.xy / prevClip.w) * 0.5 + 0.5;
+          if (prevUv.x >= 0.01 && prevUv.x <= 0.99 && prevUv.y >= 0.01 && prevUv.y <= 0.99) {
+            float prevAo = texture2D(tHistory, prevUv).r;
+            ao = mix(ao, clamp(prevAo, max(0.0, ao - 0.25), min(1.0, ao + 0.25)), uTemporalBlend);
+          }
+        }
+      }
+      gl_FragColor = vec4(vec3(ao), 1.0);
     }`,
 };
 
@@ -203,13 +225,36 @@ class CombinePass extends Pass {
   constructor() {
     super();
     this.needsSwap = true;
+    const hot = getHotCarves();
     this.material = new THREE.ShaderMaterial({
       uniforms: {
         tScene: { value: null },
+        tDepth: { value: null },
         tAo: { value: null },
         tShaft: { value: null },
+        resolution: { value: new THREE.Vector2(800, 480) },
         aoEnabled: { value: 0 },
         shaftEnabled: { value: 0 },
+        contactShadowsEnabled: { value: 0 },
+        heatHazeEnabled: { value: 0 },
+        wetReflectionsEnabled: { value: 0 },
+        motionBlurEnabled: { value: 0 },
+        lensEffectsEnabled: { value: 0 },
+        sceneProjection: { value: new THREE.Matrix4() },
+        sceneProjectionInverse: { value: new THREE.Matrix4() },
+        cameraMatrixWorld: { value: new THREE.Matrix4() },
+        cameraMatrixWorldInverse: { value: new THREE.Matrix4() },
+        uPrevViewProj: { value: new THREE.Matrix4() },
+        sunDirView: { value: new THREE.Vector3(0.4, 0.8, 0.25) },
+        sunScreen: { value: new THREE.Vector2(0.5, 0.5) },
+        sunColor: { value: new THREE.Color(0xfff2df) },
+        sunVisible: { value: 0 },
+        wetness: { value: 0 },
+        trauma: { value: 0 },
+        lowHp: { value: 0 },
+        sprintBlur: { value: 0 },
+        uHot: { value: hot.spheres },
+        uHotBirth: { value: hot.births },
         // Four screen-feel terms folded into this pass rather than given
         // passes of their own — each is a few instructions on a fetch that already happens.
         uTime: { value: 0 },
@@ -222,8 +267,17 @@ class CombinePass extends Pass {
         varying vec2 vUv;
         void main() { vUv = uv; gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0); }`,
       fragmentShader: /* glsl */`
-        uniform sampler2D tScene, tAo, tShaft;
-        uniform float aoEnabled, shaftEnabled;
+        uniform sampler2D tScene, tDepth, tAo, tShaft;
+        uniform vec2 resolution;
+        uniform float aoEnabled, shaftEnabled, contactShadowsEnabled;
+        uniform float heatHazeEnabled, wetReflectionsEnabled, motionBlurEnabled, lensEffectsEnabled;
+        uniform mat4 sceneProjection, sceneProjectionInverse;
+        uniform mat4 cameraMatrixWorld, cameraMatrixWorldInverse, uPrevViewProj;
+        uniform vec3 sunDirView, sunColor;
+        uniform vec2 sunScreen;
+        uniform float sunVisible, wetness, trauma, lowHp, sprintBlur;
+        uniform vec4 uHot[8];
+        uniform float uHotBirth[8];
         uniform float uTime, heat, dust, desat, flash;
         varying vec2 vUv;
 
@@ -239,6 +293,12 @@ class CombinePass extends Pass {
                      mix(hash21(i + vec2(0.0, 1.0)), hash21(i + vec2(1.0, 1.0)), f.x), f.y);
         }
 
+        vec3 reconstructViewPos(vec2 uv, float d) {
+          vec4 clip = vec4(uv * 2.0 - 1.0, d * 2.0 - 1.0, 1.0);
+          vec4 view = sceneProjectionInverse * clip;
+          return view.xyz / max(0.0001, view.w);
+        }
+
         void main() {
           vec2 uv = vUv;
           if (heat > 0.001) {
@@ -246,14 +306,149 @@ class CombinePass extends Pass {
             float m = heat * smoothstep(0.7, 0.0, distance(uv, vec2(0.5, 0.34)));
             uv += vec2(sin(uv.y * 95.0 + uTime * 9.0), cos(uv.x * 70.0 + uTime * 7.0)) * 0.0024 * m;
           }
-          vec4 c = texture2D(tScene, uv);
+
+          // #2: Screen-space heat haze around recent blasts & hot-carves
+          if (heatHazeEnabled > 0.5) {
+            vec2 hazeOffset = vec2(0.0);
+            for (int i = 0; i < 8; i++) {
+              float age = uTime - uHotBirth[i];
+              if (age < 0.0 || age > 2.2) continue;
+              vec4 viewCenter = cameraMatrixWorldInverse * vec4(uHot[i].xyz, 1.0);
+              if (viewCenter.z >= -0.2) continue; // behind camera
+              vec4 clipCenter = sceneProjection * viewCenter;
+              vec2 screenPos = (clipCenter.xy / clipCenter.w) * 0.5 + 0.5;
+              // Rising plume column above hot carve
+              vec2 dUv = uv - screenPos;
+              dUv.x *= resolution.x / max(1.0, resolution.y);
+              float projRadius = clamp(uHot[i].w / max(1.0, -viewCenter.z), 0.02, 0.35);
+              // Stretch vertically so shimmer rises above the crater
+              vec2 plumeDelta = vec2(dUv.x, max(0.0, dUv.y - projRadius * 0.6) * 0.55 + min(0.0, dUv.y));
+              float dist = length(plumeDelta) / projRadius;
+              if (dist < 1.35) {
+                float cool = 1.0 - age / 2.2;
+                float falloff = (1.0 - smoothstep(0.2, 1.35, dist)) * cool * cool;
+                float wave1 = sin(uv.y * 75.0 - uTime * 16.0 + float(i) * 2.1);
+                float wave2 = cos(uv.x * 65.0 - uTime * 13.0 + float(i) * 3.7);
+                hazeOffset += vec2(wave1, wave2) * 0.0038 * falloff;
+              }
+            }
+            uv = clamp(uv + hazeOffset, 0.001, 0.999);
+          }
+
+          float rawDepth = texture2D(tDepth, uv).x;
+          vec3 viewP = rawDepth < 1.0 ? reconstructViewPos(uv, rawDepth) : vec3(0.0, 0.0, -500.0);
+          vec4 worldP = cameraMatrixWorld * vec4(viewP, 1.0);
+
+          // #10: Radial chromatic aberration (scaled by trauma & lensEffectsEnabled)
+          vec4 c;
+          if (lensEffectsEnabled > 0.5 && trauma > 0.01) {
+            vec2 radial = uv - 0.5;
+            float caStrength = trauma * (0.004 + 0.008 * dot(radial, radial));
+            float rCh = texture2D(tScene, clamp(uv + radial * caStrength, 0.001, 0.999)).r;
+            vec2 ga = texture2D(tScene, uv).ga;
+            float bCh = texture2D(tScene, clamp(uv - radial * caStrength, 0.001, 0.999)).b;
+            c = vec4(rCh, ga.x, bCh, ga.y);
+          } else {
+            c = texture2D(tScene, uv);
+          }
+
+          // #8: Camera & velocity motion blur at screen edges when sprinting, shaking, or near blasts
+          if (motionBlurEnabled > 0.5 && rawDepth < 1.0) {
+            vec4 prevClip = uPrevViewProj * worldP;
+            if (prevClip.w > 0.0001) {
+              vec2 prevUv = (prevClip.xy / prevClip.w) * 0.5 + 0.5;
+              vec2 vel = (uv - prevUv);
+              float edgeWeight = smoothstep(0.15, 0.72, distance(uv, vec2(0.5)));
+              float activeWeight = clamp(edgeWeight * (0.35 + sprintBlur * 0.85 + trauma * 1.2), 0.0, 1.0);
+              vec2 blurVec = clamp(vel * activeWeight * 0.55, vec2(-0.025), vec2(0.025));
+              if (dot(blurVec, blurVec) > 0.000002) {
+                vec3 mAcc = c.rgb;
+                mAcc += texture2D(tScene, clamp(uv - blurVec * 0.33, 0.001, 0.999)).rgb;
+                mAcc += texture2D(tScene, clamp(uv - blurVec * 0.66, 0.001, 0.999)).rgb;
+                mAcc += texture2D(tScene, clamp(uv - blurVec, 0.001, 0.999)).rgb;
+                c.rgb = mAcc * 0.25;
+              }
+            }
+          }
+
           if (aoEnabled > 0.5) {
             float ao = texture2D(tAo, uv).r;
             // AO darkens ambient, not direct light, so keep a floor — a hard multiply
             // turns every voxel crease into a black seam at this density.
             c.rgb *= mix(0.55, 1.0, ao);
           }
+
+          // #5: Screen-space contact shadows (short raymarch along sun direction in view space)
+          if (contactShadowsEnabled > 0.5 && rawDepth < 0.9995 && -viewP.z < 95.0) {
+            vec3 rayDir = normalize(sunDirView) * 0.14;
+            vec3 marchPos = viewP;
+            float contactOcc = 0.0;
+            for (int s = 0; s < 6; s++) {
+              marchPos += rayDir;
+              vec4 proj = sceneProjection * vec4(marchPos, 1.0);
+              vec2 sUv = (proj.xy / proj.w) * 0.5 + 0.5;
+              if (sUv.x < 0.0 || sUv.x > 1.0 || sUv.y < 0.0 || sUv.y > 1.0) break;
+              float sd = texture2D(tDepth, sUv).x;
+              if (sd >= 1.0) continue;
+              vec3 sp = reconstructViewPos(sUv, sd);
+              float depthDiff = sp.z - marchPos.z;
+              if (depthDiff > 0.025 && depthDiff < 0.65) {
+                contactOcc = 1.0;
+                break;
+              }
+            }
+            float distFade = 1.0 - smoothstep(45.0, 95.0, -viewP.z);
+            c.rgb *= 1.0 - contactOcc * 0.24 * distFade;
+          }
+
+          // #6: Wet puddle screen-space reflections (high/ultra when wetness > 0)
+          if (wetReflectionsEnabled > 0.5 && wetness > 0.01 && rawDepth < 0.999 && -viewP.z < 85.0) {
+            vec2 texel = 1.0 / max(vec2(1.0), resolution);
+            vec3 pR = reconstructViewPos(uv + vec2(texel.x, 0.0), texture2D(tDepth, uv + vec2(texel.x, 0.0)).x);
+            vec3 pU = reconstructViewPos(uv + vec2(0.0, texel.y), texture2D(tDepth, uv + vec2(0.0, texel.y)).x);
+            vec3 viewN = normalize(cross(pR - viewP, pU - viewP));
+            vec3 worldN = normalize(mat3(cameraMatrixWorld) * viewN);
+            // Upward-facing horizontal voxel tops + procedural puddle noise mask
+            if (worldN.y > 0.85) {
+              float puddleNoise = valueNoise(worldP.xz * 0.22) * 0.65 + valueNoise(worldP.xz * 0.68) * 0.35;
+              float puddleMask = smoothstep(0.42, 0.68, puddleNoise) * wetness * smoothstep(0.85, 0.96, worldN.y);
+              if (puddleMask > 0.01) {
+                vec3 reflView = reflect(normalize(viewP), viewN);
+                vec3 rPos = viewP;
+                vec2 hitUv = vec2(uv.x, clamp(1.0 - uv.y * 0.65, 0.05, 0.95));
+                for (int rStep = 1; rStep <= 8; rStep++) {
+                  rPos += reflView * (float(rStep) * 0.75);
+                  vec4 rClip = sceneProjection * vec4(rPos, 1.0);
+                  vec2 rUv = (rClip.xy / rClip.w) * 0.5 + 0.5;
+                  if (rUv.x < 0.01 || rUv.x > 0.99 || rUv.y < 0.01 || rUv.y > 0.99) break;
+                  float rd = texture2D(tDepth, rUv).x;
+                  vec3 rp = reconstructViewPos(rUv, rd);
+                  if (rp.z >= rPos.z - 0.15) {
+                    hitUv = rUv;
+                    break;
+                  }
+                }
+                vec3 reflCol = texture2D(tScene, hitUv).rgb * (1.0 + flash * 1.4);
+                float fresnel = 0.22 + 0.58 * pow(1.0 - max(0.0, dot(-normalize(viewP), viewN)), 3.0);
+                c.rgb = mix(c.rgb * 0.82, reflCol, clamp(puddleMask * fresnel, 0.0, 0.65));
+              }
+            }
+          }
+
           if (shaftEnabled > 0.5) c.rgb += texture2D(tShaft, vUv).rgb;
+
+          // #10: Anamorphic horizontal sun flare when sun is on-screen and unoccluded in tDepth
+          if (lensEffectsEnabled > 0.5 && sunVisible > 0.01) {
+            float sunCenterDepth = texture2D(tDepth, clamp(sunScreen, 0.001, 0.999)).x;
+            if (sunCenterDepth >= 0.999) {
+              float dy = abs(vUv.y - sunScreen.y);
+              float dx = abs(vUv.x - sunScreen.x);
+              float streak = exp(-dy * 95.0) * exp(-dx * 3.8);
+              float core = exp(-(dx * dx + dy * dy) * 240.0);
+              c.rgb += mix(sunColor, vec3(0.65, 0.82, 1.0), 0.38) * (streak * 0.35 + core * 0.25) * sunVisible;
+            }
+          }
+
           if (dust > 0.001) {
             // Blotches of grit, thicker toward the edge of the glass. Screen-fixed on
             // purpose: it is on the lens, so it must not move with the world.
@@ -266,6 +461,13 @@ class CombinePass extends Pass {
             float luma = dot(c.rgb, vec3(0.2126, 0.7152, 0.0722));
             c.rgb = mix(c.rgb, vec3(luma) * vec3(1.0, 0.93, 0.92), desat);
           }
+
+          // #10: Subtle film grain at low health
+          if (lensEffectsEnabled > 0.5 && lowHp > 0.001) {
+            float grain = hash21(vUv * resolution + vec2(uTime * 61.7, uTime * 37.3)) - 0.5;
+            c.rgb += grain * 0.09 * lowHp;
+          }
+
           c.rgb *= 1.0 + flash * 1.5;
           gl_FragColor = c;
         }`,
@@ -303,9 +505,19 @@ export class Vfx {
     this._desat = 0;
     this._desatTarget = 0;
     this._flash = 0;
+    this._lowHp = 0;
+    this._sprintBlur = 0;
+    this._aoFrame = 0;
+    this._hasPrevViewProj = false;
+    this._prevViewProj = new THREE.Matrix4();
+    this._prevCamPos = new THREE.Vector3();
+    this._prevCamQuat = new THREE.Quaternion();
     this.overcast = 0;   // 0..1 from weather.js: greys the sky and takes the edge off the sun
     this.sun = null; // set by attachSun()
+    this.farSun = null;  // coarse outer shadow cascade directional light (#5)
     this._sunDir = new THREE.Vector3(0.4, 0.8, 0.25).normalize();
+    this._sunDirView = new THREE.Vector3(0.4, 0.8, 0.25);
+    this.onSmoke = null; // optional (point, radius) callback wired by Engine for fireball smoke
 
     const size = renderer.getDrawingBufferSize(new THREE.Vector2());
     const w = Math.max(1, Math.floor(size.x));
@@ -331,6 +543,7 @@ export class Vfx {
     });
     this.shaftQuad = new FullScreenQuad(this.shaftMaterial);
     this.ssaoMaterial.uniforms.tDepth.value = this.sceneTarget.depthTexture;
+    this.ssaoMaterial.uniforms.tHistory.value = this.aoHistoryTarget.texture;
     this.shaftMaterial.uniforms.tDepth.value = this.sceneTarget.depthTexture;
     this.shaftMaterial.uniforms.tColor.value = this.sceneTarget.texture;
 
@@ -345,11 +558,14 @@ export class Vfx {
       // All targets use physical pixels. Do not multiply them by DPR again.
       this.composer.setPixelRatio(1);
       this.combinePass = new CombinePass();
-      this.combinePass.material.uniforms.tScene.value = this.sceneTarget.texture;
-      this.combinePass.material.uniforms.tAo.value = this.aoTarget.texture;
-      this.combinePass.material.uniforms.tShaft.value = this.shaftTarget.texture;
-      this.combinePass.material.uniforms.aoEnabled.value = this.q.ssao ? 1 : 0;
-      this.combinePass.material.uniforms.shaftEnabled.value = this.q.godRays ? 1 : 0;
+      const cu = this.combinePass.material.uniforms;
+      cu.tScene.value = this.sceneTarget.texture;
+      cu.tDepth.value = this.sceneTarget.depthTexture;
+      cu.tAo.value = this.aoTarget.texture;
+      cu.tShaft.value = this.shaftTarget.texture;
+      cu.resolution.value.set(w, h);
+      cu.aoEnabled.value = this.q.ssao ? 1 : 0;
+      cu.shaftEnabled.value = this.q.godRays ? 1 : 0;
       this.composer.addPass(this.combinePass);
 
       // Bloom at HALF resolution. Its mip chain is the most expensive thing in the
@@ -388,8 +604,12 @@ export class Vfx {
       blending: THREE.AdditiveBlending, depthWrite: false, side: THREE.DoubleSide,
     });
 
+    this.fireballs = new FireballPool(scene, (pt, rad) => this.onSmoke?.(pt, rad));
+    this.sparkSystem = new SparkSystem(scene, this.q.sparks || 0);
+
     this._sunWorld = new THREE.Vector3();
     this._sunProjected = new THREE.Vector3();
+    this._currViewProj = new THREE.Matrix4();
   }
 
   _buildTargets(width, height) {
@@ -399,21 +619,23 @@ export class Vfx {
       type: THREE.HalfFloatType, depthTexture: depth, depthBuffer: true, stencilBuffer: false,
     });
     const aoDiv = this.q.ssaoHalfRes ? 2 : 1;
-    this.aoTarget = new THREE.WebGLRenderTarget(
-      Math.max(1, Math.floor(width / aoDiv)), Math.max(1, Math.floor(height / aoDiv)),
-      { depthBuffer: false, stencilBuffer: false });
+    const aoW = Math.max(1, Math.floor(width / aoDiv));
+    const aoH = Math.max(1, Math.floor(height / aoDiv));
+    this.aoTarget = new THREE.WebGLRenderTarget(aoW, aoH, { depthBuffer: false, stencilBuffer: false });
+    this.aoHistoryTarget = new THREE.WebGLRenderTarget(aoW, aoH, { depthBuffer: false, stencilBuffer: false });
     this.shaftTarget = new THREE.WebGLRenderTarget(
       Math.max(1, Math.floor(width / 4)), Math.max(1, Math.floor(height / 4)),
       { type: THREE.HalfFloatType, depthBuffer: false, stencilBuffer: false });
   }
 
   /** Hand the sun + hemisphere lights over so time-of-day can drive them. */
-  attachSun(sun, hemi, ambient = null) {
+  attachSun(sun, hemi, ambient = null, farSun = null) {
     this.sun = sun;
     this.hemi = hemi;
     // Ambient is the interior fill. Hemisphere light alone leans strongly on the up
     // vector, so a voxel wall's vertical faces inside a roofed room got almost nothing.
     this.ambient = ambient;
+    this.farSun = farSun;
     this._applyDayPhase();
   }
 
@@ -515,6 +737,14 @@ export class Vfx {
       this.sun.target.position.set(0, 0, 0);
       this.sun.target.updateMatrixWorld();
     }
+    if (this.farSun) {
+      this.farSun.position.copy(this._sunDir).multiplyScalar(220);
+      this.farSun.color.copy(k.sun);
+      this.farSun.intensity = this.q.farShadows && this.q.shadows ? k.sunI * 0.28 : 0;
+      this.farSun.castShadow = !!(this.q.farShadows && this.q.shadows);
+      this.farSun.target.position.set(0, 0, 0);
+      this.farSun.target.updateMatrixWorld();
+    }
     if (this.hemi) {
       this.hemi.intensity = k.hemi;
       this.hemi.color.copy(k.horizon).lerp(new THREE.Color(0xffffff), 0.55);
@@ -534,6 +764,7 @@ export class Vfx {
     }
     if (this.scene.fog) this.scene.fog.color.copy(k.horizon);
     this.shaftMaterial?.uniforms.sunColor.value.copy(k.sun);
+    this.combinePass?.material.uniforms.sunColor?.value.copy(k.sun);
     this.skyKey = k;
   }
 
@@ -543,10 +774,15 @@ export class Vfx {
     const h = Math.max(1, Math.floor(height * ratio));
     this.sceneTarget.setSize(w, h);
     const aoDiv = this.q.ssaoHalfRes ? 2 : 1;
-    this.aoTarget.setSize(Math.max(1, Math.floor(w / aoDiv)), Math.max(1, Math.floor(h / aoDiv)));
+    const aoW = Math.max(1, Math.floor(w / aoDiv));
+    const aoH = Math.max(1, Math.floor(h / aoDiv));
+    this.aoTarget.setSize(aoW, aoH);
+    this.aoHistoryTarget?.setSize(aoW, aoH);
     this.shaftTarget.setSize(Math.max(1, Math.floor(w / 4)), Math.max(1, Math.floor(h / 4)));
     this.composer?.setSize(w, h);
     this.smaaPass?.setSize(w, h);
+    this.combinePass?.material.uniforms.resolution?.value.set(w, h);
+    this._hasPrevViewProj = false;
   }
 
   syncQuality() {
@@ -554,6 +790,15 @@ export class Vfx {
       const u = this.combinePass.material.uniforms;
       u.aoEnabled.value = this.q.ssao ? 1 : 0;
       u.shaftEnabled.value = this.q.godRays ? 1 : 0;
+      if (u.contactShadowsEnabled) u.contactShadowsEnabled.value = this.q.contactShadows ? 1 : 0;
+      if (u.heatHazeEnabled) u.heatHazeEnabled.value = this.q.heatHaze && !this.reducedMotion ? 1 : 0;
+      if (u.wetReflectionsEnabled) u.wetReflectionsEnabled.value = this.q.wetReflections ? 1 : 0;
+      if (u.motionBlurEnabled) u.motionBlurEnabled.value = this.q.motionBlur && !this.reducedMotion ? 1 : 0;
+      if (u.lensEffectsEnabled) u.lensEffectsEnabled.value = this.q.lensEffects ? 1 : 0;
+    }
+    if (this.farSun) {
+      this.farSun.castShadow = !!(this.q.farShadows && this.q.shadows);
+      this.farSun.visible = !!(this.q.farShadows && this.q.shadows);
     }
     if (this.smaaPass) this.smaaPass.enabled = this.q.smaa;
     if (this.bloomPass) this.bloomPass.enabled = this.q.bloom;
@@ -583,6 +828,36 @@ export class Vfx {
     mesh.position.copy(position);
     this.scene.add(mesh);
     this.shocks.push({ mesh, life: SHOCK_LIFE_S, total: SHOCK_LIFE_S, grow: 14 });
+    this.fireball(position, 4.5);
+  }
+
+  /** Spawn a volumetric FBM fireball + pooled blast light (#1). */
+  fireball(position, radius = 4.5) {
+    this.fireballs?.spawn(position, radius, !!this.q.fireball);
+  }
+
+  /** Emit velocity-stretched sparks (#9). */
+  sparks(position, normal = null, count = 12) {
+    if (!this.q.sparks) return;
+    this.sparkSystem?.sparks(position, normal, count);
+  }
+
+  /** Spawn a ground-hugging dust ring skirt (#9). */
+  dustSkirt(position, radius = 2.5) {
+    if (!this.q.sparks) return;
+    this.sparkSystem?.dustSkirt(position, radius);
+  }
+
+  /** Set low-HP film grain intensity ratio 0..1 (#10). */
+  setLowHp(ratio) {
+    this._lowHp = THREE.MathUtils.clamp(ratio || 0, 0, 1);
+  }
+
+  /** Feed player speed / sprint state for edge motion blur (#8). */
+  setPlayerSpeed(speed, sprinting = false) {
+    this._sprintBlur = this.reducedMotion
+      ? 0
+      : THREE.MathUtils.clamp((speed - 8) / 10 + (sprinting ? 0.35 : 0), 0, 1);
   }
 
   /**
@@ -658,6 +933,9 @@ export class Vfx {
       if (!s.flat) s.mesh.quaternion.copy(this.camera.quaternion); // billboard toward the camera
     }
 
+    this.fireballs?.update(dt);
+    this.sparkSystem?.update(dt);
+
     this._dust = Math.max(0, this._dust - dt * 0.28);
     this._flash *= Math.exp(-dt * 9);
     this._desat += (this._desatTarget - this._desat) * Math.min(1, dt * 2.5);
@@ -668,6 +946,10 @@ export class Vfx {
       u.dust.value = this._dust;
       u.desat.value = this._desat;
       u.flash.value = this._flash < 0.004 ? 0 : this._flash;
+      if (u.wetness) u.wetness.value = getWetness();
+      if (u.trauma) u.trauma.value = this.reducedMotion ? 0 : this.trauma;
+      if (u.lowHp) u.lowHp.value = this._lowHp;
+      if (u.sprintBlur) u.sprintBlur.value = this._sprintBlur;
     }
   }
 
@@ -692,27 +974,52 @@ export class Vfx {
     u.resolution.value.set(this.aoTarget.width, this.aoTarget.height);
     u.sceneProjection.value.copy(this.camera.projectionMatrix);
     u.sceneProjectionInverse.value.copy(this.camera.projectionMatrixInverse);
+    u.cameraMatrixWorld.value.copy(this.camera.matrixWorld);
+    u.uPrevViewProj.value.copy(this._prevViewProj);
+    this._aoFrame = (this._aoFrame + 1) % 64;
+    u.uFrame.value = this._aoFrame;
+    u.uTemporalBlend.value = (this.q.temporalAo && this._hasPrevViewProj) ? 0.78 : 0.0;
+    u.tHistory.value = this.aoHistoryTarget.texture;
+
     this.renderer.setRenderTarget(this.aoTarget);
     this.renderer.clear();
     this.ssaoQuad.render(this.renderer);
+
+    // Swap aoTarget and aoHistoryTarget so combinePass reads the newly rendered AO
+    // and next frame's AO pass reads it as tHistory (#7).
+    if (this.combinePass) {
+      this.combinePass.material.uniforms.tAo.value = this.aoTarget.texture;
+    }
+    const tmp = this.aoTarget;
+    this.aoTarget = this.aoHistoryTarget;
+    this.aoHistoryTarget = tmp;
   }
 
-  _renderShafts() {
-    const u = this.shaftMaterial.uniforms;
-    // Sun screen position: a point far along the sun direction, projected. Shafts fade
-    // out as the sun leaves the frustum or drops toward the horizon.
+  _updateSunScreen() {
+    if (!this.camera) return 0;
     this._sunWorld.copy(this._sunDir).multiplyScalar(400).add(this.camera.position);
     this._sunProjected.copy(this._sunWorld).project(this.camera);
     const sx = this._sunProjected.x * 0.5 + 0.5;
     const sy = this._sunProjected.y * 0.5 + 0.5;
-    u.sunScreen.value.set(sx, sy);
-
     const behind = this._sunProjected.z > 1;
     const offscreen = Math.max(Math.abs(sx - 0.5), Math.abs(sy - 0.5)) - 0.5;
     const edgeFade = THREE.MathUtils.clamp(1 - offscreen / 0.35, 0, 1);
     const elevation = THREE.MathUtils.clamp(this._sunDir.y * 3, 0, 1);
-    u.strength.value = behind ? 0 : edgeFade * elevation;
+    const strength = behind ? 0 : edgeFade * elevation;
+    if (this.shaftMaterial) {
+      this.shaftMaterial.uniforms.sunScreen.value.set(sx, sy);
+      this.shaftMaterial.uniforms.strength.value = strength;
+    }
+    if (this.combinePass) {
+      const cu = this.combinePass.material.uniforms;
+      cu.sunScreen?.value.set(sx, sy);
+      if (cu.sunVisible) cu.sunVisible.value = strength * (1 - this.overcast * 0.85);
+    }
+    return strength;
+  }
 
+  _renderShafts() {
+    this._updateSunScreen();
     this.renderer.setRenderTarget(this.shaftTarget);
     this.renderer.clear();
     this.shaftQuad.render(this.renderer);
@@ -724,6 +1031,29 @@ export class Vfx {
       this.renderer.render(this.scene, this.camera);
       return;
     }
+    if (this.camera?.updateMatrixWorld) {
+      this.camera.updateMatrixWorld();
+      // Detect large camera cuts (> 4 m jump or > ~25 deg rotation) to reset temporal history (#7)
+      const moved = this.camera.position.distanceToSquared(this._prevCamPos) > 16;
+      const turned = Math.abs(this.camera.quaternion.dot(this._prevCamQuat)) < 0.96;
+      if (moved || turned) this._hasPrevViewProj = false;
+      this._currViewProj.multiplyMatrices(this.camera.projectionMatrix, this.camera.matrixWorldInverse);
+      if (!this._hasPrevViewProj) {
+        this._prevViewProj.copy(this._currViewProj);
+      }
+      this._sunDirView.copy(this._sunDir).transformDirection(this.camera.matrixWorldInverse);
+      if (this.combinePass) {
+        const cu = this.combinePass.material.uniforms;
+        cu.sceneProjection?.value.copy(this.camera.projectionMatrix);
+        cu.sceneProjectionInverse?.value.copy(this.camera.projectionMatrixInverse);
+        cu.cameraMatrixWorld?.value.copy(this.camera.matrixWorld);
+        cu.cameraMatrixWorldInverse?.value.copy(this.camera.matrixWorldInverse);
+        cu.uPrevViewProj?.value.copy(this._prevViewProj);
+        cu.sunDirView?.value.copy(this._sunDirView);
+      }
+      this._updateSunScreen();
+    }
+
     this.renderer.setRenderTarget(this.sceneTarget);
     this.renderer.clear();
     this.renderer.render(this.scene, this.camera);
@@ -733,6 +1063,13 @@ export class Vfx {
 
     this.renderer.setRenderTarget(null);
     this.composer.render();
+
+    if (this.camera?.position && this._currViewProj) {
+      this._prevViewProj.copy(this._currViewProj);
+      this._prevCamPos.copy(this.camera.position);
+      this._prevCamQuat.copy(this.camera.quaternion);
+      this._hasPrevViewProj = true;
+    }
   }
 
   dispose() {
@@ -740,6 +1077,8 @@ export class Vfx {
     this.shocks.length = 0;
     this.shockGeometry.dispose();
     this.shockMaterial.dispose();
+    this.fireballs?.dispose();
+    this.sparkSystem?.dispose();
     this.scene.remove(this.muzzleLight);
     if (this.sky) {
       this.scene.remove(this.sky);
@@ -749,6 +1088,7 @@ export class Vfx {
     this.sceneTarget.depthTexture?.dispose();
     this.sceneTarget.dispose();
     this.aoTarget.dispose();
+    this.aoHistoryTarget?.dispose();
     this.shaftTarget.dispose();
     this.ssaoQuad.dispose(); this.ssaoMaterial.dispose();
     this.shaftQuad.dispose(); this.shaftMaterial.dispose();
