@@ -893,12 +893,11 @@ export function createGlbCourse({
   // xyz triangle soups (walls, lids, junction floors), per-lane coverage
   const CONTAIN = { walls: [], lids: [], floors: [], stats: [] };
   {
-    // Clearance above each ring, from every floor vertex of the OTHER lanes (and of this lane more
-    // than a few rings away) that sits over this ring's floor footprint. Wall tops (A/D) stay out:
-    // a side-by-side sibling lane's divider wall is next to this lane, not an overpass above it.
+    // Clearance above each ring, from every shell vertex of the OTHER lanes (and of this lane more
+    // than a few rings away) that sits over this ring's floor footprint.
     const all = [];
     LANES.forEach((L, li) => {
-      for (let r = 0; r < L.n; r++) for (const arr of [L.B, L.C, L.P]) all.push(arr[r * 3], arr[r * 3 + 1], arr[r * 3 + 2], li, r);
+      for (let r = 0; r < L.n; r++) for (const arr of [L.A, L.B, L.C, L.D]) all.push(arr[r * 3], arr[r * 3 + 1], arr[r * 3 + 2], li, r);
     });
     const t = new THREE.Vector3(), w = new THREE.Vector3();
     const pushTri = (list, p, q, r) => {
@@ -956,6 +955,7 @@ export function createGlbCourse({
       const v = (arr, r) => new THREE.Vector3(arr[r * 3], arr[r * 3 + 1], arr[r * 3 + 2]);
       const T0 = v(L.P, 1).sub(v(L.P, 0)).normalize();
       const hairpin = fedFromAir[li] && dirAt(Math.max(0, L.s0 - HAIRPIN_LOOK), new THREE.Vector3()).dot(T0) < 0;
+      const underFunnel = hairpin && centerAt(Math.max(0, L.s0 - 30), new THREE.Vector3()).y - L.B[1] < 25;
       const topL = [], topR = [], baseL = [], baseR = [];
       L.HLID = new Float32Array(L.n);   // lid height above the floor per ring, 0 = no lid (caps use it)
       for (let r = 0; r < L.n; r++) {
@@ -967,17 +967,19 @@ export function createGlbCourse({
           // race from this ring. Neighbouring track seen through a curving, banked frame — the lane
           // that feeds a split mouth, or this lane's own next rings — otherwise read as a low
           // ceiling, and cost Split A's detour the lid and wall extension facing the gap between
-          // its lanes. Sibling lanes over the same stretch still count (the weave crosses itself).
+          // its lanes. Sibling lanes over the same stretch still count (the weave crosses itself),
+          // unless they are side-by-side hazard lanes on the same floor level.
           const M = LANES[all[k + 3]];
           const sibling = M !== L && M.s0 === L.s0 && M.s1 === L.s1;
           if (!sibling && Math.abs(M.S[all[k + 4]] - L.S[r]) < OVERPASS_DS) continue;
+          if (sibling && /Haz/.test(L.name)) continue;
           w.set(all[k] - P.x, all[k + 1] - P.y, all[k + 2] - P.z);
           const hu = w.dot(U);
           // Anything within OVERPASS_MIN of the floor is neighbouring track seen through a banked
           // frame (Split A's feeding lane reads 3.5 units "above" the detour's first ring), not a
           // ceiling. Real overpasses on these courses are ~46 units up.
           if (hu < OVERPASS_MIN || hu >= clear) continue;
-          if (Math.abs(w.dot(R)) > (sibling ? L.HW[r] - 2 : L.REACH[r] + 2) || Math.abs(w.dot(t)) > 10) continue;
+          if (Math.abs(w.dot(R)) > L.REACH[r] + 2 || Math.abs(w.dot(t)) > 10) continue;
           clear = hu;
         }
         const A = v(L.A, r), B = v(L.B, r), C = v(L.C, r), D = v(L.D, r);
@@ -992,7 +994,7 @@ export function createGlbCourse({
           // lane running back under a funnel, cap the extension at the ring-0 floor height so the
           // flared hopper reaches up to the funnel throat without poking into the cone overhead.
           const HL = Math.min(Math.max(H, hA + LAND_EXTRA, hD + LAND_EXTRA), clear - CONTAIN_MARGIN);
-          const roofCap = (ay) => (hairpin && U.y > 0.1 ? Math.max(0, (L.B[1] - ay) / U.y) : Infinity);
+          const roofCap = (ay) => (underFunnel && U.y > 0.1 ? Math.max(0, (L.B[1] - ay) / U.y) : Infinity);
           const dhL = Math.min(Math.max(0, HL - hA), roofCap(A.y));
           const dhR = Math.min(Math.max(0, HL - hD), roofCap(D.y));
           const eL = A.clone().addScaledVector(U, dhL).addScaledVector(R, -LAND_FLARE * Math.min(1, dhL / LAND_EXTRA));
@@ -1324,7 +1326,7 @@ export function createGlbCourse({
     let bestScore = Infinity;
     for (let li = 0; li < LANES.length; li++) {
       const L = LANES[li];
-      if (out.s < L.s0 - 8 || out.s > L.s1 + 30) continue;
+      if (out.s < L.s0 - 30 || out.s > L.s1 + 30) continue;
       // Nearest ring in space, starting from the ring whose mapped `s` matches.
       let lo = 0, hi = L.n - 1;
       while (lo < hi) { const m = (lo + hi) >> 1; if (L.S[m] < out.s) lo = m + 1; else hi = m; }
