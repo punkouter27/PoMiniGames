@@ -96,7 +96,7 @@ public sealed class PoMuleMatchTests
 
         PoMuleSave.FromJson(null).Should().BeNull();
         PoMuleSave.FromJson("{ not json").Should().BeNull();
-        PoMuleSave.FromJson(json.Replace("\"Version\":2", "\"Version\":1")).Should().BeNull("an older rules version is discarded");
+        PoMuleSave.FromJson(json.Replace("\"Version\":3", "\"Version\":2")).Should().BeNull("an older rules version is discarded");
     }
 
     private static void OverAHundredSeededMatches_NothingGoesNegative_TheStoreKeepsMules_AndNoPersonalityDominates()
@@ -142,8 +142,8 @@ public sealed class PoMuleMatchTests
         {
             var cursor = state.LandCursor;
             if (cursor >= 0 && (visited.Count == 0 || visited[^1] != cursor)) visited.Add(cursor);
-            // Row 3 has the towns; the player waits for the first plot of row 4 and presses there.
-            if (cursor >= PoMuleMap.Index(0, 4) && wanted < 0 && !match.HasClaimed(0))
+            // Row 4 has the towns; the player waits for the first plot of row 5 and presses there.
+            if (cursor >= PoMuleMap.Index(0, PoMuleMap.TownRow + 1) && wanted < 0 && !match.HasClaimed(0))
             {
                 wanted = cursor;
                 state.LandPicks[0] = cursor;

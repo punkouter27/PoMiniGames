@@ -51,7 +51,7 @@ public sealed class MatchState
     public const sbyte Nobody = -1;
 
     /// <summary>Bump when a rules change makes older saved matches unplayable; they are then discarded.</summary>
-    public const int CurrentVersion = 2; // 2: sixteen seats
+    public const int CurrentVersion = 3; // 3: 24x9 planet for sixteen seats
 
     public int Version { get; set; } = CurrentVersion;
     public ulong Seed { get; set; }

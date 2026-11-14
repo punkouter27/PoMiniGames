@@ -194,7 +194,7 @@ public class PoMuleUiTests
         await page.Locator(".pm-standings").WaitForAsync(new() { Timeout = 10_000 });
         (await page.Locator(".pm-standings").InnerTextAsync()).Should().ContainEquivalentOf("First Founder").And.ContainEquivalentOf("colony");
         (await page.EvaluateAsync<int>("() => window.__pomule().owner.filter(o => o >= 0).length"))
-            .Should().Be(188, "sixteen colonists fill the planet's 188 non-town plots over twelve months");
+            .Should().BeGreaterThanOrEqualTo(192, "sixteen colonists claimed a plot in each of twelve months");
         await page.ScreenshotAsync(new() { Path = Path.Combine(Shots(), "8-demo-final.png") });
         scorePosts.Should().Be(0, "a demo never posts a score");
         errors.Should().BeEmpty();

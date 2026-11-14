@@ -8,19 +8,20 @@ public enum Terrain : byte { Plains, River, Mountain, Crater, Town }
 public readonly record struct Plot(Terrain Terrain, byte Peaks, byte Crystite);
 
 /// <summary>
-/// The planet: 24 columns that wrap east–west and 8 rows that do not.
+/// The planet: 24 columns that wrap east–west and 9 rows that do not (212 non-town plots,
+/// enough for 16 colonists to claim a plot in every month plus all six even-month auctions).
 /// </summary>
 public sealed class PoMuleMap
 {
     public const int Columns = 24;
-    public const int Rows = 8;
+    public const int Rows = 9;
 
     /// <summary>Row index of the four town hubs.</summary>
-    public const int TownRow = 3;
+    public const int TownRow = 4;
 
     public static readonly IReadOnlyList<int> TownColumns = [2, 8, 14, 20];
 
-    private const int MountainCount = 40;
+    private const int MountainCount = 45;
     private const int CraterCount = 5;
 
     /// <summary>Row-major: index = row × <see cref="Columns"/> + column.</summary>

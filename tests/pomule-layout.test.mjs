@@ -26,7 +26,7 @@ test('the entire picture fits with an inset on desktop and narrow portrait scree
 
 test('the screen holds two bands of eight status columns under the planet', () => {
   assert.equal(SCREEN_W, 384, 'eight 48-pixel columns a band');
-  assert.equal(SCREEN_H, 226);
+  assert.equal(SCREEN_H, 242);
 });
 
 test('portrait draws sixteen player cards without cropping their stats', () => {
@@ -51,4 +51,25 @@ test('a repeated personality keeps its numeral when the name is cut to a status 
   assert.equal(shortName('Hoarder II'), 'Hoar II');
   assert.equal(shortName('Speculator III'), 'Spe III');
   for (const name of ['Industrialist III', 'Prospector II']) assert.ok(shortName(name).length <= 7);
+});
+
+test('the 16-lane market floor marks seat 0 with an inverse tag only when a human plays', () => {
+  const rects = (human) => {
+    const boxes = [];
+    const context = new Proxy({}, { get: (_, key) => key === 'fillRect'
+      ? (x, y, w, h) => boxes.push({ x, y, w, h }) : () => {} });
+    const snap = Array(700).fill(0);
+    snap[2] = 100; // <= LAND_TICKS (170), so onLandFloor(g) is true when phase === 1
+    const game = {
+      lo: { getContext: () => context }, tiles: { getContext: () => context },
+      phase: 1, snap, seats: SEATS, human,
+      names: Array.from({ length: SEATS }, (_, i) => `P${i}`),
+      colors: Array(SEATS).fill('#58d854'), species: Array(SEATS).fill(0),
+      seat: () => 4, trades: [], time: 0,
+    };
+    drawFrame(context, game, { w: 1341, h: 570 });
+    return boxes.filter(b => b.y === 134 && b.w === 20 && b.h === 9);
+  };
+  assert.equal(rects(true).length, 1, 'inverse YOU box at the foot of lane 0');
+  assert.equal(rects(false).length, 0, 'demo mode leaves lane 0 unmarked');
 });

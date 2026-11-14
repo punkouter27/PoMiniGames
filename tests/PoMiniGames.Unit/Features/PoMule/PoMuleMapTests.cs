@@ -45,8 +45,8 @@ public sealed class PoMuleMapTests
                 map[column, PoMuleMap.TownRow].Terrain.Should().Be(Terrain.Town);
             map.Plots.Count(p => p.Terrain == Terrain.Town).Should().Be(4);
 
-            map.Plots.Count(p => p.Terrain == Terrain.River).Should().BeInRange(16, 24, $"seed {seed}");
-            map.Plots.Count(p => p.Terrain == Terrain.Mountain).Should().BeInRange(34, 46, $"seed {seed}");
+            map.Plots.Count(p => p.Terrain == Terrain.River).Should().BeInRange(18, 27, $"seed {seed}");
+            map.Plots.Count(p => p.Terrain == Terrain.Mountain).Should().BeInRange(38, 52, $"seed {seed}");
             map.Plots.Count(p => p.Terrain == Terrain.Crater).Should().BeInRange(4, 6, $"seed {seed}");
 
             map.Plots.Where(p => p.Terrain == Terrain.Mountain).Should().OnlyContain(p => p.Peaks >= 1 && p.Peaks <= 3);

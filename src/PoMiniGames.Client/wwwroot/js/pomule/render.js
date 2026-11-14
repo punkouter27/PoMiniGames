@@ -1,11 +1,11 @@
 // PoMule drawing. Everything here only reads the game object index.js owns; nothing here
 // changes the match.
 //
-// The screen is laid out and coloured after the 1983 Atari 800 game. One 384×226 buffer of
+// The screen is laid out and coloured after the 1983 Atari 800 game. One 384×242 buffer of
 // fat pixels holds the whole thing and is blown up to fit, with smoothing off:
 //
 //   title line     "DEVELOPMENT #3" in grey, the month's clock at the right
-//   the planet     all 24×8 plots at once (16 pixels a plot), or the store's interior,
+//   the planet     all 24×9 plots at once (16 pixels a plot), or the store's interior,
 //                  or the auction floor
 //   message line   orange block capitals
 //   status block   one column per colonist (name, money, goods), in two bands of eight
@@ -15,12 +15,13 @@
 import * as W from './world.js';
 import { drawText } from './font.js';
 
-// Sixteen colonists: the status block is two bands of eight columns, one under the other.
-const MSG_Y = 141, STATUS_Y = 152, COLUMN_W = 48, BAND_H = 37, PER_BAND = 8;
-export const SCREEN_W = 384, SCREEN_H = STATUS_Y + 2 * BAND_H, MAP_Y = 10;
+const PX = 4; // one fat pixel in world units (a plot is 64 units, 16 pixels)
+// Sixteen colonists on a 24×9 planet: the status block is two bands of eight columns below the map.
+export const MAP_Y = 10, MAP_H = (W.ROWS * W.TILE) / PX;
+const MSG_Y = MAP_Y + MAP_H + 3, STATUS_Y = MSG_Y + 11, COLUMN_W = 48, BAND_H = 37, PER_BAND = 8;
+export const SCREEN_W = 384, SCREEN_H = STATUS_Y + 2 * BAND_H;
 // Portrait: two columns of player cards under the planet.
 const CARD_H = 40, CARD_PITCH = 46, CARD_TOP = 12, PORTRAIT_RESERVE = CARD_TOP + 8 * CARD_PITCH + 8;
-const PX = 4; // one fat pixel in world units (a plot is 64 units, 16 pixels)
 
 const GROUND = '#dcdce0';
 const SPECK = '#c4c4c8';
@@ -231,11 +232,11 @@ function drawInterior(c, g) {
   c.setTransform(1, 0, 0, 1, 0, MAP_Y);
   const outfit = [25, 50, 75, 100];
   W.TOP_STALLS.forEach((cx, k) => drawText(c, `${GOOD_NAME[k]} $${outfit[k]}`, cx / PX, 42, TEXT, 1, 'center'));
-  drawText(c, 'ASSAY', W.BOTTOM_STALLS[0] / PX, 80, TEXT, 1, 'center');
-  drawText(c, 'PUB', W.BOTTOM_STALLS[1] / PX, 80, TEXT, 1, 'center');
-  drawText(c, g.snap[9] > 0 ? `MULE $${g.snap[19]}` : 'NO MULES', W.BOTTOM_STALLS[2] / PX, 80, TEXT, 1, 'center');
-  drawText(c, 'EXIT', 2, 60, ORANGE);
-  drawText(c, 'EXIT', SCREEN_W - 2, 60, ORANGE, 1, 'right');
+  drawText(c, 'ASSAY', W.BOTTOM_STALLS[0] / PX, MAP_H - 48, TEXT, 1, 'center');
+  drawText(c, 'PUB', W.BOTTOM_STALLS[1] / PX, MAP_H - 48, TEXT, 1, 'center');
+  drawText(c, g.snap[9] > 0 ? `MULE $${g.snap[19]}` : 'NO MULES', W.BOTTOM_STALLS[2] / PX, MAP_H - 48, TEXT, 1, 'center');
+  drawText(c, 'EXIT', 2, Math.round(MAP_H / 2) - 4, ORANGE);
+  drawText(c, 'EXIT', SCREEN_W - 2, Math.round(MAP_H / 2) - 4, ORANGE, 1, 'right');
 }
 
 /**
@@ -246,7 +247,7 @@ function drawMarket(c, g) {
   const land = g.phase === 1;
   const good = g.snap[3], floor = g.snap[8], ceiling = g.snap[22];
   // One lane per colonist, half each side of the Store, which takes two lanes' width.
-  const top = 18, bottom = 92, left = 22, half = Math.ceil(g.seats / 2);
+  const top = 18, bottom = MAP_H - 36, left = 22, half = Math.ceil(g.seats / 2);
   const lane = Math.floor((SCREEN_W - 12 - left) / (g.seats + 2));
   const laneX = (seat) => left + (seat < half ? seat : seat + 2) * lane + lane / 2;
   const priceY = (p) => Math.round(bottom - ((p - floor) / Math.max(1, ceiling - floor)) * (bottom - top));
@@ -303,7 +304,15 @@ function drawMarket(c, g) {
       const label = String(price);
       drawText(c, label, x, labelY(x, y - 13, label.length * 6), TEXT, 1, 'center');
     }
-    drawText(c, String(units), x, 119, g.colors[seat], 1, 'center');
+    const footText = seat === 0 && g.human ? (land ? 'YOU' : `Y${units}`) : String(units);
+    if (seat === 0 && g.human) {
+      const fw = footText.length * 6 + 2;
+      c.fillStyle = g.colors[seat];
+      c.fillRect(Math.round(x - fw / 2), bottom + 26, fw, 9);
+      drawText(c, footText, x, bottom + 27, GROUND, 1, 'center');
+    } else if (footText) {
+      drawText(c, footText, x, bottom + 27, g.colors[seat], 1, 'center');
+    }
   }
 
   // A bar between the two sides of each trade, for a third of a second.
@@ -315,11 +324,12 @@ function drawMarket(c, g) {
   }
 
   // Time left, as a bar draining down the right edge.
+  const barH = MAP_H - 8;
   c.fillStyle = TEXT;
-  c.fillRect(SCREEN_W - 5, 4, 3, 120);
+  c.fillRect(SCREEN_W - 5, 4, 3, barH);
   c.fillStyle = ORANGE;
-  const left120 = Math.max(0, Math.min(1, g.snap[2] / (land ? LAND_TICKS : MARKET_TICKS)));
-  c.fillRect(SCREEN_W - 5, 4 + 120 * (1 - left120), 3, 120 * left120);
+  const leftRatio = Math.max(0, Math.min(1, g.snap[2] / (land ? LAND_TICKS : MARKET_TICKS)));
+  c.fillRect(SCREEN_W - 5, 4 + barH * (1 - leftRatio), 3, barH * leftRatio);
 }
 
 function title(g) {
@@ -436,7 +446,7 @@ export function drawFrame(ctx, g, view) {
   // Cover anything a sprite drew outside the picture area before the text goes on.
   c.fillStyle = GROUND;
   c.fillRect(0, 0, SCREEN_W, MAP_Y);
-  c.fillRect(0, MAP_Y + 128, SCREEN_W, SCREEN_H - MAP_Y - 128);
+  c.fillRect(0, MAP_Y + MAP_H, SCREEN_W, SCREEN_H - MAP_Y - MAP_H);
   drawText(c, title(g), SCREEN_W / 2, 1, TEXT, 1, 'center');
   // In development the player's clock is their own: hunger takes the end off it.
   const clock = g.phase === 2 && g.human ? g.seat(0, 15) : g.snap[2];

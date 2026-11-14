@@ -25,11 +25,11 @@ public static class PoMuleAi
     private static int Appeal(Archetype archetype, Terrain terrain) => (archetype, terrain) switch
     {
         (Archetype.Farmer or Archetype.Hoarder or Archetype.Speculator, Terrain.River) => 100,
-        (Archetype.Farmer or Archetype.Hoarder, Terrain.Plains) => 50,
+        (Archetype.Farmer or Archetype.Hoarder or Archetype.Speculator, Terrain.Plains) => 50,
         (Archetype.Industrialist, Terrain.Mountain) => 60,
-        (Archetype.Prospector, Terrain.Crater) => 100,
-        (Archetype.Prospector, Terrain.Mountain) => 30,
-        (Archetype.Speculator, Terrain.Crater) => 60,
+        (Archetype.Prospector, Terrain.Crater) => 110,
+        (Archetype.Prospector, Terrain.Mountain) => 25,
+        (Archetype.Speculator, Terrain.Crater) => 68,
         (Archetype.Agitator or Archetype.Gambler, Terrain.River or Terrain.Plains) => 50,
         _ => 20,
     };

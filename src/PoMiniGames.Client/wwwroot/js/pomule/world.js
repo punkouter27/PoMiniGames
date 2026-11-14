@@ -1,12 +1,12 @@
-// PoMule world geometry: a 24×8 tile planet whose columns wrap. Pure maths, no DOM and no
+// PoMule world geometry: a 24×9 tile planet whose columns wrap. Pure maths, no DOM and no
 // imports, so tests/pomule-world.test.mjs can load this file on its own.
 
 export const COLS = 24;
-export const ROWS = 8;
+export const ROWS = 9;
 export const TILE = 64;
 export const WORLD_W = COLS * TILE;
 export const WORLD_H = ROWS * TILE;
-export const TOWN_ROW = 3;
+export const TOWN_ROW = 4;
 export const TOWN_COLS = [2, 8, 14, 20];
 
 // Mirrors Terrain in PoMuleMap.cs.
