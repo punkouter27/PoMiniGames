@@ -18,6 +18,10 @@ internal static class PoRacerPreferences
     public static void SaveCustomization(PoRacerCarCustomization customization) =>
         LocalStorageService.SetItem(Key, $"{customization.ColorHex}|{customization.LiveryPattern}");
 
+    /// <summary>The solo track last picked; an id that is no longer in the catalog falls back to the default.</summary>
+    public static string LoadTrack() => PoRacerCatalog.GetTrack(LocalStorageService.GetItem<string>("PoRacer.SelectedTrack")).Id;
+    public static void SaveTrack(string trackId) => LocalStorageService.SetItem("PoRacer.SelectedTrack", trackId);
+
     public static string LoadDifficulty() =>
         LocalStorageService.GetItem<string>("PoRacer.Difficulty") is { } tier && PoRacerCatalog.Difficulties.Contains(tier) ? tier : "medium";
     public static void SaveDifficulty(string tier) => LocalStorageService.SetItem("PoRacer.Difficulty", tier);

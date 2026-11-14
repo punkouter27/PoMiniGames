@@ -8,7 +8,7 @@
 import * as Render from './renderer.js';
 import * as Audio from './audio.js';
 import { sampleAt } from './interpolation.js';
-import { prepareSnapshot } from './snapshot.js';
+import { prepareSnapshot, STRIDE } from './snapshot.js';
 import { startInput, stopInput, setInputEnabled, getSize, pollPad } from './input.js';
 import { encodeTrack, resample, sampleAt as sampleGhostAt, unwrap, loadGhost, saveGhost } from '../ghostTrack.js';
 import '../weather.js';
@@ -29,8 +29,6 @@ const STALE_MS = 1500;
 // snapshot-interval (80/50 ≈ 1.6) or the sample point falls off the back of the buffer.
 // Six entries is 300 ms of history, enough to also ride out a couple of dropped packets.
 const BUFFER_MAX = 6;
-/** Numbers per car in a pushed snapshot: x, y, heading, speed, boost, skid, damage, sand, position, lap, finished, tow, drift, boost seconds left. */
-const STRIDE = 14;
 const snapshotDecoder = new TextDecoder('utf-8', { fatal: true });
 
 // ── Ghost: your best lap on this track, driven beside you in a solo race ──
@@ -99,7 +97,7 @@ let buf = [];
 let clockOffset = null;
 let roster = [], localIdx = -1;
 let raf = 0, mainId = null, finishing = false;
-let hudEls = null, chipEls = null;
+let hudEls = null, chipEls = null, stripEl = null, hudTick = 0;
 let interpolatedCars = [], playerCars = [], lastAudioAt = 0, lastProfileAt = 0;
 const profiling = new URLSearchParams(location.search).get('perf') === '1';
 const profile = { rafFrames: 0, renderedFrames: 0, interpolationMs: 0, renderMs: 0, audioMs: 0, startedAt: performance.now() };
@@ -123,6 +121,8 @@ function hud(me, newest, ts) {
     if (!hudEls || !hudEls.every(e => e?.isConnected)) {
         hudEls = ['.race-speed', '.race-clock', '.race-lap-now'].map(s => document.querySelector(s));
     }
+    // Blazor may re-render the strip when a position or lap changes; re-find it when it does.
+    if (!stripEl || !stripEl.isConnected) stripEl = document.querySelector('.race-metrics');
     const ahead = newest.running ? Math.max(0, Math.min(0.25, (ts - newest.st) / 1000)) : 0;
     const text = [
         me ? String(Math.round(Math.abs(me.v) * 1.2)) : '',
@@ -130,6 +130,17 @@ function hud(me, newest, ts) {
         clock(newest.lapNow + ahead),
     ];
     hudEls.forEach((el, i) => { if (el && el.textContent !== text[i]) el.textContent = text[i]; });
+
+    // The instrument cluster's needles: one custom property each, read by the HUD's CSS. No
+    // text node and no element is created or replaced, so this still costs no Blazor render.
+    if (me && stripEl && stripEl.isConnected) {
+        stripEl.style.setProperty('--speed', Math.min(1, Math.abs(me.v) / 345).toFixed(3));
+        stripEl.style.setProperty('--heat', Math.min(1, me.heat || 0).toFixed(2));
+        stripEl.style.setProperty('--tow', Math.min(1, me.draft || 0).toFixed(2));
+    }
+    // The minimap: a tiny canvas, a dot a car. Every third frame is plenty when the cars move
+    // at 20 Hz.
+    if ((hudTick++ & 3) === 0) Render.drawMinimap();
 
     // Tow / boost / drift chips. Blazor renders them hidden and never sets the attribute again,
     // so showing one here costs no render either. The drift chip fills as the charge builds and
@@ -219,7 +230,7 @@ function stop() {
     Render.dispose();
     window.PoWeather?.stop();
     buf = []; clockOffset = null; roster = []; localIdx = -1;
-    finishing = false; hudEls = chipEls = null; mainId = null;
+    finishing = false; hudEls = chipEls = stripEl = null; mainId = null;
     interpolatedCars = []; playerCars = []; lastAudioAt = lastProfileAt = 0;
     ghost.key = null; ghost.best = null; ghost.car = null; ghostReset();
     profile.rafFrames = profile.renderedFrames = profile.interpolationMs = profile.renderMs = profile.audioMs = 0;
@@ -239,12 +250,13 @@ window.PoRacer = {
     },
     stop,
     setInputEnabled,
-    getSize,
     getPerformanceProfile: () => profiling ? lastProfile : null,
 
     /** Track geometry, once per race. */
     setStatic(center, width, walls, boostPads, surfaceZones, theme, laps, weather) {
         Render.setStatic(center, width, walls, boostPads, surfaceZones, theme);
+        // Grip and the look of the road: rain and snow both spray and reflect.
+        Render.setWeather(weather);
         Audio.start(laps);
         // Weather of the day: the server picks it per track and UTC day (PoRacerWeather) and races
         // in it (rain and snow cost grip), so the overlay draws the type it is told. A 2D overlay
@@ -275,6 +287,7 @@ window.PoRacer = {
     setRoster(cars, localId) {
         roster = (cars || []).map(c => ({ ...c, isPlayer: c.id === localId }));
         localIdx = roster.findIndex(c => c.isPlayer);
+        Render.minimap('race-minimap', localIdx);
     },
 
     /** Blazor's direct byte-array transfer avoids JSON serialization of the car numbers. */
@@ -314,6 +327,7 @@ window.PoRacer = {
                 boost: flat[o + 4], skid: flat[o + 5], damage: flat[o + 6], sand: flat[o + 7] > 0,
                 position: flat[o + 8], lap: flat[o + 9], finished: flat[o + 10] > 0,
                 tow: flat[o + 11] > 0, drift: flat[o + 12], boostT: flat[o + 13],
+                slip: flat[o + 14], heat: flat[o + 15], draft: flat[o + 16],
             };
         });
 
@@ -382,5 +396,4 @@ window.PoRacer = {
 
     /** The paint-shop swatch. Works before a race is mounted. */
     preview: Render.preview,
-
 };

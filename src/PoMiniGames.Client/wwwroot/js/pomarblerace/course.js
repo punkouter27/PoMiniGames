@@ -5,7 +5,7 @@
 import * as THREE from 'three';
 import * as CANNON from 'cannon-es';
 import {
-  LOST_AIR, REACQUIRE_AFTER, AIR_HOLD, BRAKE_RATE, STALL_AFTER, STALL_REPEAT, STALL_GAIN, STALL_NUDGE, STALL_STEP, STALL_MAX, STALL_LOOKAHEAD, STALL_SIDESTEP, STALL_SIDE_SHARE, BOOST_ACCEL, BOOST_MAX_SPEED, KICK_DV, KICK_UP, KICK_CHARGE,
+  LOST_AIR, REACQUIRE_AFTER, RESPAWN_HOLD, RESPAWN_SPEED, RESPAWN_LIFT, AIR_HOLD, BRAKE_RATE, STALL_AFTER, STALL_REPEAT, STALL_GAIN, STALL_NUDGE, STALL_STEP, STALL_MAX, STALL_LOOKAHEAD, STALL_SIDESTEP, STALL_SIDE_SHARE, BOOST_ACCEL, BOOST_MAX_SPEED, KICK_DV, KICK_UP, KICK_CHARGE,
 } from './tuning.js';
 
 // Scratch: centerAt()/dirAt() hand back a shared vector unless given an output.
@@ -13,6 +13,8 @@ const _camRoad = new THREE.Vector3();
 const _guardPoint = new THREE.Vector3();
 const _guardNormal = new THREE.Vector3();
 const _side = new THREE.Vector3();
+const _spawn = new THREE.Vector3();
+const _spawnUp = new THREE.Vector3();
 
 export class CourseMixin {
   // Boost pads. A no-op on maps that have none — see the track interface in maps.js.
@@ -22,16 +24,19 @@ export class CourseMixin {
     let playerBoosting = false;
     for (const m of this.marbleSet.marbles) {
       if (m.finished || m.eliminated) continue;
-      if (!this.track.inBoost(m.s)) continue;
+      const pad = this.track.inBoost(m.s);
+      if (!pad) continue;
+      // A pad may carry its own push (a lift up a climb, track-glb.js boostBands); else the default.
+      const accel = typeof pad === 'number' ? pad : BOOST_ACCEL;
       const v = m.body.velocity;
       // A map may lower the ceiling. It has to be able to: the default is 150, but an authored
       // course whose collider is a zero-thickness shell tunnels above ~120 u/s (see
       // boostMaxSpeed in track-glb.js), and a marble that leaves through the floor is gone.
       if (v.length() < (this.track.boostMaxSpeed || BOOST_MAX_SPEED)) {
         const d = this.track.dirAt(m.s);
-        v.x += d.x * BOOST_ACCEL * sdt;
-        v.y += d.y * BOOST_ACCEL * sdt;
-        v.z += d.z * BOOST_ACCEL * sdt;
+        v.x += d.x * accel * sdt;
+        v.y += d.y * accel * sdt;
+        v.z += d.z * accel * sdt;
       }
       if (m === me) playerBoosting = true;
       if (Math.random() < 0.25) this.scene.burstSparks(m.mesh.position, 0x22d3ee, 2, 0.5);
@@ -231,18 +236,74 @@ export class CourseMixin {
   // touching nothing for LOST_AIR seconds (see tuning.js). One touching track while the envelope
   // disagrees has reached another part of the course, so its position is re-acquired instead.
   // The envelope test lives in the track because it is made in the track's LOCAL (per-lane) frame.
+  // A marble a human steers is put back instead (see RESPAWN_* in tuning.js).
   _sweepLost(sdt) {
     for (const m of this.marbleSet.marbles) {
       if (m.finished || m.eliminated || !m.proj) continue;
+      if (m.respawnT > 0) { this._holdRespawn(m, sdt); continue; }
       const onTrack = this._touch.has(m.body);
       m.airT = onTrack ? 0 : (m.airT || 0) + sdt;
-      if (!this.track.isOutOfBounds(m.proj)) { m.lostT = 0; continue; }
+      if (!this.track.isOutOfBounds(m.proj)) {
+        m.lostT = 0;
+        // Rolling on the course, inside it: this is where a respawn would put the marble back.
+        if (onTrack && this._isHuman(m)) {
+          const sf = m.safe || (m.safe = { s: 0, lane: -1, ring: 0 });
+          sf.s = m.s; sf.lane = m.proj.lane; sf.ring = m.proj.ring;
+        }
+        continue;
+      }
       if (onTrack) {
         m.lostT = (m.lostT || 0) + sdt;
         if (m.lostT > REACQUIRE_AFTER) { m.pathIndex = -1; m.lostT = 0; }
       } else if (m.airT > LOST_AIR) {
-        this.marbleSet.eliminate(m);
+        if (this._isHuman(m)) this._respawn(m);
+        else this.marbleSet.eliminate(m);
       }
     }
+  }
+
+  // The marbles people steer: yours, and on the online host the guest's too. Never in the demo.
+  _isHuman(m) {
+    if (this.demo) return false;
+    return m.index === this.chosen || (!!this.online && !this.isGuest && m.index === this.guestIndex);
+  }
+
+  // Put a marble that left the course back above the last spot it was safely rolling on, and
+  // hold it there: no collisions, no motion, until _holdRespawn lets it go.
+  _respawn(m) {
+    const t = this.track;
+    const sf = m.safe || { s: Math.min(6, t.finishS * 0.5), lane: -1, ring: 0 };
+    const lift = m.radius + RESPAWN_LIFT;
+    if (t.respawnPoint) t.respawnPoint(sf, lift, _spawn);
+    else { t.centerAt(sf.s, _spawn); _spawn.addScaledVector(t.upAt(sf.s, _spawnUp), lift); }
+    (m.spawn || (m.spawn = new CANNON.Vec3())).set(_spawn.x, _spawn.y, _spawn.z);
+    m.body.position.copy(m.spawn);
+    m.body.velocity.set(0, 0, 0);
+    m.body.angularVelocity.set(0, 0, 0);
+    m.body.collisionResponse = false;
+    if (m.prev) m.prev.copy(m.spawn);   // the swept guard must not trace the teleport
+    m.respawnT = RESPAWN_HOLD;
+    m.respawns = (m.respawns || 0) + 1;
+    m.airT = 0; m.lostT = 0;
+    m.pathIndex = -1;                   // re-acquire the projection from scratch
+    m.stallS = undefined;               // and the unstick timer with it
+    this.scene.burstSparks(_spawn, m.spec.color, 14, 1.2);
+    this.scene.pulseLight(_spawn, 0x7dd3fc, 1.2);
+    if (m.index === this.chosen) {
+      this.audio.playWhoosh(this.scene.audioCue(_spawn));
+      this.audio.say('Back on track');
+      this._invoke('OnRespawn', m.respawns);
+    }
+  }
+
+  _holdRespawn(m, sdt) {
+    m.respawnT -= sdt;
+    m.body.position.copy(m.spawn);
+    m.body.angularVelocity.set(0, 0, 0);
+    if (m.respawnT > 0) { m.body.velocity.set(0, 0, 0); return; }
+    m.respawnT = 0;
+    m.body.collisionResponse = true;
+    const d = this.track.flowDir && m.proj.lane >= 0 ? this.track.flowDir(m.proj, _spawnUp) : this.track.dirAt(m.s, _spawnUp);
+    m.body.velocity.set(d.x * RESPAWN_SPEED, d.y * RESPAWN_SPEED, d.z * RESPAWN_SPEED);
   }
 }

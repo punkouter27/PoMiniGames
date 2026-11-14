@@ -4,28 +4,67 @@
 // (window.PoAudioBus), so the app's own mute and level apply and stop() only has to disconnect
 // what it made. It must never close the shared context.
 //
-//   • engine  — the car the camera follows: two detuned saws through a lowpass, pitched by a
-//     virtual five-speed gearbox (the sim has none), louder and brighter under power.
-//   • rivals  — the three nearest other cars, one saw each, panned by where they are on screen
-//     and pitch-shifted for Doppler, so a pass is heard before it is seen.
+//   • engine  — the car the camera follows: two detuned saws through a soft clipper, a lowpass
+//     and an exhaust formant, pitched by a virtual six-speed gearbox (the sim has none), with a
+//     shift transient and overrun pops. Louder and brighter under power.
+//   • rivals  — the nearest other cars, one voice each, placed with a real HRTF panner and the
+//     listener turned to face the player's heading, so a pass goes round your head. Pitch is
+//     still shifted by closing speed (the Web Audio velocity attributes are deprecated).
+//   • beds    — tyre scrub (band-passed noise, driven by the slip angle) and wind (low-passed
+//     noise, driven by speed). Continuous, not cues: a drift is a sound, not an event.
 //   • events  — crash, skid, sand, turbo and pass cues, read off consecutive server snapshots
-//     at 20 Hz. The voices live in gameCues.js. Each also rumbles a gamepad (phones buzz through the cue's own haptic).
-//   • music   — musicLayers.js on the shared music bus: a bassline from the green light, hats,
-//     kick and arp joining and the tempo climbing lap by lap. Silent at music volume 0 (the default).
+//     at 20 Hz. The voices live in gameCues.js. Each also rumbles a gamepad.
+//   • music   — musicLayers.js on the shared music bus.
 import { rumble } from './input.js';
 import { createMusicLayers } from '../musicLayers.js';
 
 const GEAR_TOP = [70, 130, 195, 265, 345];   // sim units/s at the top of each gear
-const RIVALS = 3, HEAR = 620;
+const HEAR = 620;
+const AUDIO_UNITS = 1 / 45;                  // sim units per audio unit
 
-let ctx = null, engine = null, rivals = [];
-let gear = 0, lastV = 0;
+let ctx = null, engine = null, rivals = [], beds = null, noiseBuffer = null;
+let gear = 0, lastV = 0, lastThrottle = 0;
 const last = { skid: 0, pass: 0, turbo: 0, crash: 0 };
 let litWas = 0;
 let music = null, totalLaps = 3;
+let rivalCount = 3;
+
+const tierOf = () => {
+    try { return document.documentElement.getAttribute('data-gfx') || 'high'; }
+    catch { return 'high'; }
+};
+const rivalBudget = () => (tierOf() === 'low' ? 2 : tierOf() === 'medium' ? 4 : 5);
 
 const cue = (name, opts) => { try { window.PoCue?.fire('poracer', name, opts); } catch { /* audio is never fatal */ } };
 
+/** Park the shared listener at the player's car, facing the way it points. */
+function placeListener(me) {
+    if (!ctx || !me) return;
+    const l = ctx.listener;
+    const cx = Math.cos(me.h), sy = Math.sin(me.h);
+    try {
+        if (l.forwardX) {
+            l.forwardX.value = cx; l.forwardY.value = 0; l.forwardZ.value = -sy;
+            l.upX.value = 0; l.upY.value = 1; l.upZ.value = 0;
+            l.positionX.value = 0; l.positionY.value = 0; l.positionZ.value = 0;
+        } else if (l.setOrientation) {
+            l.setOrientation(cx, 0, -sy, 0, 1, 0);
+            l.setPosition(0, 0, 0);
+        }
+    } catch { /* older listener API: the default orientation still pans */ }
+}
+
+function noise(ctx) {
+    if (noiseBuffer && noiseBuffer.sampleRate === ctx.sampleRate) return noiseBuffer;
+    const len = Math.max(1, Math.floor(ctx.sampleRate * 1.2));
+    const b = ctx.createBuffer(1, len, ctx.sampleRate);
+    const ch = b.getChannelData(0);
+    for (let i = 0; i < len; i++) ch[i] = Math.random() * 2 - 1;
+    noiseBuffer = b;
+    return b;
+}
+
+/** One car's voice. HRTF where the engine has it, a plain panner where it does not. */
 function voice(pan) {
     const out = window.PoAudioBus.busSync('sfx');
     const osc = ctx.createOscillator(); osc.type = 'sawtooth';
@@ -33,10 +72,39 @@ function voice(pan) {
     const gain = ctx.createGain(); gain.gain.value = 0;
     osc.connect(filter); filter.connect(gain);
     let panner = null;
-    if (pan && ctx.createStereoPanner) { panner = ctx.createStereoPanner(); gain.connect(panner); panner.connect(out); }
-    else gain.connect(out);
+    if (pan) {
+        try {
+            panner = ctx.createPanner();
+            panner.panningModel = 'HRTF';
+            panner.distanceModel = 'inverse';
+            panner.refDistance = 1.4;
+            panner.maxDistance = 16;
+            panner.rolloffFactor = 1.1;
+            gain.connect(panner); panner.connect(out);
+        } catch {
+            panner = null;
+        }
+        if (!panner && ctx.createStereoPanner) {
+            panner = ctx.createStereoPanner();
+            gain.connect(panner); panner.connect(out);
+        }
+    }
+    if (!panner) gain.connect(out);
     osc.start();
-    return { osc, filter, gain, panner, extra: [] };
+    return { osc, filter, gain, panner, out, extra: [] };
+}
+
+/** A looping noise source through a filter and a gain — the beds. */
+function bed(filterType, freq, q) {
+    const out = window.PoAudioBus.busSync('sfx');
+    const src = ctx.createBufferSource();
+    src.buffer = noise(ctx); src.loop = true;
+    const filter = ctx.createBiquadFilter();
+    filter.type = filterType; filter.frequency.value = freq; filter.Q.value = q;
+    const gain = ctx.createGain(); gain.gain.value = 0;
+    src.connect(filter); filter.connect(gain); gain.connect(out);
+    src.start();
+    return { src, filter, gain, out };
 }
 
 /**
@@ -50,12 +118,47 @@ export function start(laps) {
     ctx = window.PoAudioBus?.contextSync?.() || null;
     if (!ctx || !window.PoAudioBus.busSync('sfx')) { ctx = null; return; }
     engine = voice(false);
-    // The second saw an octave down, a few cents off, is what makes one oscillator an engine.
+    // The second saw an octave down, a few cents off, is what makes one oscillator an engine;
+    // the third is a fifth above at a whisper, the exhaust's first harmonic.
     const sub = ctx.createOscillator(); sub.type = 'sawtooth'; sub.detune.value = -1207;
     sub.connect(engine.filter); sub.start();
-    engine.extra.push(sub);
-    rivals = Array.from({ length: RIVALS }, () => voice(true));
-    gear = 0; lastV = 0; litWas = 0;
+    const bright = ctx.createOscillator(); bright.type = 'square'; bright.detune.value = 702;
+    const brightGain = ctx.createGain(); brightGain.gain.value = 0.16;
+    bright.connect(brightGain); brightGain.connect(engine.filter); bright.start();
+    engine.extra.push(sub, bright);
+    engine.bright = brightGain;
+    // A soft clipper gives the saws the harmonics a real engine has and a bare saw does not.
+    try {
+        const shaper = ctx.createWaveShaper();
+        const n = 1024, curve = new Float32Array(n);
+        for (let i = 0; i < n; i++) { const x = (i / (n - 1)) * 2 - 1; curve[i] = Math.tanh(x * 2.2) * 0.9; }
+        shaper.curve = curve;
+        engine.filter.disconnect();
+        engine.filter.connect(shaper);
+        shaper.connect(engine.gain);
+        engine.shaper = shaper;
+    } catch { /* no WaveShaper: the raw saws still work */ }
+    // The exhaust formant: a broad peak that opens with revs.
+    try {
+        const peak = ctx.createBiquadFilter();
+        peak.type = 'peaking'; peak.frequency.value = 900; peak.Q.value = 1.1; peak.gain.value = 7;
+        engine.gain.disconnect();
+        engine.gain.connect(peak);
+        peak.connect(engine.out);
+        engine.peak = peak;
+    } catch { /* optional */ }
+
+    rivalCount = rivalBudget();
+    rivals = Array.from({ length: rivalCount }, () => voice(true));
+
+    // Beds: tyre scrub and wind. Both are filtered noise, both fade to nothing at rest.
+    try {
+        beds = { scrub: bed('bandpass', 1750, 2.2), wind: bed('lowpass', 620, 0.7) };
+        beds.scrub.gain.gain.value = 0;
+        beds.wind.gain.gain.value = 0;
+    } catch { beds = null; }
+
+    gear = 0; lastV = 0; lastThrottle = 0; litWas = 0;
 }
 
 export function stop() {
@@ -63,19 +166,40 @@ export function stop() {
     for (const v of [engine, ...rivals]) {
         if (!v) continue;
         for (const node of [v.osc, ...v.extra]) { try { node.stop(); node.disconnect(); } catch { /* already stopped */ } }
-        for (const node of [v.filter, v.gain, v.panner]) { try { node?.disconnect(); } catch { /* not connected */ } }
+        for (const node of [v.filter, v.gain, v.panner, v.shaper, v.peak, v.bright]) { try { node?.disconnect(); } catch { /* not connected */ } }
     }
-    engine = null; rivals = []; ctx = null;
+    if (beds) {
+        for (const b of [beds.scrub, beds.wind]) {
+            try { b.src.stop(); } catch { /* already stopped */ }
+            for (const node of [b.src, b.filter, b.gain]) { try { node.disconnect(); } catch { /* not connected */ } }
+        }
+    }
+    engine = null; rivals = []; beds = null; ctx = null;
 }
 
-/** Speed → engine note. Shifts up at the top of a gear and down with hysteresis, so the note saws like a gearbox. */
+/** Speed → engine note, with a gearbox's hysteresis. */
 function note(v) {
     const speed = Math.abs(v);
-    while (gear < GEAR_TOP.length - 1 && speed > GEAR_TOP[gear]) gear++;
-    while (gear > 0 && speed < GEAR_TOP[gear - 1] * 0.82) gear--;
-    const lo = gear === 0 ? 0 : GEAR_TOP[gear - 1] * 0.62;
-    const rev = Math.max(0, Math.min(1, (speed - lo) / (GEAR_TOP[gear] - lo)));
-    return 52 + rev * 118;
+    let next = 0;
+    while (next < GEAR_TOP.length - 1 && speed > GEAR_TOP[next]) next++;
+    while (next > 0 && speed < GEAR_TOP[next - 1] * 0.82) next--;
+    const lo = next === 0 ? 0 : GEAR_TOP[next - 1] * 0.62;
+    const rev = Math.max(0, Math.min(1, (speed - lo) / (GEAR_TOP[next] - lo)));
+    return { gear: next, hz: 52 + rev * 118, rev };
+}
+
+/** A short filtered click plus a gain dip: a gear change you can hear. */
+function shiftTransient(t) {
+    if (!ctx || !engine) return;
+    try {
+        const src = ctx.createBufferSource(); src.buffer = noise(ctx);
+        const bp = ctx.createBiquadFilter(); bp.type = 'bandpass'; bp.frequency.value = 2600; bp.Q.value = 3.5;
+        const g = ctx.createGain();
+        g.gain.setValueAtTime(0.09, t);
+        g.gain.exponentialRampToValueAtTime(0.0005, t + 0.06);
+        src.connect(bp).connect(g).connect(window.PoAudioBus.busSync('sfx'));
+        src.start(t); src.stop(t + 0.08);
+    } catch { /* a click is never worth throwing for */ }
 }
 
 /**
@@ -85,13 +209,30 @@ function note(v) {
 export function frame(cars, me, quiet) {
     if (!ctx || !engine || !me) return;
     const t = ctx.currentTime;
-    const power = me.v > lastV + 0.05 ? 1 : 0.35;   // accelerating vs. coasting or braking
-    lastV = me.v;
-    const f = note(me.v);
+    const throttle = me.v > lastV + 0.05 ? 1 : 0.35;   // accelerating vs. coasting or braking
+    const lifted = lastThrottle > 0.8 && throttle < 0.5;
+    lastV = me.v; lastThrottle = throttle;
+
+    const n = note(me.v);
+    if (n.gear !== gear) {
+        if (n.gear > gear) shiftTransient(t);
+        else engine.filter.frequency.setTargetAtTime(300, t, 0.05);
+        gear = n.gear;
+    }
+    const f = n.hz;
     engine.osc.frequency.setTargetAtTime(f, t, 0.03);
     engine.extra[0].frequency.setTargetAtTime(f, t, 0.03);
-    engine.filter.frequency.setTargetAtTime(380 + f * (4 + power * 7), t, 0.06);
-    engine.gain.gain.setTargetAtTime((quiet ? 0.03 : 0.06) * (0.55 + power * 0.45), t, 0.08);
+    engine.extra[1]?.frequency.setTargetAtTime(f * 1.5, t, 0.03);
+    if (engine.bright) engine.bright.gain.setTargetAtTime(0.08 + n.rev * 0.22, t, 0.08);
+    // Brighter and louder under power, and the filter opens as the revs climb.
+    engine.filter.frequency.setTargetAtTime(360 + f * (3.6 + throttle * 7) + n.rev * 500, t, 0.06);
+    engine.gain.gain.setTargetAtTime((quiet ? 0.03 : 0.065) * (0.55 + throttle * 0.45), t, 0.08);
+    if (engine.peak) engine.peak.frequency.setTargetAtTime(760 + n.rev * 520, t, 0.1);
+
+    // Overrun: lift off at high revs and the exhaust pops.
+    if (lifted && n.rev > 0.6 && Math.random() < 0.5) cue('turbo', { gain: 0.25, pitch: 0.7 });
+
+    placeListener(me);
 
     const near = [];
     for (const car of cars) {
@@ -101,20 +242,50 @@ export function frame(cars, me, quiet) {
         const entry = { c: car, d: Math.sqrt(distanceSquared) };
         let i = near.length;
         while (i > 0 && near[i - 1].d > entry.d) i--;
-        if (i >= RIVALS) continue;
+        if (i >= rivalCount) continue;
         near.splice(i, 0, entry);
-        if (near.length > RIVALS) near.pop();
+        if (near.length > rivalCount) near.pop();
     }
     for (let i = 0; i < rivals.length; i++) {
-        const r = rivals[i], n = near[i];
-        if (!n) { r.gain.gain.setTargetAtTime(0, t, 0.1); continue; }
-        const dx = n.c.x - me.x, dy = n.c.y - me.y, d = Math.max(1, n.d);
+        const r = rivals[i], close = near[i];
+        if (!close) { r.gain.gain.setTargetAtTime(0, t, 0.12); continue; }
+        const dx = close.c.x - me.x, dy = close.c.y - me.y, d = Math.max(1, close.d);
         // Closing speed along the line between the two cars: positive = approaching = pitched up.
-        const closing = ((Math.cos(me.h) * me.v - Math.cos(n.c.h) * n.c.v) * dx + (Math.sin(me.h) * me.v - Math.sin(n.c.h) * n.c.v) * dy) / d;
-        r.osc.frequency.setTargetAtTime((58 + Math.abs(n.c.v) * 0.34) * (1 + Math.max(-0.2, Math.min(0.2, closing / 1500))), t, 0.05);
-        const k = 1 - n.d / HEAR;
-        r.gain.gain.setTargetAtTime((quiet ? 0.02 : 0.045) * k * k, t, 0.08);
-        r.panner?.pan.setTargetAtTime(Math.max(-1, Math.min(1, dx / 420)), t, 0.08);
+        const closing = ((Math.cos(me.h) * me.v - Math.cos(close.c.h) * close.c.v) * dx
+            + (Math.sin(me.h) * me.v - Math.sin(close.c.h) * close.c.v) * dy) / d;
+        const doppler = 1 + Math.max(-0.2, Math.min(0.2, closing / 1500));
+        r.osc.frequency.setTargetAtTime((58 + Math.abs(close.c.v) * 0.34) * doppler, t, 0.05);
+        const k = 1 - d / HEAR;
+        r.gain.gain.setTargetAtTime((quiet ? 0.02 : 0.05) * k * k, t, 0.08);
+        // HRTF takes a position; a plain panner takes a pan. Both get the same cone of space.
+        try {
+            if (r.panner?.positionX) {
+                r.panner.positionX.setTargetAtTime(dx * AUDIO_UNITS, t, 0.05);
+                r.panner.positionZ.setTargetAtTime(-dy * AUDIO_UNITS, t, 0.05);
+                r.panner.positionY.setTargetAtTime(0, t, 0.05);
+            } else if (r.panner?.pan) {
+                r.panner.pan.setTargetAtTime(Math.max(-1, Math.min(1, dx / 420)), t, 0.08);
+            }
+        } catch { /* a panner bug must not silence the field */ }
+    }
+
+    // Tyre scrub: the loudest slip on the frame, not just the player's. A car sliding past is
+    // the sound that makes a pass feel close.
+    if (beds) {
+        let slip = Math.abs(me.slip || 0);
+        for (let i = 0; i < cars.length; i++) {
+            const c = cars[i];
+            if (c === me) continue;
+            const dx = c.x - me.x, dy = c.y - me.y, d2 = dx * dx + dy * dy;
+            if (d2 > 260 * 260) continue;
+            slip = Math.max(slip, Math.abs(c.slip || 0) * (1 - Math.sqrt(d2) / 260));
+        }
+        const scrub = Math.min(1, Math.max(0, (slip - 0.1) * 2.4));
+        beds.scrub.gain.gain.setTargetAtTime(scrub * 0.075, t, 0.06);
+        beds.scrub.filter.frequency.setTargetAtTime(1500 + scrub * 1600, t, 0.08);
+        const speed = Math.min(1, Math.abs(me.v) / 345);
+        beds.wind.gain.gain.setTargetAtTime(speed * speed * 0.05, t, 0.15);
+        beds.wind.filter.frequency.setTargetAtTime(420 + speed * 900, t, 0.15);
     }
 }
 
@@ -144,16 +315,21 @@ export function events(prev, cur, me) {
     // A boost starting: a pad, or a drift let go with enough charge.
     if (b.boostT > 0 && !(a.boostT > 0)) { cue('boostPad', { gain: 0.8 }); rumble(0.35); }
     // The sim raises the glow once the car is flat out near top speed: the turbo coming on song.
-    // (Not while boosted: a boost sets the glow too, and its own cue just played.)
     if (b.boost >= 0.6 && a.boost < 0.6 && !(b.boostT > 0) && now - last.turbo > 5000) { last.turbo = now; cue('turbo'); }
 
-    // A pass: a rival alongside (within 70 units) that was closing and is now pulling away.
+    // A pass: a rival alongside (within 70 units) that was closing and is now pulling away,
+    // placed across the player's own axis so the whoosh arrives on the side it happened.
     for (let i = 0; i < cur.length; i++) {
         if (i === me || !prev[i]) continue;
         const d1 = Math.hypot(cur[i].x - b.x, cur[i].y - b.y), d0 = Math.hypot(prev[i].x - a.x, prev[i].y - a.y);
         if (d1 < 70 && d1 > d0 && Math.abs(cur[i].v - b.v) > 35 && now - last.pass > 1500) {
             last.pass = now;
-            cue('dopplerPass', { pan: Math.max(-1, Math.min(1, (cur[i].x - b.x) / 70)), pitch: cur[i].v > b.v ? 1.15 : 0.9 });
+            const lateral = (cur[i].x - b.x) * Math.sin(b.h) - (cur[i].y - b.y) * Math.cos(b.h);
+            cue('dopplerPass', {
+                pan: Math.max(-1, Math.min(1, lateral / 70)),
+                pitch: cur[i].v > b.v ? 1.15 : 0.9,
+                gain: 0.9,
+            });
         }
     }
 }

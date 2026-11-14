@@ -19,8 +19,8 @@ public partial class PoRacerPage
     private string? MatchCode { get; set; }
     private enum RacePhase { Start, Racing, Finished }
     private enum RaceMode { Solo, Online, Demo }
-    /// <summary>Numbers per car in a pushed snapshot; js/poracer/index.js STRIDE reads the same fourteen.</summary>
-    private const int Stride = 14;
+    /// <summary>Numbers per car in a pushed snapshot; js/poracer/snapshot.js STRIDE reads the same seventeen.</summary>
+    private const int Stride = 17;
     private RacePhase _phase;
     private RaceMode _mode;
     private PoRacerSession? _session;
@@ -29,7 +29,7 @@ public partial class PoRacerPage
     private CancellationTokenSource? _connecting;
     private DotNetObjectReference<PoRacerPage>? _reference;
     private ElementReference _resumeButton;
-    private bool _disposed, _engineReady, _isStarting, _isDemo, _trial, _pauseOpen, _focusResume, _showResults;
+    private bool _disposed, _engineReady, _isStarting, _trial, _pauseOpen, _focusResume, _showResults;
     // Race your best lap on this track (js/ghostTrack.js). Solo only; the switch is in the pause menu.
     private bool _ghost = true;
     // The opening card (GameIntro) gates everything: no lobby seat is taken and no race is
@@ -63,14 +63,15 @@ public partial class PoRacerPage
     /// <summary>Start lamps lit, 0-5: one per half second, all five held for the last half second.</summary>
     private int Lit => _raceStarted ? 0 : Math.Clamp((3000 - _countdownMs) / 500, 0, 5);
     /// <summary>Only a solo race can stop its clock; a shared one keeps running under the menu.</summary>
-    private bool CanPause => !_isDemo && !_raceOnline;
+    private bool CanPause => !IsDemo && !_raceOnline;
+    private bool IsDemo => _mode == RaceMode.Demo;
     private string LobbyTrackId =>
         _lobby?.State?.Players.FirstOrDefault(p => p.ConnectionId == _lobby.State.HostConnectionId)?.TrackId ?? PoRacerCatalog.DefaultTrackId;
 
     protected override void OnInitialized()
     {
         _playerName = PlayerNameService.GetPlayerName();
-        _selectedTrackId = PoRacerCatalog.GetTrack(LocalStorageService.GetItem<string>("PoRacer.SelectedTrack")).Id;
+        _selectedTrackId = PoRacerPreferences.LoadTrack();
         _customization = PoRacerPreferences.LoadCustomization();
         _difficulty = PoRacerPreferences.LoadDifficulty();
         _trial = PoRacerPreferences.LoadTrial();
@@ -106,7 +107,6 @@ public partial class PoRacerPage
         // card): that mode's own card opens.
         if (changed && _routed) ReopenIntro();
         _routed = true;
-        _isDemo = mode == RaceMode.Demo;
         if (_engineReady && changed && _phase != RacePhase.Start) await ResetAsync();
         await SyncModeAsync();
         if (!_disposed) StateHasChanged();
@@ -145,7 +145,7 @@ public partial class PoRacerPage
         var wantsLobby = _introDone && _mode == RaceMode.Online && string.IsNullOrWhiteSpace(MatchCode) && _phase == RacePhase.Start;
         if (wantsLobby) await OpenLobbyAsync(); else await CloseLobbyAsync();
         if (!_introDone || !_engineReady || _phase != RacePhase.Start || _isStarting) return;
-        if (_isDemo) Kiosk.SetCurrent("poracer-demo");
+        if (IsDemo) Kiosk.SetCurrent("poracer-demo");
         // Everything but the lobby races as soon as the card is gone and the track is loaded,
         // whichever comes second.
         if (!wantsLobby) await StartRaceAsync();
@@ -164,23 +164,18 @@ public partial class PoRacerPage
         // The code goes in the address so a reload during the race rejoins it (seats are bound
         // to the claim identity) instead of landing back in a lobby that has already started.
         lobby.GameStarted += code => InvokeAsync(() => Nav.NavigateTo($"/poracer/multi?code={Uri.EscapeDataString(code)}"));
-        try
-        {
-            await lobby.ConnectAndJoinAsync(AuthState.User?.DisplayName ?? "Player", !AuthState.IsAuthenticated);
-        }
-        catch (Exception ex) when (ex is HttpRequestException or InvalidOperationException or Microsoft.AspNetCore.SignalR.HubException or OperationCanceledException or IOException)
-        {
-            ToastService.Show("Server unavailable. Please try again shortly.", ToastType.Error);
-        }
+        await LobbyCallAsync(() => lobby.ConnectAndJoinAsync(AuthState.User?.DisplayName ?? "Player", !AuthState.IsAuthenticated));
         if (!_disposed) StateHasChanged();
     }
 
-    private async Task ReconnectLobbyAsync()
+    private Task ReconnectLobbyAsync() => _lobby is { } lobby ? LobbyCallAsync(lobby.ReconnectAsync) : Task.CompletedTask;
+
+    /// <summary>A lobby connect or reconnect; a server that cannot be reached is a toast, not an error page.</summary>
+    private async Task LobbyCallAsync(Func<Task> call)
     {
-        if (_lobby is not { } lobby) return;
         try
         {
-            await lobby.ReconnectAsync();
+            await call();
         }
         catch (Exception ex) when (ex is HttpRequestException or InvalidOperationException or Microsoft.AspNetCore.SignalR.HubException or OperationCanceledException or IOException)
         {
@@ -208,7 +203,7 @@ public partial class PoRacerPage
     private string IntroObjective => _mode switch
     {
         RaceMode.Demo => $"{PoRacerCatalog.SoloCarCount} bots, {PoRacerCatalog.TotalLaps} laps, nothing to drive.",
-        RaceMode.Online => "Race the room: up to 8 drivers, bots in the empty seats. Your best lap goes on the board.",
+        RaceMode.Online => $"Race the room: up to {PoRacerCatalog.CarCount} drivers, bots in the empty seats. Your best lap goes on the board.",
         _ => $"{PoRacerCatalog.TotalLaps} laps round the circuit. Finish first, and set a lap worth keeping: your best one goes on the board.",
     };
 
@@ -226,8 +221,7 @@ public partial class PoRacerPage
 
     private void SelectTrack(string trackId)
     {
-        _selectedTrackId = PoRacerCatalog.GetTrack(trackId).Id;
-        LocalStorageService.SetItem("PoRacer.SelectedTrack", _selectedTrackId);
+        PoRacerPreferences.SaveTrack(_selectedTrackId = PoRacerCatalog.GetTrack(trackId).Id);
     }
 
     private void SetTrial(bool trial) => PoRacerPreferences.SaveTrial(_trial = trial);
@@ -255,10 +249,10 @@ public partial class PoRacerPage
         session.StatusChanged += status => InvokeAsync(() => { if (!_disposed) { _connectionStatus = status; StateHasChanged(); } });
         try
         {
-            _raceOnline = !_isDemo && !string.IsNullOrWhiteSpace(MatchCode);
-            _raceTrial = !_isDemo && !_raceOnline && _trial;
+            _raceOnline = !IsDemo && !string.IsNullOrWhiteSpace(MatchCode);
+            _raceTrial = !IsDemo && !_raceOnline && _trial;
             _raceTrackId = _selectedTrackId;
-            _gameCode = _isDemo ? "DEMO" : _raceOnline ? MatchCode! : "solo-" + Guid.NewGuid().ToString("N");
+            _gameCode = IsDemo ? "DEMO" : _raceOnline ? MatchCode! : "solo-" + Guid.NewGuid().ToString("N");
             await JS.InvokeVoidAsync("PoRacer.start", "racerCanvas", _reference);
             var options = new PoRacerJoinOptions
             {
@@ -267,9 +261,9 @@ public partial class PoRacerPage
                 ColorHex = _customization.ColorHex,
                 Livery = _customization.LiveryPattern,
             };
-            await session.ConnectAsync(_gameCode, !_isDemo, _selectedTrackId, options, _connecting.Token);
+            await session.ConnectAsync(_gameCode, !IsDemo, _selectedTrackId, options, _connecting.Token);
             if (_result is null) _phase = RacePhase.Racing;
-            await JS.InvokeVoidAsync("PoRacer.setInputEnabled", !_isDemo && _result is null);
+            await JS.InvokeVoidAsync("PoRacer.setInputEnabled", !IsDemo && _result is null);
         }
         catch (OperationCanceledException)
         {
@@ -352,6 +346,7 @@ public partial class PoRacerPage
                 flat[o + 7] = c.Surface == "sand" ? 1 : 0;
                 flat[o + 8] = c.Position; flat[o + 9] = c.Lap; flat[o + 10] = c.Finished ? 1 : 0;
                 flat[o + 11] = c.Drafting ? 1 : 0; flat[o + 12] = c.Drift; flat[o + 13] = c.BoostTimer;
+                flat[o + 14] = c.Slip; flat[o + 15] = c.TireHeat; flat[o + 16] = c.Draft;
             }
             var running = snapshot.Started && !snapshot.Paused && !snapshot.Finished;
             await JS.InvokeVoidAsync("PoRacer.pushBytes", snapshot.ServerTimeMs, snapshot.ElapsedRaceTime,
@@ -378,13 +373,13 @@ public partial class PoRacerPage
         if (_phase != RacePhase.Racing || _disposed) return;
         _pauseOpen = !_pauseOpen;
         _focusResume = _pauseOpen;
-        await JS.InvokeVoidAsync("PoRacer.setInputEnabled", !_pauseOpen && !_isDemo);
+        await JS.InvokeVoidAsync("PoRacer.setInputEnabled", !_pauseOpen && !IsDemo);
         if (CanPause && _session is { } session) await session.SetPausedAsync(_pauseOpen);
         StateHasChanged();
     }
 
     /// <summary>The ghost is a solo thing: online, every car on the track has to be one the others see too.</summary>
-    private bool CanGhost => !_isDemo && !_raceOnline;
+    private bool CanGhost => !IsDemo && !_raceOnline;
 
     private async Task SetGhostAsync(bool on)
     {
@@ -402,7 +397,7 @@ public partial class PoRacerPage
         _phase = RacePhase.Finished;
         _pauseOpen = false;
         await JS.InvokeVoidAsync("PoRacer.setInputEnabled", false);
-        if (_isDemo)
+        if (IsDemo)
         {
             StateHasChanged();
             return;

@@ -24,7 +24,7 @@
            Player="@_playerName"
            BackTo="/"
            Stats="@_statItems"
-           GameOver="@(_phase == "result" && !_demo && (_online || !_lastWon))"
+           GameOver="@(_phase == "result" && !_demo && (_gp ? _gpDone : (_online || !_lastWon)))"
            GameKey="pomarblerace"
            RequiresWebGl="true"
            Fullscreen="true"
@@ -103,6 +103,10 @@
                         @* The start beat: who you are, the load, then the countdown. One panel, fixed
                            size, so nothing jumps as it moves from loading to counting. *@
                         <div class="mr-prerace" role="status">
+                            @if (_gp)
+                            {
+                                <p class="mr-prerace-kicker">Grand Prix · round @_gpRound of @GpOrder.Length · @(MapAt(_mapId)?.Name)</p>
+                            }
                             <p class="mr-prerace-title">You're the <span class="@MyColorClass">@MyColorWord</span> marble</p>
                             @if (_online)
                             {
@@ -131,12 +135,22 @@
                                 <i style="width:@(_loading ? _loadPct : 100)%"></i>
                             </div>
                             <p class="mr-prerace-hint">@SteerHint</p>
-                            @if (!_online && !_loading)
+                            @if (!_online && !_gp && !_loading)
                             {
                                 <div class="mr-prerace-actions">
                                     <button type="button" class="mr-chip-btn" @onclick="ChangeTrackAsync">Change track</button>
                                 </div>
                             }
+                        </div>
+                    }
+                    else if (ShowGpInterim)
+                    {
+                        @* Between Grand Prix rounds: what the round paid, the running total, what is next. *@
+                        <div class="mr-prerace" role="status">
+                            <p class="mr-prerace-kicker">Grand Prix · round @_gpRound of @GpOrder.Length</p>
+                            <p class="mr-prerace-title">@(_lastPlace > 0 ? $"{Ordinal(_lastPlace)} place · +{_gpGained} points" : "Didn't finish · no points")</p>
+                            <p class="mr-prerace-line">Total <strong>@_gpPoints</strong> points · @Ordinal(_gpRank) overall</p>
+                            <p class="mr-prerace-hint">Next: @(MapAt(GpNextMapId)?.Name)</p>
                         </div>
                     }
 
@@ -153,6 +167,7 @@
                                 <li>@SteerHint</li>
                                 <li><span class="mr-boost-swatch" aria-hidden="true"></span> Cyan chevrons are boost pads: roll over them for speed.</li>
                                 <li>Finish in the top 10 to score. A miss ends the run.</li>
+                                <li>Fall off and you're put back on the track after a short hold.</li>
                             </ul>
                             <button type="button" class="app-btn app-btn--primary" @onclick="DismissTutorialAsync">Got it, race!</button>
                         </div>
@@ -171,7 +186,11 @@
                                 <div class="mr-place-line">
                                     <span class="mr-place-value">P@(_myPlace > 0 ? _myPlace.ToString() : "–")</span>
                                     <span class="mr-place-field">/@_myField</span>
-                                    @if (_split is { } split)
+                                    @if (_respawned)
+                                    {
+                                        <span class="mr-split is-slower">Back on track</span>
+                                    }
+                                    else if (_split is { } split)
                                     {
                                         var delta = split.Time - split.Best;
                                         <span class="mr-split @(split.Best <= 0 || delta <= 0 ? "is-faster" : "is-slower")" @key="split.Sector"
@@ -265,6 +284,27 @@
     // One record per race: set when a result is taken, cleared when the next race sets up.
     private bool _raceRecorded;
 
+    // ── Grand Prix (1P): every course in turn, points for the top 10 of each round, one table
+    // across all of them. The table lives in the engine (grandprix.js); the page walks the rounds,
+    // booting a new engine per course. ──
+    private bool _gp;
+    private int _gpRound = 1;          // 1-based
+    private bool _gpDone;
+    private int _gpGained, _gpPoints, _gpRank;
+    private List<(int Index, int Points)> _gpTop = new();
+    private MarbleMapOption[] GpOrder => _menu?.Maps.Where(m => !m.Daily).ToArray() ?? [];
+    private int GpNextMapId => GpOrder is { Length: > 0 } o ? o[Math.Min(_gpRound, o.Length - 1)].Id : _mapId;
+    private bool ShowGpInterim => _gp && !_gpDone && _phase == "result" && !_loading && _engineError is null;
+    private const int GpRoundGapMs = 4500;
+
+    // ── Daily Canyon: today's board (each player's fastest finish on today's course) ──
+    private PoMiniGames.Domain.Models.MarbleRaceMapRecord[] _dailyBoard = [];
+    private bool IsDailyMap(int id) => MapAt(id)?.Daily == true;
+
+    // "Back on track": shown in the place chip for a moment after a respawn.
+    private bool _respawned;
+    private int _respawnSeq;
+
     private List<PodiumRow> _podium = new();
     private List<StatItem> _statItems = new();
     private PlayerStats _stats = new();
@@ -320,6 +360,7 @@
         && (_pickCountdown > 0 || _loading || IsOnlineGuest || _showTutorial);
     private bool ShowOnlineCard => _introDone && _online && _onlinePhase is not (OnlinePhase.Racing or OnlinePhase.Idle);
     private bool ShowPlace => _phase == "racing" && !_demo;
+    private IEnumerable<MarbleMapOption> PickableMaps => (_menu?.Maps ?? []).Where(m => !_online || !m.Daily);
     private string StandingsLabel => ShowPlace ? $"Your position: {_myPlace} of {_myField}" : "Podium";
 
     // ── Engine health (item 32/33): a failed start is a retry card, the download a progress bar ──
@@ -389,6 +430,7 @@
                 <li><kbd>R</kbd> new track · <kbd>M</kbd> mute · <kbd>G</kbd> ghost (all also under ⚙ Race settings)</li>
             }
             <li>Chain top-10 finishes for a multiplier: one miss ends the run</li>
+            <li>Fall off and you're put back on the track after a short hold</li>
         </ul>
     </div>;
 
@@ -478,10 +520,18 @@
     // World records per map (server: /api/marblerace/records), loaded with the menu.
     private Dictionary<int, PoMiniGames.Domain.Models.MarbleRaceMapRecord> _records = [];
 
-    private string RecordText(int mapId) =>
-        _records.TryGetValue(mapId, out var r) && r.Seconds > 0
+    private string RecordText(int mapId)
+    {
+        if (IsDailyMap(mapId))
+        {
+            return _dailyBoard.Length > 0
+                ? $"Today {_dailyBoard[0].Seconds:0.00}s · {_dailyBoard[0].PlayerName}"
+                : "Today: be the first";
+        }
+        return _records.TryGetValue(mapId, out var r) && r.Seconds > 0
             ? $"WR {r.Seconds:0.00}s · {r.PlayerName}"
             : "WR: be the first";
+    }
 
     // Track thumbnails: a glyph of each course's shape in its own colour, drawn inline so the card
     // needs no image download (slots per maps.js; an unknown slot gets a plain descent).
@@ -493,6 +543,7 @@
             2 => ("M32 17 m-3 0 a3 3 0 1 1 6 0 a7 7 0 1 1 -14 0 a11 11 0 1 1 22 0 a14 13 0 1 1 -28 0", "#a855f7"), // Spiral Works
             3 => ("M8 30 C 8 4, 30 4, 30 17 S 56 30, 56 4", "#f59e0b"),                    // Grand Spiral: twin helix
             5 => ("M6 6 H40 V14 H14 V22 H48 L58 30", "#4ade80"),                           // Playground Run: gutter laps + slide
+            6 => ("M4 8 C 16 24, 22 2, 34 14 L 22 22 L 46 28 L60 24", "#fb923c"),          // Daily Canyon: the canyon at dawn
             _ => ("M6 6 L58 30", "#94a3b8"),
         };
         return @<svg class="mr-track-glyph" viewBox="0 0 64 34" aria-hidden="true" focusable="false">
@@ -554,7 +605,35 @@
         }
         else
         {
-            @TrackPicker
+            <div class="mr-setup-label">Mode</div>
+            <div class="mr-weights" role="radiogroup" aria-label="Race mode">
+                @foreach (var (gp, name, hint) in new[]
+                {
+                    (false, "Single track", "Chain top-10 finishes on one course"),
+                    (true, "Grand Prix", $"All {GpOrder.Length} courses, points for the top 10 of each"),
+                })
+                {
+                    var g = gp;
+                    <button type="button" role="radio" aria-checked="@(g == _gp ? "true" : "false")"
+                            class="mr-opt @(g == _gp ? "is-on" : "")"
+                            @onclick="() => _gp = g">
+                        <span class="mr-opt-name">@name</span>
+                        <span class="mr-opt-hint">@hint</span>
+                    </button>
+                }
+            </div>
+            @if (_gp)
+            {
+                <p class="mr-setup-note">
+                    @(string.Join(" → ", GpOrder.Select(m => m.Name))).
+                    25 points for a win down to 1 for 10th, against the same 100 rivals every round.
+                    @(_menu.Gp.Best > 0 ? $"Your best: {_menu.Gp.Best} points, {Ordinal(_menu.Gp.BestRank)} overall." : "")
+                </p>
+            }
+            else
+            {
+                @TrackPicker
+            }
 
             <details>
             <summary>Marble finish and weight</summary>
@@ -603,7 +682,7 @@
         {
             <div class="mr-setup-label">Track</div>
             <div class="mr-tracks" role="radiogroup" aria-label="Choose a track">
-                @foreach (var m in _menu.Maps)
+                @foreach (var m in PickableMaps)
                 {
                     var id = m.Id;
                     <button type="button" role="radio" aria-checked="@(id == _mapId ? "true" : "false")"
@@ -623,7 +702,37 @@
     // Host and guest share one summary: the guest simply has no run score of its own.
     // The way on comes first (Race again / Next track, or Rematch online), then the standings with
     // your own row picked out, then the run.
-    private RenderFragment GameSummaryContent => @<div class="mr-result">
+    private RenderFragment GameSummaryContent => _gp ? GrandPrixSummary : RaceSummary;
+
+    // The Grand Prix table: the top five on points, and your own row when you are not among them.
+    private RenderFragment GrandPrixSummary => @<div class="mr-result">
+        <div class="mr-result-head">🏁 Grand Prix · @Ordinal(_gpRank) overall · @_gpPoints points</div>
+        <table class="mr-result-table">
+            <caption class="mr-sr-only">Grand Prix standings</caption>
+            <tbody>
+                @for (var i = 0; i < _gpTop.Count; i++)
+                {
+                    var row = _gpTop[i];
+                    <tr class="@(row.Index == PlayerIndex ? "is-me" : null)">
+                        <td>@(i + 1)</td>
+                        <td><span class="mr-podium-dot" style="--dot:@ColorOf(row.Index)"></span> @RosterName(row.Index)</td>
+                        <td>@row.Points pts</td>
+                    </tr>
+                }
+                @if (_gpTop.All(r => r.Index != PlayerIndex))
+                {
+                    <tr class="is-me">
+                        <td>@_gpRank</td>
+                        <td><span class="mr-podium-dot" style="--dot:@ColorOf(PlayerIndex)"></span> You</td>
+                        <td>@_gpPoints pts</td>
+                    </tr>
+                }
+            </tbody>
+        </table>
+        <div class="mr-result-run">Last round: @(_lastPlace > 0 ? $"{Ordinal(_lastPlace)} place, +{_gpGained} points" : "didn't finish")</div>
+    </div>;
+
+    private RenderFragment RaceSummary => @<div class="mr-result">
         <div class="mr-result-head">
             @(_lastWon
                 ? $"🏆 {Ordinal(_lastPlace)} place{(IsOnlineGuest ? "" : $" · +{_lastGained} points")}"
@@ -633,7 +742,11 @@
     </div>;
 
     private RenderFragment ResultActions => @<div class="mr-result-actions">
-        @if (!_online)
+        @if (_gp)
+        {
+            <button type="button" class="app-btn app-btn--primary" @onclick="() => RaceAgainAsync(nextTrack: false)">New Grand Prix</button>
+        }
+        else if (!_online)
         {
             <div class="mr-result-actions">
                 <button type="button" class="app-btn app-btn--primary" @onclick="() => RaceAgainAsync(nextTrack: false)">Race again</button>
@@ -684,6 +797,23 @@
         {
             <div class="mr-result-run">@(_lastWon ? $"Run: {_score} · Streak: {_streak}" : $"Best run: {_best}")</div>
         }
+        @if (!_online && IsDailyMap(_mapId) && _dailyBoard.Length > 0)
+        {
+            <table class="mr-result-table">
+                <caption class="mr-result-run">Today's Daily Canyon board</caption>
+                <tbody>
+                    @for (var i = 0; i < Math.Min(5, _dailyBoard.Length); i++)
+                    {
+                        var d = _dailyBoard[i];
+                        <tr>
+                            <td>@(i + 1)</td>
+                            <td>@d.PlayerName</td>
+                            <td>@d.Seconds.ToString("0.00")s</td>
+                        </tr>
+                    }
+                </tbody>
+            </table>
+        }
         @if (_online && _onlineResultKnown)
         {
             <div>@_opponentName @(_opponentPlace > 0 ? $"placed {Ordinal(_opponentPlace)}" : "didn't finish")</div>
@@ -706,7 +836,8 @@
     /// <summary>Result sheet: the same track again, or the next one, straight from the modal.</summary>
     private async Task RaceAgainAsync(bool nextTrack)
     {
-        if (nextTrack) _mapId = NextMapId;
+        if (_gp) StartGrandPrix();
+        else if (nextTrack) _mapId = NextMapId;
         await StopEngineAsync();
         _phase = "pick";
         _podium.Clear();
@@ -715,6 +846,90 @@
         _pickCountdown = PickSeconds;
         await InvokeAsync(StateHasChanged);
         await BootEngineAsync(null);
+    }
+
+    // ── Grand Prix rounds ──
+
+    private void StartGrandPrix()
+    {
+        _gpRound = 1;
+        _gpDone = false;
+        _gpGained = _gpPoints = _gpRank = 0;
+        _gpTop.Clear();
+        if (GpOrder is { Length: > 0 } order) _mapId = order[0].Id;
+        else _gp = false;   // no menu, no order: race the one track instead
+    }
+
+    /// <summary>
+    /// A Grand Prix round resolved (results.js _resolveGrandPrix). <paramref name="rank"/> and
+    /// <paramref name="points"/> are yours across the rounds so far; the top of the table rides
+    /// along as parallel arrays of marble index and points.
+    /// </summary>
+    [JSInvokable]
+    public async Task OnGrandPrix(int round, int rounds, int place, int gained, int points, int rank,
+                                  int mapId, double myTime, int[] topIndices, int[] topPoints)
+    {
+        if (_raceRecorded || !_gp) return;
+        _raceRecorded = true;
+        _lastPlace = place;
+        _lastWon = gained > 0;
+        _lastGained = gained;
+        _gpGained = gained;
+        _gpPoints = points;
+        _gpRank = rank;
+        _gpTop = topIndices.Select((ix, i) => (Index: ix, Points: i < topPoints.Length ? topPoints[i] : 0)).ToList();
+        _phase = "result";
+        _gameStats.SaveLastPlayedGame("pomarblerace");
+        UpdateStats();
+        await InvokeAsync(StateHasChanged);
+
+        if (place > 0 && myTime > 0)
+        {
+            await GameResults.SubmitMarbleRaceMapRecordAsync(new MarbleRaceRecordRequest(mapId, myTime));
+        }
+
+        if (round >= rounds)
+        {
+            // One local result for the whole Grand Prix: a podium overall is the win.
+            _gpDone = true;
+            _stats = await GameResults.RecordAndSubmitMarbleRaceAsync(
+                _playerName, rank is >= 1 and <= 3 ? GameResult.Win : GameResult.Loss, null);
+            UpdateStats();
+            await InvokeAsync(StateHasChanged);
+            return;
+        }
+
+        // On to the next course once the round's result has been read.
+        await Task.Delay(GpRoundGapMs);
+        if (_disposed || !_gp || _gpDone || _gpRound != round || _phase != "result") return;
+        _gpRound = round + 1;
+        _mapId = GpOrder is { Length: > 0 } order ? order[Math.Min(round, order.Length - 1)].Id : _mapId;
+        await StopEngineAsync();
+        _phase = "pick";
+        _podium.Clear();
+        _myPlace = -1;
+        _split = null;
+        _pickCountdown = PickSeconds;
+        await InvokeAsync(StateHasChanged);
+        await BootEngineAsync(null);
+    }
+
+    /// <summary>Your marble left the course and was put back (course.js _respawn).</summary>
+    [JSInvokable]
+    public async Task OnRespawn(int count)
+    {
+        var seq = ++_respawnSeq;
+        _respawned = true;
+        await InvokeAsync(StateHasChanged);
+        await Task.Delay(2500);
+        if (seq != _respawnSeq) return;
+        _respawned = false;
+        await InvokeAsync(StateHasChanged);
+    }
+
+    private async Task LoadDailyBoardAsync()
+    {
+        if (await ApiService.GetMarbleRaceDailyTimesAsync() is { } board) _dailyBoard = board;
     }
 
     // ── Rematch + series (online) ──
@@ -877,9 +1092,11 @@
         try
         {
             var recordsTask = ApiService.GetMarbleRaceMapRecordsAsync();
+            var dailyTask = LoadDailyBoardAsync();
             if (!await JSRuntime.InvokeAsync<bool>("loadEngine", "pomarblerace")) return;
             var json = await JSRuntime.InvokeAsync<string>("PoMarbleRace.menu");
             if (await recordsTask is { } recs) _records = recs.GroupBy(r => r.MapId).ToDictionary(g => g.Key, g => g.MinBy(r => r.Seconds)!);
+            await dailyTask;
             if (_disposed) return;
             var menu = JsonSerializer.Deserialize(json, MarbleMenuJsonContext.Default.MarbleMenu);
             if (menu is null) return;
@@ -890,6 +1107,8 @@
                 if (menu.Maps.All(m => m.Id != _mapId)) _mapId = menu.DefaultMap;
             }
             _menu = menu;
+            // Online never races the daily course (the server deals the seed there).
+            if (_online && IsDailyMap(_mapId)) _mapId = menu.DefaultMap;
             await InvokeAsync(StateHasChanged);
         }
         catch (Exception ex)
@@ -912,6 +1131,9 @@
             await StartOnlineAsync();
             return;
         }
+
+        if (_gp && !_demo) StartGrandPrix();
+        else _gp = false;
 
         if (_engineStarted)
         {
@@ -965,7 +1187,9 @@
             // uses the last pick it saved itself.
             if (_disposed) return;
             object? marble = _menu is null || _demo || _online ? null : new { skin = _skin, weight = _weight };
-            await JSRuntime.InvokeVoidAsync("PoMarbleRace.start", "marble-race-container", _ref, _demo, _mapId, online, marble);
+            object? opts = _gp && online is null ? new { gp = new { round = _gpRound, rounds = GpOrder.Length } } : null;
+            _raceRecorded = false;
+            await JSRuntime.InvokeVoidAsync("PoMarbleRace.start", "marble-race-container", _ref, _demo, _mapId, online, marble, opts);
             if (_disposed) return;
             await JSRuntime.InvokeVoidAsync("PoMarbleRace.resume");
         }
@@ -1430,8 +1654,11 @@
     [JSInvokable]
     /// <param name="myTime">Your own finish time this race, 0 when you did not finish; offered to
     /// the server as the map's world record (it keeps only the fastest).</param>
+    /// <param name="day">The UTC day (yyyy-MM-dd) of the Daily Canyon that was raced, "" on any
+    /// other map; a daily finish goes on that day's board.</param>
     public async Task OnRaceResult(bool won, int place, int score, int gained, int streak, int best,
-                                   int mapId, int[] runPlaces, double[] runTimes, double[] runLeads, double myTime)
+                                   int mapId, int[] runPlaces, double[] runTimes, double[] runLeads, double myTime,
+                                   string day)
     {
         // A repeated callback for the same race must not record (or submit) it twice.
         if (_raceRecorded) return;
@@ -1464,7 +1691,10 @@
 
             if (place > 0 && myTime > 0)
             {
-                await GameResults.SubmitMarbleRaceMapRecordAsync(new MarbleRaceRecordRequest(mapId, myTime));
+                await GameResults.SubmitMarbleRaceMapRecordAsync(
+                    new MarbleRaceRecordRequest(mapId, myTime, string.IsNullOrEmpty(day) ? null : day));
+                // The board with this finish on it, for the result sheet and the track card.
+                if (!string.IsNullOrEmpty(day)) await LoadDailyBoardAsync();
             }
 
             // One intake records local stats and submits the high score together — no desync.
@@ -1479,9 +1709,13 @@
     private void UpdateStats()
     {
         var bucket = _gameStats.GetDifficultyBucket(_stats, Difficulty.Medium);
-        _statItems = GameStatsPanel.Build(bucket, includeDraws: false, includeElo: true,
-            ("Run", _score.ToString()),
-            ("Best", _best.ToString()));
+        _statItems = _gp
+            ? GameStatsPanel.Build(bucket, includeDraws: false, includeElo: true,
+                ("Round", $"{_gpRound}/{Math.Max(1, GpOrder.Length)}"),
+                ("GP points", _gpPoints.ToString()))
+            : GameStatsPanel.Build(bucket, includeDraws: false, includeElo: true,
+                ("Run", _score.ToString()),
+                ("Best", _best.ToString()));
     }
 
     private static string Ordinal(int n) => (n % 100) switch

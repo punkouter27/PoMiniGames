@@ -25,6 +25,10 @@ function interpolate(a, b, t, out = new Array(b.cars.length)) {
         car.v = ca.v + (cb.v - ca.v) * t;
         car.boost = (ca.boost || 0) + ((cb.boost || 0) - (ca.boost || 0)) * t;
         car.skid = (ca.skid || 0) + ((cb.skid || 0) - (ca.skid || 0)) * t;
+        // Slip angle and tyre heat, so the rendered car slides on the same curve the smoke does.
+        car.slip = (ca.slip || 0) + ((cb.slip || 0) - (ca.slip || 0)) * t;
+        car.heat = (ca.heat || 0) + ((cb.heat || 0) - (ca.heat || 0)) * t;
+        car.draft = (ca.draft || 0) + ((cb.draft || 0) - (ca.draft || 0)) * t;
         // Shedding more than ~30 units/s² between two snapshots: the brake lights are on.
         car.braking = cb.v < ca.v - 1.5 && cb.v > 8;
     }

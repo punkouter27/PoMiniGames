@@ -69,6 +69,33 @@
 .racer-primary:disabled { opacity: .6; cursor: wait; }
 .racer-ghost { background: var(--racer-panel); color: var(--racer-text); }
 
+/* ── Micro-interactions ───────────────────────────────────────────────────
+   Every control in the panel answers a press: the surface gives, a ripple spreads
+   from the middle, and the label settles back on a spring. Purely CSS, so it
+   costs nothing on a frame the game is already spending on the canvas. */
+.racer-primary, .racer-ghost {
+    position: relative; overflow: hidden; isolation: isolate;
+    transition: transform .13s cubic-bezier(.2, .9, .3, 1.35), background .15s ease,
+        box-shadow .15s ease, border-color .15s ease; }
+.racer-primary:hover:not(:disabled), .racer-ghost:hover { transform: translateY(-1px); box-shadow: 0 8px 22px #0007; border-color: var(--racer-accent-line); }
+.racer-primary:active:not(:disabled), .racer-ghost:active { transform: scale(.965); box-shadow: inset 0 4px 14px #0007; }
+.racer-primary::after, .racer-ghost::after {
+    content: ''; position: absolute; inset: 50%; border-radius: 50%; pointer-events: none;
+    background: radial-gradient(circle, #ffffff70, #ffffff00 70%); opacity: 0; }
+.racer-primary:active:not(:disabled)::after, .racer-ghost:active::after {
+    inset: -45%; opacity: .85; transition: inset .3s ease-out, opacity .4s ease-out; }
+.racer-card ::deep .racer-chips label {
+    transition: transform .12s ease, border-color .15s ease, background .15s ease, color .15s ease; }
+.racer-card ::deep .racer-chips label:hover { border-color: var(--racer-accent-line); }
+.racer-card ::deep .racer-chips label:active { transform: scale(.96); }
+.racer-ghost-toggle input { transition: transform .12s ease; }
+.racer-ghost-toggle:active input { transform: scale(.9); }
+@media (prefers-reduced-motion: reduce) {
+    .racer-primary, .racer-ghost, .racer-card ::deep .racer-chips label { transition: none; }
+    .racer-primary:hover:not(:disabled), .racer-ghost:hover { transform: none; }
+    .racer-primary::after, .racer-ghost::after { display: none; }
+}
+
 /* The lobby panel brings its own page padding and card; inside this card it is just a section. */
 .racer-card ::deep .sp-page { padding: 0; max-width: none; }
 .racer-card ::deep .sp-card.sp-card { background: none; border: 0; box-shadow: none; padding: 0; backdrop-filter: none; overflow: visible; }
@@ -104,6 +131,18 @@
     mask-image: linear-gradient(105deg, #0000 0 38%, #000 46% 54%, #0000 62% 100%); mask-size: 320% 100%; mask-repeat: no-repeat;
     animation: race-flag-sweep 1.5s cubic-bezier(.4, 0, .2, 1) both; opacity: .92; }
 @keyframes race-flag-sweep { from { mask-position: 110% 0; } to { mask-position: -10% 0; } }
+/* Letterbox bars close in with the flag: the race stops being a window and becomes a replay. */
+.race-flag::before, .race-flag::after { content: ''; position: absolute; left: 0; right: 0; height: 9vh;
+    background: #05080d; animation: race-bar 1.5s cubic-bezier(.4, 0, .2, 1) both; }
+.race-flag::before { top: 0; }
+.race-flag::after { bottom: 0; }
+@keyframes race-bar { from { transform: translateY(-100%); } to { transform: none; } }
+@keyframes race-bar-down { from { transform: translateY(100%); } to { transform: none; } }
+.race-flag::after { animation-name: race-bar-down; }
+/* Lights out: one white flash on GO, over the whole track, before the field is away. */
+.race-countdown.is-go::after { content: ''; position: fixed; inset: 0; background: #fff; opacity: 0;
+    pointer-events: none; animation: race-lights-out .42s ease-out both; }
+@keyframes race-lights-out { 0% { opacity: 0; } 12% { opacity: .5; } 100% { opacity: 0; } }
 
 @media (pointer: coarse) {
     /* The 44px floor for the start card's chips and paint swatches (34px and 30px for a mouse). */
@@ -113,4 +152,4 @@
     .racer-root ::deep .racer-controls .for-touch { display: inline; }
 }
 @media (max-width: 600px) { .racer-start { padding: 8px; align-items: start; } .racer-actions { gap: 12px; } .race-countdown { padding: 214px 12px 104px; } }
-@media (prefers-reduced-motion: reduce) { .race-flag { display: none; } }
+@media (prefers-reduced-motion: reduce) { .race-flag, .race-flag::before, .race-flag::after, .race-countdown.is-go::after { display: none; } }

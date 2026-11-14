@@ -25,16 +25,19 @@ public static class MarbleRaceRunVerifier
 
     // Finish-line arclength per map slot: maps.js finishS for Spiral Works, the baked ARCLENGTH ×
     // SCALE minus the 16-unit backoff for Grand Spiral, 0.995 × LENGTH for the procedural Neon
-    // Canyon (2200), and Playground Run's baked ARCLENGTH × SCALE minus the same backoff. Move a
-    // finish line and this moves with it. Slot 4 (Canyon Run) is retired: it was folded into slot 1
+    // Canyon (2200) and the Daily Canyon on slot 6 (the same generator), and Playground Run's baked
+    // ARCLENGTH × SCALE minus the same backoff. Spiral Works runs its whole baked length since
+    // 2026-11-13 (it used to stop at 2230, in front of the first loop). Move a finish line and
+    // this moves with it. Slot 4 (Canyon Run) is retired: it was folded into slot 1
     // on 2026-11-05, and its entry stays only so a score an older client parked still verifies.
     private static readonly Dictionary<int, double> FinishDistance = new()
     {
         [1] = 2189,
-        [2] = 2230,
+        [2] = 3628,
         [3] = 3881,
         [4] = 2189,
         [5] = 2169,
+        [MarbleRaceDaily.MapId] = 2189,
     };
 
     // ponytail: a speed bound, not a replay — marbles.js MAX_SPEED (85) doubled, because a marble

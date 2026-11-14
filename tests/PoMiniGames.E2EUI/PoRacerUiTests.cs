@@ -26,7 +26,7 @@ public sealed class PoRacerUiTests(KestrelServerFixture fixture)
         await page.GotoAsync($"{fixture.ServerAddress.TrimEnd('/')}/poracer/1player?autoGuest=1");
         await page.GetByRole(AriaRole.Button, new() { Name = "OK", Exact = true }).WaitForAsync(new() { Timeout = 60000 });
         await page.Locator(".track-select select").SelectOptionAsync(track);
-        // Isolate lap timing and persistence from 99-car traffic: the keyboard driver
+        // Isolate lap timing and persistence from 63-car traffic: the keyboard driver
         // follows the centerline and does not plan overtakes. Full-field input is tested below.
         await page.GetByText("Time trial", new() { Exact = true }).ClickAsync();
         var save = page.WaitForResponseAsync(r => r.Url.EndsWith("/api/poracer/scores", StringComparison.Ordinal) && r.Request.Method == "POST", new() { Timeout = 200000 });
@@ -164,7 +164,7 @@ public sealed class PoRacerUiTests(KestrelServerFixture fixture)
         if (!touch) await VerifyTrackBitmapCacheAsync(page);
         await page.GetByRole(AriaRole.Button, new() { Name = "OK", Exact = true }).ClickAsync(new() { Timeout = 60000 });
         await page.Locator(".race-metrics").WaitForAsync(new() { Timeout = 30000 });
-        (await page.Locator(".race-pos small").InnerTextAsync()).Should().Be("/100");
+        (await page.Locator(".race-pos small").InnerTextAsync()).Should().Be($"/{PoMiniGames.Shared.Games.PoRacerCatalog.SoloCarCount}");
         if (touch)
         {
             var gas = page.Locator("[data-po-input=up]");
@@ -179,8 +179,11 @@ public sealed class PoRacerUiTests(KestrelServerFixture fixture)
         if (touch) await page.Locator("[data-po-input=up]").DispatchEventAsync("pointerup", new { pointerId = 1, bubbles = true });
         else await page.Keyboard.UpAsync("ArrowUp");
         await page.ScreenshotAsync(new() { Path = $"artifacts/poracer-{(touch ? "mobile" : "desktop")}.png" });
-        // Standings remain on both sizes; the minimap was removed to reduce rendering work.
-        (await page.Locator("#racerMinimap").CountAsync()).Should().Be(0);
+        // Standings remain on both sizes. The minimap is back as a small canvas that draws one
+        // dot a car (js/poracer/fx.js): it rides the desktop frame and is dropped on a phone,
+        // where the strip and the standings are the whole screen.
+        (await page.Locator(".race-minimap").CountAsync()).Should().Be(1);
+        (await page.Locator(".race-minimap").IsVisibleAsync()).Should().Be(!touch);
         (await page.Locator(".race-standings li").CountAsync()).Should().Be(4);
         await BackToStartAsync(page);
         await page.GetByRole(AriaRole.Button, new() { Name = "OK", Exact = true }).ClickAsync();

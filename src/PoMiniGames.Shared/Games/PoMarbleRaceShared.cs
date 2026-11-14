@@ -72,8 +72,39 @@ public sealed record MarbleRaceJoin(bool Joined, string? Error);
 /// </summary>
 public sealed record MarbleRaceRematch(bool HostWants, bool GuestWants, bool Agreed);
 
-/// <summary>One finish on one map, offered as a world record. The server keeps it only if it is the fastest.</summary>
-public sealed record MarbleRaceRecordRequest(int MapId, double FinishSeconds);
+/// <summary>
+/// One finish on one map, offered as a world record. The server keeps it only if it is the fastest.
+/// On the Daily Canyon (<see cref="MarbleRaceDaily.MapId"/>) <see cref="Day"/> is the UTC day
+/// (yyyy-MM-dd) whose course was raced, and the finish goes on that day's board instead.
+/// </summary>
+public sealed record MarbleRaceRecordRequest(int MapId, double FinishSeconds, string? Day = null);
+
+/// <summary>The Daily Canyon: one seeded course per UTC day, the same for everyone (maps.js slot 6).</summary>
+public static class MarbleRaceDaily
+{
+    /// <summary>The map slot (maps.js <c>id: 6</c>).</summary>
+    public const int MapId = 6;
+
+    public const string DayFormat = "yyyy-MM-dd";
+
+    /// <summary>
+    /// Re-formats a caller's day from the parsed date, so only a server-formatted key ever reaches
+    /// storage, and accepts it only if it is today or the day either side (a race that ran over
+    /// midnight UTC, or a skewed clock). Anything older is not a board anyone can still post to.
+    /// </summary>
+    public static bool TryDayKey(string? day, DateTime utcNow, out string key)
+    {
+        key = "";
+        if (!DateOnly.TryParseExact(day, DayFormat, System.Globalization.CultureInfo.InvariantCulture,
+                System.Globalization.DateTimeStyles.None, out var date)) return false;
+        if (Math.Abs(date.DayNumber - DateOnly.FromDateTime(utcNow).DayNumber) > 1) return false;
+        key = date.ToString(DayFormat, System.Globalization.CultureInfo.InvariantCulture);
+        return true;
+    }
+
+    public static string TodayKey(DateTime utcNow) =>
+        DateOnly.FromDateTime(utcNow).ToString(DayFormat, System.Globalization.CultureInfo.InvariantCulture);
+}
 
 /// <summary>One top-10 finish inside a scoring run. <see cref="LeadSeconds"/> is the gap to 2nd (0 unless 1st).</summary>
 public sealed record MarbleRaceRunRace(int Place, double FinishSeconds, double LeadSeconds);

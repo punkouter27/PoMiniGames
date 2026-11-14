@@ -2,7 +2,8 @@
 //
 // Slots 1-9. Slot 1 is Neon Canyon (procedural), slot 2 is the authored marble_track.glb
 // course, slot 3 is marble_track_2.glb, 4 is retired (it was Canyon Run, now folded into slot 1),
-// 5 is the imported playground.glb scene, and 6-9 are free for further GLB courses. TO ADD A MAP,
+// 5 is the imported playground.glb scene, 6 is the Daily Canyon (Neon Canyon's generator on the
+// UTC day's seed), and 7-9 are free for further GLB courses. TO ADD A MAP,
 // see ADDING A GLB MAP below — it is a handful of lines here plus one bake, with nothing to
 // change in game.js.
 //
@@ -35,6 +36,7 @@
 //   checkpoints      `s` of each checkpoint arch / sector split (addCheckpointArches, game.js)
 //   kickers          telegraphed kicker bands (see game.js _applyKickers)
 //   regenerate       true if asking for a new track means anything (procedural maps only)
+//   respawnPoint(safe, lift, out)  where to put a marble back on (course.js _respawn)
 //
 // A registry entry (MAPS below) may also carry a `theme` — scene.js setTheme(): background/fog
 // colour, fog range, ambient/hemisphere/key lights and exposure. The page reads names and blurbs
@@ -89,7 +91,8 @@ const spiralWorks = createGlbCourse({
   // RACE_TIMEOUT instead of by anyone crossing a line. Everything before it descends cleanly, so
   // the line moves to 2230 (40 units clear of the climb) and the raceable course becomes the
   // race. The geometry beyond is still built and still rendered; it is simply past the line now.
-  finishS: 2230,
+  boostBands: [[2262, 2334, 90], [3176, 3248, 90], [3520, 3612]],
+  kickerBands: [[3000, 3030]],
 });
 
 const grandSpiral = createGlbCourse({
@@ -223,6 +226,8 @@ function adaptProceduralTrack(t) {
       upAt(proj.s, _u);
       return out.set(pos.x, pos.y, pos.z).addScaledVector(_u, -proj.height + 0.06);
     },
+    // Where a respawned marble goes back on (course.js _respawn): above the centre of the floor.
+    respawnPoint: (safe, lift, out) => out.copy(t.centerAt(safe.s)).addScaledVector(upAt(safe.s, _u), lift),
     inBoost: (s) => t.inBoost(s),
     checkpoints: t.checkpoints,
     driveMotors: () => t.driveMotors(),
@@ -299,6 +304,18 @@ const NEON_CANYON = {
   curve: 1.1,
 };
 
+// ── the daily course ──
+// One canyon per UTC day, the same for everyone: the day is the seed. game.js asks for both when
+// it builds a daily map, and sends the day with a finish so the server files it on that day's board.
+/** Today's UTC day as yyyy-MM-dd. */
+export const dailyKey = (now = Date.now()) => new Date(now).toISOString().slice(0, 10);
+/** The course seed for a day key (FNV-1a over its characters). */
+export function dailySeed(key) {
+  let h = 0x811c9dc5;
+  for (let i = 0; i < key.length; i++) { h ^= key.charCodeAt(i); h = Math.imul(h, 0x01000193); }
+  return h >>> 0;
+}
+
 const MAPS = [
   {
     id: 1,
@@ -347,6 +364,23 @@ const MAPS = [
     build: (world, materials, marbleCount, asset) => addCheckpointArches(grandSpiral.buildTrack(world, materials, marbleCount, asset)),
   },
   {
+    id: 6,
+    name: 'Daily Canyon',
+    blurb: 'One canyon a day, the same for everyone until midnight UTC, with its own board. Your best run is a ghost.',
+    // `daily`: the seed is the UTC day (dailySeed above), not the clock, and a finish goes on
+    // that day's board. Same generator and layout rules as Neon Canyon, under a dawn sky.
+    daily: true,
+    theme: {
+      bg: 0x1c1430, fogNear: 90, fogFar: 340,
+      ambient: [0xc8b4cc, 2.8], hemi: [0xffb48a, 0x2a1830, 1.8], key: [0xffd2b0, 3.0], exposure: 1.1,
+      reflect: true,
+    },
+    reverb: { decay: 1.8, wet: 0.27, tone: 4200, echo: { time: 0.32, feedback: 0.3, level: 0.4 } },
+    load: () => Promise.resolve(null),
+    build: (world, materials, marbleCount, _asset, seed) =>
+      addCheckpointArches(adaptProceduralTrack(generateTrack(world, materials, seed >>> 0, marbleCount, NEON_CANYON))),
+  },
+  {
     id: 5,
     name: 'Playground Run',
     blurb: 'Three laps of gutter round a jungle gym, down the drop well and the big slide into the tray.',
@@ -373,5 +407,5 @@ export function mapById(id) {
 
 /** Slot ids and names, for the host's map picker. */
 export function mapMenu() {
-  return MAPS.map((m) => ({ id: m.id, name: m.name, blurb: m.blurb }));
+  return MAPS.map((m) => ({ id: m.id, name: m.name, blurb: m.blurb, daily: !!m.daily }));
 }

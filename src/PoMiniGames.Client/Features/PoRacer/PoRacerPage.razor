@@ -8,10 +8,8 @@
 @inject NavigationManager Nav
 @inject GameStatsService GameStats
 @inject GameResultService GameResults
-@inject ScoreSyncService ScoreSync
 @inject KioskCoordinator Kiosk
 @inject PlayerNameService PlayerNameService
-@inject ApiService Api
 @inject ApiEndpoints Endpoints
 @inject UiFeedbackService Feedback
 @inject ToastService ToastService
@@ -36,7 +34,7 @@
                            Controls="@ControlsContent"
                            HowToPlay="@TipsContent"
                            Options="@(_mode == RaceMode.Solo ? SoloSetup : StartError)"
-                           Mode="@(_isDemo ? GameIntro.IntroMode.Demo : GameIntro.IntroMode.OnePlayer)"
+                           Mode="@(IsDemo ? GameIntro.IntroMode.Demo : GameIntro.IntroMode.OnePlayer)"
                            Wide="@(_mode == RaceMode.Solo)"
                            OnStart="OnIntroStartAsync" />
             </div>
@@ -52,7 +50,7 @@
                                     LocalConnectionId="@(_lobby?.ConnectionId ?? "")"
                                     ConnectionState="@(_lobby?.ConnectionState ?? Microsoft.AspNetCore.SignalR.Client.HubConnectionState.Disconnected)"
                                     Hint="One shared room. The first driver in hosts and picks the track; bots fill the empty seats."
-                                    MaxPlayersHint="8"
+                                    MaxPlayersHint="PoRacerCatalog.CarCount"
                                     StartLabel="Start Race"
                                     OnReconnect="ReconnectLobbyAsync"
                                     OnReady="@(() => _lobby?.ToggleReadyAsync() ?? Task.CompletedTask)"
@@ -78,7 +76,7 @@
         }
         @if (_phase == RacePhase.Racing)
         {
-            <PoRacerHud Cars="_cars" Roster="_roster" PlayerId="_localCarId" TotalLaps="_totalLaps" IsDemo="_isDemo" Weather="@_raceWeather" OnPause="TogglePauseAsync" />
+            <PoRacerHud Cars="_cars" Roster="_roster" PlayerId="_localCarId" TotalLaps="_totalLaps" IsDemo="IsDemo" Weather="@_raceWeather" OnPause="TogglePauseAsync" />
             @if (!_raceStarted || _elapsed < 0.9)
             {
                 @* Five lamps come on one at a time over the last 2.5 s, hold, and go out together:
@@ -92,7 +90,7 @@
                         }
                     </div>
                     <strong class="@(_raceStarted ? "" : "sr-only")">@(_raceStarted ? "GO!" : _countdown.ToString())</strong>
-                    @if (!_isDemo) { <PoRacerControls /> }
+                    @if (!IsDemo) { <PoRacerControls /> }
                 </div>
             }
             @if (_pauseOpen)
@@ -112,12 +110,12 @@
                                 Ghost: race your best lap on this track
                             </label>
                         }
-                        @if (!_isDemo) { <PoRacerControls /> }
+                        @if (!IsDemo) { <PoRacerControls /> }
                     </div>
                 </GamePauseDialog>
             }
         }
-        @if (_phase == RacePhase.Finished && !_showResults && !_isDemo)
+        @if (_phase == RacePhase.Finished && !_showResults && !IsDemo)
         {
             <div class="race-flag" aria-hidden="true"></div>
         }
@@ -155,7 +153,7 @@
         <div class="racer-options">
             <div class="racer-chips" role="radiogroup" aria-label="Race">
                 <span class="racer-chips-label">Race</span>
-                <label><input type="radio" name="poracer-mode" checked="@(!_trial)" @onchange="() => SetTrial(false)" />99 rivals</label>
+                <label><input type="radio" name="poracer-mode" checked="@(!_trial)" @onchange="() => SetTrial(false)" />@(PoRacerCatalog.SoloCarCount - 1) rivals</label>
                 <label><input type="radio" name="poracer-mode" checked="@_trial" @onchange="() => SetTrial(true)" />Time trial</label>
             </div>
             @if (!_trial)

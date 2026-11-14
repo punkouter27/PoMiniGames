@@ -321,6 +321,19 @@ public class ApiService
         }
     }
 
+    /// <summary>Today's Daily Canyon board: each player's fastest finish on today's course.</summary>
+    public async Task<PoMiniGames.Domain.Models.MarbleRaceMapRecord[]?> GetMarbleRaceDailyTimesAsync(int count = 10)
+    {
+        try
+        {
+            return await _http.GetFromJsonAsync($"/api/marblerace/daily?count={count}", ApiJsonContext.Default.MarbleRaceMapRecordArray);
+        }
+        catch
+        {
+            return null;
+        }
+    }
+
     /// <summary>
     /// Offers one finish as a map record. Fire-and-forget by design: a record that fails to post is
     /// not parked for retry the way a run score is — the next good finish offers itself anyway.

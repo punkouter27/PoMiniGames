@@ -121,8 +121,7 @@ public static class MarbleRaceHighScoresEndpoints
                 }
                 var identity = RequestIdentity.Resolve(http.User);
                 var name = integrity.ResolveDisplayName(identity.DisplayName, identity.IsAuthenticated ? "Player" : "Guest");
-                // The board keeps the faster of this and the standing record (ShouldOverwrite).
-                var saved = await storage.SaveMarbleRaceMapRecordAsync(new MarbleRaceMapRecord
+                var entry = new MarbleRaceMapRecord
                 {
                     MapId = request.MapId,
                     Seconds = Math.Round(request.FinishSeconds, 2),
@@ -130,7 +129,25 @@ public static class MarbleRaceHighScoresEndpoints
                     UserId = identity.UserId,
                     IsGuest = identity.IsGuest,
                     AchievedAtUtc = DateTimeOffset.UtcNow,
-                });
+                };
+
+                // The Daily Canyon has no all-time record (tomorrow's is a different course): the
+                // finish goes on the board of the day it was raced, one ratcheted row per player.
+                // That the run used that day's seed is the client's word; nothing here can check it.
+                if (request.MapId == MarbleRaceDaily.MapId)
+                {
+                    if (!MarbleRaceDaily.TryDayKey(request.Day, DateTime.UtcNow, out var day))
+                    {
+                        return Results.ValidationProblem(new Dictionary<string, string[]>
+                        {
+                            [nameof(request.Day)] = ["Day must be today's date (UTC) in yyyy-MM-dd form."],
+                        });
+                    }
+                    return Results.Ok(await storage.SaveMarbleRaceDailyTimeAsync(entry, day));
+                }
+
+                // The board keeps the faster of this and the standing record (ShouldOverwrite).
+                var saved = await storage.SaveMarbleRaceMapRecordAsync(entry);
                 return Results.Ok(saved);
             })
             .WithName("SubmitMarbleRaceMapRecord")
@@ -138,6 +155,16 @@ public static class MarbleRaceHighScoresEndpoints
             .Produces<MarbleRaceMapRecord>(StatusCodes.Status200OK)
             .ProducesValidationProblem()
             .RequireRateLimiting("highscores");
+
+        // ── Daily Canyon: today's board (each player's fastest finish on today's course) ──
+        app.MapGet("/marblerace/daily",
+            async (IStorageService storage, int count = 10) =>
+                Results.Ok(await storage.GetMarbleRaceDailyTimesAsync(
+                    MarbleRaceDaily.TodayKey(DateTime.UtcNow), Math.Clamp(count, 1, 50))))
+            .WithTags("HighScores")
+            .WithName("GetMarbleRaceDailyTimes")
+            .WithSummary("Today's PoMarbleRace Daily Canyon board, fastest first")
+            .Produces<IEnumerable<MarbleRaceMapRecord>>(StatusCodes.Status200OK);
 
         return app;
     }

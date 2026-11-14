@@ -122,15 +122,20 @@ public partial class StorageService
     // Slot → the moment its course last changed shape. 2026-11-05: Neon Chute (1) and Canyon Run (4)
     // were folded into Neon Canyon on slot 1, a longer course, so older slot-1 times no longer
     // compare and slot 4 has no course. Records from before are hidden and overwritten.
+    // 2026-11-13: Spiral Works (2) races its whole course now (the finish used to sit at 62% of it,
+    // in front of the first loop), so its older, shorter times no longer compare either.
     private static readonly Dictionary<int, DateTimeOffset> MarbleRaceCourseSince = new()
     {
         [1] = new DateTimeOffset(2026, 11, 5, 0, 0, 0, TimeSpan.Zero),
+        [2] = new DateTimeOffset(2026, 11, 13, 0, 0, 0, TimeSpan.Zero),
         [4] = DateTimeOffset.MaxValue,
     };
 
     private static bool IsStaleMarbleRaceRecord(int mapId, DateTimeOffset achievedAt) =>
         MarbleRaceCourseSince.TryGetValue(mapId, out var since) && achievedAt < since;
 
+    // The per-day partitions of the Daily Canyon share this table; the default partition filter
+    // keeps them out of the world records.
     public async Task<List<MarbleRaceMapRecord>> GetMarbleRaceMapRecordsAsync() =>
         (await GetHighScoresAsync(MarbleRaceRecords, 50))
             .Where(r => !IsStaleMarbleRaceRecord(r.MapId, r.AchievedAtUtc))
@@ -138,6 +143,27 @@ public partial class StorageService
 
     public Task<MarbleRaceMapRecord> SaveMarbleRaceMapRecordAsync(MarbleRaceMapRecord entry) =>
         SaveHighScoreAsync(MarbleRaceRecords, entry);
+
+    // The Daily Canyon board: the same row shape as a world record, but one row per PLAYER in a
+    // partition per UTC day (everyone races the one canyon that day's seed builds, so the day IS
+    // the board), ranked fastest first and ratcheted so a slower later run cannot replace a faster.
+    private static readonly HighScoreDescriptor<MarbleRaceMapRecord> MarbleRaceDailyTimes = MarbleRaceRecords with
+    {
+        RowKeyFields = ["PlayerName", "UserId", "IsGuest"],
+        Rank = s => s.OrderBy(x => x.Seconds).ThenBy(x => x.AchievedAtUtc),
+        ShouldOverwrite = (existing, incoming) =>
+            (incoming.TryGetValue("Seconds", out var v) ? v as double? ?? double.MaxValue : double.MaxValue)
+                < (existing.GetDouble("Seconds") ?? double.MaxValue),
+    };
+
+    // `day` reaches an OData filter, so it must already be a server-formatted yyyy-MM-dd.
+    private static string MarbleRaceDayPartition(string day) => $"{MarbleRacePartition}_daily_{day}";
+
+    public Task<List<MarbleRaceMapRecord>> GetMarbleRaceDailyTimesAsync(string day, int limit = 10) =>
+        GetHighScoresAsync(MarbleRaceDailyTimes, limit, partition: MarbleRaceDayPartition(day));
+
+    public Task<MarbleRaceMapRecord> SaveMarbleRaceDailyTimeAsync(MarbleRaceMapRecord entry, string day) =>
+        SaveHighScoreAsync(MarbleRaceDailyTimes, entry, partition: MarbleRaceDayPartition(day));
 
     private static readonly HighScoreDescriptor<PoBrawlHighScore> PoBrawlScores = new(
         Table: PoBrawlTable,

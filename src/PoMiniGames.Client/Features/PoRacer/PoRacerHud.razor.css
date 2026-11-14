@@ -6,7 +6,21 @@
     background: var(--racer-glass); border: 1px solid var(--racer-edge); border-radius: 12px;
     backdrop-filter: blur(10px) saturate(1.3); -webkit-backdrop-filter: blur(10px) saturate(1.3);
     box-shadow: inset 0 1px 0 #ffffff1a, 0 8px 24px #0005; }
-.race-metrics { display: flex; align-items: center; gap: 4px 14px; padding: 6px 12px; min-height: 44px; white-space: nowrap; font-variant-numeric: tabular-nums; }
+.race-metrics { position: relative; display: flex; align-items: center; gap: 4px 14px; padding: 6px 12px 10px; min-height: 44px; white-space: nowrap; font-variant-numeric: tabular-nums; }
+/* Instrument bars along the bottom of the strip. The widths come from custom properties that
+   js/poracer/index.js writes each frame (--speed / --heat / --tow, all 0..1), so the gauges
+   move at frame rate without Blazor rendering anything. */
+.race-bars { position: absolute; left: 10px; right: 10px; bottom: 4px; display: grid; gap: 2px; }
+.race-bar { height: 2px; border-radius: 2px; background: #ffffff17; overflow: hidden; }
+.race-bar::after { content: ''; display: block; height: 100%; width: calc(var(--v, 0) * 100%);
+    background: currentColor; transition: width .1s linear; }
+.race-bar--speed { color: var(--racer-accent); --v: var(--speed, 0); }
+.race-bar--heat { color: var(--racer-warn); --v: var(--heat, 0); }
+.race-bar--tow { color: var(--racer-accent-line); --v: var(--tow, 0); }
+/* The minimap sits under the pause button, out of the driving line. */
+.race-minimap { position: absolute; top: 56px; right: 0; width: 132px; height: 88px; border-radius: 12px;
+    background: var(--racer-well); border: 1px solid var(--racer-edge); pointer-events: none;
+    box-shadow: inset 0 1px 0 #ffffff1a, 0 8px 24px #0005; }
 .race-metrics strong { color: var(--racer-accent-line); }
 .race-clock, .race-speed, .race-lap-now { display: inline-block; text-align: right; }
 .race-clock { min-width: 5.2ch; }
@@ -47,8 +61,19 @@
 @media (max-width: 600px) {
     .race-hud { inset: max(8px, env(safe-area-inset-top)) max(8px, env(safe-area-inset-right)) max(8px, env(safe-area-inset-bottom)) max(8px, env(safe-area-inset-left)); }
     .race-strip { max-width: calc(100% - 52px); }
-    .race-metrics { gap: 2px 9px; padding: 6px 8px; font-size: 13px; }
+    .race-metrics { gap: 2px 9px; padding: 6px 8px 10px; font-size: 13px; }
     .race-laps { font-size: 12px; gap: 0 10px; }
     .race-standings { width: 100%; max-width: 190px; font-size: 13px; }
+    /* A phone has no room for a map beside the strip; the standings already carry the field. */
+    .race-minimap { display: none; }
 }
-@media (prefers-reduced-motion: reduce) { .race-pos { animation: none; } }
+/* The pause button and the pads get the same press response as every other control in the app. */
+.race-pause { transition: transform .12s cubic-bezier(.2, .9, .3, 1.4), background .12s ease, box-shadow .12s ease; }
+.race-pause:hover { background: var(--racer-control); }
+.race-pause:active { transform: scale(.93); box-shadow: inset 0 3px 10px #0006; }
+.race-touch button { transition: transform .09s ease, background .09s ease; }
+.race-touch button.is-pressed { transform: scale(.94); }
+@media (prefers-reduced-motion: reduce) {
+    .race-pos { animation: none; }
+    .race-pause, .race-touch button, .race-bar::after { transition: none; }
+}

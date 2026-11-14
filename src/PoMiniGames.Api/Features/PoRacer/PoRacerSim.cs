@@ -115,26 +115,14 @@ internal sealed class PoRacerSim
             wallsArr[i * 4 + 2] = _walls[i].b.X;
             wallsArr[i * 4 + 3] = _walls[i].b.Y;
         }
-        double minX = double.MaxValue, minY = double.MaxValue, maxX = double.MinValue, maxY = double.MinValue;
-        foreach (var p in _centerline)
-        {
-            if (p.X < minX) minX = p.X; if (p.X > maxX) maxX = p.X;
-            if (p.Y < minY) minY = p.Y; if (p.Y > maxY) maxY = p.Y;
-        }
-        var pad = _trackWidth;
         Static = new PoRacerStaticWorld
         {
             TrackId = track.Id,
-            TrackName = track.DisplayName,
             Theme = track.EnvironmentTheme,
             Weather = weather,
             CenterXY = centerArr,
             WallsXY = wallsArr,
             TrackWidth = _trackWidth,
-            MinX = minX - pad,
-            MinY = minY - pad,
-            MaxX = maxX + pad,
-            MaxY = maxY + pad,
             TotalLaps = TotalLaps,
             BoostPads = track.BoostPads.Select(b => new PoRacerBoostPadWire
             {
@@ -153,15 +141,10 @@ internal sealed class PoRacerSim
             }).ToList()
         };
 
-        // Spawn grid: 2 cols × N rows along the first segment direction.
-        var startA = _centerline[0];
-        var startB = _centerline[1];
-        // Use a tangent directly: tangent = (b - a) normalized
-        var dx = startB.X - startA.X; var dy = startB.Y - startA.Y;
-        var dlen = Math.Sqrt(dx * dx + dy * dy);
-        var tx = dx / dlen; var ty = dy / dlen;
-        // perp = (-ty, tx) — but we also want forward = (tx, ty)
-        var nrm = new Vec2(-ty, tx);
+        // Start grid: two columns, staggered, laid along the road itself from just past the
+        // line (GridSlot). It used to run in a straight line along the first segment's direction,
+        // stepping 4 units further to one side every row: a long field left the road at the
+        // first bend and walked off the edge of the track before it.
         // Players go first; AI fills the remaining seats for this mode.
         var palette = new[] { "#4ec3ff", "#ff5d6c", "#ffd24e", "#7eff8a", "#c47bff", "#ff944d", "#5ee7ff", "#ff77c8" };
         var playerProfile = (skill: 0.7, maxSpeed: 320.0, accel: 220.0, handling: 1.0);
@@ -186,13 +169,7 @@ internal sealed class PoRacerSim
             // first, on a board that ranks best laps.
             var prof = playerProfile;
             var personality = s.isPlayer ? null : PoRacerAiDriver.GetPersonality(i);
-            int row = i / 2;
-            int col = i % 2;
-            double fwdOffset = 60 + row * 38;
-            double sideOffset = (col == 0 ? -28.0 : 28.0) - (row * 4);
-            var pos = new Vec2(
-                startA.X + tx * fwdOffset + nrm.X * sideOffset,
-                startA.Y + ty * fwdOffset + nrm.Y * sideOffset);
+            var (pos, gridHeading, gridNode) = GridSlot(i);
             string carColor = personality?.PrimaryColor ?? palette[i];
             var car = new SimCar
             {
@@ -205,7 +182,7 @@ internal sealed class PoRacerSim
                 ColorDark = Darken(carColor),
                 Livery = PoRacerCatalog.Liveries[i % PoRacerCatalog.Liveries.Count],
                 Pos = pos,
-                Heading = Math.Atan2(ty, tx),
+                Heading = gridHeading,
                 MaxSpeed = personality is null ? prof.maxSpeed : personality.MaxSpeed * botPace,
                 Acceleration = personality is null ? prof.accel : personality.Acceleration * botPace,
                 Handling = personality?.Handling ?? prof.handling,
@@ -213,7 +190,9 @@ internal sealed class PoRacerSim
                 Lane = personality?.LateralOffsetRatio ?? 0,
                 Wet = _wet,
                 Lap = 1,
-                LastCheckpoint = 0,
+                // Where on the lap the slot is: the search for a car's place on the centerline
+                // starts from here, and a slot far up the road is far from node 0.
+                LastCheckpoint = gridNode,
                 CheckpointT = 0,
                 DistanceAlongTrack = 0,
             };
@@ -225,6 +204,41 @@ internal sealed class PoRacerSim
         foreach (var car in _cars) { Project(car); UpdateRaceProgress(car); }
         Rank();
         Static.Roster = BuildRoster();
+    }
+
+    /// <summary>
+    /// Grid slot <paramref name="index"/>: its position, the way it faces and the centerline
+    /// node it sits on. Slots come in pairs, 44 units of road apart; the left car of a pair is
+    /// 30 to the left of the centerline and the right one 30 to the right and half a pair
+    /// further up the road, the stagger of a real grid. Each slot is measured along the centerline, so
+    /// the field bends with the road and every car faces down it. The first pair is 60 past the
+    /// line and later pairs are further up the road, so the humans (the lowest indices) start
+    /// at the back, as they always have.
+    /// </summary>
+    private (Vec2 Pos, double Heading, int Node) GridSlot(int index)
+    {
+        const double firstRow = 60, rowGap = 44, column = 30;
+        bool right = index % 2 == 1;
+        double along = firstRow + (index / 2) * rowGap + (right ? rowGap * 0.5 : 0);
+        int n = _centerline.Count, node = 0;
+        // Walk the centerline to that distance (at most once round: no grid is a lap long).
+        for (int walked = 0; walked < n; walked++)
+        {
+            var a = _centerline[node];
+            var b = _centerline[(node + 1) % n];
+            double length = Math.Sqrt((b.X - a.X) * (b.X - a.X) + (b.Y - a.Y) * (b.Y - a.Y));
+            if (along <= length || walked == n - 1)
+            {
+                double t = length > 1e-9 ? Math.Min(1, along / length) : 0;
+                var normal = Normal(a, b);
+                double side = right ? column : -column;
+                return (new Vec2(a.X + (b.X - a.X) * t + normal.X * side, a.Y + (b.Y - a.Y) * t + normal.Y * side),
+                    Math.Atan2(b.Y - a.Y, b.X - a.X), node);
+            }
+            along -= length;
+            node = (node + 1) % n;
+        }
+        return (_centerline[0], 0, 0);
     }
 
     public int? CarIdForOwner(string ownerId) => _byOwnerId.TryGetValue(ownerId, out var car) ? car.Id : null;
@@ -323,12 +337,21 @@ internal sealed class PoRacerSim
             if (c.Lap <= TotalLaps) continue;
             c.Speed *= Math.Max(0, 1 - 3.5 * dt);
             if (Math.Abs(c.Speed) < 2) c.Speed = 0;
-            c.Pos = new Vec2(c.Pos.X + Math.Cos(c.Heading) * c.Speed * dt,
-                             c.Pos.Y + Math.Sin(c.Heading) * c.Speed * dt);
+            var coast = c.Heading - c.Slip;
+            c.Pos = new Vec2(c.Pos.X + Math.Cos(coast) * c.Speed * dt,
+                             c.Pos.Y + Math.Sin(coast) * c.Speed * dt);
         }
         // Car-car collisions.
         BuildCollisionCandidates();
         ResolveCarCollisions();
+        // Yaw from an off-centre hit keeps turning the car for a moment after the contact,
+        // then the tyres win and it grips up again.
+        foreach (var c in _cars)
+        {
+            if (Math.Abs(c.Spin) < 1e-4) { c.Spin = 0; continue; }
+            c.Heading += c.Spin * dt;
+            c.Spin *= Math.Max(0, 1 - 5 * dt);
+        }
         // Hard safety bound: collision impulses on a jam of stopped cars could
         // otherwise integrate into absurd runaway speeds (the finish-line pile-up).
         // (A boosted car in a tow legitimately runs about 15% over MaxSpeed, hence the headroom.)
@@ -409,6 +432,8 @@ internal sealed class PoRacerSim
         // the two drafting personalities do, as before, so the solo tiers keep their pace.
         c.Drafting = (c.IsPlayer || c.Personality?.PrefersDrafting == true) && HasDraftingTarget(c);
         if (c.Drafting) c.AccelerationModifier = Math.Max(c.AccelerationModifier, 1.15);
+        // Eased, not snapped: the tow meter and the pressure-wave effect read this.
+        c.DraftStrength = Math.Clamp(c.DraftStrength + ((c.Drafting ? 1 : 0) - c.DraftStrength) * Math.Min(1, 6 * dt), 0, 1);
     }
 
     private bool HasDraftingTarget(SimCar car)
@@ -488,25 +513,51 @@ internal sealed class PoRacerSim
         double speedFactor = Math.Min(1, Math.Abs(c.Speed) / 80);
         double turnRate = (c.Speed / 60.0) * c.Steer * (1.0 - 0.3 * speedFactor) * (drift ? 1.5 : 1.0);
         // Less grip is understeer, and more of it the faster the car is going: at top speed in
-        // the rain a car turns 10% less, in snow 20% less. It also starts to slide sooner and
-        // slides further. Dry (Wet = 1) every one of these is the number it always was.
+        // the rain a car turns 10% less, in snow 20% less. Dry (Wet = 1) every one of these is
+        // the number it always was.
         turnRate *= 1 - (1 - c.Wet) * Math.Min(1, Math.Abs(c.Speed) / c.MaxSpeed);
-        double desiredHeading = c.Heading + turnRate * dt;
-        bool sliding = !drift && (handbrake || onSand || (Math.Abs(c.Steer) > 0.35 && Math.Abs(c.Speed) > c.MaxSpeed * 0.45 * c.Wet));
-        if (sliding)
+
+        // ── Slip ────────────────────────────────────────────────────────────────
+        // The nose follows the steering wheel; the car's mass follows the nose only as fast as
+        // the tyres can drag it round. The angle between the two is the slip angle, and it is
+        // what a drift IS: past the tyres' limit the car keeps travelling along its old line
+        // while the nose points into the corner, and the driver has to steer out of it.
+        //
+        // Grip is weather and tyre heat: heat is the scrub from the last few corners, and it
+        // cools again once the car runs straight, so a long drift costs real grip.
+        double grip = Math.Max(0.35, c.EffectiveGrip * c.Wet * (1 - 0.14 * c.TireHeat));
+        double demand = Math.Abs(turnRate) * 18 / Math.Max(60, Math.Abs(c.Speed)) / grip;
+        if (drift) demand = Math.Max(demand, 0.34 + 0.2 * c.DriftCharge);
+        if (handbrake) demand = Math.Max(demand, 0.48);
+        if (onSand) demand = Math.Max(demand, 0.3);
+        // Below about 40 units/s there is not enough speed to break traction at all.
+        if (Math.Abs(c.Speed) < 40) demand *= Math.Abs(c.Speed) / 40;
+        demand = Math.Min(0.62, demand);
+        double slipTarget = Math.Sign(turnRate) * demand;
+        // Slip builds faster than it recovers: a car lets go quickly and grips up slowly.
+        double slipRate = demand > Math.Abs(c.Slip) ? 6.0 : 3.0;
+        c.Slip += (slipTarget - c.Slip) * Math.Min(1, slipRate * dt);
+
+        c.Heading += turnRate * dt;
+
+        // A sliding tyre turns forward motion into noise, heat and smoke. The scrub is what
+        // keeps a drift a way round a corner rather than a free one.
+        double slipAbs = Math.Abs(c.Slip);
+        if (slipAbs > 0.1)
         {
-            double slideStrength = handbrake ? 0.7 : (onSand ? 0.55 : 0.4 + (1 - c.Wet) * 0.5);
-            c.Heading = desiredHeading * (1 - slideStrength) + c.Heading * slideStrength;
-            c.SkidIntensity = Math.Min(1, c.SkidIntensity + dt * (onSand ? 5 : 4));
+            c.Speed *= Math.Max(0, 1 - slipAbs * 1.1 * dt);
+            c.SkidIntensity = Math.Min(1, c.SkidIntensity + dt * (2 + slipAbs * 8));
         }
         else
         {
-            c.Heading = desiredHeading;
-            if (drift) c.SkidIntensity = Math.Min(1, c.SkidIntensity + dt * 4);
-            else c.SkidIntensity *= Math.Max(0, 1 - 3 * dt);
+            c.SkidIntensity *= Math.Max(0, 1 - 3 * dt);
         }
+        double scrubRate = slipAbs * Math.Abs(c.Speed) / 9000 + (handbrake ? 0.35 : 0);
+        c.TireHeat = Math.Clamp(c.TireHeat + (scrubRate - 0.18) * dt, 0, 1);
 
-        c.Pos = new Vec2(c.Pos.X + Math.Cos(c.Heading) * c.Speed * dt, c.Pos.Y + Math.Sin(c.Heading) * c.Speed * dt);
+        // Travel is along the direction the car is actually moving: the nose minus the slip.
+        double travel = c.Heading - c.Slip;
+        c.Pos = new Vec2(c.Pos.X + Math.Cos(travel) * c.Speed * dt, c.Pos.Y + Math.Sin(travel) * c.Speed * dt);
 
         c.BoostGlow *= Math.Max(0, 1 - 2 * dt);
         if (accel && Math.Abs(c.Speed) > c.MaxSpeed * 0.85) c.BoostGlow = Math.Min(1, c.BoostGlow + dt * 2);
@@ -825,6 +876,13 @@ internal sealed class PoRacerSim
                     var dent = Math.Min(0.06, closing / 2500);
                     a.Damage = Math.Min(1, a.Damage + dent);
                     b.Damage = Math.Min(1, b.Damage + dent);
+                    // A hit that lands off the line through both centres spins the car; a square
+                    // rear-ender does not. The lever is the sine of the angle between the
+                    // contact normal and the car's heading, and the spin decays in Tick.
+                    var lever = Math.Sin(Math.Atan2(dy, dx) - a.Heading);
+                    var spin = Math.Min(1.8, closing / 320);
+                    a.Spin = Math.Clamp(a.Spin - lever * spin, -3, 3);
+                    b.Spin = Math.Clamp(b.Spin + lever * spin, -3, 3);
                 }
             }
         }
@@ -832,8 +890,9 @@ internal sealed class PoRacerSim
 
     private static double ProjectVelocity(SimCar c, double nx, double ny)
     {
-        var vx = Math.Cos(c.Heading) * c.Speed;
-        var vy = Math.Sin(c.Heading) * c.Speed;
+        var dir = c.Heading - c.Slip;
+        var vx = Math.Cos(dir) * c.Speed;
+        var vy = Math.Sin(dir) * c.Speed;
         return vx * nx + vy * ny;
     }
 
@@ -862,8 +921,9 @@ internal sealed class PoRacerSim
         var tlen = Math.Sqrt(tdx * tdx + tdy * tdy);
         var tx = tdx / tlen; var ty = tdy / tlen;
         var nx = n.X * sign; var ny = n.Y * sign;
-        var vx = Math.Cos(c.Heading) * c.Speed;
-        var vy = Math.Sin(c.Heading) * c.Speed;
+        var travel = c.Heading - c.Slip;
+        var vx = Math.Cos(travel) * c.Speed;
+        var vy = Math.Sin(travel) * c.Speed;
         var vInto = vx * nx + vy * ny;
         var vTangent = vx * tx + vy * ty;
         var vNormalNew = -Math.Abs(vInto) * 0.15;
@@ -879,6 +939,8 @@ internal sealed class PoRacerSim
         // car grinds along the wall and Damage runs to 1 in a quarter second.
         c.Heading += 0.2 * Math.Sign(Math.Sin(c.Heading) * nx - Math.Cos(c.Heading) * ny);
         c.SkidIntensity = 1.0;
+        // The barrier took the slide out of it: no residual slip or spin after a hit.
+        c.Slip = 0; c.Spin = 0;
         // By the speed into the barrier: a 5 degree brush at full speed is about 0.02, head-on is 0.12.
         if (Math.Abs(vInto) > 20) c.Damage = Math.Min(1, c.Damage + Math.Min(0.12, Math.Abs(vInto) / 1500));
     }
@@ -993,6 +1055,9 @@ internal sealed class PoRacerSim
             Damage = Math.Round(c.Damage, 2),
             Drafting = c.Drafting,
             Drift = Math.Round(c.DriftCharge, 2),
+            Slip = Math.Round(c.Slip, 3),
+            TireHeat = Math.Round(c.TireHeat, 2),
+            Draft = Math.Round(c.DraftStrength, 2),
         }).ToList();
         return new PoRacerRaceSnapshot
         {
@@ -1130,5 +1195,9 @@ internal sealed class PoRacerSim
         public double Whim;         // the wildcard's lane of the moment
         public double WhimTimer;    // ...and the seconds until it picks another
         public double HotTimer;     // seconds left of a bot ignoring most of its caution (the wildcard's mistake)
+        public double Slip;         // radians between the nose and the direction of travel
+        public double Spin;         // rad/s of yaw left over from an off-centre hit
+        public double TireHeat;     // 0..1; scrubs grip and feeds the smoke
+        public double DraftStrength; // 0..1, eased from Drafting for the tow meter and effects
     }
 }

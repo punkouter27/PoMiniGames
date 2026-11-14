@@ -21,6 +21,14 @@ public sealed class MarbleMenu
     public MarblePalette Palette { get; set; } = new();
     /// <summary>The Settings drawer's switches as saved (store.js prefs, ghost and mute).</summary>
     public MarblePrefs Prefs { get; set; } = new();
+    /// <summary>Your Grand Prix record (grandprix.js): best points total and best overall place.</summary>
+    public MarbleGrandPrixBest Gp { get; set; } = new();
+}
+
+public sealed class MarbleGrandPrixBest
+{
+    public int Best { get; set; }
+    public int BestRank { get; set; }
 }
 
 public sealed class MarblePrefs
@@ -47,6 +55,8 @@ public sealed class MarbleMapOption
     public int Id { get; set; }
     public string Name { get; set; } = "";
     public string Blurb { get; set; } = "";
+    /// <summary>The Daily Canyon: one seeded course per UTC day, with its own board.</summary>
+    public bool Daily { get; set; }
 }
 
 public sealed class MarbleSkinOption

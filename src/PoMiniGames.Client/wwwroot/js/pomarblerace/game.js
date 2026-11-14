@@ -4,9 +4,10 @@
 import * as THREE from 'three';
 import { createScene } from './scene.js';
 import { createWorld, stepWorld } from './physics.js';
-import { mapById, DEFAULT_MAP_ID } from './maps.js';
+import { mapById, DEFAULT_MAP_ID, dailyKey, dailySeed } from './maps.js';
 import { createMarbles, MARBLE_COUNT, SKINS } from './marbles.js';
-import { load as loadSave, update as updateSave, readBest } from './store.js';
+import { load as loadSave, update as updateSave, readBest, rollDaily } from './store.js';
+import { gpBegin } from './grandprix.js';
 import { createAudio } from './audio.js';
 import { GhostMixin } from './ghost.js';
 import { InputMixin } from './input.js';
@@ -22,7 +23,7 @@ import '../weather.js';
 import '../glassFx.js';
 
 import {
-  RACE_TIMEOUT, TICK_INTERVAL, SLOWMO_DIST, SLOWMO_SCALE, GUEST_COLOR,
+  RACE_TIMEOUT, TICK_INTERVAL, SLOWMO_DIST, SLOWMO_SCALE, GUEST_COLOR, GHOST_KEY,
 } from './tuning.js';
 
 
@@ -37,8 +38,9 @@ export class Game {
    *   frame loop never has to run trackless; index.js owns that await.
    * @param {object|null} online null for a local game, else { role: 'host'|'guest', seed, guestIndex }.
    * @param {object|null} marble the player's { skin, weight } from the intro card, or null.
+   * @param {object|null} opts { gp: { round, rounds } } for a Grand Prix round (grandprix.js).
    */
-  constructor(containerId, dotnetRef, demo, mapId, asset, online, marble) {
+  constructor(containerId, dotnetRef, demo, mapId, asset, online, marble, opts) {
     this.container = document.getElementById(containerId);
     this.dotnet = dotnetRef || null;
     this.demo = !!demo;
@@ -48,6 +50,8 @@ export class Game {
     this.online = online || null;
     this.isGuest = !!online && online.role === 'guest';
     this.guestIndex = online ? online.guestIndex : -1;
+    // A Grand Prix round (local races only): the table across rounds lives in grandprix.js.
+    this.gp = opts && opts.gp && !this.demo && !online ? gpBegin(opts.gp.round | 0, opts.gp.rounds | 0, MARBLE_COUNT) : null;
     this._guestSteer = 0;      // host: the guest's held direction as last relayed, -1/0/+1
     this._sentSteer = 0;       // guest: last direction sent, so only changes cross the wire
     this._netAccum = 0;
@@ -95,6 +99,10 @@ export class Game {
     this.seed = ((Date.now() & 0xffffff) ^ 0x9e3779) >>> 0;
     // Online: both browsers build the course from the seed the server dealt, not from the clock.
     if (this.online) this.seed = this.online.seed >>> 0;
+    // The daily course: the UTC day is the seed, so everyone races the same canyon. Not online,
+    // where the server deals the seed and there is no board to post to.
+    this.day = null;
+    if (this.map.daily && !this.online) this._rollDay();
     this.track = null;
 
     // Weather derives from the race seed, so every client of the same
@@ -188,6 +196,14 @@ export class Game {
   regenerate() {
     if (this.phase !== 'pick') return; // R re-rolls the course before the start, never after a race
     this._nextTrack();
+  }
+
+  // Daily course: take today's day and its seed together, so a race that starts after midnight
+  // UTC is on the new day's canyon AND posts to the new day's board.
+  _rollDay() {
+    this.day = dailyKey();
+    this.seed = dailySeed(this.day);
+    rollDaily(this.map.id, this.day, GHOST_KEY + this.map.id);
   }
 
   setMuted(m) { this.audio.setMuted(m); }
@@ -296,8 +312,10 @@ export class Game {
 
   _nextTrack(seed) {
     if (this.marbleSet) { this.scene.remove(this.marbleSet.group); this.scene.remove(this.marbleSet.decorations); this.marbleSet.dispose(); }
-    // An online guest is handed the host's seed; everyone else rolls the LCG forward.
-    this.seed = seed !== undefined ? (seed >>> 0) : (this.seed * 1664525 + 1013904223) >>> 0;
+    // An online guest is handed the host's seed; the daily course keeps the day's; everyone else
+    // rolls the LCG forward.
+    if (this.day) this._rollDay();
+    else this.seed = seed !== undefined ? (seed >>> 0) : (this.seed * 1664525 + 1013904223) >>> 0;
     // Whether that seed produces a NEW track depends on the map — see _buildTrack.
     this._buildTrack();
     if (this.demo) this._autoPickSoon();

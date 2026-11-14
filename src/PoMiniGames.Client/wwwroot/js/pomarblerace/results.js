@@ -4,6 +4,8 @@ import {
   RESULT_MS, SCORE_TOP, DOMINANT_GAP, DOMINANT_BONUS, MAX_STREAK_STEPS,
 } from './tuning.js';
 import { update as updateSave, readSectorBests } from './store.js';
+import { gpScore } from './grandprix.js';
+import { MARBLE_COUNT } from './marbles.js';
 
 /**
  * The scoring rule, pure. `place` is your finish (-1 = did not finish), `lead` your margin over
@@ -83,6 +85,7 @@ export class ResultsMixin {
     const finished = !!me && me.finished && !me.eliminated;
     const place = finished ? me.place : -1;
     const lead = finished && place === 1 && order.length > 1 && order[1].finished ? order[1].finishTime - me.finishTime : 0;
+    if (this.gp) { this._resolveGrandPrix(order, place, finished ? me.finishTime : 0); return; }
     // Score for finishing anywhere in the top SCORE_TOP of the 101-marble field (scoreRace above).
     const { won, gained, streak } = scoreRace(place, lead, this.streak);
     if (won) {
@@ -113,7 +116,9 @@ export class ResultsMixin {
     // world record by the page.
     this._invoke('OnRaceResult', won, place, this.score, gained, this.streak, this.best, this.map.id,
       this.runRaces.map((r) => r.place), this.runRaces.map((r) => r.time), this.runRaces.map((r) => r.lead),
-      finished ? Math.round(me.finishTime * 100) / 100 : 0);
+      finished ? Math.round(me.finishTime * 100) / 100 : 0,
+      // The daily course's day (appended: positional contract), '' on every other map.
+      this.day || '');
     // Online host: the guest's standing, for the page to relay. Same top-SCORE_TOP rule, no
     // streak — the run/score system belongs to the host's own session.
     if (this.online && !this.isGuest) {
@@ -122,6 +127,26 @@ export class ResultsMixin {
       const gPlace = gFinished ? g.place : -1;
       this._invoke('OnGuestResult', gFinished && gPlace >= 1 && gPlace <= SCORE_TOP, gPlace);
     }
+  }
+
+  // A Grand Prix round: no run, no streak, no miss. The round's points go on the table
+  // (grandprix.js) and the page moves on to the next course; the engine only holds the result.
+  _resolveGrandPrix(order, place, time) {
+    const gp = gpScore(order, this.chosen, MARBLE_COUNT);
+    const scored = gp.gained > 0;
+    if (!this.demo) this._recordTrackStat(place, time);
+    this._runAlive = false;
+    this.resultTimer = RESULT_MS / 1000;
+    this._setPhase('result');
+    this._setGrade(scored ? 'win' : 'loss');
+    this.audio.playSting(scored);
+    this.audio.say(gp.final
+      ? `Grand Prix over. You finished P${gp.rank}.`
+      : place > 0 ? `P${place}. ${gp.gained} points.` : 'Off the track. No points.');
+    this._leaderIdx = -1;
+    this._sendTick();
+    this._invoke('OnGrandPrix', gp.round, gp.rounds, place, gp.gained, gp.points, gp.rank, this.map.id,
+      Math.round(time * 100) / 100, gp.top.map((r) => r.index), gp.top.map((r) => r.points));
   }
 
   // Race stings (audio.js), from the HUD tick on the host and the guest alike: a new leader

@@ -24,6 +24,11 @@ public interface IStorageService
     Task<List<MarbleRaceMapRecord>> GetMarbleRaceMapRecordsAsync();
     Task<MarbleRaceMapRecord> SaveMarbleRaceMapRecordAsync(MarbleRaceMapRecord entry);
 
+    // PoMarbleRace Daily Canyon: one board per UTC day, each player's fastest finish that day.
+    // `day` is a server-formatted yyyy-MM-dd (MarbleRaceDaily.TryDayKey).
+    Task<List<MarbleRaceMapRecord>> GetMarbleRaceDailyTimesAsync(string day, int limit = 10);
+    Task<MarbleRaceMapRecord> SaveMarbleRaceDailyTimeAsync(MarbleRaceMapRecord entry, string day);
+
     // PoBrawl High Scores (fastest KO)
     Task<List<PoBrawlHighScore>> GetPoBrawlHighScoresAsync(int limit = 10);
     Task<PoBrawlHighScore> SavePoBrawlHighScoreAsync(PoBrawlHighScore entry);

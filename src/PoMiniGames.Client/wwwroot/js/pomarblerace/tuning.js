@@ -17,6 +17,8 @@ export const AIR_HOLD = 0.12;      // s without floor contact before the rolling
 export const GHOST_HZ = 20;
 export const GHOST_SCALES = [10, 10, 10];
 export const GHOST_KEY = 'pomarblerace.ghost.v1.';
+// The Daily Canyon is the one procedural map that does keep a ghost: its seed is the UTC day, so
+// the course stands still until midnight. store.js rollDaily drops yesterday's with the day.
 
 // ── Staying on the map ──
 // A marble is only retired when it is BOTH outside the course envelope AND has touched nothing
@@ -26,6 +28,13 @@ export const GHOST_KEY = 'pomarblerace.ghost.v1.';
 // position is re-acquired rather than the marble deleted.
 export const LOST_AIR = 1.0;
 export const REACQUIRE_AFTER = 1.0;
+// Respawn: a marble a HUMAN steers is not retired when it leaves the course. It is put back above
+// the last spot it was safely rolling on, held there for RESPAWN_HOLD seconds of race clock (the
+// penalty, on top of the fall itself), then let go at RESPAWN_SPEED along the course. CPU marbles
+// are still retired: the field thinning out is part of the race.
+export const RESPAWN_HOLD = 1.2;
+export const RESPAWN_SPEED = 18;
+export const RESPAWN_LIFT = 0.8;     // world units above the floor, on top of the marble's radius
 // Brake strips (track.brakeAt): how fast an over-speed marble is bled down to the strip's cap.
 export const BRAKE_RATE = 3;
 // Unstick: a marble that has not gained STALL_GAIN units of progress in STALL_AFTER seconds gets
@@ -68,10 +77,10 @@ export const RIVAL_GAIN = 2.5;        // how hard the push ramps with the distan
 export const RIVAL_LOOKAHEAD = 24;    // world units ahead a line-hugger reads the bend from
 
 // ── Boost pads and kickers ──
-// These are surfaces a MAP may or may not have. The procedural chute paints boost pads, rumble
-// bands and telegraphed kicker bands onto itself; the authored GLB course has no equivalent and
-// exposes neither, so _applyBoost and _applyKickers below feature-detect and simply do nothing
-// on a map without them. See the optional part of the track interface in maps.js.
+// Every course has both now. The procedural canyon paints them onto itself; Grand Spiral's are
+// baked into its model; Spiral Works and Playground Run declare theirs in maps.js (boostBands /
+// kickerBands) and track-glb.js lays them at run time. They stay OPTIONAL on the track interface
+// (maps.js): _applyBoost and _applyKickers feature-detect, so a future course may have neither.
 export const BOOST_ACCEL = 40;      // units/s² along the track tangent while on a pad
 export const BOOST_MAX_SPEED = 150; // don't let a marble that camps a pad accelerate without bound
 

@@ -6,136 +6,55 @@ public static class PoRacerTrackRegistry
 {
     private static readonly Dictionary<string, PoRacerTrackData> _tracks = new(StringComparer.OrdinalIgnoreCase);
 
+    // One row per track: road width, spline steps per knot, where on the lap the two boost pads
+    // sit, and the surface zones. The knots, names and medal laps are in the shared PoRacerCatalog.
     static PoRacerTrackRegistry()
     {
-        Register(BuildCircuit());
-        Register(BuildNeonSkyline());
-        Register(BuildDesertDustway());
-        Register(BuildCrossfire());
+        // The oval: one pad on each straight.
+        Register("circuit", trackWidth: 230, stepsPerKnot: 10, pads: (0.10, 0.60),
+            Zone("Main Tarmac", SurfaceKind.Asphalt, 600, 390, 2000, grip: 1.0));
+        // The figure-8: a pad on the fastest arc of each loop, well clear of the crossing.
+        Register("neonskyline", trackWidth: 210, stepsPerKnot: 12, pads: (0.16, 0.69),
+            Zone("Cyber Tarmac", SurfaceKind.Asphalt, 900, 400, 2500, grip: 1.0));
+        // The rally stage: pads on the front straight and the long back straight, sand in the
+        // outer hairpin run-off areas.
+        Register("desertdustway", trackWidth: 255, stepsPerKnot: 14, pads: (0.07, 0.46),
+            Zone("Dune Run-off East", SurfaceKind.Sand, 1850, 500, 260, grip: 0.65),
+            Zone("Dune Run-off West", SurfaceKind.Sand, -150, 800, 240, grip: 0.65));
+        // Crossfire is narrower than the other three: the four legs are 320 apart, and 180 leaves
+        // grass between them. Six steps per knot: the knots are 130 apart, so a node every 22
+        // units, about half the other tracks' spacing. The bots judge the bend ahead over a window
+        // counted in nodes, and here a hairpin is never far off: at the usual spacing that window
+        // always held one, and the whole field crawled round at its slowest corner speed (a 136 s
+        // race; this is 114 s). Pads: the middle of the main straight (between the second and
+        // third crossing) and the run down to the last hairpin.
+        Register("crossfire", trackWidth: 180, stepsPerKnot: 6, pads: (0.108, 0.90),
+            Zone("Yard Tarmac", SurfaceKind.Asphalt, 0, 0, 2000, grip: 1.0));
     }
 
-    private static void Register(PoRacerTrackData track) => _tracks[track.Id] = track;
-
-    public static PoRacerTrackData GetTrack(string? trackId)
+    private static void Register(string id, double trackWidth, int stepsPerKnot, (double First, double Second) pads,
+        params PoRacerSurfaceZoneDefinition[] zones)
     {
-        if (!string.IsNullOrWhiteSpace(trackId) && _tracks.TryGetValue(trackId, out var track))
+        var centerline = ResampleClosedSpline(Knots(id), stepsPerKnot);
+        _tracks[id] = new PoRacerTrackData
         {
-            return track;
-        }
-        return _tracks["circuit"];
-    }
-
-    private static PoRacerTrackData BuildCircuit()
-    {
-        const double trackWidth = 230.0;
-        var centerline = ResampleClosedSpline(Knots("circuit"), 10);
-        var walls = GenerateWalls(centerline, trackWidth);
-
-        var surfaces = new List<PoRacerSurfaceZoneDefinition>
-        {
-            new() { Name = "Main Tarmac", SurfaceType = SurfaceKind.Asphalt, Center = new Vec2(600, 390), Radius = 2000.0, GripMultiplier = 1.0 }
-        };
-
-        return new PoRacerTrackData
-        {
-            Id = "circuit",
-            DisplayName = PoRacerCatalog.GetTrack("circuit").Name,
-            Description = PoRacerCatalog.GetTrack("circuit").Description,
+            Id = id,
             TrackWidth = trackWidth,
             Centerline = centerline,
-            Walls = walls,
-            // One on each straight.
-            BoostPads = [PadAt(centerline, 0.10), PadAt(centerline, 0.60)],
-            SurfaceZones = surfaces,
-            EnvironmentTheme = "circuit"
+            Walls = GenerateWalls(centerline, trackWidth),
+            BoostPads = [PadAt(centerline, pads.First), PadAt(centerline, pads.Second)],
+            SurfaceZones = zones,
+            // The renderer's theme is named after the track.
+            EnvironmentTheme = id,
         };
     }
 
-    private static PoRacerTrackData BuildNeonSkyline()
-    {
-        const double trackWidth = 210.0;
-        var centerline = ResampleClosedSpline(Knots("neonskyline"), 12);
-        var walls = GenerateWalls(centerline, trackWidth);
+    private static PoRacerSurfaceZoneDefinition Zone(string name, SurfaceKind kind, double x, double y, double radius, double grip) =>
+        new() { Name = name, SurfaceType = kind, Center = new Vec2(x, y), Radius = radius, GripMultiplier = grip };
 
-        var surfaces = new List<PoRacerSurfaceZoneDefinition>
-        {
-            new() { Name = "Cyber Tarmac", SurfaceType = SurfaceKind.Asphalt, Center = new Vec2(900, 400), Radius = 2500.0, GripMultiplier = 1.0 }
-        };
-
-        return new PoRacerTrackData
-        {
-            Id = "neonskyline",
-            DisplayName = PoRacerCatalog.GetTrack("neonskyline").Name,
-            Description = PoRacerCatalog.GetTrack("neonskyline").Description,
-            TrackWidth = trackWidth,
-            Centerline = centerline,
-            Walls = walls,
-            // The fastest arc of each loop, well clear of the crossing.
-            BoostPads = [PadAt(centerline, 0.16), PadAt(centerline, 0.69)],
-            SurfaceZones = surfaces,
-            EnvironmentTheme = "neonskyline"
-        };
-    }
-
-    private static PoRacerTrackData BuildDesertDustway()
-    {
-        const double trackWidth = 255.0;
-        var centerline = ResampleClosedSpline(Knots("desertdustway"), 14);
-        var walls = GenerateWalls(centerline, trackWidth);
-
-        // Sand zones in the outer hairpin run-off areas
-        var surfaces = new List<PoRacerSurfaceZoneDefinition>
-        {
-            new() { Name = "Dune Run-off East", SurfaceType = SurfaceKind.Sand, Center = new Vec2(1850, 500), Radius = 260.0, GripMultiplier = 0.65 },
-            new() { Name = "Dune Run-off West", SurfaceType = SurfaceKind.Sand, Center = new Vec2(-150, 800), Radius = 240.0, GripMultiplier = 0.65 }
-        };
-
-        return new PoRacerTrackData
-        {
-            Id = "desertdustway",
-            DisplayName = PoRacerCatalog.GetTrack("desertdustway").Name,
-            Description = PoRacerCatalog.GetTrack("desertdustway").Description,
-            TrackWidth = trackWidth,
-            Centerline = centerline,
-            Walls = walls,
-            // The front straight and the long back straight.
-            BoostPads = [PadAt(centerline, 0.07), PadAt(centerline, 0.46)],
-            SurfaceZones = surfaces,
-            EnvironmentTheme = "desertdustway"
-        };
-    }
-
-    private static PoRacerTrackData BuildCrossfire()
-    {
-        // Narrower than the other three: the four legs are 320 apart, and 180 leaves grass between them.
-        const double trackWidth = 180.0;
-        // Six steps per knot: the knots are 130 apart, so a node every 22 units, about half the
-        // other tracks' spacing. The bots judge the bend ahead over a window counted in nodes, and
-        // here a hairpin is never far off: at the usual spacing that window always held one, and
-        // the whole field crawled round at its slowest corner speed (a 136 s race; this is 114 s).
-        var centerline = ResampleClosedSpline(Knots("crossfire"), 6);
-        var walls = GenerateWalls(centerline, trackWidth);
-
-        var surfaces = new List<PoRacerSurfaceZoneDefinition>
-        {
-            new() { Name = "Yard Tarmac", SurfaceType = SurfaceKind.Asphalt, Center = new Vec2(0, 0), Radius = 2000.0, GripMultiplier = 1.0 }
-        };
-
-        return new PoRacerTrackData
-        {
-            Id = "crossfire",
-            DisplayName = PoRacerCatalog.GetTrack("crossfire").Name,
-            Description = PoRacerCatalog.GetTrack("crossfire").Description,
-            TrackWidth = trackWidth,
-            Centerline = centerline,
-            Walls = walls,
-            // The middle of the main straight (between the second and third crossing) and the
-            // run down to the last hairpin.
-            BoostPads = [PadAt(centerline, 0.108), PadAt(centerline, 0.90)],
-            SurfaceZones = surfaces,
-            EnvironmentTheme = "crossfire"
-        };
-    }
+    public static PoRacerTrackData GetTrack(string? trackId) =>
+        !string.IsNullOrWhiteSpace(trackId) && _tracks.TryGetValue(trackId, out var track)
+            ? track : _tracks[PoRacerCatalog.DefaultTrackId];
 
     /// <summary>
     /// A boost pad on the centerline at a fraction of the lap, pointing the way the track runs

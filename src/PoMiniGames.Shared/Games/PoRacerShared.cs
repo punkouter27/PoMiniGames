@@ -24,9 +24,7 @@ public sealed class PoRacerScoreDto
 public enum SurfaceKind
 {
     Asphalt = 0,
-    Sand = 1,
-    Curbs = 2,
-    BoostPad = 3
+    Sand = 1
 }
 
 public sealed record PoRacerCarCustomization(string ColorHex, string LiveryPattern)
@@ -77,7 +75,7 @@ public sealed record PoRacerCarInfo(int Id, string Name, string Color, string Co
 /// <summary>What a driver asks for when joining: solo mode and pace, and the paint the others will see.</summary>
 public sealed class PoRacerJoinOptions
 {
-    /// <summary>"race" (99 rivals) or "trial" (an empty track). Solo races only.</summary>
+    /// <summary>"race" (63 rivals) or "trial" (an empty track). Solo races only.</summary>
     public string Mode { get; set; } = "race";
     /// <summary>"easy" / "medium" / "hard" bot pace. Solo races only.</summary>
     public string Difficulty { get; set; } = "medium";
@@ -115,6 +113,14 @@ public sealed class PoRacerCarState
     public bool Drafting { get; set; }
     /// <summary>0..1 drift charge. Letting go of a drift at 0.3 or more pays it out as a short boost.</summary>
     public double Drift { get; set; }
+    /// <summary>Radians between the nose and the direction of travel: positive means the car is
+    /// sliding with its nose to the right of where it is actually going. This is what the
+    /// renderer draws the body against, and what the tyre smoke and scrub follow.</summary>
+    public double Slip { get; set; }
+    /// <summary>0..1 tyre heat. Scrub puts it in, running straight takes it out, and it costs grip.</summary>
+    public double TireHeat { get; set; }
+    /// <summary>0..1 eased tow strength while drafting, for the HUD meter and the slipstream effect.</summary>
+    public double Draft { get; set; }
 }
 
 /// <summary>
@@ -141,7 +147,6 @@ public sealed class PoRacerRaceSnapshot
 public sealed class PoRacerStaticWorld
 {
     public string TrackId { get; set; } = "circuit";
-    public string TrackName { get; set; } = "Grand Prix Circuit";
     public string Theme { get; set; } = "circuit";
     /// <summary>The race's weather (<see cref="PoRacerWeather"/>): the sim's grip and the client's overlay both come from it.</summary>
     public string Weather { get; set; } = PoRacerWeather.Clear;
@@ -151,10 +156,6 @@ public sealed class PoRacerStaticWorld
     public IReadOnlyList<PoRacerSurfaceZoneWire> SurfaceZones { get; set; } = new List<PoRacerSurfaceZoneWire>();
     public IReadOnlyList<PoRacerCarInfo> Roster { get; set; } = new List<PoRacerCarInfo>();
     public double TrackWidth { get; set; }
-    public double MinX { get; set; }
-    public double MinY { get; set; }
-    public double MaxX { get; set; }
-    public double MaxY { get; set; }
     public int TotalLaps { get; set; } = 3;
 }
 

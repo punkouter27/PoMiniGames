@@ -63,10 +63,10 @@ function pointerDown(event) {
     update();
 }
 function pointerUp(event) {
-    const pressed = pointers.get(event.pointerId);
-    if (!pressed) return;
+    const released = pointers.get(event.pointerId);
+    if (!released) return;
     pointers.delete(event.pointerId);
-    if (![...pointers.values()].some(p => p.element === pressed.element)) pressed.element.classList.remove('is-pressed');
+    if (![...pointers.values()].some(p => p.element === released.element)) released.element.classList.remove('is-pressed');
     update();
 }
 

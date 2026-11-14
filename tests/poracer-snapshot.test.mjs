@@ -11,6 +11,7 @@ function field(count = 100) {
         boostGlow: 0.5, skidIntensity: 0.6, damage: 0.7, surface: i % 2 ? 'sand' : 'asphalt',
         position: i + 1, lap: 2, finished: false, drafting: true, drift: 0.8, boostTimer: 0.9,
         currentLapSeconds: 12.345, bestLapSeconds: 11, lastLapSeconds: 13,
+        slip: 0.12 - i * 0.001, tireHeat: 0.3, draft: 0.75,
     }));
     return {
         snapshot: { cars, serverTimeMs: 10000, elapsedRaceTime: 7, countdownMs: 0,
@@ -19,15 +20,16 @@ function field(count = 100) {
     };
 }
 
-test('all 100 cars reach rendering, with the original 14-number stride', () => {
+test('all 100 cars reach rendering, with the original 17-number stride', () => {
     const { snapshot, roster } = field();
     const { flat, hud, lapNow, running } = prepareSnapshot(snapshot, roster, 49);
-    assert.equal(flat.length, 1400);
+    assert.equal(flat.length, 1700);
     for (let i = 0; i < snapshot.cars.length; i++) {
         const c = snapshot.cars[i];
-        assert.deepEqual([...flat.slice(i * 14, (i + 1) * 14)],
+        assert.deepEqual([...flat.slice(i * 17, (i + 1) * 17)],
             [c.x, c.y, c.heading, c.speed, c.boostGlow, c.skidIntensity, c.damage,
-                c.surface === 'sand' ? 1 : 0, c.position, c.lap, 0, 1, c.drift, c.boostTimer]);
+                c.surface === 'sand' ? 1 : 0, c.position, c.lap, 0, 1, c.drift, c.boostTimer,
+                c.slip, c.tireHeat, c.draft]);
     }
     assert.deepEqual(hud.cars.map(c => c.position), [1, 49, 50, 51]);
     assert.equal(hud.serverTimeMs, snapshot.serverTimeMs);
@@ -66,7 +68,7 @@ test('car IDs are resolved by roster order, not assumed to be positions', () => 
     snapshot.cars[49].position = 1;
     snapshot.cars[0].position = 50;
     const prepared = prepareSnapshot(snapshot, roster, 49);
-    assert.equal(prepared.flat[49 * 14 + 8], 1);
+    assert.equal(prepared.flat[49 * 17 + 8], 1);
     assert.ok(prepared.hud.cars.some(c => c.id === 50));
 });
 

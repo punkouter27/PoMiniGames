@@ -1,9 +1,9 @@
 // index.js — public interop surface for PoMarbleRace. The Blazor page calls these.
 import { Game } from './game.js';
-import { mapById, mapMenu, DEFAULT_MAP_ID } from './maps.js';
+import { mapById, mapMenu, DEFAULT_MAP_ID, dailyKey } from './maps.js';
 import { SKINS, WEIGHTS, paletteHex } from './marbles.js';
-import { GUEST_COLOR } from './tuning.js';
-import { readBest, readTrackStats, readMarbleChoice, load as loadSave, update as updateSave, readPref, setPref } from './store.js';
+import { GUEST_COLOR, GHOST_KEY } from './tuning.js';
+import { readBest, readTrackStats, readMarbleChoice, load as loadSave, update as updateSave, readPref, setPref, readGrandPrix, rollDaily } from './store.js';
 import { startPad, stopPad, watchInput, unwatchInput } from './gamepad.js';
 
 let game = null;
@@ -20,7 +20,12 @@ window.PoMarbleRace = {
    */
   menu() {
     const choice = readMarbleChoice();
+    // Yesterday's daily stats must not show on today's card.
+    const day = dailyKey();
+    for (const m of mapMenu()) if (m.daily) rollDaily(m.id, day, GHOST_KEY + m.id);
     return JSON.stringify({
+      // The Grand Prix: your best points total and best overall place (grandprix.js).
+      gp: readGrandPrix(),
       maps: mapMenu(), defaultMap: DEFAULT_MAP_ID,
       skins: SKINS, weights: WEIGHTS.map(({ id, name, hint }) => ({ id, name, hint })),
       best: readBest(), stats: readTrackStats(), skin: choice.skin, weight: choice.weight,
@@ -37,7 +42,8 @@ window.PoMarbleRace = {
   // `online` is null for a local game, else { role: 'host'|'guest', seed, guestIndex } — see
   // the Online section of game.js.
   // `marble` is the player's { skin, weight } pick, or null for defaults (demo, online guest).
-  async start(containerId, dotnetRef, demo, mapId, online, marble) {
+  // `opts` is null, or { gp: { round, rounds } } for a Grand Prix round (grandprix.js).
+  async start(containerId, dotnetRef, demo, mapId, online, marble, opts) {
     const token = ++startToken;
     if (game) { game.dispose(); game = null; }
     const el = document.getElementById(containerId);
@@ -64,7 +70,7 @@ window.PoMarbleRace = {
     // A newer start() (or a stop()) landed while the map was in flight — stand down.
     if (token !== startToken) return;
     // No pick from the page (an auto-skipped intro can beat the menu load): race the saved one.
-    game = new Game(containerId, dotnetRef, demo, map.id, asset, online || null, marble || (demo ? null : readMarbleChoice()));
+    game = new Game(containerId, dotnetRef, demo, map.id, asset, online || null, marble || (demo ? null : readMarbleChoice()), opts || null);
     if (readPref('muted')) game.setMuted(true);
     game.start();
     if (!demo) startPad(() => game);

@@ -326,6 +326,29 @@ const CHECKER_SIZE = 8;
 
 let _checkerTex = null;
 let _brakeTex = null;
+let _boostTex = null;
+
+/** Cyan chevrons pointing down-track, for boost pads laid at run time (opts.boostBands). */
+function boostTexture() {
+  if (_boostTex) return _boostTex;
+  const c = document.createElement('canvas');
+  c.width = c.height = 64;
+  const g = c.getContext('2d');
+  g.fillStyle = '#06222b';
+  g.fillRect(0, 0, 64, 64);
+  g.fillStyle = '#22d3ee';
+  for (const y0 of [0, 32]) {
+    g.beginPath();
+    g.moveTo(0, y0 + 22); g.lineTo(32, y0 + 2); g.lineTo(64, y0 + 22);
+    g.lineTo(64, y0 + 30); g.lineTo(32, y0 + 10); g.lineTo(0, y0 + 30);
+    g.closePath(); g.fill();
+  }
+  _boostTex = new THREE.CanvasTexture(c);
+  _boostTex.colorSpace = THREE.SRGBColorSpace;
+  _boostTex.wrapS = _boostTex.wrapT = THREE.RepeatWrapping;
+  _boostTex.anisotropy = THREE.Texture.DEFAULT_ANISOTROPY;
+  return _boostTex;
+}
 
 /** Amber/black chevrons pointing down-track, for the brake strips. Built once, shared. */
 function brakeTexture() {
@@ -406,6 +429,11 @@ export const newProjection = () => ({ s: 0, index: -1, lateral: 0, height: 0 });
  * @param {boolean} [opts.dropStallAssist] bias elevated recovery nudges toward the floor
  * @param {RegExp|null} [opts.conformNodes] model nodes to re-pose onto the ring shell, for a path
  *   that carries DRAWN — see conformToShell
+ * @param {Array<[number, number, number?]>} [opts.boostBands] [s0, s1, accel?] in world arclength:
+ *   boost pads laid at run time (a painted ribbon plus the inBoost range), on top of any the model
+ *   baked; `accel` overrides the default push for a pad that lifts the field up a climb
+ * @param {Array<[number, number]>} [opts.kickerBands] [s0, s1] in world arclength: kicker bands
+ *   laid at run time, on top of any Deco-Kicker meshes the model carries
  */
 export function createGlbCourse({
   modelUrl,
@@ -424,6 +452,8 @@ export function createGlbCourse({
   driveAccel = 0,
   dropStallAssist = false,
   conformNodes = null,
+  boostBands = [],
+  kickerBands = [],
 }) {
   if (!COL && ringLanes) ({ PATH, COL } = ringShell(PATH, ringLanes));
   const { SCALE, COUNT, ARCLENGTH, POINTS, DIRS, UPS, RIGHTS, HALF_WIDTHS, CUM } = PATH;
@@ -431,7 +461,11 @@ export function createGlbCourse({
 
   // Boost pads, converted once from the baked raw units into the world units `s` is measured in.
   // A course that declares none simply has no inBoost, and game.js feature-detects it away.
-  const BOOST_BANDS = (PATH.BOOST_BANDS || []).map(([a, b]) => [a * SCALE, b * SCALE]);
+  // Pads a course declares in maps.js (opts.boostBands) are already in world units, and have no
+  // ribbon in the model: buildTrack paints one.
+  // A third element is that pad's own push in u/s² (default: tuning.js BOOST_ACCEL), for a pad
+  // that has to carry a standing marble up a climb.
+  const BOOST_BANDS = [...(PATH.BOOST_BANDS || []).map(([a, b]) => [a * SCALE, b * SCALE, 0]), ...boostBands.map(([a, b, accel]) => [a, b, accel || 0])];
   // Kicker bands are already NORMALIZED fractions — see the kicker block in buildTrack.
   const KICKER_BANDS = PATH.KICKER_BANDS || [];
   // Seconds per charge->fire cycle. Deliberately coprime-ish so two kickers on the same course
@@ -1523,6 +1557,30 @@ export function createGlbCourse({
     // speed cap. game.js caps speed on them (brakeAt); this is the painted strip that says so.
     for (const [a, b] of BRAKE_BANDS) group.add(floorBand(a, b, brakeTexture(), 0.3, 'BrakeBand'));
 
+    // ── run-time boost pads and kickers (opts.boostBands / opts.kickerBands) ──
+    // The same surfaces a model can bake (BOOST_BANDS, Deco-Kicker), for a course whose model has
+    // none: a glowing chevron ribbon for each pad, and a magenta band per kicker whose material
+    // game.js brightens as it charges. Neither has a collider.
+    for (const [a, b] of boostBands) {
+      const pad = floorBand(a, b, boostTexture(), 0.3, 'BoostBand');
+      pad.material.emissive = new THREE.Color(0xffffff);
+      pad.material.emissiveMap = pad.material.map;
+      pad.material.emissiveIntensity = 0.9;
+      group.add(pad);
+    }
+    kickerBands.forEach(([a, b], i) => {
+      const mesh = floorBand(a, b, null, 0.32, 'KickerBand');
+      mesh.material.color = new THREE.Color(0x4a1d5c);
+      mesh.material.emissive = new THREE.Color(0xe879f9);
+      mesh.material.emissiveIntensity = 0.5;
+      // Normalized, like the baked ones: _fireKicker compares against m.s / track.length.
+      kickers.push({
+        band: [a / TRACK.LENGTH, b / TRACK.LENGTH], mesh, mat: mesh.material,
+        period: KICKER_PERIODS[(kickers.length + i) % KICKER_PERIODS.length], _lastPhase: 0,
+      });
+      group.add(mesh);
+    });
+
     // ── obstacle primitives ──
     for (const node of propNodes) {
       const box = worldBox(node);
@@ -1695,9 +1753,10 @@ export function createGlbCourse({
       // so game.js's feature detection keeps working for courses that have none. The pads have no
       // collider of their own: this is a predicate, and game.js accelerates whatever is on top.
       ...(BOOST_BANDS.length ? {
+        // Truthy on a pad: `true`, or the pad's own push in u/s² when it declares one.
         inBoost: (s) => {
           for (let i = 0; i < BOOST_BANDS.length; i++) {
-            if (s >= BOOST_BANDS[i][0] && s <= BOOST_BANDS[i][1]) return true;
+            if (s >= BOOST_BANDS[i][0] && s <= BOOST_BANDS[i][1]) return BOOST_BANDS[i][2] || true;
           }
           return false;
         },
@@ -1763,6 +1822,20 @@ export function createGlbCourse({
       rimDebug,
       // Swept check against the containment surfaces — see createSweepGuard.
       sweepGuard,
+
+      /**
+       * Where to put a marble back on the course (course.js _respawn): `lift` above the floor of
+       * the lane it was last safely on, or above the main line where no lane covers that spot.
+       */
+      respawnPoint: (safe, lift, out) => {
+        if (safe.lane >= 0 && safe.lane < LANES.length) {
+          const L = LANES[safe.lane];
+          const k = Math.max(0, Math.min(safe.ring, L.n - 1)) * 3;
+          return out.set(L.P[k] + L.U[k] * lift, L.P[k + 1] + L.U[k + 1] * lift, L.P[k + 2] + L.U[k + 2] * lift);
+        }
+        centerAt(safe.s, out);
+        return out.addScaledVector(upAt(safe.s, _scratchUp), lift);
+      },
 
       /**
        * Which way the course runs at a projected position: along the marble's own lane where it

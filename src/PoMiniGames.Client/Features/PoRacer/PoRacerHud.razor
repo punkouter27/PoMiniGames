@@ -5,11 +5,21 @@
     var best = me?.BestLapSeconds ?? -1;
 }
 <div class="race-hud">
+    @* The circuit and the field, drawn by js/poracer/fx.js through Render.minimap. A canvas, not
+       DOM: one dot a car is a draw call, and there is no element churn at 20 Hz. *@
+    <canvas id="race-minimap" class="race-minimap" aria-hidden="true"></canvas>
     @* One strip in one corner. Speed and the two running clocks are empty here on purpose:
        js/poracer/index.js writes them every frame, so Blazor must own no text node inside
        .race-speed, .race-clock or .race-lap-now. *@
     <div class="race-strip">
         <div class="race-metrics" data-glass>
+            @* Instrument bars: speed, tyre heat, tow. index.js writes --speed/--heat/--tow on
+               this element each frame; nothing here is a text node it has to chase. *@
+            <span class="race-bars" aria-hidden="true">
+                <i class="race-bar race-bar--tow"></i>
+                <i class="race-bar race-bar--heat"></i>
+                <i class="race-bar race-bar--speed"></i>
+            </span>
             @if (IsDemo) { <strong>Spectating</strong> }
             else
             {

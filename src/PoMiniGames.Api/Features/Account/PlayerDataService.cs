@@ -95,6 +95,8 @@ public sealed class PlayerDataService(
         new("PlayerStats", null, [], RowKeyIsName: true),
 
         new("MarbleRaceHighScores", ["marblerace"], ["PlayerInitials"]),
+        // Every partition: the world records, and the Daily Canyon's one board per day.
+        new("MarbleRaceMapRecords", null, ["PlayerName"]),
         new("PoBrawlHighScores", ["pobrawl"], ["PlayerInitials"]),
         new("PoRacerHighScores", ["poracer"], ["PlayerName"]),
         // Sports was removed, but its rows stay in prod storage; export and delete still cover them.

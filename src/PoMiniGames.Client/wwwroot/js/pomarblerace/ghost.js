@@ -11,7 +11,9 @@ export class GhostMixin {
   // A local race on an authored course: load the best run to race against and start recording this one.
   _armGhost() {
     this._dropGhost();
-    if (this.demo || this.online || this.track.regenerate || this.chosen < 0) return;
+    // A procedural course is a new one every race, except the daily one (this.day): that stands
+    // still until midnight UTC.
+    if (this.demo || this.online || (this.track.regenerate && !this.day) || this.chosen < 0) return;
     const best = loadGhost(GHOST_KEY + this.map.id);
     const me = this.marbleSet.marbles[this.chosen];
     let mesh = null;

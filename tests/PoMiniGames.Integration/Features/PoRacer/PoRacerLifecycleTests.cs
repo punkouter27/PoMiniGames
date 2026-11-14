@@ -84,8 +84,7 @@ public sealed class PoRacerLifecycleTests
         dto!.BestLapSeconds.Should().Be(42.5);
         var json = System.Text.Json.JsonSerializer.Serialize(dto);
         json.Should().Contain("\"totalTimeSeconds\":42.5").And.NotContain("BestLapSeconds");
-        var track = PoRacerTrackRegistry.GetTrack(trackId);
-        track.DisplayName.Should().Be(PoRacerCatalog.GetTrack(trackId).Name);
-        track.Description.Should().Be(PoRacerCatalog.GetTrack(trackId).Description);
+        // Every catalog track has geometry of its own; an id the registry does not know falls back to the oval.
+        PoRacerTrackRegistry.GetTrack(trackId).Id.Should().Be(PoRacerCatalog.GetTrack(trackId).Id);
     }
 }

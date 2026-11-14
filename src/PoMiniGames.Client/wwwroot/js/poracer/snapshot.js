@@ -1,4 +1,5 @@
-const STRIDE = 14;
+/** Numbers per car in a pushed snapshot: x, y, heading, speed, boost, skid, damage, sand, position, lap, finished, tow, drift, boost seconds left, slip, tyre heat, draft. PoRacerPage.razor.cs Stride packs the same seventeen. */
+export const STRIDE = 17;
 
 /** Keep numeric decoding in native JS; WASM only needs the four visible HUD rows. */
 export function prepareSnapshot(snapshot, roster, localIdx) {
@@ -15,6 +16,7 @@ export function prepareSnapshot(snapshot, roster, localIdx) {
         flat[o + 7] = c.surface === 'sand' ? 1 : 0;
         flat[o + 8] = c.position; flat[o + 9] = c.lap; flat[o + 10] = c.finished ? 1 : 0;
         flat[o + 11] = c.drafting ? 1 : 0; flat[o + 12] = c.drift; flat[o + 13] = c.boostTimer;
+        flat[o + 14] = c.slip; flat[o + 15] = c.tireHeat; flat[o + 16] = c.draft;
     }
     const me = localIdx >= 0 ? cars[localIdx] : null;
     const mine = me?.position ?? 2;

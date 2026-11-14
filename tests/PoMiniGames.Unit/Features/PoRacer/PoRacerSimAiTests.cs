@@ -21,11 +21,55 @@ public class PoRacerSimAiTests
     /// Each row runs one scenario: a private method below, named after what it checks.
     /// </summary>
     [Theory]
-    [InlineData(nameof(SoloAndDemoFields_HaveOneHundredCars_WhileOnlineFieldStaysAtEight))]
-    [InlineData(nameof(HundredCarSimulation_UsesNearbyCollisionCandidates))]
+    [InlineData(nameof(SoloAndDemoFields_HaveSixtyFourCars_WhileOnlineFieldStaysAtEight))]
+    [InlineData(nameof(StartGrid_LinesUpOnTheRoad_OnEveryTrack))]
+    [InlineData(nameof(FullFieldSimulation_UsesNearbyCollisionCandidates))]
     public Task Scenario(string name) => Scenarios.RunAsync(this, name);
 
-    private static void SoloAndDemoFields_HaveOneHundredCars_WhileOnlineFieldStaysAtEight()
+    // The full solo field, before anything moves: every car on the road with room to the
+    // barrier, facing the way the road runs where it stands, no two overlapping, in two
+    // staggered columns, and ranked front to back by where it sits on the lap.
+    private static void StartGrid_LinesUpOnTheRoad_OnEveryTrack()
+    {
+        const System.Reflection.BindingFlags flags = System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic;
+        foreach (var track in PoRacerCatalog.Tracks)
+        {
+            var sim = new PoRacerSim([new("connection", "Player", true, true, "owner")], track.Id, carCount: PoRacerCatalog.SoloCarCount);
+            var world = sim.Static;
+            var grid = sim.Snapshot("grid").Cars;
+            grid.Should().HaveCount(PoRacerCatalog.SoloCarCount);
+            var cars = ((System.Collections.IEnumerable)typeof(PoRacerSim).GetField("_cars", flags)!.GetValue(sim)!).Cast<object>().ToArray();
+            double Field(object car, string name) => Convert.ToDouble(car.GetType().GetField(name)!.GetValue(car), System.Globalization.CultureInfo.InvariantCulture);
+            int nodes = world.CenterXY.Count / 2;
+
+            for (int i = 0; i < cars.Length; i++)
+            {
+                // ProjSide is the signed distance from the centerline of the stretch the car is on.
+                double side = Field(cars[i], "ProjSide");
+                Math.Abs(side).Should().BeInRange(20, world.TrackWidth / 2 - 18, $"{track.Id}: car {i} is in a column on the road, clear of the barrier");
+                (side > 0).Should().Be(i % 2 == 1, $"{track.Id}: odd grid slots are the right-hand column");
+
+                int node = (int)Field(cars[i], "ProjIdx"), next = (node + 1) % nodes;
+                double road = Math.Atan2(world.CenterXY[next * 2 + 1] - world.CenterXY[node * 2 + 1], world.CenterXY[next * 2] - world.CenterXY[node * 2]);
+                Math.Abs(PoRacerAiDriver.ShortAngleDiff(grid[i].Heading, road)).Should().BeLessThan(0.35, $"{track.Id}: car {i} faces down the road where it stands");
+
+                for (int j = i + 1; j < cars.Length; j++)
+                {
+                    double dx = grid[i].X - grid[j].X, dy = grid[i].Y - grid[j].Y;
+                    // Skip pairs a long way apart on the lap: on a track that crosses itself, two
+                    // grid slots on different stretches can share a crossing.
+                    if (Math.Abs(grid[i].LapProgress - grid[j].LapProgress) * nodes > 12) continue;
+                    Math.Sqrt(dx * dx + dy * dy).Should().BeGreaterThan(36, $"{track.Id}: cars {i} and {j} must not overlap on the grid");
+                }
+            }
+            // The human is slot 0, at the back; the last slot is on pole.
+            grid[0].Position.Should().Be(PoRacerCatalog.SoloCarCount, $"{track.Id}: the driver starts at the back");
+            grid[^1].Position.Should().Be(1, $"{track.Id}: the last slot is on pole");
+            grid.Select(c => c.Position).Should().OnlyHaveUniqueItems();
+        }
+    }
+
+    private static void SoloAndDemoFields_HaveSixtyFourCars_WhileOnlineFieldStaysAtEight()
     {
         var player = new PoRacerLobbyPlayer("connection", "Player", true, true, "owner");
         var online = new PoRacerSim([player]);
@@ -41,7 +85,7 @@ public class PoRacerSimAiTests
         demo.Static.Roster.Select(c => c.Name).Should().OnlyHaveUniqueItems();
     }
 
-    private void HundredCarSimulation_UsesNearbyCollisionCandidates()
+    private void FullFieldSimulation_UsesNearbyCollisionCandidates()
     {
         var sim = new PoRacerSim(Array.Empty<PoRacerLobbyPlayer>(), carCount: PoRacerCatalog.SoloCarCount);
         typeof(PoRacerSim).GetField("_startElapsedMs", System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic)!
@@ -53,7 +97,7 @@ public class PoRacerSimAiTests
         timer.Stop();
 
         sim.LastCollisionCandidateCount.Should().BeLessThan(PoRacerCatalog.SoloCarCount * (PoRacerCatalog.SoloCarCount - 1) / 2);
-        _out.WriteLine($"100-car simulation: 250 ticks in {timer.Elapsed.TotalMilliseconds:0.0} ms; final collision candidates={sim.LastCollisionCandidateCount}");
+        _out.WriteLine($"{PoRacerCatalog.SoloCarCount}-car simulation: 250 ticks in {timer.Elapsed.TotalMilliseconds:0.0} ms; final collision candidates={sim.LastCollisionCandidateCount}");
         CollisionBroadphase_IncludesEveryOverlappingPairAcrossCellBoundaries();
     }
 

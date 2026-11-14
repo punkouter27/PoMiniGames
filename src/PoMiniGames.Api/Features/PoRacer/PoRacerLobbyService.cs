@@ -4,16 +4,14 @@ using PoMiniGames.Shared.Games;
 namespace PoMiniGames.Features.PoRacer;
 
 /// <summary>
-/// The PoRacer room: the plain ready/start lobby plus one pick, the track. Eight seats — one
+/// The PoRacer room: the plain ready/start lobby plus one pick, the track. One seat
 /// per car on the grid. The race sim calls <see cref="LobbyRoom{TPlayer}.End"/> when the
 /// last car finishes so a new host can claim the room.
 /// </summary>
 public sealed class PoRacerLobbyService : LobbyRoom<PoRacerLobbyPlayer>
 {
     public const string GlobalCode = "LOBBY";
-    public const int Cap = 8;
-
-    public PoRacerLobbyService() : base(GlobalCode, Cap, "Race already in progress")
+    public PoRacerLobbyService() : base(GlobalCode, PoRacerCatalog.CarCount, "Race already in progress")
     {
     }
 

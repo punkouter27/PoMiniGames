@@ -1,6 +1,11 @@
 // Canvas scene renderer for PoRacer: a flat top-down drawing of the race the server is
 // running. Lifecycle is owned by index.js; nothing in here listens or schedules, and the only
 // thing it fetches is the trackside sprites (see "Trackside props" below).
+//
+// The effect layer that sits on top of this scene — particles, the night light pass, track
+// wear, speed streaks, ambient motes and the minimap — lives in fx.js.
+import * as Fx from './fx.js';
+import { addTrauma, getShake, getPunch } from '../impactBus.js';
 
 let centerXY = null;
 let centerN = 0, wallsXY = null, wallsM = 0, trackWidth = 0;
@@ -31,24 +36,40 @@ let vignetteTex = null, vignetteW = 0, vignetteH = 0, vignetteDpr = 0;
 let parallaxFar = null, parallaxMid = null, parallaxW = 0, parallaxH = 0, parallaxDpr = 0;
 
 // Spectator follow-cam smoothing (demo/no-local-player). Tracks the race
-// leader; lerped so leadership changes and marshal rescues pan smoothly
-// instead of snapping. Reset to null on setStatic (new race geometry).
-let specCamX = null, specCamY = null;
+// leader; eased by the same spring as the player camera so leadership changes
+// and marshal rescues pan smoothly instead of snapping.
 // Finish sequence: performance.now() when the camera started pulling back to frame the
 // whole circuit, and where it was looking at that moment. 0 = live camera.
 let finishAt = 0, finishFrom = null;
 
+/* ── Camera rig ──────────────────────────────────────────────────────────
+   The camera is a spring, not a leash. A hard-locked camera makes every steering
+   correction arrive as a lateral jump on screen; a critically damped follow reads
+   as weight, and it is what lets the look-ahead, the speed zoom and the drift roll
+   below blend into one motion instead of three competing offsets. */
+let springX = 0, springY = 0, springScale = 1, springRoll = 0, springReady = false;
+let lastDrawAt = 0;
+let hitstopUntil = 0;        // a hit freezes the camera for a few dozen ms (see impact())
+let weatherWet = 1;          // 1 dry; rain and snow lower it, same as the sim's grip
+let lastCars = null;         // the frame's cars, for the minimap
+
+// Background fills are drawn as one tiled pattern each instead of four wrapped
+// drawImages; the pattern is cached per bitmap. Null when the engine has no
+// DOMMatrix pattern transform (then the four-draw path is used).
+const bgPatterns = new Map();
+// Ground and parallax are soft gradients: rendering them under full dpr halves the
+// fill cost of the largest layers on the frame and is invisible on that content.
+const bgScale = () => (Fx.getTier() === 'low' ? 0.5 : 0.75);
+
 // ── Track-side effects ──────────────────────────────────────────────────────
-// Skid marks, impact sparks and sand dust, all in world space and all derived from the cars
-// this module is already handed: no extra wire field, no pool fed from elsewhere. They are
-// drawn where the thing happened, not at the middle of the screen.
+// Skid marks stay here: they are part of the road surface and need the track's world space.
+// Everything airborne (smoke, spray, dust, sparks, debris) lives in fx.js.
 const SKID_MAX = 900;
 const skids = new Float32Array(SKID_MAX * 5);   // x1, y1, x2, y2, alpha
 const activeSkidIndices = new Uint16Array(SKID_MAX);
 let activeSkidCount = 0;
 let skidHead = 0;
 const wheelWas = [];                            // per car index: { lx, ly, rx, ry, t }
-const sparks = [], dust = [];
 let fxAt = 0;
 const carSprites = new Map();
 const profiled = new URLSearchParams(location.search).get('perf') === '1';
@@ -58,17 +79,22 @@ const calm = () => document.documentElement.dataset.motion === 'reduce'
     || window.matchMedia?.('(prefers-reduced-motion: reduce)').matches;
 
 function clearFx() {
-    skids.fill(0); activeSkidCount = 0; skidHead = 0; wheelWas.length = 0; sparks.length = 0; dust.length = 0; fxAt = 0;
+    skids.fill(0); activeSkidCount = 0; skidHead = 0; wheelWas.length = 0; fxAt = 0;
+    Fx.clearParticles(); Fx.clearWear();
 }
 
-/** Sparks at a car that just hit something: thrown back along its travel, a third of a second. */
+/**
+ * A car just hit something: sparks and dust in the effect layer, and the impact's weight on
+ * the camera. `strength` is 0..1 (the damage the hit added, capped).
+ */
 export function impact(x, y, heading, strength) {
     if (calm()) return;
-    const n = 5 + Math.round(strength * 9);
-    for (let i = 0; i < n && sparks.length < 80; i++) {
-        const a = heading + Math.PI + (Math.random() - 0.5) * 2.2, v = 90 + Math.random() * 200;
-        sparks.push({ x, y, vx: Math.cos(a) * v, vy: Math.sin(a) * v, life: 0.2 + Math.random() * 0.25 });
-    }
+    Fx.impact(x, y, heading, strength);
+    addTrauma(0.12 + strength * 0.5);
+    // A real hit holds the camera still for a moment before the shake starts to decay. The
+    // race clock and the HUD keep running: only the view locks, so a hit reads as force
+    // rather than as a dropped frame.
+    if (strength > 0.45) hitstopUntil = performance.now() + 55;
 }
 
 function stepFx(cars, now) {
@@ -84,16 +110,15 @@ function stepFx(cars, now) {
         else activeSkidIndices[active++] = index;
     }
     activeSkidCount = active;
-    const quiet = calm();
     for (let i = 0; i < cars.length; i++) {
         const c = cars[i], cos = Math.cos(c.h), sin = Math.sin(c.h);
         // Rear wheels, in the car's frame (-11, +-7).
         const lx = c.x - cos * 11 + sin * 7, ly = c.y - sin * 11 - cos * 7;
         const rx = c.x - cos * 11 - sin * 7, ry = c.y - sin * 11 + cos * 7;
         const was = wheelWas[i];
-        const sliding = (c.skid || 0) > 0.5 && Math.abs(c.v) > 70;
+        const sliding = ((c.skid || 0) > 0.5 || Math.abs(c.slip || 0) > 0.2) && Math.abs(c.v) > 70;
         if (sliding && was && now - was.t < 200 && Math.hypot(lx - was.lx, ly - was.ly) < 40) {
-            const a = Math.min(0.5, 0.2 + (c.skid - 0.5) * 0.6);
+            const a = Math.min(0.5, 0.2 + ((c.skid || 0) - 0.5) * 0.6 + Math.abs(c.slip || 0) * 0.3);
             for (const seg of [[was.lx, was.ly, lx, ly], [was.rx, was.ry, rx, ry]]) {
                 const o = (skidHead++ % SKID_MAX) * 5;
                 if (skids[o + 4] <= 0) activeSkidIndices[activeSkidCount++] = o / 5;
@@ -101,23 +126,10 @@ function stepFx(cars, now) {
             }
         }
         wheelWas[i] = sliding ? { lx, ly, rx, ry, t: now } : null;
-        if (!quiet && c.sand && Math.abs(c.v) > 50 && dust.length < 90 && Math.random() < dt * 22) {
-            dust.push({ x: (lx + rx) / 2, y: (ly + ry) / 2, r: 5 + Math.random() * 4, life: 0.7, max: 0.7 });
-        }
-    }
-    for (let i = sparks.length - 1; i >= 0; i--) {
-        const p = sparks[i];
-        p.life -= dt; p.x += p.vx * dt; p.y += p.vy * dt; p.vx *= 1 - 3 * dt; p.vy *= 1 - 3 * dt;
-        if (p.life <= 0) sparks.splice(i, 1);
-    }
-    for (let i = dust.length - 1; i >= 0; i--) {
-        const p = dust[i];
-        p.life -= dt; p.r += 26 * dt;
-        if (p.life <= 0) dust.splice(i, 1);
     }
 }
 
-function drawFx(g, camX, camY, scale, w, h) {
+function drawSkids(g, camX, camY, scale, w, h) {
     const hw = w * 0.5, hh = h * 0.5;
     // Skids: three alpha bands, one path each.
     g.lineCap = 'round'; g.lineWidth = Math.max(1.5, 3.2 * scale);
@@ -136,20 +148,6 @@ function drawFx(g, camX, camY, scale, w, h) {
             any = true;
         }
         if (any) { g.strokeStyle = 'rgba(10,10,12,' + (lo + 0.12).toFixed(2) + ')'; g.stroke(); }
-    }
-    for (const p of dust) {
-        const x = hw + (p.x - camX) * scale, y = hh + (p.y - camY) * scale, r = p.r * scale;
-        if (x + r < 0 || x - r > w || y + r < 0 || y - r > h) continue;
-        g.fillStyle = 'rgba(214,178,120,' + (0.38 * p.life / p.max).toFixed(3) + ')';
-        g.beginPath(); g.arc(x, y, r, 0, Math.PI * 2); g.fill();
-    }
-    // Sparks are flat flecks, not lights: no glow, no additive blend.
-    for (const p of sparks) {
-        const x = hw + (p.x - camX) * scale, y = hh + (p.y - camY) * scale;
-        if (x < -3 || x > w + 3 || y < -3 || y > h + 3) continue;
-        g.fillStyle = p.life > 0.2 ? '#ffe28a' : '#ff9a3c';
-        const s = Math.max(1.5, 2.6 * scale);
-        g.fillRect(x - s / 2, y - s / 2, s, s);
     }
 }
 
@@ -322,7 +320,7 @@ function createOffscreen(w, h) {
 
 // Full-screen layers (grass, both parallax planes, fog, vignette)
 // are cached as offscreen bitmaps and blitted with drawImage(tex, 0, 0, w, h).
-// `w`/`h` are CSS pixels — draw() takes them from PoRacer.getSize(), which
+// `w`/`h` are CSS pixels — draw() takes them from input.js getSize(), which
 // returns clientWidth/clientHeight — while the destination context carries a
 // setTransform(dpr, ...). A bitmap built at the CSS size would be stretched over
 // w*dpr x h*dpr device pixels and the browser would upscale it. Those layers cover
@@ -351,6 +349,45 @@ function dprOf(g, w) {
     return (c && w > 0 && c.width > 0) ? c.width / w : 1;
 }
 
+/**
+ * A background layer is a viewport-sized tile drawn up to four times to wrap it. One tiled
+ * pattern fill does the same in a single call, which is most of the frame's fill-rate on a
+ * flat background. Falls back to null where the engine cannot scale a pattern, and the caller
+ * keeps the four draws.
+ */
+function tiledPattern(g, tex, key, texDpr) {
+    const k = key + '|' + texDpr + '|' + currentTheme;
+    const hit = bgPatterns.get(k);
+    if (hit !== undefined) return hit;
+    let pat = null;
+    try {
+        pat = g.createPattern(tex, 'repeat');
+        if (!pat || typeof pat.setTransform !== 'function' || typeof DOMMatrix === 'undefined') pat = null;
+        // The bitmap is texDpr device pixels per CSS pixel; the pattern must lay it out at
+        // its CSS size, so undo that scale in the pattern's own matrix.
+        if (pat) pat.setTransform(new DOMMatrix([1 / texDpr, 0, 0, 1 / texDpr, 0, 0]));
+    } catch { pat = null; }
+    bgPatterns.set(k, pat);
+    return pat;
+}
+
+function blitTiled(g, tex, key, texDpr, offX, offY, w, h, alpha) {
+    if (!tex) return;
+    const pat = tiledPattern(g, tex, key, texDpr);
+    if (pat) {
+        g.globalAlpha = alpha;
+        g.fillStyle = pat;
+        // The pattern is anchored at the origin, so filling from the negative offset covers the
+        // viewport exactly where the four wrapped draws would have put the bitmap.
+        g.fillRect(-offX, -offY, w, h);
+        g.globalAlpha = 1;
+        return;
+    }
+    g.globalAlpha = alpha;
+    for (const dx of [0, w]) for (const dy of [0, h]) g.drawImage(tex, dx - offX, dy - offY, w, h);
+    g.globalAlpha = 1;
+}
+
 function mulberry32(seed) {
     let a = seed;
     return function() { a |= 0; a = a + 0x6D2B79F5 | 0; let t = Math.imul(a ^ a >>> 15, 1 | a); t = t + Math.imul(t ^ t >>> 7, 61 | t) ^ t; return ((t ^ t >>> 14) >>> 0) / 4294967296; };
@@ -358,9 +395,10 @@ function mulberry32(seed) {
 
 // ── Parallax layers ────────────────────────────────────────────────────────
 function ensureParallaxLayers(w, h, dpr) {
-    if (parallaxW === w && parallaxH === h && parallaxDpr === dpr && parallaxFar && parallaxMid && parallaxTheme === currentTheme) return;
-    parallaxW = w; parallaxH = h; parallaxDpr = dpr; parallaxTheme = currentTheme;
-    const farLayer = createLayer(w, h, dpr);
+    const bdpr = Math.max(0.5, dpr * bgScale());
+    if (parallaxW === w && parallaxH === h && parallaxDpr === bdpr && parallaxFar && parallaxMid && parallaxTheme === currentTheme) return;
+    parallaxW = w; parallaxH = h; parallaxDpr = bdpr; parallaxTheme = currentTheme;
+    const farLayer = createLayer(w, h, bdpr);
     const farOff = farLayer.canvas;
     const farCtx = farLayer.ctx;
 
@@ -385,7 +423,7 @@ function ensureParallaxLayers(w, h, dpr) {
         }
         parallaxFar = farOff;
 
-        const midLayer = createLayer(w, h, dpr);
+        const midLayer = createLayer(w, h, bdpr);
         const midOff = midLayer.canvas;
         const midCtx = midLayer.ctx;
         const rng2 = mulberry32(202);
@@ -408,7 +446,7 @@ function ensureParallaxLayers(w, h, dpr) {
         }
         parallaxFar = farOff;
 
-        const midLayer = createLayer(w, h, dpr);
+        const midLayer = createLayer(w, h, bdpr);
         const midOff = midLayer.canvas;
         const midCtx = midLayer.ctx;
         midCtx.fillStyle = 'rgba(125, 70, 30, 0.45)';
@@ -424,7 +462,7 @@ function ensureParallaxLayers(w, h, dpr) {
         for (let i = 0; i < 40; i++) { const tx = rng() * w, ty = rng() * h * 0.6 + h * 0.2, th = 20 + rng() * 40, tw = 10 + rng() * 15; farCtx.beginPath(); farCtx.moveTo(tx, ty); farCtx.lineTo(tx - tw, ty + th); farCtx.lineTo(tx + tw, ty + th); farCtx.closePath(); farCtx.fill(); }
         parallaxFar = farOff;
 
-        const midLayer = createLayer(w, h, dpr);
+        const midLayer = createLayer(w, h, bdpr);
         const midOff = midLayer.canvas;
         const midCtx = midLayer.ctx;
         midCtx.fillStyle = 'rgba(20,50,30,0.25)';
@@ -451,9 +489,10 @@ function drawVignette(g, w, h, dpr) {
 
 // ── Ground ─────────────────────────────────────────────────────────────────
 function ensureGrass(w, h, dpr) {
-    if (grassTex && grassW === w && grassH === h && grassDpr === dpr && grassTheme === currentTheme) return;
-    const layer = createLayer(w, h, dpr), off = layer.canvas, g = layer.ctx;
-    grassDpr = dpr; grassTheme = currentTheme;
+    const bdpr = Math.max(0.5, dpr * bgScale());
+    if (grassTex && grassW === w && grassH === h && grassDpr === bdpr && grassTheme === currentTheme) return;
+    const layer = createLayer(w, h, bdpr), off = layer.canvas, g = layer.ctx;
+    grassDpr = bdpr; grassTheme = currentTheme;
 
     if (currentTheme === 'neonskyline') {
         const grad = g.createRadialGradient(w / 2, h / 2, 0, w / 2, h / 2, Math.max(w, h) * 0.75);
@@ -884,11 +923,38 @@ function drawCar(g, car, camX, camY, scale, w, h, detailed) {
         drawSimpleCar(g, car, x, y, scale);
         return;
     }
+    const slip = car.slip || 0;
     g.save();
     g.translate(x, y);
     g.rotate(car.h);
     g.scale(scale, scale);
+    // Weight transfer. The nose is the heading; the slide shows in how far the body has
+    // leaned off it, and a car that is sideways squats on its outside wheels.
+    if (slip) {
+        g.translate(0, -slip * 6);
+        g.scale(1 - Math.min(0.06, Math.abs(slip) * 0.1), 1 + Math.min(0.04, Math.abs(slip) * 0.06));
+    }
     g.drawImage(spriteFor(car), -24, -20, 48, 40);
+    // Boost: three additive tongues out of the back, flickering on the frame clock.
+    const boost = Math.max(car.boostT > 0 ? 1 : 0, car.boost || 0);
+    if (boost > 0.2) {
+        const t = performance.now() * 0.02;
+        g.globalCompositeOperation = 'lighter';
+        for (let i = -1; i <= 1; i++) {
+            const len = (9 + boost * 20) * (0.75 + 0.25 * Math.sin(t + i * 2.1));
+            const grd = g.createLinearGradient(-17, 0, -17 - len, 0);
+            grd.addColorStop(0, `rgba(255,220,150,${0.55 * boost})`);
+            grd.addColorStop(0.5, `rgba(255,140,60,${0.35 * boost})`);
+            grd.addColorStop(1, 'rgba(255,90,40,0)');
+            g.fillStyle = grd;
+            g.beginPath();
+            g.moveTo(-17, i * 5 - 2.6);
+            g.lineTo(-17 - len, i * 5);
+            g.lineTo(-17, i * 5 + 2.6);
+            g.closePath(); g.fill();
+        }
+        g.globalCompositeOperation = 'source-over';
+    }
     g.restore();
 }
 
@@ -921,8 +987,11 @@ export function dispose() {
     mainCanvas = mainCtx = null;
     trackTex = grassTex = parallaxFar = parallaxMid = vignetteTex = null;
     carSprites.clear();
-    specCamX = specCamY = null;
+    springReady = false;
     finishAt = 0; finishFrom = null;
+    lastDrawAt = 0;
+    Fx.disposeLights();
+    bgPatterns.clear();
     clearFx();
 }
 
@@ -939,13 +1008,12 @@ export function setStatic(center, width, walls, boostPads, surfaceZones, theme) 
     carSprites.clear();
     grassTex = null; parallaxFar = null; parallaxMid = null;
     grassTheme = null; parallaxTheme = null;
-    specCamX = null; specCamY = null;
+    springReady = false; springRoll = 0;
     finishAt = 0; finishFrom = null;
+    // Patterns point at the bitmaps that were just dropped.
+    bgPatterns.clear();
     clearFx();
 }
-
-/** 'circuit' | 'neonskyline' | 'desertdustway' | 'crossfire'. */
-export function theme() { return currentTheme; }
 
 // Also clears the per-layer dpr keys. input.js calls this when the backing
 // store changes, which is exactly when those keys are stale.
@@ -953,6 +1021,7 @@ export function invalidateBitmaps() {
     grassTex = null; trackTex = null; trackReqDpr = 0; trackDpr = 0;
     parallaxFar = null; parallaxMid = null; vignetteTex = null;
     grassDpr = 0; parallaxDpr = 0; vignetteDpr = 0; grassTheme = null; parallaxTheme = null;
+    bgPatterns.clear();
     if (mainCanvas) mainCtx = mainCanvas.getContext('2d');
 }
 
@@ -1006,33 +1075,67 @@ export function draw(cars, w, h, ghost) {
     const g = mainCtx;
     if (!g || !cars || cars.length === 0 || !w || !h) return;
     const totalStart = profiled ? performance.now() : 0;
+    const now = performance.now();
+    const dt = lastDrawAt ? Math.min(0.05, (now - lastDrawAt) / 1000) : 1 / 60;
+    lastDrawAt = now;
+    lastCars = cars;
+    Fx.syncTier(now);
 
+    // ── Where the camera wants to be ──
     const player = cars.find(c => c.isPlayer);
     const base = Math.min(w, h) / 900;
-    let camX, camY, scale;
+    let wantX, wantY, wantScale;
     if (!player && centerXY && centerN > 0) {
-        // Spectator / demo view: follow the leader, eased.
+        // Spectator / demo view: follow the leader.
         const lead = cars.reduce((a, c) => c.position < a.position ? c : a, cars[0]);
-        const tx = lead.x + Math.cos(lead.h) * 80, ty = lead.y + Math.sin(lead.h) * 80;
-        if (specCamX === null || Math.hypot(tx - specCamX, ty - specCamY) > 3000) { specCamX = tx; specCamY = ty; }
-        else { specCamX += (tx - specCamX) * 0.18; specCamY += (ty - specCamY) * 0.18; }
-        camX = specCamX; camY = specCamY;
-        scale = Math.max(0.35, Math.min(1.2, base * 1.1));
+        wantX = lead.x + Math.cos(lead.h) * 80;
+        wantY = lead.y + Math.sin(lead.h) * 80;
+        wantScale = Math.max(0.35, Math.min(1.2, base * 1.1));
     } else {
-        // Follow-cam on the local player: zoom in so their car and the cars
-        // around them (for collisions) are clearly visible.
+        // Follow-cam on the local player. The look-ahead grows with speed so the corner
+        // arrives on screen before the car does, and leans into the slide by the slip angle.
         const target = player || cars[0];
-        camX = target.x + Math.cos(target.h) * 80;
-        camY = target.y + Math.sin(target.h) * 80;
-        scale = Math.max(0.25, Math.min(1.2, base));
+        const speed = Math.abs(target.v || 0);
+        const look = 48 + Math.min(110, speed * 0.32);
+        const lean = Math.max(-26, Math.min(26, (target.slip || 0) * 90));
+        wantX = target.x + Math.cos(target.h) * look + Math.cos(target.h + Math.PI / 2) * lean;
+        wantY = target.y + Math.sin(target.h) * look + Math.sin(target.h + Math.PI / 2) * lean;
+        // Zoom out a touch at speed: the same frame holds more road when the road matters.
+        wantScale = Math.max(0.25, Math.min(1.2, base * (1 + Math.min(0.07, speed / 5200))));
     }
+
+    // ── The spring ──
+    if (!springReady) { springX = wantX; springY = wantY; springScale = wantScale; springRoll = 0; springReady = true; }
+    else {
+        // A heavy hit locks the camera for a few dozen ms before it resumes chasing.
+        const posK = 1 - Math.exp(-dt * (now < hitstopUntil ? 2.6 : 9));
+        const zoomK = 1 - Math.exp(-dt * 6);
+        springX += (wantX - springX) * posK;
+        springY += (wantY - springY) * posK;
+        springScale += (wantScale - springScale) * zoomK;
+    }
+    // The whole frame leans into a drift, by less than a degree and a half.
+    const rollWant = calm() ? 0 : Math.max(-0.018, Math.min(0.018, (player?.slip || 0) * -0.06));
+    springRoll += (rollWant - springRoll) * Math.min(1, dt * 6);
+
+    let camX = springX, camY = springY, scale = springScale;
+    // Impact shake is applied in screen pixels converted back to world units, so a hit moves
+    // the picture by the same distance at any zoom. Punch is the zoom kick that goes with it.
+    const shake = getShake();
+    const punch = getPunch();
+    if (shake > 0.001) {
+        const t = now * 0.001;
+        camX += Math.sin(t * 13.7) * (11 * shake / scale);
+        camY += Math.sin(t * 17.3) * (9 * shake / scale);
+    }
+    if (punch > 0.01) scale *= 1 + punch * 0.035;
 
     // Finish pull-back. The live camera above is where it starts from; the end is the track's
     // bounding box, fitted. Captured once so the start point does not drift under the ease.
     let zooming = false;
     if (finishAt && centerXY) {
         if (!finishFrom) finishFrom = { camX, camY, scale };
-        const t = Math.min(1, (performance.now() - finishAt) / FINISH_MS);
+        const t = Math.min(1, (now - finishAt) / FINISH_MS);
         const e = t * t * (3 - 2 * t);
         const fit = Math.min(w / (boxMaxX - boxMinX || 1), h / (boxMaxY - boxMinY || 1)) * 0.82;
         camX = finishFrom.camX + ((boxMinX + boxMaxX) / 2 - finishFrom.camX) * e;
@@ -1046,23 +1149,28 @@ export function draw(cars, w, h, ghost) {
     // through PoCanvasDpr, which lowers the ratio once the pixel budget is hit,
     // so the two are NOT the same number on a large window.
     const layerDpr = dprOf(g, w);
+    const bgDpr = Math.max(0.5, layerDpr * bgScale());
 
-    // Parallax backgrounds
+    // The drift roll rotates the whole scene about the centre; the 3% over-scale keeps the
+    // corners covered.
+    g.save();
+    if (Math.abs(springRoll) > 0.0004) {
+        g.translate(w / 2, h / 2); g.rotate(springRoll); g.scale(1.03, 1.03); g.translate(-w / 2, -h / 2);
+    }
+
+    // Parallax backgrounds: one tiled fill a layer instead of four blits.
     const backgroundStart = profiled ? performance.now() : 0;
     ensureParallaxLayers(w, h, layerDpr); ensureGrass(w, h, layerDpr);
     g.drawImage(grassTex, 0, 0, w, h);
     const farOffX = ((camX * 0.3) % w + w) % w, farOffY = ((camY * 0.3) % h + h) % h;
-    g.globalAlpha = 0.5;
-    g.drawImage(parallaxFar, -farOffX, -farOffY, w, h); g.drawImage(parallaxFar, w - farOffX, -farOffY, w, h);
-    g.drawImage(parallaxFar, -farOffX, h - farOffY, w, h); g.drawImage(parallaxFar, w - farOffX, h - farOffY, w, h);
-    const midOffX = ((camX * 0.6) % w + w) % w, midOffY = ((camY * 0.6) % h + h) % h;
-    g.globalAlpha = 0.6;
-    g.drawImage(parallaxMid, -midOffX, -midOffY, w, h); g.drawImage(parallaxMid, w - midOffX, -midOffY, w, h);
-    g.drawImage(parallaxMid, -midOffX, h - midOffY, w, h); g.drawImage(parallaxMid, w - midOffX, h - midOffY, w, h);
-    g.globalAlpha = 1.0;
+    blitTiled(g, parallaxFar, 'far', bgDpr, farOffX, farOffY, w, h, 0.5);
+    if (Fx.getTier() !== 'low') {
+        const midOffX = ((camX * 0.6) % w + w) % w, midOffY = ((camY * 0.6) % h + h) % h;
+        blitTiled(g, parallaxMid, 'mid', bgDpr, midOffX, midOffY, w, h, 0.6);
+    }
     const backgroundMs = profiled ? performance.now() - backgroundStart : 0;
 
-    if (!centerXY) return;
+    if (!centerXY) { g.restore(); return; }
 
     // Track — cached in world space, rebuilt only when zoom (scale) changes (not when the
     // camera pans). The finish pull-back changes the zoom every frame, so it scales the
@@ -1076,12 +1184,23 @@ export function draw(cars, w, h, ghost) {
     g.drawImage(trackTex, tox - TRACK_MARGIN * k, toy - TRACK_MARGIN * k, trackTexCssW * k, trackTexCssH * k);
     const trackMs = profiled ? performance.now() - trackStart : 0;
 
-    // On the road, under the cars: pads, skid marks, dust, sparks.
+    // On the road, under the cars: wear, pads, skid marks, then airborne smoke.
     const effectsStart = profiled ? performance.now() : 0;
-    const now = performance.now();
     stepFx(cars, now);
+    Fx.stampWear(cars, dt);
+    Fx.drawWear(g, camX, camY, scale, w, h);
     drawPads(g, cars, camX, camY, scale, w, h, now);
-    drawFx(g, camX, camY, scale, w, h);
+    drawSkids(g, camX, camY, scale, w, h);
+    Fx.emit(cars, dt, { wet: weatherWet });
+    Fx.step(dt);
+    Fx.drawWorld(g, camX, camY, scale, w, h);
+    Fx.drawShadows(g, cars, camX, camY, scale, w, h);
+    Fx.drawReflections(g, cars, camX, camY, scale, w, h, weatherWet);
+    // The light pass sits over the road and under the cars: headlight pools and the wet
+    // sheen belong to the surface, and the bloom it adds is what makes the night track glow.
+    Fx.lightPass(g, cars, camX, camY, scale, w, h, {
+        night: currentTheme === 'neonskyline', wet: weatherWet, now,
+    });
     const effectsMs = profiled ? performance.now() - effectsStart : 0;
 
     const hw = w * 0.5, hh = h * 0.5;
@@ -1099,12 +1218,22 @@ export function draw(cars, w, h, ghost) {
         const detailed = c.isPlayer || 32 * scale * layerDpr >= detailedBelow;
         drawCar(g, c, camX, camY, scale, w, h, detailed);
     }
+    // Airborne sparks and glow go over the cars, so a hit is never hidden behind the car that
+    // caused it.
+    Fx.drawGlow(g, camX, camY, scale, w, h);
+    Fx.drawSlipstream(g, cars, camX, camY, scale, w, h);
     const carsMs = profiled ? performance.now() - carStart : 0;
+
+    // Speed streaks + ambient motes: both screen space, both switched off by reduced motion.
+    const speedFrac = player ? Math.min(1, Math.abs(player.v || 0) / 345) : 0;
+    Fx.streaks(g, w, h, Math.pow(speedFrac, 3) * 0.85 + punch * 0.5, now);
+    Fx.ambient(g, w, h, currentTheme, dt, now);
 
     // A constant 10% dusk tint, then the vignette. Both were the "ambient" and "post" steps
     // of the old pipeline at their fixed midday settings; this is what they always drew.
     g.fillStyle = 'rgba(0,0,0,0.105)'; g.fillRect(0, 0, w, h);
     drawVignette(g, w, h, layerDpr);
+    g.restore();
 
     if (player && !zooming) drawPlayerMarker(g, player, camX, camY, scale, w, h);
     if (profiled) {
@@ -1115,4 +1244,33 @@ export function draw(cars, w, h, ghost) {
         drawProfile.carsMs += carsMs;
         drawProfile.totalMs += performance.now() - totalStart;
     }
+}
+
+/** The HUD's minimap canvas. Named once at race start; the frame loop redraws it. */
+let mapCanvasId = null, mapCanvas = null, mapLocal = -1;
+export function minimap(canvasId, localId) {
+    mapCanvasId = canvasId || null;
+    mapCanvas = mapCanvasId ? document.getElementById(mapCanvasId) : null;
+    mapLocal = localId ?? -1;
+    drawMinimap();
+}
+
+/**
+ * Redraw the minimap from the last frame's field. Cheap: a tiny canvas, one dot a car.
+ * The element is re-resolved when it is missing, because the roster arrives before the HUD is
+ * on the page and Blazor can replace the canvas on a re-render.
+ */
+export function drawMinimap() {
+    if (!mapCanvasId) return;
+    if (!mapCanvas || !mapCanvas.isConnected) {
+        mapCanvas = document.getElementById(mapCanvasId);
+        if (!mapCanvas) return;
+    }
+    if (lastCars) Fx.minimap(mapCanvas, centerXY, centerN, lastCars, mapLocal);
+}
+
+/** Weather changes grip and what the road looks like. Called once per race. */
+export function setWeather(weather) {
+    const w = String(weather || 'clear').toLowerCase();
+    weatherWet = w === 'rain' ? 0.72 : w === 'snow' ? 0.6 : w === 'fog' ? 0.9 : 1;
 }
