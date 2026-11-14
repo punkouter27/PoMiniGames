@@ -85,12 +85,11 @@ const spiralWorks = createGlbCourse({
   brakeBands: [[905, 965, 46], [1480, 1536, 46], [1690, 1712, 46]],
   // Elevated recovery nudges should fall toward LowerA rather than jump into its overpass.
   dropStallAssist: true,
-  // FINISH EARLY, at the foot of the Track-LowerA loop (world s 2270.7, 62.3% of the geometry).
-  // That loop climbs 23.3 world units and needs ~59 u/s at the bottom simply to crest, so the
-  // field bunches there and almost nothing gets over — the race was being decided by game.js's
-  // RACE_TIMEOUT instead of by anyone crossing a line. Everything before it descends cleanly, so
-  // the line moves to 2230 (40 units clear of the climb) and the raceable course becomes the
-  // race. The geometry beyond is still built and still rendered; it is simply past the line now.
+  // The full 3628-unit course runs through Track-Bowl, the Track-LowerA loop, the hazard lanes,
+  // and Track-LowerC to the finish ring. Boost/kicker bands carry the pack over the climbs and a
+  // tangent drive keeps the tail of the 101-marble pack moving through the hazard lanes inside
+  // the 180 s race clock.
+  driveAccel: 16,
   boostBands: [[2262, 2334, 90], [3176, 3248, 90], [3520, 3612]],
   kickerBands: [[3000, 3030]],
 });

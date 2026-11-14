@@ -743,6 +743,7 @@ export function createGlbCourse({
   // floor half-width and how far out its wall tops reach. `s` still comes from the main line so
   // standings stay comparable: a lane ring maps onto the main arclength its segment spans.
   const LANES = [];
+  const colKeep = new Uint8Array(COL_VERTS.length / 3);
   {
     const segInfo = new Map((PATH.SEGMENTS || []).map((sg) => [sg.name, sg]));
     let base = 0;
@@ -753,6 +754,7 @@ export function createGlbCourse({
       base += n * 4;
       // Bumper is a decorative rim with no floor; a name the path does not know has no `s`.
       if (!info || /Bumper/.test(sg.name) || n < 2) continue;
+      colKeep.fill(1, vbase, vbase + n * 4);
       const read = (r, k, out) => {
         const o = (vbase + r * 4 + k) * 3;
         return out.set(COL_VERTS[o] * SCALE, COL_VERTS[o + 1] * SCALE, COL_VERTS[o + 2] * SCALE);
@@ -891,11 +893,12 @@ export function createGlbCourse({
   // xyz triangle soups (walls, lids, junction floors), per-lane coverage
   const CONTAIN = { walls: [], lids: [], floors: [], stats: [] };
   {
-    // Clearance above each ring, from every shell vertex of the OTHER lanes (and of this lane more
-    // than a few rings away) that sits over this ring's floor footprint.
+    // Clearance above each ring, from every floor vertex of the OTHER lanes (and of this lane more
+    // than a few rings away) that sits over this ring's floor footprint. Wall tops (A/D) stay out:
+    // a side-by-side sibling lane's divider wall is next to this lane, not an overpass above it.
     const all = [];
     LANES.forEach((L, li) => {
-      for (let r = 0; r < L.n; r++) for (const arr of [L.A, L.B, L.C, L.D]) all.push(arr[r * 3], arr[r * 3 + 1], arr[r * 3 + 2], li, r);
+      for (let r = 0; r < L.n; r++) for (const arr of [L.B, L.C, L.P]) all.push(arr[r * 3], arr[r * 3 + 1], arr[r * 3 + 2], li, r);
     });
     const t = new THREE.Vector3(), w = new THREE.Vector3();
     const pushTri = (list, p, q, r) => {
@@ -951,6 +954,8 @@ export function createGlbCourse({
       // A Catch lane is never lidded (it exists to catch what falls onto it) but still gets its
       // walls raised: Grand Spiral's 160-wide catch pan lost marbles straight over its low sides.
       const v = (arr, r) => new THREE.Vector3(arr[r * 3], arr[r * 3 + 1], arr[r * 3 + 2]);
+      const T0 = v(L.P, 1).sub(v(L.P, 0)).normalize();
+      const hairpin = fedFromAir[li] && dirAt(Math.max(0, L.s0 - HAIRPIN_LOOK), new THREE.Vector3()).dot(T0) < 0;
       const topL = [], topR = [], baseL = [], baseR = [];
       L.HLID = new Float32Array(L.n);   // lid height above the floor per ring, 0 = no lid (caps use it)
       for (let r = 0; r < L.n; r++) {
@@ -972,7 +977,7 @@ export function createGlbCourse({
           // frame (Split A's feeding lane reads 3.5 units "above" the detour's first ring), not a
           // ceiling. Real overpasses on these courses are ~46 units up.
           if (hu < OVERPASS_MIN || hu >= clear) continue;
-          if (Math.abs(w.dot(R)) > L.REACH[r] + 2 || Math.abs(w.dot(t)) > 10) continue;
+          if (Math.abs(w.dot(R)) > (sibling ? L.HW[r] - 2 : L.REACH[r] + 2) || Math.abs(w.dot(t)) > 10) continue;
           clear = hu;
         }
         const A = v(L.A, r), B = v(L.B, r), C = v(L.C, r), D = v(L.D, r);
@@ -983,10 +988,15 @@ export function createGlbCourse({
         baseL.push(A); baseR.push(D);
         if (!(H >= 4)) { topL.push(null); topR.push(null); continue; }   // no room: an overpass is the lid
         if (L.open || fedByCatch[li] || (fedFromAir[li] && r < LANDING_RINGS)) {
-          // Landing zone: extend the walls, leave the top open (see fedFromAir).
+          // Landing zone: extend the walls, leave the top open (see fedFromAir). On a hairpin-fed
+          // lane running back under a funnel, cap the extension at the ring-0 floor height so the
+          // flared hopper reaches up to the funnel throat without poking into the cone overhead.
           const HL = Math.min(Math.max(H, hA + LAND_EXTRA, hD + LAND_EXTRA), clear - CONTAIN_MARGIN);
-          const eL = A.clone().addScaledVector(U, Math.max(0, HL - hA)).addScaledVector(R, -LAND_FLARE);
-          const eD = D.clone().addScaledVector(U, Math.max(0, HL - hD)).addScaledVector(R, LAND_FLARE);
+          const roofCap = (ay) => (hairpin && U.y > 0.1 ? Math.max(0, (L.B[1] - ay) / U.y) : Infinity);
+          const dhL = Math.min(Math.max(0, HL - hA), roofCap(A.y));
+          const dhR = Math.min(Math.max(0, HL - hD), roofCap(D.y));
+          const eL = A.clone().addScaledVector(U, dhL).addScaledVector(R, -LAND_FLARE * Math.min(1, dhL / LAND_EXTRA));
+          const eD = D.clone().addScaledVector(U, dhR).addScaledVector(R, LAND_FLARE * Math.min(1, dhR / LAND_EXTRA));
           landing.push([li, r, eL, eD]);
           topL.push(null); topR.push(null);
           continue;
@@ -1010,9 +1020,6 @@ export function createGlbCourse({
       // gets a tall backstop there instead, since the whole field lands carrying its old direction.
       if (fedFromAir[li] && L.kerb) {
         const k0 = vv3(L.B, 0), k1 = vv3(L.C, 0), U0 = vv3(L.U, 0);
-        const T0 = vv3(L.P, 1).sub(vv3(L.P, 0)).normalize();
-        const inflow = dirAt(Math.max(0, L.s0 - HAIRPIN_LOOK), new THREE.Vector3());
-        const hairpin = inflow.dot(T0) < 0;
         const bk = T0.clone().multiplyScalar(-APRON_LEN);
         const j0 = k0.clone().add(bk), j1 = k1.clone().add(bk);
         const side = U0.clone().multiplyScalar(BACKSTOP_H), back = U0.clone().multiplyScalar(hairpin ? BACKSTOP_H : KERB_H);
@@ -1317,7 +1324,7 @@ export function createGlbCourse({
     let bestScore = Infinity;
     for (let li = 0; li < LANES.length; li++) {
       const L = LANES[li];
-      if (out.s < L.s0 - 30 || out.s > L.s1 + 30) continue;
+      if (out.s < L.s0 - 8 || out.s > L.s1 + 30) continue;
       // Nearest ring in space, starting from the ring whose mapped `s` matches.
       let lo = 0, hi = L.n - 1;
       while (lo < hi) { const m = (lo + hi) >> 1; if (L.S[m] < out.s) lo = m + 1; else hi = m; }
@@ -1454,12 +1461,13 @@ export function createGlbCourse({
         [COL.BUMP_INDICES, materials.bump],
         [COL.ICE_INDICES, materials.ice],
       ];
+      const keepVert = (a, b, c) => colKeep[a] && colKeep[b] && colKeep[c];
       for (const [indices, material] of zoned) {
         if (!indices || !indices.length) continue;
-        for (const shape of chunkedTrimeshes(cx, cy, cz, indices)) addStatic(shape, material);
-        for (let t = 0; t < indices.length; t++) {
-          const v = indices[t];
-          shellSoup.push(cx[v], cy[v], cz[v]);
+        for (const shape of chunkedTrimeshes(cx, cy, cz, indices, keepVert)) addStatic(shape, material);
+        for (let t = 0; t < indices.length; t += 3) {
+          const a = indices[t], b = indices[t + 1], c = indices[t + 2];
+          if (keepVert(a, b, c)) shellSoup.push(cx[a], cy[a], cz[a], cx[b], cy[b], cz[b], cx[c], cy[c], cz[c]);
         }
       }
     }
