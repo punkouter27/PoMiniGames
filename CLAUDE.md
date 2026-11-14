@@ -30,9 +30,10 @@ node --test tests/pomule-world.test.mjs                        # JS engine tests
   `--artifacts-path artifacts/<name>` (it must stay inside the repo).
 - `scripts/test-all.ps1` runs all four tiers. The AGENTS.md rules say not to run it for routine
   changes.
-- CI (`.github/workflows/deploy.yml`) runs on every push to master and deploys to Azure App
-  Service. A push is a production deploy. Infra is Bicep under `infra/`, and `azure.yaml` drives
-  `azd up`.
+- CI uses the shared `.github/workflows/deploy.yml`: `scripts/ci-checks.ps1` preserves the
+  trim/size, format, Bicep, CSS, test-ceiling, and JavaScript checks; `scripts/ci-package.ps1`
+  stages the docs suite; `scripts/pre-deploy.ps1` clears stale Kudu files on the Windows App Service.
+  Only master deploys. Provision with the manual `.github/workflows/infra.yml` workflow or `azd up`.
 
 ## Tests
 

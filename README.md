@@ -324,7 +324,9 @@ Run `pwsh scripts/test-ceilings.ps1` to check all four test-method budgets witho
 Run `node --test tests/pomule-world.test.mjs tests/pomule-physics.test.mjs` for PoMule's renderer maths.
 
 Run `npm ci --prefix scripts/pomarblerace` then `node --test tests/pomarblerace-map-health.test.mjs` for Marble Race map health (a full headless 101-marble race on every course, also run by CI; see `scripts/pomarblerace/README.md`).
-CI validates Bicep and deploys application code; use `azd up` for resource provisioning.
+The shared `.github/workflows/deploy.yml` runs unit and repository checks, stages the documentation
+suite, and deploys only from `master`. Provision or update Azure resources with the manual
+`.github/workflows/infra.yml` workflow or `azd up`.
 
 ## Configuration and endpoint changes (2026-10-17)
 

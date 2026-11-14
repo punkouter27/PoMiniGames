@@ -1,8 +1,15 @@
 using FluentAssertions;
+using Microsoft.AspNetCore.Components;
+using Microsoft.AspNetCore.Components.RenderTree;
+using Microsoft.AspNetCore.Components.Rendering;
+using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Logging.Abstractions;
+using Microsoft.JSInterop;
 using PoMiniGames.Domain.Primitives;
 using PoMiniGames.Shared.Games;
 using PoMiniGamesClient.Features.PoBrawl;
 using PoMiniGamesClient.Models;
+using PoMiniGamesClient.Services.Play;
 
 namespace PoMiniGames.Unit.Features.PoBrawl;
 
@@ -22,10 +29,67 @@ public sealed class PoBrawlTournamentTests
     [InlineData(nameof(CampaignTrail_Crosses270_OnlyOnTheLastRung))]
     [InlineData(nameof(Progress_Merge_TakesTheNewerRung_TheFastestKo_AndTheMostClears))]
     [InlineData(nameof(Catalog_HasTwoDistinctDemoModesAndReelEntries))]
+    [InlineData(nameof(Ffa_HumanRoundsRecordOnce_AndDemoDoesNotRecord))]
     public Task Scenario(string name) => Scenarios.RunAsync(this, name);
 
     private static PoBrawlTournament NewCup(int seed = 7, IReadOnlyDictionary<string, int>? ratings = null) =>
         PoBrawlTournament.Draw(PoBrawlRoster.Fighters, new Random(seed), ratings);
+
+    private static async Task Ffa_HumanRoundsRecordOnce_AndDemoDoesNotRecord()
+    {
+        var stats = new GameStatsService();
+        var names = new PlayerNameService(new NoJs());
+        await names.Initialized;
+        names.SetPlayerName($"ffa-test-{Guid.NewGuid():N}");
+        var results = new GameResultService(stats, null!, null!, null!, null!, null!);
+        await using var services = new ServiceCollection().BuildServiceProvider();
+        await using var renderer = new FfaRenderer(services);
+        var page = new FfaTestPage();
+        typeof(PoBrawlFfaPage).GetProperty("Mode")!.SetValue(page, "play");
+        typeof(PoBrawlFfaPage).GetProperty("PlayerNameService", System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic)!.SetValue(page, names);
+        typeof(PoBrawlFfaPage).GetProperty("GameResults", System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic)!.SetValue(page, results);
+        renderer.Attach(page);
+
+        await renderer.Dispatcher.InvokeAsync(async () =>
+        {
+            await page.OnFfaRoundStarted(1, 1);
+            await page.OnFfaChampion("bob", 1);
+            await page.OnFfaChampion("bob", 1);
+            await page.OnFfaRoundStarted(2, 2);
+            await page.OnFfaChampion("bob", 1);
+            await page.OnFfaChampion("trump", 2);
+            await page.OnFfaRoundStarted(1, 3); // season reset reuses the visible round number
+            await page.OnFfaChampion("bob", 3);
+            typeof(PoBrawlFfaPage).GetProperty("Mode")!.SetValue(page, null);
+            await page.OnFfaRoundStarted(2, 4);
+            await page.OnFfaChampion("trump", 4);
+        });
+
+        var bucket = stats.GetStats("pobrawl-ffa", names.GetPlayerName()).Medium;
+        bucket.Wins.Should().Be(2);
+        bucket.Losses.Should().Be(1);
+    }
+
+    private sealed class NoJs : IJSRuntime
+    {
+        public ValueTask<T> InvokeAsync<T>(string identifier, object?[]? args) => ValueTask.FromResult(default(T)!);
+        public ValueTask<T> InvokeAsync<T>(string identifier, CancellationToken cancellationToken, object?[]? args) => ValueTask.FromResult(default(T)!);
+    }
+
+    private sealed class FfaTestPage : PoBrawlFfaPage
+    {
+        protected override void BuildRenderTree(RenderTreeBuilder builder) { }
+    }
+
+#pragma warning disable BL0006
+    private sealed class FfaRenderer(IServiceProvider services) : Renderer(services, NullLoggerFactory.Instance)
+    {
+        public override Dispatcher Dispatcher { get; } = Dispatcher.CreateDefault();
+        public void Attach(IComponent component) => AssignRootComponentId(component);
+        protected override Task UpdateDisplayAsync(in RenderBatch renderBatch) => Task.CompletedTask;
+        protected override void HandleException(Exception exception) => throw exception;
+    }
+#pragma warning restore BL0006
 
     private static void Catalog_HasTwoDistinctDemoModesAndReelEntries()
     {
