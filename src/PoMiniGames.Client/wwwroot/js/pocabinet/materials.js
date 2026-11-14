@@ -96,6 +96,15 @@ function ensureWorldVarying(shader) {
 }
 
 /**
+ * A uniform declaration, or '' when an earlier hook on the same material already declared it.
+ * Hooks stack (the road is macro + puddlePorosity + reflective) and GLSL rejects a uniform
+ * declared twice, which silently drops the whole material.
+ */
+function decl(shader, line) {
+    return shader.fragmentShader.includes(line) ? '' : line + '\n';
+}
+
+/**
  * World-space low-frequency variation of the albedo: `amount` ± around 1 at
  * `scale` world units per noise tile. Kills visible tiling on big surfaces.
  */
@@ -103,7 +112,7 @@ export function macro(material, scale = 60, amount = 0.25) {
     return addHook(material, `macro${scale}:${amount}`, (shader) => {
         ensureWorldVarying(shader);
         shader.uniforms.uPcNoise = { value: noise() };
-        shader.fragmentShader = 'uniform sampler2D uPcNoise;\n' + shader.fragmentShader.replace('#include <map_fragment>', `#include <map_fragment>
+        shader.fragmentShader = decl(shader, 'uniform sampler2D uPcNoise;') + shader.fragmentShader.replace('#include <map_fragment>', `#include <map_fragment>
         {
             vec4 n1 = texture2D(uPcNoise, vPcWorld.xz / ${scale.toFixed(1)});
             vec4 n2 = texture2D(uPcNoise, vPcWorld.xz / ${(scale * 0.23).toFixed(2)});
@@ -169,7 +178,7 @@ export function puddlePorosity(material, uWet) {
         ensureWorldVarying(shader);
         shader.uniforms.uPcNoise = { value: noise() };
         shader.uniforms.uPcWetRoad = uWet;
-        shader.fragmentShader = 'uniform sampler2D uPcNoise;\nuniform float uPcWetRoad;\nfloat pcPuddleMask = 0.0;\n'
+        shader.fragmentShader = decl(shader, 'uniform sampler2D uPcNoise;') + 'uniform float uPcWetRoad;\nfloat pcPuddleMask = 0.0;\n'
             + shader.fragmentShader
                 .replace('#include <roughnessmap_fragment>', `#include <roughnessmap_fragment>
                 {
@@ -195,7 +204,7 @@ export function water(material, strength = 0.18) {
         ensureWorldVarying(shader);
         shader.uniforms.uPcTime = clock;
         shader.uniforms.uPcNoise = { value: noise() };
-        shader.fragmentShader = 'uniform float uPcTime;\nuniform sampler2D uPcNoise;\n' + shader.fragmentShader.replace('#include <normal_fragment_maps>', `#include <normal_fragment_maps>
+        shader.fragmentShader = decl(shader, 'uniform float uPcTime;') + decl(shader, 'uniform sampler2D uPcNoise;') + shader.fragmentShader.replace('#include <normal_fragment_maps>', `#include <normal_fragment_maps>
         {
             vec2 p = vPcWorld.xz;
             vec2 a = texture2D(uPcNoise, p * 0.11 + vec2(uPcTime * 0.021, uPcTime * 0.013)).rg - 0.5;
@@ -214,7 +223,7 @@ export function water(material, strength = 0.18) {
 export function reflective(material, uRefl) {
     return addHook(material, 'reflective', (shader) => {
         shader.uniforms.uPcRefl = uRefl;
-        shader.fragmentShader = 'uniform float uPcRefl;\n' + shader.fragmentShader.replace('#include <dithering_fragment>', `#include <dithering_fragment>
+        shader.fragmentShader = decl(shader, 'uniform float uPcRefl;') + shader.fragmentShader.replace('#include <dithering_fragment>', `#include <dithering_fragment>
         gl_FragColor.a = 1.0 - uPcRefl;`);
     });
 }

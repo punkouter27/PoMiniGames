@@ -145,4 +145,19 @@
     }
   };
 
+  // `po-awake` on <html> while the viewer is active (any pointer or key in the last 3 s).
+  // The demo reel's control bar fades without it, so it stops covering the game.
+  var awakeTimer = 0;
+  function wake() {
+    document.documentElement.classList.add('po-awake');
+    clearTimeout(awakeTimer);
+    awakeTimer = setTimeout(function () {
+      document.documentElement.classList.remove('po-awake');
+    }, 3000);
+  }
+  ['pointermove', 'pointerdown', 'keydown', 'touchstart'].forEach(function (type) {
+    window.addEventListener(type, wake, { passive: true, capture: true });
+  });
+  wake();
+
 })();

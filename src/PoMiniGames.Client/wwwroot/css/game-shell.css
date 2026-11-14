@@ -854,6 +854,12 @@ dialog.gps-intro-overlay::backdrop { background: transparent; }
   z-index: 20;
 }
 
+/* The demo reel is watched, not debugged: the pill would sit on top of games' own
+   bottom-left HUD (Cabinet's leader card). Tab still opens the panel. */
+body:has(.kiosk-bar) .gps-stats-toggle {
+  display: none;
+}
+
 .gps-debug {
   position: fixed;
   left: 0.75rem;

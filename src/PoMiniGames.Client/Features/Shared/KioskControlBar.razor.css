@@ -37,6 +37,24 @@
     flex-shrink: 0;
 }
 
+/* The bar sits over the middle of the bottom edge, which is where several demos
+   put their action (Marble Race's pack, the Brawl FFA ring). It fades once the
+   viewer stops moving (app.js toggles `po-awake` on <html>) and comes straight
+   back on any pointer, key, hover or focus. */
+.kiosk-bar {
+    opacity: 0.15;
+}
+
+:root.po-awake .kiosk-bar,
+.kiosk-bar:hover,
+.kiosk-bar:focus-within {
+    opacity: 1;
+}
+
+@media (prefers-reduced-motion: no-preference) {
+    .kiosk-bar { transition: opacity 0.4s var(--ease-standard); }
+}
+
 /* Paused reads as "held", not "stopped" — hence dimmed rather than a new hue. */
 .kiosk-bar-dot--paused { opacity: 0.4; }
 
