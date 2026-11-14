@@ -250,6 +250,15 @@ public partial class PoCapitolPage : IAsyncDisposable
         }
         catch (Exception ex) when (ex is JSException or InvalidOperationException)
         {
+            // The route changed while the engine was downloading: its container is gone
+            // and there is nothing left to initialise. That is a navigation, not a page
+            // failure, so it must not be logged — the link audit (and a player reading
+            // the console) treats a logged init error as a broken page.
+            if (ex.Message.Contains("scene container was not found", StringComparison.OrdinalIgnoreCase))
+            {
+                return;
+            }
+
             Logger.LogError(ex, "PoCapitol could not initialize");
             _error = "The 3D scene is unavailable. Check your connection and browser graphics support, then retry.";
             _status = "error";

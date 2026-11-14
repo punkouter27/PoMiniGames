@@ -81,20 +81,8 @@
 }
 
 /* ── Heading ──
-   The page title and whose stats these are, on one line. The Gamer Card under
-   it is the hero (avatar, account badge, rank), so this carries no card of its
-   own. */
-.prf-head {
-    display: flex;
-    align-items: baseline;
-    flex-wrap: wrap;
-    gap: 0.25rem 0.75rem;
-}
-
-.prf-name {
-    font-size: 1.5rem;
-    font-weight: 700;
-}
+   The page title lives in the shared <PageHeader>; whose stats these are is the
+   Gamer Card under it (avatar, account badge, rank). */
 
 /* ── Headline band ──
    One band with a 1P | Online switch over one wrapping strip. Each chip is a value
@@ -115,8 +103,19 @@
 
 .prf-chips {
     display: grid;
-    grid-template-columns: repeat(auto-fit, minmax(8.5rem, 1fr));
+    /* Six across on a wide screen; three when the cards are 300px wide, which is what
+       keeps a hint like "Win 2 in a row vs the CPU" on one line instead of wrapping in
+       a 148px chip while its neighbours have one. */
+    grid-template-columns: repeat(6, minmax(0, 1fr));
     gap: 0.5rem;
+}
+
+@media (max-width: 1180px) {
+    .prf-chips { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+}
+
+@media (max-width: 560px) {
+    .prf-chips { grid-template-columns: repeat(2, minmax(0, 1fr)); }
 }
 
 .prf-chip {
@@ -239,19 +238,90 @@
     .prf-ach-grid { grid-template-columns: 1fr 1fr; }
 }
 
-/* ── Charts (folded) ── */
-.prf-fold > summary {
-    cursor: pointer;
-    margin-bottom: 0;
-    padding: 0.4rem 0;
+/* ── Achievement progress ──
+   Radzen's progress bar, told the page's own colours; the plain bar underneath is the
+   fallback for the first paint, before the theme lands. */
+.prf-ach-bar {
+    width: 8rem;
+    flex: 0 0 auto;
 }
 
-.prf-fold[open] > summary { margin-bottom: 0.6rem; }
+.prf-ach-bar ::deep .rz-progressbar {
+    height: 0.5rem;
+    border-radius: 999px;
+    background-color: var(--tint-medium);
+}
 
+.prf-ach-bar ::deep .rz-progressbar-value {
+    border-radius: 999px;
+    background-color: var(--color-accent);
+}
+
+.prf-ach-bar-primitive {
+    width: 8rem;
+    height: 0.5rem;
+    border-radius: 999px;
+    background: var(--tint-medium);
+    overflow: hidden;
+}
+
+.prf-ach-bar-fill {
+    height: 100%;
+    border-radius: 999px;
+    background: var(--color-accent);
+}
+
+@media (max-width: 560px) {
+    .prf-ach-bar,
+    .prf-ach-bar-primitive { width: 100%; }
+}
+
+/* The rest of the list, folded. */
+.prf-ach-more {
+    margin-top: 0.6rem;
+}
+
+.prf-ach-more-summary {
+    cursor: pointer;
+    padding: 0.3rem 0;
+    font-size: var(--text-sm);
+    font-weight: 600;
+    color: var(--color-text-secondary);
+}
+
+.prf-ach-more-summary:hover {
+    color: var(--color-text-primary);
+}
+
+/* ── Charts ── */
 .prf-charts {
     display: grid;
-    grid-template-columns: 1fr 1fr;
+    grid-template-columns: minmax(0, 1.35fr) minmax(0, 1fr);
     gap: 1rem;
+}
+
+/* Holds the chart's height while Radzen's theme and script land, so the section
+   below it does not jump when the bars appear. */
+.prf-chart-placeholder {
+    width: 100%;
+    height: 220px;
+    border-radius: var(--radius-md);
+    background: linear-gradient(90deg, var(--tint-soft), var(--tint-medium), var(--tint-soft));
+    background-size: 200% 100%;
+    animation: prf-chart-shimmer 1.4s ease-in-out infinite;
+}
+
+@keyframes prf-chart-shimmer {
+    0% { background-position: 200% 0; }
+    100% { background-position: -200% 0; }
+}
+
+.prf-chart-card--wide {
+    align-items: stretch;
+}
+
+.prf-chart-card--wide .prf-chart {
+    width: 100%;
 }
 
 @media (max-width: 640px) {
@@ -318,28 +388,40 @@
 .prf-legend-draw { background: var(--accent-warning); }
 .prf-legend-loss { background: var(--accent-danger); }
 
-/* ── Unplayed strip ──
-   Instead of a wall of "Not played yet" cards: one wrapped row of small chips
-   under the played-games grid, each a link into its game. Colours come from the
-   theme tokens so the strip follows light/dark like the rest of the page. */
+/* ── Unplayed games ──
+   One disclosure row instead of a wall of chips. It opens by itself only when the
+   player has nothing to look at yet. Colours come from the theme tokens so it
+   follows light/dark like the rest of the page. */
 .prf-unplayed {
-    display: flex;
-    align-items: center;
-    flex-wrap: wrap;
-    gap: 0.4rem;
     margin-top: var(--space-2);
-    padding: 0.6rem 0.75rem;
+    padding: 0.35rem 0.6rem;
     border: 1px dashed var(--color-border);
     border-radius: var(--radius-md);
 }
 
 .prf-unplayed-label {
+    cursor: pointer;
+    padding: 0.25rem 0;
     font-size: 0.75rem;
     font-weight: 700;
     letter-spacing: 0.04em;
     text-transform: uppercase;
     color: var(--color-text-secondary);
-    margin-right: 0.15rem;
+}
+
+.prf-unplayed-label:hover {
+    color: var(--color-text-primary);
+}
+
+.prf-unplayed[open] > .prf-unplayed-label {
+    margin-bottom: 0.4rem;
+}
+
+.prf-unplayed-chips {
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 0.4rem;
 }
 
 .prf-unplayed-chip {

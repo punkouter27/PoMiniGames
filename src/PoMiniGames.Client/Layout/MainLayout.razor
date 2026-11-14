@@ -13,7 +13,6 @@
 @inject AppUpdateService AppUpdate
 @inject PlaySessionService PlaySessions
 @inject NavigationManager NavigationManager
-@inject IWebAssemblyHostEnvironment HostEnv
 
 <div class="gl-page">
     @* First tab stop on every route. The header is persistent chrome (brand, game
@@ -103,36 +102,35 @@
                         <span class="gl-account-caret" aria-hidden="true">▾</span>
                     </button>
                     @* role="menu": js/app.js adds focus-on-open and arrow keys, which is what
-                       the role promises. aria-current marks the page the player is on. *@
+                       the role promises. aria-current marks the page the player is on.
+                       Every item carries the same Material Symbols glyph set the rest of
+                       the shell uses, so the menu reads as a list of places rather than a
+                       paragraph of links. *@
                     <div id="gl-account-menu" popover="auto" class="gl-overflow-panel"
                          role="menu" aria-label="Account">
-                        @foreach (var (path, label) in MenuPages)
+                        <p class="gl-overflow-head">Signed in as <strong>@AuthUserLabel</strong></p>
+                        @foreach (var (path, label, icon) in MenuPages)
                         {
                             <button type="button" class="gl-overflow-item" role="menuitem"
                                     aria-current="@(IsCurrent(path) ? "page" : null)"
                                     popovertarget="gl-account-menu" popovertargetaction="hide"
-                                    @onclick="() => GoTo(path)">@label</button>
+                                    @onclick="() => GoTo(path)">
+                                <span class="material-symbols-outlined gl-overflow-icon" aria-hidden="true">@icon</span>
+                                <span>@label</span>
+                            </button>
                         }
                         <button type="button" class="gl-overflow-item" role="menuitem"
                                 popovertarget="gl-account-menu" popovertargetaction="hide"
-                                @onclick="Settings.RequestOpen">Settings</button>
-                        @if (!HostEnv.IsProduction())
-                        {
-                            <div class="gl-overflow-item gl-overflow-item--sep">
-                                <label for="dev-persona-select" class="gl-sr-only">Dev persona</label>
-                                <select id="dev-persona-select" aria-label="Dev persona switcher"
-                                        value="@DevFakeUserHandler.ActiveFakeUser"
-                                        @onchange="OnDevPersonaChanged">
-                                    @foreach (var persona in AccountMenu.Personas)
-                                    {
-                                        <option value="@(persona.FakeUserHeader ?? string.Empty)">@persona.Label</option>
-                                    }
-                                </select>
-                            </div>
-                        }
+                                @onclick="Settings.RequestOpen">
+                            <span class="material-symbols-outlined gl-overflow-icon" aria-hidden="true">tune</span>
+                            <span>Settings</span>
+                        </button>
                         <button type="button" class="gl-overflow-item gl-overflow-item--sep" role="menuitem"
                                 popovertarget="gl-account-menu" popovertargetaction="hide"
-                                @onclick="SignOut">Sign out</button>
+                                @onclick="SignOut">
+                            <span class="material-symbols-outlined gl-overflow-icon" aria-hidden="true">logout</span>
+                            <span>Sign out</span>
+                        </button>
                     </div>
                 }
             }
@@ -197,12 +195,13 @@
     private string _connectivityAnnouncement = "";
     private bool _announcedOffline;
 
-    // The account menu's page destinations, in order. Settings (a sheet) and Sign out follow.
-    private static readonly (string Path, string Label)[] MenuPages =
+    // The account menu's page destinations, in order, with the glyph each one shows.
+    // Settings (a sheet) and Sign out follow.
+    private static readonly (string Path, string Label, string Icon)[] MenuPages =
     [
-        ("/profile", "My Stats"),
-        ("/leaderboards", "Leaderboards"),
-        ("/health", "Status"),
+        ("/profile", "My Stats", "person"),
+        ("/leaderboards", "Leaderboards", "leaderboard"),
+        ("/health", "Status", "monitor_heart"),
     ];
 
     private bool IsCurrent(string path) =>
@@ -211,13 +210,6 @@
     // Top-bar identity for a signed-in user: prefer the display name, fall back to
     // the email/username. The full email is surfaced via the tooltip so a truncated
     // name in the pill is still resolvable on hover.
-    private void OnDevPersonaChanged(ChangeEventArgs e)
-    {
-        var v = e.Value?.ToString();
-        DevFakeUserHandler.ActiveFakeUser = string.IsNullOrWhiteSpace(v) ? null : v;
-        _ = AuthState.InitializeAsync();
-    }
-
     private string AuthUserLabel
     {
         get

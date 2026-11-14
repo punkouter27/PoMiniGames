@@ -4,6 +4,7 @@
 @inject AuthStateService AuthState
 @inject UiFeedbackService Feedback
 @inject IJSRuntime JS
+@inject IWebAssemblyHostEnvironment HostEnv
 @implements IDisposable
 
 @* ─────────────────────────────────────────────────────────────────────────
@@ -227,6 +228,30 @@
                 <legend class="prefs-group-legend">Advanced game options</legend>
                 <PoMiniGamesClient.Features.PoBrawl.PoBrawlShowPrefs />
             </fieldset>
+            @* The dev persona switcher used to sit in the account popover, between the
+               destinations and Sign out: a developer control in the middle of a player's
+               menu, and a raw native <select> against the popover's own styling. It is
+               still one tap away here, and only outside Production. *@
+            @if (!HostEnv.IsProduction())
+            {
+                <fieldset class="prefs-group prefs-group--advanced">
+                    <legend class="prefs-group-legend">Developer</legend>
+                    <div class="prefs-row">
+                        <div class="prefs-label">
+                            <span class="prefs-name">Dev persona</span>
+                            <span class="prefs-hint">Switches the fake signed-in user. Development and Test only.</span>
+                        </div>
+                        <select id="dev-persona-select" class="prefs-select" aria-label="Dev persona switcher"
+                                value="@DevFakeUserHandler.ActiveFakeUser"
+                                @onchange="OnDevPersonaChanged">
+                            @foreach (var persona in PoMiniGamesClient.Layout.AccountMenu.Personas)
+                            {
+                                <option value="@(persona.FakeUserHeader ?? string.Empty)">@persona.Label</option>
+                            }
+                        </select>
+                    </div>
+                </fieldset>
+            }
         </details>
 
         <fieldset class="prefs-group">
@@ -271,6 +296,15 @@
         ThemeMode.Dark => "Dark",
         _ => "Auto",
     };
+
+    // Same switch the account popover used to carry: set the fake user header and
+    // re-run auth so every page sees the new identity without a reload.
+    private void OnDevPersonaChanged(ChangeEventArgs e)
+    {
+        var v = e.Value?.ToString();
+        DevFakeUserHandler.ActiveFakeUser = string.IsNullOrWhiteSpace(v) ? null : v;
+        _ = AuthState.InitializeAsync();
+    }
 
     protected override void OnInitialized()
     {

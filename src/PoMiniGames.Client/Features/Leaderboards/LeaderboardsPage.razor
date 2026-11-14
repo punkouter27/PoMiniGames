@@ -12,11 +12,15 @@
 
 <div class="lb-page">
     @* The head is a fixed frame rendered from the first paint: the title and a meta line
-       that is always reserved, so nothing moves when the boards arrive. The player's best placing is a compact chip on that meta
-       line (it used to be a hero card that pushed the page down once loaded). *@
-    <header class="lb-head">
-        <h1 class="lb-title">Leaderboards</h1>
-        <div class="lb-meta">
+       that is always reserved, so nothing moves when the boards arrive. The player's best
+       placing is a compact chip on that meta line (it used to be a hero card that pushed
+       the page down once loaded).
+
+       The page's three filters live on the title's line, not on a toolbar row of their
+       own: one board at a time is on screen, so the controls that choose it belong to the
+       heading that names it. *@
+    <PageHeader Title="Leaderboards">
+        <Meta>
             @if (!_loading && _boards.Count > 0)
             {
                 // A count of boards, said as boards, not games. They measure different
@@ -33,46 +37,60 @@
                     <span class="lb-sr-only">, @_topValue. Show that board.</span>
                 </button>
             }
-        </div>
-    </header>
-
-    @* One compact toolbar row: which board, which period, and a player search. Radzen,
-       loaded on demand like Brawl HQ (its theme is global CSS, so it is in the document
-       only while this page is). Radzen's components call its script as they mount, so they
-       render once the theme and script have landed; the row's height is reserved from the
-       first paint, so that moves nothing. *@
-    <div class="lb-toolbar" role="toolbar" aria-label="Leaderboard filters">
-        @if (_radzenReady)
-        {
-            <RadzenDropDown TValue="string" Data="@_pickItems" TextProperty="Label" ValueProperty="Key"
-                            Value="@_selectedGame" Change="@(v => SelectAsync(v as string))"
-                            Disabled="@(_loading || _error || _pickItems.Count == 0)"
-                            Placeholder="Pick a game" class="lb-tb-game"
-                            InputAttributes="@(new Dictionary<string, object> { ["aria-label"] = "Pick a game" })">
-                <Template Context="item">
-                    @{ var pick = (PickItem)(object)item; }
-                    <span class="lb-tb-opt">
-                        <span class="lb-tb-opt-group">@pick.Group</span>
-                        <span class="lb-tb-opt-name">@pick.Title</span>
-                        @if (pick.Rank is int r)
+        </Meta>
+        <Actions>
+            @* Radzen, loaded on demand like Brawl HQ (its theme is global CSS, so it is
+               in the document only while this page is). Radzen's components call its
+               script as they mount, so they render once the theme and script have landed;
+               the header reserves the row's height from the first paint, so that moves
+               nothing. *@
+            @if (_radzenReady)
+            {
+                <div class="lb-toolbar" role="toolbar" aria-label="Leaderboard filters">
+                    <RadzenDropDown TValue="string" Data="@_pickItems" TextProperty="Label" ValueProperty="Key"
+                                    Value="@_selectedGame" Change="@(v => SelectAsync(v as string))"
+                                    Disabled="@(_loading || _error || _pickItems.Count == 0)"
+                                    Placeholder="Pick a game" class="lb-tb-game"
+                                    InputAttributes="@(new Dictionary<string, object> { ["aria-label"] = "Pick a game" })">
+                        <Template Context="item">
+                            @{ var pick = (PickItem)(object)item; }
+                            <span class="lb-tb-opt">
+                                <span class="lb-tb-opt-group">@pick.Group</span>
+                                <span class="lb-tb-opt-name">@pick.Title</span>
+                                @if (pick.Rank is int r)
+                                {
+                                    <span class="lb-pick-rank" title="Your rank">#@r</span>
+                                }
+                            </span>
+                        </Template>
+                    </RadzenDropDown>
+                    <RadzenSelectBar TValue="bool" Value="@_weekly" Change="@(v => SetPeriodAsync(v))"
+                                     Size="ButtonSize.Small" AriaLabel="Period" class="lb-tb-period">
+                        <Items>
+                            <RadzenSelectBarItem Text="All time" Value="false" />
+                            <RadzenSelectBarItem Text="This week" Value="true" />
+                        </Items>
+                    </RadzenSelectBar>
+                    @* Collapsed to an icon until it is used: a permanent 12rem search box
+                       next to the picker was the widest thing on the page for the
+                       least-used control on it. *@
+                    <div class="lb-search @(_searchOpen || _search.Length > 0 ? "lb-search--open" : null)">
+                        <button type="button" class="lb-search__toggle" aria-label="Find a player"
+                                aria-expanded="@Aria(_searchOpen || _search.Length > 0)"
+                                @onclick="ToggleSearch">
+                            <span class="material-symbols-outlined" aria-hidden="true">search</span>
+                        </button>
+                        @if (_searchOpen || _search.Length > 0)
                         {
-                            <span class="lb-pick-rank" title="Your rank">#@r</span>
+                            <RadzenTextBox Value="@_search" Change="@(v => SearchAsync(v))" Immediate="true"
+                                           Placeholder="Find a player" class="lb-tb-search" MaxLength="40"
+                                           aria-label="Find a player on this board" autocomplete="off" />
                         }
-                    </span>
-                </Template>
-            </RadzenDropDown>
-            <RadzenSelectBar TValue="bool" Value="@_weekly" Change="@(v => SetPeriodAsync(v))"
-                             Size="ButtonSize.Small" AriaLabel="Period" class="lb-tb-period">
-                <Items>
-                    <RadzenSelectBarItem Text="All time" Value="false" />
-                    <RadzenSelectBarItem Text="This week" Value="true" />
-                </Items>
-            </RadzenSelectBar>
-            <RadzenTextBox Value="@_search" Change="@(v => SearchAsync(v))" Immediate="true"
-                           Placeholder="Find a player" class="lb-tb-search" MaxLength="40"
-                           aria-label="Find a player on this board" autocomplete="off" />
-        }
-    </div>
+                    </div>
+                </div>
+            }
+        </Actions>
+    </PageHeader>
 
     @if (!_loading && !_error && _boards.Count == 0)
     {
@@ -119,16 +137,23 @@
     {
         @* One board at a time. Laying every board out at once would be fourteen
            cards, each showing what the end-of-game modal already shows, and
-           2,600px of them on a phone. The toolbar's picker is the page's navigation
-           and the one board it selects is ten rows deep, with the player's own line
-           added when they rank below that. *@
+           2,600px of them on a phone. The picker in the page header is the page's
+           navigation, and the one board it selects is ten places deep, with the
+           player's own line added when they rank below that. *@
         <div class="lb-layout">
             @if (Selected is { } board)
             {
                 var searching = _search.Trim().Length > 0;
                 var rows = searching ? SearchRows(board) : VisibleRows(board);
+                var podium = rows.Where(r => r.Rank <= 3).Take(3).ToList();
+                var rest = rows.Where(r => r.Rank > 3).ToList();
                 <article class="lb-board" aria-label="@($"{board.Title} leaderboard, scored by {board.Unit}")">
-                    <h2 class="lb-board-title">@board.Title</h2>
+                    <div class="lb-board-head">
+                        <h2 class="lb-board-title">@board.Title</h2>
+                        @* The unit belongs to the board, not to a table header: with cards
+                           there is no column header to carry it. *@
+                        <span class="lb-board-unit">@NameLabelFor(board.GameKey) · @board.Unit</span>
+                    </div>
 
                     @if (searching && _searchLoading)
                     {
@@ -144,29 +169,58 @@
                     }
                     else
                     {
-                        // The data is tabular (rank + player + score), so the grid
-                        // carries table roles and assistive tech can navigate it by
-                        // column. The unit is the value column's header.
-                        <div role="table"
-                             aria-label="@($"{board.Title} top {rows.Count}, scored by {board.Unit}")"
-                             class="lb-rows">
-                            <div role="row" class="lb-row lb-row--head">
-                                <span role="columnheader" class="lb-rank" aria-label="Rank">#</span>
-                                @* The header is per-board, because the Brawl Demo board
-                                   ranks fighters. *@
-                                <span role="columnheader" class="lb-name">@NameLabelFor(board.GameKey)</span>
-                                <span role="columnheader" class="lb-value">@board.Unit</span>
+                        @* The top three are the board's headline, so they get the podium
+                           treatment and the list that follows starts at #4. An ordered
+                           list carries the ranking, so assistive tech hears "1." before
+                           the name without a rank column. *@
+                        @if (podium.Count > 0)
+                        {
+                            <ol class="lb-podium" aria-label="@($"{board.Title} top {podium.Count}, scored by {board.Unit}")">
+                                @foreach (var e in podium)
+                                {
+                                    @PodiumCard(board, e)
+                                }
+                            </ol>
+                        }
+
+                        @if (rest.Count > 0)
+                        {
+                            <ol class="lb-list" start="4" aria-label="@($"{board.Title} places 4 to {rows.Count}, scored by {board.Unit}")">
+                                @foreach (var e in rest)
+                                {
+                                    @RankCard(board, e)
+                                }
+                            </ol>
+                        }
+
+                        @if (!searching && _myRow.GetValueOrDefault(board.GameKey) is { } mine)
+                        {
+                            <div class="lb-me-row">
+                                <span class="lb-me-row__label">Your place</span>
+                                @* An <ol>, because RankCard is an <li>: a list item
+                                   outside a list is invalid markup and loses its
+                                   list semantics for assistive tech. *@
+                                <ol class="lb-list lb-list--pinned" aria-label="Your place on this board">
+                                    @RankCard(board, mine)
+                                </ol>
                             </div>
-                            @foreach (var e in rows)
-                            {
-                                @RankRow(board, e)
-                            }
-                            @if (!searching && _myRow.GetValueOrDefault(board.GameKey) is { } mine)
-                            {
-                                <div class="lb-row lb-row--gap" aria-hidden="true">⋯</div>
-                                @RankRow(board, mine)
-                            }
-                        </div>
+                        }
+
+                        @if (!searching && rows.Count < ShortBoardThreshold)
+                        {
+                            @* A short board is the page's best advertisement: the next score
+                               lands in the top five, and saying so is the only call to action
+                               this page has that a player can act on immediately. *@
+                            <div class="lb-claim">
+                                <p class="lb-claim__text">
+                                    Only @rows.Count @(rows.Count == 1 ? "score" : "scores") here. The next one lands at #@(rows.Count + 1).
+                                </p>
+                                @if (PlayUrlFor(board) is { } url)
+                                {
+                                    <a class="app-btn app-btn--primary app-btn--sm" href="@url">Play @board.Title</a>
+                                }
+                            </div>
+                        }
                     }
                 </article>
             }
@@ -175,18 +229,71 @@
 </div>
 
 @code {
-    // lb-row--me / data-lb-me: the player's own row is both the row they look for
-    // first and the anchor the rank-change burst fires from, so it needs a class for
-    // the highlight and an addressable attribute for the FX pass.
-    private RenderFragment RankRow(GameLeaderboardDto board, LeaderboardEntryDto e) =>
-        @<div role="row"
-              class="lb-row @(e.Rank <= 3 ? $"lb-row--top lb-row--{e.Rank} fx-holo-card" : null) @(IsMe(e.Name) ? "lb-row--me" : null)"
-              data-fx-holo="@(e.Rank <= 3 ? "6" : null)"
-              data-lb-me="@(IsMe(e.Name) ? board.GameKey : null)">
-            <span role="cell" class="lb-rank" aria-label="@($"Rank {e.Rank}")">@e.Rank</span>
-            <span role="cell" class="lb-name">@LeaderboardNames.Pretty(e.Name)</span>
-            <span role="cell" class="lb-value">@e.DisplayValue</span>
-        </div>;
+    // data-lb-me: the player's own row is both the row they look for first and the
+    // anchor the rank-change burst fires from, so it needs a class for the highlight
+    // and an addressable attribute for the FX pass.
+    private RenderFragment PodiumCard(GameLeaderboardDto board, LeaderboardEntryDto e) =>
+        @<li class="lb-podium__item">
+            <div class="lb-podium__card lb-podium__card--@Medal(e.Rank) fx-holo-card @(IsMe(e.Name) ? "lb-card--me" : null)"
+                 data-fx-holo="6"
+                 data-lb-me="@(IsMe(e.Name) ? board.GameKey : null)">
+                <span class="lb-podium__medal" aria-hidden="true">@e.Rank</span>
+                <span class="lb-podium__name">@LeaderboardNames.Pretty(e.Name)</span>
+                <span class="lb-podium__value">@e.DisplayValue</span>
+            </div>
+        </li>;
+
+    private RenderFragment RankCard(GameLeaderboardDto board, LeaderboardEntryDto e) =>
+        @<li class="lb-card @(IsMe(e.Name) ? "lb-card--me" : null)"
+             data-lb-me="@(IsMe(e.Name) ? board.GameKey : null)">
+            <span class="lb-card__rank" aria-hidden="true">@e.Rank</span>
+            <span class="lb-card__avatar" aria-hidden="true">@Initial(e.Name)</span>
+            <span class="lb-card__name">
+                <span class="lb-card__name-text">@LeaderboardNames.Pretty(e.Name)</span>
+                @* How far up the board this score is, as a bar. A card with a rank, a
+                   name and a right-aligned number leaves 500px of nothing between the two
+                   on a laptop; the bar is the missing proportion. Decorative: the number
+                   beside it is the value. *@
+                <span class="lb-card__bar" aria-hidden="true">
+                    <span class="lb-card__bar-fill" style="width: @($"{BarPercent(board, e)}%")"></span>
+                </span>
+            </span>
+            <span class="lb-card__value">@e.DisplayValue</span>
+        </li>;
+
+    /// <summary>
+    /// A row's score as a percentage of the board's best, for the bar behind its name.
+    /// Boards that rank a time are better when lower, so they measure against the
+    /// fastest row instead of the slowest.
+    /// </summary>
+    private static int BarPercent(GameLeaderboardDto board, LeaderboardEntryDto e)
+    {
+        var values = board.Entries
+            .Where(x => x.Name != PlaceholderName)
+            .Select(x => x.Value)
+            .ToList();
+        if (values.Count == 0) return 0;
+
+        var best = board.HigherIsBetter ? values.Max() : values.Min();
+        if (best <= 0 || e.Value <= 0) return 0;
+
+        var ratio = board.HigherIsBetter ? e.Value / best : best / e.Value;
+        return (int)Math.Clamp(Math.Round(ratio * 100), 1, 100);
+    }
+
+    /// <summary>The podium card's colour key: gold, silver, bronze.</summary>
+    private static string Medal(int rank) => rank switch
+    {
+        1 => "gold",
+        2 => "silver",
+        _ => "bronze",
+    };
+
+    private static string Initial(string name) =>
+        name.Length > 0 ? char.ToUpperInvariant(name[0]).ToString() : "?";
+
+    /// <summary>How few places make a board worth advertising a claim on.</summary>
+    private const int ShortBoardThreshold = 5;
 
     private bool _loading = true;
     private bool _error;
@@ -219,6 +326,30 @@
     // board and period), because the ten on screen are rarely where a looked-up name sits.
     private string _search = "";
     private bool _searchLoading;
+    private bool _searchOpen;
+
+    // Renders a bool as the literal string ARIA requires; a bool-valued attribute is an
+    // HTML boolean attribute to Blazor, which is not a valid ARIA state.
+    private static string Aria(bool value) => value ? "true" : "false";
+
+    private void ToggleSearch() => _searchOpen = !_searchOpen;
+
+    /// <summary>
+    /// The board's game, as a route to play it. Racer and Cabinet have one board per
+    /// track and Brawl has a fighters board, so a board key is not always a game key.
+    /// Null when the key maps to no playable game, and the claim card then shows text only.
+    /// </summary>
+    private static string? PlayUrlFor(GameLeaderboardDto board)
+    {
+        var key = board.GameKey;
+        if (key.StartsWith("poracer-", StringComparison.OrdinalIgnoreCase)) key = GameKeys.PoRacer.Value;
+        else if (key.StartsWith("pocabinet-", StringComparison.OrdinalIgnoreCase)) key = GameKeys.PoCabinet.Value;
+        else if (string.Equals(key, "pobrawldemo", StringComparison.OrdinalIgnoreCase)) key = GameKeys.PoBrawl.Value;
+
+        return GameCatalog.All
+            .FirstOrDefault(g => string.Equals(g.Key.Value, key, StringComparison.OrdinalIgnoreCase))
+            ?.Primary.Url;
+    }
     private readonly Dictionary<string, GameLeaderboardDto?> _deep = [];
 
     private async Task SearchAsync(string? text)

@@ -34,49 +34,60 @@
        CSS gradient on browsers without WebGL2 (Safari TP, etc.). *@
     <canvas @ref="_ambientCanvas" class="home-ambient" aria-hidden="true"></canvas>
 
-    @* The page's heading is for the outline and for FocusOnNavigate only (visually
-       hidden): the brand is already in the top bar, one row above, and the strapline
-       under it said what fifteen game cards say by existing. *@
-    <h1 class="home-title">PoMiniGames</h1>
+    @* The page's heading, its finder and the demo reel, in the shared header: the brand
+       above already says the name, so the h1 is for the outline only, and a page whose
+       only navigation is fourteen cards needs a way to find one of them by typing.
 
-    @* The hub bar: the one thing on this page that is not a game card, the demo reel.
-       (Today's game, the mode filters, pins and the "Continue" shortcuts were cut on
-       2026-10-19 to keep the hub to the cards.) Leaderboards, My Stats and Settings live in
-       the top bar's account menu, on every route.
+       Leaderboards, My Stats and Settings live in the top bar's account menu, on every
+       route. Links carrying data-hub-nav are launched by js/app.js: an in-app navigation
+       wrapped in a view transition that morphs the pressed card into the game's title. *@
+    <PageHeader Title="PoMiniGames" VisuallyHidden="true">
+        <Actions>
+            <div class="home-tools">
+                @* A native search field rather than a Radzen one: the hub does not load
+                   Radzen's theme or script, and adding both to the most-visited page to
+                   style one input would cost more than the whole grid. *@
+                <div class="home-search" role="search">
+                    <span class="material-symbols-outlined home-search__icon" aria-hidden="true">search</span>
+                    <input type="search" class="home-search__input"
+                           placeholder="Find a game"
+                           aria-label="Find a game by name or description"
+                           value="@_query"
+                           @oninput="OnSearchInput" />
+                    @if (_query.Length > 0)
+                    {
+                        <button type="button" class="home-search__clear" aria-label="Clear search" @onclick="ClearSearch">×</button>
+                    }
+                </div>
 
-       Links carrying data-hub-nav are launched by js/app.js: an in-app navigation
-       wrapped in a view transition that morphs the pressed card into the game's title.
-
-       Keep markup comments between elements, never between attributes: a Razor
-       comment inside an attribute list is parsed as an attribute NAME, and
-       setAttribute then throws InvalidCharacterError and takes the page down. *@
-    <div class="home-bar">
-        @* aria-pressed is a literal string, not a bare bool: Blazor renders a bool-valued
-           attribute as an HTML boolean attribute, which is not a valid ARIA state. The
-           visible text shortens on a narrow phone, so the full name is the aria-label. *@
-        <button type="button"
-                class="home-action home-action--demo @(Kiosk.IsActive ? "home-action--on" : null)"
-                aria-pressed="@(Kiosk.IsActive ? "true" : "false")"
-                aria-label="@(Kiosk.IsActive ? "Stop demos" : "Watch all demos")"
-                title="@(Kiosk.IsActive ? "Stop watching all demos" : "Auto-play every demo in turn")"
-                @onclick="ToggleWatchAll">
-            <span class="home-action-icon" aria-hidden="true">
-                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                    <rect x="2" y="3" width="20" height="14" rx="2"/>
-                    <path d="M8 21h8"/><path d="M12 17v4"/>
-                    <polygon points="10 8 15 10.5 10 13 10 8" fill="currentColor" stroke="none"/>
-                </svg>
-            </span>
-            <span class="home-action-label home-action-label--long" aria-hidden="true">@(Kiosk.IsActive ? "Stop demos" : "Watch all demos")</span>
-            <span class="home-action-label home-action-label--short" aria-hidden="true">@(Kiosk.IsActive ? "Stop" : "Demos")</span>
-        </button>
-    </div>
+                @* aria-pressed is a literal string, not a bare bool: Blazor renders a
+                   bool-valued attribute as an HTML boolean attribute, which is not a valid
+                   ARIA state. The visible text shortens on a narrow phone, so the full
+                   name is the aria-label. *@
+                <button type="button"
+                        class="home-action home-action--demo @(Kiosk.IsActive ? "home-action--on" : null)"
+                        aria-pressed="@(Kiosk.IsActive ? "true" : "false")"
+                        aria-label="@(Kiosk.IsActive ? "Stop demos" : "Watch all demos")"
+                        title="@(Kiosk.IsActive ? "Stop watching all demos" : "Auto-play every demo in turn")"
+                        @onclick="ToggleWatchAll">
+                    <span class="home-action-icon" aria-hidden="true">
+                        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                            <rect x="2" y="3" width="20" height="14" rx="2"/>
+                            <path d="M8 21h8"/><path d="M12 17v4"/>
+                            <polygon points="10 8 15 10.5 10 13 10 8" fill="currentColor" stroke="none"/>
+                        </svg>
+                    </span>
+                    <span class="home-action-label">@(Kiosk.IsActive ? "Stop demos" : "Watch all demos")</span>
+                </button>
+            </div>
+        </Actions>
+    </PageHeader>
 
     <div class="home-grid">
-        @foreach (var game in GameCatalog.AllSorted)
+        @foreach (var game in VisibleGames)
         {
             var playable = IsPlayable(game.Primary);
-            <article class="home-card @(game.Key == GameKeys.PoBrawl ? "home-card--brawl" : null)" aria-labelledby="@($"home-card-{game.Key.Value}")">
+            <article class="home-card" aria-labelledby="@($"home-card-{game.Key.Value}")">
                 @* The heading opens the game's main mode: one large target on every card,
                    however small a short phone makes the chips. Out of the tab order,
                    because the first chip is the same destination for a keyboard. *@
@@ -84,31 +95,64 @@
                 {
                     <a class="home-card-head" href="@game.Primary.Url" data-hub-nav tabindex="-1"
                        title="@($"Play {game.Title} — {GameModes.ToDescription(game.Primary.Mode)}")">
-                        <span class="home-card-icon" aria-hidden="true">@game.Icon</span>
+                        <span class="home-card-icon material-symbols-outlined" aria-hidden="true">@game.Icon</span>
                         <span class="home-card-title" id="@($"home-card-{game.Key.Value}")">@game.Title</span>
                     </a>
                 }
                 else
                 {
-                    <div class="home-card-head @(playable ? null : "home-card-head--offline")"
-                         aria-disabled="@(playable ? null : "true")"
-                         title="@(playable ? null : "Needs a connection — unavailable offline")">
-                        <span class="home-card-icon" aria-hidden="true">@game.Icon</span>
+                    <div class="home-card-head home-card-head--offline"
+                         aria-disabled="true"
+                         title="Needs a connection — unavailable offline">
+                        <span class="home-card-icon material-symbols-outlined" aria-hidden="true">@game.Icon</span>
                         <span class="home-card-title" id="@($"home-card-{game.Key.Value}")">@game.Title</span>
                     </div>
                 }
 
-                @* One chip per mode the catalogue declares, no exceptions, so no mode is
-                   unreachable from here. *@
+                @* Four chips, then a "+N" that opens the rest in a popover. Brawl used to
+                   spend six chips on one card, which made its whole grid row taller than
+                   every other one; the popover keeps those modes one tap away instead of
+                   spending the layout on them. *@
                 <div class="home-card-modes">
-                    @foreach (var m in game.Modes)
+                    @foreach (var m in game.Modes.Take(HomeChipLimit))
                     {
                         @ModeChip(game, m)
                     }
+                    @if (game.Modes.Count > HomeChipLimit)
+                    {
+                        var rest = game.Modes.Skip(HomeChipLimit).ToList();
+                        var panelId = $"home-more-{game.Key.Value}";
+                        @* One anchor name per card. A single shared name would have every
+                           panel anchor to whichever button the browser picked last, which
+                           put Brawl's folded modes under the Racer card. *@
+                        <button type="button" class="home-mode-chip home-mode-chip--more"
+                                popovertarget="@panelId" aria-haspopup="true"
+                                style="@($"anchor-name: --home-more-{game.Key.Value}")"
+                                aria-label="@($"{game.Title}: {rest.Count} more modes")">+@rest.Count</button>
+                        <div id="@panelId" popover="auto" class="home-more-panel"
+                             role="group" aria-label="@($"{game.Title} other modes, {game.Description}")"
+                             style="@($"position-anchor: --home-more-{game.Key.Value}")">
+                            @foreach (var m in rest)
+                            {
+                                @ModeChip(game, m)
+                            }
+                        </div>
+                    }
                 </div>
+
+                @* What the game is. Sits on its own line under the title and chips. *@
+                <p class="home-card-desc">@game.Description</p>
             </article>
         }
     </div>
+
+    @if (VisibleGames.Count == 0)
+    {
+        <div class="home-no-results" role="status">
+            <p>No game matches “@_query.Trim()”.</p>
+            <button type="button" class="app-btn app-btn--secondary app-btn--sm" @onclick="ClearSearch">Show every game</button>
+        </div>
+    }
 
     @* Home page activity feed: surfaces the player's most recent matches
        so the page never feels empty even on a fresh install. Pulled from the
@@ -120,10 +164,12 @@
             <ul class="home-activity__list">
                 @foreach (var item in _activity)
                 {
-                    <li class="home-activity__item">
-                        <span aria-hidden="true">@item.Icon</span>
-                        <a href="@item.Url">@item.GameTitle</a>
-                        <span>· @item.Message</span>
+                    <li class="home-activity__card">
+                        <span class="home-activity__icon" aria-hidden="true">@item.Icon</span>
+                        <span class="home-activity__body">
+                            <a class="home-activity__game" href="@item.Url">@item.GameTitle</a>
+                            <span class="home-activity__msg">@item.Message</span>
+                        </span>
                         <span class="home-activity__time" title="@item.When.ToString("u")">@FormatRelative(item.When)</span>
                     </li>
                 }
@@ -136,6 +182,38 @@
     private ElementReference _ambientCanvas;
     private IJSObjectReference? _ambientModule;
     private bool _ambientStarted;
+
+    // How many mode chips a card shows before the rest fold into a "+N" popover. Three,
+    // not four: a 305px card on a laptop cannot hold a title and four chips — the fourth
+    // was being clipped mid-word by the card's paint containment.
+    private const int HomeChipLimit = 3;
+
+    // The finder's query. Filtering happens in memory over fourteen catalogue entries,
+    // so there is nothing to debounce and no round trip to make.
+    private string _query = "";
+
+    private List<CatalogGame> VisibleGames
+    {
+        get
+        {
+            var q = _query.Trim();
+            if (q.Length == 0) return [.. GameCatalog.AllSorted];
+            return GameCatalog.AllSorted
+                .Where(g => Matches(g, q))
+                .ToList();
+        }
+    }
+
+    private static bool Matches(CatalogGame game, string query) =>
+        game.Title.Contains(query, StringComparison.OrdinalIgnoreCase)
+        || game.Description.Contains(query, StringComparison.OrdinalIgnoreCase)
+        || game.Modes.Any(m =>
+            (m.ChipLabel?.Contains(query, StringComparison.OrdinalIgnoreCase) ?? false)
+            || (m.ChipDescription?.Contains(query, StringComparison.OrdinalIgnoreCase) ?? false));
+
+    private void OnSearchInput(ChangeEventArgs e) => _query = e.Value?.ToString() ?? "";
+
+    private void ClearSearch() => _query = "";
 
     // Activity feed (recent matches).
     private IReadOnlyList<ActivityFeedService.FeedItem> _activity = Array.Empty<ActivityFeedService.FeedItem>();

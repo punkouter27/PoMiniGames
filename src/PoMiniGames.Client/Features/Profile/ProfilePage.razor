@@ -12,7 +12,7 @@
 @inject IJSRuntime JS
 @inject InviteService Invites
 @inject AchievementService Achievements
-@implements IDisposable
+@implements IAsyncDisposable
 
 <PageTitle>My Stats · PoMiniGames</PageTitle>
 
@@ -47,10 +47,7 @@ else
        per game the player has touched (its best score, its record and its ratings in
        the same card), the head-to-head tables, and the two charts folded away.
        "Your data" lives in the settings sheet, with the other account controls. *@
-    <header class="prf-head">
-        @* The display name is not repeated here: it is the headline of the card below. *@
-        <h1 class="prf-name">My Stats</h1>
-    </header>
+    <PageHeader Title="My Stats" />
 
     @* The card is fetched with the rest of the page (it feeds the Online half of the band
        below). Only a card in hand is passed down: a null Card makes PlayerCard fetch its
@@ -202,7 +199,7 @@ else
                 {
                     <div class="prf-game-card">
                         <div class="prf-game-header">
-                            <span class="prf-game-icon">@g.Icon</span>
+                            <span class="prf-game-icon material-symbols-outlined" aria-hidden="true">@g.Icon</span>
                             <span class="prf-game-name">@g.Label</span>
                             @* The server board's number (a score, a time), for the games that
                                have one. The AI games' "best" is their ELO, which the rating
@@ -259,26 +256,62 @@ else
         @if (unplayed.Count > 0)
         {
             @* Every game still has a named entry here (a profile that listed three of
-               ten games is the bug ProfileCoverageUiTests pins), but an unplayed one is
-               a chip that starts the game, not a card saying "Not played yet". *@
-            <div class="prf-unplayed">
-                <span class="prf-unplayed-label">@(played.Count == 0 ? "Nothing played yet. Pick one:" : "Not played yet")</span>
-                @foreach (var g in unplayed)
-                {
-                    <a class="prf-unplayed-chip" href="@PlayUrl(g.Key)">
-                        <span class="prf-game-icon" aria-hidden="true">@g.Icon</span>
-                        <span class="prf-game-name">@g.Label</span>
-                    </a>
-                }
-            </div>
+               ten games is the bug ProfileCoverageUiTests pins), but the fourteen-chip
+               bucket that used to sit under the cards is now one row that names the
+               count. A returning player scrolls past one line instead of a wall of
+               games they have already decided not to play; open by default only when
+               there is nothing else to look at. *@
+            <details class="prf-unplayed" open="@(played.Count == 0 ? "open" : null)">
+                <summary class="prf-unplayed-label">
+                    @if (played.Count == 0)
+                    {
+                        <text>Nothing played yet — pick one</text>
+                    }
+                    else
+                    {
+                        <text>@unplayed.Count not played yet</text>
+                    }
+                </summary>
+                <div class="prf-unplayed-chips">
+                    @foreach (var g in unplayed)
+                    {
+                        <a class="prf-unplayed-chip" href="@PlayUrl(g.Key)">
+                            <span class="prf-game-icon material-symbols-outlined" aria-hidden="true">@g.Icon</span>
+                            <span class="prf-game-name">@g.Label</span>
+                        </a>
+                    }
+                </div>
+            </details>
         }
     </section>
 
     <!-- ── Achievements: earned on this device, locked ones greyed with how to earn them ── -->
     <section class="prf-section" aria-labelledby="prf-ach-title">
-        <h2 class="prf-section-title" id="prf-ach-title">Achievements · @Achievements.UnlockedCount of @AchievementService.All.Count</h2>
+        <div class="prf-section-head">
+            <h2 class="prf-section-title" id="prf-ach-title">Achievements · @Achievements.UnlockedCount of @AchievementService.All.Count</h2>
+            @* The count said as a bar: "3 of 15" is a number to read, a bar is a number
+               to feel. Radzen's progress bar follows the same tokens as the rest of the
+               page once its theme is loaded, and the plain fallback keeps the row from
+               collapsing while that happens. *@
+            @if (_radzenReady)
+            {
+                <RadzenProgressBar Value="@AchievementPercent" ShowValue="false" class="prf-ach-bar"
+                                   AriaLabel="@($"Achievements: {AchievementPercent}% complete")" />
+            }
+            else
+            {
+                <div class="prf-ach-bar-primitive" role="img"
+                     aria-label="@($"Achievements: {AchievementPercent}% complete")">
+                    <div class="prf-ach-bar-fill" style="width: @($"{AchievementPercent}%")"></div>
+                </div>
+            }
+        </div>
+
+        @* Three rows, then a disclosure. Fifteen locked achievements on every visit is
+           the least valuable content on the page: it is a list of things that have not
+           happened. The earned ones are always shown, because those are the news. *@
         <ul class="prf-ach-grid">
-            @foreach (var a in AchievementService.All)
+            @foreach (var a in AchievementsTop)
             {
                 var earned = Achievements.IsUnlocked(a.Id);
                 <li class="prf-ach @(earned ? "prf-ach--on" : "prf-ach--off")">
@@ -290,6 +323,26 @@ else
                 </li>
             }
         </ul>
+
+        @if (AchievementsRest.Count > 0)
+        {
+            <details class="prf-ach-more">
+                <summary class="prf-ach-more-summary">Show all @AchievementService.All.Count achievements</summary>
+                <ul class="prf-ach-grid">
+                    @foreach (var a in AchievementsRest)
+                    {
+                        var earned = Achievements.IsUnlocked(a.Id);
+                        <li class="prf-ach @(earned ? "prf-ach--on" : "prf-ach--off")">
+                            <span class="prf-ach-icon" aria-hidden="true">@a.Icon</span>
+                            <span class="prf-ach-text">
+                                <span class="prf-ach-title">@a.Title<span class="prf-sr-only">@(earned ? ", earned" : ", locked")</span></span>
+                                <span class="prf-ach-hint">@a.Hint</span>
+                            </span>
+                        </li>
+                    }
+                </ul>
+            </details>
+        }
     </section>
 
     <!-- ── Head-to-Head ── -->
@@ -331,15 +384,38 @@ else
         </section>
     }
 
-    <!-- ── Charts: the same record, drawn. Folded, because the cards above say it. ── -->
+    <!-- ── Charts: the same record, drawn. Open, not folded: two charts are a scan,
+         and the cards above are the detail. ── -->
     @if (_totalGames > 0)
     {
-        <details class="prf-fold">
-            <summary class="prf-section-title">Charts</summary>
+        <section class="prf-section" aria-labelledby="prf-charts-title">
+            <h2 class="prf-section-title" id="prf-charts-title">Charts</h2>
             <div class="prf-charts">
-                <div class="prf-chart-card">
+                <div class="prf-chart-card prf-chart-card--wide">
                     <h3 class="prf-chart-title">Win Rate by Game</h3>
-                    @((MarkupString)BuildRadarSvg())
+                    @* Radzen's bar chart, on the same tokens as the rest of the page. It
+                       replaces a hand-rolled radar: a bar reads win rates against 100%
+                       without the reader having to work out where a pentagon's corner
+                       sits. The reserved height keeps the card from jumping when the
+                       theme and script land. *@
+                    @if (_radzenReady)
+                    {
+                        <RadzenChart class="prf-chart" Style="height: 220px">
+                            <RadzenBarSeries Data="@WinRateRows" CategoryProperty="Label" ValueProperty="WinPercent"
+                                             Title="Win rate" Fill="#6366f1">
+                                <RadzenSeriesDataLabels Visible="true" />
+                            </RadzenBarSeries>
+                            <RadzenValueAxis Min="0" Max="100">
+                                <RadzenGridLines Visible="true" />
+                            </RadzenValueAxis>
+                            <RadzenCategoryAxis />
+                            <RadzenLegend Visible="false" />
+                        </RadzenChart>
+                    }
+                    else
+                    {
+                        <div class="prf-chart-placeholder" aria-hidden="true"></div>
+                    }
                 </div>
                 <div class="prf-chart-card">
                     <h3 class="prf-chart-title">Overall Record</h3>
@@ -351,7 +427,7 @@ else
                     </div>
                 </div>
             </div>
-        </details>
+        </section>
     }
 }
 </div>

@@ -1,6 +1,17 @@
 @inject NavigationManager Navigation
+@inject SettingsService Settings
 @implements IDisposable
 
+@*
+    Phone navigation.
+
+    Four destinations, and the fourth is a sheet rather than a page. It used to be
+    "Status" — an on-call diagnostics table — which spent a quarter of the primary
+    navigation on infrastructure no player opens. The sheet keeps Status reachable
+    (it is still in the desktop account menu) while giving the slot back to settings,
+    which every player does use, and to the build date the removed page-corner stamp
+    used to carry.
+*@
 <nav class="app-bottom-nav" aria-label="Mobile navigation">
     <a class="app-bottom-nav__item @(IsActive("/") ? "app-bottom-nav__item--active" : null)" href="/">
         <span class="material-symbols-outlined" aria-hidden="true">sports_esports</span>
@@ -14,11 +25,42 @@
         <span class="material-symbols-outlined" aria-hidden="true">person</span>
         <span>Stats</span>
     </a>
-    <a class="app-bottom-nav__item @(IsActive("/health") ? "app-bottom-nav__item--active" : null)" href="/health">
-        <span class="material-symbols-outlined" aria-hidden="true">monitor_heart</span>
-        <span>Status</span>
-    </a>
+    @* A button, not a link: it opens a popover, so it is not a navigation target.
+       aria-haspopup plus the sheet's role="menu" is what the popover actually does. *@
+    <button type="button"
+            class="app-bottom-nav__item @(IsActive("/health") ? "app-bottom-nav__item--active" : null)"
+            popovertarget="app-more-sheet"
+            aria-haspopup="menu"
+            aria-label="More: settings, service status and app version">
+        <span class="material-symbols-outlined" aria-hidden="true">more_horiz</span>
+        <span>More</span>
+    </button>
 </nav>
+
+@* Bottom sheet, in the top layer via the Popover API: light-dismiss, Escape and focus
+   handling come from the browser. `popovertargetaction="hide"` closes the sheet on the
+   same tap that runs the item's action. *@
+<div id="app-more-sheet" popover="auto" class="app-more-sheet" role="menu" aria-label="More">
+    <div class="app-more-sheet__grip" aria-hidden="true"></div>
+
+    <button type="button" class="app-more-sheet__item" role="menuitem"
+            popovertarget="app-more-sheet" popovertargetaction="hide"
+            @onclick="Settings.RequestOpen">
+        <span class="material-symbols-outlined app-more-sheet__icon" aria-hidden="true">tune</span>
+        <span class="app-more-sheet__label">Settings</span>
+        <span class="app-more-sheet__meta">Theme, sound, motion, graphics</span>
+    </button>
+
+    <button type="button" class="app-more-sheet__item" role="menuitem"
+            popovertarget="app-more-sheet" popovertargetaction="hide"
+            @onclick='() => Navigation.NavigateTo("/health")'>
+        <span class="material-symbols-outlined app-more-sheet__icon" aria-hidden="true">monitor_heart</span>
+        <span class="app-more-sheet__label">Service status</span>
+        <span class="app-more-sheet__meta">Which connection is down, if any</span>
+    </button>
+
+    <p class="app-more-sheet__foot">PoMiniGames · build @PoMiniGamesClient.BuildInfo.Date</p>
+</div>
 
 @code {
     private EventHandler<LocationChangedEventArgs>? _onLocationChanged;

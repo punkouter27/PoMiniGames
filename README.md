@@ -65,10 +65,16 @@ scores.
   (`Features/PoFunQuiz/Data/questions.json`, `Features/PoCoupleQuiz/Data/questions.json`)
   loaded into memory once at startup; PoCoupleQuiz matches answers with free fuzzy matching
   (`AnswerMatcher`). Ecosystem, Brawl and Cabinet commentary is scripted.
-- **Around the games.** The hub is the game cards plus *Watch all demos* (the Today card,
-  streak, Continue strip, pins and filters were cut on 2026-10-19), and it launches games
-  without rebooting the app. Leaderboards have all-time and weekly boards. The profile shows
-  achievements. PoRacer and PoMarbleRace race your best-run ghost. Gamepads work in every game
+- **Around the games.** The hub is the game cards plus a finder and *Watch all demos* (the
+  Today card, streak, Continue strip, pins and filters were cut on 2026-10-19), and it
+  launches games without rebooting the app. Each card carries one line saying what the game
+  is, and its modes are capped at three chips with the rest behind a `+N` popover. On a phone
+  the bottom bar is Games / Boards / Stats / More, where More holds Settings, Service status
+  and the build date. Leaderboards have all-time and weekly boards, drawn as a podium for the
+  top three and rank cards below, with the player's own place pinned when it falls outside the
+  ten shown. The profile shows achievements behind a progress bar and the first three rows,
+  with the rest on a disclosure. There is no version stamp in the page corner. The pages
+  share one `PageHeader`. Gamepads work in every game
   and on the hub. The game-over sheet can share a result card. Settings is a side drawer.
   Each demo in the reel gets a 60-second slot, including games whose match ends early.
   Reel controls fit narrow phones, and Ecosystem skips its interactive onboarding in the
@@ -89,6 +95,9 @@ scores.
 
 ### Shared game UI
 
+- `PageHeader` is the one page header: title, an optional meta line and an action slot,
+  used by the hub, leaderboards, My Stats and Service health. New top-level pages use it
+  rather than their own head markup.
 - `GameShell` owns the title, Settings entry point, diagnostics and result dialog.
   Keep game artwork and HUDs game-specific, but do not override the shared dialogs'
   theme, typography or geometry.
@@ -133,7 +142,7 @@ scores.
 | PoCoupleQuiz | Two-player realtime couples quiz (SignalR); curated JSON question bank, free answer matching |
 | PoFunQuiz | Multiplayer trivia lobby from a JSON question bank (~7,800 questions; most from [The Trivia API](https://the-trivia-api.com), CC BY-NC 4.0) |
 | PoMarbleRace | You steer the one red marble through a 101-marble field on four courses (Neon Canyon, Spiral Works, Grand Spiral, Playground Run); CPU rivals each have a personality (steady, cautious, line-hugger, bully, wildcard); your best run is a ghost; sector splits and per-track records; online is 2 players max, by quick match or a private 4-letter race code, with a both-must-agree **Rematch** and a running series score (the host's browser streams the physics); a **Race settings** drawer (ghost, sound, spoken announcer, F3 performance overlay, Full/Lite effects); keyboard, touch and gamepad steering; sound is fully synthesized (energy- and material-driven impacts, a skid hiss, per-map reverb, crowd stings). Engine modules live in `wwwroot/js/pomarblerace/` (game.js plus one mixin per system; constants in `tuning.js`, the save in `store.js`) |
-| PoRacer | Top-down canvas racer the server simulates: four tracks (Grand Prix Circuit, Neon Skyline, Desert Dustway and Crossfire Switchbacks, seven tight turns with a main straight that crosses all four of its legs), solo races against 99 rivals or a time trial, an 8-seat online room and a demo. Each track has its own weather for the UTC day (clear, rain, snow or fog): rain and snow lower every car's grip, and the start card and a HUD chip say so. Rivals drive in character (apex hugger, draft hunter, bruiser, late braker, cautious, slingshot, wildcard); the results list each one's style. Trackside scenery (grandstands, tyre walls, cones, trees, tents, rocks) is Kenney's Racing Pack, CC0 (`wwwroot/img/poracer/`) |
+| PoRacer | Top-down canvas racer the server simulates: four tracks (Grand Prix Circuit, Neon Skyline, Desert Dustway and Crossfire Switchbacks, seven tight turns with a main straight that crosses all four of its legs), solo races against 63 rivals or a time trial, an 8-seat online room and a demo. Each track has its own weather for the UTC day (clear, rain, snow or fog): rain and snow lower every car's grip, and the start card and a HUD chip say so. Rivals drive in character (apex hugger, draft hunter, bruiser, late braker, cautious, slingshot, wildcard); the results list each one's style. Trackside scenery (grandstands, tyre walls, cones, trees, tents, rocks) is Kenney's Racing Pack, CC0 (`wwwroot/img/poracer/`) |
 | PoCabinet | 3D circuit racer: solo career across four tracks, plus Senate Hill, Bedroom Floor GP (a toy-car track laid in a scanned bedroom: `wwwroot/models/bedroom.glb`, built by `scripts/blender/pocabinet-bedroom.py` in headless Blender, on stilts ~2 ft up, threading round the desks and drum kit, the room drawn as a Gaussian splat (`wwwroot/models/bedroom.ksplat`, registered onto the mesh by `scripts/blender/pocabinet-bedroom-splat.py`; the mesh is the collision model and the low-tier fallback)), Center Court (a toy-car circuit on the floor of a scanned outdoor basketball court, round the centre circle and both keys, the court drawn as a Gaussian splat; `wwwroot/models/court.glb` and `court.ksplat`, built by `scripts/blender/pocabinet-court.py` and `pocabinet-court-splat.py`) and a seeded daily circuit (a new layout every UTC day, the same for everyone, with its own board), AI officials, a best-lap leaderboard per track, and a server-simulated online lobby (8 drivers on a grid of up to 16 cars, the rest AI); tracks have hills and banking, pinch points and wide braking zones, a bus-stop chicane with raised kerbs, gravel traps and tarmac run-off, grip patches (resurfaced, dusty, bumpy, puddles in the rain), a racing line that rubbers in over the race (and dries first in the rain), split sections with a shorter joker lane, braking boards and corner numbers; track limits are enforced (all four wheels off and the lap does not count, here and on the server); a 64-car field where every driver has its own personality (bruisers, late brakers, wild cards…) and runs off the road now and then; damage is real: hits dent the body where they land, knock bumpers, wings and mirrors loose and off, break lamps and glass, and cost the car power, grip and alignment until it is wrecked and out; hills and banking are real physics (cars run faster downhill, slower uphill, banked turns hold them in, hard braking mid-corner washes wide); the demo is covered like a TV race: a director cuts to the closest battles, with a timing tower, callouts (lead changes, passes, fastest laps, wrecks, the flag), a caption for the car on screen and a rear-cam / onboard picture-in-picture; graphics on medium/high add ambient occlusion, wet-road and puddle reflections with raindrop ripples, per-object motion blur, 32k lit GPU smoke and fire that cars part, rigid-body crash debris (bumpers, wheels, shards), cars that get dirty, wet and scarred, and a felt slipstream (a tow arc on the gauge; the heat-haze shimmer and road mirage are switched off); sound adds an adaptive synthesized score (settings: **Music**), reverb zones (grandstand, gantry, open country) and gravel/sand/wet tyre sounds |
 | PoVoxelStrike | Third-person survival shooter with fully destructible voxel structures |
 | PoMule | Eight-player M.U.L.E.: claim land, work M.U.L.E.s and trade on a walking-floor market for twelve months vs seven AI personalities; all-AI demo |
@@ -293,7 +302,8 @@ scripts/                        Working scripts only — see scripts/README.md
 PoRacer ranks **best completed laps**, separately from final race times. Its legacy JSON
 field and Azure Table column `totalTimeSeconds` / `TotalTimeSeconds` retain their names
 for stored-score compatibility; existing rows are preserved without inferred conversion.
-Solo races have 99 AI rivals and spectator demos have 100 AI cars; online rooms remain
+Solo races have 63 AI rivals and spectator demos have 64 AI cars (the grid is two staggered
+columns that follow the road from the start line); online rooms remain
 capped at 8 cars. The minimap is removed. Add `?perf=1` to a PoRacer URL and inspect
 `window.PoRacer.getPerformanceProfile()` for frame rates and render-stage timings.
 Track bitmaps respect the canvas pixel budget, including backing-store ratios below 1,

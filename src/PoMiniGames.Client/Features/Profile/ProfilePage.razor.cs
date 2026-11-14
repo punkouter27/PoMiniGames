@@ -119,6 +119,43 @@ public partial class ProfilePage
     private GameEntry? _bestEntry, _nemesisEntry;
     private List<GameEntry> _entries = new();
 
+    // ── Radzen theme (charts) ────────────────────────────────────
+    // Loaded on demand like Brawl HQ and the leaderboards, and removed on navigation
+    // so a page that has no Radzen controls does not carry its theme.
+    private bool _radzenReady;
+    private IJSObjectReference? _theme;
+
+    /// <summary>One bar in the Win Rate by Game chart.</summary>
+    public sealed record WinRateRow(string Label, double WinPercent);
+
+    /// <summary>Games with a decided result, as bars. Computed from the same entries the
+    /// cards below use, so the chart can never disagree with them.</summary>
+    private List<WinRateRow> WinRateRows =>
+        _entries
+            .Where(e => e.TotalGames > 0)
+            .OrderByDescending(e => e.WinPercent)
+            .Select(e => new WinRateRow(e.Label, Math.Round(e.WinPercent, 1)))
+            .ToList();
+
+    private int AchievementPercent =>
+        AchievementService.All.Count == 0 ? 0 : (int)Math.Round(100.0 * Achievements.UnlockedCount / AchievementService.All.Count);
+
+    /// <summary>
+    /// The first three achievement rows: everything earned, then the nearest locked
+    /// ones, so the section always opens with news if there is any.
+    /// </summary>
+    private List<Achievement> AchievementsTop =>
+        AchievementService.All
+            .OrderByDescending(a => Achievements.IsUnlocked(a.Id))
+            .Take(3)
+            .ToList();
+
+    private List<Achievement> AchievementsRest =>
+        AchievementService.All
+            .OrderByDescending(a => Achievements.IsUnlocked(a.Id))
+            .Skip(3)
+            .ToList();
+
     // ── Headline band: 1P | Online ───────────────────────────────
     // The competitive card, fetched with the page so the band's Online half has it.
     private PlayerCardDto? _card;
@@ -215,10 +252,37 @@ public partial class ProfilePage
         await Task.CompletedTask;
     }
 
-    public void Dispose()
+    public async ValueTask DisposeAsync()
     {
         PlayerNameService.StateChanged -= OnNameChanged;
         GC.SuppressFinalize(this);
+        if (_theme is null) return;
+        try
+        {
+            await _theme.InvokeVoidAsync("remove");
+            await _theme.DisposeAsync();
+        }
+        catch (JSDisconnectedException) { }
+        catch (JSException) { }
+    }
+
+    // Radzen's theme and script, on demand: only the charts need them, and its CSS is
+    // global, so it is in the document only while this page is (same loader as the
+    // leaderboards and Brawl HQ).
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (!firstRender || _theme is not null) return;
+        try
+        {
+            _theme = await JS.InvokeAsync<IJSObjectReference>("import", "./js/radzenTheme.js");
+            await _theme.InvokeVoidAsync("ensure");
+        }
+        catch (JSException ex)
+        {
+            Console.Error.WriteLine($"[profile] Radzen theme failed: {ex.Message}");
+        }
+        _radzenReady = true;
+        StateHasChanged();
     }
 
     private void OnNameChanged()

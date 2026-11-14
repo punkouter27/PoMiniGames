@@ -5,6 +5,7 @@
 @implements IDisposable
 @inject ApiService ApiService
 @inject IWebAssemblyHostEnvironment Env
+@inject IJSRuntime JS
 
 @*
     /health — the human-facing status page for this app's external connections.
@@ -24,20 +25,22 @@
 <PageTitle>Service health · PoMiniGames</PageTitle>
 
 <div class="hp">
-    <header class="hp-head">
-        <h1 class="hp-title">Service health</h1>
-        <div class="hp-head-actions">
+    <PageHeader Title="Service health">
+        <Actions>
             <span class="hp-badge hp-badge--@StatusSlug">@StatusLabel</span>
+            <button class="app-btn app-btn--secondary app-btn--sm" @onclick="CopyJsonAsync"
+                    disabled="@(_report is null)">
+                Copy JSON
+            </button>
             <button class="app-btn app-btn--secondary app-btn--sm" @onclick="RefreshAsync" disabled="@_loading">
                 @(_loading ? "Checking…" : "Refresh")
             </button>
-        </div>
-    </header>
+        </Actions>
+    </PageHeader>
 
     @* The result area holds a fixed minimum height from the first paint, so the spinner
        giving way to the checks does not push the footer down the page (a layout shift
-       the link audit, LinkAuditUiTests, measures). *@
-    <div class="hp-body">
+       the link audit, LinkAuditUiTests, measures). *@    <div class="hp-body">
         @if (_error is not null)
         {
             @* An unreachable /api/health is itself the answer, and the most important one this
@@ -68,29 +71,26 @@
         }
         else
         {
-            <table class="hp-table">
-                <thead>
-                    <tr>
-                        <th scope="col">Connection</th>
-                        <th scope="col">Status</th>
-                        <th scope="col">Detail</th>
-                    </tr>
-                </thead>
-                <tbody>
-                    @foreach (var check in _report.Checks)
-                    {
-                        <tr>
-                            @* data-label renders as the small uppercase caption next to
-                               each value when the table reflows into cards on phones
-                               (HealthPage.razor.css, @media max-width 640px). Desktop
-                               ignores the attribute. *@
-                            <th scope="row" class="hp-name" data-label="Connection">@check.Name</th>
-                            <td data-label="Status"><span class="hp-dot hp-dot--@Slug(check.Status)" aria-hidden="true"></span>@check.Status</td>
-                            <td class="hp-detail" data-label="Detail">@(string.IsNullOrWhiteSpace(check.Description) ? "—" : check.Description)</td>
-                        </tr>
-                    }
-                </tbody>
-            </table>
+            @* One card per dependency rather than three table columns. The question
+               this page answers is "which dependency is down", and a card puts the
+               name, the state and its latency on one line — the description only
+               when there is one. The list reflows on its own: a card is already a
+               block, so there is no table-to-card reflow to maintain. *@
+            <ul class="hp-list" aria-label="Dependency checks">
+                @foreach (var check in _report.Checks)
+                {
+                    <li class="hp-card hp-card--@Slug(check.Status)">
+                        <span class="hp-dot hp-dot--@Slug(check.Status)" aria-hidden="true"></span>
+                        <span class="hp-card__name">@check.Name</span>
+                        <span class="hp-card__status">@check.Status</span>
+                        <span class="hp-card__latency" title="How long this check took">@check.Duration.ToString("0") ms</span>
+                        @if (!string.IsNullOrWhiteSpace(check.Description))
+                        {
+                            <span class="hp-card__detail">@check.Description</span>
+                        }
+                    </li>
+                }
+            </ul>
         }
     </div>
 
@@ -150,6 +150,29 @@
     {
         await RefreshAsync();
         _poll = new Timer(_ => _ = InvokeAsync(RefreshAsync), null, PollIntervalMs, PollIntervalMs);
+    }
+
+    // Copy the machine-readable report the page is rendering. Source-generated
+    // metadata, so this stays trim-safe in the WASM build.
+    private async Task CopyJsonAsync()
+    {
+        if (_report is null) return;
+        try
+        {
+            var json = JsonSerializer.Serialize(_report, ApiJsonContext.Default.HealthReportDto);
+            try
+            {
+                await JS.InvokeVoidAsync("navigator.clipboard.writeText", json);
+            }
+            catch
+            {
+                await JS.InvokeVoidAsync("poCopyToClipboard", json);
+            }
+        }
+        catch (Exception ex) when (ex is JSException or InvalidOperationException)
+        {
+            // Clipboard denied: the raw endpoint is printed in the footer anyway.
+        }
     }
 
     private async Task RefreshAsync()

@@ -1,0 +1,43 @@
+@namespace PoMiniGamesClient.Features.Shared
+
+@*
+    The one page header.
+
+    Hub, Leaderboards, My Stats and Service health each used to roll their own head
+    (`home-title`, `lb-head`, `prf-head`, `hp-head`), so the title's size, the gap to
+    the first row and where the page's controls sit differed on every screen. This
+    component owns that geometry once: a title, an optional meta line under it, and
+    an action slot pinned to the right that wraps under the title on a phone.
+
+    The title is still the route's single <h1>, so the document outline and
+    FocusOnNavigate are unchanged. `VisuallyHidden` exists for the hub, whose heading
+    is for the outline only (the brand one row above already says the name).
+*@
+
+<header class="app-page-head @(VisuallyHidden ? "app-page-head--sr-only" : null)">
+    <div class="app-page-head__text">
+        <h1 class="app-page-head__title">@Title</h1>
+        @if (Meta is not null)
+        {
+            <div class="app-page-head__meta">@Meta</div>
+        }
+    </div>
+    @if (Actions is not null)
+    {
+        <div class="app-page-head__actions">@Actions</div>
+    }
+</header>
+
+@code {
+    /// <summary>The page's name. Rendered as the route's only <h1>.</summary>
+    [Parameter, EditorRequired] public string Title { get; set; } = "";
+
+    /// <summary>Optional line under the title: a count, a chip, a period switch.</summary>
+    [Parameter] public RenderFragment? Meta { get; set; }
+
+    /// <summary>Right-hand slot for the page's controls (search, filters, primary action).</summary>
+    [Parameter] public RenderFragment? Actions { get; set; }
+
+    /// <summary>Keep the title in the outline only, for a page that already shows its name.</summary>
+    [Parameter] public bool VisuallyHidden { get; set; }
+}

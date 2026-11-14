@@ -108,15 +108,31 @@ else if (Card is not null)
 
             @if (AllowExport)
             {
+                @* One Export control with both actions behind it. Two permanent buttons
+                   ("Copy card", "Download card") were the widest thing on a card whose job
+                   is to be looked at, and neither is an everyday action. *@
                 <div class="card-actions">
-                    <button type="button" class="app-btn app-btn--secondary app-btn--sm" @onclick="CopySvgAsync" title="Copy standalone vector SVG to clipboard">
-                        <span>📋</span>
-                        <span>@(_copying ? "Copied!" : "Copy card")</span>
+                    <button type="button" class="app-btn app-btn--secondary app-btn--sm"
+                            popovertarget="player-card-export" aria-haspopup="menu"
+                            aria-label="Export this licence card">
+                        <span class="material-symbols-outlined" aria-hidden="true">ios_share</span>
+                        <span>Export</span>
                     </button>
-                    <button type="button" class="app-btn app-btn--secondary app-btn--sm" @onclick="DownloadSvgAsync" title="Download SVG image file">
-                        <span>💾</span>
-                        <span>Download card</span>
-                    </button>
+                    <div id="player-card-export" popover="auto" class="card-export-panel"
+                         role="menu" aria-label="Export licence card">
+                        <button type="button" role="menuitem" class="card-export-item"
+                                popovertarget="player-card-export" popovertargetaction="hide"
+                                @onclick="CopySvgAsync">
+                            <span class="material-symbols-outlined" aria-hidden="true">content_copy</span>
+                            <span>Copy as SVG</span>
+                        </button>
+                        <button type="button" role="menuitem" class="card-export-item"
+                                popovertarget="player-card-export" popovertargetaction="hide"
+                                @onclick="DownloadSvgAsync">
+                            <span class="material-symbols-outlined" aria-hidden="true">download</span>
+                            <span>Download SVG</span>
+                        </button>
+                    </div>
                 </div>
             }
         </div>
@@ -129,7 +145,6 @@ else if (Card is not null)
     [Parameter] public bool AllowExport { get; set; } = true;
 
     private bool _loading;
-    private bool _copying;
 
     // No ranked game on record: the card's numbers are the starting values, not a result.
     private bool Ranked => Card is not null && Card.Wins + Card.Losses + Card.Draws > 0;
@@ -152,7 +167,6 @@ else if (Card is not null)
 
     private async Task CopySvgAsync()
     {
-        _copying = true;
         try
         {
             var svg = await ApiService.GetPlayerCardSvgAsync(PlayerName);
@@ -176,12 +190,6 @@ else if (Card is not null)
         catch (Exception ex)
         {
             Toasts.Show($"Copy failed: {ex.Message}", ToastType.Error);
-        }
-        finally
-        {
-            await Task.Delay(1200);
-            _copying = false;
-            StateHasChanged();
         }
     }
 

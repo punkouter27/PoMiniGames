@@ -32,7 +32,120 @@
         padding: 0.25rem 0;
     }
 
+    /* The More item is a <button> (it opens a popover, not a route) and has to shed
+       the UA button chrome to sit in the same row as the three links. */
+    button.app-bottom-nav__item {
+        width: 100%;
+        height: 100%;
+        background: none;
+        border: 0;
+        font: inherit;
+        font-size: 0.7rem;
+        font-weight: 600;
+        cursor: pointer;
+    }
+
     .app-bottom-nav__item--active {
         color: var(--color-accent);
     }
+}
+
+/* ── More sheet ───────────────────────────────────────────────────────────────
+   The popover is in the top layer, so its position is fixed to the viewport bottom
+   rather than to the nav. It sits above the bar (extra safe-area padding) so a tap
+   never lands on "Games" instead of an item. */
+.app-more-sheet {
+    margin: 0 auto;
+    inset: auto 0 calc(3.25rem + env(safe-area-inset-bottom)) 0;
+    width: min(28rem, 100%);
+    padding: 0.4rem 0.5rem 0.6rem;
+    background: var(--color-surface);
+    color: var(--color-text-primary);
+    border: 1px solid var(--color-border);
+    border-bottom: 0;
+    border-radius: var(--radius-lg) var(--radius-lg) 0 0;
+    box-shadow: 0 -12px 30px -12px rgba(0, 0, 0, 0.45);
+
+    /* Entry/exit without a keyframe: @starting-style supplies the "before" state a
+       popover otherwise does not have. Unsupported browsers just snap open. */
+    opacity: 0;
+    transform: translateY(0.75rem);
+    transition:
+        opacity var(--dur-fast) var(--ease-out),
+        transform var(--dur-fast) var(--ease-out),
+        overlay var(--dur-fast) allow-discrete,
+        display var(--dur-fast) allow-discrete;
+}
+
+.app-more-sheet:popover-open {
+    opacity: 1;
+    transform: translateY(0);
+}
+
+@starting-style {
+    .app-more-sheet:popover-open {
+        opacity: 0;
+        transform: translateY(0.75rem);
+    }
+}
+
+.app-more-sheet::backdrop {
+    background: rgba(0, 0, 0, 0.32);
+}
+
+.app-more-sheet__grip {
+    width: 2.5rem;
+    height: 0.25rem;
+    margin: 0.15rem auto 0.35rem;
+    border-radius: 999px;
+    background: var(--color-border);
+}
+
+.app-more-sheet__item {
+    display: grid;
+    grid-template-columns: 1.5rem minmax(0, 1fr);
+    grid-template-areas:
+        "icon label"
+        "icon meta";
+    align-items: center;
+    column-gap: 0.65rem;
+    width: 100%;
+    padding: 0.6rem 0.75rem;
+    background: none;
+    border: 0;
+    border-radius: var(--radius-md);
+    color: inherit;
+    font: inherit;
+    text-align: left;
+    cursor: pointer;
+}
+
+.app-more-sheet__item:hover,
+.app-more-sheet__item:focus-visible {
+    background: var(--color-surface-hover, rgba(255, 255, 255, 0.08));
+}
+
+.app-more-sheet__icon {
+    grid-area: icon;
+    color: var(--color-text-secondary);
+}
+
+.app-more-sheet__label {
+    grid-area: label;
+    font-weight: 600;
+}
+
+.app-more-sheet__meta {
+    grid-area: meta;
+    font-size: var(--text-xs);
+    color: var(--color-text-secondary);
+}
+
+.app-more-sheet__foot {
+    margin: 0.35rem 0 0;
+    padding-top: 0.55rem;
+    border-top: 1px solid var(--color-border);
+    text-align: center;
+    font-size: var(--text-xs);
+    color: var(--color-text-secondary);
 }

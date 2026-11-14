@@ -43,6 +43,14 @@ public sealed record CatalogMode(GameMode Mode, string Url, bool RequiresNetwork
 /// </remarks>
 public sealed record CatalogGame(GameKey Key, string Title, string Icon, IReadOnlyList<CatalogMode> Modes)
 {
+    /// <summary>
+    /// One line under the title on the hub card: what the game is, in the player's terms.
+    /// A grid of fourteen cards that show only a name and a row of chips leaves a
+    /// first-time visitor to guess which of "Cabinet", "PoCapitol" and "Ecosystem" is the
+    /// one they want.
+    /// </summary>
+    public string Description => GameCatalog.DescriptionFor(Key);
+
     /// <summary>The richest interactive mode available: what the profile's "play this" chips
     /// open and what decides whether the hub greys a card out offline. Demo is last-resort
     /// only: a game whose primary action is "watch" is a game the player cannot play.</summary>
@@ -84,16 +92,17 @@ public static class GameCatalog
         var game = All.First(g => g.Key == key);
         builder.OpenElement(0, "span");
         builder.OpenElement(1, "span");
-        builder.AddAttribute(2, "aria-hidden", "true");
-        builder.AddContent(3, game.Icon);
+        builder.AddAttribute(2, "class", "material-symbols-outlined");
+        builder.AddAttribute(3, "aria-hidden", "true");
+        builder.AddContent(4, game.Icon);
         builder.CloseElement();
-        builder.AddContent(4, " " + game.Title);
+        builder.AddContent(5, " " + game.Title);
         builder.CloseElement();
     };
 
     public static readonly IReadOnlyList<CatalogGame> All =
     [
-        new(GameKeys.ConnectFive, "Connect Five", "🔴",
+        new(GameKeys.ConnectFive, "Connect Five", "grid_on",
         [
             new(GameMode.OnePlayer, "/connectfive/1player"),
             new(GameMode.TwoPlayer, "/connectfive/2player"),
@@ -107,7 +116,7 @@ public static class GameCatalog
         // in the in-game "How to play" copy and intro card. Note this variant is
         // Connect-Four mechanics on a 6×6 grid — line up four in a row, horizontally,
         // vertically or diagonally — not the 3×3 / 3-in-a-row game of the same name.
-        new(GameKeys.TicTacToe, "Tic-Tac-Toe", "❌",
+        new(GameKeys.TicTacToe, "Tic-Tac-Toe", "apps",
         [
             new(GameMode.OnePlayer, "/tictactoe/1player"),
             new(GameMode.TwoPlayer, "/tictactoe/2player"),
@@ -118,7 +127,7 @@ public static class GameCatalog
 
         // Auth consistency: every PoBrawl entry point opts into autoGuest so
         // 1P, 2P and demo all land the same way for anonymous visitors.
-        new(GameKeys.PoBrawl, "Brawl", "🥊",
+        new(GameKeys.PoBrawl, "Brawl", "sports_mma",
         [
             new(GameMode.OnePlayer, "/pobrawl/1player?autoGuest=1"),
             new(GameMode.TwoPlayer, "/pobrawl/2player?autoGuest=1"),
@@ -129,12 +138,12 @@ public static class GameCatalog
             // Both Brawl exhibitions are demo modes, labelled explicitly on the hub.
             new(GameMode.Demo, "/pobrawl/demo?autoGuest=1")
             {
-                ChipLabel = "DEMO · Tournament",
+                ChipLabel = "Demo · Tournament",
                 ChipDescription = "16-slot Brawl Cup tournament",
             },
             new(GameMode.Demo, "/pobrawl/ffa")
             {
-                ChipLabel = "DEMO · FFA",
+                ChipLabel = "Demo · FFA",
                 ChipDescription = "16-president free-for-all exhibition",
             },
             new(GameMode.OnePlayer, "/pobrawl/ffa/play")
@@ -144,7 +153,7 @@ public static class GameCatalog
             },
         ]),
 
-        new(GameKeys.PoRacer, "Racer", "🏎️",
+        new(GameKeys.PoRacer, "Racer", "sports_motorsports",
         [
             new(GameMode.OnePlayer, "/poracer/1player"),
             new(GameMode.Multiplayer, "/poracer/multi", RequiresNetwork: true),
@@ -156,14 +165,14 @@ public static class GameCatalog
         // Three modes: 1P championship, multi SignalR lobby, demo AI showcase. There is no 2P
         // mode; /pocabinet/2player links land on 1P (PoCabinetPage.Mode). The lobby endpoint
         // at /api/pocabinet is authed; the leaderboard reads are anonymous.
-        new(GameKeys.PoCabinet, "Cabinet", "🏛️",
+        new(GameKeys.PoCabinet, "Cabinet", "videogame_asset",
         [
             new(GameMode.OnePlayer, "/pocabinet/1player"),
             new(GameMode.Multiplayer, "/pocabinet/multi", RequiresNetwork: true),
             new(GameMode.Demo, "/pocabinet/demo"),
         ]),
 
-        new(GameKeys.PoMarbleRace, "Marble Race", "🔮",
+        new(GameKeys.PoMarbleRace, "Marble Race", "blur_circular",
         [
             new(GameMode.OnePlayer, "/pomarblerace/1player"),
             // Host-authoritative 2-player race over SignalR: the host browser runs the
@@ -175,7 +184,7 @@ public static class GameCatalog
         // Voxel assets stream from /api/povoxelstrike/assets on first load (Cache API
         // holds them after that), so the first run needs a server — but the mode itself
         // is offline-capable once cached, matching the other single-player 3D games.
-        new(GameKeys.PoVoxelStrike, "Voxel Strike", "🧱",
+        new(GameKeys.PoVoxelStrike, "Voxel Strike", "view_in_ar",
         [
             new(GameMode.OnePlayer, "/povoxelstrike/1player"),
             // The squad run is the Online tab of the same page; this entry is the hub's
@@ -186,13 +195,13 @@ public static class GameCatalog
 
         // PoMule runs entirely in the browser (rules in PoMiniGames.Shared); only the final
         // score needs the server, and that parks offline like every other board.
-        new(GameKeys.PoMule, "Mule", "🫏",
+        new(GameKeys.PoMule, "Mule", "agriculture",
         [
             new(GameMode.OnePlayer, "/pomule/1player"),
             new(GameMode.Demo, "/pomule/demo"),
         ]),
 
-        new(GameKeys.PoCapitol, "PoCapitol", "🏛️",
+        new(GameKeys.PoCapitol, "PoCapitol", "account_balance",
         [
             new(GameMode.OnePlayer, "/pocapitol/1player")
             {
@@ -206,17 +215,17 @@ public static class GameCatalog
 
         // PoFighter (preview): a fighter cut from a filmed performer, in a practice room.
         // No score and no demo, so it stays out of the kiosk reel below.
-        new(GameKeys.PoFighter, "PoFighter", "🥋",
+        new(GameKeys.PoFighter, "PoFighter", "sports_martial_arts",
         [
             new(GameMode.OnePlayer, "/pofighter/1player")
             {
-                ChipLabel = "Practice · Preview",
-                ChipDescription = "Preview: try every move on a punching bag; nothing is scored",
+                ChipLabel = "Preview",
+                ChipDescription = "Practice room: try every move on a punching bag; nothing is scored",
             },
         ]),
 
         // Questions come from /api/funquiz/quiz/questions, so even solo needs a server.
-        new(GameKeys.PoFunQuiz, "Fun Quiz", "🧠",
+        new(GameKeys.PoFunQuiz, "Fun Quiz", "quiz",
         [
             new(GameMode.OnePlayer, "/funquiz/1player", RequiresNetwork: true),
             new(GameMode.TwoPlayer, "/funquiz/2player", RequiresNetwork: true),
@@ -233,19 +242,19 @@ public static class GameCatalog
         // so the URL is functionally a no-op alias for routing purposes, but it gives the
         // two affordances distinct destinations so each can be a separate, semantically
         // correct link.
-        new(GameKeys.PoCoupleQuiz, "Couple Quiz", "💕",
+        new(GameKeys.PoCoupleQuiz, "Couple Quiz", "favorite",
         [
             new(GameMode.Multiplayer, "/couplequiz", RequiresNetwork: true),
         ]),
 
         // PoEcosystem is an autonomous simulation that is watched, never played. Demo only:
         // a fresh island every time, never saved in this browser.
-        new(GameKeys.PoEcosystem, "Ecosystem", "🌿",
+        new(GameKeys.PoEcosystem, "Ecosystem", "forest",
         [
             new(GameMode.Demo, "/poecosystem/demo"),
         ]),
 
-        new(GameKeys.SandPlayground, "Sand Playground", "🏜️",
+        new(GameKeys.SandPlayground, "Sand Playground", "landscape",
         [
             new(GameMode.OnePlayer, "/sandplayground/1player"),
             new(GameMode.Demo, "/sandplayground/demo"),
@@ -255,6 +264,30 @@ public static class GameCatalog
     /// <summary>Games sorted for display — alphabetical, matching the old per-section order.</summary>
     public static readonly IReadOnlyList<CatalogGame> AllSorted =
         All.OrderBy(g => g.Title, StringComparer.OrdinalIgnoreCase).ToList();
+
+    // One promise per game, keyed by GameKey. Kept here rather than in each constructor
+    // call so the catalogue's shape (which mode goes where) stays readable, and so a new
+    // game without a line fails review rather than shipping a blank card.
+    private static readonly Dictionary<string, string> Descriptions = new(StringComparer.OrdinalIgnoreCase)
+    {
+        [GameKeys.ConnectFive.Value] = "Line up four on a six-by-six grid.",
+        [GameKeys.TicTacToe.Value] = "Three in a row, against the CPU or a friend.",
+        [GameKeys.PoBrawl.Value] = "Time the tap, pick your spots, put them on the canvas.",
+        [GameKeys.PoRacer.Value] = "Grand prix racing against the ghost of your best lap.",
+        [GameKeys.PoCabinet.Value] = "Arcade racing under the dome.",
+        [GameKeys.PoMarbleRace.Value] = "Roll to the line against the pack.",
+        [GameKeys.PoVoxelStrike.Value] = "Break the blocks before they break you.",
+        [GameKeys.PoMule.Value] = "Four colonists, four months, one colony.",
+        [GameKeys.PoCapitol.Value] = "The Capitol, and 99 raiders who want it.",
+        [GameKeys.PoFighter.Value] = "A practice room, a punching bag, every move.",
+        [GameKeys.PoFunQuiz.Value] = "Trivia rounds against the computer.",
+        [GameKeys.PoCoupleQuiz.Value] = "How well do you know each other?",
+        [GameKeys.PoEcosystem.Value] = "A world you watch, never touch.",
+        [GameKeys.SandPlayground.Value] = "A sandbox that answers to gravity.",
+    };
+
+    /// <summary>The hub card's one-line promise for a game.</summary>
+    public static string DescriptionFor(GameKey key) => Descriptions.GetValueOrDefault(key.Value, "");
 
     private static IReadOnlyList<CatalogEntry> For(GameMode mode) =>
         All.Select(g => (game: g, mode: g.Find(mode)))

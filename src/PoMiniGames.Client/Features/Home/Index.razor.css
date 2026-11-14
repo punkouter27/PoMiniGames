@@ -36,7 +36,10 @@
     flex: 1 1 auto;
     display: flex;
     flex-direction: column;
-    justify-content: center;
+    /* Top-aligned. It used to centre the board in a tall window, which was right when
+       the page was only cards; now the page header leads, and centring it left ~200px
+       of nothing above the title on a laptop. */
+    justify-content: flex-start;
     /* `overflow-x: clip` stops the WebGL canvas or the tilt perspective offset from
        adding a few px of sideways scroll, without clipping a sticky shadow. */
     overflow-x: clip;
@@ -81,29 +84,91 @@
     display: none;
 }
 
-/* ── Heading ─────────────────────────────────────────────────────────────────
-   Visually hidden, not removed: it is the page's h1 for the outline and the
-   element App.razor's FocusOnNavigate lands on. The visible brand is the top
-   bar's, one row above. */
-.home-title {
-    position: absolute;
-    width: 1px;
-    height: 1px;
-    margin: -1px;
-    overflow: hidden;
-    clip-path: inset(50%);
-    white-space: nowrap;
-}
-
-/* ── Hub bar ─────────────────────────────────────────────────────────────────
-   One row above the grid: the demo reel, at the right. (Today's game, the filters, pins
-   and the Continue shortcuts were cut on 2026-10-19.) */
-.home-bar {
+/* ── Hub tools ───────────────────────────────────────────────────────────────
+   The page header's action slot: the finder and the demo reel on one line. */
+.home-tools {
     position: relative;
     z-index: 1;
     display: flex;
+    align-items: center;
     justify-content: flex-end;
-    margin-bottom: 0.6rem;
+    flex-wrap: wrap;
+    gap: 0.5rem;
+}
+
+.home-search {
+    display: flex;
+    align-items: center;
+    gap: 0.35rem;
+    min-height: 2.75rem;
+    padding: 0 0.6rem;
+    border: 1px solid var(--color-border);
+    border-radius: var(--radius-lg);
+    background: var(--surface-1);
+    transition: border-color 0.18s var(--ease-standard),
+                box-shadow 0.18s var(--ease-standard);
+}
+
+.home-search:focus-within {
+    border-color: var(--color-accent);
+    box-shadow: 0 0 0 3px var(--accent-soft, rgba(99, 102, 241, 0.25));
+}
+
+.home-search__icon {
+    font-size: 1.1rem;
+    color: var(--color-text-secondary);
+}
+
+.home-search__input {
+    width: 10rem;
+    min-width: 0;
+    padding: 0;
+    border: 0;
+    background: transparent;
+    color: var(--color-text-primary);
+    font: inherit;
+    font-size: var(--text-sm);
+}
+
+.home-search__input:focus {
+    outline: none;
+}
+
+.home-search__input::-webkit-search-cancel-button {
+    display: none;
+}
+
+.home-search__clear {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 1.4rem;
+    height: 1.4rem;
+    padding: 0;
+    border: 0;
+    border-radius: 50%;
+    background: var(--surface-2);
+    color: var(--color-text-secondary);
+    font-size: 0.95rem;
+    line-height: 1;
+    cursor: pointer;
+}
+
+.home-search__clear:hover {
+    color: var(--color-text-primary);
+}
+
+/* What the finder came back with. */
+.home-no-results {
+    position: relative;
+    z-index: 1;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 0.6rem;
+    padding: 2rem 1rem;
+    color: var(--color-text-secondary);
+    text-align: center;
 }
 
 /* The demo reel: the only control that changes app state rather than navigating,
@@ -140,15 +205,6 @@
     line-height: 1;
 }
 
-/* Full label on a wide screen, one word on a phone (and only the icon on the
-   narrowest, below); the button's aria-label always carries the full name. */
-.home-action-label--short { display: none; }
-
-@media (max-width: 640px) {
-    .home-action-label--long { display: none; }
-    .home-action-label--short { display: inline; }
-}
-
 .home-action--demo {
     border-color: rgba(251, 146, 60, 0.55);
     background: linear-gradient(135deg, rgba(251, 146, 60, 0.18), rgba(244, 114, 182, 0.10));
@@ -174,21 +230,20 @@
     flex: 0 0 auto;
     display: grid;
     grid-template-columns: repeat(4, minmax(0, 1fr));
-    grid-auto-rows: minmax(5.25rem, auto);
+    grid-auto-rows: minmax(6.5rem, auto);
     gap: 0.6rem;
 }
 
 .home-card {
     position: relative;
     display: flex;
-    /* Wrap is the fallback, not the layout: if a title and its chips ever do not
-       fit one line (a longer name, a fifth mode), the chips drop under the title
-       instead of running out of the card. */
+    /* Wrap is the layout now: title and chips share line one, the description takes
+       line two. It was also the fallback for a long title, so it still covers that. */
     flex-wrap: wrap;
     align-items: center;
     align-content: center;
     justify-content: space-between;
-    gap: 0.4rem 0.6rem;
+    gap: 0.2rem 0.6rem;
     padding: 0.55rem 0.85rem;
     border: 1px solid var(--color-border);
     border-radius: var(--radius-lg);
@@ -202,6 +257,21 @@
     /* Containment — each card is a self-contained layout so a hover/focus
        repaint on one card never reaches the rest of the grid. */
     contain: layout paint;
+}
+
+/* The whole card is the target, not just its title. The link's ::after stretches over
+   the card's padding box; the chips sit above it, so a chip still lands on its own
+   destination and everything else opens the game. */
+.home-card-head::after {
+    content: "";
+    position: absolute;
+    inset: 0;
+    border-radius: inherit;
+}
+
+.home-card-modes {
+    position: relative;
+    z-index: 1;
 }
 
 .home-card:hover {
@@ -226,13 +296,44 @@
    wrap. */
 .home-card-title { min-width: 0; }
 
-.home-card-icon { font-size: 1.6rem; line-height: 1; }
+.home-card-icon {
+    font-size: 1.5rem;
+    line-height: 1;
+    /* The glyph is the card's identity; tint it with the accent so fourteen cards read
+       as a set rather than as fourteen pieces of system emoji. */
+    color: var(--color-accent);
+}
 
 .home-card-title {
     font-size: var(--text-base);
     font-weight: 700;
     font-family: var(--font-display);
     white-space: nowrap;
+    /* A long title must not widen the card: the chips beside it keep their space and
+       the name ellipsises instead. Without this a card's min-content width could
+       exceed its grid column and get clipped at the page edge on a phone. */
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.home-card-head {
+    min-width: 0;
+}
+
+/* One line of what the game is. Clamped, because a card is a card. */
+.home-card-desc {
+    flex: 1 1 100%;
+    order: 3;
+    margin: 0;
+    min-width: 0;
+    color: var(--color-text-secondary);
+    font-size: var(--text-xs);
+    line-height: 1.35;
+    display: -webkit-box;
+    -webkit-line-clamp: 2;
+    -webkit-box-orient: vertical;
+    overflow: hidden;
 }
 
 a.home-card-head:hover .home-card-title { text-decoration: underline; text-underline-offset: 3px; }
@@ -249,10 +350,57 @@ a.home-card-head:hover .home-card-title { text-decoration: underline; text-under
     display: flex;
     gap: 0.3rem;
     align-items: center;
+    /* Wrap instead of clipping: a longer label ("Demo · Tournament") or a card a few
+       pixels narrower than the grid assumed must never cut a chip in half. */
+    flex-wrap: wrap;
 }
 
-.home-card--brawl .home-card-modes {
+/* The "+N" that folds Brawl's extra modes into a popover. Dashed, so it reads as a
+   disclosure rather than a mode of its own. */
+.home-mode-chip--more {
+    border-style: dashed;
+    background: transparent;
+    cursor: pointer;
+    font-variant-numeric: tabular-nums;
+}
+
+/* The folded modes, in the top layer so the card's paint containment cannot clip
+   them. Anchored to the "+N" button by the browser's own positioning. */
+.home-more-panel {
+    margin: 0;
+    inset: auto;
+    /* Hidden until the popover opens. The UA stylesheet hides `[popover]:not(:popover-open)`,
+       but an author `display` declaration outranks it, so the panel painted itself onto the
+       card even while shut. */
+    display: none;
     flex-wrap: wrap;
+    gap: 0.3rem;
+    max-width: 18rem;
+    padding: 0.5rem;
+    background: var(--color-surface);
+    color: var(--color-text-primary);
+    border: 1px solid var(--color-border);
+    border-radius: var(--radius-lg);
+    box-shadow: var(--elevation-1);
+    position: fixed;
+    top: 4.5rem;
+    right: var(--space-4);
+}
+
+.home-more-panel:popover-open {
+    display: flex;
+}
+
+@supports (anchor-name: --a) {
+    .home-more-panel {
+        position: absolute;
+        /* The button supplies its own --home-more-<key> name inline (one per card). */
+        position-area: block-end span-inline-end;
+        margin-block-start: 0.35rem;
+        top: auto;
+        right: auto;
+        position-try-fallbacks: flip-block;
+    }
 }
 
 .home-mode-chip {
@@ -342,19 +490,59 @@ a.home-card-head:hover .home-card-title { text-decoration: underline; text-under
     list-style: none;
     padding: 0;
     margin: 0;
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(13rem, 1fr));
+    gap: 0.5rem;
 }
 
-.home-activity__item {
-    display: flex;
+/* Each recent match is a small card rather than a line of text: the outcome glyph is
+   the thing the eye lands on, and the result reads before the words. */
+.home-activity__card {
+    display: grid;
+    grid-template-columns: 1.75rem minmax(0, 1fr) auto;
     align-items: center;
-    gap: 0.5rem;
-    padding: 0.5rem 0;
-    border-bottom: 1px solid var(--color-border);
+    gap: 0.35rem 0.5rem;
+    padding: 0.5rem 0.65rem;
+    border: 1px solid var(--color-border);
+    border-radius: var(--radius-md);
+    background: var(--surface-1);
     font-size: 0.85rem;
 }
 
+.home-activity__icon {
+    font-size: 1.1rem;
+    line-height: 1;
+}
+
+.home-activity__body {
+    display: flex;
+    flex-direction: column;
+    min-width: 0;
+}
+
+.home-activity__game {
+    color: var(--color-text-primary);
+    font-weight: 600;
+    text-decoration: none;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.home-activity__game:hover {
+    text-decoration: underline;
+    text-underline-offset: 3px;
+}
+
+.home-activity__msg {
+    color: var(--color-text-secondary);
+    font-size: var(--text-xs);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
 .home-activity__time {
-    margin-left: auto;
     color: var(--color-text-secondary);
     font-size: 0.75rem;
     flex-shrink: 0;
@@ -379,16 +567,21 @@ a.home-card-head:hover .home-card-title { text-decoration: underline; text-under
         justify-content: flex-start;
         padding: 0.6rem 0.6rem max(env(safe-area-inset-bottom, 0px), 0.6rem);
     }
-    .home-bar { margin-bottom: 0.35rem; gap: 0.3rem; }
-    
+
+    .home-tools {
+        justify-content: stretch;
+    }
+    .home-search { flex: 1 1 auto; }
+    .home-search__input { width: 100%; }
+
     .home-grid {
         grid-template-columns: minmax(0, 1fr);
         grid-auto-rows: auto;
         gap: 0.25rem;
     }
     .home-card {
-        flex-wrap: nowrap;
-        gap: 0.4rem;
+        flex-wrap: wrap;
+        gap: 0.15rem 0.4rem;
         padding: 0.2rem 0.5rem;
     }
     .home-card:hover { transform: none; }
@@ -405,16 +598,23 @@ a.home-card-head:hover .home-card-title { text-decoration: underline; text-under
     }
     .home-card-icon { font-size: 1.2rem; }
     .home-card-title { font-size: 0.92rem; }
-    .home-card-modes { flex: 0 0 auto; align-self: stretch; align-items: stretch; }
-    .home-card--brawl { flex-wrap: wrap; }
-    .home-card--brawl .home-card-modes { flex: 1 1 100%; }
+    /* Chips share the row with the title and wrap inside their own box when the two
+       do not fit; `min-width: 0` lets the row shrink instead of pushing the card past
+       the viewport. */
+    .home-card-modes {
+        flex: 0 1 auto;
+        min-width: 0;
+        align-self: stretch;
+        align-items: stretch;
+        flex-wrap: wrap;
+        justify-content: flex-end;
+    }
     .home-mode-chip { min-height: 2.25rem; min-width: 2.25rem; padding: 0 0.5rem; font-size: 0.78rem; }
-    
 
     /* Keep the feed to two rows on phones so the page still ends inside the
        first viewport; the full list remains on desktop. */
     .home-activity { margin-top: 0.75rem; }
-    .home-activity__item:nth-child(n+3) { display: none; }
+    .home-activity__card:nth-child(n+3) { display: none; }
 }
 
 /* Narrow phones: the reel button is its icon (its name stays in aria-label). */
@@ -457,6 +657,9 @@ a.home-card-head:hover .home-card-title { text-decoration: underline; text-under
     .home-card-title { font-size: 0.82rem; }
     .home-card-modes { align-self: auto; align-items: center; flex-wrap: wrap; gap: 0.15rem; }
     .home-mode-chip { min-height: 30px; min-width: 1.5rem; padding: 0 0.2rem; font-size: var(--text-xs); }
+    /* The card is two rows tall here on purpose; a third line of prose is what would
+       push the hub off a short screen. */
+    .home-card-desc { display: none; }
 }
 
 @media (min-width: 700px) and (max-height: 500px) {

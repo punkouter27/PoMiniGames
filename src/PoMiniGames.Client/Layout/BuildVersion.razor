@@ -1,2 +1,10 @@
+@*
+    The site's end, for assistive tech only.
+
+    The visible "v261113" stamp this component used to paint into the bottom-right
+    corner of every page is gone: it was developer chrome on player screens, and the
+    build date already has two homes a person can actually ask for it — the More sheet
+    on a phone and the Service health page. The contentinfo landmark stays so a
+    screen-reader user still finds the end of the site.
+*@
 <footer class="gl-sr-only" aria-label="Site information">PoMiniGames, build @BuildInfo.Date</footer>
-<span class="gl-build-stamp app-build-version" aria-hidden="true">v@(BuildInfo.Date)</span>
