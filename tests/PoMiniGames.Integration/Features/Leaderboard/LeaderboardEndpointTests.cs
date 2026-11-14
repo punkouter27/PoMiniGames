@@ -47,12 +47,14 @@ public sealed class LeaderboardEndpointTests : IClassFixture<TestWebApplicationF
 
     // ── PoBrawl fastest-KO high scores ────────────────────────────────────
 
-    /// <summary>A client signed in as <paramref name="user"/> (FakeAuth: id = name = the header), armed.</summary>
+    /// <summary>A client identified by <paramref name="user"/> via X-Player-Id / X-Player-Initials, armed.</summary>
     private async Task<HttpClient> SignedInAsync(string user)
     {
         var client = _factory.CreateClient();
-        client.DefaultRequestHeaders.Remove(FakeAuthHandler.UserHeader);
-        client.DefaultRequestHeaders.Add(FakeAuthHandler.UserHeader, user);
+        client.DefaultRequestHeaders.Remove("X-Player-Id");
+        client.DefaultRequestHeaders.Remove("X-Player-Initials");
+        client.DefaultRequestHeaders.Add("X-Player-Id", user);
+        client.DefaultRequestHeaders.Add("X-Player-Initials", user.Length >= 3 ? user[..3].ToUpperInvariant() : "TST");
         await client.ArmAntiforgeryAsync();
         return client;
     }

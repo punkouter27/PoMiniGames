@@ -18,6 +18,10 @@ public static partial class LeaderboardNames
     public static string Pretty(string? raw)
     {
         var safe = raw ?? string.Empty;
+        if (string.IsNullOrWhiteSpace(safe))
+        {
+            return "---";
+        }
         var m = GuestRotating().Match(safe);
         if (!m.Success) return safe;
         var hex = m.Groups[1].Value[..Math.Min(6, m.Groups[1].Value.Length)].ToUpperInvariant();

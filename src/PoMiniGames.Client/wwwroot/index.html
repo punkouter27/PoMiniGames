@@ -190,6 +190,7 @@
          reason — the swap would reinsert it at its original position anyway,
          but a render-blocking load also avoids a flash of unglassed chrome. -->
     <link rel="stylesheet" href="css/glass.css" />
+    <link rel="stylesheet" href="css/retro-arcade.css" />
 
     <!-- Shared canvas resolution policy (audit #8). Not deferred and listed
          first among the game scripts: the racing renderer and the engine modules
@@ -208,13 +209,6 @@
     <script src="js/app.js" defer></script>
     <!-- AppErrorBoundary fallback clipboard helper (non-secure-context safe) -->
     <script src="js/appErrorBoundary.js" defer></script>
-    <!-- Microsoft sign-in (MSAL.js + interop wrapper). Loaded eagerly so the
-         login gate can call poAuth.* during startup when OAuth is configured.
-         The integrity hash pins the exact file: bump it together with the version. -->
-    <script src="https://cdn.jsdelivr.net/npm/@azure/msal-browser@2.38.4/lib/msal-browser.min.js"
-            integrity="sha384-FyFWjaUFP9q0tLEvcwV9UloGlRNkfP3l+vmNCjwLpji7ChADDrvdXXXNIufO0sEw"
-            crossorigin="anonymous"></script>
-    <script src="js/poauth.js"></script>
 </head>
 
 <body>

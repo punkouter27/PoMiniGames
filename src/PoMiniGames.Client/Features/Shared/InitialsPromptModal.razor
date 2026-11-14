@@ -1,0 +1,195 @@
+@inject PlayerNameService PlayerNames
+@inject NavigationManager NavigationManager
+@inject UiFeedbackService Feedback
+@implements IDisposable
+
+@if (ShouldShow)
+{
+    <div class="arcade-modal-backdrop" role="dialog" aria-modal="true" aria-labelledby="arcade-initials-title" @onkeydown="OnKeyDown">
+        <div class="arcade-modal-crt">
+            <div class="arcade-modal-scanlines" aria-hidden="true"></div>
+
+            <div class="arcade-modal-header">
+                <span class="arcade-coin-badge">1 COIN · 1 PLAY</span>
+                <h2 id="arcade-initials-title" class="arcade-modal-title">ENTER YOUR INITIALS</h2>
+                <p class="arcade-modal-sub">PLAYER 1 HIGH SCORE TABLE</p>
+            </div>
+
+            <div class="arcade-slots-wrap">
+                <div class="arcade-slots" aria-hidden="true">
+                    @for (var i = 0; i < 3; i++)
+                    {
+                        var ch = i < _letters.Length ? _letters[i].ToString() : "_";
+                        <span class="arcade-slot @(i == _letters.Length && _letters.Length < 3 ? "arcade-slot--active" : "")">@ch</span>
+                    }
+                </div>
+                <input @ref="_inputRef"
+                       type="text"
+                       class="arcade-hidden-input"
+                       maxlength="3"
+                       autocomplete="off"
+                       autocapitalize="characters"
+                       spellcheck="false"
+                       aria-label="Enter 3-letter initials (A to Z)"
+                       value="@_letters"
+                       @oninput="OnInput" />
+            </div>
+
+            <p class="arcade-modal-hint">TYPE 3 LETTERS (A–Z) OR SKIP FOR BLANK [   ]</p>
+
+            <div class="arcade-modal-actions">
+                <button type="button"
+                        class="arcade-btn arcade-btn--primary"
+                        disabled="@(_letters.Length != 3)"
+                        @onclick="ConfirmAsync">
+                    ENTER INITIALS
+                </button>
+                <button type="button"
+                        class="arcade-btn arcade-btn--skip"
+                        @onclick="SkipAsync">
+                    SKIP [   ]
+                </button>
+            </div>
+        </div>
+    </div>
+}
+
+@code {
+    private ElementReference _inputRef;
+    private string _letters = string.Empty;
+    private bool _wasOpen;
+    private Action? _onStateChanged;
+    private EventHandler<LocationChangedEventArgs>? _onLocationChanged;
+
+    private bool IsOnMainPage
+    {
+        get
+        {
+            var path = new Uri(NavigationManager.Uri).AbsolutePath.TrimEnd('/');
+            return string.IsNullOrEmpty(path);
+        }
+    }
+
+    private bool ShouldShow =>
+        PlayerNames.IsInitialized &&
+        PlayerNames.IsPromptOpen &&
+        (PlayerNames.HasPrompted || IsOnMainPage);
+
+    protected override void OnInitialized()
+    {
+        SyncFromService();
+        _onStateChanged = () => InvokeAsync(() =>
+        {
+            SyncFromService();
+            StateHasChanged();
+        });
+        PlayerNames.StateChanged += _onStateChanged;
+
+        _onLocationChanged = (_, _) => InvokeAsync(StateHasChanged);
+        NavigationManager.LocationChanged += _onLocationChanged;
+    }
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (ShouldShow && !_wasOpen)
+        {
+            _wasOpen = true;
+            try
+            {
+                await _inputRef.FocusAsync();
+            }
+            catch
+            {
+                // ignore focus failures during navigation
+            }
+        }
+        else if (!ShouldShow)
+        {
+            _wasOpen = false;
+        }
+    }
+
+    private void SyncFromService()
+    {
+        if (!ShouldShow)
+        {
+            return;
+        }
+
+        var current = PlayerNames.Initials.Trim();
+        _letters = current.Length == 3 ? current : string.Empty;
+    }
+
+    private void OnInput(ChangeEventArgs e)
+    {
+        var prevLen = _letters.Length;
+        var raw = e.Value?.ToString() ?? string.Empty;
+        Span<char> buf = stackalloc char[3];
+        var len = 0;
+        foreach (var c in raw)
+        {
+            if (c is >= 'a' and <= 'z')
+            {
+                buf[len++] = (char)(c - 'a' + 'A');
+            }
+            else if (c is >= 'A' and <= 'Z')
+            {
+                buf[len++] = c;
+            }
+            if (len == 3) break;
+        }
+        _letters = new string(buf[..len]);
+        if (_letters.Length > prevLen)
+        {
+            _ = Feedback.ArcadeKeyAsync(_letters.Length);
+        }
+        else if (_letters.Length < prevLen)
+        {
+            _ = Feedback.ArcadeKeyAsync(_letters.Length, backspace: true);
+        }
+    }
+
+    private async Task OnKeyDown(KeyboardEventArgs e)
+    {
+        if (e.Key == "Enter" && _letters.Length == 3)
+        {
+            await ConfirmAsync();
+        }
+        else if (e.Key == "Escape")
+        {
+            await SkipAsync();
+        }
+    }
+
+    private async Task ConfirmAsync()
+    {
+        if (_letters.Length != 3) return;
+        await Feedback.CompleteAsync();
+        PlayerNames.SetInitials(_letters);
+    }
+
+    private async Task SkipAsync()
+    {
+        await Feedback.TapAsync();
+        if (PlayerNames.HasPrompted)
+        {
+            PlayerNames.ClosePrompt();
+        }
+        else
+        {
+            PlayerNames.SkipInitials();
+        }
+    }
+
+    public void Dispose()
+    {
+        if (_onStateChanged is not null)
+        {
+            PlayerNames.StateChanged -= _onStateChanged;
+        }
+        if (_onLocationChanged is not null)
+        {
+            NavigationManager.LocationChanged -= _onLocationChanged;
+        }
+    }
+}

@@ -7,14 +7,21 @@
 const KEY = 'pominigames:pvs-settings';
 const TIERS = ['auto', 'low', 'medium', 'high', 'ultra'];
 
+export const DEFAULT_SETTINGS = Object.freeze({
+  sens: 1,
+  invertY: false,
+  fov: 70,
+  gfx: 'auto',
+});
+
 function clean(s) {
   const num = (v, lo, hi, fallback) =>
     (v !== null && v !== '' && Number.isFinite(+v)) ? Math.min(hi, Math.max(lo, +v)) : fallback;
   return {
-    sens: num(s?.sens, 0.3, 2.5, 1),
-    invertY: !!s?.invertY,
-    fov: num(s?.fov, 55, 100, 70),
-    gfx: TIERS.includes(s?.gfx) ? s.gfx : 'auto',
+    sens: num(s?.sens, 0.3, 2.5, DEFAULT_SETTINGS.sens),
+    invertY: s?.invertY !== undefined ? !!s.invertY : DEFAULT_SETTINGS.invertY,
+    fov: num(s?.fov, 55, 100, DEFAULT_SETTINGS.fov),
+    gfx: TIERS.includes(s?.gfx) ? s.gfx : DEFAULT_SETTINGS.gfx,
   };
 }
 

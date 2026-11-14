@@ -89,8 +89,10 @@ public sealed class PoBrawlFighterEloTests : IClassFixture<TestWebApplicationFac
         // ── A draw is zero-sum too ────────────────────────────────────────
         // From a second identity: the pacing above is per caller, not global.
         using var other = _factory.CreateClient();
-        other.DefaultRequestHeaders.Remove(PoMiniGames.Features.Auth.FakeAuthHandler.UserHeader);
-        other.DefaultRequestHeaders.Add(PoMiniGames.Features.Auth.FakeAuthHandler.UserHeader, $"demo_{Guid.NewGuid():N}"[..20]);
+        other.DefaultRequestHeaders.Remove("X-Player-Id");
+        other.DefaultRequestHeaders.Remove("X-Player-Initials");
+        other.DefaultRequestHeaders.Add("X-Player-Id", $"demo_{Guid.NewGuid():N}"[..20]);
+        other.DefaultRequestHeaders.Add("X-Player-Initials", "DEM");
         await other.ArmAntiforgeryAsync();
         (await other.PostAsJsonAsync(
             "/api/pobrawl/elo", new { winnerFighterId = Winner, loserFighterId = Loser, isDraw = true }))

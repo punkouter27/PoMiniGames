@@ -31,8 +31,8 @@
 // Presentation only: handlers use Math.random, never `this.rng` (seeded replays, online lockstep).
 // A throwing handler is logged and skipped, never allowed to take the fight down.
 //
-// Simple vs Full show (the settings sheet's "Brawl show" row, PoBrawlShowPrefs.razor). Simple, the
-// default, registers only the modules that carry fight information — the sound design and the
+// Simple vs Full show (the settings sheet's "Brawl show" row, PoBrawlShowPrefs.razor). Full is the
+// default. Simple registers only the modules that carry fight information — the sound design and the
 // charge aura. Full adds the dressing: balloons, LED boards, the instant replay and the result
 // glass (plus, elsewhere, the KO shatter and pyro, the comic KO words, the crowd's camera flashes,
 // the belt ceremony and the director's TV cuts — each gated on _fullShow()). A module that never
@@ -62,9 +62,9 @@ function loadFullShow() {
   return fullModules;
 }
 
-/** True when the player chose the Full show in the settings sheet; Simple otherwise (and by default). */
+/** True unless the player chose the Simple show in the settings sheet: Full is the default. */
 export function fullShow() {
-  try { return localStorage.getItem('pominigames:pobrawl-show') === 'full'; } catch { return false; }
+  try { return localStorage.getItem('pominigames:pobrawl-show') !== 'simple'; } catch { return true; }
 }
 
 function guard(label, fn, ...args) {

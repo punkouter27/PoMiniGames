@@ -1,3 +1,12 @@
+/* The arena is the show: standings, tool bar and broadcast card stay hidden until the
+   shared Stats panel is open (Tab, or its button). game-debug.js sets the root class.
+   An already-open studio keeps its own Close button; a failed start still shows its board. */
+:root:not(.po-game-stats-open) .pffa-board:not(.pffa-board--error),
+:root:not(.po-game-stats-open) .pffa-tools,
+:root:not(.po-game-stats-open) .pffa-broadcast {
+    display: none;
+}
+
 .pffa-board {
     position: absolute;
     top: calc(var(--pb-gutter) + 10px);

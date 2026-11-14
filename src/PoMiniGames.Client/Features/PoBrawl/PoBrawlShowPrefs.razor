@@ -5,7 +5,7 @@
 @* ─────────────────────────────────────────────────────────────────────────
    The Brawl row of the settings sheet (its "Games" fieldset): how much show a fight puts on.
 
-   Simple (the default) is the fight and one result card: the fixed ringside camera, no instant
+   Full is the default. Simple is the fight and one result card: the fixed ringside camera, no instant
    replay, no balloon drop, LED boards, frosted result glass, KO shatter, pyro or belt ceremony,
    and no campaign-map interlude between ladder rungs. Full turns all of that on, with the
    director's TV cuts in the CPU-only modes (Demo and the Cup).
@@ -30,8 +30,8 @@
     /// <summary>The localStorage key; js/pobrawl/show.js reads the same one.</summary>
     public const string StorageKey = "pominigames:pobrawl-show";
 
-    /// <summary>True when the player chose the Full show. Anything else, a missing key included, is Simple.</summary>
-    public static bool IsFull => LocalStorageService.GetItem<string>(StorageKey) == "full";
+    /// <summary>True unless the player chose the Simple show: a missing key is Full.</summary>
+    public static bool IsFull => LocalStorageService.GetItem<string>(StorageKey) != "simple";
 
     private bool _full;
 

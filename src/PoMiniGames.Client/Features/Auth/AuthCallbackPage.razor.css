@@ -1,9 +1,0 @@
-/* AuthCallbackPage — vertical/horizontal centering, zero inline styles. */
-.auth-callback-page {
-    min-height: 60vh;
-    display: grid;
-    place-items: center;
-    color: var(--color-text-secondary);
-    font-family: var(--font-body);
-    font-size: var(--text-base);
-}

@@ -39,10 +39,8 @@ internal static class EndpointRouteExtensions
 {
     public static WebApplication MapPoMiniGamesEndpoints(this WebApplication app)
     {
-        // ── Platform: unprotected (auth flow, health probes, diagnostics) ──
-        app.MapAuthEndpoints();
-        // CSRF token issuer. Anonymous + GET, so it stays reachable before sign-in
-        // and is itself exempt from the validation gate it feeds.
+        // ── Platform: unprotected (health probes, diagnostics) ──
+        // CSRF token issuer.
         app.MapAntiforgeryEndpoints();
         app.MapHealthEndpoints();
         // Uniform cross-app liveness probe (see PoPlatform). Same shape in every Po app, which
@@ -75,15 +73,10 @@ internal static class EndpointRouteExtensions
         // summary) that the fighter select shows before sign-in.
         app.MapPoBrawlDossierEndpoints();
 
-        // ── Authenticated game API ─────────────────────────────────────────
-        // All game-data endpoints require a valid session. Per-endpoint rate
-        // limits (highscores, leaderboard-read, ...) are declared
-        // inside each slice; the group adds the auth gate only.
-        //
-        // The "/api" prefix lives here, not in the slices: it is exactly the scope
-        // AntiforgeryExtensions validates, so the CSRF boundary, the auth boundary and
-        // the URL boundary are now one line instead of three separate conventions.
-        var gameApi = app.MapGroup("/api").RequireAuthorization();
+        // ── Game API ──────────────────────────────────────────────────────
+        // All game-data endpoints use the lightweight player-initials identity
+        // populated by UsePlayerIdentity() — no OAuth gate required.
+        var gameApi = app.MapGroup("/api");
 
         // Play sessions: minted per game opened, redeemed by the score guard on submission.
         // Authenticated because a session is bound to an identity — there is nothing to bind
@@ -113,30 +106,20 @@ internal static class EndpointRouteExtensions
         // Game invites: push subscriptions, invite-a-past-opponent and the lobby QR code.
         gameApi.MapInviteEndpoints();
 
-        // ── SignalR hubs (auth required; not part of MapGroup) ────────────
-        app.MapHub<CoupleQuizHub>("/couplequiz/hubs/game").RequireAuthorization();
-        app.MapHub<FunQuizHub>("/funquiz/gamehub").RequireAuthorization();
-        app.MapHub<PoRacerLobbyHub>("/poracer/lobby-hub").RequireAuthorization();
-        app.MapHub<PoRacerRaceHub>("/poracer/race-hub").RequireAuthorization();
-        // PoCabinet (T6): lobby + race hubs at their own roots (anonymous /negotiate).
-        app.MapHub<PoCabinetLobbyHub>("/pocabinet/lobby-hub").RequireAuthorization();
-        app.MapHub<PoCabinetRaceHub>("/pocabinet/race-hub").RequireAuthorization();
-        // PoVoxelStrike co-op: lobby hub for the ready/start room, lockstep hub for the
-        // active run. Both follow the platform pattern (auth required, separate from
-        // MapGroup because MapHub returns IHubEndpointConventionBuilder).
-        app.MapHub<PoMiniGames.Features.PoVoxelStrike.PoVoxelStrikeLobbyHub>("/povoxelstrike/lobby-hub").RequireAuthorization();
-        app.MapHub<PoMiniGames.Features.PoVoxelStrike.PoVoxelStrikeLockstepHub>("/povoxelstrike/lockstep-hub").RequireAuthorization();
-        // PoBrawl online: lobby hub carries the ready/start room, match hub carries the
-        // per-tick combat state. Same platform conventions as every other live hub.
-        app.MapHub<PoBrawlLobbyHub>("/pobrawl/lobby-hub").RequireAuthorization();
-        app.MapHub<PoBrawlMatchHub>("/pobrawl/match-hub").RequireAuthorization();
-        // ConnectFive + TicTacToe online: one turn-match hub each carries queue, moves,
-        // rematch and reconnect. SignalR-first like PoCoupleQuiz — neither slice maps
-        // an HTTP route at all.
-        app.MapHub<ConnectFiveHub>("/connectfive/hub").RequireAuthorization();
-        app.MapHub<TicTacToeHub>("/tictactoe/hub").RequireAuthorization();
-        // PoMarbleRace online: pairing + host→guest frame relay + guest→host steering.
-        app.MapHub<PoMarbleRaceOnlineHub>("/pomarblerace/hub").RequireAuthorization();
+        // ── SignalR hubs (no OAuth gate; identity from playerId/initials) ─
+        app.MapHub<CoupleQuizHub>("/couplequiz/hubs/game");
+        app.MapHub<FunQuizHub>("/funquiz/gamehub");
+        app.MapHub<PoRacerLobbyHub>("/poracer/lobby-hub");
+        app.MapHub<PoRacerRaceHub>("/poracer/race-hub");
+        app.MapHub<PoCabinetLobbyHub>("/pocabinet/lobby-hub");
+        app.MapHub<PoCabinetRaceHub>("/pocabinet/race-hub");
+        app.MapHub<PoMiniGames.Features.PoVoxelStrike.PoVoxelStrikeLobbyHub>("/povoxelstrike/lobby-hub");
+        app.MapHub<PoMiniGames.Features.PoVoxelStrike.PoVoxelStrikeLockstepHub>("/povoxelstrike/lockstep-hub");
+        app.MapHub<PoBrawlLobbyHub>("/pobrawl/lobby-hub");
+        app.MapHub<PoBrawlMatchHub>("/pobrawl/match-hub");
+        app.MapHub<ConnectFiveHub>("/connectfive/hub");
+        app.MapHub<TicTacToeHub>("/tictactoe/hub");
+        app.MapHub<PoMarbleRaceOnlineHub>("/pomarblerace/hub");
 
         return app;
     }

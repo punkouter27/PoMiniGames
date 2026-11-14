@@ -3,7 +3,7 @@
 
 import { Engine } from './game.js';
 import { loadAssets } from './assets.js';
-import { loadSettings, saveSettings } from './settings.js';
+import { DEFAULT_SETTINGS, loadSettings, saveSettings } from './settings.js';
 
 let engine = null;
 // Monotonic token for the in-flight start(): assets are fetched over the network, so two
@@ -399,7 +399,7 @@ window.PoVoxelStrike = {
   },
 
   /** Persist, and apply to the live run. The graphics tier takes effect on the next start(). */
-  setSettings(sens, invertY, fov, gfx) {
+  setSettings(sens = DEFAULT_SETTINGS.sens, invertY = DEFAULT_SETTINGS.invertY, fov = DEFAULT_SETTINGS.fov, gfx = DEFAULT_SETTINGS.gfx) {
     const s = saveSettings({ sens, invertY, fov, gfx });
     engine?.applySettings(s);
   },

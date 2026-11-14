@@ -1,7 +1,7 @@
 @inherits LayoutComponentBase
 @implements IDisposable
 @using PoMiniGamesClient.Models
-@inject AuthStateService AuthState
+@inject PlayerNameService PlayerNames
 @inject ToastService ToastService
 @inject KioskCoordinator Kiosk
 @inject ScoreSyncService ScoreSync
@@ -72,68 +72,42 @@
             }
             @* Always in the DOM: a live region only announces changes to one that already exists. *@
             <span class="gl-sr-only" role="status" aria-live="polite">@_connectivityAnnouncement</span>
-            @if (AuthState.IsConfigured && !AuthState.IsLoading)
-            {
-                @* Live ELO badge for single-player rated games, projected here by
-                   GameShell so it sits right beside the player's identity. Renders
-                   nothing outside a rated 1P game. *@
-                <SectionOutlet SectionName="game-elo" />
-                @* The account menu: the name chip is the one button, and it holds every
-                   page-level destination, the service Status page included. There is no
-                   gear and no visible footer.
-
-                   There is no signed-out branch. AuthGate renders the login screen in
-                   place of this layout until a session exists, so a signed-out control
-                   here could only ever show on the /auth/callback page, for the moment
-                   it takes to finish signing in.
-
-                   Native Popover API: light-dismiss, Escape-to-close and the top layer
-                   come free. popovertargetaction="hide" closes the panel on activation
-                   and the @onclick still runs. *@
-                @if (AuthState.IsAuthenticated)
+            <SectionOutlet SectionName="game-elo" />
+            <button type="button" class="gl-account-trigger"
+                    popovertarget="gl-account-menu"
+                    aria-haspopup="menu"
+                    aria-label="@($"Player 1 menu, initials {DisplayInitialsLabel}")"
+                    title="Player 1 Initials & Menu">
+                <span class="gl-account-initial" aria-hidden="true">P1</span>
+                <span class="gl-account-name gl-arcade-initials" aria-hidden="true">[@PlayerNames.Initials]</span>
+                <span class="gl-account-caret" aria-hidden="true">▾</span>
+            </button>
+            <div id="gl-account-menu" popover="auto" class="gl-overflow-panel"
+                 role="menu" aria-label="Player Menu">
+                <p class="gl-overflow-head">PLAYER 1: <strong class="gl-arcade-initials">[@PlayerNames.Initials]</strong></p>
+                <button type="button" class="gl-overflow-item" role="menuitem"
+                        popovertarget="gl-account-menu" popovertargetaction="hide"
+                        @onclick="OpenInitialsPrompt">
+                    <span class="material-symbols-outlined gl-overflow-icon" aria-hidden="true">edit</span>
+                    <span>Change Initials</span>
+                </button>
+                @foreach (var (path, label, icon) in MenuPages)
                 {
-                    <button type="button" class="gl-account-trigger"
-                            popovertarget="gl-account-menu"
-                            aria-haspopup="menu"
-                            aria-label="@($"Account menu, signed in as {AuthUserLabel}")"
-                            title="@AuthUserTitle">
-                        <span class="gl-account-initial" aria-hidden="true">@AuthUserInitial</span>
-                        <span class="gl-account-name" aria-hidden="true">@AuthUserLabel</span>
-                        <span class="gl-account-caret" aria-hidden="true">▾</span>
+                    <button type="button" class="gl-overflow-item" role="menuitem"
+                            aria-current="@(IsCurrent(path) ? "page" : null)"
+                            popovertarget="gl-account-menu" popovertargetaction="hide"
+                            @onclick="() => GoTo(path)">
+                        <span class="material-symbols-outlined gl-overflow-icon" aria-hidden="true">@icon</span>
+                        <span>@label</span>
                     </button>
-                    @* role="menu": js/app.js adds focus-on-open and arrow keys, which is what
-                       the role promises. aria-current marks the page the player is on.
-                       Every item carries the same Material Symbols glyph set the rest of
-                       the shell uses, so the menu reads as a list of places rather than a
-                       paragraph of links. *@
-                    <div id="gl-account-menu" popover="auto" class="gl-overflow-panel"
-                         role="menu" aria-label="Account">
-                        <p class="gl-overflow-head">Signed in as <strong>@AuthUserLabel</strong></p>
-                        @foreach (var (path, label, icon) in MenuPages)
-                        {
-                            <button type="button" class="gl-overflow-item" role="menuitem"
-                                    aria-current="@(IsCurrent(path) ? "page" : null)"
-                                    popovertarget="gl-account-menu" popovertargetaction="hide"
-                                    @onclick="() => GoTo(path)">
-                                <span class="material-symbols-outlined gl-overflow-icon" aria-hidden="true">@icon</span>
-                                <span>@label</span>
-                            </button>
-                        }
-                        <button type="button" class="gl-overflow-item" role="menuitem"
-                                popovertarget="gl-account-menu" popovertargetaction="hide"
-                                @onclick="Settings.RequestOpen">
-                            <span class="material-symbols-outlined gl-overflow-icon" aria-hidden="true">tune</span>
-                            <span>Settings</span>
-                        </button>
-                        <button type="button" class="gl-overflow-item gl-overflow-item--sep" role="menuitem"
-                                popovertarget="gl-account-menu" popovertargetaction="hide"
-                                @onclick="SignOut">
-                            <span class="material-symbols-outlined gl-overflow-icon" aria-hidden="true">logout</span>
-                            <span>Sign out</span>
-                        </button>
-                    </div>
                 }
-            }
+                <button type="button" class="gl-overflow-item gl-overflow-item--sep" role="menuitem"
+                        popovertarget="gl-account-menu" popovertargetaction="hide"
+                        @onclick="Settings.RequestOpen">
+                    <span class="material-symbols-outlined gl-overflow-icon" aria-hidden="true">tune</span>
+                    <span>Settings</span>
+                </button>
+            </div>
         </div>
     </header>
 
@@ -179,10 +153,11 @@
     @* The one settings sheet. Mounted here so it exists on every route; it opens
        itself when anything calls Settings.RequestOpen(). *@
     <SettingsSheet />
+    <InitialsPromptModal />
 </div>
 
 @code {
-    private Action? _onAuthStateChanged;
+    private Action? _onPlayerStateChanged;
     private Action? _onOnlineStateChanged;
     private Action? _onToastsChanged;
     private Action<int>? _onScoresFlushed;
@@ -207,41 +182,13 @@
     private bool IsCurrent(string path) =>
         string.Equals(new Uri(NavigationManager.Uri).AbsolutePath.TrimEnd('/'), path, StringComparison.OrdinalIgnoreCase);
 
-    // Top-bar identity for a signed-in user: prefer the display name, fall back to
-    // the email/username. The full email is surfaced via the tooltip so a truncated
-    // name in the pill is still resolvable on hover.
-    private string AuthUserLabel
-    {
-        get
-        {
-            var user = AuthState.User;
-            if (user is null) return string.Empty;
-            if (!string.IsNullOrWhiteSpace(user.DisplayName)) return user.DisplayName;
-            return user.Email ?? string.Empty;
-        }
-    }
-
-    private string AuthUserInitial =>
-        AuthUserLabel.Length > 0 ? char.ToUpperInvariant(AuthUserLabel[0]).ToString() : "?";
-
-    private string AuthUserTitle
-    {
-        get
-        {
-            var user = AuthState.User;
-            if (user is null) return string.Empty;
-            return string.IsNullOrWhiteSpace(user.Email) ? AuthUserLabel : user.Email;
-        }
-    }
+    private string DisplayInitialsLabel =>
+        string.IsNullOrWhiteSpace(PlayerNames.Initials) ? "blank" : PlayerNames.Initials;
 
     protected override void OnInitialized()
     {
-        // Auth is initialized by <AuthGate> before MainLayout ever renders, so here we
-        // only subscribe for live updates (e.g. sign-out). The handler is held in a
-        // field so Dispose can detach it — an inline lambda could never be
-        // unsubscribed and would leak this component on every re-creation.
-        _onAuthStateChanged = () => InvokeAsync(StateHasChanged);
-        AuthState.StateChanged += _onAuthStateChanged;
+        _onPlayerStateChanged = () => InvokeAsync(StateHasChanged);
+        PlayerNames.StateChanged += _onPlayerStateChanged;
 
         _onOnlineStateChanged = () => InvokeAsync(() =>
         {
@@ -434,17 +381,17 @@
         NavigationManager.NavigateTo(path);
     }
 
-    private async Task SignOut()
+    private async Task OpenInitialsPrompt()
     {
         await Feedback.TapAsync();
-        await AuthState.SignOutAsync();
+        PlayerNames.RequestOpenPrompt();
     }
 
     public void Dispose()
     {
-        if (_onAuthStateChanged is not null)
+        if (_onPlayerStateChanged is not null)
         {
-            AuthState.StateChanged -= _onAuthStateChanged;
+            PlayerNames.StateChanged -= _onPlayerStateChanged;
         }
         if (_onOnlineStateChanged is not null)
         {

@@ -1,6 +1,5 @@
 using FluentValidation;
 using Blazored.LocalStorage;
-using Microsoft.AspNetCore.Components.Authorization;
 using Microsoft.AspNetCore.Components.Web;
 using Microsoft.AspNetCore.Components.WebAssembly.Hosting;
 using Microsoft.JSInterop;
@@ -66,6 +65,7 @@ if (string.IsNullOrWhiteSpace(apiBase))
 // AntiforgeryHandler sits ABOVE IncludeCredentialsHandler: the token fetch it makes must
 // carry credentials, because the response sets the paired antiforgery cookie the server
 // validates the header against.
+builder.Services.AddScoped<PlayerNameService>();
 builder.Services.AddScoped(sp => new HttpClient(
     new TransientRetryHandler
     {
@@ -73,7 +73,7 @@ builder.Services.AddScoped(sp => new HttpClient(
         {
             InnerHandler = new AntiforgeryHandler
             {
-                InnerHandler = new DevFakeUserHandler
+                InnerHandler = new PlayerIdentityHandler(sp.GetRequiredService<PlayerNameService>())
                 {
                     InnerHandler = new IncludeCredentialsHandler
                     {
@@ -98,10 +98,6 @@ builder.Services.AddScoped<ApiService>();
 // even when the WASM is served standalone on :5261.
 builder.Services.AddScoped<ApiEndpoints>();
 builder.Services.AddScoped<AuthStateService>();
-// BFF-aware AuthenticationStateProvider wired into <AuthorizeRouteView>.
-builder.Services.AddScoped<AuthenticationStateProvider, BffAuthenticationStateProvider>();
-builder.Services.AddAuthorizationCore();
-builder.Services.AddScoped<PlayerNameService>();
 builder.Services.AddScoped<ToastService>();
 builder.Services.AddScoped<GameStatsService>();
 // PoCabinet race session owns both lobby + race hub connections for

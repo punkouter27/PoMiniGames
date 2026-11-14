@@ -1,10 +1,9 @@
 using FluentValidation;
 using System.Reflection;
-using PoMiniGames.Features.Auth;       // Source-generated AuthLog + MicrosoftAuthOptionsBinder
+using PoMiniGames.Features.Auth;       // Source-generated AuthLog
 using PoMiniGames.Domain.Abstractions;
 using PoMiniGames.Infrastructure;
 using PoMiniGames.Infrastructure.Services;
-using Microsoft.Extensions.Options;
 // Note: the full endpoint/hub route table is registered via app.MapPoMiniGamesEndpoints()
 // (EndpointRouteExtensions); per-slice types there are referenced in that file, not here.
 using Microsoft.AspNetCore.SignalR;   // HubOptions.AddFilter<HubLogContextFilter>()
@@ -38,19 +37,7 @@ builder.Services.AddPoMiniGamesDataProtection(builder.Environment, storageAccoun
 builder.Services
     .Configure<PoMiniGames.Features.PoCoupleQuiz.CoupleQuizOptions>(
         builder.Configuration.GetSection(PoMiniGames.Features.PoCoupleQuiz.CoupleQuizOptions.SectionName))
-    // MicrosoftAuthOptions.Enabled defaults to true
-    // whenever ClientId + ApiClientId are present, even without an explicit Enabled=true
-    // secret in KV. The post-configure binder only fires when Enabled is absent from
-    // configuration; explicit true/false in KV or env var still wins.
-    .AddOptions<PoMiniGames.Features.Auth.MicrosoftAuthOptions>()
-    .Bind(builder.Configuration.GetSection(PoMiniGames.Features.Auth.MicrosoftAuthOptions.SectionName));
-
-// Register the post-configure binder explicitly (it depends on IConfiguration).
-builder.Services.AddSingleton<MicrosoftAuthOptionsBinder>();
-builder.Services.AddSingleton<IPostConfigureOptions<PoMiniGames.Features.Auth.MicrosoftAuthOptions>>(
-    sp => sp.GetRequiredService<MicrosoftAuthOptionsBinder>());
-builder.Services.AddPoMiniGamesStorage(builder.Configuration)
-    .AddPoMiniGamesAuth(builder.Environment, builder.Configuration)
+    .AddPoMiniGamesStorage(builder.Configuration)
     .AddPoMiniGamesGameServices()
     .AddPoMiniGamesRateLimiting();
 builder.Services.AddSingleton<ConfigurationDiagnosticsSnapshotProvider>();
@@ -92,7 +79,6 @@ builder.Services.AddSignalR(options =>
 // ─── Swagger / OpenAPI ───────────────────────────────────────────────
 builder.Services.AddProblemDetails();
 builder.Services.AddValidatorsFromAssemblyContaining<PoMiniGames.Shared.Validation.PlayerDisplayNameValidator>();
-builder.Services.AddAuthorization();
 // CSRF: synchroniser tokens for every state-changing /api/* call. See
 // AntiforgeryExtensions for why UseAntiforgery() alone does not cover a JSON API.
 builder.Services.AddPoMiniGamesAntiforgery();
@@ -173,14 +159,6 @@ if (app.Environment.IsProduction())
 // All Production-fail-fast checks live in StartupSecretValidator (IHostedService
 // that runs before the first HTTP request). Single source of truth — see
 // src/PoMiniGames.API/Infrastructure/StartupSecretValidator.cs.
-
-// Graceful degradation: warn loudly (but do not crash) when real OAuth is unconfigured.
-var microsoftAuth = app.Services
-    .GetRequiredService<Microsoft.Extensions.Options.IOptions<PoMiniGames.Features.Auth.MicrosoftAuthOptions>>().Value;
-if (!microsoftAuth.Enabled)
-{
-    app.Logger.MicrosoftOAuthNotConfigured();
-}
 
 // Initialize storage eagerly so the database is ready before the first request.
 app.Services.GetRequiredService<StorageService>().Initialize();
@@ -380,21 +358,6 @@ app.Use(async (ctx, next) =>
     await next(ctx);
 });
 
-// Bug fix: the framework's published `_framework/Po*.pdb` debug symbols are
-// not present in production builds, and their SRI hashes are baked into
-// blazor.boot.json at publish time. Browsers block the failed fetches with
-// "Failed to find a valid digest" console errors. Returning a 204 for any
-// .pdb request keeps the boot.json happy without serving stale content.
-app.Use(async (ctx, next) =>
-{
-    if (ctx.Request.Path.StartsWithSegments("/_framework") &&
-        ctx.Request.Path.Value?.EndsWith(".pdb", StringComparison.OrdinalIgnoreCase) == true)
-    {
-        ctx.Response.StatusCode = StatusCodes.Status204NoContent;
-        return;
-    }
-    await next(ctx);
-});
 // glTF binary is not in the framework's default extension→MIME map, and StaticFileMiddleware
 // SKIPS any file whose content type it cannot resolve — the request falls through to the SPA
 // fallback and the caller gets the Blazor shell (or a 404) instead of the asset. PoMarbleRace
@@ -421,9 +384,8 @@ app.UseStaticFiles(new Microsoft.AspNetCore.Builder.StaticFileOptions
     }
 });
 
-app.UseAuthentication();
+app.UsePlayerIdentity();
 app.UseRateLimiter();
-app.UseAuthorization();
 
 // CSRF gate. Deliberately AFTER UseAuthentication: the antiforgery token is bound to
 // the user's identity claims, so validating before the principal is established would
@@ -450,6 +412,24 @@ app.Map("/api/{*rest:nonfile}", () => Results.NotFound(new
     detail = "The requested /api/* path is not mapped. Check the OpenAPI document at /openapi/v1.json for the live route table."
 }))
 .ExcludeFromDescription(); // §7 of QA report: keep the catch-all out of the OpenAPI surface.
+
+// ─── One-time cache bust for stale _framework/*.pdb 204 responses ───
+app.Use(async (ctx, next) =>
+{
+    if (HttpMethods.IsGet(ctx.Request.Method)
+        && ctx.Request.Path == "/"
+        && !ctx.Request.Cookies.ContainsKey("po-cache-v2"))
+    {
+        ctx.Response.Headers["Clear-Site-Data"] = "\"cache\"";
+        ctx.Response.Cookies.Append("po-cache-v2", "1", new CookieOptions
+        {
+            Path = "/",
+            SameSite = SameSiteMode.Lax,
+            MaxAge = TimeSpan.FromDays(30),
+        });
+    }
+    await next(ctx);
+});
 
 // ─── SPA fallback ────────────────────────────────────────────────────
 app.MapFallbackToFile("index.html");

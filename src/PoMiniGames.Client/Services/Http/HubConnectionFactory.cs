@@ -47,13 +47,22 @@ public static class HubConnectionFactory
     /// accepts bearer tokens only, so without this every authorized hub answers 401.
     /// </summary>
     public static string? BearerToken { get; set; }
+    public static string? PlayerId { get; set; }
+    public static string? PlayerInitials { get; set; }
 
     /// <param name="protocolDecorator">Optional game-specific inbound fast path around the configured JSON protocol.</param>
     public static HubConnection Create(string hubUrl, HttpTransportType? transports = null, TimeSpan[]? reconnectDelays = null,
         Func<IHubProtocol, IHubProtocol>? protocolDecorator = null)
     {
+        var sep = hubUrl.Contains('?') ? '&' : '?';
+        var resolvedUrl = hubUrl;
+        if (!string.IsNullOrEmpty(PlayerId))
+        {
+            resolvedUrl += $"{sep}playerId={Uri.EscapeDataString(PlayerId)}&initials={Uri.EscapeDataString(PlayerInitials ?? "   ")}";
+        }
+
         var builder = new HubConnectionBuilder()
-            .WithUrl(hubUrl, options =>
+            .WithUrl(resolvedUrl, options =>
             {
                 options.HttpMessageHandlerFactory = SignalRCredentialsHttpClientFactory.CreateHandler;
                 // Read per (re)connect, so a sign-in after the connection was built still applies.

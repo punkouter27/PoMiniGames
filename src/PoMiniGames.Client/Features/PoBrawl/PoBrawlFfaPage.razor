@@ -43,7 +43,7 @@
              role="img" aria-label="@(IsHuman ? "Brawl FFA arena — you are Bob versus sixteen CPUs" : "Brawl FFA arena — sixteen presidents fight here")"></div>
         @if (_introDone)
         {
-            <aside class="pffa-board" aria-label="Free-for-all standings">
+            <aside class="pffa-board @(_engineError is not null ? "pffa-board--error" : "")" aria-label="Free-for-all standings">
                 <header class="pffa-board-head">
                     <span class="pffa-kicker">PRESIDENTIAL RUMBLE</span>
                     <strong>@(_champion is null ? $"{_remaining} / {Roster.Count} ALIVE" : "CHAMPION")</strong>

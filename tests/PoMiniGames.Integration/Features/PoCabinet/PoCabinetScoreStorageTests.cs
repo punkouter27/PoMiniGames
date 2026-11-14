@@ -54,8 +54,10 @@ public sealed class PoCabinetScoreStorageTests : IClassFixture<TestWebApplicatio
         // run's first lap. The token is bound to identity, so arm after switching.
         var resolvedPlayer = $"pocab-int-{Guid.NewGuid():N}"[..24];
         var raw = _factory.CreateClient();
-        raw.DefaultRequestHeaders.Remove(FakeAuthHandler.UserHeader);
-        raw.DefaultRequestHeaders.Add(FakeAuthHandler.UserHeader, resolvedPlayer);
+        raw.DefaultRequestHeaders.Remove("X-Player-Id");
+        raw.DefaultRequestHeaders.Remove("X-Player-Initials");
+        raw.DefaultRequestHeaders.Add("X-Player-Id", resolvedPlayer);
+        raw.DefaultRequestHeaders.Add("X-Player-Initials", "CAB");
         var client = await raw.ArmAntiforgeryAsync();
 
         // The server resolves identity from FakeAuth, never the wire player name; the wire

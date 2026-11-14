@@ -165,7 +165,6 @@ public static class PoBrawlOnlineMatchEndpoints
 
                 return Results.NoContent();
             })
-            .RequireAuthorization()
             .RequireRateLimiting("highscores");
 
         return app;

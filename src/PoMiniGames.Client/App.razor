@@ -1,37 +1,14 @@
-@using Microsoft.AspNetCore.Components.Authorization
 @* Scoped trim suppression (was a project-wide NoWarn). The generated render code below sets
    LayoutView.Layout and Router.NotFoundPage, whose [DynamicallyAccessedMembers] setters the
    Razor generator dispatches by reflection. The layout and page types are app-assembly types,
    which the trimmer keeps (the app is not IsTrimmable), so nothing it needs can be removed. *@
 @attribute [System.Diagnostics.CodeAnalysis.UnconditionalSuppressMessage("Trimming", "IL2110", Justification = "Razor-generated LayoutView/Router parameter dispatch; the layout and page types live in the untrimmed app assembly.")]
 @attribute [System.Diagnostics.CodeAnalysis.UnconditionalSuppressMessage("Trimming", "IL2111", Justification = "Razor-generated LayoutView/Router parameter dispatch; the layout and page types live in the untrimmed app assembly.")]
-@* AuthGate gates the whole app. AppErrorBoundary wraps everything so an
-   unhandled exception in any page surfaces an actionable, environment-aware
-   banner instead of the default Blazor error template. *@
 
-<AuthGate>
-    <AppErrorBoundary>
-    <CascadingAuthenticationState>
+<AppErrorBoundary>
     <Router AppAssembly="@typeof(App).Assembly">
         <Found Context="routeData">
-            @* AuthorizeRouteView prevents page flashing on routes that opt into
-                 [Authorize]. Routes that do not opt in render normally (the default
-                 for the public games suite). *@
-            <AuthorizeRouteView RouteData="@routeData" DefaultLayout="@typeof(Layout.MainLayout)">
-                <NotAuthorized>
-                    <PageTitle>Not authorized · PoMiniGames</PageTitle>
-                    <LayoutView Layout="@typeof(Layout.MainLayout)">
-                        <div class="app-fallback">
-                            <h1>Sign in required</h1>
-                            <p>
-                                This page is only available to signed-in players. Use the
-                                <strong>Sign in</strong> button in the top bar to continue.
-                            </p>
-                            <a href="/" class="app-fallback-link">← Back to home</a>
-                        </div>
-                    </LayoutView>
-                </NotAuthorized>
-            </AuthorizeRouteView>
+            <RouteView RouteData="@routeData" DefaultLayout="@typeof(Layout.MainLayout)" />
             <FocusOnNavigate RouteData="@routeData" Selector="h1" />
         </Found>
         <NotFound>
@@ -43,6 +20,4 @@
             </LayoutView>
         </NotFound>
     </Router>
-    </CascadingAuthenticationState>
-    </AppErrorBoundary>
-</AuthGate>
+</AppErrorBoundary>

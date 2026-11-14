@@ -1,4 +1,3 @@
-using Microsoft.AspNetCore.Authentication;
 using Microsoft.Extensions.Hosting;
 using PoMiniGames.Features.Auth;
 
@@ -9,80 +8,35 @@ namespace PoMiniGames.Infrastructure;
 /// consolidated game (PoCoupleQuiz, PoFunQuiz) are present. This is the fail-fast
 /// guard so a misconfigured production deployment never silently serves mock/fallback data
 /// to real players.
-///
-/// <para><b>Behavior by environment</b>:</para>
-/// <list type="bullet">
-///   <item><b>Production</b> — throws <see cref="InvalidOperationException"/> if any required
-///         secret is missing or empty. Prevents the app from accepting traffic with a
-///         half-configured host.</item>
-///   <item><b>Development</b> — logs a warning and continues so local dev iteration is not
-///         blocked by missing secrets.</item>
-///   <item><b>Test</b> — skips validation; tests intentionally use mock services.</item>
-/// </list>
-/// <para>Pattern: Fail-Fast. The service runs as <see cref="IHostedService"/> before the first
-/// HTTP request is processed.</para>
 /// </summary>
-/// <remarks>Validates platform-level secrets (Key Vault, Table Storage, Microsoft Auth).</remarks>
+/// <remarks>Validates platform-level secrets (Key Vault, Table Storage).</remarks>
 public sealed class StartupSecretValidator : IHostedService
 {
     private readonly IHostEnvironment _environment;
     private readonly IConfiguration _configuration;
     private readonly ILogger<StartupSecretValidator> _logger;
-    private readonly IAuthenticationSchemeProvider _schemeProvider;
 
     public StartupSecretValidator(
         IHostEnvironment environment,
         IConfiguration configuration,
-        ILogger<StartupSecretValidator> logger,
-        IAuthenticationSchemeProvider schemeProvider)
+        ILogger<StartupSecretValidator> logger)
     {
         _environment = environment;
         _configuration = configuration;
         _logger = logger;
-        _schemeProvider = schemeProvider;
     }
 
-    public async Task StartAsync(CancellationToken cancellationToken)
+    public Task StartAsync(CancellationToken cancellationToken)
     {
-        // ── Production compilation guard ─────────────────────────────
-        // The FakeAuth scheme bypasses real identity and must never be live in Production.
-        // Fail fast (unhandled) if it is registered while running as Production, regardless
-        // of how it got there.
-        if (_environment.IsProduction())
-        {
-            var fakeScheme = await _schemeProvider.GetSchemeAsync(FakeAuthHandler.SchemeName);
-            if (fakeScheme is not null)
-            {
-                _logger.FakeAuthSchemeInProduction(FakeAuthHandler.SchemeName);
-                throw new InvalidOperationException(
-                    $"FATAL: authentication scheme '{FakeAuthHandler.SchemeName}' is registered while running in " +
-                    "Production. Fake authentication must never be enabled in Production.");
-            }
-
-            // AutoGuestLogin is a silent sign-in bypass. It must NEVER be enabled in
-            // Production regardless of how the config was sourced.
-            if (_configuration.GetValue<bool>("Auth:AutoGuestLogin"))
-            {
-                _logger.AutoGuestLoginInProduction();
-                throw new InvalidOperationException(
-                    "FATAL: 'Auth:AutoGuestLogin' is enabled in a Production environment. " +
-                    "This silently bypasses sign-in and is forbidden.");
-            }
-        }
-
         // Test environment uses mock services (registered by feature-specific wiring) — skip.
         if (_environment.IsEnvironment("Test"))
         {
             _logger.StartupValidationSkippedForTest();
-            return;
+            return Task.CompletedTask;
         }
 
         var missing = new List<string>();
 
-        // ── Platform-level secrets (Production-mandatory) ──────────────
-        // These are required for the app to function correctly in Production regardless
-        // of which game slices are enabled. Local dev may omit KeyVault:Uri because the
-        // dev config sources secrets from user-secrets + appsettings.Development.json.
         if (_environment.IsProduction())
         {
             var kvUri = _configuration["PoMiniGames:KeyVault:Uri"] ?? _configuration["KeyVault:Uri"];
@@ -97,27 +51,12 @@ public sealed class StartupSecretValidator : IHostedService
             {
                 missing.Add("PoMiniGames:Storage:TableService:Endpoint");
             }
-
-            // OAuth wiring: in Production the Entra app registration IDs must be present
-            // (either inline or via Key Vault). The full fail-fast here complements the
-            // /api/auth/handshake "microsoftConfigured" flag — the boot guard ensures we
-            // never accept traffic in a half-configured state.
-            var clientId = _configuration["PoMiniGames:MicrosoftAuth:ClientId"];
-            var apiClientId = _configuration["PoMiniGames:MicrosoftAuth:ApiClientId"];
-            if (string.IsNullOrWhiteSpace(clientId))
-            {
-                missing.Add("PoMiniGames:MicrosoftAuth:ClientId");
-            }
-            if (string.IsNullOrWhiteSpace(apiClientId))
-            {
-                missing.Add("PoMiniGames:MicrosoftAuth:ApiClientId");
-            }
         }
 
         if (missing.Count == 0)
         {
             _logger.StartupValidationPassed(_environment.EnvironmentName);
-            return;
+            return Task.CompletedTask;
         }
 
         var joined = string.Join(", ", missing);
@@ -130,6 +69,7 @@ public sealed class StartupSecretValidator : IHostedService
         }
 
         _logger.RequiredSecretsMissingNonProduction(_environment.EnvironmentName, joined);
+        return Task.CompletedTask;
     }
 
     public Task StopAsync(CancellationToken cancellationToken) => Task.CompletedTask;

@@ -171,6 +171,14 @@ public sealed class UiFeedbackService : IAsyncDisposable
         }
     }
 
+    /// <summary>Retro 8-bit square-wave blip for arcade initials entry.</summary>
+    public async ValueTask ArcadeKeyAsync(int slotIndex, bool backspace = false)
+    {
+        var freq = backspace ? 330 : 660 + Math.Clamp(slotIndex, 0, 3) * 110;
+        await PlayToneAsync(freq, 35, 0.16, "square");
+        await VibrateAsync(HapticClick);
+    }
+
     /// <summary>A bright completion cue — "ui/confirm", plus a three-beat haptic.</summary>
     public async ValueTask CompleteAsync()
     {

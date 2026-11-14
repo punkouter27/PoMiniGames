@@ -69,9 +69,6 @@ public sealed class ConfigurationDiagnosticsSnapshotProvider
                     "PoMiniGames:ApplicationInsights:ConnectionString",
                     "APPLICATIONINSIGHTS_CONNECTION_STRING",
                     "APPINSIGHTS_CONNECTIONSTRING"),
-                ["microsoftAuthConfigured"] = HasConfiguredValue(
-                    "PoMiniGames:MicrosoftAuth:ClientId",
-                    "PoMiniGames:MicrosoftAuth:ApiClientId"),
             },
             ["keys"] = new Dictionary<string, object?>
             {
@@ -80,8 +77,6 @@ public sealed class ConfigurationDiagnosticsSnapshotProvider
                     _configuration["PoMiniGames:ApplicationInsights:ConnectionString"]
                     ?? _configuration["APPLICATIONINSIGHTS_CONNECTION_STRING"]
                     ?? _configuration["APPINSIGHTS_CONNECTIONSTRING"]),
-                ["microsoftClientId"] = SecretMasker.MaskMiddle(_configuration["PoMiniGames:MicrosoftAuth:ClientId"]),
-                ["microsoftApiClientId"] = SecretMasker.MaskMiddle(_configuration["PoMiniGames:MicrosoftAuth:ApiClientId"]),
             },
             ["health"] = new Dictionary<string, object?>
             {

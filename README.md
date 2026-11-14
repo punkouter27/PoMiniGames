@@ -277,10 +277,11 @@ scripts/                        Working scripts only — see scripts/README.md
 
 ## Notes
 
-- Auth: Microsoft Entra sign-in in the browser (MSAL), sent to the API as a bearer token.
-  Guest login exists only in Development/Test and only from loopback. The whole app sits
-  behind the sign-in gate; leaderboard reads are anonymous at the API, and all game-data
-  writes require auth + antiforgery.
+- Identity: No OAuth or login gate. First-time visitors on the main page are prompted by a
+  1980s retro arcade modal for 3-letter initials (`A–Z`, persisted in `localStorage`) or can
+  skip to 3 blank spaces (`"   "`), paired with a persistent browser `playerId` sent via
+  `X-Player-Id` / `X-Player-Initials` headers (and SignalR query params) and resolved by
+  `UsePlayerIdentity()` on the server.
 - UI is native Blazor + plain CSS for thirteen of the games. PoMule was the first screen built
   on Radzen (Material Dark), and Brawl HQ (`/pobrawl/hq`) is the second; the hub, settings,
   leaderboards and the other games move to Radzen next. Until then each of those pages loads

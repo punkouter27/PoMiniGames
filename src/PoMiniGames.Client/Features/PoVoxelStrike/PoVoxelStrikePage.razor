@@ -51,7 +51,6 @@
                        Objective="@StartObjective"
                        DialogLabel="Voxel Strike — start"
                        Controls="@(_tab == Tab.Solo || !_lobbyOpen || _runStarted ? ControlsContent : null)"
-                       Options="@(_tab == Tab.Solo ? SoloOptions : null)"
                        Lobby="@(_tab == Tab.Online && _lobbyOpen && !_runStarted ? LobbyContent : null)"
                        Status="@(_fatalError is not null ? ErrorContent : null)"
                        ShowStart="@(_tab == Tab.Solo || !_lobbyOpen || _runStarted)"
@@ -80,7 +79,7 @@
                             <span class="pvs-bar-value">@_hp</span>
                         </div>
                         <div class="pvs-hud-meta">
-                            @FormatTime(_elapsed) · @_gunsSilenced/@_gunsTotal guns silenced@(_solo == SoloRun.Survival && !IsMulti ? $" · {_kills} kills" : "")@(IsMulti ? $" · P{_playerNumber} of {_squadSize}" : "")
+                            @FormatTime(_elapsed) · @_gunsSilenced/@_gunsTotal guns silenced@(Defaults.Survival && !IsMulti ? $" · {_kills} kills" : "")@(IsMulti ? $" · P{_playerNumber} of {_squadSize}" : "")
                         </div>
                         <div class="pvs-hud-score-wrap">
                             @foreach (var pop in _popups)
@@ -127,7 +126,6 @@
                             <div><span>@_gunsSilenced/@_gunsTotal</span><small>guns silenced</small></div>
                         </div>
                         @ControlsContent
-                        @SettingsContent
                         <div class="pvs-pause-actions">
                             <button class="pvs-btn pvs-btn-primary" @ref="_resumeButton" @onclick="ResumeAsync">Resume</button>
                             <button class="pvs-btn" @onclick="RestartAsync">Restart</button>
@@ -143,12 +141,20 @@
 
 @code {
     [Parameter] public string? Mode { get; set; }
-    /// <summary>An arena to replay, as the 8 hex digits the run summary shows.</summary>
-    [SupplyParameterFromQuery(Name = "seed")] public string? SeedQuery { get; set; }
-    /// <summary>Any value opens solo on the Daily Siege (the hub's Today card links here with it).</summary>
-    [SupplyParameterFromQuery(Name = "daily")] public string? DailyQuery { get; set; }
 
     private const string Container = "povoxelstrike-container";
+
+    // Fixed defaults for every run: options were removed from the intro and pause dialogs so
+    // every player launches straight into the standard configuration.
+    private sealed record VoxelStrikeDefaults(
+        uint Seed = 0,
+        bool Survival = false,
+        double LookSpeed = 1.0,
+        bool InvertY = false,
+        int FieldOfView = 70,
+        string Graphics = "auto");
+
+    private static readonly VoxelStrikeDefaults Defaults = new();
 
     // One lifecycle machine. Intro is the start card, with the arena built and
     // frozen behind it; the JS engine reports the Intro→Playing edge via OnResumed when it
@@ -156,19 +162,16 @@
     // Intro → Playing ⇄ Paused → Dead; the pause menu's Restart re-enters Intro.
     private enum Phase { Intro, Playing, Paused, Dead }
     private enum Tab { Solo, Online }
-    private enum SoloRun { Siege, Survival, Daily }
 
     private string _playerName = "";
     private bool _demo;
     private Tab _tab;
-    private SoloRun _solo;
     private Phase _phase = Phase.Intro;
     private string? _routeKey;       // the route this instance last set itself up for
     private bool _routeDirty;
     private bool _engineLoaded;
     private bool _ready;             // the arena is built and waiting behind the card
     private bool _autoEnter;         // Restart: go straight in when the arena is ready
-    private string _weather = "";
     private string? _fatalError;
     private DotNetObjectReference<PoVoxelStrikePage>? _ref;
     private ElementReference _resumeButton;
@@ -185,10 +188,6 @@
     private Task _applyFrameInFlight = Task.CompletedTask;
     private Task _submitInFlight = Task.CompletedTask;
 
-    // ── This run ──
-    private uint? _seedOverride;     // ?seed=
-    private string? _runDay;         // yyyy-MM-dd when this run is a Daily Siege
-
     // HUD snapshot, updated by the engine's 10 Hz pump.
     private int _hp = 100;
     private int _score;
@@ -200,12 +199,6 @@
     private int _revivePct;
     private HudRegion? _hudRegion;   // the HUD strip and the Down card (OnHudTick)
 
-    // Settings (mirrors js/povoxelstrike/settings.js; the engine owns the storage).
-    private double _sens = 1;
-    private bool _invertY;
-    private int _fov = 70;
-    private string _gfx = "auto";
-
     // Final run summary.
     private double _finalSurvival;
     private int _finalBruteKills;
@@ -214,7 +207,6 @@
     private int _finalDamage;
     private bool _isNewBest;
     private bool _won;   // set by OnVictory; a loss never clears it mid-run, only a restart does
-    private PoVoxelStrikeHighScore[]? _dailyBoard;
 
     // Floating "+N" score popups. Spawned on HUD ticks whose score delta beats the
     // passive time drip (kills/crushes, not the +10/s clock), pruned on later ticks
@@ -257,21 +249,6 @@
 
     private RenderFragment ErrorContent => @<InlineError Message="@($"The arena could not start: {_fatalError}")" />;
 
-    private RenderFragment SoloOptions => @<div>
-        <div class="app-seg app-seg--quiet" role="radiogroup" aria-label="Run type">
-            @foreach (var run in Enum.GetValues<SoloRun>())
-            {
-                <button type="button" role="radio" class="app-seg__btn"
-                        aria-checked="@Flag(_solo == run)" @onclick="() => SetSoloRunAsync(run)">@RunLabel(run)</button>
-            }
-        </div>
-        <p class="pvs-start-note">@RunNote</p>
-        <details class="pvs-details">
-            <summary>Settings</summary>
-            @SettingsContent
-        </details>
-    </div>;
-
     private RenderFragment LobbyContent => @<LobbyPanel TPlayer="PoVoxelStrikeLobbyPlayer"
                   State="@Hub.Lobby.State"
                   LocalConnectionId="@Hub.LobbyConnectionId"
@@ -307,33 +284,6 @@
         <li class="touch-only">Hold DIG to dig · tap BLAST and JUMP · II pauses</li>
     </ul>;
 
-    private RenderFragment SettingsContent => @<div class="pvs-settings">
-        <label>
-            <span>Look speed</span>
-            <input type="range" min="0.3" max="2.5" step="0.1" value="@_sens.ToString(CultureInfo.InvariantCulture)"
-                   @onchange="e => SetSettingsAsync(sens: ParseDouble(e.Value, _sens))" />
-        </label>
-        <label>
-            <span>Field of view</span>
-            <input type="range" min="55" max="100" step="1" value="@_fov"
-                   @onchange="e => SetSettingsAsync(fov: (int)ParseDouble(e.Value, _fov))" />
-        </label>
-        <label class="pvs-settings-check">
-            <input type="checkbox" checked="@_invertY" @onchange="e => SetSettingsAsync(invertY: e.Value is true)" />
-            <span>Invert look up/down</span>
-        </label>
-        <label>
-            <span>Graphics <small>(next run)</small></span>
-            <select value="@_gfx" @onchange="e => SetSettingsAsync(gfx: e.Value?.ToString())">
-                <option value="auto">Auto</option>
-                <option value="low">Low</option>
-                <option value="medium">Medium</option>
-                <option value="high">High</option>
-                <option value="ultra">Ultra</option>
-            </select>
-        </label>
-    </div>;
-
     private RenderFragment GameSummaryContent => @<div class="pvs-summary">
         @if (_won || _isNewBest)
         {
@@ -363,15 +313,6 @@
                 }
             </div>
         }
-        @if (_dailyBoard is { Length: > 0 })
-        {
-            <ol class="pvs-daily">
-                @foreach (var row in _dailyBoard)
-                {
-                    <li><span>@row.PlayerName@(row.Won ? " 🏆" : "")</span><span>@row.Score.ToString("N0")</span></li>
-                }
-            </ol>
-        }
     </div>;
 
     /// <summary>Earned on this run, from numbers the engine already counted.</summary>
@@ -383,27 +324,6 @@
         if (_finalVoxels >= 250_000) yield return ("🧨", "Demolisher", "A quarter of a million voxels destroyed");
     }
 
-    private static string RunLabel(SoloRun run) => run switch
-    {
-        SoloRun.Survival => "Survival",
-        SoloRun.Daily => "Daily Siege",
-        _ => "Siege",
-    };
-
-    private string RunNote => _solo switch
-    {
-        SoloRun.Survival => "The siege, plus a horde that never stops coming.",
-        SoloRun.Daily => "One arena for everyone today (UTC). Your best run lands on today's board.",
-        _ when _seedOverride is { } seed => $"Replaying arena {seed:x8}.",
-        _ => _ready && _weather.Length > 0 ? $"A fresh fortress every run. Today: {_weather}." : "A fresh fortress every run.",
-    };
-
-    // Blazor renders a bool attribute as present/absent, and ARIA wants the word.
-    private static string Flag(bool on) => on ? "true" : "false";
-
-    private static double ParseDouble(object? value, double fallback) =>
-        double.TryParse(value?.ToString(), NumberStyles.Float, CultureInfo.InvariantCulture, out var d) ? d : fallback;
-
     protected override void OnInitialized() => _playerName = PlayerNameService.GetPlayerName();
 
     // The Demo tab is a link to another route on this same component, and Blazor keeps the
@@ -412,16 +332,12 @@
     protected override void OnParametersSet()
     {
         var mode = GameModes.Parse(Mode);
-        var key = $"{mode}|{SeedQuery}|{DailyQuery}";
+        var key = mode.ToString();
         if (key == _routeKey) return;
         _routeKey = key;
         _routeDirty = true;
         _demo = mode == GameMode.Demo;
         _tab = mode == GameMode.Multiplayer ? Tab.Online : Tab.Solo;
-        if (mode == GameMode.OnePlayer && !string.IsNullOrEmpty(DailyQuery)) _solo = SoloRun.Daily;
-        _seedOverride = uint.TryParse(SeedQuery, NumberStyles.HexNumber, CultureInfo.InvariantCulture, out var seed) && seed > 0
-            ? seed
-            : null;
     }
 
     protected override async Task OnAfterRenderAsync(bool firstRender)
@@ -467,14 +383,8 @@
                 return false;
             }
             _engineLoaded = true;
-            var parts = (await JSRuntime.InvokeAsync<string>("PoVoxelStrike.getSettings")).Split('|');
-            if (parts.Length == 4)
-            {
-                _sens = ParseDouble(parts[0], 1);
-                _invertY = parts[1] == "1";
-                _fov = (int)ParseDouble(parts[2], 70);
-                _gfx = parts[3];
-            }
+            await JSRuntime.InvokeVoidAsync("PoVoxelStrike.setSettings",
+                Defaults.LookSpeed, Defaults.InvertY, Defaults.FieldOfView, Defaults.Graphics);
             return true;
         }
         catch (Exception ex)
@@ -486,26 +396,12 @@
         }
     }
 
-    /// <summary>Build (or rebuild) the solo arena behind the start card.</summary>
+    /// <summary>Build (or rebuild) the solo arena behind the start card using the fixed defaults.</summary>
     private async Task BuildSoloAsync()
     {
         _ready = false;
-        _runDay = _solo == SoloRun.Daily ? DateTime.UtcNow.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture) : null;
-        // 0 lets the engine roll its own seed.
-        var seed = _runDay is not null ? DailySeed(_runDay) : _seedOverride ?? 0;
         StateHasChanged();
-        await StartEngineAsync(demo: false, seed, _solo == SoloRun.Survival, playerNumber: 0, names: null);
-    }
-
-    /// <summary>The Daily Siege arena: FNV-1a of the UTC date, so every client lands on the same one.</summary>
-    private static uint DailySeed(string day)
-    {
-        unchecked
-        {
-            var hash = 2166136261u;
-            foreach (var c in "pvs-daily-" + day) hash = (hash ^ c) * 16777619u;
-            return hash == 0 ? 1 : hash;
-        }
+        await StartEngineAsync(demo: false, Defaults.Seed, Defaults.Survival, playerNumber: 0, names: null);
     }
 
     private async Task StartEngineAsync(bool demo, uint seed, bool survival, int playerNumber, string[]? names)
@@ -551,14 +447,6 @@
         {
             await BuildSoloAsync();
         }
-    }
-
-    private async Task SetSoloRunAsync(SoloRun run)
-    {
-        if (run == _solo) return;
-        _solo = run;
-        if (run != SoloRun.Siege) _seedOverride = null;
-        await BuildSoloAsync();
     }
 
     /// <summary>The card's button: a click, which is what makes the Pointer Lock request legal.</summary>
@@ -761,7 +649,6 @@
     {
         _won = false;
         _isNewBest = false;
-        _dailyBoard = null;
         _hp = 100; _score = 0; _elapsed = 0; _kills = 0;
         _gunsSilenced = 0; _down = false; _revivePct = 0;
         _popups.Clear();
@@ -778,16 +665,6 @@
     {
         try { await JSRuntime.InvokeVoidAsync("PoVoxelStrike.toggleFullscreen"); }
         catch (Exception ex) { Console.Error.WriteLine($"[PoVoxelStrike] fullscreen failed: {ex.Message}"); }
-    }
-
-    private async Task SetSettingsAsync(double? sens = null, bool? invertY = null, int? fov = null, string? gfx = null)
-    {
-        _sens = sens ?? _sens;
-        _invertY = invertY ?? _invertY;
-        _fov = fov ?? _fov;
-        _gfx = gfx ?? _gfx;
-        try { await JSRuntime.InvokeVoidAsync("PoVoxelStrike.setSettings", _sens, _invertY, _fov, _gfx); }
-        catch (Exception ex) { Console.Error.WriteLine($"[PoVoxelStrike] settings failed: {ex.Message}"); }
     }
 
     /// <summary>
@@ -808,7 +685,6 @@
             StateHasChanged();
             return;
         }
-        if (_solo != SoloRun.Daily) _seedOverride = null;
         _autoEnter = true;
         await BuildSoloAsync();
     }
@@ -817,7 +693,6 @@
     public void OnReady(int assetCount, int structureCount, string weather)
     {
         _ready = true;
-        _weather = weather;
         StateHasChanged();
         if (!_autoEnter) return;
         _autoEnter = false;
@@ -931,12 +806,11 @@
             // price a win's bonus.
             await GameResults.RecordAndSubmitPoVoxelStrikeAsync(_playerName, _won ? GameResult.Win : GameResult.Loss,
                 new PoVoxelStrikeRunRequest(score, survivalSeconds, kills, bruteKills, crushKills, voxelsDestroyed,
-                    Won: _won, Day: _runDay),
+                    Won: _won, Day: null),
                 onNewBest: isNewBest =>
                 {
                     _isNewBest = isNewBest;
                 });
-            if (_runDay is not null) _dailyBoard = await Api.GetPoVoxelStrikeHighScoresAsync(5, _runDay);
             StateHasChanged(); // the game-over modal may already be up — repaint the badge in
         }
         catch (Exception ex)

@@ -4,7 +4,7 @@ import { buildArena } from './arena.js';
 import { buildFighter, CHARACTERS, setExpression, updateJiggles } from './fighters.js';
 import { Animator } from './animation.js';
 import { AudioBus } from './audio.js';
-import { guardCovers } from './hitboxes.js';
+import { guardCovers, testAttackHit, regionForHurtBone } from './hitboxes.js';
 import { MAX_HP } from './constants.js';
 import { FfaSeason, FFA_PROFILES, seededRandom } from './ffaSeason.js';
 import { setup as setupFfaRendering } from './ffaRendering.js';
@@ -20,9 +20,23 @@ import { getFfaAgentStrategy, getFfaAgentPresets } from './ffaAgents.js';
 import { FfaRagdollBudget } from './ffaRagdollBudget.js';
 
 const FIELD_SIZE = 16;
-const ATTACK_RANGE = 1.55;
 const RESULT_HOLD_MS = 5000;
 const MODEL_SCALE = 0.68;
+// Strikes land the way they do in 1v1: the swinging fist or shoe has to touch a body
+// (hitboxes.js capsules, shrunk to MODEL_SCALE). These ranges only decide when a CPU
+// bothers to swing; they are sized to what a scaled arm plus the lunge can cover.
+const ENGAGE_RANGE = 0.95;
+// Headless simulations (benchmark, agent lab) have no limbs to test, so they fall back
+// to this root-to-root reach, checked once at `contact` seconds into the swing.
+const ATTACK_RANGE = 1.05;
+// Per-swing timing. The capsule test runs from `windup` for `active` seconds, which
+// covers the animation's extension; `total` is how long the fighter is committed.
+const SWINGS = {
+  punch: { windup: 0.06, active: 0.14, contact: 0.1, total: 0.24, lunge: 1.4 },
+  kick: { windup: 0.12, active: 0.16, contact: 0.18, total: 0.36, lunge: 1.6 },
+};
+// Where the blow landed scales it, as in 1v1 (hitResolution.js regionMod).
+const REGION_DAMAGE = { head: 1.25, legs: 0.85 };
 
 export class BrawlFfaGame {
   constructor(container, dotnetRef, options) {
@@ -460,12 +474,15 @@ export class BrawlFfaGame {
       fighter.animator.setBlocking(fighter.blocking);
 
       let moveX = 0, moveZ = 0;
-      if (!fighter.swing && fighter.stun <= 0 && distance > ATTACK_RANGE * (0.82 / strategy.aggression)) {
+      // Close to arm's length: a bolder style stands a little nearer, nobody stops out of reach.
+      const standoff = ENGAGE_RANGE * Math.max(0.84, Math.min(0.9, 0.82 / strategy.aggression));
+      if (!fighter.swing && fighter.stun <= 0 && distance > standoff) {
         moveX = dx / distance;
         moveZ = dz / distance;
       }
       for (const other of alive) {
-        if (other === fighter || !other.alive) continue;
+        // Crowd spacing must not push a fighter back out of reach of the rival they chose.
+        if (other === fighter || other === target || !other.alive) continue;
         const ox = root.position.x - other.rig.root.position.x;
         const oz = root.position.z - other.rig.root.position.z;
         const separation = Math.hypot(ox, oz);
@@ -515,18 +532,12 @@ export class BrawlFfaGame {
         fighter.expressionIn -= dt;
         if (fighter.expressionIn <= 0 && !this.options.headless) setExpression(fighter.rig, 'neutral');
       }
-      if (fighter.swing) {
-        fighter.swing.remaining -= dt;
-        if (fighter.swing.remaining <= 0) {
-          const swing = fighter.swing;
-          fighter.swing = null;
-          this._landStrike(fighter, swing.target, swing.kick);
-        }
-      }
+      if (fighter.swing) this._tickSwing(fighter, alive, dt);
+      if (this.phase !== 'fighting') break;
       if (fighter.human) {
         if (fighter.stun <= 0 && !fighter.blocking && !fighter.swing && fighter.attackIn <= 0
             && (fighter.intent.punch || fighter.intent.kick)) this._attack(fighter, target, fighter.intent.kick);
-      } else if (distance <= ATTACK_RANGE && fighter.stun <= 0 && !fighter.blocking
+      } else if (distance <= ENGAGE_RANGE && fighter.stun <= 0 && !fighter.blocking
           && !fighter.swing && fighter.attackIn <= 0) {
         this._attack(fighter, target);
       }
@@ -564,26 +575,81 @@ export class BrawlFfaGame {
     const kick = attacker.human ? humanKick : this.random() < 0.35;
     attacker.animator.play(kick ? 'kick' : 'punch');
     attacker.attackIn = (0.72 + this.random() * 0.32) * this._strategy(attacker).pace;
-    attacker.swing = { target, kick, remaining: kick ? 0.18 : 0.1 };
-  }
-
-  _landStrike(attacker, target, kick) {
-    if (!attacker.alive || !target.alive || attacker.stun > 0 || this.phase !== 'fighting') return;
+    const timing = SWINGS[kick ? 'kick' : 'punch'];
+    attacker.swing = { target, kick, elapsed: 0, remaining: timing.total, resolved: false };
+    // Step into the strike, as 1v1 does: the reach is the limb plus this lunge.
     const dx = target.rig.root.position.x - attacker.rig.root.position.x;
     const dz = target.rig.root.position.z - attacker.rig.root.position.z;
     const distance = Math.hypot(dx, dz);
-    if (distance > ATTACK_RANGE) return;
-    // The attacker must face the strike, but the defender need not face the attacker.
-    const yaw = attacker.rig.root.rotation.y;
-    if (distance > 0.001 && (Math.sin(yaw) * dx + Math.cos(yaw) * dz) / distance < 0.5) return;
+    const gap = Math.max(0, Math.min(1, (distance - 0.78) / 0.2));
+    if (distance > 0.001 && gap > 0) {
+      attacker.velocity.x += dx / distance * timing.lunge * gap;
+      attacker.velocity.z += dz / distance * timing.lunge * gap;
+    }
+  }
+
+  // Advance a committed swing. With a real rig the striking limb is tested against every
+  // nearby body each tick of its active window, and whoever it touches takes the blow.
+  _tickSwing(fighter, alive, dt) {
+    const swing = fighter.swing;
+    const timing = SWINGS[swing.kick ? 'kick' : 'punch'];
+    swing.elapsed += dt;
+    swing.remaining -= dt;
+    if (!swing.resolved && fighter.stun <= 0) {
+      if (!fighter.rig.joints.fistR) {
+        if (swing.elapsed >= timing.contact) {
+          swing.resolved = true;
+          this._landStrike(fighter, swing.target, swing.kick);
+        }
+      } else if (swing.elapsed >= timing.windup && swing.elapsed <= timing.windup + timing.active) {
+        const contact = this._strikeContact(fighter, swing, alive);
+        if (contact) {
+          swing.resolved = true;
+          this._landStrike(fighter, contact.target, swing.kick, contact);
+        }
+      }
+    }
+    if (fighter.swing === swing && swing.remaining <= 0) fighter.swing = null;
+  }
+
+  // The first body the swinging limb is touching: the chosen rival first, then anyone
+  // else standing close enough to be in the way.
+  _strikeContact(attacker, swing, alive) {
+    const from = attacker.rig.root.position;
+    const candidates = [swing.target, ...alive.filter((other) => other !== swing.target)];
+    for (const other of candidates) {
+      if (!other || other === attacker || !other.alive) continue;
+      const to = other.rig.root.position;
+      if (Math.hypot(to.x - from.x, to.z - from.z) > 1.6) continue;
+      const hit = testAttackHit(attacker.rig, swing.kick ? 'kick' : 'punch', 'active', other.rig, MODEL_SCALE);
+      if (hit) return { target: other, point: hit.point, region: regionForHurtBone(hit.capsule) };
+    }
+    return null;
+  }
+
+  // `contact` is a limb-on-body touch from _strikeContact. Without one (headless rigs)
+  // the strike is judged on range and facing instead.
+  _landStrike(attacker, target, kick, contact = null) {
+    if (!attacker.alive || !target.alive || attacker.stun > 0 || this.phase !== 'fighting') return;
+    if (!contact) {
+      const dx = target.rig.root.position.x - attacker.rig.root.position.x;
+      const dz = target.rig.root.position.z - attacker.rig.root.position.z;
+      const distance = Math.hypot(dx, dz);
+      if (distance > ATTACK_RANGE) return;
+      // The attacker must face the strike, but the defender need not face the attacker.
+      const yaw = attacker.rig.root.rotation.y;
+      if (distance > 0.001 && (Math.sin(yaw) * dx + Math.cos(yaw) * dz) / distance < 0.5) return;
+    }
     if (target.blocking && guardCovers(target.rig, attacker.rig.root.position)) {
-      this.spatialAudio?.impact({ position: target.rig.root.position, energy: kick ? 35 : 20, material: 'cloth', blocked: true });
-      this.rendering?.impact({ position: target.rig.root.position, power: 0.3, kind: 'hit', target, blocked: true });
+      const at = contact?.point || target.rig.root.position;
+      this.spatialAudio?.impact({ position: at, energy: kick ? 35 : 20, material: 'cloth', blocked: true });
+      this.rendering?.impact({ position: at, power: 0.3, kind: 'hit', target, blocked: true });
       return;
     }
     const overtime = this.elapsed > 55 ? 1.45 : 1;
-    const damage = Math.round((18 + this.random() * 14) * (attacker.rig.config.attackPower || 1) * overtime);
-    const contact = impactImpulse(attacker, target, kick, damage);
+    const damage = Math.round((18 + this.random() * 14) * (attacker.rig.config.attackPower || 1) * overtime
+      * (REGION_DAMAGE[contact?.region] || 1));
+    const impulse = impactImpulse(attacker, target, kick, damage);
     attacker.damage += Math.min(target.hp, damage);
     if (!guardCovers(target.rig, attacker.rig.root.position)) target.rearHitsTaken++;
     target.lastAttacker = attacker.id;
@@ -596,15 +662,19 @@ export class BrawlFfaGame {
     target.animator.play('hitstun');
     if (!this.options.headless) setExpression(target.rig, 'hurt');
     target.expressionIn = 0.5;
-    const hitPoint = target.rig.root.position.clone();
-    hitPoint.y += 1.0;
-    this.spatialAudio?.impact({ ...contact, position: hitPoint, material: 'flesh' });
-    this.rendering?.impact({ position: hitPoint, normal: contact.normal, power: Math.min(1, damage / 35), kind: 'hit', target });
+    // Effects go where the limb actually touched, not at a fixed height over the root.
+    let hitPoint = contact?.point;
+    if (!hitPoint) {
+      hitPoint = target.rig.root.position.clone();
+      hitPoint.y += 1.0;
+    }
+    this.spatialAudio?.impact({ ...impulse, position: hitPoint, material: 'flesh' });
+    this.rendering?.impact({ position: hitPoint, normal: impulse.normal, power: Math.min(1, damage / 35), kind: 'hit', target });
     this._notify('OnFfaHit', target.id, target.hp);
 
     if (target.hp <= 0) {
       attacker.knockouts++;
-      this._eliminate(target, contact.normal, kick);
+      this._eliminate(target, impulse.normal, kick);
     }
   }
 
@@ -772,7 +842,7 @@ export class BrawlFfaGame {
   async runBenchmark() {
     if (this.benchmarkRunning || this.disposed) return;
     this.benchmarkRunning = true;
-    this.benchmark = { completed: 0, total: 48, physicsVersion: 3, rows: [] };
+    this.benchmark = { completed: 0, total: 48, physicsVersion: 4, rows: [] };
     this._publishDashboard();
     const totals = Object.keys(FFA_PROFILES).map((profile) =>
       ({ profile, rounds: 0, wins: 0, place: 0, damage: 0, knockouts: 0 }));

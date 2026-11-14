@@ -1,43 +1,43 @@
 using Microsoft.JSInterop;
-
-using PoMiniGamesClient.Services.Auth;
 using PoMiniGamesClient.Services.Http;
-using PoMiniGamesClient.Services.Interop;
-using PoMiniGamesClient.Services.Play;
-using PoMiniGamesClient.Services.Ui;
 
 namespace PoMiniGamesClient.Services.Play;
 
+/// <summary>
+/// Manages the player's 1980s arcade 3-letter initials (or 3 blank spaces if skipped)
+/// and a persistent per-browser device ID in <c>localStorage</c> so scores and
+/// multiplayer sessions never collide even when two players skip or share initials.
+/// </summary>
 public class PlayerNameService
 {
-    private const string StorageKey = "pominigames:player";
-    private static readonly string[] Adjectives = ["Swift", "Bold", "Brave", "Cool", "Fast", "Wild", "Sharp", "Calm", "Sly", "Keen"];
-    private static readonly string[] Nouns = ["Fox", "Bear", "Wolf", "Hawk", "Panda", "Tiger", "Lynx", "Raven", "Otter", "Gecko"];
+    private const string InitialsStorageKey = "pominigames:initials";
+    private const string PlayerIdStorageKey = "pominigames:playerid";
+    public const string BlankInitials = "   ";
 
-    private string _playerName = string.Empty;
-    private IJSRuntime? _jsRuntime;
-    private TaskCompletionSource _initializedTcs = new(TaskCreationOptions.RunContinuationsAsynchronously);
+    private string _initials = BlankInitials;
+    private string _playerId = string.Empty;
+    private bool _hasPrompted;
+    private bool _isPromptOpen;
+    private readonly IJSRuntime? _jsRuntime;
+    private readonly TaskCompletionSource _initializedTcs = new(TaskCreationOptions.RunContinuationsAsynchronously);
 
-    /// <summary>True once <see cref="InitializeAsync"/> has finished its first pass.</summary>
     public bool IsInitialized => _initializedTcs.Task.IsCompleted;
-
-    /// <summary>Resolves when the first read-from-localStorage pass is complete.
-    /// Used by AuthStateService so that a server-provided DisplayName is the
-    /// final value (not the random adjective-noun fallback).</summary>
     public Task Initialized => _initializedTcs.Task;
 
-    public string PlayerName
-    {
-        get => _playerName;
-        private set
-        {
-            if (_playerName != value)
-            {
-                _playerName = value;
-                StateChanged?.Invoke();
-            }
-        }
-    }
+    /// <summary>True once the user has either entered 3-letter initials or clicked Skip.</summary>
+    public bool HasPrompted => _hasPrompted;
+
+    /// <summary>True when the arcade initials modal should be shown.</summary>
+    public bool IsPromptOpen => _isPromptOpen;
+
+    /// <summary>Exact 3-character arcade initials ("ABC" or "   " if skipped).</summary>
+    public string Initials => _initials;
+
+    /// <summary>Stable per-browser ID stored in localStorage to prevent collisions.</summary>
+    public string PlayerId => _playerId;
+
+    /// <summary>Backwards-compatible alias for <see cref="Initials"/>.</summary>
+    public string PlayerName => _initials;
 
     public event Action? StateChanged;
 
@@ -49,17 +49,38 @@ public class PlayerNameService
 
     public async Task InitializeAsync()
     {
+        if (_initializedTcs.Task.IsCompleted)
+        {
+            return;
+        }
+
         try
         {
             if (_jsRuntime is not null)
             {
-                _playerName = await GetItemAsync(StorageKey) ?? "Player";
-                if (string.IsNullOrEmpty(_playerName) || _playerName == "Player")
+                var storedId = await GetItemAsync(PlayerIdStorageKey);
+                if (string.IsNullOrWhiteSpace(storedId))
                 {
-                    var generated = GenerateRandomName();
-                    _playerName = generated;
-                    await SetItemAsync(StorageKey, generated);
+                    storedId = Guid.NewGuid().ToString("N")[..16];
+                    await SetItemAsync(PlayerIdStorageKey, storedId);
                 }
+                _playerId = storedId.Trim();
+
+                var storedInitials = await GetItemAsync(InitialsStorageKey);
+                if (storedInitials is not null)
+                {
+                    _initials = NormalizeInitials(storedInitials);
+                    _hasPrompted = true;
+                    _isPromptOpen = false;
+                }
+                else
+                {
+                    _initials = BlankInitials;
+                    _hasPrompted = false;
+                    _isPromptOpen = true;
+                }
+
+                SyncHubIdentity();
                 StateChanged?.Invoke();
                 _initializedTcs.TrySetResult();
                 return;
@@ -69,53 +90,104 @@ public class PlayerNameService
         {
             // JS interop not available (e.g. pre-render)
         }
-        _playerName = "Player";
+
+        if (string.IsNullOrEmpty(_playerId))
+        {
+            _playerId = Guid.NewGuid().ToString("N")[..16];
+        }
+        _initials = BlankInitials;
+        SyncHubIdentity();
         _initializedTcs.TrySetResult();
     }
 
-    public void SetPlayerName(string name)
+    public void RequestOpenPrompt()
     {
-        var trimmed = string.IsNullOrWhiteSpace(name) ? "Player" : name.Trim();
-        PlayerName = trimmed;
-        _ = PersistName(trimmed);
+        _isPromptOpen = true;
+        StateChanged?.Invoke();
     }
 
-    public void SetPlayerNameFromAuth(string name)
+    public void ClosePrompt()
     {
-        var trimmed = name.Trim();
-        if (string.IsNullOrEmpty(trimmed)) return;
-        PlayerName = trimmed;
-        _ = PersistName(trimmed);
-    }
-
-    private static string GenerateRandomName()
-    {
-        var adj = Adjectives[Random.Shared.Next(Adjectives.Length)];
-        var noun = Nouns[Random.Shared.Next(Nouns.Length)];
-        var num = Random.Shared.Next(1, 100);
-        return $"{adj}{noun}{num}";
-    }
-
-    public string GetPlayerName() => PlayerName;
-
-    public string GetOrReadInitialName()
-    {
-        if (_playerName == "Player" || string.IsNullOrEmpty(_playerName))
+        if (!_hasPrompted)
         {
-            var generated = GenerateRandomName();
-            _playerName = generated;
-            _ = PersistName(generated);
+            SkipInitials();
+            return;
         }
-        return _playerName;
+
+        _isPromptOpen = false;
+        StateChanged?.Invoke();
     }
 
-    private async Task PersistName(string name)
+    public void SetInitials(string? raw)
+    {
+        var normalized = NormalizeInitials(raw);
+        _initials = normalized;
+        _hasPrompted = true;
+        _isPromptOpen = false;
+        SyncHubIdentity();
+        _ = PersistAsync(InitialsStorageKey, normalized);
+        StateChanged?.Invoke();
+    }
+
+    public void SkipInitials()
+    {
+        _initials = BlankInitials;
+        _hasPrompted = true;
+        _isPromptOpen = false;
+        SyncHubIdentity();
+        _ = PersistAsync(InitialsStorageKey, BlankInitials);
+        StateChanged?.Invoke();
+    }
+
+    public void SetPlayerName(string name) => SetInitials(name);
+
+    public string GetPlayerName() => _initials;
+
+    public string GetOrReadInitialName() => _initials;
+
+    /// <summary>Normalizes input to 3 uppercase ASCII letters (A-Z), or 3 spaces if invalid/empty.</summary>
+    public static string NormalizeInitials(string? raw)
+    {
+        if (string.IsNullOrEmpty(raw))
+        {
+            return BlankInitials;
+        }
+
+        Span<char> buffer = stackalloc char[3];
+        var count = 0;
+        foreach (var ch in raw)
+        {
+            if (ch is >= 'a' and <= 'z')
+            {
+                buffer[count++] = (char)(ch - 'a' + 'A');
+            }
+            else if (ch is >= 'A' and <= 'Z')
+            {
+                buffer[count++] = ch;
+            }
+
+            if (count == 3)
+            {
+                break;
+            }
+        }
+
+        return count == 3 ? new string(buffer) : BlankInitials;
+    }
+
+    private void SyncHubIdentity()
+    {
+        HubConnectionFactory.PlayerId = _playerId;
+        HubConnectionFactory.PlayerInitials = _initials;
+    }
+
+    private async Task PersistAsync(string key, string value)
     {
         try
         {
             if (_jsRuntime is not null)
             {
-                await SetItemAsync(StorageKey, name);
+                await SetItemAsync(key, value);
             }
         }
         catch
@@ -129,9 +201,8 @@ public class PlayerNameService
         if (_jsRuntime == null) return null;
         try
         {
-            var raw = await _jsRuntime.InvokeAsync<string>("window.localStorage.getItem", key);
+            var raw = await _jsRuntime.InvokeAsync<string?>("window.localStorage.getItem", key);
             if (raw is null) return null;
-            // If the stored value is a JSON-encoded string (e.g. "\"CalmTiger42\""), decode it
             if (raw.Length >= 2 && raw[0] == '"' && raw[^1] == '"')
             {
                 try

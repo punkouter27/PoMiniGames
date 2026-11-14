@@ -51,11 +51,7 @@ public class TestWebApplicationFactory : WebApplicationFactory<Program>, IAsyncL
 
     protected override void ConfigureWebHost(IWebHostBuilder builder)
     {
-        // E2E + integration tests run under the "Test"
-        // environment so StartupSecretValidator's Test-skip branch activates and
-        // AuthExtensions' FakeAuth/DevCookie schemes are registered. Production
-        // guards (FakeAuth-in-Prod, AutoGuestLogin-in-Prod) are still enforced when
-        // a test simulates Production via WithWebHostBuilder(...).
+        // Integration tests run under "Test" so StartupSecretValidator's Test-skip branch activates.
         builder.UseEnvironment("Test");
         builder.ConfigureAppConfiguration((context, cfg) =>
         {
@@ -77,34 +73,16 @@ public class TestWebApplicationFactory : WebApplicationFactory<Program>, IAsyncL
 
             cfg.AddInMemoryCollection(overrides);
         });
-        builder.ConfigureTestServices(services =>
-        {
-            // Register the FakeAuth scheme additively in the test host. Tests assert
-            // identity variations by injecting X-Fake-User / X-Fake-Roles per request.
-            // Never register it when a test simulates Production — the runtime production guard
-            // (Program.cs) forbids fake auth there, and a faithful harness must honour that.
-            if (_finalEnvIsProduction)
-            {
-                return;
-            }
-
-            services.AddAuthentication(options =>
-            {
-                options.DefaultAuthenticateScheme = FakeAuthHandler.SchemeName;
-                options.DefaultChallengeScheme = FakeAuthHandler.SchemeName;
-                options.DefaultScheme = FakeAuthHandler.SchemeName;
-            })
-            .AddScheme<AuthenticationSchemeOptions, FakeAuthHandler>(FakeAuthHandler.SchemeName, _ => { });
-        });
     }
 
     /// <summary>
-    /// Every test client is authenticated by default as "test-user" via the FakeAuth header.
-    /// Individual tests can override or remove this header to assert other identities / anonymous access.
+    /// Every test client sends default retro-arcade identity headers (<c>X-Player-Id</c> / <c>X-Player-Initials</c>).
+    /// Individual tests can override or remove these headers to assert other identities.
     /// </summary>
     protected override void ConfigureClient(HttpClient client)
     {
-        client.DefaultRequestHeaders.Add(FakeAuthHandler.UserHeader, "test-user");
+        client.DefaultRequestHeaders.Add("X-Player-Id", "test-user");
+        client.DefaultRequestHeaders.Add("X-Player-Initials", "TST");
         base.ConfigureClient(client);
     }
 }

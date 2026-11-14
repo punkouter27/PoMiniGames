@@ -80,7 +80,6 @@ public static class FunQuizEndpoints
             await repo.SubmitAsync(body, cancellationToken);
             return Results.Created("/api/funquiz/leaderboard", body);
         })
-        .RequireAuthorization()
         .RequireRateLimiting("highscores")
         .WithName("FunQuiz_SubmitLeaderboard");
 

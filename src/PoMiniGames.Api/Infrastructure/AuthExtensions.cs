@@ -1,170 +1,82 @@
-using Microsoft.AspNetCore.Authentication;
-using Microsoft.AspNetCore.Authentication.Cookies;
-using Microsoft.AspNetCore.Authentication.JwtBearer;
-using Microsoft.IdentityModel.Tokens;
-using PoMiniGames.Features.Auth;
+using System.Security.Claims;
+using System.Text.RegularExpressions;
 
 namespace PoMiniGames.Infrastructure;
 
 /// <summary>
-/// Registers the authentication scheme (DevCookie / JWT Bearer) for the current environment.
+/// Populates <see cref="HttpContext.User"/> from the lightweight retro-arcade
+/// player headers (<c>X-Player-Id</c>, <c>X-Player-Initials</c>) or SignalR query
+/// parameters (<c>playerId</c>, <c>initials</c>) without OAuth or cookies.
 /// </summary>
-internal static class AuthExtensions
+internal static partial class AuthExtensions
 {
-    public static IServiceCollection AddPoMiniGamesAuth(
-        this IServiceCollection services,
-        IWebHostEnvironment env,
-        IConfiguration configuration)
+    [GeneratedRegex("^[a-zA-Z0-9_-]{1,64}$", RegexOptions.Compiled)]
+    private static partial Regex PlayerIdPattern();
+
+    public static IApplicationBuilder UsePlayerIdentity(this IApplicationBuilder app)
     {
-        var microsoftAuthSection = configuration.GetSection(MicrosoftAuthOptions.SectionName);
-        services.Configure<MicrosoftAuthOptions>(microsoftAuthSection);
-        var microsoftAuthOptions = microsoftAuthSection.Get<MicrosoftAuthOptions>() ?? new MicrosoftAuthOptions();
-
-        // Dev + Test environments get the dev-login pathway so the test harness can
-        // sign in as Guest without going through the MSAL/OAuth handshake. Production
-        // NEVER gets this — a startup guard in Program.cs enforces that even if the
-        // config flag slips in (see FakeAuthHandler + StartupSecretValidator).
-        var devLoginEnabled = env.IsDevOrTest();
-
-        // Fake auth (header-driven) is gated to non-Production environments behind an
-        // explicit config flag. Both Dev and Test honor it so e2e fixtures can opt
-        // into header-driven identity assertions; Production guards remain intact via
-        // StartupSecretValidator (throws if FakeAuth is ever registered in Prod).
-        var fakeAuthEnabled = env.IsDevOrTest()
-            && configuration.GetValue<bool>("Auth:EnableFakeAuth");
-
-        var authBuilder = services.AddAuthentication(options =>
-            {
-                options.DefaultAuthenticateScheme = AuthSchemes.Composite;
-                options.DefaultChallengeScheme = AuthSchemes.Composite;
-            })
-            .AddPolicyScheme(AuthSchemes.Composite, AuthSchemes.Composite, options =>
-            {
-                options.ForwardDefaultSelector = context =>
-                {
-                    var authHeader = context.Request.Headers.Authorization.ToString();
-                    if (!string.IsNullOrWhiteSpace(authHeader)
-                        && authHeader.StartsWith("Bearer ", StringComparison.OrdinalIgnoreCase))
-                    {
-                        return JwtBearerDefaults.AuthenticationScheme;
-                    }
-
-                    if (context.Request.Query.ContainsKey("access_token")
-                        && !string.IsNullOrWhiteSpace(context.Request.Query["access_token"]))
-                    {
-                        return JwtBearerDefaults.AuthenticationScheme;
-                    }
-
-                    if (fakeAuthEnabled && context.Request.Headers.ContainsKey(FakeAuthHandler.UserHeader))
-                    {
-                        return FakeAuthHandler.SchemeName;
-                    }
-
-                    if (devLoginEnabled)
-                    {
-                        return AuthSchemes.DevCookie;
-                    }
-
-                    return JwtBearerDefaults.AuthenticationScheme;
-                };
-            });
-
-        if (fakeAuthEnabled)
+        return app.Use(async (context, next) =>
         {
-            authBuilder.AddScheme<AuthenticationSchemeOptions, FakeAuthHandler>(
-                FakeAuthHandler.SchemeName, _ => { });
+            var rawId = context.Request.Headers["X-Player-Id"].FirstOrDefault()
+                        ?? context.Request.Query["playerId"].FirstOrDefault();
+
+            var rawInitials = context.Request.Headers["X-Player-Initials"].FirstOrDefault()
+                              ?? context.Request.Query["initials"].FirstOrDefault();
+
+            var initials = NormalizeInitials(rawInitials);
+
+            if (!string.IsNullOrWhiteSpace(rawId) && PlayerIdPattern().IsMatch(rawId.Trim()))
+            {
+                var playerId = rawId.Trim();
+                var claims = new List<Claim>
+                {
+                    new("oid", playerId),
+                    new(ClaimTypes.NameIdentifier, playerId),
+                    new("name", initials),
+                    new(ClaimTypes.Name, initials),
+                };
+                context.User = new ClaimsPrincipal(new ClaimsIdentity(claims, "ArcadeInitials"));
+            }
+            else if (rawInitials is not null)
+            {
+                var claims = new List<Claim>
+                {
+                    new("name", initials),
+                    new(ClaimTypes.Name, initials),
+                };
+                context.User = new ClaimsPrincipal(new ClaimsIdentity(claims));
+            }
+
+            await next(context);
+        });
+    }
+
+    internal static string NormalizeInitials(string? raw)
+    {
+        if (string.IsNullOrEmpty(raw))
+        {
+            return "   ";
         }
 
-        authBuilder
-            .AddCookie(AuthSchemes.DevCookie, options =>
+        Span<char> buffer = stackalloc char[3];
+        var count = 0;
+        foreach (var ch in raw)
+        {
+            if (ch is >= 'a' and <= 'z')
             {
-                options.Cookie.Name = "PoMiniGames.DevAuth";
-                options.Cookie.HttpOnly = true;
-                // Session cookies are SameSite=Strict. The dev/guest cookie is
-                // minted and read entirely same-origin (the /auth/login/fake redirect and
-                // /api/auth/dev-* posts all originate from the SPA on the host origin), so
-                // Strict never blocks a legitimate flow while closing the cross-site vector.
-                options.Cookie.SameSite = SameSiteMode.Strict;
-                options.Cookie.SecurePolicy = CookieSecurePolicy.SameAsRequest;
-                options.Events = new CookieAuthenticationEvents
-                {
-                    OnRedirectToLogin = context =>
-                    {
-                        context.Response.StatusCode = StatusCodes.Status401Unauthorized;
-                        return Task.CompletedTask;
-                    },
-                    OnRedirectToAccessDenied = context =>
-                    {
-                        context.Response.StatusCode = StatusCodes.Status403Forbidden;
-                        return Task.CompletedTask;
-                    },
-                };
-                // See /api/auth/handshake — the
-                // reauth signal is set on the handshake endpoint whenever a
-                // DevCookie was sent but context.User is anonymous (i.e. the
-                // data-protection key ring no longer matches). The handshake
-                // endpoint is the right place to detect this: cookie auth
-                // failures are swallowed upstream, so a per-endpoint check
-                // against the request cookie is the only reliable hook.
-            })
-            .AddJwtBearer(options =>
+                buffer[count++] = (char)(ch - 'a' + 'A');
+            }
+            else if (ch is >= 'A' and <= 'Z')
             {
-                var authority = microsoftAuthOptions.Authority;
-                var audience = microsoftAuthOptions.ApiClientId;
+                buffer[count++] = ch;
+            }
 
-                options.MapInboundClaims = false;
-                options.RequireHttpsMetadata = env.IsProduction();
+            if (count == 3)
+            {
+                break;
+            }
+        }
 
-                if (!string.IsNullOrWhiteSpace(authority))
-                {
-                    options.Authority = authority;
-                }
-
-                options.TokenValidationParameters = new TokenValidationParameters
-                {
-                    // ValidateIssuer must be true. A custom IssuerValidator
-                    // allow-lists the well-known public authorities (common / organizations /
-                    // consumers) plus any tenant IDs configured under
-                    // PoMiniGames:MicrosoftAuth:AllowedTenantIds.
-                    ValidateIssuer = true,
-                    ValidIssuer = authority,
-                    IssuerValidator = (issuer, token, parameters) =>
-                        MicrosoftAuthIssuerValidator.Validate(issuer, microsoftAuthOptions.AllowedTenantIds),
-                    ValidateAudience = !string.IsNullOrWhiteSpace(audience),
-                    ValidAudience = audience,
-                    NameClaimType = "name",
-                    RoleClaimType = "roles",
-                };
-
-                options.Events = new JwtBearerEvents
-                {
-                    OnMessageReceived = context =>
-                    {
-                        // Browsers cannot set headers on a WebSocket upgrade, so SignalR sends
-                        // the token in the query string. Accept it for hub endpoints only.
-                        var accessToken = context.Request.Query["access_token"];
-                        var isHub = context.HttpContext.GetEndpoint()?.Metadata
-                            .GetMetadata<Microsoft.AspNetCore.SignalR.HubMetadata>() is not null;
-                        if (!string.IsNullOrWhiteSpace(accessToken) && isHub)
-                        {
-                            context.Token = accessToken;
-                        }
-
-                        return Task.CompletedTask;
-                    },
-
-                    // Canonical UserSignedIn record. A bearer token is validated on EVERY request,
-                    // so dedupe:true collapses an active SPA session down to one record per user
-                    // per window instead of hundreds.
-                    OnTokenValidated = context =>
-                    {
-                        SignInTelemetry.TrackFrom(
-                            context.HttpContext, context.Principal, "PoMiniGames", dedupe: true);
-                        return Task.CompletedTask;
-                    },
-                };
-            });
-
-        return services;
+        return count == 3 ? new string(buffer) : "   ";
     }
 }

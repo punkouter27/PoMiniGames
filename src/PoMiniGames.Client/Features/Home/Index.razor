@@ -7,6 +7,7 @@
 @inject OnlineStatusService OnlineStatus
 @inject ToastService Toasts
 @inject IWebAssemblyHostEnvironment Env
+@inject PlayerNameService PlayerNames
 @implements IAsyncDisposable
 
 @* ─────────────────────────────────────────────────────────────────────────
@@ -82,6 +83,17 @@
             </div>
         </Actions>
     </PageHeader>
+
+    <div class="arcade-marquee" role="region" aria-label="Arcade cabinet status">
+        <div class="arcade-marquee__left">
+            <span class="arcade-marquee__coin">FREE PLAY · 1984</span>
+            <span class="arcade-marquee__title">SELECT YOUR CABINET</span>
+        </div>
+        <button type="button" class="arcade-marquee__player-btn" @onclick="PlayerNames.RequestOpenPrompt" title="Click to change your 3-letter arcade initials">
+            <span>PLAYER 1:</span>
+            <span class="gl-arcade-initials">[@PlayerNames.Initials]</span>
+        </button>
+    </div>
 
     <div class="home-grid">
         @foreach (var game in VisibleGames)
@@ -244,6 +256,7 @@
         // Subscribe to kiosk state so the Demo button (Start ↔ Stop) updates
         // reactively when the coordinator starts/stops/pauses/advances.
         Kiosk.Changed += OnKioskStateChanged;
+        PlayerNames.StateChanged += OnPlayerNamesChanged;
         // Connectivity drives which chips are navigable (see IsPlayable), so the grid
         // has to re-render the moment the browser goes offline or comes back.
         OnlineStatus.StateChanged += OnOnlineStateChanged;
@@ -354,9 +367,12 @@
         entry.Url.Split('?', '#')[0] == "/pobrawl/ffa" ? "pobrawl-ffa" : entry.Key.Value;
 
 
+    private void OnPlayerNamesChanged() => _ = InvokeAsync(StateHasChanged);
+
     public async ValueTask DisposeAsync()
     {
         Kiosk.Changed -= OnKioskStateChanged;
+        PlayerNames.StateChanged -= OnPlayerNamesChanged;
         OnlineStatus.StateChanged -= OnOnlineStateChanged;
         try { await JS.InvokeVoidAsync("PoVisualRuntime.enableAudioReactive", false); } catch { /* page unloading */ }
         if (_ambientModule is not null)

@@ -195,13 +195,8 @@
         <PoBrawlDossierCard FighterId="@_p2Char" Compact="true" />
     </div>;
 
-    // 1P: the start choice, beside OK.
-    private RenderFragment? IntroActions => _mode == "1p"
-        ? @<label class="pb-intro-train" title="No clock, no KO; the room's bar has the exit.">
-            <input type="checkbox" @bind="_training" />
-            <span><b>🥋 Training first</b> <small>· no clock, no KO</small></span>
-        </label>
-        : null;
+    // No setup toggles beside OK: the "Training first" option was removed from the 1P card.
+    private RenderFragment? IntroActions => null;
 
     // Two-player fighter select: one shared 4×4 grid with a cursor per player. Each player
     // drives their cursor with their in-game keys (see OnIntroKey) or a tap; the side cards

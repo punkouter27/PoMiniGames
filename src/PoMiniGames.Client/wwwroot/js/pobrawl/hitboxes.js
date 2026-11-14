@@ -101,14 +101,14 @@ const ATTACK_CAPSULES = {
 const _vA = new THREE.Vector3();
 const _vB = new THREE.Vector3();
 const _fwd = new THREE.Vector3();
-function capsuleEndpoints(joints, cap, forwardDir) {
+function capsuleEndpoints(joints, cap, forwardDir, scale = 1) {
   const a = joints[cap.jointA];
   const b = joints[cap.jointB];
   if (!a || !b) return null;
   a.getWorldPosition(_vA);
   b.getWorldPosition(_vB);
   if (cap.forwardReach && forwardDir) {
-    _fwd.copy(forwardDir).multiplyScalar(cap.forwardReach);
+    _fwd.copy(forwardDir).multiplyScalar(cap.forwardReach * scale);
     _vB.add(_fwd);
   }
   return { a: _vA.clone(), b: _vB.clone() };
@@ -166,8 +166,8 @@ function facing(rig, out) {
   return out.normalize();
 }
 
-function testCapsuleAgainstSet(attackerRig, attackerCaps, defenderRig, defenderCaps) {
-  const atk = capsuleEndpoints(attackerRig.joints, attackerCaps, facing(attackerRig, _fwd));
+function testCapsuleAgainstSet(attackerRig, attackerCaps, defenderRig, defenderCaps, scale) {
+  const atk = capsuleEndpoints(attackerRig.joints, attackerCaps, facing(attackerRig, _fwd), scale);
   if (!atk) return null;
   let best = null;
   for (const [name, cap] of Object.entries(defenderCaps)) {
@@ -175,7 +175,7 @@ function testCapsuleAgainstSet(attackerRig, attackerCaps, defenderRig, defenderC
     if (!def) continue;
     const hit = closestPointsOnSegments(atk.a, atk.b, def.a, def.b);
     if (!hit) continue;
-    const threshold = attackerCaps.radius + cap.radius;
+    const threshold = (attackerCaps.radius + cap.radius) * scale;
     if (hit.d <= threshold) {
       // Tie-break: keep the deepest (smallest gap) intersection so the
       // closest body part wins.
@@ -191,8 +191,10 @@ function testCapsuleAgainstSet(attackerRig, attackerCaps, defenderRig, defenderC
  * Test every attacker striker capsule against the defender's hurt set.
  * Returns { capsule, hurtBone, point, distance } on the first hit, or null.
  * Picks the deepest intersection across all striker capsules.
+ * `scale` shrinks the capsule radii for rigs drawn smaller than life (FFA), so
+ * contact still means the visible limb touched the visible body.
  */
-export function testAttackHit(attackerRig, attackName, phase, defenderRig) {
+export function testAttackHit(attackerRig, attackName, phase, defenderRig, scale = 1) {
   const def = FIGHTER_CAPSULES.hurt;
   const atkSet = ATTACK_CAPSULES[attackName];
   if (!atkSet) return null;
@@ -200,7 +202,7 @@ export function testAttackHit(attackerRig, attackName, phase, defenderRig) {
   if (!caps) return null;
   let best = null;
   for (const [capName, cap] of Object.entries(caps)) {
-    const hit = testCapsuleAgainstSet(attackerRig, cap, defenderRig, def);
+    const hit = testCapsuleAgainstSet(attackerRig, cap, defenderRig, def, scale);
     if (!hit) continue;
     if (!best || hit.distance < best.distance) {
       best = { ...hit, striker: capName };

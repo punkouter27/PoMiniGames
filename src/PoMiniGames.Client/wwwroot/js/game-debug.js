@@ -58,6 +58,8 @@
     if (open === next) return;
     open = next;
     window.poGameStatsOpen = open;
+    // Pages can keep their own HUD behind Tab with `:root.po-game-stats-open` (Brawl FFA does).
+    document.documentElement.classList.toggle('po-game-stats-open', open);
     window.dispatchEvent(new CustomEvent('po-game-stats', { detail: { open } }));
     last = 0;
     frames = 0;
@@ -89,6 +91,7 @@
       window.removeEventListener('keyup', onKeyUp, true);
       open = false;
       window.poGameStatsOpen = false;
+      document.documentElement.classList.remove('po-game-stats-open');
       window.dispatchEvent(new CustomEvent('po-game-stats', { detail: { open: false } }));
       if (raf) cancelAnimationFrame(raf);
       raf = 0;

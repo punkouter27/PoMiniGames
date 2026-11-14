@@ -95,12 +95,10 @@ public static class PlayerStatsEndpoints
                 await storage.SavePlayerStatsAsync(game, owner, stats);
                 return Results.NoContent();
             })
-            .RequireAuthorization()
             .RequireRateLimiting("highscores")
             .WithName("SavePlayerStats")
             .WithSummary("Save or update player statistics for a game")
-            .Produces(StatusCodes.Status204NoContent)
-            .ProducesProblem(StatusCodes.Status401Unauthorized);
+            .Produces(StatusCodes.Status204NoContent);
 
         return app;
     }
