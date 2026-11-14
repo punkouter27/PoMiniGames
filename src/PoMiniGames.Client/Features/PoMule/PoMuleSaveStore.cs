@@ -53,11 +53,16 @@ public sealed record WorthPoint(int Month, int Worth);
 public static class PoMuleUi
 {
     /// <summary>
-    /// Seat colours: the Atari game's red, blue, green and purple, plus four more for the
-    /// extra seats. Saturated mid-tones, so they read on the pale map and on the dark panel.
+    /// Seat colours: the Atari game's red, blue, green and purple, then twelve more for the
+    /// extra seats. The first eight are bright mid-tones and the second eight darker or
+    /// duller ones, so seats 1 and 9 never look alike. All of them read on the pale map
+    /// and on the dark panel.
     /// </summary>
     public static readonly string[] SeatColors =
-        ["#e02828", "#2468f0", "#28a010", "#a828e0", "#e07000", "#0898a0", "#d83898", "#806020"];
+    [
+        "#e02828", "#2468f0", "#28a010", "#a828e0", "#e07000", "#0898a0", "#d83898", "#806020",
+        "#8c1818", "#102c88", "#607800", "#503078", "#b88c00", "#0a6048", "#e06070", "#507090",
+    ];
 
     public static readonly string[] GoodNames = ["Food", "Energy", "Smithore", "Crystite"];
 

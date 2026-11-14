@@ -6,7 +6,8 @@ namespace PoMiniGames.Shared.Games.PoMule;
 /// </summary>
 public static class PoMuleTuning
 {
-    public const int Seats = 8;
+    /// <summary>Colonists on Irata: the player and fifteen AI, or sixteen AI in a demo.</summary>
+    public const int Seats = 16;
     public const int Months = 12;
     public const int TicksPerSecond = 10;
 
@@ -20,12 +21,13 @@ public static class PoMuleTuning
     public const int EventSeconds = 4;
     public const int StandingsSeconds = 6;
 
-    // Starting position.
+    // Starting position. The Store and the corral are stocked for sixteen colonists: twice
+    // what eight needed, so the bigger colony starts no hungrier than the smaller one did.
     public const int StartFood = 4;
     public const int StartEnergy = 2;
-    public static readonly IReadOnlyList<int> StoreStartStock = [32, 32, 0, 0];
+    public static readonly IReadOnlyList<int> StoreStartStock = [64, 64, 0, 0];
     public static readonly IReadOnlyList<int> StoreStartPrice = [30, 25, 50, 100];
-    public const int StoreStartMules = 28;
+    public const int StoreStartMules = 56;
     public const int MuleStartPrice = 100;
 
     // Outfitting a M.U.L.E. for Food / Energy / Smithore / Crystite.
@@ -80,8 +82,8 @@ public static class PoMuleTuning
     /// <summary>No plot makes more than this in a plain month, however well placed.</summary>
     public const int MaxPlotYield = 8;
 
-    /// <summary>This many colonists short of Food or Energy in one month is a colony crisis.</summary>
-    public const int CrisisShortColonists = 3;
+    /// <summary>This many colonists short of Food or Energy in one month is a colony crisis (three in eight, as before).</summary>
+    public const int CrisisShortColonists = 6;
 
     // Market. Limits on the Store's buying price for Food / Energy / Smithore / Crystite.
     public static readonly IReadOnlyList<int> PriceMin = [15, 15, 25, 50];
@@ -105,15 +107,15 @@ public static class PoMuleTuning
     public static readonly IReadOnlyList<int> AiReserve = [2, 3];
 
     /// <summary>
-    /// Smithore price × M.U.L.E.s in the corral: 14 M.U.L.E.s (half the opening herd) price
+    /// Smithore price × M.U.L.E.s in the corral: 28 M.U.L.E.s (half the opening herd) price
     /// Smithore at 50, so ore pays while there is still a M.U.L.E. left to mine it with.
     /// </summary>
-    public const int SmithorePriceTimesMules = 700;
+    public const int SmithorePriceTimesMules = 1400;
 
     // Scoring.
     public const int LandValue = 500;
     public const int MuleValue = 350;
-    public const int FederationTarget = 60_000;
+    public const int FederationTarget = 120_000;
     public const int MaxCrisisMonths = 1;
 
     /// <summary>Food a colonist must hold to work a full month: 3, then 4, then 5.</summary>

@@ -7,7 +7,7 @@ public static class PoMuleLand
         match.Owner[plot] == MatchState.Nobody && match.Map.Plots[plot].Terrain != Terrain.Town;
 
     /// <summary>
-    /// Resolves all eight cursors at once.
+    /// Resolves every seat's pick at once.
     /// </summary>
     /// <param name="picks">Plot index per seat, or -1 for "picked nothing".</param>
     /// <returns>The plot each seat received, or -1.</returns>

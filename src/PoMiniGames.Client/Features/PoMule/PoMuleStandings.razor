@@ -23,7 +23,7 @@
         </div>
 
         <div class="pm-standings-body">
-            <RadzenDataGrid Data="@Rows" TItem="PoMuleRow" Density="Density.Compact" AllowSorting="false" AllowPaging="false">
+            <RadzenDataGrid Data="@Rows" TItem="PoMuleRow" Density="Density.Compact" AllowSorting="false" AllowPaging="false" class="pm-standings-grid">
                 <Columns>
                     <RadzenDataGridColumn TItem="PoMuleRow" Title="#" Width="40px">
                         <Template Context="r">@r.Rank</Template>
@@ -56,7 +56,7 @@
             {
                 @* Sized to the screen rather than a fixed 220px: a landscape phone is about
                    390px tall, and a fixed chart pushed the table's own rows off it. *@
-                <RadzenChart Style="height: clamp(130px, 28vh, 220px)">
+                <RadzenChart Style="height: clamp(110px, 22vh, 175px)">
                     @foreach (var p in State.Players)
                     {
                         var seat = p.Seat;

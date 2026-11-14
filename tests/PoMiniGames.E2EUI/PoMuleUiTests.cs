@@ -75,8 +75,8 @@ public class PoMuleUiTests
         await page.WaitForTimeoutAsync(1000);
         await page.Keyboard.UpAsync("d");
         var after = await page.EvaluateAsync<double[][]>(positions);
-        var moved = Enumerable.Range(0, 8).Count(i => before[i][0] != after[i][0] || before[i][1] != after[i][1]);
-        moved.Should().BeGreaterThanOrEqualTo(6, "all colonists develop at the same time, not in turns");
+        var moved = Enumerable.Range(0, 16).Count(i => before[i][0] != after[i][0] || before[i][1] != after[i][1]);
+        moved.Should().BeGreaterThanOrEqualTo(12, "all colonists develop at the same time, not in turns");
         after[0][0].Should().NotBe(before[0][0], "the D key walks the player's avatar east");
         await page.ScreenshotAsync(new() { Path = Path.Combine(shots, "3-development.png") });
 
@@ -121,7 +121,7 @@ public class PoMuleUiTests
         await page.GetByRole(AriaRole.Button, new() { Name = "OK", Exact = true }).ClickAsync();
         await WaitForPhase(page, Land, 2, 30_000);
         (await page.EvaluateAsync<int>("() => window.__pomule().owner.filter(o => o >= 0).length"))
-            .Should().BeGreaterThanOrEqualTo(8, "month 1's land is still owned");
+            .Should().BeGreaterThanOrEqualTo(16, "month 1's land is still owned");
         errors.Should().BeEmpty();
         await desktopGuard.DisposeAsync();
         await desktop.CloseAsync();
@@ -176,7 +176,7 @@ public class PoMuleUiTests
         var origin = _fixture.ServerAddress.TrimEnd('/');
         await page.GotoAsync($"{origin}/pomule/demo?autoGuest=1", new() { WaitUntil = WaitUntilState.NetworkIdle, Timeout = 60_000 });
 
-        // No input: the demo card times out and eight AI colonists start month 1.
+        // No input: the demo card times out and sixteen AI colonists start month 1.
         await WaitForPhase(page, Development, 1);
         (await page.EvaluateAsync<bool>("() => window.__pomule().human")).Should().BeFalse();
         (await page.EvaluateAsync<double>("() => window.__pomule().speed")).Should().Be(4, "a demo runs at four times speed");
@@ -194,7 +194,7 @@ public class PoMuleUiTests
         await page.Locator(".pm-standings").WaitForAsync(new() { Timeout = 10_000 });
         (await page.Locator(".pm-standings").InnerTextAsync()).Should().ContainEquivalentOf("First Founder").And.ContainEquivalentOf("colony");
         (await page.EvaluateAsync<int>("() => window.__pomule().owner.filter(o => o >= 0).length"))
-            .Should().BeGreaterThanOrEqualTo(96, "eight colonists claimed a plot in each of twelve months");
+            .Should().Be(188, "sixteen colonists fill the planet's 188 non-town plots over twelve months");
         await page.ScreenshotAsync(new() { Path = Path.Combine(Shots(), "8-demo-final.png") });
         scorePosts.Should().Be(0, "a demo never posts a score");
         errors.Should().BeEmpty();

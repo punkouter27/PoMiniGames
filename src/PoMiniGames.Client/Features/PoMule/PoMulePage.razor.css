@@ -386,11 +386,22 @@
 .pm-root ::deep .pm-standings-card {
     display: flex;
     flex-direction: column;
-    gap: 0.6rem;
+    gap: 0.45rem;
     width: min(100%, 760px);
     max-height: 100%;
-    padding: 0.8rem 1rem;
+    padding: 0.6rem 0.9rem;
     overflow-y: auto;
+}
+
+.pm-root ::deep .pm-standings-grid {
+    max-height: clamp(200px, 46vh, 380px);
+    overflow-y: auto;
+}
+
+.pm-root ::deep .pm-standings .rz-grid-table td,
+.pm-root ::deep .pm-standings .rz-grid-table th {
+    padding-top: 0.16rem !important;
+    padding-bottom: 0.16rem !important;
 }
 
 .pm-root ::deep .pm-standings-head,

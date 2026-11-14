@@ -19,18 +19,20 @@ public sealed class PoMuleScoringTests
     {
         var match = MatchState.New(seed: 5, humanSpecies: species);
 
-        match.Players.Should().HaveCount(8);
+        match.Players.Should().HaveCount(PoMuleTuning.Seats);
         match.Players[0].Should().Match<PlayerState>(p =>
             p.Archetype == Archetype.Human && p.Species == species && p.Cash == cash);
-        match.Players.Select(p => p.Species).Should().OnlyHaveUniqueItems();
-        // Seats 1–7 hold each AI personality exactly once; the seed decides who sits where.
-        match.Players.Skip(1).Select(p => p.Archetype).Order().Should().Equal(
-            Archetype.Hoarder, Archetype.Industrialist, Archetype.Prospector, Archetype.Agitator,
-            Archetype.Farmer, Archetype.Speculator, Archetype.Gambler);
+        // Eight species for sixteen seats: each one exactly twice.
+        match.Players.GroupBy(p => p.Species).Should().HaveCount(8).And.OnlyContain(g => g.Count() == 2);
+        // Seats 1–15 hold each AI personality twice and one a third time; the seed decides who sits where.
+        var personalities = match.Players.Skip(1).GroupBy(p => p.Archetype).ToList();
+        personalities.Should().HaveCount(7);
+        personalities.Select(g => g.Count()).Order().Should().Equal(2, 2, 2, 2, 2, 2, 3);
+        match.Players.Select(p => p.Name).Should().OnlyHaveUniqueItems("a repeated personality is told apart: Hoarder, Hoarder II");
         match.Players.Should().OnlyContain(p =>
             p.Goods[(int)Good.Food] == 4 && p.Goods[(int)Good.Energy] == 2 && p.Cash == PoMuleSpecies.Get(p.Species).StartingCash);
         (match.Month, match.Phase).Should().Be((1, Phase.Land));
-        match.Store.Mules.Should().Be(28);
+        match.Store.Mules.Should().Be(PoMuleTuning.StoreStartMules);
 
         var demo = MatchState.New(seed: 5, humanSpecies: null);
         demo.Players.Should().NotContain(p => p.Archetype == Archetype.Human);
@@ -52,16 +54,16 @@ public sealed class PoMuleScoringTests
         PoMuleScoring.NetWorth(match, seat: 0).Should().Be(300 + 300 + 100 + 1000 + 350);
 
         var standings = PoMuleScoring.Standings(match);
-        standings.Select(s => s.Rank).Should().Equal(1, 2, 3, 4, 5, 6, 7, 8);
+        standings.Select(s => s.Rank).Should().Equal(Enumerable.Range(1, PoMuleTuning.Seats));
         standings.Select(s => s.NetWorth).Should().BeInDescendingOrder();
         standings[0].Seat.Should().Be(0);
     }
 
     [Theory]
-    [InlineData(60_000, 0, true)]
-    [InlineData(60_000, 1, true)]
-    [InlineData(59_999, 0, false)]
-    [InlineData(90_000, 2, false)]
+    [InlineData(120_000, 0, true)]
+    [InlineData(120_000, 1, true)]
+    [InlineData(119_999, 0, false)]
+    [InlineData(180_000, 2, false)]
     public void Colony_SurvivesOnlyWithEnoughCombinedWealth_AndFewCrisisMonths(int combined, int crisisMonths, bool survives) =>
         PoMuleScoring.ColonySurvives(combined, crisisMonths).Should().Be(survives);
 }

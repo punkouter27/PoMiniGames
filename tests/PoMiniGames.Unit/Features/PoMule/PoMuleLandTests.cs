@@ -3,7 +3,7 @@ using PoMiniGames.Shared.Games.PoMule;
 
 namespace PoMiniGames.Unit;
 
-/// <summary>The monthly land grant (eight cursors at once) and the even-month land auction.</summary>
+/// <summary>The monthly land grant (every seat's pick at once) and the even-month land auction.</summary>
 public sealed class PoMuleLandTests
 {
     private static MatchState Match(ulong seed = 3) => MatchState.New(seed, Species.Humanoid);
@@ -59,10 +59,14 @@ public sealed class PoMuleLandTests
 
                 var awarded = PoMuleLand.Grant(match, picks);
 
-                awarded.Should().OnlyHaveUniqueItems($"seed {seed} month {month}");
-                awarded.Should().OnlyContain(a => before[a] == MatchState.Nobody && match.Map.Plots[a].Terrain != Terrain.Town);
+                // Sixteen colonists fill the planet in the last month, as four did the 1983 one:
+                // whoever is left over when the land runs out gets nothing (-1).
+                var granted = awarded.Where(a => a >= 0).ToList();
+                granted.Should().OnlyHaveUniqueItems($"seed {seed} month {month}");
+                granted.Should().OnlyContain(a => before[a] == MatchState.Nobody && match.Map.Plots[a].Terrain != Terrain.Town);
             }
-            match.Owner.Count(o => o != MatchState.Nobody).Should().Be(PoMuleTuning.Seats * PoMuleTuning.Months);
+            var claimable = match.Map.Plots.Count(p => p.Terrain != Terrain.Town);
+            match.Owner.Count(o => o != MatchState.Nobody).Should().Be(Math.Min(claimable, PoMuleTuning.Seats * PoMuleTuning.Months));
         }
     }
 

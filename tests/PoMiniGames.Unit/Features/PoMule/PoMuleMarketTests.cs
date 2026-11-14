@@ -4,7 +4,7 @@ using PoMiniGames.Shared.Games.PoMule;
 namespace PoMiniGames.Unit;
 
 /// <summary>
-/// The walking-floor market: eight lanes on one price axis, sellers walking down from the
+/// The walking-floor market: sixteen lanes on one price axis, sellers walking down from the
 /// Store's selling price and buyers walking up from its buying price.
 /// </summary>
 public sealed class PoMuleMarketTests
@@ -160,10 +160,10 @@ public sealed class PoMuleMarketTests
 
         match.Store.Mules.Should().Be(PoMuleTuning.StoreStartMules + 2);
         match.Store.Stock[(int)Good.Smithore].Should().Be(1);
-        // Thirty M.U.L.E.s in the corral: Smithore is at its floor, and a M.U.L.E. costs twice that.
+        // Fifty-eight M.U.L.E.s in the corral: Smithore is at its floor, and a M.U.L.E. costs twice that.
         match.Store.Price[(int)Good.Smithore].Should().Be(25);
         match.Store.MulePrice.Should().Be(50);
-        (PoMuleMarket.SmithorePrice(14), PoMuleMarket.SmithorePrice(4), PoMuleMarket.SmithorePrice(0))
+        (PoMuleMarket.SmithorePrice(28), PoMuleMarket.SmithorePrice(8), PoMuleMarket.SmithorePrice(0))
             .Should().Be((50, 175, 250), "the scarcer M.U.L.E.s are, the more ore is worth");
 
         var prices = Enumerable.Range(0, 200).Select(_ => { PoMuleMarket.EndOfMonth(match); return match.Store.Price[(int)Good.Crystite]; }).ToList();

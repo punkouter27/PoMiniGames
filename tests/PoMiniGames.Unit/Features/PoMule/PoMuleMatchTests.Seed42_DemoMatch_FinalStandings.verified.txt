@@ -1,20 +1,28 @@
 ﻿{
   Standings: [
-    1. Prospector 19305,
-    2. Hoarder 19268,
-    3. Gambler 18155,
-    4. Speculator 17890,
-    5. Farmer 17314,
-    6. Agitator 13331,
-    7. Industrialist II 12346,
-    8. Industrialist 11985
+    1. Farmer 16005,
+    2. Farmer II 15983,
+    3. Prospector 15329,
+    4. Hoarder 15099,
+    5. Gambler II 14931,
+    6. Hoarder II 14728,
+    7. Gambler 14428,
+    8. Speculator III 14392,
+    9. Speculator 14298,
+    10. Speculator II 13770,
+    11. Gambler III 13576,
+    12. Industrialist II 13216,
+    13. Agitator 13124,
+    14. Agitator II 12873,
+    15. Industrialist 12447,
+    16. Prospector II 12248
   ],
-  CrisisMonths: 3,
-  StoreMules: 84,
+  CrisisMonths: 1,
+  StoreMules: 41,
   StorePrices: [
-    32,
+    19,
     15,
-    25,
-    85
+    34,
+    54
   ]
 }

@@ -76,9 +76,11 @@ function resize() {
 
 /** Puts everyone outside a town at the start of a development phase. */
 function placeAvatars() {
+  // Four colonists to a town, in a two-by-two huddle below its door.
   for (const a of g.avatars) {
-    a.x = W.wrapX(W.TOWN_COLS[a.seat % 4] * W.TILE + W.TILE / 2 + (a.seat < 4 ? -20 : 20));
-    a.y = (W.TOWN_ROW + 1) * W.TILE + 24;
+    const spot = Math.floor(a.seat / 4) % 4;
+    a.x = W.wrapX(W.TOWN_COLS[a.seat % 4] * W.TILE + W.TILE / 2 + (spot % 2 ? 20 : -20));
+    a.y = (W.TOWN_ROW + 1) * W.TILE + 16 + (spot >> 1) * 30; // 30 apart: two avatars' radii, so no shove at the start
     a.stamina = P.DASH_SECONDS;
     a.winded = false;
     a.dashing = false;

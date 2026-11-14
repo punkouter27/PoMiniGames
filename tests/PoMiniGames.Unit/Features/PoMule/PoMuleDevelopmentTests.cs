@@ -66,7 +66,7 @@ public sealed class PoMuleDevelopmentTests
         PoMuleDevelopment.Outfit(match, 0, Good.Food).Should().Be(Outcome.Ok);
         PoMuleDevelopment.Outfit(match, 0, Good.Food).Should().Be(Outcome.Ok, "already outfitted for Food");
         you.Cash.Should().Be(1200 - 100 - 25, "and not charged twice for it");
-        match.Store.Mules.Should().Be(27);
+        match.Store.Mules.Should().Be(PoMuleTuning.StoreStartMules - 1);
         (you.HasMule, you.Outfit).Should().Be((true, (sbyte)Good.Food));
 
         PoMuleDevelopment.Install(match, 0, plot).Should().Be(Outcome.Ok);

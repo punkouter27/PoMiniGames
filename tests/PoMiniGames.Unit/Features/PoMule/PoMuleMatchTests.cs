@@ -96,7 +96,7 @@ public sealed class PoMuleMatchTests
 
         PoMuleSave.FromJson(null).Should().BeNull();
         PoMuleSave.FromJson("{ not json").Should().BeNull();
-        PoMuleSave.FromJson(json.Replace("\"Version\":1", "\"Version\":0")).Should().BeNull("an older rules version is discarded");
+        PoMuleSave.FromJson(json.Replace("\"Version\":2", "\"Version\":1")).Should().BeNull("an older rules version is discarded");
     }
 
     private static void OverAHundredSeededMatches_NothingGoesNegative_TheStoreKeepsMules_AndNoPersonalityDominates()
@@ -178,14 +178,14 @@ public sealed class PoMuleMatchTests
         var luck = MatchState.New(seed: 5, humanSpecies: null);
         for (var roll = 0; roll < 300; roll++)
         {
-            for (var seat = 0; seat < 8; seat++) luck.Players[seat].Cash = roll < 150 ? 1000 + seat * 100 : 10;
+            for (var seat = 0; seat < PoMuleTuning.Seats; seat++) luck.Players[seat].Cash = roll < 150 ? 1000 + seat * 100 : 10;
             var rank = PoMuleScoring.Standings(luck).ToDictionary(s => s.Seat, s => s.Rank);
             var (lucky, kind, amount) = PoMuleEvents.Luck(luck);
             if (kind < LuckKind.Elves) rank[lucky].Should().BeGreaterThan(1, "good luck never finds the leader");
-            else rank[lucky].Should().BeLessThan(8, "bad luck never finds last place");
+            else rank[lucky].Should().BeLessThan(PoMuleTuning.Seats, "bad luck never finds last place");
             luck.Players[lucky].Cash.Should().BeGreaterThanOrEqualTo(0);
             luck.Players[lucky].Goods.Should().OnlyContain(units => units >= 0);
-            PoMuleEvents.LuckText(kind, "Industrialist", amount).Length.Should().BeLessThanOrEqualTo(63);
+            PoMuleEvents.LuckText(kind, "Industrialist III", amount).Length.Should().BeLessThanOrEqualTo(63);
         }
 
         // The meteor digs a rich crater in open, unowned ground.

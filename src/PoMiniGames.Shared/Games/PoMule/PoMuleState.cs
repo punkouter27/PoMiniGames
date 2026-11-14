@@ -51,7 +51,7 @@ public sealed class MatchState
     public const sbyte Nobody = -1;
 
     /// <summary>Bump when a rules change makes older saved matches unplayable; they are then discarded.</summary>
-    public const int CurrentVersion = 1;
+    public const int CurrentVersion = 2; // 2: sixteen seats
 
     public int Version { get; set; } = CurrentVersion;
     public ulong Seed { get; set; }
@@ -150,26 +150,38 @@ public sealed class MatchState
         var rng = new PoMuleRng(seed);
         var map = PoMuleMap.Generate(rng);
 
-        var archetypes = Enum.GetValues<Archetype>().Where(a => a != Archetype.Human).ToList();
-        rng.Shuffle(archetypes);
-        // A demo has eight AI seats and seven personalities, so the seed picks one to repeat.
-        archetypes.Insert(0, humanSpecies is null ? archetypes[rng.Next(archetypes.Count)] : Archetype.Human);
+        // Sixteen seats and seven personalities: every personality sits at least twice, and the
+        // seed picks the one (or, in a demo, two) that sit a third time.
+        var personalities = Enum.GetValues<Archetype>().Where(a => a != Archetype.Human).ToList();
+        var archetypes = new List<Archetype>();
+        while (archetypes.Count + personalities.Count <= PoMuleTuning.Seats - 1)
+        {
+            rng.Shuffle(personalities);
+            archetypes.AddRange(personalities);
+        }
+        rng.Shuffle(personalities);
+        archetypes.AddRange(personalities.Take(PoMuleTuning.Seats - 1 - archetypes.Count));
+        archetypes.Insert(0, humanSpecies is null ? personalities[^1] : Archetype.Human);
 
-        var species = Enum.GetValues<Species>().Where(s => s != humanSpecies).ToList();
+        // Eight species for sixteen seats: each one twice, the player's pick among them.
+        var species = Enumerable.Repeat(Enum.GetValues<Species>(), PoMuleTuning.Seats / PoMuleSpecies.All.Count)
+            .SelectMany(all => all).ToList();
+        if (humanSpecies is { } pick) species.Remove(pick);
         rng.Shuffle(species);
-        if (humanSpecies is { } pick) species.Insert(0, pick);
+        if (humanSpecies is { } chosen) species.Insert(0, chosen);
 
         var players = new PlayerState[PoMuleTuning.Seats];
+        var named = new Dictionary<Archetype, int>();
         for (var seat = 0; seat < players.Length; seat++)
         {
             var goods = new int[4];
             goods[(int)Good.Food] = PoMuleTuning.StartFood;
             goods[(int)Good.Energy] = PoMuleTuning.StartEnergy;
+            var copy = named[archetypes[seat]] = named.GetValueOrDefault(archetypes[seat]) + 1;
             players[seat] = new PlayerState
             {
                 Seat = seat,
-                Name = archetypes[seat] == Archetype.Human ? "You"
-                    : seat == 0 ? $"{archetypes[seat]} II" : archetypes[seat].ToString(),
+                Name = archetypes[seat] == Archetype.Human ? "You" : $"{archetypes[seat]}{Numeral(copy)}",
                 Species = species[seat],
                 Archetype = archetypes[seat],
                 Cash = PoMuleSpecies.StartingCash(species[seat], classic),
@@ -183,4 +195,7 @@ public sealed class MatchState
         Array.Fill(installed, Nobody);
         return new MatchState { Recorded = true, Classic = classic, Seed = seed, Rng = rng, Map = map, Players = players, Owner = owner, Installed = installed, Assayed = new bool[map.Plots.Length] };
     }
+
+    /// <summary>"", " II", " III": the first of a personality goes by its plain name.</summary>
+    private static string Numeral(int copy) => copy switch { 1 => "", 2 => " II", 3 => " III", _ => $" {copy}" };
 }

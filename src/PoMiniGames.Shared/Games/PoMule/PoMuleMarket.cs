@@ -4,7 +4,7 @@ namespace PoMiniGames.Shared.Games.PoMule;
 public readonly record struct Trade(int Seller, int Buyer, int Price);
 
 /// <summary>
-/// The walking-floor market. One good at a time, all eight lanes on one price axis that runs
+/// The walking-floor market. One good at a time, all sixteen lanes on one price axis that runs
 /// from the Store's buying price (the floor) to its selling price (the ceiling).
 /// </summary>
 public static class PoMuleMarket
@@ -157,7 +157,7 @@ public static class PoMuleMarket
 
     /// <summary>
     /// Smithore is worth what the corral lacks: dear when M.U.L.E.s are scarce, cheap when the
-    /// Store has plenty. 7 in the corral gives the opening price.
+    /// Store has plenty. Half the opening herd in the corral gives the opening price.
     /// </summary>
     public static int SmithorePrice(int mulesInCorral) => Math.Clamp(
         PoMuleTuning.SmithorePriceTimesMules / Math.Max(1, mulesInCorral),

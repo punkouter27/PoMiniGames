@@ -83,11 +83,11 @@ public sealed class PoMuleProductionTests
     /// Each row runs one scenario: a private method below, named after what it checks.
     /// </summary>
     [Theory]
-    [InlineData(nameof(ShortOfEnergy_TheLeastValuableMulesGoIdle_AndThreeShortColonistsMakeACrisisMonth))]
+    [InlineData(nameof(ShortOfEnergy_TheLeastValuableMulesGoIdle_AndSixShortColonistsMakeACrisisMonth))]
     [InlineData(nameof(Events_HitOneFoodPlot_StealCrystite_BurnTheStore_AndComeUpAboutThreeMonthsInFour))]
     public Task Scenario(string name) => Scenarios.RunAsync(this, name);
 
-    private static void ShortOfEnergy_TheLeastValuableMulesGoIdle_AndThreeShortColonistsMakeACrisisMonth()
+    private static void ShortOfEnergy_TheLeastValuableMulesGoIdle_AndSixShortColonistsMakeACrisisMonth()
     {
         var match = Match();
         var food = Work(match, 0, Terrain.River, Good.Food);                    // 4 × 30 = 120
@@ -106,8 +106,13 @@ public sealed class PoMuleProductionTests
         match.Players[0].WentShort.Should().BeTrue();
         match.CrisisMonths.Should().Be(0, "one colonist short is not a colony crisis");
 
-        match.Players[1].WentShort = true;   // e.g. started the month hungry
-        match.Players[2].WentShort = true;
+        // Six of sixteen short (three in eight, as before) is a crisis; five is not.
+        for (var seat = 1; seat <= 4; seat++) match.Players[seat].WentShort = true; // e.g. started the month hungry
+        match.Players[0].Goods[(int)Good.Energy] = 0;
+        PoMuleProduction.Run(match, ColonyEvent.None, vary: false);
+        match.CrisisMonths.Should().Be(0, "five colonists short is not yet a colony crisis");
+
+        match.Players[5].WentShort = true;
         match.Players[0].Goods[(int)Good.Energy] = 0;
         PoMuleProduction.Run(match, ColonyEvent.None, vary: false);
         match.CrisisMonths.Should().Be(1);

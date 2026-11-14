@@ -1,22 +1,25 @@
 // PoMule drawing. Everything here only reads the game object index.js owns; nothing here
 // changes the match.
 //
-// The screen is laid out and coloured after the 1983 Atari 800 game. One 384×190 buffer of
+// The screen is laid out and coloured after the 1983 Atari 800 game. One 384×226 buffer of
 // fat pixels holds the whole thing and is blown up to fit, with smoothing off:
 //
 //   title line     "DEVELOPMENT #3" in grey, the month's clock at the right
 //   the planet     all 24×8 plots at once (16 pixels a plot), or the store's interior,
 //                  or the auction floor
 //   message line   orange block capitals
-//   status block   one column per colonist: name, money, goods
+//   status block   one column per colonist (name, money, goods), in two bands of eight
 //
 // Pale grey ground, plots fenced in their owner's colour with the M.U.L.E.'s glyph inside, a
 // dotted orange river, small grey mountains, black store blocks.
 import * as W from './world.js';
 import { drawText } from './font.js';
 
-export const SCREEN_W = 384, SCREEN_H = 190, MAP_Y = 10;
-const MSG_Y = 141, STATUS_Y = 153, COLUMN_W = 48;
+// Sixteen colonists: the status block is two bands of eight columns, one under the other.
+const MSG_Y = 141, STATUS_Y = 152, COLUMN_W = 48, BAND_H = 37, PER_BAND = 8;
+export const SCREEN_W = 384, SCREEN_H = STATUS_Y + 2 * BAND_H, MAP_Y = 10;
+// Portrait: two columns of player cards under the planet.
+const CARD_H = 40, CARD_PITCH = 46, CARD_TOP = 12, PORTRAIT_RESERVE = CARD_TOP + 8 * CARD_PITCH + 8;
 const PX = 4; // one fat pixel in world units (a plot is 64 units, 16 pixels)
 
 const GROUND = '#dcdce0';
@@ -242,17 +245,30 @@ function drawInterior(c, g) {
 function drawMarket(c, g) {
   const land = g.phase === 1;
   const good = g.snap[3], floor = g.snap[8], ceiling = g.snap[22];
-  const top = 18, bottom = 92, lane = 40, left = 22;
-  const laneX = (seat) => left + (seat < 4 ? seat : seat + 1) * lane + lane / 2;
+  // One lane per colonist, half each side of the Store, which takes two lanes' width.
+  const top = 18, bottom = 92, left = 22, half = Math.ceil(g.seats / 2);
+  const lane = Math.floor((SCREEN_W - 12 - left) / (g.seats + 2));
+  const laneX = (seat) => left + (seat < half ? seat : seat + 2) * lane + lane / 2;
   const priceY = (p) => Math.round(bottom - ((p - floor) / Math.max(1, ceiling - floor)) * (bottom - top));
-  const storeX = left + 4 * lane;
+  const storeX = left + half * lane, storeMid = storeX + lane;
+  // Lanes are narrower than a price: a label that would touch one already drawn (or a
+  // neighbour's sprite) goes up a line until it is clear, so sixteen bids stay readable.
+  const labels = Array.from({ length: g.seats }, (_, s) => {
+    const r = g.seat(s, 9), p = g.seat(s, 10);
+    return { x: laneX(s), y: (r === 0 ? bottom + 14 : priceY(p)) - 4, w: 6 };
+  });
+  const labelY = (x, y, w) => {
+    while (labels.some((r) => Math.abs(r.x - x) < (r.w + w) / 2 + 2 && Math.abs(r.y - y) < 9)) y -= 9;
+    labels.push({ x, y, w });
+    return y;
+  };
   c.setTransform(1, 0, 0, 1, 0, MAP_Y);
 
-  // The Store, between lanes 4 and 5.
+  // The Store, in the middle of the floor.
   c.fillStyle = INK;
-  c.fillRect(storeX + 4, top - 8, lane - 8, bottom - top + 16);
-  drawText(c, land ? 'LAND' : 'STORE', storeX + lane / 2, top - 5, WINDOW, 1, 'center');
-  drawText(c, land ? '1' : String(g.snap[11 + good] ?? 0), storeX + lane / 2, (top + bottom) / 2 - 3, WINDOW, 1, 'center');
+  c.fillRect(storeX + 4, top - 8, lane * 2 - 8, bottom - top + 16);
+  drawText(c, land ? 'LAND' : 'STORE', storeMid, top - 5, WINDOW, 1, 'center');
+  drawText(c, land ? '1' : String(g.snap[11 + good] ?? 0), storeMid, (top + bottom) / 2 - 3, WINDOW, 1, 'center');
 
   // The Store's two prices (for land, the opening bid) as dotted lines; the best bid and ask as dashed ones.
   // For land the upper line is the top of the scale, which climbs ahead of the bidding.
@@ -283,14 +299,17 @@ function drawMarket(c, g) {
     drawColonist(c, x * PX, y * PX, g.colors[seat], g.species[seat], role === 1 ? 1 : -1, false, Math.floor(g.time * 4) % 2);
     c.globalAlpha = 1;
     c.setTransform(1, 0, 0, 1, 0, MAP_Y);
-    if (role !== 0 && !(land && price <= floor)) drawText(c, String(price), x, y - 13, TEXT, 1, 'center');
+    if (role !== 0 && !(land && price <= floor)) {
+      const label = String(price);
+      drawText(c, label, x, labelY(x, y - 13, label.length * 6), TEXT, 1, 'center');
+    }
     drawText(c, String(units), x, 119, g.colors[seat], 1, 'center');
   }
 
   // A bar between the two sides of each trade, for a third of a second.
   for (const t of g.trades) {
-    const from = t.seller < 0 ? storeX + lane / 2 : laneX(t.seller);
-    const to = t.buyer < 0 ? storeX + lane / 2 : laneX(t.buyer);
+    const from = t.seller < 0 ? storeMid : laneX(t.seller);
+    const to = t.buyer < 0 ? storeMid : laneX(t.buyer);
     c.fillStyle = INK;
     c.fillRect(Math.min(from, to), priceY(t.price) - 1, Math.abs(to - from), 2);
   }
@@ -335,30 +354,36 @@ function hint(g) {
 
 /**
  * A name cut to seven characters (a status column holds eight, and one is the gap to the
- * next), so that it still reads as a name: "INDUSTRIALIST" becomes "INDUST." and a second
- * "HOARDER II" stays "HOAR II".
+ * next), so that it still reads as a name: "INDUSTRIALIST" becomes "INDUST.", a second
+ * "HOARDER II" becomes "HOAR II" and a third "HOARDER III" "HOA III".
  */
 export function shortName(name) {
   const s = String(name);
   if (s.length <= 7) return s;
-  return / II$/.test(s) ? `${s.slice(0, -3).slice(0, 4)} II` : `${s.slice(0, 6)}.`;
+  const numeral = / I{2,3}$/.exec(s)?.[0];
+  return numeral ? `${s.slice(0, -numeral.length).slice(0, 7 - numeral.length)}${numeral}` : `${s.slice(0, 6)}.`;
 }
 
 function drawStatus(c, g) {
   c.setTransform(1, 0, 0, 1, 0, 0);
+  // A hairline between the two bands, in the planet's speck grey.
+  if (g.seats > PER_BAND) {
+    c.fillStyle = SPECK;
+    c.fillRect(0, STATUS_Y + BAND_H - 2, SCREEN_W, 1);
+  }
   for (let seat = 0; seat < g.seats; seat++) {
-    const x = seat * COLUMN_W + 1, color = g.colors[seat];
-    const name = shortName(g.names[seat]);
+    const x = (seat % PER_BAND) * COLUMN_W + 1, y = STATUS_Y + Math.floor(seat / PER_BAND) * BAND_H;
+    const color = g.colors[seat], name = shortName(g.names[seat]);
     if (seat === 0 && g.human) {
       // The player's own name is shown inverse, as a selected item is on the Atari.
       c.fillStyle = color;
-      c.fillRect(x - 1, STATUS_Y - 1, name.length * 6 + 2, 9);
-      drawText(c, name, x, STATUS_Y, GROUND);
-    } else drawText(c, name, x, STATUS_Y, color);
+      c.fillRect(x - 1, y - 1, name.length * 6 + 2, 9);
+      drawText(c, name, x, y, GROUND);
+    } else drawText(c, name, x, y, color);
     const away = g.phase === 2 && (g.seat(seat, 8) === 1 || g.seat(seat, 5) === 0);
-    drawText(c, away ? (g.seat(seat, 8) === 1 ? 'IN PUB' : 'TIME UP') : `$${g.seat(seat, 0)}`, x, STATUS_Y + 9, color);
-    drawText(c, `F${g.seat(seat, 1)} E${g.seat(seat, 2)}`, x, STATUS_Y + 18, color);
-    drawText(c, `S${g.seat(seat, 3)} C${g.seat(seat, 4)}`, x, STATUS_Y + 27, color);
+    drawText(c, away ? (g.seat(seat, 8) === 1 ? 'IN PUB' : 'TIME UP') : `$${g.seat(seat, 0)}`, x, y + 9, color);
+    drawText(c, `F${g.seat(seat, 1)} E${g.seat(seat, 2)}`, x, y + 18, color);
+    drawText(c, `S${g.seat(seat, 3)} C${g.seat(seat, 4)}`, x, y + 27, color);
   }
 }
 
@@ -366,33 +391,36 @@ export function frameLayout(view) {
   const portrait = view.w < 600 && view.h > view.w;
   const sourceHeight = portrait ? STATUS_Y - 2 : SCREEN_H;
   const scale = Math.min(Math.max(1, view.w - 16) / SCREEN_W,
-    Math.max(1, view.h - (portrait ? 300 : 16)) / sourceHeight);
+    Math.max(1, view.h - (portrait ? PORTRAIT_RESERVE : 16)) / sourceHeight);
   const width = SCREEN_W * scale, height = sourceHeight * scale;
   return { portrait, sourceHeight, width, height, x: (view.w - width) / 2,
     y: portrait ? 8 : (view.h - height) / 2 };
 }
 
+/** Two columns of cards: name and money on the first line, the four goods on the second. */
 function drawPortraitStatus(ctx, g, layout, view) {
-  const top = layout.y + layout.height + 12;
+  const top = layout.y + layout.height + CARD_TOP;
   const columnWidth = (view.w - 24) / 2;
   ctx.font = 'bold 13px monospace';
-  ctx.textAlign = 'left';
   ctx.textBaseline = 'top';
   for (let seat = 0; seat < g.seats; seat++) {
-    const x = 8 + seat % 2 * (columnWidth + 8), y = top + Math.floor(seat / 2) * 68;
+    const x = 8 + seat % 2 * (columnWidth + 8), y = top + Math.floor(seat / 2) * CARD_PITCH;
     ctx.fillStyle = '#f4f4f4';
-    ctx.fillRect(x, y, columnWidth, 60);
+    ctx.fillRect(x, y, columnWidth, CARD_H);
     ctx.fillStyle = g.colors[seat];
-    ctx.fillRect(x, y, 3, 60);
+    ctx.fillRect(x, y, 3, CARD_H);
     ctx.fillStyle = TEXT;
-    ctx.fillText(shortName(g.names[seat]), x + 8, y + 5);
-    ctx.fillText(`$${g.seat(seat, 0)}`, x + 8, y + 23);
+    ctx.textAlign = 'left';
+    ctx.fillText(shortName(g.names[seat]), x + 8, y + 4);
+    ctx.textAlign = 'right';
+    ctx.fillText(`$${g.seat(seat, 0)}`, x + columnWidth - 6, y + 4);
+    ctx.textAlign = 'left';
     ctx.fillText(`F${g.seat(seat, 1)} E${g.seat(seat, 2)} S${g.seat(seat, 3)} C${g.seat(seat, 4)}`,
-      x + 8, y + 41, columnWidth - 16);
+      x + 8, y + 22, columnWidth - 14);
   }
 }
 
-/** Portrait keeps the planet intact and gives the eight colonists readable cards. */
+/** Portrait keeps the planet intact and gives the sixteen colonists compact cards. */
 export function drawFrame(ctx, g, view) {
   const lo = (g.lo ??= Object.assign(document.createElement('canvas'), { width: SCREEN_W, height: SCREEN_H }));
   const c = lo.getContext('2d');

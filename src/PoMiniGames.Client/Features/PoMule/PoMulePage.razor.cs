@@ -420,12 +420,12 @@ public partial class PoMulePage : IAsyncDisposable
         await Saves.ClearAsync();
         var mine = _rows.First(r => r.Seat == 0);
         _outcome = mine.Rank == 1 ? GameResult.Win : GameResult.Loss;
-        _endLine = (mine.Rank == 1 ? "You are First Founder" : $"You finished {Ordinal(mine.Rank)} of 8")
+        _endLine = (mine.Rank == 1 ? "You are First Founder" : $"You finished {Ordinal(mine.Rank)} of {PoMuleTuning.Seats}")
             + (survived ? ", and the colony survives." : ", but the colony collapsed.");
         _endStats =
         [
             new StatItem { Value = mine.NetWorth.ToString("N0", System.Globalization.CultureInfo.InvariantCulture), Label = "Net Worth" },
-            new StatItem { Value = $"{mine.Rank}/8", Label = "Place" },
+            new StatItem { Value = $"{mine.Rank}/{PoMuleTuning.Seats}", Label = "Place" },
             new StatItem { Value = mine.Plots.ToString(System.Globalization.CultureInfo.InvariantCulture), Label = "Plots" },
             new StatItem { Value = survived ? "Survived" : "Collapsed", Label = "Colony" },
         ];
