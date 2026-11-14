@@ -95,7 +95,7 @@ public sealed class PoBrawlTournamentTests
     {
         var game = GameCatalog.All.Single(g => g.Key == GameKeys.PoBrawl);
         var demos = game.Modes.Where(mode => mode.Mode == GameMode.Demo).ToArray();
-        demos.Select(mode => mode.ChipLabel).Should().Equal("DEMO · Tournament", "DEMO · FFA");
+        demos.Select(mode => mode.ChipLabel).Should().Equal("Demo · Tournament", "Demo · FFA");
         demos.Select(mode => mode.Url).Should().Equal("/pobrawl/demo?autoGuest=1", "/pobrawl/ffa");
         demos.Should().OnlyContain(mode => !mode.RequiresNetwork);
         var reel = GameCatalog.Demo.Where(entry => entry.Key == GameKeys.PoBrawl).ToArray();
