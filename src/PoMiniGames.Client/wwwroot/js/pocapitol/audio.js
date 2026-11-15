@@ -25,14 +25,26 @@
 //   doors       glass going at the first doors, an extinguisher let off in the doorway, fists and
 //               boots on whichever door the crowd is held at
 //   alert       the curfew alert, on every phone at once and none of them in time
+//   voices      the crowd as people: a few dozen individual shouting voices synthesized on the
+//               audio thread (crowdWorklet.js), each thrown from where the crowd actually stands,
+//               carried as a first-order sound field and decoded to four directions round the
+//               listener, so the crowd has a front, a back and sides
 //   footage     optional: the whole mix through a phone's microphone (wind buffeting the capsule,
 //               a hard limiter that pumps after every bang, no low end)
 //
 // Space: every one-shot is placed in the world with an HRTF panner relative to the listener's
-// position and heading, attenuated by distance, and muffled when walls stand between it and the
-// listener. The reverb is built from the room the listener is in: its Sabine decay time from
-// the room's volume, first reflections from the real distances to its walls, and outdoors a
-// single slap-back from the building's facade at the right delay.
+// position and heading, attenuated by distance, and delayed by the time sound takes to cover it.
+// Between rooms it does not go through the wall: it goes round, through each doorway on the way
+// (soundPath), so it is heard from the doorway, late by the length of the route and dulled by
+// how sharply it had to turn. Outdoors every loud one-shot is heard a second time off each flat
+// face that can see both it and the listener (facadeEchoes): the west front and the two stands.
+// The reverb is built from the room the listener is in: its Sabine decay time from the room's
+// volume, first reflections from the real distances to its walls, and outdoors a single
+// slap-back from the building's facade at the right delay.
+//
+// Mix: the beds (crowd, chant, helicopter, voices) sit on their own bus, and a loud transient
+// pushes that bus down for a moment (duckDepth), the way a film mix clears room for a bang.
+// Whatever the camera is following is lifted a little over everything else.
 //
 // Silent on kiosk routes, where the attract reel runs without anyone having asked for sound.
 import { areas, groundHeight, CLOCK_START } from './world.js';
@@ -124,6 +136,98 @@ export function impactLayers(energy, mass) {
         crack: e >= 150 ? Math.min(0.5, 0.2 + (e - 150) / 1200) : 0,
     };
 }
+/**
+ * The openings between one room and the next, in the order the rooms run (grounds, Crypt,
+ * Rotunda, connecting doorway, Statuary Hall, House corridor): where the opening is along z, and
+ * half its width. All of them are on the centre line.
+ */
+export const PORTALS = [
+    { z: 14.5, half: 4.5 }, { z: -3, half: 4.5 }, { z: -26, half: 4 }, { z: -29.5, half: 4 }, { z: -44.5, half: 4 },
+];
+
+/**
+ * The way sound gets from `source` to `listener`: straight, if they share a room, otherwise
+ * through every doorway between them, crossing each one as close to the straight line as the
+ * opening allows. Returns where it seems to come from (`x`, `z`: out along the first leg, at the
+ * full length of the route), the route's `length` in metres, how many `doors` it passed, and
+ * `bend`: the total angle it turned, in radians, which is what takes the top end off.
+ */
+export function soundPath(source, listener) {
+    const from = areaIndex(listener.x, listener.z), to = areaIndex(source.x, source.z);
+    const direct = Math.hypot(source.x - listener.x, source.z - listener.z);
+    if (from === to) return { x: source.x, z: source.z, length: direct, doors: 0, bend: 0 };
+    const step = to > from ? 1 : -1;
+    const points = [{ x: listener.x, z: listener.z }];
+    for (let room = from; room !== to; room += step) {
+        const portal = PORTALS[step > 0 ? room : room - 1];
+        const last = points[points.length - 1];
+        // Where the straight line to the source crosses this doorway's plane, held to the opening.
+        const t = Math.abs(source.z - last.z) < 1e-6 ? 0 : (portal.z - last.z) / (source.z - last.z);
+        const x = last.x + (source.x - last.x) * Math.max(0, Math.min(1, t));
+        points.push({ x: Math.max(-portal.half, Math.min(portal.half, x)), z: portal.z });
+    }
+    points.push({ x: source.x, z: source.z });
+    let length = 0, bend = 0, heading = null;
+    for (let i = 1; i < points.length; i++) {
+        const dx = points[i].x - points[i - 1].x, dz = points[i].z - points[i - 1].z, leg = Math.hypot(dx, dz);
+        if (leg < 1e-6) continue;
+        const angle = Math.atan2(dx, dz);
+        if (heading !== null) bend += Math.abs(Math.atan2(Math.sin(angle - heading), Math.cos(angle - heading)));
+        heading = angle; length += leg;
+    }
+    const first = points[1], reach = Math.hypot(first.x - listener.x, first.z - listener.z) || 1;
+    return {
+        x: listener.x + (first.x - listener.x) / reach * length, z: listener.z + (first.z - listener.z) / reach * length,
+        length, doors: points.length - 2, bend,
+    };
+}
+
+/** Low-pass cutoff (Hz) and level for a route of this length that turned this much through this many doors. */
+export function pathTone(path) {
+    const turned = 700 + 17300 * Math.exp(-path.bend * 1.7) * Math.pow(0.78, path.doors);
+    return {
+        cutoff: Math.min(airAbsorption(path.length), turned),
+        level: Math.pow(0.9, path.doors) / (1 + path.bend * 0.8),
+    };
+}
+
+/** Flat faces that throw sound back outdoors: the west front, and the open fronts of the two stands. */
+export const FACADES = [
+    { z: 14.7, x0: -38, x1: 38 }, { z: 36, x0: -37.5, x1: -13.5 }, { z: 36, x0: 13.5, x1: 37.5 },
+];
+
+/**
+ * First reflections of an outdoor sound: for each face that both the source and the listener
+ * stand in front of, the mirror image of the source behind it, if the bounce point is on the
+ * face. Each is `{ x, z, length }`: where the echo is heard from and how far it travelled.
+ */
+export function facadeEchoes(source, listener) {
+    const echoes = [];
+    if (source.z < 15 || listener.z < 15) return echoes;
+    for (const face of FACADES) {
+        if (source.z <= face.z + 0.5 || listener.z <= face.z + 0.5) continue;
+        const image = { x: source.x, z: 2 * face.z - source.z };
+        // The bounce point: where the line from the listener to the image crosses the face.
+        const t = (face.z - listener.z) / (image.z - listener.z);
+        const hit = listener.x + (image.x - listener.x) * t;
+        if (hit < face.x0 || hit > face.x1) continue;
+        const length = Math.hypot(image.x - listener.x, image.z - listener.z);
+        if (length > 150) continue;
+        echoes.push({ x: image.x, z: image.z, length });
+    }
+    return echoes;
+}
+
+/**
+ * How far a transient pushes the beds down, 0..0.75, from what it was, how hard and how near.
+ * A blow in a crowd does not duck anything; a flash-bang at arm's length clears the mix.
+ */
+export function duckDepth(type, energy = 0, distance = 0) {
+    const base = { grenade: 0.75, flash: 0.65, gunshot: 0.4, openfire: 0.5, break: 0.45, baton: 0.12 }[type]
+        ?? (type === 'impact' && energy >= 150 ? 0.22 : 0);
+    return base <= 0 ? 0 : clamp(base / (1 + Math.max(0, distance) / 14), 0, 0.75);
+}
+
 /** Ceiling heights, meters: the crypt is low, the rotunda a dome, the statuary hall tall. */
 const CEILING = [0, 9, 24, 4, 14, 5];
 
@@ -203,7 +307,12 @@ export function createAudio({ onCaption } = {}) {
         return { convolver, level };
     });
     master.connect(wetSend);
-    let activeSlot = -1, roomKey = '';
+    // The beds: everything that is a continuous texture rather than an event. A transient ducks
+    // this bus and nothing else, so the bang itself is never turned down by its own duck.
+    const bed = ctx.createGain();
+    bed.connect(master);
+    nodes.push(bed);
+    let activeSlot = -1, roomKey = '', disposed = false;
     function tuneRoom(listenerPoint) {
         const index = areaIndex(listenerPoint.x, listenerPoint.z);
         // Outdoors the slap-back delay moves with the listener, quantized so it rebuilds rarely.
@@ -239,9 +348,9 @@ export function createAudio({ onCaption } = {}) {
         nodes.push(gain);
         return { gain, filter };
     }
-    const murmur = loop('bandpass', 420, 0.5).gain;
-    const roar = loop('bandpass', 1150, 0.9).gain;
-    const friction = loop('bandpass', 900, 1.4);
+    const murmur = loop('bandpass', 420, 0.5, bed).gain;
+    const roar = loop('bandpass', 1150, 0.9, bed).gain;
+    const friction = loop('bandpass', 900, 1.4, bed);
     // Wind on the phone's capsule: it goes in after the microphone's own filter, because it is
     // the capsule moving, not a sound in the air.
     const buffet = loop('lowpass', 120, 0.7, micLimit).gain;
@@ -280,8 +389,8 @@ export function createAudio({ onCaption } = {}) {
     const chant = formantBank(), cheer = formantBank();
     const echo = ctx.createDelay(0.5), echoTone = ctx.createBiquadFilter(), echoLevel = ctx.createGain();
     echo.delayTime.value = 0.23; echoTone.type = 'lowpass'; echoTone.frequency.value = 1400; echoLevel.gain.value = 0.5;
-    chant.level.connect(master);
-    chant.level.connect(echo).connect(echoTone).connect(echoLevel).connect(master);
+    chant.level.connect(bed);
+    chant.level.connect(echo).connect(echoTone).connect(echoLevel).connect(bed);
     cheer.level.connect(master);
     nodes.push(choir, echo, echoLevel);
     // The helicopter: rotor wash chopped at the blade rate, placed high overhead and moved a
@@ -294,7 +403,7 @@ export function createAudio({ onCaption } = {}) {
     blades.start(); running.push(blades);
     try { heliPan.panningModel = 'HRTF'; } catch { heliPan.panningModel = 'equalpower'; }
     heliPan.distanceModel = 'inverse'; heliPan.refDistance = 40; heliPan.rolloffFactor = 1; heliPan.maxDistance = 400;
-    chop.connect(heli).connect(heliPan).connect(master);
+    chop.connect(heli).connect(heliPan).connect(bed);
     for (const [type, frequency, q, share] of [['lowpass', 420, 0.7, 1], ['bandpass', 900, 0.8, 0.35]]) {
         const source = ctx.createBufferSource(), filter = ctx.createBiquadFilter(), gain = ctx.createGain();
         source.buffer = noise; source.loop = true; source.playbackRate.value = 0.7 + share * 0.2;
@@ -309,36 +418,100 @@ export function createAudio({ onCaption } = {}) {
     siren.connect(alarmTone).connect(alarm).connect(master); siren.start(); running.push(siren);
 
     const ease = (param, value, seconds = 0.4) => param.setTargetAtTime(value, ctx.currentTime, seconds);
-    const listener = { x: 0, z: 100, yaw: 0 };
+    const listener = { x: 0, z: 100, yaw: 0, focus: null };
+
+    // The crowd as voices (crowdWorklet.js): four channels out of the worklet, north, east, south
+    // and west, each into its own HRTF panner standing twelve metres off in that direction. The
+    // panners move with the listener and do not turn with them, so the field holds still in the
+    // world. If the worklet cannot load, the noise bed is simply all there is.
+    const voices = { node: null, level: ctx.createGain(), panners: [], sentAt: 0 };
+    voices.level.gain.value = 0;
+    voices.level.connect(bed);
+    nodes.push(voices.level);
+    const COMPASS = [[0, -1], [1, 0], [0, 1], [-1, 0]];
+    try {
+        const module = new URL('./crowdWorklet.js', import.meta.url);
+        ctx.audioWorklet?.addModule(module).then(() => {
+            if (disposed) return;
+            const node = new AudioWorkletNode(ctx, 'pocapitol-crowd', { numberOfInputs: 0, numberOfOutputs: 1, outputChannelCount: [4] });
+            const split = ctx.createChannelSplitter(4);
+            node.connect(split);
+            COMPASS.forEach((_, i) => {
+                const panner = ctx.createPanner();
+                try { panner.panningModel = 'HRTF'; } catch { panner.panningModel = 'equalpower'; }
+                // Direction only: how far off the voices are is already in what the worklet sends.
+                panner.distanceModel = 'linear'; panner.rolloffFactor = 0;
+                split.connect(panner, i);
+                panner.connect(voices.level);
+                voices.panners.push(panner);
+                nodes.push(panner);
+            });
+            nodes.push(node, split);
+            voices.node = node;
+        }).catch(() => { /* no worklet: the bed carries the crowd alone */ });
+    } catch { /* not a browser module (tests): no worklet */ }
+    function placeVoices() {
+        voices.panners.forEach((panner, i) => {
+            const x = listener.x + COMPASS[i][0] * 12, z = listener.z + COMPASS[i][1] * 12;
+            if (panner.positionX) { panner.positionX.value = x; panner.positionY.value = 1.7; panner.positionZ.value = z; }
+            else panner.setPosition(x, 1.7, z);
+        });
+    }
+    /** Pushes the beds down by `depth` (0..1) at once and lets them back up over `seconds`. */
+    function duck(depth, seconds = 0.5) {
+        if (depth <= 0.02) return;
+        const t = ctx.currentTime;
+        bed.gain.cancelScheduledValues(t);
+        bed.gain.setTargetAtTime(1 - depth, t, 0.012);
+        bed.gain.setTargetAtTime(1, t + 0.09 + seconds * 0.25, seconds * 0.4);
+    }
 
     // A sound placed in the world. Returns the node a voice should connect to; the whole chain is
     // torn down after `life` seconds. Walls between the source and the listener muffle it, and
     // the wave takes time to arrive: at 343 m/s a shout from the far end of the hall lands about
     // a sixth of a second late, which is most of what makes a big room feel big.
-    function place(x, z, life = 4, height = 1.3) {
+    function place(x, z, life = 4, height = 1.3, { echoes = false, gain = 1 } = {}) {
         const panner = ctx.createPanner(), muffle = ctx.createBiquadFilter(), level = ctx.createGain();
-        const flight = ctx.createDelay(0.5);
+        const flight = ctx.createDelay(1);
         try { panner.panningModel = 'HRTF'; } catch { panner.panningModel = 'equalpower'; }
         panner.distanceModel = 'inverse';
         panner.refDistance = 4; panner.rolloffFactor = 0.9; panner.maxDistance = 120;
+        // Round the corner, not through the wall: heard from the first doorway on the route, at
+        // the route's full length, and dulled by how far it had to turn to get here.
+        const path = soundPath({ x, z }, listener), tone = pathTone(path);
         if (panner.positionX) {
-            panner.positionX.value = x; panner.positionY.value = height; panner.positionZ.value = z;
-        } else panner.setPosition(x, height, z);
-        const walls = Math.abs(areaIndex(x, z) - areaIndex(listener.x, listener.z));
-        // Sound gets out through a doorway far better than through a wall: the connecting aisle
-        // is 9 m wide, so a source lined up with one is only partly screened.
-        const doorway = walls === 1 && Math.abs(x) < 4.5 && Math.abs(listener.x) < 8;
+            panner.positionX.value = path.x; panner.positionY.value = height; panner.positionZ.value = path.z;
+        } else panner.setPosition(path.x, height, path.z);
         muffle.type = 'lowpass';
-        const away = Math.hypot(x - listener.x, z - listener.z);
-        // Stone between the pair dulls the sound far more than distance does; take the lower of
-        // the wall cutoff and the air's own absorption at this range.
-        muffle.frequency.value = Math.min(airAbsorption(away), walls === 0 ? 18000 : doorway ? 9000 : walls === 1 ? 3500 : 900);
-        level.gain.value = walls === 0 ? 1 : doorway ? 0.9 : walls === 1 ? 0.75 : 0.4;
-        flight.delayTime.value = Math.min(0.4, Math.hypot(x - listener.x, z - listener.z) / SPEED_OF_SOUND);
+        muffle.frequency.value = tone.cutoff;
+        // Whatever the camera is following is brought forward over the rest.
+        const focus = listener.focus;
+        const lift = focus && Math.hypot(x - focus.x, z - focus.z) < 4.5 ? 1.45 : 1;
+        level.gain.value = tone.level * gain * lift;
+        flight.delayTime.value = Math.min(0.95, path.length / SPEED_OF_SOUND);
         muffle.connect(level).connect(flight).connect(panner).connect(master);
+        const made = [muffle, level, flight, panner];
+        let longest = flight.delayTime.value;
+        if (echoes && path.doors === 0) {
+            // The same sound again off each flat face that can see both ends: later by the
+            // longer route, quieter, with the top taken off by the stone.
+            for (const echo of facadeEchoes({ x, z }, listener)) {
+                const back = ctx.createGain(), dull = ctx.createBiquadFilter(), late = ctx.createDelay(1), from = ctx.createPanner();
+                try { from.panningModel = 'HRTF'; } catch { from.panningModel = 'equalpower'; }
+                from.distanceModel = 'inverse'; from.refDistance = 4; from.rolloffFactor = 0.9; from.maxDistance = 160;
+                if (from.positionX) { from.positionX.value = echo.x; from.positionY.value = 4; from.positionZ.value = echo.z; }
+                else from.setPosition(echo.x, 4, echo.z);
+                back.gain.value = 0.5 * gain;
+                dull.type = 'lowpass'; dull.frequency.value = Math.min(3200, airAbsorption(echo.length));
+                late.delayTime.value = Math.min(0.95, echo.length / SPEED_OF_SOUND);
+                muffle.connect(back).connect(dull).connect(late).connect(from).connect(master);
+                made.push(back, dull, late, from);
+                longest = Math.max(longest, late.delayTime.value);
+            }
+        }
         setTimeout(() => {
-            try { muffle.disconnect(); level.disconnect(); flight.disconnect(); panner.disconnect(); } catch { /* gone */ }
-        }, life * 1000 + 100 + flight.delayTime.value * 1000);
+            try { for (const node of made) node.disconnect(); } catch { /* gone */ }
+        }, life * 1000 + 100 + longest * 1000);
         return muffle;
     }
     function aimListener() {
@@ -493,8 +666,14 @@ export function createAudio({ onCaption } = {}) {
 
     function event(e) {
         if (!e.human && farAway(e)) return;
-        const dest = place(e.x, e.z, e.type === 'gas' ? 3 : e.type === 'break' ? 4 : 2);
+        const away = Math.hypot(e.x - listener.x, e.z - listener.z);
+        // Anything loud enough to come back off a wall gets its echoes.
+        const loud = e.type === 'gunshot' || e.type === 'flash' || e.type === 'grenade' || e.type === 'break' || e.type === 'baton';
+        const dest = place(e.x, e.z, e.type === 'gas' ? 3 : e.type === 'break' ? 4 : 2, 1.3, { echoes: loud });
         const energy = e.energy ?? 30;
+        // The bang arrives late by its distance, and the duck with it.
+        const depth = duckDepth(e.type, energy, away);
+        if (depth > 0) setTimeout(() => { if (!disposed) duck(depth, e.type === 'grenade' || e.type === 'flash' ? 1.4 : 0.5); }, Math.min(900, away / SPEED_OF_SOUND * 1000));
         const isIndoors = (e.z ?? listener.z) < 14.5;
         switch (e.type) {
             case 'shove':
@@ -591,6 +770,7 @@ export function createAudio({ onCaption } = {}) {
                 // someone lets off an extinguisher; at the first doors the panes go as well.
                 if (Number.isInteger(e.line)) {
                     roarUp(0.34);
+                    voices.node?.port.postMessage({ roar: 1 });
                     if (e.line === 1) for (const x of [-12, 12]) glass(place(x, e.z, 3, 3), 0.15 + Math.random() * 0.5);
                     if (e.line >= 1) burst({ type: 'highpass', frequency: 2600, q: 0.4, volume: 0.26, attack: 0.04, seconds: 1.5, at: 0.9, sweep: 1700, dest });
                 }
@@ -674,7 +854,9 @@ export function createAudio({ onCaption } = {}) {
     function update(mix, dt) {
         clock += dt;
         listener.x = mix.x; listener.z = mix.z; listener.yaw = mix.yaw ?? 0;
+        listener.focus = mix.focus ?? null;
         aimListener();
+        placeVoices();
         const indoors = mix.z < 14.5, live = mix.active && !bus.isMuted?.();
         ease(master.gain, live ? 0.9 : 0, 0.25);
         // Overhead all afternoon. Through the roof it is a faint thud; outdoors it is the floor
@@ -687,7 +869,19 @@ export function createAudio({ onCaption } = {}) {
         ease(buffet.gain, live && footage && !indoors ? micBuffet(mix.wind ?? 6.7, clock) * 0.5 : 0, 0.08);
         tuneRoom(listener);
         ease(wetSend.gain, indoors ? 0.55 : 0.12);
-        ease(murmur.gain, live ? 0.07 + mix.crowd * 0.1 : 0);
+        // With the voices running the noise bed steps back: it is the far crowd, they are the near.
+        const voiced = voices.node !== null;
+        ease(murmur.gain, live ? (0.07 + mix.crowd * 0.1) * (voiced ? 0.6 : 1) : 0);
+        ease(voices.level.gain, live && voiced ? 0.5 + 0.5 * mix.crowd : 0, 0.3);
+        if (voiced && clock >= voices.sentAt) {
+            voices.sentAt = clock + 0.2;
+            voices.node.port.postMessage({
+                weights: mix.ring?.weights, depth: mix.ring?.depth,
+                level: live ? 0.25 + 0.75 * mix.crowd : 0,
+                agitation: clamp(0.15 + 0.5 * (mix.pressure ?? 0) + 0.35 * (mix.morale ?? 0) * mix.crowd, 0, 1),
+                indoors: indoors ? 1 : 0,
+            });
+        }
         ease(roar.gain, live ? mix.pressure * 0.2 : 0);
         // Shearing cloth, straps and shoes: a hiss that brightens and swells with relative speed.
         const shear = live ? clamp(mix.shear ?? 0, 0, 1) : 0;
@@ -778,6 +972,7 @@ export function createAudio({ onCaption } = {}) {
     }
 
     function dispose() {
+        disposed = true;
         for (const source of running) { try { source.stop(); } catch { /* already stopped */ } }
         try {
             for (const node of nodes) node.disconnect();

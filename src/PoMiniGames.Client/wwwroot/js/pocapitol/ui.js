@@ -14,6 +14,14 @@
 //              rim around the panel with chromatic dispersion (red, green and blue bend by slightly
 //              different amounts), and shockwave ripples from every press. It runs only while a menu
 //              is on screen.
+//   wipes      the same canvas draws the cuts between menu, play and result: a front of light
+//              that crosses the frame along a noisy diagonal, dissolving a dark veil off the scene
+//              as it goes (a start), or just passing over it (a pause, an ending).
+//   readouts   the numbers in the heads-up panel belong to Blazor, so they are not rewritten
+//              here, only watched: when one changes it rolls up into place like a counter wheel,
+//              the clock ticks, a milestone pip springs as it lights, and a caption sweeps in.
+//   touch      a highlight follows the cursor across a control, and a press is felt as well as
+//              heard: a short rumble on a gamepad, a tap on a phone.
 //
 // All of it stands down for reduced motion; the shader also for the lowest quality tier.
 
@@ -30,6 +38,7 @@ uniform vec2 uRes;
 uniform float uTime, uOn;
 uniform vec4 uPanel;      // x, y, width, height in canvas pixels, origin top-left
 uniform vec4 uRip[4];     // x, y, start time, strength
+uniform vec3 uWipe;       // progress 0..1 (outside that: none), 1 if it lifts a veil, a seed
 out vec4 outColor;
 
 float hash(vec2 p) { return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453); }
@@ -83,6 +92,23 @@ void main() {
     vec3 rgb = caustic * gold * 0.2 * (0.35 + 0.65 * inside) + rim * vec3(1.0, 0.88, 0.66) * (0.3 + 0.55 * h) + ripple * vec3(0.9, 0.8, 0.6);
     float alpha = 0.04 + 0.09 * inside * dot(caustic, vec3(0.33)) + max(rim.r, max(rim.g, rim.b)) * 0.42 + ripple * 0.3;
     outColor = vec4(rgb * uOn, alpha * uOn);   // premultiplied
+
+    // A cut: a front of light crossing the frame on a noisy diagonal. Ahead of it, on a start,
+    // the scene is still under a dark veil; behind it the scene is clear.
+    if (uWipe.x > 0.0 && uWipe.x < 1.0) {
+        vec2 uv = px / uRes;
+        // Two slow sine fields make the front wander without ever having a hard edge in it.
+        float grain = 0.5 + 0.3 * sin(uv.x * 5.3 + uWipe.z) * sin(uv.y * 4.1 + uWipe.z * 1.7) + 0.2 * sin(uv.x * 11.0 - uv.y * 7.0 + uWipe.z * 2.3);
+        float reach = uv.x * 0.72 + uv.y * 0.28 + (grain - 0.5) * 0.22;
+        float ahead = reach - (uWipe.x * 1.5 - 0.25);
+        float swell = sin(uWipe.x * 3.14159);
+        float front = exp(-ahead * ahead * 1400.0) * swell * 0.5;
+        float leak = exp(-ahead * ahead * 60.0) * swell * 0.07;
+        float veil = uWipe.y * smoothstep(0.0, 0.05, ahead) * 0.6 * smoothstep(1.0, 0.7, uWipe.x);
+        vec3 light = vec3(1.0, 0.84, 0.55) * front + vec3(0.95, 0.6, 0.3) * leak;
+        float cover = clamp(veil + front * 0.5 + leak * 0.4, 0.0, 1.0);
+        outColor = vec4(vec3(0.03, 0.06, 0.1) * veil + light + outColor.rgb * (1.0 - cover), cover + outColor.a * (1.0 - cover));
+    }
 }`;
 
 export function createUiFx(root) {
@@ -212,7 +238,7 @@ export function createUiFx(root) {
         gl.bufferData(gl.ARRAY_BUFFER, new Float32Array([-1, -1, 3, -1, -1, 3]), gl.STATIC_DRAW);
         const at = gl.getAttribLocation(program, 'aPos');
         gl.enableVertexAttribArray(at); gl.vertexAttribPointer(at, 2, gl.FLOAT, false, 0, 0);
-        uniforms = Object.fromEntries(['uRes', 'uTime', 'uOn', 'uPanel', 'uRip'].map(name => [name, gl.getUniformLocation(program, name)]));
+        uniforms = Object.fromEntries(['uRes', 'uTime', 'uOn', 'uPanel', 'uRip', 'uWipe'].map(name => [name, gl.getUniformLocation(program, name)]));
         root.prepend(canvas);
     }
     function frame() {
@@ -221,7 +247,9 @@ export function createUiFx(root) {
         const panel = currentPanel();
         on += ((panel ? 1 : 0) - on) * 0.14;
         const time = (performance.now() - start) / 1000;
-        const busy = panel || on > 0.01 || ripples.some(r => time - r[2] < 1.8);
+        const wiped = cut ? (time - cut.start) / cut.seconds : 2;
+        if (wiped >= 1) cut = null;
+        const busy = panel || on > 0.01 || cut || ripples.some(r => time - r[2] < 1.8);
         // Half resolution is plenty for soft light.
         const w = Math.max(2, Math.round(root.clientWidth * 0.5)), h = Math.max(2, Math.round(root.clientHeight * 0.5));
         if (canvas.width !== w || canvas.height !== h) { canvas.width = w; canvas.height = h; gl.viewport(0, 0, w, h); }
@@ -234,6 +262,7 @@ export function createUiFx(root) {
             gl.uniform2f(uniforms.uRes, w, h); gl.uniform1f(uniforms.uTime, time); gl.uniform1f(uniforms.uOn, on);
             gl.uniform4f(uniforms.uPanel, ...panelBox);
             gl.uniform4fv(uniforms.uRip, ripples.flat());
+            gl.uniform3f(uniforms.uWipe, cut ? Math.max(0.0001, wiped) : 2, cut?.veil ? 1 : 0, cut?.seed ?? 0);
             gl.drawArrays(gl.TRIANGLES, 0, 3);
             running = requestAnimationFrame(frame);
         }
@@ -247,6 +276,31 @@ export function createUiFx(root) {
         wake();
     }
     const currentPanel = () => root.querySelector(':scope > .pc-panel');
+    let cut = null;
+    /**
+     * A cut between states. 'reveal' lifts a dark veil off the scene behind a front of light (a
+     * start); 'pass' sends the front across without the veil (a pause, an ending).
+     */
+    function wipe(kind = 'pass') {
+        if (calm()) return;
+        initShader();
+        if (!gl) return;
+        const veil = kind === 'reveal';
+        cut = { start: (performance.now() - start) / 1000, seconds: veil ? 1.05 : 0.7, veil, seed: Math.random() * 6 };
+        const o = live();
+        if (o) whoosh(o, { rising: veil, volume: veil ? 0.06 : 0.035, seconds: veil ? 0.7 : 0.45 });
+        wake();
+    }
+    /** A press you can feel: a short rumble on a gamepad, a tap on a phone. `strength` 0..1. */
+    function rumble(strength = 0.3, ms = 40) {
+        if (calm()) return;
+        try {
+            for (const pad of navigator.getGamepads?.() ?? []) {
+                pad?.vibrationActuator?.playEffect?.('dual-rumble', { duration: ms, weakMagnitude: Math.min(1, strength), strongMagnitude: Math.min(1, strength * 0.6) })?.catch?.(() => {});
+            }
+            if (matchMedia('(pointer: coarse)').matches) navigator.vibrate?.(Math.round(ms * 0.3));
+        } catch { /* no haptics here */ }
+    }
 
     // -------------------------------------------------------------- motion
     const spring = 'cubic-bezier(0.2, 0.9, 0.3, 1.25)', settle = 'cubic-bezier(0.2, 0.8, 0.2, 1)';
@@ -326,8 +380,14 @@ export function createUiFx(root) {
         if (!el || el.disabled || el.contains(e.relatedTarget)) return;
         lift(el, true); cue.hover(el);
     });
-    on_('pointerout', e => { const el = target(e); if (el && !el.contains(e.relatedTarget)) { lift(el, false); release(el); el.style.rotate = ''; } });
-    on_('pointerdown', e => { const el = target(e); if (el && !el.disabled && el.getAttribute('aria-disabled') !== 'true') { dip(el, e); cue.press(el); } });
+    on_('pointerout', e => {
+        const el = target(e);
+        if (el && !el.contains(e.relatedTarget)) {
+            lift(el, false); release(el); el.style.rotate = '';
+            el.style.removeProperty('--pc-shine-x'); el.style.removeProperty('--pc-shine-y');
+        }
+    });
+    on_('pointerdown', e => { const el = target(e); if (el && !el.disabled && el.getAttribute('aria-disabled') !== 'true') { dip(el, e); cue.press(el); rumble(0.3, 35); } });
     on_('pointerup', e => { const el = target(e); if (el) release(el); });
     on_('pointercancel', e => { const el = target(e); if (el) release(el); });
     // A control leans a couple of degrees toward the cursor: enough to feel alive, not enough to
@@ -340,6 +400,9 @@ export function createUiFx(root) {
         const r = el.getBoundingClientRect();
         const lean = ((e.clientX - r.left) / Math.max(1, r.width) - 0.5) * TILT;
         el.style.rotate = `${lean.toFixed(2)}deg`;
+        // And a highlight sits under the cursor, as light would on something with a surface.
+        el.style.setProperty('--pc-shine-x', `${((e.clientX - r.left) / Math.max(1, r.width) * 100).toFixed(1)}%`);
+        el.style.setProperty('--pc-shine-y', `${((e.clientY - r.top) / Math.max(1, r.height) * 100).toFixed(1)}%`);
     });
     on_('click', e => {
         const el = target(e);
@@ -356,7 +419,7 @@ export function createUiFx(root) {
         if (!el || el.disabled) return;
         const r = el.getBoundingClientRect();
         dip(el, { clientX: r.left + r.width / 2, clientY: r.top + r.height / 2 });
-        cue.press(el);
+        cue.press(el); rumble(0.3, 35);
     }, { capture: true });
     on_('keyup', e => {
         if (e.key !== 'Enter' && e.key !== ' ') return;
@@ -389,16 +452,88 @@ export function createUiFx(root) {
         track();
     });
     watcher.observe(root, { childList: true });
+    // ---------------------------------------------------------- readouts
+    // Blazor owns every node in the heads-up panel and rewrites text in place, so nothing in it is
+    // touched: a change is noticed and the element that holds it is animated from outside.
+    const ROLLS = '.pc-time, .pc-health-header > span:last-child, .pc-line-header > span:last-child, .pc-crowd > span, .pc-crowd > b';
+    const rolled = new WeakMap();
+    let tock = false;
+    function roll(el) {
+        const now = performance.now();
+        // A readout that changes five times a second would never be still: one roll at a time.
+        if (calm() || now - (rolled.get(el) ?? 0) < 240) return;
+        rolled.set(el, now);
+        if (getComputedStyle(el).display === 'inline') el.style.display = 'inline-block';
+        el.animate([
+            { translate: '0 0.5em', opacity: 0.15, filter: 'blur(2px)' },
+            { translate: '0 -0.06em', opacity: 1, filter: 'blur(0)', offset: 0.7 },
+            { translate: '0 0', opacity: 1, filter: 'blur(0)' },
+        ], { duration: 300, easing: settle });
+    }
+    function readoutChanged(node) {
+        const el = (node.nodeType === 3 ? node.parentElement : node)?.closest?.(ROLLS);
+        if (!el) return;
+        roll(el);
+        if (el.matches('.pc-time')) {
+            // The clock is the one readout that is heard: a tick and a tock, barely there.
+            const o = live();
+            if (o) voice(o, { from: tock ? 1500 : 1900, to: tock ? 1150 : 1500, type: 'triangle', volume: 0.012, seconds: 0.022, pan: 0.35 });
+            tock = !tock;
+        }
+    }
+    const readouts = new MutationObserver(records => {
+        for (const record of records) {
+            if (record.type === 'attributes') {
+                // A milestone pip lighting: it springs, and a ring of light leaves it.
+                const pip = record.target;
+                if (pip.classList?.contains('pc-done') && pip.parentElement?.classList.contains('pc-progress') && !calm()) {
+                    pip.animate([{ scale: 1, filter: 'brightness(1)' }, { scale: 2.1, filter: 'brightness(2.4)', offset: 0.35 }, { scale: 1, filter: 'brightness(1)' }],
+                        { duration: 620, easing: spring });
+                    const o = live();
+                    if (o) { voice(o, { from: 784, type: 'triangle', volume: 0.05, seconds: 0.16 }); voice(o, { from: 1175, type: 'triangle', volume: 0.05, seconds: 0.3, at: 0.09 }); }
+                    rumble(0.5, 90);
+                }
+            } else if (record.type === 'characterData') readoutChanged(record.target);
+            else for (const node of record.addedNodes) readoutChanged(node);
+        }
+    });
+    let hud = null;
+    function watchHud() {
+        const found = document.querySelector('.pc-tab-hud');
+        if (found === hud) return;
+        readouts.disconnect();
+        hud = found;
+        if (hud) readouts.observe(hud, { subtree: true, childList: true, characterData: true, attributes: true, attributeFilter: ['class'] });
+    }
+    // A caption arriving sweeps in from the left and settles; it is spoken radio, so it should land.
+    const captions = new MutationObserver(records => {
+        if (calm()) return;
+        for (const record of records) {
+            const box = (record.target.nodeType === 3 ? record.target.parentElement : record.target)?.closest?.('.pc-caption');
+            if (!box || box.classList.contains('pc-caption--idle') || !box.textContent.trim()) continue;
+            if (performance.now() - (rolled.get(box) ?? 0) < 300) continue;
+            rolled.set(box, performance.now());
+            box.animate([
+                { translate: '-26px 0', opacity: 0, filter: 'blur(6px)' },
+                { translate: '3px 0', opacity: 1, filter: 'blur(0)', offset: 0.6 },
+                { translate: '0 0', opacity: 1, filter: 'blur(0)' },
+            ], { duration: 420, easing: settle });
+        }
+    });
+    captions.observe(root, { subtree: true, childList: true, characterData: true });
+
     // Positions are sampled while a menu is up, so a panel that resizes is still ghosted where it was.
-    const sampler = setInterval(track, 120);
+    const sampler = setInterval(() => { track(); watchHud(); }, 120);
+    watchHud();
     track();
     if (currentPanel()) { initShader(); wake(); }
 
     return {
         /** A shockwave through the fluid from a screen position, for events outside the menus. */
         ripple,
+        wipe, rumble,
         dispose() {
-            controller.abort(); watcher.disconnect(); clearInterval(sampler);
+            controller.abort(); watcher.disconnect(); readouts.disconnect(); captions.disconnect(); clearInterval(sampler);
             if (running) cancelAnimationFrame(running);
             canvas?.remove();
             gl?.getExtension('WEBGL_lose_context')?.loseContext();

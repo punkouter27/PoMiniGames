@@ -31,6 +31,8 @@
 }
 .pc-root ::deep .rz-button, .pc-root ::deep .rz-selectbar-item { transition: box-shadow 180ms ease, background-color 180ms ease, transform 150ms ease; }
 .pc-root ::deep .rz-button:hover, .pc-root ::deep .rz-selectbar-item:hover { box-shadow: 0 0 0 1px #e4c48255, 0 8px 26px #b98c4550; transform: translateY(-1px); }
+/* A highlight under the cursor: ui.js writes where the pointer is on the control. */
+.pc-root ::deep .rz-button:hover, .pc-root ::deep .rz-selectbar-item:hover { background-image: radial-gradient(circle at var(--pc-shine-x, 50%) var(--pc-shine-y, 0%), #ffffff3d, transparent 62%); }
 .pc-root ::deep .rz-button:active { box-shadow: 0 0 0 1px #f2d79a99, 0 2px 10px #b98c4570; transform: scale(0.98); }
 .pc-eyebrow { display: block; color: #d4b87b; font-size: 10px; letter-spacing: 0.17em; font-weight: 700; }
 .pc-panel h2 { font-family: Georgia, serif; font-weight: 400; font-size: clamp(32px, 3vw, 44px); line-height: 1.05; margin: 12px 0 15px; color: #f6f0e2; }

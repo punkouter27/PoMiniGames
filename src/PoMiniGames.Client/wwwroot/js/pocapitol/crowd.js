@@ -560,8 +560,11 @@ const NEUTRAL_COAT = '#b0b0b0';
  *                 coats white and everything else black. Either one leaves the banners out.
  * @param detail   shared `{ value }` 0..1 for the cloth detail, so the quality governor can turn it down
  */
-export function createCrowd(scene, capacity, { time, groundHeight, shadowTexture, figure, wind = null, signs = [], detail = { value: 1 }, palette = null }) {
+export function createCrowd(scene, capacity, { time, groundHeight, shadowTexture, figure, wind = null, signs = [], detail = { value: 1 }, palette = null, surge = null }) {
     const parts = [], resources = new Set(), textures = new Set();
+    // Follow-through: each person's velocity, and a spring that chases it a beat late. The gap
+    // between the two is what swings a cape, a hood or a pack when its wearer starts or stops.
+    const lagOf = new Map(), rocked = { x: 0, z: 0, lean: 0 }, swung = new THREE.Euler();
     const transform = new THREE.Object3D(), color = new THREE.Color();
     transform.rotation.order = 'YXZ';
     const held = new THREE.Object3D(), worn = new THREE.Matrix4(), boneWorld = new THREE.Matrix4();
@@ -856,6 +859,17 @@ export function createCrowd(scene, capacity, { time, groundHeight, shadowTexture
     // When each person was last in gas or spray, for the minute of coughing and rinsing after it.
     const lastGas = new Map();
     let lastNow = 0;
+    /** Loose things and how they hang: how far their middle is below where they are fixed, and how freely they swing. */
+    const SWING = {
+        cape: { drop: 0.43, gain: 0.5, stream: 0.34 }, backpack: { drop: 0.2, gain: 0.1, stream: 0 }, hood: { drop: -0.08, gain: 0.14, stream: 0 },
+        scarf: { drop: 0.08, gain: 0.3, stream: 0.1 }, pom: { drop: -0.06, gain: 0.35, stream: 0 },
+    };
+    /** Height of the walking surface under one foot: `side` is -1 left, +1 right, `ahead` metres in front. */
+    function footGround(a, h, wide, side, ahead) {
+        const x = a.x + Math.cos(h) * 0.11 * wide * side - Math.sin(h) * ahead;
+        const z = a.z - Math.sin(h) * 0.11 * wide * side - Math.cos(h) * ahead;
+        return groundHeight(x, z);
+    }
     /** How hard the line an officer stands in is being leaned on, 0..1. */
     function officerStrain(state, a) {
         const line = state.lines?.[a.line];
@@ -875,7 +889,7 @@ export function createCrowd(scene, capacity, { time, groundHeight, shadowTexture
         const now = state.elapsed ?? 0;
         const dt = Math.min(0.1, Math.max(0.008, now - lastNow));
         // The clock running backwards is a new attempt: nobody is still coughing from the last one.
-        if (now < lastNow) lastGas.clear();
+        if (now < lastNow) { lastGas.clear(); lagOf.clear(); }
         lastNow = now;
         const gasClouds = (state.effects ?? []).filter(e => e.type === 'gas');
         // The chant's three beats and a rest, the same 1.75 s bar the sound plays.
@@ -927,6 +941,30 @@ export function createCrowd(scene, capacity, { time, groundHeight, shadowTexture
                 bodies.dress(b.slot, regionKey, region => color.set(paint(region, a)), region => regionCloth[region](a), build);
             }
             b.fit = fits[b.slot];
+            // Secondary motion. The spring is underdamped on purpose: a cape overshoots and settles.
+            let lag = lagOf.get(key);
+            if (!lag) { lag = { x: a.x, z: a.z, sx: 0, sz: 0, vx: 0, vz: 0 }; lagOf.set(key, lag); }
+            const mvx = Math.max(-6, Math.min(6, (a.x - lag.x) / dt)), mvz = Math.max(-6, Math.min(6, (a.z - lag.z) / dt));
+            lag.x = a.x; lag.z = a.z;
+            lag.vx += ((mvx - lag.sx) * 70 - lag.vx * 9) * dt; lag.vz += ((mvz - lag.sz) * 70 - lag.vz * 9) * dt;
+            lag.sx += lag.vx * dt; lag.sz += lag.vz * dt;
+            const gapX = Math.max(-2, Math.min(2, lag.sx - mvx)), gapZ = Math.max(-2, Math.min(2, lag.sz - mvz));
+            const sinH = Math.sin(b.yaw), cosH = Math.cos(b.yaw);
+            b.lagF = active ? -(gapX * sinH + gapZ * cosH) : 0;
+            b.lagR = active ? gapX * cosH - gapZ * sinH : 0;
+            b.run = Math.min(1, Math.hypot(mvx, mvz) / 3.5);
+            // A wave going through a packed crowd carries whoever it passes: the simulation moves
+            // them (world.js stepField); here they only lean the way they are being carried.
+            b.dx = b.dz = b.rockF = b.rockR = 0;
+            if (surge && alive && active && !a.civilian) {
+                const packed = a.police ? 0.5 * officerStrain(state, a) : Math.min(1, (a.crowding ?? 0) / 5);
+                surge.sample(a.x, a.z, packed, rocked);
+                if (rocked.lean > 0.002) {
+                    const reach = Math.hypot(rocked.x, rocked.z) || 1;
+                    b.rockF = -(rocked.x * sinH + rocked.z * cosH) / reach * rocked.lean;
+                    b.rockR = (rocked.x * cosH - rocked.z * sinH) / reach * rocked.lean;
+                }
+            }
             // Where the round came from, in the body's own frame, so a flinch or a fall leans the
             // way the impact did however the person happens to be facing.
             const knock = Math.hypot(a.kx ?? 0, a.kz ?? 0);
@@ -972,6 +1010,24 @@ export function createCrowd(scene, capacity, { time, groundHeight, shadowTexture
             // A body that has fallen rests where the heap allows: pushed out of its neighbours,
             // lifted onto the layer beneath it, and rolled. A standing officer rocks on his feet
             // under the weight of the line, harder the more he is being leaned on.
+            if (alive && how.drop === 0 && !b.lying) {
+                // The head and shoulders arrive a beat after the feet.
+                rot(pose, 'chest', -0.035 * b.lagF, 0, 0.03 * b.lagR);
+                rot(pose, 'head', -0.07 * b.lagF, 0, 0.05 * b.lagR);
+                // On the terrace steps each foot finds its own tread: the body stands on the lower
+                // one and the other knee comes up by exactly the height of the step under it.
+                if (a.z > 14 && a.z < 22.5 && Math.abs(a.x) < 10.5) {
+                    const reach = moving ? Math.sin(phase) * b.stride * 0.32 : 0;
+                    const left = footGround(a, b.yaw, wide, -1, reach), right = footGround(a, b.yaw, wide, 1, -reach);
+                    const low = Math.min(left, right);
+                    for (const [s, rise] of [['L', left - low], ['R', right - low]]) {
+                        if (rise < 0.015) continue;
+                        const bend = Math.acos(Math.max(0.3, 1 - Math.min(0.4, rise) / (0.9 * tall)));
+                        rot(pose, `thigh_${s}`, bend); rot(pose, `shin_${s}`, -2 * bend); rot(pose, `foot_${s}`, bend);
+                    }
+                    b.ground = low + (moving ? Math.abs(Math.cos(phase)) * 0.045 : 0);
+                }
+            }
             const rest = b.fall?.rest;
             const strain = b.strain;
             const brace = strain ? Math.sin(now * (1.4 + strain * 2.5) + (a.id || 0) * 1.7) * (0.012 + strain * 0.045) : 0;
@@ -982,8 +1038,8 @@ export function createCrowd(scene, capacity, { time, groundHeight, shadowTexture
             const y = b.lying
                 ? b.ground + 0.06 + Math.min(0.12, rest?.height ?? 0)
                 : b.ground + lift - how.drop * tall + how.lift * wide + (rest?.height ?? 0);
-            transform.position.set(a.x + (rest?.dx ?? 0), y, a.z + (rest?.dz ?? 0));
-            transform.rotation.set(how.fall + brace + ((a.y ?? 0) > 0.05 && !b.lying ? (a.spin ?? 0) * 0.5 : 0), b.yaw, (how.lean || 0) + (rest?.roll ?? 0));
+            transform.position.set(a.x + (rest?.dx ?? 0) + b.dx, y, a.z + (rest?.dz ?? 0) + b.dz);
+            transform.rotation.set(how.fall + brace - b.rockF + ((a.y ?? 0) > 0.05 && !b.lying ? (a.spin ?? 0) * 0.5 : 0), b.yaw, (how.lean || 0) + (rest?.roll ?? 0) - b.rockR);
             transform.scale.set(wide, tall, wide);
             const figureMatrix = slotFigure[b.slot].compose(transform.position, transform.quaternion, transform.scale);
             bodies.pose(b.slot, figureMatrix, pose);
@@ -1000,7 +1056,7 @@ export function createCrowd(scene, capacity, { time, groundHeight, shadowTexture
                 if (p.name === 'contact') {
                     // Out of the scenario figures sit or lie, so their shadow spreads.
                     const spread = a.health > 0 ? 1 : b.lying ? 1.6 : 1.3;
-                    transform.position.set(a.x, b.floor + 0.015, a.z);
+                    transform.position.set(a.x + b.dx, b.floor + 0.015, a.z + b.dz);
                     if (b.lying) transform.position.add(shift.set(0, 0, 0.75 * b.tall).applyAxisAngle(up, h));
                     transform.rotation.set(-Math.PI / 2, h, 0);
                     transform.scale.set(p.scale[0] * b.wide * (b.lying ? 1 : spread), p.scale[1] * b.wide * spread * (b.lying ? 1.5 : 1), 1);
@@ -1063,6 +1119,17 @@ export function createCrowd(scene, capacity, { time, groundHeight, shadowTexture
                         const build = Math.min(1, Math.max(0, (state.elapsed - 20) / 400));
                         if (build <= 0.01) continue;
                         held.scale.multiplyScalar(0.55 + 0.45 * build);
+                    }
+                    const hang = SWING[p.name];
+                    if (hang && a.health > 0) {
+                        // Swung about where it is fixed, not about its own middle: the gap between
+                        // the wearer's motion and the spring chasing it, plus the slipstream of a run.
+                        const flutter = hang.stream ? Math.sin(now * 9 + a.id * 1.7) * 0.06 * b.run : 0;
+                        swung.set(Math.max(-0.7, Math.min(0.7, b.lagF * hang.gain - b.run * hang.stream + flutter)), 0,
+                            Math.max(-0.5, Math.min(0.5, b.lagR * hang.gain * 0.7)));
+                        shift.set(0, -hang.drop, 0).applyEuler(swung);
+                        held.position.x += shift.x; held.position.y += shift.y + hang.drop; held.position.z += shift.z;
+                        held.rotation.x += swung.x; held.rotation.z += swung.z;
                     }
                     held.updateMatrix();
                     worn.multiplyMatrices(boneWorld, held.matrix);

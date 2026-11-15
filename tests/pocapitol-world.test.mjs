@@ -13,7 +13,9 @@ const yuka = url(read('lib/yuka/yuka.module.js'));
 const physics = url(read('js/pocapitol/physics.js'));
 const steering = url(read('js/pocapitol/steering.js').replace("'yuka'", `'${yuka}'`).replace("'./physics.js'", `'${physics}'`));
 const harm = url(read('js/pocapitol/harm.js'));
-const world = await import(url(read('js/pocapitol/world.js').replace("'./steering.js'", `'${steering}'`).replace("'./physics.js'", `'${physics}'`).replace("'./harm.js'", `'${harm}'`)));
+const barricadesUrl = url(read('js/pocapitol/barricades.js').replace("'./physics.js'", `'${physics}'`));
+const surgeUrl = url(read('js/pocapitol/surge.js'));
+const world = await import(url(read('js/pocapitol/world.js').replace("'./steering.js'", `'${steering}'`).replace("'./physics.js'", `'${physics}'`).replace("'./harm.js'", `'${harm}'`).replace("'./barricades.js'", `'${barricadesUrl}'`).replace("'./surge.js'", `'${surgeUrl}'`)));
 const { createAttempt, advance, shove, fire, throwPlayerGrenade, setPaused, walkable, milestones, obstacles, columns, statues, lineDefs,
     selectLeader, frontLine, clockLabel, CROWD_SIZE, MAX_POLICE, CIVILIANS, CURFEW_ELAPSED } = world;
 const { createGovernor, RUNGS, preferredMode, detectTier } = await import(url(read('js/pocapitol/quality.js')));
@@ -154,7 +156,8 @@ test('the armed story demo eliminates people on both sides, breaks every line in
         advance(state, {}, 1 / 60);
         for (const e of state.events) {
             seen.add(e.type);
-            if (e.type === 'break') broken.push(e.line);
+            // A shield shattering is a 'break' too; only a line giving way carries `line`.
+            if (e.type === 'break' && e.line !== undefined) broken.push(e.line);
         }
         police = Math.max(police, state.enemies.length);
         assert.ok(state.enemies.length <= MAX_POLICE);

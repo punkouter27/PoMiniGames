@@ -265,6 +265,11 @@ async function init(hostId, reference) {
                 // Read this step's events before a shove appends its own.
                 for (const event of g.state.events) {
                     g.audio?.event(event);
+                    // A blast near the player is felt in the hands as well as heard.
+                    if (human() && (event.type === 'flash' || event.type === 'grenade')) {
+                        const near = 1 / (1 + Math.hypot(event.x - g.state.player.x, event.z - g.state.player.z) / 8);
+                        if (near > 0.15) g.ui?.rumble?.(near, event.type === 'grenade' ? 320 : 200);
+                    }
                     // A shield shatters with the same type; only a line break carries `line`.
                     if (event.type === 'break' && event.line !== undefined) g.caption('A police line has given way.');
                     if (event.type === 'openfire') g.caption('The police opened fire. The crowd breaks and runs.');
@@ -287,6 +292,7 @@ async function init(hostId, reference) {
                     clearInput();
                     if (!g.ended) {
                         g.ended = true;
+                        g.ui?.wipe?.('pass');
                         g.lastReport = buildReport(g.state);
                         track('end', { mode: g.state.demo ? 'demo' : 'solo', outcome: g.state.outcome, seconds: Math.round(g.state.elapsed) });
                     }
@@ -322,7 +328,9 @@ async function init(hostId, reference) {
                 // Heading changes every frame; the 5 Hz crowd read does not carry it.
                 const ear = s.role === 'none' ? selectLeader(s) ?? s.player : s.player;
                 const yaw = s.role === 'none' ? ear.heading ?? 0 : g.yaw;
-                g.audio.update({ ...g.mix, x: ear.x, z: ear.z, yaw, walking: moving, gassed: s.gassed, wind: g.weather?.windSpeed, active: g.started && s.status === 'active' }, dt);
+                // Whoever the camera is on is who the mix favours.
+                const focus = s.role === 'none' ? (directed ?? ear) : s.player;
+                g.audio.update({ ...g.mix, focus, x: ear.x, z: ear.z, yaw, walking: moving, gassed: s.gassed, wind: g.weather?.windSpeed, active: g.started && s.status === 'active' }, dt);
             }
             if (g.weather?.mode === 'live' && now >= (g.weatherRefreshAt || 0)) {
                 g.weatherRefreshAt = now + 300000;
@@ -365,8 +373,20 @@ function soundMix(s) {
     const ear = s.role === 'none' ? selectLeader(s) ?? s.player : s.player;
     let crowd = 0, morale = 0, shear = 0, packed = 0;
     const near = [];
+    // Where the crowd stands round the listener, in eight compass sectors (north is toward the
+    // building, clockwise): the share of people in each and how far off they are on average.
+    // The voices in crowdWorklet.js are thrown from these, so the crowd is heard where it is.
+    const weights = new Float32Array(8), depth = new Float32Array(8);
+    let ringed = 0;
     for (const c of s.companions) {
         const distance = Math.hypot(c.x - ear.x, c.z - ear.z);
+        if (c.health > 0 && distance > 1.5 && distance < 70) {
+            const bearing = (Math.atan2(c.x - ear.x, -(c.z - ear.z)) + Math.PI * 2) % (Math.PI * 2);
+            const sector = Math.min(7, Math.floor(bearing / (Math.PI / 4)));
+            // Someone near counts for more than someone far: it is their voice that carries.
+            const share = 1 / (1 + distance / 10);
+            weights[sector] += share; depth[sector] += distance * share; ringed += share;
+        }
         if (c.health <= 0 || distance > 22) continue;
         crowd++; morale += c.morale;
         const speed = Math.hypot(c.vx ?? 0, c.vz ?? 0);
@@ -381,6 +401,10 @@ function soundMix(s) {
         police = Math.max(police, 1 / (1 + distance / 6));
         if (distance < hornDistance) { hornDistance = distance; horn = { x: e.x, z: e.z }; }
     }
+    for (let i = 0; i < 8; i++) {
+        depth[i] = weights[i] > 0 ? depth[i] / weights[i] : 30;
+        weights[i] = ringed > 0 ? weights[i] / ringed : 1 / 8;
+    }
     const front = frontLine(s);
     const pressure = front && Math.abs(front.z - ear.z) < 28 ? Math.min(1, front.pressure / 24) : 0;
     // A door the crowd is held at gets pounded on: the Crypt and Rotunda doors while their lines
@@ -391,7 +415,7 @@ function soundMix(s) {
     return {
         x: ear.x, z: ear.z, crowd: Math.min(1, crowd / 35), morale: crowd ? morale / crowd : 0, police, pressure,
         shear: packed ? Math.min(1, shear / packed / 2.5 * Math.min(1, packed / 8)) : 0,
-        walkers: near.slice(0, 6), horn, door, elapsed: s.elapsed,
+        walkers: near.slice(0, 6), horn, door, elapsed: s.elapsed, ring: { weights, depth },
     };
 }
 
@@ -433,6 +457,9 @@ function start(difficulty, demo = false, role = 'raider') {
     // The opening establishing shot: five seconds over the Capitol before the player is behind
     // the crowd. Skipped when reduced motion is asked for.
     game.view.startIntro?.();
+    // The cut into the scene: a front of light lifts a veil off it (ui.js).
+    game.ui?.wipe?.('reveal');
+    game.view.setMenu?.(false);
     // Created on the first start, which follows a click: browsers keep audio shut until then.
     if (!game.audio) {
         const current = game;
@@ -444,8 +471,13 @@ function start(difficulty, demo = false, role = 'raider') {
 
 function pause(value) {
     if (!game?.started) return;
+    const was = game.state.status === 'paused';
     setPaused(game.state, value);
     game.keys.clear(); game.firing = false;
+    // A pause pulls the scene out of focus behind its panel, and a front of light marks the cut.
+    const now = game.state.status === 'paused';
+    game.view.setMenu?.(now);
+    if (now !== was) game.ui?.wipe?.('pass');
     if (value && document.pointerLockElement === game.view.canvas) document.exitPointerLock();
     notify(game);
 }

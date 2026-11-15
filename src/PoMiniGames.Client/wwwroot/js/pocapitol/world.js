@@ -10,6 +10,8 @@
 // sides carry guns and whoever is hit drops out for good. That part follows no record at all.
 import { createSteering } from './steering.js';
 import { createHarm, applyInjury, advanceHarm, harmSummary } from './harm.js';
+import { createBarricades } from './barricades.js';
+import { createSurge } from './surge.js';
 import { createGrid, sweep, segmentCircle, firstBlocked, firstBodyHit, strike, exchange, slide, bounce, knockback, blastFalloff, massOf, MIN_GAP, SWEPT_BODY_SPEED } from './physics.js';
 
 export const areas = [
@@ -307,6 +309,12 @@ function officer(id, line, x, z) {
 }
 
 const steeringByAttempt = new WeakMap();
+// The two fields that are not plain data: the loose racks' solver and the pressure-wave grid.
+// Kept beside the attempt, like the steering, so the attempt itself stays serialisable.
+const fieldByAttempt = new WeakMap();
+/** A packed body in a passing wave is carried at up to this, m/s^2: enough to beat friction. */
+const SURGE_PUSH = 9;
+const surged = { x: 0, z: 0, lean: 0 };
 
 export function createAttempt(difficulty = 'standard', demo = false, role = 'raider') {
     if (!Object.hasOwn(difficulties, difficulty)) throw new RangeError('Unknown difficulty.');
@@ -360,6 +368,12 @@ export function createAttempt(difficulty = 'standard', demo = false, role = 'rai
         evacuation: -1,
     };
     steeringByAttempt.set(state, createSteering(CROWD_SIZE));
+    const loose = createBarricades(RACK_ROWS);
+    fieldByAttempt.set(state, { loose, surge: createSurge() });
+    // The racks once they are off the line, as data the renderer can read: where each lies, how
+    // far it has tipped, and whether it is resting across another.
+    state.looseRacks = loose.bodies;
+    state.surgeAt = 0;
     // One-player raider: the human is the heavy element of the crowd, with a machine gun and
     // five concussion grenades. The demo and the observer/police roles keep their own rules.
     if (role === 'raider' && !demo) {
@@ -437,6 +451,80 @@ export function shove(state, direction) {
     // A shove into thin air still has a body behind it: a lean of the shoulder, about 25 J.
     blow(state, 'shove', state.player.x, state.player.z, energy || 25, 'body', { human: true });
     return { hit: hit?.id ?? null, x: state.player.x + dx * 1.6, z: state.player.z + dz * 1.6 };
+}
+
+/**
+ * How a pressure wave is rocking someone at (x, z): `out.x`/`out.z` metres, `out.lean` radians.
+ * `packed` is 0..1, how hemmed in they are. For the renderer; the simulation applies it itself.
+ */
+export function surgeSample(state, x, z, packed, out) {
+    const field = fieldByAttempt.get(state);
+    if (!field) { out.x = out.z = out.lean = 0; return out; }
+    return field.surge.sample(x, z, packed, out);
+}
+
+/**
+ * The loose racks and the wave through the crowd, once a step, after everyone has moved.
+ *
+ * Racks: a rack that has gone over, or whose line has, is handed to the rigid-body solver with
+ * the push that tipped it; from then on whoever walks through it shoves it along, and it slows
+ * them (stepRaiders reads `rackDrag`). Its landings and clashes are ordinary metal impacts.
+ *
+ * Waves: every shove, blow and blast this step is a push into the field, and so is a heave from
+ * the back of the crowd every few seconds while a line is leaned on. The slope of the wave under
+ * each packed raider is a small knock, which the contact pass resolves like any other.
+ */
+function stepField(state, dt) {
+    const field = fieldByAttempt.get(state);
+    if (!field) return;
+    const { loose, surge } = field, def = lineDefs[0], first = state.lines[0];
+    for (const rack of state.racks) {
+        const body = loose.bodies[rack.id];
+        if (body.free || (!rack.fallen && first.state === 'holding')) continue;
+        const lean = first.state === 'holding' ? Math.min(1, first.pressure / Math.max(1, first.hold)) : 1;
+        // It lies half its height in front of where it stood, and leaves with the crowd's push.
+        loose.release(rack.id, { x: rack.x + rack.slide * 0.3, z: def.z - 0.25, yaw: (rack.id * 37 % 7 - 3) * 0.05, tip: Math.max(0.15, rack.tip * 0.5) },
+            { x: rack.slide * 1.4 + (rack.id % 3 - 1) * 0.5, z: -1.2 - (rack.id * 37 % 11) * 0.16 - lean });
+    }
+    if (loose.bodies.some(body => body.free)) {
+        const near = state.companions.filter(c => c.health > 0 && Math.abs(c.z - def.z) < 16);
+        if (state.role !== 'none' && state.health > 0) near.push(state.player);
+        let rung = 0;
+        for (const hit of loose.step(dt, near, (x, z) => !walkable(x, z))) {
+            if (rung++ >= 3) break;
+            blow(state, 'impact', hit.x, hit.z, Math.min(260, 40 + hit.energy * (hit.type === 'land' ? 3 : 2)), 'metal', { rack: hit.type });
+        }
+    }
+    for (const e of state.events) {
+        if (e.type === 'shove') surge.push(e.x, e.z, 0.25, 2.5);
+        else if (e.type === 'impact' && e.material === 'body') surge.push(e.x, e.z, Math.min(0.6, 0.15 + (e.energy ?? 0) / 400), 2.5);
+        else if (e.type === 'flash') surge.push(e.x, e.z, 1.1, 4);
+        else if (e.type === 'grenade') surge.push(e.x, e.z, 2.2, 6);
+        else if (e.type === 'break' && Number.isInteger(e.line)) surge.push(e.x, e.z + 3, 2.4, 8);
+    }
+    const leaned = state.lines.find(line => line.state === 'holding');
+    if (leaned && state.elapsed >= state.surgeAt) {
+        const lean = Math.min(1, leaned.pressure / Math.max(1, leaned.hold));
+        // Where and how far back is fixed by the clock, so the same attempt heaves the same way.
+        state.surgeAt = state.elapsed + 3.4 - 1.9 * lean + Math.sin(state.elapsed * 7.3) * 0.4;
+        if (lean > 0.15) {
+            const at = lineDefs[leaned.id], span = at.x1 - at.x0;
+            surge.push(at.x0 + span * (0.5 + 0.42 * Math.sin(state.elapsed * 1.9)), at.z + 9 + 6 * Math.abs(Math.sin(state.elapsed * 0.77)), 0.5 + 0.9 * lean, 4.5);
+        }
+    }
+    if (!surge.step(dt)) return;
+    for (const c of state.companions) {
+        if (c.health <= 0 || c.crowding < 2 || (c.y ?? 0) > 0.05) continue;
+        surge.sample(c.x, c.z, Math.min(1, c.crowding / 5), surged);
+        if (surged.lean <= 0.002) continue;
+        // `surged` is a displacement of up to 0.2 m; as a push it is that share of SURGE_PUSH.
+        knockback(c, surged.x * 5 * SURGE_PUSH * dt, surged.z * 5 * SURGE_PUSH * dt);
+    }
+}
+
+/** Share of a step someone at (x, z) loses to a loose rack underfoot, 0 on clear ground. */
+function rackDrag(state, x, z) {
+    return fieldByAttempt.get(state)?.loose.dragAt(x, z) ?? 0;
 }
 
 /** True where a bike rack has been shoved over and the crowd may press up to the officers. */
@@ -544,7 +632,7 @@ function updateLines(state, difficulty, dt) {
         const line = state.lines[i];
         if (line.state !== 'holding') continue;
         line.munition -= dt; line.flashCooldown -= dt;
-        const pressing = actor => (actor.y ?? 0) < 0.35 && (actor.step ?? 0) < 0.3 &&
+        const pressing = actor => (actor.y ?? 0) < 0.35 &&
             actor.x >= def.x0 - 0.5 && actor.x <= def.x1 + 0.5 &&
             actor.z >= lineLimit(state, i, actor.x) - 0.1 && actor.z <= lineLimit(state, i, actor.x) + 2.4;
         let pressure = 0, sumX = 0, count = 0, instigatorX = 0, instigatorWeight = 0;
@@ -552,7 +640,11 @@ function updateLines(state, difficulty, dt) {
         let support = 0;
         for (const c of state.companions) {
             if (c.health <= 0 || c.retreating || c.stun > 0 || !pressing(c)) continue;
-            const weight = c.temperament === 'pusher' ? 1 : c.temperament === 'follower' && c.morale > 0.7 ? 0.5 : 0;
+            // Someone standing on a body has poor footing, but they are still leaning on the line.
+            // (Left out altogether, a doorway full of casualties could never be pushed through:
+            // everyone at it is standing on someone.)
+            const footing = (c.step ?? 0) >= 0.3 ? 0.6 : 1;
+            const weight = footing * (c.temperament === 'pusher' ? 1 : c.temperament === 'follower' && c.morale > 0.7 ? 0.5 : 0);
             if (weight === 0) continue;
             support++;
             pressure += weight * (c.surge > 0 ? 1.3 : 1);
@@ -599,6 +691,9 @@ function updateLines(state, difficulty, dt) {
         hold *= 1 - Math.min(0.65, line.strain / difficulty.tire);
         line.pressure = pressure; line.hold = hold; line.support = support;
         line.integrity = Math.max(0, Math.min(100, line.integrity + (hold - pressure) * (pressure > hold ? 1.5 : 0.25) * dt));
+        // Armed demo: a barricade with nobody left standing behind it is furniture. Whoever
+        // reaches it drags it aside, faster the more hands there are, and it does not recover.
+        if (state.armed && standing === 0 && support > 0) line.integrity = Math.max(0, line.integrity - (4 + 3 * support) * dt);
         const rawCenter = instigatorWeight > 0 ? instigatorX / instigatorWeight : count ? sumX / count : 0;
         const centerX = count ? Math.max(def.x0 + 2, Math.min(def.x1 - 2, rawCenter)) : 0;
         if (pressure > hold * 0.6 && line.gasLeft > 0 && line.munition <= 0) {
@@ -1205,7 +1300,8 @@ export function advance(state, input, seconds) {
         const magnitude = Math.max(1, Math.hypot(x, z));
         // Climbing the terrace steps is slower than walking the pavement, for the human too.
         const climb = 1 / (1 + 2.6 * Math.min(1.4, groundSlope(state.player.x, state.player.z)));
-        const speed = (input.sprint ? 8 : 5) * (state.sprayed > 0 ? 0.6 : 1) * climb;
+        // Steel on the ground is in the way: crossing a loose rack costs pace.
+        const speed = (input.sprint ? 8 : 5) * (state.sprayed > 0 ? 0.6 : 1) * climb * (1 - rackDrag(state, state.player.x, state.player.z));
         const nx = state.player.x + x / magnitude * speed * dt;
         let nz = state.player.z + z / magnitude * speed * dt;
         if (state.role === 'raider') nz = heldAt(state, nx, state.player.z, nz) ?? nz;
@@ -1227,6 +1323,7 @@ export function advance(state, input, seconds) {
     updateOfficers(state, difficulty, dt);
     stepRaiders(state, difficulty, dt);
     stepGrenades(state, dt);
+    stepField(state, dt);
 
     // Pick up fallen police riot shields
     if (state.droppedShields?.length > 0) {
@@ -1404,6 +1501,12 @@ function stepRaiders(state, difficulty, dt) {
         const held = actor.health > 0 ? heldAt(state, agent.nextX, fromZ, nz) : null;
         if (held !== null) nz = held;
         relocate(state, actor, agent.nextX, nz, false);
+        // Wading through a loose rack: part of the step is lost. Stepping back along the way just
+        // walked cannot end inside anything, so it needs no sweep.
+        if (actor.health > 0 && Math.abs(actor.z - lineDefs[0].z) < 18) {
+            const drag = rackDrag(state, actor.x, actor.z);
+            if (drag > 0) { actor.x -= (actor.x - fromX) * drag; actor.z -= (actor.z - fromZ) * drag; }
+        }
         const dx = actor.x - fromX, dz = actor.z - fromZ, moved = Math.hypot(dx, dz);
         if (held !== null || moved < Math.hypot(agent.nextX - fromX, agent.nextZ - fromZ) * 0.5) steering.stop(actor.id);
         actor.crowding = agent.crowding;

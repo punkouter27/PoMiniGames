@@ -6,100 +6,112 @@ import { UnrealBloomPass } from 'three/addons/postprocessing/UnrealBloomPass.js'
 import { OutputPass } from 'three/addons/postprocessing/OutputPass.js';
 import { ShaderPass } from 'three/addons/postprocessing/ShaderPass.js';
 import { createRackFocus } from '../postFx.js';
+import { createTemporal } from './temporal.js';
+import { createVolumetric } from './volumetric.js';
+import { createSmallLights } from './smallLights.js';
+import { createLens } from './lens.js';
 
 // PoCapitol's frame: scene -> ambient occlusion -> contact shadows (SSCS) ->
-// diffuse global illumination (SSGI) -> screen-space reflections (SSR) -> bloom ->
-// (transient) depth of field -> tone map -> grade. The scene always goes through the
+// diffuse global illumination (SSGI) -> screen-space reflections (SSR) -> small lights ->
+// lit air -> temporal resolve -> refraction -> bloom -> sun shafts -> motion blur ->
+// (transient) depth of field -> lens (metering, flare) -> tone map -> grade. The scene always goes through the
 // composer, even with every optional pass off, so a quality change never flips the scene's
 // shaders between "to screen" and "to target" variants (that recompile is the multi-second hitch
 // quality.js exists to avoid).
 
-// High-resolution Screen-Space Contact Shadows (SSCS) for grounding actors, barriers, columns.
+const QUAD = `
+    varying vec2 vUv;
+    void main() {
+        vUv = uv;
+        gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
+    }`;
+
+// Contact shadows: the last few centimetres the shadow map cannot draw. From each pixel a short
+// ray is walked toward the sun through the depth buffer; if something solid stands between the
+// pixel and the light within arm's reach, the pixel is darkened. It is what plants a boot on the
+// paving and a rack on the grass. Positions are rebuilt in view space, in metres, so the reach
+// and the thickness test mean the same thing next to the lens and across the lawn.
 const SSCSShader = {
     uniforms: {
         tDiffuse: { value: null },
         tDepth: { value: null },
         uCameraNear: { value: 0.1 },
-        uCameraFar: { value: 150 },
-        uLightDir: { value: new THREE.Vector3(0.5, 0.8, 0.3).normalize() },
-        uIntensity: { value: 0.65 },
-        uResolution: { value: new THREE.Vector2(1, 1) },
-        uStepScale: { value: 1 },
+        uCameraFar: { value: 420 },
+        // The sun's direction in view space, and the projection's x and y scale.
+        uLightView: { value: new THREE.Vector3(0, 1, 0) },
+        uProj: { value: new THREE.Vector2(1, 1) },
+        uIntensity: { value: 0.3 },
+        uReach: { value: 0.4 },
+        uTime: { value: 0 },
     },
-    vertexShader: `
-        varying vec2 vUv;
-        void main() {
-            vUv = uv;
-            gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
-        }
-    `,
+    vertexShader: QUAD,
     fragmentShader: `
+        #include <packing>
         uniform sampler2D tDiffuse;
         uniform sampler2D tDepth;
-        uniform float uCameraNear, uCameraFar, uIntensity, uStepScale;
-        uniform vec3 uLightDir;
-        uniform vec2 uResolution;
+        uniform float uCameraNear, uCameraFar, uIntensity, uReach, uTime;
+        uniform vec3 uLightView;
+        uniform vec2 uProj;
         varying vec2 vUv;
 
-        float readDepth(vec2 coord) {
-            float z = texture2D(tDepth, coord).r;
-            return (2.0 * uCameraNear) / (uCameraFar + uCameraNear - z * (uCameraFar - uCameraNear));
+        float viewZ(vec2 coord) {
+            return perspectiveDepthToViewZ(textureLod(tDepth, coord, 0.0).r, uCameraNear, uCameraFar);
         }
 
         void main() {
             vec4 col = texture2D(tDiffuse, vUv);
-            float depth = readDepth(vUv);
-            if (depth > 0.98 || depth < 0.001) {
-                gl_FragColor = col;
-                return;
-            }
-            vec2 stepUv = (uLightDir.xz * vec2(1.0, -1.0) / uResolution) * (3.5 + (1.0 - depth) * 10.0) * uStepScale;
+            float z = viewZ(vUv);
+            // Sky, and anything too far off for a hand's width of shadow to be a pixel.
+            if (z < -70.0 || uIntensity <= 0.0) { gl_FragColor = col; return; }
+            vec3 at = vec3((vUv * 2.0 - 1.0) * -z / uProj, z);
+            // Further away the ray is longer, so its steps never fall inside one pixel.
+            float reach = uReach * (1.0 + -z * 0.035);
+            float start = fract(sin(dot(gl_FragCoord.xy + fract(uTime) * 53.0, vec2(12.9898, 78.233))) * 43758.5453);
             float shadow = 0.0;
-            for (int i = 1; i <= 6; i++) {
-                vec2 sampleUv = vUv + stepUv * float(i);
-                if (sampleUv.x < 0.0 || sampleUv.x > 1.0 || sampleUv.y < 0.0 || sampleUv.y > 1.0) break;
-                float sDepth = readDepth(sampleUv);
-                float diff = depth - sDepth;
-                if (diff > 0.0008 && diff < 0.02) {
-                    shadow += (1.0 - diff / 0.02) * (1.0 - float(i) / 6.0);
-                }
+            for (int i = 0; i < 6; i++) {
+                float t = reach * (float(i) + start) / 6.0;
+                vec3 p = at + uLightView * t;
+                if (p.z > -uCameraNear) break;
+                vec2 uv = p.xy * uProj / -p.z * 0.5 + 0.5;
+                if (uv.x < 0.0 || uv.x > 1.0 || uv.y < 0.0 || uv.y > 1.0) break;
+                // How far in front of the ray the scene's surface is here. Just in front: something
+                // is in the way. Far in front: a person a street nearer the lens, not a caster.
+                float gap = viewZ(uv) - p.z;
+                if (gap > 0.025 + t * 0.12 && gap < 0.45) shadow = max(shadow, 1.0 - t / reach);
             }
-            shadow = clamp(shadow * uIntensity, 0.0, 0.72);
-            col.rgb *= (1.0 - shadow);
+            col.rgb *= 1.0 - shadow * uIntensity;
             gl_FragColor = col;
         }
     `
 };
 
-// Dynamic Screen-Space Diffuse Global Illumination (SSGI) multi-bounce light bounce.
+// Bounced light, in screen space: a surface next to a brighter one picks up some of its colour.
+// Eight neighbours at about the same depth are averaged, and only what they have over the pixel
+// itself is added, so an evenly lit wall gains nothing and the shaded side of a column next to
+// sunlit paving is lifted and tinted by it. The sample pattern turns every frame; the temporal
+// resolve averages the turns.
 const SSGIShader = {
     uniforms: {
         tDiffuse: { value: null },
         tDepth: { value: null },
         uCameraNear: { value: 0.1 },
-        uCameraFar: { value: 150 },
-        uBounceIntensity: { value: 0.35 },
+        uCameraFar: { value: 420 },
+        uBounceIntensity: { value: 0.2 },
         uResolution: { value: new THREE.Vector2(1, 1) },
         uTime: { value: 0 },
         uRadius: { value: 26 },
     },
-    vertexShader: `
-        varying vec2 vUv;
-        void main() {
-            vUv = uv;
-            gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
-        }
-    `,
+    vertexShader: QUAD,
     fragmentShader: `
+        #include <packing>
         uniform sampler2D tDiffuse;
         uniform sampler2D tDepth;
         uniform float uCameraNear, uCameraFar, uBounceIntensity, uTime, uRadius;
         uniform vec2 uResolution;
         varying vec2 vUv;
 
-        float readDepth(vec2 coord) {
-            float z = texture2D(tDepth, coord).r;
-            return (2.0 * uCameraNear) / (uCameraFar + uCameraNear - z * (uCameraFar - uCameraNear));
+        float viewZ(vec2 coord) {
+            return perspectiveDepthToViewZ(textureLod(tDepth, coord, 0.0).r, uCameraNear, uCameraFar);
         }
 
         const vec2 POISSON[8] = vec2[8](
@@ -111,35 +123,26 @@ const SSGIShader = {
 
         void main() {
             vec4 col = texture2D(tDiffuse, vUv);
-            float depth = readDepth(vUv);
-            if (depth > 0.95 || depth < 0.001) {
-                gl_FragColor = col;
-                return;
-            }
-            vec3 bounceAcc = vec3(0.0);
-            float totalWeight = 0.0;
-            float radius = (1.0 - depth * 0.65) * uRadius / uResolution.y;
-
-            float rot = fract(sin(dot(vUv * uResolution + fract(uTime) * 11.0, vec2(12.9898, 78.233))) * 43758.5453) * 6.28318;
+            float z = -viewZ(vUv);
+            if (z > 120.0 || uBounceIntensity <= 0.0) { gl_FragColor = col; return; }
+            // A fixed reach on the ground, so it is wide on screen up close and tight far away.
+            vec2 radius = vec2(uResolution.y / uResolution.x, 1.0) * clamp(uRadius * 0.05 / z, 0.004, 0.06);
+            float rot = fract(sin(dot(gl_FragCoord.xy + fract(uTime) * 11.0, vec2(12.9898, 78.233))) * 43758.5453) * 6.28318;
             mat2 rotMat = mat2(cos(rot), -sin(rot), sin(rot), cos(rot));
-
+            vec3 bounce = vec3(0.0);
+            float total = 0.0;
             for (int i = 0; i < 8; i++) {
-                vec2 offset = rotMat * POISSON[i] * radius;
-                vec2 sUv = vUv + offset;
+                vec2 sUv = vUv + rotMat * POISSON[i] * radius;
                 if (sUv.x < 0.0 || sUv.x > 1.0 || sUv.y < 0.0 || sUv.y > 1.0) continue;
-                float sDepth = readDepth(sUv);
-                float depthDelta = abs(depth - sDepth);
-                if (depthDelta < 0.045) {
-                    vec3 sCol = texture2D(tDiffuse, sUv).rgb;
-                    float luma = dot(sCol, vec3(0.299, 0.587, 0.114));
-                    float weight = (1.0 - depthDelta / 0.045) * smoothstep(0.1, 0.85, luma);
-                    bounceAcc += sCol * weight;
-                    totalWeight += weight;
-                }
+                // Only what is about as far away as this pixel can be lighting it.
+                float near = 1.0 - clamp(abs(-viewZ(sUv) - z) / 1.5, 0.0, 1.0);
+                bounce += textureLod(tDiffuse, sUv, 0.0).rgb * near;
+                total += near;
             }
-            if (totalWeight > 0.001) {
-                vec3 indirect = (bounceAcc / totalWeight) * uBounceIntensity;
-                col.rgb += indirect * (1.0 - depth * 0.4);
+            if (total > 0.001) {
+                // What the neighbours have over this pixel is what they can give it.
+                vec3 excess = max(bounce / total - col.rgb, 0.0);
+                col.rgb += min(excess, vec3(1.5)) * uBounceIntensity;
             }
             gl_FragColor = col;
         }
@@ -462,6 +465,18 @@ export function createPost(renderer, scene, camera, depthCamera) {
     ssrPass.uniforms.tDepth.value = depthTex;
     composer.addPass(ssrPass);
 
+    // Everything from here to the resolve is accumulated over frames by it: the phone screens and
+    // lamp posts lighting what is near them, then the air itself, lit and ray-marched.
+    const temporal = createTemporal(camera, depthTex);
+    const lights = createSmallLights(camera, depthTex, temporal.matrices.invViewProj);
+    composer.addPass(lights.pass);
+    const air = createVolumetric(depthTex, temporal.matrices.invViewProj);
+    composer.addPass(air.pass);
+    composer.addPass(temporal.velocity);
+    composer.addPass(temporal.resolve);
+    const lens = createLens();
+    composer.addPass(lens.refract);
+
     // Only what is genuinely brighter than lit stone blooms: lamps at dusk, phone screens,
     // the flash-bang core.
     const bloom = new UnrealBloomPass(new THREE.Vector2(1, 1), 0.45, 0.55, 1.15);
@@ -471,8 +486,11 @@ export function createPost(renderer, scene, camera, depthCamera) {
     shaftsPass.uniforms.tDepth.value = depthTex;
     composer.addPass(shaftsPass);
 
+    composer.addPass(temporal.blur);
+
     const focus = createRackFocus(scene, depthCamera, 1, 1);
     composer.addPass(focus.pass);
+    composer.addPass(lens.lens);
 
     composer.addPass(new OutputPass());
 
@@ -492,11 +510,12 @@ export function createPost(renderer, scene, camera, depthCamera) {
         if (key === lightKey && indoors === interior) return;
         lightKey = key; interior = indoors;
         const dusk = 1 - key;
-        sscsPass.uniforms.uIntensity.value = (indoors ? 0.48 : 0.55) + key * 0.22;
-        // Indoors the light comes in from high windows: a tighter, softer contact shadow.
-        sscsPass.uniforms.uStepScale.value = indoors ? 0.75 : 1;
-        // Two-bounce diffuse light matters most in the rotunda, where marble returns it all.
-        ssgiPass.uniforms.uBounceIntensity.value = indoors ? 0.55 : 0.24 + dusk * 0.26;
+        // A contact shadow is the sun's: strong under a clear low sun, faint once it has gone.
+        // Indoors the light comes in from high windows: a shorter, softer one.
+        sscsPass.uniforms.uIntensity.value = indoors ? 0.16 : 0.1 + key * 0.26;
+        sscsPass.uniforms.uReach.value = indoors ? 0.28 : 0.4;
+        // Bounced light matters most in the rotunda, where marble returns it all.
+        ssgiPass.uniforms.uBounceIntensity.value = indoors ? 0.3 : 0.14 + dusk * 0.1;
         ssgiPass.uniforms.uRadius.value = indoors ? 18 : 26;
         // Polished interior floors and wet paving reflect; grass does not.
         ssrPass.uniforms.uIntensity.value = indoors ? 0.62 : 0.3 + dusk * 0.4;
@@ -504,18 +523,28 @@ export function createPost(renderer, scene, camera, depthCamera) {
         bloom.threshold = 1.2 - dusk * 0.32;
         grade.uniforms.uSaturation.value = indoors ? 0.9 : 0.94;
     }
-    const sunNDC = new THREE.Vector3();
-    /** 3: everything clean; 2: bloom and shafts; 1: MSAA, FXAA and grade; 0: grade only. */
+    const sunNDC = new THREE.Vector3(), white = new THREE.Color(1, 1, 1);
+    /**
+     * 3: everything, anti-aliased over time; 2: bloom, shafts, flare and metering under MSAA;
+     * 1: MSAA, FXAA and grade; 0: grade only.
+     */
     function setLevel(level) {
+        // The depth these read is drawn by the ambient-occlusion pass, so they go with it.
+        temporal.setEnabled(level >= 3);
+        lights.setAllowed(level >= 3);
+        air.setAllowed(level >= 3);
+        lens.setAllowed(level >= 2);
+        lens.setLens(level >= 2);
         ao.enabled = level >= 3;
         sscsPass.enabled = level >= 3;
         ssgiPass.enabled = level >= 3;
         ssrPass.enabled = level >= 3;
         shaftsPass.enabled = level >= 2;
-        fxaaPass.enabled = level >= 1;
+        // Temporal resolve is the anti-aliasing at the top level: MSAA and FXAA would only cost.
+        fxaaPass.enabled = level >= 1 && level < 3;
         dofAllowed = level >= 3;
         bloom.enabled = level >= 2;
-        const want = level >= 1 ? 4 : 0;
+        const want = level >= 1 && level < 3 ? 4 : 0;
         if (want !== samples) {
             samples = want;
             for (const t of [composer.renderTarget1, composer.renderTarget2]) { t.samples = want; t.dispose(); }
@@ -528,12 +557,30 @@ export function createPost(renderer, scene, camera, depthCamera) {
         const pw = Math.max(1, Math.floor(w * ratio)), ph = Math.max(1, Math.floor(h * ratio));
         grade.uniforms.uTexel.value.set(1 / pw, 1 / ph);
         ssrPass.uniforms.uResolution.value.set(pw, ph);
+        ssgiPass.uniforms.uResolution.value.set(pw, ph);
         fxaaPass.uniforms.uResolution.value.set(pw, ph);
+        temporal.setSize(pw, ph);
     }
-    function render(dt, time, calm, cam, sunPos, environment) {
+    const noPeople = [], noWaves = [];
+    /**
+     * @param frame  what moved and what is in the air this frame: `people` for motion vectors,
+     *               `lights`/`ambient`/`haze`/`gas` for the lit air, `waves`/`hazes` for
+     *               refraction, `still` when nothing should smear (paused, reduced motion)
+     */
+    function render(dt, time, calm, cam, sunPos, environment, frame = {}) {
         if (environment) setEnvironment(environment);
+        temporal.update(frame.people ?? noPeople, dt, time, calm || frame.still === true);
+        air.update(cam ?? camera, frame.lights ?? noPeople, frame.ambient ?? white, frame.haze ?? 0, frame.gas ?? 0, time);
+        lens.update(cam ?? camera, frame.waves ?? noWaves, frame.hazes ?? noWaves, time, calm);
         grade.uniforms.uTime.value = time;
         grade.uniforms.uPhoneTime.value = time;
+        // The two depth-reading passes work in the camera's own space, in metres.
+        const eye = cam ?? camera;
+        for (const pass of [sscsPass, ssgiPass]) {
+            pass.uniforms.uCameraNear.value = eye.near; pass.uniforms.uCameraFar.value = eye.far; pass.uniforms.uTime.value = time;
+        }
+        sscsPass.uniforms.uProj.value.set(eye.projectionMatrix.elements[0], eye.projectionMatrix.elements[5]);
+        if (frame.sunDir) sscsPass.uniforms.uLightView.value.copy(frame.sunDir).transformDirection(eye.matrixWorldInverse);
         // A small sensor in flat light is noisy; reduced flashing keeps the frame still either way.
         grade.uniforms.uGrain.value = calm ? 0.0 : 0.024 + 0.045 * grade.uniforms.uFootage.value;
         if (cam && sunPos && shaftsPass.enabled) {
@@ -564,8 +611,17 @@ export function createPost(renderer, scene, camera, depthCamera) {
         },
         /** Pulls focus onto a subject `distance` metres away for a moment (top quality only). */
         rackFocus(distance, hold, strength) { if (dofAllowed) focus.trigger(distance, hold, strength); },
+        /** Nudges the camera for temporal anti-aliasing. Call before anything copies its projection. */
+        jitter() { temporal.jitter(); },
+        /** After a hard camera cut: last frame's picture is no use to this one. */
+        cut() { temporal.cut(); },
+        /** The list of small lights: `begin()`, `add(x, y, z, reach, r, g, b, power)`, `end()`. */
+        lights,
+        /** The gas grid's density texture and the ground it covers, for the lit air. */
+        setGas(texture, rect) { air.setGas(texture, rect); },
         dispose() {
             focus.dispose();
+            temporal.dispose(); lights.dispose(); air.dispose(); lens.dispose();
             for (const pass of composer.passes) pass.dispose?.();
             composer.dispose?.();
             target.dispose();

@@ -12,10 +12,12 @@ const physicsUrl = url(read('js/pocapitol/physics.js'));
 const physics = await import(physicsUrl);
 const steering = url(read('js/pocapitol/steering.js').replace("'yuka'", `'${yuka}'`).replace("'./physics.js'", `'${physicsUrl}'`));
 const harm = url(read('js/pocapitol/harm.js'));
+const barricadesUrl = url(read('js/pocapitol/barricades.js').replace("'./physics.js'", `'${physicsUrl}'`));
+const surgeUrl = url(read('js/pocapitol/surge.js'));
 const worldUrl = url(read('js/pocapitol/world.js')
     .replace("'./steering.js'", `'${steering}'`)
     .replace("'./physics.js'", `'${physicsUrl}'`)
-    .replace("'./harm.js'", `'${harm}'`));
+    .replace("'./harm.js'", `'${harm}'`).replace("'./barricades.js'", `'${barricadesUrl}'`).replace("'./surge.js'", `'${surgeUrl}'`));
 const world = await import(worldUrl);
 const audio = await import(url(read('js/pocapitol/audio.js').replace("'./world.js'", `'${worldUrl}'`)));
 const quality = await import(url(read('js/pocapitol/quality.js')));

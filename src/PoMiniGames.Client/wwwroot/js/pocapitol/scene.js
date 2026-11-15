@@ -1,5 +1,5 @@
 import * as THREE from 'three';
-import { areas, obstacles, columns, statues, milestones, lineDefs, selectLeader, groundHeight, walkable, CROWD_SIZE, MAX_POLICE, CIVILIANS, CURFEW_ELAPSED } from './world.js';
+import { areas, obstacles, columns, statues, milestones, lineDefs, selectLeader, groundHeight, walkable, surgeSample, CROWD_SIZE, MAX_POLICE, CIVILIANS, CURFEW_ELAPSED } from './world.js';
 import { createCrowd, createDistantCrowd, bakeImpostors, flagTexture, coats } from './crowd.js';
 import { SURFACE, addSurface, surfaceTexture, createSky, setSkyColors, createEnvironment, addWave, softTexture } from './look.js';
 import { createParticles } from './particles.js';
@@ -9,6 +9,10 @@ import { createPost } from './post.js';
 import { createCampus } from './campus.js';
 import { addArchitecturalDetail } from './architecture.js';
 import { createWear } from './ground.js';
+import { createGasGrid } from './gasGrid.js';
+import { createCloth } from './cloth.js';
+import { createGlass } from './glass.js';
+import { createNearCascade } from './cascade.js';
 
 // The chamber is drawn but never walked: its doors stay barricaded, as they did. It is only
 // seen in the closing shot, empty.
@@ -98,6 +102,10 @@ export function createScene(host, { figure, osm, signs = [] } = {}) {
     sun.shadow.normalBias = 0.025;
     sun.shadow.radius = 3;
     scene.add(sun);
+    // The sun's second, close shadow map (cascade.js). Its light exists from the start, at zero
+    // brightness, so the light count never changes and nothing recompiles when it is switched on.
+    const cascade = createNearCascade(scene, sun);
+    let shadowFrame = 0;
     const sunDir = sunDirection(0);
     const placeSun = () => sun.position.copy(sun.target.position).addScaledVector(sunDir, 110);
     placeSun();
@@ -522,7 +530,9 @@ export function createScene(host, { figure, osm, signs = [] } = {}) {
     // no light of their own, which would cost every lit pixel.
     const globeMaterial = new THREE.MeshStandardMaterial({ color: '#f4ead2', emissive: '#ffd9a0', emissiveIntensity: 0, roughness: 0.3 });
     materials.set('lamp-globes', globeMaterial);
+    const lampPosts = [];
     for (const x of [-11.6, 11.6]) for (const z of [22, 30, 46, 54, 62]) {
+        lampPosts.push([x, z]);
         mesh(new THREE.CylinderGeometry(0.22, 0.28, 0.5, 8), '#2f3236', x, 0.25, z);
         mesh(new THREE.CylinderGeometry(0.06, 0.1, 3.4, 8), '#2f3236', x, 2, z);
         mesh(new THREE.SphereGeometry(0.24, 12, 8), '#f4ead2', x, 3.9, z).material = globeMaterial;
@@ -555,7 +565,8 @@ export function createScene(host, { figure, osm, signs = [] } = {}) {
     const barRed = new THREE.MeshStandardMaterial({ color: '#3a0d0d', emissive: '#ff2a1c', emissiveIntensity: 0.3, roughness: 0.4 });
     const barBlue = new THREE.MeshStandardMaterial({ color: '#0d1a3a', emissive: '#2a5cff', emissiveIntensity: 0.3, roughness: 0.4 });
     materials.set('bar-red', barRed); materials.set('bar-blue', barBlue);
-    for (const [vx, vz, turn] of [[-43.6, 27, 0.12], [-44.6, 36.5, -0.08], [43.6, 30, -0.1], [44.3, 41, 0.15]]) {
+    const patrolCars = [[-43.6, 27, 0.12], [-44.6, 36.5, -0.08], [43.6, 30, -0.1], [44.3, 41, 0.15]];
+    for (const [vx, vz, turn] of patrolCars) {
         const cos = Math.cos(turn), sin = Math.sin(turn), base = groundHeight(vx, vz);
         const park = (part, lx, lz) => {
             part.position.x = vx + lx * cos + lz * sin; part.position.z = vz - lx * sin + lz * cos;
@@ -686,16 +697,20 @@ export function createScene(host, { figure, osm, signs = [] } = {}) {
     for (const o of obstacles) {
         if (o.kind !== 'bleacher') continue;
         const side = Math.sign(o.x);
-        const hang = (geometry, mat, x, top, z, yaw) => {
+        // Real cloth (cloth.js): a grid of points on fixed-length links, pinned along the top.
+        const hang = (width, height, mat, x, top, z, yaw) => {
+            const cols = Math.max(8, Math.round(width * 2.6)), rows = Math.max(5, Math.round(height * 3.2));
+            const geometry = new THREE.PlaneGeometry(width, height, cols - 1, rows - 1);
             geometries.add(geometry);
+            mat.side = THREE.DoubleSide;
             const cloth = new THREE.Mesh(geometry, mat);
             cloth.position.set(x, top, z); cloth.rotation.y = yaw; cloth.receiveShadow = true; cloth.visible = false;
             scene.add(cloth);
-            drapes.push({ cloth, top, height: geometry.parameters.height });
+            drapes.push({ cloth, top, height, yaw, x, z, sim: createCloth({ width, height, cols, rows, weight: 0.8 + height * 0.2 }) });
         };
-        hang(new THREE.PlaneGeometry(9.5, 1.55), side < 0 ? banner('TRUMP 2020', '#233d78', '#ffffff') : banner('STOP THE STEAL', '#f1efe8', '#a9353e'),
+        hang(9.5, 1.55, side < 0 ? banner('TRUMP 2020', '#233d78', '#ffffff') : banner('STOP THE STEAL', '#f1efe8', '#a9353e'),
             o.x - side * 2.5, 6.2, o.z + o.d / 2 + 0.16, 0);
-        hang(new THREE.PlaneGeometry(4.2, 2.8), hungFlag, o.x - side * (o.w / 2 + 0.15), 6.0, o.z + 0.3, -side * Math.PI / 2);
+        hang(4.2, 2.8, hungFlag, o.x - side * (o.w / 2 + 0.15), 6.0, o.z + 0.3, -side * Math.PI / 2);
     }
     // The outer line of green snow fencing across the lawn. It is standing when the day starts
     // and goes down, panel by panel, as the front of the crowd walks into it.
@@ -884,6 +899,26 @@ export function createScene(host, { figure, osm, signs = [] } = {}) {
     // zero so the light count never changes and no shader recompiles when one is needed.
     const bursts = createBursts(scene);
     const decals = createDecals(scene);
+    // Gas as a fluid on a grid: it flows round the stands and pools in rooms, and the lit air in
+    // post.js draws it. And the four panes by the first doors, pre-cut. (The loose racks and the
+    // wave through the packed crowd belong to the simulation: world.js steps them, this draws them.)
+    // Indoors gas is held by the walls. Outdoors only the stands and the columns are in its way:
+    // past the edge of the lawn is open air, which is where the wind takes it.
+    const gasBlocked = (x, z) => (z < 14.5 ? !walkable(x, z)
+        : obstacles.some(o => Math.abs(x - o.x) <= o.w / 2 && Math.abs(z - o.z) <= o.d / 2) || columns.some(c => Math.hypot(x - c.x, z - c.z) < 1.15));
+    const gasGrid = createGasGrid(undefined, undefined, undefined, gasBlocked);
+    const gasTexture = new THREE.DataTexture(gasGrid.bytes, gasGrid.cols, gasGrid.rows, THREE.RedFormat);
+    gasTexture.magFilter = gasTexture.minFilter = THREE.LinearFilter;
+    gasTexture.needsUpdate = true;
+    textures.add(gasTexture);
+    // The crowd renderer asks how the wave is rocking each person; the answer is the live attempt's.
+    let liveState = null;
+    const surge = { sample: (x, z, packed, out) => (liveState ? surgeSample(liveState, x, z, packed, out) : out) };
+    const PANES = [-16.3, -12, 12, 16.3];
+    const glass = createGlass(scene, PANES.map(x => ({ x, y: 3.3, z: 14.72, w: 1.5, h: 2.5 })), { floor: 0.13, sun: sunDir });
+    const shocks = [], waveList = [], hazeList = [], peoplePool = [], peopleList = [];
+    const ambientAir = new THREE.Color();
+    let gasDue = 0, postLevel = 3, shadowReach = 46, shadowReachSet = 46;
     const flares = [0, 1].map(() => { const light = new THREE.PointLight('#ffb35c', 0, 14, 1.8); scene.add(light); return light; });
     const reacted = new WeakSet();
     function flare(x, y, z, intensity, color) {
@@ -891,7 +926,7 @@ export function createScene(host, { figure, osm, signs = [] } = {}) {
         light.position.set(x, y, z); light.color.set(color); light.intensity = intensity;
     }
 
-    const crowd = createCrowd(scene, CROWD_SIZE + MAX_POLICE + CIVILIANS + 1, { time, groundHeight, shadowTexture: shadowBlob, figure, wind, signs, detail: surfaceDetail });
+    const crowd = createCrowd(scene, CROWD_SIZE + MAX_POLICE + CIVILIANS + 1, { time, groundHeight, shadowTexture: shadowBlob, figure, wind, signs, detail: surfaceDetail, surge });
     // The far crowd is photographed from the rigged figure, here, now that every light the scene
     // will ever have exists: the pictures are then lit and compiled exactly as the near crowd is.
     // A device on the lowest tier keeps the painted far crowd: the bake costs memory it does not have.
@@ -920,6 +955,10 @@ export function createScene(host, { figure, osm, signs = [] } = {}) {
     scene.add(selectRing);
 
     const post = createPost(renderer, scene, camera, depthCamera);
+    post.setGas(gasTexture, gasGrid.rect);
+    // Everything lit is in the scene by now: teach it all to read the close shadow map.
+    cascade.teachAll(scene);
+    const airLights = [strobe, flood, ...lamps, flashLight, muzzleLight, ...flares];
     const raycaster = new THREE.Raycaster();
     const target = new THREE.Vector3(), desired = new THREE.Vector3(), offset = new THREE.Vector3(), look = new THREE.Vector3(), smoothLook = new THREE.Vector3();
     let renderScale = 1;
@@ -938,6 +977,12 @@ export function createScene(host, { figure, osm, signs = [] } = {}) {
         renderScale = settings.scale;
         resize();
         const shadows = settings.shadows > 0;
+        // The close cascade is for the top rung. With it on, the far map is redrawn every other
+        // frame (it is the far crowd and the building, which do not move much), so two maps cost
+        // about one and a half; with it off the far map goes back to every frame.
+        const close = settings.shadows >= 2048 && (settings.post ?? 0) >= 3;
+        cascade.setEnabled(close);
+        sun.shadow.autoUpdate = !close;
         if (renderer.shadowMap.autoUpdate !== shadows) {
             // Switching shadows off the usual way recompiles every lit shader, a multi-second
             // freeze on exactly the devices that need the help. Instead the shadow pass is
@@ -950,7 +995,7 @@ export function createScene(host, { figure, osm, signs = [] } = {}) {
         }
         if (shadows && sun.shadow.mapSize.x !== settings.shadows) {
             sun.shadow.mapSize.set(settings.shadows, settings.shadows);
-            sun.shadow.map?.dispose(); sun.shadow.map = null;
+            sun.shadow.map?.dispose(); sun.shadow.map = null; sun.shadow.needsUpdate = true;
         }
         const distant = Math.floor(DISTANT * settings.distant);
         farCrowd.setCount(distant);
@@ -970,6 +1015,7 @@ export function createScene(host, { figure, osm, signs = [] } = {}) {
         // Surface detail is a uniform, not a define: lowering it costs no recompile.
         surfaceDetail.value = settings.detail ?? 1;
         post.setLevel(settings.post ?? 0);
+        postLevel = settings.post ?? 0;
         host.dataset.renderScale = settings.scale;
         host.dataset.shadows = settings.shadows;
         host.dataset.post = settings.post ?? 0;
@@ -994,6 +1040,7 @@ export function createScene(host, { figure, osm, signs = [] } = {}) {
     // Scenario time for the GPU bursts: it stops with the game, so a paused spark shower hangs in the air.
     let fxClock = 0;
     function render(state, yaw, pitch, moving, dt, options = {}) {
+        liveState = state;
         clock += dt;
         time.value = clock;
         sky.uniforms.uTime.value = clock;
@@ -1148,14 +1195,20 @@ export function createScene(host, { figure, osm, signs = [] } = {}) {
                 const rock = Math.sin(clock * (1.8 + strain * 3.4) + i * 0.85) * (0.035 + 0.075 * shove);
                 pose.position.set(x + rock * 0.9 + slide * 0.3, 0.62 - 0.1 * lean, firstDef.z + 0.35 - bow - push - lean * 0.8);
                 pose.rotation.set(-strain * 0.25 - shove * 0.12 + rock - lean * 0.5, rock * 0.6, rock * 0.5 + lean * 0.3);
-            } else if (first.state === 'holding') {
-                // Shoved over: it lies where the crowd dragged it, still rocking a little.
-                const rock = Math.sin(clock * 1.6 + i) * 0.02;
-                pose.position.set(x + slide, 0.1, firstDef.z + 0.1 + Math.abs(slide) * 0.2);
-                pose.rotation.set(-Math.PI / 2 + 0.06 + rock, slide * 0.5, rack?.id % 2 ? 0.1 : -0.1);
             } else {
-                pose.position.set(x + (i % 3 - 1) * 0.7, 0.08, firstDef.z - 0.6 - (i % 4) * 0.9);
-                pose.rotation.set(-Math.PI / 2, 0, (i * 37 % 11 - 5) * 0.12);
+                // Off the line: from here it is loose steel on the ground, a rigid body the
+                // simulation steps (world.js stepField, barricades.js). It goes over with the push
+                // that tipped it, and is then kicked, dragged and piled up by whoever walks through.
+                const loose = state.looseRacks?.[i];
+                const body = loose?.free ? loose : { x, z: firstDef.z - 0.25, yaw: 0, tip: 1, y: 0, roll: 0 };
+                const lie = Math.min(1, body.tip) * Math.PI / 2, back = 0.6 * (1 - Math.sin(lie));
+                pose.rotation.order = 'YXZ';
+                pose.position.set(body.x + Math.sin(body.yaw) * back, 0.05 + 0.6 * Math.cos(lie) + body.y, body.z + Math.cos(body.yaw) * back);
+                pose.rotation.set(-lie + body.y * 0.9, body.yaw, body.roll * body.tip);
+                pose.scale.setScalar(1); pose.updateMatrix();
+                pose.rotation.order = 'XYZ';
+                racks.setMatrixAt(i, pose.matrix);
+                continue;
             }
             pose.scale.setScalar(1); pose.updateMatrix();
             racks.setMatrixAt(i, pose.matrix);
@@ -1177,6 +1230,7 @@ export function createScene(host, { figure, osm, signs = [] } = {}) {
         droppedFlags.count = brokenLines * FLAGS_PER_LINE;
 
         const quiet = calm();
+        particles.illuminate(sunDir, Math.min(1, sun.intensity / SUN[0][1]), airLights);
         particles.update(state.effects, state.elapsed, daylight, quiet, wind, dusk);
         // Light bars: two quick flashes of red, then two of blue. Dim by day, and after dark the
         // colour washes over the wet stone and the backs of the crowd. Steady for anyone who
@@ -1194,7 +1248,11 @@ export function createScene(host, { figure, osm, signs = [] } = {}) {
             strobe.intensity = lit ? dusk * 150 : 0;
         }
         // The lawn under the crowd. A new attempt starts on clean grass, with the fence back up.
-        if (state.elapsed < wearElapsed) { wear.reset(); fenceFell.fill(-1); standsTaken = -1; wearClock = 0; }
+        if (state.elapsed < wearElapsed) {
+            wear.reset(); fenceFell.fill(-1); standsTaken = -1; wearClock = 0;
+            gasGrid.reset(); gasTexture.needsUpdate = true;
+            glass.reset(); shocks.length = 0; post.cut();
+        }
         wearElapsed = state.elapsed;
         const afoot = state.companions;
         if (state.status === 'active' && state.elapsed - wearClock >= 0.25) {
@@ -1226,6 +1284,14 @@ export function createScene(host, { figure, osm, signs = [] } = {}) {
             drape.cloth.visible = unrolled > 0;
             drape.cloth.scale.y = Math.max(0.02, unrolled);
             drape.cloth.position.y = drape.top - drape.height * unrolled / 2;
+            if (unrolled > 0 && state.status === 'active') {
+                // The wind through the cloth's own face, so a banner side-on to it hangs still.
+                drape.sim.step(dt, (wind.x * Math.sin(drape.yaw) + wind.z * Math.cos(drape.yaw)) * 0.5, clock);
+                const at = drape.cloth.geometry.attributes.position, from = drape.sim.positions;
+                for (let v = 0; v < at.count; v++) at.setXYZ(v, from[v * 3], from[v * 3 + 1] + drape.height / 2, from[v * 3 + 2]);
+                at.needsUpdate = true;
+                drape.cloth.geometry.computeVertexNormals();
+            }
         }
         lostHats.count = lostGloves.count = Math.floor(Math.min(1, state.elapsed / 170) * LOST / 2);
         // Footprints: a few hundred people walking wet grit and thin snow leave a record of
@@ -1250,6 +1316,24 @@ export function createScene(host, { figure, osm, signs = [] } = {}) {
             bursts.react(e, floor, quiet);
             decals.react(e, floor);
             const energy = e.energy ?? 0;
+            // A blast is also a pressure front through the air: it bends the light and kicks the
+            // banners. (The wave it sends through the packed crowd is the simulation's.)
+            if (e.type === 'flash' || e.type === 'grenade') {
+                const big = e.type === 'grenade';
+                shocks.push({ x: e.x, z: e.z, born: clock, big });
+                if (shocks.length > 4) shocks.shift();
+                for (const drape of drapes) {
+                    const away = Math.hypot(drape.x - e.x, drape.z - e.z);
+                    if (away < 30) drape.sim.impulse((big ? 26 : 14) / (1 + away * 0.25), Math.sign((drape.x - e.x) * Math.sin(drape.yaw) + (drape.z - e.z) * Math.cos(drape.yaw)) || 1);
+                }
+            } else if (e.type === 'break' && Number.isInteger(e.line)) {
+                // The first doors: the panes beside them go, one after another, not all at once.
+                if (e.line === 1) {
+                    PANES.forEach((x, pane) => {
+                        if (glass.shatter(pane, fxClock + 0.15 + pane * 0.21)) bursts.puff(x, 3.2, 14.6, 60, { tone: [0.8, 0.85, 0.88], size: 0.4, life: 0.7 });
+                    });
+                }
+            }
             if (e.type === 'gunshot') {
                 muzzleLight.position.set(e.x, floor + 1.35, e.z);
                 muzzleLight.intensity = quiet ? 35 : 240;
@@ -1277,6 +1361,30 @@ export function createScene(host, { figure, osm, signs = [] } = {}) {
         post.setCombatStress?.(calmMode ? 0 : retinalFlash, calmMode ? ((state.suppression ?? 0) * 0.2) : (state.suppression ?? 0));
 
         if (state.status === 'active') fxClock += dt;
+        const running = state.status === 'active';
+        // Gas and smoke feed the grid for as long as the canister is venting; the wind, the walls
+        // and the people moving through it do the rest.
+        if (running) {
+            const venting = [];
+            for (const effect of state.effects) {
+                if (effect.type === 'gas') venting.push({ x: effect.x, z: effect.z, rate: 0.55 * Math.min(1, effect.life / 2), r: (effect.r ?? 4) * 0.6 });
+                else if (effect.type === 'smoke') venting.push({ x: effect.x, z: effect.z, rate: 0.9 * Math.min(1, effect.life / 3), r: (effect.r ?? 7) * 0.5 });
+            }
+            if (venting.length || gasGrid.active()) {
+                const movers = [];
+                for (let i = 0; i < afoot.length; i += 3) {
+                    const mover = afoot[i];
+                    if (mover.health > 0 && Math.abs(mover.vx ?? 0) + Math.abs(mover.vz ?? 0) > 0.6) movers.push(mover);
+                }
+                // Thirty steps a second is plenty for something this soft, at any frame rate.
+                gasDue += dt;
+                if (gasDue >= 1 / 30) {
+                    if (gasGrid.step(Math.min(0.1, gasDue), venting, wind, movers)) gasTexture.needsUpdate = true;
+                    gasDue = 0;
+                }
+            }
+        }
+        glass.update(fxClock, daylight);
         bursts.update(fxClock, camera, renderer.domElement.height, groundHeight(camera.position.x, camera.position.z));
         decals.update(daylight, dt);
         let flash = 0, flashAt = null;
@@ -1303,6 +1411,21 @@ export function createScene(host, { figure, osm, signs = [] } = {}) {
         const focus = subject || lastFocus;
         sun.target.position.lerp(new THREE.Vector3(focus.x, 0, focus.z), 0.08);
         sun.position.copy(sun.target.position).addScaledVector(sunDir, 110);
+        // The shadow map covers only as much ground as the shot shows. Behind the player that is
+        // a 20 m square instead of a 46 m one, so the same map draws shadows at over twice the
+        // detail; a crane shot gets the full spread back. It moves in steps, not continuously,
+        // because resizing the frustum every frame would make every shadow edge crawl.
+        const shotReach = Math.min(46, Math.max(20, camera.position.distanceTo(sun.target.position) * 1.7 + 8));
+        shadowReach += (shotReach - shadowReach) * (1 - Math.exp(-dt * 1.5));
+        cascade.update(focus, sunDir);
+        if (cascade.enabled()) sun.shadow.needsUpdate = (shadowFrame++ & 1) === 0;
+        const reachStep = Math.round(shadowReach / 4) * 4;
+        if (reachStep !== shadowReachSet && sun.shadow.camera.far > 1) {
+            shadowReachSet = reachStep;
+            Object.assign(sun.shadow.camera, { left: -reachStep, right: reachStep, top: reachStep * 1.14, bottom: -reachStep * 1.14 });
+            sun.shadow.camera.updateProjectionMatrix();
+            sun.shadow.needsUpdate = true;
+        }
         const floor = groundHeight(focus.x, focus.z);
         target.set(focus.x, floor + 1.65, focus.z);
         // Demo camera: long, high shots behind the crowd and behind the police line. Indoors the
@@ -1466,6 +1589,7 @@ export function createScene(host, { figure, osm, signs = [] } = {}) {
             camera.translateX(Math.sin(clock * 47) * jolt); camera.translateY(Math.sin(clock * 61 + 1) * jolt);
         }
         sky.mesh.position.copy(camera.position);
+        post.jitter();
         depthCamera.copy(camera);
         depthCamera.layers.set(0);
         host.dataset.actorCount = crowd.update(state, spectating ? 0 : yaw, moving, camera.position);
@@ -1489,9 +1613,69 @@ export function createScene(host, { figure, osm, signs = [] } = {}) {
         renderer.info.reset();
         post.setPhone(phone);
         post.setFootage(footage);
+        // Everyone on screen, for motion vectors: where they stand now. Top quality only.
+        let seen = 0;
+        if (postLevel >= 3) {
+            const note = (key, actor) => {
+                if (actor.health <= 0) return;
+                const person = peoplePool[seen] ??= { key: '', x: 0, y: 0, z: 0 };
+                person.key = key; person.x = actor.x; person.z = actor.z; person.y = groundHeight(actor.x, actor.z);
+                peopleList[seen++] = person;
+            };
+            for (const c of state.companions) note(c.id, c);
+            for (const e of state.enemies) note(1000 + e.id, e);
+            if (state.role !== 'none' && state.health > 0) note(-1, { x: state.player.x, z: state.player.z, health: 1 });
+        }
+        peopleList.length = seen;
+        // The small lights: every one of these lights only what is near it (smallLights.js).
+        const small = post.lights;
+        small.begin();
+        if (postLevel >= 3) {
+            const evening = 0.12 + 0.88 * dusk;
+            for (const [x, z] of lampPosts) small.add(x, 3.7, z, 10, 1, 0.8, 0.52, dusk * 7);
+            // Each car's own bars, in step with the one real strobe that stands in for them.
+            const red = barRed.emissiveIntensity > 1, blue = barBlue.emissiveIntensity > 1;
+            for (const [vx, vz] of patrolCars) {
+                const y = groundHeight(vx, vz) + 2.1;
+                if (red) small.add(vx - 0.4, y, vz, 12, 1, 0.12, 0.08, 9 * evening);
+                if (blue) small.add(vx + 0.4, y, vz, 12, 0.12, 0.3, 1, 9 * evening);
+            }
+            // A phone held up lights the face behind it and the shoulders in front.
+            for (const c of state.companions) {
+                if (!c.filming || c.health <= 0) continue;
+                const h = c.heading ?? 0;
+                small.add(c.x - Math.sin(h) * 0.42, groundHeight(c.x, c.z) + 1.58, c.z - Math.cos(h) * 0.42, 1.7, 0.62, 0.78, 1, 0.3 + 0.9 * dusk);
+            }
+            // After dark the far crowd is a field of screens, each one flickering as its picture changes.
+            if (dusk > 0.08) {
+                for (let i = 0; i < farSpots.length; i += 5) {
+                    const spot = farSpots[i];
+                    const flicker = 0.6 + 0.4 * Math.sin(clock * (1.3 + (i % 7) * 0.4) + i);
+                    small.add(spot.x, spot.y + 1.7, spot.z, 2.6, 0.62, 0.78, 1, dusk * 1.5 * flicker);
+                }
+            }
+            for (let i = 0; i < shots; i++) small.add(state.shots[i].x, state.shots[i].y ?? 1.35, state.shots[i].z, 3.4, 1, 0.82, 0.5, 2.2);
+        }
+        small.end();
+        // Pressure fronts and shimmering clouds, for the refraction pass.
+        waveList.length = 0; hazeList.length = 0;
+        while (shocks.length && clock - shocks[0].born > 0.85) shocks.shift();
+        for (const shock of shocks) {
+            const age = (clock - shock.born) / 0.85;
+            waveList.push({ x: shock.x, y: 1.2, z: shock.z, radius: 0.6 + age * (shock.big ? 26 : 18), strength: (1 - age) ** 2 * (shock.big ? 0.05 : 0.032) });
+        }
+        for (const effect of state.effects) {
+            if (hazeList.length >= 4 || (effect.type !== 'gas' && effect.type !== 'smoke')) continue;
+            hazeList.push({ x: effect.x, y: 1.4, z: effect.z, radius: (effect.r ?? 5) * 1.3, strength: 0.0045 * Math.min(1, effect.life / 2) });
+        }
+        ambientAir.copy(skyColor).multiplyScalar(0.25 + 0.75 * daylight);
         post.render(dt, clock, quiet, camera, sun.position, {
             sunlight: daylight,
             indoors: camera.position.z < 14.5,
+        }, {
+            people: peopleList, still: motionReduction || state.status !== 'active',
+            sunDir, lights: airLights, ambient: ambientAir, haze: 0.004 + 0.02 * dusk, gas: gasGrid.active() ? 1 : 0,
+            waves: waveList, hazes: hazeList,
         });
         host.dataset.drawCalls = renderer.info.render.calls;
     }
@@ -1526,7 +1710,7 @@ export function createScene(host, { figure, osm, signs = [] } = {}) {
         perchCrowd.dispose();
         impostors?.dispose();
         particles.dispose();
-        bursts.dispose(); decals.dispose();
+        bursts.dispose(); decals.dispose(); glass.dispose(); cascade.dispose();
         for (const light of flares) scene.remove(light);
         post.dispose();
         campus.dispose();
@@ -1538,5 +1722,15 @@ export function createScene(host, { figure, osm, signs = [] } = {}) {
         geometries.forEach(g => g.dispose()); materials.forEach(m => m.dispose()); textures.forEach(t => t.dispose());
         renderer.dispose(); renderer.forceContextLoss(); renderer.domElement.remove();
     }
-    return { canvas: renderer.domElement, render, aim, pickUnit, applyQuality, dispose, renderer, camera, startIntro, introActive, setTracerMode, setMotionReduction, setFov, setFootage };
+    /**
+     * A menu is over the scene (a pause): rack the focus close so everything behind the panel
+     * goes soft, and let it come back when the menu goes. Top quality only, like any focus pull.
+     */
+    let menuUp = false;
+    function setMenu(on) {
+        if (on === menuUp) return;
+        menuUp = on;
+        post.rackFocus(2.2, on ? 3600 : 0.01, 0.9);
+    }
+    return { canvas: renderer.domElement, render, aim, pickUnit, applyQuality, dispose, renderer, camera, startIntro, introActive, setTracerMode, setMotionReduction, setFov, setFootage, setMenu };
 }

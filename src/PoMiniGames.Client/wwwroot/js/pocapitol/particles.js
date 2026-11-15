@@ -6,7 +6,13 @@ import { billboardChunk, softTexture } from './look.js';
 // The world reports each effect as a position, radius and age; it keeps no particles. So every
 // sprite here is a pure function of (effect, index, time): nothing to spawn, nothing to leak,
 // and a paused game shows a paused cloud.
+//
+// A sprite is flat, but it is shaded as the ball of smoke it stands for. Each pixel takes the
+// facing a sphere would have there, so the side toward the sun is bright and the far side falls
+// into the cloud's own shadow, the underside is darker than the top, and every small light in
+// reach (the light bars, the floods, a flash-bang) colours the side of the puff that faces it.
 
+const LIGHTS = 8;
 const GAS_PUFFS = 14, SPRAY_DROPS = 18, FLASH_SPRITES = 6, SMOKE_PUFFS = 26;
 // What a cloud leaves behind: gas and smoke do not vanish when the canister is spent, they thin
 // into a low haze that hangs for most of a minute and slides off with the wind.
@@ -36,15 +42,51 @@ export function createParticles(scene, capacity = 430) {
     alpha.setUsage(THREE.DynamicDrawUsage);
     geometry.setAttribute('aAlpha', alpha);
     const material = new THREE.MeshBasicMaterial({ map: texture, transparent: true, depthWrite: false, fog: true });
-    material.onBeforeCompile = shader => {
-        shader.vertexShader = shader.vertexShader
-            .replace('#include <common>', '#include <common>\nattribute float aAlpha;\nvarying float vAlpha;')
-            .replace('#include <project_vertex>', billboardChunk(false) + '\nvAlpha = aAlpha;');
-        shader.fragmentShader = shader.fragmentShader
-            .replace('#include <common>', '#include <common>\nvarying float vAlpha;')
-            .replace('#include <color_fragment>', '#include <color_fragment>\ndiffuseColor.a *= vAlpha;');
+    const lighting = {
+        uSunDir: { value: new THREE.Vector3(0.3, 0.6, 0.7) }, uSunAmount: { value: 1 },
+        uGlowAt: { value: Array.from({ length: LIGHTS }, () => new THREE.Vector4()) },
+        uGlowColor: { value: Array.from({ length: LIGHTS }, () => new THREE.Vector3()) },
+        uGlows: { value: 0 },
     };
-    material.customProgramCacheKey = () => 'pocapitol-particles';
+    material.onBeforeCompile = shader => {
+        Object.assign(shader.uniforms, lighting);
+        shader.vertexShader = shader.vertexShader
+            .replace('#include <common>', '#include <common>\nattribute float aAlpha;\nvarying float vAlpha;\nvarying vec2 vDisc;\nvarying vec3 vPuff, vPuffRight, vPuffUp;\nvarying float vPuffSize;')
+            .replace('#include <project_vertex>', billboardChunk(false) + `
+                vAlpha = aAlpha;
+                vDisc = position.xy * 2.0; vPuff = bbCenter; vPuffRight = bbRight; vPuffUp = bbUp; vPuffSize = bbScale.x * 0.5;`);
+        shader.fragmentShader = shader.fragmentShader
+            .replace('#include <common>', `#include <common>
+                varying float vAlpha;
+                varying vec2 vDisc;
+                varying vec3 vPuff, vPuffRight, vPuffUp;
+                varying float vPuffSize;
+                uniform vec3 uSunDir, uGlowColor[${LIGHTS}];
+                uniform vec4 uGlowAt[${LIGHTS}];
+                uniform float uSunAmount;
+                uniform int uGlows;`)
+            .replace('#include <color_fragment>', `#include <color_fragment>
+                diffuseColor.a *= vAlpha;
+                // The facing a ball of smoke would have at this pixel, in the world.
+                float puffR = min(dot(vDisc, vDisc), 1.0);
+                vec3 puffToward = normalize(cameraPosition - vPuff);
+                vec3 puffN = normalize(vPuffRight * vDisc.x + vPuffUp * vDisc.y + puffToward * sqrt(1.0 - puffR));
+                vec3 puffAt = vPuff + puffN * vPuffSize;
+                // Sun on one side, the cloud's own shadow on the other, and a darker underside.
+                float puffSun = dot(puffN, normalize(uSunDir)) * 0.5 + 0.5;
+                diffuseColor.rgb *= mix(1.0, (0.58 + 0.56 * puffSun) * (0.86 + 0.14 * puffN.y), uSunAmount);
+                vec3 puffGlow = vec3(0.0);
+                for (int i = 0; i < ${LIGHTS}; i++) {
+                    if (i >= uGlows) break;
+                    vec3 puffTo = uGlowAt[i].xyz - puffAt;
+                    float puffD2 = dot(puffTo, puffTo), puffWindow = clamp(1.0 - puffD2 / (uGlowAt[i].w * uGlowAt[i].w), 0.0, 1.0);
+                    // Smoke scatters light through itself, so the far side is lit too, only less.
+                    float puffFace = dot(puffN, puffTo * inversesqrt(max(puffD2, 1e-4))) * 0.4 + 0.6;
+                    puffGlow += uGlowColor[i] * puffFace * puffWindow * puffWindow / (1.0 + puffD2);
+                }
+                diffuseColor.rgb += puffGlow;`);
+    };
+    material.customProgramCacheKey = () => 'pocapitol-particles-lit';
     const mesh = new THREE.InstancedMesh(geometry, material, capacity);
     mesh.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
     mesh.setColorAt(0, new THREE.Color());
@@ -197,6 +239,27 @@ export function createParticles(scene, capacity = 430) {
         alpha.needsUpdate = true;
     }
     /**
+     * What is lighting the clouds this frame.
+     * @param sunDir  direction to the sun
+     * @param amount  0..1: how much of the sun's shaping to apply (none at night)
+     * @param lights  three.js point lights; the ones that are on are used, up to eight
+     */
+    function illuminate(sunDir, amount, lights = []) {
+        lighting.uSunDir.value.copy(sunDir);
+        lighting.uSunAmount.value = amount;
+        let count = 0;
+        for (const glow of lights) {
+            if (count >= LIGHTS) break;
+            if (!(glow.intensity > 0.5)) continue;
+            lighting.uGlowAt.value[count].set(glow.position.x, glow.position.y, glow.position.z, glow.distance || 40);
+            // Candela to what a puff of smoke a metre away throws back.
+            const k = Math.min(glow.intensity, 320) * 0.012;
+            lighting.uGlowColor.value[count].set(glow.color.r * k, glow.color.g * k, glow.color.b * k);
+            count++;
+        }
+        lighting.uGlows.value = count;
+    }
+    /**
      * An extinguisher discharged at (x, z) along the unit direction (dx, dz), at scenario time
      * `time`. Purely a cloud: it obscures, and nothing in the simulation reads it.
      */
@@ -207,5 +270,5 @@ export function createParticles(scene, capacity = 430) {
     function dispose() {
         scene.remove(mesh); mesh.dispose(); geometry.dispose(); material.dispose(); texture.dispose();
     }
-    return { update, plume, dispose };
+    return { update, plume, illuminate, dispose };
 }
