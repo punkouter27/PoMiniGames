@@ -223,6 +223,11 @@ public sealed class PoBrawlTournament
         /// <summary>"Round of 16 2 of 8", "Quarterfinal 1 of 4", or "Final".</summary>
         public string Label => Round == Round.Final ? "Final" : $"{GetRoundName(Round)} {Slot + 1} of {BoutsIn(Round)}";
 
+        /// <summary>Spaced uppercase banner heading for arena splash cards ("ROUND OF 16 · 1 OF 8").</summary>
+        public string BannerLabel => Round == Round.Final
+            ? "FINAL"
+            : $"{GetRoundName(Round).ToUpperInvariant()} · {Slot + 1} OF {BoutsIn(Round)}";
+
         private static string GetRoundName(Round round) => round switch
         {
             Round.RoundOf16 => "Round of 16",

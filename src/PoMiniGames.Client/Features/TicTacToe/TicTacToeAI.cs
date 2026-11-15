@@ -5,7 +5,10 @@ namespace PoMiniGamesClient.Features.TicTacToe;
 public class TicTacToeAI
 {
     private const int MaxDepth = 4;
-    private Dictionary<string, int> _transpositionTable = new();
+    private const int WideBoardDepth = 3;
+    private const int MaxSearchNodes = 12_000;
+    private readonly Dictionary<string, int> _transpositionTable = new();
+    private int _nodesSearched;
 
     public (int Row, int Col) GetMove(TicTacToeBoard board, CellValue player, Difficulty difficulty)
     {
@@ -98,15 +101,27 @@ public class TicTacToeAI
 
     private (int, int) HardMove(TicTacToeBoard board, CellValue player)
     {
-        _transpositionTable.Clear();
         var opponent = player == CellValue.X ? CellValue.O : CellValue.X;
+
+        // Instant tactical exits avoid scanning the full 6x6 tree on forced moves.
+        var win = FindWinningMove(board, player);
+        if (win.HasValue) return win.Value;
+        var block = FindWinningMove(board, opponent);
+        if (block.HasValue) return block.Value;
+
+        var candidates = GetOrderedCandidates(board);
+        if (candidates.Count == 1) return candidates[0];
+
+        _transpositionTable.Clear();
+        _nodesSearched = 0;
+        var depthLimit = candidates.Count > 16 ? WideBoardDepth : MaxDepth;
         var bestScore = int.MinValue;
         var bestMoves = new List<(int, int)>();
 
-        foreach (var (r, c) in board.GetAvailableMoves())
+        foreach (var (r, c) in candidates)
         {
             var next = board.Place(r, c, player);
-            var score = Minimax(next, MaxDepth - 1, int.MinValue, int.MaxValue, false, player, opponent);
+            var score = Minimax(next, depthLimit - 1, int.MinValue, int.MaxValue, false, player, opponent);
             if (score > bestScore)
             {
                 bestScore = score;
@@ -124,19 +139,19 @@ public class TicTacToeAI
 
     private int Minimax(TicTacToeBoard board, int depth, int alpha, int beta, bool isMaximizing, CellValue player, CellValue opponent)
     {
-        // Terminal checks
         if (board.CheckWin(player).Won) return 1000 + depth;
         if (board.CheckWin(opponent).Won) return -(1000 + depth);
-        if (board.IsFull() || depth == 0) return Heuristic(board, player, opponent);
+        if (board.IsFull() || depth == 0 || ++_nodesSearched >= MaxSearchNodes) return Heuristic(board, player, opponent);
 
         var key = BoardKey(board, isMaximizing);
         if (_transpositionTable.TryGetValue(key, out var cached)) return cached;
 
+        var candidates = GetOrderedCandidates(board);
         int best;
         if (isMaximizing)
         {
             best = int.MinValue;
-            foreach (var (r, c) in board.GetAvailableMoves())
+            foreach (var (r, c) in candidates)
             {
                 var next = board.Place(r, c, player);
                 var score = Minimax(next, depth - 1, alpha, beta, false, player, opponent);
@@ -148,7 +163,7 @@ public class TicTacToeAI
         else
         {
             best = int.MaxValue;
-            foreach (var (r, c) in board.GetAvailableMoves())
+            foreach (var (r, c) in candidates)
             {
                 var next = board.Place(r, c, opponent);
                 var score = Minimax(next, depth - 1, alpha, beta, true, player, opponent);
@@ -160,6 +175,59 @@ public class TicTacToeAI
 
         _transpositionTable[key] = best;
         return best;
+    }
+
+    /// <summary>
+    /// Orders empty cells near existing marks first (or board center when sparse)
+    /// so alpha-beta prunes aggressively without blowing the frame budget on 6x6.
+    /// </summary>
+    private static List<(int Row, int Col)> GetOrderedCandidates(TicTacToeBoard board)
+    {
+        var near = new List<(int Row, int Col)>();
+        var far = new List<(int Row, int Col)>();
+        var hasMarks = false;
+
+        for (int r = 0; r < TicTacToeBoard.Size; r++)
+        {
+            for (int c = 0; c < TicTacToeBoard.Size; c++)
+            {
+                if (board.Get(r, c) != CellValue.None)
+                {
+                    hasMarks = true;
+                    continue;
+                }
+                if (HasNeighborMark(board, r, c))
+                    near.Add((r, c));
+                else
+                    far.Add((r, c));
+            }
+        }
+
+        var result = hasMarks && near.Count > 0 ? near : far;
+        // Center-first ordering maximizes early cutoffs.
+        result.Sort(static (a, b) =>
+        {
+            var da = Math.Abs(a.Row * 2 - (TicTacToeBoard.Size - 1)) + Math.Abs(a.Col * 2 - (TicTacToeBoard.Size - 1));
+            var db = Math.Abs(b.Row * 2 - (TicTacToeBoard.Size - 1)) + Math.Abs(b.Col * 2 - (TicTacToeBoard.Size - 1));
+            return da.CompareTo(db);
+        });
+        return result;
+    }
+
+    private static bool HasNeighborMark(TicTacToeBoard board, int row, int col)
+    {
+        var r0 = Math.Max(0, row - 2);
+        var r1 = Math.Min(TicTacToeBoard.Size - 1, row + 2);
+        var c0 = Math.Max(0, col - 2);
+        var c1 = Math.Min(TicTacToeBoard.Size - 1, col + 2);
+        for (int r = r0; r <= r1; r++)
+        {
+            for (int c = c0; c <= c1; c++)
+            {
+                if (board.Get(r, c) != CellValue.None) return true;
+            }
+        }
+        return false;
     }
 
     private static int Heuristic(TicTacToeBoard board, CellValue player, CellValue opponent)
@@ -199,15 +267,18 @@ public class TicTacToeAI
 
     private static string BoardKey(TicTacToeBoard board, bool isMax)
     {
-        var key = isMax ? "1" : "0";
-        for (int r = 0; r < TicTacToeBoard.Size; r++)
+        return string.Create(1 + TicTacToeBoard.Size * TicTacToeBoard.Size, (board, isMax), static (span, state) =>
         {
-            for (int c = 0; c < TicTacToeBoard.Size; c++)
+            span[0] = state.isMax ? '1' : '0';
+            var idx = 1;
+            for (int r = 0; r < TicTacToeBoard.Size; r++)
             {
-                key += (int)board.Get(r, c);
+                for (int c = 0; c < TicTacToeBoard.Size; c++)
+                {
+                    span[idx++] = (char)('0' + (int)state.board.Get(r, c));
+                }
             }
-        }
-        return key;
+        });
     }
 
     private static (int, int)? FindWinningMove(TicTacToeBoard board, CellValue player)

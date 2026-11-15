@@ -46,7 +46,7 @@
    and every game's content is cut to fit so it does not (LinkAuditUiTests holds the line). *@
 @if (!_kiosk)
 {
-<dialog class="gps-intro-overlay" aria-label="@(string.IsNullOrWhiteSpace(DialogLabel) ? "Game intro" : DialogLabel)"
+<dialog class="gps-intro-overlay" role="dialog" aria-modal="true" aria-label="@(string.IsNullOrWhiteSpace(DialogLabel) ? "Game intro" : DialogLabel)"
      style="width:100%;height:100%;max-width:none;max-height:none;margin:0;border:0;box-sizing:border-box;color:inherit"
      @ref="_root"
      @onclick="HandleOverlayClick"

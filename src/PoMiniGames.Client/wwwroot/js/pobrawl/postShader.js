@@ -223,11 +223,13 @@ export const CAVignetteShader = {
         col += uSpeedTint * streak * radMask * uSpeed * (0.30 + 0.70 * phase);
       }
 
-      // Broadcast grade: teal-pushed shadows, warm highlights, +saturation.
+      // Broadcast grade: teal-pushed shadows, warm highlights, +saturation. Saturation is the
+      // lever that keeps the hall looking painted rather than washed out — it costs no contrast,
+      // unlike exposure, and it is the one number to raise for a brighter, more vibrant frame.
       float lum = dot(col, vec3(0.2126, 0.7152, 0.0722));
-      col += vec3(0.008, 0.02, 0.038) * (1.0 - smoothstep(0.0, 0.4, lum)) * uGrade;
-      col *= mix(vec3(1.0), vec3(1.05, 1.0, 0.93), smoothstep(0.3, 1.0, lum) * uGrade);
-      col = mix(vec3(lum), col, 1.0 + 0.1 * uGrade);
+      col += vec3(0.005, 0.013, 0.026) * (1.0 - smoothstep(0.0, 0.4, lum)) * uGrade;
+      col *= mix(vec3(1.0), vec3(1.06, 1.0, 0.92), smoothstep(0.3, 1.0, lum) * uGrade);
+      col = mix(vec3(lum), col, 1.0 + 0.3 * uGrade);
       // Filmic S-curve contrast: crush the toe a touch and roll the shoulder so
       // the grade reads like a graded LUT rather than a flat colour shift. Only
       // the amount is dialled by uGrade — the shape is fixed.

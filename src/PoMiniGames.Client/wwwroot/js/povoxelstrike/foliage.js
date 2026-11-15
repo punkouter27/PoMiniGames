@@ -81,8 +81,9 @@ function hookBend(material, stiff, key) {
     shader.uniforms.uBlast = shared.blasts;
     shader.uniforms.uBlastBirth = shared.births;
     shader.uniforms.uBlastPower = shared.power;
+    const bendDecl = shader.vertexShader.includes('attribute float aBend;') ? '' : 'attribute float aBend;\n';
     shader.vertexShader = shader.vertexShader
-      .replace('#include <common>', `#include <common>\n${BEND_GLSL}`)
+      .replace('#include <common>', `#include <common>\n${bendDecl}${BEND_GLSL}`)
       .replace('#include <project_vertex>', /* glsl */`
         vec4 pvsWp = vec4(transformed, 1.0);
         #ifdef USE_INSTANCING

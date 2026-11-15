@@ -102,7 +102,7 @@ begin without reading a manual.
 - **D1.** Matches: health, rounds, a timer, a winner.
 - **D2.** A computer opponent, and a second local player.
 - **D3.** More fighters, each from their own video, and a fighter select screen.
-- **D4.** Real block, hit reaction, knockdown and victory animations.
+- **D4.** Real block and hit reaction animations (knockdown and victory shipped 2026-11-15).
 - **D5.** Scores and leaderboards.
 
 ## 4. Core workflows and states
@@ -125,7 +125,9 @@ begin without reading a manual.
 | Walking forward / backward | Direction held, on the ground | Direction released, or another move starts |
 | Crouching | Down held, on the ground | Down released |
 | Jumping | Up pressed, on the ground | The fighter lands |
-| Attacking (mid punch, high punch, kick) | Attack pressed, on the ground, not already attacking | The attack animation ends |
+| Attacking (mid punch, high punch, kick, lunge) | Attack pressed, on the ground, not already attacking | The attack animation ends; a lunge leaves the fighter where it landed |
+| Cheering | Cheer pressed, or every 10th hit once the attack ends | 2.4 s pass, or any control after the first 0.5 s |
+| Knocked down | Fall pressed | Any control after the fall (0.8 s), which plays the fall backwards to stand up |
 
 Rules that tie the states together:
 
@@ -145,7 +147,7 @@ the hub. There is no win, loss or end screen.
 | In scope for this milestone | Out of scope for this milestone |
 |---|---|
 | One fighter from the one supplied video | Further fighters and fighter select |
-| Idle, walk forward, walk backward, crouch, jump, mid punch, high punch, kick | Block, hit reaction, knockdown, victory (neutral stance stands in) |
+| Idle, walk forward, walk backward, crouch, jump, mid punch, high punch, kick, lunge, cheer, knockdown | Block, hit reaction (listed as missing) |
 | Practice room with a stationary dummy, hit flash and hit counter | Health bars, rounds, timer, winner |
 | On-screen move list; reset; step-through of a move | Computer opponent, second player, online play |
 | Keyboard, gamepad and touch controls | Scores, leaderboards, saved progress |
@@ -192,19 +194,26 @@ the hub. There is no win, loss or end screen.
 
 ## 7. What the supplied video contains
 
-Source: one 29-second video, one performer in side view facing right.
+Source: one 51-second phone video (1080p, 30 fps, 2026-11-14), one performer, mostly in side
+view facing right; the camera is hand-held and pans, tilts and zooms to follow.
 
-| Move | Found | Note |
-|---|---|---|
-| Idle stance | Yes | Many pictures |
-| Walk forward | Partly | Short shuffles, not a clean walk |
-| Walk backward | No | Will reuse walk forward in reverse |
-| Crouch | Yes | Brief |
-| Jump | Yes | Some motion blur |
-| Mid punch, high punch | Yes | Several of each |
-| Kick | Yes | About five front kicks |
-| Block, hit reaction, knockdown, victory | No | Neutral stance stands in |
+| Move | Found | Frames used | Note |
+|---|---|---|---|
+| Idle stance | Yes | 4–64 | Still, side-on |
+| Walk forward | Yes | 196–282 | A clean walk; the camera follows, so travel is measured from the background |
+| Walk backward | No | — | Walk forward played in reverse |
+| Crouch | Yes | 892–904 | The squat before the jump; some motion blur |
+| Jump | Yes | 892–934 | Real airtime, the floor is held from the first picture |
+| Mid punch | Yes | 404–428 | Lead-hand jab |
+| High punch | Yes | 494–514 | Rear-hand cross |
+| Kick | Yes | 643–673 | High side-on kick (others at 556–604, 739–802) |
+| Lunge | Yes | 968–1000 | Crouch and dive forward; the camera whips round after it |
+| Victory (cheer) | Yes | 1188–1264 | Facing the camera, arms pumping |
+| Knockdown | Yes | 1374–1446 | Fall to the knees; the camera tilts down and zooms in, corrected per picture |
+| Block, hit reaction | No | — | Listed as missing |
 
-Known quality risks: the performer wears grey against a grey wall with a strong shadow, so
-cut-out edges may be rough; feet are hidden in some early pictures; a second person is
-visible at the lower left and must be removed.
+How the pictures are made (`scripts/pofighter/`): YOLO person segmentation picks the
+performer's pixels, so furniture behind the legs is never kept; BiRefNet, run on a crop around
+the performer, draws the outline; `camera.py` measures the camera's pan and zoom on the
+background so every move keeps one size and stays pinned to the floor; `pack.py` also evens
+out the phone's exposure so every picture has the same colours.

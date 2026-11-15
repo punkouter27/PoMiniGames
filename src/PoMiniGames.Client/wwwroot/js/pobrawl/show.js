@@ -5,8 +5,8 @@
 //   audioShow.js   — charge riser, beat-locked stingers, camera-aware mix, crowd rhythm
 //   chargeAura.js  — the fist/shoe aura while an attack is held
 //   balloons.js    — convention balloon drop + bunting cloth
-//   ledBoards.js   — apron LED ribbon boards, beat-pulsed truss, phone-light wave
-//   replay.js      — the instant replay between the KO and the result
+//   ledBoards.js   — beat-pulsed truss, phone-light stadium wave (the LED ribbon ticker is gone)
+//   replay.js      — the occasional instant replay between the KO and the result
 //   resultGlass.js — the frozen-frame glass behind the result
 //
 // A module registers in its `_init*`:

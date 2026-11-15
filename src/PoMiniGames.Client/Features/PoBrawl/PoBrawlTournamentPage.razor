@@ -99,11 +99,8 @@
     private int _speed = 1;
     // The camera starts where the settings sheet's "Brawl show" row says: Full = Broadcast, Simple = Ringside.
     private bool _director;
-    private bool _isoCam;
 
     private bool _introDone;
-    private bool _bracketOpen;
-    private bool _bracketFresh;   // a result landed since the drawer was last opened
     private bool _showFinal;
     private string _p1Char = "";
     private string _p2Char = "";
@@ -128,32 +125,6 @@
         : PoBrawlRoster.NameOf(id) ?? id;
 
     private string HudName(string id) => _cup is null || string.IsNullOrEmpty(id) ? Name(id) : $"{Name(id)} · {_cup.EloOf(id)}";
-
-    // ── Under the HUD clock: the round and one pip per bout ──
-    private int MatchesBefore(PoBrawlTournament.Bout bout) =>
-        _cup!.Bouts.Take(bout.Index).Count(b => b.WinnerId != null && !b.IsBye);
-
-    private RenderFragment? BoutChip => _cup?.Current is { } now
-        ? @<span class="pb-chip" role="img"
-               aria-label="@($"{now.Label} — match {MatchesBefore(now) + 1} of {_cup.Field.Count - 1}")">
-            <b>@RoundShort(now.Round)</b>
-            <span class="pb-chip-pips">
-                @foreach (var b in _cup.Bouts)
-                {
-                    <span class="pb-chip-pip @(b.WinnerId is not null ? "pb-chip-pip--done" : b == now ? "pb-chip-pip--now" : "")"></span>
-                }
-            </span>
-            <span>@(MatchesBefore(now) + 1)/@(_cup.Field.Count - 1)</span>
-        </span>
-        : null;
-
-    private static string RoundShort(PoBrawlTournament.Round round) => round switch
-    {
-        PoBrawlTournament.Round.RoundOf16 => "R16",
-        PoBrawlTournament.Round.Quarterfinal => "QF",
-        PoBrawlTournament.Round.Semifinal => "SF",
-        _ => "Final",
-    };
 
     // ── Camera: one button through the director's set-ups (director.js) ──
     // Broadcast = the director cutting angles; Ringside = the fixed side view.
@@ -585,7 +556,7 @@
         }
         _playerName = PlayerNameService.GetPlayerName();
         _titles = PoBrawlProgressBook.LoadTitles();
-        _director = _isoCam = PoBrawlShowPrefs.IsFull;
+        _director = PoBrawlShowPrefs.IsFull;
         _cup = PoBrawlTournament.Draw(Roster, new Random(_drawSeed), _ratings);
         // Brawl's slot on the "Watch all demos" reel.
         Kiosk.SetCurrent("pobrawl-demo");
@@ -639,7 +610,7 @@
                 p2Character = _p2Char,
                 // Both corners on the same mid-tier CPU, so the presidents' own patterns decide it.
                 difficulty = "medium",
-                roundLabel = first.Label.ToUpperInvariant(),
+                roundLabel = first.BannerLabel,
                 introLine = PoBrawlPressLines.Intro(_p1Char, _p2Char)?.Text,
                 round = (int)first.Round,
                 p1Expected = _cup.ExpectedP1(first),
@@ -651,7 +622,6 @@
             }
             await JSRuntime.InvokeVoidAsync("PoBrawl.setSpeed", _speed);
             await JSRuntime.InvokeVoidAsync("PoBrawl.setDirector", _director);
-            await JSRuntime.InvokeVoidAsync("PoBrawl.setIsoCam", _isoCam);
             if (Settings.Muted) await JSRuntime.InvokeVoidAsync("PoBrawl.setMuted", true);
         }
         catch (Exception ex)
@@ -664,12 +634,6 @@
     {
         _speed = speed;
         try { await JSRuntime.InvokeVoidAsync("PoBrawl.setSpeed", speed); } catch { }
-    }
-
-    private void ToggleBracket()
-    {
-        _bracketOpen = !_bracketOpen;
-        if (_bracketOpen) _bracketFresh = false;
     }
 
     // ── Engine callbacks (the same contract PoBrawlPage implements) ─────────
@@ -709,7 +673,6 @@
         // jumbotrons switch to the bracket straight away.
         await ShowJumbotronBracketAsync();
         if (generation != _generation) return;
-        _bracketFresh = true;
         await InvokeAsync(StateHasChanged);
         var resultHold = Task.Delay(ResultHoldMs);
 
@@ -748,7 +711,7 @@
         await InvokeAsync(StateHasChanged);
         try
         {
-            await JSRuntime.InvokeVoidAsync("PoBrawl.matchup", _p1Char, _p2Char, next.Label.ToUpperInvariant(),
+            await JSRuntime.InvokeVoidAsync("PoBrawl.matchup", _p1Char, _p2Char, next.BannerLabel,
                 PoBrawlPressLines.Intro(_p1Char, _p2Char)?.Text, BoutOptions(next));
         }
         catch (Exception ex)

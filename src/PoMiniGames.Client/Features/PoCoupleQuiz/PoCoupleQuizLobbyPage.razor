@@ -31,47 +31,49 @@
     }
     else
     {
-    @* One inline failure strip for every lobby: Components/InlineError. *@
-    <InlineError Message="@_error" OnRetry="ReconnectLobbyAsync" />
-    @* One start path: the server starts the match the moment everyone is ready, so there
-       is no Start button (ShowStart) and a ready cannot be taken back (CanReady). *@
-    <LobbyPanel TPlayer="NamedLobbyPlayer"
-                State="@LobbyState"
-                LocalConnectionId="@(_lobby?.PlayerName ?? "")"
-                ConnectionState="@Hub.ConnectionState"
-                Hint="@(_lobby is { Players.Count: >= 2 }
-                        ? "One shared room. The match starts as soon as everyone is ready."
-                        : "One shared room. Waiting for another player to join…")"
-                MaxPlayersHint="0"
-                StartLabel="Start"
-                ShowStart="false"
-                HostReadies="true"
-                CanReady="@(!_ready)"
-                PickerTitle="Rounds"
-                HowTo="@HowToPlayContent"
-                OnReconnect="ReconnectLobbyAsync"
-                OnReady="OnReady"
-                OnLeave="Leave">
-        <Picker>
-            @* Rounds is host-only. It used to be a "Difficulty" select every player saw,
-               which mapped to nothing but the round count — and belonged to whoever created
-               the lobby, so a joiner picked "Hard", had it silently discarded, and got no
-               hint why. Non-hosts now read the value instead of setting it. *@
-            @if (_lobby is { IsHost: true })
-            {
-                <select aria-label="Rounds" value="@_lobby.MaxRounds" @onchange="OnRoundsChanged">
-                    @foreach (var n in RoundChoices)
+        <div class="cq-lobby-wrap">
+            @* One inline failure strip for every lobby: Components/InlineError. *@
+            <InlineError Message="@_error" OnRetry="ReconnectLobbyAsync" />
+            @* One start path: the server starts the match the moment everyone is ready, so there
+               is no Start button (ShowStart) and a ready cannot be taken back (CanReady). *@
+            <LobbyPanel TPlayer="NamedLobbyPlayer"
+                        State="@LobbyState"
+                        LocalConnectionId="@(_lobby?.PlayerName ?? "")"
+                        ConnectionState="@Hub.ConnectionState"
+                        Hint="@(_lobby is { Players.Count: >= 2 }
+                                ? "One shared room. The match starts as soon as everyone is ready."
+                                : "One shared room. Waiting for another player to join…")"
+                        MaxPlayersHint="0"
+                        StartLabel="Start"
+                        ShowStart="false"
+                        HostReadies="true"
+                        CanReady="@(!_ready)"
+                        PickerTitle="Rounds"
+                        HowTo="@HowToPlayContent"
+                        OnReconnect="ReconnectLobbyAsync"
+                        OnReady="OnReady"
+                        OnLeave="Leave">
+                <Picker>
+                    @* Rounds is host-only. It used to be a "Difficulty" select every player saw,
+                       which mapped to nothing but the round count — and belonged to whoever created
+                       the lobby, so a joiner picked "Hard", had it silently discarded, and got no
+                       hint why. Non-hosts now read the value instead of setting it. *@
+                    @if (_lobby is { IsHost: true })
                     {
-                        <option value="@n">@n rounds</option>
+                        <select aria-label="Rounds" value="@_lobby.MaxRounds" @onchange="OnRoundsChanged">
+                            @foreach (var n in RoundChoices)
+                            {
+                                <option value="@n">@n rounds</option>
+                            }
+                        </select>
                     }
-                </select>
-            }
-            else
-            {
-                <p class="lobby__hint">@(_lobby?.MaxRounds ?? 5) rounds, set by the host.</p>
-            }
-        </Picker>
-    </LobbyPanel>
+                    else
+                    {
+                        <p class="lobby__hint">@(_lobby?.MaxRounds ?? 5) rounds, set by the host.</p>
+                    }
+                </Picker>
+            </LobbyPanel>
+        </div>
     }
 </GameShell>
 
@@ -107,7 +109,7 @@
 
     protected override void OnInitialized()
     {
-        _playerName = PlayerNameService.GetPlayerName();
+        _playerName = ResolvePlayerName(PlayerNameService.GetPlayerName());
         Hub.OnLobbyJoined += HandleLobbyJoined;
         Hub.OnLobbyUpdated += HandleLobbyUpdated;
         Hub.OnPlayerDisconnected += HandleLobbyUpdated;
@@ -115,6 +117,15 @@
         Hub.OnGameStarted += HandleGameStarted;
         Hub.ConnectionChanged += HandleConnectionChanged;
     }
+
+    protected override async Task OnInitializedAsync()
+    {
+        await PlayerNameService.InitializeAsync();
+        _playerName = ResolvePlayerName(PlayerNameService.GetPlayerName());
+    }
+
+    private static string ResolvePlayerName(string? name) =>
+        string.IsNullOrWhiteSpace(name) ? "Guest" : name.Trim();
 
     /// <summary>The opening card was dismissed: connect and take a seat.</summary>
     private async Task OnIntroStartAsync()
@@ -132,6 +143,8 @@
         _error = null;
         try
         {
+            await PlayerNameService.InitializeAsync();
+            _playerName = ResolvePlayerName(PlayerNameService.GetPlayerName());
             await Hub.ConnectAsync();
             _isConnected = true;
             StateHasChanged();
@@ -155,6 +168,8 @@
         _error = null;
         try
         {
+            await PlayerNameService.InitializeAsync();
+            _playerName = ResolvePlayerName(PlayerNameService.GetPlayerName());
             await Hub.ConnectAsync();
             _isConnected = true;
             await Hub.JoinAsync(_playerName);

@@ -658,3 +658,13 @@ a.home-card-head:hover .home-card-title { text-decoration: underline; text-under
     .home-card-modes { gap: 0.25rem; }
     .home-mode-chip { min-height: 30px; min-width: 2rem; padding: 0 0.4rem; }
 }
+
+@media (pointer: coarse) {
+    .arcade-marquee__player-btn {
+        min-height: 44px;
+    }
+    .home-mode-chip {
+        min-height: 44px;
+        min-width: 44px;
+    }
+}

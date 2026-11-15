@@ -439,3 +439,17 @@
     white-space: pre;
     color: var(--accent-ink);
 }
+
+@media (pointer: coarse) {
+    .gl-account-trigger,
+    .gl-brand,
+    .gl-overflow-item {
+        min-height: 44px;
+    }
+    @media (max-width: 420px) {
+        .gl-account-trigger {
+            width: 2.75rem;
+            height: 2.75rem;
+        }
+    }
+}

@@ -80,3 +80,36 @@ export function getUpChoice(intent) {
 export function isFloored(state) {
   return state === 'down' || state === 'getup';
 }
+
+// ── The referee's count ──────────────────────────────────────────────────
+// A CPU fight has nobody to mash a button, so a knockdown is counted over like a real bout:
+// one number a second, and the fighter on the canvas beats the count on a roll against the
+// energy left in the tank. A full tank on the first number is close to a certainty; a gassed
+// fighter late in the count is nearly gone. The roll is what gives every count its own story.
+export const COUNT = Object.freeze({
+  /** Seconds between numbers. */
+  step: 1.0,
+  /** The number that ends it. */
+  max: 10,
+  /** Below this the tank has nothing to give: no odds at all. */
+  energyFloor: 0.2,
+  /** Odds at a full tank on the first number. */
+  best: 0.92,
+});
+
+/**
+ * Odds the downed fighter beats the count on this number: the tank squared (a little energy
+ * is not much help) times how much count is left, out of `COUNT.best`.
+ */
+export function riseOdds(count, energy) {
+  const e = Math.max(0, Math.min(1, Number(energy) || 0));
+  if (e <= COUNT.energyFloor) return 0;
+  const tank = (e - COUNT.energyFloor) / (1 - COUNT.energyFloor);
+  const left = Math.max(0, Math.min(1, 1 - (count - 1) / COUNT.max));
+  return COUNT.best * tank * tank * left;
+}
+
+/** One number of the count. `roll` is Math.random unless a test or a replay supplies one. */
+export function beatsCount(count, energy, roll = Math.random()) {
+  return roll < riseOdds(count, energy);
+}

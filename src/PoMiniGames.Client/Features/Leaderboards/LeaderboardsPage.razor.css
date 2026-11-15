@@ -516,3 +516,23 @@
     font-size: var(--text-sm);
     color: var(--color-text-secondary);
 }
+
+@media (pointer: coarse) {
+    .lb-toolbar {
+        --rz-input-height: 44px;
+        min-height: 44px;
+    }
+    .lb-toolbar ::deep .lb-tb-game,
+    .lb-toolbar ::deep .lb-tb-search {
+        min-height: 44px;
+        height: 44px;
+    }
+    .lb-toolbar ::deep .lb-tb-period .rz-button {
+        min-height: 44px;
+        min-width: 44px;
+    }
+    .lb-search__toggle {
+        width: 44px;
+        height: 44px;
+    }
+}

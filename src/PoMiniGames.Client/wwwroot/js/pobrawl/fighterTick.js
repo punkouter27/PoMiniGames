@@ -15,13 +15,16 @@ import { regionEffect, pickPunchArm } from './combat.js';
 import { PERSONALITIES } from './personalities.js';
 import { MAX_HP, ATTACKS, TIME_LIMIT, HITSTUN } from './constants.js';
 import { tickEnergy, drainCharge, paySwing, canAttack, chargeMultiplier } from './energy.js';
-import { KNOCKDOWN, decayDaze, shouldRise, getUpChoice, isFloored } from './knockdown.js';
+import { KNOCKDOWN, COUNT, decayDaze, shouldRise, getUpChoice, isFloored, beatsCount } from './knockdown.js';
 
 // Lateral orbit speed for the circle keys, in the same units as the 2.4 / 1.9
 // forward / backward walk. Slightly under the advance so that closing distance
 // is still the faster way to cross the ring and circling reads as positioning
 // rather than a second, better run.
 const CIRCLE_SPEED = 2.0;
+
+// A rise with nothing held: the referee's count stands a CPU fighter up on a plain get-up.
+const CALM_RISE = Object.freeze({ move: 0, side: 0, punch: false, kick: false, block: false });
 
 class FighterTickMethods {
   _aiContext(f, opp, dt) {
@@ -336,6 +339,9 @@ class FighterTickMethods {
       case 'down': {
         // Online the sim decides when and how a fighter rises (netplay.js follows it).
         if (this.online) break;
+        // A CPU-only bout has nobody to answer the canvas for the fighter, so the referee
+        // counts them over instead of handing the rise to an AI that would take it at once.
+        if (this.options?.mode === 'tournament' && !this.training) { this._refCounted(f, dt); break; }
         // Lying there is safe; getting up is the decision. Any input after
         // DOWN_MIN starts the rise, and what is held picks how (knockdown.js).
         const wants = intent.move !== 0 || intent.side !== 0
@@ -585,6 +591,8 @@ class FighterTickMethods {
     f.state = 'down';
     f.stateT = 0;
     f.daze = 0;
+    // Every knockdown starts its own count (knockdown.js COUNT).
+    f.refCount = undefined;
     f.attack = null;
     f.chargeName = null;
     f.chargeAmt = 0;
@@ -631,6 +639,62 @@ class FighterTickMethods {
       const dir = toward.multiplyScalar(choice.roll.move).add(sideAxis.multiplyScalar(choice.roll.side));
       if (dir.lengthSq() > 1e-6) f.knockback.add(dir.normalize().multiplyScalar(KNOCKDOWN.rollImpulse));
     }
+  }
+
+  // ── The referee's count (knockdown.js COUNT) ─────────────────────────────
+  // Only a CPU-only bout has nobody to answer the canvas for them, so only there does the
+  // referee count: a number a second, up to ten. A player's own get-up game is untouched.
+
+  /**
+   * Count a downed CPU fighter over: a number a second up to ten, and the tank answers it.
+   * Ten and they are counted out.
+   */
+  _refCounted(f, dt) {
+    if (f.refCount === undefined) { f.refCount = 0; f.refT = 0; f.refNextAt = COUNT.step; }
+    f.refT += dt;
+    if (f.refT < f.refNextAt) return;
+    f.refNextAt += COUNT.step;
+    f.refCount += 1;
+    this._jumboCaption(String(f.refCount), 0.7);
+    if (f.refCount >= COUNT.max) { this._countedOut(f); return; }
+    // The tank answers the count, and the roll is what makes every count its own story.
+    if (beatsCount(f.refCount, f.energy)) {
+      f.refCount = 0; f.refT = 0; f.refNextAt = COUNT.step;
+      this._getUp(f, this.fighters.find((o) => o !== f), CALM_RISE);
+    }
+  }
+
+  /** Ten and they are out: the same knockout presentation a killing blow gets. */
+  _countedOut(f) {
+    const winner = this.fighters.indexOf(f) === 0 ? 2 : 1;
+    f.refCount = 0;
+    f.state = 'ko';
+    f.animator.frozen = true;
+    f.animator.play(null);
+    f.pendingKO = {
+      knockDir: new THREE.Vector3(0, 0, -1),
+      velocity: f.vel.clone(),
+      head: true,
+      region: 'head',
+      attackName: 'punch',
+      hitY: 0.4,
+      spin: 0,
+    };
+    this.winner = winner;
+    this.phase = 'ko';
+    this.phaseT = 0;
+    this.timeScale = 0.35;
+    this.koShot = this.rng.random() < 0.4 ? 'overhead' : 'side';
+    this._setCameraMode('ko');
+    this.cameraModeT = 0;
+    this._caption('K O!');
+    this._jumboCaption('K.O.', 2.4);
+    this._setBanner('K.O.!');
+    this._triggerFlash();
+    this.audio?.ko?.();
+    this.audio?.crowdSwell?.(1.0);
+    this._show('ko', { winner });
+    this.hudDirty = true;
   }
 }
 

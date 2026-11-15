@@ -26,7 +26,7 @@ the asset changes, except where CI is named.
 | `pomarblerace/` | The headless harness behind `tests/pomarblerace-map-health.test.mjs` | CI runs `npm ci` here, then the test. See its README |
 | `pocapitol-figure.mjs` | `wwwroot/models/pocapitol/figure.glb` from `js/pocapitol/rig.js` | Checked by `tests/pocapitol-figure.test.mjs` |
 | `pocapitol-campus.mjs` | `wwwroot/data/pocapitol/campus-osm.json` (OpenStreetMap footprints, ODbL) | Calls the Overpass API |
-| `pofighter/` | PoFighter's sprite sheet: `cutout.py` cuts the performer out of video frames, `pack.py` packs the moves listed in `p1.moves.json` | Python; intermediates stay under `artifacts/` |
+| `pofighter/` | PoFighter's sprite sheet: `cutout.py` cuts the performer out of video frames (YOLO person mask + BiRefNet), `camera.py` measures the camera's pan and zoom, `pack.py` packs the moves listed in `p1.moves.json`. See its README | Python venv (ultralytics, rembg); intermediates stay under `artifacts/` |
 
 Development is Windows/`pwsh`.
 

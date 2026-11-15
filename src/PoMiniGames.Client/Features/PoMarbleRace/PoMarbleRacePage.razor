@@ -120,10 +120,6 @@
                                 {
                                     <text>Waiting for @_opponentName to start…</text>
                                 }
-                                else if (_showTutorial)
-                                {
-                                    <text>Ready when you are</text>
-                                }
                                 else
                                 {
                                     <text>Go in <strong class="mr-countdown-num" @key="_pickCountdown">@_pickCountdown</strong></text>
@@ -160,7 +156,7 @@
                         {
                             <div class="mr-tut-ring" style="left:@Pct(at.X);top:@Pct(at.Y)" aria-hidden="true"></div>
                         }
-                        <div class="mr-tutorial" role="dialog" aria-label="How to race">
+                        <div class="mr-tutorial" role="region" aria-label="How to race">
                             <ul>
                                 <li><span class="mr-red">That's you</span>: the one red marble in a pack of 101.</li>
                                 <li>@SteerHint</li>

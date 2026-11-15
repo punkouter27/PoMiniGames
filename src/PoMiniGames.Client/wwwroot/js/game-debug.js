@@ -12,6 +12,7 @@
 // start() simply adopts the newest owner.
 
 (function () {
+  const FIRST_SAMPLE_MS = 120;
   const SAMPLE_MS = 500;
   const INTERACTIVE = 'input, textarea, select, button, a[href], [contenteditable="true"]';
 
@@ -21,6 +22,7 @@
   let last = 0;
   let frames = 0;
   let elapsed = 0;
+  let firstSample = true;
 
   function isPlaying() {
     // A modal dialog, the start card or the end card is up: Tab must move focus there.
@@ -44,11 +46,12 @@
       if (delta < 1000) { // ignore the gap left by a hidden tab
         frames++;
         elapsed += delta;
-        if (elapsed >= SAMPLE_MS) {
+        if (elapsed >= (firstSample ? FIRST_SAMPLE_MS : SAMPLE_MS)) {
           const fps = frames * 1000 / elapsed;
           const frameMs = elapsed / frames;
           frames = 0;
           elapsed = 0;
+          firstSample = false;
           try { dotnetRef.invokeMethodAsync('OnSample', fps, frameMs); } catch { /* gone */ }
         }
       }
@@ -67,6 +70,7 @@
     last = 0;
     frames = 0;
     elapsed = 0;
+    firstSample = true;
     if (open && !raf) raf = requestAnimationFrame(tick);
     try { dotnetRef.invokeMethodAsync('OnToggle', open); } catch { /* gone */ }
   }

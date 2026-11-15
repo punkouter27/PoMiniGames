@@ -93,6 +93,8 @@
                     }
                 </p>
             }
+            @* CC BY-SA 4.0 attribution: the bank holds Open Trivia DB questions. *@
+            <p class="fq-credit">Questions: Open Trivia DB (CC BY-SA 4.0)</p>
         </div>
     }
     else if (_currentIndex < _questions.Count && _splitScreen)
@@ -192,12 +194,9 @@
                     — next question in a moment…
                 </div>
             }
+            @* CC BY-SA 4.0 attribution: the bank holds Open Trivia DB questions. *@
+            <p class="fq-credit">Questions: Open Trivia DB (CC BY-SA 4.0)</p>
         </div>
-    }
-    @if (_questions.Count > 0 && !_isLoading)
-    {
-        @* CC BY-SA 4.0 attribution: the bank holds Open Trivia DB questions. *@
-        <p class="fq-credit">Questions: Open Trivia DB (CC BY-SA 4.0)</p>
     }
     @* Quiz completion is shown in the shared end-of-game modal (GameSummaryContent). *@
 </GameShell>

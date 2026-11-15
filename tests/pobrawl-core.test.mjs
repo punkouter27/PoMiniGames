@@ -518,3 +518,20 @@ test('frame data: the numbers the rules above assume', () => {
   assert.ok(ATTACKS.kick.dmg > ATTACKS.punch.dmg && ATTACKS.kick.reach > ATTACKS.punch.reach);
   assert.ok(ATTACKS.punch.energyMul < ATTACKS.kick.energyMul);
 });
+
+// ── The referee's count (knockdown.js COUNT) ────────────────────────────────
+
+test('count: a full tank on the first number beats the count', () => {
+  assert.ok(kd.riseOdds(1, 1) > 0.9);
+  assert.equal(kd.beatsCount(1, 1, 0.5), true);
+});
+
+test('count: a gassed fighter has no odds at all and is counted out', () => {
+  assert.equal(kd.riseOdds(1, 0.15), 0);
+  assert.equal(kd.beatsCount(1, 0.15, 0), false);
+});
+
+test('count: the same tank is longer odds the later the number', () => {
+  assert.ok(kd.riseOdds(9, 0.6) < kd.riseOdds(2, 0.6));
+  assert.equal(kd.riseOdds(kd.COUNT.max + 1, 1), 0);
+});

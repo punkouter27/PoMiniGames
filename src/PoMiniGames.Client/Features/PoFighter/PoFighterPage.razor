@@ -50,15 +50,13 @@
                             <span class="pf-ctl pf-ctl-pad">@m.Pad</span>
                         </li>
                     }
-                    <li class="pf-missing">
-                        <span class="pf-name">Block · hit · knockdown · victory</span>
-                        <span class="pf-ctl">missing</span>
-                    </li>
                 </ul>
             </div>
 
             <div class="pf-panel pf-status">
                 <span class="pf-hits" role="status">Hits <strong data-pf-hits>0</strong></span>
+                <button type="button" class="pf-chip" data-pf-btn="victory" title="Celebrate (V)">Cheer</button>
+                <button type="button" class="pf-chip" data-pf-btn="ko" title="Get knocked down; any button gets up (X)">Fall</button>
                 <button type="button" class="pf-chip" data-pf-action="reset" title="Reset the room (R)">Reset</button>
                 <button type="button" class="pf-chip" data-pf-action="slow" aria-pressed="false"
                         title="Quarter speed, to judge a move picture by picture (T)">Slow</button>
@@ -76,6 +74,7 @@
                 <button type="button" data-pf-btn="punchMid">Punch</button>
                 <button type="button" data-pf-btn="punchHigh">High</button>
                 <button type="button" data-pf-btn="kick">Kick</button>
+                <button type="button" data-pf-btn="lunge">Lunge</button>
             </div>
         </div>
     }
@@ -97,6 +96,9 @@
         new("punchMid", "Punch", "J", "X"),
         new("punchHigh", "High punch", "K", "Y"),
         new("kick", "Kick", "L", "A"),
+        new("lunge", "Lunge", "I", "B"),
+        new("victory", "Cheer · every 10 hits", "V", "LB"),
+        new("ko", "Knockdown · any key gets up", "X", "RB"),
     ];
 
     private ElementReference _room;
@@ -108,7 +110,8 @@
     private static RenderFragment TitleContent => GameCatalog.TitleFor(GameKeys.PoFighter);
 
     private static RenderFragment ControlsContent => @<div>
-        <p><kbd>←</kbd> <kbd>→</kbd> walk · <kbd>↑</kbd> jump · <kbd>↓</kbd> crouch · <kbd>J</kbd> punch · <kbd>K</kbd> high punch · <kbd>L</kbd> kick.</p>
+        <p><kbd>←</kbd> <kbd>→</kbd> walk · <kbd>↑</kbd> jump · <kbd>↓</kbd> crouch · <kbd>J</kbd> punch · <kbd>K</kbd> high punch · <kbd>L</kbd> kick · <kbd>I</kbd> lunge.</p>
+        <p><kbd>V</kbd> cheers (it also happens every 10 hits) and <kbd>X</kbd> takes a fall; any key gets back up.</p>
         <p><kbd>R</kbd> resets the room and <kbd>T</kbd> slows it down. A gamepad works too, and a phone gets on-screen buttons.</p>
     </div>;
 

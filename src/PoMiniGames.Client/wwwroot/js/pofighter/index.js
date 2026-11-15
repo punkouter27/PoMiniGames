@@ -13,16 +13,20 @@
 // The page's markup is static, so the engine writes the counter and the highlights straight
 // into it; there are no .NET callbacks. Nothing here is scored, saved or sent anywhere.
 
-import { WORLD, ATTACKS, createState, reset, step, frameAt } from './sim.js';
+import { WORLD, ACTIONS, createState, reset, step, frameAt } from './sim.js';
 import { BUTTONS, ButtonEdges, activePad, pressed, stick } from '../gamepadBus.js';
 
 const KEYS = {
     ArrowLeft: 'left', KeyA: 'left', ArrowRight: 'right', KeyD: 'right',
     ArrowUp: 'up', KeyW: 'up', ArrowDown: 'down', KeyS: 'down',
-    KeyJ: 'punchMid', KeyK: 'punchHigh', KeyL: 'kick',
+    KeyJ: 'punchMid', KeyK: 'punchHigh', KeyL: 'kick', KeyI: 'lunge',
+    KeyV: 'victory', KeyX: 'ko',
 };
-// Gamepad face buttons, read through the shared helpers in gamepadBus.js.
-const PAD_ATTACKS = { [BUTTONS.west]: 'punchMid', [BUTTONS.north]: 'punchHigh', [BUTTONS.south]: 'kick' };
+// Gamepad face buttons and bumpers, read through the shared helpers in gamepadBus.js.
+const PAD_ATTACKS = {
+    [BUTTONS.west]: 'punchMid', [BUTTONS.north]: 'punchHigh', [BUTTONS.south]: 'kick',
+    [BUTTONS.east]: 'lunge', [BUTTONS.lb]: 'victory', [BUTTONS.rb]: 'ko',
+};
 const reducedMotion = () => document.documentElement.dataset.motion === 'reduce'
     || !!window.matchMedia?.('(prefers-reduced-motion: reduce)').matches;
 
@@ -73,7 +77,7 @@ async function start(root, fighterId = 'p1') {
     const device = name => { if (root.dataset.pfDevice !== name) root.dataset.pfDevice = name; };
     const press = control => {
         tapped.add(control);
-        if (ATTACKS.includes(control)) presses.push(control);
+        if (ACTIONS.includes(control)) presses.push(control);
     };
     const doReset = () => { reset(state); presses.length = 0; };
     const toggleSlow = () => {
@@ -201,12 +205,13 @@ async function start(root, fighterId = 'p1') {
     function drawFighter() {
         const def = data.moves[state.move];
         const f = def.frames[frameAt(def, state.t).index];
-        const squash = 1 - state.lift / (WORLD.jumpLift * 2.2);
+        // The filmed jump and lunge already rise in the pictures; the shadow only shrinks.
+        const squash = Math.max(0.35, 1 - state.lift / (WORLD.jumpLift * 2.2));
         ctx.fillStyle = 'rgba(0,0,0,0.3)';
         ctx.beginPath();
         ctx.ellipse(state.x, WORLD.ground - 4, 78 * squash, 13 * squash, 0, 0, Math.PI * 2);
         ctx.fill();
-        ctx.drawImage(sheet, f.x, f.y, f.w, f.h, state.x - f.ax, WORLD.ground - state.lift - f.ay, f.w, f.h);
+        ctx.drawImage(sheet, f.x, f.y, f.w, f.h, state.x - f.ax, WORLD.ground - f.ay, f.w, f.h);
     }
 
     function render() {

@@ -432,7 +432,11 @@ public partial class PoMarbleRacePage
         _tutorialAt = null;
         (_menu ??= new MarbleMenu()).Prefs.TutorialSeen = true;
         await TryJsAsync("PoMarbleRace.setPref", "tutorialSeen", true);
-        if (_phase == "pick" && _engineStarted) StartPickCountdown();
+        if (_phase == "pick" && _engineStarted)
+        {
+            StopPickCountdown();
+            await Pick(PlayerIndex);
+        }
     }
 
     /// <summary>
@@ -576,6 +580,8 @@ public partial class PoMarbleRacePage
         await InvokeAsync(StateHasChanged);
         try
         {
+            await PlayerNameService.InitializeAsync();
+            _playerName = PlayerNameService.GetPlayerName();
             if (_onlineClient is null)
             {
                 _onlineClient = new PoMarbleRaceOnlineClient(Endpoints);
@@ -850,13 +856,14 @@ public partial class PoMarbleRacePage
     // ready" beat. Cancellation rather than a System.Timers.Timer so the loop runs on the
     // component's own context and cannot race Stop/Dispose.
     private const int PickSeconds = 3;
+    private const int TutorialPickSeconds = 8;
     private int _pickCountdown;
     private CancellationTokenSource? _pickCts;
 
-    private void StartPickCountdown()
+    private void StartPickCountdown(int seconds = PickSeconds)
     {
         StopPickCountdown();
-        _pickCountdown = PickSeconds;
+        _pickCountdown = seconds;
         var cts = new CancellationTokenSource();
         _pickCts = cts;
         _ = RunPickCountdownAsync(cts.Token);
@@ -924,10 +931,10 @@ public partial class PoMarbleRacePage
             _podium.Clear();   // hide the previous race's podium as the next race sets up
 
             // Demo auto-picks on the JS side, and an online guest starts when the host does. A first
-            // solo race holds the countdown for the tutorial card (DismissTutorialAsync starts it).
+            // solo race gives extra countdown headroom alongside the non-blocking tutorial tip.
             if (!_demo && !_online && _menu is { Prefs.TutorialSeen: false })
             {
-                StopPickCountdown();
+                StartPickCountdown(TutorialPickSeconds);
                 _ = ShowTutorialAsync();
             }
             else if (!_demo && !IsOnlineGuest) StartPickCountdown();

@@ -669,6 +669,7 @@ html[data-input="pad"] .fq-split__pad { display: flex; }
 /* Buttons are the shared `.app-btn` (app.css). */
 .cq-actions { display: flex; flex-wrap: wrap; gap: 0.5rem; }
 .cq-hint { color: var(--color-text-secondary); font-size: 0.9rem; }
+.cq-lobby-wrap { width: min(92vw, 480px); display: flex; flex-direction: column; gap: 0.75rem; }
 .fq-join label { display: flex; flex-direction: column; gap: 0.25rem; font-size: 0.9rem; }
 .fq-join input,
 .fq-join select {

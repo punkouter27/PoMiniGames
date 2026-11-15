@@ -41,9 +41,21 @@
         catch { return null; }
     }
 
+    function isSoftwareRenderer() {
+        try {
+            const c = document.createElement('canvas');
+            const gl = c.getContext('webgl2') || c.getContext('webgl');
+            if (!gl) return false;
+            const dbg = gl.getExtension('WEBGL_debug_renderer_info');
+            const name = String(dbg ? gl.getParameter(dbg.UNMASKED_RENDERER_WEBGL) : gl.getParameter(gl.RENDERER) || '');
+            return /swiftshader|llvmpipe|softpipe|lavapipe|basic render driver|mesa offscreen/i.test(name);
+        } catch { return false; }
+    }
+
     function computeTier() {
         // Conservative device read: memory and core count are the two signals
         // that correlate with sustained GPU/CPU headroom for this app's loads.
+        if (isSoftwareRenderer()) return 'low';
         const mem = navigator.deviceMemory || 8;   // Chrome-only; assume healthy
         const cores = navigator.hardwareConcurrency || 4;
         if (mem <= 2 || cores <= 2) return 'low';

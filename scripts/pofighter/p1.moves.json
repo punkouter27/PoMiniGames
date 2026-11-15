@@ -1,17 +1,22 @@
 {
   "fighter": "p1",
+  "source": "PXL_20261114_231353677.mp4",
   "sourceFps": 30,
-  "groundY": 1080,
-  "standHeight": 746,
-  "scale": 0.5,
+  "ground": "feet",
+  "standPx": 373,
+  "colorMatch": true,
   "moves": {
-    "idle":      { "from": 243, "to": 257, "step": 2, "anchor": "world", "loop": "pingpong" },
-    "walkF":     { "from": 258, "to": 291, "step": 3, "anchor": "track", "loop": "loop", "rate": 1.6 },
-    "walkB":     { "from": 207, "to": 249, "step": 3, "anchor": "track", "loop": "loop", "rate": 2.0 },
-    "crouch":    { "from": 357, "to": 371, "step": 2, "anchor": "world", "loop": "hold" },
-    "jump":      { "from": 335, "to": 349, "step": 2, "anchor": "world", "loop": "once" },
-    "punchMid":  { "from": 469, "to": 485, "step": 2, "anchor": "world", "loop": "once", "attack": true, "rate": 1.25 },
-    "punchHigh": { "from": 527, "to": 545, "step": 2, "anchor": "world", "loop": "once", "attack": true, "rate": 1.25 },
-    "kick":      { "from": 583, "to": 603, "step": 2, "anchor": "world", "loop": "once", "attack": true, "rate": 1.25 }
+    "idle":      { "frames": [8, 12, 16, 20, 28, 32, 36, 40, 44, 48, 52, 56, 60], "anchor": "world", "loop": "pingpong" },
+    "walkF":     { "from": 276,  "to": 308,  "step": 2, "anchor": "track", "loop": "loop" },
+    "walkB":     { "from": 318,  "to": 348,  "step": 2, "anchor": "track", "loop": "loop" },
+    "crouch":    { "from": 892,  "to": 904,  "step": 2, "anchor": "world", "loop": "hold" },
+    "jump":      { "from": 892,  "to": 934,  "step": 2, "anchor": "world", "loop": "once", "ground": "hold", "rate": 1.2 },
+    "punchMid":  { "from": 404,  "to": 428,  "step": 2, "anchor": "world", "loop": "once", "attack": true, "rate": 1.25 },
+    "punchHigh": { "from": 494,  "to": 514,  "step": 2, "anchor": "world", "loop": "once", "attack": true, "rate": 1.25 },
+    "kick":      { "from": 643,  "to": 673,  "step": 2, "anchor": "world", "loop": "once", "attack": true, "rate": 1.25 },
+    "lunge":     { "from": 968,  "to": 1000, "step": 2, "anchor": "world", "loop": "once", "attack": true, "ground": "hold", "advance": true, "rate": 1.15 },
+    "victory":   { "from": 1188, "to": 1264, "step": 4, "anchor": "world", "loop": "pingpong" },
+    "ko":        { "from": 1374, "to": 1446, "step": 3, "anchor": "world", "loop": "hold" },
+    "getUp":     { "from": 1374, "to": 1446, "step": 3, "reverse": true, "anchor": "world", "loop": "once", "rate": 2.5, "refFrame": 1374, "anchorFrame": 1374 }
   }
 }

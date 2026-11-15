@@ -7,7 +7,8 @@
 // 'hit' events keep the last few impact points.
 //
 // Playback ('ko' → 'replay' → 'result'): game.js hands the end of the KO fall to _replayBegin
-// instead of the result. The sim holds still (_tick returns while phase is 'replay', so no
+// instead of the result — but only on the occasional knockout (REPLAY_CHANCE), so the package
+// stays a highlight rather than wallpaper in a Cup that plays fifteen bouts. The sim holds still (_tick returns while phase is 'replay', so no
 // physics step, no animator, no ragdoll drive) and this module poses the rigs and the camera
 // from the ring each frame: a presidential-seal wipe, a wide side angle at 1x, a hard cut to a
 // tight angle on the killing blow at SLOW x with a freeze while the telestrator rings it, and a
@@ -32,6 +33,9 @@ const SLOW = 0.3;
 const HOLD = 0.85;             // freeze on the impact while the telestrator draws
 const WIPE = 0.6;              // seal wipe, s (covered around the half)
 const GRACE = 0.35;            // s of input ignored at the start (a mashed punch is not a skip)
+// How often a knockout gets the replay treatment at all. The Cup plays fifteen bouts in a row,
+// so a replay on every one of them turns a highlight into wallpaper.
+const REPLAY_CHANCE = 0.25;
 const HITS = 8;
 
 // Fixed joint order; a fighter missing one (or one torn off later) just skips the slot.
@@ -265,6 +269,9 @@ class ReplayMethods {
   _replayBegin() {
     const rp = this._rp;
     if (!rp || !rp.rec || rp.tKo < 0 || rp.count < 30 || rp.ch.length !== 2) return false;
+    // A highlight, not a routine: most knockouts go straight to the result, and the replay
+    // package is saved for the occasional knockout worth watching twice.
+    if (Math.random() > REPLAY_CHANCE) return false;
     if (this.options?.mode === 'online' || this.training || (this.speed || 1) > 1) return false;
     if (!this.fighters.some((f) => f.state === 'ko') || !this.container) return false;
     const tFirst = rp.times[this._replaySlot(0)];

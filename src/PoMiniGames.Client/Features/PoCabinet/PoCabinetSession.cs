@@ -1,6 +1,7 @@
 using Microsoft.AspNetCore.SignalR.Client;
 using PoMiniGames.Shared.Games;
 using PoMiniGamesClient.Services.Http;
+using PoMiniGamesClient.Services.Play;
 
 namespace PoMiniGamesClient.Features.PoCabinet;
 
@@ -36,8 +37,10 @@ namespace PoMiniGamesClient.Features.PoCabinet;
 /// </summary>
 public sealed class PoCabinetSession : IAsyncDisposable
 {
-    private readonly HubConnection _lobby;
-    private readonly HubConnection _race;
+    private readonly ApiEndpoints _endpoints;
+    private readonly PlayerNameService _playerNameService;
+    private HubConnection? _lobby;
+    private HubConnection? _race;
     private readonly CancellationTokenSource _lifetime = new();
     private bool _inLobby;
     private string _displayName = "Player";
@@ -48,22 +51,27 @@ public sealed class PoCabinetSession : IAsyncDisposable
     private int _lastSeq;
     private Task _pingLoop = Task.CompletedTask;
 
-    public PoCabinetSession(ApiEndpoints endpoints)
+    public PoCabinetSession(ApiEndpoints endpoints, PlayerNameService playerNameService)
     {
-        _lobby = HubConnectionFactory.Create(endpoints.Hub("pocabinet/lobby-hub"));
-        _race = HubConnectionFactory.Create(endpoints.Hub("pocabinet/race-hub"));
+        _endpoints = endpoints;
+        _playerNameService = playerNameService;
+    }
 
-        _lobby.On<PoCabinetLobbyView>("LobbyState", async view =>
+    private HubConnection GetOrCreateLobby()
+    {
+        if (_lobby is not null) return _lobby;
+        var lobby = HubConnectionFactory.Create(_endpoints.Hub("pocabinet/lobby-hub"));
+        lobby.On<PoCabinetLobbyView>("LobbyState", async view =>
         {
             if (!_inLobby) return;
             Lobby = view;
             if (LobbyChanged is { } handler) await handler(view);
         });
-        _lobby.On<string, string>("RaceStarting", async (code, trackId) =>
+        lobby.On<string, string>("RaceStarting", async (code, trackId) =>
         {
             if (RaceStarting is { } handler) await handler(code, trackId);
         });
-        _lobby.On<string>("Kicked", async reason =>
+        lobby.On<string>("Kicked", async reason =>
         {
             if (!_inLobby) return;
             _inLobby = false;
@@ -71,48 +79,55 @@ public sealed class PoCabinetSession : IAsyncDisposable
             MySeatId = null;
             if (Kicked is { } handler) await handler(reason);
         });
-        _lobby.On<string>("LobbyNotice", async text =>
+        lobby.On<string>("LobbyNotice", async text =>
         {
             if (_inLobby && LobbyNotice is { } handler) await handler(text);
         });
-        _lobby.Reconnected += async _ =>
+        lobby.Reconnected += async _ =>
         {
             if (!_inLobby) return;
             try { await JoinLobbyAsync(_displayName, _trackId, _color); } catch { /* the view shows the stale state */ }
         };
-        _lobby.Closed += async _ =>
+        lobby.Closed += async _ =>
         {
             if (_inLobby && LobbyLost is { } handler) await handler("Lost the connection to the lobby.");
         };
+        _lobby = lobby;
+        return lobby;
+    }
 
-        _race.On<PoCabinetRaceSnapshot>("RaceSnapshot", async snapshot =>
+    private HubConnection GetOrCreateRace()
+    {
+        if (_race is not null) return _race;
+        var race = HubConnectionFactory.Create(_endpoints.Hub("pocabinet/race-hub"));
+        race.On<PoCabinetRaceSnapshot>("RaceSnapshot", async snapshot =>
         {
             if (!IsCurrent(snapshot.GameCode)) return;
             if (SnapshotReceived is { } handler) await handler(snapshot);
         });
-        _race.On<PoCabinetFinalResult>("RaceFinished", async result =>
+        race.On<PoCabinetFinalResult>("RaceFinished", async result =>
         {
             if (!IsCurrent(result.GameCode)) return;
             if (RaceFinished is { } handler) await handler(result);
         });
-        _race.On<string>("RaceAborted", async code =>
+        race.On<string>("RaceAborted", async code =>
         {
             if (!IsCurrent(code)) return;
             _raceJoined = false;
             await RaiseRaceLostAsync(new PoCabinetRaceLoss(
                 "The race server hit a problem and called the race off. The lobby is open for a rematch.", RaceOver: true, MaySubmit: false));
         });
-        _race.Reconnecting += async _ =>
+        race.Reconnecting += async _ =>
         {
             if (_raceJoined && StatusChanged is { } handler) await handler("Reconnecting…");
         };
-        _race.Reconnected += async _ =>
+        race.Reconnected += async _ =>
         {
             if (_gameCode is not { } code) return;
             PoCabinetRaceSnapshot? rejoined;
             try
             {
-                rejoined = await _race.InvokeAsync<PoCabinetRaceSnapshot?>("JoinRace", code);
+                rejoined = await race.InvokeAsync<PoCabinetRaceSnapshot?>("JoinRace", code);
             }
             catch
             {
@@ -130,12 +145,14 @@ public sealed class PoCabinetSession : IAsyncDisposable
             }
             if (StatusChanged is { } handler) await handler(null);
         };
-        _race.Closed += async _ =>
+        race.Closed += async _ =>
         {
             if (!_raceJoined) return;
             _raceJoined = false;
             await RaiseRaceLostAsync(new PoCabinetRaceLoss("Lost the connection to the race server.", RaceOver: false, MaySubmit: false));
         };
+        _race = race;
+        return race;
     }
 
     /// <summary>The lobby this client sits in (latest broadcast), or null.</summary>
@@ -167,8 +184,10 @@ public sealed class PoCabinetSession : IAsyncDisposable
     /// </summary>
     public async Task<PoCabinetLobbyView?> JoinLobbyAsync(string displayName, string? trackId, string? color, CancellationToken ct = default)
     {
-        await EnsureAsync(_lobby, ct);
-        var view = await _lobby.InvokeAsync<PoCabinetLobbyView?>("Join", displayName, trackId, color, ct);
+        await _playerNameService.InitializeAsync();
+        var lobby = GetOrCreateLobby();
+        await EnsureAsync(lobby, ct);
+        var view = await lobby.InvokeAsync<PoCabinetLobbyView?>("Join", displayName, trackId, color, ct);
         _inLobby = true;
         _displayName = displayName;
         _trackId = trackId;
@@ -195,7 +214,7 @@ public sealed class PoCabinetSession : IAsyncDisposable
         _inLobby = false;
         Lobby = null;
         MySeatId = null;
-        if (!wasIn || _lobby.State != HubConnectionState.Connected) return;
+        if (!wasIn || _lobby is null || _lobby.State != HubConnectionState.Connected) return;
         try { await _lobby.InvokeAsync("Leave"); } catch { /* best effort */ }
     }
 
@@ -207,8 +226,10 @@ public sealed class PoCabinetSession : IAsyncDisposable
     {
         _gameCode = gameCode;
         _lastSeq = 0;
-        await EnsureAsync(_race, ct);
-        var snapshot = await _race.InvokeAsync<PoCabinetRaceSnapshot?>("JoinRace", gameCode, ct)
+        await _playerNameService.InitializeAsync();
+        var race = GetOrCreateRace();
+        await EnsureAsync(race, ct);
+        var snapshot = await race.InvokeAsync<PoCabinetRaceSnapshot?>("JoinRace", gameCode, ct)
             ?? throw new InvalidOperationException("That race is over. Head back to the lobby for a rematch.");
         _raceJoined = true;
         return snapshot;
@@ -224,14 +245,14 @@ public sealed class PoCabinetSession : IAsyncDisposable
         var wasJoined = _gameCode is not null;
         _raceJoined = false;
         _gameCode = null;
-        if (!wasJoined || _race.State != HubConnectionState.Connected) return;
+        if (!wasJoined || _race is null || _race.State != HubConnectionState.Connected) return;
         try { await _race.SendAsync("LeaveRace"); } catch { /* the server unbinds on disconnect anyway */ }
     }
 
     /// <summary>One tick of input, fire-and-forget. Dropped while not joined or reconnecting.</summary>
     public Task SendInputAsync(PoCabinetInput input)
     {
-        if (!_raceJoined || _gameCode is null || _race.State != HubConnectionState.Connected) return Task.CompletedTask;
+        if (!_raceJoined || _gameCode is null || _race is null || _race.State != HubConnectionState.Connected) return Task.CompletedTask;
         _lastSeq = Math.Max(_lastSeq, input.Seq);
         return _race.SendAsync("SubmitInput", input);
     }
@@ -265,10 +286,10 @@ public sealed class PoCabinetSession : IAsyncDisposable
             try
             {
                 await Task.Delay(3000, ct);
-                if (_raceJoined && _race.State == HubConnectionState.Connected)
+                if (_raceJoined && _race is { State: HubConnectionState.Connected } race)
                 {
                     var sw = System.Diagnostics.Stopwatch.StartNew();
-                    await _race.InvokeAsync<long>("Ping", ct);
+                    await race.InvokeAsync<long>("Ping", ct);
                     sw.Stop();
                     if (PingMeasured is { } handler) await handler(sw.Elapsed.TotalMilliseconds);
                 }
@@ -287,8 +308,10 @@ public sealed class PoCabinetSession : IAsyncDisposable
     private async Task<bool> LobbyCallAsync(string method, params object?[] args)
     {
         if (!_inLobby) return false;
-        await EnsureAsync(_lobby, default);
-        return await _lobby.InvokeCoreAsync<bool>(method, args);
+        await _playerNameService.InitializeAsync();
+        var lobby = GetOrCreateLobby();
+        await EnsureAsync(lobby, default);
+        return await lobby.InvokeCoreAsync<bool>(method, args);
     }
 
     private static async Task EnsureAsync(HubConnection hub, CancellationToken ct)
@@ -299,8 +322,8 @@ public sealed class PoCabinetSession : IAsyncDisposable
     public async ValueTask DisposeAsync()
     {
         _lifetime.Cancel();
-        try { await _lobby.DisposeAsync(); } catch { /* ignore */ }
-        try { await _race.DisposeAsync(); } catch { /* ignore */ }
+        if (_lobby is not null) { try { await _lobby.DisposeAsync(); } catch { /* ignore */ } }
+        if (_race is not null) { try { await _race.DisposeAsync(); } catch { /* ignore */ } }
         _lifetime.Dispose();
     }
 }

@@ -124,7 +124,7 @@
     max-width: min(92%, 46rem);
     padding: 0.35rem 0.85rem;
     border-radius: 0.5rem;
-    background: rgba(8, 10, 20, 0.72);
+    background: rgba(8, 10, 20, 0.90);
     color: var(--pb-ink);
     font-size: clamp(0.85rem, 1.9vw, 1.05rem);
     line-height: 1.35;

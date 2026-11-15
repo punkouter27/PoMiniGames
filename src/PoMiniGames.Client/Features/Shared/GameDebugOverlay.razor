@@ -37,9 +37,9 @@
 
         <dl class="gps-debug-grid">
             <dt>FPS</dt>
-            <dd class="@_fpsTier">@_fps.ToString("0")</dd>
+            <dd class="@(_hasSample ? _fpsTier : "")">@(_hasSample ? _fps.ToString("0") : "—")</dd>
             <dt>Frame</dt>
-            <dd>@_frameMs.ToString("0.0") ms</dd>
+            <dd>@(_hasSample ? $"{_frameMs:0.0} ms" : "—")</dd>
             @if (_heapMb >= 0)
             {
                 <dt>Heap</dt>
@@ -107,6 +107,7 @@
     private bool _wired;
     private Task ToggleAsync() => JS.InvokeVoidAsync("poGameDebug.toggle").AsTask();
 
+    private bool _hasSample;
     private double _fps;
     private double _frameMs;
     private double _heapMb = -1;
@@ -139,6 +140,7 @@
     public async Task OnToggle(bool open)
     {
         _open = open;
+        if (!open) _hasSample = false;
         if (open) await ReadEnvAsync();
         StateHasChanged();
     }
@@ -146,6 +148,7 @@
     [JSInvokable]
     public async Task OnSample(double fps, double frameMs)
     {
+        _hasSample = true;
         _fps = fps;
         _frameMs = frameMs;
         if (_open)

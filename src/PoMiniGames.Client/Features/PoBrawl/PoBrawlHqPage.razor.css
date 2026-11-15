@@ -34,6 +34,7 @@
     --rz-chart-tooltip-color: var(--color-text-primary);
     width: min(100%, 72rem);
     margin: 0 auto;
+    align-self: flex-start;
     padding: 0 0 0.25rem;
     display: grid;
     gap: 10px;

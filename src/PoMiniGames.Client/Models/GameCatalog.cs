@@ -203,11 +203,11 @@ public static class GameCatalog
         [
             new(GameMode.OnePlayer, "/pocapitol/1player")
             {
-                ChipDescription = "One human and 99 NPCs; adult themes and fictional combat",
+                ChipDescription = "Hold or breach the Capitol alongside 512 raiders, 64 police, and 64 staff",
             },
             new(GameMode.Demo, "/pocapitol/demo")
             {
-                ChipDescription = "100 computer-controlled raiders; leader-following spectator camera",
+                ChipDescription = "Autonomous 512-raider crowd assault with leader-following spectator camera",
             },
         ]),
 
@@ -242,7 +242,10 @@ public static class GameCatalog
         // correct link.
         new(GameKeys.PoCoupleQuiz, "Couple Quiz", "favorite",
         [
-            new(GameMode.Multiplayer, "/couplequiz", RequiresNetwork: true),
+            new(GameMode.Multiplayer, "/couplequiz", RequiresNetwork: true)
+            {
+                ChipUrl = "/couplequiz/multi",
+            },
         ]),
 
         // PoEcosystem is an autonomous simulation that is watched, never played. Demo only:
@@ -268,15 +271,15 @@ public static class GameCatalog
     // game without a line fails review rather than shipping a blank card.
     private static readonly Dictionary<string, string> Descriptions = new(StringComparer.OrdinalIgnoreCase)
     {
-        [GameKeys.ConnectFive.Value] = "Line up four on a six-by-six grid.",
-        [GameKeys.TicTacToe.Value] = "Three in a row, against the CPU or a friend.",
+        [GameKeys.ConnectFive.Value] = "Drop discs on a 9×9 board — five in a row wins.",
+        [GameKeys.TicTacToe.Value] = "Four in a row on a 6×6 grid, against CPU or a friend.",
         [GameKeys.PoBrawl.Value] = "Time the tap, pick your spots, put them on the canvas.",
         [GameKeys.PoRacer.Value] = "Grand prix racing against the ghost of your best lap.",
         [GameKeys.PoCabinet.Value] = "Arcade racing under the dome.",
         [GameKeys.PoMarbleRace.Value] = "Roll to the line against the pack.",
         [GameKeys.PoVoxelStrike.Value] = "Break the blocks before they break you.",
-        [GameKeys.PoMule.Value] = "Four colonists, four months, one colony.",
-        [GameKeys.PoCapitol.Value] = "The Capitol, and 99 raiders who want it.",
+        [GameKeys.PoMule.Value] = "Sixteen colonists, twelve months, one colony.",
+        [GameKeys.PoCapitol.Value] = "The Capitol, and 512 raiders who want it.",
         [GameKeys.PoFighter.Value] = "A practice room, a punching bag, every move.",
         [GameKeys.PoFunQuiz.Value] = "Trivia rounds against the computer.",
         [GameKeys.PoCoupleQuiz.Value] = "How well do you know each other?",

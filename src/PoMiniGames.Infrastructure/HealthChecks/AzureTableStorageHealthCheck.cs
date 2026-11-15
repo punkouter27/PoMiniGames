@@ -29,14 +29,7 @@ public sealed class AzureTableStorageHealthCheck : IHealthCheck
         var endpoint = _configuration["PoMiniGames:Storage:TableService:Endpoint"];
         var accountName = _configuration["PoMiniGames:Storage:TableService:AccountName"];
 
-        // Treat "UseDevelopmentStorage=true" without a running Azurite as "not configured"
         if (string.IsNullOrWhiteSpace(connectionString) && string.IsNullOrWhiteSpace(endpoint) && string.IsNullOrWhiteSpace(accountName))
-        {
-            return HealthCheckResult.Healthy("Table storage is not configured for this environment.");
-        }
-
-        // Also treat the default dev connection string as "not configured" — Azurite must be explicitly running
-        if (connectionString == "UseDevelopmentStorage=true" && string.IsNullOrWhiteSpace(endpoint))
         {
             return HealthCheckResult.Healthy("Table storage is not configured for this environment.");
         }
