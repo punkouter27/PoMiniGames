@@ -1,5 +1,5 @@
 using Microsoft.AspNetCore.SignalR;
-using PoMiniGames.Features.Auth;
+using PoMiniGames.Features.Identity;
 using PoMiniGames.Shared.Games;
 
 namespace PoMiniGames.Features.PoMarbleRace;

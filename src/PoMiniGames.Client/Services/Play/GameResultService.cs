@@ -3,7 +3,6 @@ using PoMiniGamesClient.Models;
 // Alias, not a namespace import: PoMiniGamesClient.Models mirrors several other Domain
 // types by name, so importing the namespace wholesale would make them all ambiguous.
 
-using PoMiniGamesClient.Services.Auth;
 using PoMiniGamesClient.Services.Http;
 using PoMiniGamesClient.Services.Interop;
 using PoMiniGamesClient.Services.Play;
@@ -27,54 +26,30 @@ public sealed class GameResultService
     private readonly ApiService _api;
     private readonly ScoreSyncService _sync;
     private readonly UiFeedbackService _feedback;
-    private readonly AuthStateService _auth;
     private readonly ToastService _toast;
-    // Nudge a guest to sign in at most once per app session — a soft invitation,
-    // not a nag after every round.
-    private bool _guestNudgeShown;
 
     public GameResultService(
         GameStatsService stats,
         ApiService api,
         ScoreSyncService sync,
         UiFeedbackService feedback,
-        AuthStateService auth,
         ToastService toast)
     {
         _stats = stats;
         _api = api;
         _sync = sync;
         _feedback = feedback;
-        _auth = auth;
         _toast = toast;
     }
 
     /// <summary>
-    /// A server submit didn't land, so the score was parked in the offline queue.
-    /// Why it failed changes what the player should hear:
-    /// <list type="bullet">
-    /// <item>Guest (not signed in) — this isn't an error, it's the deferred-sign-in
-    /// path. Nudge them to sign in so the parked score reaches the board; keep the
-    /// audio soft.</item>
-    /// <item>Signed-in — a genuine network hiccup. Buzz + reassure that it will sync.</item>
-    /// </list>
+    /// A server submit didn't land, so the score was parked in the offline queue: buzz, and
+    /// say that it will sync by itself.
     /// </summary>
     private async Task OnScoreParkedAsync()
     {
-        if (!_auth.IsAuthenticated)
-        {
-            await _feedback.TapAsync();
-            if (!_guestNudgeShown)
-            {
-                _guestNudgeShown = true;
-                _toast.Show("Nice run! Sign in to save your score to the leaderboard.", ToastType.Info);
-            }
-        }
-        else
-        {
-            await _feedback.ErrorAsync();
-            _toast.Show("You're offline — your score will sync automatically.", ToastType.Warning);
-        }
+        await _feedback.ErrorAsync();
+        _toast.Show("You're offline — your score will sync automatically.", ToastType.Warning);
     }
 
     /// <summary>Records a local-only outcome (the common path for games without a server board).</summary>

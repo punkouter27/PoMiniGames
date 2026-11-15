@@ -31,19 +31,15 @@
     <aside id="game-diagnostics" class="gps-debug" role="region" aria-label="Game diagnostics" data-glass>
         <header class="gps-debug-head">
             <span class="gps-debug-title">Diagnostics</span>
-            <span class="gps-debug-keys">
-                <kbd class="gps-kbd">Tab</kbd> hide
-                <kbd class="gps-kbd">Esc</kbd>
-            </span>
-            <button type="button" class="app-btn app-btn--ghost app-btn--sm" aria-label="Close stats"
-                    @onclick="ToggleAsync">Close</button>
+            <button type="button" class="gps-debug-close" aria-label="Close diagnostics"
+                    title="Close (Esc)" @onclick="ToggleAsync">✕</button>
         </header>
 
         <dl class="gps-debug-grid">
             <dt>FPS</dt>
-            <dd class="@_fpsTier">@_fps</dd>
+            <dd class="@_fpsTier">@_fps.ToString("0")</dd>
             <dt>Frame</dt>
-            <dd>@_frameMs ms</dd>
+            <dd>@_frameMs.ToString("0.0") ms</dd>
             @if (_heapMb >= 0)
             {
                 <dt>Heap</dt>
@@ -81,6 +77,11 @@
         {
             <div class="gps-debug-extra">@ChildContent</div>
         }
+        <p class="gps-debug-hint">
+            <kbd class="gps-kbd">Tab</kbd> hide
+            <span class="gps-debug-dot" aria-hidden="true">·</span>
+            <kbd class="gps-kbd">Esc</kbd> close
+        </p>
     </aside>
 }
 

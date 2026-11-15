@@ -20,33 +20,15 @@ public class MobileGoldenPathTests
 
     private async Task<(IPage Page, PlaywrightErrorGuard Guard)> OpenHomeAsync(IBrowser browser)
     {
-        // BFF header overrides: every browser context attaches the FakeAuth headers
-        // so the FakeAuth scheme authenticates each request without depending on the
-        // cookie flow (which is brittle across dynamic-port Kestrel hosts).
-        var origin = new Uri(_fixture.ServerAddress);
-        var context = await browser.NewContextAsync(new BrowserNewContextOptions
+        var context = await browser.NewPlayerContextAsync(new BrowserNewContextOptions
         {
             ViewportSize = Portrait,
-        });
-        await context.RouteAsync("**/*", async route =>
-        {
-            if (new Uri(route.Request.Url).Authority != origin.Authority)
-            {
-                await route.ContinueAsync();
-                return;
-            }
-            var headers = new Dictionary<string, string>(route.Request.Headers)
-            {
-                ["X-Fake-User"] = "test-user",
-                ["X-Fake-Roles"] = "Player",
-            };
-            await route.ContinueAsync(new RouteContinueOptions { Headers = headers });
         });
         var page = await context.NewPageAsync();
         var guard = PlaywrightErrorGuard.Watch(page);
         // WASM cold-boot (download + start) can take a while under the load of the parallel
         // Testcontainers fixtures, so allow a generous navigation budget.
-        await page.GotoAsync($"{_fixture.ServerAddress}?autoGuest=1", new PageGotoOptions
+        await page.GotoAsync($"{_fixture.ServerAddress}", new PageGotoOptions
         {
             WaitUntil = WaitUntilState.NetworkIdle,
             Timeout = 60_000,
@@ -128,14 +110,14 @@ public class MobileGoldenPathTests
     {
         foreach (var viewport in new[] { Portrait, new ViewportSize { Width = 844, Height = 390 } })
         {
-            await using var context = await browser.NewContextAsync(new()
+            await using var context = await browser.NewPlayerContextAsync(new()
             {
                 ViewportSize = viewport,
                 HasTouch = true,
                 IsMobile = true,
             });
             var page = await context.NewPageAsync();
-            await page.GotoAsync($"{_fixture.ServerAddress}connectfive/2player?autoGuest=1", new()
+            await page.GotoAsync($"{_fixture.ServerAddress}connectfive/2player", new()
             {
                 WaitUntil = WaitUntilState.NetworkIdle,
                 Timeout = 60_000,

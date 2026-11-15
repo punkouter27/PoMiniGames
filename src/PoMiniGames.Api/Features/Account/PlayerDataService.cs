@@ -57,7 +57,7 @@ public sealed class PlayerDataUnavailableException(string table, Exception inner
 /// <para>
 /// <b>Matching is deliberately conservative.</b> When a row carries a <c>UserId</c> and the
 /// caller has a claim identity, the UserId is the ONLY thing that counts — a display-name match
-/// is ignored. Falling back to the name in that case would let a signed-in player delete the
+/// is ignored. Falling back to the name in that case would let a identified player delete the
 /// rows of a guest who picked the same name. The name fallback applies only to rows that have
 /// no UserId to compare (name-keyed tables, and rows written before identity was stamped).
 /// </para>

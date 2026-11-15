@@ -1,5 +1,5 @@
 using PoMiniGames.Domain.Primitives;
-using PoMiniGames.Features.Auth;
+using PoMiniGames.Features.Identity;
 using PoMiniGames.Shared.Games;
 
 namespace PoMiniGames.Features.PoBrawl;

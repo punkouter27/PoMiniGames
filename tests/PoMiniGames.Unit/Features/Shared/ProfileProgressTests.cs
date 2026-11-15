@@ -10,7 +10,7 @@ namespace PoMiniGames.Unit.Features.Shared;
 public sealed class ProfileProgressTests
 {
     [Theory]
-    [InlineData("pomule/1player?autoGuest=1", "pomule")]
+    [InlineData("pomule/1player?kiosk=2", "pomule")]
     [InlineData("/poecosystem/demo", "poecosystem")]
     [InlineData("sandplayground/1player", "sandplayground")]
     [InlineData("pocabinet/multi#lobby", "pocabinet")]

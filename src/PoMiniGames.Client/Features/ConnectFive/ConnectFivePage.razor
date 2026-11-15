@@ -8,7 +8,6 @@
 @using PoMiniGames.Shared.Games;
 @inject NavigationManager Navigation;
 @inject ApiEndpoints Endpoints;
-@inject AuthStateService AuthState;
 @inject ToastService Toasts;
 @inject PlayerNameService PlayerNameService;
 @inject MatchHistoryService MatchHistory;
@@ -889,7 +888,7 @@
     {
         if (_online is null)
         {
-            _online = new OnlineTurnSession(Endpoints, AuthState, Toasts, MatchHistory, "connectfive/hub", "connectfive", P1Name);
+            _online = new OnlineTurnSession(Endpoints, Toasts, MatchHistory, "connectfive/hub", "connectfive", P1Name);
             _online.Changed += () => _ = InvokeAsync(StateHasChanged);
             _online.GameStarted += _ => ResetBoardState();
             _online.MoveApplied += OnOnlineMove;

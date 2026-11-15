@@ -56,9 +56,9 @@ internal static class AntiforgeryExtensions
             // script-readable would hand both halves to any XSS payload for nothing.
             options.Cookie.HttpOnly = true;
             options.Cookie.SecurePolicy = CookieSecurePolicy.SameAsRequest;
-            // Lax, not Strict: the Microsoft Entra sign-in flow returns via a top-level
-            // cross-site redirect, and a Strict antiforgery cookie would be withheld on that
-            // navigation, leaving the freshly-signed-in user unable to write until a reload.
+            // Lax, not Strict: a player arriving from another site (a shared invite link, the
+            // QR code) lands through a top-level cross-site navigation, and a Strict cookie would
+            // be withheld on it, leaving their first write refused until a reload.
             options.Cookie.SameSite = SameSiteMode.Lax;
         });
 
@@ -67,9 +67,9 @@ internal static class AntiforgeryExtensions
 
     /// <summary>
     /// Validates the synchroniser token on every state-changing <c>/api/*</c> request.
-    /// Must be registered AFTER <c>UseAuthentication</c>: the token is bound to the user's
+    /// Must be registered AFTER <c>UsePlayerIdentity</c>: the token is bound to the player's
     /// identity, so validating it against an anonymous principal would reject the very
-    /// token the same user was just issued.
+    /// token the same player was just issued.
     /// </summary>
     public static WebApplication UsePoMiniGamesAntiforgery(this WebApplication app)
     {
@@ -129,9 +129,9 @@ internal static class AntiforgeryExtensions
         {
             var tokens = antiforgery.GetAndStoreTokens(context);
 
-            // Never cache: the token is bound to this user's identity, and a shared or
-            // browser-cached copy would be replayed for the wrong principal after a
-            // sign-in/sign-out and fail validation.
+            // Never cache: the token is bound to this player's identity, and a shared or
+            // browser-cached copy would be replayed for the wrong player after the id
+            // changes (data erased, storage cleared) and fail validation.
             context.Response.Headers.CacheControl = "no-store, no-cache, must-revalidate";
 
             return Results.Ok(new AntiforgeryTokenResponse(

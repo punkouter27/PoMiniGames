@@ -21,7 +21,7 @@
 @using Microsoft.AspNetCore.Components.Web
 @using Microsoft.Extensions.Logging
 @inject ILogger<AppErrorBoundary> Logger
-@inject PoMiniGamesClient.Services.Auth.AuthStateService AuthState
+@inject PlayerNameService PlayerNameService
 @inject IJSRuntime JSRuntime
 
 <ErrorBoundary @ref="_boundary">
@@ -102,10 +102,7 @@
         var sb = new StringBuilder();
         sb.AppendLine($"Error ID:    {errorId}");
         sb.AppendLine($"Time (UTC):  {DateTime.UtcNow:O}");
-        if (AuthState.User is { } u)
-        {
-            sb.AppendLine($"User:        {u.UserId} ({u.DisplayName})");
-        }
+        sb.AppendLine($"Player:      {PlayerNameService.PlayerId} ({PlayerNameService.Initials})");
         sb.AppendLine($"Exception:   {ex.GetType().FullName}");
         sb.AppendLine($"Message:     {ex.Message}");
         sb.AppendLine("Stack:");

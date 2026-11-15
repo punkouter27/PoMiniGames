@@ -7,7 +7,6 @@
 @inject ApiService ApiService
 @inject MatchHistoryService MatchHistory
 @inject NavigationManager NavigationManager
-@inject AuthStateService AuthState
 @inject ToastService Toasts
 @inject IJSRuntime JS
 @inject InviteService Invites
@@ -351,12 +350,6 @@ else
         <section class="prf-section">
             <div class="prf-section-head">
                 <h2 class="prf-section-title">Head-to-Head · People You Played</h2>
-                <span class="prf-h2h-legend" role="group" aria-label="Badge legend">
-                    <span class="prf-h2h-badge prf-h2h-badge--guest" aria-hidden="true">G</span>
-                    <span class="prf-h2h-legend-lbl">Guest</span>
-                    <span class="prf-h2h-badge prf-h2h-badge--microsoft" aria-hidden="true">MS</span>
-                    <span class="prf-h2h-legend-lbl">Microsoft</span>
-                </span>
             </div>
             @if (_matchesLoading)
             {
@@ -470,8 +463,7 @@ else
                     <Virtualize Items="opponents" Context="o" ItemSize="48" SpacerElement="tr">
                         <tr role="row" class="prf-h2h-row">
                             <td role="cell" class="prf-h2h-name">
-                                <span class="prf-h2h-badge prf-h2h-badge--@o.Type" aria-hidden="true">@(o.Type == "microsoft" ? "MS" : "G")</span>
-                                <span class="prf-h2h-who">@o.Name<span class="prf-sr-only">@(o.Type == "microsoft" ? " (Microsoft account)" : " (guest)")</span></span>
+                                <span class="prf-h2h-who">@o.Name</span>
                             </td>
                             <td role="cell" class="prf-h2h-num prf-h2h-w">@o.Wins</td>
                             <td role="cell" class="prf-h2h-num prf-h2h-l">@o.Losses</td>

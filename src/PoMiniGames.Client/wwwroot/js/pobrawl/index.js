@@ -28,7 +28,7 @@ window.PoBrawl = {
    *            localSide?: 1|2 (online; 0 or absent = spectating), seed?,
    *            roundLabel? (tournament: the first bout's splash heading),
    *            round?: 0|1|2, p1Expected?: 0..1 (tournament: see matchup's `opts`),
-   *            director?: boolean, isoCam?: boolean (tournament camera; default = the Full show) }
+   *            director?: boolean (tournament camera; default = the Full show) }
    * The /pobrawl/demo route is the Cup; /pobrawl/ffa runs a 16-fighter battle royale.
    */
   init(containerId, dotnetRef, options) {
@@ -42,7 +42,7 @@ window.PoBrawl = {
       : new BrawlGame(el, dotnetRef, { ...options });
     game.start();
     // Headless harnesses: ?debug (or localStorage pominigames:pobrawl-debug) exposes the live engine as
-    // window.__pobrawl(). The sign-in redirect can drop the query, hence the storage flag.
+    // window.__pobrawl(). A redirect can drop the query, hence the storage flag.
     let debug = /[?&]debug/.test(location.search);
     try { debug ||= !!localStorage.getItem('pominigames:pobrawl-debug'); } catch { /* storage blocked */ }
     if (debug) window.__pobrawl = () => game;
@@ -108,9 +108,7 @@ window.PoBrawl = {
   setMuted(muted) { if (game) game.setMuted(muted); },
   /** Tournament: the broadcast director camera (director.js). Player modes ignore it. */
   setDirector(on) { if (game) game.setDirector(!!on); },
-  /** Tournament: the picture-in-picture iso cam (medium/high tier, not on phones). */
-  setIsoCam(on) { if (game) game.setIsoCam(!!on); },
-  /** Diagnostics: the director's live shot and iso state, or null. `force` (a rig name) cuts to it — test hook. */
+  /** Diagnostics: the director's live shot, or null. `force` (a rig name) cuts to it — test hook. */
   director(force) { return game ? game.directorState(force) : null; },
   /**
    * Engine phase ('intro' | 'countdown' | 'fighting' | 'ko' | 'result') or null. The ladder

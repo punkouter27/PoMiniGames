@@ -36,7 +36,7 @@ public readonly record struct DisplayNameResult(DisplayNameVerdict Verdict, stri
 /// <c>PlayerName</c>, the stats PUT carries <c>{playerName}</c> in the route, and match
 /// history carries <c>OpponentName</c>. None of those were normalised or filtered, so a
 /// zero-width-padded or slur-bearing name went straight onto a page anyone can read without
-/// signing in (leaderboard READS are anonymous — see EndpointRouteExtensions).
+/// a player id (leaderboard READS are anonymous — see EndpointRouteExtensions).
 /// </para>
 /// <para>
 /// <b>Two stages by design.</b> Stage one <i>normalises</i> and always wins: control and

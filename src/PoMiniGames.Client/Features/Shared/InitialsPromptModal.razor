@@ -1,5 +1,4 @@
 @inject PlayerNameService PlayerNames
-@inject NavigationManager NavigationManager
 @inject UiFeedbackService Feedback
 @implements IDisposable
 
@@ -7,12 +6,9 @@
 {
     <div class="arcade-modal-backdrop" role="dialog" aria-modal="true" aria-labelledby="arcade-initials-title" @onkeydown="OnKeyDown">
         <div class="arcade-modal-crt">
-            <div class="arcade-modal-scanlines" aria-hidden="true"></div>
-
             <div class="arcade-modal-header">
-                <span class="arcade-coin-badge">1 COIN · 1 PLAY</span>
-                <h2 id="arcade-initials-title" class="arcade-modal-title">ENTER YOUR INITIALS</h2>
-                <p class="arcade-modal-sub">PLAYER 1 HIGH SCORE TABLE</p>
+                <h2 id="arcade-initials-title" class="arcade-modal-title">Enter your initials</h2>
+                <p class="arcade-modal-sub">They label your scores on the leaderboards.</p>
             </div>
 
             <div class="arcade-slots-wrap">
@@ -26,7 +22,6 @@
                 <input @ref="_inputRef"
                        type="text"
                        class="arcade-hidden-input"
-                       maxlength="3"
                        autocomplete="off"
                        autocapitalize="characters"
                        spellcheck="false"
@@ -35,19 +30,19 @@
                        @oninput="OnInput" />
             </div>
 
-            <p class="arcade-modal-hint">TYPE 3 LETTERS (A–Z) OR SKIP FOR BLANK [   ]</p>
+            <p class="arcade-modal-hint">Type three letters, A to Z. You can change them later from the home page.</p>
 
             <div class="arcade-modal-actions">
                 <button type="button"
                         class="arcade-btn arcade-btn--primary"
                         disabled="@(_letters.Length != 3)"
                         @onclick="ConfirmAsync">
-                    ENTER INITIALS
+                    Save initials
                 </button>
                 <button type="button"
                         class="arcade-btn arcade-btn--skip"
                         @onclick="SkipAsync">
-                    SKIP [   ]
+                    Skip
                 </button>
             </div>
         </div>
@@ -59,21 +54,12 @@
     private string _letters = string.Empty;
     private bool _wasOpen;
     private Action? _onStateChanged;
-    private EventHandler<LocationChangedEventArgs>? _onLocationChanged;
 
-    private bool IsOnMainPage
-    {
-        get
-        {
-            var path = new Uri(NavigationManager.Uri).AbsolutePath.TrimEnd('/');
-            return string.IsNullOrEmpty(path);
-        }
-    }
-
+    // A first-time visitor (nothing saved in this browser) is asked straight away, on whatever
+    // page they arrived at, before they can use it; after that the prompt opens only on request.
     private bool ShouldShow =>
         PlayerNames.IsInitialized &&
-        PlayerNames.IsPromptOpen &&
-        (PlayerNames.HasPrompted || IsOnMainPage);
+        PlayerNames.IsPromptOpen;
 
     protected override void OnInitialized()
     {
@@ -85,8 +71,6 @@
         });
         PlayerNames.StateChanged += _onStateChanged;
 
-        _onLocationChanged = (_, _) => InvokeAsync(StateHasChanged);
-        NavigationManager.LocationChanged += _onLocationChanged;
     }
 
     protected override async Task OnAfterRenderAsync(bool firstRender)
@@ -124,6 +108,14 @@
     {
         var prevLen = _letters.Length;
         var raw = e.Value?.ToString() ?? string.Empty;
+        // The prompt opens holding the current initials. With a full entry, the next letter
+        // starts a new one instead of being dropped (the field has no maxlength for that
+        // reason: a capped field swallows the keypress before this handler ever sees it).
+        if (prevLen == 3 && raw.Length > 3 && raw.StartsWith(_letters, StringComparison.OrdinalIgnoreCase))
+        {
+            raw = raw[3..];
+            prevLen = 0;
+        }
         Span<char> buf = stackalloc char[3];
         var len = 0;
         foreach (var c in raw)
@@ -186,10 +178,6 @@
         if (_onStateChanged is not null)
         {
             PlayerNames.StateChanged -= _onStateChanged;
-        }
-        if (_onLocationChanged is not null)
-        {
-            NavigationManager.LocationChanged -= _onLocationChanged;
         }
     }
 }

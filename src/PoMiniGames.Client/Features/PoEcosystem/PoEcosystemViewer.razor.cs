@@ -5,7 +5,6 @@ using PoMiniGamesClient.Features.PoEcosystem.Components;
 using PoMiniGamesClient.Features.PoEcosystem.Models;
 using PoMiniGamesClient.Features.PoEcosystem.Services;
 using PoMiniGamesClient.Features.Shared;
-using PoMiniGamesClient.Services.Auth;
 using PoMiniGamesClient.Services.Http;
 using PoMiniGamesClient.Services.Interop;
 using PoMiniGamesClient.Services.Play;
@@ -41,7 +40,6 @@ public partial class PoEcosystemViewer : ComponentBase, IAsyncDisposable
     [Inject] private BrowserViewport Viewport { get; set; } = default!;
     [Inject] private KioskCoordinator Kiosk { get; set; } = default!;
     [Inject] private ToastService Toasts { get; set; } = default!;
-    [Inject] private AuthStateService Auth { get; set; } = default!;
     [Inject] private UiFeedbackService Feedback { get; set; } = default!;
     [Inject] private NavigationManager Navigation { get; set; } = default!;
 
@@ -677,7 +675,7 @@ public partial class PoEcosystemViewer : ComponentBase, IAsyncDisposable
         if (_cloudBusy) return;
         _cloudBusy = true;
         await InvokeAsync(StateHasChanged);
-        var worlds = Auth.IsAuthenticated ? Api.ListWorldsAsync() : Task.FromResult(Array.Empty<EcoWorldMeta>());
+        var worlds = Api.ListWorldsAsync();
         var gallery = Api.GalleryAsync();
         await Task.WhenAll(worlds, gallery);
         _worlds = worlds.Result;
@@ -705,7 +703,7 @@ public partial class PoEcosystemViewer : ComponentBase, IAsyncDisposable
             if (_stats is null) return;
             var name = $"Year {_stats.Year} · {_stats.Alive} alive";
             var saved = await Api.SaveWorldAsync(slot, name, int.TryParse(_seedInput, out var s) ? s : 0, _stats.Year, _stats.Tick, _stats.Counts, bytes);
-            _cloudMessage = saved is null ? "The cloud did not accept the save. Sign in and try again." : $"Saved to slot {slot} ({bytes.Length / 1024} KB).";
+            _cloudMessage = saved is null ? "The cloud did not accept the save. Try again in a moment." : $"Saved to slot {slot} ({bytes.Length / 1024} KB).";
             if (saved is not null) _worlds = await Api.ListWorldsAsync();
         }
         finally

@@ -17,13 +17,13 @@ public sealed class PoRacerUiTests(KestrelServerFixture fixture)
         var launch = BrowserLaunch.Options();
         launch.SlowMo = 0; // Driving samples steering at 20 Hz; human-scale click delays cannot steer.
         await using var browser = await playwright.Chromium.LaunchAsync(launch);
-        await using var context = await browser.NewContextAsync(new() { ViewportSize = new() { Width = 1440, Height = 900 } });
+        await using var context = await browser.NewPlayerContextAsync(new() { ViewportSize = new() { Width = 1440, Height = 900 } });
         var page = await context.NewPageAsync();
         await using var guard = PlaywrightErrorGuard.Watch(page);
         var errors = new List<string>();
         page.PageError += (_, error) => errors.Add(error);
         var driver = new PoRacerDriver(page);
-        await page.GotoAsync($"{fixture.ServerAddress.TrimEnd('/')}/poracer/1player?autoGuest=1");
+        await page.GotoAsync($"{fixture.ServerAddress.TrimEnd('/')}/poracer/1player");
         await page.GetByRole(AriaRole.Button, new() { Name = "OK", Exact = true }).WaitForAsync(new() { Timeout = 60000 });
         await page.Locator(".track-select select").SelectOptionAsync(track);
         // Isolate lap timing and persistence from 63-car traffic: the keyboard driver
@@ -68,11 +68,11 @@ public sealed class PoRacerUiTests(KestrelServerFixture fixture)
         using var playwright = await Playwright.CreateAsync();
         var launch = BrowserLaunch.Options(); launch.SlowMo = 0;
         await using var browser = await playwright.Chromium.LaunchAsync(launch);
-        var page = await browser.NewPageAsync();
+        var page = await (await browser.NewPlayerContextAsync()).NewPageAsync();
         await using var guard = PlaywrightErrorGuard.Watch(page);
         var errors = new List<string>(); page.PageError += (_, error) => errors.Add(error);
         var driver = new PoRacerDriver(page);
-        await page.GotoAsync($"{fixture.ServerAddress.TrimEnd('/')}/poracer/1player?autoGuest=1");
+        await page.GotoAsync($"{fixture.ServerAddress.TrimEnd('/')}/poracer/1player");
         await page.GetByRole(AriaRole.Button, new() { Name = "OK", Exact = true }).ClickAsync(new() { Timeout = 60000 });
         await driver.DriveAsync(page, "dnf", drive: false);
         driver.Result!.Standings.Single(s => s.CarId == driver.LocalId).Finished.Should().BeFalse();
@@ -91,13 +91,13 @@ public sealed class PoRacerUiTests(KestrelServerFixture fixture)
     {
         using var playwright = await Playwright.CreateAsync();
         await using var browser = await playwright.Chromium.LaunchAsync(BrowserLaunch.Options());
-        await using var first = await browser.NewContextAsync();
-        await using var second = await browser.NewContextAsync();
+        await using var first = await browser.NewPlayerContextAsync();
+        await using var second = await browser.NewPlayerContextAsync();
         var host = await first.NewPageAsync();
         await using var hostGuard = PlaywrightErrorGuard.Watch(host);
         var guest = await second.NewPageAsync();
         await using var guestGuard = PlaywrightErrorGuard.Watch(guest);
-        var url = $"{fixture.ServerAddress.TrimEnd('/')}/poracer/multi?autoGuest=1";
+        var url = $"{fixture.ServerAddress.TrimEnd('/')}/poracer/multi";
         // Each browser opens on the game's card; its button is what takes the lobby seat.
         await host.GotoAsync(url);
         await host.GetByRole(AriaRole.Button, new() { Name = "OK", Exact = true }).ClickAsync(new() { Timeout = 60000 });
@@ -136,31 +136,16 @@ public sealed class PoRacerUiTests(KestrelServerFixture fixture)
     {
         using var playwright = await Playwright.CreateAsync();
         await using var browser = await playwright.Chromium.LaunchAsync(BrowserLaunch.Options());
-        var origin = new Uri(fixture.ServerAddress);
-        await using var context = await browser.NewContextAsync(new()
+        await using var context = await browser.NewPlayerContextAsync(new()
         {
             ViewportSize = touch ? new() { Width = 390, Height = 844 } : new() { Width = 1280, Height = 900 },
             HasTouch = touch,
-        });
-        await context.RouteAsync("**/*", async route =>
-        {
-            if (new Uri(route.Request.Url).Authority != origin.Authority)
-            {
-                await route.ContinueAsync();
-                return;
-            }
-            var headers = new Dictionary<string, string>(route.Request.Headers)
-            {
-                ["X-Fake-User"] = "racer-user",
-                ["X-Fake-Roles"] = "Player",
-            };
-            await route.ContinueAsync(new() { Headers = headers });
         });
         var page = await context.NewPageAsync();
         await using var guard = PlaywrightErrorGuard.Watch(page);
         var errors = new List<string>();
         page.PageError += (_, error) => errors.Add(error);
-        await page.GotoAsync($"{fixture.ServerAddress.TrimEnd('/')}/poracer?autoGuest=1");
+        await page.GotoAsync($"{fixture.ServerAddress.TrimEnd('/')}/poracer");
         if (!touch) await VerifyTrackBitmapCacheAsync(page);
         await page.GetByRole(AriaRole.Button, new() { Name = "OK", Exact = true }).ClickAsync(new() { Timeout = 60000 });
         await page.Locator(".race-metrics").WaitForAsync(new() { Timeout = 30000 });

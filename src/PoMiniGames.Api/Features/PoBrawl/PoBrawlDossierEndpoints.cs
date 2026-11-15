@@ -5,7 +5,7 @@ namespace PoMiniGames.Features.PoBrawl;
 /// <summary>
 /// <c>GET /api/pobrawl/dossier</c>: every fighter's dossier card in one call. Anonymous, like the
 /// leaderboard reads — it is public reference text, and the fighter select is browsable before
-/// sign-in. Always 200: Wikipedia trouble degrades to the static facts.
+/// a player id. Always 200: Wikipedia trouble degrades to the static facts.
 /// </summary>
 public static class PoBrawlDossierEndpoints
 {

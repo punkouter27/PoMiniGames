@@ -3,7 +3,6 @@ using System.Threading;
 using System.Threading.Tasks;
 using Microsoft.AspNetCore.Components.WebAssembly.Http;
 
-using PoMiniGamesClient.Services.Auth;
 using PoMiniGamesClient.Services.Http;
 using PoMiniGamesClient.Services.Interop;
 using PoMiniGamesClient.Services.Play;
@@ -16,14 +15,13 @@ namespace PoMiniGamesClient.Services.Http;
 /// to <c>credentials: 'omit'</c> on the underlying browser fetch, which means
 /// cross-origin requests (e.g. the standalone Blazor client on
 /// <c>http://localhost:5261</c> calling the API on
-/// <c>http://localhost:5000</c>) drop the auth cookie set by
-/// <c>/api/auth/dev-login</c> and every subsequent protected endpoint returns
-/// 401 "Requires an authenticated user".
+/// <c>http://localhost:5000</c>) drop the antiforgery cookie, and every write is then
+/// refused with 403.
 ///
 /// This handler sets the WASM-native
 /// <see cref="WebAssemblyHttpRequestMessageExtensions.SetBrowserRequestCredentials"/>
-/// option on every outgoing request, restoring the same-origin behaviour for
-/// cookie auth without callers needing to remember to set it per-request.
+/// option on every outgoing request, restoring the same-origin cookie behaviour
+/// without callers needing to remember to set it per-request.
 /// </summary>
 /// <remarks>
 /// Wired as a <see cref="DelegatingHandler"/> in the client HttpClient pipeline in

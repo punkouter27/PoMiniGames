@@ -1,7 +1,7 @@
 using PoMiniGames.Domain.Abstractions;
 using PoMiniGames.Domain.Models;
 using PoMiniGames.Domain.Primitives;
-using PoMiniGames.Features.Auth;
+using PoMiniGames.Features.Identity;
 using PoMiniGames.Features.Integrity;
 
 namespace PoMiniGames.Features.PoBrawl;
@@ -33,7 +33,7 @@ public static class PoBrawlLeaderboardEndpoints
             {
                 // The typed name is only a fallback (the claim name wins below), so it is only
                 // validated when it is the one that will be stored. Checked unconditionally, a
-                // signed-in player whose display name ran past 24 characters would have every KO
+                // identified player whose display name ran past 24 characters would have every KO
                 // refused for a name the board is about to discard.
                 var claimName = ClaimName(http);
                 if (claimName is null && string.IsNullOrWhiteSpace(entry.PlayerInitials))
@@ -196,7 +196,7 @@ public static class PoBrawlLeaderboardEndpoints
         return Results.NoContent();
     }
 
-    /// <summary>The signed-in display name, or null when the typed name is all there is.</summary>
+    /// <summary>The initials, or null when the typed name is all there is.</summary>
     private static string? ClaimName(HttpContext http)
     {
         var identity = RequestIdentity.Resolve(http.User);

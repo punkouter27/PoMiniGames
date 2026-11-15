@@ -7,8 +7,9 @@
 //      every engine was writing for itself.
 //   2. The DOM. startNav() lets the D-pad or left stick move focus around the page (hub cards and
 //      chips, dialog buttons, the TicTacToe and ConnectFive boards), A clicks what has focus and B
-//      is Escape / back. It stays out of the canvas games, which read the pad themselves, unless
-//      a modal (the intro card, a menu, the game-over sheet) is open over them.
+//      is Escape / back. It stays out of the canvas games, which read the pad themselves, and of
+//      any screen marked [data-pad-claim] (the split-screen quiz), unless a modal (the intro
+//      card, a menu, the game-over sheet) is open over them.
 //   3. impactBus.js. Once a pad is in use, window.PoGamepad.rumblePattern() plays the haptic
 //      presets as dual-rumble on it, alongside navigator.vibrate. Every rumble from here goes
 //      through impactBus's haptics gate (the Haptics setting, reduced haptics, duty caps).
@@ -210,6 +211,9 @@ function navScope() {
   const modal = topModal();
   if (modal) return modal;
   if (CANVAS_GAMES.test(location.pathname)) return null;
+  // A DOM screen that reads the pads itself: the split-screen quiz gives each player a
+  // controller, and one shared focus cannot answer for two people (B would also leave the page).
+  if (document.querySelector('[data-pad-claim]')) return null;
   return document.querySelector('main') || document.body;
 }
 

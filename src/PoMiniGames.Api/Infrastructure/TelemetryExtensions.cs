@@ -132,7 +132,7 @@ internal static class TelemetryExtensions
                 // billing-blocked state (a "Warned"/disabled subscription returns a 403
                 // "subscription associated with this vault has been disabled"), we fall back to
                 // the local values in appsettings.Development.json and let the app boot — guest
-                // login still works and Microsoft sign-in simply stays unwired until the vault
+                // the app still works and anything read from the vault simply stays unset until the vault
                 // is reachable again. In cloud environments this failure stays fatal by design.
                 try
                 {

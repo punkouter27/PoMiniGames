@@ -1,5 +1,5 @@
 using System.Text;
-using PoMiniGames.Features.Auth;
+using PoMiniGames.Features.Identity;
 using PoMiniGames.Features.Integrity;
 using PoMiniGames.Features.MatchHistory;
 using QRCoder;
@@ -9,7 +9,7 @@ namespace PoMiniGames.Features.Invites;
 /// <summary>A browser's push subscription. Only the endpoint: pushes carry no payload, so no keys are needed.</summary>
 public sealed record PushSubscriptionRequest(string? Endpoint);
 
-/// <param name="Owner">The caller's match-history name. Used for guests only; a signed-in caller's comes from the claims.</param>
+/// <param name="Owner">The caller's match-history name. Used for guests only; a identified caller's comes from the claims.</param>
 /// <param name="OpponentName">The person to invite, as their name appears in the caller's head-to-head list.</param>
 /// <param name="Game">Route slug of the game, e.g. <c>poracer</c>.</param>
 public sealed record InviteRequest(string? Owner, string? OpponentName, string? Game);

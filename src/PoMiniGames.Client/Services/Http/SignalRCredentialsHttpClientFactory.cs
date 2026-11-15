@@ -1,6 +1,5 @@
 using System.Net.Http;
 
-using PoMiniGamesClient.Services.Auth;
 using PoMiniGamesClient.Services.Http;
 using PoMiniGamesClient.Services.Interop;
 using PoMiniGamesClient.Services.Play;
@@ -16,26 +15,16 @@ namespace PoMiniGamesClient.Services.Http;
 /// <see cref="HttpClient"/> for the negotiate POST. That HttpClient is created via
 /// <c>HttpConnectionOptions.DefaultHttpClientFactory</c>, which is a plain
 /// <c>new HttpClient()</c> — it does NOT flow through the DI pipeline, so the
-/// <see cref="IncludeCredentialsHandler"/> that protects every other authenticated
-/// request in the app never wraps it.
-///
-/// On the dev auth flow that means the <c>PoMiniGames.DevAuth</c> cookie minted by
-/// <c>/api/auth/dev-login</c> (the silent Guest sign-in fired by <c>AuthGate</c>
-/// on demo routes) is dropped on the negotiate POST. The hub endpoints have
-/// <c>.RequireAuthorization()</c> applied at mapping time
-/// (<c>Infrastructure/EndpointRouteExtensions.cs</c>), so the server returns
-/// <c>401 Unauthorized</c>, <c>HubConnection.StartAsync()</c> throws an
-/// <see cref="HttpRequestException"/>, and the user sees
-/// <c>"Demo unavailable: net::http_message_not_success_statuscode_reason.401. Unauthorized"</c>
-/// on <c>/poracer/demo</c> (and every other SignalR-driven multiplayer flow).
+/// <see cref="IncludeCredentialsHandler"/> that every other request in the app goes
+/// through never wraps it, and on a cross-origin dev setup the negotiate POST drops the
+/// site's cookies.
 ///
 /// Fix: assign <see cref="CreateHandler"/> to
 /// <c>HttpConnectionOptions.HttpMessageHandlerFactory</c> on every
 /// <c>HubConnectionBuilder.WithUrl(url, options =&gt; …)</c> call so the negotiate
 /// request goes out through the same <see cref="IncludeCredentialsHandler"/> chain
-/// the DI <see cref="HttpClient"/> uses. Without this, the only way to play a
-/// multiplayer game (or the demo) is to be a fully-authenticated Entra ID user —
-/// defeating the Guest / dev-login attraction loop.
+/// the DI <see cref="HttpClient"/> uses. The player identity itself rides on the hub URL's
+/// query string (<see cref="HubConnectionFactory"/>), not on a cookie.
 /// <see cref="HubConnectionFactory.Create"/> is the one place that wiring
 /// happens — every client hub connection is built through it.
 ///

@@ -24,26 +24,15 @@ public class PoEcosystemUiTests
         var options = BrowserLaunch.Options();
         options.Args = ["--enable-unsafe-swiftshader", "--use-gl=angle", "--use-angle=swiftshader"];
         await using var browser = await playwright.Chromium.LaunchAsync(options);
-        var context = await browser.NewContextAsync(new BrowserNewContextOptions { ViewportSize = MobileViewport.Portrait });
+        var context = await browser.NewPlayerContextAsync(new BrowserNewContextOptions { ViewportSize = MobileViewport.Portrait });
 
-        // Per-request headers for the app origin only — context-wide headers would force a
-        // CORS preflight on the three.js / cannon-es CDN imports and kill the engine.
         var origin = _fixture.ServerAddress.TrimEnd('/');
-        await context.RouteAsync($"{origin}/**", async route =>
-        {
-            var headers = new Dictionary<string, string>(route.Request.Headers)
-            {
-                ["X-Fake-User"] = "test-user",
-                ["X-Fake-Roles"] = "Player",
-            };
-            await route.ContinueAsync(new RouteContinueOptions { Headers = headers });
-        });
         var page = await context.NewPageAsync();
         await using var guard = PlaywrightErrorGuard.Watch(page);
         page.Console += (_, msg) => { if (msg.Type is "error") Console.WriteLine($"[browser:error] {msg.Text}"); };
         page.PageError += (_, err) => Console.WriteLine($"[pageerror] {err}");
 
-        await page.GotoAsync($"{origin}/poecosystem/demo?autoGuest=1", new PageGotoOptions
+        await page.GotoAsync($"{origin}/poecosystem/demo", new PageGotoOptions
         {
             WaitUntil = WaitUntilState.NetworkIdle,
             Timeout = 120_000,

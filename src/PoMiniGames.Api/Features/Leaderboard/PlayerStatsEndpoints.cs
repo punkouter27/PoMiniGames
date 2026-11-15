@@ -1,7 +1,7 @@
 using PoMiniGames.Domain.Models;
 using PoMiniGames.Domain.Abstractions;
 using PoMiniGames.Domain.Primitives;
-using PoMiniGames.Features.Auth;
+using PoMiniGames.Features.Identity;
 using PoMiniGames.Features.Integrity;
 
 namespace PoMiniGames.Features.Leaderboard;
@@ -65,7 +65,7 @@ public static class PlayerStatsEndpoints
                     return Results.BadRequest(new { error = $"Unknown game key '{game}'" });
                 }
 
-                // Server-authoritative identity: a signed-in caller may only write their
+                // Server-authoritative identity: a identified caller may only write their
                 // OWN stats row. The route {playerName} is ignored for authenticated users —
                 // the persisted key is the caller's claim identity — so nobody can PUT to
                 // /players/{victim}/stats and overwrite another player's leaderboard row.
@@ -80,7 +80,7 @@ public static class PlayerStatsEndpoints
                 }
 
                 // The win-rate board renders this value as the player's name on a page that is
-                // readable without signing in, so it is moderated before it becomes a RowKey.
+                // readable by anyone, so it is moderated before it becomes a RowKey.
                 // Note the side effect: for a name the sanitiser REWRITES, the row key changes
                 // and the old row is orphaned rather than updated. That is confined to names
                 // carrying invisible characters or collapsed whitespace — i.e. exactly the

@@ -52,27 +52,15 @@ public sealed class PoCabinetTwoBrowserRaceTests(KestrelServerFixture fixture)
     /// <summary>A fresh context with its own fake identity, on the multiplayer start screen, past its OK.</summary>
     private async Task<(IPage Page, PlaywrightErrorGuard Guard)> JoinLobbyAsync(IBrowser browser, string user, List<string> pageErrors)
     {
-        var ctx = await browser.NewContextAsync(new() { ViewportSize = MobileViewport.Portrait });
-        // Per-request headers for the app origin only — context-wide headers
-        // would force a CORS preflight on the three.js import-map fetches and
-        // stall the engine loader. PoEcosystemUiTests uses the same trick.
+        var ctx = await browser.NewPlayerContextAsync(new() { ViewportSize = MobileViewport.Portrait });
         var origin = fixture.ServerAddress.TrimEnd('/');
-        await ctx.RouteAsync($"{origin}/**", async route =>
-        {
-            var headers = new Dictionary<string, string>(route.Request.Headers)
-            {
-                ["X-Fake-User"] = user,
-                ["X-Fake-Roles"] = "Player",
-            };
-            await route.ContinueAsync(new() { Headers = headers });
-        });
 
         var page = await ctx.NewPageAsync();
         var guard = PlaywrightErrorGuard.Watch(page);
         page.Console += (_, msg) => { if (msg.Type is "error") Console.WriteLine($"[{user}:error] {msg.Text}"); };
         page.PageError += (_, err) => pageErrors.Add($"{user}: {err}");
 
-        await page.GotoAsync($"{origin}/pocabinet/multi?autoGuest=1",
+        await page.GotoAsync($"{origin}/pocabinet/multi",
             new() { WaitUntil = WaitUntilState.NetworkIdle, Timeout = 90_000 });
         var join = page.GetByRole(AriaRole.Button, new() { Name = "OK", Exact = true });
         await join.WaitForAsync(new() { Timeout = 60_000 });

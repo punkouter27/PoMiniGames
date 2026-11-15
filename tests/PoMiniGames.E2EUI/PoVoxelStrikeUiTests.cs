@@ -28,22 +28,8 @@ public class PoVoxelStrikeUiTests
         var options = BrowserLaunch.Options();
         options.Args = ["--enable-unsafe-swiftshader", "--use-gl=angle", "--use-angle=swiftshader"];
         await using var browser = await playwright.Chromium.LaunchAsync(options);
-        var context = await browser.NewContextAsync(new BrowserNewContextOptions { ViewportSize = Portrait });
+        var context = await browser.NewPlayerContextAsync(new BrowserNewContextOptions { ViewportSize = Portrait });
 
-        // Same header-driven FakeAuth identity the other UI smokes use — but injected
-        // per-request for the app origin ONLY. Context-wide ExtraHTTPHeaders ride on every
-        // request including the three.js/cannon-es CDN imports, where a custom X-Fake-*
-        // header forces a CORS preflight jsdelivr rejects — killing the engine import.
-        var origin = _fixture.ServerAddress.TrimEnd('/');
-        await context.RouteAsync($"{origin}/**", async route =>
-        {
-            var headers = new Dictionary<string, string>(route.Request.Headers)
-            {
-                ["X-Fake-User"] = "test-user",
-                ["X-Fake-Roles"] = "Player",
-            };
-            await route.ContinueAsync(new RouteContinueOptions { Headers = headers });
-        });
         var page = await context.NewPageAsync();
         await using var guard = PlaywrightErrorGuard.Watch(page);
         page.Console += (_, msg) =>
@@ -55,7 +41,7 @@ public class PoVoxelStrikeUiTests
         };
         page.PageError += (_, err) => Console.WriteLine($"[pageerror] {err}");
 
-        await page.GotoAsync($"{_fixture.ServerAddress.TrimEnd('/')}/povoxelstrike/demo?autoGuest=1", new PageGotoOptions
+        await page.GotoAsync($"{_fixture.ServerAddress.TrimEnd('/')}/povoxelstrike/demo", new PageGotoOptions
         {
             WaitUntil = WaitUntilState.NetworkIdle,
             Timeout = 60_000,

@@ -7,7 +7,7 @@ namespace PoMiniGames.Domain.Models;
 /// <para>
 /// <see cref="UserId"/>/<see cref="IsGuest"/> are the row's identity and are always resolved
 /// server-side from the auth cookie — never from the request body. Without them a row was
-/// identified by display name alone, so an anonymous caller could post under any signed-in
+/// identified by display name alone, so an anonymous caller could post under any identified
 /// player's name and land on the board as them.
 /// </para>
 /// <para>
@@ -24,7 +24,7 @@ public sealed record MarbleRaceHighScore
     /// <summary>Stable claims id of the submitter; empty for an anonymous caller.</summary>
     public string UserId { get; init; } = string.Empty;
 
-    /// <summary>True when the submitter had no real signed-in identity.</summary>
+    /// <summary>True when the submitter had no real player identity.</summary>
     public bool IsGuest { get; init; }
 
     /// <summary>Best run total (consecutive top-10 finishes). See <see cref="MarbleRaceScore"/> for the valid range.</summary>

@@ -125,18 +125,16 @@ public static class GameCatalog
             new(GameMode.Demo, "/tictactoe/demo"),
         ]),
 
-        // Auth consistency: every PoBrawl entry point opts into autoGuest so
-        // 1P, 2P and demo all land the same way for anonymous visitors.
         new(GameKeys.PoBrawl, "Brawl", "sports_mma",
         [
-            new(GameMode.OnePlayer, "/pobrawl/1player?autoGuest=1"),
-            new(GameMode.TwoPlayer, "/pobrawl/2player?autoGuest=1"),
+            new(GameMode.OnePlayer, "/pobrawl/1player"),
+            new(GameMode.TwoPlayer, "/pobrawl/2player"),
             // Server-authoritative 1v1 over SignalR. Two humans, one lobby, one
             // fight. POST /api/pobrawl/matches feeds the per-player Elo table —
             // see Features/PoBrawl/Online.
             new(GameMode.Multiplayer, "/pobrawl/multi", RequiresNetwork: true),
             // Both Brawl exhibitions are demo modes, labelled explicitly on the hub.
-            new(GameMode.Demo, "/pobrawl/demo?autoGuest=1")
+            new(GameMode.Demo, "/pobrawl/demo")
             {
                 ChipLabel = "Demo · Tournament",
                 ChipDescription = "16-slot Brawl Cup tournament",

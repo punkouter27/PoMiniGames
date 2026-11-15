@@ -27,11 +27,13 @@
                    Objective="Answer the multiple-choice questions — chain correct answers for a streak bonus."
                    Controls="@HowToPlayContent"
                    Mode="@_introMode"
+                   Options="@(_playMode == "demo" ? null : CategoryContent)"
+                   StartEnabled="@(!_changingCategory)"
                    OnStart="DismissIntro" />
     }
-    @* No setup card: the player's name comes from their stored profile, Player 2
-       keeps its default label, and the category defaults to General; the quiz loads
-       and starts on navigation (see OnInitializedAsync). This block is only the
+    @* No setup card: the player's name comes from their stored profile and Player 2
+       keeps its default label. The quiz loads on navigation (see OnInitializedAsync)
+       in the category last picked on the start card. This block is only the
        load-failed state — the loading state is the shell's shared skeleton
        (GameShell Loading), and the failure is the app's shared error view. *@
     @if (!_isLoading && _questions.Count == 0)
@@ -116,7 +118,9 @@
                 ? (_splitResults[side] ? "fq-split__opt--picked" : "fq-split__opt--wrong")
                 : "fq-split__opt--muted";
         };
-        <div class="fq-split">
+        @* data-pad-claim: each controller answers for its own player here (see
+           js/pofunquiz/hotkeys.js), so gamepadBus's focus navigation stands down. *@
+        <div class="fq-split" data-pad-claim>
             <div class="fq-split__header">
                 <h2 class="gps-phase-h">Question @(_currentIndex + 1) of @_questions.Count</h2>
                 <p class="fq-split__prompt">@q.Text</p>
@@ -126,6 +130,7 @@
                     <div class="fq-split__name">@_playerName</div>
                     <div class="fq-split__score">@_score1 <span class="fq-split__streak">streak @_streak1</span></div>
                     <div class="fq-split__keys">Keys: <kbd>1</kbd><kbd>2</kbd><kbd>3</kbd><kbd>4</kbd></div>
+                    <div class="fq-split__keys fq-split__pad">Controller 1: <kbd>Y</kbd><kbd>X</kbd><kbd>B</kbd><kbd>A</kbd></div>
                     <div class="fq-split__options">
                         @for (var i = 0; i < q.Options.Count; i++)
                         {
@@ -154,6 +159,7 @@
                     <div class="fq-split__name">@_player2Name</div>
                     <div class="fq-split__score">@_score2 <span class="fq-split__streak">streak @_streak2</span></div>
                     <div class="fq-split__keys">Keys: <kbd>6</kbd><kbd>7</kbd><kbd>8</kbd><kbd>9</kbd></div>
+                    <div class="fq-split__keys fq-split__pad">Controller 2: <kbd>Y</kbd><kbd>X</kbd><kbd>B</kbd><kbd>A</kbd></div>
                     <div class="fq-split__options">
                         @for (var i = 0; i < q.Options.Count; i++)
                         {
@@ -228,6 +234,7 @@
             <ul>
                 <li>Player 1 (left): keys <kbd>1</kbd> <kbd>2</kbd> <kbd>3</kbd> <kbd>4</kbd></li>
                 <li>Player 2 (right): keys <kbd>6</kbd> <kbd>7</kbd> <kbd>8</kbd> <kbd>9</kbd></li>
+                <li>Controllers: one each, face buttons <kbd>Y</kbd> <kbd>X</kbd> <kbd>B</kbd> <kbd>A</kbd> pick options 1–4</li>
                 <li>Mouse works too — click any option on your side</li>
             </ul>
         </div>,
@@ -269,7 +276,49 @@
 
     private string _playerName = string.Empty;
     private string _player2Name = "Player 2";
-    private string _category = "General";
+    // Shared with the online lobby's picker, so the two modes open on the same category.
+    // An unknown stored value is harmless: the server falls back to General.
+    private string _category = LocalStorageService.GetItem<string>(FunQuizCategories.StorageKey) is { Length: > 0 } saved
+        ? saved
+        : FunQuizCategories.Default;
+    // True while a category picked on the start card is being dealt; OK waits for it.
+    private bool _changingCategory;
+
+    @* .fq-join is the wrapper the lobby's form controls are styled under (games.css). *@
+    private RenderFragment CategoryContent => @<div class="fq-join">
+        <label class="fq-join__field">
+            <span class="fq-join__label">Category</span>
+            <select value="@_category" @onchange="ChangeCategoryAsync" disabled="@_changingCategory">
+                @foreach (var c in FunQuizCategories.All)
+                {
+                    <option value="@c.Value" selected="@(c.Value == _category)">@c.Label</option>
+                }
+            </select>
+        </label>
+    </div>;
+
+    /// <summary>
+    /// The start card's category picker. The quiz was already dealt on navigation, so a new
+    /// category deals again, behind the card: no loading skeleton (it would replace the card
+    /// and the select the player is using), and OK is held until the new questions are in.
+    /// </summary>
+    private async Task ChangeCategoryAsync(ChangeEventArgs e)
+    {
+        var picked = e.Value?.ToString();
+        if (string.IsNullOrEmpty(picked) || picked == _category || _introDone) return;
+        var previous = _category;
+        _category = picked;
+        _changingCategory = true;
+        try
+        {
+            await StartGame(quiet: true);
+            // The deal failed, so the questions on the table are still the old category's:
+            // put the picker back rather than play them under the new category's name.
+            if (_error is not null) _category = previous;
+            else LocalStorageService.SetItem(FunQuizCategories.StorageKey, _category);
+        }
+        finally { _changingCategory = false; }
+    }
     private string? _error;
     // Starts true: the quiz auto-loads on navigation, so the very first render
     // is the loading state, never the "couldn't start" card.
@@ -398,36 +447,24 @@
 
     protected override async Task OnAfterRenderAsync(bool firstRender)
     {
-        if (!firstRender) return;
-        if (_splitScreen)
-        {
-            // Register a window-level keydown listener via a tiny JS interop. We
-            // can't do this purely in Blazor because Razor can't subscribe to
-            // global keyboard events without a DOM hook.
-            // Imported here rather than loaded eagerly from index.html, so the
-            // other ~25 pages in the app do not fetch a split-screen quiz hotkey
-            // handler.
-            await JS.InvokeAsync<IJSObjectReference>("import", "./js/poFunQuizSplitHotkeys.js");
-            await JS.InvokeVoidAsync("poFunQuizSplitHotkeys.register", _selfRef ??= DotNetObjectReference.Create(this));
-        }
-        // Solo mode reuses the same hotkey bridge by registering with side="S"
-        // (solo); the script already routes 1-4 to whatever side is registered and
-        // ignores inputs/textareas. A second DotNetObjectReference would be
-        // wasted — the same instance handles both invocations.
-        else if (_playMode == "solo")
-        {
-            await JS.InvokeAsync<IJSObjectReference>("import", "./js/poFunQuizSplitHotkeys.js");
-            await JS.InvokeVoidAsync("poFunQuizSplitHotkeys.registerSolo", _selfRef ??= DotNetObjectReference.Create(this));
-        }
+        if (!firstRender || (!_splitScreen && _playMode != "solo")) return;
+        // Razor can't subscribe to global keyboard events, so the answer keys (and, in
+        // split-screen, one controller per player) live in a module imported here, on the
+        // one page that uses it. Solo and split-screen share it; only the registration differs.
+        _hotkeys = await JS.InvokeAsync<IJSObjectReference>("import", "./js/pofunquiz/hotkeys.js");
+        if (_disposed) return;
+        await _hotkeys.InvokeVoidAsync(_splitScreen ? "register" : "registerSolo",
+            _selfRef ??= DotNetObjectReference.Create(this));
     }
 
     [Inject] private IJSRuntime JS { get; set; } = default!;
 
-    // The one reference the hotkey bridge calls back through; released in DisposeAsync.
+    // The hotkey module, and the one reference it calls back through; both released in DisposeAsync.
+    private IJSObjectReference? _hotkeys;
     private DotNetObjectReference<PoFunQuizPage>? _selfRef;
 
     /// <summary>
-    /// Invoked from JS (poFunQuizSplitHotkeys.js) when a split-screen hotkey
+    /// Invoked from JS (js/pofunquiz/hotkeys.js) when a split-screen hotkey
     /// fires. Side 'L' keys 1/2/3/4, side 'R' keys 6/7/8/9, index 0-3 maps to
     /// options A-D. No-op outside split-screen mode.
     /// </summary>
@@ -473,19 +510,30 @@
             await _demoTimer.DisposeAsync();
             _demoTimer = null;
         }
-        try { await JS.InvokeVoidAsync("poFunQuizSplitHotkeys.unregister"); } catch { /* disposed */ }
+        if (_hotkeys is not null)
+        {
+            try
+            {
+                await _hotkeys.InvokeVoidAsync("unregister");
+                await _hotkeys.DisposeAsync();
+            }
+            catch (JSDisconnectedException) { /* the circuit is already gone */ }
+            _hotkeys = null;
+        }
         _selfRef?.Dispose();
         _selfRef = null;
     }
 
-    private async Task StartGame()
+    private Task StartGame() => StartGame(quiet: false);
+
+    private async Task StartGame(bool quiet)
     {
         // The name inputs are gone, so there is nothing to validate: _playerName
         // comes from the stored profile and _player2Name / _category carry their
         // defaults. Guard only against an empty stored profile.
         if (string.IsNullOrWhiteSpace(_playerName)) _playerName = "Player 1";
         _error = null;
-        _isLoading = true;
+        _isLoading = !quiet;
         try
         {
             var fetch = await Api.GetFunQuizQuestionsAsync(_category, 10);
@@ -500,7 +548,7 @@
                     StateHasChanged();
                     await Task.Delay(TimeSpan.FromSeconds(wait));
                     if (_disposed) return;
-                    await StartGame();
+                    await StartGame(quiet);
                     return;
                 }
 

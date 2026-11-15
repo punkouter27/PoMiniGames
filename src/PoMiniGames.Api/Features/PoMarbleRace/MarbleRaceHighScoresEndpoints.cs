@@ -1,7 +1,7 @@
 using PoMiniGames.Domain.Abstractions;
 using PoMiniGames.Domain.Models;
 using PoMiniGames.Domain.Primitives;
-using PoMiniGames.Features.Auth;
+using PoMiniGames.Features.Identity;
 using PoMiniGames.Features.Integrity;
 using PoMiniGames.Shared.Games;
 
@@ -76,7 +76,7 @@ public static class MarbleRaceHighScoresEndpoints
                 // under someone else's.
                 var identity = RequestIdentity.Resolve(http.User);
                 var fallback = identity.IsAuthenticated ? "Player" : "Guest";
-                // Even a claim-derived name is player-chosen — an Entra display name is whatever
+                // Even a claim-derived name is player-chosen — a player's initials are whatever
                 // the account holder typed — so it goes through moderation like any other.
                 var name = integrity.ResolveDisplayName(identity.DisplayName, fallback);
 

@@ -9,7 +9,7 @@ namespace PoMiniGamesClient.Features.PoBrawl;
 /// The one place the browser keeps a player's Brawl progress: the 1P ladder rung (and when it was
 /// written), the fastest KO, the full-ladder clears, and the Cup titles. The 1P page, Brawl HQ,
 /// the Cup and the achievements all read and write through here, so the storage keys and the
-/// rules for folding in the signed-in copy (<see cref="PoBrawlProgressDto.Merge"/>, the server
+/// rules for folding in the server copy (<see cref="PoBrawlProgressDto.Merge"/>, the server
 /// store's own rule) live once.
 /// </summary>
 /// <remarks>
@@ -36,7 +36,7 @@ public static class PoBrawlProgressBook
     };
 
     /// <summary>
-    /// Fold the signed-in copy (another device) into this browser's and store the result. With
+    /// Fold the server copy (another device) into this browser's and store the result. With
     /// <paramref name="takeRung"/> false the local rung stands whatever its age — a fight already
     /// under way owns it — while the KO record and the clears still take the best of both.
     /// </summary>

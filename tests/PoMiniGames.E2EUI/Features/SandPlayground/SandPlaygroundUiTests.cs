@@ -23,7 +23,7 @@ public class SandPlaygroundUiTests
         // The simulation is WebGL2; SwiftShader gives the headless shell a real context.
         options.Args = ["--enable-unsafe-swiftshader", "--use-gl=angle", "--use-angle=swiftshader"];
         await using var browser = await playwright.Chromium.LaunchAsync(options);
-        var context = await browser.NewContextAsync();
+        var context = await browser.NewPlayerContextAsync();
         var page = await context.NewPageAsync();
         await using var guard = PlaywrightErrorGuard.Watch(page);
         var errors = new List<string>();
@@ -33,7 +33,7 @@ public class SandPlaygroundUiTests
         var origin = _fixture.ServerAddress.TrimEnd('/');
         // ?debug installs window.__sandPlayground, which init() only reaches once every
         // program has compiled and linked and the first world has been uploaded.
-        await page.GotoAsync($"{origin}/sandplayground/demo?autoGuest=1&debug",
+        await page.GotoAsync($"{origin}/sandplayground/demo?debug",
             new PageGotoOptions { WaitUntil = WaitUntilState.NetworkIdle, Timeout = 60_000 });
 
         try

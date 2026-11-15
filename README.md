@@ -8,8 +8,8 @@ quizzes draw from JSON question banks.
 ## Overview
 
 Fourteen small games on one website. The browser runs each game in full, including its
-computer opponents; the server signs players in, referees online play, checks and stores
-scores.
+computer opponents; the server referees online play, checks and stores scores. There is no
+sign-in: a player is a random browser id plus three initials.
 
 - **One origin.** The API host serves the Blazor client it is then called by, so there is no
   cross-site setup in production.
@@ -57,16 +57,16 @@ scores.
   `feelPresets.js` (`window.PoFeel`), and particle bursts in `gpuFx.js`
   (`PoFx.burst(x, y, 'win' | 'ko' | 'highscore')`).
 - **No database.** Scores, ratings, saves and AI spend ledgers live in Azure Table Storage;
-  PoEcosystem world files live in Blob Storage. A player is whoever the sign-in token says
-  they are; there is no Player table.
+  PoEcosystem world files live in Blob Storage. A player is the browser's player id and
+  initials; there is no Player table.
 - **Computer opponents are hand-written rules, not trained models.** Difficulty is a table of
   numbers in source.
 - **No AI services.** PoFunQuiz and PoCoupleQuiz pick random questions from JSON banks
   (`Features/PoFunQuiz/Data/questions.json`, `Features/PoCoupleQuiz/Data/questions.json`)
   loaded into memory once at startup; PoCoupleQuiz matches answers with free fuzzy matching
   (`AnswerMatcher`). Ecosystem, Brawl and Cabinet commentary is scripted.
-- **Around the games.** The hub is the game cards plus a finder and *Watch all demos* (the
-  Today card, streak, Continue strip, pins and filters were cut on 2026-10-19), and it
+- **Around the games.** The hub is the game cards plus *Watch all demos* (the Today card,
+  streak, Continue strip, pins and filters were cut on 2026-10-19, the search box on 2026-11-15), and it
   launches games without rebooting the app. Each card carries one line saying what the game
   is, and its modes are capped at three chips with the rest behind a `+N` popover. On a phone
   the bottom bar is Games / Boards / Stats / More, where More holds Settings, Service status
@@ -123,15 +123,15 @@ scores.
 | Document | What it covers |
 |---|---|
 | [Game consistency rules](GAME-CONSISTENCY.md) | Required game workflow, shared UI, controls, accessibility, and verification conventions |
-| [Documentation overview](DOCS/20261112/index.html) | Index of the current documentation suite |
-| [Visual architecture dashboard](DOCS/20261112/VISUAL_ARCHITECTURE_DASHBOARD.html) | Visual map of the app's architecture and major flows |
-| [User journeys](DOCS/20261112/USER_WORKFLOW.html) | Player-facing workflows through the app |
-| [Auth and security report](DOCS/20261112/AUTH_SECURITY_REPORT.html) | Authentication and access-control overview |
-| [AI and external services report](DOCS/20261112/AI_SERVICES_REPORT.html) | Current AI and external-service boundaries |
-| [Interactive tabbed shell](DOCS/20261112/artifact.html) | All five reports in one standalone tabbed frame |
+| [Documentation overview](docs/20261112/index.html) | Index of the current documentation suite |
+| [Visual architecture dashboard](docs/20261112/VISUAL_ARCHITECTURE_DASHBOARD.html) | Visual map of the app's architecture and major flows |
+| [User journeys](docs/20261112/USER_WORKFLOW.html) | Player-facing workflows through the app |
+| [Identity and security report](docs/20261112/AUTH_SECURITY_REPORT.html) | Player identity, antiforgery and access overview |
+| [AI and external services report](docs/20261112/AI_SERVICES_REPORT.html) | Current AI and external-service boundaries |
+| [Interactive tabbed shell](docs/20261112/artifact.html) | All five reports in one standalone tabbed frame |
 | [Architecture map](https://claude.ai/artifact/HGHLwMdGyveqtknNC1o5ar) | Component diagrams, request flows and the data model (private link; share it from the page to give others access) |
 
-## Games (`src/PoMiniGames.Client/Games/`)
+## Games (`src/PoMiniGames.Client/Features/`)
 
 | Game | One-liner |
 |---|---|
@@ -140,7 +140,7 @@ scores.
 | ConnectFive | Five-in-a-row vs AI, hot-seat, or online quick-match (SignalR) |
 | PoBrawl | Physics brawler with a presidents ladder and two CPU exhibitions on the home hub: **DEMO · Tournament** (the 16-slot Brawl Cup at `/pobrawl/demo`; all presidents enter, every bout advances automatically to one champion, and each bout updates fighter Elo) and **DEMO · FFA** (`/pobrawl/ffa`; all 16 presidents fight in the ring at once, rear attacks bypass guards, knockout places are shown, and a new round starts after five seconds; this exhibition does not submit 1v1 Elo results); the Cup has an animated bracket and belt ceremony, golden-hour → dusk → night arena, an Elo-upset crowd, and a TV-style director camera with picture-in-picture iso cam; 1P/2P/online keep a plain side view; the old `/pobrawl/tournament` address redirects to the Cup; 1P, 2P and training pause on Esc / P, on the touch ⏸ button and automatically when the window loses focus (Resume, Restart fight, Quit), and the result leads with Fight again / Rematch in place; a showtime layer of charge auras and president motifs over a crowd that stomps and chants, plus — with the settings sheet's **Brawl show** set to Full (`pobrawl_show`; Simple is the default) — convention balloon drops, LED ribbon boards, a stadium wave, an instant replay, a glass result screen, the belt ceremony and the director camera (those four Full-only modules are loaded on demand, so Simple never parses them); live 3D fighter select (a mirror pick gives Player 2 an alternate suit); an election-night campaign map for the ladder + fighter Elo board; **Brawl HQ** (`/pobrawl/hq`) puts the ladder, campaign map, local record, the ladder / fastest-KO / fighter-Elo boards and Cup titles on one page |
 | PoCoupleQuiz | Two-player realtime couples quiz (SignalR); curated JSON question bank, free answer matching |
-| PoFunQuiz | Multiplayer trivia lobby from a JSON question bank (~7,800 questions; most from [The Trivia API](https://the-trivia-api.com), CC BY-NC 4.0) |
+| PoFunQuiz | Trivia from a JSON question bank (~8,500 questions; most from [The Trivia API](https://the-trivia-api.com), CC BY-NC 4.0, topped up from [Open Trivia DB](https://opentdb.com), CC BY-SA 4.0, by `scripts/import-trivia.ps1`). Solo, split-screen 2P and the online lobby all pick one of eight categories on the start card (the last pick is remembered). In split-screen each player can answer on their own controller: face buttons Y / X / B / A are options 1-4 |
 | PoMarbleRace | You steer the one red marble through a 101-marble field on four courses (Neon Canyon, Spiral Works, Grand Spiral, Playground Run); CPU rivals each have a personality (steady, cautious, line-hugger, bully, wildcard); your best run is a ghost; sector splits and per-track records; online is 2 players max, by quick match or a private 4-letter race code, with a both-must-agree **Rematch** and a running series score (the host's browser streams the physics); a **Race settings** drawer (ghost, sound, spoken announcer, F3 performance overlay, Full/Lite effects); keyboard, touch and gamepad steering; sound is fully synthesized (energy- and material-driven impacts, a skid hiss, per-map reverb, crowd stings). Engine modules live in `wwwroot/js/pomarblerace/` (game.js plus one mixin per system; constants in `tuning.js`, the save in `store.js`) |
 | PoRacer | Top-down canvas racer the server simulates: four tracks (Grand Prix Circuit, Neon Skyline, Desert Dustway and Crossfire Switchbacks, seven tight turns with a main straight that crosses all four of its legs), solo races against 63 rivals or a time trial, an 8-seat online room and a demo. Each track has its own weather for the UTC day (clear, rain, snow or fog): rain and snow lower every car's grip, and the start card and a HUD chip say so. Rivals drive in character (apex hugger, draft hunter, bruiser, late braker, cautious, slingshot, wildcard); the results list each one's style. Trackside scenery (grandstands, tyre walls, cones, trees, tents, rocks) is Kenney's Racing Pack, CC0 (`wwwroot/img/poracer/`) |
 | PoCabinet | 3D circuit racer: solo career across four tracks, plus Senate Hill, Bedroom Floor GP (a toy-car track laid in a scanned bedroom: `wwwroot/models/bedroom.glb`, built by `scripts/blender/pocabinet-bedroom.py` in headless Blender, on stilts ~2 ft up, threading round the desks and drum kit, the room drawn as a Gaussian splat (`wwwroot/models/bedroom.ksplat`, registered onto the mesh by `scripts/blender/pocabinet-bedroom-splat.py`; the mesh is the collision model and the low-tier fallback)), Center Court (a toy-car circuit on the floor of a scanned outdoor basketball court, round the centre circle and both keys, the court drawn as a Gaussian splat; `wwwroot/models/court.glb` and `court.ksplat`, built by `scripts/blender/pocabinet-court.py` and `pocabinet-court-splat.py`) and a seeded daily circuit (a new layout every UTC day, the same for everyone, with its own board), AI officials, a best-lap leaderboard per track, and a server-simulated online lobby (8 drivers on a grid of up to 16 cars, the rest AI); tracks have hills and banking, pinch points and wide braking zones, a bus-stop chicane with raised kerbs, gravel traps and tarmac run-off, grip patches (resurfaced, dusty, bumpy, puddles in the rain), a racing line that rubbers in over the race (and dries first in the rain), split sections with a shorter joker lane, braking boards and corner numbers; track limits are enforced (all four wheels off and the lap does not count, here and on the server); a 64-car field where every driver has its own personality (bruisers, late brakers, wild cards…) and runs off the road now and then; damage is real: hits dent the body where they land, knock bumpers, wings and mirrors loose and off, break lamps and glass, and cost the car power, grip and alignment until it is wrecked and out; hills and banking are real physics (cars run faster downhill, slower uphill, banked turns hold them in, hard braking mid-corner washes wide); the demo is covered like a TV race: a director cuts to the closest battles, with a timing tower, callouts (lead changes, passes, fastest laps, wrecks, the flag), a caption for the car on screen and a rear-cam / onboard picture-in-picture; graphics on medium/high add ambient occlusion, wet-road and puddle reflections with raindrop ripples, per-object motion blur, 32k lit GPU smoke and fire that cars part, rigid-body crash debris (bumpers, wheels, shards), cars that get dirty, wet and scarred, and a felt slipstream (a tow arc on the gauge; the heat-haze shimmer and road mirage are switched off); sound adds an adaptive synthesized score (settings: **Music**), reverb zones (grandstand, gantry, open country) and gravel/sand/wet tyre sounds |
@@ -250,7 +250,7 @@ top-right sound toggle controls the same app-wide mute setting.
 ```powershell
 # prerequisites: .NET SDK 10.0.100 or a later feature band (global.json), Docker
 docker compose up -d azurite                                  # local table storage
-dotnet run --project src/PoMiniGames.API/PoMiniGames.API.csproj
+dotnet run --project src/PoMiniGames.Api/PoMiniGames.Api.csproj
 # → http://localhost:5080  (API + client, one origin)
 
 pwsh scripts/test-all.ps1                                     # full test suite
@@ -260,16 +260,17 @@ pwsh scripts/test-all.ps1                                     # full test suite
 
 ```
 src/
-├── PoMiniGames.API/            Host + vertical feature slices (Features/<Slice>)
+├── PoMiniGames.Api/            Host + vertical feature slices (Features/<Slice>)
 ├── PoMiniGames.Client/         Blazor WASM client (assembly: PoMiniGamesClient)
 ├── PoMiniGames.Infrastructure/ Table Storage, HighScoreDescriptor<T> leaderboards (all-time + weekly, ?period=week)
 ├── PoMiniGames.Domain/         Domain primitives (EloCalculator, GameKey, ...)
 └── PoMiniGames.Shared/         DTOs shared between client and server
 tests/
-├── PoMiniGames.Unit/           ≤100 tests (hermetic)
-├── PoMiniGames.Integration/    ≤50 tests (Testcontainers Azurite)
-├── PoMiniGames.E2EAPI/         ≤25 tests (HTTP contract)
-├── PoMiniGames.E2EUI/          ≤25 tests (Playwright)
+├── PoMiniGames.Unit/           ≤85 test methods (hermetic)
+├── PoMiniGames.Integration/    ≤34 test methods (Testcontainers Azurite)
+├── PoMiniGames.E2EAPI/         ≤18 test methods (HTTP contract)
+├── PoMiniGames.E2EUI/          ≤22 test methods (Playwright)
+├── *.test.mjs                  JS engine tests (node --test; CI runs them all)
 └── Shared/                     TestBudgetGuard (no test ever spends AI tokens)
 infra/                          Bicep (azd); deployed by .github/workflows/deploy.yml
 scripts/                        Working scripts only — see scripts/README.md
@@ -277,11 +278,11 @@ scripts/                        Working scripts only — see scripts/README.md
 
 ## Notes
 
-- Identity: No OAuth or login gate. First-time visitors on the main page are prompted by a
-  1980s retro arcade modal for 3-letter initials (`A–Z`, persisted in `localStorage`) or can
-  skip to 3 blank spaces (`"   "`), paired with a persistent browser `playerId` sent via
-  `X-Player-Id` / `X-Player-Initials` headers (and SignalR query params) and resolved by
-  `UsePlayerIdentity()` on the server.
+- Identity: no sign-in, no OAuth. First-time visitors on the main page are prompted for
+  3-letter initials (`A–Z`, persisted in `localStorage`) or can skip to 3 blank spaces
+  (`"   "`), paired with a persistent browser `playerId` sent via `X-Player-Id` /
+  `X-Player-Initials` headers (and SignalR query params) and resolved by `UsePlayerIdentity()`
+  (`Infrastructure/PlayerIdentityExtensions.cs`) on the server.
 - UI is native Blazor + plain CSS for thirteen of the games. PoMule was the first screen built
   on Radzen (Material Dark), and Brawl HQ (`/pobrawl/hq`) is the second; the hub, settings,
   leaderboards and the other games move to Radzen next. Until then each of those pages loads
@@ -290,14 +291,14 @@ scripts/                        Working scripts only — see scripts/README.md
 - **Each game is a Razor page plus a JavaScript engine, except PoMule**, whose rules are C# in
   `PoMiniGames.Shared/Games/PoMule` (unit-tested, seeded, deterministic) with JavaScript only
   drawing and moving the avatars. The server replays a submitted match from its seed and
-  action log (`PoMuleRunVerifier`). See `SPEC.md` and `CAPABILITY-MAP.md`.
+  action log (`PoMuleRunVerifier`).
 - **Two three.js versions.** PoEcosystem renders with three r186 `WebGPURenderer` and node
   materials (TSL), imported as `three-eco/webgpu` / `three-eco/tsl` / `three-eco/addons/`; it
   falls back to three's WebGL2 backend by itself, and `?ecoBackend=webgl2` forces that. Every
   other three.js game stays on r165 (`three`, `three/addons/`). Both are pinned, with SRI, in the
   import map in   `wwwroot/index.html`, and `cannon-es` (`0.20.0`) is vendored locally in `wwwroot/lib/cannon-es/` for zero-CDN worker physics. See the
-  [visual architecture dashboard](DOCS/20261029/VISUAL_ARCHITECTURE_DASHBOARD.html).
-- Offline-friendly PWA: finished scores park locally and sync on reconnect/sign-in.
+  [visual architecture dashboard](docs/20261112/VISUAL_ARCHITECTURE_DASHBOARD.html).
+- Offline-friendly PWA: finished scores park locally and sync on reconnect.
 - Deploy: `azd up` (App Service F1, resource group `PoMiniGames`).
 
 PoRacer ranks **best completed laps**, separately from final race times. Its legacy JSON

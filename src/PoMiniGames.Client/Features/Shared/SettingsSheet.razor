@@ -1,7 +1,6 @@
 @namespace PoMiniGamesClient.Features.Shared
 @inject SettingsService Settings
 @inject InviteService Invites
-@inject AuthStateService AuthState
 @inject UiFeedbackService Feedback
 @inject IJSRuntime JS
 @inject IWebAssemblyHostEnvironment HostEnv
@@ -257,12 +256,10 @@
     private bool _invitesBusy;
     private bool _inviteFailed;
 
-    private bool InvitesAvailable =>
-        AuthState.IsAuthenticated && _invites is InviteState.On or InviteState.Off;
+    private bool InvitesAvailable => _invites is InviteState.On or InviteState.Off;
 
     private string InviteHint => _invites switch
     {
-        _ when !AuthState.IsAuthenticated => "Sign in to be invited by players you have met.",
         InviteState.Unsupported => "This browser cannot show invites. On an iPhone, add the app to your Home Screen first.",
         InviteState.Denied => "Notifications are blocked for this site in your browser settings.",
         _ when _inviteFailed => "Could not turn invites on. Try again in a moment.",

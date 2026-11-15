@@ -2,7 +2,7 @@ using System.Net;
 using System.Net.Http.Json;
 using FluentAssertions;
 using PoMiniGames.Domain.Primitives;
-using PoMiniGames.Features.Auth;
+using PoMiniGames.Features.Identity;
 using PoMiniGames.TestUtilities;
 
 namespace PoMiniGames.Integration;
@@ -47,17 +47,21 @@ public sealed class LeaderboardEndpointTests : IClassFixture<TestWebApplicationF
 
     // ── PoBrawl fastest-KO high scores ────────────────────────────────────
 
-    /// <summary>A client identified by <paramref name="user"/> via X-Player-Id / X-Player-Initials, armed.</summary>
-    private async Task<HttpClient> SignedInAsync(string user)
+    /// <summary>
+    /// A client identified by <paramref name="user"/> and <paramref name="initials"/> via
+    /// X-Player-Id / X-Player-Initials, armed. The boards store the initials, so a test that reads
+    /// its own row back gives each player initials of its own (<see cref="RandomInitials"/>).
+    /// </summary>
+    private async Task<HttpClient> SignedInAsync(string user, string initials = "TST")
     {
-        var client = _factory.CreateClient();
-        client.DefaultRequestHeaders.Remove("X-Player-Id");
-        client.DefaultRequestHeaders.Remove("X-Player-Initials");
-        client.DefaultRequestHeaders.Add("X-Player-Id", user);
-        client.DefaultRequestHeaders.Add("X-Player-Initials", user.Length >= 3 ? user[..3].ToUpperInvariant() : "TST");
+        var client = _factory.CreateClient().AsPlayer(user, initials);
         await client.ArmAntiforgeryAsync();
         return client;
     }
+
+    /// <summary>Three random letters: 17,576 combinations, so two players in one run do not share a row name.</summary>
+    private static string RandomInitials() =>
+        string.Concat(Enumerable.Range(0, 3).Select(_ => (char)('A' + Random.Shared.Next(26))));
 
     [Fact]
     public async Task PoBrawlHighScores_PostRanksAscending_AndRejectsBadInput()
@@ -65,11 +69,10 @@ public sealed class LeaderboardEndpointTests : IClassFixture<TestWebApplicationF
         if (!_factory.DockerAvailable) return;
 
         // Two players; the faster KO should rank ahead of the slower one. The stored name is the
-        // claim name, so each needs its own identity.
-        var slowName = $"ko_slow_{Guid.NewGuid():N}"[..20];
-        var fastName = $"ko_fast_{Guid.NewGuid():N}"[..20];
-        using var slowClient = await SignedInAsync(slowName);
-        using var fastClient = await SignedInAsync(fastName);
+        // caller's initials, never the body's, so each needs initials of its own.
+        var slowName = RandomInitials();
+        using var slowClient = await SignedInAsync($"ko_slow_{Guid.NewGuid():N}"[..20], slowName);
+        using var fastClient = await SignedInAsync($"ko_fast_{Guid.NewGuid():N}"[..20], RandomInitials());
         var slow = new { PlayerInitials = "SLW", KoTimeSeconds = 42.5, Character = "trump", Date = DateTime.UtcNow.ToString("o") };
         var fast = new { PlayerInitials = "FST", KoTimeSeconds = 7.25, Character = "obama", Date = DateTime.UtcNow.ToString("o") };
 
@@ -114,10 +117,10 @@ public sealed class LeaderboardEndpointTests : IClassFixture<TestWebApplicationF
     {
         if (!_factory.DockerAvailable) return;
 
-        var name = $"ladder_test_{Guid.NewGuid():N}"[..24];
-        var rival = $"ladder_riva_{Guid.NewGuid():N}"[..24];
-        using var nameClient = await SignedInAsync(name);
-        using var rivalClient = await SignedInAsync(rival);
+        var name = RandomInitials();
+        var rival = RandomInitials();
+        using var nameClient = await SignedInAsync($"ladder_test_{Guid.NewGuid():N}"[..24], name);
+        using var rivalClient = await SignedInAsync($"ladder_riva_{Guid.NewGuid():N}"[..24], rival);
 
         async Task<System.Text.Json.JsonElement> Post(HttpClient client, object body, HttpStatusCode expected)
         {
@@ -167,8 +170,8 @@ public sealed class LeaderboardEndpointTests : IClassFixture<TestWebApplicationF
         var beaten = entries.Select(e => e.GetProperty("value").GetDouble()).ToList();
         beaten.Should().BeInDescendingOrder(because: "most presidents beaten ranks first");
 
-        // Same rule as the KO board: a signed-in caller's blank typed name is fine (the claim
-        // name is stored); an out-of-range count is still rejected.
+        // Same rule as the KO board: a blank typed name is fine (the caller's initials are
+        // stored); an out-of-range count is still rejected.
         using var blankClient = await SignedInAsync($"ladder_blank_{Guid.NewGuid():N}"[..24]);
         await Post(blankClient, new { PlayerName = "", PresidentsBeaten = 3 }, HttpStatusCode.Created);
         await Post(blankClient, new { PlayerName = "abc", PresidentsBeaten = PoBrawlRoster.Count + 1 }, HttpStatusCode.BadRequest);

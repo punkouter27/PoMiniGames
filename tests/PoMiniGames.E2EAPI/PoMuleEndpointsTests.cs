@@ -18,19 +18,18 @@ public class PoMuleEndpointsTests
     public PoMuleEndpointsTests(PoMiniGamesE2EFixture factory) => _factory = factory;
 
     [Fact]
-    public async Task ScoreRoutes_AreAuthGated_RangeChecked_AndFeedTheUnifiedBoard()
+    public async Task ScoreRoutes_RefuseAnUnarmedWrite_RangeChecked_AndFeedTheUnifiedBoard()
     {
         using var client = _factory.CreateClient();
         object Run(int netWorth, int species = 7) => new { netWorth, species, colonySurvived = true };
 
         (await client.GetAsync("/api/pomule/highscores"))
-            .StatusCode.Should().BeOneOf(HttpStatusCode.Unauthorized, HttpStatusCode.Redirect, HttpStatusCode.Found);
+            .StatusCode.Should().Be(HttpStatusCode.OK, "the board is a public read");
         (await client.PostAsJsonAsync("/api/pomule/highscores", Run(15_000)))
-            .StatusCode.Should().BeOneOf(HttpStatusCode.Unauthorized, HttpStatusCode.Redirect, HttpStatusCode.Found);
+            .StatusCode.Should().Be(HttpStatusCode.Forbidden, "a write needs the antiforgery token");
 
         var player = $"Mule{Guid.NewGuid().ToString("N")[..8]}";
-        var login = await client.GetAsync($"/auth/login/fake?displayName={player}");
-        login.IsSuccessStatusCode.Should().BeTrue("guest login must succeed under the Test environment");
+        client.AsPlayer($"{player}");
         await client.ArmAntiforgeryAsync();
 
         var saved = await client.PostAsJsonAsync("/api/pomule/highscores", Run(15_000));

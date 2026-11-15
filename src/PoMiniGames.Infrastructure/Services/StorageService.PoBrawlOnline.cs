@@ -23,7 +23,7 @@ namespace PoMiniGames.Infrastructure.Services;
 /// </para>
 /// <para>
 /// Anonymous guests cannot participate in 1v1 (the lobby is auth-gated), so every row
-/// in this table maps to a real principal id. A guest who never signs in never
+/// in this table maps to a real principal id. A caller without a player id never
 /// accumulates here.
 /// </para>
 /// </remarks>

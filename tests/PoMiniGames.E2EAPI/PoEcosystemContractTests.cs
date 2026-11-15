@@ -23,9 +23,11 @@ public class PoEcosystemContractTests
 
     [Theory]
     [InlineData("GET", "/api/ecosystem/worlds", HttpStatusCode.Unauthorized)]
-    [InlineData("PUT", "/api/ecosystem/worlds/1?name=x", HttpStatusCode.Unauthorized)]
-    [InlineData("DELETE", "/api/ecosystem/worlds/1", HttpStatusCode.Unauthorized)]
-    [InlineData("POST", "/api/ecosystem/worlds/1/share", HttpStatusCode.Unauthorized)]
+    // Writes without the antiforgery token stop there (403); a read with no player id has no
+    // slots to list (401, from the endpoint itself).
+    [InlineData("PUT", "/api/ecosystem/worlds/1?name=x", HttpStatusCode.Forbidden)]
+    [InlineData("DELETE", "/api/ecosystem/worlds/1", HttpStatusCode.Forbidden)]
+    [InlineData("POST", "/api/ecosystem/worlds/1/share", HttpStatusCode.Forbidden)]
     [InlineData("GET", "/api/ecosystem/gallery?top=5", HttpStatusCode.OK)]
     [InlineData("GET", "/api/ecosystem/gallery/nosuchcode/data", HttpStatusCode.NotFound)]
     public async Task Routes_AnswerAnonymousCallersAsContracted(string method, string path, HttpStatusCode expected)

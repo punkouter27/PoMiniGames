@@ -5,7 +5,6 @@ using System.Text.Json.Serialization;
 using PoMiniGamesClient.Models;
 using PoMiniGames.Shared.Games;
 
-using PoMiniGamesClient.Services.Auth;
 using PoMiniGamesClient.Services.Http;
 using PoMiniGamesClient.Services.Interop;
 using PoMiniGamesClient.Services.Play;
@@ -27,11 +26,6 @@ namespace PoMiniGamesClient.Services.Http;
     PropertyNameCaseInsensitive = true,
     DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull,
     UseStringEnumConverter = true)]
-// Auth
-[JsonSerializable(typeof(AuthClientConfiguration))]
-[JsonSerializable(typeof(AuthenticatedUserProfile))]
-[JsonSerializable(typeof(DevLoginRequest))]
-[JsonSerializable(typeof(AuthHandshake))]
 // CSRF: AntiforgeryHandler deserializes the token endpoint's payload through this
 // context so the token fetch stays trim-safe (it runs on the WASM HttpClient pipeline).
 [JsonSerializable(typeof(AntiforgeryTokenDto))]

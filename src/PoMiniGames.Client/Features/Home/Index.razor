@@ -35,9 +35,8 @@
        CSS gradient on browsers without WebGL2 (Safari TP, etc.). *@
     <canvas @ref="_ambientCanvas" class="home-ambient" aria-hidden="true"></canvas>
 
-    @* The page's heading, its finder and the demo reel, in the shared header: the brand
-       above already says the name, so the h1 is for the outline only, and a page whose
-       only navigation is fourteen cards needs a way to find one of them by typing.
+    @* The page's heading and the demo reel, in the shared header: the brand above already
+       says the name, so the h1 is for the outline only.
 
        Leaderboards, My Stats and Settings live in the top bar's account menu, on every
        route. Links carrying data-hub-nav are launched by js/app.js: an in-app navigation
@@ -45,22 +44,6 @@
     <PageHeader Title="PoMiniGames" VisuallyHidden="true">
         <Actions>
             <div class="home-tools">
-                @* A native search field rather than a Radzen one: the hub does not load
-                   Radzen's theme or script, and adding both to the most-visited page to
-                   style one input would cost more than the whole grid. *@
-                <div class="home-search" role="search">
-                    <span class="material-symbols-outlined home-search__icon" aria-hidden="true">search</span>
-                    <input type="search" class="home-search__input"
-                           placeholder="Find a game"
-                           aria-label="Find a game by name or description"
-                           value="@_query"
-                           @oninput="OnSearchInput" />
-                    @if (_query.Length > 0)
-                    {
-                        <button type="button" class="home-search__clear" aria-label="Clear search" @onclick="ClearSearch">×</button>
-                    }
-                </div>
-
                 @* aria-pressed is a literal string, not a bare bool: Blazor renders a
                    bool-valued attribute as an HTML boolean attribute, which is not a valid
                    ARIA state. The visible text shortens on a narrow phone, so the full
@@ -96,7 +79,7 @@
     </div>
 
     <div class="home-grid">
-        @foreach (var game in VisibleGames)
+        @foreach (var game in GameCatalog.AllSorted)
         {
             var playable = IsPlayable(game.Primary);
             <article class="home-card" aria-labelledby="@($"home-card-{game.Key.Value}")">
@@ -158,13 +141,6 @@
         }
     </div>
 
-    @if (VisibleGames.Count == 0)
-    {
-        <div class="home-no-results" role="status">
-            <p>No game matches “@_query.Trim()”.</p>
-            <button type="button" class="app-btn app-btn--secondary app-btn--sm" @onclick="ClearSearch">Show every game</button>
-        </div>
-    }
 
     @* Home page activity feed: surfaces the player's most recent matches
        so the page never feels empty even on a fresh install. Pulled from the
@@ -200,32 +176,6 @@
     // was being clipped mid-word by the card's paint containment.
     private const int HomeChipLimit = 3;
 
-    // The finder's query. Filtering happens in memory over fourteen catalogue entries,
-    // so there is nothing to debounce and no round trip to make.
-    private string _query = "";
-
-    private List<CatalogGame> VisibleGames
-    {
-        get
-        {
-            var q = _query.Trim();
-            if (q.Length == 0) return [.. GameCatalog.AllSorted];
-            return GameCatalog.AllSorted
-                .Where(g => Matches(g, q))
-                .ToList();
-        }
-    }
-
-    private static bool Matches(CatalogGame game, string query) =>
-        game.Title.Contains(query, StringComparison.OrdinalIgnoreCase)
-        || game.Description.Contains(query, StringComparison.OrdinalIgnoreCase)
-        || game.Modes.Any(m =>
-            (m.ChipLabel?.Contains(query, StringComparison.OrdinalIgnoreCase) ?? false)
-            || (m.ChipDescription?.Contains(query, StringComparison.OrdinalIgnoreCase) ?? false));
-
-    private void OnSearchInput(ChangeEventArgs e) => _query = e.Value?.ToString() ?? "";
-
-    private void ClearSearch() => _query = "";
 
     // Activity feed (recent matches).
     private IReadOnlyList<ActivityFeedService.FeedItem> _activity = Array.Empty<ActivityFeedService.FeedItem>();

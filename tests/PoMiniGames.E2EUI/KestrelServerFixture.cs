@@ -94,22 +94,15 @@ public class KestrelServerFixture : WebApplicationFactory<Program>, IAsyncLifeti
 
     protected override void ConfigureWebHost(IWebHostBuilder builder)
     {
-        // E2E-UI tests run under the "Test" environment
-        // so the FakeAuth scheme is opt-in (via Auth:EnableFakeAuth below), the
-        // DevCookie path is registered for the SPA's auto-guest flow, and
-        // StartupSecretValidator skips its secrets check.
+        // E2E-UI tests run under the "Test" environment so StartupSecretValidator skips its
+        // secrets check. Identity needs no setup: the page itself sends the browser's player
+        // id and initials with every request.
         builder.UseEnvironment("Test");
 
         builder.ConfigureAppConfiguration((_, cfg) =>
         {
             var overrides = new Dictionary<string, string?>(TestBudgetGuard.Overrides);
 
-            // BFF header overrides: enable the FakeAuth scheme so e2e tests can
-            // inject identity variations through X-Fake-User / X-Fake-Roles headers.
-            overrides["Auth:EnableFakeAuth"] = "true";
-            // Browser tests run against the login-gated SPA; auto-sign-in as Guest so
-            // the home page renders without a manual auth step.
-            overrides["Auth:AutoGuestLogin"] = "true";
             // Mirror Azurite to BOTH TableService and BlobService sections.
             foreach (var (k, v) in TestBudgetGuard.StorageOverrides(_azuriteConnectionString, "pominigames-e2eui"))
             {

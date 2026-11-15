@@ -1,5 +1,5 @@
 using Microsoft.AspNetCore.Mvc;
-using PoMiniGames.Features.Auth;
+using PoMiniGames.Features.Identity;
 using PoMiniGames.Features.Integrity;
 using PoMiniGames.Shared.Games.PoEcosystem;
 

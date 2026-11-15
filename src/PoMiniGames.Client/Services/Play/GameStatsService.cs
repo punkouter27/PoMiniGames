@@ -4,7 +4,6 @@ using PoMiniGamesClient.Models;
 using System.Text.Json;
 using System.Text.Json.Serialization.Metadata;
 
-using PoMiniGamesClient.Services.Auth;
 using PoMiniGamesClient.Services.Http;
 using PoMiniGamesClient.Services.Interop;
 using PoMiniGamesClient.Services.Play;
@@ -103,10 +102,8 @@ public class GameStatsService
 
     public AdaptiveRating GetAdaptiveRating(string gameKey, string playerName)
     {
-        // Per-player slot: switching identities on the same browser (e.g. Guest ↔
-        // Microsoft sign-in) must never wipe another player's accumulated rating —
-        // the Guest's ELO keeps evolving across guest sessions no matter who else
-        // played in between.
+        // Per-player slot: changing initials on the same browser must never wipe
+        // another player's accumulated rating.
         var stored = LocalStorageService.GetItem(
             $"{AdaptiveKeyPrefix}{gameKey}_{playerName}", ApiJsonContext.Default.AdaptiveRating);
         if (stored != null && stored.PlayerName == playerName)
@@ -170,18 +167,17 @@ public class GameStatsService
 
     /// <remarks>
     /// Keyed by the stable player id, NOT the display name. The name is mutable and
-    /// resolves late: it starts empty, is filled by an async localStorage read, and is
-    /// then overwritten by <see cref="PlayerNameService.SetPlayerNameFromAuth"/> when a
-    /// guest signs in. Keying on it meant a session recorded before any of those steps
-    /// was filed under a name the profile never reads back — the count silently showed
-    /// zero, and signing in orphaned whatever had accumulated.
+    /// resolves late: it starts empty, is filled by an async localStorage read, and can be
+    /// changed from the hub at any time. Keying on it meant a session recorded before the
+    /// read finished was filed under a name the profile never reads back — the count
+    /// silently showed zero.
     ///
     /// The id is created synchronously on first use and never changes, so it also
     /// removes the ordering hazard entirely: callers need not await anything.
     ///
     /// Trade-off: two identities used in the same browser share one counter. For a
     /// "times played" tally that is the better failure mode than losing the count on
-    /// every sign-in.
+    /// every change of initials.
     /// </remarks>
     private string PlayCountKey(string gameKey) =>
         $"{PlayCountKeyPrefix}{gameKey}_{GetOrCreatePlayerId()}";
@@ -205,7 +201,7 @@ public class GameStatsService
     }
 
     /// <summary>
-    /// The catalogue game a page address belongs to ("pomule/1player?autoGuest=1" →
+    /// The catalogue game a page address belongs to ("pomule/1player?kiosk=2" →
     /// "pomule"), or null for an address that is not a game. Matched on the first path
     /// segment of each game's mode URLs, so it needs no list of its own — Fun Quiz lives at
     /// /funquiz but keeps its stats under "pofunquiz", and that is the key this returns.

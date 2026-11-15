@@ -12,7 +12,6 @@
 @inject ApiService ApiService
 @inject IJSRuntime JSRuntime
 @inject SettingsService Settings
-@inject AuthStateService Auth
 @inject KioskCoordinator Kiosk
 @inject NavigationManager Nav
 
@@ -36,6 +35,9 @@
            GameKey="pobrawldemo"
            RequiresWebGl="true"
            GameSummary="@FinalSummary"
+           OptionsHeading="Cup controls"
+           OptionsContent="@CupControls"
+           DiagnosticsContent="@BracketHub"
            Announcement="@_announcement">
     @if (!_introDone)
     {
@@ -63,80 +65,13 @@
                 <PoBrawlHud @ref="_hud"
                             P1Name="@HudName(_p1Char)" P2Name="@HudName(_p2Char)"
                             P1Fighter="@Name(_p1Char)" P2Fighter="@Name(_p2Char)"
-                            Training="false"
-                            Below="@BoutChip" />
+                            Training="false" />
             }
         </div>
 
-        @if (_introDone)
-        {
-            @* One compact bar: the speed segment, the bracket drawer, and one camera button that
-               steps through the broadcast set-ups. mousedown:preventDefault keeps a clicked button
-               from taking focus (see PoBrawlPage's trainbar). *@
-            <div class="pt-bar" role="toolbar" aria-label="Tournament controls" @onmousedown:preventDefault="true">
-                <span class="pt-speed" role="group" aria-label="Bout speed">
-                    @foreach (var s in Speeds)
-                    {
-                        var speed = s;
-                        <button type="button" class="pt-speed-btn"
-                                aria-pressed="@(speed == _speed ? "true" : "false")"
-                                title="@($"Play the bouts at {speed}× speed")"
-                                @onclick="() => SetSpeedAsync(speed)">@(speed)×</button>
-                    }
-                </span>
-                @* The drawer never opens by itself (the arena's jumbotrons carry the bracket);
-                   a fresh result only makes this button glow until it is opened. *@
-                <button type="button" class="pb-seg pt-btn @(_bracketOpen ? "pt-seg--on" : "") @(_bracketFresh && !_bracketOpen ? "pt-btn--fresh" : "")"
-                        aria-expanded="@(_bracketOpen ? "true" : "false")" aria-controls="pt-drawer"
-                        @onclick="ToggleBracket">🗂 Bracket</button>
-                <button type="button" class="pb-seg pt-btn"
-                        title="@CameraHint"
-                        aria-label="@($"Camera: {CameraName}. Press for {NextCameraName}.")"
-                        @onclick="CycleCameraAsync">🎥 @CameraName</button>
-            </div>
-        }
-
-        @if (_introDone && _bracketOpen && _cup is not null)
-        {
-            @* A drawer, not a modal: the arena stays in view beside it (under it on a phone). *@
-            <aside class="pt-drawer" id="pt-drawer" aria-label="Tournament">
-                <div class="pt-drawer-head">
-                    <div class="pt-tabs" role="tablist" aria-label="Tournament views">
-                        @foreach (var t in DrawerTabs)
-                        {
-                            var tab = t;
-                            <button type="button" role="tab" id="pt-tab-@tab" class="pt-tab"
-                                    aria-selected="@(tab == _drawerTab ? "true" : "false")" aria-controls="pt-tabpanel"
-                                    tabindex="@(tab == _drawerTab ? 0 : -1)"
-                                    @onclick="() => _drawerTab = tab">@DrawerTabLabel(tab)</button>
-                        }
-                    </div>
-                    <button type="button" class="pt-drawer-close" aria-label="Close the bracket" @onclick="ToggleBracket">✕</button>
-                </div>
-                @if (_lastDecided is { } last)
-                {
-                    <p class="pt-panel-news @(last.IsUpset ? "pt-panel-news--upset" : "")" role="status">
-                        @if (last.IsUpset)
-                        {
-                            <span class="pt-upset-tag">UPSET!</span>
-                        }
-                        @ResultSentence(last, tagged: false)
-                    </p>
-                }
-                <div class="pt-tabpanel" id="pt-tabpanel" role="tabpanel" aria-labelledby="pt-tab-@_drawerTab">
-                    @if (_drawerTab == "next")
-                    {
-                        @NextBout
-                    }
-                    else
-                    {
-                        @Bracket
-                    }
-                </div>
-                @* Cup titles live on Brawl HQ, with every other Brawl board. *@
-                <a class="pt-hq-link" href="/pobrawl/hq">📊 Cup titles and every board on Brawl HQ</a>
-            </aside>
-        }
+        @* No floating control bar: the arena carries only the fight. The speed and camera
+           controls sit in the shell's options gear, and the bracket lives in the Tab hub
+           (GameShell's DiagnosticsContent) with the rest of the readouts. *@
     </div>
 </GameShell>
 
@@ -220,32 +155,80 @@
         _ => "Final",
     };
 
-    // ── Camera: one button through the director's set-ups (director.js + its iso PiP) ──
-    // Broadcast = the director cutting angles with the picture-in-picture close-up; Director =
-    // the cuts alone; Ringside = the fixed side view.
-    private string CameraName => _director ? (_isoCam ? "Broadcast" : "Director") : "Ringside";
-    private string NextCameraName => _director ? (_isoCam ? "Director" : "Ringside") : "Broadcast";
-    private string CameraHint => _director
-        ? _isoCam ? "TV cuts with a picture-in-picture close-up (the close-up needs medium or high graphics)" : "TV cuts between camera angles"
-        : "The fixed ringside view";
+    // ── Camera: one button through the director's set-ups (director.js) ──
+    // Broadcast = the director cutting angles; Ringside = the fixed side view.
+    private string CameraName => _director ? "Broadcast" : "Ringside";
+    private string NextCameraName => _director ? "Ringside" : "Broadcast";
+    private string CameraHint => _director ? "TV cuts between camera angles" : "The fixed ringside view";
 
-    private async Task CycleCameraAsync()
+    private async Task ToggleCameraAsync()
     {
-        (_director, _isoCam) = (_director, _isoCam) switch
-        {
-            (true, true) => (true, false),
-            (true, false) => (false, false),
-            _ => (true, true),
-        };
-        try
-        {
-            await JSRuntime.InvokeVoidAsync("PoBrawl.setDirector", _director);
-            await JSRuntime.InvokeVoidAsync("PoBrawl.setIsoCam", _isoCam);
-        }
+        _director = !_director;
+        try { await JSRuntime.InvokeVoidAsync("PoBrawl.setDirector", _director); }
         catch { }
     }
 
-    // ── The drawer's tabs ──
+    /// <summary>The shell's options drawer (the gear beside the title): the mid-bout controls.</summary>
+    private RenderFragment CupControls => @<div class="pt-controls">
+        <div class="pt-controls-row">
+            <span class="pt-controls-label">Bout speed</span>
+            <span class="pt-speed" role="group" aria-label="Bout speed">
+                @foreach (var s in Speeds)
+                {
+                    var speed = s;
+                    <button type="button" class="pt-speed-btn"
+                            aria-pressed="@(speed == _speed ? "true" : "false")"
+                            title="@($"Play the bouts at {speed}× speed")"
+                            @onclick="() => SetSpeedAsync(speed)">@(speed)×</button>
+                }
+            </span>
+        </div>
+        <div class="pt-controls-row">
+            <span class="pt-controls-label">Camera</span>
+            <button type="button" class="pb-seg pt-btn"
+                    title="@CameraHint"
+                    aria-label="@($"Camera: {CameraName}. Press for {NextCameraName}.")"
+                    @onclick="ToggleCameraAsync">🎥 @CameraName</button>
+        </div>
+    </div>;
+
+    // ── The bracket hub: the tournament views inside the Tab diagnostics panel ──
+    private RenderFragment? BracketHub => _introDone && _cup is not null ? @<div class="pt-hub">
+        @if (_lastDecided is { } last)
+        {
+            <p class="pt-panel-news @(last.IsUpset ? "pt-panel-news--upset" : "")" role="status">
+                @if (last.IsUpset)
+                {
+                    <span class="pt-upset-tag">UPSET!</span>
+                }
+                @ResultSentence(last, tagged: false)
+            </p>
+        }
+        <div class="pt-tabs" role="tablist" aria-label="Tournament views">
+            @foreach (var t in DrawerTabs)
+            {
+                var tab = t;
+                <button type="button" role="tab" id="pt-tab-@tab" class="pt-tab"
+                        aria-selected="@(tab == _drawerTab ? "true" : "false")" aria-controls="pt-tabpanel"
+                        tabindex="@(tab == _drawerTab ? 0 : -1)"
+                        @onclick="() => _drawerTab = tab">@DrawerTabLabel(tab)</button>
+            }
+        </div>
+        <div class="pt-tabpanel" id="pt-tabpanel" role="tabpanel" aria-labelledby="pt-tab-@_drawerTab">
+            @if (_drawerTab == "next")
+            {
+                @NextBout
+            }
+            else
+            {
+                @Bracket
+            }
+        </div>
+        @* Cup titles live on Brawl HQ, with every other Brawl board. *@
+        <a class="pt-hq-link" href="/pobrawl/hq">📊 Cup titles and every board on Brawl HQ</a>
+    </div> : null;
+
+    // ── The hub's tabs ──
     private static readonly string[] DrawerTabs = ["bracket", "next"];
     private string _drawerTab = "bracket";
 
@@ -293,9 +276,7 @@
             </details>
             <p class="pt-draw-note">@(_ratingsLoaded ? $"{_cup.Field.Count} fighters · {PoBrawlTournament.Size} slots · BYEs advance automatically · Elo starts from the global fighter board." : "Loading ratings from the fighter board…")</p>
         }
-        <p class="pt-draw-note">@(Auth.IsAuthenticated
-            ? "Every completed bout automatically updates global fighter Elo; BYEs do not affect ratings."
-            : "Every completed bout updates this tournament's Elo; sign in to save ratings to the global board.")</p>
+        <p class="pt-draw-note">Every completed bout automatically updates global fighter Elo; BYEs do not affect ratings.</p>
     </div>;
 
     private RenderFragment PreviewRound(string title, IEnumerable<PoBrawlTournament.Bout> bouts) => @<section class="pt-menu-round">
@@ -541,11 +522,9 @@
 
     private static string Signed(int n) => n >= 0 ? $"+{n}" : n.ToString();
 
-    private string ReportSummary => !Auth.IsAuthenticated
-        ? "These bouts were not reported to the global board."
-        : _reportFailed
-            ? $"The global Elo board accepted {_reportedMatches} of {_cup!.Field.Count - 1} match results; local standings include every result."
-            : $"All {_reportedMatches} match results were reported to the global fighter Elo board; BYEs do not change Elo.";
+    private string ReportSummary => _reportFailed
+        ? $"The global Elo board accepted {_reportedMatches} of {_cup!.Field.Count - 1} match results; local standings include every result."
+        : $"All {_reportedMatches} match results were reported to the global fighter Elo board; BYEs do not change Elo.";
 
     // "UPSET! Carter beats Reagan by KO in 19 seconds as a 31% underdog and advances (Elo +17)."
     // `tagged` false leaves the "UPSET!" to the bracket's own stamp.
@@ -604,9 +583,6 @@
         {
             Nav.NavigateTo("/pobrawl/demo" + uri.Query, replace: true);
         }
-        // Under ?autoGuest=1 the guest session can settle after first render: the report
-        // box appears with it.
-        Auth.StateChanged += OnAuthChanged;
         _playerName = PlayerNameService.GetPlayerName();
         _titles = PoBrawlProgressBook.LoadTitles();
         _director = _isoCam = PoBrawlShowPrefs.IsFull;
@@ -696,8 +672,6 @@
         if (_bracketOpen) _bracketFresh = false;
     }
 
-    private void OnAuthChanged() => _ = InvokeAsync(StateHasChanged);
-
     // ── Engine callbacks (the same contract PoBrawlPage implements) ─────────
 
     /// <summary>HUD pump — exact arity contract with game.js _pushHud (see PoBrawlPage.OnHud).</summary>
@@ -739,14 +713,11 @@
         await InvokeAsync(StateHasChanged);
         var resultHold = Task.Delay(ResultHoldMs);
 
-        if (Auth.IsAuthenticated)
-        {
-            if (await ApiService.SubmitPoBrawlDemoResultAsync(
-                    new PoBrawlDemoResultRequest(decided.WinnerId!, decided.LoserId!, IsDraw: false)))
-                _reportedMatches++;
-            else
-                _reportFailed = true;
-        }
+        if (await ApiService.SubmitPoBrawlDemoResultAsync(
+                new PoBrawlDemoResultRequest(decided.WinnerId!, decided.LoserId!, IsDraw: false)))
+            _reportedMatches++;
+        else
+            _reportFailed = true;
 
         if (generation != _generation) return;
 
@@ -791,7 +762,6 @@
     public async ValueTask DisposeAsync()
     {
         ++_generation;
-        Auth.StateChanged -= OnAuthChanged;
         try { await JSRuntime.InvokeVoidAsync("PoBrawl.destroy"); } catch { }
         _ref?.Dispose();
         _ref = null;

@@ -81,8 +81,11 @@ public class PlayerNameService
                 }
 
                 SyncHubIdentity();
-                StateChanged?.Invoke();
+                // Ready first, then announce: the prompt re-checks IsInitialized when this event
+                // fires, and announcing before the task completed left a first-time visitor with
+                // no prompt at all (it saw "not initialized" and nothing ever asked again).
                 _initializedTcs.TrySetResult();
+                StateChanged?.Invoke();
                 return;
             }
         }
@@ -98,6 +101,7 @@ public class PlayerNameService
         _initials = BlankInitials;
         SyncHubIdentity();
         _initializedTcs.TrySetResult();
+        StateChanged?.Invoke();
     }
 
     public void RequestOpenPrompt()

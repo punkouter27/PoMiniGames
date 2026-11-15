@@ -1,7 +1,7 @@
 using Microsoft.AspNetCore.Mvc;
 using PoMiniGames.Domain.Models;
 using PoMiniGames.Domain.Primitives;
-using PoMiniGames.Features.Auth;
+using PoMiniGames.Features.Identity;
 using PoMiniGames.Features.Integrity;
 using PoMiniGames.Infrastructure.Services;
 using PoMiniGames.Shared.Games;

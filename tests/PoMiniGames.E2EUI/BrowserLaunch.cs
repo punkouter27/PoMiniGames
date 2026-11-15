@@ -20,3 +20,24 @@ public static class BrowserLaunch
         };
     }
 }
+
+/// <summary>Browser contexts for the E2E-UI tier.</summary>
+public static class PlayerContext
+{
+    /// <summary>
+    /// A fresh context for a returning player: three initials are already saved in this browser,
+    /// so the first-visit initials prompt (which blocks every page until answered) stays shut and
+    /// the test sees the page it navigated to. Random letters by default, so two contexts in one
+    /// test are two different players on the boards and in the lobbies.
+    /// </summary>
+    public static async Task<IBrowserContext> NewPlayerContextAsync(
+        this IBrowser browser, BrowserNewContextOptions? options = null, string? initials = null)
+    {
+        var context = await browser.NewContextAsync(options ?? new BrowserNewContextOptions());
+        var letters = initials ?? string.Concat(Enumerable.Range(0, 3).Select(_ => (char)('A' + Random.Shared.Next(26))));
+        // Before any page script runs, and only if the page has not saved initials of its own.
+        await context.AddInitScriptAsync(
+            $"if (!localStorage.getItem('pominigames:initials')) localStorage.setItem('pominigames:initials', '{letters}');");
+        return context;
+    }
+}

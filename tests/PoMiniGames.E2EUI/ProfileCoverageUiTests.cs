@@ -26,26 +26,11 @@ public class ProfileCoverageUiTests
 
     public ProfileCoverageUiTests(KestrelServerFixture fixture) => _fixture = fixture;
 
-    private async Task<IPage> NewSignedInPageAsync(IBrowser browser)
+    private static async Task<IPage> NewPhonePageAsync(IBrowser browser)
     {
-        var origin = new Uri(_fixture.ServerAddress);
-        var context = await browser.NewContextAsync(new BrowserNewContextOptions
+        var context = await browser.NewPlayerContextAsync(new BrowserNewContextOptions
         {
             ViewportSize = MobileViewport.Portrait,
-        });
-        await context.RouteAsync("**/*", async route =>
-        {
-            if (new Uri(route.Request.Url).Authority != origin.Authority)
-            {
-                await route.ContinueAsync();
-                return;
-            }
-            var headers = new Dictionary<string, string>(route.Request.Headers)
-            {
-                ["X-Fake-User"] = "test-user",
-                ["X-Fake-Roles"] = "Player",
-            };
-            await route.ContinueAsync(new RouteContinueOptions { Headers = headers });
         });
         return await context.NewPageAsync();
     }
@@ -55,10 +40,10 @@ public class ProfileCoverageUiTests
     {
         using var playwright = await Playwright.CreateAsync();
         await using var browser = await playwright.Chromium.LaunchAsync(BrowserLaunch.Options());
-        var page = await NewSignedInPageAsync(browser);
+        var page = await NewPhonePageAsync(browser);
         await using var guard = PlaywrightErrorGuard.Watch(page);
 
-        await page.GotoAsync($"{_fixture.ServerAddress}profile?autoGuest=1",
+        await page.GotoAsync($"{_fixture.ServerAddress}profile",
             new PageGotoOptions { WaitUntil = WaitUntilState.NetworkIdle });
         await page.Locator(".prf-game-name").First.WaitForAsync(
             new LocatorWaitForOptions { Timeout = 30_000 });
@@ -103,10 +88,10 @@ public class ProfileCoverageUiTests
     {
         using var playwright = await Playwright.CreateAsync();
         await using var browser = await playwright.Chromium.LaunchAsync(BrowserLaunch.Options());
-        var page = await NewSignedInPageAsync(browser);
+        var page = await NewPhonePageAsync(browser);
         await using var guard = PlaywrightErrorGuard.Watch(page);
 
-        await page.GotoAsync($"{_fixture.ServerAddress}?autoGuest=1",
+        await page.GotoAsync($"{_fixture.ServerAddress}",
             new PageGotoOptions { WaitUntil = WaitUntilState.NetworkIdle });
 
         // The home page is one game-major grid: a card per game, a chip per mode,

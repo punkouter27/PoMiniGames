@@ -24,7 +24,7 @@ internal static class RateLimitingExtensions
             // partition would let a single attacker behind a corporate NAT — or a single
             // AutoGuest browser on a shared connection — saturate the bucket for every
             // legitimate user behind that NAT. The compound partition keeps anonymous bursts from
-            // poisoning authenticated traffic and lets DevCookie / JWT identities
+            // poisoning authenticated traffic and lets player-id identities
             // get their own bucket on top of an IP-level bucket for anon traffic.
             opts.AddPolicy("highscores", ctx =>
                 RateLimitPartition.GetFixedWindowLimiter(
@@ -179,7 +179,7 @@ internal static class RateLimitingExtensions
     /// user id (oid / NameIdentifier claim) — or <c>anon</c> when absent — is
     /// appended to the remote IP, so two distinct identities sharing an IP get
     /// separate buckets. The cookie session id (resolved by the auth middleware)
-    /// is used as a fallback identity for unauthenticated DevCookie requests.
+    /// is used as a fallback identity for requests that carry no player id.
     /// </summary>
     private static string BuildPartitionKey(HttpContext ctx)
     {

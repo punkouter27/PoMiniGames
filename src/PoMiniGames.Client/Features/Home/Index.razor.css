@@ -85,7 +85,7 @@
 }
 
 /* ── Hub tools ───────────────────────────────────────────────────────────────
-   The page header's action slot: the finder and the demo reel on one line. */
+   The page header's action slot: the demo reel button. */
 .home-tools {
     position: relative;
     z-index: 1;
@@ -94,81 +94,6 @@
     justify-content: flex-end;
     flex-wrap: wrap;
     gap: 0.5rem;
-}
-
-.home-search {
-    display: flex;
-    align-items: center;
-    gap: 0.35rem;
-    min-height: 2.75rem;
-    padding: 0 0.6rem;
-    border: 1px solid var(--color-border);
-    border-radius: var(--radius-lg);
-    background: var(--surface-1);
-    transition: border-color 0.18s var(--ease-standard),
-                box-shadow 0.18s var(--ease-standard);
-}
-
-.home-search:focus-within {
-    border-color: var(--color-accent);
-    box-shadow: 0 0 0 3px var(--accent-soft, rgba(99, 102, 241, 0.25));
-}
-
-.home-search__icon {
-    font-size: 1.1rem;
-    color: var(--color-text-secondary);
-}
-
-.home-search__input {
-    width: 10rem;
-    min-width: 0;
-    padding: 0;
-    border: 0;
-    background: transparent;
-    color: var(--color-text-primary);
-    font: inherit;
-    font-size: var(--text-sm);
-}
-
-.home-search__input:focus {
-    outline: none;
-}
-
-.home-search__input::-webkit-search-cancel-button {
-    display: none;
-}
-
-.home-search__clear {
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
-    width: 1.4rem;
-    height: 1.4rem;
-    padding: 0;
-    border: 0;
-    border-radius: 50%;
-    background: var(--surface-2);
-    color: var(--color-text-secondary);
-    font-size: 0.95rem;
-    line-height: 1;
-    cursor: pointer;
-}
-
-.home-search__clear:hover {
-    color: var(--color-text-primary);
-}
-
-/* What the finder came back with. */
-.home-no-results {
-    position: relative;
-    z-index: 1;
-    display: flex;
-    flex-direction: column;
-    align-items: center;
-    gap: 0.6rem;
-    padding: 2rem 1rem;
-    color: var(--color-text-secondary);
-    text-align: center;
 }
 
 /* The demo reel: the only control that changes app state rather than navigating,
@@ -206,17 +131,83 @@
 }
 
 .home-action--demo {
-    border-color: rgba(251, 146, 60, 0.55);
-    background: linear-gradient(135deg, rgba(251, 146, 60, 0.18), rgba(244, 114, 182, 0.10));
+    border-color: var(--accent-ring);
+    background: var(--accent-soft);
+    color: var(--accent-ink);
 }
 
 .home-action--demo:hover {
-    border-color: rgba(251, 146, 60, 0.85);
+    border-color: var(--color-accent);
 }
 
+/* Running: the solid accent, so "on" is a filled button rather than a brighter tint. */
 .home-action--on {
-    background: linear-gradient(135deg, rgba(251, 146, 60, 0.42), rgba(244, 114, 182, 0.30));
-    border-color: rgb(251, 146, 60);
+    background: var(--color-accent-solid);
+    border-color: var(--color-accent-solid);
+    color: var(--color-accent-contrast);
+}
+
+/* ── Hub banner ──────────────────────────────────────────────────────────── */
+.arcade-marquee {
+    position: relative;
+    z-index: 1;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    flex-wrap: wrap;
+    gap: var(--space-3);
+    margin-bottom: var(--space-3);
+    padding: var(--space-2) var(--space-4);
+    background: var(--surface-1);
+    border: 1px solid var(--color-border);
+    border-radius: var(--radius-lg);
+    font-family: var(--font-display);
+}
+
+.arcade-marquee__left {
+    display: flex;
+    align-items: center;
+    gap: var(--space-3);
+    flex-wrap: wrap;
+}
+
+.arcade-marquee__coin {
+    padding: 0.2rem 0.6rem;
+    border-radius: var(--radius-pill);
+    font-size: var(--text-xs);
+    font-weight: 700;
+    letter-spacing: 0.08em;
+    background: var(--accent-warning-soft);
+    color: var(--accent-warning-ink);
+}
+
+.arcade-marquee__title {
+    font-size: var(--text-sm);
+    font-weight: 700;
+    letter-spacing: 0.08em;
+    color: var(--color-text-secondary);
+}
+
+.arcade-marquee__player-btn {
+    display: inline-flex;
+    align-items: center;
+    gap: var(--space-2);
+    min-height: 2.25rem;
+    padding: 0.25rem 0.8rem;
+    font-family: var(--font-display);
+    font-size: var(--text-sm);
+    font-weight: 700;
+    letter-spacing: 0.04em;
+    background: var(--surface-raised);
+    color: var(--color-text-primary);
+    border: 1px solid var(--color-border);
+    border-radius: var(--radius-pill);
+    cursor: pointer;
+    transition: border-color var(--dur-fast) var(--ease-standard);
+}
+
+.arcade-marquee__player-btn:hover {
+    border-color: var(--color-accent);
 }
 
 /* ── Game grid ─────────────────────────────────────────────────────────────
@@ -276,8 +267,8 @@
 
 .home-card:hover {
     transform: translateY(-3px) scale(1.015);
-    border-color: var(--accent-cyan, #22d3ee);
-    box-shadow: 0 8px 30px rgba(0, 0, 0, 0.4), 0 0 24px rgba(34, 211, 238, 0.14);
+    border-color: var(--color-accent);
+    box-shadow: var(--elevation-1);
 }
 
 /* The heading: a link to the game's main mode (one large target per card), or a
@@ -328,7 +319,7 @@
     margin: 0;
     min-width: 0;
     color: var(--color-text-secondary);
-    font-size: var(--text-xs);
+    font-size: var(--text-sm);
     line-height: 1.35;
     display: -webkit-box;
     -webkit-line-clamp: 2;
@@ -571,8 +562,6 @@ a.home-card-head:hover .home-card-title { text-decoration: underline; text-under
     .home-tools {
         justify-content: stretch;
     }
-    .home-search { flex: 1 1 auto; }
-    .home-search__input { width: 100%; }
 
     .home-grid {
         grid-template-columns: minmax(0, 1fr);

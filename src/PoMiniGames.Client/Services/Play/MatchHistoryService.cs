@@ -1,6 +1,5 @@
 using PoMiniGamesClient.Models;
 
-using PoMiniGamesClient.Services.Auth;
 using PoMiniGamesClient.Services.Http;
 using PoMiniGamesClient.Services.Interop;
 using PoMiniGamesClient.Services.Play;
@@ -10,36 +9,29 @@ namespace PoMiniGamesClient.Services.Play;
 
 /// <summary>
 /// Records and reads the local player's head-to-head match results (local 2P and
-/// online multiplayer). The "owner" identity is the signed-in Microsoft email when
+/// online multiplayer). The "owner" identity is the player's initials when
 /// available, otherwise the guest display name — so both authenticated and guest
 /// players build up a personal opponent record on the server.
 /// </summary>
 public sealed class MatchHistoryService
 {
     private readonly ApiService _api;
-    private readonly AuthStateService _auth;
     private readonly PlayerNameService _playerName;
 
-    public MatchHistoryService(ApiService api, AuthStateService auth, PlayerNameService playerName)
+    public MatchHistoryService(ApiService api, PlayerNameService playerName)
     {
         _api = api;
-        _auth = auth;
         _playerName = playerName;
     }
 
     /// <summary>The current player's owner key + type used to scope their match history.</summary>
     public (string Owner, string OwnerType) ResolveOwner()
     {
-        var email = _auth.User?.Email;
-        if (!string.IsNullOrWhiteSpace(email))
-            return (email.Trim(), "microsoft");
-
-        var display = _auth.User?.DisplayName;
-        if (!string.IsNullOrWhiteSpace(display))
-            return (display.Trim(), "microsoft");
-
-        var guest = _playerName.GetPlayerName();
-        return (string.IsNullOrWhiteSpace(guest) ? "Player" : guest, "guest");
+        // The owner types are stored labels from when the app had sign-in: "microsoft" now
+        // means "a player who entered initials" and "guest" one who skipped the prompt. Kept
+        // as they are so rows already in storage keep matching their owner.
+        var initials = _playerName.Initials;
+        return string.IsNullOrWhiteSpace(initials) ? ("Player", "guest") : (initials.Trim(), "microsoft");
     }
 
     /// <summary>The display label for the current player (what opponents would see).</summary>

@@ -164,7 +164,7 @@ public partial class PoRacerPage
         // The code goes in the address so a reload during the race rejoins it (seats are bound
         // to the claim identity) instead of landing back in a lobby that has already started.
         lobby.GameStarted += code => InvokeAsync(() => Nav.NavigateTo($"/poracer/multi?code={Uri.EscapeDataString(code)}"));
-        await LobbyCallAsync(() => lobby.ConnectAndJoinAsync(AuthState.User?.DisplayName ?? "Player", !AuthState.IsAuthenticated));
+        await LobbyCallAsync(() => lobby.ConnectAndJoinAsync(PlayerNameService.Initials, isGuest: false));
         if (!_disposed) StateHasChanged();
     }
 

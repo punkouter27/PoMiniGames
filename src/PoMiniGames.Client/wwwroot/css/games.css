@@ -86,7 +86,7 @@
 /* On phones the bar is tight — demote the back link to the brand area
    instead of crowding the title. */
 
-/* Live ELO badge shown in the top bar beside the signed-in identity during
+/* Live ELO badge shown in the top bar beside the player identity during
    single-player rated games. Projected by GameShell into MainLayout's
    `game-elo` section outlet (so it lands inside `.gl-auth`, not the game
    header). Amber to read as a "your standing" chip, distinct from the cyan
@@ -428,6 +428,11 @@
   flex-wrap: wrap;
 }
 
+/* The controller line only once a pad is in use (gamepadBus.js and the quiz's own pad
+   reader both stamp html[data-input="pad"]); a keyboard player never sees it. */
+.fq-split__pad { display: none; }
+html[data-input="pad"] .fq-split__pad { display: flex; }
+
 .fq-split__keys kbd {
   display: inline-block;
   padding: 2px 8px;
@@ -499,14 +504,14 @@
    pill switches from ✓ to ✗ so the player can tell at a glance even without
    colour vision. */
 .fq-split__opt--correct {
-  border-color: rgba(74, 222, 128, 0.6);
-  background: rgba(74, 222, 128, 0.18);
-  box-shadow: 0 0 0 2px rgba(74, 222, 128, 0.35) inset;
+  border-color: var(--accent-success);
+  background: var(--accent-success-soft);
+  box-shadow: 0 0 0 1px var(--accent-success) inset;
 }
 .fq-split__opt--wrong {
-  border-color: rgba(248, 113, 113, 0.6);
-  background: rgba(248, 113, 113, 0.18);
-  box-shadow: 0 0 0 2px rgba(248, 113, 113, 0.35) inset;
+  border-color: var(--accent-danger);
+  background: var(--accent-danger-soft);
+  box-shadow: 0 0 0 1px var(--accent-danger) inset;
 }
 /* Post-reveal de-emphasis for options neither side picked. 0.45 put the text at
    2.82:1 — the one state in this component that still failed outright after the
@@ -818,9 +823,8 @@
   left: 150%;
 }
 .fq-option:hover:not(:disabled) {
-  filter: brightness(1.1);
   transform: translateY(-1px);
-  border-color: var(--accent-cyan);
+  border-color: var(--color-accent);
 }
 /* 0.72, not 0.5: a disabled option is still text the player reads (the reveal), and
    lower opacity drops it under the 4.5:1 floor. */
@@ -829,16 +833,16 @@
 /* Solo/2p-shared-screen answer reveal: --correct = green, --wrong = red,
    --muted = dim the un-picked options so the eye finds the answer. Demo mode
    never enters this state (the page sets showReveal=false there). */
+/* Status tokens, not raw greens and reds: the -soft tints are tuned to keep the option text
+   legible in both themes, and the hues match every other win/loss surface in the app. */
 .fq-option--correct {
-  background: rgba(74, 222, 128, 0.22);
-  border-color: rgba(74, 222, 128, 0.8);
-  box-shadow: 0 0 14px rgba(74, 222, 128, 0.35);
+  background: var(--accent-success-soft);
+  border-color: var(--accent-success);
   color: var(--color-text-primary);
 }
 .fq-option--wrong {
-  background: rgba(248, 113, 113, 0.22);
-  border-color: rgba(248, 113, 113, 0.8);
-  box-shadow: 0 0 14px rgba(248, 113, 113, 0.35);
+  background: var(--accent-danger-soft);
+  border-color: var(--accent-danger);
   color: var(--color-text-primary);
 }
 /* The reveal states are disabled buttons too, and `.fq-option:disabled` outranks a single

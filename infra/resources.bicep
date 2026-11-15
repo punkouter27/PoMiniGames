@@ -11,15 +11,6 @@ param sharedAppInsightsName string = 'poappideinsights8f9c9a4e'
 @description('The name of the resource group containing shared resources')
 param sharedResourceGroupName string = 'PoShared'
 
-// ── Microsoft (Entra ID) OAuth configuration (see main.bicep for rationale)
-// Client IDs are not secrets; App Settings is the right home. The
-// MicrosoftAuthOptionsBinder (PoMiniGames server) auto-promotes `Enabled=true`
-// when `FullyConfigured=true` (both ClientId + ApiClientId present), so we
-// don't need to push an explicit `Enabled=true` flag here.
-param microsoftAuthClientId string = ''
-param microsoftAuthApiClientId string = ''
-param microsoftAuthTenantId string = tenant().tenantId
-
 var resourceToken = toLower(uniqueString(subscription().id, name, location))
 // Solution identity baked into names per Azure Cloud Adoption Framework guidance.
 // Names stay stable across SKU/region changes; only the suffix varies.
@@ -113,23 +104,6 @@ resource webApp 'Microsoft.Web/sites@2022-09-01' = {
         {
           name: 'PoMiniGames__Storage__TableService__TableName'
           value: appTable.name
-        }
-        // ── Microsoft (Entra ID) OAuth (App Settings, not KV — these are
-        //    public identifiers, not secrets). Wired as Bicep parameters so
-        //    each environment can supply its own app registration via
-        //    main.parameters.json or `azd env set`. StartupSecretValidator
-        //    fails-fast if Production boots without these values.
-        {
-          name: 'PoMiniGames__MicrosoftAuth__ClientId'
-          value: microsoftAuthClientId
-        }
-        {
-          name: 'PoMiniGames__MicrosoftAuth__ApiClientId'
-          value: microsoftAuthApiClientId
-        }
-        {
-          name: 'PoMiniGames__MicrosoftAuth__Authority'
-          value: '${environment().authentication.loginEndpoint}${microsoftAuthTenantId}/v2.0'
         }
         {
           name: 'PoVoxelStrike__ConvertedPath'

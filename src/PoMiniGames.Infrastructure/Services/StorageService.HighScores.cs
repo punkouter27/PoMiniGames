@@ -64,7 +64,7 @@ public partial class StorageService
             AchievedAtUtc = DateTimeOffset.TryParse(e.GetString("Date"), out var d) ? d : default,
         },
         // Identity is the player — (UserId, IsGuest) rather than the display name, so a guest
-        // can't write onto a signed-in player's row by copying their name. Deliberately NOT
+        // can't write onto a identified player's row by copying their name. Deliberately NOT
         // keyed on BestScore: the client submits on every new personal best, so a session that
         // scored 10 would post 1,2,3…10 and mint ten rows, letting one player fill a board that
         // ranks "highest score wins". One row per player, ratcheted by ShouldOverwrite below.

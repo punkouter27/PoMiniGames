@@ -21,7 +21,7 @@ public sealed record ClientErrorReport(string? Kind, string? Message, string? So
 /// <b>Outside <c>/api</c> on purpose.</b> The reporter uses <c>navigator.sendBeacon</c>, which
 /// survives the page unloading and cannot attach a header, so the route has to sit outside the
 /// scope <c>AntiforgeryExtensions</c> validates — the same reason the SignalR hubs do. It is
-/// anonymous for the same reason the leaderboard reads are: a page can break before sign-in.
+/// anonymous for the same reason the leaderboard reads are: a page can break before the player id exists.
 /// What that leaves is an unauthenticated write to the log, so it is bounded three ways: a small
 /// body, truncated fields with control characters removed, and its own rate limit.
 /// </para>

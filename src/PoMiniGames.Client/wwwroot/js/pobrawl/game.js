@@ -636,8 +636,6 @@ export class BrawlGame {
       // canvas keeps its last frame until the warm-up settles.
       if (this._compiling) return;
       this.composer.render();
-      // The director's iso-cam inset, drawn over the finished frame (director.js).
-      this._renderIsoCam();
       // Showtime modules that read the finished frame (replay grade, result glass).
       this._renderShow(now);
       // The result shatter snapshots the frame, so it has the same constraint.
@@ -2084,7 +2082,6 @@ export class BrawlGame {
       });
     }
     if (this.composer) this.composer.dispose?.();
-    this._disposeDirector();
     // PMREM output target — a WebGLRenderTarget, invisible to the
     // geometry/material traverse above.
     if (this._envRT) { this._envRT.dispose(); this._envRT = null; }

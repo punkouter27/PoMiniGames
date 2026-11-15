@@ -18,7 +18,6 @@
 @inject KioskCoordinator Kiosk
 @inject PoVoxelStrikeMultiplayerClient Hub
 @inject ToastService ToastService
-@inject AuthStateService AuthState
 @inject ApiService Api
 @inject UiFeedbackService Feedback
 
@@ -484,7 +483,7 @@
         }
         try
         {
-            await Hub.ConnectLobbyAsync(AuthState.User?.DisplayName ?? "Player", !AuthState.IsAuthenticated);
+            await Hub.ConnectLobbyAsync(PlayerNameService.Initials, isGuest: false);
         }
         catch (Exception ex)
         {
@@ -801,7 +800,7 @@
         try
         {
             // Every finished run submits — the server ratchets to the best. A failed submit
-            // parks in the offline queue (guests included) and flushes on sign-in/reconnect.
+            // parks in the offline queue (guests included) and flushes on start/reconnect.
             // The result and the Won flag both come from _won: the server needs the flag to
             // price a win's bonus.
             await GameResults.RecordAndSubmitPoVoxelStrikeAsync(_playerName, _won ? GameResult.Win : GameResult.Loss,

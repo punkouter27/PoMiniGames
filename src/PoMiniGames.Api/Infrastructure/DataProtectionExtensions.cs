@@ -13,7 +13,7 @@ namespace PoMiniGames.Infrastructure;
 /// <para>
 /// The BFF cookies must be encrypted. The framework default key ring is
 /// ephemeral (in-memory, per-process), which means a redeploy silently invalidates every
-/// signed-in user. This extension pins the key ring to:
+/// player. This extension pins the key ring to:
 /// </para>
 /// <list type="bullet">
 ///   <item><b>Development / Test:</b> the on-disk <c>keys/</c> folder under the app root.</item>
@@ -63,7 +63,7 @@ internal static class DataProtectionExtensions
                 // Fail-fast: a missing storage account in Production is the same shape of
                 // bug as a missing Key Vault URI. Boot into a known-broken state so an
                 // operator notices, rather than silently falling back to in-memory keys
-                // (which would invalidate every signed-in user on next deploy).
+                // (which would invalidate every antiforgery token on next deploy).
                 throw new InvalidOperationException(
                     "PoMiniGames:Storage:TableService:AccountName is required in Production " +
                     "to back the data-protection key ring (PoShared storage account, " +

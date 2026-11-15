@@ -1,115 +1,77 @@
+/* The first-visit initials prompt. Drawn like the game start card (game-shell.css
+   .gps-intro-card): a token-coloured surface over a dimmed page, so it follows the light
+   and dark themes like every other dialog. */
 .arcade-modal-backdrop {
     position: fixed;
     inset: 0;
-    z-index: 9500;
+    z-index: var(--z-modal);
     display: flex;
     align-items: center;
     justify-content: center;
-    padding: 20px;
-    background: rgba(4, 2, 14, 0.88);
-    backdrop-filter: blur(6px);
+    padding: var(--space-4);
+    background: rgba(15, 23, 42, 0.55);
+    backdrop-filter: blur(4px);
 }
 
 .arcade-modal-crt {
     position: relative;
-    width: min(440px, 100%);
-    padding: 28px 24px 24px;
-    background: #0a0618;
-    border: 3px solid #00f5ff;
-    box-shadow:
-        0 0 0 2px #140b2e,
-        0 0 28px rgba(0, 245, 255, 0.45),
-        inset 0 0 32px rgba(255, 42, 133, 0.16);
+    width: min(420px, 100%);
+    padding: var(--space-5) var(--space-5) var(--space-4);
+    background: var(--color-surface);
+    color: var(--color-text-primary);
+    border: 1px solid var(--color-border);
+    border-radius: var(--radius-lg);
+    box-shadow: var(--elevation-3);
     text-align: center;
-    overflow: hidden;
-    font-family: 'Bungee', 'Courier New', monospace;
-}
-
-.arcade-modal-scanlines {
-    position: absolute;
-    inset: 0;
-    pointer-events: none;
-    background: repeating-linear-gradient(
-        to bottom,
-        rgba(255, 255, 255, 0.03) 0px,
-        rgba(255, 255, 255, 0.03) 1px,
-        transparent 1px,
-        transparent 3px
-    );
-    z-index: 1;
-}
-
-.arcade-modal-header,
-.arcade-slots-wrap,
-.arcade-modal-hint,
-.arcade-modal-actions {
-    position: relative;
-    z-index: 2;
-}
-
-.arcade-coin-badge {
-    display: inline-block;
-    padding: 4px 10px;
-    margin-bottom: 12px;
-    font-size: 0.72rem;
-    letter-spacing: 0.14em;
-    color: #0a0618;
-    background: #ffe600;
-    box-shadow: 0 0 12px rgba(255, 230, 0, 0.65);
+    font-family: var(--font-body);
 }
 
 .arcade-modal-title {
     margin: 0;
-    font-size: 1.45rem;
-    letter-spacing: 0.08em;
-    color: #00f5ff;
-    text-shadow: 0 0 12px rgba(0, 245, 255, 0.75);
+    font-family: var(--font-display);
+    font-size: var(--text-xl);
+    font-weight: 700;
+    letter-spacing: 0;
+    color: var(--color-text-primary);
 }
 
 .arcade-modal-sub {
-    margin: 6px 0 0;
-    font-family: 'Courier New', monospace;
-    font-weight: 700;
-    font-size: 0.85rem;
-    letter-spacing: 0.14em;
-    color: #ff2a85;
-    text-shadow: 0 0 8px rgba(255, 42, 133, 0.65);
+    margin: var(--space-1) 0 0;
+    font-size: var(--text-sm);
+    color: var(--color-text-secondary);
 }
 
 .arcade-slots-wrap {
     position: relative;
-    margin: 22px auto 14px;
+    margin: var(--space-5) auto var(--space-3);
     width: fit-content;
 }
 
 .arcade-slots {
     display: flex;
-    gap: 14px;
+    gap: var(--space-3);
     justify-content: center;
 }
 
 .arcade-slot {
-    width: 66px;
-    height: 78px;
+    width: 64px;
+    height: 72px;
     display: flex;
     align-items: center;
     justify-content: center;
-    font-size: 2.2rem;
-    color: #ffe600;
-    background: #12092a;
-    border: 2px solid #ff2a85;
-    box-shadow: inset 0 0 12px rgba(255, 42, 133, 0.35), 0 0 10px rgba(255, 42, 133, 0.3);
-    text-shadow: 0 0 10px rgba(255, 230, 0, 0.85);
+    font-family: var(--font-mono);
+    font-size: 2rem;
+    font-weight: 700;
+    color: var(--color-text-primary);
+    background: var(--surface-3);
+    border: 1px solid var(--color-border);
+    border-radius: var(--radius-md);
 }
 
+/* The slot the next letter lands in: an accent outline, no blinking. */
 .arcade-slot--active {
-    border-color: #00f5ff;
-    box-shadow: inset 0 0 14px rgba(0, 245, 255, 0.4), 0 0 14px rgba(0, 245, 255, 0.6);
-    animation: arcade-blink 1s steps(2, start) infinite;
-}
-
-@keyframes arcade-blink {
-    50% { border-color: #ffe600; }
+    border-color: var(--color-accent);
+    box-shadow: 0 0 0 3px var(--accent-ring);
 }
 
 .arcade-hidden-input {
@@ -124,58 +86,47 @@
 }
 
 .arcade-modal-hint {
-    margin: 0 0 20px;
-    font-family: 'Courier New', monospace;
-    font-weight: 700;
-    font-size: 0.78rem;
-    letter-spacing: 0.08em;
-    color: #c4b5fd;
-    white-space: pre-wrap;
+    margin: 0 0 var(--space-4);
+    font-size: var(--text-sm);
+    color: var(--color-text-secondary);
 }
 
 .arcade-modal-actions {
     display: flex;
-    gap: 12px;
+    gap: var(--space-3);
     justify-content: center;
     flex-wrap: wrap;
 }
 
 .arcade-btn {
-    padding: 11px 18px;
-    font-family: 'Bungee', 'Courier New', monospace;
-    font-size: 0.86rem;
-    letter-spacing: 0.08em;
-    border: 2px solid transparent;
+    min-height: 2.75rem;
+    padding: 0.5rem 1.25rem;
+    font-family: var(--font-display);
+    font-size: var(--text-sm);
+    font-weight: 700;
+    border: 1px solid transparent;
+    border-radius: var(--radius-md);
     cursor: pointer;
-    transition: transform 0.08s ease, box-shadow 0.12s ease;
-    white-space: pre;
-}
-
-.arcade-btn:active:not(:disabled) {
-    transform: translateY(2px);
+    transition: background var(--dur-fast) var(--ease-standard),
+                border-color var(--dur-fast) var(--ease-standard);
 }
 
 .arcade-btn--primary {
-    background: #00f5ff;
-    color: #090516;
-    border-color: #ffffff;
-    box-shadow: 0 0 16px rgba(0, 245, 255, 0.65);
+    background: var(--color-accent-solid);
+    color: var(--color-accent-contrast);
 }
 
 .arcade-btn--primary:disabled {
-    opacity: 0.35;
+    opacity: 0.45;
     cursor: not-allowed;
-    box-shadow: none;
 }
 
 .arcade-btn--skip {
-    background: #1a0f35;
-    color: #ffe600;
-    border-color: #ffe600;
-    box-shadow: 0 0 10px rgba(255, 230, 0, 0.25);
+    background: transparent;
+    color: var(--color-text-primary);
+    border-color: var(--color-border);
 }
 
 .arcade-btn--skip:hover {
-    background: #28164f;
-    box-shadow: 0 0 16px rgba(255, 230, 0, 0.55);
+    background: var(--color-surface-hover);
 }

@@ -334,7 +334,7 @@
       <a href="USER_WORKFLOW.html">User Journeys</a>
       <a href="VISUAL_ARCHITECTURE_DASHBOARD.html">Architecture</a>
       <a href="AI_SERVICES_REPORT.html">AI &amp; External</a>
-      <a href="AUTH_SECURITY_REPORT.html">Auth &amp; Security</a>
+      <a href="AUTH_SECURITY_REPORT.html">Identity &amp; Security</a>
       <a href="artifact.html">Tabbed Shell</a>
     </nav>
     <div class="controls">
@@ -351,7 +351,7 @@
     <section class="hero">
       <h1>PoMiniGames — Executive &amp; Plain-English Overview</h1>
       <div class="eli5">
-        <strong>In plain English:</strong> PoMiniGames is a single website hosting 14 instant-play browser mini-games. Your browser runs the game graphics, sound, and computer opponents locally, while one .NET 10 server handles player sign-in, live multiplayer rooms, and saving high scores.
+        <strong>In plain English:</strong> PoMiniGames is a single website hosting 14 instant-play browser mini-games. Your browser runs the game graphics, sound, and computer opponents locally, while one .NET 10 server handles live multiplayer rooms, and saving high scores.
       </div>
       <p>
         Built as a single-origin platform, the backend serves the Blazor WebAssembly frontend directly on port <code>5080</code> so there is no cross-site friction in production. If your internet drops, finished scores are safely parked in your browser and sent automatically when you reconnect.
@@ -385,13 +385,13 @@
     <section class="section">
       <h2>Everyday Analogies: How the Platform Works</h2>
       <div class="eli5">
-        <strong>In plain English:</strong> Think of PoMiniGames like an arcade inside a shopping mall: there is one front desk for passes, a central tool shed for shared gear, security checkpoints at every door, and a digital filing cabinet for high-score records.
+        <strong>In plain English:</strong> Think of PoMiniGames like an arcade inside a shopping mall: there is one name tag per visitor, a central tool shed for shared gear, security checkpoints at every door, and a digital filing cabinet for high-score records.
       </div>
       <div class="analogy-grid">
         <div class="analogy-card">
           <div class="tag">Middleware</div>
           <strong>Security Checkpoint &amp; Assembly Line</strong>
-          <p>Every incoming web request passes through ordered checkpoints (compression, security headers, login check, rate limit, anti-forgery) before reaching a game endpoint.</p>
+          <p>Every incoming web request passes through ordered checkpoints (compression, security headers, player name tag, rate limit, anti-forgery) before reaching a game endpoint.</p>
           <div class="tier-3"><span class="cite">Program.cs:206-433</span></div>
         </div>
         <div class="analogy-card">
@@ -413,10 +413,10 @@
           <div class="tier-3"><span class="cite">EndpointRouteExtensions.cs:41-145</span></div>
         </div>
         <div class="analogy-card">
-          <div class="tag">JWT &amp; Dev Cookies</div>
-          <strong>Visitor Badge / Security Pass</strong>
-          <p>Microsoft Entra issues a signed JWT badge in production; local development issues a same-origin guest cookie so developers can test without OAuth.</p>
-          <div class="tier-3"><span class="cite">AuthExtensions.cs:36-137</span></div>
+          <div class="tag">Player Id &amp; Initials</div>
+          <strong>Name Tag</strong>
+          <p>There is no sign-in. Each browser keeps a random player id and three initials and sends them with every request; the server reads them in one place to label scores. Updated 2026-11-15.</p>
+          <div class="tier-3"><span class="cite">PlayerIdentityExtensions.cs</span> <span class="cite">RequestIdentity.cs</span></div>
         </div>
       </div>
     </section>

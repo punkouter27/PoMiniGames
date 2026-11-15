@@ -6,14 +6,15 @@ The rules for working in this repository live in `AGENTS.md` and apply to every 
 
 @AGENTS.md
 
-For the project tour and the list of games, see `README.md`. `CAPABILITY-MAP.md` says which module
-owns what; `DOCS/20261029/VISUAL_ARCHITECTURE_DASHBOARD.html` is the current visual architecture overview.
+For the project tour and the list of games, see `README.md`. `GAME-CONSISTENCY.md` holds the game
+workflow and UI rules; `docs/20261112/VISUAL_ARCHITECTURE_DASHBOARD.html` is the current visual
+architecture overview.
 
 ## Commands
 
 ```powershell
 docker compose up -d azurite                                   # storage emulator (ports 10000-10002)
-dotnet run --project src/PoMiniGames.API/PoMiniGames.API.csproj # API + Blazor WASM client on http://localhost:5080
+dotnet run --project src/PoMiniGames.Api/PoMiniGames.Api.csproj # API + Blazor WASM client on http://localhost:5080
 dotnet build PoMiniGames.slnx                                  # warnings are errors (Directory.Build.props)
 dotnet format PoMiniGames.slnx --verify-no-changes             # CI style gate
 pwsh scripts/css-lint.ps1                                      # CI CSS gate; run after any scripted CSS edit
@@ -21,7 +22,8 @@ pwsh scripts/test-ceilings.ps1                                 # test-count ceil
 
 dotnet test tests/PoMiniGames.Unit --filter "FullyQualifiedName~PoMule"   # one test / one area
 dotnet test tests/PoMiniGames.E2EUI -p:SkipPlaywrightInstall=true --filter "..."
-node --test tests/pomule-world.test.mjs                        # JS engine tests (not run by CI)
+node --test tests/pomule-world.test.mjs                        # one JS engine test file
+node --test "tests/*.test.mjs"                                 # every JS engine test (CI runs them all)
 ```
 
 - The API host serves the client on one origin, so there is no separate client dev server. Never
@@ -50,7 +52,7 @@ node --test tests/pomule-world.test.mjs                        # JS engine tests
 ## Architecture
 
 - **Projects:** `src/` holds five projects.
-  - `PoMiniGames.API`: the ASP.NET Core host. It contains vertical slices in `Features/<Game>`
+  - `PoMiniGames.Api`: the ASP.NET Core host. It contains vertical slices in `Features/<Game>`
     and also serves the client.
   - `PoMiniGames.Client`: Blazor WASM, assembly name `PoMiniGamesClient`.
   - `PoMiniGames.Domain`: `GameKey`, `ScoreRules`, Elo and the high-score models.
@@ -63,8 +65,8 @@ node --test tests/pomule-world.test.mjs                        # JS engine tests
   2. Add a `ScoreRules` bounds entry and a high-score model.
   3. In `StorageService`, add the table and partition constants and a `HighScoreDescriptor`.
   4. Create `Features/<Game>/*Endpoints.cs` and map it in
-     `API/Infrastructure/EndpointRouteExtensions.cs` on the `gameApi` group, which requires
-     authorization. Map hubs there too.
+     `Api/Infrastructure/EndpointRouteExtensions.cs` on the `gameApi` group (the `/api` prefix).
+     Map hubs there too.
   5. Add a case to `Features/Leaderboard/UnifiedLeaderboardEndpoints.cs`.
   6. Register services and options in `Infrastructure/GameServicesExtensions.cs`.
   7. On the client, add `Models/GameKeys`, `Models/GameCatalog.cs`, and a page at
@@ -85,14 +87,17 @@ node --test tests/pomule-world.test.mjs                        # JS engine tests
   build is trimmed.
 - **Storage:** Azure Tables and Blob, using Azurite in dev and test and managed identity in
   prod. `StorageInitializer` creates tables at startup.
-- **Auth** (`Infrastructure/AuthExtensions.cs`) is a composite scheme:
-  - Entra JWT bearer, signed in with MSAL in the browser.
-  - A dev guest cookie, available only in Development and Test.
-  - The `X-Fake-User` header, enabled by `Auth:EnableFakeAuth` in Development.
-    `StartupSecretValidator` refuses to start if fake auth is on in Production.
-  - Game writes need auth plus antiforgery. Leaderboard reads are anonymous.
-- **SignalR:** multiplayer games use authorized hubs mapped in `EndpointRouteExtensions.cs`, and
-  their state is held in memory.
+- **Identity:** there is no sign-in and no OAuth. Each browser keeps a random player id and the
+  player's three initials (`Client/Services/Play/PlayerNameService.cs`, prompted by
+  `InitialsPromptModal`) and sends them as `X-Player-Id` / `X-Player-Initials`
+  (`PlayerIdentityHandler`); SignalR carries them as the `playerId` / `initials` query parameters.
+  `Api/Infrastructure/PlayerIdentityExtensions.cs` (`UsePlayerIdentity`) turns them into claims and
+  every slice reads the caller through `Features/Identity/RequestIdentity.cs`. The id is a handle,
+  not a credential. Do not add sign-in back without being asked.
+  - Writes need the antiforgery token (`AntiforgeryExtensions`); reads are anonymous. There is no
+    route-level authorization gate: an endpoint that needs a player id checks for one itself.
+- **SignalR:** multiplayer games use hubs mapped in `EndpointRouteExtensions.cs`; their state is
+  held in memory, and a hub refuses a seat to a connection with no player id.
 - **AI:** none; quizzes draw from JSON banks.
   - PoFunQuiz and PoCoupleQuiz pick random questions from in-memory banks loaded once from
     `Features/*/Data/questions.json` (no table, no network). Couple answers use the free

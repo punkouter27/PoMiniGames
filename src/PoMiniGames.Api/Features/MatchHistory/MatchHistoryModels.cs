@@ -8,8 +8,8 @@ namespace PoMiniGames.Features.MatchHistory;
 /// multiplayer) between the owning player and a single named opponent.
 /// </summary>
 /// <remarks>
-/// PartitionKey is the owner's stable identity (lowercased MS-OAuth email when
-/// signed in, otherwise the guest display name). RowKey is reverse-chronological
+/// PartitionKey is the owner's identity (the player's initials, or the display name the
+/// client sent when it had none). RowKey is reverse-chronological
 /// so a plain partition scan returns most-recent-first without an in-memory sort.
 /// </remarks>
 public sealed class MatchRecordEntity : ITableEntity

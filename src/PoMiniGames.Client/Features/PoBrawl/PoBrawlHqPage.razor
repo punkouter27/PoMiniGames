@@ -12,7 +12,7 @@
 
 @* Brawl HQ: everything Brawl keeps about a player, on one page. Before it the numbers lived in
    five places: the 1P ladder rung, fastest KO and clears (this browser, and /api/pobrawl/progress
-   when signed in), the 1P Elo in the result modal, the three server boards on /leaderboards, and
+   on the server), the 1P Elo in the result modal, the three server boards on /leaderboards, and
    the Cup titles, which no screen listed at all (HQ is now their one list). The data surfaces are Radzen (the tabs,
    the select bar, the grid, the chart), loaded on demand the way PoMule does it: Radzen's theme is global
    CSS, so it is only on the page while this page is. The fight HUD stays custom. *@
@@ -24,7 +24,7 @@
             </a>
             @* The ladder's intro card carries the other modes' pills (2P, Online, Demo); the Cup
                gets its own way in here, where its titles are kept. *@
-            <a class="app-btn app-btn--ghost hq-modes" href="/pobrawl/demo?autoGuest=1">🏆 Watch the Cup</a>
+            <a class="app-btn app-btn--ghost hq-modes" href="/pobrawl/demo">🏆 Watch the Cup</a>
         </section>
 
         @* Four tabs, one surface at a time, so HQ fits a laptop screen without scrolling. It
@@ -106,7 +106,7 @@
                         <p class="hq-board-note">Cups won in this browser.</p>
                         @if (_titles.Count == 0)
                         {
-                            <p class="hq-empty">No Cup won in this browser yet. <a href="/pobrawl/demo?autoGuest=1">Watch the Cup</a>.</p>
+                            <p class="hq-empty">No Cup won in this browser yet. <a href="/pobrawl/demo">Watch the Cup</a>.</p>
                         }
                         else
                         {
@@ -179,7 +179,7 @@
     {
         LoadLocal();
         _titles = PoBrawlProgressBook.LoadTitles();
-        // On a hard refresh the page can initialise before the stored (then signed-in) name
+        // On a hard refresh the page can initialise before the stored name
         // arrives, and everything above is keyed by it — re-read when it settles, as PoBrawlPage does.
         PlayerNameService.StateChanged += OnPlayerNameChanged;
     }
@@ -210,7 +210,7 @@
 
     protected override async Task OnInitializedAsync()
     {
-        // The signed-in copy of the ladder (another device) can be ahead of this browser's.
+        // The server copy of the ladder can be ahead of this browser's.
         var progressTask = ApiService.GetPoBrawlProgressAsync();
         var keys = new[] { "pobrawl", "pobrawlko", "pobrawldemo" };
         var boardTasks = keys.Select(k => ApiService.GetGameLeaderboardAsync(k, k == "pobrawldemo" ? PoBrawlRoster.Count : 10)).ToArray();

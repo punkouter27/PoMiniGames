@@ -28,14 +28,15 @@ public class ApiContractSmokeTests
     }
 
     [Fact]
-    public async Task AuthHandshake_Anonymous_ReturnsConfigAndNoUser()
+    public async Task AntiforgeryToken_Anonymous_ReturnsAToken()
     {
         using var client = _factory.CreateClient();
-        var response = await client.GetAsync("/api/auth/handshake");
+        var response = await client.GetAsync("/api/auth/antiforgery-token");
 
-        // Anonymous: 200 with the public client config and a null user, never a 401.
+        // Anonymous: every browser fetches this before its first write, before anything else
+        // is known about it, so it must never answer 401.
         response.StatusCode.Should().Be(HttpStatusCode.OK);
         var body = await response.Content.ReadAsStringAsync();
-        body.Should().Contain("\"config\"");
+        body.Should().Contain("\"token\"");
     }
 }

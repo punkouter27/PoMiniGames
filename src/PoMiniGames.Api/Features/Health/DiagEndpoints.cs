@@ -8,7 +8,7 @@ using Microsoft.AspNetCore.Routing;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Options;
 using PoMiniGames.Domain.Abstractions;
-using PoMiniGames.Features.Auth;
+using PoMiniGames.Features.Identity;
 using PoMiniGames.Infrastructure;
 using PoMiniGames.Serialization;
 
@@ -109,7 +109,6 @@ public static class DiagEndpoints
             var telemetryFlags = new Dictionary<string, string>
             {
                 ["enableDiagnostics"] = config.GetValue("FeatureFlags:EnableDiagnostics", env.IsDevelopment()).ToString(),
-                ["autoGuestLogin"] = config.GetValue("Auth:AutoGuestLogin", false).ToString(),
             };
             // If Application Insights is configured, surface a non-secret indicator only.
             var ai = config.GetValue<string>("ApplicationInsights:ConnectionString")

@@ -30,6 +30,9 @@
     if (!el || el === document.body || el === document.documentElement) return true;
     // Chrome around the game (top bar, header slot) keeps its own keyboard behaviour.
     if (el.closest && el.closest('.main-nav, header.topbar, .gps-header-slot')) return false;
+    // The diagnostics pill and the panel itself are ours: Tab opened it, so Tab has to
+    // close it again even though a click left focus on a <button>.
+    if (el.closest && el.closest('.gps-stats-toggle, .gps-debug')) return true;
     if (el.matches && el.matches(INTERACTIVE)) return false;
     return !!(el.closest && el.closest('.gps-game-area, .gps-shell'));
   }

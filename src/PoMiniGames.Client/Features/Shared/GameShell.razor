@@ -151,7 +151,7 @@
                `BackTo` drives SwipeBack; <GameOverModal> always goes home. *@
 
             @* Live rating badge for single-player, ELO-rated modes: the page passes
-               its current rating via Elo and it renders next to the signed-in
+               its current rating via Elo and it renders next to the player's
                identity (see MainLayout's "game-elo" outlet), so the player can see
                their standing throughout the match. Left null in 2-player / demo /
                unrated modes, which emits nothing. *@
@@ -164,7 +164,7 @@
     // itself, which is why it looks unused at a glance.
     [Parameter] public string? Player { get; set; }
     // Current ELO for single-player, rated modes. When set, it renders as a
-    // small badge beside the signed-in identity in the top bar (via the
+    // small badge beside the player identity in the top bar (via the
     // "game-elo" section outlet in MainLayout). Leave null for 2-player, demo
     // and other unrated modes — nothing is projected.
     [Parameter] public int? Elo { get; set; }

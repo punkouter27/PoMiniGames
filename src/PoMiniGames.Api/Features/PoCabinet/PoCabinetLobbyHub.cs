@@ -1,5 +1,5 @@
 using Microsoft.AspNetCore.SignalR;
-using PoMiniGames.Features.Auth;
+using PoMiniGames.Features.Identity;
 using PoMiniGames.Shared.Games;
 
 namespace PoMiniGames.Features.PoCabinet;
@@ -15,7 +15,7 @@ namespace PoMiniGames.Features.PoCabinet;
 ///
 /// <para>
 /// Identity comes from the claims (<see cref="RequestIdentity"/>), never from the client: seats
-/// are keyed by it and a signed-in player's claim name wins over whatever name they typed.
+/// are keyed by it and a identified player's claim name wins over whatever name they typed.
 /// Hub endpoints require auth (<c>/negotiate</c> included), mapped in
 /// <c>EndpointRouteExtensions</c>.
 /// </para>
@@ -116,7 +116,7 @@ public sealed class PoCabinetLobbyHub(PoCabinetLobbyService lobbies, PoCabinetRa
     {
         var identity = RequestIdentity.Resolve(Context.User);
         if (string.IsNullOrEmpty(identity.UserId))
-            throw new HubException("Sign in or continue as a guest to race.");
+            throw new HubException("This connection carried no player id. Reload the page and try again.");
         var typed = SanitizeName(requestedName);
         var name = identity.IsAuthenticated && !string.IsNullOrWhiteSpace(identity.DisplayName)
             ? identity.DisplayName

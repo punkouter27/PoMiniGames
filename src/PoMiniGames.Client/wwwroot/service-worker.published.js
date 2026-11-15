@@ -37,10 +37,9 @@ const offlineAssetsExclude = [
 ];
 
 // ── Never-cache list ──────────────────────────────────────────────────────────
-// The correctness-critical part of this file. Auth here is a BFF cookie pattern
-// over MSAL redirects; a cached auth redirect or a cached /api response does not
-// fail loudly — it yields a mis-scoped session or silently stale game data, which
-// is far harder to diagnose than an outright error. SignalR likewise must always
+// The correctness-critical part of this file. A cached /api response does not fail
+// loudly — it yields another player's data or silently stale game data, which is
+// far harder to diagnose than an outright error. SignalR likewise must always
 // reach the server: a cached negotiate response points at a connection that no
 // longer exists.
 //
@@ -48,10 +47,6 @@ const offlineAssetsExclude = [
 // and served from cache never.
 const networkOnlyPaths = [
     /^\/api\//,                  // every REST endpoint
-    /^\/auth(\/|$)/,             // client auth routes + server auth endpoints
-    /^\/authentication(\/|$)/,   // MSAL redirect routes
-    /^\/signin-oidc/,            // Entra redirect target
-    /^\/signout/,                // sign-out endpoints
     /^\/health/,                 // liveness — a cached "healthy" is a lie
     /\/hubs?\//,                 // /couplequiz/hubs/game
     /-hub(\/|$)/,                // /poracer/lobby-hub, /poracer/race-hub, …

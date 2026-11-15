@@ -20,7 +20,7 @@ public enum IntegrityMode
 /// <para>
 /// <b>Why the default is Observe and not Enforce.</b> Two live paths submit scores without a
 /// fresh play session and are both legitimate: <c>ScoreSyncService</c> replays scores parked in
-/// the offline queue — possibly hours later, possibly across a sign-in — and any game that ends
+/// the offline queue — possibly hours later, possibly after the initials changed — and any game that ends
 /// a round after the session TTL has run out. Shipping straight to Enforce would silently drop
 /// exactly the scores the PWA's durable-submission design exists to protect. Observe puts the
 /// verdicts in the logs at Warning first; flip to Enforce once those logs are quiet.

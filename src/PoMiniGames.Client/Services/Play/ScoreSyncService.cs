@@ -4,7 +4,6 @@ using System.Text.Json;
 // types by name, so importing the namespace wholesale would make them all ambiguous.
 using PoMiniGamesClient.Models;
 
-using PoMiniGamesClient.Services.Auth;
 using PoMiniGamesClient.Services.Http;
 using PoMiniGamesClient.Services.Interop;
 using PoMiniGamesClient.Services.Play;

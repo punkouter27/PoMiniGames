@@ -2,7 +2,7 @@
 @* Worlds: everything about WHICH island is on screen, in one place — the seed, New world,
    Today's island, the cloud slots and the gallery.
 
-   Three cloud slots per signed-in identity; a world is a gzip'd snapshot the engine packs
+   Three cloud slots per player id; a world is a gzip'd snapshot the engine packs
    itself. The gallery lists islands their owners made public — visiting one boots it
    read-only, so it can never autosave over yours. Every island is drawn from its seed
    (index.js islandThumb): the map is a property of the seed, so nothing is uploaded. A
@@ -40,49 +40,42 @@
             <h3>Cloud slots</h3>
             <button type="button" class="poeco-pill" disabled="@Busy" @onclick="OnRefresh">↻ Refresh</button>
         </div>
-        @if (!SignedIn)
-        {
-            <p class="poeco-note">Sign in to keep up to three islands in the cloud and carry them between devices.</p>
-        }
-        else
-        {
-            <ul class="poeco-slots">
-                @foreach (var slot in EcoWorldSlots.All)
-                {
-                    var w = Worlds.FirstOrDefault(x => x.Slot == slot);
-                    <li class="poeco-slot @(w is null ? "poeco-slot--empty" : "")">
+        <ul class="poeco-slots">
+            @foreach (var slot in EcoWorldSlots.All)
+            {
+                var w = Worlds.FirstOrDefault(x => x.Slot == slot);
+                <li class="poeco-slot @(w is null ? "poeco-slot--empty" : "")">
+                    @if (w is not null)
+                    {
+                        <img class="poeco-thumb poeco-thumb--sm" src="@ThumbOf(w.Seed)" alt="" width="44" height="44" />
+                    }
+                    <div class="poeco-slot-meta">
+                        <strong>Slot @slot@(w is null ? "" : $" · {w.Name}")</strong>
+                        @if (w is null)
+                        {
+                            <span class="poeco-note">empty</span>
+                        }
+                        else
+                        {
+                            <span class="poeco-note" title="@Counts(w.Counts)">seed @w.Seed · @(w.SizeBytes / 1024) KB · @Ago(w.SavedAt)@(w.ShareCode is null ? "" : " · shared")</span>
+                        }
+                    </div>
+                    <div class="poeco-slot-actions">
+                        <button type="button" class="poeco-pill poeco-pill--on" disabled="@(Busy || Stats is null || Visiting)" title="Save the running island here" @onclick="() => OnSave.InvokeAsync(slot)">Save</button>
                         @if (w is not null)
                         {
-                            <img class="poeco-thumb poeco-thumb--sm" src="@ThumbOf(w.Seed)" alt="" width="44" height="44" />
+                            <button type="button" class="poeco-pill" disabled="@Busy" @onclick="() => OnLoad.InvokeAsync(slot)">Load</button>
+                            <button type="button" class="poeco-pill" disabled="@Busy" @onclick="() => OnShare.InvokeAsync((slot, w.ShareCode is null))">@(w.ShareCode is null ? "Share" : "Unshare")</button>
+                            @if (w.ShareCode is { } code)
+                            {
+                                <button type="button" class="poeco-pill" title="Share or copy a link that opens this island" @onclick="() => OnLink.InvokeAsync((code, w.Name))">🔗 Link</button>
+                            }
+                            <button type="button" class="poeco-pill" disabled="@Busy" @onclick="() => OnDelete.InvokeAsync(slot)">Delete</button>
                         }
-                        <div class="poeco-slot-meta">
-                            <strong>Slot @slot@(w is null ? "" : $" · {w.Name}")</strong>
-                            @if (w is null)
-                            {
-                                <span class="poeco-note">empty</span>
-                            }
-                            else
-                            {
-                                <span class="poeco-note" title="@Counts(w.Counts)">seed @w.Seed · @(w.SizeBytes / 1024) KB · @Ago(w.SavedAt)@(w.ShareCode is null ? "" : " · shared")</span>
-                            }
-                        </div>
-                        <div class="poeco-slot-actions">
-                            <button type="button" class="poeco-pill poeco-pill--on" disabled="@(Busy || Stats is null || Visiting)" title="Save the running island here" @onclick="() => OnSave.InvokeAsync(slot)">Save</button>
-                            @if (w is not null)
-                            {
-                                <button type="button" class="poeco-pill" disabled="@Busy" @onclick="() => OnLoad.InvokeAsync(slot)">Load</button>
-                                <button type="button" class="poeco-pill" disabled="@Busy" @onclick="() => OnShare.InvokeAsync((slot, w.ShareCode is null))">@(w.ShareCode is null ? "Share" : "Unshare")</button>
-                                @if (w.ShareCode is { } code)
-                                {
-                                    <button type="button" class="poeco-pill" title="Share or copy a link that opens this island" @onclick="() => OnLink.InvokeAsync((code, w.Name))">🔗 Link</button>
-                                }
-                                <button type="button" class="poeco-pill" disabled="@Busy" @onclick="() => OnDelete.InvokeAsync(slot)">Delete</button>
-                            }
-                        </div>
-                    </li>
-                }
-            </ul>
-        }
+                    </div>
+                </li>
+            }
+        </ul>
         @if (!string.IsNullOrWhiteSpace(Message))
         {
             <p class="poeco-note" role="status">@Message</p>
@@ -139,7 +132,6 @@
     [Parameter] public EcoStats? Stats { get; set; }
     [Parameter] public EcoWorldMeta[] Worlds { get; set; } = [];
     [Parameter] public EcoSharedWorld[] Gallery { get; set; } = [];
-    [Parameter] public bool SignedIn { get; set; }
     [Parameter] public bool Busy { get; set; }
     [Parameter] public bool Visiting { get; set; }
     [Parameter] public bool LocalPersist { get; set; }

@@ -37,7 +37,7 @@ public interface IStorageService
     Task<List<PoRacerHighScore>> GetPoRacerHighScoresAsync(int limit = 10, string? trackId = null, bool weekly = false);
     Task<PoRacerHighScore> SavePoRacerHighScoreAsync(PoRacerHighScore entry);
 
-    // PoBrawl presidents-ladder leaderboard (one row per signed-in identity, best-ever progress)
+    // PoBrawl presidents-ladder leaderboard (one row per player identity, best-ever progress)
     Task<List<PoBrawlLadderEntry>> GetPoBrawlLadderAsync(int limit = 10);
 
     /// <summary>

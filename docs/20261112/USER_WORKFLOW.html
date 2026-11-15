@@ -80,34 +80,34 @@
     <section class="hero">
       <h1>User Journeys &amp; Experience</h1>
       <div class="eli5">
-        <strong>In plain English:</strong> Players can browse leaderboards immediately, sign in with a Microsoft pass (or Guest pass in dev) to play, and never lose a finished score even if their Wi-Fi drops mid-game.
+        <strong>In plain English:</strong> Players type three initials once (or skip), play straight away, and never lose a finished score even if their Wi-Fi drops mid-game. <em>Updated 2026-11-15: there is no sign-in.</em>
       </div>
     </section>
 
     <section class="section">
-      <h2>Journey 1: Arriving, Signing In &amp; Launching a Game</h2>
+      <h2>Journey 1: Arriving, Picking Initials &amp; Launching a Game</h2>
       <div class="eli5">
-        <strong>In plain English:</strong> When you open PoMiniGames, the browser performs one quick handshake with the front desk to check your visitor badge, then loads the game hub without reloading the page.
+        <strong>In plain English:</strong> When you open PoMiniGames for the first time, it asks for three initials (or lets you skip) and makes up a player id for this browser. After that the hub opens straight away, and every game launches without reloading the page.
       </div>
       <div class="mermaid tier-2">
 flowchart TD
-  Start["Player opens /"] --> Handshake["GET /api/auth/handshake\n(Single-RTT auth + config check)"]
-  Handshake -->|"Signed in"| Hub["Game Hub + Watch All Demos"]
-  Handshake -->|"Anonymous"| Gate["AuthGate: Sign in with Microsoft\n(or Guest in Dev/Test)"]
-  Gate -->|"Browse only"| Boards["Public Leaderboards\n(Anonymous GET /api/leaderboards)"]
-  Gate -->|"Sign in"| Hub
+  Start["Player opens /"] --> Known{"Initials saved\nin this browser?"}
+  Known -->|"No"| Prompt["Initials prompt\n(3 letters, or skip)"]
+  Known -->|"Yes"| Hub["Game Hub + Watch All Demos"]
+  Prompt --> Hub
+  Hub -->|"Boards"| Boards["Public Leaderboards\n(GET /api/leaderboards)"]
   Hub -->|"Pick a game"| Intro["GameIntro Modal\n(Controls + Setup + OK)"]
   Intro -->|"Click OK"| Play["Lazy-load JS Engine\n&amp; Mint Play Session"]
       </div>
       <div class="narrative-grid">
         <div class="step-card">
-          <div><span class="step-num">1</span><strong>Single-Trip Handshake</strong></div>
-          <p>The app asks <code>/api/auth/handshake</code> for both sign-in configuration and the current user in one round-trip.</p>
-          <div class="tier-3"><span class="cite">AuthEndpoints.cs:127-140</span></div>
+          <div><span class="step-num">1</span><strong>Initials, Once</strong></div>
+          <p><code>PlayerNameService</code> keeps a random player id and the initials in <code>localStorage</code>; <code>InitialsPromptModal</code> asks only on the first visit, and the initials can be changed from the hub banner.</p>
+          <div class="tier-3"><span class="cite">PlayerNameService.cs</span> <span class="cite">InitialsPromptModal.razor</span></div>
         </div>
         <div class="step-card">
-          <div><span class="step-num">2</span><strong>Guest-First Reading</strong></div>
-          <p>Even before signing in, visitors can view public leaderboards, PoBrawl fighter dossiers, and shared PoEcosystem islands.</p>
+          <div><span class="step-num">2</span><strong>Open Reading</strong></div>
+          <p>Public leaderboards, PoBrawl fighter dossiers, and shared PoEcosystem islands are readable by anyone.</p>
           <div class="tier-3"><span class="cite">EndpointRouteExtensions.cs:58-77</span></div>
         </div>
         <div class="step-card">
@@ -170,7 +170,7 @@ sequenceDiagram
   actor P1 as Player 1 Browser
   participant Hub as SignalR Lobby / Match Hub
   actor P2 as Player 2 Browser
-  P1->>Hub: Connect (?access_token=... or DevCookie)
+  P1->>Hub: Connect (?playerId=...&amp;initials=...)
   P2->>Hub: Connect &amp; Join Seat
   Hub-->>P1: GameStarted / RaceStarting(code)
   loop Active Match

@@ -494,7 +494,7 @@
     private string _myNameLower = "";
 
     /// <summary>
-    /// True if a leaderboard row belongs to the signed-in player. Reuses
+    /// True if a leaderboard row belongs to the identified player. Reuses
     /// <see cref="NameMatches"/> so the row highlight and the hero card agree on
     /// identity — the board stores whatever the submitter passed (display name,
     /// email slug or id slug), so neither can demand an exact match.
@@ -737,7 +737,7 @@
     {
         // The hero card must not pick the GLOBAL rank-1 row across every board: a
         // high score left by another session would be attributed to whichever guest
-        // is signed in. Filter to entries whose Name matches the current PlayerName
+        // has initials. Filter to entries whose Name matches the current PlayerName
         // (case-insensitive, contains — the score submit may use the display name,
         // an email slug, or the bare id).
         var me = PlayerNameService.GetPlayerName();

@@ -279,7 +279,7 @@ export async function vibrate(pattern) {
         // route.
         if (isOnKioskRoute()) return;
         // The kiosk guard above catches the attract reel, but not every
-        // gesture-less caller: /login fires a UI cue while the sign-in gate is
+        // gesture-less caller: the first page fires a UI cue while it is
         // still mounting, which would produce "Blocked call to navigator.vibrate
         // because user hasn't tapped on the frame" on the app's own entry page
         // — one guaranteed console error for every visitor. The browser's rule

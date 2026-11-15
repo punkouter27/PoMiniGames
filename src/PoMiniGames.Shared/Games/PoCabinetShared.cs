@@ -214,7 +214,7 @@ public sealed class PoCabinetInput
 
 /// <summary>
 /// One lobby seat as other players see it. <see cref="SeatId"/> is a hash of the
-/// player's claim id — never the claim itself, which is an Entra object id.
+/// player's claim id — never the claim itself, which is the browser's player id.
 /// </summary>
 public sealed class PoCabinetLobbySeat
 {

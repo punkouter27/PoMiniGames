@@ -1,7 +1,6 @@
 using Microsoft.AspNetCore.Components;
 using Microsoft.JSInterop;
 using PoMiniGamesClient.Models;
-using PoMiniGamesClient.Services.Auth;
 using PoMiniGamesClient.Services.Http;
 using PoMiniGamesClient.Services.Interop;
 using PoMiniGamesClient.Services.Play;
@@ -202,7 +201,6 @@ public partial class ProfilePage
     private sealed class OpponentRecord
     {
         public string Name { get; init; } = "";
-        public string Type { get; init; } = "guest";
         /// <summary>The game most recently played against them: where an invite takes both players.</summary>
         public string LastGame { get; init; } = "";
         public int Wins, Losses, Draws;
@@ -437,7 +435,7 @@ public partial class ProfilePage
         where T : class
     {
         var me = _playerName?.Trim() ?? string.Empty;
-        var myUserId = AuthState.User?.UserId ?? string.Empty;
+        var myUserId = PlayerNameService.PlayerId;
 
         T? found = default;
         if (userIdOf is not null && !string.IsNullOrEmpty(myUserId))
@@ -477,7 +475,6 @@ public partial class ProfilePage
             .Select(g => new OpponentRecord
             {
                 Name = g.Key,
-                Type = g.Any(x => x.OpponentType == "microsoft") ? "microsoft" : "guest",
                 // The API returns history newest-first, so the group's first row is the latest.
                 LastGame = g.First().Game,
                 Wins = g.Count(x => x.Outcome == "win"),

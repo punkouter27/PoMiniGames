@@ -6,7 +6,6 @@ using Microsoft.AspNetCore.SignalR.Protocol;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Options;
 
-using PoMiniGamesClient.Services.Auth;
 using PoMiniGamesClient.Services.Http;
 using PoMiniGamesClient.Services.Interop;
 using PoMiniGamesClient.Services.Play;
@@ -16,14 +15,13 @@ namespace PoMiniGamesClient.Services.Http;
 
 /// <summary>
 /// The single construction path for every SignalR hub connection in the client.
-/// Bakes in the two things every hub connection here must have:
+/// Bakes in the three things every hub connection here must have:
 /// <list type="bullet">
-/// <item>SignalR's default HttpClientFactory doesn't flow through
-/// DI, so the negotiate POST drops the dev cookie and the hub's
-/// RequireAuthorization() returns 401. Every connection forces the credentials
-/// handler (<see cref="SignalRCredentialsHttpClientFactory.CreateHandler"/>) so
-/// the PoMiniGames.DevAuth cookie round-trips — see that class for the full
-/// failure story.</item>
+/// <item>The player id and initials on the query string (a WebSocket cannot carry
+/// custom headers); the hubs read them through <c>UsePlayerIdentity</c>.</item>
+/// <item>SignalR's default HttpClientFactory doesn't flow through DI, so every
+/// connection forces the credentials handler
+/// (<see cref="SignalRCredentialsHttpClientFactory.CreateHandler"/>) — see that class.</item>
 /// <item>Automatic reconnect, so a dropped WebSocket heals instead of leaving
 /// the lobby/race dead.</item>
 /// </list>
@@ -42,11 +40,9 @@ public static class HubConnectionFactory
     /// <param name="reconnectDelays">Optional custom reconnect backoff; null uses
     /// SignalR's default 0/2/10/30s schedule.</param>
     /// <summary>
-    /// The Microsoft access token for the signed-in user, or null for a cookie session.
-    /// Set alongside <see cref="ApiService.SetBearer"/>. Outside Dev/Test the server
-    /// accepts bearer tokens only, so without this every authorized hub answers 401.
+    /// The player identity every hub connection carries, as query parameters: a WebSocket
+    /// cannot send the <c>X-Player-Id</c> / <c>X-Player-Initials</c> headers REST calls use.
     /// </summary>
-    public static string? BearerToken { get; set; }
     public static string? PlayerId { get; set; }
     public static string? PlayerInitials { get; set; }
 
@@ -65,8 +61,6 @@ public static class HubConnectionFactory
             .WithUrl(resolvedUrl, options =>
             {
                 options.HttpMessageHandlerFactory = SignalRCredentialsHttpClientFactory.CreateHandler;
-                // Read per (re)connect, so a sign-in after the connection was built still applies.
-                options.AccessTokenProvider = () => Task.FromResult(BearerToken);
                 if (transports is { } restricted) options.Transports = restricted;
             })
             // PoBrawlOnline: the server-side hub protocol serialises

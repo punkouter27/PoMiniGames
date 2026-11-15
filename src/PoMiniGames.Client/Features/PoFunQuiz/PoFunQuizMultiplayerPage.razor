@@ -114,14 +114,10 @@
     private RenderFragment CategoryContent => @<label class="fq-join__field">
         <span class="fq-join__label">Category <span class="fq-join__hint">used if you're first in</span></span>
         <select @bind="_category" @bind:after="RememberCategory" disabled="@_busy" aria-describedby="fq-category-hint">
-            <option value="General" selected>General</option>
-            <option value="Science">Science</option>
-            <option value="History">History</option>
-            <option value="Geography">Geography</option>
-            <option value="Sports">Sports</option>
-            <option value="Entertainment">Entertainment</option>
-            <option value="Technology">Technology</option>
-            <option value="ArtCulture">Art &amp; Culture</option>
+            @foreach (var c in FunQuizCategories.All)
+            {
+                <option value="@c.Value">@c.Label</option>
+            }
         </select>
         @* Say this out loud rather than silently discarding the joiner's pick —
            the same honesty fix made for Couple Quiz's host-only round count. *@
@@ -154,7 +150,7 @@
 
     private bool _introDone;
     private string _playerName = string.Empty;
-    private const string CategoryKey = "pominigames:funquiz-category";
+    private const string CategoryKey = FunQuizCategories.StorageKey;
     // An unknown stored value is harmless: the server falls back to General.
     private string _category = LocalStorageService.GetItem<string>(CategoryKey) is { Length: > 0 } saved ? saved : "General";
 
@@ -177,7 +173,7 @@
     private bool IsInProgress => string.Equals(_state?.State, "InProgress", StringComparison.OrdinalIgnoreCase);
 
     // "ArtCulture" is the wire value; spell it the way the picker does.
-    private string CategoryLabel => _state?.Category == "ArtCulture" ? "Art & Culture" : (_state?.Category ?? "General");
+    private string CategoryLabel => FunQuizCategories.LabelFor(_state?.Category);
 
     private int MyScore => _state?.Players.FirstOrDefault(p => p.Name == _playerName)?.Score ?? 0;
     private int OpponentScore => _state?.Players.FirstOrDefault(p => p.Name != _playerName)?.Score ?? 0;

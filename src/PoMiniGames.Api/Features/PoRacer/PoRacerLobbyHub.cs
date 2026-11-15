@@ -22,7 +22,7 @@ public sealed class PoRacerLobbyHub : LobbyHub<PoRacerLobbyPlayer, PoRacerLobbyS
 
     protected override (LobbyState<PoRacerLobbyPlayer> state, string message) OpenSeat(string displayName, bool isGuest)
     {
-        var identity = PoMiniGames.Features.Auth.RequestIdentity.Resolve(Context.User);
+        var identity = PoMiniGames.Features.Identity.RequestIdentity.Resolve(Context.User);
         return Lobby.Open(Context.ConnectionId, identity.DisplayName, identity.IsGuest, identity.UserId);
     }
 

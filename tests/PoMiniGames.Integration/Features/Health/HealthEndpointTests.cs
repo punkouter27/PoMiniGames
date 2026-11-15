@@ -97,11 +97,8 @@ public sealed class HealthEndpointTests : IClassFixture<TestWebApplicationFactor
     [Fact]
     public async Task DiagEndpoint_ReturnsNotFound_WhenDiagnosticsDisabled()
     {
-        // The Production-env fail-fast contract is exercised by Program.cs at host start:
-        //   - FakeAuth scheme registration → throws
-        //   - Auth:AutoGuestLogin=true       → throws
-        //   - Missing storage AccountName    → throws
-        // Those guards are unit-tested separately in StartupSecretValidatorTests. Here
+        // The Production fail-fast contract (missing Key Vault or storage settings throw at
+        // host start) belongs to StartupSecretValidator. Here
         // we only assert the HTTP contract for the diagnostics-disabled case, so we
         // stay in Development (cheaper, hermetic) and just toggle the feature flag.
         using var diagDisabledFactory = _factory.WithWebHostBuilder(builder =>

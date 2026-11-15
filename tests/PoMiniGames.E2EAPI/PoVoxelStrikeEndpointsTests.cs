@@ -70,14 +70,14 @@ public class PoVoxelStrikeEndpointsTests
     }
 
     [Fact]
-    public async Task RunRoutes_AreAuthGated_AndPriceAWinByItsFlag()
+    public async Task RunRoutes_RefuseAnUnarmedWrite_AndPriceAWinByItsFlag()
     {
         using var client = _factory.CreateClient();
 
-        // Score READ and WRITE both sit inside the authenticated game API group —
-        // anonymous requests must bounce, never 404 (the route exists) and never 200.
+        // The board is a public read; a write without the antiforgery token is refused before
+        // it reaches the endpoint.
         var get = await client.GetAsync("/api/povoxelstrike/highscores");
-        get.StatusCode.Should().BeOneOf(HttpStatusCode.Unauthorized, HttpStatusCode.Redirect, HttpStatusCode.Found);
+        get.StatusCode.Should().Be(HttpStatusCode.OK);
 
         var post = await client.PostAsJsonAsync("/api/povoxelstrike/highscores", new
         {
@@ -88,16 +88,15 @@ public class PoVoxelStrikeEndpointsTests
             crushKills = 1,
             voxelsDestroyed = 500,
         });
-        post.StatusCode.Should().BeOneOf(HttpStatusCode.Unauthorized, HttpStatusCode.Redirect, HttpStatusCode.Found);
+        post.StatusCode.Should().Be(HttpStatusCode.Forbidden, "a write needs the antiforgery token");
 
-        // Signed in. A siege won at 60 s scores 600 on the clock plus the chalice bonus
+        // Identified and armed. A siege won at 60 s scores 600 on the clock plus the chalice bonus
         // (25,000 − 40/s = 22,600). The plausibility ceiling had no term for that bonus, so
         // with the roaming enemies off (no kills, no slack) every win was a 400 and never
         // reached the board. The Won flag is what prices it — and only the flag: the same
-        // score without it is still implausible. (Same method as the auth gate above rather
+        // score without it is still implausible. (Same method as the write check above rather
         // than its own, because this tier is one fact from its ceiling.)
-        var login = await client.GetAsync($"/auth/login/fake?displayName=Siege{Guid.NewGuid().ToString("N")[..8]}");
-        login.IsSuccessStatusCode.Should().BeTrue("guest login must succeed under the Test environment");
+        client.AsPlayer($"Siege{Guid.NewGuid().ToString("N")[..8]}");
         await client.ArmAntiforgeryAsync();
 
         object Run(bool won) => new

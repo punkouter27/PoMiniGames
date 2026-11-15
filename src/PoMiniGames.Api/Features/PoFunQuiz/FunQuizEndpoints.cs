@@ -1,6 +1,6 @@
 using Microsoft.AspNetCore.Mvc;
 using PoMiniGames.Domain.Services;
-using PoMiniGames.Features.Auth;
+using PoMiniGames.Features.Identity;
 using PoMiniGames.Features.PoFunQuiz.Storage;
 
 namespace PoMiniGames.Features.PoFunQuiz;
@@ -69,7 +69,7 @@ public static class FunQuizEndpoints
             CancellationToken cancellationToken) =>
         {
             // Anti-spoof: the stored name comes from the caller's claims, never the body.
-            // The board is readable without signing in, so it must be a display name and
+            // The board is readable by anyone, so it must be a display name and
             // never an email: an address-shaped claim keeps only the part before the '@'.
             var claimed = RequestIdentity.Resolve(ctx.User).DisplayName;
             var at = claimed.IndexOf('@');

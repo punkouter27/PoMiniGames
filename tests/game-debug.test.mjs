@@ -8,8 +8,16 @@ const source = readFileSync(new URL('../src/PoMiniGames.Client/wwwroot/js/game-d
 function harness() {
   const listeners = new Map();
   const calls = [];
+  const classes = new Set();
   const document = {
-    body: {}, documentElement: {},
+    body: {},
+    documentElement: {
+      classList: {
+        toggle(name, on) { if (on) classes.add(name); else classes.delete(name); },
+        remove(name) { classes.delete(name); },
+        contains(name) { return classes.has(name); },
+      },
+    },
     activeElement: null,
     modal: false,
     querySelector() { return this.modal ? {} : null; }
@@ -38,11 +46,14 @@ test('Tab toggles once; repeat and modified Tab preserve navigation', () => {
   const h = harness();
   assert.equal(h.key('Tab').defaultPrevented, true);
   assert.equal(h.window.poGameStatsOpen, true);
+  assert.equal(h.document.documentElement.classList.contains('po-game-stats-open'), true,
+    'pages hide their own HUD behind Tab with this class');
   for (const modifier of ['shiftKey', 'ctrlKey', 'altKey', 'metaKey', 'repeat']) {
     assert.equal(h.key('Tab', { [modifier]: true }).defaultPrevented, undefined);
   }
   h.key('Tab');
   assert.equal(h.window.poGameStatsOpen, false);
+  assert.equal(h.document.documentElement.classList.contains('po-game-stats-open'), false);
   assert.equal(h.calls.length, 2);
 });
 

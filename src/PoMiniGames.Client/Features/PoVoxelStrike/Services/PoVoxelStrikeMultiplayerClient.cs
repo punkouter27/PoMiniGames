@@ -1,6 +1,5 @@
 using Microsoft.AspNetCore.SignalR.Client;
 using PoMiniGames.Shared.Games;
-using PoMiniGamesClient.Services.Auth;
 using PoMiniGamesClient.Services.Http;
 using PoMiniGamesClient.Services.Interop;
 using PoMiniGamesClient.Services.Play;

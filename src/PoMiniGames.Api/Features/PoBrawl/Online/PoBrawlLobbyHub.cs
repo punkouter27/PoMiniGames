@@ -1,6 +1,6 @@
 using Microsoft.AspNetCore.SignalR;
 using PoMiniGames.Domain.Primitives;
-using PoMiniGames.Features.Auth;
+using PoMiniGames.Features.Identity;
 using PoMiniGames.Features.Shared.Lobby;
 using PoMiniGames.Shared.Games;
 

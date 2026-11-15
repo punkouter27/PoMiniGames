@@ -159,7 +159,7 @@ public class OnlineModesUiTests
     /// <summary>A fresh context (own cookies → own guest session), landed on the page with the intro dismissed.</summary>
     private async Task<(IPage Page, PlaywrightErrorGuard Guard)> OpenAsGuestAsync(IBrowser browser, string path, string tag)
     {
-        var context = await browser.NewContextAsync(new BrowserNewContextOptions
+        var context = await browser.NewPlayerContextAsync(new BrowserNewContextOptions
         {
             ViewportSize = new ViewportSize { Width = 1280, Height = 900 },
         });
@@ -171,7 +171,7 @@ public class OnlineModesUiTests
         };
         page.PageError += (_, err) => _output.WriteLine($"[{tag}:pageerror] {err}");
 
-        await page.GotoAsync($"{Origin}{path}?autoGuest=1", new PageGotoOptions
+        await page.GotoAsync($"{Origin}{path}", new PageGotoOptions
         {
             WaitUntil = WaitUntilState.NetworkIdle,
             Timeout = 60_000,

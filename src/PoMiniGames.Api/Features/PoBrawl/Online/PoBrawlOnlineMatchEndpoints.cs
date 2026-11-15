@@ -2,7 +2,7 @@ using Microsoft.AspNetCore.Mvc;
 using PoMiniGames.Domain.Abstractions;
 using PoMiniGames.Domain.Primitives;
 using PoMiniGames.Domain.Services;
-using PoMiniGames.Features.Auth;
+using PoMiniGames.Features.Identity;
 using PoMiniGames.Features.Integrity;
 using PoMiniGames.Features.MatchHistory;
 using PoMiniGames.Features.Shared;
@@ -54,15 +54,14 @@ public static class PoBrawlOnlineMatchEndpoints
                         new Dictionary<string, string[]> { [nameof(dto.MatchId)] = ["MatchId is required."] });
                 }
 
-                // Authoritative identity — never trust the client-supplied owner id
-                // or display name. The auth cookie is the only source of truth for
-                // who the submitting player actually is.
+                // The owner id and display name come from the request's player identity,
+                // never from the body.
                 var (userId, displayName, isGuest, _) = RequestIdentity.Resolve(http.User);
                 if (string.IsNullOrWhiteSpace(userId))
                 {
                     return Results.Problem(
-                        title: "Sign in required",
-                        detail: "Live 1v1 matches require an authenticated identity so Elo can be attributed.",
+                        title: "Player id required",
+                        detail: "Live 1v1 matches need a player id so Elo can be attributed.",
                         statusCode: StatusCodes.Status401Unauthorized);
                 }
 

@@ -88,12 +88,12 @@ public class MarbleRaceMapCertificationTests
         // The engine needs a GL context to boot even though nothing is drawn.
         options.Args = ["--enable-unsafe-swiftshader", "--use-gl=angle", "--use-angle=swiftshader"];
         await using var browser = await playwright.Chromium.LaunchAsync(options);
-        var page = await (await browser.NewContextAsync()).NewPageAsync();
+        var page = await (await browser.NewPlayerContextAsync()).NewPageAsync();
         await using var guard = PlaywrightErrorGuard.Watch(page);
         page.PageError += (_, err) => _output.WriteLine($"[pageerror] {err}");
 
         var origin = _fixture.ServerAddress.TrimEnd('/');
-        await page.GotoAsync($"{origin}/pomarblerace/demo?autoGuest=1",
+        await page.GotoAsync($"{origin}/pomarblerace/demo",
             new PageGotoOptions { WaitUntil = WaitUntilState.NetworkIdle, Timeout = 60_000 });
         await page.WaitForFunctionAsync("() => window.__game && window.__game()", null,
             new PageWaitForFunctionOptions { Timeout = 120_000 });

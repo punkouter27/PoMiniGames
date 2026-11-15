@@ -17,9 +17,9 @@ public class DeploymentSmokeTests
 
     [Theory]
     [InlineData("/health")]
-    // The /api/auth/handshake route is the cheapest public probe of the BFF /api prefix; the other
-    // BFF routes (hubs, leaderboards) require setup that this fixture intentionally doesn't provide.
-    [InlineData("/api/auth/handshake")]
+    // /api/health/ping is the cheapest public probe of the /api prefix; the other routes (hubs,
+    // leaderboards) require setup that this fixture intentionally doesn't provide.
+    [InlineData("/api/health/ping")]
     // Microsoft.AspNetCore.OpenApi must publish the schema doc.
     [InlineData("/openapi/v1.json")]
     public async Task PublicProbe_Is2xx(string path)

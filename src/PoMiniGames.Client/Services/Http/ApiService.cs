@@ -5,7 +5,6 @@ using System.Net.Http.Json;
 // types by name, so importing the namespace wholesale would make them all ambiguous.
 using PoMiniGamesClient.Models;
 
-using PoMiniGamesClient.Services.Auth;
 using PoMiniGamesClient.Services.Http;
 using PoMiniGamesClient.Services.Interop;
 using PoMiniGamesClient.Services.Play;
@@ -23,18 +22,6 @@ public class ApiService
         _http = http;
     }
 
-    /// <summary>
-    /// Attaches (or clears) the Microsoft access token as the default bearer for every
-    /// subsequent API call, so authenticated endpoints work after MSAL sign-in.
-    /// </summary>
-    public void SetBearer(string? token)
-    {
-        HubConnectionFactory.BearerToken = string.IsNullOrEmpty(token) ? null : token;
-        _http.DefaultRequestHeaders.Authorization = string.IsNullOrEmpty(token)
-            ? null
-            : new System.Net.Http.Headers.AuthenticationHeaderValue("Bearer", token);
-    }
-
     public async Task<bool> IsAvailableAsync()
     {
         try
@@ -49,128 +36,6 @@ public class ApiService
         catch
         {
             return false;
-        }
-    }
-
-    /// <summary>
-    /// Single round-trip that returns the auth client config + (when a session
-    /// cookie exists) the canonical user profile, so AuthGate can hydrate with one RTT.
-    /// A bare try/catch returning null on every failure would conflate the
-    /// ERR_ABORTED that fires when a navigation tears down the in-flight
-    /// request with the X-Reauth header that signals a stale-cookie unprotect
-    /// failure. Both surface as distinct exceptions so the caller can
-    /// keep the previous user on a transient abort and force a fresh dev
-    /// login on a reauth signal.
-    /// </summary>
-    public async Task<AuthHandshake?> GetAuthHandshakeAsync()
-    {
-        AuthHandshakeReauthRequiredException? reauth = null;
-        try
-        {
-            using var response = await _http.GetAsync("/api/auth/handshake");
-            if (response.Headers.TryGetValues("X-Reauth", out var reauthHeader)
-                && reauthHeader.Any(v => v == "1"))
-            {
-                // The server's data-protection key ring was rebuilt; the
-                // cookie we sent is no longer decryptable. The caller must
-                // trigger a fresh dev-login so the user isn't stranded on
-                // a stale identity.
-                reauth = new AuthHandshakeReauthRequiredException("Auth cookie no longer decryptable");
-            }
-            if (reauth is not null) throw reauth;
-            if (!response.IsSuccessStatusCode)
-            {
-                return null;
-            }
-            return await response.Content.ReadFromJsonAsync(ApiJsonContext.Default.AuthHandshake);
-        }
-        catch (HttpRequestException ex) when (ex.StatusCode is null)
-        {
-            // Transport-level failure (DNS, connection refused, aborted
-            // navigation). Surface so the caller can keep the previous
-            // identity and show a "Reconnecting…" hint.
-            throw new AuthHandshakeUnavailableException("Auth handshake unreachable", ex);
-        }
-        catch (Exception ex) when (ex is not OperationCanceledException)
-        {
-            // Auth-side failure (5xx, schema drift, etc). Same surface as
-            // before: clear state and let the caller re-hydrate.
-            return null;
-        }
-
-    }
-
-    /// <summary>
-    /// Thrown when the auth handshake can't be reached at the transport layer
-    /// (no HTTP response — e.g. aborted by navigation, DNS, connection refused).
-    /// AuthStateService treats this as transient: keep the previous user rather
-    /// than blanking the header on a navigation race.
-    /// </summary>
-    public sealed class AuthHandshakeUnavailableException : Exception
-    {
-        public AuthHandshakeUnavailableException(string message, Exception inner) : base(message, inner) { }
-    }
-
-    /// <summary>
-    /// Thrown when the server responded 401 with <c>X-Reauth: 1</c>, meaning the
-    /// data-protection key ring was rebuilt and the existing DevCookie can no
-    /// longer be unprotected. AuthStateService treats this as a forced
-    /// re-login: issue a fresh guest identity before continuing.
-    /// </summary>
-    public sealed class AuthHandshakeReauthRequiredException : Exception
-    {
-        public AuthHandshakeReauthRequiredException(string message) : base(message) { }
-    }
-
-    public async Task<AuthenticatedUserProfile?> DevLoginAsync(DevLoginRequest? request = null)
-    {
-        try
-        {
-            var response = await _http.PostAsJsonAsync("/api/auth/dev-login", request ?? new DevLoginRequest(), ApiJsonContext.Default.DevLoginRequest);
-            return response.IsSuccessStatusCode ? await response.Content.ReadFromJsonAsync(ApiJsonContext.Default.AuthenticatedUserProfile) : null;
-        }
-        catch
-        {
-            return null;
-        }
-    }
-
-    public async Task<AuthenticatedUserProfile?> DevBypassAsync(string? userName = null)
-    {
-        var name = string.IsNullOrWhiteSpace(userName) ? "Dev Admin" : userName;
-        // Only the name is sent. The server suffixes it and derives the user id and email from
-        // the suffixed form, so two guests never share an id. Pinning the id here ("dev-guest")
-        // made every guest the same player: one profile, one row per board.
-        return await DevLoginAsync(new DevLoginRequest { DisplayName = name });
-    }
-
-    public async Task<bool> DevLogoutAsync()
-    {
-        try
-        {
-            var response = await _http.PostAsync("/api/auth/dev-logout", null);
-            return response.IsSuccessStatusCode;
-        }
-        catch
-        {
-            return false;
-        }
-    }
-
-    public async Task<AuthenticatedUserProfile?> GetAuthenticatedUserAsync(string? accessToken = null)
-    {
-        try
-        {
-            var request = new HttpRequestMessage(HttpMethod.Get, "/api/auth/me");
-            if (!string.IsNullOrEmpty(accessToken))
-                request.Headers.Authorization = new System.Net.Http.Headers.AuthenticationHeaderValue("Bearer", accessToken);
-
-            var response = await _http.SendAsync(request);
-            return response.IsSuccessStatusCode ? await response.Content.ReadFromJsonAsync(ApiJsonContext.Default.AuthenticatedUserProfile) : null;
-        }
-        catch
-        {
-            return null;
         }
     }
 
@@ -206,7 +71,7 @@ public class ApiService
     // limited to 5/min, and are only ever triggered by an explicit click on the profile page.
 
     /// <summary>
-    /// Downloads every row the platform stores about the signed-in caller, as raw JSON.
+    /// Downloads every row the platform stores about the identified caller, as raw JSON.
     /// </summary>
     /// <remarks>
     /// Returned as a string rather than a parsed object on purpose: the caller hands it straight

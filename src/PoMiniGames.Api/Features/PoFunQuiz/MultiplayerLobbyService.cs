@@ -92,8 +92,8 @@ public class MultiplayerLobbyService(IFunQuizQuestionSource questions, ILogger<M
         if (game is null) return null;
         // If this connection re-joins, drop the old slot first.
         game.Players.RemoveAll(p => p.ConnectionId == connectionId);
-        // Two anonymous players share one "Guest######" identity when they sign in
-        // from the same browser, so disambiguate a duplicate name with a suffix.
+        // Two players can carry the same initials (or both skipped the prompt), so
+        // disambiguate a duplicate name with a suffix.
         var taken = new HashSet<string>(game.Players.Select(p => p.Name), StringComparer.OrdinalIgnoreCase);
         var uniqueName = playerName;
         for (var i = 2; taken.Contains(uniqueName); i++) uniqueName = $"{playerName} ({i})";

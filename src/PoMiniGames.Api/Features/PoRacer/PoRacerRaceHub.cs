@@ -1,5 +1,5 @@
 using Microsoft.AspNetCore.SignalR;
-using PoMiniGames.Features.Auth;
+using PoMiniGames.Features.Identity;
 using PoMiniGames.Shared.Games;
 
 namespace PoMiniGames.Features.PoRacer;
@@ -15,7 +15,7 @@ public sealed class PoRacerRaceHub(PoRacerRaceRegistry registry) : Hub
     public async Task<PoRacerRaceSnapshot> JoinRace(string code, bool asPlayer = false, string? trackId = null, PoRacerJoinOptions? options = null)
     {
         var identity = RequestIdentity.Resolve(Context.User);
-        if (string.IsNullOrEmpty(identity.UserId)) throw new HubException("Sign in or continue as a guest to race.");
+        if (string.IsNullOrEmpty(identity.UserId)) throw new HubException("This connection carried no player id. Reload the page and try again.");
         var player = new PoRacerLobbyPlayer(Context.ConnectionId, identity.DisplayName, identity.IsGuest, true, identity.UserId);
         var race = registry.Join(code, asPlayer, player, trackId, options);
         int? localCarId = null;

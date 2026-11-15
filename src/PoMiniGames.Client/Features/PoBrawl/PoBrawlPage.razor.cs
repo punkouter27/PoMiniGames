@@ -244,13 +244,9 @@ public partial class PoBrawlPage
             Nav.NavigateTo("/pobrawl" + new Uri(Nav.Uri).Query, replace: true);
         }
         LoadLocalProgress();
-        // The name can still be settling (localStorage read, then the signed-in display name) —
+        // The name can still be settling (localStorage read, then the initials) —
         // and everything above is keyed by it. See OnPlayerNameChanged.
         PlayerNameService.StateChanged += OnPlayerNameChanged;
-        // Same for the identity itself: under ?autoGuest=1 the guest session is still being
-        // minted on first render, so the cloud-progress fetch below 403s. OnAuthSettled
-        // re-runs the merge the moment auth flips to signed-in. See MergeRemoteProgressAsync.
-        Auth.StateChanged += OnAuthSettled;
 
         if (_mode == "2p")
         {
@@ -267,32 +263,15 @@ public partial class PoBrawlPage
         || string.Equals(mode, GameModes.OnePlayerSlug, StringComparison.OrdinalIgnoreCase)
         || string.Equals(mode, GameModes.TwoPlayerSlug, StringComparison.OrdinalIgnoreCase);
 
-    // One remote-progress merge per page life: first render when already signed in, otherwise
-    // the moment the auto-guest identity settles (see OnAuthSettled).
-    private bool _progressFetched;
-
     /// <summary>
     /// 1P: pick up ladder progress saved from another device (GET /api/pobrawl/progress). The
     /// newer of the two copies wins the rung; the fastest KO and the clear count take the best.
-    /// Never blocks the page — offline or signed out, the local copy simply stands.
+    /// Never blocks the page — offline, the local copy simply stands.
     /// </summary>
     protected override async Task OnInitializedAsync()
     {
         if (_mode != "1p") return;
-        if (!Auth.IsAuthenticated) return; // OnAuthSettled picks this up.
-        _progressFetched = true;
         await MergeRemoteProgressAsync();
-    }
-
-    private void OnAuthSettled()
-    {
-        if (_mode != "1p" || _progressFetched || _introDone || !Auth.IsAuthenticated) return;
-        _progressFetched = true;
-        _ = InvokeAsync(async () =>
-        {
-            await MergeRemoteProgressAsync();
-            StateHasChanged();
-        });
     }
 
     private async Task MergeRemoteProgressAsync()
@@ -353,7 +332,7 @@ public partial class PoBrawlPage
 
     /// <summary>
     /// The player name settled after OnInitialized read it. On a reload the page can initialise
-    /// before the stored name (and then the signed-in display name) arrives, so the rung would be
+    /// before the stored name (and then the initials) arrives, so the rung would be
     /// read under the wrong key. Re-read it — until the fight starts; after that the running
     /// match owns the numbers.
     /// </summary>
@@ -655,7 +634,7 @@ public partial class PoBrawlPage
         catch (Exception ex)
         {
             // A missing fight is not an exception — JoinMatch answers null (OnNetJoinedAsync).
-            // Anything thrown is the transport, the sign-in or the hub refusing: worth a retry.
+            // Anything thrown is the transport or the hub refusing: worth a retry.
             Console.Error.WriteLine($"[PoBrawl] online connect failed: {ex.Message}");
             _netConnectFailed = true;
             _netConnectError = PoBrawlNetSession.HubMessage(ex, "The fight server didn't answer. Check your connection and try again.");
@@ -1243,13 +1222,12 @@ public partial class PoBrawlPage
     }
 
     /// <summary>
-    /// Persist the rung here and, signed in, on the server (PUT /api/pobrawl/progress) so the run
+    /// Persist the rung here and on the server (PUT /api/pobrawl/progress) so the run
     /// follows the player to another device. The timestamp is what lets the newer copy win on load.
     /// </summary>
     private void SaveLadder()
     {
         var progress = PoBrawlProgressBook.RecordRung(_playerName, _ladder);
-        if (!Auth.IsAuthenticated) return;
         _ = ApiService.SavePoBrawlProgressAsync(progress);
     }
 
@@ -1259,7 +1237,6 @@ public partial class PoBrawlPage
         // page boots (the Cup shares the PoBrawl global).
         ++_ladderRollGeneration;
         PlayerNameService.StateChanged -= OnPlayerNameChanged;
-        Auth.StateChanged -= OnAuthSettled;
         try { await JSRuntime.InvokeVoidAsync("PoBrawl.destroy"); } catch { }
         // Leaving the page mid-fight is a drop: the server's reconnect grace starts now.
         if (_net is not null) await _net.DisposeAsync();

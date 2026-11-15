@@ -30,30 +30,17 @@ public class PoCabinetRouteUiTests
         // selector and paint shop panels.
         options.Args = ["--enable-unsafe-swiftshader", "--use-gl=angle", "--use-angle=swiftshader"];
         await using var browser = await playwright.Chromium.LaunchAsync(options);
-        var context = await browser.NewContextAsync(new BrowserNewContextOptions
+        var context = await browser.NewPlayerContextAsync(new BrowserNewContextOptions
         {
             ViewportSize = MobileViewport.Portrait,
         });
-        // FakeAuth identity on requests to the app origin ONLY. Context-wide extra headers also
-        // rode on the three.js CDN imports, where X-Fake-* forces a CORS preflight jsdelivr
-        // rejects: the engine never loaded here, which went unnoticed while the race view's
-        // markup rendered regardless (it now shows the "race view stopped" card instead).
         var origin = _fixture.ServerAddress.TrimEnd('/');
-        await context.RouteAsync($"{origin}/**", async route =>
-        {
-            var headers = new Dictionary<string, string>(route.Request.Headers)
-            {
-                ["X-Fake-User"] = "test-user",
-                ["X-Fake-Roles"] = "Player",
-            };
-            await route.ContinueAsync(new RouteContinueOptions { Headers = headers });
-        });
         var page = await context.NewPageAsync();
         await using var guard = PlaywrightErrorGuard.Watch(page);
         page.Console += (_, msg) => { if (msg.Type is "error") Console.WriteLine($"[browser:error] {msg.Text}"); };
         page.PageError += (_, err) => Console.WriteLine($"[pageerror] {err}");
 
-        await page.GotoAsync($"{origin}{path}?autoGuest=1",
+        await page.GotoAsync($"{origin}{path}",
             new PageGotoOptions { WaitUntil = WaitUntilState.NetworkIdle, Timeout = 60_000 });
 
         // The Blazor WASM runtime replaces the loading placeholder once #app renders.

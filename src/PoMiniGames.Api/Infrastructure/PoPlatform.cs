@@ -120,7 +120,7 @@ public static class PoPlatform
     /// <remarks>
     /// The Azure Monitor exporter maps <c>enduser.id</c> onto <c>user_AuthenticatedId</c>, which is
     /// what makes every request, dependency and exception in the operation attributable to a person
-    /// rather than only the sign-in record.
+    /// rather than only the first-visit record.
     /// </remarks>
     public static void TagEndUser(string? userId)
     {

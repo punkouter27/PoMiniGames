@@ -47,22 +47,21 @@ public class InviteAndClientErrorContractTests
                 $$"""{"message":"{{new string('x', ClientErrorEndpoints.MaxBodyBytes)}}"}"""))
             .Should().Be(HttpStatusCode.RequestEntityTooLarge);
 
-        // ── Invites: anonymous callers learn nothing ─────────────────────
-        foreach (var (method, path) in new[]
-                 {
-                     ("GET", "/api/push/key"), ("POST", "/api/push/subscriptions"), ("POST", "/api/invites"),
-                     ("GET", "/api/invites/pending"), ("GET", "/api/invites/qr?game=poracer"),
-                 })
+        // ── Invites: public pieces answer anyone; a caller with no player id learns nothing ──
+        // The push key is a VAPID public key and the QR code encodes a public lobby address.
+        (await client.GetAsync("/api/push/key")).StatusCode.Should().Be(HttpStatusCode.OK);
+        (await client.GetAsync("/api/invites/qr?game=poracer")).StatusCode.Should().Be(HttpStatusCode.OK);
+        (await client.GetStringAsync("/api/invites/pending")).Should().Be("[]", "no player id, so no invites to show");
+        foreach (var (method, path) in new[] { ("POST", "/api/push/subscriptions"), ("POST", "/api/invites") })
         {
             using var request = new HttpRequestMessage(new HttpMethod(method), path);
             if (method == "POST") request.Content = new StringContent("{}", Encoding.UTF8, "application/json");
             using var response = await client.SendAsync(request);
-            response.StatusCode.Should().Be(HttpStatusCode.Unauthorized, $"{method} {path} is behind the auth gate");
+            response.IsSuccessStatusCode.Should().BeFalse($"{method} {path} has no player to answer for");
         }
 
-        // ── Invites: a signed-in guest ───────────────────────────────────
-        var login = await client.GetAsync($"/auth/login/fake?displayName=Invite{Guid.NewGuid().ToString("N")[..8]}");
-        login.IsSuccessStatusCode.Should().BeTrue("guest login must succeed under the Test environment");
+        // ── Invites: an identified player ───────────────────────────────
+        client.AsPlayer($"Invite{Guid.NewGuid().ToString("N")[..8]}");
         await client.ArmAntiforgeryAsync();
 
         using (var qr = await client.GetAsync("/api/invites/qr?game=poracer"))

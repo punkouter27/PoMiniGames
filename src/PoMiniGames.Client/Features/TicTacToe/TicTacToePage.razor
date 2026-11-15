@@ -8,7 +8,6 @@
 @using PoMiniGames.Shared.Games;
 @inject NavigationManager Navigation;
 @inject ApiEndpoints Endpoints;
-@inject AuthStateService AuthState;
 @inject ToastService Toasts;
 @inject PlayerNameService PlayerNameService;
 @inject MatchHistoryService MatchHistory;
@@ -20,7 +19,7 @@
    (HandleTwoPlayerMove records a local match instead) — so showing the
    grid there would display stale 1P figures. Matches ConnectFive.
    The ELO badge, like Connect Five and Brawl, goes through GameShell.Elo so the
-   live rating shows next to the signed-in identity on 1P AI. *@
+   live rating shows next to the player's initials on 1P AI. *@
 <PageTitle>Tic-Tac-Toe · PoMiniGames</PageTitle>
 
 @* Same 5 s post-win pause as Connect Five — let the winning
@@ -726,7 +725,7 @@
     {
         if (_online is null)
         {
-            _online = new OnlineTurnSession(Endpoints, AuthState, Toasts, MatchHistory, "tictactoe/hub", "tictactoe", P1Name);
+            _online = new OnlineTurnSession(Endpoints, Toasts, MatchHistory, "tictactoe/hub", "tictactoe", P1Name);
             _online.Changed += () => _ = InvokeAsync(StateHasChanged);
             _online.GameStarted += _ => ResetBoardState();
             _online.MoveApplied += OnOnlineMove;

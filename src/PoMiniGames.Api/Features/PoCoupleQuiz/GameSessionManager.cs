@@ -49,8 +49,8 @@ public sealed class GameSessionManager
             // second seat at the table.
             if (_session.Players.Any(p => p.ConnectionId == connectionId)) return _session;
 
-            // Two anonymous players share one "Guest######" identity when they sign in from
-            // the same browser (shared session cookie), so the same name can join twice. The
+            // Two players can carry the same initials (two tabs of one browser, the same three
+            // letters, or both skipped the prompt), so the same name can join twice. The
             // name is the identity key for round scoring, so a collision would collapse both
             // players into one. Disambiguate with a numeric suffix.
             _session.Players.Add(new LobbyPlayer(EnsureUniqueName(_session, playerName), connectionId));

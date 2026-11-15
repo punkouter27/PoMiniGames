@@ -85,12 +85,18 @@
             <div id="gl-account-menu" popover="auto" class="gl-overflow-panel"
                  role="menu" aria-label="Player Menu">
                 <p class="gl-overflow-head">PLAYER 1: <strong class="gl-arcade-initials">[@PlayerNames.Initials]</strong></p>
-                <button type="button" class="gl-overflow-item" role="menuitem"
-                        popovertarget="gl-account-menu" popovertargetaction="hide"
-                        @onclick="OpenInitialsPrompt">
-                    <span class="material-symbols-outlined gl-overflow-icon" aria-hidden="true">edit</span>
-                    <span>Change Initials</span>
-                </button>
+                @* Initials are only editable from the main menu: mid-game the prompt would
+                   steal the keyboard from the arena, and nothing a player types there is
+                   worth interrupting a bout for. *@
+                @if (AtMainMenu)
+                {
+                    <button type="button" class="gl-overflow-item" role="menuitem"
+                            popovertarget="gl-account-menu" popovertargetaction="hide"
+                            @onclick="OpenInitialsPrompt">
+                        <span class="material-symbols-outlined gl-overflow-icon" aria-hidden="true">edit</span>
+                        <span>Change Initials</span>
+                    </button>
+                }
                 @foreach (var (path, label, icon) in MenuPages)
                 {
                     <button type="button" class="gl-overflow-item" role="menuitem"
@@ -182,6 +188,18 @@
     private bool IsCurrent(string path) =>
         string.Equals(new Uri(NavigationManager.Uri).AbsolutePath.TrimEnd('/'), path, StringComparison.OrdinalIgnoreCase);
 
+    /// <summary>True on the catalog grid (the app's home route) and nowhere else.</summary>
+    private bool AtMainMenu
+    {
+        get
+        {
+            var path = NavigationManager.ToBaseRelativePath(NavigationManager.Uri);
+            var cut = path.AsSpan().IndexOfAny('?', '#');
+            if (cut >= 0) path = path[..cut];
+            return path.Trim('/').Length == 0;
+        }
+    }
+
     private string DisplayInitialsLabel =>
         string.IsNullOrWhiteSpace(PlayerNames.Initials) ? "blank" : PlayerNames.Initials;
 
@@ -211,18 +229,15 @@
         ScoreSync.Changed += _onPendingChanged;
 
         // The payoff moment for the whole offline-score story: parked runs reaching
-        // the board. Subscribed to the service rather than fired at the sign-in call
-        // site, because a flush now has three triggers (sign-in, app start,
-        // reconnect) and the celebration should not belong to whichever one the
-        // feature started life with.
+        // the board. Subscribed to the service rather than fired at a call site,
+        // because a flush has two triggers (app start, reconnect) and the
+        // celebration should not belong to either one.
         _onScoresFlushed = count => InvokeAsync(() => CelebrateFlushAsync(count));
         ScoreSync.Flushed += _onScoresFlushed;
 
         // Coming back online is the canonical moment to drain the queue — the
         // service's own summary has always promised "whenever the API is reachable
-        // again", but sign-in was the only thing that ever called it, so a player
-        // who went offline mid-session and came back had to sign out and in to get
-        // their runs onto the board.
+        // again".
         _onOnlineFlush = () =>
         {
             if (OnlineStatus.IsOnline) _ = ScoreSync.FlushAsync();
@@ -264,9 +279,8 @@
         // game route is showing. Started here, once, for the same reason the two above are —
         // it is app-wide behaviour, and no individual game page should have to remember it.
         await PlaySessions.InitializeAsync();
-        // Third flush trigger: a queue that survived a reload (localStorage-backed)
-        // should drain as soon as the app is up, without waiting for the player to
-        // sign in again. Deliberately not awaited — a slow or unreachable API must
+        // Second flush trigger: a queue that survived a reload (localStorage-backed)
+        // should drain as soon as the app is up. Deliberately not awaited — a slow or unreachable API must
         // not delay the rest of this after-render pass, and FlushAsync is
         // re-entrancy guarded so racing the reconnect handler is harmless.
         _ = ScoreSync.FlushAsync();

@@ -1,6 +1,6 @@
 using FluentValidation;
 using System.Reflection;
-using PoMiniGames.Features.Auth;       // Source-generated AuthLog
+using PoMiniGames.Features.Identity;
 using PoMiniGames.Domain.Abstractions;
 using PoMiniGames.Infrastructure;
 using PoMiniGames.Infrastructure.Services;
@@ -131,9 +131,8 @@ if (builder.Environment.IsDevelopment())
                     "https://localhost:5080")
                 .AllowAnyHeader()
                 .AllowAnyMethod()
-                // The auth flow returns a bearer in JSON; allow credentials
-                // so the dev cookie (FakeAuthHandler header + cookie pair)
-                // round-trips during the handshake.
+                // Allow credentials so the antiforgery cookie round-trips when the
+                // client runs on its own dev port.
                 .AllowCredentials();
         });
     });
@@ -158,7 +157,7 @@ if (app.Environment.IsProduction())
 // ─── Production safety guards ─────────────────────────────────────────
 // All Production-fail-fast checks live in StartupSecretValidator (IHostedService
 // that runs before the first HTTP request). Single source of truth — see
-// src/PoMiniGames.API/Infrastructure/StartupSecretValidator.cs.
+// src/PoMiniGames.Api/Infrastructure/StartupSecretValidator.cs.
 
 // Initialize storage eagerly so the database is ready before the first request.
 app.Services.GetRequiredService<StorageService>().Initialize();
@@ -196,8 +195,8 @@ app.Use((ctx, next) =>
     return next(ctx);
 });
 // CORS: applies only in Development (see registration above). Must precede
-// UseAuthentication / MapPoMiniGamesEndpoints so preflight OPTIONS requests
-// are answered before the auth pipeline tries to validate them.
+// UsePlayerIdentity / MapPoMiniGamesEndpoints so preflight OPTIONS requests
+// are answered before anything else looks at them.
 if (app.Environment.IsDevelopment())
 {
     app.UseCors("PoMiniGamesDevSpa");
@@ -387,9 +386,9 @@ app.UseStaticFiles(new Microsoft.AspNetCore.Builder.StaticFileOptions
 app.UsePlayerIdentity();
 app.UseRateLimiter();
 
-// CSRF gate. Deliberately AFTER UseAuthentication: the antiforgery token is bound to
-// the user's identity claims, so validating before the principal is established would
-// reject every token this same user was just issued. After UseRateLimiter too, so a flood
+// CSRF gate. Deliberately AFTER UsePlayerIdentity: the antiforgery token is bound to
+// the player's identity claims, so validating before the principal is established would
+// reject every token this same player was just issued. After UseRateLimiter too, so a flood
 // of token-less writes is shed by the limiter rather than each one paying for a
 // Data Protection unprotect.
 app.UsePoMiniGamesAntiforgery();

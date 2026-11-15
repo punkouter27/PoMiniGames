@@ -502,8 +502,6 @@ class CinematicsMethods {
     // place themselves and ignore it).
     this._camSideCut = false;
 
-    // Picture-in-picture iso camera (director.js); drawn after the composer in game.js.
-    this._updateIsoCam(dt);
   }
 }
 

@@ -37,12 +37,12 @@ public class PoMuleUiTests
         var shots = Shots();
 
         // ── Desktop, keyboard ──
-        var desktop = await browser.NewContextAsync(new() { ViewportSize = new() { Width = 1280, Height = 720 } });
+        var desktop = await browser.NewPlayerContextAsync(new() { ViewportSize = new() { Width = 1280, Height = 720 } });
         var page = await desktop.NewPageAsync();
         await using var desktopGuard = PlaywrightErrorGuard.Watch(page);
         var errors = new List<string>();
         page.PageError += (_, err) => errors.Add(err);
-        await page.GotoAsync($"{origin}/pomule/1player?autoGuest=1", new() { WaitUntil = WaitUntilState.NetworkIdle, Timeout = 60_000 });
+        await page.GotoAsync($"{origin}/pomule/1player", new() { WaitUntil = WaitUntilState.NetworkIdle, Timeout = 60_000 });
 
         // Start card: eight species from Radzen's data list, one pick, Start.
         await page.Locator(".pm-species-card").First.WaitForAsync(new() { Timeout = 60_000 });
@@ -127,10 +127,10 @@ public class PoMuleUiTests
         await desktop.CloseAsync();
 
         // ── Phone in landscape, touch ──
-        var phone = await browser.NewContextAsync(new() { ViewportSize = new() { Width = 844, Height = 390 }, HasTouch = true, IsMobile = true });
+        var phone = await browser.NewPlayerContextAsync(new() { ViewportSize = new() { Width = 844, Height = 390 }, HasTouch = true, IsMobile = true });
         var mobile = await phone.NewPageAsync();
         await using var mobileGuard = PlaywrightErrorGuard.Watch(mobile);
-        await mobile.GotoAsync($"{origin}/pomule/1player?autoGuest=1", new() { WaitUntil = WaitUntilState.NetworkIdle, Timeout = 60_000 });
+        await mobile.GotoAsync($"{origin}/pomule/1player", new() { WaitUntil = WaitUntilState.NetworkIdle, Timeout = 60_000 });
         await mobile.Locator(".pm-species-card").First.WaitForAsync(new() { Timeout = 60_000 });
         await mobile.GetByRole(AriaRole.Button, new() { Name = "OK", Exact = true }).TapAsync();
         await WaitForPhase(mobile, Land, 1);
@@ -164,7 +164,7 @@ public class PoMuleUiTests
     {
         using var playwright = await Playwright.CreateAsync();
         await using var browser = await playwright.Chromium.LaunchAsync(BrowserLaunch.Options());
-        var context = await browser.NewContextAsync(new() { ViewportSize = new() { Width = 1280, Height = 720 } });
+        var context = await browser.NewPlayerContextAsync(new() { ViewportSize = new() { Width = 1280, Height = 720 } });
         var page = await context.NewPageAsync();
         await using var guard = PlaywrightErrorGuard.Watch(page);
         var errors = new List<string>();
@@ -174,7 +174,7 @@ public class PoMuleUiTests
         page.Request += (_, request) => { if (request.Method == "POST" && request.Url.Contains("/api/pomule/")) scorePosts++; };
 
         var origin = _fixture.ServerAddress.TrimEnd('/');
-        await page.GotoAsync($"{origin}/pomule/demo?autoGuest=1", new() { WaitUntil = WaitUntilState.NetworkIdle, Timeout = 60_000 });
+        await page.GotoAsync($"{origin}/pomule/demo", new() { WaitUntil = WaitUntilState.NetworkIdle, Timeout = 60_000 });
 
         // No input: the demo card times out and sixteen AI colonists start month 1.
         await WaitForPhase(page, Development, 1);

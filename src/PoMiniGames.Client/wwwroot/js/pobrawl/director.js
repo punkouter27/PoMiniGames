@@ -1,8 +1,10 @@
 // director.js — the broadcast director. In the CPU-only mode ('tournament', the Cup) nobody
-// plays, so instead of the one fixed boom the camera cuts like a TV truck: a shot list of rigs,
-// a director that picks the next one from fight events and a shot clock, and a small
-// picture-in-picture "iso cam" on the fighter the main shot is not centred on.
+// plays, so instead of the one fixed boom the camera cuts like a TV truck: a shot list of rigs
+// and a director that picks the next one from fight events and a shot clock.
 // Mixed into BrawlGame's prototype (`this` is the live game) — see mixin.js.
+//
+// The picture-in-picture "iso cam" that used to sit in the bottom-left corner is gone: over the
+// arena it read as a second, competing window rather than as coverage.
 //
 // Ownership with the rest of the camera (cinematics.js _updateCamera):
 //   KO and super keep their own branches and always win — the director only drives the
@@ -11,8 +13,6 @@
 // would change seeded replays and break online determinism.
 
 import * as THREE from 'three';
-import { OutputPass } from 'three/addons/postprocessing/OutputPass.js';
-import * as Quality from './quality.js';
 import { MAX_HP, HEAVY_HIT_DMG } from './constants.js';
 
 // Shot clock, seconds. Reduced motion holds every shot longer and never whip-pans.
@@ -37,20 +37,11 @@ const POOL = [
 ];
 const TIGHT = new Set(['two', 'ots', 'pushin']);
 
-// Iso cam: share of the host width, 16:9, rendered below the inset's device pixels.
-const ISO_WIDTH = 0.22;
-const ISO_ASPECT = 16 / 9;
-const ISO_RES = 0.8;
-const ISO_MARGIN = 12;
-const ISO_MIN_HOST_W = 640;
-
 const _a = new THREE.Vector3();
 const _b = new THREE.Vector3();
 const _c = new THREE.Vector3();
 const _m = new THREE.Matrix4();
-const _q = new THREE.Quaternion();
 const _up = new THREE.Vector3(0, 1, 0);
-const _size = new THREE.Vector2();
 
 const smooth = (x) => { const t = THREE.MathUtils.clamp(x, 0, 1); return t * t * (3 - 2 * t); };
 const rand = (lo, hi) => lo + Math.random() * (hi - lo);
@@ -96,7 +87,7 @@ function clampRadius(p, name) {
 }
 
 class DirectorMethods {
-  /** Director state, created on first use. `on`/`isoOn` come from init options (default on). */
+  /** Director state, created on first use. `on` comes from the init options (default on). */
   _dirState() {
     if (this._dir) return this._dir;
     const o = this.options || {};
@@ -104,7 +95,6 @@ class DirectorMethods {
     const full = this._fullShow();
     this._dir = {
       on: o.director === undefined ? full : o.director !== false,
-      isoOn: o.isoCam === undefined ? full : o.isoCam !== false,
       live: false,
       shot: null,         // { name, len, t, focus, side, seed, pos, look, fov }
       prev: null,         // name of the shot before, to avoid repeats
@@ -117,7 +107,6 @@ class DirectorMethods {
       victim: 1,          // the fighter who last took a landed hit
       whip: null,         // { t, fromPos, fromQuat }
       cuts: { n: 0, whip: 0 },
-      iso: null,          // lazily built by _isoBuild
     };
     return this._dir;
   }
@@ -129,16 +118,9 @@ class DirectorMethods {
     if (!d.on) this._directorRelease();
   }
 
-  /** Public toggle (index.js) for the picture-in-picture iso cam. */
-  setIsoCam(on) {
-    const d = this._dirState();
-    d.isoOn = !!on;
-    if (!d.isoOn) this._isoShow(false);
-  }
-
   /**
-   * Diagnostics for the harness: the live shot and whether the iso inset is up. `force`
-   * (a rig name) cuts to that shot on the next frame — a test hook, never used by the page.
+   * Diagnostics for the harness: the live shot. `force` (a rig name) cuts to that shot on the
+   * next frame — a test hook, never used by the page.
    */
   directorState(force) {
     const d = this._dirState();
@@ -146,7 +128,6 @@ class DirectorMethods {
     return {
       on: d.on, live: d.live, shot: d.shot?.name ?? null, focus: d.shot?.focus ?? null,
       shotT: d.shot ? Math.round(d.shot.t * 100) / 100 : 0,
-      iso: d.isoOn, isoShown: !!d.iso?.shown, isoFocus: d.iso?.focus ?? null,
       cuts: d.cuts.n, whips: d.cuts.whip, calm: this._calm(),
     };
   }
@@ -356,7 +337,6 @@ class DirectorMethods {
     this.camera.fov = fov;
     this.camera.updateProjectionMatrix();
     shot.snap = true;
-    this._isoRetarget();
   }
 
   // ── The rigs ──────────────────────────────────────────────────────────
@@ -465,192 +445,6 @@ class DirectorMethods {
         return base;
       }
     }
-  }
-
-  // ── Iso cam (picture-in-picture) ──────────────────────────────────────
-  // A second, cheap render of the scene: a small half-float target at ~0.8× the inset's
-  // device pixels, every other frame, no post chain and no shadow-map re-render, then
-  // tone-mapped into a scissored corner of the canvas by its own OutputPass.
-
-  _isoAllowed() {
-    if (!this._directorAllowed()) return false;
-    const d = this._dirState();
-    if (!d.isoOn) return false;
-    if ((this._hostW || 0) < ISO_MIN_HOST_W) return false;
-    // Tier hysteresis: a drop to 'low' pulls the inset at once (it is the first thing to
-    // go when frames are short), but it only comes back at the next round's bell, so a
-    // tier hovering at the boundary cannot pop it in and out mid-fight.
-    if (this.phase !== d.isoPhase) {
-      if (this.phase === 'fighting') d.isoBlocked = Quality.tier() === 'low';
-      d.isoPhase = this.phase;
-    }
-    if (Quality.tier() === 'low') d.isoBlocked = true;
-    if (d.isoBlocked) return false;
-    if (d.coarse === undefined) {
-      try { d.coarse = window.matchMedia('(pointer: coarse)').matches; } catch { d.coarse = false; }
-    }
-    return !d.coarse;
-  }
-
-  _isoBuild() {
-    const d = this._dir;
-    if (d.iso) return d.iso;
-    const cam = new THREE.PerspectiveCamera(36, ISO_ASPECT, 0.1, this.camera.far);
-    const rt = new THREE.WebGLRenderTarget(16, 9, { type: THREE.HalfFloatType });
-    const out = new OutputPass();
-    out.renderToScreen = true;
-    const el = document.createElement('div');
-    el.className = 'pb-iso';
-    el.setAttribute('aria-hidden', 'true');
-    el.style.cssText = `position:absolute;left:${ISO_MARGIN}px;bottom:${ISO_MARGIN}px;display:none;`
-      + 'pointer-events:none;z-index:3;box-sizing:border-box;border:2px solid rgba(255,209,102,0.9);'
-      + 'border-radius:6px;box-shadow:0 6px 18px rgba(0,0,0,0.45),inset 0 0 0 1px rgba(0,0,0,0.55);';
-    el.innerHTML = '<span style="position:absolute;left:6px;top:6px;display:flex;align-items:center;gap:6px;'
-      + 'padding:2px 8px 2px 6px;border-radius:4px;background:rgba(8,10,22,0.82);color:#f4f6ff;'
-      + 'font:700 11px/1.4 system-ui,sans-serif;letter-spacing:0.08em;text-transform:uppercase;">'
-      + '<span style="width:7px;height:7px;border-radius:50%;background:#ff3b3b;box-shadow:0 0 6px #ff3b3b;"></span>'
-      + '<span class="pb-iso__name">ISO</span></span>';
-    this.container.appendChild(el);
-    d.iso = { cam, rt, out, el, nameEl: el.querySelector('.pb-iso__name'), shown: false, focus: 0,
-      w: 0, h: 0, frame: 0, fresh: false, pos: new THREE.Vector3(), aim: new THREE.Vector3(), snap: true };
-    return d.iso;
-  }
-
-  _isoShow(on) {
-    const iso = this._dir?.iso;
-    if (!iso || iso.shown === on) return;
-    iso.shown = on;
-    iso.el.style.display = on ? 'block' : 'none';
-    if (on) { iso.snap = true; iso.fresh = false; }
-  }
-
-  // Which fighter the inset follows: the one the main shot is NOT centred on.
-  _isoRetarget() {
-    const d = this._dir;
-    if (!d?.iso || !this.fighters) return;
-    const s = d.live ? d.shot : null;
-    let focus;
-    if (s && s.focus !== null && s.focus !== undefined) focus = 1 - s.focus;
-    else if (s && s.name !== 'reaction') {
-      // Project both from the new shot's pose; the one further from centre gets the iso.
-      // A tie (symmetric two-shot) goes to whoever is taking the punishment.
-      const ndc = [0, 1].map((i) => {
-        _m.lookAt(s.pos, s.look, _up);
-        _a.copy(this.fighters[i].rig.root.position).setY(1.2).sub(s.pos).applyMatrix4(_m.transpose());
-        return Math.abs(_a.x / Math.max(0.1, -_a.z));
-      });
-      focus = Math.abs(ndc[0] - ndc[1]) < 0.08 ? d.victim : (ndc[0] > ndc[1] ? 0 : 1);
-    } else focus = d.victim;
-    if (focus !== d.iso.focus) {
-      d.iso.focus = focus;
-      d.iso.snap = true;
-    }
-    const name = this.fighters[focus]?.rig?.config?.name || '';
-    d.iso.nameEl.textContent = `ISO · ${name}`;
-  }
-
-  /** Per frame, after the main camera (cinematics.js _updateCamera): place the iso camera. */
-  _updateIsoCam(dt) {
-    // Not over the KO or the super hero shot; a mode string still held at 'super' by the
-    // camera dwell after the beat has ended (`_superFighter` cleared) counts as normal.
-    const want = this.fighters && this._isoAllowed() && this.phase === 'fighting' && !this._compiling
-      && (this.cameraMode === 'normal' || (this.cameraMode === 'super' && !this._superFighter));
-    if (!want) { this._isoShow(false); return; }
-    const d = this._dir;
-    const iso = this._isoBuild();
-    if (!iso.shown) { this._isoShow(true); this._isoRetarget(); }
-    // Director off: no main shot to read, so follow whoever is taking the hits.
-    if (!d.live && iso.focus !== d.victim && (d.clock - (iso.switchedAt ?? -99)) > 3) {
-      iso.switchedAt = d.clock;
-      this._isoRetarget();
-    }
-    if (!d.live) {
-      // The events poll only runs inside the director; keep `victim` fresh without it.
-      for (let i = 0; i < 2; i++) {
-        const hp = this._hp(this.fighters[i]);
-        if (hp < d.lastHp[i]) { d.victim = i; d.lastHitAt = d.clock; }
-        d.lastHp[i] = hp;
-      }
-      d.clock += dt;
-    }
-
-    const sf = this.fighters[iso.focus];
-    const subj = sf.rig.root.position;
-    const opp = this.fighters[1 - iso.focus].rig.root.position;
-    // Frame the head and shoulders, not the root (the feet): fighters lean and duck.
-    const head = sf.rig.joints?.head;
-    if (head) head.getWorldPosition(_c); else _c.set(subj.x, 1.8, subj.z);
-    // Tight on the face from the opponent's side, swung 55° toward the audience so the
-    // opponent is not in the way.
-    const dir = flatDir(subj, opp, _a, _b.set(1, 0, 0));
-    const lat = _b.set(dir.z, 0, -dir.x);
-    if (lat.z < 0) lat.negate();
-    const cs = Math.cos(0.95), sn = Math.sin(0.95);
-    // The head joint is the neck pivot; the skull sits above it.
-    const tx = _c.x + (dir.x * cs + lat.x * sn) * 1.85;
-    const tz = _c.z + (dir.z * cs + lat.z * sn) * 1.85;
-    const k = iso.snap ? 1 : 1 - Math.exp(-dt * 5);
-    iso.pos.lerp(_a.set(tx, _c.y + 0.05, tz), k);
-    iso.aim.lerp(_b.set(_c.x, _c.y - 0.05, _c.z), k);
-    iso.snap = false;
-    iso.cam.position.copy(iso.pos);
-    iso.cam.lookAt(iso.aim);
-  }
-
-  /** After composer.render() (game.js loop): draw the inset over the finished frame. */
-  _renderIsoCam() {
-    const iso = this._dir?.iso;
-    if (!iso || !iso.shown) return;
-    const r = this.renderer;
-    const { x: W, y: H } = r.getSize(_size);
-    const w = Math.round(W * ISO_WIDTH), h = Math.round(w / ISO_ASPECT);
-    const pr = r.getPixelRatio();
-    const rw = Math.max(16, Math.round(w * pr * ISO_RES)), rh = Math.max(9, Math.round(h * pr * ISO_RES));
-    if (iso.w !== w || iso.h !== h) {
-      iso.w = w; iso.h = h;
-      iso.el.style.width = `${w}px`;
-      iso.el.style.height = `${h}px`;
-      iso.fresh = false;
-    }
-    if (iso.rt.width !== rw || iso.rt.height !== rh) { iso.rt.setSize(rw, rh); iso.fresh = false; }
-
-    // The scene pass runs at half rate (a 30 Hz feed); the blit has to run every frame
-    // because the composer repaints the whole canvas.
-    iso.frame ^= 1;
-    if (iso.frame === 0 || !iso.fresh) {
-      // Shadow maps were rendered for this frame by the main pass; reuse them.
-      const auto = r.shadowMap.autoUpdate;
-      r.shadowMap.autoUpdate = false;
-      try {
-        r.setRenderTarget(iso.rt);
-        r.render(this.scene, iso.cam);
-      } finally {
-        r.shadowMap.autoUpdate = auto;
-        r.setRenderTarget(null);
-      }
-      iso.fresh = true;
-    }
-    // Inside the 2 px frame. setViewport/setScissor take CSS pixels, origin bottom-left.
-    const x = ISO_MARGIN + 2, y = ISO_MARGIN + 2, vw = w - 4, vh = h - 4;
-    r.setViewport(x, y, vw, vh);
-    r.setScissor(x, y, vw, vh);
-    r.setScissorTest(true);
-    try {
-      iso.out.render(r, null, iso.rt);
-    } finally {
-      r.setScissorTest(false);
-      r.setScissor(0, 0, W, H);
-      r.setViewport(0, 0, W, H);
-    }
-  }
-
-  _disposeDirector() {
-    const iso = this._dir?.iso;
-    if (!iso) return;
-    iso.rt.dispose();
-    iso.out.dispose();
-    iso.el.remove();
-    this._dir.iso = null;
   }
 }
 

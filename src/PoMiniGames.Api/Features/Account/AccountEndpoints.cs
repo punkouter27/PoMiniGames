@@ -1,4 +1,4 @@
-using PoMiniGames.Features.Auth;
+using PoMiniGames.Features.Identity;
 using PoMiniGames.Serialization;
 
 namespace PoMiniGames.Features.Account;
@@ -10,15 +10,14 @@ namespace PoMiniGames.Features.Account;
 /// <para>
 /// The platform keys rows on a Microsoft identity across eight tables and has, until now, had
 /// no way for a player to read that back or get rid of it. These two routes close that: a
-/// signed-in caller can export their rows as JSON and can erase them, and both act ONLY on the
-/// caller's own claim identity — the subject is resolved from the cookie, never from a
-/// parameter, so there is no id to substitute.
+/// identified caller can export their rows as JSON and can erase them, and both act ONLY on the
+/// caller's own player identity — the subject is resolved from the request's player id, never
+/// from a parameter in the route or body.
 /// </para>
 /// <para>
-/// <b>Erase is not sign-out.</b> It removes stored rows; it does not revoke the Entra account
-/// or the session. A player who erases and keeps playing starts accumulating rows again, which
-/// is the behaviour they expect from "delete my scores". Anything that must also end the
-/// session is the client's job (see ProfilePage, which signs out afterwards).
+/// <b>Erase keeps the player id.</b> It removes stored rows and nothing else. A player who
+/// erases and keeps playing starts accumulating rows again, which is the behaviour they
+/// expect from "delete my scores".
 /// </para>
 /// </remarks>
 public static class AccountEndpoints
@@ -33,7 +32,7 @@ public static class AccountEndpoints
             {
                 if (ResolveSubject(http) is not { } subject)
                 {
-                    return Results.BadRequest(new { error = "No identity to export. Sign in first." });
+                    return Results.BadRequest(new { error = "No player id on this request, so there is nothing to export." });
                 }
 
                 var identity = RequestIdentity.Resolve(http.User);
@@ -56,7 +55,7 @@ public static class AccountEndpoints
                 return Results.Json(export, AccountDataJsonContext.Default.PlayerDataExport);
             })
             .WithName("ExportAccountData")
-            .WithSummary("Download every row this platform stores about the signed-in caller")
+            .WithSummary("Download every row this platform stores about the caller's player id")
             .Produces<PlayerDataExport>(StatusCodes.Status200OK)
             .ProducesProblem(StatusCodes.Status400BadRequest)
             .ProducesProblem(StatusCodes.Status503ServiceUnavailable)
@@ -68,7 +67,7 @@ public static class AccountEndpoints
             {
                 if (ResolveSubject(http) is not { } subject)
                 {
-                    return Results.BadRequest(new { error = "No identity to erase. Sign in first." });
+                    return Results.BadRequest(new { error = "No player id on this request, so there is nothing to erase." });
                 }
 
                 var identity = RequestIdentity.Resolve(http.User);
@@ -89,7 +88,7 @@ public static class AccountEndpoints
                 return Results.Ok(result);
             })
             .WithName("DeleteAccountData")
-            .WithSummary("Permanently erase every stored row belonging to the signed-in caller")
+            .WithSummary("Permanently erase every stored row belonging to the caller's player id")
             .Produces<PlayerDataDeletion>(StatusCodes.Status200OK)
             .ProducesProblem(StatusCodes.Status400BadRequest)
             .ProducesProblem(StatusCodes.Status503ServiceUnavailable)

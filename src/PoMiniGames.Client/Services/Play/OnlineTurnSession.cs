@@ -2,7 +2,6 @@ using Microsoft.AspNetCore.SignalR;
 using Microsoft.AspNetCore.SignalR.Client;
 using PoMiniGames.Shared.Games;
 using PoMiniGamesClient.Models;
-using PoMiniGamesClient.Services.Auth;
 using PoMiniGamesClient.Services.Http;
 using PoMiniGamesClient.Services.Ui;
 
@@ -28,7 +27,6 @@ public enum QuickMatchPhase
 public sealed class OnlineTurnSession : IAsyncDisposable
 {
     private readonly ApiEndpoints _endpoints;
-    private readonly AuthStateService _auth;
     private readonly ToastService _toasts;
     private readonly MatchHistoryService _history;
     private readonly string _hubPath;
@@ -41,11 +39,10 @@ public sealed class OnlineTurnSession : IAsyncDisposable
     /// <param name="gameKey">Match-history key, e.g. <c>connectfive</c>.</param>
     /// <param name="localName">Fallback display name sent with the queue request.</param>
     public OnlineTurnSession(
-        ApiEndpoints endpoints, AuthStateService auth, ToastService toasts, MatchHistoryService history,
+        ApiEndpoints endpoints, ToastService toasts, MatchHistoryService history,
         string hubPath, string gameKey, string localName)
     {
         _endpoints = endpoints;
-        _auth = auth;
         _toasts = toasts;
         _history = history;
         _hubPath = hubPath;
@@ -161,7 +158,7 @@ public sealed class OnlineTurnSession : IAsyncDisposable
         Changed?.Invoke();
         // matchStarted may fire before this returns (the server pairs inside the call), so
         // the phase is only ever advanced by the event, never here.
-        await _client.FindMatchAsync(_localName, !_auth.IsAuthenticated);
+        await _client.FindMatchAsync(_localName, isGuest: false);
     }
 
     public async Task FindOpponentSafeAsync()

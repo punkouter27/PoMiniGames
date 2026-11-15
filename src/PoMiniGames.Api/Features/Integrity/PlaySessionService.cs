@@ -190,7 +190,7 @@ public sealed class PlaySessionService
 
     /// <summary>
     /// Binds the token to an identity without putting the identity in it. The identity key is an
-    /// Entra object id or, for a guest, a display name — neither belongs in a value that is
+    /// browser player id or, for a caller without one, a display name — neither belongs in a value that is
     /// handed to a browser and may end up in a log or a bug report.
     /// </summary>
     private static string HashIdentity(string identityKey)

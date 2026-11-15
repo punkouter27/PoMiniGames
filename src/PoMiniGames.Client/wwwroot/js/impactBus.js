@@ -509,7 +509,7 @@ export function vibrate(pattern, opts = {}) {
         // Before the gesture gate: a pad's actuator needs no user activation.
         if (opts.pad !== false && !_hapticClaims) window.PoGamepad?.rumblePattern?.(pat);
         // The kiosk guard covers the attract reel but not every gesture-less caller. /login
-        // fires a cue while the sign-in gate is still mounting, and an ungated call logs
+        // fires a cue while the first page is still mounting, and an ungated call logs
         // "Blocked call to navigator.vibrate because user hasn't tapped on the frame" on the
         // app's entry page. Same sticky-activation test as uiAudio.js.
         if (!hasUserGestured()) return;

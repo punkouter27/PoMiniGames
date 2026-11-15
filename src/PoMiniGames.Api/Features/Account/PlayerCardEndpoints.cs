@@ -1,6 +1,6 @@
 using PoMiniGames.Domain.Abstractions;
 using PoMiniGames.Domain.Models;
-using PoMiniGames.Features.Auth;
+using PoMiniGames.Features.Identity;
 using PoMiniGames.Features.Integrity;
 
 namespace PoMiniGames.Features.Account;

@@ -1,5 +1,5 @@
 using PoMiniGames.Features.Account;
-using PoMiniGames.Features.Auth;
+using PoMiniGames.Features.Identity;
 using PoMiniGames.Features.Shared.TurnMatch; // ConnectFiveHub + TicTacToeHub (shared turn-match hubs)
 using PoMiniGames.Features.Health;
 using PoMiniGames.Features.Integrity;
@@ -52,17 +52,13 @@ internal static class EndpointRouteExtensions
         // by sendBeacon, which cannot carry the antiforgery header that scope requires.
         app.MapClientErrorEndpoints();
 
-        // ── Public read-only leaderboards (guest-first) ────────────────────
-        // A brand-new visitor can browse the boards before signing in, so
-        // the leaderboard READ endpoints are anonymous. These are pure GETs
-        // (no writes), and default authorization is anonymous — they just have to
-        // stay outside the authenticated group below. Score
-        // SUBMIT paths stay authenticated (guests park scores locally and flush
-        // them on sign-in), so anonymous read never becomes anonymous write.
+        // ── Public read-only leaderboards ──────────────────────────────────
+        // Pure GETs that any visitor can read. Score SUBMIT paths live in the
+        // /api group below, where every write needs the antiforgery token.
         app.MapUnifiedLeaderboardEndpoints();
         // PoVoxelStrike voxel assets are read-only game content (content-addressed,
         // immutable), so they sit with the anonymous reads; the run-submission POST
-        // is in the authenticated group below.
+        // is in the /api group below.
         app.MapPoVoxelStrikeAssetEndpoints();
         // PoEcosystem gallery: shared islands are public by their owners' choice, and a visit
         // is a read of bytes only the browser engine can interpret.
@@ -70,26 +66,26 @@ internal static class EndpointRouteExtensions
         // Dynamic SVG Player License cards & Online MMR profile inspection
         app.MapPlayerCardEndpoints();
         // PoBrawl fighter dossiers: public reference text (static facts + a cached Wikipedia
-        // summary) that the fighter select shows before sign-in.
+        // summary) that the fighter select shows.
         app.MapPoBrawlDossierEndpoints();
 
         // ── Game API ──────────────────────────────────────────────────────
-        // All game-data endpoints use the lightweight player-initials identity
-        // populated by UsePlayerIdentity() — no OAuth gate required.
+        // All game-data endpoints read the player-id/initials identity populated by
+        // UsePlayerIdentity(). There is no route-level gate; an endpoint that needs a
+        // player id checks for one itself.
         var gameApi = app.MapGroup("/api");
 
         // Play sessions: minted per game opened, redeemed by the score guard on submission.
-        // Authenticated because a session is bound to an identity — there is nothing to bind
-        // for an anonymous caller, and an unbound session is a token anyone could spend.
+        // A session is bound to a player id — there is nothing to bind for a caller without
+        // one, and an unbound session is a token anyone could spend.
         gameApi.MapPlaySessionEndpoints();
-        // Self-service data export + erase. In the authenticated group for the obvious reason:
-        // the subject is always the caller's own claim identity.
+        // Self-service data export + erase. The subject is always the caller's own player id.
         gameApi.MapAccountEndpoints();
         gameApi.MapGetPlayerStats();
         gameApi.MapSavePlayerStats();
         gameApi.MapMarbleRaceHighScoresEndpoints();
         gameApi.MapPoBrawlLeaderboardEndpoints();
-        // The 1P ladder run per claim identity, so it follows a player across devices.
+        // The 1P ladder run per player id.
         gameApi.MapPoBrawlProgressEndpoints();
         gameApi.MapMatchHistoryEndpoints();
         // PoCoupleQuiz is SignalR-first — CoupleQuizHub below is its entire server surface.
@@ -99,14 +95,14 @@ internal static class EndpointRouteExtensions
         gameApi.MapPoVoxelStrikeScoreEndpoints();
         gameApi.MapPoMuleScoreEndpoints();
         // PoBrawl online (lobby + match hub) — match result ingest endpoint. Same
-        // shape as PoRacer's score endpoints: authenticated, rate-limited highscores.
+        // shape as PoRacer's score endpoints: rate-limited highscores.
         gameApi.MapPoBrawlOnlineMatchEndpoints();
         // PoEcosystem: the caller's three cloud slots and sharing.
         gameApi.MapPoEcosystemEndpoints();
         // Game invites: push subscriptions, invite-a-past-opponent and the lobby QR code.
         gameApi.MapInviteEndpoints();
 
-        // ── SignalR hubs (no OAuth gate; identity from playerId/initials) ─
+        // ── SignalR hubs (identity from the playerId/initials query) ──────
         app.MapHub<CoupleQuizHub>("/couplequiz/hubs/game");
         app.MapHub<FunQuizHub>("/funquiz/gamehub");
         app.MapHub<PoRacerLobbyHub>("/poracer/lobby-hub");

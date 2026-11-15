@@ -8,7 +8,6 @@ using PoMiniGamesClient.Features.PoCoupleQuiz.Services;
 using PoMiniGamesClient.Features.PoFunQuiz.Services;
 using PoMiniGamesClient.Features.PoCabinet;
 using PoMiniGamesClient.Features.PoRacer;
-using PoMiniGamesClient.Services.Auth;
 using PoMiniGamesClient.Services.Http;
 using PoMiniGamesClient.Services.Interop;
 using PoMiniGamesClient.Services.Play;
@@ -37,8 +36,8 @@ if (string.IsNullOrWhiteSpace(apiBase))
 // Cross-origin credentials: the Blazor WASM HttpClient uses the browser's
 // `fetch` underneath, which defaults to `credentials: 'omit'`. On the
 // standalone-client dev setup (Blazor served from :5261, API on :5000)
-// every cross-origin request therefore drops the DevCookie set by
-// /api/auth/dev-login and every protected endpoint returns 401.
+// every cross-origin request therefore drops the antiforgery cookie and every
+// write is refused.
 //
 // We patch `window.fetch` once at startup (see
 // wwwroot/js/crossOriginFetchPatch.js) so requests to the API origin get
@@ -97,7 +96,6 @@ builder.Services.AddScoped<ApiService>();
 // SignalR and other string-URL transports can target the API host (:5000)
 // even when the WASM is served standalone on :5261.
 builder.Services.AddScoped<ApiEndpoints>();
-builder.Services.AddScoped<AuthStateService>();
 builder.Services.AddScoped<ToastService>();
 builder.Services.AddScoped<GameStatsService>();
 // PoCabinet race session owns both lobby + race hub connections for
@@ -174,11 +172,10 @@ LocalStorageService.SetJSRuntime(host.Services.GetRequiredService<IJSRuntime>())
 // Cross-origin credentials patch: must run before any HttpClient is used
 // (i.e. before any component renders), so we install it right after Build
 // but before RunAsync. Requests to `apiBase` get credentials: 'include' so
-// the DevCookie set by /api/auth/dev-login round-trips on the
-// standalone-client (:5261 → :5000) dev setup. Everything else — including
-// MSAL's Entra calls — keeps the browser default; passing apiBase is what
-// scopes it (see the module header for the sign-in outage a blanket patch
-// caused). Installs nothing when the API is same-origin.
+// the antiforgery cookie round-trips on the standalone-client (:5261 → :5000)
+// dev setup. Everything else — every third-party origin — keeps the browser
+// default; passing apiBase is what scopes it (see the module header for why a
+// blanket patch breaks). Installs nothing when the API is same-origin.
 var fetchPatchModule = await host.Services.GetRequiredService<IJSRuntime>()
     .InvokeAsync<IJSObjectReference>("import", "./js/crossOriginFetchPatch.js");
 await fetchPatchModule.InvokeVoidAsync("installCrossOriginCredentialsPatch", apiBase);

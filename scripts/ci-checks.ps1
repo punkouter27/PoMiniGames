@@ -15,14 +15,15 @@ Invoke-Check 'Formatting' { dotnet format PoMiniGames.slnx --verify-no-changes -
 Invoke-Check 'Bicep compile' { az bicep build --file infra/main.bicep --stdout > $null }
 Invoke-Check 'CSS lint' { ./scripts/css-lint.ps1 }
 Invoke-Check 'Test ceilings' { ./scripts/test-ceilings.ps1 -Configuration Release -NoBuild }
-Invoke-Check 'PoBrawl rollback parity' { node --test tests/pobrawl-rollback.test.mjs }
-
+# Every JS engine test (tests/*.test.mjs) in one run. Node runs the files in parallel, so the
+# wall time is the slowest file's (PoCapitol's world sim, about four minutes), not the sum. Two of
+# them need inputs built first: the PoCabinet worlds and the PoMarbleRace harness's packages.
 Invoke-Check 'PoCabinet race health setup' {
     dotnet run scripts/pocabinet/dump.cs -- artifacts/pocabinet-worlds capitol bedroom court
 }
-Invoke-Check 'PoCabinet race health' { node --test tests/pocabinet-race-health.test.mjs }
 Invoke-Check 'PoMarbleRace dependencies' { npm ci --prefix scripts/pomarblerace --no-audit --no-fund }
-Invoke-Check 'PoMarbleRace map health' { node --test tests/pomarblerace-map-health.test.mjs }
+# The file list is expanded here rather than passed as a glob: Node only reads globs from 21 on.
+Invoke-Check 'JS engine tests' { node --test @(Get-ChildItem tests -Filter *.test.mjs | ForEach-Object FullName) }
 
 $trimOut = Join-Path ([IO.Path]::GetTempPath()) "pominigames-trim-$([guid]::NewGuid().ToString('N'))"
 try {

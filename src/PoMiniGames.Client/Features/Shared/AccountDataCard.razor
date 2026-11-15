@@ -1,11 +1,9 @@
 @using PoMiniGamesClient.Models
-@using PoMiniGamesClient.Services.Auth
 @using PoMiniGamesClient.Services.Http
 @using PoMiniGamesClient.Services.Ui
 @inject ApiService ApiService
 @inject ToastService Toasts
 @inject IJSRuntime JS
-@inject AuthStateService AuthState
 @inject NavigationManager Navigation
 
 @* Export and erase, as a group inside the settings sheet. The sheet supplies the
@@ -13,8 +11,7 @@
    just deleted. *@
 <div class="acct-data">
     <p class="acct-data-blurb">
-        Scores, match history and player stats are stored against your
-        @(IsGuest ? "guest profile" : "Microsoft account").
+        Scores, match history and player stats are stored against this browser's player id.
         You can take a copy or remove all of it.
     </p>
 
@@ -57,10 +54,6 @@
 </div>
 
 @code {
-    // Same heuristic the profile uses: a guest session's display name is the minted
-    // "Guest-NNNNNN" handle; AuthenticatedUserProfile carries no kind of its own.
-    private bool IsGuest => AuthState.User?.DisplayName?.StartsWith("Guest", StringComparison.Ordinal) ?? true;
-
     private bool _dataBusy;
     private string? _busyAction;
     private bool _eraseArmed;

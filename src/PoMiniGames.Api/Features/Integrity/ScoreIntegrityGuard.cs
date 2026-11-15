@@ -1,7 +1,7 @@
 using Microsoft.Extensions.Options;
 using PoMiniGames.Domain.Primitives;
 using PoMiniGames.Domain.Services;
-using PoMiniGames.Features.Auth;
+using PoMiniGames.Features.Identity;
 
 namespace PoMiniGames.Features.Integrity;
 

@@ -3,7 +3,7 @@
 @using PoMiniGamesClient.Features.Shared
 @using PoBrawlFighter = PoMiniGames.Domain.Primitives.PoBrawlFighter
 @using PoBrawlRoster = PoMiniGames.Domain.Primitives.PoBrawlRoster
-@inject AuthStateService AuthState
+@inject PlayerNameService PlayerNameService
 @inject NavigationManager Nav
 @inject ApiService Api
 @inject ApiEndpoints Endpoints
@@ -149,8 +149,7 @@ else
     // An id this build no longer knows still renders, as itself.
     private static string FighterName(string id) => PoBrawlRoster.NameOf(id) ?? id;
 
-    private string Name => AuthState.User?.DisplayName ?? "Player";
-    private bool IsGuest => !AuthState.IsAuthenticated;
+    private string Name => PlayerNameService.Initials;
     private string MyFighterId => _lobby.Me?.Fighter.Id ?? "";
 
     private bool EveryoneReady =>
@@ -220,7 +219,7 @@ else
         }
         try
         {
-            await _lobby.ConnectAndJoinAsync(Name, IsGuest);
+            await _lobby.ConnectAndJoinAsync(Name, isGuest: false);
         }
         catch (Exception ex)
         {

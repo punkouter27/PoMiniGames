@@ -40,21 +40,14 @@ public sealed class PoMiniGamesE2EFixture : WebApplicationFactory<Program>
 
     protected override void ConfigureWebHost(IWebHostBuilder builder)
     {
-        // E2E tests run under the "Test" environment
-        // so AuthExtensions' DevCookie scheme is registered (StartupSecretValidator
-        // skips its secrets check) and the FakeAuth header pathway is opt-in via
-        // Auth:EnableFakeAuth below.
+        // E2E tests run under the "Test" environment so StartupSecretValidator skips its
+        // secrets check. Identity needs no setup: a test sends X-Player-Id / X-Player-Initials
+        // (PlayerIdentityTestExtensions.AsPlayer) exactly as the browser does.
         builder.UseEnvironment("Test");
 
-        // Enable the header-driven fake-auth scheme so e2e tests can
-        // assert identity variations without performing a real OAuth handshake.
-        // AddPoMiniGamesAuth() reads Auth:EnableFakeAuth at registration time,
-        // so the override MUST land in host configuration (which runs before
-        // service registration), not in app configuration.
         builder.ConfigureAppConfiguration((_, cfg) =>
         {
             var overrides = new Dictionary<string, string?>(TestBudgetGuard.Overrides);
-            overrides["Auth:EnableFakeAuth"] = "true";
             // Mirror Azurite to BOTH TableService and BlobService sections.
             foreach (var (k, v) in TestBudgetGuard.StorageOverrides(AzuriteConnectionString, "pominigames-e2e"))
             {
@@ -70,11 +63,6 @@ public sealed class PoMiniGamesE2EFixture : WebApplicationFactory<Program>
             // here from the same Azurite connection string the host already uses.
             services.AddSingleton(_ => new TableServiceClient(AzuriteConnectionString));
             services.AddSingleton(_ => new BlobServiceClient(AzuriteConnectionString));
-
-            // The canonical harness for header-driven FakeAuth identity is
-            // TestWebApplicationFactory in the integration-test project. The e2e
-            // suite is intentionally lighter — it asserts the BFF contract
-            // (HTTP routes / status codes / JSON shape), not the auth pipeline.
         });
     }
 }

@@ -4,11 +4,14 @@ using System.Text.RegularExpressions;
 namespace PoMiniGames.Infrastructure;
 
 /// <summary>
-/// Populates <see cref="HttpContext.User"/> from the lightweight retro-arcade
-/// player headers (<c>X-Player-Id</c>, <c>X-Player-Initials</c>) or SignalR query
-/// parameters (<c>playerId</c>, <c>initials</c>) without OAuth or cookies.
+/// The app's whole identity model: there is no sign-in. Each browser keeps a random player id
+/// and the player's three initials, and sends them as the <c>X-Player-Id</c> and
+/// <c>X-Player-Initials</c> headers (SignalR: the <c>playerId</c> and <c>initials</c> query
+/// parameters). This middleware turns them into <see cref="HttpContext.User"/> so every slice
+/// reads the caller through <c>RequestIdentity</c>. The id is a handle, not a credential: it
+/// separates one browser's rows from another's and proves nothing about who is holding it.
 /// </summary>
-internal static partial class AuthExtensions
+internal static partial class PlayerIdentityExtensions
 {
     [GeneratedRegex("^[a-zA-Z0-9_-]{1,64}$", RegexOptions.Compiled)]
     private static partial Regex PlayerIdPattern();

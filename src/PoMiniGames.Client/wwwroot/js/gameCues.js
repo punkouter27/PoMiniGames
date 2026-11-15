@@ -575,18 +575,6 @@ const CUES = {
         },
     },
 
-    // ── DynastyTree — lineage, ancestral remembrance & genetics ──────
-    dynasty: {
-        ancestorPass: {
-            voices: [
-                v('sine', 220, 0.60, 0.22, { decay: 0.55 }),
-                v('sine', 329.63, 0.70, 0.18, { delay: 0.06, decay: 0.65 }),
-                v('sine', 110, 0.80, 0.25, { delay: 0.12, decay: 0.75, drive: 0.2 }),
-            ],
-            feel: 'light', scale: 0.7, fx: { preset: 'dust', scale: 0.6 },
-        },
-    },
-
     // ── PoMule — an Atari 800 sound chip ───────────────────────────────
     // Square waves with a flat body and a hard stop, at exact pitches: jitter 0 on
     // all of them, because the 1983 chip had none and a detuned blip reads as modern.

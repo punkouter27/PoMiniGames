@@ -100,27 +100,13 @@ public class LinkAuditUiTests
         using var playwright = await Playwright.CreateAsync();
         await using var browser = await playwright.Chromium.LaunchAsync(BrowserLaunch.Options());
         var origin = new Uri(_fixture.ServerAddress);
-        var context = await browser.NewContextAsync(new BrowserNewContextOptions
+        var context = await browser.NewPlayerContextAsync(new BrowserNewContextOptions
         {
             ViewportSize = MobileViewport.Portrait,
         });
         // The fake-auth headers go to this host only. Set context-wide, they ride on the games'
         // CDN module imports too (three.js from jsDelivr), whose CORS preflight rejects them,
         // and the engine then fails to load for a reason no player would ever hit.
-        await context.RouteAsync("**/*", async route =>
-        {
-            if (new Uri(route.Request.Url).Authority != origin.Authority)
-            {
-                await route.ContinueAsync();
-                return;
-            }
-            var headers = new Dictionary<string, string>(route.Request.Headers)
-            {
-                ["X-Fake-User"] = "test-user",
-                ["X-Fake-Roles"] = "Player",
-            };
-            await route.ContinueAsync(new RouteContinueOptions { Headers = headers });
-        });
         await context.AddInitScriptAsync(ShiftObserver);
         var page = await context.NewPageAsync();
         await using var guard = PlaywrightErrorGuard.Watch(page);
@@ -162,7 +148,7 @@ public class LinkAuditUiTests
             }
         }
 
-        await page.GotoAsync($"{_fixture.ServerAddress}?autoGuest=1", new PageGotoOptions
+        await page.GotoAsync($"{_fixture.ServerAddress}", new PageGotoOptions
         {
             WaitUntil = WaitUntilState.NetworkIdle,
             Timeout = 60_000,

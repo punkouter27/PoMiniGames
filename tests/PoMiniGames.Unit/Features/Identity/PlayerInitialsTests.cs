@@ -1,7 +1,7 @@
 using FluentAssertions;
 using PoMiniGamesClient.Services.Play;
 
-namespace PoMiniGames.Unit.Features.Auth;
+namespace PoMiniGames.Unit.Features.Identity;
 
 public class PlayerInitialsTests
 {

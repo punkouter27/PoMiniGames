@@ -5,7 +5,6 @@ using System.Net.Http.Json;
 using System.Threading;
 using System.Threading.Tasks;
 
-using PoMiniGamesClient.Services.Auth;
 using PoMiniGamesClient.Services.Http;
 using PoMiniGamesClient.Services.Interop;
 using PoMiniGamesClient.Services.Play;
@@ -32,8 +31,8 @@ namespace PoMiniGamesClient.Services.Http;
 /// what keeps this from recursing back into itself.
 /// </para>
 /// <para>
-/// The token is bound to the user's identity claims, so it is invalidated by sign-in and
-/// sign-out. Rather than couple this handler to AuthStateService, a 403 carrying the
+/// The token is bound to the player's identity claims, so it goes stale when the player id
+/// changes (data erased, storage cleared). Rather than track that here, a 403 carrying the
 /// server's <c>antiforgery_validation_failed</c> marker triggers exactly one refresh and
 /// replay. The marker matters: a bare 403 is a genuine authorization denial and replaying
 /// it would turn one refusal into two.
@@ -74,13 +73,6 @@ public sealed class AntiforgeryHandler : DelegatingHandler
 
         if (!await IsAntiforgeryRejectionAsync(response, cancellationToken))
         {
-            // A dev sign-in or sign-out just changed the identity this token is bound to.
-            // Dropping it here saves the next write a refusal and a replay.
-            if (response.IsSuccessStatusCode && ChangesIdentity(request))
-            {
-                Invalidate(token);
-            }
-
             return response;
         }
 
@@ -95,14 +87,6 @@ public sealed class AntiforgeryHandler : DelegatingHandler
         SetHeader(replay, refreshed);
 
         return await base.SendAsync(replay, cancellationToken);
-    }
-
-    private static bool ChangesIdentity(HttpRequestMessage request)
-    {
-        var path = request.RequestUri?.AbsolutePath;
-        return path is not null
-            && (path.EndsWith("/api/auth/dev-login", StringComparison.OrdinalIgnoreCase)
-                || path.EndsWith("/api/auth/dev-logout", StringComparison.OrdinalIgnoreCase));
     }
 
     private static bool RequiresToken(HttpRequestMessage request)

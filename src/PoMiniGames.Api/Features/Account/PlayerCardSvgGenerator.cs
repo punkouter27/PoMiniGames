@@ -31,9 +31,6 @@ public static class PlayerCardSvgGenerator
             < 0 => $"{card.CurrentStreak} L",
             _ => "—"
         };
-        var isMs = string.Equals(card.AccountKind, "microsoft", StringComparison.OrdinalIgnoreCase);
-        var accountBadge = isMs ? "VERIFIED" : "GUEST";
-        var accountBadgeColor = isMs ? "#00e5ff" : "#8892b0";
 
         var progressWidth = (int)Math.Clamp(Math.Round(card.TierProgress * 210), 4, 210);
 
@@ -78,11 +75,6 @@ public static class PlayerCardSvgGenerator
 
         // Header Section
         sb.AppendLine("  <text x=\"32\" y=\"38\" class=\"mono\" font-size=\"11\" font-weight=\"700\" fill=\"#64748b\" letter-spacing=\"2\">POMINIGAMES · COMPETITIVE LICENSE</text>");
-
-        // Verification Badge
-        sb.AppendLine(System.Globalization.CultureInfo.InvariantCulture, $"  <rect x=\"480\" y=\"22\" width=\"88\" height=\"22\" rx=\"11\" fill=\"rgba(255,255,255,0.05)\" stroke=\"{accountBadgeColor}\" stroke-width=\"1\"/>");
-        sb.AppendLine(System.Globalization.CultureInfo.InvariantCulture, $"  <circle cx=\"493\" cy=\"33\" r=\"3.5\" fill=\"{accountBadgeColor}\"/>");
-        sb.AppendLine(System.Globalization.CultureInfo.InvariantCulture, $"  <text x=\"504\" y=\"37\" class=\"mono\" font-size=\"9.5\" font-weight=\"700\" fill=\"{accountBadgeColor}\" letter-spacing=\"1\">{accountBadge}</text>");
 
         // Avatar & Player Info
         sb.AppendLine("  <g transform=\"translate(32, 76)\">");

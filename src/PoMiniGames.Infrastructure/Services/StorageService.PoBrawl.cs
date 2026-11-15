@@ -29,7 +29,7 @@ namespace PoMiniGames.Infrastructure.Services;
 public partial class StorageService
 {
     // ── PoBrawl presidents ladder ─────────────────────────────────────────
-    // One row per signed-in identity: RowKey = a hash of the claim id (the raw id kept in UserId
+    // One row per player identity: RowKey = a hash of the claim id (the raw id kept in UserId
     // for the account export/erase), the moderated display name a plain column. PresidentsBeaten
     // only ever ratchets up, one rung per submission at most, and never faster than a real fight
     // can be won — so the board is the server's own count of wins, not the client's claim.

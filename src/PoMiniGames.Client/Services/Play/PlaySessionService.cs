@@ -4,7 +4,6 @@ using Microsoft.AspNetCore.Components;
 using Microsoft.AspNetCore.Components.Routing;
 using PoMiniGamesClient.Models;
 
-using PoMiniGamesClient.Services.Auth;
 using PoMiniGamesClient.Services.Http;
 using PoMiniGamesClient.Services.Interop;
 using PoMiniGamesClient.Services.Play;
@@ -27,7 +26,7 @@ namespace PoMiniGamesClient.Services.Play;
 /// coverage is structural rather than remembered.
 /// </para>
 /// <para>
-/// <b>Failure is silent and non-blocking on purpose.</b> A guest who is not signed in gets a 401
+/// <b>Failure is silent and non-blocking on purpose.</b> A caller without a player id gets a 401
 /// here, the server is configured Off in some deployments (204), and the whole endpoint is
 /// unreachable offline. None of those may cost the player their round, so every failure path
 /// ends the same way: no session is held, the submission goes out bare, and the server — in its

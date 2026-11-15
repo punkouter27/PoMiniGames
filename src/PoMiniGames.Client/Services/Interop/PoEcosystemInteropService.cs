@@ -3,7 +3,6 @@ using Microsoft.JSInterop;
 using PoMiniGames.Shared.Games.PoEcosystem;
 using PoMiniGamesClient.Features.PoEcosystem.Models;
 
-using PoMiniGamesClient.Services.Auth;
 using PoMiniGamesClient.Services.Http;
 using PoMiniGamesClient.Services.Interop;
 using PoMiniGamesClient.Services.Play;

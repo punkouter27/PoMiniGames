@@ -4,7 +4,7 @@ using FluentAssertions;
 using Microsoft.Extensions.DependencyInjection;
 using PoMiniGames.Domain.Abstractions;
 using PoMiniGames.Domain.Models;
-using PoMiniGames.Features.Auth;
+using PoMiniGames.Features.Identity;
 using PoMiniGames.Features.PoCabinet;
 using PoMiniGames.TestUtilities;
 
@@ -26,11 +26,10 @@ namespace PoMiniGames.Integration.Features.PoCabinet;
 ///         fastest first, in m:ss.fff; an unknown track has no board (404).</item>
 /// </list>
 /// <para>
-/// <b>Test identity.</b> The test signs in as a fresh FakeAuth user per run, and the server
-/// overwrites the wire-supplied <c>PlayerDisplayName</c> with the resolved
-/// identity. The assertions match on that resolved name,
-/// not the randomized wire name — the wire name is the issue PoRacer had to
-/// fix for the same reason (see PoRacerScoreEndpoints.cs header comment).
+/// <b>Test identity.</b> The test is a fresh player per run, with initials of its own, and the
+/// server overwrites the wire-supplied <c>PlayerDisplayName</c> with the caller's initials. The
+/// assertions match on those initials, not the randomized wire name — the wire name is the issue
+/// PoRacer had to fix for the same reason (see PoRacerScoreEndpoints.cs header comment).
 /// </para>
 /// One method, five claims. The Integration tier is at its 50 cap (per
 /// <see cref="IntegrationTestCountCeilingTests"/>) and the rule is to consolidate
@@ -52,16 +51,14 @@ public sealed class PoCabinetScoreStorageTests : IClassFixture<TestWebApplicatio
         // A fresh identity per run: this tier writes to the developer's local Azurite, and a
         // PB left behind by an earlier run under a shared "test-user" would out-ratchet this
         // run's first lap. The token is bound to identity, so arm after switching.
-        var resolvedPlayer = $"pocab-int-{Guid.NewGuid():N}"[..24];
-        var raw = _factory.CreateClient();
-        raw.DefaultRequestHeaders.Remove("X-Player-Id");
-        raw.DefaultRequestHeaders.Remove("X-Player-Initials");
-        raw.DefaultRequestHeaders.Add("X-Player-Id", resolvedPlayer);
-        raw.DefaultRequestHeaders.Add("X-Player-Initials", "CAB");
-        var client = await raw.ArmAntiforgeryAsync();
+        // The stored name is the caller's initials: random ones, so this run's row is its own.
+        var resolvedPlayer = string.Concat(Enumerable.Range(0, 3).Select(_ => (char)('A' + Random.Shared.Next(26))));
+        var client = await _factory.CreateClient()
+            .AsPlayer($"pocab-int-{Guid.NewGuid():N}"[..24], resolvedPlayer)
+            .ArmAntiforgeryAsync();
 
-        // The server resolves identity from FakeAuth, never the wire player name; the wire
-        // name differs on purpose so a match can only come from the resolved identity.
+        // The server resolves identity from the player headers, never the wire player name; the
+        // wire name differs on purpose so a match can only come from the resolved identity.
         var wirePlayer = $"pocabinet-int-{Guid.NewGuid():N}";
         // Laps are server-timed from their input logs (PoCabinetLapVerifier), so each submit
         // carries a real browser-recorded proof and the claim is only logged. The fixtures'
@@ -104,7 +101,7 @@ public sealed class PoCabinetScoreStorageTests : IClassFixture<TestWebApplicatio
         var firstPost = await client.PostAsJsonAsync("/api/pocabinet/scores", lying);
         firstPost.StatusCode.Should().Be(HttpStatusCode.Created);
         (await StoredAsync("capitol")).Should().BeApproximately(Lap("capitol-clean"), 0.001,
-            "the server stores the lap it re-timed, and resolves identity from auth, not the wire name");
+            "the server stores the lap it re-timed, and names the row from the caller, not the wire name");
         var clean = PoCabinetLapProofs.Get("capitol-clean");
         var replayedPlace = PoCabinetLapVerifier.Replay(clean.TrackId, clean.Wet, PoCabinetLapVerifier.Decode(clean.Inputs)!).Position;
         (await RowAsync("capitol")).FinalPosition.Should().Be(Math.Max(1, replayedPlace),

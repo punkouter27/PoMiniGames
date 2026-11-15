@@ -190,7 +190,6 @@
          reason — the swap would reinsert it at its original position anyway,
          but a render-blocking load also avoids a flash of unglassed chrome. -->
     <link rel="stylesheet" href="css/glass.css" />
-    <link rel="stylesheet" href="css/retro-arcade.css" />
 
     <!-- Shared canvas resolution policy (audit #8). Not deferred and listed
          first among the game scripts: the racing renderer and the engine modules
@@ -229,9 +228,9 @@
          poFunQuizSplitHotkeys.js and gl-fps.js were global
          <script> tags, so every page in the app fetched and parsed ~39 KB of
          code that exactly one game (or one opt-out diagnostic) ever calls.
-         Each is now imported at its point of use — see PoFunQuizPage and
-         FpsCounter. They assign their window.* globals on evaluation, so the
-         existing InvokeVoidAsync("global.fn") style call sites are unchanged. -->
+         Each is now imported at its point of use: the quiz keys as an ES module
+         (js/pofunquiz/hotkeys.js, see PoFunQuizPage) and gl-fps.js from
+         FpsCounter, which still assigns a window global on evaluation. -->
     <script src="_framework/blazor.webassembly.js"></script>
 
     <!-- ── Game engines: route-gated, NOT loaded here ──────────────────────────

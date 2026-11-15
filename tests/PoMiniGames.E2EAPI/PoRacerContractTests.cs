@@ -8,7 +8,7 @@ namespace PoMiniGames.E2EAPI;
 public sealed class PoRacerContractTests(PoMiniGamesE2EFixture fixture)
 {
     [Fact]
-    public async Task LeaderboardIsPublic_AndScoreSubmissionRequiresAuthentication()
+    public async Task LeaderboardIsPublic_AndAnUnverifiedScoreIsNotStored()
     {
         using var client = fixture.CreateClient();
         var board = await client.GetAsync("/api/leaderboards/poracer");
@@ -16,6 +16,7 @@ public sealed class PoRacerContractTests(PoMiniGamesE2EFixture fixture)
         (await board.Content.ReadAsStringAsync()).Should().Contain("Best lap");
         await client.ArmAntiforgeryAsync();
         var write = await client.PostAsJsonAsync("/api/poracer/scores", new { totalTimeSeconds = 42, finalPosition = 1, trackId = "circuit" });
-        write.StatusCode.Should().BeOneOf(HttpStatusCode.Unauthorized, HttpStatusCode.Redirect);
+        // No player id and no lap proof: the server has nothing to verify, so nothing is stored.
+        write.StatusCode.Should().Be(HttpStatusCode.UnprocessableEntity);
     }
 }

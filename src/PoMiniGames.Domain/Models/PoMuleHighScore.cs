@@ -23,7 +23,7 @@ public sealed record PoMuleHighScore
     /// <summary>Stable claims id of the submitter; empty for an anonymous caller.</summary>
     public string UserId { get; init; } = string.Empty;
 
-    /// <summary>True when the submitter had no real signed-in identity.</summary>
+    /// <summary>True when the submitter had no real player identity.</summary>
     public bool IsGuest { get; init; }
 
     /// <summary>Cash + land + installed M.U.L.E.s + goods at the end of month 12.</summary>

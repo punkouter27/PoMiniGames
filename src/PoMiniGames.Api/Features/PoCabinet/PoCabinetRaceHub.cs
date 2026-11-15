@@ -1,5 +1,5 @@
 using Microsoft.AspNetCore.SignalR;
-using PoMiniGames.Features.Auth;
+using PoMiniGames.Features.Identity;
 using PoMiniGames.Shared.Games;
 
 namespace PoMiniGames.Features.PoCabinet;
@@ -23,7 +23,7 @@ public sealed class PoCabinetRaceHub(PoCabinetRaceRegistry registry) : Hub
     {
         var identity = RequestIdentity.Resolve(Context.User);
         if (string.IsNullOrEmpty(identity.UserId))
-            throw new HubException("Sign in or continue as a guest to race.");
+            throw new HubException("This connection carried no player id. Reload the page and try again.");
         if (string.IsNullOrEmpty(gameCode) || gameCode.Length > 32) return null;
         var snapshot = registry.Join(gameCode, Context.ConnectionId, identity.UserId);
         if (snapshot is null) return null;

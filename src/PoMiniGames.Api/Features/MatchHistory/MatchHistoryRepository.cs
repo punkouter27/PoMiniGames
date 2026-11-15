@@ -207,7 +207,8 @@ public sealed class MatchHistoryRepository(TableServiceClient tableServiceClient
     {
         var t = (type ?? "").Trim().ToLowerInvariant();
         if (t is "microsoft" or "guest") return t;
-        // Heuristic fallback: an opponent name shaped like an email is an MS-OAuth identity.
+        // Heuristic fallback for rows written before the type was stored: an email-shaped name
+        // was a Microsoft account when the app still had sign-in.
         return (name ?? "").Contains('@') ? "microsoft" : "guest";
     }
 

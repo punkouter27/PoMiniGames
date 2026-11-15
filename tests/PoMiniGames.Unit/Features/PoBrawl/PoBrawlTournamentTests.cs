@@ -41,7 +41,7 @@ public sealed class PoBrawlTournamentTests
         var names = new PlayerNameService(new NoJs());
         await names.Initialized;
         names.SetPlayerName($"ffa-test-{Guid.NewGuid():N}");
-        var results = new GameResultService(stats, null!, null!, null!, null!, null!);
+        var results = new GameResultService(stats, null!, null!, null!, null!);
         await using var services = new ServiceCollection().BuildServiceProvider();
         await using var renderer = new FfaRenderer(services);
         var page = new FfaTestPage();
@@ -96,7 +96,7 @@ public sealed class PoBrawlTournamentTests
         var game = GameCatalog.All.Single(g => g.Key == GameKeys.PoBrawl);
         var demos = game.Modes.Where(mode => mode.Mode == GameMode.Demo).ToArray();
         demos.Select(mode => mode.ChipLabel).Should().Equal("Demo · Tournament", "Demo · FFA");
-        demos.Select(mode => mode.Url).Should().Equal("/pobrawl/demo?autoGuest=1", "/pobrawl/ffa");
+        demos.Select(mode => mode.Url).Should().Equal("/pobrawl/demo", "/pobrawl/ffa");
         demos.Should().OnlyContain(mode => !mode.RequiresNetwork);
         var reel = GameCatalog.Demo.Where(entry => entry.Key == GameKeys.PoBrawl).ToArray();
         reel.Select(entry => entry.Url).Should().Equal(demos.Select(mode => mode.Url));

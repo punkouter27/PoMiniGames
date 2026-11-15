@@ -28,18 +28,17 @@ public class PoBrawlOnlineContractTests
     }
 
     /// <summary>
-    /// The body carries only a match id and the server decides everything else, so a signed-in
+    /// The body carries only a match id and the server decides everything else, so an identified
     /// caller cannot mint a result: a blank id is a 400 and an id the registry does not hold is a
     /// 404 — neither reaches MatchHistory or the Elo table.
     /// </summary>
     [Fact]
-    public async Task PostMatch_SignedIn_RejectsBlankAndUnheldMatchIds()
+    public async Task PostMatch_Identified_RejectsBlankAndUnheldMatchIds()
     {
         using var client = _factory.CreateClient();
-        // This tier's fixture registers no header-driven FakeAuth scheme, so sign in the way a
-        // player does, then arm: the antiforgery token is bound to the identity's claims.
-        var login = await client.GetAsync($"/auth/login/fake?displayName=Brawl{Guid.NewGuid().ToString("N")[..8]}");
-        login.IsSuccessStatusCode.Should().BeTrue("guest login must succeed under the Test environment");
+        // Identify the client the way a browser does, then arm: the antiforgery token is bound
+        // to the identity's claims.
+        client.AsPlayer($"Brawl{Guid.NewGuid().ToString("N")[..8]}");
         await client.ArmAntiforgeryAsync();
 
         var blank = await client.PostAsJsonAsync("/api/pobrawl/matches", new PoBrawlMatchResultDto { MatchId = " " });
@@ -50,22 +49,20 @@ public class PoBrawlOnlineContractTests
     }
 
     /// <summary>
-    /// Every PoBrawl online write — the result ingest and the match hub's negotiate — must answer an
-    /// anonymous caller with 401. One theory over the routes rather than a method each (the E2E-API
-    /// tier sits at its 25-method ceiling), bundled with the hub's wire contract.
+    /// The PoBrawl online routes answer an unidentified, unarmed caller as contracted: the result
+    /// ingest refuses a write without the antiforgery token, and the match hub is mapped. One theory
+    /// over the routes rather than a method each (the E2E-API tier sits at its ceiling), bundled
+    /// with the hub's wire contract.
     /// </summary>
     [Theory]
-    [InlineData("/api/pobrawl/matches")]
-    [InlineData("/pobrawl/match-hub/negotiate")]
-    public async Task PostPoBrawlRoutes_Anonymous_Return401(string path)
+    [InlineData("/api/pobrawl/matches", HttpStatusCode.Forbidden)]
+    [InlineData("/pobrawl/match-hub/negotiate", HttpStatusCode.OK)]
+    public async Task PoBrawlRoutes_AnswerAnUnarmedCaller(string path, HttpStatusCode expected)
     {
         using var client = _factory.CreateClient();
         var response = await client.PostAsJsonAsync(path, new PoBrawlMatchResultDto { MatchId = "anon-test" });
 
-        // 401 (not 403) for an anonymous caller — the request is
-        // rejected before the antiforgery middleware sees it. 403 would
-        // leak "this endpoint exists" to anonymous callers.
-        response.StatusCode.Should().Be(HttpStatusCode.Unauthorized);
+        response.StatusCode.Should().Be(expected);
 
         AssertMatchHubWireShape();
     }

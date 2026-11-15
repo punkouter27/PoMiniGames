@@ -6,7 +6,7 @@ using Microsoft.AspNetCore.TestHost;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
-using PoMiniGames.Features.Auth;
+using PoMiniGames.Features.Identity;
 using PoMiniGames.TestUtilities;
 
 namespace PoMiniGames.Integration;
@@ -76,7 +76,7 @@ public class TestWebApplicationFactory : WebApplicationFactory<Program>, IAsyncL
     }
 
     /// <summary>
-    /// Every test client sends default retro-arcade identity headers (<c>X-Player-Id</c> / <c>X-Player-Initials</c>).
+    /// Every test client sends default player identity headers (<c>X-Player-Id</c> / <c>X-Player-Initials</c>).
     /// Individual tests can override or remove these headers to assert other identities.
     /// </summary>
     protected override void ConfigureClient(HttpClient client)

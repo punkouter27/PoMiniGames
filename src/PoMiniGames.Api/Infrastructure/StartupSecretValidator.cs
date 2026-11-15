@@ -1,5 +1,4 @@
 using Microsoft.Extensions.Hosting;
-using PoMiniGames.Features.Auth;
 
 namespace PoMiniGames.Infrastructure;
 

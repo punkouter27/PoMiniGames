@@ -2,7 +2,7 @@
 
 PoCabinet's physics runs in two copies that must agree to the last bit:
 `src/PoMiniGames.Client/wwwroot/js/pocabinet/physics.js` + `track.js` (solo races in the browser)
-and `src/PoMiniGames.API/Features/PoCabinet/` (`PoCabinetPhysics`, `PoCabinetAiDriver`,
+and `src/PoMiniGames.Api/Features/PoCabinet/` (`PoCabinetPhysics`, `PoCabinetAiDriver`,
 `PoCabinetTrack`; the lap verifier and online races). These tools race the browser copy in
 node, so track and physics changes can be checked without a browser, and regenerate the lap
 proofs the tests replay.

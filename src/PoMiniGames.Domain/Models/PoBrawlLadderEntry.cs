@@ -2,7 +2,7 @@ namespace PoMiniGames.Domain.Models;
 
 /// <summary>
 /// One player's best run up the PoBrawl presidents ladder (1-player mode).
-/// One row per signed-in identity; <see cref="PresidentsBeaten"/> is the best-ever count
+/// One row per player identity; <see cref="PresidentsBeaten"/> is the best-ever count
 /// (0 to PoBrawlRoster.Count, 15 today) and never goes down. More presidents beaten ranks higher.
 /// </summary>
 public sealed record PoBrawlLadderEntry

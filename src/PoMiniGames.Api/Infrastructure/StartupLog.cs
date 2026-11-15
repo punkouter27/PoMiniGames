@@ -1,26 +1,8 @@
-using Microsoft.Extensions.Logging;
+namespace PoMiniGames.Infrastructure;
 
-namespace PoMiniGames.Features.Auth;
-
-/// <summary>
-/// Source-generated <see cref="ILogger"/> extensions for the auth pipeline. Replaces
-/// the legacy interpolated-message paths that allocate a format string on every call
-/// even when the level is disabled.
-/// </summary>
-internal static partial class AuthLog
+/// <summary>Source-generated log messages for host startup: the configuration check and storage bootstrap.</summary>
+public static partial class StartupLog
 {
-    [LoggerMessage(EventId = 6101, Level = LogLevel.Warning,
-        Message = "Microsoft OAuth is NOT configured (missing ClientId/ApiClientId). The app will boot, but /api/auth/handshake will report OAuth as unconfigured and real sign-in is unavailable.")]
-    public static partial void MicrosoftOAuthNotConfigured(this ILogger logger);
-
-    [LoggerMessage(EventId = 6102, Level = LogLevel.Critical,
-        Message = "FATAL: authentication scheme '{Scheme}' is registered while running in Production. Fake authentication must never be enabled in Production.")]
-    public static partial void FakeAuthSchemeInProduction(this ILogger logger, string scheme);
-
-    [LoggerMessage(EventId = 6103, Level = LogLevel.Critical,
-        Message = "FATAL: 'Auth:AutoGuestLogin' is enabled in a Production environment. This silently bypasses sign-in and is forbidden.")]
-    public static partial void AutoGuestLoginInProduction(this ILogger logger);
-
     [LoggerMessage(EventId = 6104, Level = LogLevel.Information,
         Message = "Startup secret validation passed for {Environment}")]
     public static partial void StartupValidationPassed(this ILogger logger, string environment);

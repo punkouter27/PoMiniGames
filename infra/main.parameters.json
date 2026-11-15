@@ -10,18 +10,6 @@
     },
     "resourceGroupName": {
       "value": "PoMiniGames"
-    },
-    "_comment_microsoftAuth": {
-      "value": "Entra ID client IDs are intentionally blank in the committed file. Override per environment via `azd env set PoMiniGamesMicrosoftAuthClientId <APP_ID>` (and the same for ApiClientId + TenantId). StartupSecretValidator throws if Production boots with empty values, so a forgotten override fails the deploy rather than silently serving a login wall."
-    },
-    "microsoftAuthClientId": {
-      "value": ""
-    },
-    "microsoftAuthApiClientId": {
-      "value": ""
-    },
-    "microsoftAuthTenantId": {
-      "value": ""
     }
   }
 }

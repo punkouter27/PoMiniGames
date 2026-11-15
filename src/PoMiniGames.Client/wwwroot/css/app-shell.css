@@ -117,7 +117,7 @@
     min-width: 0;
 }
 
-/* The account menu's trigger: the signed-in name as a pill button. The panel it
+/* The account menu's trigger: the initials as a pill button. The panel it
    opens is the shared .gl-overflow-panel below. */
 .gl-account-trigger {
     display: inline-flex;
@@ -158,7 +158,7 @@
 /* (Removed: `.gl-center-action*` and `.gl-sync-pill*`. The kiosk centre-action
    button and the pending-score sync pill were both dropped from the top bar in
    the 2026-07 cleanups; no layout renders either class. ScoreSyncService still
-   flushes parked scores on sign-in — it just reports through a toast now
+   flushes parked scores on start and reconnect — it just reports through a toast now
    instead of a persistent pill. */
 
 /* ── Account menu panel ───────────────────────────────────────────────────────
@@ -428,3 +428,14 @@
    While js/app.js runs the card-to-title view transition it sets data-hero-nav on the root;
    routeFx's colour wipe would otherwise sweep over the morph on the same frames. */
 :root[data-hero-nav] .po-route-wipe { display: none; }
+
+/* The player's 3-letter initials, wherever they appear (top bar, account menu,
+   hub banner). Monospace so the three slots keep their width; the ink token is
+   the accent at a lightness that is legible as text in either scheme. */
+.gl-arcade-initials {
+    font-family: var(--font-mono);
+    font-weight: 700;
+    letter-spacing: 0.08em;
+    white-space: pre;
+    color: var(--accent-ink);
+}
