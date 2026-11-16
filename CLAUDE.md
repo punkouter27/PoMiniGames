@@ -35,7 +35,7 @@ node --test "tests/*.test.mjs"                                 # every JS engine
 - CI uses the shared `.github/workflows/deploy.yml`: `scripts/ci-checks.ps1` preserves the
   trim/size, format, Bicep, CSS, test-ceiling, and JavaScript checks; `scripts/ci-package.ps1`
   stages the docs suite; `scripts/pre-deploy.ps1` clears stale Kudu files on the Windows App Service.
-  Only master deploys. Provision with the manual `.github/workflows/infra.yml` workflow or `azd up`.
+  Only master deploys. Provision with a manual run of `.github/workflows/deploy.yml` with `infra` = what-if, then apply or `azd up`.
 
 ## Tests
 

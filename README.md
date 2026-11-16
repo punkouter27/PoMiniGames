@@ -329,7 +329,7 @@ Run `node --test tests/pomule-world.test.mjs tests/pomule-physics.test.mjs` for 
 Run `npm ci --prefix scripts/pomarblerace` then `node --test tests/pomarblerace-map-health.test.mjs` for Marble Race map health (a full headless 101-marble race on every course, also run by CI; see `scripts/pomarblerace/README.md`).
 The shared `.github/workflows/deploy.yml` runs unit and repository checks, stages the documentation
 suite, and deploys only from `master`. Provision or update Azure resources with the manual
-`.github/workflows/infra.yml` workflow or `azd up`.
+`.github/workflows/deploy.yml` (run by hand with `infra`) workflow or `azd up`.
 
 ## Configuration and endpoint changes (2026-10-17)
 
