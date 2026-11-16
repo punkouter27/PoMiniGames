@@ -26,7 +26,14 @@ bottom of the outline in each picture ("ground": "feet"); a move marked "ground"
 
 "colorMatch": true evens out the phone's exposure and white balance: every picture's
 performer is matched to the first idle picture's colours, smoothed over neighbouring frames.
+
+"res" (default 1) bakes the sheet at that many pixels per world unit so the fighter stays sharp
+when the canvas scales the world up. Anchors ("ax", "ay") and reach ("r") stay in world units;
+the sheet rect ("x", "y", "w", "h") is in sheet pixels, so readers draw it at w / res.
+Frames are resized with premultiplied alpha (no halo from the hidden room colours), and
+identical cells (a getUp that replays the knockdown) are stored once.
 """
+import hashlib
 import json
 import pathlib
 import sys
@@ -84,6 +91,7 @@ def main() -> None:
     camera = json.loads(camera_path.read_text()) if camera_path.exists() else {}
     stand_px, default_ground = cfg["standPx"], cfg.get("ground", "feet")
     fps = cfg["sourceFps"]
+    res = float(cfg.get("res", 1))
 
     reference_colour = None
     if cfg.get("colorMatch"):
@@ -145,8 +153,9 @@ def main() -> None:
             px = im[y0:y1, x0:x1].astype(np.float32)
             px[..., :3] = np.clip(px[..., :3] * gain, 0, 255)
             crop = Image.fromarray(px.astype(np.uint8))
-            size = (max(1, round(crop.width * sc)), max(1, round(crop.height * sc)))
-            crop = crop.resize(size, Image.LANCZOS)
+            size = (max(1, round(crop.width * sc * res)), max(1, round(crop.height * sc * res)))
+            # Premultiplied: the room's colour under transparent pixels must not bleed in.
+            crop = crop.convert("RGBa").resize(size, Image.LANCZOS).convert("RGBA")
             # r = how far the outline reaches in front of the anchor; attacks hit with it.
             frames.append({"src": i, "ax": round((ax - x0) * sc, 1), "ay": round((g - y0) * sc, 1),
                            "r": round((x1 - ax) * sc, 1)})
@@ -165,28 +174,35 @@ def main() -> None:
         print(f"{name}: {len(frames)} frames, size x{base:.3f}, zoom {min(scales) / base:.2f}-"
               f"{max(scales) / base:.2f}, travel {travel:+.0f}px")
 
-    # Shelf packing, tallest first.
-    width, pad = 2048, 2
+    # Identical pictures (a reversed move replaying another) share one cell.
+    unique: dict[str, tuple[Image.Image, list[dict]]] = {}
+    for crop, f in cells:
+        key = hashlib.sha1(crop.tobytes() + repr(crop.size).encode()).hexdigest()
+        unique.setdefault(key, (crop, []))[1].append(f)
+
+    # Shelf packing, tallest first; a wide gap so smoothing never samples a neighbour.
+    width, pad = 2048 if res <= 1 else 4096, 4
     x = y = shelf = 0
-    for crop, f in sorted(cells, key=lambda c: -c[0].height):
+    for crop, fs in sorted(unique.values(), key=lambda c: -c[0].height):
         if x + crop.width + pad > width:
             x, y, shelf = 0, y + shelf + pad, 0
-        f.update(x=x, y=y, w=crop.width, h=crop.height)
+        for f in fs:
+            f.update(x=x, y=y, w=crop.width, h=crop.height)
         x += crop.width + pad
         shelf = max(shelf, crop.height)
     sheet = Image.new("RGBA", (width, y + shelf), (0, 0, 0, 0))
-    for crop, f in cells:
-        sheet.paste(crop, (f["x"], f["y"]))
+    for crop, fs in unique.values():
+        sheet.paste(crop, (fs[0]["x"], fs[0]["y"]))
 
     fighter = cfg["fighter"]
-    sheet.save(out / f"{fighter}.webp", quality=88, method=6)
-    data = {"fighter": fighter, "sheet": f"{fighter}.webp", "standHeight": stand_px, "moves": meta}
+    sheet.save(out / f"{fighter}.webp", quality=90, alpha_quality=100, method=6)
+    data = {"fighter": fighter, "sheet": f"{fighter}.webp", "standHeight": stand_px, "res": res, "moves": meta}
     (out / f"{fighter}.json").write_text(json.dumps(data, separators=(",", ":")))
 
     template = (pathlib.Path(__file__).parent / "review.template.html").read_text(encoding="utf-8")
     (out / "review.html").write_text(template.replace("/*DATA*/null", json.dumps(data)), encoding="utf-8")
     kb = (out / f"{fighter}.webp").stat().st_size // 1024
-    print(f"{len(cells)} frames, sheet {sheet.width}x{sheet.height}, {kb} KB -> {out}")
+    print(f"{len(cells)} frames ({len(unique)} unique), sheet {sheet.width}x{sheet.height}, {kb} KB -> {out}")
 
 
 if __name__ == "__main__":

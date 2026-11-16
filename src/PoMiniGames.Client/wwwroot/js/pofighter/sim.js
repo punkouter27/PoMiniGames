@@ -122,7 +122,8 @@ export function step(state, input, dt, data) {
     const { index } = frameAt(def, state.t);
     const f = def.frames[index];
     // How far the picture's feet are off the floor (its anchor sits below the outline).
-    state.lift = f.h !== undefined ? Math.max(0, f.ay - f.h) : 0;
+    // The sheet may be baked at `res` pixels per world unit; anchors are already world units.
+    state.lift = f.h !== undefined ? Math.max(0, f.ay - f.h / (data.res ?? 1)) : 0;
 
     // A walk carries its own speed, measured from the footage so the feet do not slide.
     if (def.speed) state.x += def.speed * dt;

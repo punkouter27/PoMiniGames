@@ -34,14 +34,15 @@
 </main>
 <script>
 const DATA = /*DATA*/null;
-const TITLES = { idle: 'Idle stance', walkF: 'Walk forward', walkB: 'Walk backward', crouch: 'Crouch', jump: 'Jump', punchMid: 'Mid punch', punchHigh: 'High punch', kick: 'Kick' };
+const TITLES = { idle: 'Idle stance', walkF: 'Walk forward', walkB: 'Walk backward', crouch: 'Crouch', jump: 'Jump', punchMid: 'Mid punch', punchHigh: 'High punch', kick: 'Kick', lunge: 'Lunge', victory: 'Victory', ko: 'Knockdown', getUp: 'Get up' };
 const sheet = new Image();
 sheet.src = DATA.sheet;
 const speed = document.getElementById('speed'), cross = document.getElementById('cross');
 speed.oninput = () => document.getElementById('speedText').textContent = Math.round(speed.value * 100) + '%';
 
 function draw(ctx, f, gx, gy, s) {
-  ctx.drawImage(sheet, f.x, f.y, f.w, f.h, gx - f.ax * s, gy - f.ay * s, f.w * s, f.h * s);
+  const k = s / (DATA.res || 1);   // the sheet may be baked at res pixels per world unit
+  ctx.drawImage(sheet, f.x, f.y, f.w, f.h, gx - f.ax * s, gy - f.ay * s, f.w * k, f.h * k);
   if (cross.checked) { ctx.fillStyle = '#ffb020'; ctx.fillRect(gx - 8, gy - 1, 16, 2); ctx.fillRect(gx - 1, gy - 8, 2, 16); }
 }
 function order(move) {

@@ -211,7 +211,8 @@ async function start(root, fighterId = 'p1') {
         ctx.beginPath();
         ctx.ellipse(state.x, WORLD.ground - 4, 78 * squash, 13 * squash, 0, 0, Math.PI * 2);
         ctx.fill();
-        ctx.drawImage(sheet, f.x, f.y, f.w, f.h, state.x - f.ax, WORLD.ground - f.ay, f.w, f.h);
+        const res = data.res ?? 1;   // sheet pixels per world unit
+        ctx.drawImage(sheet, f.x, f.y, f.w, f.h, state.x - f.ax, WORLD.ground - f.ay, f.w / res, f.h / res);
     }
 
     function render() {
