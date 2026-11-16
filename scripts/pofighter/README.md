@@ -52,6 +52,16 @@ lunge travelled; `refFrame`/`anchorFrame` name the standing picture for a revers
 unit (p1 uses 1.75, about the video's own detail) so the fighter stays sharp when the canvas scales
 the world up — anchors stay in world units and the engine draws each cell at `w / res`.
 
+## Picking ranges for smooth joins
+
+Every move starts and (for one-shots) returns to the idle stance with a hard cut, so:
+
+- a walk's range is one whole stride cycle (its last picture is one step before its first);
+- a one-shot ends on the picture that looks most like the stance (the jump at its most upright
+  landing, the kick once the leg is down, the lunge once it has landed);
+- a move the performer travels in either keeps that travel (`advance`) or is re-centred
+  (`anchor: track` with `speed: 0`, the cheer), so the stance never jumps back on the floor.
+
 ## Known trap: the black bag
 
 In the crouch/jump stretch (frames 898–908) the performer squats right in front of a black bag;
