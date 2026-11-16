@@ -3,7 +3,7 @@
 //
 // Units are sprite-sheet pixels: the fighter data (data/pofighter/<id>.json, written by
 // scripts/pofighter/pack.py) gives every picture an anchor on the ground line and `r`, how far
-// its outline reaches in front of that anchor. An attack hits with `r`. A filmed jump or lunge
+// its outline reaches in front of that anchor. An attack hits with `r`. A filmed jump
 // leaves the floor in the pictures themselves (the anchor sits below the feet), so the rules
 // only read how high the picture is, for the shadow.
 
@@ -16,14 +16,14 @@ export const WORLD = {
     jumpLift: 120,   // the height the shadow is scaled against
 };
 
-export const ATTACKS = ['punchMid', 'punchHigh', 'kick', 'lunge'];
+export const ATTACKS = ['punchMid', 'kick'];
 // Everything a single press asks for: the attacks, a cheer and a fall.
 export const ACTIONS = [...ATTACKS, 'victory', 'ko'];
 // These play to their end; nothing cancels them.
 const LOCKED = new Set(['jump', 'getUp', ...ATTACKS]);
 // Where on the bag each attack lands, as a height above the ground (for the spark).
-const HIT_HEIGHT = { punchMid: 265, punchHigh: 310, kick: 245, lunge: 290 };
-const BAG_PUSH = { kick: 3.2, lunge: 3.6 };
+const HIT_HEIGHT = { punchMid: 265, kick: 245 };
+const BAG_PUSH = { kick: 3.2 };
 
 export const CHEER_EVERY = 10;        // every tenth hit, the fighter celebrates
 export const VICTORY_SECONDS = 2.4;   // a cheer's length when nothing interrupts it
@@ -93,7 +93,7 @@ export function step(state, input, dt, data) {
 
     const current = moves[state.move];
     if (LOCKED.has(state.move) && frameAt(current, state.t).done) {
-        // A lunge ends where the body landed, not where it took off.
+        // A punch or kick that steps in ends where the body stepped to, not where it started.
         if (current.advance) { state.x += current.advance; clampX(state); }
         const cheer = state.cheer && moves.victory;
         state.cheer = false;

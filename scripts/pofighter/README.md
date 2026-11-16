@@ -47,7 +47,7 @@ See the docstring at the top of `pack.py` for every key. In short: `from`/`to`/`
 explicit `frames` list) choose pictures; `anchor` is `world` (keep the filmed body motion) or
 `track` (re-centre, the game supplies the travel); `ground: hold` keeps a jump's floor; `rate`
 speeds a move up; `reverse` plays it backwards; `advance` moves the fighter by the distance a
-lunge travelled; `refFrame`/`anchorFrame` name the standing picture for a reversed move;
+step-in attack travelled; `refFrame`/`anchorFrame` name the standing picture for a reversed move;
 `colorMatch` evens out the phone's exposure; `res` bakes the sheet at that many pixels per world
 unit (p1 uses 1.75, about the video's own detail) so the fighter stays sharp when the canvas scales
 the world up — anchors stay in world units and the engine draws each cell at `w / res`.
@@ -58,7 +58,7 @@ Every move starts and (for one-shots) returns to the idle stance with a hard cut
 
 - a walk's range is one whole stride cycle (its last picture is one step before its first);
 - a one-shot ends on the picture that looks most like the stance (the jump at its most upright
-  landing, the kick once the leg is down, the lunge once it has landed);
+  landing, the kick once the leg is down);
 - a move the performer travels in either keeps that travel (`advance`) or is re-centred
   (`anchor: track` with `speed: 0`, the cheer), so the stance never jumps back on the floor.
 
@@ -66,5 +66,5 @@ Every move starts and (for one-shots) returns to the idle stance with a hard cut
 
 In the crouch/jump stretch (frames 898–908) the performer squats right in front of a black bag;
 YOLO counts it as body, and it is no darker than the trousers in shadow, so neither the models nor
-a brightness cut can drop it. `crouch` therefore uses the lunge's wind-up (968–982), and `jump`
+a brightness cut can drop it. `crouch` therefore uses the wind-up of a dive (968–982), and `jump`
 starts at 910 with `refFrame` 914 (an upright picture sets its size).

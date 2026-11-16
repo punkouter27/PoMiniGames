@@ -144,11 +144,11 @@ test('a knockdown stays down until a press, then gets up and returns to idle', (
     assert.equal(s.move, 'idle');
 });
 
-test('a lunge carries the fighter forward by the distance the body travelled', () => {
+test('a punch that steps in carries the fighter forward by the distance the body travelled', () => {
     const s = createState();
-    const advance = data.moves.lunge.advance;
+    const advance = data.moves.punchMid.advance;
     assert.ok(advance > 0, `advance ${advance}`);
-    step(s, { ...NONE, attack: 'lunge' }, DT, data);
+    step(s, { ...NONE, attack: 'punchMid' }, DT, data);
     runFor(s, NONE, 2);
     assert.equal(s.move, 'idle');
     assert.ok(Math.abs(s.x - Math.min(maxX(), WORLD.startX + advance)) < 1e-6);

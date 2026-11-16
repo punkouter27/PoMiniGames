@@ -148,7 +148,7 @@ sign-in: a player is a random browser id plus three initials.
 | PoMule | Sixteen-player M.U.L.E.: claim land, work M.U.L.E.s and trade on a walking-floor market for twelve months vs fifteen AI colonists across seven personalities; all-AI demo |
 | PoEcosystem | Watch-only island simulation: unified species & tribes, physical village building, seasons/weather/disease, caravans, fast-forward (+1y/+5y), naturalist Photo Mode postcards, opt-in browser persistence, and cloud gallery |
 | SandPlayground | GPU sand-and-water sandbox |
-| PoFighter | Preview. A 2D fighter whose character is cut from a phone video of a real person. `/pofighter/1player` is a practice room: walk, crouch, jump, punch, high punch, kick and lunge against a punching bag that counts hits, plus a cheer (every 10 hits) and a knockdown; keyboard, gamepad or touch. Nothing is scored or sent. New fighters are made offline with `scripts/pofighter/` (see `DOCS/20261112/PoFighter-PRD.md`) |
+| PoFighter | Preview. A 2D fighter whose character is cut from a phone video of a real person. `/pofighter/1player` is a practice room: walk, crouch, jump, punch and kick against a punching bag that counts hits, plus a cheer (every 10 hits) and a knockdown; keyboard, gamepad or touch. Nothing is scored or sent. New fighters are made offline with `scripts/pofighter/` (see `DOCS/20261112/PoFighter-PRD.md`) |
 
 In PoBrawl FFA, knockouts use the same jointed physics ragdolls as 1v1: fighters
 fall from their current pose with the final hit's momentum instead of snapping

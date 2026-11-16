@@ -63,7 +63,7 @@ cleaner results.
 
 **B1 (P0).** As a player, I want to move my fighter with every control, so that I can test
 all the movements.
-- Walk forward, walk backward, crouch, jump, mid punch, high punch and kick each respond to
+- Walk forward, walk backward, crouch, jump, punch and kick each respond to
   their control and play their own animation.
 - Releasing all controls returns the fighter to the idle stance.
 
@@ -125,7 +125,7 @@ begin without reading a manual.
 | Walking forward / backward | Direction held, on the ground | Direction released, or another move starts |
 | Crouching | Down held, on the ground | Down released |
 | Jumping | Up pressed, on the ground | The fighter lands |
-| Attacking (mid punch, high punch, kick, lunge) | Attack pressed, on the ground, not already attacking | The attack animation ends; a lunge leaves the fighter where it landed |
+| Attacking (punch, kick) | Attack pressed, on the ground, not already attacking | The attack animation ends; an attack that steps in leaves the fighter where it stepped to |
 | Cheering | Cheer pressed, or every 10th hit once the attack ends | 2.4 s pass, or any control after the first 0.5 s |
 | Knocked down | Fall pressed | Any control after the fall (0.8 s), which plays the fall backwards to stand up |
 
@@ -147,7 +147,7 @@ the hub. There is no win, loss or end screen.
 | In scope for this milestone | Out of scope for this milestone |
 |---|---|
 | One fighter from the one supplied video | Further fighters and fighter select |
-| Idle, walk forward, walk backward, crouch, jump, mid punch, high punch, kick, lunge, cheer, knockdown | Block, hit reaction (listed as missing) |
+| Idle, walk forward, walk backward, crouch, jump, punch, kick, cheer, knockdown | Block, hit reaction (listed as missing) |
 | Practice room with a stationary dummy, hit flash and hit counter | Health bars, rounds, timer, winner |
 | On-screen move list; reset; step-through of a move | Computer opponent, second player, online play |
 | Keyboard, gamepad and touch controls | Scores, leaderboards, saved progress |
@@ -199,17 +199,16 @@ view facing right; the camera is hand-held and pans, tilts and zooms to follow.
 
 | Move | Found | Frames used | Note |
 |---|---|---|---|
-| Idle stance | Yes | 4–64 | Still, side-on |
-| Walk forward | Yes | 196–282 | A clean walk; the camera follows, so travel is measured from the background |
-| Walk backward | No | — | Walk forward played in reverse |
-| Crouch | Yes | 892–904 | The squat before the jump; some motion blur |
-| Jump | Yes | 892–934 | Real airtime, the floor is held from the first picture |
-| Mid punch | Yes | 404–428 | Lead-hand jab |
-| High punch | Yes | 494–514 | Rear-hand cross |
-| Kick | Yes | 643–673 | High side-on kick (others at 556–604, 739–802) |
-| Lunge | Yes | 968–1000 | Crouch and dive forward; the camera whips round after it |
-| Victory (cheer) | Yes | 1188–1264 | Facing the camera, arms pumping |
+| Idle stance | Yes | 8–60 | Still, side-on |
+| Walk forward | Yes | 268–290 | One whole stride cycle, so the loop has no seam; the camera follows, so travel is measured from the background |
+| Walk backward | Yes | 320–338 | One whole stride cycle |
+| Crouch | Yes | 968–982 | The wind-up of a dive; the squat before the jump (898–908) has a black bag pressed to the legs |
+| Jump | Yes | 910–930 | Real airtime, ends on the most upright landing; the floor is held from the first picture |
+| Punch | Yes | 404–428 | Lead-hand jab; keeps the step it takes in (`advance`) |
+| Kick | Yes | 643–667 | High side-on kick, ends once the leg is down (others at 556–604, 739–802) |
+| Victory (cheer) | Yes | 1188–1264 | Facing the camera, arms pumping; re-centred so it stays in place |
 | Knockdown | Yes | 1374–1446 | Fall to the knees; the camera tilts down and zooms in, corrected per picture |
+| High punch, lunge | Cut | — | Filmed (494–514, 968–1006) but dropped to keep one punch and one kick |
 | Block, hit reaction | No | — | Listed as missing |
 
 How the pictures are made (`scripts/pofighter/`): YOLO person segmentation picks the

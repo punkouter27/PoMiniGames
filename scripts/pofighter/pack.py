@@ -8,7 +8,7 @@ x = the body's centre line, y = the ground line. "anchorFrame" names the picture
 fixes a world move's spot (default: the first one played).
 
   "world" moves keep the body motion that was filmed: one spot on the floor anchors the
-          whole move. "advance" moves (a lunge) also carry the fighter forward by the distance
+          whole move. "advance" moves (a punch that steps in) also carry the fighter forward by the distance
           the body really travelled, once the move ends.
   "track" moves (walks) are re-centred per frame so the game supplies the travel, at the
           "speed" measured from the footage (or stated in the config).

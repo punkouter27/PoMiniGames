@@ -19,13 +19,13 @@ import { BUTTONS, ButtonEdges, activePad, pressed, stick } from '../gamepadBus.j
 const KEYS = {
     ArrowLeft: 'left', KeyA: 'left', ArrowRight: 'right', KeyD: 'right',
     ArrowUp: 'up', KeyW: 'up', ArrowDown: 'down', KeyS: 'down',
-    KeyJ: 'punchMid', KeyK: 'punchHigh', KeyL: 'kick', KeyI: 'lunge',
+    KeyJ: 'punchMid', KeyL: 'kick',
     KeyV: 'victory', KeyX: 'ko',
 };
 // Gamepad face buttons and bumpers, read through the shared helpers in gamepadBus.js.
 const PAD_ATTACKS = {
-    [BUTTONS.west]: 'punchMid', [BUTTONS.north]: 'punchHigh', [BUTTONS.south]: 'kick',
-    [BUTTONS.east]: 'lunge', [BUTTONS.lb]: 'victory', [BUTTONS.rb]: 'ko',
+    [BUTTONS.west]: 'punchMid', [BUTTONS.south]: 'kick',
+    [BUTTONS.lb]: 'victory', [BUTTONS.rb]: 'ko',
 };
 const reducedMotion = () => document.documentElement.dataset.motion === 'reduce'
     || !!window.matchMedia?.('(prefers-reduced-motion: reduce)').matches;
@@ -205,7 +205,7 @@ async function start(root, fighterId = 'p1') {
     function drawFighter() {
         const def = data.moves[state.move];
         const f = def.frames[frameAt(def, state.t).index];
-        // The filmed jump and lunge already rise in the pictures; the shadow only shrinks.
+        // The filmed jump already rises in the pictures; the shadow only shrinks.
         const squash = Math.max(0.35, 1 - state.lift / (WORLD.jumpLift * 2.2));
         ctx.fillStyle = 'rgba(0,0,0,0.3)';
         ctx.beginPath();
