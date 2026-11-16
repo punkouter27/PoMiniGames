@@ -85,18 +85,6 @@
             <div id="gl-account-menu" popover="auto" class="gl-overflow-panel"
                  role="menu" aria-label="Player Menu">
                 <p class="gl-overflow-head">PLAYER 1: <strong class="gl-arcade-initials">[@PlayerNames.Initials]</strong></p>
-                @* Initials are only editable from the main menu: mid-game the prompt would
-                   steal the keyboard from the arena, and nothing a player types there is
-                   worth interrupting a bout for. *@
-                @if (AtMainMenu)
-                {
-                    <button type="button" class="gl-overflow-item" role="menuitem"
-                            popovertarget="gl-account-menu" popovertargetaction="hide"
-                            @onclick="OpenInitialsPrompt">
-                        <span class="material-symbols-outlined gl-overflow-icon" aria-hidden="true">edit</span>
-                        <span>Change Initials</span>
-                    </button>
-                }
                 @foreach (var (path, label, icon) in MenuPages)
                 {
                     <button type="button" class="gl-overflow-item" role="menuitem"
@@ -187,18 +175,6 @@
 
     private bool IsCurrent(string path) =>
         string.Equals(new Uri(NavigationManager.Uri).AbsolutePath.TrimEnd('/'), path, StringComparison.OrdinalIgnoreCase);
-
-    /// <summary>True on the catalog grid (the app's home route) and nowhere else.</summary>
-    private bool AtMainMenu
-    {
-        get
-        {
-            var path = NavigationManager.ToBaseRelativePath(NavigationManager.Uri);
-            var cut = path.AsSpan().IndexOfAny('?', '#');
-            if (cut >= 0) path = path[..cut];
-            return path.Trim('/').Length == 0;
-        }
-    }
 
     private string DisplayInitialsLabel =>
         string.IsNullOrWhiteSpace(PlayerNames.Initials) ? "blank" : PlayerNames.Initials;
@@ -393,12 +369,6 @@
     {
         await Feedback.TapAsync();
         NavigationManager.NavigateTo(path);
-    }
-
-    private async Task OpenInitialsPrompt()
-    {
-        await Feedback.TapAsync();
-        PlayerNames.RequestOpenPrompt();
     }
 
     public void Dispose()
