@@ -69,12 +69,6 @@
     opacity: 0.8;
 }
 
-.pf-missing {
-    margin-top: 4px;
-    color: #9aa3b8;
-    font-style: italic;
-}
-
 /* One control column at a time: keyboard by default, gamepad once a pad is used, none on touch. */
 .pf-ctl-pad,
 .pf-room[data-pf-device="pad"] .pf-ctl-keys,

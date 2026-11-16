@@ -302,23 +302,6 @@
 
 /* ── resume, error ────────────────────────────────────────────── */
 
-.poeco-resume {
-    position: absolute;
-    inset: 0;
-    display: flex;
-    flex-direction: column;
-    align-items: center;
-    justify-content: center;
-    gap: var(--space-3);
-    background: var(--surface-1);
-    backdrop-filter: var(--glass-2);
-    text-align: center;
-}
-
-.poeco-resume h2 { margin: 0; font-size: var(--text-2xl); }
-.poeco-resume p { margin: 0; color: var(--color-text-secondary); }
-.poeco-resume-actions { display: flex; gap: var(--space-3); }
-
 .poeco-btn {
     height: 40px;
     padding: 0 var(--space-5);
@@ -545,12 +528,6 @@
 /* The dashboard scrim sits between the world and the card, so it takes the blur and the
    card above it only needs its own tint. */
 .poeco-overlay,
-.poeco-resume {
-    background: light-dark(rgba(248, 250, 252, 0.55), rgba(2, 6, 23, 0.55));
-    backdrop-filter: var(--glass-3);
-    -webkit-backdrop-filter: var(--glass-3);
-}
-
 .poeco-record {
     background: var(--poeco-glass);
     border-color: var(--poeco-glass-border);
@@ -568,10 +545,7 @@
     }
 
     .poeco-overlay,
-    .poeco-resume {
-        background: var(--surface-1);
     }
-}
 
 /* Forced-colors mode replaces the palette outright; a translucent substrate there is both
    ignored and actively misleading, so the glass is dropped rather than approximated. */
@@ -1186,22 +1160,6 @@
     border: 1px solid var(--color-border);
     border-radius: 8px;
     padding: 0.8rem;
-}
-
-.poeco-diplomacy-header {
-    display: flex;
-    flex-direction: column;
-    gap: 0.15rem;
-}
-
-.poeco-diplomacy-header h4 {
-    margin: 0;
-    font-size: 0.95rem;
-}
-
-.poeco-diplomacy-subtitle {
-    font-size: 0.75rem;
-    color: var(--color-text-secondary);
 }
 
 .poeco-diplomacy-canvas-wrap {

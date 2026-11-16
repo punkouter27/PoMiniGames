@@ -31,10 +31,9 @@
   --color-text-primary: #e2e8f0;
   --color-text-secondary: #94a3b8;
   --color-accent: #818cf8;
-  /* Foreground for anything sitting ON --color-accent. Consumed by
-     `.gps-back-link:hover` (games.css). Scheme-invariant: the accent itself
-     does not change between light and dark, so neither does the text that sits
-     on it. */
+  /* Foreground for anything sitting ON --color-accent (buttons, countdowns,
+     the initials prompt). Scheme-invariant: the accent itself does not change
+     between light and dark, so neither does the text that sits on it. */
   --color-accent-contrast: #ffffff;
   /* Accent for SOLID fills that carry --color-accent-contrast text on top.
      --color-accent itself is left alone: it is also the link colour, the
@@ -116,7 +115,7 @@
      would let a game retheme its whole UI while the glow behind it stayed
      indigo.
      Declaring the triad here and re-pointing it inside a game's theme root
-     (e.g. `.mygame-root { --fx-accent: var(--accent-gold); }`) retints every
+     (e.g. ``) retints every
      glass edge, aurora ring, impact flash and background curtain at once.
      Kept as plain colours, not gradients: the shader parses these through
      getComputedStyle and needs something that resolves to rgb(). */

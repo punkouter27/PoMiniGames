@@ -46,18 +46,6 @@
   margin-bottom: var(--space-5);
 }
 
-.hp-title {
-  font-family: var(--font-display);
-  font-size: var(--text-xl);
-  margin: 0;
-}
-
-.hp-head-actions {
-  display: flex;
-  align-items: center;
-  gap: var(--space-3);
-}
-
 .hp-badge {
   font-family: var(--font-mono);
   font-size: var(--text-xs);
@@ -163,15 +151,6 @@
 .hp-dot--healthy { background: var(--accent-success); }
 .hp-dot--degraded { background: var(--accent-warning); }
 .hp-dot--unhealthy { background: var(--accent-danger); }
-
-.hp-error {
-  color: var(--accent-danger);
-  background: var(--accent-danger-soft);
-  border: 1px solid var(--accent-danger);
-  border-radius: var(--radius-md);
-  padding: var(--space-4);
-  overflow-wrap: anywhere;
-}
 
 .hp-muted {
   color: var(--color-text-secondary);

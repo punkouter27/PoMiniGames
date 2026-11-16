@@ -257,18 +257,6 @@
     color: #ffffff;
 }
 
-.dot-win {
-    background-color: var(--color-emerald, #10b981);
-}
-
-.dot-loss {
-    background-color: var(--color-rose, #ef4444);
-}
-
-.dot-draw {
-    background-color: #64748b;
-}
-
 .card-actions {
     display: flex;
     align-items: center;

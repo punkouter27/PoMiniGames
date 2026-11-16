@@ -31,24 +31,6 @@
     width: min(94vw, 480px);
 }
 
-.pvs-start-note {
-    margin: -0.35rem 0 0;
-    font-size: var(--text-xs);
-    color: var(--color-text-secondary);
-}
-
-.pvs-details {
-    align-self: stretch;
-    text-align: left;
-    font-size: var(--text-sm);
-    color: var(--color-text-secondary);
-}
-
-.pvs-details summary {
-    cursor: pointer;
-    padding: 0.2rem 0;
-}
-
 /* The lobby panel is a full page card everywhere else; inside this card it is a section. */
 .pvs-start ::deep .sp-page {
     padding: 0;
@@ -123,12 +105,6 @@
     background: var(--color-surface);
     color: var(--color-text-primary);
     font: inherit;
-}
-
-.pvs-settings .pvs-settings-check {
-    flex-direction: row;
-    align-items: center;
-    gap: 0.45rem;
 }
 
 .pvs-settings small { opacity: 0.75; }
@@ -671,23 +647,7 @@
     font-weight: 600;
 }
 
-/* Today's Daily Siege board. */
-.pvs-daily {
-    width: 100%;
-    margin: 0;
-    padding: 0 0 0 1.4rem;
-    font-size: var(--text-sm);
-    color: var(--color-text-secondary);
-    text-align: left;
-}
-
-.pvs-daily li > span:last-child {
-    float: right;
-    font-variant-numeric: tabular-nums;
-    color: var(--color-text-primary);
-}
-
-/* ── Button Micro-interactions (#19): 3D tilt, radial ripple & light-sweep sheen ── */
+/* ── Button micro-interactions: 3D tilt, radial ripple & light-sweep sheen ── */
 
 .pvs-btn,
 .pvs-start ::deep .gps-intro-ok,

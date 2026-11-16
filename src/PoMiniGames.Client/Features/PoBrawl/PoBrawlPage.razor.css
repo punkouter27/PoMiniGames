@@ -614,32 +614,9 @@
     gap: 3px;
 }
 
-/* Tournament: one pip per bout — decided, on now, to come. */
-.pb-chip-pips {
-    display: inline-flex;
-    gap: 3px;
-}
-
-.pb-chip-pip {
-    width: 6px;
-    height: 6px;
-    border-radius: 50%;
-    background: rgba(255, 255, 255, 0.25);
-}
-
-.pb-chip-pip--done {
-    background: var(--pb-p1);
-}
-
-.pb-chip-pip--now {
-    background: var(--pb-gold);
-    box-shadow: 0 0 6px rgba(255, 209, 102, 0.9);
-}
-
 /* A 390px phone: the plates need every pixel, so the votes wait for the campaign map. */
 @media (max-width: 480px) {
-    .pb-chip-ev,
-    .pb-chip-pips {
+    .pb-chip-ev {
         display: none;
     }
 }
@@ -1017,29 +994,6 @@ button.pb-net-btn {
     .pb-dossier-pair {
         grid-template-columns: minmax(0, 1fr);
     }
-}
-
-/* "Training first" — the start-mode checkbox, on Start's row of the 1P intro card
-   (GameIntro Actions). Theme surface, so tokens. */
-.pb-intro-train {
-    display: inline-flex;
-    align-items: center;
-    gap: 6px;
-    min-height: 32px;
-    font-size: var(--text-sm);
-    color: var(--color-text-primary);
-    cursor: pointer;
-}
-
-.pb-intro-train small {
-    color: var(--color-text-secondary);
-}
-
-.pb-intro-train input {
-    width: 16px;
-    height: 16px;
-    margin: 0;
-    accent-color: var(--accent-ring);
 }
 
 /* ── Fight recap (end-of-game modal) ──────────────────────────────────── */
