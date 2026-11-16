@@ -34,7 +34,7 @@
          CentralPackageTransitivePinningEnabled this holds it at a current version so
          the NuGet CVE audit (which fails the build) can't be tripped by an old
          transitive. No project references it directly. -->
-    <PackageVersion Include="Microsoft.OpenApi" Version="2.12.2" />
+    <PackageVersion Include="Microsoft.OpenApi" Version="2.13.0" />
     <PackageVersion Include="Scalar.AspNetCore" Version="2.21.0" />
     <!-- IdentityModel — security-pinned transitive deps (CVE mitigation, upgrade from 8.0.1) -->
     <PackageVersion Include="Microsoft.IdentityModel.Abstractions" Version="8.19.2" />
