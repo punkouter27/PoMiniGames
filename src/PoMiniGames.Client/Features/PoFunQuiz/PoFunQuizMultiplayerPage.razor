@@ -210,8 +210,8 @@
     {
         // Show a "Reconnecting…" banner so the player knows the lobby is healing.
         // A common cause on a fresh tab is the browser tearing down the WebSocket
-        // when the BFF cookie hasn't finished propagating yet — the
-        // WithAutomaticReconnect() schedule above retries 0/1/3/5s.
+        // while the renderer still holds the page — the WithAutomaticReconnect()
+        // schedule above retries 0/1/3/5s.
         _isConnected = false;
         _reconnecting = true;
         InvokeAsync(StateHasChanged);

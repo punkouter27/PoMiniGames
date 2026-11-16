@@ -1,5 +1,4 @@
 using FluentValidation;
-using System.Reflection;
 using PoMiniGames.Features.Identity;
 using PoMiniGames.Domain.Abstractions;
 using PoMiniGames.Infrastructure;
@@ -175,25 +174,14 @@ catch (Exception ex)
 }
 
 // ─── Exception handling & developer tooling ──────────────────────────
-// Bug fix QA #10: response compression must be the FIRST middleware that
-// touches the response body — any later middleware that calls `WriteAsync`
-// or sets `Content-Length` directly will bypass it. Static files are
-// streamed with `SendFile` (which honors the compression layer), so this
-// ordering works for the WASM payload too.
+// Response compression must be the FIRST middleware that touches the response body —
+// any later middleware that calls `WriteAsync` or sets `Content-Length` directly will
+// bypass it. Static files are streamed with `SendFile` (which honours the compression
+// layer, see UsePoMiniGamesStaticFiles), so this ordering works for the WASM payload too.
 app.UseResponseCompression();
-// Which build answered: the SDK stamps the commit into the informational version as
-// <version>+<sha>, and the deploy checks this header against the commit it shipped. OnStarting,
-// so a response the exception handler rewrites keeps it.
-var commit = typeof(Program).Assembly.GetCustomAttribute<AssemblyInformationalVersionAttribute>()?.InformationalVersion.Split('+') is [_, var sha] ? sha : "unknown";
-app.Use((ctx, next) =>
-{
-    ctx.Response.OnStarting(() =>
-    {
-        ctx.Response.Headers["X-Commit"] = commit;
-        return Task.CompletedTask;
-    });
-    return next(ctx);
-});
+// Which build answered: the commit SHA the deploy checks against what it shipped.
+app.UsePoMiniGamesCommitStamp();
+
 // CORS: applies only in Development (see registration above). Must precede
 // UsePlayerIdentity / MapPoMiniGamesEndpoints so preflight OPTIONS requests
 // are answered before anything else looks at them.
@@ -226,20 +214,8 @@ else
     app.UseDeveloperExceptionPage();
 }
 
-// ─── Security headers ────────────────────────────────────────────────
-// HTTPS redirection is not here on purpose: App Service enforces it (httpsOnly in
-// infra/resources.bicep) and terminates TLS before the request reaches Kestrel.
-// ponytail: the CSP covers framing, <base> and plugins only. A script-src policy needs
-// hashes for the inline import map and boot scripts in index.html; add it with those.
-app.Use(async (ctx, next) =>
-{
-    var headers = ctx.Response.Headers;
-    headers.XContentTypeOptions = "nosniff";
-    headers.XFrameOptions = "DENY";
-    headers["Referrer-Policy"] = "strict-origin-when-cross-origin";
-    headers.ContentSecurityPolicy = "frame-ancestors 'none'; base-uri 'self'; object-src 'none'";
-    await next();
-});
+// ─── Security headers (nosniff, DENY framing, minimal CSP) ───────────
+app.UsePoMiniGamesSecurityHeaders();
 
 app.MapOpenApi();
 app.MapScalarApiReference(options =>
@@ -248,140 +224,17 @@ app.MapScalarApiReference(options =>
     options.Theme = ScalarTheme.Purple;
 });
 
-// ─── Dev-only: never cache the boot chain ────────────────────────────
-// The SPA shell (index.html, served for extensionless routes), /_framework/*,
-// and the non-fingerprinted .css/.js are how the browser discovers the current
-// fingerprinted asset names. If they sit in the HTTP cache, a rebuild changes
-// the fingerprints and an already-open tab keeps requesting the old (now 404)
-// files → "An unhandled error has occurred" on load. The same mix happens after a
-// deploy: StaticWebAssetsFingerprintingEnabled is off, so js/*.js and the shell
-// carry no fingerprint and, with no Cache-Control, browsers keep them "fresh" by
-// heuristic for hours. A reload then boots the new client against the old
-// js/engineLoader.js (whose registry lacks any game added since) and the game page
-// shows "could not load". Every environment therefore forces revalidation on the
-// boot chain; the fingerprinted assets stay cacheable, and ETag revalidation makes
-// the cost one 304 per file.
-{
-    app.Use(async (ctx, next) =>
-    {
-        var path = ctx.Request.Path.Value ?? "/";
-        // /api/* is not the boot chain: the extensionless heuristic below used to catch
-        // API routes whose last segment has no dot (e.g. the content-addressed
-        // /api/povoxelstrike/assets/{hash}) and this OnStarting overwrote the immutable
-        // cache header the handler had set — dev silently diverged from production.
-        var noCache = !path.StartsWith("/api/", StringComparison.OrdinalIgnoreCase)
-            && (path.StartsWith("/_framework", StringComparison.OrdinalIgnoreCase)
-            || !System.IO.Path.HasExtension(path)                       // SPA shell routes ("/", "/connectfive/demo")
-            || path.EndsWith(".css", StringComparison.OrdinalIgnoreCase)
-            || path.EndsWith(".js", StringComparison.OrdinalIgnoreCase));
-        if (noCache)
-        {
-            ctx.Response.OnStarting(() =>
-            {
-                ctx.Response.Headers.CacheControl = "no-cache";
-                return Task.CompletedTask;
-            });
-        }
-        await next();
-    });
-}
+// ─── Boot chain: revalidate the shell, /_framework and the js/css ────
+app.UsePoMiniGamesBootChainCachePolicy();
 
 // ─── Blazor WASM hosting ─────────────────────────────────────────────
-// Bug fix QA #10: opt the static-files middleware into compression-aware
-// responses by setting HttpsCompressionBehavior + adding Vary header. The
-// static-files middleware uses `SendFile` when the response is unmodified,
-// which bypasses compression; we force it through the response stream by
-// removing the Content-Length and adding Vary: Accept-Encoding.
 app.UseBlazorFrameworkFiles();
 
-// ─── Security gate: serve the *client's* appsettings.*.json, not the server's ───
-// Why this exists: the Blazor WASM runtime fetches /appsettings.json at startup
-// and treats a 404 as a fatal init error (MONO_WASM: download 'http://...
-// appsettings.json' ... failed 404). We therefore intercept the request and
-// serve ONLY the client's appsettings (public API base address, feature flags) — the server's appsettings (Key Vault endpoints, secrets, AAD
-// client ids) are never returned to a browser.
-//
-// MUST be registered before UseStaticFiles so the gate fires before the
-// static-files pipeline reads the file from disk.
-app.Use(async (ctx, next) =>
-{
-    var p = ctx.Request.Path.Value;
-    if (p is not null && p.StartsWith("/appsettings", StringComparison.OrdinalIgnoreCase) &&
-        p.EndsWith(".json", StringComparison.OrdinalIgnoreCase))
-    {
-        // Restrict to a small allowlist of filenames; block any other path that
-        // somehow resolves under appsettings*.json (e.g. ../ traversal).
-        var fileName = p.TrimStart('/');
-        if (fileName.Contains('/') || fileName.Contains('\\') ||
-            !(fileName.Equals("appsettings.json", StringComparison.OrdinalIgnoreCase) ||
-              fileName.Equals("appsettings.Development.json", StringComparison.OrdinalIgnoreCase)))
-        {
-            ctx.Response.StatusCode = StatusCodes.Status404NotFound;
-            return;
-        }
+// ─── Client appsettings gate (client copy only, never the server's) ──
+app.UsePoMiniGamesClientAppSettings();
 
-        // Resolve the *client's* appsettings file from disk. PoMiniGames.csproj's
-        // StageBlazorClientStaticWebAssets target copies the client's
-        // appsettings files into <bin>/wwwroot/appsettings*.json. We deliberately
-        // do NOT serve ContentRootPath or AppContext.BaseDirectory, because those
-        // contain the server's own appsettings.json (Key Vault URIs, AAD client
-        // ids, secrets) and exposing them to a browser would leak configuration.
-        var env = ctx.RequestServices.GetRequiredService<IWebHostEnvironment>();
-        var fullPath = (string?)null;
-        var wwwrootRoot = env.WebRootPath;
-        if (string.IsNullOrEmpty(wwwrootRoot))
-        {
-            // Fall back: in `dotnet run` WebRootPath may be the source project root
-            // (where no wwwroot/ exists), so look under bin/wwwroot instead.
-            wwwrootRoot = Path.Combine(AppContext.BaseDirectory, "wwwroot");
-        }
-        var candidate = Path.Combine(wwwrootRoot, fileName);
-        if (System.IO.File.Exists(candidate)) fullPath = candidate;
-        if (!System.IO.File.Exists(fullPath))
-        {
-            // Fall back to an empty payload so the Blazor WASM runtime still
-            // boots — never 404 the client config, that bricks the SPA.
-            ctx.Response.StatusCode = StatusCodes.Status200OK;
-            ctx.Response.ContentType = "application/json";
-            ctx.Response.Headers["Cache-Control"] = "no-store";
-            await ctx.Response.WriteAsync("{}");
-            return;
-        }
-
-        ctx.Response.StatusCode = StatusCodes.Status200OK;
-        ctx.Response.ContentType = "application/json";
-        ctx.Response.Headers["Cache-Control"] = "no-store";
-        await ctx.Response.SendFileAsync(fullPath);
-        return;
-    }
-    await next(ctx);
-});
-
-// glTF binary is not in the framework's default extension→MIME map, and StaticFileMiddleware
-// SKIPS any file whose content type it cannot resolve — the request falls through to the SPA
-// fallback and the caller gets the Blazor shell (or a 404) instead of the asset. PoMarbleRace
-// loads its whole course from wwwroot/models/marble_track.glb, so without this registration the
-// game has no track at all. Registered on a copy of the default provider rather than by mutating
-// a shared static, so nothing else in the pipeline inherits the change.
-var contentTypeProvider = new Microsoft.AspNetCore.StaticFiles.FileExtensionContentTypeProvider();
-contentTypeProvider.Mappings[".glb"] = "model/gltf-binary";
-contentTypeProvider.Mappings[".gltf"] = "model/gltf+json";
-// PoCabinet's scanned tracks draw their scans as Gaussian splats (wwwroot/models/bedroom.ksplat, court.ksplat).
-contentTypeProvider.Mappings[".ksplat"] = "application/octet-stream";
-
-app.UseStaticFiles(new Microsoft.AspNetCore.Builder.StaticFileOptions
-{
-    ContentTypeProvider = contentTypeProvider,
-    OnPrepareResponse = ctx =>
-    {
-        // Allow compression middleware to wrap the body.
-        ctx.Context.Response.Headers["Vary"] = "Accept-Encoding";
-        ctx.Context.Response.Headers.Remove("Content-Length");
-        // Force streaming (not SendFile) so the compression layer can wrap the body.
-        ctx.Context.Features.Set<Microsoft.AspNetCore.Http.Features.IHttpResponseBodyFeature>(
-            new Microsoft.AspNetCore.Http.StreamResponseBodyFeature(ctx.Context.Response.Body, ctx.Context.Features.Get<Microsoft.AspNetCore.Http.Features.IHttpResponseBodyFeature>()!));
-    }
-});
+// ─── Static files: glb/gltf/ksplat types, compression-friendly headers ─
+app.UsePoMiniGamesStaticFiles();
 
 app.UsePlayerIdentity();
 app.UseRateLimiter();
@@ -397,7 +250,7 @@ app.UsePoMiniGamesAntiforgery();
 // The whole route table lives in EndpointRouteExtensions.MapPoMiniGamesEndpoints.
 app.MapPoMiniGamesEndpoints();
 
-// ─── Fake /api/* fallback ───────────────────────────
+// ─── Fake /api/* fallback ─────────────────────────────────────────────
 // The SPA fallback below (`MapFallbackToFile("index.html")`) intercepts every
 // unmatched path and returns the Blazor shell. That is correct for client
 // routes like /leaderboards, but it silently converts undefined /api/* paths
@@ -410,25 +263,10 @@ app.Map("/api/{*rest:nonfile}", () => Results.NotFound(new
     error = "no_such_endpoint",
     detail = "The requested /api/* path is not mapped. Check the OpenAPI document at /openapi/v1.json for the live route table."
 }))
-.ExcludeFromDescription(); // §7 of QA report: keep the catch-all out of the OpenAPI surface.
+.ExcludeFromDescription(); // Keep the catch-all out of the OpenAPI surface.
 
-// ─── One-time cache bust for stale _framework/*.pdb 204 responses ───
-app.Use(async (ctx, next) =>
-{
-    if (HttpMethods.IsGet(ctx.Request.Method)
-        && ctx.Request.Path == "/"
-        && !ctx.Request.Cookies.ContainsKey("po-cache-v2"))
-    {
-        ctx.Response.Headers["Clear-Site-Data"] = "\"cache\"";
-        ctx.Response.Cookies.Append("po-cache-v2", "1", new CookieOptions
-        {
-            Path = "/",
-            SameSite = SameSiteMode.Lax,
-            MaxAge = TimeSpan.FromDays(30),
-        });
-    }
-    await next(ctx);
-});
+// ─── One-time cache bust for stale _framework/*.pdb 204 responses ─────
+app.UsePoMiniGamesOnceCacheBust();
 
 // ─── SPA fallback ────────────────────────────────────────────────────
 app.MapFallbackToFile("index.html");

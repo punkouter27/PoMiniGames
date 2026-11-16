@@ -138,28 +138,12 @@
     border: 1px solid var(--glass-edge);
     box-shadow: var(--glass-inner);
 }
-/* These sit ON the game canvas, not on an app surface — see the
-   `--glass-*-canvas` note above for why they must not follow the scheme.
 
-   `.racer-hud` must not be in this group. Unlike `.ps-hud` (a flex bar with its
-   own padding and background) and `.hud-panel` (PoRacer's actual corner
-   panels), `.racer-hud` is PoRacer's full-screen HUD *container* —
-   `position: absolute; inset: 0; pointer-events: none`, a bare positioning layer
-   whose children are the panels. Glassing it would paint the 72%-opaque canvas
-   fill over the ENTIRE race and run a backdrop blur across everything behind
-   it, permanently blurring the track, cars and background while the HUD text on
-   top stayed sharp. `.hud-panel` already covers the panels meant to be glass.
-
-   Rule of thumb for this list: only ever add a selector that names an element
-   which paints its own background. A full-bleed overlay does not belong here. */
-.ps-hud.ps-hud,
-.hud-panel.hud-panel {
-    background: var(--glass-fill-canvas);
-    border: 1px solid var(--glass-edge-canvas);
-    box-shadow: var(--glass-inner-canvas);
-    -webkit-backdrop-filter: blur(calc(var(--gfx-blur) * 0.6)) saturate(150%);
-    backdrop-filter: blur(calc(var(--gfx-blur) * 0.6)) saturate(150%);
-}
+/* On-canvas HUD surfaces (corner panels, single HUD bars) belong in the game's own
+   scoped stylesheet, using the `--glass-*-canvas` tokens above — those are the ones
+   that deliberately do not follow the app colour scheme. A full-bleed HUD container
+   is never a glass surface: `position: absolute; inset: 0` would paint the 72%-opaque
+   canvas fill over the whole game and blur everything behind it. */
 
 /* ── Cards, tiles and panels ──────────────────────────────────────────────
    NOT given backdrop-filter. These repeat — a home screen has a dozen game

@@ -11,9 +11,11 @@ namespace PoMiniGames.Infrastructure;
 /// </summary>
 /// <remarks>
 /// <para>
-/// The BFF cookies must be encrypted. The framework default key ring is
-/// ephemeral (in-memory, per-process), which means a redeploy silently invalidates every
-/// player. This extension pins the key ring to:
+/// The protected payloads (the antiforgery cookie plus the signed play-session tokens
+/// <see cref="Features.Integrity.PlaySessionService"/> hands out) must survive a redeploy.
+/// The framework default key ring is ephemeral (in-memory, per-process), so a restart
+/// silently invalidates every player's token and every parked score replays into a 403.
+/// This extension pins the key ring to:
 /// </para>
 /// <list type="bullet">
 ///   <item><b>Development / Test:</b> the on-disk <c>keys/</c> folder under the app root.</item>
@@ -24,7 +26,7 @@ namespace PoMiniGames.Infrastructure;
 /// <para>
 /// Pattern: Singleton. The data-protection key ring is one process-wide object; this
 /// extension registers a single <see cref="IDataProtectionProvider"/> whose lifetime is
-/// the application lifetime. Consumers (cookie auth, antiforgery, session state) all
+/// the application lifetime. Consumers (antiforgery, play sessions) all
 /// pull keys from the same provider, so swapping the backing store affects every
 /// protected payload in lockstep.
 /// </para>
@@ -89,7 +91,7 @@ internal static class DataProtectionExtensions
         else if (env.IsEnvironment("Test"))
         {
             // Zero-waste: the Test tier simulates the Production fail-fast contracts
-            // (auth scheme guards, AutoGuestLogin guard, diag-404 guard) by forcing
+            // (the startup secret guard and the diag-404 guard) by forcing
             // UseEnvironment("Production") in individual tests. Those boots must NOT
             // try to authenticate against the real PoShared storage account (the
             // developer's CLI credential may be a personal-account token with no

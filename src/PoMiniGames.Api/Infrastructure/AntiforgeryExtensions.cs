@@ -6,13 +6,15 @@ namespace PoMiniGames.Infrastructure;
 /// <summary>
 /// Antiforgery (CSRF) protection for every state-changing API call.
 ///
-/// This app authenticates with a BFF cookie, which browsers attach to cross-site
-/// requests automatically — the exact precondition CSRF exploits. <c>SameSite=Strict</c>
-/// on the session cookie (see <c>AuthExtensions</c>) already blocks the classic
-/// cross-site form post, but it is a single control enforced entirely by the browser:
-/// it does nothing for a same-site subdomain takeover, and it silently degrades on
-/// clients that do not implement the attribute. The synchroniser-token pattern below
-/// is the server-side control that does not depend on browser cooperation.
+/// There is no sign-in, so there is no ambient credential to ride: identity arrives in the
+/// <c>X-Player-Id</c> header, which a browser never attaches by itself. What this closes is
+/// the remaining hole — that header is trivially forgeable, and a third-party page can make
+/// the browser POST to this origin. The synchroniser token requires two things such a page
+/// cannot produce together: a custom header (which a cross-site request cannot send without
+/// passing a CORS preflight this host does not answer, since CORS is registered for the
+/// local dev ports only) and the paired cookie (which <c>SameSite=Lax</c> withholds from a
+/// cross-site POST). The server-side check below is what enforces it; nothing here depends
+/// on the browser honouring anything.
 ///
 /// Scope is deliberate, and each exclusion is a real requirement rather than a gap:
 /// <list type="bullet">
@@ -20,7 +22,7 @@ namespace PoMiniGames.Infrastructure;
 ///     (<c>/poracer/lobby-hub</c>, <c>/couplequiz/hubs/game</c>, …). Their POST
 ///     <c>/negotiate</c> would fail validation because the SignalR client builds its
 ///     own request pipeline and cannot be taught to attach the header. Hub traffic is
-///     covered by the auth gate plus <c>SameSite=Strict</c>.</item>
+///     covered by the connection's player id plus <c>SameSite=Lax</c> on the token cookie.</item>
 ///   <item><b>Only unsafe methods.</b> GET/HEAD/OPTIONS/TRACE are required by
 ///     <see cref="IAntiforgery"/> to be side-effect free, and the token-issuing
 ///     endpoint is itself a GET so the client can always bootstrap.</item>
@@ -39,7 +41,7 @@ internal static class AntiforgeryExtensions
     /// <summary>
     /// Cookie holding the antiforgery *cookie token*. Not <c>__Host-</c> prefixed: that
     /// prefix mandates <c>Secure</c>, and development serves the whole app over plain
-    /// <c>http://localhost:5000</c>, where a Secure cookie is discarded by the browser and
+    /// <c>http://localhost:5080</c>, where a Secure cookie is discarded by the browser and
     /// every write would 403 locally. <see cref="CookieSecurePolicy.SameAsRequest"/> gets
     /// the Secure flag in production (HTTPS) without breaking dev.
     /// </summary>

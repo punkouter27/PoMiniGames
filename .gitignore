@@ -78,6 +78,13 @@ node_modules/
 npm-debug.log
 yarn-error.log
 
+# ─── Python (scripts/pofighter/*.py, scripts/blender/*.py) ──────────
+# Bytecode caches are written next to the script the moment any of them is
+# imported; five of them were committed by mistake and shipped in every clone.
+__pycache__/
+*.py[cod]
+.pytest_cache/
+
 # ─── Local Azurite state ─────────────────────────────────────────────
 # The npm-installed Azurite (when Docker isn't running) writes its
 # on-disk state here. Container Azurite persists via the named volume

@@ -57,16 +57,14 @@ html[data-input="pad"] .gps-game-card.gps-game-card:has(:focus) {
 }
 
 /* Tabular figures for numbers, counters, leaderboards & timestamps to avoid layout jitter.
-   Option #8: broaden from an explicit class list to the wider "this surface holds
-   numbers" pattern — every HUD chip, score tile, time display, badge, and
-   percentage cell — so a new HUD that ships tomorrow inherits this without
-   having to be added to a list. `:where()` keeps specificity at zero so a
+   Broadened from an explicit class list to the "this surface holds numbers" pattern — every
+   HUD chip, score tile, time display, badge and percentage cell — so a new surface inherits
+   this without having to be added to a list. `:where()` keeps specificity at zero so a
    component can still opt OUT by declaring its own font-variant. */
-:where(.gps-stat-value, .lb-val, .lb-rank, .prf-chip-val, .racer-hud, .ps-hud,
-       .gl-fps, .sv-score, .timer, [data-tabular],
-       /* Generic "this surface holds a number" hooks — match by suffix so
-          HUDs that surface scores (".xx-score"), ELOs (".xx-elo"), times
-          (".xx-time"), and counts (".xx-count") inherit without being added. */
+:where(.gps-stat-value, .prf-chip-val, .gl-fps, .timer, [data-tabular],
+       /* Generic "this surface holds a number" hooks — match by suffix so a component that
+          surfaces scores ("-score"), ELOs ("-elo"), times ("-time") and counts ("-count")
+          inherits without being added. */
        [class$="-score"], [class$="-elo"], [class$="-time"], [class$="-count"],
        [class$="-val"], [class$="-rank"], [class$="-rating"], [class$="-pct"]) {
     font-variant-numeric: tabular-nums lining-nums;
@@ -278,18 +276,16 @@ h3[tabindex="0"]:focus-visible {
   border-radius: var(--radius-sm);
 }
 
-/* ── Skeleton Loading (Suggestion #6) ── */
+/* ── Skeleton Loading ──
+   The base class only: the shared stage is the shimmer block below. The old
+   .skeleton--card / --text / --text-short / --btn / --search shapes belonged to the
+   home-page skeleton that GameSkeleton replaced; nothing rendered them. */
 .skeleton {
   background: linear-gradient(90deg, var(--color-surface) 25%, var(--color-surface-hover) 50%, var(--color-surface) 75%);
   background-size: 200% 100%;
   animation: shimmer 1.5s infinite;
   border-radius: 0.5rem;
 }
-.skeleton--card { height: 200px; width: 100%; }
-.skeleton--text { height: 1rem; width: 60%; margin-bottom: 0.5rem; }
-.skeleton--text-short { height: 0.8rem; width: 40%; }
-.skeleton--btn { height: 3rem; width: 160px; border-radius: 1rem; }
-.skeleton--search { height: 2.5rem; width: 100%; border-radius: 0.5rem; }
 
 @keyframes shimmer {
   0% { background-position: 200% 0; }
@@ -333,7 +329,10 @@ h3[tabindex="0"]:focus-visible {
 
 /* All .home-* selectors migrated to scoped Pages/Index.razor.css. */
 
-/* ── Single Player Page ── */
+/* ── Single Player Page + shared button ──
+   .sp-page / .sp-card frame a lobby (LobbyPanel) and .sp-btn is the sandbox's
+   button; .sp-back / .sp-title / .sp-subtitle went with the old single-player
+   page shell that PageHeader and LobbyPanel replaced. */
 .sp-page {
   padding: 2rem 1.5rem;
   max-width: 1200px;
@@ -352,33 +351,7 @@ h3[tabindex="0"]:focus-visible {
   backdrop-filter: blur(12px);
 }
 
-.sp-back {
-  background: transparent;
-  border: 1px solid var(--color-border);
-  color: var(--color-text-secondary);
-  padding: 0.4rem 0.85rem;
-  border-radius: 9999px;
-  font-size: 0.8rem;
-  display: flex;
-  align-items: center;
-  gap: 0.3rem;
-  transition: all 0.2s;
-}
-.sp-back:hover { border-color: var(--color-text-secondary); color: var(--color-text-primary); }
-
-.sp-title {
-  font-size: var(--text-xl);
-  font-weight: 700;
-  font-family: var(--font-display);
-}
-
-.sp-subtitle {
-  color: var(--color-text-secondary);
-  font-size: 0.9rem;
-  margin-bottom: 1.5rem;
-}
-
-/* ── High Scores (Suggestion #9: empty states) — moved to scoped
+/* ── High Scores — moved to scoped
      Pages/Index.razor.css and Components/HomeHighScores.razor.css ── */
 
 /* ── Responsive ──────────────────────────────────────────────────────────────
@@ -422,15 +395,14 @@ h3[tabindex="0"]:focus-visible {
    it is being phased in via per-game refactors; do not write new ones.
 
    Sections:
-     · Viewport-fit helpers     (--gps-area-h, .gl-viewport)
+     · Viewport-fit tokens      (--gps-area-h, --gps-topbar-h)
      · State primitives         (.app-loading, .app-empty-state, .app-error-state)
-     · Component primitives     (.app-card, .app-btn, .app-chip, .app-link)
-     · Containment              (.app-contain — the "opt in" helper)
+     · Component primitives     (.app-btn, .app-chip)
      · Typography defaults      (text-wrap balance/pretty, fluid-scale anchors)
      · Touch target floor       (extended selector list under @media coarse)
    ───────────────────────────────────────────────────────────────────────── */
 
-/* ── Viewport-fit helpers ────────────────────────────────────────────────────
+/* ── Viewport-fit tokens ─────────────────────────────────────────────────────
    Mobile portrait fit is the brief's #1 explicit ask: "fit content within
    the viewport to eliminate vertical scrolling in mobile portrait without
    truncation". Each game/canvas page used to compute its own height from
@@ -461,32 +433,6 @@ h3[tabindex="0"]:focus-visible {
      padding and the GameShell's `--gps-area-h` calc. */
   --safe-bottom: env(safe-area-inset-bottom, 0px);
   --safe-top: env(safe-area-inset-top, 0px);
-}
-
-/* Drop-in viewport-fit helper. Wrap any page whose content should NOT
-   overflow the visible area on a portrait phone — typically a profile,
-   health, or leaderboard page whose content is short and where scrolling
-   is a bug, not a feature. Pairs with `.app-card` (below) for the body. */
-.gl-viewport {
-  display: flex;
-  flex-direction: column;
-  min-height: calc(var(--gps-area-h) - var(--gps-topbar-h));
-  max-height: calc(var(--gps-area-h) - var(--gps-topbar-h));
-  overflow-y: auto;
-  overflow-x: clip;
-  padding-block: var(--space-4);
-  padding-inline: var(--space-4);
-  padding-bottom: calc(var(--space-6) + var(--safe-bottom));
-  -webkit-overflow-scrolling: touch;
-}
-
-/* Compact variant: drops the safe-area inset on small phones so a one-screen
-   page fits without a phantom 24px gap below the last row. */
-@media (max-width: 640px) {
-  .gl-viewport {
-    padding-block: var(--space-3);
-    padding-bottom: calc(var(--space-4) + var(--safe-bottom));
-  }
 }
 
 /* ── State primitives ─────────────────────────────────────────────────────

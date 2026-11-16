@@ -3,14 +3,12 @@ using System.Threading.RateLimiting;
 
 namespace PoMiniGames.Infrastructure;
 
-/// <summary>Registers the rate-limiter policy used by high-score endpoints.</summary>
+/// <summary>Registers the rate-limiter policies used by the API's write and read endpoints.</summary>
 /// <remarks>
-/// Pattern: Strategy + Specification. The limiter is parameterised by a partition key
-/// (remote IP) and a fixed-window specification (10 requests / minute). Swapping the
-/// window strategy (e.g. sliding-window or token-bucket) is a one-line change in the
-/// <c>factory</c> delegate; the rest of the call sites are unaffected. This is the
-/// textbook "rate-limiting as cross-cutting concern" decomposition from the
-/// .NET rate-limiting middleware documentation.
+/// Every policy is the same shape — a fixed one-minute window on the compound
+/// <c>{ip}|{identity}</c> partition (see <see cref="BuildPartitionKey"/>) — and only the
+/// per-window budget differs. <see cref="FixedWindow"/> is that shape, so a policy is one
+/// line and its comment is about the number, which is the only thing that is a decision.
 /// </remarks>
 internal static class RateLimitingExtensions
 {
@@ -20,144 +18,50 @@ internal static class RateLimitingExtensions
         {
             opts.RejectionStatusCode = StatusCodes.Status429TooManyRequests;
 
-            // Every policy keys on a compound (IP + identity) partition. An IP-only
-            // partition would let a single attacker behind a corporate NAT — or a single
-            // AutoGuest browser on a shared connection — saturate the bucket for every
-            // legitimate user behind that NAT. The compound partition keeps anonymous bursts from
-            // poisoning authenticated traffic and lets player-id identities
-            // get their own bucket on top of an IP-level bucket for anon traffic.
-            opts.AddPolicy("highscores", ctx =>
-                RateLimitPartition.GetFixedWindowLimiter(
-                    partitionKey: BuildPartitionKey(ctx),
-                    factory: _ => new FixedWindowRateLimiterOptions
-                    {
-                        Window = TimeSpan.FromMinutes(1),
-                        PermitLimit = 10,
-                        AutoReplenishment = true,
-                        QueueProcessingOrder = QueueProcessingOrder.OldestFirst,
-                        QueueLimit = 0,
-                    }));
+            // Score submissions. A round ends with one post, so ten a minute is a
+            // generous ceiling for a human and a hard cap for a script.
+            opts.AddPolicy("highscores", ctx => FixedWindow(ctx, permitLimit: 10));
 
-            // Anonymous leaderboard READS. Separate from "highscores" on both axes:
-            // a read is cheaper than a write (one bounded partition query, no
-            // read-modify-write), and sharing a bucket would let a page that reads a
-            // board before submitting to it starve its own write. 60/min still caps an
-            // unauthenticated flood at ~1 rps per partition, which is what an endpoint
-            // carrying AllowAnonymous needs — dropping the group's auth gate removes the
-            // only other thing standing between a caller and Table Storage on an F1 plan.
-            opts.AddPolicy("leaderboard-read", ctx =>
-                RateLimitPartition.GetFixedWindowLimiter(
-                    partitionKey: BuildPartitionKey(ctx),
-                    factory: _ => new FixedWindowRateLimiterOptions
-                    {
-                        Window = TimeSpan.FromMinutes(1),
-                        PermitLimit = 60,
-                        AutoReplenishment = true,
-                        QueueProcessingOrder = QueueProcessingOrder.OldestFirst,
-                        QueueLimit = 0,
-                    }));
+            // Anonymous leaderboard READS. A read is cheaper than a write (one bounded
+            // partition query, no read-modify-write) and shares no bucket with "highscores",
+            // so a page that reads a board before submitting to it cannot starve its own
+            // write. 60/min still caps an unauthenticated flood at ~1 rps per partition,
+            // which matters because these endpoints carry AllowAnonymous and Table Storage
+            // on an F1 plan is the thing behind them.
+            opts.AddPolicy("leaderboard-read", ctx => FixedWindow(ctx, permitLimit: 60));
 
-            // Play-session minting. One mint per game the player opens, so a normal session
-            // spends a handful; 30/min leaves a browsing player untouched while capping the
-            // rate a script can farm signed sessions at. Cheaper than "highscores" work
-            // (a Protect call, no storage) but deliberately not unlimited: a session is a
-            // credential, and minting is the only way to get one.
-            opts.AddPolicy("play-session", ctx =>
-                RateLimitPartition.GetFixedWindowLimiter(
-                    partitionKey: BuildPartitionKey(ctx),
-                    factory: _ => new FixedWindowRateLimiterOptions
-                    {
-                        Window = TimeSpan.FromMinutes(1),
-                        PermitLimit = 30,
-                        AutoReplenishment = true,
-                        QueueProcessingOrder = QueueProcessingOrder.OldestFirst,
-                        QueueLimit = 0,
-                    }));
+            // Play-session minting: one mint per game the player opens, so a normal session
+            // spends a handful. Not unlimited on purpose — a signed session is the only
+            // credential a score submission carries.
+            opts.AddPolicy("play-session", ctx => FixedWindow(ctx, permitLimit: 30));
 
-            // Account export / erase. The tightest policy in the app because each call is a
-            // full cross-table scan of every board's partition — by far the most expensive
-            // thing an authenticated caller can ask for on an F1 plan. A human does this once
-            // or twice, ever; 5/min is generous for that and useless as an amplifier.
-            opts.AddPolicy("account-data", ctx =>
-                RateLimitPartition.GetFixedWindowLimiter(
-                    partitionKey: BuildPartitionKey(ctx),
-                    factory: _ => new FixedWindowRateLimiterOptions
-                    {
-                        Window = TimeSpan.FromMinutes(1),
-                        PermitLimit = 5,
-                        AutoReplenishment = true,
-                        QueueProcessingOrder = QueueProcessingOrder.OldestFirst,
-                        QueueLimit = 0,
-                    }));
+            // Account export / erase: the tightest budget in the app, because each call is a
+            // full cross-table scan of every board's partition. A human does this once.
+            opts.AddPolicy("account-data", ctx => FixedWindow(ctx, permitLimit: 5));
 
-            // PoCabinet: the score-submission policy for the cockpit-view racing game.
-            // A racing session submits one best lap per finish, so 10/min mirrors "highscores"
-            // — the cap that worked for the rest of the games. Uses the same (IP + identity)
-            // partition so anonymous floods can't poison authed traffic.
-            opts.AddPolicy("pocabinet", ctx =>
-                RateLimitPartition.GetFixedWindowLimiter(
-                    partitionKey: BuildPartitionKey(ctx),
-                    factory: _ => new FixedWindowRateLimiterOptions
-                    {
-                        Window = TimeSpan.FromMinutes(1),
-                        PermitLimit = 10,
-                        AutoReplenishment = true,
-                        QueueProcessingOrder = QueueProcessingOrder.OldestFirst,
-                        QueueLimit = 0,
-                    }));
+            // PoCabinet best laps: one submission per finish, the same budget as "highscores".
+            opts.AddPolicy("pocabinet", ctx => FixedWindow(ctx, permitLimit: 10));
 
-            // PoBrawl demo fighter Elo. Its own bucket so a kiosk (or a 4x tournament) reporting
-            // bouts cannot starve the same player's KO and ladder posts in "highscores". The real
-            // per-identity limits (a bout every 3 s, 40 a day) are PoBrawlDemoEloGate's; this
-            // only caps a burst at the gate's own pace.
-            opts.AddPolicy("pobrawl-elo", ctx =>
-                RateLimitPartition.GetFixedWindowLimiter(
-                    partitionKey: BuildPartitionKey(ctx),
-                    factory: _ => new FixedWindowRateLimiterOptions
-                    {
-                        Window = TimeSpan.FromMinutes(1),
-                        PermitLimit = 20,
-                        AutoReplenishment = true,
-                        QueueProcessingOrder = QueueProcessingOrder.OldestFirst,
-                        QueueLimit = 0,
-                    }));
+            // PoBrawl demo fighter Elo, in its own bucket so a kiosk (or a 4x tournament)
+            // reporting bouts cannot starve the same player's KO and ladder posts. The real
+            // per-identity limits are PoBrawlDemoEloGate's; this only caps a burst at the
+            // gate's own pace.
+            opts.AddPolicy("pobrawl-elo", ctx => FixedWindow(ctx, permitLimit: 20));
 
-            // Browser error reports. Anonymous and outside the antiforgery scope, so
-            // this limit is what stops the sink being used to fill the log. The page itself sends
-            // at most ten per load, deduplicated; 20/min covers a couple of bad page loads.
-            opts.AddPolicy("client-errors", ctx =>
-                RateLimitPartition.GetFixedWindowLimiter(
-                    partitionKey: BuildPartitionKey(ctx),
-                    factory: _ => new FixedWindowRateLimiterOptions
-                    {
-                        Window = TimeSpan.FromMinutes(1),
-                        PermitLimit = 20,
-                        AutoReplenishment = true,
-                        QueueProcessingOrder = QueueProcessingOrder.OldestFirst,
-                        QueueLimit = 0,
-                    }));
+            // Browser error reports: anonymous and outside the antiforgery scope, so this
+            // limit is what stops the sink being used to fill the log. A page sends at most
+            // ten per load, deduplicated.
+            opts.AddPolicy("client-errors", ctx => FixedWindow(ctx, permitLimit: 20));
 
-            // Game invites. Each one is a write and an outbound push to someone
-            // else's device, so it gets the tightest window after account-data: nobody invites
-            // more than a handful of people a minute, and the recipient is the one who pays.
-            opts.AddPolicy("invites", ctx =>
-                RateLimitPartition.GetFixedWindowLimiter(
-                    partitionKey: BuildPartitionKey(ctx),
-                    factory: _ => new FixedWindowRateLimiterOptions
-                    {
-                        Window = TimeSpan.FromMinutes(1),
-                        PermitLimit = 6,
-                        AutoReplenishment = true,
-                        QueueProcessingOrder = QueueProcessingOrder.OldestFirst,
-                        QueueLimit = 0,
-                    }));
+            // Game invites: each one is a write plus an outbound push to someone else's
+            // device, so the recipient is the one who pays for a flood.
+            opts.AddPolicy("invites", ctx => FixedWindow(ctx, permitLimit: 6));
 
-            // Every policy here is a fixed window with QueueLimit = 0, so a rejected caller has
-            // to guess how long to wait — and the client's own retry handler deliberately does
-            // not replay a 429. Hand back the window's remaining time as Retry-After so the UI
-            // can say "in 12s" instead of failing blind. The metadata is only present on
-            // limiters that know their replenishment schedule; absent it, say nothing rather
-            // than invent a number.
+            // QueueLimit = 0 everywhere, so a rejected caller has to guess how long to wait
+            // and the client's retry handler deliberately does not replay a 429. Hand back
+            // the window's remaining time as Retry-After so the UI can say "in 12s" rather
+            // than fail blind. The metadata is only present on limiters that know their
+            // replenishment schedule; absent it, say nothing rather than invent a number.
             opts.OnRejected = (context, _) =>
             {
                 if (context.Lease.TryGetMetadata(MetadataName.RetryAfter, out var retryAfter))
@@ -174,12 +78,25 @@ internal static class RateLimitingExtensions
         return services;
     }
 
+    /// <summary>One fixed one-minute window on the caller's compound partition key.</summary>
+    private static RateLimitPartition<string> FixedWindow(HttpContext ctx, int permitLimit) =>
+        RateLimitPartition.GetFixedWindowLimiter(
+            partitionKey: BuildPartitionKey(ctx),
+            factory: _ => new FixedWindowRateLimiterOptions
+            {
+                Window = TimeSpan.FromMinutes(1),
+                PermitLimit = permitLimit,
+                AutoReplenishment = true,
+                QueueProcessingOrder = QueueProcessingOrder.OldestFirst,
+                QueueLimit = 0,
+            });
+
     /// <summary>
-    /// Compound partition key: <c>{ip}|{identity-or-anon}</c>. The authenticated
-    /// user id (oid / NameIdentifier claim) — or <c>anon</c> when absent — is
-    /// appended to the remote IP, so two distinct identities sharing an IP get
-    /// separate buckets. The cookie session id (resolved by the auth middleware)
-    /// is used as a fallback identity for requests that carry no player id.
+    /// Compound partition key: <c>{ip}|{identity-or-anon}</c>. An IP-only partition would let
+    /// one attacker behind a corporate NAT — or one browser on a shared connection — saturate
+    /// the bucket for every legitimate user behind that NAT, so the player id is appended to
+    /// it. That id is the <c>oid</c> claim <c>UsePlayerIdentity</c> puts on the principal from
+    /// the <c>X-Player-Id</c> header; <c>anon</c> when the caller carried none.
     /// </summary>
     private static string BuildPartitionKey(HttpContext ctx)
     {
