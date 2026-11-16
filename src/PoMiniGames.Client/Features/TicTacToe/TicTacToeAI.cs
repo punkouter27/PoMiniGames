@@ -4,9 +4,10 @@ namespace PoMiniGamesClient.Features.TicTacToe;
 
 public class TicTacToeAI
 {
-    private const int MaxDepth = 4;
-    private const int WideBoardDepth = 3;
-    private const int MaxSearchNodes = 12_000;
+    private const int MaxDepth = 3;
+    private const int WideBoardDepth = 2;
+    private const int MaxSearchNodes = 2_000;
+    private const int MaxCandidates = 12;
     private readonly Dictionary<string, int> _transpositionTable = new();
     private int _nodesSearched;
 
@@ -114,7 +115,7 @@ public class TicTacToeAI
 
         _transpositionTable.Clear();
         _nodesSearched = 0;
-        var depthLimit = candidates.Count > 16 ? WideBoardDepth : MaxDepth;
+        var depthLimit = candidates.Count > 8 ? WideBoardDepth : MaxDepth;
         var bestScore = int.MinValue;
         var bestMoves = new List<(int, int)>();
 
@@ -211,15 +212,16 @@ public class TicTacToeAI
             var db = Math.Abs(b.Row * 2 - (TicTacToeBoard.Size - 1)) + Math.Abs(b.Col * 2 - (TicTacToeBoard.Size - 1));
             return da.CompareTo(db);
         });
+        if (result.Count > MaxCandidates) result.RemoveRange(MaxCandidates, result.Count - MaxCandidates);
         return result;
     }
 
     private static bool HasNeighborMark(TicTacToeBoard board, int row, int col)
     {
-        var r0 = Math.Max(0, row - 2);
-        var r1 = Math.Min(TicTacToeBoard.Size - 1, row + 2);
-        var c0 = Math.Max(0, col - 2);
-        var c1 = Math.Min(TicTacToeBoard.Size - 1, col + 2);
+        var r0 = Math.Max(0, row - 1);
+        var r1 = Math.Min(TicTacToeBoard.Size - 1, row + 1);
+        var c0 = Math.Max(0, col - 1);
+        var c1 = Math.Min(TicTacToeBoard.Size - 1, col + 1);
         for (int r = r0; r <= r1; r++)
         {
             for (int c = c0; c <= c1; c++)

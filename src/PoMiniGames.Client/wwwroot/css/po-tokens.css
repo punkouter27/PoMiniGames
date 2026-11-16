@@ -329,6 +329,10 @@
    before first paint. "auto" still tracks the OS: appPrefs.js re-stamps on
    matchMedia change. Blazor WASM is required to run this app at all, so there is
    no no-JS path left to serve. */
+:root[data-theme="dark"] {
+    color-scheme: dark;
+}
+
 :root[data-theme="light"] {
     color-scheme: light;
 
