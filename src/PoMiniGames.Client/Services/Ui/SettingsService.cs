@@ -241,6 +241,59 @@ public sealed class SettingsService : IAsyncDisposable
         await InvokeAsync("applyGraphicsTier", tier);
     }
 
+    /// <summary>
+    /// Apply a graphics tier for ten seconds without saving it. The Settings
+    /// sheet can then commit or cancel the preview based on what the player sees.
+    /// </summary>
+    public async Task<bool> StartGraphicsPreviewAsync(string tier)
+    {
+        if (!GraphicsTiers.Contains(tier) || tier == "auto") return false;
+        try
+        {
+            var module = await _prefs.Value;
+            return await module.InvokeAsync<bool>("startGraphicsPreview", tier);
+        }
+        catch
+        {
+            return false;
+        }
+    }
+
+    public async Task<bool> CommitGraphicsPreviewAsync(string tier)
+    {
+        if (!GraphicsTiers.Contains(tier) || tier == "auto") return false;
+        try
+        {
+            var module = await _prefs.Value;
+            var committed = await module.InvokeAsync<bool>("commitGraphicsPreview");
+            if (committed)
+            {
+                Graphics = tier;
+                LocalStorageService.SetItem(GraphicsKey, tier);
+                Changed?.Invoke();
+            }
+            return committed;
+        }
+        catch
+        {
+            return false;
+        }
+    }
+
+    public async Task<bool> CancelGraphicsPreviewAsync()
+    {
+        try
+        {
+            var module = await _prefs.Value;
+            return await module.InvokeAsync<bool>("cancelGraphicsPreview");
+        }
+        catch
+        {
+            return false;
+        }
+    }
+
+
     public async Task SetRichAudioAsync(bool on)
     {
         RichAudio = on;

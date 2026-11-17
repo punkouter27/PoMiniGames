@@ -24,6 +24,8 @@
     let _source = 'computed';    // computed | storage | query
     let _watchdog = null;
     const _listeners = [];
+    let _preview = null;
+    let _previewTimer = 0;
 
     function clampTier(t) {
         return t === 'high' || t === 'medium' || t === 'low' ? t : null;
@@ -71,6 +73,18 @@
         for (const cb of _listeners) { try { cb(_tier); } catch { /* listener bug must not break the rest */ } }
         // The adaptive frame-rate loop works under this tier, never over it.
         try { window.PoVisualRuntime?.syncWithQuality?.(); } catch { /* not loaded yet: it syncs itself on load */ }
+    }
+
+    function cancelPreview() {
+        if (!_preview) return false;
+        const previousTier = _preview.previousTier;
+        const previousSource = _preview.previousSource;
+        window.clearTimeout(_previewTimer);
+        _previewTimer = 0;
+        _preview = null;
+        _source = previousSource;
+        apply(previousTier);
+        return true;
     }
 
     function resolve() {
@@ -133,6 +147,37 @@
         allowHeavy: function () { return _tier === 'high'; },
         reduceFlashing: function () { return _reduceFlashing; },
         source: function () { return _source; },
+        previewStatus: function () {
+            return _preview
+                ? { active: true, tier: _preview.tier, remainingMs: Math.max(0, _preview.endsAt - performance.now()) }
+                : { active: false, tier: null, remainingMs: 0 };
+        },
+        startPreview: function (t, durationMs = 10000) {
+            const tier = clampTier(t);
+            if (!tier) return false;
+            if (_preview) cancelPreview();
+
+            const previousTier = _tier;
+            const previousSource = _source;
+            const duration = Math.max(3000, Math.min(15000, Number(durationMs) || 10000));
+            _preview = { tier, previousTier, previousSource, endsAt: performance.now() + duration };
+            _source = 'preview';
+            apply(tier);
+            _previewTimer = window.setTimeout(cancelPreview, duration);
+            return true;
+        },
+        commitPreview: function () {
+            if (!_preview) return false;
+            const tier = _preview.tier;
+            window.clearTimeout(_previewTimer);
+            _previewTimer = 0;
+            _preview = null;
+            try { localStorage.setItem(STORE_TIER, tier); } catch { /* private mode: session-only */ }
+            _source = 'storage';
+            apply(tier);
+            return true;
+        },
+        cancelPreview: cancelPreview,
         setSessionTier: function (t) {
             const tier = clampTier(t);
             if (!tier) return false;

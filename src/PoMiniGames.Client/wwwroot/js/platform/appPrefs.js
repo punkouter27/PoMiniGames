@@ -207,6 +207,30 @@ export function applyGraphicsTier(tier) {
     } catch { /* private mode: nothing to persist */ }
 }
 
+/** Preview a graphics tier temporarily, without changing the saved choice. */
+export async function startGraphicsPreview(tier) {
+    if (!window.PoQuality) return false;
+    return window.PoQuality.startPreview(tier);
+}
+
+/** Keep the currently previewed tier as the saved player choice. */
+export async function commitGraphicsPreview() {
+    if (!window.PoQuality) return false;
+    return window.PoQuality.commitPreview();
+}
+
+/** Restore the tier that was active before a preview began. */
+export async function cancelGraphicsPreview() {
+    if (!window.PoQuality) return false;
+    return window.PoQuality.cancelPreview();
+}
+
+/** Read whether a temporary quality preview is active. */
+export async function graphicsPreviewStatus() {
+    if (!window.PoQuality) return { active: false, tier: null, remainingMs: 0 };
+    return window.PoQuality.previewStatus();
+}
+
 /**
  * Read the OS reduced-motion preference, so the settings UI can tell the user
  * their system is already asking for less motion regardless of this toggle.

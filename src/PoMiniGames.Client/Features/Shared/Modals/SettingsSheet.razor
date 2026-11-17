@@ -73,6 +73,28 @@
                     }
                 </div>
             </div>
+            <div class="prefs-row prefs-preview-row">
+                <div class="prefs-label">
+                    <span class="prefs-name">Quality preview</span>
+                    <span class="prefs-hint">@(_previewActive ? $"Previewing {_previewTier}" : "Test Low, Medium or High for 10 seconds.")</span>
+                </div>
+                @if (_previewActive)
+                {
+                    <div class="prefs-preview-actions">
+                        <button type="button" class="app-btn app-btn--primary" @onclick="CommitGraphicsPreview">Keep</button>
+                        <button type="button" class="app-btn" @onclick="CancelGraphicsPreview">Cancel</button>
+                    </div>
+                }
+                else
+                {
+                    <button type="button"
+                            class="app-btn"
+                            disabled="@(!PreviewTierAvailable)"
+                            @onclick="() => StartGraphicsPreview(PreviewTier)">
+                        Preview
+                    </button>
+                }
+            </div>
         </fieldset>
 
         <fieldset class="prefs-group">
@@ -287,6 +309,11 @@
     private InviteState _invites = InviteState.Unsupported;
     private bool _invitesBusy;
     private bool _inviteFailed;
+    private bool _previewActive;
+    private string _previewTier = "medium";
+
+    private bool PreviewTierAvailable => true;
+    private string PreviewTier => Settings.Graphics is "low" or "medium" or "high" ? Settings.Graphics : "medium";
 
     private bool InvitesAvailable => _invites is InviteState.On or InviteState.Off;
 
@@ -357,6 +384,39 @@
     {
         if (Settings.Graphics == tier) return;
         await Settings.SetGraphicsAsync(tier);
+        await Feedback.ClickAsync();
+    }
+
+    private async Task StartGraphicsPreview(string tier)
+    {
+        _previewActive = await Settings.StartGraphicsPreviewAsync(tier);
+        _previewTier = tier;
+        StateHasChanged();
+        if (_previewActive) await Feedback.ClickAsync();
+        _ = AutoClearPreviewUiAsync();
+    }
+
+    private async Task AutoClearPreviewUiAsync()
+    {
+        await Task.Delay(10050);
+        if (!_previewActive) return;
+        _previewActive = false;
+        await InvokeAsync(StateHasChanged);
+    }
+
+    private async Task CommitGraphicsPreview()
+    {
+        await Settings.CommitGraphicsPreviewAsync(_previewTier);
+        _previewActive = false;
+        StateHasChanged();
+        await Feedback.ClickAsync();
+    }
+
+    private async Task CancelGraphicsPreview()
+    {
+        await Settings.CancelGraphicsPreviewAsync();
+        _previewActive = false;
+        StateHasChanged();
         await Feedback.ClickAsync();
     }
 
