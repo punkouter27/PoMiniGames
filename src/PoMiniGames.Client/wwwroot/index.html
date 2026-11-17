@@ -255,6 +255,9 @@
     <script type="module" src="js/platform/audioBus.js"></script>
     <script type="module" src="js/platform/richAudio.js"></script>
     <script type="module" src="js/platform/speechBus.js"></script>
+    <!-- uiAudio.js binds the keyboard-only data-sonify listener (menu focus/select cues) at load;
+         without this tag it only arrived with the first game that imported it, so the hub was silent. -->
+    <script type="module" src="js/platform/uiAudio.js"></script>
     <script type="module" src="js/platform/visualRuntime.js"></script>
     <!-- §GFX-10 synthesis moved to an AudioWorklet; dsp.js is the main-thread
          front end and acoustics.js owns the per-game reverb spaces. Both are

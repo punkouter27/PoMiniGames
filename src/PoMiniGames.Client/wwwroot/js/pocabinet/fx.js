@@ -1020,7 +1020,7 @@ class CarFx {
         for (const c of cars) {
             const s = this.state.get(c.id);
             if (!s || s.prog === undefined) continue;
-            rows.push({ id: c.id, name: c.name, prog: s.prog, speed: Math.abs(c.speed) || 1 });
+            rows.push({ id: c.id, name: c.name, local: !!c.isLocal, pos: c.position || 0, dist: c.dist, prog: s.prog, speed: Math.abs(c.speed) || 1 });
             if (focus) {
                 const d = (c.x / WS - focus.x) ** 2 + (c.y / WS - focus.z) ** 2;
                 if (d < best) { best = d; you = c.id; }
@@ -1032,16 +1032,24 @@ class CarFx {
         }
         sh.wreckNear = Math.max(0, wreck);
         if (!rows.length || typeof sh.setStandings !== 'function') return;
-        rows.sort((a, b) => b.prog - a.prog);
-        const lead = rows[0].prog;
+        // The race's own standings when it publishes them (the same order as the race HUD);
+        // fx's track progress is only the fallback, since it does not count laps.
+        const ranked = rows.every(r => r.pos > 0);
+        rows.sort(ranked ? (a, b) => a.pos - b.pos : (a, b) => b.prog - a.prog);
+        const metres = r => (ranked && Number.isFinite(r.dist) ? r.dist : r.prog);
+        const lead = metres(rows[0]);
         let gained = 0;
+        // The player's own car when there is one; in a demo or replay, the car the camera follows
+        // keeps the highlight but is never called "YOU".
+        const local = rows.find(r => r.local);
+        if (local) you = local.id;
         const out = rows.map((r, i) => {
             const isYou = r.id === you;
             if (isYou) {
                 if (this.focusPos && i + 1 < this.focusPos) gained = this.focusPos - (i + 1);
                 this.focusPos = i + 1;
             }
-            return { pos: i + 1, name: isYou ? 'YOU' : (r.name || `Car ${r.id + 1}`), you: isYou, gap: i ? (lead - r.prog) / r.speed : null };
+            return { pos: i + 1, name: isYou && local ? 'YOU' : (r.name || `Car ${r.id + 1}`), you: isYou, gap: i ? gapSeconds(lead - metres(r), r.speed) : null };
         });
         // Around the focus car when it is outside the top six, so the board always shows you.
         let shown = out.slice(0, 6);
@@ -1124,4 +1132,10 @@ class CarFx {
 
 export function createFx(sceneHandle, track, opts) {
     return new CarFx(sceneHandle, track, opts);
+}
+
+/** A rough gap for the board: metres behind / own speed, dropped when it is meaningless (lapped, stopped). */
+function gapSeconds(metresBehind, speed) {
+    const g = metresBehind / Math.max(1, speed);
+    return Number.isFinite(g) && g >= 0 && g < 60 ? g : null;
 }

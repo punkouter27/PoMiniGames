@@ -1358,6 +1358,10 @@ class Race {
         const exact = this.mode !== 'net';
         return this.cars.map(c => ({
             id: c.id, x: c.render.x, y: c.render.y, h: c.render.h, heading: c.render.heading, speed: c.render.speed,
+            // For the in-world race-order board (fx.publishOrder).
+            // The demo's autopilot car is local too, but nobody is driving it: never "YOU" there.
+            name: c.name, isLocal: !!c.isLocal && this.mode !== 'demo',
+            position: c.position || 0, dist: c.body?.distance,
             sliding: (exact || c.isLocal) ? !!c.body.sliding : false,
             braking: !!(c.mesh?.braking || (c.isLocal && this.lastControls.brake > 0.15)),
             color: c.mesh?.paintHex || null,

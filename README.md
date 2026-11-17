@@ -79,7 +79,8 @@ sign-in: a player is a random browser id plus three initials.
     - `impactSynth.js`.
     - Acoustic zones: `acoustics.setZone/zoneAt`.
     - `tensionMixer.js`: drives six-stem `musicLayers`.
-    - Opt-in `data-sonify` menu cues in `uiAudio.js` (pan ≤ 0.6, pitch carries the meaning).
+    - Keyboard-only `data-sonify` menu cues in `uiAudio.js` (pan ≤ 0.6, pitch carries the meaning). `uiAudio.js` loads globally
+      from `index.html` so the listener binds on the hub; the hub mode chips opt in.
     - `speechBus.speakResultSummary`, which only speaks when the voice announcer is on.
   - **UI:**
     - `springUi.js` (`data-spring`/`data-magnetic`).
