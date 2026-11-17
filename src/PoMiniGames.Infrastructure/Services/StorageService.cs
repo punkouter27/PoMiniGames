@@ -158,18 +158,22 @@ public partial class StorageService : IStorageService
         }
     }
 
-    // Returns the client, creating the table once per name (cached).
+    // Returns the client, creating the table once per name (cached). The name is cached only
+    // AFTER CreateIfNotExists succeeds: it used to be added first, so one slow or failed create
+    // (a cold or loaded Azurite at startup) left the table "ensured" but never created, and
+    // every later call on it failed with TableNotFound and tripped the availability breaker —
+    // ladder posts answered 503 and high scores were silently dropped until the process restarted.
     private TableClient Table(string name)
     {
         var client = _serviceClient.GetTableClient(name);
-        bool firstTime;
         lock (_ensureLock)
         {
-            firstTime = _ensuredTables.Add(name);
+            if (_ensuredTables.Contains(name)) return client;
         }
-        if (firstTime)
+        client.CreateIfNotExists();
+        lock (_ensureLock)
         {
-            client.CreateIfNotExists();
+            _ensuredTables.Add(name);
         }
         return client;
     }
@@ -224,6 +228,16 @@ public partial class StorageService : IStorageService
     /// </summary>
     private void MarkUnavailable(Exception ex)
     {
+        // The service answered (a 4xx/5xx with a status code): storage is reachable, the call
+        // was refused. Tripping the breaker on that turned one conflict or missing table into
+        // ten seconds of every board reading empty and every write being dropped.
+        if (ex is RequestFailedException { Status: > 0 and < 500 })
+        {
+            _logger.LogWarning(ex, "Azure Table Storage refused a call ({Status}); storage stays marked reachable.",
+                ((RequestFailedException)ex).Status);
+            return;
+        }
+
         if (_isStorageAvailable)
         {
             _logger.LogWarning(ex,

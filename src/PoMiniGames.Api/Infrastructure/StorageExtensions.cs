@@ -51,16 +51,26 @@ internal static class StorageExtensions
 
     public static IServiceCollection AddPoMiniGamesStorage(this IServiceCollection services, IConfiguration configuration)
     {
-        var section = configuration.GetSection("PoMiniGames:Storage:TableService");
-        var connectionString = section["ConnectionString"];
-        var endpoint = section["Endpoint"];
-        var accountName = section["AccountName"];
-
         // Per-game repositories inject these clients directly; the central
         // resolver keeps the prod-vs-dev branching logic in one place.
-        services.AddSingleton(sp => ResolveTableServiceClient(
-            connectionString, endpoint, accountName, sp.GetService<IHostEnvironment>()));
-        services.AddSingleton(_ => ResolveBlobServiceClient(connectionString, endpoint, accountName));
+        //
+        // The settings are read from the container's IConfiguration when the client is first
+        // built, NOT from `configuration` here at registration time (2026-11-17). Read eagerly,
+        // they missed every override a host applies after Program's registrations run — the
+        // integration tier's per-fixture Azurite connection string included — so the tests
+        // silently fell through to UseDevelopmentStorage=true, the machine's shared emulator:
+        // state leaked between runs and a busy shared emulator turned into 503s and empty boards.
+        _ = configuration;
+        services.AddSingleton(sp =>
+        {
+            var (connectionString, endpoint, accountName) = TableSettings(sp);
+            return ResolveTableServiceClient(connectionString, endpoint, accountName, sp.GetService<IHostEnvironment>());
+        });
+        services.AddSingleton(sp =>
+        {
+            var (connectionString, endpoint, accountName) = TableSettings(sp);
+            return ResolveBlobServiceClient(connectionString, endpoint, accountName);
+        });
 
         // Every dependency (TableServiceClient, EloCalculator, PairwiseEloCalculator, ILogger)
         // resolves from the container so all slices share the same TableServiceClient instance.
@@ -86,6 +96,12 @@ internal static class StorageExtensions
                 tags: OptionalTags);
 
         return services;
+    }
+
+    private static (string? ConnectionString, string? Endpoint, string? AccountName) TableSettings(IServiceProvider sp)
+    {
+        var section = sp.GetRequiredService<IConfiguration>().GetSection("PoMiniGames:Storage:TableService");
+        return (section["ConnectionString"], section["Endpoint"], section["AccountName"]);
     }
 
     private static TableServiceClient ResolveTableServiceClient(

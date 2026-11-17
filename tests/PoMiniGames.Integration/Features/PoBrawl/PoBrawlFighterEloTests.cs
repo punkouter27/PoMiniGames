@@ -1,7 +1,11 @@
 using System.Net;
 using System.Net.Http.Json;
 using FluentAssertions;
+using Microsoft.AspNetCore.TestHost;
+using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Time.Testing;
 using PoMiniGames.Domain.Models;
+using PoMiniGames.Features.PoBrawl;
 
 namespace PoMiniGames.Integration;
 
@@ -57,7 +61,13 @@ public sealed class PoBrawlFighterEloTests : IClassFixture<TestWebApplicationFac
         // The POSTs below are state-changing /api/* calls and are refused without
         // the synchroniser token. Armed up front so the validation assertions at the end
         // exercise a real 400 rather than collapsing into a blanket 403.
-        var client = await _factory.CreateClient().ArmAntiforgeryAsync();
+        // The demo gate paces one caller's bouts by wall-clock time (MinGap). Under a loaded
+        // machine the two board reads between the first post and the "hammered" one can take
+        // longer than MinGap, and the hammer was then admitted (204, not 429). The gate runs
+        // on a frozen clock here so the pacing assertion tests the rule, not the machine.
+        await using var host = _factory.WithWebHostBuilder(b => b.ConfigureTestServices(s =>
+            s.AddSingleton(new PoBrawlDemoEloGate(new FakeTimeProvider(DateTimeOffset.UtcNow)))));
+        var client = await host.CreateClient().ArmAntiforgeryAsync();
 
         // ── A decisive result moves both ratings, zero-sum ────────────────
         // Names, not ids: the board renders the roster display name, resolved server-side.
@@ -88,7 +98,7 @@ public sealed class PoBrawlFighterEloTests : IClassFixture<TestWebApplicationFac
 
         // ── A draw is zero-sum too ────────────────────────────────────────
         // From a second identity: the pacing above is per caller, not global.
-        using var other = _factory.CreateClient();
+        using var other = host.CreateClient();
         other.DefaultRequestHeaders.Remove("X-Player-Id");
         other.DefaultRequestHeaders.Remove("X-Player-Initials");
         other.DefaultRequestHeaders.Add("X-Player-Id", $"demo_{Guid.NewGuid():N}"[..20]);
