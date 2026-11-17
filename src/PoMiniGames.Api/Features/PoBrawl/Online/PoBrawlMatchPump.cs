@@ -44,6 +44,10 @@ public sealed class PoBrawlMatchPump : BackgroundService
         {
             while (await timer.WaitForNextTickAsync(stoppingToken))
             {
+                // No match running or lingering: sleep until one starts instead of waking 250
+                // times a second for nothing (that idle spin used up the F1 daily CPU quota).
+                if (_registry.IsEmpty) await _registry.WaitForMatchAsync(stoppingToken);
+
                 var now = Stopwatch.GetTimestamp();
                 foreach (var match in _registry.All)
                 {

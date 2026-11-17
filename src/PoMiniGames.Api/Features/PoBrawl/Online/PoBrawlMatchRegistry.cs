@@ -16,7 +16,7 @@ namespace PoMiniGames.Features.PoBrawl.Online;
 /// fight starts from the lobby, on a fresh code.
 /// </para>
 /// </remarks>
-public sealed class PoBrawlMatchRegistry
+public sealed class PoBrawlMatchRegistry : IDisposable
 {
     /// <summary>How long a finished match is kept for late result delivery and the result ingest.</summary>
     public static readonly TimeSpan FinishedLinger = TimeSpan.FromSeconds(90);
@@ -29,7 +29,32 @@ public sealed class PoBrawlMatchRegistry
     {
         var match = new PoBrawlMatchService(Guid.NewGuid().ToString("N"), code, roster, PoBrawlMatchService.CountdownSeconds);
         _byCode[code] = match;
+        Wake();
         return match;
+    }
+
+    // Wakes the pump when the first match arrives, so an empty registry costs no CPU. On the F1
+    // plan a 4 ms idle loop burned the 60 CPU-minute daily quota and Azure stopped the site.
+    private readonly SemaphoreSlim _wake = new(0, 1);
+
+    private void Wake()
+    {
+        try { _wake.Release(); }
+        catch (SemaphoreFullException) { /* already signalled */ }
+    }
+
+    public void Dispose() => _wake.Dispose();
+
+    /// <summary>True when no match is running or lingering.</summary>
+    public bool IsEmpty => _byCode.IsEmpty;
+
+    /// <summary>Waits until a match is started (returns at once if one already exists).</summary>
+    public async Task WaitForMatchAsync(CancellationToken ct)
+    {
+        while (_byCode.IsEmpty)
+        {
+            await _wake.WaitAsync(ct);
+        }
     }
 
     public PoBrawlMatchService? Get(string code) =>
