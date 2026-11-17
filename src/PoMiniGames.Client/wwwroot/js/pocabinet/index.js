@@ -5,7 +5,7 @@
 // `window.PoCabinet` namespace (the same JS.InvokeAsync dance as the other
 // engines); the modules themselves stay directly importable.
 //
-// Contract surface (called from src/PoMiniGames.Client/Games/PoCabinet/...):
+// Contract surface (called from src/PoMiniGames.Client/Features/PoCabinet/...):
 //   PoCabinet.mount(canvasId, world) -> sceneHandle      — world = PoCabinetStaticWorld
 //   PoCabinet.unmount(handle)
 //   PoCabinet.mountDialogue(parentId) / showDialogue(handle, name, text) / unmountDialogue
@@ -151,9 +151,17 @@ window.addEventListener('keydown', unlockAudio);
 // holds (and is 0 when games.css hides it on a sideways phone): publish the measured height.
 const topBar = document.querySelector('.gl-top-bar');
 if (topBar && typeof ResizeObserver === 'function') {
-    new ResizeObserver(() => {
-        document.documentElement.style.setProperty('--pocabinet-topbar-h', `${topBar.getBoundingClientRect().height}px`);
-    }).observe(topBar);
+    // Publish the height only when it actually changes, and only after the frame
+    // that measured it: the variable feeds a layout rule that can resize the bar
+    // this observer watches, which is exactly the feedback the browser reports as
+    // "ResizeObserver loop completed with undelivered notifications".
+    let published = '';
+    new ResizeObserver(() => requestAnimationFrame(() => {
+        const h = `${topBar.getBoundingClientRect().height}px`;
+        if (h === published) return;
+        published = h;
+        document.documentElement.style.setProperty('--pocabinet-topbar-h', h);
+    })).observe(topBar);
 }
 
 // A hidden tab is silent: the frame loop stops with the tab, but the engine, beds and music

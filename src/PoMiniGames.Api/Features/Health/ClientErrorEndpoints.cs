@@ -1,4 +1,5 @@
 using System.Text.Json;
+using PoMiniGames.Infrastructure;
 using PoMiniGames.Serialization;
 
 namespace PoMiniGames.Features.Health;
@@ -82,14 +83,6 @@ public static class ClientErrorEndpoints
     /// Truncated, with control characters flattened to spaces: the value is attacker-controlled
     /// text headed for a log line, where a newline would let it forge a second entry.
     /// </summary>
-    internal static string Clean(string? value, int max)
-    {
-        if (string.IsNullOrWhiteSpace(value)) return string.Empty;
-        var text = value.Length <= max ? value : value[..max];
-        return string.Create(text.Length, text, static (span, source) =>
-        {
-            for (var i = 0; i < source.Length; i++)
-                span[i] = char.IsControl(source[i]) ? ' ' : source[i];
-        }).Trim();
-    }
+    internal static string Clean(string? value, int max) =>
+        value.StripControlChars(max, flattenToSpace: true);
 }

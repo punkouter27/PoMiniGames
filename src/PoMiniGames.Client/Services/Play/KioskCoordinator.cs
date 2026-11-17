@@ -1,6 +1,7 @@
 using Microsoft.AspNetCore.Components;
 using Microsoft.AspNetCore.Components.Routing;
 
+using PoMiniGamesClient.Models;
 using PoMiniGamesClient.Services.Http;
 using PoMiniGamesClient.Services.Interop;
 using PoMiniGamesClient.Services.Play;
@@ -75,6 +76,63 @@ public sealed class KioskCoordinator : IDisposable
         Changed?.Invoke();
     }
 
+    /// <summary>
+    /// Every demo in the catalog, in reel order. Shared by the home page's
+    /// "Watch all demos" button and by <see cref="TryStartFromUrl"/>, so a reloaded
+    /// or shared demo link rebuilds the exact same reel instead of a partial one.
+    /// </summary>
+    public static IReadOnlyList<DemoEntry> CatalogEntries() =>
+        GameCatalog.Demo
+            .Select(d => new DemoEntry(DemoKey(d), d.Url, d.Title, d.Icon))
+            .ToList();
+
+    /// <summary>Brawl's two demo entries carry the same GameKey; the reel keeps them apart.</summary>
+    private static string DemoKey(CatalogEntry entry) =>
+        entry.Url.Split('?', '#')[0] == "/pobrawl/ffa" ? "pobrawl-ffa" : entry.Key.Value;
+
+    /// <summary>
+    /// Register the catalog, arm the timer at <paramref name="index"/> and return the
+    /// demo's URL with its <c>?kiosk=N</c> marker already applied. Null when the
+    /// catalog has no demos, so callers can simply skip the navigation.
+    /// </summary>
+    public string? BeginFromCatalog(int index)
+    {
+        var entries = CatalogEntries();
+        if (entries.Count == 0) return null;
+        if (index < 0 || index >= entries.Count) index = 0;
+        RegisterEntries(entries);
+        Start(index);
+        return WithKioskIndex(entries[index].Path, index);
+    }
+
+    /// <summary>
+    /// Re-arm the reel from a URL that already carries <c>?kiosk=N</c>. Called once
+    /// when the shell mounts: a hard reload (or a shared link) mid-reel used to land
+    /// on the demo page with no controls and no rotation, because the coordinator
+    /// only ever armed itself from a <see cref="NavigationManager.LocationChanged"/>,
+    /// which a fresh document load never raises.
+    /// </summary>
+    public bool TryStartFromUrl(string? url)
+    {
+        if (_disposed || _timer is not null) return false;
+        if (url is null || !TryGetKioskIndex(url, out var index)) return false;
+        if (_entries.Count == 0) RegisterEntries(CatalogEntries());
+        if (_entries.Count == 0) return false;
+
+        var clamped = Math.Clamp(index, 0, _entries.Count - 1);
+        Start(clamped);
+        // Start() resets the "on screen" state; the page we are already showing is
+        // the one at `clamped`, so report it before the first tick.
+        _currentIndex = clamped;
+        _currentKey = _entries[clamped].Key;
+        CurrentGameName = _entries[clamped].DisplayName;
+        Changed?.Invoke();
+        return true;
+    }
+
+    private static string WithKioskIndex(string path, int index) =>
+        $"{path}{(path.Contains('?') ? '&' : '?')}kiosk={index}";
+
     public void SetCurrent(string key)
     {
         _currentKey = key;
@@ -129,9 +187,7 @@ public sealed class KioskCoordinator : IDisposable
         _timer?.Dispose();
         _timer = null;
         var next = (_advanceIndex + 1) % _entries.Count;
-        var nextEntry = _entries[next];
-        var sep = nextEntry.Path.Contains('?') ? '&' : '?';
-        _navigation.NavigateTo($"{nextEntry.Path}{sep}kiosk={next}", forceLoad: false);
+        _navigation.NavigateTo(WithKioskIndex(_entries[next].Path, next), forceLoad: false);
         Changed?.Invoke();
     }
 
@@ -146,9 +202,7 @@ public sealed class KioskCoordinator : IDisposable
         _timer?.Dispose();
         _timer = null;
         var prev = (_advanceIndex - 1 + _entries.Count) % _entries.Count;
-        var prevEntry = _entries[prev];
-        var sep = prevEntry.Path.Contains('?') ? '&' : '?';
-        _navigation.NavigateTo($"{prevEntry.Path}{sep}kiosk={prev}", forceLoad: false);
+        _navigation.NavigateTo(WithKioskIndex(_entries[prev].Path, prev), forceLoad: false);
         Changed?.Invoke();
     }
 
@@ -170,9 +224,7 @@ public sealed class KioskCoordinator : IDisposable
             _timer.Dispose();
             _timer = null;
             _advanceIndex = index;
-            var entry = _entries[index];
-            var sep = entry.Path.Contains('?') ? '&' : '?';
-            _navigation.NavigateTo($"{entry.Path}{sep}kiosk={index}", forceLoad: false);
+            _navigation.NavigateTo(WithKioskIndex(_entries[index].Path, index), forceLoad: false);
             Changed?.Invoke();
         }
     }
@@ -196,9 +248,7 @@ public sealed class KioskCoordinator : IDisposable
             _timer?.Dispose();
             _timer = null;
             var next = (_advanceIndex + 1) % _entries.Count;
-            var nextEntry = _entries[next];
-            var sep = nextEntry.Path.Contains('?') ? '&' : '?';
-            _navigation.NavigateTo($"{nextEntry.Path}{sep}kiosk={next}", forceLoad: false);
+            _navigation.NavigateTo(WithKioskIndex(_entries[next].Path, next), forceLoad: false);
         }
     }
 

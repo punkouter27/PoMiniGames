@@ -39,6 +39,7 @@ public sealed class GameSessionManagerTests
     [InlineData(nameof(RoundCompletion_RoutesTheKingToTheSecret_WaitsForGuesses_AndAppliesScores))]
     [InlineData(nameof(ReadyState_NeedsEnoughPlayers_AndResetToLobbyKeepsThem))]
     [InlineData(nameof(Game_ScoreboardIncludesEveryPlayer))]
+    [InlineData(nameof(TopicPack_IsHostOnlyAndValidated))]
     public Task Scenario(string name) => Scenarios.RunAsync(this, name);
 
     private static void Join_OpensOneLobby_ReusesIt_AndDisambiguatesNames()
@@ -214,6 +215,17 @@ public sealed class GameSessionManagerTests
         var board = game.GetScoreboard();
         board.Keys.Should().Equal("Alice", "Carla", "Bob");
         board.Values.Should().Equal(20, 12, 8);
+    }
+
+    private static void TopicPack_IsHostOnlyAndValidated()
+    {
+        var mgr = LobbyOf("Alice", "Bob");
+        mgr.SetTopicPack("conn2", "WordSync").Should().BeNull("only host can change topic pack");
+        mgr.SetTopicPack("conn1", "NotARealPack").Should().BeNull("unknown pack is rejected");
+
+        var updated = mgr.SetTopicPack("conn1", "worldtravel");
+        updated.Should().NotBeNull();
+        updated!.TopicPack.Should().Be("WorldTravel");
     }
 
     [Theory]

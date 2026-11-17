@@ -173,6 +173,7 @@ export class Broadcast {
         if (kind === 'fastest') this.callouts = this.callouts.filter(c => c.kind !== 'fastest');
         this.callouts.push({ kind, title, text });
         if (this.callouts.length > 3) this.callouts.shift();
+        if (typeof window !== 'undefined') window.PoSpeech?.speak?.(`${title}. ${text}`);
     }
 
     // ── Render side: called every frame before the camera is placed ──────

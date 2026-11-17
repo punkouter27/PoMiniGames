@@ -182,6 +182,7 @@ export function createRenderer(container, {
   let fauna = null;
   // Weather as the last stats message reported it; the per-frame emitters read it.
   let weatherKind = 0; let weatherIntensity = 0;
+  let liveEnv = null;
   let rainDebt = 0;
   // GFX pass 2 state. `surface` is what the terrain and water read every frame.
   let trails = null;
@@ -306,7 +307,10 @@ export function createRenderer(container, {
     camera.updateProjectionMatrix();
   }
   resize();
-  const observer = new ResizeObserver(resize);
+  // Deferred: resize() sets the renderer size, which changes the container it is
+  // observing — doing that synchronously logs "ResizeObserver loop completed with
+  // undelivered notifications" on every mount.
+  const observer = new ResizeObserver(() => requestAnimationFrame(resize));
   observer.observe(container);
   window.addEventListener('resize', resize);
 
@@ -475,12 +479,16 @@ export function createRenderer(container, {
    * no notion of snow on the ground — only of snow falling.
    */
   function updateSurface(dt) {
-    const wetTarget = Math.max(0, Math.min(1, stats?.weather?.wetness ?? 0));
+    const k = liveEnv ? liveEnv.weatherKind : weatherKind;
+    const inten = liveEnv ? liveEnv.intensity : weatherIntensity;
+    const wetTarget = liveEnv
+      ? (k === WEATHER_RAIN || k === WEATHER_STORM ? Math.max(0.5, inten) : k === WEATHER_DROUGHT ? 0.05 : 0.25)
+      : Math.max(0, Math.min(1, stats?.weather?.wetness ?? 0));
     surface.wet += (wetTarget - surface.wet) * Math.min(1, dt * 0.5);
-    const raining = weatherKind === WEATHER_RAIN || weatherKind === WEATHER_STORM ? weatherIntensity : 0;
+    const raining = k === WEATHER_RAIN || k === WEATHER_STORM ? inten : 0;
     surface.rain += (raining - surface.rain) * Math.min(1, dt * 0.8);
     const season = stats?.season ?? 0;
-    if (weatherKind === WEATHER_SNOW) snowFall = Math.min(1, snowFall + dt * weatherIntensity * 0.03);
+    if (k === WEATHER_SNOW) snowFall = Math.min(1, snowFall + dt * inten * 0.03);
     else snowFall = Math.max(0, snowFall - dt * (season === 1 ? 0.02 : season === 3 ? 0.002 : 0.008));
     // Winter's own cover, and the thaw in the first part of Spring (the old seasonal rule).
     const seasonal = season === 3 ? 0.75 : season === 0 ? Math.max(0, 0.75 - (stats?.seasonProgress ?? 0) * 2.5) : 0;
@@ -720,10 +728,11 @@ export function createRenderer(container, {
 
   /** Rain and snow, emitted in a column above the god so the weather is always on screen. */
   function emitWeather(dt) {
-    if (!particles.enabled || weatherIntensity <= 0.02) return;
-    const k = weatherKind;
+    const k = liveEnv ? liveEnv.weatherKind : weatherKind;
+    const intensity = liveEnv ? liveEnv.intensity : weatherIntensity;
+    if (!particles.enabled || intensity <= 0.02) return;
     if (k !== 1 && k !== 2 && k !== 4) return;
-    const perSecond = (k === 4 ? 70 : k === 2 ? 420 : 260) * weatherIntensity * (tier === 'medium' ? 0.6 : 1);
+    const perSecond = (k === 4 ? 70 : k === 2 ? 420 : 260) * intensity * (tier === 'medium' ? 0.6 : 1);
     rainDebt += dt * perSecond;
     const n = Math.min(40, Math.floor(rainDebt));
     rainDebt -= n;
@@ -814,9 +823,12 @@ export function createRenderer(container, {
       minimap?.draw(interp, interpCount, player);
     }
 
-    const overcast = (OVERCAST[weatherKind] ?? 0) * weatherIntensity;
+    const effWeatherKind = liveEnv ? liveEnv.weatherKind : weatherKind;
+    const effWeatherIntensity = liveEnv ? liveEnv.intensity : weatherIntensity;
+    const effDayFraction = liveEnv ? liveEnv.dayFraction : (stats?.dayFraction ?? 0.5);
+    const overcast = liveEnv ? liveEnv.overcast : ((OVERCAST[effWeatherKind] ?? 0) * effWeatherIntensity);
     skyDome.setOvercast(overcast);
-    const sky = lighting.update(stats?.dayFraction ?? 0.5, player, timeSec, skyDome.overcast);
+    const sky = lighting.update(effDayFraction, player, timeSec, skyDome.overcast);
     scene.background = sky.sky;
     materialClock.value = timeSec;
     if (stats && stats.season !== undefined) materialSeason.value = stats.season;
@@ -834,7 +846,7 @@ export function createRenderer(container, {
     materialCloud.uCloudShade.value = tier === 'low' ? 0 : CLOUD_SHADE * Math.min(1, sky.day * 2.5) * (1 - skyDome.overcast * 0.75);
     updateUnderwater(dt);
     island?.update(timeSec, sky, surface);
-    const windy = weatherKind === WEATHER_STORM ? weatherIntensity : weatherKind === WEATHER_RAIN ? weatherIntensity * 0.4 : 0.12;
+    const windy = effWeatherKind === WEATHER_STORM ? effWeatherIntensity : effWeatherKind === WEATHER_RAIN ? effWeatherIntensity * 0.4 : 0.12;
     grass?.update(dt, player, windy, sky);
     if (campfireAt) {
       campfireLight.position.set(campfireAt.x, campfireAt.y + 1.1, campfireAt.z);
@@ -842,16 +854,16 @@ export function createRenderer(container, {
       campfireLight.intensity = (14 + (sky.night ?? 0) * 70) * flicker;
     } else campfireLight.intensity = 0;
 
-    eventFx.ambient(dt, { fireTiles, lavaTiles, player, dayFraction: stats?.dayFraction ?? 0.5 });
+    eventFx.ambient(dt, { fireTiles, lavaTiles, player, dayFraction: effDayFraction });
     emitWeather(dt);
     emitSeason(dt);
-    fauna?.update(dt, timeSec, { player, night: sky.night ?? 0, storm: weatherKind === WEATHER_STORM ? weatherIntensity : 0 });
+    fauna?.update(dt, timeSec, { player, night: sky.night ?? 0, storm: effWeatherKind === WEATHER_STORM ? effWeatherIntensity : 0 });
     particles.update(dt);
 
     post.setNight(sky.night, sky.dusk);
     updateShafts(sky, dir);
     updateHeat();
-    post.setHaze(weatherKind === WEATHER_DROUGHT && !motionReduced ? weatherIntensity * (sky.day ?? 1) : 0);
+    post.setHaze(effWeatherKind === WEATHER_DROUGHT && !motionReduced ? effWeatherIntensity * (sky.day ?? 1) : 0);
     updateVoices(timeSec, sky.night ?? 0);
     post.update(dt);
     // Shake LAST, after everything that reads the camera has read it: applyCameraShake
@@ -1051,6 +1063,7 @@ export function createRenderer(container, {
     holdDirector(on) { directorHeld = !!on; if (directorHeld && director.enabled) setDirector(false); },
     setBindings: (b) => input.setBindings(b),
     setReducedMotion(on) { motionReduced = !!on; },
+    setLiveEnv(env) { liveEnv = env || null; },
     get contextLost() { return contextLost; },
     get faunaInfo() { return { birds: fauna?.birdCount ?? 0, fishSchools: fauna?.fishSchools ?? 0 }; },
     touchMove: (x, z) => input.setTouchVector(x, z),

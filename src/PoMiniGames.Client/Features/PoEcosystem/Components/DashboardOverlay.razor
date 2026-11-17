@@ -95,7 +95,9 @@
                     <button type="button" class="poeco-btn poeco-btn--sm" @onclick="OnReplayTour">Show the getting-started tour again</button>
                 </section>
                 <section class="poeco-panel poeco-panel--chart">
-                    <ViewSettingsPanel Settings="@ViewSettings" Capturing="@Capturing" OnQuality="@OnQuality"
+                    <ViewSettingsPanel Settings="@ViewSettings" Capturing="@Capturing"
+                                       LiveCity="@LiveCity" LiveWeatherLabel="@LiveWeatherLabel"
+                                       OnQuality="@OnQuality" OnLiveCity="@OnLiveCity"
                                        OnRebind="@OnRebind" OnResetBindings="@OnResetBindings" />
                 </section>
             </div>
@@ -166,10 +168,13 @@
     [Parameter] public IReadOnlyList<EcoSpeciesCard> Cards { get; set; } = [];
     [Parameter] public EcoSettings? ViewSettings { get; set; }
     [Parameter] public string? Capturing { get; set; }
+    [Parameter] public string LiveCity { get; set; } = "off";
+    [Parameter] public string? LiveWeatherLabel { get; set; }
     [Parameter] public string DailySeed { get; set; } = "";
     [Parameter] public EventCallback OnTodaysIsland { get; set; }
     [Parameter] public EventCallback OnReplayTour { get; set; }
     [Parameter] public EventCallback<string> OnQuality { get; set; }
+    [Parameter] public EventCallback<string> OnLiveCity { get; set; }
     [Parameter] public EventCallback<string> OnRebind { get; set; }
     [Parameter] public EventCallback OnResetBindings { get; set; }
     /// <summary>Raised when a tab opens, so the viewer can load what that tab needs (field guide, cloud).</summary>

@@ -18,22 +18,30 @@
     <ChildContent>@ChildContent</ChildContent>
     <ErrorContent Context="ex">
         @{ Log(ex); }
-        <div class="game-error" role="alert">
-            <div class="game-error__icon" aria-hidden="true">⚠️</div>
-            <h2 class="game-error__title">This game hit a snag</h2>
-            <p class="game-error__body">
-                Something went wrong while it was running. Your scores and stats are safe.
-            </p>
-            <div class="game-error__actions">
-                <button type="button" class="app-btn app-btn--primary" @onclick="Retry">Retry</button>
-                <a class="app-btn app-btn--ghost" href="/">All games</a>
+        @if (CustomErrorContent is not null)
+        {
+            @CustomErrorContent(ex)
+        }
+        else
+        {
+            <div class="game-error" role="alert">
+                <div class="game-error__icon" aria-hidden="true">⚠️</div>
+                <h2 class="game-error__title">This game hit a snag</h2>
+                <p class="game-error__body">
+                    Something went wrong while it was running. Your scores and stats are safe.
+                </p>
+                <div class="game-error__actions">
+                    <button type="button" class="app-btn app-btn--primary" @onclick="Retry">Retry</button>
+                    <a class="app-btn app-btn--ghost" href="/">All games</a>
+                </div>
             </div>
-        </div>
+        }
     </ErrorContent>
 </ErrorBoundary>
 
 @code {
     [Parameter] public RenderFragment? ChildContent { get; set; }
+    [Parameter] public RenderFragment<Exception>? CustomErrorContent { get; set; }
 
     private ErrorBoundary? _boundary;
     private Exception? _logged;
@@ -47,6 +55,11 @@
     }
 
     private void Retry()
+    {
+        Recover();
+    }
+
+    public void Recover()
     {
         _logged = null;
         _boundary?.Recover();

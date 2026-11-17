@@ -1,5 +1,6 @@
 using System.Security.Claims;
 using System.Text.RegularExpressions;
+using Microsoft.AspNetCore.DataProtection;
 
 namespace PoMiniGames.Infrastructure;
 
@@ -7,12 +8,17 @@ namespace PoMiniGames.Infrastructure;
 /// The app's whole identity model: there is no sign-in. Each browser keeps a random player id
 /// and the player's three initials, and sends them as the <c>X-Player-Id</c> and
 /// <c>X-Player-Initials</c> headers (SignalR: the <c>playerId</c> and <c>initials</c> query
-/// parameters). This middleware turns them into <see cref="HttpContext.User"/> so every slice
-/// reads the caller through <c>RequestIdentity</c>. The id is a handle, not a credential: it
-/// separates one browser's rows from another's and proves nothing about who is holding it.
+/// parameters). This middleware turns them into <see cref="HttpContext.User"/> and binds the
+/// player id to an HttpOnly Data-Protection-signed cookie (<see cref="BindingCookieName"/>)
+/// issued at antiforgery bootstrap so a caller cannot spoof another player's id.
 /// </summary>
 internal static partial class PlayerIdentityExtensions
 {
+    internal const string BindingCookieName = "PoMiniGames.PlayerBinding";
+    internal const string BoundClaimType = "po:bound";
+    internal const string SpoofedContextItem = "po:spoofed-identity";
+    private const string ProtectorPurpose = "PoMiniGames.PlayerIdentity.v1";
+
     [GeneratedRegex("^[a-zA-Z0-9_-]{1,64}$", RegexOptions.Compiled)]
     private static partial Regex PlayerIdPattern();
 
@@ -27,18 +33,32 @@ internal static partial class PlayerIdentityExtensions
                               ?? context.Request.Query["initials"].FirstOrDefault();
 
             var initials = NormalizeInitials(rawInitials);
+            var boundId = TryReadBoundPlayerId(context);
 
             if (!string.IsNullOrWhiteSpace(rawId) && PlayerIdPattern().IsMatch(rawId.Trim()))
             {
                 var playerId = rawId.Trim();
-                var claims = new List<Claim>
+                if (boundId is not null && !string.Equals(playerId, boundId, StringComparison.Ordinal))
                 {
-                    new("oid", playerId),
-                    new(ClaimTypes.NameIdentifier, playerId),
-                    new("name", initials),
-                    new(ClaimTypes.Name, initials),
-                };
-                context.User = new ClaimsPrincipal(new ClaimsIdentity(claims, "ArcadeInitials"));
+                    // A caller holding a signed binding cookie attempted to present a different
+                    // X-Player-Id / playerId. Refuse to authenticate the spoofed identity.
+                    context.Items[SpoofedContextItem] = true;
+                }
+                else
+                {
+                    var claims = new List<Claim>
+                    {
+                        new("oid", playerId),
+                        new(ClaimTypes.NameIdentifier, playerId),
+                        new("name", initials),
+                        new(ClaimTypes.Name, initials),
+                    };
+                    if (boundId is not null)
+                    {
+                        claims.Add(new Claim(BoundClaimType, "1"));
+                    }
+                    context.User = new ClaimsPrincipal(new ClaimsIdentity(claims, "ArcadeInitials"));
+                }
             }
             else if (rawInitials is not null)
             {
@@ -52,6 +72,59 @@ internal static partial class PlayerIdentityExtensions
 
             await next(context);
         });
+    }
+
+    internal static void EnsureBindingCookie(HttpContext context, string playerId)
+    {
+        if (string.IsNullOrEmpty(playerId) || TryReadBoundPlayerId(context) is not null)
+        {
+            return;
+        }
+
+        var protector = context.RequestServices
+            .GetService<IDataProtectionProvider>()
+            ?.CreateProtector(ProtectorPurpose);
+        if (protector is null)
+        {
+            return;
+        }
+
+        context.Response.Cookies.Append(BindingCookieName, protector.Protect(playerId), new CookieOptions
+        {
+            HttpOnly = true,
+            IsEssential = true,
+            Path = "/",
+            SameSite = SameSiteMode.Lax,
+            Secure = context.Request.IsHttps,
+            MaxAge = TimeSpan.FromDays(365),
+        });
+    }
+
+    private static string? TryReadBoundPlayerId(HttpContext context)
+    {
+        if (!context.Request.Cookies.TryGetValue(BindingCookieName, out var protectedValue)
+            || string.IsNullOrEmpty(protectedValue))
+        {
+            return null;
+        }
+
+        var protector = context.RequestServices
+            .GetService<IDataProtectionProvider>()
+            ?.CreateProtector(ProtectorPurpose);
+        if (protector is null)
+        {
+            return null;
+        }
+
+        try
+        {
+            var id = protector.Unprotect(protectedValue);
+            return PlayerIdPattern().IsMatch(id) ? id : null;
+        }
+        catch
+        {
+            return null;
+        }
     }
 
     internal static string NormalizeInitials(string? raw)

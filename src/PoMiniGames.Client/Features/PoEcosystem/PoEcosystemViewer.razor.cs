@@ -114,6 +114,8 @@ public partial class PoEcosystemViewer : ComponentBase, IAsyncDisposable
     private bool _cardsRequested;
     private EcoSettings? _viewSettings;
     private string? _capturing;                     // the action whose key is being rebound
+    private string _liveCity = "off";
+    private string? _liveWeatherLabel;
     private bool _tourActive;
     private int _tourStep;
     private bool _tourStepDone;
@@ -889,6 +891,13 @@ public partial class PoEcosystemViewer : ComponentBase, IAsyncDisposable
 
     // ── viewing settings ─────────────────────────────────────────────────
     private async Task SetQualityAsync(string tier) { await Interop.SetQualityAsync(tier); _viewSettings = await Interop.SettingsAsync(); }
+    private async Task SetLiveCityAsync(string cityId)
+    {
+        _liveCity = string.IsNullOrWhiteSpace(cityId) ? "off" : cityId;
+        _liveWeatherLabel = await Interop.SetLiveWeatherAsync(_liveCity);
+        if (_liveCity != "off" && string.IsNullOrWhiteSpace(_liveWeatherLabel))
+            _liveWeatherLabel = "Weather feed unavailable — using sim sky";
+    }
     private async Task ResetBindingsAsync() { await Interop.ResetBindingsAsync(); _viewSettings = await Interop.SettingsAsync(); }
 
     private async Task RebindAsync(string action)

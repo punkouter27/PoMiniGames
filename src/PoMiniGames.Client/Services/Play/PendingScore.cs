@@ -3,18 +3,17 @@ namespace PoMiniGamesClient.Services.Play;
 /// <summary>The kind of server board a queued score targets — drives which submit path the flusher uses.</summary>
 public enum PendingScoreKind
 {
-    MarbleRace,
-    PoBrawl,
+    MarbleRace = 0,
+    PoBrawl = 1,
     /// <summary>A PlayerStats PUT (adaptive-ELO games mirror their rating into it).</summary>
-    PlayerStats,
-    /// <summary>Retired with the Sports game. Kept so an old parked entry still parses; the flusher drops it.</summary>
-    PoSports,
-    PoVoxelStrike,
-    PoRacer,
-    PoCabinet,
-    PoMule,
-    PoFunQuiz,
-    MarbleRaceMapRecord,
+    PlayerStats = 2,
+    // 3 was retired with the PoSports game; explicit values keep older parked queues valid.
+    PoVoxelStrike = 4,
+    PoRacer = 5,
+    PoCabinet = 6,
+    PoMule = 7,
+    PoFunQuiz = 8,
+    MarbleRaceMapRecord = 9,
 }
 
 /// <summary>

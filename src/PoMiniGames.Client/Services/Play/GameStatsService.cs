@@ -230,13 +230,9 @@ public class GameStatsService
         // "TicTacToe4"). Unknown keys (e.g. a removed game lingering in
         // localStorage) fall back to the raw key so the card still renders.
         GameKey key = lastGameKey;
-        var entry = GameCatalog.SinglePlayer
-            .Concat(GameCatalog.LocalTwoPlayer)
-            .Concat(GameCatalog.Multiplayer)
-            .Concat(GameCatalog.Demo)
-            .FirstOrDefault(g => g.Key.Equals(key));
-        return entry is not null
-            ? new GameCard(entry.Title, entry.Url)
+        var game = GameCatalog.All.FirstOrDefault(g => g.Key.Equals(key));
+        return game is not null
+            ? new GameCard(game.Title, game.Primary.Url)
             : new GameCard(lastGameKey, $"/{lastGameKey}");
     }
 
@@ -279,97 +275,5 @@ public class GameStatsService
             LocalStorageService.SetItem(StorageKey, playerId);
         }
         return playerId;
-    }
-}
-
-public static class LocalStorageService
-{
-    private static IJSRuntime? _jsRuntime;
-
-    public static void SetJSRuntime(IJSRuntime jsRuntime)
-    {
-        _jsRuntime = jsRuntime;
-    }
-
-    /// <summary>
-    /// Read a value straight from localStorage. On Blazor WASM this must use the
-    /// synchronous <see cref="IJSInProcessRuntime"/>: blocking on InvokeAsync(...).Result
-    /// on the WASM UI thread can throw, which previously surfaced as silently-empty
-    /// history (e.g. the PoClick stats page reporting "Session Not Found").
-    /// </summary>
-    // Only plain strings cross the JS boundary here (localStorage stores strings),
-    // so the trimmer warning about reflection-based JSON marshalling does not apply.
-    [System.Diagnostics.CodeAnalysis.UnconditionalSuppressMessage(
-        "Trimming", "IL2026",
-        Justification = "Only string values are read from localStorage; no reflection-based JSON marshalling.")]
-    private static string? RawGet(string key)
-    {
-        if (_jsRuntime is IJSInProcessRuntime inProcess)
-            return inProcess.Invoke<string?>("window.localStorage.getItem", key);
-
-        // Fallback for non-WASM hosts (prerender/tests) where in-process isn't available.
-        return _jsRuntime?.InvokeAsync<string?>("window.localStorage.getItem", key).AsTask().GetAwaiter().GetResult();
-    }
-
-    [System.Diagnostics.CodeAnalysis.UnconditionalSuppressMessage(
-        "Trimming", "IL2026",
-        Justification = "Only string values are written to localStorage; no reflection-based JSON marshalling.")]
-    private static void RawSet(string key, string value)
-    {
-        if (_jsRuntime is IJSInProcessRuntime inProcess)
-        {
-            // Synchronous invoke guarantees the write is committed before we return,
-            // so a subsequent read (e.g. navigating to the stats page) sees it.
-            inProcess.InvokeVoid("window.localStorage.setItem", key, value);
-            return;
-        }
-
-        _ = _jsRuntime?.InvokeVoidAsync("window.localStorage.setItem", key, value).AsTask();
-    }
-
-    public static T? GetItem<T>(string key, JsonTypeInfo<T>? typeInfo = null)
-    {
-        if (_jsRuntime == null) return default;
-        try
-        {
-            if (typeof(T) == typeof(string))
-            {
-                var raw = RawGet(key);
-                if (raw is null) return default;
-                // If the stored value is a JSON-encoded string (e.g. "\"CalmTiger42\""), decode it
-                if (raw.Length >= 2 && raw[0] == '"' && raw[^1] == '"')
-                {
-                    try { return (T)(object)JsonDocument.Parse(raw).RootElement.GetString()!; }
-                    catch { /* fall through to raw */ }
-                }
-                return (T)(object)raw;
-            }
-            if (typeInfo is null) return default;
-            var rawJson = RawGet(key);
-            if (rawJson is null) return default;
-            return JsonSerializer.Deserialize(rawJson, typeInfo);
-        }
-        catch
-        {
-            return default;
-        }
-    }
-
-    public static void SetItem<T>(string key, T value, JsonTypeInfo<T>? typeInfo = null)
-    {
-        if (_jsRuntime == null) return;
-        try
-        {
-            if (value is string s)
-            {
-                RawSet(key, s);
-            }
-            else if (typeInfo is not null)
-            {
-                var json = JsonSerializer.Serialize(value, typeInfo);
-                RawSet(key, json);
-            }
-        }
-        catch { }
     }
 }

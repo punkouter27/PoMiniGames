@@ -35,10 +35,6 @@
     <PackageReference Include="Microsoft.AspNetCore.Components.WebAssembly.DevServer" PrivateAssets="all" />
     <PackageReference Include="Microsoft.AspNetCore.SignalR.Client" />
     <PackageReference Include="Microsoft.AspNetCore.Components.Authorization" />
-    <!-- Typed localStorage (Blazored). Prefer the *AsString* members: the generic
-         overloads serialise through reflection-based System.Text.Json, which the trim
-         analyzer flags (IL2026) and the trimmer may break. -->
-    <PackageReference Include="Blazored.LocalStorage" />
     <PackageReference Include="Radzen.Blazor" />
     <PackageReference Include="FluentValidation" />
     <PackageReference Include="FluentValidation.DependencyInjectionExtensions" />

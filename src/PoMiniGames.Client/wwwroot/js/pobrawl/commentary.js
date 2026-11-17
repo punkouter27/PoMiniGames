@@ -119,6 +119,7 @@ class CommentaryMethods {
     cc.lastAt = now;
     cc.kindAt[kind] = now;
     this._caption(line);
+    if (typeof window !== 'undefined') window.PoSpeech?.speak?.(line);
     return true;
   }
 

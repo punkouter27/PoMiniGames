@@ -547,6 +547,25 @@ export class Vfx {
     this.shaftMaterial.uniforms.tDepth.value = this.sceneTarget.depthTexture;
     this.shaftMaterial.uniforms.tColor.value = this.sceneTarget.texture;
 
+    // Depth-only blit that feeds the soft-smoke fade (see _buildTargets).
+    this.softDepthMaterial = new THREE.ShaderMaterial({
+      uniforms: { tDepth: { value: this.sceneTarget.depthTexture } },
+      vertexShader: /* glsl */`
+        varying vec2 vUv;
+        void main() {
+          vUv = uv;
+          gl_Position = vec4(position.xy, 0.0, 1.0);
+        }`,
+      fragmentShader: /* glsl */`
+        varying vec2 vUv;
+        uniform sampler2D tDepth;
+        void main() { gl_FragColor = vec4(texture2D(tDepth, vUv).x); }`,
+      depthTest: false,
+      depthWrite: false,
+    });
+    this.softDepthQuad = new FullScreenQuad(this.softDepthMaterial);
+    this._clearSoftDepth();
+
     // Composer is best-effort: SwiftShader/odd drivers can refuse float targets, and the
     // game must render either way.
     this.composer = null;
@@ -626,6 +645,42 @@ export class Vfx {
     this.shaftTarget = new THREE.WebGLRenderTarget(
       Math.max(1, Math.floor(width / 4)), Math.max(1, Math.floor(height / 4)),
       { type: THREE.HalfFloatType, depthBuffer: false, stencilBuffer: false });
+    // Soft smoke needs scene depth, and it draws INSIDE the scene pass — sampling
+    // sceneTarget.depthTexture there is a framebuffer/texture feedback loop, which
+    // Chrome rejects draw-by-draw (thousands of GL_INVALID_OPERATION warnings and a
+    // smoke pass that never lands). This half-res copy is written after the scene
+    // pass and read by the particles on the next frame; one frame of lag is invisible
+    // on a fade, and the loop is gone.
+    this.softDepthTarget = new THREE.WebGLRenderTarget(
+      Math.max(1, Math.floor(width / 2)), Math.max(1, Math.floor(height / 2)),
+      { type: THREE.HalfFloatType, depthBuffer: false, stencilBuffer: false });
+  }
+
+  /** The depth copy the particle shader is allowed to sample. */
+  get softDepthTexture() { return this.softDepthTarget.texture; }
+
+  /**
+   * Fill the soft-depth copy with "far" (1.0). Called on build and on resize so a
+   * freshly allocated buffer never reads as depth 0, which would cull every particle
+   * for the frame before the first copy lands.
+   */
+  _clearSoftDepth() {
+    const prevColor = this.renderer.getClearColor(new THREE.Color());
+    const prevAlpha = this.renderer.getClearAlpha();
+    this.renderer.setClearColor(0xffffff, 1);
+    this.renderer.setRenderTarget(this.softDepthTarget);
+    this.renderer.clear(true, false, false);
+    this.renderer.setRenderTarget(null);
+    this.renderer.setClearColor(prevColor, prevAlpha);
+  }
+
+  /** Copy sceneTarget's depth into softDepthTarget. Source and target differ, so
+   *  this draw is a legal read-while-writing-nothing. */
+  _copySoftDepth() {
+    this.softDepthMaterial.uniforms.tDepth.value = this.sceneTarget.depthTexture;
+    this.renderer.setRenderTarget(this.softDepthTarget);
+    this.softDepthQuad.render(this.renderer);
+    this.renderer.setRenderTarget(null);
   }
 
   /** Hand the sun + hemisphere lights over so time-of-day can drive them. */
@@ -779,6 +834,8 @@ export class Vfx {
     this.aoTarget.setSize(aoW, aoH);
     this.aoHistoryTarget?.setSize(aoW, aoH);
     this.shaftTarget.setSize(Math.max(1, Math.floor(w / 4)), Math.max(1, Math.floor(h / 4)));
+    this.softDepthTarget.setSize(Math.max(1, Math.floor(w / 2)), Math.max(1, Math.floor(h / 2)));
+    this._clearSoftDepth();
     this.composer?.setSize(w, h);
     this.smaaPass?.setSize(w, h);
     this.combinePass?.material.uniforms.resolution?.value.set(w, h);
@@ -1058,6 +1115,11 @@ export class Vfx {
     this.renderer.clear();
     this.renderer.render(this.scene, this.camera);
 
+    // After the scene, never during it: the particles sample this copy, and sampling
+    // the framebuffer they are drawing into is the feedback loop this exists to avoid.
+    // Gated on the feature itself so the low tier does not pay for a pass it cannot see.
+    if (this.q.softSmoke) this._copySoftDepth();
+
     if (this.q.ssao) this._renderAo();
     if (this.q.godRays) this._renderShafts();
 
@@ -1090,6 +1152,8 @@ export class Vfx {
     this.aoTarget.dispose();
     this.aoHistoryTarget?.dispose();
     this.shaftTarget.dispose();
+    this.softDepthTarget.dispose();
+    this.softDepthQuad.dispose(); this.softDepthMaterial.dispose();
     this.ssaoQuad.dispose(); this.ssaoMaterial.dispose();
     this.shaftQuad.dispose(); this.shaftMaterial.dispose();
     // Composer render targets hold GPU memory; passes hold their own (bloom's mips).

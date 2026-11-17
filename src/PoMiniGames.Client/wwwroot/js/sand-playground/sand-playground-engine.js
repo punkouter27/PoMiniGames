@@ -11,6 +11,7 @@ import * as SFX from './sand-playground-audio.js';
 import { source as physicsSource } from './sand-playground-physics.glsl.js';
 import { source as renderSource } from './sand-playground-render.glsl.js';
 import { SAND_PLAYGROUND_CALIBRATION, consumePhysicsSteps } from './sand-playground-calibration.js';
+import { encodeGif } from './gifEncoder.js';
 
 const W = 800, H = 600;
 const AIR = 0, SAND = 1, CONCRETE = 2, WATER = 3, BEDROCK = 4;
@@ -95,8 +96,9 @@ let dotnet = null;             // Blazor target: OnEngine(kind, value) keeps the
 let rootEl = null;             // .sand-playground-root — receives the blast CSS variables
 let inited = false;
 let debugHud = false;          // ?debug: FPS + the conservation counters
+let labHud = false;            // Physics Lab toggle: live cell counts + FPS readout
 let cleanups = [];             // listener/observer teardown, run by dispose()
-let speed = 1, simCredit = 0;  // sim frames per rendered frame (0.25 / 1 / 2)
+let speed = 1, simCredit = 0;  // sim frames per rendered frame (0.25 / 1 / 2 / 4 / 8)
 let hitStop = 0, slowmo = 0;   // blast hit-stop (frames), then slow motion easing back to 1
 let windUser = 0, tiltWind = 0, rain = 0;
 let sunMode = 'auto', sun = 1; // daylight 0..1 fed to the render + composite passes
@@ -104,7 +106,7 @@ let preset = 'classic', worldSeed = 1;
 let rnd = Math.random;         // scene builders draw from this so a seed replays a world
 let undoStack = [];
 let challenge = null;          // { id, def, t, n0, progress, done, held, tnt }
-let shotRequest = false, rec = null, recCanvas = null;
+let shotRequest = false, rec = null, recCanvas = null, gifRec = null;
 let lastHaptic = 0;
 // <html data-motion> is the OS preference OR the player's own switch in the settings sheet.
 const reducedMotion = (typeof document !== 'undefined' && document.documentElement.dataset.motion === 'reduce')
@@ -307,7 +309,7 @@ async function setupGl(gen) {
 export async function init(canvasEl, overlayEl, dotnetRef) {
     // The module instance survives navigation, so a second visit must start clean.
     disposed = false; inited = false;
-    undoStack = []; challenge = null; rec = null; simCredit = 0; hitStop = 0; slowmo = 0;
+    undoStack = []; challenge = null; rec = null; gifRec = null; simCredit = 0; hitStop = 0; slowmo = 0;
     canvas = canvasEl;
     overlay = overlayEl;
     dotnet = dotnetRef || null;
@@ -466,7 +468,8 @@ export function setTool(t) {
     tool = t; aimOrigin = null; barStart = null; mouse.painting = false;
 }
 /** X-ray view: 0 off, 1 support, 2 water pressure, 3 moisture. */
-export function setView(v) { view = Math.max(0, Math.min(3, v | 0)); }
+/** X-ray overlay: 0 off, 1 support, 2 water pressure, 3 moisture, 4 thermal. */
+export function setView(v) { view = Math.max(0, Math.min(4, v | 0)); }
 /** Ordnance options: the fuse ('impact' | '2' | '5' | 'remote') and a full or small charge. */
 export function setFuse(f) { fuseMode = String(f); }
 export function setCharge(big) { bigCharge = !!big; }
@@ -496,7 +499,8 @@ export function setDemo(on) { demo = !!on; demoTimer = 0; }
 // Watch-only reel: the CPU plays, so pointer and keyboard input are ignored.
 export function lockInput(on) { inputLocked = !!on; }
 export function stepOnce() { stepRequest = true; }
-export function setSpeed(s) { speed = s === 0.25 || s === 2 ? s : 1; simCredit = 0; }
+export function setSpeed(s) { speed = (s === 0.25 || s === 2 || s === 4 || s === 8) ? s : 1; simCredit = 0; }
+export function setLabHud(on) { labHud = !!on; }
 
 // Weather and time of day. Gravity scales everything the CPU integrates (bombs, ejecta,
 // falling concrete); the cellular sand and water fall one cell per step regardless.
@@ -1418,8 +1422,50 @@ function sceneBunker() {
     return w.data;
 }
 
+// Physics Lab preset 1: Thermal Chamber — sealed basin over concrete risers for convection/boiling tests.
+function sceneConvection() {
+    const surf = x => (x > 160 && x < 640) ? 210 : 340;
+    const w = blankWorld(surf);
+    w.carve(400, 140, 140);
+    w.bar(250, 210, 300, 12);
+    w.pool(240, 560, 340);
+    return w.data;
+}
+
+// Physics Lab preset 2: Rain Spillway — terraced sandy ridge leading to a catch basin.
+function sceneErosion() {
+    const surf = x => x < 140 ? 440 : x < 540 ? Math.round(440 - (x - 140) * 0.62) : 192;
+    const w = blankWorld(surf);
+    w.carve(640, 175, 45);
+    w.pool(585, 695, 180);
+    return w.data;
+}
+
+// Physics Lab preset 3: Artesian Aquifer — pressurized deep chamber beneath layered concrete seals.
+function sceneAquifer() {
+    const surf = x => 310 + Math.round(14 * Math.sin(x * 0.015));
+    const w = blankWorld(surf);
+    for (let y = 70; y < 170; y++) {
+        for (let x = 140; x <= 660; x++) {
+            const i = (y * W + x) * 4;
+            dataSet(w.data, i, WATER);
+        }
+    }
+    w.bar(135, 172, 530, 14);
+    w.bar(360, 186, 12, 120);
+    return w.data;
+}
+
+function dataSet(data, i, m) {
+    data[i] = MATBYTE[m];
+    data[i + 1] = m === WATER ? 128 : 0;
+    data[i + 2] = m === WATER ? 128 : 0;
+    data[i + 3] = m === WATER ? 0 : 255;
+}
+
 const PRESETS = {
     classic: buildScene, dunes: sceneDunes, dam: sceneDam, tower: sceneTower, caverns: sceneCaverns,
+    convection: sceneConvection, erosion: sceneErosion, aquifer: sceneAquifer,
     canyon: sceneCanyon, bunker: sceneBunker,
 };
 
@@ -2858,7 +2904,7 @@ function attachKeys() {
             brushFlash = performance.now();
             notify('brush', brush);
         } else if (e.code === 'KeyX') {
-            view = (view + 1) % 4;
+            view = (view + 1) % 5;
             notify('view', view);
         } else if (e.code === 'Enter' && tag !== 'BUTTON' && tag !== 'A') {
             // A focused button already treats Enter as a click.
@@ -2894,7 +2940,10 @@ function attachResize() {
         }
     };
     fit();
-    const ro = new ResizeObserver(fit);
+    // Deferred: fit() writes canvas.width/height, which is inside the box this
+    // observer watches — doing that synchronously logs the "ResizeObserver loop"
+    // warning on every mount.
+    const ro = new ResizeObserver(() => requestAnimationFrame(fit));
     ro.observe(canvas);
     cleanups.push(() => ro.disconnect());
 }
@@ -2955,6 +3004,26 @@ export function recordClip(seconds = 8) {
     return true;
 }
 
+/** Record a loopable 400x300 animated GIF time-lapse over `seconds` seconds. */
+export function recordGif(seconds = 6) {
+    if (rec || gifRec) return false;
+    const gw = 400, gh = 300;
+    const gCanvas = document.createElement('canvas');
+    gCanvas.width = gw; gCanvas.height = gh;
+    const gctx = gCanvas.getContext('2d', { willReadFrequently: true });
+    recCanvas = recCanvas || document.createElement('canvas');
+    recCanvas.width = W; recCanvas.height = H;
+    gifRec = {
+        gCanvas, gctx, gw, gh,
+        frames: [],
+        nextAt: 0,
+        intervalMs: 160,
+        until: performance.now() + Math.max(2, Math.min(12, seconds)) * 1000,
+    };
+    notify('recording', 'true');
+    return true;
+}
+
 function afterFrame(t) {
     if (shotRequest) {
         shotRequest = false;
@@ -2966,6 +3035,26 @@ function afterFrame(t) {
     if (rec) {
         composeFrame(recCanvas);
         if (t >= rec.until) { try { rec.recorder.stop(); } catch { rec = null; } }
+    }
+    if (gifRec) {
+        if (t >= gifRec.nextAt) {
+            gifRec.nextAt = t + gifRec.intervalMs;
+            composeFrame(recCanvas);
+            gifRec.gctx.drawImage(recCanvas, 0, 0, gifRec.gw, gifRec.gh);
+            const rgba = gifRec.gctx.getImageData(0, 0, gifRec.gw, gifRec.gh).data;
+            gifRec.frames.push({ rgba: new Uint8Array(rgba), delayCs: 10 });
+        }
+        if (t >= gifRec.until || gifRec.frames.length >= 45) {
+            const finished = gifRec;
+            gifRec = null;
+            notify('recording', 'false');
+            if (finished.frames.length && !disposed) {
+                try {
+                    const blob = encodeGif({ width: finished.gw, height: finished.gh, frames: finished.frames });
+                    deliver(blob, 'sandplayground-timelapse.gif');
+                } catch { /* ignore encode errors */ }
+            }
+        }
     }
 }
 
@@ -3479,7 +3568,7 @@ function frame(t) {
     if (hitStop > 0) hitStop--;
     slowmo = Math.max(0, slowmo - dt / 520);
     simCredit += hitStop > 0 ? 0 : speed * (1 - 0.7 * slowmo);
-    let simFrames = stepRequest ? 1 : running ? Math.min(2, Math.floor(simCredit)) : 0;
+    let simFrames = stepRequest ? 1 : running ? Math.min(8, Math.floor(simCredit)) : 0;
     simCredit -= Math.floor(simCredit);
     // The same rate, unquantised, for what only the renderer moves (particles,
     // smoke): they glide through slow motion instead of stepping one frame in three.
@@ -3703,7 +3792,13 @@ function drawOverlay(t) {
     }
     // X-ray legend: which field is on screen and which end of the ramp is which.
     if (view) {
-        const [name, lo, hi] = [null, ['SUPPORT', 'solid', 'failing'], ['WATER PRESSURE', 'low', 'high'], ['MOISTURE', 'dry', 'wet']][view];
+        const [name, lo, hi] = [
+            null,
+            ['SUPPORT', 'solid', 'failing'],
+            ['WATER PRESSURE', 'low', 'high'],
+            ['MOISTURE', 'dry', 'wet'],
+            ['THERMAL', 'cool', 'hot'],
+        ][view];
         const y0 = H - (challenge || demo ? 46 : 22);
         chip(4, y0, 236, 18);
         octx.fillStyle = '#e6ebf2';
@@ -3720,15 +3815,14 @@ function drawOverlay(t) {
         octx.textAlign = 'left'; octx.fillText(hi, gx + gw + 4, y0 + 12);
         octx.font = 'bold 11px monospace';
     }
-    if (rec) {
+    if (rec || gifRec) {
         chip(W - 62, H - 22, 58, 18);
         octx.fillStyle = (t / 500 | 0) % 2 ? '#ff5e5e' : '#ffb0b0';
-        octx.fillText('● REC', W - 54, H - 9);
+        octx.fillText(gifRec ? '● GIF' : '● REC', W - 54, H - 9);
     }
 
-    // Diagnostics (?debug): frame rate and the live conservation counter
-    // (grid cells + grains currently in flight).
-    if (debugHud) {
+    // Diagnostics (?debug) or Physics Lab Telemetry toggle: frame rate and live cell counts.
+    if (debugHud || labHud) {
         chip(W - 76, H - 62, 72, 16);
         octx.fillStyle = fps >= 50 ? '#7dff9b' : '#ffcf5e';
         octx.fillText(`${fps} FPS`, W - 70, H - 50);

@@ -25,7 +25,7 @@ public sealed class ConfigurationDiagnosticsSnapshotProvider
     {
         var report = await _healthCheckService.CheckHealthAsync(cancellationToken);
 
-        return new Dictionary<string, object?>
+        var snapshot = new Dictionary<string, object?>
         {
             ["identity"] = new Dictionary<string, object?>
             {
@@ -41,15 +41,9 @@ public sealed class ConfigurationDiagnosticsSnapshotProvider
             {
                 ["name"] = _environment.EnvironmentName,
                 ["application"] = _environment.ApplicationName,
-                ["urls"] = SecretMasker.MaskMiddle(_configuration["ASPNETCORE_URLS"] ?? _configuration["URLS"]),
-            },
-            ["storage"] = new Dictionary<string, object?>
-            {
-                ["provider"] = "AzureTableStorage",
-                ["tableServiceConnection"] = SecretMasker.MaskMiddle(_configuration["PoMiniGames:Storage:TableService:ConnectionString"]),
-                ["tableServiceEndpoint"] = SecretMasker.MaskMiddle(_configuration["PoMiniGames:Storage:TableService:Endpoint"]),
-                ["tableServiceAccount"] = SecretMasker.MaskMiddle(_configuration["PoMiniGames:Storage:TableService:AccountName"]),
-                ["tableServiceTable"] = _configuration["PoMiniGames:Storage:TableService:TableName"] ?? "(null)",
+                ["urls"] = _environment.IsDevelopment()
+                    ? SecretMasker.MaskMiddle(_configuration["ASPNETCORE_URLS"] ?? _configuration["URLS"])
+                    : "(redacted)",
             },
             ["logging"] = new Dictionary<string, object?>
             {
@@ -70,14 +64,6 @@ public sealed class ConfigurationDiagnosticsSnapshotProvider
                     "APPLICATIONINSIGHTS_CONNECTION_STRING",
                     "APPINSIGHTS_CONNECTIONSTRING"),
             },
-            ["keys"] = new Dictionary<string, object?>
-            {
-                ["keyVaultUri"] = SecretMasker.MaskMiddle(_configuration["PoMiniGames:KeyVault:Uri"] ?? _configuration["KeyVault:Uri"]),
-                ["applicationInsights"] = SecretMasker.MaskMiddle(
-                    _configuration["PoMiniGames:ApplicationInsights:ConnectionString"]
-                    ?? _configuration["APPLICATIONINSIGHTS_CONNECTION_STRING"]
-                    ?? _configuration["APPINSIGHTS_CONNECTIONSTRING"]),
-            },
             ["health"] = new Dictionary<string, object?>
             {
                 ["status"] = report.Status.ToString(),
@@ -92,6 +78,28 @@ public sealed class ConfigurationDiagnosticsSnapshotProvider
                 ["checkedAtUtc"] = DateTimeOffset.UtcNow,
             },
         };
+
+        if (_environment.IsDevelopment())
+        {
+            snapshot["storage"] = new Dictionary<string, object?>
+            {
+                ["provider"] = "AzureTableStorage",
+                ["tableServiceConnection"] = SecretMasker.MaskMiddle(_configuration["PoMiniGames:Storage:TableService:ConnectionString"]),
+                ["tableServiceEndpoint"] = SecretMasker.MaskMiddle(_configuration["PoMiniGames:Storage:TableService:Endpoint"]),
+                ["tableServiceAccount"] = SecretMasker.MaskMiddle(_configuration["PoMiniGames:Storage:TableService:AccountName"]),
+                ["tableServiceTable"] = _configuration["PoMiniGames:Storage:TableService:TableName"] ?? "(null)",
+            };
+            snapshot["keys"] = new Dictionary<string, object?>
+            {
+                ["keyVaultUri"] = SecretMasker.MaskMiddle(_configuration["PoMiniGames:KeyVault:Uri"] ?? _configuration["KeyVault:Uri"]),
+                ["applicationInsights"] = SecretMasker.MaskMiddle(
+                    _configuration["PoMiniGames:ApplicationInsights:ConnectionString"]
+                    ?? _configuration["APPLICATIONINSIGHTS_CONNECTION_STRING"]
+                    ?? _configuration["APPINSIGHTS_CONNECTIONSTRING"]),
+            };
+        }
+
+        return snapshot;
     }
 
     private bool HasConfiguredValue(params string[] keys)

@@ -207,6 +207,15 @@ public sealed class PoEcosystemInteropService : IAsyncDisposable
     public ValueTask SetBindingAsync(string action, string code) => SafeInvokeAsync("PoEcosystem.setBinding", action, code);
     public ValueTask ResetBindingsAsync() => SafeInvokeAsync("PoEcosystem.resetBindings");
 
+    /// <summary>Sync island sky/weather to real-world Open-Meteo + Sunrise-Sunset data for a city, or "off".</summary>
+    public async ValueTask<string> SetLiveWeatherAsync(string cityId)
+    {
+        if (!_started) return "";
+        try { return await _js.InvokeAsync<string?>("PoEcosystem.setLiveWeather", cityId) ?? ""; }
+        catch (JSException) { return ""; }
+        catch (JSDisconnectedException) { return ""; }
+    }
+
     /// <summary>The next key the player presses (KeyboardEvent.code), or null on Escape / timeout.</summary>
     public async ValueTask<string?> CaptureKeyAsync()
     {

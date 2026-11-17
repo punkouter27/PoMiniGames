@@ -82,111 +82,48 @@ public static class UnifiedLeaderboardEndpoints
         if (weekly)
         {
             var weeklyBoards = await Task.WhenAll(
-                PoRacerCatalog.Tracks.Select(t => SafeBuildPoRacerAsync(storage, limit, t.Id, weekly: true))
+                PoRacerCatalog.Tracks.Select(t => SafeBuildAsync(PoRacerTitle(t.Id), () => BuildPoRacerAsync(storage, limit, t.Id, weekly: true)))
                     .Concat(
                     [
-                        SafeBuildMarbleAsync(storage, limit, weekly: true),
-                        SafeBuildPoVoxelStrikeAsync(storage, limit, weekly: true),
-                        SafeBuildPoMuleAsync(storage, limit, weekly: true),
+                        SafeBuildAsync("Marble Race", () => BuildMarbleAsync(storage, limit, weekly: true)),
+                        SafeBuildAsync("Voxel Strike", () => BuildPoVoxelStrikeAsync(storage, limit, weekly: true)),
+                        SafeBuildAsync("Mule", () => BuildPoMuleAsync(storage, limit, weekly: true)),
                     ]));
             return weeklyBoards.OrderByDescending(b => b.Entries.Count(e => e.Name != PlaceholderName)).ToList();
         }
 
-        // Each board is an independent storage read, so fan them out concurrently instead
-        // of awaiting one at a time. Wall-clock drops from the SUM of the per-board scans to
-        // the slowest single one.
-        //
-        // Graceful degradation: every per-board build is wrapped in SafeAsync so a single
-        // board's storage failure (e.g., TaskCanceledException from the 2s network timeout
-        // against an unreachable Azurite) cannot 500 the whole /api/leaderboards endpoint.
-        // A failed board returns its title with placeholder rows, matching the "no scores
-        // yet" rendering the client already uses for empty boards.
-        var winRateTasks = WinRateGames.Select(g => SafeBuildWinRateAsync(storage, g.Key, g.Title, limit));
-        // One Racer board per track: a lap on the oval and a lap on the figure-8 are different
-        // measures, and every track's partition has to be read or its laps are stored and
-        // then shown nowhere.
-        var racerTasks = PoRacerCatalog.Tracks.Select(t => SafeBuildPoRacerAsync(storage, limit, t.Id));
-        // Cabinet the same way: one board per fixed track, and today's daily circuit.
+        var winRateTasks = WinRateGames.Select(g => SafeBuildAsync(g.Title, () => BuildWinRateAsync(storage, g.Key, g.Title, limit)));
+        var racerTasks = PoRacerCatalog.Tracks.Select(t => SafeBuildAsync(PoRacerTitle(t.Id), () => BuildPoRacerAsync(storage, limit, t.Id)));
         var cabinetTasks = PoCabinetCatalog.Tracks.Select(t => t.Id).Append(PoCabinetDailyKey)
             .Select(k => SafeBuildPoCabinetAsync(storage, limit, k));
         var boardTasks = new[]
         {
-            SafeBuildMarbleAsync(storage, limit),
-            SafeBuildPoBrawlAsync(storage, limit),
-            // Dedicated top-3 board for the PoBrawl demo-mode fighter ELO.
-            // Ratings characters, not players — see BuildPoBrawlDemoAsync's docstring.
-            // This is the board's only read; POST /api/pobrawl/elo is write only.
-            SafeBuildPoBrawlDemoAsync(storage, limit),
-            SafeBuildFunQuizAsync(funQuiz, limit),
-            SafeBuildPoVoxelStrikeAsync(storage, limit),
-            SafeBuildPoMuleAsync(storage, limit),
-            SafeBuildOnlineMmrAsync(storage, limit),
+            SafeBuildAsync("Marble Race", () => BuildMarbleAsync(storage, limit)),
+            SafeBuildAsync("Brawl", () => BuildPoBrawlAsync(storage, limit)),
+            SafeBuildAsync("Brawl Demo", () => BuildPoBrawlDemoAsync(storage, limit)),
+            SafeBuildAsync("Fun Quiz", () => BuildFunQuizAsync(funQuiz, limit)),
+            SafeBuildAsync("Voxel Strike", () => BuildPoVoxelStrikeAsync(storage, limit)),
+            SafeBuildAsync("Mule", () => BuildPoMuleAsync(storage, limit)),
+            SafeBuildAsync("Online MMR", () => BuildOnlineMmrAsync(storage, limit)),
         };
 
         var result = (await Task.WhenAll(winRateTasks.Concat(racerTasks).Concat(cabinetTasks).Concat(boardTasks))).ToList();
 
-        // Boards with at least one REAL entry float to the top (every board is now
-        // padded to `limit` with XXX placeholders, so raw count no longer ranks).
         return result.OrderByDescending(b => b.Entries.Count(e => e.Name != PlaceholderName)).ToList();
     }
 
-    // Safe* wrappers around each board builder. A failed builder returns an empty-board
-    // GameLeaderboardDto so the fan-out can keep producing the rest of the page; matches
-    // the same "empty list, padded with XXX by the client" rendering the page already uses
-    // for genuinely empty boards. The board's title still surfaces so the user can see
-    // the section exists, just without rows.
-    private static async Task<GameLeaderboardDto> SafeBuildWinRateAsync(IStorageService storage, string key, string title, int limit)
+    private static async Task<GameLeaderboardDto> SafeBuildAsync(string fallbackTitle, Func<Task<GameLeaderboardDto>> build)
     {
-        try { return await BuildWinRateAsync(storage, key, title, limit); }
-        catch { return EmptyBoard(title); }
+        try { return await build(); }
+        catch { return EmptyBoard(fallbackTitle); }
     }
-    private static async Task<GameLeaderboardDto> SafeBuildMarbleAsync(IStorageService storage, int limit, bool weekly = false)
-    {
-        try { return await BuildMarbleAsync(storage, limit, weekly); }
-        catch { return EmptyBoard("Marble Race"); }
-    }
-    private static async Task<GameLeaderboardDto> SafeBuildPoRacerAsync(IStorageService storage, int limit, string trackId, bool weekly = false)
-    {
-        try { return await BuildPoRacerAsync(storage, limit, trackId, weekly); }
-        catch { return EmptyBoard(PoRacerTitle(trackId)); }
-    }
+
     /// <param name="track">A fixed track id, or <see cref="PoCabinetDailyKey"/> for today's circuit.</param>
-    private static async Task<GameLeaderboardDto> SafeBuildPoCabinetAsync(IStorageService storage, int limit, string track)
+    private static Task<GameLeaderboardDto> SafeBuildPoCabinetAsync(IStorageService storage, int limit, string track)
     {
         var trackId = track == PoCabinetDailyKey ? PoCabinetDailyTrack.TodayId(DateTime.UtcNow) : track;
         var key = track == PoCabinetDailyKey ? PoCabinetBoardPrefix + PoCabinetDailyKey : PoCabinetBoardKey(trackId);
-        try { return await BuildPoCabinetAsync(storage, limit, trackId, key); }
-        catch { return EmptyBoard(PoCabinetTitle(trackId)); }
-    }
-    private static async Task<GameLeaderboardDto> SafeBuildPoBrawlAsync(IStorageService storage, int limit)
-    {
-        try { return await BuildPoBrawlAsync(storage, limit); }
-        catch { return EmptyBoard("Brawl"); }
-    }
-    private static async Task<GameLeaderboardDto> SafeBuildPoBrawlDemoAsync(IStorageService storage, int limit)
-    {
-        try { return await BuildPoBrawlDemoAsync(storage, limit); }
-        catch { return EmptyBoard("Brawl Demo"); }
-    }
-    private static async Task<GameLeaderboardDto> SafeBuildFunQuizAsync(LeaderboardRepository repo, int limit)
-    {
-        try { return await BuildFunQuizAsync(repo, limit); }
-        catch { return EmptyBoard("Fun Quiz"); }
-    }
-    private static async Task<GameLeaderboardDto> SafeBuildPoVoxelStrikeAsync(IStorageService storage, int limit, bool weekly = false)
-    {
-        try { return await BuildPoVoxelStrikeAsync(storage, limit, weekly); }
-        catch { return EmptyBoard("Voxel Strike"); }
-    }
-    private static async Task<GameLeaderboardDto> SafeBuildPoMuleAsync(IStorageService storage, int limit, bool weekly = false)
-    {
-        try { return await BuildPoMuleAsync(storage, limit, weekly); }
-        catch { return EmptyBoard("Mule"); }
-    }
-    private static async Task<GameLeaderboardDto> SafeBuildOnlineMmrAsync(IStorageService storage, int limit)
-    {
-        try { return await BuildOnlineMmrAsync(storage, limit); }
-        catch { return EmptyBoard("Online MMR"); }
+        return SafeBuildAsync(PoCabinetTitle(trackId), () => BuildPoCabinetAsync(storage, limit, trackId, key));
     }
 
     private static async Task<GameLeaderboardDto?> BuildOneAsync(

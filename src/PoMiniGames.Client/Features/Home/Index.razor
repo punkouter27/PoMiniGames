@@ -72,10 +72,6 @@
             <span class="arcade-marquee__coin">FREE PLAY · 1984</span>
             <span class="arcade-marquee__title">SELECT YOUR CABINET</span>
         </div>
-        <button type="button" class="arcade-marquee__player-btn" @onclick="PlayerNames.RequestOpenPrompt" title="Click to change your 3-letter arcade initials">
-            <span>PLAYER 1:</span>
-            <span class="gl-arcade-initials">[@PlayerNames.Initials]</span>
-        </button>
     </div>
 
     <div class="home-grid">
@@ -284,7 +280,7 @@
             Kiosk.Stop();
             return;
         }
-        await BeginKioskFromAsync(0);
+        BeginKioskFromAsync(0);
     }
 
     /// <summary>
@@ -292,30 +288,19 @@
     /// button always passes 0; the index parameter survives because the reel
     /// itself re-enters here when a game hands off to the next one.
     /// </summary>
-    private async Task BeginKioskFromAsync(int index)
+    private void BeginKioskFromAsync(int index)
     {
-        var demos = GameCatalog.Demo;
-        if (demos.Count == 0) return;
-        if (index < 0 || index >= demos.Count) index = 0;
-
-        Kiosk.RegisterEntries(demos.Select(d => new Services.Play.DemoEntry(DemoEntryKey(d), d.Url, d.Title, d.Icon)));
+        // Registering the catalog, arming the timer and building the ?kiosk=N link
+        // all live in KioskCoordinator so a reloaded demo URL rebuilds the same reel.
+        var url = Kiosk.BeginFromCatalog(index);
+        if (url is null) return;
         // Clear every active toast before entering the reel — the PWA "Update now"
         // prompt and any error toast are persistent (ShowAction never auto-expires) and
         // would otherwise follow the user into the loop and steal taps from the reel
         // controls. One-shot entry, not per-game.
         Toasts.DismissAll();
-        var entry = demos[index];
-        var sep = entry.Url.Contains('?') ? '&' : '?';
-        // Display index `index` with advance pointer `index` so the first rotation
-        // lands on `index + 1`. Starting at 1 instead of 0 used to skip the second
-        // demo on every lap; the same logic has to work for non-zero starts.
-        Kiosk.Start(index);
-        NavigationManager.NavigateTo($"{entry.Url}{sep}kiosk={index}");
+        NavigationManager.NavigateTo(url);
     }
-
-    private static string DemoEntryKey(CatalogEntry entry) =>
-        entry.Url.Split('?', '#')[0] == "/pobrawl/ffa" ? "pobrawl-ffa" : entry.Key.Value;
-
 
     private void OnPlayerNamesChanged() => _ = InvokeAsync(StateHasChanged);
 

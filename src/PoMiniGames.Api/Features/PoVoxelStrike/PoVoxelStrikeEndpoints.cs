@@ -3,8 +3,8 @@ using System.Text.RegularExpressions;
 using PoMiniGames.Domain.Abstractions;
 using PoMiniGames.Domain.Models;
 using PoMiniGames.Domain.Primitives;
-using PoMiniGames.Features.Identity;
 using PoMiniGames.Features.Integrity;
+using PoMiniGames.Features.Shared;
 
 namespace PoMiniGames.Features.PoVoxelStrike;
 
@@ -139,18 +139,14 @@ internal static class PoVoxelStrikeEndpoints
                 // The stats-vs-score ceiling above proves the run is internally consistent; it
                 // cannot tell whether the run happened. The guard adds the missing half by
                 // measuring the submission against a clock the server owns.
-                var verdict = integrity.Inspect(http, GameKey.PoVoxelStrike, request.Score);
-                if (!verdict.Allowed)
+                if (ScoreEndpointHelpers.InspectOrProblem(http, integrity, GameKey.PoVoxelStrike, request.Score, out var code) is { } problem)
                 {
-                    PoVoxelStrikeLog.ScoreRejected(log, request.Score, verdict.Code ?? "integrity");
-                    return verdict.ToProblem();
+                    PoVoxelStrikeLog.ScoreRejected(log, request.Score, code!);
+                    return problem;
                 }
 
                 // Server-authoritative identity — the body carries no name to forge.
-                var identity = RequestIdentity.Resolve(http.User);
-                var name = integrity.ResolveDisplayName(
-                    identity.DisplayName,
-                    identity.IsAuthenticated ? "Player" : "Guest");
+                var (identity, name) = ScoreEndpointHelpers.ResolvePlayer(http, integrity);
 
                 var entry = new PoVoxelStrikeHighScore
                 {

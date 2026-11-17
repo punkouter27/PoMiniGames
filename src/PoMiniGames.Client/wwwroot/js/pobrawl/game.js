@@ -1230,7 +1230,11 @@ export class BrawlGame {
       splash.classList.remove('pb-splash--visible');
       return;
     }
-    vt.finished.finally(() => {
+    // A second transition started before this one settles (the reel skips, the player
+    // navigates) aborts it, and BOTH promises reject. Unhandled, they surface as an
+    // uncaught "Transition was aborted because of invalid state" page error.
+    vt.ready.catch(() => {});
+    vt.finished.catch(() => {}).finally(() => {
       huds[0].style.viewTransitionName = '';
       huds[1].style.viewTransitionName = '';
       names[0].style.viewTransitionName = '';

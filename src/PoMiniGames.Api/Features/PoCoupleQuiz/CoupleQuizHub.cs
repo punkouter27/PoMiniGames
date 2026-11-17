@@ -59,7 +59,8 @@ public class CoupleQuizHub : Hub<IGameClient>
             Players: session.Players.Select(p => p.Name).ToList(),
             ReadyPlayers: readyNames,
             HostName: session.HostName ?? string.Empty,
-            MaxRounds: session.MaxRounds));
+            MaxRounds: session.MaxRounds,
+            TopicPack: session.TopicPack));
 
         await Clients.Others.LobbyUpdated(BuildLobbyUpdatedPayload(session, readyNames));
     }
@@ -70,7 +71,7 @@ public class CoupleQuizHub : Hub<IGameClient>
         if (state is null) return;
 
         await Clients.All.LobbyUpdated(new LobbyUpdatedPayload(
-            state.Players, state.ReadyPlayers, state.HostName, state.MaxRounds));
+            state.Players, state.ReadyPlayers, state.HostName, state.MaxRounds, state.TopicPack));
 
         // Everybody ready and enough players → the match starts itself. This was already the
         // behaviour; what's gone is the redundant host-only "Start game" button that raced it.
@@ -86,7 +87,16 @@ public class CoupleQuizHub : Hub<IGameClient>
         var state = _sessions.SetMaxRounds(Context.ConnectionId, rounds);
         if (state is null) return;
         await Clients.All.LobbyUpdated(new LobbyUpdatedPayload(
-            state.Players, state.ReadyPlayers, state.HostName, state.MaxRounds));
+            state.Players, state.ReadyPlayers, state.HostName, state.MaxRounds, state.TopicPack));
+    }
+
+    /// <summary>Host-only: topic pack (Classic, WordSync, WorldTravel, BooksAndStories, Mixed).</summary>
+    public async Task SetTopicPack(string topicPack)
+    {
+        var state = _sessions.SetTopicPack(Context.ConnectionId, topicPack);
+        if (state is null) return;
+        await Clients.All.LobbyUpdated(new LobbyUpdatedPayload(
+            state.Players, state.ReadyPlayers, state.HostName, state.MaxRounds, state.TopicPack));
     }
 
     // ── Game phase ──────────────────────────────────────────────────────
@@ -120,5 +130,6 @@ public class CoupleQuizHub : Hub<IGameClient>
         new(s.Players.Select(p => p.Name).ToList(),
             readyNames,
             s.HostName ?? string.Empty,
-            s.MaxRounds);
+            s.MaxRounds,
+            s.TopicPack);
 }

@@ -18,6 +18,24 @@
         </select>
     </label>
 
+    <h3>Live Sky &amp; Weather</h3>
+    <label class="poeco-field" title="Optional: mirror real-world weather (Open-Meteo) and solar time (Sunrise-Sunset.org) onto the island's sky without changing sim rules.">
+        <span>Sync city</span>
+        <select value="@LiveCity" @onchange="LiveCityChanged">
+            <option value="off">Sim Island Clock (Default)</option>
+            <option value="tokyo">Tokyo, JP</option>
+            <option value="london">London, UK</option>
+            <option value="reykjavik">Reykjavik, IS</option>
+            <option value="cairo">Cairo, EG</option>
+            <option value="seattle">Seattle, US</option>
+            <option value="sydney">Sydney, AU</option>
+        </select>
+    </label>
+    @if (!string.IsNullOrWhiteSpace(LiveWeatherLabel))
+    {
+        <p class="poeco-note">Live sky: <strong>@LiveWeatherLabel</strong></p>
+    }
+
     <h3>Accessibility</h3>
     <p class="poeco-note">
         Colour-blind safe colours, reduced motion and sound volume are app settings.
@@ -62,12 +80,16 @@
 
     [Parameter] public EcoSettings? Settings { get; set; }
     [Parameter] public string? Capturing { get; set; }
+    [Parameter] public string LiveCity { get; set; } = "off";
+    [Parameter] public string? LiveWeatherLabel { get; set; }
     [Parameter] public EventCallback<string> OnQuality { get; set; }
+    [Parameter] public EventCallback<string> OnLiveCity { get; set; }
     [Parameter] public EventCallback<string> OnRebind { get; set; }
     [Parameter] public EventCallback OnResetBindings { get; set; }
 
     private static string Label(string action) => Labels.GetValueOrDefault(action, action);
     private Task QualityChanged(ChangeEventArgs e) => OnQuality.InvokeAsync(e.Value?.ToString() ?? "auto");
+    private Task LiveCityChanged(ChangeEventArgs e) => OnLiveCity.InvokeAsync(e.Value?.ToString() ?? "off");
 
     /// <summary>KeyboardEvent.code → what is printed on the key ("KeyW" → "W", "ArrowUp" → "↑").</summary>
     internal static string KeyName(string code) => code switch

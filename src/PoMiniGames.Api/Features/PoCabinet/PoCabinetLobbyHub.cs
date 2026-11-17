@@ -1,5 +1,6 @@
 using Microsoft.AspNetCore.SignalR;
 using PoMiniGames.Features.Identity;
+using PoMiniGames.Infrastructure;
 using PoMiniGames.Shared.Games;
 
 namespace PoMiniGames.Features.PoCabinet;
@@ -126,8 +127,7 @@ public sealed class PoCabinetLobbyHub(PoCabinetLobbyService lobbies, PoCabinetRa
 
     private static string? SanitizeName(string? name)
     {
-        if (string.IsNullOrWhiteSpace(name)) return null;
-        var clean = new string(name.Where(ch => !char.IsControl(ch)).ToArray()).Trim();
+        var clean = name.StripControlChars();
         return clean.Length == 0 ? null : clean;
     }
 }

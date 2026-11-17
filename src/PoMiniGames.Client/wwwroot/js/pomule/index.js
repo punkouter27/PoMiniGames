@@ -12,12 +12,12 @@ import * as Sfx from './audio.js';
 import { drawFrame, frameLayout, SCREEN_W, MAP_Y } from './render.js';
 import { buildTouchControls, isTouchDevice } from './touch.js';
 import { KeyBridge, BUTTONS, pressed, stick } from '../gamepadBus.js';
+import { ensure as ensureRadzen, remove as removeRadzen } from '../radzenTheme.js';
 
 const TICK = 0.1;
 const HEADER = 23, PER = 16;
 const LAND = 0, AUCTION = 1, DEVELOP = 2, PRODUCE = 3, MARKET = 5, STANDINGS = 6, FINISHED = 7;
 const GOAL_OUTFITTER = 1, GOAL_INSTALL = 2, GOAL_ASSAY = 3, GOAL_SURVEY = 4, GOAL_PUB = 5, GOAL_CHASE = 6;
-const RADZEN_CSS_ID = 'pomule-radzen-css';
 const MOVE_KEYS = { KeyW: [0, -1], ArrowUp: [0, -1], KeyS: [0, 1], ArrowDown: [0, 1], KeyA: [-1, 0], ArrowLeft: [-1, 0], KeyD: [1, 0], ArrowRight: [1, 0] };
 
 let g = null;
@@ -33,33 +33,6 @@ function padCodes(pad) {
   if (pressed(pad, BUTTONS.south)) codes.add('Space');
   if (pressed(pad, BUTTONS.east) || pressed(pad, BUTTONS.lb) || pressed(pad, BUTTONS.rb)) codes.add('ShiftLeft');
   return codes;
-}
-
-/**
- * Radzen's theme is global CSS, and until the rest of the app moves to Radzen it must only
- * be present while PoMule is. Resolves once the stylesheet and Radzen's script are in.
- */
-function ensureRadzen() {
-  const base = document.baseURI;
-  const css = document.getElementById(RADZEN_CSS_ID) ? Promise.resolve() : new Promise((done) => {
-    const link = document.createElement('link');
-    link.id = RADZEN_CSS_ID;
-    link.rel = 'stylesheet';
-    link.href = new URL('_content/Radzen.Blazor/css/material-dark-base.css?v=12.1.12', base).href;
-    link.onload = link.onerror = () => done();
-    document.head.appendChild(link);
-  });
-  const js = window.Radzen ? Promise.resolve() : new Promise((done) => {
-    const script = document.createElement('script');
-    script.src = new URL('_content/Radzen.Blazor/Radzen.Blazor.js?v=12.1.12', base).href;
-    script.onload = script.onerror = () => done();
-    document.head.appendChild(script);
-  });
-  return Promise.all([css, js]).then(() => true);
-}
-
-function removeRadzen() {
-  document.getElementById(RADZEN_CSS_ID)?.remove();
 }
 
 function call(method, ...args) {
@@ -395,7 +368,12 @@ window.PoMule = {
     placeAvatars();
     onSnapshot(opts.snapshot);
     resize();
-    g.onResize = () => g && resize();
+    g.onResize = () => {
+        // Re-entrant by construction: resize() writes the canvas size the observer is
+        // watching, so doing it inside the callback logs "ResizeObserver loop completed
+        // with undelivered notifications" on every mount. Defer to the next frame.
+        if (g) requestAnimationFrame(() => { if (g) resize(); });
+    };
     g.resizeObserver = new ResizeObserver(g.onResize);
     g.resizeObserver.observe(host);
     window.addEventListener('resize', g.onResize);

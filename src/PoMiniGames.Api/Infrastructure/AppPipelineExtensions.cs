@@ -66,7 +66,24 @@ internal static class AppPipelineExtensions
             headers.XContentTypeOptions = "nosniff";
             headers.XFrameOptions = "DENY";
             headers["Referrer-Policy"] = "strict-origin-when-cross-origin";
-            headers.ContentSecurityPolicy = "frame-ancestors 'none'; base-uri 'self'; object-src 'none'";
+            headers.ContentSecurityPolicy =
+                "default-src 'self'; " +
+                "script-src 'self' 'unsafe-inline' 'wasm-unsafe-eval' https://cdn.jsdelivr.net; " +
+                "style-src 'self' 'unsafe-inline'; " +
+                "img-src 'self' data: blob: https://*.wikimedia.org; " +
+                // Brawl's highlight reel and PoEcosystem's clip share hand a <video> a
+                // blob URL; with no media-src, default-src 'self' blocked playback.
+                "media-src 'self' blob:; " +
+                "font-src 'self' data:; " +
+                // `blob:` is load-bearing: three.js's GLTFLoader turns an embedded glTF
+                // texture into a blob URL and fetches it, so without it every textured
+                // model logs "Couldn't load texture" and renders untextured. `img-src`
+                // already allows blob: for the <img> path.
+                // archive-api is the historical-weather host PoCapitol's scenario reads;
+                // api.open-meteo.com (forecast) does not cover it.
+                "connect-src 'self' blob: ws: wss: https://cdn.jsdelivr.net https://api.open-meteo.com https://archive-api.open-meteo.com https://geocoding-api.open-meteo.com https://www.wikidata.org; " +
+                "worker-src 'self' blob:; " +
+                "frame-ancestors 'none'; base-uri 'self'; object-src 'none'";
             await next();
         });
 
@@ -223,34 +240,6 @@ internal static class AppPipelineExtensions
                         ctx.Context.Response.Body,
                         ctx.Context.Features.Get<IHttpResponseBodyFeature>()!));
             }
-        });
-
-        return app;
-    }
-
-    /// <summary>
-    /// One-time cache bust for players who cached <c>_framework/*.pdb</c> 204 responses: the
-    /// first root request clears <c>cache</c> and sets the marker cookie so it never fires
-    /// again. Kept because a stale PDB cache makes the debuggerless client fail to boot, and
-    /// the alternative is a support round trip.
-    /// </summary>
-    public static WebApplication UsePoMiniGamesOnceCacheBust(this WebApplication app)
-    {
-        app.Use(async (ctx, next) =>
-        {
-            if (HttpMethods.IsGet(ctx.Request.Method)
-                && ctx.Request.Path == "/"
-                && !ctx.Request.Cookies.ContainsKey("po-cache-v2"))
-            {
-                ctx.Response.Headers["Clear-Site-Data"] = "\"cache\"";
-                ctx.Response.Cookies.Append("po-cache-v2", "1", new CookieOptions
-                {
-                    Path = "/",
-                    SameSite = SameSiteMode.Lax,
-                    MaxAge = TimeSpan.FromDays(30),
-                });
-            }
-            await next(ctx);
         });
 
         return app;

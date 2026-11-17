@@ -3,6 +3,7 @@ using Microsoft.AspNetCore.Components;
 using Microsoft.AspNetCore.Components.Web;
 using Microsoft.JSInterop;
 using PoMiniGames.Shared.Games;
+using PoMiniGamesClient.Features.Shared;
 using PoMiniGamesClient.Models;
 using PoMiniGamesClient.Services.Play;
 
@@ -76,7 +77,7 @@ public partial class PoCabinetPageBase : ComponentBase, IAsyncDisposable
     /// <summary>Why the race view failed (the crash card's small print).</summary>
     protected string? _raceError;
     /// <summary>Round the race view: a render throw shows the crash card; a retry recovers it.</summary>
-    protected ErrorBoundary? _raceBoundary;
+    protected GameErrorBoundary? _raceBoundary;
 
     protected PoCabinetTalk.Debrief? _debrief;
 

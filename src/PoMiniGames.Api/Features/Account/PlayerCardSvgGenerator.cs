@@ -1,6 +1,7 @@
 using System.Globalization;
 using System.Security;
 using System.Text;
+using System.Text.RegularExpressions;
 using PoMiniGames.Domain.Models;
 
 namespace PoMiniGames.Features.Account;
@@ -10,17 +11,23 @@ namespace PoMiniGames.Features.Account;
 /// Fully self-contained with embedded fonts, CSS, gradients and theme tokens.
 /// Compatible with GitHub README embeds, Discord image unfurls, and clipboard copies.
 /// </summary>
-public static class PlayerCardSvgGenerator
+public static partial class PlayerCardSvgGenerator
 {
+    [GeneratedRegex("^#[0-9a-fA-F]{6}$", RegexOptions.Compiled)]
+    private static partial Regex HexColorPattern();
+
     public static string Generate(PlayerCardDto card)
     {
         var name = SecurityElement.Escape(card.DisplayName ?? "Guest");
         if (name.Length > 20) name = name[..18] + "…";
         var initials = SecurityElement.Escape(card.Initials ?? "P");
         var sigTitle = SecurityElement.Escape(card.SignatureGameTitle ?? "PoRacer");
-        var sigIcon = card.SignatureGameIcon ?? "🏎️";
+        var sigIcon = SecurityElement.Escape(card.SignatureGameIcon ?? "🏎️");
         var tierName = SecurityElement.Escape((card.TierName ?? "Silver").ToUpperInvariant());
-        var tierColor = string.IsNullOrWhiteSpace(card.TierColorHex) ? "#c0c0c0" : card.TierColorHex;
+        var tierIcon = SecurityElement.Escape(card.TierIcon ?? "🥈");
+        var tierColor = !string.IsNullOrWhiteSpace(card.TierColorHex) && HexColorPattern().IsMatch(card.TierColorHex)
+            ? card.TierColorHex
+            : "#c0c0c0";
         var nextTierName = SecurityElement.Escape(card.NextTierName ?? "Top Rank");
         var nextMinMmr = card.NextTierMinMmr.HasValue ? $"{card.NextTierMinMmr.Value:N0} MMR" : "MAX";
         var winRatePct = $"{card.WinRate * 100:0.#}%";
@@ -88,7 +95,7 @@ public static class PlayerCardSvgGenerator
         // Tier & MMR Section (Right)
         sb.AppendLine("  <g transform=\"translate(330, 76)\">");
         sb.AppendLine(System.Globalization.CultureInfo.InvariantCulture, $"    <rect x=\"0\" y=\"4\" width=\"238\" height=\"32\" rx=\"8\" fill=\"rgba(255,255,255,0.04)\" stroke=\"{tierColor}\" stroke-opacity=\"0.4\" stroke-width=\"1\"/>");
-        sb.AppendLine(System.Globalization.CultureInfo.InvariantCulture, $"    <text x=\"12\" y=\"25\" class=\"sans\" font-size=\"15\">{card.TierIcon}</text>");
+        sb.AppendLine(System.Globalization.CultureInfo.InvariantCulture, $"    <text x=\"12\" y=\"25\" class=\"sans\" font-size=\"15\">{tierIcon}</text>");
         sb.AppendLine(System.Globalization.CultureInfo.InvariantCulture, $"    <text x=\"36\" y=\"25\" class=\"mono\" font-size=\"13\" font-weight=\"800\" fill=\"{tierColor}\" letter-spacing=\"1\">{tierName} TIER</text>");
         sb.AppendLine("    <text x=\"226\" y=\"25\" class=\"mono\" font-size=\"12\" font-weight=\"700\" fill=\"#94a3b8\" text-anchor=\"end\">#ONLINE</text>");
         sb.AppendLine(System.Globalization.CultureInfo.InvariantCulture, $"    <text x=\"0\" y=\"70\" class=\"sans\" font-size=\"34\" font-weight=\"900\" fill=\"#ffffff\" filter=\"url(#glow)\">{card.Mmr:N0}</text>");

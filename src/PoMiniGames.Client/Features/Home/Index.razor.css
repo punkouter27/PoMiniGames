@@ -188,28 +188,6 @@
     color: var(--color-text-secondary);
 }
 
-.arcade-marquee__player-btn {
-    display: inline-flex;
-    align-items: center;
-    gap: var(--space-2);
-    min-height: 2.25rem;
-    padding: 0.25rem 0.8rem;
-    font-family: var(--font-display);
-    font-size: var(--text-sm);
-    font-weight: 700;
-    letter-spacing: 0.04em;
-    background: var(--surface-raised);
-    color: var(--color-text-primary);
-    border: 1px solid var(--color-border);
-    border-radius: var(--radius-pill);
-    cursor: pointer;
-    transition: border-color var(--dur-fast) var(--ease-standard);
-}
-
-.arcade-marquee__player-btn:hover {
-    border-color: var(--color-accent);
-}
-
 /* ── Game grid ─────────────────────────────────────────────────────────────
    Intrinsic rows: each row is as tall as its tallest card, with a floor so a
    one-line card is still a comfortable target. There is no height cap measured
@@ -660,9 +638,6 @@ a.home-card-head:hover .home-card-title { text-decoration: underline; text-under
 }
 
 @media (pointer: coarse) {
-    .arcade-marquee__player-btn {
-        min-height: 44px;
-    }
     .home-mode-chip {
         min-height: 44px;
         min-width: 44px;

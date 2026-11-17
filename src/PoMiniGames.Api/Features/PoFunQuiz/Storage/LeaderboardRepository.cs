@@ -1,6 +1,8 @@
 using Azure;
 using Azure.Data.Tables;
+using PoMiniGames.Domain.Services;
 using PoMiniGames.Infrastructure;
+using PoMiniGames.Infrastructure.Services;
 
 namespace PoMiniGames.Features.PoFunQuiz.Storage;
 
@@ -29,7 +31,7 @@ public sealed class LeaderboardRepository(TableServiceClient tableServiceClient)
         // Server-side sanitization: override any client-supplied PlayerName with the
         // authenticated user. The caller is responsible for setting PlayerName to
         // the email claim (or "anon-<guid>" for guest mode) before invoking.
-        var playerName = Sanitize(entry.PlayerName).Truncate(32);
+        var playerName = DisplayNameSanitizer.Sanitize(entry.PlayerName, "Player").Value.Truncate(32);
         var score = Math.Clamp(entry.Score, 0, 10_000); // hard cap
         var maxStreak = Math.Max(0, entry.MaxStreak);
         var datePlayed = entry.DatePlayed == default ? DateTime.UtcNow : entry.DatePlayed;
@@ -72,9 +74,7 @@ public sealed class LeaderboardRepository(TableServiceClient tableServiceClient)
     {
         var minuteBucket = new DateTime(datePlayed.Year, datePlayed.Month, datePlayed.Day,
             datePlayed.Hour, datePlayed.Minute, 0, DateTimeKind.Utc).Ticks;
-        var canonical = $"{player}|{score}|{maxStreak}|{category}|{minuteBucket}";
-        var hash = System.Security.Cryptography.SHA256.HashData(System.Text.Encoding.UTF8.GetBytes(canonical));
-        return Convert.ToHexStringLower(hash);
+        return StorageService.ComputeRowKeyHash($"{player}|{score}|{maxStreak}|{category}|{minuteBucket}");
     }
 
     public async Task<IReadOnlyList<LeaderboardEntry>> GetTopAsync(QuestionCategory category, int top, CancellationToken cancellationToken = default)
@@ -118,6 +118,4 @@ public sealed class LeaderboardRepository(TableServiceClient tableServiceClient)
             })
             .ToList();
     }
-
-    private static string Sanitize(string s) => System.Text.RegularExpressions.Regex.Replace(s ?? string.Empty, "<.*?>", string.Empty);
 }

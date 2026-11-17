@@ -219,3 +219,28 @@ export function prefersReducedMotion() {
         return false;
     }
 }
+
+/**
+ * Opt-in Rich Audio Layer (Tone.js / FM polyphonic synths + hall reverb).
+ * @param {boolean} on
+ */
+export function applyRichAudio(on) {
+    try {
+        window.PoRichAudio?.setRichAudio?.(!!on);
+        const ctx = AudioBus.hasContext() ? AudioBus.contextSync() : null;
+        if (ctx && window.PoRichAudio) {
+            AudioBus.setSpaceBuffer(on ? window.PoRichAudio.buildHallImpulse(ctx) : null);
+            if (on) AudioBus.setReverb(0.14);
+        }
+    } catch { /* best-effort */ }
+}
+
+/**
+ * Opt-in Web Speech API voice announcer.
+ * @param {boolean} on
+ */
+export function applyVoiceAnnouncer(on) {
+    try {
+        window.PoSpeech?.setEnabled?.(!!on);
+    } catch { /* best-effort */ }
+}

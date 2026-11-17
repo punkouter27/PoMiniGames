@@ -147,6 +147,38 @@
                     <span class="prefs-toggle-knob"></span>
                 </button>
             </div>
+
+            <div class="prefs-row @(Settings.Muted ? "prefs-row--disabled" : null)">
+                <div class="prefs-label">
+                    <span class="prefs-name">Rich audio</span>
+                    <span class="prefs-hint">Opt-in Tone.js FM chord layers &amp; hall reverb.</span>
+                </div>
+                <button type="button"
+                        class="prefs-toggle @(Settings.RichAudio ? "prefs-toggle--on" : null)"
+                        role="switch"
+                        aria-checked="@Aria(Settings.RichAudio)"
+                        aria-label="Rich audio"
+                        disabled="@Settings.Muted"
+                        @onclick="ToggleRichAudio">
+                    <span class="prefs-toggle-knob"></span>
+                </button>
+            </div>
+
+            <div class="prefs-row @(Settings.Muted ? "prefs-row--disabled" : null)">
+                <div class="prefs-label">
+                    <span class="prefs-name">Voice announcer</span>
+                    <span class="prefs-hint">Spoken callouts in Brawl, Cabinet &amp; Fun Quiz (Web Speech).</span>
+                </div>
+                <button type="button"
+                        class="prefs-toggle @(Settings.VoiceAnnouncer ? "prefs-toggle--on" : null)"
+                        role="switch"
+                        aria-checked="@Aria(Settings.VoiceAnnouncer)"
+                        aria-label="Voice announcer"
+                        disabled="@Settings.Muted"
+                        @onclick="ToggleVoiceAnnouncer">
+                    <span class="prefs-toggle-knob"></span>
+                </button>
+            </div>
         </fieldset>
 
         <fieldset class="prefs-group">
@@ -374,6 +406,23 @@
     {
         await Settings.SetColorSafeAsync(!Settings.ColorSafe);
         await Feedback.ClickAsync();
+    }
+
+    private async Task ToggleRichAudio()
+    {
+        await Settings.SetRichAudioAsync(!Settings.RichAudio);
+        await Feedback.ClickAsync();
+    }
+
+    private async Task ToggleVoiceAnnouncer()
+    {
+        var next = !Settings.VoiceAnnouncer;
+        await Settings.SetVoiceAnnouncerAsync(next);
+        await Feedback.ClickAsync();
+        if (next)
+        {
+            try { await JS.InvokeVoidAsync("PoSpeech.speak", "Voice announcer ready"); } catch { }
+        }
     }
 
     private async Task ToggleInvites()

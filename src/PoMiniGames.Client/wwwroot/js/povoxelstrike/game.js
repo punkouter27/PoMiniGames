@@ -355,7 +355,9 @@ export class Engine {
     const drawSize = this.renderer.getDrawingBufferSize(new THREE.Vector2());
     this.particles.setViewportHeight(drawSize.y, drawSize.x);
     this.particles.setSoftLighting({
-      depthTexture: this.vfx.sceneTarget?.depthTexture,
+      // The depth COPY, not sceneTarget's own depth: the particles draw inside the
+      // pass that writes sceneTarget, so sampling its depth there is a feedback loop.
+      depthTexture: this.vfx.softDepthTexture,
       near: this.camera.near,
       far: this.camera.far,
       sunDir: this.vfx._sunDir,
@@ -808,7 +810,7 @@ export class Engine {
     tickMaterials(this.vfx.time);
     this.vfx.applyShake(); // AFTER lookAt so the shake never fights the follow lerp
     this.particles.setSoftLighting({
-      depthTexture: this.vfx.sceneTarget?.depthTexture,
+      depthTexture: this.vfx.softDepthTexture,
       near: this.camera.near,
       far: this.camera.far,
       sunDir: this.vfx._sunDir,

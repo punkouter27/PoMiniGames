@@ -1,8 +1,8 @@
 using PoMiniGames.Domain.Abstractions;
 using PoMiniGames.Domain.Models;
 using PoMiniGames.Domain.Primitives;
-using PoMiniGames.Features.Identity;
 using PoMiniGames.Features.Integrity;
+using PoMiniGames.Features.Shared;
 using PoMiniGames.Shared.Games.PoMule;
 
 namespace PoMiniGames.Features.PoMule;
@@ -45,11 +45,10 @@ internal static class PoMuleEndpoints
                     errors[nameof(request.Log)] = ["A replay needs both the seed and the action log."];
                 if (errors.Count > 0) return Results.ValidationProblem(errors);
 
-                var verdict = integrity.Inspect(http, GameKey.PoMule, request.NetWorth);
-                if (!verdict.Allowed)
+                if (ScoreEndpointHelpers.InspectOrProblem(http, integrity, GameKey.PoMule, request.NetWorth, out var code) is { } problem)
                 {
-                    PoMuleLog.ScoreRejected(log, request.NetWorth, verdict.Code ?? "integrity");
-                    return verdict.ToProblem();
+                    PoMuleLog.ScoreRejected(log, request.NetWorth, code!);
+                    return problem;
                 }
 
                 if (request is { Seed: { } seed, Log: { } actions })
@@ -71,10 +70,7 @@ internal static class PoMuleEndpoints
                 }
 
                 // Server-authoritative identity: the body carries no name to forge.
-                var identity = RequestIdentity.Resolve(http.User);
-                var name = integrity.ResolveDisplayName(
-                    identity.DisplayName,
-                    identity.IsAuthenticated ? "Player" : "Guest");
+                var (identity, name) = ScoreEndpointHelpers.ResolvePlayer(http, integrity);
 
                 var saved = await storage.SavePoMuleHighScoreAsync(new PoMuleHighScore
                 {

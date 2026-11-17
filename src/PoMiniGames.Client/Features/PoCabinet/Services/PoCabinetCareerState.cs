@@ -1,21 +1,20 @@
 using System.Text.Json;
-using Blazored.LocalStorage;
 using PoMiniGames.Shared.Games;
+using PoMiniGamesClient.Services.Play;
 
 namespace PoMiniGamesClient.Features.PoCabinet;
 
 /// <summary>
 /// The player's campaign progress, stored in this browser's <c>localStorage</c> via
-/// Blazored.LocalStorage's <c>*AsString</c> methods (the generic overloads go through
-/// reflection-based JSON that the trim analyzer rejects).
+/// <see cref="IBrowserStorage"/>.
 /// </summary>
 public sealed class PoCabinetCareerState
 {
     private const string StorageKey = "pominigames:pocabinet-career-v1";
 
-    private readonly ILocalStorageService _storage;
+    private readonly IBrowserStorage _storage;
 
-    public PoCabinetCareerState(ILocalStorageService storage) => _storage = storage;
+    public PoCabinetCareerState(IBrowserStorage storage) => _storage = storage;
 
     /// <summary>Current state (loaded from storage, or fresh state if none).</summary>
     public PoCabinetCareerDto Current { get; set; } = PoCabinetCareerDto.New();

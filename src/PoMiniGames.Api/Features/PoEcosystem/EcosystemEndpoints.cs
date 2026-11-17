@@ -1,6 +1,7 @@
 using Microsoft.AspNetCore.Mvc;
 using PoMiniGames.Features.Identity;
 using PoMiniGames.Features.Integrity;
+using PoMiniGames.Infrastructure;
 using PoMiniGames.Shared.Games.PoEcosystem;
 
 namespace PoMiniGames.Features.PoEcosystem;
@@ -126,20 +127,21 @@ public static class EcosystemEndpoints
         return app;
     }
 
-    /// <summary>The stable id and display name of the caller, or null when there is no usable identity.</summary>
+    /// <summary>The stable id and display name of the caller, or null when unbound or missing an id.</summary>
     private static RequestIdentity.Identity? Owner(HttpContext http)
     {
+        if (!http.User.HasClaim(PoMiniGames.Infrastructure.PlayerIdentityExtensions.BoundClaimType, "1"))
+        {
+            return null;
+        }
+
         var identity = RequestIdentity.Resolve(http.User);
-        if (!string.IsNullOrEmpty(identity.UserId)) return identity;
-        // A cookie session without a stable id (older dev logins): the display name is the
-        // best partition there is, and it is at least the same one every visit.
-        return string.IsNullOrEmpty(identity.DisplayName) ? null : identity with { UserId = "name:" + identity.DisplayName };
+        return string.IsNullOrEmpty(identity.UserId) ? null : identity;
     }
 
     private static string CleanName(string? name, string fallback)
     {
-        var chars = (name ?? string.Empty).Where(c => !char.IsControl(c)).Take(EcoWorldSlots.MaxNameChars).ToArray();
-        var cleaned = new string(chars).Trim();
+        var cleaned = name.StripControlChars(EcoWorldSlots.MaxNameChars);
         return cleaned.Length == 0 ? fallback : cleaned;
     }
 

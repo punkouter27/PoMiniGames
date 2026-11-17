@@ -177,10 +177,13 @@
                               Cards="_cards"
                               ViewSettings="_viewSettings"
                               Capturing="@_capturing"
+                              LiveCity="@_liveCity"
+                              LiveWeatherLabel="@_liveWeatherLabel"
                               DailySeed="@DailySeed"
                               OnTodaysIsland="TodaysIslandAsync"
                               OnReplayTour="ReplayTourAsync"
                               OnQuality="SetQualityAsync"
+                              OnLiveCity="SetLiveCityAsync"
                               OnRebind="RebindAsync"
                               OnResetBindings="ResetBindingsAsync"
                               OnTab="OnDashboardTabAsync" />

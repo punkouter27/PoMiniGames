@@ -129,6 +129,17 @@ internal static class AntiforgeryExtensions
     {
         app.MapGet("/api/auth/antiforgery-token", (HttpContext context, IAntiforgery antiforgery) =>
         {
+            if (context.Items.ContainsKey(PlayerIdentityExtensions.SpoofedContextItem))
+            {
+                return Results.Unauthorized();
+            }
+
+            var playerId = context.User.FindFirst("oid")?.Value;
+            if (!string.IsNullOrEmpty(playerId))
+            {
+                PlayerIdentityExtensions.EnsureBindingCookie(context, playerId);
+            }
+
             var tokens = antiforgery.GetAndStoreTokens(context);
 
             // Never cache: the token is bound to this player's identity, and a shared or

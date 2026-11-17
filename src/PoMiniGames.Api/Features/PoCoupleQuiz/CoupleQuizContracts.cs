@@ -14,13 +14,15 @@ public record LobbyEventPayload(
     List<string> Players,
     List<string> ReadyPlayers,
     string HostName,
-    int MaxRounds);
+    int MaxRounds,
+    string TopicPack = "Classic");
 
 public record LobbyUpdatedPayload(
     List<string> Players,
     List<string> ReadyPlayers,
     string HostName,
-    int MaxRounds);
+    int MaxRounds,
+    string TopicPack = "Classic");
 
 public record GameStartedPayload(
     string KingPlayerName,

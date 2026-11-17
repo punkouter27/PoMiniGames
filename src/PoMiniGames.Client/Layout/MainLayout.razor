@@ -85,9 +85,15 @@
             <div id="gl-account-menu" popover="auto" class="gl-overflow-panel"
                  role="menu" aria-label="Player Menu">
                 <p class="gl-overflow-head">PLAYER 1: <strong class="gl-arcade-initials">[@PlayerNames.Initials]</strong></p>
+                <button type="button" class="gl-overflow-item" role="menuitem"
+                        popovertarget="gl-account-menu" popovertargetaction="hide"
+                        @onclick="PlayerNames.RequestOpenPrompt">
+                    <span class="material-symbols-outlined gl-overflow-icon" aria-hidden="true">edit</span>
+                    <span>Change initials</span>
+                </button>
                 @foreach (var (path, label, icon) in MenuPages)
                 {
-                    <button type="button" class="gl-overflow-item" role="menuitem"
+                    <button type="button" class="gl-overflow-item gl-overflow-item--desktop-only" role="menuitem"
                             aria-current="@(IsCurrent(path) ? "page" : null)"
                             popovertarget="gl-account-menu" popovertargetaction="hide"
                             @onclick="() => GoTo(path)">
@@ -95,7 +101,7 @@
                         <span>@label</span>
                     </button>
                 }
-                <button type="button" class="gl-overflow-item gl-overflow-item--sep" role="menuitem"
+                <button type="button" class="gl-overflow-item gl-overflow-item--sep gl-overflow-item--desktop-only" role="menuitem"
                         popovertarget="gl-account-menu" popovertargetaction="hide"
                         @onclick="Settings.RequestOpen">
                     <span class="material-symbols-outlined gl-overflow-icon" aria-hidden="true">tune</span>
@@ -237,6 +243,11 @@
         NavigationManager.LocationChanged += _onLocationChanged;
 
         Settings.Load();
+
+        // A deep link or a hard reload of a demo URL still carries ?kiosk=N. Without
+        // this the reel silently ended on the reload: the demo rendered, but with no
+        // control bar and no rotation, because only a LocationChanged arms the timer.
+        Kiosk.TryStartFromUrl(NavigationManager.Uri);
     }
 
     protected override async Task OnAfterRenderAsync(bool firstRender)

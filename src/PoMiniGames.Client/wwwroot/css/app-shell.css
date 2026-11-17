@@ -310,6 +310,13 @@
     padding-top: 0.7rem;
 }
 
+/* On mobile viewports, BottomNav + More sheet already own Stats, Boards, Status & Settings. */
+@media (max-width: 768px) {
+    .gl-overflow-item--desktop-only {
+        display: none;
+    }
+}
+
 /* ── Mobile portrait: mirror MainLayout's top-bar compaction ── */
 @media (max-width: 640px) {
     .gl-top-bar {
@@ -346,6 +353,18 @@
 
 .gl-page:has(.kiosk-bar) {
     --kiosk-clearance: calc(5rem + env(safe-area-inset-bottom, 0px));
+    /* Attract mode is a fixed-viewport showcase: the reserved bar height must come out
+       of the page, not extend it, or every demo grew a scrollbar nobody could use. */
+    height: 100dvh;
+    overflow: hidden;
+}
+
+/* The reel bar floats over the bottom edge. DOM content — a board's last row, a
+   ticker, a HUD panel — must not sit under it, so the content well gives back the
+   bar's height while the reel runs. Games that paint to the whole viewport keep
+   their own bottom-inset rules (PoMule, Sand Playground). */
+.gl-page:has(.kiosk-bar) .gl-content {
+    padding-bottom: var(--kiosk-clearance);
 }
 
 @media (max-width: 480px) {

@@ -77,6 +77,19 @@ internal static class GameServicesExtensions
         // JSON bank (CoupleQuizQuestionBank). CoupleQuizOptions is bound in Program.cs before
         // AddPoMiniGamesGameServices.
         services.AddSingleton<GameSessionManager>();
+        services.AddHttpClient(PoMiniGames.Features.PoCoupleQuiz.CoupleQuizExternalPackService.HttpClientName, client =>
+            {
+                client.Timeout = TimeSpan.FromSeconds(10);
+                client.DefaultRequestHeaders.Accept.ParseAdd("application/json");
+                client.DefaultRequestHeaders.TryAddWithoutValidation("User-Agent", PoMiniGames.Features.PoBrawl.PoBrawlDossierService.UserAgent);
+            })
+            .AddStandardResilienceHandler(options =>
+            {
+                options.AttemptTimeout.Timeout = TimeSpan.FromSeconds(4);
+                options.TotalRequestTimeout.Timeout = TimeSpan.FromSeconds(5);
+                options.Retry.MaxRetryAttempts = 1;
+            });
+        services.AddSingleton<PoMiniGames.Features.PoCoupleQuiz.CoupleQuizExternalPackService>();
         // Note: GameSessionManager is a pure in-memory state holder, not a hosted service.
         // The round timer lives in CoupleQuizRoundDirector below.
         // Owns the round clock. A Hub instance lives for one invocation and cannot hold a

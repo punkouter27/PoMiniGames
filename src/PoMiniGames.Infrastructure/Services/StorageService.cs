@@ -87,48 +87,50 @@ public partial class StorageService : IStorageService
             .ToHashSet();
 
     public StorageService(
-        IConfiguration configuration,
+        TableServiceClient serviceClient,
         EloCalculator eloCalculator,
         PairwiseEloCalculator fighterElo,
         ILogger<StorageService>? logger = null)
     {
+        _serviceClient = serviceClient;
         _eloCalculator = eloCalculator;
         _fighterElo = fighterElo;
-        // Optional so the test harnesses that construct this service by hand keep working;
-        // the container always supplies one.
         _logger = logger ?? NullLogger<StorageService>.Instance;
+    }
 
+    public StorageService(
+        IConfiguration configuration,
+        EloCalculator eloCalculator,
+        PairwiseEloCalculator fighterElo,
+        ILogger<StorageService>? logger = null)
+        : this(CreateTableServiceClient(configuration), eloCalculator, fighterElo, logger)
+    {
+    }
+
+    private static TableServiceClient CreateTableServiceClient(IConfiguration configuration)
+    {
         var section = configuration.GetSection("PoMiniGames:Storage:TableService");
         var connectionString = section["ConnectionString"];
         var endpoint = section["Endpoint"];
         var accountName = section["AccountName"];
 
-        // Fast-fail options: a 2s network timeout with no retries means a single unreachable
-        // backend (e.g., Docker not running so Azurite is not listening) surfaces within a
-        // couple of seconds per call rather than the SDK's default ~30s retry chain. The
-        // graceful-degradation path (MarkUnavailable + the in-memory fallback) takes over
-        // from there; the rest of the app never sees the wait.
         var options = new TableClientOptions
         {
             Retry = { MaxRetries = 0, NetworkTimeout = TimeSpan.FromSeconds(2) },
         };
 
         if (!string.IsNullOrWhiteSpace(connectionString))
-        {
-            _serviceClient = new TableServiceClient(connectionString, options);
-        }
-        else if (!string.IsNullOrWhiteSpace(endpoint) || !string.IsNullOrWhiteSpace(accountName))
+            return new TableServiceClient(connectionString, options);
+
+        if (!string.IsNullOrWhiteSpace(endpoint) || !string.IsNullOrWhiteSpace(accountName))
         {
             var serviceUri = !string.IsNullOrWhiteSpace(endpoint)
                 ? new Uri(endpoint!)
                 : new Uri($"https://{accountName}.table.core.windows.net");
-            _serviceClient = new TableServiceClient(serviceUri, new DefaultAzureCredential(), options);
+            return new TableServiceClient(serviceUri, new DefaultAzureCredential(), options);
         }
-        else
-        {
-            // Default to the Azurite emulator so local dev works out of the box.
-            _serviceClient = new TableServiceClient("UseDevelopmentStorage=true", options);
-        }
+
+        return new TableServiceClient("UseDevelopmentStorage=true", options);
     }
 
     /// <summary>

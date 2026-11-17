@@ -15,6 +15,7 @@
 
 import { WORLD, ACTIONS, createState, reset, step, frameAt } from './sim.js';
 import { BUTTONS, ButtonEdges, activePad, pressed, stick } from '../gamepadBus.js';
+import { listCustomFighters, getCustomFighter } from './studio.js';
 
 const KEYS = {
     ArrowLeft: 'left', KeyA: 'left', ArrowRight: 'right', KeyD: 'right',
@@ -50,9 +51,17 @@ async function start(root, fighterId = 'p1') {
     const session = { stopped: false, cleanup: [] };
     run = session;
 
-    const base = `data/pofighter/${fighterId}`;
-    const data = await (await fetch(assetUrl(`${base}.json`))).json();
-    const sheet = await loadImage(assetUrl(`data/pofighter/${data.sheet}`));
+    let data, sheet;
+    if (fighterId && fighterId !== 'p1') {
+        const custom = await getCustomFighter(fighterId);
+        if (!custom) return false;
+        data = custom.data;
+        sheet = await loadImage(custom.sheetDataUrl);
+    } else {
+        const base = `data/pofighter/${fighterId || 'p1'}`;
+        data = await (await fetch(assetUrl(`${base}.json`))).json();
+        sheet = await loadImage(assetUrl(`data/pofighter/${data.sheet}`));
+    }
     if (session.stopped) return false;
 
     const canvas = root.querySelector('[data-pf-canvas]');
@@ -271,4 +280,9 @@ function stop() {
     run = null;
 }
 
-window.PoFighter = { start, stop, peek: () => (run?.state ? { ...run.state } : null) };
+window.PoFighter = {
+    start,
+    stop,
+    listFighters: listCustomFighters,
+    peek: () => (run?.state ? { ...run.state } : null),
+};

@@ -67,6 +67,7 @@ public static class PlayerCardEndpoints
 
             var card = await storage.GetPlayerCardAsync(owner, displayName, isGuest, ct);
             var svg = PlayerCardSvgGenerator.Generate(card);
+            http.Response.Headers.ContentSecurityPolicy = "default-src 'none'; style-src 'unsafe-inline'; sandbox";
             return Results.Content(svg, "image/svg+xml; charset=utf-8");
         })
         .WithName("GetPlayerCardSvg")

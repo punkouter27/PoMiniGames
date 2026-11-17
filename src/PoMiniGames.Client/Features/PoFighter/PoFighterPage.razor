@@ -55,12 +55,67 @@
 
             <div class="pf-panel pf-status">
                 <span class="pf-hits" role="status">Hits <strong data-pf-hits>0</strong></span>
+                <select class="pf-select" aria-label="Select fighter" value="@_fighterId" @onchange="OnFighterChangedAsync">
+                    <option value="p1">Default (P1)</option>
+                    @foreach (var f in _customFighters)
+                    {
+                        <option value="@f.Id">@f.Name</option>
+                    }
+                </select>
+                <button type="button" class="pf-chip" @onclick="OpenStudioAsync" title="Create a fighter from webcam or video (MediaPipe WASM)">✨ Studio</button>
                 <button type="button" class="pf-chip" data-pf-btn="victory" title="Celebrate (V)">Cheer</button>
                 <button type="button" class="pf-chip" data-pf-btn="ko" title="Get knocked down; any button gets up (X)">Fall</button>
                 <button type="button" class="pf-chip" data-pf-action="reset" title="Reset the room (R)">Reset</button>
                 <button type="button" class="pf-chip" data-pf-action="slow" aria-pressed="false"
                         title="Quarter speed, to judge a move picture by picture (T)">Slow</button>
             </div>
+
+            @if (_studioOpen)
+            {
+                <div class="pf-studio" role="dialog" aria-modal="true" aria-label="PoFighter Studio">
+                    <div class="pf-studio-card">
+                        <header class="pf-studio-head">
+                            <h2>PoFighter Studio</h2>
+                            <button type="button" class="pf-chip" @onclick="CloseStudioAsync">✕ Close</button>
+                        </header>
+                        <p class="pf-studio-status" @ref="_studioStatus">Ready — use webcam capture or upload a short clip (MediaPipe WASM runs 100% in your browser).</p>
+                        <div class="pf-studio-body">
+                            <div class="pf-studio-cams">
+                                <video @ref="_studioVideo" class="pf-studio-video" muted playsinline></video>
+                                <canvas @ref="_studioPreview" class="pf-studio-preview" width="240" height="240"></canvas>
+                            </div>
+                            <div class="pf-studio-controls">
+                                <label class="pf-studio-name">
+                                    <span>Fighter name</span>
+                                    <input type="text" maxlength="24" @bind="_studioFighterName" placeholder="My Fighter" />
+                                </label>
+                                <div class="pf-studio-row">
+                                    <button type="button" class="pf-chip" @onclick="StartWebcamAsync">📷 Start Webcam</button>
+                                    <button type="button" class="pf-chip" @onclick="CaptureBgAsync">🖼️ Capture BG</button>
+                                    <label class="pf-chip pf-upload">
+                                        🎞️ Upload Video
+                                        <input @ref="_studioFile" type="file" accept="video/*" @onchange="ImportVideoAsync" hidden />
+                                    </label>
+                                </div>
+                                <div class="pf-studio-moves">
+                                    @foreach (var m in StudioMoves)
+                                    {
+                                        var count = _studioCounts.TryGetValue(m.Id, out var c) ? c : 0;
+                                        <button type="button" class="pf-chip" @onclick="() => CaptureMoveAsync(m.Id)" title="@m.Hint">
+                                            @m.Label (@count)
+                                        </button>
+                                    }
+                                </div>
+                                <div class="pf-studio-row">
+                                    <button type="button" class="pf-chip pf-chip--primary" disabled="@(_studioTotalFrames == 0 || _studioBusy)" @onclick="SaveStudioFighterAsync">
+                                        ⚔️ Save &amp; Fight (@_studioTotalFrames frames)
+                                    </button>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            }
 
             <div class="pf-touch pf-touch-move" aria-label="Movement">
                 <button type="button" data-pf-btn="left" aria-label="Walk backward">◀</button>
@@ -98,10 +153,38 @@
     ];
 
     private ElementReference _room;
+    private ElementReference _studioVideo;
+    private ElementReference _studioPreview;
+    private ElementReference _studioStatus;
+    private ElementReference _studioFile;
     private string _playerName = "";
     private bool _introDismissed;
     private bool _started;
     private bool _failed;
+    private string _fighterId = "p1";
+    private List<CustomFighterItem> _customFighters = [];
+    private bool _studioOpen;
+    private bool _studioBusy;
+    private string _studioFighterName = "My Fighter";
+    private Dictionary<string, int> _studioCounts = [];
+    private int _studioTotalFrames => _studioCounts.Values.Sum();
+    private IJSObjectReference? _studioModule;
+    private IJSObjectReference? _studioCtrl;
+    private DotNetObjectReference<PoFighterPage>? _selfRef;
+
+    private sealed record CustomFighterItem(string Id, string Name);
+    private sealed record StudioMoveDef(string Id, string Label, string Hint);
+    private static readonly StudioMoveDef[] StudioMoves =
+    [
+        new("idle", "Stance", "Stand in fighting guard"),
+        new("walkF", "Walk", "Step forward and back"),
+        new("punchMid", "Punch", "Throw a straight punch"),
+        new("kick", "Kick", "Throw a front or side kick"),
+        new("jump", "Jump", "Hop in place"),
+        new("crouch", "Crouch", "Duck low into guard"),
+        new("victory", "Cheer", "Raise both arms"),
+        new("ko", "Fall", "Drop or lean down"),
+    ];
 
     private static RenderFragment TitleContent => GameCatalog.TitleFor(GameKeys.PoFighter);
 
@@ -120,8 +203,9 @@
         try
         {
             if (await JS.InvokeAsync<bool>("loadEngine", "pofighter")
-                && await JS.InvokeAsync<bool>("PoFighter.start", _room))
+                && await JS.InvokeAsync<bool>("PoFighter.start", _room, _fighterId))
             {
+                await RefreshFightersAsync();
                 return;
             }
         }
@@ -134,8 +218,121 @@
         StateHasChanged();
     }
 
+    private async Task RefreshFightersAsync()
+    {
+        try
+        {
+            using var doc = System.Text.Json.JsonDocument.Parse(
+                await JS.InvokeAsync<string>("JSON.stringify", await JS.InvokeAsync<object?>("PoFighter.listFighters")));
+            _customFighters = doc.RootElement.EnumerateArray()
+                .Select(el => new CustomFighterItem(
+                    el.GetProperty("id").GetString() ?? "",
+                    el.GetProperty("name").GetString() ?? "Fighter"))
+                .Where(f => !string.IsNullOrEmpty(f.Id))
+                .ToList();
+            StateHasChanged();
+        }
+        catch { }
+    }
+
+    private async Task OnFighterChangedAsync(ChangeEventArgs e)
+    {
+        _fighterId = e.Value?.ToString() ?? "p1";
+        await JS.InvokeAsync<bool>("PoFighter.start", _room, _fighterId);
+    }
+
+    private async Task OpenStudioAsync()
+    {
+        _studioOpen = true;
+        _studioCounts.Clear();
+        await JS.InvokeVoidAsync("PoFighter.stop");
+        StateHasChanged();
+        _studioModule ??= await JS.InvokeAsync<IJSObjectReference>("import", "./js/pofighter/studio.js");
+        _selfRef ??= DotNetObjectReference.Create(this);
+        _studioCtrl = await _studioModule.InvokeAsync<IJSObjectReference>(
+            "createStudioController", _studioVideo, _studioPreview, _studioStatus, _selfRef);
+    }
+
+    private async Task CloseStudioAsync()
+    {
+        if (_studioCtrl is not null)
+        {
+            try { await _studioCtrl.InvokeVoidAsync("dispose"); await _studioCtrl.DisposeAsync(); } catch { }
+            _studioCtrl = null;
+        }
+        _studioOpen = false;
+        await JS.InvokeAsync<bool>("PoFighter.start", _room, _fighterId);
+    }
+
+    private async Task StartWebcamAsync()
+    {
+        if (_studioCtrl is not null) await _studioCtrl.InvokeAsync<bool>("startWebcam");
+    }
+
+    private async Task CaptureBgAsync()
+    {
+        if (_studioCtrl is not null) await _studioCtrl.InvokeAsync<bool>("captureBackground");
+    }
+
+    private async Task CaptureMoveAsync(string moveId)
+    {
+        if (_studioCtrl is null || _studioBusy) return;
+        _studioBusy = true;
+        try { await _studioCtrl.InvokeAsync<int>("captureMove", moveId); }
+        finally { _studioBusy = false; }
+    }
+
+    private async Task ImportVideoAsync()
+    {
+        if (_studioCtrl is null || _studioBusy) return;
+        _studioBusy = true;
+        try { await _studioCtrl.InvokeAsync<bool>("importVideo", _studioFile); }
+        finally { _studioBusy = false; }
+    }
+
+    private async Task SaveStudioFighterAsync()
+    {
+        if (_studioCtrl is null || _studioBusy) return;
+        _studioBusy = true;
+        try
+        {
+            var id = await _studioCtrl.InvokeAsync<string>("save", _studioFighterName);
+            if (!string.IsNullOrEmpty(id))
+            {
+                _fighterId = id;
+                await RefreshFightersAsync();
+                await CloseStudioAsync();
+            }
+        }
+        finally { _studioBusy = false; }
+    }
+
+    [JSInvokable]
+    public void OnStudioCounts(string json)
+    {
+        try
+        {
+            using var doc = System.Text.Json.JsonDocument.Parse(json);
+            var next = new Dictionary<string, int>();
+            foreach (var prop in doc.RootElement.EnumerateObject())
+                next[prop.Name] = prop.Value.GetInt32();
+            _studioCounts = next;
+            InvokeAsync(StateHasChanged);
+        }
+        catch { }
+    }
+
     public async ValueTask DisposeAsync()
     {
+        if (_studioCtrl is not null)
+        {
+            try { await _studioCtrl.InvokeVoidAsync("dispose"); await _studioCtrl.DisposeAsync(); } catch { }
+        }
+        if (_studioModule is not null)
+        {
+            try { await _studioModule.DisposeAsync(); } catch { }
+        }
+        _selfRef?.Dispose();
         if (!_started) return;
         try { await JS.InvokeVoidAsync("PoFighter.stop"); }
         catch (JSDisconnectedException) { }

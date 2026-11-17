@@ -1,5 +1,5 @@
-using Blazored.LocalStorage;
 using PoMiniGames.Shared.Games.PoMule;
+using PoMiniGamesClient.Services.Play;
 
 namespace PoMiniGamesClient.Features.PoMule;
 
@@ -8,11 +8,10 @@ namespace PoMiniGamesClient.Features.PoMule;
 /// does not throw away twenty minutes of play.
 /// </summary>
 /// <remarks>
-/// String API only: Blazored's generic overloads serialise by reflection, which the trim
-/// analyzer rejects. Storage can be unavailable (private mode), so every call swallows its
-/// failure: the match plays on, it just cannot be resumed.
+/// String API only: trim-safe and swallows storage unavailability (private mode) so the
+/// match plays on without resuming across reloads.
 /// </remarks>
-public sealed class PoMuleSaveStore(ILocalStorageService storage)
+public sealed class PoMuleSaveStore(IBrowserStorage storage)
 {
     private const string Key = "pomule.save.v1";
 

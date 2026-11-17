@@ -170,8 +170,17 @@ function target() {
 function effects(q, ratio = 1) {
     return Object.assign(Object.create(Vfx.prototype), {
         q,
-        renderer: { getPixelRatio: () => ratio },
+        renderer: {
+            getPixelRatio: () => ratio,
+            // resize() clears the soft-depth copy; the particle pass samples it.
+            getClearColor: (c) => c,
+            getClearAlpha: () => 1,
+            setClearColor() {}, setRenderTarget() {}, clear() {},
+        },
         sceneTarget: target(), aoTarget: target(), shaftTarget: target(),
+        softDepthTarget: target(),
+        softDepthMaterial: { uniforms: { tDepth: { value: null } } },
+        softDepthQuad: { render() {} },
         composer: target(), smaaPass: target(), bloomPass: {},
         combinePass: { material: { uniforms: { aoEnabled: { value: 1 }, shaftEnabled: { value: 1 } } } },
     });
@@ -189,12 +198,15 @@ test('every offscreen pass follows the effective pixel ratio, including DPR and 
             assert.deepEqual([vfx.smaaPass.width, vfx.smaaPass.height], [w, h]);
             assert.deepEqual([vfx.aoTarget.width, vfx.aoTarget.height], [Math.floor(w / 2), Math.floor(h / 2)]);
             assert.deepEqual([vfx.shaftTarget.width, vfx.shaftTarget.height], [Math.floor(w / 4), Math.floor(h / 4)]);
+            // The soft-smoke depth copy: sampled by the particles, so it tracks DPR too.
+            assert.deepEqual([vfx.softDepthTarget.width, vfx.softDepthTarget.height], [Math.floor(w / 2), Math.floor(h / 2)]);
         }
     }
     const vfx = effects(resolveQuality(), 0.6);
     vfx.resize(0, 0);
     assert.equal(vfx.sceneTarget.width, 1);
     assert.equal(vfx.aoTarget.height, 1);
+    assert.equal(vfx.softDepthTarget.width, 1);
 });
 
 test('engine applies auto demotion without changing structural simulation or particle/material budgets', () => {

@@ -40,15 +40,15 @@
          addons import them) resolve to the same r186 files, so there is one instance of it.
          Bump the version and the integrity hashes together.
 
-         "yuka" (crowd steering, PoCapitol) is the one library served from this origin instead
-         of the CDN: lib/yuka/yuka.module.js is the unmodified 0.7.8 ESM build, kept in the
-         repo so the engine's Node tests run against the same file the browser loads. -->
+         "yuka" (crowd steering, PoCapitol) and "cannon-es" (physics, also imported directly by
+         PoEcosystem's Web Worker) are served from this origin instead of the CDN so browser
+         engines, Web Workers, and Node tests run against the same local copy. -->
     <script type="importmap">
     {
       "imports": {
         "three": "https://cdn.jsdelivr.net/npm/three@0.165.0/build/three.module.js",
         "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.165.0/examples/jsm/",
-        "cannon-es": "https://cdn.jsdelivr.net/npm/cannon-es@0.20.0/dist/cannon-es.js",
+        "cannon-es": "/lib/cannon-es/cannon-es.js",
         "yuka": "/lib/yuka/yuka.module.js",
         "gaussian-splats-3d": "https://cdn.jsdelivr.net/npm/@mkkellogg/gaussian-splats-3d@0.4.7/build/gaussian-splats-3d.module.js",
         "three-eco/webgpu": "https://cdn.jsdelivr.net/npm/three@0.186.1/build/three.webgpu.js",
@@ -64,7 +64,6 @@
       },
       "integrity": {
         "https://cdn.jsdelivr.net/npm/three@0.165.0/build/three.module.js": "sha384-Qvl1RLjZOCDFOOH2bKcGnaDHMM8MVv3zVtMvhy3juQdiIOs6RgQ/7zYdM1FbpHzI",
-        "https://cdn.jsdelivr.net/npm/cannon-es@0.20.0/dist/cannon-es.js": "sha384-LDCkTUkpgO4r4LtCJLXk5kwgo36GMMbF99L04+unS4RQdoKCAhj6jZ2B+2CkdSyo",
         "https://cdn.jsdelivr.net/npm/@mkkellogg/gaussian-splats-3d@0.4.7/build/gaussian-splats-3d.module.js": "sha384-DQVu71SUzpCfnf47PQBML4SmJum9lfByrWl+Xpp3n3jjVbBIfPEzkTOniE2jH+eM",
         "https://cdn.jsdelivr.net/npm/three@0.186.1/build/three.webgpu.js": "sha384-4BcMoAQ5pbGKlA/ACC52ZLD19HUU8F/mGnEtg8LEb6G0S5xckMOrpPtPHQMzWi0D",
         "https://cdn.jsdelivr.net/npm/three@0.186.1/build/three.core.js": "sha384-mdKeCwPEcbDvzaxwhm+MVuLoMou+E7jQqrs4tmu/n8HBYPGI1kZt0MkJxlMR4zFM",
@@ -158,7 +157,6 @@
          game ends on). Loaded ahead of games.css so per-game rules can't win a
          specificity tie against it by accident. -->
     <link rel="preload" href="css/game-shell.css" as="style" onload="this.onload=null;this.rel='stylesheet'" />
-    <link rel="preload" href="css/games.css" as="style" onload="this.onload=null;this.rel='stylesheet'" />
     <!-- §GFX fx.css: platform effects layer (glass, animatable gradients,
          compositor-only motion, adaptive-quality rules). Purely additive utility
          classes — nothing in it restyles an existing element, so it is safe to
@@ -255,6 +253,8 @@
          visualRuntime.js runs the single rAF loop that publishes both the
          reactive bands (--audio-*, from cues and the pointer) and the adaptive-quality tier (data-gfx). -->
     <script type="module" src="js/audioBus.js"></script>
+    <script type="module" src="js/richAudio.js"></script>
+    <script type="module" src="js/speechBus.js"></script>
     <script type="module" src="js/visualRuntime.js"></script>
     <!-- §GFX-10 synthesis moved to an AudioWorklet; dsp.js is the main-thread
          front end and acoustics.js owns the per-game reverb spaces. Both are

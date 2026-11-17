@@ -290,17 +290,11 @@ public static class GameCatalog
     /// <summary>The hub card's one-line promise for a game.</summary>
     public static string DescriptionFor(GameKey key) => Descriptions.GetValueOrDefault(key.Value, "");
 
-    private static IReadOnlyList<CatalogEntry> For(GameMode mode) =>
-        All.Select(g => (game: g, mode: g.Find(mode)))
-           .Where(x => x.mode is not null)
-           .Select(x => new CatalogEntry(
-               x.game.Key, x.game.Title, x.game.Icon, x.mode!.Url, mode, x.mode.RequiresNetwork))
-           .OrderBy(e => e.Title, StringComparer.OrdinalIgnoreCase)
-           .ToList();
-
-    public static readonly IReadOnlyList<CatalogEntry> SinglePlayer = For(GameMode.OnePlayer);
-    public static readonly IReadOnlyList<CatalogEntry> LocalTwoPlayer = For(GameMode.TwoPlayer);
-    public static readonly IReadOnlyList<CatalogEntry> Multiplayer = For(GameMode.Multiplayer);
+    /// <summary>Returns the keys of every game that declares <paramref name="mode"/>.</summary>
+    public static HashSet<GameKey> KeysFor(GameMode mode) =>
+        All.Where(g => g.Find(mode) is not null)
+           .Select(g => g.Key)
+           .ToHashSet();
 
     /// <summary>
     /// The kiosk reel, in rotation order. Deliberately NOT alphabetical and NOT derived

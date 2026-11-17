@@ -36,7 +36,7 @@ uniform sampler2D u_smoke;    // half-res advected field: R = smoke, G = vapour
 uniform sampler2D u_temp;     // half-res thermal/humidity field: R = temp, G = vapor
 uniform float u_time;
 uniform vec4 u_sky;           // sun elevation -1..1, overcast 0..1, lightning 0..1, sun x 0..1
-uniform int u_view;           // 0 = normal, 1 = support, 2 = water pressure, 3 = moisture
+uniform int u_view;           // 0 = normal, 1 = support, 2 = water pressure, 3 = moisture, 4 = thermal
 in vec2 v_uv;
 out vec4 outColor;
 
@@ -135,6 +135,13 @@ vec3 xray(vec4 self, int m, ivec2 p) {
         if (m == SAND) return rb >= 85.0 ? vec3(0.10, 0.20, 0.34) : vec3(0.10, 0.09, 0.08);
         float sp = length(self.gb - vec2(0.5)) * 255.0 / 62.0;
         return ramp(self.a * 255.0 / 90.0) * (0.55 + 0.9 * clamp(sp, 0.0, 1.0));
+    }
+    if (u_view == 4) {
+        // Thermal & vapor field (R = heat, G = steam/vapor), overlaid onto silhouettes.
+        vec2 th = texture(u_temp, v_uv).rg;
+        vec3 heatC = ramp(clamp(th.r * 1.45, 0.0, 1.0));
+        vec3 base = m == WATER ? vec3(0.06, 0.14, 0.28) : (m == AIR ? vec3(0.03, 0.04, 0.07) : vec3(0.24, 0.22, 0.20));
+        return mix(base, heatC, clamp(th.r * 1.35 + 0.12, 0.0, 0.92)) + vec3(0.6, 0.75, 0.9) * clamp(th.g * 0.55, 0.0, 0.45);
     }
     // Moisture: dry tan -> damp blue, saturated cyan, glass green.
     if (m == WATER) return vec3(0.04, 0.16, 0.55);

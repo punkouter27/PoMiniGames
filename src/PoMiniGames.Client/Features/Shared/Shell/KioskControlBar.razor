@@ -29,7 +29,7 @@
            which is unusable with a screen reader. The number is decoration; the
            buttons carry the actual affordances. *@
         <span class="kiosk-bar-count" aria-hidden="true">
-            @(Kiosk.IsPaused ? "paused" : $"{Kiosk.SecondsUntilAdvance}s")
+            @(Kiosk.IsPaused ? $"paused · {Kiosk.SecondsUntilAdvance}s" : $"{Kiosk.SecondsUntilAdvance}s")
         </span>
 
         @* Demo N of M pill: anchors repeat viewers on where they are in the loop.

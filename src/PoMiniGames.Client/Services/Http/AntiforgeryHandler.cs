@@ -53,6 +53,12 @@ public sealed class AntiforgeryHandler : DelegatingHandler
         HttpRequestMessage request,
         CancellationToken cancellationToken)
     {
+        if (RequiresBindingOnly(request))
+        {
+            await GetTokenAsync(request, cancellationToken);
+            return await base.SendAsync(request, cancellationToken);
+        }
+
         if (!RequiresToken(request))
         {
             return await base.SendAsync(request, cancellationToken);
@@ -87,6 +93,16 @@ public sealed class AntiforgeryHandler : DelegatingHandler
         SetHeader(replay, refreshed);
 
         return await base.SendAsync(replay, cancellationToken);
+    }
+
+    private static bool RequiresBindingOnly(HttpRequestMessage request)
+    {
+        if (request.Method != HttpMethod.Get) return false;
+        var path = request.RequestUri is null
+            ? string.Empty
+            : (request.RequestUri.IsAbsoluteUri ? request.RequestUri.AbsolutePath : request.RequestUri.OriginalString);
+        return path.StartsWith("/api/account/", StringComparison.OrdinalIgnoreCase)
+            || path.StartsWith("/api/ecosystem/worlds", StringComparison.OrdinalIgnoreCase);
     }
 
     private static bool RequiresToken(HttpRequestMessage request)

@@ -16,6 +16,7 @@
 @implements IAsyncDisposable
 
 <PageTitle>Couple Quiz · PoMiniGames</PageTitle>
+<HeadContent><link rel="stylesheet" href="css/quiz.css" /></HeadContent>
 
 @* The lobby is the shared LobbyPanel, with Leave and Invite. Every way into a game opens
    on the same card: the opening card comes first, and the seat is taken when it is
@@ -66,10 +67,16 @@
                                 <option value="@n">@n rounds</option>
                             }
                         </select>
+                        <select aria-label="Topic pack" value="@_lobby.TopicPack" @onchange="OnTopicPackChanged">
+                            @foreach (var p in TopicPacks)
+                            {
+                                <option value="@p.Id">@p.Label</option>
+                            }
+                        </select>
                     }
                     else
                     {
-                        <p class="lobby__hint">@(_lobby?.MaxRounds ?? 5) rounds, set by the host.</p>
+                        <p class="lobby__hint">@(_lobby?.MaxRounds ?? 5) rounds · @PackLabel(_lobby?.TopicPack) pack, set by the host.</p>
                     }
                 </Picker>
             </LobbyPanel>
@@ -79,6 +86,16 @@
 
 @code {
     private static readonly int[] RoundChoices = [3, 5, 7];
+    private static readonly (string Id, string Label)[] TopicPacks =
+    [
+        ("Classic", "Classic (Curated)"),
+        ("WordSync", "Word Sync (Datamuse)"),
+        ("WorldTravel", "World Travel (REST Countries)"),
+        ("BooksAndStories", "Books & Stories (Gutendex)"),
+        ("Mixed", "Mixed (All Packs)"),
+    ];
+    private static string PackLabel(string? id) =>
+        TopicPacks.FirstOrDefault(p => string.Equals(p.Id, id, StringComparison.OrdinalIgnoreCase)).Label ?? "Classic";
 
     // Multiplayer-only route, so the title carries the mode like every other lobby
     // title rather than reading as the game's whole name.
@@ -231,6 +248,20 @@
         }
     }
 
+    private async Task OnTopicPackChanged(ChangeEventArgs e)
+    {
+        if (_lobby is null) return;
+        var pack = e.Value?.ToString() ?? "Classic";
+        try
+        {
+            await Hub.SetTopicPackAsync(pack);
+        }
+        catch (Exception ex)
+        {
+            _error = $"Couldn't change the topic pack: {ex.Message}";
+        }
+    }
+
     // NB: SignalR `.On` callbacks run outside Blazor's render loop, so each handler
     // must marshal a StateHasChanged onto the renderer's context — otherwise the UI
     // only repaints when some *other* UI event happens to fire (a latent race that
@@ -258,6 +289,7 @@
             ReadyPlayers = p.ReadyPlayers,
             HostName = p.HostName,
             MaxRounds = p.MaxRounds,
+            TopicPack = p.TopicPack,
             // The host can leave, and whoever is promoted needs the rounds control.
             IsHost = string.Equals(p.HostName, _lobby.PlayerName, StringComparison.Ordinal),
         };

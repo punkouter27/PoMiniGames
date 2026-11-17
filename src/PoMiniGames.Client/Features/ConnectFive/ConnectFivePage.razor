@@ -37,6 +37,7 @@
     Stats="@(PlayMode == "ai" ? _statItems : null)"
     Diagnostics="@(PlayMode == "ai" ? _statItems : null)"
     Announcement="@Announcement"
+    OptionsContent="@OptionsContent"
     GameSummary="@GameSummaryContent">
 
     @if (!_introDone)
@@ -369,6 +370,11 @@
     // switch and the first segment after the game in the address.
     private static RenderFragment TitleContent => GameCatalog.TitleFor(GameKeys.ConnectFive);
 
+    private static RenderFragment OptionsContent => @<div class="cf-options">
+        <p class="cf-options__label">Mode</p>
+        <ModeSwitch />
+    </div>;
+
     // Mode-specific HowToPlay. 1P talks about the CPU and ELO, 2P
     // talks about two players and a hot seat, and the demo explains it is a
     // CPU-vs-CPU exhibition.
@@ -597,28 +603,36 @@
     }
 
     /// <summary>
-    /// Demo-mode move selection for a CPU side. Plays the 4-ply alpha-beta negamax
-    /// "Hard" rung so both CPUs play a genuinely smart game. The first
+    /// Demo-mode move selection for a CPU side. Red searches four plies, Yellow plays
+    /// the one-ply win/block heuristic, and the first
     /// <see cref="DemoOpeningRandomPlies"/> plies are randomised across the central
-    /// columns: the Hard search is deterministic, so without this every demo loop
-    /// would replay the identical game. An empty / near-empty board carries no
-    /// tactical threats, so a varied central opening diversifies which strong game
-    /// is played out without ever making a blunder.
+    /// columns so every lap is a different game.
     /// </summary>
+    /// <remarks>
+    /// The two sides deliberately do NOT play the same strength. Two equal 4-ply
+    /// searches block each other perfectly: the attract loop filled the board in an
+    /// identical two-row stripe (columns 3, 8 and 9 never used) and never produced a
+    /// win inside the reel's 60-second dwell, which reads as a broken AI to anyone
+    /// walking past. A deeper Red against a greedy Yellow still looks like real play —
+    /// Yellow blocks the obvious four — but Red eventually builds a double threat and
+    /// the demo shows a win, its cascade, and a fresh board.
+    /// </remarks>
     private (int Row, int Col) DemoMove(ConnectFiveBoard board, Player player)
     {
         if (_demoPly < DemoOpeningRandomPlies)
         {
             var cols = board.GetAvailableCols();
             var center = ConnectFiveBoard.Cols / 2;
-            var band = cols.Where(c => Math.Abs(c - center) <= 2).ToList();
+            var band = cols.Where(c => Math.Abs(c - center) <= 3).ToList();
             var pickFrom = band.Count > 0 ? band : cols;
             if (pickFrom.Count == 0) return (0, 0);
             var pick = pickFrom[Random.Shared.Next(pickFrom.Count)];
             return (board.GetTargetRow(pick), pick);
         }
 
-        return _ai.GetMove(board, player, Difficulty.Hard);
+        return player == Player.Red
+            ? _ai.GetMove(board, player, Difficulty.Hard)
+            : _ai.GetMove(board, player, Difficulty.Medium);
     }
 
     // Lazy-load the matter.js physics engine on first render. Failure is

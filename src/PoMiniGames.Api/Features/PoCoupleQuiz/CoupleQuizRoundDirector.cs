@@ -34,18 +34,21 @@ public sealed class CoupleQuizRoundDirector : IDisposable
     private readonly GameSessionManager _sessions;
     private readonly IOptionsMonitor<CoupleQuizOptions> _options;
     private readonly ILogger<CoupleQuizRoundDirector> _logger;
+    private readonly CoupleQuizExternalPackService? _externalPacks;
     private readonly SemaphoreSlim _gate = new(1, 1);
 
     public CoupleQuizRoundDirector(
         IHubContext<CoupleQuizHub, IGameClient> hub,
         GameSessionManager sessions,
         IOptionsMonitor<CoupleQuizOptions> options,
-        ILogger<CoupleQuizRoundDirector> logger)
+        ILogger<CoupleQuizRoundDirector> logger,
+        CoupleQuizExternalPackService? externalPacks = null)
     {
         _hub = hub;
         _sessions = sessions;
         _options = options;
         _logger = logger;
+        _externalPacks = externalPacks;
     }
 
     private int RoundSeconds => Math.Max(10, _options.CurrentValue.RoundSeconds);
@@ -56,6 +59,25 @@ public sealed class CoupleQuizRoundDirector : IDisposable
     /// <summary>Start a match for the current lobby. No-op if one is already running.</summary>
     public async Task StartGameAsync(CancellationToken cancellationToken = default)
     {
+        Question first;
+        await _gate.WaitAsync(cancellationToken);
+        try
+        {
+            var session = _sessions.Current;
+            if (session is null || session.State == SessionState.InProgress) return;
+            if (session.Players.Count < Game.MinimumPlayers)
+            {
+                await _hub.Clients.All.GameError($"Need at least {Game.MinimumPlayers} players to start.");
+                return;
+            }
+        }
+        finally
+        {
+            _gate.Release();
+        }
+
+        first = await NextQuestionAsync(newMatch: true, cancellationToken);
+
         await _gate.WaitAsync(cancellationToken);
         try
         {
@@ -67,7 +89,6 @@ public sealed class CoupleQuizRoundDirector : IDisposable
                 return;
             }
 
-            var first = NextQuestion(newMatch: true);
             var game = _sessions.StartGame(first.Text, first.Category.ToString());
 
             await _hub.Clients.All.GameStarted(new GameStartedPayload(
@@ -151,7 +172,7 @@ public sealed class CoupleQuizRoundDirector : IDisposable
     {
         if (_sessions.GetLobbyReadyState() is not { } state) return;
         await _hub.Clients.All.LobbyUpdated(new LobbyUpdatedPayload(
-            state.Players, state.ReadyPlayers, state.HostName, state.MaxRounds));
+            state.Players, state.ReadyPlayers, state.HostName, state.MaxRounds, state.TopicPack));
     }
 
     // ── Round transitions ───────────────────────────────────────────────────
@@ -249,7 +270,7 @@ public sealed class CoupleQuizRoundDirector : IDisposable
 
         try
         {
-            next = NextQuestion(newMatch: false);
+            next = await NextQuestionAsync(newMatch: false, cancellationToken);
         }
         catch (Exception ex)
         {
@@ -301,8 +322,17 @@ public sealed class CoupleQuizRoundDirector : IDisposable
 
     // ── Questions and scoring ───────────────────────────────────────────────
 
-    /// <summary>The next question, dealt at random from the curated bank (never repeating within a match).</summary>
-    private Question NextQuestion(bool newMatch) => _sessions.TakeBankQuestion(newMatch);
+    /// <summary>The next question, drawn from the selected topic pack (falling back to the curated bank).</summary>
+    private async Task<Question> NextQuestionAsync(bool newMatch, CancellationToken ct)
+    {
+        if (_externalPacks is null) return _sessions.TakeBankQuestion(newMatch);
+        var (pack, asked) = _sessions.PrepareQuestionDraw(newMatch);
+        if (string.Equals(pack, "Classic", StringComparison.OrdinalIgnoreCase))
+            return _sessions.TakeBankQuestion(newMatch: false);
+        var q = await _externalPacks.DrawAsync(pack, asked, ct);
+        _sessions.RecordAskedQuestion(q.Text);
+        return q;
+    }
 
     // ── Timer plumbing ──────────────────────────────────────────────────────
 

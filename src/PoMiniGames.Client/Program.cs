@@ -1,5 +1,4 @@
 using FluentValidation;
-using Blazored.LocalStorage;
 using Microsoft.AspNetCore.Components.Web;
 using Microsoft.AspNetCore.Components.WebAssembly.Hosting;
 using Microsoft.JSInterop;
@@ -128,14 +127,11 @@ builder.Services.AddScoped<UiFeedbackService>();
 builder.Services.AddScoped<ScreenFxService>();
 // Global settings (master mute, FPS badge) shared by the layout and every game.
 builder.Services.AddScoped<SettingsService>();
-// Blazored.LocalStorage. New code should take ILocalStorageService and use
-// the *AsString* members; the generic overloads go through reflection-based JSON that the
-// trim analyzer rejects. Existing raw `localStorage.getItem` interop is left as-is.
-builder.Services.AddBlazoredLocalStorage();
-// Radzen dialog / notification / tooltip services. Only PoMule uses them so far; its
-// page loads the Radzen stylesheet itself so the other games keep their plain CSS.
+// Unified trim-safe localStorage service (replaces Blazored.LocalStorage).
+builder.Services.AddScoped<IBrowserStorage, BrowserStorageService>();
+// Radzen dialog / notification / tooltip services. Only PoMule, Brawl HQ, Leaderboards,
+// and Profile use Radzen components; their pages load the Radzen stylesheet on demand.
 builder.Services.AddRadzenComponents();
-builder.Services.AddScoped<DialogNotificationHelper>();
 builder.Services.AddValidatorsFromAssemblyContaining<PoMiniGames.Shared.Validation.PlayerDisplayNameValidator>();
 builder.Services.AddScoped<PoMiniGamesClient.Features.PoMule.PoMuleSaveStore>();
 // PoBrawl fighter dossiers: fetched once per app life, static facts until (or unless) they land.
@@ -169,15 +165,13 @@ var host = builder.Build();
 // Initialize LocalStorageService with the JS runtime so all localStorage operations work
 LocalStorageService.SetJSRuntime(host.Services.GetRequiredService<IJSRuntime>());
 
-// Cross-origin credentials patch: must run before any HttpClient is used
-// (i.e. before any component renders), so we install it right after Build
-// but before RunAsync. Requests to `apiBase` get credentials: 'include' so
-// the antiforgery cookie round-trips on the standalone-client (:5261 → :5000)
-// dev setup. Everything else — every third-party origin — keeps the browser
-// default; passing apiBase is what scopes it (see the module header for why a
-// blanket patch breaks). Installs nothing when the API is same-origin.
-var fetchPatchModule = await host.Services.GetRequiredService<IJSRuntime>()
-    .InvokeAsync<IJSObjectReference>("import", "./js/crossOriginFetchPatch.js");
-await fetchPatchModule.InvokeVoidAsync("installCrossOriginCredentialsPatch", apiBase);
+// Only import the cross-origin credentials fetch patch when the API sits on a different origin
+// (standalone client dev setup); same-origin builds skip the dynamic import completely.
+if (!string.Equals(new Uri(apiBase).Authority, new Uri(builder.HostEnvironment.BaseAddress).Authority, StringComparison.OrdinalIgnoreCase))
+{
+    var fetchPatchModule = await host.Services.GetRequiredService<IJSRuntime>()
+        .InvokeAsync<IJSObjectReference>("import", "./js/crossOriginFetchPatch.js");
+    await fetchPatchModule.InvokeVoidAsync("installCrossOriginCredentialsPatch", apiBase);
+}
 
 await host.RunAsync();

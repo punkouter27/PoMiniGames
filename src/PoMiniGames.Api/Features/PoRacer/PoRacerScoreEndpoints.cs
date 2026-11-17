@@ -3,6 +3,7 @@ using PoMiniGames.Domain.Models;
 using PoMiniGames.Domain.Primitives;
 using PoMiniGames.Features.Identity;
 using PoMiniGames.Features.Integrity;
+using PoMiniGames.Features.Shared;
 using PoMiniGames.Infrastructure.Services;
 using PoMiniGames.Shared.Games;
 
@@ -51,10 +52,9 @@ public static class PoRacerScoreEndpoints
             }
 
             // A best lap cannot be longer than the play session that produced it.
-            var verdict = integrity.Inspect(http, GameKey.PoRacer, timed.BestLapSeconds);
-            if (!verdict.Allowed)
+            if (ScoreEndpointHelpers.InspectOrProblem(http, integrity, GameKey.PoRacer, timed.BestLapSeconds, out _) is { } problem)
             {
-                return verdict.ToProblem();
+                return problem;
             }
 
             var log = loggerFactory.CreateLogger("PoRacerScores");
@@ -62,28 +62,22 @@ public static class PoRacerScoreEndpoints
             log.LogInformation("PoRacer score POST user={UserId} guest={Guest} track={Track} t={T}s pos={Pos} claimed={Claimed}s",
                 userId, isGuest, trackId, timed.BestLapSeconds, timed.Position, dto.BestLapSeconds);
 
-            PoRacerHighScore saved;
-            try
+            var (_, playerName) = ScoreEndpointHelpers.ResolvePlayer(http, integrity);
+            var (saved, saveError) = await ScoreEndpointHelpers.TrySaveAsync(() => storage.SavePoRacerHighScoreAsync(new PoRacerHighScore
             {
-                saved = await storage.SavePoRacerHighScoreAsync(new PoRacerHighScore
-                {
-                    PlayerName = integrity.ResolveDisplayName(displayName, isGuest ? "Guest" : "Player"),
-                    UserId = userId,
-                    TrackId = trackId,
-                    TotalTimeSeconds = timed.BestLapSeconds,
-                    FinalPosition = timed.Position,
-                    Date = timed.FinishedAtUtc.ToString("yyyy-MM-ddTHH:mm:ssZ", System.Globalization.CultureInfo.InvariantCulture),
-                    IsGuest = isGuest,
-                    GameCode = dto.GameCode ?? "",
-                });
-            }
-            catch (IOException)
-            {
-                return Results.Problem("Best lap could not be stored. Please retry.", statusCode: StatusCodes.Status503ServiceUnavailable);
-            }
+                PlayerName = playerName,
+                UserId = userId,
+                TrackId = trackId,
+                TotalTimeSeconds = timed.BestLapSeconds,
+                FinalPosition = timed.Position,
+                Date = timed.FinishedAtUtc.ToString("yyyy-MM-ddTHH:mm:ssZ", System.Globalization.CultureInfo.InvariantCulture),
+                IsGuest = isGuest,
+                GameCode = dto.GameCode ?? "",
+            }), "Best lap could not be stored. Please retry.");
+            if (saveError is not null) return saveError;
             return Results.Created("/api/poracer/scores", new PoRacerScoreDto
             {
-                PlayerDisplayName = saved.PlayerName,
+                PlayerDisplayName = saved!.PlayerName,
                 UserId = saved.UserId,
                 TrackId = saved.TrackId,
                 BestLapSeconds = saved.TotalTimeSeconds,

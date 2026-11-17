@@ -38,21 +38,24 @@
 }
 
 /* The bar sits over the middle of the bottom edge, which is where several demos
-   put their action (Marble Race's pack, the Brawl FFA ring). It fades once the
-   viewer stops moving (app.js toggles `po-awake` on <html>) and comes straight
-   back on any pointer, key, hover or focus. */
+   put their action (Marble Race's pack, the Brawl FFA ring). It thins its own
+   backdrop when the viewer stops moving (app.js toggles `po-awake` on <html>) and
+   goes solid on any pointer, key, hover or focus.
+   It deliberately does NOT fade its opacity: at 0.15 the title, the countdown and
+   the exit button were unreadable, so the only visible way out of the reel was
+   invisible. The controls stay at full contrast; only the pill behind them thins. */
 .kiosk-bar {
-    opacity: 0.15;
+    background: color-mix(in srgb, var(--surface-raised) 80%, transparent);
 }
 
 :root.po-awake .kiosk-bar,
 .kiosk-bar:hover,
 .kiosk-bar:focus-within {
-    opacity: 1;
+    background: var(--surface-raised);
 }
 
 @media (prefers-reduced-motion: no-preference) {
-    .kiosk-bar { transition: opacity 0.4s var(--ease-standard); }
+    .kiosk-bar { transition: background-color 0.4s var(--ease-standard); }
 }
 
 /* Paused reads as "held", not "stopped" — hence dimmed rather than a new hue. */

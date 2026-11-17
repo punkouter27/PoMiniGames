@@ -342,12 +342,17 @@
     // _drop every frame.
 
     // ─── rAF loop ─────────────────────────────────────────────────────────
+    // Matter warns when a step exceeds its own base delta. `1000 / 60` is the exact
+    // same expression Matter uses, so clamping to it can never be "greater than".
+    const BASE_DELTA = 1000 / 60;
+
     function step(now) {
         if (!_engine) return;
-        // Cap delta so a backgrounded tab returning mid-physics does not
-        // dump 30+ steps into the engine in one frame.
-        if (!_drop) { _lastFrame = 0; _rafId = requestAnimationFrame(step); return; }
-        const delta = Math.min(32, _lastFrame ? now - _lastFrame : 16.67);
+        // Between drops there is nothing to simulate, so stop the loop rather than
+        // holding a frame callback for the whole session. dropDisc() restarts it.
+        // This is also the backstop that stops an engine outliving its page.
+        if (!_drop) { _rafId = 0; _lastFrame = 0; return; }
+        const delta = Math.min(BASE_DELTA, _lastFrame ? now - _lastFrame : BASE_DELTA);
         _lastFrame = now;
         Matter.Engine.update(_engine, delta);
 
@@ -363,7 +368,7 @@
             }
             if (isAtRest(b, _restY)) finalizeDrop();
         }
-        _rafId = requestAnimationFrame(step);
+        _rafId = _drop ? requestAnimationFrame(step) : 0;
     }
 
     function finalizeDrop() {
@@ -585,6 +590,9 @@
             _restY = restYForRow(targetRow);
             _stillFrames = 0;
             _lastFrame = 0;
+            // The loop parks itself between drops (see step), so every drop has to
+            // kick it back into life.
+            if (!_rafId) _rafId = requestAnimationFrame(step);
             armWatchdog();
             return true;
         } catch (e) {

@@ -106,6 +106,27 @@ public sealed class GameSessionManager
     }
 
     /// <summary>
+    /// Snapshot of asked question texts for the current session (clears history when starting a match).
+    /// </summary>
+    public (string TopicPack, HashSet<string> Asked) PrepareQuestionDraw(bool newMatch)
+    {
+        lock (_gate)
+        {
+            if (_session is null) return ("Classic", new HashSet<string>(StringComparer.Ordinal));
+            if (newMatch) _session.AskedQuestions.Clear();
+            return (_session.TopicPack, new HashSet<string>(_session.AskedQuestions, StringComparer.Ordinal));
+        }
+    }
+
+    public void RecordAskedQuestion(string text)
+    {
+        lock (_gate)
+        {
+            _session?.AskedQuestions.Add(text);
+        }
+    }
+
+    /// <summary>
     /// A curated question this match has not asked yet. <paramref name="newMatch"/> clears the
     /// match's history first.
     /// </summary>
@@ -249,6 +270,21 @@ public sealed class GameSessionManager
         }
     }
 
+    /// <summary>Host-only. Selects the question topic pack while waiting in the lobby.</summary>
+    public LobbyReadyState? SetTopicPack(string connectionId, string topicPack)
+    {
+        lock (_gate)
+        {
+            if (_session is null) return null;
+            if (_session.HostConnectionId != connectionId) return null;
+            if (_session.State != SessionState.Waiting) return null;
+            if (!CoupleQuizExternalPackService.IsValidPack(topicPack)) return null;
+
+            _session.TopicPack = CoupleQuizExternalPackService.NormalizePack(topicPack);
+            return BuildReadyState(_session);
+        }
+    }
+
     /// <summary>Return a finished lobby to the waiting state so the same players can go again.</summary>
     public LobbyReadyState? ResetToLobby()
     {
@@ -271,7 +307,8 @@ public sealed class GameSessionManager
         s.HostName ?? string.Empty,
         s.MaxRounds,
         s.Players.Count >= Game.MinimumPlayers && s.ReadyConnectionIds.Count >= s.Players.Count,
-        Game.MinimumPlayers);
+        Game.MinimumPlayers,
+        s.TopicPack);
 
     // Ensure a joining player's name is unique within the lobby (case-insensitive).
     // Shared "Guest######" identities collide otherwise; append " (2)", " (3)", …

@@ -48,6 +48,7 @@ public partial class SandPlaygroundSandbox : ComponentBase, IAsyncDisposable
     protected string Preset { get; private set; } = "classic";
     protected long Seed { get; private set; }
     protected long[] SlotTimes { get; private set; } = [0, 0, 0];
+    protected bool LabHud { get; private set; }
     protected string? ChallengeId { get; private set; }
     protected int View { get; private set; }
     protected string Fuse { get; private set; } = "5";
@@ -96,7 +97,7 @@ public partial class SandPlaygroundSandbox : ComponentBase, IAsyncDisposable
         new("remote", "Radio", "Lies where it lands until you press Detonate (Enter)"),
     ];
 
-    protected static readonly string[] Views = ["Off", "Support", "Pressure", "Moisture"];
+    protected static readonly string[] Views = ["Off", "Support", "Pressure", "Moisture", "Thermal"];
 
     // The tool each group last used, so its chip brings back what you had.
     private readonly Dictionary<Group, ToolDef> _current = [];
@@ -124,9 +125,12 @@ public partial class SandPlaygroundSandbox : ComponentBase, IAsyncDisposable
         new("dam", "Dam", "A reservoir held back above a village"),
         new("tower", "Tower", "Five storeys of concrete to bring down"),
         new("caverns", "Caverns", "Three tiers of galleries and sealed water chambers"),
+        new("convection", "Thermal chamber", "Physics Lab: sealed basin over concrete risers for heat & boiling"),
+        new("erosion", "Rain spillway", "Physics Lab: terraced sandy slope into a catch basin"),
+        new("aquifer", "Artesian aquifer", "Physics Lab: deep water table sealed under concrete strata"),
     ];
 
-    protected static readonly Level[] Speeds = [new(0.25, "¼×"), new(1, "1×"), new(2, "2×")];
+    protected static readonly Level[] Speeds = [new(0.25, "¼×"), new(1, "1×"), new(2, "2×"), new(4, "4×"), new(8, "8×")];
     protected static readonly Level[] Gravities = [new(0.4, "Low"), new(1, "Normal"), new(1.8, "High")];
     protected static readonly string[] Skies = ["Auto", "Day", "Night"];
     private static readonly int[] BrushSteps = [3, 8, 16, 28];
@@ -480,6 +484,19 @@ public partial class SandPlaygroundSandbox : ComponentBase, IAsyncDisposable
         MenuOpen = false;
         if (_module is null) return;
         if (!await _module.InvokeAsync<bool>("recordClip", 8)) ShowToast("This browser cannot record the canvas");
+    }
+
+    protected async Task GifAsync()
+    {
+        MenuOpen = false;
+        if (_module is null) return;
+        if (!await _module.InvokeAsync<bool>("recordGif", 6)) ShowToast("Already recording a clip");
+    }
+
+    protected async Task ToggleLabHudAsync()
+    {
+        LabHud = !LabHud;
+        if (_module is not null) await _module.InvokeVoidAsync("setLabHud", LabHud);
     }
 
     private static int ParseInt(ChangeEventArgs e) =>

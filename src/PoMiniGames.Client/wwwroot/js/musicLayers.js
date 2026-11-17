@@ -115,7 +115,22 @@ export function createMusicLayers(opts) {
         let step = lastStep + 1;
         while (stepTime(step) < now + LOOKAHEAD) {
             const at = stepTime(step);
-            if (at >= now - 0.01) voicesFor(step, Math.max(at, now), voices);
+            if (at >= now - 0.01) {
+                const clampedAt = Math.max(at, now);
+                voicesFor(step, clampedAt, voices);
+                if (typeof window !== 'undefined' && window.PoRichAudio?.isRichAudio?.()) {
+                    const s = ((step % STEPS) + STEPS) % STEPS;
+                    const bar = Math.floor(s / 16);
+                    const inBar = s % 16;
+                    const rootHz = o.root * R(PROGRESSION[bar]);
+                    const musicBus = AudioBus.busSync('music');
+                    if (musicBus) {
+                        window.PoRichAudio.playRichLayerStep({
+                            ctx, bus: musicBus, bar, inBar, rootHz, intensity, gain, at: clampedAt,
+                        });
+                    }
+                }
+            }
             lastStep = step++;
         }
         if (voices.length) Dsp.playAll(voices, 'music');

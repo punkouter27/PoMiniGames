@@ -681,9 +681,9 @@
         // category based on GameCatalog membership. Anything not in the
         // catalog lands in the "Other" bucket so the page never silently
         // drops a board.
-        var spKeys = GameCatalog.SinglePlayer.Select(g => g.Key).ToHashSet();
-        var lpKeys = GameCatalog.LocalTwoPlayer.Select(g => g.Key).ToHashSet();
-        var mpKeys = GameCatalog.Multiplayer.Select(g => g.Key).ToHashSet();
+        var spKeys = GameCatalog.KeysFor(GameMode.OnePlayer);
+        var lpKeys = GameCatalog.KeysFor(GameMode.TwoPlayer);
+        var mpKeys = GameCatalog.KeysFor(GameMode.Multiplayer);
 
         // The Brawl Demo board (fighter ELO from CPU-vs-CPU matches) is
         // an associative view of the Brawl game — its rows are characters, not the

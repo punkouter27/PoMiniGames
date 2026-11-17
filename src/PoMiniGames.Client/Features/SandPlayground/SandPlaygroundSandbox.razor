@@ -235,6 +235,9 @@
                         <button type="button" class="sp-pill @(DemoOn ? "active" : "")"
                                 title="Rain a random TNT bomb every second"
                                 aria-pressed="@Pressed(DemoOn)" @onclick="ToggleDemoAsync">💣 Auto-drop</button>
+                        <button type="button" class="sp-pill @(LabHud ? "active" : "")"
+                                title="Show live sand/water cell counts and FPS readout"
+                                aria-pressed="@Pressed(LabHud)" @onclick="ToggleLabHudAsync">🧪 Lab readout</button>
                         <button type="button" class="sp-pill sp-touch-only @(Tilt ? "active" : "")"
                                 title="Tilt the device to set the wind"
                                 aria-pressed="@Pressed(Tilt)" @onclick="ToggleTiltAsync">📱 Tilt = wind</button>
@@ -242,11 +245,14 @@
                 </section>
 
                 <section>
-                    <h2>Share</h2>
+                    <h2>Share &amp; Time-Lapse</h2>
                     <div class="sp-row">
                         <button type="button" class="sp-pill" @onclick="ShotAsync">📷 Screenshot</button>
                         <button type="button" class="sp-pill" disabled="@Recording" @onclick="ClipAsync">
                             @(Recording ? "● Recording…" : "🎬 Clip (8 s)")
+                        </button>
+                        <button type="button" class="sp-pill" disabled="@Recording" @onclick="GifAsync">
+                            @(Recording ? "● Capturing…" : "🖼️ GIF (6 s)")
                         </button>
                     </div>
                 </section>

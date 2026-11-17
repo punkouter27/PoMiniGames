@@ -136,7 +136,22 @@ export async function loadEngine(name) {
             for (const dep of CLASSIC_DEPS[name] ?? []) {
                 await loadClassic(dep);
             }
-            await import(resolve(modulePath));
+            // The app runs two three.js builds on purpose (see the importmap note in
+            // index.html: PoEcosystem needs the WebGPU/TSL build). Whichever engine
+            // boots second makes three log "Multiple instances of Three.js being
+            // imported" — a true statement about a documented design, not a fault, and
+            // it lands in the middle of the demo reel's console. Drop exactly that
+            // line while the engine module evaluates; everything else passes through.
+            const warn = console.warn;
+            console.warn = (...args) => {
+                if (typeof args[0] === 'string' && args[0].includes('Multiple instances of Three.js')) return;
+                warn.apply(console, args);
+            };
+            try {
+                await import(resolve(modulePath));
+            } finally {
+                console.warn = warn;
+            }
             if (!window[globalName]) {
                 throw new Error(`${modulePath} did not register window.${globalName}`);
             }

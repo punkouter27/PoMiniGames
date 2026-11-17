@@ -32,7 +32,7 @@ public static class AccountEndpoints
             {
                 if (ResolveSubject(http) is not { } subject)
                 {
-                    return Results.BadRequest(new { error = "No player id on this request, so there is nothing to export." });
+                    return Results.Unauthorized();
                 }
 
                 var identity = RequestIdentity.Resolve(http.User);
@@ -67,7 +67,7 @@ public static class AccountEndpoints
             {
                 if (ResolveSubject(http) is not { } subject)
                 {
-                    return Results.BadRequest(new { error = "No player id on this request, so there is nothing to erase." });
+                    return Results.Unauthorized();
                 }
 
                 var identity = RequestIdentity.Resolve(http.User);
@@ -136,8 +136,13 @@ public static class AccountEndpoints
     /// </summary>
     private static PlayerDataSubject? ResolveSubject(HttpContext http)
     {
+        if (!http.User.HasClaim(PoMiniGames.Infrastructure.PlayerIdentityExtensions.BoundClaimType, "1"))
+        {
+            return null;
+        }
+
         var identity = RequestIdentity.Resolve(http.User);
-        if (string.IsNullOrEmpty(identity.UserId) && string.IsNullOrWhiteSpace(identity.DisplayName))
+        if (string.IsNullOrEmpty(identity.UserId))
         {
             return null;
         }

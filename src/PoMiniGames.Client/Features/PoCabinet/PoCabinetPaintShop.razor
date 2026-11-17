@@ -1,13 +1,13 @@
 @*
     PoCabinetPaintShop — the car's colour swatches, procedural livery selector, and live 3D
     turntable preview (car-preview.js). The page reads the stored choices before the first render
-    and passes them in; this component persists each pick through Blazored.LocalStorage and raises it.
+    and passes them in; this component persists each pick through IBrowserStorage and raises it.
 *@
 
-@using Blazored.LocalStorage
 @using Microsoft.JSInterop
+@using PoMiniGamesClient.Services.Play
 @implements IAsyncDisposable
-@inject ILocalStorageService LocalStorage
+@inject IBrowserStorage LocalStorage
 @inject IJSRuntime JS
 
 <div class="pocabinet-paintshop-wrap">

@@ -12,6 +12,7 @@
 @implements IAsyncDisposable
 
 <PageTitle>Fun Quiz · PoMiniGames</PageTitle>
+<HeadContent><link rel="stylesheet" href="css/quiz.css" /></HeadContent>
 
 <GameShell Title=@TitleContent Player="@_playerName" BackTo="/"
            Loading="@_isLoading"
@@ -73,7 +74,22 @@
                                 Correct="@(showReveal && captured == correctIdx)" OnSelect="SelectAnswer" />
                 }
             </div>
-            <p>Score: <strong>@_score</strong> · Streak: @_streak</p>
+            <p>
+                Score: <strong>@_score</strong> · Streak: @_streak
+                @if (_voiceRecSupported && _playMode == "solo")
+                {
+                    <button type="button" class="fq-voice-btn @(_voiceListening ? "fq-voice-btn--on" : "")"
+                            aria-pressed="@(_voiceListening ? "true" : "false")"
+                            title="Hands-free voice answers: say 1-4, A-D, or the answer text"
+                            @onclick="ToggleVoiceListeningAsync">
+                        @(_voiceListening ? "🎙️ Listening…" : "🎙️ Voice answer")
+                    </button>
+                    @if (!string.IsNullOrEmpty(_lastVoiceHeard))
+                    {
+                        <span class="fq-voice-heard" role="status">Heard: “@_lastVoiceHeard”</span>
+                    }
+                }
+            </p>
             @* Solo-mode reveal line: shows the correct option and your pick
                after a wrong answer. The line fades out on the advance timer so
                the quiz never stops moving. *@
@@ -221,7 +237,11 @@
     private GameIntro.IntroMode _introMode => _playMode == "demo"
         ? GameIntro.IntroMode.Demo
         : GameIntro.IntroMode.OnePlayer;
-    private void DismissIntro() => _introDone = true;
+    private void DismissIntro()
+    {
+        _introDone = true;
+        _ = SpeakCurrentQuestionAsync();
+    }
 
     private RenderFragment HowToPlayContent => _playMode switch
     {
@@ -454,6 +474,15 @@
         if (_disposed) return;
         await _hotkeys.InvokeVoidAsync(_splitScreen ? "register" : "registerSolo",
             _selfRef ??= DotNetObjectReference.Create(this));
+        if (_playMode == "solo")
+        {
+            try
+            {
+                _voiceRecSupported = await JS.InvokeAsync<bool>("PoSpeech.isRecognitionSupported");
+                StateHasChanged();
+            }
+            catch { /* SpeechRecognition optional */ }
+        }
     }
 
     [Inject] private IJSRuntime JS { get; set; } = default!;
@@ -461,6 +490,54 @@
     // The hotkey module, and the one reference it calls back through; both released in DisposeAsync.
     private IJSObjectReference? _hotkeys;
     private DotNetObjectReference<PoFunQuizPage>? _selfRef;
+    private bool _voiceRecSupported;
+    private bool _voiceListening;
+    private string? _lastVoiceHeard;
+
+    private async Task ToggleVoiceListeningAsync()
+    {
+        if (_voiceListening)
+        {
+            _voiceListening = false;
+            try { await JS.InvokeVoidAsync("PoSpeech.stopListening"); } catch { }
+            return;
+        }
+        try
+        {
+            _selfRef ??= DotNetObjectReference.Create(this);
+            _voiceListening = await JS.InvokeAsync<bool>("PoSpeech.startListening", _selfRef, nameof(OnVoiceTranscriptAsync));
+        }
+        catch
+        {
+            _voiceListening = false;
+        }
+    }
+
+    [JSInvokable]
+    public async Task OnVoiceTranscriptAsync(string transcript)
+    {
+        if (_disposed || !_introDone || _playMode != "solo" || _currentIndex >= _questions.Count) return;
+        if (_selected.ContainsKey(_currentIndex)) return;
+        var q = _questions[_currentIndex];
+        _lastVoiceHeard = transcript;
+        try
+        {
+            var idx = await JS.InvokeAsync<int>("PoSpeech.matchSpokenOption", transcript, q.Options);
+            if (idx >= 0 && idx < q.Options.Count)
+            {
+                SelectAnswer(idx);
+            }
+        }
+        catch { }
+        await InvokeAsync(StateHasChanged);
+    }
+
+    private async Task SpeakCurrentQuestionAsync()
+    {
+        if (_disposed || !_introDone || _playMode != "solo" || _currentIndex >= _questions.Count) return;
+        var q = _questions[_currentIndex];
+        try { await JS.InvokeVoidAsync("PoSpeech.speakQuestion", q.Text, q.Options); } catch { }
+    }
 
     /// <summary>
     /// Invoked from JS (js/pofunquiz/hotkeys.js) when a split-screen hotkey
@@ -509,6 +586,12 @@
             await _demoTimer.DisposeAsync();
             _demoTimer = null;
         }
+        if (_voiceListening)
+        {
+            _voiceListening = false;
+            try { await JS.InvokeVoidAsync("PoSpeech.stopListening"); } catch { }
+        }
+        try { await JS.InvokeVoidAsync("PoSpeech.stopSpeaking"); } catch { }
         if (_hotkeys is not null)
         {
             try
@@ -713,6 +796,7 @@
         var finished = IsGameOver && _playMode == "solo" && !_scoreSubmitted;
         if (finished) _scoreSubmitted = true;   // guarded before the first await: recorded once
         await InvokeAsync(StateHasChanged);
+        if (!finished && _playMode == "solo") await SpeakCurrentQuestionAsync();
         if (finished) await SubmitSoloOutcomeAsync();
     }
 

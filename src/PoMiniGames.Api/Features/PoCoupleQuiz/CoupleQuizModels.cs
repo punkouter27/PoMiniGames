@@ -135,6 +135,7 @@ public class GameSession
 {
     public string HostConnectionId { get; set; } = string.Empty;
     public int MaxRounds { get; set; } = Game.DefaultRounds;
+    public string TopicPack { get; set; } = "Classic";
     public SessionState State { get; set; } = SessionState.Waiting;
     public List<LobbyPlayer> Players { get; set; } = new();
     public Game? ActiveGame { get; set; }
@@ -171,4 +172,5 @@ public record LobbyReadyState(
     string HostName,
     int MaxRounds,
     bool AllReady,
-    int MinPlayersToStart);
+    int MinPlayersToStart,
+    string TopicPack = "Classic");

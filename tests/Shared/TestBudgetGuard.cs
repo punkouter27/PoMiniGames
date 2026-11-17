@@ -28,6 +28,8 @@ public static class TestBudgetGuard
     {
         // PoBrawl dossiers: free, but a live call to en.wikipedia.org. Tests serve the static facts.
         ["PoMiniGames:PoBrawl:Dossier:FetchWikipedia"] = "false",
+        // PoCoupleQuiz external topic packs: free APIs, disabled in tests so runs stay hermetic.
+        ["PoMiniGames:PoCoupleQuiz:FetchExternalPacks"] = "false",
         // Not a cost: Racer draws each track's weather from the date, and rain or snow changes
         // the grip. Tests race on a dry track whatever day they run.
         ["PoMiniGames:PoRacer:Weather"] = "clear",

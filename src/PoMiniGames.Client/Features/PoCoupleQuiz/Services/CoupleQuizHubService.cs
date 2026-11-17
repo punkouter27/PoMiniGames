@@ -24,13 +24,15 @@ public record CoupleQuizLobbyEventPayload(
     List<string> Players,
     List<string> ReadyPlayers,
     string HostName,
-    int MaxRounds);
+    int MaxRounds,
+    string TopicPack = "Classic");
 
 public record CoupleQuizLobbyUpdatedPayload(
     List<string> Players,
     List<string> ReadyPlayers,
     string HostName,
-    int MaxRounds);
+    int MaxRounds,
+    string TopicPack = "Classic");
 
 public record CoupleQuizGameStartedPayload(
     string KingPlayerName,
@@ -184,6 +186,13 @@ public sealed class CoupleQuizHubService : IAsyncDisposable
     {
         EnsureConnected();
         return _connection!.InvokeAsync("SetRounds", rounds);
+    }
+
+    /// <summary>Host-only; selects Classic or an external API topic pack.</summary>
+    public Task SetTopicPackAsync(string topicPack)
+    {
+        EnsureConnected();
+        return _connection!.InvokeAsync("SetTopicPack", topicPack);
     }
 
     public Task SubmitAnswerAsync(string answer)

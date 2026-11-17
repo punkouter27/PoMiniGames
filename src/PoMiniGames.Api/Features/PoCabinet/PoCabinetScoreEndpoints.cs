@@ -3,6 +3,7 @@ using PoMiniGames.Domain.Models;
 using PoMiniGames.Domain.Primitives;
 using PoMiniGames.Features.Identity;
 using PoMiniGames.Features.Integrity;
+using PoMiniGames.Features.Shared;
 using PoMiniGames.Infrastructure.Services;
 using PoMiniGames.Shared.Games;
 
@@ -123,42 +124,34 @@ public static class PoCabinetScoreEndpoints
                 userId, trackId, dto.BestLapSeconds, verifiedLap);
         }
 
-        var verdict = integrity.Inspect(http, GameKey.PoCabinet, verifiedLap);
-        if (!verdict.Allowed) return verdict.ToProblem();
+        if (ScoreEndpointHelpers.InspectOrProblem(http, integrity, GameKey.PoCabinet, verifiedLap, out _) is { } problem)
+            return problem;
 
         log.LogInformation(
             "PoCabinet score POST user={UserId} guest={Guest} track={Track} t={T}s pos={Pos}",
             userId, isGuest, trackId, verifiedLap, place);
 
-        PoCabinetHighScore saved;
-        try
+        var (_, playerName) = ScoreEndpointHelpers.ResolvePlayer(http, integrity);
+        var (saved, saveError) = await ScoreEndpointHelpers.TrySaveAsync(() => storage.SavePoCabinetHighScoreAsync(new PoCabinetHighScore
         {
-            saved = await storage.SavePoCabinetHighScoreAsync(new PoCabinetHighScore
-            {
-                PlayerName = integrity.ResolveDisplayName(displayName, isGuest ? "Guest" : "Player"),
-                UserId = userId,
-                TrackId = trackId,
-                BestLapSeconds = verifiedLap,
-                FinalPosition = place,
-                IsGuest = isGuest,
-                Date = (dto.AchievedAtUtc == default ? DateTimeOffset.UtcNow : dto.AchievedAtUtc)
-                    .ToString("yyyy-MM-ddTHH:mm:ssZ", System.Globalization.CultureInfo.InvariantCulture),
-                GameCode = dto.GameCode ?? "",
-            });
-        }
-        catch (IOException)
-        {
-            return Results.Problem(
-                "Best lap could not be stored. Please retry.",
-                statusCode: StatusCodes.Status503ServiceUnavailable);
-        }
+            PlayerName = playerName,
+            UserId = userId,
+            TrackId = trackId,
+            BestLapSeconds = verifiedLap,
+            FinalPosition = place,
+            IsGuest = isGuest,
+            Date = (dto.AchievedAtUtc == default ? DateTimeOffset.UtcNow : dto.AchievedAtUtc)
+                .ToString("yyyy-MM-ddTHH:mm:ssZ", System.Globalization.CultureInfo.InvariantCulture),
+            GameCode = dto.GameCode ?? "",
+        }), "Best lap could not be stored. Please retry.");
+        if (saveError is not null) return saveError;
 
         // Stored: now the online proof is spent, so the same lap cannot be posted twice.
         if (onlineLap is not null && verifiedLap > 0) await races.ForgetVerifiedLapAsync(userId, onlineLap);
 
         return Results.Created("/api/pocabinet/scores", new PoCabinetScoreDto
         {
-            PlayerDisplayName = saved.PlayerName,
+            PlayerDisplayName = saved!.PlayerName,
             UserId = saved.UserId,
             TrackId = saved.TrackId,
             BestLapSeconds = saved.BestLapSeconds,

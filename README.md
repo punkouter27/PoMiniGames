@@ -79,6 +79,12 @@ sign-in: a player is a random browser id plus three initials.
   Each demo in the reel gets a 60-second slot, including games whose match ends early.
   Reel controls fit narrow phones, and Ecosystem skips its interactive onboarding in the
   reel. Mule reserves room for the controls and uses readable player cards in portrait.
+  Every demo page gives the bar's height back through `--kiosk-clearance`, so a board's last
+  row or a HUD panel never sits under the controls, and the bar keeps its labels at full
+  contrast (it thins only its backdrop while the viewer is idle). A reload or a shared
+  `?kiosk=N` link re-arms the reel where it left off. Connect Five's demo plays Red one ply
+  deeper than Yellow, which is what makes the attract loop end in a win instead of a
+  two-row stripe.
   Voxel Strike's automatic graphics budget responds to sustained frame times rather than
   assuming a fast GPU from CPU core count; explicit graphics choices remain authoritative.
   Its collision narrowphase searches terrain within each chunk's actual footprint and
@@ -123,19 +129,19 @@ sign-in: a player is a random browser id plus three initials.
 | Document | What it covers |
 |---|---|
 | [Game consistency rules](GAME-CONSISTENCY.md) | Required game workflow, shared UI, controls, accessibility, and verification conventions |
-| [Documentation overview](docs/20261112/index.html) | Index of the current documentation suite |
-| [Visual architecture dashboard](docs/20261112/VISUAL_ARCHITECTURE_DASHBOARD.html) | Visual map of the app's architecture and major flows |
-| [User journeys](docs/20261112/USER_WORKFLOW.html) | Player-facing workflows through the app |
-| [Identity and security report](docs/20261112/AUTH_SECURITY_REPORT.html) | Player identity, antiforgery and access overview |
-| [AI and external services report](docs/20261112/AI_SERVICES_REPORT.html) | Current AI and external-service boundaries |
-| [Interactive tabbed shell](docs/20261112/artifact.html) | All five reports in one standalone tabbed frame |
+| [Documentation overview](DOCS/20261112/index.html) | Index of the current documentation suite |
+| [Visual architecture dashboard](DOCS/20261112/VISUAL_ARCHITECTURE_DASHBOARD.html) | Visual map of the app's architecture and major flows |
+| [User journeys](DOCS/20261112/USER_WORKFLOW.html) | Player-facing workflows through the app |
+| [Identity and security report](DOCS/20261112/AUTH_SECURITY_REPORT.html) | Player identity, antiforgery and access overview |
+| [AI and external services report](DOCS/20261112/AI_SERVICES_REPORT.html) | Current AI and external-service boundaries |
+| [Interactive tabbed shell](DOCS/20261112/artifact.html) | All five reports in one standalone tabbed frame |
 | [Architecture map](https://claude.ai/artifact/HGHLwMdGyveqtknNC1o5ar) | Component diagrams, request flows and the data model (private link; share it from the page to give others access) |
 
 ## Games (`src/PoMiniGames.Client/Features/`)
 
 | Game | One-liner |
 |---|---|
-| PoCapitol | Third-person alternate-history crowd simulation. `/pocapitol/1player`: join a crowd of 512 that starts out on the grass (mostly bystanders, a minority pushing), hold a police line, or observe; 64 police in five lines with shields, batons, spray, gas, flash-bangs and a few concussion grenades fall back in stages across grounds, Crypt, Rotunda and Statuary Hall to barricaded House chamber doors, on a 12:50 pm to 6:00 pm clock, while 64 staff and members shelter inside and are evacuated (nothing can harm them). As the solo raider you carry a machine gun, five concussion grenades and two smoke grenades (**Space**/**Click** fire, **G** throw, **H** smoke; on touch, FIRE and two grenade buttons that show what is left; on a gamepad, right trigger, X and Y); about one person in three breaks off into a room once inside, and one in twenty carries a historically sourced, one-to-six-word sign. `/pocapitol/demo` is an armed, entirely fictional variant in which both sides fire and those hit drop out; the first seven seconds are calm, then the police open fire, the crowd scatters and returns fire, protestor rounds can hit other protestors, and the camera alternates a high crane, a close orbit around the crowd and a shot from behind the police line. It loops and saves nothing. Blasts are overpressure: people are thrown into the air and knocked down, never dismembered. Synthesized sound, Yuka crowd steering (vendored, MIT), adaptive graphics with Auto/Low/High (the top rung adds temporal anti-aliasing with motion blur, ray-marched lit gas on a fluid grid, hundreds of small screen-space lights, lens flare and metering, and a second close shadow cascade with contact-hardening edges; hung banners and breaking panes are simulated for the picture only, while loose bike racks slow whoever wades through them and pushes travel through the packed crowd as pressure waves), and a crowd of individual synthesized voices placed around the listener. Adult themes, no injury shown; invented layout, not a documentary or real access plan. [Product requirements](DOCS/20261109/PoCapitol-PRD.md). |
+| PoCapitol | Third-person alternate-history crowd simulation. `/pocapitol/1player`: join a crowd of 512 that starts out on the grass (mostly bystanders, a minority pushing), hold a police line, or observe; 64 police in five lines with shields, batons, spray, gas, flash-bangs and a few concussion grenades fall back in stages across grounds, Crypt, Rotunda and Statuary Hall to barricaded House chamber doors, on a 12:50 pm to 6:00 pm clock, while 64 staff and members shelter inside and are evacuated (nothing can harm them). As the solo raider you carry a machine gun, five concussion grenades and two smoke grenades (**Space**/**Click** fire, **G** throw, **H** smoke; on touch, FIRE and two grenade buttons that show what is left; on a gamepad, right trigger, X and Y); about one person in three breaks off into a room once inside, and one in twenty carries a historically sourced, one-to-six-word sign. `/pocapitol/demo` is an armed, entirely fictional variant in which both sides fire and those hit drop out; the first seven seconds are calm, then the police open fire, the crowd scatters and returns fire, protestor rounds can hit other protestors, and the camera alternates a high crane, a close orbit around the crowd and a shot from behind the police line. It loops and saves nothing. Blasts are overpressure: people are thrown into the air and knocked down, never dismembered. Synthesized sound, Yuka crowd steering (vendored, MIT), adaptive graphics with Auto/Low/High (the top rung adds temporal anti-aliasing with motion blur, ray-marched lit gas on a fluid grid, hundreds of small screen-space lights, lens flare and metering, and a second close shadow cascade with contact-hardening edges; hung banners and breaking panes are simulated for the picture only, while loose bike racks slow whoever wades through them and pushes travel through the packed crowd as pressure waves), and a crowd of individual synthesized voices placed around the listener. Adult themes, no injury shown; invented layout, not a documentary or real access plan. |
 | TicTacToe | 4-in-a-row on 6×6 vs AI, hot-seat, or online quick-match (SignalR) |
 | ConnectFive | Five-in-a-row vs AI, hot-seat, or online quick-match (SignalR) |
 | PoBrawl | Physics brawler with a presidents ladder and two CPU exhibitions on the home hub: **DEMO · Tournament** (the 16-slot Brawl Cup at `/pobrawl/demo`; all presidents enter, every bout advances automatically to one champion, and each bout updates fighter Elo) and **DEMO · FFA** (`/pobrawl/ffa`; all 16 presidents fight in the ring at once, rear attacks bypass guards, knockout places are shown, and a new round starts after five seconds; this exhibition does not submit 1v1 Elo results); the Cup has an animated bracket (with the cup's controls: the options gear for speed and camera, Tab for the bracket hub) and belt ceremony, golden-hour → dusk → night arena, an Elo-upset crowd, and a TV-style director camera; 1P/2P/online keep a plain side view; the old `/pobrawl/tournament` address redirects to the Cup; 1P, 2P and training pause on Esc / P, on the touch ⏸ button and automatically when the window loses focus (Resume, Restart fight, Quit), and the result leads with Fight again / Rematch in place; a showtime layer of charge auras and president motifs over a crowd that stomps and chants, plus — with the settings sheet's **Brawl show** set to Full (`pobrawl_show`; Simple is the default) — convention balloon drops, a stadium wave, an occasional instant replay, a glass result screen, the belt ceremony and the director camera (those four Full-only modules are loaded on demand, so Simple never parses them); live 3D fighter select (a mirror pick gives Player 2 an alternate suit); an election-night campaign map for the ladder + fighter Elo board; **Brawl HQ** (`/pobrawl/hq`) puts the ladder, campaign map, local record, the ladder / fastest-KO / fighter-Elo boards and Cup titles on one page |
@@ -295,10 +301,11 @@ scripts/                        Working scripts only — see scripts/README.md
 - **Two three.js versions.** PoEcosystem renders with three r186 `WebGPURenderer` and node
   materials (TSL), imported as `three-eco/webgpu` / `three-eco/tsl` / `three-eco/addons/`; it
   falls back to three's WebGL2 backend by itself, and `?ecoBackend=webgl2` forces that. Every
-  other three.js game stays on r165 (`three`, `three/addons/`). Both `three` variants and `cannon-es`
-  (`0.20.0`) are pinned, with SRI, in the import map in `wwwroot/index.html`, alongside a local
-  copy of `cannon-es` (`0.20.0`) in `wwwroot/lib/cannon-es/`. See the
-  [visual architecture dashboard](docs/20261112/VISUAL_ARCHITECTURE_DASHBOARD.html).
+  every other three.js game stays on r165 (`three`, `three/addons/`). `three` and `gaussian-splats-3d`
+  are pinned with SRI in the import map in `wwwroot/index.html`, while `cannon-es` (`0.20.0`)
+  and `yuka` (`0.7.8`) resolve to their local copies under `wwwroot/lib/` so browsers, Web
+  Workers, and Node tests load the same artifact. See the
+  [visual architecture dashboard](DOCS/20261112/VISUAL_ARCHITECTURE_DASHBOARD.html).
 - Offline-friendly PWA: finished scores park locally and sync on reconnect.
 - Deploy: `azd up` (App Service F1, resource group `PoMiniGames`).
 
@@ -338,6 +345,7 @@ suite, and deploys only from `master`. Provision or update Azure resources with 
 | (AI keys removed) | `PoFunQuiz:QuestionSource/AllowFreshAi/OpenTriviaDb`, `PoCoupleQuiz:Features:*AI*`, `PoMiniGames:AI:*` and `PoMiniGames:Diag:AiUsageAdmins` no longer exist; the quizzes read their JSON banks only |
 | `PoMiniGames:PoRacer:Weather` | `daily` (default): each Racer track's weather is drawn from the UTC date. `clear`, `rain`, `snow` or `fog` fixes it for every race; tests pin `clear` (`TestBudgetGuard`). The start card always describes the daily draw |
 | `PoMiniGames:PoBrawl:Dossier:FetchWikipedia`, `CacheHours` | Fighter dossiers: enrich the static facts from the free Wikimedia REST API (default `true`), cached 24 h; off or failing, static facts are served. Tests pin it to `false` |
+| `PoMiniGames:PoCoupleQuiz:FetchExternalPacks` | Couple Quiz external topic packs (Datamuse, REST Countries, Gutendex; default `true`), cached 30 min; falls back to curated bank. Tests pin `false` (`TestBudgetGuard`) |
 
 | Endpoint | Change |
 |---|---|

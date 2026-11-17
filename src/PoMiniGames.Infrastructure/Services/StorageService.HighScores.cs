@@ -615,6 +615,12 @@ public partial class StorageService
         var canonical = string.Join("", rowKeyFields
             .OrderBy(s => s, StringComparer.Ordinal)
             .Select(k => fields.TryGetValue(k, out var v) ? $"{k}={Convert.ToString(v, System.Globalization.CultureInfo.InvariantCulture)}" : $"{k}="));
+        return ComputeRowKeyHash(canonical);
+    }
+
+    /// <summary>Stable SHA-256 lowercase hex row key from a canonical identity string.</summary>
+    public static string ComputeRowKeyHash(string canonical)
+    {
         var hash = System.Security.Cryptography.SHA256.HashData(System.Text.Encoding.UTF8.GetBytes(canonical));
         return Convert.ToHexStringLower(hash);
     }

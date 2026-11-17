@@ -265,9 +265,6 @@ app.Map("/api/{*rest:nonfile}", () => Results.NotFound(new
 }))
 .ExcludeFromDescription(); // Keep the catch-all out of the OpenAPI surface.
 
-// ─── One-time cache bust for stale _framework/*.pdb 204 responses ─────
-app.UsePoMiniGamesOnceCacheBust();
-
 // ─── SPA fallback ────────────────────────────────────────────────────
 app.MapFallbackToFile("index.html");
 

@@ -62,9 +62,13 @@ internal static class StorageExtensions
             connectionString, endpoint, accountName, sp.GetService<IHostEnvironment>()));
         services.AddSingleton(_ => ResolveBlobServiceClient(connectionString, endpoint, accountName));
 
-        // Every dependency (IConfiguration, EloCalculator, PairwiseEloCalculator, ILogger)
-        // resolves from the container, so this is a plain registration.
-        services.AddSingleton<StorageService>();
+        // Every dependency (TableServiceClient, EloCalculator, PairwiseEloCalculator, ILogger)
+        // resolves from the container so all slices share the same TableServiceClient instance.
+        services.AddSingleton(sp => new StorageService(
+            sp.GetRequiredService<TableServiceClient>(),
+            sp.GetRequiredService<PoMiniGames.Domain.Services.EloCalculator>(),
+            sp.GetRequiredService<PoMiniGames.Domain.Services.PairwiseEloCalculator>(),
+            sp.GetRequiredService<ILogger<StorageService>>()));
         services.AddSingleton<IStorageService>(sp => sp.GetRequiredService<StorageService>());
 
         services.AddHealthChecks()

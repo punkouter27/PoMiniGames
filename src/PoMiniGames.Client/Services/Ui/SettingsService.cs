@@ -54,6 +54,8 @@ public sealed class SettingsService : IAsyncDisposable
     private const string HapticsKey = "pominigames:haptics";
     private const string ReducedMotionKey = "pominigames:reduced-motion";
     private const string ColorSafeKey = "pominigames:color-safe";
+    private const string RichAudioKey = "pominigames:rich-audio";
+    private const string VoiceAnnouncerKey = "pominigames:voice-announcer";
     // Owned by wwwroot/js/qualityTiers.js; read here only to show the current choice.
     private const string GraphicsKey = "pominigames:fx-tier";
 
@@ -114,6 +116,12 @@ public sealed class SettingsService : IAsyncDisposable
     /// <summary>Graphics quality for every game: one of <see cref="GraphicsTiers"/>.</summary>
     public string Graphics { get; private set; } = "auto";
 
+    /// <summary>Opt-in polyphonic FM/Tone.js synth &amp; hall reverb layer.</summary>
+    public bool RichAudio { get; private set; }
+
+    /// <summary>Opt-in Web Speech API play-by-play announcer and question reader.</summary>
+    public bool VoiceAnnouncer { get; private set; }
+
     /// <summary>Read persisted values. Call once JS interop is available.</summary>
     public void Load()
     {
@@ -127,6 +135,8 @@ public sealed class SettingsService : IAsyncDisposable
             Haptics = LocalStorageService.GetItem<string>(HapticsKey) != "0";
             ReducedMotion = LocalStorageService.GetItem<string>(ReducedMotionKey) == "1";
             ColorSafe = LocalStorageService.GetItem<string>(ColorSafeKey) == "1";
+            RichAudio = LocalStorageService.GetItem<string>(RichAudioKey) == "1";
+            VoiceAnnouncer = LocalStorageService.GetItem<string>(VoiceAnnouncerKey) == "1";
             var tier = LocalStorageService.GetItem<string>(GraphicsKey);
             Graphics = GraphicsTiers.Contains(tier) ? tier! : "auto";
         }
@@ -229,6 +239,22 @@ public sealed class SettingsService : IAsyncDisposable
         Graphics = tier;
         Changed?.Invoke();
         await InvokeAsync("applyGraphicsTier", tier);
+    }
+
+    public async Task SetRichAudioAsync(bool on)
+    {
+        RichAudio = on;
+        LocalStorageService.SetItem(RichAudioKey, on ? "1" : "0");
+        Changed?.Invoke();
+        await InvokeAsync("applyRichAudio", on);
+    }
+
+    public async Task SetVoiceAnnouncerAsync(bool on)
+    {
+        VoiceAnnouncer = on;
+        LocalStorageService.SetItem(VoiceAnnouncerKey, on ? "1" : "0");
+        Changed?.Invoke();
+        await InvokeAsync("applyVoiceAnnouncer", on);
     }
 
     /// <summary>

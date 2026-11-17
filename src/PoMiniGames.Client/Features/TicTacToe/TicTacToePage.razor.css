@@ -4,8 +4,11 @@
 /* ── Board ── */
 .ttt-board {
     /* Geometry tokens are shared with the win-line calc (see WinLineStyle in the
-       .razor) so the overlay stays pixel-aligned with the grid at any size. */
-    --ttt-cell: clamp(44px, calc((100dvh - 220px) / 6), 78px);
+       .razor) so the overlay stays pixel-aligned with the grid at any size.
+       `--kiosk-clearance` is set only while the "Watch all demos" bar is up: the
+       bar covers the bottom edge, so the board gives that height back instead of
+       letting its last row sit underneath the controls. */
+    --ttt-cell: clamp(44px, calc((100dvh - 220px - var(--kiosk-clearance, 0px)) / 6), 78px);
     --ttt-gap: 4px;
     --ttt-pad: 12px;
     /* Distinct player colours: X = warm coral, O = cyan. */

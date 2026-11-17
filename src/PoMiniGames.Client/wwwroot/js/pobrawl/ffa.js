@@ -391,6 +391,12 @@ export class BrawlFfaGame {
     }
     const position = new THREE.Vector3(0, 10, 13);
     const look = new THREE.Vector3();
+    // Attract mode frames wider than play does. The ring-side distances were tuned for a
+    // player tracking their own fighter through the camera; in the demo reel, with nobody
+    // at the controls, they left a handful of tiny figures in the middle of an empty mat.
+    const attract = !this.human;
+    const shotHeights = attract ? [4.6, 5.6, 7.2] : [3.4, 4.3, 5.8];
+    const orbit = attract ? 7.2 : 5.5;
     if (!overview && this.cameraFocus) {
       const focus = this.cameraFocus;
       const opponent = this._nearestOpponent(focus, alive);
@@ -400,9 +406,9 @@ export class BrawlFfaGame {
         + [Math.PI / 2, -Math.PI / 2, Math.PI * 0.8][this.cameraShot];
       const x = p.x + Math.max(-1, Math.min(1, (q.x - p.x) * 0.35));
       const z = p.z + Math.max(-1, Math.min(1, (q.z - p.z) * 0.35));
-      position.set(Math.max(-6, Math.min(6, x + Math.sin(angle) * 5.5)),
-        [3.4, 4.3, 5.8][this.cameraShot],
-        Math.max(-6, Math.min(6, z + Math.cos(angle) * 5.5)));
+      position.set(Math.max(-6, Math.min(6, x + Math.sin(angle) * orbit)),
+        shotHeights[this.cameraShot],
+        Math.max(-6, Math.min(6, z + Math.cos(angle) * orbit)));
       // Leave space for the standings on the left without hiding the endangered fighter.
       look.set(x - Math.cos(angle) * 0.8, focus.alive ? 0.85 : 0.25, z + Math.sin(angle) * 0.8);
     }
@@ -410,7 +416,7 @@ export class BrawlFfaGame {
     this.camera.position.lerp(position, blend);
     this.cameraLook.lerp(look, blend);
     this.camera.lookAt(this.cameraLook);
-    this.camera.fov = THREE.MathUtils.radToDeg(2 * Math.atan(Math.tan(THREE.MathUtils.degToRad(overview ? 42 : 48) / 2)
+    this.camera.fov = THREE.MathUtils.radToDeg(2 * Math.atan(Math.tan(THREE.MathUtils.degToRad(overview ? 42 : (attract ? 58 : 48)) / 2)
       / Math.min(this.camera.aspect, 1)));
     this.camera.updateProjectionMatrix();
   }

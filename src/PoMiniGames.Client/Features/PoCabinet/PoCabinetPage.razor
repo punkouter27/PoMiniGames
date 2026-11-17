@@ -53,7 +53,7 @@
         {
             @* A throw while the race view renders (or a child of it) lands on the same card as a
                failed mount, instead of taking the page with it. *@
-            <ErrorBoundary @ref="_raceBoundary">
+            <GameErrorBoundary @ref="_raceBoundary">
                 <ChildContent>
                     @* The race view fills the screen under the app's top bar, like every other game, and
                        every readout sits on the view (the lap strip used to be a white band under it). *@
@@ -258,10 +258,10 @@
                         </GamePauseDialog>
                     }
                 </ChildContent>
-                <ErrorContent Context="ex">
+                <CustomErrorContent Context="ex">
                     @CrashCard(ex.Message)
-                </ErrorContent>
-            </ErrorBoundary>
+                </CustomErrorContent>
+            </GameErrorBoundary>
         }
         <PoCabinetDrawer @ref="_drawer" Settings="Settings" SettingsChanged="OnSettingsChangedAsync"
                          Color="@_color" PaintChanged="OnPaintChanged"

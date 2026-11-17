@@ -4,6 +4,7 @@
 // when present.
 import { createSimHost } from './host/simHost.js';
 import { fetchSpeciesInfo } from './host/naturalist.js';
+import { fetchLiveWeather } from './host/liveWeather.js';
 import { createRenderer } from './render/renderer.js';
 import { BINDABLE, DEFAULT_BINDINGS, mergeBindings } from './render/input.js';
 import { connectedPads } from '../gamepadBus.js';
@@ -615,6 +616,23 @@ function createEngine(container, dotnetRef, opts) {
     setTint: (traitIndex) => state.renderer?.setTint(traitIndex),
     setDirector: (on) => state.renderer?.setDirector(!!on),
     togglePip: () => state.renderer?.togglePip(),
+    async setLiveWeather(cityId) {
+      if (state.liveWeatherTimer) { clearInterval(state.liveWeatherTimer); state.liveWeatherTimer = null; }
+      const id = String(cityId || 'off');
+      state.liveCity = id;
+      if (!id || id === 'off') {
+        state.renderer?.setLiveEnv(null);
+        return '';
+      }
+      const apply = async () => {
+        const env = await fetchLiveWeather(id);
+        if (state.liveCity !== id) return '';
+        state.renderer?.setLiveEnv(env);
+        return env?.label ?? '';
+      };
+      state.liveWeatherTimer = setInterval(() => { void apply(); }, 15 * 60 * 1000);
+      return await apply();
+    },
     debug: (op, arg) => state.host?.send({ type: 'debug', op, arg }),
     exportTelemetry: () => state.host?.send({ type: 'exportTelemetry' }),
     setSound(on) {
@@ -642,6 +660,7 @@ function createEngine(container, dotnetRef, opts) {
         state.hudIdle = null;
       }
       clearInterval(state.subjectTimer);
+      if (state.liveWeatherTimer) { clearInterval(state.liveWeatherTimer); state.liveWeatherTimer = null; }
       clearTimeout(state.bloomTimer);
       state.chronicle?.dispose(); state.chronicle = null;
       state.reel?.dispose(); state.reel = null;
@@ -821,6 +840,7 @@ const PoEcosystem = {
   rename: (handle, name) => engine?.rename(handle, name),
   watch: (handle, on) => engine?.watch(handle, on),
   setTint: (traitIndex) => engine?.setTint(traitIndex),
+  setLiveWeather: (cityId) => engine?.setLiveWeather(cityId) ?? Promise.resolve(''),
   setDirector: (on) => engine?.setDirector(on),
   togglePip: () => engine?.togglePip(),
   toggleReel: () => engine?.toggleReel() ?? false,

@@ -29,7 +29,7 @@
            GameOver="@(_phase == Phase.Dead && !_demo)"
            GameOverDelayMs="@(_won ? 4500 : 1200)"
            Outcome="@(_phase != Phase.Dead ? GameResult.InProgress : _won ? GameResult.Win : GameResult.Loss)"
-           GameKey="povoxelstrike"
+           GameKey="@GameKeys.PoVoxelStrike.Value"
            NewBest="@_isNewBest"
            RequiresWebGl="true"
            GameSummary="@GameSummaryContent">
