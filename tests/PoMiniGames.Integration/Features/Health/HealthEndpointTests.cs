@@ -63,59 +63,45 @@ public sealed class HealthEndpointTests : IClassFixture<TestWebApplicationFactor
             json![checksKey].Should().NotBeNull();
     }
 
+    /// <summary>
+    /// GET /api/diag backs the public /diag page (fleet standard, 2026-11-17): it answers
+    /// anonymously with the report the page renders, and carries no secret or address — the
+    /// test host's own Azurite connection string (account key and all) must not appear.
+    /// </summary>
     [Fact]
     public async Task DiagEndpoint_ReturnsOk()
     {
-        // /api/diag is OFF by default in the shipped appsettings (it is an anonymous support
-        // surface), so this test turns it on explicitly rather than depending on a production
-        // default. The disabled half of the contract is the test below.
-        using var diagEnabledFactory = _factory.WithWebHostBuilder(builder =>
-        {
-            builder.ConfigureAppConfiguration((_, cfg) =>
-            {
-                cfg.AddInMemoryCollection(new Dictionary<string, string?>
-                {
-                    ["FeatureFlags:EnableDiagnostics"] = "true",
-                });
-            });
-        });
-
-        using var client = diagEnabledFactory.CreateClient();
-        // The programmatic snapshot lives at /api/diag; bare /diag is the Blazor page route
-        // (it would fall through to the SPA index.html fallback and return HTML, not JSON).
-        var response = await client.GetAsync("/api/diag");
+        using var anonymous = _factory.CreateClient();
+        anonymous.DefaultRequestHeaders.Remove("X-Player-Id");
+        anonymous.DefaultRequestHeaders.Remove("X-Player-Initials");
+        // Bare /diag is the Blazor page route; the JSON lives at /api/diag.
+        var response = await anonymous.GetAsync("/api/diag");
         response.StatusCode.Should().Be(HttpStatusCode.OK);
 
         var body = await response.Content.ReadAsStringAsync();
-        var json = JsonNode.Parse(body);
+        var json = JsonNode.Parse(body)!;
 
-        json.Should().NotBeNull();
-        // The DiagResponse DTO projects Identity / Environment / Integrations
-        // (System.Text.Json default policy preserves the C# PascalCase names).
-        json!["Identity"]!.Should().NotBeNull();
-        json["Identity"]!["Ports"]!["Http"]!.GetValue<int>().Should().Be(5000);
-        // "Test", not "Development": every integration/E2E fixture boots the host under the
-        // Test environment (see TestWebApplicationFactory — it is what activates
-        // StartupSecretValidator's Test-skip branch). This assertion had said "Development"
-        // since before that policy landed and could never have passed.
-        json["Environment"]!["Name"]!.GetValue<string>().Should().Be("Test");
-        // ApplicationName comes from IWebHostEnvironment, which the framework derives from the
-        // ENTRY ASSEMBLY name — so this tracks the host project rename to PoMiniGames.Api.
-        // Note this is display-only. The identity that actually matters, Data Protection's
-        // SetApplicationName("PoMiniGames"), is a hardcoded constant and deliberately did NOT
-        // move with the assembly; had it, the rename would have invalidated every auth cookie.
-        json["Environment"]!["ApplicationName"]!.GetValue<string>().Should().Be("PoMiniGames.Api");
-        body.Should().NotContain("APPLICATIONINSIGHTS_CONNECTION_STRING");
-        body.Should().NotContain("InstrumentationKey", because: "diag should not expose raw secret values");
+        json["status"]!.GetValue<string>().Should().BeOneOf("Healthy", "Degraded", "Unhealthy");
+        json["environment"]!.GetValue<string>().Should().Be("Test");
+        json["version"]!.GetValue<string>().Should().MatchRegex(@"^\d{6}$|^unknown$");
+        json["stores"]!.AsArray().Should().NotBeEmpty("the storage health checks are registered");
+        json["services"]!.AsArray().Should().NotBeEmpty();
+
+        foreach (var leak in new[] { "AccountKey", "devstoreaccount1", "DefaultEndpointsProtocol", "127.0.0.1",
+                     "localhost", "vault.azure.net", "core.windows.net", "InstrumentationKey", "StackTrace", "Exception:" })
+        {
+            body.Should().NotContain(leak, because: "the anonymous diag report must never expose secrets or addresses");
+        }
+        body.Should().NotContain(AppContext.BaseDirectory.TrimEnd('\\', '/'), because: "no file paths");
     }
 
+    /// <summary>
+    /// FeatureFlags:EnableDiagnostics no longer gates /api/diag (it only gates the Development
+    /// log tail): the /diag page must work in production too.
+    /// </summary>
     [Fact]
-    public async Task DiagEndpoint_ReturnsNotFound_WhenDiagnosticsDisabled()
+    public async Task DiagEndpoint_StaysOn_WhenDiagnosticsFlagIsOff()
     {
-        // The Production fail-fast contract (missing Key Vault or storage settings throw at
-        // host start) belongs to StartupSecretValidator. Here
-        // we only assert the HTTP contract for the diagnostics-disabled case, so we
-        // stay in Development (cheaper, hermetic) and just toggle the feature flag.
         using var diagDisabledFactory = _factory.WithWebHostBuilder(builder =>
         {
             builder.ConfigureAppConfiguration((_, cfg) =>
@@ -130,7 +116,7 @@ public sealed class HealthEndpointTests : IClassFixture<TestWebApplicationFactor
         using var client = diagDisabledFactory.CreateClient();
         var response = await client.GetAsync("/api/diag");
 
-        response.StatusCode.Should().Be(HttpStatusCode.NotFound);
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
     }
 
 }

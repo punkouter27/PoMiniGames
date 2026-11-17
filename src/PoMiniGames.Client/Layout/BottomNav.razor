@@ -28,7 +28,7 @@
     @* A button, not a link: it opens a popover, so it is not a navigation target.
        aria-haspopup plus the sheet's role="menu" is what the popover actually does. *@
     <button type="button"
-            class="app-bottom-nav__item @(IsActive("/health") ? "app-bottom-nav__item--active" : null)"
+            class="app-bottom-nav__item @((IsActive("/diag") || IsActive("/health")) ? "app-bottom-nav__item--active" : null)"
             popovertarget="app-more-sheet"
             aria-haspopup="menu"
             aria-label="More: settings, service status and app version">
@@ -53,7 +53,7 @@
 
     <button type="button" class="app-more-sheet__item" role="menuitem"
             popovertarget="app-more-sheet" popovertargetaction="hide"
-            @onclick='() => Navigation.NavigateTo("/health")'>
+            @onclick='() => Navigation.NavigateTo("/diag")'>
         <span class="material-symbols-outlined app-more-sheet__icon" aria-hidden="true">monitor_heart</span>
         <span class="app-more-sheet__label">Service status</span>
         <span class="app-more-sheet__meta">Which connection is down, if any</span>

@@ -201,6 +201,41 @@ public partial class ApiService
 
     // ── Health Report ─────────────────────────────────────────────────────
 
+    /// <summary>
+    /// The /diag page's data (<c>GET /api/diag</c>) plus how long the round trip took, which
+    /// the page shows as the API's own response time. Never throws: a failure comes back as
+    /// a plain-English error for the page's error state.
+    /// </summary>
+    public async Task<(PoMiniGames.Shared.Diagnostics.DiagReport? Report, double RoundTripMs, string? Error)> GetDiagReportAsync(CancellationToken ct = default)
+    {
+        var started = System.Diagnostics.Stopwatch.GetTimestamp();
+        try
+        {
+            using var response = await _http.GetAsync("/api/diag", ct);
+            var elapsed = System.Diagnostics.Stopwatch.GetElapsedTime(started).TotalMilliseconds;
+            if (!response.IsSuccessStatusCode)
+            {
+                return (null, elapsed, $"The API answered {(int)response.StatusCode} {response.ReasonPhrase}.");
+            }
+            var report = await response.Content.ReadFromJsonAsync(ApiJsonContext.Default.DiagReport, ct);
+            return (report, elapsed, report is null ? "The API sent an empty report." : null);
+        }
+        catch (OperationCanceledException)
+        {
+            return (null, 0, null);
+        }
+        catch (HttpRequestException)
+        {
+            return (null, System.Diagnostics.Stopwatch.GetElapsedTime(started).TotalMilliseconds,
+                "The API could not be reached. Check your connection and try again.");
+        }
+        catch (System.Text.Json.JsonException)
+        {
+            return (null, System.Diagnostics.Stopwatch.GetElapsedTime(started).TotalMilliseconds,
+                "The API sent a report this page could not read.");
+        }
+    }
+
     public async Task<(HealthReportDto? Report, string? Error)> GetHealthReportAsync(CancellationToken ct = default)
     {
         try

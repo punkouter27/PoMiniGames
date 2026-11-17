@@ -1,175 +1,74 @@
-using System.Globalization;
-using System.Security.Claims;
-using System.Text.Json;
+using System.Diagnostics;
+using System.Reflection;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Routing;
 using Microsoft.Extensions.Configuration;
-using Microsoft.Extensions.Options;
-using PoMiniGames.Domain.Abstractions;
-using PoMiniGames.Features.Identity;
-using PoMiniGames.Infrastructure;
+using Microsoft.Extensions.Diagnostics.HealthChecks;
 using PoMiniGames.Serialization;
+using PoMiniGames.Shared.Diagnostics;
 
 namespace PoMiniGames.Features.Health;
 
 /// <summary>
-/// Wire-format DTO for <c>/api/diag</c>. The snapshot provider may surface a
-/// wider, internal-only object graph (reflection helpers, type manifests, etc.);
-/// this projection restricts the over-the-wire payload to the fields safe to
-/// expose to dev tools and CI. See <see cref="DiagEndpoints.diagHandler"/>.
+/// <c>GET /api/diag</c>: the data behind the friendly /diag page (HealthPage.razor).
 /// </summary>
-internal sealed record DiagResponse(
-    DiagIdentity Identity,
-    DiagEnvironment Environment,
-    IReadOnlyList<DiagIntegration> Integrations);
-
-internal sealed record DiagIdentity(
-    string Solution,
-    string AppPrefix,
-    DiagPorts Ports);
-
-internal sealed record DiagPorts(int Http, int Https);
-
-internal sealed record DiagEnvironment(
-    string Name,
-    string ApplicationName,
-    string ApplicationInsights,
-    string KeyVaultUri,
-    IReadOnlyDictionary<string, string> TelemetryFlags);
-
-internal sealed record DiagIntegration(
-    string Name,
-    string Status,
-    string? Description);
-
+/// <remarks>
+/// 2026-11-17: rebuilt to the fleet /diag standard. It used to be a developer configuration
+/// dump (ports, application name, the Key Vault URI in Development) behind
+/// FeatureFlags:EnableDiagnostics, so the page had nothing to show in production. It is now
+/// always on and anonymous, and safe to be: it is the registered health checks' status and
+/// latency, a configured/not-configured note per external service, the build date and the
+/// environment name — never a connection string, key, URI, path, id or exception message
+/// (an exception TYPE name at most). HealthEndpointTests pins that.
+/// </remarks>
 public static class DiagEndpoints
 {
     private const int MaxLogFileBytes = 512 * 1024;       // 512 KB upper bound on a log-tail response.
     private const int MaxTailLines = 500;                  // Cap rows per call to keep the response bounded.
-    private const int MaxPayloadBytes = 8 * 1024 * 1024;   // 8 MB upper bound on the /api/diag payload.
+
+    /// <summary>What each registered health check is for, in plain English. Unknown checks get a generic line.</summary>
+    private static readonly Dictionary<string, (string Name, string Purpose)> StoreNames = new(StringComparer.OrdinalIgnoreCase)
+    {
+        ["Storage"] = ("Scores and leaderboards", "Azure Table Storage: high scores, ladders, ratings and player stats."),
+        ["AzureTableStorage"] = ("Table storage connection", "A direct round trip to Azure Table Storage, the store every board reads."),
+    };
+
+    /// <summary>Build date of the running server, YYMMDD (the assembly's build output timestamp).</summary>
+    internal static string BuildVersion { get; } = ResolveBuildVersion();
+
+    private static string ResolveBuildVersion()
+    {
+        try
+        {
+            var location = typeof(DiagEndpoints).Assembly.Location;
+            if (!string.IsNullOrEmpty(location) && File.Exists(location))
+            {
+                return File.GetLastWriteTimeUtc(location).ToString("yyMMdd", System.Globalization.CultureInfo.InvariantCulture);
+            }
+        }
+        catch (IOException) { }
+        catch (UnauthorizedAccessException) { }
+        return "unknown";
+    }
 
     public static IEndpointRouteBuilder MapDiagEndpoints(this IEndpointRouteBuilder app)
     {
         var isDevelopment = app.ServiceProvider.GetRequiredService<IWebHostEnvironment>().IsDevelopment();
 
-        async Task<IResult> diagHandler(IConfiguration configuration, IWebHostEnvironment environment, ConfigurationDiagnosticsSnapshotProvider diagnosticsProvider, CancellationToken ct)
+        async Task<IResult> diagHandler(HealthCheckService health, IConfiguration configuration, IWebHostEnvironment environment, CancellationToken ct)
         {
-            var diagnosticsEnabled = configuration.GetValue("FeatureFlags:EnableDiagnostics", environment.IsDevelopment());
-            if (!diagnosticsEnabled)
-            {
-                return Results.NotFound();
-            }
-
-            // Adapter-style endpoint: transport concerns stay here, while diagnostics assembly
-            // is delegated to an application-facing provider for Onion-style separation.
-            // We project the wide provider payload down to a strict, documented DTO so
-            // reflection helpers / type graphs never leak to dev tooling.
-            var raw = await diagnosticsProvider.BuildSnapshotAsync(CancellationToken.None);
-            var projection = ProjectDiagnostics(raw, configuration, environment);
-            var json = JsonSerializer.SerializeToUtf8Bytes(projection, DiagJsonContext.Default.DiagResponse);
-            if (json.Length > MaxPayloadBytes)
-            {
-                return Results.Problem(
-                    statusCode: StatusCodes.Status503ServiceUnavailable,
-                    title: "Diag payload too large",
-                    detail: $"Diag snapshot projected to {json.Length} bytes exceeds the {MaxPayloadBytes}-byte safety cap.");
-            }
-            return Results.File(json, "application/json");
+            var report = await BuildReportAsync(health, configuration, environment, ct);
+            return Results.Json(report, DiagJsonContext.Default.DiagReport);
         }
 
-        // Internal projection: take whatever the provider produced and pull out the
-        // well-known scalar fields. Unknown / nested type-graph entries are dropped
-        // so a future change to the provider cannot widen the response surface.
-        static DiagResponse ProjectDiagnostics(object raw, IConfiguration config, IWebHostEnvironment env)
-        {
-            var dict = raw as IDictionary<string, object?> ?? new Dictionary<string, object?>();
-
-            string Get(params string[] path)
-            {
-                object? cur = dict;
-                foreach (var key in path)
-                {
-                    if (cur is not IDictionary<string, object?> nested || !nested.TryGetValue(key, out cur))
-                        return string.Empty;
-                }
-                return cur?.ToString() ?? string.Empty;
-            }
-
-            var ports = new DiagPorts(
-                Http: int.TryParse(Get("identity", "ports", "http"), out var hp) ? hp : 5000,
-                Https: int.TryParse(Get("identity", "ports", "https"), out var xp) ? xp : 5001);
-
-            var identity = new DiagIdentity(
-                Solution: Get("identity", "solution"),
-                AppPrefix: Get("identity", "appPrefix"),
-                Ports: ports);
-
-            var telemetryFlags = new Dictionary<string, string>
-            {
-                ["enableDiagnostics"] = config.GetValue("FeatureFlags:EnableDiagnostics", env.IsDevelopment()).ToString(),
-            };
-            // If Application Insights is configured, surface a non-secret indicator only.
-            var ai = config.GetValue<string>("ApplicationInsights:ConnectionString")
-                  ?? config.GetValue<string>("APPLICATIONINSIGHTS_CONNECTION_STRING")
-                  ?? string.Empty;
-            if (!string.IsNullOrEmpty(ai)) { telemetryFlags["applicationInsightsConfigured"] = "true"; }
-
-            var environment = new DiagEnvironment(
-                Name: env.EnvironmentName,
-                ApplicationName: env.ApplicationName,
-                ApplicationInsights: ai.Length > 0 ? "configured" : string.Empty,
-                // This route is anonymous, so outside Development it says only whether a
-                // vault is configured, never which one.
-                KeyVaultUri: config.GetValue<string>("KeyVault:Uri") is { Length: > 0 } vault
-                    ? (env.IsDevelopment() ? vault : "configured")
-                    : string.Empty,
-                TelemetryFlags: telemetryFlags);
-
-            // Project the integrations section into a flat name/status/description list.
-            var integrations = new List<DiagIntegration>();
-
-            if (dict.TryGetValue("integrations", out var integObj)
-                && integObj is IDictionary<string, object?> configured)
-            {
-                foreach (var (name, value) in configured)
-                {
-                    var status = value switch
-                    {
-                        bool b => b ? "configured" : "not-configured",
-                        null => "not-configured",
-                        _ => value.ToString() ?? "unknown"
-                    };
-                    integrations.Add(new DiagIntegration(name, status, null));
-                }
-            }
-            else if (integObj is IEnumerable<object?> items)
-            {
-                foreach (var item in items)
-                {
-                    if (item is IDictionary<string, object?> d
-                        && d.TryGetValue("name", out var n)
-                        && d.TryGetValue("status", out var st))
-                    {
-                        integrations.Add(new DiagIntegration(
-                            n?.ToString() ?? string.Empty,
-                            st?.ToString() ?? string.Empty,
-                            d.TryGetValue("description", out var desc) ? desc?.ToString() : null));
-                    }
-                }
-            }
-
-            return new DiagResponse(identity, environment, integrations);
-        }
-
-        // /api/diag routes share the /api/diag prefix; /api/logs/tail sits at a
-        // sibling path so it gets its own sibling declaration.
         var diag = app.MapGroup("/api/diag").WithTags("Health");
 
         diag.MapGet("", diagHandler)
         .WithName("GetDiagnostics")
-        .WithSummary("Exposes a development-focused diagnostic summary without raw secret values");
+        .WithSummary("Plain status of the API, its stores and its services, for the /diag page (no secrets)")
+        .Produces<DiagReport>(StatusCodes.Status200OK);
 
         // Note: /diag is NOT registered as an API endpoint to avoid conflicting with
         // the Blazor page route at /diag. Use /api/diag for programmatic access.
@@ -262,5 +161,60 @@ public static class DiagEndpoints
         .WithSummary("Tail the latest development log file (dev-only)");
 
         return app;
+    }
+
+    /// <summary>Assembles the /api/diag report from the health checks and configuration presence.</summary>
+    internal static async Task<DiagReport> BuildReportAsync(
+        HealthCheckService health, IConfiguration configuration, IWebHostEnvironment environment, CancellationToken ct)
+    {
+        var started = Stopwatch.GetTimestamp();
+        var report = await health.CheckHealthAsync(ct);
+
+        var stores = report.Entries.Select(e =>
+        {
+            var (name, purpose) = StoreNames.TryGetValue(e.Key, out var known)
+                ? known
+                : (e.Key, "A dependency this app checks on every health probe.");
+            return new DiagCheck(
+                name,
+                e.Value.Status.ToString(),
+                purpose,
+                Math.Round(e.Value.Duration.TotalMilliseconds, 1),
+                // Type name only: an exception MESSAGE can carry a host name or a key.
+                e.Value.Exception?.GetType().Name);
+        }).ToList();
+
+        static DiagCheck Configured(string name, bool configured, string purpose) =>
+            new(name, configured ? "Healthy" : "Not configured",
+                configured ? purpose : purpose + " Not used in this environment.", null, null);
+
+        var services = new List<DiagCheck>
+        {
+            // Presence only: the vault's address is never echoed.
+            Configured("Azure Key Vault", !string.IsNullOrWhiteSpace(configuration["KeyVault:Uri"]),
+                "Holds the production secrets; read once at startup."),
+            Configured("Application Insights",
+                !string.IsNullOrWhiteSpace(configuration["ApplicationInsights:ConnectionString"])
+                || !string.IsNullOrWhiteSpace(configuration["APPLICATIONINSIGHTS_CONNECTION_STRING"]),
+                "Receives request telemetry and errors for troubleshooting."),
+            new("Multiplayer hubs", "Healthy",
+                "SignalR lobbies and matches; they run inside this server, so they are up whenever the API is.", null, null),
+        };
+
+        var overall = report.Status switch
+        {
+            HealthStatus.Unhealthy => "Unhealthy",
+            HealthStatus.Degraded => "Degraded",
+            _ => "Healthy",
+        };
+
+        return new DiagReport(
+            overall,
+            BuildVersion,
+            environment.EnvironmentName,
+            DateTimeOffset.UtcNow,
+            Math.Round(Stopwatch.GetElapsedTime(started).TotalMilliseconds, 1),
+            stores,
+            services);
     }
 }

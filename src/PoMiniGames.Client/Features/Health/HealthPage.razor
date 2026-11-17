@@ -1,229 +1,219 @@
+@page "/diag"
 @page "/health"
-@using System.Net.Http.Json
-@using System.Text.Json
-@using PoMiniGamesClient.Services
-@implements IDisposable
+@using PoMiniGames.Shared.Diagnostics
+@implements IAsyncDisposable
 @inject ApiService ApiService
-@inject IWebAssemblyHostEnvironment Env
 @inject IJSRuntime JS
 
 @*
-    /health — the human-facing status page for this app's external connections.
+    /diag — the plain-English status page (fleet /diag standard, 2026-11-17). /health stays as
+    an alias: the server's GET /health hands a browser (Accept: text/html) the Blazor shell
+    and the router lands here, while monitors and the deploy gate keep the JSON contract
+    (HealthEndpoints.PrefersHtml). /health/live is the separate dependency-free probe.
 
-    Reachable in a browser because the server's root /health endpoint content-negotiates:
-    an Accept containing text/html hands back the Blazor shell and the router lands here,
-    while monitors sending */* or application/json keep the JSON report unchanged
-    (see HealthEndpoints.PrefersHtml).
-
-    Distinct from /diag by audience, not data. /diag is the developer's configuration dump
-    — correlation ids, telemetry wiring, masked identity. This page answers one question for
-    whoever is on call: which dependency is down. Everything here is rendered from
-    /api/health's own check entries, so a dependency added to the health-check registration
-    shows up on this page with no change to this file.
+    Everything shown comes from GET /api/diag (DiagEndpoints): the server's own health checks
+    plus a configured/not-configured note per external service. That payload carries no
+    secrets or addresses, so the page is safe to leave open to anyone.
 *@
 
-<PageTitle>Service health · PoMiniGames</PageTitle>
+<PageTitle>Status · PoMiniGames</PageTitle>
 
-<div class="hp">
-    <PageHeader Title="Service health">
+<div class="dg">
+    <PageHeader Title="Status">
         <Actions>
-            <span class="hp-badge hp-badge--@StatusSlug">@StatusLabel</span>
-            <button class="app-btn app-btn--secondary app-btn--sm" @onclick="CopyJsonAsync"
-                    disabled="@(_report is null)">
-                Copy JSON
-            </button>
-            <button class="app-btn app-btn--secondary app-btn--sm" @onclick="RefreshAsync" disabled="@_loading">
-                @(_loading ? "Checking…" : "Refresh")
-            </button>
+            <RadzenButton Text="@(_loading ? "Checking…" : "Refresh")" Icon="refresh"
+                          ButtonStyle="ButtonStyle.Secondary" Size="ButtonSize.Small"
+                          Disabled="_loading" IsBusy="_loading" BusyText="Checking…"
+                          Click="RefreshAsync" aria-label="Refresh the status" />
         </Actions>
     </PageHeader>
 
-    @* The result area holds a fixed minimum height from the first paint, so the spinner
-       giving way to the checks does not push the footer down the page (a layout shift
-       the link audit, LinkAuditUiTests, measures). *@    <div class="hp-body">
-        @if (_error is not null)
+    <div class="dg-body" aria-live="polite">
+        @if (_report is null && _error is null)
         {
-            @* An unreachable /api/health is itself the answer, and the most important one this
-               page can give — surface it as the result rather than as an empty table. *@
-            @* The `_error` message stays in the body so the on-call engineer can read it
-               without expanding a details element. *@
-            <ErrorState Icon="📡"
-                        Title="Could not reach the health endpoint"
-                        OnRetry="RefreshAsync">
-                @_error
-            </ErrorState>
-        }
-        else if (_report is null)
-        {
-            @* Shared `.app-loading` primitive — same centered spinner + muted label as the
-               leaderboards / lobbies. *@
-            <div class="app-loading" role="status" aria-live="polite">
-                <div class="app-loading__spinner" aria-hidden="true"></div>
-                <span>Contacting the API…</span>
+            <div class="dg-loading" role="status">
+                <RadzenProgressBarCircular ShowValue="false" Mode="ProgressBarMode.Indeterminate" Size="ProgressBarCircularSize.Small" />
+                <span>Checking the API, storage and services…</span>
             </div>
         }
-        else if (_report.Checks.Count == 0)
+        else if (_error is not null)
         {
-            <EmptyState Icon="🩺"
-                        Title="No registered dependency checks">
-                The API is reachable but reports no registered dependency checks.
-            </EmptyState>
+            <RadzenAlert AlertStyle="AlertStyle.Danger" Variant="Variant.Flat" Shade="Shade.Lighter" AllowClose="false"
+                         Title="The API is not answering" class="dg-banner">
+                <p class="dg-banner-text">@_error</p>
+                <RadzenButton Text="Try again" ButtonStyle="ButtonStyle.Danger" Size="ButtonSize.Small"
+                              Disabled="_loading" IsBusy="_loading" Click="RefreshAsync" />
+            </RadzenAlert>
         }
-        else
+        else if (_report is { } r)
         {
-            @* One card per dependency rather than three table columns. The question
-               this page answers is "which dependency is down", and a card puts the
-               name, the state and its latency on one line — the description only
-               when there is one. The list reflows on its own: a card is already a
-               block, so there is no table-to-card reflow to maintain. *@
-            <ul class="hp-list" aria-label="Dependency checks">
-                @foreach (var check in _report.Checks)
+            <RadzenAlert AlertStyle="@BannerStyle(r.Status)" Variant="Variant.Flat" Shade="Shade.Lighter" AllowClose="false"
+                         Title="@BannerTitle(r.Status)" class="dg-banner" data-testid="diag-banner">
+                <p class="dg-banner-text">@BannerText(r.Status)</p>
+            </RadzenAlert>
+
+            <section class="dg-section" aria-labelledby="dg-api">
+                <h2 class="dg-h2" id="dg-api">API</h2>
+                <RadzenCard class="dg-card">
+                    <div class="dg-row">
+                        <span class="dg-name">PoMiniGames API</span>
+                        <RadzenBadge BadgeStyle="BadgeStyle.Success" Text="Reachable" />
+                    </div>
+                    <p class="dg-desc">Serves the games, scores and leaderboards. Answered in @Ms(_roundTripMs).</p>
+                </RadzenCard>
+            </section>
+
+            <section class="dg-section" aria-labelledby="dg-stores">
+                <h2 class="dg-h2" id="dg-stores">Database / storage</h2>
+                @if (r.Stores.Count == 0)
                 {
-                    <li class="hp-card hp-card--@Slug(check.Status)">
-                        <span class="hp-dot hp-dot--@Slug(check.Status)" aria-hidden="true"></span>
-                        <span class="hp-card__name">@check.Name</span>
-                        <span class="hp-card__status">@check.Status</span>
-                        <span class="hp-card__latency" title="How long this check took">@check.Duration.ToString("0") ms</span>
-                        @if (!string.IsNullOrWhiteSpace(check.Description))
-                        {
-                            <span class="hp-card__detail">@check.Description</span>
-                        }
-                    </li>
+                    <p class="dg-empty">This server has no storage checks registered.</p>
                 }
-            </ul>
+                else
+                {
+                    @foreach (var c in r.Stores)
+                    {
+                        @CheckCard(c)
+                    }
+                }
+            </section>
+
+            <section class="dg-section" aria-labelledby="dg-services">
+                <h2 class="dg-h2" id="dg-services">Services</h2>
+                @if (r.Services.Count == 0)
+                {
+                    <p class="dg-empty">This app uses no external services.</p>
+                }
+                else
+                {
+                    @foreach (var c in r.Services)
+                    {
+                        @CheckCard(c)
+                    }
+                }
+            </section>
+
+            <section class="dg-section" aria-labelledby="dg-about">
+                <h2 class="dg-h2" id="dg-about">About this build</h2>
+                <RadzenCard class="dg-card">
+                    <dl class="dg-facts">
+                        <dt>Version</dt><dd data-testid="diag-version">@BuildInfo.Date</dd>
+                        <dt>Server build</dt><dd>@r.Version</dd>
+                        <dt>Environment</dt><dd>@r.Environment</dd>
+                        <dt>Last checked</dt><dd>@r.CheckedAtUtc.ToLocalTime().ToString("HH:mm:ss")</dd>
+                    </dl>
+                </RadzenCard>
+            </section>
         }
     </div>
-
-    <p class="hp-muted hp-foot">
-        Last checked @(_checkedAt?.ToLocalTime().ToString("HH:mm:ss") ?? "—").
-        Build @PoMiniGamesClient.BuildInfo.Date.
-        @* The developer endpoints link to raw JSON rather than a UI, so no diagnostics
-           page ships in the WASM bundle. They leak internal infrastructure to anyone
-           who hits /health, so they sit behind an explicit opt-in disclosure. *@
-        Machine-readable report at <code>/api/health</code>.
-        @if (_showDeveloperLinks)
-        {
-            <button class="hp-link-btn" @onclick="() => _showDeveloperLinks = false" aria-label="Hide developer endpoints">hide developer endpoints</button>
-            <span class="hp-foot-divider">·</span>
-            <span class="hp-foot-devlinks">
-                @foreach (var ep in DeveloperEndpoints)
-                {
-                    <code>@ep</code>
-                }
-            </span><text>.</text>
-        }
-        else
-        {
-            <span class="hp-foot-divider">·</span>
-            <button class="hp-link-btn" @onclick="() => _showDeveloperLinks = true">developer endpoints</button>
-        }
-    </p>
 </div>
 
 @code {
-    private HealthReportDto? _report;
+    private DiagReport? _report;
     private string? _error;
-    private DateTimeOffset? _checkedAt;
+    private double _roundTripMs;
     private bool _loading;
-
-    // Developer endpoints are hidden behind this toggle so the user-facing
-    // /health page doesn't leak /api/diag and friends to every visitor.
-    // Default off; a click reveals them in place.
-    private bool _showDeveloperLinks;
-    // /api/logs/tail is mapped only in Development (DiagEndpoints), so it is listed only
-    // there; anywhere else it would advertise a route that answers with the SPA shell.
-    private IEnumerable<string> DeveloperEndpoints => Env.IsDevelopment()
-        ? ["/api/diag", "/api/logs/tail"]
-        : ["/api/diag"];
-
-    // Polling keeps an on-call tab current without a manual refresh. 15s is slow enough
-    // that a parked tab costs the API almost nothing and fast enough to catch a dependency
-    // recovering while someone is watching.
-    private const int PollIntervalMs = 15_000;
-    private Timer? _poll;
-
-    // Cancels the in-flight fetch on navigation away. Without it, a slow response resolving
-    // after disposal calls StateHasChanged on a dead component.
+    private IJSObjectReference? _theme;
     private readonly CancellationTokenSource _cts = new();
 
-    protected override async Task OnInitializedAsync()
-    {
-        await RefreshAsync();
-        _poll = new Timer(_ => _ = InvokeAsync(RefreshAsync), null, PollIntervalMs, PollIntervalMs);
-    }
+    private RenderFragment CheckCard(DiagCheck c) => @<RadzenCard class="dg-card">
+        <div class="dg-row">
+            <span class="dg-name">@c.Name</span>
+            <RadzenBadge BadgeStyle="@StatusStyle(c.Status)" Text="@c.Status" />
+        </div>
+        <p class="dg-desc">@c.Description</p>
+        <p class="dg-meta">
+            @(c.LatencyMs is { } ms ? $"Checked in {Ms(ms)}" : "Not probed")
+            · last checked @(_report?.CheckedAtUtc.ToLocalTime().ToString("HH:mm:ss"))
+            @if (c.Error is not null)
+            {
+                <span> · error: @c.Error</span>
+            }
+        </p>
+    </RadzenCard>;
 
-    // Copy the machine-readable report the page is rendering. Source-generated
-    // metadata, so this stays trim-safe in the WASM build.
-    private async Task CopyJsonAsync()
+    protected override async Task OnInitializedAsync() => await RefreshAsync();
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
     {
-        if (_report is null) return;
+        // Radzen's theme is global CSS, so it is loaded only while a Radzen page is open
+        // (same loader as the profile and leaderboards).
+        if (!firstRender || _theme is not null) return;
         try
         {
-            var json = JsonSerializer.Serialize(_report, ApiJsonContext.Default.HealthReportDto);
-            try
-            {
-                await JS.InvokeVoidAsync("navigator.clipboard.writeText", json);
-            }
-            catch
-            {
-                await JS.InvokeVoidAsync("poCopyToClipboard", json);
-            }
+            _theme = await JS.InvokeAsync<IJSObjectReference>("import", "./js/platform/radzenTheme.js");
+            await _theme.InvokeVoidAsync("ensure");
         }
-        catch (Exception ex) when (ex is JSException or InvalidOperationException)
+        catch (JSException)
         {
-            // Clipboard denied: the raw endpoint is printed in the footer anyway.
+            // Unstyled Radzen still reads correctly.
         }
     }
 
     private async Task RefreshAsync()
     {
         if (_loading || _cts.IsCancellationRequested) return;
-
         _loading = true;
         StateHasChanged();
-
         try
         {
-            var (report, error) = await ApiService.GetHealthReportAsync(_cts.Token);
+            var (report, roundTrip, error) = await ApiService.GetDiagReportAsync(_cts.Token);
             if (_cts.IsCancellationRequested) return;
             _report = report;
-            _error = error;
-        }
-        catch (OperationCanceledException)
-        {
-            // Navigating away mid-fetch. Not a health signal — say nothing.
-        }
-        catch (Exception ex)
-        {
-            _report = null;
-            _error = ex.Message;
+            _roundTripMs = roundTrip;
+            _error = report is null ? error ?? "The API sent no report." : null;
         }
         finally
         {
             _loading = false;
-            _checkedAt = DateTimeOffset.UtcNow;
-            StateHasChanged();
+            if (!_cts.IsCancellationRequested) StateHasChanged();
         }
     }
 
-    private string StatusLabel => _error is not null ? "Unreachable" : _report?.Status ?? "Checking";
+    private static string Ms(double ms) => ms < 1 ? "under 1 ms" : $"{ms:0} ms";
 
-    private string StatusSlug => _error is not null ? "unhealthy" : Slug(_report?.Status);
-
-    // Maps ASP.NET's HealthStatus names onto the three CSS states. Unknown values fall to
-    // "degraded" rather than "healthy": an unrecognised status must never render green.
-    private static string Slug(string? status) => status?.ToLowerInvariant() switch
+    private static BadgeStyle StatusStyle(string status) => status switch
     {
-        "healthy" => "healthy",
-        "unhealthy" => "unhealthy",
-        null => "degraded",
-        _ => "degraded",
+        "Healthy" => BadgeStyle.Success,
+        "Degraded" => BadgeStyle.Warning,
+        "Unhealthy" => BadgeStyle.Danger,
+        _ => BadgeStyle.Light,
     };
 
-    public void Dispose()
+    private static AlertStyle BannerStyle(string status) => status switch
     {
-        _poll?.Dispose();
+        "Healthy" => AlertStyle.Success,
+        "Degraded" => AlertStyle.Warning,
+        _ => AlertStyle.Danger,
+    };
+
+    private static string BannerTitle(string status) => status switch
+    {
+        "Healthy" => "Everything is working",
+        "Degraded" => "Running, with a problem",
+        _ => "Something is down",
+    };
+
+    private static string BannerText(string status) => status switch
+    {
+        "Healthy" => "The API, its storage and its services all answered normally.",
+        "Degraded" => "The games still play, but scores or leaderboards may not save until storage recovers.",
+        _ => "A required part of the app is not answering. Details are below.",
+    };
+
+    public async ValueTask DisposeAsync()
+    {
         _cts.Cancel();
         _cts.Dispose();
+        if (_theme is not null)
+        {
+            try
+            {
+                await _theme.InvokeVoidAsync("remove");
+                await _theme.DisposeAsync();
+            }
+            catch (JSDisconnectedException) { }
+            catch (JSException) { }
+        }
     }
 }

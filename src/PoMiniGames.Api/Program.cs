@@ -38,7 +38,6 @@ builder.Services
     .AddPoMiniGamesStorage(builder.Configuration)
     .AddPoMiniGamesGameServices()
     .AddPoMiniGamesRateLimiting();
-builder.Services.AddSingleton<ConfigurationDiagnosticsSnapshotProvider>();
 
 // ─── SignalR (shared by all multiplayer hubs) ─────────────────────────────────
 // Enrich every hub invocation's logs with UserId/ConnectionId — the SignalR

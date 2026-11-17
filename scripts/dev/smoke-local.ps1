@@ -34,8 +34,7 @@ Write-Host "`nPoMiniGames smoke test against $BASE`n" -ForegroundColor Cyan
 Test-Endpoint "GET /health"        "$BASE/health"
 Test-Endpoint "GET /api/health"    "$BASE/api/health"
 Test-Endpoint "GET /api/health/ping" "$BASE/api/health/ping"
-# /api/diag, not /diag: there is no Blazor diag page, so a bare /diag
-# falls through to MapFallbackToFile and returns the WASM shell with a vacuous 200.
+# /api/diag is the JSON behind the Blazor /diag page; a bare /diag returns the WASM shell.
 Test-Endpoint "GET /api/diag"      "$BASE/api/diag"
 Test-Endpoint "GET /openapi/v1.json" "$BASE/openapi/v1.json"
 Test-Endpoint "GET /api/auth/handshake" "$BASE/api/auth/handshake"

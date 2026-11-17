@@ -3,77 +3,82 @@ using FluentAssertions;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Diagnostics.HealthChecks;
-using PoMiniGames.Infrastructure;
+using PoMiniGames.Features.Health;
+using PoMiniGames.Serialization;
 
 namespace PoMiniGames.Unit.Features.Health;
 
 /// <summary>
-/// Locks the <c>/api/diag</c> over-the-wire projection: the wide provider
-/// payload must never leak <c>System.*</c> reflection helpers, raw
-/// <c>KeyVaultSecret</c> handles, or un-masked secret strings through the
-/// projection defined in <see cref="DiagEndpoints.diagHandler"/>.
-///
-/// <para>
-/// These tests assert the structural contract — if a future contributor widens
-/// the projection to include a new dictionary key, this test will fail and
-/// force them to think about whether the new field is safe to ship.
-/// </para>
+/// Locks the <c>/api/diag</c> payload (the data behind the public /diag page): it reports
+/// status, latency, version and environment, and never a secret or an address — not even when
+/// the configuration holds them and a check fails with one in its exception message.
 /// </summary>
+/// <remarks>
+/// 2026-11-17: rewritten when /api/diag moved from a masked configuration dump to the fleet
+/// /diag report (DiagEndpoints.BuildReportAsync).
+/// </remarks>
 public sealed class DiagProjectionTests
 {
-    // Shape of the projection: which sections/keys must (or must never) appear. `cors` must stay
-    // absent because the single-origin host has no CORS policy to report; the AI rows must stay
-    // gone because the app has no AI services.
-    [Theory]
-    [InlineData(null, "cors", false)]
-    [InlineData("integrations", "aiFoundryConfigured", false)]
-    [InlineData("keys", "aiFoundryEndpoint", false)]
-    [InlineData("keys", "aiDefaultDeployment", false)]
-    public void Snapshot_ExposesExactlyTheContractedFields(string? section, string property, bool expectedPresent)
-    {
-        using var doc = JsonDocument.Parse(SerializeSnapshot());
-        var parent = section is null ? doc.RootElement : doc.RootElement.GetProperty(section);
+    private const string Secret = "DefaultEndpointsProtocol=https;AccountName=pominiprod;AccountKey=c2VjcmV0c2VjcmV0c2VjcmV0c2VjcmV0c2VjcmV0;EndpointSuffix=core.windows.net";
+    private const string VaultUri = "https://kv-pominigames-prod.vault.azure.net/";
+    private const string AiConnection = "InstrumentationKey=00000000-1111-2222-3333-444444444444;IngestionEndpoint=https://eastus-0.in.applicationinsights.azure.com/";
 
-        parent.TryGetProperty(property, out _).Should().Be(expectedPresent,
-            $"`{section ?? "(root)"}.{property}` presence is part of the /api/diag contract");
+    // The report's shape: overall status, both sections, the configured services reported by
+    // presence, and a failing check reduced to its exception TYPE.
+    [Theory]
+    [InlineData("status", "Degraded")]
+    [InlineData("environment", "Production")]
+    [InlineData("stores[0].error", "InvalidOperationException")]
+    [InlineData("services[0].status", "Healthy")]
+    public void Report_CarriesTheContractedFields(string path, string expected)
+    {
+        using var doc = JsonDocument.Parse(SerializeReport());
+        var node = doc.RootElement;
+        foreach (var part in path.Split('.'))
+        {
+            var bracket = part.IndexOf('[');
+            node = bracket < 0
+                ? node.GetProperty(part)
+                : node.GetProperty(part[..bracket])[int.Parse(part[(bracket + 1)..^1], System.Globalization.CultureInfo.InvariantCulture)];
+        }
+        node.GetString().Should().Be(expected);
     }
 
     [Fact]
-    public void Snapshot_LeaksNoSecretsOrReflectionHelpers()
+    public void Report_LeaksNoSecretsAddressesOrExceptionText()
     {
-        var json = SerializeSnapshot();
-        using var doc = JsonDocument.Parse(json);
+        var json = SerializeReport();
 
-        foreach (var prop in doc.RootElement.GetProperty("keys").EnumerateObject())
-        {
-            var value = prop.Value.GetString() ?? "(null)";
-            value.Should().NotMatchRegex(@"KeyVaultSecret",
-                $"the `{prop.Name}` field must never include a typed secret reference");
-            value.Should().NotMatchRegex(@"[A-Za-z0-9]{32,}",
-                $"the `{prop.Name}` field must be masked (raw 32-char+ token would indicate a leak)");
-        }
-
-        json.Should().NotContain("System.Reflection");
-        json.Should().NotContain("RuntimeMethodHandle");
-        json.Should().NotContain("Microsoft.AspNetCore.Builder");
-        json.Should().NotContain("PoMiniGames.Health");
+        json.Should().NotContain("AccountKey");
+        json.Should().NotContain("pominiprod");
+        json.Should().NotContain("core.windows.net");
+        json.Should().NotContain("vault.azure.net");
+        json.Should().NotContain("InstrumentationKey");
+        json.Should().NotContain("applicationinsights.azure.com");
+        json.Should().NotContain("00000000-1111");
+        json.Should().NotContain("StackTrace");
+        json.Should().NotContain(AppContext.BaseDirectory.TrimEnd('\\', '/'));
+        json.Should().NotMatchRegex(@"[A-Za-z0-9+/]{32,}", "no raw key-like token may appear");
     }
 
-    private static string SerializeSnapshot()
+    private static string SerializeReport()
     {
-        var config = new ConfigurationBuilder().Build();
-        var env = new HostingEnvironment { EnvironmentName = "Development" };
-        var healthService = new StubHealthCheckService();
+        var config = new ConfigurationBuilder().AddInMemoryCollection(new Dictionary<string, string?>
+        {
+            ["KeyVault:Uri"] = VaultUri,
+            ["ApplicationInsights:ConnectionString"] = AiConnection,
+            ["PoMiniGames:Storage:TableService:ConnectionString"] = Secret,
+        }).Build();
+        var env = new HostingEnvironment { EnvironmentName = "Production" };
 
-        var provider = new ConfigurationDiagnosticsSnapshotProvider(config, env, healthService);
-        var snapshot = provider.BuildSnapshotAsync().GetAwaiter().GetResult();
-
-        return JsonSerializer.Serialize(snapshot);
+        var report = DiagEndpoints.BuildReportAsync(new StubHealthCheckService(), config, env, CancellationToken.None)
+            .GetAwaiter().GetResult();
+        return JsonSerializer.Serialize(report, DiagJsonContext.Default.DiagReport);
     }
 
     private sealed class HostingEnvironment : IWebHostEnvironment
     {
-        public string EnvironmentName { get; set; } = "Development";
+        public string EnvironmentName { get; set; } = "Production";
         public string ApplicationName { get; set; } = "PoMiniGames";
         public string ContentRootPath { get; set; } = AppContext.BaseDirectory;
         public Microsoft.Extensions.FileProviders.IFileProvider ContentRootFileProvider { get; set; } = null!;
@@ -81,19 +86,21 @@ public sealed class DiagProjectionTests
         public Microsoft.Extensions.FileProviders.IFileProvider WebRootFileProvider { get; set; } = null!;
     }
 
-    /// <summary>Subclass of <see cref="HealthCheckService"/> that returns a canned report.
-    /// <see cref="HealthCheckService.CheckHealthAsync"/> is non-virtual in 10.0.x, so a Moq
-    /// proxy cannot intercept it; subclassing the abstract base is the supported seam.</summary>
+    /// <summary>A canned report with one failing storage check whose exception message holds a secret.
+    /// <see cref="HealthCheckService.CheckHealthAsync"/> is non-virtual in 10.0.x, so subclassing the
+    /// abstract base is the supported seam.</summary>
     private sealed class StubHealthCheckService : HealthCheckService
     {
         public override Task<HealthReport> CheckHealthAsync(
             Func<HealthCheckRegistration, bool>? predicate = null,
             CancellationToken cancellationToken = default)
         {
-            var report = new HealthReport(
-                entries: new Dictionary<string, HealthReportEntry>(),
-                totalDuration: TimeSpan.FromMilliseconds(1));
-            return Task.FromResult(report);
+            var entries = new Dictionary<string, HealthReportEntry>
+            {
+                ["Storage"] = new(HealthStatus.Degraded, "Table storage is unavailable.", TimeSpan.FromMilliseconds(12),
+                    new InvalidOperationException($"Could not connect using {Secret} from {AppContext.BaseDirectory}"), null),
+            };
+            return Task.FromResult(new HealthReport(entries, TimeSpan.FromMilliseconds(12)));
         }
     }
 }

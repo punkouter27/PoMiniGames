@@ -20,7 +20,7 @@ the 2026-08-18 cleanup (they referenced files that no longer exist and had no ca
 | `ci-checks.ps1` | Post-build gate: CSS lint, test ceilings, Bicep build, JS engine tests | `deploy.yml` |
 | `ci-package.ps1` | Adds the docs suite to the publish folder | `deploy.yml` |
 | `pre-deploy.ps1` | Clears stale Kudu files on the Windows App Service | `deploy.yml` |
-| `post-deploy-smoke.ps1` | Probes the live site after the health gate: `/api/health/ping`, `/api/health`, and asserts `/api/diag` is **closed** | `deploy.yml` |
+| `post-deploy-smoke.ps1` | Probes the live site after the health gate: `/api/health/ping`, `/api/health`, and asserts `/api/diag` answers 200 with no secret or address in it | `deploy.yml` |
 
 ## ci/
 

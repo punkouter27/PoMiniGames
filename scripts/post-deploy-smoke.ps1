@@ -25,12 +25,15 @@ foreach ($path in '/api/health/ping', '/api/health') {
     if ($code -ne 200) { throw "$path returned $code, expected 200." }
 }
 
-# Diagnostics is an anonymous support surface and is OFF in production, so the live site
-# must refuse it. Asserting the closed state is the point: a 200 here means the flag was
-# turned back on by accident or the route was mapped outside the guard.
+# /api/diag backs the public /diag status page (2026-11-17: always on). It must answer, and it
+# must never carry a secret or an address: a hit on any of these means a connection string,
+# key, vault/storage URI or exception text leaked into the anonymous payload.
 $diag = Get-Response '/api/diag'
 $diagCode = if ($diag) { [int]$diag.StatusCode } else { 0 }
-Write-Host "/api/diag -> $diagCode (expected 404)"
-if ($diagCode -eq 200) { throw '/api/diag answered 200 on a production deployment; diagnostics should be disabled.' }
+Write-Host "/api/diag -> $diagCode (expected 200)"
+if ($diagCode -ne 200) { throw "/api/diag returned $diagCode, expected 200." }
+foreach ($leak in @('AccountKey', 'SharedAccessSignature', 'InstrumentationKey', 'vault.azure.net', 'core.windows.net', 'DefaultEndpointsProtocol', 'StackTrace')) {
+    if ($diag.Content -match [regex]::Escape($leak)) { throw "/api/diag exposes '$leak'." }
+}
 
 Write-Host 'Post-deploy smoke tests passed.'

@@ -68,7 +68,7 @@ public class LinkAuditUiTests
         }
         """;
     /// <summary>The non-game pages a player reaches from the shell.</summary>
-    private static readonly string[] MainPages = ["/", "/leaderboards", "/profile", "/health", "/pobrawl/hq"];
+    private static readonly string[] MainPages = ["/", "/leaderboards", "/profile", "/diag", "/health", "/pobrawl/hq"];
 
     private const string ShiftObserver = """
         window.__poShifts = [];
