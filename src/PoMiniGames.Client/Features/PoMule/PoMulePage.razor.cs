@@ -117,6 +117,9 @@ public partial class PoMulePage : IAsyncDisposable
 
     private bool _resume = true;
 
+    /// <summary>A saved match keeps its species, so the picker only shows when a new one is being started.</summary>
+    private bool PickingSpecies => _saved is null || !_resume;
+
     private async Task BeginAsync(PoMuleMatch match)
     {
         _match = match;
@@ -211,7 +214,12 @@ public partial class PoMulePage : IAsyncDisposable
         {
             case NoticeKind.LandGranted:
                 _plotsDirty = true;
-                if (notice.Seat == 0 && !_demo) Say("The plot is yours.", "claim");
+                if (notice.Seat == 0 && !_demo)
+                {
+                    Say(notice.B == 1
+                        ? "You missed the sweep, so the nearest free plot is yours."
+                        : "The plot is yours.", "claim");
+                }
                 break;
             case NoticeKind.AuctionWon:
                 _plotsDirty = true;
@@ -413,7 +421,12 @@ public partial class PoMulePage : IAsyncDisposable
             // Outside the reel a demo keeps going: show the result, then play another.
             // In the reel, keep it visible until the full 60-second slot expires.
             await Task.Delay(10000);
-            if (!_disposed && _demo && _finished && !Kiosk.IsActive) await StartNewAsync();
+            // Only if that finished match is still the one on screen: leaving for the hub, or a
+            // restart already under way, must not start a second match under the page.
+            if (!_disposed && _demo && _finished && !Kiosk.IsActive && _stage == Stage.Playing)
+            {
+                await StartNewAsync();
+            }
             return;
         }
 

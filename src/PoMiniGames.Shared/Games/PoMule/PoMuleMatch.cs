@@ -335,9 +335,36 @@ public sealed class PoMuleMatch(MatchState state)
             .Count(i => PoMuleLand.Claimable(State, i)) * PoMuleTuning.LandStepTicks;
 
         if (State.LandCursor >= 0 && !_claimed.All(c => c)) return;
+
+        // The sweep is over. A colonist who never pressed still gets land: a mistimed press
+        // is a slip of the thumb, not a forfeit, and the original handed out a plot either
+        // way. They take the free plot nearest the last one the highlighter lit.
+        GrantToTheLatecomers();
+
         State.LandCursor = -1;
         Array.Fill(State.LandPicks, -1);
         Go(PoMuleLand.IsAuctionMonth(State.Month) ? Phase.Auction : Phase.Development);
+    }
+
+    /// <summary>Gives a plot to every seat that never claimed one while the sweep was running.</summary>
+    private void GrantToTheLatecomers()
+    {
+        var late = Enumerable.Range(0, State.Players.Length).Where(seat => !_claimed[seat]).ToArray();
+        if (late.Length == 0) return;
+
+        var from = _landPrev >= 0 ? _landPrev : 0;
+        var picks = new int[State.Players.Length];
+        Array.Fill(picks, -1);
+        foreach (var seat in late) picks[seat] = PoMuleLand.NearestFree(State, from);
+
+        var awarded = PoMuleLand.Grant(State, picks);
+        for (var seat = 0; seat < awarded.Length; seat++)
+        {
+            if (awarded[seat] < 0) continue;
+            _claimed[seat] = true;
+            // B = 1: the plot came after a missed press, so the page can say so.
+            Notices.Add(new Notice(NoticeKind.LandGranted, seat, awarded[seat], 1));
+        }
     }
 
     // ── Auction ──

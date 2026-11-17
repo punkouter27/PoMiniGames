@@ -248,8 +248,13 @@ function onSnapshot(snap) {
 }
 
 function frame(now) {
-  if (!g?.running) return;
-  g.raf = requestAnimationFrame(frame);
+  // The match this callback was queued for. A restart replaces `g` before the old loop has
+  // run; the stale callback retires instead of adopting the new match, which would leave two
+  // clocks advancing it and two draws per frame.
+  const self = g;
+  if (!self?.running) return;
+  self.raf = requestAnimationFrame(frame);
+  if (g !== self) return;
   const dt = Math.min(0.1, (now - g.last) / 1000);
   g.last = now;
   g.pad?.poll();
@@ -286,7 +291,14 @@ function frame(now) {
   }
 
   g.ctx.setTransform(g.view.dpr, 0, 0, g.view.dpr, 0, 0);
-  drawFrame(g.ctx, g, g.view);
+  try {
+    drawFrame(g.ctx, g, g.view);
+  } catch (e) {
+    // A canvas left blank with nothing in the console is the worst failure mode: say what
+    // went wrong once and stop, rather than throw sixty times a second for the rest of the match.
+    console.error('[PoMule] draw failed', e);
+    window.PoMule.stop();
+  }
 }
 
 function onKeyDown(e) {
@@ -349,6 +361,8 @@ window.PoMule = {
     this.stop();
     const host = document.getElementById(containerId);
     if (!host) return false;
+    // A canvas left behind by an earlier match would sit under this one: start from an empty host.
+    host.replaceChildren();
     const canvas = document.createElement('canvas');
     canvas.className = 'pm-canvas';
     host.appendChild(canvas);

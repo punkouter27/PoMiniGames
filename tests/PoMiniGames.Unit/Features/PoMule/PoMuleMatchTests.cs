@@ -19,6 +19,7 @@ public sealed class PoMuleMatchTests
     [InlineData(nameof(ASaveTakenAtTheStartOfAMonth_RestoresItExactly_AndPlaysOnIdentically))]
     [InlineData(nameof(OverAHundredSeededMatches_NothingGoesNegative_TheStoreKeepsMules_AndNoPersonalityDominates))]
     [InlineData(nameof(TheLandGrant_SweepsAHighlighterRowByRow_AndGivesThePlotToWhoeverPressesOnIt))]
+    [InlineData(nameof(AMissedPress_StillLeavesTheColonistWithOnePlot))]
     [InlineData(nameof(LuckTheMeteorTheWampusAndThePlotByPlotCount_WorkAsInTheOriginal))]
     [InlineData(nameof(WithARenderer_TheMatchWaitsForArrivals_AndFeedsOneFlatSnapshot))]
     public Task Scenario(string name) => Scenarios.RunAsync(this, name);
@@ -168,6 +169,29 @@ public sealed class PoMuleMatchTests
         late.State.LandPicks[0] = 2;
         late.Advance(1);
         late.State.Owner[2].Should().NotBe((sbyte)0);
+    }
+
+    /// <summary>A press is a timing slip, not a forfeit: the sweep ending still leaves land in hand.</summary>
+    private static void AMissedPress_StillLeavesTheColonistWithOnePlot()
+    {
+        var match = PoMuleMatch.New(seed: 8, humanSpecies: Species.Humanoid);
+        var state = match.State;
+        match.Advance(1);
+        state.Phase.Should().Be(Phase.Land);
+
+        // Never press: the sweep runs to the end of the planet with the player doing nothing.
+        var notices = new List<Notice>();
+        for (var guard = 0; guard < 5000 && state.Phase == Phase.Land; guard++)
+        {
+            match.Advance(1);
+            notices = [.. match.Notices];
+        }
+
+        state.Phase.Should().NotBe(Phase.Land, "the sweep cannot stall waiting for a press");
+        state.Owner.Count(o => o == 0).Should().Be(1, "the colonist who never pressed still gets one plot");
+        state.Owner.Count(o => o != MatchState.Nobody).Should().Be(PoMuleTuning.Seats, "and nobody gets two");
+        notices.Should().Contain(n => n.Kind == NoticeKind.LandGranted && n.Seat == 0 && n.B == 1,
+            "the page is told the plot came from a missed press");
     }
 
     /// <summary>The touches carried over from the 1983 game.</summary>

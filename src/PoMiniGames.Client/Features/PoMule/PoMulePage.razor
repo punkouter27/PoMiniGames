@@ -117,23 +117,32 @@
                 <label><input type="radio" name="pomule-match" checked="@(!_resume)" @onchange="() => _resume = false" /> New match</label>
             </div>
         }
-        <label class="pm-classic">
-            <input type="checkbox" @bind="_classic" />
-            Classic 1983 rules: no species traits
-        </label>
-        <div class="pm-species-label">Choose your species</div>
-        <RadzenDataList Data="@PoMuleSpecies.All" TItem="SpeciesInfo" AllowPaging="false">
-            <Template Context="s">
-                <button type="button" class="pm-species-card @(s.Id == _species ? "pm-species-card--on" : "")" title="@(_classic ? "No trait" : s.Trait)"
-                        aria-pressed="@(s.Id == _species ? "true" : "false")" @onclick="@(() => _species = s.Id)">
-                    <span class="pm-species-name">@PoMuleSpecies.Name(s.Id, _classic)</span>
-                    <span class="pm-species-cash">@PoMuleSpecies.StartingCash(s.Id, _classic).ToString("N0") cr</span>
-                    <span class="pm-species-trait">@(_classic ? "No trait" : s.Trait)</span>
-                </button>
-            </Template>
-        </RadzenDataList>
-        @* A small screen shows the cards as name and cash only; the pick's trait is said once, here. *@
-        <p class="pm-species-picked">@(_classic ? "No trait" : PoMuleSpecies.Get(_species).Trait)</p>
+        @if (PickingSpecies)
+        {
+            <label class="pm-classic">
+                <input type="checkbox" @bind="_classic" />
+                Classic 1983 rules: no species traits
+            </label>
+            <div class="pm-species-label">Choose your species</div>
+            <RadzenDataList Data="@PoMuleSpecies.All" TItem="SpeciesInfo" AllowPaging="false">
+                <Template Context="s">
+                    <button type="button" class="pm-species-card @(s.Id == _species ? "pm-species-card--on" : "")" title="@(_classic ? "No trait" : s.Trait)"
+                            aria-pressed="@(s.Id == _species ? "true" : "false")" @onclick="@(() => _species = s.Id)">
+                        <span class="pm-species-name">@PoMuleSpecies.Name(s.Id, _classic)</span>
+                        <span class="pm-species-cash">@PoMuleSpecies.StartingCash(s.Id, _classic).ToString("N0") cr</span>
+                        <span class="pm-species-trait">@(_classic ? "No trait" : s.Trait)</span>
+                    </button>
+                </Template>
+            </RadzenDataList>
+            @* A small screen shows the cards as name and cash only; the pick's trait is said once, here. *@
+            <p class="pm-species-picked">@(_classic ? "No trait" : PoMuleSpecies.Get(_species).Trait)</p>
+        }
+        else
+        {
+            @* A saved match keeps the species it started with, so a picker whose ticks did
+               nothing would only be a promise the card cannot keep. *@
+            <p class="pm-species-picked">Continuing with the species from your saved match.</p>
+        }
     </div>;
 
     private RenderFragment EndSummary => @<p>@_endLine</p>;

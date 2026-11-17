@@ -34,6 +34,8 @@ const ORANGE = '#c86000';
 const TEXT = '#585858';
 const GOOD_NAME = ['FOOD', 'ENERGY', 'SMITHORE', 'CRYSTITE'];
 const TERRAIN_NAME = ['PLAINS', 'RIVER', 'MOUNTAIN', 'CRATER'];
+// Three-letters-wide: what the land auction's floor shows inside its LAND box.
+const LAND_MARK = ['PLN', 'RIV', 'MTN', 'CRT'];
 // Ticks: a whole development month, a goods auction, and a land auction once its floor opens.
 const DEVELOP_TICKS = 450, MARKET_TICKS = 120, LAND_TICKS = 170;
 
@@ -269,7 +271,12 @@ function drawMarket(c, g) {
   c.fillStyle = INK;
   c.fillRect(storeX + 4, top - 8, lane * 2 - 8, bottom - top + 16);
   drawText(c, land ? 'LAND' : 'STORE', storeMid, top - 5, WINDOW, 1, 'center');
-  drawText(c, land ? '1' : String(g.snap[11 + good] ?? 0), storeMid, (top + bottom) / 2 - 3, WINDOW, 1, 'center');
+  // The plot's own ground, so the bidder knows what the money is for.
+  const plot = g.snap[4];
+  const inside = land
+    ? (plot >= 0 ? LAND_MARK[g.terrain[plot]] ?? 'LAND' : 'LAND')
+    : String(g.snap[11 + good] ?? 0);
+  drawText(c, inside, storeMid, (top + bottom) / 2 - 3, WINDOW, 1, 'center');
 
   // The Store's two prices (for land, the opening bid) as dotted lines; the best bid and ask as dashed ones.
   // For land the upper line is the top of the scale, which climbs ahead of the bidding.
@@ -302,7 +309,15 @@ function drawMarket(c, g) {
     c.setTransform(1, 0, 0, 1, 0, MAP_Y);
     if (role !== 0 && !(land && price <= floor)) {
       const label = String(price);
-      drawText(c, label, x, labelY(x, y - 13, label.length * 6), TEXT, 1, 'center');
+      const top = labelY(x, y - 13, label.length * 6);
+      // A label lifted clear of a neighbour keeps a hairline down to its own colonist, so a
+      // price is never read against the wrong lane. The glyphs end at top + 8 and the
+      // colonist's head starts at y - 4.
+      if (y - 12 - top > 0) {
+        c.fillStyle = g.colors[seat];
+        c.fillRect(x, top + 8, 1, y - 12 - top);
+      }
+      drawText(c, label, x, top, TEXT, 1, 'center');
     }
     const footText = seat === 0 && g.human ? (land ? 'YOU' : `Y${units}`) : String(units);
     if (seat === 0 && g.human) {
@@ -346,13 +361,20 @@ function title(g) {
   }
 }
 
-function hint(g) {
+/** The line under the map: what to do, or what just happened. Exported for the layout tests. */
+export function hint(g) {
   const me = g.human;
   switch (g.phase) {
     case 0: return me ? 'PRESS THE BUTTON WHEN YOUR PLOT IS LIT' : 'THE COLONISTS CHOOSE THEIR LAND';
-    case 1: return g.snap[6] >= 0 ? `${g.names[g.snap[6]]} BIDS $${g.snap[5]}`
-      : !onLandFloor(g) ? `${TERRAIN_NAME[g.terrain[g.snap[4]]] ?? 'LAND'} PLOT FOR SALE`
-      : me ? `WALK UP TO BID. OPENING BID $${g.snap[8] + 10}` : 'LAND FOR SALE. WHO WILL BID?';
+    case 1: {
+      // What is being sold belongs on every line: the floor covers the map, and a bid that
+      // replaces the hint used to leave the player bidding on a plot they could not see.
+      const plot = g.snap[4];
+      const land = plot >= 0 ? TERRAIN_NAME[g.terrain[plot]] ?? 'LAND' : 'LAND';
+      return g.snap[6] >= 0 ? `${land} PLOT: ${g.names[g.snap[6]]} BIDS $${g.snap[5]}`
+        : !onLandFloor(g) ? `${land} PLOT FOR SALE`
+        : me ? `${land} PLOT: WALK UP TO BID, OPENING $${g.snap[8] + 10}` : `${land} PLOT FOR SALE: WHO WILL BID?`;
+    }
     case 2: return g.interior ? 'WALK INTO A STALL, OR OUT EITHER SIDE'
       : g.snap[9] > 0 ? `STORE HAS ${g.snap[9]} MULES AT $${g.snap[19]}` : 'THE CORRAL IS EMPTY. THE STORE NEEDS SMITHORE';
     case 3: return 'THE MULES ARE AT WORK';
@@ -450,7 +472,7 @@ export function drawFrame(ctx, g, view) {
   drawText(c, title(g), SCREEN_W / 2, 1, TEXT, 1, 'center');
   // In development the player's clock is their own: hunger takes the end off it.
   const clock = g.phase === 2 && g.human ? g.seat(0, 15) : g.snap[2];
-  if (g.phase <= 2 && clock > 0 && !onLandFloor(g)) drawText(c, String(Math.ceil(clock / 10)), SCREEN_W - 2, 1, ORANGE, 1, 'right');
+  if (g.phase <= 2 && clock > 0 && !onLandFloor(g)) drawText(c, `TIME ${Math.ceil(clock / 10)}`, SCREEN_W - 2, 1, ORANGE, 1, 'right');
   if (g.phase === 2 && g.human) {
     // The time bar of the original: a full month wide, already short for a hungry colonist.
     c.fillStyle = TEXT;
