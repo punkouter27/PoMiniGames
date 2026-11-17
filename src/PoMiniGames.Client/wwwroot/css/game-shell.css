@@ -1229,3 +1229,70 @@ body:has(.pm-root) .gps-stats-toggle {
   border-color: var(--accent);
 }
 .gps-error { color: #fca5a5; font-weight: 600; }
+
+/* ── Result ceremony (js/platform/resultCeremony.js, deck idea #19) ───────────
+   While the ceremony runs the dialog carries data-ceremony, and data-beats grows
+   "freeze headline rank record action" as each beat lands. Only opacity and translate
+   move: every line stays in the accessibility tree and the footer is never hidden, so a
+   screen reader and a keyboard have the whole result from the first frame. Reduced
+   motion never gets data-ceremony at all. */
+dialog.gps-modal[data-ceremony] .gps-game-summary,
+dialog.gps-modal[data-ceremony] .gps-modal-stats,
+dialog.gps-modal[data-ceremony] .gps-result-details,
+dialog.gps-modal[data-ceremony] .gps-modal-rank,
+dialog.gps-modal[data-ceremony] .gps-modal-board,
+dialog.gps-modal[data-ceremony] .gps-modal-skeleton {
+  opacity: 0;
+  translate: 0 8px;
+  transition: opacity 0.26s ease-out, translate 0.34s cubic-bezier(0.2, 0.9, 0.3, 1.25);
+}
+
+dialog.gps-modal[data-beats~="headline"] .gps-game-summary,
+dialog.gps-modal[data-beats~="headline"] .gps-modal-stats,
+dialog.gps-modal[data-beats~="headline"] .gps-result-details,
+dialog.gps-modal[data-beats~="rank"] .gps-modal-rank,
+dialog.gps-modal[data-beats~="rank"] .gps-modal-board,
+dialog.gps-modal[data-beats~="rank"] .gps-modal-skeleton {
+  opacity: 1;
+  translate: 0 0;
+}
+
+dialog.gps-modal[data-ceremony][data-beats~="record"] .gps-modal-stats .gps-stat:first-child {
+  animation: gps-ceremony-record 0.9s ease-out 1;
+}
+
+dialog.gps-modal[data-ceremony][data-beats~="action"] .gps-play-again-actions .app-btn--primary {
+  animation: gps-ceremony-action 0.5s cubic-bezier(0.2, 0.9, 0.3, 1.3) 1;
+}
+
+@keyframes gps-ceremony-record {
+  0% { box-shadow: 0 0 0 0 color-mix(in srgb, var(--fx-accent, #fbbf24) 70%, transparent); }
+  100% { box-shadow: 0 0 0 14px transparent; }
+}
+
+@keyframes gps-ceremony-action {
+  0% { scale: 1; }
+  45% { scale: 1.06; }
+  100% { scale: 1; }
+}
+
+.gps-ceremony-skip {
+  position: absolute;
+  top: 0.5rem;
+  right: 0.5rem;
+  min-width: 44px;
+  min-height: 44px;
+  padding: 0 0.75rem;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-pill, 999px);
+  background: transparent;
+  color: var(--color-text-muted, inherit);
+  font: inherit;
+  font-size: 0.8rem;
+  cursor: pointer;
+}
+
+.gps-ceremony-skip:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}

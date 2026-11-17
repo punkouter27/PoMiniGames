@@ -56,6 +56,44 @@ sign-in: a player is a random browser id plus three initials.
   with PoRacer's laps and PoBrawl's round clock. Shared camera-shake presets live in
   `feelPresets.js` (`window.PoFeel`), and particle bursts in `gpuFx.js`
   (`PoFx.burst(x, y, 'win' | 'ko' | 'highscore')`).
+- **GFX / physics / audio layer (2026-11-17 deck, `docs/2026-11-17/GFX_PHYSICS_AUDIO_IDEAS.html`).**
+  All of these are in `wwwroot/js/platform/` and are lazy-imported by engines, except `springUi`, `framePacing`
+  and `resultCeremony`, which load globally from `index.html`.
+  - **Shared table:** `impactMaterials.js` is one table (metal, wood, stone, glass, rubber, paint, flesh, dirt,
+    water) that drives the hit decals and particles (`damageSignature.js`), the debris (`debrisField.js`) and the
+    synthesized hit sound (`impactSynth.js`).
+  - **Graphics:**
+    - `renderBudget.js`: the p95 frame-time quality ladder, never above the `PoQuality` tier.
+    - `anticipation.js`: the pre-impact bloom and exposure dip.
+    - `instancedPool.js`: fixed-size GPU pools.
+    - `lightRig.js`: light presets, plus lightning that fires a `po-lightning` event.
+    - `diegeticBoard.js`: an in-world board, always mirrored to an `aria-live` HUD.
+    - `volumetricFog.js`: ray-marched fog, with fog cards as the fallback.
+  - **Physics:**
+    - `feelPresets.fromImpulse/impulseImpact`: one profile for shake, hit-stop, blur, haptics and the crowd
+      (a `po-crowd-recoil` event).
+    - `ragdollBlend.js`, `debrisField.js` and `softChain.js`.
+    - `simInterest.js`: interest management. Anything that is multiplayer or replay state is always simulated at
+      full precision.
+  - **Audio:**
+    - `impactSynth.js`.
+    - Acoustic zones: `acoustics.setZone/zoneAt`.
+    - `tensionMixer.js`: drives six-stem `musicLayers`.
+    - Opt-in `data-sonify` menu cues in `uiAudio.js` (pan ≤ 0.6, pitch carries the meaning).
+    - `speechBus.speakResultSummary`, which only speaks when the voice announcer is on.
+  - **UI:**
+    - `springUi.js` (`data-spring`/`data-magnetic`).
+    - The hub launch morph keeps the top bar still, adds an edge wipe and plays a sweep cue.
+    - `resultCeremony.js`: the five-beat game-over sequence. It can be skipped and is off under reduced motion.
+    - `framePacing.js`: the 10-second Settings preview measures p95 and recommends Auto/Low/Medium/High. After a
+      tier is kept, a 60-second stutter watch rolls back to the last stable tier.
+  - **Wired into:**
+    - PoCabinet: render budget, anticipation, light rig, standings board, tunnel/garage zones.
+    - Voxel Strike: damage signatures.
+    - PoCapitol: fog cards.
+    - PoBrawl: impulse coupling, cloth banners, seeded debris, ragdoll smoothing, balloon interest culling.
+    - PoMarbleRace: impact synth.
+    - PoRacer: tension mixer.
 - **No database.** Scores, ratings, saves and AI spend ledgers live in Azure Table Storage;
   PoEcosystem world files live in Blob Storage. A player is the browser's player id and
   initials; there is no Player table.

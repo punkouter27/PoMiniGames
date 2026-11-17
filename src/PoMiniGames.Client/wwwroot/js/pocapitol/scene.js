@@ -13,6 +13,9 @@ import { createGasGrid } from './gasGrid.js';
 import { createCloth } from './cloth.js';
 import { createGlass } from './glass.js';
 import { createNearCascade } from './cascade.js';
+// Deck #4 fallback: below the top post level the ray-marched lit air (volumetric.js) is off,
+// so depth-tested fog cards carry the haze instead, drifting with the wind and thinned by blasts.
+import { FogCards } from '../platform/volumetricFog.js';
 
 // The chamber is drawn but never walked: its doors stay barricaded, as they did. It is only
 // seen in the closing shot, empty.
@@ -919,6 +922,14 @@ export function createScene(host, { figure, osm, signs = [] } = {}) {
     const shocks = [], waveList = [], hazeList = [], peoplePool = [], peopleList = [];
     const ambientAir = new THREE.Color();
     let gasDue = 0, postLevel = 3, shadowReach = 46, shadowReachSet = 46;
+    const fogCards = (() => {
+        try {
+            const cards = new FogCards(THREE, scene, { count: 6, near: 10, far: 90, clouds: 0 });
+            cards.setEnabled(false);
+            return cards;
+        } catch { return null; }
+    })();
+    const fogPushes = [];
     const flares = [0, 1].map(() => { const light = new THREE.PointLight('#ffb35c', 0, 14, 1.8); scene.add(light); return light; });
     const reacted = new WeakSet();
     function flare(x, y, z, intensity, color) {
@@ -1016,6 +1027,8 @@ export function createScene(host, { figure, osm, signs = [] } = {}) {
         surfaceDetail.value = settings.detail ?? 1;
         post.setLevel(settings.post ?? 0);
         postLevel = settings.post ?? 0;
+        // The cards stand in for the lit air only where post.js has switched it off.
+        fogCards?.setEnabled(postLevel < 3);
         host.dataset.renderScale = settings.scale;
         host.dataset.shadows = settings.shadows;
         host.dataset.post = settings.post ?? 0;
@@ -1669,6 +1682,14 @@ export function createScene(host, { figure, osm, signs = [] } = {}) {
             hazeList.push({ x: effect.x, y: 1.4, z: effect.z, radius: (effect.r ?? 5) * 1.3, strength: 0.0045 * Math.min(1, effect.life / 2) });
         }
         ambientAir.copy(skyColor).multiplyScalar(0.25 + 0.75 * daylight);
+        if (fogCards?.enabled) {
+            fogPushes.length = 0;
+            for (const shock of shocks) fogPushes.push({ x: shock.x, z: shock.z, radius: shock.big ? 26 : 18, age: clock - shock.born });
+            fogCards.update(dt, camera, {
+                density: Math.min(1, (scene.fog.density / FOG_OUT) * 0.3 + 0.35 * dusk),
+                windX: wind.x, windZ: wind.z, color: scene.fog.color, pushes: fogPushes,
+            });
+        }
         post.render(dt, clock, quiet, camera, sun.position, {
             sunlight: daylight,
             indoors: camera.position.z < 14.5,
@@ -1711,6 +1732,7 @@ export function createScene(host, { figure, osm, signs = [] } = {}) {
         impostors?.dispose();
         particles.dispose();
         bursts.dispose(); decals.dispose(); glass.dispose(); cascade.dispose();
+        fogCards?.dispose();
         for (const light of flares) scene.remove(light);
         post.dispose();
         campus.dispose();

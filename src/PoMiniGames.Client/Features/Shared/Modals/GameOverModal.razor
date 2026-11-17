@@ -270,6 +270,10 @@
             // Score count-up: started before the dialog opens, so the stats are already at
             // zero in its first painted frame instead of flashing their final values.
             try { await JS.InvokeVoidAsync("PoImpact.countUp", _dialog); } catch { /* feel layer missing: the numbers just show */ }
+            // The five-beat result ceremony (resultCeremony.js): staged before the dialog
+            // paints so nothing flashes in and out. A no-op under reduced motion; the text and
+            // the Back button are in the DOM and focusable throughout, and Skip ends it.
+            try { await JS.InvokeAsync<bool>("PoCeremony.start", _dialog, NewBest); } catch { /* module missing: everything shows at once */ }
             await JS.InvokeVoidAsync("PoDialogInterop.holdOpen", _dialog);
             await _dialog.ShowModalAsync(JS);
             // Confetti lands on the card instead of falling through it (high tier).
@@ -487,5 +491,6 @@
     {
         // Nothing left on screen to land on.
         await ScreenFx.CollideWithAsync();
+        try { await JS.InvokeVoidAsync("PoCeremony.finish"); } catch { /* module missing or circuit gone */ }
     }
 }

@@ -58,6 +58,9 @@ import { Weather } from './weather.js';
 import { loadSettings } from './settings.js';
 import { Foliage } from './foliage.js';
 import { AcousticProbe } from './acousticsProbe.js';
+// Material-true damage (deck #3) in pooled InstancedMeshes (deck #5): chips, sparks and dust
+// thrown along the surface normal, plus the decal, from platform/impactMaterials.js.
+import { createDamageSignature } from '../platform/damageSignature.js';
 
 const CAM_DISTANCE = 7;
 // How close the chase camera may be pushed by a wall before the avatar is hidden — inside
@@ -371,6 +374,12 @@ export class Engine {
       });
     };
     this.decals = new DecalField(this.scene, this.q.decals);
+    try {
+      this.damage = createDamageSignature({ THREE, parent: this.scene, decals: this.decals });
+    } catch (e) {
+      this.damage = null;   // no instancing: the plain puffs below still fire
+      console.warn('povoxelstrike: damage signatures unavailable', e);
+    }
     this._spaceClock = 0;
     // Demo (kiosk) keeps the visuals but stays silent — there is no user gesture to
     // unlock an AudioContext, and the catalog page should not hum on its own.
@@ -489,6 +498,8 @@ export class Engine {
             color: 0xffb066, speed: 10, spread: 1, size: 0.7, life: 0.5, upward: 1.4,
           });
           this.decals.stamp(point, this._surfaceNormal(point), { radius: 3.4, color: 0x140f0b });
+          this.damage?.hit(point, this._surfaceNormal(point), 'stone', 40,
+            { decal: false, floorY: this.terrain.heightAt(point.x, point.z) });
         },
         // Primary-fire contact: a small puff and a small burn, so sustained digging
         // leaves a visible trench rather than a clean hole.
@@ -496,12 +507,18 @@ export class Engine {
           markHotCarve(point, radius);
           const surfNorm = normal ?? this._surfaceNormal(point);
           if (kind === 'structure') this.vfx.sparks(point, surfNorm, 12);
-          this.particles.emit(point, 6, {
-            color: kind === 'terrain' ? 0x6d5138 : 0xc9c6c0,
-            speed: 2.2, spread: 0.6, size: 0.32, life: 0.8, upward: 0.9,
-          });
-          this.decals.stamp(point, surfNorm,
-            { radius: 0.85, color: 0x1c1712, life: 26 });
+          if (this.damage) {
+            // Stone walls crack and chip grey; the ground scuffs and throws dirt.
+            this.damage.hit(point, surfNorm, kind === 'terrain' ? 'dirt' : 'stone', 6 + (radius ?? 1) * 6,
+              { floorY: this.terrain.heightAt(point.x, point.z), decalLife: 26, decalScale: 1.2 });
+          } else {
+            this.particles.emit(point, 6, {
+              color: kind === 'terrain' ? 0x6d5138 : 0xc9c6c0,
+              speed: 2.2, spread: 0.6, size: 0.32, life: 0.8, upward: 0.9,
+            });
+            this.decals.stamp(point, surfNorm,
+              { radius: 0.85, color: 0x1c1712, life: 26 });
+          }
         },
       },
       this.shrapnel);
@@ -664,6 +681,7 @@ export class Engine {
     this.vfx?.dispose();
     this.particles?.dispose();
     this.decals?.dispose();
+    this.damage?.dispose();
     this.skyEnv?.dispose();
     this.guns?.dispose();
     this.chalice?.dispose();
@@ -819,6 +837,7 @@ export class Engine {
     });
     this.particles.update(sdt);
     this.decals.update(dt);
+    this.damage?.update(sdt);
     this.shrapnel.update(sdt);
     this._updateSpace(dt);
     this.weather.update(dt, this.camera.position, this.indoors);

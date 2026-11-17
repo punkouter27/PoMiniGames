@@ -1,6 +1,8 @@
 // arena.js — the fight ring, breakable props, low-poly crowd and lighting.
 import * as THREE from 'three';
 import { RectAreaLightUniformsLib } from 'three/addons/lights/RectAreaLightUniformsLib.js';
+import { createSoftGrid } from '../platform/softChain.js';
+import { spawnBatch } from '../platform/debrisField.js';
 
 export const RING_HALF = 5.2; // playable clamp radius (ring is 12x12, keep a margin)
 
@@ -450,21 +452,41 @@ export function twangRope(arena, clampAxis, sign, power = 1) {
 
 // ── Banner ripple: a driven traveling wave, amplitude growing toward the free
 // bottom edge (top hem pinned). No solver.
-export function updateBanners(backdrop, t) {
+// Each banner is a soft grid (platform/softChain.js) matching its 5 × 13 vertex layout:
+// pinned along the top, shape memory pulling it back to hanging straight. The old sine
+// sway stays as the idle draft; `kick` (a one-shot from the shared impulse profile — a
+// KO, a heavy hit) gusts every banner outward and the soft grid carries the swing and
+// the settle. Presentation only.
+const _soft = { x: 0, y: 0, z: 0 };
+export function updateBanners(backdrop, t, dt = 1 / 60, kick = 0) {
   if (!backdrop) return;
+  let n = 0;
   backdrop.traverse((o) => {
     if (!o.userData || !o.userData.banner || !o.geometry) return;
     const pos = o.geometry.attributes.position;
     const base = o.userData.base;
     const ph = o.userData.phase || 0;
+    let soft = o.userData.soft;
+    if (!soft && pos.count === 65) {
+      soft = o.userData.soft = createSoftGrid({ cols: 5, rows: 13, width: 2.2, height: 4, pin: 'top', memory: 0.04 });
+    }
+    if (soft) {
+      // Alternate the push so the four banners read as blown OUT from the ring.
+      if (kick > 0.01) soft.impulse(0, 0.4 * kick, (n % 2 ? 1 : -1) * 3.2 * kick, dt);
+      soft.setForce(0, 0, 0.25 * Math.sin(t * 0.6 + ph));
+      soft.step(dt);
+    }
+    n++;
     for (let i = 0; i < pos.count; i++) {
       const bx = base[i * 3], by = base[i * 3 + 1];
       // by spans [-2, 2] (height 4); +2 is the pinned top, -2 the free bottom.
       const droop = (2.0 - by) / 4.0;            // 0 at top → 1 at bottom
       const amp = 0.22 * droop * droop;
       const z = amp * Math.sin(t * 1.7 + bx * 1.6 + by * 0.7 + ph);
-      pos.array[i * 3 + 2] = base[i * 3 + 2] + z;
-      pos.array[i * 3] = bx + amp * 0.4 * Math.sin(t * 1.1 + by * 0.9 + ph);
+      if (soft) soft.offset(i, _soft); else { _soft.x = 0; _soft.y = 0; _soft.z = 0; }
+      pos.array[i * 3 + 2] = base[i * 3 + 2] + z + _soft.z;
+      pos.array[i * 3] = bx + amp * 0.4 * Math.sin(t * 1.1 + by * 0.9 + ph) + _soft.x;
+      pos.array[i * 3 + 1] = by + _soft.y;
     }
     pos.needsUpdate = true;
     // Normals deliberately not recomputed: a per-frame main-thread cost for dim banners.
@@ -842,28 +864,39 @@ export function animateCrowd(crowd, dt, t, excited) {
 // to integrate into its particle update list.
 const _debrisGeo = new THREE.BoxGeometry(0.18, 0.06, 0.18);
 const _debrisMat = new THREE.MeshStandardMaterial({ color: 0x8a92c9, roughness: 0.6 });
-export function damagePost(post, dmg, scene) {
+// `blast` (optional): { dir: {x,y,z}, momentum: {x,y,z}, seed } — the chunks leave in the
+// direction the fighter hit the post and carry the fighter's momentum (platform/debrisField.js),
+// instead of a random spray. Seeded, so the same break throws the same chunks.
+export function damagePost(post, dmg, scene, blast = null) {
   if (!post || !post.userData.breakable) return [];
   post.userData.hp -= dmg;
   const debris = [];
   if (post.userData.hp <= 0 && post.userData.hp > -1000) {
     post.userData.hp = -1000; // sentinel to avoid re-spawning
-    const chunks = 4 + Math.floor(Math.random() * 2);
-    for (let i = 0; i < chunks; i++) {
+    const bp = post.userData.basePos;
+    const batch = spawnBatch({
+      origin: { x: bp.x, y: bp.y, z: bp.z },
+      dir: blast?.dir || { x: 0, y: 1, z: 0 },
+      parentVelocity: blast?.momentum ? {
+        x: blast.momentum.x * 0.35, y: Math.max(0, blast.momentum.y || 0) * 0.35, z: blast.momentum.z * 0.35,
+      } : null,
+      impulse: 70,
+      material: 'metal',
+      count: 5,
+      seed: blast?.seed ?? 1,
+      spread: blast?.dir ? 0.5 : 1,
+      lift: 0.6,
+      volume: 0.0009,
+      maxSpeed: 7,
+      life: 1.5,
+    });
+    for (const c of batch) {
       const chunk = new THREE.Mesh(_debrisGeo, _debrisMat.clone());
-      chunk.position.copy(post.userData.basePos);
+      chunk.position.copy(bp);
       chunk.userData.kind = 'debris';
-      chunk.userData.vel = new THREE.Vector3(
-        (Math.random() - 0.5) * 4,
-        Math.random() * 4 + 2,
-        (Math.random() - 0.5) * 4
-      );
-      chunk.userData.angVel = new THREE.Vector3(
-        (Math.random() - 0.5) * 8,
-        (Math.random() - 0.5) * 8,
-        (Math.random() - 0.5) * 8
-      );
-      chunk.userData.life = 1.5;
+      chunk.userData.vel = new THREE.Vector3(c.vx, c.vy, c.vz);
+      chunk.userData.angVel = new THREE.Vector3(c.ax, c.ay, c.az);
+      chunk.userData.life = c.life;
       scene.add(chunk);
       debris.push(chunk);
     }

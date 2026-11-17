@@ -614,7 +614,10 @@ export class BrawlGame {
       this.atmoT += dt;
       updateAtmosphere(this.arena, dt, this.atmoT, this.excited, this._phoneLevel);
       updateRopes(this.arena, dt, this.fighters, this.atmoT);
-      updateBanners(this.arena.backdrop, this.atmoT);
+      // The shared impulse profile (hitResolution: KO / heavy hits) leaves a one-shot gust
+      // here; the banners' soft grid takes it and settles. Calm mode keeps them on the draft.
+      updateBanners(this.arena.backdrop, this.atmoT, dt, this._calm() ? 0 : (this._bannerGust || 0));
+      this._bannerGust = 0;
       if (this.props) updateProps(this.props, dt, this.fighters, this._propHooks);
       this._updateBlobShadows();
       this._updateMatWear(dt);
@@ -1631,7 +1634,12 @@ export class BrawlGame {
         d.y = 0;
         const horiz = Math.hypot(d.x, d.z);
         if (horiz < 0.55 && f.knockback.lengthSq() > 6) {
-          const chunks = damagePost(post, 30, this.scene);
+          // Chunks leave the way the fighter hit the post, carrying their momentum.
+          const chunks = damagePost(post, 30, this.scene, {
+            dir: { x: d.x, y: 0.4, z: d.z },
+            momentum: f.knockback,
+            seed: (Math.round(this.t * 60) ^ (post.id * 2654435761)) >>> 0,
+          });
           this.effects.push(...chunks.map((c) => ({ mesh: c, life: c.userData.life })));
           // Reflect knockback and dampen hard.
           f.knockback.multiplyScalar(-0.3);

@@ -91,6 +91,37 @@ export function speakQuestion(question, options) {
 }
 
 /**
+ * Pure: one short spoken sentence for a finished game (deck idea #16 — the result is
+ * available by ear as well as by eye). Only the fields given are spoken.
+ * @param {{ game?: string, outcome?: 'win'|'lose'|'draw'|string, score?: number,
+ *           rank?: number, of?: number, best?: boolean }} r
+ */
+export function resultSummaryText(r = {}) {
+    const parts = [];
+    const outcome = { win: 'You win', lose: 'Game over', draw: 'A draw' }[r.outcome] || '';
+    if (outcome) parts.push(r.game ? `${outcome} in ${r.game}` : outcome);
+    else if (r.game) parts.push(`${r.game} finished`);
+    if (Number.isFinite(r.rank) && r.rank > 0) {
+        const n = r.rank;
+        const suffix = n % 100 >= 11 && n % 100 <= 13 ? 'th' : ({ 1: 'st', 2: 'nd', 3: 'rd' }[n % 10] || 'th');
+        parts.push(Number.isFinite(r.of) && r.of > 1 ? `${n}${suffix} of ${r.of}` : `${n}${suffix} place`);
+    }
+    if (Number.isFinite(r.score)) parts.push(`score ${Math.round(r.score).toLocaleString('en-US')}`);
+    if (r.best) parts.push('a new personal best');
+    return parts.join(', ') + (parts.length ? '.' : '');
+}
+
+/**
+ * Speak a result summary — only when the player turned the Voice Announcer on.
+ * @param {Parameters<typeof resultSummaryText>[0]} r
+ */
+export function speakResultSummary(r) {
+    if (!_enabled) return false;
+    const text = resultSummaryText(r);
+    return text ? speak(text, { rate: 1.0, interrupt: true }) : false;
+}
+
+/**
  * Parse a spoken trivia transcript into a 0-based option index, or -1 if unmatched.
  * @param {string} transcript
  * @param {string[]} [options]
@@ -188,6 +219,8 @@ if (typeof window !== 'undefined') {
         setEnabled,
         speak,
         speakQuestion,
+        speakResultSummary,
+        resultSummaryText,
         stopSpeaking,
         matchSpokenOption,
         startListening,

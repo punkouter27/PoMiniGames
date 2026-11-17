@@ -34,6 +34,7 @@ export const HITSTOP_FRAMES = Object.freeze({ jab: 3, kick: 5, clash: 6, ko: 8 }
 const HITSTOP_MS = Object.freeze({ jab: 50, kick: 83, clash: 100, ko: 133 });
 
 export function motionReduced() {
+    if (typeof document === 'undefined') return false;
     try {
         const root = document.documentElement;
         if (root.getAttribute('data-motion') === 'reduce') return true;
@@ -82,6 +83,90 @@ export function hitstop(name, scale = 1) {
     window.PoImpact?.hitstop?.(ms);
 }
 
+// ── Impulse coupling (deck idea #8) ───────────────────────────────────────────────
+//
+// A collision already knows how hard it was and which way it went. Instead of every
+// engine picking a shake, a freeze, a blur, a crowd reaction and a rumble separately
+// (and disagreeing), fromImpulse() turns ONE impulse + direction into ONE profile, and
+// impulseImpact() applies it. The scale is the same named one above: a grazing touch is
+// a whiff, a full hit a KO.
+//
+// Presentation only: none of this feeds a fixed-step sim. Reduced motion zeroes the
+// shake, freeze and blur (crowd recoil and haptics stay, both damped) — and the DOM
+// side goes through impactBus, which only ever moves the registered game stage, never
+// the HUD or essential UI.
+
+const KIND_BY_ENERGY = [
+    [0.8, 'ko', 'heavy'],
+    [0.55, 'clash', 'heavy'],
+    [0.3, 'kick', 'medium'],
+    [0.1, 'jab', 'light'],
+    [0, 'whiff', 'tick'],
+];
+
+/**
+ * @param {number} impulse raw impulse (any engine unit; see `full`)
+ * @param {{x:number,y?:number,z:number}|null} [dir] hit direction, world space
+ * @param {{full?:number, reduced?:boolean}} [opts] full: impulse that counts as a max hit
+ */
+export function fromImpulse(impulse, dir = null, opts = {}) {
+    const full = opts.full ?? 20;
+    const x = Math.max(0, Number(impulse) || 0) / Math.max(1e-6, full);
+    const energy = 1 - Math.exp(-x * 1.6);
+    const reduced = opts.reduced ?? motionReduced();
+    let kind = 'whiff', impactKind = 'tick';
+    for (const [min, k, ik] of KIND_BY_ENERGY) { if (energy >= min) { kind = k; impactKind = ik; break; } }
+    const p = SHAKE[kind];
+    const tier = tierScale();
+    let n = null;
+    if (dir) {
+        const l = Math.hypot(dir.x || 0, dir.y || 0, dir.z || 0);
+        if (l > 1e-9) n = { x: (dir.x || 0) / l, y: (dir.y || 0) / l, z: (dir.z || 0) / l };
+    }
+    return {
+        energy,
+        kind,
+        dir: n,
+        shake: reduced ? { t: 0, amp: 0 } : { t: p.t, amp: p.amp * (0.6 + energy * 0.6) * tier },
+        hitstopMs: reduced ? 0 : Math.round((HITSTOP_MS[kind] ?? 0) * energy),
+        radialBlur: reduced ? 0 : Math.max(0, (energy - 0.5) * 2) * 0.6 * tier,
+        crowdRecoil: energy * energy * (reduced ? 0.5 : 1),
+        haptic: { strong: energy, weak: Math.min(1, energy * 0.6 + 0.1), ms: Math.round(40 + energy * 220) },
+        impactKind,
+        impactScale: 0.6 + energy,
+    };
+}
+
+/**
+ * Apply a profile: arm the 3D camera shake on `target` (if given), fire the DOM layer
+ * through impactBus (unless `dom:false`), and broadcast `po-crowd-recoil` so crowds,
+ * banners and props in any engine can react. Returns the profile so the engine can use
+ * radialBlur/hitstopMs on its own post chain.
+ *
+ * @param {number} impulse
+ * @param {{x,y?,z}|null} [dir]
+ * @param {{full?:number, target?:object, dom?:boolean, reduced?:boolean}} [opts]
+ */
+export function impulseImpact(impulse, dir = null, opts = {}) {
+    const prof = fromImpulse(impulse, dir, opts);
+    if (opts.target && prof.shake.amp > 0) {
+        opts.target.shakeT = Math.max(opts.target.shakeT || 0, prof.shake.t);
+        opts.target.shakeAmp = Math.max(opts.target.shakeAmp || 0, prof.shake.amp);
+    }
+    if (opts.dom !== false && typeof window !== 'undefined') {
+        // impactBus applies its own reduced-motion gate (and its own haptics).
+        window.PoImpact?.impact?.(prof.impactKind, prof.impactScale);
+    }
+    if (typeof window !== 'undefined' && typeof CustomEvent === 'function') {
+        try {
+            window.dispatchEvent(new CustomEvent('po-crowd-recoil', {
+                detail: { energy: prof.energy, recoil: prof.crowdRecoil, dir: prof.dir, kind: prof.kind },
+            }));
+        } catch { /* CustomEvent unavailable */ }
+    }
+    return prof;
+}
+
 if (typeof window !== 'undefined') {
-    window.PoFeel = { SHAKE, HITSTOP_FRAMES, shake, hitstopFrames, hitstop, motionReduced, tierScale };
+    window.PoFeel = { SHAKE, HITSTOP_FRAMES, shake, hitstopFrames, hitstop, motionReduced, tierScale, fromImpulse, impulseImpact };
 }

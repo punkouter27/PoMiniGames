@@ -123,7 +123,90 @@ const SPACES = {
         taps: [[5, 0.34], [10, 0.27], [16, 0.20], [23, 0.13]],
         send: 0.14,
     },
+    /** A pit garage: concrete floor, a steel roller door, tools on the wall — close and clangy. */
+    garage: {
+        seconds: 1.0, decay: 3.6, damping: 0.34, predelay: 5,
+        taps: [[6, 0.50], [11, 0.38], [17, 0.33], [26, 0.24], [35, 0.17]],
+        send: 0.22,
+    },
+    /** A sports court: one big box with hard floor and far walls — squeaky slap, medium tail. */
+    court: {
+        seconds: 1.6, decay: 3.0, damping: 0.40, predelay: 16,
+        taps: [[17, 0.46], [29, 0.36], [48, 0.28], [71, 0.20]],
+        send: 0.24,
+    },
+    /** An open field: the ground bloom and a distant tree line, nothing else. */
+    field: {
+        seconds: 0.55, decay: 6.0, damping: 0.88, predelay: 24,
+        taps: [[28, 0.12], [140, 0.05]],
+        send: 0.08,
+    },
 };
+
+// ── Acoustic zones (deck idea #14) ─────────────────────────────────────────
+//
+// A game's SPACE (above) is one reverb for the whole route. A ZONE is a region inside a
+// game — the grandstand straight, the tunnel, the garage — and the player moves between
+// them mid-play. Swapping the shared convolver mid-play clicks (see setSpaceBuffer), so
+// zones run on their own two-slot convolver pair: the new zone loads into the slot that
+// has been silent, then the two crossfade. One impulse per region, cached per sample rate.
+//
+// Zone names are the shared vocabulary; each maps to a SPACES entry.
+export const ZONES = Object.freeze({
+    grandstand: 'grandstand',
+    tunnel: 'tunnel',
+    garage: 'garage',
+    court: 'court',
+    field: 'field',
+    hall: 'hall',
+    cave: 'cavern',
+    room: 'room',
+});
+
+/**
+ * Which zone a position is in. Regions are spheres `{ zone, center, radius }` or boxes
+ * `{ zone, min, max }`, each with an optional `falloff` (world units of blend beyond the
+ * edge). Inside a region its weight is 1; across the falloff it fades linearly to 0. The
+ * strongest region wins; with none above 0 the fallback zone answers at weight 1.
+ * Pure — engines call it per frame (it allocates one small object).
+ *
+ * @param {{x:number,y?:number,z:number}} pos
+ * @param {{regions:object[], fallback?:string}|object[]} map
+ * @returns {{zone:string, weight:number}}
+ */
+export function zoneAt(pos, map) {
+    const regions = Array.isArray(map) ? map : (map?.regions || []);
+    const fallback = (!Array.isArray(map) && map?.fallback) || 'field';
+    let best = null, bestW = 0;
+    const px = pos?.x || 0, py = pos?.y || 0, pz = pos?.z || 0;
+    for (const r of regions) {
+        const fall = Math.max(1e-6, r.falloff ?? 0);
+        let outside;   // distance outside the region's edge (≤0 = inside)
+        if (r.center) {
+            const c = r.center;
+            outside = Math.hypot(px - c.x, py - (c.y || 0), pz - c.z) - (r.radius || 0);
+        } else if (r.min && r.max) {
+            const dx = Math.max(r.min.x - px, 0, px - r.max.x);
+            const dy = Math.max((r.min.y ?? -Infinity) - py, 0, py - (r.max.y ?? Infinity));
+            const dz = Math.max(r.min.z - pz, 0, pz - r.max.z);
+            outside = Math.hypot(dx, dy, dz);
+        } else continue;
+        const w = outside <= 0 ? 1 : Math.max(0, 1 - outside / fall);
+        if (w > bestW) { bestW = w; best = r.zone; }
+    }
+    return best && bestW > 0 ? { zone: best, weight: bestW } : { zone: fallback, weight: 1 };
+}
+
+/** Bind a region list once; `.at(pos)` is zoneAt against it. */
+export function createZoneMap(regions, fallback = 'field') {
+    const map = { regions: regions || [], fallback };
+    return { ...map, at: (pos) => zoneAt(pos, map) };
+}
+
+/** Default wet level for a zone (its space's send). */
+export function zoneSend(name) {
+    return (SPACES[ZONES[name] || name] || SPACES.room).send;
+}
 
 /** @type {Map<string, AudioBuffer>} */
 const _cache = new Map();
@@ -221,11 +304,106 @@ export async function setSpace(name, send) {
         _cache.set(name, buf);
     }
     await AudioBus.setSpaceBuffer(buf);
-    await AudioBus.setReverb(send == null ? def.send : send);
+    // While a zone layer is on (setZone) it owns the reverb; the route's send stays shut.
+    await AudioBus.setReverb(_zone ? 0 : (send == null ? def.send : send));
     _current = name;
 }
 
 export function currentSpace() { return _current; }
+
+/** The cached impulse for a space or zone — for engines that run their own convolvers. */
+export function zoneImpulse(ctx, name) {
+    const key = ZONES[name] || name;
+    const def = SPACES[key];
+    if (!ctx || !def) return null;
+    if (_cacheRate !== ctx.sampleRate) { _cache.clear(); _cacheRate = ctx.sampleRate; }
+    let buf = _cache.get(key);
+    if (!buf) { buf = buildIR(ctx, def); _cache.set(key, buf); }
+    return buf;
+}
+
+// Zone runtime: two convolvers tapped off the sfx bus, returned through the ui bus (which
+// shares the Effects level and the master, and is not tapped — so there is no loop).
+let _zone = null;   // { input, slots:[{conv, wet, zone}], active, switchAt, name }
+const ZONE_HOLD_S = 0.6;   // a slot must sit silent this long before it is reloaded
+
+function ensureZoneGraph() {
+    if (_zone) return _zone;
+    if (!AudioBus.hasContext()) return null;
+    const ctx = AudioBus.contextSync();
+    const sfx = AudioBus.busSync('sfx');
+    const ui = AudioBus.busSync('ui');
+    if (!ctx || !sfx || !ui || !ctx.createConvolver) return null;
+    const input = ctx.createGain();
+    sfx.connect(input);
+    const slots = [0, 1].map(() => {
+        const conv = ctx.createConvolver();
+        const wet = ctx.createGain();
+        wet.gain.value = 0;
+        input.connect(conv); conv.connect(wet); wet.connect(ui);
+        return { conv, wet, zone: null };
+    });
+    _zone = { ctx, input, slots, active: 0, switchAt: -10, name: null };
+    // The zone layer replaces the route's single reverb while it is on: two tails at once
+    // would double the room.
+    AudioBus.setReverb(0);
+    return _zone;
+}
+
+/**
+ * Move the listener into a zone. Crossfades from the previous zone over `fadeMs`; safe to
+ * call every frame (an unchanged zone only re-targets the wet level). No-op before the
+ * first gesture (no AudioContext is created here).
+ *
+ * @param {string} name a ZONES key (or any SPACES name)
+ * @param {{wet?:number, fadeMs?:number}} [opts]
+ */
+export function setZone(name, opts = {}) {
+    const z = ensureZoneGraph();
+    if (!z) return false;
+    const buf = zoneImpulse(z.ctx, name);
+    if (!buf) return false;
+    const t = z.ctx.currentTime;
+    const fade = Math.max(0.05, (opts.fadeMs ?? 600) / 1000);
+    const wet = Math.max(0, Math.min(1, opts.wet ?? zoneSend(name)));
+    if (z.slots[z.active].zone !== name && t - z.switchAt > Math.max(ZONE_HOLD_S, fade)) {
+        const next = 1 - z.active;
+        const s = z.slots[next];
+        if (s.zone !== name) { s.conv.buffer = buf; s.zone = name; }
+        z.active = next;
+        z.switchAt = t;
+    }
+    z.name = z.slots[z.active].zone;
+    z.slots.forEach((s, i) => s.wet.gain.setTargetAtTime(i === z.active ? wet : 0, t, fade / 3));
+    return true;
+}
+
+/** Per-frame convenience: look the position up in `map` and blend the wet level by weight. */
+export function updateZone(pos, map, opts = {}) {
+    const hit = zoneAt(pos, map);
+    const send = opts.wet ?? zoneSend(hit.zone);
+    setZone(hit.zone, { fadeMs: opts.fadeMs, wet: send * (0.4 + 0.6 * hit.weight) });
+    return hit;
+}
+
+/** The zone the listener is in, or null when the zone layer is off. */
+export function currentZone() { return _zone ? _zone.name : null; }
+
+/** Leave zone mode: fade the zone tails out and hand the route's own space back. */
+export function clearZone() {
+    if (!_zone) return;
+    const z = _zone;
+    _zone = null;
+    const t = z.ctx.currentTime;
+    for (const s of z.slots) s.wet.gain.setTargetAtTime(0, t, 0.15);
+    setTimeout(() => {
+        try { AudioBus.busSync('sfx')?.disconnect(z.input); } catch { /* already gone */ }
+        for (const s of z.slots) { try { s.wet.disconnect(); } catch { /* gone */ } }
+    }, 1500);
+    const space = _current || _wanted;
+    _current = null;
+    if (space) setSpace(space);
+}
 
 /**
  * Route key → space. paletteBus.setGame() hands every route here, so the space follows
@@ -350,7 +528,10 @@ export function dopplerRatio2D(dx, dy, vx, vy) {
 }
 
 if (typeof window !== 'undefined') {
-    window.PoAcoustics = { setSpace, currentSpace, useGame, prewarm, dopplerRatio, dopplerRatio2D };
+    window.PoAcoustics = {
+        setSpace, currentSpace, useGame, prewarm, dopplerRatio, dopplerRatio2D,
+        ZONES, zoneAt, createZoneMap, zoneSend, zoneImpulse, setZone, updateZone, currentZone, clearZone,
+    };
     // paletteBus (a classic script) may have run its first setGame before this module
     // evaluated; pick the route up here so a direct load into a game gets its space.
     useGame((location.pathname.split('/')[1] || '').toLowerCase() || 'menu');

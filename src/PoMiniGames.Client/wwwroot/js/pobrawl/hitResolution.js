@@ -772,9 +772,12 @@ class HitResolutionMethods {
         if (this.rackFocus) {
           this.rackFocus.trigger(this.camera.position.distanceTo(dpos), 1.4, 1.2);
         }
-        // The shared feel layer: this is the heaviest event the app produces.
-        // Skipped in calm mode (app-wide reduced motion): it shakes the DOM chrome too.
-        if (!this._calm()) window.PoImpact?.impact('heavy', 1.6);
+        // The shared feel layer: this is the heaviest event the app produces. One
+        // impulse → one profile (feelPresets.impulseImpact): the DOM jolt (skipped in calm
+        // mode — it shakes the chrome too), the po-crowd-recoil broadcast and the banner
+        // gust all read the same number. Presentation only: nothing here feeds the sim.
+        const koFeel = Feel.impulseImpact(40, knockDir, { dom: !this._calm() });
+        this._bannerGust = Math.max(this._bannerGust || 0, koFeel.crowdRecoil);
         // Big warm flash over the fallen fighter as the house lights dim.
         this._flashImpactLight(
           new THREE.Vector3(dpos.x, dpos.y + 1.0, dpos.z), 22, 0xfff0d0, 0.4);
@@ -811,6 +814,11 @@ class HitResolutionMethods {
       // A near-drop dishevels the hair for the rest of the match.
       if (defender.rig.refs) defender.rig.refs.hairPivot.rotation.y = 0.3;
       this.excited = Math.max(this.excited, 0.6);
+      // Same impulse profile as the KO, scaled to the hit: the crowd recoils and the
+      // hanging banners take a gust. No DOM jolt — the camera shake already sold it.
+      const heavyFeel = Feel.impulseImpact(baseDmg * (atkMass / defMass), knockDir,
+        { full: HEAVY_HIT_DMG * 1.5, dom: false });
+      this._bannerGust = Math.max(this._bannerGust || 0, heavyFeel.crowdRecoil * 0.6);
       // The press row catches it.
       this._pressBurst(3);
       // Sweat fans off the rocked head the way it snapped.

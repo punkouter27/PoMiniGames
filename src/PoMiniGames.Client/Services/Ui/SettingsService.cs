@@ -1,3 +1,5 @@
+using System.Text.Json;
+
 using Microsoft.JSInterop;
 
 using PoMiniGamesClient.Services.Http;
@@ -242,12 +244,14 @@ public sealed class SettingsService : IAsyncDisposable
     }
 
     /// <summary>
-    /// Apply a graphics tier for ten seconds without saving it. The Settings
-    /// sheet can then commit or cancel the preview based on what the player sees.
+    /// Apply a graphics tier for ten seconds without saving it, measuring its frame times
+    /// meanwhile (framePacing.js). "auto" previews what the device read would pick. The
+    /// Settings sheet then commits or cancels it based on what the player saw and on
+    /// <see cref="GetGraphicsPreviewStatusAsync"/>.
     /// </summary>
     public async Task<bool> StartGraphicsPreviewAsync(string tier)
     {
-        if (!GraphicsTiers.Contains(tier) || tier == "auto") return false;
+        if (!GraphicsTiers.Contains(tier)) return false;
         try
         {
             var module = await _prefs.Value;
@@ -261,7 +265,7 @@ public sealed class SettingsService : IAsyncDisposable
 
     public async Task<bool> CommitGraphicsPreviewAsync(string tier)
     {
-        if (!GraphicsTiers.Contains(tier) || tier == "auto") return false;
+        if (!GraphicsTiers.Contains(tier)) return false;
         try
         {
             var module = await _prefs.Value;
@@ -269,7 +273,8 @@ public sealed class SettingsService : IAsyncDisposable
             if (committed)
             {
                 Graphics = tier;
-                LocalStorageService.SetItem(GraphicsKey, tier);
+                // Auto is the absence of a choice: appPrefs.js has already cleared the key.
+                if (tier != "auto") LocalStorageService.SetItem(GraphicsKey, tier);
                 Changed?.Invoke();
             }
             return committed;
@@ -293,6 +298,41 @@ public sealed class SettingsService : IAsyncDisposable
         }
     }
 
+    /// <summary>
+    /// The live (or last finished) preview measurement. Read as a <see cref="JsonElement"/>
+    /// and picked apart by hand, so the trimmed WASM build needs no serializer metadata.
+    /// </summary>
+    public async Task<GraphicsPreviewStatus> GetGraphicsPreviewStatusAsync()
+    {
+        try
+        {
+            var module = await _prefs.Value;
+            var json = await module.InvokeAsync<JsonElement>("graphicsPreviewStatus");
+            return GraphicsPreviewStatus.From(json);
+        }
+        catch
+        {
+            return GraphicsPreviewStatus.None;
+        }
+    }
+
+    /// <summary>
+    /// Raised when the stutter watch put a lighter tier back after the player chose a heavier
+    /// one: (from, to). The sheet re-renders through <see cref="Changed"/>; this is for a toast.
+    /// </summary>
+    public event Action<string, string>? GraphicsRolledBack;
+
+    private DotNetObjectReference<SettingsService>? _selfRef;
+
+    /// <summary>Called by framePacing.js (through appPrefs.js) after a stutter rollback.</summary>
+    [JSInvokable]
+    public void OnGraphicsRolledBack(string from, string to)
+    {
+        if (!GraphicsTiers.Contains(to)) return;
+        Graphics = to;
+        Changed?.Invoke();
+        GraphicsRolledBack?.Invoke(from, to);
+    }
 
     public async Task SetRichAudioAsync(bool on)
     {
@@ -338,6 +378,8 @@ public sealed class SettingsService : IAsyncDisposable
     {
         await InvokeAsync("applyTheme", ThemeToStorage(Theme));
         if (ReducedMotion) await InvokeAsync("applyReducedMotion", true);
+        _selfRef ??= DotNetObjectReference.Create(this);
+        await InvokeAsync("registerGraphicsRollback", _selfRef);
         // Volume and mute are not re-pushed here: audioBus.js reads both keys
         // itself when it builds the graph, which it may already have done. Re-
         // sending them would only risk constructing an AudioContext before the
@@ -367,6 +409,7 @@ public sealed class SettingsService : IAsyncDisposable
     {
         if (_disposed) return;
         _disposed = true;
+        _selfRef?.Dispose();
         if (_prefs.IsValueCreated)
         {
             try
@@ -377,4 +420,48 @@ public sealed class SettingsService : IAsyncDisposable
             catch { /* module never loaded — fine */ }
         }
     }
+}
+
+/// <summary>
+/// A graphics preview's state and measurement, from appPrefs.js <c>graphicsPreviewStatus</c>.
+/// </summary>
+/// <param name="Active">A preview is applied right now.</param>
+/// <param name="RemainingMs">Time left in the preview.</param>
+/// <param name="Tier">The tier being (or last) measured; "auto" previews resolve to a real tier.</param>
+/// <param name="P95Ms">95th-percentile frame time, the deck's success metric.</param>
+/// <param name="Fps">Mean frames per second over the measured frames.</param>
+/// <param name="Verdict">smooth | ok | stutter | unknown.</param>
+/// <param name="Recommend">The tier framePacing.js recommends after this measurement.</param>
+/// <param name="Reason">One sentence explaining the recommendation.</param>
+public sealed record GraphicsPreviewStatus(
+    bool Active, int RemainingMs, string? Tier, double P95Ms, double Fps, string Verdict, string? Recommend, string? Reason)
+{
+    public static readonly GraphicsPreviewStatus None = new(false, 0, null, 0, 0, "unknown", null, null);
+
+    /// <summary>A measurement exists (live or finished).</summary>
+    public bool HasResult => Verdict != "unknown" && P95Ms > 0;
+
+    public static GraphicsPreviewStatus From(JsonElement json)
+    {
+        if (json.ValueKind != JsonValueKind.Object) return None;
+        var active = json.TryGetProperty("active", out var a) && a.ValueKind == JsonValueKind.True;
+        var remaining = json.TryGetProperty("remainingMs", out var r) && r.TryGetDouble(out var rd) ? (int)rd : 0;
+        if (!json.TryGetProperty("result", out var res) || res.ValueKind != JsonValueKind.Object)
+            return None with { Active = active, RemainingMs = remaining };
+        return new GraphicsPreviewStatus(
+            active,
+            remaining,
+            Str(res, "tier"),
+            Num(res, "p95"),
+            Num(res, "fps"),
+            Str(res, "verdict") ?? "unknown",
+            Str(res, "recommend"),
+            Str(res, "reason"));
+    }
+
+    private static string? Str(JsonElement e, string name) =>
+        e.TryGetProperty(name, out var v) && v.ValueKind == JsonValueKind.String ? v.GetString() : null;
+
+    private static double Num(JsonElement e, string name) =>
+        e.TryGetProperty(name, out var v) && v.TryGetDouble(out var d) ? d : 0;
 }

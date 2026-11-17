@@ -83,10 +83,10 @@
                             @* Two views of one panel, not two actions: a tab strip. Keydowns stop
                                so Enter on a tab switches it instead of starting the game. *@
                             <div class="gps-intro-tabs" role="tablist" aria-label="Intro" @onkeydown="HandleControlKey" @onkeydown:stopPropagation="true">
-                                <button type="button" role="tab" class="gps-intro-tab"
+                                <button type="button" role="tab" class="gps-intro-tab" data-spring
                                         aria-selected="@(!ShowingRules ? "true" : "false")"
                                         @onclick="() => _rules = false">Controls</button>
-                                <button type="button" role="tab" class="gps-intro-tab"
+                                <button type="button" role="tab" class="gps-intro-tab" data-spring
                                         aria-selected="@(ShowingRules ? "true" : "false")"
                                         @onclick="() => _rules = true">How to play</button>
                             </div>
@@ -131,7 +131,7 @@
                 <div class="gps-intro-actions-extra" @onkeydown="HandleControlKey" @onkeydown:stopPropagation="true">@Actions</div>
             }
             @* The card's one button. 1P and demo: focused on open, so Enter and Space take it. *@
-            <button type="button" class="app-btn app-btn--lg app-btn--primary" data-intro-action
+            <button type="button" class="app-btn app-btn--lg app-btn--primary" data-intro-action data-spring
                     @ref="_ok"
                     disabled="@(!StartEnabled)"
                     @onkeydown:stopPropagation="@(Mode != IntroMode.TwoPlayer)"
