@@ -51,6 +51,20 @@ node --test "tests/*.test.mjs"                                 # every JS engine
 
 ## Architecture
 
+- **Decisions 2026-11-17 (owner):**
+  - `/diag` is the status page (`Features/Health/HealthPage.razor`, `/health` kept as a browser
+    alias); it renders `GET /api/diag`, which is always on and anonymous and must never carry
+    secrets, addresses or exception messages (`DiagProjectionTests`, `HealthEndpointTests`). The
+    server's JSON `/health` and `/health/live` probes are unchanged for the deploy gate.
+  - The build date (`v{YYMMDD}`, `Layout/BuildVersion.razor`) is visible bottom-right on every
+    page again, above the BottomNav on phones and above the modal layer.
+  - Forms that submit (initials, ecosystem rename and alerts) validate with FluentValidation rules
+    in `PoMiniGames.Shared/Validation` through `Layout/FluentValidationValidator.cs`: inline errors,
+    submit disabled while submitting.
+  - Storage settings are read from DI `IConfiguration` when the clients are built
+    (`StorageExtensions`), never at registration: read eagerly they missed the test hosts'
+    overrides and every integration fixture silently used the machine's shared Azurite.
+
 - **Projects:** `src/` holds five projects.
   - `PoMiniGames.Api`: the ASP.NET Core host. It contains vertical slices in `Features/<Game>`
     and also serves the client.

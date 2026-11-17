@@ -95,7 +95,8 @@ sign-in: a player is a random browser id plus three initials.
   matrix for hundreds of mostly static bodies.
   Chunk remeshing caches voxel samples across all six face sweeps without changing
   geometry, damage tinting, or collision accuracy.
-  The `/health` status page includes the build date for support and diagnostics.
+  The `/diag` status page (also at `/health` in a browser) shows the API, storage and services
+  in plain words, plus the build date; every page shows the build date (v YYMMDD) bottom-right.
 - **Works offline.** A score that cannot reach the server is parked in the browser and sent
   automatically later.
 
@@ -348,6 +349,7 @@ suite, and deploys only from `master`. Provision or update Azure resources with 
 
 | Endpoint | Change |
 |---|---|
+| `GET /api/diag` | 2026-11-17: always on (no longer behind `FeatureFlags:EnableDiagnostics`); returns the /diag page's report: overall status, each store and service with status, latency and purpose, build date and environment. No secrets, addresses or exception text |
 | `GET /api/diag/ai` | Removed with all AI services |
 | `GET /api/logs/tail` | Development only: not mapped in any other environment (2026-10-29) |
 | `GET /api/health/ai` | Removed (moved to `/api/diag/ai`) |
