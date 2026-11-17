@@ -3,11 +3,11 @@
 // Steering: the left stick or the D-pad held left/right is the same held steer as ←/→, fed through
 // Game.setSteer so the online guest's relay and the host's physics see no difference. Polled on
 // its own rAF loop (the engine's loop is gated while the intro is up; this one only acts once a
-// game exists and is racing). Shared polling and deadzone come from ../gamepadBus.js.
+// game exists and is racing). Shared polling and deadzone come from ../platform/gamepadBus.js.
 //
 // Input kind: the page shows hints for the device in hand ('keys' | 'touch' | 'pad'). The last
 // device used wins and is reported to the page on change (OnInputKind).
-import { connectedPads, stick, pressed, BUTTONS } from '../gamepadBus.js';
+import { connectedPads, stick, pressed, BUTTONS } from '../platform/gamepadBus.js';
 
 const STICK_ON = 0.45;   // stick x past this holds a direction (a little hysteresis below)
 const STICK_OFF = 0.3;

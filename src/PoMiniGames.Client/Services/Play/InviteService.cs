@@ -25,7 +25,7 @@ public enum InviteState
 
 /// <summary>
 /// Game invites from the page's side: turning them on for this device, and inviting someone
-/// from the head-to-head list. The browser calls are <c>window.poPush</c> (js/pwa.js); the API
+/// from the head-to-head list. The browser calls are <c>window.poPush</c> (js/platform/pwa.js); the API
 /// calls ride the app <see cref="HttpClient"/> so they carry credentials and the antiforgery token.
 /// </summary>
 /// <remarks>

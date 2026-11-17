@@ -13,8 +13,8 @@ function Invoke-Check([string]$Name, [scriptblock]$Command) {
 
 Invoke-Check 'Formatting' { dotnet format PoMiniGames.slnx --verify-no-changes --no-restore --verbosity minimal }
 Invoke-Check 'Bicep compile' { az bicep build --file infra/main.bicep --stdout > $null }
-Invoke-Check 'CSS lint' { ./scripts/css-lint.ps1 }
-Invoke-Check 'Test ceilings' { ./scripts/test-ceilings.ps1 -Configuration Release -NoBuild }
+Invoke-Check 'CSS lint' { ./scripts/ci/css-lint.ps1 }
+Invoke-Check 'Test ceilings' { ./scripts/ci/test-ceilings.ps1 -Configuration Release -NoBuild }
 # Every JS engine test (tests/*.test.mjs) in one run. Node runs the files in parallel, so the
 # wall time is the slowest file's (PoCapitol's world sim, about four minutes), not the sum. Two of
 # them need inputs built first: the PoCabinet worlds and the PoMarbleRace harness's packages.

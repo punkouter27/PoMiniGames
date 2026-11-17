@@ -36,7 +36,7 @@ public class PoRacerTrackRegistryTests
         // The knots come from the shared catalog (the client draws its track cards from them).
         track.Centerline[0].Should().Be(new Vec2(PoMiniGames.Shared.Games.PoRacerCatalog.GetTrack(track.Id).Knots[0].X, PoMiniGames.Shared.Games.PoRacerCatalog.GetTrack(track.Id).Knots[0].Y));
 
-        // The day's weather is the one js/weather.js draws for the same track and day (these four
+        // The day's weather is the one js/platform/weather.js draws for the same track and day (these four
         // were computed with its hash), and only rain and snow cost grip.
         var day = new DateOnly(2026, 11, 14);
         PoMiniGames.Shared.Games.PoRacerWeather.For(track.Id, day).Should().Be(track.Id switch

@@ -13,7 +13,7 @@ function Get-Response([string]$Path) {
     catch { $null }
 }
 
-foreach ($path in '/api/health/ping', '/api/health', '/api/diag') {
+foreach ($path in '/api/health/ping', '/api/health') {
     $response = $null
     for ($attempt = 1; $attempt -le 11; $attempt++) {
         $response = Get-Response $path
@@ -24,5 +24,13 @@ foreach ($path in '/api/health/ping', '/api/health', '/api/diag') {
     Write-Host "$path -> $code"
     if ($code -ne 200) { throw "$path returned $code, expected 200." }
 }
+
+# Diagnostics is an anonymous support surface and is OFF in production, so the live site
+# must refuse it. Asserting the closed state is the point: a 200 here means the flag was
+# turned back on by accident or the route was mapped outside the guard.
+$diag = Get-Response '/api/diag'
+$diagCode = if ($diag) { [int]$diag.StatusCode } else { 0 }
+Write-Host "/api/diag -> $diagCode (expected 404)"
+if ($diagCode -eq 200) { throw '/api/diag answered 200 on a production deployment; diagnostics should be disabled.' }
 
 Write-Host 'Post-deploy smoke tests passed.'

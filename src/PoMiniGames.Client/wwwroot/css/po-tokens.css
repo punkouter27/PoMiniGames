@@ -52,7 +52,6 @@
      Slugs reflect semantic intent, not raw colour, so swapping palettes is a
      1-line change to the named hex. */
   --accent: var(--color-accent);
-  --accent-bg: rgba(129, 140, 248, 0.16);             /* hover-backdrop for primary actions */
   --accent-soft: rgba(129, 140, 248, 0.10);           /* empty-state badges, etc. */
   /* Names stylesheets were already using that were never defined, so the text
      silently inherited its colour. Aliases, so both themes follow for free. */
@@ -69,7 +68,6 @@
   --accent-danger-soft: rgba(248, 113, 113, 0.16);
   --accent-cyan: #22d3ee;
   --accent-amber: #fbbf24;
-  --accent-gold: #ca8a04;
 
   /* ── Player identity ───────────────────────────────────────────────────
      The two sides of any local-versus screen. They exist so the 2P surfaces
@@ -144,8 +142,6 @@
   --text-base: clamp(0.95rem, 0.92rem + 0.15vw, 1rem);
   --text-lg:   clamp(1.1rem, 1.05rem + 0.25vw, 1.25rem);
   --text-xl:   clamp(1.3rem, 1.2rem + 0.5vw, 1.5rem);
-  --text-2xl:  clamp(1.65rem, 1.45rem + 1vw, 2rem);
-  --text-3xl:  clamp(2rem, 1.6rem + 2vw, 3rem);
 
   /* ── Tints & hairlines ─────────────────────────────────────────────────────
      Zebra striping, inset meter tracks and 1px separators were authored across
@@ -183,7 +179,6 @@
   --radius-sm: 0.5rem;
   --radius-md: 0.75rem;
   --radius-lg: 1rem;
-  --radius-xl: 1.25rem;
   --radius-pill: 9999px;
 
   /* Elevation scale (Option #2: light-dark() pairs) */
@@ -192,25 +187,18 @@
   --elevation-3: light-dark(0 20px 60px rgba(15,23,42,0.12), 0 20px 60px rgba(0,0,0,0.4));
 
   /* Spacing scale */
-  --space-0: 0;
   --space-1: 0.25rem;
   --space-2: 0.5rem;
   --space-3: 0.75rem;
   --space-4: 1rem;
   --space-5: 1.5rem;
   --space-6: 2rem;
-  --space-7: 2.5rem;
-  --space-8: 3rem;
 
   /* Z-index scale (single source of truth — replaces scattered raw z-index values) */
-  --z-base: 1;
   --z-sticky: 50;
-  --z-kiosk: 60;
-  --z-btb: 70;
   --z-dropdown: 100;
   --z-overlay: 500;
   --z-modal: 1000;
-  --z-banner: 2000;
   --z-toast: 3000;
   --z-toast-stack: 3000;
   /* GFX overlays. Above the modal/toast layers on purpose: confetti that

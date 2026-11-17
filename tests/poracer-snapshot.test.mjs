@@ -80,8 +80,8 @@ test('invalid field sizes and changed car order fail explicitly', () => {
     assert.throws(() => prepareSnapshot(snapshot, roster, -1), /order changed/);
 });
 
-// The ghost lap (js/ghostTrack.js): quantized Int16 deltas in base64, decoded back for playback.
-const ghostSource = await readFile(new URL('../src/PoMiniGames.Client/wwwroot/js/ghostTrack.js', import.meta.url), 'utf8');
+// The ghost lap (js/platform/ghostTrack.js): quantized Int16 deltas in base64, decoded back for playback.
+const ghostSource = await readFile(new URL('../src/PoMiniGames.Client/wwwroot/js/platform/ghostTrack.js', import.meta.url), 'utf8');
 const ghost = await import(`data:text/javascript;base64,${Buffer.from(ghostSource).toString('base64')}`);
 
 test('a ghost lap survives encode and decode within one quantization step, with no drift', () => {

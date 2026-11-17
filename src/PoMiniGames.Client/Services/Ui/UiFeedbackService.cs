@@ -48,7 +48,7 @@ public sealed class UiFeedbackService : IAsyncDisposable
     public UiFeedbackService(IJSRuntime js)
     {
         _module = new Lazy<Task<IJSObjectReference>>(() =>
-            js.InvokeAsync<IJSObjectReference>("import", "./js/uiAudio.js").AsTask());
+            js.InvokeAsync<IJSObjectReference>("import", "./js/platform/uiAudio.js").AsTask());
     }
 
     // Haptic vocabulary. Each intent below pairs its audio cue with a short

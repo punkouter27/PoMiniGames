@@ -33,7 +33,7 @@ else
     protected override async Task OnAfterRenderAsync(bool firstRender)
     {
         if (!firstRender || Native) return;
-        _module = await JS.InvokeAsync<IJSObjectReference>("import", "./js/gamePauseDialog.js");
+        _module = await JS.InvokeAsync<IJSObjectReference>("import", "./js/platform/gamePauseDialog.js");
         _self = DotNetObjectReference.Create(this);
         await _module.InvokeVoidAsync("attach", _root, OnResume.HasDelegate ? _self : null);
     }

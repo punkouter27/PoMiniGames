@@ -13,8 +13,8 @@ import { loadPrefs, savePrefs, matches, rebind } from './prefs.js';
 import { createDebriefRouter } from './debrief.js';
 import { loadCampusData } from './campusData.js';
 import { loadSigns } from './signs.js';
-import { ensure, remove } from '../radzenTheme.js';
-import { connectedPads, stick, pressed, ButtonEdges } from '../gamepadBus.js';
+import { ensure, remove } from '../platform/radzenTheme.js';
+import { connectedPads, stick, pressed, ButtonEdges } from '../platform/gamepadBus.js';
 
 const GRAPHICS_KEY = 'pominigames:pocapitol-graphics';
 const WEATHER_KEY = 'pominigames:pocapitol-weather';

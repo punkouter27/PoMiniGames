@@ -9,7 +9,7 @@ import { ShaderPass } from 'three/addons/postprocessing/ShaderPass.js';
 import { OutputPass } from 'three/addons/postprocessing/OutputPass.js';
 import { GTAOPass } from 'three/addons/postprocessing/GTAOPass.js';
 import { AfterimagePass } from 'three/addons/postprocessing/AfterimagePass.js';
-import * as PostFx from '../postFx.js';
+import * as PostFx from '../platform/postFx.js';
 import * as Quality from './quality.js';
 import { CAVignetteShader } from './postShader.js';
 

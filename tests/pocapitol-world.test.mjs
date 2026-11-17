@@ -619,7 +619,7 @@ test('losing focus pauses and a disconnected interface is explicitly reported', 
 });
 
 test('controller navigation leaves live PoCapitol input to its engine', () => {
-    const bus = read('js/gamepadBus.js');
+    const bus = read('js/platform/gamepadBus.js');
     const declaration = bus.match(/const CANVAS_GAMES = (\/.*\/i);/)[1];
     const canvasGames = vm.runInNewContext(declaration);
     assert.equal(canvasGames.test('/pocapitol/1player'), true);

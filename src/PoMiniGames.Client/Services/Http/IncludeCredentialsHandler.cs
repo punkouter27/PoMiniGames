@@ -30,7 +30,7 @@ namespace PoMiniGamesClient.Services.Http;
 /// <see cref="TransientRetryHandler"/>. It is intentionally not registered as a primary
 /// handler — that would replace the browser fetch shim and break all requests. This is
 /// the code-level fallback for cross-origin cookie inclusion; the
-/// <c>wwwroot/js/crossOriginFetchPatch.js</c> monkey-patch is the belt-and-braces
+/// <c>wwwroot/js/platform/crossOriginFetchPatch.js</c> monkey-patch is the belt-and-braces
 /// equivalent at the JS layer.
 /// </remarks>
 public sealed class IncludeCredentialsHandler : DelegatingHandler

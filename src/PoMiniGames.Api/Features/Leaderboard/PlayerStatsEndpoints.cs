@@ -34,7 +34,7 @@ public static class PlayerStatsEndpoints
                     return Results.NotFound(new { message = $"Player '{playerName}' not found in game '{game}'" });
                 }
 
-                return Results.Ok(new PlayerStatsDto
+                return Results.Ok(new PlayerStatsRow
                 {
                     Name = playerName,
                     Game = game,
@@ -43,7 +43,7 @@ public static class PlayerStatsEndpoints
             })
             .WithName("GetPlayerStats")
             .WithSummary("Retrieve stats for a player in a specific game")
-            .Produces<PlayerStatsDto>(StatusCodes.Status200OK);
+            .Produces<PlayerStatsRow>(StatusCodes.Status200OK);
 
         return app;
     }

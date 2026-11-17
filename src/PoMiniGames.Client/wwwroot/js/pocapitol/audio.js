@@ -1,6 +1,6 @@
 // PoCapitol's sound: every layer is synthesized here, nothing is downloaded or sampled.
 //
-// It plays through the platform's one AudioContext on its sfx bus (js/audioBus.js), so the
+// It plays through the platform's one AudioContext on its sfx bus (js/platform/audioBus.js), so the
 // app's mute, master volume and compressor all apply and nothing here owns a context.
 //
 // Layers, loudest first in a typical moment:

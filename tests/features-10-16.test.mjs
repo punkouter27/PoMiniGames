@@ -4,7 +4,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { mapWmoToWeather, computeDayFraction } from '../src/PoMiniGames.Client/wwwroot/js/poecosystem/host/liveWeather.js';
 import { encodeGif } from '../src/PoMiniGames.Client/wwwroot/js/sand-playground/gifEncoder.js';
-import { matchSpokenOption } from '../src/PoMiniGames.Client/wwwroot/js/speechBus.js';
+import { matchSpokenOption } from '../src/PoMiniGames.Client/wwwroot/js/platform/speechBus.js';
 import { classifyPose, STUDIO_MOVES } from '../src/PoMiniGames.Client/wwwroot/js/pofighter/studio.js';
 
 test('liveWeather maps WMO codes and solar day fraction cleanly', () => {

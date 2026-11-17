@@ -16,7 +16,7 @@
 // or more KeyboardEvent.code values (Settings → Controls rebinds the first of each), and a
 // gamepad is polled in consume() (left stick moves, right stick looks). Tab, Escape
 // and the speed digits stay fixed: they are the HUD's own shortcuts and the page's docs.
-import { BUTTONS, ButtonEdges, connectedPads, pressed } from '../../gamepadBus.js';
+import { BUTTONS, ButtonEdges, connectedPads, pressed } from '../../platform/gamepadBus.js';
 
 export const DEFAULT_BINDINGS = Object.freeze({
   forward: ['KeyW', 'ArrowUp'], back: ['KeyS', 'ArrowDown'], left: ['KeyA', 'ArrowLeft'], right: ['KeyD', 'ArrowRight'],

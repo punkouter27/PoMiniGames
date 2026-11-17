@@ -1,7 +1,7 @@
 // audio.js — synthesized SFX for PoVoxelStrike.
 // No audio files: everything is OscillatorNode + filtered noise, following the
 // pobrawl/audio.js recipe. All output rides the platform's shared AudioContext and
-// mix graph (js/audioBus.js) through window.PoAudioBus on the 'sfx' bus, so global
+// mix graph (js/platform/audioBus.js) through window.PoAudioBus on the 'sfx' bus, so global
 // mute/volume/ducking apply for free.
 //
 // There is no music in here: background music is off app-wide.

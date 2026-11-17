@@ -65,7 +65,7 @@
 				"-ExecutionPolicy",
 				"Bypass",
 				"-File",
-				"${workspaceFolder}/scripts/smoke-local.ps1"
+				"${workspaceFolder}/scripts/dev/smoke-local.ps1"
 			],
 			"problemMatcher": [],
 			"presentation": {

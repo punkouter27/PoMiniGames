@@ -561,7 +561,7 @@ public partial class PoBrawlPage
         }
         try
         {
-            // Route-gated engine load (wwwroot/js/engineLoader.js): it has to be pulled in
+            // Route-gated engine load (wwwroot/js/platform/engineLoader.js): it has to be pulled in
             // before the first interop call. Idempotent after the first await.
             if (!await JSRuntime.InvokeAsync<bool>("loadEngine", "pobrawl"))
             {

@@ -4,7 +4,7 @@ using PoMiniGames.Serialization;
 
 namespace PoMiniGames.Features.Health;
 
-/// <summary>One browser-side failure, as posted by <c>wwwroot/js/errorReporter.js</c>.</summary>
+/// <summary>One browser-side failure, as posted by <c>wwwroot/js/platform/errorReporter.js</c>.</summary>
 public sealed record ClientErrorReport(string? Kind, string? Message, string? Source, string? Stack, string? Path);
 
 /// <summary>

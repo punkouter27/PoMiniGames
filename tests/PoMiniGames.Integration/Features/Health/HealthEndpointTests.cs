@@ -66,9 +66,24 @@ public sealed class HealthEndpointTests : IClassFixture<TestWebApplicationFactor
     [Fact]
     public async Task DiagEndpoint_ReturnsOk()
     {
+        // /api/diag is OFF by default in the shipped appsettings (it is an anonymous support
+        // surface), so this test turns it on explicitly rather than depending on a production
+        // default. The disabled half of the contract is the test below.
+        using var diagEnabledFactory = _factory.WithWebHostBuilder(builder =>
+        {
+            builder.ConfigureAppConfiguration((_, cfg) =>
+            {
+                cfg.AddInMemoryCollection(new Dictionary<string, string?>
+                {
+                    ["FeatureFlags:EnableDiagnostics"] = "true",
+                });
+            });
+        });
+
+        using var client = diagEnabledFactory.CreateClient();
         // The programmatic snapshot lives at /api/diag; bare /diag is the Blazor page route
         // (it would fall through to the SPA index.html fallback and return HTML, not JSON).
-        var response = await _client.GetAsync("/api/diag");
+        var response = await client.GetAsync("/api/diag");
         response.StatusCode.Should().Be(HttpStatusCode.OK);
 
         var body = await response.Content.ReadAsStringAsync();

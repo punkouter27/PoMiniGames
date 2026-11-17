@@ -102,7 +102,7 @@ internal static class AppPipelineExtensions
     /// mix happens after a deploy: static-web-asset fingerprinting is off, so <c>js/*.js</c>
     /// and the shell carry no fingerprint and, with no Cache-Control, browsers keep them
     /// "fresh" by heuristic for hours — a reload then boots the new client against the old
-    /// <c>js/engineLoader.js</c> and the game page shows "could not load". Every environment
+    /// <c>js/platform/engineLoader.js</c> and the game page shows "could not load". Every environment
     /// therefore forces revalidation; the fingerprinted assets stay cacheable, and ETag
     /// revalidation makes the cost one 304 per file.
     /// </remarks>

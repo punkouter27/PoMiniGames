@@ -4,7 +4,7 @@
 // gamepad adds an analog steer / throttle / brake. The server lets a non-zero analog value
 // win over its key, so the two never have to be reconciled here.
 import * as Render from './renderer.js';
-import { connectedPads, pressed, rumble as padRumble, BUTTONS } from '../gamepadBus.js';
+import { connectedPads, pressed, rumble as padRumble, BUTTONS } from '../platform/gamepadBus.js';
 
 let canvas = null, reference = null, listeners = null, enabled = false;
 let input = { up: false, down: false, left: false, right: false, space: false, steer: 0, throttle: 0, brake: 0 };

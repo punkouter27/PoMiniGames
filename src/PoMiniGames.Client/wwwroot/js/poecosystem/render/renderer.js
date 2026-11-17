@@ -51,7 +51,7 @@ import { createTrails } from './trails.js';
 import { createGrass } from './grass.js';
 import { GOAL } from '../sim/behavior/utility.js';
 import { createSceneRenderer } from './backend.js';
-import { connectedPads, rumble as padRumble } from '../../gamepadBus.js';
+import { connectedPads, rumble as padRumble } from '../../platform/gamepadBus.js';
 
 const TAU = Math.PI * 2;
 // What the auto-director calls a cut to an event tile.

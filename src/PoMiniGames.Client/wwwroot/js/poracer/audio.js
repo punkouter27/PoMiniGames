@@ -16,7 +16,7 @@
 //     at 20 Hz. The voices live in gameCues.js. Each also rumbles a gamepad.
 //   • music   — musicLayers.js on the shared music bus.
 import { rumble } from './input.js';
-import { createMusicLayers } from '../musicLayers.js';
+import { createMusicLayers } from '../platform/musicLayers.js';
 
 const GEAR_TOP = [70, 130, 195, 265, 345];   // sim units/s at the top of each gear
 const HEAR = 620;

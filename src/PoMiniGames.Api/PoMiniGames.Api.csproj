@@ -15,7 +15,6 @@
          derived from the assembly name, this rename would have invalidated every live
          auth cookie on the next deploy. Keep them constant. -->
     <RootNamespace>PoMiniGames</RootNamespace>
-    <UserSecretsId>pomini-games-secret-id</UserSecretsId>
     <!--
       Hosting the Blazor WebAssembly client inside this API project.
       The Microsoft.NET.Sdk.Web glue picks up the referenced Client's static web
@@ -43,23 +42,34 @@
   </ItemGroup>
 
   <ItemGroup>
-    <!-- PoVoxelStrike author-time voxel assets: the drop folder ships INSIDE
-         the deployment package (WEBSITE_RUN_FROM_PACKAGE mounts it read-only; ingestion
-         output goes to the writable path from config). Without this include a publish
-         carries no GLBs and every deployed arena silently falls back to procedural
-         primitives. drop/ only — converted/ is a build product and stays out of both
-         git and the package. -->
-<Content Include="App_Data/povoxelstrike/drop/*.glb"
+    <!-- PoVoxelStrike voxel assets. The authored GLBs in drop/ are AUTHOR-TIME INPUT only:
+         they are what the Prebake script converts, and the conversion output (converted/,
+         ~150 KB of .pvx for 87 MB of GLB) is what the app actually serves. Shipping the GLBs
+         put 87 MB into every deploy package for bytes nothing reads at runtime, so the
+         package carries the baked volumes instead and drop/ is copied nowhere.
+         Re-bake with scripts/dev/bake-voxels.ps1 when a GLB or VoxelResolution changes. -->
+    <Content Include="App_Data/povoxelstrike/drop/*.glb"
              CopyToOutputDirectory="Never"
+             CopyToPublishDirectory="Never" />
+    <Content Include="App_Data/povoxelstrike/converted/*.pvx"
+             CopyToOutputDirectory="PreserveNewest"
              CopyToPublishDirectory="PreserveNewest" />
-    <!-- Voxel painter (#9): author sidecars ship with the GLBs. The SDK auto-globs every
-         file under App_Data/ as Content (EnableDefaultContentItems=true); without the
-         explicit <Content Remove> an NETSDK1022 "Duplicate Content items" error fires.
-         The Remove uses the same path the SDK computed, leaving only the explicit one. -->
+    <!-- The sidecar carries the authored display name and material table. Without it the
+         catalog re-reads the header and every material is called "Material 1". The SDK
+         already globs *.json under App_Data as Content, so the Remove is required before the
+         explicit Include that pins the copy behaviour. -->
+    <Content Remove="App_Data/povoxelstrike/converted/*.pvx.json" />
+    <Content Include="App_Data/povoxelstrike/converted/*.pvx.json"
+             CopyToOutputDirectory="PreserveNewest"
+             CopyToPublishDirectory="PreserveNewest" />
+    <!-- Voxel painter (#9): author sidecars sit beside the GLBs in the drop folder. The SDK
+         auto-globs every file under App_Data/ as Content (EnableDefaultContentItems=true);
+         without the explicit <Content Remove> an NETSDK1022 "Duplicate Content items" error
+         fires. The Remove uses the same path the SDK computed, leaving only the explicit one. -->
     <Content Remove="App_Data/povoxelstrike/drop/Box.glb.pvx-mat.json" />
     <Content Include="App_Data/povoxelstrike/drop/Box.glb.pvx-mat.json"
              CopyToOutputDirectory="Never"
-             CopyToPublishDirectory="PreserveNewest" />
+             CopyToPublishDirectory="Never" />
   </ItemGroup>
 
   <!-- The quiz banks (PoFunQuiz trivia, PoCoupleQuiz questions): the only question source. Embedded
@@ -89,8 +99,6 @@
     <PackageReference Include="Microsoft.Extensions.Http.Resilience" />
     <PackageReference Include="Microsoft.AspNetCore.Components.WebAssembly.Server" />
     <PackageReference Include="Scalar.AspNetCore" />
-    <PackageReference Include="FluentValidation" />
-    <PackageReference Include="FluentValidation.DependencyInjectionExtensions" />
     <!-- PoVoxelStrike: GLB → voxel ingestion (Features/PoVoxelStrike/GlbVoxelizer). -->
     <PackageReference Include="SharpGLTF.Core" />
     <!-- Invites: the lobby QR code (Features/Invites/InviteEndpoints.QrSvg). Server-side only,

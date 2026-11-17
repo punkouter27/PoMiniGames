@@ -265,12 +265,12 @@ public partial class StorageService : IStorageService
 
     /// <summary>
     /// Streams every player-stats row in the table as an async sequence. The previous
-    /// <c>List&lt;PlayerStatsDto&gt;</c> shape materialised the full table in memory; for
+    /// <c>List&lt;PlayerStatsRow&gt;</c> shape materialised the full table in memory; for
     /// the public <c>/api/statistics</c> endpoint the JSON response is also streamed
     /// (see <c>PlayerStatsEndpoints.MapGetAllPlayerStatistics</c>) so the network and
     /// the heap pressure track the page size, not the row count.
     /// </summary>
-    public async IAsyncEnumerable<PlayerStatsDto> GetAllPlayerStatsAsync(
+    public async IAsyncEnumerable<PlayerStatsRow> GetAllPlayerStatsAsync(
         [System.Runtime.CompilerServices.EnumeratorCancellation] CancellationToken cancellationToken = default)
     {
         // Stream from a list rather than yield inside the storage try block: C# forbids
@@ -285,14 +285,14 @@ public partial class StorageService : IStorageService
         }
     }
 
-    private async Task<List<PlayerStatsDto>> ReadAllPlayerStatsAsync(CancellationToken cancellationToken)
+    private async Task<List<PlayerStatsRow>> ReadAllPlayerStatsAsync(CancellationToken cancellationToken)
     {
         if (!IsStorageAvailable())
         {
             return [];
         }
 
-        var rows = new List<PlayerStatsDto>();
+        var rows = new List<PlayerStatsRow>();
         try
         {
             var table = Table(PlayerStatsTable);
@@ -302,7 +302,7 @@ public partial class StorageService : IStorageService
                 if (string.IsNullOrEmpty(json)) continue;
                 var stats = JsonSerializer.Deserialize(json, StorageJsonContext.Default.PlayerStats);
                 if (stats is null) continue;
-                rows.Add(new PlayerStatsDto
+                rows.Add(new PlayerStatsRow
                 {
                     Game = entity.PartitionKey,
                     Name = entity.RowKey,

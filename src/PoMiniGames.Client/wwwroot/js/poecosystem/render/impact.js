@@ -1,11 +1,11 @@
 // impact.js — PoEcosystem's read of the app-wide impact envelope (impactBus.js).
 //
-// These are the three helpers ../../postFx.js exports, restated here on purpose: postFx.js
+// These are the three helpers ../../platform/postFx.js exports, restated here on purpose: postFx.js
 // imports three r165's BokehPass, so importing it from this game would pull the second
 // three.js build (and its whole module graph) into a page that renders with r186 — two
 // copies of three, one of them unused. The maths is the same, so the island reacts to a
 // blast on the same curve as every other three.js game.
-import * as Impact from '../../impactBus.js';
+import * as Impact from '../../platform/impactBus.js';
 
 /** Chromatic aberration (UV units at the frame edge) for the current impact envelope. */
 export function punchAberration(scale = 1) {

@@ -5,7 +5,7 @@ import { GTAOPass } from 'three/addons/postprocessing/GTAOPass.js';
 import { UnrealBloomPass } from 'three/addons/postprocessing/UnrealBloomPass.js';
 import { OutputPass } from 'three/addons/postprocessing/OutputPass.js';
 import { ShaderPass } from 'three/addons/postprocessing/ShaderPass.js';
-import { createRackFocus } from '../postFx.js';
+import { createRackFocus } from '../platform/postFx.js';
 import { createTemporal } from './temporal.js';
 import { createVolumetric } from './volumetric.js';
 import { createSmallLights } from './smallLights.js';

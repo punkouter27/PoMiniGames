@@ -82,7 +82,7 @@
                 return;
             }
 
-            var module = await JS.InvokeAsync<IJSObjectReference>("import", "./js/fileDownload.js");
+            var module = await JS.InvokeAsync<IJSObjectReference>("import", "./js/platform/fileDownload.js");
             await using (module)
             {
                 await module.InvokeVoidAsync(

@@ -2,13 +2,13 @@ import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { test } from 'node:test';
 
-// PoCapitol's rigged figure: rig.js builds it, scripts/pocapitol-figure.mjs writes the glb.
+// PoCapitol's rigged figure: rig.js builds it, scripts/content/pocapitol-figure.mjs writes the glb.
 const client = new URL('../src/PoMiniGames.Client/wwwroot/', import.meta.url);
 const rig = await import(new URL('js/pocapitol/rig.js', client));
 const { BONES, REGIONS, buildFigure, toGlb } = rig;
 const figure = buildFigure();
 
-test('committed figure.glb matches rig.js (run scripts/pocapitol-figure.mjs after editing the rig)', () => {
+test('committed figure.glb matches rig.js (run scripts/content/pocapitol-figure.mjs after editing the rig)', () => {
     const disk = readFileSync(new URL('models/pocapitol/figure.glb', client));
     assert.deepEqual(Buffer.from(toGlb(figure)), disk);
 });

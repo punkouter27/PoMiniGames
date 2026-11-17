@@ -734,7 +734,7 @@ class AudioShowtimeMethods {
       this._echoNodes = null;
     }
     if (this.ctx) {
-      // Never close the shared app context (js/audioBus.js); only a private fallback.
+      // Never close the shared app context (js/platform/audioBus.js); only a private fallback.
       if (this._ownsCtx && this.ctx.state !== 'closed') {
         this.ctx.close().catch(() => { /* already closing */ });
       } else {

@@ -33,7 +33,7 @@
     else
     {
         <div class="cq-lobby-wrap">
-            @* One inline failure strip for every lobby: Components/InlineError. *@
+            @* One inline failure strip for every lobby: Features/Shared/Feedback/InlineError.razor. *@
             <InlineError Message="@_error" OnRetry="ReconnectLobbyAsync" />
             @* One start path: the server starts the match the moment everyone is ready, so there
                is no Start button (ShowStart) and a ready cannot be taken back (CanReady). *@

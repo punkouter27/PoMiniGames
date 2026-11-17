@@ -79,7 +79,7 @@ class AudioBus {
     try {
       const Ctor = window.AudioContext || window.webkitAudioContext;
       if (!Ctor) { this._ensureFailed = true; return false; }
-      // Shared context (js/audioBus.js) — one AudioContext for the whole app.
+      // Shared context (js/platform/audioBus.js) — one AudioContext for the whole app.
       const shared = window.PoAudioBus && window.PoAudioBus.contextSync();
       const ctx = shared || new Ctor();
       this.ctx = ctx;

@@ -9,7 +9,7 @@
 //                 C cycles the camera, Esc / P pause.
 //   • gamepad   — Gamepad API, standard mapping: left stick steers (deadzone +
 //                 response curve), RT/LT or A/B are gas/brake, Start pauses.
-//                 Wall hits rumble. All pad reads go through ../gamepadBus.js;
+//                 Wall hits rumble. All pad reads go through ../platform/gamepadBus.js;
 //                 only the analog trigger values are read off the pad object,
 //                 because the bus exposes buttons as pressed/not.
 //   • touch     — on-screen controls rendered by the page (#pocabinetTouch):
@@ -21,7 +21,7 @@
 // attaches listeners and flips data-* attributes Blazor never renders, so a
 // re-render can't wipe them.
 
-import { BUTTONS, connectedPads, pressed, rumble as padRumble } from '../gamepadBus.js';
+import { BUTTONS, connectedPads, pressed, rumble as padRumble } from '../platform/gamepadBus.js';
 
 const KEY_STEER_RATE = 4.5;     // lock per second while a steer key is held
 const KEY_CENTER_RATE = 7.5;    // lock per second back to centre

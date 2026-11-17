@@ -7,7 +7,7 @@ The rules for working in this repository live in `AGENTS.md` and apply to every 
 @AGENTS.md
 
 For the project tour and the list of games, see `README.md`. `GAME-CONSISTENCY.md` holds the game
-workflow and UI rules; `docs/20261112/VISUAL_ARCHITECTURE_DASHBOARD.html` is the current visual
+workflow and UI rules; `docs/2026-11-12/VISUAL_ARCHITECTURE_DASHBOARD.html` is the current visual
 architecture overview.
 
 ## Commands
@@ -17,8 +17,8 @@ docker compose up -d azurite                                   # storage emulato
 dotnet run --project src/PoMiniGames.Api/PoMiniGames.Api.csproj # API + Blazor WASM client on http://localhost:5080
 dotnet build PoMiniGames.slnx                                  # warnings are errors (Directory.Build.props)
 dotnet format PoMiniGames.slnx --verify-no-changes             # CI style gate
-pwsh scripts/css-lint.ps1                                      # CI CSS gate; run after any scripted CSS edit
-pwsh scripts/test-ceilings.ps1                                 # test-count ceiling guards only
+pwsh scripts/ci/css-lint.ps1                                      # CI CSS gate; run after any scripted CSS edit
+pwsh scripts/ci/test-ceilings.ps1                                 # test-count ceiling guards only
 
 dotnet test tests/PoMiniGames.Unit --filter "FullyQualifiedName~PoMule"   # one test / one area
 dotnet test tests/PoMiniGames.E2EUI -p:SkipPlaywrightInstall=true --filter "..."
@@ -30,7 +30,7 @@ node --test "tests/*.test.mjs"                                 # every JS engine
   build `PoMiniGames.Client` alone while the host is running, because the fingerprinted wasm assets
   stop matching. Under a running host, build with
   `--artifacts-path artifacts/<name>` (it must stay inside the repo).
-- `scripts/test-all.ps1` runs all four tiers. The AGENTS.md rules say not to run it for routine
+- `scripts/dev/test-all.ps1` runs all four tiers. The AGENTS.md rules say not to run it for routine
   changes.
 - CI uses the shared `.github/workflows/deploy.yml`: `scripts/ci-checks.ps1` preserves the
   trim/size, format, Bicep, CSS, test-ceiling, and JavaScript checks; `scripts/ci-package.ps1`
@@ -72,7 +72,7 @@ node --test "tests/*.test.mjs"                                 # every JS engine
   7. On the client, add `Models/GameKeys`, `Models/GameCatalog.cs`, and a page at
      `Games/<Game>/<Game>Page.razor` with routes `/game` and `/game/{Mode}`.
 - **JS engines:** heavy games are JS engines in `Client/wwwroot/js/<game>/`.
-  `wwwroot/js/engineLoader.js` (`loadEngine(name)`) loads them on demand, and the page's
+  `wwwroot/js/platform/engineLoader.js` (`loadEngine(name)`) loads them on demand, and the page's
   `.razor.cs` drives them over IJSRuntime. The PWA service worker precaches them automatically
   through the asset manifest.
 - **Results flow:**
@@ -110,5 +110,5 @@ node --test "tests/*.test.mjs"                                 # every JS engine
 - **Constraints:**
   - PoEcosystem is observation-only: never add controls that change its world.
   - Every in-app `<a>` goes through the Blazor router. Hub links marked `data-hub-nav` are
-    launched by `wwwroot/js/app.js` (`PoHubNav.go`): `Blazor.navigateTo` inside a same-document
+    launched by `wwwroot/js/platform/app.js` (`PoHubNav.go`): `Blazor.navigateTo` inside a same-document
     view transition that morphs the card into the game's title. No WASM reboot.

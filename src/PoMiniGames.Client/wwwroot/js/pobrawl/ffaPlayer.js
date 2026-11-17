@@ -1,5 +1,5 @@
 import { KeyboardController, buildTouchControls, LAYOUTS, padCodes } from './input.js';
-import { KeyBridge } from '../gamepadBus.js';
+import { KeyBridge } from '../platform/gamepadBus.js';
 
 export class FfaPlayerInput {
   constructor(container, onPause) {

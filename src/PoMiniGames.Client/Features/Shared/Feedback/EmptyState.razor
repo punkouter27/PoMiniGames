@@ -1,54 +1,86 @@
 @namespace PoMiniGamesClient.Features.Shared
 
 @*
-    Universal "no rows yet" view.
+    The one viewable "nothing here / something failed" card.
 
-    Drop-in primitive for every list / lobby / leaderboard that can render
-    empty. Composition: icon (emoji, supplied by caller) + headline + body
-    sentence + optional action button. The visual treatment lives entirely
-    in wwwroot/css/app.css under `.app-empty-state*`, so a new page should
-    never have to write its own empty-state CSS — only this component.
+    Composition: optional icon (emoji, supplied by caller) + headline + body
+    sentence + optional action. Two tones share the markup, because the only real
+    difference between an empty list and a recoverable failure is the tint and
+    whether the card announces itself as news:
 
-    Pages that currently roll their own empty markup (`<p>No scores yet.</p>`,
-    themed one-offs in `.prf-page`, etc.) should migrate here. The
-    no-inline-style rule is honoured: this component passes any
-    runtime values via CSS custom properties on `style="…"` rather than
-    static styles.
+      Tone="info"  (default)  role="status", muted, for "no rows yet"
+      Tone="error"            role="alert",  danger tint, for a failed fetch
+
+    <ErrorState> is a thin wrapper over this with Tone="error" — kept as a named
+    component because a page reads better saying "this is an error" than passing a
+    tone, and because it is already the call site everywhere. The visual treatment
+    lives entirely in wwwroot/css/app.css under `.app-empty-state*`, so a new page
+    never has to write its own state CSS — only this component.
+
+    A process-level crash is NOT this component: that is <AppErrorBoundary> or
+    <GameErrorBoundary>, which own recovery rather than presentation.
 *@
 
-<div class="app-empty-state" role="status" aria-live="polite">
+<div class="app-empty-state @(Tone == StateTone.Error ? "app-empty-state--error" : null)"
+     role="@(Tone == StateTone.Error ? "alert" : "status")"
+     aria-live="@(Tone == StateTone.Error ? null : "polite")"
+     aria-labelledby="@(string.IsNullOrEmpty(Title) ? null : _titleId)"
+     aria-describedby="@(ChildContent is null ? null : _bodyId)">
     @if (!string.IsNullOrEmpty(Icon))
     {
         <div class="app-empty-state__icon" aria-hidden="true">@Icon</div>
     }
     @if (!string.IsNullOrEmpty(Title))
     {
-        <h3 class="app-empty-state__title">@Title</h3>
+        <h3 id="@_titleId" class="app-empty-state__title">@Title</h3>
     }
     @if (ChildContent != null)
     {
-        <div class="app-empty-state__body">@ChildContent</div>
+        <div id="@_bodyId" class="app-empty-state__body">@ChildContent</div>
     }
     @if (Action != null)
     {
         <div class="app-empty-state__action">@Action</div>
     }
+    else if (OnRetry.HasDelegate)
+    {
+        <div class="app-empty-state__action">
+            <button class="app-btn app-btn--primary" type="button" @onclick="OnRetry">@RetryLabel</button>
+        </div>
+    }
 </div>
 
 @code {
-    /// <summary>Emoji or short text rendered large and dimmed. Leave null to skip.</summary>
+    /// <summary>Emoji or short text rendered large. Leave null to skip.</summary>
     [Parameter] public string? Icon { get; set; }
 
-    /// <summary>Headline (rendered as <h3>). Leave null to skip.</summary>
+    /// <summary>Headline (rendered as h3). Leave null to skip.</summary>
     [Parameter] public string? Title { get; set; }
 
-    /// <summary>Body sentence or list explaining the empty state.</summary>
+    /// <summary>Body sentence or list explaining the state.</summary>
     [Parameter] public RenderFragment? ChildContent { get; set; }
 
     /// <summary>
-    /// Optional action slot — usually a `.app-btn--primary` "Try again" /
-    /// "Browse games" / "Sign in" button. The caller owns the styling;
-    /// this component only centres it inside `.app-empty-state__action`.
+    /// Optional action slot — usually an <c>.app-btn--primary</c> "Browse games"
+    /// button. The caller owns the styling; this component only centres it.
     /// </summary>
     [Parameter] public RenderFragment? Action { get; set; }
+
+    /// <summary>
+    /// <see cref="StateTone.Info"/> for "no rows yet", <see cref="StateTone.Error"/>
+    /// for a recoverable failure.
+    /// </summary>
+    [Parameter] public StateTone Tone { get; set; } = StateTone.Info;
+
+    /// <summary>
+    /// When set (and <see cref="Action"/> is not), renders a retry button that calls
+    /// it. Without a callback there is nothing to retry — a 401 should redirect, not
+    /// retry — so the button is omitted rather than disabled.
+    /// </summary>
+    [Parameter] public EventCallback OnRetry { get; set; }
+
+    [Parameter] public string RetryLabel { get; set; } = "Try again";
+
+    private readonly string _titleId = $"state-title-{Guid.NewGuid():N}";
+    private readonly string _bodyId = $"state-body-{Guid.NewGuid():N}";
 }

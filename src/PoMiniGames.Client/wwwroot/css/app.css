@@ -396,7 +396,7 @@ h3[tabindex="0"]:focus-visible {
 
    Sections:
      · Viewport-fit tokens      (--gps-area-h, --gps-topbar-h)
-     · State primitives         (.app-loading, .app-empty-state, .app-error-state)
+     · State primitives         (.app-loading, .app-empty-state)
      · Component primitives     (.app-btn, .app-chip)
      · Typography defaults      (text-wrap balance/pretty, fluid-scale anchors)
      · Touch target floor       (extended selector list under @media coarse)
@@ -474,8 +474,8 @@ h3[tabindex="0"]:focus-visible {
 
 /* Inline error strip — the failures that do not replace the card they sit in
    (a lobby whose hub dropped, a quiz that could not connect). The page-level
-   shape is .app-error-state. Owned by Components/InlineError.razor so the three
-   lobbies that used to hand-roll it read identically. */
+   shape is .app-empty-state--error. Owned by Feedback/InlineError.razor so the
+   three lobbies that used to hand-roll it read identically. */
 .app-error-inline {
   display: flex;
   flex-wrap: wrap;
@@ -560,47 +560,28 @@ h3[tabindex="0"]:focus-visible {
   margin-top: var(--space-2);
 }
 
-/* Error state — recoverable failure. Renders an alert icon + headline +
-   a retry button that fires `OnRetry` (rendered as a real <button> by the
-   component, this rule only styles it). */
-.app-error-state {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  gap: var(--space-3);
+/* Error tone — the same card, tinted and raised. One implementation, two call
+   sites: <EmptyState Tone="error"> and the <ErrorState> wrapper over it. */
+.app-empty-state--error {
   padding: var(--space-6) var(--space-4);
-  text-align: center;
-  color: var(--color-text-secondary);
+  min-height: 0;
   /* Soft danger tint so the eye lands here before the headline. */
   background: var(--accent-danger-soft);
   border: 1px solid color-mix(in srgb, var(--accent-danger) 35%, transparent);
   border-radius: var(--radius-lg);
 }
 
-.app-error-state__icon {
+.app-empty-state--error .app-empty-state__icon {
   font-size: clamp(2rem, 4vw, 2.5rem);
-  line-height: 1;
 }
 
-.app-error-state__title {
-  margin: 0;
-  font-size: var(--text-lg);
-  font-weight: 700;
+.app-empty-state--error .app-empty-state__title {
   color: var(--accent-danger-ink);
-  font-family: var(--font-display);
 }
 
-.app-error-state__body {
-  margin: 0;
-  font-size: var(--text-sm);
-  line-height: 1.5;
+.app-empty-state--error .app-empty-state__body {
   max-width: 38ch;
   color: var(--color-text-primary);
-}
-
-.app-error-state__action {
-  margin-top: var(--space-2);
 }
 
 /* ── Component primitives ──────────────────────────────────────────────────
@@ -802,7 +783,6 @@ h3[tabindex="0"]:focus-visible {
    transform, so a no-op render is identical to today's. */
 h1, h2, h3, h4, h5, h6,
 .app-empty-state__title,
-.app-error-state__title,
 .gps-modal-title,
 .gps-game-title {
   text-wrap: balance;
@@ -810,7 +790,6 @@ h1, h2, h3, h4, h5, h6,
 
 p, li, dd, blockquote,
 .app-empty-state__body,
-.app-error-state__body,
 .gps-game-summary,
 .gps-intro-objective {
   text-wrap: pretty;
@@ -830,12 +809,11 @@ p, li, dd, blockquote,
   /* A chip gets the floor only when it is something to press: most are status
      labels (a lobby's "host" pill), and a 44px-tall label is just a tall label. */
   :where(.app-btn, a.app-chip, button.app-chip, .app-link,
-         /* New: EmptyState / ErrorState actions. The component renders the
-            retry / CTA as `.app-btn` already, but the older selectors do
-            not enumerate these so we list them here for safety in case a
-            page rolls a plain <button> inside an empty/error state. */
-         .app-empty-state__action button,
-         .app-error-state__action button) {
+         /* Empty/error state actions. The component renders the retry / CTA as
+            `.app-btn` already, but the older selectors in this file do not
+            enumerate these, so a page that rolls a plain <button> inside a state
+            card still gets the floor. */
+         .app-empty-state__action button) {
     min-height: 44px;
   }
 

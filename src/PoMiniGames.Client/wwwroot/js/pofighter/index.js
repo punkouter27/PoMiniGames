@@ -14,7 +14,7 @@
 // into it; there are no .NET callbacks. Nothing here is scored, saved or sent anywhere.
 
 import { WORLD, ACTIONS, createState, reset, step, frameAt } from './sim.js';
-import { BUTTONS, ButtonEdges, activePad, pressed, stick } from '../gamepadBus.js';
+import { BUTTONS, ButtonEdges, activePad, pressed, stick } from '../platform/gamepadBus.js';
 import { listCustomFighters, getCustomFighter } from './studio.js';
 
 const KEYS = {

@@ -11,8 +11,8 @@ import * as P from './physics.js';
 import * as Sfx from './audio.js';
 import { drawFrame, frameLayout, SCREEN_W, MAP_Y } from './render.js';
 import { buildTouchControls, isTouchDevice } from './touch.js';
-import { KeyBridge, BUTTONS, pressed, stick } from '../gamepadBus.js';
-import { ensure as ensureRadzen, remove as removeRadzen } from '../radzenTheme.js';
+import { KeyBridge, BUTTONS, pressed, stick } from '../platform/gamepadBus.js';
+import { ensure as ensureRadzen, remove as removeRadzen } from '../platform/radzenTheme.js';
 
 const TICK = 0.1;
 const HEADER = 23, PER = 16;

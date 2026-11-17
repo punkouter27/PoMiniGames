@@ -30,7 +30,7 @@ public partial class PoRacerPage
     private DotNetObjectReference<PoRacerPage>? _reference;
     private ElementReference _resumeButton;
     private bool _disposed, _engineReady, _isStarting, _trial, _pauseOpen, _focusResume, _showResults;
-    // Race your best lap on this track (js/ghostTrack.js). Solo only; the switch is in the pause menu.
+    // Race your best lap on this track (js/platform/ghostTrack.js). Solo only; the switch is in the pause menu.
     private bool _ghost = true;
     // The opening card (GameIntro) gates everything: no lobby seat is taken and no race is
     // joined until it is dismissed. _routed tells the first route apart from a later one.

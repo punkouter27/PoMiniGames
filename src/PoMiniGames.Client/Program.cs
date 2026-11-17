@@ -1,4 +1,3 @@
-using FluentValidation;
 using Microsoft.AspNetCore.Components.Web;
 using Microsoft.AspNetCore.Components.WebAssembly.Hosting;
 using Microsoft.JSInterop;
@@ -39,7 +38,7 @@ if (string.IsNullOrWhiteSpace(apiBase))
 // write is refused.
 //
 // We patch `window.fetch` once at startup (see
-// wwwroot/js/crossOriginFetchPatch.js) so requests to the API origin get
+// wwwroot/js/platform/crossOriginFetchPatch.js) so requests to the API origin get
 // `credentials: 'include'` while every other origin stays untouched.
 // The patch is idempotent. Installed via JS interop during
 // WebAssemblyHostBuilder.Build() below — see the `await host.RunAsync()`
@@ -132,7 +131,6 @@ builder.Services.AddScoped<IBrowserStorage, BrowserStorageService>();
 // Radzen dialog / notification / tooltip services. Only PoMule, Brawl HQ, Leaderboards,
 // and Profile use Radzen components; their pages load the Radzen stylesheet on demand.
 builder.Services.AddRadzenComponents();
-builder.Services.AddValidatorsFromAssemblyContaining<PoMiniGames.Shared.Validation.PlayerDisplayNameValidator>();
 builder.Services.AddScoped<PoMiniGamesClient.Features.PoMule.PoMuleSaveStore>();
 // PoBrawl fighter dossiers: fetched once per app life, static facts until (or unless) they land.
 builder.Services.AddScoped<PoMiniGamesClient.Features.PoBrawl.PoBrawlDossierService>();
@@ -170,7 +168,7 @@ LocalStorageService.SetJSRuntime(host.Services.GetRequiredService<IJSRuntime>())
 if (!string.Equals(new Uri(apiBase).Authority, new Uri(builder.HostEnvironment.BaseAddress).Authority, StringComparison.OrdinalIgnoreCase))
 {
     var fetchPatchModule = await host.Services.GetRequiredService<IJSRuntime>()
-        .InvokeAsync<IJSObjectReference>("import", "./js/crossOriginFetchPatch.js");
+        .InvokeAsync<IJSObjectReference>("import", "./js/platform/crossOriginFetchPatch.js");
     await fetchPatchModule.InvokeVoidAsync("installCrossOriginCredentialsPatch", apiBase);
 }
 

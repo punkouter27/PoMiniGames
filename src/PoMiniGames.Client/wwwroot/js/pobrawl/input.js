@@ -26,7 +26,7 @@
 // Camera-relative is the point: an axis derived from the line between the
 // fighters would flip on screen whenever they swap sides.
 
-import { BUTTONS, pressed } from '../gamepadBus.js';
+import { BUTTONS, pressed } from '../platform/gamepadBus.js';
 
 // Exported because the touch panel (below) and padCodes (the controller) press these same codes.
 export const LAYOUTS = {
@@ -44,7 +44,7 @@ export const LAYOUTS = {
 
 // ── Controllers ──
 // A pad drives the same key codes as the keyboard: game.js hands padCodes to the shared
-// KeyBridge (../gamepadBus.js), which presses and releases them for it.
+// KeyBridge (../platform/gamepadBus.js), which presses and releases them for it.
 //
 // Stick deadzone. 0.4 rather than a tight 0.15: a worn stick resting at 0.25 would otherwise walk
 // the fighter on its own, and nothing here is analogue (the keyboard model is on/off, so there is

@@ -33,7 +33,7 @@ namespace PoMiniGamesClient.Services.Play;
 ///         active timer to prevent a stale timer from yanking the user
 ///         back into the kiosk cycle.
 ///   • Users can Pause/Resume/Skip/Exit via the on-screen kiosk control
-///     bar (<c>Components/KioskControlBar.razor</c>, mounted once in
+///     bar (<c>Features/Shared/Shell/KioskControlBar.razor</c>, mounted once in
 ///     MainLayout). It renders only while <see cref="IsActive"/>.
 /// </summary>
 public sealed class KioskCoordinator : IDisposable

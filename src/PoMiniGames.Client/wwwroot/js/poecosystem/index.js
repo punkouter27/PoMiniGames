@@ -7,7 +7,7 @@ import { fetchSpeciesInfo } from './host/naturalist.js';
 import { fetchLiveWeather } from './host/liveWeather.js';
 import { createRenderer } from './render/renderer.js';
 import { BINDABLE, DEFAULT_BINDINGS, mergeBindings } from './render/input.js';
-import { connectedPads } from '../gamepadBus.js';
+import { connectedPads } from '../platform/gamepadBus.js';
 import { createAudio } from './render/audio.js';
 import { createMusic } from './render/music.js';
 import { createLeitmotif } from './render/leitmotif.js';

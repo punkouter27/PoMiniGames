@@ -24,6 +24,6 @@ via `WebApplicationFactory<Program>`, force `Auth:EnableFakeAuth=true` so
 ## Running
 
 ```pwsh
-# from repo root — requires Azurite on 127.0.0.1:10002 (scripts/setup.ps1)
+# from repo root — requires Azurite on 127.0.0.1:10002 (scripts/dev/setup.ps1)
 dotnet test tests/PoMiniGames.E2EAPI/PoMiniGames.E2EAPI.csproj
 ```

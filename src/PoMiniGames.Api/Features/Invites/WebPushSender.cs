@@ -21,7 +21,7 @@ public enum PushOutcome
 /// <b>No payload, on purpose.</b> A push with a body has to be encrypted to the subscription
 /// (ECDH + HKDF + AES-GCM, RFC 8291), which is either a new dependency or hand-rolled
 /// cryptography. A push without one needs only the VAPID signature (RFC 8292), which is one
-/// ES256 JWT from the standard library. The service worker (<c>js/pushWorker.js</c>) answers the
+/// ES256 JWT from the standard library. The service worker (<c>js/platform/pushWorker.js</c>) answers the
 /// wake-up by fetching <c>/api/invites/pending</c> with the player's own cookie and shows what it
 /// finds. That also means the push service never carries who invited whom.
 /// </para>

@@ -12,4 +12,4 @@ self.addEventListener('fetch', () => { });
 
 // Game invites (push + notification click). Not caching, so it belongs here too:
 // without it an invite could only be tried against a published build.
-self.importScripts('./js/pushWorker.js');
+self.importScripts('./js/platform/pushWorker.js');

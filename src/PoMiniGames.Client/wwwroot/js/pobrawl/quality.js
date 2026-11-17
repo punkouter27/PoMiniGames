@@ -11,7 +11,7 @@
 //     physicalMaterials — read per fighter build, so it picks up a tier change
 //     at the next spawn.
 
-import * as VisualRuntime from '../visualRuntime.js';
+import * as VisualRuntime from '../platform/visualRuntime.js';
 
 /**
  * Per-tier renderer settings.

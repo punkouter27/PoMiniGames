@@ -54,7 +54,7 @@
                     @(!_isConnected ? "Connecting…" : _busy ? "Joining…" : "Join the lobby")
                 </button>
             </div>
-            @* One inline failure strip for every lobby: Components/InlineError. *@
+            @* One inline failure strip for every lobby: Features/Shared/Feedback/InlineError.razor. *@
             <InlineError Message="@_error" OnRetry="RetryConnect" />
         </div>
     }

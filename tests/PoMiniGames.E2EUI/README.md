@@ -21,7 +21,7 @@ the rendered Blazor WASM UI.
 
 ## Prerequisites
 
-1. **Azurite** on `127.0.0.1:10002` — `scripts/setup.ps1` brings it up.
+1. **Azurite** on `127.0.0.1:10002` — `scripts/dev/setup.ps1` brings it up.
 2. **Playwright browsers** (one-time per machine), installed from the build
    output after a first `dotnet build`:
 
@@ -38,4 +38,4 @@ dotnet test tests/PoMiniGames.E2EUI/PoMiniGames.E2EUI.csproj
 
 > **Not run in CI** by default (needs browser binaries). Per repo UPDATES,
 > the `.github/workflows/deploy.yml` runs only the Unit tier; this tier is run locally
-> via `scripts/test-all.ps1` or in an environment that supplies Azurite + browsers.
+> via `scripts/dev/test-all.ps1` or in an environment that supplies Azurite + browsers.

@@ -8,7 +8,7 @@ namespace PoMiniGames.Domain.Abstractions;
 public interface IStorageService
 {
     // Player Stats
-    IAsyncEnumerable<PlayerStatsDto> GetAllPlayerStatsAsync(CancellationToken cancellationToken = default);
+    IAsyncEnumerable<PlayerStatsRow> GetAllPlayerStatsAsync(CancellationToken cancellationToken = default);
     Task<PlayerStats?> GetPlayerStatsAsync(string game, string playerName);
     Task SavePlayerStatsAsync(string game, string playerName, PlayerStats stats);
     Task<List<(string Name, PlayerStats Stats)>> GetLeaderboardAsync(string game, int limit, string? difficulty = null);

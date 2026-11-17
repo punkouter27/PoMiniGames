@@ -168,12 +168,11 @@ ehthumbs.db
 # every deploy package for pixels nothing renders.
 assets/
 
-# PoVoxelStrike: converted voxel volumes are build product derived from the GLBs in
-# the drop folder — regenerated on any API start. The drop folder itself IS source
-# (authored GLBs ship with the app), so only the output is ignored.
-src/PoMiniGames.API/App_Data/povoxelstrike/converted/
-
-# The same scaffold at the REPO ROOT is pure runtime: PoVoxelStrike's AssetDropPath
+# PoVoxelStrike: the converted voxel volumes ARE tracked. They are the product the API
+# serves, and they are what keeps an App Service cold start from re-voxelising 87 MB of
+# authored GLB (which yields the same ~150 KB every time). Re-bake with
+# scripts/dev/bake-voxels.ps1 and commit the result when a GLB or VoxelResolution changes.
+# The same scaffold at the repo ROOT is pure runtime: PoVoxelStrike's AssetDropPath
 # and ConvertedPath are relative, so launching the host with the repo root as the
 # working directory (dotnet run from here, or a debugger profile) recreates the tree
 # there. Nothing under it is source — the authored GLBs live under the API project.

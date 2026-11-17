@@ -9,7 +9,7 @@
 // button or, on a touch-only device, from the start card. Pause is then a button (Start,
 // or the on-screen one) rather than the lock being lost.
 
-import { connectedPads, BUTTONS } from '../gamepadBus.js';
+import { connectedPads, BUTTONS } from '../platform/gamepadBus.js';
 
 const DEADZONE = 0.18;
 // A trigger counts as held a little earlier than the bus's half-travel `pressed()`: DIG on RT

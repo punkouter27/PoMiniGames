@@ -14,7 +14,7 @@
    frame time, heap and viewport, plus any per-game rows the page passes through
    GameShell's `Diagnostics` slot.
 
-   Gesture rules live in wwwroot/js/game-debug.js: Tab is only claimed while the
+   Gesture rules live in wwwroot/js/platform/game-debug.js: Tab is only claimed while the
    player is in the game area — never while a dialog, the intro card or a form
    control has focus — so it stays the browser's focus mover everywhere else.
    Escape closes the panel.
@@ -125,7 +125,7 @@
         try
         {
             _wired = true;
-            _module ??= await JS.InvokeAsync<IJSObjectReference>("import", "./js/game-debug.js");
+            _module ??= await JS.InvokeAsync<IJSObjectReference>("import", "./js/platform/game-debug.js");
             _ref ??= DotNetObjectReference.Create(this);
             await JS.InvokeVoidAsync("poGameDebug.start", _ref);
         }

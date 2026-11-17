@@ -19,7 +19,7 @@ import { addDaze, isKnockdown, isFloored } from './knockdown.js';
 import { PERSONALITIES } from './personalities.js';
 import { testAttackHit, guardCovers, testAttackClash, regionForHurtBone } from './hitboxes.js';
 import { SIM_DT, MAX_HP, ATTACKS, HEAVY_HIT_DMG } from './constants.js';
-import * as Feel from '../feelPresets.js';
+import * as Feel from '../platform/feelPresets.js';
 
 // ── Dismemberment ─────────────────────────────────────────────────────────
 // When the arms region reddens, an arm tears off and falls to the canvas with a

@@ -18,7 +18,7 @@
 //
 // Keypresses inside an input or a contenteditable are ignored, so typing never answers.
 
-import { BUTTONS, connectedPads, pressed } from '../gamepadBus.js';
+import { BUTTONS, connectedPads, pressed } from '../platform/gamepadBus.js';
 
 /** Standard-mapping face buttons in option order: Y, X, B, A. */
 export const PAD_OPTION_BUTTONS = Object.freeze([BUTTONS.north, BUTTONS.west, BUTTONS.east, BUTTONS.south]);

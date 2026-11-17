@@ -11,7 +11,7 @@ New-Item -ItemType Directory -Force $target | Out-Null
 Get-ChildItem -LiteralPath $docs -Force | Copy-Item -Destination $target -Recurse -Force
 
 $latest = Get-ChildItem -LiteralPath $docs -Directory |
-    Where-Object { $_.Name -match '^\d{8}$' } |
+    Where-Object { $_.Name -match '^\d{4}-\d{2}-\d{2}$' } |
     Sort-Object -Property Name |
     Select-Object -Last 1
 if (-not $latest) {
@@ -24,13 +24,12 @@ $redirect = @"
 <html lang="en">
 <head>
 <meta charset="utf-8">
-<meta http-equiv="refresh" content="0; url=$($latest.Name)/artifact.html">
-<link rel="canonical" href="$($latest.Name)/artifact.html">
+<meta http-equiv="refresh" content="0; url=$($latest.Name)/index.html">
+<link rel="canonical" href="$($latest.Name)/index.html">
 <title>PoMiniGames documentation</title>
 </head>
 <body style="font:16px system-ui,sans-serif;padding:2rem">
-<p>Opening <a href="$($latest.Name)/artifact.html">the PoMiniGames documentation suite</a>&hellip;</p>
-<p><a href="$($latest.Name)/index.html">Or start with the plain-English overview</a>.</p>
+<p>Opening <a href="$($latest.Name)/index.html">the PoMiniGames documentation overview</a>&hellip;</p>
 </body>
 </html>
 "@

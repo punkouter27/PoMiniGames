@@ -16,9 +16,9 @@ namespace PoMiniGames.Features.Health;
 /// <remarks>
 /// Pattern: Adapter over ASP.NET Core's <see cref="HealthCheckService"/>. The
 /// application-composition root treats these URLs as a single namespace so
-/// <c>curl .../api/health/...</c> is the only shape dev/ops/CI ever have to learn
-/// (the previously-divergent <c>/health</c> and <c>/api/health/ping</c> pair was the
-/// most-copy-pasted bug across the test suites — see <c>docs/qa-fixes-runbook.md</c>).
+/// <c>curl .../api/health/...</c> is the only shape dev/ops/CI ever have to learn.
+/// <c>/health</c> survives only because App Service probes it; new callers use
+/// <c>/api/health</c>.
 /// </remarks>
 public static class HealthEndpoints
 {

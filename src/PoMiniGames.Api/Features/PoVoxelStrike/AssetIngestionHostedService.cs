@@ -50,6 +50,7 @@ internal sealed partial class AssetIngestionHostedService(
         Directory.CreateDirectory(dropDir);
         Directory.CreateDirectory(convertedDir);
 
+        SeedPackagedConversions(convertedDir);
         IndexExisting(convertedDir);
 
         var glbFiles = Directory.EnumerateFiles(dropDir, "*.glb", SearchOption.TopDirectoryOnly).ToList();
@@ -140,6 +141,76 @@ internal sealed partial class AssetIngestionHostedService(
             return ConversionOutcome.Failed;
         }
     }
+
+    /// <summary>
+    /// Copies the pre-baked volumes that ship inside the deployment package into the writable
+    /// conversion directory on first boot.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// The authored GLBs are author-time input: converting the 87 MB drop folder on every boot
+    /// (and on every scale-out instance) produced the same 150 KB of volumes each time, so the
+    /// volumes are baked once and committed instead. They ship beside the app, but App Service
+    /// points <see cref="PoVoxelStrikeOptions.ConvertedPath"/> at a writable directory under
+    /// <c>%HOME%\data</c> — so the packaged copies have to be handed over before indexing or
+    /// the catalog reads as empty.
+    /// </para>
+    /// <para>
+    /// Only ever a one-time copy: an existing volume in the writable directory wins, so a
+    /// rollback to an older package cannot silently overwrite a newer volume, and the copy is
+    /// skipped entirely when the two paths are the same directory (local `dotnet run`).
+    /// </para>
+    /// </remarks>
+    private void SeedPackagedConversions(string convertedDir)
+    {
+        var packagedDir = Path.Combine(environment.ContentRootPath, PackagedConvertedPath);
+        if (string.Equals(Path.GetFullPath(packagedDir), Path.GetFullPath(convertedDir), StringComparison.OrdinalIgnoreCase)
+            || !Directory.Exists(packagedDir))
+        {
+            return;
+        }
+
+        try
+        {
+            var packaged = Directory.EnumerateFiles(packagedDir, "*.pvx", SearchOption.TopDirectoryOnly).ToList();
+            var seeded = 0;
+            foreach (var source in packaged)
+            {
+                var target = Path.Combine(convertedDir, Path.GetFileName(source));
+                if (File.Exists(target))
+                {
+                    continue;
+                }
+
+                File.Copy(source, target);
+
+                // The sidecar carries the display name and material table. Missing it is not
+                // fatal (IndexExisting re-reads dims from the header) but the arena would show
+                // "Material 1" instead of the authored names.
+                var sidecar = source + ".json";
+                if (File.Exists(sidecar))
+                {
+                    File.Copy(sidecar, target + ".json");
+                }
+
+                seeded++;
+            }
+
+            if (seeded > 0)
+            {
+                Log.Seeded(logger, seeded, convertedDir);
+            }
+        }
+        catch (Exception ex)
+        {
+            // A read-only or full data directory must not stop the host: the GLB scan below
+            // still runs, and a missing volume degrades to the procedural fallback world.
+            Log.SeedFailed(logger, ex);
+        }
+    }
+
+    /// <summary>Where the pre-baked volumes live inside the package, relative to the content root.</summary>
+    private const string PackagedConvertedPath = "App_Data/povoxelstrike/converted";
 
     private static IReadOnlyList<VoxelAssetMaterial> BuildAssetMaterials(PvxVolume volume, PvxSidecar? sidecar)
     {
@@ -233,6 +304,14 @@ internal sealed partial class AssetIngestionHostedService(
 
         [LoggerMessage(Level = LogLevel.Warning, Message = "PoVoxelStrike ingest: {File} could not be indexed")]
         public static partial void IndexFailed(ILogger logger, string file, Exception ex);
+
+        [LoggerMessage(Level = LogLevel.Information,
+            Message = "PoVoxelStrike ingest: copied {Count} pre-baked volume(s) into {Directory}")]
+        public static partial void Seeded(ILogger logger, int count, string directory);
+
+        [LoggerMessage(Level = LogLevel.Warning,
+            Message = "PoVoxelStrike ingest: could not copy the pre-baked volumes; continuing with the drop folder")]
+        public static partial void SeedFailed(ILogger logger, Exception ex);
 
         [LoggerMessage(Level = LogLevel.Error, Message = "PoVoxelStrike ingest: scan aborted")]
         public static partial void ScanFailed(ILogger logger, Exception ex);

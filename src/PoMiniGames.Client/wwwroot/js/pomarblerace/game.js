@@ -19,8 +19,8 @@ import { RivalsMixin } from './rivals.js';
 import { PerfMixin } from './perf.js';
 // Weather + glass: classic-style IIFE modules imported as modules, they self-register
 // on window and run once.
-import '../weather.js';
-import '../glassFx.js';
+import '../platform/weather.js';
+import '../platform/glassFx.js';
 
 import {
   RACE_TIMEOUT, TICK_INTERVAL, SLOWMO_DIST, SLOWMO_SCALE, GUEST_COLOR, GHOST_KEY,

@@ -5,7 +5,7 @@
 // The effect layer that sits on top of this scene — particles, the night light pass, track
 // wear, speed streaks, ambient motes and the minimap — lives in fx.js.
 import * as Fx from './fx.js';
-import { addTrauma, getShake, getPunch } from '../impactBus.js';
+import { addTrauma, getShake, getPunch } from '../platform/impactBus.js';
 
 let centerXY = null;
 let centerN = 0, wallsXY = null, wallsM = 0, trackWidth = 0;

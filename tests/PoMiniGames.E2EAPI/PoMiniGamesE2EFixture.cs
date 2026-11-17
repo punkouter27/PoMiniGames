@@ -25,7 +25,7 @@ namespace PoMiniGames.E2EAPI;
 /// <para>
 /// The fixture assumes Azurite Table Storage is reachable on
 /// <c>127.0.0.1:10002</c> with the well-known dev account
-/// (<c>devstoreaccount1</c> + canned key). <c>scripts/setup.ps1</c> brings
+/// (<c>devstoreaccount1</c> + canned key). <c>scripts/dev/setup.ps1</c> brings
 /// that container up via docker-compose. CI must do the same before running
 /// this test project.
 /// </para>

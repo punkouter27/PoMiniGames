@@ -1,4 +1,3 @@
-using FluentValidation;
 using PoMiniGames.Features.Identity;
 using PoMiniGames.Domain.Abstractions;
 using PoMiniGames.Infrastructure;
@@ -76,8 +75,11 @@ builder.Services.AddSignalR(options =>
 });
 
 // ─── Swagger / OpenAPI ───────────────────────────────────────────────
+// Documentation surfaces are mapped for Development and Test only (see the
+// MapOpenApi/MapScalarApiReference calls below). Production's route table is not
+// published: the typed /api/* 404 below is what a caller gets, and it names no
+// document, because there is no document there to read.
 builder.Services.AddProblemDetails();
-builder.Services.AddValidatorsFromAssemblyContaining<PoMiniGames.Shared.Validation.PlayerDisplayNameValidator>();
 // CSRF: synchroniser tokens for every state-changing /api/* call. See
 // AntiforgeryExtensions for why UseAntiforgery() alone does not cover a JSON API.
 builder.Services.AddPoMiniGamesAntiforgery();
@@ -217,12 +219,17 @@ else
 // ─── Security headers (nosniff, DENY framing, minimal CSP) ───────────
 app.UsePoMiniGamesSecurityHeaders();
 
-app.MapOpenApi();
-app.MapScalarApiReference(options =>
+// API documentation is a developer surface, not a product one: the route table is
+// mapped only where it is useful and harmless (Development and the E2E "Test" host).
+if (app.Environment.IsDevOrTest())
 {
-    options.Title = "PoMiniGames API";
-    options.Theme = ScalarTheme.Purple;
-});
+    app.MapOpenApi();
+    app.MapScalarApiReference(options =>
+    {
+        options.Title = "PoMiniGames API";
+        options.Theme = ScalarTheme.Purple;
+    });
+}
 
 // ─── Boot chain: revalidate the shell, /_framework and the js/css ────
 app.UsePoMiniGamesBootChainCachePolicy();
@@ -261,7 +268,7 @@ app.MapPoMiniGamesEndpoints();
 app.Map("/api/{*rest:nonfile}", () => Results.NotFound(new
 {
     error = "no_such_endpoint",
-    detail = "The requested /api/* path is not mapped. Check the OpenAPI document at /openapi/v1.json for the live route table."
+    detail = "The requested /api/* path is not mapped."
 }))
 .ExcludeFromDescription(); // Keep the catch-all out of the OpenAPI surface.
 

@@ -531,7 +531,7 @@ public partial class PoMarbleRacePage
         _ref ??= DotNetObjectReference.Create(this);
         try
         {
-            // Route-gated engine load (wwwroot/js/engineLoader.js); idempotent after the first.
+            // Route-gated engine load (wwwroot/js/platform/engineLoader.js); idempotent after the first.
             if (!await JSRuntime.InvokeAsync<bool>("loadEngine", "pomarblerace"))
             {
                 Console.Error.WriteLine("[pomarblerace] engine failed to load");

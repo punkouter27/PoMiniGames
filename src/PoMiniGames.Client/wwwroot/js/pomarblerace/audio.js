@@ -527,7 +527,7 @@ export function createAudio() {
 
   function ensure() {
     if (!ctx) {
-      // Shared context only (js/audioBus.js) — one AudioContext for the whole app, so dispose()
+      // Shared context only (js/platform/audioBus.js) — one AudioContext for the whole app, so dispose()
       // never closes it. No shared bus, no sound: a private context would ignore the app's mute
       // and volume. ensure() then returns null, which every caller treats as silence, and the
       // next call tries the bus again.

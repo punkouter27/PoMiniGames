@@ -78,7 +78,7 @@ public static class PoRacerCatalog
 /// The weather of the day on a Racer track: one draw per track and UTC day, so everyone who races
 /// a track on the same day drives it in the same conditions. The server decides it (the sim turns
 /// it into grip) and sends it with the track; the start card calls the same function to say what
-/// is coming. The hash and the shares are the ones js/weather.js has always used for the overlay
+/// is coming. The hash and the shares are the ones js/platform/weather.js has always used for the overlay
 /// (FNV-1a over <c>"trackId"yyyy-MM-dd</c>: 58% clear, 25% rain, 11% snow, 6% fog).
 /// </summary>
 public static class PoRacerWeather

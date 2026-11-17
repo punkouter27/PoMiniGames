@@ -3,19 +3,17 @@ using PoMiniGames.Features.Identity;
 using PoMiniGames.Features.Shared.TurnMatch; // ConnectFiveHub + TicTacToeHub (shared turn-match hubs)
 using PoMiniGames.Features.Health;
 using PoMiniGames.Features.Integrity;
-using PoMiniGames.Features.Invites;       // push subscriptions + game invites (2026-10-01)
-using PoMiniGames.Features.PoBrawl;        // moved out of Features.HighScores 2026-08-11,
-                                           // same correction PoMarbleRace already had
-using PoMiniGames.Features.PoBrawl.Online; // 2026-09-14: lobby hub + match hub + match ingest
-using PoMiniGames.Features.PoMarbleRace;   // moved out of Features.HighScores so the
-                                           // namespace matches its own slice folder
+using PoMiniGames.Features.Invites;       // push subscriptions + game invites
+using PoMiniGames.Features.PoBrawl;       // 1P ladder, KO board, dossiers, progress
+using PoMiniGames.Features.PoBrawl.Online; // lobby hub + match hub + match ingest
+using PoMiniGames.Features.PoMarbleRace;  // high scores + the 2-player race hub
 using PoMiniGames.Features.Leaderboard;
 using PoMiniGames.Features.MatchHistory;
 using PoMiniGames.Features.PoCoupleQuiz;  // CoupleQuizHub (the slice's only server surface)
-using PoMiniGames.Features.PoEcosystem;   // cloud world slots, gallery (2026-09-14)
+using PoMiniGames.Features.PoEcosystem;   // cloud world slots, gallery
 using PoMiniGames.Features.PoFunQuiz;
 using PoMiniGames.Features.PoRacer;
-using PoMiniGames.Features.PoCabinet; // T4-T6: career, score, lobby + race hubs
+using PoMiniGames.Features.PoCabinet;     // career, score, lobby + race hubs
 using PoMiniGames.Features.PoVoxelStrike;
 using PoMiniGames.Features.PoMule;
 
@@ -48,7 +46,7 @@ internal static class EndpointRouteExtensions
         app.MapPoLiveness();
         // /api/diag.
         app.MapDiagEndpoints();
-        // Browser-side error sink (js/errorReporter.js). Deliberately NOT under /api: it is fed
+        // Browser-side error sink (js/platform/errorReporter.js). Deliberately NOT under /api: it is fed
         // by sendBeacon, which cannot carry the antiforgery header that scope requires.
         app.MapClientErrorEndpoints();
 

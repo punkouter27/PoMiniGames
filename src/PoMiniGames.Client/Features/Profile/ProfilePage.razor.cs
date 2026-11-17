@@ -272,7 +272,7 @@ public partial class ProfilePage
         if (!firstRender || _theme is not null) return;
         try
         {
-            _theme = await JS.InvokeAsync<IJSObjectReference>("import", "./js/radzenTheme.js");
+            _theme = await JS.InvokeAsync<IJSObjectReference>("import", "./js/platform/radzenTheme.js");
             await _theme.InvokeVoidAsync("ensure");
         }
         catch (JSException ex)

@@ -27,7 +27,7 @@ public enum ThemeMode
 /// </summary>
 /// <remarks>
 /// <para>
-/// The setters sit behind <c>Components/SettingsSheet.razor</c>, a dialog rather
+/// The setters sit behind <c>Features/Shared/Modals/SettingsSheet.razor</c>, a dialog rather
 /// than a page, which also covers <c>pominigames:color-safe</c>. A fresh browser gets
 /// the defaults below (Auto theme, unmuted, full volume, haptics on, motion
 /// unreduced, standard palettes).
@@ -40,7 +40,7 @@ public enum ThemeMode
 /// <para>
 /// The FPS badge used to be gated here too (<c>pomini_showfps</c>, default off).
 /// It is now unconditional in the top bar, so the flag is gone — see
-/// Components/FpsCounter.razor. The "show game intros" flag went the same way:
+/// Features/Shared/Shell/FpsCounter.razor. The "show game intros" flag went the same way:
 /// the controls card now opens every 1-player game.
 /// </para>
 /// </remarks>
@@ -56,7 +56,7 @@ public sealed class SettingsService : IAsyncDisposable
     private const string ColorSafeKey = "pominigames:color-safe";
     private const string RichAudioKey = "pominigames:rich-audio";
     private const string VoiceAnnouncerKey = "pominigames:voice-announcer";
-    // Owned by wwwroot/js/qualityTiers.js; read here only to show the current choice.
+    // Owned by wwwroot/js/platform/qualityTiers.js; read here only to show the current choice.
     private const string GraphicsKey = "pominigames:fx-tier";
 
     /// <summary>The graphics choices the sheet offers. "auto" lets the device decide.</summary>
@@ -79,7 +79,7 @@ public sealed class SettingsService : IAsyncDisposable
     public SettingsService(IJSRuntime js)
     {
         _prefs = new Lazy<Task<IJSObjectReference>>(() =>
-            js.InvokeAsync<IJSObjectReference>("import", "./js/appPrefs.js").AsTask());
+            js.InvokeAsync<IJSObjectReference>("import", "./js/platform/appPrefs.js").AsTask());
     }
 
     public bool Muted { get; private set; }

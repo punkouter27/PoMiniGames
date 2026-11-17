@@ -192,20 +192,20 @@
     <!-- Shared canvas resolution policy (audit #8). Not deferred and listed
          first among the game scripts: the racing renderer and the engine modules
          read window.PoCanvasDpr during their own setup. -->
-    <script src="js/canvasDpr.js"></script>
+    <script src="js/platform/canvasDpr.js"></script>
     <!-- Reports uncaught errors, console.error and lost WebGL contexts to the server
          log (POST /client-errors). Must stay ABOVE consoleFilter.js: the filter then
          wraps this file's console.error, so the noise it drops is never reported. -->
-    <script src="js/errorReporter.js"></script>
+    <script src="js/platform/errorReporter.js"></script>
     <!-- Kiosk reel polish: filter the harmless "AudioContext closed" warnings
          that print on every demo transition. Loaded eagerly so it wraps
          console.warn/error before the game audio modules install their paths.
          The original methods are stashed on window.__poConsole for debugging. -->
-    <script src="js/consoleFilter.js"></script>
+    <script src="js/platform/consoleFilter.js"></script>
     <!-- View Transitions + App enhancements (Suggestion #5) -->
-    <script src="js/app.js" defer></script>
+    <script src="js/platform/app.js" defer></script>
     <!-- AppErrorBoundary fallback clipboard helper (non-secure-context safe) -->
-    <script src="js/appErrorBoundary.js" defer></script>
+    <script src="js/platform/appErrorBoundary.js" defer></script>
 </head>
 
 <body>
@@ -237,14 +237,14 @@
          that is ~24,600 lines of JavaScript parsed on first paint to render a
          menu, and almost no session opens more than one game.
 
-         They are now pulled in by js/engineLoader.js when a game page actually
+         They are now pulled in by js/platform/engineLoader.js when a game page actually
          mounts. The interop contract is unchanged — each engine still registers
          its window.PoBrawl / window.PoMarbleRace / … global, and pages still call
          through it; the page just awaits `loadEngine('<name>')` first.
 
          PoRacer's input, renderer, interpolation and compositor are imported
          explicitly by js/poracer/index.js. -->
-    <script type="module" src="js/engineLoader.js"></script>
+    <script type="module" src="js/platform/engineLoader.js"></script>
 
     <!-- §GFX/SOUND platform runtime (2026-07-29).
          audioBus.js owns the app's ONE AudioContext and the master/music/sfx/ui
@@ -252,48 +252,48 @@
          imported before any module that plays a sound, hence its position here.
          visualRuntime.js runs the single rAF loop that publishes both the
          reactive bands (--audio-*, from cues and the pointer) and the adaptive-quality tier (data-gfx). -->
-    <script type="module" src="js/audioBus.js"></script>
-    <script type="module" src="js/richAudio.js"></script>
-    <script type="module" src="js/speechBus.js"></script>
-    <script type="module" src="js/visualRuntime.js"></script>
+    <script type="module" src="js/platform/audioBus.js"></script>
+    <script type="module" src="js/platform/richAudio.js"></script>
+    <script type="module" src="js/platform/speechBus.js"></script>
+    <script type="module" src="js/platform/visualRuntime.js"></script>
     <!-- §GFX-10 synthesis moved to an AudioWorklet; dsp.js is the main-thread
          front end and acoustics.js owns the per-game reverb spaces. Both are
          inert until first use — the worklet module is fetched lazily on the
          first cue, not here, because addModule() needs a live AudioContext and
          that only exists after a user gesture. -->
-    <script type="module" src="js/dsp.js"></script>
-    <script type="module" src="js/acoustics.js"></script>
+    <script type="module" src="js/platform/dsp.js"></script>
+    <script type="module" src="js/platform/acoustics.js"></script>
     <!-- §GFX-11 the sound vocabulary. Imports dsp/impact/gpuFx and is what call
          sites should use: one fire() gets audio, screen feel and particles. -->
-    <script type="module" src="js/gameCues.js"></script>
+    <script type="module" src="js/platform/gameCues.js"></script>
     <!-- §GFX-7/8 shared feel layer. Both are inert on load: impactBus.js only
          appends its flash div, gpuFx.js does not touch WebGL until the first
          burst. Loading them here rather than lazily means a game's first hit
          does not pay a module fetch at the exact frame it needs to be smooth. -->
-    <script type="module" src="js/impactBus.js"></script>
-    <script type="module" src="js/gpuFx.js"></script>
+    <script type="module" src="js/platform/impactBus.js"></script>
+    <script type="module" src="js/platform/gpuFx.js"></script>
     <!-- §GFX-6 pointer-tracked tilt for [data-fx-tilt] surfaces. One delegated
          listener; idle until something is hovered. -->
-    <script type="module" src="js/fxTilt.js"></script>
+    <script type="module" src="js/platform/fxTilt.js"></script>
     <!-- Controllers: gamepadBus.js (D-pad focus navigation, pad rumble for impactBus haptics) is
          fetched on the first gamepadconnected only, so a player without a pad pays nothing. -->
-    <script type="module">addEventListener('gamepadconnected', () => import('./js/gamepadBus.js').then((m) => m.startNav()), { once: true });</script>
+    <script type="module">addEventListener('gamepadconnected', () => import('./js/platform/gamepadBus.js').then((m) => m.startNav()), { once: true });</script>
     <!-- §GFX-12…21 the quality/palette/sound bootstrap. Decides the device's
          quality tier BEFORE any game asks for it, owns the dynamic accent
          palette, and
          background-probes WebGPU for the particle backend. Everything heavier
          (glass captures, weather, props) stays lazy in the games that use it. -->
-    <script src="js/fxBootstrap.js" defer></script>
+    <script src="js/platform/fxBootstrap.js" defer></script>
     <!-- Native <dialog> interop (Option #9). showModal / close are HTMLDialogElement
          methods Blazor's ElementReference doesn't bind directly, so a tiny shim
          exposes them on `window.PoDialogInterop`. Must be present BEFORE the
          GameOverModal renders; defer keeps it off the critical render path. -->
-    <script src="js/dialogInterop.js" defer></script>
+    <script src="js/platform/dialogInterop.js" defer></script>
     <!-- PWA: service worker registration + connectivity signals. Registration is
          kicked off from MainLayout (not here) so the update toast has a live Blazor
          renderer to display into. -->
     <!-- PWA: service worker registration + connectivity signals -->
-    <script src="js/pwa.js" defer></script>
+    <script src="js/platform/pwa.js" defer></script>
 </body>
 
 </html>

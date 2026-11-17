@@ -40,7 +40,7 @@
     // Ownership token for the single global sampler: each layout carries its own
     // <FpsCounter />, so on navigation two instances briefly coexist. The token
     // lets this instance's Dispose stop the loop only if it still owns it — see
-    // the note atop js/gl-fps.js.
+    // the note atop js/platform/gl-fps.js.
     private static int _nextToken;
     private readonly int _token = System.Threading.Interlocked.Increment(ref _nextToken);
 
@@ -53,7 +53,7 @@
         try
         {
             _running = true;
-            _module ??= await JSRuntime.InvokeAsync<IJSObjectReference>("import", "./js/gl-fps.js");
+            _module ??= await JSRuntime.InvokeAsync<IJSObjectReference>("import", "./js/platform/gl-fps.js");
             _ref ??= DotNetObjectReference.Create(this);
             await JSRuntime.InvokeVoidAsync("glFps.start", _ref, _token);
         }

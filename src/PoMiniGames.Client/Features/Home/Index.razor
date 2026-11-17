@@ -39,7 +39,7 @@
        says the name, so the h1 is for the outline only.
 
        Leaderboards, My Stats and Settings live in the top bar's account menu, on every
-       route. Links carrying data-hub-nav are launched by js/app.js: an in-app navigation
+       route. Links carrying data-hub-nav are launched by js/platform/app.js: an in-app navigation
        wrapped in a view transition that morphs the pressed card into the game's title. *@
     <PageHeader Title="PoMiniGames" VisuallyHidden="true">
         <Actions>
@@ -182,7 +182,7 @@
     // that run locally stay fully playable.
     private bool IsPlayable(CatalogMode mode) => !mode.RequiresNetwork || OnlineStatus.IsOnline;
 
-    // data-hub-nav: js/app.js launches the game in place, morphing the card into its title.
+    // data-hub-nav: js/platform/app.js launches the game in place, morphing the card into its title.
     private static string ModeLabel(CatalogMode mode) => mode.ChipLabel ?? GameModes.ToLabel(mode.Mode);
     private static string ModeDescription(CatalogMode mode) => mode.ChipDescription ?? GameModes.ToDescription(mode.Mode);
 
@@ -256,7 +256,7 @@
                     return;
                 }
                 _ambientModule = await JS.InvokeAsync<IJSObjectReference>(
-                    "import", "./js/ambientParticles.js");
+                    "import", "./js/platform/ambientParticles.js");
                 await _ambientModule.InvokeVoidAsync("start", _ambientCanvas);
             }
             catch

@@ -81,7 +81,7 @@
     </div>
 
     @* Tab diagnostics: the one stats/debug panel every game shares. The gesture
-       (Tab) is wired once in js/game-debug.js, so a game gets it by existing
+       (Tab) is wired once in js/platform/game-debug.js, so a game gets it by existing
        inside this shell; a page adds its own numbers through `Diagnostics`.
        Held outside `.gps-game-area` so a fullscreen renderer cannot replace it. *@
     <GameDebugOverlay Enabled="@TabDebug" GameKey="@GameKey" Items="@Diagnostics">@DiagnosticsContent</GameDebugOverlay>

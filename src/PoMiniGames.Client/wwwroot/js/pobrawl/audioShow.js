@@ -33,7 +33,7 @@
 // No per-frame allocation: every per-frame value lives in `this._as` / `this.beat`.
 
 import * as Quality from './quality.js';
-import { createMusicLayers } from '../musicLayers.js';
+import { createMusicLayers } from '../platform/musicLayers.js';
 
 const TIME_LIMIT = 60;          // game.js's round length (not exported there)
 const COUNTDOWN_BPM = 120;      // the PA calls once a second: every other beat

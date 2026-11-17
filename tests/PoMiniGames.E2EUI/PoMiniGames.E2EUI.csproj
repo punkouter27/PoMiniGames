@@ -39,7 +39,7 @@
     Zero-waste E2E-UI preflight. The Playwright Chromium binary must be
     present before VSTest runs, otherwise every test fails in <2s with
     "Executable doesn't exist at …\chrome-win\headless_shell.exe".
-    scripts/test-all.ps1 has a try/catch preflight that warns on install
+    scripts/dev/test-all.ps1 has a try/catch preflight that warns on install
     failure; a developer (or CI) running this project in isolation would
     otherwise hit four red tests and a misleading Playwright exception.
     This target fails the build (not the test) if the browser is missing,

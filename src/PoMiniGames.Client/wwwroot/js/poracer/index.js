@@ -10,8 +10,8 @@ import * as Audio from './audio.js';
 import { sampleAt } from './interpolation.js';
 import { prepareSnapshot, STRIDE } from './snapshot.js';
 import { startInput, stopInput, setInputEnabled, getSize, pollPad } from './input.js';
-import { encodeTrack, resample, sampleAt as sampleGhostAt, unwrap, loadGhost, saveGhost } from '../ghostTrack.js';
-import '../weather.js';
+import { encodeTrack, resample, sampleAt as sampleGhostAt, unwrap, loadGhost, saveGhost } from '../platform/ghostTrack.js';
+import '../platform/weather.js';
 
 // Rivals are drawn this far behind the newest snapshot, so there is always a pair of
 // snapshots to interpolate between (two intervals, less one frame of jitter).
