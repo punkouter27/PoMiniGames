@@ -2162,3 +2162,12 @@
     color: var(--color-text-secondary);
     cursor: pointer;
 }
+
+/* Inline validation for the rename and alert forms (forms standard, 2026-11-17). */
+.poeco-field-error {
+    flex-basis: 100%;
+    font-size: 0.75rem;
+    font-weight: 600;
+    color: var(--color-error);
+}
+.poeco-field-error:empty { display: none; }

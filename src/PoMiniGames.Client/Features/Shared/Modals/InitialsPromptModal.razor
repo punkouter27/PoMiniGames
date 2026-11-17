@@ -1,12 +1,19 @@
 @namespace PoMiniGamesClient.Features.Shared
 @inject PlayerNameService PlayerNames
 @inject UiFeedbackService Feedback
+@using Microsoft.AspNetCore.Components.Forms
+@using PoMiniGames.Shared.Validation
 @implements IDisposable
 
 @if (ShouldShow)
 {
     <div class="arcade-modal-backdrop" role="dialog" aria-modal="true" aria-labelledby="arcade-initials-title" @onkeydown="OnKeyDown">
+        @* A real form (forms standard, 2026-11-17): the shared InitialsInputValidator runs on
+           submit and on every keystroke, the error shows inline under the slots, and the
+           Save button is disabled while a save is in flight so a double tap saves once. *@
         <div class="arcade-modal-crt">
+        <EditForm EditContext="_editContext" OnValidSubmit="ConfirmAsync" novalidate>
+            <FluentValidationValidator TModel="InitialsInput" Validator="Validator" />
             <div class="arcade-modal-header">
                 <h2 id="arcade-initials-title" class="arcade-modal-title">Enter your initials</h2>
                 <p class="arcade-modal-sub">They label your scores on the leaderboards.</p>
@@ -27,30 +34,42 @@
                        autocapitalize="characters"
                        spellcheck="false"
                        aria-label="Enter 3-letter initials (A to Z)"
+                       aria-invalid="@(_editContext.GetValidationMessages(_initialsField).Any() ? "true" : "false")"
                        value="@_letters"
                        @oninput="OnInput" />
             </div>
 
             <p class="arcade-modal-hint">Type three letters, A to Z. You can change them later from the home page.</p>
 
+            <div class="arcade-modal-error" aria-live="polite">
+                <ValidationMessage For="() => _model.Initials" class="arcade-field-error" />
+            </div>
+
             <div class="arcade-modal-actions">
-                <button type="button"
+                <button type="submit"
                         class="arcade-btn arcade-btn--primary"
-                        disabled="@(_letters.Length != 3)"
-                        @onclick="ConfirmAsync">
-                    Save initials
+                        disabled="@_submitting"
+                        aria-busy="@(_submitting ? "true" : "false")">
+                    @(_submitting ? "Saving…" : "Save initials")
                 </button>
                 <button type="button"
                         class="arcade-btn arcade-btn--skip"
+                        disabled="@_submitting"
                         @onclick="SkipAsync">
                     Skip
                 </button>
             </div>
+        </EditForm>
         </div>
     </div>
 }
 
 @code {
+    private static readonly InitialsInputValidator Validator = new();
+    private readonly InitialsInput _model = new();
+    private EditContext _editContext = default!;
+    private FieldIdentifier _initialsField;
+    private bool _submitting;
     private ElementReference _inputRef;
     private string _letters = string.Empty;
     private bool _wasOpen;
@@ -64,6 +83,8 @@
 
     protected override void OnInitialized()
     {
+        _editContext = new EditContext(_model);
+        _initialsField = FieldIdentifier.Create(() => _model.Initials);
         SyncFromService();
         _onStateChanged = () => InvokeAsync(() =>
         {
@@ -103,6 +124,7 @@
 
         var current = PlayerNames.Initials.Trim();
         _letters = current.Length == 3 ? current : string.Empty;
+        _model.Initials = _letters;
     }
 
     private void OnInput(ChangeEventArgs e)
@@ -132,6 +154,13 @@
             if (len == 3) break;
         }
         _letters = new string(buf[..len]);
+        _model.Initials = _letters;
+        // Re-check the field as the player types, so a shown error clears the moment the
+        // entry becomes valid (the hidden input is not an InputBase, so this is done by hand).
+        if (_editContext.GetValidationMessages(_initialsField).Any())
+        {
+            _editContext.NotifyFieldChanged(_initialsField);
+        }
         if (_letters.Length > prevLen)
         {
             _ = Feedback.ArcadeKeyAsync(_letters.Length);
@@ -144,21 +173,27 @@
 
     private async Task OnKeyDown(KeyboardEventArgs e)
     {
-        if (e.Key == "Enter" && _letters.Length == 3)
-        {
-            await ConfirmAsync();
-        }
-        else if (e.Key == "Escape")
+        // Enter submits the form natively (and so runs the validator).
+        if (e.Key == "Escape" && !_submitting)
         {
             await SkipAsync();
         }
     }
 
+    // Only reached through OnValidSubmit, so the validator has already passed.
     private async Task ConfirmAsync()
     {
-        if (_letters.Length != 3) return;
-        await Feedback.CompleteAsync();
-        PlayerNames.SetInitials(_letters);
+        if (_submitting) return;
+        _submitting = true;
+        try
+        {
+            await Feedback.CompleteAsync();
+            PlayerNames.SetInitials(_model.Initials);
+        }
+        finally
+        {
+            _submitting = false;
+        }
     }
 
     private async Task SkipAsync()

@@ -130,3 +130,16 @@
 .arcade-btn--skip:hover {
     background: var(--color-surface-hover);
 }
+
+/* Inline validation (forms standard, 2026-11-17). The row keeps its height so an error
+   appearing does not shift the buttons under the player's thumb. */
+.arcade-modal-error {
+    min-height: 1.25rem;
+    margin: 0 0 var(--space-2);
+    font-size: var(--text-sm);
+}
+
+.arcade-modal-error ::deep .arcade-field-error {
+    color: var(--color-error);
+    font-weight: 600;
+}

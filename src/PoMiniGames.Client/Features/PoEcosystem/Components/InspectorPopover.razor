@@ -1,3 +1,5 @@
+@using Microsoft.AspNetCore.Components.Forms
+@using PoMiniGames.Shared.Validation
 @* The creature under the crosshair. Anchored beside the crosshair, never over it.
 
    The family lives here: a section of this panel, with cards for the six relatives, that
@@ -8,11 +10,19 @@
         <div class="poeco-inspector-title">
             @if (_renaming)
             {
-                <form class="poeco-rename" @onsubmit="SubmitRename">
-                    <input type="text" @bind="_newName" @bind:event="oninput" maxlength="24" placeholder="A name for @Detail.Name" aria-label="New name" autofocus />
-                    <button type="submit" class="poeco-pill poeco-pill--on">Name</button>
-                    <button type="button" class="poeco-pill" @onclick="() => _renaming = false">Cancel</button>
-                </form>
+                @* Validated with the shared CreatureRenameInputValidator; the error shows inline
+                   and Name is disabled while the rename is in flight (forms standard, 2026-11-17). *@
+                <EditForm EditContext="_renameContext" OnValidSubmit="SubmitRename" class="poeco-rename" novalidate>
+                    <FluentValidationValidator TModel="CreatureRenameInput" Validator="RenameValidator" />
+                    <InputText @bind-Value="_rename.Name" @bind-Value:event="oninput" maxlength="@CreatureRenameInput.MaxLength"
+                               placeholder="@($"A name for {Detail.Name}")" aria-label="New name" autofocus
+                               aria-describedby="poeco-rename-error" />
+                    <button type="submit" class="poeco-pill poeco-pill--on" disabled="@_renameSubmitting">Name</button>
+                    <button type="button" class="poeco-pill" disabled="@_renameSubmitting" @onclick="() => _renaming = false">Cancel</button>
+                    <div id="poeco-rename-error" class="poeco-field-error" aria-live="polite">
+                        <ValidationMessage For="() => _rename.Name" />
+                    </div>
+                </EditForm>
             }
             else
             {
@@ -33,7 +43,7 @@
                 title="Parents, grandparents and young — @Detail.Children young, @Detail.Descendants descendants" @onclick="OnFamily">
             Family · gen @Detail.Generation
         </button>
-        <button type="button" class="poeco-pill" title="Give this creature a name" aria-label="Rename" @onclick="() => { _newName = Detail.Name; _renaming = true; }">✎</button>
+        <button type="button" class="poeco-pill" title="Give this creature a name" aria-label="Rename" @onclick="BeginRename">✎</button>
     </div>
 
     @if (FamilyOpen && Family is { } tree && tree.Self.Handle == Detail.Handle)
@@ -119,8 +129,18 @@
     /// <summary>A relative was clicked: inspect it and walk the tree there.</summary>
     [Parameter] public EventCallback<int> OnSelectKin { get; set; }
 
+    private static readonly CreatureRenameInputValidator RenameValidator = new();
     private bool _renaming;
-    private string _newName = "";
+    private bool _renameSubmitting;
+    private CreatureRenameInput _rename = new();
+    private EditContext _renameContext = new(new CreatureRenameInput());
+
+    private void BeginRename()
+    {
+        _rename = new CreatureRenameInput { Name = Detail.Name };
+        _renameContext = new EditContext(_rename);
+        _renaming = true;
+    }
 
     /// <summary>
     /// A followed creature's detail lands up to sixteen times a second at 4×. The viewer pushes
@@ -145,10 +165,20 @@
         _ => $"Parents: {Detail.Mother} · {Detail.Father}",
     };
 
+    // Only reached through OnValidSubmit, so the name has already passed the validator.
     private async Task SubmitRename()
     {
-        _renaming = false;
-        if (!string.IsNullOrWhiteSpace(_newName)) await OnRename.InvokeAsync(_newName);
+        if (_renameSubmitting) return;
+        _renameSubmitting = true;
+        try
+        {
+            await OnRename.InvokeAsync(_rename.Name.Trim());
+            _renaming = false;
+        }
+        finally
+        {
+            _renameSubmitting = false;
+        }
     }
 
     private static string Pct(double v) => $"{Math.Clamp(v, 0, 1) * 100:0}%";
