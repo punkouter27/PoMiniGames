@@ -4,9 +4,9 @@
 // where it is, worked out each frame from the race and handed to audio.js. Render + audio only: it
 // reads the race and never steps it.
 //
-//   • acoustic zone — 'metal' under the start gantry, under a bridge (a stretch of the course
-//     passing overhead, found once at start) or between close barrier walls (a narrow section
-//     with tight run-off both sides); 'stand' near the grandstand (scenery.crowd.center);
+//   • acoustic zone — 'garage' under the start gantry (the pit boxes), 'tunnel' under a bridge
+//     (a stretch of the course passing overhead, found once at start), 'metal' between close
+//     barrier walls (a narrow section with tight run-off both sides); 'stand' near the grandstand (scenery.crowd.center);
 //     otherwise 'open' air, driest up on the hills. The bedroom (terrain.js isRoom) is one
 //     'room' throughout: a small damped room, whatever the outdoor rules would say. The zone
 //     and its wet level go to audio.setAcoustics, which crossfades its two convolvers.
@@ -187,7 +187,12 @@ export class Acoustics {
             const d = Math.hypot(rd.x / WS - c.x, rd.y / WS - c.z);
             stand = Math.min(1, Math.max(0, 1 - (d - STAND_NEAR) / (STAND_FAR - STAND_NEAR)));
         }
-        if (metal > 0.3 && metal >= stand) return { zone: 'metal', wet: 0.16 + 0.24 * metal, occ: metal * 0.65 };
+        if (metal > 0.3 && metal >= stand) {
+            // Deck #14: which hard space it is changes the tail — a bridge is a concrete tunnel,
+            // the start gantry the pit garages, and close barrier walls a tight steel canyon.
+            const zone = bridge >= metal ? 'tunnel' : gantry >= metal ? 'garage' : 'metal';
+            return { zone, wet: 0.16 + 0.24 * metal, occ: metal * (zone === 'tunnel' ? 0.75 : 0.65) };
+        }
         if (stand > 0.15) return { zone: 'stand', wet: 0.12 + 0.3 * stand, occ: 0 };
         // Open air: a little ground bloom, less of it up on a hill.
         const hill = t.z && this.zSpan > 1 ? (t.z[i] - this.zLo) / this.zSpan : 0;

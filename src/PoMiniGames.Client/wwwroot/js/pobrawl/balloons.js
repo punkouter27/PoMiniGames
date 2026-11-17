@@ -22,6 +22,7 @@
 // only: Math.random, never the match RNG. Reduced motion: half the balloons, slower, no kicks.
 import * as THREE from 'three';
 import * as Quality from './quality.js';
+import { createInterest } from '../platform/simInterest.js';
 
 const NET_Y = 7.7;            // the net's floor, above the fight framing
 const NET_R = 3.7;            // radius of the net's footprint over the ring
@@ -61,6 +62,9 @@ const _q = new THREE.Quaternion();
 const _s = new THREE.Vector3();
 const _axis = new THREE.Vector3();
 const _zero = new THREE.Matrix4().makeScale(0, 0, 0);
+const _frustum = new THREE.Frustum();
+const _projView = new THREE.Matrix4();
+const _ball = new THREE.Sphere();
 
 class BalloonsMethods {
   _initBalloons() {
@@ -281,8 +285,21 @@ class BalloonsMethods {
 
   _balIntegrate(dt) {
     const b = this._bal;
-    const damp = Math.exp(-b.drag * dt);
-    const rest = Math.exp(-1.6 * dt);
+    const damp1 = Math.exp(-b.drag * dt);
+    const rest1 = Math.exp(-1.6 * dt);
+    // Interest management (platform/simInterest.js): a balloon near the camera, or
+    // moving where the camera can see it, steps every frame; a still one in view steps
+    // every other frame at 2 × dt; a still one out of view sleeps until something
+    // (a fighter, the KO blast) gives it velocity again. Presentation-only bodies —
+    // the match sim never reads them — so thinning them cannot desync anything.
+    const interest = b.interest || (b.interest = createInterest({ near: 5, far: 16, moving: 0.06 }));
+    interest.begin();
+    const cam = this.camera;
+    if (cam) {
+      cam.updateMatrixWorld();
+      _projView.multiplyMatrices(cam.projectionMatrix, cam.matrixWorldInverse);
+      _frustum.setFromProjectionMatrix(_projView);
+    }
     for (let i = 0; i < b.n; i++) {
       const st = b.st[i];
       if (st === 1) {
@@ -293,20 +310,32 @@ class BalloonsMethods {
         b.vy[i] = -(2.2 + Math.random() * 1.6) * (b.drag > 1 ? 0.6 : 1);
         b.vz[i] = (Math.random() - 0.5) * 0.8;
       } else if (st !== 2) continue;
+      let h = dt, damp = damp1, rest = rest1;
+      if (cam) {
+        _ball.center.set(b.px[i], b.py[i], b.pz[i]);
+        _ball.radius = b.r[i];
+        h = interest.step(i, {
+          distance: cam.position.distanceTo(_ball.center),
+          visible: _frustum.intersectsSphere(_ball),
+          speed: Math.hypot(b.vx[i], b.vy[i], b.vz[i]),
+        }, dt);
+        if (!h) continue;
+        if (h !== dt) { damp = damp1 * damp1; rest = rest1 * rest1; }
+      }
       const r = b.r[i];
       const x0 = b.px[i], z0 = b.pz[i];
       let x = x0, y = b.py[i], z = z0, vx = b.vx[i], vy = b.vy[i], vz = b.vz[i];
       const inRing0 = Math.abs(x0) < RING && Math.abs(z0) < RING;
       const ground = inRing0 ? CANVAS_Y : FLOOR_Y;
-      vy += b.grav * dt;
+      vy += b.grav * h;
       if (y - r > ground + 0.08) {
         // Sway on the way down: each balloon on its own slow phase.
         const ph = b.ph[i];
-        vx += Math.sin(b.t * 1.3 + ph) * 0.8 * dt;
-        vz += Math.cos(b.t * 1.05 + ph * 1.7) * 0.8 * dt;
+        vx += Math.sin(b.t * 1.3 + ph) * 0.8 * h;
+        vz += Math.cos(b.t * 1.05 + ph * 1.7) * 0.8 * h;
       }
       vx *= damp; vy *= damp; vz *= damp;
-      x += vx * dt; y += vy * dt; z += vz * dt;
+      x += vx * h; y += vy * h; z += vz * h;
 
       // The ring's top and sides, then the arena floor.
       const inRing = Math.abs(x) < RING && Math.abs(z) < RING;

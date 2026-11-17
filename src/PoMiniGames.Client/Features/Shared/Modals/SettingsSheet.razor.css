@@ -237,6 +237,9 @@
 
 .prefs-preview-actions {
     display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    justify-content: flex-end;
     gap: var(--space-2);
 }
 
@@ -345,3 +348,9 @@
 
 /* Dev persona picker (Advanced, non-production only). The native <select> it replaced
    in the account popover kept UA chrome that matched neither the sheet nor the theme. */
+
+/* The preview row carries a tier picker, Preview and sometimes "Use …": let it wrap
+   under the label on a narrow sheet rather than squeeze the 44px targets. */
+.prefs-grid ::deep .prefs-preview-row {
+    flex-wrap: wrap;
+}

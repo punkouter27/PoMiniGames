@@ -399,6 +399,21 @@ const IR_SHAPES = {
             [0.031, 0.2, 0.4], [0.038, 0.3, 0.18], [0.046, 0.14, 0.22]],
         rings: [[1180, 0.16, 0.05], [2470, 0.12, 0.04], [3890, 0.09, 0.03], [5230, 0.07, 0.022]], seed: 37,
     },
+    // Under a bridge (deck #14 zones): a concrete tube — regular flutter off both walls and the
+    // roof, a longer, darker tail than the steel, and no ring.
+    tunnel: {
+        dur: 1.3, decay: 0.24, build: 0.004, bright: 0.45, tail: 0.55,
+        early: [[0.007, 0.7, 0.55], [0.014, 0.55, 0.7], [0.021, 0.5, 0.42], [0.028, 0.38, 0.5], [0.035, 0.32, 0.28],
+            [0.042, 0.24, 0.3], [0.056, 0.18, 0.16]],
+        rings: [[140, 0.2, 0.025]], seed: 61,
+    },
+    // The start gantry over the pit wall: the open pit garages either side give a close boxy
+    // slap and a little steel ring from the gantry above.
+    garage: {
+        dur: 0.9, decay: 0.15, build: 0.003, bright: 0.6, tail: 0.55,
+        early: [[0.005, 0.75, 0.3], [0.011, 0.3, 0.7], [0.019, 0.45, 0.4], [0.029, 0.22, 0.3]],
+        rings: [[930, 0.14, 0.03], [2210, 0.1, 0.02]], seed: 71,
+    },
     // The bedroom (the toy track): walls a couple of metres off, carpet, bed and curtains soaking
     // it up. Quick floor and wall taps, a short dark tail, no ring; the faint 85 Hz is the room's
     // own boxy mode.
@@ -985,7 +1000,8 @@ export function musicStinger() {
 }
 
 /**
- * The room the ear is in: zone 'open' | 'stand' | 'metal' | 'room', wet 0..1 (reverb send level).
+ * The room the ear is in: zone 'open' | 'stand' | 'metal' | 'tunnel' | 'garage' | 'room', wet 0..1
+ * (reverb send level).
  * A new zone loads into the convolver that has been silent at least a second, then the two
  * crossfade; the switch is held off until then, so flicking between zones never clicks.
  */

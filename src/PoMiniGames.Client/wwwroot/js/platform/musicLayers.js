@@ -26,6 +26,9 @@ const STEPS = 64;         // 4 bars of 16ths
 const PROGRESSION = [0, -4, -2, -5];   // semitones from the root per bar: i, VI, VII, v
 const ARP = [0, 3, 7, 12];             // minor triad + octave
 
+/** Stems this generator can voice, in rough order of how early a build brings them in. */
+export const STEM_NAMES = Object.freeze(['bass', 'pad', 'hats', 'kick', 'arp', 'lead']);
+
 const R = (s) => Math.pow(2, s / 12);
 const clamp01 = (x) => (x < 0 ? 0 : x > 1 ? 1 : x);
 
@@ -47,6 +50,11 @@ export function createMusicLayers(opts) {
     let anchorPos = 0, anchorAt = -1;
     let lastStep = -1;        // last 16th handed to dsp.js
     let layers = 0;           // how many layers are on, fixed for the current bar
+    // Per-stem gains (tensionMixer.js). Null = the classic intensity-threshold arrangement;
+    // once set, every stem — including the pad and lead that the thresholds never play — is
+    // on whenever its gain is audible, at that gain. The mixer eases the gains, so a stem
+    // fades in and out instead of entering on a bar line.
+    let stems = null;
 
     function layerCount(x) {
         return x >= 0.8 ? 4 : x >= 0.55 ? 3 : x >= 0.3 ? 2 : 1;
@@ -71,22 +79,37 @@ export function createMusicLayers(opts) {
         const root = o.root * R(PROGRESSION[bar]);
         const g = gain;
         const open = 300 + intensity * 1500;
+        const sg = (name, fallbackOn) => (stems ? (stems[name] > 0.02 ? stems[name] : 0) : (fallbackOn ? 1 : 0));
+        const bassG = sg('bass', true), hatsG = sg('hats', layers >= 2), kickG = sg('kick', layers >= 3);
+        const arpG = sg('arp', layers >= 4), padG = sg('pad', false), leadG = sg('lead', false);
 
-        if (inBar % 2 === 0) {
+        if (bassG && inBar % 2 === 0) {
             // The octave jump on the off-beat 8th is what makes a pulse read as a bassline.
             const up = inBar % 4 === 2 ? 2 : 1;
-            out.push({ wave: 'saw', freq: root * up, dur: 0.11, attack: 0.004, decay: 0.1, gain: 0.05 * g, cutoff: open, q: 2, at });
+            out.push({ wave: 'saw', freq: root * up, dur: 0.11, attack: 0.004, decay: 0.1, gain: 0.05 * g * bassG, cutoff: open, q: 2, at });
         }
-        if (layers >= 2 && inBar % 2 === 0) {
+        if (hatsG && inBar % 2 === 0) {
             const off = inBar % 4 === 2;
-            out.push({ wave: 'noise', freq: 0, dur: 0.03, attack: 0.001, decay: 0.028, gain: (off ? 0.03 : 0.016) * g, cutoff: 9000, q: 0.7, pan: off ? 0.25 : -0.25, at });
+            out.push({ wave: 'noise', freq: 0, dur: 0.03, attack: 0.001, decay: 0.028, gain: (off ? 0.03 : 0.016) * g * hatsG, cutoff: 9000, q: 0.7, pan: off ? 0.25 : -0.25, at });
         }
-        if (layers >= 3 && inBar % 4 === 0) {
-            out.push({ wave: 'sine', freq: 130, freqEnd: 44, sweep: 0.09, dur: 0.16, attack: 0.002, decay: 0.15, gain: 0.11 * g, at });
+        if (kickG && inBar % 4 === 0) {
+            out.push({ wave: 'sine', freq: 130, freqEnd: 44, sweep: 0.09, dur: 0.16, attack: 0.002, decay: 0.15, gain: 0.11 * g * kickG, at });
         }
-        if (layers >= 4) {
+        if (arpG) {
             const note = root * 4 * R(ARP[inBar % ARP.length]);
-            out.push({ wave: 'square', freq: note, dur: 0.07, attack: 0.003, decay: 0.06, gain: 0.018 * g, cutoff: 3200, pan: inBar % 2 ? 0.35 : -0.35, at });
+            out.push({ wave: 'square', freq: note, dur: 0.07, attack: 0.003, decay: 0.06, gain: 0.018 * g * arpG, cutoff: 3200, pan: inBar % 2 ? 0.35 : -0.35, at });
+        }
+        if (padG && inBar === 0) {
+            // A held minor triad two octaves up for the whole bar: the bed under a tense moment.
+            const barSec = (4 * 60) / bpm;
+            for (const iv of [0, 3, 7]) {
+                out.push({ wave: 'sine', freq: root * 4 * R(iv), dur: barSec * 0.98, attack: barSec * 0.25, decay: barSec * 0.7, gain: 0.012 * g * padG, at });
+            }
+        }
+        if (leadG && (inBar === 0 || inBar === 6 || inBar === 10)) {
+            // Three stabs per bar on the syncopated 3-3-2 grid, walking the triad.
+            const note = root * 8 * R(ARP[(bar + (inBar >> 2)) % 3]);
+            out.push({ wave: 'square', freq: note, dur: 0.14, attack: 0.004, decay: 0.12, gain: 0.014 * g * leadG, cutoff: 2600, at });
         }
     }
 
@@ -151,6 +174,15 @@ export function createMusicLayers(opts) {
         /** 0..1. Layers follow on the next bar line; the free-running tempo eases toward it. */
         setIntensity(x) {
             intensity = clamp01(Number(x) || 0);
+        },
+        /**
+         * Drive each stem directly (tensionMixer.js): `{ bass, pad, hats, kick, arp, lead }`,
+         * each 0..1. Pass null to go back to the intensity thresholds.
+         */
+        setStemGains(g) {
+            if (!g) { stems = null; return; }
+            stems = stems || {};
+            for (const k of STEM_NAMES) stems[k] = clamp01(Number(g[k]) || 0);
         },
         /** Overall level multiplier, for a quieter demo or spectator view. */
         setGain(x) {

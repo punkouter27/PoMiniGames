@@ -350,6 +350,145 @@ export async function pluck(freq, opts) {
     return Dsp.playPluck(freq, o.dur || 0.8, o.gain || 0.25, o.damp || 0.7, 'ui');
 }
 
+// ── Spatial menu + event sonification (deck idea #16) ─────────────────────
+//
+// Navigation, countdowns, rank changes and notifications each get a distinct sound that
+// still says something with no visual motion at all:
+//   • PITCH carries the meaning — an item's place in its list, a count, up vs. down.
+//   • PAN only reinforces where on screen it is, and is capped at ±0.6 so on mono speakers
+//     or one earbud nothing is lost: pan never carries information on its own.
+// Opt-in from markup with `data-sonify` (no Razor change needed — a delegated listener),
+// or call the functions from a game.
+
+const MAX_PAN = 0.6;
+// Major pentatonic from C5: any two neighbours sound consonant, so arrowing through a list
+// plays a little tune rather than a run of unrelated beeps.
+const PENTA = [0, 2, 4, 7, 9];
+const C5 = 523.25;
+
+/** Pure: pitch for the i-th item of a list (wraps up an octave every 5 steps). */
+export function navPitch(index) {
+    const i = Math.max(0, Math.floor(Number(index) || 0));
+    const semis = PENTA[i % 5] + 12 * Math.min(2, Math.floor(i / 5));
+    return C5 * Math.pow(2, semis / 12);
+}
+
+/** Pure: pan for a screen x (px) inside a viewport width — capped, mono-safe. */
+export function screenPan(x, width) {
+    if (!(width > 0) || !Number.isFinite(x)) return 0;
+    const p = (x / width) * 2 - 1;
+    return Math.max(-MAX_PAN, Math.min(MAX_PAN, p * MAX_PAN));
+}
+
+/** Pure: countdown pitch. 3-2-1 climb a major triad; 0 ("go") is the octave. */
+export function countdownPitch(n) {
+    const k = Math.max(0, Math.floor(Number(n) || 0));
+    if (k === 0) return C5 * 2;
+    return C5 * Math.pow(2, [7, 4, 0][Math.min(2, k - 1)] / 12) * (k > 3 ? 0.75 : 1);
+}
+
+/** Pure: the two notes of a rank change. Rising for a gain, falling for a loss. */
+export function rankChangeNotes(from, to) {
+    const gained = Number(to) < Number(from);
+    const steps = Math.min(4, Math.abs((Number(from) || 0) - (Number(to) || 0)));
+    const a = gained ? 659.25 : 783.99;
+    const interval = gained ? 3 + steps * 2 : -(3 + steps * 2);
+    return { gained, notes: [a, a * Math.pow(2, interval / 12)] };
+}
+
+let _lastNavAt = 0;
+
+/**
+ * A focus/hover/select cue for item `index` of a list, panned by where it is on screen.
+ * @param {{index?:number, x?:number, width?:number, kind?:'focus'|'select'|'back'}} [o]
+ */
+export function navCue(o = {}) {
+    const now = typeof performance !== 'undefined' ? performance.now() : Date.now();
+    if (now - _lastNavAt < 45) return false;   // arrow-key repeat must not machine-gun
+    _lastNavAt = now;
+    const pan = screenPan(o.x, o.width ?? (typeof window !== 'undefined' ? window.innerWidth : 0));
+    const f = navPitch(o.index);
+    if (o.kind === 'select') { playTone(f, 70, 0.07, 'triangle', pan); playTone(f * 1.5, 110, 0.05, 'sine', pan); }
+    else if (o.kind === 'back') playSweep(f, f * 0.7, 90, 0.05, 'triangle');
+    else playTone(f, 45, 0.035, 'sine', pan);
+    return true;
+}
+
+/** One countdown tick. `n` = seconds left; 0 = go. */
+export function countdownCue(n) {
+    const f = countdownPitch(n);
+    return playTone(f, n === 0 ? 260 : 110, n === 0 ? 0.1 : 0.07, n === 0 ? 'square' : 'triangle');
+}
+
+/** A rank change, from → to (1 = first). */
+export function rankChangeCue(from, to) {
+    if (Number(from) === Number(to)) return Promise.resolve();
+    const { notes } = rankChangeNotes(from, to);
+    return playArpeggio(notes, [80, 140], 0.07);
+}
+
+/** A notification: 'info' a single soft ping, 'success' a rising fifth, 'warn' a low double. */
+export function notifyCue(level = 'info', x) {
+    const pan = screenPan(x, typeof window !== 'undefined' ? window.innerWidth : 0);
+    if (level === 'success') return playArpeggio([783.99, 1174.66], [70, 160], 0.06);
+    if (level === 'warn') { playTone(311.13, 90, 0.07, 'square', pan); return playTone(311.13, 90, 0.05, 'square', pan); }
+    return playTone(987.77, 120, 0.05, 'sine', pan);
+}
+
+// Delegated listener. Markup opts in with:
+//   data-sonify            — this element (and siblings with the same attr) is a list item
+//   data-sonify="countdown" with data-sonify-value="3"  — reads a countdown tick on change
+// Keyboard focus (:focus-visible) plays the item's pitch; activation plays the select cue.
+// Pointer hover is deliberately silent: sweeping a mouse across the catalog must not chirp.
+function sonifyIndex(el) {
+    const group = el.parentElement ? Array.from(el.parentElement.querySelectorAll(':scope > [data-sonify]')) : [];
+    const i = group.indexOf(el);
+    return i < 0 ? 0 : i;
+}
+
+function onFocusIn(e) {
+    const el = e.target?.closest?.('[data-sonify]');
+    if (!el || el.getAttribute('data-sonify') === 'countdown') return;
+    try { if (!el.matches(':focus-visible')) return; } catch { /* old browser: allow */ }
+    const r = el.getBoundingClientRect();
+    navCue({ index: sonifyIndex(el), x: r.left + r.width / 2, kind: 'focus' });
+}
+
+function onActivate(e) {
+    if (e.type === 'keydown' && e.key !== 'Enter' && e.key !== ' ') return;
+    const el = e.target?.closest?.('[data-sonify]');
+    if (!el || el.getAttribute('data-sonify') === 'countdown') return;
+    const r = el.getBoundingClientRect();
+    navCue({ index: sonifyIndex(el), x: r.left + r.width / 2, kind: 'select' });
+}
+
+let _sonifyBound = false;
+let _countdownObserver = null;
+
+/** Turn the `data-sonify` listener on (idempotent). Called once at module load in a browser. */
+export function enableSonify() {
+    if (_sonifyBound || typeof document === 'undefined') return;
+    _sonifyBound = true;
+    document.addEventListener('focusin', onFocusIn, true);
+    document.addEventListener('keydown', onActivate, true);
+    if (typeof MutationObserver === 'function') {
+        _countdownObserver = new MutationObserver((records) => {
+            for (const r of records) {
+                const el = r.target;
+                if (el.nodeType === 1 && el.getAttribute('data-sonify') === 'countdown') {
+                    const v = parseInt(el.getAttribute('data-sonify-value'), 10);
+                    if (Number.isFinite(v)) countdownCue(v);
+                }
+            }
+        });
+        _countdownObserver.observe(document.documentElement, {
+            subtree: true, attributes: true, attributeFilter: ['data-sonify-value'],
+        });
+    }
+}
+
+if (typeof window !== 'undefined' && typeof document !== 'undefined') enableSonify();
+
 if (typeof window !== 'undefined') {
     window.PoUiAudio = {
         cue,
@@ -362,5 +501,11 @@ if (typeof window !== 'undefined') {
         fluidRipple,
         glassResonate,
         pluck,
+        navCue,
+        countdownCue,
+        rankChangeCue,
+        notifyCue,
+        navPitch,
+        screenPan,
     };
 }

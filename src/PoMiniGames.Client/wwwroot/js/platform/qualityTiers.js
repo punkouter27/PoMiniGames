@@ -147,6 +147,9 @@
         allowHeavy: function () { return _tier === 'high'; },
         reduceFlashing: function () { return _reduceFlashing; },
         source: function () { return _source; },
+        // What Auto would pick on this device, without applying it — the Settings
+        // preview offers Auto alongside the fixed tiers and measures this one.
+        deviceTier: function () { return computeTier(); },
         previewStatus: function () {
             return _preview
                 ? { active: true, tier: _preview.tier, remainingMs: Math.max(0, _preview.endsAt - performance.now()) }

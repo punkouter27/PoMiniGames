@@ -35,7 +35,15 @@ class EnvironmentHandle {
         if (!raining) return;
         // Re-assert now and then: the AudioContext may only have been unlocked after mount.
         let last = 0;
+        let nextBolt = 0;
         this.frameCb = (now) => {
+            // Lightning in the storm (platform/lightRig.js): an exposure flash every 9-22 s. The
+            // rig itself stands down under reduce-flashing; the low tier skips it entirely.
+            if (!nextBolt) nextBolt = now + 6000 + Math.random() * 10000;
+            else if (now >= nextBolt) {
+                nextBolt = now + 9000 + Math.random() * 13000;
+                if (window.PoQuality?.tier?.() !== 'low') sceneHandle.lightRig?.lightning(0.6 + Math.random() * 0.5);
+            }
             if (now - last < 1000) return;
             last = now;
             audio.setRain(1);

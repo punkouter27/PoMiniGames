@@ -76,6 +76,12 @@
 
         if (motionReduced()) return;
 
+        // A hub launch is already choreographed by app.js (PoHubNav): the card morphs
+        // into the title and the page wipes in from the card's edge inside a view
+        // transition. A colour wipe and a vortex on top would be a second, unaligned
+        // transition with its own sound, so stand down for that navigation.
+        if (document.documentElement.hasAttribute('data-hero-nav')) return;
+
         const accents = accentsFor(path);
         const el = ensureLayer();
         if (accents) {

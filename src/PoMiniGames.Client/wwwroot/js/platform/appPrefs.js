@@ -11,6 +11,7 @@
 // Auto/Light/Dark switch take effect without a reload.
 
 import * as AudioBus from './audioBus.js';
+import * as Pacing from './framePacing.js';
 
 const THEME_KEY = 'pominigames:theme';
 
@@ -197,7 +198,10 @@ export function applyMuted(muted) {
 export function applyGraphicsTier(tier) {
     const value = tier === 'auto' ? null : tier;
     if (window.PoQuality) {
+        const before = window.PoQuality.tier();
         window.PoQuality.setOverride(value);
+        // A heavier tier picked by hand gets the same stutter watch a kept preview does.
+        Pacing.watchForStutter(window.PoQuality.tier(), before, notifyRollback);
         return;
     }
     // qualityTiers.js not loaded yet: leave the choice where it will find it.
@@ -207,28 +211,95 @@ export function applyGraphicsTier(tier) {
     } catch { /* private mode: nothing to persist */ }
 }
 
-/** Preview a graphics tier temporarily, without changing the saved choice. */
-export async function startGraphicsPreview(tier) {
-    if (!window.PoQuality) return false;
-    return window.PoQuality.startPreview(tier);
+// ── Graphics preview + rollback (deck idea #20) ─────────────────────────────
+// The preview applies a tier for ten seconds and MEASURES it (framePacing.js): p95
+// frame time, jank share, a verdict and a recommended tier. Keeping a tier (or picking
+// a heavier one by hand) starts a stutter watch that puts the last smooth tier back.
+let _preview = null;        // { requested, tier, previous, sampler, endsAt, timer }
+let _lastResult = null;     // the finished preview's measurement, kept for the sheet
+let _rollbackRef = null;    // DotNetObjectReference to SettingsService
+
+function finishPreviewMeasurement() {
+    if (!_preview) return _lastResult;
+    clearTimeout(_preview.timer);
+    const summary = Pacing.summarize(_preview.sampler.stop());
+    const rec = Pacing.recommend(_preview.tier, summary);
+    _lastResult = { requested: _preview.requested, tier: _preview.tier, ...summary, recommend: rec.tier, reason: rec.reason };
+    _preview = null;
+    return _lastResult;
 }
 
-/** Keep the currently previewed tier as the saved player choice. */
+function notifyRollback(from, to) {
+    try { _rollbackRef?.invokeMethodAsync('OnGraphicsRolledBack', from, to); } catch { /* circuit gone */ }
+}
+
+/** SettingsService registers itself so a rollback can update the sheet and toast. */
+export function registerGraphicsRollback(dotnetRef) {
+    _rollbackRef = dotnetRef || null;
+}
+
+/**
+ * Preview a graphics tier temporarily, without changing the saved choice.
+ * 'auto' previews what the device read would pick.
+ */
+export async function startGraphicsPreview(tier) {
+    const q = window.PoQuality;
+    if (!q) return false;
+    if (_preview) { finishPreviewMeasurement(); q.cancelPreview(); }
+    const applied = tier === 'auto' ? (q.deviceTier?.() || 'medium') : tier;
+    const previous = q.tier();
+    if (!q.startPreview(applied)) return false;
+    const sampler = Pacing.createSampler({ warmupMs: 1000 });
+    sampler.start();
+    const durationMs = 10000;
+    _preview = {
+        requested: tier, tier: applied, previous, sampler, endsAt: performance.now() + durationMs,
+        // qualityTiers restores the old tier on its own timer; stop measuring with it.
+        timer: setTimeout(finishPreviewMeasurement, durationMs),
+    };
+    _lastResult = null;
+    return true;
+}
+
+/** Keep the currently previewed tier as the saved player choice, and watch it. */
 export async function commitGraphicsPreview() {
-    if (!window.PoQuality) return false;
-    return window.PoQuality.commitPreview();
+    const q = window.PoQuality;
+    if (!q) return false;
+    const pending = _preview;
+    finishPreviewMeasurement();
+    let ok;
+    if (pending && pending.requested === 'auto') {
+        q.cancelPreview();
+        q.setOverride(null);
+        ok = true;
+    } else {
+        ok = q.commitPreview();
+    }
+    if (ok && pending) Pacing.watchForStutter(q.tier(), pending.previous, notifyRollback);
+    return ok;
 }
 
 /** Restore the tier that was active before a preview began. */
 export async function cancelGraphicsPreview() {
     if (!window.PoQuality) return false;
+    finishPreviewMeasurement();
     return window.PoQuality.cancelPreview();
 }
 
-/** Read whether a temporary quality preview is active. */
+/**
+ * Whether a preview is active, plus its live (or last finished) measurement:
+ * { active, tier, remainingMs, result: { p95, fps, jank, verdict, recommend, reason } | null }.
+ */
 export async function graphicsPreviewStatus() {
-    if (!window.PoQuality) return { active: false, tier: null, remainingMs: 0 };
-    return window.PoQuality.previewStatus();
+    if (!window.PoQuality) return { active: false, tier: null, remainingMs: 0, result: null };
+    const s = window.PoQuality.previewStatus();
+    let result = _lastResult;
+    if (_preview) {
+        const live = Pacing.summarize(_preview.sampler.frames);
+        const rec = Pacing.recommend(_preview.tier, live);
+        result = { requested: _preview.requested, tier: _preview.tier, ...live, recommend: rec.tier, reason: rec.reason };
+    }
+    return { active: s.active, tier: s.tier, remainingMs: Math.round(s.remainingMs), result };
 }
 
 /**

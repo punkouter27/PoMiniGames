@@ -42,9 +42,15 @@
 //
 // Quality follows the app's tier (qualityTiers.js, window.PoQuality: the player's choice in
 // Settings, else what the device can take): a mount starts there and a change of it applies at
-// once. Under it, the loop watches the frame rate and steps the pixel ratio, bloom depth,
-// shadow map and grass down a tier after a sustained dip below 45 fps; it never steps back up
-// on its own mid-race.
+// once. Under it, platform/renderBudget.js reads the 95th-percentile frame time and walks a
+// ladder one rung at a time — pixel ratio, smoke share, throttled shadows, then the tier's
+// bloom depth, shadow map and grass — down fast when frames run long and back up slowly
+// when there is headroom, never above the app's tier.
+//
+// Presentation on top (never the sim): a pre-impact light swell when the focus car is about
+// to hit another (platform/anticipation.js), the light rig for lightning and wreck beacons
+// (platform/lightRig.js), and an in-world race-order board whose text is mirrored in a flat
+// HUD fallback (platform/diegeticBoard.js).
 //
 // Weather (setWeather, from environment.js) is the scene's: fog, sky and light, the wet
 // asphalt and run-off, the falling-rain streaks and the lens drops (fx.rain). `raining` is
@@ -80,6 +86,13 @@ import { PLAYGROUND, keepOutFor, scanOf } from './models.js';
 import { SHADOW_EXTENT } from './cameras.js';
 import * as cams from './cameras.js';
 import * as models from './models.js';
+// Platform GFX layer (deck ideas #1, #2, #6, #7): the fine-grained render budget under the
+// app tier, the pre-impact light swell, the shared light rig (lightning, wreck beacons, rim
+// pulse) and the in-world standings board with its flat HUD fallback.
+import { RenderBudget, tickShadows } from '../platform/renderBudget.js';
+import { Anticipation, closestApproach } from '../platform/anticipation.js';
+import { LightRig } from '../platform/lightRig.js';
+import { DiegeticBoard } from '../platform/diegeticBoard.js';
 
 const SUN_BASE = 3.2;
 const HEMI_BASE = 0.7;
@@ -176,6 +189,19 @@ class SceneHandle {
         this._v = new THREE.Vector3();
         this.pip = null;
         this.pipRect = null;
+        // Render budget (#1): p95 frame time walks a ladder of resolution / particle / shadow
+        // settings under the app tier. Replaces the old one-way three-slow-seconds step-down.
+        this.particleScale = 1;
+        this._frameNo = 0;
+        this.budget = new RenderBudget({ onChange: (rung) => this.applyBudget(rung) });
+        // Anticipation (#2) and the light rig (#6): presentation only, never the sim.
+        this.antic = new Anticipation();
+        this.lightRig = new LightRig({ sun, hemi });
+        this.wreckNear = 0;   // fx.js: 0..1, a wrecked car close to the camera (beacons)
+        this._prevPos = new WeakMap();
+        this._contactCooldown = 0;
+        this._prevSlow = 0;
+        this.board = null;   // #7, made by placeBoard() for full-size tracks
         this._onResize = () => this.resize();
         window.addEventListener('resize', this._onResize);
     }
@@ -211,11 +237,25 @@ class SceneHandle {
                 this.updateSunScreen();
                 this.syncRoomSplat();
             } catch { /* decoration never kills the frame */ }
+            // Pre-impact swell and the light rig scale the frame's exposure and bloom for this
+            // render only; the engine's own values are put back right after.
+            const e0 = this.fx.exposure, b0 = this.fx.bloom;
+            try {
+                const a = this.updateAnticipation(now, dt);
+                this.lightRig.setRim(a.rim);
+                this.lightRig.setOverlay('emergency', Math.min(0.6, this.wreckNear || 0));
+                const rig = this.lightRig.update(dt);
+                this.fx.exposure = (e0 || 1) * a.exposure * rig.exposure;
+                this.fx.bloom = (b0 ?? 0.7) + a.bloom;
+            } catch { /* decoration never kills the frame */ }
             if (this.post) this.post.render(this.scene, this.camera, this.fx, now / 1000);
             else this.renderer.render(this.scene, this.camera);
             if (this.pip) {
                 try { this.renderPip(); } catch { this.pipRect = null; }
             }
+            this.fx.exposure = e0;
+            this.fx.bloom = b0;
+            try { this.board?.update(this.camera, now); } catch { /* the HUD fallback still has the text */ }
         };
         this._raf = requestAnimationFrame(loop);
     }
@@ -263,28 +303,122 @@ class SceneHandle {
         this.fx.reduced = calm();
     }
 
-    /** Step quality down a tier after ~3 s averaging under 45 fps (see the header). */
+    /**
+     * Feed the render budget one frame (platform/renderBudget.js). It reads the p95 frame time
+     * and moves one rung at a time, both ways, never above the app's tier; applyBudget() does
+     * the switching. Static-shadow rungs refresh the shadow map every 4th frame.
+     */
     autoQuality(dt) {
-        const f = this.fps;
-        if (!(dt > 0) || this.quality === 'low') return;
-        f.frames++;
-        f.time += dt;
-        if (f.time < 1) return;
-        const rate = f.frames / f.time;
-        f.frames = 0;
-        f.time = 0;
-        f.slow = rate < 45 ? f.slow + 1 : 0;
-        if (f.slow < 3) return;
-        this.applyTier(this.quality === 'high' ? 'medium' : 'low');
+        if (!(dt > 0)) return;
+        this.budget.frame(dt * 1000);
+        tickShadows(this.renderer, ++this._frameNo, 4);
     }
 
-    /** Switch the whole frame to tier `q`: pixel ratio, bloom depth, shadow map, grass. */
+    /** One budget rung: pixel ratio (this scene's per-tier scale x the rung's), shadows, tier. */
+    applyBudget(rung) {
+        if (this.disposed || !rung || !RENDER_SCALE[rung.tier]) return;
+        this.fps.slow = 0;
+        const dpr = Math.min(window.devicePixelRatio || 1, rung.maxDpr) * rung.resScale * RENDER_SCALE[rung.tier];
+        this.renderer.setPixelRatio(dpr);
+        this.renderer.shadowMap.autoUpdate = !rung.staticShadows;
+        this.renderer.shadowMap.needsUpdate = true;
+        this.particleScale = this.budget.particleScale;
+        this.setQuality(rung.tier);
+        this.resize();
+    }
+
+    /** Switch the whole frame to tier `q` (the app's choice): the budget restarts at its top rung. */
     applyTier(q) {
         if (this.disposed || !RENDER_SCALE[q]) return;
-        this.fps.slow = 0;
-        this.renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2) * RENDER_SCALE[q]);
-        this.setQuality(q);
-        this.resize();
+        this.budget.snapTo(q);
+        this.applyBudget(this.budget.rung);
+    }
+
+    /**
+     * Pre-impact light (#2). Predicts contact between the focus car and any other car from
+     * their on-screen motion (closest approach inside a second, under a car's width apart,
+     * closing fast) and arms the swell for that moment; the photo-finish slow motion arms a
+     * 'win' swell. Returns the envelope sample.
+     */
+    updateAnticipation(now, dt) {
+        const fx = this.fx;
+        const slow = fx.slow || 0;
+        if (slow > 0.2 && this._prevSlow <= 0.2) {
+            this.antic.arm('win', { leadMs: 900 });
+            this.board?.showEvent('PHOTO FINISH');
+        }
+        this._prevSlow = slow;
+        this._contactCooldown = Math.max(0, this._contactCooldown - dt);
+        const focus = fx.focus;
+        const movers = fx.movers;
+        if (!(dt > 0) || !focus || !movers || !(fx.speed > 0)) return this.antic.sample(now);
+        // Velocities from last frame's positions (cars only; the crowd mesh is instanced).
+        let me = null, mvx = 0, mvz = 0, bestD = 9;
+        for (const m of movers) {
+            if (m.isInstancedMesh) continue;
+            const p = m.position;
+            const prev = this._prevPos.get(m);
+            const vx = prev ? (p.x - prev.x) / dt : 0, vz = prev ? (p.z - prev.z) / dt : 0;
+            if (prev) { prev.x = p.x; prev.z = p.z; prev.vx = vx; prev.vz = vz; }
+            else this._prevPos.set(m, { x: p.x, z: p.z, vx: 0, vz: 0 });
+            const d = (p.x - focus.x) ** 2 + (p.z - focus.z) ** 2;
+            if (d < bestD) { bestD = d; me = m; mvx = vx; mvz = vz; }
+        }
+        if (!me || this._contactCooldown > 0) return this.antic.sample(now);
+        let soonest = Infinity, strength = 0;
+        for (const m of movers) {
+            if (m === me || m.isInstancedMesh) continue;
+            const p = m.position, v = this._prevPos.get(m);
+            if (!v || (p.x - focus.x) ** 2 + (p.z - focus.z) ** 2 > 1600) continue;
+            const c = closestApproach(focus.x, focus.z, mvx, mvz, p.x, p.z, v.vx, v.vz);
+            if (c.t > 0.05 && c.t < 1 && c.miss < 2.2 && c.closing > 6 && c.t < soonest) {
+                soonest = c.t;
+                strength = Math.min(1.2, c.closing / 30);
+            }
+        }
+        if (soonest < Infinity && this.antic.arm('impact', { at: now + soonest * 1000, strength })) {
+            this._contactCooldown = 1.2;
+        }
+        return this.antic.sample(now);
+    }
+
+    /**
+     * The in-world board (#7) over the run-up to the line, facing the oncoming cars. The flat HUD
+     * fallback lives over the canvas; the race page's own HUD already lists positions, so only
+     * the event cards surface visibly there (the list stays in the accessibility tree).
+     */
+    placeBoard() {
+        const t = this.track;
+        if (!t || this.playground || this.room || this.scan || models.MODEL_LOOKS[this.theme]) {
+            if (this.board) this.board.mesh.visible = false;
+            return;
+        }
+        if (!this.board) {
+            this.board = new DiegeticBoard({
+                THREE, title: 'RACE ORDER', worldWidth: 12, label: 'Race order',
+                hudHost: this.canvas?.parentElement || null,
+            });
+            this.scene.add(this.board.mesh);
+        }
+        this.board.mesh.visible = true;
+        const d = 40 * WORLD_SCALE;
+        const p = t.pointAt(d);
+        const side = (t.halfWidth || 6 * WORLD_SCALE) / WORLD_SCALE + 3.5;
+        // Left of travel (+ lateral = right in sim units), raised clear of the barrier.
+        const x = (p.x + p.ty * side * WORLD_SCALE) / WORLD_SCALE;
+        const z = (p.y - p.tx * side * WORLD_SCALE) / WORLD_SCALE;
+        const y = t.heightAt(d) / WORLD_SCALE + 6.5;
+        this.board.place(x, y, z, -p.tx, -p.ty);
+    }
+
+    /** Race order from fx.js (rows: { name, pos, gap, you }), and a card when the focus car gains a place. */
+    setStandings(rows, gained = 0) {
+        this.board?.setStandings(rows);
+        if (gained > 0) {
+            const me = rows.find(r => r.you);
+            if (me) this.board?.showEvent(`P${me.pos} \u25B2`, 1600);
+            this.antic.arm('overtake', { leadMs: 0, strength: 0.8 });
+        }
     }
 
     setQuality(q) {
@@ -346,6 +480,8 @@ class SceneHandle {
             }
         }
         this.captureEnvironment();
+        // The light rig scales what the weather just set (lightning, beacons, rim pulse).
+        this.lightRig?.captureBase();
     }
 
     /**
@@ -616,6 +752,7 @@ class SceneHandle {
         this.buildGrass();
         this.setWeather(false);
         models.MODEL_LOOKS[this.theme]?.load(this, group);
+        try { this.placeBoard(); } catch (e) { console.warn('pocabinet/scene: board skipped', e); }
     }
 
     buildRoomTrack(group, atmosphere) {
@@ -770,6 +907,9 @@ class SceneHandle {
         this._frameCbs.clear();
         this.disposeTrackMeshes();
         this.setRainStreaks(false);
+        this.board?.dispose();
+        this.board = null;
+        this.lightRig?.restore();
         this.envTarget?.dispose();
         this.pmrem.dispose();
         this.post?.dispose();

@@ -17,6 +17,7 @@
 //   • music   — musicLayers.js on the shared music bus.
 import { rumble } from './input.js';
 import { createMusicLayers } from '../platform/musicLayers.js';
+import { createTensionMixer } from '../platform/tensionMixer.js';
 
 const GEAR_TOP = [70, 130, 195, 265, 345];   // sim units/s at the top of each gear
 const HEAR = 620;
@@ -26,7 +27,7 @@ let ctx = null, engine = null, rivals = [], beds = null, noiseBuffer = null;
 let gear = 0, lastV = 0, lastThrottle = 0;
 const last = { skid: 0, pass: 0, turbo: 0, crash: 0 };
 let litWas = 0;
-let music = null, totalLaps = 3;
+let music = null, tension = null, totalLaps = 3;
 let rivalCount = 3;
 
 const tierOf = () => {
@@ -115,6 +116,7 @@ export function start(laps) {
     stop();
     totalLaps = laps > 0 ? laps : 3;
     music = createMusicLayers({ root: 49, bpmLow: 108, bpmHigh: 152 });
+    tension = createTensionMixer(music);
     ctx = window.PoAudioBus?.contextSync?.() || null;
     if (!ctx || !window.PoAudioBus.busSync('sfx')) { ctx = null; return; }
     engine = voice(false);
@@ -162,7 +164,7 @@ export function start(laps) {
 }
 
 export function stop() {
-    music?.stop(); music = null;
+    music?.stop(); music = null; tension = null;
     for (const v of [engine, ...rivals]) {
         if (!v) continue;
         for (const node of [v.osc, ...v.extra]) { try { node.stop(); node.disconnect(); } catch { /* already stopped */ } }
@@ -335,18 +337,26 @@ export function events(prev, cur, me) {
 }
 
 /**
- * Music intensity from the lap the followed car is on (the leader when spectating): the first
- * lap is the bassline alone, the last one everything. Laps run 1..laps; past that the car is home.
+ * Music from the race state of the followed car (the leader when spectating), through the
+ * platform tension mixer (deck #15): the lap is the clock, the place the position, the nearest
+ * rival the proximity. Stems swell in and thin out as those move; the last lap is the clock
+ * at full. Laps run 1..laps; past that the car is home and the mix settles.
  */
+const PROXIMITY_NEAR = 60;     // sim units: a rival this close is right on you
+const PROXIMITY_FAR = 260;     // and from here on, no pressure at all
 function tune(cur, me) {
     if (!music || !cur?.length) return;
     const car = cur[me] || cur.reduce((x, c) => (c.position < x.position ? c : x), cur[0]);
-    if (car.finished || car.lap > totalLaps) { music.setIntensity(0); return; }
+    if (car.finished || car.lap > totalLaps) { tension?.update({}); music.setIntensity(0); return; }
     const lap = Math.max(1, car.lap);
-    // A one-lap race still builds: lead the progress with the field position.
     const byLap = totalLaps > 1 ? (lap - 1) / (totalLaps - 1) : 0.5;
-    const byPlace = cur.length > 1 ? 1 - (car.position - 1) / (cur.length - 1) : 1;
-    music.setIntensity(lap === totalLaps ? Math.max(0.85, byLap) : 0.1 + byLap * 0.6 + byPlace * 0.15);
+    let nearest = Infinity;
+    for (const c of cur) if (c !== car) nearest = Math.min(nearest, Math.hypot(c.x - car.x, c.y - car.y));
+    tension?.update({
+        clock: lap === totalLaps ? 1 : byLap * 0.7,
+        position: cur.length > 1 ? (car.position - 1) / (cur.length - 1) : 0,
+        proximity: Math.max(0, Math.min(1, (PROXIMITY_FAR - nearest) / (PROXIMITY_FAR - PROXIMITY_NEAR))),
+    });
     music.setGain(me < 0 ? 0.5 : 1);
     music.start();
 }

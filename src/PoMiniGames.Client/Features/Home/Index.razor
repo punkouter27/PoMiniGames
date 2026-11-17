@@ -84,9 +84,9 @@
                    because the first chip is the same destination for a keyboard. *@
                 @if (playable)
                 {
-                    <a class="home-card-head" href="@game.Primary.Url" data-hub-nav tabindex="-1"
+                    <a class="home-card-head" href="@game.Primary.Url" data-hub-nav data-spring="0.97" tabindex="-1"
                        title="@($"Play {game.Title} — {GameModes.ToDescription(game.Primary.Mode)}")">
-                        <span class="home-card-icon material-symbols-outlined" aria-hidden="true">@game.Icon</span>
+                        <span class="home-card-icon material-symbols-outlined" aria-hidden="true" data-parallax="5">@game.Icon</span>
                         <span class="home-card-title" id="@($"home-card-{game.Key.Value}")">@game.Title</span>
                     </a>
                 }
@@ -116,7 +116,7 @@
                         @* One anchor name per card. A single shared name would have every
                            panel anchor to whichever button the browser picked last, which
                            put Brawl's folded modes under the Racer card. *@
-                        <button type="button" class="home-mode-chip home-mode-chip--more"
+                        <button type="button" class="home-mode-chip home-mode-chip--more" data-spring data-sonify
                                 popovertarget="@panelId" aria-haspopup="true"
                                 style="@($"anchor-name: --home-more-{game.Key.Value}")"
                                 aria-label="@($"{game.Title}: {rest.Count} more modes")">+@rest.Count</button>
@@ -189,7 +189,7 @@
     private RenderFragment ModeChip(CatalogGame game, CatalogMode m) =>
         IsPlayable(m)
             ? @<a class="home-mode-chip home-mode-chip--@(m.Mode.ToString().ToLowerInvariant())"
-                  href="@(m.ChipUrl ?? m.Url)" data-hub-nav
+                  href="@(m.ChipUrl ?? m.Url)" data-hub-nav data-spring data-sonify
                   title="@($"{game.Title} — {ModeDescription(m)}")"
                   aria-label="@($"{game.Title}, {ModeDescription(m)}")">@ModeLabel(m)</a>
             : @<span class="home-mode-chip home-mode-chip--offline"

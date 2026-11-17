@@ -255,6 +255,9 @@
     <script type="module" src="js/platform/audioBus.js"></script>
     <script type="module" src="js/platform/richAudio.js"></script>
     <script type="module" src="js/platform/speechBus.js"></script>
+    <!-- uiAudio.js binds the keyboard-only data-sonify listener (menu focus/select cues) at load;
+         without this tag it only arrived with the first game that imported it, so the hub was silent. -->
+    <script type="module" src="js/platform/uiAudio.js"></script>
     <script type="module" src="js/platform/visualRuntime.js"></script>
     <!-- §GFX-10 synthesis moved to an AudioWorklet; dsp.js is the main-thread
          front end and acoustics.js owns the per-game reverb spaces. Both are
@@ -275,6 +278,11 @@
     <!-- §GFX-6 pointer-tracked tilt for [data-fx-tilt] surfaces. One delegated
          listener; idle until something is hovered. -->
     <script type="module" src="js/platform/fxTilt.js"></script>
+    <!-- Spring press / hover parallax for [data-spring] and [data-magnetic] controls
+         (deck #17), and the five-beat end-of-game ceremony GameOverModal starts (deck #19).
+         Both are delegated listeners or idle functions until used. -->
+    <script type="module" src="js/platform/springUi.js"></script>
+    <script type="module" src="js/platform/resultCeremony.js"></script>
     <!-- Controllers: gamepadBus.js (D-pad focus navigation, pad rumble for impactBus haptics) is
          fetched on the first gamepadconnected only, so a player without a pad pays nothing. -->
     <script type="module">addEventListener('gamepadconnected', () => import('./js/platform/gamepadBus.js').then((m) => m.startNav()), { once: true });</script>

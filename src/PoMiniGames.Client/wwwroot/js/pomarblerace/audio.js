@@ -62,6 +62,7 @@
 // waiting, because a call about a lead that has already changed again is worse than silence.
 
 import { readPref } from './store.js';
+import * as ImpactSynth from '../platform/impactSynth.js';
 
 const NOISE_SECONDS = 2;
 
@@ -77,6 +78,13 @@ const IMPACT_FULL = 22;
 // (physics.js). `modes` are partial frequency ratios over f0 — inharmonic ratios are what make
 // glass and metal ring rather than buzz; `decay` the ring time; `click` the level of the noise
 // transient and `hp` its highpass; `level` a per-material trim.
+// The platform's material vocabulary (impactMaterials.js) for each cannon material, used by
+// impactSynth.js while this game's own bank is still rendering.
+const SYNTH_MATERIAL = {
+  marble: 'glass', surface: 'stone', obstacle: 'wood', rumble: 'rubber',
+  bump: 'rubber', spinner: 'metal', ice: 'glass',
+};
+
 const IMPACT_MATERIALS = {
   marble: { f0: 2100, modes: [1, 2.76, 5.4], decay: 0.11, click: 0.5, hp: 3200, level: 0.8 },
   surface: { f0: 360, modes: [1, 1.58], decay: 0.07, click: 0.35, hp: 1400, level: 1.0 },
@@ -683,6 +691,17 @@ export function createAudio() {
     const v = Math.min(1, speed / IMPACT_FULL);
     const energy = v * v;
     const mat = IMPACT_MATERIALS[material] || IMPACT_MATERIALS.surface;
+    const bank = impactBank && impactBank[material in IMPACT_MATERIALS ? material : 'surface'];
+
+    // Deck #13: until the offline bank has rendered, the platform's modal synth voices the hit
+    // from the shared material table (its own capped pool and rate limit), into this game's mix.
+    if (!(bank && bank.length)) {
+      const played = ImpactSynth.play(SYNTH_MATERIAL[material] || 'stone', speed, {
+        full: IMPACT_FULL, size: material === 'marble' ? 0.35 : 1, pan: cue?.pan || 0,
+        context: c, destination: sfxBus,
+      });
+      if (played) { lastClink = now; return; }
+    }
 
     // Voice pool: drop finished voices, then make room only for a harder hit than the softest.
     impactVoices = impactVoices.filter((x) => x.end > now);
@@ -707,7 +726,6 @@ export function createAudio() {
     g.gain.setTargetAtTime(0.0001, now + ring * 0.6, ring * 0.25);
     bright.connect(g).connect(dest);
 
-    const bank = impactBank && impactBank[material in IMPACT_MATERIALS ? material : 'surface'];
     let src;
     if (bank && bank.length) {
       src = c.createBufferSource();

@@ -57,6 +57,49 @@
   animation: none;
 }
 
+/* Shared launch choreography (deck idea #18). js/platform/app.js names the top bar `po-hud`
+   for the length of a hub launch, so the one HUD surface both pages share holds still
+   instead of cross-fading with itself, and sets data-hero-dir so the new page wipes in from
+   the edge nearest the pressed card while that card flies into the title. Reduced motion and
+   browsers without the API never get here: PoHubNav navigates instantly. */
+::view-transition-group(po-hud) {
+  animation: none;
+}
+::view-transition-old(po-hud) {
+  display: none;
+}
+::view-transition-new(po-hud) {
+  animation: none;
+}
+
+:root[data-hero-nav]::view-transition-new(root) {
+  animation: po-route-edge-ltr 420ms cubic-bezier(0.2, 0.9, 0.25, 1) both;
+}
+:root[data-hero-nav][data-hero-dir='rtl']::view-transition-new(root) {
+  animation-name: po-route-edge-rtl;
+}
+:root[data-hero-nav]::view-transition-old(root) {
+  animation: po-route-edge-out 420ms ease-in both;
+}
+
+@keyframes po-route-edge-ltr {
+  from { clip-path: inset(0 100% 0 0); }
+  to { clip-path: inset(0 0 0 0); }
+}
+@keyframes po-route-edge-rtl {
+  from { clip-path: inset(0 0 0 100%); }
+  to { clip-path: inset(0 0 0 0); }
+}
+@keyframes po-route-edge-out {
+  from { opacity: 1; }
+  to { opacity: 0.55; }
+}
+
+:root[data-motion='reduce'][data-hero-nav]::view-transition-new(root),
+:root[data-motion='reduce'][data-hero-nav]::view-transition-old(root) {
+  animation: none;
+}
+
 /* a11y: honour reduced-motion for the cross-document transition too — the
    root cross-fade is motion the user opted out of. Skipping the animation makes
    the swap instant (the API still no-ops gracefully where unsupported). */

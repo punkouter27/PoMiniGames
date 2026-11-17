@@ -49,7 +49,18 @@
       var root = document.documentElement;
       var title = null;
       if (hero) hero.style.viewTransitionName = 'po-hero';
-      // routeFx's colour wipe would play on top of the morph; app-shell.css hides it meanwhile.
+      // The top bar is the one HUD surface both pages share. Named on its own it is
+      // captured apart from the page, so it holds still while the page wipes under it
+      // instead of cross-fading with itself (po-motion.css).
+      var hud = document.querySelector('.gl-top-bar');
+      if (hud) hud.style.viewTransitionName = 'po-hud';
+      // The new page wipes in from the edge nearest the pressed card, so the wipe and
+      // the card's flight into the title travel the same way (po-motion.css).
+      var r = hero && hero.getBoundingClientRect ? hero.getBoundingClientRect() : null;
+      var fromRight = !!r && (r.left + r.width / 2) > window.innerWidth / 2;
+      root.setAttribute('data-hero-dir', fromRight ? 'rtl' : 'ltr');
+      // routeFx's colour wipe and vortex would play on top of the morph; routeFx stands
+      // them down while this attribute is set, and app-shell.css hides the layer.
       root.setAttribute('data-hero-nav', '');
       var transition = document.startViewTransition(function () {
         if (hero) hero.style.viewTransitionName = '';
@@ -62,10 +73,16 @@
       var cleanup = function () {
         if (title) title.style.viewTransitionName = '';
         if (hero) hero.style.viewTransitionName = '';
+        if (hud) hud.style.viewTransitionName = '';
         root.removeAttribute('data-hero-nav');
+        root.removeAttribute('data-hero-dir');
       };
       transition.finished.then(cleanup, cleanup);
-      transition.ready.catch(function () { /* skipped: the navigation still happened */ });
+      // One low-volume rising sweep as the morph starts: the transition's sound, timed
+      // to the frame the animation actually begins rather than to the click.
+      transition.ready.then(function () {
+        try { window.PoUiAudio && window.PoUiAudio.playSweep(330, 660, 320, 0.03, 'sine'); } catch (_) { /* audio is a garnish */ }
+      }, function () { /* skipped: the navigation still happened */ });
     }
   };
 

@@ -23,6 +23,7 @@
 import * as CANNON from 'cannon-es';
 import * as THREE from 'three';
 import { G_ROOT, G_RAGDOLL, G_ARENA, G_PROP } from './physics.js';
+import { createSettler } from '../platform/ragdollBlend.js';
 
 // Body parts: box half-extent source sizes (full w/h/d, scaled by the
 // fighter's heightScale), the rig joint that anchors them, the offset from
@@ -114,6 +115,11 @@ export class CannonRagdoll {
     this.rig = rig;
     this.bodies = null;      // part name -> CANNON.Body
     this.constraints = null;
+    // Settle, not flop (platform/ragdollBlend.js): a speed-gated low-pass on the
+    // VISUAL joint rotations, so a nearly-still pile stops shivering under solver
+    // jitter. Reads body speed only (never frame dt) and never writes a body, so the
+    // cannon sim — and anything replay/netplay compares — is untouched.
+    this.settler = createSettler({ still: 0.2, moving: 1.2, minAlpha: 0.2 });
   }
 
   get active() {
@@ -133,6 +139,7 @@ export class CannonRagdoll {
   //                 "lights out, crumples in place" KO.
   activate(knockDir, opts = {}) {
     if (this.bodies) this.dispose();
+    this.settler.reset();
     this.rig.root.updateMatrixWorld(true);
     const s = this.rig.root.getWorldScale(_scale).x;
     const vel = opts.velocity || { x: 0, z: 0 };
@@ -271,6 +278,11 @@ export class CannonRagdoll {
       const joint = joints[name];
       if (!body || !joint) continue;
       _q.set(body.quaternion.x, body.quaternion.y, body.quaternion.z, body.quaternion.w);
+      // The hips place the root and torso: they always follow physics exactly.
+      if (name !== 'hips') {
+        const v = body.velocity, w = body.angularVelocity;
+        this.settler.apply(name, _q, Math.hypot(v.x, v.y, v.z) + 0.25 * Math.hypot(w.x, w.y, w.z));
+      }
       const parentName = JOINT_PARENT[name];
       const parentQuat = parentName ? worldQuats[parentName] : root.quaternion;
       _qInv.copy(parentQuat).invert();

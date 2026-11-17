@@ -2,6 +2,7 @@
 @inject SettingsService Settings
 @inject InviteService Invites
 @inject UiFeedbackService Feedback
+@inject ToastService Toasts
 @inject IJSRuntime JS
 @inject IWebAssemblyHostEnvironment HostEnv
 @implements IDisposable
@@ -47,6 +48,7 @@
                         <button type="button"
                                 role="radio"
                                 class="app-seg__btn"
+                                data-spring
                                 aria-checked="@Aria(Settings.Theme == mode)"
                                 @onclick="() => SetTheme(mode)">
                             @ThemeLabel(mode)
@@ -66,6 +68,7 @@
                         <button type="button"
                                 role="radio"
                                 class="app-seg__btn"
+                                data-spring
                                 aria-checked="@Aria(Settings.Graphics == tier)"
                                 @onclick="() => SetGraphics(tier)">
                             @GraphicsLabel(tier)
@@ -73,26 +76,47 @@
                     }
                 </div>
             </div>
+            @* Perceptual preview (deck idea #20): try a tier for ten seconds while
+               framePacing.js times every frame, then keep it, cancel, or take the
+               recommendation. A kept tier is watched for stutter and rolled back. *@
             <div class="prefs-row prefs-preview-row">
                 <div class="prefs-label">
                     <span class="prefs-name">Quality preview</span>
-                    <span class="prefs-hint">@(_previewActive ? $"Previewing {_previewTier}" : "Test Low, Medium or High for 10 seconds.")</span>
+                    <span class="prefs-hint" role="status" aria-live="polite">@PreviewHint</span>
                 </div>
                 @if (_previewActive)
                 {
                     <div class="prefs-preview-actions">
-                        <button type="button" class="app-btn app-btn--primary" @onclick="CommitGraphicsPreview">Keep</button>
-                        <button type="button" class="app-btn" @onclick="CancelGraphicsPreview">Cancel</button>
+                        <button type="button" class="app-btn app-btn--primary" data-spring @onclick="CommitGraphicsPreview">Keep</button>
+                        <button type="button" class="app-btn" data-spring @onclick="CancelGraphicsPreview">Cancel</button>
                     </div>
                 }
                 else
                 {
-                    <button type="button"
-                            class="app-btn"
-                            disabled="@(!PreviewTierAvailable)"
-                            @onclick="() => StartGraphicsPreview(PreviewTier)">
-                        Preview
-                    </button>
+                    <div class="prefs-preview-actions">
+                        <div class="app-seg" role="radiogroup" aria-label="Tier to preview">
+                            @foreach (var tier in SettingsService.GraphicsTiers)
+                            {
+                                <button type="button"
+                                        role="radio"
+                                        class="app-seg__btn"
+                                        data-spring
+                                        aria-checked="@Aria(PreviewTier == tier)"
+                                        @onclick="() => _previewPick = tier">
+                                    @GraphicsLabel(tier)
+                                </button>
+                            }
+                        </div>
+                        <button type="button" class="app-btn" data-spring @onclick="() => StartGraphicsPreview(PreviewTier)">
+                            Preview
+                        </button>
+                        @if (_previewStatus.HasResult && _previewStatus.Recommend is { } rec && rec != Settings.Graphics)
+                        {
+                            <button type="button" class="app-btn app-btn--primary" data-spring @onclick="() => SetGraphics(rec)">
+                                Use @GraphicsLabel(rec)
+                            </button>
+                        }
+                    </div>
                 }
             </div>
         </fieldset>
@@ -106,6 +130,7 @@
                 </div>
                 <button type="button"
                         class="prefs-toggle @(Settings.Muted ? null : "prefs-toggle--on")"
+                        data-spring
                         role="switch"
                         aria-checked="@Aria(!Settings.Muted)"
                         aria-label="Sound"
@@ -162,6 +187,7 @@
                 </div>
                 <button type="button"
                         class="prefs-toggle @(Settings.Haptics ? "prefs-toggle--on" : null)"
+                        data-spring
                         role="switch"
                         aria-checked="@Aria(Settings.Haptics)"
                         aria-label="Haptics"
@@ -177,6 +203,7 @@
                 </div>
                 <button type="button"
                         class="prefs-toggle @(Settings.RichAudio ? "prefs-toggle--on" : null)"
+                        data-spring
                         role="switch"
                         aria-checked="@Aria(Settings.RichAudio)"
                         aria-label="Rich audio"
@@ -193,6 +220,7 @@
                 </div>
                 <button type="button"
                         class="prefs-toggle @(Settings.VoiceAnnouncer ? "prefs-toggle--on" : null)"
+                        data-spring
                         role="switch"
                         aria-checked="@Aria(Settings.VoiceAnnouncer)"
                         aria-label="Voice announcer"
@@ -221,6 +249,7 @@
                 </div>
                 <button type="button"
                         class="prefs-toggle @(Settings.ReducedMotion ? "prefs-toggle--on" : null)"
+                        data-spring
                         role="switch"
                         aria-checked="@Aria(Settings.ReducedMotion)"
                         aria-label="Reduce motion"
@@ -236,6 +265,7 @@
                 </div>
                 <button type="button"
                         class="prefs-toggle @(Settings.ColorSafe ? "prefs-toggle--on" : null)"
+                        data-spring
                         role="switch"
                         aria-checked="@Aria(Settings.ColorSafe)"
                         aria-label="Colour-blind safe colours"
@@ -259,6 +289,7 @@
                 </div>
                 <button type="button"
                         class="prefs-toggle @(_invites == InviteState.On ? "prefs-toggle--on" : null)"
+                        data-spring
                         role="switch"
                         aria-checked="@Aria(_invites == InviteState.On)"
                         aria-label="Game invites on this device"
@@ -311,9 +342,31 @@
     private bool _inviteFailed;
     private bool _previewActive;
     private string _previewTier = "medium";
+    private string? _previewPick;
+    private GraphicsPreviewStatus _previewStatus = GraphicsPreviewStatus.None;
+    private CancellationTokenSource? _previewPoll;
 
-    private bool PreviewTierAvailable => true;
-    private string PreviewTier => Settings.Graphics is "low" or "medium" or "high" ? Settings.Graphics : "medium";
+    /// <summary>The tier the Preview button will try: the player's pick, else the current setting.</summary>
+    private string PreviewTier => _previewPick ?? Settings.Graphics;
+
+    private string PreviewHint
+    {
+        get
+        {
+            var s = _previewStatus;
+            var tier = GraphicsLabel(_previewTier);
+            if (_previewActive)
+            {
+                var left = Math.Max(0, (int)Math.Ceiling(s.RemainingMs / 1000.0));
+                return s.HasResult
+                    ? $"Previewing {tier} · {left} s left · {s.Fps:0} fps, 95% of frames under {s.P95Ms:0} ms."
+                    : $"Previewing {tier} · {left} s left · measuring…";
+            }
+            if (s.HasResult)
+                return $"{s.Reason} Recommended: {GraphicsLabel(s.Recommend ?? "auto")}.";
+            return "Try a setting for 10 seconds while every frame is timed.";
+        }
+    }
 
     private bool InvitesAvailable => _invites is InviteState.On or InviteState.Off;
 
@@ -337,7 +390,13 @@
     {
         Settings.Changed += OnSettingsChanged;
         Settings.OpenRequested += OnOpenRequested;
+        Settings.GraphicsRolledBack += OnGraphicsRolledBack;
     }
+
+    // The stutter watch put a lighter tier back (framePacing.js). Say so: the player chose
+    // the heavier one, and a silent change would read as the setting not sticking.
+    private void OnGraphicsRolledBack(string from, string to) =>
+        Toasts.Show($"Graphics set back to {GraphicsLabel(to)}: {GraphicsLabel(from)} was stuttering.", ToastType.Warning);
 
     private void OnSettingsChanged() => InvokeAsync(StateHasChanged);
 
@@ -363,6 +422,9 @@
     {
         Settings.Changed -= OnSettingsChanged;
         Settings.OpenRequested -= OnOpenRequested;
+        Settings.GraphicsRolledBack -= OnGraphicsRolledBack;
+        _previewPoll?.Cancel();
+        _previewPoll?.Dispose();
     }
 
     private async Task SetTheme(ThemeMode mode)
@@ -391,32 +453,53 @@
     {
         _previewActive = await Settings.StartGraphicsPreviewAsync(tier);
         _previewTier = tier;
+        _previewStatus = GraphicsPreviewStatus.None;
         StateHasChanged();
-        if (_previewActive) await Feedback.ClickAsync();
-        _ = AutoClearPreviewUiAsync();
+        if (!_previewActive) return;
+        await Feedback.ClickAsync();
+        _ = PollPreviewAsync();
     }
 
-    private async Task AutoClearPreviewUiAsync()
+    /// <summary>Refresh the live measurement twice a second until the preview ends.</summary>
+    private async Task PollPreviewAsync()
     {
-        await Task.Delay(10050);
-        if (!_previewActive) return;
+        _previewPoll?.Cancel();
+        _previewPoll?.Dispose();
+        var cts = _previewPoll = new CancellationTokenSource();
+        try
+        {
+            while (!cts.IsCancellationRequested)
+            {
+                await Task.Delay(500, cts.Token);
+                _previewStatus = await Settings.GetGraphicsPreviewStatusAsync();
+                if (!_previewStatus.Active) _previewActive = false;
+                await InvokeAsync(StateHasChanged);
+                if (!_previewActive) return;
+            }
+        }
+        catch (OperationCanceledException) { /* closed or committed */ }
+    }
+
+    private async Task StopPreviewPollAsync()
+    {
+        _previewPoll?.Cancel();
+        _previewStatus = await Settings.GetGraphicsPreviewStatusAsync();
         _previewActive = false;
-        await InvokeAsync(StateHasChanged);
+        StateHasChanged();
     }
 
     private async Task CommitGraphicsPreview()
     {
         await Settings.CommitGraphicsPreviewAsync(_previewTier);
-        _previewActive = false;
-        StateHasChanged();
+        _previewPick = null;
+        await StopPreviewPollAsync();
         await Feedback.ClickAsync();
     }
 
     private async Task CancelGraphicsPreview()
     {
         await Settings.CancelGraphicsPreviewAsync();
-        _previewActive = false;
-        StateHasChanged();
+        await StopPreviewPollAsync();
         await Feedback.ClickAsync();
     }
 

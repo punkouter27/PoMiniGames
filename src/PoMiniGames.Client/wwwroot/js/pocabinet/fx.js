@@ -574,6 +574,8 @@ class CarFx {
         this.lightPulses = [];
         this.size = new THREE.Vector2();
         this.disposed = false;
+        this.orderClock = 0;
+        this.focusPos = 0;   // the focus car's last place, for the board's overtake card
     }
 
     /** The scene's weather, live (environment.js sets it; a remount mid-race changes it). */
@@ -585,6 +587,10 @@ class CarFx {
         if (cam && (x - cam.x) ** 2 + (z - cam.z) ** 2 > PUFF_RANGE * PUFF_RANGE) return;
         const q = this.sh.quality;
         const rnd = Math.random;
+        // The render budget (platform/renderBudget.js, via scene.js) thins smoke inside a tier
+        // before it has to drop the whole tier.
+        const share = this.sh.particleScale ?? 1;
+        if (share < 1 && rnd() > share) return;
         if (q !== 'high' && q !== 'medium') {
             this.smoke.spawn(x, y, z, vx, vy, vz, life, s0, s1, a0, r, g, b, drag, grav, floor, rnd());
             return;
@@ -713,6 +719,17 @@ class CarFx {
             if (c.hint >= 0) s.hint = c.hint;
             const proj = t.project(c.x, c.y, s.hint);
             s.hint = proj.index;
+            // Race progress for the in-world board: distance along the loop, unwrapped across
+            // the line. A grid slot behind the line starts negative, not a lap ahead.
+            if (s.along === undefined) {
+                s.prog = proj.along > t.length / 2 ? proj.along - t.length : proj.along;
+            } else {
+                let step = proj.along - s.along;
+                if (step < -t.length / 2) step += t.length;
+                else if (step > t.length / 2) step -= t.length;
+                s.prog += step;
+            }
+            s.along = proj.along;
             const up = s.up = Number(c.h) || 0;
             const v = Math.abs(c.speed);
             // A pose that jumped (replay seek, snapshot snap, respawn) is not a slide.
@@ -974,12 +991,71 @@ class CarFx {
             if (this.lightPulses[i].life <= 0) this.lightPulses.splice(i, 1);
         }
 
+        this.orderClock -= dt;
+        if (this.orderClock <= 0) {
+            this.orderClock = 0.5;
+            try { this.publishOrder(cars); } catch { /* the board is decoration */ }
+        }
+
         const useGpu = this.sh.quality === 'high';
         this.smoke.step(dt, useGpu);
         this.sparks.step(dt, useGpu);
         this.skids.flush();
         this.decals.flush();
         return events;
+    }
+
+    /**
+     * Race order for scene.setStandings (the in-world board) and how close a wreck is to the
+     * camera (scene.wreckNear, the light rig's amber beacons). The focus car is the one under
+     * scene.fx.focus. Gaps are rough seconds: metres behind / the car's own speed.
+     */
+    publishOrder(cars) {
+        const sh = this.sh;
+        const cam = sh.camera?.position;
+        let wreck = 0;
+        const rows = [];
+        const focus = sh.fx?.focus;
+        let you = -1, best = 25;
+        for (const c of cars) {
+            const s = this.state.get(c.id);
+            if (!s || s.prog === undefined) continue;
+            rows.push({ id: c.id, name: c.name, local: !!c.isLocal, pos: c.position || 0, dist: c.dist, prog: s.prog, speed: Math.abs(c.speed) || 1 });
+            if (focus) {
+                const d = (c.x / WS - focus.x) ** 2 + (c.y / WS - focus.z) ** 2;
+                if (d < best) { best = d; you = c.id; }
+            }
+            if (c.wrecked && cam) {
+                const d = Math.hypot(c.x / WS - cam.x, c.y / WS - cam.z);
+                wreck = Math.max(wreck, 1 - d / 45);
+            }
+        }
+        sh.wreckNear = Math.max(0, wreck);
+        if (!rows.length || typeof sh.setStandings !== 'function') return;
+        // The race's own standings when it publishes them (the same order as the race HUD);
+        // fx's track progress is only the fallback, since it does not count laps.
+        const ranked = rows.every(r => r.pos > 0);
+        rows.sort(ranked ? (a, b) => a.pos - b.pos : (a, b) => b.prog - a.prog);
+        const metres = r => (ranked && Number.isFinite(r.dist) ? r.dist : r.prog);
+        const lead = metres(rows[0]);
+        let gained = 0;
+        // The player's own car when there is one; in a demo or replay, the car the camera follows
+        // keeps the highlight but is never called "YOU".
+        const local = rows.find(r => r.local);
+        if (local) you = local.id;
+        const out = rows.map((r, i) => {
+            const isYou = r.id === you;
+            if (isYou) {
+                if (this.focusPos && i + 1 < this.focusPos) gained = this.focusPos - (i + 1);
+                this.focusPos = i + 1;
+            }
+            return { pos: i + 1, name: isYou && local ? 'YOU' : (r.name || `Car ${r.id + 1}`), you: isYou, gap: i ? gapSeconds(lead - metres(r), r.speed) : null };
+        });
+        // Around the focus car when it is outside the top six, so the board always shows you.
+        let shown = out.slice(0, 6);
+        const me = out.findIndex(r => r.you);
+        if (me >= 6) shown = [...out.slice(0, 3), ...out.slice(me - 1, me + 2)];
+        sh.setStandings(shown, gained);
     }
 
     pushLight(x, y, z, r, g, b, intensity, radius, life) {
@@ -1056,4 +1132,10 @@ class CarFx {
 
 export function createFx(sceneHandle, track, opts) {
     return new CarFx(sceneHandle, track, opts);
+}
+
+/** A rough gap for the board: metres behind / own speed, dropped when it is meaningless (lapped, stopped). */
+function gapSeconds(metresBehind, speed) {
+    const g = metresBehind / Math.max(1, speed);
+    return Number.isFinite(g) && g >= 0 && g < 60 ? g : null;
 }
