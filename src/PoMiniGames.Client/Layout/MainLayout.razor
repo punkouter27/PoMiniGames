@@ -143,10 +143,9 @@
        nothing unless the reel is actually running. *@
     <KioskControlBar />
 
-    @* The contentinfo landmark, visually hidden. The visible footer row held a build
-       label and a Status link; Status is in the account menu now, and the row's height
-       was space every page needed (the hub's grid, a portrait game). The landmark
-       stays so a screen-reader user still finds the site's end. *@
+    @* The contentinfo landmark plus the build stamp, a small fixed label bottom-right
+       (above the BottomNav on a phone, above the modal layer). It takes no layout space
+       and no taps. Visible again since 2026-11-17 (owner decision). *@
     <BuildVersion />
     <BottomNav />
 
@@ -176,7 +175,7 @@
     [
         ("/profile", "My Stats", "person"),
         ("/leaderboards", "Leaderboards", "leaderboard"),
-        ("/health", "Status", "monitor_heart"),
+        ("/diag", "Status", "monitor_heart"),
     ];
 
     private bool IsCurrent(string path) =>

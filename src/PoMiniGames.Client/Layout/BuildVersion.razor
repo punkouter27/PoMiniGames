@@ -1,10 +1,13 @@
 @*
-    The site's end, for assistive tech only.
+    The build stamp (YYMMDD), bottom-right on every page, and the site's contentinfo landmark.
 
-    The visible "v261113" stamp this component used to paint into the bottom-right
-    corner of every page is gone: it was developer chrome on player screens, and the
-    build date already has two homes a person can actually ask for it — the More sheet
-    on a phone and the Service health page. The contentinfo landmark stays so a
-    screen-reader user still finds the end of the site.
+    2026-11-17, owner decision: the version is visible again on every page. It had been
+    reduced to a screen-reader-only footer; the fleet standard wants the build date readable
+    at a glance (bug reports, "am I on the new build?"). It sits above the BottomNav on a
+    phone and above the modal layer, so the first-visit initials prompt cannot hide it.
+    pointer-events: none keeps it from ever taking a tap meant for the page.
 *@
-<footer class="gl-sr-only" aria-label="Site information">PoMiniGames, build @BuildInfo.Date</footer>
+<footer class="app-build-footer" aria-label="Site information">
+    <span class="gl-sr-only">PoMiniGames, build @BuildInfo.Date</span>
+    <span class="app-build-version" data-testid="build-version" aria-hidden="true">v@(BuildInfo.Date)</span>
+</footer>
