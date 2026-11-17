@@ -91,7 +91,7 @@ export class CourseMixin {
     if (!sweep) return;
     for (const m of this.marbleSet.marbles) {
       if (m.finished || m.eliminated || !m.prev) continue;
-      if (!sweep(m.prev, m.body.position, m.radius, _guardPoint, _guardNormal)) continue;
+      if (!sweep(m.prev, m.body.position, m.radius, _guardPoint, _guardNormal, m.s)) continue;
       m.body.position.set(_guardPoint.x, _guardPoint.y, _guardPoint.z);
       // Bounce off the inside of the surface it tried to pass (restitution 0.3).
       const v = m.body.velocity;

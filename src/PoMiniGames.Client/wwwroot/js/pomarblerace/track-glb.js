@@ -886,12 +886,22 @@ export function createGlbCourse({
   // Landing rings flare into a hopper: walls rise LAND_EXTRA past the authored wall top and lean
   // LAND_FLARE outward at the top, so a marble coming down just outside the lane is steered in.
   const LAND_EXTRA = 14;
+  // Under a funnel the throat throws marbles down the lane ~35 units over its floor, so that
+  // hopper rises further (still capped below the cone; see roofCap and buildFunnelSkirt).
+  const FUNNEL_LAND_EXTRA = 26;
   const LAND_FLARE = 10;
   const HAIRPIN_LOOK = 10;       // how far back along the course a lane's inflow direction is read
   const APRON_LEN = 9;           // apron behind a hairpin-fed lane's first ring
   const BACKSTOP_H = 30;
+  const SKIRT_GAP = 0.3;          // clearance a funnel skirt leaves under the cone (well under a marble)
+  const SKIRT_REACH = 24;        // tallest slot under a funnel that gets a skirt
+  const PEG_DEFLECT = 6;         // how far upstream a peg's wall deflector starts
+  const MARBLE_R = 1;            // marbles.js radius
+  const TAPER_RINGS = 10;        // rings an under-funnel tube's lid tapers from the hopper rim to CONTAIN_H
   // xyz triangle soups (walls, lids, junction floors), per-lane coverage
-  const CONTAIN = { walls: [], lids: [], floors: [], stats: [] };
+  // `rims`: the hopper wall tops of a lane running back under a funnel (see underFunnel), which
+  // buildTrack skirts up to the funnel's underside once the model is loaded.
+  const CONTAIN = { walls: [], lids: [], floors: [], stats: [], rims: [] };
   {
     // Clearance above each ring, from every shell vertex of the OTHER lanes (and of this lane more
     // than a few rings away) that sits over this ring's floor footprint.
@@ -982,24 +992,46 @@ export function createGlbCourse({
           if (Math.abs(w.dot(R)) > L.REACH[r] + 2 || Math.abs(w.dot(t)) > 10) continue;
           clear = hu;
         }
+        // A tight loop (Spiral Works' Lower A corkscrew, radius ~14) is this lane's own floor on
+        // the far side, upside down, and well inside OVERPASS_DS, so the test above never sees it.
+        // Its tube then reached past the loop's axis: an 18-high lid on a 14-radius loop put each
+        // half-turn's interior inside the other's, and a marble flying across the axis came out
+        // on the wrong side of the other half's wall, missed its floor edge and left the course.
+        // So the floor facing back down at this one caps the tube at the axis, halfway across.
+        for (let j = 0; j < L.n; j++) {
+          if (Math.abs(j - r) < 4 || Math.abs(L.S[j] - L.S[r]) >= OVERPASS_DS) continue;
+          if (L.U[j * 3] * U.x + L.U[j * 3 + 1] * U.y + L.U[j * 3 + 2] * U.z > -0.5) continue;
+          w.set(L.P[j * 3] - P.x, L.P[j * 3 + 1] - P.y, L.P[j * 3 + 2] - P.z);
+          const hu = w.dot(U);
+          if (hu < OVERPASS_MIN || Math.abs(w.dot(R)) > L.HW[r] + L.HW[j] || Math.abs(w.dot(t)) > 24) continue;
+          clear = Math.min(clear, hu / 2 + CONTAIN_MARGIN);
+        }
         const A = v(L.A, r), B = v(L.B, r), C = v(L.C, r), D = v(L.D, r);
         const hA = A.clone().sub(B).dot(U), hD = D.clone().sub(C).dot(U);
         // Lid at the taller of CONTAIN_H and the real walls, unless the level above is closer —
         // then just under it. A wall already taller than that height simply is not extended.
-        const H = Math.min(Math.max(CONTAIN_H, hA, hD), clear - CONTAIN_MARGIN);
+        // Under a funnel, the tube after the hopper starts as tall as the hopper rim and tapers to
+        // CONTAIN_H over TAPER_RINGS: Spiral Works' throat throws marbles down Lower A up to ~35 units
+        // over the floor, past the hopper, and an 18-high lid caught them on its TOP. They rode it
+        // to the corkscrew, where it curls away under them, and left the course.
+        const k = r - LANDING_RINGS;
+        const taper = underFunnel && k >= 0 && k < TAPER_RINGS ? (Math.max(hA, hD) + FUNNEL_LAND_EXTRA) * (1 - k / TAPER_RINGS) + CONTAIN_H * (k / TAPER_RINGS) : 0;
+        const H = Math.min(Math.max(CONTAIN_H, hA, hD, taper), clear - CONTAIN_MARGIN);
         baseL.push(A); baseR.push(D);
         if (!(H >= 4)) { topL.push(null); topR.push(null); continue; }   // no room: an overpass is the lid
         if (L.open || fedByCatch[li] || (fedFromAir[li] && r < LANDING_RINGS)) {
           // Landing zone: extend the walls, leave the top open (see fedFromAir). On a hairpin-fed
           // lane running back under a funnel, cap the extension at the ring-0 floor height so the
           // flared hopper reaches up to the funnel throat without poking into the cone overhead.
-          const HL = Math.min(Math.max(H, hA + LAND_EXTRA, hD + LAND_EXTRA), clear - CONTAIN_MARGIN);
+          const extra = underFunnel ? FUNNEL_LAND_EXTRA : LAND_EXTRA;
+          const HL = Math.min(Math.max(H, hA + extra, hD + extra), clear - CONTAIN_MARGIN);
           const roofCap = (ay) => (underFunnel && U.y > 0.1 ? Math.max(0, (L.B[1] - ay) / U.y) : Infinity);
           const dhL = Math.min(Math.max(0, HL - hA), roofCap(A.y));
           const dhR = Math.min(Math.max(0, HL - hD), roofCap(D.y));
           const eL = A.clone().addScaledVector(U, dhL).addScaledVector(R, -LAND_FLARE * Math.min(1, dhL / LAND_EXTRA));
           const eD = D.clone().addScaledVector(U, dhR).addScaledVector(R, LAND_FLARE * Math.min(1, dhR / LAND_EXTRA));
           landing.push([li, r, eL, eD]);
+          if (underFunnel) CONTAIN.rims.push([li, r, eL, eD]);
           topL.push(null); topR.push(null);
           continue;
         }
@@ -1037,6 +1069,17 @@ export function createGlbCourse({
         if (la !== li || lb !== li || rb !== ra + 1) continue;
         pushTri(CONTAIN.walls, baseL[ra], baseL[rb], eB); pushTri(CONTAIN.walls, baseL[ra], eB, eA);
         pushTri(CONTAIN.walls, baseR[ra], dB, baseR[rb]); pushTri(CONTAIN.walls, baseR[ra], dA, dB);
+      }
+      // Hopper → tube: where the landing rings end and the lidded tube begins, neither loop above
+      // spans the interval between them, so it was open from the authored wall top up, and a marble
+      // gliding down the hopper above the authored wall flew on past the tube's side. Wall both
+      // sides of that interval and lid it from the hopper rim to the tube's lid.
+      for (const [la, ra, eA, dA] of landing) {
+        const rb = ra + 1;
+        if (la !== li || rb >= L.n || !topL[rb] || !topR[rb]) continue;
+        pushTri(CONTAIN.walls, baseL[ra], baseL[rb], topL[rb]); pushTri(CONTAIN.walls, baseL[ra], topL[rb], eA);
+        pushTri(CONTAIN.walls, baseR[ra], topR[rb], baseR[rb]); pushTri(CONTAIN.walls, baseR[ra], dA, topR[rb]);
+        pushTri(CONTAIN.lids, eA, topL[rb], topR[rb]); pushTri(CONTAIN.lids, eA, topR[rb], dA);
       }
       landing.length = 0;
       const lidded = topL.filter(Boolean).length;
@@ -1214,15 +1257,17 @@ export function createGlbCourse({
      * @param {{x,y,z}} p0 position before the step @param {{x,y,z}} p1 position after it
      * @param {THREE.Vector3} outPoint where to put the marble back @param {THREE.Vector3} outNormal
      *   unit normal pointing back inside (against the motion)
+     * @param {number} [s] the marble's race distance, to tell inside from outside when the path
+     *   starts ON the surface (see GUARD_GRAZE)
      * @returns {boolean} true when the path crossed a containment triangle
      */
-    return function sweep(p0, p1, radius, outPoint, outNormal) {
+    return function sweep(p0, p1, radius, outPoint, outNormal, s) {
       dir.set(p1.x - p0.x, p1.y - p0.y, p1.z - p0.z);
       if (dir.lengthSq() < 1e-8) return false;
       const lo = [Math.min(p0.x, p1.x), Math.min(p0.y, p1.y), Math.min(p0.z, p1.z)].map((v) => Math.floor(v / CELL));
       const hi = [Math.max(p0.x, p1.x), Math.max(p0.y, p1.y), Math.max(p0.z, p1.z)].map((v) => Math.floor(v / CELL));
       seen.clear();
-      let bestT = Infinity;
+      let bestT = Infinity, bestTri = null;
       for (let x = lo[0]; x <= hi[0]; x++) for (let y = lo[1]; y <= hi[1]; y++) for (let z = lo[2]; z <= hi[2]; z++) {
         const b = grid.get(key(x, y, z));
         if (!b) continue;
@@ -1252,9 +1297,26 @@ export function createGlbCourse({
           n.crossVectors(e1, e2).normalize();
           if (n.dot(dir) > 0) n.negate();
           outNormal.copy(n);
+          bestTri = t;
         }
       }
       if (bestT === Infinity) return false;
+      // "Back the way it came" is only an answer when the marble came from one side. A path that
+      // STARTS on the surface has no such side: a marble running dead along the line of a lane's
+      // narrower wall (Spiral Works' Split C short lane into the Merge, the gates lane into Lower
+      // C) slides past the convex corner where the narrowing meets that wall with its centre on
+      // the wall's plane, and the next inward step was "crossing" it from outside, so the guard put
+      // it outside, where it left the course. Then the inside is the side the marble's own lane
+      // floor is on.
+      if (s !== undefined && Math.abs(outNormal.x * (p0.x - bestTri[0]) + outNormal.y * (p0.y - bestTri[1]) + outNormal.z * (p0.z - bestTri[2])) < GUARD_GRAZE) {
+        _graze.s = s;
+        refineLane(p0.x, p0.y, p0.z, _graze);
+        if (_graze.lane >= 0) {
+          const L = LANES[_graze.lane], k = _graze.ring * 3;
+          const ix = L.P[k] + L.U[k] * 3 - bestTri[0], iy = L.P[k + 1] + L.U[k + 1] * 3 - bestTri[1], iz = L.P[k + 2] + L.U[k + 2] * 3 - bestTri[2];
+          if (outNormal.x * ix + outNormal.y * iy + outNormal.z * iz < 0) outNormal.negate();
+        }
+      }
       outPoint.set(p0.x + dir.x * bestT, p0.y + dir.y * bestT, p0.z + dir.z * bestT).addScaledVector(outNormal, radius + 0.05);
       return true;
     };
@@ -1312,7 +1374,79 @@ export function createGlbCourse({
     }
   }
 
+  /**
+   * Skirt a lane running back under a funnel (CONTAIN.rims) up to the funnel's underside. Its hopper
+   * walls are capped below the cone so they never poke into it, which left a slot between the wall
+   * tops and the cone's underside, 3 to 20 units tall over Spiral Works' Lower A, and marbles
+   * spinning out of the throat flew sideways through it and off the course. Each skirt rises
+   * straight up from a hopper wall top to SKIRT_GAP under the cone, so the cone itself is untouched.
+   */
+  function buildFunnelSkirt(wx, wy, wz, indices, out) {
+    if (!CONTAIN.rims.length) return;
+    const ray = new THREE.Ray(new THREE.Vector3(), new THREE.Vector3(0, 1, 0));
+    const a = new THREE.Vector3(), b = new THREE.Vector3(), c = new THREE.Vector3(), hit = new THREE.Vector3();
+    const tops = new Map();
+    const reach = (p) => {
+      ray.origin.copy(p);
+      let best = Infinity;
+      for (let t = 0; t < indices.length; t += 3) {
+        const i = indices[t], j = indices[t + 1], k = indices[t + 2];
+        const lo = Math.min(wx[i], wx[j], wx[k]), hi = Math.max(wx[i], wx[j], wx[k]);
+        if (p.x < lo - 0.01 || p.x > hi + 0.01) continue;
+        const lz = Math.min(wz[i], wz[j], wz[k]), hz = Math.max(wz[i], wz[j], wz[k]);
+        if (p.z < lz - 0.01 || p.z > hz + 0.01) continue;
+        a.set(wx[i], wy[i], wz[i]); b.set(wx[j], wy[j], wz[j]); c.set(wx[k], wy[k], wz[k]);
+        if (ray.intersectTriangle(a, b, c, false, hit)) best = Math.min(best, hit.y - p.y);
+      }
+      return best > SKIRT_GAP && best < SKIRT_REACH ? p.clone().setY(p.y + best - SKIRT_GAP) : null;
+    };
+    for (const [li, r, eL, eD] of CONTAIN.rims) tops.set(li * 10000 + r, [eL, reach(eL), eD, reach(eD)]);
+    for (const [key, [eL, sL, eD, sD]] of tops) {
+      const next = tops.get(key + 1);
+      if (!next) continue;
+      const [nL, nsL, nD, nsD] = next;
+      if (sL && nsL) out.push(eL.x, eL.y, eL.z, nL.x, nL.y, nL.z, nsL.x, nsL.y, nsL.z, eL.x, eL.y, eL.z, nsL.x, nsL.y, nsL.z, sL.x, sL.y, sL.z);
+      if (sD && nsD) out.push(eD.x, eD.y, eD.z, nsD.x, nsD.y, nsD.z, nD.x, nD.y, nD.z, eD.x, eD.y, eD.z, sD.x, sD.y, sD.z, nsD.x, nsD.y, nsD.z);
+    }
+  }
+
+  /**
+   * A peg standing closer to its lane's wall than a marble is wide makes a pocket: the drive and
+   * every unstick nudge push the marble forward, deeper into the wedge between peg and wall, and it
+   * never comes out (Spiral Works' pegs lane parked a marble there for the last 60 s of a race).
+   * Each such peg gets a deflector from the wall, PEG_DEFLECT upstream, to the peg's inner flank,
+   * so a marble riding the wall is steered round the peg instead of into the gap.
+   */
+  function pegDeflectors(nodes) {
+    const out = [];
+    const proj = { s: 0, index: 0, lateral: 0, height: 0, lane: -1, ring: 0, hw: 0, reach: 0 };
+    for (const node of nodes) {
+      if (!/^Obs-Peg/.test(node.name)) continue;
+      const box = worldBox(node);
+      const c = box.getCenter(new THREE.Vector3()), size = box.getSize(new THREE.Vector3());
+      const r = Math.max(size.x, size.z) / 2;
+      project(c.x, c.y, c.z, -1, proj);
+      if (proj.lane < 0) continue;
+      const L = LANES[proj.lane], k = Math.min(proj.ring, L.n - 2) * 3;
+      const gap = L.HW[proj.ring] - Math.abs(proj.lateral) - r;
+      if (!(gap > 0 && gap < 2 * MARBLE_R)) continue;
+      const R = new THREE.Vector3(L.R[k], L.R[k + 1], L.R[k + 2]), U = new THREE.Vector3(L.U[k], L.U[k + 1], L.U[k + 2]);
+      const T = new THREE.Vector3(L.P[k + 3] - L.P[k], L.P[k + 4] - L.P[k + 1], L.P[k + 5] - L.P[k + 2]).normalize();
+      const sgn = Math.sign(proj.lateral);
+      const foot = c.clone().addScaledVector(U, -(proj.height + 1));
+      const w0 = foot.clone().addScaledVector(R, sgn * (gap + r)).addScaledVector(T, -PEG_DEFLECT);
+      const p0 = foot.clone().addScaledVector(R, -sgn * r);
+      const up = U.clone().multiplyScalar(size.y + 2);
+      const w1 = w0.clone().add(up), p1 = p0.clone().add(up);
+      out.push(w0.x, w0.y, w0.z, p0.x, p0.y, p0.z, p1.x, p1.y, p1.z, w0.x, w0.y, w0.z, p1.x, p1.y, p1.z, w1.x, w1.y, w1.z);
+    }
+    return out;
+  }
+
   const _lp = new THREE.Vector3();
+  const _graze = { s: 0, lane: -1, ring: 0, lateral: 0, height: 0, hw: 0, reach: 0 };
+  // A guard path starting within this of a surface's plane started ON it (see sweep).
+  const GUARD_GRAZE = 0.25;
   /**
    * Refine a main-line projection against the lanes that span its `s`: pick the lane whose floor
    * the point is actually over (smallest overhang past the floor edge, then nearest the floor)
@@ -1339,6 +1473,11 @@ export function createGlbCourse({
       _lp.set(x - L.P[k * 3], y - L.P[k * 3 + 1], z - L.P[k * 3 + 2]);
       const lat = _lp.x * L.R[k * 3] + _lp.y * L.R[k * 3 + 1] + _lp.z * L.R[k * 3 + 2];
       const h = _lp.x * L.U[k * 3] + _lp.y * L.U[k * 3 + 1] + _lp.z * L.U[k * 3 + 2];
+      // Before its start a lane only claims what is over its own footprint (its hopper flare
+      // included). Spiral Works' funnel spins its field above Lower A's start, and a marble
+      // dropping off the Catch into it was judged in Lower A's frame, 30 units "wide" of a lane it
+      // was never in, and retired in mid-air on its way down into the bowl.
+      if (out.s < L.s0 && Math.abs(lat) > L.REACH[k] + LAND_FLARE + 2) continue;
       const score = Math.max(0, Math.abs(lat) - L.HW[k]) + Math.abs(h - 1);
       if (score < bestScore) {
         bestScore = score;
@@ -1507,6 +1646,7 @@ export function createGlbCourse({
     // the funnel's axis, extruded straight up RIM_H. Bins where a lane meets the rim (the channel
     // that feeds the funnel) are left open, or the wall would shut the entrance.
     const rimWalls = [];
+    const skirts = [];
     if (bowlMeshName) {
       for (const mesh of trackMeshes) {
         if (mesh.name !== bowlMeshName) continue;
@@ -1523,6 +1663,7 @@ export function createGlbCourse({
           shellSoup.push(wx[a], wy[a], wz[a], wx[b], wy[b], wz[b], wx[c], wy[c], wz[c]);
         }
         buildRimWall(wx, wy, wz, rimWalls);
+        buildFunnelSkirt(wx, wy, wz, indices, skirts);
       }
     }
 
@@ -1540,10 +1681,13 @@ export function createGlbCourse({
     soupBodies(CONTAIN.lids);
     soupBodies(CONTAIN.floors);
     soupBodies(rimWalls);
+    soupBodies(skirts);
+    const deflectors = pegDeflectors(propNodes);
+    soupBodies(deflectors);
     // The guard covers the WHOLE course, not just the containment: a marble's centre never has a
     // legitimate reason to cross any track surface, and the original shell walls tunnel exactly
     // like the new ones (the Split-A mouth on Spiral Works lost marbles through its own lane wall).
-    const sweepGuard = createSweepGuard([CONTAIN.walls, CONTAIN.lids, CONTAIN.floors, rimWalls, shellSoup]);
+    const sweepGuard = createSweepGuard([CONTAIN.walls, CONTAIN.lids, CONTAIN.floors, rimWalls, skirts, deflectors, shellSoup]);
     const glass = (soup, opacity) => {
       const geo = new THREE.BufferGeometry();
       geo.setAttribute('position', new THREE.Float32BufferAttribute(soup, 3));
@@ -1561,6 +1705,8 @@ export function createGlbCourse({
     // No rail along the lid edges either: the bright line floating over the track reads as clutter.
     glass(CONTAIN.walls, 0.1);
     if (rimWalls.length) glass(rimWalls, 0.1);
+    if (skirts.length) glass(skirts, 0.1);
+    if (deflectors.length) glass(deflectors, 0.1);
 
     // ── brake bands ──
     // Amber rumble strips before the narrow lane mouths: marbles reach them at the 85 u/s
