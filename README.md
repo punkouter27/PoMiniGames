@@ -134,7 +134,6 @@ sign-in: a player is a random browser id plus three initials.
 | [User journeys](DOCS/20261112/USER_WORKFLOW.html) | Player-facing workflows through the app |
 | [Identity and security report](DOCS/20261112/AUTH_SECURITY_REPORT.html) | Player identity, antiforgery and access overview |
 | [AI and external services report](DOCS/20261112/AI_SERVICES_REPORT.html) | Current AI and external-service boundaries |
-| [PoMule vs the 1983 original](docs/20261117/POMULE-ORIGINAL-GAPS.md) | Ten ways the M.U.L.E. clone still differs from the 1983 game, and what each would take |
 | [Interactive tabbed shell](DOCS/20261112/artifact.html) | All five reports in one standalone tabbed frame |
 | [Architecture map](https://claude.ai/artifact/HGHLwMdGyveqtknNC1o5ar) | Component diagrams, request flows and the data model (private link; share it from the page to give others access) |
 
