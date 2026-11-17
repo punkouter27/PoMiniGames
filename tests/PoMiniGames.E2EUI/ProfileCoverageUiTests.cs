@@ -65,7 +65,11 @@ public class ProfileCoverageUiTests
         await page.Locator(".prf-game-name").First.WaitForAsync(
             new LocatorWaitForOptions { Timeout = 30_000 });
 
-        var names = await page.Locator(".prf-game-name").AllInnerTextsAsync();
+        // Text content, not innerText: the games not played yet sit in a <details> that is
+        // collapsed once anything has been played, and a closed <details> renders its names
+        // (so innerText reads them as blanks) while they are still listed in the page.
+        var names = (await page.Locator(".prf-game-name").AllTextContentsAsync())
+            .Select(n => n.Trim()).ToList();
 
         // The whole point of the change: the profile used to report three of ten
         // games, so several games recorded stats no one could ever see.
@@ -98,7 +102,9 @@ public class ProfileCoverageUiTests
         // all of it visible at once. Nothing has to be expanded first — the four
         // collapsible mode sections (and their .home-section-toggle buttons) were
         // replaced when the page moved to GameCatalog.All.
-        await page.Locator("a.home-mode-chip[href='/couplequiz']").WaitForAsync(
+        // Couple Quiz's chip points at /couplequiz/multi (GameCatalog ChipUrl); the bare
+        // /couplequiz is the card head. Waiting on the head's URL timed out forever.
+        await page.Locator("a.home-mode-chip[href='/couplequiz/multi']").WaitForAsync(
             new LocatorWaitForOptions { Timeout = 30_000 });
 
         // Online: nothing is suppressed.
@@ -126,7 +132,7 @@ public class ProfileCoverageUiTests
             .Should().BeGreaterThan(0, because: "Couple Quiz is hub-backed in every mode");
 
         // The multiplayer chip must also stop being a link, not merely look disabled.
-        (await page.Locator("a.home-mode-chip[href='/couplequiz']").CountAsync())
+        (await page.Locator("a.home-mode-chip[href='/couplequiz/multi']").CountAsync())
             .Should().Be(0, because: "an unreachable lobby must not stay navigable");
 
         // Local games stay playable — that is the point of offline support.

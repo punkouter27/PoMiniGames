@@ -306,9 +306,17 @@
    is really around the board (top bar, the turn strip, the frame, the gaps), and
    the floor is the 24px minimum target. */
 @media (max-height: 500px) {
+  /* 2026-11-17: the top bar is ~63px on a phone on its side, not the ~40px this reserve
+     assumed, so at 844x390 the page still scrolled by 34px (MobileGoldenPathTests). The
+     reserve now counts the real bar, the board's margin is halved, and the cell floor drops
+     to 20px; on a touch screen the board is driven by the 44px side pads, not the cells. */
   .cf-layout {
-    --cf-cell: clamp(24px, min(calc((100dvh - 176px) / 9), calc((100dvw - 100px) / 9)), 84px);
+    --cf-cell: clamp(20px, min(calc((100dvh - 200px) / 9), calc((100dvw - 100px) / 9)), 84px);
   }
+  .cf-board { margin: 0.4rem auto; }
+  /* The status strip tracks the board's width, and a 200px strip wraps both names onto two
+     lines (84px tall). On a phone on its side there is width to spare, so give it room. */
+  .cf-status-slot { width: min(100%, 26rem); }
 }
 
 /* Keyboard / gamepad focus on a column's top cell. The socket's own inset shadow

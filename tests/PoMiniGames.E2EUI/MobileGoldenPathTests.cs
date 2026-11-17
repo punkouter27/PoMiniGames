@@ -46,12 +46,15 @@ public class MobileGoldenPathTests
         await using var _ = guard;
 
         // The home hero renders the platform identity…
-        await page.Locator(".home-title").WaitForAsync(new LocatorWaitForOptions
+        // (The hub's own .home-title became the shared PageHeader, visually hidden because the
+        // brand in the top bar already names the app; the brand is what a player sees.)
+        await page.Locator(".gl-brand-text").WaitForAsync(new LocatorWaitForOptions
         {
             State = WaitForSelectorState.Visible,
             Timeout = 60_000,
         });
-        (await page.Locator(".home-title").InnerTextAsync()).Should().Contain("PoMiniGames");
+        (await page.Locator(".gl-brand-text").InnerTextAsync()).Should().Contain("PoMiniGames");
+        (await page.Locator("h1").First.TextContentAsync()).Should().Contain("PoMiniGames");
 
         // …and the catalog renders game cards with playable mode chips. The grid is
         // game-major now (a card per game, a chip per mode), so both layers are

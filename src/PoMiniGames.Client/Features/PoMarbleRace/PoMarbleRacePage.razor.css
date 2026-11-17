@@ -663,8 +663,10 @@
     stroke-linejoin: round;
 }
 
+/* 2026-11-17: the five-track picker still overflowed the 390px start card by ~25px (the link
+   audit's "gps-intro-body scrolls"); a 16px glyph strip wins back ~36px over three rows. */
 @media (max-width: 480px) and (min-height: 561px) {
-    .mr-track-glyph { height: 28px; margin-bottom: 0; }
+    .mr-track-glyph { height: 16px; margin-bottom: 0; }
 }
 
 /* ── Settings drawer (#19) ── */
