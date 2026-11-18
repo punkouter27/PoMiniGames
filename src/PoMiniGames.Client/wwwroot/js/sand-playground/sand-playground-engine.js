@@ -283,7 +283,7 @@ async function setupGl(gen) {
     return true;
 }
 
-export async function init(canvasEl, overlayEl, dotnetRef) {
+export async function init(canvasEl, overlayEl, dotnetRef, startWorld) {
     // The module instance survives navigation, so a second visit must start clean.
     disposed = false; inited = false;
     stage?.dispose(); stage = null;
@@ -312,8 +312,10 @@ export async function init(canvasEl, overlayEl, dotnetRef) {
     windUser = 0; rain = 0; sunMode = 'auto'; GRAVITY = GRAVITY0;
     overcast = 0; skyFlash = 0; bolt = null; nextBolt = 0; melt = 0; pointers.clear(); pinch = null;
     // ?world=dam&seed=1234 (or seed=daily) opens one specific world: it is what a copied link carries.
+    // Otherwise the world picked in the start card's dropdown (startWorld), if any.
     const q = new URLSearchParams(location.search);
     if (PRESETS[q.get('world')]) preset = q.get('world');
+    else if (startWorld && PRESETS[startWorld]) preset = startWorld;
     const qSeed = q.get('seed');
     loadWorld(preset, qSeed === 'daily' ? dailySeed()
         : parseInt(qSeed, 10) > 0 ? parseInt(qSeed, 10) : (Math.random() * 0x7fffffff) | 0);

@@ -35,6 +35,10 @@
                                Options="@OptionsContent"
                                Mode="@(Mode == GameMode.Demo ? GameIntro.IntroMode.Demo : GameIntro.IntroMode.OnePlayer)"
                                Wide="@(Mode == GameMode.OnePlayer)"
+                               Maps="@(Mode == GameMode.OnePlayer ? TrackMaps : null)"
+                               MapLabel="Track"
+                               MapId="@_trackId"
+                               MapIdChanged="OnTrackChanged"
                                OnStart="StartRaceAsync" />
                 </div>
             }
@@ -272,6 +276,9 @@
 </GameShell>
 
 @code {
+    // The track: the start card's dropdown beside OK (owner rule), every track and today's Daily.
+    private static IReadOnlyList<IntroMap> TrackMaps =>
+        [.. PoCabinetCatalog.Tracks.Append(PoCabinetCatalog.Today(DateTime.UtcNow)).Select(t => new IntroMap(t.Id, t.Name))];
     // One line, for the device in hand (.keys-only / .touch-only, game-shell.css). It used to be
     // two bullets for every device, and the settings panel repeated the keyboard line.
     private RenderFragment ControlsContent => Mode == GameMode.Demo
@@ -309,7 +316,7 @@
     // panels are in the drawer, from the pause card. Otherwise only a failed start says so here.
     private RenderFragment? OptionsContent => Mode == GameMode.OnePlayer
         ? @<div class="pocabinet-start">
-            <PoCabinetPreRace TrackId="@_trackId" TrackIdChanged="OnTrackChanged"
+            <PoCabinetPreRace TrackId="@_trackId"
                               Settings="Settings" SettingsChanged="OnSettingsChangedAsync"
                               Color="@_color" PaintChanged="OnPaintChanged"
                               Livery="@_livery" LiveryChanged="OnLiveryChanged" />

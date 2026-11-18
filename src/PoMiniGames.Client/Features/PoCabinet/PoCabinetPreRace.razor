@@ -1,7 +1,8 @@
 @*
-    PoCabinetPreRace — the 1P start card's setup as one tabbed sheet: Track (the default: the
-    track list, and the bedroom's room-scan choice when it is picked), Car (the paint shop) and
-    Settings (the settings panel). It replaced the track list alone on the card, with the car and
+    PoCabinetPreRace — the 1P start card's setup as one tabbed sheet: Car (the paint shop) and
+    Settings (the settings panel), with the room-scan choice above them while a scanned track is
+    picked. The track itself is the card's dropdown beside OK (GameIntro.Maps, owner rule
+    2026-11-18). It replaced the track list alone on the card, with the car and
     the settings one drawer away; the drawer (PoCabinetDrawer) is still how the pause card and
     the lobby reach them.
 
@@ -13,6 +14,24 @@
 @using PoMiniGames.Shared.Games
 
 <div class="pocabinet-prerace">
+    @if (HasRoomScan(TrackId))
+    {
+        @* The scanned track's own choice, shown while that track is picked in the card's Track
+           dropdown (the Settings tab has it too). *@
+        <div class="pocabinet-prerace__room" role="radiogroup" aria-label="Scan detail">
+            <span>Scan detail <small>Auto picks for this device; Full is a 9.6 MB download; Lite is the plain room</small></span>
+            <span class="pocabinet-prerace__pills">
+                @foreach (var (value, text) in RoomOptions)
+                {
+                    <label class="pocabinet-prerace__pill">
+                        <input type="radio" name="pocabinet-room-track" value="@value"
+                               checked="@(Settings.RoomDetail == value)" @onchange="() => SetRoomDetailAsync(value)" />
+                        <span>@text</span>
+                    </label>
+                }
+            </span>
+        </div>
+    }
     <div class="pocabinet-prerace__tabs" role="tablist" aria-label="Race setup" @onkeydown="OnTabKey">
         @for (var i = 0; i < Tabs.Length; i++)
         {
@@ -32,26 +51,6 @@
          id="pocabinet-tabpanel-@_tab" aria-labelledby="pocabinet-tab-@_tab">
         @switch (_tab)
         {
-            case Tab.Track:
-                <PoCabinetTrackSelector SelectedTrackId="@TrackId" SelectedTrackIdChanged="TrackIdChanged" Campaign="true" Compact="true" />
-                @if (HasRoomScan(TrackId))
-                {
-                    @* The scanned track's own choice, beside the track it is for (the Settings tab has it too). *@
-                    <div class="pocabinet-prerace__room" role="radiogroup" aria-label="Scan detail">
-                        <span>Scan detail <small>Auto picks for this device; Full is a 9.6 MB download; Lite is the plain room</small></span>
-                        <span class="pocabinet-prerace__pills">
-                            @foreach (var (value, text) in RoomOptions)
-                            {
-                                <label class="pocabinet-prerace__pill">
-                                    <input type="radio" name="pocabinet-room-track" value="@value"
-                                           checked="@(Settings.RoomDetail == value)" @onchange="() => SetRoomDetailAsync(value)" />
-                                    <span>@text</span>
-                                </label>
-                            }
-                        </span>
-                    </div>
-                }
-                break;
             case Tab.Car:
                 <section class="pocabinet-prerace__car" aria-label="Car colour and livery">
                     <h3>Car colour &amp; livery <span class="pocabinet-muted">@Color</span></h3>
@@ -68,13 +67,12 @@
 </div>
 
 @code {
-    private enum Tab { Track, Car, Settings }
+    private enum Tab { Car, Settings }
 
-    private static readonly (Tab Tab, string Label)[] Tabs = [(Tab.Track, "Track"), (Tab.Car, "Car"), (Tab.Settings, "Settings")];
+    private static readonly (Tab Tab, string Label)[] Tabs = [(Tab.Car, "Car"), (Tab.Settings, "Settings")];
     private static readonly (string Value, string Text)[] RoomOptions = [("auto", "Auto"), ("splat", "Full"), ("mesh", "Lite")];
 
     [Parameter] public string? TrackId { get; set; }
-    [Parameter] public EventCallback<string> TrackIdChanged { get; set; }
     [Parameter] public PoCabinetUiSettings Settings { get; set; } = new();
     [Parameter] public EventCallback<PoCabinetUiSettings> SettingsChanged { get; set; }
     [Parameter] public string? Color { get; set; }
@@ -82,7 +80,7 @@
     [Parameter] public int Livery { get; set; } = 1;
     [Parameter] public EventCallback<int> LiveryChanged { get; set; }
 
-    private Tab _tab = Tab.Track;
+    private Tab _tab = Tab.Car;
     private readonly ElementReference[] _tabRefs = new ElementReference[Tabs.Length];
     /// <summary>An arrow key moved the selection: focus follows it after the render.</summary>
     private bool _focusTab;

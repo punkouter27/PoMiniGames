@@ -35,6 +35,9 @@ public partial class SandPlaygroundSandbox : ComponentBase, IAsyncDisposable
     /// <summary>Plain-language status (tool, pause) for the page's screen-reader live region.</summary>
     [Parameter] public EventCallback<string> OnStatus { get; set; }
 
+    /// <summary>The world picked in the start card's dropdown; a <c>?world=</c> link still wins.</summary>
+    [Parameter] public string? StartWorld { get; set; }
+
     private void PushStatus() =>
         _ = OnStatus.InvokeAsync($"{ToolOf(ActiveTool)?.Label ?? ActiveTool} tool selected." + (Paused ? " Paused." : ""));
 
@@ -72,7 +75,7 @@ public partial class SandPlaygroundSandbox : ComponentBase, IAsyncDisposable
     protected sealed record ToolDef(string Id, string Icon, string Label, string Hint, int Key);
     /// <summary>One dock chip. A group with several tools opens a tray to choose between them.</summary>
     protected sealed record Group(string Label, ToolDef[] Tools);
-    protected sealed record Choice(string Id, string Label, string Hint);
+    public sealed record Choice(string Id, string Label, string Hint);
     protected sealed record Level(double Value, string Label);
     protected sealed record ChallengeInfo(string Id, string Name, string Hint, double Best);
 
@@ -124,7 +127,7 @@ public partial class SandPlaygroundSandbox : ComponentBase, IAsyncDisposable
         if (GroupOf(toolId) is { } g && ToolOf(toolId) is { } t) _current[g] = t;
     }
 
-    protected static readonly Choice[] Presets =
+    public static readonly Choice[] Presets =
     [
         new("classic", "Ant farm", "A lake over a tunnel maze, with buried concrete"),
         new("dunes", "Dunes", "Open desert with one oasis"),
@@ -177,7 +180,7 @@ public partial class SandPlaygroundSandbox : ComponentBase, IAsyncDisposable
         try
         {
             var module = await JS.InvokeAsync<IJSObjectReference>("import", "./js/sand-playground/sand-playground-engine.js");
-            await module.InvokeVoidAsync("init", _canvas, _overlay, _ref);
+            await module.InvokeVoidAsync("init", _canvas, _overlay, _ref, StartWorld);
             await module.InvokeVoidAsync("setTool", ActiveTool);
             await module.InvokeVoidAsync("setBrush", BrushSize);
             await module.InvokeVoidAsync("setDemo", DemoOn);

@@ -451,24 +451,11 @@
     gap: 6px;
 }
 
-/* Four tracks with four lines each: two per row keeps every line readable. */
-.mr-tracks {
-    display: grid;
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-    gap: 6px;
-}
-
-/* Wide enough (the start card's setup column on a desktop): three a row, so the card fits. */
-@media (min-width: 900px) {
-    .mr-tracks { grid-template-columns: repeat(3, minmax(0, 1fr)); }
-}
-
 /* A narrow phone (390px): five tracks stack three rows deep and the card overflowed by ~14px.
    Tighter options and gaps win back ~30px without dropping a line of information. */
 @media (max-width: 480px) and (min-height: 561px) {
     .mr-setup { gap: 4px; }
     .mr-setup-label { margin-top: 2px; }
-    .mr-tracks { gap: 4px; }
     .mr-opt { padding: 5px 6px; gap: 1px; }
 }
 
@@ -476,9 +463,8 @@
 @media (max-height: 560px) {
     .mr-setup { gap: 4px; }
     .mr-setup-label { margin-top: 0; }
-    .mr-tracks { grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 4px; }
     .mr-opt { padding: 4px 6px; }
-    .mr-opt-hint, .mr-track-wr, .mr-setup-note { display: none; }
+    .mr-opt-hint, .mr-setup-note { display: none; }
     .mr-skin-ball { width: 18px; height: 18px; }
 }
 
@@ -519,18 +505,9 @@
     font-weight: 700;
 }
 
-/* The three small lines on an option. An option's own background is the raised
-   surface, which is lighter than the card, and the secondary text colour is tuned
-   for the card: on the option it measured 4.03:1 (3.35:1 with the opacity the meta
-   line added) and the amber record 3.25:1, all under the 4.5:1 floor. These read
-   through the primary text colour and the amber ink token instead, which follow the
-   scheme. */
-.mr-track-wr {
-    font-size: var(--text-xs);
-    font-weight: 700;
-    color: var(--accent-amber-ink);
-}
-
+/* The small line on an option. An option's own background is the raised surface, which is
+   lighter than the card, and the secondary text colour is tuned for the card (it measured
+   4.03:1 on the option, under the 4.5:1 floor), so it reads through the primary colour. */
 .mr-opt-hint {
     font-size: var(--text-xs);
     color: color-mix(in srgb, var(--color-text-primary) 80%, transparent);
@@ -632,12 +609,17 @@
     font-weight: 700;
 }
 
-/* ── Track cards: a glyph of the course above its name (#35) ── */
+/* ── The picked track: a glyph of the course beside its description (#35) ── */
+.mr-track-pick {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+}
+
 .mr-track-glyph {
-    display: block;
-    width: 100%;
+    flex: none;
+    width: 64px;
     height: 34px;
-    margin-bottom: 2px;
     border-radius: 6px;
     background: rgba(15, 23, 42, 0.9);
 }
@@ -647,13 +629,6 @@
     stroke-width: 3;
     stroke-linecap: round;
     stroke-linejoin: round;
-}
-
-/* 2026-11-17: the five-track picker still overflowed the 390px start card (by ~37px with the
-   keyboard control hints, the link audit's "gps-intro-body scrolls"). The glyph is decoration
-   beside the track's name, so a narrow phone drops it: ~85px back over three rows. */
-@media (max-width: 480px) and (min-height: 561px) {
-    .mr-track-glyph { display: none; }
 }
 
 /* ── Settings drawer (#19) ── */

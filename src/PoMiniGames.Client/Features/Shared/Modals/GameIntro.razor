@@ -41,7 +41,8 @@
      header  – icon + title, one objective line;
      body    – the controls (with the longer rules behind a "How to play" tab when a game
                has them) and the game's setup (Options). Wide cards put the two side by side;
-     footer  – exactly one button, OK, plus any setup toggles that belong beside it (Actions).
+     footer  – exactly one button, OK, plus any setup toggles that belong beside it (Actions)
+               and, for a game with several maps, the map dropdown (Maps, 1P and 2P only).
    The card is a flex column that never scrolls itself; the body is the only part that may,
    and every game's content is cut to fit so it does not (LinkAuditUiTests holds the line). *@
 @if (!_kiosk)
@@ -146,6 +147,22 @@
                    on a checkbox ticks it. *@
                 <div class="gps-intro-actions-extra" @onkeydown="HandleControlKey" @onkeydown:stopPropagation="true">@Actions</div>
             }
+            @if (ShowMapPicker)
+            {
+                @* The map, beside OK (owner rule 2026-11-18): the card's one other control, a native
+                   dropdown, in 1P and 2P only. Keydowns stop so arrows and Enter in the list pick
+                   a map instead of starting the game. *@
+                <label class="gps-intro-map" @onkeydown="HandleControlKey" @onkeydown:stopPropagation="true">
+                    <span class="gps-intro-map-label">@MapLabel</span>
+                    <select class="gps-intro-map-select" value="@MapId" @onchange="OnMapChangedAsync"
+                            aria-label="@MapLabel">
+                        @foreach (var map in Maps!)
+                        {
+                            <option value="@map.Id">@map.Name</option>
+                        }
+                    </select>
+                </label>
+            }
             @* The card's one button. 1P and demo: focused on open, so Enter and Space take it. *@
             <button type="button" class="app-btn app-btn--lg app-btn--primary" data-intro-action data-spring
                     @ref="_ok"
@@ -202,6 +219,25 @@
     /// start choice and OK read together. Inputs only: OK is the card's one button.
     /// </summary>
     [Parameter] public RenderFragment? Actions { get; set; }
+
+    /// <summary>
+    /// The game's maps (tracks, arenas, worlds). With more than one, and in 1P or 2P, the footer
+    /// shows a dropdown beside OK so the player can pick one before starting. Bind with
+    /// <c>@bind-MapId</c>; the game reads its own field when OK starts it.
+    /// </summary>
+    [Parameter] public IReadOnlyList<IntroMap>? Maps { get; set; }
+    [Parameter] public string? MapId { get; set; }
+    [Parameter] public EventCallback<string> MapIdChanged { get; set; }
+    /// <summary>The dropdown's label: "Map", "Track", "Arena"…</summary>
+    [Parameter] public string MapLabel { get; set; } = "Map";
+
+    private bool ShowMapPicker => Maps is { Count: > 1 } && Mode is IntroMode.OnePlayer or IntroMode.TwoPlayer;
+
+    private async Task OnMapChangedAsync(ChangeEventArgs e)
+    {
+        if (e.Value?.ToString() is { Length: > 0 } id && id != MapId)
+            await MapIdChanged.InvokeAsync(id);
+    }
 
     [Parameter] public IntroMode Mode { get; set; } = IntroMode.OnePlayer;
 

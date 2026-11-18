@@ -30,11 +30,14 @@
                    Objective="A GPU physics sandbox — dig, flood, build, then blow it apart."
                    Controls="@(IsDemo ? DemoContent : HowToPlayContent)"
                    Mode="@(IsDemo ? GameIntro.IntroMode.Demo : GameIntro.IntroMode.OnePlayer)"
+                   Maps="@WorldMaps"
+                   MapLabel="World"
+                   @bind-MapId="_world"
                    OnStart="@(() => _introDismissed = true)" />
     }
     else
     {
-        <SandPlaygroundSandbox IsDemo="IsDemo" OnStatus="SetStatus" />
+        <SandPlaygroundSandbox IsDemo="IsDemo" OnStatus="SetStatus" StartWorld="@(IsDemo ? null : _world)" />
     }
 </GameShell>
 
@@ -44,6 +47,11 @@
     private string _playerName = "";
     private bool _introDismissed;
     private string? _status;
+    // The world: the start card's dropdown beside OK (owner rule 2026-11-18); the in-game menu
+    // still swaps it later.
+    private string? _world = "classic";
+    private static readonly IReadOnlyList<IntroMap> WorldMaps =
+        [.. SandPlaygroundSandbox.Presets.Select(p => new IntroMap(p.Id, p.Label))];
 
     private void SetStatus(string status)
     {

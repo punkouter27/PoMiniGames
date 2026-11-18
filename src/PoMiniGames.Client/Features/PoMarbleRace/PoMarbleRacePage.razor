@@ -41,6 +41,10 @@
                    Options="@(_demo ? null : _online ? OnlineSetupContent : SetupContent)"
                    Wide="@(!_demo)"
                    Mode="@(_demo ? GameIntro.IntroMode.Demo : GameIntro.IntroMode.OnePlayer)"
+                   Maps="@TrackMaps"
+                   MapLabel="Track"
+                   MapId="@_mapId.ToString(System.Globalization.CultureInfo.InvariantCulture)"
+                   MapIdChanged="OnTrackPicked"
                    OnStart="OnIntroStartAsync" />
     }
     <div class="mr-wrap-row">
@@ -514,6 +518,20 @@
         }
     </div>;
 
+    // The track is the start card's dropdown beside OK (owner rule 2026-11-18): every pickable
+    // course, its record beside the name. None while a Grand Prix (it runs them all), a demo or a
+    // join-by-code race (the host's track) is set up.
+    private IReadOnlyList<IntroMap>? TrackMaps =>
+        _demo || _menu is null || (!_online && _gp) || (_online && _onlineHow == OnlineHow.JoinRoom) ? null
+        : [.. PickableMaps.Select(m => new IntroMap(m.Id.ToString(System.Globalization.CultureInfo.InvariantCulture),
+            RecordText(m.Id) is { Length: > 0 } record ? $"{m.Name} · {record}" : m.Name))];
+
+    private void OnTrackPicked(string id)
+    {
+        if (int.TryParse(id, System.Globalization.NumberStyles.Integer, System.Globalization.CultureInfo.InvariantCulture, out var mapId)) _mapId = mapId;
+    }
+
+    // What the picked course is like, under the setup (the dropdown only names it).
     private RenderFragment TrackPicker => @<div>
         @if (_menu is null)
         {
@@ -521,22 +539,10 @@
         }
         else
         {
-            <div class="mr-setup-label">Track</div>
-            <div class="mr-tracks" role="radiogroup" aria-label="Choose a track">
-                @foreach (var m in PickableMaps)
-                {
-                    var id = m.Id;
-                    <button type="button" role="radio" aria-checked="@(id == _mapId ? "true" : "false")"
-                            class="mr-opt mr-track @(id == _mapId ? "is-on" : "")"
-                            @onclick="() => _mapId = id">
-                        @TrackGlyph(id)
-                        <span class="mr-opt-name">@m.Name</span>
-                        <span class="mr-track-wr">@RecordText(id)</span>
-                        <span class="mr-opt-hint">@TrackStatText(StatFor(id))</span>
-                    </button>
-                }
+            <div class="mr-track-pick">
+                @TrackGlyph(_mapId)
+                <p class="mr-setup-note"><strong>@(MapAt(_mapId)?.Name)</strong> · @(MapAt(_mapId)?.Blurb) @TrackStatText(StatFor(_mapId))</p>
             </div>
-            <p class="mr-setup-note">@(MapAt(_mapId)?.Blurb)</p>
         }
     </div>;
 

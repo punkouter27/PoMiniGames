@@ -184,7 +184,9 @@ sign-in: a player is a random browser id plus three initials.
   Keep game artwork and HUDs game-specific, but do not override the shared dialogs'
   theme, typography or geometry.
 - `GameIntro` owns modal focus containment, readiness, controls, setup and the one OK
-  action. Essential choices stay visible; longer explanations and customization belong
+  action. A game with several maps passes `Maps` (`IntroMap` id + name) and binds `MapId`: in
+  1P and 2P the footer shows a **map dropdown** beside OK (Racer and Cabinet tracks, Marble Race
+  courses, Sand Playground worlds). A map is always that dropdown, never cards or buttons. Essential choices stay visible; longer explanations and customization belong
   in disclosures. On a portrait phone a game's setup is a third **Setup** tab beside Controls
   and How to play, so the card fits a 375×667 phone without scrolling; wider cards show setup
   beside the controls. Escape cancels the intro rather than silently starting play.
