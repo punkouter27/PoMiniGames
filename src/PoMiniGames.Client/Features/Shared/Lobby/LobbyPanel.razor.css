@@ -195,3 +195,21 @@
 ::deep .lobby-pick-card small {
     color: var(--color-text-secondary);
 }
+
+/* Optional game slots: per-row controls (kick) and live notices. */
+.lobby__row-actions {
+    margin-left: auto;
+    display: inline-flex;
+    align-items: center;
+    gap: 0.35rem;
+}
+
+.lobby__status {
+    display: grid;
+    gap: 0.5rem;
+    margin: 0 0 0.5rem;
+    font-size: 0.9rem;
+    color: var(--color-text-secondary);
+}
+
+.lobby__status:empty { display: none; }

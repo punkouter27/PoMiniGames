@@ -49,7 +49,7 @@
                    Mode="@_introMode"
                    OnStart="DismissIntro" />
     }
-    @* One column: the quick-match card (online only), the turn strip, the board. The
+    @* One column: the lobby and status cards (online only), the turn strip, the board. The
        game area is a row, so the card and the board must not be two direct children of
        it: on a phone the card would take the left half and push three of the board's
        six columns off the right edge. *@
@@ -57,7 +57,8 @@
     <div class="ttt-slot">
         @if (IsOnline)
         {
-            <QuickMatchPanel Session="@_online" OnCancel="LeaveOnline" OnRetry="RetryOnlineAsync" OnFindAnother="FindOpponentSafeAsync" />
+            <TurnLobbyPanel Session="@_online" HowTo="@HowToPlayContent" OnLeave="LeaveOnline" />
+            <QuickMatchPanel Session="@_online" OnCancel="LeaveOnline" OnRetry="RetryOnlineAsync" OnFindAnother="ReturnToLobbySafeAsync" />
         }
         @* The turn strip, in every mode. Outside online play the turn used to be spoken
            (GameShell's live region) and shown to nobody; Connect Five, the same kind of
@@ -277,8 +278,8 @@
     private void DismissIntro()
     {
         _introDone = true;
-        // Online connects only once the player has read the intro: the queue is a
-        // promise to play, and nobody should be paired while still reading the rules.
+        // Online connects only once the player has read the intro: the lobby is a
+        // promise to play, and nobody should take a seat while still reading the rules.
         if (IsOnline) _ = StartOnlineAsync();
     }
 
@@ -310,8 +311,8 @@
         "online" => @<div>
             <p>Play another person over the internet.</p>
             <ul>
-                <li>You're paired with the next player who picks Online — no lobby, no codes</li>
-                <li>❌ goes first; who gets ❌ is drawn at random</li>
+                <li>Everyone who picks Online meets in one shared lobby: the first in hosts, the guest marks Ready, the host starts</li>
+                <li>The host plays ❌ and goes first</li>
                 <li>The board lives on the server: tap a cell on your turn, then wait for theirs</li>
             </ul>
         </div>,
@@ -704,15 +705,15 @@
         _gameId++;
     }
 
-    // ── Online (quick-match over /tictactoe/hub) ─────────────────────────────
+    // ── Online (shared lobby, then /tictactoe/hub) ─────────────────────────────
     // OnlineTurnSession owns the whole server conversation; this page only draws and
-    // sounds what it is told. Side mapping is fixed: First = X, Second = O — X always
-    // opens, and a rematch swaps seats.
+    // sounds what it is told. Side mapping is fixed: First = X, Second = O — X is the host and always
+    // opens.
     private OnlineTurnSession? _online;
 
     private bool IsOnline => PlayMode == "online";
     private bool IsMyOnlineTurn => _online?.IsMyTurn ?? false;
-    // No opponent yet (or the connection is gone): the quick-match card stands alone.
+    // No opponent yet (in the lobby, or the connection is gone): the card stands alone.
     private bool OnlineWaiting => IsOnline && _online?.Phase is not (QuickMatchPhase.Playing or QuickMatchPhase.Over);
     private TurnMatchSide _mySide => _online?.MySide ?? TurnMatchSide.First;
     private string OpponentName => _online?.OpponentName ?? "Opponent";
@@ -736,7 +737,7 @@
     }
 
     private Task RetryOnlineAsync() => _online?.RetryAsync() ?? Task.CompletedTask;
-    private Task FindOpponentSafeAsync() => _online?.FindOpponentSafeAsync() ?? Task.CompletedTask;
+    private Task ReturnToLobbySafeAsync() => _online?.ReturnToLobbySafeAsync() ?? Task.CompletedTask;
 
     // Exactly one move behind the server: place it so the mark draws itself and sounds.
     private void OnOnlineMove(TurnMatchMove move)

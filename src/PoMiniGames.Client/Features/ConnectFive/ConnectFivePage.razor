@@ -51,13 +51,14 @@
     }
 
     <div class="cf-layout">
-        @* Online quick-match status (searching, dropped opponent) — the shared
+        @* Online lobby, then the status card (connecting, dropped opponent) — the shared
            card, sized to the board. During normal play it renders nothing and the status
            bar below carries the turn. *@
         @if (IsOnline)
         {
             <div class="cf-online-slot">
-                <QuickMatchPanel Session="@_online" OnCancel="LeaveOnline" OnRetry="RetryOnlineAsync" OnFindAnother="FindOpponentSafeAsync" />
+                <TurnLobbyPanel Session="@_online" HowTo="@HowToPlayContent" OnLeave="LeaveOnline" />
+                <QuickMatchPanel Session="@_online" OnCancel="LeaveOnline" OnRetry="RetryOnlineAsync" OnFindAnother="ReturnToLobbySafeAsync" />
             </div>
         }
         @* Online, before there is an opponent (connecting, searching, connection lost),
@@ -361,8 +362,8 @@
     private void DismissIntro()
     {
         _introDone = true;
-        // Online connects only once the player has read the intro: the queue is a
-        // promise to play, and nobody should be paired while still reading the rules.
+        // Online connects only once the player has read the intro: the lobby is a
+        // promise to play, and nobody should take a seat while still reading the rules.
         if (IsOnline) _ = StartOnlineAsync();
     }
 
@@ -394,8 +395,8 @@
         "online" => @<div>
             <p>Play another person over the internet.</p>
             <ul>
-                <li>You're paired with the next player who picks Online — no lobby, no codes</li>
-                <li>Who goes first is drawn at random</li>
+                <li>Everyone who picks Online meets in one shared lobby: the first in hosts, the guest marks Ready, the host starts</li>
+                <li>The host goes first</li>
                 <li>The board lives on the server: drop a disc on your turn, then wait for theirs</li>
             </ul>
         </div>,
@@ -902,17 +903,16 @@
         _lastGhostRenderKey = -1;
     }
 
-    // ── Online (quick-match over /connectfive/hub) ───────────────────────────
-    // OnlineTurnSession owns the whole server conversation (queue, seat, moves, rematch,
+    // ── Online (shared lobby, then /connectfive/hub) ───────────────────────────
+    // OnlineTurnSession owns the whole server conversation (lobby, seat, moves,
     // reconnect, match history); this page only draws and sounds what it is told.
-    // Side mapping is fixed: First = Red, Second = Yellow — Red always opens, and a
-    // rematch swaps seats.
+    // Side mapping is fixed: First = Red, Second = Yellow — Red is the host and always opens.
     private OnlineTurnSession? _online;
 
     private bool IsOnline => PlayMode == "online";
     private bool IsMyOnlineTurn => _online?.IsMyTurn ?? false;
     private bool OnlinePlaying => _online?.Phase == QuickMatchPhase.Playing;
-    // No opponent yet (or the connection is gone): the quick-match card stands alone.
+    // No opponent yet (in the lobby, or the connection is gone): the card stands alone.
     private bool OnlineWaiting => IsOnline && _online?.Phase is not (QuickMatchPhase.Playing or QuickMatchPhase.Over);
     private TurnMatchSide _mySide => _online?.MySide ?? TurnMatchSide.First;
     private TurnMatchSide OnlineTurn => _online?.Turn ?? TurnMatchSide.First;
@@ -940,7 +940,7 @@
     }
 
     private Task RetryOnlineAsync() => _online?.RetryAsync() ?? Task.CompletedTask;
-    private Task FindOpponentSafeAsync() => _online?.FindOpponentSafeAsync() ?? Task.CompletedTask;
+    private Task ReturnToLobbySafeAsync() => _online?.ReturnToLobbySafeAsync() ?? Task.CompletedTask;
 
     // Exactly one move behind the server: place it so the drop animates and sounds.
     private void OnOnlineMove(TurnMatchMove move)

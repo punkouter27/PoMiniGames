@@ -50,18 +50,13 @@ public sealed class PoMarbleRaceOnlineClient : IAsyncDisposable
         ConnectionChanged?.Invoke(_hub.State);
     }
 
-    public Task<MarbleRaceQueueStatus> FindRaceAsync(string displayName, bool isGuest, int mapId) =>
-        Require().InvokeAsync<MarbleRaceQueueStatus>("FindRace", displayName, isGuest, mapId);
-
-    public Task CancelSearchAsync() => Require().InvokeAsync("CancelSearch");
-
-    /// <summary>Open a private race; returns its code, or null when already queued or seated.</summary>
-    public Task<MarbleRaceRoom?> CreateRoomAsync(string displayName, bool isGuest, int mapId) =>
-        Require().InvokeAsync<MarbleRaceRoom?>("CreateRoom", displayName, isGuest, mapId);
-
-    /// <summary>Join a friend's private race by code.</summary>
-    public Task<MarbleRaceJoin> JoinRoomAsync(string code, string displayName, bool isGuest) =>
-        Require().InvokeAsync<MarbleRaceJoin>("JoinRoom", code, displayName, isGuest);
+    /// <summary>
+    /// Take this player's seat in the match the lobby started, by the internal code its
+    /// <c>gameStarted</c> carried. <c>raceStarted</c> follows once both seats are in. False when
+    /// the match is gone (the other player never arrived).
+    /// </summary>
+    public Task<bool> JoinMatchAsync(string matchCode) =>
+        Require().InvokeAsync<bool>("JoinMatch", matchCode);
 
     /// <summary>Host: push a frame unless the previous one is still on the wire.</summary>
     public void SendFrame(MarbleRaceFrame frame)

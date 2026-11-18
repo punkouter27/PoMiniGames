@@ -6,7 +6,7 @@ namespace PoMiniGamesClient.Services.Play;
 
 /// <summary>
 /// Client-side wrapper around a turn-match hub (<c>/connectfive/hub</c>,
-/// <c>/tictactoe/hub</c>). Owned by the game page for the life of the online
+/// <c>/tictactoe/hub</c>), joined with the code the lobby hands out. Owned by the game page for the life of the online
 /// session (not DI-registered: one page, one connection, disposed together).
 /// Exposes the two server events as C# events and keeps the seat token so a
 /// SignalR automatic reconnect re-binds the seat on its own — the page never sees
@@ -26,13 +26,13 @@ public sealed class TurnMatchClient : IAsyncDisposable
         _hubPath = hubPath;
     }
 
-    /// <summary>A game began (first pairing or rematch). Carries the local seat's side and token.</summary>
+    /// <summary>The match began (or was rejoined). Carries the local seat's side and token.</summary>
     public event Action<TurnMatchStart>? MatchStarted;
     /// <summary>Authoritative board after every change.</summary>
     public event Action<TurnMatchState>? StateChanged;
     /// <summary>Transport-level changes the page may want to surface (reconnecting, closed).</summary>
     public event Action<HubConnectionState>? ConnectionChanged;
-    /// <summary>The seat was lost across a reconnect (server forfeited it); the page should re-queue.</summary>
+    /// <summary>The seat was lost across a reconnect (server forfeited it); the page should go back to the lobby.</summary>
     public event Action? SeatLost;
 
     public HubConnectionState State => _hub?.State ?? HubConnectionState.Disconnected;
@@ -68,10 +68,12 @@ public sealed class TurnMatchClient : IAsyncDisposable
         ConnectionChanged?.Invoke(_hub.State);
     }
 
-    public Task<TurnMatchQueueStatus> FindMatchAsync(string displayName, bool isGuest) =>
-        Require().InvokeAsync<TurnMatchQueueStatus>("FindMatch", displayName, isGuest);
-
-    public Task CancelSearchAsync() => Require().InvokeAsync("CancelSearch");
+    /// <summary>
+    /// Claim a seat in the match the lobby reserved under <paramref name="code"/>. The second
+    /// claimant completes the pairing; <c>matchStarted</c> then arrives for both. The host moves first.
+    /// </summary>
+    public Task JoinMatchAsync(string code, string displayName, bool isGuest, bool asHost) =>
+        Require().InvokeAsync("JoinMatch", code, displayName, isGuest, asHost);
 
     /// <summary>
     /// Place a mark. A rejected move throws <see cref="HubException"/> with the server's

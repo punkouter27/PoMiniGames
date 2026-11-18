@@ -64,6 +64,8 @@ public class OnlineModesUiTests
         await using var browser = await LaunchAsync(playwright);
         var (first, guardFirst) = await OpenAsGuestAsync(browser, lobby, "A");
         await using var _first = guardFirst;
+        // Seat order is arrival order (the first in hosts): A must hold its seat before B opens.
+        await Assertions.Expect(first.GetByText("Players · 1/2")).ToBeVisibleAsync(new() { Timeout = 60_000 });
         var (second, guardSecond) = await OpenAsGuestAsync(browser, lobby, "B");
         await using var _second = guardSecond;
 
@@ -120,10 +122,20 @@ public class OnlineModesUiTests
         await using var browser = await LaunchAsync(playwright);
         var (first, guardFirst) = await OpenAsGuestAsync(browser, "/pomarblerace/multi", "A");
         await using var _first = guardFirst;
+        // Seat order is arrival order (the first in hosts): A must hold its seat before B opens.
+        await Assertions.Expect(first.GetByText("Players · 1/2")).ToBeVisibleAsync(new() { Timeout = 60_000 });
         var (second, guardSecond) = await OpenAsGuestAsync(browser, "/pomarblerace/multi", "B");
         await using var _second = guardSecond;
 
-        // Pairing boots both engines on the dealt seed: the host lands on its countdown card
+        // Both land on the shared lobby after the intro: the second to arrive readies, the first
+        // (the host) starts.
+        await Assertions.Expect(second.Locator(".lobby")).ToBeVisibleAsync(new() { Timeout = 60_000 });
+        await second.GetByRole(AriaRole.Button, new() { Name = "Ready!" }).ClickAsync();
+        var startRace = first.GetByRole(AriaRole.Button, new() { Name = "Start race" });
+        await Assertions.Expect(startRace).ToBeEnabledAsync(new() { Timeout = 30_000 });
+        await startRace.ClickAsync();
+
+        // The start boots both engines on the dealt seed: the host lands on its countdown card
         // (red marble), the guest on the waiting card (white marble). Both need the GLB course
         // and three.js from the CDN, so this is the slow part.
         var pages = new[] { first, second };

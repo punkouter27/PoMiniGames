@@ -10,7 +10,7 @@ namespace PoMiniGames.Unit.Features.PoMarbleRace;
 /// PoMarbleRace server rules, as one <c>[Theory]</c> of scenarios to keep the Unit tier inside its
 /// cap: <see cref="MarbleRaceScore"/> (an out-of-range score is unrepresentable, not merely
 /// rejected), <see cref="MarbleRaceRunVerifier"/> (a run total recomputed from its races), and
-/// <see cref="PoMarbleRaceOnlineService"/> (quick-match, and private codes for two
+/// <see cref="PoMarbleRaceLobbyService"/> and <see cref="PoMarbleRaceOnlineService"/> (the shared lobby, and pairing by its internal code for two
 /// players at most).
 /// </summary>
 /// <remarks>
@@ -22,10 +22,10 @@ public class PoMarbleRaceTests
     [Theory]
     [InlineData(nameof(Score_TryCreateChecksTheRange_AndClampBoundsIt))]
     [InlineData(nameof(RunVerifier_RecomputesTheTotal_OrRefusesTheRun))]
-    [InlineData(nameof(QuickMatch_PairsTheFirstTwo_FirstHosts))]
-    [InlineData(nameof(PrivateCode_SeatsTheFriend_OnTheHostsMap_AndAThirdIsTurnedAway))]
-    [InlineData(nameof(PrivateCode_RefusesUnknownCodes_AndYourOwn))]
-    [InlineData(nameof(Leaving_ClosesAnOpenCode))]
+    [InlineData(nameof(Lobby_SeatsTwo_AndRefusesAThird))]
+    [InlineData(nameof(Lobby_FirstArrivalHosts_AndStartNeedsAReadyGuest))]
+    [InlineData(nameof(Race_PairsHostAndGuest_ByTheInternalCode_Only))]
+    [InlineData(nameof(Leaving_FreesTheLobbySeat_AndEndsTheRace))]
     public Task Scenario(string name) => Scenarios.RunAsync(this, name);
 
     // value, accepted, clamped
@@ -83,50 +83,73 @@ public class PoMarbleRaceTests
         }
     }
 
-    private static void QuickMatch_PairsTheFirstTwo_FirstHosts()
+    private static void Lobby_SeatsTwo_AndRefusesAThird()
+    {
+        var lobby = new PoMarbleRaceLobbyService();
+        lobby.Open("a", "Alice", false, "alice");
+        lobby.Open("b", "Bob", false, "bob");
+        var (state, message) = lobby.Open("c", "Cara", false, "cara");
+
+        message.Should().Be("Lobby is full");
+        state.Players.Select(p => p.ConnectionId).Should().BeEquivalentTo(["a", "b"]);
+        state.MaxPlayers.Should().Be(PoMarbleRaceOnlineService.MaxPlayers);
+        lobby.PickMap("a", MarbleRaceDaily.MapId).Should().BeFalse("the Daily Canyon is a solo board");
+    }
+
+    private static void Lobby_FirstArrivalHosts_AndStartNeedsAReadyGuest()
+    {
+        var lobby = new PoMarbleRaceLobbyService();
+        lobby.Open("a", "Alice", false, "alice");
+        lobby.TryStart("a").Should().BeFalse("a lone host has nobody to race");
+        lobby.Open("b", "Bob", false, "bob");
+        lobby.HostConnectionId.Should().Be("a", "the first arrival hosts");
+
+        lobby.TryStart("a").Should().BeFalse("the guest has not readied");
+        lobby.ToggleReady("b");
+        lobby.TryStart("b").Should().BeFalse("only the host starts");
+        lobby.PickMap("b", 4).Should().BeTrue();
+        lobby.PickMap("a", 3).Should().BeTrue();
+        var roster = lobby.TryStartWithRoster("a");
+        roster.Should().NotBeNull();
+        roster!.First(p => p.ConnectionId == "a").MapId.Should().Be(3, "the host's pick is the course");
+    }
+
+    private static void Race_PairsHostAndGuest_ByTheInternalCode_Only()
     {
         var svc = new PoMarbleRaceOnlineService();
-        svc.Enqueue("a", "alice", "Alice", isGuest: false, mapId: 3).Should().BeNull("the first arrival waits");
-        var pair = svc.Enqueue("b", "bob", "Bob", isGuest: true, mapId: 1);
+        var code = new PoMarbleRaceLobbyService().CreateMatchCode();
+        svc.Expect(code, new("alice", "Alice", false), new("bob", "Bob", true), mapId: 3);
+
+        svc.JoinMatch("x", "carol", code).Seated.Should().BeFalse("only the seated players may join");
+        svc.JoinMatch("g", "bob", "nope").Seated.Should().BeFalse("an unknown code seats nobody");
+        var first = svc.JoinMatch("h", "alice", code);
+        first.Seated.Should().BeTrue();
+        first.Pairing.Should().BeNull("the race waits for the second seat");
+        var pair = svc.JoinMatch("g", "bob", code).Pairing;
 
         pair.Should().NotBeNull();
-        pair!.HostConnectionId.Should().Be("a");
-        pair.HostStart.MapId.Should().Be(3, "the host's map is the course");
+        pair!.HostConnectionId.Should().Be("h", "the lobby host is the race host");
+        pair.HostStart.MapId.Should().Be(3);
         pair.GuestStart.YourRole.Should().Be(MarbleRaceRole.Guest);
-        svc.PeerOf("b").Should().Be("a");
+        svc.PeerOf("g").Should().Be("h");
+        svc.JoinMatch("z", "alice", code).Seated.Should().BeFalse("the code is spent once both seats are in");
     }
 
-    private static void PrivateCode_SeatsTheFriend_OnTheHostsMap_AndAThirdIsTurnedAway()
+    private static void Leaving_FreesTheLobbySeat_AndEndsTheRace()
     {
+        var lobby = new PoMarbleRaceLobbyService();
+        lobby.Open("a", "Alice", false, "alice");
+        lobby.Open("b", "Bob", false, "bob");
+        lobby.Leave("b");
+        lobby.Open("c", "Cara", false, "cara").message.Should().Be("Cara joined", "the freed seat is open again");
+        lobby.Leave("a");
+        lobby.HostConnectionId.Should().Be("c", "hosting passes to the player left");
+
         var svc = new PoMarbleRaceOnlineService();
-        var code = svc.CreateRoom("a", "alice", "Alice", isGuest: false, mapId: 4);
-        code.Should().MatchRegex("^[A-Z2-9]{4}$");
-        svc.Enqueue("q", "quinn", "Quinn", false, 1).Should().BeNull("a private race is not in the quick-match queue");
-
-        var (pair, error) = svc.JoinRoom("b", "bob", "Bob", isGuest: false, code!.ToLowerInvariant());
-        error.Should().BeNull("codes are case-insensitive");
-        pair!.GuestStart.MapId.Should().Be(4);
-
-        var (third, why) = svc.JoinRoom("c", "cara", "Cara", isGuest: false, code);
-        third.Should().BeNull();
-        why.Should().Contain($"{PoMarbleRaceOnlineService.MaxPlayers} players");
-    }
-
-    private static void PrivateCode_RefusesUnknownCodes_AndYourOwn()
-    {
-        var svc = new PoMarbleRaceOnlineService();
-        var code = svc.CreateRoom("a", "alice", "Alice", false, 2)!;
-
-        svc.JoinRoom("a", "alice", "Alice", false, code).Error.Should().Contain("your own");
-        svc.JoinRoom("b", "bob", "Bob", false, "ZZZZ").Error.Should().Be("No race with that code.");
-        svc.CreateRoom("a", "alice", "Alice", false, 2).Should().BeNull("one open race per connection");
-    }
-
-    private static void Leaving_ClosesAnOpenCode()
-    {
-        var svc = new PoMarbleRaceOnlineService();
-        var code = svc.CreateRoom("a", "alice", "Alice", false, 2)!;
-        svc.Remove("a");
-        svc.JoinRoom("b", "bob", "Bob", false, code).Error.Should().Be("No race with that code.");
+        svc.Expect("m", new("alice", "Alice", false), new("bob", "Bob", false), 2);
+        svc.JoinMatch("h", "alice", "m");
+        svc.JoinMatch("g", "bob", "m");
+        svc.Remove("h").Should().Be("g", "the guest is told the host left");
+        svc.RoleOf("g").Should().BeNull();
     }
 }

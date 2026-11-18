@@ -5,8 +5,8 @@ using PoMiniGames.Shared.Games;
 namespace PoMiniGames.Features.Shared.TurnMatch;
 
 /// <summary>
-/// Hub surface shared by every two-seat turn game: quick-match queue, moves,
-/// rematch and reconnect. State lives in <see cref="TurnMatchService{THub}"/>; this
+/// Hub surface shared by every two-seat turn game: joining the lobby's reserved match,
+/// moves and reconnect. State lives in <see cref="TurnMatchService{THub}"/>; this
 /// class only resolves identity, relays rejected moves as <see cref="HubException"/>s
 /// the client can toast, and fans results out to the per-match group. A game's hub
 /// is an empty subclass so it gets its own route, its own service instance and its
@@ -39,27 +39,25 @@ public abstract class TurnMatchHub<THub> : Hub where THub : Hub
     }
 
     /// <summary>
-    /// Join the quick-match queue. Identity is server-canonical from the auth cookie;
-    /// <paramref name="displayName"/> is only the fallback for a guest with no name claim.
+    /// Claim a seat in the match the lobby reserved under <paramref name="code"/>. Identity is
+    /// server-canonical from the request claims; <paramref name="displayName"/> is only the
+    /// fallback for a guest with no name claim. The second claimant completes the pairing and
+    /// both seats are sent <c>matchStarted</c>; the host (<paramref name="asHost"/>) moves first.
     /// </summary>
-    public async Task<TurnMatchQueueStatus> FindMatch(string displayName, bool isGuest)
+    public async Task JoinMatch(string code, string displayName, bool isGuest, bool asHost)
     {
         var identity = RequestIdentity.Resolve(Context.User);
         var name = !string.IsNullOrWhiteSpace(identity.DisplayName) ? identity.DisplayName : displayName;
-        var pairing = _matches.Enqueue(Context.ConnectionId, identity.UserId, name, identity.IsGuest || isGuest);
-        if (pairing is null)
+        TurnMatchService<THub>.Pairing? pairing;
+        try
         {
-            return new TurnMatchQueueStatus(Matched: false, Waiting: _matches.WaitingCount);
+            pairing = _matches.Join(code, Context.ConnectionId, identity.UserId, name, identity.IsGuest || isGuest, asHost);
         }
-
-        await AnnounceStartAsync(pairing);
-        return new TurnMatchQueueStatus(Matched: true, Waiting: 0);
-    }
-
-    public Task CancelSearch()
-    {
-        _matches.Dequeue(Context.ConnectionId);
-        return Task.CompletedTask;
+        catch (InvalidOperationException ex)
+        {
+            throw new HubException(ex.Message);
+        }
+        if (pairing is not null) await AnnounceStartAsync(pairing);
     }
 
     /// <summary>
@@ -81,29 +79,9 @@ public abstract class TurnMatchHub<THub> : Hub where THub : Hub
         await Clients.Group(_matches.GroupFor(state.MatchId)).SendAsync("state", state);
     }
 
-    public async Task RequestRematch()
-    {
-        (TurnMatchState state, TurnMatchService<THub>.Pairing? rematch) result;
-        try
-        {
-            result = _matches.RequestRematch(Context.ConnectionId);
-        }
-        catch (InvalidOperationException ex)
-        {
-            throw new HubException(ex.Message);
-        }
-
-        if (result.rematch is { } pairing)
-        {
-            await AnnounceStartAsync(pairing);
-            return;
-        }
-        await Clients.Group(_matches.GroupFor(result.state.MatchId)).SendAsync("state", result.state);
-    }
-
     /// <summary>
     /// Re-bind this connection to the seat behind <paramref name="seatToken"/> after a
-    /// reconnect. Null means the seat is gone and the client should queue again.
+    /// reconnect. Null means the seat is gone and the client should go back to the lobby.
     /// </summary>
     public async Task<TurnMatchRejoinResult?> Rejoin(string seatToken)
     {
@@ -125,7 +103,7 @@ public abstract class TurnMatchHub<THub> : Hub where THub : Hub
     }
 
     /// <summary>
-    /// Announce a (re)start: each seat gets its own private start record, then the
+    /// Announce the start: each seat gets its own private start record, then the
     /// shared board goes to the group. Group membership is (re)asserted here because
     /// the first pairing is the first time either connection has a match to belong to.
     /// </summary>

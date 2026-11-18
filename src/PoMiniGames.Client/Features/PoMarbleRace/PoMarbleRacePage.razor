@@ -38,7 +38,7 @@
                    Title="@TitleContent"
                    Objective="@IntroObjective"
                    Controls="@(_demo ? DemoQuickControls : _online ? OnlineHowToPlayContent : HowToPlayContent)"
-                   Options="@(_demo ? null : _online ? OnlineSetupContent : SetupContent)"
+                   Options="@(_demo || _online ? null : SetupContent)"
                    Wide="@(!_demo)"
                    Mode="@(_demo ? GameIntro.IntroMode.Demo : GameIntro.IntroMode.OnePlayer)"
                    Maps="@TrackMaps"
@@ -74,30 +74,55 @@
                     }
                     else if (ShowOnlineCard)
                     {
-                        @* Online before the race: connecting, searching, a private code, the opponent gone. *@
+                        @* Online before the race: the shared lobby, then connecting, waiting for the
+                           other seat, the opponent gone. *@
                         <div class="mr-scrim">
-                            <div class="mr-prerace mr-prerace--center" role="status">
-                                @if (_onlinePhase == OnlinePhase.Searching && _roomCode is not null)
-                                {
-                                    <p class="mr-prerace-kicker">Your race code</p>
-                                    <p class="mr-room-code" aria-label="Race code @string.Join(" ", _roomCode.ToCharArray())">@_roomCode</p>
-                                    <p class="mr-prerace-line">Send it to a friend: they pick Online, then Join a friend. The race starts when they join (2 players max).</p>
-                                    <div class="mr-prerace-actions">
-                                        <button type="button" class="app-btn app-btn--secondary" @onclick="CopyRoomCodeAsync">Copy code</button>
-                                        <button type="button" class="app-btn app-btn--secondary" @onclick="LeaveOnline">Cancel</button>
-                                    </div>
-                                }
-                                else
-                                {
+                            @if (_onlinePhase == OnlinePhase.Lobby)
+                            {
+                                <div class="mr-lobby">
+                                    <LobbyPanel TPlayer="PoMarbleRaceLobbyPlayer"
+                                                State="@_lobby?.State"
+                                                LocalConnectionId="@(_lobby?.ConnectionId ?? "")"
+                                                ConnectionState="@(_lobby?.ConnectionState ?? HubConnectionState.Disconnected)"
+                                                Hint="One shared room. The first to arrive hosts, runs the race and picks the track; the second steers WHITE."
+                                                MaxPlayersHint="2"
+                                                StartLabel="Start race"
+                                                HowTo="OnlineHowToPlayContent"
+                                                OnReconnect="ReconnectLobbyAsync"
+                                                OnReady="@(() => _lobby?.ToggleReadyAsync() ?? Task.CompletedTask)"
+                                                OnStart="@(() => _lobby?.StartGameAsync() ?? Task.CompletedTask)"
+                                                OnLeave="LeaveLobbyAsync">
+                                        <Picker>
+                                            <div class="mr-lobby-pick">
+                                                <label class="mr-setup-label" for="mr-lobby-map">Track</label>
+                                                <select id="mr-lobby-map" value="@LobbyMapId" disabled="@(_lobby?.IsHost != true)"
+                                                        @onchange="e => PickLobbyMapAsync(e.Value?.ToString())">
+                                                    @foreach (var m in PickableMaps)
+                                                    {
+                                                        <option value="@m.Id">@m.Name</option>
+                                                    }
+                                                </select>
+                                                @if (_lobby?.IsHost != true)
+                                                {
+                                                    <p class="mr-setup-note">The host picks the track.</p>
+                                                }
+                                            </div>
+                                        </Picker>
+                                    </LobbyPanel>
+                                </div>
+                            }
+                            else
+                            {
+                                <div class="mr-prerace mr-prerace--center" role="status">
                                     <QuickMatchPanel Phase="@QuickPhase"
                                                      OpponentName="@_opponentName"
                                                      OpponentGone="@(_onlinePhase == OnlinePhase.PeerLeft)"
-                                                     SearchingHint="The first to arrive hosts the race and steers RED; the second steers WHITE."
+                                                     SearchingHint="Joining the race with the other player…"
                                                      OnCancel="LeaveOnline"
-                                                     OnRetry="RetryOnlineAsync"
-                                                     OnFindAnother="FindOpponentSafeAsync" />
-                                }
-                            </div>
+                                                     OnRetry="ReturnToLobbyAsync"
+                                                     OnFindAnother="ReturnToLobbyAsync" />
+                                </div>
+                            }
                         </div>
                     }
                     else if (ShowPrerace)
@@ -404,45 +429,6 @@
         : s.BestPlace == 0 ? $"{s.Races} races, no finish"
         : $"Best P{s.BestPlace} · {s.BestTime:0.0}s · {s.Wins} {(s.Wins == 1 ? "win" : "wins")}";
 
-    // ── Online setup: the track (used when you end up hosting) and how to meet the other player ──
-    private enum OnlineHow { QuickMatch, CreateRoom, JoinRoom }
-    private OnlineHow _onlineHow = OnlineHow.QuickMatch;
-    private string _joinCode = "";
-    private string? _roomCode;   // set while a private race we opened waits for its guest
-
-    private RenderFragment OnlineSetupContent => @<div class="mr-setup">
-        <div class="mr-setup-label">Play with</div>
-        <div class="mr-weights" role="radiogroup" aria-label="How to find the other player">
-            @foreach (var (how, name, hint) in new[]
-            {
-                (OnlineHow.QuickMatch, "Anyone", "Quick match with the next player"),
-                (OnlineHow.CreateRoom, "A friend", "Get a code to send them"),
-                (OnlineHow.JoinRoom, "Join a friend", "Type the code they sent"),
-            })
-            {
-                var h = how;
-                <button type="button" role="radio" aria-checked="@(h == _onlineHow ? "true" : "false")"
-                        class="mr-opt @(h == _onlineHow ? "is-on" : "")"
-                        @onclick="() => _onlineHow = h">
-                    <span class="mr-opt-name">@name</span>
-                    <span class="mr-opt-hint">@hint</span>
-                </button>
-            }
-        </div>
-        @if (_onlineHow == OnlineHow.JoinRoom)
-        {
-            <label class="mr-setup-label" for="mr-join-code">Race code</label>
-            <input id="mr-join-code" class="mr-join-code" maxlength="4" autocomplete="off" spellcheck="false"
-                   placeholder="ABCD" @bind="_joinCode" @bind:event="oninput" />
-            <p class="mr-setup-note">The host's track is the one you race.</p>
-        }
-        else
-        {
-            @TrackPicker
-            <p class="mr-setup-note">Two players per race. Whoever hosts picks the track.</p>
-        }
-    </div>;
-
     private RenderFragment SetupContent => @<div class="mr-setup">
         @if (_menu is null)
         {
@@ -519,10 +505,10 @@
     </div>;
 
     // The track is the start card's dropdown beside OK (owner rule 2026-11-18): every pickable
-    // course, its record beside the name. None while a Grand Prix (it runs them all), a demo or a
-    // join-by-code race (the host's track) is set up.
+    // course, its record beside the name. None while a Grand Prix (it runs them all), a demo or online
+    // (the host picks the track in the lobby) is set up.
     private IReadOnlyList<IntroMap>? TrackMaps =>
-        _demo || _menu is null || (!_online && _gp) || (_online && _onlineHow == OnlineHow.JoinRoom) ? null
+        _demo || _online || _menu is null || _gp ? null
         : [.. PickableMaps.Select(m => new IntroMap(m.Id.ToString(System.Globalization.CultureInfo.InvariantCulture),
             RecordText(m.Id) is { Length: > 0 } record ? $"{m.Name} · {record}" : m.Name))];
 

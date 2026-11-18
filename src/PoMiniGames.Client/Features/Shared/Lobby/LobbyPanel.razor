@@ -29,6 +29,11 @@
                                       OnRetry="OnReconnect" />
             </div>
             <p class="lobby__hint">@Hint</p>
+            @if (Status is not null)
+            {
+                @* A game's live notices (waiting for a seat, a race running, kicked → rejoin). *@
+                <div class="lobby__status" role="status">@Status</div>
+            }
             @if (State is null)
             {
                 <div class="app-loading"><span class="app-loading__spinner" aria-hidden="true"></span><span>Loading players…</span></div>
@@ -75,6 +80,10 @@
                             {
                                 <span class="app-chip app-chip--success">ready</span>
                             }
+                            @if (PlayerActions is not null)
+                            {
+                                <span class="lobby__row-actions">@PlayerActions(p)</span>
+                            }
                         </li>
                     }
                 </ol>
@@ -113,6 +122,7 @@
                     <button type="button" class="app-btn app-btn--primary" disabled="@(!EffectiveCanStart || _busy)" @onclick="StartAsync">@StartLabel</button>
                 }
                 <button type="button" class="app-btn app-btn--secondary" @onclick="OnLeave">Leave</button>
+                @ExtraActions
                 <InviteLink />
             }
             @* State null: the strip above already says "connecting…" — rendering a
@@ -166,6 +176,12 @@
     /// <summary>A picker section between the roster and the buttons — use <c>lobby-pick-grid</c> / <c>lobby-pick-card</c>.</summary>
     [Parameter] public RenderFragment? Picker { get; set; }
     [Parameter] public string? PickerTitle { get; set; }
+    /// <summary>Optional per-row controls at the row's end (e.g. the host's kick button). Not rendered when null.</summary>
+    [Parameter] public RenderFragment<TPlayer>? PlayerActions { get; set; }
+    /// <summary>Optional notices under the hint (waiting for a seat, a race running, a rejoin button). Not rendered when null.</summary>
+    [Parameter] public RenderFragment? Status { get; set; }
+    /// <summary>Optional non-primary buttons after Leave (e.g. a settings entry).</summary>
+    [Parameter] public RenderFragment? ExtraActions { get; set; }
 
     [Parameter] public EventCallback OnReady { get; set; }
     [Parameter] public EventCallback OnStart { get; set; }

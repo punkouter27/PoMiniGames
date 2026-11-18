@@ -158,9 +158,9 @@ internal static class GameServicesExtensions
         services.AddSingleton<PoMiniGames.Features.PoBrawl.PoBrawlDossierService>();
 
         // ConnectFive + TicTacToe online — turn-based 1v1 over SignalR. One shared
-        // TurnMatchService<THub> per hub holds that game's quick-match queue and every
-        // authoritative board; there is no lobby service because a two-seat turn game
-        // has nothing to configure before play. The rules instance is the only thing
+        // TurnMatchService<THub> per hub holds that game's reserved matches and every
+        // authoritative board; each game also has one shared TurnLobbyRoom (host, ready, start,
+        // no codes) that reserves the match. The rules instance is the only thing
         // that differs. See Features/Shared/TurnMatch for the reconnect contract.
         services.AddSingleton(sp => new PoMiniGames.Features.Shared.TurnMatch.TurnMatchService<PoMiniGames.Features.Shared.TurnMatch.ConnectFiveHub>(
             PoMiniGames.Shared.Games.ConnectFiveRules.Instance,
@@ -171,10 +171,14 @@ internal static class GameServicesExtensions
             sp.GetRequiredService<Microsoft.AspNetCore.SignalR.IHubContext<PoMiniGames.Features.Shared.TurnMatch.TicTacToeHub>>(),
             sp.GetRequiredService<ILogger<PoMiniGames.Features.Shared.TurnMatch.TurnMatchService<PoMiniGames.Features.Shared.TurnMatch.TicTacToeHub>>>()));
 
+        services.AddSingleton<PoMiniGames.Features.Shared.TurnMatch.TurnLobbyRoom<PoMiniGames.Features.Shared.TurnMatch.ConnectFiveHub>>();
+        services.AddSingleton<PoMiniGames.Features.Shared.TurnMatch.TurnLobbyRoom<PoMiniGames.Features.Shared.TurnMatch.TicTacToeHub>>();
+
         // PoMarbleRace online — host-authoritative 2-player race. The service is only a
         // pairing registry and relay table: the host BROWSER is the simulation (see
         // Shared/Games/PoMarbleRaceShared.cs for why lockstep was not an option).
         services.AddSingleton<PoMiniGames.Features.PoMarbleRace.PoMarbleRaceOnlineService>();
+        services.AddSingleton<PoMiniGames.Features.PoMarbleRace.PoMarbleRaceLobbyService>();
 
         // PoVoxelStrike — startup GLB → voxel ingestion plus the in-memory asset catalog
         // the manifest/payload endpoints read. See Features/PoVoxelStrike/.

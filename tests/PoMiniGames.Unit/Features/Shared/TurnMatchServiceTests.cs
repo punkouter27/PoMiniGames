@@ -7,9 +7,9 @@ using PoMiniGames.Shared.Games;
 namespace PoMiniGames.Unit.Features.Shared;
 
 /// <summary>
-/// The turn-match state machine behind online ConnectFive and TicTacToe: quick-match
-/// pairing, turn and placement enforcement through the shared grid rules, win and
-/// forfeit detection, rematch seat-swap, and token-based rejoin. One theory per rule
+/// The turn-match state machine behind online ConnectFive and TicTacToe: the shared lobby
+/// (host, ready, start gate), pairing by the reserved match code, turn and placement
+/// enforcement through the shared grid rules, win and forfeit detection, and token-based rejoin. One theory per rule
 /// set so the Unit tier stays under its 100-method ceiling.
 /// </summary>
 public class TurnMatchServiceTests
@@ -45,7 +45,7 @@ public class TurnMatchServiceTests
     [Theory]
     [InlineData("connectfive")]
     [InlineData("tictactoe")]
-    public void QuickMatch_PairsTwo_EnforcesTurns_DetectsWin_SwapsSeatsOnRematch_AndForfeitsOnLeave(string game)
+    public void Lobby_PairsTwoByCode_EnforcesTurns_DetectsWin_RejoinsByToken_AndForfeitsOnLeave(string game)
     {
         if (game == "connectfive") Run(Create<ConnectFiveHub>(ConnectFiveRules.Instance), gravity: true);
         else Run(Create<TicTacToeHub>(TicTacToeRules.Instance), gravity: false);
@@ -55,23 +55,38 @@ public class TurnMatchServiceTests
     {
         var rules = svc.Rules;
 
-        // ── Pairing: first arrival waits, second completes the pair. ──
-        svc.Enqueue("c1", "alice", "Alice", isGuest: false).Should().BeNull();
-        svc.WaitingCount.Should().Be(1);
-        var pairing = svc.Enqueue("c2", "bob", "Bob", isGuest: true);
+        // ── Lobby: first arrival hosts, the guest readies, only the host starts, cap of two. ──
+        var lobby = new TurnLobbyRoom<THub>();
+        lobby.Open("c1", "Alice", isGuest: false);
+        lobby.HostConnectionId.Should().Be("c1");
+        lobby.TryStartWithRoster("c1").Should().BeNull("a lone host cannot start");
+        lobby.Open("c2", "Bob", isGuest: true);
+        lobby.Open("c3", "Cy", isGuest: false).state.Players.Should().HaveCount(2, "the lobby is capped at two seats");
+        lobby.TryStartWithRoster("c1").Should().BeNull("the guest is not ready");
+        lobby.ToggleReady("c2").isReady.Should().BeTrue();
+        lobby.TryStartWithRoster("c2").Should().BeNull("only the host starts");
+        var roster = lobby.TryStartWithRoster("c1");
+        roster.Should().NotBeNull();
+        roster!.Select(p => p.ConnectionId).Should().BeEquivalentTo(["c1", "c2"]);
+        lobby.End();
+
+        // ── Pairing by the reserved code: the first claimant waits, the second completes it. ──
+        svc.Invoking(s => s.Join("nope", "cx", "x", "X", false, asHost: false)).Should().Throw<InvalidOperationException>();
+        var code = svc.Reserve();
+        // The guest (c2) arrives before the host: the host still moves first.
+        svc.Join(code, "c2", "bob", "Bob", isGuest: true, asHost: false).Should().BeNull();
+        svc.PendingCount.Should().Be(1);
+        var pairing = svc.Join(code, "c1", "alice", "Alice", isGuest: false, asHost: true);
         pairing.Should().NotBeNull();
-        svc.WaitingCount.Should().Be(0);
-        pairing!.Connections.Should().HaveCount(2);
-        pairing.Connections.Select(c => c.ConnectionId).Should().BeEquivalentTo(["c1", "c2"]);
+        svc.PendingCount.Should().Be(0);
+        pairing!.Connections.Select(c => c.ConnectionId).Should().BeEquivalentTo(["c1", "c2"]);
         pairing.State.Turn.Should().Be(TurnMatchSide.First);
+        pairing.Connections.Single(c => c.ConnectionId == "c1").Start.YourSide.Should().Be(TurnMatchSide.First, "the host plays first");
+        svc.Invoking(s => s.Join(code, "c9", "z", "Z", false, false)).Should().Throw<InvalidOperationException>("a spent code is refused");
 
         var first = pairing.Connections.Single(c => c.Start.YourSide == TurnMatchSide.First);
         var second = pairing.Connections.Single(c => c.Start.YourSide == TurnMatchSide.Second);
         first.Start.SeatToken.Should().NotBe(second.Start.SeatToken);
-
-        // Re-queueing a seated connection is a no-op, not a second seat.
-        svc.Enqueue(first.ConnectionId, "x", "X", false).Should().BeNull();
-        svc.WaitingCount.Should().Be(0);
 
         // ── Turn enforcement and the rules. ──
         svc.Invoking(s => s.Place(second.ConnectionId, 0, 0)).Should().Throw<InvalidOperationException>()
@@ -109,38 +124,27 @@ public class TurnMatchServiceTests
         svc.Invoking(s => s.Place(second.ConnectionId, 0, 2)).Should().Throw<InvalidOperationException>()
             .WithMessage("*over*");
 
-        // ── Rematch: both must vote; seats swap; fresh board. ──
-        var (afterOne, none) = svc.RequestRematch(first.ConnectionId);
-        none.Should().BeNull();
-        afterOne.SeatOf(TurnMatchSide.First).WantsRematch.Should().BeTrue();
-        var (afterTwo, rematch) = svc.RequestRematch(second.ConnectionId);
-        rematch.Should().NotBeNull();
-        afterTwo.GameNumber.Should().Be(2);
-        afterTwo.MoveCount.Should().Be(0);
-        afterTwo.Status.Should().Be(TurnMatchStatus.InProgress);
-        afterTwo.Cells.Should().OnlyContain(b => b == GridGameRules.Empty);
-        rematch!.Connections.Single(c => c.ConnectionId == first.ConnectionId).Start.YourSide
-            .Should().Be(TurnMatchSide.Second, "the player who opened last game answers this one");
-        rematch.Connections.Single(c => c.ConnectionId == second.ConnectionId).Start.SeatToken
-            .Should().Be(second.Start.SeatToken, "tokens survive a rematch");
-
-        // ── Rejoin: a reconnect presents the token and lands in the same seat. ──
-        svc.Disconnected(second.ConnectionId)!.SeatOf(TurnMatchSide.First).Connected.Should().BeFalse();
-        var rejoined = svc.Rejoin("c2-new", second.Start.SeatToken);
+        // ── A fresh match (the finished one is over): rejoin by token, then forfeit on leave. ──
+        // Two claimants on different codes never pair with each other.
+        svc.Join(svc.Reserve(), "d1", "dee", "Dee", false, asHost: true).Should().BeNull();
+        svc.Join(svc.Reserve(), "d2", "eli", "Eli", false, asHost: false).Should().BeNull();
+        var code2 = svc.Reserve();
+        svc.Join(code2, "e1", "eve", "Eve", false, asHost: true).Should().BeNull();
+        var match2 = svc.Join(code2, "e2", "fay", "Fay", false, asHost: false)!;
+        var guestSeat = match2.Connections.Single(c => c.ConnectionId == "e2").Start;
+        svc.Disconnected("e2")!.SeatOf(TurnMatchSide.Second).Connected.Should().BeFalse();
+        var rejoined = svc.Rejoin("e2-new", guestSeat.SeatToken);
         rejoined.Should().NotBeNull();
-        rejoined!.Start.YourSide.Should().Be(TurnMatchSide.First);
-        rejoined.State.First.Connected.Should().BeTrue();
+        rejoined!.Start.YourSide.Should().Be(TurnMatchSide.Second);
+        rejoined.State.Second.Connected.Should().BeTrue();
         svc.Rejoin("c9", "not-a-token").Should().BeNull();
 
-        // ── Leave mid-game forfeits to whoever stayed. ──
-        var forfeited = svc.Leave("c2-new");
+        var forfeited = svc.Leave("e2-new");
         forfeited.Should().NotBeNull();
-        forfeited!.Status.Should().Be(TurnMatchStatus.SecondWon);
+        forfeited!.Status.Should().Be(TurnMatchStatus.FirstWon);
         forfeited.EndReason.Should().Be(TurnMatchEndReason.Forfeit);
-        // The leaver's token is gone; the survivor can queue again after leaving too.
-        svc.Rejoin("c2-again", second.Start.SeatToken).Should().BeNull();
-        svc.Leave(first.ConnectionId).Should().NotBeNull();
-        svc.Enqueue(first.ConnectionId, "alice", "Alice", false).Should().BeNull("the queue is empty, so Alice waits");
-        svc.WaitingCount.Should().Be(1);
+        // The leaver's token is gone; the survivor can leave too.
+        svc.Rejoin("e2-again", guestSeat.SeatToken).Should().BeNull();
+        svc.Leave("e1").Should().NotBeNull();
     }
 }
