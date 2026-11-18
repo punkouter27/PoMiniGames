@@ -28,7 +28,10 @@
                    Objective="Answer the multiple-choice questions — chain correct answers for a streak bonus."
                    Controls="@HowToPlayContent"
                    Mode="@_introMode"
-                   Options="@(_playMode == "demo" ? null : CategoryContent)"
+                   Maps="@(_playMode == "demo" ? null : CategoryMaps)"
+                   MapLabel="Category"
+                   MapId="@_category"
+                   MapIdChanged="OnCategoryPickedAsync"
                    StartEnabled="@(!_changingCategory)"
                    OnStart="DismissIntro" />
     }
@@ -303,27 +306,16 @@
     // True while a category picked on the start card is being dealt; OK waits for it.
     private bool _changingCategory;
 
-    @* .fq-join is the wrapper the lobby's form controls are styled under (games.css). *@
-    private RenderFragment CategoryContent => @<div class="fq-join">
-        <label class="fq-join__field">
-            <span class="fq-join__label">Category</span>
-            <select value="@_category" @onchange="ChangeCategoryAsync" disabled="@_changingCategory">
-                @foreach (var c in FunQuizCategories.All)
-                {
-                    <option value="@c.Value" selected="@(c.Value == _category)">@c.Label</option>
-                }
-            </select>
-        </label>
-    </div>;
+    private static readonly IReadOnlyList<IntroMap> CategoryMaps =
+        [.. FunQuizCategories.All.Select(c => new IntroMap(c.Value, c.Label))];
 
     /// <summary>
     /// The start card's category picker. The quiz was already dealt on navigation, so a new
     /// category deals again, behind the card: no loading skeleton (it would replace the card
     /// and the select the player is using), and OK is held until the new questions are in.
     /// </summary>
-    private async Task ChangeCategoryAsync(ChangeEventArgs e)
+    private async Task OnCategoryPickedAsync(string picked)
     {
-        var picked = e.Value?.ToString();
         if (string.IsNullOrEmpty(picked) || picked == _category || _introDone) return;
         var previous = _category;
         _category = picked;

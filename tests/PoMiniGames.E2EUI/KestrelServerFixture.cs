@@ -25,20 +25,31 @@ internal static class E2EUiAzurite
 {
     private static readonly SemaphoreSlim Gate = new(1, 1);
     private static AzuriteContainer? _container;
+    private static string? _fallbackConnectionString;
 
     public static async Task<string> GetConnectionStringAsync()
     {
         if (_container is not null)
             return _container.GetConnectionString();
+        if (_fallbackConnectionString is not null)
+            return _fallbackConnectionString;
 
         await Gate.WaitAsync();
         try
         {
-            if (_container is null)
+            if (_container is null && _fallbackConnectionString is null)
             {
-                var c = new AzuriteBuilder("mcr.microsoft.com/azure-storage/azurite:3.33.0").Build();
-                await c.StartAsync();
-                _container = c;
+                try
+                {
+                    var c = new AzuriteBuilder("mcr.microsoft.com/azure-storage/azurite:3.33.0").Build();
+                    await c.StartAsync();
+                    _container = c;
+                }
+                catch (DotNet.Testcontainers.Builders.DockerUnavailableException)
+                {
+                    _fallbackConnectionString = Environment.GetEnvironmentVariable("AZURITE_CONNECTION_STRING")
+                        ?? "UseDevelopmentStorage=true";
+                }
             }
         }
         finally
@@ -46,7 +57,7 @@ internal static class E2EUiAzurite
             Gate.Release();
         }
 
-        return _container.GetConnectionString();
+        return _container?.GetConnectionString() ?? _fallbackConnectionString!;
     }
 }
 

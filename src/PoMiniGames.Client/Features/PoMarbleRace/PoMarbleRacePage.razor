@@ -501,11 +501,21 @@
         }
     </div>;
 
+    private static readonly IReadOnlyList<IntroMap> DefaultTrackMaps =
+    [
+        new("1", "Neon Canyon"),
+        new("2", "Spiral Works"),
+        new("3", "Grand Spiral"),
+        new("6", "Daily Canyon"),
+        new("5", "Playground Run"),
+    ];
+
     // The track is the start card's dropdown beside OK (owner rule 2026-11-18): every pickable
     // course, its record beside the name. None while a Grand Prix (it runs them all), a demo or online
     // (the host picks the track in the lobby) is set up.
     private IReadOnlyList<IntroMap>? TrackMaps =>
-        _demo || _online || _menu is null || _gp ? null
+        _demo || _online || _gp ? null
+        : _menu is null ? DefaultTrackMaps
         : [.. PickableMaps.Select(m => new IntroMap(m.Id.ToString(System.Globalization.CultureInfo.InvariantCulture),
             RecordText(m.Id) is { Length: > 0 } record ? $"{m.Name} · {record}" : m.Name))];
 

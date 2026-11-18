@@ -52,7 +52,7 @@ foreach ($file in $files) {
     if ($stray -ge 0) { $problems.Add("${rel}:$(& $lineOf $stray): '*/' outside a comment") }
     if ($code.IndexOf('/*') -ge 0) { $problems.Add("${rel}:$(& $lineOf $code.IndexOf('/*')): comment is never closed") }
 
-    if ($file.Name -ne 'po-tokens.css') { $hexCount += $hexPattern.Matches($code).Count }
+    if ($file.Name -notin 'po-tokens.css', 'app-tokens.css') { $hexCount += $hexPattern.Matches($code).Count }
 
     $depth = 0
     for ($i = 0; $i -lt $code.Length; $i++) {
