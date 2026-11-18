@@ -189,6 +189,9 @@
 
     protected override async Task OnInitializedAsync()
     {
+        // The initials load from storage asynchronously: read them only once that is done, or a
+        // straight-to-online visit joins with a blank name ("Player name is required").
+        await PlayerNameService.InitializeAsync();
         _playerName = PlayerNameService.GetPlayerName();
         Hub.OnGameCreated += HandleState;
         Hub.OnGameJoined += HandleState;
