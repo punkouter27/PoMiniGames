@@ -48,25 +48,22 @@
                 <div class="racer-card">
                     @if (_mode == RaceMode.Online && string.IsNullOrWhiteSpace(MatchCode))
                     {
-                        <LobbyPanel TPlayer="PoRacerLobbyPlayer"
-                                    State="@_lobby?.State"
-                                    LocalConnectionId="@(_lobby?.ConnectionId ?? "")"
-                                    ConnectionState="@(_lobby?.ConnectionState ?? Microsoft.AspNetCore.SignalR.Client.HubConnectionState.Disconnected)"
-                                    Hint="One shared room. The first driver in hosts and picks the track; bots fill the empty seats."
-                                    MaxPlayersHint="PoRacerCatalog.CarCount"
-                                    StartLabel="Start Race"
-                                    OnReconnect="ReconnectLobbyAsync"
-                                    OnReady="@(() => _lobby?.ToggleReadyAsync() ?? Task.CompletedTask)"
-                                    OnStart="@(() => _lobby?.StartGameAsync() ?? Task.CompletedTask)"
-                                    OnLeave="LeaveLobbyAsync">
+                        <OnlineLobby TPlayer="PoRacerLobbyPlayer"
+                                     HubPath="poracer/lobby-hub"
+                                     Hint="One shared room. The first driver in hosts and picks the track; bots fill the empty seats."
+                                     MaxPlayersHint="PoRacerCatalog.CarCount"
+                                     StartLabel="Start race"
+                                     OnClient="OnLobbyClient"
+                                     OnGameStarted="OnLobbyStarted"
+                                     OnLeave="LeaveLobby">
                             <Picker>
                                 @* Track, then paint, then the buttons: the paint shop used to sit
-                                   under Start Race, after the thing it is a choice for. *@
+                                   under Start race, after the thing it is a choice for. *@
                                 <PoRacerTrackSelector SelectedTrackId="@LobbyTrackId" SelectedTrackIdChanged="PickLobbyTrackAsync"
-                                                      Disabled="@(_lobby?.IsHost != true)" Bests="_bests" />
+                                                      Disabled="@(_lobby?.IsHost != true)" Bests="_bests" Compact="true" />
                                 <PoRacerPaintShop @bind-Customization="_customization" EngineReady="_engineReady" />
                             </Picker>
-                        </LobbyPanel>
+                        </OnlineLobby>
                     }
                     else
                     {

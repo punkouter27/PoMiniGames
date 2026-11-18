@@ -3,108 +3,94 @@ using System.Collections.Concurrent;
 namespace PoMiniGames.Features.PoFunQuiz;
 
 /// <summary>
-/// In-memory registry of open PoFunQuiz multiplayer games. Sessions do NOT
-/// survive restarts; for the consolidation MVP a single-process model is
-/// sufficient. The reaper background service is intentionally not included —
-/// idle rooms are cleaned up when the host disconnects.
+/// In-memory registry of PoFunQuiz multiplayer matches. Sessions do NOT survive restarts.
 /// </summary>
 /// <remarks>
-/// <para><b>One lobby, no game codes.</b> Creating and joining are a single
-/// <see cref="JoinOrCreateAsync"/>: a player presses one
-/// button and lands in the single open lobby, opening it themselves only if nobody is
-/// waiting. <see cref="MultiplayerGame.GameId"/> survives as the internal SignalR group
-/// key and log correlation id — it is never shown to a player and never typed in.</para>
-///
-/// <para>A match still gets its own game object once it starts, so a second pair can be
-/// matched while the first pair plays. "Single lobby" is about the <em>entry point</em>:
-/// at most one game is ever in <see cref="GameState.Waiting"/> with a free seat.</para>
+/// <para><b>One lobby, no game codes.</b> Pairing happens in <see cref="FunQuizLobbyHub"/>. When
+/// its host starts, the lobby calls <see cref="ReserveAsync"/>, which deals the questions and
+/// opens a match under an internal code (<see cref="MultiplayerGame.GameId"/>, also the SignalR
+/// group key and log correlation id; never shown, never typed in). Each of the two seated
+/// players then claims their seat with <see cref="JoinMatch"/>, and the match begins when both
+/// have. A reservation nobody claims is dropped by the next <see cref="ReserveAsync"/>.</para>
 /// </remarks>
 public class MultiplayerLobbyService(IFunQuizQuestionSource questions, ILogger<MultiplayerLobbyService> logger)
 {
+    /// <summary>How long an unclaimed reservation lives before the next reservation sweeps it.</summary>
+    public static readonly TimeSpan ReservationLifetime = TimeSpan.FromMinutes(2);
+
     private readonly ConcurrentDictionary<string, MultiplayerGame> _games = new();
     private readonly ConcurrentDictionary<string, string> _connectionToGame = new();
     private readonly IFunQuizQuestionSource _questions = questions;
     private readonly ILogger<MultiplayerLobbyService> _logger = logger;
 
-    // Guards lobby *membership* (open-seat search, player add, player removal). The
-    // concurrent dictionaries make the game lookup safe, but MultiplayerGame.Players is a
-    // plain List whose "is there a free seat?" check and its Add must be atomic together —
-    // without that, two players pressing the single button at the same moment both see the
-    // free seat and one silently overflows a 2-player game to 3.
+    // Guards match *membership* (seat claim, removal): MultiplayerGame.Players is a plain List
+    // whose "is this seat free?" check and its Add must be atomic together.
     private readonly Lock _gate = new();
 
     /// <summary>
-    /// Seat this connection in the one open lobby, opening a fresh one if nobody is
-    /// waiting. Returns the game plus whether this player opened it (i.e. is the host).
+    /// Reserve a match for the two lobby seats (host first) and return its internal code. The
+    /// questions are dealt now, from the in-memory bank, for the host's category and count.
     /// </summary>
-    public async Task<(MultiplayerGame Game, bool Created)> JoinOrCreateAsync(
-        string connectionId, string playerName, QuestionCategory category, int questionCount, CancellationToken ct)
+    public async Task<string> ReserveAsync(
+        string hostName, string guestName, QuestionCategory category, int questionCount, CancellationToken ct)
     {
-        // A connection that joins again leaves its previous game first, or that game is
-        // orphaned in the registry with nobody left to empty it.
-        RemovePlayer(connectionId, out _);
-
+        questionCount = Math.Clamp(questionCount, 1, 50);
+        var dealt = (await _questions.GetQuestionsAsync(category, questionCount, ct)).ToList();
+        var game = new MultiplayerGame
+        {
+            GameId = "match-" + Guid.NewGuid().ToString("N"),
+            Category = category,
+            State = GameState.Waiting,
+            ExpectedNames = [hostName, guestName],
+            Questions = dealt
+        };
         lock (_gate)
         {
-            var open = TryTakeOpenSeat(connectionId, playerName);
-            if (open is not null) return (open, false);
-        }
-
-        // Nobody waiting → this player opens the lobby, and its questions are dealt for the
-        // category *they* picked — from the in-memory bank. Deliberately outside the gate so
-        // dealing never holds the lock that every other player's join needs.
-        var questions = (await _questions.GetQuestionsAsync(category, questionCount, ct)).ToList();
-
-        lock (_gate)
-        {
-            // Someone may have opened a lobby while we were dealing. Prefer
-            // theirs — otherwise two players who pressed the button together end up
-            // alone in two separate lobbies, which is the exact failure the single
-            // lobby exists to prevent. Our freshly dealt questions are discarded.
-            var open = TryTakeOpenSeat(connectionId, playerName);
-            if (open is not null) return (open, false);
-
-            var game = new MultiplayerGame
+            var cutoff = DateTime.UtcNow - ReservationLifetime;
+            foreach (var stale in _games.Values.Where(g => g.State == GameState.Waiting && g.ReservedAtUtc < cutoff).ToList())
             {
-                GameId = Guid.NewGuid().ToString("N").Substring(0, 6).ToUpperInvariant(),
-                Category = category,
-                HostConnectionId = connectionId,
-                State = GameState.Waiting,
-                Players = new List<MultiplayerPlayer>
-                {
-                    new() { ConnectionId = connectionId, Name = playerName, PlayerNumber = 1 }
-                },
-                Questions = questions
-            };
+                _games.TryRemove(stale.GameId, out _);
+                foreach (var p in stale.Players) _connectionToGame.TryRemove(p.ConnectionId, out _);
+            }
             _games[game.GameId] = game;
-            _connectionToGame[connectionId] = game.GameId;
-            return (game, true);
         }
+        _logger.GameCreated(game.GameId, hostName);
+        return game.GameId;
     }
 
     /// <summary>
-    /// Adds the player to the waiting game with a free seat, or returns null if there
-    /// isn't one. Caller must hold <see cref="_gate"/>.
+    /// Claim the reserved seat named <paramref name="playerName"/> in the match
+    /// <paramref name="matchCode"/>. Returns null when the code is unknown, the name is not one of
+    /// the reserved seats, or that seat is already taken. The match starts (and
+    /// <c>AllSeated</c> is true) when the last reserved seat is claimed.
     /// </summary>
-    private MultiplayerGame? TryTakeOpenSeat(string connectionId, string playerName)
+    public (MultiplayerGame Game, bool AllSeated)? JoinMatch(string connectionId, string matchCode, string playerName)
     {
-        var game = _games.Values.FirstOrDefault(g => g.State == GameState.Waiting && g.Players.Count < 2);
-        if (game is null) return null;
-        // If this connection re-joins, drop the old slot first.
-        game.Players.RemoveAll(p => p.ConnectionId == connectionId);
-        // Two players can carry the same initials (or both skipped the prompt), so
-        // disambiguate a duplicate name with a suffix.
-        var taken = new HashSet<string>(game.Players.Select(p => p.Name), StringComparer.OrdinalIgnoreCase);
-        var uniqueName = playerName;
-        for (var i = 2; taken.Contains(uniqueName); i++) uniqueName = $"{playerName} ({i})";
-        game.Players.Add(new MultiplayerPlayer
+        lock (_gate)
         {
-            ConnectionId = connectionId,
-            Name = uniqueName,
-            PlayerNumber = game.Players.Count + 1
-        });
-        _connectionToGame[connectionId] = game.GameId;
-        return game;
+            // A connection that claims again leaves its previous match first.
+            RemovePlayerLocked(connectionId, out _);
+            if (!_games.TryGetValue(matchCode, out var game) || game.State != GameState.Waiting) return null;
+            var index = game.ExpectedNames.FindIndex(n => string.Equals(n, playerName, StringComparison.Ordinal));
+            if (index < 0 || game.Players.Any(p => p.PlayerNumber == index + 1)) return null;
+            game.Players.Add(new MultiplayerPlayer
+            {
+                ConnectionId = connectionId,
+                Name = game.ExpectedNames[index],
+                PlayerNumber = index + 1
+            });
+            game.Players.Sort((a, b) => a.PlayerNumber.CompareTo(b.PlayerNumber));
+            if (index == 0) game.HostConnectionId = connectionId;
+            _connectionToGame[connectionId] = game.GameId;
+            var allSeated = game.Players.Count == game.ExpectedNames.Count;
+            if (allSeated)
+            {
+                game.State = GameState.InProgress;
+                game.StartTime = DateTime.UtcNow;
+            }
+            _logger.PlayerJoined(game.GameId, game.ExpectedNames[index]);
+            return (game, allSeated);
+        }
     }
 
     public MultiplayerGame? GetByConnection(string connectionId) =>
@@ -112,34 +98,26 @@ public class MultiplayerLobbyService(IFunQuizQuestionSource questions, ILogger<M
 
     public void RemovePlayer(string connectionId, out bool sessionEmpty)
     {
-        lock (_gate)
-        {
-            sessionEmpty = false;
-            if (!_connectionToGame.TryRemove(connectionId, out var gameId)) return;
-            if (!_games.TryGetValue(gameId, out var game)) return;
-            game.Players.RemoveAll(p => p.ConnectionId == connectionId);
-            if (game.Players.Count == 0)
-            {
-                _games.TryRemove(gameId, out _);
-                sessionEmpty = true;
-                return;
-            }
-            // Host left → promote the remaining player to host.
-            if (game.HostConnectionId == connectionId)
-            {
-                game.HostConnectionId = game.Players[0].ConnectionId;
-            }
-        }
+        lock (_gate) RemovePlayerLocked(connectionId, out sessionEmpty);
     }
 
-    public bool StartGame(string gameId, string requesterConnectionId)
+    private void RemovePlayerLocked(string connectionId, out bool sessionEmpty)
     {
-        if (!_games.TryGetValue(gameId, out var game)) return false;
-        if (game.HostConnectionId != requesterConnectionId) return false;
-        if (game.Players.Count < 2) return false;
-        game.State = GameState.InProgress;
-        game.StartTime = DateTime.UtcNow;
-        return true;
+        sessionEmpty = false;
+        if (!_connectionToGame.TryRemove(connectionId, out var gameId)) return;
+        if (!_games.TryGetValue(gameId, out var game)) return;
+        game.Players.RemoveAll(p => p.ConnectionId == connectionId);
+        if (game.Players.Count == 0)
+        {
+            _games.TryRemove(gameId, out _);
+            sessionEmpty = true;
+            return;
+        }
+        // Host left → promote the remaining player to host.
+        if (game.HostConnectionId == connectionId)
+        {
+            game.HostConnectionId = game.Players[0].ConnectionId;
+        }
     }
 
     public bool UpdateScore(string gameId, string connectionId, bool isCorrect, double speedMultiplier, int secondsRemaining)
@@ -220,6 +198,9 @@ public class MultiplayerGame
     public string GameId { get; set; } = string.Empty;
     public string HostConnectionId { get; set; } = string.Empty;
     public QuestionCategory Category { get; set; } = QuestionCategory.General;
+    /// <summary>The lobby's two seat names, host first; a seat is claimed by <see cref="MultiplayerLobbyService.JoinMatch"/>.</summary>
+    public List<string> ExpectedNames { get; set; } = new();
+    public DateTime ReservedAtUtc { get; set; } = DateTime.UtcNow;
     public List<QuizQuestion> Questions { get; set; } = new();
     public List<MultiplayerPlayer> Players { get; set; } = new();
     public GameState State { get; set; } = GameState.Waiting;

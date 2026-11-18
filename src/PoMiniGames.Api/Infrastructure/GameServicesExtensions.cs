@@ -105,6 +105,9 @@ internal static class GameServicesExtensions
         services.AddSingleton<IFunQuizQuestionSource, FunQuizQuestionService>();
         services.AddSingleton<PoMiniGames.Features.PoFunQuiz.Storage.LeaderboardRepository>();
         services.AddSingleton<MultiplayerLobbyService>();
+        // One shared ready/start room per quiz; the lobby hubs reserve the match on the game hubs.
+        services.AddSingleton<FunQuizLobbyRoom>();
+        services.AddSingleton<CoupleQuizLobbyRoom>();
 
         // PoEcosystem — cloud world slots + gallery (blob + table). The store degrades to
         // empty when storage is unreachable.

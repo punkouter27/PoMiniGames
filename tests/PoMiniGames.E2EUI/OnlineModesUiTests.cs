@@ -68,11 +68,11 @@ public class OnlineModesUiTests
     // Brawl has no Start button: each player readies from their own fighter card and the
     // host's client starts the fight once both seats are ready.
     [InlineData("/pobrawl/multi", null, "/pobrawl/online", "#pobrawl-container canvas")]
-    [InlineData("/poracer/multi", "Start Race", "/poracer/multi?code=", ".race-hud")]
+    [InlineData("/poracer/multi", "Start race", "/poracer/multi?code=", ".race-hud")]
     // Voxel Strike's lobby is the Online tab of the game page itself: the run starts
     // in place, so the URL does not move and the engine canvas — which only exists once the
     // host has started and the squad's arena is built — is what proves both arrived.
-    [InlineData("/povoxelstrike/multi", "Start the Run", "/povoxelstrike/multi", "#povoxelstrike-container canvas")]
+    [InlineData("/povoxelstrike/multi", "Start run", "/povoxelstrike/multi", "#povoxelstrike-container canvas")]
     public async Task LobbyGame_TwoPlayersReady_HostStarts_AndBothReachTheMatch(string lobby, string? startLabel, string matchPath, string marker)
     {
         using var playwright = await Playwright.CreateAsync();
@@ -80,7 +80,7 @@ public class OnlineModesUiTests
         var (first, guardFirst) = await OpenAsGuestAsync(browser, lobby, "A");
         await using var _first = guardFirst;
         // Seat order is arrival order (the first in hosts): A must hold its seat before B opens.
-        await Assertions.Expect(first.GetByText("Players · 1/2")).ToBeVisibleAsync(new() { Timeout = 60_000 });
+        await Assertions.Expect(first.GetByText(new System.Text.RegularExpressions.Regex(@"Players · 1/"))).ToBeVisibleAsync(new() { Timeout = 60_000 });
         var (second, guardSecond) = await OpenAsGuestAsync(browser, lobby, "B");
         await using var _second = guardSecond;
 

@@ -190,7 +190,9 @@
     // lockstep rate, relays its carves, and announces the win. See game.js, "Online".
     private bool IsMulti => _tab == Tab.Online && _runStarted;
     private bool _runStarted;
-    private bool _lobbySubscribed;
+    private bool _lockstepWired;
+    private LobbyClient<PoVoxelStrikeLobbyPlayer>? _lobby;   // handed out by OnlineLobby
+    private string _lobbyConnectionId = "";                  // this browser's seat id when the run started
     private int _playerNumber = 1;
     private int _squadSize = 1;
     private Task _applyFrameInFlight = Task.CompletedTask;
@@ -257,29 +259,24 @@
 
     private RenderFragment ErrorContent => @<InlineError Message="@($"The arena could not start: {_fatalError}")" />;
 
-    private RenderFragment LobbyContent => @<LobbyPanel TPlayer="PoVoxelStrikeLobbyPlayer"
-                  State="@Hub.Lobby.State"
-                  LocalConnectionId="@Hub.LobbyConnectionId"
-                  ConnectionState="@Hub.Lobby.ConnectionState"
+    private RenderFragment LobbyContent => @<OnlineLobby TPlayer="PoVoxelStrikeLobbyPlayer"
+                  HubPath="povoxelstrike/lobby-hub"
                   Hint="One shared room — first to arrive hosts. Every wall one of you opens is open for all, and one hand on the chalice wins it for the squad."
                   MaxPlayersHint="6"
-                  StartLabel="Start the Run"
-                  OnReconnect="ConnectLobbyAsync"
-                  OnReady="Hub.ToggleReadyAsync"
-                  OnStart="Hub.StartGameAsync"
+                  StartLabel="Start run"
+                  OnClient="OnLobbyClient"
+                  OnGameStarted="OnGameStarted"
                   OnLeave="() => SwitchTabAsync(Tab.Solo)">
         <PlayerLabel Context="p">
             <span class="app-chip">P@(p.PlayerNumber)</span> @p.DisplayName
         </PlayerLabel>
-    </LobbyPanel>;
+    </OnlineLobby>;
 
     private async Task OkAsync()
     {
         if (_tab == Tab.Online && !_lobbyOpen)
         {
-            _lobbyOpen = true;
-            StateHasChanged();
-            await ConnectLobbyAsync();
+            await OpenLobbyAsync();
             return;
         }
         await EnterAsync();
@@ -468,51 +465,41 @@
 
     // ── Online ─────────────────────────────────────────────────────────────
 
-    private async Task ConnectLobbyAsync()
+    /// <summary>OK on the opening card: check the server, wire the run's hub, and show the shared lobby.</summary>
+    private async Task OpenLobbyAsync()
     {
         if (!await Api.IsAvailableAsync())
         {
             ToastService.Show("Server unavailable. Try Solo.", ToastType.Error);
-            _lobbyOpen = false;
             return;
         }
-        if (!_lobbySubscribed)
+        if (!_lockstepWired)
         {
-            _lobbySubscribed = true;
-            Hub.Lobby.StateChanged += OnLobbyChanged;
-            Hub.Lobby.ConnectionChanged += OnConnectionChanged;
-            Hub.Lobby.ReconnectFailed += _ => ToastService.Show("Connection restored, but the lobby could not be rejoined. Retry the connection.", ToastType.Error);
-            Hub.Lobby.EventReceived += OnLobbyEvent;
-            Hub.Lobby.GameStarted += OnGameStarted;
+            _lockstepWired = true;
             Hub.FrameReceived += OnLockstepFrame;
             Hub.RunEnded += OnRunEnded;
             Hub.PlayerDropped += OnPlayerDropped;
             Hub.CarveReceived += OnCarveReceived;
             Hub.SquadWon += OnSquadWon;
         }
-        try
-        {
-            await Hub.ConnectLobbyAsync(PlayerNameService.Initials, isGuest: false);
-        }
-        catch (Exception ex)
-        {
-            Console.Error.WriteLine($"[PoVoxelStrike] lobby connect failed: {ex.Message}");
-            ToastService.Show("Couldn't reach the lobby. Try Solo.", ToastType.Error);
-        }
+        _lobbyOpen = true;
         StateHasChanged();
     }
 
-    /// <summary>Drop the lobby seat and the run link. Safe to call when neither is held.</summary>
-    private async Task LeaveOnlineAsync()
+    private Task OnLobbyClient(LobbyClient<PoVoxelStrikeLobbyPlayer> lobby)
     {
-        if (!_lobbySubscribed) return;
-        _runStarted = false;
-        try { await Hub.StopLockstepAsync(); } catch { }
-        try { await Hub.LeaveLobbyAsync(); } catch { }
+        _lobby = lobby;
+        lobby.EventReceived += OnLobbyEvent;
+        return Task.CompletedTask;
     }
 
-    private void OnLobbyChanged(LobbyState<PoVoxelStrikeLobbyPlayer> _) => InvokeAsync(StateHasChanged);
-    private void OnConnectionChanged(Microsoft.AspNetCore.SignalR.Client.HubConnectionState _) => InvokeAsync(StateHasChanged);
+    /// <summary>Drop the run link (the lobby seat goes with the lobby component). Safe when none is held.</summary>
+    private async Task LeaveOnlineAsync()
+    {
+        if (!_lockstepWired) return;
+        _runStarted = false;
+        try { await Hub.StopLockstepAsync(); } catch { }
+    }
 
     private void OnLobbyEvent(LobbyEvent ev) => ToastService.Show(ev.Message, ev.Kind switch
     {
@@ -524,7 +511,11 @@
     // The host pressed Start: every client binds to the run and builds the dealt arena, in
     // place. The card stays up (now showing Deploy) because each player still owes the
     // browser a click before it will lock the pointer.
-    private void OnGameStarted(string gameCode) => _ = InvokeAsync(() => StartSquadRunAsync(gameCode));
+    private void OnGameStarted(OnlineLobbyStart start)
+    {
+        _lobbyConnectionId = _lobby?.ConnectionId ?? "";
+        _ = InvokeAsync(() => StartSquadRunAsync(start.MatchCode));
+    }
 
     private async Task StartSquadRunAsync(string gameCode)
     {
@@ -544,7 +535,7 @@
                 StateHasChanged();
                 return;
             }
-            var me = info.Players.FirstOrDefault(p => p.ConnectionId == Hub.LobbyConnectionId);
+            var me = info.Players.FirstOrDefault(p => p.ConnectionId == _lobbyConnectionId);
             _playerNumber = me?.PlayerNumber ?? 1;
             _squadSize = Math.Max(1, info.Players.Count);
             var names = new string[info.Players.Max(p => p.PlayerNumber)];
@@ -852,19 +843,14 @@
     public async ValueTask DisposeAsync()
     {
         try { await JSRuntime.InvokeVoidAsync("PoVoxelStrike.stop"); } catch { }
-        if (_lobbySubscribed)
+        if (_lockstepWired)
         {
-            Hub.Lobby.StateChanged -= OnLobbyChanged;
-            Hub.Lobby.ConnectionChanged -= OnConnectionChanged;
-            Hub.Lobby.EventReceived -= OnLobbyEvent;
-            Hub.Lobby.GameStarted -= OnGameStarted;
             Hub.FrameReceived -= OnLockstepFrame;
             Hub.RunEnded -= OnRunEnded;
             Hub.PlayerDropped -= OnPlayerDropped;
             Hub.CarveReceived -= OnCarveReceived;
             Hub.SquadWon -= OnSquadWon;
             try { await Hub.StopLockstepAsync(); } catch { }
-            try { await Hub.LeaveLobbyAsync(); } catch { }
             try { await Hub.DisposeAsync(); } catch { }
         }
         _ref?.Dispose();

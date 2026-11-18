@@ -11,12 +11,6 @@ namespace PoMiniGames.Features.PoCoupleQuiz;
 /// </summary>
 internal static partial class CoupleQuizLog
 {
-    // 5105/5106 both logged "lobby {Code} created by {Host}" from the two join paths.
-    // There is one lobby and one join path now, so there is one message.
-    [LoggerMessage(EventId = 5105, Level = LogLevel.Information,
-        Message = "PoCoupleQuiz: lobby opened by {Host}")]
-    public static partial void LobbyOpened(this ILogger logger, string? host);
-
     [LoggerMessage(EventId = 5107, Level = LogLevel.Error,
         Message = "PoCoupleQuiz: the round timer callback threw; the lobby is left recoverable.")]
     public static partial void RoundTimerFailed(this ILogger logger, Exception ex);

@@ -7,7 +7,7 @@ using PoMiniGamesClient.Services.Ui;
 
 namespace PoMiniGamesClient.Services.Play;
 
-/// <summary>Where an online session is, from the player's point of view. <c>QuickMatchPanel</c> draws the non-lobby states; <see cref="Lobby"/> is drawn by <c>TurnLobbyPanel</c>.</summary>
+/// <summary>Where an online session is, from the player's point of view. <c>QuickMatchPanel</c> draws the non-lobby states; the lobby is drawn by <c>TurnLobbyPanel</c> (the shared <c>OnlineLobby</c>).</summary>
 public enum QuickMatchPhase
 {
     Idle,
@@ -34,9 +34,8 @@ public sealed class OnlineTurnSession : IAsyncDisposable
     private readonly string _hubPath;
     private readonly string _gameKey;
     private readonly string _localName;
-    private readonly string _lobbyPath;
     private TurnMatchClient? _client;
-    private LobbyClient<TurnLobbyPlayer>? _lobby;
+    private CancellationTokenSource? _joinWatch;
     private bool _matchRecorded;
 
     /// <param name="hubPath">The match hub, e.g. <c>connectfive/hub</c>; the lobby hub is <c>connectfive/lobby-hub</c>.</param>
@@ -50,7 +49,6 @@ public sealed class OnlineTurnSession : IAsyncDisposable
         _toasts = toasts;
         _history = history;
         _hubPath = hubPath;
-        _lobbyPath = hubPath[..hubPath.LastIndexOf('/')] + "/lobby-hub";
         _gameKey = gameKey;
         _localName = localName;
     }
@@ -66,8 +64,8 @@ public sealed class OnlineTurnSession : IAsyncDisposable
     /// <summary>The game ended. Win cells are flat indices into the grid; empty for a draw or forfeit.</summary>
     public event Action<GameResult, int[]>? GameEnded;
 
-    /// <summary>The lobby while <see cref="Phase"/> is <see cref="QuickMatchPhase.Lobby"/>; null otherwise.</summary>
-    public LobbyClient<TurnLobbyPlayer>? Lobby => _lobby;
+    /// <summary>The game's lobby hub, relative to the API base (what <c>OnlineLobby</c> connects to).</summary>
+    public string LobbyHubPath => _hubPath[.._hubPath.LastIndexOf('/')] + "/lobby-hub";
     public QuickMatchPhase Phase { get; private set; } = QuickMatchPhase.Idle;
     public TurnMatchStart? Seat { get; private set; }
     public TurnMatchSide MySide { get; private set; } = TurnMatchSide.First;
@@ -117,21 +115,13 @@ public sealed class OnlineTurnSession : IAsyncDisposable
 
     // ── Lifecycle ─────────────────────────────────────────────────────────
 
-    public async Task StartAsync()
+    /// <summary>Enter the lobby phase: the page renders the shared <c>OnlineLobby</c> and joins the match from its start callback.</summary>
+    public Task StartAsync()
     {
-        Phase = QuickMatchPhase.Connecting;
         Reconnecting = false;
+        Phase = QuickMatchPhase.Lobby;
         Changed?.Invoke();
-        try
-        {
-            await OpenLobbyAsync();
-        }
-        catch (Exception)
-        {
-            Phase = QuickMatchPhase.Error;
-            _toasts.Show("Couldn't reach the game server.", ToastType.Error);
-            Changed?.Invoke();
-        }
+        return Task.CompletedTask;
     }
 
     public async Task RetryAsync()
@@ -140,48 +130,14 @@ public sealed class OnlineTurnSession : IAsyncDisposable
         await StartAsync();
     }
 
-    /// <summary>
-    /// Take a seat in the shared lobby (the first player in hosts). The host's Start sends
-    /// <c>gameStarted</c> with the internal match code, which <see cref="JoinMatchAsync"/> joins.
-    /// </summary>
-    private async Task OpenLobbyAsync()
+    /// <summary>The lobby's host started: claim a seat in the reserved match by its internal code. The host moves first.</summary>
+    public async Task JoinMatchAsync(string code, bool asHost)
     {
-        await CloseLobbyAsync();
-        var lobby = _lobby = new LobbyClient<TurnLobbyPlayer>(_endpoints, _lobbyPath);
-        lobby.StateChanged += _ => Changed?.Invoke();
-        lobby.ConnectionChanged += _ => Changed?.Invoke();
-        lobby.GameStarted += code => _ = JoinMatchAsync(lobby, code);
-        Phase = QuickMatchPhase.Lobby;
-        Changed?.Invoke();
-        await lobby.ConnectAndJoinAsync(_localName, isGuest: false);
-    }
-
-    public async Task ReconnectLobbyAsync()
-    {
-        if (_lobby is not { } lobby) return;
-        try { await lobby.ReconnectAsync(); }
-        catch (Exception) { _toasts.Show("Couldn't reach the lobby — try again.", ToastType.Warning); }
-    }
-
-    private async Task CloseLobbyAsync()
-    {
-        var lobby = _lobby;
-        _lobby = null;
-        if (lobby is null) return;
-        await lobby.LeaveLobbyAsync();
-        await lobby.DisposeAsync();
-    }
-
-    /// <summary>The host started: leave the lobby and claim a seat in the reserved match. The host moves first.</summary>
-    private async Task JoinMatchAsync(LobbyClient<TurnLobbyPlayer> lobby, string code)
-    {
-        if (lobby != _lobby) return;
-        var asHost = lobby.IsHost;
+        if (Phase != QuickMatchPhase.Lobby) return;
         Phase = QuickMatchPhase.Connecting;
         Changed?.Invoke();
         try
         {
-            await CloseLobbyAsync();
             if (_client is null)
             {
                 _client = new TurnMatchClient(_endpoints, _hubPath);
@@ -194,7 +150,16 @@ public sealed class OnlineTurnSession : IAsyncDisposable
             // matchStarted may fire before this returns (the second claimant completes the
             // pairing inside the call), so the phase is only ever advanced by the event.
             await _client.JoinMatchAsync(code, _localName, isGuest: false, asHost);
-            _ = WatchJoinAsync(code);
+            // The other player was seated by the lobby but never claimed their seat: say so and
+            // go back to the lobby instead of waiting on a card that never changes.
+            _joinWatch?.Cancel();
+            _joinWatch = new CancellationTokenSource();
+            _ = MatchJoinGuard.WatchAsync(() => Phase == QuickMatchPhase.Connecting && Seat is null, async () =>
+            {
+                _toasts.Show("The other player didn't join. Back to the lobby.", ToastType.Warning);
+                await ReturnToLobbySafeAsync();
+                Changed?.Invoke();
+            }, _joinWatch.Token);
         }
         catch (Exception)
         {
@@ -203,22 +168,6 @@ public sealed class OnlineTurnSession : IAsyncDisposable
             Changed?.Invoke();
         }
     }
-
-    /// <summary>
-    /// The other player was seated by the lobby but never claimed their seat (closed the tab
-    /// between Start and the match): after <see cref="JoinTimeout"/> say so and go back to the
-    /// lobby, instead of waiting on a card that never changes. The server drops the reservation.
-    /// </summary>
-    private async Task WatchJoinAsync(string code)
-    {
-        await Task.Delay(JoinTimeout);
-        if (Phase != QuickMatchPhase.Connecting || Seat is not null) return;
-        _toasts.Show("The other player didn't join. Back to the lobby.", ToastType.Warning);
-        await ReturnToLobbySafeAsync();
-        Changed?.Invoke();
-    }
-
-    private static readonly TimeSpan JoinTimeout = TimeSpan.FromSeconds(20);
 
     /// <summary>Give up the finished seat and go back to the lobby for another opponent.</summary>
     public async Task ReturnToLobbyAsync()
@@ -230,7 +179,7 @@ public sealed class OnlineTurnSession : IAsyncDisposable
         EndReason = TurnMatchEndReason.None;
         Result = GameResult.InProgress;
         _matchRecorded = false;
-        await OpenLobbyAsync();
+        await StartAsync();
     }
 
     public async Task ReturnToLobbySafeAsync()
@@ -283,7 +232,7 @@ public sealed class OnlineTurnSession : IAsyncDisposable
 
     public async Task TearDownAsync()
     {
-        await CloseLobbyAsync();
+        _joinWatch?.Cancel();
         await DropMatchAsync();
     }
 

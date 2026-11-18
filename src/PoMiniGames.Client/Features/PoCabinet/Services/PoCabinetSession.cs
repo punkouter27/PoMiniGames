@@ -6,29 +6,22 @@ using PoMiniGamesClient.Services.Play;
 namespace PoMiniGamesClient.Features.PoCabinet;
 
 /// <summary>
-/// Owns the two PoCabinet hub connections for the app's lifetime (scoped = one per tab in
-/// WASM), so the lobby survives the hop into a race and back for a rematch.
-/// <list type="number">
-///   <item><b>Lobby hub</b> (<c>/pocabinet/lobby-hub</c>): join the one lobby (first in
-///         hosts), receive <c>LobbyState</c> after every change, host controls (track, AI
-///         officials, kick), and <c>RaceStarting(raceCode, trackId)</c>. A reconnect rejoins —
-///         seats are keyed by claim identity server-side, so it is the same seat.
-///         <c>Kicked(reason)</c> means the seat is gone; <c>LobbyNotice(text)</c> is a line
-///         for everyone.</item>
-///   <item><b>Race hub</b> (<c>/pocabinet/race-hub</c>): <see cref="JoinRaceAsync"/> returns
-///         the static world and this client's car id (null = spectating); then one numbered
-///         input per 30 Hz tick goes up and a <c>RaceSnapshot</c> per tick comes down, ending
-///         with a typed <c>RaceFinished</c> result (or <c>RaceAborted</c>).
-///         <see cref="LeaveRaceAsync"/> tells the server this player is out.</item>
-/// </list>
+/// Owns the PoCabinet race hub connection for the app's lifetime (scoped = one per tab in
+/// WASM). The lobby is not here: <c>PoCabinetLobby</c> runs on the shared <c>OnlineLobby</c>, and
+/// its <c>gameStarted(code)</c> is what leads to <see cref="JoinRaceAsync"/>.
+/// <b>Race hub</b> (<c>/pocabinet/race-hub</c>): <see cref="JoinRaceAsync"/> returns the static
+/// world and this client's car id (null = spectating); then one numbered input per 30 Hz tick
+/// goes up and a <c>RaceSnapshot</c> per tick comes down, ending with a typed
+/// <c>RaceFinished</c> result (or <c>RaceAborted</c>). <see cref="LeaveRaceAsync"/> tells the
+/// server this player is out.
 /// <para>
 /// Every race has its own code, and snapshots, results and aborts for any other code are
 /// dropped here, so a results screen left open is not fed the next race.
 /// </para>
 /// <para>
-/// When a connection is lost for good (automatic reconnect gave up), or a reconnect finds the
-/// race already over, <see cref="RaceLost"/> / <see cref="LobbyLost"/> say so — the page must
-/// never sit on "Reconnecting…" forever.
+/// When the connection is lost for good (automatic reconnect gave up), or a reconnect finds the
+/// race already over, <see cref="RaceLost"/> says so — the page must never sit on
+/// "Reconnecting…" forever.
 /// </para>
 /// <para>
 /// Inputs use <c>SendAsync</c> (fire-and-forget): at 30 per second, awaiting a round trip
@@ -39,13 +32,8 @@ public sealed class PoCabinetSession : IAsyncDisposable
 {
     private readonly ApiEndpoints _endpoints;
     private readonly PlayerNameService _playerNameService;
-    private HubConnection? _lobby;
     private HubConnection? _race;
     private readonly CancellationTokenSource _lifetime = new();
-    private bool _inLobby;
-    private string _displayName = "Player";
-    private string? _trackId;
-    private string? _color;
     private string? _gameCode;
     private bool _raceJoined;
     private int _lastSeq;
@@ -55,45 +43,6 @@ public sealed class PoCabinetSession : IAsyncDisposable
     {
         _endpoints = endpoints;
         _playerNameService = playerNameService;
-    }
-
-    private HubConnection GetOrCreateLobby()
-    {
-        if (_lobby is not null) return _lobby;
-        var lobby = HubConnectionFactory.Create(_endpoints.Hub("pocabinet/lobby-hub"));
-        lobby.On<PoCabinetLobbyView>("LobbyState", async view =>
-        {
-            if (!_inLobby) return;
-            Lobby = view;
-            if (LobbyChanged is { } handler) await handler(view);
-        });
-        lobby.On<string, string>("RaceStarting", async (code, trackId) =>
-        {
-            if (RaceStarting is { } handler) await handler(code, trackId);
-        });
-        lobby.On<string>("Kicked", async reason =>
-        {
-            if (!_inLobby) return;
-            _inLobby = false;
-            Lobby = null;
-            MySeatId = null;
-            if (Kicked is { } handler) await handler(reason);
-        });
-        lobby.On<string>("LobbyNotice", async text =>
-        {
-            if (_inLobby && LobbyNotice is { } handler) await handler(text);
-        });
-        lobby.Reconnected += async _ =>
-        {
-            if (!_inLobby) return;
-            try { await JoinLobbyAsync(_displayName, _trackId, _color); } catch { /* the view shows the stale state */ }
-        };
-        lobby.Closed += async _ =>
-        {
-            if (_inLobby && LobbyLost is { } handler) await handler("Lost the connection to the lobby.");
-        };
-        _lobby = lobby;
-        return lobby;
     }
 
     private HubConnection GetOrCreateRace()
@@ -155,20 +104,6 @@ public sealed class PoCabinetSession : IAsyncDisposable
         return race;
     }
 
-    /// <summary>The lobby this client sits in (latest broadcast), or null.</summary>
-    public PoCabinetLobbyView? Lobby { get; private set; }
-
-    /// <summary>This client's seat in <see cref="Lobby"/>.</summary>
-    public string? MySeatId { get; private set; }
-
-    public event Func<PoCabinetLobbyView, Task>? LobbyChanged;
-    public event Func<string, string, Task>? RaceStarting;
-    /// <summary>This player's seat was freed (the host kicked it, or the ready timeout); the text says why.</summary>
-    public event Func<string, Task>? Kicked;
-    /// <summary>A line for everyone in the lobby (e.g. who lost a seat to the ready timeout).</summary>
-    public event Func<string, Task>? LobbyNotice;
-    /// <summary>The lobby connection is gone for good; joining again restarts it.</summary>
-    public event Func<string, Task>? LobbyLost;
     public event Func<PoCabinetRaceSnapshot, Task>? SnapshotReceived;
     public event Func<PoCabinetFinalResult, Task>? RaceFinished;
     /// <summary>Non-null message while the race connection is unhealthy, null when restored.</summary>
@@ -176,48 +111,6 @@ public sealed class PoCabinetSession : IAsyncDisposable
     /// <summary>This client is out of the current race for good: the connection closed, or the race is over or called off.</summary>
     public event Func<PoCabinetRaceLoss, Task>? RaceLost;
     public event Func<double, Task>? PingMeasured;
-
-    /// <summary>
-    /// Join (or rejoin) the lobby; the first arrival hosts on <paramref name="trackId"/>. When
-    /// no seat is free (race running, or eight seated) the view comes back with a null
-    /// <see cref="MySeatId"/> and broadcasts keep arriving, so the caller can retry.
-    /// </summary>
-    public async Task<PoCabinetLobbyView?> JoinLobbyAsync(string displayName, string? trackId, string? color, CancellationToken ct = default)
-    {
-        await _playerNameService.InitializeAsync();
-        var lobby = GetOrCreateLobby();
-        await EnsureAsync(lobby, ct);
-        var view = await lobby.InvokeAsync<PoCabinetLobbyView?>("Join", displayName, trackId, color, ct);
-        _inLobby = true;
-        _displayName = displayName;
-        _trackId = trackId;
-        _color = color;
-        Lobby = view;
-        MySeatId = view?.YourSeatId;
-        return view;
-    }
-
-    public Task<bool> ToggleReadyAsync() => LobbyCallAsync("ToggleReady");
-
-    public Task<bool> SetTrackAsync(string trackId) => LobbyCallAsync("SetTrack", trackId);
-
-    public Task<bool> SetBotsAsync(int count) => LobbyCallAsync("SetBots", count);
-
-    public Task<bool> TryStartAsync() => LobbyCallAsync("TryStart");
-
-    /// <summary>Host-only, between races: free another player's seat.</summary>
-    public Task<bool> KickAsync(string seatId) => LobbyCallAsync("Kick", seatId);
-
-    public async Task LeaveLobbyAsync()
-    {
-        var wasIn = _inLobby;
-        _inLobby = false;
-        Lobby = null;
-        MySeatId = null;
-        if (!wasIn || _lobby is null || _lobby.State != HubConnectionState.Connected) return;
-        try { await _lobby.InvokeAsync("Leave"); } catch { /* best effort */ }
-    }
-
     /// <summary>
     /// Join a running race. The reply carries the static world and, for a seated player,
     /// <c>LocalCarId</c> — null means this client spectates. Throws when the race is already over.
@@ -305,15 +198,6 @@ public sealed class PoCabinetSession : IAsyncDisposable
         }
     }
 
-    private async Task<bool> LobbyCallAsync(string method, params object?[] args)
-    {
-        if (!_inLobby) return false;
-        await _playerNameService.InitializeAsync();
-        var lobby = GetOrCreateLobby();
-        await EnsureAsync(lobby, default);
-        return await lobby.InvokeCoreAsync<bool>(method, args);
-    }
-
     private static async Task EnsureAsync(HubConnection hub, CancellationToken ct)
     {
         if (hub.State == HubConnectionState.Disconnected) await hub.StartAsync(ct);
@@ -322,7 +206,6 @@ public sealed class PoCabinetSession : IAsyncDisposable
     public async ValueTask DisposeAsync()
     {
         _lifetime.Cancel();
-        if (_lobby is not null) { try { await _lobby.DisposeAsync(); } catch { /* ignore */ } }
         if (_race is not null) { try { await _race.DisposeAsync(); } catch { /* ignore */ } }
         _lifetime.Dispose();
     }

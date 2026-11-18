@@ -5,15 +5,15 @@ using PoMiniGames.Features.PoFunQuiz;
 namespace PoMiniGames.Unit.Features.PoFunQuiz;
 
 /// <summary>
-/// Unit tests for the PoFunQuiz in-memory multiplayer lobby. Goes through
+/// Unit tests for the PoFunQuiz in-memory match registry. Goes through
 /// <see cref="MultiplayerLobbyService"/> with a source that deals from the bundled bank.
 /// </summary>
 /// <remarks>
-/// <para>Player lifecycle (Join/Remove) is one theory; scoring updates are another.</para>
-///
-/// <para>There are no game codes, so create and join are one
-/// <see cref="MultiplayerLobbyService.JoinOrCreateAsync"/>: you cannot name a game, and the
-/// second caller lands in the *same* lobby as the first rather than opening their own.</para>
+/// <para>Pairing happens in the lobby hub; the service only reserves a match for the two seat
+/// names (<see cref="MultiplayerLobbyService.ReserveAsync"/>) and seats each player who claims
+/// one (<see cref="MultiplayerLobbyService.JoinMatch"/>). You cannot name a game you were not
+/// reserved a seat in, and the match begins when both seats are claimed.</para>
+/// <para>Player lifecycle (claim/remove) is one theory; scoring updates are another.</para>
 /// </remarks>
 public sealed class MultiplayerLobbyServiceTests
 {
@@ -25,23 +25,30 @@ public sealed class MultiplayerLobbyServiceTests
 
     private static MultiplayerLobbyService NewLobby() => new(new StubQuestions(), NullLogger<MultiplayerLobbyService>.Instance);
 
-    private static Task<(MultiplayerGame Game, bool Created)> JoinAsync(
-        MultiplayerLobbyService lobby, string conn, string name, QuestionCategory category = QuestionCategory.General, int questions = 5) =>
-        lobby.JoinOrCreateAsync(conn, name, category, questions, default);
+    /// <summary>Reserve a match for Alice (host) and the guest, then seat the named players in that order.</summary>
+    private static async Task<(string Code, MultiplayerGame Game)> MatchAsync(
+        MultiplayerLobbyService lobby, string guest = "Bob", int questions = 5, params (string Conn, string Name)[] seated)
+    {
+        var code = await lobby.ReserveAsync("Alice", guest, QuestionCategory.General, questions, default);
+        foreach (var (conn, name) in seated) lobby.JoinMatch(conn, code, name);
+        return (code, seated.Length > 0 ? lobby.GetByConnection(seated[0].Conn)! : null!);
+    }
 
     [Theory]
     [InlineData("conn2", "Bob", 2)]
     [InlineData("conn5", "Dan", 2)]
-    public async Task SecondPlayer_JoinsTheOpenLobby_AsPlayerNumberTwo(string conn, string name, int expectedNumber)
+    public async Task GuestClaim_JoinsTheReservedMatch_AsPlayerNumberTwo(string conn, string name, int expectedNumber)
     {
         var lobby = NewLobby();
-        var (hosted, _) = await JoinAsync(lobby, "conn1", "Alice");
-        var (joined, created) = await JoinAsync(lobby, conn, name);
-        created.Should().BeFalse(because: "there is one lobby — the second player must land in it, not open another");
-        joined.GameId.Should().Be(hosted.GameId);
-        joined.Players.Should().HaveCount(2);
-        joined.Players[1].Name.Should().Be(name);
-        joined.Players[1].PlayerNumber.Should().Be(expectedNumber);
+        var (code, hosted) = await MatchAsync(lobby, name, 5, ("conn1", "Alice"));
+        var joined = lobby.JoinMatch(conn, code, name);
+        joined.Should().NotBeNull();
+        joined!.Value.AllSeated.Should().BeTrue(because: "the match begins when the last reserved seat is claimed");
+        joined.Value.Game.GameId.Should().Be(hosted.GameId);
+        joined.Value.Game.State.Should().Be(GameState.InProgress);
+        joined.Value.Game.Players.Should().HaveCount(2);
+        joined.Value.Game.Players[1].Name.Should().Be(name);
+        joined.Value.Game.Players[1].PlayerNumber.Should().Be(expectedNumber);
     }
 
     [Theory]
@@ -52,7 +59,7 @@ public sealed class MultiplayerLobbyServiceTests
     public async Task UpdateScore_UpdatesBaseAndStreak(bool firstCorrect, int consecutiveCorrect)
     {
         var lobby = NewLobby();
-        var (game, _) = await JoinAsync(lobby, "conn1", "Alice");
+        var (_, game) = await MatchAsync(lobby, "Bob", 5, ("conn1", "Alice"));
         lobby.UpdateScore(game.GameId, "conn1", isCorrect: firstCorrect, speedMultiplier: 1.0, secondsRemaining: 30);
 
         for (int i = 1; i < consecutiveCorrect; i++)
@@ -84,61 +91,69 @@ public sealed class MultiplayerLobbyServiceTests
     }
 
     [Theory]
-    [InlineData("conn2", false)] // non-host cannot start
-    [InlineData("conn1", true)]  // host can start (with 2 players)
-    public async Task StartGame_RequiresHostAndTwoPlayers(string actingConn, bool expectSuccess)
+    [InlineData("Alice", false)] // only the host's seat claimed: the match waits
+    [InlineData("Bob", true)]    // both seats claimed: the match begins
+    public async Task Match_BeginsOnlyWhenBothSeatsAreClaimed(string lastClaimant, bool expectStarted)
     {
         var lobby = NewLobby();
-        var (game, _) = await JoinAsync(lobby, "conn1", "Alice");
-        await JoinAsync(lobby, "conn2", "Bob");
+        var (code, _) = await MatchAsync(lobby, "Bob", 5, ("conn1", "Alice"));
+        if (lastClaimant == "Bob") lobby.JoinMatch("conn2", code, "Bob");
 
-        var result = lobby.StartGame(game.GameId, actingConn);
-        result.Should().Be(expectSuccess);
-
-        if (expectSuccess)
-        {
-            lobby.GetByConnection("conn1")!.State.Should().Be(GameState.InProgress);
-        }
+        var game = lobby.GetByConnection("conn1")!;
+        game.State.Should().Be(expectStarted ? GameState.InProgress : GameState.Waiting);
+        game.StartTime.HasValue.Should().Be(expectStarted);
     }
 
     /// <summary>
     /// Each row runs one scenario: a private method below, named after what it checks.
     /// </summary>
     [Theory]
-    [InlineData(nameof(FirstPlayer_OpensLobby_AndIsHostPlayerOne))]
-    [InlineData(nameof(ThirdPlayer_OpensAFreshLobby_RatherThanOverfillingAFullOne))]
+    [InlineData(nameof(FirstClaim_IsHostPlayerOne_AndMatchWaitsForTheOther))]
+    [InlineData(nameof(Strangers_TakenSeats_AndStaleReservations_AreRefused))]
     [InlineData(nameof(RemoveLastPlayer_DeletesSession))]
     [InlineData(nameof(Survivor_Rejoin_And_ClientBonuses_AreAllBounded))]
     public Task Scenario(string name) => Scenarios.RunAsync(this, name);
 
-    private static async Task FirstPlayer_OpensLobby_AndIsHostPlayerOne()
+    private static async Task FirstClaim_IsHostPlayerOne_AndMatchWaitsForTheOther()
     {
         foreach (var (hostConn, hostName) in new[] { ("conn1", "Alice"), ("conn7", "Eve") })
         {
             var lobby = NewLobby();
-            var (game, created) = await JoinAsync(lobby, hostConn, hostName);
-            created.Should().BeTrue(because: "an empty lobby is opened by whoever arrives first");
-            game.GameId.Should().NotBeNullOrEmpty();
+            var code = await lobby.ReserveAsync(hostName, "Zed", QuestionCategory.Science, 7, default);
+            var (game, allSeated) = lobby.JoinMatch(hostConn, code, hostName)!.Value;
+            allSeated.Should().BeFalse();
+            game.GameId.Should().Be(code);
+            game.Category.Should().Be(QuestionCategory.Science, "the host's category is the one dealt");
+            game.Questions.Should().HaveCount(7);
             game.HostConnectionId.Should().Be(hostConn);
             game.Players.Should().ContainSingle(p => p.Name == hostName && p.PlayerNumber == 1);
             game.State.Should().Be(GameState.Waiting);
         }
     }
 
-    private static async Task ThirdPlayer_OpensAFreshLobby_RatherThanOverfillingAFullOne()
+    private static async Task Strangers_TakenSeats_AndStaleReservations_AreRefused()
     {
         var lobby = NewLobby();
-        var (first, _) = await JoinAsync(lobby, "conn1", "Alice");
-        await JoinAsync(lobby, "conn2", "Bob");
+        var code = await lobby.ReserveAsync("Alice", "Bob", QuestionCategory.General, 5, default);
 
-        // The pair is full. The next arrival must not become a third player in a
-        // 2-player game — they open the next lobby and wait there.
-        var (third, created) = await JoinAsync(lobby, "conn3", "Carla");
+        // A name nobody reserved, a code nobody issued, and a seat already taken are all refused,
+        // so a pair is never overfilled and a client cannot name a match it was not seated in.
+        lobby.JoinMatch("conn3", code, "Carla").Should().BeNull();
+        lobby.JoinMatch("conn1", "match-nope", "Alice").Should().BeNull();
+        var guestFirst = lobby.JoinMatch("conn2", code, "Bob")!.Value;
+        guestFirst.AllSeated.Should().BeFalse();
+        lobby.JoinMatch("conn1", code, "Alice")!.Value.Game.Players.Select(p => p.Name).Should().Equal("Alice", "Bob");
+        lobby.JoinMatch("conn9", code, "Alice").Should().BeNull("the match has begun and the seat is taken");
 
-        created.Should().BeTrue();
-        third.GameId.Should().NotBe(first.GameId);
-        first.Players.Should().HaveCount(2);
-        third.Players.Should().ContainSingle(p => p.Name == "Carla");
+        // An unclaimed reservation does not linger: the next reservation sweeps it.
+        var stale = await lobby.ReserveAsync("Eve", "Fay", QuestionCategory.General, 5, default);
+        lobby.JoinMatch("conn4", stale, "Eve").Should().NotBeNull();
+        lobby.RemovePlayer("conn4", out _);
+        var old = await lobby.ReserveAsync("Gus", "Hal", QuestionCategory.General, 5, default);
+        lobby.JoinMatch("conn5", old, "Gus");
+        lobby.GetByConnection("conn5")!.ReservedAtUtc = DateTime.UtcNow - MultiplayerLobbyService.ReservationLifetime - TimeSpan.FromSeconds(1);
+        await lobby.ReserveAsync("Ivy", "Jon", QuestionCategory.General, 5, default);
+        lobby.JoinMatch("conn6", old, "Hal").Should().BeNull("the stale reservation was swept");
     }
 
     [Theory]
@@ -147,8 +162,7 @@ public sealed class MultiplayerLobbyServiceTests
     public async Task RemovePlayer_PromotesNewHostOrKeepsSession(string leaver, string expectedNewHost, string otherPlayer)
     {
         var lobby = NewLobby();
-        await JoinAsync(lobby, "conn1", "Alice");
-        await JoinAsync(lobby, "conn2", "Bob");
+        await MatchAsync(lobby, "Bob", 5, ("conn1", "Alice"), ("conn2", "Bob"));
 
         lobby.RemovePlayer(leaver, out _);
 
@@ -160,7 +174,7 @@ public sealed class MultiplayerLobbyServiceTests
     private static async Task RemoveLastPlayer_DeletesSession()
     {
         var lobby = NewLobby();
-        await JoinAsync(lobby, "conn1", "Alice");
+        await MatchAsync(lobby, "Bob", 5, ("conn1", "Alice"));
         lobby.RemovePlayer("conn1", out var sessionEmpty);
         sessionEmpty.Should().BeTrue();
         lobby.GetByConnection("conn1").Should().BeNull();
@@ -169,9 +183,7 @@ public sealed class MultiplayerLobbyServiceTests
     private static async Task Survivor_Rejoin_And_ClientBonuses_AreAllBounded()
     {
         var lobby = NewLobby();
-        var (first, _) = await JoinAsync(lobby, "conn1", "Alice");
-        await JoinAsync(lobby, "conn2", "Bob");
-        lobby.StartGame(first.GameId, "conn1");
+        var (_, first) = await MatchAsync(lobby, "Bob", 5, ("conn1", "Alice"), ("conn2", "Bob"));
 
         // A tampered client cannot buy points with the two values it supplies.
         lobby.UpdateScore(first.GameId, "conn1", isCorrect: true, speedMultiplier: 1e9, secondsRemaining: int.MaxValue);
@@ -184,9 +196,9 @@ public sealed class MultiplayerLobbyServiceTests
         first.Winner.Should().BeSameAs(alice);
         first.IsTie.Should().BeFalse();
 
-        // Alice queues again on the same connection: she leaves the old game rather than orphaning it.
-        var (second, created) = await JoinAsync(lobby, "conn1", "Alice");
-        created.Should().BeTrue();
+        // Alice claims a seat in a new match on the same connection: she leaves the old game
+        // rather than orphaning it.
+        var (_, second) = await MatchAsync(lobby, "Bob", 5, ("conn1", "Alice"));
         second.GameId.Should().NotBe(first.GameId);
         first.Players.Should().BeEmpty();
     }
@@ -198,8 +210,7 @@ public sealed class MultiplayerLobbyServiceTests
     public async Task AdvanceQuestion_ResetsHasFinished_ExceptOnLastQuestion(int currentQuestion, int totalQuestions)
     {
         var lobby = NewLobby();
-        var (game, _) = await JoinAsync(lobby, "conn1", "Alice", questions: totalQuestions);
-        await JoinAsync(lobby, "conn2", "Bob", questions: totalQuestions);
+        var (_, game) = await MatchAsync(lobby, "Bob", totalQuestions, ("conn1", "Alice"), ("conn2", "Bob"));
 
         // Hop the game to the desired question index by direct field-mutation
         // (acceptable here: we are testing the AdvanceQuestion behavior in

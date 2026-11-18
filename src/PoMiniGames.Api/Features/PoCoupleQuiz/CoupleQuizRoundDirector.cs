@@ -148,13 +148,16 @@ public sealed class CoupleQuizRoundDirector : IDisposable
         {
             var session = _sessions.Current;
             if (session?.ActiveGame is not { } game) return;
-            if (session.Phase != RoundPhase.Answering) return;
+            if (session.State != SessionState.InProgress || session.Phase != RoundPhase.Answering) return;
             if (game.Players.Count < Game.MinimumPlayers)
             {
-                // Not a game any more. Park the lobby rather than leaving a half-match live.
-                session.DisarmTimer();
-                _sessions.ResetToLobby();
-                await BroadcastLobbyAsync();
+                // Not a game any more: end it on the scores earned so far rather than leaving a
+                // half-match live.
+                _sessions.FinishGame();
+                await _hub.Clients.All.GameError("Your opponent left. Ending the match here.");
+                await _hub.Clients.All.GameOver(new GameOverPayload(
+                    FinalScores: game.GetScoreboard(),
+                    Players: Snapshot(game)));
                 return;
             }
             if (!game.AllPlayersAnswered()) return;
@@ -166,13 +169,6 @@ public sealed class CoupleQuizRoundDirector : IDisposable
         }
 
         await CompleteRoundAsync(roundToComplete, cancellationToken);
-    }
-
-    public async Task BroadcastLobbyAsync()
-    {
-        if (_sessions.GetLobbyReadyState() is not { } state) return;
-        await _hub.Clients.All.LobbyUpdated(new LobbyUpdatedPayload(
-            state.Players, state.ReadyPlayers, state.HostName, state.MaxRounds, state.TopicPack));
     }
 
     // ── Round transitions ───────────────────────────────────────────────────

@@ -36,7 +36,7 @@ namespace PoMiniGames.Shared.Games;
 [JsonSerializable(typeof(PoBrawlMatchResult))]
 [JsonSerializable(typeof(PoBrawlMatchClock))]
 // PoCabinet lobby + race
-[JsonSerializable(typeof(PoCabinetLobbyView))]
+[JsonSerializable(typeof(LobbyState<PoCabinetLobbyPlayer>))]
 [JsonSerializable(typeof(PoCabinetRaceSnapshot))]
 [JsonSerializable(typeof(PoCabinetFinalResult))]
 [JsonSerializable(typeof(PoCabinetInput))]
@@ -53,6 +53,9 @@ namespace PoMiniGames.Shared.Games;
 [JsonSerializable(typeof(PoRacerInput))]
 [JsonSerializable(typeof(PoRacerJoinOptions))]
 [JsonSerializable(typeof(List<PoRacerCarInfo>))]
+// Quiz lobbies (Fun Quiz, Couple Quiz)
+[JsonSerializable(typeof(LobbyState<FunQuizLobbyPlayer>))]
+[JsonSerializable(typeof(LobbyState<CoupleQuizLobbyPlayer>))]
 // PoVoxelStrike lockstep
 [JsonSerializable(typeof(PoVoxelStrikeLockstepSessionInfo))]
 [JsonSerializable(typeof(PoVoxelStrikeLockstepFrame))]

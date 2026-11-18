@@ -7,6 +7,8 @@
 @inject PlayerNameService PlayerNameService
 @inject MatchHistoryService MatchHistory
 @inject GameResultService GameResults
+@inject ToastService Toasts
+@inject NavigationManager Navigation
 @implements IAsyncDisposable
 
 @* The match ends on the shared end-of-game modal every other game uses, with the
@@ -36,7 +38,7 @@
         {
             <div class="cq-gameover">
                 <h2 class="gps-phase-h">You haven't joined a game yet</h2>
-                <p>This page is only useful mid-round. Join the lobby and the match starts once everyone is ready.</p>
+                <p>This page is only useful mid-round. Join the lobby; the host starts the match.</p>
                 <a class="app-btn app-btn--primary" href="/couplequiz">Go to the lobby <span class="material-symbols-outlined" aria-hidden="true">arrow_forward</span></a>
             </div>
         }
@@ -148,8 +150,7 @@
     private CoupleQuizRoundResultPayload? _lastResult;
     private CoupleQuizGameOverPayload? _gameOver;
 
-    // If no game starts within 4s of landing here, show
-    // the lobby redirect hint instead of an infinite spinner.
+    // Landed here with no lobby behind it: show the lobby redirect hint instead of a spinner.
     private bool _showLobbyHint;
     private CancellationTokenSource? _lobbyHintCts;
     private string? _connectionError;
@@ -167,15 +168,27 @@
         Hub.OnGameError += HandleGameError;
         await ConnectAsync();
 
-        // GameStarted fired while the lobby was still mounted (it drove the navigation
-        // here), so we won't see it as a live event. Hydrate from the buffered payload.
-        if (Hub.LastGameStarted is not null)
+        // The lobby handed us the match it reserved (its internal code) and the name it seated
+        // us under. Claim the seat; the match begins once the other player has too.
+        if (Hub.TakePendingMatch() is { } pending && _connectionError is null)
         {
-            HandleGameStarted(Hub.LastGameStarted);
+            _playerName = pending.PlayerName;
+            _lobbyHintCts = new CancellationTokenSource();
+            _ = MatchJoinGuard.WatchAsync(() => _game is null, BackToLobbyAsync, _lobbyHintCts.Token);
+            try
+            {
+                await Hub.JoinMatchAsync(pending.MatchCode, pending.PlayerName);
+            }
+            catch (Exception ex)
+            {
+                _connectionError = $"Could not join the match: {ex.Message}";
+            }
         }
-
-        _lobbyHintCts = new CancellationTokenSource();
-        _ = WatchForLobbyHintAsync(_lobbyHintCts.Token);
+        else if (_connectionError is null)
+        {
+            // Landed here without a lobby (deep-link or refresh): point back at it.
+            _showLobbyHint = true;
+        }
     }
 
     private async Task ConnectAsync()
@@ -197,18 +210,13 @@
         }
     }
 
-    private async Task WatchForLobbyHintAsync(CancellationToken ct)
+    // The other player never claimed their seat (closed the tab after Start): the shared rule
+    // is a toast and back to the lobby.
+    private Task BackToLobbyAsync()
     {
-        try
-        {
-            await Task.Delay(TimeSpan.FromSeconds(4), ct);
-            if (_game is null && !ct.IsCancellationRequested)
-            {
-                _showLobbyHint = true;
-                await InvokeAsync(StateHasChanged);
-            }
-        }
-        catch (TaskCanceledException) { /* expected when the game starts */ }
+        Toasts.Show("Your opponent didn't make it. Back to the lobby.", ToastType.Warning);
+        Navigation.NavigateTo("/couplequiz");
+        return Task.CompletedTask;
     }
 
     // SignalR `.On` callbacks run outside Blazor's render loop, so each handler marshals
@@ -216,6 +224,7 @@
     // invoked synchronously from OnInitializedAsync for the buffered payload — harmless there.)
     private void HandleGameStarted(CoupleQuizGameStartedPayload p)
     {
+        _lobbyHintCts?.Cancel();
         _game = p;
         _maxRounds = p.MaxRounds;
         BeginRound(p.RoundIndex, p.KingPlayerName, p.QuestionText);
@@ -276,10 +285,6 @@
     // Record a head-to-head result against every other player, scored by final points.
     private async Task RecordOutcomesAsync(CoupleQuizGameOverPayload p)
     {
-        _lobbyHintCts?.Cancel();
-        _lobbyHintCts?.Dispose();
-        _lobbyHintCts = null;
-
         // Every player is on the scoreboard now. This used to bail here for the King,
         // who was excluded from FinalScores entirely and so finished every match with no
         // match-history row and no profile result.

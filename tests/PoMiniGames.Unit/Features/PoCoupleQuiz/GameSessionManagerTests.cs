@@ -5,80 +5,95 @@ namespace PoMiniGames.Unit.Features.PoCoupleQuiz;
 
 /// <summary>
 /// Unit tests for the in-memory game session manager — the authoritative
-/// state holder for the single PoCoupleQuiz lobby (state does NOT survive restarts).
+/// state holder for the one live PoCoupleQuiz match (state does NOT survive restarts).
 /// </summary>
 /// <remarks>
 /// <para>The scenarios share one <c>[Theory]</c> to stay inside the test-count cap.
-/// Host-only enforcement is asserted against <c>SetMaxRounds</c>, the one host-gated setting.</para>
+/// Pairing is the lobby's job: the manager reserves a match for the lobby's seat names
+/// (<c>Reserve</c>) and seats whoever claims one (<c>JoinMatch</c>).</para>
 /// <para>The scoreboard test asserts the King is INCLUDED. See
 /// <see cref="Game.CurrentKingPlayerIndex"/> for why excluding the King is wrong.</para>
 /// </remarks>
 public sealed class GameSessionManagerTests
 {
-    private static readonly string[] ExpectedReadyPlayers = ["Alice", "Bob"];
-    /// <summary>A lobby with the given names, in join order. The first is the host.</summary>
-    private static GameSessionManager LobbyOf(params string[] names)
+    /// <summary>A match with the given seat names, all claimed in order (host first) as conn1, conn2, …</summary>
+    private static GameSessionManager MatchOf(params string[] names) => MatchOf(Game.DefaultRounds, names);
+
+    private static GameSessionManager MatchOf(int rounds, params string[] names)
     {
         var mgr = new GameSessionManager();
+        var code = mgr.Reserve(names, rounds, "Classic")!;
         for (var i = 0; i < names.Length; i++)
         {
-            mgr.Join($"conn{i + 1}", names[i], out _);
+            mgr.JoinMatch($"conn{i + 1}", code, names[i]);
         }
         return mgr;
     }
 
-    // ─── Lobby membership ───────────────────────────────────────────────
+    // ─── Match membership ───────────────────────────────────────────────
 
     /// <summary>
     /// Each row runs one scenario: a private method below, named after what it checks.
     /// </summary>
     [Theory]
-    [InlineData(nameof(Join_OpensOneLobby_ReusesIt_AndDisambiguatesNames))]
-    [InlineData(nameof(RemovePlayer_PrunesTheLiveRoster_AndClosesTheLobbyWhenTheLastPlayerLeaves))]
+    [InlineData(nameof(Reserve_OpensOneMatch_SeatsOnlyReservedNames_AndNormalisesSettings))]
+    [InlineData(nameof(RemovePlayer_PrunesTheLiveRoster_AndClosesTheMatchWhenTheLastPlayerLeaves))]
     [InlineData(nameof(GameLifecycle_StartAndAdvanceRound_IncrementsRoundAndRotatesKing))]
     [InlineData(nameof(RoundCompletion_RoutesTheKingToTheSecret_WaitsForGuesses_AndAppliesScores))]
-    [InlineData(nameof(ReadyState_NeedsEnoughPlayers_AndResetToLobbyKeepsThem))]
+    [InlineData(nameof(Reserve_IsRefusedWhileAMatchIsLive_AndReopensOnceItFinished))]
     [InlineData(nameof(Game_ScoreboardIncludesEveryPlayer))]
-    [InlineData(nameof(TopicPack_IsHostOnlyAndValidated))]
     public Task Scenario(string name) => Scenarios.RunAsync(this, name);
 
-    private static void Join_OpensOneLobby_ReusesIt_AndDisambiguatesNames()
+    private static void Reserve_OpensOneMatch_SeatsOnlyReservedNames_AndNormalisesSettings()
     {
         var mgr = new GameSessionManager();
 
-        var first = mgr.Join("conn1", "Alice", out var created);
-        created.Should().BeTrue();
-        first.HostConnectionId.Should().Be("conn1");
-        first.State.Should().Be(SessionState.Waiting);
-        first.MaxRounds.Should().Be(Game.DefaultRounds);
+        var code = mgr.Reserve(["Alice", "Bob"], 7, "worldtravel")!;
+        code.Should().NotBeNullOrEmpty();
+        var session = mgr.Current!;
+        session.State.Should().Be(SessionState.Waiting);
+        session.MaxRounds.Should().Be(7);
+        session.TopicPack.Should().Be("WorldTravel");
 
-        var second = mgr.Join("conn2", "Bob", out var createdAgain);
-        createdAgain.Should().BeFalse();
-        second.Should().BeSameAs(first, "there is exactly one lobby per process");
+        // One match at a time: a second reservation is refused while this one is fresh.
+        mgr.Reserve(["Carla", "Dan"], 5, "Classic").Should().BeNull();
 
-        // Two guests from one browser share a "Guest######" identity, and the name is the
-        // scoring key — a collision would collapse both players into one row.
-        var third = mgr.Join("conn3", "bob", out _);
-        third.Players.Select(p => p.Name).Should().Equal("Alice", "Bob", "bob (2)");
+        // A stale code, a name nobody reserved, and a taken seat are refused.
+        mgr.JoinMatch("conn1", "match-nope", "Alice").Should().BeNull();
+        mgr.JoinMatch("conn3", code, "Carla").Should().BeNull();
+
+        // The guest can claim first; seat order is still the lobby's (host first, King of round 0).
+        var guest = mgr.JoinMatch("conn2", code, "Bob")!.Value;
+        guest.AllSeated.Should().BeFalse();
+        var host = mgr.JoinMatch("conn1", code, "Alice")!.Value;
+        host.AllSeated.Should().BeTrue();
+        host.Session.Should().BeSameAs(session);
+        session.Players.Select(p => p.Name).Should().Equal("Alice", "Bob");
+        mgr.JoinMatch("conn9", code, "Alice").Should().BeNull("the seat is taken");
+
+        // A value off the menu falls back to the defaults rather than failing the start.
+        var other = new GameSessionManager();
+        other.Reserve(["Alice", "Bob"], 4, "NotARealPack");
+        other.Current!.MaxRounds.Should().Be(Game.DefaultRounds);
+        other.Current.TopicPack.Should().Be("Classic");
     }
 
     [Theory]
-    [InlineData("conn2", "conn1")] // non-host leaves → host unchanged
-    [InlineData("conn1", "conn2")] // host leaves → conn2 promoted
-    public void RemovePlayer_PromotesANewHostWhenTheHostLeaves(string leaverConn, string expectedHostConn)
+    [InlineData("conn2", "Alice")] // one seat leaves, the other stays
+    [InlineData("conn1", "Bob")]
+    public void RemovePlayer_KeepsTheMatchForTheRemainingSeat(string leaverConn, string remaining)
     {
-        var mgr = LobbyOf("Alice", "Bob");
+        var mgr = MatchOf("Alice", "Bob");
 
         mgr.RemovePlayer(leaverConn, out var sessionEmpty);
 
         sessionEmpty.Should().BeFalse();
-        mgr.Current.Should().NotBeNull();
-        mgr.Current!.HostConnectionId.Should().Be(expectedHostConn);
+        mgr.Current!.Players.Select(p => p.Name).Should().Equal(remaining);
     }
 
-    private static void RemovePlayer_PrunesTheLiveRoster_AndClosesTheLobbyWhenTheLastPlayerLeaves()
+    private static void RemovePlayer_PrunesTheLiveRoster_AndClosesTheMatchWhenTheLastPlayerLeaves()
     {
-        var mgr = LobbyOf("Alice", "Bob", "Carla");
+        var mgr = MatchOf("Alice", "Bob", "Carla");
         var game = mgr.StartGame("Q?", "Hobbies");
 
         // A leaver must also leave the Game's roster, or AllPlayersAnswered waits forever on
@@ -101,8 +116,7 @@ public sealed class GameSessionManagerTests
         var act = () => empty.StartGame("Q?", "Hobbies");
         act.Should().Throw<InvalidOperationException>();
 
-        var mgr = LobbyOf("Alice", "Bob");
-        mgr.SetMaxRounds("conn1", 7);
+        var mgr = MatchOf(7, "Alice", "Bob");
 
         var game = mgr.StartGame("What is Alice's favorite color?", "Preferences");
 
@@ -119,7 +133,7 @@ public sealed class GameSessionManagerTests
 
     private static void RoundCompletion_RoutesTheKingToTheSecret_WaitsForGuesses_AndAppliesScores()
     {
-        var mgr = LobbyOf("Alice", "Bob", "Carla"); // Alice is King for round 0
+        var mgr = MatchOf("Alice", "Bob", "Carla"); // Alice is King for round 0
         var game = mgr.StartGame("Q?", "Hobbies");
         var q = game.CurrentQuestion!;
 
@@ -150,52 +164,34 @@ public sealed class GameSessionManagerTests
         bob.TotalRoundsPlayed.Should().Be(1);
     }
 
-    // ─── Lobby orchestration ────────────────────────────────────────────
+    // ─── Match orchestration ────────────────────────────────────────────
 
-    private static void ReadyState_NeedsEnoughPlayers_AndResetToLobbyKeepsThem()
+    private static void Reserve_IsRefusedWhileAMatchIsLive_AndReopensOnceItFinished()
     {
-        var mgr = LobbyOf("Alice");
-
-        // One ready player out of one is NOT a startable match. The old BuildReadyState
-        // reported AllReady here and left the minimum-player check to every caller.
-        mgr.MarkPlayerReady("conn1")!.AllReady.Should().BeFalse();
-
-        mgr.Join("conn2", "Bob", out _);
-        mgr.MarkPlayerReady("conn2");
-        var ready = mgr.GetLobbyReadyState()!;
-        ready.AllReady.Should().BeTrue();
-        ready.ReadyPlayers.Should().BeEquivalentTo(ExpectedReadyPlayers);
-
+        var mgr = MatchOf("Alice", "Bob");
         mgr.StartGame("Q?", "Hobbies");
-        mgr.FinishGame();
-        var reset = mgr.ResetToLobby()!;
+        mgr.Reserve(["Carla", "Dan"], 5, "Classic").Should().BeNull("a match is in progress");
 
-        reset.Players.Should().Equal("Alice", "Bob");
-        reset.ReadyPlayers.Should().BeEmpty();
+        mgr.FinishGame();
+        var again = mgr.Reserve(["Carla", "Dan"], 3, "Classic");
+
+        again.Should().NotBeNull();
         mgr.Current!.State.Should().Be(SessionState.Waiting);
         mgr.Current.ActiveGame.Should().BeNull();
+        mgr.Current.Players.Should().BeEmpty();
+        mgr.Current.MaxRounds.Should().Be(3);
     }
 
     [Theory]
-    [InlineData("conn1", 7, true)]  // host, legal value
-    [InlineData("conn2", 7, false)] // non-host
-    [InlineData("conn1", 4, false)] // host, value not on the menu
-    public void SetMaxRounds_IsHostOnlyAndValidated(string actingConn, int rounds, bool expectApplied)
+    [InlineData(7, 7)] // legal value
+    [InlineData(3, 3)] // legal value
+    [InlineData(4, 5)] // not on the menu: the default
+    public void Reserve_UsesAllowedRoundCountsOnly(int rounds, int expected)
     {
-        var mgr = LobbyOf("Alice", "Bob");
+        var mgr = MatchOf(rounds, "Alice", "Bob");
 
-        var updated = mgr.SetMaxRounds(actingConn, rounds);
-
-        if (expectApplied)
-        {
-            updated.Should().NotBeNull();
-            updated!.MaxRounds.Should().Be(rounds);
-        }
-        else
-        {
-            updated.Should().BeNull();
-            mgr.Current!.MaxRounds.Should().Be(Game.DefaultRounds);
-        }
+        mgr.Current!.MaxRounds.Should().Be(expected);
+        mgr.StartGame("Q?", "Hobbies").MaxRounds.Should().Be(expected);
     }
 
     // ─── Game scoring ───────────────────────────────────────────────────
@@ -215,17 +211,6 @@ public sealed class GameSessionManagerTests
         var board = game.GetScoreboard();
         board.Keys.Should().Equal("Alice", "Carla", "Bob");
         board.Values.Should().Equal(20, 12, 8);
-    }
-
-    private static void TopicPack_IsHostOnlyAndValidated()
-    {
-        var mgr = LobbyOf("Alice", "Bob");
-        mgr.SetTopicPack("conn2", "WordSync").Should().BeNull("only host can change topic pack");
-        mgr.SetTopicPack("conn1", "NotARealPack").Should().BeNull("unknown pack is rejected");
-
-        var updated = mgr.SetTopicPack("conn1", "worldtravel");
-        updated.Should().NotBeNull();
-        updated!.TopicPack.Should().Be("WorldTravel");
     }
 
     [Theory]

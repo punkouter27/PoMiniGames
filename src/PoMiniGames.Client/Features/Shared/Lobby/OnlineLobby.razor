@@ -1,0 +1,155 @@
+@namespace PoMiniGamesClient.Features.Shared
+@using Microsoft.AspNetCore.SignalR.Client
+@using PoMiniGames.Shared.Games
+@using PoMiniGamesClient.Services.Http
+@using PoMiniGamesClient.Services.Play
+@using PoMiniGamesClient.Services.Ui
+@typeparam TPlayer where TPlayer : ILobbyPlayer
+@inject ApiEndpoints Endpoints
+@inject PlayerNameService PlayerNames
+@inject ToastService Toasts
+@implements IAsyncDisposable
+
+@* ─────────────────────────────────────────────────────────────────────────
+   OnlineLobby — every game's online mode, end to end (owner rule 2026-11-18: one shared lobby
+   per game, no codes). It owns the lobby connection (LobbyClient: connect, take a seat, re-join
+   after a reconnect), renders the shared LobbyPanel, and wires Ready / Start / Leave / Reconnect.
+   When the host starts, it hands the page the internal match code (OnGameStarted) and the page
+   swaps to its game; the page never touches the hub plumbing.
+
+   A game supplies only what is its own: the lobby hub path, the start label, the host's
+   settings (Picker), per-player badges or actions, and what to do with the match. Game-specific
+   hub calls (a map pick, a fighter pick) go through the LobbyClient handed out by OnClient.
+   Server side every lobby is a LobbyHub + LobbyRoom.
+   ───────────────────────────────────────────────────────────────────────── *@
+<LobbyPanel TPlayer="TPlayer"
+            State="@_client?.State"
+            LocalConnectionId="@(_client?.ConnectionId ?? "")"
+            ConnectionState="@(_client?.ConnectionState ?? HubConnectionState.Connecting)"
+            Hint="@Hint"
+            MaxPlayersHint="@MaxPlayersHint"
+            StartLabel="@StartLabel"
+            CanStart="@CanStart"
+            WaitingHint="@WaitingHint"
+            CanReady="@CanReady"
+            HostReadies="@HostReadies"
+            ShowReady="@ShowReady"
+            ShowStart="@ShowStart"
+            HowTo="@HowTo"
+            PlayerLabel="@PlayerLabel"
+            PlayerBadges="@PlayerBadges"
+            PlayerActions="@PlayerActions"
+            Picker="@Picker"
+            PickerTitle="@PickerTitle"
+            Status="@Status"
+            ExtraActions="@ExtraActions"
+            OnReady="ReadyAsync"
+            OnStart="StartAsync"
+            OnLeave="LeaveAsync"
+            OnReconnect="ReconnectAsync" />
+
+@code {
+    /// <summary>The game's lobby hub, relative to the API base (e.g. <c>poracer/lobby-hub</c>).</summary>
+    [Parameter, EditorRequired] public string HubPath { get; set; } = "";
+    [Parameter, EditorRequired] public string StartLabel { get; set; } = "Start";
+    [Parameter] public string Hint { get; set; } = "One shared room — the first to arrive hosts.";
+    [Parameter] public int MaxPlayersHint { get; set; } = 2;
+    [Parameter] public bool? CanStart { get; set; }
+    [Parameter] public string WaitingHint { get; set; } = "Waiting for everyone to mark Ready…";
+    [Parameter] public bool CanReady { get; set; } = true;
+    [Parameter] public bool HostReadies { get; set; }
+    [Parameter] public bool ShowReady { get; set; } = true;
+    [Parameter] public bool ShowStart { get; set; } = true;
+    [Parameter] public RenderFragment? HowTo { get; set; }
+    [Parameter] public RenderFragment<TPlayer>? PlayerLabel { get; set; }
+    [Parameter] public RenderFragment<TPlayer>? PlayerBadges { get; set; }
+    [Parameter] public RenderFragment<TPlayer>? PlayerActions { get; set; }
+    [Parameter] public RenderFragment? Picker { get; set; }
+    [Parameter] public string? PickerTitle { get; set; }
+    [Parameter] public RenderFragment? Status { get; set; }
+    [Parameter] public RenderFragment? ExtraActions { get; set; }
+
+    /// <summary>The live client, once created: game-specific hub calls and the current state.</summary>
+    [Parameter] public EventCallback<LobbyClient<TPlayer>> OnClient { get; set; }
+    /// <summary>Every roster/state broadcast (a page mirrors the host's picks from it).</summary>
+    [Parameter] public EventCallback<LobbyState<TPlayer>> OnStateChanged { get; set; }
+    /// <summary>The host started: the internal match code and whether this browser hosted.</summary>
+    [Parameter, EditorRequired] public EventCallback<OnlineLobbyStart> OnGameStarted { get; set; }
+    /// <summary>The player left the lobby (after the seat is given up). Default: the page decides.</summary>
+    [Parameter] public EventCallback OnLeave { get; set; }
+
+    private LobbyClient<TPlayer>? _client;
+    private bool _started;
+    private bool _disposed;
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (!firstRender) return;
+        _client = new LobbyClient<TPlayer>(Endpoints, HubPath);
+        _client.StateChanged += s => _ = InvokeAsync(async () => { await OnStateChanged.InvokeAsync(s); StateHasChanged(); });
+        _client.ConnectionChanged += state => _ = InvokeAsync(StateHasChanged);
+        _client.GameStarted += code => _ = InvokeAsync(() => HandleStartedAsync(code));
+        _client.ReconnectFailed += error => _ = InvokeAsync(() => Toasts.Show("Lost the lobby. Tap Reconnect.", ToastType.Warning));
+        await OnClient.InvokeAsync(_client);
+        await JoinAsync();
+    }
+
+    private async Task JoinAsync()
+    {
+        if (_client is null || _disposed) return;
+        try
+        {
+            await PlayerNames.InitializeAsync();
+            var name = PlayerNames.GetPlayerName();
+            await _client.ConnectAndJoinAsync(string.IsNullOrWhiteSpace(name) ? "Player" : name.Trim(), isGuest: false);
+        }
+        catch (Exception)
+        {
+            Toasts.Show("Couldn't reach the lobby. Tap Reconnect.", ToastType.Warning);
+        }
+        StateHasChanged();
+    }
+
+    private async Task HandleStartedAsync(string code)
+    {
+        if (_started || _disposed) return;
+        _started = true;
+        await OnGameStarted.InvokeAsync(new OnlineLobbyStart(code, _client?.IsHost == true));
+    }
+
+    private Task ReadyAsync() => _client?.ToggleReadyAsync() ?? Task.CompletedTask;
+
+    private async Task StartAsync()
+    {
+        if (_client is null) return;
+        try { await _client.StartGameAsync(); }
+        catch (Exception) { Toasts.Show("Couldn't start. Try again.", ToastType.Warning); }
+    }
+
+    private async Task ReconnectAsync()
+    {
+        if (_client is null) return;
+        try { await _client.ReconnectAsync(); }
+        catch (Exception) { Toasts.Show("Still can't reach the lobby.", ToastType.Warning); }
+        StateHasChanged();
+    }
+
+    private async Task LeaveAsync()
+    {
+        if (_client is not null) await _client.LeaveLobbyAsync();
+        await OnLeave.InvokeAsync();
+    }
+
+    public async ValueTask DisposeAsync()
+    {
+        if (_disposed) return;
+        _disposed = true;
+        var client = _client;
+        _client = null;
+        if (client is null) return;
+        // Leaving before a start gives the seat back at once; after a start the room has
+        // already ended and the hub's disconnect does the rest.
+        if (!_started) await client.LeaveLobbyAsync();
+        await client.DisposeAsync();
+    }
+}

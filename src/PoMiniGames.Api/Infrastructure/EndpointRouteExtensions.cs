@@ -103,6 +103,8 @@ internal static class EndpointRouteExtensions
         // ── SignalR hubs (identity from the playerId/initials query) ──────
         app.MapHub<CoupleQuizHub>("/couplequiz/hubs/game");
         app.MapHub<FunQuizHub>("/funquiz/gamehub");
+        app.MapHub<FunQuizLobbyHub>("/funquiz/lobby-hub");
+        app.MapHub<CoupleQuizLobbyHub>("/couplequiz/lobby-hub");
         app.MapHub<PoRacerLobbyHub>("/poracer/lobby-hub");
         app.MapHub<PoRacerRaceHub>("/poracer/race-hub");
         app.MapHub<PoCabinetLobbyHub>("/pocabinet/lobby-hub");

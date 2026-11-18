@@ -101,11 +101,11 @@ public sealed class PoRacerUiTests(KestrelServerFixture fixture)
         // Each browser opens on the game's card; its button is what takes the lobby seat.
         await host.GotoAsync(url);
         await host.GetByRole(AriaRole.Button, new() { Name = "OK", Exact = true }).ClickAsync(new() { Timeout = 60000 });
-        await host.GetByRole(AriaRole.Button, new() { Name = "Start Race", Exact = true }).WaitForAsync(new() { Timeout = 60000 });
+        await host.GetByRole(AriaRole.Button, new() { Name = "Start race", Exact = true }).WaitForAsync(new() { Timeout = 60000 });
         await guest.GotoAsync(url);
         await guest.GetByRole(AriaRole.Button, new() { Name = "OK", Exact = true }).ClickAsync(new() { Timeout = 60000 });
         await guest.GetByRole(AriaRole.Button, new() { Name = "Ready!", Exact = true }).ClickAsync(new() { Timeout = 60000 });
-        await host.GetByRole(AriaRole.Button, new() { Name = "Start Race", Exact = true }).ClickAsync();
+        await host.GetByRole(AriaRole.Button, new() { Name = "Start race", Exact = true }).ClickAsync();
         foreach (var page in new[] { host, guest })
         {
             await page.Locator(".race-metrics").WaitForAsync(new() { Timeout = 30000 });

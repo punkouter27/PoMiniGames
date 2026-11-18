@@ -19,6 +19,16 @@
         {
             <canvas id="pocabinetUiBg" class="pocabinet-ui-bg" aria-hidden="true"></canvas>
         }
+        @if (IsMultiplayerMode && _phase != Phase.Start)
+        {
+            @* Mounted from the lobby on, hidden while the race runs: its connection (and so the roster
+               and the rematch) outlives the race. Leaving to the start card unmounts it, which leaves. *@
+            <div hidden="@(_phase != Phase.Lobby)">
+                <PoCabinetLobby InitialTrackId="@_trackId" Color="@PlayerColorHex"
+                                OnRaceStarting="OnLobbyRaceStartingAsync" OnExit="LeaveLobbyAsync"
+                                OnOpenSettings="OpenDrawerAsync" Notice="@_lobbyNotice" />
+            </div>
+        }
         @if (_phase == Phase.Start)
         {
             @* The shared opening card, like every other game. Not until the stored
@@ -45,9 +55,7 @@
         }
         else if (_phase == Phase.Lobby)
         {
-            <PoCabinetLobby InitialTrackId="@_trackId" Color="@PlayerColorHex"
-                            OnRaceStarting="OnLobbyRaceStartingAsync" OnExit="LeaveLobbyAsync"
-                            OnOpenSettings="OpenDrawerAsync" Notice="@_lobbyNotice" />
+            @* The lobby is mounted above, visible. *@
         }
         else if (_phase == Phase.Failed)
         {
