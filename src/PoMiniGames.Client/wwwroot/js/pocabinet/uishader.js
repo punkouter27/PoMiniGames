@@ -5,6 +5,9 @@
 // shockwaves. Uses a zero-copy WebGPU WGSL render pipeline when navigator.gpu succeeds (mode
 // 'auto' or 'webgpu'), falling back seamlessly to WebGL2 GLSL.
 
+import { createShaderQuad } from '../platform/2d/shaderQuad.js';
+import { bindCanvas } from '../platform/2d/canvas2d.js';
+
 const WGSL_UI = /* wgsl */`
 struct Uniforms {
     resTime : vec4<f32>,   // width, height, timeSec, pulse
@@ -86,14 +89,6 @@ fn fsMain(in: VsOut) -> @location(0) vec4<f32> {
 }
 `;
 
-const GLSL_VERT = `#version 300 es
-out vec2 vUv;
-void main() {
-    vec2 p = vec2(gl_VertexID == 1 ? 3.0 : -1.0, gl_VertexID == 2 ? 3.0 : -1.0);
-    vUv = p * 0.5 + 0.5;
-    gl_Position = vec4(p, 0.0, 1.0);
-}`;
-
 const GLSL_FRAG = `#version 300 es
 precision highp float;
 in vec2 vUv;
@@ -152,51 +147,17 @@ void main() {
 let active = null;
 
 function createWebGL2Pass(canvas) {
-    const gl = canvas.getContext('webgl2', { alpha: false, antialias: false, depth: false, stencil: false, powerPreference: 'low-power' });
-    if (!gl) return null;
-    const compile = (type, src) => {
-        const s = gl.createShader(type);
-        gl.shaderSource(s, src);
-        gl.compileShader(s);
-        if (!gl.getShaderParameter(s, gl.COMPILE_STATUS)) {
-            gl.deleteShader(s);
-            return null;
-        }
-        return s;
-    };
-    const vs = compile(gl.VERTEX_SHADER, GLSL_VERT);
-    const fs = compile(gl.FRAGMENT_SHADER, GLSL_FRAG);
-    if (!vs || !fs) return null;
-    const prog = gl.createProgram();
-    gl.attachShader(prog, vs);
-    gl.attachShader(prog, fs);
-    gl.linkProgram(prog);
-    gl.deleteShader(vs);
-    gl.deleteShader(fs);
-    if (!gl.getProgramParameter(prog, gl.LINK_STATUS)) {
-        gl.deleteProgram(prog);
-        return null;
-    }
-    const vao = gl.createVertexArray();
-    const uResTime = gl.getUniformLocation(prog, 'uResTime');
-    const uPointer = gl.getUniformLocation(prog, 'uPointer');
-    const uRipple = gl.getUniformLocation(prog, 'uRipple');
-
+    const quad = createShaderQuad(canvas, { frag: GLSL_FRAG });
+    if (!quad) return null;
     return {
         backend: 'webgl2',
-        draw(uData, w, h) {
-            gl.viewport(0, 0, w, h);
-            gl.useProgram(prog);
-            gl.bindVertexArray(vao);
-            gl.uniform4f(uResTime, uData[0], uData[1], uData[2], uData[3]);
-            gl.uniform4f(uPointer, uData[4], uData[5], uData[6], uData[7]);
-            gl.uniform4f(uRipple, uData[8], uData[9], uData[10], uData[11]);
-            gl.drawArrays(gl.TRIANGLES, 0, 3);
+        draw(u, w, h) {
+            quad.set('uResTime', u[0], u[1], u[2], u[3]);
+            quad.set('uPointer', u[4], u[5], u[6], u[7]);
+            quad.set('uRipple', u[8], u[9], u[10], u[11]);
+            quad.draw(w, h);
         },
-        dispose() {
-            gl.deleteVertexArray(vao);
-            gl.deleteProgram(prog);
-        },
+        dispose: () => quad.dispose(),
     };
 }
 
@@ -271,7 +232,6 @@ export async function mountUiShader(canvasId, mode = 'auto') {
         pass: null,
         backend: 'none',
         raf: 0,
-        ro: null,
         disposed: false,
         t0: performance.now(),
         px: 0.5, py: 0.35, tx: 0.5, ty: 0.35,
@@ -281,14 +241,11 @@ export async function mountUiShader(canvasId, mode = 'auto') {
     };
     active = state;
 
-    const resize = () => {
-        if (state.disposed) return;
-        const rect = canvas.getBoundingClientRect();
-        const dpr = Math.min(1.5, window.devicePixelRatio || 1);
-        canvas.width = Math.max(2, Math.round((rect.width || window.innerWidth || 800) * dpr));
-        canvas.height = Math.max(2, Math.round((rect.height || window.innerHeight || 600) * dpr));
-    };
-    resize();
+    // Sized through the shared DPR policy (this backdrop's own 1.5x cap, no pixel budget).
+    state.bound = bindCanvas(canvas, {
+        context: 'none', maxDpr: 1.5, maxPixels: 1e9,
+        onResize: (v) => { canvas.width = Math.max(2, v.w); canvas.height = Math.max(2, v.h); },
+    });
 
     const reduced = window.matchMedia?.('(prefers-reduced-motion: reduce)')?.matches;
 
@@ -309,19 +266,10 @@ export async function mountUiShader(canvasId, mode = 'auto') {
     };
     root.addEventListener('pointermove', onMove, { passive: true });
     root.addEventListener('pointerdown', onDown, { passive: true });
-    if (typeof ResizeObserver === 'function') {
-        let roRaf = 0;
-        state.ro = new ResizeObserver(() => {
-            if (roRaf) cancelAnimationFrame(roRaf);
-            roRaf = requestAnimationFrame(() => { roRaf = 0; resize(); });
-        });
-        state.ro.observe(canvas);
-    }
-
     state.cleanupListeners = () => {
         root.removeEventListener('pointermove', onMove);
         root.removeEventListener('pointerdown', onDown);
-        state.ro?.disconnect();
+        state.bound.dispose();
     };
 
     if (state.mode !== 'webgl') {

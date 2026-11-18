@@ -42,6 +42,7 @@ import { createParticles } from './particles.js';
 import { createEventFx } from './eventFx.js';
 import { createDirector } from './director.js';
 import { createPip } from './pip.js';
+import { createStage } from '../../platform/stage/stage.js';
 import { createSky } from './sky.js';
 import { materialClock, materialCloud, materialDetail, materialSeason, materialSnow, materialWet, materialSky } from './materials.js';
 import { applyCameraShake } from './impact.js';
@@ -306,13 +307,11 @@ export function createRenderer(container, {
     camera.aspect = w / h;
     camera.updateProjectionMatrix();
   }
-  resize();
-  // Deferred: resize() sets the renderer size, which changes the container it is
-  // observing — doing that synchronously logs "ResizeObserver loop completed with
-  // undelivered notifications" on every mount.
-  const observer = new ResizeObserver(() => requestAnimationFrame(resize));
-  observer.observe(container);
-  window.addEventListener('resize', resize);
+  // The shared stage owns the measuring only: a loop-safe (deferred) ResizeObserver plus the
+  // window resize, torn down by stage.dispose(). The rAF loop stays here: pip.js re-routes it
+  // to the Picture-in-Picture window's clock per frame, and the adaptive DPR below sets its own
+  // pixel ratio, so no renderer attach (which would size at the stage's DPR) and no pause source.
+  const stage = createStage({ kind: '3d', container, pauseOn: [], exclude: ['shake'], onResize: resize });
 
   /**
    * Adaptive resolution (GFX option 9). onFps was already plumbed but only ever fed a
@@ -1082,8 +1081,7 @@ export function createRenderer(container, {
       for (const id of howlTimers) clearTimeout(id);
       howlTimers.clear();
       grass?.dispose(); trails?.dispose();
-      observer.disconnect();
-      window.removeEventListener('resize', resize);
+      stage.dispose();
       input.dispose();
       pip.dispose();
       scene.remove(campfireLight);

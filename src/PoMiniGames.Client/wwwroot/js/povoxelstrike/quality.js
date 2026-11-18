@@ -15,6 +15,7 @@
 // Structural debris, scoring, masses and the physics timestep remain unchanged.
 
 import { loadSettings } from './settings.js';
+import { createRenderer as createSharedRenderer } from '../platform/3d/renderer.js';
 
 const TIERS = ['low', 'medium', 'high', 'ultra'];
 
@@ -194,16 +195,17 @@ export class AdaptiveQuality {
 }
 
 /**
- * Build the renderer. Returns { renderer, api: 'webgpu' | 'webgl2' }.
- * WebGPU is only attempted when ?gpu=webgpu is present — see WEBGPU_STATUS.
+ * Build the renderer through the shared factory. Returns { renderer, api: 'webgpu' | 'webgl2' }.
+ * WebGPU is only attempted when ?gpu=webgpu is present (see WEBGPU_STATUS); r165 keeps its
+ * WebGPURenderer in an addon, so it is lent to the factory on a copy of the THREE namespace.
+ * `look` is the shared factory's tone / exposure / shadows / pixelRatio.
  */
-export async function createRenderer({ antialias = true } = {}) {
+export async function createRenderer(THREE, { antialias = true, ...look } = {}) {
+  const base = { antialias, powerPreference: 'default', ...look };
   if ((urlFlag('gpu') || '').toLowerCase() === 'webgpu' && WEBGPU_STATUS.supported) {
     try {
-      const { default: WebGPURenderer } =
-        await import('three/addons/renderers/webgpu/WebGPURenderer.js');
-      const renderer = new WebGPURenderer({ antialias });
-      await renderer.init();
+      const { default: WebGPURenderer } = await import('three/addons/renderers/webgpu/WebGPURenderer.js');
+      const renderer = await createSharedRenderer({ ...THREE, WebGPURenderer }, { ...base, api: 'webgpu' });
       WEBGPU_STATUS.usable = true;
       console.info('[povoxelstrike/quality] WebGPU renderer active — post-processing is '
         + 'disabled on this path (' + WEBGPU_STATUS.reason + ').');
@@ -213,6 +215,5 @@ export async function createRenderer({ antialias = true } = {}) {
         + 'falling back to WebGL2:', e);
     }
   }
-  const THREE = await import('three');
-  return { renderer: new THREE.WebGLRenderer({ antialias }), api: 'webgl2' };
+  return { renderer: await createSharedRenderer(THREE, { ...base, api: 'webgl' }), api: 'webgl2' };
 }

@@ -12,6 +12,7 @@ import { SMAAPass } from 'three/addons/postprocessing/SMAAPass.js';
 import { GTAOPass } from 'three/addons/postprocessing/GTAOPass.js';
 import { OutputPass } from 'three/addons/postprocessing/OutputPass.js';
 import * as PostFx from '../platform/postFx.js';
+import { createRenderer, attachRenderer } from '../platform/3d/renderer.js';
 import { createRaceFx } from './fx-race.js';
 import { readPref } from './store.js';
 
@@ -107,14 +108,13 @@ const GRADES = {
   loss: { tint: [0.92, 0.92, 0.96], contrast: 0.96, saturation: 0.35 },
 };
 
-export function createScene(container) {
-  const renderer = new THREE.WebGLRenderer({ antialias: false, alpha: false });
-  renderer.setPixelRatio(window.PoCanvasDpr.ceiling());   // audit #8: shared policy, js/platform/canvasDpr.js
-  renderer.setClearColor(BG, 1);
-  renderer.toneMapping = THREE.ACESFilmicToneMapping;   // #2 — filmic highlight rolloff
-  renderer.toneMappingExposure = 1.15;
-  renderer.shadowMap.enabled = true;                     // #3 — dynamic shadows
-  renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+/** The race renderer (shared factory): ACES filmic 1.15, soft shadows, no MSAA (SMAA runs in the composer). */
+export function createSceneRenderer() {
+  return createRenderer(THREE, { antialias: false, alpha: false, powerPreference: 'default', tone: 'aces', exposure: 1.15, shadows: 'pcfsoft', clearColor: BG });
+}
+
+/** @param {HTMLElement} container @param {object} renderer from createSceneRenderer @param {object} stage the game's 3D stage */
+export function createScene(container, renderer, stage) {
   // The glass marbles (marbles.js, heavy tier) render the scene once more for refraction; they
   // are small on screen, so half resolution is indistinguishable and halves that pass.
   renderer.transmissionResolutionScale = 0.5;
@@ -488,42 +488,19 @@ export function createScene(container) {
     dragging = false;
     canvas.style.cursor = 'grab';
   };
-  canvas.addEventListener('pointerdown', onPointerDown);
-  canvas.addEventListener('pointermove', onPointerMove);
-  window.addEventListener('pointerup', onPointerUp);
+  stage.listen(canvas, 'pointerdown', onPointerDown);
+  stage.listen(canvas, 'pointermove', onPointerMove);
+  stage.listen(window, 'pointerup', onPointerUp);
 
-  function resize() {
-    // Clamp the measured host to the viewport. If the host
-    // chain ever resolves content-driven (flex-basis:auto shell), sizing the
-    // buffer to the host makes the canvas attribute itself the host's content
-    // and the ResizeObserver doubles it every pass until the browser clamps
-    // at 2^26 — the page ends up 33M px tall. No legitimate render needs more
-    // than the viewport; three.js applies devicePixelRatio on top of this.
-    const capW = Math.max(320, Math.round(window.innerWidth * 1.5));
-    const capH = Math.max(320, Math.round(window.innerHeight * 1.5));
-    const w = Math.min(container.clientWidth || 800, capW);
-    const h = Math.min(container.clientHeight || 540, capH);
-    renderer.setSize(w, h, false);
-    camera.aspect = w / h;
-    camera.updateProjectionMatrix();
-    composer.setSize(w, h);
-    smaa.setSize(w, h);
-    // Both of these own internal render targets sized independently of the
-    // composer's; missing either leaves it sampling a stale buffer at the old
-    // aspect, which shows up as the AO or the bokeh being stretched.
-    if (gtao) gtao.setSize(w, h);
-    rackFocus.setSize(w, h);
-  }
-  resize();
-  window.addEventListener('resize', resize);
-  // The window resize event only fires for viewport changes — it misses the
-  // container growing/shrinking in place, which is exactly what happens when the
-  // Blazor layout settles after init (fonts, intro card unmounting, the shell's
-  // flex height). That race leaves the canvas sized for a stale first
-  // measurement. ResizeObserver covers both sources; the guard is for ancient
-  // browsers where the window listener alone still works.
-  const resizeObserver = typeof ResizeObserver !== 'undefined' ? new ResizeObserver(resize) : null;
-  resizeObserver?.observe(container);
+  // The stage measures the container (deferred ResizeObserver + window resize) and sizes the
+  // renderer, composer and camera aspect; the passes that own their own targets follow here.
+  // Both of these own internal render targets sized independently of the composer's; missing
+  // either leaves it sampling a stale buffer at the old aspect (AO / bokeh stretched).
+  const rig = attachRenderer(stage, renderer, {
+    camera, composer,
+    onResize({ cssW, cssH }) { smaa.setSize(cssW, cssH); gtao?.setSize(cssW, cssH); rackFocus.setSize(cssW, cssH); },
+  });
+  const resize = () => rig.resize();
 
   // Smoothly move the camera to orbit-and-follow `pos`. With no drag this is the default
   // above-and-behind view; left-drag adds a yaw/pitch offset that rotates around the target.
@@ -671,27 +648,13 @@ export function createScene(container) {
     render() { composer.render(); },
     resize,
     dispose() {
-      window.removeEventListener('resize', resize);
-      resizeObserver?.disconnect();
-      canvas.removeEventListener('pointerdown', onPointerDown);
-      canvas.removeEventListener('pointermove', onPointerMove);
-      window.removeEventListener('pointerup', onPointerUp);
       raceFx.dispose();
       sparkGeo.dispose();
       sparkMat.dispose();
       marbleEnv.dispose();   // PMREM render target + its texture
       rackFocus.dispose();
       gtao?.dispose?.();
-      composer.dispose();
-      renderer.dispose();
-      // …and hand the context back. dispose() only frees what three.js
-      // allocated inside it; the context survives on the detached canvas until
-      // GC runs, so hopping between the 3D games leaks one slot per visit out of
-      // the browser's ~16 (see pobrawl/game.js dispose()).
-      try { renderer.forceContextLoss?.(); } catch { /* context already gone */ }
-      if (renderer.domElement && renderer.domElement.parentNode) {
-        renderer.domElement.parentNode.removeChild(renderer.domElement);
-      }
+      composer.dispose();   // the stage disposes the renderer, hands the GL context back and removes the canvas
     },
   };
 }

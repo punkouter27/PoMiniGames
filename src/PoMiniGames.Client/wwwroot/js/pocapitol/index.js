@@ -48,7 +48,7 @@ async function init(hostId, reference) {
     // delay the scene by its own timeout.
     const [figure, osm, signs] = await Promise.all([loadFigure(), loadCampusData(), loadSigns()]);
     if (!host.isConnected) return;
-    const view = createScene(host, { figure, osm, signs });
+    const view = await createScene(host, { figure, osm, signs });
     // The app's own quality tier is a device guess made elsewhere. When it says nothing, fall back
     // to what this browser actually reports rather than assuming the best GPU.
     const caps = view.renderer?.capabilities;
@@ -62,7 +62,7 @@ async function init(hostId, reference) {
     applyViewPrefs(view, prefs);
     const g = {
         host, view, reference, state: createAttempt(), started: false, disposed: false,
-        yaw: 0, pitch: 0, keys: new Set(), firing: false, frame: 0, last: 0,
+        yaw: 0, pitch: 0, keys: new Set(), firing: false,
         notifyAt: 0, notifying: false, message: '', drag: null, edges: new ButtonEdges(), restartAt: 0,
         events: new AbortController(), audio: null, ui: null, mix: null, mixAt: 0,
         governor: createGovernor({ tier, mode: storedGraphics() }), tier, tierAt: 0,
@@ -187,8 +187,10 @@ async function init(hostId, reference) {
     listen(window, 'pointerup', () => { g.firing = false; g.drag = null; });
     listen(window, 'pointercancel', clearInput);
     // A backgrounded tab is throttled; those long frames must not be read as a slow scene and
-    // walk the quality ladder down while nobody is watching.
-    listen(document, 'visibilitychange', () => g.governor.suspend(document.hidden));
+    // walk the quality ladder down while nobody is watching. The stage pauses with the tab.
+    const stage = view.stage;
+    stage.on('pause', () => g.governor.suspend(true));
+    stage.on('resume', () => g.governor.suspend(false));
     listen(view.canvas, 'contextmenu', e => e.preventDefault());
     listen(view.canvas, 'webglcontextlost', e => {
         e.preventDefault();
@@ -224,12 +226,13 @@ async function init(hostId, reference) {
     listen(host.parentElement, 'pointerup', releaseButton);
     listen(host.parentElement, 'pointercancel', releaseButton);
     listen(host.parentElement, 'lostpointercapture', releaseButton);
-    function loop(now) {
+    // The stage's frame: `elapsed` is the real seconds since the last frame (unclamped, the
+    // governor reads hitches from it), `now` the stage clock in ms.
+    function loop(elapsed) {
         if (g.disposed) return;
         try {
-            const elapsed = Math.max(0, (now - (g.last || now)) / 1000);
+            const now = stage.time * 1000;
             const dt = Math.min(0.05, elapsed);
-            g.last = now;
             const frameMs = elapsed * 1000;
             g.frames.push(frameMs); if (g.frames.length > 240) g.frames.shift();
             if (frameMs > 55) g.longFrames++;
@@ -341,15 +344,16 @@ async function init(hostId, reference) {
                 }).catch(() => {});
             }
             if (g.started && now >= g.notifyAt) { g.notifyAt = now + 200; notify(g); }
-            g.frame = requestAnimationFrame(loop);
         } catch (error) {
+            stage.stop();
             console.error('[PoCapitol] frame failed:', error);
             track('frame-error', { message: String(error?.message ?? error) });
             g.started = false;
             reference.invokeMethodAsync('OnEngineError', error.message).catch(err => console.error('[PoCapitol] error notification failed:', err));
         }
     }
-    g.frame = requestAnimationFrame(loop);
+    stage.on('frame', loop);
+    stage.start();
 }
 
 function initRadar(canvasId = 'pocapitol-radar') {
@@ -725,13 +729,13 @@ async function probeDebrief() {
 function dispose() {
     if (!game) return;
     const g = game;
-    g.disposed = true; g.events.abort(); cancelAnimationFrame(g.frame);
+    g.disposed = true; g.events.abort();
     if (document.pointerLockElement === g.view.canvas) document.exitPointerLock();
     g.audio?.dispose?.();
     g.ui?.dispose?.();
     g.radar?.destroy?.();
     g.inspector?.clear?.();
-    g.view.dispose(); remove(); game = null;
+    g.view.dispose(); remove();   // the view's stage stops the loop game = null;
 }
 
 window.PoCapitol = {

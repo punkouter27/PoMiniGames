@@ -11,6 +11,7 @@ import { GTAOPass } from 'three/addons/postprocessing/GTAOPass.js';
 import { AfterimagePass } from 'three/addons/postprocessing/AfterimagePass.js';
 import * as PostFx from '../platform/postFx.js';
 import * as Quality from './quality.js';
+import { bindView, setMaxDpr } from './stageHost.js';
 import { CAVignetteShader } from './postShader.js';
 
 // scene.environmentIntensity; 0 disables IBL. game.js start() derives exposureBase
@@ -37,9 +38,7 @@ class SceneSetupMethods {
     this.rackFocus = null;
 
     const q = Quality.settings();
-    const pixelRatio = Quality.pixelRatio(w, h);
-    this.renderer.setPixelRatio(pixelRatio);
-    this.renderer.setSize(w, h);
+    const pixelRatio = this.renderer.getPixelRatio();   // the stage sized it (shared DPR budget)
     // _applyQuality rebuilds only when this changes (it is a render-target property).
     this._composerSamples = q.msaaSamples;
 
@@ -77,6 +76,8 @@ class SceneSetupMethods {
     this.fxPass = new ShaderPass(CAVignetteShader);
     this.composer.addPass(this.fxPass);
     this.composer.addPass(new OutputPass());
+    // Size the new chain (and the camera aspect) with the renderer from now on.
+    bindView(this.stage, { camera: this.camera, composer: this.composer });
   }
 
   /**
@@ -91,13 +92,8 @@ class SceneSetupMethods {
     const cw = this.container.clientWidth || 800;
     const ch = this.container.clientHeight || 540;
 
-    const dpr = Quality.pixelRatio(cw, ch);
-    if (this.renderer.getPixelRatio() !== dpr) {
-      this.renderer.setPixelRatio(dpr);
-      this.composer?.setPixelRatio(dpr);
-      this.composer?.setSize(cw, ch);
-      this.rackFocus?.setSize(cw, ch);
-    }
+    // The stage owns the pixel ratio; only its tier ceiling moves here.
+    setMaxDpr(this.stage, q.maxDpr);
 
     if (liveOnly) { this._qualityDirty = true; return; }
     this._qualityDirty = false;

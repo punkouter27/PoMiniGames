@@ -25,6 +25,7 @@ const prefs = await import(url(read('js/pocapitol/prefs.js')));
 const debrief = await import(url(read('js/pocapitol/debrief.js')));
 const campusData = await import(url(read('js/pocapitol/campusData.js')));
 const signsData = await import(url(read('js/pocapitol/signs.js')));
+const { createStage } = await import(new URL('js/platform/stage/stage.js', client));   // the shared host the scene hands index.js
 
 function tick(state, input = {}, seconds = 1) {
     for (let i = 0; i < Math.round(seconds * 60); i++) advance(state, input, 1 / 60);
@@ -505,7 +506,9 @@ async function engineHarness(rejectUpdates = false) {
     window.localStorage = { getItem: key => stored.get(key) ?? null, setItem: (key, value) => stored.set(key, value) };
     const frames = new Map(), calls = [], errors = [], sounds = [], quality = [];
     let frameId = 0, disposed = 0, audioDisposed = 0;
-    const view = { canvas, render() {}, aim: () => ({ x: 0, z: -1 }), applyQuality: s => quality.push(s), dispose() { disposed++; } };
+    // The real stage (loop, pause, clock) on this harness's frame queue; the scene would add the renderer and sizing.
+    const stage = createStage({ kind: '3d', maxDt: Infinity, raf: cb => { frames.set(++frameId, cb); return frameId; }, caf: id => frames.delete(id) });
+    const view = { canvas, stage, render() {}, aim: () => ({ x: 0, z: -1 }), applyQuality: s => quality.push(s), dispose() { disposed++; stage.dispose(); } };
     const context = vm.createContext({
         window, document, AbortController, createAttempt, advance, shove, fire, throwPlayerGrenade, setPaused, selectLeader, frontLine,
         preferredMode, detectTier, rebind: prefs.rebind, createDebriefRouter: debrief.createDebriefRouter,

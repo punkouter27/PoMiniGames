@@ -6,7 +6,8 @@ const root = new URL('../src/PoMiniGames.Client/wwwroot/js/povoxelstrike/', impo
 const source = (name) => readFile(new URL(name, root), 'utf8');
 const moduleUrl = (text) => `data:text/javascript;base64,${Buffer.from(text).toString('base64')}`;
 const settingsUrl = moduleUrl(await source('settings.js'));
-const qualityUrl = moduleUrl((await source('quality.js')).replace("'./settings.js'", JSON.stringify(settingsUrl)));
+const rendererUrl = new URL('../platform/3d/renderer.js', root).href;
+const qualityUrl = moduleUrl((await source('quality.js')).replace("'./settings.js'", JSON.stringify(settingsUrl)).replace("'../platform/3d/renderer.js'", JSON.stringify(rendererUrl)));
 const { resolveQuality, detectTier, AdaptiveQuality, applyRenderTier } = await import(qualityUrl);
 // Execute the production methods with small renderer doubles; no WebGL/browser needed.
 const importsRemoved = (text) => text.replace(/^import .*;\r?$/gm, '');

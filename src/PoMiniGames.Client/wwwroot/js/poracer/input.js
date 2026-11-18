@@ -1,9 +1,8 @@
-// Route-scoped input and canvas sizing. AbortController releases every listener.
+// Route-scoped input. AbortController releases every listener.
 //
 // Three sources, one packet: the keyboard and the touch buttons are the five booleans, a
 // gamepad adds an analog steer / throttle / brake. The server lets a non-zero analog value
 // win over its key, so the two never have to be reconciled here.
-import * as Render from './renderer.js';
 import { connectedPads, pressed, rumble as padRumble, BUTTONS } from '../platform/gamepadBus.js';
 
 let canvas = null, reference = null, listeners = null, enabled = false;
@@ -129,7 +128,6 @@ export function startInput(canvasId, dotnetReference) {
     document.addEventListener('pointerup', pointerUp, options);
     document.addEventListener('pointercancel', pointerUp, options);
     document.addEventListener('lostpointercapture', pointerUp, options);
-    getSize();
 }
 export function setInputEnabled(value) {
     enabled = value;
@@ -141,16 +139,4 @@ export function stopInput() {
     reset();
     listeners?.abort();
     listeners = reference = canvas = null;
-}
-export function getSize() {
-    if (!canvas) return { w: 0, h: 0 };
-    const w = canvas.clientWidth, h = canvas.clientHeight;
-    const dpr = window.PoCanvasDpr.resolve(w, h, { maxPixels: 900_000 });
-    const width = Math.max(1, Math.floor(w * dpr)), height = Math.max(1, Math.floor(h * dpr));
-    if (canvas.width !== width || canvas.height !== height) {
-        canvas.width = width; canvas.height = height;
-        canvas.getContext('2d')?.setTransform(dpr, 0, 0, dpr, 0, 0);
-        Render.invalidateBitmaps();
-    }
-    return { w, h };
 }

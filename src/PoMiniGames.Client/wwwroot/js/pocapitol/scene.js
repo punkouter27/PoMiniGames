@@ -16,6 +16,8 @@ import { createNearCascade } from './cascade.js';
 // Deck #4 fallback: below the top post level the ray-marched lit air (volumetric.js) is off,
 // so depth-tested fog cards carry the haze instead, drifting with the wind and thinned by blasts.
 import { FogCards } from '../platform/volumetricFog.js';
+import { createStage } from '../platform/stage/stage.js';
+import { createRenderer, attachRenderer } from '../platform/3d/renderer.js';
 
 // The chamber is drawn but never walked: its doors stay barricaded, as they did. It is only
 // seen in the closing shot, empty.
@@ -73,20 +75,14 @@ export function sunDirection(day, out = new THREE.Vector3()) {
     return out.set(-Math.cos(azimuth) * Math.cos(altitude), Math.sin(altitude), -Math.sin(azimuth) * Math.cos(altitude));
 }
 
-export function createScene(host, { figure, osm, signs = [] } = {}) {
+export async function createScene(host, { figure, osm, signs = [] } = {}) {
     const scene = new THREE.Scene();
     scene.fog = new THREE.FogExp2(SKY[0][1], FOG_OUT);
     // The composer does the anti-aliasing (MSAA on its own target), so the canvas needs none.
-    const renderer = new THREE.WebGLRenderer({ antialias: false, powerPreference: 'high-performance' });
-    renderer.outputColorSpace = THREE.SRGBColorSpace;
-    renderer.toneMapping = THREE.ACESFilmicToneMapping;
-    renderer.toneMappingExposure = 1.1;
-    renderer.shadowMap.enabled = true;
-    renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+    const renderer = await createRenderer(THREE, { antialias: false, tone: 'aces', exposure: 1.1 });
     renderer.info.autoReset = false;
     renderer.domElement.tabIndex = 0;
     renderer.domElement.setAttribute('aria-label', 'PoCapitol third-person scene. Click to look around.');
-    host.append(renderer.domElement);
     // Far enough to hold the city ring a mile out; near stays 0.1 so contact detail reads.
     const camera = new THREE.PerspectiveCamera(52, 1, 0.1, 420);
     // Everything see-through (sky, sprites, decals, cloth) lives on layer 1. The main camera
@@ -973,20 +969,23 @@ export function createScene(host, { figure, osm, signs = [] } = {}) {
     const raycaster = new THREE.Raycaster();
     const target = new THREE.Vector3(), desired = new THREE.Vector3(), offset = new THREE.Vector3(), look = new THREE.Vector3(), smoothLook = new THREE.Vector3();
     let renderScale = 1;
-    function resize() {
-        const w = Math.max(1, host.clientWidth), h = Math.max(1, host.clientHeight);
-        const ratio = Math.min(devicePixelRatio, 1.6) * renderScale;
-        renderer.setPixelRatio(ratio);
-        renderer.setSize(w, h, false); camera.aspect = w / h; camera.updateProjectionMatrix();
-        post.setSize(w, h, ratio);
-    }
-    const observer = new ResizeObserver(resize);
-    observer.observe(host); resize();
+    // The stage owns sizing (the shared deferred observer), the loop index.js drives and disposal.
+    // This game keeps its own 1.6 DPR ceiling with no pixel budget, scaled by the governor's rung;
+    // it has no camera shake of its own and none of the shared kind.
+    const stage = createStage({ kind: '3d', container: host, maxDpr: 1.6, maxPixels: 1e9, maxDt: Infinity, exclude: ['shake'] });
+    const gfx = attachRenderer(stage, renderer, {
+        camera,
+        onResize(view) {
+            const ratio = view.dpr * renderScale;
+            if (renderScale !== 1) renderer.setPixelRatio(ratio);
+            post.setSize(view.cssW, view.cssH, ratio);
+        },
+    });
 
     /** Applies one rung of quality.js: resolution, shadows, far-crowd size, post and small detail. */
     function applyQuality(settings) {
         renderScale = settings.scale;
-        resize();
+        gfx.resize();
         const shadows = settings.shadows > 0;
         // The close cascade is for the top rung. With it on, the far map is redrawn every other
         // frame (it is the far crowd and the building, which do not move much), so two maps cost
@@ -1725,7 +1724,6 @@ export function createScene(host, { figure, osm, signs = [] } = {}) {
         return best;
     }
     function dispose() {
-        observer.disconnect();
         crowd.dispose();
         farCrowd.dispose();
         perchCrowd.dispose();
@@ -1742,7 +1740,7 @@ export function createScene(host, { figure, osm, signs = [] } = {}) {
         architectureBatches.forEach(b => b.dispose());
         loose.forEach(b => b.dispose());
         geometries.forEach(g => g.dispose()); materials.forEach(m => m.dispose()); textures.forEach(t => t.dispose());
-        renderer.dispose(); renderer.forceContextLoss(); renderer.domElement.remove();
+        stage.dispose();   // the renderer, its GL context and the canvas
     }
     /**
      * A menu is over the scene (a pause): rack the focus close so everything behind the panel
@@ -1754,5 +1752,5 @@ export function createScene(host, { figure, osm, signs = [] } = {}) {
         menuUp = on;
         post.rackFocus(2.2, on ? 3600 : 0.01, 0.9);
     }
-    return { canvas: renderer.domElement, render, aim, pickUnit, applyQuality, dispose, renderer, camera, startIntro, introActive, setTracerMode, setMotionReduction, setFov, setFootage, setMenu };
+    return { canvas: renderer.domElement, stage, render, aim, pickUnit, applyQuality, dispose, renderer, camera, startIntro, introActive, setTracerMode, setMotionReduction, setFov, setFootage, setMenu };
 }

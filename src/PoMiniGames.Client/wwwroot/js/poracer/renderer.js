@@ -6,6 +6,8 @@
 // wear, speed streaks, ambient motes and the minimap — lives in fx.js.
 import * as Fx from './fx.js';
 import { addTrauma, getShake, getPunch } from '../platform/impactBus.js';
+import { makeLayer } from '../platform/2d/canvas2d.js';
+import { clamp, damp } from '../platform/2d/tween.js';
 
 let centerXY = null;
 let centerN = 0, wallsXY = null, wallsM = 0, trackWidth = 0;
@@ -320,8 +322,8 @@ function createOffscreen(w, h) {
 
 // Full-screen layers (grass, both parallax planes, fog, vignette)
 // are cached as offscreen bitmaps and blitted with drawImage(tex, 0, 0, w, h).
-// `w`/`h` are CSS pixels — draw() takes them from input.js getSize(), which
-// returns clientWidth/clientHeight — while the destination context carries a
+// `w`/`h` are CSS pixels — draw() takes them from the stage view, which is
+// clientWidth/clientHeight — while the destination context carries a
 // setTransform(dpr, ...). A bitmap built at the CSS size would be stretched over
 // w*dpr x h*dpr device pixels and the browser would upscale it. Those layers cover
 // essentially the whole frame, so on any HiDPI screen the picture would read as out
@@ -334,12 +336,6 @@ function createOffscreen(w, h) {
 // on device pixels. dpr belongs in each layer's cache key too — a window
 // dragged between monitors of different scaling changes it without changing
 // the CSS size, which would otherwise keep a stale, wrong-resolution bitmap.
-function createLayer(w, h, dpr) {
-    const c = createOffscreen(Math.max(1, Math.round(w * dpr)), Math.max(1, Math.round(h * dpr)));
-    const ctx = c.getContext('2d');
-    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
-    return { canvas: c, ctx: ctx };
-}
 
 /** Backing-store pixels per CSS pixel for the context being drawn into. The
  *  canvas element is the single source of truth here, so this cannot drift
@@ -398,7 +394,7 @@ function ensureParallaxLayers(w, h, dpr) {
     const bdpr = Math.max(0.5, dpr * bgScale());
     if (parallaxW === w && parallaxH === h && parallaxDpr === bdpr && parallaxFar && parallaxMid && parallaxTheme === currentTheme) return;
     parallaxW = w; parallaxH = h; parallaxDpr = bdpr; parallaxTheme = currentTheme;
-    const farLayer = createLayer(w, h, bdpr);
+    const farLayer = makeLayer(w, h, bdpr);
     const farOff = farLayer.canvas;
     const farCtx = farLayer.ctx;
 
@@ -423,7 +419,7 @@ function ensureParallaxLayers(w, h, dpr) {
         }
         parallaxFar = farOff;
 
-        const midLayer = createLayer(w, h, bdpr);
+        const midLayer = makeLayer(w, h, bdpr);
         const midOff = midLayer.canvas;
         const midCtx = midLayer.ctx;
         const rng2 = mulberry32(202);
@@ -446,7 +442,7 @@ function ensureParallaxLayers(w, h, dpr) {
         }
         parallaxFar = farOff;
 
-        const midLayer = createLayer(w, h, bdpr);
+        const midLayer = makeLayer(w, h, bdpr);
         const midOff = midLayer.canvas;
         const midCtx = midLayer.ctx;
         midCtx.fillStyle = 'rgba(125, 70, 30, 0.45)';
@@ -462,7 +458,7 @@ function ensureParallaxLayers(w, h, dpr) {
         for (let i = 0; i < 40; i++) { const tx = rng() * w, ty = rng() * h * 0.6 + h * 0.2, th = 20 + rng() * 40, tw = 10 + rng() * 15; farCtx.beginPath(); farCtx.moveTo(tx, ty); farCtx.lineTo(tx - tw, ty + th); farCtx.lineTo(tx + tw, ty + th); farCtx.closePath(); farCtx.fill(); }
         parallaxFar = farOff;
 
-        const midLayer = createLayer(w, h, bdpr);
+        const midLayer = makeLayer(w, h, bdpr);
         const midOff = midLayer.canvas;
         const midCtx = midLayer.ctx;
         midCtx.fillStyle = 'rgba(20,50,30,0.25)';
@@ -477,7 +473,7 @@ function ensureParallaxLayers(w, h, dpr) {
 function drawVignette(g, w, h, dpr) {
     if (!vignetteTex || vignetteW !== w || vignetteH !== h || vignetteDpr !== dpr) {
         vignetteW = w; vignetteH = h; vignetteDpr = dpr;
-        const layer = createLayer(w, h, dpr);
+        const layer = makeLayer(w, h, dpr);
         vignetteTex = layer.canvas;
         const vc = layer.ctx;
         const vg = vc.createRadialGradient(w / 2, h / 2, Math.min(w, h) * 0.3, w / 2, h / 2, Math.max(w, h) * 0.8);
@@ -491,7 +487,7 @@ function drawVignette(g, w, h, dpr) {
 function ensureGrass(w, h, dpr) {
     const bdpr = Math.max(0.5, dpr * bgScale());
     if (grassTex && grassW === w && grassH === h && grassDpr === bdpr && grassTheme === currentTheme) return;
-    const layer = createLayer(w, h, bdpr), off = layer.canvas, g = layer.ctx;
+    const layer = makeLayer(w, h, bdpr), off = layer.canvas, g = layer.ctx;
     grassDpr = bdpr; grassTheme = currentTheme;
 
     if (currentTheme === 'neonskyline') {
@@ -1090,32 +1086,30 @@ export function draw(cars, w, h, ghost) {
         const lead = cars.reduce((a, c) => c.position < a.position ? c : a, cars[0]);
         wantX = lead.x + Math.cos(lead.h) * 80;
         wantY = lead.y + Math.sin(lead.h) * 80;
-        wantScale = Math.max(0.35, Math.min(1.2, base * 1.1));
+        wantScale = clamp(base * 1.1, 0.35, 1.2);
     } else {
         // Follow-cam on the local player. The look-ahead grows with speed so the corner
         // arrives on screen before the car does, and leans into the slide by the slip angle.
         const target = player || cars[0];
         const speed = Math.abs(target.v || 0);
         const look = 48 + Math.min(110, speed * 0.32);
-        const lean = Math.max(-26, Math.min(26, (target.slip || 0) * 90));
+        const lean = clamp((target.slip || 0) * 90, -26, 26);
         wantX = target.x + Math.cos(target.h) * look + Math.cos(target.h + Math.PI / 2) * lean;
         wantY = target.y + Math.sin(target.h) * look + Math.sin(target.h + Math.PI / 2) * lean;
         // Zoom out a touch at speed: the same frame holds more road when the road matters.
-        wantScale = Math.max(0.25, Math.min(1.2, base * (1 + Math.min(0.07, speed / 5200))));
+        wantScale = clamp(base * (1 + Math.min(0.07, speed / 5200)), 0.25, 1.2);
     }
 
     // ── The spring ──
     if (!springReady) { springX = wantX; springY = wantY; springScale = wantScale; springRoll = 0; springReady = true; }
     else {
         // A heavy hit locks the camera for a few dozen ms before it resumes chasing.
-        const posK = 1 - Math.exp(-dt * (now < hitstopUntil ? 2.6 : 9));
-        const zoomK = 1 - Math.exp(-dt * 6);
-        springX += (wantX - springX) * posK;
-        springY += (wantY - springY) * posK;
-        springScale += (wantScale - springScale) * zoomK;
+        springX = damp(springX, wantX, now < hitstopUntil ? 2.6 : 9, dt);
+        springY = damp(springY, wantY, now < hitstopUntil ? 2.6 : 9, dt);
+        springScale = damp(springScale, wantScale, 6, dt);
     }
     // The whole frame leans into a drift, by less than a degree and a half.
-    const rollWant = calm() ? 0 : Math.max(-0.018, Math.min(0.018, (player?.slip || 0) * -0.06));
+    const rollWant = calm() ? 0 : clamp((player?.slip || 0) * -0.06, -0.018, 0.018);
     springRoll += (rollWant - springRoll) * Math.min(1, dt * 6);
 
     let camX = springX, camY = springY, scale = springScale;

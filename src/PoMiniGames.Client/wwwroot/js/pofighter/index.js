@@ -15,6 +15,8 @@
 
 import { WORLD, ACTIONS, createState, reset, step, frameAt } from './sim.js';
 import { BUTTONS, ButtonEdges, activePad, pressed, stick } from '../platform/gamepadBus.js';
+import { createStage } from '../platform/stage/stage.js';
+import { fitWorld } from '../platform/2d/camera2d.js';
 import { listCustomFighters, getCustomFighter } from './studio.js';
 
 const KEYS = {
@@ -65,7 +67,6 @@ async function start(root, fighterId = 'p1') {
     if (session.stopped) return false;
 
     const canvas = root.querySelector('[data-pf-canvas]');
-    const ctx = canvas.getContext('2d');
     const hitsEl = root.querySelector('[data-pf-hits]');
     const rows = new Map([...root.querySelectorAll('[data-pf-move]')].map(el => [el.dataset.pfMove, el]));
     const state = createState();
@@ -76,6 +77,19 @@ async function start(root, fighterId = 'p1') {
                                   // two frames is not lost
     const presses = [];           // attack presses since the last step, in the order they came
     let slow = false;
+    const stage = createStage({
+        canvas, maxDpr: 2, maxDt: 0.05, pauseOn: ['hidden', 'blur'], exclude: ['shake'],
+        timeScale: () => (slow ? 0.25 : 1),
+        onStep: dt => stepRoom(dt),
+        onFrame: () => { stage.render(draw); syncHud(); },
+    });
+    const ctx = stage.ctx;
+    session.cleanup.push(() => stage.dispose());
+    // Hidden tab or lost focus: the room holds still and forgets held controls.
+    const forget = () => { keys.clear(); touch.clear(); presses.length = 0; tapped.clear(); };
+    stage.on('pause', forget);
+    stage.on('resume', forget);
+    if (!document.hasFocus()) stage.setPaused(true, 'blur');
     const padEdges = new ButtonEdges();
     let shownHits = -1, shownMove = '';
 
@@ -105,7 +119,6 @@ async function start(root, fighterId = 'p1') {
         else if (e.code === 'KeyT' && !e.repeat) toggleSlow();
     });
     on(window, 'keyup', e => keys.delete(KEYS[e.code]));
-    on(window, 'blur', () => { keys.clear(); touch.clear(); });
 
     for (const btn of root.querySelectorAll('[data-pf-btn]')) {
         const control = btn.dataset.pfBtn;
@@ -138,17 +151,6 @@ async function start(root, fighterId = 'p1') {
         for (const index of went) if (PAD_ATTACKS[index]) press(PAD_ATTACKS[index]);
         if (went.length || pad.left || pad.right || pad.up || pad.down) device('pad');
     }
-
-    function resize() {
-        const dpr = Math.min(window.devicePixelRatio || 1, 2);
-        const w = Math.max(1, Math.round(canvas.clientWidth * dpr));
-        const h = Math.max(1, Math.round(canvas.clientHeight * dpr));
-        if (canvas.width !== w || canvas.height !== h) { canvas.width = w; canvas.height = h; }
-    }
-    const observer = new ResizeObserver(resize);
-    observer.observe(canvas);
-    session.cleanup.push(() => observer.disconnect());
-    resize();
 
     function drawStage() {
         const far = 4000;   // the wall and floor run past the world so wide screens have no bars
@@ -224,10 +226,10 @@ async function start(root, fighterId = 'p1') {
         ctx.drawImage(sheet, f.x, f.y, f.w, f.h, state.x - f.ax, WORLD.ground - f.ay, f.w / res, f.h / res);
     }
 
-    function render() {
-        const scale = Math.min(canvas.width / WORLD.width, canvas.height / WORLD.height);
-        ctx.setTransform(scale, 0, 0, scale,
-            (canvas.width - WORLD.width * scale) / 2, canvas.height - WORLD.height * scale);
+    function draw() {
+        const { cssW, cssH } = stage.view;
+        const cam = fitWorld(cssW, cssH, WORLD.width, WORLD.height, { alignY: 'bottom' });
+        stage.setTransform(cam.scale, cam.x, cam.y);
         ctx.imageSmoothingQuality = 'high';
         drawStage();
         drawBag();
@@ -246,15 +248,7 @@ async function start(root, fighterId = 'p1') {
         }
     }
 
-    let prev = performance.now();
-    function tick(now) {
-        if (session.stopped) return;
-        session.raf = requestAnimationFrame(tick);
-        // The first frame's timestamp can be earlier than the clock read above; never step backwards.
-        const dt = Math.min(0.05, Math.max(0, (now - prev) / 1000)) * (slow ? 0.25 : 1);
-        prev = now;
-        // Hidden tab or lost focus: the room holds still and forgets held controls.
-        if (document.hidden || !document.hasFocus()) { presses.length = 0; tapped.clear(); return; }
+    function stepRoom(dt) {
         readPad();
         const held = name => keys.has(name) || touch.has(name) || tapped.has(name) || !!pad[name];
         step(state, {
@@ -263,11 +257,9 @@ async function start(root, fighterId = 'p1') {
         }, dt, data);
         presses.length = 0;
         tapped.clear();
-        render();
-        syncHud();
     }
-    session.raf = requestAnimationFrame(tick);
-    render();
+    stage.start();
+    stage.render(draw);
     syncHud();
     return true;
 }
@@ -275,7 +267,6 @@ async function start(root, fighterId = 'p1') {
 function stop() {
     if (!run) return;
     run.stopped = true;
-    cancelAnimationFrame(run.raf);
     for (const undo of run.cleanup) undo();
     run = null;
 }

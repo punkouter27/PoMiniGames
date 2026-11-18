@@ -1,5 +1,6 @@
 // index.js — public interop surface for PoMarbleRace. The Blazor page calls these.
 import { Game } from './game.js';
+import { createSceneRenderer } from './scene.js';
 import { mapById, mapMenu, DEFAULT_MAP_ID, dailyKey } from './maps.js';
 import { SKINS, WEIGHTS, paletteHex } from './marbles.js';
 import { GUEST_COLOR, GHOST_KEY } from './tuning.js';
@@ -67,10 +68,12 @@ window.PoMarbleRace = {
       if (token !== startToken) return;
       throw new Error(`Couldn't load ${map.name}. Check your connection and try again.`);
     }
-    // A newer start() (or a stop()) landed while the map was in flight — stand down.
-    if (token !== startToken) return;
+    // The renderer is async (shared factory: WebGL now, WebGPU-ready); built before the Game, whose constructor is sync.
+    const renderer = await createSceneRenderer();
+    // A newer start() (or a stop()) landed while the map or renderer was in flight — stand down.
+    if (token !== startToken) { renderer.dispose(); renderer.forceContextLoss?.(); return; }
     // No pick from the page (an auto-skipped intro can beat the menu load): race the saved one.
-    game = new Game(containerId, dotnetRef, demo, map.id, asset, online || null, marble || (demo ? null : readMarbleChoice()), opts || null);
+    game = new Game(containerId, dotnetRef, demo, map.id, asset, online || null, marble || (demo ? null : readMarbleChoice()), opts || null, renderer);
     if (readPref('muted')) game.setMuted(true);
     game.start();
     if (!demo) startPad(() => game);

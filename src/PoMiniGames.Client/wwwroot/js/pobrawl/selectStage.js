@@ -29,6 +29,8 @@ import * as THREE from 'three';
 import { buildFighter, setExpression, CHARACTERS } from './fighters.js';
 import { Animator } from './animation.js';
 import * as Quality from './quality.js';
+import { createRendererSync } from '../platform/3d/renderer.js';
+import { disposeRenderer } from '../platform/3d/dispose.js';
 
 const IDLE_MS = 15000;
 const SPIN = 0.5;            // turntable rad/s
@@ -83,13 +85,12 @@ class SelectStage {
     this.frameMs = tier === 'high' ? 0 : 1000 / 30;
     this.budget = tier === 'high' ? 5 : 3;
 
-    this.renderer = new THREE.WebGLRenderer({
+    // mount() is synchronous (the page reads its boolean), so the sync shared factory.
+    // No shadows here: portraits are unshadowed.
+    this.renderer = createRendererSync(THREE, {
       alpha: true, antialias: true, preserveDrawingBuffer: true, powerPreference: 'low-power',
+      tone: 'agx', exposure: 1.45, shadows: false, clearColor: 0x000000, clearAlpha: 0,
     });
-    this.renderer.setClearColor(0x000000, 0);
-    this.renderer.toneMapping = THREE.AgXToneMapping;
-    this.renderer.toneMappingExposure = 1.45;
-    this.renderer.outputColorSpace = THREE.SRGBColorSpace;
     this.renderer.autoClear = true;
     // One frame = many render() calls; count them together (see stats()).
     this.renderer.info.autoReset = false;
@@ -437,10 +438,7 @@ class SelectStage {
       });
     }
     this.rigs.clear();
-    this.renderer.dispose();
-    // dispose() frees three's GPU objects but not the context itself (see game.js dispose).
-    try { this.renderer.forceContextLoss(); } catch { /* already lost */ }
-    this.renderer.domElement.remove();
+    disposeRenderer(this.renderer);   // dispose + context loss + canvas removal (see game.js dispose)
     if (h.dataset.stage === 'live') delete h.dataset.stage;
   }
 }

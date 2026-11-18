@@ -3,6 +3,7 @@
 // director, course, results, online) and are copied onto Game.prototype at the bottom.
 import * as THREE from 'three';
 import { createScene } from './scene.js';
+import { createStage } from '../platform/stage/stage.js';
 import { createWorld, stepWorld } from './physics.js';
 import { mapById, DEFAULT_MAP_ID, dailyKey, dailySeed } from './maps.js';
 import { createMarbles, MARBLE_COUNT, SKINS } from './marbles.js';
@@ -39,8 +40,9 @@ export class Game {
    * @param {object|null} online null for a local game, else { role: 'host'|'guest', seed, guestIndex }.
    * @param {object|null} marble the player's { skin, weight } from the intro card, or null.
    * @param {object|null} opts { gp: { round, rounds } } for a Grand Prix round (grandprix.js).
+   * @param {object} renderer built by index.js (createSceneRenderer is async); the Game owns and disposes it.
    */
-  constructor(containerId, dotnetRef, demo, mapId, asset, online, marble, opts) {
+  constructor(containerId, dotnetRef, demo, mapId, asset, online, marble, opts, renderer) {
     this.container = document.getElementById(containerId);
     this.dotnet = dotnetRef || null;
     this.demo = !!demo;
@@ -58,7 +60,16 @@ export class Game {
     this._netTick = 0;
     this._netFinish = 0;       // guest: finish order, in the order the host's frames report it
     this._guestHud = null;
-    this.scene = createScene(this.container);
+    // The stage owns the rAF loop (dt clamped to 0.05), the resize, pause-on-hidden and teardown.
+    // 'shake' is left off: scene.followTarget applies the tuned PostFx.applyCameraShake (1.4) itself.
+    this.stage = createStage({
+      kind: '3d', container: this.container, maxDt: 0.05, exclude: ['shake'],
+      onFrame: (dt) => {
+        if (this._paused) return;
+        this._frame(this._fresh || !dt ? (this._fresh = false, 0.016) : dt);
+      },
+    });
+    this.scene = createScene(this.container, renderer, this.stage);
     this.scene.setTheme(this.map.theme);
     const w = createWorld();
     this.world = w.world;
@@ -122,8 +133,7 @@ export class Game {
     this.tickAccum = 0;
     this.resultTimer = 0;
     this.disposed = false;
-    this._raf = 0;
-    this._lastTs = 0;
+    this._fresh = false;
 
     // player verb — lateral steering, held via keyboard or the on-screen pads
     this._steerLeft = false;
@@ -144,19 +154,10 @@ export class Game {
   // ── public API (called from index.js / interop) ──
   start() {
     this.audio.resume();
-    this._lastTs = 0;
-    this._paused = true; // 2026-07-19: gate the rAF loop on resume() so the
+    this._paused = true; // 2026-07-19: gate the loop on resume() so the
                          // engine can't run the pick countdown and racing
                          // phase while the intro modal is still up.
-    const loop = (ts) => {
-      if (this.disposed) return;
-      const now = ts || performance.now();
-      const dt = this._lastTs ? (now - this._lastTs) / 1000 : 0.016;
-      this._lastTs = now;
-      if (!this._paused) this._frame(Math.min(dt, 0.05));
-      this._raf = requestAnimationFrame(loop);
-    };
-    this._raf = requestAnimationFrame(loop);
+    this.stage.start();
     // Demo mode is auto-cycled by the kiosk; it gets the same pause gate
     // (the intro card flashes for DemoDelayMs then calls resume()).
     if (this.demo) this._autoPickSoon();
@@ -169,7 +170,7 @@ export class Game {
   resume() {
     if (this._paused) {
       this._paused = false;
-      this._lastTs = 0; // discard the dt we accumulated while paused
+      this._fresh = true; // discard the dt we accumulated while paused
       // Re-emit the current phase so the host can sync its overlay state.
       this._invoke('OnPhase', this.phase, this.chosen, this.score, this.best, this.streak, this.seed | 0);
     }
@@ -212,7 +213,6 @@ export class Game {
 
   dispose() {
     this.disposed = true;
-    if (this._raf) cancelAnimationFrame(this._raf);
     this._unbindKeys();
     this._perfDispose();
     this._dropGhost();
@@ -220,6 +220,7 @@ export class Game {
     if (this.track) this.track.dispose();
     this.audio.dispose();
     this.scene.dispose();
+    this.stage.dispose();   // stops the loop, drops the observer + listeners, frees the renderer and its GL context
     // Teardown: the glass capturer holds a capture interval and
     // the weather overlay a rAF loop — both must die with the game.
     if (this._glassStop) this._glassStop();

@@ -25,12 +25,10 @@
 //
 // All of it stands down for reduced motion; the shader also for the lowest quality tier.
 
+import { createShaderQuad } from '../platform/2d/shaderQuad.js';
+
 const BUTTON = 'button, a[href], [role="radio"], [role="tab"], .rz-button, .rz-selectbar-item, summary';
 const calm = () => matchMedia('(prefers-reduced-motion: reduce)').matches;
-
-const VERTEX = `#version 300 es
-in vec2 aPos;
-void main() { gl_Position = vec4(aPos, 0.0, 1.0); }`;
 
 const FRAGMENT = `#version 300 es
 precision highp float;
@@ -204,7 +202,7 @@ export function createUiFx(root) {
     };
 
     // -------------------------------------------------------------- the fluid shader
-    let gl = null, program = null, canvas = null, uniforms = null, running = 0, on = 0;
+    let gl = null, quad = null, ripLoc = null, canvas = null, running = 0, on = 0;
     const ripples = [[0, 0, -9, 0], [0, 0, -9, 0], [0, 0, -9, 0], [0, 0, -9, 0]];
     let rippleNext = 0, panelBox = [0, 0, 0, 0], start = performance.now();
     const lowTier = () => window.PoQuality?.tier?.() === 'low';
@@ -213,32 +211,11 @@ export function createUiFx(root) {
         canvas = document.createElement('canvas');
         canvas.setAttribute('aria-hidden', 'true');
         Object.assign(canvas.style, { position: 'absolute', inset: '0', width: '100%', height: '100%', pointerEvents: 'none', zIndex: '2' });
-        gl = canvas.getContext('webgl2', { alpha: true, premultipliedAlpha: true, antialias: false, depth: false, powerPreference: 'low-power' });
-        if (!gl) { canvas = null; return; }
-        const compile = (type, source) => {
-            const shader = gl.createShader(type);
-            gl.shaderSource(shader, source); gl.compileShader(shader);
-            if (!gl.getShaderParameter(shader, gl.COMPILE_STATUS)) throw new Error(gl.getShaderInfoLog(shader));
-            return shader;
-        };
-        try {
-            program = gl.createProgram();
-            gl.attachShader(program, compile(gl.VERTEX_SHADER, VERTEX));
-            gl.attachShader(program, compile(gl.FRAGMENT_SHADER, FRAGMENT));
-            gl.linkProgram(program);
-            if (!gl.getProgramParameter(program, gl.LINK_STATUS)) throw new Error(gl.getProgramInfoLog(program));
-        } catch (error) {
-            console.warn('[PoCapitol] menu shader unavailable:', error);
-            gl = null; canvas = null; return;
-        }
-        gl.useProgram(program);
-        const buffer = gl.createBuffer();
-        gl.bindBuffer(gl.ARRAY_BUFFER, buffer);
-        // One oversized triangle covers the screen with no diagonal seam.
-        gl.bufferData(gl.ARRAY_BUFFER, new Float32Array([-1, -1, 3, -1, -1, 3]), gl.STATIC_DRAW);
-        const at = gl.getAttribLocation(program, 'aPos');
-        gl.enableVertexAttribArray(at); gl.vertexAttribPointer(at, 2, gl.FLOAT, false, 0, 0);
-        uniforms = Object.fromEntries(['uRes', 'uTime', 'uOn', 'uPanel', 'uRip', 'uWipe'].map(name => [name, gl.getUniformLocation(program, name)]));
+        // The shared fullscreen-triangle quad (its vertex stage; this fragment shader reads gl_FragCoord).
+        quad = createShaderQuad(canvas, { frag: FRAGMENT, contextOptions: { alpha: true, premultipliedAlpha: true } });
+        if (!quad) { canvas = null; return; }
+        gl = quad.gl;
+        ripLoc = gl.getUniformLocation(quad.program, 'uRip');
         root.prepend(canvas);
     }
     function frame() {
@@ -259,11 +236,11 @@ export function createUiFx(root) {
         }
         gl.clearColor(0, 0, 0, 0); gl.clear(gl.COLOR_BUFFER_BIT);
         if (busy) {
-            gl.uniform2f(uniforms.uRes, w, h); gl.uniform1f(uniforms.uTime, time); gl.uniform1f(uniforms.uOn, on);
-            gl.uniform4f(uniforms.uPanel, ...panelBox);
-            gl.uniform4fv(uniforms.uRip, ripples.flat());
-            gl.uniform3f(uniforms.uWipe, cut ? Math.max(0.0001, wiped) : 2, cut?.veil ? 1 : 0, cut?.seed ?? 0);
-            gl.drawArrays(gl.TRIANGLES, 0, 3);
+            quad.set('uRes', w, h); quad.set('uTime', time); quad.set('uOn', on);
+            quad.set('uPanel', ...panelBox);
+            gl.uniform4fv(ripLoc, ripples.flat());
+            quad.set('uWipe', cut ? Math.max(0.0001, wiped) : 2, cut?.veil ? 1 : 0, cut?.seed ?? 0);
+            quad.draw(w, h);
             running = requestAnimationFrame(frame);
         }
     }
@@ -536,8 +513,9 @@ export function createUiFx(root) {
             controller.abort(); watcher.disconnect(); readouts.disconnect(); captions.disconnect(); clearInterval(sampler);
             if (running) cancelAnimationFrame(running);
             canvas?.remove();
+            quad?.dispose();
             gl?.getExtension('WEBGL_lose_context')?.loseContext();
-            gl = null;
+            gl = quad = null;
         },
     };
 }

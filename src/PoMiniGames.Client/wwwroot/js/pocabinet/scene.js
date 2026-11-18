@@ -89,7 +89,8 @@ import * as models from './models.js';
 // Platform GFX layer (deck ideas #1, #2, #6, #7): the fine-grained render budget under the
 // app tier, the pre-impact light swell, the shared light rig (lightning, wreck beacons, rim
 // pulse) and the in-world standings board with its flat HUD fallback.
-import { RenderBudget, tickShadows } from '../platform/renderBudget.js';
+import { createStage } from '../platform/stage/stage.js';
+import { createRenderer, attachRenderer, configureRenderer } from '../platform/3d/renderer.js';
 import { Anticipation, closestApproach } from '../platform/anticipation.js';
 import { LightRig } from '../platform/lightRig.js';
 import { DiegeticBoard } from '../platform/diegeticBoard.js';
@@ -112,21 +113,6 @@ function appTier() {
     return RENDER_SCALE[t] ? t : 'high';
 }
 
-// Mounted scenes follow a change of the app's tier. PoQuality has no unsubscribe, so one
-// listener serves every mount and a disposed scene leaves the set.
-const liveScenes = new Set();
-let tierListening = false;
-function followAppTier(handle) {
-    liveScenes.add(handle);
-    if (tierListening || !window.PoQuality?.onChange) return;
-    tierListening = true;
-    window.PoQuality.onChange(() => {
-        const t = appTier();
-        for (const h of liveScenes) h.applyTier(t);
-    });
-}
-
-
 
 
 class SceneHandle {
@@ -139,6 +125,14 @@ class SceneHandle {
         this.sun = sun;
         this.canvas = canvas;
         this.disposed = false;
+        // The stage owns the loop, the resize observer, the pixel-ratio policy, the tier and the
+        // render budget. Camera shake stays the scene's own (cameras.applyFx), so no shared shake.
+        this.stage = createStage({
+            kind: '3d', container: canvas, maxDt: 0.1, use: ['renderBudget'], exclude: ['shake'],
+            onFrame: (dt) => this._frame(dt),
+        });
+        attachRenderer(this.stage, renderer, { camera, onResize: (view) => this._applyDpr(view) });
+        this.stage.on('rung', (rung) => this.applyBudget(rung));
         this.track = null;
         this.trackGroup = null;
         this.groundMesh = null;
@@ -180,8 +174,6 @@ class SceneHandle {
         };
         this.baseAtmosphere = null;
         this._frameCbs = new Set();
-        this._raf = null;
-        this._lastNow = null;
         this._tvIndex = -1;
         this._chase = new THREE.Vector3();
         this._chaseLook = new THREE.Vector3();
@@ -192,8 +184,6 @@ class SceneHandle {
         // Render budget (#1): p95 frame time walks a ladder of resolution / particle / shadow
         // settings under the app tier. Replaces the old one-way three-slow-seconds step-down.
         this.particleScale = 1;
-        this._frameNo = 0;
-        this.budget = new RenderBudget({ onChange: (rung) => this.applyBudget(rung) });
         // Anticipation (#2) and the light rig (#6): presentation only, never the sim.
         this.antic = new Anticipation();
         this.lightRig = new LightRig({ sun, hemi });
@@ -202,9 +192,10 @@ class SceneHandle {
         this._contactCooldown = 0;
         this._prevSlow = 0;
         this.board = null;   // #7, made by placeBoard() for full-size tracks
-        this._onResize = () => this.resize();
-        window.addEventListener('resize', this._onResize);
     }
+
+    /** The stage's renderBudget feature (platform/renderBudget.js ladder under the app tier). */
+    get budget() { return this.stage.budget; }
 
     /** Register a per-frame callback (receives a DOMHighResTimeStamp). */
     onFrame(cb) {
@@ -216,55 +207,50 @@ class SceneHandle {
     }
 
     startLoop() {
-        if (this._raf !== null) return;
-        const loop = (now) => {
-            if (this.disposed) return;
-            this._raf = requestAnimationFrame(loop);
-            const dt = this._lastNow === null ? 0 : Math.min(0.1, (now - this._lastNow) / 1000);
-            this._lastNow = now;
-            clock.value = now / 1000;
-            for (const cb of this._frameCbs) {
-                try { cb(now); } catch { /* one bad effect never kills the frame */ }
-            }
-            this.autoQuality(dt);
-            try {
-                this.applyFx(dt);
-                this.updateRain(dt);
-                this.followShadow();
-                this.grass?.update(this.camera);
-                this.sky?.update(this.camera, this.scene.fog, now / 1000);
-                this.scenery?.update(dt, this.fx.focus);
-                this.updateSunScreen();
-                this.syncRoomSplat();
-            } catch { /* decoration never kills the frame */ }
-            // Pre-impact swell and the light rig scale the frame's exposure and bloom for this
-            // render only; the engine's own values are put back right after.
-            const e0 = this.fx.exposure, b0 = this.fx.bloom;
-            try {
-                const a = this.updateAnticipation(now, dt);
-                this.lightRig.setRim(a.rim);
-                this.lightRig.setOverlay('emergency', Math.min(0.6, this.wreckNear || 0));
-                const rig = this.lightRig.update(dt);
-                this.fx.exposure = (e0 || 1) * a.exposure * rig.exposure;
-                this.fx.bloom = (b0 ?? 0.7) + a.bloom;
-            } catch { /* decoration never kills the frame */ }
-            if (this.post) this.post.render(this.scene, this.camera, this.fx, now / 1000);
-            else this.renderer.render(this.scene, this.camera);
-            if (this.pip) {
-                try { this.renderPip(); } catch { this.pipRect = null; }
-            }
-            this.fx.exposure = e0;
-            this.fx.bloom = b0;
-            try { this.board?.update(this.camera, now); } catch { /* the HUD fallback still has the text */ }
-        };
-        this._raf = requestAnimationFrame(loop);
+        this.stage.start();
+    }
+
+    /** One frame (the stage's onFrame): dt is already clamped to 0.1 s. */
+    _frame(dt) {
+        if (this.disposed) return;
+        const now = performance.now();
+        clock.value = now / 1000;
+        for (const cb of this._frameCbs) {
+            try { cb(now); } catch { /* one bad effect never kills the frame */ }
+        }
+        try {
+            this.applyFx(dt);
+            this.updateRain(dt);
+            this.followShadow();
+            this.grass?.update(this.camera);
+            this.sky?.update(this.camera, this.scene.fog, now / 1000);
+            this.scenery?.update(dt, this.fx.focus);
+            this.updateSunScreen();
+            this.syncRoomSplat();
+        } catch { /* decoration never kills the frame */ }
+        // Pre-impact swell and the light rig scale the frame's exposure and bloom for this
+        // render only; the engine's own values are put back right after.
+        const e0 = this.fx.exposure, b0 = this.fx.bloom;
+        try {
+            const a = this.updateAnticipation(now, dt);
+            this.lightRig.setRim(a.rim);
+            this.lightRig.setOverlay('emergency', Math.min(0.6, this.wreckNear || 0));
+            const rig = this.lightRig.update(dt);
+            this.fx.exposure = (e0 || 1) * a.exposure * rig.exposure;
+            this.fx.bloom = (b0 ?? 0.7) + a.bloom;
+        } catch { /* decoration never kills the frame */ }
+        if (this.post) this.post.render(this.scene, this.camera, this.fx, now / 1000);
+        else this.renderer.render(this.scene, this.camera);
+        if (this.pip) {
+            try { this.renderPip(); } catch { this.pipRect = null; }
+        }
+        this.fx.exposure = e0;
+        this.fx.bloom = b0;
+        try { this.board?.update(this.camera, now); } catch { /* the HUD fallback still has the text */ }
     }
 
     stopLoop() {
-        if (this._raf !== null) {
-            cancelAnimationFrame(this._raf);
-            this._raf = null;
-        }
+        this.stage.stop();
     }
 
     setView(p) {
@@ -304,27 +290,25 @@ class SceneHandle {
     }
 
     /**
-     * Feed the render budget one frame (platform/renderBudget.js). It reads the p95 frame time
-     * and moves one rung at a time, both ways, never above the app's tier; applyBudget() does
-     * the switching. Static-shadow rungs refresh the shadow map every 4th frame.
+     * One budget rung (the stage's 'rung' event; the feature has already moved the shadow policy):
+     * pixel ratio (this scene's per-tier scale x the rung's), particle share, quality tier.
      */
-    autoQuality(dt) {
-        if (!(dt > 0)) return;
-        this.budget.frame(dt * 1000);
-        tickShadows(this.renderer, ++this._frameNo, 4);
-    }
-
-    /** One budget rung: pixel ratio (this scene's per-tier scale x the rung's), shadows, tier. */
     applyBudget(rung) {
         if (this.disposed || !rung || !RENDER_SCALE[rung.tier]) return;
         this.fps.slow = 0;
-        const dpr = Math.min(window.devicePixelRatio || 1, rung.maxDpr) * rung.resScale * RENDER_SCALE[rung.tier];
-        this.renderer.setPixelRatio(dpr);
-        this.renderer.shadowMap.autoUpdate = !rung.staticShadows;
         this.renderer.shadowMap.needsUpdate = true;
         this.particleScale = this.budget.particleScale;
         this.setQuality(rung.tier);
-        this.resize();
+        this._applyDpr(this.stage.view);
+    }
+
+    /** The budget's pixel ratio on top of the shared DPR policy, then the post targets. */
+    _applyDpr(view) {
+        const rung = this.budget?.rung;
+        if (!rung || !RENDER_SCALE[rung.tier]) return;
+        const dpr = Math.min(view.dpr, rung.maxDpr) * rung.resScale * RENDER_SCALE[rung.tier];
+        if (Math.abs(dpr - this.renderer.getPixelRatio()) > 1e-4) this.renderer.setPixelRatio(dpr);
+        this.post?.setSize();
     }
 
     /** Switch the whole frame to tier `q` (the app's choice): the budget restarts at its top rung. */
@@ -887,22 +871,14 @@ class SceneHandle {
         this.envSky = null;
     }
 
-    /** Match the canvas size to its CSS box; called on resize + after mount. */
+    /** Re-measure the canvas now (the stage also does it on every resize). */
     resize() {
-        if (this.disposed || !this.canvas) return;
-        const w = this.canvas.clientWidth || 800;
-        const h = this.canvas.clientHeight || 450;
-        this.renderer.setSize(w, h, false);
-        this.camera.aspect = w / h;
-        this.camera.updateProjectionMatrix();
-        this.post?.setSize();
+        if (!this.disposed) this.stage.resize();
     }
 
     dispose() {
         if (this.disposed) return;
         this.disposed = true;
-        liveScenes.delete(this);
-        window.removeEventListener('resize', this._onResize);
         this.stopLoop();
         this._frameCbs.clear();
         this.disposeTrackMeshes();
@@ -914,9 +890,8 @@ class SceneHandle {
         this.pmrem.dispose();
         this.post?.dispose();
         this.post = null;
-        this.renderer.dispose();
-        // dispose() does not hand the context back; see pobrawl/game.js dispose().
-        try { this.renderer.forceContextLoss?.(); } catch { /* context already gone */ }
+        // The stage disposes the renderer and hands its GL context back.
+        this.stage.dispose();
     }
 }
 
@@ -949,10 +924,8 @@ export async function mount(canvas, world) {
     if (!world || !world.atmosphere) throw new Error('pocabinet/scene: world is required');
 
     // preserveDrawingBuffer so the clip recorder and the result card can read frames back.
-    const renderer = new THREE.WebGLRenderer({ canvas, antialias: true, alpha: false, preserveDrawingBuffer: true, powerPreference: 'high-performance' });
-    renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
-    renderer.shadowMap.enabled = true;
-    renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+    // Tone mapping is the post pass's (it falls back to ACES below without one).
+    const renderer = await createRenderer(THREE, { canvas, antialias: true, preserveDrawingBuffer: true, tone: 'none' });
 
     const scene = new THREE.Scene();
     const camera = new THREE.PerspectiveCamera(70, 16 / 9, 0.25, 5000);
@@ -978,11 +951,10 @@ export async function mount(canvas, world) {
         handle.post = new PostFx(renderer);
     } catch (e) {
         handle.post = null;   // no post pass: the scene renders straight to the canvas
-        renderer.toneMapping = THREE.ACESFilmicToneMapping;
+        configureRenderer(THREE, renderer, { tone: 'aces' });
         console.warn('pocabinet/scene: post-processing unavailable', e);
     }
     handle.applyTier(appTier());
-    followAppTier(handle);
     handle.setTrack(world);
     const start = handle.track.pointAt(-40);
     handle.setView({ x: start.x, y: start.y, h: handle.track.heightAt(-40) / WORLD_SCALE, heading: Math.atan2(start.ty, start.tx), mode: 'chase', snap: true });

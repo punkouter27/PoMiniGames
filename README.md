@@ -56,6 +56,25 @@ sign-in: a player is a random browser id plus three initials.
   with PoRacer's laps and PoBrawl's round clock. Shared camera-shake presets live in
   `feelPresets.js` (`window.PoFeel`), and particle bursts in `gpuFx.js`
   (`PoFx.burst(x, y, 'win' | 'ko' | 'highscore')`).
+- **One game host for 2D and 3D (`wwwroot/js/platform/stage/`, `2d/`, `3d/`).** Every canvas engine
+  runs on `createStage({ kind: '2d' | '3d', ... })`. The stage owns the canvas size through the
+  shared pixel-ratio policy (`canvasDpr.js`), a loop-safe ResizeObserver, the rAF loop (dt clamp,
+  optional fixed step, hitstop time scale), pause on a hidden tab or lost focus, the `PoQuality`
+  tier and every teardown. Games keep only what they simulate and draw.
+  - **Features are written once.** A feature is one file in `platform/stage/features/` plus one line in
+    its `index.js`; `kind: 'any' | '2d' | '3d'` decides which stages get it, and `default: true` turns
+    it on everywhere (a game opts out with `exclude: ['id']`). Today: `shake` (default, any; camera
+    shake driven by `PoImpact` trauma) and `renderBudget` (opt-in, 3D; the adaptive pixel-ratio and
+    shadow ladder).
+  - **2D helpers:** `bindCanvas` and `makeLayer` (HUD and offscreen canvases), `fitWorld` (letterbox and
+    integer-pixel scaling), `createParticles2D`, `tween.js` (easing, damp, spring), `createShaderQuad`
+    (raw WebGL2 full-screen shaders).
+  - **3D helpers:** `createRenderer(THREE, { api: 'webgl' | 'webgpu' | 'auto', tone, shadows, ... })` takes
+    `THREE` as an argument, so the r165 games and the r186 WebGPU PoEcosystem share it.
+    `attachRenderer(stage, renderer, { camera, composer })` sizes the renderer on every resize and
+    disposes it with the stage. `disposeObject3D` and `watchContextLoss` handle teardown and context
+    loss, and `warmup` compiles shaders before the first frame.
+  - Tested in `tests/platform-stage.test.mjs`.
 - **GFX / physics / audio layer (2026-11-17 deck, `docs/2026-11-17/GFX_PHYSICS_AUDIO_IDEAS.html`).**
   All of these are in `wwwroot/js/platform/` and are lazy-imported by engines, except `springUi`, `framePacing`
   and `resultCeremony`, which load globally from `index.html`.

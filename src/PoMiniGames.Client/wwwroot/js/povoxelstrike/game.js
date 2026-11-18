@@ -45,6 +45,8 @@ import { Weapon } from './combat.js';
 import { EnemyManager } from './enemies.js';
 import { VoxelAudio } from './audio.js';
 import { Vfx } from './vfx.js';
+import { createStage } from '../platform/stage/stage.js';
+import { disposeObject3D, disposeRenderer } from '../platform/3d/dispose.js';
 import { resolveQuality, createRenderer, AdaptiveQuality, applyRenderTier } from './quality.js';
 import { setQuality, SkyEnvironment, markHotCarve, tickMaterials, resetMaterials } from './materials.js';
 import { ParticleSystem } from './particles.js';
@@ -203,8 +205,6 @@ export class Engine {
     this.carveSink = null;    // online: (kind, structureIndex, x, y, z) → the hub
     this.winSink = null;      // online: () → the hub, when this player takes the chalice
     this.free = false;        // free control: driving without Pointer Lock (pad / touch)
-    this.rafId = 0;
-    this.lastTime = 0;
     this.keys = new Set();
     this.yaw = 0;
     this.pitch = -0.25;
@@ -268,22 +268,20 @@ export class Engine {
 
     // MSAA is redundant once SMAA is in the chain, and the two together cost twice for
     // one result — so the tier that turns SMAA on turns hardware AA off.
-    const built = await createRenderer({ antialias: !this.q.smaa });
-    if (this.disposed) { built.renderer.dispose?.(); return; }
-    this.renderer = built.renderer;
-    this.rendererApi = built.api;
-    this.renderer.setPixelRatio(Math.min(window.devicePixelRatio, this.q.pixelRatioCap));
-    this.renderer.setSize(width, height);
-    this.renderer.shadowMap.enabled = this.q.shadows;
-    this.renderer.shadowMap.type = THREE.PCFSoftShadowMap;
     // PBR wants a filmic curve and a linear working space; without tone mapping the
     // sun-lit faces of a white cottage clip to flat white the moment the sun is up.
-    this.renderer.toneMapping = THREE.ACESFilmicToneMapping;
     // ACES rolls highlights off hard, so a "correct" exposure of 1.0 reads as gloomy in a
     // scene made almost entirely of mid-grey stone. 1.2 puts the walls in the upper
     // midtones where the damage is readable; 1.45 (tried first) clipped stone and sky to
     // flat white, which is not "brighter", it is less picture.
-    this.renderer.toneMappingExposure = 1.2;
+    const built = await createRenderer(THREE, {
+      antialias: !this.q.smaa, tone: 'aces', exposure: 1.2, shadows: this.q.shadows ? 'pcfsoft' : false,
+      pixelRatio: Math.min(window.devicePixelRatio, this.q.pixelRatioCap),
+    });
+    if (this.disposed) { disposeRenderer(built.renderer); return; }
+    this.renderer = built.renderer;
+    this.rendererApi = built.api;
+    this.renderer.setSize(width, height);
     this.canvas = this.renderer.domElement;
     this.canvas.style.display = 'block';
     this.host.appendChild(this.canvas);
@@ -586,17 +584,17 @@ export class Engine {
     this._buildCrosshair();
     this.input = new AltInput(this.host, { pause: () => this.pause() });
 
-    window.addEventListener('keydown', this._onKeyDown);
-    window.addEventListener('keyup', this._onKeyUp);
-    document.addEventListener('pointerlockchange', this._onPointerLockChange);
-    document.addEventListener('contextmenu', this._onContextMenu);
-
-    this.resizeObserver = new ResizeObserver(() => this._resize());
-    this.resizeObserver.observe(this.host);
+    // The stage owns the rAF loop (dt clamped to 0.05; rAF's first stamp can be stale, the loop
+    // zeroes it), the deferred ResizeObserver, pause-on-hidden and listener teardown. The sim's
+    // own accumulator, hit-stop scale and trauma shake (rotation + shader uniform) stay here.
+    this.stage = createStage({ kind: '3d', container: this.host, exclude: ['shake'], maxDt: 0.05, onFrame: (dt) => this._frame(dt), onResize: () => this._resize() });
+    this.stage.listen(window, 'keydown', this._onKeyDown);
+    this.stage.listen(window, 'keyup', this._onKeyUp);
+    this.stage.listen(document, 'pointerlockchange', this._onPointerLockChange);
+    this.stage.listen(document, 'contextmenu', this._onContextMenu);
 
     this.running = true;
-    this.lastTime = performance.now();
-    this.rafId = requestAnimationFrame((t) => this._frame(t));
+    this.stage.start();
 
     this._notify('OnReady', this.volumes.length, structures.length, this.weather.kind);
   }
@@ -659,15 +657,10 @@ export class Engine {
   dispose() {
     this.disposed = true;
     this.running = false;
-    cancelAnimationFrame(this.rafId);
-    window.removeEventListener('keydown', this._onKeyDown);
-    window.removeEventListener('keyup', this._onKeyUp);
-    document.removeEventListener('pointerlockchange', this._onPointerLockChange);
-    document.removeEventListener('contextmenu', this._onContextMenu);
+    this.stage?.dispose();   // loop, resize observer and the listeners registered in start()
     document.removeEventListener('mousemove', this._onMouseMove);
     document.removeEventListener('mousedown', this._onMouseDown);
     document.removeEventListener('mouseup', this._onMouseUp);
-    this.resizeObserver?.disconnect();
     if (this._locked()) document.exitPointerLock();
 
     this.input?.dispose();
@@ -694,14 +687,8 @@ export class Engine {
 
     // Free GPU resources explicitly — this SPA holds one live GL context per mounted 3D
     // game and Chrome caps the pool (~16), so a leaked context starves sibling games.
-    this.scene?.traverse((obj) => {
-      obj.geometry?.dispose();
-      if (obj.material) (Array.isArray(obj.material) ? obj.material : [obj.material]).forEach(m => m.dispose());
-    });
-    this.renderer?.dispose();
-    // dispose() does not hand the context back; see pobrawl/game.js dispose().
-    try { this.renderer?.forceContextLoss?.(); } catch { /* context already gone */ }
-    this.canvas?.remove();
+    disposeObject3D(this.scene);
+    disposeRenderer(this.renderer);   // also hands the GL context back and removes the canvas
     this.crosshair?.remove();
     this.hitArc?.remove();
     this.cracks?.remove();
@@ -709,15 +696,10 @@ export class Engine {
 
   // ── Frame loop ─────────────────────────────────────────────────────────
 
-  _frame(time) {
+  _frame(dt) {
     if (!this.running) return;
-    // Clamped on BOTH ends: rAF can hand the first callback a timestamp EARLIER than the
-    // performance.now() taken in start() (observed ~2.8 s stale in headless Chromium). An
-    // unclamped negative dt turns the camera lerp factor 1−e^(−12·dt) negative and the
-    // follow diverges exponentially instead of converging.
-    const frameDt = (time - this.lastTime) / 1000;
-    const dt = Math.min(Math.max(frameDt, 0), 0.05);
-    this.lastTime = time;
+    // dt arrives clamped to [0, 0.05] by the stage loop (a stale first rAF stamp or a negative
+    // dt would turn the camera lerp factor 1−e^(−12·dt) negative and diverge the follow).
 
     // Paused, or 'ready' behind the start card: render the frozen scene, nothing advances
     // (the clock must not run nor the wall guns fire while the start card is up). Dead: the world keeps moving for the kill-cam beat (debris
@@ -874,7 +856,6 @@ export class Engine {
     }
 
     this.vfx.render();
-    this.rafId = requestAnimationFrame((t) => this._frame(t));
   }
 
   // ── Online ──

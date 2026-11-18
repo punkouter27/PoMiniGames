@@ -340,7 +340,6 @@ class CinematicsMethods {
     this.camera.lookAt(mid.x, mid.y + 1 * this._framingHeightBias(), mid.z);
     this._camVel.set(0, 0, 0);
     this.fovPunch = 0;
-    this.shakeT = 0;
     this._fitFov();
   }
 
@@ -480,8 +479,8 @@ class CinematicsMethods {
     }
 
     // FOV punch decays per frame; 'super' drives its own FOV so skips both branches.
-    // Calm mode (reduced motion) drops punch and shake outright.
-    if (this._calm()) { this.fovPunch = 0; this.shakeT = 0; }
+    // Calm mode (reduced motion) drops the punch outright.
+    if (this._calm()) this.fovPunch = 0;
     if (this.fovPunch > 0.01 && this.cameraMode !== 'super') {
       this.camera.fov = fovAim + this.fovPunch;
       this.camera.updateProjectionMatrix();
@@ -489,13 +488,6 @@ class CinematicsMethods {
     } else if (this.cameraMode !== 'ko' && this.cameraMode !== 'super') {
       this.camera.fov = THREE.MathUtils.lerp(this.camera.fov, fovAim, Math.min(1, dt * 6));
       this.camera.updateProjectionMatrix();
-    }
-
-    if (this.shakeT > 0) {
-      const amp = this.shakeAmp * (this.shakeT / 0.18);
-      this.camera.position.x += (Math.random() - 0.5) * amp;
-      this.camera.position.y += (Math.random() - 0.5) * amp;
-      this.shakeT = Math.max(0, this.shakeT - dt);
     }
 
     // A side change is consumed by whichever branch ran this frame (the KO/super shots

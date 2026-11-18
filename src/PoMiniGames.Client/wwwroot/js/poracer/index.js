@@ -9,9 +9,10 @@ import * as Render from './renderer.js';
 import * as Audio from './audio.js';
 import { sampleAt } from './interpolation.js';
 import { prepareSnapshot, STRIDE } from './snapshot.js';
-import { startInput, stopInput, setInputEnabled, getSize, pollPad } from './input.js';
+import { startInput, stopInput, setInputEnabled, pollPad } from './input.js';
 import { encodeTrack, resample, sampleAt as sampleGhostAt, unwrap, loadGhost, saveGhost } from '../platform/ghostTrack.js';
 import '../platform/weather.js';
+import { createStage } from '../platform/stage/stage.js';
 
 // Rivals are drawn this far behind the newest snapshot, so there is always a pair of
 // snapshots to interpolate between (two intervals, less one frame of jitter).
@@ -96,7 +97,7 @@ let buf = [];
 // easing in push() is what filters the jitter out.
 let clockOffset = null;
 let roster = [], localIdx = -1;
-let raf = 0, mainId = null, finishing = false;
+let stage = null, mainId = null, finishing = false;
 let hudEls = null, chipEls = null, stripEl = null, hudTick = 0;
 let interpolatedCars = [], playerCars = [], lastAudioAt = 0, lastProfileAt = 0;
 const profiling = new URLSearchParams(location.search).get('perf') === '1';
@@ -158,10 +159,9 @@ function hud(me, newest, ts) {
 }
 
 function frame() {
-    raf = requestAnimationFrame(frame);
     const now = performance.now();
     if (profiling) profile.rafFrames++;
-    if (!buf.length || document.hidden) return;
+    if (!buf.length) return;   // the stage's loop already sits out a hidden tab
     pollPad();
 
     const newest = buf[buf.length - 1];
@@ -183,7 +183,7 @@ function frame() {
     }
     if (profiling) profile.interpolationMs += performance.now() - interpolationStart;
 
-    const { w, h } = getSize();
+    const { cssW: w, cssH: h } = stage.view;
     const renderStart = profiling ? performance.now() : 0;
     Render.draw(cars, w, h, localIdx >= 0 ? ghostAt(cars[localIdx], newest, ts) : null);
     if (profiling) profile.renderMs += performance.now() - renderStart;
@@ -223,8 +223,8 @@ function frame() {
 }
 
 function stop() {
-    if (raf) cancelAnimationFrame(raf);
-    raf = 0;
+    stage?.dispose();
+    stage = null;
     stopInput();
     Audio.stop();
     Render.dispose();
@@ -244,6 +244,16 @@ window.PoRacer = {
         mainId = canvasId;
         startInput(canvasId, reference);
         Render.mount(canvasId);
+        // Owns sizing (900k-pixel budget), the rAF loop and the hidden-tab pause. No dt clamp (the
+        // renderer clamps its own) and no shared shake: the camera applies PoImpact's in world units.
+        const canvas = document.getElementById(canvasId);
+        if (canvas) {
+            stage = createStage({
+                canvas, maxPixels: 900_000, maxDt: Infinity, exclude: ['shake'],
+                onResize: (v, st) => { st.ctx.setTransform(v.sx, 0, 0, v.sy, 0, 0); Render.invalidateBitmaps(); },
+                onFrame: frame,
+            });
+        }
         // Outdoors: almost no early reflections and a short, dark tail. See
         // acoustics.js — the default "generic room" made the track sound indoors.
         try { window.PoAcoustics?.setSpace('outdoor'); } catch { /* optional */ }
@@ -364,7 +374,7 @@ window.PoRacer = {
 
         Audio.lights(countdownMs > 0 ? Math.min(5, Math.floor((3000 - countdownMs) / 500)) : 0);
         if (running) Audio.events(prev, cars, localIdx);
-        if (!raf) raf = requestAnimationFrame(frame);
+        stage?.start();
     },
 
     /**

@@ -12,6 +12,8 @@ import * as Sfx from './audio.js';
 import { drawFrame, frameLayout, SCREEN_W, MAP_Y } from './render.js';
 import { buildTouchControls, isTouchDevice } from './touch.js';
 import { KeyBridge, BUTTONS, pressed, stick } from '../platform/gamepadBus.js';
+import { createStage } from '../platform/stage/stage.js';
+import { clamp } from '../platform/2d/tween.js';
 import { ensure as ensureRadzen, remove as removeRadzen } from '../platform/radzenTheme.js';
 
 const TICK = 0.1;
@@ -37,14 +39,6 @@ function padCodes(pad) {
 
 function call(method, ...args) {
   return g?.ref.invokeMethodAsync(method, ...args).catch(() => {});
-}
-
-function resize() {
-  const dpr = Math.min(2, window.devicePixelRatio || 1);
-  const w = g.host.clientWidth, h = g.host.clientHeight;
-  g.canvas.width = Math.max(1, Math.round(w * dpr));
-  g.canvas.height = Math.max(1, Math.round(h * dpr));
-  g.view = { w, h, dpr };
 }
 
 /** Puts everyone outside a town at the start of a development phase. */
@@ -247,50 +241,40 @@ function onSnapshot(snap) {
   g.trades = [];
 }
 
-function frame(now) {
-  // The match this callback was queued for. A restart replaces `g` before the old loop has
-  // run; the stale callback retires instead of adopting the new match, which would leave two
-  // clocks advancing it and two draws per frame.
-  const self = g;
-  if (!self?.running) return;
-  self.raf = requestAnimationFrame(frame);
-  if (g !== self) return;
-  const dt = Math.min(0.1, (now - g.last) / 1000);
-  g.last = now;
+/** One clock step (dt already clamped to 0.1 s by the stage loop). */
+function step(dt) {
   g.pad?.poll();
-  // A phone held upright shows the rotate prompt; the match waits.
-  g.paused = g.touch && window.matchMedia('(orientation: portrait)').matches;
-  if (!g.paused) {
-    const gameDt = dt * g.speed;
-    g.time += dt;
-    g.phaseTime += gameDt;
-    if (g.phase === DEVELOP) for (let left = gameDt; left > 0; left -= 0.05) simulate(Math.min(0.05, left));
-    for (const t of g.trades) t.life -= dt;
-    g.trades = g.trades.filter((t) => t.life > 0);
-    // A message is worth so many seconds of the match, not of the wall clock: sped up, it
-    // would otherwise still be on the bar two phases later. (Never quicker than 4×, to stay readable.)
-    if (g.messageLife > 0 && (g.messageLife -= dt * Math.min(g.speed, 4)) <= 0) g.message = '';
+  const gameDt = dt * g.speed;
+  g.time += dt;
+  g.phaseTime += gameDt;
+  if (g.phase === DEVELOP) for (let left = gameDt; left > 0; left -= 0.05) simulate(Math.min(0.05, left));
+  for (const t of g.trades) t.life -= dt;
+  g.trades = g.trades.filter((t) => t.life > 0);
+  // A message is worth so many seconds of the match, not of the wall clock: sped up, it
+  // would otherwise still be on the bar two phases later. (Never quicker than 4×, to stay readable.)
+  if (g.messageLife > 0 && (g.messageLife -= dt * Math.min(g.speed, 4)) <= 0) g.message = '';
 
-    // Production counts each plot's units up one at a time, with a blip for each.
-    if (g.phase === PRODUCE && g.production) {
-      const shown = Math.min(7, Math.floor(g.phaseTime / 0.35));
-      if (shown > g.units && g.production.some((n) => n >= shown)) Sfx.unit(shown);
-      g.units = Math.max(g.units, shown);
-    }
-
-    g.acc += gameDt;
-    while (g.acc >= TICK) { g.acc -= TICK; g.pending++; }
-    if (g.pending > 0 && !g.busy && g.phase !== FINISHED) {
-      const n = Math.min(g.pending, 20);
-      g.pending -= n;
-      g.busy = true;
-      g.ref.invokeMethodAsync('OnTick', n)
-        .then((snap) => { if (g) { g.busy = false; onSnapshot(snap); } })
-        .catch((e) => { console.error('[PoMule] tick failed', e); window.PoMule.stop(); });
-    }
+  // Production counts each plot's units up one at a time, with a blip for each.
+  if (g.phase === PRODUCE && g.production) {
+    const shown = Math.min(7, Math.floor(g.phaseTime / 0.35));
+    if (shown > g.units && g.production.some((n) => n >= shown)) Sfx.unit(shown);
+    g.units = Math.max(g.units, shown);
   }
 
-  g.ctx.setTransform(g.view.dpr, 0, 0, g.view.dpr, 0, 0);
+  g.acc += gameDt;
+  while (g.acc >= TICK) { g.acc -= TICK; g.pending++; }
+  if (g.pending > 0 && !g.busy && g.phase !== FINISHED) {
+    const n = Math.min(g.pending, 20);
+    g.pending -= n;
+    g.busy = true;
+    g.ref.invokeMethodAsync('OnTick', n)
+      .then((snap) => { if (g) { g.busy = false; onSnapshot(snap); } })
+      .catch((e) => { console.error('[PoMule] tick failed', e); window.PoMule.stop(); });
+  }
+}
+
+function draw(stage) {
+  g.ctx.setTransform(stage.view.sx, 0, 0, stage.view.sy, 0, 0);
   try {
     drawFrame(g.ctx, g, g.view);
   } catch (e) {
@@ -368,7 +352,7 @@ window.PoMule = {
     host.appendChild(canvas);
     const plots = W.COLS * W.ROWS;
     g = {
-      host, canvas, ctx: canvas.getContext('2d'), ref: dotnetRef,
+      host, canvas, ref: dotnetRef,
       terrain: opts.terrain, peaks: opts.peaks, species: opts.species, colors: opts.colors, names: opts.names,
       owner: new Array(plots).fill(-1), installed: new Array(plots).fill(-1), crystite: new Array(plots).fill(0),
       human: !!opts.human, speed: opts.speed || 1, seats: opts.species.length,
@@ -381,19 +365,33 @@ window.PoMule = {
     };
     placeAvatars();
     onSnapshot(opts.snapshot);
-    resize();
-    g.onResize = () => {
-        // Re-entrant by construction: resize() writes the canvas size the observer is
-        // watching, so doing it inside the callback logs "ResizeObserver loop completed
-        // with undelivered notifications" on every mount. Defer to the next frame.
-        if (g) requestAnimationFrame(() => { if (g) resize(); });
+    // The stage owns canvas sizing, the ResizeObserver, the rAF loop (dt clamp 0.1) and teardown.
+    // The host shakes through PoImpact.registerStage below, so the stage's own shake stays off.
+    // A callback from a stopped or replaced match must never step or draw the new one.
+    const self = g;
+    const live = (st) => g === self && g.stage === st;
+    g.stage = createStage({
+      canvas, container: host, maxDpr: 2, maxDt: 0.1, exclude: ['shake'], renderWhilePaused: true,
+      onResize: (v) => { if (g === self) g.view = { w: v.cssW, h: v.cssH, dpr: v.dpr }; },
+      onStep: (dt, st) => { if (live(st)) step(dt); },
+      onFrame: (dt, a, st) => {
+        if (!live(st)) return;
+        if (st.paused) g.pad?.poll();
+        draw(st);
+      },
+    });
+    g.ctx = g.stage.ctx;
+    g.view = { w: g.stage.view.cssW, h: g.stage.view.cssH, dpr: g.stage.view.dpr };
+    // A phone held upright shows the rotate prompt; the match waits.
+    const portrait = window.matchMedia('(orientation: portrait)');
+    const syncPortrait = () => {
+      g.paused = g.touch && portrait.matches;
+      g.stage.setPaused(g.paused, 'portrait');
     };
-    g.resizeObserver = new ResizeObserver(g.onResize);
-    g.resizeObserver.observe(host);
-    window.addEventListener('resize', g.onResize);
-    window.addEventListener('keydown', onKeyDown);
-    window.addEventListener('keyup', onKeyUp);
-    window.addEventListener('blur', onBlur);
+    g.stage.listen(portrait, 'change', syncPortrait);
+    g.stage.listen(window, 'keydown', onKeyDown);
+    g.stage.listen(window, 'keyup', onKeyUp);
+    g.stage.listen(window, 'blur', onBlur);
     if (g.human && isTouchDevice()) {
       g.touch = true;
       g.removeTouch = buildTouchControls(host);
@@ -404,8 +402,8 @@ window.PoMule = {
     }
     // The host shakes with the cues' impact feel (a meteor, a claim).
     g.unstage = window.PoImpact?.registerStage?.(host);
-    g.last = performance.now();
-    g.raf = requestAnimationFrame(frame);
+    syncPortrait();
+    g.stage.start();
     return true;
   },
 
@@ -425,7 +423,7 @@ window.PoMule = {
 
   /** How many times faster than real time the match runs (the demo's speed buttons). */
   setSpeed(speed) {
-    if (g) g.speed = Math.min(16, Math.max(1, speed));
+    if (g) g.speed = clamp(speed, 1, 16);
   },
 
   /** Puts a line on the orange message bar for a few seconds. `sound`: a name from audio.js. */
@@ -465,13 +463,8 @@ window.PoMule = {
   stop() {
     if (!g) return;
     g.running = false;
-    cancelAnimationFrame(g.raf);
+    g.stage.dispose();
     g.pad?.dispose(); // releases any key a held pad pressed, while the listeners still hear it
-    g.resizeObserver.disconnect();
-    window.removeEventListener('resize', g.onResize);
-    window.removeEventListener('keydown', onKeyDown);
-    window.removeEventListener('keyup', onKeyUp);
-    window.removeEventListener('blur', onBlur);
     g.removeTouch?.();
     g.unstage?.();
     g.canvas.remove();

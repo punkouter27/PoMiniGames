@@ -12,6 +12,7 @@ import { source as physicsSource } from './sand-playground-physics.glsl.js';
 import { source as renderSource } from './sand-playground-render.glsl.js';
 import { SAND_PLAYGROUND_CALIBRATION, consumePhysicsSteps } from './sand-playground-calibration.js';
 import { encodeGif } from './gifEncoder.js';
+import { createStage } from '../platform/stage/stage.js';
 
 const W = 800, H = 600;
 const AIR = 0, SAND = 1, CONCRETE = 2, WATER = 3, BEDROCK = 4;
@@ -83,7 +84,7 @@ let parity = 0;
 let surgeDir = 1;      // horizontal surge pass alternates direction each sub-step
 let disableFall = false, disableSurge = false, moveDisable = 0; // diagnostic toggles
 let quakes = [];       // expanding seismic tremor rings from big blasts
-let rafId = 0, disposed = false;
+let stage = null, disposed = false;
 let lastT = 0, avgDelta = 16.6, fps = 60, fpsFrames = 0, fpsTime = 0;
 let physicsAccumulator = 0;
 
@@ -309,6 +310,7 @@ async function setupGl(gen) {
 export async function init(canvasEl, overlayEl, dotnetRef) {
     // The module instance survives navigation, so a second visit must start clean.
     disposed = false; inited = false;
+    stage?.dispose(); stage = null;
     undoStack = []; challenge = null; rec = null; gifRec = null; simCredit = 0; hitStop = 0; slowmo = 0;
     canvas = canvasEl;
     overlay = overlayEl;
@@ -404,7 +406,7 @@ export async function init(canvasEl, overlayEl, dotnetRef) {
     };
     if (!reducedMotion) melt = 1.0001; // the first world pours in from the sky too
     lastT = performance.now();
-    rafId = requestAnimationFrame(frame);
+    stage.start();
 }
 
 // A lost context (driver reset, GPU process crash, too many tabs) must not end the
@@ -412,7 +414,7 @@ export async function init(canvasEl, overlayEl, dotnetRef) {
 // GL object and re-upload the world from the CPU mirror.
 function attachContextLoss() {
     const c = canvas;
-    const lost = e => { e.preventDefault(); glLost = true; cancelAnimationFrame(rafId); };
+    const lost = e => { e.preventDefault(); glLost = true; stage?.stop(); };
     const restored = async () => {
         if (disposed) return;
         if (!(await setupGl(++initGen))) return;
@@ -420,7 +422,7 @@ function attachContextLoss() {
         computeColumnHeights();
         melt = 0; glLost = false;
         lastT = performance.now();
-        rafId = requestAnimationFrame(frame);
+        stage?.start();
     };
     c.addEventListener('webglcontextlost', lost);
     c.addEventListener('webglcontextrestored', restored);
@@ -532,7 +534,7 @@ async function setTilt(on) {
 
 export function dispose() {
     disposed = true;
-    cancelAnimationFrame(rafId);
+    stage?.dispose(); stage = null;
     for (const fn of cleanups) { try { fn(); } catch { /* already gone */ } }
     cleanups = [];
     setTilt(false);
@@ -2925,27 +2927,18 @@ function attachKeys() {
 // Present at the displayed size instead of letting CSS stretch an 800x600 bitmap:
 // the composite pass does the (sharp-bilinear) upscale, so cells stay crisp at any DPR.
 function attachResize() {
-    const fit = () => {
-        const r = canvas.getBoundingClientRect();
-        if (r.width < 2 || r.height < 2) return;
-        // One resolution policy for every canvas in the app (canvasDpr.js: a DPR
-        // ceiling plus a total-pixel budget). The 2D overlay is sized with the GL
-        // canvas so the aim line, HUD text and brush ring are as sharp as the scene.
-        const dpr = window.PoCanvasDpr ? window.PoCanvasDpr.resolve(r.width, r.height) : Math.min(window.devicePixelRatio || 1, 2);
-        const w = Math.max(W, Math.round(r.width * dpr));
-        const h = Math.max(H, Math.round(r.height * dpr));
-        if (canvas.width !== w || canvas.height !== h) {
-            canvas.width = overlay.width = w;
-            canvas.height = overlay.height = h;
-        }
-    };
-    fit();
-    // Deferred: fit() writes canvas.width/height, which is inside the box this
-    // observer watches — doing that synchronously logs the "ResizeObserver loop"
-    // warning on every mount.
-    const ro = new ResizeObserver(() => requestAnimationFrame(fit));
-    ro.observe(canvas);
-    cleanups.push(() => ro.disconnect());
+    // The shared stage owns the DPR policy, the loop-safe ResizeObserver and the rAF loop. The GL
+    // canvas and the 2D overlay share one backing size (never below the W x H world) so the aim
+    // line, HUD text and brush ring are as sharp as the scene. The sim keeps its own credit
+    // accumulator in frame(); the stage only supplies the tick.
+    stage = createStage({
+        kind: '2d', canvas, context: 'none', sizeCanvas: false, exclude: ['shake'],
+        onResize: v => {
+            const w = Math.max(W, v.w), h = Math.max(H, v.h);
+            if (canvas.width !== w || canvas.height !== h) { canvas.width = overlay.width = w; canvas.height = overlay.height = h; }
+        },
+        onFrame: () => frame(stage.now),
+    });
 }
 
 // ---------------------------------------------------------------------------
@@ -3598,7 +3591,6 @@ function frame(t) {
 
     fpsFrames++;
     if (t - fpsTime > 500) { fps = Math.round(fpsFrames * 1000 / (t - fpsTime)); fpsFrames = 0; fpsTime = t; }
-    rafId = requestAnimationFrame(frame);
 }
 
 // ---------------------------------------------------------------------------

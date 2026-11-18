@@ -8,6 +8,7 @@ import { guardCovers, testAttackHit, regionForHurtBone } from './hitboxes.js';
 import { MAX_HP } from './constants.js';
 import { FfaSeason, FFA_PROFILES, seededRandom } from './ffaSeason.js';
 import { setup as setupFfaRendering } from './ffaRendering.js';
+import { createArenaStage, bindView } from './stageHost.js';
 import { createAutomaticHighlights } from './ffaHighlights.js';
 import { createWikimediaFacts } from './ffaFacts.js';
 import { moveFighters, impactImpulse } from './ffaPhysics.js';
@@ -61,8 +62,7 @@ export class BrawlFfaGame {
     this.renderer = null;
     this.scene = null;
     this.camera = null;
-    this.resizeObserver = null;
-    this.lastFrame = 0;
+    this.stage = null;
     this.elapsed = 0;
     this.phase = 'intro';
     this.round = 0;
@@ -71,7 +71,6 @@ export class BrawlFfaGame {
     this.started = false;
     this.resultTimer = 0;
     this.resultPending = false;
-    this._animFrame = 0;
     this.cameraFocus = null;
     this.cameraShot = -1;
     this.cameraShotTime = 0;
@@ -105,7 +104,7 @@ export class BrawlFfaGame {
     };
   }
 
-  start() {
+  async start() {
     if (this.started || this.disposed) return;
     this.started = true;
     this.motionQuery = window.matchMedia('(prefers-reduced-motion: reduce)');
@@ -118,13 +117,14 @@ export class BrawlFfaGame {
     this.round = this.seasons.state.totalRounds;
     this.factsEnabled = this.seasons.state.factsEnabled === true;
 
-    this.renderer = new THREE.WebGLRenderer({ antialias: false, powerPreference: 'high-performance' });
-    this.renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 1.35));
-    this.renderer.setSize(this.container.clientWidth || 800, this.container.clientHeight || 540);
-    this.renderer.outputColorSpace = THREE.SRGBColorSpace;
-    this.renderer.toneMapping = THREE.AgXToneMapping;
-    this.renderer.toneMappingExposure = 1.25;
-    this.container.appendChild(this.renderer.domElement);
+    // Stage-owned renderer, loop, resize and dispose. ffaRendering.js then takes over the pixel
+    // ratio with its own frame-time ladder, so the stage's cap is only the starting point.
+    const { stage, renderer } = await createArenaStage(this.container,
+      { tone: 'agx', exposure: 1.25 },
+      { maxDpr: 1.35, maxDt: 0.05, onFrame: (dt) => this._frame(dt) });
+    if (this.disposed) { stage.dispose(); return; }
+    this.stage = stage;
+    this.renderer = renderer;
 
     this.scene = new THREE.Scene();
     const arena = buildArena(this.scene, { rectAreaLights: 0 });
@@ -149,9 +149,8 @@ export class BrawlFfaGame {
     this.camera = new THREE.PerspectiveCamera(42, 1, 0.1, 100);
     this.camera.position.set(0, 10, 13);
     this.camera.lookAt(0, 0, 0);
-    this._resize();
-    this.resizeObserver = new ResizeObserver(() => this._resize());
-    this.resizeObserver.observe(this.container);
+    bindView(stage, { camera: this.camera, onResize: (view) => this._resize(view) });
+    this._resize(stage.view);
 
     this.audio = new AudioBus();
     this.audio.setMuted(!!this.options.muted);
@@ -195,18 +194,15 @@ export class BrawlFfaGame {
     this.replay = new FfaReplay(this.fighters);
 
     this._startRound();
-    this._animFrame = requestAnimationFrame((t) => this._frame(t));
+    stage.start();
   }
 
-  _resize() {
-    if (!this.renderer || !this.camera || !this.container) return;
-    const width = Math.max(1, this.container.clientWidth);
-    const height = Math.max(1, this.container.clientHeight);
-    this.camera.aspect = width / height;
+  _resize(view) {
+    if (this.disposed || !this.camera) return;
+    // The stage already sized the renderer and the camera aspect; the ladder owns the pixel ratio.
     this._updateCamera(0);
     this.camera.updateProjectionMatrix();
-    this.renderer.setSize(width, height);
-    this.rendering?.resize(width, height);
+    this.rendering?.resize(view.cssW, view.cssH);
   }
 
   _startRound() {
@@ -285,10 +281,8 @@ export class BrawlFfaGame {
     this._publishDashboard();
   }
 
-  _frame(timestamp) {
+  _frame(dt) {
     if (this.disposed) return;
-    const dt = this.lastFrame ? Math.min((timestamp - this.lastFrame) / 1000, 0.05) : 0;
-    this.lastFrame = timestamp;
 
     if (dt > 0 && !this.paused) {
       if (this.phase === 'fighting') {
@@ -341,7 +335,6 @@ export class BrawlFfaGame {
     }
     this.audio?.tick(dt);
     this.rendering.render(this.camera, dt);
-    this._animFrame = requestAnimationFrame((t) => this._frame(t));
   }
 
   _updateCamera(dt) {
@@ -968,9 +961,8 @@ export class BrawlFfaGame {
   dispose() {
     if (this.disposed) return;
     this.disposed = true;
-    cancelAnimationFrame(this._animFrame);
+    this.stage?.stop();
     window.clearTimeout(this.resultTimer);
-    this.resizeObserver?.disconnect();
     this.motionQuery?.removeEventListener('change', this.motionListener);
     this.spatialAudio?.dispose();
     this.audio?.close();
@@ -997,9 +989,8 @@ export class BrawlFfaGame {
       geometries.forEach((geometry) => geometry.dispose());
       materials.forEach((material) => material.dispose());
     }
-    this.renderer?.dispose();
-    this.renderer?.forceContextLoss();
-    this.renderer?.domElement.remove();
+    this.stage?.dispose();   // renderer, context loss, canvas, observer
+    this.stage = null;
     this.fighters = [];
     this.scene = null;
     this.renderer = null;

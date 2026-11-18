@@ -3,6 +3,7 @@
 // and real-time crowd pressure gradient heatmap.
 
 import { areas, lineDefs, obstacles, milestones } from './world.js';
+import { bindCanvas } from '../platform/2d/canvas2d.js';
 
 /**
  * Two palettes: the tablet's own, and the Okabe–Ito set the rest of the app switches to when
@@ -28,9 +29,14 @@ const PALETTES = {
 
 export function createRadar(canvas, { onSelectUnit } = {}) {
     if (!canvas) return null;
-    const ctx = canvas.getContext('2d');
     let width = canvas.width, height = canvas.height;
     let cachedDpr = 1;
+    // Backing size through the shared DPR policy and a deferred observer (no per-frame layout read).
+    const bound = bindCanvas(canvas, {
+        maxDpr: 2, maxPixels: 1e9,
+        onResize(view) { cachedDpr = view.dpr; width = view.w; height = view.h; },
+    });
+    const ctx = bound.ctx;
     let paletteMode = 'auto';
     const colors = () => PALETTES[paletteMode === 'auto'
         ? (document.documentElement.hasAttribute('data-colorsafe') ? 'colorsafe' : 'default')
@@ -41,20 +47,6 @@ export function createRadar(canvas, { onSelectUnit } = {}) {
     const WORLD_Z_MIN = -78, WORLD_Z_MAX = 108;
     const WORLD_W = WORLD_X_MAX - WORLD_X_MIN;
     const WORLD_D = WORLD_Z_MAX - WORLD_Z_MIN;
-
-    function resize() {
-        const dpr = Math.min(window.devicePixelRatio || 1, 2);
-        cachedDpr = dpr;
-        const rect = canvas.getBoundingClientRect();
-        const displayW = Math.max(160, Math.floor(rect.width || 220));
-        const displayH = Math.max(240, Math.floor(rect.height || 310));
-        if (canvas.width !== displayW * dpr || canvas.height !== displayH * dpr) {
-            canvas.width = displayW * dpr;
-            canvas.height = displayH * dpr;
-        }
-        width = canvas.width;
-        height = canvas.height;
-    }
 
     function toCanvas(wx, wz) {
         const u = (wx - WORLD_X_MIN) / WORLD_W;
@@ -84,7 +76,7 @@ export function createRadar(canvas, { onSelectUnit } = {}) {
     let currentUnits = [];
 
     // Pointer click interaction to select units
-    canvas.addEventListener('pointerdown', e => {
+    const onPointerDown = e => {
         if (!onSelectUnit || !currentUnits.length) return;
         const rect = canvas.getBoundingClientRect();
         const cx = (e.clientX - rect.left) * cachedDpr;
@@ -101,14 +93,14 @@ export function createRadar(canvas, { onSelectUnit } = {}) {
             }
         }
         if (best) onSelectUnit(best);
-    });
+    };
+    canvas.addEventListener('pointerdown', onPointerDown);
 
     let pulseTime = 0;
 
     function render(state, selectedUnit = null, dt = 0.016) {
         if (!state) return;
         const C = colors();
-        resize();
         pulseTime += dt;
         ctx.save();
         ctx.clearRect(0, 0, width, height);
@@ -313,7 +305,8 @@ export function createRadar(canvas, { onSelectUnit } = {}) {
     }
 
     function destroy() {
-        // cleanup listeners
+        canvas.removeEventListener('pointerdown', onPointerDown);
+        bound.dispose();
     }
 
     return { render, destroy, dispose: destroy, canvas, setPalette(mode) { paletteMode = mode ?? 'auto'; } };

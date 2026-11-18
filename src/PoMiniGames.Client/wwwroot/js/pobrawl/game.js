@@ -17,6 +17,8 @@ import { PERSONALITIES, makePersonalityState } from './personalities.js';
 import * as PostFx from '../platform/postFx.js';
 import * as VisualRuntime from '../platform/visualRuntime.js';
 import * as Quality from './quality.js';
+import { createArenaStage, bindView } from './stageHost.js';
+import { warmup } from '../platform/3d/warmup.js';
 import { AudioBus } from './audio.js';
 import { CannonRagdoll } from './ragdollPhysics.js';
 import {
@@ -163,9 +165,8 @@ export class BrawlGame {
     this.options = options;
     this.muted = false;
     this.disposed = false;
-    this.raf = 0;
+    this.stage = null;
     this.accumulator = 0;
-    this.lastFrame = 0;
     this.timeScale = 1;
     // Fast-forward multiplier (tournament only, see PoBrawl.setSpeed); 1 everywhere else.
     this.speed = 1;
@@ -175,10 +176,8 @@ export class BrawlGame {
     this._roundLabel = null;
     // Effects list — sparks, debris, post chunks. Updated each render tick.
     this.effects = [];
-    // Renderer-level feedback: hit-pause, screen shake, FOV punch.
+    // Renderer-level feedback: hit-pause, FOV punch.
     this.hitstopT = 0;
-    this.shakeT = 0;
-    this.shakeAmp = 0;
     this.fovPunch = 0;
     this.fovBase = BASE_FOV; // _fitFov re-derives it from the container's aspect
     // Post-FX pulses: bloom strength, chromatic aberration, radial blur and
@@ -227,7 +226,7 @@ export class BrawlGame {
     this.match = this._roundsMode() ? newMatch() : null;
   }
 
-  start() {
+  async start() {
     // Once per engine: a second call would build a second renderer, scene and rAF loop on top
     // of the first, and dispose() only knows about the latest of each.
     if (this._started || this.disposed) return;
@@ -244,46 +243,26 @@ export class BrawlGame {
     // there; switched on here and off in dispose so only this page pays for it.
     try { VisualRuntime.enableAudioReactive(true); } catch { /* never block the game on chrome */ }
 
-    // antialias:false is deliberate. Every frame is rendered into the
-    // composer's own MSAA target (see _buildComposer) and reaches the canvas
-    // as a fullscreen quad in OutputPass — a quad has no interior edges, so a
-    // multisampled default framebuffer would be allocated and never resolved
-    // against any geometry. The `samples` on composerRT is the real AA.
-    this.renderer = new THREE.WebGLRenderer({ antialias: false });
-    // Tier-aware DPR through the SHARED pixel budget (quality.js → PoCanvasDpr.resolve).
-    this.renderer.setPixelRatio(Quality.pixelRatio(w, h));
-    this.renderer.setSize(w, h);
-    this.renderer.shadowMap.enabled = true;
-    // PCFSoft: percentage-closer soft edges — the fighters' shadows get a
-    // real penumbra instead of the stepped PCF look.
-    this.renderer.shadowMap.type = THREE.PCFSoftShadowMap;
-    // KNOWN WARNING, not ours: on Windows/ANGLE the first program compile logs
-    //   THREE.WebGLProgram: Program Info Log: warning X4000: use of potentially
-    //   uninitialized variable (dyn_index_vec4_float4_int)
-    // The `dyn_index_*` temporaries are emitted by ANGLE's D3D backend when it lowers a
-    // dynamic array index, and the vec4 array it trips over is in three's own chunks (the
-    // light/shadow arrays in lights_fragment_begin / shadowmap_pars_fragment — this scene's
-    // shadow-casting key + spot is what pulls them in). None of this game's GLSL (the
-    // particle ShaderMaterial in vfx.js, the onBeforeCompile hooks in arena.js/sceneSetup.js/
-    // game.js/matWear.js) indexes an array with a variable — checked. The program still links
-    // and renders; the warning is upstream noise, so don't go hunting for a shader bug here.
-    // AgX handles saturated bright lights (bloom pulses, colored corner
-    // accents) far more gracefully than ACES, which skews hot colors.
-    // Measured against ACES/Neutral/Reinhard on a live frame: AgX keeps ~15%
-    // of pixels in the midtones where the others crush 95-98% into shadow.
-    this.renderer.toneMapping = THREE.AgXToneMapping;
-    // Contrast comes from the lighting ratio (key vs hemisphere fill), NOT from
-    // exposure — exposure lifts shadows and highlights together, so pushing it
-    // just makes a flat image a brighter flat image. Measured: at 1.9 the frame
-    // went 99.8% midtones with 0% shadows, visibly worse than 1.15. The real
-    // lever is the hemisphere cut + hotter key in arena.js; exposure only takes
-    // the small step needed to keep overall level after that cut. Tied to
-    // ENV_INTENSITY: without the env fill the rig carries the ambient level alone
-    // and needs 1.5; with it, 1.5 would re-flatten the contrast.
+    // The shared stage owns the renderer, its sizing (tier-aware DPR through PoCanvasDpr's pixel
+    // budget), the rAF loop and the dispose; this keeps only the look.
+    // PCFSoft: soft-edged shadows, a real penumbra under the fighters. AgX handles saturated
+    // bright lights (bloom pulses, colored corner accents) far more gracefully than ACES (~15%
+    // of pixels stay in the midtones). Contrast comes from the lighting ratio (key vs hemisphere
+    // fill), NOT exposure, which lifts shadows and highlights together; it is tied to
+    // ENV_INTENSITY: with the env fill 1.5 would re-flatten the contrast.
+    // KNOWN WARNING, not ours: on Windows/ANGLE the first compile logs "X4000: use of
+    // potentially uninitialized variable (dyn_index_vec4_float4_int)" from three's own
+    // light/shadow array chunks, not this game's GLSL (checked). The program still links.
+    // antialias:false is deliberate: every frame goes through the composer's own MSAA target
+    // (see _buildComposer) and reaches the canvas as a fullscreen quad, so a multisampled
+    // default framebuffer would never be resolved against any geometry.
     this.exposureBase = ENV_INTENSITY > 0 ? 1.36 : 1.5;
-    this.renderer.toneMappingExposure = this.exposureBase;
-    this.renderer.outputColorSpace = THREE.SRGBColorSpace;
-    this.container.appendChild(this.renderer.domElement);
+    const { stage, renderer } = await createArenaStage(this.container,
+      { tone: 'agx', exposure: this.exposureBase, shadows: 'pcfsoft' },
+      { maxDpr: Quality.settings().maxDpr, maxDt: MAX_FRAME_DT, onFrame: (dt) => this._frame(dt) });
+    if (this.disposed) { stage.dispose(); return; }
+    this.stage = stage;
+    this.renderer = renderer;
 
     this.scene = new THREE.Scene();
     // ── IBL ─────────────────────────────────────────────────────────────
@@ -434,38 +413,25 @@ export class BrawlGame {
     this.container.appendChild(this.splash);
     this._splashHide = 0; // wall-clock at which the splash should fade out
 
-    this._onResize = () => {
-      const cw = this.container.clientWidth, ch = this.container.clientHeight;
-      if (!cw || !ch) return;
-      this._hostW = cw;
-      this._hostH = ch;
-      this.camera.aspect = cw / ch;
-      this.camera.updateProjectionMatrix();
-      // The pixel budget is a function of the CSS size, so a resize can change the
-      // resolved DPR even though the tier has not moved — a window dragged from a
-      // quarter of the screen to fullscreen is exactly the case the budget exists
-      // for, and re-resolving here is what keeps it enforced after boot.
-      this.renderer.setPixelRatio(Quality.pixelRatio(cw, ch));
-      this.composer.setPixelRatio(Quality.pixelRatio(cw, ch));
-      this.renderer.setSize(cw, ch);
-      this.composer.setSize(cw, ch);
+    // The stage re-measures on every container change (the touch pad's row appearing, the shell's
+    // chrome: a window listener left the buffer stretched), sizes renderer, composer and camera
+    // aspect through the shared DPR budget, then runs this.
+    bindView(this.stage, { camera: this.camera, composer: this.composer, onResize: (view) => {
+      if (this.disposed) return;
+      this._hostW = view.cssW;
+      this._hostH = view.cssH;
       // BokehPass owns render targets sized independently of the composer's;
       // without this its depth buffer keeps the old aspect and the blur skews.
-      if (this.rackFocus) this.rackFocus.setSize(cw, ch);
+      this.rackFocus?.setSize(view.cssW, view.cssH);
       // Portrait frames widen the lens (cinematics.js _fitFov).
       this._fitFov();
       // setSize cleared the canvas; a paused loop draws nothing on its own, so ask for one frame.
       this._pauseRedraw = true;
-    };
-    // The container, not the window: the host changes size without a window
-    // resize too (the touch pad's row appearing, the shell's chrome), and a
-    // window listener left the drawing buffer stretched to the old aspect.
-    this._resizeObs = new ResizeObserver(this._onResize);
-    this._resizeObs.observe(this.container);
+    } });
 
     // Track the measured tier for the rest of the match (visualRuntime's
     // monitor self-starts on import, so this is a live signal).
-    // Mid-match only the pixel ratio follows the tier; the rest recompiles shaders,
+    // Mid-match only the pixel ratio follows the tier (_applyQuality moves the stage's DPR cap); the rest recompiles shaders,
     // so it waits for the next warm-up (resetMatch).
     this._offTierChange = Quality.onTierChange(() => {
       if (this.disposed) return;
@@ -573,78 +539,69 @@ export class BrawlGame {
     window.addEventListener('blur', this._onFocusLost);
     document.addEventListener('visibilitychange', this._onVisibility);
 
-    this.lastFrame = performance.now();
-    const loop = (now) => {
-      if (this.disposed) return;
-      this.raf = requestAnimationFrame(loop);
-      if (this.paused) {
-        // Frozen: no pads, no sim ticks, no clock, no render-time animation. The canvas keeps
-        // its last frame; only a resize (which clears it) draws one more. lastFrame tracks the
-        // wall clock so the first frame after the resume carries no catch-up dt.
-        this.lastFrame = now;
-        if (this._pauseRedraw && !this._compiling) {
-          this._pauseRedraw = false;
-          this.composer.render();
-        }
-        return;
-      }
-      this._pauseRedraw = false;
-      const rawDt = (now - this.lastFrame) / 1000;
-      // Floored at 0: a rAF timestamp can predate `lastFrame` when _warmupRender stamped it from
-      // performance.now() after a long shader compile (or a background tab delivers a stale frame
-      // time). A negative dt drives the accumulator below zero and freezes the sim until it climbs back.
-      let dt = Math.max(0, Math.min(rawDt, MAX_FRAME_DT));
-      this.lastFrame = now;
+    this.stage.start();
+  }
 
-      // Sample the pads before the sim so a press lands on this frame's tick.
-      if (this.gamepads) this.gamepads.poll();
-      // `speed` is the tournament's fast-forward (PoBrawl.setSpeed): more fixed ticks per frame,
-      // never a longer tick, so the fight resolves exactly as it would at 1x.
-      this.accumulator += dt * this.timeScale * this.speed;
-      while (this.accumulator >= SIM_DT) {
-        this.accumulator -= SIM_DT;
-        this._tick(SIM_DT);
+  /** One rendered frame, called by the stage with the clamped dt (MAX_FRAME_DT). */
+  _frame(dt) {
+    if (this.paused) {
+      // Frozen: no pads, no sim ticks, no clock, no render-time animation. The canvas keeps
+      // its last frame; only a resize (which clears it) draws one more. The stage's clock
+      // keeps running, so the first frame after the resume carries no catch-up dt.
+      if (this._pauseRedraw && !this._compiling) {
+        this._pauseRedraw = false;
+        this.composer.render();
       }
-      this._updateCamera(dt);
-      this._updateEffects(dt);
-      this._updateCrowd(dt);
-      this._updateFx(dt);
-      this._updateShow(dt);
-      this._updateLighting(dt);
-      this.atmoT += dt;
-      updateAtmosphere(this.arena, dt, this.atmoT, this.excited, this._phoneLevel);
-      updateRopes(this.arena, dt, this.fighters, this.atmoT);
-      // The shared impulse profile (hitResolution: KO / heavy hits) leaves a one-shot gust
-      // here; the banners' soft grid takes it and settles. Calm mode keeps them on the draft.
-      updateBanners(this.arena.backdrop, this.atmoT, dt, this._calm() ? 0 : (this._bannerGust || 0));
-      this._bannerGust = 0;
-      if (this.props) updateProps(this.props, dt, this.fighters, this._propHooks);
-      this._updateBlobShadows();
-      this._updateMatWear(dt);
-      if (this.fighters) {
-        for (const f of this.fighters) {
-          updateJiggles(f.rig, dt);
-          this._updateTrail(f, dt);
-          // Transient 'hurt' faces relax back to the resting expression.
-          // KO'd fighters keep the dazed face under the result modal.
-          if (f.expressionT > 0) {
-            f.expressionT -= dt;
-            if (f.expressionT <= 0 && f.state !== 'ko') {
-              setExpression(f.rig, 'neutral');
-            }
+      return;
+    }
+    this._pauseRedraw = false;
+    // Sample the pads before the sim so a press lands on this frame's tick.
+    if (this.gamepads) this.gamepads.poll();
+    // `speed` is the tournament's fast-forward (PoBrawl.setSpeed): more fixed ticks per frame,
+    // never a longer tick, so the fight resolves exactly as it would at 1x.
+    this.accumulator += dt * this.timeScale * this.speed;
+    while (this.accumulator >= SIM_DT) {
+      this.accumulator -= SIM_DT;
+      this._tick(SIM_DT);
+    }
+    this._updateCamera(dt);
+    this._updateEffects(dt);
+    this._updateCrowd(dt);
+    this._updateFx(dt);
+    this._updateShow(dt);
+    this._updateLighting(dt);
+    this.atmoT += dt;
+    updateAtmosphere(this.arena, dt, this.atmoT, this.excited, this._phoneLevel);
+    updateRopes(this.arena, dt, this.fighters, this.atmoT);
+    // The shared impulse profile (hitResolution: KO / heavy hits) leaves a one-shot gust
+    // here; the banners' soft grid takes it and settles. Calm mode keeps them on the draft.
+    updateBanners(this.arena.backdrop, this.atmoT, dt, this._calm() ? 0 : (this._bannerGust || 0));
+    this._bannerGust = 0;
+    if (this.props) updateProps(this.props, dt, this.fighters, this._propHooks);
+    this._updateBlobShadows();
+    this._updateMatWear(dt);
+    if (this.fighters) {
+      for (const f of this.fighters) {
+        updateJiggles(f.rig, dt);
+        this._updateTrail(f, dt);
+        // Transient 'hurt' faces relax back to the resting expression.
+        // KO'd fighters keep the dazed face under the result modal.
+        if (f.expressionT > 0) {
+          f.expressionT -= dt;
+          if (f.expressionT <= 0 && f.state !== 'ko') {
+            setExpression(f.rig, 'neutral');
           }
         }
       }
-      // While programs link in the background a render would block on them, so the
-      // canvas keeps its last frame until the warm-up settles.
-      if (this._compiling) return;
-      this.composer.render();
-      // Showtime modules that read the finished frame (replay grade, result glass).
-      this._renderShow(now);
-      // The result shatter snapshots the frame, so it has the same constraint.
-      if (this._shatterPending) this._shatterNow();
-    };
-    this.raf = requestAnimationFrame(loop);
+    }
+    // While programs link in the background a render would block on them, so the
+    // canvas keeps its last frame until the warm-up settles.
+    if (this._compiling) return;
+    this.composer.render();
+    // Showtime modules that read the finished frame (replay grade, result glass).
+    this._renderShow(performance.now());
+    // The result shatter snapshots the frame, so it has the same constraint.
+    if (this._shatterPending) this._shatterNow();
   }
 
   // ── Pause ───────────────────────────────────────────────────────────────
@@ -671,7 +628,6 @@ export class BrawlGame {
     this._releaseHeldInput();
     this.audio?.setPaused(want);
     if (!want) {
-      this.lastFrame = performance.now();
       // The first gesture of the session may have arrived while paused (see _resumeAudio).
       if (!this._audioKicked) this._resumeAudio?.();
     }
@@ -1110,9 +1066,9 @@ export class BrawlGame {
     this.renderer.setRenderTarget(this.composer.readBuffer);
     let compiled;
     try {
-      compiled = this.renderer.compileAsync
-        ? this.renderer.compileAsync(this.scene, this.camera)
-        : Promise.resolve(this.renderer.compile(this.scene, this.camera));
+      // The shared warm-up: compileAsync raced against a timeout; the synchronous traversal
+      // that needs the objects shown and the composer target bound happens inside this call.
+      compiled = warmup(this.renderer, this.scene, this.camera, { render: false });
     } catch (e) {
       compiled = Promise.reject(e);
     } finally {
@@ -1130,7 +1086,6 @@ export class BrawlGame {
       for (const p of transient) p.enabled = false;
       // Don't bill the warm-up to the simulation: the next frame's dt is
       // measured from here, and no catch-up ticks are owed.
-      this.lastFrame = performance.now();
       this.accumulator = 0;
     });
     return this._ready;
@@ -2042,7 +1997,7 @@ export class BrawlGame {
 
   dispose() {
     this.disposed = true;
-    cancelAnimationFrame(this.raf);
+    this.stage?.stop();
     clearTimeout(this._splashTimer);
     // The pads first: releasing their held keys has to
     // reach the controllers before those are disposed below.
@@ -2059,7 +2014,6 @@ export class BrawlGame {
     // alive on every page the player visits afterwards, writing CSS variables
     // nothing reads.
     try { VisualRuntime.enableAudioReactive(false); } catch { /* */ }
-    if (this._resizeObs) { this._resizeObs.disconnect(); this._resizeObs = null; }
     if (this._dropResumeAudio) this._dropResumeAudio();
     window.removeEventListener('keydown', this._onMuteKey);
     window.removeEventListener('keydown', this._onPauseKey);
@@ -2107,19 +2061,11 @@ export class BrawlGame {
     if (this._jumboTex) { this._jumboTex.dispose(); this._jumboTex = null; }
     this._jumboCanvas = this._jumboCtx = null;
     this._rigLenses = null;
-    if (this.renderer) {
-      this.renderer.dispose();
-      // dispose() frees the GPU objects three.js allocated; it does NOT release
-      // the WebGL context itself, which stays live until the detached canvas is
-      // garbage collected. This is an SPA — the player walks between the 3D
-      // games without a page load — so those zombie contexts accumulate against
-      // the browser's per-process ceiling (~16 in Chrome). Past it, the next
-      // getContext() can come back null and GameShell's probe reports "This game
-      // needs 3D graphics" on a machine that renders 3D fine.
-      // forceContextLoss() is WebGL-only; the WebGPU renderer has no such method.
-      try { this.renderer.forceContextLoss?.(); } catch { /* context already gone */ }
-      this.renderer.domElement.remove();
-    }
+    // dispose() frees three's GPU objects but not the context: the stage also forces the loss
+    // (an SPA walks between 3D games; zombie contexts hit the browser's ~16 ceiling and the next
+    // getContext() fails, "This game needs 3D graphics") and removes the canvas.
+    this.stage?.dispose();
+    this.stage = null;
     if (this.banner) this.banner.remove();
     if (this.flash) this.flash.remove();
     if (this.splash) this.splash.remove();

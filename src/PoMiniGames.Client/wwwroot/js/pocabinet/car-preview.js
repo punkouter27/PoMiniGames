@@ -6,6 +6,8 @@
 
 import * as THREE from 'three';
 import { mountCar, unmountCar } from './cars.js';
+import { createStage } from '../platform/stage/stage.js';
+import { attachRenderer, configureRenderer } from '../platform/3d/renderer.js';
 
 /**
  * Mount a 3D car preview turntable inside `canvasId`.
@@ -24,17 +26,10 @@ export function mountCarPreview(canvasId, colorHex = '#3470d8', liveryIndex = 1)
         return null;
     }
 
-    const dpr = Math.min(window.devicePixelRatio || 1, 2);
-    renderer.setPixelRatio(dpr);
-    renderer.toneMapping = THREE.ACESFilmicToneMapping;
-    renderer.toneMappingExposure = 1.18;
+    configureRenderer(THREE, renderer, { tone: 'aces', exposure: 1.18 });
 
     const scene = new THREE.Scene();
-    const w0 = Math.max(120, canvas.clientWidth || 280);
-    const h0 = Math.max(80, canvas.clientHeight || 136);
-    renderer.setSize(w0, h0, false);
-
-    const camera = new THREE.PerspectiveCamera(32, w0 / h0, 0.1, 40);
+    const camera = new THREE.PerspectiveCamera(32, 280 / 136, 0.1, 40);
     camera.position.set(3.55, 1.55, 3.85);
     camera.lookAt(0, 0.42, 0);
 
@@ -71,11 +66,7 @@ export function mountCarPreview(canvasId, colorHex = '#3470d8', liveryIndex = 1)
     let yaw = 0.58;
     let dragging = false;
     let lastX = 0;
-    let lastW = w0;
-    let lastH = h0;
     let disposed = false;
-    let raf = 0;
-    let lastT = performance.now();
 
     const onDown = (e) => {
         dragging = true;
@@ -92,32 +83,22 @@ export function mountCarPreview(canvasId, colorHex = '#3470d8', liveryIndex = 1)
         canvas.releasePointerCapture?.(e.pointerId);
     };
 
-    canvas.addEventListener('pointerdown', onDown);
-    canvas.addEventListener('pointermove', onMove);
-    window.addEventListener('pointerup', onUp);
-
-    const tick = (now) => {
-        if (disposed) return;
-        const dt = Math.min(0.05, Math.max(0, (now - lastT) / 1000));
-        lastT = now;
-
-        const cw = canvas.clientWidth;
-        const ch = canvas.clientHeight;
-        if (cw > 0 && ch > 0 && (cw !== lastW || ch !== lastH)) {
-            lastW = cw;
-            lastH = ch;
-            renderer.setSize(cw, ch, false);
-            camera.aspect = cw / ch;
-            camera.updateProjectionMatrix();
-        }
-
-        if (!dragging) yaw += dt * 0.55;
-        car.group.rotation.y = yaw;
-        car.livery?.tick(dt, 0, 0);
-        renderer.render(scene, camera);
-        raf = requestAnimationFrame(tick);
-    };
-    raf = requestAnimationFrame(tick);
+    // The stage owns the loop and the sizing (the canvas is not appended or context-lost: the
+    // page keeps it). The turntable has no camera shake.
+    const stage = createStage({
+        kind: '3d', container: canvas, maxDt: 0.05, exclude: ['shake'],
+        onFrame: (dt) => {
+            if (!dragging) yaw += dt * 0.55;
+            car.group.rotation.y = yaw;
+            car.livery?.tick(dt, 0, 0);
+            renderer.render(scene, camera);
+        },
+    });
+    attachRenderer(stage, renderer, { camera, loseContext: false });
+    stage.listen(canvas, 'pointerdown', onDown);
+    stage.listen(canvas, 'pointermove', onMove);
+    stage.listen(window, 'pointerup', onUp);
+    stage.start();
 
     return {
         setLook(nextHex, nextLivery) {
@@ -133,14 +114,10 @@ export function mountCarPreview(canvasId, colorHex = '#3470d8', liveryIndex = 1)
         dispose() {
             if (disposed) return;
             disposed = true;
-            cancelAnimationFrame(raf);
-            canvas.removeEventListener('pointerdown', onDown);
-            canvas.removeEventListener('pointermove', onMove);
-            window.removeEventListener('pointerup', onUp);
+            stage.dispose();
             unmountCar(car);
             plinthGeo.dispose();
             plinthMat.dispose();
-            renderer.dispose();
         },
     };
 }

@@ -20,16 +20,11 @@
 // drawn static: one frame per change, no slosh, no plasma swirl. The rAF loop runs only while
 // the HUD is on screen (IntersectionObserver) and the tab is visible.
 
+import { createShaderQuad } from '../platform/2d/shaderQuad.js';
 const MAX_DPR = 2;
 const PAD_CSS = 5;          // glow / drips / sparks margin around each tube, in CSS px
 const CHIP_HOLD_MS = 450;   // the old CSS ghost's delay
 const CHIP_DRAIN_S = 0.6;   // ...and its drain
-
-const VS = `#version 300 es
-void main() {
-    vec2 p = vec2(float((gl_VertexID << 1) & 2), float(gl_VertexID & 2));
-    gl_Position = vec4(p * 2.0 - 1.0, 0.0, 1.0);
-}`;
 
 // Everything is measured in device pixels around the tube's centre, x mirrored for P2 so
 // both tubes fill from their outer end and drain toward the clock.
@@ -227,9 +222,6 @@ void main() {
     o = vec4(min(col.rgb, vec3(col.a)), col.a);
 }`;
 
-const UNIFORMS = ['uTube', 'uDpr', 'uPad', 'uKind', 'uFlip', 'uLevel', 'uChip', 'uDrain', 'uSlosh',
-    'uWave', 'uDanger', 'uTime', 'uFull', 'uPower', 'uColA', 'uColB', 'uChipA', 'uChipB'];
-
 const root = document.documentElement;
 const lowTier = () => root.getAttribute('data-gfx') === 'low';
 const reducedMotion = () => root.getAttribute('data-motion') === 'reduce';
@@ -363,54 +355,18 @@ class LiquidHud {
     }
 
     initGl() {
-        let gl = null;
+        let q = null;
         try {
-            gl = this.canvas.getContext('webgl2', {
-                alpha: true, premultipliedAlpha: true, antialias: false, depth: false, stencil: false,
+            q = createShaderQuad(this.canvas, {
+                frag: FS,
+                contextOptions: { alpha: true, premultipliedAlpha: true, powerPreference: 'default' },
+                onLost: () => { this.lost = true; this.syncState(); },
+                onRestored: () => { this.lost = false; this.syncState(); },
             });
-        } catch { gl = null; }
-        if (!gl) { this.failed = true; return; }
-        this.gl = gl;
-        if (!this.buildProgram()) { this.failed = true; this.gl = null; return; }
-        this.canvas.addEventListener('webglcontextlost', (e) => {
-            e.preventDefault();
-            this.lost = true;
-            this.syncState();
-        });
-        this.canvas.addEventListener('webglcontextrestored', () => {
-            this.lost = !this.buildProgram();
-            this.syncState();
-        });
-    }
-
-    buildProgram() {
-        const gl = this.gl;
-        const sh = (type, src) => {
-            const s = gl.createShader(type);
-            gl.shaderSource(s, src);
-            gl.compileShader(s);
-            if (!gl.getShaderParameter(s, gl.COMPILE_STATUS) && !gl.isContextLost()) {
-                console.warn('[PoBrawl HUD] shader:', gl.getShaderInfoLog(s));
-                return null;
-            }
-            return s;
-        };
-        const vs = sh(gl.VERTEX_SHADER, VS);
-        const fs = sh(gl.FRAGMENT_SHADER, FS);
-        if (!vs || !fs) return false;
-        const prog = gl.createProgram();
-        gl.attachShader(prog, vs);
-        gl.attachShader(prog, fs);
-        gl.linkProgram(prog);
-        if (!gl.getProgramParameter(prog, gl.LINK_STATUS)) {
-            if (!gl.isContextLost()) console.warn('[PoBrawl HUD] link:', gl.getProgramInfoLog(prog));
-            return false;
-        }
-        this.prog = prog;
-        this.u = {};
-        for (const n of UNIFORMS) this.u[n] = gl.getUniformLocation(prog, n);
-        this.vao = gl.createVertexArray();
-        return true;
+        } catch { q = null; }
+        if (!q) { this.failed = true; return; }
+        this.q = q;
+        this.gl = q.gl;
     }
 
     readColors() {
@@ -502,7 +458,7 @@ class LiquidHud {
 
     /** One still frame: reduced motion, or a change while the loop is parked. */
     drawStatic() {
-        if (!this.live || !this.prog) return;
+        if (!this.live || !this.q) return;
         for (const b of this.bars) {
             b.level = b.target; b.chip = 0; b.drain = 0; b.slosh = 0; b.sloshVel = 0; b.wave = 0;
             b.danger = b.dangerTarget;
@@ -514,43 +470,41 @@ class LiquidHud {
 
     draw(still) {
         const gl = this.gl;
-        if (!gl || !this.prog || gl.isContextLost()) return;
-        const W = this.canvas.width, H = this.canvas.height, u = this.u, dpr = this.dpr;
+        const q = this.q;
+        if (!gl || !q || gl.isContextLost()) return;
+        const W = this.canvas.width, H = this.canvas.height, dpr = this.dpr;
         gl.disable(gl.SCISSOR_TEST);
         gl.viewport(0, 0, W, H);
         gl.clearColor(0, 0, 0, 0);
         gl.clear(gl.COLOR_BUFFER_BIT);
-        gl.useProgram(this.prog);
-        gl.bindVertexArray(this.vao);
         gl.enable(gl.BLEND);
         gl.blendFunc(gl.ONE, gl.ONE_MINUS_SRC_ALPHA);
         gl.enable(gl.SCISSOR_TEST);
         const pad = Math.round(PAD_CSS * dpr);
-        gl.uniform1f(u.uDpr, dpr);
-        gl.uniform1f(u.uPad, pad);
-        gl.uniform3fv(u.uChipA, this.pal.chip[0]);
-        gl.uniform3fv(u.uChipB, this.pal.chip[1]);
+        q.set('uDpr', dpr);
+        q.set('uPad', pad);
+        q.set('uChipA', ...this.pal.chip[0]);
+        q.set('uChipB', ...this.pal.chip[1]);
         for (const b of this.bars) {
             if (b.w < 2 || b.h < 2) continue;
-            const vx = Math.floor(b.x - pad), vy = Math.floor(H - (b.y + b.h) - pad);
-            const vw = Math.ceil(b.w + 2 * pad), vh = Math.ceil(b.h + 2 * pad);
-            gl.viewport(vx, vy, vw, vh);
-            gl.scissor(vx, vy, vw, vh);
-            gl.uniform4f(u.uTube, b.x + b.w / 2, H - (b.y + b.h / 2), b.w, b.h);
-            gl.uniform1f(u.uKind, b.kind);
-            gl.uniform1f(u.uFlip, b.side);
-            gl.uniform1f(u.uLevel, b.level);
-            gl.uniform1f(u.uChip, b.chip);
-            gl.uniform1f(u.uDrain, b.drain);
-            gl.uniform1f(u.uSlosh, b.slosh);
-            gl.uniform1f(u.uWave, b.wave);
-            gl.uniform1f(u.uDanger, b.kind === 0 ? b.danger : 0);
-            gl.uniform1f(u.uTime, still ? 1.3 + b.side * 2.1 : this.time + b.side * 13.7);
-            gl.uniform1f(u.uFull, b.full);
-            gl.uniform1f(u.uPower, b.kind === 1 ? b.level * (b.state === 2 ? 0.6 : 1) : 1);
-            gl.uniform3fv(u.uColA, b.colA);
-            gl.uniform3fv(u.uColB, b.colB);
-            gl.drawArrays(gl.TRIANGLES, 0, 3);
+            // The scissor is the bar's box; the oversized triangle is clipped to it, and
+            // gl_FragCoord stays in canvas space, which is what uTube is measured in.
+            gl.scissor(Math.floor(b.x - pad), Math.floor(H - (b.y + b.h) - pad), Math.ceil(b.w + 2 * pad), Math.ceil(b.h + 2 * pad));
+            q.set('uTube', b.x + b.w / 2, H - (b.y + b.h / 2), b.w, b.h);
+            q.set('uKind', b.kind);
+            q.set('uFlip', b.side);
+            q.set('uLevel', b.level);
+            q.set('uChip', b.chip);
+            q.set('uDrain', b.drain);
+            q.set('uSlosh', b.slosh);
+            q.set('uWave', b.wave);
+            q.set('uDanger', b.kind === 0 ? b.danger : 0);
+            q.set('uTime', still ? 1.3 + b.side * 2.1 : this.time + b.side * 13.7);
+            q.set('uFull', b.full);
+            q.set('uPower', b.kind === 1 ? b.level * (b.state === 2 ? 0.6 : 1) : 1);
+            q.set('uColA', ...b.colA);
+            q.set('uColB', ...b.colB);
+            q.draw(W, H);
         }
     }
 
@@ -576,8 +530,9 @@ class LiquidHud {
         this.io.disconnect();
         document.removeEventListener('visibilitychange', this.sync);
         this.hud.removeAttribute('data-liquid');
+        this.q?.dispose();
         try { this.gl?.getExtension('WEBGL_lose_context')?.loseContext(); } catch { /* already gone */ }
-        this.gl = null;
+        this.gl = this.q = null;
     }
 }
 

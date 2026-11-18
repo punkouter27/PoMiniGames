@@ -87,7 +87,9 @@ node --test "tests/*.test.mjs"                                 # every JS engine
      `Games/<Game>/<Game>Page.razor` with routes `/game` and `/game/{Mode}`.
 - **JS engines:** heavy games are JS engines in `Client/wwwroot/js/<game>/`.
   `wwwroot/js/platform/engineLoader.js` (`loadEngine(name)`) loads them on demand, and the page's
-  `.razor.cs` drives them over IJSRuntime. The PWA service worker precaches them automatically
+  `.razor.cs` drives them over IJSRuntime. Engines run on the shared host
+  `platform/stage/stage.js` (`createStage`) with helpers in `platform/2d/` and `platform/3d/`; a new
+  cross-game effect goes in `platform/stage/features/` (written once), not inside a game. The PWA service worker precaches them automatically
   through the asset manifest.
 - **Results flow:**
   - Every game reports to `Client/Services/Play/GameResultService`.
