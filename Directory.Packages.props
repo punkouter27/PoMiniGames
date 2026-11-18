@@ -12,8 +12,7 @@
          is why the ASP.NET 10.0.x pins below moved together. -->
     <PackageVersion Include="Radzen.Blazor" Version="12.2.0" />
     <!-- FluentValidation: the form rules (initials, creature rename, ecosystem alerts) live in
-         PoMiniGames.Shared so the client form and any server check use one rule set. Same
-         version as the fleet reference (PoTraffic). -->
+         PoMiniGames.Shared so the client form and any server check use one rule set. -->
     <PackageVersion Include="FluentValidation" Version="11.12.0" />
     <!-- Azure -->
     <PackageVersion Include="Azure.Identity" Version="1.21.0" />

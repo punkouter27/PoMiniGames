@@ -11,31 +11,36 @@
     <NuGetAuditMode>all</NuGetAuditMode>
     <NuGetAuditLevel>low</NuGetAuditLevel>
   </PropertyGroup>
-  <!-- Publish only Brotli copies of static assets (UseBlazorFrameworkFiles serves _framework/*.br).
-       Every browser sends br over HTTPS; anything that does not gets runtime compression
-       (UseResponseCompression). The gzip copies were 11 MB of every deploy package for nothing. -->
+
   <PropertyGroup Condition="'$(Configuration)' == 'Release'">
     <EnableDefaultCompressionFormats>false</EnableDefaultCompressionFormats>
     <PublishCompressionFormats>brotli</PublishCompressionFormats>
   </PropertyGroup>
-  <!-- Build stamp (Po standard): vYYMMDD, the UTC date of the HEAD commit, falling back to the
-       UTC build date when git is unavailable. Computed once here so the server (an
-       AssemblyMetadata "BuildVersion" attribute, read by /api/diag) and the client
-       (PoMiniGamesClient.BuildInfo.Date, PoMiniGames.Client.csproj) show the same value.
-       git prints the commit time as Unix seconds (%ct), which has no time zone, and MSBuild
-       turns it into the UTC date. Pass -p:PoStamp=YYMMDD to pin it. -->
+
+  <!-- Self-contained Po build stamp (vYYMMDD = UTC date of HEAD commit, fallback to UTC build date).
+       Emits BuildVersion (and legacy aliases BuildStamp/BuildDate) so client corner badge and /api/diag match. -->
   <Target Name="PoBuildStamp" BeforeTargets="GetAssemblyAttributes;CoreCompile">
-    <Exec Condition="'$(PoStamp)' == ''" Command="git log -1 --format=%25ct" WorkingDirectory="$(MSBuildThisFileDirectory)"
-          ConsoleToMsBuild="true" IgnoreExitCode="true" StandardOutputImportance="low" StandardErrorImportance="low">
-      <Output TaskParameter="ConsoleOutput" PropertyName="_PoCommitSeconds" />
+    <Exec Condition="'$(PoStamp)' == ''" Command="git rev-list -1 --timestamp HEAD" WorkingDirectory="$(MSBuildThisFileDirectory)"
+          ConsoleToMSBuild="true" IgnoreExitCode="true" IgnoreStandardErrorWarningFormat="true"
+          StandardOutputImportance="low" StandardErrorImportance="low">
+      <Output TaskParameter="ConsoleOutput" PropertyName="_PoHeadCommit" />
+      <Output TaskParameter="ExitCode" PropertyName="_PoHeadCommitExit" />
     </Exec>
     <PropertyGroup>
-      <PoStamp Condition="'$(PoStamp)' == '' and $([System.Text.RegularExpressions.Regex]::IsMatch('$(_PoCommitSeconds)', '^\d+$'))">$([System.DateTime]::UnixEpoch.AddSeconds($(_PoCommitSeconds)).ToString('yyMMdd'))</PoStamp>
+      <PoStamp Condition="'$(PoStamp)' == '' and '$(_PoHeadCommitExit)' == '0' and '$(_PoHeadCommit)' != '' and $([System.Text.RegularExpressions.Regex]::IsMatch('$(_PoHeadCommit.Split(` `)[0])', '^\d+$'))">$([System.DateTime]::UnixEpoch.AddSeconds($(_PoHeadCommit.Split(' ')[0])).ToString('yyMMdd'))</PoStamp>
       <PoStamp Condition="'$(PoStamp)' == ''">$([System.DateTime]::UtcNow.ToString('yyMMdd'))</PoStamp>
     </PropertyGroup>
     <ItemGroup>
       <AssemblyAttribute Include="System.Reflection.AssemblyMetadataAttribute">
         <_Parameter1>BuildVersion</_Parameter1>
+        <_Parameter2>$(PoStamp)</_Parameter2>
+      </AssemblyAttribute>
+      <AssemblyAttribute Include="System.Reflection.AssemblyMetadataAttribute">
+        <_Parameter1>BuildStamp</_Parameter1>
+        <_Parameter2>$(PoStamp)</_Parameter2>
+      </AssemblyAttribute>
+      <AssemblyAttribute Include="System.Reflection.AssemblyMetadataAttribute">
+        <_Parameter1>BuildDate</_Parameter1>
         <_Parameter2>$(PoStamp)</_Parameter2>
       </AssemblyAttribute>
     </ItemGroup>

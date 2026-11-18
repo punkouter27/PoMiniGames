@@ -1,3 +1,4 @@
+using Radzen;
 using PoMiniGamesClient.Services.Http;
 using PoMiniGamesClient.Services.Interop;
 using PoMiniGamesClient.Services.Play;
@@ -55,9 +56,14 @@ public class ToastService
 {
     private readonly List<ToastItem> _toasts = [];
     private readonly UiFeedbackService _feedback;
+    private readonly NotificationService? _radzen;
     private int _nextId;
 
-    public ToastService(UiFeedbackService feedback) => _feedback = feedback;
+    public ToastService(UiFeedbackService feedback, NotificationService? radzen = null)
+    {
+        _feedback = feedback;
+        _radzen = radzen;
+    }
 
     public IReadOnlyList<ToastItem> Toasts => _toasts;
 
