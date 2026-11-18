@@ -213,35 +213,31 @@ public sealed class PoCabinetInput
 // ──────────────────────────────  Multiplayer lobby  ──────────────────────────────
 
 /// <summary>
-/// One lobby seat as other players see it. <see cref="SeatId"/> is a hash of the
-/// player's claim id — never the claim itself, which is the browser's player id.
+/// One lobby seat on the shared lobby wire (<c>LobbyState&lt;PoCabinetLobbyPlayer&gt;</c>).
+/// <see cref="ConnectionId"/> is the seat id. The claim id the race hub keys cars by
+/// (<see cref="UserId"/>) is server-only and never serialized. <see cref="TrackId"/> and
+/// <see cref="BotCount"/> are the host's picks, stamped on every seat so a migrating host keeps them.
 /// </summary>
-public sealed class PoCabinetLobbySeat
+public sealed record PoCabinetLobbyPlayer(
+    string ConnectionId,
+    string DisplayName,
+    bool IsGuest,
+    bool IsReady,
+    string Color = "",
+    string TrackId = PoCabinetCatalog.DefaultTrackId,
+    int BotCount = 0) : ILobbyPlayer
 {
-    public string SeatId { get; set; } = "";
-    public string DisplayName { get; set; } = "";
-    public bool IsReady { get; set; }
-    public bool IsHost { get; set; }
-    public string Color { get; set; } = "";
+    /// <summary>Claim-derived player id the race grid is built from. Never sent to clients.</summary>
+    [System.Text.Json.Serialization.JsonIgnore]
+    public string UserId { get; init; } = "";
 }
 
-/// <summary>Full lobby state, broadcast as <c>LobbyState</c> after every change.</summary>
-public sealed class PoCabinetLobbyView
+/// <summary>Grid arithmetic the lobby server and its page both read.</summary>
+public static class PoCabinetLobbyRules
 {
-    /// <summary>Internal id of the lobby's race (what <c>JoinRace</c> takes). Never shown — there are no join codes.</summary>
-    public string Code { get; set; } = "";
-    public string TrackId { get; set; } = PoCabinetCatalog.DefaultTrackId;
-    /// <summary>AI drivers the host asked for; the race seats <see cref="BotSeats"/> of them.</summary>
-    public int BotCount { get; set; }
-    /// <summary>The AI drivers that fit: min(BotCount, grid slots the drivers leave free).</summary>
-    public int BotSeats { get; set; }
-    /// <summary>The host may start: everyone is ready and there are two cars, counting the AI.</summary>
-    public bool Startable { get; set; }
-    /// <summary>True while a race for this lobby is running; the lobby reopens when it ends.</summary>
-    public bool InRace { get; set; }
-    public IReadOnlyList<PoCabinetLobbySeat> Players { get; set; } = new List<PoCabinetLobbySeat>();
-    /// <summary>The caller's own seat — set only on the Join reply (null there when no seat was free), null in broadcasts.</summary>
-    public string? YourSeatId { get; set; }
+    /// <summary>The AI drivers that fit: min(asked, grid slots the humans leave free).</summary>
+    public static int BotSeats(int botCount, int humans) =>
+        Math.Min(botCount, Math.Max(0, PoCabinetCatalog.OnlineGridSize - humans));
 }
 
 // ──────────────────────────────  Final result  ──────────────────────────────

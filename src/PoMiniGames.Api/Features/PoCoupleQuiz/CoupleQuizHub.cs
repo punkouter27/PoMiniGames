@@ -1,102 +1,46 @@
 using Microsoft.AspNetCore.SignalR;
-using Microsoft.Extensions.Options;
-using PoMiniGames.Features.Identity;
-using PoMiniGames.Features.Shared;
 
 namespace PoMiniGames.Features.PoCoupleQuiz;
 
 /// <summary>
-/// SignalR hub for PoCoupleQuiz. Handles the four things a player can actually do — join,
-/// ready up, pick the round count (host), submit an answer — and delegates every round
-/// transition to <see cref="CoupleQuizRoundDirector"/>.
+/// SignalR hub for the PoCoupleQuiz match. Pairing is the lobby's job
+/// (<see cref="CoupleQuizLobbyHub"/>); this hub claims the reserved seats, takes answers, and
+/// delegates every round transition to <see cref="CoupleQuizRoundDirector"/>.
 /// </summary>
 /// <remarks>
 /// <para>Authoritative state lives in <see cref="GameSessionManager"/> (singleton). Clients are
 /// pure views driven by <see cref="IGameClient"/> events.</para>
 ///
-/// <para>The hub has no game codes, so joining is one <see cref="Join"/> call; the round clock is
-/// driven by the server, not the host.</para>
-///
-/// <para>There is exactly one lobby per process, so every broadcast targets
-/// <c>Clients.All</c> and no SignalR group is needed.</para>
+/// <para>There is one live match per process, so every broadcast targets
+/// <c>Clients.All</c> and no SignalR group is needed. The round clock is driven by the server,
+/// not a player.</para>
 /// </remarks>
 public class CoupleQuizHub : Hub<IGameClient>
 {
     private readonly GameSessionManager _sessions;
     private readonly CoupleQuizRoundDirector _director;
-    private readonly ILogger<CoupleQuizHub> _logger;
 
-    public CoupleQuizHub(
-        GameSessionManager sessions,
-        CoupleQuizRoundDirector director,
-        ILogger<CoupleQuizHub> logger)
+    public CoupleQuizHub(GameSessionManager sessions, CoupleQuizRoundDirector director)
     {
         _sessions = sessions;
         _director = director;
-        _logger = logger;
     }
 
-    // ── Lobby phase ─────────────────────────────────────────────────────
-
-    public async Task Join(string playerName)
+    /// <summary>
+    /// Claim the seat the lobby reserved for <paramref name="playerName"/> in the match
+    /// <paramref name="matchCode"/>. The match begins once both seats are claimed.
+    /// </summary>
+    public async Task JoinMatch(string matchCode, string playerName)
     {
-        if (string.IsNullOrWhiteSpace(playerName))
+        var joined = _sessions.JoinMatch(Context.ConnectionId, matchCode ?? string.Empty, playerName ?? string.Empty);
+        if (joined is not { } j)
         {
-            await Clients.Caller.LobbyError("Player name cannot be empty.");
-            return;
+            throw new HubException("That quiz is no longer open. Head back to the lobby.");
         }
-
-        var session = _sessions.Join(Context.ConnectionId, playerName.Trim(), out var created);
-        if (created)
-        {
-            _logger.LobbyOpened(session.HostName);
-        }
-
-        var readyNames = ReadyNames(session);
-        await Clients.Caller.LobbyJoined(new LobbyEventPayload(
-            IsHost: session.HostConnectionId == Context.ConnectionId,
-            PlayerName: session.Players.First(p => p.ConnectionId == Context.ConnectionId).Name,
-            Players: session.Players.Select(p => p.Name).ToList(),
-            ReadyPlayers: readyNames,
-            HostName: session.HostName ?? string.Empty,
-            MaxRounds: session.MaxRounds,
-            TopicPack: session.TopicPack));
-
-        await Clients.Others.LobbyUpdated(BuildLobbyUpdatedPayload(session, readyNames));
-    }
-
-    public async Task SetReady()
-    {
-        var state = _sessions.MarkPlayerReady(Context.ConnectionId);
-        if (state is null) return;
-
-        await Clients.All.LobbyUpdated(new LobbyUpdatedPayload(
-            state.Players, state.ReadyPlayers, state.HostName, state.MaxRounds, state.TopicPack));
-
-        // Everybody ready and enough players → the match starts itself. This was already the
-        // behaviour; what's gone is the redundant host-only "Start game" button that raced it.
-        if (state.AllReady)
+        if (j.AllSeated)
         {
             await _director.StartGameAsync(Context.ConnectionAborted);
         }
-    }
-
-    /// <summary>Host-only: 3, 5 or 7 rounds. Ignored from anyone else, or once a match is live.</summary>
-    public async Task SetRounds(int rounds)
-    {
-        var state = _sessions.SetMaxRounds(Context.ConnectionId, rounds);
-        if (state is null) return;
-        await Clients.All.LobbyUpdated(new LobbyUpdatedPayload(
-            state.Players, state.ReadyPlayers, state.HostName, state.MaxRounds, state.TopicPack));
-    }
-
-    /// <summary>Host-only: topic pack (Classic, WordSync, WorldTravel, BooksAndStories, Mixed).</summary>
-    public async Task SetTopicPack(string topicPack)
-    {
-        var state = _sessions.SetTopicPack(Context.ConnectionId, topicPack);
-        if (state is null) return;
-        await Clients.All.LobbyUpdated(new LobbyUpdatedPayload(
-            state.Players, state.ReadyPlayers, state.HostName, state.MaxRounds, state.TopicPack));
     }
 
     // ── Game phase ──────────────────────────────────────────────────────
@@ -115,21 +59,7 @@ public class CoupleQuizHub : Hub<IGameClient>
         var session = _sessions.RemovePlayer(Context.ConnectionId, out var sessionEmpty);
         if (session is null || sessionEmpty) return;
 
-        await Clients.All.PlayerDisconnected(BuildLobbyUpdatedPayload(session, ReadyNames(session)));
-
         // The leaver may have been the last person the round was waiting on.
         await _director.OnPlayerLeftAsync();
     }
-
-    // ── Helpers ─────────────────────────────────────────────────────────
-
-    private static List<string> ReadyNames(GameSession s) =>
-        s.Players.Where(p => s.ReadyConnectionIds.Contains(p.ConnectionId)).Select(p => p.Name).ToList();
-
-    private static LobbyUpdatedPayload BuildLobbyUpdatedPayload(GameSession s, List<string> readyNames) =>
-        new(s.Players.Select(p => p.Name).ToList(),
-            readyNames,
-            s.HostName ?? string.Empty,
-            s.MaxRounds,
-            s.TopicPack);
 }

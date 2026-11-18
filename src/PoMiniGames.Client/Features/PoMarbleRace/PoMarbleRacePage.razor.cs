@@ -91,6 +91,7 @@ public partial class PoMarbleRacePage
     private PoMarbleRaceOnlineClient? _onlineClient;
     private LobbyClient<PoMarbleRaceLobbyPlayer>? _lobby;
     private OnlinePhase _onlinePhase = OnlinePhase.Idle;
+    private readonly CancellationTokenSource _joinWatch = new();
     private MarbleRaceRole _onlineRole = MarbleRaceRole.Host;
     private string _opponentName = "Opponent";
     private string _hostName = "Host";
@@ -519,7 +520,6 @@ public partial class PoMarbleRacePage
         {
             await PlayerNameService.InitializeAsync();
             _playerName = PlayerNameService.GetPlayerName();
-            await OpenLobbyAsync();
         }
         catch (Exception)
         {
@@ -529,42 +529,16 @@ public partial class PoMarbleRacePage
         }
     }
 
-    private async Task OpenLobbyAsync()
+    private Task OnLobbyClient(LobbyClient<PoMarbleRaceLobbyPlayer> lobby)
     {
-        if (_lobby is not null || _disposed) return;
-        var lobby = _lobby = new LobbyClient<PoMarbleRaceLobbyPlayer>(Endpoints, "pomarblerace/lobby-hub");
-        lobby.StateChanged += _ => InvokeAsync(StateHasChanged);
-        lobby.ConnectionChanged += _ => InvokeAsync(StateHasChanged);
-        lobby.ReconnectFailed += _ => ToastService.Show("Connection restored, but the lobby could not be rejoined. Retry the connection.", ToastType.Error);
+        _lobby = lobby;
         lobby.EventReceived += ev => ToastService.Show(ev.Message, ev.Kind == "left" ? ToastType.Warning : ToastType.Info);
-        lobby.GameStarted += code => _ = InvokeAsync(() => JoinRaceSafeAsync(code));
-        await lobby.ConnectAndJoinAsync(_playerName, isGuest: false);
-        if (!_disposed) await InvokeAsync(StateHasChanged);
+        return Task.CompletedTask;
     }
 
-    private async Task ReconnectLobbyAsync()
-    {
-        if (_lobby is not { } lobby) return;
-        try { await lobby.ReconnectAsync(); }
-        catch (Exception)
-        {
-            ToastService.Show("Server unavailable. Please try again shortly.", ToastType.Error);
-        }
-    }
+    private void OnLobbyStarted(OnlineLobbyStart start) => _ = InvokeAsync(() => JoinRaceSafeAsync(start.MatchCode));
 
-    private async Task CloseLobbyAsync()
-    {
-        if (_lobby is not { } lobby) return;
-        _lobby = null;
-        await lobby.LeaveLobbyAsync();
-        await lobby.DisposeAsync();
-    }
-
-    private async Task LeaveLobbyAsync()
-    {
-        await CloseLobbyAsync();
-        Navigation.NavigateTo("/");
-    }
+    private void LeaveLobby() => Navigation.NavigateTo("/");
 
     // The host's track on the lobby seat list (the race runs the host's course).
     private int LobbyMapId =>
@@ -590,7 +564,6 @@ public partial class PoMarbleRacePage
     private async Task JoinRaceAsync(string matchCode)
     {
         if (_disposed || _onlinePhase != OnlinePhase.Lobby) return;
-        await CloseLobbyAsync();
         _onlinePhase = OnlinePhase.Connecting;
         _onlineResultKnown = false;
         _phase = "pick";
@@ -620,19 +593,13 @@ public partial class PoMarbleRacePage
             _onlinePhase = OnlinePhase.PeerLeft;
         }
         await InvokeAsync(StateHasChanged);
-        _ = WatchJoinAsync();
-    }
-
-    /// <summary>
-    /// The other player was seated by the lobby but never took their race seat: after 20 s show
-    /// the "other player left" card (its button goes back to the lobby) instead of waiting forever.
-    /// </summary>
-    private async Task WatchJoinAsync()
-    {
-        await Task.Delay(TimeSpan.FromSeconds(20));
-        if (_disposed || _onlinePhase != OnlinePhase.Searching) return;
-        _onlinePhase = OnlinePhase.PeerLeft;
-        await InvokeAsync(StateHasChanged);
+        // The other player was seated by the lobby but never took their race seat: show the
+        // "other player left" card (its button goes back to the lobby) instead of waiting forever.
+        _ = MatchJoinGuard.WatchAsync(() => !_disposed && _onlinePhase == OnlinePhase.Searching, async () =>
+        {
+            _onlinePhase = OnlinePhase.PeerLeft;
+            await InvokeAsync(StateHasChanged);
+        }, _joinWatch.Token);
     }
 
     /// <summary>Back to the shared lobby after a failed connect or an opponent who left.</summary>
@@ -640,7 +607,6 @@ public partial class PoMarbleRacePage
     {
         await StopEngineAsync();
         await TearDownOnlineAsync();
-        await CloseLobbyAsync();
         _podium.Clear();
         _phase = "pick";
         await StartOnlineAsync();
@@ -1068,7 +1034,7 @@ public partial class PoMarbleRacePage
         GC.SuppressFinalize(this);
         _disposed = true;
         // Online: tell the peer we left and drop the hub before the engine goes.
-        await CloseLobbyAsync();
+        await _joinWatch.CancelAsync();
         await TearDownOnlineAsync();
         // Before the JS ref goes away — a pending tick would otherwise Pick() through a disposed ref.
         StopPickCountdown();

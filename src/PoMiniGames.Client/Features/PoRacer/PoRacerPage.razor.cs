@@ -3,6 +3,7 @@ using Microsoft.AspNetCore.Components.Routing;
 using Microsoft.JSInterop;
 using System.Runtime.InteropServices;
 using PoMiniGames.Shared.Games;
+using PoMiniGamesClient.Features.Shared;
 using PoMiniGamesClient.Models;
 using PoMiniGamesClient.Services.Play;
 using PoMiniGamesClient.Services.Ui;
@@ -143,7 +144,6 @@ public partial class PoRacerPage
     private async Task SyncModeAsync()
     {
         var wantsLobby = _introDone && _mode == RaceMode.Online && string.IsNullOrWhiteSpace(MatchCode) && _phase == RacePhase.Start;
-        if (wantsLobby) await OpenLobbyAsync(); else await CloseLobbyAsync();
         if (!_introDone || !_engineReady || _phase != RacePhase.Start || _isStarting) return;
         if (IsDemo) Kiosk.SetCurrent("poracer-demo");
         // Everything but the lobby races as soon as the card is gone and the track is loaded,
@@ -153,50 +153,21 @@ public partial class PoRacerPage
 
     // ── Online lobby ──────────────────────────────────────────────────────
 
-    private async Task OpenLobbyAsync()
+    private Task OnLobbyClient(LobbyClient<PoRacerLobbyPlayer> lobby)
     {
-        if (_lobby is not null || _disposed) return;
-        var lobby = _lobby = new LobbyClient<PoRacerLobbyPlayer>(Endpoints, "poracer/lobby-hub");
-        lobby.StateChanged += _ => InvokeAsync(StateHasChanged);
-        lobby.ConnectionChanged += _ => InvokeAsync(StateHasChanged);
-        lobby.ReconnectFailed += _ => ToastService.Show("Connection restored, but the lobby could not be rejoined. Retry the connection.", ToastType.Error);
+        _lobby = lobby;
         lobby.EventReceived += ev => ToastService.Show(ev.Message, ev.Kind == "left" ? ToastType.Warning : ToastType.Info);
-        // The code goes in the address so a reload during the race rejoins it (seats are bound
-        // to the claim identity) instead of landing back in a lobby that has already started.
-        lobby.GameStarted += code => InvokeAsync(() => Nav.NavigateTo($"/poracer/multi?code={Uri.EscapeDataString(code)}"));
-        await LobbyCallAsync(() => lobby.ConnectAndJoinAsync(PlayerNameService.Initials, isGuest: false));
-        if (!_disposed) StateHasChanged();
+        return Task.CompletedTask;
     }
 
-    private Task ReconnectLobbyAsync() => _lobby is { } lobby ? LobbyCallAsync(lobby.ReconnectAsync) : Task.CompletedTask;
-
-    /// <summary>A lobby connect or reconnect; a server that cannot be reached is a toast, not an error page.</summary>
-    private async Task LobbyCallAsync(Func<Task> call)
-    {
-        try
-        {
-            await call();
-        }
-        catch (Exception ex) when (ex is HttpRequestException or InvalidOperationException or Microsoft.AspNetCore.SignalR.HubException or OperationCanceledException or IOException)
-        {
-            ToastService.Show("Server unavailable. Please try again shortly.", ToastType.Error);
-        }
-    }
-
-    private async Task CloseLobbyAsync()
-    {
-        if (_lobby is not { } lobby) return;
-        _lobby = null;
-        await lobby.DisposeAsync();
-    }
+    // The code goes in the address so a reload during the race rejoins it (seats are bound
+    // to the claim identity) instead of landing back in a lobby that has already started.
+    private void OnLobbyStarted(OnlineLobbyStart start) =>
+        Nav.NavigateTo($"/poracer/multi?code={Uri.EscapeDataString(start.MatchCode)}");
 
     private Task PickLobbyTrackAsync(string trackId) => _lobby?.SendAsync("PickTrack", trackId) ?? Task.CompletedTask;
 
-    private async Task LeaveLobbyAsync()
-    {
-        if (_lobby is { } lobby) await lobby.LeaveLobbyAsync();
-        Nav.NavigateTo("/poracer/1player");
-    }
+    private void LeaveLobby() => Nav.NavigateTo("/poracer/1player");
 
     // ── Start card ────────────────────────────────────────────────────────
 
@@ -515,7 +486,6 @@ public partial class PoRacerPage
         _disposed = true;
         Nav.LocationChanged -= OnLocationChanged;
         await _lifetime.CancelAsync();
-        await CloseLobbyAsync();
         if (!_isStarting && _session is { } session) await session.DisposeAsync();
         try { await JS.InvokeVoidAsync("PoRacer.stop"); } catch (Exception ex) when (ex is JSDisconnectedException or JSException) { }
         _reference?.Dispose();

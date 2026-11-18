@@ -8,7 +8,7 @@ namespace PoMiniGamesClient.Services.Play;
 /// Client half of the shared ready/start lobby (server: <c>LobbyHub</c>). One instance per
 /// lobby connection; owns the hub, the current <see cref="State"/>, the re-join on
 /// reconnect, and the three broadcasts every lobby emits. Game-specific hub calls
-/// (a character or fighter pick) go through <see cref="InvokeAsync{T}"/>.
+/// (a character, fighter or track pick) go through <see cref="SendAsync"/>.
 /// </summary>
 public sealed class LobbyClient<TPlayer> : IAsyncDisposable where TPlayer : ILobbyPlayer
 {
@@ -31,13 +31,14 @@ public sealed class LobbyClient<TPlayer> : IAsyncDisposable where TPlayer : ILob
     public event Action<LobbyEvent>? EventReceived;
     /// <summary>The host started; payload is the game code to carry to the game page.</summary>
     public event Action<string>? GameStarted;
+    /// <summary>The host removed this seat (or a room rule freed it); payload is the reason. <see cref="State"/> is cleared; <see cref="ReconnectAsync"/> takes a seat again.</summary>
+    public event Action<string>? Kicked;
     public event Action<HubConnectionState>? ConnectionChanged;
     public event Action<Exception>? ReconnectFailed;
 
     public LobbyState<TPlayer>? State { get; private set; }
     public string ConnectionId => _hub?.ConnectionId ?? "";
     public HubConnectionState ConnectionState => _needsRejoin ? HubConnectionState.Disconnected : _hub?.State ?? HubConnectionState.Disconnected;
-    public bool IsConnected => !_needsRejoin && _hub is not null && _hub.State == HubConnectionState.Connected;
 
     public TPlayer? Me => State is null ? default : State.Players.FirstOrDefault(p => p.ConnectionId == ConnectionId);
     public bool IsHost => State is not null && !string.IsNullOrEmpty(ConnectionId) && State.HostConnectionId == ConnectionId;
@@ -60,6 +61,7 @@ public sealed class LobbyClient<TPlayer> : IAsyncDisposable where TPlayer : ILob
             _subs.Add(_hub.On<LobbyState<TPlayer>>("lobbyState", s => { State = s; StateChanged?.Invoke(s); }));
             _subs.Add(_hub.On<LobbyEvent>("lobbyEvent", e => EventReceived?.Invoke(e)));
             _subs.Add(_hub.On<string>("gameStarted", code => GameStarted?.Invoke(code)));
+            _subs.Add(_hub.On<string>("kicked", reason => { State = null; Kicked?.Invoke(reason); }));
             _hub.Reconnecting += _ => { ConnectionChanged?.Invoke(HubConnectionState.Reconnecting); return Task.CompletedTask; };
             _hub.Reconnected += async _ =>
             {
@@ -88,7 +90,7 @@ public sealed class LobbyClient<TPlayer> : IAsyncDisposable where TPlayer : ILob
     public Task<LobbyState<TPlayer>?> ReconnectAsync() =>
         ConnectAndJoinAsync(_displayName, _isGuest);
 
-    public async Task<LobbyState<TPlayer>?> JoinAsync()
+    private async Task<LobbyState<TPlayer>?> JoinAsync()
     {
         if (_hub is null) return null;
         var state = await _hub.InvokeAsync<LobbyState<TPlayer>>("Join", _displayName, _isGuest);
@@ -102,6 +104,10 @@ public sealed class LobbyClient<TPlayer> : IAsyncDisposable where TPlayer : ILob
 
     public Task StartGameAsync() => SendAsync("StartGame");
 
+    /// <summary>Host-only, between games, in rooms that allow it: remove another seat. False when refused.</summary>
+    public Task<bool> KickAsync(string connectionId) =>
+        _hub is null ? Task.FromResult(false) : _hub.InvokeAsync<bool>("Kick", connectionId);
+
     /// <summary>Give the seat up. Never throws — this runs on the way out.</summary>
     public async Task LeaveLobbyAsync()
     {
@@ -109,13 +115,7 @@ public sealed class LobbyClient<TPlayer> : IAsyncDisposable where TPlayer : ILob
         try { await _hub.InvokeAsync("LeaveLobby"); } catch { /* socket may already be closed */ }
     }
 
-    /// <summary>A game-specific hub call with a reply (e.g. <c>PickCharacter</c>).</summary>
-    public Task<T> InvokeAsync<T>(string method, params object?[] args) =>
-        _hub is null
-            ? throw new InvalidOperationException("ConnectAndJoinAsync has not been called.")
-            : _hub.InvokeCoreAsync<T>(method, args);
-
-    /// <summary>A game-specific hub call with no reply (e.g. <c>PickFighter</c>).</summary>
+    /// <summary>A game-specific hub call with no reply (e.g. <c>PickFighter</c>, <c>PickTrack</c>).</summary>
     public Task SendAsync(string method, params object?[] args) =>
         _hub is null ? Task.CompletedTask : _hub.InvokeCoreAsync(method, args);
 

@@ -1,32 +1,20 @@
 using Microsoft.AspNetCore.SignalR.Client;
 using PoMiniGames.Shared.Games;
 using PoMiniGamesClient.Services.Http;
-using PoMiniGamesClient.Services.Interop;
-using PoMiniGamesClient.Services.Play;
-using PoMiniGamesClient.Services.Ui;
 
 namespace PoMiniGamesClient.Features.PoVoxelStrike.Services;
 
 /// <summary>
-/// Client-side wrapper around the two PoVoxelStrike multiplayer hubs:
-/// <list type="bullet">
-/// <item><c>/povoxelstrike/lobby-hub</c> — single global room; join/ready/start. Mirrors
-/// PoRacer/PoFunQuiz lobby hubs exactly.</item>
-/// <item><c>/povoxelstrike/lockstep-hub</c> — active run; relays inputs from the local
-/// player to the server, surfaces incoming frames from peers, and forwards heartbeats
-/// so the server can flag desync.</item>
-/// </list>
+/// Client-side wrapper around the PoVoxelStrike lockstep hub (<c>/povoxelstrike/lockstep-hub</c>):
+/// active run; relays inputs from the local player to the server, surfaces incoming frames from
+/// peers, and forwards heartbeats so the server can flag desync. The ready/start lobby is the
+/// shared <c>OnlineLobby</c> on the page, not part of this client.
 /// </summary>
 /// <remarks>
-/// <para>The lockstep runtime uses a strict ordering contract: every client observes
-/// every input batch in PlayerNumber order, then applies them locally. There is no
-/// authoritative sim — the server only relays inputs. Determinism is the client's
-/// responsibility; the server-side validation is "did your fingerprint match the
-/// aggregate the server stamped on this frame?".</para>
-///
-/// <para>The wrapper deliberately keeps the lobby and lockstep connections separate:
-/// the lobby closes before the lockstep opens, the lockstep
-/// closes before the lobby reopens on game-over.</para>
+/// The lockstep runtime uses a strict ordering contract: every client observes every input
+/// batch in PlayerNumber order, then applies them locally. There is no authoritative sim — the
+/// server only relays inputs. Determinism is the client's responsibility; the server-side
+/// validation is "did your fingerprint match the aggregate the server stamped on this frame?".
 /// </remarks>
 public sealed class PoVoxelStrikeMultiplayerClient : IAsyncDisposable
 {
@@ -35,9 +23,6 @@ public sealed class PoVoxelStrikeMultiplayerClient : IAsyncDisposable
     private readonly List<IDisposable> _lockstepSubs = new();
     /// <summary>The game code this connection is bound to; surfaced for the lockstep reconnect handler.</summary>
     private string _gameCode = "";
-
-    /// <summary>The lobby half: the shared ready/start client. Pages subscribe to its events directly.</summary>
-    public LobbyClient<PoVoxelStrikeLobbyPlayer> Lobby { get; }
 
     /// <summary>One tick of authoritative state; the engine applies each batch in order.</summary>
     public event Action<PoVoxelStrikeLockstepFrame>? FrameReceived;
@@ -50,24 +35,10 @@ public sealed class PoVoxelStrikeMultiplayerClient : IAsyncDisposable
     /// <summary>A squadmate took the chalice; payload is their player number.</summary>
     public event Action<int>? SquadWon;
 
-    public string LobbyConnectionId => Lobby.ConnectionId;
-
     public PoVoxelStrikeMultiplayerClient(ApiEndpoints endpoints)
     {
         _endpoints = endpoints;
-        Lobby = new LobbyClient<PoVoxelStrikeLobbyPlayer>(endpoints, "povoxelstrike/lobby-hub");
     }
-
-    // ── Lobby ─────────────────────────────────────────────────────────────
-
-    public Task<LobbyState<PoVoxelStrikeLobbyPlayer>?> ConnectLobbyAsync(string displayName, bool isGuest) =>
-        Lobby.ConnectAndJoinAsync(displayName, isGuest);
-
-    public Task ToggleReadyAsync() => Lobby.ToggleReadyAsync();
-
-    public Task StartGameAsync() => Lobby.StartGameAsync();
-
-    public Task LeaveLobbyAsync() => Lobby.LeaveLobbyAsync();
 
     // ── Lockstep ──────────────────────────────────────────────────────────
 
@@ -141,6 +112,5 @@ public sealed class PoVoxelStrikeMultiplayerClient : IAsyncDisposable
     public async ValueTask DisposeAsync()
     {
         await StopLockstepAsync();
-        await Lobby.DisposeAsync();
     }
 }

@@ -285,117 +285,88 @@ public class PoCabinetTests
 
     /// <summary>
     /// There is one lobby and no join codes: the first arrival hosts, the next arrivals share it,
-    /// the ninth is bounced. Ready toggling, the start rule the clients are sent, host migration,
-    /// the rematch loop, AI officials filling free seats so a lone host can race, and seats that
-    /// survive a dropped connection all hold.
+    /// the ninth is bounced. Ready toggling, the start rule, host migration, the host's picks
+    /// riding every seat, the generic host kick, the rematch loop with its ready timeout, and AI
+    /// officials filling free seats so a lone host can race all hold, on the shared LobbyRoom.
     /// </summary>
     private static void Lobby_FirstArrivalHosts_LaterArrivalsShareIt_AndBouncesAtCap()
     {
-        var service = new PoCabinetLobbyService();
-        service.View().Should().BeNull("nobody has arrived yet");
+        var clock = new Microsoft.Extensions.Time.Testing.FakeTimeProvider(DateTimeOffset.UtcNow);
+        var room = new PoCabinetLobbyService(clock);
+        room.State.Players.Should().BeEmpty("nobody has arrived yet");
+        room.Open("c-h", "Alice", false, "host");
+        room.HostConnectionId.Should().Be("c-h", "the first arrival hosts");
+        room.Open("c-2", "Bob", false, "p2");
+        room.State.Players.Should().HaveCount(2).And.OnlyContain(p => p.TrackId == PoCabinetCatalog.DefaultTrackId);
+        for (var i = 3; i <= 8; i++) room.Open($"c-{i}", $"Player{i}", false, $"p{i}").state.Players.Should().Contain(p => p.ConnectionId == $"c-{i}");
+        room.Open("c-9", "Eve", false, "p9").message.Should().Be("Lobby is full");
+        room.State.Players.Should().HaveCount(PoCabinetCatalog.CarCount, "eight seats, no more");
 
-        var lobby = service.Join("host", "Alice", trackId: "capitol");
-        lobby!.HostId.Should().Be("host", "the first arrival hosts");
-        lobby.Players[0].IsReady.Should().BeTrue("the host is auto-ready");
-        var second = service.Join("p2", "Bob", trackId: "maralago");
-        second.Should().BeSameAs(lobby, "there is one lobby");
-        second!.TrackId.Should().Be("capitol", "a later arrival's track choice is ignored");
-        second.Players[1].IsReady.Should().BeFalse("guests ready up themselves");
-        for (var i = 3; i <= 8; i++) service.Join($"p{i}", $"Player{i}").Should().NotBeNull();
-        service.Join("p9", "Eve").Should().BeNull("eight seats, no more");
-        service.View()!.Players.Should().HaveCount(PoCabinetCatalog.CarCount);
+        room.SetTrack("c-2", "maralago").Should().BeFalse("only the host picks the track");
+        room.SetTrack("c-h", "maralago").Should().BeTrue();
+        room.SetBots("c-h", 99).Should().BeTrue();
+        room.BotCount.Should().Be(PoCabinetCatalog.MaxBots, "the request is clamped");
+        room.State.Players.Should().OnlyContain(p => p.TrackId == "maralago" && p.BotCount == PoCabinetCatalog.MaxBots, "the picks ride every seat");
+        room.SetBots("c-h", PoCabinetLobbyService.DefaultBots);
 
-        service.ToggleReady("p2").Should().BeTrue();
-        service.View()!.Startable.Should().BeFalse("not everyone is ready");
-        service.Start("host").Should().BeNull();
-        for (var i = 3; i <= 8; i++) service.ToggleReady($"p{i}");
-        service.View()!.Startable.Should().BeTrue();
-        service.Start("p2").Should().BeNull("only the host starts");
-        service.Start("host").Should().NotBeNull();
-        service.Start("host").Should().BeNull("a started lobby cannot start again");
-        service.Join("late", "Latecomer").Should().BeNull();
-        service.View()!.InRace.Should().BeTrue("a latecomer sees the race in progress");
+        room.TryStart("c-h").Should().BeFalse("nobody has readied");
+        for (var i = 2; i <= 8; i++) room.ToggleReady($"c-{i}");
+        room.TryStart("c-2").Should().BeFalse("only the host starts");
+        var roster = room.TryStartWithRoster("c-h")!;
+        roster.Should().HaveCount(8);
+        room.TryStart("c-h").Should().BeFalse("a started lobby cannot start again");
+        room.Kick("c-h", "c-2").ok.Should().BeFalse("no kicking while a race runs");
+        var code = room.BeginRace();
+        code.Should().MatchRegex("^[0-9a-f]{8}$");
+        room.State.Should().Match<LobbyState<PoCabinetLobbyPlayer>>(s => s.InProgress && s.GameCode == code, "a latecomer sees the race in progress and can Watch by its code");
+        room.Open("c-late", "Latecomer", false, "late").state.Players.Should().NotContain(p => p.ConnectionId == "c-late");
+        var grid = room.BuildGrid(roster);
+        grid.Should().HaveCount(8 + 3, "eight humans plus the three AI that asked for and fit");
+        grid.Take(8).Select(d => d.OwnerId).Should().Equal(roster.Select(p => p.UserId));
+        System.Text.Json.JsonSerializer.Serialize(roster[0]).Should().NotContainEquivalentOf("userId", "the claim id never leaves the server");
 
-        service.Leave("host");
-        service.View()!.Players.Should().ContainSingle(p => p.IsHost).Which.DisplayName.Should().Be("Bob", "the next player is promoted");
-        foreach (var id in new[] { "p2", "p3", "p4", "p5", "p6", "p7", "p8" }) service.Leave(id);
-        service.View().Should().NotBeNull("a running race keeps its lobby, so no second race starts under the same id");
-        service.MarkRaceFinished().Should().BeNull();
-        service.View().Should().BeNull("an empty lobby is purged");
+        room.MarkRaceFinished("stale-code").Should().BeFalse("another race's finish changes nothing");
+        room.MarkRaceFinished(code).Should().BeTrue("the lobby reopens for a rematch with the same roster");
+        room.State.Should().Match<LobbyState<PoCabinetLobbyPlayer>>(s => !s.InProgress && s.GameCode == PoCabinetLobbyService.GlobalCode && s.Players.Count == 8);
+        room.State.Players.Where(p => p.ConnectionId != "c-h").Should().OnlyContain(p => !p.IsReady, "guests ready up again");
 
-        service.Join("solo", "Hana", trackId: "maralago", connectionId: "c-solo")!.HostId.Should().Be("solo");
-        service.View()!.Startable.Should().BeTrue("a lone host races the default AI officials");
-        service.SetBots("solo", 0).Should().BeTrue();
-        service.View()!.Startable.Should().BeFalse("one car is not a race");
-        service.SetBots("solo", 2);
-        service.SetBots("someone-else", 4).Should().BeFalse("only the host changes the grid");
-        service.Join("g1", "Gil", connectionId: "c-g1").Should().NotBeNull();
-        service.ToggleReady("g1");
-        service.View()!.BotSeats.Should().Be(2);
-        service.Start("solo").Should().NotBeNull();
-        var grid = service.BuildGrid();
-        grid.Should().HaveCount(4, "two humans plus the two officials asked for");
-        grid.Skip(2).Select(d => d.Name).Should().Equal("Sean S.", "Steve B.");
+        // The host's generic kick: never themselves, never as a guest, one seat freed.
+        room.Kick("c-2", "c-3").ok.Should().BeFalse("only the host kicks");
+        room.Kick("c-h", "c-h").ok.Should().BeFalse("the host cannot kick themselves");
+        room.Kick("c-h", "c-3").Should().Be((true, "Player3"));
+        room.State.Players.Should().HaveCount(7);
+
+        // Seats left not ready past the timeout are freed after a race; the host never is.
+        room.ToggleReady("c-4");
+        clock.Advance(PoCabinetLobbyService.ReadyTimeout - TimeSpan.FromSeconds(1));
+        room.SweepUnready().Should().BeEmpty();
+        clock.Advance(TimeSpan.FromSeconds(2));
+        room.SweepUnready().Select(u => u.ConnectionId).Should().BeEquivalentTo(["c-2", "c-5", "c-6", "c-7", "c-8"]);
+        room.State.Players.Select(p => p.ConnectionId).Should().BeEquivalentTo(["c-h", "c-4"]);
+
+        // A lone host races the AI officials; a lone host with none cannot; a drained room starts fresh.
+        var solo = new PoCabinetLobbyService(clock);
+        solo.Open("s", "Hana", false, "solo");
+        solo.TryStartWithRoster("s").Should().NotBeNull("a lone host races the default AI officials");
+        solo.End();
+        solo.SetBots("s", 0).Should().BeTrue();
+        solo.TryStart("s").Should().BeFalse("one car is not a race");
+        solo.SetBots("s", 99);
+        solo.Open("g", "Gil", false, "g1");
+        solo.ToggleReady("g");
+        var soloRoster = solo.TryStartWithRoster("s")!;
         // A full AI grid: the four officials, then field racers under the names and paint they
         // have in a solo race, and never more cars than the online grid holds.
-        var full = new PoCabinetLobbyService();
-        full.Join("h", "Host");
-        full.SetBots("h", 99).Should().BeTrue();
-        full.View()!.BotCount.Should().Be(PoCabinetCatalog.MaxBots, "the request is clamped");
-        full.Start("h").Should().NotBeNull();
-        var fullGrid = full.BuildGrid();
-        fullGrid.Should().HaveCount(1 + PoCabinetCatalog.MaxBots);
+        var fullGrid = solo.BuildGrid(soloRoster);
+        fullGrid.Should().HaveCount(2 + PoCabinetLobbyRules.BotSeats(PoCabinetCatalog.MaxBots, 2));
         fullGrid.Select(d => d.Name).Should().OnlyHaveUniqueItems();
-        fullGrid.Skip(1).Take(4).Select(d => d.OfficialId).Should().Equal(PoCabinetCatalog.Officials.Select(o => o.Id));
-        fullGrid[5].Should().Match<PoCabinetDriver>(d => d.Name == "Dana K." && d.OfficialId == PoCabinetCatalog.FieldRacerId && d.Color.StartsWith("hsl("));
-        full.MarkRaceFinished().Should().NotBeNull("the lobby reopens for a rematch");
-        for (var i = 2; i <= PoCabinetCatalog.CarCount; i++) full.Join($"d{i}", $"Driver{i}").Should().NotBeNull();
-        full.View()!.BotSeats.Should().Be(PoCabinetCatalog.OnlineGridSize - PoCabinetCatalog.CarCount, "eight drivers leave room for eight AI");
-        new PoCabinetSim("capitol", 1, full.BuildGrid()).SnapshotCars().Should().HaveCount(PoCabinetCatalog.OnlineGridSize);
-        service.DropConnection("c-g1").Should().BeTrue();
-        service.View()!.Players.Should().HaveCount(2, "a drop mid-race keeps the seat until the race ends");
-        service.Join("g1", "Gil", connectionId: "c-g1b").Should().NotBeNull("rejoining your own seat works mid-race");
-
-        var reopened = service.MarkRaceFinished();
-        reopened!.IsStarted.Should().BeFalse();
-        reopened.Players.Single(p => p.PlayerId == "g1").IsReady.Should().BeFalse("guests ready up again for the rematch");
-        service.View("g1")!.YourSeatId.Should().Be(PoCabinetLobbyService.SeatIdFor("g1")).And.NotContain("g1", "seat ids never expose the claim id");
-
-        // Every race has its own code, a stale race's finish cannot reopen the next one, and a
-        // race that could not be created rolls the lobby back to idle.
-        var clock = new Microsoft.Extensions.Time.Testing.FakeTimeProvider(DateTimeOffset.UtcNow);
-        var rematch = new PoCabinetLobbyService(clock);
-        rematch.Join("h", "Host", connectionId: "c-h");
-        rematch.Join("afk", "Afk", connectionId: "c-afk");
-        rematch.Join("k", "Kicked", connectionId: "c-k");
-        rematch.ToggleReady("afk");
-        rematch.ToggleReady("k");
-        var first = rematch.Start("h")!.RaceCode;
-        first.Should().MatchRegex("^[0-9a-f]{8}$");
-        rematch.View()!.Code.Should().Be(first, "Watch joins the running race by its code");
-        rematch.MarkRaceFinished("stale-code").Should().BeNull();
-        rematch.View()!.InRace.Should().BeTrue("another race's finish changes nothing");
-        rematch.MarkRaceFinished(first).Should().NotBeNull();
-        rematch.ToggleReady("afk");
-        rematch.ToggleReady("k");
-        var next = rematch.Start("h")!.RaceCode;
-        next.Should().NotBe(first);
-        rematch.AbortStart(next!);
-        rematch.View()!.InRace.Should().BeFalse("a race that failed to start leaves the lobby idle");
-
-        // The host frees an AFK seat between races (never their own, never as a guest), and a
-        // reopened lobby frees seats left not ready for the timeout.
-        rematch.Kick("afk", PoCabinetLobbyService.SeatIdFor("k")).Should().BeNull("only the host kicks");
-        rematch.Kick("h", PoCabinetLobbyService.SeatIdFor("h")).Should().BeNull("the host cannot kick themselves");
-        rematch.Kick("h", PoCabinetLobbyService.SeatIdFor("k"))!.ConnectionIds.Should().Equal("c-k");
-        rematch.View()!.Players.Should().HaveCount(2);
-        rematch.Start("h");
-        rematch.MarkRaceFinished(rematch.View()!.Code);
-        clock.Advance(PoCabinetLobbyService.ReadyTimeout - TimeSpan.FromSeconds(1));
-        rematch.SweepUnready().Should().BeEmpty();
-        clock.Advance(TimeSpan.FromSeconds(2));
-        rematch.SweepUnready().Should().ContainSingle().Which.DisplayName.Should().Be("Afk");
-        rematch.View()!.Players.Should().ContainSingle(p => p.IsHost, "the host is ready by definition and never swept");
+        fullGrid.Skip(2).Take(4).Select(d => d.OfficialId).Should().Equal(PoCabinetCatalog.Officials.Select(o => o.Id));
+        fullGrid[6].Should().Match<PoCabinetDriver>(d => d.Name == "Dana K." && d.OfficialId == PoCabinetCatalog.FieldRacerId && d.Color.StartsWith("hsl("));
+        solo.Leave("s");
+        solo.Leave("g");
+        solo.IsEmpty.Should().BeTrue();
+        solo.Open("n", "New", false, "n1").state.Players.Single().BotCount.Should().Be(PoCabinetLobbyService.DefaultBots, "an emptied lobby resets the picks");
+        new PoCabinetSim("capitol", 1, fullGrid).SnapshotCars().Should().HaveCount(fullGrid.Count);
     }
 
     /// <summary>

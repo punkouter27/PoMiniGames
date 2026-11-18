@@ -69,6 +69,14 @@ public abstract class LobbyRoom<TPlayer> where TPlayer : class, ILobbyPlayer
     {
     }
 
+    /// <summary>Called under the lock when the game ends (<see cref="End"/>), after the ready flags are cleared.</summary>
+    protected virtual void OnEnded()
+    {
+    }
+
+    /// <summary>Opt-in per room: the host may remove another seat between games (<see cref="Kick"/>).</summary>
+    public virtual bool CanKick => false;
+
     public LobbyState<TPlayer> State
     {
         get
@@ -80,7 +88,8 @@ public abstract class LobbyRoom<TPlayer> where TPlayer : class, ILobbyPlayer
                     HostConnectionId: string.IsNullOrEmpty(_hostConnectionId) ? null : _hostConnectionId,
                     GameCode: GameCode,
                     MaxPlayers: MaxPlayers,
-                    LastUpdatedUtc: DateTimeOffset.UtcNow);
+                    LastUpdatedUtc: DateTimeOffset.UtcNow,
+                    InProgress: _startedAtMs > 0);
             }
         }
     }
@@ -214,6 +223,22 @@ public abstract class LobbyRoom<TPlayer> where TPlayer : class, ILobbyPlayer
         }
     }
 
+    /// <summary>
+    /// Host-only, between games, only when <see cref="CanKick"/>: free another seat (never the
+    /// host's own). Returns the removed player's name so the hub can tell them and the room.
+    /// </summary>
+    public (bool ok, string name) Kick(string hostConnectionId, string targetConnectionId)
+    {
+        lock (_lock)
+        {
+            if (!CanKick || _startedAtMs > 0 || _hostConnectionId != hostConnectionId || targetConnectionId == hostConnectionId)
+                return (false, "");
+            if (!_players.Remove(targetConnectionId, out var removed)) return (false, "");
+            OnLeft(targetConnectionId);
+            return (true, removed.DisplayName);
+        }
+    }
+
     /// <summary>The game is over: clear the started flag and every ready flag so the next round needs a fresh Ready.</summary>
     public void End()
     {
@@ -224,6 +249,7 @@ public abstract class LobbyRoom<TPlayer> where TPlayer : class, ILobbyPlayer
             {
                 _players[key] = WithReady(_players[key], false);
             }
+            OnEnded();
         }
     }
 

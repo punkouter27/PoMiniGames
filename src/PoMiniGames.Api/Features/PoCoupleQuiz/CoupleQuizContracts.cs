@@ -2,27 +2,10 @@ namespace PoMiniGames.Features.PoCoupleQuiz;
 
 // ── Strongly-typed client interface (compile-time-safe SignalR events) ──────
 //
-// Payloads carry no game code and no AI mode: there is exactly ONE lobby in the
-// process, so a code identifies nothing, and AI always runs remotely on the server.
-// The lobby sends `MaxRounds` (the round count) rather than a difficulty level.
+// The lobby is its own hub (CoupleQuizLobbyHub); these are the match events. Payloads carry no
+// game code: a match is reached by the internal code the lobby hands both players.
 
 public record GamePlayerState(string Name, bool IsKingPlayer, int Score);
-
-public record LobbyEventPayload(
-    bool IsHost,
-    string PlayerName,
-    List<string> Players,
-    List<string> ReadyPlayers,
-    string HostName,
-    int MaxRounds,
-    string TopicPack = "Classic");
-
-public record LobbyUpdatedPayload(
-    List<string> Players,
-    List<string> ReadyPlayers,
-    string HostName,
-    int MaxRounds,
-    string TopicPack = "Classic");
 
 public record GameStartedPayload(
     string KingPlayerName,
@@ -58,16 +41,10 @@ public record GameOverPayload(
 
 public interface IGameClient
 {
-    Task LobbyJoined(LobbyEventPayload payload);
-    Task LobbyUpdated(LobbyUpdatedPayload payload);
-    Task LobbyError(string message);
-
     Task GameStarted(GameStartedPayload payload);
     Task RoundStarted(RoundStartedPayload payload);
     Task AnswerRecorded(AnswerRecordedPayload payload);
     Task RoundResult(RoundResultPayload payload);
     Task GameOver(GameOverPayload payload);
     Task GameError(string message);
-
-    Task PlayerDisconnected(LobbyUpdatedPayload payload);
 }

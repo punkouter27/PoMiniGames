@@ -1,44 +1,40 @@
 @*
-    PoCabinetLobby — joins the one lobby (no codes: the first arrival hosts, later arrivals
-    take the next seats) and renders it on the shared LobbyPanel: the server's LobbyState
-    broadcast is mapped into the panel's LobbyState (seat id = connection id), so the roster,
-    host / ready chips, Ready / Start / Leave, Invite and the folded how-to look like every
-    other lobby. The host's Picker holds the track dropdown (every track plus today's Daily,
-    the solo card's names) and the AI-driver count; the host can remove a seat between races
-    (PlayerActions). Car & settings opens the page's drawer (OnOpenSettings); a paint change
-    there re-joins with the new colour (PoCabinetPage), which the server applies to the seat.
-    The RaceStarting broadcast hands everyone to the race through OnRaceStarting; after a race
-    the same lobby reopens (the rematch). Arriving while a race runs (or all eight seats are
-    taken) shows a waiting note in the panel's status area and re-tries the seat on every
-    broadcast, so the next reopen seats you.
+    PoCabinetLobby — the one shared lobby (no codes: the first arrival hosts, later arrivals take
+    the next seats) on the shared OnlineLobby: it owns the connection, the roster, Ready / Start /
+    Leave and the panel; this page supplies only what is Cabinet's own. The host's Picker holds
+    the track dropdown (every track plus today's Daily, the solo card's names) and the AI-driver
+    count, both read from the host's seat in the lobby state and written with SetTrack / SetBots;
+    the host can remove a seat between races (PlayerActions, the generic Kick). Car & settings opens
+    the page's drawer (OnOpenSettings); a paint change flows in through Color and is sent as
+    SetColor. gameStarted (every start, including rematches, so this listens on the client rather
+    than on OnGameStarted) hands everyone to the race through OnRaceStarting. The page keeps this
+    component mounted, hidden, while the race runs, so the roster is still here for the rematch.
+    Arriving while a race runs (or all eight seats are taken) shows a waiting note and re-tries the
+    seat on every broadcast, so the next reopen seats you.
 *@
 
-@using Microsoft.AspNetCore.SignalR.Client
 @using PoMiniGames.Shared.Games
 @using PoMiniGamesClient.Features.Shared
-@implements IAsyncDisposable
-@inject PlayerNameService PlayerNameSvc
-@inject PoCabinetSession Session
+@using PoMiniGamesClient.Services.Play
 
 <div class="pocabinet-lobby" aria-label="Multiplayer lobby">
-    <LobbyPanel TPlayer="CabinetSeat"
-                State="@_state"
-                LocalConnectionId="@(Session.MySeatId ?? "")"
-                ConnectionState="@PanelConnection"
-                Hint="@PanelHint"
-                MaxPlayersHint="PoCabinetCatalog.CarCount"
-                StartLabel="@(_view is { } sv ? StartLabel(sv) : "Start race")"
-                CanStart="@(_view is { Startable: true, InRace: false })"
-                CanReady="@CanReady"
-                OnReconnect="RejoinAsync"
-                OnReady="ToggleReadyAsync"
-                OnStart="StartAsync"
-                OnLeave="LeaveAsync">
+    <OnlineLobby TPlayer="PoCabinetLobbyPlayer"
+                 HubPath="pocabinet/lobby-hub"
+                 StartLabel="Start race"
+                 WaitingHint="@WaitingHint"
+                 Hint="@PanelHint"
+                 MaxPlayersHint="PoCabinetCatalog.CarCount"
+                 CanStart="@Startable"
+                 CanReady="@CanReady"
+                 OnClient="OnClientAsync"
+                 OnStateChanged="OnStateAsync"
+                 OnGameStarted="IgnoreStartAsync"
+                 OnLeave="OnExit">
         <PlayerLabel>
             <span class="pocabinet-seat__chip" style="--chip:@SeatColor(context.Color)" aria-hidden="true"></span>@context.DisplayName
         </PlayerLabel>
         <PlayerActions>
-            @if (IsHost && context.ConnectionId != Session.MySeatId && _view is { InRace: false })
+            @if (IsHost && context.ConnectionId != _client?.ConnectionId && !InRace)
             {
                 @* Host only, between races: one AFK seat must not block every rematch. *@
                 <button type="button" class="pocabinet-seat__kick" disabled="@_busy"
@@ -47,12 +43,12 @@
             }
         </PlayerActions>
         <Picker>
-            @if (IsHost && _view is { } pv)
+            @if (IsHost && !InRace)
             {
                 <div class="pocabinet-pick">
                     <label>
                         <span>Track</span>
-                        <select value="@pv.TrackId" disabled="@_busy" @onchange="e => SetTrackAsync(e.Value?.ToString() ?? PoCabinetCatalog.DefaultTrackId)">
+                        <select value="@TrackId" disabled="@_busy" @onchange="SetTrackAsync">
                             @foreach (var track in AllTracks)
                             {
                                 <option value="@track.Id">@track.Name</option>
@@ -61,7 +57,7 @@
                     </label>
                     <label>
                         <span>AI drivers</span>
-                        <select value="@pv.BotCount" disabled="@_busy" @onchange="e => SetBotsAsync(int.TryParse(e.Value?.ToString(), out var n) ? n : 0)">
+                        <select value="@BotCount" disabled="@_busy" @onchange="SetBotsAsync">
                             @for (var n = 0; n <= PoCabinetCatalog.MaxBots; n++)
                             {
                                 <option value="@n">@n</option>
@@ -81,24 +77,23 @@
                 @* Our seat was freed (the host, or the rematch ready timeout): nothing rejoins on its own. *@
                 <div class="pocabinet-lobby__notice" role="alert">
                     <span>@_kickedReason</span>
-                    <button type="button" class="app-btn app-btn--secondary" disabled="@_joining" @onclick="RejoinAsync">Rejoin the lobby</button>
+                    <button type="button" class="app-btn app-btn--secondary" disabled="@_busy" @onclick="RejoinAsync">Rejoin the lobby</button>
                 </div>
             }
-            else if (_view is { InRace: true })
+            else if (InRace && Me is null)
             {
                 <div class="pocabinet-lobby__notice">
-                    <span>@(MySeat is null ? "Race in progress — you'll get a seat when it finishes." : "A race is running for this lobby. It reopens here when it ends.")</span>
+                    <span>Race in progress — you'll get a seat when it finishes.</span>
                     <button type="button" class="app-btn app-btn--secondary" @onclick="WatchAsync">Watch</button>
                 </div>
             }
-            else if (_view is not null && MySeat is null)
+            else if (State is not null && Me is null)
             {
                 <p class="pocabinet-lobby__notice">All @PoCabinetCatalog.CarCount seats are taken — you'll get one as soon as someone leaves.</p>
             }
             @if (!string.IsNullOrEmpty(_error))
             {
-                <InlineError Message="@_error" RetryLabel="Reconnect"
-                             OnRetry="@(_connectionLost && !_joining ? EventCallback.Factory.Create(this, RejoinAsync) : default)" />
+                <InlineError Message="@_error" />
             }
         </Status>
         <ExtraActions>
@@ -107,7 +102,7 @@
         <HowTo>
             <p>One shared room: the first driver in hosts, picks the track and the AI drivers, and starts once everyone is ready. After a race you come back here for the rematch; ready up within @ReadyTimeoutSeconds seconds or the seat is freed.</p>
         </HowTo>
-    </LobbyPanel>
+    </OnlineLobby>
 </div>
 
 @code {
@@ -122,178 +117,166 @@
     /// <summary>A line from the page, e.g. how the last race ended when its finish was missed.</summary>
     [Parameter] public string? Notice { get; set; }
 
-    /// <summary>A seat on the shared panel: the seat id is the panel's connection id.</summary>
-    private sealed record CabinetSeat(string ConnectionId, string DisplayName, bool IsReady, string? Color) : ILobbyPlayer
-    {
-        public bool IsGuest => false;
-    }
-
-    private PoCabinetLobbyView? _view;
-    private LobbyState<CabinetSeat>? _state;
-    private string? _error;
-    private bool _busy;
-    private bool _joining;
-    /// <summary>The lobby connection failed or closed: the error offers Reconnect.</summary>
-    private bool _connectionLost;
-    /// <summary>Our seat was freed (kicked, or the rematch ready timeout); why, until we rejoin.</summary>
-    private string? _kickedReason;
-    /// <summary>The latest LobbyNotice broadcast.</summary>
-    private string? _notice;
-
     /// <summary>Mirrors the server's PoCabinetLobbyService.ReadyTimeout.</summary>
     private const int ReadyTimeoutSeconds = 90;
+
+    private LobbyClient<PoCabinetLobbyPlayer>? _client;
+    private string? _error;
+    private bool _busy;
+    private bool _rejoining;
+    private bool _initialTrackHandled;
+    private string? _sentColor;
+    /// <summary>Our seat was freed (kicked, or the rematch ready timeout); why, until we rejoin.</summary>
+    private string? _kickedReason;
+    /// <summary>The latest notice broadcast (e.g. who lost a seat to the ready timeout).</summary>
+    private string? _notice;
 
     /// <summary>The fixed tracks, then today's daily circuit (UTC), as on the solo start card.</summary>
     private static IReadOnlyList<PoCabinetTrackInfo> AllTracks =>
         [.. PoCabinetCatalog.Tracks, PoCabinetCatalog.Today(DateTime.UtcNow)];
 
-    private static LobbyState<CabinetSeat>? Map(PoCabinetLobbyView? view) => view is null ? null : new LobbyState<CabinetSeat>(
-        [.. view.Players.Select(p => new CabinetSeat(p.SeatId, p.DisplayName, p.IsReady, p.Color))],
-        view.Players.FirstOrDefault(p => p.IsHost)?.SeatId,
-        view.Code, PoCabinetCatalog.CarCount, DateTimeOffset.UtcNow);
+    private LobbyState<PoCabinetLobbyPlayer>? State => _client?.State;
 
-    private HubConnectionState PanelConnection =>
-        _view is not null || _kickedReason is not null ? HubConnectionState.Connected
-        : _connectionLost ? HubConnectionState.Disconnected : HubConnectionState.Connecting;
+    private PoCabinetLobbyPlayer? Me => _client?.Me;
 
-    private bool CanReady => _view is { InRace: false } && MySeat is not null;
+    private bool IsHost => _client?.IsHost == true;
 
-    private string PanelHint => _view is not { } v ? "Single shared room — first to arrive becomes host."
+    private bool InRace => State?.InProgress == true;
+
+    /// <summary>The host's seat carries the track and AI-driver picks.</summary>
+    private PoCabinetLobbyPlayer? HostSeat => State?.Players.FirstOrDefault(p => p.ConnectionId == State.HostConnectionId);
+
+    private string TrackId => HostSeat?.TrackId ?? PoCabinetCatalog.DefaultTrackId;
+
+    private int BotCount => HostSeat?.BotCount ?? 0;
+
+    private int BotSeats => PoCabinetLobbyRules.BotSeats(BotCount, State?.Players.Count ?? 0);
+
+    private bool CanReady => Me is not null && !InRace;
+
+    /// <summary>The host may start: every other seat is ready and two cars would line up, AI counted.</summary>
+    private bool Startable => State is { InProgress: false } s && Me is not null
+        && s.Players.Count + BotSeats >= 2
+        && s.Players.All(p => p.ConnectionId == s.HostConnectionId || p.IsReady);
+
+    // The button always reads "Start race" (every lobby keeps its Start label fixed); what the
+    // host is waiting on is the panel's waiting line.
+    private string WaitingHint =>
+        InRace ? "Race running…"
+        : State is { } s && s.Players.Count + BotSeats < 2 ? "Add an AI driver or wait for a friend."
+        : "Waiting for everyone to ready up…";
+
+    private string PanelHint => State is null ? "Single shared room — first to arrive becomes host."
         : IsHost ? "You're the host: pick the track and AI drivers, then start."
-        : $"Track {PoCabinetCatalog.GetTrack(v.TrackId).Name} · {v.BotSeats} AI driver{(v.BotSeats == 1 ? "" : "s")} · the host starts";
-
-    private PoCabinetLobbySeat? MySeat => _view?.Players.FirstOrDefault(p => p.SeatId == Session.MySeatId);
+        : $"Track {PoCabinetCatalog.GetTrack(TrackId).Name} · {BotSeats} AI driver{(BotSeats == 1 ? "" : "s")} · the host starts";
 
     private string? CurrentNotice => _notice ?? Notice;
-
-    private bool IsHost => Session.MySeatId is not null && _view?.Players.FirstOrDefault(p => p.IsHost)?.SeatId == Session.MySeatId;
-
-    protected override async Task OnInitializedAsync()
-    {
-        Session.LobbyChanged += OnLobbyChangedAsync;
-        Session.RaceStarting += OnRaceStartingAsync;
-        Session.Kicked += OnKickedAsync;
-        Session.LobbyNotice += OnLobbyNoticeAsync;
-        Session.LobbyLost += OnLobbyLostAsync;
-        await JoinAsync();
-    }
-
-    /// <summary>Take (or retake) a seat. Guarded: our own join's broadcast arrives before its reply.</summary>
-    private async Task JoinAsync()
-    {
-        if (_joining) return;
-        _joining = true;
-        try
-        {
-            _view = await Session.JoinLobbyAsync(PlayerNameSvc.GetOrReadInitialName(), InitialTrackId, Color) ?? _view;
-            _state = Map(_view);
-            if (_connectionLost) _error = null;
-            _connectionLost = false;
-        }
-        catch (Exception ex)
-        {
-            _error = $"Could not reach the lobby: {ex.Message}";
-            _connectionLost = true;
-        }
-        finally
-        {
-            _joining = false;
-        }
-    }
-
-    /// <summary>Reconnect after a lost connection, or take a seat again after losing it.</summary>
-    private async Task RejoinAsync()
-    {
-        _kickedReason = null;
-        _notice = null;
-        await JoinAsync();
-    }
-
-    private Task OnKickedAsync(string reason) => InvokeAsync(() =>
-    {
-        _kickedReason = reason;
-        _view = null;
-        _state = null;
-        StateHasChanged();
-    });
-
-    private Task OnLobbyNoticeAsync(string text) => InvokeAsync(() =>
-    {
-        _notice = text;
-        StateHasChanged();
-    });
-
-    private Task OnLobbyLostAsync(string message) => InvokeAsync(() =>
-    {
-        _error = message;
-        _connectionLost = true;
-        StateHasChanged();
-    });
-
-    private Task OnLobbyChangedAsync(PoCabinetLobbyView view)
-    {
-        _view = view;
-        _state = Map(view);
-        // Waiting for a seat: the race just ended or someone left, so try again. Not awaited —
-        // this runs on the hub's receive loop, which has to stay free to deliver the reply.
-        if (Session.MySeatId is null && !view.InRace && view.Players.Count < PoCabinetCatalog.CarCount)
-            _ = InvokeAsync(async () => { await JoinAsync(); StateHasChanged(); });
-        return InvokeAsync(StateHasChanged);
-    }
-
-    private Task OnRaceStartingAsync(string code, string trackId) =>
-        InvokeAsync(() => OnRaceStarting.InvokeAsync((code, trackId)));
 
     /// <summary>The server's sanitised hex, or the grid's default green when the player sent none.</summary>
     private static string SeatColor(string? hex) => string.IsNullOrEmpty(hex) ? PoCabinetCatalog.DefaultSeatColor : hex;
 
-    private static string StartLabel(PoCabinetLobbyView view) =>
-        view.InRace ? "Race running…"
-        : view.Players.Count + view.BotSeats < 2 ? "Add an AI driver or wait for a friend"
-        : view.Players.All(p => p.IsReady) ? "Start race"
-        : "Waiting for everyone to ready up…";
+    protected override async Task OnParametersSetAsync() => await SyncSeatAsync();
 
-    private async Task RunAsync(Func<Task> action)
+    private Task OnClientAsync(LobbyClient<PoCabinetLobbyPlayer> client)
     {
+        _client = client;
+        client.Kicked += reason => _ = InvokeAsync(() =>
+        {
+            _kickedReason = reason;
+            StateHasChanged();
+        });
+        client.EventReceived += e =>
+        {
+            if (e.Kind != "notice") return;
+            _ = InvokeAsync(() =>
+            {
+                _notice = e.Message;
+                StateHasChanged();
+            });
+        };
+        // Every start, rematches included (OnGameStarted only reports the first).
+        client.GameStarted += code => _ = InvokeAsync(() =>
+        {
+            _notice = null;
+            return OnRaceStarting.InvokeAsync((code, TrackId));
+        });
+        return Task.CompletedTask;
+    }
+
+    private Task IgnoreStartAsync(OnlineLobbyStart start) => Task.CompletedTask;
+
+    private async Task OnStateAsync(LobbyState<PoCabinetLobbyPlayer> state)
+    {
+        await SyncSeatAsync();
+        // No seat while it could be had (a race just ended, or someone left): ask again. Not
+        // awaited here — this runs off the hub's receive loop, which has to stay free for the reply.
+        if (Me is null && !state.InProgress && state.Players.Count < PoCabinetCatalog.CarCount && _kickedReason is null && !_rejoining)
+            _ = InvokeAsync(RejoinAsync);
+    }
+
+    /// <summary>Send the paint and, for a first arrival, the opening track once seated (join takes neither).</summary>
+    private async Task SyncSeatAsync()
+    {
+        if (_client is null || Me is not { } me) return;
+        var wanted = Color ?? "";
+        if (wanted.Length > 0 && !string.Equals(me.Color, wanted, StringComparison.OrdinalIgnoreCase)
+            && !string.Equals(_sentColor, wanted, StringComparison.OrdinalIgnoreCase))
+        {
+            _sentColor = wanted;
+            try { await _client.SendAsync("SetColor", wanted); }
+            catch { /* best effort: the seat keeps its old colour */ }
+        }
+        if (!_initialTrackHandled)
+        {
+            _initialTrackHandled = true;
+            if (IsHost && State is { Players.Count: 1 } && !string.IsNullOrEmpty(InitialTrackId) && TrackId != InitialTrackId)
+            {
+                try { await _client.SendAsync("SetTrack", InitialTrackId); }
+                catch { /* the lobby opens on the default track */ }
+            }
+        }
+    }
+
+    /// <summary>Take a seat again after losing it (kick, timeout, or a dropped connection).</summary>
+    private async Task RejoinAsync()
+    {
+        if (_client is null || _rejoining) return;
+        _rejoining = true;
+        _kickedReason = null;
+        _notice = null;
+        try { await _client.ReconnectAsync(); }
+        catch (Exception ex) { _error = $"Could not reach the lobby: {ex.Message}"; }
+        finally { _rejoining = false; }
+        StateHasChanged();
+    }
+
+    private Task SetTrackAsync(ChangeEventArgs e) => SendAsync("SetTrack", e.Value?.ToString() ?? PoCabinetCatalog.DefaultTrackId);
+
+    private Task SetBotsAsync(ChangeEventArgs e) =>
+        SendAsync("SetBots", int.TryParse(e.Value?.ToString(), out var n) ? Math.Clamp(n, 0, PoCabinetCatalog.MaxBots) : 0);
+
+    private async Task SendAsync(string method, object value)
+    {
+        if (_client is null) return;
         _busy = true;
-        try { await action(); }
+        try { await _client.SendAsync(method, value); }
         catch (Exception ex) { _error = ex.Message; }
         finally { _busy = false; }
     }
 
-    private Task SetTrackAsync(string trackId) => RunAsync(() => Session.SetTrackAsync(trackId));
-
-    private Task SetBotsAsync(int count) => RunAsync(() => Session.SetBotsAsync(Math.Clamp(count, 0, PoCabinetCatalog.MaxBots)));
-
-    private Task ToggleReadyAsync() => RunAsync(() => Session.ToggleReadyAsync());
-
-    private Task KickAsync(string seatId) => RunAsync(async () =>
+    private async Task KickAsync(string connectionId)
     {
-        if (!await Session.KickAsync(seatId)) _error = "Could not remove that player — a race may have just started.";
-    });
-
-    private Task StartAsync() => RunAsync(async () =>
-    {
-        if (!await Session.TryStartAsync()) _error = "Could not start — someone may have just un-readied.";
-    });
-
-    private async Task LeaveAsync()
-    {
-        await Session.LeaveLobbyAsync();
-        await OnExit.InvokeAsync();
+        if (_client is null) return;
+        _busy = true;
+        try
+        {
+            if (!await _client.KickAsync(connectionId)) _error = "Could not remove that player — a race may have just started.";
+        }
+        catch (Exception ex) { _error = ex.Message; }
+        finally { _busy = false; }
     }
 
     /// <summary>Follow the running race; a seated player gets their car back, anyone else spectates.</summary>
     private Task WatchAsync() =>
-        _view is { } view ? OnRaceStarting.InvokeAsync((view.Code, view.TrackId)) : Task.CompletedTask;
-
-    public ValueTask DisposeAsync()
-    {
-        Session.LobbyChanged -= OnLobbyChangedAsync;
-        Session.RaceStarting -= OnRaceStartingAsync;
-        Session.Kicked -= OnKickedAsync;
-        Session.LobbyNotice -= OnLobbyNoticeAsync;
-        Session.LobbyLost -= OnLobbyLostAsync;
-        return ValueTask.CompletedTask;
-    }
+        State is { } state ? OnRaceStarting.InvokeAsync((state.GameCode, TrackId)) : Task.CompletedTask;
 }

@@ -13,26 +13,10 @@ namespace PoMiniGamesClient.Features.PoCoupleQuiz.Services;
 /// server payloads exactly (camelCase via JSON).
 /// </summary>
 /// <remarks>
-/// The payloads carry no game code, AI mode or difficulty: there is one lobby per server,
-/// so a code names nothing, and the round count is sent as <c>MaxRounds</c>.
+/// The payloads carry no game code: the lobby (its own hub, see <c>OnlineLobby</c>) pairs the
+/// players and hands both an internal match code, which <see cref="JoinMatchAsync"/> claims a seat with.
 /// </remarks>
 public record CoupleQuizGamePlayerState(string Name, bool IsKingPlayer, int Score);
-
-public record CoupleQuizLobbyEventPayload(
-    bool IsHost,
-    string PlayerName,
-    List<string> Players,
-    List<string> ReadyPlayers,
-    string HostName,
-    int MaxRounds,
-    string TopicPack = "Classic");
-
-public record CoupleQuizLobbyUpdatedPayload(
-    List<string> Players,
-    List<string> ReadyPlayers,
-    string HostName,
-    int MaxRounds,
-    string TopicPack = "Classic");
 
 public record CoupleQuizGameStartedPayload(
     string KingPlayerName,
@@ -66,11 +50,14 @@ public record CoupleQuizGameOverPayload(
     IReadOnlyDictionary<string, int> FinalScores,
     List<CoupleQuizGamePlayerState> Players);
 
+/// <summary>The lobby hand-off to the game page: the internal match code and this player seat name.</summary>
+public sealed record CoupleQuizPendingMatch(string MatchCode, string PlayerName);
+
 /// <summary>
 /// Client-side wrapper around the <c>/couplequiz/hubs/game</c> SignalR connection.
 /// Exposes the server events as C# events for the page to subscribe to. The page
-/// should call <see cref="ConnectAsync"/> on init, then <see cref="JoinAsync"/>
-/// once a name is known.
+/// should call <see cref="ConnectAsync"/> on init, then <see cref="JoinMatchAsync"/>
+/// with the code the lobby handed over (<see cref="PendingMatch"/>).
 /// </summary>
 public sealed class CoupleQuizHubService : IAsyncDisposable
 {
@@ -78,25 +65,23 @@ public sealed class CoupleQuizHubService : IAsyncDisposable
     private readonly ApiEndpoints _endpoints;
     private HubConnection? _connection;
 
-    /// <summary>
-    /// The most recent <c>GameStarted</c> payload, buffered so the game page can
-    /// initialise from it. The lobby page consumes the live event to navigate to
-    /// <c>/couplequiz/game</c>; by the time that page mounts and subscribes, the
-    /// live event has already fired — so it reads this buffer instead. Cleared on
-    /// game-over so a stale game can't leak into the next lobby session.
-    /// </summary>
-    public CoupleQuizGameStartedPayload? LastGameStarted { get; private set; }
+    /// <summary>The match the lobby reserved, waiting for the game page to claim its seat.</summary>
+    public CoupleQuizPendingMatch? PendingMatch { get; set; }
 
-    public event Action<CoupleQuizLobbyEventPayload>? OnLobbyJoined;
-    public event Action<CoupleQuizLobbyUpdatedPayload>? OnLobbyUpdated;
-    public event Action<string>? OnLobbyError;
+    /// <summary>Take (and clear) the pending match, so a refresh of the game page cannot rejoin a stale one.</summary>
+    public CoupleQuizPendingMatch? TakePendingMatch()
+    {
+        var pending = PendingMatch;
+        PendingMatch = null;
+        return pending;
+    }
+
     public event Action<CoupleQuizGameStartedPayload>? OnGameStarted;
     public event Action<CoupleQuizRoundStartedPayload>? OnRoundStarted;
     public event Action<CoupleQuizAnswerRecordedPayload>? OnAnswerRecorded;
     public event Action<CoupleQuizRoundResultPayload>? OnRoundResult;
     public event Action<CoupleQuizGameOverPayload>? OnGameOver;
     public event Action<string>? OnGameError;
-    public event Action<CoupleQuizLobbyUpdatedPayload>? OnPlayerDisconnected;
     public event Action<HubConnectionState>? ConnectionChanged;
 
     public CoupleQuizHubService(NavigationManager navigation, ApiEndpoints endpoints) =>
@@ -121,41 +106,19 @@ public sealed class CoupleQuizHubService : IAsyncDisposable
         // factory (see HubConnectionFactory for the cookie contract).
         _connection = HubConnectionFactory.Create(_endpoints.Hub("couplequiz/hubs/game"));
 
-        _connection.On<CoupleQuizLobbyEventPayload>("LobbyJoined", p => OnLobbyJoined?.Invoke(p));
-        _connection.On<CoupleQuizLobbyUpdatedPayload>("LobbyUpdated", p => OnLobbyUpdated?.Invoke(p));
-        _connection.On<string>("LobbyError", m => OnLobbyError?.Invoke(m));
-        _connection.On<CoupleQuizGameStartedPayload>("GameStarted", p =>
-        {
-            // Buffer first, THEN raise — the game page reads the buffer on mount.
-            LastGameStarted = p;
-            OnGameStarted?.Invoke(p);
-        });
+        _connection.On<CoupleQuizGameStartedPayload>("GameStarted", p => OnGameStarted?.Invoke(p));
         _connection.On<CoupleQuizRoundStartedPayload>("RoundStarted", p => OnRoundStarted?.Invoke(p));
         _connection.On<CoupleQuizAnswerRecordedPayload>("AnswerRecorded", p => OnAnswerRecorded?.Invoke(p));
         _connection.On<CoupleQuizRoundResultPayload>("RoundResult", p => OnRoundResult?.Invoke(p));
-        _connection.On<CoupleQuizGameOverPayload>("GameOver", p =>
-        {
-            LastGameStarted = null; // don't let a finished game re-hydrate a new page
-            OnGameOver?.Invoke(p);
-        });
+        _connection.On<CoupleQuizGameOverPayload>("GameOver", p => OnGameOver?.Invoke(p));
         _connection.On<string>("GameError", m => OnGameError?.Invoke(m));
-        _connection.On<CoupleQuizLobbyUpdatedPayload>("PlayerDisconnected", p => OnPlayerDisconnected?.Invoke(p));
 
         _connection.Reconnecting += _ =>
         {
             ConnectionChanged?.Invoke(HubConnectionState.Reconnecting);
             return Task.CompletedTask;
         };
-        _connection.Reconnected += async _ =>
-        {
-            ConnectionChanged?.Invoke(HubConnectionState.Connected);
-            if (_lastPlayerName is null) return;
-            try { await JoinAsync(_lastPlayerName); }
-            catch (Exception ex) when (ex is HttpRequestException or InvalidOperationException or Microsoft.AspNetCore.SignalR.HubException or OperationCanceledException or IOException)
-            {
-                OnLobbyError?.Invoke($"Could not rejoin the lobby: {ex.Message}");
-            }
-        };
+        // No re-join: the server dropped the seat with the old connection, and a match cannot resume.
         _connection.Closed += _ =>
         {
             ConnectionChanged?.Invoke(HubConnectionState.Disconnected);
@@ -166,33 +129,11 @@ public sealed class CoupleQuizHubService : IAsyncDisposable
         ConnectionChanged?.Invoke(_connection.State);
     }
 
-    private string? _lastPlayerName;
-
-    public Task JoinAsync(string playerName)
+    /// <summary>Claim the seat the lobby reserved, by the internal match code.</summary>
+    public Task JoinMatchAsync(string matchCode, string playerName)
     {
         EnsureConnected();
-        _lastPlayerName = playerName;
-        return _connection!.InvokeAsync("Join", playerName);
-    }
-
-    public Task SetReadyAsync()
-    {
-        EnsureConnected();
-        return _connection!.InvokeAsync("SetReady");
-    }
-
-    /// <summary>Host-only; the server ignores it from anyone else.</summary>
-    public Task SetRoundsAsync(int rounds)
-    {
-        EnsureConnected();
-        return _connection!.InvokeAsync("SetRounds", rounds);
-    }
-
-    /// <summary>Host-only; selects Classic or an external API topic pack.</summary>
-    public Task SetTopicPackAsync(string topicPack)
-    {
-        EnsureConnected();
-        return _connection!.InvokeAsync("SetTopicPack", topicPack);
+        return _connection!.InvokeAsync("JoinMatch", matchCode, playerName);
     }
 
     public Task SubmitAnswerAsync(string answer)

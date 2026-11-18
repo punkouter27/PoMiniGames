@@ -80,18 +80,15 @@
                             @if (_onlinePhase == OnlinePhase.Lobby)
                             {
                                 <div class="mr-lobby">
-                                    <LobbyPanel TPlayer="PoMarbleRaceLobbyPlayer"
-                                                State="@_lobby?.State"
-                                                LocalConnectionId="@(_lobby?.ConnectionId ?? "")"
-                                                ConnectionState="@(_lobby?.ConnectionState ?? HubConnectionState.Disconnected)"
-                                                Hint="One shared room. The first to arrive hosts, runs the race and picks the track; the second steers WHITE."
-                                                MaxPlayersHint="2"
-                                                StartLabel="Start race"
-                                                HowTo="OnlineHowToPlayContent"
-                                                OnReconnect="ReconnectLobbyAsync"
-                                                OnReady="@(() => _lobby?.ToggleReadyAsync() ?? Task.CompletedTask)"
-                                                OnStart="@(() => _lobby?.StartGameAsync() ?? Task.CompletedTask)"
-                                                OnLeave="LeaveLobbyAsync">
+                                    <OnlineLobby TPlayer="PoMarbleRaceLobbyPlayer"
+                                                 HubPath="pomarblerace/lobby-hub"
+                                                 Hint="One shared room. The first to arrive hosts, runs the race and picks the track; the second steers WHITE."
+                                                 MaxPlayersHint="2"
+                                                 StartLabel="Start race"
+                                                 HowTo="OnlineHowToPlayContent"
+                                                 OnClient="OnLobbyClient"
+                                                 OnGameStarted="OnLobbyStarted"
+                                                 OnLeave="LeaveLobby">
                                         <Picker>
                                             <div class="mr-lobby-pick">
                                                 <label class="mr-setup-label" for="mr-lobby-map">Track</label>
@@ -108,7 +105,7 @@
                                                 }
                                             </div>
                                         </Picker>
-                                    </LobbyPanel>
+                                    </OnlineLobby>
                                 </div>
                             }
                             else

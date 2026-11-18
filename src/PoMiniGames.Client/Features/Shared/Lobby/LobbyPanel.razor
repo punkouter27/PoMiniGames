@@ -243,13 +243,17 @@
         }
 
         if (_arrived.Count == 0) return;
-        foreach (var id in _arrived)
+        // Snapshot first: each await below yields, and a lobbyState broadcast landing then runs
+        // OnParametersSet, which adds to _arrived. Enumerating the live list threw
+        // InvalidOperationException and the first player's lobby crashed as the second arrived.
+        var arrived = _arrived.ToArray();
+        _arrived.Clear();
+        foreach (var id in arrived)
         {
             var seat = $"[data-lobby-seat=\"{id}\"]";
             await ScreenFx.PopAsync(seat);
             await ScreenFx.BurstAtAsync(seat, ScreenFxService.Sparks, 0.6);
         }
-        _arrived.Clear();
     }
 
     // One hub call at a time. Every lobby passes its hub call straight through, so

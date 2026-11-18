@@ -128,19 +128,21 @@ public class Game
 public record LobbyPlayer(string Name, string ConnectionId);
 
 /// <summary>
-/// The single process-wide lobby. There is exactly one; see <see cref="GameSessionManager"/>
-/// for why game codes were removed.
+/// The single live match: reserved by the lobby, claimed seat by seat on the game hub.
+/// See <see cref="GameSessionManager"/>.
 /// </summary>
 public class GameSession
 {
-    public string HostConnectionId { get; set; } = string.Empty;
+    /// <summary>The internal match code the lobby reserved; never shown to a player.</summary>
+    public string MatchCode { get; set; } = string.Empty;
+    /// <summary>The lobby seat names, host first. A seat is claimed by <see cref="GameSessionManager.JoinMatch"/>.</summary>
+    public List<string> ExpectedNames { get; set; } = new();
+    public DateTime ReservedAtUtc { get; set; } = DateTime.UtcNow;
     public int MaxRounds { get; set; } = Game.DefaultRounds;
     public string TopicPack { get; set; } = "Classic";
     public SessionState State { get; set; } = SessionState.Waiting;
     public List<LobbyPlayer> Players { get; set; } = new();
     public Game? ActiveGame { get; set; }
-    public HashSet<string> ReadyConnectionIds { get; set; } = new(StringComparer.Ordinal);
-    public string? HostName => Players.FirstOrDefault(p => p.ConnectionId == HostConnectionId)?.Name;
 
     // ── Round driver state (owned by CoupleQuizRoundDirector) ───────────────
 
@@ -165,12 +167,3 @@ public class GameSession
         PhaseTimer = null;
     }
 }
-
-public record LobbyReadyState(
-    List<string> Players,
-    List<string> ReadyPlayers,
-    string HostName,
-    int MaxRounds,
-    bool AllReady,
-    int MinPlayersToStart,
-    string TopicPack = "Classic");

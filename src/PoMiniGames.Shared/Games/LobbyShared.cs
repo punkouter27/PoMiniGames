@@ -17,13 +17,14 @@ public interface ILobbyPlayer
     bool IsReady { get; }
 }
 
-/// <summary>Snapshot of one lobby, broadcast to every member after every change.</summary>
+/// <summary>Snapshot of one lobby, broadcast to every member after every change. <c>InProgress</c>: a game is running and the room is closed to new seats until it ends.</summary>
 public sealed record LobbyState<TPlayer>(
     IReadOnlyList<TPlayer> Players,
     string? HostConnectionId,
     string GameCode,
     int MaxPlayers,
-    DateTimeOffset LastUpdatedUtc) where TPlayer : ILobbyPlayer;
+    DateTimeOffset LastUpdatedUtc,
+    bool InProgress = false) where TPlayer : ILobbyPlayer;
 
 /// <summary>Transient toast-style event (joined / left / ready / pick / starting).</summary>
 public sealed record LobbyEvent(string Kind, string Message, DateTimeOffset AtUtc);

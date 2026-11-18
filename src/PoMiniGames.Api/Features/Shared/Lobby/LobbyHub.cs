@@ -64,6 +64,8 @@ public abstract class LobbyHub<TPlayer, TRoom> : Hub
     /// <summary>Join the global room. First arrival becomes host.</summary>
     public async Task<LobbyState<TPlayer>> Join(string displayName, bool isGuest)
     {
+        // A kicked seat left the group; joining again puts it back (idempotent otherwise).
+        await Groups.AddToGroupAsync(Context.ConnectionId, _group);
         var (state, msg) = OpenSeat(displayName, isGuest);
         Log.LogInformation("{Hub}: conn={Conn} joined as {Name}; players={Count}/{Max} host={Host}",
             GetType().Name, Context.ConnectionId, displayName, state.Players.Count, state.MaxPlayers, state.HostConnectionId);
@@ -80,6 +82,25 @@ public abstract class LobbyHub<TPlayer, TRoom> : Hub
         if (!ok) return;
         await BroadcastStateAsync();
         await BroadcastEventAsync("ready", msg);
+    }
+
+    /// <summary>What a removed player is told. Override for a game-specific line.</summary>
+    protected virtual string KickedMessage => "The host removed you from the lobby.";
+
+    /// <summary>
+    /// Host-only, between games, for rooms that opt in (<see cref="LobbyRoom{TPlayer}.CanKick"/>):
+    /// free another seat. The target gets <c>kicked(reason)</c> and leaves the lobby group (a later
+    /// <c>Join</c> returns it); everyone else gets the new state and a <c>left</c> event.
+    /// </summary>
+    public async Task<bool> Kick(string connectionId)
+    {
+        var (ok, name) = Lobby.Kick(Context.ConnectionId, connectionId);
+        if (!ok) return false;
+        await Clients.Client(connectionId).SendAsync("kicked", KickedMessage);
+        await Groups.RemoveFromGroupAsync(connectionId, _group);
+        await BroadcastStateAsync();
+        await BroadcastEventAsync("left", $"{name} was removed");
+        return true;
     }
 
     public Task LeaveLobby() => LeaveAndBroadcastAsync();

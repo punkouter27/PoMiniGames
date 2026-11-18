@@ -46,9 +46,14 @@ public sealed class HubJsonContextTests
             Inputs = { new PoVoxelStrikeInput { Forward = true, Yaw = 45.5f, X = 1, Down = true } },
         };
 
+        var funQuizLobby = new LobbyState<FunQuizLobbyPlayer>(
+            [new FunQuizLobbyPlayer("c1", "Ana", false, true, "ArtCulture", 15)], "c1", "FUNQUIZ", 2, DateTimeOffset.UnixEpoch);
+        var coupleQuizLobby = new LobbyState<CoupleQuizLobbyPlayer>(
+            [new CoupleQuizLobbyPlayer("c1", "Ana", false, false, 7, "WorldTravel")], "c1", "COUPLEQUIZ", 2, DateTimeOffset.UnixEpoch);
+
         var reflection = HubOptions(withContext: false);
         var generated = HubOptions(withContext: true);
-        foreach (var payload in new object[] { state, snapshot, batch, new LobbyEvent("join", "Ana joined", DateTimeOffset.UnixEpoch) })
+        foreach (var payload in new object[] { state, snapshot, batch, funQuizLobby, coupleQuizLobby, new LobbyEvent("join", "Ana joined", DateTimeOffset.UnixEpoch) })
         {
             var expected = JsonSerializer.Serialize(payload, payload.GetType(), reflection);
             Assert.Equal(expected, JsonSerializer.Serialize(payload, payload.GetType(), generated));

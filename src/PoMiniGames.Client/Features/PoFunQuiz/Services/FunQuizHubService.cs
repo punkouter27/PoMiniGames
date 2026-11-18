@@ -36,19 +36,16 @@ public record FunQuizPlayerFinishedQuestionDto(string GameId, string PlayerName,
 
 public record FunQuizGameFinishedDto(string GameId, IReadOnlyDictionary<string, int> FinalScores, FunQuizPlayerStateDto? Winner, bool IsTie);
 
-public record FunQuizLobbyPlayerJoinedDto(string GameId, string PlayerName, List<string> Players);
-
-public record FunQuizLobbyErrorDto(string GameCode, string Message);
-
 /// <summary>
 /// Client-side wrapper over <c>/funquiz/gamehub</c>. Two-player SignalR trivia:
-/// JoinLobby → StartGame → UpdateScore loop → PlayerFinished → GameFinished.
+/// JoinMatch → UpdateScore loop → PlayerFinished → GameFinished.
 /// </summary>
 /// <remarks>
-/// There are no game codes: <c>JoinLobby</c> seats you in the one open lobby
-/// and the server tracks which game you are in by connection, so nothing downstream needs
-/// a game id. <c>GameId</c> stays on the payload records purely as the server's correlation
-/// value — the UI does not show it and never sends it back.
+/// The lobby is its own hub (<c>/funquiz/lobby-hub</c>, driven by <c>OnlineLobby</c>); when its
+/// host starts, both players get the match's internal code and claim their seats with
+/// <see cref="JoinMatch"/>. The server then tracks which game you are in by connection, so nothing
+/// downstream needs a game id. <c>GameId</c> stays on the payload records purely as the server's
+/// correlation value — the UI does not show it and never sends it back.
 /// </remarks>
 public sealed class FunQuizHubService : IAsyncDisposable
 {
@@ -57,15 +54,11 @@ public sealed class FunQuizHubService : IAsyncDisposable
     private readonly ApiEndpoints _endpoints;
     private HubConnection? _connection;
 
-    public event Action<FunQuizGameStateDto>? OnGameCreated;
-    public event Action<FunQuizGameStateDto>? OnGameJoined;
     public event Action<FunQuizGameStateDto>? OnGameUpdated;
     public event Action<FunQuizGameStateDto>? OnGameStarted;
     public event Action<FunQuizScoreUpdateDto>? OnScoreUpdated;
-    public event Action<FunQuizLobbyPlayerJoinedDto>? OnPlayerJoined;
     public event Action<FunQuizPlayerFinishedQuestionDto>? OnPlayerFinishedQuestion;
     public event Action<FunQuizGameFinishedDto>? OnGameFinished;
-    public event Action<FunQuizLobbyErrorDto>? OnLobbyError;
 
     // Connection lifecycle events (consumed by the page to render a
     // "Reconnecting…" banner so players know the lobby is healing, not dead).
@@ -121,15 +114,11 @@ public sealed class FunQuizHubService : IAsyncDisposable
             : (HttpTransportType?)null;
         _connection = HubConnectionFactory.Create(url, transports,
             [TimeSpan.FromSeconds(0), TimeSpan.FromSeconds(1), TimeSpan.FromSeconds(3), TimeSpan.FromSeconds(5)]);
-        _connection.On<FunQuizGameStateDto>("GameCreated", p => OnGameCreated?.Invoke(p));
-        _connection.On<FunQuizGameStateDto>("GameJoined", p => OnGameJoined?.Invoke(p));
         _connection.On<FunQuizGameStateDto>("GameUpdated", p => OnGameUpdated?.Invoke(p));
         _connection.On<FunQuizGameStateDto>("GameStarted", p => OnGameStarted?.Invoke(p));
         _connection.On<FunQuizScoreUpdateDto>("ScoreUpdated", p => OnScoreUpdated?.Invoke(p));
-        _connection.On<FunQuizLobbyPlayerJoinedDto>("PlayerJoined", p => OnPlayerJoined?.Invoke(p));
         _connection.On<FunQuizPlayerFinishedQuestionDto>("PlayerFinishedQuestion", p => OnPlayerFinishedQuestion?.Invoke(p));
         _connection.On<FunQuizGameFinishedDto>("GameFinished", p => OnGameFinished?.Invoke(p));
-        _connection.On<FunQuizLobbyErrorDto>("LobbyError", p => OnLobbyError?.Invoke(p));
 
         // Surface reconnect lifecycle so the UI can show a "Reconnecting…"
         // banner instead of leaving the player staring at a dead lobby.
@@ -151,17 +140,11 @@ public sealed class FunQuizHubService : IAsyncDisposable
         await _connection.StartAsync();
     }
 
-    /// <summary>Join the one open lobby (opening it if empty). Category applies only if you open it.</summary>
-    public Task JoinLobby(string playerName, string category, int questionCount = 10)
+    /// <summary>Claim the seat the lobby reserved for <paramref name="playerName"/>, by the internal match code.</summary>
+    public Task JoinMatch(string matchCode, string playerName)
     {
         EnsureConnected();
-        return _connection!.InvokeAsync("JoinLobby", playerName, category, questionCount);
-    }
-
-    public Task StartGame()
-    {
-        EnsureConnected();
-        return _connection!.InvokeAsync("StartGame");
+        return _connection!.InvokeAsync("JoinMatch", matchCode, playerName);
     }
 
     public Task UpdateScore(bool isCorrect, double speedMultiplier, int secondsRemaining)
@@ -192,6 +175,9 @@ public sealed class FunQuizHubService : IAsyncDisposable
 
     public async ValueTask DisposeAsync()
     {
-        if (_connection is not null) await _connection.DisposeAsync();
+        // Clear the field too: the service is app-lifetime, and a later visit must build a fresh connection.
+        var connection = _connection;
+        _connection = null;
+        if (connection is not null) await connection.DisposeAsync();
     }
 }

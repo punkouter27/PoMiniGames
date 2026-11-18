@@ -213,3 +213,10 @@
 }
 
 .lobby__status:empty { display: none; }
+
+/* A thumb needs 44px (Profile B): the pickers' native selects and the folded how-to were 32-36px. */
+@media (pointer: coarse) {
+    .lobby ::deep select,
+    .lobby select { min-height: 44px; }
+    .lobby__howto > summary { min-height: 44px; display: flex; align-items: center; }
+}

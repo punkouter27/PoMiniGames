@@ -15,7 +15,7 @@ namespace PoMiniGamesClient.Features.PoCabinet;
 ///   <item><b>Start</b> — the shared card: how to play and, in 1P, the track list. 1p/demo go
 ///         to <see cref="Phase.Loading"/>; multiplayer joins the one lobby (first in hosts; there
 ///         are no codes).</item>
-///   <item><b>Lobby</b> — <see cref="PoCabinetLobby"/>; its <c>RaceStarting</c> hand-off calls
+///   <item><b>Lobby</b> — <see cref="PoCabinetLobby"/>; its <c>gameStarted</c> hand-off calls
 ///         <see cref="BeginWireModeAsync"/> directly. (It used to navigate to this same page with
 ///         a query string, which Blazor treats as a parameter change on the live component —
 ///         <c>OnInitializedAsync</c> never re-ran, so no multiplayer race ever started.)</item>
@@ -323,13 +323,7 @@ public partial class PoCabinetPageBase : ComponentBase, IAsyncDisposable
     protected async Task OnPaintChanged(string color)
     {
         _color = color;
-        // In the lobby the seat already has a colour: re-joining is idempotent for a seated
-        // player and carries the new one, which the server applies and broadcasts.
-        if (_phase == Phase.Lobby && Session.MySeatId is not null)
-        {
-            try { await Session.JoinLobbyAsync(PlayerNameSvc.GetOrReadInitialName(), null, PlayerColorHex); }
-            catch { /* best effort: the seat keeps its old colour */ }
-        }
+        // In the lobby the new colour reaches the server through PoCabinetLobby's Color parameter.
         await InvokeAsync(StateHasChanged);
     }
 
@@ -523,7 +517,7 @@ public partial class PoCabinetPageBase : ComponentBase, IAsyncDisposable
             try { await JS.InvokeVoidAsync("console.error", "pocabinet JoinWireRaceAsync failed: " + ex); } catch { }
             await TeardownRaceAsync();
             _status = $"Could not join the race: {ex.Message}";
-            _phase = Session.Lobby is not null ? Phase.Lobby : Phase.Start;
+            _phase = IsMultiplayerMode ? Phase.Lobby : Phase.Start;
             await InvokeAsync(StateHasChanged);
         }
     }
@@ -660,7 +654,6 @@ public partial class PoCabinetPageBase : ComponentBase, IAsyncDisposable
     protected async Task QuitOnlineAsync()
     {
         await TeardownRaceAsync();
-        await Session.LeaveLobbyAsync();
         await ReturnToStartAsync();
     }
 
@@ -1228,9 +1221,6 @@ public partial class PoCabinetPageBase : ComponentBase, IAsyncDisposable
             _uiShader = null;
         }
         await TeardownRaceAsync();
-        // The results modal's one button leaves the page, and the session outlives the page:
-        // without this the seat stayed taken in the lobby. (The old "Back to start" button did it.)
-        if (IsMultiplayerMode) await Session.LeaveLobbyAsync();
         _selfRef?.Dispose();
         GC.SuppressFinalize(this);
     }

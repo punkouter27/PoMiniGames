@@ -3,94 +3,42 @@ using Microsoft.AspNetCore.SignalR;
 namespace PoMiniGames.Features.PoFunQuiz;
 
 /// <summary>
-/// SignalR hub for PoFunQuiz multiplayer. Two-player trivia battle. Authoritative
-/// state lives in <see cref="MultiplayerLobbyService"/> (singleton). Clients are
+/// SignalR hub for the PoFunQuiz match. Two-player trivia battle. Pairing is the lobby's job
+/// (<see cref="FunQuizLobbyHub"/>); this hub only plays the match the lobby reserved.
+/// Authoritative state lives in <see cref="MultiplayerLobbyService"/> (singleton). Clients are
 /// pure views driven by <see cref="IFunQuizClient"/> events.
 /// </summary>
 /// <remarks>
-/// <b>No game codes.</b> Joining is one <see cref="JoinLobby"/> call, and no method takes a
-/// <c>gameId</c> argument: the caller's game is resolved from their connection, so a client
-/// cannot name a game it isn't in.
+/// <b>No game codes shown.</b> The one entry point is <see cref="JoinMatch"/>, with the internal
+/// code the lobby's <c>gameStarted</c> carried; after that no method takes a <c>gameId</c>: the
+/// caller's game is resolved from their connection, so a client cannot name a game it isn't in.
 /// </remarks>
 public class FunQuizHub : Hub<IFunQuizClient>
 {
     private readonly MultiplayerLobbyService _lobby;
-    private readonly ILogger<FunQuizHub> _logger;
 
-    public FunQuizHub(MultiplayerLobbyService lobby, ILogger<FunQuizHub> logger)
+    public FunQuizHub(MultiplayerLobbyService lobby)
     {
         _lobby = lobby;
-        _logger = logger;
     }
 
     /// <summary>
-    /// The only way into multiplayer: seats the caller in the single open lobby, or opens
-    /// it for them if nobody is waiting. <paramref name="category"/> and
-    /// <paramref name="questionCount"/> apply only when this call opens the lobby — a
-    /// joiner plays the quiz the waiting player already has.
+    /// Claim the seat the lobby reserved for <paramref name="playerName"/> in the match
+    /// <paramref name="matchCode"/>. When both seats are claimed the match begins and
+    /// <c>GameStarted</c> goes to both players.
     /// </summary>
-    public async Task JoinLobby(string playerName, string category, int questionCount = 10)
+    public async Task JoinMatch(string matchCode, string playerName)
     {
-        if (string.IsNullOrWhiteSpace(playerName))
+        var joined = _lobby.JoinMatch(Context.ConnectionId, matchCode ?? string.Empty, playerName ?? string.Empty);
+        if (joined is not { } j)
         {
-            await Clients.Caller.LobbyError(new FunQuizLobbyError(string.Empty, "Player name is required."));
-            return;
+            throw new HubException("That quiz is no longer open. Head back to the lobby.");
         }
-        var cat = Enum.TryParse<QuestionCategory>(category, true, out var c) ? c : QuestionCategory.General;
-        questionCount = Math.Clamp(questionCount, 1, 50);
-
-        // Opening a lobby generates its questions, which is a live model call — the one part of
-        // this method that can fail for reasons that have nothing to do with the caller (the
-        // account is rate limited, the identity's daily token budget is spent, the deployment
-        // rejects the request). Letting that escape hands the client SignalR's own generic
-        // "An unexpected error occurred invoking 'JoinLobby' on the server", which tells a
-        // player nothing and tells us nothing either — the server-side detail only ever reached
-        // the log. LobbyError is the channel the page already renders, so use it.
-        MultiplayerGame game;
-        bool created;
-        try
+        await Groups.AddToGroupAsync(Context.ConnectionId, j.Game.GameId);
+        if (j.AllSeated)
         {
-            (game, created) = await _lobby.JoinOrCreateAsync(
-                Context.ConnectionId, playerName.Trim(), cat, questionCount, Context.ConnectionAborted);
+            await Clients.Group(j.Game.GameId).GameStarted(BuildState(j.Game));
         }
-        catch (OperationCanceledException) when (Context.ConnectionAborted.IsCancellationRequested)
-        {
-            return; // Player navigated away mid-generation; nothing to report to a gone connection.
-        }
-        catch (Exception ex)
-        {
-            _logger.JoinLobbyFailed(ex, playerName, cat);
-            await Clients.Caller.LobbyError(new FunQuizLobbyError(
-                string.Empty,
-                "Couldn't start a quiz right now - the question generator is unavailable. Try again in a minute."));
-            return;
-        }
-
-        await Groups.AddToGroupAsync(Context.ConnectionId, game.GameId);
-
-        if (created)
-        {
-            _logger.GameCreated(game.GameId, playerName);
-            await Clients.Caller.GameCreated(BuildState(game));
-            return;
-        }
-
-        _logger.PlayerJoined(game.GameId, playerName);
-        await Clients.Caller.GameJoined(BuildState(game));
-        // Push the FULL updated state to the host (and any other members), not just a
-        // lightweight PlayerJoined notice — the client renders off GameState, and the
-        // page never subscribed to PlayerJoined, so the host would otherwise never see
-        // the 2nd player arrive (and never get the "Start game" button). Mirrors the
-        // GameUpdated broadcast used on disconnect / question advance.
-        await Clients.OthersInGroup(game.GameId).GameUpdated(BuildState(game));
-    }
-
-    public async Task StartGame()
-    {
-        var game = _lobby.GetByConnection(Context.ConnectionId);
-        if (game is null) return;
-        if (!_lobby.StartGame(game.GameId, Context.ConnectionId)) return;
-        await Clients.Group(game.GameId).GameStarted(BuildState(game));
     }
 
     public async Task UpdateScore(bool isCorrect, double speedMultiplier, int secondsRemaining)

@@ -9,7 +9,7 @@ namespace PoMiniGames.Features.PoCabinet;
 
 /// <summary>
 /// Owns the running PoCabinet multiplayer race on this host (keyed by the race code
-/// <see cref="PoCabinetLobbyService.Start"/> mints: one lobby, so at most one race at a time),
+/// <see cref="PoCabinetLobbyService.BeginRace"/> mints: one lobby, so at most one race at a time),
 /// ticked at 30 Hz by one shared timer, broadcasting a snapshot to the race group after every
 /// tick. The same timer sweeps the lobby's not-ready seats once a second
 /// (<see cref="PoCabinetLobbyService.SweepUnready"/>).
@@ -81,7 +81,7 @@ public sealed class PoCabinetRaceRegistry : IAsyncDisposable
 
     public static string RaceGroup(string code) => $"race:{code.ToUpperInvariant()}";
 
-    public const string LobbyGroup = "lobby:" + PoCabinetLobbyService.RaceId;
+    public const string LobbyGroup = "lobby:cabinet";
 
     /// <summary>Start a race for <paramref name="code"/>, replacing any finished one.</summary>
     public void Create(string code, string trackId, IReadOnlyList<PoCabinetDriver> drivers)
@@ -366,21 +366,20 @@ public sealed class PoCabinetRaceRegistry : IAsyncDisposable
     }
 
     /// <summary>
-    /// Tell unseated players (<c>Kicked</c>, with why) and drop their connections from the lobby
-    /// group, then broadcast the new roster and, when given, a <c>LobbyNotice</c> to everyone left.
+    /// Tell unseated players (<c>kicked</c>, with why) and drop their connections from the lobby
+    /// group, then broadcast the new roster and a <c>lobbyEvent</c> notice to everyone left.
     /// </summary>
-    public async Task AnnounceUnseatedAsync(IReadOnlyList<PoCabinetLobbyService.Unseated> gone, string reason, string? notice)
+    private async Task AnnounceUnseatedAsync(IReadOnlyList<PoCabinetLobbyService.Unseated> gone, string reason, string notice)
     {
         try
         {
             foreach (var player in gone)
             {
-                if (player.ConnectionIds.Count == 0) continue;
-                await _lobbyHub.Clients.Clients(player.ConnectionIds).SendAsync("Kicked", reason);
-                foreach (var connectionId in player.ConnectionIds) await _lobbyHub.Groups.RemoveFromGroupAsync(connectionId, LobbyGroup);
+                await _lobbyHub.Clients.Client(player.ConnectionId).SendAsync("kicked", reason);
+                await _lobbyHub.Groups.RemoveFromGroupAsync(player.ConnectionId, LobbyGroup);
             }
             BroadcastLobby();
-            if (notice is not null) await _lobbyHub.Clients.Group(LobbyGroup).SendAsync("LobbyNotice", notice);
+            await _lobbyHub.Clients.Group(LobbyGroup).SendAsync("lobbyEvent", new LobbyEvent("notice", notice, DateTimeOffset.UtcNow));
         }
         catch (Exception ex)
         {
@@ -388,12 +387,8 @@ public sealed class PoCabinetRaceRegistry : IAsyncDisposable
         }
     }
 
-    private void BroadcastLobby()
-    {
-        var view = _lobbies.View();
-        if (view is not null) _ = _lobbyHub.Clients.Group(LobbyGroup).SendAsync("LobbyState", view);
-    }
-
+    private void BroadcastLobby() =>
+        _ = _lobbyHub.Clients.Group(LobbyGroup).SendAsync("lobbyState", _lobbies.State);
     private static PoCabinetRaceSnapshot BuildSnapshot(RaceSession session, PoCabinetDialogueEvent? dialogue)
     {
         var sim = session.Sim;

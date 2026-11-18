@@ -1,340 +1,170 @@
 using System.Security.Cryptography;
-using System.Text;
+using PoMiniGames.Features.Shared.Lobby;
 using PoMiniGames.Shared.Games;
 
 namespace PoMiniGames.Features.PoCabinet;
 
 /// <summary>
-/// The one in-memory PoCabinet lobby: whoever arrives first hosts, the next arrivals take the
-/// free seats up to eight, the host starts, and optional AI drivers (the officials, then field
-/// racers) fill the grid out to <see cref="PoCabinetCatalog.OnlineGridSize"/> cars. The lobby
-/// outlives its race — when the race ends it reopens with the same roster, which is what
-/// "rematch" means. There are no join codes: everyone who opens the
-/// multiplayer page lands in this lobby.
+/// The one in-memory PoCabinet lobby, a <see cref="LobbyRoom{TPlayer}"/>: whoever arrives first
+/// hosts, the next arrivals take the free seats up to eight, the host starts, and optional AI
+/// drivers (the officials, then field racers) fill the grid out to
+/// <see cref="PoCabinetCatalog.OnlineGridSize"/> cars. There are no join codes: everyone who
+/// opens the multiplayer page lands here.
 ///
 /// <para>
-/// Seats are keyed by the caller's claim id, not the SignalR connection id. A reconnect gets a
-/// new connection id; keying seats on it would turn every network blip into a lost seat. Connection ids are still tracked per player so a player is
-/// only dropped once their LAST connection goes.
+/// The host's track and AI-driver picks live on the room and are stamped on every seat, so the
+/// shared lobby state carries them. Each start mints an internal race code (<see cref="BeginRace"/>)
+/// that <c>gameStarted</c> carries and <see cref="PoCabinetRaceHub"/> keys the race by.
 /// </para>
 /// <para>
-/// All state sits behind one lock: hub calls arrive on arbitrary threads and the race
-/// registry's timer calls <see cref="MarkRaceFinished"/> and <see cref="SweepUnready"/> from its own.
-/// </para>
-/// <para>
-/// Every race gets its own code (<see cref="Lobby.RaceCode"/>, minted by <see cref="Start"/>):
-/// a screen still showing the last race's results must not pick up the next race's snapshots,
-/// and a reconnect must not rejoin a different race than the one it left.
-/// </para>
-/// <para>
-/// One AFK player cannot hold up the rematch: the host can <see cref="Kick"/> a seat, and once
-/// the lobby has reopened after a race, a player who stays not ready for
-/// <see cref="ReadyTimeout"/> loses their seat (<see cref="SweepUnready"/>).
+/// The lobby outlives its race: <see cref="MarkRaceFinished"/> reopens it with the same roster
+/// (that is the rematch), everyone but the host readies up again, and after a race a seat that
+/// stays not ready for <see cref="ReadyTimeout"/> is freed (<see cref="SweepUnready"/>, called
+/// about once a second by the race registry's timer). The host can kick a seat between races
+/// (<see cref="CanKick"/>).
 /// </para>
 /// </summary>
-public sealed class PoCabinetLobbyService(TimeProvider? time = null)
+public sealed class PoCabinetLobbyService : LobbyRoom<PoCabinetLobbyPlayer>
 {
-    public const int MaxPlayers = PoCabinetCatalog.CarCount;
     public const int DefaultBots = 3;
+
+    /// <summary>The fixed room code in the lobby state while idle; a running race swaps in its own code.</summary>
+    public const string GlobalCode = "LOBBY";
 
     /// <summary>How long a player may stay not ready in a reopened (rematch) lobby before the seat is freed.</summary>
     public static readonly TimeSpan ReadyTimeout = TimeSpan.FromSeconds(90);
 
-    /// <summary>
-    /// Internal id of the lobby's SignalR group and of the seat-id hash. Never shown to players.
-    /// The races themselves are keyed by a fresh <see cref="Lobby.RaceCode"/> each.
-    /// </summary>
-    public const string RaceId = "cabinet";
+    private readonly TimeProvider _time;
+    private readonly Dictionary<string, DateTimeOffset> _unreadySince = new(StringComparer.Ordinal);
+    private string _trackId = PoCabinetCatalog.DefaultTrackId;
+    private int _botCount = DefaultBots;
+    private bool _hasRaced;
 
-    private readonly object _gate = new();
-    private readonly TimeProvider _time = time ?? TimeProvider.System;
-    private Lobby? _lobby;
-
-    /// <summary>
-    /// Take a seat, creating the lobby (caller as host, on <paramref name="trackId"/>) when
-    /// nobody is in it. Idempotent for a player already seated (a reconnect or a rematch
-    /// return). Null when a race is running or all eight seats are taken.
-    /// </summary>
-    public Lobby? Join(string playerId, string displayName, string? trackId = null,
-        string? color = null, string? connectionId = null)
+    public PoCabinetLobbyService(TimeProvider? time = null)
+        : base(GlobalCode, PoCabinetCatalog.CarCount, "Race in progress. You get a seat when it finishes.")
     {
-        lock (_gate)
+        _time = time ?? TimeProvider.System;
+    }
+
+    public override bool CanKick => true;
+
+    /// <summary>The host's track pick for the next race.</summary>
+    public string TrackId => WithLock(_ => _trackId);
+
+    /// <summary>The AI drivers the host asked for (the race seats <see cref="PoCabinetLobbyRules.BotSeats"/> of them).</summary>
+    public int BotCount => WithLock(_ => _botCount);
+
+    /// <summary>Seat the caller. An empty room starts fresh (default picks, no rematch timeout yet).</summary>
+    public (LobbyState<PoCabinetLobbyPlayer> state, string message) Open(string connectionId, string displayName, bool isGuest, string userId) =>
+        OpenCore(connectionId, displayName, isGuest, (name, previous, others) =>
         {
-            var lobby = _lobby ??= new Lobby(playerId,
-                PoCabinetCatalog.IsKnownTrack(trackId) ? PoCabinetCatalog.GetTrack(trackId).Id : PoCabinetCatalog.DefaultTrackId);
-            var existing = lobby.Players.FirstOrDefault(p => p.PlayerId == playerId);
-            if (existing is not null)
+            if (others.Count == 0)
             {
-                if (connectionId is not null) existing.Connections.Add(connectionId);
-                existing.Disconnected = false;
-                if (color is not null) existing.Color = SanitizeColor(color);
-                return lobby;
+                _hasRaced = false;
+                _trackId = PoCabinetCatalog.DefaultTrackId;
+                _botCount = DefaultBots;
             }
-            if (lobby.IsStarted) return null;
-            if (lobby.Players.Count >= MaxPlayers) return null;
+            _unreadySince[connectionId] = _time.GetUtcNow();
+            return new PoCabinetLobbyPlayer(connectionId, name, isGuest, false, previous?.Color ?? "", _trackId, _botCount) { UserId = userId };
+        });
 
-            // The host is ready by definition; everyone else readies up.
-            var player = new LobbyPlayer(playerId, displayName, isReady: lobby.HostId == playerId)
-            {
-                Color = SanitizeColor(color),
-                UnreadySince = _time.GetUtcNow(),
-            };
-            if (connectionId is not null) player.Connections.Add(connectionId);
-            lobby.Players.Add(player);
-            return lobby;
-        }
-    }
-
-    /// <summary>Toggle the player's ready flag.</summary>
-    public bool ToggleReady(string playerId)
+    /// <summary>Host-only, idle: switch the track for the next race.</summary>
+    public bool SetTrack(string connectionId, string? trackId) => WithLock(seats =>
     {
-        lock (_gate)
-        {
-            var player = _lobby is { IsStarted: false } lobby ? lobby.Players.FirstOrDefault(p => p.PlayerId == playerId) : null;
-            if (player is null) return false;
-            player.IsReady = !player.IsReady;
-            if (!player.IsReady) player.UnreadySince = _time.GetUtcNow();
-            return true;
-        }
-    }
+        if (!HostedIdle(connectionId) || !PoCabinetCatalog.IsKnownTrack(trackId)) return false;
+        _trackId = PoCabinetCatalog.GetTrack(trackId).Id;
+        foreach (var key in seats.Keys.ToList()) seats[key] = seats[key] with { TrackId = _trackId };
+        return true;
+    });
 
-    /// <summary>Host-only: switch the track for the next race.</summary>
-    public bool SetTrack(string hostId, string? trackId)
+    /// <summary>Host-only, idle: how many AI drivers join the grid (0 to <see cref="PoCabinetCatalog.MaxBots"/>).</summary>
+    public bool SetBots(string connectionId, int count) => WithLock(seats =>
     {
-        lock (_gate)
-        {
-            if (HostedIdle(hostId) is not { } lobby || !PoCabinetCatalog.IsKnownTrack(trackId)) return false;
-            lobby.TrackId = PoCabinetCatalog.GetTrack(trackId).Id;
-            return true;
-        }
-    }
+        if (!HostedIdle(connectionId)) return false;
+        _botCount = Math.Clamp(count, 0, PoCabinetCatalog.MaxBots);
+        foreach (var key in seats.Keys.ToList()) seats[key] = seats[key] with { BotCount = _botCount };
+        return true;
+    });
 
-    /// <summary>Host-only: how many AI drivers join the grid (0 to <see cref="PoCabinetCatalog.MaxBots"/>).</summary>
-    public bool SetBots(string hostId, int count)
+    /// <summary>The caller's paint: a paint-shop name or #rrggbb; anything else clears it (client default).</summary>
+    public bool SetColor(string connectionId, string? color) => WithLock(seats =>
     {
-        lock (_gate)
-        {
-            if (HostedIdle(hostId) is not { } lobby) return false;
-            lobby.BotCount = Math.Clamp(count, 0, PoCabinetCatalog.MaxBots);
-            return true;
-        }
-    }
+        if (!seats.TryGetValue(connectionId, out var seat)) return false;
+        seats[connectionId] = seat with { Color = SanitizeColor(color) };
+        return true;
+    });
+
+    /// <summary>Mint the internal race code this start runs under; it is what <c>gameStarted</c> carries.</summary>
+    public string BeginRace() => WithLock(_ =>
+        GameCode = Convert.ToHexString(RandomNumberGenerator.GetBytes(4)).ToLowerInvariant());
 
     /// <summary>
-    /// Mark the lobby started under a fresh <see cref="Lobby.RaceCode"/> and return it (the
-    /// caller builds the grid from it and creates the race under that code).
+    /// The race ended: reopen the lobby with the same roster. Everyone but the host has to ready
+    /// up again within <see cref="ReadyTimeout"/>. A <paramref name="raceCode"/> that is not the
+    /// running race's changes nothing. True when the lobby reopened.
     /// </summary>
-    public Lobby? Start(string hostId)
+    public bool MarkRaceFinished(string? raceCode = null) => WithLock(seats =>
     {
-        lock (_gate)
-        {
-            // Startable refuses a started lobby, so a second Start is a no-op.
-            if (_lobby is not { } lobby || lobby.HostId != hostId || !Startable(lobby)) return null;
-            lobby.IsStarted = true;
-            lobby.RaceCode = Convert.ToHexString(RandomNumberGenerator.GetBytes(4)).ToLowerInvariant();
-            return lobby;
-        }
-    }
-
-    /// <summary>The race for <paramref name="raceCode"/> could not be created: back to the idle lobby, roster and ready flags kept.</summary>
-    public void AbortStart(string raceCode)
-    {
-        lock (_gate)
-        {
-            if (_lobby is not { } lobby || lobby.RaceCode != raceCode) return;
-            lobby.IsStarted = false;
-            lobby.RaceCode = null;
-            foreach (var gone in lobby.Players.Where(p => p.Disconnected).ToList()) RemoveLocked(lobby, gone.PlayerId);
-            if (lobby.Players.Count == 0) _lobby = null;
-        }
-    }
-
-    /// <summary>
-    /// The race ended: reopen the lobby for a rematch. Players who dropped during the race are
-    /// removed now; everyone but the host has to ready up again, within <see cref="ReadyTimeout"/>.
-    /// A <paramref name="raceCode"/> that is not the lobby's current race changes nothing.
-    /// </summary>
-    public Lobby? MarkRaceFinished(string? raceCode = null)
-    {
-        lock (_gate)
-        {
-            if (_lobby is not { } lobby) return null;
-            if (raceCode is not null && lobby.RaceCode != raceCode) return null;
-            lobby.IsStarted = false;
-            lobby.RaceCode = null;
-            lobby.HasRaced = true;
-            foreach (var gone in lobby.Players.Where(p => p.Disconnected).ToList())
-            {
-                RemoveLocked(lobby, gone.PlayerId);
-            }
-            if (lobby.Players.Count == 0)
-            {
-                _lobby = null;
-                return null;
-            }
-            var now = _time.GetUtcNow();
-            foreach (var p in lobby.Players)
-            {
-                p.IsReady = p.PlayerId == lobby.HostId;
-                p.UnreadySince = now;
-            }
-            return lobby;
-        }
-    }
-
-    /// <summary>
-    /// Host-only, idle lobby: free the seat <paramref name="seatId"/> (never the host's own).
-    /// Returns who was removed, so the hub can tell their connections; null when refused.
-    /// </summary>
-    public Unseated? Kick(string hostId, string seatId)
-    {
-        lock (_gate)
-        {
-            if (HostedIdle(hostId) is not { } lobby) return null;
-            var target = lobby.Players.FirstOrDefault(p => p.PlayerId != hostId && SeatIdFor(p.PlayerId) == seatId);
-            if (target is null) return null;
-            RemoveLocked(lobby, target.PlayerId);
-            return new Unseated(target.DisplayName, [.. target.Connections]);
-        }
-    }
+        if (!IsStarted || (raceCode is not null && GameCode != raceCode)) return false;
+        End();
+        _hasRaced = true;
+        var now = _time.GetUtcNow();
+        foreach (var key in seats.Keys) _unreadySince[key] = now;
+        return true;
+    });
 
     /// <summary>
     /// A reopened (rematch) lobby frees the seats of players who have not readied up for
-    /// <see cref="ReadyTimeout"/>. Called about once a second by the race registry's timer;
-    /// a lobby that has not raced yet, or is racing, is left alone.
+    /// <see cref="ReadyTimeout"/>; a lobby that has not raced yet, or is racing, is left alone.
     /// </summary>
-    public IReadOnlyList<Unseated> SweepUnready()
+    public IReadOnlyList<Unseated> SweepUnready() => WithLock<IReadOnlyList<Unseated>>(seats =>
     {
-        lock (_gate)
-        {
-            if (_lobby is not { IsStarted: false, HasRaced: true } lobby) return [];
-            var cutoff = _time.GetUtcNow() - ReadyTimeout;
-            var idle = lobby.Players
-                .Where(p => !p.IsReady && p.PlayerId != lobby.HostId && p.UnreadySince <= cutoff)
-                .ToList();
-            foreach (var p in idle) RemoveLocked(lobby, p.PlayerId);
-            return [.. idle.Select(p => new Unseated(p.DisplayName, [.. p.Connections]))];
-        }
-    }
-
-    /// <summary>Remove a player; close the lobby when the last one leaves.</summary>
-    public void Leave(string playerId)
-    {
-        lock (_gate)
-        {
-            if (_lobby is { } lobby) RemoveLocked(lobby, playerId);
-        }
-    }
+        if (!_hasRaced || IsStarted) return [];
+        var cutoff = _time.GetUtcNow() - ReadyTimeout;
+        var host = HostConnectionId;
+        var idle = seats.Values
+            .Where(p => !p.IsReady && p.ConnectionId != host
+                && _unreadySince.TryGetValue(p.ConnectionId, out var since) && since <= cutoff)
+            .ToList();
+        foreach (var p in idle) Leave(p.ConnectionId);
+        return [.. idle.Select(p => new Unseated(p.ConnectionId, p.DisplayName))];
+    });
 
     /// <summary>
-    /// A SignalR connection closed. The owning player leaves if that was their last
-    /// connection — immediately if the lobby is idle, at race end if a race is running (their
-    /// car keeps its grid slot until then). True when the roster changed.
+    /// The race grid for <paramref name="roster"/> (the roster the start gate passed): humans in
+    /// seat order, then as many AI drivers as asked for and fit.
     /// </summary>
-    public bool DropConnection(string connectionId)
+    public IReadOnlyList<PoCabinetDriver> BuildGrid(IReadOnlyList<PoCabinetLobbyPlayer> roster)
     {
-        lock (_gate)
+        var grid = roster
+            .Select(p => new PoCabinetDriver(p.UserId, p.DisplayName, IsPlayer: true,
+                Color: string.IsNullOrEmpty(p.Color) ? PoCabinetCatalog.DefaultSeatColor : p.Color, Personality: null))
+            .ToList();
+        var bots = PoCabinetPersonality.OnlineBots;
+        for (int i = 0; i < PoCabinetLobbyRules.BotSeats(BotCount, roster.Count); i++)
         {
-            var player = _lobby?.Players.FirstOrDefault(p => p.Connections.Contains(connectionId));
-            if (_lobby is not { } lobby || player is null) return false;
-            player.Connections.Remove(connectionId);
-            if (player.Connections.Count > 0) return false;
-            if (lobby.IsStarted) player.Disconnected = true;
-            else RemoveLocked(lobby, player.PlayerId);
-            return true;
+            var o = bots[i];
+            grid.Add(new PoCabinetDriver($"bot-{i}", o.Name, IsPlayer: false, o.Color, o.Personality,
+                o.MaxSpeed, o.CorneringSkill, o.Id));
         }
+        return grid;
     }
 
-    /// <summary>Wire view of the lobby; <paramref name="forPlayerId"/> fills <c>YourSeatId</c>.</summary>
-    public PoCabinetLobbyView? View(string? forPlayerId = null)
-    {
-        lock (_gate)
-        {
-            if (_lobby is not { } lobby) return null;
-            return new PoCabinetLobbyView
-            {
-                Code = lobby.RaceCode ?? "",
-                TrackId = lobby.TrackId,
-                BotCount = lobby.BotCount,
-                BotSeats = EffectiveBots(lobby),
-                Startable = Startable(lobby),
-                InRace = lobby.IsStarted,
-                Players = lobby.Players.Select(p => new PoCabinetLobbySeat
-                {
-                    SeatId = SeatIdFor(p.PlayerId),
-                    DisplayName = p.DisplayName,
-                    IsReady = p.IsReady,
-                    IsHost = p.PlayerId == lobby.HostId,
-                    Color = p.Color,
-                }).ToList(),
-                YourSeatId = forPlayerId is null ? null : SeatIdFor(forPlayerId),
-            };
-        }
-    }
+    /// <summary>The host can begin: every other seat is ready and the grid would hold at least two cars, AI counted (a lone host with bots on can race).</summary>
+    protected override bool CanStart(IReadOnlyList<PoCabinetLobbyPlayer> players, string hostConnectionId) =>
+        base.CanStart(players, hostConnectionId)
+        && players.Count + PoCabinetLobbyRules.BotSeats(_botCount, players.Count) >= 2;
 
-    /// <summary>
-    /// The race grid for the started lobby: humans in seat order, then as many AI drivers as
-    /// asked for and fit. Snapshot taken under the lock so a late leave cannot tear it.
-    /// </summary>
-    public IReadOnlyList<PoCabinetDriver> BuildGrid()
-    {
-        lock (_gate)
-        {
-            if (_lobby is not { } lobby) return [];
-            var grid = lobby.Players
-                .Select(p => new PoCabinetDriver(p.PlayerId, p.DisplayName, IsPlayer: true,
-                    Color: string.IsNullOrEmpty(p.Color) ? PoCabinetCatalog.DefaultSeatColor : p.Color, Personality: null))
-                .ToList();
-            var bots = PoCabinetPersonality.OnlineBots;
-            for (int i = 0; i < EffectiveBots(lobby); i++)
-            {
-                var o = bots[i];
-                grid.Add(new PoCabinetDriver($"bot-{i}", o.Name, IsPlayer: false, o.Color, o.Personality,
-                    o.MaxSpeed, o.CorneringSkill, o.Id));
-            }
-            return grid;
-        }
-    }
+    protected override PoCabinetLobbyPlayer WithReady(PoCabinetLobbyPlayer player, bool ready) =>
+        player with { IsReady = ready };
 
-    /// <summary>Opaque seat id: stable for a player, never the claim id itself.</summary>
-    public static string SeatIdFor(string playerId)
-    {
-        var bytes = SHA256.HashData(Encoding.UTF8.GetBytes(RaceId + "|" + playerId));
-        return Convert.ToHexString(bytes, 0, 5).ToLowerInvariant();
-    }
+    protected override void OnLeft(string connectionId) => _unreadySince.Remove(connectionId);
 
-    private static int EffectiveBots(Lobby lobby) =>
-        Math.Min(lobby.BotCount, Math.Max(0, PoCabinetCatalog.OnlineGridSize - lobby.Players.Count));
+    protected override void OnSeatTouched(string connectionId) => _unreadySince[connectionId] = _time.GetUtcNow();
 
-    /// <summary>The host can begin: every seated human is ready and the grid would hold at least
-    /// two cars once the AI officials are counted (a lone host with bots on can race).</summary>
-    private static bool Startable(Lobby lobby) =>
-        !lobby.IsStarted
-        && lobby.Players.Count > 0
-        && lobby.Players.Count + EffectiveBots(lobby) >= 2
-        && lobby.Players.All(p => p.IsReady);
+    protected override void OnEnded() => GameCode = GlobalCode;
 
-    private Lobby? HostedIdle(string hostId) =>
-        _lobby is { IsStarted: false } lobby && lobby.HostId == hostId ? lobby : null;
-
-    private void RemoveLocked(Lobby lobby, string playerId)
-    {
-        lobby.Players.RemoveAll(p => p.PlayerId == playerId);
-        if (lobby.Players.Count == 0)
-        {
-            // A running race keeps its (empty) lobby until MarkRaceFinished, so a newcomer
-            // cannot start a second race while the first still ticks.
-            if (!lobby.IsStarted) _lobby = null;
-            return;
-        }
-        // If the host left, promote the first remaining player; they are ready by definition.
-        if (lobby.HostId == playerId)
-        {
-            var newHost = lobby.Players[0];
-            lobby.HostId = newHost.PlayerId;
-            newHost.IsReady = true;
-        }
-    }
+    private bool HostedIdle(string connectionId) => !IsStarted && HostConnectionId == connectionId;
 
     /// <summary>Paint names from the paint shop or #rrggbb; anything else becomes empty (client default).</summary>
     private static string SanitizeColor(string? color)
@@ -343,41 +173,6 @@ public sealed class PoCabinetLobbyService(TimeProvider? time = null)
         return color.All(ch => char.IsAsciiLetterOrDigit(ch) || ch == '#') ? color : "";
     }
 
-    public sealed class Lobby(string hostId, string trackId)
-    {
-        public string HostId { get; set; } = hostId;
-        public string TrackId { get; set; } = trackId;
-        public int BotCount { get; set; } = DefaultBots;
-        public bool IsStarted { get; set; }
-        /// <summary>The running race's code (what <c>JoinRace</c> takes); null while idle.</summary>
-        public string? RaceCode { get; set; }
-        /// <summary>At least one race has finished here: the ready timeout applies from now on.</summary>
-        public bool HasRaced { get; set; }
-        public List<LobbyPlayer> Players { get; } = new();
-    }
-
-    /// <summary>A player whose seat was freed (kicked or timed out), and the connections to tell.</summary>
-    public sealed record Unseated(string DisplayName, IReadOnlyList<string> ConnectionIds);
-
-    public sealed class LobbyPlayer
-    {
-        public LobbyPlayer(string playerId, string displayName, bool isReady)
-        {
-            PlayerId = playerId;
-            DisplayName = displayName;
-            IsReady = isReady;
-        }
-
-        /// <summary>Claim-derived identity (never sent to other clients — see <see cref="SeatIdFor"/>).</summary>
-        public string PlayerId { get; }
-        public string DisplayName { get; }
-        public bool IsReady { get; set; }
-        /// <summary>When the player last became not ready (joined, un-readied, or the lobby reopened).</summary>
-        public DateTimeOffset UnreadySince { get; set; }
-        public string Color { get; set; } = "";
-        /// <summary>Live SignalR connections for this player (tabs, reconnects).</summary>
-        public HashSet<string> Connections { get; } = new(StringComparer.Ordinal);
-        /// <summary>Lost every connection mid-race; removed when the race ends.</summary>
-        public bool Disconnected { get; set; }
-    }
+    /// <summary>A player whose seat was freed by the ready timeout, and the connection to tell.</summary>
+    public sealed record Unseated(string ConnectionId, string DisplayName);
 }
