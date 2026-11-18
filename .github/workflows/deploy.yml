@@ -24,7 +24,11 @@ name: Build & Deploy
 on:
   push:
     branches: [master]
-  # Pull requests get the build and tests; only master deploys.
+    # Root-level notes (README, AGENTS, CLAUDE, …) and UI mockups never reach the site, so a commit
+    # touching only those skips the build and deploy. docs/ is NOT ignored: ci-package.ps1 ships it.
+    paths-ignore: ['*.md', 'SCREENSHOTS/**']
+  # Pull requests get the build and tests; only master deploys. No paths-ignore here: the required
+  # status checks would never report on a notes-only PR and it could not merge.
   pull_request:
   workflow_dispatch:
     inputs:
@@ -168,23 +172,22 @@ jobs:
         shell: pwsh
         run: ./scripts/pre-deploy.ps1 -BaseUrl "$env:BASE_URL"
 
-      # The rollback target is the last successful deploy's own artifact, fetched from GitHub. It used
-      # to be a zip of the live site pulled from Kudu: ~150 MB of App Service egress per deploy, which
-      # alone spent the F1 plan's 165 MB/day data-out quota and got the site stopped (403 on deploy).
-      - name: Fetch the previous build for rollback
+      # Note the rollback target now; fetch it only if a rollback is needed. It is the last successful
+      # deploy's own artifact on GitHub. It used to be a zip of the live site pulled from Kudu before
+      # every deploy: ~150 MB of App Service egress, which alone spent the F1 plan's 165 MB/day
+      # data-out quota and got the site stopped (403 on deploy).
+      - name: Find the previous build for rollback
         id: backup
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
           prev=$(gh run list -R "$GITHUB_REPOSITORY" --workflow deploy.yml --branch master --event push \
                    --status success --limit 1 --json databaseId -q '.[0].databaseId' || true)
-          if [ -n "$prev" ] && gh run download "$prev" -R "$GITHUB_REPOSITORY" -n webapp -D previous \
-               && (cd previous && zip -qr ../previous.zip .); then
-            echo "ok=true" >> "$GITHUB_OUTPUT"
-            echo "Rollback target: run $prev ($(du -h previous.zip | cut -f1))."
+          if [ -n "$prev" ]; then
+            echo "run=$prev" >> "$GITHUB_OUTPUT"
+            echo "Rollback target: run $prev."
           else
-            echo "::warning title=No rollback target::No artifact from a previous successful deploy, so this deploy cannot be rolled back."
-            echo "ok=false" >> "$GITHUB_OUTPUT"
+            echo "::warning title=No rollback target::No previous successful deploy, so this deploy cannot be rolled back."
           fi
 
       - uses: azure/webapps-deploy@v3
@@ -193,8 +196,6 @@ jobs:
           app-name: ${{ vars.AZURE_WEBAPP_NAME }}
           resource-group-name: ${{ vars.AZURE_RESOURCE_GROUP }}
           package: publish
-          # Wipe wwwroot first: without it every build's fingerprinted files piled up (714 MB on disk).
-          clean: true
 
       # The deploy step succeeds once App Service accepts the package, which says nothing about
       # whether the app starts. First the new build must be the one answering (X-Commit on
@@ -221,13 +222,18 @@ jobs:
 
       # Runs on a cancel or a timeout too, not only on a failure: either can strand a half-good build.
       - name: Roll back to the previous build
-        if: (failure() || cancelled()) && steps.deploy.outcome == 'success' && steps.backup.outputs.ok == 'true'
+        if: (failure() || cancelled()) && steps.deploy.outcome == 'success' && steps.backup.outputs.run != ''
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PREV: ${{ steps.backup.outputs.run }}
         run: |
-          az webapp deploy -g "$RG" -n "$APP" --src-path previous.zip --type zip --clean true
-          echo "::error title=Rolled back::${{ github.sha }} failed after it went live; the previous build is live again."
+          gh run download "$PREV" -R "$GITHUB_REPOSITORY" -n webapp -D previous
+          (cd previous && zip -qr ../previous.zip .)
+          az webapp deploy -g "$RG" -n "$APP" --src-path previous.zip --type zip
+          echo "::error title=Rolled back::${{ github.sha }} failed after it went live; build from run $PREV is live again."
 
       - name: Tell ntfy about the rollback
-        if: (failure() || cancelled()) && steps.deploy.outcome == 'success' && steps.backup.outputs.ok == 'true'
+        if: (failure() || cancelled()) && steps.deploy.outcome == 'success' && steps.backup.outputs.run != ''
         env:
           NTFY_TOPIC: ${{ secrets.NTFY_TOPIC }}
         run: |

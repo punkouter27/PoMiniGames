@@ -11,4 +11,11 @@
     <NuGetAuditMode>all</NuGetAuditMode>
     <NuGetAuditLevel>low</NuGetAuditLevel>
   </PropertyGroup>
+  <!-- Publish only Brotli copies of static assets (UseBlazorFrameworkFiles serves _framework/*.br).
+       Every browser sends br over HTTPS; anything that does not gets runtime compression
+       (UseResponseCompression). The gzip copies were 11 MB of every deploy package for nothing. -->
+  <PropertyGroup Condition="'$(Configuration)' == 'Release'">
+    <EnableDefaultCompressionFormats>false</EnableDefaultCompressionFormats>
+    <PublishCompressionFormats>brotli</PublishCompressionFormats>
+  </PropertyGroup>
 </Project>

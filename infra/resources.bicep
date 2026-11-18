@@ -98,6 +98,11 @@ resource webApp 'Microsoft.Web/sites@2022-09-01' = {
           value: storageAccount.name
         }
         {
+          // /models/* redirects here (UsePoMiniGamesModelRedirect); see modelsContainer.
+          name: 'PoMiniGames__Models__BaseUrl'
+          value: 'https://${storageAccount.name}.blob.${environment().suffixes.storage}/models'
+        }
+        {
           name: 'PoMiniGames__Storage__TableService__Endpoint'
           value: 'https://${storageAccount.name}.table.${environment().suffixes.storage}'
         }
@@ -135,8 +140,39 @@ resource storageAccount 'Microsoft.Storage/storageAccounts@2023-05-01' = {
   }
   properties: {
     minimumTlsVersion: 'TLS1_2'
-    allowBlobPublicAccess: false
+    // Allowed so the one 'models' container below can be anonymous-read. Every other container
+    // (data-protection keys, PoEcosystem worlds) stays private: access is opted into per container.
+    allowBlobPublicAccess: true
     supportsHttpsTrafficOnly: true
+  }
+}
+
+resource blobService 'Microsoft.Storage/storageAccounts/blobServices@2023-05-01' = {
+  name: 'default'
+  parent: storageAccount
+  properties: {
+    // The game loaders fetch() the models after the app's /models/* redirect, so they need CORS.
+    cors: {
+      corsRules: [
+        {
+          allowedOrigins: [ '*' ]
+          allowedMethods: [ 'GET', 'HEAD' ]
+          allowedHeaders: [ '*' ]
+          exposedHeaders: [ '*' ]
+          maxAgeInSeconds: 86400
+        }
+      ]
+    }
+  }
+}
+
+// The 3D models (~37 MB), uploaded by scripts/pre-deploy.ps1. Served from here instead of the F1
+// app, whose 165 MB/day data-out quota a handful of 3D-game players would otherwise use up.
+resource modelsContainer 'Microsoft.Storage/storageAccounts/blobServices/containers@2023-05-01' = {
+  name: 'models'
+  parent: blobService
+  properties: {
+    publicAccess: 'Blob'
   }
 }
 

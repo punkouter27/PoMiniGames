@@ -99,7 +99,24 @@ sign-in: a player is a random browser id plus three initials.
   PoEcosystem world files live in Blob Storage. A player is the browser's player id and
   initials; there is no Player table.
 - **Computer opponents are hand-written rules, not trained models.** Difficulty is a table of
-  numbers in source.
+  numbers in source. No LLM and no AI service; all of it is classic game AI (2026-11-18):
+  - **Connect Five / Tic-Tac-Toe** share one k-in-a-row engine (`Client/Features/BoardAi/`):
+    time-budgeted iterative deepening (Easy 5 ms, Medium 40 ms, Hard 150 ms), a Zobrist
+    transposition table, TT/killer/history move ordering, a gravity-aware VCF threat search, an
+    opening book, shape-based evaluation, and MCTS (Connect Five Hard and top rungs). Weak rungs
+    make plausible mistakes by softmax over the top moves instead of random moves.
+  - **Brawl** (`js/pobrawl/`): a cross-session habit profile (`playerProfile.js`, localStorage key
+    `pomini_pobrawl_profile`), an n-gram predictor of the player's next action (`predictor.js`),
+    utility scoring of tactics under per-archetype behaviour trees (`tactics.js`: aggressor,
+    counter-puncher, turtle) and bait-and-punish. `scripts/dev/selfplay-brawl.mjs` runs headless
+    CPU-vs-CPU ladders; its proposed rung table is in `rungTuning.json` and is opt-in, not applied.
+  - **Racer** (`Api/Features/PoRacer/PoRacerRacingLine.cs`): a per-track braking/acceleration
+    speed profile and apex line, one-move defending and committed overtakes, rubber-banding capped
+    at ±4% (solo only, off on the final lap), and bots that learn braking points from the fastest
+    human lap (in memory only).
+  - **Mule** (`Shared/Games/PoMule/PoMuleAi.cs`): goal planning per colonist (secure food/energy,
+    mine, corner a good, cash out) and next-month price forecasts for buying and selling, still
+    deterministic so the server's replay check matches.
 - **No AI services.** PoFunQuiz and PoCoupleQuiz pick random questions from JSON banks
   (`Features/PoFunQuiz/Data/questions.json`, `Features/PoCoupleQuiz/Data/questions.json`)
   loaded into memory once at startup; PoCoupleQuiz matches answers with free fuzzy matching
@@ -376,6 +393,18 @@ Run `npm ci --prefix scripts/pomarblerace` then `node --test tests/pomarblerace-
 The shared `.github/workflows/deploy.yml` runs unit and repository checks, stages the documentation
 suite, and deploys only from `master`. Provision or update Azure resources with the manual
 `.github/workflows/deploy.yml` (run by hand with `infra`) workflow or `azd up`.
+
+**F1 budget (2026-11-18).** The F1 plan allows 165 MB/day of data out and 1 GB of disk; going over
+stops the site (`QuotaExceeded`, deploys get a 403). So:
+- Rollback uses the last successful run's `webapp` artifact (kept 7 days), downloaded only when a
+  rollback happens. The deploy no longer pulls a ~150 MB zip of the live site from Kudu.
+- `scripts/pre-deploy.ps1` deletes old run-from-package zips in `data/SitePackages`, and, when the
+  app has `PoMiniGames__Models__BaseUrl`, uploads changed `wwwroot/models` files to the public
+  `models` blob container and strips them from the package. The app then redirects `/models/*`
+  there (`UsePoMiniGamesModelRedirect`, also added to the CSP `connect-src`). Unset (dev, tests),
+  the models are served from wwwroot.
+- Release publishes Brotli copies only (`Directory.Build.props`), not gzip as well.
+- Pushes that touch only root `*.md` files or `SCREENSHOTS/` do not build or deploy.
 
 ## Configuration and endpoint changes (2026-10-17)
 

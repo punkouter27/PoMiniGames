@@ -240,6 +240,7 @@ app.UseBlazorFrameworkFiles();
 app.UsePoMiniGamesClientAppSettings();
 
 // ─── Static files: glb/gltf/ksplat types, compression-friendly headers ─
+app.UsePoMiniGamesModelRedirect();
 app.UsePoMiniGamesStaticFiles();
 
 app.UsePlayerIdentity();

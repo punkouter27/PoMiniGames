@@ -1,0 +1,382 @@
+{
+  "note": "Written by scripts/dev/selfplay-brawl.mjs --tune --write. ai.js LEVELS is the shipped table; applyRungTuning(rungs) overrides it. rungs is a PROPOSAL, not baked in: the 1-D sim saturates in the upper table, which compresses the whole ladder into the first few rows (a masher beats the proposed rung 4). See the harness header for the limits.",
+  "seeds": 300,
+  "chars": false,
+  "shipped": {
+    "adjacent": [
+      {
+        "pair": "2v1",
+        "win": 0.973,
+        "ko": 0.927
+      },
+      {
+        "pair": "3v2",
+        "win": 0.843,
+        "ko": 0.997
+      },
+      {
+        "pair": "4v3",
+        "win": 0.82,
+        "ko": 1
+      },
+      {
+        "pair": "5v4",
+        "win": 0.82,
+        "ko": 1
+      },
+      {
+        "pair": "6v5",
+        "win": 0.84,
+        "ko": 1
+      },
+      {
+        "pair": "7v6",
+        "win": 0.77,
+        "ko": 1
+      },
+      {
+        "pair": "8v7",
+        "win": 0.687,
+        "ko": 1
+      },
+      {
+        "pair": "9v8",
+        "win": 0.487,
+        "ko": 0.99
+      },
+      {
+        "pair": "10v9",
+        "win": 0.665,
+        "ko": 0.85
+      },
+      {
+        "pair": "11v10",
+        "win": 0.513,
+        "ko": 0.46
+      },
+      {
+        "pair": "12v11",
+        "win": 0.528,
+        "ko": 0.273
+      },
+      {
+        "pair": "13v12",
+        "win": 0.38,
+        "ko": 0.167
+      },
+      {
+        "pair": "14v13",
+        "win": 0.497,
+        "ko": 0.093
+      },
+      {
+        "pair": "15v14",
+        "win": 0.547,
+        "ko": 0.033
+      },
+      {
+        "pair": "16v15",
+        "win": 0.5,
+        "ko": 0.003
+      }
+    ],
+    "masher": [
+      {
+        "rung": 1,
+        "masherWin": 1
+      },
+      {
+        "rung": 2,
+        "masherWin": 0.79
+      },
+      {
+        "rung": 4,
+        "masherWin": 0.06
+      },
+      {
+        "rung": 8,
+        "masherWin": 0
+      },
+      {
+        "rung": 12,
+        "masherWin": 0
+      },
+      {
+        "rung": 16,
+        "masherWin": 0
+      }
+    ]
+  },
+  "proposal": {
+    "adjacent": [
+      {
+        "pair": "2v1",
+        "win": 0.687,
+        "ko": 0.43
+      },
+      {
+        "pair": "3v2",
+        "win": 0.637,
+        "ko": 0.58
+      },
+      {
+        "pair": "4v3",
+        "win": 0.653,
+        "ko": 0.73
+      },
+      {
+        "pair": "5v4",
+        "win": 0.7,
+        "ko": 0.917
+      },
+      {
+        "pair": "6v5",
+        "win": 0.68,
+        "ko": 0.95
+      },
+      {
+        "pair": "7v6",
+        "win": 0.647,
+        "ko": 0.97
+      },
+      {
+        "pair": "8v7",
+        "win": 0.687,
+        "ko": 0.99
+      },
+      {
+        "pair": "9v8",
+        "win": 0.657,
+        "ko": 1
+      },
+      {
+        "pair": "10v9",
+        "win": 0.637,
+        "ko": 0.997
+      },
+      {
+        "pair": "11v10",
+        "win": 0.68,
+        "ko": 1
+      },
+      {
+        "pair": "12v11",
+        "win": 0.6,
+        "ko": 0.997
+      },
+      {
+        "pair": "13v12",
+        "win": 0.697,
+        "ko": 1
+      },
+      {
+        "pair": "14v13",
+        "win": 0.737,
+        "ko": 0.997
+      },
+      {
+        "pair": "15v14",
+        "win": 0.663,
+        "ko": 0.91
+      },
+      {
+        "pair": "16v15",
+        "win": 0.5,
+        "ko": 0.003
+      }
+    ],
+    "masher": [
+      {
+        "rung": 1,
+        "masherWin": 1
+      },
+      {
+        "rung": 2,
+        "masherWin": 0.98
+      },
+      {
+        "rung": 4,
+        "masherWin": 0.947
+      },
+      {
+        "rung": 8,
+        "masherWin": 0.46
+      },
+      {
+        "rung": 12,
+        "masherWin": 0.027
+      },
+      {
+        "rung": 16,
+        "masherWin": 0
+      }
+    ]
+  },
+  "rungs": {
+    "2": {
+      "reactionMs": 676,
+      "blockP": 0.077,
+      "baitP": 0.003,
+      "punishP": 0.077,
+      "aggro": 0.302,
+      "comboP": 0.008,
+      "chargeP": 0.058,
+      "punishGas": 0.094,
+      "maxCharge": 0.165
+    },
+    "3": {
+      "reactionMs": 653,
+      "blockP": 0.093,
+      "baitP": 0.007,
+      "punishP": 0.093,
+      "aggro": 0.323,
+      "comboP": 0.017,
+      "chargeP": 0.067,
+      "punishGas": 0.106,
+      "maxCharge": 0.18
+    },
+    "4": {
+      "reactionMs": 622,
+      "blockP": 0.114,
+      "baitP": 0.011,
+      "punishP": 0.114,
+      "aggro": 0.351,
+      "comboP": 0.027,
+      "chargeP": 0.077,
+      "punishGas": 0.124,
+      "maxCharge": 0.199
+    },
+    "5": {
+      "reactionMs": 585,
+      "blockP": 0.141,
+      "baitP": 0.016,
+      "punishP": 0.141,
+      "aggro": 0.385,
+      "comboP": 0.04,
+      "chargeP": 0.09,
+      "punishGas": 0.145,
+      "maxCharge": 0.223
+    },
+    "6": {
+      "reactionMs": 559,
+      "blockP": 0.159,
+      "baitP": 0.02,
+      "punishP": 0.159,
+      "aggro": 0.408,
+      "comboP": 0.049,
+      "chargeP": 0.099,
+      "punishGas": 0.159,
+      "maxCharge": 0.239
+    },
+    "7": {
+      "reactionMs": 543,
+      "blockP": 0.179,
+      "baitP": 0.024,
+      "punishP": 0.179,
+      "aggro": 0.423,
+      "comboP": 0.06,
+      "chargeP": 0.111,
+      "punishGas": 0.179,
+      "maxCharge": 0.259
+    },
+    "8": {
+      "reactionMs": 513,
+      "blockP": 0.22,
+      "baitP": 0.032,
+      "punishP": 0.22,
+      "aggro": 0.452,
+      "comboP": 0.08,
+      "chargeP": 0.136,
+      "punishGas": 0.22,
+      "maxCharge": 0.3
+    },
+    "9": {
+      "reactionMs": 481,
+      "blockP": 0.264,
+      "baitP": 0.041,
+      "punishP": 0.264,
+      "aggro": 0.483,
+      "comboP": 0.103,
+      "chargeP": 0.162,
+      "punishGas": 0.264,
+      "maxCharge": 0.343
+    },
+    "10": {
+      "reactionMs": 452,
+      "blockP": 0.308,
+      "baitP": 0.051,
+      "punishP": 0.308,
+      "aggro": 0.517,
+      "comboP": 0.132,
+      "chargeP": 0.181,
+      "punishGas": 0.302,
+      "maxCharge": 0.372
+    },
+    "11": {
+      "reactionMs": 421,
+      "blockP": 0.354,
+      "baitP": 0.061,
+      "punishP": 0.354,
+      "aggro": 0.553,
+      "comboP": 0.163,
+      "chargeP": 0.202,
+      "punishGas": 0.343,
+      "maxCharge": 0.403
+    },
+    "12": {
+      "reactionMs": 404,
+      "blockP": 0.381,
+      "baitP": 0.067,
+      "punishP": 0.381,
+      "aggro": 0.574,
+      "comboP": 0.18,
+      "chargeP": 0.214,
+      "punishGas": 0.367,
+      "maxCharge": 0.42
+    },
+    "13": {
+      "reactionMs": 378,
+      "blockP": 0.421,
+      "baitP": 0.076,
+      "punishP": 0.421,
+      "aggro": 0.606,
+      "comboP": 0.208,
+      "chargeP": 0.232,
+      "punishGas": 0.404,
+      "maxCharge": 0.448
+    },
+    "14": {
+      "reactionMs": 371,
+      "blockP": 0.432,
+      "baitP": 0.078,
+      "punishP": 0.432,
+      "aggro": 0.614,
+      "comboP": 0.215,
+      "chargeP": 0.237,
+      "punishGas": 0.413,
+      "maxCharge": 0.455
+    },
+    "15": {
+      "reactionMs": 101,
+      "blockP": 0.95,
+      "baitP": 0.4,
+      "punishP": 0.98,
+      "aggro": 1.24,
+      "comboP": 0.86,
+      "chargeP": 0.6,
+      "punishGas": 0.97,
+      "maxCharge": 1
+    },
+    "16": {
+      "reactionMs": 92,
+      "blockP": 0.97,
+      "baitP": 0.44,
+      "punishP": 0.99,
+      "aggro": 1.28,
+      "comboP": 0.9,
+      "chargeP": 0.62,
+      "punishGas": 0.99,
+      "maxCharge": 1
+    }
+  }
+}

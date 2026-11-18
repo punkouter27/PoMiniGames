@@ -29,6 +29,16 @@ internal sealed class PoRacerSim
     /// </summary>
     public const double DefaultBotCaution = 0.58;
     private readonly double _botCaution;
+    // Solo races only: bots far from the leading human are nudged (UpdateRubberBand).
+    private readonly bool _rubberBand;
+    private readonly PoRacerRacingLine _line;
+    // The fastest clean human lap so far on this track, as speed per node (PoRacerGhostLibrary
+    // seeds it; SampleGhost and OfferGhostLap feed it). Bots blend their corner speed toward it.
+    private readonly PoRacerGhostLibrary? _ghosts;
+    private double[]? _ghost;
+    private double _ghostSeconds = -1;
+    private readonly Random _errRng;
+    internal double GhostSeconds => _ghost is null ? -1 : _ghostSeconds;
     // Tyre grip from the weather: 1 dry, 0.90 rain, 0.80 snow. Every car carries it (SimCar.Wet).
     private readonly double _wet;
 
@@ -39,7 +49,13 @@ internal sealed class PoRacerSim
     private const double DamageSpeedCost = 0.10;   // share of top speed lost at Damage = 1
 
     private static double TopSpeed(SimCar c) =>
-        c.MaxSpeed * (1 - DamageSpeedCost * c.Damage) * (c.BoostTimer > 0 ? BoostTopSpeed : 1) * (c.Drafting ? DraftTopSpeed : 1);
+        c.MaxSpeed * (1 - DamageSpeedCost * c.Damage) * (c.BoostTimer > 0 ? BoostTopSpeed : 1) * (c.Drafting ? DraftTopSpeed : 1)
+        * (1 + c.RubberBand);
+
+    /// <summary>The most a bot's pace is moved by the solo rubber band, either way.</summary>
+    internal const double RubberBandCap = 0.04;
+    /// <summary>How far (in laps) from the leading human a bot gets the whole of it.</summary>
+    private const double RubberBandSpanLaps = 0.15;
 
     public PoRacerStaticWorld Static { get; }
 
@@ -84,15 +100,21 @@ internal sealed class PoRacerSim
     /// every boost pad used to fail CI now and then).</param>
     public PoRacerSim(IReadOnlyList<PoRacerLobbyPlayer> players, string? trackId = null, int countdownSeconds = 0,
         bool bots = true, double botPace = 1.0, double botCaution = DefaultBotCaution,
-        int carCount = PoRacerCatalog.CarCount, int? seed = null, string weather = PoRacerWeather.Clear)
+        int carCount = PoRacerCatalog.CarCount, int? seed = null, string weather = PoRacerWeather.Clear,
+        bool rubberBand = false, PoRacerGhostLibrary? ghosts = null)
     {
+        _rubberBand = rubberBand && bots;
+        _ghosts = ghosts;
         _wet = PoRacerWeather.Grip(weather);
         _rng = seed is { } fixedSeed ? new Random(fixedSeed) : Random.Shared;
+        _errRng = seed is { } errSeed ? new Random(errSeed ^ 0x5EED) : Random.Shared;
         ArgumentOutOfRangeException.ThrowIfLessThan(carCount, 1);
         ArgumentOutOfRangeException.ThrowIfGreaterThan(carCount, PoRacerCatalog.SoloCarCount);
         _botCaution = botCaution;
         var track = PoRacerTrackRegistry.GetTrack(trackId);
         _track = track;
+        _line = PoRacerRacingLine.For(track);
+        if (ghosts?.Get(track.Id) is { } held) { _ghost = held.Speeds; _ghostSeconds = held.Seconds; }
         _trackWidth = track.TrackWidth;
         _centerline.Clear();
         _walls.Clear();
@@ -189,6 +211,8 @@ internal sealed class PoRacerSim
                 CorneringSkill = personality?.CorneringSkill ?? prof.skill,
                 Lane = personality?.LateralOffsetRatio ?? 0,
                 Wet = _wet,
+                // A small fixed misjudgement of how hard each bend is, bigger for the less skilled.
+                LineError = personality is null ? 0 : (_errRng.NextDouble() - 0.5) * 0.16 * (1.15 - personality.CorneringSkill),
                 Lap = 1,
                 // Where on the lap the slot is: the search for a car's place on the centerline
                 // starts from here, and a slot far up the road is far from node 0.
@@ -305,6 +329,8 @@ internal sealed class PoRacerSim
         {
             UpdateSurfaceAndBoost(c, dt);
         }
+
+        UpdateRubberBand(dt);
 
         // Apply player input.
         foreach (var (cid, car) in _byOwnerId)
@@ -473,7 +499,7 @@ internal sealed class PoRacerSim
 
         double before = c.Speed;
         // A wet or snowy road (c.Wet under 1) spins some of the push away and lengthens every stop.
-        double engine = c.Acceleration * c.AccelerationModifier * throttle * (0.6 + 0.4 * c.Wet);
+        double engine = c.Acceleration * c.AccelerationModifier * throttle * (0.6 + 0.4 * c.Wet) * (1 + c.RubberBand);
         engine -= c.Acceleration * (c.Speed > 1 ? 1.6 : 0.6) * braking * c.Wet;
         c.Speed += engine * dt;
         double drag = 0.6 + Math.Abs(c.Speed) * 0.004;
@@ -611,12 +637,16 @@ internal sealed class PoRacerSim
         double bend = UpcomingBend(c.LastCheckpoint, scan);
         double turn = UpcomingTurn(c.LastCheckpoint, scan);
 
-        // Which lane to drive in: -1 is the left edge of the usable road, 1 the right. Each
-        // style picks its own, from the track and from the cars around it.
+        // Which lane to drive in: -1 is the left edge of the usable road, 1 the right. Every bot
+        // starts from the racing line's apex lane (the inside of the bend ahead, more of it the
+        // more skilled the driver); each style then picks its own, from the track and the cars around it.
         Nearby(c, out var ahead, out double aheadGap, out double aheadSide, out var beside, out double besideSide);
+        Behind(c, out var behind, out double behindGap, out double behindSide);
         double laneWidth = _trackWidth * 0.35;
         double lane = c.Personality?.LateralOffsetRatio ?? 0;
         double LaneOf(double side) => (c.ProjSide + side) / laneWidth;
+        int apexIdx = (c.LastCheckpoint + (int)(3 + speedFrac * 6)) % n;
+        lane += _line.Apex[apexIdx] * (0.35 + 0.5 * c.CorneringSkill);
         switch (style)
         {
             case PoRacerAiStyle.ApexHugger:
@@ -646,11 +676,15 @@ internal sealed class PoRacerSim
                 lane = c.Whim;
                 break;
         }
-        // Caught a slower car: go round it. The bruiser drives into the back of it instead, and
-        // the two drafters have their own plan for a car ahead.
+        // A car close behind on a straight before a bend: take (and keep) the inside line.
+        if (DefenceLane(c, style == PoRacerAiStyle.Bruiser, behind, behindGap, behindSide, laneWidth) is { } defend) lane = defend;
+        // Caught a slower car: go round it, on the side with room. The bruiser drives into the
+        // back of it instead, and the two drafters have their own plan for a car ahead.
         bool blocked = ahead is not null && aheadGap < 70 && Math.Abs(aheadSide) < 30 && c.Speed > ahead.Speed;
-        if (blocked && style is not (PoRacerAiStyle.Bruiser or PoRacerAiStyle.DraftHunter or PoRacerAiStyle.Slingshot))
-            lane = LaneOf(aheadSide) + (LaneOf(aheadSide) > 0 ? -0.75 : 0.75);
+        c.PassHold = Math.Max(0, c.PassHold - dt);
+        c.PassCooldown = Math.Max(0, c.PassCooldown - dt);
+        if (style is not (PoRacerAiStyle.Bruiser or PoRacerAiStyle.DraftHunter or PoRacerAiStyle.Slingshot))
+            lane = OvertakeLane(c, ahead, aheadGap, aheadSide, beside, besideSide, laneWidth, lane);
         // Eased, so a change of mind is a lane change and not a swerve.
         c.Lane += (Math.Clamp(lane, -0.9, 0.9) - c.Lane) * Math.Min(1, 2.5 * dt);
 
@@ -673,17 +707,9 @@ internal sealed class PoRacerSim
         // Predictive corner speed: slow to a speed the car can actually hold through the bend
         // ahead. Straights are near top speed; tight bends a small fraction. How much a bot
         // lifts is the race's caution (the solo tier) times its own.
-        double curviness = Math.Clamp(bend / 0.85, 0, 1);
-        double aggression = c.Personality?.Aggression ?? 0.5;
         double caution = Math.Min(0.9, _botCaution * (c.Personality?.Caution ?? 1.0));
         if (c.HotTimer > 0) { c.HotTimer -= dt; caution *= 0.35; }
-        // Scaled from the car's top speed of the moment, not its nominal one: on a boost pad a
-        // bot is well over MaxSpeed, and measured against that it would brake for the boost.
-        double top = TopSpeed(c);
-        double cornerSpeed = top * (1.0 - caution * curviness) * (0.90 + 0.12 * c.CorneringSkill + 0.08 * aggression);
-        // In the wet a bend is worth less speed still; a straight is worth what it always was.
-        cornerSpeed *= 1 - (1 - c.Wet) * 0.5 * Math.Min(1, curviness * 2);
-        cornerSpeed = Math.Clamp(cornerSpeed, c.MaxSpeed * 0.36 * c.Wet, top);
+        double cornerSpeed = TargetSpeed(c, bend, caution);
 
         const double deadband = 0.05;
         bool accel, brake = false, handbrake = false;
@@ -725,6 +751,195 @@ internal sealed class PoRacerSim
         {
             c.Steer += (_rng.NextDouble() - 0.5) * 0.06;
         }
+    }
+
+    /// <summary>
+    /// The speed a bot aims for this tick. The racing line's profile (curvature limit with its
+    /// braking and acceleration passes, so it knows where to start lifting) is blended with the
+    /// local look-ahead bend, the more of it the more skilled the driver; a small fixed error
+    /// per car keeps the field apart. Then the bot's own caution says how close to that it drives,
+    /// and, when a human has set a clean lap, the bot learns toward the speeds that lap showed.
+    /// </summary>
+    private double TargetSpeed(SimCar c, double bend, double caution)
+    {
+        int n = _centerline.Count;
+        var style = c.Personality?.Style ?? PoRacerAiStyle.Steady;
+        int sample = (c.LastCheckpoint + (style == PoRacerAiStyle.LateBraker ? 0 : 2)) % n;
+        double local = Math.Clamp(bend / 0.85, 0, 1);
+        double profile = Math.Clamp((1 - _line.Speed[sample] / PoRacerRacingLine.TopSpeed) / 0.6, 0, 1);
+        double curviness = Math.Clamp(local + (profile - local) * (0.35 + 0.5 * c.CorneringSkill) + c.LineError, 0, 1);
+        double aggression = c.Personality?.Aggression ?? 0.5;
+        // Scaled from the car's top speed of the moment, not its nominal one: on a boost pad a
+        // bot is well over MaxSpeed, and measured against that it would brake for the boost.
+        double top = TopSpeed(c);
+        double cornerSpeed = top * (1.0 - caution * curviness) * (0.90 + 0.12 * c.CorneringSkill + 0.08 * aggression);
+        // In the wet a bend is worth less speed still; a straight is worth what it always was.
+        cornerSpeed *= 1 - (1 - c.Wet) * 0.5 * Math.Min(1, curviness * 2);
+        if (_ghost is not null && c.Personality is not null)
+        {
+            double learn = Math.Clamp((c.CorneringSkill - 0.5) * 1.2, 0, 0.6);
+            cornerSpeed += (_ghost[sample] * (c.MaxSpeed / 320.0) - cornerSpeed) * learn;
+        }
+        return Math.Clamp(cornerSpeed, c.MaxSpeed * 0.36 * c.Wet, top);
+    }
+
+    /// <summary>What a car would aim for right now (the scan a tick of UpdateAi makes), for the tests.</summary>
+    internal double TargetSpeedOf(int carId)
+    {
+        var c = _cars[carId];
+        double speedFrac = Math.Clamp(Math.Abs(c.Speed) / c.MaxSpeed, 0, 1);
+        int scan = (int)(9 + speedFrac * 15);
+        return TargetSpeed(c, UpcomingBend(c.LastCheckpoint, scan), Math.Min(0.9, _botCaution * (c.Personality?.Caution ?? 1.0)));
+    }
+
+    /// <summary>The nearest car behind (8 to 90 units back, within 60 to the side), same frame as <see cref="Nearby"/>.</summary>
+    private void Behind(SimCar c, out SimCar? behind, out double gap, out double side)
+    {
+        behind = null; gap = double.MaxValue; side = 0;
+        double cos = Math.Cos(c.Heading), sin = Math.Sin(c.Heading);
+        var cell = SpatialCell(c.Pos, 160);
+        for (int x = cell.X - 1; x <= cell.X + 1; x++)
+        {
+            for (int y = cell.Y - 1; y <= cell.Y + 1; y++)
+            {
+                if (!_spatialGrid.TryGetValue((x, y), out var bucket)) continue;
+                foreach (var index in bucket)
+                {
+                    var other = _cars[index];
+                    if (other.Id == c.Id || other.Lap > TotalLaps) continue;
+                    double dx = other.Pos.X - c.Pos.X, dy = other.Pos.Y - c.Pos.Y;
+                    double back = -(dx * cos + dy * sin), lateral = dy * cos - dx * sin;
+                    if (back > 8 && back <= 90 && back < gap && Math.Abs(lateral) < 60) { behind = other; gap = back; side = lateral; }
+                }
+            }
+        }
+    }
+
+    /// <summary>
+    /// Defence: with a car close behind on a straight that ends in a bend, cover the inside line.
+    /// One move per straight, keyed by the bend it ends in: the lane is chosen once and held until
+    /// the bend, so a defender never weaves. A car already alongside is not defended against. The
+    /// bruiser leans toward the car behind instead of taking the inside; nobody else touches it.
+    /// Returns null when there is nothing to defend.
+    /// </summary>
+    private double? DefenceLane(SimCar c, bool bruiser, SimCar? behind, double gap, double side, double laneWidth)
+    {
+        int n = _centerline.Count;
+        int node = ((c.LastCheckpoint % n) + n) % n;
+        int dist = _line.NextBendDistance[node];
+        if (dist <= 3 || dist > 40) return null;
+        long key = (long)c.Lap * n + node + dist;
+        if (c.DefendKey == key) return c.DefendLane;
+        if (behind is null || gap < 15 || gap > 70 || Math.Abs(side) > 40) return null;
+        c.DefendKey = key;
+        c.DefendMoves++;
+        c.DefendLane = bruiser ? Math.Clamp((c.ProjSide + side) / laneWidth, -0.9, 0.9) : 0.65 * _line.NextBendSign[node];
+        return c.DefendLane;
+    }
+
+    /// <summary>
+    /// Overtaking: a bot closing on a car ahead picks the side to pass once (the inside of the next
+    /// bend when there is room, else the side with more room), holds it while the pass lasts, and
+    /// gives the move up if another car takes that side or there is no room: it drops back into line
+    /// behind and tries again after a short wait. Returns the lane to drive, <paramref name="lane"/> when not passing.
+    /// </summary>
+    private double OvertakeLane(SimCar c, SimCar? ahead, double gap, double aheadSide, SimCar? beside, double besideSide,
+        double laneWidth, double lane)
+    {
+        if (c.PassHold > 0)
+        {
+            // Blocked: something is already alongside on the side being taken.
+            if (beside is not null && Math.Sign(besideSide) == c.PassSide && Math.Abs(besideSide) < 60)
+            {
+                c.PassHold = 0; c.PassCooldown = 2; c.PassSide = 0;
+                return lane;
+            }
+            return c.PassLane;
+        }
+        if (ahead is null || c.PassCooldown > 0 || gap >= 90 || Math.Abs(aheadSide) >= 40 || c.Speed <= ahead.Speed + 3) return lane;
+
+        double limit = _trackWidth * 0.5 - CarRadius;
+        double roomRight = limit - ahead.ProjSide, roomLeft = limit + ahead.ProjSide;
+        const double needed = CarRadius * 2 + 8;
+        bool takenRight = beside is not null && besideSide > 0 && Math.Abs(besideSide) < 60;
+        bool takenLeft = beside is not null && besideSide < 0 && Math.Abs(besideSide) < 60;
+        bool rightOk = roomRight >= needed && !takenRight, leftOk = roomLeft >= needed && !takenLeft;
+        int side;
+        int node = ((c.LastCheckpoint % _centerline.Count) + _centerline.Count) % _centerline.Count;
+        int inside = _line.NextBendDistance[node] <= 40 ? _line.NextBendSign[node] : 0;
+        if (rightOk && leftOk) side = inside != 0 ? inside : roomRight >= roomLeft ? 1 : -1;
+        else if (rightOk) side = 1;
+        else if (leftOk) side = -1;
+        else { c.PassCooldown = 1; return lane; }                      // no room: stay behind it
+        c.PassSide = side;
+        c.PassHold = 2.5;
+        c.PassLane = Math.Clamp((c.ProjSide + aheadSide) / laneWidth + side * 0.75, -0.9, 0.9);
+        return c.PassLane;
+    }
+
+    /// <summary>
+    /// Solo rubber band: bots far behind the leading human get up to 4% more pace, bots far ahead
+    /// up to 4% less, eased in over a second or two. Off on the final lap (the finish is honest)
+    /// and for humans, who never carry it. It only scales a bot's own top speed and push; scores
+    /// and lap times are still the sim's clock.
+    /// </summary>
+    private void UpdateRubberBand(double dt)
+    {
+        if (!_rubberBand) return;
+        SimCar? lead = null;
+        foreach (var c in _cars)
+        {
+            if (!c.IsPlayer || c.Autopilot || c.BotDriven || c.Lap > TotalLaps) continue;
+            if (lead is null || c.DistanceAlongTrack > lead.DistanceAlongTrack) lead = c;
+        }
+        bool finalLap = lead is null || lead.Lap >= TotalLaps;
+        double n = _centerline.Count;
+        foreach (var c in _cars)
+        {
+            if (c.IsPlayer || finalLap || c.Lap >= TotalLaps) { c.RubberBand = 0; continue; }
+            double gapLaps = (c.DistanceAlongTrack - lead!.DistanceAlongTrack) / n;
+            double target = -Math.Clamp(gapLaps / RubberBandSpanLaps, -1, 1) * RubberBandCap;
+            c.RubberBand += (target - c.RubberBand) * Math.Min(1, 0.8 * dt);
+        }
+    }
+
+    internal double RubberBandOf(int carId) => _cars[carId].RubberBand;
+
+    /// <summary>Note the speed a human is carrying through the node it is on, for the ghost lap.</summary>
+    private void SampleGhost(SimCar c)
+    {
+        c.LapSpeeds ??= Enumerable.Repeat(double.NaN, _centerline.Count).ToArray();
+        // A seat the stand-in bot has touched, or a car reversing, makes this lap no one's to learn from.
+        if (c.Autopilot || c.BotDriven || c.Speed < 0) c.LapTainted = true;
+        c.LapSpeeds[c.ProjIdx] = c.Speed;
+    }
+
+    /// <summary>
+    /// A lap just closed. If a human drove all of it and it is the fastest this race has seen and
+    /// it covers the lap, keep its speed per node as the ghost the bots learn from. Bot cars never get here.
+    /// </summary>
+    private bool OfferGhostLap(SimCar c, double lapTime)
+    {
+        var samples = c.LapSpeeds;
+        bool clean = c.IsPlayer && !c.BotDriven && !c.Autopilot && !c.LapTainted && samples is not null && lapTime > 0;
+        c.LapSpeeds = null; c.LapTainted = false;
+        if (!clean || samples is null) return false;
+        int n = samples.Length, first = Array.FindIndex(samples, v => !double.IsNaN(v));
+        if (first < 0 || samples.Count(v => !double.IsNaN(v)) < n * 0.6) return false;
+        if (_ghost is not null && lapTime >= _ghostSeconds) return false;
+        // A car at speed skips nodes: carry the last speed seen forward over the gaps.
+        var filled = new double[n];
+        double last = samples[first];
+        for (int k = 0; k < n; k++)
+        {
+            int i = (first + k) % n;
+            if (!double.IsNaN(samples[i])) last = samples[i];
+            filled[i] = last;
+        }
+        _ghost = filled;
+        _ghostSeconds = lapTime;
+        _ghosts?.Offer(TrackId, lapTime, filled);
+        return true;
     }
 
     /// <summary>Cumulative absolute heading change (radians) over the next <paramref name="span"/>
@@ -948,6 +1163,7 @@ internal sealed class PoRacerSim
     private void UpdateRaceProgress(SimCar c)
     {
         if (c.Lap > TotalLaps) return;
+        if (c.IsPlayer) SampleGhost(c);
         if (c.LastCheckpoint >= 0)
         {
             int prev = c.LastCheckpoint;
@@ -969,6 +1185,7 @@ internal sealed class PoRacerSim
                 var nowSec = RaceSeconds;
                 var lapTime = nowSec - c.LapStartElapsed;
                 c.LastLapTime = lapTime;
+                OfferGhostLap(c, lapTime);
                 if (lapTime > 0 && (c.BestLapTime < 0 || lapTime < c.BestLapTime))
                 {
                     c.BestLapTime = lapTime;
@@ -1199,5 +1416,16 @@ internal sealed class PoRacerSim
         public double Spin;         // rad/s of yaw left over from an off-centre hit
         public double TireHeat;     // 0..1; scrubs grip and feeds the smoke
         public double DraftStrength; // 0..1, eased from Drafting for the tow meter and effects
+        public double RubberBand;    // bots in a solo race: -0.04..0.04 of pace, eased; always 0 for humans
+        public double LineError;     // bots: a fixed misjudgement of bend severity (seeded)
+        public long DefendKey = -1;  // the bend a defence was last made for: one move per straight
+        public double DefendLane;
+        public int DefendMoves;
+        public double PassHold;      // seconds left of the pass in progress
+        public double PassCooldown;  // seconds before a bot that gave a pass up tries another
+        public int PassSide;         // -1 or +1: the side being taken; 0 when not passing
+        public double PassLane;
+        public double[]? LapSpeeds;  // humans: speed per node over the lap in progress (NaN where not seen)
+        public bool LapTainted;      // ...and whether anything but the human drove any of it
     }
 }

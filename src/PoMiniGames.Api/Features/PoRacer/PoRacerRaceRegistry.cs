@@ -24,6 +24,8 @@ public sealed class PoRacerRaceRegistry : IAsyncDisposable
     // "daily" (the default): each track's own draw for the UTC day. Any weather name instead
     // fixes it for every race, which is what the test hosts do so a race does not depend on the date.
     private readonly string _weather;
+    // The fastest clean human lap per track this process has seen: the bots learn braking points from it.
+    private readonly PoRacerGhostLibrary _ghosts = new();
 
     public PoRacerRaceRegistry(PoRacerLobbyService lobby, IHubContext<PoRacerRaceHub> hub, ILoggerFactory logs,
         VerifiedResultStore? store = null, IConfiguration? config = null)
@@ -63,13 +65,15 @@ public sealed class PoRacerRaceRegistry : IAsyncDisposable
             "hard" => (1.07, 0.20),
             _ => (1.03, 0.42),
         };
-        return GetOrCreate(code, [player], trackId, bots: options?.Mode != "trial", pace, caution,
-            carCount: PoRacerCatalog.SoloCarCount);
+        // Rubber band: solo races with bots only (never online, demo or a time trial).
+        bool trial = options?.Mode == "trial";
+        return GetOrCreate(code, [player], trackId, bots: !trial, pace, caution,
+            carCount: PoRacerCatalog.SoloCarCount, rubberBand: !trial);
     }
 
     private PoRacerRaceService GetOrCreate(string code, IReadOnlyList<PoRacerLobbyPlayer> players, string? trackId,
         bool bots = true, double botPace = 1.0, double botCaution = PoRacerSim.DefaultBotCaution,
-        int carCount = PoRacerCatalog.CarCount)
+        int carCount = PoRacerCatalog.CarCount, bool rubberBand = false)
     {
         lock (_gate)
         {
@@ -80,7 +84,7 @@ public sealed class PoRacerRaceRegistry : IAsyncDisposable
             // online and demo, and fixed for the race from here even if midnight passes during it.
             var weather = _weather == "daily" ? PoRacerWeather.Today(PoRacerCatalog.GetTrack(trackId).Id) : _weather;
             var race = new PoRacerRaceService(code, players, _logs.CreateLogger<PoRacerRaceService>(), trackId,
-                bots, botPace, botCaution, carCount, weather);
+                bots, botPace, botCaution, carCount, weather, rubberBand, _ghosts);
             race.SnapshotReady += snapshot => BroadcastAsync(code, "raceSnapshot", snapshot);
             race.Finished += result =>
             {

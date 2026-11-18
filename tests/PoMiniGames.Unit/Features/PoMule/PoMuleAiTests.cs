@@ -76,6 +76,11 @@ public sealed class PoMuleAiTests
     [Theory]
     [InlineData(nameof(Goals_WalkThroughBuyInstallPub_WhileTheGamblerQuitsEarlyAndTheAgitatorHunts))]
     [InlineData(nameof(AtAuction_TheSpeculatorOutbidsTheFarmer_AndNobodyBidsPastTheirMeans))]
+    [InlineData(nameof(SameSeed_GivesTheSameObjectivesPlansAndForecasts))]
+    [InlineData(nameof(AColonistShortOnFood_PlansAFarmFirst_AndAFedOneGoesBackToMining))]
+    [InlineData(nameof(ATraderHoldsAGoodForecastToBeScarce_AndBuyersWaitForAFallingPrice))]
+    [InlineData(nameof(ATraderSellsSurplusIntoAPriceAboveForecast))]
+    [InlineData(nameof(WhenAPlannedPlotIsTaken_TheColonistReplans))]
     public Task Scenario(string name) => Scenarios.RunAsync(this, name);
 
     private static void Goals_WalkThroughBuyInstallPub_WhileTheGamblerQuitsEarlyAndTheAgitatorHunts()
@@ -184,5 +189,117 @@ public sealed class PoMuleAiTests
         match.Players[2].Cash = 100;
         PoMuleLand.OpenAuction(match, match.AuctionPlot);
         PoMuleAi.AuctionInput(match, 2).Should().Be(0, "cannot cover the opening bid");
+    }
+
+    private static void SameSeed_GivesTheSameObjectivesPlansAndForecasts()
+    {
+        static string Snapshot()
+        {
+            var match = Match(Archetype.Speculator);
+            Own(match, 0, Terrain.River);
+            Own(match, 1, Terrain.Mountain, peaks: 2);
+            Own(match, 2, Terrain.Plains);
+            var land = PoMuleAi.PickLand(match, Ai);
+            var plan = string.Join(";", PoMuleAi.Plan(match, Ai));
+            var forecasts = string.Join(";", Enum.GetValues<Good>().Select(g => PoMuleAi.ForecastFor(match, g)));
+            PoMuleMarket.Open(match, Good.Food);
+            return $"{land}|{PoMuleAi.ChooseObjective(match, Ai)}|{plan}|{forecasts}|{PoMuleAi.MarketInput(match, Ai)}|{match.Rng.State}";
+        }
+
+        Snapshot().Should().Be(Snapshot());
+    }
+
+    private static void AColonistShortOnFood_PlansAFarmFirst_AndAFedOneGoesBackToMining()
+    {
+        var hungry = Match(Archetype.Industrialist);
+        hungry.Players[Ai].Goods[(int)Good.Food] = 0;
+        Own(hungry, 0, Terrain.Mountain, peaks: 3);
+        var river = Own(hungry, 1, Terrain.River);
+
+        PoMuleAi.ChooseObjective(hungry, Ai).Should().Be(Objective.SecureFood);
+        var plan = PoMuleAi.Plan(hungry, Ai);
+        plan[0].Should().Be(new PlanStep(GoalKind.Outfitter, -1, Good.Food));
+        plan[1].Should().Be(new PlanStep(GoalKind.Install, river, Good.Food));
+        plan.Count.Should().Be(4, "a second M.U.L.E. is planned behind the first");
+
+        var fed = Match(Archetype.Industrialist);
+        fed.Players[Ai].Goods[(int)Good.Food] = 10;
+        Own(fed, 0, Terrain.Mountain, peaks: 3);
+        Own(fed, 1, Terrain.River);
+        PoMuleAi.ChooseObjective(fed, Ai).Should().Be(Objective.MineSmithore);
+        PoMuleAi.Plan(fed, Ai)[0].Good.Should().Be(Good.Smithore);
+    }
+
+    private static void ATraderHoldsAGoodForecastToBeScarce_AndBuyersWaitForAFallingPrice()
+    {
+        static MatchState Colony(int othersFood)
+        {
+            var match = Match(Archetype.Farmer);
+            match.Store.Stock[(int)Good.Food] = 0;
+            foreach (var p in match.Players.Where(p => p.Seat != Ai)) p.Goods[(int)Good.Food] = othersFood;
+            match.Players[Ai].Goods[(int)Good.Food] = 6;
+            PoMuleMarket.Open(match, Good.Food);
+            return match;
+        }
+
+        var scarce = Colony(othersFood: 0);
+        PoMuleAi.ForecastFor(scarce, Good.Food).Scarce.Should().BeTrue();
+        PoMuleAi.ForecastFor(scarce, Good.Food).Price.Should().BeGreaterThan(scarce.Store.Price[(int)Good.Food]);
+        PoMuleAi.MarketInput(scarce, Ai).Should().Be(1, "it keeps the spare Food at the top of its lane instead of selling the colony dry");
+
+        var plenty = Colony(othersFood: 20);
+        PoMuleAi.MarketInput(plenty, Ai).Should().Be(-1, "with plenty about the same surplus goes at a fair price");
+
+        // Short in a glutted colony (the price is forecast to fall): it waits at a fair bid, until last call.
+        plenty.Players[Ai].Goods[(int)Good.Food] = 0;
+        PoMuleMarket.Open(plenty, Good.Food);
+        var (floor, ceiling) = (PoMuleMarket.Floor(plenty, Good.Food), PoMuleMarket.Ceiling(plenty, Good.Food));
+        plenty.LanePrice[Ai] = floor + (ceiling - floor) / 3;
+        PoMuleAi.MarketInput(plenty, Ai).Should().Be(0, "no hurry while the price is falling");
+        plenty.ClockTicks = PoMuleTuning.MarketLastCallTicks - 1;
+        PoMuleAi.MarketInput(plenty, Ai).Should().Be(1, "at last call it pays what it takes");
+    }
+
+    private static void ATraderSellsSurplusIntoAPriceAboveForecast()
+    {
+        MatchState Hoarder(int storeStock, int othersFood)
+        {
+            var match = Match(Archetype.Hoarder);
+            match.Store.Price[(int)Good.Food] = 100;
+            match.Store.Stock[(int)Good.Food] = storeStock;
+            foreach (var p in match.Players.Where(p => p.Seat != Ai)) p.Goods[(int)Good.Food] = othersFood;
+            match.Players[Ai].Goods[(int)Good.Food] = 9;
+            PoMuleMarket.Open(match, Good.Food);
+            return match;
+        }
+
+        var glut = Hoarder(storeStock: 64, othersFood: 20);
+        var forecast = PoMuleAi.ForecastFor(glut, Good.Food);
+        forecast.Price.Should().BeLessThan(90, "a glutted colony sees the price falling");
+        PoMuleAi.MarketInput(glut, Ai).Should().Be(-1, "even the Hoarder sells into a price that is about to drop");
+
+        var even = Hoarder(storeStock: 0, othersFood: 4);
+        PoMuleAi.MarketInput(even, Ai).Should().Be(0, "no drop in sight: it sits on its Food at the top");
+    }
+
+    private static void WhenAPlannedPlotIsTaken_TheColonistReplans()
+    {
+        var match = Match(Archetype.Farmer);
+        var river = Own(match, 0, Terrain.River);
+        var plains = Own(match, 1, Terrain.Plains);
+
+        var before = PoMuleAi.Plan(match, Ai);
+        before[1].Should().Be(new PlanStep(GoalKind.Install, river, Good.Food));
+
+        match.Owner[river] = 3; // someone else's now (a land-grab, a lost auction)
+        var after = PoMuleAi.Plan(match, Ai);
+        after.Should().NotContain(step => step.Plot == river);
+        after[1].Should().Be(new PlanStep(GoalKind.Install, plains, Good.Food));
+
+        // And a purse that no longer stretches to the outfit swaps to a cheaper one.
+        match.Players[Ai].Cash = match.Store.MulePrice + PoMuleTuning.OutfitCost[(int)Good.Food];
+        PoMuleAi.Plan(match, Ai)[0].Good.Should().Be(Good.Food);
+        match.Players[Ai].Cash = match.Store.MulePrice;
+        PoMuleAi.Plan(match, Ai)[0].Kind.Should().Be(GoalKind.Pub, "cannot afford any outfit: cash the clock in instead");
     }
 }

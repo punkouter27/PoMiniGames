@@ -28,10 +28,12 @@ public sealed class PoRacerRaceService : IAsyncDisposable
     /// <param name="weather">The race's weather (<see cref="PoRacerWeather"/>); dry unless the registry says otherwise.</param>
     public PoRacerRaceService(string code, IReadOnlyList<PoRacerLobbyPlayer> players, ILogger<PoRacerRaceService> log,
         string? trackId = null, bool bots = true, double botPace = 1.0, double botCaution = PoRacerSim.DefaultBotCaution,
-        int carCount = PoRacerCatalog.CarCount, string weather = PoRacerWeather.Clear)
+        int carCount = PoRacerCatalog.CarCount, string weather = PoRacerWeather.Clear,
+        bool rubberBand = false, PoRacerGhostLibrary? ghosts = null)
     {
         GameCode = code;
-        _sim = new PoRacerSim(players, trackId, countdownSeconds: 3, bots, botPace, botCaution, carCount, weather: weather);
+        _sim = new PoRacerSim(players, trackId, countdownSeconds: 3, bots, botPace, botCaution, carCount, weather: weather,
+            rubberBand: rubberBand, ghosts: ghosts);
         _log = log;
         // A shared race: a seat nobody is connected to is driven by the stand-in bot, from the
         // lights (a lobby player who never arrived) or from the moment its driver drops. Solo

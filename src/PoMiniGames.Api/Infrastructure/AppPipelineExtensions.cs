@@ -60,6 +60,9 @@ internal static class AppPipelineExtensions
     /// </remarks>
     public static WebApplication UsePoMiniGamesSecurityHeaders(this WebApplication app)
     {
+        // The 3D models' host when they are served from Blob Storage (UsePoMiniGamesModelRedirect):
+        // the loaders fetch them, so the redirect target must be allowed by connect-src.
+        var modelsOrigin = ModelsBaseUrl(app) is { } models ? " " + models.GetLeftPart(UriPartial.Authority) : "";
         app.Use(async (ctx, next) =>
         {
             var headers = ctx.Response.Headers;
@@ -81,7 +84,7 @@ internal static class AppPipelineExtensions
                 // already allows blob: for the <img> path.
                 // archive-api is the historical-weather host PoCapitol's scenario reads;
                 // api.open-meteo.com (forecast) does not cover it.
-                "connect-src 'self' blob: ws: wss: https://cdn.jsdelivr.net https://api.open-meteo.com https://archive-api.open-meteo.com https://geocoding-api.open-meteo.com https://www.wikidata.org; " +
+                "connect-src 'self' blob: ws: wss: https://cdn.jsdelivr.net https://api.open-meteo.com https://archive-api.open-meteo.com https://geocoding-api.open-meteo.com https://www.wikidata.org" + modelsOrigin + "; " +
                 "worker-src 'self' blob:; " +
                 "frame-ancestors 'none'; base-uri 'self'; object-src 'none'";
             await next();
@@ -215,6 +218,38 @@ internal static class AppPipelineExtensions
     /// default one rather than a mutation of the shared static, so nothing else in the
     /// pipeline inherits the change.
     /// </remarks>
+    /// <summary>
+    /// Sends <c>/models/*</c> (the ~37 MB of 3D tracks and splats) to Blob Storage when
+    /// <c>PoMiniGames:Models:BaseUrl</c> is set, so those bytes never count against the F1 plan's
+    /// 165 MB/day data-out quota. Unset (dev, tests) the files are served from wwwroot as before.
+    /// </summary>
+    /// <remarks>
+    /// Must precede <see cref="UsePoMiniGamesStaticFiles"/>: in production the deploy
+    /// (scripts/pre-deploy.ps1) uploads the models and strips them from the package.
+    /// </remarks>
+    public static WebApplication UsePoMiniGamesModelRedirect(this WebApplication app)
+    {
+        if (ModelsBaseUrl(app) is not { } baseUrl) return app;
+        var root = baseUrl.AbsoluteUri.TrimEnd('/');
+
+        app.Use((ctx, next) =>
+        {
+            if (!ctx.Request.Path.StartsWithSegments("/models", out var rest) || !rest.HasValue)
+            {
+                return next(ctx);
+            }
+            ctx.Response.Headers.CacheControl = "public, max-age=86400";
+            ctx.Response.Redirect(root + rest.Value + ctx.Request.QueryString.Value, permanent: false);
+            return Task.CompletedTask;
+        });
+
+        return app;
+    }
+
+    private static Uri? ModelsBaseUrl(WebApplication app) =>
+        Uri.TryCreate(app.Configuration["PoMiniGames:Models:BaseUrl"], UriKind.Absolute, out var uri)
+        && uri.Scheme == Uri.UriSchemeHttps ? uri : null;
+
     public static WebApplication UsePoMiniGamesStaticFiles(this WebApplication app)
     {
         var contentTypeProvider = new Microsoft.AspNetCore.StaticFiles.FileExtensionContentTypeProvider();

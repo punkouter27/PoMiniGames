@@ -2,6 +2,9 @@
 // treats human and CPU fighters identically.
 
 import { PERSONALITIES } from './personalities.js';
+import { PlayerProfile, defaultStorage } from './playerProfile.js';
+import { NGramPredictor, ActionReader, SWING } from './predictor.js';
+import { archetypeFor, chooseStance, facts as tacticFacts, scoreTactics, pickWeighted } from './tactics.js';
 //
 // Three layers decide what the CPU does on a tick, in priority order:
 //   1. the signature PHRASE (personalities.js `aiPatterns`) — a fixed script
@@ -24,6 +27,21 @@ import { PERSONALITIES } from './personalities.js';
 //   • spammers get guarded and whiff-punished more often.
 // And a read of the scoreboard (`_mood`): hurt → careful, ahead late → protect
 // the lead, behind late → press.
+//
+// Layer 2's neutral choice is a UTILITY pick (tactics.js): attack, guard, retreat,
+// circle, charge, bait and punish are each scored from health, energy, distance, the
+// ropes, mood and the predictor, then biased by the behaviour-tree stance of the
+// president's archetype (aggressor / counter-puncher / turtle). The rung columns
+// below are the weights and gates the scores are built from, so they stay the dial.
+//
+// Memory, all scaled by rung (rungs 1-3 use none of it):
+//   • playerProfile.js — the human's habits across sessions seed the ~8 s window;
+//   • predictor.js — an n-gram of the human's recent actions. Past a rung-scaled
+//     confidence the CPU pre-empts (early guard, step out, or a counter jab), at most
+//     PRED_CAP_MAX times per 10 s and only on a decision tick (reaction-gated);
+//   • bait-and-punish — a feint (swing cancelled into guard, the old baitP) or a LURE
+//     (guard dropped, step out as the swing starts) arms a whiff-punish: a kick or
+//     punch into the spent swing's recovery.
 //
 // The canvas (knockdown.js) sits ahead of all of it. Knocked down, the CPU picks
 // one get-up per knockdown — when to rise and whether to roll, rise guarding or
@@ -64,6 +82,20 @@ const LEVELS = [
 
 const MAX_RUNG = LEVELS.length;
 
+// Self-play overrides per rung ({ 7: { aggro: 0.8, … } }), written by
+// scripts/dev/selfplay-brawl.mjs into rungTuning.json. The tuned numbers are baked
+// into LEVELS above; this lets the harness (or a game build) try others.
+let tuning = {};
+export function applyRungTuning(t) { tuning = t && typeof t === 'object' ? t : {}; }
+export function rungParams(level) { return { ...LEVELS[level - 1], ...(tuning[level] || {}) }; }
+
+// Prediction: the most pre-emptive acts per 10 s (top rung) and how long a symbol
+// stays fresh enough to act on.
+const PRED_CAP_MAX = 4;
+const PRED_FRESH = 1.2;
+// How long a lure holds the guard down waiting for a swing to whiff-punish.
+const LURE_SECS = 0.7;
+
 // Habit tracker: exponential decay so recent behavior dominates.
 const HABIT_TAU = 8;          // seconds of memory
 const TURTLE_THRESHOLD = 0.35; // fraction of in-range time spent blocking
@@ -96,12 +128,13 @@ const NEUTRAL = Object.freeze({ move: 0, side: 0, punch: false, kick: false, blo
 
 export class AiController {
   /** difficulty: 1-16 rung number, or 'easy' | 'medium' | 'hard'.
-   *  charId: optional president id used to apply personality modifiers. */
-  constructor(difficulty, rng = null, charId = null) {
+   *  charId: optional president id used to apply personality modifiers.
+   *  opts.profile: a PlayerProfile, or null for none (default: loaded from storage). */
+  constructor(difficulty, rng = null, charId = null, opts = {}) {
     const level = typeof difficulty === 'number'
       ? Math.max(1, Math.min(MAX_RUNG, Math.round(difficulty)))
       : (NAMED_LEVELS[difficulty] || NAMED_LEVELS.medium);
-    const p = LEVELS[level - 1];
+    const p = rungParams(level);
     const k = (level - 1) / (MAX_RUNG - 1);   // 0 at rung 1 → 1 at rung 16
     this.level = level;
     this.reactionMs = p.reactionMs;
@@ -228,7 +261,33 @@ export class AiController {
     this.oppAtkN = 0;    // decayed count of opponent attack starts
     this.clockT = 0;     // decayed total time (normalizer for the attack rate)
     this.prevOppWindup = false;
+
+    // ── Memory: profile, predictor, archetype ─────────────────────────────
+    // 0 at rungs 1-3 (they ignore all of it), 1 at the top.
+    const mem = level <= 3 ? 0 : Math.min(1, (level - 3) / 12);
+    this.archetype = archetypeFor(this.charId);
+    this.profile = opts.profile !== undefined ? opts.profile : PlayerProfile.load(defaultStorage());
+    const seed = this.profile?.seed(mem);
+    if (seed) Object.assign(this, seed);
+    this.reader = new ActionReader();
+    this.predictor = new NGramPredictor();
+    this._predScale = mem;
+    // Confidence the read must clear: 0.82 at rung 4 → 0.52 at the top.
+    this._predThr = 0.82 - 0.30 * mem;
+    this._predP = 0.20 + 0.55 * mem;
+    this._predCap = 1 + Math.floor((PRED_CAP_MAX - 1) * mem);
+    this._lastSym = null;
+    this._lastSymT = -1e9;
+    this._predActs = [];      // engine times of recent pre-emptive acts (the cap)
+    this._predPending = -1;   // until when a made prediction can still be scored
+    this.stats = { predActs: 0, predHits: 0, lures: 0, lurePunishes: 0 };
+    // A lure in progress ({ until, recoverAt, rolled }), and a held step out.
+    this._lure = null;
+    this._stepOutUntil = 0;
   }
+
+  /** Game hook: how the human got up from the canvas, for the cross-session profile. */
+  notifyOpponentGetUp(choice) { this.profile?.noteGetUp(choice); }
 
   notifyHit() {
     this.recentHits.push(this.t);
@@ -241,6 +300,8 @@ export class AiController {
     this._guardSince = -1;
     // ...and breaks the signature phrase: interrupting it is the reward for reading it.
     this._pat = null;
+    this._lure = null;
+    this._stepOutUntil = 0;
   }
 
   /**
@@ -257,6 +318,8 @@ export class AiController {
     this.baitArmed = false;
     this._guardSince = -1;
     this._pat = null;
+    this._lure = null;
+    this._stepOutUntil = 0;
     this._meaty = false;
     const k = (this.level - 1) / (MAX_RUNG - 1);
     const r = this.rng.random();
@@ -364,6 +427,52 @@ export class AiController {
     }
     if (!ctx.opponentWindup) this._oppWindupSince = -1;
     this.prevOppWindup = ctx.opponentWindup;
+
+    // What the human just did, for the predictor and the cross-session profile.
+    const sym = this.reader.read(ctx);
+    if (sym) {
+      if (SWING.has(sym) && this.t < this._predPending) {
+        this.stats.predHits++;
+        this._predPending = -1;
+      }
+      this.predictor.push(sym);
+      this._lastSym = sym;
+      this._lastSymT = this.t;
+    }
+    this.profile?.record(ctx);
+  }
+
+  // The predictor's read while it is still fresh, scaled by rung (0 at rungs 1-3).
+  _prediction() {
+    if (this._predScale <= 0 || this.t - this._lastSymT > PRED_FRESH) return null;
+    return this.predictor.predict();
+  }
+
+  // 0..1 chance the human is about to swing, rung-scaled; feeds the utility scores.
+  _predSwing() {
+    if (this._predScale <= 0 || this.t - this._lastSymT > PRED_FRESH) return 0;
+    return this.predictor.swingProb() * this._predScale;
+  }
+
+  // Pre-emptive acts left under the cap (acts in the last 10 s).
+  _predBudget() {
+    this._predActs = this._predActs.filter((a) => this.t - a < 10);
+    return this._predActs.length < this._predCap;
+  }
+
+  _spendPred() {
+    this._predActs.push(this.t);
+    this.stats.predActs++;
+  }
+
+  // A lure: the guard stays down and the CPU waits for the swing to start, then steps
+  // out so it whiffs; the spent swing is the whiff-punish's target. See _lureTick.
+  _armLure() {
+    this._lure = { until: this.t + LURE_SECS, recoverAt: -1, rolled: false, stepped: false };
+    this.stats.lures++;
+    this._footLive = false;
+    this.baitArmed = false;
+    this.current = { ...NEUTRAL };
   }
 
   // 0..1 — how much of recent in-range time the opponent spent blocking.
@@ -799,6 +908,15 @@ export class AiController {
       this.sinceDecision = 1e9;   // decide on this very tick, while they recover
     }
 
+    // ── Lure / whiff-punish, and a held step out ────────────────────────
+    const lureOut = this._lureTick(ctx, effPunishP);
+    if (lureOut) return lureOut;
+    if (this.t < this._stepOutUntil && !this.holdName) {
+      this._footLive = false;
+      this.current = { ...NEUTRAL, move: -1 };
+      return { ...this.current, super: false };
+    }
+
     // ── Reactive defense ────────────────────────────────────────────────
     // Answer a wind-up once it has been visible for reactFloor. ONE roll per
     // swing, not per tick: per-tick rolls compound over a long coil and make
@@ -879,12 +997,16 @@ export class AiController {
       this._stunRolled = false;
     }
 
-    // ── Open-guard coil: punish a player who never blocks ──────────────
-    // Damped by the turtle read — a coil into a held guard is a gift to it.
-    if (ctx.opponentState === 'idle' && inRange
-        && this.rng.random() < this.chargeP * 0.5 * mood.aggro * (1 - Math.min(1, turtle * 2))) {
-      this._remember('charge');
-      return this._loadCharge(0.4, 0.45);
+    // ── Pre-empt a predicted swing ─────────────────────────────────────
+    // Only here, behind the reaction gate, with the opponent not yet swinging, a
+    // confidence past this rung's threshold, a roll and the 10 s cap: a predictor
+    // that always acted would be unbeatable, and a varied player starves it.
+    if (this._predScale > 0 && ctx.opponentState === 'idle' && !ctx.opponentWindup
+        && ctx.distance < ctx.kickRange * 1.4 && this._predBudget()) {
+      const pr = this._prediction();
+      if (pr && SWING.has(pr.sym) && pr.conf >= this._predThr && this.rng.random() < this._predP) {
+        return this._preempt(ctx, pr);
+      }
     }
 
     // ── Out of range: close on this president's own footwork ────────────
@@ -914,63 +1036,65 @@ export class AiController {
       return this._press(ctx, 'punch', this.rng.random() < this.comboP);
     }
 
-    // The attack share is `aggro` × the scoreboard mood, split punch/kick by
-    // kickShare (a low rung throws mostly jabs: a clean kick is a quarter of
-    // the bar); guard and spacing take the rest. Against a turtle, swings give
-    // way to baits and waiting — a held guard stops anything from the front.
-    // A choice taken on both of the last two decisions is damped (_fresh), so
-    // no move is spammed.
+    // ── Utility pick ────────────────────────────────────────────────────
+    // The rung's columns build the base weights: the attack share is `aggro` × the
+    // scoreboard mood (damped against a turtle, whose held guard stops anything
+    // from the front), guard `blockP`, bait `baitP`, coil `chargeP`, punish
+    // `punishP`. tactics.js then reshapes them for the moment and the archetype's
+    // behaviour-tree stance biases the families. A tactic taken on both of the last
+    // two decisions is damped (_fresh), so no move is spammed.
     const atk = Math.min(0.8, 0.6 * this.aggro * mood.aggro
       * (1 - Math.min(0.6, turtle * 1.2 * this.adapt)));
     const guardW = Math.min(0.3, 0.02 + 0.24 * effBlockP * this.adapt + (mood.protect ? 0.15 : 0));
-    const w = {
-      punch: atk * (1 - this.kickShare) * this._fresh('punch'),
-      kick: atk * this.kickShare * this._fresh('kick'),
-      guard: guardW * this._fresh('guard'),
-      space: Math.max(0.15, 1 - atk - guardW) * this._fresh('space'),
+    const base = {
+      attack: atk,
+      guard: guardW * (1 - effBaitP),
+      bait: guardW * effBaitP,
+      space: Math.max(0.15, 1 - atk - guardW),
+      charge: ctx.opponentState === 'idle'
+        ? this.chargeP * 0.5 * mood.aggro * (1 - Math.min(1, turtle * 2)) : 0,
+      punish: effPunishP * 0.4,
     };
-    const total = w.punch + w.kick + w.guard + w.space;
-    let r = this.rng.random() * total;
-    if ((r -= w.punch) < 0) {
-      this._remember('punch');
-      return this._press(ctx, 'punch', this.comboP > 0 && this.rng.random() < this.comboP);
-    }
-    if ((r -= w.kick) < 0) {
-      this._remember('kick');
-      return this._press(ctx, 'kick');
-    }
-    if ((r -= w.guard) < 0) {
-      // A guard with intent — or a bait: start a punch, cancel into block next tick.
-      this._remember('guard');
-      this._footLive = false;
-      if (this.rng.random() < effBaitP) {
-        this.baitArmed = true;
-        this.baitStartedAt = this.t;
-        this.current = { ...NEUTRAL };
-        return { ...this.current, punch: true };
+    const predSwing = this._predSwing();
+    const f = tacticFacts(ctx, mood, predSwing, turtle);
+    const st = chooseStance(this.archetype, f);
+    const scores = scoreTactics(base, ctx, f, st, 0.3 + 0.7 * this.adapt);
+    for (const t of Object.keys(scores)) scores[t] *= this._fresh(t);
+    const pick = pickWeighted(scores, this.rng.random()) || 'circle';
+    this._remember(pick);
+
+    switch (pick) {
+      case 'attack': {
+        if (this.rng.random() < this.kickShare) return this._press(ctx, 'kick');
+        return this._press(ctx, 'punch', this.comboP > 0 && this.rng.random() < this.comboP);
       }
-      // Held for a beat through the reactive-guard machinery, so a swing that
-      // bounces off it is punished the same way (it used to drop on the next
-      // decision tick — under 100 ms at rung 16, too short to stop anything).
-      this._guardSince = this.t;
-      this._guardSloppy = false;
-      this._guardUntil = this.t + 0.3 + this.rng.random() * 0.3;
-      this._stunRolled = false;
-      this.current = { ...NEUTRAL, block: true };
-      return { ...this.current };
+      case 'punish':
+        return this._press(ctx, 'punch', this.rng.random() < this.comboP);
+      case 'charge':
+        return this._loadCharge(0.4, 0.45);
+      case 'bait': return this._bait(ctx, predSwing);
+      case 'guard':
+        // Held for a beat through the reactive-guard machinery, so a swing that
+        // bounces off it is punished the same way.
+        this._footLive = false;
+        this._guardSince = this.t;
+        this._guardSloppy = false;
+        this._guardUntil = this.t + 0.3 + this.rng.random() * 0.3;
+        this._stunRolled = false;
+        this.current = { ...NEUTRAL, block: true };
+        return { ...this.current };
+      default: break;   // retreat | circle: spacing, below
     }
-    // Spacing: the signature walks it; without one, vary it — step out, circle
-    // to an angle, or hold. Protecting a lead, the CPU prefers stepping out.
-    this._remember('space');
+    // Spacing: the signature walks it (layer 3, fixed); without one, retreat steps
+    // out and circle goes to an angle or holds. Protecting a lead prefers stepping out.
     let foot;
     if (this.footwork && !mood.protect) {
       foot = this._footIntent(false);
+    } else if (pick === 'retreat') {
+      foot = { move: -1, side: 0 };
     } else {
-      const s = this.rng.random();
       const orbit = this.rng.random() < 0.5 ? 1 : -1;
-      foot = s < (mood.protect ? 0.6 : 0.35) ? { move: -1, side: 0 }
-        : s < 0.8 ? { move: 0, side: orbit }
-        : { move: 0, side: 0 };
+      foot = this.rng.random() < 0.75 ? { move: 0, side: orbit } : { move: 0, side: 0 };
     }
     this.current = { ...NEUTRAL, move: foot.move, side: foot.side };
     this._footLive = !!this.footwork && !mood.protect;
@@ -978,5 +1102,99 @@ export class AiController {
     return { ...this.current };
   }
 
-  dispose() {}
+  // A bait. The FEINT starts a punch and cancels into guard on the next decision
+  // (the old baitP). When the predictor expects a swing, a LURE is used some of the
+  // time instead: guard down, step out as the swing starts, whiff-punish the spent
+  // swing. Both are the same bait, so baitP stays the one dial.
+  _bait(ctx, predSwing) {
+    this._footLive = false;
+    if (this.level >= 5 && predSwing > 0.25 && this._predBudget()
+        && this.rng.random() < 0.4 + 0.5 * this._predScale) {
+      this._spendPred();
+      this._armLure();
+      return { ...this.current };
+    }
+    this.baitArmed = true;
+    this.baitStartedAt = this.t;
+    this.current = { ...NEUTRAL };
+    return { ...this.current, punch: true };
+  }
+
+  // Act on a confident read of an incoming swing: guard early, step out (and arm
+  // the whiff-punish), or, against a slow kick / coil, jab first.
+  _preempt(ctx, pr) {
+    this._spendPred();
+    this._predPending = this.t + 1.0;
+    const k = this._predScale;
+    const roped = (ctx.backRoom ?? 9) < ROPE_MARGIN + 0.5;
+    const w = pr.sym === 'P'
+      ? { guard: 0.5, out: roped ? 0 : 0.45, counter: 0.05 }
+      : { guard: 0.3, out: roped ? 0 : 0.2, counter: 0.2 + 0.4 * k };
+    let r = this.rng.random() * (w.guard + w.out + w.counter);
+    if ((r -= w.counter) < 0) {
+      this.sinceDecision = 0;
+      return this._press(ctx, 'punch');
+    }
+    if ((r -= w.out) < 0) {
+      this._stepOutUntil = this.t + 0.3;
+      this._armLure();
+      this.current = { ...NEUTRAL, move: -1 };
+      return { ...this.current };
+    }
+    this._guardSince = this.t;
+    this._guardSloppy = false;
+    this._guardUntil = this.t + 0.45;
+    this._stunRolled = false;
+    this._footLive = false;
+    this.current = { ...NEUTRAL, block: true };
+    return { ...this.current };
+  }
+
+  // Runs every tick while a lure is armed. Step out once the swing has been visible
+  // for reactFloor (most of the time; otherwise the normal guard answers it), then
+  // punish the spent swing: one roll, after a short beat, a kick from range or a
+  // punch up close. Returns an intent, or null to let the usual layers run.
+  _lureTick(ctx, effPunishP) {
+    const L = this._lure;
+    if (!L) return null;
+    if (ctx.opponentFloored || this.t > L.until + (L.stepped ? 0.8 : 0)) { this._lure = null; return null; }
+    const seen = this._oppWindupSince >= 0 && (this.t - this._oppWindupSince) >= this.reactFloor;
+    if (!L.stepped && seen && ctx.distance < ctx.kickRange * 1.4) {
+      L.stepped = true;
+      L.until = this.t + 0.5;
+      if (this.rng.random() < 0.75 && (ctx.backRoom ?? 9) > ROPE_MARGIN) {
+        this._windupRolled = true;   // this swing has been answered
+        this._stepOutUntil = this.t + 0.35;
+        this.current = { ...NEUTRAL, move: -1 };
+        return { ...this.current, super: false };
+      }
+      this._lure = null;             // the guard takes it from here
+      return null;
+    }
+    if (L.stepped && ctx.opponentRecover) {
+      if (L.recoverAt < 0) L.recoverAt = this.t;
+      if (!L.rolled && this.t - L.recoverAt >= this.reactFloor * 0.4) {
+        L.rolled = true;
+        if (this.rng.random() < Math.min(0.97, effPunishP + 0.25 * this.adapt)) {
+          this._stepOutUntil = 0;
+          if (ctx.distance < ctx.kickRange * 1.15) {
+            this.stats.lurePunishes++;
+            this._lure = null;
+            this.sinceDecision = 0;
+            const near = ctx.distance < ctx.ownAttacks.punch.reach + 0.25;
+            return this._press(ctx, near ? 'punch' : 'kick', near && this.rng.random() < this.comboP);
+          }
+          // Out of reach: close on the spent swing (the next tick re-checks).
+          L.rolled = false;
+          this.current = { ...NEUTRAL, move: 1 };
+          return { ...this.current, super: false };
+        }
+      }
+    }
+    // Waiting: stand with the guard down and let them swing.
+    if (!L.stepped) { this.current = { ...NEUTRAL }; return { ...this.current, super: false }; }
+    return null;
+  }
+
+  dispose() { this.profile?.save(); }
 }
