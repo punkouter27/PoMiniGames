@@ -1,0 +1,239 @@
+/* ── Living Geopolitics & Diplomacy Web ── */
+.poeco-diplomacy-web {
+    display: flex;
+    flex-direction: column;
+    gap: 0.6rem;
+    margin-top: 0.75rem;
+    background: var(--poeco-glass);
+    border: 1px solid var(--color-border);
+    border-radius: 8px;
+    padding: 0.8rem;
+}
+
+.poeco-diplomacy-canvas-wrap {
+    width: 100%;
+    max-width: 440px;
+    margin: 0 auto;
+    background: color-mix(in srgb, var(--surface-1) 85%, transparent);
+    border-radius: 8px;
+    border: 1px solid var(--color-border);
+    overflow: hidden;
+}
+
+.poeco-diplomacy-svg {
+    width: 100%;
+    height: auto;
+    display: block;
+}
+
+.poeco-diplomacy-detail-card {
+    padding: 0.5rem 0.7rem;
+    background: var(--poeco-glass-strong);
+    border-radius: 6px;
+    border: 1px solid var(--color-border);
+}
+
+.poeco-diplomacy-detail-head {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 0.3rem;
+    font-size: 0.85rem;
+}
+
+.poeco-diplomacy-detail-text {
+    margin: 0;
+    font-size: 0.78rem;
+    color: var(--color-text-secondary);
+    line-height: 1.4;
+}
+
+/* ── Weather chip, sick badge, timeline, field notes, tour, settings ── */
+.poeco-chip-weather { white-space: nowrap; }
+
+.poeco-badge--sick {
+    margin-left: var(--space-1);
+    color: var(--accent-warning-ink);
+    border-color: var(--accent-warning);
+}
+
+.poeco-timeline-controls {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: end;
+    gap: var(--space-3);
+    margin-bottom: var(--space-2);
+}
+
+.poeco-timeline-controls input[type="range"] { width: min(260px, 60vw); }
+
+.poeco-timeline-chart {
+    width: 100%;
+    height: 210px;
+}
+
+.poeco-timeline-grid {
+    stroke: var(--color-border);
+    stroke-width: 0.5;
+    stroke-dasharray: 2 3;
+}
+
+.poeco-timeline-label {
+    fill: var(--color-text-muted);
+    font-size: 9px;
+}
+
+.poeco-timeline-diversity {
+    stroke: var(--poeco-diversity);
+    stroke-dasharray: 5 3;
+    opacity: 0.65;
+}
+
+.poeco-timeline-mark { cursor: pointer; }
+.poeco-timeline-mark line { stroke-width: 1; opacity: 0.55; }
+.poeco-timeline-mark:hover line { opacity: 1; }
+
+.poeco-timeline-mark line,
+.poeco-timeline-mark circle { stroke: var(--mark); fill: var(--mark); }
+
+.poeco-mark--tech { --mark: var(--poeco-mark-tech); }
+.poeco-mark--diplomacy { --mark: var(--poeco-mark-diplomacy); }
+.poeco-mark--weather { --mark: var(--poeco-mark-weather); }
+.poeco-mark--outbreak { --mark: var(--poeco-mark-outbreak); }
+.poeco-mark--extinction { --mark: var(--poeco-mark-extinction); }
+.poeco-mark--variety { --mark: var(--poeco-mark-variety); }
+.poeco-mark--eruption { --mark: var(--poeco-mark-eruption); }
+
+.poeco-timeline-filters {
+    display: flex;
+    flex-wrap: wrap;
+    gap: var(--space-1);
+    margin: var(--space-2) 0;
+}
+
+.poeco-timeline-filters .poeco-pill { border-left: 3px solid var(--mark); }
+.poeco-timeline-filters .poeco-pill:not(.poeco-pill--on) { opacity: 0.5; }
+
+.poeco-timeline-dot {
+    display: inline-block;
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    background: var(--mark);
+    vertical-align: middle;
+}
+
+.poeco-timeline-diversity-key {
+    display: inline-flex;
+    align-items: center;
+    gap: var(--space-1);
+    border-left: 3px dashed var(--poeco-diversity);
+}
+
+.poeco-timeline-selected {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: var(--space-2);
+    font-size: var(--text-sm);
+}
+
+.poeco-timeline-list { max-height: 220px; }
+.poeco-timeline-list li { cursor: default; }
+.poeco-timeline-item--place { cursor: pointer; }
+.poeco-timeline-item--place:hover { color: var(--accent-ink, var(--accent)); }
+
+.poeco-milestone-grid {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+    gap: var(--space-2);
+}
+
+.poeco-milestone {
+    display: grid;
+    grid-template-columns: 2rem 1fr;
+    grid-template-rows: auto auto;
+    column-gap: var(--space-2);
+    padding: var(--space-2);
+    border-radius: var(--radius-md, 10px);
+    border: 1px solid var(--color-border);
+    background: var(--surface-3);
+    opacity: 0.55;
+}
+
+.poeco-milestone--got { opacity: 1; border-color: var(--accent); }
+.poeco-milestone-icon { grid-row: span 2; font-size: 1.4rem; text-align: center; align-self: center; }
+.poeco-milestone-title { font-weight: 600; font-size: var(--text-sm); }
+
+.poeco-tour {
+    position: absolute;
+    left: 50%;
+    bottom: max(var(--space-4), var(--kiosk-clearance, 0px));
+    transform: translateX(-50%);
+    width: min(440px, calc(100vw - 32px));
+    padding: var(--space-3);
+    border-radius: var(--radius-lg, 14px);
+    background: var(--surface-bar);
+    border: 1px solid var(--color-border);
+    box-shadow: 0 6px 24px rgba(0, 0, 0, 0.3);
+    backdrop-filter: blur(12px);
+    -webkit-backdrop-filter: blur(12px);
+    pointer-events: auto;
+    z-index: 25;
+    font-size: var(--text-sm);
+}
+
+.poeco-tour-head { display: flex; align-items: center; gap: var(--space-2); }
+.poeco-tour-step { font-size: var(--text-xs); color: var(--color-text-muted); }
+.poeco-tour-actions { display: flex; align-items: center; justify-content: flex-end; gap: var(--space-2); }
+.poeco-tour-done { color: var(--accent-success-ink); font-weight: 700; }
+
+.poeco-world-actions { display: flex; flex-wrap: wrap; gap: var(--space-2); }
+
+.poeco-bindings { border-collapse: collapse; width: 100%; font-size: var(--text-sm); }
+.poeco-bindings th { text-align: left; font-weight: 500; padding: 2px var(--space-2) 2px 0; }
+.poeco-bindings td { padding: 2px var(--space-1); }
+.poeco-bindings kbd + kbd { margin-left: 2px; }
+
+.poeco-varieties {
+    list-style: none;
+    margin: 0 0 var(--space-2);
+    padding: 0;
+    font-size: var(--text-sm);
+}
+
+.poeco-fieldguide {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
+    gap: var(--space-2);
+}
+
+.poeco-fieldcard {
+    display: grid;
+    grid-template-columns: 72px 1fr;
+    gap: var(--space-2);
+    padding: var(--space-2);
+    border-top: 3px solid var(--color-border);
+    border-radius: var(--radius-md, 10px);
+    background: var(--surface-3);
+    font-size: var(--text-xs);
+}
+
+.poeco-fieldcard img {
+    width: 72px;
+    height: 72px;
+    object-fit: cover;
+    border-radius: var(--radius-sm, 6px);
+}
+
+.poeco-fieldcard h4 { margin: 0 0 2px; font-size: var(--text-sm); }
+.poeco-fieldcard h4 em { font-weight: 400; color: var(--color-text-muted); }
+.poeco-fieldcard p { margin: 0 0 4px; }
+
+@media (max-width: 600px) {
+    .poeco-fieldcard { grid-template-columns: 1fr; }
+    .poeco-fieldcard img { width: 100%; height: 120px; }
+}

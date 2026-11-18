@@ -643,3 +643,8 @@ a.home-card-head:hover .home-card-title { text-decoration: underline; text-under
         min-width: 44px;
     }
 }
+
+/* A thumb needs 44px (Profile B): the heading link was 32px tall on a phone. */
+@media (pointer: coarse) {
+    .home-card-head { min-height: 44px; }
+}

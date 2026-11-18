@@ -56,11 +56,13 @@ test('save then load round-trips exactly', () => {
     assert.equal(loaded.keys.push, 'KeyF');
 });
 
-test('the arrows always steer, whatever the map says', () => {
+test('up and down always move and left and right only turn the camera, whatever the map says', () => {
     const prefs = sanitizePrefs({ keys: { forward: 'KeyI', back: 'KeyK', left: 'KeyJ', right: 'KeyL' } });
     assert.equal(matches(prefs, 'forward', 'KeyI'), true);
     assert.equal(matches(prefs, 'forward', 'ArrowUp'), true);
-    assert.equal(matches(prefs, 'right', 'ArrowRight'), true);
+    assert.equal(matches(prefs, 'back', 'ArrowDown'), true);
+    assert.equal(matches(prefs, 'right', 'ArrowRight'), false, 'ArrowRight turns the camera, it does not strafe');
+    assert.equal(matches(prefs, 'left', 'ArrowLeft'), false, 'ArrowLeft turns the camera, it does not strafe');
     assert.equal(matches(prefs, 'forward', 'KeyW'), false, 'a remap really does unbind the old key');
 });
 

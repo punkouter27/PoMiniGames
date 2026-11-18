@@ -21,6 +21,11 @@
            BackTo="/"
            Fullscreen="true"
            RequiresWebGl="true"
+           GameOver="@_showEnd"
+           GameOverDelayMs="@EndHoldMs"
+           Outcome="@_outcome"
+           GameSummary="@EndSummary"
+           DiagnosticsContent="@StudioPanel"
            Announcement="@_announcement">
     @if (!_introDone)
     {
@@ -32,6 +37,7 @@
                        Mode="@(IsHuman ? GameIntro.IntroMode.OnePlayer : GameIntro.IntroMode.Demo)"
                        DemoDelayMs="4000"
                        Wide="true"
+                       Options="@SetupOptions"
                        DialogLabel="Brawl FFA: sixteen-fighter battle royale"
                        CaptureKeys="false"
                        OnStart="StartAsync" />
@@ -79,12 +85,10 @@
                 <p class="pffa-foot">Season @_dashboard.Season · @_dashboard.Completed / @_dashboard.SeasonRounds rounds<br />@(IsHuman ? "17-player local ratings · separate from CPU seasons" : "Local FFA ratings · separate from 1v1 Elo")</p>
             </aside>
             <div class="pffa-tools">
-                <a href="@(IsHuman ? "/pobrawl/ffa" : "/pobrawl/ffa/play")">@(IsHuman ? "Watch CPU FFA" : "Play as Bob")</a>
                 @if (IsHuman)
                 {
                     <button type="button" @onclick="TogglePauseAsync">@(_paused ? "Resume" : "Pause")</button>
                 }
-                <button type="button" @onclick="ToggleDashboardAsync" aria-expanded="@_dashboardOpen">Seasons &amp; studio</button>
                 <button type="button" @onclick="ToggleMuteAsync" aria-pressed="@Settings.Muted" aria-label="@(Settings.Muted ? "Unmute FFA audio" : "Mute FFA audio")">@(Settings.Muted ? "Sound off" : "Sound on")</button>
             </div>
             <aside class="pffa-broadcast" aria-label="Broadcast coverage">
@@ -115,121 +119,145 @@
                     }
                 }
             </aside>
-            @if (_dashboardOpen)
-            {
-                <section class="pffa-studio @(_studioClosing ? "pffa-studio--closing" : "")" aria-label="FFA seasons and production studio">
-                    <header><h2>FFA seasons &amp; studio</h2><button type="button" @onclick="ToggleDashboardAsync" aria-label="Close studio">Close</button></header>
-                    @if (_workflowError is not null)
-                    {
-                        <p class="pffa-error" role="alert">@_workflowError</p>
-                    }
-                    <p>Season @_dashboard.Season · @_dashboard.Completed / @_dashboard.SeasonRounds rounds · @_dashboard.TotalRounds lifetime matches. Each 20-round season crowns a champion automatically.</p>
-                    <details class="pffa-production">
-                        <summary>Graphics &amp; spatial audio</summary>
-                        <p>Quality-adaptive GPU hit bursts, bloom, contact shading, skin/fabric detail, sweat and round-long wear. Arena haze and light beams are WebGL approximations, not RTX.</p>
-                        <p>Camera-linked binaural impacts and foot friction share the app's volume and mute settings. Reduced motion keeps a steady camera and suppresses bursts and hit flashes.</p>
-                        <p>Mass-aware swept collisions prevent fighters crossing each other or the ring edge. Jointed knockouts settle and retire from the solver; survivors step over them.</p>
-                    </details>
-                    <label>Next-round strategy
-                        <select value="@_dashboard.Profile" @onchange="ChangeProfileAsync">
-                            <option value="balanced">Balanced</option>
-                            <option value="aggressive">Aggressive — faster attacks, hunt weak rivals</option>
-                            <option value="cautious">Cautious — more frequent guarding</option>
-                        </select>
-                    </label>
-                    <small>Active strategy: @_dashboard.ActiveProfile. Changes apply next round; no agent training or paid AI.</small>
-                    <h3>Season standings &amp; lifetime agent stats</h3>
-                    <div class="pffa-table-scroll">
-                        <table>
-                            <caption>Ratings compare each placement against the other @(Roster.Count - 1) fighters; wins and damage are lifetime totals.</caption>
-                            <thead><tr><th>Agent</th><th>Points</th><th>FFA Elo</th><th>Wins</th><th>Avg place</th><th>Damage</th><th>KOs</th><th>Rear hits taken</th></tr></thead>
-                            <tbody>
-                                @foreach (var record in _dashboard.Records)
-                                {
-                                    <tr>
-                                        <th scope="row">@NameOf(record.Id)</th><td>@record.SeasonPoints</td>
-                                        <td>@record.Rating.ToString("F0", CultureInfo.InvariantCulture)</td><td>@record.Wins / @record.Rounds</td>
-                                        <td>@record.AveragePlace.ToString("F1", CultureInfo.InvariantCulture)</td>
-                                        <td><meter min="0" max="@Math.Max(1, _dashboard.Records.Max(r => r.Damage))" value="@record.Damage" aria-label="@($"{NameOf(record.Id)}: {record.Damage} damage")"></meter> @record.Damage</td>
-                                        <td>@record.Knockouts</td><td>@record.RearHitsTaken</td>
-                                    </tr>
-                                }
-                            </tbody>
-                        </table>
-                    </div>
-                    @if (_dashboard.History.Count > 0)
-                    {
-                        <h3>Season champions</h3>
-                        <ul>@foreach (var title in _dashboard.History) { <li>Season @title.Season: @NameOf(title.Champion) (@title.Points points)</li> }</ul>
-                    }
-                    <h3>Repeatable strategy benchmark</h3>
-                    <p>48 simulations: 16 fixed seeds, each president tested once with balanced, aggressive, and cautious behavior against 15 balanced rivals. Uses the real fixed-step combat engine, not live results. No ratings change. The last completed report is saved locally; positive placement gain is better, negative is worse.</p>
-                    <button type="button" disabled="@_dashboard.BenchmarkRunning" @onclick="RunBenchmarkAsync">@(_dashboard.BenchmarkRunning ? "Benchmark running…" : "Run strategy benchmark")</button>
-                    @if (_dashboard.Benchmark is { } benchmark)
-                    {
-                        <progress max="@benchmark.Total" value="@benchmark.Completed" aria-label="Benchmark progress"></progress>
-                        <span>@benchmark.Completed / @benchmark.Total simulations</span>
-                        <div class="pffa-table-scroll">
-                            <table>
-                                <thead><tr><th>Strategy</th><th>Matches</th><th>Wins</th><th>Avg place</th><th>Avg damage</th><th>KOs</th><th>Placement gain vs balanced</th></tr></thead>
-                                <tbody>@foreach (var row in benchmark.Rows) {
-                                    <tr><th>@row.Profile</th><td>@row.Rounds</td><td>@row.Wins</td><td>@row.AveragePlace.ToString("F2", CultureInfo.InvariantCulture)</td><td>@row.AverageDamage.ToString("F0", CultureInfo.InvariantCulture)</td><td>@row.Knockouts</td><td>@row.PlacementGain.ToString("+0.00;-0.00;0.00", CultureInfo.InvariantCulture)</td></tr>
-                                }</tbody>
-                            </table>
-                        </div>
-                    }
-                    <h3>Agent lab · tune, compare, promote</h3>
-                    <p>Every CPU has its own scripted style. Test a new preset against the saved incumbent on eight paired seeds (16 simulations). Only better average placement is promoted, starting next round. No paid AI or machine learning.</p>
-                    <label>President
-                        <select @bind="_agentId" disabled="@_dashboard.BenchmarkRunning">
-                            @foreach (var agent in _dashboard.Agents)
-                            {
-                                <option value="@agent.Id">@agent.Name · @agent.Preset</option>
-                            }
-                        </select>
-                    </label>
-                    <label>Candidate preset
-                        <select @bind="_agentPreset" disabled="@_dashboard.BenchmarkRunning">
-                            <option value="pressure">Pressure</option>
-                            <option value="counter">Counter</option>
-                            <option value="opportunist">Opportunist</option>
-                            <option value="native">Original character style</option>
-                        </select>
-                    </label>
-                    <button type="button" disabled="@_dashboard.BenchmarkRunning" @onclick="EvaluateAgentAsync">Evaluate and promote if better</button>
-                    @if (_dashboard.AgentEvaluation is { } evaluation)
-                    {
-                        <p role="status">@NameOf(evaluation.CharacterId) · @evaluation.CandidatePreset · @evaluation.Status</p>
-                        @if (!_dashboard.BenchmarkRunning)
-                        {
-                            <p>@(evaluation.Promoted ? "PROMOTED next round" : "Incumbent retained") · average place @evaluation.AveragePlace.Candidate.ToString("F2", CultureInfo.InvariantCulture) vs @evaluation.AveragePlace.Incumbent.ToString("F2", CultureInfo.InvariantCulture) · gain @evaluation.PlacementGain.ToString("+0.00;-0.00;0.00", CultureInfo.InvariantCulture)</p>
-                        }
-                    }
-                    <h3>Automatic highlights</h3>
-                    <label><input type="checkbox" checked="@_presentation.Recording.Enabled" disabled="@(!_presentation.Recording.Supported)" @onchange="ToggleRecordingAsync" /> Capture knockout and final-duel clips</label>
-                    <p>@_presentation.Recording.Status</p>
-                    <small>Silent video of the arena. Download before leaving; clips are session-only and bounded to protect memory.</small>
-                    <ul>
-                        @foreach (var clip in _presentation.Recording.Clips)
-                        {
-                            <li><a href="@clip.Url" download="@ClipFileName(clip)" @onclick="DownloadCueAsync">Download @clip.Label</a></li>
-                        }
-                    </ul>
-                    <h3>President fact cards</h3>
-                    <label><input type="checkbox" checked="@_factsEnabled" @onchange="ToggleFactsAsync" /> Show cached Wikidata facts between rounds</label>
-                    <p>@_presentation.Fact.Status</p>
-                    <small>Optional external lookup of public historical facts; no account or gameplay data is sent. Cached locally; failures never block a round.</small>
-                    <h3>Local data</h3>
-                    <p>Seasons and statistics stay in this browser, not the global leaderboard.</p>
-                    <button type="button" @onclick="ResetSeasonsAsync">@(_confirmReset ? "Confirm: erase local seasons and stats" : "Reset local seasons")</button>
-                </section>
-            }
         }
     </div>
 </GameShell>
 
 @code {
     [Parameter] public string? Mode { get; set; }
+    private const int EndHoldMs = 2500;
+
+    private RenderFragment SetupOptions => @<div class="pffa-setup">
+        <label>Strategy
+            <select @bind="_startProfile" @bind:after="ApplyStartProfile">
+                <option value="balanced">Balanced</option>
+                <option value="aggressive">Aggressive: faster attacks, hunt weak rivals</option>
+                <option value="cautious">Cautious: more frequent guarding</option>
+            </select>
+        </label>
+        <p><a href="@(IsHuman ? "/pobrawl/ffa" : "/pobrawl/ffa/play")">@(IsHuman ? "Switch to Watch CPU FFA" : "Switch to Play as Bob")</a></p>
+    </div>;
+
+    private RenderFragment EndSummary => @<section aria-label="Free-for-all result">
+        @if (_endHeadline is not null)
+        {
+            <h3>@_endHeadline</h3>
+        }
+        @if (_endDetail is not null)
+        {
+            <p>@_endDetail</p>
+        }
+    </section>;
+
+    private RenderFragment StudioPanel => @<div>
+        <section class="pffa-studio" aria-label="FFA seasons and production studio">
+            <h2>FFA seasons &amp; studio</h2>
+            @if (_workflowError is not null)
+            {
+                <p class="pffa-error" role="alert">@_workflowError</p>
+            }
+            <p>Season @_dashboard.Season · @_dashboard.Completed / @_dashboard.SeasonRounds rounds · @_dashboard.TotalRounds lifetime matches. Each 20-round season crowns a champion automatically.</p>
+            <details class="pffa-production">
+                <summary>Graphics &amp; spatial audio</summary>
+                <p>Quality-adaptive GPU hit bursts, bloom, contact shading, skin/fabric detail, sweat and round-long wear. Arena haze and light beams are WebGL approximations, not RTX.</p>
+                <p>Camera-linked binaural impacts and foot friction share the app's volume and mute settings. Reduced motion keeps a steady camera and suppresses bursts and hit flashes.</p>
+                <p>Mass-aware swept collisions prevent fighters crossing each other or the ring edge. Jointed knockouts settle and retire from the solver; survivors step over them.</p>
+            </details>
+            <label>Next-round strategy
+                <select value="@_dashboard.Profile" @onchange="ChangeProfileAsync">
+                    <option value="balanced">Balanced</option>
+                    <option value="aggressive">Aggressive — faster attacks, hunt weak rivals</option>
+                    <option value="cautious">Cautious — more frequent guarding</option>
+                </select>
+            </label>
+            <small>Active strategy: @_dashboard.ActiveProfile. Changes apply next round; no agent training or paid AI.</small>
+            <h3>Season standings &amp; lifetime agent stats</h3>
+            <div class="pffa-table-scroll">
+                <table>
+                    <caption>Ratings compare each placement against the other @(Roster.Count - 1) fighters; wins and damage are lifetime totals.</caption>
+                    <thead><tr><th>Agent</th><th>Points</th><th>FFA Elo</th><th>Wins</th><th>Avg place</th><th>Damage</th><th>KOs</th><th>Rear hits taken</th></tr></thead>
+                    <tbody>
+                        @foreach (var record in _dashboard.Records)
+                        {
+                            <tr>
+                                <th scope="row">@NameOf(record.Id)</th><td>@record.SeasonPoints</td>
+                                <td>@record.Rating.ToString("F0", CultureInfo.InvariantCulture)</td><td>@record.Wins / @record.Rounds</td>
+                                <td>@record.AveragePlace.ToString("F1", CultureInfo.InvariantCulture)</td>
+                                <td><meter min="0" max="@Math.Max(1, _dashboard.Records.Max(r => r.Damage))" value="@record.Damage" aria-label="@($"{NameOf(record.Id)}: {record.Damage} damage")"></meter> @record.Damage</td>
+                                <td>@record.Knockouts</td><td>@record.RearHitsTaken</td>
+                            </tr>
+                        }
+                    </tbody>
+                </table>
+            </div>
+            @if (_dashboard.History.Count > 0)
+            {
+                <h3>Season champions</h3>
+                <ul>@foreach (var title in _dashboard.History) { <li>Season @title.Season: @NameOf(title.Champion) (@title.Points points)</li> }</ul>
+            }
+            <h3>Repeatable strategy benchmark</h3>
+            <p>48 simulations: 16 fixed seeds, each president tested once with balanced, aggressive, and cautious behavior against 15 balanced rivals. Uses the real fixed-step combat engine, not live results. No ratings change. The last completed report is saved locally; positive placement gain is better, negative is worse.</p>
+            <button type="button" disabled="@_dashboard.BenchmarkRunning" @onclick="RunBenchmarkAsync">@(_dashboard.BenchmarkRunning ? "Benchmark running…" : "Run strategy benchmark")</button>
+            @if (_dashboard.Benchmark is { } benchmark)
+            {
+                <progress max="@benchmark.Total" value="@benchmark.Completed" aria-label="Benchmark progress"></progress>
+                <span>@benchmark.Completed / @benchmark.Total simulations</span>
+                <div class="pffa-table-scroll">
+                    <table>
+                        <thead><tr><th>Strategy</th><th>Matches</th><th>Wins</th><th>Avg place</th><th>Avg damage</th><th>KOs</th><th>Placement gain vs balanced</th></tr></thead>
+                        <tbody>@foreach (var row in benchmark.Rows) {
+                            <tr><th>@row.Profile</th><td>@row.Rounds</td><td>@row.Wins</td><td>@row.AveragePlace.ToString("F2", CultureInfo.InvariantCulture)</td><td>@row.AverageDamage.ToString("F0", CultureInfo.InvariantCulture)</td><td>@row.Knockouts</td><td>@row.PlacementGain.ToString("+0.00;-0.00;0.00", CultureInfo.InvariantCulture)</td></tr>
+                        }</tbody>
+                    </table>
+                </div>
+            }
+            <h3>Agent lab · tune, compare, promote</h3>
+            <p>Every CPU has its own scripted style. Test a new preset against the saved incumbent on eight paired seeds (16 simulations). Only better average placement is promoted, starting next round. No paid AI or machine learning.</p>
+            <label>President
+                <select @bind="_agentId" disabled="@_dashboard.BenchmarkRunning">
+                    @foreach (var agent in _dashboard.Agents)
+                    {
+                        <option value="@agent.Id">@agent.Name · @agent.Preset</option>
+                    }
+                </select>
+            </label>
+            <label>Candidate preset
+                <select @bind="_agentPreset" disabled="@_dashboard.BenchmarkRunning">
+                    <option value="pressure">Pressure</option>
+                    <option value="counter">Counter</option>
+                    <option value="opportunist">Opportunist</option>
+                    <option value="native">Original character style</option>
+                </select>
+            </label>
+            <button type="button" disabled="@_dashboard.BenchmarkRunning" @onclick="EvaluateAgentAsync">Evaluate and promote if better</button>
+            @if (_dashboard.AgentEvaluation is { } evaluation)
+            {
+                <p role="status">@NameOf(evaluation.CharacterId) · @evaluation.CandidatePreset · @evaluation.Status</p>
+                @if (!_dashboard.BenchmarkRunning)
+                {
+                    <p>@(evaluation.Promoted ? "PROMOTED next round" : "Incumbent retained") · average place @evaluation.AveragePlace.Candidate.ToString("F2", CultureInfo.InvariantCulture) vs @evaluation.AveragePlace.Incumbent.ToString("F2", CultureInfo.InvariantCulture) · gain @evaluation.PlacementGain.ToString("+0.00;-0.00;0.00", CultureInfo.InvariantCulture)</p>
+                }
+            }
+            <h3>Automatic highlights</h3>
+            <label><input type="checkbox" checked="@_presentation.Recording.Enabled" disabled="@(!_presentation.Recording.Supported)" @onchange="ToggleRecordingAsync" /> Capture knockout and final-duel clips</label>
+            <p>@_presentation.Recording.Status</p>
+            <small>Silent video of the arena. Download before leaving; clips are session-only and bounded to protect memory.</small>
+            <ul>
+                @foreach (var clip in _presentation.Recording.Clips)
+                {
+                    <li><a href="@clip.Url" download="@ClipFileName(clip)" @onclick="DownloadCueAsync">Download @clip.Label</a></li>
+                }
+            </ul>
+            <h3>President fact cards</h3>
+            <label><input type="checkbox" checked="@_factsEnabled" @onchange="ToggleFactsAsync" /> Show cached Wikidata facts between rounds</label>
+            <p>@_presentation.Fact.Status</p>
+            <small>Optional external lookup of public historical facts; no account or gameplay data is sent. Cached locally; failures never block a round.</small>
+            <h3>Local data</h3>
+            <p>Seasons and statistics stay in this browser, not the global leaderboard.</p>
+            <button type="button" @onclick="ResetSeasonsAsync">@(_confirmReset ? "Confirm: erase local seasons and stats" : "Reset local seasons")</button>
+        </section>
+    </div>;
+
     private bool IsHuman => Mode == "play";
     private IReadOnlyList<PoBrawlFighter> Roster =>
         IsHuman ? [.. PoBrawlRoster.Fighters, PoBrawlRoster.Bob] : PoBrawlRoster.Fighters;
@@ -258,9 +286,12 @@
     private bool _introDone;
     private bool _disposed;
     private bool _engineLoaded;
-    private bool _dashboardOpen;
-    private bool _studioClosing;
-    private int _studioGeneration;
+    private bool _showEnd;
+    private GameResult _outcome = GameResult.InProgress;
+    private string? _endHeadline;
+    private string? _endDetail;
+    private int _seenTitles = -1;
+    private string _startProfile = "balanced";
     private bool _confirmReset;
     private bool _factsEnabled;
     private bool _paused;
@@ -293,7 +324,8 @@
         _loadedHuman = IsHuman;
         _engineLoaded = false;
         _introDone = false;
-        _dashboardOpen = false;
+        _showEnd = false;
+        _seenTitles = -1;
         _paused = false;
         _replaying = false;
         _champion = null;
@@ -333,6 +365,7 @@
                 human = IsHuman,
                 muted = Settings.Muted,
             });
+            if (_startProfile != "balanced") await CommandAsync("PoBrawl.ffaProfile", _startProfile);
         }
         catch (Exception ex)
         {
@@ -396,6 +429,16 @@
             await GameResults.RecordAsync("pobrawl-ffa", PlayerNameService.GetPlayerName(), Difficulty.Medium,
                 string.Equals(fighterId, "bob", StringComparison.OrdinalIgnoreCase) ? GameResult.Win : GameResult.Loss);
         }
+        if (IsHuman)
+        {
+            var bobWon = string.Equals(fighterId, "bob", StringComparison.OrdinalIgnoreCase);
+            _outcome = bobWon ? GameResult.Win : GameResult.Loss;
+            _endHeadline = bobWon ? "You win the free-for-all" : $"{NameOf(fighterId)} wins Round {_round}";
+            _endDetail = bobWon ? "Bob is the last fighter standing." : $"Bob placed #{_places.GetValueOrDefault("bob", Roster.Count)} of {Roster.Count}.";
+            // Hold the next round behind the end card; the engine resumes it when unpaused.
+            await CommandAsync("PoBrawl.ffaPause", true);
+            _showEnd = true;
+        }
         await InvokeAsync(StateHasChanged);
     }
 
@@ -405,25 +448,8 @@
     private static string ClipFileName(FfaClip clip) =>
         $"pobrawl-ffa-highlight-{clip.Id}.{(clip.MimeType.Contains("mp4", StringComparison.OrdinalIgnoreCase) ? "mp4" : "webm")}";
 
-    private async Task ToggleDashboardAsync()
-    {
-        if (IsHuman && !_dashboardOpen) await CommandAsync("PoBrawl.ffaPause", true);
-        _confirmReset = false;
-        var generation = ++_studioGeneration;
-        await CommandAsync("PoBrawl.ffaClick", _dashboardOpen ? "close" : "open");
-        if (_dashboardOpen)
-        {
-            _studioClosing = true;
-            await Task.Delay(160);
-            if (_disposed || generation != _studioGeneration) return;
-            _dashboardOpen = false;
-        }
-        else
-        {
-            _dashboardOpen = true;
-        }
-        _studioClosing = false;
-    }
+    private Task ApplyStartProfile() =>
+        _engineLoaded ? CommandAsync("PoBrawl.ffaProfile", _startProfile) : Task.CompletedTask;
 
     private async Task ToggleMuteAsync()
     {
@@ -490,6 +516,16 @@
         _dashboard = JsonSerializer.Deserialize(json, PoBrawlFfaJsonContext.Default.FfaDashboard)
             ?? throw new JsonException("Missing FFA dashboard state.");
         _factsEnabled = _dashboard.FactsEnabled;
+        var titles = _dashboard.History.Count;
+        if (_seenTitles >= 0 && titles > _seenTitles && !IsHuman)
+        {
+            var title = _dashboard.History[^1];
+            _outcome = GameResult.Draw;
+            _endHeadline = $"{NameOf(title.Champion)} wins Season {title.Season}";
+            _endDetail = $"{title.Points} points over {_dashboard.SeasonRounds} rounds.";
+            _showEnd = true;
+        }
+        _seenTitles = titles;
         return InvokeAsync(StateHasChanged);
     }
 

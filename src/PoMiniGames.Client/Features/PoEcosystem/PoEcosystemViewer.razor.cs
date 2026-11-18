@@ -253,6 +253,7 @@ public partial class PoEcosystemViewer : ComponentBase, IAsyncDisposable
         foreach (var rule in _alerts.Observe(stats))
         {
             Toasts.Show($"🔔 {rule.Describe()}", ToastType.Warning);
+            _liveNote = $"Alert: {rule.Describe()}";
             _ = Feedback.CrystalPingAsync().AsTask();
         }
         RenderStats();
@@ -296,6 +297,8 @@ public partial class PoEcosystemViewer : ComponentBase, IAsyncDisposable
     /// line under the status chip (render/chronicle.js), not toasts stacked in the corner on
     /// top of the chronicle card for the same moment.
     /// </summary>
+    private string _liveNote = string.Empty;
+
     private void Ticker(string text) => _ = Interop.TickerAsync(text).AsTask();
 
     /// <summary>A field note was witnessed: a line on the ticker and a soft chime, never more.</summary>
@@ -304,6 +307,7 @@ public partial class PoEcosystemViewer : ComponentBase, IAsyncDisposable
         foreach (var m in notes)
         {
             Ticker($"{m.Icon} Field note: {m.Title} — {m.What}");
+            _liveNote = $"Field note: {m.Title}. {m.What}";
             _ = Feedback.CrystalPingAsync().AsTask();
         }
     }

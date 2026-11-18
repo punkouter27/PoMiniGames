@@ -17,8 +17,8 @@ the 2026-08-18 cleanup (they referenced files that no longer exist and had no ca
 
 | Script | Purpose | Called from |
 |---|---|---|
-| `ci-checks.ps1` | Local gate: CSS lint, test ceilings, Bicep build, JS engine tests | humans (no longer called by `deploy.yml`) |
-| `ci-package.ps1` | Adds the docs suite to the publish folder | `deploy.yml` |
+| `ci-checks.ps1` | Local gate: format, Bicep build, CSS lint, test ceilings, JS lint, JS engine tests, WASM trim audit | humans (no longer called by `deploy.yml`) |
+| `ci-package.ps1` | Adds the dated docs suite to the publish folder when `docs/` exists (skips with a warning otherwise) | `deploy.yml` |
 | `pre-deploy.ps1` | Clears stale Kudu files on the Windows App Service | `deploy.yml` |
 | `post-deploy-smoke.ps1` | Probes the live site: `/api/health/ping`, `/api/health`, and asserts `/api/diag` answers 200 with no secret or address in it | humans, `-BaseUrl` (no longer called by `deploy.yml`) |
 
@@ -26,7 +26,8 @@ the 2026-08-18 cleanup (they referenced files that no longer exist and had no ca
 
 | Script | Purpose | Notes |
 |---|---|---|
-| `css-lint.ps1` | Structural check of every stylesheet (unterminated comments, unbalanced braces) | Run after any scripted CSS edit |
+| `css-lint.ps1` | Structural check of every stylesheet (unterminated comments, unbalanced braces) plus a ratchet on hard-coded hex colours outside `po-tokens.css` (the baseline can only go down) | Run after any scripted CSS edit |
+| `js-lint/` | ESLint with correctness rules only (`no-undef`, duplicate keys, unreachable code) over `wwwroot/js` | `npm ci --prefix scripts/ci/js-lint && npm run lint --prefix scripts/ci/js-lint` |
 | `test-ceilings.ps1` | The four test-method budget guards, without Docker or browsers | `-NoBuild` skips the build |
 | `ensure-azure-access.ps1` | Idempotent role assignments for the app identity and the OIDC deploy app | Every permission the app or CI needs must be added here — a role granted by hand is lost on the next re-provision |
 

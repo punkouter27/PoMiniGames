@@ -31,8 +31,16 @@
     <aside id="game-diagnostics" class="gps-debug" role="region" aria-label="Game diagnostics" data-glass>
         <header class="gps-debug-head">
             <span class="gps-debug-title">Diagnostics</span>
+            @* The separate developer window (debug-window.html): the same numbers, live, in a
+               window of its own that stays up while you play. *@
+            <button type="button" class="gps-debug-close" aria-label="Open diagnostics in a separate window"
+                    title="Pop out" @onclick="PopOutAsync">
+                <span class="material-symbols-outlined" aria-hidden="true">open_in_new</span>
+            </button>
             <button type="button" class="gps-debug-close" aria-label="Close diagnostics"
-                    title="Close (Esc)" @onclick="ToggleAsync">✕</button>
+                    title="Close (Esc)" @onclick="ToggleAsync">
+                <span class="material-symbols-outlined" aria-hidden="true">close</span>
+            </button>
         </header>
 
         <dl class="gps-debug-grid">
@@ -107,6 +115,25 @@
     private bool _wired;
     private Task ToggleAsync() => JS.InvokeVoidAsync("poGameDebug.toggle").AsTask();
 
+    private async Task PopOutAsync()
+    {
+        await PushInfoAsync();
+        try { await JS.InvokeAsync<bool>("poGameDebug.popout"); }
+        catch (JSException ex) { Logger.LogWarning(ex, "Could not open the diagnostics window"); }
+    }
+
+    /// <summary>The rows only .NET knows (game key, the page's Diagnostics items), for the pop-out.</summary>
+    private async Task PushInfoAsync()
+    {
+        if (!_wired) return;
+        try
+        {
+            var items = (Items ?? []).Select(i => new DetailDto { label = i.Label, value = i.Value }).ToArray();
+            await JS.InvokeVoidAsync("poGameDebug.setInfo", GameKey, items);
+        }
+        catch (JSException ex) { Logger.LogWarning(ex, "Could not share game diagnostics"); }
+    }
+
     private bool _hasSample;
     private double _fps;
     private double _frameMs;
@@ -128,6 +155,7 @@
             _module ??= await JS.InvokeAsync<IJSObjectReference>("import", "./js/platform/game-debug.js");
             _ref ??= DotNetObjectReference.Create(this);
             await JS.InvokeVoidAsync("poGameDebug.start", _ref);
+            await PushInfoAsync();
         }
         catch (JSException ex)
         {
@@ -141,7 +169,7 @@
     {
         _open = open;
         if (!open) _hasSample = false;
-        if (open) await ReadEnvAsync();
+        if (open) { await ReadEnvAsync(); await PushInfoAsync(); }
         StateHasChanged();
     }
 

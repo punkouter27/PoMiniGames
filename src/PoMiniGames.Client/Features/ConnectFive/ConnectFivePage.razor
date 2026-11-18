@@ -76,7 +76,11 @@
         </div>
         @* Hover-ghost: pointerleave on the board clears the column preview so
            the ghost disc never sticks when the cursor exits the grid. *@
-        <div class="cf-board" role="grid" aria-label="Connect Five game board"
+        <div class="cf-board" role="grid" aria-label="Connect Five game board. Left and right arrows pick a column, Enter, Space or Down arrow drops a disc."
+             tabindex="@(_gameResult == GameResult.InProgress && PlayMode != "demo" ? 0 : -1)"
+             @onkeydown="HandleBoardKey"
+             @onkeydown:preventDefault="_boardKeyHandled"
+             @onfocus="BoardFocused"
              @onpointerleave="ClearHover">
             @* role="grid" requires role="row" between it and its gridcells.
                `display: contents` keeps all 81 cells as
@@ -104,13 +108,10 @@
                     var ghostKey = GhostRenderKey(col, row, CanPreview);
                     var isGhost = piece == Piece.None && CanPreview && col == _hoverCol && row == _hoverTargetRow && ghostKey >= 0;
 
-                    <div class="cf-cell @GetPieceClass(piece) @(winCellClass) @(_gameResult != GameResult.InProgress ? "disabled" : "")"
+                    <div class="cf-cell @GetPieceClass(piece) @(winCellClass) @(row == 0 && col == _kbCol && CanPreview ? "cf-cell--cursor" : "") @(_gameResult != GameResult.InProgress ? "disabled" : "")"
                          style="@(isWinCell ? $"--win-i: {winIndex};" : null)"
                          @onclick="() => HandleDrop(col)"
-                         @onkeydown="e => HandleDropKey(e, col)"
-                         @onfocus="() => SetHover(col)"
                          @onpointerenter="() => SetHover(col)"
-                         tabindex="@(row == 0 && _gameResult == GameResult.InProgress ? 0 : -1)"
                          role="gridcell"
                          aria-colindex="@(col + 1)"
                          aria-label="@GetPieceAriaLabel(piece)">
@@ -193,6 +194,7 @@
         GameResult.Loss => PlayMode == "ai" ? "You lose." : "Yellow wins.",
         GameResult.Draw => "It's a draw.",
         _ when _isAiTurn => "Opponent is thinking.",
+        _ when _kbCol >= 0 => $"Your turn. Column {_kbCol + 1} of {ConnectFiveBoard.Cols} selected.",
         _ => "Your turn.",
     };
 
@@ -406,7 +408,7 @@
         </div>,
         _ => @<div>
             <ul>
-                <li>Click a column, or use the touch controls to choose a column and drop your disc</li>
+                <li>Mouse or touch: click a column, or use the on-screen arrows and Drop button. Keyboard: Tab to the board, then Left/Right arrows pick a column and Enter, Space or Down drops your disc</li>
                 <li>The CPU is matched to your ELO: win and it gets stronger, lose and it eases off</li>
                 <li>Your rating and the CPU's show in the header — climb as high as you can</li>
             </ul>
@@ -690,8 +692,33 @@
     }
 
     // The top cell of each column is a tab stop; Enter or Space drops a disc there.
-    private Task HandleDropKey(KeyboardEventArgs e, int col) =>
-        e.Key is "Enter" or " " ? HandleDrop(col) : Task.CompletedTask;
+    // Keyboard column cursor: Left/Right move it, Enter/Space/Down drop in it.
+    private int _kbCol = -1;
+    private bool _boardKeyHandled;
+
+    private void BoardFocused()
+    {
+        if (!CanPreview) return;
+        if (_kbCol < 0) _kbCol = _touchColumn;
+        SetHover(_kbCol);
+    }
+
+    private async Task HandleBoardKey(KeyboardEventArgs e)
+    {
+        _boardKeyHandled = e.Key is "ArrowLeft" or "ArrowRight" or "ArrowDown" or "Enter" or " ";
+        if (!_boardKeyHandled || PlayMode == "demo" || _gameResult != GameResult.InProgress) return;
+        if (_kbCol < 0) _kbCol = _touchColumn;
+        if (e.Key is "ArrowLeft" or "ArrowRight")
+        {
+            _kbCol = Math.Clamp(_kbCol + (e.Key == "ArrowLeft" ? -1 : 1), 0, ConnectFiveBoard.Cols - 1);
+            _touchColumn = _kbCol;
+            _hoverCol = _kbCol;
+            _lastGhostRenderKey = -1;
+            return;
+        }
+        await HandleDrop(_kbCol);
+        if (CanPreview) { _hoverCol = _kbCol; _lastGhostRenderKey = -1; }
+    }
 
     private async Task HandleDrop(int col)
     {

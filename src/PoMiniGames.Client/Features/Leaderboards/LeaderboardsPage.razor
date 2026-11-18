@@ -185,12 +185,43 @@
 
                         @if (rest.Count > 0)
                         {
-                            <ol class="lb-list" start="4" aria-label="@($"{board.Title} places 4 to {rows.Count}, scored by {board.Unit}")">
-                                @foreach (var e in rest)
-                                {
-                                    @RankCard(board, e)
-                                }
-                            </ol>
+                            @* Places 4 and down are a table, so Radzen's grid carries them. The
+                               grid loads with the theme (_radzenReady); the player's own row is
+                               marked by RowRender and keeps the data-lb-me anchor the rank-change
+                               burst fires from. *@
+                            @if (_radzenReady)
+                            {
+                                <RadzenDataGrid Data="@rest" TItem="LeaderboardEntryDto" Density="Density.Compact"
+                                                AllowSorting="false" AllowPaging="false"
+                                                RowRender="@(a => MarkMe(board, a))" class="lb-grid"
+                                                aria-label="@($"{board.Title} places 4 to {rows.Count}, scored by {board.Unit}")">
+                                    <Columns>
+                                        <RadzenDataGridColumn TItem="LeaderboardEntryDto" Title="#" Width="56px" TextAlign="TextAlign.Center">
+                                            <Template Context="e"><span class="lb-card__rank">@e.Rank</span></Template>
+                                        </RadzenDataGridColumn>
+                                        <RadzenDataGridColumn TItem="LeaderboardEntryDto" Title="Player">
+                                            <Template Context="e">
+                                                <span class="lb-card__avatar" aria-hidden="true">@Initial(e.Name)</span>
+                                                <span class="lb-card__name">
+                                                    <span class="lb-card__name-text">@LeaderboardNames.Pretty(e.Name)</span>
+                                                    @* How far up the board this score is, as a bar. Decorative: the
+                                                       number beside it is the value. *@
+                                                    <span class="lb-card__bar" aria-hidden="true">
+                                                        <span class="lb-card__bar-fill" style="width: @($"{BarPercent(board, e)}%")"></span>
+                                                    </span>
+                                                </span>
+                                            </Template>
+                                        </RadzenDataGridColumn>
+                                        <RadzenDataGridColumn TItem="LeaderboardEntryDto" Title="@board.Unit" Width="120px" TextAlign="TextAlign.Right">
+                                            <Template Context="e"><span class="lb-card__value">@e.DisplayValue</span></Template>
+                                        </RadzenDataGridColumn>
+                                    </Columns>
+                                </RadzenDataGrid>
+                            }
+                            else
+                            {
+                                <p class="lb-board-empty" role="status">Loading…</p>
+                            }
                         }
 
                         @if (!searching && _myRow.GetValueOrDefault(board.GameKey) is { } mine)
@@ -242,6 +273,15 @@
                 <span class="lb-podium__value">@e.DisplayValue</span>
             </div>
         </li>;
+
+    private void MarkMe(GameLeaderboardDto board, RowRenderEventArgs<LeaderboardEntryDto> args)
+    {
+        if (args.Data is { } e && IsMe(e.Name))
+        {
+            args.Attributes["class"] = "lb-row-me";
+            args.Attributes["data-lb-me"] = board.GameKey;
+        }
+    }
 
     private RenderFragment RankCard(GameLeaderboardDto board, LeaderboardEntryDto e) =>
         @<li class="lb-card @(IsMe(e.Name) ? "lb-card--me" : null)"

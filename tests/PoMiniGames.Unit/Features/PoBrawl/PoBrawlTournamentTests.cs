@@ -48,6 +48,8 @@ public sealed class PoBrawlTournamentTests
         typeof(PoBrawlFfaPage).GetProperty("Mode")!.SetValue(page, "play");
         typeof(PoBrawlFfaPage).GetProperty("PlayerNameService", System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic)!.SetValue(page, names);
         typeof(PoBrawlFfaPage).GetProperty("GameResults", System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic)!.SetValue(page, results);
+        // The human champion pauses the engine behind the end card, which goes through JS interop.
+        typeof(PoBrawlFfaPage).GetProperty("JSRuntime", System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic)!.SetValue(page, new NoJs());
         renderer.Attach(page);
 
         await renderer.Dispatcher.InvokeAsync(async () =>

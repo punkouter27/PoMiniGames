@@ -82,7 +82,7 @@
                     title="Player 1 Initials & Menu">
                 <span class="gl-account-initial" aria-hidden="true">P1</span>
                 <span class="gl-account-name gl-arcade-initials" aria-hidden="true">[@PlayerNames.Initials]</span>
-                <span class="gl-account-caret" aria-hidden="true">▾</span>
+                <span class="material-symbols-outlined gl-account-caret" aria-hidden="true">expand_more</span>
             </button>
             <div id="gl-account-menu" popover="auto" class="gl-overflow-panel"
                  role="menu" aria-label="Player Menu">
@@ -103,12 +103,6 @@
                         <span>@label</span>
                     </button>
                 }
-                <button type="button" class="gl-overflow-item gl-overflow-item--sep" role="menuitem"
-                        popovertarget="gl-account-menu" popovertargetaction="hide"
-                        @onclick='() => GoTo("/diag")'>
-                    <span class="material-symbols-outlined gl-overflow-icon" aria-hidden="true">monitor_heart</span>
-                    <span>Status</span>
-                </button>
             </div>
             @* The one settings control (Po standard): a gear, last on the right. It opens the
                settings sheet in place, so a game keeps running underneath; /settings is the
@@ -142,7 +136,7 @@
                     {
                         <button class="toast-action" @onclick="() => RunToastAction(toast)">@toast.ActionLabel</button>
                     }
-                    <button class="toast-close" @onclick="() => ToastService.Dismiss(toast.Id)" aria-label="Dismiss">×</button>
+                    <button class="toast-close" @onclick="() => ToastService.Dismiss(toast.Id)" aria-label="Dismiss"><span class="material-symbols-outlined" aria-hidden="true">close</span></button>
                 </div>
             }
         </div>
@@ -178,9 +172,8 @@
     private string _connectivityAnnouncement = "";
     private bool _announcedOffline;
 
-    // The account menu's page destinations that the phone BottomNav also carries (so the
-    // menu shows them on wide screens only). Status follows on every width; settings is
-    // the header gear.
+    // The account menu's page destinations, in order, with the glyph each one shows.
+    // Settings is the gear beside the menu, not an item in it.
     private static readonly (string Path, string Label, string Icon)[] MenuPages =
     [
         ("/profile", "My Stats", "person"),

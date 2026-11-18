@@ -30,6 +30,7 @@ public sealed class DiagProjectionTests
     [InlineData("environment", "Production")]
     [InlineData("stores[0].error", "InvalidOperationException")]
     [InlineData("services[0].status", "Healthy")]
+    [InlineData("containers[0].name", "poecosystem-worlds")]
     public void Report_CarriesTheContractedFields(string path, string expected)
     {
         using var doc = JsonDocument.Parse(SerializeReport());

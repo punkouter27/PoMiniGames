@@ -12,7 +12,7 @@
 <GameShell Title="@TitleContent" Player="@_playerName" BackTo="/" Fullscreen="true" RequiresWebGl="true"
            GameOver="@(_phase == Phase.Finished && Mode != GameMode.Demo)" GameKey="@BoardKey"
            Outcome="@ResultsOutcome" NewBest="@_isPersonalBest"
-           GameSummary="@ResultsContent" GameActions="@ResultActions"
+           GameSummary="@ResultsContent"
            Loading="@(_phase == Phase.Loading)" LoadingLabel="Building the track…">
     <div class="pocabinet-root">
         @if (_phase is Phase.Start or Phase.Lobby && _loaded)
@@ -35,6 +35,10 @@
                                Options="@OptionsContent"
                                Mode="@(Mode == GameMode.Demo ? GameIntro.IntroMode.Demo : GameIntro.IntroMode.OnePlayer)"
                                Wide="@(Mode == GameMode.OnePlayer)"
+                               Maps="@(Mode == GameMode.OnePlayer ? TrackMaps : null)"
+                               MapLabel="Track"
+                               MapId="@_trackId"
+                               MapIdChanged="OnTrackChanged"
                                OnStart="StartRaceAsync" />
                 </div>
             }
@@ -202,7 +206,7 @@
                                    spectators. A driver taps twice (the first tap arms it). *@
                                 <button type="button" class="pocabinet-iconbtn" @onclick="LeaveWireRaceAsync"
                                         aria-label="@(_confirmLeave ? "Tap again to leave the race" : "Leave race")"
-                                        title="Leave the race and go back to the lobby">@(_confirmLeave ? "Leave?" : "✕")</button>
+                                        title="Leave the race and go back to the lobby">@if (_confirmLeave) { <text>Leave?</text> } else { <span class="material-symbols-outlined" aria-hidden="true">close</span> }</button>
                             }
                         </span>
                         @* Screen-reader channel: laps, places, officials' radio lines, the finish. *@
@@ -272,7 +276,9 @@
 </GameShell>
 
 @code {
-    private RenderFragment ResultActions => @<button type="button" class="app-btn app-btn--secondary" @onclick="RaceAgainAsync">@(IsMultiplayerMode ? "Back to lobby" : "Race again")</button>;
+    // The track: the start card's dropdown beside OK (owner rule), every track and today's Daily.
+    private static IReadOnlyList<IntroMap> TrackMaps =>
+        [.. PoCabinetCatalog.Tracks.Append(PoCabinetCatalog.Today(DateTime.UtcNow)).Select(t => new IntroMap(t.Id, t.Name))];
     // One line, for the device in hand (.keys-only / .touch-only, game-shell.css). It used to be
     // two bullets for every device, and the settings panel repeated the keyboard line.
     private RenderFragment ControlsContent => Mode == GameMode.Demo
@@ -310,7 +316,7 @@
     // panels are in the drawer, from the pause card. Otherwise only a failed start says so here.
     private RenderFragment? OptionsContent => Mode == GameMode.OnePlayer
         ? @<div class="pocabinet-start">
-            <PoCabinetPreRace TrackId="@_trackId" TrackIdChanged="OnTrackChanged"
+            <PoCabinetPreRace TrackId="@_trackId"
                               Settings="Settings" SettingsChanged="OnSettingsChangedAsync"
                               Color="@_color" PaintChanged="OnPaintChanged"
                               Livery="@_livery" LiveryChanged="OnLiveryChanged" />

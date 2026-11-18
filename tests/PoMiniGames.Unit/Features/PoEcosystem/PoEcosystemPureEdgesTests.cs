@@ -18,6 +18,7 @@ public sealed class PoEcosystemPureEdgesTests
     [InlineData("contracts")]
     [InlineData("wager")]
     [InlineData("alerts")]
+    [InlineData("coupleAnswerValidation")]
     public void Ecosystem_PureEdges_HoldTheirContracts(string edge)
     {
         switch (edge)
@@ -106,6 +107,17 @@ public sealed class PoEcosystemPureEdgesTests
                     (book.Record.Points - before.Points).Should().Be(extinct.Points, "one right, one wrong");
                     (book.Record.Right - before.Right).Should().Be(1);
                     (book.Record.Settled - before.Settled).Should().Be(2);
+                    break;
+                }
+            case "coupleAnswerValidation":
+                {
+                    var v = new PoMiniGames.Shared.Validation.CoupleAnswerInputValidator();
+                    static PoMiniGames.Shared.Validation.CoupleAnswerInput In(string a) => new() { Answer = a };
+                    v.Validate(In("pizza")).IsValid.Should().BeTrue();
+                    v.Validate(In("")).IsValid.Should().BeFalse("empty is not an answer");
+                    v.Validate(In("   ")).IsValid.Should().BeFalse("whitespace is not an answer");
+                    v.Validate(In(new string('a', 61))).IsValid.Should().BeFalse("over the 60 character cap");
+                    v.Validate(In("ab")).IsValid.Should().BeFalse("control characters are refused");
                     break;
                 }
             case "alerts":

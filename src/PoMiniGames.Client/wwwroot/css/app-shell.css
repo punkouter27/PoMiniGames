@@ -131,7 +131,7 @@
     text-overflow: ellipsis;
 }
 
-.gl-account-caret { font-size: 0.7em; }
+.gl-account-caret { font-size: 1.1em; line-height: 1; }
 
 /* Wide screens show the name; the initial is the narrow-phone form (below). */
 .gl-account-initial { display: none; }
@@ -439,10 +439,31 @@
     .gl-overflow-item {
         min-height: 44px;
     }
+    /* In a game the phone hides the title, leaving a 22px-wide logo: widen the target. */
+    .gl-brand { min-width: 44px; justify-content: center; }
     @media (max-width: 420px) {
         .gl-account-trigger {
             width: 2.75rem;
             height: 2.75rem;
         }
+    }
+}
+
+/* -- Settings: the one gear (.po-header__settings, po-tokens.css), upper right on every page.
+   Phones keep the 44px touch floor. */
+@media (pointer: coarse) {
+    .po-header__settings { width: 2.75rem; height: 2.75rem; }
+}
+
+/* The title, upper left on every page: a phone used to show only the logo. It still steps
+   aside while a game is up, because the game's own title fills the middle of the bar then. */
+@media (max-width: 480px) {
+    .gl-top-bar:not(:has(.gl-top-bar-game > *)) .gl-brand-text {
+        position: static;
+        width: auto;
+        height: auto;
+        overflow: visible;
+        clip-path: none;
+        font-size: 1rem;
     }
 }

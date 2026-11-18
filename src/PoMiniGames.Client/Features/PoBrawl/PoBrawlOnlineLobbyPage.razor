@@ -66,7 +66,7 @@ else
                             <span class="pb-select-who">You</span>
                             <span class="pb-select-plate">
                                 <span class="pb-select-pick">@FighterName(MyFighterId)</span>
-                                <span class="pb-select-state">@(MyReady ? "✓ Ready" : "Ready up")</span>
+                                <span class="pb-select-state">@if (MyReady) { <span class="material-symbols-outlined" aria-hidden="true">check</span> }@(MyReady ? "Ready" : "Ready up")</span>
                             </span>
                             @if (MyReady)
                             {
@@ -79,7 +79,7 @@ else
                             <span class="pb-select-who">@(Opponent is { } who ? LeaderboardNames.Pretty(who.DisplayName) : "Opponent")</span>
                             <span class="pb-select-plate">
                                 <span class="pb-select-pick">@(Opponent is { } o ? FighterName(o.Fighter.Id) : "Waiting…")</span>
-                                <span class="pb-select-state">@(Opponent is null ? "Seat open" : Opponent.IsReady ? "✓ Ready" : "Picking")</span>
+                                <span class="pb-select-state">@if (Opponent?.IsReady == true) { <span class="material-symbols-outlined" aria-hidden="true">check</span> }@(Opponent is null ? "Seat open" : Opponent.IsReady ? "Ready" : "Picking")</span>
                             </span>
                             @if (Opponent?.IsReady == true)
                             {

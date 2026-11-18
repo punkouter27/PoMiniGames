@@ -35,6 +35,10 @@
                            Options="@(_mode == RaceMode.Solo ? SoloSetup : StartError)"
                            Mode="@(IsDemo ? GameIntro.IntroMode.Demo : GameIntro.IntroMode.OnePlayer)"
                            Wide="@(_mode == RaceMode.Solo)"
+                           Maps="@(_mode == RaceMode.Solo ? TrackMaps : null)"
+                           MapLabel="Track"
+                           MapId="@_selectedTrackId"
+                           MapIdChanged="SelectTrack"
                            OnStart="OnIntroStartAsync" />
             </div>
         }
@@ -145,10 +149,13 @@
         <li>Rivals drive in character: bruisers lean on you, late brakers dive in, cautious ones lift.</li>
     </ul>;
 
+    // The track: the start card's dropdown beside OK (owner rule), your best lap beside each name.
+    private IReadOnlyList<IntroMap> TrackMaps => [.. PoRacerCatalog.Tracks.Select(t =>
+        new IntroMap(t.Id, _bests.TryGetValue(t.Id, out var best) && best > 0 ? $"{t.Name} · best {best:0.00}s" : t.Name))];
+
     // The solo race's choices, in the card's Options slot. .racer-card keeps them on the
     // Racer palette (the track cards and paint chips are drawn for a dark panel).
     private RenderFragment SoloSetup => @<div class="racer-card racer-setup">
-        <PoRacerTrackSelector SelectedTrackId="@_selectedTrackId" SelectedTrackIdChanged="SelectTrack" Bests="_bests" Compact="true" />
         <div class="racer-options">
             <div class="racer-chips" role="radiogroup" aria-label="Race">
                 <span class="racer-chips-label">Race</span>

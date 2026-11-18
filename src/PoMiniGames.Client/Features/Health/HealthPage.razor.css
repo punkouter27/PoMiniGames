@@ -11,15 +11,7 @@
 /* Reserved before the report lands, so the result does not push the page around. */
 .dg-body { min-height: 16rem; display: grid; gap: var(--space-4); align-content: start; }
 
-.dg-loading {
-    display: flex;
-    align-items: center;
-    gap: var(--space-2);
-    padding: var(--space-4) 0;
-    color: var(--color-text-secondary);
-}
-
-.dg-section { margin-top: var(--space-2); }
+.dg-section { margin-top: var(--space-4); }
 
 .dg-h2 {
     margin: 0 0 var(--space-2);
@@ -72,7 +64,13 @@
     color: var(--color-text-secondary);
 }
 
-.dg-empty { color: var(--color-text-secondary); font-size: 0.875rem; }
+.dg-body ::deep .dg-res { padding: var(--space-1) 0; }
+.dg-body ::deep .dg-route { font-size: 0.75rem; color: var(--color-text-secondary); overflow-wrap: anywhere; }
+
+/* Touch: the Refresh button reaches the 44px target. */
+@media (pointer: coarse) {
+    .dg ::deep .rz-button { min-height: 44px; min-width: 44px; }
+}
 
 .dg-facts {
     display: grid;

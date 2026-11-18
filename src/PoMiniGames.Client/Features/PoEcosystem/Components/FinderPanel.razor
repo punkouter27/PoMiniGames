@@ -7,7 +7,7 @@
     <div class="poeco-finder-head">
         <input @ref="_input" type="search" class="poeco-finder-input" placeholder="Name or species…" autocomplete="off" spellcheck="false"
                aria-label="Name or species" value="@_text" @oninput="OnInput" />
-        <button type="button" class="poeco-icon-btn" @onclick="OnClose" aria-label="Close the finder">✕</button>
+        <button type="button" class="poeco-icon-btn" @onclick="OnClose" aria-label="Close the finder"><span class="material-symbols-outlined" aria-hidden="true">close</span></button>
     </div>
     <div class="poeco-finder-sorts" role="group" aria-label="Order by">
         @foreach (var (id, label) in Sorts)
@@ -39,7 +39,10 @@
         }
         @if (Results.Count == 0 && MatchingTribes.Count == 0)
         {
-            <li class="poeco-note">@(_asked ? "Nobody alive matches." : "Searching…")</li>
+            <li>
+                @if (_asked) { <EmptyState Title="Nobody alive matches" /> }
+                else { <LoadingState Label="Searching…" /> }
+            </li>
         }
     </ul>
     <p class="poeco-note"><kbd>Enter</kbd> goes to the first · <kbd>Esc</kbd> closes</p>

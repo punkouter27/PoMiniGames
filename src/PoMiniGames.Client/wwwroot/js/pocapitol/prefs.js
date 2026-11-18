@@ -19,8 +19,12 @@ export const ACTIONS = [
     { id: 'pause', label: 'Pause', key: 'KeyP' },
 ];
 
-/** Arrow keys always steer, whatever the map says, so a remap can never strand a player. */
-const ALWAYS = { forward: ['ArrowUp'], back: ['ArrowDown'], left: ['ArrowLeft'], right: ['ArrowRight'] };
+/**
+ * Up/Down always move, whatever the map says, so a remap can never strand a player. Left/Right
+ * are NOT strafe keys: they turn the camera (index.js), so they are deliberately absent here
+ * and strafing stays on the remappable A/D defaults.
+ */
+const ALWAYS = { forward: ['ArrowUp'], back: ['ArrowDown'] };
 
 export const DEFAULTS = Object.freeze({
     sensitivity: 1, fov: 62, captions: false, contrast: 'normal', radar: 'auto', director: true,

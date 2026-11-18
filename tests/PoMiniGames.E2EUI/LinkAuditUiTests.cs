@@ -67,6 +67,47 @@ public class LinkAuditUiTests
           return out.join('; ');
         }
         """;
+    /// <summary>
+    /// Every visible control smaller than a 44px thumb target (Profile B), as "selector WxH" lines.
+    /// Inline links inside running text are exempt (WCAG 2.5.8's inline exception), as is anything
+    /// marked data-tap-exempt (a control that is not for touch, e.g. a desktop-only hint).
+    /// </summary>
+    private const string SmallTapTargets = """
+        () => {
+          const out = [];
+          for (const el of document.querySelectorAll('button, a[href], [role=button], [role=tab], select, summary, input:not([type=hidden])')) {
+            const st = getComputedStyle(el), b = el.getBoundingClientRect();
+            if (st.visibility === 'hidden' || st.display === 'none' || b.width === 0 || b.height === 0) continue;
+            if (b.bottom < 0 || b.top > innerHeight || b.right < 0 || b.left > innerWidth) continue;
+            if (el.closest('[data-tap-exempt], [inert], [aria-hidden=true]')) continue;
+            if (el.tagName === 'A' && st.display === 'inline') continue;
+            if (el.matches('input[type=checkbox], input[type=radio]') && el.closest('label')) continue;
+            // Layout size, not the painted box: a card still in its pop-in animation is scaled.
+            const w = el.offsetWidth ?? b.width, h = el.offsetHeight ?? b.height;
+            if (w + 0.5 >= 44 && h + 0.5 >= 44) continue;
+            const cls = (el.className && el.className.baseVal === undefined ? el.className : '').split(' ').filter(Boolean)[0];
+            out.push(`${el.tagName.toLowerCase()}${cls ? '.' + cls : ''} ${Math.round(w)}x${Math.round(h)}`);
+          }
+          return [...new Set(out)].slice(0, 6).join(', ');
+        }
+        """;
+
+    /// <summary>The end card, read like the start card: its one action and no scrolling.</summary>
+    private const string EndCardProblems = """
+        () => {
+          const card = document.querySelector('dialog.gps-modal[open]');
+          if (!card) return 'is not up';
+          const out = [];
+          if (card.scrollHeight > card.clientHeight + 1)
+            out.push(`scrolls (${card.scrollHeight}px of content in ${card.clientHeight}px)`);
+          const acts = [...card.querySelectorAll('button')].filter(b => !b.closest('details, summary'));
+          const labels = acts.map(b => b.innerText.replace(/\s+/g, ' ').replace(/ Esc$/, '').trim());
+          if (acts.length !== 1 || labels[0] !== 'Back to main menu' || !acts[0].hasAttribute('data-end-action'))
+            out.push(`its buttons are [${labels.join(' | ')}], not one "Back to main menu"`);
+          return out.join('; ');
+        }
+        """;
+
     /// <summary>The non-game pages a player reaches from the shell.</summary>
     private static readonly string[] MainPages = ["/", "/leaderboards", "/profile", "/diag", "/health", "/pobrawl/hq"];
 
@@ -100,9 +141,14 @@ public class LinkAuditUiTests
         using var playwright = await Playwright.CreateAsync();
         await using var browser = await playwright.Chromium.LaunchAsync(BrowserLaunch.Options());
         var origin = new Uri(_fixture.ServerAddress);
+        // The phone pass runs on the small phone, as a touch device (coarse pointer), so the
+        // start cards and the 44px floor are judged where they are tightest.
+        var phone = MobileViewport.SmallPortrait;
         var context = await browser.NewPlayerContextAsync(new BrowserNewContextOptions
         {
-            ViewportSize = MobileViewport.Portrait,
+            ViewportSize = phone,
+            HasTouch = true,
+            IsMobile = true,
         });
         // The fake-auth headers go to this host only. Set context-wide, they ride on the games'
         // CDN module imports too (three.js from jsDelivr), whose CORS preflight rejects them,
@@ -206,12 +252,14 @@ public class LinkAuditUiTests
                 var overflow = await page.EvaluateAsync<int>(
                     "() => document.documentElement.scrollWidth - window.innerWidth");
                 if (overflow > 1)
-                    failures.Add($"{route}: scrolls sideways by {overflow}px on a {MobileViewport.Portrait.Width}px phone");
+                    failures.Add($"{route}: scrolls sideways by {overflow}px on a {phone.Width}px phone");
             }
             else if (await page.EvaluateAsync<string?>(StartCardProblems) is { Length: > 0 } problems)
             {
-                failures.Add($"{route}: on a {MobileViewport.Portrait.Width}px phone the start card {problems}");
+                failures.Add($"{route}: on a {phone.Width}×{phone.Height} phone the start card {problems}");
             }
+            if (await page.EvaluateAsync<string>(SmallTapTargets) is { Length: > 0 } small)
+                failures.Add($"{route}: touch targets under 44px on a phone: {small}");
         }
 
         // Desktop pass: the start cards again, on a laptop screen. Most game pages read their
@@ -264,7 +312,10 @@ public class LinkAuditUiTests
             }
         }
 
+        // The end card, on the small phone where it is tightest: the shared GameOverModal every
+        // game ends on, so one game's result card stands for the component.
         current = "/tictactoe/2player";
+        await page.SetViewportSizeAsync(phone.Width, phone.Height);
         await page.GotoAsync(new Uri(origin, current).ToString());
         await page.Locator("dialog[open] [data-intro-action]").ClickAsync();
         var cells = page.GetByRole(AriaRole.Gridcell);
@@ -272,6 +323,9 @@ public class LinkAuditUiTests
             await cells.Nth(index).ClickAsync();
         var result = page.Locator("dialog.gps-modal[open]");
         await result.WaitForAsync(new LocatorWaitForOptions { Timeout = 15_000 });
+        await page.WaitForTimeoutAsync(SettleMs);
+        if (await page.EvaluateAsync<string>(EndCardProblems) is { Length: > 0 } endProblems)
+            failures.Add($"Tic-Tac-Toe result on a {phone.Width}×{phone.Height} phone: the end card {endProblems}");
         await result.Locator("[data-end-action]").FocusAsync();
         await page.Keyboard.PressAsync("Tab");
         if (!await result.EvaluateAsync<bool>("el => el.contains(document.activeElement)"))

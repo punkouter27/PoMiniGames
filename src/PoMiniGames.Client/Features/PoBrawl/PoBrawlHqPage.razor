@@ -63,11 +63,11 @@
 
                             @if (!_boardsLoaded)
                             {
-                                <div class="app-loading"><span class="app-loading__spinner" aria-hidden="true"></span><span>Loading the boards…</span></div>
+                                <LoadingState Label="Loading the boards…" />
                             }
                             else if (Rows.Count == 0)
                             {
-                                <p class="hq-empty">Nobody is on this board yet.</p>
+                                <EmptyState Title="Nobody is on this board yet" />
                             }
                             else if (_board == "pobrawldemo")
                             {
@@ -106,7 +106,7 @@
                         <p class="hq-board-note">Cups won in this browser.</p>
                         @if (_titles.Count == 0)
                         {
-                            <p class="hq-empty">No Cup won in this browser yet. <a href="/pobrawl/demo">Watch the Cup</a>.</p>
+                            <EmptyState Title="No Cup won in this browser yet"><a href="/pobrawl/demo">Watch the Cup</a></EmptyState>
                         }
                         else
                         {
@@ -123,7 +123,7 @@
         }
         else
         {
-            <div class="hq-tabs-pending app-loading"><span class="app-loading__spinner" aria-hidden="true"></span><span>Loading HQ…</span></div>
+            <div class="hq-tabs-pending"><LoadingState Label="Loading HQ…" /></div>
         }
     </div>
 </GameShell>

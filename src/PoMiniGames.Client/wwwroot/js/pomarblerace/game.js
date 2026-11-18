@@ -462,7 +462,6 @@ export class Game {
       }
       // The demo rolls on, and so does a solo run that is still alive (a top-10 finish keeps
       // the streak going, like Brawl's ladder). A miss ends here on the page's end-of-game modal.
-      // Online, the host waits on the page: both players agree to a rematch (rematch() below).
       if (this.resultTimer <= 0 && (this.demo || (!this.online && this._runAlive))) this._nextTrack();
     } else {
       // pick phase: gentle overview of the start gate. The heading matters here too — without

@@ -30,7 +30,7 @@
             }
             <p>@Detail.SpeciesName · @Detail.AgeYears.ToString("0.0") y · @Stage @Sex@if (Detail.Sick) { <span class="poeco-badge poeco-badge--sick" title="Sick: losing health while it lasts, then immune for a while">sick</span> }</p>
         </div>
-        <button type="button" class="poeco-icon-btn" @onclick="OnClose" aria-label="Close" title="Close (Esc)">✕</button>
+        <button type="button" class="poeco-icon-btn" @onclick="OnClose" aria-label="Close" title="Close (Esc)"><span class="material-symbols-outlined" aria-hidden="true">close</span></button>
     </header>
 
     <div class="poeco-inspector-actions">

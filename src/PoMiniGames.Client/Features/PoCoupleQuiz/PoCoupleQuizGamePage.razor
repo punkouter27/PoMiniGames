@@ -1,6 +1,8 @@
 @page "/couplequiz/game"
 @using PoMiniGamesClient.Features.PoCoupleQuiz.Services
 @using PoMiniGamesClient.Features.Shared
+@using Microsoft.AspNetCore.Components.Forms
+@using PoMiniGames.Shared.Validation
 @inject CoupleQuizHubService Hub
 @inject PlayerNameService PlayerNameService
 @inject MatchHistoryService MatchHistory
@@ -35,7 +37,7 @@
             <div class="cq-gameover">
                 <h2 class="gps-phase-h">You haven't joined a game yet</h2>
                 <p>This page is only useful mid-round. Join the lobby and the match starts once everyone is ready.</p>
-                <a class="app-btn app-btn--primary" href="/couplequiz">Go to the lobby →</a>
+                <a class="app-btn app-btn--primary" href="/couplequiz">Go to the lobby <span class="material-symbols-outlined" aria-hidden="true">arrow_forward</span></a>
             </div>
         }
         else
@@ -61,18 +63,29 @@
 
             @if (_phase == Phase.Answering)
             {
-                <input @bind="_myAnswer"
-                       @bind:event="oninput"
-                       placeholder="@(_isKing ? "Your secret answer (1-2 words)" : "Your guess")"
-                       maxlength="60"
-                       disabled="@_submitted" />
-                <div class="cq-actions">
-                    <button class="app-btn app-btn--primary"
-                            @onclick="Submit"
-                            disabled="@(_submitted || string.IsNullOrWhiteSpace(_myAnswer))">
-                        @(_submitted ? "Submitted ✓" : "Submit")
-                    </button>
-                </div>
+                <EditForm EditContext="_editContext" OnValidSubmit="Submit" novalidate>
+                    <FluentValidationValidator TModel="CoupleAnswerInput" Validator="Validator" />
+                    <label class="sr-only" for="cq-answer">@(_isKing ? "Your secret answer" : "Your guess")</label>
+                    <InputText id="cq-answer"
+                               @bind-Value="_model.Answer"
+                               @bind-Value:event="oninput"
+                               placeholder="@(_isKing ? "Your secret answer (1-2 words)" : "Your guess")"
+                               maxlength="60"
+                               autocomplete="off"
+                               disabled="@_submitted"
+                               aria-describedby="cq-answer-error" />
+                    <div id="cq-answer-error" aria-live="polite">
+                        <ValidationMessage For="() => _model.Answer" class="arcade-field-error" />
+                    </div>
+                    <div class="cq-actions">
+                        <button type="submit"
+                                class="app-btn app-btn--primary"
+                                disabled="@(_submitted || string.IsNullOrWhiteSpace(_model.Answer))"
+                                aria-busy="@(_submitted ? "true" : "false")">
+                            @(_submitted ? "Submitted" : "Submit")@if (_submitted) { <span class="material-symbols-outlined" aria-hidden="true">check</span> }
+                        </button>
+                    </div>
+                </EditForm>
                 @if (_submitted)
                 {
                     <p class="cq-hint">Waiting for the others… the round scores itself when everyone is in.</p>
@@ -119,7 +132,10 @@
     </div>;
 
     private string _playerName = string.Empty;
-    private string _myAnswer = string.Empty;
+    private static readonly CoupleAnswerInputValidator Validator = new();
+    private readonly CoupleAnswerInput _model = new();
+    private EditContext _editContext = default!;
+    private string _myAnswer { get => _model.Answer; set => _model.Answer = value; }
     private bool _isKing;
     private bool _submitted;
     private string _kingName = string.Empty;
@@ -138,6 +154,8 @@
     private CancellationTokenSource? _lobbyHintCts;
     private string? _connectionError;
     private bool _connecting;
+
+    protected override void OnInitialized() => _editContext = new EditContext(_model);
 
     protected override async Task OnInitializedAsync()
     {
@@ -295,6 +313,7 @@
     private async Task Submit()
     {
         if (_game is null || _submitted || string.IsNullOrWhiteSpace(_myAnswer)) return;
+        // Lock before the first await so a double tap or Enter+click sends once.
         _submitted = true;
         _connectionError = null;
         try

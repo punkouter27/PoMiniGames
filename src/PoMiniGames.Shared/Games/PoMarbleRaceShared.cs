@@ -67,12 +67,6 @@ public sealed record MarbleRaceRoom(string Code);
 public sealed record MarbleRaceJoin(bool Joined, string? Error);
 
 /// <summary>
-/// Rematch handshake, sent to both seats whenever either asks. The race restarts once both
-/// <see cref="HostWants"/> and <see cref="GuestWants"/> are true (then both are cleared).
-/// </summary>
-public sealed record MarbleRaceRematch(bool HostWants, bool GuestWants, bool Agreed);
-
-/// <summary>
 /// One finish on one map, offered as a world record. The server keeps it only if it is the fastest.
 /// On the Daily Canyon (<see cref="MarbleRaceDaily.MapId"/>) <see cref="Day"/> is the UTC day
 /// (yyyy-MM-dd) whose course was raced, and the finish goes on that day's board instead.

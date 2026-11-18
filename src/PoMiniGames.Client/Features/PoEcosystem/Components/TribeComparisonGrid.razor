@@ -5,7 +5,7 @@
     <div class="poeco-tribe-cards">
         @if (Tribes is null || Tribes.Count == 0)
         {
-            <div class="poeco-note">Observing island... tribal factions have not established settlements yet.</div>
+            <EmptyState Title="No settlements yet">Observing the island. Tribal factions have not settled yet.</EmptyState>
         }
         else
         {

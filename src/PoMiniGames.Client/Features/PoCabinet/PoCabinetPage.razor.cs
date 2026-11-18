@@ -441,9 +441,6 @@ public partial class PoCabinetPageBase : ComponentBase, IAsyncDisposable
         }
     }
 
-    /// <summary>The results card's primary button: the same track again (online, the lobby, where the rematch is).</summary>
-    protected Task RaceAgainAsync() => IsMultiplayerMode ? BackToLobbyAsync() : RestartRaceAsync();
-
     /// <summary>The crash card's Retry: a clean teardown and a fresh mount on new canvases.</summary>
     protected async Task RetryRaceAsync()
     {

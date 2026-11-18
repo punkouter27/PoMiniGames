@@ -13,24 +13,15 @@ import { source as renderSource } from './sand-playground-render.glsl.js';
 import { SAND_PLAYGROUND_CALIBRATION, consumePhysicsSteps } from './sand-playground-calibration.js';
 import { encodeGif } from './gifEncoder.js';
 import { createStage } from '../platform/stage/stage.js';
+import {
+    W, H, AIR, SAND, CONCRETE, WATER, BEDROCK, MATBYTE, SAT_BYTE, BEDROCK_TOP, GRAVITY0, SLING_K, SLING_MAX,
+    TNT_FUSE_MS, TNT_BLAST_R, TNT_SHATTER_R, BLAST_SOLID_BUDGET, BALLOON_R, LW, LH, NP, KIND, PAINT_TOOLS,
+    UNDO_DEPTH, SLOT_KEY, SLOT_INDEX, UNIFORM_NAMES, CANTILEVER_LIMIT, SPAN_LIMIT, TOOL_KEYS, DAY_MS, MAT_NAMES,
+} from './sand-playground-constants.js';
+import { CHALLENGES, BEST_KEY } from './sand-playground-challenges.js';
+import { dailySeed, makeRng, gzip, toB64, fromB64, parseSections } from './sand-playground-codec.js';
 
-const W = 800, H = 600;
-const AIR = 0, SAND = 1, CONCRETE = 2, WATER = 3, BEDROCK = 4;
-const MATBYTE = [0, 60, 120, 180, 240];
-const SAT_BYTE = 85;              // sand R byte for "pores hold one cell of water"
-const BEDROCK_TOP = 8;            // texture rows 0..7 are bedrock baseline
-const GRAVITY0 = 0.35;            // px/frame^2 for rigid projectiles
 let GRAVITY = GRAVITY0;            // scaled by the Gravity setting (setEnv)
-const SLING_K = 0.085;            // drag distance -> launch speed
-const SLING_MAX = 13.5;           // px/frame launch speed cap
-const TNT_FUSE_MS = 5000;
-const TNT_BLAST_R = 63;     // 10x yield: energy scales with crater area (20 * sqrt(10))
-const TNT_SHATTER_R = 100;  // measured to the bar's nearest surface
-// Line-of-sight budget for a blast ray (see detonate). Loose ground is
-// blown through almost freely; concrete and bedrock shield hard, so ~12 px
-// of wall stops a ray outright while 100 px of sand does not.
-const BLAST_SOLID_BUDGET = 120;
-const BALLOON_R = 13;
 
 let gl = null, canvas = null, overlay = null, octx = null;
 let progSupport, progPressure, progRelax, progMove, progFall, progSurge, progRender;
@@ -42,7 +33,6 @@ let packTex, packFbo;             // RGBA8 copy of the state: the CPU mirror is 
 let useFloatState = false;
 
 // Post pipeline: scene FBO -> dynamic light field + bloom chain -> composite.
-const LW = 400, LH = 300;          // light/bloom working resolution
 let sceneTex, sceneFbo;
 let lightTex = [null, null], lightFbo = [null, null], lightFront = 0;
 let blurTex = [null, null], blurFbo = [null, null];
@@ -52,8 +42,6 @@ let colH = new Float32Array(W).fill(300);
 let vaoTri;
 // Juice particles (sparks/dust/mist/bubbles/foam) live on the GPU: two buffers
 // ping-ponged by transform feedback, new ones staged here and uploaded each frame.
-const NP = 16384;
-const KIND = { spark: 1, dust: 2, mist: 3, bubble: 4, foam: 5 };
 let pVao = [null, null], pBuf = [null, null], pFront = 0, pHead = 0, pStaged = 0;
 const pStage = new Float32Array(2048 * 8);
 let rings = [];                    // shock-refraction rings {x,y,r,amp}
@@ -129,9 +117,7 @@ let strokeTool = 'dig';        // the tool the current gesture is using (a right
 let brushFlash = 0, lastGlass = 0;
 const pointers = new Map();    // active pointers, for the two-finger brush pinch
 let pinch = null;
-const PAINT_TOOLS = ['dig', 'sand', 'water', 'fire'];
 
-const dailySeed = () => { const d = new Date(); return d.getUTCFullYear() * 10000 + (d.getUTCMonth() + 1) * 100 + d.getUTCDate(); };
 // A challenge restricts the toolbox; outside one (or once it is beaten) everything is free.
 const toolFree = t => !challenge || challenge.done || t === 'inspect' || challenge.def.tools.includes(t);
 
@@ -147,16 +133,6 @@ function windNow() {
     return Math.max(-1, Math.min(1, amb * (1 - Math.abs(w)) + w));
 }
 
-// Mulberry32 — a small seeded PRNG.
-function makeRng(seed) {
-    let a = seed >>> 0;
-    return () => {
-        a |= 0; a = (a + 0x6D2B79F5) | 0;
-        let t = Math.imul(a ^ (a >>> 15), 1 | a);
-        t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
-        return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
-    };
-}
 
 // Gamepad rumble for blasts: strong motor = ground coupling, weak = what vented.
 function rumble(strong, weak) {
@@ -307,7 +283,7 @@ async function setupGl(gen) {
     return true;
 }
 
-export async function init(canvasEl, overlayEl, dotnetRef) {
+export async function init(canvasEl, overlayEl, dotnetRef, startWorld) {
     // The module instance survives navigation, so a second visit must start clean.
     disposed = false; inited = false;
     stage?.dispose(); stage = null;
@@ -336,8 +312,10 @@ export async function init(canvasEl, overlayEl, dotnetRef) {
     windUser = 0; rain = 0; sunMode = 'auto'; GRAVITY = GRAVITY0;
     overcast = 0; skyFlash = 0; bolt = null; nextBolt = 0; melt = 0; pointers.clear(); pinch = null;
     // ?world=dam&seed=1234 (or seed=daily) opens one specific world: it is what a copied link carries.
+    // Otherwise the world picked in the start card's dropdown (startWorld), if any.
     const q = new URLSearchParams(location.search);
     if (PRESETS[q.get('world')]) preset = q.get('world');
+    else if (startWorld && PRESETS[startWorld]) preset = startWorld;
     const qSeed = q.get('seed');
     loadWorld(preset, qSeed === 'daily' ? dailySeed()
         : parseInt(qSeed, 10) > 0 ? parseInt(qSeed, 10) : (Math.random() * 0x7fffffff) | 0);
@@ -549,7 +527,6 @@ export function dispose() {
 // Undo, save slots
 // ---------------------------------------------------------------------------
 
-const UNDO_DEPTH = 10; // ~1.9 MB a snapshot
 
 function snapshot() {
     return {
@@ -625,24 +602,7 @@ export function undo() {
     return true;
 }
 
-const SLOT_KEY = n => `pominigames:sandplayground:slot.${n}`;
-const SLOT_INDEX = 'sandplayground.slots';
 
-async function gzip(bytes, pack) {
-    const stream = new Blob([bytes]).stream()
-        .pipeThrough(pack ? new CompressionStream('gzip') : new DecompressionStream('gzip'));
-    return new Uint8Array(await new Response(stream).arrayBuffer());
-}
-function toB64(bytes) {
-    let s = '';
-    for (let i = 0; i < bytes.length; i += 0x8000) s += String.fromCharCode.apply(null, bytes.subarray(i, i + 0x8000));
-    return btoa(s);
-}
-function fromB64(str) {
-    const bin = atob(str), out = new Uint8Array(bin.length);
-    for (let i = 0; i < bin.length; i++) out[i] = bin.charCodeAt(i);
-    return out;
-}
 
 /** Save timestamps for slots 1-3 (0 = empty). */
 export function slots() {
@@ -789,18 +749,7 @@ export function loadWorld(name, seed, keepChallenge = false) {
 // Shader plumbing
 // ---------------------------------------------------------------------------
 
-function parseSections(src) {
-    const sections = {};
-    const parts = src.split(/\/\/======\s*([A-Z]+)\s*======/g);
-    for (let i = 1; i < parts.length; i += 2) sections[parts[i]] = parts[i + 1].trim() + '\n';
-    return sections;
-}
 
-const UNIFORM_NAMES = ['u_state', 'u_aux', 'u_temp', 'u_seed', 'u_parity', 'u_time', 'u_dt', 'u_wind', 'u_disable', 'u_surgeDir',
-    'u_light', 'u_heights', 'u_prev', 'u_lights', 'u_nlights',
-    'u_scene', 'u_bloom', 'u_dir', 'u_texel', 'u_rings', 'u_nrings',
-    'u_shake', 'u_flash',
-    'u_k', 'u_sky', 'u_view', 'u_smoke', 'u_out', 'u_melt', 'u_old', 'u_src', 'u_nsrc'];
 
 // Kick off compile + link for one program and query NOTHING: any status query
 // forces the driver to finish that program on the spot, which is precisely the
@@ -1476,25 +1425,7 @@ const PRESETS = {
 // a cell count over the same grid the conservation audit already trusts.
 // ---------------------------------------------------------------------------
 
-const CHALLENGES = {
-    drain: {
-        name: 'Drain the reservoir', hint: 'TNT only. Breach the lake bed into the tunnels below.',
-        world: 'classic', tools: ['tnt'], tnt: 3,
-        rects: [[232, 195, 257, 90]], mat: WATER, want: 'empty', frac: 0.2,
-    },
-    bridge: {
-        name: 'Bring down the bridges', hint: 'Two bombs, two bridges.',
-        world: 'canyon', tools: ['tnt'], tnt: 2,
-        rects: [[207, 326, 76, 18], [517, 326, 76, 18]], mat: CONCRETE, want: 'empty', frac: 0.08,
-    },
-    flood: {
-        name: 'Flood the bunker', hint: 'Vacuum only. Dig the lake a way down the hill.',
-        world: 'bunker', tools: ['dig'], tnt: 0,
-        rects: [[566, 171, 108, 50]], mat: WATER, want: 'fill', frac: 0.6,
-    },
-};
 
-const BEST_KEY = id => `pominigames:sandplayground:best.${id}`;
 function bestOf(id) { try { return +(localStorage.getItem(BEST_KEY(id)) || 0); } catch { return 0; } }
 
 function countIn(def) {
@@ -1964,8 +1895,6 @@ function stepBody(b, bi) {
     }
 }
 
-const CANTILEVER_LIMIT = 35;
-const SPAN_LIMIT = 90;
 
 function checkBendingSnap(b, bi) {
     const ca = Math.cos(b.angle), sa = Math.sin(b.angle);
@@ -2883,7 +2812,6 @@ function attachInput() {
     });
 }
 
-const TOOL_KEYS = ['dig', 'sand', 'water', 'fire', 'concrete', 'tnt', 'balloon', 'inspect'];
 
 // Keyboard: 1-8 tools, [ ] brush, Space pause, . step, X x-ray, Enter detonate,
 // Ctrl+Z undo. Every change is
@@ -3522,7 +3450,6 @@ function simFrame(dt) {
 
 // Daylight 0..1. Auto runs a ten-minute day that opens in mid-morning (dusk comes
 // at about 4:40, dawn at 7:20); the menu can pin noon or midnight.
-const DAY_MS = 600000;
 function updateSun(t) {
     const day = t / DAY_MS - 0.12;
     const target = sunMode === 'day' ? 1 : sunMode === 'night' ? 0
@@ -3827,7 +3754,6 @@ function drawOverlay(t) {
     }
 }
 
-const MAT_NAMES = ['Air', 'Sand', 'Concrete', 'Water', 'Bedrock'];
 
 function inspectLines(x, y) {
     const i = (y * W + x) * 4;

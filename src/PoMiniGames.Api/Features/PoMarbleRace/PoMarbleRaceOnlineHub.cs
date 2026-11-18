@@ -13,7 +13,7 @@ namespace PoMiniGames.Features.PoMarbleRace;
 /// <remarks>
 /// Client events: <c>raceStarted</c> (<see cref="MarbleRaceStart"/>), <c>frame</c>,
 /// <c>phase</c>, <c>podium</c>, <c>result</c> (guest only), <c>guestSteer</c> (host only,
-/// an <c>int</c> -1/0/+1), <c>rematch</c> (<see cref="MarbleRaceRematch"/>, both seats) and
+/// an <c>int</c> -1/0/+1) and
 /// <c>peerLeft</c> when the other seat is gone. A race seats two players at most: players meet
 /// by quick-match or by a private code (<see cref="CreateRoom"/> / <see cref="JoinRoom"/>).
 /// </remarks>
@@ -74,13 +74,6 @@ public sealed class PoMarbleRaceOnlineHub : Hub
         await Clients.Client(pairing.HostConnectionId).SendAsync("raceStarted", pairing.HostStart);
         await Clients.Client(pairing.GuestConnectionId).SendAsync("raceStarted", pairing.GuestStart);
         return new MarbleRaceJoin(true, null);
-    }
-
-    /// <summary>Ask for another race against the same opponent. Both seats hear every change.</summary>
-    public async Task RequestRematch()
-    {
-        if (_races.RequestRematch(Context.ConnectionId) is not { } update) return;
-        await Clients.Clients(update.HostConnectionId, update.GuestConnectionId).SendAsync("rematch", update.State);
     }
 
     public Task CancelSearch()

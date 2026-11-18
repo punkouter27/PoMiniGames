@@ -82,7 +82,7 @@
                                     </span>
                                     <strong>@_selectedTelemetry.name</strong>
                                 </div>
-                                <button type="button" class="pc-debug-close" @onclick="ClearInspectAsync" aria-label="Close Inspector">✕</button>
+                                <button type="button" class="pc-debug-close" @onclick="ClearInspectAsync" aria-label="Close Inspector"><span class="material-symbols-outlined" aria-hidden="true">close</span></button>
                             </div>
                             <div class="pc-inspector-role">@_selectedTelemetry.role</div>
                             <div class="pc-inspector-status"><span>STATUS:</span> <b>@_selectedTelemetry.status</b></div>
@@ -339,7 +339,7 @@
             <div class="pc-radar-header">
                 <button type="button" class="pc-radar-toggle" @onclick="ToggleRadar" title="Toggle Tactical Radar" aria-expanded="@(_radarExpanded ? "true" : "false")">
                     <span>📡 RADAR</span>
-                    <small>@(_radarExpanded ? "▲" : "▼")</small>
+                    <span class="material-symbols-outlined" aria-hidden="true">@(_radarExpanded ? "expand_less" : "expand_more")</span>
                 </button>
             </div>
             @if (_radarExpanded)
@@ -517,7 +517,7 @@
     </div>;
 
     private RenderFragment IntroControls => @<div>
-        <p><kbd>W</kbd> <kbd>A</kbd> <kbd>S</kbd> <kbd>D</kbd> move · <kbd>Mouse</kbd> look &amp; aim · <kbd>←</kbd> <kbd>→</kbd> turn camera · <kbd>Shift</kbd> sprint</p>
+        <p><kbd>W</kbd> <kbd>A</kbd> <kbd>S</kbd> <kbd>D</kbd> move · <kbd>Mouse</kbd> look &amp; aim · <kbd>↑</kbd> <kbd>↓</kbd> move · <kbd>←</kbd> <kbd>→</kbd> turn camera · <kbd>Shift</kbd> sprint</p>
         <p><kbd>Space</kbd> / <kbd>Click</kbd> fire (in the crowd) or push (police line) · <kbd>G</kbd> concussion grenade · <kbd>H</kbd> smoke grenade</p>
         <p><kbd>Esc</kbd> / <kbd>P</kbd> pause</p>
         <p class="touch-only">Touch: d-pad to move, drag to look, FIRE / PUSH, and grenade buttons that show what is left.</p>
@@ -530,7 +530,7 @@
         <details><summary>Historical record</summary>@ContextContent</details>
     </div>;
 
-    private RenderFragment IntroOptions => @<div>
+    private RenderFragment IntroOptions => @<div class="pc-intro-opts">
         <label class="pc-small" for="pc-role">Who you are</label>
         <RadzenSelectBar TValue="string" @bind-Value="_role" id="pc-role">
             <Items>

@@ -1,0 +1,83 @@
+/* ── glass pass (GFX option 9) ────────────────────────────────────
+   The HUD used `--surface-bar`, which is ~92% opaque: a backdrop-filter behind it has
+   almost nothing to show through, so before this the game used `backdrop-filter` in
+   exactly two of ~480 lines and the rest of the chrome sat on the world as flat plates.
+
+   These tokens are LOCAL to .poeco-root on purpose. The app's `--surface-*` scale is
+   tuned for pages laid over a solid background; a HUD floating over a live 3D scene wants
+   a much thinner substrate, and changing the shared tokens to get it would repaint every
+   other game. The blur itself still goes through the app's `--glass-*` tokens, so the
+   app-wide `prefers-reduced-transparency` override in app.css strips it here too — and
+   the opacity block below finishes that job, because a translucent panel with the blur
+   removed is worse than no glass at all. */
+.poeco-root {
+    --poeco-glass: light-dark(rgba(255, 255, 255, 0.55), rgba(15, 23, 42, 0.52));
+    --poeco-glass-strong: light-dark(rgba(255, 255, 255, 0.74), rgba(15, 23, 42, 0.70));
+    --poeco-glass-border: light-dark(rgba(15, 23, 42, 0.10), rgba(255, 255, 255, 0.13));
+    /* The inset line along the top edge is what reads as "thickness" — without it a
+       blurred panel looks like a smudge rather than a pane. */
+    --poeco-glass-lip: inset 0 1px 0 light-dark(rgba(255, 255, 255, 0.85), rgba(255, 255, 255, 0.10));
+    --poeco-glass-cast: 0 8px 32px light-dark(rgba(15, 23, 42, 0.14), rgba(2, 6, 23, 0.42));
+}
+
+.poeco-chip,
+.poeco-speed,
+.poeco-badge,
+.poeco-minimap-wrap,
+.poeco-pad {
+    background: var(--poeco-glass);
+    backdrop-filter: var(--glass-2);
+    -webkit-backdrop-filter: var(--glass-2);
+    border-color: var(--poeco-glass-border);
+    box-shadow: var(--poeco-glass-lip), var(--poeco-glass-cast);
+}
+
+/* Panels carrying body text get the heavier tint: a name and five stat bars have to stay
+   legible over whatever the island happens to be doing behind them. */
+.poeco-inspector,
+.poeco-overlay-card {
+    background: var(--poeco-glass-strong);
+    backdrop-filter: var(--glass-3);
+    -webkit-backdrop-filter: var(--glass-3);
+    box-shadow: var(--poeco-glass-lip), var(--poeco-glass-cast);
+}
+
+/* The dashboard scrim sits between the world and the card, so it takes the blur and the
+   card above it only needs its own tint. */
+.poeco-overlay,
+.poeco-record {
+    background: var(--poeco-glass);
+    border-color: var(--poeco-glass-border);
+    box-shadow: var(--poeco-glass-lip);
+}
+
+/* Blur removed → transparency removed. Falling back to the opaque app tokens rather than
+   to a lighter tint keeps contrast at the same ratio the rest of the app is checked at. */
+@media (prefers-reduced-transparency: reduce) {
+    .poeco-root {
+        --poeco-glass: var(--surface-bar);
+        --poeco-glass-strong: var(--surface-2);
+        --poeco-glass-border: var(--color-border);
+        --poeco-glass-lip: none;
+    }
+
+    .poeco-overlay,
+    }
+
+/* Forced-colors mode replaces the palette outright; a translucent substrate there is both
+   ignored and actively misleading, so the glass is dropped rather than approximated. */
+@media (forced-colors: active) {
+    .poeco-chip,
+.poeco-speed,
+.poeco-badge,
+.poeco-minimap-wrap,
+.poeco-pad,
+.poeco-inspector,
+.poeco-overlay-card,
+.poeco-record {
+        background: Canvas;
+        backdrop-filter: none;
+        -webkit-backdrop-filter: none;
+        box-shadow: none;
+    }
+}

@@ -6,9 +6,8 @@ The rules for working in this repository live in `AGENTS.md` and apply to every 
 
 @AGENTS.md
 
-For the project tour and the list of games, see `README.md`. `GAME-CONSISTENCY.md` holds the game
-workflow and UI rules; `docs/2026-11-12/VISUAL_ARCHITECTURE_DASHBOARD.html` is the current visual
-architecture overview.
+For the project tour, the list of games and the game workflow and UI rules (the **Shared game UI**
+section), see `README.md`.
 
 ## Commands
 
@@ -18,6 +17,7 @@ dotnet run --project src/PoMiniGames.Api/PoMiniGames.Api.csproj # API + Blazor W
 dotnet build PoMiniGames.slnx                                  # warnings are errors (Directory.Build.props)
 dotnet format PoMiniGames.slnx --verify-no-changes             # style gate (run locally)
 pwsh scripts/ci/css-lint.ps1                                      # CSS gate; run after any scripted CSS edit
+npm ci --prefix scripts/ci/js-lint && npm run lint --prefix scripts/ci/js-lint  # JS gate (undefined identifiers), run locally
 pwsh scripts/ci/test-ceilings.ps1                                 # test-count ceiling guards only
 
 dotnet test tests/PoMiniGames.Unit --filter "FullyQualifiedName~PoMule"   # one test / one area

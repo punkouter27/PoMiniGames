@@ -82,7 +82,7 @@
                             aria-pressed="@(_voiceListening ? "true" : "false")"
                             title="Hands-free voice answers: say 1-4, A-D, or the answer text"
                             @onclick="ToggleVoiceListeningAsync">
-                        @(_voiceListening ? "🎙️ Listening…" : "🎙️ Voice answer")
+                        <span class="material-symbols-outlined" aria-hidden="true">mic</span> @(_voiceListening ? "Listening…" : "Voice answer")
                     </button>
                     @if (!string.IsNullOrEmpty(_lastVoiceHeard))
                     {
@@ -161,7 +161,7 @@
                                 <span class="fq-split__label">@q.Options[i]</span>
                                 @if (picked && _splitResults[1])
                                 {
-                                    <span class="fq-split__badge">✓</span>
+                                    <span class="fq-split__badge"><span class="material-symbols-outlined" aria-hidden="true">check</span></span>
                                 }
                                 else if (picked && !_splitResults[1])
                                 {
@@ -170,7 +170,7 @@
                             </button>
                         }
                     </div>
-                    <div class="fq-split__status">@(_splitPicks[1] >= 0 ? "Locked ✓" : "Pick 1-4")</div>
+                    <div class="fq-split__status">@(_splitPicks[1] >= 0 ? "Locked" : "Pick 1-4")@if (_splitPicks[1] >= 0) { <span class="material-symbols-outlined" aria-hidden="true">check</span> }</div>
                 </div>
                 <div class="fq-split__vs">VS</div>
                 <div class="fq-split__player fq-split__player--right" data-player="2">
@@ -190,7 +190,7 @@
                                 <span class="fq-split__label">@q.Options[i]</span>
                                 @if (picked && _splitResults[2])
                                 {
-                                    <span class="fq-split__badge">✓</span>
+                                    <span class="fq-split__badge"><span class="material-symbols-outlined" aria-hidden="true">check</span></span>
                                 }
                                 else if (picked && !_splitResults[2])
                                 {
@@ -199,7 +199,7 @@
                             </button>
                         }
                     </div>
-                    <div class="fq-split__status">@(_splitPicks[2] >= 0 ? "Locked ✓" : "Pick 6-9")</div>
+                    <div class="fq-split__status">@(_splitPicks[2] >= 0 ? "Locked" : "Pick 6-9")@if (_splitPicks[2] >= 0) { <span class="material-symbols-outlined" aria-hidden="true">check</span> }</div>
                 </div>
             </div>
             @if (_splitPicks[1] >= 0 && _splitPicks[2] >= 0)

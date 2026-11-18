@@ -12,6 +12,11 @@
 //
 // Single instance: the game shell unmounts before the next one mounts, and
 // start() simply adopts the newest owner.
+//
+// Pop-out: popout() opens debug-window.html, a separate developer window. Each sample is also
+// posted on the 'po-debug' BroadcastChannel; while a pop-out says hello (every second) the
+// sampler keeps running even with the in-page panel closed. It needs no game: /diag opens it
+// too, and then it shows the page's own frame rate and environment.
 
 (function () {
   const FIRST_SAMPLE_MS = 120;
@@ -25,6 +30,46 @@
   let frames = 0;
   let elapsed = 0;
   let firstSample = true;
+  let info = { gameKey: null, items: [] };   // pushed by GameDebugOverlay (setInfo)
+  let watcherSeenAt = 0;                      // last hello from a pop-out window
+  const WATCHER_TTL_MS = 3000;
+  const channel = typeof BroadcastChannel === 'function' ? new BroadcastChannel('po-debug') : null;
+
+  function watched() { return watcherSeenAt > 0 && Date.now() - watcherSeenAt < WATCHER_TTL_MS; }
+  function sampling() { return open || watched(); }
+  function ensureLoop() { if (sampling() && !raf) { last = 0; raf = requestAnimationFrame(tick); } }
+
+  if (channel) {
+    channel.onmessage = (e) => {
+      const type = e.data && e.data.type;
+      if (type === 'hello') { watcherSeenAt = Date.now(); ensureLoop(); }
+      else if (type === 'bye') watcherSeenAt = 0;
+    };
+  }
+
+  function env() {
+    const mem = performance.memory;
+    return {
+      heapMb: mem ? mem.usedJSHeapSize / 1048576 : -1,
+      cores: navigator.hardwareConcurrency || 0,
+      dpr: window.devicePixelRatio || 1,
+      width: window.innerWidth,
+      height: window.innerHeight,
+      details: window.poGameStatsDetails || []
+    };
+  }
+
+  function broadcast(fps, frameMs) {
+    if (!channel || !watched()) return;
+    try {
+      channel.postMessage({
+        type: 'sample', fps, frameMs, env: env(),
+        route: location.pathname + location.search,
+        title: document.title, online: navigator.onLine,
+        gameKey: info.gameKey, items: info.items
+      });
+    } catch { /* a detail that cannot be cloned: skip this sample */ }
+  }
 
   function isPlaying() {
     // A modal dialog, the start card or the end card is up: Tab must move focus there.
@@ -42,7 +87,7 @@
   }
 
   function tick(now) {
-    if (!open) { raf = 0; return; }
+    if (!sampling()) { raf = 0; return; }
     if (last) {
       const delta = now - last;
       if (delta < 1000) { // ignore the gap left by a hidden tab
@@ -54,7 +99,8 @@
           frames = 0;
           elapsed = 0;
           firstSample = false;
-          try { dotnetRef.invokeMethodAsync('OnSample', fps, frameMs); } catch { /* gone */ }
+          if (open && dotnetRef) { try { dotnetRef.invokeMethodAsync('OnSample', fps, frameMs); } catch { /* gone */ } }
+          broadcast(fps, frameMs);
         }
       }
     }
@@ -73,8 +119,8 @@
     frames = 0;
     elapsed = 0;
     firstSample = true;
-    if (open && !raf) raf = requestAnimationFrame(tick);
-    try { dotnetRef.invokeMethodAsync('OnToggle', open); } catch { /* gone */ }
+    ensureLoop();
+    if (dotnetRef) { try { dotnetRef.invokeMethodAsync('OnToggle', open); } catch { /* gone */ } }
   }
 
   function onKeyDown(e) {
@@ -107,24 +153,26 @@
       window.poGameStatsOpen = false;
       document.documentElement.classList.remove('po-game-stats-open');
       window.dispatchEvent(new CustomEvent('po-game-stats', { detail: { open: false } }));
-      if (raf) cancelAnimationFrame(raf);
-      raf = 0;
+      if (raf && !watched()) { cancelAnimationFrame(raf); raf = 0; }
       dotnetRef = null;
+      info = { gameKey: null, items: [] };
     },
     toggle() {
       if (dotnetRef) setOpen(!open);
     },
     // One-shot environment read for the panel's static rows.
-    env() {
-      const mem = performance.memory;
-      return {
-        heapMb: mem ? mem.usedJSHeapSize / 1048576 : -1,
-        cores: navigator.hardwareConcurrency || 0,
-        dpr: window.devicePixelRatio || 1,
-        width: window.innerWidth,
-        height: window.innerHeight,
-        details: window.poGameStatsDetails || []
-      };
+    env,
+    // The overlay's own rows (game key, the page's Diagnostics items), for the pop-out.
+    setInfo(gameKey, items) {
+      info = { gameKey: gameKey || null, items: Array.isArray(items) ? items : [] };
+    },
+    // The separate developer window. Returns false when the browser blocked the pop-up.
+    popout() {
+      const w = window.open('debug-window.html', 'po-debug-window', 'popup,width=420,height=560');
+      if (!w) return false;
+      watcherSeenAt = Date.now();
+      ensureLoop();
+      return true;
     }
   };
 })();

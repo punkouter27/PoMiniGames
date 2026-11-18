@@ -29,7 +29,6 @@
            Fullscreen="true"
            OptionsContent="@(_demo ? null : SettingsContent)"
            OptionsHeading="Race settings"
-           GameActions="@ResultActions"
            GameSummary="@GameSummaryContent">
     @* The one decision card: controls, and in 1P the track and your marble. Everything after it
        is the pre-race panel — there is nothing left to choose by then. *@
@@ -42,6 +41,10 @@
                    Options="@(_demo ? null : _online ? OnlineSetupContent : SetupContent)"
                    Wide="@(!_demo)"
                    Mode="@(_demo ? GameIntro.IntroMode.Demo : GameIntro.IntroMode.OnePlayer)"
+                   Maps="@TrackMaps"
+                   MapLabel="Track"
+                   MapId="@_mapId.ToString(System.Globalization.CultureInfo.InvariantCulture)"
+                   MapIdChanged="OnTrackPicked"
                    OnStart="OnIntroStartAsync" />
     }
     <div class="mr-wrap-row">
@@ -515,6 +518,20 @@
         }
     </div>;
 
+    // The track is the start card's dropdown beside OK (owner rule 2026-11-18): every pickable
+    // course, its record beside the name. None while a Grand Prix (it runs them all), a demo or a
+    // join-by-code race (the host's track) is set up.
+    private IReadOnlyList<IntroMap>? TrackMaps =>
+        _demo || _menu is null || (!_online && _gp) || (_online && _onlineHow == OnlineHow.JoinRoom) ? null
+        : [.. PickableMaps.Select(m => new IntroMap(m.Id.ToString(System.Globalization.CultureInfo.InvariantCulture),
+            RecordText(m.Id) is { Length: > 0 } record ? $"{m.Name} · {record}" : m.Name))];
+
+    private void OnTrackPicked(string id)
+    {
+        if (int.TryParse(id, System.Globalization.NumberStyles.Integer, System.Globalization.CultureInfo.InvariantCulture, out var mapId)) _mapId = mapId;
+    }
+
+    // What the picked course is like, under the setup (the dropdown only names it).
     private RenderFragment TrackPicker => @<div>
         @if (_menu is null)
         {
@@ -522,28 +539,16 @@
         }
         else
         {
-            <div class="mr-setup-label">Track</div>
-            <div class="mr-tracks" role="radiogroup" aria-label="Choose a track">
-                @foreach (var m in PickableMaps)
-                {
-                    var id = m.Id;
-                    <button type="button" role="radio" aria-checked="@(id == _mapId ? "true" : "false")"
-                            class="mr-opt mr-track @(id == _mapId ? "is-on" : "")"
-                            @onclick="() => _mapId = id">
-                        @TrackGlyph(id)
-                        <span class="mr-opt-name">@m.Name</span>
-                        <span class="mr-track-wr">@RecordText(id)</span>
-                        <span class="mr-opt-hint">@TrackStatText(StatFor(id))</span>
-                    </button>
-                }
+            <div class="mr-track-pick">
+                @TrackGlyph(_mapId)
+                <p class="mr-setup-note"><strong>@(MapAt(_mapId)?.Name)</strong> · @(MapAt(_mapId)?.Blurb) @TrackStatText(StatFor(_mapId))</p>
             </div>
-            <p class="mr-setup-note">@(MapAt(_mapId)?.Blurb)</p>
         }
     </div>;
 
     // Host and guest share one summary: the guest simply has no run score of its own.
-    // The way on comes first (Race again / Next track, or Rematch online), then the standings with
-    // your own row picked out, then the run.
+    // The standings with your own row picked out, then the run. The end card's only action is
+    // "Back to main menu"; another race starts from the start card.
     private RenderFragment GameSummaryContent => _gp ? GrandPrixSummary : RaceSummary;
 
     // The Grand Prix table: the top five on points, and your own row when you are not among them.
@@ -581,33 +586,6 @@
                 : IsOnlineGuest ? "💀 Outside the top 10" : $"💀 Run over · {(_lastPlace > 0 ? $"you placed {Ordinal(_lastPlace)}" : "you didn't finish")}")
         </div>
         @ResultStandings
-    </div>;
-
-    private RenderFragment ResultActions => @<div class="mr-result-actions">
-        @if (_gp)
-        {
-            <button type="button" class="app-btn app-btn--primary" @onclick="() => RaceAgainAsync(nextTrack: false)">New Grand Prix</button>
-        }
-        else if (!_online)
-        {
-            <div class="mr-result-actions">
-                <button type="button" class="app-btn app-btn--primary" @onclick="() => RaceAgainAsync(nextTrack: false)">Race again</button>
-                <button type="button" class="app-btn app-btn--secondary" @onclick="() => RaceAgainAsync(nextTrack: true)">Next track: @(MapAt(NextMapId)?.Name ?? "next")</button>
-            </div>
-        }
-        else if (_onlineResultKnown && _onlinePhase == OnlinePhase.Racing)
-        {
-            <div class="mr-rematch">
-                <button type="button" class="app-btn app-btn--primary" disabled="@_rematch.Mine"
-                        @onclick="RequestRematchAsync">
-                    @(_rematch.Mine ? $"Waiting for {_opponentName}…" : _rematch.Theirs ? "Accept rematch" : "Rematch")
-                </button>
-                @if (_rematch.Theirs && !_rematch.Mine)
-                {
-                    <span class="mr-rematch-note">@_opponentName wants a rematch</span>
-                }
-            </div>
-        }
     </div>;
 
     private RenderFragment ResultStandings => @<div>

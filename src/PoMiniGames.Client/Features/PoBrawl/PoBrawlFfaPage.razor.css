@@ -1,6 +1,6 @@
 /* The arena is the show: standings, tool bar and broadcast card stay hidden until the
    shared Stats panel is open (Tab, or its button). game-debug.js sets the root class.
-   An already-open studio keeps its own Close button; a failed start still shows its board. */
+   A failed start still shows its board. */
 :root:not(.po-game-stats-open) .pffa-board:not(.pffa-board--error),
 :root:not(.po-game-stats-open) .pffa-tools,
 :root:not(.po-game-stats-open) .pffa-broadcast {
@@ -226,53 +226,22 @@
 .pffa-broadcast a { color: #93c5fd; pointer-events: auto; }
 .pffa-fact { margin: 5px 0 0; font-size: 0.76rem; }
 
+/* The studio lives inside the shared Tab diagnostics panel, so it has no overlay chrome. */
 .pffa-studio {
-    position: absolute;
-    top: calc(var(--pb-gutter) + 55px);
-    right: calc(var(--pb-gutter) + 10px);
-    bottom: calc(var(--pb-gutter) + 10px);
-    width: min(760px, calc(100% - 40px));
-    padding: 18px;
-    overflow: auto;
-    border: 1px solid #ffd166;
-    border-radius: 12px;
-    background: linear-gradient(135deg, rgba(15, 24, 46, 0.96), rgba(8, 12, 28, 0.94));
     color: #f4f6ff;
-    z-index: 9;
     font-size: 0.84rem;
-    backdrop-filter: blur(16px) saturate(1.2);
-    transform-origin: right center;
-    animation: pffa-studio-in 240ms cubic-bezier(0.2, 0.8, 0.2, 1);
 }
 
-.pffa-studio--closing {
-    animation: pffa-studio-out 160ms ease-in forwards;
-    pointer-events: none;
-}
+.pffa-setup { display: grid; gap: 8px; }
+.pffa-setup label { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; }
+.pffa-setup select { max-width: 100%; min-height: 44px; }
 
 .pffa-production { margin: 12px 0; padding: 10px; border: 1px solid #35445a; border-radius: 8px; }
 .pffa-production summary { cursor: pointer; color: #93c5fd; }
 
-@keyframes pffa-studio-in {
-    from { opacity: 0; transform: translateX(28px) scale(0.98); }
-    to { opacity: 1; transform: translateX(0) scale(1); }
-}
-
-@keyframes pffa-studio-out {
-    from { opacity: 1; transform: translateX(0); }
-    to { opacity: 0; transform: translateX(22px); }
-}
-
 @keyframes pffa-place-in {
     from { opacity: 0.4; transform: translateY(4px); }
     to { opacity: 1; transform: translateY(0); }
-}
-
-.pffa-studio header {
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
-    gap: 12px;
 }
 
 .pffa-studio h2 { margin: 0; font-size: 1.2rem; }
@@ -316,7 +285,7 @@
 
 @media (prefers-reduced-motion: reduce) {
     .pffa-health span { transition: none; }
-    .pffa-studio, .pffa-studio--closing, .pffa-fighter--winner, .pffa-fighter--out .pffa-place { animation: none; }
+    .pffa-fighter--winner, .pffa-fighter--out .pffa-place { animation: none; }
     .pffa-fighter, .pffa-tools button, .pffa-studio button, .pffa-studio select, .pffa-studio a { transition: none; }
     .pffa-tools button:active, .pffa-studio button:active, .pffa-studio a:active { transform: none; }
 }

@@ -17,7 +17,10 @@ the rendered Blazor WASM UI.
 - **`LinkAuditUiTests`** — visits every route in `GameCatalog.All` plus the main
   pages in one session (SPA navigation), and fails on "Page not found", the error
   boundary or error bar, a same-origin asset 404, a layout shift over 0.25 (CLS via
-  `PerformanceObserver`), or sideways scroll on a main page at phone width.
+  `PerformanceObserver`), or sideways scroll on a main page at phone width. The phone pass
+  runs on a 375×667 touch phone: every start card must fit without scrolling and offer one OK,
+  every visible control must be at least 44px (inline text links and `[data-tap-exempt]`
+  excepted), and the end card (2-player Tic-Tac-Toe) must fit with one "Back to main menu".
 
 ## Prerequisites
 

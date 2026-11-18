@@ -12,7 +12,8 @@ namespace PoMiniGames.Features.PoMarbleRace;
 /// <remarks>
 /// A race seats exactly <see cref="MaxPlayers"/>: the host and one guest. Players meet by
 /// quick-match (the first two to queue) or by a private code one creates and the other types
-/// in. After a race either may ask for a rematch; the next race starts once both have.
+/// in. A race is one race: another one starts from the start card (owner rule: the end card
+/// has one action, "Back to main menu").
 /// </remarks>
 public sealed class PoMarbleRaceOnlineService
 {
@@ -107,25 +108,6 @@ public sealed class PoMarbleRaceOnlineService
         }
     }
 
-    /// <summary>
-    /// Record that this seat wants a rematch. Returns the handshake to send both seats, or null
-    /// when the caller is not in a race. When it comes back Agreed, both wants are cleared.
-    /// </summary>
-    public RematchUpdate? RequestRematch(string connectionId)
-    {
-        lock (_lock)
-        {
-            if (!_byConnection.TryGetValue(connectionId, out var race)) return null;
-            if (race.Host.ConnectionId == connectionId) race.HostWantsRematch = true;
-            else race.GuestWantsRematch = true;
-
-            var agreed = race.HostWantsRematch && race.GuestWantsRematch;
-            var state = new MarbleRaceRematch(race.HostWantsRematch, race.GuestWantsRematch, agreed);
-            if (agreed) race.HostWantsRematch = race.GuestWantsRematch = false;
-            return new RematchUpdate(state, race.Host.ConnectionId, race.Guest.ConnectionId);
-        }
-    }
-
     /// <summary>Leave the quick-match queue and close any private race this connection opened.</summary>
     public void Dequeue(string connectionId)
     {
@@ -200,8 +182,6 @@ public sealed class PoMarbleRaceOnlineService
 
     public sealed record Pairing(string RaceId, string HostConnectionId, MarbleRaceStart HostStart, string GuestConnectionId, MarbleRaceStart GuestStart);
 
-    public sealed record RematchUpdate(MarbleRaceRematch State, string HostConnectionId, string GuestConnectionId);
-
     private sealed record Waiting(string ConnectionId, string PrincipalId, string DisplayName, bool IsGuest, int MapId);
 
     private sealed class Race
@@ -221,8 +201,6 @@ public sealed class PoMarbleRaceOnlineService
         public int Seed { get; }
         /// <summary>The private code it was joined by; null for a quick-match.</summary>
         public string? Code { get; }
-        public bool HostWantsRematch { get; set; }
-        public bool GuestWantsRematch { get; set; }
 
         public Pairing Pairing()
         {

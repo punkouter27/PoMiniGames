@@ -130,3 +130,8 @@
 @media (prefers-reduced-motion: reduce) {
     .game-opts-sheet[open] { animation: none; }
 }
+
+/* A thumb needs 44px (Profile B); the 36px gear was under it. */
+@media (pointer: coarse) {
+    .game-opts-gear { width: 2.75rem; height: 2.75rem; }
+}

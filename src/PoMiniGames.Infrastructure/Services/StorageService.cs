@@ -37,6 +37,14 @@ public partial class StorageService : IStorageService
     private const string PoCabinetTable = "PoCabinetHighScores";
     private const string PoMuleTable = "PoMuleHighScores";
 
+    /// <summary>Every table this service reads or writes, for the /diag inventory (names only).</summary>
+    public static IReadOnlyList<string> KnownTableNames { get; } =
+    [
+        PlayerStatsTable, MarbleRaceTable, MarbleRaceRecordsTable, PoBrawlTable, PoBrawlLadderTable,
+        PoBrawlEloTable, PoBrawlPlayerEloTable, PoRacerTable, PoVoxelStrikeTable, PoCabinetTable,
+        PoMuleTable, MatchHistoryTable,
+    ];
+
     // High scores share a single partition per game so a leaderboard is one partition scan.
     private const string MarbleRacePartition = "marblerace";
     private const string PoBrawlPartition = "pobrawl";

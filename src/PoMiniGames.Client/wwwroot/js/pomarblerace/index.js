@@ -131,8 +131,6 @@ window.PoMarbleRace = {
   applyFrame(...args) { if (game) game.applyFrame(...args); },
   // Guest: the host resolved the race; `won` is the guest's own top-10 verdict.
   guestResult(won) { if (game) game.guestResult(won); },
-  // Host: both players agreed to a rematch; start the next race.
-  rematch() { if (game) game.rematch(); },
   // Guest: the host started the next race on this seed.
   nextTrack(seed) { if (game) game.nextTrack(seed); },
   // Bumping the token here too, so a start() still waiting on the model fetch cannot install a

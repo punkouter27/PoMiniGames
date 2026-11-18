@@ -292,7 +292,7 @@
     height: 3px;
 }
 
-.lb-podium__card--gold::before   { background: linear-gradient(90deg, #fcd34d, #f59e0b); }
+.lb-podium__card--gold::before   { background: linear-gradient(90deg, #fcd34d, var(--color-warning)); }
 .lb-podium__card--silver::before { background: linear-gradient(90deg, #e2e8f0, #94a3b8); }
 .lb-podium__card--bronze::before { background: linear-gradient(90deg, #fdba74, #ea580c); }
 
@@ -308,7 +308,7 @@
     font-variant-numeric: tabular-nums;
 }
 
-.lb-podium__card--gold .lb-podium__medal   { background: linear-gradient(135deg, #fcd34d, #f59e0b); color: #1e1b4b; }
+.lb-podium__card--gold .lb-podium__medal   { background: linear-gradient(135deg, #fcd34d, var(--color-warning)); color: #1e1b4b; }
 .lb-podium__card--silver .lb-podium__medal { background: linear-gradient(135deg, #e2e8f0, #94a3b8); color: #0f172a; }
 .lb-podium__card--bronze .lb-podium__medal { background: linear-gradient(135deg, #fdba74, #ea580c); color: #1e1b4b; }
 
@@ -469,6 +469,15 @@
     box-shadow: inset 3px 0 0 0 var(--accent);
     font-weight: 650;
 }
+
+/* The grid's own row: Radzen renders the <tr>, so the rule reaches it with ::deep. */
+.lb-grid ::deep .lb-row-me > td {
+    background: var(--accent-soft);
+    font-weight: 650;
+}
+.lb-grid ::deep .lb-row-me > td:first-child { box-shadow: inset 3px 0 0 0 var(--accent); }
+.lb-grid ::deep td .lb-card__avatar { margin-right: var(--space-2); vertical-align: middle; }
+.lb-grid ::deep td .lb-card__name { display: inline-flex; vertical-align: middle; max-width: calc(100% - 2.2rem); }
 
 .lb-card--me .lb-card__name,
 .lb-me-row .lb-card__name {
