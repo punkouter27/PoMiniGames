@@ -620,6 +620,19 @@ public partial class PoMarbleRacePage
             _onlinePhase = OnlinePhase.PeerLeft;
         }
         await InvokeAsync(StateHasChanged);
+        _ = WatchJoinAsync();
+    }
+
+    /// <summary>
+    /// The other player was seated by the lobby but never took their race seat: after 20 s show
+    /// the "other player left" card (its button goes back to the lobby) instead of waiting forever.
+    /// </summary>
+    private async Task WatchJoinAsync()
+    {
+        await Task.Delay(TimeSpan.FromSeconds(20));
+        if (_disposed || _onlinePhase != OnlinePhase.Searching) return;
+        _onlinePhase = OnlinePhase.PeerLeft;
+        await InvokeAsync(StateHasChanged);
     }
 
     /// <summary>Back to the shared lobby after a failed connect or an opponent who left.</summary>

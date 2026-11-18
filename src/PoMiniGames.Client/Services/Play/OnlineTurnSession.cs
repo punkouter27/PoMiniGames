@@ -194,6 +194,7 @@ public sealed class OnlineTurnSession : IAsyncDisposable
             // matchStarted may fire before this returns (the second claimant completes the
             // pairing inside the call), so the phase is only ever advanced by the event.
             await _client.JoinMatchAsync(code, _localName, isGuest: false, asHost);
+            _ = WatchJoinAsync(code);
         }
         catch (Exception)
         {
@@ -202,6 +203,22 @@ public sealed class OnlineTurnSession : IAsyncDisposable
             Changed?.Invoke();
         }
     }
+
+    /// <summary>
+    /// The other player was seated by the lobby but never claimed their seat (closed the tab
+    /// between Start and the match): after <see cref="JoinTimeout"/> say so and go back to the
+    /// lobby, instead of waiting on a card that never changes. The server drops the reservation.
+    /// </summary>
+    private async Task WatchJoinAsync(string code)
+    {
+        await Task.Delay(JoinTimeout);
+        if (Phase != QuickMatchPhase.Connecting || Seat is not null) return;
+        _toasts.Show("The other player didn't join. Back to the lobby.", ToastType.Warning);
+        await ReturnToLobbySafeAsync();
+        Changed?.Invoke();
+    }
+
+    private static readonly TimeSpan JoinTimeout = TimeSpan.FromSeconds(20);
 
     /// <summary>Give up the finished seat and go back to the lobby for another opponent.</summary>
     public async Task ReturnToLobbyAsync()
