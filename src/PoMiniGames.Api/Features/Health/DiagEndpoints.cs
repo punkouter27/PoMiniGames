@@ -35,23 +35,14 @@ public static class DiagEndpoints
         ["AzureTableStorage"] = ("Table storage connection", "A direct round trip to Azure Table Storage, the store every board reads."),
     };
 
-    /// <summary>Build date of the running server, YYMMDD (the assembly's build output timestamp).</summary>
-    internal static string BuildVersion { get; } = ResolveBuildVersion();
-
-    private static string ResolveBuildVersion()
-    {
-        try
-        {
-            var location = typeof(DiagEndpoints).Assembly.Location;
-            if (!string.IsNullOrEmpty(location) && File.Exists(location))
-            {
-                return File.GetLastWriteTimeUtc(location).ToString("yyMMdd", System.Globalization.CultureInfo.InvariantCulture);
-            }
-        }
-        catch (IOException) { }
-        catch (UnauthorizedAccessException) { }
-        return "unknown";
-    }
+    /// <summary>
+    /// Build stamp of the running server, YYMMDD: the UTC date of the commit it was built from,
+    /// stamped as <c>AssemblyMetadata("BuildVersion")</c> by PoBuildStamp in Directory.Build.props,
+    /// the same value the client shows as <c>.po-version</c>.
+    /// </summary>
+    internal static string BuildVersion { get; } =
+        typeof(DiagEndpoints).Assembly.GetCustomAttributes<AssemblyMetadataAttribute>()
+            .FirstOrDefault(a => a.Key == "BuildVersion")?.Value ?? "unknown";
 
     public static IEndpointRouteBuilder MapDiagEndpoints(this IEndpointRouteBuilder app)
     {
@@ -68,6 +59,14 @@ public static class DiagEndpoints
         diag.MapGet("", diagHandler)
         .WithName("GetDiagnostics")
         .WithSummary("Plain status of the API, its stores and its services, for the /diag page (no secrets)")
+        .Produces<DiagReport>(StatusCodes.Status200OK);
+
+        // The same report at /api/diag/status: the first JSON endpoint the Tab developer
+        // window (wwwroot/po-dev.html, Po standard) tries. Without it the 404 there, a JSON
+        // problem response, was taken as the diagnostics source and showed no checks.
+        diag.MapGet("/status", diagHandler)
+        .WithName("GetDiagnosticsStatus")
+        .WithSummary("Same report as /api/diag, at the path the developer window reads first")
         .Produces<DiagReport>(StatusCodes.Status200OK);
 
         // Note: /diag is NOT registered as an API endpoint to avoid conflicting with

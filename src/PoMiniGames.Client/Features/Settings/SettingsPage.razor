@@ -1,0 +1,26 @@
+@page "/settings"
+@inject SettingsService Settings
+
+@*
+    /settings: the header gear's link target (Po standard, 2026-11-18). The gear normally
+    opens the settings sheet in place (MainLayout.OpenSettings), so a game keeps running;
+    this page is the same sheet for a deep link, a new tab or a reload. It opens the sheet
+    on arrival and says the two things the sheet does not: colours follow the device, and
+    which build this is. The app has no sign-in, so there is no account section.
+*@
+
+<PageTitle>Settings · PoMiniGames</PageTitle>
+
+<div class="st-page">
+    <PageHeader Title="Settings" />
+    <p class="st-text">Light or dark follows your device setting.</p>
+    <p class="st-text">Build <span class="st-build">v@(BuildInfo.Date)</span></p>
+    <button type="button" class="app-btn app-btn--primary" @onclick="Settings.RequestOpen">Open settings</button>
+</div>
+
+@code {
+    protected override void OnAfterRender(bool firstRender)
+    {
+        if (firstRender) Settings.RequestOpen();
+    }
+}

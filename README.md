@@ -29,7 +29,7 @@ sign-in: a player is a random browser id plus three initials.
   and down sooner, torso = slower energy regen, arms = weaker strikes and a guard that leaks,
   legs = slower on the feet and off the canvas. The rules are pure modules
   (`js/pobrawl/energy.js`, `knockdown.js`, `rounds.js`, `combat.js`; the per-fighter state
-  machine is `fighterTick.js`), tested headless by `tests/pobrawl-core.test.mjs`, which CI runs.
+  machine is `fighterTick.js`), tested headless by `tests/pobrawl-core.test.mjs`.
   The fastest-KO board takes a round-one knockout only. Online has the knockdown and both hands
   too, in the rollback sim's own integer terms (daze, down / rising / rolling, jab and cross), so
   the packed state is 38 ints (16 a corner), not 26.
@@ -351,9 +351,9 @@ tests/
 ├── PoMiniGames.Integration/    ≤34 test methods (Testcontainers Azurite)
 ├── PoMiniGames.E2EAPI/         ≤18 test methods (HTTP contract)
 ├── PoMiniGames.E2EUI/          ≤22 test methods (Playwright)
-├── *.test.mjs                  JS engine tests (node --test; CI runs them all)
+├── *.test.mjs                  JS engine tests (node --test; run locally)
 └── Shared/                     TestBudgetGuard (no test ever spends AI tokens)
-infra/                          Bicep (azd); deployed by .github/workflows/deploy.yml
+infra/                          Bicep (azd up or az deployment, run locally)
 scripts/                        Working scripts only — see scripts/README.md
 ```
 
@@ -408,15 +408,19 @@ the same boards as dry ones and are slower; the medal times are dry-track times.
 Run `pwsh scripts/ci/test-ceilings.ps1` to check all four test-method budgets without Docker.
 Run `node --test tests/pomule-world.test.mjs tests/pomule-physics.test.mjs` for PoMule's renderer maths.
 
-Run `npm ci --prefix scripts/pomarblerace` then `node --test tests/pomarblerace-map-health.test.mjs` for Marble Race map health (a full headless 101-marble race on every course, also run by CI; see `scripts/pomarblerace/README.md`).
-The shared `.github/workflows/deploy.yml` runs unit and repository checks, stages the documentation
-suite, and deploys only from `master`. Provision or update Azure resources with the manual
-`.github/workflows/deploy.yml` (run by hand with `infra`) workflow or `azd up`.
+Run `npm ci --prefix scripts/pomarblerace` then `node --test tests/pomarblerace-map-health.test.mjs` for Marble Race map health (a full headless 101-marble race on every course; see `scripts/pomarblerace/README.md`).
+`.github/workflows/deploy.yml` builds and deploys only: on a push to `master` (or a manual run)
+it builds the solution, publishes the API, stages the documentation suite
+(`scripts/ci-package.ps1`), prepares the live site (`scripts/pre-deploy.ps1`), deploys, and waits
+until `/health/live` answers with this commit's `X-Commit`. It runs no tests, no format or CSS
+checks, no Bicep and no rollback, and does not run on pull requests: tests and checks run
+locally (`scripts/ci-checks.ps1` still bundles them for a local run). The file is identical in
+every Po repo and each repo owns its copy. Provision or update Azure resources locally with
+`azd up`.
 
 **F1 budget (2026-11-18).** The F1 plan allows 165 MB/day of data out and 1 GB of disk; going over
 stops the site (`QuotaExceeded`, deploys get a 403). So:
-- Rollback uses the last successful run's `webapp` artifact (kept 7 days), downloaded only when a
-  rollback happens. The deploy no longer pulls a ~150 MB zip of the live site from Kudu.
+- The deploy has no rollback step and never pulls a zip of the live site from Kudu.
 - `scripts/pre-deploy.ps1` deletes old run-from-package zips in `data/SitePackages`, and, when the
   app has `PoMiniGames__Models__BaseUrl`, uploads changed `wwwroot/models` files to the public
   `models` blob container and strips them from the package. The app then redirects `/models/*`
@@ -437,6 +441,7 @@ stops the site (`QuotaExceeded`, deploys get a 403). So:
 | Endpoint | Change |
 |---|---|
 | `GET /api/diag` | 2026-11-17: always on (no longer behind `FeatureFlags:EnableDiagnostics`); returns the /diag page's report: overall status, each store and service with status, latency and purpose, build date and environment. No secrets, addresses or exception text |
+| `GET /api/diag/status` | 2026-11-18: the same report as `/api/diag`, at the first path the Tab developer window (`/po-dev.html`) reads |
 | `GET /api/diag/ai` | Removed with all AI services |
 | `GET /api/logs/tail` | Development only: not mapped in any other environment (2026-10-29) |
 | `GET /api/health/ai` | Removed (moved to `/api/diag/ai`) |

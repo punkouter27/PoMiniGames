@@ -18,4 +18,26 @@
     <EnableDefaultCompressionFormats>false</EnableDefaultCompressionFormats>
     <PublishCompressionFormats>brotli</PublishCompressionFormats>
   </PropertyGroup>
+  <!-- Build stamp (Po standard): vYYMMDD, the UTC date of the HEAD commit, falling back to the
+       UTC build date when git is unavailable. Computed once here so the server (an
+       AssemblyMetadata "BuildVersion" attribute, read by /api/diag) and the client
+       (PoMiniGamesClient.BuildInfo.Date, PoMiniGames.Client.csproj) show the same value.
+       git prints the commit time as Unix seconds (%ct), which has no time zone, and MSBuild
+       turns it into the UTC date. Pass -p:PoStamp=YYMMDD to pin it. -->
+  <Target Name="PoBuildStamp" BeforeTargets="GetAssemblyAttributes;CoreCompile">
+    <Exec Condition="'$(PoStamp)' == ''" Command="git log -1 --format=%25ct" WorkingDirectory="$(MSBuildThisFileDirectory)"
+          ConsoleToMsBuild="true" IgnoreExitCode="true" StandardOutputImportance="low" StandardErrorImportance="low">
+      <Output TaskParameter="ConsoleOutput" PropertyName="_PoCommitSeconds" />
+    </Exec>
+    <PropertyGroup>
+      <PoStamp Condition="'$(PoStamp)' == '' and $([System.Text.RegularExpressions.Regex]::IsMatch('$(_PoCommitSeconds)', '^\d+$'))">$([System.DateTime]::UnixEpoch.AddSeconds($(_PoCommitSeconds)).ToString('yyMMdd'))</PoStamp>
+      <PoStamp Condition="'$(PoStamp)' == ''">$([System.DateTime]::UtcNow.ToString('yyMMdd'))</PoStamp>
+    </PropertyGroup>
+    <ItemGroup>
+      <AssemblyAttribute Include="System.Reflection.AssemblyMetadataAttribute">
+        <_Parameter1>BuildVersion</_Parameter1>
+        <_Parameter2>$(PoStamp)</_Parameter2>
+      </AssemblyAttribute>
+    </ItemGroup>
+  </Target>
 </Project>

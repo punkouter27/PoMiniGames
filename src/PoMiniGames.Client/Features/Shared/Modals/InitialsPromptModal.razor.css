@@ -1,9 +1,11 @@
 /* The first-visit initials prompt. Drawn like the game start card (game-shell.css
    .gps-intro-card): a token-coloured surface over a dimmed page, so it follows the light
    and dark themes like every other dialog. */
+/* The backdrop starts below the header, so the app name, the player menu and the settings
+   gear stay usable while the prompt is up (Po standard). */
 .arcade-modal-backdrop {
     position: fixed;
-    inset: 0;
+    inset: var(--po-header-h) 0 0 0;
     z-index: var(--z-modal);
     display: flex;
     align-items: center;

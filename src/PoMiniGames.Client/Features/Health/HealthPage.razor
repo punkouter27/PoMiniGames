@@ -3,7 +3,6 @@
 @using PoMiniGames.Shared.Diagnostics
 @implements IAsyncDisposable
 @inject ApiService ApiService
-@inject IJSRuntime JS
 
 @*
     /diag — the plain-English status page (fleet /diag standard, 2026-11-17). /health stays as
@@ -13,18 +12,20 @@
 
     Everything shown comes from GET /api/diag (DiagEndpoints): the server's own health checks
     plus a configured/not-configured note per external service. That payload carries no
-    secrets or addresses, so the page is safe to leave open to anyone.
+    secrets or addresses, so the page is safe to leave open to anyone. Drawn with the
+    estate's /diag classes (po-diag__card, po-badge--ok|warn|bad in po-tokens.css): groups
+    API, Data and Services, one card per dependency.
 *@
 
 <PageTitle>Status · PoMiniGames</PageTitle>
 
-<div class="dg">
+<div class="dg po-diag">
     <PageHeader Title="Status">
         <Actions>
-            <RadzenButton Text="@(_loading ? "Checking…" : "Refresh")" Icon="refresh"
-                          ButtonStyle="ButtonStyle.Secondary" Size="ButtonSize.Small"
-                          Disabled="_loading" IsBusy="_loading" BusyText="Checking…"
-                          Click="RefreshAsync" aria-label="Refresh the status" />
+            <button type="button" class="app-btn app-btn--secondary" disabled="@_loading" aria-busy="@(_loading ? "true" : "false")"
+                    @onclick="RefreshAsync" aria-label="Refresh the status">
+                @(_loading ? "Checking…" : "Refresh")
+            </button>
         </Actions>
     </PageHeader>
 
@@ -32,39 +33,40 @@
         @if (_report is null && _error is null)
         {
             <div class="dg-loading" role="status">
-                <RadzenProgressBarCircular ShowValue="false" Mode="ProgressBarMode.Indeterminate" Size="ProgressBarCircularSize.Small" />
                 <span>Checking the API, storage and services…</span>
             </div>
         }
         else if (_error is not null)
         {
-            <RadzenAlert AlertStyle="AlertStyle.Danger" Variant="Variant.Flat" Shade="Shade.Lighter" AllowClose="false"
-                         Title="The API is not answering" class="dg-banner">
-                <p class="dg-banner-text">@_error</p>
-                <RadzenButton Text="Try again" ButtonStyle="ButtonStyle.Danger" Size="ButtonSize.Small"
-                              Disabled="_loading" IsBusy="_loading" Click="RefreshAsync" />
-            </RadzenAlert>
+            <div class="dg-banner dg-banner--bad" role="alert">
+                <span class="po-badge po-badge--bad">Down</span>
+                <div>
+                    <p class="dg-banner-title">The API is not answering</p>
+                    <p class="dg-banner-text">@_error</p>
+                </div>
+            </div>
         }
         else if (_report is { } r)
         {
-            <RadzenAlert AlertStyle="@BannerStyle(r.Status)" Variant="Variant.Flat" Shade="Shade.Lighter" AllowClose="false"
-                         Title="@BannerTitle(r.Status)" class="dg-banner" data-testid="diag-banner">
-                <p class="dg-banner-text">@BannerText(r.Status)</p>
-            </RadzenAlert>
+            <div class="dg-banner dg-banner--@BadgeClass(r.Status)" data-testid="diag-banner">
+                <span class="po-badge po-badge--@BadgeClass(r.Status)">@r.Status</span>
+                <div>
+                    <p class="dg-banner-title">@BannerTitle(r.Status)</p>
+                    <p class="dg-banner-text">@BannerText(r.Status)</p>
+                </div>
+            </div>
 
-            <section class="dg-section" aria-labelledby="dg-api">
+            <section class="dg-section po-diag__group" aria-labelledby="dg-api">
                 <h2 class="dg-h2" id="dg-api">API</h2>
-                <RadzenCard class="dg-card">
-                    <div class="dg-row">
-                        <span class="dg-name">PoMiniGames API</span>
-                        <RadzenBadge BadgeStyle="BadgeStyle.Success" Text="Reachable" />
-                    </div>
+                <div class="dg-card po-diag__card">
+                    <span class="dg-name">PoMiniGames API</span>
+                    <span class="po-badge po-badge--ok">Reachable</span>
                     <p class="dg-desc">Serves the games, scores and leaderboards. Answered in @Ms(_roundTripMs).</p>
-                </RadzenCard>
+                </div>
             </section>
 
-            <section class="dg-section" aria-labelledby="dg-stores">
-                <h2 class="dg-h2" id="dg-stores">Database / storage</h2>
+            <section class="dg-section po-diag__group" aria-labelledby="dg-stores">
+                <h2 class="dg-h2" id="dg-stores">Data</h2>
                 @if (r.Stores.Count == 0)
                 {
                     <p class="dg-empty">This server has no storage checks registered.</p>
@@ -78,7 +80,7 @@
                 }
             </section>
 
-            <section class="dg-section" aria-labelledby="dg-services">
+            <section class="dg-section po-diag__group" aria-labelledby="dg-services">
                 <h2 class="dg-h2" id="dg-services">Services</h2>
                 @if (r.Services.Count == 0)
                 {
@@ -93,16 +95,16 @@
                 }
             </section>
 
-            <section class="dg-section" aria-labelledby="dg-about">
+            <section class="dg-section po-diag__group" aria-labelledby="dg-about">
                 <h2 class="dg-h2" id="dg-about">About this build</h2>
-                <RadzenCard class="dg-card">
+                <div class="dg-card">
                     <dl class="dg-facts">
                         <dt>Version</dt><dd data-testid="diag-version">@BuildInfo.Date</dd>
                         <dt>Server build</dt><dd>@r.Version</dd>
                         <dt>Environment</dt><dd>@r.Environment</dd>
                         <dt>Last checked</dt><dd>@r.CheckedAtUtc.ToLocalTime().ToString("HH:mm:ss")</dd>
                     </dl>
-                </RadzenCard>
+                </div>
             </section>
         }
     </div>
@@ -113,14 +115,11 @@
     private string? _error;
     private double _roundTripMs;
     private bool _loading;
-    private IJSObjectReference? _theme;
     private readonly CancellationTokenSource _cts = new();
 
-    private RenderFragment CheckCard(DiagCheck c) => @<RadzenCard class="dg-card">
-        <div class="dg-row">
-            <span class="dg-name">@c.Name</span>
-            <RadzenBadge BadgeStyle="@StatusStyle(c.Status)" Text="@c.Status" />
-        </div>
+    private RenderFragment CheckCard(DiagCheck c) => @<div class="dg-card po-diag__card">
+        <span class="dg-name">@c.Name</span>
+        <span class="po-badge po-badge--@BadgeClass(c.Status)">@c.Status</span>
         <p class="dg-desc">@c.Description</p>
         <p class="dg-meta">
             @(c.LatencyMs is { } ms ? $"Checked in {Ms(ms)}" : "Not probed")
@@ -130,25 +129,9 @@
                 <span> · error: @c.Error</span>
             }
         </p>
-    </RadzenCard>;
+    </div>;
 
     protected override async Task OnInitializedAsync() => await RefreshAsync();
-
-    protected override async Task OnAfterRenderAsync(bool firstRender)
-    {
-        // Radzen's theme is global CSS, so it is loaded only while a Radzen page is open
-        // (same loader as the profile and leaderboards).
-        if (!firstRender || _theme is not null) return;
-        try
-        {
-            _theme = await JS.InvokeAsync<IJSObjectReference>("import", "./js/platform/radzenTheme.js");
-            await _theme.InvokeVoidAsync("ensure");
-        }
-        catch (JSException)
-        {
-            // Unstyled Radzen still reads correctly.
-        }
-    }
 
     private async Task RefreshAsync()
     {
@@ -172,19 +155,14 @@
 
     private static string Ms(double ms) => ms < 1 ? "under 1 ms" : $"{ms:0} ms";
 
-    private static BadgeStyle StatusStyle(string status) => status switch
+    // po-badge--ok|warn|bad (po-tokens.css). Anything that is not healthy or degraded,
+    // including "Not configured", reads as a warning rather than an outage.
+    private static string BadgeClass(string status) => status switch
     {
-        "Healthy" => BadgeStyle.Success,
-        "Degraded" => BadgeStyle.Warning,
-        "Unhealthy" => BadgeStyle.Danger,
-        _ => BadgeStyle.Light,
-    };
-
-    private static AlertStyle BannerStyle(string status) => status switch
-    {
-        "Healthy" => AlertStyle.Success,
-        "Degraded" => AlertStyle.Warning,
-        _ => AlertStyle.Danger,
+        "Healthy" => "ok",
+        "Degraded" => "warn",
+        "Unhealthy" => "bad",
+        _ => "warn",
     };
 
     private static string BannerTitle(string status) => status switch
@@ -201,19 +179,10 @@
         _ => "A required part of the app is not answering. Details are below.",
     };
 
-    public async ValueTask DisposeAsync()
+    public ValueTask DisposeAsync()
     {
         _cts.Cancel();
         _cts.Dispose();
-        if (_theme is not null)
-        {
-            try
-            {
-                await _theme.InvokeVoidAsync("remove");
-                await _theme.DisposeAsync();
-            }
-            catch (JSDisconnectedException) { }
-            catch (JSException) { }
-        }
+        return ValueTask.CompletedTask;
     }
 }

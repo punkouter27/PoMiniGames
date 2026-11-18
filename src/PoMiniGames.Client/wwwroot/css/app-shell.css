@@ -52,18 +52,10 @@
     }
 }
 
-/* Spatial contract: Left (branding) — Center (FPS + game status) — Right (session). */
+/* Spatial contract: Left (branding) — Center (FPS + game status) — Right (session + gear).
+   The header is also the estate's .po-header (po-tokens.css): that rule owns its
+   position, height, padding, surface and border. This one only adds the gap. */
 .gl-top-bar {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    padding: 0.6rem var(--space-5);
-    background: var(--surface-bar);
-    backdrop-filter: var(--glass-2);
-    border-bottom: 1px solid var(--color-border);
-    position: sticky;
-    top: 0;
-    z-index: var(--z-sticky);
     gap: var(--space-4);
 }
 
@@ -96,18 +88,7 @@
     overflow: hidden;
 }
 
-.gl-brand {
-    display: flex;
-    align-items: center;
-    gap: var(--space-2);
-    color: var(--color-text-primary);
-    text-decoration: none;
-    font-weight: 700;
-    font-size: 1.1rem;
-    white-space: nowrap;
-}
-
-.gl-brand-icon { font-size: 1.3rem; }
+.gl-brand-icon { display: inline-flex; color: var(--po-accent); }
 
 .gl-auth {
     display: flex;
@@ -186,7 +167,7 @@
        JS measurement — which is the whole reason the panel is positioned in CSS
        rather than by a resize/scroll listener. */
     position: fixed;
-    top: 3.25rem;
+    top: var(--po-header-h);
     right: var(--space-4);
 }
 
@@ -310,7 +291,7 @@
     padding-top: 0.7rem;
 }
 
-/* On mobile viewports, BottomNav + More sheet already own Stats, Boards, Status & Settings. */
+/* On mobile viewports, the BottomNav already carries Stats and Boards. */
 @media (max-width: 768px) {
     .gl-overflow-item--desktop-only {
         display: none;
@@ -320,7 +301,6 @@
 /* ── Mobile portrait: mirror MainLayout's top-bar compaction ── */
 @media (max-width: 640px) {
     .gl-top-bar {
-        padding: 0.6rem var(--space-4);
         gap: var(--space-2);
     }
 
@@ -340,13 +320,8 @@
 }
 
 @media (max-width: 480px) {
-    .gl-brand-text {
-        position: absolute;
-        width: 1px;
-        height: 1px;
-        overflow: hidden;
-        clip-path: inset(50%);
-    }
+    /* The app name stays visible at phone width (Po standard); the game title in
+       the centre rail is what yields. */
     .gl-top-bar-center { padding: 0; }
     .gl-top-bar-game .gps-game-title { max-width: none; }
 }
@@ -461,7 +436,6 @@
 
 @media (pointer: coarse) {
     .gl-account-trigger,
-    .gl-brand,
     .gl-overflow-item {
         min-height: 44px;
     }

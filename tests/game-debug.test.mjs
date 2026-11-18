@@ -79,3 +79,12 @@ test('visible Stats action and Escape share state; disposal removes listeners', 
   assert.equal(h.listeners.size, 0);
   assert.equal(h.window.poGameStatsOpen, false);
 });
+
+test('Tab with nothing focused is left to the estate developer window when it is loaded', () => {
+  const h = harness();
+  h.window.poOpenDevWindow = () => true;
+  assert.equal(h.key('Tab').defaultPrevented, undefined);
+  assert.equal(h.calls.length, 0);
+  h.document.activeElement = { matches: () => true, closest: (sel) => (sel.includes('gps-stats-toggle') ? {} : null) };
+  assert.equal(h.key('Tab').defaultPrevented, true, 'from the focused pill, Tab still toggles the panel');
+});

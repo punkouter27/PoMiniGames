@@ -19,31 +19,18 @@
        CDN font is the one asset that could not be served from cache on a cold
        offline start.
 
+   Inter and Space Grotesk, the text and title faces, are declared by po-tokens.css
+   (the estate's latin-subset variable files in fonts/). This file only adds Bungee.
+
    Subsetting: Bungee ships in vietnamese / latin-ext / latin cuts. Only `latin`
    is stored here — Bungee is used exclusively for PoBrawl's HUD, banner and
-   inter-round splash, which are fixed English strings. Inter is the full
-   variable font (one file, weights 100–900) because it renders user-supplied
-   display names and leaderboard entries, which are not constrained to latin.
-   That is 352 KB against ~14 KB for a static cut, and it is the right trade:
-   the alternative is a name rendering in a fallback face mid-list.
+   inter-round splash, which are fixed English strings, and is only fetched on
+   those pages (a face no element uses is never downloaded).
 
    `font-display: swap` throughout — text paints immediately in the system
    fallback and swaps when the file lands, so a slow font never blocks content.
-   The type tokens in app.css list system-ui first for the same reason.
    ───────────────────────────────────────────────────────────────────────── */
 
-/* Inter — variable, covers the whole 100–900 range in a single file, which is
-   why no per-weight @font-face rules are needed. The app references it as
-   "InterVariable" via --font-display in app.css. */
-@font-face {
-    font-family: InterVariable;
-    font-style: normal;
-    font-weight: 100 900;
-    font-display: swap;
-    src: url('../fonts/InterVariable.woff2') format('woff2');
-}
-
-/* Bungee — PoBrawl's stencil/broadcast face. Latin subset only (see above). */
 @font-face {
     font-family: 'Bungee';
     font-style: normal;

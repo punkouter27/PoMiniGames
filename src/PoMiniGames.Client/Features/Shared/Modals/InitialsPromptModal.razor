@@ -1,6 +1,7 @@
 @namespace PoMiniGamesClient.Features.Shared
 @inject PlayerNameService PlayerNames
 @inject UiFeedbackService Feedback
+@inject NavigationManager Navigation
 @using Microsoft.AspNetCore.Components.Forms
 @using PoMiniGames.Shared.Validation
 @implements IDisposable
@@ -75,11 +76,25 @@
     private bool _wasOpen;
     private Action? _onStateChanged;
 
-    // A first-time visitor (nothing saved in this browser) is asked straight away, on whatever
-    // page they arrived at, before they can use it; after that the prompt opens only on request.
+    // A first-time visitor (nothing saved in this browser) is asked straight away; after that
+    // the prompt opens only on request. Po standard (2026-11-18): it never covers the header
+    // (the backdrop starts below it) and it waits while the visitor is on a page that is not
+    // about playing (/diag, /health, /settings), so a status check is never blocked.
     private bool ShouldShow =>
         PlayerNames.IsInitialized &&
-        PlayerNames.IsPromptOpen;
+        PlayerNames.IsPromptOpen &&
+        !OnUtilityPage;
+
+    private static readonly string[] UtilityPages = ["/diag", "/health", "/settings"];
+
+    private bool OnUtilityPage
+    {
+        get
+        {
+            var path = new Uri(Navigation.Uri).AbsolutePath.TrimEnd('/');
+            return UtilityPages.Any(p => string.Equals(path, p, StringComparison.OrdinalIgnoreCase));
+        }
+    }
 
     protected override void OnInitialized()
     {
@@ -92,6 +107,7 @@
             StateHasChanged();
         });
         PlayerNames.StateChanged += _onStateChanged;
+        Navigation.LocationChanged += OnLocationChanged;
 
     }
 
@@ -209,8 +225,11 @@
         }
     }
 
+    private void OnLocationChanged(object? sender, LocationChangedEventArgs e) => _onStateChanged?.Invoke();
+
     public void Dispose()
     {
+        Navigation.LocationChanged -= OnLocationChanged;
         if (_onStateChanged is not null)
         {
             PlayerNames.StateChanged -= _onStateChanged;

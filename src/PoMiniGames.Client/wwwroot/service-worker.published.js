@@ -139,7 +139,9 @@ async function onFetch(event) {
     // auth routes above are excluded before reaching here, so this never short-
     // circuits a redirect the server needs to handle.
     const cache = await caches.open(cacheName);
-    const shouldServeIndexHtml = request.mode === 'navigate';
+    // /po-dev.html (the Tab developer window, Po standard) is a page of its own, not a route
+    // of the app: it is served as itself, from the precache like any other asset.
+    const shouldServeIndexHtml = request.mode === 'navigate' && url.pathname !== '/po-dev.html';
     const cached = await cache.match(shouldServeIndexHtml ? 'index.html' : request);
     if (cached) return cached;
 

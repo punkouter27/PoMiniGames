@@ -1,4 +1,10 @@
-/* PoMiniGames Design Tokens & Fonts (Rule 5 & Rule 6) */
+/* app-tokens.css: PoMiniGames' own design tokens, loaded right after po-tokens.css.
+   Since 2026-11-18 (Po web standard) every colour, font, radius and space here is an
+   alias of a --po-* token, so the app wears the estate look: one indigo accent, a
+   light/dark palette that follows the device (prefers-color-scheme, no in-app toggle),
+   Inter for text and Space Grotesk for titles. Only the app's game-specific values
+   (player hues, podium ranks, toasts, game pieces) keep their own literals.
+   Material Symbols (the icon font) is declared here; it is the one extra face. */
 @font-face {
   font-family: 'Material Symbols Outlined';
   src: url('/_content/Radzen.Blazor/fonts/MaterialSymbolsOutlined.woff2') format('woff2');
@@ -21,30 +27,23 @@
 }
 
 :root {
-  /* Slate surfaces, a darker indigo accent, and grounded status hues — less
-     neon, more studio. Every value clears WCAG AA on its pair (text on surface,
-     accent text on accent fill). */
-  --color-bg: #0f172a;
-  --color-surface: #1e293b;
-  --color-surface-hover: #334155;
-  --color-border: #334155;
-  --color-text-primary: #e2e8f0;
-  --color-text-secondary: #94a3b8;
-  --color-accent: #818cf8;
-  /* Foreground for anything sitting ON --color-accent (buttons, countdowns,
-     the initials prompt). Scheme-invariant: the accent itself does not change
-     between light and dark, so neither does the text that sits on it. */
-  --color-accent-contrast: #ffffff;
-  /* Accent for SOLID fills that carry --color-accent-contrast text on top.
-     --color-accent itself is left alone: it is also the link colour, the
-     focus ring and a border hue, none of which want to shift.
-
-     White on #4f46e5 is 6.3:1; on #6366f1 it would be 4.47:1, a hair UNDER the
-     4.5:1 AA floor. Not a TEXT colour on a dark surface (it is
-     darker than the accent on purpose); that is --color-accent. */
-  --color-accent-solid: #4f46e5;
-  --color-warning: #f59e0b;
-  --color-error: #ef4444;
+  /* Surfaces, text and the accent are the estate palette (po-tokens.css), which
+     flips with the device's light/dark setting on its own. */
+  --color-bg: var(--po-bg);
+  --color-surface: var(--po-surface);
+  --color-surface-hover: var(--po-surface-2);
+  --color-border: var(--po-border);
+  --color-text-primary: var(--po-text);
+  --color-text-secondary: var(--po-text-muted);
+  --color-accent: var(--po-accent);
+  /* Foreground for anything sitting ON the accent fill (buttons, countdowns,
+     the initials prompt): white on the light-mode indigo, near-black on the
+     lighter dark-mode indigo. */
+  --color-accent-contrast: var(--po-on-accent);
+  /* Accent for SOLID fills that carry --color-accent-contrast text on top. */
+  --color-accent-solid: var(--po-accent);
+  --color-warning: var(--po-warning);
+  --color-error: var(--po-danger);
   /* ── Tiered accent bag (Fix #8 — single source of truth for status colour) ──
      Each game's own brand colour (PoEcosystem amber,
      etc.) stays scoped to its theme root, but every chip / button / focus ring
@@ -52,20 +51,20 @@
      Slugs reflect semantic intent, not raw colour, so swapping palettes is a
      1-line change to the named hex. */
   --accent: var(--color-accent);
-  --accent-soft: rgba(129, 140, 248, 0.10);           /* empty-state badges, etc. */
+  --accent-soft: color-mix(in srgb, var(--po-accent) 12%, transparent);   /* empty-state badges, etc. */
   /* Names stylesheets were already using that were never defined, so the text
      silently inherited its colour. Aliases, so both themes follow for free. */
   --color-accent-soft: var(--accent-soft);
   --color-text-muted: var(--color-text-secondary);
   --color-text-soft: var(--color-text-secondary);
   --border-subtle: var(--color-border);
-  --accent-ring: rgba(129, 140, 248, 0.45);           /* :focus-visible */
-  --accent-success: #34d399;
-  --accent-success-soft: rgba(52, 211, 153, 0.16);
-  --accent-warning: #fbbf24;
-  --accent-warning-soft: rgba(251, 191, 36, 0.16);
-  --accent-danger: #f87171;
-  --accent-danger-soft: rgba(248, 113, 113, 0.16);
+  --accent-ring: color-mix(in srgb, var(--po-focus) 45%, transparent);    /* :focus-visible */
+  --accent-success: var(--po-success);
+  --accent-success-soft: color-mix(in srgb, var(--po-success) 16%, transparent);
+  --accent-warning: var(--po-warning);
+  --accent-warning-soft: color-mix(in srgb, var(--po-warning) 16%, transparent);
+  --accent-danger: var(--po-danger);
+  --accent-danger-soft: color-mix(in srgb, var(--po-danger) 16%, transparent);
   --accent-cyan: #22d3ee;
   --accent-amber: #fbbf24;
 
@@ -101,10 +100,10 @@
      legitimately re-point per scheme (the hues themselves stay scheme-invariant
      per the theming rules). Anything rendering status text on a *-soft tint must
      read from an -ink token, never from the raw hue. */
-  --accent-ink: #c7d2fe;
-  --accent-success-ink: #6ee7b7;
-  --accent-warning-ink: #fcd34d;
-  --accent-danger-ink: #fca5a5;
+  --accent-ink: var(--po-accent-hover);
+  --accent-success-ink: var(--po-success);
+  --accent-warning-ink: var(--po-warning);
+  --accent-danger-ink: var(--po-danger);
   --accent-amber-ink: #fde68a;
 
   /* ── GFX FX triad ─────────────────────────────────────────────────────────
@@ -120,17 +119,11 @@
   --fx-accent: var(--accent);
   --fx-accent-2: var(--accent-cyan);
   --fx-accent-3: var(--accent-amber);
-  /* Typography (Suggestion #4) */
-  /* "InterVariable" is the family name the self-hosted variable file declares
-     (css/fonts.css). It was 'Inter' while the app loaded rsms.me's stylesheet,
-     which declared BOTH a static `Inter` and a variable `InterVariable`; only
-     the variable file is vendored, so naming the static family here would have
-     silently fallen through to system-ui on every heading. */
-  --font-display: 'InterVariable', system-ui, -apple-system, sans-serif;
-  --font-body: system-ui, -apple-system, sans-serif;
-  /* Single source of truth for monospace UI (FPS counter, diagnostics, code).
-     Previously each component hand-rolled its own mono stack. */
-  --font-mono: ui-monospace, 'Cascadia Code', 'Consolas', 'SFMono-Regular', 'Menlo', monospace;
+  /* Typography: the estate faces (self-hosted by po-tokens.css). Space Grotesk
+     for titles, Inter for text, the shared mono stack for numbers and code. */
+  --font-display: var(--po-font-display);
+  --font-body: var(--po-font);
+  --font-mono: var(--po-font-mono);
 
   /* Type scale — fluid (Option #6).
      clamp(min, fluid, max) so headings grow with the viewport between phone
@@ -169,17 +162,17 @@
      which we set to "light dark" below — so the browser picks the right half
      automatically. Tokens that need to stay identical across schemes
      (the accent hues, the toast hues) keep their plain declarations. */
-  --surface-1: light-dark(rgba(255,255,255,0.7), rgba(15,23,42,0.65));
-  --surface-2: light-dark(rgba(255,255,255,0.92), rgba(30,41,59,0.85));
-  --surface-3: light-dark(rgba(241,245,249,0.85), rgba(30,41,59,0.65));
-  --surface-bar: light-dark(rgba(255,255,255,0.95), rgba(15,23,42,0.92));
-  --surface-raised: light-dark(rgba(255,255,255,0.98), rgba(51,65,85,0.75));
+  --surface-1: color-mix(in srgb, var(--po-bg) 70%, transparent);
+  --surface-2: color-mix(in srgb, var(--po-surface) 92%, transparent);
+  --surface-3: color-mix(in srgb, var(--po-surface-2) 85%, transparent);
+  --surface-bar: color-mix(in srgb, var(--po-surface) 95%, transparent);
+  --surface-raised: color-mix(in srgb, var(--po-surface) 98%, transparent);
 
   /* Radius scale (Design Token Unification) */
-  --radius-sm: 0.5rem;
-  --radius-md: 0.75rem;
-  --radius-lg: 1rem;
-  --radius-pill: 9999px;
+  --radius-sm: var(--po-radius-sm);
+  --radius-md: var(--po-radius);
+  --radius-lg: calc(var(--po-radius) + 4px);
+  --radius-pill: var(--po-radius-pill);
 
   /* Elevation scale (Option #2: light-dark() pairs) */
   --elevation-1: light-dark(0 4px 20px rgba(15,23,42,0.08), 0 4px 20px rgba(0,0,0,0.35));
@@ -187,12 +180,12 @@
   --elevation-3: light-dark(0 20px 60px rgba(15,23,42,0.12), 0 20px 60px rgba(0,0,0,0.4));
 
   /* Spacing scale */
-  --space-1: 0.25rem;
-  --space-2: 0.5rem;
-  --space-3: 0.75rem;
-  --space-4: 1rem;
-  --space-5: 1.5rem;
-  --space-6: 2rem;
+  --space-1: var(--po-space-1);
+  --space-2: var(--po-space-2);
+  --space-3: var(--po-space-3);
+  --space-4: var(--po-space-4);
+  --space-5: var(--po-space-5);
+  --space-6: var(--po-space-6);
 
   /* Z-index scale (single source of truth — replaces scattered raw z-index values) */
   --z-sticky: 50;
@@ -215,7 +208,7 @@
   --glass-1: blur(8px) saturate(140%);
   --glass-2: blur(12px) saturate(160%);
   --glass-3: blur(20px) saturate(180%);
-  --glass-tint: light-dark(rgba(255,255,255,0.6), rgba(15, 23, 42, 0.6));
+  --glass-tint: color-mix(in srgb, var(--po-surface) 60%, transparent);
 
   /* Motion tokens (paired with the prefers-reduced-motion guard below) */
   --dur-fast: 0.15s;
@@ -277,95 +270,34 @@
      Prefer a container query (`@container`) over any of these for a component
      that should react to its own slot rather than to the viewport. */
 
-  /* Tell the UA which schemes this document supports, so native chrome the
-     stylesheet cannot reach — scrollbars, <select> popups, date pickers, form
-     control borders, the canvas behind an overscroll — is painted to match
-     instead of staying stark white against a dark page.
-     Option #2: `light dark` (not just `dark`) is the prerequisite for
-     `light-dark()` to resolve — see the surface/tint/elevation/glass tokens
-     above. The user-facing light-mode toggle (Profile → Preferences) still
-     flips `data-theme` and overrides the few tokens that can't be expressed as
-     light-dark pairs below. */
+  /* The phone BottomNav's height (BottomNav.razor.css): po-tokens.css lifts the
+     .po-version stamp above it at the same breakpoint (768px). */
+  --po-stamp-lift: calc(3.25rem + env(safe-area-inset-bottom, 0px));
+
+  /* Light and dark both supported; the device picks (po-tokens.css sets the same).
+     `light dark` is also what lets the light-dark() pairs above resolve. */
   color-scheme: light dark;
 }
 
-/* ── Light theme ─────────────────────────────────────────────────────────
-   Overrides ONLY the surface/text/elevation tokens. Every component in the app
-   reads its colour through these variables, so re-pointing them here is the
-   whole light theme — no component rule is duplicated, and a new component is
-   themed correctly the moment it uses the tokens rather than raw hex.
-
-   Deliberately NOT overridden:
-     • Accent hues (--accent, --accent-success/warning/danger, --accent-cyan…).
-       They carry semantic meaning and are already AA-legible on both surfaces;
-       re-hueing them per scheme would fork the status vocabulary in two.
-     • Game-piece and per-game theme tokens (--disc-*, PoEcosystem's
-       amber). Those paint inside a canvas or a self-contained board that sets its
-       own backdrop, so a light page around them changes nothing they render.
-
-   Shadows drop to near-black at low alpha: the dark theme's heavy rgba(0,0,0,.35)
-   reads as dirt rather than depth on a light surface.
-
-   ── Why an attribute and not `@media (prefers-color-scheme: light)` ──
-   Preferences (Profile page) has a manual Auto/Light/Dark switch. A media query
-   cannot be overridden by a user choice — the OS would always win — and
-   duplicating the palette into a second `[data-theme="light"]` rule would leave
-   two copies to drift apart.
-   So the OS preference is resolved to a concrete value exactly once, by the
-   inline script in index.html, which stamps `<html data-theme="light|dark">`
-   before first paint. "auto" still tracks the OS: appPrefs.js re-stamps on
-   matchMedia change. Blazor WASM is required to run this app at all, so there is
-   no no-JS path left to serve. */
-:root[data-theme="dark"] {
-    color-scheme: dark;
-}
-
-:root[data-theme="light"] {
-    color-scheme: light;
-
-    /* Calmer off-white base + softer slate text: keeps the page looking
-       professional rather than crisp-but-cold. */
-    --color-bg: #f1f5f9;
-    --color-surface: #ffffff;
-    --color-surface-hover: #e2e8f0;
-    --color-border: #cbd5e1;
-    --color-text-primary: #0f172a;
-    --color-text-secondary: #475569;
-    --color-accent: #4f46e5;
-    --color-accent-solid: #4338ca;
-
-    /* Player ink on a white surface — same hue family as --player-1/2, pushed
+/* ── Light scheme ──────────────────────────────────────────────────────
+   The estate palette flips itself (po-tokens.css). What is left here are the app's
+   own values that are tuned as fills against a dark page and need a darker ink on a
+   light one: the player hues used as text, the amber ink, the podium ranks and the
+   toasts. Follows the device only: there is no in-app theme switch (Po standard). */
+@media (prefers-color-scheme: light) {
+  :root {
+    /* Player ink on a white surface: same hue family as --player-1/2, pushed
        down in lightness until each clears its floor as text. */
     --player-1-ink: #4338ca;
     --player-2-ink: #be123c;
-
-    /* Status text on a pale tint needs dark ink — see the --accent-*-ink note in
-       the :root block. Each value is the same hue pushed down in lightness until
-       it clears 4.5:1 on its own --accent-*-soft tint over a white surface. */
-    --accent-ink: #3730a3;
-    /* #15803d computes to exactly 4.50:1 on --accent-success-soft over a white
-       surface — mathematically at the floor, which axe still reports as a failure
-       once it rounds. One step darker gives ~6.3:1 and real headroom. */
-    --accent-success-ink: #166534;
-    /* Same story as --accent-success-ink above: #a16207 on --accent-warning-soft
-       composites to 4.17:1 over a light surface, which axe reports as a failure.
-       One step darker measures ~5.6:1. */
-    --accent-warning-ink: #845104;
-    --accent-danger-ink: #b91c1c;
     --accent-amber-ink: #854d0e;
 
-    /* Option #2: --surface-*, --tint-*, --elevation-*, --glass-tint no longer
-       need to be re-declared here. They are `light-dark()` pairs in :root,
-       which resolve against the element's `color-scheme` — and the very first
-       rule in this block sets `color-scheme: light`, so each token picks the
-       light half automatically. */
-
-    /* Darkened to keep the podium readable on a light surface (see note above). */
+    /* Darkened to keep the podium readable on a light surface. */
     --rank-gold:   #b45309;
     --rank-silver: #64748b;
     --rank-bronze: #9a5b2d;
 
-    /* Toasts keep their hue but invert lightness: the dark theme's near-black
+    /* Toasts keep their hue but invert lightness: the dark scheme's near-black
        tinted backgrounds with pale text are unreadable on a light page. */
     --toast-info-bg: #eff6ff;
     --toast-info-text: #1e3a5f;
@@ -375,6 +307,7 @@
     --toast-success-text: #14532d;
     --toast-warning-bg: #fffbeb;
     --toast-warning-text: #78350f;
+  }
 }
 
 /* ── Radzen variable mappings ─────────────────────────────────────────────── */

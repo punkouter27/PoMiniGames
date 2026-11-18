@@ -1,13 +1,15 @@
 /* /diag — every colour reads from the root tokens, so the page follows light and dark. */
 .dg {
+    width: 100%;
     max-width: 48rem;
     margin: 0 auto;
     padding: var(--space-4) var(--space-4) var(--space-6);
     color: var(--color-text-primary);
+    box-sizing: border-box;
 }
 
 /* Reserved before the report lands, so the result does not push the page around. */
-.dg-body { min-height: 16rem; }
+.dg-body { min-height: 16rem; display: grid; gap: var(--space-4); align-content: start; }
 
 .dg-loading {
     display: flex;
@@ -17,7 +19,7 @@
     color: var(--color-text-secondary);
 }
 
-.dg-section { margin-top: var(--space-4); }
+.dg-section { margin-top: var(--space-2); }
 
 .dg-h2 {
     margin: 0 0 var(--space-2);
@@ -28,44 +30,51 @@
     color: var(--color-text-secondary);
 }
 
-.dg-body ::deep .dg-card {
-    margin-bottom: var(--space-2);
-    padding: var(--space-3);
+/* The cards and badges are the estate's .po-diag__card / .po-badge (po-tokens.css): name
+   and badge on the first row, the description and timing spanning both columns below. */
+.dg-card {
     background: var(--color-surface);
     color: var(--color-text-primary);
     border: 1px solid var(--color-border);
     border-radius: var(--radius-md);
-    box-shadow: none;
+    padding: var(--space-3) var(--space-4);
 }
 
-.dg-body ::deep .dg-banner { margin: 0; }
-
-.dg-body ::deep .dg-row {
+.dg-banner {
     display: flex;
-    align-items: center;
-    justify-content: space-between;
-    gap: var(--space-2);
-    flex-wrap: wrap;
+    align-items: flex-start;
+    gap: var(--space-3);
+    padding: var(--space-3) var(--space-4);
+    border-radius: var(--radius-md);
+    border: 1px solid var(--color-border);
+    background: var(--color-surface);
 }
+.dg-banner--ok { border-color: color-mix(in srgb, var(--po-success) 40%, var(--po-border)); }
+.dg-banner--warn { border-color: color-mix(in srgb, var(--po-warning) 40%, var(--po-border)); }
+.dg-banner--bad { border-color: color-mix(in srgb, var(--po-danger) 40%, var(--po-border)); }
+.dg-banner-title { margin: 0; font-weight: 700; }
 
-.dg-body ::deep .dg-name { font-weight: 700; }
+.dg-name { font-weight: 700; min-width: 0; overflow-wrap: anywhere; }
 
-.dg-body ::deep .dg-desc,
-.dg-body ::deep .dg-banner-text {
-    margin: var(--space-1) 0 0;
+.po-diag__card .dg-desc,
+.po-diag__card .dg-meta { grid-column: 1 / -1; }
+
+.dg-desc,
+.dg-banner-text {
+    margin: 0;
     font-size: 0.875rem;
     color: var(--color-text-secondary);
 }
 
-.dg-body ::deep .dg-meta {
-    margin: var(--space-1) 0 0;
+.dg-meta {
+    margin: 0;
     font-size: 0.75rem;
     color: var(--color-text-secondary);
 }
 
 .dg-empty { color: var(--color-text-secondary); font-size: 0.875rem; }
 
-.dg-body ::deep .dg-facts {
+.dg-facts {
     display: grid;
     grid-template-columns: max-content 1fr;
     gap: var(--space-1) var(--space-3);
@@ -73,5 +82,5 @@
     font-size: 0.875rem;
 }
 
-.dg-body ::deep .dg-facts dt { color: var(--color-text-secondary); }
-.dg-body ::deep .dg-facts dd { margin: 0; font-variant-numeric: tabular-nums; overflow-wrap: anywhere; }
+.dg-facts dt { color: var(--color-text-secondary); }
+.dg-facts dd { margin: 0; font-variant-numeric: tabular-nums; overflow-wrap: anywhere; }

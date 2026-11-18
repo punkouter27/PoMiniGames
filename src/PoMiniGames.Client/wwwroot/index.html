@@ -75,27 +75,14 @@
 
     <link rel="modulepreload" href="_framework/blazor.webassembly.js" />
 
-    <!-- Theme resolution, inline and render-blocking ON PURPOSE.
-         app.css keys the light palette off `<html data-theme="light">` rather than
-         a `prefers-color-scheme` media query, so that an explicit user choice
-         (Profile → Preferences) can beat the OS. That means SOMETHING has to stamp
-         the attribute, and it has to happen before first paint or a dark-default
-         page flashes at a light-mode user on every navigation.
-         Blazor WASM cannot do it — it boots long after first paint — so this runs
-         here, ahead of the stylesheet. Keep it inline: an external file would be a
-         second round-trip in front of the render.
-         "auto" (or an unset/corrupt value) resolves against the OS preference and
-         is re-resolved live by the matchMedia listener in appPrefs.js. -->
+    <!-- Motion and colour-safe resolution, inline and render-blocking ON PURPOSE: a game
+         engine that boots before Blazor must already see <html data-motion> and
+         <html data-colorsafe>. There is no theme attribute: light/dark follows the device
+         through prefers-color-scheme in css/po-tokens.css (Po standard, 2026-11-18). -->
     <script>
         (function () {
             try {
-                var mode = localStorage.getItem('pominigames:theme') || 'auto';
-                if (mode !== 'light' && mode !== 'dark') {
-                    mode = matchMedia('(prefers-color-scheme: light)').matches ? 'light' : 'dark';
-                }
-                document.documentElement.setAttribute('data-theme', mode);
-                // Same story for motion, and for the same reason app.css keys the
-                // light palette off an attribute: resolving `prefers-reduced-motion`
+                // Resolving `prefers-reduced-motion`
                 // to a concrete value HERE is what lets the stylesheet carry one
                 // universal-selector guard instead of an attribute rule plus a
                 // duplicate @media copy of it. Either source wins — an explicit
@@ -112,31 +99,18 @@
                     document.documentElement.setAttribute('data-colorsafe', '1');
                 }
             } catch (e) {
-                // Private mode / storage disabled — fall back to the dark default.
-                document.documentElement.setAttribute('data-theme', 'dark');
+                // Private mode / storage disabled: the defaults stand.
             }
         })();
     </script>
 
-    <!-- Typography — self-hosted (see css/fonts.css for the full rationale).
-         This replaces preconnects + preloads to rsms.me and fonts.googleapis.com.
-         Those were two external origins on the render path, and the Google one is
-         itself a stylesheet that then fetches from fonts.gstatic.com — the actual
-         font bytes were four hops deep, could not be service-worker cached for
-         offline play, and leaked every visitor's IP to two third parties.
-
-         Now same-origin: one small stylesheet plus the woff2 files it points at.
-         The sheet is render-blocking (it is ~70 lines and same-origin, so it costs
-         nothing meaningful) while the FONT FILES are not — `font-display: swap`
-         means text paints in system-ui immediately and swaps when they land.
-
-         The Inter file is preloaded because it is used by every page's headings;
-         Bungee is not, because only PoBrawl uses it and preloading it would fetch
-         35 KB on every visit for one game. The `crossorigin` on the preload is
-         required even same-origin: fonts are always fetched in CORS mode, and
-         without it the browser fetches the file twice. -->
-    <link rel="preload" href="fonts/InterVariable.woff2" as="font" type="font/woff2" crossorigin />
+    <!-- Typography and the estate look: po-tokens.css comes FIRST among the app's
+         stylesheets. It self-hosts Inter and Space Grotesk (fonts/, same-origin, so no CSP
+         change) and carries the shared shell: .po-header, .po-version, /diag cards.
+         app-tokens.css then aliases the app's own variables to the --po-* tokens.
+         fonts.css only adds Bungee, the PoBrawl HUD's display face. -->
     <link rel="stylesheet" href="css/po-tokens.css" />
+    <link rel="stylesheet" href="css/app-tokens.css" />
     <link rel="stylesheet" href="css/po-motion.css" />
     <link rel="stylesheet" href="css/fonts.css" />
 
@@ -171,7 +145,8 @@
     <link rel="alternate icon" type="image/png" href="favicon.png" />
     <link rel="manifest" href="manifest.webmanifest" />
     <link rel="apple-touch-icon" href="icon-192.png" />
-    <meta name="theme-color" content="#0f172a" />
+    <meta name="theme-color" media="(prefers-color-scheme: light)" content="#ffffff" />
+    <meta name="theme-color" media="(prefers-color-scheme: dark)" content="#171a23" />
     <meta name="description" content="PoMiniGames — instant-play mini-games with AI opponents, real-time 2P multiplayer, and global leaderboards. Offline-resilient." />
     <meta property="og:title" content="PoMiniGames" />
     <meta property="og:description" content="Instant-play mini-games · AI opponents · real-time 2P multiplayer · leaderboards." />
@@ -206,6 +181,9 @@
     <script src="js/platform/app.js" defer></script>
     <!-- AppErrorBoundary fallback clipboard helper (non-secure-context safe) -->
     <script src="js/platform/appErrorBoundary.js" defer></script>
+    <!-- Po standard: Tab with nothing focused opens /po-dev.html (live diagnostics) in its
+         own window. A plain external script, same file in every Po app. -->
+    <script src="js/po-devwindow.js"></script>
 </head>
 
 <body>

@@ -1,5 +1,6 @@
 /* Read by assistive technology, not drawn. MainLayout's .gl-sr-only is scoped to its own
-   markup, so this component carries its own copy. */
+   markup, so this component carries its own copy. The stamp itself is styled by
+   po-tokens.css (.po-version). */
 .gl-sr-only {
     position: absolute;
     width: 1px;
@@ -12,32 +13,6 @@
     border: 0;
 }
 
-/* Bottom-right on every page. Above the modal layer (the initials prompt's backdrop is
-   --z-modal) and below toasts; never interactive, so it cannot block a tap. */
-.app-build-version {
-    position: fixed;
-    right: 0.5rem;
-    bottom: calc(0.35rem + env(safe-area-inset-bottom));
-    z-index: calc(var(--z-modal) + 1);
-    padding: 0.05rem 0.4rem;
-    border-radius: var(--radius-pill);
-    background: var(--color-surface);
-    color: var(--color-text-secondary);
-    font-family: var(--font-mono);
-    font-size: 0.7rem;
-    line-height: 1.4;
-    opacity: 0.85;
-    pointer-events: none;
-    user-select: none;
-}
-
-/* Phones: BottomNav is fixed to the bottom edge (3.25rem + safe area), so sit just above it. */
-@media (max-width: 768px) {
-    .app-build-version {
-        bottom: calc(3.25rem + env(safe-area-inset-bottom) + 0.3rem);
-    }
-}
-
 @media print {
-    .app-build-version { display: none; }
+    .po-version { display: none; }
 }

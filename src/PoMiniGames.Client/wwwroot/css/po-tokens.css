@@ -1,0 +1,214 @@
+/* po-tokens.css — SAME FILE IN EVERY PO WEB APP. Do not edit one copy: change all ten together.
+   One look for the estate: light and dark follow the device, one indigo accent, Inter for text,
+   Space Grotesk for titles, one spacing ladder, one shell (header, version stamp, settings gear).
+   Fonts are self-hosted (wwwroot/fonts/, variable woff2, latin subset): no external host, so no
+   CSP change and no third-party request. App stylesheets alias their own variables to these
+   tokens instead of defining new colours. */
+
+@font-face {
+  font-family: "Inter";
+  src: url("../fonts/inter-latin.woff2") format("woff2");
+  font-weight: 100 900;
+  font-style: normal;
+  font-display: swap;
+}
+@font-face {
+  font-family: "Space Grotesk";
+  src: url("../fonts/space-grotesk-latin.woff2") format("woff2");
+  font-weight: 300 700;
+  font-style: normal;
+  font-display: swap;
+}
+
+:root {
+  color-scheme: light dark;
+
+  /* colour — light (default) */
+  --po-bg: #f6f7fb;
+  --po-surface: #ffffff;
+  --po-surface-2: #eef0f6;
+  --po-border: #dcdfe8;
+  --po-text: #141826;
+  --po-text-muted: #596075;
+  --po-accent: #4f46e5;
+  --po-accent-hover: #4338ca;
+  --po-on-accent: #ffffff;
+  --po-accent-soft: #e8e7fd;
+  --po-success: #157f3d;
+  --po-warning: #9a5b00;
+  --po-danger: #c0262d;
+  --po-info: #1d5fbf;
+  --po-focus: #4f46e5;
+
+  /* type */
+  --po-font: "Inter", system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  --po-font-display: "Space Grotesk", "Inter", system-ui, sans-serif;
+  --po-font-mono: ui-monospace, "Cascadia Mono", Consolas, monospace;
+  --po-text-xs: 0.75rem;
+  --po-text-sm: 0.875rem;
+  --po-text-md: 1rem;
+  --po-text-lg: 1.25rem;
+  --po-text-xl: 1.5rem;
+  --po-text-2xl: 2rem;
+
+  /* space, shape, depth */
+  --po-space-1: 4px;
+  --po-space-2: 8px;
+  --po-space-3: 12px;
+  --po-space-4: 16px;
+  --po-space-5: 24px;
+  --po-space-6: 32px;
+  --po-radius-sm: 6px;
+  --po-radius: 10px;
+  --po-radius-pill: 999px;
+  --po-shadow: 0 1px 2px rgb(16 20 38 / 6%), 0 4px 16px rgb(16 20 38 / 6%);
+  --po-header-h: 56px;
+  --po-z-header: 100;
+  --po-z-stamp: 1000;
+
+  /* Radzen bridge: apps that use Radzen inherit the accent and status colours. */
+  --rz-primary: var(--po-accent);
+  --rz-primary-light: var(--po-accent-hover);
+  --rz-primary-lighter: var(--po-accent-soft);
+  --rz-primary-dark: var(--po-accent-hover);
+  --rz-on-primary: var(--po-on-accent);
+  --rz-success: var(--po-success);
+  --rz-warning: var(--po-warning);
+  --rz-danger: var(--po-danger);
+  --rz-info: var(--po-info);
+  --rz-text-font-family: var(--po-font);
+  --rz-body-background-color: var(--po-bg);
+  --rz-base-background-color: var(--po-surface);
+  --rz-text-color: var(--po-text);
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --po-bg: #0f1117;
+    --po-surface: #171a23;
+    --po-surface-2: #1f2330;
+    --po-border: #2c3142;
+    --po-text: #e8eaf2;
+    --po-text-muted: #a1a8bd;
+    --po-accent: #8b85ff;
+    --po-accent-hover: #a29dff;
+    --po-on-accent: #0f1117;
+    --po-accent-soft: #24224a;
+    --po-success: #5fd08c;
+    --po-warning: #f0b84f;
+    --po-danger: #ff7b7b;
+    --po-info: #79a8ff;
+    --po-focus: #a29dff;
+    --po-shadow: 0 1px 2px rgb(0 0 0 / 40%), 0 4px 16px rgb(0 0 0 / 30%);
+  }
+}
+
+html { background: var(--po-bg); }
+body {
+  background: var(--po-bg);
+  color: var(--po-text);
+  font-family: var(--po-font);
+  font-size: var(--po-text-md);
+  line-height: 1.5;
+}
+h1, h2, h3, .po-display { font-family: var(--po-font-display); letter-spacing: -0.01em; }
+:focus-visible { outline: 2px solid var(--po-focus); outline-offset: 2px; }
+
+/* ── Shell: header (title upper-left; email + settings upper-right). Shown signed in AND out. ── */
+.po-header {
+  position: sticky;
+  top: 0;
+  z-index: var(--po-z-header);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--po-space-3);
+  min-height: var(--po-header-h);
+  padding: 0 max(var(--po-space-4), env(safe-area-inset-right, 0px)) 0 max(var(--po-space-4), env(safe-area-inset-left, 0px));
+  background: var(--po-surface);
+  border-bottom: 1px solid var(--po-border);
+}
+.po-header__title {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--po-space-2);
+  min-width: 0;
+  font-family: var(--po-font-display);
+  font-size: var(--po-text-lg);
+  font-weight: 600;
+  color: var(--po-text);
+  text-decoration: none;
+  white-space: nowrap;
+}
+.po-header__actions {
+  display: flex;
+  align-items: center;
+  gap: var(--po-space-2);
+  flex-shrink: 0;
+  min-width: 0;
+}
+.po-header__email {
+  max-width: 28ch;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: var(--po-text-sm);
+  color: var(--po-text-muted);
+}
+@media (max-width: 480px) {
+  .po-header__email { max-width: 16ch; font-size: var(--po-text-xs); }
+}
+.po-header__settings {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 40px;
+  height: 40px;
+  border-radius: 50%;
+  border: 1px solid var(--po-border);
+  background: var(--po-surface-2);
+  color: var(--po-text);
+  cursor: pointer;
+  text-decoration: none;
+}
+.po-header__settings:hover { border-color: var(--po-accent); color: var(--po-accent); }
+.po-header__settings svg { width: 20px; height: 20px; }
+
+/* ── Shell: build stamp, vYYMMDD, fixed lower-right on every page ── */
+.po-version {
+  position: fixed;
+  right: max(var(--po-space-3), env(safe-area-inset-right, 0px));
+  bottom: max(var(--po-space-3), env(safe-area-inset-bottom, 0px));
+  z-index: var(--po-z-stamp);
+  padding: 2px 8px;
+  border-radius: var(--po-radius-pill);
+  background: var(--po-surface);
+  border: 1px solid var(--po-border);
+  color: var(--po-text-muted);
+  font-family: var(--po-font-mono);
+  font-size: var(--po-text-xs);
+  line-height: 1.6;
+  pointer-events: none;
+  opacity: 0.9;
+}
+/* Apps with a bottom nav on phones lift the stamp above it by setting --po-stamp-lift. */
+@media (max-width: 768px) {
+  .po-version { bottom: calc(max(var(--po-space-3), env(safe-area-inset-bottom, 0px)) + var(--po-stamp-lift, 0px)); }
+}
+
+/* ── Shell: /diag status cards ── */
+.po-diag { display: grid; gap: var(--po-space-4); max-width: 960px; margin: 0 auto; padding: var(--po-space-5) var(--po-space-4); }
+.po-diag__group { display: grid; gap: var(--po-space-2); }
+.po-diag__card {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: var(--po-space-1) var(--po-space-3);
+  padding: var(--po-space-3) var(--po-space-4);
+  background: var(--po-surface);
+  border: 1px solid var(--po-border);
+  border-radius: var(--po-radius);
+}
+.po-badge { display: inline-block; padding: 2px 10px; border-radius: var(--po-radius-pill); font-size: var(--po-text-xs); font-weight: 600; }
+.po-badge--ok { color: var(--po-success); background: color-mix(in srgb, var(--po-success) 14%, transparent); }
+.po-badge--warn { color: var(--po-warning); background: color-mix(in srgb, var(--po-warning) 16%, transparent); }
+.po-badge--bad { color: var(--po-danger); background: color-mix(in srgb, var(--po-danger) 14%, transparent); }

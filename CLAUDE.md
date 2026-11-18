@@ -16,14 +16,14 @@ architecture overview.
 docker compose up -d azurite                                   # storage emulator (ports 10000-10002)
 dotnet run --project src/PoMiniGames.Api/PoMiniGames.Api.csproj # API + Blazor WASM client on http://localhost:5080
 dotnet build PoMiniGames.slnx                                  # warnings are errors (Directory.Build.props)
-dotnet format PoMiniGames.slnx --verify-no-changes             # CI style gate
-pwsh scripts/ci/css-lint.ps1                                      # CI CSS gate; run after any scripted CSS edit
+dotnet format PoMiniGames.slnx --verify-no-changes             # style gate (run locally)
+pwsh scripts/ci/css-lint.ps1                                      # CSS gate; run after any scripted CSS edit
 pwsh scripts/ci/test-ceilings.ps1                                 # test-count ceiling guards only
 
 dotnet test tests/PoMiniGames.Unit --filter "FullyQualifiedName~PoMule"   # one test / one area
 dotnet test tests/PoMiniGames.E2EUI -p:SkipPlaywrightInstall=true --filter "..."
 node --test tests/pomule-world.test.mjs                        # one JS engine test file
-node --test "tests/*.test.mjs"                                 # every JS engine test (CI runs them all)
+node --test "tests/*.test.mjs"                                 # every JS engine test
 ```
 
 - The API host serves the client on one origin, so there is no separate client dev server. Never
@@ -32,10 +32,13 @@ node --test "tests/*.test.mjs"                                 # every JS engine
   `--artifacts-path artifacts/<name>` (it must stay inside the repo).
 - `scripts/dev/test-all.ps1` runs all four tiers. The AGENTS.md rules say not to run it for routine
   changes.
-- CI uses the shared `.github/workflows/deploy.yml`: `scripts/ci-checks.ps1` preserves the
-  trim/size, format, Bicep, CSS, test-ceiling, and JavaScript checks; `scripts/ci-package.ps1`
-  stages the docs suite; `scripts/pre-deploy.ps1` clears stale Kudu files on the Windows App Service.
-  Only master deploys. Provision with a manual run of `.github/workflows/deploy.yml` with `infra` = what-if, then apply or `azd up`.
+- `.github/workflows/deploy.yml` builds and deploys only (no tests, no infra job, no rollback,
+  no PR runs): build, publish, `scripts/ci-package.ps1` stages the docs suite,
+  `scripts/pre-deploy.ps1` clears stale Kudu files on the Windows App Service, deploy, then wait
+  for `/health/live` to answer with this commit's `X-Commit`. The file is identical in every Po
+  repo and each repo owns its copy. Tests and checks run locally: `scripts/ci-checks.ps1` still
+  bundles the trim/size, format, Bicep, CSS, test-ceiling and JavaScript checks, but CI no longer
+  calls it. Provision Azure with `azd up` (or `az deployment ... what-if`) from a local shell.
 
 ## Tests
 
@@ -57,10 +60,25 @@ node --test "tests/*.test.mjs"                                 # every JS engine
     secrets, addresses or exception messages (`DiagProjectionTests`, `HealthEndpointTests`). The
     server's JSON `/health` and `/health/live` probes are unchanged for the deploy gate.
   - The build date (`v{YYMMDD}`, `Layout/BuildVersion.razor`) is visible bottom-right on every
-    page again, above the BottomNav on phones and above the modal layer.
+    page again, above the BottomNav on phones.
   - Forms that submit (initials, ecosystem rename and alerts) validate with FluentValidation rules
     in `PoMiniGames.Shared/Validation` through `Layout/FluentValidationValidator.cs`: inline errors,
     submit disabled while submitting.
+  - **Po web standard (2026-11-18).** The shell is shared with every Po app:
+    `wwwroot/css/po-tokens.css` (same file everywhere, never edit one copy) is the first
+    stylesheet; `css/app-tokens.css` aliases the app's own variables to its `--po-*` tokens.
+    Light/dark follows the device only (no theme setting, no `data-theme`); Inter for text,
+    Space Grotesk for titles (self-hosted in `wwwroot/fonts/`; Bungee stays for PoBrawl's HUD).
+    `MainLayout`'s header is `.po-header`: app name upper-left, the initials menu and the settings
+    gear (`.po-header__settings`, opens the settings sheet; `/settings` is the same sheet as a
+    page) upper-right. The phone BottomNav is Games / Boards / Stats. The build stamp is one
+    `.po-version` (`v{YYMMDD}`, the UTC date of HEAD, computed by `PoBuildStamp` in
+    `Directory.Build.props` for client and server alike). `/diag` draws `po-diag__card` cards
+    with `po-badge--ok|warn|bad` in API / Data / Services groups. Pressing Tab with nothing focused
+    opens `/po-dev.html` (`js/po-devwindow.js` + `js/po-dev.js`, same files everywhere), which
+    reads `/health/live` (`X-Commit`) and `/api/diag`; in a game the Tab stats panel then opens
+    from its pill. The first-visit initials prompt waits on `/diag`, `/health` and `/settings`
+    and never covers the header.
   - Storage settings are read from DI `IConfiguration` when the clients are built
     (`StorageExtensions`), never at registration: read eagerly they missed the test hosts'
     overrides and every integration fixture silently used the machine's shared Azurite.

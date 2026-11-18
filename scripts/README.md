@@ -7,8 +7,8 @@ the 2026-08-18 cleanup (they referenced files that no longer exist and had no ca
 
 | Folder | What lives there | Who runs it |
 |---|---|---|
-| `scripts/` (root) | The four workflow hooks. **These paths are fixed**: `.github/workflows/deploy.yml` is shared verbatim across every Po .NET repo and calls them by name. | CI |
-| `scripts/ci/` | Checks CI runs, callable by hand | `ci-checks.ps1`, humans |
+| `scripts/` (root) | The workflow hooks and the local check bundle. **These paths are fixed**: `.github/workflows/deploy.yml` is identical in every Po .NET repo (each repo owns its copy) and calls `ci-package.ps1` and `pre-deploy.ps1` by name. | CI, humans |
+| `scripts/ci/` | Checks run locally (CI builds and deploys only) | `ci-checks.ps1`, humans |
 | `scripts/dev/` | Local setup, test runs, reports, cleanup | humans |
 | `scripts/content/` | Author-time asset pipelines that produce committed output | humans, when an asset changes |
 | `scripts/blender/`, `pocabinet/`, `pofighter/`, `pomarblerace/` | Per-asset authoring kits with their own READMEs | humans |
@@ -17,10 +17,10 @@ the 2026-08-18 cleanup (they referenced files that no longer exist and had no ca
 
 | Script | Purpose | Called from |
 |---|---|---|
-| `ci-checks.ps1` | Post-build gate: CSS lint, test ceilings, Bicep build, JS engine tests | `deploy.yml` |
+| `ci-checks.ps1` | Local gate: CSS lint, test ceilings, Bicep build, JS engine tests | humans (no longer called by `deploy.yml`) |
 | `ci-package.ps1` | Adds the docs suite to the publish folder | `deploy.yml` |
 | `pre-deploy.ps1` | Clears stale Kudu files on the Windows App Service | `deploy.yml` |
-| `post-deploy-smoke.ps1` | Probes the live site after the health gate: `/api/health/ping`, `/api/health`, and asserts `/api/diag` answers 200 with no secret or address in it | `deploy.yml` |
+| `post-deploy-smoke.ps1` | Probes the live site: `/api/health/ping`, `/api/health`, and asserts `/api/diag` answers 200 with no secret or address in it | humans, `-BaseUrl` (no longer called by `deploy.yml`) |
 
 ## ci/
 

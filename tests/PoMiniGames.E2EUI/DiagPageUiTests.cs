@@ -3,9 +3,11 @@ using Microsoft.Playwright;
 namespace PoMiniGames.E2EUI;
 
 /// <summary>
-/// The /diag status page (fleet standard, 2026-11-17): it renders the report from /api/diag at
-/// phone and desktop width, with the build stamp visible bottom-right, no sideways scroll and
-/// zero console errors (PlaywrightErrorGuard fails the test on any).
+/// The /diag status page (Po standard, 2026-11-18): it renders the report from /api/diag at
+/// phone and desktop width as po-diag__card cards in the API / Data / Services groups, under
+/// the shared header (app name left, settings gear right), with the vYYMMDD build stamp
+/// visible bottom-right, no sideways scroll and zero console errors (PlaywrightErrorGuard
+/// fails the test on any).
 /// </summary>
 [Collection(KestrelServerCollection.Name)]
 public class DiagPageUiTests
@@ -31,9 +33,13 @@ public class DiagPageUiTests
 
                 await page.Locator("[data-testid='diag-banner']").WaitForAsync(new LocatorWaitForOptions { Timeout = 30_000 });
                 (await page.Locator("h1").First.TextContentAsync()).Should().Contain("Status");
-                (await page.GetByText("Database / storage").CountAsync()).Should().BeGreaterThan(0);
+                (await page.GetByText("Data", new() { Exact = true }).CountAsync()).Should().BeGreaterThan(0);
                 (await page.GetByText("Services", new() { Exact = true }).CountAsync()).Should().BeGreaterThan(0);
                 (await page.Locator("[data-testid='diag-version']").InnerTextAsync()).Should().MatchRegex(@"^\d{6}$");
+                (await page.Locator(".po-diag__card .po-badge").CountAsync()).Should().BeGreaterThan(1);
+                (await page.Locator(".po-header .po-header__title").InnerTextAsync()).Should().Contain("PoMiniGames");
+                (await page.Locator(".po-header .po-header__settings").GetAttributeAsync("href")).Should().Be("/settings");
+                (await page.Locator(".po-version").InnerTextAsync()).Should().MatchRegex(@"^v\d{6}$");
 
                 // The build stamp: visible, inside the viewport, in the bottom-right quarter.
                 var stamp = await page.Locator("[data-testid='build-version']").BoundingBoxAsync();

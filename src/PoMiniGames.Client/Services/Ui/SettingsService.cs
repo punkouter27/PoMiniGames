@@ -9,29 +9,20 @@ using PoMiniGamesClient.Services.Ui;
 
 namespace PoMiniGamesClient.Services.Ui;
 
-/// <summary>How the app picks its colour scheme.</summary>
-public enum ThemeMode
-{
-    /// <summary>Follow the OS preference, and keep following it if it changes mid-session.</summary>
-    Auto,
-    Light,
-    Dark,
-}
-
 /// <summary>
-/// Global app settings shared by every game: colour scheme, master mute and
+/// Global app settings shared by every game: master mute and
 /// volume, haptics and reduced motion. Persisted as plain localStorage values
-/// (<c>pominigames:muted</c>, <c>pominigames:theme</c>, <c>pominigames:volume</c>,
+/// (<c>pominigames:muted</c>, <c>pominigames:volume</c>,
 /// <c>pominigames:sfx-volume</c>, <c>pominigames:music-volume</c>,
 /// <c>pominigames:haptics</c>, <c>pominigames:reduced-motion</c>) so JS modules (uiAudio.js,
-/// audioBus.js, the index.html pre-paint theme script, game engines) can read
+/// audioBus.js, the index.html pre-paint motion script, game engines) can read
 /// them directly without an interop round-trip.
 /// </summary>
 /// <remarks>
 /// <para>
 /// The setters sit behind <c>Features/Shared/Modals/SettingsSheet.razor</c>, a dialog rather
 /// than a page, which also covers <c>pominigames:color-safe</c>. A fresh browser gets
-/// the defaults below (Auto theme, unmuted, full volume, haptics on, motion
+/// the defaults below (unmuted, full volume, haptics on, motion
 /// unreduced, standard palettes).
 /// </para>
 /// <para>
@@ -49,7 +40,6 @@ public enum ThemeMode
 public sealed class SettingsService : IAsyncDisposable
 {
     private const string MutedKey = "pominigames:muted";
-    private const string ThemeKey = "pominigames:theme";
     private const string VolumeKey = "pominigames:volume";
     private const string SfxVolumeKey = "pominigames:sfx-volume";
     private const string MusicVolumeKey = "pominigames:music-volume";
@@ -85,9 +75,6 @@ public sealed class SettingsService : IAsyncDisposable
     }
 
     public bool Muted { get; private set; }
-
-    /// <summary>Colour scheme. <see cref="ThemeMode.Auto"/> tracks the OS.</summary>
-    public ThemeMode Theme { get; private set; } = ThemeMode.Auto;
 
     /// <summary>Master output volume as a percentage, 0–100.</summary>
     public int Volume { get; private set; } = 100;
@@ -130,7 +117,6 @@ public sealed class SettingsService : IAsyncDisposable
         try
         {
             Muted = LocalStorageService.GetItem<string>(MutedKey) == "1";
-            Theme = ParseTheme(LocalStorageService.GetItem<string>(ThemeKey));
             Volume = ParseVolume(LocalStorageService.GetItem<string>(VolumeKey));
             SfxVolume = ParseVolume(LocalStorageService.GetItem<string>(SfxVolumeKey));
             MusicVolume = ParseVolume(LocalStorageService.GetItem<string>(MusicVolumeKey), fallback: 0);
@@ -146,38 +132,12 @@ public sealed class SettingsService : IAsyncDisposable
     }
 
     /// <summary>
-    /// Anything unrecognised (including a missing key or a value written by an
-    /// older build) means Auto — the safest reading of "no explicit choice".
-    /// </summary>
-    private static ThemeMode ParseTheme(string? raw) => raw switch
-    {
-        "light" => ThemeMode.Light,
-        "dark" => ThemeMode.Dark,
-        _ => ThemeMode.Auto,
-    };
-
-    /// <summary>
     /// Clamped to 0–100. A corrupt or missing value reads as full volume rather
     /// than 0, so a bad key never presents as broken audio. Music passes 0 as its
     /// fallback because it is off until the player raises it.
     /// </summary>
     private static int ParseVolume(string? raw, int fallback = 100) =>
         int.TryParse(raw, out var pct) ? Math.Clamp(pct, 0, 100) : fallback;
-
-    private static string ThemeToStorage(ThemeMode mode) => mode switch
-    {
-        ThemeMode.Light => "light",
-        ThemeMode.Dark => "dark",
-        _ => "auto",
-    };
-
-    public async Task SetThemeAsync(ThemeMode mode)
-    {
-        Theme = mode;
-        LocalStorageService.SetItem(ThemeKey, ThemeToStorage(mode));
-        Changed?.Invoke();
-        await InvokeAsync("applyTheme", ThemeToStorage(mode));
-    }
 
     public async Task SetMutedAsync(bool muted)
     {
@@ -371,12 +331,11 @@ public sealed class SettingsService : IAsyncDisposable
 
     /// <summary>
     /// Push the persisted values into the DOM and audio graph. Call once after
-    /// first render: the pre-paint script in index.html has already stamped the
-    /// theme, but nothing has wired up the OS-change listener for Auto mode yet.
+    /// first render: the pre-paint script in index.html has already stamped motion
+    /// and colour-safe palettes; this wires up the live listeners.
     /// </summary>
     public async Task ApplyAsync()
     {
-        await InvokeAsync("applyTheme", ThemeToStorage(Theme));
         if (ReducedMotion) await InvokeAsync("applyReducedMotion", true);
         _selfRef ??= DotNetObjectReference.Create(this);
         await InvokeAsync("registerGraphicsRollback", _selfRef);

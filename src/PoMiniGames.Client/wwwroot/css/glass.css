@@ -50,28 +50,18 @@
 
 /* Light mode needs a *lighter* fill, not the same dark one at lower opacity —
    re-pointing the two fills is enough because everything else is derived. */
-:root[data-theme='light'] {
-    --glass-fill: rgba(255, 255, 255, 0.58);
-    --glass-fill-strong: rgba(255, 255, 255, 0.82);
-    --glass-edge: rgba(15, 23, 42, 0.10);
-    --glass-edge-lit: rgba(255, 255, 255, 0.9);
+@media (prefers-color-scheme: light) {
+    :root {
+        --glass-fill: rgba(255, 255, 255, 0.58);
+        --glass-fill-strong: rgba(255, 255, 255, 0.82);
+        --glass-edge: rgba(15, 23, 42, 0.10);
+        --glass-edge-lit: rgba(255, 255, 255, 0.9);
+    }
 }
 
 /* ── Top bar ──────────────────────────────────────────────────────────────
-   The one surface on screen at all times, so it is the one that most defines
-   whether the app reads as glass. Blur is stronger here than anywhere else
-   because content scrolls underneath it. */
-.gl-top-bar.gl-top-bar {
-    background: var(--glass-fill-strong);
-    border-bottom: 1px solid var(--glass-edge);
-    box-shadow: var(--glass-inner), 0 1px 24px rgba(0, 0, 0, 0.22);
-}
-@supports (backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px)) {
-    .gl-top-bar.gl-top-bar {
-        background: var(--glass-fill);
-        -webkit-backdrop-filter: blur(var(--gfx-blur)) saturate(170%);
-        backdrop-filter: blur(var(--gfx-blur)) saturate(170%);
-    }}
+   No glass: the header is the estate's .po-header (po-tokens.css), a solid
+   surface that looks the same in every Po app. */
 
 .gl-overflow-panel.gl-overflow-panel {
     background: var(--glass-fill-strong);

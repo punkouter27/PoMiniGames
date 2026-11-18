@@ -21,13 +21,15 @@
        reaching the game. Visually hidden until focused. *@
     <a class="gl-skip-link" href="#main-content">Skip to content</a>
 
-    <header class="gl-top-bar">
+    @* The estate header (.po-header, po-tokens.css): the app name upper-left, the
+       player's initials menu and the settings gear upper-right, on every route. *@
+    <header class="gl-top-bar po-header">
         @* <nav> landmark. The brand link IS this app's persistent navigation on
            every route, so a screen-reader user needs a landmark to jump to.
            Labelled because a second <nav> (in-game) may appear, and unlabelled
            sibling landmarks are indistinguishable in a landmark list. *@
         <nav class="gl-top-bar-left" aria-label="Main">
-            <a href="/" class="gl-brand">
+            <a href="/" class="gl-brand po-header__title">
                 <span class="gl-brand-icon">
                     <svg width="22" height="22" viewBox="0 0 40 40" fill="none" xmlns="http://www.w3.org/2000/svg">
                         <rect x="3" y="5" width="14" height="14" rx="2" fill="currentColor" opacity="0.8"/>
@@ -57,7 +59,7 @@
             </div>
         </div>
 
-        <div class="gl-auth">
+        <div class="gl-auth po-header__actions">
             @* Offline status pill. It used to be a full-width banner above the bar, and
                going offline pushed every game page down until it scrolled. The service
                worker serves a working shell with no network, so without a signal an
@@ -101,13 +103,20 @@
                         <span>@label</span>
                     </button>
                 }
-                <button type="button" class="gl-overflow-item gl-overflow-item--sep gl-overflow-item--desktop-only" role="menuitem"
+                <button type="button" class="gl-overflow-item gl-overflow-item--sep" role="menuitem"
                         popovertarget="gl-account-menu" popovertargetaction="hide"
-                        @onclick="Settings.RequestOpen">
-                    <span class="material-symbols-outlined gl-overflow-icon" aria-hidden="true">tune</span>
-                    <span>Settings</span>
+                        @onclick='() => GoTo("/diag")'>
+                    <span class="material-symbols-outlined gl-overflow-icon" aria-hidden="true">monitor_heart</span>
+                    <span>Status</span>
                 </button>
             </div>
+            @* The one settings control (Po standard): a gear, last on the right. It opens the
+               settings sheet in place, so a game keeps running underneath; /settings is the
+               same sheet for a deep link or a new tab. *@
+            <a class="po-header__settings" href="/settings" aria-label="Settings" title="Settings"
+               @onclick="OpenSettings" @onclick:preventDefault="true">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 1 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 1 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 1 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 1 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
+            </a>
         </div>
     </header>
 
@@ -143,9 +152,9 @@
        nothing unless the reel is actually running. *@
     <KioskControlBar />
 
-    @* The contentinfo landmark plus the build stamp, a small fixed label bottom-right
-       (above the BottomNav on a phone, above the modal layer). It takes no layout space
-       and no taps. Visible again since 2026-11-17 (owner decision). *@
+    @* The contentinfo landmark plus the build stamp (.po-version, vYYMMDD), a small fixed
+       label bottom-right on every page (above the BottomNav on a phone). It takes no layout
+       space and no taps. *@
     <BuildVersion />
     <BottomNav />
 
@@ -169,13 +178,13 @@
     private string _connectivityAnnouncement = "";
     private bool _announcedOffline;
 
-    // The account menu's page destinations, in order, with the glyph each one shows.
-    // Settings (a sheet) and Sign out follow.
+    // The account menu's page destinations that the phone BottomNav also carries (so the
+    // menu shows them on wide screens only). Status follows on every width; settings is
+    // the header gear.
     private static readonly (string Path, string Label, string Icon)[] MenuPages =
     [
         ("/profile", "My Stats", "person"),
         ("/leaderboards", "Leaderboards", "leaderboard"),
-        ("/diag", "Status", "monitor_heart"),
     ];
 
     private bool IsCurrent(string path) =>
@@ -372,6 +381,12 @@
         {
             await toast.Action();
         }
+    }
+
+    private async Task OpenSettings()
+    {
+        await Feedback.TapAsync();
+        Settings.RequestOpen();
     }
 
     // Account-menu destinations: menu items are buttons, so they navigate in code.

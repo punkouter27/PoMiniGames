@@ -4,6 +4,8 @@
 //   • Tab toggles the panel — but only while the player is IN the game. While a
 //     dialog, the intro card or a form control has focus, Tab stays the browser's
 //     focus mover, so keyboard navigation is never swallowed.
+//     With nothing focused, Tab opens the estate developer window instead
+//     (js/po-devwindow.js); the panel then opens from its pill.
 //   • Escape closes it.
 //   • While open, a rAF loop measures frame rate and reports it back once per
 //     ~500 ms so the panel can show live numbers without one interop call per frame.
@@ -78,6 +80,11 @@
   function onKeyDown(e) {
     if (e.key !== 'Tab' || e.shiftKey || e.ctrlKey || e.altKey || e.metaKey || e.repeat) return;
     if (e.defaultPrevented) return; // a game already claimed Tab (PoEcosystem)
+    // Po standard (2026-11-18): Tab with nothing focused belongs to the estate developer
+    // window (js/po-devwindow.js, /po-dev.html). This panel then opens from its pill, or
+    // with Tab once the pill or the panel has focus.
+    const a = document.activeElement;
+    if (window.poOpenDevWindow && (!a || a === document.body || a === document.documentElement)) return;
     if (!isPlaying()) return;
     e.preventDefault();
     setOpen(!open);
