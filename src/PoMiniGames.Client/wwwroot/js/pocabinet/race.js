@@ -1096,7 +1096,7 @@ class Race {
             audio.setScrape(racing ? (events?.scraping.get(ear.id) || 0) : 0);
 
             if (racing && !dead && this.scene.camera) {
-                const fwd = this.camForward || (this.camForward = new THREE.Vector3());
+                const fwd = this.camForward || (this.camForward = new Vector3());
                 this.scene.camera.getWorldDirection(fwd);
                 const ch = Math.cos(ear.render.heading), sh = Math.sin(ear.render.heading);
                 const rearDot = fwd.x * ch + fwd.z * sh;

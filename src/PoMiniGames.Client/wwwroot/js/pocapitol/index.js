@@ -735,7 +735,8 @@ function dispose() {
     g.ui?.dispose?.();
     g.radar?.destroy?.();
     g.inspector?.clear?.();
-    g.view.dispose(); remove();   // the view's stage stops the loop game = null;
+    g.view.dispose(); remove();   // the view's stage stops the loop
+    game = null;
 }
 
 window.PoCapitol = {

@@ -700,6 +700,11 @@ export class Engine {
     if (!this.running) return;
     // dt arrives clamped to [0, 0.05] by the stage loop (a stale first rAF stamp or a negative
     // dt would turn the camera lerp factor 1−e^(−12·dt) negative and diverge the follow).
+    // The dynamic-resolution governor needs the real, unclamped frame time: a 0.05 clamp
+    // would hide exactly the long frames it exists to react to.
+    const now = performance.now();
+    const frameDt = this._lastFrameAt > 0 ? Math.max(0, (now - this._lastFrameAt) / 1000) : dt;
+    this._lastFrameAt = now;
 
     // Paused, or 'ready' behind the start card: render the frozen scene, nothing advances
     // (the clock must not run nor the wall guns fire while the start card is up). Dead: the world keeps moving for the kill-cam beat (debris

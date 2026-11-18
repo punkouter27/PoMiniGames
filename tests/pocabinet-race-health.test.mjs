@@ -5,11 +5,25 @@
 // numbers), so the bounds are fixed, with headroom over today's figures (capitol: 0 wrecks,
 // 0 stuck; bedroom: 4-6 wrecks, 0 stuck; court: 0 wrecks, 0-1 stuck, longest stall 4 s).
 //
-// Needs the worlds the page hands race.js, from the shared C#:
+// Needs the worlds the page hands race.js, from the shared C#. They are gitignored, so the test
+// dumps any that are missing itself (CI's ci-checks.ps1 dumps them up front; a fresh clone used
+// to fail here with ENOENT):
 //   dotnet run scripts/pocabinet/dump.cs -- artifacts/pocabinet-worlds capitol bedroom court
-//   node --test tests/pocabinet-race-health.test.mjs
 import assert from 'node:assert/strict';
+import { spawnSync } from 'node:child_process';
+import { existsSync } from 'node:fs';
+import { fileURLToPath } from 'node:url';
 import { test } from 'node:test';
+
+const IDS = ['capitol', 'bedroom', 'court'];
+const repo = fileURLToPath(new URL('..', import.meta.url));
+const worlds = fileURLToPath(new URL('../artifacts/pocabinet-worlds/', import.meta.url));
+const missing = IDS.filter((id) => !existsSync(`${worlds}${id}.json`));
+if (missing.length) {
+    const dump = spawnSync('dotnet', ['run', 'scripts/pocabinet/dump.cs', '--', 'artifacts/pocabinet-worlds', ...missing],
+        { cwd: repo, encoding: 'utf8', shell: process.platform === 'win32' });
+    if (dump.status !== 0) throw new Error(`Could not dump the PoCabinet worlds (${missing.join(', ')}): ${dump.stderr || dump.stdout || dump.error}`);
+}
 
 const { race } = await import(new URL('../scripts/pocabinet/harness.mjs', import.meta.url));
 

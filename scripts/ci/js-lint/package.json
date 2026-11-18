@@ -1,0 +1,13 @@
+{
+  "name": "pominigames-js-lint",
+  "private": true,
+  "description": "CI gate: catches undefined identifiers in the client JS engines (a rename that leaves a stale reference throws on every frame).",
+  "type": "module",
+  "scripts": {
+    "lint": "cd ../../.. && eslint -c scripts/ci/js-lint/eslint.config.mjs --max-warnings 0 src/PoMiniGames.Client/wwwroot/js"
+  },
+  "devDependencies": {
+    "eslint": "9.39.1",
+    "globals": "16.5.0"
+  }
+}

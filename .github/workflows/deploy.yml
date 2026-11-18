@@ -109,6 +109,8 @@ jobs:
           restore-keys: nuget-${{ runner.os }}-
       - name: Build
         run: dotnet build *.slnx -c Release
+      - name: Unit tests
+        run: for p in tests/*.Unit/*.csproj; do dotnet test "$p" -c Release --no-build; done
       - name: Repo checks (scripts/ci-checks.ps1)
         if: hashFiles('scripts/ci-checks.ps1') != ''
         shell: pwsh
