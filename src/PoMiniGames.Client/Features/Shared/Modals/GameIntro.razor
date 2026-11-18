@@ -74,26 +74,42 @@
 
         @if (Controls != null || HowToPlay != null || Options != null || Lobby != null)
         {
-            <div class="gps-intro-body">
+            <div class="gps-intro-body" data-view="@ViewName">
                 @if (Controls != null || HowToPlay != null)
                 {
+                    var bothViews = Controls != null && HowToPlay != null;
                     <section class="gps-intro-controls" aria-label="@(ShowingRules ? "How to play" : "Controls")">
-                        @if (Controls != null && HowToPlay != null)
+                        @if (bothViews || Options != null)
                         {
-                            @* Two views of one panel, not two actions: a tab strip. Keydowns stop
-                               so Enter on a tab switches it instead of starting the game. *@
-                            <div class="gps-intro-tabs" role="tablist" aria-label="Intro" @onkeydown="HandleControlKey" @onkeydown:stopPropagation="true">
-                                <button type="button" role="tab" class="gps-intro-tab" data-spring
-                                        aria-selected="@(!ShowingRules ? "true" : "false")"
-                                        @onclick="() => _rules = false">Controls</button>
-                                <button type="button" role="tab" class="gps-intro-tab" data-spring
-                                        aria-selected="@(ShowingRules ? "true" : "false")"
-                                        @onclick="() => _rules = true">How to play</button>
+                            @* Views of one panel, not actions: a tab strip. Keydowns stop so Enter on
+                               a tab switches it instead of starting the game. On a phone the game's
+                               setup (Options) is a third tab instead of a second block below, so the
+                               card never scrolls; a wider card shows setup beside the panel and
+                               hides that tab (game-shell.css, .gps-intro-tab--setup). *@
+                            <div class="gps-intro-tabs @(bothViews ? null : "gps-intro-tabs--setup-only")" role="tablist" aria-label="Intro" @onkeydown="HandleControlKey" @onkeydown:stopPropagation="true">
+                                @if (Controls != null)
+                                {
+                                    <button type="button" role="tab" class="gps-intro-tab" data-spring
+                                            aria-selected="@(_view == IntroView.Controls ? "true" : "false")"
+                                            @onclick="() => _view = IntroView.Controls">Controls</button>
+                                }
+                                @if (HowToPlay != null)
+                                {
+                                    <button type="button" role="tab" class="gps-intro-tab" data-spring
+                                            aria-selected="@(_view == IntroView.Rules || Controls == null ? "true" : "false")"
+                                            @onclick="() => _view = IntroView.Rules">How to play</button>
+                                }
+                                @if (Options != null)
+                                {
+                                    <button type="button" role="tab" class="gps-intro-tab gps-intro-tab--setup" data-spring
+                                            aria-selected="@(_view == IntroView.Setup ? "true" : "false")"
+                                            @onclick="() => _view = IntroView.Setup">Setup</button>
+                                }
                             </div>
                         }
-                        else
+                        @if (!bothViews)
                         {
-                            <div class="gps-intro-section-label">@(Controls != null ? "Controls" : "How to play")</div>
+                            <div class="gps-intro-section-label @(Options != null ? "gps-intro-section-label--setup-only" : null)">@(Controls != null ? "Controls" : "How to play")</div>
                         }
                         <div class="gps-intro-panel">@(ShowingRules ? HowToPlay : Controls)</div>
                     </section>
@@ -262,9 +278,12 @@
     private bool _demoElapsed;
     private bool _lastShowStart;
 
-    // The "How to play" tab is showing instead of Controls.
-    private bool _rules;
-    private bool ShowingRules => (_rules && HowToPlay != null) || Controls == null;
+    // Which tab of the body is showing. Setup only exists as a tab on a phone-width card; wider
+    // cards show the game's Options beside the panel whatever this says.
+    private enum IntroView { Controls, Rules, Setup }
+    private IntroView _view;
+    private bool ShowingRules => (_view == IntroView.Rules && HowToPlay != null) || Controls == null;
+    private string ViewName => _view == IntroView.Setup ? "setup" : ShowingRules ? "rules" : "controls";
     private Timer? _demoTimer;
 
     // The demo attract loop (?kiosk=N) starts at once and never shows the card.

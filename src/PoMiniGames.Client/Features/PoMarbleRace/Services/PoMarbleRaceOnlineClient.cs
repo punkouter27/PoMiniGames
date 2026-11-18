@@ -25,7 +25,6 @@ public sealed class PoMarbleRaceOnlineClient : IAsyncDisposable
     public event Action<MarbleRacePodium>? PodiumReceived;
     public event Action<MarbleRaceResult>? ResultReceived;
     public event Action<int>? GuestSteerReceived;
-    public event Action<MarbleRaceRematch>? RematchChanged;
     public event Action? PeerLeft;
     public event Action<HubConnectionState>? ConnectionChanged;
 
@@ -41,7 +40,6 @@ public sealed class PoMarbleRaceOnlineClient : IAsyncDisposable
         _hub.On<MarbleRacePodium>("podium", p => PodiumReceived?.Invoke(p));
         _hub.On<MarbleRaceResult>("result", r => ResultReceived?.Invoke(r));
         _hub.On<int>("guestSteer", d => GuestSteerReceived?.Invoke(d));
-        _hub.On<MarbleRaceRematch>("rematch", r => RematchChanged?.Invoke(r));
         _hub.On("peerLeft", () => PeerLeft?.Invoke());
         _hub.Reconnecting += _ => { ConnectionChanged?.Invoke(HubConnectionState.Reconnecting); return Task.CompletedTask; };
         // A reconnect gets a new connection id the server has already forgotten, and the
@@ -64,14 +62,6 @@ public sealed class PoMarbleRaceOnlineClient : IAsyncDisposable
     /// <summary>Join a friend's private race by code.</summary>
     public Task<MarbleRaceJoin> JoinRoomAsync(string code, string displayName, bool isGuest) =>
         Require().InvokeAsync<MarbleRaceJoin>("JoinRoom", code, displayName, isGuest);
-
-    /// <summary>Ask for another race against the same opponent (answered on <see cref="RematchChanged"/>).</summary>
-    public async Task RequestRematchAsync()
-    {
-        var hub = _hub;
-        if (hub is null || hub.State != HubConnectionState.Connected) return;
-        try { await hub.SendAsync("RequestRematch"); } catch { /* the peer-left path reports a dead link */ }
-    }
 
     /// <summary>Host: push a frame unless the previous one is still on the wire.</summary>
     public void SendFrame(MarbleRaceFrame frame)

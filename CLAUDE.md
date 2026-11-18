@@ -18,6 +18,7 @@ dotnet run --project src/PoMiniGames.Api/PoMiniGames.Api.csproj # API + Blazor W
 dotnet build PoMiniGames.slnx                                  # warnings are errors (Directory.Build.props)
 dotnet format PoMiniGames.slnx --verify-no-changes             # CI style gate
 pwsh scripts/ci/css-lint.ps1                                      # CI CSS gate; run after any scripted CSS edit
+npm ci --prefix scripts/ci/js-lint && npm run lint --prefix scripts/ci/js-lint  # CI JS gate (undefined identifiers)
 pwsh scripts/ci/test-ceilings.ps1                                 # test-count ceiling guards only
 
 dotnet test tests/PoMiniGames.Unit --filter "FullyQualifiedName~PoMule"   # one test / one area

@@ -21,6 +21,13 @@ $clientRoot = Join-Path $repoRoot 'src/PoMiniGames.Client'
 $files = Get-ChildItem -Path $clientRoot -Recurse -Filter *.css -File |
     Where-Object { $_.FullName -notmatch '[\\/](bin|obj|lib)[\\/]' }
 
+# Hex colour ratchet: a colour literal outside po-tokens.css is a colour that will not follow
+# the light/dark theme or a retheme. The count may only go DOWN: when you migrate a literal to a
+# var(--token), lower this number in the same change. Never raise it - add a token instead.
+$hexBaseline = 607
+$hexCount = 0
+$hexPattern = [regex]'#(?:[0-9a-fA-F]{8}|[0-9a-fA-F]{6}|[0-9a-fA-F]{3})\b'
+
 $problems = [System.Collections.Generic.List[string]]::new()
 $commentPattern = [regex]'(?s)/\*.*?\*/'
 $blockInComment = [regex]'\{[ \t]*\r?\n\s*[\w-]+\s*:[^;{}]+;'
@@ -45,6 +52,8 @@ foreach ($file in $files) {
     if ($stray -ge 0) { $problems.Add("${rel}:$(& $lineOf $stray): '*/' outside a comment") }
     if ($code.IndexOf('/*') -ge 0) { $problems.Add("${rel}:$(& $lineOf $code.IndexOf('/*')): comment is never closed") }
 
+    if ($file.Name -ne 'po-tokens.css') { $hexCount += $hexPattern.Matches($code).Count }
+
     $depth = 0
     for ($i = 0; $i -lt $code.Length; $i++) {
         $ch = $code[$i]
@@ -55,6 +64,13 @@ foreach ($file in $files) {
         }
     }
     if ($depth -ne 0) { $problems.Add("${rel}: $depth block(s) never closed") }
+}
+
+if ($hexCount -gt $hexBaseline) {
+    $problems.Add("hex colour literals outside po-tokens.css: $hexCount, baseline $hexBaseline. Use a var(--token) (or add one to po-tokens.css) instead of a new literal.")
+}
+elseif ($hexCount -lt $hexBaseline) {
+    Write-Host "css-lint: hex literals fell to $hexCount; lower `$hexBaseline from $hexBaseline to $hexCount to lock it in."
 }
 
 if ($problems.Count -gt 0) {

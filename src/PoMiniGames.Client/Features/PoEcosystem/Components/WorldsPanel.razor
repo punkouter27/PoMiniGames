@@ -38,7 +38,7 @@
 
         <div class="poeco-cloud-head">
             <h3>Cloud slots</h3>
-            <button type="button" class="poeco-pill" disabled="@Busy" @onclick="OnRefresh">↻ Refresh</button>
+            <button type="button" class="poeco-pill" disabled="@Busy" @onclick="OnRefresh"><span class="material-symbols-outlined" aria-hidden="true">refresh</span> Refresh</button>
         </div>
         <ul class="poeco-slots">
             @foreach (var slot in EcoWorldSlots.All)
@@ -99,7 +99,7 @@
         </div>
         @if (Gallery.Length == 0)
         {
-            <p class="poeco-note">No shared islands yet. Share one of yours and it appears here for everyone.</p>
+            <EmptyState Title="No shared islands yet">Share one of yours and it appears here for everyone.</EmptyState>
         }
         else
         {

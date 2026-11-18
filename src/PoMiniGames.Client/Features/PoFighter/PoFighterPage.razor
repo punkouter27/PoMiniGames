@@ -37,7 +37,7 @@
 
             @if (_failed)
             {
-                <p class="pf-error" role="alert">The fighter could not be loaded. Check your connection and reopen the game.</p>
+                <div class="pf-error"><ErrorState Title="The fighter could not be loaded">Check your connection and reopen the game.</ErrorState></div>
             }
 
             <div class="pf-panel pf-moves" aria-label="Moves and their controls">
@@ -76,7 +76,7 @@
                     <div class="pf-studio-card">
                         <header class="pf-studio-head">
                             <h2>PoFighter Studio</h2>
-                            <button type="button" class="pf-chip" @onclick="CloseStudioAsync">✕ Close</button>
+                            <button type="button" class="pf-chip" @onclick="CloseStudioAsync"><span class="material-symbols-outlined" aria-hidden="true">close</span> Close</button>
                         </header>
                         <p class="pf-studio-status" @ref="_studioStatus">Ready — use webcam capture or upload a short clip (MediaPipe WASM runs 100% in your browser).</p>
                         <div class="pf-studio-body">
@@ -120,8 +120,8 @@
             <div class="pf-touch pf-touch-move" aria-label="Movement">
                 <button type="button" data-pf-btn="left" aria-label="Walk backward">◀</button>
                 <div class="pf-touch-stack">
-                    <button type="button" data-pf-btn="up" aria-label="Jump">▲</button>
-                    <button type="button" data-pf-btn="down" aria-label="Crouch">▼</button>
+                    <button type="button" data-pf-btn="up" aria-label="Jump"><span class="material-symbols-outlined" aria-hidden="true">keyboard_arrow_up</span></button>
+                    <button type="button" data-pf-btn="down" aria-label="Crouch"><span class="material-symbols-outlined" aria-hidden="true">keyboard_arrow_down</span></button>
                 </div>
                 <button type="button" data-pf-btn="right" aria-label="Walk forward">▶</button>
             </div>

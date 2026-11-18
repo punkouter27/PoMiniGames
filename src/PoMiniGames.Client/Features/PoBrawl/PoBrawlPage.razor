@@ -115,7 +115,7 @@
                 <h2>Couldn't connect</h2>
                 <p>@_netConnectError</p>
                 <div class="pb-net-actions">
-                    <button type="button" class="pb-net-btn" @onclick="RetryConnectAsync">↻ Retry</button>
+                    <button type="button" class="pb-net-btn" @onclick="RetryConnectAsync"><span class="material-symbols-outlined" aria-hidden="true">refresh</span> Retry</button>
                     <a class="pb-net-btn pb-net-btn--ghost" href="/pobrawl/multi">Back to the lobby</a>
                 </div>
             </div>
@@ -141,7 +141,7 @@
                     <button type="button" class="pb-pause-act pb-pause-act--go" @ref="_resumeButton"
                             @onclick="ResumeAsync">▶ Resume</button>
                     <button type="button" class="pb-pause-act" @onclick="RestartFightAsync">↺ Restart fight</button>
-                    <button type="button" class="pb-pause-act" @onclick="QuitFight">✕ Quit</button>
+                    <button type="button" class="pb-pause-act" @onclick="QuitFight"><span class="material-symbols-outlined" aria-hidden="true">close</span> Quit</button>
                 </div>
                 <p class="pb-pause-hint">Esc or P resumes</p>
             </GamePauseDialog>
@@ -242,7 +242,7 @@
             <span class="pb-select-who">Player @side</span>
             <span class="pb-select-plate">
                 <span class="pb-select-pick">@pick</span>
-                <span class="pb-select-state">@(locked ? "✓ Ready" : "Lock in")</span>
+                <span class="pb-select-state">@if (locked) { <span class="material-symbols-outlined" aria-hidden="true">check</span> }@(locked ? "Ready" : "Lock in")</span>
             </span>
             @if (locked)
             {

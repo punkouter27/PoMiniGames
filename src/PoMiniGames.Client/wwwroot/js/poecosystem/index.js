@@ -35,13 +35,18 @@ const MOOD_HUE = { ionian: 150, dorian: 200, aeolian: 268, phrygian: 352 };
 const BLOOM_BIRTHS = 3;   // births in one stats interval that make the HUD bloom
 // The minimap layers the sim's heat book feeds (the other two are computed render-side).
 const HEAT_LAYERS = ['deaths', 'predation', 'sickness'];
+// css/poecosystem/*.css is one stylesheet cut into pieces; DOM order is cascade order, so keep this list in
+// file-name order. Explicit links fetch in parallel (an @import chain would be a request waterfall).
+const STYLE_PARTS = ['00-base', '10-hud-bar-minimap', '20-panels', '30-glass', '40-dashboard-tabs', '50-geopolitics-settings', '60-mood-chronicle-reel', '70-hud-menus', '80-dashboard-v2', '90-photo-forms'];
 function ensureStyles() {
   if (typeof document === 'undefined' || document.getElementById(STYLE_ID)) return;
-  const link = document.createElement('link');
-  link.id = STYLE_ID;
-  link.rel = 'stylesheet';
-  link.href = new URL('css/poecosystem.css', document.baseURI).href;
-  document.head.appendChild(link);
+  for (const part of STYLE_PARTS) {
+    const link = document.createElement('link');
+    link.id = part === STYLE_PARTS[0] ? STYLE_ID : `${STYLE_ID}-${part}`;
+    link.rel = 'stylesheet';
+    link.href = new URL(`css/poecosystem/${part}.css`, document.baseURI).href;
+    document.head.appendChild(link);
+  }
 }
 
 // Whether a .NET panel that charts popHistory / traitHistory is open. Module-level, so it

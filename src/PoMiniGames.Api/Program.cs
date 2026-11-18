@@ -26,8 +26,9 @@ builder
     .AddPoMiniGamesKeyVault()
     .AddPoMiniGamesLogging();
 
-// ─── Data Protection (encrypted cookies) ──────────────────────
-// Pinned BEFORE auth so AddCookie picks up the configured IDataProtector.
+// ─── Data Protection ─────────────────────────────────────────
+// One shared key ring for the antiforgery cookie and the signed play-session tokens (there is
+// no sign-in; see DataProtectionExtensions).
 var storageAccountName = builder.Configuration["PoMiniGames:Storage:TableService:AccountName"];
 builder.Services.AddPoMiniGamesDataProtection(builder.Environment, storageAccountName);
 

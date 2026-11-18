@@ -25,8 +25,7 @@
     position: absolute;
     inset: 40% 16px auto;
     margin: 0;
-    text-align: center;
-    color: #e8eaf2;
+    z-index: 2;
 }
 
 .pf-panel {

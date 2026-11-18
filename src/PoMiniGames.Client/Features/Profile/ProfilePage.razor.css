@@ -99,7 +99,7 @@
 
 /* The shared segmented control is 32px tall on a fine pointer; 40px keeps it a
    comfortable target everywhere (coarse pointers already get 44px from app.css). */
-.prf-band-seg .app-seg__btn { min-height: 40px; min-width: 4.5rem; }
+.prf-band-seg .app-seg__btn { min-height: 44px; min-width: 4.5rem; }
 
 .prf-chips {
     display: grid;
@@ -635,78 +635,22 @@
     color: var(--color-text-secondary);
     font-style: italic;
 }
-.prf-h2h-table { width: 100%; border-collapse: collapse; font-size: 0.82rem; }
-.prf-h2h-table th {
-    text-align: left;
-    font-size: 0.75rem;
-    text-transform: uppercase;
-    letter-spacing: 0.05em;
-    color: var(--color-text-secondary);
-    padding: 0.3rem 0.5rem;
-    border-bottom: 1px solid var(--color-border);
-}
-.prf-h2h-table td { padding: 0.4rem 0.5rem; border-bottom: 1px solid var(--hairline); }
-
 /* The opponent table's frame. No height cap and no scroll of its own: the
-   Virtualize component recycles rows against the page's scroll, so a long
-   history is one scroll on a phone instead of a 360px well inside the page. */
+   grid pages instead of scrolling, so a long history never becomes a 360px well
+   inside the page. */
 .prf-h2h-vwrap {
     border-radius: var(--radius-md);
     background: var(--color-surface);
     border: 1px solid var(--color-border);
 }
-.prf-h2h-table .prf-h2h-num { text-align: center; width: 2.5rem; }
-.prf-h2h-table abbr { text-decoration: none; }
-.prf-h2h-name { display: flex; align-items: center; gap: 0.45rem; font-weight: 500; min-width: 0; }
+.prf-h2h-name { font-weight: 500; }
 .prf-h2h-who { min-width: 0; overflow-wrap: anywhere; }
 .prf-h2h-w { color: var(--accent-success); font-weight: 600; }
 .prf-h2h-l { color: var(--accent-danger); font-weight: 600; }
 .prf-h2h-d { color: var(--color-text-secondary); }
-/* The invite column, online opponents only. */
-.prf-h2h-table .prf-h2h-invite { width: auto; text-align: right; }
-.prf-h2h-invite .app-btn { min-height: 40px; }
+.prf-h2h-invite { min-height: 40px; }
 
-/* Phone: each opponent is a card row (badge and name, then a W–L–D pill, then a
-   small Invite button), laid out by CSS alone so Virtualize keeps one row
-   element per opponent. The header row is spoken, not shown: the pill's colours
-   and the cells' explicit roles carry it. */
-@media (max-width: 640px) {
-    .prf-h2h-table thead {
-        position: absolute;
-        width: 1px;
-        height: 1px;
-        overflow: hidden;
-        clip: rect(0, 0, 0, 0);
-    }
-    .prf-h2h-table, .prf-h2h-table tbody { display: block; }
-    .prf-h2h-table tr.prf-h2h-row {
-        display: grid;
-        grid-template-columns: minmax(0, 1fr) auto auto auto auto;
-        align-items: center;
-        column-gap: 0;
-        min-height: 48px;
-        padding: 0.25rem 0.6rem;
-        border-bottom: 1px solid var(--hairline);
-    }
-    .prf-h2h-table tr.prf-h2h-row td { border-bottom: 0; padding: 0; }
-    .prf-h2h-table tr.prf-h2h-row .prf-h2h-name { padding-right: 0.5rem; }
-    /* The three counts read as one pill: a shared well, rounded at its ends. */
-    .prf-h2h-table tr.prf-h2h-row .prf-h2h-num {
-        width: auto;
-        min-width: 1.6rem;
-        padding: 0.2rem 0.3rem;
-        background: var(--surface-2);
-        font-variant-numeric: tabular-nums;
-    }
-    .prf-h2h-table tr.prf-h2h-row .prf-h2h-w { border-radius: var(--radius-pill) 0 0 var(--radius-pill); padding-left: 0.55rem; }
-    .prf-h2h-table tr.prf-h2h-row .prf-h2h-d { border-radius: 0 var(--radius-pill) var(--radius-pill) 0; padding-right: 0.55rem; }
-    .prf-h2h-table tr.prf-h2h-row .prf-h2h-l::before,
-    .prf-h2h-table tr.prf-h2h-row .prf-h2h-d::before {
-        /* Decorative: the empty alt text keeps the dash out of the spoken cell. */
-        content: "–" / "";
-        margin-right: 0.3rem;
-        color: var(--color-text-secondary);
-        font-weight: 400;
-    }
-    .prf-h2h-table tr.prf-h2h-row .prf-h2h-invite { padding-left: 0.5rem; }
+/* A thumb needs 44px (Profile B): "Watch again" / "Play again" were 23px tall. */
+@media (pointer: coarse) {
+    .prf-game-link { display: inline-flex; align-items: center; min-height: 44px; }
 }

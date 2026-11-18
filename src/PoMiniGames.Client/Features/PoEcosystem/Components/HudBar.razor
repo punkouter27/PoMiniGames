@@ -37,7 +37,7 @@
         {
             <button type="button" class="poeco-pill @(Stats?.Speed == s ? "poeco-pill--on" : "")" aria-pressed="@(Stats?.Speed == s ? "true" : "false")"
                     title="@(s == 0 ? "Pause (0)" : $"{s}× speed ({(s == 4 ? 3 : s)})")" aria-label="@(s == 0 ? "Pause" : $"{s} times speed")"
-                    @onclick="() => OnSpeed.InvokeAsync(s)">@(s == 0 ? "⏸" : $"{s}×")</button>
+                    @onclick="() => OnSpeed.InvokeAsync(s)">@if (s == 0) { <span class="material-symbols-outlined" aria-hidden="true">pause</span> } else { @($"{s}×") }</button>
         }
         <button type="button" class="poeco-pill" title="Fast-forward the island by 1 year" aria-label="Skip 1 year"
                 @onclick="() => OnFastForward.InvokeAsync(1)">+1y</button>
@@ -48,7 +48,7 @@
     <button type="button" class="poeco-pill poeco-sound-btn" aria-pressed="@(Sound ? "true" : "false")"
             aria-label="@(Sound ? "Mute ambience" : "Unmute ambience")"
             title="@(Sound ? "Mute ambience" : "Unmute ambience")"
-            @onclick="() => OnSound.InvokeAsync(!Sound)">@(Sound ? "🔊" : "🔇")</button>
+            @onclick="() => OnSound.InvokeAsync(!Sound)">@if (Sound) { <span class="material-symbols-outlined" aria-hidden="true">volume_up</span> } else { <span class="material-symbols-outlined" aria-hidden="true">volume_off</span> }</button>
 
     <button type="button" class="poeco-pill @(Director ? "poeco-pill--on" : "")" aria-pressed="@(Director ? "true" : "false")"
             title="Cinematic camera — let the director find the drama (C)" aria-label="Cinematic camera"

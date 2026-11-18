@@ -3,7 +3,14 @@ using System.Reflection;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Http;
+using Azure.Data.Tables;
+using Azure.Storage.Blobs;
 using Microsoft.AspNetCore.Routing;
+using Microsoft.AspNetCore.SignalR;
+using PoMiniGames.Features.PoBrawl;
+using PoMiniGames.Features.PoEcosystem;
+using PoMiniGames.Infrastructure;
+using PoMiniGames.Infrastructure.Services;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Diagnostics.HealthChecks;
 using PoMiniGames.Serialization;
@@ -57,9 +64,12 @@ public static class DiagEndpoints
     {
         var isDevelopment = app.ServiceProvider.GetRequiredService<IWebHostEnvironment>().IsDevelopment();
 
-        async Task<IResult> diagHandler(HealthCheckService health, IConfiguration configuration, IWebHostEnvironment environment, CancellationToken ct)
+        async Task<IResult> diagHandler(
+            HealthCheckService health, IConfiguration configuration, IWebHostEnvironment environment,
+            TableServiceClient tables, BlobServiceClient blobs, EndpointDataSource endpoints, CancellationToken ct)
         {
-            var report = await BuildReportAsync(health, configuration, environment, ct);
+            var probe = await ProbeStorageAsync(tables, blobs, ct);
+            var report = await BuildReportAsync(health, configuration, environment, ct, probe, ListHubs(endpoints));
             return Results.Json(report, DiagJsonContext.Default.DiagReport);
         }
 
@@ -163,9 +173,61 @@ public static class DiagEndpoints
         return app;
     }
 
+    /// <summary>Names of the tables and containers the storage account listed; null when it could not be listed.</summary>
+    internal sealed record StorageProbe(IReadOnlySet<string>? Tables, IReadOnlySet<string>? Containers);
+
+    /// <summary>Every table the app uses, by name (the storage service's, the initializer's and the stores').</summary>
+    internal static IReadOnlyList<string> TableNames { get; } =
+        [.. StorageService.KnownTableNames.Concat(StorageInitializer.AdditionalTables).Append(PoBrawlProgressStore.TableName)
+            .Distinct(StringComparer.OrdinalIgnoreCase).Order(StringComparer.OrdinalIgnoreCase)];
+
+    /// <summary>Every blob container the app uses, by name.</summary>
+    internal static IReadOnlyList<string> ContainerNames { get; } =
+        [.. StorageInitializer.AdditionalBlobContainers.Append(EcosystemWorldStore.ContainerName)
+            .Distinct(StringComparer.OrdinalIgnoreCase).Order(StringComparer.OrdinalIgnoreCase)];
+
+    /// <summary>
+    /// One list call per service. A failure of either is swallowed into "not reachable"; the
+    /// exception (which can carry the account address) is never surfaced.
+    /// </summary>
+    internal static async Task<StorageProbe> ProbeStorageAsync(TableServiceClient tables, BlobServiceClient blobs, CancellationToken ct)
+    {
+        using var cts = CancellationTokenSource.CreateLinkedTokenSource(ct);
+        cts.CancelAfter(TimeSpan.FromSeconds(3));
+        HashSet<string>? tableNames = null, containerNames = null;
+        try
+        {
+            var found = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+            await foreach (var table in tables.QueryAsync(cancellationToken: cts.Token)) found.Add(table.Name);
+            tableNames = found;
+        }
+        catch (Exception) when (!ct.IsCancellationRequested) { }
+        try
+        {
+            var found = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+            await foreach (var container in blobs.GetBlobContainersAsync(cancellationToken: cts.Token)) found.Add(container.Name);
+            containerNames = found;
+        }
+        catch (Exception) when (!ct.IsCancellationRequested) { }
+        return new StorageProbe(tableNames, containerNames);
+    }
+
+    /// <summary>The SignalR hubs mapped on this host: class name and route (the /negotiate twin is folded in).</summary>
+    internal static IReadOnlyList<DiagHub> ListHubs(EndpointDataSource endpoints) =>
+    [
+        .. endpoints.Endpoints.OfType<RouteEndpoint>()
+            .Select(e => (Meta: e.Metadata.GetMetadata<HubMetadata>(), Route: e.RoutePattern.RawText))
+            .Where(h => h.Meta is not null && h.Route is { Length: > 0 } && !h.Route.EndsWith("/negotiate", StringComparison.OrdinalIgnoreCase))
+            .DistinctBy(h => h.Route, StringComparer.OrdinalIgnoreCase)
+            .OrderBy(h => h.Route, StringComparer.OrdinalIgnoreCase)
+            // No hub keeps a cheap live connection count, so only "mapped" is reported.
+            .Select(h => new DiagHub(h.Meta!.HubType.Name, h.Route!, null)),
+    ];
+
     /// <summary>Assembles the /api/diag report from the health checks and configuration presence.</summary>
     internal static async Task<DiagReport> BuildReportAsync(
-        HealthCheckService health, IConfiguration configuration, IWebHostEnvironment environment, CancellationToken ct)
+        HealthCheckService health, IConfiguration configuration, IWebHostEnvironment environment, CancellationToken ct,
+        StorageProbe? storage = null, IReadOnlyList<DiagHub>? hubs = null)
     {
         var started = Stopwatch.GetTimestamp();
         var report = await health.CheckHealthAsync(ct);
@@ -198,7 +260,7 @@ public static class DiagEndpoints
                 || !string.IsNullOrWhiteSpace(configuration["APPLICATIONINSIGHTS_CONNECTION_STRING"]),
                 "Receives request telemetry and errors for troubleshooting."),
             new("Multiplayer hubs", "Healthy",
-                "SignalR lobbies and matches; they run inside this server, so they are up whenever the API is.", null, null),
+                "SignalR lobbies and matches; they run inside this server, so they are up whenever the API is. Each hub is listed below.", null, null),
         };
 
         var overall = report.Status switch
@@ -215,6 +277,9 @@ public static class DiagEndpoints
             DateTimeOffset.UtcNow,
             Math.Round(Stopwatch.GetElapsedTime(started).TotalMilliseconds, 1),
             stores,
-            services);
+            services,
+            [.. TableNames.Select(n => new DiagResource(n, storage?.Tables is not null, storage?.Tables?.Contains(n) == true))],
+            [.. ContainerNames.Select(n => new DiagResource(n, storage?.Containers is not null, storage?.Containers?.Contains(n) == true))],
+            hubs ?? []);
     }
 }

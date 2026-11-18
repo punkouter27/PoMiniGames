@@ -25,25 +25,22 @@
                           ButtonStyle="ButtonStyle.Secondary" Size="ButtonSize.Small"
                           Disabled="_loading" IsBusy="_loading" BusyText="Checking…"
                           Click="RefreshAsync" aria-label="Refresh the status" />
+            @* The separate developer window (debug-window.html): live frame rate, viewport and
+               heap for this tab. In a game, Tab opens the same numbers in-page. *@
+            <RadzenButton Text="Live debug window" Icon="open_in_new"
+                          ButtonStyle="ButtonStyle.Light" Size="ButtonSize.Small"
+                          Click="OpenDebugWindowAsync" aria-label="Open live diagnostics in a separate window" />
         </Actions>
     </PageHeader>
 
     <div class="dg-body" aria-live="polite">
         @if (_report is null && _error is null)
         {
-            <div class="dg-loading" role="status">
-                <RadzenProgressBarCircular ShowValue="false" Mode="ProgressBarMode.Indeterminate" Size="ProgressBarCircularSize.Small" />
-                <span>Checking the API, storage and services…</span>
-            </div>
+            <LoadingState Label="Checking the API, storage and services…" />
         }
         else if (_error is not null)
         {
-            <RadzenAlert AlertStyle="AlertStyle.Danger" Variant="Variant.Flat" Shade="Shade.Lighter" AllowClose="false"
-                         Title="The API is not answering" class="dg-banner">
-                <p class="dg-banner-text">@_error</p>
-                <RadzenButton Text="Try again" ButtonStyle="ButtonStyle.Danger" Size="ButtonSize.Small"
-                              Disabled="_loading" IsBusy="_loading" Click="RefreshAsync" />
-            </RadzenAlert>
+            <ErrorState Title="The API is not answering" OnRetry="RefreshAsync">@_error</ErrorState>
         }
         else if (_report is { } r)
         {
@@ -67,7 +64,7 @@
                 <h2 class="dg-h2" id="dg-stores">Database / storage</h2>
                 @if (r.Stores.Count == 0)
                 {
-                    <p class="dg-empty">This server has no storage checks registered.</p>
+                    <EmptyState Title="No storage checks" Icon="🗄️">This server has no storage checks registered.</EmptyState>
                 }
                 else
                 {
@@ -78,11 +75,60 @@
                 }
             </section>
 
+            <section class="dg-section" aria-labelledby="dg-tables">
+                <h2 class="dg-h2" id="dg-tables">Azure tables</h2>
+                @if (r.Tables.Count == 0)
+                {
+                    <EmptyState Title="No tables" Icon="🗄️">This server reports no tables.</EmptyState>
+                }
+                else
+                {
+                    <RadzenCard class="dg-card" data-testid="diag-tables">
+                        @foreach (var t in r.Tables) { @ResourceRow(t) }
+                    </RadzenCard>
+                }
+            </section>
+
+            <section class="dg-section" aria-labelledby="dg-containers">
+                <h2 class="dg-h2" id="dg-containers">Blob containers</h2>
+                @if (r.Containers.Count == 0)
+                {
+                    <EmptyState Title="No containers" Icon="🗄️">This server reports no blob containers.</EmptyState>
+                }
+                else
+                {
+                    <RadzenCard class="dg-card" data-testid="diag-containers">
+                        @foreach (var c in r.Containers) { @ResourceRow(c) }
+                    </RadzenCard>
+                }
+            </section>
+
+            <section class="dg-section" aria-labelledby="dg-hubs">
+                <h2 class="dg-h2" id="dg-hubs">SignalR hubs</h2>
+                @if (r.Hubs.Count == 0)
+                {
+                    <EmptyState Title="No hubs" Icon="🔌">This server maps no multiplayer hubs.</EmptyState>
+                }
+                else
+                {
+                    <RadzenCard class="dg-card" data-testid="diag-hubs">
+                        @foreach (var h in r.Hubs)
+                        {
+                            <div class="dg-row dg-res">
+                                <span><span class="dg-name">@h.Name</span> <code class="dg-route">@h.Route</code></span>
+                                <RadzenBadge BadgeStyle="BadgeStyle.Success"
+                                             Text="@(h.Connections is { } n ? $"{n} connected" : "Mapped")" />
+                            </div>
+                        }
+                    </RadzenCard>
+                }
+            </section>
+
             <section class="dg-section" aria-labelledby="dg-services">
                 <h2 class="dg-h2" id="dg-services">Services</h2>
                 @if (r.Services.Count == 0)
                 {
-                    <p class="dg-empty">This app uses no external services.</p>
+                    <EmptyState Title="No external services" Icon="🔌">This app uses no external services.</EmptyState>
                 }
                 else
                 {
@@ -132,6 +178,12 @@
         </p>
     </RadzenCard>;
 
+    private static RenderFragment ResourceRow(DiagResource res) => @<div class="dg-row dg-res">
+        <span class="dg-name">@res.Name</span>
+        <RadzenBadge BadgeStyle="@(!res.Reachable ? BadgeStyle.Danger : res.Exists ? BadgeStyle.Success : BadgeStyle.Info)"
+                     Text="@(!res.Reachable ? "Not reachable" : res.Exists ? "Ready" : "Created on first use")" />
+    </div>;
+
     protected override async Task OnInitializedAsync() => await RefreshAsync();
 
     protected override async Task OnAfterRenderAsync(bool firstRender)
@@ -148,6 +200,16 @@
         {
             // Unstyled Radzen still reads correctly.
         }
+    }
+
+    private async Task OpenDebugWindowAsync()
+    {
+        try
+        {
+            await using var module = await JS.InvokeAsync<IJSObjectReference>("import", "./js/platform/game-debug.js");
+            await JS.InvokeAsync<bool>("poGameDebug.popout");
+        }
+        catch (JSException) { /* a blocked pop-up: nothing to show */ }
     }
 
     private async Task RefreshAsync()

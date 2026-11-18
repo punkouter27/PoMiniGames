@@ -1,0 +1,248 @@
+/* ── HUD menus, lenses and dashboard ─────────────────────────────────────────────
+   HUD menus and speed, the finder, the ticker, lenses, map layers, ambient mode, the
+   four-tab dashboard (Island · Life · Tribes · Worlds), wagers, alerts, worlds.
+
+   Lens colours are canvas colours: they mirror what render/creatureMeshes.js paints on the
+   creatures, so — like the species and landmark tokens above — they describe the island,
+   not the page, and do not change with the colour scheme. */
+:root {
+    --poeco-lens-trait: linear-gradient(90deg, #2563eb, #fbbf24);
+    --poeco-lens-hunger: linear-gradient(90deg, #22c55e, #ef4444);
+    --poeco-lens-health: linear-gradient(90deg, #dc2626, #34d399);
+    --poeco-lens-thermal: linear-gradient(90deg, #22105e, #c0206e, #ff8a1f, #fff3b0);
+    --poeco-kin-self: #fde047;
+    --poeco-kin-elder: #7dd3fc;
+    --poeco-kin-young: #86efac;
+    --poeco-kin-sibling: #fda4af;
+    --poeco-map-sea: #0c4a6e;
+}
+
+/* The idle / cinematic fade (see the comment further up). The selector lists named the
+   sparkline and the lock hint until both were deleted. */
+.poeco-hud[data-idle] :is(.poeco-hud-top, .poeco-minimap-wrap, .poeco-keys, .poeco-touch),
+.poeco-hud--cinematic :is(.poeco-hud-top, .poeco-minimap-wrap, .poeco-keys, .poeco-touch) {
+    opacity: 0.05;
+    pointer-events: none;
+}
+
+/* An open menu, or a HUD the pointer is on, is never a whisper. */
+.poeco-hud[data-idle] .poeco-hud-top:is(:hover, :focus-within),
+.poeco-hud--cinematic .poeco-hud-top:is(:hover, :focus-within) {
+    opacity: 1;
+    pointer-events: auto;
+}
+
+.poeco-btn--sm { height: 30px; padding: 0 var(--space-3); font-size: var(--text-sm); }
+
+/* ── HUD bar ── */
+.poeco-speed .poeco-pill { min-width: 30px; height: 22px; padding: 0 var(--space-2); justify-content: center; }
+
+.poeco-hudbar > .poeco-pill,
+.poeco-menu > .poeco-pill {
+    justify-content: center;
+    background: var(--poeco-glass);
+    backdrop-filter: var(--glass-2);
+    -webkit-backdrop-filter: var(--glass-2);
+    border-color: var(--poeco-glass-border);
+    box-shadow: var(--poeco-glass-lip);
+}
+
+.poeco-hudbar > .poeco-pill:hover,
+.poeco-menu > .poeco-pill:hover { background: var(--poeco-glass-strong); }
+
+.poeco-hudbar > .poeco-pill--on,
+.poeco-menu > .poeco-pill--on { background: var(--accent); color: var(--color-bg); }
+
+.poeco-menu { position: relative; }
+
+.poeco-menu-panel {
+    position: absolute;
+    top: calc(100% + 6px);
+    left: 0;
+    z-index: 30;
+    display: flex;
+    flex-direction: column;
+    min-width: 230px;
+    padding: 4px;
+    border: 1px solid var(--poeco-glass-border);
+    border-radius: var(--radius-md);
+    background: var(--poeco-glass-strong);
+    backdrop-filter: var(--glass-3);
+    -webkit-backdrop-filter: var(--glass-3);
+    box-shadow: var(--poeco-glass-lip), var(--poeco-glass-cast);
+    animation: poeco-fade var(--dur-fast) var(--ease-out);
+}
+
+.poeco-menu-item {
+    display: flex;
+    align-items: center;
+    gap: var(--space-2);
+    padding: 6px var(--space-3);
+    border: 0;
+    border-radius: var(--radius-sm);
+    background: transparent;
+    color: var(--color-text-primary);
+    font: inherit;
+    font-size: var(--text-sm);
+    text-align: left;
+    white-space: nowrap;
+    cursor: pointer;
+}
+
+.poeco-menu-item:hover { background: var(--tint-medium); }
+.poeco-menu-item:focus-visible { outline: 2px solid var(--accent-ring); outline-offset: -2px; }
+.poeco-menu-item--on { color: var(--accent-ink); font-weight: 600; }
+.poeco-menu-item--on::after { content: '✓'; margin-left: auto; }
+.poeco-menu-hint { margin-left: auto; padding-left: var(--space-3); font-size: var(--text-xs); font-weight: 400; color: var(--color-text-secondary); }
+.poeco-menu-item--on .poeco-menu-hint { margin-left: 0; }
+
+/* What the lens means, under the bar while one is on. */
+.poeco-lens-legend,
+.poeco-ticker,
+.poeco-keys {
+    background: var(--poeco-glass);
+    backdrop-filter: var(--glass-2);
+    -webkit-backdrop-filter: var(--glass-2);
+    border: 1px solid var(--poeco-glass-border);
+    box-shadow: var(--poeco-glass-lip);
+}
+
+.poeco-lens-legend {
+    display: inline-flex;
+    align-items: center;
+    gap: var(--space-2);
+    flex-wrap: wrap;
+    margin: 0;
+    padding: 3px var(--space-3);
+    border-radius: var(--radius-pill);
+    font-size: var(--text-xs);
+    color: var(--color-text-primary);
+}
+
+.poeco-lens-ramp { display: inline-block; width: 84px; height: 8px; border-radius: var(--radius-pill); }
+.poeco-lens-ramp--trait { background: var(--poeco-lens-trait); }
+.poeco-lens-ramp--hunger { background: var(--poeco-lens-hunger); }
+.poeco-lens-ramp--health { background: var(--poeco-lens-health); }
+.poeco-lens-ramp--thermal { background: var(--poeco-lens-thermal); }
+.poeco-lens-key { display: inline-flex; align-items: center; gap: 4px; }
+.poeco-lens-dot { width: 8px; height: 8px; border-radius: var(--radius-pill); }
+.poeco-lens-dot--self { background: var(--poeco-kin-self); }
+.poeco-lens-dot--elder { background: var(--poeco-kin-elder); }
+.poeco-lens-dot--young { background: var(--poeco-kin-young); }
+.poeco-lens-dot--sibling { background: var(--poeco-kin-sibling); }
+
+/* The ticker: the island's small news, one line at a time under the bar (engine-owned DOM,
+   render/chronicle.js). Never a control. */
+.poeco-ticker {
+    position: absolute;
+    left: var(--space-3);
+    top: 84px;
+    z-index: 4;
+    max-width: min(560px, calc(100% - 240px));
+    margin: 0;
+    padding: 4px var(--space-3);
+    border-radius: var(--radius-pill);
+    font-size: var(--text-sm);
+    color: var(--color-text-primary);
+    pointer-events: none;
+    opacity: 0;
+    translate: 0 -6px;
+    transition: opacity 0.35s var(--ease-out), translate 0.35s var(--ease-out);
+}
+
+.poeco-ticker.is-on { opacity: 1; translate: 0 0; }
+.poeco-ticker[hidden] { display: none; }
+
+/* The key legend: held up by H, or pinned from the menu. */
+.poeco-keys {
+    left: var(--space-3);
+    bottom: var(--space-3);
+    max-width: min(640px, calc(100% - 24px));
+    padding: var(--space-2) var(--space-3);
+    border-radius: var(--radius-md);
+    color: var(--color-text-primary);
+}
+
+.poeco-visiting { display: flex; align-items: center; gap: var(--space-2); }
+.poeco-visiting .poeco-pill { height: 24px; pointer-events: auto; }
+
+/* The minimap's data layer: one button that names the layer and steps to the next. */
+.poeco-minimap-layer {
+    position: absolute;
+    left: 8px;
+    bottom: 8px;
+    height: 22px;
+    padding: 0 var(--space-2);
+    border: 1px solid var(--color-border);
+    border-radius: var(--radius-pill);
+    background: var(--surface-bar);
+    color: var(--color-text-primary);
+    font: inherit;
+    font-size: var(--text-xs);
+    font-weight: 600;
+    cursor: pointer;
+}
+
+.poeco-minimap-layer:hover { background: var(--tint-medium); }
+.poeco-minimap-layer:focus-visible { outline: 2px solid var(--accent-ring); outline-offset: 2px; }
+.poeco-minimap-layer--on { background: var(--accent); border-color: var(--accent); color: var(--color-bg); }
+
+/* Ambient mode: the island and nothing else. */
+.poeco-root[data-poeco-ambient] :is(.poeco-hud-top, .poeco-minimap-wrap, .poeco-keys, .poeco-touch, .poeco-crosshair,
+    .poeco-ticker, .poeco-director, .poeco-tour, .poeco-finder) {
+    display: none;
+}
+
+/* ── finder ── */
+.poeco-finder {
+    position: absolute;
+    left: 50%;
+    top: 64px;
+    z-index: 20;
+    translate: -50% 0;
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-2);
+    width: min(440px, calc(100% - 24px));
+    max-height: 72%;
+    padding: var(--space-3);
+    border: 1px solid var(--poeco-glass-border);
+    border-radius: var(--radius-md);
+    background: var(--poeco-glass-strong);
+    backdrop-filter: var(--glass-3);
+    -webkit-backdrop-filter: var(--glass-3);
+    box-shadow: var(--poeco-glass-lip), var(--poeco-glass-cast);
+    font-size: var(--text-sm);
+    pointer-events: auto;
+}
+
+.poeco-finder-head { display: flex; align-items: center; gap: var(--space-2); }
+
+.poeco-finder-input,
+.poeco-gallery-tools select,
+.poeco-alert-form select,
+.poeco-alert-form input {
+    height: 32px;
+    padding: 0 var(--space-2);
+    border: 1px solid var(--color-border);
+    border-radius: var(--radius-sm);
+    background: var(--surface-3);
+    color: var(--color-text-primary);
+    font: inherit;
+    font-size: var(--text-sm);
+}
+
+.poeco-finder-input { flex: 1; min-width: 0; }
+.poeco-finder-sorts { display: flex; flex-wrap: wrap; gap: var(--space-1); }
+.poeco-finder-sorts .poeco-pill { height: 24px; padding: 0 var(--space-2); }
+.poeco-finder-list { display: flex; flex-direction: column; gap: 2px; margin: 0; padding: 0; list-style: none; overflow: auto; min-height: 0; }
+.poeco-finder-list .poeco-species-chip { width: 10px; height: 10px; border-radius: var(--radius-pill); align-self: center; }
+
+/* ── inspector: one action row, family inside ── */
+.poeco-inspector-title { flex: 1; min-width: 0; }
+.poeco-inspector-actions .poeco-pill { height: 26px; padding: 0 var(--space-2); background: var(--tint-soft); }
+.poeco-inspector-actions .poeco-pill--on { background: var(--accent); }
+.poeco-inspector--family { width: 380px; }
+.poeco-inspector .poeco-tree { padding: var(--space-2) 0; border-bottom: 1px solid var(--color-border); }
+.poeco-inspector .poeco-kin { min-width: 5.2rem; padding: 0.2rem 0.4rem; font-size: var(--text-xs); }
+.poeco-inspector .poeco-kin .poeco-species-chip { width: 8px; height: 8px; border-radius: var(--radius-pill); }

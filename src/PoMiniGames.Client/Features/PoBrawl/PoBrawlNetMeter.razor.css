@@ -42,8 +42,8 @@
 .pb-net-bar--4 { height: 100%; }
 
 .pb-net-meter--good .pb-net-bar--on { background: #4ade80; }
-.pb-net-meter--fair .pb-net-bar--on { background: #fbbf24; }
-.pb-net-meter--poor .pb-net-bar--on { background: #f87171; }
+.pb-net-meter--fair .pb-net-bar--on { background: var(--accent-warning); }
+.pb-net-meter--poor .pb-net-bar--on { background: var(--accent-danger); }
 
 /* data-motion (appPrefs.js) folds the OS preference and the app toggle into one switch. */
 html[data-motion="reduce"] .pb-net-bar { transition: none; }

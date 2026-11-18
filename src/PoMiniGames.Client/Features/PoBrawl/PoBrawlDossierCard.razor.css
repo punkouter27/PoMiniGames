@@ -76,7 +76,7 @@
 }
 
 .pbd-party-dot--dem { background: #3b82f6; }
-.pbd-party-dot--rep { background: #ef4444; }
+.pbd-party-dot--rep { background: var(--color-error); }
 
 .pbd-style,
 .pbd-summary {

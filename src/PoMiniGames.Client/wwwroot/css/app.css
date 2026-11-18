@@ -854,6 +854,22 @@ p, li, dd, blockquote,
   :where(input[type="range"]) {
     align-self: center;
   }
+
+  /* The catch-all: every button, tab, disclosure and link-styled-as-a-button, so a new
+     component cannot ship under the floor (LinkAuditUiTests checks every route on a 375×667
+     touch phone). Zero specificity, so a component can still state its own size; an inline
+     text link is exempt (WCAG 2.5.8), and [data-tap-exempt] opts out a control that is not
+     meant for a thumb. */
+  :where(button, [role="button"], [role="tab"], summary, a.app-btn, a[role="tab"]):not([data-tap-exempt]) {
+    min-height: 44px;
+  }
+  :where(button, [role="button"], [role="tab"]):not([data-tap-exempt]) {
+    min-width: 44px;
+  }
+  :where(summary) {
+    display: flex;
+    align-items: center;
+  }
 }
 
 /* ── Connect Five physics clone ──────────────────────────────────────────────

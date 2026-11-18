@@ -1,0 +1,20 @@
+@namespace PoMiniGamesClient.Features.Shared
+
+@*
+    The one "waiting for data" view: a centred spinner and a muted label.
+
+    The sibling of <EmptyState> (nothing here) and <ErrorState> (it failed). The look is
+    the shared `.app-loading` primitive in wwwroot/css/app.css, so a page never writes its
+    own spinner. Announced politely as a status. For a whole-game load use GameShell's
+    `Loading` parameter (the skeleton) instead.
+*@
+
+<div class="app-loading" role="status" aria-live="polite">
+    <span class="app-loading__spinner" aria-hidden="true"></span>
+    <span>@Label</span>
+</div>
+
+@code {
+    /// <summary>What is being waited on, for example "Loading the boards…".</summary>
+    [Parameter] public string Label { get; set; } = "Loading…";
+}

@@ -17,7 +17,23 @@ public sealed record DiagReport(
     DateTimeOffset CheckedAtUtc,
     double TotalMs,
     IReadOnlyList<DiagCheck> Stores,
-    IReadOnlyList<DiagCheck> Services);
+    IReadOnlyList<DiagCheck> Services,
+    IReadOnlyList<DiagResource> Tables,
+    IReadOnlyList<DiagResource> Containers,
+    IReadOnlyList<DiagHub> Hubs);
+
+/// <summary>One Azure Table or Blob container the app uses. Name only: never the account address.</summary>
+/// <param name="Name">Table or container name.</param>
+/// <param name="Reachable">True when the storage service answered the listing.</param>
+/// <param name="Exists">True when the listing included it. Reachable but not existing is normal
+/// for a store created on first use (the PoEcosystem world container).</param>
+public sealed record DiagResource(string Name, bool Reachable, bool Exists);
+
+/// <summary>One mapped SignalR hub.</summary>
+/// <param name="Name">Hub class name.</param>
+/// <param name="Route">The mapped route, for example /connectfive/hub.</param>
+/// <param name="Connections">Live connection count, or null when the hub does not track one.</param>
+public sealed record DiagHub(string Name, string Route, int? Connections);
 
 /// <summary>One store or service.</summary>
 /// <param name="Status">Healthy, Degraded, Unhealthy, or "Not configured" for a service this environment does not use.</param>

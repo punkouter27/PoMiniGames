@@ -105,7 +105,7 @@
                        moment everyone is in): the button is disabled, so it must not read
                        as the "Not Ready" action it cannot perform. *@
                     <button type="button" class="app-btn app-btn--primary" disabled="@(!CanReady || _busy)" @onclick="ReadyAsync">
-                        @(MyReady ? (CanReady ? "Not Ready" : "Ready ✓") : "Ready!")
+                        @(MyReady ? (CanReady ? "Not Ready" : "Ready") : "Ready!")@if (MyReady && !CanReady) { <span class="material-symbols-outlined" aria-hidden="true">check</span> }
                     </button>
                 }
                 @if (ShowStart && IsHost)

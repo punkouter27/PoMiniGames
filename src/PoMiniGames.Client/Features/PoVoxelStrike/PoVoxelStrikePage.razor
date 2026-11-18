@@ -31,6 +31,7 @@
            Outcome="@(_phase != Phase.Dead ? GameResult.InProgress : _won ? GameResult.Win : GameResult.Loss)"
            GameKey="@GameKeys.PoVoxelStrike.Value"
            NewBest="@_isNewBest"
+           Announcement="@Announcement"
            RequiresWebGl="true"
            GameSummary="@GameSummaryContent">
     @if (_phase == Phase.Intro && _demo)
@@ -161,6 +162,14 @@
     // Intro → Playing ⇄ Paused → Dead; the pause menu's Restart re-enters Intro.
     private enum Phase { Intro, Playing, Paused, Dead }
     private enum Tab { Solo, Online }
+
+    // Coarse on purpose: the HUD ticks many times a second, so health is spoken by band,
+    // never by value, and the guns line changes only when a gun falls.
+    private string? Announcement => _demo || _phase == Phase.Intro ? null
+        : _phase == Phase.Paused ? "Paused."
+        : _phase == Phase.Dead ? (_won ? "Victory. You reached the chalice." : "You are down. Round over.")
+        : _down ? "You are down. A teammate can revive you."
+        : $"Health {(_hp < 25 ? "critical" : _hp < 50 ? "low" : "good")}. Guns silenced {_gunsSilenced} of {_gunsTotal}.";
 
     private string _playerName = "";
     private bool _demo;

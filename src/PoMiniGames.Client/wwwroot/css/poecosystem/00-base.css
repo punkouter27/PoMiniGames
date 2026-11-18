@@ -1,0 +1,83 @@
+/* Loaded at runtime by js/poecosystem/index.js.
+   NOT a Blazor scoped stylesheet: the HUD is built from several components, and scoped
+   CSS does not cross component boundaries — that is why this file lives here. */
+/* PoEcosystem HUD — layered over the full-bleed three.js canvas (layout concept C).
+   Every colour reads through the app's tokens so light mode and forced-colors work;
+   the world itself is drawn by WebGL and is scheme-invariant by design. */
+
+/* Species and landmark colours. Components read these, never raw hex, so
+   the colour-blind palette in Settings re-points everything at once. The standard set
+   rides the app's accent tokens; the cb set is Okabe–Ito, which stays distinguishable
+   under protanopia, deuteranopia and tritanopia. */
+:root {
+    --poeco-species-0: var(--accent-warning);
+    --poeco-species-1: var(--accent-success);
+    --poeco-species-2: var(--accent-danger);
+    --poeco-species-3: var(--accent);
+    --poeco-mark-tech: var(--accent);
+    --poeco-mark-diplomacy: var(--accent-danger);
+    --poeco-mark-weather: var(--accent-info, var(--accent));
+    --poeco-mark-outbreak: var(--accent-warning);
+    --poeco-mark-extinction: var(--color-text-muted);
+    --poeco-mark-variety: var(--accent-success);
+    --poeco-mark-eruption: var(--accent-danger);
+    --poeco-diversity: var(--color-text-primary);
+}
+
+:root[data-poeco-palette="cb"] {
+    --poeco-species-0: #e69f00;
+    --poeco-species-1: #009e73;
+    --poeco-species-2: #cc79a7;
+    --poeco-species-3: #0072b2;
+    --poeco-mark-tech: #0072b2;
+    --poeco-mark-diplomacy: #d55e00;
+    --poeco-mark-weather: #56b4e9;
+    --poeco-mark-outbreak: #e69f00;
+    --poeco-mark-variety: #009e73;
+    --poeco-mark-eruption: #cc79a7;
+}
+
+/* Fills the game area. `height: 100%` inside a flex row that centres its children
+   resolves to auto, so only the 70vh floor would apply and the island would sit in a band
+   with dead space above and below it. Stretching on the cross axis is what fills. */
+.poeco-root {
+    position: relative;
+    inset: 0;
+    width: 100%;
+    align-self: stretch;
+    min-height: min(70vh, 640px);
+    overflow: hidden;
+    background: var(--color-bg);
+    color: var(--color-text-primary);
+    font-family: var(--font-body);
+}
+
+.poeco-world {
+    position: absolute;
+    inset: 0;
+}
+
+/* The HUD never swallows pointer events — only its controls do. */
+.poeco-hud {
+    position: absolute;
+    inset: 0;
+    pointer-events: none;
+}
+
+.poeco-hud button,
+.poeco-hud .poeco-minimap-wrap,
+.poeco-hud .poeco-touch {
+    pointer-events: auto;
+}
+
+.poeco-crosshair {
+    position: absolute;
+    left: 50%;
+    top: 50%;
+    width: 20px;
+    height: 20px;
+    margin: -10px 0 0 -10px;
+    color: var(--color-text-primary);
+    opacity: 0.85;
+    filter: drop-shadow(0 0 2px rgb(0 0 0 / 0.6));
+}

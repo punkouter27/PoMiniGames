@@ -135,14 +135,6 @@ export class OnlineMixin {
     this.audio.playSting(!!won);
   }
 
-  // Host: both players agreed to a rematch (the hub's handshake). Roll the next race from the
-  // result screen; its pick phase reaches the guest with the new seed through the phase relay.
-  // A guest has nothing to do here: it rebuilds when that phase arrives (nextTrack below).
-  rematch() {
-    if (!this.online || this.isGuest || this.phase !== 'result') return;
-    this._nextTrack();
-  }
-
   // Guest: the host has moved on to the next race, on this seed.
   nextTrack(seed) {
     if (!this.isGuest) return;

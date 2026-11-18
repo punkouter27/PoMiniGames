@@ -54,7 +54,7 @@
                     fixes it — or try a different browser or device.
                 </p>
                 <div class="gps-nogl-actions">
-                    <a class="gps-nogl-link" href="/">← Back to all games</a>
+                    <a class="gps-nogl-link" href="/"><span class="material-symbols-outlined" aria-hidden="true">arrow_back</span> Back to all games</a>
                     <span class="gps-nogl-or">or play a 2D game now:</span>
                     <a class="gps-nogl-link gps-nogl-link--chip" href="/tictactoe/1player">❌ Tic-Tac-Toe</a>
                     <a class="gps-nogl-link gps-nogl-link--chip" href="/connectfive/1player">🔴 Connect Five</a>
@@ -102,7 +102,6 @@
     {
         <GameOverModal Title="@Title"
                        GameSummary="@GameSummary"
-                       GameActions="@GameActions"
                        GameDetails="@GameDetails"
                        Stats="@Stats"
                        GameKey="@GameKey"
@@ -192,7 +191,6 @@
     // The run just saved was a personal best: the modal badges and celebrates it.
     [Parameter] public bool NewBest { get; set; }
     [Parameter] public RenderFragment? GameSummary { get; set; }
-    [Parameter] public RenderFragment? GameActions { get; set; }
     [Parameter] public RenderFragment? GameDetails { get; set; }
 
     /// <summary>

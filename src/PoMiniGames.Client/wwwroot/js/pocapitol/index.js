@@ -119,7 +119,9 @@ async function init(hostId, reference) {
         if (!human()) return;
         if (g.state.status !== 'active') return;
         if (e.target.closest?.('button, a, summary, [role="radio"]')) return;
-        if (['forward', 'back', 'left', 'right', 'push', 'sprint'].some(action => matches(g.prefs, action, e.code))) {
+        // ←/→ turn the camera (read from g.keys in the frame loop), so they are tracked here too.
+        if (e.code === 'ArrowLeft' || e.code === 'ArrowRight' ||
+            ['forward', 'back', 'left', 'right', 'push', 'sprint'].some(action => matches(g.prefs, action, e.code))) {
             g.keys.add(e.code); e.preventDefault();
         }
     });

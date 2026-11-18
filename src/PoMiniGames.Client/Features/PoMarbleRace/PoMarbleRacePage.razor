@@ -29,7 +29,6 @@
            Fullscreen="true"
            OptionsContent="@(_demo ? null : SettingsContent)"
            OptionsHeading="Race settings"
-           GameActions="@ResultActions"
            GameSummary="@GameSummaryContent">
     @* The one decision card: controls, and in 1P the track and your marble. Everything after it
        is the pre-race panel — there is nothing left to choose by then. *@
@@ -542,8 +541,8 @@
     </div>;
 
     // Host and guest share one summary: the guest simply has no run score of its own.
-    // The way on comes first (Race again / Next track, or Rematch online), then the standings with
-    // your own row picked out, then the run.
+    // The standings with your own row picked out, then the run. The end card's only action is
+    // "Back to main menu"; another race starts from the start card.
     private RenderFragment GameSummaryContent => _gp ? GrandPrixSummary : RaceSummary;
 
     // The Grand Prix table: the top five on points, and your own row when you are not among them.
@@ -581,33 +580,6 @@
                 : IsOnlineGuest ? "💀 Outside the top 10" : $"💀 Run over · {(_lastPlace > 0 ? $"you placed {Ordinal(_lastPlace)}" : "you didn't finish")}")
         </div>
         @ResultStandings
-    </div>;
-
-    private RenderFragment ResultActions => @<div class="mr-result-actions">
-        @if (_gp)
-        {
-            <button type="button" class="app-btn app-btn--primary" @onclick="() => RaceAgainAsync(nextTrack: false)">New Grand Prix</button>
-        }
-        else if (!_online)
-        {
-            <div class="mr-result-actions">
-                <button type="button" class="app-btn app-btn--primary" @onclick="() => RaceAgainAsync(nextTrack: false)">Race again</button>
-                <button type="button" class="app-btn app-btn--secondary" @onclick="() => RaceAgainAsync(nextTrack: true)">Next track: @(MapAt(NextMapId)?.Name ?? "next")</button>
-            </div>
-        }
-        else if (_onlineResultKnown && _onlinePhase == OnlinePhase.Racing)
-        {
-            <div class="mr-rematch">
-                <button type="button" class="app-btn app-btn--primary" disabled="@_rematch.Mine"
-                        @onclick="RequestRematchAsync">
-                    @(_rematch.Mine ? $"Waiting for {_opponentName}…" : _rematch.Theirs ? "Accept rematch" : "Rematch")
-                </button>
-                @if (_rematch.Theirs && !_rematch.Mine)
-                {
-                    <span class="mr-rematch-note">@_opponentName wants a rematch</span>
-                }
-            </div>
-        }
     </div>;
 
     private RenderFragment ResultStandings => @<div>

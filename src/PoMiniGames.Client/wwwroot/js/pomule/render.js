@@ -143,9 +143,15 @@ function tileLayer(g) {
   return g.tiles;
 }
 
+// prefers-reduced-motion: no planetquake rattle, no fast flicker (the highlight blinks at a
+// calm 1.5 Hz instead of 6 Hz) and the runaway M.U.L.E. holds one pose. Read live so a
+// changed OS setting applies without a reload.
+const motionQuery = typeof matchMedia === 'function' ? matchMedia('(prefers-reduced-motion: reduce)') : null;
+const reducedMotion = () => !!motionQuery?.matches;
+
 function drawMap(c, g) {
   // A planetquake rattles the whole picture.
-  const quake = g.phase === 4 && g.snap[7] === 4 ? (Math.floor(g.time * 20) % 3 - 1) : 0;
+  const quake = g.phase === 4 && g.snap[7] === 4 && !reducedMotion() ? (Math.floor(g.time * 20) % 3 - 1) : 0;
   c.setTransform(1, 0, 0, 1, 0, 0);
   c.drawImage(tileLayer(g), quake, MAP_Y);
   c.setTransform(1 / PX, 0, 0, 1 / PX, quake, MAP_Y);
@@ -154,7 +160,8 @@ function drawMap(c, g) {
     const t = W.tileCenter(index);
     cells(c, t.x - W.TILE / 2, t.y - W.TILE / 2, color, [[0, 0, 16, 2], [0, 14, 16, 2], [0, 0, 2, 16], [14, 0, 2, 16]]);
   };
-  const blink = Math.floor(g.time * 6) % 2 === 0;
+  const reduced = reducedMotion();
+  const blink = Math.floor(g.time * (reduced ? 1.5 : 6)) % 2 === 0;
   const event = g.snap[7];
 
   if (g.phase === 0 && g.snap[10] >= 0) {
@@ -172,7 +179,7 @@ function drawMap(c, g) {
       if (a.hidden || !a.mule) continue;
       wrapped(snap(a.mule.x), (x) => drawMule(c, x, snap(a.mule.y), g.colors[a.seat], a.frame));
     }
-    for (const r of g.runaways) wrapped(snap(r.x), (x) => drawMule(c, x, snap(r.y), TEXT, Math.floor(g.time * 12) % 2));
+    for (const r of g.runaways) wrapped(snap(r.x), (x) => drawMule(c, x, snap(r.y), TEXT, reduced ? 0 : Math.floor(g.time * 12) % 2));
     for (const a of g.avatars) {
       if (a.hidden) continue;
       wrapped(snap(a.x), (x) => drawColonist(c, x, snap(a.y), g.colors[a.seat], a.species, a.facing, a.dashing, a.frame));

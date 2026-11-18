@@ -60,11 +60,11 @@
         <button type="button" class="kiosk-bar-btn kiosk-bar-btn--mute"
                 aria-label="@(Settings.Muted ? "Unmute audio" : "Mute audio")"
                 title="@(Settings.Muted ? "Unmute" : "Mute")"
-                @onclick="ToggleMuteAsync">@(Settings.Muted ? "🔇" : "🔊")</button>
+                @onclick="ToggleMuteAsync"><span class="material-symbols-outlined" aria-hidden="true">@(Settings.Muted ? "volume_off" : "volume_up")</span></button>
 
         <button type="button" class="kiosk-bar-btn kiosk-bar-btn--exit"
                 aria-label="Stop watching demos and return home" title="Exit"
-                @onclick="ExitAsync">✕</button>
+                @onclick="ExitAsync"><span class="material-symbols-outlined" aria-hidden="true">close</span></button>
     </div>
 }
 

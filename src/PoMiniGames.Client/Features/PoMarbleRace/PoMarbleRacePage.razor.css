@@ -596,7 +596,7 @@
     .mr-nudge-pad { width: 50px; height: 50px; }
 }
 
-/* ── Online: private race code, join field, series + rematch ── */
+/* ── Online: private race code, join field, series ── */
 .mr-room-code {
     margin: 4px 0 6px;
     font-family: var(--font-display);
@@ -630,20 +630,6 @@
 .mr-series {
     margin-top: 6px;
     font-weight: 700;
-}
-
-.mr-rematch {
-    display: flex;
-    flex-wrap: wrap;
-    align-items: center;
-    justify-content: center;
-    gap: 8px;
-    margin-top: 10px;
-}
-
-.mr-rematch-note {
-    font-size: 0.8rem;
-    color: var(--color-text-secondary);
 }
 
 /* ── Track cards: a glyph of the course above its name (#35) ── */
@@ -764,13 +750,6 @@
 }
 
 .mr-result-head { font-weight: 800; }
-
-.mr-result-actions {
-    display: flex;
-    flex-wrap: wrap;
-    justify-content: center;
-    gap: 8px;
-}
 
 .mr-result-table {
     width: 100%;

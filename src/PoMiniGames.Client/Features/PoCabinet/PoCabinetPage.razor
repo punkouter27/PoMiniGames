@@ -12,7 +12,7 @@
 <GameShell Title="@TitleContent" Player="@_playerName" BackTo="/" Fullscreen="true" RequiresWebGl="true"
            GameOver="@(_phase == Phase.Finished && Mode != GameMode.Demo)" GameKey="@BoardKey"
            Outcome="@ResultsOutcome" NewBest="@_isPersonalBest"
-           GameSummary="@ResultsContent" GameActions="@ResultActions"
+           GameSummary="@ResultsContent"
            Loading="@(_phase == Phase.Loading)" LoadingLabel="Building the track…">
     <div class="pocabinet-root">
         @if (_phase is Phase.Start or Phase.Lobby && _loaded)
@@ -202,7 +202,7 @@
                                    spectators. A driver taps twice (the first tap arms it). *@
                                 <button type="button" class="pocabinet-iconbtn" @onclick="LeaveWireRaceAsync"
                                         aria-label="@(_confirmLeave ? "Tap again to leave the race" : "Leave race")"
-                                        title="Leave the race and go back to the lobby">@(_confirmLeave ? "Leave?" : "✕")</button>
+                                        title="Leave the race and go back to the lobby">@if (_confirmLeave) { <text>Leave?</text> } else { <span class="material-symbols-outlined" aria-hidden="true">close</span> }</button>
                             }
                         </span>
                         @* Screen-reader channel: laps, places, officials' radio lines, the finish. *@
@@ -272,7 +272,6 @@
 </GameShell>
 
 @code {
-    private RenderFragment ResultActions => @<button type="button" class="app-btn app-btn--secondary" @onclick="RaceAgainAsync">@(IsMultiplayerMode ? "Back to lobby" : "Race again")</button>;
     // One line, for the device in hand (.keys-only / .touch-only, game-shell.css). It used to be
     // two bullets for every device, and the settings panel repeated the keyboard line.
     private RenderFragment ControlsContent => Mode == GameMode.Demo

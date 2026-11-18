@@ -240,11 +240,11 @@ else
                                 <span class="prf-game-plays-lbl">@(g.PlayCount == 1 ? "session" : "sessions")</span>
                                 @if (DemoUrl(g.Key) is { } demo)
                                 {
-                                    <a class="prf-game-link" href="@demo">Watch again →</a>
+                                    <a class="prf-game-link" href="@demo">Watch again <span class="material-symbols-outlined" aria-hidden="true">arrow_forward</span></a>
                                 }
                                 else
                                 {
-                                    <a class="prf-game-link" href="@PlayUrl(g.Key)">Play again →</a>
+                                    <a class="prf-game-link" href="@PlayUrl(g.Key)">Play again <span class="material-symbols-outlined" aria-hidden="true">arrow_forward</span></a>
                                 }
                             </p>
                         }
@@ -435,54 +435,51 @@ else
     private RenderFragment RenderOpponentTable(List<OpponentRecord> opponents, bool invitable) => __builder =>
     {
         @*
-            <Virtualize> wraps the opponent table body. A player's full head-to-head
-            history is unbounded (each new opponent is a new row), so without virtualization
-            a profile page with 200+ opponents allocates a DOM node per opponent. There is no
-            inner scroll box: the virtualizer follows the page's own scroll, so a phone has
-            one scroll, not a 360px well inside it.
-
-            Under 640px each row is laid out as a card (badge and name, a W–L–D pill, a small
-            Invite button) by CSS alone. The explicit table roles keep it a table to
-            assistive tech once the rows stop being display: table-row.
+            Radzen's grid, like the Brawl HQ and PoMule standings. A player's full head-to-head
+            history is unbounded (each new opponent is a new row), so it pages at ten instead of
+            drawing every row; the pager only shows once there is a second page. The theme is
+            loaded on demand (OnAfterRenderAsync), so the grid waits for _radzenReady.
         *@
         <div class="prf-h2h-vwrap">
-            <table class="prf-h2h-table" role="table">
-                <thead role="rowgroup">
-                    <tr role="row">
-                        <th role="columnheader">Opponent</th>
-                        <th role="columnheader" class="prf-h2h-num"><abbr title="Wins">W</abbr></th>
-                        <th role="columnheader" class="prf-h2h-num"><abbr title="Losses">L</abbr></th>
-                        <th role="columnheader" class="prf-h2h-num"><abbr title="Draws">D</abbr></th>
+            @if (!_radzenReady)
+            {
+                <p class="prf-h2h-note">Loading…</p>
+            }
+            else
+            {
+                <RadzenDataGrid Data="@opponents" TItem="OpponentRecord" Density="Density.Compact"
+                                AllowSorting="false" AllowPaging="@(opponents.Count > 10)" PageSize="10"
+                                PagerHorizontalAlign="HorizontalAlign.Center" ShowPagingSummary="false"
+                                class="prf-h2h-grid">
+                    <Columns>
+                        <RadzenDataGridColumn TItem="OpponentRecord" Title="Opponent">
+                            <Template Context="o"><span class="prf-h2h-who prf-h2h-name">@o.Name</span></Template>
+                        </RadzenDataGridColumn>
+                        <RadzenDataGridColumn TItem="OpponentRecord" Title="W" Width="48px" TextAlign="TextAlign.Center">
+                            <Template Context="o"><span class="prf-h2h-w" title="Wins">@o.Wins</span></Template>
+                        </RadzenDataGridColumn>
+                        <RadzenDataGridColumn TItem="OpponentRecord" Title="L" Width="48px" TextAlign="TextAlign.Center">
+                            <Template Context="o"><span class="prf-h2h-l" title="Losses">@o.Losses</span></Template>
+                        </RadzenDataGridColumn>
+                        <RadzenDataGridColumn TItem="OpponentRecord" Title="D" Width="48px" TextAlign="TextAlign.Center">
+                            <Template Context="o"><span class="prf-h2h-d" title="Draws">@o.Draws</span></Template>
+                        </RadzenDataGridColumn>
                         @if (invitable)
                         {
-                            <th role="columnheader" class="prf-h2h-invite"><span class="prf-sr-only">Invite</span></th>
-                        }
-                    </tr>
-                </thead>
-                <tbody role="rowgroup">
-                    <Virtualize Items="opponents" Context="o" ItemSize="48" SpacerElement="tr">
-                        <tr role="row" class="prf-h2h-row">
-                            <td role="cell" class="prf-h2h-name">
-                                <span class="prf-h2h-who">@o.Name</span>
-                            </td>
-                            <td role="cell" class="prf-h2h-num prf-h2h-w">@o.Wins</td>
-                            <td role="cell" class="prf-h2h-num prf-h2h-l">@o.Losses</td>
-                            <td role="cell" class="prf-h2h-num prf-h2h-d">@o.Draws</td>
-                            @if (invitable)
-                            {
-                                @* Online opponents only: a local 2-player name is whatever was
-                                   typed on this device, not someone who can be reached. *@
-                                <td role="cell" class="prf-h2h-invite">
-                                    <button type="button" class="app-btn app-btn--secondary app-btn--sm"
+                            @* Online opponents only: a local 2-player name is whatever was
+                               typed on this device, not someone who can be reached. *@
+                            <RadzenDataGridColumn TItem="OpponentRecord" Title="Invite" Width="90px" TextAlign="TextAlign.Right">
+                                <Template Context="o">
+                                    <button type="button" class="app-btn app-btn--secondary app-btn--sm prf-h2h-invite"
                                             disabled="@(_inviting == o.Name)"
                                             aria-label="@($"Invite {o.Name} to play again")"
                                             @onclick="() => InviteAsync(o)">Invite</button>
-                                </td>
-                            }
-                        </tr>
-                    </Virtualize>
-                </tbody>
-            </table>
+                                </Template>
+                            </RadzenDataGridColumn>
+                        }
+                    </Columns>
+                </RadzenDataGrid>
+            }
         </div>
     };
 }

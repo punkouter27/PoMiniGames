@@ -70,7 +70,7 @@
                 @if (isDev)
                 {
                     <button type="button" class="app-error-boundary__copy" @onclick="() => Copy(ex, errorId)">
-                        @(_copied ? "✓ Copied" : "Copy diagnostic")
+                        @if (_copied) { <span class="material-symbols-outlined" aria-hidden="true">check</span> }@(_copied ? "Copied" : "Copy diagnostic")
                     </button>
                 }
             </p>

@@ -607,6 +607,25 @@ dialog.gps-intro-overlay::backdrop { background: transparent; }
   outline-offset: 1px;
 }
 
+/* A thumb needs 44px (Profile B). */
+@media (pointer: coarse) {
+  .gps-intro-tab { min-height: 44px; padding-inline: 0.9rem; }
+}
+
+/* Setup as a tab: only on a portrait phone, where setup below the controls made the body
+   scroll (PoCapitol, Marble Race, Mule at 375x667). Wider or landscape cards keep setup beside
+   the panel, so the Setup tab, and a strip that only exists for it, are hidden there. */
+.gps-intro-tab--setup,
+.gps-intro-tabs--setup-only { display: none; }
+
+@media (max-width: 759px) and (min-height: 561px) {
+  .gps-intro-tab--setup { display: inline-block; }
+  .gps-intro-tabs--setup-only { display: inline-flex; }
+  .gps-intro-section-label--setup-only { display: none; }
+  .gps-intro-body[data-view="setup"] > .gps-intro-controls > .gps-intro-panel { display: none; }
+  .gps-intro-body:not([data-view="setup"]) > .gps-intro-options { display: none; }
+}
+
 /* Key chips: the shell's <kbd> look. A run of them on one line reads as the controls. */
 .gps-intro-controls kbd {
   display: inline-block;
@@ -1295,4 +1314,37 @@ dialog.gps-modal[data-ceremony][data-beats~="action"] .gps-play-again-actions .a
 .gps-ceremony-skip:focus-visible {
   outline: 2px solid var(--accent);
   outline-offset: 2px;
+}
+
+/* ── Safe areas (Profile B) ────────────────────────────────────────────────────
+   One rule for every game instead of one per game: the play area keeps clear of a notch,
+   rounded corners and the home indicator. A fullscreen game area has no padding and its game
+   places its own HUD inside the insets. The end card shrinks by the insets too. */
+.gps-game-area:not(.gps-game-area--fullscreen) {
+  padding-left: max(1.5rem, env(safe-area-inset-left));
+  padding-right: max(1.5rem, env(safe-area-inset-right));
+  padding-bottom: max(1.5rem, env(safe-area-inset-bottom));
+}
+@media (max-height: 500px) {
+  .gps-game-area:not(.gps-game-area--fullscreen) {
+    padding-left: max(1rem, env(safe-area-inset-left));
+    padding-right: max(1rem, env(safe-area-inset-right));
+    padding-bottom: max(0.5rem, env(safe-area-inset-bottom));
+  }
+}
+dialog.gps-modal {
+  max-height: calc(100dvh - 2.5rem - env(safe-area-inset-top) - env(safe-area-inset-bottom));
+}
+
+/* ── The end card on a short phone (Profile B: no scrollbar) ─────────────────────
+   A 667px phone could not fit summary + six stats + rank + top 3 + details + the button.
+   Tighter spacing first; then the top-3 board steps aside (the leaderboard page has it,
+   and the rank line still says where you placed). */
+@media (max-height: 740px) {
+  dialog.gps-modal { gap: 0.55rem; padding: 0.9rem 1rem 0.85rem; }
+  .gps-modal-stats { gap: 0.35rem; }
+  .gps-result-details[open] { max-height: 28dvh; }
+}
+@media (max-height: 680px) {
+  .gps-modal-board { display: none; }
 }

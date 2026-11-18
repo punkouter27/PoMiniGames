@@ -11,7 +11,7 @@
             {
                 <li>
                     <span class="poeco-alert-rule @(Stats is not null && rule.Holds(Stats) ? "poeco-alert-rule--on" : "")">@rule.Describe()</span>
-                    <button type="button" class="poeco-icon-btn" aria-label="Remove the alert: @rule.Describe()" title="Remove" @onclick="() => Remove(rule)">✕</button>
+                    <button type="button" class="poeco-icon-btn" aria-label="Remove the alert: @rule.Describe()" title="Remove" @onclick="() => Remove(rule)"><span class="material-symbols-outlined" aria-hidden="true">close</span></button>
                 </li>
             }
         </ul>

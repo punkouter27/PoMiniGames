@@ -21,6 +21,10 @@ public static class MobileViewport
     /// <summary>iPhone 14 logical portrait dimensions.</summary>
     public static readonly ViewportSize Portrait = new() { Width = 390, Height = 844 };
 
+    /// <summary>The small phone Profile B is held to (iPhone SE / 8 logical size): start and end
+    /// cards must fit it without scrolling and every control must be a 44px target.</summary>
+    public static readonly ViewportSize SmallPortrait = new() { Width = 375, Height = 667 };
+
     /// <summary>Hard ceiling — any wider than this is treated as desktop. Asserted
     /// by <see cref="MobileViewportGuard"/> before navigation.</summary>
     public const int MaxPortraitWidth = 414;

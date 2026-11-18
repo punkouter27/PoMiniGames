@@ -32,6 +32,12 @@ public partial class SandPlaygroundSandbox : ComponentBase, IAsyncDisposable
     /// </summary>
     [Parameter] public bool IsDemo { get; set; }
 
+    /// <summary>Plain-language status (tool, pause) for the page's screen-reader live region.</summary>
+    [Parameter] public EventCallback<string> OnStatus { get; set; }
+
+    private void PushStatus() =>
+        _ = OnStatus.InvokeAsync($"{ToolOf(ActiveTool)?.Label ?? ActiveTool} tool selected." + (Paused ? " Paused." : ""));
+
     protected string ActiveTool { get; private set; } = "dig";
     protected int BrushSize { get; private set; } = 8;
     protected bool Paused { get; private set; }
@@ -201,6 +207,7 @@ public partial class SandPlaygroundSandbox : ComponentBase, IAsyncDisposable
             case "tool":
                 ActiveTool = value;
                 Remember(value);
+                PushStatus();
                 break;
             case "view":
                 if (int.TryParse(value, out var view)) View = view;
@@ -213,6 +220,7 @@ public partial class SandPlaygroundSandbox : ComponentBase, IAsyncDisposable
                 break;
             case "paused":
                 Paused = value == "true";
+                PushStatus();
                 break;
             case "undo":
                 if (int.TryParse(value, out var u)) UndoDepth = u;
@@ -286,6 +294,7 @@ public partial class SandPlaygroundSandbox : ComponentBase, IAsyncDisposable
         ActiveTool = tool;
         Remember(tool);
         MenuOpen = false;
+        PushStatus();
         if (ToolOf(tool) is { } def) ShowToast($"{def.Label}: {def.Hint}");
         if (_module is not null) await _module.InvokeVoidAsync("setTool", tool);
     }

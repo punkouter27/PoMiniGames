@@ -413,3 +413,8 @@
 .pc-debrief-meta { font-family: ui-monospace, Consolas, monospace; font-size: 10px; line-height: 1.4; }
 .pc-debrief-meta--warn { font-weight: 700; }
 .pc-debrief-meta--warn::before { content: "⚠ "; }
+
+/* The role picker shares the card's width on a phone: "Observer" ran off the right edge of a
+   375px card. Equal segments, and a long label wraps inside its own segment. */
+.pc-intro-opts ::deep #pc-role { display: flex; width: 100%; }
+.pc-intro-opts ::deep #pc-role > .rz-button { flex: 1 1 0; min-width: 0; padding-inline: 0.4rem; white-space: normal; }

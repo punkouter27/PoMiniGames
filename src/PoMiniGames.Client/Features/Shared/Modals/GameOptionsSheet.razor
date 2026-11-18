@@ -29,7 +29,7 @@
 <dialog @ref="_dialog" class="game-opts-sheet" closedby="any" aria-labelledby="game-opts-title">
     <header class="game-opts-head">
         <h2 id="game-opts-title" class="game-opts-title">@Heading</h2>
-        <button type="button" class="game-opts-close" aria-label="Close game options" @onclick="CloseAsync">×</button>
+        <button type="button" class="game-opts-close" aria-label="Close game options" @onclick="CloseAsync"><span class="material-symbols-outlined" aria-hidden="true">close</span></button>
     </header>
     <div class="game-opts-body">
         @ChildContent

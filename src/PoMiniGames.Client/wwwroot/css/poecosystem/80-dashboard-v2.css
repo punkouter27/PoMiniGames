@@ -1,0 +1,180 @@
+/* ── dashboard ── */
+.poeco-tabs { align-items: center; }
+
+/* Rack focus: the island pulls out of focus behind the glass as the dashboard opens, where
+   it used to be blurred from the first frame. */
+@keyframes poeco-rack {
+    from { backdrop-filter: blur(0); -webkit-backdrop-filter: blur(0); background-color: transparent; }
+}
+
+@keyframes poeco-card-in {
+    from { opacity: 0; scale: 0.975; translate: 0 10px; }
+}
+
+/* Pinned to the top, not centred: centred, the tab row sat at a different height on every
+   tab, and the whole card crept up and down as a feed inside it grew a line. */
+.poeco-overlay { align-items: flex-start; animation: poeco-rack 0.36s var(--ease-out); }
+.poeco-overlay-card { animation: poeco-card-in 0.3s var(--ease-out); }
+
+.poeco-log { max-height: 320px; }
+.poeco-chart-legend { align-items: stretch; }
+.poeco-legend-item { flex-direction: row; align-items: baseline; gap: var(--space-2); min-width: 0; padding: 2px var(--space-2); }
+
+.poeco-timemachine {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: var(--space-2);
+    margin-top: var(--space-2);
+    font-size: var(--text-sm);
+}
+
+.poeco-timemachine .poeco-pill { height: 24px; border-color: var(--color-border); }
+.poeco-timemachine .poeco-pill--on { border-color: var(--accent); }
+
+.poeco-milestone-grid { grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: var(--space-1); }
+.poeco-milestone { grid-template-columns: 1.3rem 1fr; grid-template-rows: auto; align-items: center; padding: 3px var(--space-2); }
+.poeco-milestone-icon { grid-row: auto; font-size: 1rem; }
+.poeco-milestone-title { font-weight: 500; font-size: var(--text-xs); }
+
+/* wagers */
+.poeco-wager { display: flex; flex-direction: column; gap: var(--space-2); }
+.poeco-wager-record { margin: 0; font-size: var(--text-sm); }
+.poeco-wager-q { min-width: 0; margin: 0; padding: 0; border: 0; }
+.poeco-wager-q legend { padding: 0; font-size: var(--text-sm); }
+.poeco-wager-options { display: flex; flex-wrap: wrap; gap: var(--space-1); margin: var(--space-1) 0; }
+.poeco-wager-options .poeco-pill { height: 24px; padding: 0 var(--space-2); border-color: var(--color-border); }
+.poeco-wager-q:disabled .poeco-pill { cursor: default; }
+.poeco-wager-q:disabled .poeco-pill:not(.poeco-pill--on, .poeco-wager--right) { opacity: 0.5; }
+.poeco-wager--right { outline: 2px solid var(--accent-success); outline-offset: 1px; }
+.poeco-wager--wrong { outline: 2px solid var(--accent-danger); outline-offset: 1px; }
+
+/* alerts */
+.poeco-alert-form { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-1); }
+.poeco-alert-form input { width: 64px; }
+.poeco-alert-form .poeco-pill { height: 32px; }
+.poeco-alert-rule { flex: 1; font-size: var(--text-sm); }
+.poeco-alert-rule--on { color: var(--accent-warning-ink); font-weight: 600; }
+
+/* tribes */
+.poeco-tribe { display: flex; flex-direction: column; gap: var(--space-3); }
+.poeco-tribe h3 { margin: 0; font-size: var(--text-xs); text-transform: uppercase; letter-spacing: 0.06em; color: var(--color-text-secondary); }
+.poeco-tribe-top { display: grid; grid-template-columns: minmax(170px, 230px) minmax(0, 1fr); gap: var(--space-3); align-items: start; }
+.poeco-tribe-side { display: flex; flex-direction: column; gap: var(--space-2); min-width: 0; }
+.poeco-tribe-record { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: var(--space-4); align-items: start; }
+.poeco-tribe-record > section { display: flex; flex-direction: column; gap: var(--space-2); min-width: 0; }
+.poeco-ladder { margin: 0; }
+.poeco-ladder li { padding: 0.25rem 0.5rem; }
+/* `.poeco-ladder li` out-ranks the bare modifier classes, so the modifiers are written
+   as `li.` selectors to keep a reached tier distinct from one not yet reached. */
+.poeco-ladder li.poeco-ladder--done { opacity: 1; border-color: var(--accent-success); background: color-mix(in srgb, var(--accent-success) 10%, transparent); }
+.poeco-ladder li.poeco-ladder--next { opacity: 0.85; border-style: dashed; }
+.poeco-diplomacy-web h3 { margin: 0; }
+.poeco-diplomacy-web { margin-top: 0; }
+.poeco-minimap-svg-container { background: var(--poeco-map-sea); }
+.poeco-territory-camp { cursor: pointer; }
+.poeco-territory-label { fill: #fff; font-size: 7.5px; font-weight: 700; paint-order: stroke; stroke: rgb(0 0 0 / 0.75); stroke-width: 2px; }
+.poeco-key-dot--hut { background: #ecf0f1; }
+.poeco-key-dot--granary { background: #f1c40f; }
+.poeco-key-dot--tower { background: #e74c3c; }
+.poeco-key-dot--caravan { background: #f39c12; }
+
+/* The clan cards, at the density they had on the old Analytics tab. */
+.poeco-tribe-cards { grid-template-columns: repeat(auto-fit, minmax(230px, 1fr)); gap: var(--space-2); }
+.poeco-tribe-card { padding: 6px 8px; gap: 4px; border-top-width: 3px; }
+.poeco-tribe-title-row { gap: 4px; flex-wrap: wrap; }
+.poeco-tribe-name { font-size: 0.85rem; }
+.poeco-tribe-card .poeco-badge--tech { padding: 1px 5px; font-size: var(--text-xs); }
+.poeco-pill--focus { height: 24px; padding: 0 6px; font-size: var(--text-xs); white-space: nowrap; }
+.poeco-tribe-stats-row { padding: 2px; gap: 2px; }
+.poeco-stat-val { font-size: 0.85rem; }
+.poeco-tribe-diplomacy-row { flex-direction: row; align-items: baseline; gap: 4px; padding-top: 3px; }
+.poeco-dip-tag { padding: 1px 4px; font-size: var(--text-xs); }
+.poeco-struct-badge { padding: 1px 4px; font-size: var(--text-xs); }
+
+/* worlds */
+.poeco-worlds { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: var(--space-4); align-items: start; }
+.poeco-worlds-col { display: flex; flex-direction: column; gap: var(--space-2); min-width: 0; }
+.poeco-worlds h3 { margin: 0; font-size: var(--text-xs); text-transform: uppercase; letter-spacing: 0.06em; color: var(--color-text-secondary); }
+.poeco-world-now { display: flex; align-items: center; gap: var(--space-3); }
+.poeco-world-now .poeco-slot-meta { flex: 1; }
+.poeco-slots, .poeco-gallery { margin: 0; }
+.poeco-slot, .poeco-gallery li { padding: 0.35rem 0.5rem; justify-content: flex-start; }
+.poeco-slot .poeco-slot-meta, .poeco-gallery .poeco-slot-meta { flex: 1; }
+.poeco-slot-actions .poeco-pill { height: 24px; padding: 0 var(--space-2); border-color: var(--color-border); }
+.poeco-gallery { max-height: 300px; overflow: auto; }
+.poeco-gallery-tools { display: flex; gap: var(--space-1); }
+.poeco-gallery-tools .poeco-finder-input { width: 130px; flex: none; }
+
+/* An island's map, drawn from its seed: 72 map pixels shown at their own size. */
+.poeco-thumb {
+    flex: none;
+    width: 72px;
+    height: 72px;
+    border: 1px solid var(--color-border);
+    border-radius: var(--radius-sm);
+    background: var(--poeco-map-sea);
+    image-rendering: pixelated;
+}
+
+.poeco-thumb--sm { width: 44px; height: 44px; }
+
+.poeco-compare { margin: var(--space-2) 0 0; }
+.poeco-compare figcaption { display: flex; align-items: center; gap: var(--space-2); flex-wrap: wrap; font-size: var(--text-sm); }
+.poeco-compare-chart { height: 130px; }
+.poeco-compare-theirs { stroke-dasharray: 5 4; opacity: 0.8; }
+.poeco-compare-key { display: inline-block; width: 22px; border-top: 2px solid var(--color-text-primary); }
+.poeco-compare-key--dashed { border-top-style: dashed; }
+
+/* ── narrow ── */
+.poeco-narrow .poeco-tribe-top,
+.poeco-narrow .poeco-tribe-record,
+.poeco-narrow .poeco-worlds { grid-template-columns: minmax(0, 1fr); }
+.poeco-narrow .poeco-ticker { top: 96px; max-width: calc(100% - 24px); }
+.poeco-narrow .poeco-menu-panel { min-width: 200px; }
+.poeco-narrow .poeco-inspector--family { width: auto; }
+.poeco-narrow .poeco-minimap-layer { left: 4px; bottom: 4px; padding: 0 6px; }
+
+@container poeco-dashboard (max-width: 760px) {
+    .poeco-tribe-top,
+    .poeco-tribe-record,
+    .poeco-worlds { grid-template-columns: minmax(0, 1fr); }
+    .poeco-overlay-grid { grid-template-columns: minmax(0, 1fr); }
+    .poeco-panel--chart { grid-column: span 1; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+    .poeco-overlay,
+    .poeco-overlay-card,
+    .poeco-menu-panel { animation: none; }
+    .poeco-ticker { transition: none; }
+}
+
+.poeco-root[data-poeco-still] :is(.poeco-overlay, .poeco-overlay-card, .poeco-menu-panel) { animation: none; }
+.poeco-root[data-poeco-still] .poeco-ticker { transition: none; }
+
+@media (forced-colors: active) {
+    .poeco-menu-panel,
+    .poeco-finder,
+    .poeco-lens-legend,
+    .poeco-ticker,
+    .poeco-keys { background: Canvas; backdrop-filter: none; -webkit-backdrop-filter: none; box-shadow: none; }
+}
+
+/* ── touch: 44px targets on a coarse pointer ─────────────────────
+   The HUD's pills, chips and corner buttons are sized for a mouse; a finger needs the
+   whole 44px. The control itself grows (never an invisible overlapping hit-box), and only
+   on a coarse pointer so the desktop HUD keeps its density. */
+@media (pointer: coarse) {
+    .poeco-root :is(.poeco-pill, .poeco-chip, .poeco-btn, .poeco-tab, .poeco-menu-item,
+                    .poeco-minimap-layer, .poeco-thought-item, .poeco-kin-name) {
+        min-height: 44px;
+    }
+
+    .poeco-root :is(.poeco-icon-btn, .poeco-minimap-overview) {
+        width: 44px;
+        height: 44px;
+    }
+
+    .poeco-root .poeco-pill { min-width: 44px; }
+}

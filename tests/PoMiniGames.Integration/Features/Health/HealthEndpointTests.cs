@@ -86,6 +86,9 @@ public sealed class HealthEndpointTests : IClassFixture<TestWebApplicationFactor
         json["version"]!.GetValue<string>().Should().MatchRegex(@"^\d{6}$|^unknown$");
         json["stores"]!.AsArray().Should().NotBeEmpty("the storage health checks are registered");
         json["services"]!.AsArray().Should().NotBeEmpty();
+        json["tables"]!.AsArray().Should().NotBeEmpty("the app's tables are listed by name");
+        json["containers"]!.AsArray().Should().NotBeEmpty();
+        json["hubs"]!.AsArray().Should().Contain(h => h!["route"]!.GetValue<string>() == "/connectfive/hub");
 
         foreach (var leak in new[] { "AccountKey", "devstoreaccount1", "DefaultEndpointsProtocol", "127.0.0.1",
                      "localhost", "vault.azure.net", "core.windows.net", "InstrumentationKey", "StackTrace", "Exception:" })

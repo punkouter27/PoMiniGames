@@ -73,6 +73,12 @@
             @* Always in the DOM: a live region only announces changes to one that already exists. *@
             <span class="gl-sr-only" role="status" aria-live="polite">@_connectivityAnnouncement</span>
             <SectionOutlet SectionName="game-elo" />
+            @* Settings is its own icon, upper right on every page (the fleet's header rule): it
+               used to be the last item of the player menu, two taps deep. *@
+            <button type="button" class="gl-settings-btn" aria-label="Settings" title="Settings"
+                    @onclick="Settings.RequestOpen">
+                <span class="material-symbols-outlined" aria-hidden="true">settings</span>
+            </button>
             <button type="button" class="gl-account-trigger"
                     popovertarget="gl-account-menu"
                     aria-haspopup="menu"
@@ -80,7 +86,7 @@
                     title="Player 1 Initials & Menu">
                 <span class="gl-account-initial" aria-hidden="true">P1</span>
                 <span class="gl-account-name gl-arcade-initials" aria-hidden="true">[@PlayerNames.Initials]</span>
-                <span class="gl-account-caret" aria-hidden="true">▾</span>
+                <span class="material-symbols-outlined gl-account-caret" aria-hidden="true">expand_more</span>
             </button>
             <div id="gl-account-menu" popover="auto" class="gl-overflow-panel"
                  role="menu" aria-label="Player Menu">
@@ -101,12 +107,6 @@
                         <span>@label</span>
                     </button>
                 }
-                <button type="button" class="gl-overflow-item gl-overflow-item--sep gl-overflow-item--desktop-only" role="menuitem"
-                        popovertarget="gl-account-menu" popovertargetaction="hide"
-                        @onclick="Settings.RequestOpen">
-                    <span class="material-symbols-outlined gl-overflow-icon" aria-hidden="true">tune</span>
-                    <span>Settings</span>
-                </button>
             </div>
         </div>
     </header>
@@ -133,7 +133,7 @@
                     {
                         <button class="toast-action" @onclick="() => RunToastAction(toast)">@toast.ActionLabel</button>
                     }
-                    <button class="toast-close" @onclick="() => ToastService.Dismiss(toast.Id)" aria-label="Dismiss">×</button>
+                    <button class="toast-close" @onclick="() => ToastService.Dismiss(toast.Id)" aria-label="Dismiss"><span class="material-symbols-outlined" aria-hidden="true">close</span></button>
                 </div>
             }
         </div>
@@ -170,7 +170,7 @@
     private bool _announcedOffline;
 
     // The account menu's page destinations, in order, with the glyph each one shows.
-    // Settings (a sheet) and Sign out follow.
+    // Settings is the gear beside the menu, not an item in it.
     private static readonly (string Path, string Label, string Icon)[] MenuPages =
     [
         ("/profile", "My Stats", "person"),

@@ -10,8 +10,8 @@ namespace PoMiniGames.Unit.Features.PoMarbleRace;
 /// PoMarbleRace server rules, as one <c>[Theory]</c> of scenarios to keep the Unit tier inside its
 /// cap: <see cref="MarbleRaceScore"/> (an out-of-range score is unrepresentable, not merely
 /// rejected), <see cref="MarbleRaceRunVerifier"/> (a run total recomputed from its races), and
-/// <see cref="PoMarbleRaceOnlineService"/> (quick-match, private codes for two players at most,
-/// and the both-must-ask rematch).
+/// <see cref="PoMarbleRaceOnlineService"/> (quick-match, and private codes for two
+/// players at most).
 /// </summary>
 /// <remarks>
 /// The two tables below were data theories of their own; each row is still asserted, named in its
@@ -25,7 +25,6 @@ public class PoMarbleRaceTests
     [InlineData(nameof(QuickMatch_PairsTheFirstTwo_FirstHosts))]
     [InlineData(nameof(PrivateCode_SeatsTheFriend_OnTheHostsMap_AndAThirdIsTurnedAway))]
     [InlineData(nameof(PrivateCode_RefusesUnknownCodes_AndYourOwn))]
-    [InlineData(nameof(Rematch_StartsOnlyWhenBothAsk_ThenResets))]
     [InlineData(nameof(Leaving_ClosesAnOpenCode))]
     public Task Scenario(string name) => Scenarios.RunAsync(this, name);
 
@@ -121,22 +120,6 @@ public class PoMarbleRaceTests
         svc.JoinRoom("a", "alice", "Alice", false, code).Error.Should().Contain("your own");
         svc.JoinRoom("b", "bob", "Bob", false, "ZZZZ").Error.Should().Be("No race with that code.");
         svc.CreateRoom("a", "alice", "Alice", false, 2).Should().BeNull("one open race per connection");
-    }
-
-    private static void Rematch_StartsOnlyWhenBothAsk_ThenResets()
-    {
-        var svc = new PoMarbleRaceOnlineService();
-        svc.Enqueue("a", "alice", "Alice", false, 2);
-        svc.Enqueue("b", "bob", "Bob", false, 2);
-
-        svc.RequestRematch("x").Should().BeNull("not in a race");
-        var first = svc.RequestRematch("b")!;
-        first.State.Should().Be(new MarbleRaceRematch(HostWants: false, GuestWants: true, Agreed: false));
-        var second = svc.RequestRematch("a")!;
-        second.State.Agreed.Should().BeTrue();
-        second.GuestConnectionId.Should().Be("b");
-
-        svc.RequestRematch("a")!.State.Should().Be(new MarbleRaceRematch(true, false, false), "an agreed rematch clears both asks");
     }
 
     private static void Leaving_ClosesAnOpenCode()

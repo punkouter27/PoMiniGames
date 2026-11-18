@@ -16,6 +16,7 @@
            BackTo="/"
            GameKey="sandplayground"
            RequiresWebGl="true"
+           Announcement="@_status"
            Fullscreen="true">
 
     @* Gated rather than overlaid: the WebGL context, the rAF loop and the
@@ -33,7 +34,7 @@
     }
     else
     {
-        <SandPlaygroundSandbox IsDemo="IsDemo" />
+        <SandPlaygroundSandbox IsDemo="IsDemo" OnStatus="SetStatus" />
     }
 </GameShell>
 
@@ -42,6 +43,14 @@
 
     private string _playerName = "";
     private bool _introDismissed;
+    private string? _status;
+
+    private void SetStatus(string status)
+    {
+        if (IsDemo || status == _status) return;
+        _status = status;
+        StateHasChanged();
+    }
 
     private bool IsDemo => GameModes.Parse(Mode) == GameMode.Demo;
 

@@ -174,32 +174,6 @@ public partial class PoMarbleRacePage
 
 
     // The track after this one in the menu's order, wrapping.
-    private int NextMapId
-    {
-        get
-        {
-            var maps = _menu?.Maps;
-            if (maps is null || maps.Length == 0) return _mapId;
-            var i = Array.FindIndex(maps, m => m.Id == _mapId);
-            return maps[(i + 1) % maps.Length].Id;
-        }
-    }
-
-    /// <summary>Result sheet: the same track again, or the next one, straight from the modal.</summary>
-    private async Task RaceAgainAsync(bool nextTrack)
-    {
-        if (_gp) StartGrandPrix();
-        else if (nextTrack) _mapId = NextMapId;
-        await StopEngineAsync();
-        _phase = "pick";
-        _podium.Clear();
-        _myPlace = -1;
-        _split = null;
-        _pickCountdown = PickSeconds;
-        await InvokeAsync(StateHasChanged);
-        await BootEngineAsync(null);
-    }
-
     // ── Grand Prix rounds ──
 
     private void StartGrandPrix()
@@ -284,11 +258,10 @@ public partial class PoMarbleRacePage
         if (await ApiService.GetMarbleRaceDailyTimesAsync() is { } board) _dailyBoard = board;
     }
 
-    // ── Rematch + series (online) ──
+    // ── Series (online) ──
     // Each finished race scores the series for whoever placed better (a non-finish loses to any
-    // finish; two non-finishes score nobody). A rematch needs both players to ask.
+    // finish; two non-finishes score nobody).
     private int _seriesMine, _seriesTheirs;
-    private (bool Mine, bool Theirs) _rematch;
 
     private void ScoreSeries(int myPlace, int theirPlace)
     {
@@ -296,35 +269,6 @@ public partial class PoMarbleRacePage
         var theirs = theirPlace > 0 ? theirPlace : int.MaxValue;
         if (mine < theirs) _seriesMine++;
         else if (theirs < mine) _seriesTheirs++;
-    }
-
-    private async Task RequestRematchAsync()
-    {
-        if (_onlineClient is null) return;
-        _rematch.Mine = true;
-        await _onlineClient.RequestRematchAsync();
-    }
-
-    private void OnRematchChanged(MarbleRaceRematch r)
-    {
-        _ = InvokeAsync(async () =>
-        {
-            var host = _onlineRole == MarbleRaceRole.Host;
-            if (r.Agreed)
-            {
-                _rematch = (false, false);
-                _onlineResultKnown = false;
-                _podium.Clear();
-                // The host's engine rolls the next race; its pick phase reaches the guest by relay.
-                if (host) { try { await JSRuntime.InvokeVoidAsync("PoMarbleRace.rematch"); } catch { } }
-                else _phase = "pick";
-            }
-            else
-            {
-                _rematch = host ? (r.HostWants, r.GuestWants) : (r.GuestWants, r.HostWants);
-            }
-            StateHasChanged();
-        });
     }
 
     private async Task CopyRoomCodeAsync()
@@ -591,7 +535,6 @@ public partial class PoMarbleRacePage
                 _onlineClient.PodiumReceived += OnPodiumReceived;
                 _onlineClient.ResultReceived += OnResultReceived;
                 _onlineClient.GuestSteerReceived += OnGuestSteerReceived;
-                _onlineClient.RematchChanged += OnRematchChanged;
                 _onlineClient.PeerLeft += OnPeerLeft;
                 _onlineClient.ConnectionChanged += OnOnlineConnection;
             }
@@ -623,7 +566,6 @@ public partial class PoMarbleRacePage
         await InvokeAsync(StateHasChanged);
         _roomCode = null;
         _seriesMine = _seriesTheirs = 0;
-        _rematch = (false, false);
         await InvokeAsync(StateHasChanged);
         // raceStarted may fire before these return (the server pairs inside the call), so the
         // phase is only ever advanced by the event, never here.
@@ -844,7 +786,6 @@ public partial class PoMarbleRacePage
         online.PodiumReceived -= OnPodiumReceived;
         online.ResultReceived -= OnResultReceived;
         online.GuestSteerReceived -= OnGuestSteerReceived;
-        online.RematchChanged -= OnRematchChanged;
         online.PeerLeft -= OnPeerLeft;
         online.ConnectionChanged -= OnOnlineConnection;
         await online.LeaveAsync();

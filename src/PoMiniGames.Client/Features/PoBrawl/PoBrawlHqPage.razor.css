@@ -182,11 +182,6 @@
     font-weight: 700;
 }
 
-.hq-empty {
-    margin: 8px 0;
-    color: var(--color-text-secondary);
-}
-
 .hq-titles {
     list-style: none;
     margin: 0;

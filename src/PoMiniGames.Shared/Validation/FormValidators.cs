@@ -67,3 +67,22 @@ public sealed class EcoAlertInputValidator : AbstractValidator<EcoAlertInput>
             .InclusiveBetween(0, EcoAlertInput.MaxValue).WithMessage($"Use a number from 0 to {EcoAlertInput.MaxValue}.");
     }
 }
+
+/// <summary>A PoCoupleQuiz answer or guess (the King's secret answer, or a guess at it).</summary>
+public sealed class CoupleAnswerInput
+{
+    public const int MaxLength = 60;
+    public string Answer { get; set; } = string.Empty;
+}
+
+public sealed class CoupleAnswerInputValidator : AbstractValidator<CoupleAnswerInput>
+{
+    public CoupleAnswerInputValidator()
+    {
+        RuleFor(x => x.Answer)
+            .Must(a => !string.IsNullOrWhiteSpace(a)).WithMessage("Type an answer first.")
+            .Must(a => (a ?? string.Empty).Trim().Length <= CoupleAnswerInput.MaxLength)
+                .WithMessage($"Answers are {CoupleAnswerInput.MaxLength} characters or fewer.")
+            .Must(a => (a ?? string.Empty).All(c => !char.IsControl(c))).WithMessage("Use ordinary characters only.");
+    }
+}

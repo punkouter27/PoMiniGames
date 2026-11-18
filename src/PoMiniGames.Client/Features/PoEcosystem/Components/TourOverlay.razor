@@ -13,7 +13,7 @@
     <div class="poeco-tour-actions">
         @if (Done)
         {
-            <span class="poeco-tour-done" aria-hidden="true">✓</span>
+            <span class="poeco-tour-done material-symbols-outlined" aria-hidden="true">check</span>
             <button type="button" class="poeco-btn poeco-btn--primary poeco-btn--sm" @onclick="OnNext">@(Step == Steps.Length - 1 ? "Finish" : "Next")</button>
         }
         else

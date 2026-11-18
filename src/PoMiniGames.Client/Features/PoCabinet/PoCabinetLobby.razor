@@ -21,7 +21,7 @@
 
 <div class="pocabinet-lobby" aria-label="Multiplayer lobby">
     <header class="pocabinet-lobby__header">
-        <button type="button" class="app-btn app-btn--ghost pocabinet-lobby__leave" @onclick="LeaveAsync">← Leave</button>
+        <button type="button" class="app-btn app-btn--ghost pocabinet-lobby__leave" @onclick="LeaveAsync"><span class="material-symbols-outlined" aria-hidden="true">arrow_back</span> Leave</button>
         <h2>Lobby @if (_view is { } v) { <span class="pocabinet-muted">· @v.Players.Count of @PoCabinetCatalog.CarCount drivers</span> }</h2>
         <span class="pocabinet-lobby__headbtns">
             <button type="button" class="app-btn app-btn--secondary" @onclick="OnOpenSettings">Car &amp; settings</button>
@@ -52,7 +52,7 @@
                     <span class="pocabinet-seat__chip" style="--chip:@SeatColor(seat.Color)" aria-hidden="true"></span>
                     <span class="pocabinet-seat__who">
                         <strong title="@seat.DisplayName">@seat.DisplayName@(mine ? " (you)" : "")</strong>
-                        <span class="pocabinet-seat__state @(seat.IsReady ? "pocabinet-seat__state--ready" : null)">@(seat.IsReady ? "Ready ✓" : "Not ready")</span>
+                        <span class="pocabinet-seat__state @(seat.IsReady ? "pocabinet-seat__state--ready" : null)">@(seat.IsReady ? "Ready" : "Not ready")@if (seat.IsReady) { <span class="material-symbols-outlined" aria-hidden="true">check</span> }</span>
                     </span>
                     @if (seat.IsHost) { <span class="pocabinet-seat__badge">Host</span> }
                     else if (IsHost && !mine && !view.InRace)
@@ -60,7 +60,7 @@
                         @* Host only, between races: one AFK seat must not block every rematch. *@
                         <button type="button" class="pocabinet-seat__kick" disabled="@_busy"
                                 aria-label="Remove @seat.DisplayName from the lobby" title="Remove from the lobby"
-                                @onclick="() => KickAsync(seat.SeatId)">✕</button>
+                                @onclick="() => KickAsync(seat.SeatId)"><span class="material-symbols-outlined" aria-hidden="true">close</span></button>
                     }
                 </div>
             }
@@ -103,7 +103,7 @@
                 <p class="pocabinet-lobby__track">Track <strong>@PoCabinetCatalog.GetTrack(view.TrackId).Name</strong> · @view.BotSeats AI driver@(view.BotSeats == 1 ? "" : "s") · the host starts</p>
                 <button class="app-btn app-btn--primary pocabinet-lobby__ready" disabled="@(view.InRace || _busy)" @onclick="ToggleReadyAsync"
                         title="After a race, ready up within @ReadyTimeoutSeconds seconds or the seat is freed for someone else">
-                    @(MySeat(view)?.IsReady == true ? "Ready ✓ — tap to cancel" : "Ready up")
+                    @(MySeat(view)?.IsReady == true ? "Ready" : "Ready up")@if (MySeat(view)?.IsReady == true) { <span class="material-symbols-outlined" aria-hidden="true">check</span> <text>— tap to cancel</text> }
                 </button>
             }
         </section>
@@ -122,18 +122,13 @@
     }
     else if (string.IsNullOrEmpty(_error))
     {
-        <p class="pocabinet-lobby__notice" role="status">Connecting to the lobby…</p>
+        <LoadingState Label="Connecting to the lobby…" />
     }
 
     @if (!string.IsNullOrEmpty(_error))
     {
-        <div class="pocabinet-lobby__notice" role="alert">
-            <span class="pocabinet-lobby__error">@_error</span>
-            @if (_connectionLost)
-            {
-                <button type="button" class="app-btn app-btn--secondary" disabled="@_joining" @onclick="RejoinAsync">Reconnect</button>
-            }
-        </div>
+        <InlineError Message="@_error" RetryLabel="Reconnect"
+                     OnRetry="@(_connectionLost && !_joining ? EventCallback.Factory.Create(this, RejoinAsync) : default)" />
     }
 </div>
 
