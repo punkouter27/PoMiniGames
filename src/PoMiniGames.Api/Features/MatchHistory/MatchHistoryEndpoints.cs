@@ -1,5 +1,6 @@
 using PoMiniGames.Features.Identity;
 using PoMiniGames.Features.Integrity;
+using PoMiniGames.Features.Shared;
 
 namespace PoMiniGames.Features.MatchHistory;
 
@@ -21,16 +22,16 @@ public static class MatchHistoryEndpoints
                    ScoreIntegrityGuard integrity) =>
             {
                 if (string.IsNullOrWhiteSpace(request.Game))
-                    return Results.BadRequest(new { error = "Game is required" });
+                    return ApiValidation.InvalidField(nameof(request.Game), "Game is required.");
                 if (string.IsNullOrWhiteSpace(request.OpponentName))
-                    return Results.BadRequest(new { error = "OpponentName is required" });
+                    return ApiValidation.InvalidField(nameof(request.OpponentName), "OpponentName is required.");
 
                 // A identified caller may only write to their OWN partition — the client
                 // Owner is overridden with the claim identity. Guests keep the supplied name.
                 var identity = RequestIdentity.Resolve(http.User);
                 var owner = ResolveOwner(identity, request.Owner, integrity);
                 if (string.IsNullOrWhiteSpace(owner))
-                    return Results.BadRequest(new { error = "Owner is required" });
+                    return ApiValidation.InvalidField(nameof(request.Owner), "Owner is required.");
 
                 // The opponent name is chosen by whoever set up the local 2-player game and is
                 // rendered back on the stats page, so it gets the same treatment as any other
@@ -59,7 +60,7 @@ public static class MatchHistoryEndpoints
                 // and read from another — their history would silently come back empty.
                 var effectiveOwner = ResolveOwner(identity, owner, integrity);
                 if (string.IsNullOrWhiteSpace(effectiveOwner))
-                    return Results.BadRequest(new { error = "owner query parameter is required" });
+                    return ApiValidation.InvalidField(nameof(owner), "owner query parameter is required.");
 
                 var records = await repo.GetForOwnerAsync(effectiveOwner, limit);
                 return Results.Ok(records);

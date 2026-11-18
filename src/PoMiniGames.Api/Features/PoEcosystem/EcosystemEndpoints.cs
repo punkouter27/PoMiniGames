@@ -1,6 +1,7 @@
 using Microsoft.AspNetCore.Mvc;
 using PoMiniGames.Features.Identity;
 using PoMiniGames.Features.Integrity;
+using PoMiniGames.Features.Shared;
 using PoMiniGames.Infrastructure;
 using PoMiniGames.Shared.Games.PoEcosystem;
 
@@ -42,12 +43,13 @@ public static class EcosystemEndpoints
             {
                 var who = Owner(http);
                 if (who is null) return Results.Unauthorized();
-                if (!EcoWorldSlots.IsValid(slot)) return Results.BadRequest(new { error = "slot must be 1, 2 or 3" });
+                if (!EcoWorldSlots.IsValid(slot)) return ApiValidation.InvalidField(nameof(slot), "slot must be 1, 2 or 3.");
                 if (http.Request.ContentLength is > EcoWorldSlots.MaxBytes) return Results.StatusCode(StatusCodes.Status413PayloadTooLarge);
 
                 var bytes = await ReadBoundedAsync(http.Request.Body, EcoWorldSlots.MaxBytes, ct);
                 if (bytes is null) return Results.StatusCode(StatusCodes.Status413PayloadTooLarge);
-                if (bytes.Length < 2 || bytes[0] != 0x1f || bytes[1] != 0x8b) return Results.BadRequest(new { error = "body must be a gzip'd snapshot" });
+                if (bytes.Length < 2 || bytes[0] != 0x1f || bytes[1] != 0x8b)
+                    return ApiValidation.InvalidField("body", "body must be a gzip'd snapshot.");
 
                 var cleanName = CleanName(name, $"Year {year}");
                 var ownerName = integrity.ResolveDisplayName(who.Value.DisplayName, "Islander");
@@ -68,7 +70,7 @@ public static class EcosystemEndpoints
             {
                 var who = Owner(http);
                 if (who is null) return Results.Unauthorized();
-                if (!EcoWorldSlots.IsValid(slot)) return Results.BadRequest(new { error = "slot must be 1, 2 or 3" });
+                if (!EcoWorldSlots.IsValid(slot)) return ApiValidation.InvalidField(nameof(slot), "slot must be 1, 2 or 3.");
                 var bytes = await store.LoadAsync(who.Value.UserId, slot, ct);
                 return bytes is null ? Results.NotFound() : Results.Bytes(bytes, "application/gzip");
             })
@@ -78,7 +80,7 @@ public static class EcosystemEndpoints
             {
                 var who = Owner(http);
                 if (who is null) return Results.Unauthorized();
-                if (!EcoWorldSlots.IsValid(slot)) return Results.BadRequest(new { error = "slot must be 1, 2 or 3" });
+                if (!EcoWorldSlots.IsValid(slot)) return ApiValidation.InvalidField(nameof(slot), "slot must be 1, 2 or 3.");
                 return await store.DeleteAsync(who.Value.UserId, slot, ct) ? Results.NoContent() : Results.StatusCode(StatusCodes.Status503ServiceUnavailable);
             })
             .WithName("PoEcosystemDeleteWorld")
@@ -88,7 +90,7 @@ public static class EcosystemEndpoints
             {
                 var who = Owner(http);
                 if (who is null) return Results.Unauthorized();
-                if (!EcoWorldSlots.IsValid(slot)) return Results.BadRequest(new { error = "slot must be 1, 2 or 3" });
+                if (!EcoWorldSlots.IsValid(slot)) return ApiValidation.InvalidField(nameof(slot), "slot must be 1, 2 or 3.");
                 var meta = await store.ShareAsync(who.Value.UserId, slot, request.Public, ct);
                 return meta is null ? Results.NotFound() : Results.Ok(meta);
             })
@@ -115,7 +117,8 @@ public static class EcosystemEndpoints
 
         app.MapGet("/api/ecosystem/gallery/{code}/data", async (string code, EcosystemWorldStore store, CancellationToken ct) =>
             {
-                if (string.IsNullOrWhiteSpace(code) || code.Length > 16 || !code.All(char.IsAsciiLetterOrDigit)) return Results.BadRequest();
+                if (string.IsNullOrWhiteSpace(code) || code.Length > 16 || !code.All(char.IsAsciiLetterOrDigit))
+                    return ApiValidation.InvalidField(nameof(code), "Share code must be 1 to 16 alphanumeric characters.");
                 var bytes = await store.LoadSharedAsync(code, ct);
                 return bytes is null ? Results.NotFound() : Results.Bytes(bytes, "application/gzip");
             })

@@ -2,6 +2,7 @@ using System.Text;
 using PoMiniGames.Features.Identity;
 using PoMiniGames.Features.Integrity;
 using PoMiniGames.Features.MatchHistory;
+using PoMiniGames.Features.Shared;
 using QRCoder;
 
 namespace PoMiniGames.Features.Invites;
@@ -71,9 +72,9 @@ public static class InviteEndpoints
                 ScoreIntegrityGuard integrity, CancellationToken ct) =>
             {
                 if (!WebPushSender.IsAllowedEndpoint(request.Endpoint))
-                    return Results.BadRequest(new { error = "Not a push service endpoint" });
+                    return ApiValidation.InvalidField(nameof(request.Endpoint), "Not a push service endpoint.");
                 if (Addressee(http, integrity) is not { } me)
-                    return Results.BadRequest(new { error = "A display name is required to receive invites" });
+                    return ApiValidation.BadRequestProblem("display_name_required", "A display name is required to receive invites.");
 
                 return await store.SubscribeAsync(me, request.Endpoint!, ct)
                     ? Results.NoContent()
@@ -100,9 +101,9 @@ public static class InviteEndpoints
                 MatchHistoryRepository matches, ScoreIntegrityGuard integrity, CancellationToken ct) =>
             {
                 if (!OnlineGames.TryGetValue(request.Game ?? "", out var title))
-                    return Results.BadRequest(new { error = "Unknown game" });
+                    return ApiValidation.InvalidField(nameof(request.Game), "Unknown game.");
                 if (string.IsNullOrWhiteSpace(request.OpponentName))
-                    return Results.BadRequest(new { error = "OpponentName is required" });
+                    return ApiValidation.InvalidField(nameof(request.OpponentName), "OpponentName is required.");
 
                 var identity = RequestIdentity.Resolve(http.User);
                 var owner = MatchHistoryEndpoints.ResolveOwner(identity, request.Owner, integrity);
@@ -150,7 +151,7 @@ public static class InviteEndpoints
 
         invites.MapGet("/qr", (string? game, HttpContext http) =>
             {
-                if (!OnlineGames.ContainsKey(game ?? "")) return Results.BadRequest(new { error = "Unknown game" });
+                if (!OnlineGames.ContainsKey(game ?? "")) return ApiValidation.InvalidField(nameof(game), "Unknown game.");
                 http.Response.Headers.CacheControl = "private, max-age=3600";
                 return Results.Text(
                     QrSvg($"{http.Request.Scheme}://{http.Request.Host}/{game!.ToLowerInvariant()}/multi"), "image/svg+xml");

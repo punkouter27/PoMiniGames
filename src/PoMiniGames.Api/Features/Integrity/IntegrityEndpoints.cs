@@ -1,6 +1,7 @@
 using Microsoft.Extensions.Options;
 using PoMiniGames.Domain.Primitives;
 using PoMiniGames.Features.Identity;
+using PoMiniGames.Features.Shared;
 
 namespace PoMiniGames.Features.Integrity;
 
@@ -33,7 +34,7 @@ public static class IntegrityEndpoints
                 // key fails here rather than minting a token that can never be redeemed.
                 if (GameKey.TryParse(game) is not { } key)
                 {
-                    return Results.BadRequest(new { error = $"Unknown game key '{game}'" });
+                    return ApiValidation.InvalidField(nameof(game), $"Unknown game key '{game}'");
                 }
 
                 var identity = RequestIdentity.Resolve(http.User);

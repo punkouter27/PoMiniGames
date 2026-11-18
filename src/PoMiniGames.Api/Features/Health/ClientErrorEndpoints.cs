@@ -58,10 +58,17 @@ public static class ClientErrorEndpoints
                 }
                 catch (JsonException)
                 {
-                    return Results.BadRequest();
+                    return Results.Problem(
+                        title: "invalid_json",
+                        detail: "Request body must be valid JSON.",
+                        statusCode: StatusCodes.Status400BadRequest);
                 }
                 var message = Clean(report?.Message, 500);
-                if (message.Length == 0) return Results.BadRequest();
+                if (message.Length == 0)
+                {
+                    return Results.ValidationProblem(
+                        new Dictionary<string, string[]> { ["message"] = ["Error message is required."] });
+                }
 
                 logs.CreateLogger("ClientErrors").LogWarning(
                     "Client error {Kind} on {Path}: {Message} | source={Source} | agent={Agent} | stack={Stack}",

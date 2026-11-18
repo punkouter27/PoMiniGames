@@ -3,6 +3,7 @@ using PoMiniGames.Domain.Models;
 using PoMiniGames.Domain.Primitives;
 using PoMiniGames.Features.Identity;
 using PoMiniGames.Features.Integrity;
+using PoMiniGames.Features.Shared;
 
 namespace PoMiniGames.Features.PoBrawl;
 
@@ -37,13 +38,13 @@ public static class PoBrawlLeaderboardEndpoints
                 // refused for a name the board is about to discard.
                 var claimName = ClaimName(http);
                 if (claimName is null && string.IsNullOrWhiteSpace(entry.PlayerInitials))
-                    return Results.BadRequest(new { error = "Player name is required" });
+                    return ApiValidation.InvalidField(nameof(entry.PlayerInitials), "Player name is required.");
 
                 if (claimName is null && entry.PlayerInitials.Trim().Length > 24)
-                    return Results.BadRequest(new { error = "Player name must be 24 characters or fewer" });
+                    return ApiValidation.InvalidField(nameof(entry.PlayerInitials), "Player name must be 24 characters or fewer.");
 
                 if (entry.KoTimeSeconds <= 0 || entry.KoTimeSeconds >= 600)
-                    return Results.BadRequest(new { error = "KO time must be between 0 and 600 seconds" });
+                    return ApiValidation.InvalidField(nameof(entry.KoTimeSeconds), "KO time must be between 0 and 600 seconds.");
 
                 // KO time is the ranked value, so the guard's duration check applies directly:
                 // a 4-second KO cannot come out of a session that has existed for one second.
@@ -96,13 +97,13 @@ public static class PoBrawlLeaderboardEndpoints
                 // Same rule as the KO board: the typed name is validated only when it is stored.
                 var claimName = ClaimName(http);
                 if (claimName is null && string.IsNullOrWhiteSpace(entry.PlayerName))
-                    return Results.BadRequest(new { error = "Player name is required" });
+                    return ApiValidation.InvalidField(nameof(entry.PlayerName), "Player name is required.");
 
                 if (claimName is null && entry.PlayerName.Trim().Length > 24)
-                    return Results.BadRequest(new { error = "Player name must be 24 characters or fewer" });
+                    return ApiValidation.InvalidField(nameof(entry.PlayerName), "Player name must be 24 characters or fewer.");
 
                 if (entry.PresidentsBeaten < 0 || entry.PresidentsBeaten > PoBrawlRoster.Count)
-                    return Results.BadRequest(new { error = $"Presidents beaten must be between 0 and {PoBrawlRoster.Count}" });
+                    return ApiValidation.InvalidField(nameof(entry.PresidentsBeaten), $"Presidents beaten must be between 0 and {PoBrawlRoster.Count}.");
 
                 // The claimed count is not taken on trust. The client posts once per win, so the
                 // store credits at most ONE rung past the row's own count, and only when the last
@@ -170,14 +171,14 @@ public static class PoBrawlLeaderboardEndpoints
         var loser = PoBrawlRoster.IsRateable(request.LoserFighterId) ? PoBrawlRoster.Canonicalize(request.LoserFighterId) : null;
         if (winner is null || loser is null)
         {
-            return Results.BadRequest(new { error = "Both fighters must be on the PoBrawl presidents roster" });
+            return ApiValidation.BadRequestProblem("invalid_fighter", "Both fighters must be on the PoBrawl presidents roster.");
         }
 
         // Compared canonically: two spellings of one president are still one fighter, and the
         // store would throw on the pair rather than answer 400.
         if (string.Equals(winner, loser, StringComparison.Ordinal))
         {
-            return Results.BadRequest(new { error = "A fighter cannot fight itself" });
+            return ApiValidation.BadRequestProblem("fighter_self_match", "A fighter cannot fight itself.");
         }
 
         // Validated first, so a malformed post never spends the caller's allowance.

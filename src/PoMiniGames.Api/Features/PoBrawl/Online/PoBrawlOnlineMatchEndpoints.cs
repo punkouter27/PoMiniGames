@@ -114,7 +114,7 @@ public static class PoBrawlOnlineMatchEndpoints
                 // other way must still be a 400 here, not a history row and a rating fighting itself.
                 if (string.Equals(PrincipalIds.Sanitize(winnerPid), PrincipalIds.Sanitize(loserPid), StringComparison.Ordinal))
                 {
-                    return Results.BadRequest(new { error = "opponent_is_self" });
+                    return ApiValidation.BadRequestProblem("opponent_is_self", "Players cannot report a match against themselves.");
                 }
 
                 // The moderated names, like every other board — the raw claim name and the lobby's

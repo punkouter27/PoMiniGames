@@ -2,6 +2,7 @@ using Microsoft.AspNetCore.Mvc;
 using PoMiniGames.Domain.Services;
 using PoMiniGames.Features.Identity;
 using PoMiniGames.Features.PoFunQuiz.Storage;
+using PoMiniGames.Features.Shared;
 
 namespace PoMiniGames.Features.PoFunQuiz;
 
@@ -34,7 +35,7 @@ public static class FunQuizEndpoints
             // would put a second, unrelated meaning on the one status code the rate limiter
             // owns — and the client surfaces 429 as "wait and retry", advice that would never
             // make count=500 succeed.
-            if (count > 50) return Results.BadRequest(new { error = "count must be between 1 and 50." });
+            if (count > 50) return ApiValidation.InvalidField(nameof(count), "count must be between 1 and 50.");
 
             var cat = Enum.TryParse<QuestionCategory>(category, ignoreCase: true, out var c)
                 ? c

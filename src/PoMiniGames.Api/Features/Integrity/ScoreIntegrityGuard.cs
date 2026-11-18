@@ -12,8 +12,11 @@ public readonly record struct IntegrityVerdict(bool Allowed, string? Code, strin
 {
     public static IntegrityVerdict Allow { get; } = new(true, null, null);
 
-    /// <summary>The 400 body every score endpoint returns on a refusal, so the shape is uniform.</summary>
-    public IResult ToProblem() => Results.BadRequest(new { error = Code, detail = Message });
+    /// <summary>The 400 RFC 7807 ProblemDetails body every score endpoint returns on a refusal.</summary>
+    public IResult ToProblem() => Results.Problem(
+        title: Code,
+        detail: Message,
+        statusCode: StatusCodes.Status400BadRequest);
 }
 
 /// <summary>

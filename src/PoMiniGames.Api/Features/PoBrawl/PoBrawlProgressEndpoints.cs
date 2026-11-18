@@ -1,5 +1,6 @@
 using PoMiniGames.Domain.Primitives;
 using PoMiniGames.Features.Identity;
+using PoMiniGames.Features.Shared;
 using PoMiniGames.Shared.Games;
 
 namespace PoMiniGames.Features.PoBrawl;
@@ -33,7 +34,7 @@ public static class PoBrawlProgressEndpoints
                 // The rung is the index of the next opponent, so it tops out one short of the roster
                 // size — read from PoBrawlRoster, never a literal (the ladder board's frozen-at-10 bug).
                 if (body.Rung < 0 || body.Rung >= PoBrawlRoster.Count || body.BestKoSeconds is < 0 or > 600 || body.Clears is < 0 or > 100_000)
-                    return Results.BadRequest(new { error = "progress_out_of_range" });
+                    return ApiValidation.BadRequestProblem("progress_out_of_range", "Progress values are outside allowed bounds.");
                 // The merge lets the newer timestamp win the rung, so a stamp from the future would
                 // pin this save over every later one from any device. Never later than now.
                 body.UpdatedAtUnixMs = Math.Clamp(body.UpdatedAtUnixMs, 0, DateTimeOffset.UtcNow.ToUnixTimeMilliseconds());

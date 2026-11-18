@@ -3,6 +3,7 @@ using PoMiniGames.Domain.Abstractions;
 using PoMiniGames.Domain.Primitives;
 using PoMiniGames.Features.Identity;
 using PoMiniGames.Features.Integrity;
+using PoMiniGames.Features.Shared;
 
 namespace PoMiniGames.Features.Leaderboard;
 
@@ -62,7 +63,7 @@ public static class PlayerStatsEndpoints
                 // arbitrary partition. Only the well-known catalogue may carry stats.
                 if (GameKey.TryParse(game) is null)
                 {
-                    return Results.BadRequest(new { error = $"Unknown game key '{game}'" });
+                    return ApiValidation.InvalidField(nameof(game), $"Unknown game key '{game}'.");
                 }
 
                 // Server-authoritative identity: a identified caller may only write their
@@ -76,7 +77,7 @@ public static class PlayerStatsEndpoints
 
                 if (string.IsNullOrWhiteSpace(claimed))
                 {
-                    return Results.BadRequest("Player name cannot be empty");
+                    return ApiValidation.InvalidField(nameof(playerName), "Player name cannot be empty.");
                 }
 
                 // The win-rate board renders this value as the player's name on a page that is
@@ -89,7 +90,7 @@ public static class PlayerStatsEndpoints
 
                 if (!IsValidStats(stats))
                 {
-                    return Results.BadRequest("Stats cannot have negative or out-of-range values");
+                    return ApiValidation.InvalidField(nameof(stats), "Stats cannot have negative or out-of-range values.");
                 }
 
                 await storage.SavePlayerStatsAsync(game, owner, stats);
