@@ -6,9 +6,8 @@ The rules for working in this repository live in `AGENTS.md` and apply to every 
 
 @AGENTS.md
 
-For the project tour and the list of games, see `README.md`. `GAME-CONSISTENCY.md` holds the game
-workflow and UI rules; `docs/2026-11-12/VISUAL_ARCHITECTURE_DASHBOARD.html` is the current visual
-architecture overview.
+For the project tour, the list of games and the game workflow and UI rules (the **Shared game UI**
+section), see `README.md`.
 
 ## Commands
 

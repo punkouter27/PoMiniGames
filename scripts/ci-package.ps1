@@ -5,7 +5,11 @@ $ErrorActionPreference = 'Stop'
 $docs = Join-Path (Split-Path $PSScriptRoot -Parent) 'docs'
 $target = Join-Path $PublishDir 'wwwroot/docs'
 if (-not (Test-Path $PublishDir)) { throw "Publish folder not found: $PublishDir" }
-if (-not (Test-Path $docs)) { throw "Documentation folder not found: $docs" }
+# The dated docs suite is optional (the repo has none since 2026-11-18): no folder, nothing to stage.
+if (-not (Test-Path $docs)) {
+    Write-Warning "No docs/ folder; the publish carries no documentation suite."
+    exit 0
+}
 
 New-Item -ItemType Directory -Force $target | Out-Null
 Get-ChildItem -LiteralPath $docs -Force | Copy-Item -Destination $target -Recurse -Force

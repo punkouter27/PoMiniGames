@@ -49,7 +49,9 @@ Rules for any AI agent working in this repository.
 
 ## 6. Game Workflow and UI/UX (PoMiniGames Only)
 
-Follow [GAME-CONSISTENCY.md](GAME-CONSISTENCY.md) for all game workflow and UI/UX changes.
+Follow the **Shared game UI** section of [README.md](README.md#shared-game-ui) for all game workflow and UI/UX
+changes: Main menu → start card (one OK) → game → end card (one "Back to main menu"); Tab opens
+the stats panel during gameplay only.
 
 ## CI/CD and Azure (same section in every Po repo)
 

@@ -75,7 +75,7 @@ sign-in: a player is a random browser id plus three initials.
     disposes it with the stage. `disposeObject3D` and `watchContextLoss` handle teardown and context
     loss, and `warmup` compiles shaders before the first frame.
   - Tested in `tests/platform-stage.test.mjs`.
-- **GFX / physics / audio layer (2026-11-17 deck, `docs/2026-11-17/GFX_PHYSICS_AUDIO_IDEAS.html`).**
+- **GFX / physics / audio layer (2026-11-17).**
   All of these are in `wwwroot/js/platform/` and are lazy-imported by engines, except `springUi`, `framePacing`
   and `resultCeremony`, which load globally from `index.html`.
   - **Shared table:** `impactMaterials.js` is one table (metal, wood, stone, glass, rubber, paint, flesh, dirt,
@@ -211,12 +211,7 @@ sign-in: a player is a random browser id plus three initials.
 
 | Document | What it covers |
 |---|---|
-| [Game consistency rules](GAME-CONSISTENCY.md) | Required game workflow, shared UI, controls, accessibility, and verification conventions |
-| [Documentation overview](docs/2026-11-12/index.html) | Index of the current documentation suite |
-| [Visual architecture dashboard](docs/2026-11-12/VISUAL_ARCHITECTURE_DASHBOARD.html) | Visual map of the app's architecture and major flows |
-| [User journeys](docs/2026-11-12/USER_WORKFLOW.html) | Player-facing workflows through the app |
-| [Identity and security report](docs/2026-11-12/AUTH_SECURITY_REPORT.html) | Player identity, antiforgery and access overview (a point-in-time report, dated 2026-11-12) |
-| [AI and external services report](docs/2026-11-12/AI_SERVICES_REPORT.html) | Current AI and external-service boundaries (a point-in-time report, dated 2026-11-12) |
+| [Shared game UI](#shared-game-ui) | Required game workflow, shared UI, controls, accessibility, and verification conventions |
 | [Architecture map](https://claude.ai/artifact/HGHLwMdGyveqtknNC1o5ar) | Component diagrams, request flows and the data model (private link; share it from the page to give others access) |
 
 ## Games (`src/PoMiniGames.Client/Features/`)
