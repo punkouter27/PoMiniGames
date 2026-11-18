@@ -26,7 +26,7 @@ namespace PoMiniGames.Shared.Games;
 // Turn match (ConnectFive, TicTacToe)
 [JsonSerializable(typeof(TurnMatchStart))]
 [JsonSerializable(typeof(TurnMatchState))]
-[JsonSerializable(typeof(TurnMatchQueueStatus))]
+[JsonSerializable(typeof(LobbyState<TurnLobbyPlayer>))]
 [JsonSerializable(typeof(TurnMatchRejoinResult))]
 // PoBrawl online
 [JsonSerializable(typeof(PoBrawlMatchSnapshot))]
@@ -41,14 +41,12 @@ namespace PoMiniGames.Shared.Games;
 [JsonSerializable(typeof(PoCabinetFinalResult))]
 [JsonSerializable(typeof(PoCabinetInput))]
 // PoMarbleRace online
-[JsonSerializable(typeof(MarbleRaceQueueStatus))]
+[JsonSerializable(typeof(LobbyState<PoMarbleRaceLobbyPlayer>))]
 [JsonSerializable(typeof(MarbleRaceStart))]
 [JsonSerializable(typeof(MarbleRaceFrame))]
 [JsonSerializable(typeof(MarbleRacePhase))]
 [JsonSerializable(typeof(MarbleRacePodium))]
 [JsonSerializable(typeof(MarbleRaceResult))]
-[JsonSerializable(typeof(MarbleRaceRoom))]
-[JsonSerializable(typeof(MarbleRaceJoin))]
 // PoRacer
 [JsonSerializable(typeof(PoRacerRaceSnapshot))]
 [JsonSerializable(typeof(PoRacerFinalResult))]

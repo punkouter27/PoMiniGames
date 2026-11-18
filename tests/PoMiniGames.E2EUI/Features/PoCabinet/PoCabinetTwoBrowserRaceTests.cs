@@ -31,20 +31,20 @@ public sealed class PoCabinetTwoBrowserRaceTests(KestrelServerFixture fixture)
         var pageErrors = new List<string>();
         var (host, hostGuard) = await JoinLobbyAsync(browser, "cabinet-host", pageErrors);
         await using var _host = hostGuard;
-        await host.Locator(".pocabinet-lobby__start").WaitForAsync(new() { Timeout = 30_000 });
+        await host.Locator(".lobby__actions > .app-btn--primary").WaitForAsync(new() { Timeout = 30_000 });
 
         var (guest, guestGuard) = await JoinLobbyAsync(browser, "cabinet-guest", pageErrors);
         await using var _guest = guestGuard;
-        await guest.Locator(".pocabinet-lobby__ready").WaitForAsync(new() { Timeout = 30_000 });
+        await guest.GetByRole(AriaRole.Button, new() { Name = "Ready!" }).WaitForAsync(new() { Timeout = 30_000 });
 
         // Both browsers see the same two humans: the host's seat plus the guest's.
         foreach (var page in new[] { host, guest })
         {
-            await Assertions.Expect(page.Locator(".pocabinet-seat--filled")).ToHaveCountAsync(2, new() { Timeout = 30_000 });
-            await Assertions.Expect(page.Locator(".pocabinet-seat--filled .pocabinet-seat__badge")).ToHaveTextAsync("Host");
+            await Assertions.Expect(page.Locator(".lobby__player")).ToHaveCountAsync(2, new() { Timeout = 30_000 });
+            await Assertions.Expect(page.Locator(".lobby__player.is-host .app-chip--accent")).ToHaveTextAsync("host");
         }
-        (await host.Locator(".pocabinet-lobby__start").CountAsync()).Should().Be(1, "the first arrival hosts");
-        (await guest.Locator(".pocabinet-lobby__start").CountAsync()).Should().Be(0, "a later arrival is not the host");
+        (await host.Locator(".lobby__actions > .app-btn--primary").CountAsync()).Should().Be(1, "the first arrival hosts");
+        (await guest.Locator(".lobby__actions > .app-btn--primary").AllInnerTextsAsync()).Should().Equal(["Ready!"], "a later arrival is not the host");
 
         pageErrors.Should().BeEmpty("neither browser may raise a JS error joining the lobby");
     }

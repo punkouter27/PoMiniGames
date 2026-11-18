@@ -5,7 +5,7 @@ using PoMiniGames.Shared.Games;
 namespace PoMiniGames.Features.PoMarbleRace;
 
 /// <summary>
-/// Online Marble Race: quick-match pairing plus a one-to-one relay. The host browser
+/// Online Marble Race: a one-to-one relay between the two players the lobby seated. The host browser
 /// streams <see cref="MarbleRaceFrame"/>s and phase/podium/result events; the guest
 /// browser streams steering. Nothing here inspects a payload beyond the sender's role —
 /// a guest cannot publish frames and a host cannot steer the guest's marble.
@@ -14,8 +14,8 @@ namespace PoMiniGames.Features.PoMarbleRace;
 /// Client events: <c>raceStarted</c> (<see cref="MarbleRaceStart"/>), <c>frame</c>,
 /// <c>phase</c>, <c>podium</c>, <c>result</c> (guest only), <c>guestSteer</c> (host only,
 /// an <c>int</c> -1/0/+1) and
-/// <c>peerLeft</c> when the other seat is gone. A race seats two players at most: players meet
-/// by quick-match or by a private code (<see cref="CreateRoom"/> / <see cref="JoinRoom"/>).
+/// <c>peerLeft</c> when the other seat is gone. A race seats two players at most: they meet in the
+/// shared lobby and both call <see cref="JoinMatch"/> with the internal code its start carried.
 /// </remarks>
 public sealed class PoMarbleRaceOnlineHub : Hub
 {
@@ -34,52 +34,22 @@ public sealed class PoMarbleRaceOnlineHub : Hub
         await base.OnDisconnectedAsync(exception);
     }
 
-    /// <summary>Queue for a race. <paramref name="mapId"/> only matters if the caller ends up host.</summary>
-    public async Task<MarbleRaceQueueStatus> FindRace(string displayName, bool isGuest, int mapId)
+    /// <summary>
+    /// Take your seat in the match the lobby started, by the internal <paramref name="matchCode"/>
+    /// its <c>gameStarted</c> carried. The race starts when both seats are in (<c>raceStarted</c>
+    /// to both). False when the code is unknown or this player holds no seat in it.
+    /// </summary>
+    public async Task<bool> JoinMatch(string matchCode)
     {
         var identity = RequestIdentity.Resolve(Context.User);
-        var name = !string.IsNullOrWhiteSpace(identity.DisplayName) ? identity.DisplayName : displayName;
-        var pairing = _races.Enqueue(Context.ConnectionId, identity.UserId, name, identity.IsGuest || isGuest, mapId);
-        if (pairing is null)
-        {
-            return new MarbleRaceQueueStatus(Matched: false, Waiting: _races.WaitingCount);
-        }
+        var (seated, pairing) = _races.JoinMatch(Context.ConnectionId, identity.UserId, matchCode);
+        if (pairing is null) return seated;
 
         _log.LogInformation("PoMarbleRace online: race {RaceId} paired host={Host} guest={Guest}",
             pairing.RaceId, pairing.HostStart.Host.DisplayName, pairing.HostStart.Guest.DisplayName);
         await Clients.Client(pairing.HostConnectionId).SendAsync("raceStarted", pairing.HostStart);
         await Clients.Client(pairing.GuestConnectionId).SendAsync("raceStarted", pairing.GuestStart);
-        return new MarbleRaceQueueStatus(Matched: true, Waiting: 0);
-    }
-
-    /// <summary>Open a private race and get the code a friend types in to join it. Null when already queued or seated.</summary>
-    public MarbleRaceRoom? CreateRoom(string displayName, bool isGuest, int mapId)
-    {
-        var identity = RequestIdentity.Resolve(Context.User);
-        var name = !string.IsNullOrWhiteSpace(identity.DisplayName) ? identity.DisplayName : displayName;
-        var code = _races.CreateRoom(Context.ConnectionId, identity.UserId, name, identity.IsGuest || isGuest, mapId);
-        return code is null ? null : new MarbleRaceRoom(code);
-    }
-
-    /// <summary>Join a friend's private race by its code. The race starts at once (<c>raceStarted</c> to both).</summary>
-    public async Task<MarbleRaceJoin> JoinRoom(string code, string displayName, bool isGuest)
-    {
-        var identity = RequestIdentity.Resolve(Context.User);
-        var name = !string.IsNullOrWhiteSpace(identity.DisplayName) ? identity.DisplayName : displayName;
-        var (pairing, error) = _races.JoinRoom(Context.ConnectionId, identity.UserId, name, identity.IsGuest || isGuest, code);
-        if (pairing is null) return new MarbleRaceJoin(false, error);
-
-        _log.LogInformation("PoMarbleRace online: private race {RaceId} joined host={Host} guest={Guest}",
-            pairing.RaceId, pairing.HostStart.Host.DisplayName, pairing.HostStart.Guest.DisplayName);
-        await Clients.Client(pairing.HostConnectionId).SendAsync("raceStarted", pairing.HostStart);
-        await Clients.Client(pairing.GuestConnectionId).SendAsync("raceStarted", pairing.GuestStart);
-        return new MarbleRaceJoin(true, null);
-    }
-
-    public Task CancelSearch()
-    {
-        _races.Dequeue(Context.ConnectionId);
-        return Task.CompletedTask;
+        return true;
     }
 
     public Task HostFrame(MarbleRaceFrame frame) => RelayFromHostAsync("frame", frame);

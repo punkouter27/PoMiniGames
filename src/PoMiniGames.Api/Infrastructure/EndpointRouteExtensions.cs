@@ -113,7 +113,10 @@ internal static class EndpointRouteExtensions
         app.MapHub<PoBrawlMatchHub>("/pobrawl/match-hub");
         app.MapHub<ConnectFiveHub>("/connectfive/hub");
         app.MapHub<TicTacToeHub>("/tictactoe/hub");
+        app.MapHub<ConnectFiveLobbyHub>("/connectfive/lobby-hub");
+        app.MapHub<TicTacToeLobbyHub>("/tictactoe/lobby-hub");
         app.MapHub<PoMarbleRaceOnlineHub>("/pomarblerace/hub");
+        app.MapHub<PoMarbleRaceLobbyHub>("/pomarblerace/lobby-hub");
 
         return app;
     }

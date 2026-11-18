@@ -27,7 +27,7 @@ public sealed class HubJsonContextTests
 
     private static void SharedDtosWriteTheSameJsonAsReflection()
     {
-        var seat = new TurnMatchSeat("Ana", false, TurnMatchSide.First, true, false);
+        var seat = new TurnMatchSeat("Ana", false, TurnMatchSide.First, true);
         var state = new TurnMatchState("m1", 2, [0, 1, 2], 3, TurnMatchSide.Second, TurnMatchStatus.InProgress,
             TurnMatchEndReason.None, new TurnMatchMove(1, 2, TurnMatchSide.First), [4, 5],
             seat, seat with { DisplayName = "Bo", Side = TurnMatchSide.Second }, DateTimeOffset.UnixEpoch);

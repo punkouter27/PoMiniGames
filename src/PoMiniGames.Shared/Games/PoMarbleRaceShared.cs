@@ -1,6 +1,7 @@
 namespace PoMiniGames.Shared.Games;
 
-// Contracts for the /pomarblerace/hub SignalR surface: online Marble Race.
+// Contracts for the /pomarblerace/hub (race) and /pomarblerace/lobby-hub (shared lobby) SignalR
+// surfaces: online Marble Race.
 //
 // The race is HOST-AUTHORITATIVE. cannon-es steps with a variable frame dt and its float
 // math is not guaranteed identical across two browsers, so a lockstep of the 101-marble
@@ -55,16 +56,19 @@ public sealed record MarbleRacePodium(int[] Indices, double[] Times, double[] Ga
 /// <summary>Host → guest final standings for the two humans. Place is -1 for a marble that fell off.</summary>
 public sealed record MarbleRaceResult(bool HostWon, int HostPlace, bool GuestWon, int GuestPlace);
 
-public sealed record MarbleRaceQueueStatus(bool Matched, int Waiting);
-
-/// <summary>A private race waiting for a friend: share <see cref="Code"/>; the race starts when they join.</summary>
-public sealed record MarbleRaceRoom(string Code);
-
 /// <summary>
-/// Answer to a join by code. <see cref="Error"/> says why not: no such race, or it already has its
-/// two players (a race seats exactly two: the host and one guest).
+/// One seat in the shared Marble Race lobby. <see cref="MapId"/> is this seat's track pick; only the
+/// host's counts (the race runs the host's course), but riding on the seat lets the shared lobby
+/// state carry it to the guest with no extra message. <see cref="UserId"/> never goes on the wire:
+/// the race hub uses it to tell which seat a joining connection is.
 /// </summary>
-public sealed record MarbleRaceJoin(bool Joined, string? Error);
+public sealed record PoMarbleRaceLobbyPlayer(
+    string ConnectionId,
+    string DisplayName,
+    bool IsGuest,
+    bool IsReady,
+    [property: System.Text.Json.Serialization.JsonIgnore] string UserId = "",
+    int MapId = 2) : ILobbyPlayer;
 
 /// <summary>
 /// One finish on one map, offered as a world record. The server keeps it only if it is the fastest.

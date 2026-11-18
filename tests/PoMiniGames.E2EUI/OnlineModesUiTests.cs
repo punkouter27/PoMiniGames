@@ -7,7 +7,7 @@ namespace PoMiniGames.E2EUI;
 /// <summary>
 /// Two real browsers, one host: every online mode gets paired through its hub and the
 /// first thing that has to cross between the two players actually crosses. Turn games
-/// relay the opening move; lobby games ready up, start, and both browsers land in the
+/// meet in the shared lobby (guest Ready, host Start) and relay the opening move; lobby games ready up, start, and both browsers land in the
 /// live match. Both contexts sign in as separate auto-guests, so the hubs authenticate
 /// through the ordinary cookie rather than injected headers.
 /// </summary>
@@ -37,7 +37,22 @@ public class OnlineModesUiTests
         var (b, guardB) = await OpenAsGuestAsync(browser, $"/{game}/multi", "B");
         await using var _b = guardB;
 
-        // Who opens is drawn server-side, so wait for whichever browser is told it is on.
+        // The shared lobby: whoever the server made host owns Start, the guest readies first.
+        foreach (var page in new[] { a, b })
+        {
+            await Assertions.Expect(page.GetByText(new System.Text.RegularExpressions.Regex(@"Players · 2/")))
+                .ToBeVisibleAsync(new() { Timeout = 30_000 });
+        }
+        var hostPage = await a.GetByRole(AriaRole.Button, new() { Name = "Start game" }).CountAsync() > 0 ? a : b;
+        var guestPage = hostPage == a ? b : a;
+        var ready = guestPage.GetByRole(AriaRole.Button, new() { Name = "Ready!" });
+        await Assertions.Expect(ready.First).ToBeEnabledAsync(new() { Timeout = 30_000 });
+        await ready.First.ClickAsync();
+        var startButton = hostPage.GetByRole(AriaRole.Button, new() { Name = "Start game" });
+        await Assertions.Expect(startButton).ToBeEnabledAsync(new() { Timeout = 30_000 });
+        await startButton.ClickAsync();
+
+        // The host opens, but wait for whichever browser is told it is on.
         var mover = await WaitForTurnAsync(a, b, status);
         var other = mover == a ? b : a;
 
@@ -64,6 +79,8 @@ public class OnlineModesUiTests
         await using var browser = await LaunchAsync(playwright);
         var (first, guardFirst) = await OpenAsGuestAsync(browser, lobby, "A");
         await using var _first = guardFirst;
+        // Seat order is arrival order (the first in hosts): A must hold its seat before B opens.
+        await Assertions.Expect(first.GetByText("Players · 1/2")).ToBeVisibleAsync(new() { Timeout = 60_000 });
         var (second, guardSecond) = await OpenAsGuestAsync(browser, lobby, "B");
         await using var _second = guardSecond;
 
@@ -120,10 +137,20 @@ public class OnlineModesUiTests
         await using var browser = await LaunchAsync(playwright);
         var (first, guardFirst) = await OpenAsGuestAsync(browser, "/pomarblerace/multi", "A");
         await using var _first = guardFirst;
+        // Seat order is arrival order (the first in hosts): A must hold its seat before B opens.
+        await Assertions.Expect(first.GetByText("Players · 1/2")).ToBeVisibleAsync(new() { Timeout = 60_000 });
         var (second, guardSecond) = await OpenAsGuestAsync(browser, "/pomarblerace/multi", "B");
         await using var _second = guardSecond;
 
-        // Pairing boots both engines on the dealt seed: the host lands on its countdown card
+        // Both land on the shared lobby after the intro: the second to arrive readies, the first
+        // (the host) starts.
+        await Assertions.Expect(second.Locator(".lobby")).ToBeVisibleAsync(new() { Timeout = 60_000 });
+        await second.GetByRole(AriaRole.Button, new() { Name = "Ready!" }).ClickAsync();
+        var startRace = first.GetByRole(AriaRole.Button, new() { Name = "Start race" });
+        await Assertions.Expect(startRace).ToBeEnabledAsync(new() { Timeout = 30_000 });
+        await startRace.ClickAsync();
+
+        // The start boots both engines on the dealt seed: the host lands on its countdown card
         // (red marble), the guest on the waiting card (white marble). Both need the GLB course
         // and three.js from the CDN, so this is the slow part.
         var pages = new[] { first, second };

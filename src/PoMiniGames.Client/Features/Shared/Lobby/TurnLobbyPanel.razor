@@ -1,0 +1,31 @@
+@namespace PoMiniGamesClient.Features.Shared
+@using Microsoft.AspNetCore.SignalR.Client
+@using PoMiniGames.Shared.Games
+@using PoMiniGamesClient.Services.Play
+
+@* The shared lobby card for the two turn games (Connect Five, Tic-Tac-Toe): the one shared
+   room, host plays first, the guest readies and the host starts. It renders only while the
+   session is in the lobby; the page then swaps to the board once the match starts. *@
+@if (Session is { Phase: QuickMatchPhase.Lobby, Lobby: { } lobby })
+{
+    <LobbyPanel TPlayer="TurnLobbyPlayer"
+                State="@lobby.State"
+                LocalConnectionId="@lobby.ConnectionId"
+                ConnectionState="@lobby.ConnectionState"
+                Hint="Two players. The first one in hosts and moves first."
+                MaxPlayersHint="2"
+                StartLabel="Start game"
+                HowTo="@HowTo"
+                OnReconnect="Session.ReconnectLobbyAsync"
+                OnReady="@(() => lobby.ToggleReadyAsync())"
+                OnStart="@(() => lobby.StartGameAsync())"
+                OnLeave="OnLeave" />
+}
+
+@code {
+    [Parameter, EditorRequired] public OnlineTurnSession? Session { get; set; }
+    /// <summary>The game's rules, folded under the lobby buttons.</summary>
+    [Parameter] public RenderFragment? HowTo { get; set; }
+    /// <summary>Leave the lobby (the page navigates away).</summary>
+    [Parameter] public EventCallback OnLeave { get; set; }
+}

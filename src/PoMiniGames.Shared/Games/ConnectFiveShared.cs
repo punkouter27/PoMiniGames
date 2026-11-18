@@ -135,10 +135,9 @@ public sealed class TicTacToeRules : GridGameRules
 //
 // Contracts for the turn-match hubs (/connectfive/hub, /tictactoe/hub). Enums
 // cross the wire as camelCase strings (Program.cs AddJsonProtocol on the server,
-// HubConnectionFactory on the client). No lobby, no host, no ready check: a
-// two-seat turn game only needs a quick-match queue — the first two arrivals are
-// paired and play. "First" is whichever seat moves first in the current game;
-// a rematch swaps the seats, so the same player is Second next time.
+// HubConnectionFactory on the client). The shared lobby (host, ready, start) pairs the
+// two seats and mints an internal match code; both clients then join the match by it.
+// "First" is the seat that moves first: the lobby host.
 
 public enum TurnMatchSide
 {
@@ -170,12 +169,11 @@ public sealed record TurnMatchSeat(
     string DisplayName,
     bool IsGuest,
     TurnMatchSide Side,
-    bool Connected,
-    bool WantsRematch);
+    bool Connected);
 
 /// <summary>
-/// Sent to each seat individually when a game begins (first pairing and every
-/// rematch). <see cref="SeatToken"/> is the private handle a client presents to
+/// Sent to each seat individually when the two seats are paired into a match.
+/// <see cref="SeatToken"/> is the private handle a client presents to
 /// <c>Rejoin</c> after a reconnect; it never appears in the shared state.
 /// </summary>
 public sealed record TurnMatchStart(
@@ -213,8 +211,8 @@ public sealed record TurnMatchState(
     public TurnMatchSeat OpponentOf(TurnMatchSide side) => side == TurnMatchSide.First ? Second : First;
 }
 
-/// <summary>Reply to <c>FindMatch</c>. When <see cref="Matched"/> is true a <c>matchStarted</c> event follows.</summary>
-public sealed record TurnMatchQueueStatus(bool Matched, int Waiting);
+/// <summary>A seat in the ConnectFive / TicTacToe lobby (cap 2: the host and one guest).</summary>
+public sealed record TurnLobbyPlayer(string ConnectionId, string DisplayName, bool IsGuest, bool IsReady) : ILobbyPlayer;
 
 /// <summary>Reply to <c>Rejoin</c>: the seat's private start record plus the current board.</summary>
 public sealed record TurnMatchRejoinResult(TurnMatchStart Start, TurnMatchState State);
