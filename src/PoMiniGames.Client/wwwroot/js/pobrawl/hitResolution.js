@@ -225,7 +225,8 @@ class HitResolutionMethods {
     const phase = (attacker.stateT > attack.windup * wMul + attack.active * aMul)
       ? 'recover' : 'active';
     // `strike` is the hand that is actually swinging (punch = right, punchL = left).
-    let hit = testAttackHit(attacker.rig, attacker.strike || attack.name, phase, defender.rig);
+    // The sim clock lets the fist be tested along the path it travelled this tick.
+    let hit = testAttackHit(attacker.rig, attacker.strike || attack.name, phase, defender.rig, 1, { t: this.t });
     // ── Obama "no-drama open" passive dodge ──────────────────────────
     // ~22% of incoming attacks simply miss against Obama — a casual lean
     // that the engine realizes as a hit-test miss returning false.
@@ -890,7 +891,10 @@ class HitResolutionMethods {
     if (f.state === 'ko') return;
     const total = (f.regionDmg.head + f.regionDmg.torso
       + f.regionDmg.arms + f.regionDmg.legs) / 400;
-    const sweat = Math.min(1, total * 1.6 + (f.sweat || 0) * 0.7);
+    // Sweat leads: a fighter who has not started sweating does not glisten because they
+    // were hit, and one who has glistens more for the damage they have taken.
+    const worked = f.sweat || 0;
+    const sweat = Math.min(1, worked * 0.75 + total * 1.6 * Math.min(1, worked * 4));
     // The beads and trickles on the skin follow the same value (fighterFx.js).
     if (f.bloodWear) f.bloodWear.sweat = sweat;
     const skin = f.rig.materials.skinMat;

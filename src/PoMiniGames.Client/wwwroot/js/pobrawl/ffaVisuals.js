@@ -3,9 +3,10 @@ import * as THREE from 'three-eco/webgpu';
 import {
   abs, attribute, cameraProjectionMatrix, cameraViewMatrix, clamp, cross, dFdx, dFdy, dot, fwidth, length,
   materialColor, materialRoughness, max, mix, normalize, positionGeometry, positionLocal, positionView,
-  positionWorld, pow, select, sin, smoothstep, texture, uniform, userData, uv, varying, vec3, vec4,
+  output, positionWorld, pow, select, sin, smoothstep, texture, uniform, userData, uv, varying, vec3, vec4,
 } from 'three-eco/tsl';
 import { MatWear } from './matWear.js';
+import { sweatParts, sweatShine, sweatCurve } from './fighterFx.js';
 
 export function visualPolicy(tier = 'high', slow = false) {
   const low = tier === 'low' || slow;
@@ -99,15 +100,22 @@ class GpuPool {
 // One graph per surface type, shared by all sixteen fighters (see fighterFx.js for why): the
 // per-fighter wear and sweat are read at draw time from `mesh.userData.ffa`.
 const ffaWear = userData('ffa.wear', 'float'), ffaSweat = userData('ffa.sweat', 'float');
+const ffaRun = userData('ffa.run', 'float');     // metres the sweat trickles have run
 const SURFACE = {
   skin: (() => {
     const local = positionLocal;
     const bruise = smoothstep(0.3, 0.85, sin(local.x.mul(39).add(local.y.mul(23))).mul(sin(local.z.mul(33))));
     const pores = sin(local.x.mul(390)).mul(sin(local.y.mul(370)));
     const filterPore = smoothstep(0.001, 0.012, length(fwidth(local))).oneMinus();
+    // Sweat as in the 1v1 game (fighterFx.js): beads and trickles that come up as the
+    // fighter works, glossy where they sit and throwing the lights back.
+    const { wetSkin } = sweatParts(ffaSweat, ffaRun);
+    const dry = clamp(materialRoughness.sub(ffaSweat.mul(0.19)).add(pores.mul(0.025).mul(filterPore)), 0.24, 1);
     return {
-      colorNode: mix(materialColor.rgb, materialColor.rgb.mul(vec3(0.68, 0.55, 0.7)), bruise.mul(ffaWear).mul(0.45)),
-      roughnessNode: clamp(materialRoughness.sub(ffaSweat.mul(0.19)).add(pores.mul(0.025).mul(filterPore)), 0.24, 1),
+      colorNode: mix(materialColor.rgb, materialColor.rgb.mul(vec3(0.68, 0.55, 0.7)), bruise.mul(ffaWear).mul(0.45))
+        .mul(wetSkin.mul(0.08).oneMinus()),
+      roughnessNode: mix(dry, 0.05, wetSkin),
+      outputNode: vec4(clamp(output.rgb, 0, 16).add(sweatShine(clamp(output.rgb, 0, 16), ffaSweat, ffaRun)), output.a),
     };
   })(),
   fabric: (() => {
@@ -124,13 +132,15 @@ const SURFACE = {
 export function hookSurface(material, type) {
   const nodes = SURFACE[type];
   if (!nodes) return () => {};
-  const before = { colorNode: material.colorNode, roughnessNode: material.roughnessNode };
+  const before = { colorNode: material.colorNode, roughnessNode: material.roughnessNode, outputNode: material.outputNode };
   material.colorNode = nodes.colorNode;
   material.roughnessNode = nodes.roughnessNode;
+  if (nodes.outputNode) material.outputNode = nodes.outputNode;
   material.needsUpdate = true;
   return () => {
     if (material.colorNode !== nodes.colorNode) return;
     material.colorNode = before.colorNode; material.roughnessNode = before.roughnessNode;
+    material.outputNode = before.outputNode;
     material.needsUpdate = true;
   };
 }
@@ -192,7 +202,7 @@ export function createFfaVisuals(scene, arena, policy) {
   const resetRound = () => {
     particles.clear(); rings.clear(); wear?.clear(); pulse = 0; lastPulse = -1;
     for (const record of fighters.values()) {
-      record.surface.wear = record.surface.sweat = 0;
+      record.surface.wear = record.surface.sweat = record.surface.run = record.surface.clock = 0;
       record.previous = null; record.fallen = false;
     }
   };
@@ -203,7 +213,7 @@ export function createFfaVisuals(scene, arena, policy) {
         const rig = entry.rig || entry;
         if (!rig.root || fighters.has(rig)) continue;
         // This fighter's surface values; every mesh of the rig points at the same object.
-        const surface = { wear: 0, sweat: 0 };
+        const surface = { wear: 0, sweat: 0, run: 0, clock: 0 };
         rig.root.traverse((o) => { if (o.isMesh) o.userData.ffa = surface; });
         const record = { entry, rig, surface, previous: null, fallen: false };
         fighters.set(rig, record);
@@ -250,7 +260,11 @@ export function createFfaVisuals(scene, arena, policy) {
       if (stamp) footTimer %= 0.2;
       for (const record of fighters.values()) {
         const { rig, entry, surface } = record;
-        surface.sweat = Math.max(0, Math.min(0.8, surface.sweat + dt * (entry.alive === false ? -0.015 : 0.005)));
+        // None, then slow, then faster, on the same curve as the 1v1 game; a fighter who is
+        // out stops working and slowly dries.
+        if (entry.alive === false) surface.sweat = Math.max(0, surface.sweat - dt * 0.015);
+        else { surface.clock += dt; surface.sweat = Math.min(0.9, sweatCurve(surface.clock)); }
+        surface.run += dt * 0.045 * surface.sweat;
         if (!stamp || !wear) continue;
         const p = rig.root.position;
         if (entry.alive === false && !record.fallen) {

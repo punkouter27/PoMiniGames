@@ -245,7 +245,7 @@ class SceneSetupMethods {
     sky.addColorStop(0.00, '#39406e');   // ceiling / truss haze
     sky.addColorStop(0.42, '#161a2e');   // the dark upper hall
     sky.addColorStop(0.58, '#121526');   // horizon — darkest band
-    sky.addColorStop(1.00, '#3d4680');   // ring canvas bounce (matches arena.js)
+    sky.addColorStop(1.00, '#2a55b8');   // ring canvas bounce (matches arena.js)
     g.fillStyle = sky;
     g.fillRect(0, 0, 512, 256);
 

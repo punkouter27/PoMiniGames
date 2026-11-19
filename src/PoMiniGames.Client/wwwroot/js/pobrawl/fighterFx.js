@@ -96,9 +96,8 @@ function noiseTexture() {
 // Both come up out of the noise as `fx.sweat` rises, the trickles sliding as `sweatRun` grows.
 // `glint` is the bright heart of each bead and the spine of each trickle: the part that
 // throws the lights back whatever the angle, because a bead is a little dome.
-function sweatParts() {
+export function sweatParts(sweat = fx('sweat', 'float'), sweatRun = fx('sweatRun', 'float')) {
   const noise = noiseTexture();
-  const sweat = fx('sweat', 'float'), sweatRun = fx('sweatRun', 'float');
   const p = positionLocal;
   const across = p.x.add(p.z.mul(0.73));
   const on = smoothstep(0.05, 0.2, sweat);
@@ -404,4 +403,25 @@ export function tickFighterFx(rig, state, dt) {
     if (q.t > 0.6) { q.joint.scale.set(1, 1, 1); state.squashes.splice(i, 1); continue; }
     q.joint.scale.set(1 + k * 0.5, 1 - k, 1 + k * 0.5);
   }
+}
+
+// How sweaty a fighter is after `seconds` of fighting: nothing for the opening
+// SWEAT_DELAY, then the square of the time since, reaching 1 after SWEAT_RAMP more.
+const SWEAT_DELAY = 10;
+const SWEAT_RAMP = 75;
+export function sweatCurve(seconds) {
+  const u = Math.max(0, seconds - SWEAT_DELAY) / SWEAT_RAMP;
+  return Math.min(1, u * u);
+}
+
+/**
+ * What sweat adds to lit skin: a pinpoint of the lights from every bead and trickle, and a
+ * wet sheen where the skin turns from the eye. For an output node; `lit` is the lit colour.
+ */
+export function sweatShine(lit, sweat, sweatRun) {
+  const { glint } = sweatParts(sweat, sweatRun);
+  const facing = clamp(dot(normalView, positionViewDirection), 0, 1);
+  const lightOn = clamp(dot(lit, vec3(0.3, 0.5, 0.2)).mul(2.2), 0.15, 1.4);
+  const rim = pow(facing.oneMinus(), 3).mul(sweat).mul(0.22);
+  return vec3(1, 0.97, 0.92).mul(glint.mul(0.75).add(rim)).mul(lightOn);
 }

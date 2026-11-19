@@ -621,7 +621,7 @@ export class BrawlFfaGame {
       if (!other || other === attacker || !other.alive) continue;
       const to = other.rig.root.position;
       if (Math.hypot(to.x - from.x, to.z - from.z) > 1.6) continue;
-      const hit = testAttackHit(attacker.rig, swing.kick ? 'kick' : 'punch', 'active', other.rig, MODEL_SCALE);
+      const hit = testAttackHit(attacker.rig, swing.kick ? 'kick' : 'punch', 'active', other.rig, MODEL_SCALE, { loose: true });
       if (hit) return { target: other, point: hit.point, region: regionForHurtBone(hit.capsule) };
     }
     return null;

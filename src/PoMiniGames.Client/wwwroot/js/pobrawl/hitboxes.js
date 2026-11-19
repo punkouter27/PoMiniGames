@@ -11,6 +11,18 @@
 // the cost of a true mesh-mesh pipeline. It is the only hit path: game.js polls
 // it every active-attack tick, and the clash test runs on the same geometry.
 //
+// ── A strike counts when it touches ───────────────────────────────────────
+// The shapes below are the body as it is drawn: a capsule the size of the head where the
+// head is, one the size of the chest where the chest is, one down each limb. The strikers
+// are the fist and the foot (with the shin behind it), nothing wider. So a punch scores
+// when the glove reaches the face or the body, and a swing that stops short, or passes
+// beside a head, is a miss.
+// A fist crosses 10-15 cm in one sim tick, more than half a head: tested only where it is
+// each tick it could step straight over a face and never be "in" it. So the fist and foot
+// are tested along the path they travelled since the last tick (a sweep), not at a point.
+// The battle royale's small fighters keep the older, more generous shapes (`loose`): its
+// pacing is tuned on them, and at that size nobody can see the difference.
+//
 // ── Capsule anatomy ───────────────────────────────────────────────────────
 // A capsule is { jointA, jointB, radius } where jointA/jointB are rig joint
 // names; its world endpoints are those joints' world positions at test time.
@@ -25,24 +37,41 @@
 
 import * as THREE from 'three-eco/webgpu';
 
-// jointA/jointB are the rig's joint names; radius is the capsule thickness in
-// world units.
-const FIGHTER_CAPSULES = {
-  // ── Hurt capsules (defender's body) ────────────────────────────────
-  hurt: {
-    head:      { jointA: 'torso', jointB: 'head',     radius: 0.30 },
-    torso:     { jointA: 'hips',  jointB: 'torso',    radius: 0.34 },
-    hipL:      { jointA: 'hips',  jointB: 'hipL',     radius: 0.18 },
-    hipR:      { jointA: 'hips',  jointB: 'hipR',     radius: 0.18 },
-    thighL:    { jointA: 'hipL',  jointB: 'kneeL',    radius: 0.16 },
-    thighR:    { jointA: 'hipR',  jointB: 'kneeR',    radius: 0.16 },
-    shinL:     { jointA: 'kneeL', jointB: 'footL',    radius: 0.14 },
-    shinR:     { jointA: 'kneeR', jointB: 'footR',    radius: 0.14 },
-    upperArmL: { jointA: 'torso', jointB: 'elbowL',   radius: 0.13 },
-    upperArmR: { jointA: 'torso', jointB: 'elbowR',   radius: 0.13 },
-    forearmL:  { jointA: 'shoulderL', jointB: 'elbowL', radius: 0.11 },
-    forearmR:  { jointA: 'shoulderR', jointB: 'elbowR', radius: 0.11 },
-  },
+// jointA/jointB are the rig's joint names; offA/offB move an end along that joint's own axes
+// (metres at scale 1); radius is the capsule thickness in world units at scale 1.
+// `wide` parts follow the fighter's build as well as their height.
+const HURT_CAPSULES = {
+  // The skull: a box about 26 cm across, centred 16 cm above the neck joint.
+  head:      { jointA: 'head',  offA: [0, 0.13, 0], jointB: 'head',  offB: [0, 0.19, 0], radius: 0.145 },
+  // The chest: 46 x 62 x 32 cm, standing on the waist joint.
+  torso:     { jointA: 'torso', offA: [0, 0.16, 0], jointB: 'torso', offB: [0, 0.46, 0], radius: 0.19, wide: true },
+  // Pelvis and belly, between the hips and the waist.
+  belly:     { jointA: 'hips',  jointB: 'torso',    radius: 0.16, wide: true },
+  hipL:      { jointA: 'hips',  jointB: 'hipL',     radius: 0.11 },
+  hipR:      { jointA: 'hips',  jointB: 'hipR',     radius: 0.11 },
+  thighL:    { jointA: 'hipL',  jointB: 'kneeL',    radius: 0.095 },
+  thighR:    { jointA: 'hipR',  jointB: 'kneeR',    radius: 0.095 },
+  shinL:     { jointA: 'kneeL', jointB: 'footL',    radius: 0.08 },
+  shinR:     { jointA: 'kneeR', jointB: 'footR',    radius: 0.08 },
+  // No arms: a glove on a forearm is not a scoring blow. A strike has to get to the head,
+  // the body or the legs; arms in the way are what the guard (below) is for.
+};
+
+// The shapes this used before, kept for the battle royale and for anything that only needs
+// "roughly where did that land": about twice the thickness of the body they stand for.
+const LOOSE_HURT_CAPSULES = {
+  head:      { jointA: 'torso', jointB: 'head',     radius: 0.30 },
+  torso:     { jointA: 'hips',  jointB: 'torso',    radius: 0.34 },
+  hipL:      { jointA: 'hips',  jointB: 'hipL',     radius: 0.18 },
+  hipR:      { jointA: 'hips',  jointB: 'hipR',     radius: 0.18 },
+  thighL:    { jointA: 'hipL',  jointB: 'kneeL',    radius: 0.16 },
+  thighR:    { jointA: 'hipR',  jointB: 'kneeR',    radius: 0.16 },
+  shinL:     { jointA: 'kneeL', jointB: 'footL',    radius: 0.14 },
+  shinR:     { jointA: 'kneeR', jointB: 'footR',    radius: 0.14 },
+  upperArmL: { jointA: 'torso', jointB: 'elbowL',   radius: 0.13 },
+  upperArmR: { jointA: 'torso', jointB: 'elbowR',   radius: 0.13 },
+  forearmL:  { jointA: 'shoulderL', jointB: 'elbowL', radius: 0.11 },
+  forearmR:  { jointA: 'shoulderR', jointB: 'elbowR', radius: 0.11 },
 };
 
 // Half-angle of the guard, measured from the defender's facing. A held guard
@@ -53,47 +82,61 @@ const FIGHTER_CAPSULES = {
 // flanks, so only a strike from behind the shoulder line still lands.
 const GUARD_HALF_ARC_COS = Math.cos(THREE.MathUtils.degToRad(100));
 
-// Per-attack striker capsules. We split strike vs recovery so a swing that
-// misses never re-strikes on the way back.
-//
-// Strikers follow the ACTUAL fist/shoe meshes (registered as rig joints in
-// fighters.js) — a hit only registers when the visible limb polygons reach
-// the defender. `forwardReach` is a small knuckle/toe pad; the range comes
-// from the stretched strike animation and the attack lunge.
+// Per-attack striker capsules.
+//   active   what scores: the fist, or the foot and the shin behind it. `sweep` strikers
+//            are tested along the path they moved since the last tick. `forwardReach` is the
+//            knuckle / toe ahead of the joint.
+//   recover  nothing: a limb on its way back does not score.
+//   clash    what two simultaneous swings meet on (the whole forearm or shin, as before).
+//   loose    the older, fatter strikers, with the forearm scoring too (battle royale).
+const fistOf = (side) => ({
+  active: {
+    fist: { jointA: `fist${side}`, jointB: `fist${side}`, radius: 0.085, forwardReach: 0.02, sweep: true },
+  },
+  recover: {},
+  clash: {
+    forearm: { jointA: `elbow${side}`, jointB: `fist${side}`, radius: 0.11 },
+    fist:    { jointA: `fist${side}`,  jointB: `fist${side}`, radius: 0.12, forwardReach: 0.06 },
+  },
+  loose: {
+    active: {
+      forearm: { jointA: `elbow${side}`, jointB: `fist${side}`, radius: 0.11 },
+      fist:    { jointA: `fist${side}`,  jointB: `fist${side}`, radius: 0.12, forwardReach: 0.06 },
+    },
+    recover: {
+      forearm: { jointA: `elbow${side}`, jointB: `fist${side}`, radius: 0.08 },
+    },
+  },
+});
 const ATTACK_CAPSULES = {
-  punch: {
-    active: {
-      forearm: { jointA: 'elbowR', jointB: 'fistR', radius: 0.11 },
-      fist:    { jointA: 'fistR',  jointB: 'fistR', radius: 0.12,
-                 forwardReach: 0.06 },
-    },
-    // Recovery: capsule shrinks so a follow-up swing is required to hit again.
-    recover: {
-      forearm: { jointA: 'elbowR', jointB: 'fistR', radius: 0.08 },
-    },
-  },
+  punch: fistOf('R'),
   // The left hand (combat.js pickPunchArm): the same shapes on the other arm.
-  punchL: {
-    active: {
-      forearm: { jointA: 'elbowL', jointB: 'fistL', radius: 0.11 },
-      fist:    { jointA: 'fistL',  jointB: 'fistL', radius: 0.12,
-                 forwardReach: 0.06 },
-    },
-    recover: {
-      forearm: { jointA: 'elbowL', jointB: 'fistL', radius: 0.08 },
-    },
-  },
+  punchL: fistOf('L'),
   kick: {
     active: {
-      shin: { jointA: 'kneeR', jointB: 'footR', radius: 0.13 },
-      foot: { jointA: 'footR', jointB: 'footR', radius: 0.14,
-              forwardReach: 0.08 },
+      shin: { jointA: 'kneeR', jointB: 'footR', radius: 0.07 },
+      foot: { jointA: 'footR', jointB: 'footR', radius: 0.08, forwardReach: 0.12, sweep: true },
     },
-    recover: {
-      shin: { jointA: 'kneeR', jointB: 'footR', radius: 0.09 },
+    recover: {},
+    clash: {
+      shin: { jointA: 'kneeR', jointB: 'footR', radius: 0.13 },
+      foot: { jointA: 'footR', jointB: 'footR', radius: 0.14, forwardReach: 0.08 },
+    },
+    loose: {
+      active: {
+        shin: { jointA: 'kneeR', jointB: 'footR', radius: 0.13 },
+        foot: { jointA: 'footR', jointB: 'footR', radius: 0.14, forwardReach: 0.08 },
+      },
+      recover: {
+        shin: { jointA: 'kneeR', jointB: 'footR', radius: 0.09 },
+      },
     },
   },
 };
+
+// Where each sweep striker was on the last tick it was tested: rig -> name -> { p, t, attack }.
+const _swept = new WeakMap();
+const SWEEP_MAX_GAP = 0.06;    // seconds; older than this is another swing, not this one's path
 
 // Compute the two world-space endpoints of a capsule from the rig's joints.
 // `forwardReach` extends the second endpoint along the rig's local +Z (the
@@ -105,8 +148,9 @@ function capsuleEndpoints(joints, cap, forwardDir, scale = 1) {
   const a = joints[cap.jointA];
   const b = joints[cap.jointB];
   if (!a || !b) return null;
-  a.getWorldPosition(_vA);
-  b.getWorldPosition(_vB);
+  // An offset end is a point in the joint's own space (the skull above the neck joint).
+  if (cap.offA) a.localToWorld(_vA.fromArray(cap.offA)); else a.getWorldPosition(_vA);
+  if (cap.offB) b.localToWorld(_vB.fromArray(cap.offB)); else b.getWorldPosition(_vB);
   if (cap.forwardReach && forwardDir) {
     _fwd.copy(forwardDir).multiplyScalar(cap.forwardReach * scale);
     _vB.add(_fwd);
@@ -166,21 +210,38 @@ function facing(rig, out) {
   return out.normalize();
 }
 
-function testCapsuleAgainstSet(attackerRig, attackerCaps, defenderRig, defenderCaps, scale) {
+// How big a rig's shapes are: its height, and for `wide` parts its build as well.
+function rigScale(rig, cap) {
+  const c = rig.config || {};
+  return (c.heightScale ?? 1) * (cap.wide ? (c.buildScale ?? 1) : 1);
+}
+
+function testCapsuleAgainstSet(attackerRig, name, attackerCaps, defenderRig, defenderCaps, scale, o) {
   const atk = capsuleEndpoints(attackerRig.joints, attackerCaps, facing(attackerRig, _fwd), scale);
   if (!atk) return null;
+  if (attackerCaps.sweep && o.t != null) {
+    // From where the fist was a tick ago to where it is now: the path it actually took.
+    let memo = _swept.get(attackerRig);
+    if (!memo) _swept.set(attackerRig, memo = {});
+    const was = memo[name];
+    const tip = atk.b.clone();
+    if (was && was.attack === o.attack && o.t - was.t >= 0 && o.t - was.t < SWEEP_MAX_GAP) atk.a.copy(was.p);
+    memo[name] = { p: tip, t: o.t, attack: o.attack };
+  }
+  const atkRadius = attackerCaps.radius * rigScale(attackerRig, attackerCaps) * scale;
   let best = null;
-  for (const [name, cap] of Object.entries(defenderCaps)) {
+  for (const [capName, cap] of Object.entries(defenderCaps)) {
     const def = capsuleEndpoints(defenderRig.joints, cap, null);
     if (!def) continue;
-    const hit = closestPointsOnSegments(atk.a, atk.b, def.a, def.b);
-    if (!hit) continue;
-    const threshold = (attackerCaps.radius + cap.radius) * scale;
+    const hit = closestPointsOnSegments(atk.a, atk.b, def.a, def.b)
+      // Two points (a still fist against a sphere-like head): plain distance.
+      || { d: atk.a.distanceTo(def.a), pa: atk.a.clone(), pb: def.a.clone() };
+    const threshold = atkRadius + cap.radius * rigScale(defenderRig, cap) * scale;
     if (hit.d <= threshold) {
       // Tie-break: keep the deepest (smallest gap) intersection so the
       // closest body part wins.
       if (!best || hit.d < best.distance) {
-        best = { capsule: name, point: hit.pa.clone(), distance: hit.d, hurtPoint: hit.pb.clone() };
+        best = { capsule: capName, point: hit.pa.clone(), distance: hit.d, hurtPoint: hit.pb.clone() };
       }
     }
   }
@@ -193,16 +254,23 @@ function testCapsuleAgainstSet(attackerRig, attackerCaps, defenderRig, defenderC
  * Picks the deepest intersection across all striker capsules.
  * `scale` shrinks the capsule radii for rigs drawn smaller than life (FFA), so
  * contact still means the visible limb touched the visible body.
+ *
+ * @param {{t?: number, loose?: boolean}} [o]
+ *   t      the sim clock, which lets a fist or foot be swept along its path since the last
+ *          tick (leave it out and each test is of where the striker is now)
+ *   loose  the older, generous shapes (see the header)
  */
-export function testAttackHit(attackerRig, attackName, phase, defenderRig, scale = 1) {
-  const def = FIGHTER_CAPSULES.hurt;
-  const atkSet = ATTACK_CAPSULES[attackName];
-  if (!atkSet) return null;
+export function testAttackHit(attackerRig, attackName, phase, defenderRig, scale = 1, o = {}) {
+  const set = ATTACK_CAPSULES[attackName];
+  if (!set) return null;
+  const atkSet = o.loose ? set.loose : set;
+  const def = o.loose ? LOOSE_HURT_CAPSULES : HURT_CAPSULES;
   const caps = phase === 'recover' ? atkSet.recover : atkSet.active;
   if (!caps) return null;
+  const opts = { t: o.t, attack: attackName };
   let best = null;
   for (const [capName, cap] of Object.entries(caps)) {
-    const hit = testCapsuleAgainstSet(attackerRig, cap, defenderRig, def, scale);
+    const hit = testCapsuleAgainstSet(attackerRig, capName, cap, defenderRig, def, scale, opts);
     if (!hit) continue;
     if (!best || hit.distance < best.distance) {
       best = { ...hit, striker: capName };
@@ -230,8 +298,9 @@ export function guardCovers(defenderRig, fromPos) {
  * midpoint of the closest approach (a new Vector3), or null.
  */
 export function testAttackClash(rigA, attackA, phaseA, rigB, attackB, phaseB) {
-  const capsA = ATTACK_CAPSULES[attackA]?.[phaseA === 'recover' ? 'recover' : 'active'];
-  const capsB = ATTACK_CAPSULES[attackB]?.[phaseB === 'recover' ? 'recover' : 'active'];
+  // Swings meet limb on limb, whatever phase each is in: the `clash` shapes.
+  const capsA = ATTACK_CAPSULES[attackA]?.clash;
+  const capsB = ATTACK_CAPSULES[attackB]?.clash;
   if (!capsA || !capsB) return null;
   const fwdA = facing(rigA, new THREE.Vector3());
   const fwdB = facing(rigB, new THREE.Vector3());
@@ -254,6 +323,7 @@ export function testAttackClash(rigA, attackA, phaseA, rigB, attackB, phaseB) {
 const HURT_BONE_TO_REGION = {
   head: 'head',
   torso: 'torso',
+  belly: 'torso',
   upperArmL: 'arms', upperArmR: 'arms',
   forearmL: 'arms', forearmR: 'arms',
   hipL: 'legs', hipR: 'legs',

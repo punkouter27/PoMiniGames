@@ -496,7 +496,8 @@ class NetplayMethods {
     const wMul = attacker.swingWindupMul ?? 1.0;
     const aMul = attacker.swingActiveMul ?? 1.0;
     const phase = attacker.stateT > attack.windup * wMul + attack.active * aMul ? 'recover' : 'active';
-    const hit = testAttackHit(attacker.rig, attacker.strike || attack.name, phase, defender.rig);
+    // Online the server has already ruled this a hit; this only finds where to show it.
+    const hit = testAttackHit(attacker.rig, attacker.strike || attack.name, phase, defender.rig, 1, { loose: true });
     if (!hit) return;
     this._presentNetVerdict(attacker, defender, attack, v, hit);
   }

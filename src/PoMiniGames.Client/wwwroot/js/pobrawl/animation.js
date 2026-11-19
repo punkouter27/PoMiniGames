@@ -116,6 +116,20 @@ function mirrorPose(pose) {
 }
 TRACKS.punchL = TRACKS.punch.map(([pose, dur, opts]) => [mirrorPose(pose), dur, opts]);
 
+// A punch at the head: the same cross with the arm driven up through the strike instead of
+// straight out, so the glove arrives at face height. Hits are decided by where the glove
+// actually goes (hitboxes.js), and the plain cross lands on the chest; without this one
+// nothing would ever reach a face. Only the extended frames are raised (the shoulder past
+// about 60 degrees), so the wind-up and the recovery are the plain punch's.
+const HEAD_SHOT_LIFT = 0.6;     // radians the striking shoulder is raised
+const raised = (track, joint) => track.map(([pose, dur, opts]) => [
+  pose !== GUARD && pose[joint] && pose[joint].x < -1
+    ? { ...pose, [joint]: { ...pose[joint], x: pose[joint].x - HEAD_SHOT_LIFT } }
+    : pose,
+  dur, opts]);
+TRACKS.punchHigh = raised(TRACKS.punch, 'shoulderR');
+TRACKS.punchLHigh = raised(TRACKS.punchL, 'shoulderL');
+
 // Flat on the back (knockdown.js): the hips group pitches the whole body over and
 // Animator drops it to the canvas. Legs keyed, so the foot stepper lets go of them.
 const DOWN_POSE = {

@@ -8,6 +8,7 @@ import { PERSONALITIES } from './personalities.js';
 // The ring spotlight sweeps an ellipse (mostly along Z, with a vertical bob)
 // aimed at the fighters' midpoint, so the light pool, shadows and shaft swing
 // like a hanging studio fixture. See "Room light swing" in _updateLighting.
+import { KEY_INTENSITY, SPOT_INTENSITY } from './arena.js';
 const HOUSE_LIGHT_RADIUS = 4.4;              // Z swing
 const HOUSE_LIGHT_RADIUS_X = 1.6;            // narrower X swing for an ellipse, not a circle
 const HOUSE_LIGHT_BOB = 1.8;                 // vertical bobbing amplitude
@@ -33,7 +34,7 @@ class LightingMethods {
     this.lightsDim = 0;
     const d = this.lightsDim;
     L.hemi.intensity = 0.22 * (1 - d * 0.85);
-    L.key.intensity = 3.4 * (1 - d * 0.75);
+    L.key.intensity = KEY_INTENSITY * (1 - d * 0.75);
     L.rim.intensity = 1.0 * (1 - d * 0.5);
     L.fill.intensity = 0.6 * (1 - d * 0.85);
 
@@ -86,7 +87,7 @@ class LightingMethods {
     L.rim.intensity *= rimMul;
     L.cornerA.intensity = 1.7 * (1 - d * 0.9);
     L.cornerB.intensity = 1.7 * (1 - d * 0.9);
-    L.spot.intensity = 1.6 + d * 1.6;
+    L.spot.intensity = SPOT_INTENSITY + d * 1.6;
     // Studio rig panels dim with the house lights.
     if (L.rectA) L.rectA.intensity = 3.4 * (1 - d * 0.85);
     if (L.rectB) L.rectB.intensity = 2.6 * (1 - d * 0.85);

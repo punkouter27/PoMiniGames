@@ -25,14 +25,15 @@ function ringCanvasTexture() {
   const c = document.createElement('canvas');
   c.width = c.height = 256;
   const g = c.getContext('2d');
-  g.fillStyle = '#3d4680';
+  // Event-blue canvas, lighter where the overhead lights pool in the middle.
+  g.fillStyle = '#1f52c4';
   g.fillRect(0, 0, 256, 256);
   const wear = g.createRadialGradient(128, 128, 10, 128, 128, 120);
-  wear.addColorStop(0, 'rgba(200,205,235,0.16)');
-  wear.addColorStop(1, 'rgba(200,205,235,0)');
+  wear.addColorStop(0, 'rgba(215,230,255,0.16)');
+  wear.addColorStop(1, 'rgba(215,230,255,0)');
   g.fillStyle = wear;
   g.fillRect(0, 0, 256, 256);
-  g.strokeStyle = 'rgba(255,255,255,0.10)';
+  g.strokeStyle = 'rgba(255,255,255,0.22)';
   g.lineWidth = 4;
   g.beginPath();
   g.arc(128, 128, 42, 0, Math.PI * 2);
@@ -56,29 +57,36 @@ function ringCanvasTexture() {
  *        Build-time only: light counts are shader #defines, so changing one live
  *        recompiles every lit material. See quality.js.
  */
+// The hall, and the two lights that make the ring: values lighting.js re-applies every frame.
+const HALL_COLOR = 0x070b1c;
+export const KEY_INTENSITY = 4.1;
+export const SPOT_INTENSITY = 2.4;
+
 export function buildArena(scene, quality = {}) {
-  // Not near-black: an off-ring camera must not read as "the screen went black".
-  scene.background = new THREE.Color(0x1a2040);
+  // A big-event hall: dark, so the ring under its lights is the brightest thing in the
+  // room. Deep blue, not black: an off-ring camera must not read as "the screen went black".
+  scene.background = new THREE.Color(HALL_COLOR);
   // Exponential haze: fighters (4-6 m out) stay clean, crowd and hall melt away.
-  scene.fog = new THREE.FogExp2(0x1a2040, 0.018);
+  scene.fog = new THREE.FogExp2(HALL_COLOR, 0.014);
 
   const floor = new THREE.Mesh(
     new THREE.PlaneGeometry(120, 120),
-    new THREE.MeshStandardNodeMaterial({ color: 0x14172a, roughness: 0.95, metalness: 0.0 })
+    new THREE.MeshStandardNodeMaterial({ color: 0x0b0e1c, roughness: 0.95, metalness: 0.0 })
   );
   floor.rotation.x = -Math.PI / 2;
   floor.position.y = -0.5;
   floor.receiveShadow = true;
   scene.add(floor);
 
-  const grid = new THREE.GridHelper(80, 40, 0x232848, 0x1a1e38);
+  const grid = new THREE.GridHelper(80, 40, 0x1a2040, 0x12162c);
   grid.position.y = -0.49;
   grid.material.opacity = 0.55;
   grid.material.transparent = true;
   scene.add(grid);
 
+  // The apron: a strong blue skirt round the ring, as at a title fight.
   const ringMat = new THREE.MeshStandardNodeMaterial({
-    color: 0x2a3160, roughness: 0.85, metalness: 0.05,
+    color: 0x1b3aa6, roughness: 0.8, metalness: 0.05,
   });
   const ring = new THREE.Mesh(new THREE.BoxGeometry(12, 0.5, 12), ringMat);
   ring.position.y = -0.25;
@@ -170,8 +178,9 @@ export function buildArena(scene, quality = {}) {
   // Hemisphere fill kept low: much higher washes the frame into grey haze.
   const hemi = new THREE.HemisphereLight(0x9aa4ff, 0x1a1030, 0.22);
   scene.add(hemi);
-  const key = new THREE.DirectionalLight(0xfff1d0, 3.4);
-  key.position.set(6, 12, 4);
+  // The key comes down from the rig over the ring, nearly straight: the light of a big hall.
+  const key = new THREE.DirectionalLight(0xfff6ea, KEY_INTENSITY);
+  key.position.set(3, 14, 4);
   key.castShadow = true;
   // Build-time default = 'high' tier; _applyQuality retunes per tier. Over the ±6.5
   // frustum 2048 already exceeds what PCFSoft's kernel resolves, so 4096 buys nothing.
@@ -196,7 +205,7 @@ export function buildArena(scene, quality = {}) {
   scene.add(fill);
 
   // Overhead spot; the KO cinematic brightens it and retargets it onto the loser.
-  const spot = new THREE.SpotLight(0xfff4e0, 1.6, 30, Math.PI / 4.5, 0.45, 1.2);
+  const spot = new THREE.SpotLight(0xfff4e0, SPOT_INTENSITY, 30, Math.PI / 4.5, 0.45, 1.2);
   spot.position.set(0, 11, 0);
   spot.target.position.set(0, 0, 0);
   spot.castShadow = true;
@@ -255,6 +264,8 @@ export function buildArena(scene, quality = {}) {
   }
 
   const atmo = buildAtmosphere(scene, quality.renderer, spot);
+  // The low tier (no area lights) gets the rig and its lamps but not the eight shafts.
+  buildTruss(scene, (quality.rectAreaLights ?? 2) > 0);
   const backdrop = buildBackdrop(scene);
   const crowd = buildCrowd(scene, quality.renderer);
   scene.add(crowd);
@@ -521,6 +532,90 @@ export function updateBanners(backdrop, t, dt = 1 / 60, kick = 0) {
     pos.needsUpdate = true;
     // Normals deliberately not recomputed: a per-frame main-thread cost for dim banners.
   });
+}
+
+// ── The lighting rig: a truss over the ring, its lamps, and their beams ──
+// What makes it a big-event hall is seeing where the light comes from: a square of truss
+// hung over the ring, a lamp head every few metres burning far brighter than anything it
+// lights (so the bloom catches each one), and a shaft from each down onto the canvas. The
+// shafts are painted cones, not lights: eight more real lights would cost every lit pixel in
+// the scene, and the key and the spot above already do the lighting.
+const TRUSS_Y = 10.4;
+const TRUSS_HALF = 4.7;
+// Each lamp: where on the truss, where on the canvas it points, and its colour. The corners
+// are white, the sides carry the two corners' colours and a cool pair.
+const LAMPS = [
+  [[-1, -1], [1.6, 1.2], 0xfff3df], [[1, -1], [-1.6, 1.2], 0xfff3df],
+  [[-1, 1], [1.6, -1.2], 0xfff3df], [[1, 1], [-1.6, -1.2], 0xfff3df],
+  [[-1, 0], [0.9, 0], 0xff6a55], [[1, 0], [-0.9, 0], 0x5f93ff],
+  [[0, -1], [0, 1.4], 0xcfe2ff], [[0, 1], [0, -1.4], 0xcfe2ff],
+];
+let _shaftTex = null;
+function shaftTexture() {
+  if (_shaftTex) return _shaftTex;
+  const c = document.createElement('canvas');
+  c.width = 1; c.height = 64;
+  const g = c.getContext('2d');
+  const grad = g.createLinearGradient(0, 0, 0, 64);
+  grad.addColorStop(0, 'rgba(255,255,255,0.9)');      // at the lamp
+  grad.addColorStop(0.35, 'rgba(255,255,255,0.32)');
+  grad.addColorStop(1, 'rgba(255,255,255,0)');        // spent by the canvas
+  g.fillStyle = grad;
+  g.fillRect(0, 0, 1, 64);
+  return (_shaftTex = new THREE.CanvasTexture(c));
+}
+
+function buildTruss(scene, shafts = true) {
+  const group = new THREE.Group();
+  group.userData.kind = 'truss';
+  const metal = new THREE.MeshStandardNodeMaterial({ color: 0x1b1e2a, roughness: 0.55, metalness: 0.7 });
+  const span = 2 * TRUSS_HALF + 0.3;
+  for (const [x, z, w, d] of [[0, -TRUSS_HALF, span, 0.22], [0, TRUSS_HALF, span, 0.22], [-TRUSS_HALF, 0, 0.22, span], [TRUSS_HALF, 0, 0.22, span]]) {
+    const beam = new THREE.Mesh(new THREE.BoxGeometry(w, 0.22, d), metal);
+    beam.position.set(x, TRUSS_Y, z);
+    group.add(beam);
+  }
+  const headGeo = new THREE.CylinderGeometry(0.17, 0.24, 0.34, 12);
+  const lensGeo = new THREE.CircleGeometry(0.2, 16);
+  const up = new THREE.Vector3(0, 1, 0);
+  const from = new THREE.Vector3(), to = new THREE.Vector3(), dir = new THREE.Vector3();
+  for (const [[lx, lz], [tx, tz], hex] of LAMPS) {
+    from.set(lx * TRUSS_HALF, TRUSS_Y - 0.3, lz * TRUSS_HALF);
+    to.set(tx, 0.04, tz);
+    dir.copy(from).sub(to);
+    const length = dir.length();
+    dir.normalize();
+    const aim = new THREE.Quaternion().setFromUnitVectors(up, dir);
+    const head = new THREE.Mesh(headGeo, metal);
+    head.position.copy(from);
+    head.quaternion.copy(aim);
+    group.add(head);
+    // The lens: far brighter than white, so the bloom makes a lamp of it.
+    const color = new THREE.Color(hex);
+    const lens = new THREE.Mesh(lensGeo, new THREE.MeshBasicNodeMaterial({
+      color: color.clone().multiplyScalar(5), side: THREE.DoubleSide, fog: false,
+    }));
+    lens.position.copy(from).addScaledVector(dir, -0.18);
+    lens.quaternion.copy(aim).multiply(new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(1, 0, 0), Math.PI / 2));
+    group.add(lens);
+    if (!shafts) continue;
+    // The shaft: narrow at the lamp, a couple of metres wide where it meets the canvas.
+    const shaft = new THREE.Mesh(
+      new THREE.CylinderGeometry(0.16, 1.5, length, 14, 1, true),
+      new THREE.MeshBasicMaterial({
+        map: shaftTexture(), color, transparent: true, opacity: 0.06,
+        // Front faces only: a shaft is seen from outside, and drawing its far side as well
+        // doubles the pixels eight big cones fill.
+        blending: THREE.AdditiveBlending, depthWrite: false, side: THREE.FrontSide, fog: false,
+      }));
+    shaft.position.copy(from).addScaledVector(dir, -length / 2);
+    shaft.quaternion.copy(aim);
+    shaft.renderOrder = 2;
+    group.add(shaft);
+  }
+  for (const o of group.children) { o.castShadow = false; o.receiveShadow = false; }
+  scene.add(group);
+  return group;
 }
 
 // ── Atmosphere: the spotlight's beam through the hall's haze ──
@@ -975,35 +1070,36 @@ export function flashbulbs(arena, n) {
   }
 }
 
-// ── Tournament lighting: golden hour → dusk → night ──────────────────────
-// One look per round, as multipliers on _updateLighting's own baselines plus the
-// colours, key-light angle, haze and hall tint that make the time of day. The engine
-// eases between them under the bout's VS splash (cup.js), so the hall changes over a
-// couple of seconds, never in one frame. Other modes never read this table.
-//   0 quarterfinals — golden hour: a low, warm key raking across the ring, amber fill.
-//   1 semifinals    — dusk: the key cools to rose and sinks, the hall goes violet, more rim.
-//   2 final         — night: a dim moonlit key, a hot tight overhead spot, heavy haze.
+// ── Tournament lighting: undercard → co-main → main event ──────────────
+// One look per round, as multipliers on _updateLighting's own baselines plus the colours,
+// key-light angle, haze and hall tint. All three are a big hall lit from its rig; what
+// changes is how much of the hall the lights hold. The engine eases between them under the
+// bout's VS splash (cup.js), so the hall changes over a couple of seconds, never in one
+// frame. Other modes never read this table.
+//   0 quarterfinals — the house is up: a bright, even, white ring, the hall still visible.
+//   1 semifinals    — the house comes down: cooler key, stronger rim and corner colour.
+//   2 final         — the main event: the hall is black, one hot tight spot on the canvas.
 export const ROUND_LOOKS = [
   {
-    key: 0xffa04a, keyMul: 1.2, keyPos: [10, 6, 7],
-    hemiSky: 0xffc488, hemiGround: 0x3a2414, hemiMul: 1.4,
-    fill: 0xffb060, fillMul: 1.3, rimMul: 0.7, spotMul: 0.85,
-    spotAngle: Math.PI / 4.5, spotPenumbra: 0.45, cornerMul: 0.85, backMul: 0.8, rectMul: 1.0,
-    hall: 0x4a3020, fog: 0.017, haze: 0.08,
+    key: 0xfff6ea, keyMul: 1.0, keyPos: [3, 14, 4],
+    hemiSky: 0xc4d4ff, hemiGround: 0x121830, hemiMul: 1.15,
+    fill: 0xffecd2, fillMul: 1.1, rimMul: 1.0, spotMul: 1.0,
+    spotAngle: Math.PI / 4.5, spotPenumbra: 0.45, cornerMul: 1.0, backMul: 1.0, rectMul: 1.0,
+    hall: 0x0a1026, fog: 0.014, haze: 0.09,
   },
   {
-    key: 0xf08cb4, keyMul: 0.8, keyPos: [8, 7.5, 1],
-    hemiSky: 0x8f7aff, hemiGround: 0x1c0f34, hemiMul: 1.0,
-    fill: 0xff9a8a, fillMul: 0.85, rimMul: 1.4, spotMul: 1.2,
-    spotAngle: Math.PI / 5.2, spotPenumbra: 0.4, cornerMul: 1.2, backMul: 1.2, rectMul: 0.8,
-    hall: 0x2c1d50, fog: 0.022, haze: 0.12,
+    key: 0xeef2ff, keyMul: 0.9, keyPos: [2, 14, 2],
+    hemiSky: 0x9cb2ff, hemiGround: 0x0c1028, hemiMul: 0.85,
+    fill: 0xffdcb8, fillMul: 0.9, rimMul: 1.4, spotMul: 1.4,
+    spotAngle: Math.PI / 5.2, spotPenumbra: 0.4, cornerMul: 1.3, backMul: 1.2, rectMul: 0.85,
+    hall: 0x070b1e, fog: 0.018, haze: 0.13,
   },
   {
-    key: 0xb8caff, keyMul: 0.45, keyPos: [4, 14, 3],
-    hemiSky: 0x5a68c8, hemiGround: 0x06050f, hemiMul: 0.6,
-    fill: 0xffd9a8, fillMul: 0.5, rimMul: 1.6, spotMul: 3.0,
-    spotAngle: Math.PI / 8, spotPenumbra: 0.3, cornerMul: 1.3, backMul: 1.4, rectMul: 0.45,
-    hall: 0x0a0e2a, fog: 0.03, haze: 0.22,
+    key: 0xe2e9ff, keyMul: 0.7, keyPos: [1, 15, 1],
+    hemiSky: 0x7f92e0, hemiGround: 0x05060f, hemiMul: 0.6,
+    fill: 0xffd9a8, fillMul: 0.6, rimMul: 1.6, spotMul: 2.4,
+    spotAngle: Math.PI / 8, spotPenumbra: 0.3, cornerMul: 1.4, backMul: 1.4, rectMul: 0.5,
+    hall: 0x03050d, fog: 0.024, haze: 0.2,
   },
 ];
 

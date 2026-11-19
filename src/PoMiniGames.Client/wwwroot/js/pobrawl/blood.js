@@ -15,7 +15,7 @@ import {
 import * as Quality from './quality.js';
 import { createParticlePool } from './particlePool.js';
 import { createBloodFluid } from './bloodFluid.js';
-import { recordHit, recordDent, tickFighterFx } from './fighterFx.js';
+import { recordHit, recordDent, tickFighterFx, sweatCurve } from './fighterFx.js';
 import { MAT_HALF } from './constants.js';
 
 const DROP_MAX = 768;       // blood droplets in flight
@@ -850,7 +850,11 @@ class BloodMethods {
     if (f.state === 'ko') return;
     if (this.phase === 'fighting') {
       const tired = 1 - Math.max(0, Math.min(1, f.energy ?? 1));
-      f.sweat = Math.min(1, (f.sweat || 0) + dt * (1 / 80 + tired / 45));
+      // None at first, then slowly, then faster: dry for the opening seconds, and from
+      // there the square of the time spent fighting, on a clock that runs quicker the more
+      // tired the fighter is. (sweatCurve, shared with the battle royale.)
+      f.sweatClock = (f.sweatClock || 0) + dt * (1 + tired * 1.2);
+      f.sweat = sweatCurve(f.sweatClock);
     }
     f.sweatWearT = (f.sweatWearT || 0) - dt;
     if (f.sweatWearT <= 0) {

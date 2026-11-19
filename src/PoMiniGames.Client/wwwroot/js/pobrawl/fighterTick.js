@@ -26,6 +26,9 @@ const CIRCLE_SPEED = 2.0;
 // A rise with nothing held: the referee's count stands a CPU fighter up on a plain get-up.
 const CALM_RISE = Object.freeze({ move: 0, side: 0, punch: false, kick: false, block: false });
 
+// The share of punches thrown at the head rather than the body.
+const HEAD_SHOT_CHANCE = 0.5;
+
 class FighterTickMethods {
   _aiContext(f, opp, dt) {
     const dist = f.rig.root.position.distanceTo(opp.rig.root.position);
@@ -450,7 +453,11 @@ class FighterTickMethods {
     // in _tickFighter.
     paySwing(f, f.attack.energyMul ?? 1);
     this.hudDirty = true;
-    f.animator.play(f.strike);
+    // Head or body: half of all punches go up at the face (animation.js punchHigh), the
+    // rest at the chest. Decided on the match RNG, so a replay throws the same punch.
+    // Online the server rules on hits, so the picture keeps to the plain punch.
+    f.headShot = !this.online && (f.strike === 'punch' || f.strike === 'punchL') && this.rng.random() < HEAD_SHOT_CHANCE;
+    f.animator.play(f.headShot ? `${f.strike}High` : f.strike);
 
     // ── On-swing personality flags (consumed at hit landing) ─────────
     // Trump "THE WALL" haymaker: 18% of swings commit to a heavy right with
