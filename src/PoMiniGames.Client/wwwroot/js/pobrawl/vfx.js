@@ -6,6 +6,7 @@
 
 import * as THREE from 'three-eco/webgpu';
 import { createParticlePool } from './particlePool.js';
+import * as Quality from './quality.js';
 import { createConfettiSim, SPLINTERS } from './confettiSim.js';
 import { MAT_HALF } from './constants.js';
 import { SeveredArm } from './ragdollPhysics.js';
@@ -13,6 +14,12 @@ import { stepWorld } from './physics.js';
 
 // Scratch objects so the trail sampler and particle spawns allocate nothing.
 const _trailPos = new THREE.Vector3();
+
+const MOTES_PER_SEC = 22;
+const MOTE_COLOR = 0xe0c896;       // additive: a warm speck catching the lamp, not a spark
+const _moteAxis = new THREE.Vector3();
+const _moteU = new THREE.Vector3();
+const _moteV = new THREE.Vector3();
 
 class VfxMethods {
   // Effects built mid-fight (callout words and the like) make their
@@ -240,6 +247,7 @@ class VfxMethods {
   }
 
   _updateParticles(dt) {
+    this._beamMotes(dt);
     this._particles?.update(dt, this.camera);
     this._confetti?.update(dt);
     this._splinters?.update(dt);
@@ -421,6 +429,41 @@ class VfxMethods {
   }
 
   // Celebration confetti glitter over the ring at the K.O.
+  // Dust in the spotlight: a few motes always adrift in the beam, each a dim warm speck that
+  // lives a few seconds. It is what tells the eye the light is passing through air, and it
+  // costs a handful of particles from the pool. None on the low tier; they hold still-ish
+  // (no swirl) so reduced motion keeps them.
+  _beamMotes(dt) {
+    const spot = this.arena?.lights?.spot;
+    if (!spot || !this._particles || Quality.tier() === 'low') return;
+    this._moteAcc = (this._moteAcc || 0) + dt * MOTES_PER_SEC;
+    if (this._moteAcc < 1) return;
+    _moteAxis.copy(spot.target.position).sub(spot.position);
+    const reach = Math.min(_moteAxis.length(), 10);
+    if (reach < 0.5) return;
+    _moteAxis.normalize();
+    // Any two directions across the beam.
+    _moteU.set(1, 0, 0).cross(_moteAxis);
+    if (_moteU.lengthSq() < 1e-4) _moteU.set(0, 0, 1).cross(_moteAxis);
+    _moteU.normalize();
+    _moteV.copy(_moteAxis).cross(_moteU);
+    while (this._moteAcc >= 1) {
+      this._moteAcc -= 1;
+      // Somewhere in the cone: further down the beam it is wider.
+      // The lower two thirds: the top of the beam is above every camera.
+      const along = 0.4 + Math.random() * 0.6;
+      const radius = (0.35 + 3.4 * along) * Math.sqrt(Math.random());
+      const angle = Math.random() * Math.PI * 2;
+      const cx = Math.cos(angle) * radius, cy = Math.sin(angle) * radius;
+      this._spawnParticle(
+        spot.position.x + _moteAxis.x * reach * along + _moteU.x * cx + _moteV.x * cy,
+        spot.position.y + _moteAxis.y * reach * along + _moteU.y * cx + _moteV.y * cy,
+        spot.position.z + _moteAxis.z * reach * along + _moteU.z * cx + _moteV.z * cy,
+        (Math.random() - 0.5) * 0.09, (Math.random() - 0.4) * 0.06, (Math.random() - 0.5) * 0.09,
+        MOTE_COLOR, 3.5 + Math.random() * 3.5, -0.012, 0.03 + Math.random() * 0.03, 0);
+    }
+  }
+
   /**
    * A crate went to pieces at `pos`: a burst of slivers that scatter, drop and lie where
    * they fall (WebGPU only). The few big fragments props.js spawns are physics bodies and
