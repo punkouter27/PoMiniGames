@@ -6,7 +6,6 @@ using Microsoft.AspNetCore.TestHost;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
-using PoMiniGames.TestUtilities;
 
 namespace PoMiniGames.E2EAPI;
 
@@ -47,9 +46,21 @@ public sealed class PoMiniGamesE2EFixture : WebApplicationFactory<Program>
 
         builder.ConfigureAppConfiguration((_, cfg) =>
         {
-            var overrides = new Dictionary<string, string?>(TestBudgetGuard.Overrides);
+            var overrides = new Dictionary<string, string?>
+            {
+                // Keep test hosts hermetic: no live Wikipedia or external quiz packs, a dry Racer track, no Key Vault.
+                ["PoMiniGames:PoBrawl:Dossier:FetchWikipedia"] = "false",
+                ["PoMiniGames:PoCoupleQuiz:FetchExternalPacks"] = "false",
+                ["PoMiniGames:PoRacer:Weather"] = "clear",
+                ["KeyVault:Uri"] = "",
+            };
             // Mirror Azurite to BOTH TableService and BlobService sections.
-            foreach (var (k, v) in TestBudgetGuard.StorageOverrides(AzuriteConnectionString, "pominigames-e2e"))
+            foreach (var (k, v) in new Dictionary<string, string?>
+                {
+                    ["PoMiniGames:Storage:TableService:ConnectionString"] = AzuriteConnectionString,
+                    ["PoMiniGames:Storage:BlobService:ConnectionString"] = AzuriteConnectionString,
+                    ["PoMiniGames:Storage:TableService:TableName"] = "pominigames-e2e",
+                })
             {
                 overrides[k] = v;
             }

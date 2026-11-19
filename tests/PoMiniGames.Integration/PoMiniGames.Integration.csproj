@@ -23,17 +23,12 @@
   <ItemGroup>
     <ProjectReference Include="..\..\src\PoMiniGames.Api\PoMiniGames.Api.csproj" />
     <ProjectReference Include="..\..\src\PoMiniGames.Client\PoMiniGames.Client.csproj" />
-    <!-- Shared test utilities (TestBudgetGuard, etc.) — explicit ProjectReference
-         so the fixture compiles whether or not tests/Shared/PoMiniGames.TestUtilities.csproj
-         is registered in the solution. -->
-    <ProjectReference Include="..\Shared\PoMiniGames.TestUtilities.csproj" />
   </ItemGroup>
 
   <ItemGroup>
     <Using Include="Xunit" />
     <!-- ArmAntiforgeryAsync is needed by every test that writes; a global using keeps
          the CSRF plumbing out of each file's header. -->
-    <Using Include="PoMiniGames.TestUtilities" />
   </ItemGroup>
 
 </Project>

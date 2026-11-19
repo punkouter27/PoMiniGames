@@ -23,16 +23,10 @@
     <ProjectReference Include="..\..\src\PoMiniGames.Api\PoMiniGames.Api.csproj" />
     <ProjectReference Include="..\..\src\PoMiniGames.Client\PoMiniGames.Client.csproj" />
     <!-- TierCeilingGuard (the 100/50/25/25 assertion, shared by all four tiers). -->
-    <ProjectReference Include="..\Shared\PoMiniGames.TestUtilities.csproj" />
   </ItemGroup>
 
   <ItemGroup>
     <Using Include="Xunit" />
-  </ItemGroup>
-
-  <ItemGroup>
-    <!-- The PoBrawl rollback sim contract, shared with tests/pobrawl-rollback.test.mjs. -->
-    <None Include="..\pobrawl-rollback-golden.json" Link="pobrawl-rollback-golden.json" CopyToOutputDirectory="PreserveNewest" />
   </ItemGroup>
 
 </Project>

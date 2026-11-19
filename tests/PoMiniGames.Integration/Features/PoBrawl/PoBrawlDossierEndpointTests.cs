@@ -8,7 +8,7 @@ using PoMiniGames.Shared.Games;
 namespace PoMiniGames.Integration;
 
 /// <summary>
-/// <c>GET /api/pobrawl/dossier</c> with Wikipedia fetching off (TestBudgetGuard pins
+/// <c>GET /api/pobrawl/dossier</c> with Wikipedia fetching off (the test host pins
 /// <c>PoMiniGames:PoBrawl:Dossier:FetchWikipedia</c> to false): anonymous, 200, sixteen static
 /// dossiers in ladder order then BOB. Also pins the summary trimmer the Wikipedia path uses.
 /// One method on purpose — the Integration tier has a ceiling.

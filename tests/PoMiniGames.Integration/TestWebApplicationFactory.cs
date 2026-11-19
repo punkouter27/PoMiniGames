@@ -7,7 +7,6 @@ using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 using PoMiniGames.Features.Identity;
-using PoMiniGames.TestUtilities;
 
 namespace PoMiniGames.Integration;
 
@@ -58,14 +57,26 @@ public class TestWebApplicationFactory : WebApplicationFactory<Program>, IAsyncL
             _finalEnvIsProduction = string.Equals(
                 context.HostingEnvironment.EnvironmentName, "Production", StringComparison.OrdinalIgnoreCase);
 
-            var overrides = new Dictionary<string, string?>(TestBudgetGuard.Overrides);
+            var overrides = new Dictionary<string, string?>
+            {
+                // Keep test hosts hermetic: no live Wikipedia or external quiz packs, a dry Racer track, no Key Vault.
+                ["PoMiniGames:PoBrawl:Dossier:FetchWikipedia"] = "false",
+                ["PoMiniGames:PoCoupleQuiz:FetchExternalPacks"] = "false",
+                ["PoMiniGames:PoRacer:Weather"] = "clear",
+                ["KeyVault:Uri"] = "",
+            };
 
             if (_azuriteConnectionString is not null)
             {
                 // Mirror the Azurite connection string into BOTH the
                 // TableService and BlobService sections so per-game blob repositories
                 // bind to the emulator rather than falling through to DefaultAzureCredential.
-                foreach (var (k, v) in TestBudgetGuard.StorageOverrides(_azuriteConnectionString, "pominigames"))
+                foreach (var (k, v) in new Dictionary<string, string?>
+                {
+                    ["PoMiniGames:Storage:TableService:ConnectionString"] = _azuriteConnectionString,
+                    ["PoMiniGames:Storage:BlobService:ConnectionString"] = _azuriteConnectionString,
+                    ["PoMiniGames:Storage:TableService:TableName"] = "pominigames",
+                })
                 {
                     overrides[k] = v;
                 }
