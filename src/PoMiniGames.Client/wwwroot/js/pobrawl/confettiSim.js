@@ -1,4 +1,4 @@
-// confettiSim.js — confetti that lands. WebGPU only (compute shaders and storage buffers);
+// confettiSim.js — small debris that lands: confetti, and the splinters of a smashed crate. WebGPU only (compute shaders and storage buffers);
 // on the WebGL2 backend `createConfettiSim` returns null and the callers keep throwing their
 // confetti through the shared particle pool, where it flies a fixed arc and fades in the air.
 //
@@ -18,24 +18,43 @@ import {
   uniformArray, varying, vec3, vec4,
 } from 'three-eco/tsl';
 
-const PIECES = 6144;
 const PUSHERS = 8;
 const EMITS = 8;
-const GRAVITY = -2.6;         // paper, not gravel
-const DRAG = 1.5;
-const LIFE = 20;              // seconds a piece exists, most of them lying down
 const FADE = 1.6;
 const KICK_RADIUS = 0.32;
 const HALL_FLOOR = -0.52;     // what catches a piece that misses the ring
-const PALETTE = [0xffd257, 0xfff3c4, 0xff4a3c, 0x4a7dff, 0xf5f2ec, 0xffb02e];
+
+/** What a kind of debris is made of. Every field can be overridden per simulation. */
+export const CONFETTI = {
+  pieces: 6144,
+  gravity: -2.6,              // paper, not gravel
+  drag: 1.5,
+  flutter: 1.6,               // sideways slip as it falls, m/s²
+  life: 20,                   // seconds a piece exists, most of them lying down
+  size: [0.045, 0.085],       // metres, long edge
+  aspect: 0.6,                // short edge / long edge
+  palette: [0xffd257, 0xfff3c4, 0xff4a3c, 0x4a7dff, 0xf5f2ec, 0xffb02e],
+};
+export const SPLINTERS = {
+  pieces: 2048,
+  gravity: -10,               // wood: it drops, it does not drift
+  drag: 0.5,
+  flutter: 0,
+  life: 26,
+  size: [0.05, 0.16],
+  aspect: 0.22,               // long thin slivers
+  palette: [0x8a5a34, 0x6e4526, 0xa9743f, 0x5a3a20, 0xb98a55, 0x7b4f2c],
+};
 
 /**
  * @param {object} renderer  an initialised WebGPURenderer
- * @param {{half: number, floorY: number}} o  half-width of the canvas, and its top
+ * @param {{half: number, floorY: number, kind?: object}} o  half-width of the canvas, its top,
+ *   and what the pieces are (CONFETTI by default, or SPLINTERS)
  * @returns {null | object}
  */
-export function createConfettiSim(renderer, { half, floorY }) {
+export function createConfettiSim(renderer, { half, floorY, kind = CONFETTI }) {
   if (!renderer?.backend?.isWebGPUBackend) return null;
+  const { pieces: PIECES, gravity: GRAVITY, drag: DRAG, flutter: FLUTTER, life: LIFE, palette: PALETTE } = kind;
 
   const P = instancedArray(PIECES, 'vec4');     // xyz, seconds left (<= 0: free slot)
   const V = instancedArray(PIECES, 'vec4');     // velocity, random 0..1 (phase, colour, spin)
@@ -59,7 +78,7 @@ export function createConfettiSim(renderer, { half, floorY }) {
       const kick = vec3(rnd(4), rnd(5), rnd(6)).sub(0.5).mul(2);
       P.element(instanceIndex).assign(vec4(eOrigin.add(jitter.mul(eBox)), mix(LIFE * 0.75, LIFE, rnd(7))));
       V.element(instanceIndex).assign(vec4(eVelocity.add(kick.mul(eScatter)), rnd(8)));
-      S.element(instanceIndex).assign(vec4(0, mix(0.045, 0.085, rnd(9)), 0, 0));
+      S.element(instanceIndex).assign(vec4(0, mix(kind.size[0], kind.size[1], rnd(9)), 0, 0));
     });
   })().compute(PIECES);
 
@@ -72,7 +91,7 @@ export function createConfettiSim(renderer, { half, floorY }) {
       If(lying.lessThan(0.5), () => {
         // Flutter: each piece slips sideways on its own rhythm as it comes down.
         const phase = v.w.mul(40).add(time.mul(mix(2.2, 4.4, v.w)));
-        vel.addAssign(vec3(sin(phase), 0, cos(phase.mul(1.3))).mul(dt.mul(1.6)));
+        vel.addAssign(vec3(sin(phase), 0, cos(phase.mul(1.3))).mul(dt.mul(FLUTTER)));
         vel.y.addAssign(dt.mul(GRAVITY));
         vel.mulAssign(exp(dt.mul(-DRAG)));
         pos.addAssign(vel.mul(dt));
@@ -105,7 +124,7 @@ export function createConfettiSim(renderer, { half, floorY }) {
   const clearPass = Fn(() => { P.element(instanceIndex).assign(vec4(0, -9, 0, 0)); })().compute(PIECES);
 
   // ── Drawing ──────────────────────────────────────────────────────────
-  const quad = new THREE.PlaneGeometry(1, 0.6);
+  const quad = new THREE.PlaneGeometry(1, kind.aspect);
   const geo = new THREE.InstancedBufferGeometry().copy(quad);
   quad.dispose();
   geo.instanceCount = PIECES;

@@ -128,7 +128,9 @@ function bloodNodes(share) {
     .add(texture(noise, vec2(across.mul(1.31).add(0.37), p.y.mul(1.17)).mul(23)).g.mul(0.3));
   // The noise sits around 0.5 with most of it inside ±0.2, so these thresholds run from
   // "a few flecks" to about a quarter of the surface.
-  const spotAt = mix(0.76, 0.58, amount);
+  // (Value noise from a texture is spread wider than Perlin, so the bar starts high: a
+  // fighter with a little blood on them shows a few flecks, not a rash.)
+  const spotAt = mix(0.9, 0.62, amount);
   const spots = smoothstep(spotAt, spotAt.add(0.03), fleck);
   // Strands: tight across the body, long down it. `feed` decides which stretches of skin
   // carry a run at all, so they come in ragged groups, not an even comb.

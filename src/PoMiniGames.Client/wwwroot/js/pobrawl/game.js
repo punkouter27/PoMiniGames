@@ -1900,6 +1900,8 @@ export class BrawlGame {
         this._spawnSparks(pos, 0xc8a060, 8, 1.6);
         if (kind === 'wood') {
           this.audio.prop({ material: 'wood', power: power ?? 1, worldPos: pos });
+          // 1.4 is a crate breaking apart (props.js damageCrate); a lighter knock only thuds.
+          if ((power ?? 1) >= 1.4) this._crateSplinters(pos);
           this._kickRig(0.35, pos.x, pos.z);
         } else {
           this.audio.impact({ power: power ?? 1, worldPos: pos });
@@ -2024,6 +2026,7 @@ export class BrawlGame {
     if (this.matWear) { this.matWear.dispose(); this.matWear = null; }
     if (this._particles) { this._particles.dispose(); this._particles = null; }
     if (this._confetti) { this._confetti.dispose(); this._confetti = null; }
+    if (this._splinters) { this._splinters.dispose(); this._splinters = null; }
     this._disposeBlood();
     // Drop the tier subscription before anything else is torn down — the handler
     // touches the renderer and the arena lights, and a `po-gfx-tier` firing during

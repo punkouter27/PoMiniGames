@@ -379,7 +379,7 @@ scripts/                        Working scripts only — see scripts/README.md
   action log (`PoMuleRunVerifier`).
 - **Two three.js versions.** PoEcosystem renders with three r186 `WebGPURenderer` and node
   materials (TSL), imported as `three-eco/webgpu` / `three-eco/tsl` / `three-eco/addons/`; it
-  falls back to three's WebGL2 backend by itself, and `?ecoBackend=webgl2` forces that. Every
+  falls back to three's WebGL2 backend by itself, and `?ecoBackend=webgl2` forces that.
   PoBrawl uses the same r186 build (`?brawlBackend=webgl2` forces its fallback; its GPU blood,
   crowd and confetti simulations need WebGPU and switch off without it). The other three.js games
   stay on r165 (`three`, `three/addons/`). `three` and `gaussian-splats-3d`

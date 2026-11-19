@@ -131,6 +131,8 @@ class LightingMethods {
       if (_beamDir.lengthSq() < 1e-6) _beamDir.set(0, 1, 0); else _beamDir.normalize();
       atmo.cone.quaternion.setFromUnitVectors(_upY, _beamDir);
       atmo.cone.position.copy(L.spot.position).addScaledVector(_beamDir, -5.4);
+      // The volumetric beam reads the lamp's shadow map (arena.js beamMaterial).
+      atmo.cone.material.userData.sync?.();
     }
 
     // Backlights: behind each fighter, opposite the camera.

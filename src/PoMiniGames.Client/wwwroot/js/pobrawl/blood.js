@@ -192,12 +192,17 @@ class BloodMethods {
         fluid.setPusher(pusher, _p.x, _p.z, vx, vz);
         // The same feet kick lying confetti back into the air (confettiSim.js).
         this._confetti?.setPusher(pusher, _p.x, _p.z, vx, vz);
+        this._splinters?.setPusher(pusher, _p.x, _p.z, vx, vz);
         pusher++;
         was.x = _p.x; was.z = _p.z;
       }
     }
     for (; sphere < 8; sphere++) fluid.setCollider(sphere, 0, -99, 0, 0);
-    for (; pusher < 8; pusher++) { fluid.setPusher(pusher, 0, 0, 0, 0); this._confetti?.setPusher(pusher, 0, 0, 0, 0); }
+    for (; pusher < 8; pusher++) {
+      fluid.setPusher(pusher, 0, 0, 0, 0);
+      this._confetti?.setPusher(pusher, 0, 0, 0, 0);
+      this._splinters?.setPusher(pusher, 0, 0, 0, 0);
+    }
     fluid.update(dt);
   }
 

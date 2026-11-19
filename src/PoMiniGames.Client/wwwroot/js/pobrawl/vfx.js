@@ -6,7 +6,7 @@
 
 import * as THREE from 'three-eco/webgpu';
 import { createParticlePool } from './particlePool.js';
-import { createConfettiSim } from './confettiSim.js';
+import { createConfettiSim, SPLINTERS } from './confettiSim.js';
 import { MAT_HALF } from './constants.js';
 import { SeveredArm } from './ragdollPhysics.js';
 import { stepWorld } from './physics.js';
@@ -222,9 +222,12 @@ class VfxMethods {
     // Confetti that lands, lies there and gets kicked about (confettiSim.js). Null where the
     // renderer cannot simulate it; then confetti goes through the pool above, as it did.
     this._confetti = createConfettiSim(this.renderer, { half: MAT_HALF, floorY: 0.05 });
-    if (this._confetti) {
-      this.scene.add(this._confetti.mesh);
-      try { this._confetti.warm(); } catch { /* compiled on first use instead */ }
+    // The same simulation with wood in it: what a smashed crate throws (_crateSplinters).
+    this._splinters = this._confetti ? createConfettiSim(this.renderer, { half: MAT_HALF, floorY: 0.05, kind: SPLINTERS }) : null;
+    for (const sim of [this._confetti, this._splinters]) {
+      if (!sim) continue;
+      this.scene.add(sim.mesh);
+      try { sim.warm(); } catch { /* compiled on first use instead */ }
     }
   }
 
@@ -239,6 +242,7 @@ class VfxMethods {
   _updateParticles(dt) {
     this._particles?.update(dt, this.camera);
     this._confetti?.update(dt);
+    this._splinters?.update(dt);
   }
 
   // Canvas dust kicked up where a body hits the mat, or feet skid under a heavy
@@ -417,6 +421,18 @@ class VfxMethods {
   }
 
   // Celebration confetti glitter over the ring at the K.O.
+  /**
+   * A crate went to pieces at `pos`: a burst of slivers that scatter, drop and lie where
+   * they fall (WebGPU only). The few big fragments props.js spawns are physics bodies and
+   * are capped; these are what makes it read as a crate that actually splintered.
+   */
+  _crateSplinters(pos) {
+    this._splinters?.emit({
+      origin: [pos.x, pos.y, pos.z], box: [0.16, 0.14, 0.16],
+      velocity: [0, 2.6, 0], scatter: [3.6, 2.4, 3.6], count: 90,
+    });
+  }
+
   _spawnConfetti() {
     if (this._confetti) {
       // Let go from the rafters over the whole ring; it drifts down and stays where it lands.

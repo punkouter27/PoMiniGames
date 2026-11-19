@@ -3,8 +3,8 @@ import * as THREE from 'three-eco/webgpu';
 import {
   Fn, Loop, abs, atan, attribute, cameraFar, cameraNear, cameraPosition, clamp, dot, exp, float, fract, instanceIndex,
   instancedArray, length, materialOpacity, max, mix, mod, modelWorldMatrixInverse, perspectiveDepthToViewZ,
-  positionGeometry, positionLocal, positionView, screenCoordinate, select, sin, smoothstep, step, uniform, vec2, vec3,
-  vec4, viewportDepthTexture,
+  modelWorldMatrix, positionGeometry, positionLocal, positionView, screenCoordinate, select, sin, smoothstep, step,
+  texture, uniform, vec2, vec3, vec4, viewportDepthTexture,
 } from 'three-eco/tsl';
 import { RectAreaLightTexturesLib } from 'three-eco/addons/lights/RectAreaLightTexturesLib.js';
 import { createSoftGrid } from '../platform/softChain.js';
@@ -254,7 +254,7 @@ export function buildArena(scene, quality = {}) {
     scene.add(strip);
   }
 
-  const atmo = buildAtmosphere(scene, quality.renderer);
+  const atmo = buildAtmosphere(scene, quality.renderer, spot);
   const backdrop = buildBackdrop(scene);
   const crowd = buildCrowd(scene, quality.renderer);
   scene.add(crowd);
@@ -528,14 +528,22 @@ export function updateBanners(backdrop, t, dt = 1 / 60, kick = 0) {
 // lens through the cone and adds up the lit haze along it, so the shaft has depth, is denser
 // seen down its length than across it, brightens toward the lamp, and stops at whatever
 // solid thing the ray meets first (a fighter standing in the beam is in front of the haze
-// behind them, and behind the haze in front). It does not cast the fighters' shadows into
-// the haze: that needs the lamp's shadow map sampled per step, which this does not do.
+// behind them, and behind the haze in front). While the lamp is casting shadows (the high
+// tier), every step also asks its shadow map whether the lamp can see that point, so a
+// fighter in the beam throws a dark shaft down through the haze below them.
 // Elsewhere it is the painted cone below.
 const BEAM_STEPS = 28;
 const BEAM_TOP = 0.35, BEAM_BOTTOM = 4.2, BEAM_HALF = 5;      // the cone's own shape (see geometry)
 const BEAM_GAIN = 0.62;
 
-function beamMaterial() {
+function beamMaterial(spot) {
+  // The lamp's shadow map is made on its first shadow pass, after this material: a stand-in
+  // depth texture with the same comparison holds the slot until `sync` can bind the real one.
+  const standIn = new THREE.DepthTexture(1, 1);
+  standIn.compareFunction = THREE.LessEqualCompare;
+  const shadowMap = texture(standIn);
+  const shadowOn = uniform(0);
+  const shadowMatrix = uniform(spot ? spot.shadow.matrix : new THREE.Matrix4());
   const material = new THREE.MeshBasicNodeMaterial({
     transparent: true, opacity: 0.09, blending: THREE.AdditiveBlending, depthWrite: false,
     // Back faces only, untested against depth: one fragment per pixel that the whole volume
@@ -558,18 +566,31 @@ function beamMaterial() {
       const radial = length(p.xz).div(mix(BEAM_BOTTOM, BEAM_TOP, up));
       // Inside the frustum, soft toward its edge, and thicker toward the lamp.
       const inside = step(abs(p.y), BEAM_HALF).mul(smoothstep(0.5, 1, radial).oneMinus());
-      lit.addAssign(inside.mul(mix(0.3, 1, up.mul(up))));
+      // Can the lamp see this point? The same lookup the lit surfaces make (three's
+      // ShadowNode): into the lamp's clip space, y flipped, compared against its depth map.
+      const inLamp = shadowMatrix.mul(modelWorldMatrix.mul(vec4(p, 1)));
+      const sc = inLamp.xyz.div(inLamp.w);
+      const seen = shadowMap.sample(vec2(sc.x, sc.y.oneMinus())).compare(sc.z.sub(0.002));
+      const inMap = step(0, sc.x).mul(step(sc.x, 1)).mul(step(0, sc.y)).mul(step(sc.y, 1)).mul(step(sc.z, 1));
+      const unshadowed = mix(1, seen, shadowOn.mul(inMap));
+      lit.addAssign(inside.mul(mix(0.3, 1, up.mul(up))).mul(unshadowed));
     });
     const depth = length(span).mul(reach);
     return vec3(1, 0.955, 0.88).mul(lit.div(BEAM_STEPS)).mul(depth).mul(materialOpacity).mul(BEAM_GAIN);
   })();
+  /** Per frame: bind the lamp's shadow map once it exists, and follow whether it is casting. */
+  material.userData.sync = () => {
+    const depth = spot?.shadow?.map?.depthTexture;
+    if (depth && shadowMap.value !== depth && depth.compareFunction === THREE.LessEqualCompare) shadowMap.value = depth;
+    shadowOn.value = depth && shadowMap.value === depth && spot.castShadow ? 1 : 0;
+  };
   return material;
 }
 
-function buildAtmosphere(scene, renderer = null) {
+function buildAtmosphere(scene, renderer = null, spot = null) {
   if (renderer?.backend?.isWebGPUBackend && !/[?&]brawlBeam=off/.test(globalThis.location?.search ?? '')) {
     const cone = new THREE.Mesh(
-      new THREE.CylinderGeometry(BEAM_TOP, BEAM_BOTTOM, 2 * BEAM_HALF, 24, 1, false), beamMaterial());
+      new THREE.CylinderGeometry(BEAM_TOP, BEAM_BOTTOM, 2 * BEAM_HALF, 24, 1, false), beamMaterial(spot));
     cone.position.y = 5.6;
     cone.renderOrder = 2;
     cone.frustumCulled = false;
