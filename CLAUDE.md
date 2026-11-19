@@ -18,12 +18,9 @@ dotnet build PoMiniGames.slnx                                  # warnings are er
 dotnet format PoMiniGames.slnx --verify-no-changes             # style gate (run locally)
 pwsh scripts/ci/css-lint.ps1                                      # CSS gate; run after any scripted CSS edit
 npm ci --prefix scripts/ci/js-lint && npm run lint --prefix scripts/ci/js-lint  # JS gate (undefined identifiers), run locally
-pwsh scripts/ci/test-ceilings.ps1                                 # test-count ceiling guards only
 
 dotnet test tests/PoMiniGames.Unit --filter "FullyQualifiedName~PoMule"   # one test / one area
 dotnet test tests/PoMiniGames.E2EUI -p:SkipPlaywrightInstall=true --filter "..."
-node --test tests/pomule-world.test.mjs                        # one JS engine test file
-node --test "tests/*.test.mjs"                                 # every JS engine test
 ```
 
 - The API host serves the client on one origin, so there is no separate client dev server. Never
@@ -37,7 +34,7 @@ node --test "tests/*.test.mjs"                                 # every JS engine
   `scripts/pre-deploy.ps1` clears stale Kudu files on the Windows App Service, deploy, then wait
   for `/health/live` to answer with this commit's `X-Commit`. The file is identical in every Po
   repo and each repo owns its copy. Tests and checks run locally: `scripts/ci-checks.ps1` still
-  bundles the trim/size, format, Bicep, CSS, test-ceiling and JavaScript checks, but CI no longer
+  bundles the trim/size, format, Bicep, CSS and JavaScript checks, but CI no longer
   calls it. Provision Azure with `azd up` (or `az deployment ... what-if`) from a local shell.
 
 ## Tests
@@ -45,12 +42,13 @@ node --test "tests/*.test.mjs"                                 # every JS engine
 - There are four tiers. **Unit** is hermetic. **Integration** uses a Testcontainers Azurite.
   **E2EAPI** runs HTTP contract tests against the compose Azurite. **E2EUI** runs C# Playwright
   against a Kestrel host in the `Test` environment.
-- Each tier has a ceiling on its test-method count, enforced by `*CeilingTests.cs` via
-  `tests/Shared/TierCeilingGuard.cs`: Unit 85, Integration 34, E2EAPI 18, E2EUI 22. When a tier
-  is full, fold facts into the class's `Scenario` theory (`tests/PoMiniGames.Unit/Scenarios.cs`)
-  or move a test to another tier rather than raising the cap.
-- Every fixture applies `tests/Shared/TestBudgetGuard.cs`, which forces mock or stub AI and
-  disables Key Vault. Any new paid-AI boundary needs a key there so tests never spend money.
+- **Owner decision 2026-11-19:** `tests/` holds only the four project folders
+  (`PoMiniGames.Unit`, `.Integration`, `.E2EAPI`, `.E2EUI`). There is no shared test-utilities
+  project, no test-count ceiling guard and no root-level JS engine tests; tests that needed those
+  helpers were dropped. Don't add files or folders at the `tests/` root.
+- Each host fixture (`TestWebApplicationFactory`, `PoMiniGamesE2EFixture`, `KestrelServerFixture`)
+  sets its own config overrides inline: no live Wikipedia or external quiz packs, a dry Racer
+  track, no Key Vault, and storage on Azurite. A new external boundary needs a key in all three.
 
 ## Architecture
 
