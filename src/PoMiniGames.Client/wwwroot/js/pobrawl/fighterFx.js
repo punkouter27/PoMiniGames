@@ -13,7 +13,8 @@
 import * as THREE from 'three-eco/webgpu';
 import {
   Fn, abs, attribute, clamp, dot, exp, float, floor, fract, length, materialColor, materialRoughness, max, mix,
-  normalView, output, positionLocal, positionViewDirection, pow, sin, smoothstep, step, texture, userData, vec2, vec4,
+  normalView, output, positionLocal, positionViewDirection, pow, sin, smoothstep, step, texture, userData, vec2, vec3,
+  vec4,
 } from 'three-eco/tsl';
 
 // Fresnel edge darkening in the fighters' own materials — free, unlike an inverted hull /
@@ -91,6 +92,29 @@ function noiseTexture() {
   return _noiseTex;
 }
 
+// Where the sweat is on a piece of skin: beads standing on it, and trickles running down it.
+// Both come up out of the noise as `fx.sweat` rises, the trickles sliding as `sweatRun` grows.
+// `glint` is the bright heart of each bead and the spine of each trickle: the part that
+// throws the lights back whatever the angle, because a bead is a little dome.
+function sweatParts() {
+  const noise = noiseTexture();
+  const sweat = fx('sweat', 'float'), sweatRun = fx('sweatRun', 'float');
+  const p = positionLocal;
+  const across = p.x.add(p.z.mul(0.73));
+  const on = smoothstep(0.05, 0.2, sweat);
+  // Beads: about a centimetre across, a few at first, a scattering on a drenched face.
+  const beadNoise = texture(noise, vec2(across, p.y).mul(74)).g;
+  const beadAt = mix(0.985, 0.8, sweat);
+  const beads = smoothstep(beadAt, beadAt.add(0.025), beadNoise);
+  const down = p.y.add(sweatRun);
+  const strand = texture(noise, vec2(across.mul(14), down.mul(0.9))).r;
+  const trickleAt = mix(0.96, 0.52, sweat);
+  const fed = smoothstep(trickleAt, trickleAt.add(0.06), texture(noise, vec2(across.mul(2.3), down.mul(0.27))).b);
+  const trickles = smoothstep(0.66, 0.72, strand).mul(fed);
+  const glint = max(smoothstep(beadAt.add(0.03), beadAt.add(0.06), beadNoise), smoothstep(0.71, 0.76, strand).mul(fed).mul(0.5));
+  return { wetSkin: max(beads, trickles).mul(on), glint: glint.mul(on) };
+}
+
 // Blood on a fighter: fine spatter where it landed, and thin runs that creep down the body
 // while it is fresh. All of it is noise in the mesh's own space, so it stays put as the body
 // moves, and it is thresholded by the fighter's wear, so more blood means more of the same
@@ -99,7 +123,7 @@ function noiseTexture() {
 //   runs   noise stretched down the body, so it reads as strands. Its lookup slides with
 //          `run` (metres travelled), which is what makes them flow
 //   wet    fresh blood is glossy; it dulls as `wet` falls
-function bloodNodes(share) {
+function bloodNodes(share, skin = false) {
   const wear = fx('wear', 'float'), run = fx('run', 'float'), wet = fx('wet', 'float');
   const noise = noiseTexture();
   const p = positionLocal;
@@ -140,9 +164,24 @@ function bloodNodes(share) {
   const runs = smoothstep(0.63, 0.69, lanes.b)
     .mul(smoothstep(feedAt, feedAt.add(0.06), texture(noise, vec2(across.mul(2), slide.mul(0.31))).r));
   const stained = max(max(spots, runs.mul(0.92)), clamp(drip, 0, 1)).mul(smoothstep(0, 0.04, wear));
+  if (!skin) {
+    return {
+      colorNode: mix(materialColor.rgb, new THREE.Color(BLOOD_COLOR), stained.mul(0.9)),
+      roughnessNode: mix(materialRoughness, 0.22, stained.mul(wet)),
+    };
+  }
+  // Skin sweats. The material's own roughness already falls as a fighter tires
+  // (hitResolution.js _applyDamageWear); that makes the whole face a little glossier, which
+  // on its own reads as plastic. What reads as sweat is that it is uneven: beads standing on
+  // the skin, each a pinpoint of the ring lights, and trickles running down from the brow
+  // that slide as `sweatRun` grows. Both come up out of the same noise as `sweat` rises,
+  // and the skin under them is a touch darker, as wet skin is.
+  const sweat = fx('sweat', 'float');
+  const { wetSkin } = sweatParts();
+  const sheen = mix(mix(materialRoughness, 0.2, sweat.mul(0.5)), 0.05, wetSkin);
   return {
-    colorNode: mix(materialColor.rgb, new THREE.Color(BLOOD_COLOR), stained.mul(0.9)),
-    roughnessNode: mix(materialRoughness, 0.22, stained.mul(wet)),
+    colorNode: mix(materialColor.rgb.mul(wetSkin.mul(0.08).oneMinus()), new THREE.Color(BLOOD_COLOR), stained.mul(0.9)),
+    roughnessNode: mix(sheen, 0.22, stained.mul(wet)),
   };
 }
 // The ink edge plus the blow's ripple, for the parts that carry `jpos` (skin and clothes).
@@ -170,7 +209,35 @@ const INK_RIPPLE_OUTPUT = Fn(() => {
   return vec4(mix(lit, fx('inkColor', 'color'), ink), output.a);
 })();
 
-const BLOOD_SKIN = bloodNodes(WEAR_SKIN);
+// The same for skin, which also sweats (see sweatParts).
+const INK_RIPPLE_SWEAT_OUTPUT = Fn(() => {
+  const facing = clamp(dot(normalView, positionViewDirection), 0, 1);
+  const ink = clamp(pow(facing.oneMinus(), fx('inkPower', 'float')).mul(fx('ink', 'float')), 0, 1);
+  const jp = attribute('jpos', 'vec3');
+  const joint = userData('fxJoint', 'float');
+  const dents = fx('dents', 'vec4'), ages = fx('dentAges', 'float');
+  let shade = float(0);
+  for (let i = 0; i < DENTS; i++) {
+    const h = dents.element(i), age = ages.element(i);
+    const mine = step(abs(floor(h.w).sub(joint)), 0.5).mul(fract(h.w));
+    const d = length(jp.sub(h.xyz));
+    const edge = d.sub(age.mul(RIPPLE_SPEED)).mul(16);
+    const band = exp(edge.mul(edge).negate());
+    const fade = smoothstep(0, RIPPLE_SECS, age).oneMinus().mul(exp(d.mul(-3.5)));
+    shade = shade.add(mine.mul(band).mul(fade).mul(sin(d.mul(42).sub(age.mul(34)))));
+  }
+  // Sweat throws the ring lights back: a pinpoint from every bead and trickle, and a wet
+  // sheen where the skin turns away from the eye. Added to the lit colour, scaled by how
+  // brightly this patch is lit, so a fighter in shadow does not sparkle.
+  const { glint } = sweatParts();
+  const lightOn = clamp(dot(sane(output.rgb), vec3(0.3, 0.5, 0.2)).mul(2.2), 0.15, 1.4);
+  const rim = pow(facing.oneMinus(), 3).mul(fx('sweat', 'float')).mul(0.22);
+  const shine = vec3(1, 0.97, 0.92).mul(glint.mul(0.75).add(rim)).mul(lightOn);
+  const lit = sane(output.rgb).mul(shade.mul(0.55).add(1)).add(shine);
+  return vec4(mix(lit, fx('inkColor', 'color'), ink), output.a);
+})();
+
+const BLOOD_SKIN = bloodNodes(WEAR_SKIN, true);
 const BLOOD_CLOTH = bloodNodes(WEAR_CLOTH);
 
 const isLit = (m) => !!m && (m.isMeshStandardNodeMaterial || m.isMeshPhysicalNodeMaterial);
@@ -204,6 +271,8 @@ export function applyFighterFx(rig, { ink = true, blood = true } = {}) {
     jointNames: null,
     run: 0,        // metres the fresh blood has run
     wet: 0,        // 1 = just bled, falling to 0 as it dries
+    sweat: 0,      // 0..1 how hard this fighter is sweating (hitResolution.js _applyDamageWear)
+    sweatRun: 0,   // metres the trickles have run
   };
   // Each mesh learns which joint carries it, and each vertex where it sits in that joint's
   // space, so a wound recorded on the head stays on the head whatever the body does.
@@ -251,8 +320,9 @@ export function applyFighterFx(rig, { ink = true, blood = true } = {}) {
       if (!nodes) continue;
       m.colorNode = nodes.colorNode;
       m.roughnessNode = nodes.roughnessNode;
-      // These parts carry `jpos`, so they can show the blow's ripple as well as the ink.
-      if (ink) m.outputNode = INK_RIPPLE_OUTPUT;
+      // These parts carry `jpos`, so they can show the blow's ripple as well as the ink;
+      // skin also shows its sweat.
+      if (ink) m.outputNode = nodes === BLOOD_SKIN ? INK_RIPPLE_SWEAT_OUTPUT : INK_RIPPLE_OUTPUT;
       m.needsUpdate = true;
     }
   }
@@ -325,6 +395,8 @@ export function recordDent(rig, state, point, strength = 0.5) {
 /** Per frame: age the ripples and run the squash springs (volume kept: thinner means taller). */
 export function tickFighterFx(rig, state, dt) {
   for (let i = 0; i < DENTS; i++) if (state.dentAges[i] < 9) state.dentAges[i] += dt;
+  // Sweat trickles a few centimetres a second, faster the harder the fighter is sweating.
+  state.sweatRun += dt * 0.045 * state.sweat;
   for (let i = state.squashes.length - 1; i >= 0; i--) {
     const q = state.squashes[i];
     q.t += dt;

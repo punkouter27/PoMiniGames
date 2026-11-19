@@ -75,6 +75,10 @@ const WET_SPOT_SECS = 14;
 const WET_SPOT_REACH = 0.22;
 const PRINT_STRIDE = 0.3;
 const PRINT_FADE = 0.7;
+// Sweat dripping off the chin: from this much sweat, at this interval, down to this one.
+const SWEAT_DRIP_FROM = 0.22;
+const SWEAT_DRIP_SLOW = 1.5;
+const SWEAT_DRIP_FAST = 0.28;
 
 function rnd(a, b) { return a + Math.random() * (b - a); }
 
@@ -231,7 +235,19 @@ class BloodMethods {
         was.x = _p.x; was.z = _p.z;
       }
     }
-    for (; sphere < 8; sphere++) fluid.setCollider(sphere, 0, -99, 0, 0);
+    // The corner crate stacks, each as one sphere round what is left of it: a spray thrown
+    // into a corner breaks on the crates instead of passing through them.
+    const corners = [[0, 0, 0, 0], [0, 0, 0, 0], [0, 0, 0, 0], [0, 0, 0, 0]];
+    for (const entry of this.props?.bodies || []) {
+      const body = entry.body;
+      if (body.userData.isDebris || Math.abs(body.position.x) < 2.5 || Math.abs(body.position.z) < 2.5) continue;
+      const c = corners[(body.position.x > 0 ? 1 : 0) + (body.position.z > 0 ? 2 : 0)];
+      c[0] += body.position.x; c[1] += body.position.y; c[2] += body.position.z; c[3]++;
+    }
+    for (const c of corners) {
+      if (c[3] && sphere < 12) fluid.setCollider(sphere++, c[0] / c[3], c[1] / c[3], c[2] / c[3], 0.28 + 0.11 * Math.sqrt(c[3]));
+    }
+    for (; sphere < 12; sphere++) fluid.setCollider(sphere, 0, -99, 0, 0);
     for (; pusher < 8; pusher++) {
       fluid.setPusher(pusher, 0, 0, 0, 0);
       this._confetti?.setPusher(pusher, 0, 0, 0, 0);
@@ -390,7 +406,11 @@ class BloodMethods {
     this._spray?.update(dt, this.camera);
     this._stepBloodFluid(dt);
     // Sweat darkens the vinyl where it lands and dries off (matWear.js).
-    this._stepDrops(this._sweatDrops, dt, (x, z) => this.matWear?.sweat(x, z, 0.02, 1));
+    this._stepDrops(this._sweatDrops, dt, (x, z) => {
+      this.matWear?.sweat(x, z, 0.02, 1);
+      // Each drop that lands leaves the canvas a little wetter (bloodFluid.js; it dries slowly).
+      this._fluid?.splat(x, z, 0.07, 0.3, true);
+    });
     this._updateStains(dt);
   }
 
@@ -810,6 +830,9 @@ class BloodMethods {
     let dx = dir ? dir.x : 0, dz = dir ? dir.z : 0;
     const len = Math.sqrt(dx * dx + dz * dz);
     if (len < 1e-3) { const a = Math.random() * Math.PI * 2; dx = Math.cos(a); dz = Math.sin(a); } else { dx /= len; dz /= len; }
+    // The fine spray off a struck face: simulated droplets of sweat, more of them the wetter
+    // the fighter is, alongside the few lit drops below.
+    this._ensureBloodFluid()?.emit(headPos, { x: dx, z: dz }, 0.9, Math.round((24 + 70 * wet) * this._sprayScale), 1, true);
     for (let i = 0; i < n; i++) {
       const fan = rnd(-0.8, 0.8), sp = rnd(1.8, 3.6);
       this._emitDrop(this._sweatDrops,
@@ -837,6 +860,21 @@ class BloodMethods {
     // Head speed relative to the body: walking doesn't flick, a snap does.
     const head = f.rig.joints.head;
     if (!head) return;
+    // Sweat drips off the chin once there is enough of it: slowly at first, a steady drip
+    // from a fighter who is drenched. The drops fall, land and wet the canvas.
+    const wetness = f.bloodWear?.sweat ?? f.sweat ?? 0;
+    if (wetness > SWEAT_DRIP_FROM) {
+      f.sweatDripT = (f.sweatDripT ?? 1) - dt;
+      if (f.sweatDripT <= 0) {
+        f.sweatDripT = SWEAT_DRIP_SLOW + (SWEAT_DRIP_FAST - SWEAT_DRIP_SLOW) * Math.min(1, (wetness - SWEAT_DRIP_FROM) / (1 - SWEAT_DRIP_FROM));
+        const hs = f.rig.config?.heightScale || 1;
+        head.getWorldPosition(_p);
+        this._emitDrop(this._sweatDrops,
+          _p.x + rnd(-0.07, 0.07) * hs, _p.y + rnd(0.0, 0.05) * hs, _p.z + rnd(-0.07, 0.07) * hs,
+          f.vel.x * 0.6 + rnd(-0.15, 0.15), rnd(-0.2, 0), f.vel.z * 0.6 + rnd(-0.15, 0.15),
+          rnd(0.006, 0.011), SWEAT_TINT);
+      }
+    }
     head.getWorldPosition(_head).sub(f.rig.root.position);
     if (!f.headRel) { f.headRel = _head.clone(); return; }
     const vx = (_head.x - f.headRel.x) / dt, vy = (_head.y - f.headRel.y) / dt, vz = (_head.z - f.headRel.z) / dt;

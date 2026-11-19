@@ -20,6 +20,11 @@
 // The canvas material reads the grid directly, so the film is lit by the ring lights like the
 // vinyl it sits on: dark where it has dried in, glossy where it is still wet.
 //
+// SWEAT. The same droplets and the same film carry water as well as blood. A droplet is one
+// or the other (thrown off a face by a blow, or let go of at the chin); where it lands it
+// adds to the cell's water, which spreads thinner than blood, leaves no stain and dries off
+// more slowly. Over a long round the canvas under the fighters goes dark and glossy.
+//
 // Presentation only: nothing here feeds back into the match.
 import * as THREE from 'three-eco/webgpu';
 import {
@@ -30,7 +35,7 @@ import {
 
 const DROPS = 16384;          // droplets in the ring buffer
 const GRID = 192;             // film cells per side
-const COLLIDERS = 8;          // body spheres the droplets glance off
+const COLLIDERS = 12;         // spheres the droplets glance off: body parts, and the crate stacks
 const PUSHERS = 8;            // feet and bodies that drag the film
 const SPLATS = 12;            // lit-drop landings accepted per frame
 const EMITS = 6;              // bursts accepted per frame
@@ -42,6 +47,11 @@ const BEAD_VOLUME = 0.3;      // film height one droplet adds to the cell it lan
 const SPREAD_ABOVE = 0.22;    // film deeper than this runs into its neighbours
 const SPREAD_RATE = 0.18;     // share of the height difference moved per pass (stable under 0.25)
 const DRY_SECS = 22;          // wet film → dry
+const WATER_SPREAD_ABOVE = 0.1;   // water is thinner than blood: it runs sooner
+const WATER_DRY_SECS = 48;        // and a sweat-wet canvas stays wet for most of a round
+const SWEAT_COLOR = 0xc4d6e4;     // a droplet of it in the air
+const ROPE_HEIGHTS = [0.5, 0.9, 1.3];   // arena.js
+const ROPE_REACH = 0.035;         // how close to a rope's height a droplet has to cross to catch on it
 const PUSH_RADIUS = 0.24;     // metres round a foot that drags the film
 const DROP_COLOR = 0x7c0e0b;  // unlit, so it carries its own brightness
 const FILM_WET = 0x4d0907;
@@ -59,13 +69,14 @@ export function createBloodFluid(renderer, { half, floorY }) {
   // ── Droplets ─────────────────────────────────────────────────────────
   const P = instancedArray(DROPS, 'vec4');     // xyz, seconds left (<= 0: free slot)
   const V = instancedArray(DROPS, 'vec4');     // velocity, radius in metres
-  const S = instancedArray(DROPS, 'vec4');     // landed 0/1, life it started with, alpha, spare
+  const S = instancedArray(DROPS, 'vec4');     // landed 0/1, kind (0 blood, 1 sweat), alpha, mist 0/1
 
   // ── Film ─────────────────────────────────────────────────────────────
   const CELLS = GRID * GRID;
-  const A = instancedArray(CELLS, 'vec4');     // x wet height, y dried stain: what is drawn
+  const A = instancedArray(CELLS, 'vec4');     // x wet blood, y dried stain, z water: what is drawn
   const B = instancedArray(CELLS, 'vec4');     // scratch for the two-pass step
-  const D = instancedArray(CELLS, 'float');    // this frame's deposits from the droplet pass
+  const D = instancedArray(CELLS, 'float');    // this frame's blood from the droplet pass
+  const DW = instancedArray(CELLS, 'float');   // and its water
   const cellOf = (xz) => {
     const g = clamp(xz.add(half).div(2 * half).mul(GRID), 0, GRID - 1);
     return int(floor(g.y)).mul(GRID).add(int(floor(g.x)));
@@ -81,6 +92,8 @@ export function createBloodFluid(renderer, { half, floorY }) {
   const eStart = uniform(0), eCount = uniform(0), ePower = uniform(1), eSeed = uniform(0, 'uint');
   // 1 = thrown by a blow; near 0 = let go of, a drip that only falls.
   const eThrow = uniform(1);
+  const eKind = uniform(0);      // 0 blood, 1 sweat
+  const ropeAt = uniform(5.8);   // the ropes' distance from the ring's centre
   const emitPass = Fn(() => {
     const slot = float(instanceIndex).sub(eStart);
     const offset = select(slot.lessThan(0), slot.add(DROPS), slot);
@@ -99,7 +112,9 @@ export function createBloodFluid(renderer, { half, floorY }) {
       const life = mix(1.2, 2.6, rnd(10));
       P.element(instanceIndex).assign(vec4(eOrigin.add(jitter), life));
       V.element(instanceIndex).assign(vec4(cone, mix(mix(0.009, 0.024, rnd(11)), mix(0.05, 0.085, rnd(11)), mist)));
-      S.element(instanceIndex).assign(vec4(0, life, mix(mix(0.8, 1, rnd(12)), 0.2, mist), mist));
+      // Sweat is clear: the same droplet, a good deal fainter.
+      const alpha = mix(mix(0.8, 1, rnd(12)), 0.2, mist).mul(mix(1, mix(0.42, 0.2, mist), eKind));
+      S.element(instanceIndex).assign(vec4(0, eKind, alpha, mist));
     });
   })().compute(DROPS);
 
@@ -125,6 +140,16 @@ export function createBloodFluid(renderer, { half, floorY }) {
             vel.mulAssign(0.45);
           });
         });
+        // The ropes: a droplet that crosses one at its height catches on it, loses its
+        // throw and drips straight down from there.
+        for (const height of ROPE_HEIGHTS) {
+          const crossedX = abs(p.x).sub(ropeAt).mul(abs(pos.x).sub(ropeAt)).lessThan(0);
+          const crossedZ = abs(p.z).sub(ropeAt).mul(abs(pos.z).sub(ropeAt)).lessThan(0);
+          If(crossedX.or(crossedZ).and(abs(pos.y.sub(height)).lessThan(ROPE_REACH)), () => {
+            pos.assign(vec3(p.x, pos.y, p.z));
+            vel.assign(vec3(0, min(vel.y, 0).mul(0.3), 0));
+          });
+        }
         const landed = float(0).toVar();
         const onCanvas = abs(pos.x).lessThan(half).and(abs(pos.z).lessThan(half));
         If(pos.y.lessThanEqual(floorY).and(onCanvas).and(vel.y.lessThan(0)), () => {
@@ -135,7 +160,9 @@ export function createBloodFluid(renderer, { half, floorY }) {
           // Its volume goes into the film. Several droplets can hit one cell in a frame and
           // the adds are not atomic, so some are lost; nobody can count beads.
           const cell = cellOf(pos.xz);
-          D.element(cell).assign(D.element(cell).add(v.w.mul(BEAD_VOLUME / 0.016).mul(s.w.oneMinus())));
+          const volume = v.w.mul(BEAD_VOLUME / 0.016).mul(s.w.oneMinus());
+          D.element(cell).assign(D.element(cell).add(volume.mul(s.y.oneMinus())));
+          DW.element(cell).assign(DW.element(cell).add(volume.mul(s.y)));
         });
         // Off the canvas and under it: gone.
         If(pos.y.lessThan(-0.6), () => { life.assign(0); });
@@ -171,13 +198,19 @@ export function createBloodFluid(renderer, { half, floorY }) {
     const from = xz.sub(drag.mul(dt));
     const film = readA(from.add(half).div(2 * half).mul(GRID)).toVar();
     film.x.addAssign(D.element(instanceIndex));
+    film.z.addAssign(DW.element(instanceIndex));
     Loop(SPLATS, ({ i }) => {
       const sp = splats.element(i);
       const d = xz.sub(sp.xy);
-      film.x.addAssign(sp.w.mul(exp(dot(d, d).negate().div(max(sp.z.mul(sp.z), 0.0001)))));
+      // A negative radius marks a splat of water (see `splat`).
+      const amount = sp.w.mul(exp(dot(d, d).negate().div(max(sp.z.mul(sp.z), 0.0001))));
+      const water = step(sp.z, 0);
+      film.x.addAssign(amount.mul(water.oneMinus()));
+      film.z.addAssign(amount.mul(water));
     });
     D.element(instanceIndex).assign(0);
-    B.element(instanceIndex).assign(vec4(min(film.x, 3), film.y, 0, 0));
+    DW.element(instanceIndex).assign(0);
+    B.element(instanceIndex).assign(vec4(min(film.x, 3), film.y, min(film.z, 2), 0));
   })().compute(CELLS);
 
   // Film, pass 2: spread and dry, B → A.
@@ -185,16 +218,20 @@ export function createBloodFluid(renderer, { half, floorY }) {
     const ix = int(instanceIndex.mod(uint(GRID))), iz = int(instanceIndex.div(uint(GRID)));
     const here = B.element(instanceIndex);
     const h = here.x.toVar();
-    const flow = float(0).toVar();
+    const w = here.z.toVar();
+    const flow = float(0).toVar(), waterFlow = float(0).toVar();
     for (const [dx, dz] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) {
       const nx = clamp(ix.add(dx), 0, GRID - 1), nz = clamp(iz.add(dz), 0, GRID - 1);
-      const hn = B.element(nz.mul(GRID).add(nx)).x;
+      const next = B.element(nz.mul(GRID).add(nx));
+      const hn = next.x;
+      waterFlow.addAssign(next.z.sub(w).mul(step(WATER_SPREAD_ABOVE, max(next.z, w))));
       // Surface tension: the pair only exchanges when the deeper of the two is over the bar.
       flow.addAssign(hn.sub(h).mul(step(SPREAD_ABOVE, max(hn, h))));
     }
     const wet = max(h.add(flow.mul(SPREAD_RATE)), 0).toVar();
     const stain = max(here.y, min(wet.mul(5), 1));
-    A.element(instanceIndex).assign(vec4(wet.mul(exp(dt.div(-DRY_SECS))), stain, 0, 0));
+    const water = max(w.add(waterFlow.mul(SPREAD_RATE)), 0).mul(exp(dt.div(-WATER_DRY_SECS)));
+    A.element(instanceIndex).assign(vec4(wet.mul(exp(dt.div(-DRY_SECS))), stain, water, 0));
   })().compute(CELLS);
 
   const clearDrops = Fn(() => { P.element(instanceIndex).assign(vec4(0, -9, 0, 0)); })().compute(DROPS);
@@ -202,6 +239,7 @@ export function createBloodFluid(renderer, { half, floorY }) {
     A.element(instanceIndex).assign(vec4(0));
     B.element(instanceIndex).assign(vec4(0));
     D.element(instanceIndex).assign(0);
+    DW.element(instanceIndex).assign(0);
   })().compute(CELLS);
 
   // ── Drawing the droplets ─────────────────────────────────────────────
@@ -229,7 +267,7 @@ export function createBloodFluid(renderer, { half, floorY }) {
     material.vertexNode = cameraProjectionMatrix.mul(select(s.x.greaterThan(0.5), bead, air));
     const fade = smoothstep(0, 0.35, p.w);
     const r = length(uv().sub(0.5)).mul(2);
-    material.colorNode = new THREE.Color(DROP_COLOR);
+    material.colorNode = varying(mix(new THREE.Color(DROP_COLOR), new THREE.Color(SWEAT_COLOR), s.y));
     material.opacityNode = smoothstep(0.55, 1, r).oneMinus().mul(varying(select(alive, s.z.mul(fade), 0)));
   }
   const mesh = new THREE.Mesh(geo, material);
@@ -249,18 +287,21 @@ export function createBloodFluid(renderer, { half, floorY }) {
     const film = mix(mix(at(0, 0), at(1, 0), f.x), mix(at(0, 1), at(1, 1), f.x), f.y);
     // A liquid has an edge: the cover comes up sharply at a thin film, not as a gradient.
     const wet = smoothstep(0.03, 0.1, film.x);
-    const stained = mix(colorNode, new THREE.Color(FILM_DRY), film.y.mul(0.74));
+    // Water has no colour of its own: wet vinyl is the same vinyl, darker, and it shines.
+    const damp = smoothstep(0.02, 0.09, film.z);
+    const stained = mix(colorNode.mul(damp.mul(0.2).oneMinus()), new THREE.Color(FILM_DRY), film.y.mul(0.74));
     // The film has thickness, and its surface slopes down to its edge. That slope is what
     // the ring lights catch: a bright rim round every puddle and bead, which is the single
     // thing that makes a dark patch read as liquid. From the height difference across the
     // four cells this fragment sits between, exaggerated (the real film is a millimetre).
-    const h00 = at(0, 0).x, h10 = at(1, 0).x, h01 = at(0, 1).x, h11 = at(1, 1).x;
+    const height = (c) => c.x.add(c.z.mul(0.6));
+    const h00 = height(at(0, 0)), h10 = height(at(1, 0)), h01 = height(at(0, 1)), h11 = height(at(1, 1));
     const slope = vec2(mix(h10.sub(h00), h11.sub(h01), f.y), mix(h01.sub(h00), h11.sub(h10), f.x)).mul(FILM_RELIEF);
     const filmNormal = transformNormalToView(normalize(vec3(slope.x.negate(), 1, slope.y.negate())));
     return {
       colorNode: mix(stained, new THREE.Color(FILM_WET), wet.mul(0.94)),
-      roughnessNode: mix(roughnessNode, 0.06, wet),
-      normalNode: normalize(mix(normalView, filmNormal, wet)),
+      roughnessNode: mix(mix(roughnessNode, 0.1, damp), 0.06, wet),
+      normalNode: normalize(mix(normalView, filmNormal, max(wet, damp))),
     };
   };
 
@@ -272,19 +313,21 @@ export function createBloodFluid(renderer, { half, floorY }) {
     mesh,
     over,
     /** Throw `count` droplets from `origin` along `dir` (need not be unit). Queued to the next update. */
-    emit(origin, dir, power = 1, count = 160, thrown = 1) {
+    emit(origin, dir, power = 1, count = 160, thrown = 1, sweat = false) {
       // `thrown` near 0 makes it a drip: let go where it is, to fall straight down.
       if (bursts.length >= EMITS) return;
       const flat = Math.hypot(dir.x, dir.z);
       bursts.push({
         x: origin.x, y: origin.y, z: origin.z,
         dx: flat > 0.05 ? dir.x / flat : 0, dz: flat > 0.05 ? dir.z / flat : 0, power, count, thrown,
+        kind: sweat ? 1 : 0,
       });
     },
     /** A lit drop landed at (x, z): add it to the film. */
-    splat(x, z, radius, amount) {
+    splat(x, z, radius, amount, water = false) {
       if (splatCount >= SPLATS) return;
-      splats.array[splatCount++].set(x, z, radius, amount);
+      // Water rides the same slot with its radius negated (the carry pass reads the sign).
+      splats.array[splatCount++].set(x, z, water ? -radius : radius, amount);
     },
     /** Sphere `i` (centre, radius) the droplets glance off this frame; radius 0 switches it off. */
     setCollider(i, x, y, z, radius) {
@@ -302,6 +345,7 @@ export function createBloodFluid(renderer, { half, floorY }) {
         eDir.value.set(b.dx, 0, b.dz);
         eStart.value = cursor; eCount.value = b.count; ePower.value = b.power; eSeed.value = seed;
         eThrow.value = b.thrown;
+        eKind.value = b.kind;
         seed = (seed * 1664525 + 1013904223) >>> 0;
         cursor = (cursor + b.count) % DROPS;
         renderer.compute(emitPass);

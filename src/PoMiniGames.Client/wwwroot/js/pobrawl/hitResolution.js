@@ -891,6 +891,8 @@ class HitResolutionMethods {
     const total = (f.regionDmg.head + f.regionDmg.torso
       + f.regionDmg.arms + f.regionDmg.legs) / 400;
     const sweat = Math.min(1, total * 1.6 + (f.sweat || 0) * 0.7);
+    // The beads and trickles on the skin follow the same value (fighterFx.js).
+    if (f.bloodWear) f.bloodWear.sweat = sweat;
     const skin = f.rig.materials.skinMat;
     skin.roughness = 0.55 - 0.3 * sweat;
     f.rig.materials.suitMat.roughness = 0.95 - 0.3 * sweat;
