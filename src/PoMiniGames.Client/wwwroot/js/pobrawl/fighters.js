@@ -17,8 +17,9 @@
 //
 // Each character exposes `mass`, `attackPower`, and `moveAccel` so the engine
 // can drive weight/momentum/knockback without per-character special cases.
-import * as THREE from 'three';
-import { RoundedBoxGeometry } from 'three/addons/geometries/RoundedBoxGeometry.js';
+import * as THREE from 'three-eco/webgpu';
+import { RoundedBoxGeometry } from 'three-eco/addons/geometries/RoundedBoxGeometry.js';
+import { mergeGeometries } from 'three-eco/addons/utils/BufferGeometryUtils.js';
 
 // Face parameter reference (all optional, defaults in buildFace):
 //   brow:  { color, angle (rad; − = stern inner-down, + = raised), thick, w }
@@ -671,7 +672,7 @@ function buildHair(c, hairMat, dims) {
     back.position.set(0, topY - 0.02, -(d / 2) - 0.004);
     g.add(cap, back);
     if (c.greyTemples) {
-      const greyMat = new THREE.MeshStandardMaterial({
+      const greyMat = new THREE.MeshStandardNodeMaterial({
         color: 0x9a9a9a, roughness: 0.85, metalness: 0.0,
       });
       for (const s of [-1, 1]) {
@@ -848,7 +849,7 @@ function buildFace(c, head, mats, dims) {
   const { faceMat, skinMat } = mats;
 
   // Painted detail plate (tan lines, blush, wrinkles, stubble).
-  const plateMat = new THREE.MeshStandardMaterial({
+  const plateMat = new THREE.MeshStandardNodeMaterial({
     map: faceDetailTexture(c), roughness: 0.6, metalness: 0.0,
   });
   const plate = new THREE.Mesh(
@@ -860,10 +861,10 @@ function buildFace(c, head, mats, dims) {
   // that catches the key light — the highlight is what makes them read alive.
   const eyes = f.eyes || {};
   const squint = eyes.squint ?? 0.15;
-  const scleraMat = new THREE.MeshStandardMaterial({
+  const scleraMat = new THREE.MeshStandardNodeMaterial({
     color: 0xf4f1ea, roughness: 0.45, metalness: 0.0,
   });
-  const irisMat = new THREE.MeshStandardMaterial({
+  const irisMat = new THREE.MeshStandardNodeMaterial({
     color: mixHex(eyes.color ?? 0x3a2e22, 0x000000, 0.25),
     roughness: 0.12, metalness: 0.1,
   });
@@ -880,7 +881,7 @@ function buildFace(c, head, mats, dims) {
   // Brows: the angle carries the personality — Nixon's stern inner-down
   // slabs vs. Bush's amused raise.
   const brow = f.brow || {};
-  const browMat = new THREE.MeshStandardMaterial({
+  const browMat = new THREE.MeshStandardNodeMaterial({
     color: brow.color ?? mixHex(c.hair, 0x000000, 0.35), roughness: 0.9,
   });
   const bThick = brow.thick ?? 1;
@@ -939,13 +940,13 @@ function buildFace(c, head, mats, dims) {
   const mw = m.w ?? 1;
   const mouthY = 0.085;
   const mx = m.smirk ? 0.016 : 0;
-  const lipMat = new THREE.MeshStandardMaterial({
+  const lipMat = new THREE.MeshStandardNodeMaterial({
     color: mixHex(c.faceTint ?? c.skin, 0x7a3a34, 0.65), roughness: 0.6,
   });
-  const toothMat = new THREE.MeshStandardMaterial({
+  const toothMat = new THREE.MeshStandardNodeMaterial({
     color: 0xf2eee4, roughness: 0.35,
   });
-  const innerMat = new THREE.MeshStandardMaterial({
+  const innerMat = new THREE.MeshStandardNodeMaterial({
     color: 0x431a17, roughness: 0.7,
   });
 
@@ -1032,7 +1033,7 @@ function buildFace(c, head, mats, dims) {
 
   // Bush Sr.'s round wire glasses — open rings so the eyes show through.
   if (c.glasses === 'round') {
-    const wireMat = new THREE.MeshStandardMaterial({
+    const wireMat = new THREE.MeshStandardNodeMaterial({
       color: 0xb9975b, roughness: 0.3, metalness: 0.8,
     });
     for (const s of [-1, 1]) {
@@ -1075,9 +1076,9 @@ export function buildFighter(charId, quality = {}) {
   // physical-only keys are dropped here.
   const physical = quality.physicalMaterials !== false;
   const dress = (params) => {
-    if (physical) return new THREE.MeshPhysicalMaterial(params);
+    if (physical) return new THREE.MeshPhysicalNodeMaterial(params);
     const { sheen, sheenRoughness, sheenColor, clearcoat, clearcoatRoughness, ...standard } = params;
-    return new THREE.MeshStandardMaterial(standard);
+    return new THREE.MeshStandardNodeMaterial(standard);
   };
   const b = c.buildScale;
   const casual = c.outfit === 'casual';
@@ -1154,7 +1155,7 @@ export function buildFighter(charId, quality = {}) {
     roughness: casual ? 0.7 : 0.35, metalness: 0.05,
     clearcoat: casual ? 0.0 : 0.55, clearcoatRoughness: 0.25,
   });
-  const shirtMat = new THREE.MeshStandardMaterial({
+  const shirtMat = new THREE.MeshStandardNodeMaterial({
     color: 0xf5f5f0, roughness: 0.85, metalness: 0.0,
   });
 
@@ -1243,7 +1244,7 @@ export function buildFighter(charId, quality = {}) {
     // Flag lapel pin — a tiny canvas-painted Stars and Stripes on the left
     // lapel, angled to hug the chest curve.
     if (c.lapelPin) {
-      const pin = box(0.04, 0.026, 0.008, new THREE.MeshStandardMaterial({
+      const pin = box(0.04, 0.026, 0.008, new THREE.MeshStandardNodeMaterial({
         map: flagTexture(), roughness: 0.4, metalness: 0.3,
       }));
       pin.position.set(0.09 * b, 0.46, 0.152 * b);
@@ -1301,7 +1302,7 @@ export function buildFighter(charId, quality = {}) {
     const collar = taper(0.075, 0.085, 0.045, suitMat, 0.9);
     collar.position.y = 0.585;
     torso.add(collar);
-    const pocket = box(0.06, 0.07, 0.015, new THREE.MeshStandardMaterial({
+    const pocket = box(0.06, 0.07, 0.015, new THREE.MeshStandardNodeMaterial({
       color: 0xc9c4b8, roughness: 0.9,
     }));
     pocket.position.set(0.08 * b, 0.34, 0.15 * b);
@@ -1338,7 +1339,7 @@ export function buildFighter(charId, quality = {}) {
 
   // Cut decal above the brow — hidden until head damage passes the threshold
   // (the engine toggles refs.cut.visible).
-  const cut = box(0.024, 0.06, 0.02, new THREE.MeshStandardMaterial({
+  const cut = box(0.024, 0.06, 0.02, new THREE.MeshStandardNodeMaterial({
     color: 0x7a1512, roughness: 0.35,
   }));
   cut.position.set(0.085, 0.225, dims.d / 2 - 0.005);
@@ -1347,7 +1348,7 @@ export function buildFighter(charId, quality = {}) {
   head.add(cut);
 
   if (c.aviators) {
-    const glassMat = new THREE.MeshStandardMaterial({
+    const glassMat = new THREE.MeshStandardNodeMaterial({
       color: 0x14161a, roughness: 0.1, metalness: 0.85,
     });
     for (const side of [-1, 1]) {
@@ -1409,7 +1410,7 @@ export function buildFighter(charId, quality = {}) {
     knee.add(shoe);
     if (casual) {
       // Sneaker sole: a dark rubber slab under the white upper.
-      const sole = box(0.12, 0.03, 0.28, new THREE.MeshStandardMaterial({
+      const sole = box(0.12, 0.03, 0.28, new THREE.MeshStandardNodeMaterial({
         color: 0x2c2c2c, roughness: 0.9,
       }));
       sole.position.set(0, -0.492, 0.05);
@@ -1470,7 +1471,7 @@ export function buildFighter(charId, quality = {}) {
     }));
   }
 
-  return {
+  return bakeRig({
     root,
     joints,
     jiggles,
@@ -1484,7 +1485,122 @@ export function buildFighter(charId, quality = {}) {
       skin: new THREE.Color(c.skin),
       tie: new THREE.Color(c.tie ?? c.jeans ?? 0x444444),
     },
+  });
+}
+
+// ── Fewer, bigger draws ───────────────────────────────────────────────────
+// A fighter is built from about sixty small meshes (a nose, each ear, each button), and
+// every mesh is a draw in the colour pass and again in each shadow pass. The renderer's cost
+// is per draw, so sixteen fighters in a battle royale were nearly two thousand of them.
+// Two things, once, at build time, with no change to what is on screen:
+//
+//   MERGE   meshes that share a parent and a material become one mesh. Same parent, so the
+//           joint that moves them still moves them; same material, so they shade the same.
+//           Anything the engine holds a handle to stays its own mesh: the joints, the
+//           jiggle pivots, and the refs (skull, cut, mouths) the damage and expression
+//           systems address directly.
+//   PAINT   a fighter also carries a dozen one-off materials for its details (sclera, iris,
+//           brows, lips, lapel pin, shoe soles), each a flat colour, and a different material
+//           cannot merge. Their colours move into the vertices instead, on two materials
+//           the whole rig shares (a glossy one and a matte one), and then they merge like
+//           anything else. Only materials nothing else can reach are repainted: not the
+//           named wardrobe materials the damage and sweat systems tint, nothing textured,
+//           nothing transparent, nothing that glows.
+//   SHADOW  what is left and is smaller than a fist stops casting. A nostril's shadow is
+//           under a pixel; drawing it into the shadow map is not.
+const SMALL_CASTER = 0.05;     // metres, bounding radius
+const GLOSSY_BELOW = 0.45;     // roughness under this paints onto the glossy detail material
+const PLAIN_MAPS = ['map', 'normalMap', 'bumpMap', 'roughnessMap', 'metalnessMap', 'emissiveMap', 'alphaMap', 'aoMap'];
+
+// A flat-coloured lit material with nothing a vertex colour cannot carry.
+function isPlainDetail(m) {
+  if (!m || !m.isMeshStandardNodeMaterial || m.isMeshPhysicalNodeMaterial) return false;
+  if (m.transparent || m.vertexColors || m.side !== THREE.FrontSide || m.flatShading) return false;
+  if (m.metalness > 0.05 || (m.emissive && (m.emissive.r || m.emissive.g || m.emissive.b))) return false;
+  if (m.colorNode || m.outputNode || m.positionNode || m.roughnessNode) return false;
+  return PLAIN_MAPS.every((slot) => !m[slot]);
+}
+
+function meshRadius(mesh) {
+  if (!mesh.geometry.boundingSphere) mesh.geometry.computeBoundingSphere();
+  return mesh.geometry.boundingSphere.radius * Math.max(mesh.scale.x, mesh.scale.y, mesh.scale.z);
+}
+
+function bakeRig(rig) {
+  // Every object the engine can reach by handle. A merged mesh would orphan the handle.
+  const held = new Set([rig.root, ...Object.values(rig.joints)]);
+  const hold = (v) => {
+    if (!v || typeof v !== 'object') return;
+    if (v.isObject3D) { held.add(v); return; }
+    if (v.isMaterial || v.isBufferGeometry || v.isColor || v.isVector3 || v.isQuaternion) return;
+    for (const inner of Array.isArray(v) ? v : Object.values(v)) hold(inner);
   };
+  hold(rig.refs);
+  hold(rig.jiggles);
+
+  // PAINT: the two shared detail materials, made only if something uses them.
+  const named = new Set(Object.values(rig.materials));
+  const detail = {};
+  const detailMaterial = (glossy) => detail[glossy ? 'glossy' : 'matte'] ||= new THREE.MeshStandardNodeMaterial({
+    color: 0xffffff, vertexColors: true, roughness: glossy ? 0.3 : 0.78, metalness: 0,
+  });
+  rig.root.traverse((o) => {
+    if (!o.isMesh || held.has(o) || Array.isArray(o.material)) return;
+    const m = o.material;
+    if (named.has(m) || !isPlainDetail(m)) return;
+    // Its own copy of the geometry: the original may be shared with another part.
+    const g = o.geometry.clone();
+    const n = g.attributes.position.count;
+    const colors = new Float32Array(n * 3);
+    for (let i = 0; i < n; i++) { colors[i * 3] = m.color.r; colors[i * 3 + 1] = m.color.g; colors[i * 3 + 2] = m.color.b; }
+    g.setAttribute('color', new THREE.BufferAttribute(colors, 3));
+    o.geometry = g;
+    o.material = detailMaterial(m.roughness < GLOSSY_BELOW);
+    o.userData.painted = true;
+  });
+
+  const parents = [];
+  rig.root.traverse((o) => { if (o.children.length > 1) parents.push(o); });
+  for (const parent of parents) {
+    // Mergeable: a plain, visible, leaf mesh nobody holds, with an ordinary layout.
+    const groups = new Map();
+    for (const child of parent.children) {
+      if (!child.isMesh || child.isInstancedMesh || child.isSkinnedMesh || held.has(child)) continue;
+      if (!child.visible || child.children.length || Array.isArray(child.material)) continue;
+      if (child.renderOrder !== 0 || child.name || child.matrixAutoUpdate === false) continue;
+      const g = child.geometry;
+      if (Object.keys(g.morphAttributes).length) continue;
+      // A mirrored part (negative scale) would come out inside-out once its transform is baked.
+      if (child.scale.x * child.scale.y * child.scale.z <= 0) continue;
+      const layout = Object.keys(g.attributes).sort().join(',');
+      // Indexed and non-indexed geometry cannot share one buffer.
+      const key = `${child.material.uuid}|${layout}|${g.index ? 'i' : 'n'}|${child.receiveShadow}`;
+      let list = groups.get(key);
+      if (!list) groups.set(key, list = []);
+      list.push(child);
+    }
+    for (const list of groups.values()) {
+      if (list.length < 2) continue;
+      const parts = list.map((child) => {
+        child.updateMatrix();
+        return child.geometry.clone().applyMatrix4(child.matrix);
+      });
+      const merged = mergeGeometries(parts, false);
+      for (const part of parts) part.dispose();
+      if (!merged) continue;      // attribute mismatch: leave these as they were
+      const mesh = new THREE.Mesh(merged, list[0].material);
+      mesh.castShadow = list.some((child) => child.castShadow && meshRadius(child) >= SMALL_CASTER);
+      mesh.receiveShadow = list[0].receiveShadow;
+      mesh.userData.baked = list.length;
+      for (const child of list) parent.remove(child);
+      parent.add(mesh);
+    }
+  }
+  // What stayed its own mesh and is tiny no longer casts.
+  rig.root.traverse((o) => {
+    if (o.isMesh && o.castShadow && !o.userData.baked && meshRadius(o) < SMALL_CASTER) o.castShadow = false;
+  });
+  return rig;
 }
 
 // ── Secondary motion (tie/hair jiggle) ────────────────────────────────────

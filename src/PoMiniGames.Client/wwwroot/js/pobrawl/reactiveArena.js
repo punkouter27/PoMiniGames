@@ -2,9 +2,13 @@
 // the Cup bracket captions), the rig lenses and the ring mat's ripple and wear. Mixin
 // (mixin.js), `this` is the live game; moved out of game.js unchanged.
 
-import * as THREE from 'three';
+import * as THREE from 'three-eco/webgpu';
+import {
+  Fn, If, exp, length, materialColor, materialRoughness, mix, output, positionWorld, sin, texture, uniform, vec4,
+} from 'three-eco/tsl';
 import { MAX_HP, TIME_LIMIT, COMBO_MIN_SHOWN, MAT_HALF } from './constants.js';
 import { MatWear } from './matWear.js';
+import { crowdReact } from './arena.js';
 
 class ReactiveArenaMethods {
   // ══ Reactive arena ═══════════════════════════════════════════════════
@@ -45,85 +49,52 @@ class ReactiveArenaMethods {
     // the weight, for one branch in a fragment shader that already runs.
     this._ripple = {
       origin: new THREE.Vector2(0, 0),
-      t: { value: 99 },          // seconds since the strike; >2 = idle
-      amp: { value: 0 },
-      originU: { value: new THREE.Vector2(0, 0) },
+      t: uniform(99),            // seconds since the strike; >2 = idle
+      amp: uniform(0),
+      originU: uniform(new THREE.Vector2(0, 0)),
     };
     const mat = this.arena.canvasMat;
     // ── Mat wear ────────────────────────────────────────────────────────
-    // Built here because the canvas shader below is the one place both the
-    // ripple and the wear lookup get injected — two onBeforeCompile hooks on
-    // one material would overwrite each other.
+    // Built here because the canvas material below is the one place both the
+    // ripple and the wear lookup are attached.
     this.matWear = new MatWear(MAT_HALF);
-    const W = {
-      wear: { value: this.matWear.wear.tex },
-      wet: { value: this.matWear.wet.tex },
-      half: { value: MAT_HALF },
-    };
     if (mat) {
       const R = this._ripple;
-      mat.onBeforeCompile = (shader) => {
-        shader.uniforms.uRippleT = R.t;
-        shader.uniforms.uRippleAmp = R.amp;
-        shader.uniforms.uRippleOrigin = R.originU;
-        shader.uniforms.uWearMap = W.wear;
-        shader.uniforms.uWetMap = W.wet;
-        shader.uniforms.uWearHalf = W.half;
-        shader.vertexShader = shader.vertexShader
-          .replace('void main() {', 'varying vec2 vMatXZ;\nvoid main() {')
-          // World XZ of the fragment. Piggybacks on begin_vertex (which defines
-          // `transformed`) rather than on worldpos_vertex, because that chunk
-          // only emits a world position when an envmap/shadow define happens to
-          // be set — which would make this silently break if lighting changed.
-          .replace('#include <begin_vertex>',
-            '#include <begin_vertex>\n  vMatXZ = (modelMatrix * vec4(transformed, 1.0)).xz;');
-        shader.fragmentShader = shader.fragmentShader
-          .replace('void main() {', /* glsl */`
-            uniform float uRippleT;
-            uniform float uRippleAmp;
-            uniform vec2 uRippleOrigin;
-            uniform sampler2D uWearMap;
-            uniform sampler2D uWetMap;
-            uniform float uWearHalf;
-            varying vec2 vMatXZ;
-            float _matWet = 0.0;
-            void main() {`)
-          // Wear goes into the ALBEDO (before lighting), so scuffs sit in the
-          // vinyl under the spots rather than being painted over the lit result.
-          // The box's side faces get the edge texel; at 4 cm tall nobody sees it.
-          .replace('#include <map_fragment>', /* glsl */`
-            #include <map_fragment>
-            {
-              vec2 _wuv = vMatXZ / (2.0 * uWearHalf) + 0.5;
-              if (all(greaterThanEqual(_wuv, vec2(0.0))) && all(lessThanEqual(_wuv, vec2(1.0)))) {
-                vec4 _wear = texture2D(uWearMap, _wuv);
-                // Straight alpha: WebGL un-premultiplies a canvas on upload, so
-                // dividing by alpha again here turned faint texels into speckles.
-                diffuseColor.rgb = mix(diffuseColor.rgb, _wear.rgb, _wear.a);
-                _matWet = texture2D(uWetMap, _wuv).a;
-                diffuseColor.rgb *= 1.0 - 0.38 * _matWet;
-              }
-            }`)
-          // Wet vinyl is glossier: the sweat catches the spots as it dries off.
-          .replace('#include <roughnessmap_fragment>', /* glsl */`
-            #include <roughnessmap_fragment>
-            roughnessFactor = mix(roughnessFactor, 0.28, _matWet);`)
-          .replace('#include <opaque_fragment>', /* glsl */`
-            #include <opaque_fragment>
-            if (uRippleAmp > 0.001) {
-              float _d = distance(vMatXZ, uRippleOrigin);
-              // Expanding wave front at ~4.5 m/s with a gaussian envelope, so
-              // the disturbance is a moving band rather than the whole mat
-              // pulsing at once.
-              float _front = uRippleT * 4.5;
-              float _band = exp(-pow((_d - _front) * 1.9, 2.0));
-              float _wave = sin(_d * 7.0 - uRippleT * 22.0);
-              // Falls off with distance travelled AND with age — a ripple that
-              // only faded with time would still be visible at the ropes.
-              float _fade = uRippleAmp * exp(-_d * 0.24) * exp(-uRippleT * 1.7);
-              gl_FragColor.rgb *= 1.0 + _wave * _band * _fade * 0.55;
-            }`);
-      };
+      // World XZ of the fragment → the wear maps' UV. The mat is 2 * MAT_HALF square and
+      // centred, so the lookup always lands inside the maps on the top face; the box's
+      // side faces get the clamped edge texel, and at 4 cm tall nobody sees it.
+      const matXZ = positionWorld.xz;
+      const wuv = matXZ.div(2 * MAT_HALF).add(0.5);
+      const wear = texture(this.matWear.wear.tex, wuv);
+      const wet = texture(this.matWear.wet.tex, wuv).a;
+      // Wear goes into the ALBEDO (before lighting), so scuffs sit in the
+      // vinyl under the spots rather than being painted over the lit result.
+      let colorNode = mix(materialColor.rgb, wear.rgb, wear.a).mul(wet.mul(0.38).oneMinus());
+      // Wet vinyl is glossier: the sweat catches the spots as it dries off.
+      let roughnessNode = mix(materialRoughness, 0.28, wet);
+      // The simulated blood film lies over all of it (bloodFluid.js; WebGPU only).
+      const fluid = this._ensureBloodFluid?.();
+      if (fluid) ({ colorNode, roughnessNode } = fluid.over(colorNode, roughnessNode, matXZ));
+      mat.colorNode = colorNode;
+      mat.roughnessNode = roughnessNode;
+      // A SHADING ripple over the lit result: bands of light and shadow racing out.
+      mat.outputNode = Fn(() => {
+        const col = output.rgb.toVar();
+        If(R.amp.greaterThan(0.001), () => {
+          const d = length(matXZ.sub(R.originU)).toVar();
+          // Expanding wave front at ~4.5 m/s with a gaussian envelope, so
+          // the disturbance is a moving band rather than the whole mat
+          // pulsing at once.
+          const edge = d.sub(R.t.mul(4.5)).mul(1.9);
+          const band = exp(edge.mul(edge).negate());
+          const wave = sin(d.mul(7).sub(R.t.mul(22)));
+          // Falls off with distance travelled AND with age — a ripple that
+          // only faded with time would still be visible at the ropes.
+          const fade = R.amp.mul(exp(d.mul(-0.24))).mul(exp(R.t.mul(-1.7)));
+          col.mulAssign(wave.mul(band).mul(fade).mul(0.55).add(1));
+        });
+        return vec4(col, output.a);
+      })();
       mat.needsUpdate = true;
     }
   }
@@ -134,6 +105,8 @@ class ReactiveArenaMethods {
     this._ripple.originU.value.set(x, z);
     this._ripple.t.value = 0;
     this._ripple.amp.value = Math.min(1.2, amp);
+    // What shakes the canvas shakes the stands (not under reduced motion).
+    if (!this._calm?.()) crowdReact(this.arena?.crowd, x, z, Math.min(1, amp * 0.85));
   }
 
   _updateReactiveArena(dt) {

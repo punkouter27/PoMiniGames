@@ -1,5 +1,5 @@
 // ffa.js — presidential battle royale, with optional human-controlled Bob.
-import * as THREE from 'three';
+import * as THREE from 'three-eco/webgpu';
 import { buildArena } from './arena.js';
 import { buildFighter, CHARACTERS, setExpression, updateJiggles } from './fighters.js';
 import { Animator } from './animation.js';
@@ -8,7 +8,7 @@ import { guardCovers, testAttackHit, regionForHurtBone } from './hitboxes.js';
 import { MAX_HP } from './constants.js';
 import { FfaSeason, FFA_PROFILES, seededRandom } from './ffaSeason.js';
 import { setup as setupFfaRendering } from './ffaRendering.js';
-import { createArenaStage, bindView } from './stageHost.js';
+import { createArenaStage, bindView, sampleGpuTime } from './stageHost.js';
 import { createAutomaticHighlights } from './ffaHighlights.js';
 import { createWikimediaFacts } from './ffaFacts.js';
 import { moveFighters, impactImpulse } from './ffaPhysics.js';
@@ -127,7 +127,7 @@ export class BrawlFfaGame {
     this.renderer = renderer;
 
     this.scene = new THREE.Scene();
-    const arena = buildArena(this.scene, { rectAreaLights: 0 });
+    const arena = buildArena(this.scene, { rectAreaLights: 0, renderer: this.renderer });
     // The overhead TV rig was designed for ringside cameras and occludes the FFA overview.
     arena.backdrop.visible = false;
     this.ragdollPhysics = createPhysicsWorld();
@@ -335,6 +335,7 @@ export class BrawlFfaGame {
     }
     this.audio?.tick(dt);
     this.rendering.render(this.camera, dt);
+    this.gpuMs = sampleGpuTime(this.stage, this.renderer);
   }
 
   _updateCamera(dt) {

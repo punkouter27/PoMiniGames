@@ -3,7 +3,7 @@
 // Presentation only: never touches sim state, and uses Math.random, never the
 // seeded match RNG, so seeded replays and online lockstep are untouched.
 // Flicker rule: nothing here changes whole-frame brightness.
-import * as THREE from 'three';
+import * as THREE from 'three-eco/webgpu';
 import { pressBurst } from './arena.js';
 
 const _proj = new THREE.Vector3();
@@ -11,6 +11,7 @@ const _proj = new THREE.Vector3();
 const SHOCK_LIFE = 0.7;        // s, wall clock
 const COMIC_HOLD = 0.55;       // s at full strength, then COMIC_FADE out
 const COMIC_FADE = 0.3;
+const WORD_LIFT = 0.6;         // m the KO word sits above the blow, clear of the falling body
 const COMIC_FREEZE = 0.25;     // s the KO frame stops dead before the slow-mo fall
 const WORD_LIFE = 1.4;
 const REWIND_SEC = 0.75;
@@ -26,6 +27,8 @@ const WORDS = {
 };
 
 const pick = (a) => a[(Math.random() * a.length) | 0];
+
+const _wordAt = new THREE.Vector3();
 
 class SpectacleMethods {
   _initSpectacle() {
@@ -55,16 +58,19 @@ class SpectacleMethods {
   }
 
   // ── Comic-book KO ────────────────────────────────────────────────────
-  /** The killing blow: freeze, print the frame as a comic panel, slam a word in. */
+  /**
+   * The killing blow: a word slams in over the action. Nothing else.
+   *
+   * It used to stop the frame dead and print it as a comic panel for most of a second, with
+   * the word on the contact point: exactly where, and when, the knocked-out fighter starts to
+   * go down. The fall is the moment, so the frame now stays live and unprinted from the first
+   * instant of the slow-motion, and the word sits above the fighters' heads, not on the body.
+   */
   _comicKO(point, attackName) {
     if (!this._fullShow()) return; // Full show only (show.js)
-    this._comicT = COMIC_HOLD + COMIC_FADE;
-    // The KO branch of _tick ignores hitstopT, so park timeScale; _updateSpectacle restores slow-mo.
-    this._comicFreeze = COMIC_FREEZE;
-    this.timeScale = 0;
     const list = Math.random() < 0.33 ? WORDS.flavor
       : attackName === 'kick' ? WORDS.kick : WORDS.punch;
-    this._spawnWord(pick(list), point);
+    this._spawnWord(pick(list), _wordAt.copy(point).setY(Math.max(point.y, 1.5) + WORD_LIFT));
   }
 
   _spawnWord(text, point) {

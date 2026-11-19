@@ -12,7 +12,7 @@
 // keep their order for a seeded match to reproduce. Reordering the steps reorders
 // the draws.
 
-import * as THREE from 'three';
+import * as THREE from 'three-eco/webgpu';
 import { setExpression } from './fighters.js';
 import { COMBAT_EVENTS, REGIONS, regionEffect, regionTier, REGION_CALLOUTS } from './combat.js';
 import { addDaze, isKnockdown, isFloored } from './knockdown.js';
@@ -645,11 +645,16 @@ class HitResolutionMethods {
     // On-hit personality effects already ran once, in _rollHitDamage.
     if (defender.controller.notifyHit) defender.controller.notifyHit();
     // Sparks + a real light flash at the contact point, not at the defender's root.
+    // The body gives where it was struck (fighterFx.js).
+    this._dent(defender, hit.point, chargeMul);
     this._spawnSparks(hit.point, region === REGIONS.HEAD ? 0xff5530 : 0xffc857,
       Math.round(8 * chargeMul), 1.4 * chargeMul);
     // Roughly 1-in-4 face hits draw blood; charged shots more often.
     if (region === REGIONS.HEAD && this.rng.random() < 0.22 + 0.3 * (chargeMul - 1)) {
       this._spawnBlood(hit.point, impulseDir, chargeMul);
+      // It stays on both of them: the face that took it, and the knuckles that threw it.
+      this._bloody(defender, 0.22 * chargeMul, hit.point);
+      this._bloody(attacker, 0.08 * chargeMul);
     }
     // Per-region hit-light color: head=hot red, arms=orange, torso=warm
     // white, legs=cool yellow. Lets the player read WHERE they got hit

@@ -21,7 +21,7 @@
 // stay rig-perfect while the constraint solver keeps bodies at the joints.
 
 import * as CANNON from 'cannon-es';
-import * as THREE from 'three';
+import * as THREE from 'three-eco/webgpu';
 import { G_ROOT, G_RAGDOLL, G_ARENA, G_PROP } from './physics.js';
 import { createSettler } from '../platform/ragdollBlend.js';
 

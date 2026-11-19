@@ -12,7 +12,7 @@
 // confetti and flashbulbs are local; nothing here changes whole-frame brightness.
 // Reduced motion: a third of the confetti, no flashbulbs, no spin on the belt.
 // The belt is built hidden at engine start so _warmupRender compiles its programs up front.
-import * as THREE from 'three';
+import * as THREE from 'three-eco/webgpu';
 import { flashbulbs } from './arena.js';
 import * as Quality from './quality.js';
 
@@ -31,15 +31,15 @@ class CeremonyMethods {
   _initCeremony() {
     this._cer = null;
     const seal = sealTexture();
-    const gold = new THREE.MeshStandardMaterial({
+    const gold = new THREE.MeshStandardNodeMaterial({
       color: 0xffc53d, metalness: 1, roughness: 0.26, envMapIntensity: 1.4,
       emissive: 0x3a2400, emissiveIntensity: 0.7,
     });
-    const face = new THREE.MeshStandardMaterial({
+    const face = new THREE.MeshStandardNodeMaterial({
       map: seal, bumpMap: seal, bumpScale: 2.4, metalness: 0.9, roughness: 0.32, envMapIntensity: 1.4,
       emissive: 0xffffff, emissiveMap: seal, emissiveIntensity: 0.28,
     });
-    const leather = new THREE.MeshStandardMaterial({
+    const leather = new THREE.MeshStandardNodeMaterial({
       color: 0x17110d, roughness: 0.5, metalness: 0.05, side: THREE.DoubleSide,
     });
     const belt = new THREE.Group();
@@ -157,7 +157,15 @@ class CeremonyMethods {
     CANNONS.forEach(([x, y, z], i) => {
       const dx = -x * 0.9, dy = 3 - y, dz = -z * 0.9;
       const len = Math.hypot(dx, dy, dz);
-      for (let n = 0; n < per; n++) {
+      if (this._confetti) {
+        // Simulated: it carries across the ring, flutters down and litters the canvas.
+        const sp = 9.5;
+        this._confetti.emit({
+          origin: [x, y, z], box: [0.1, 0.1, 0.1],
+          velocity: [dx / len * sp, dy / len * sp, dz / len * sp], scatter: [3.2, 2.6, 3.2],
+          count: Math.round(per * 2.2),
+        });
+      } else for (let n = 0; n < per; n++) {
         const sp = 6 + Math.random() * 7;
         this._spawnParticle(x, y, z,
           (dx / len + (Math.random() - 0.5) * 0.5) * sp,

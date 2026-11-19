@@ -20,7 +20,7 @@
 //
 // Built at init (the warm-up compiles every program); no per-frame allocation. Presentation
 // only: Math.random, never the match RNG. Reduced motion: half the balloons, slower, no kicks.
-import * as THREE from 'three';
+import * as THREE from 'three-eco/webgpu';
 import * as Quality from './quality.js';
 import { createInterest } from '../platform/simInterest.js';
 
@@ -108,11 +108,11 @@ class BalloonsMethods {
     const geo = balloonGeometry();
     const physical = Quality.settings().physicalMaterials;
     const mat = physical
-      ? new THREE.MeshPhysicalMaterial({
+      ? new THREE.MeshPhysicalNodeMaterial({
         color: 0xffffff, roughness: 0.38, metalness: 0, clearcoat: 1, clearcoatRoughness: 0.22,
         envMapIntensity: 1.3, emissive: 0x000000,
       })
-      : new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 0.34, metalness: 0, envMapIntensity: 1.3 });
+      : new THREE.MeshStandardNodeMaterial({ color: 0xffffff, roughness: 0.34, metalness: 0, envMapIntensity: 1.3 });
     const mesh = new THREE.InstancedMesh(geo, mat, n);
     mesh.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
     const c = new THREE.Color();
@@ -642,7 +642,7 @@ class BalloonsMethods {
     }
     fanGeo.setIndex(idx);
     bu.fanTex = fanTexture();
-    bu.fanMesh = new THREE.Mesh(fanGeo, new THREE.MeshStandardMaterial({
+    bu.fanMesh = new THREE.Mesh(fanGeo, new THREE.MeshStandardNodeMaterial({
       map: bu.fanTex, side: THREE.DoubleSide, roughness: 0.85, metalness: 0,
       emissive: 0xffffff, emissiveMap: bu.fanTex, emissiveIntensity: 0.14,
     }));
@@ -667,7 +667,7 @@ class BalloonsMethods {
     penGeo.setAttribute('position', ppos);
     penGeo.setAttribute('normal', pnor);
     penGeo.setAttribute('color', new THREE.BufferAttribute(pcol, 3));
-    bu.penMesh = new THREE.Mesh(penGeo, new THREE.MeshStandardMaterial({
+    bu.penMesh = new THREE.Mesh(penGeo, new THREE.MeshStandardNodeMaterial({
       vertexColors: true, side: THREE.DoubleSide, roughness: 0.75, metalness: 0,
     }));
     bu.penMesh.frustumCulled = false;

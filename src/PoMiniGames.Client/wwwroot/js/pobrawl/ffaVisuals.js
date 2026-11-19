@@ -1,5 +1,10 @@
 // Bounded analytic GPU effects; all randomness is presentation-only.
-import * as THREE from 'three';
+import * as THREE from 'three-eco/webgpu';
+import {
+  abs, attribute, cameraProjectionMatrix, cameraViewMatrix, clamp, cross, dFdx, dFdy, dot, fwidth, length,
+  materialColor, materialRoughness, max, mix, normalize, positionGeometry, positionLocal, positionView,
+  positionWorld, pow, select, sin, smoothstep, texture, uniform, userData, uv, varying, vec3, vec4,
+} from 'three-eco/tsl';
 import { MatWear } from './matWear.js';
 
 export function visualPolicy(tier = 'high', slow = false) {
@@ -15,37 +20,34 @@ export function visualPolicy(tier = 'high', slow = false) {
   };
 }
 
-export const particleVertex = `
-attribute vec3 aOrigin;
-attribute vec3 aVelocity;
-attribute vec4 aLife;
-uniform float time;
-uniform float ring;
-varying float fade;
-varying vec2 effectUV;
-void main() {
-  float age = time - aLife.x;
-  float t = clamp(age / max(aLife.y,0.001),0.0,1.0);
-  fade = age >= 0.0 && age < aLife.y ? (1.0-t)*(1.0-t)*aLife.w : 0.0;
-  effectUV = uv;
-  vec3 center = aOrigin + aVelocity*age + vec3(0.0,-4.5*age*age,0.0)*(1.0-ring);
-  vec4 view = viewMatrix * vec4(center,1.0);
-  float scale = ring > 0.5 ? (0.12+t*0.85)*aLife.z : aLife.z*(1.0-t*0.7);
-  view.xy += position.xy * scale * (fade > 0.0 ? 1.0 : 0.0);
-  gl_Position = projectionMatrix * view;
-}`;
-
-const particleFragment = `
-uniform float ring;
-varying float fade;
-varying vec2 effectUV;
-void main() {
-  float r = length(effectUV-0.5)*2.0;
-  float mask = ring > 0.5 ? (1.0-smoothstep(0.055,0.12,abs(r-0.8))) :
-    (1.0-smoothstep(0.3,1.0,r));
-  if (mask*fade < 0.003) discard;
-  gl_FragColor = vec4(mix(vec3(1.2,0.66,0.22),vec3(0.48,0.75,1.1),ring),mask*fade*0.45);
-}`;
+// One pool material: camera-facing instanced quads on a closed-form trajectory. `ring` picks
+// the expanding shock ring over the falling spark.
+function poolMaterial(ring) {
+  const time = uniform(0);
+  const aOrigin = attribute('aOrigin', 'vec3'), aVelocity = attribute('aVelocity', 'vec3');
+  const aLife = attribute('aLife', 'vec4');     // birth, life, size, strength
+  const age = time.sub(aLife.x);
+  const t = clamp(age.div(max(aLife.y, 0.001)), 0, 1);
+  const alive = age.greaterThanEqual(0).and(age.lessThan(aLife.y));
+  const fade = select(alive, t.oneMinus().mul(t.oneMinus()).mul(aLife.w), 0);
+  // Sparks fall; rings stay where they were struck.
+  const drop = ring ? vec3(0) : vec3(0, age.mul(age).mul(-4.5), 0);
+  const view = cameraViewMatrix.mul(vec4(aOrigin.add(aVelocity.mul(age)).add(drop), 1));
+  const scale = ring ? t.mul(0.85).add(0.12).mul(aLife.z) : aLife.z.mul(t.mul(-0.7).add(1));
+  const size = select(fade.greaterThan(0), scale, 0);
+  const material = new THREE.MeshBasicNodeMaterial({
+    transparent: true, blending: THREE.AdditiveBlending, depthWrite: false, depthTest: true,
+  });
+  material.vertexNode = cameraProjectionMatrix.mul(vec4(view.xy.add(positionGeometry.xy.mul(size)), view.zw));
+  const r = length(uv().sub(0.5)).mul(2);
+  const mask = ring
+    ? smoothstep(0.055, 0.12, abs(r.sub(0.8))).oneMinus()
+    : smoothstep(0.3, 1.0, r).oneMinus();
+  material.colorNode = ring ? vec3(0.48, 0.75, 1.1) : vec3(1.2, 0.66, 0.22);
+  material.opacityNode = mask.mul(varying(fade)).mul(0.45);
+  material.uniforms = { time };
+  return material;
+}
 
 class GpuPool {
   constructor(scene, capacity, ring) {
@@ -61,12 +63,7 @@ class GpuPool {
     this.geometry.setAttribute('aOrigin', this.origin);
     this.geometry.setAttribute('aVelocity', this.velocity);
     this.geometry.setAttribute('aLife', this.life);
-    this.material = new THREE.ShaderMaterial({
-      vertexShader: particleVertex, fragmentShader: particleFragment,
-      uniforms: { time: { value: 0 }, ring: { value: ring ? 1 : 0 } },
-      transparent: true, blending: THREE.AdditiveBlending, depthWrite: false, depthTest: true,
-      toneMapped: false,
-    });
+    this.material = poolMaterial(ring);
     this.mesh = new THREE.Mesh(this.geometry, this.material);
     this.mesh.frustumCulled = false;
     this.mesh.renderOrder = 3;
@@ -96,111 +93,78 @@ class GpuPool {
   dispose() { this.scene.remove(this.mesh); this.geometry.dispose(); this.material.dispose(); }
 }
 
-// Derivative-filtered object-space fabric, static local bruises and a cheap
-// diffuse-light wrap approximation. No displacement, silhouette or skin-color replacement.
-export function hookSurface(material, uniforms, type) {
-  const before = material.onBeforeCompile;
-  const cache = material.customProgramCacheKey;
-  const hook = (shader, renderer) => {
-    before?.call(material, shader, renderer);
-    Object.assign(shader.uniforms, uniforms);
-    shader.vertexShader = shader.vertexShader.replace('void main() {',
-      'varying vec3 vFfaLocal;\nvoid main() {').replace('#include <begin_vertex>',
-      '#include <begin_vertex>\nvFfaLocal = position;');
-    shader.fragmentShader = shader.fragmentShader.replace('void main() {', `
-      varying vec3 vFfaLocal;
-      uniform float ffaWear;
-      uniform float ffaSweat;
-      void main() {`);
-    if (type === 'skin') {
-      shader.fragmentShader = shader.fragmentShader.replace('#include <map_fragment>', `
-        #include <map_fragment>
-        float bruise = smoothstep(0.3,0.85,sin(vFfaLocal.x*39.0+vFfaLocal.y*23.0)*sin(vFfaLocal.z*33.0));
-        diffuseColor.rgb = mix(diffuseColor.rgb, diffuseColor.rgb*vec3(0.68,0.55,0.7),bruise*ffaWear*0.45);`)
-        .replace('#include <roughnessmap_fragment>', `
-        #include <roughnessmap_fragment>
-        float pores = sin(vFfaLocal.x*390.0)*sin(vFfaLocal.y*370.0);
-        float filterPore = 1.0-smoothstep(0.001,0.012,length(fwidth(vFfaLocal)));
-        roughnessFactor = clamp(roughnessFactor - ffaSweat*0.19 + pores*0.025*filterPore,0.24,1.0);`)
-        .replace('#include <opaque_fragment>', `
-        // Approximate scattering uses the actual diffuse irradiance, not emissive skin.
-        float wrap = pow(1.0-abs(dot(normal,normalize(vViewPosition))),2.0);
-        outgoingLight += reflectedLight.directDiffuse*vec3(1.0,0.42,0.28)*wrap*0.09;
-        #include <opaque_fragment>`);
-    } else if (type === 'fabric') {
-      shader.fragmentShader = shader.fragmentShader.replace('#include <map_fragment>', `
-        #include <map_fragment>
-        float thread = sin(vFfaLocal.y*270.0)*sin((vFfaLocal.x+vFfaLocal.z)*240.0);
-        float filterThread = 1.0-smoothstep(0.002,0.02,length(fwidth(vFfaLocal)));
-        diffuseColor.rgb *= 1.0 + thread*0.045*filterThread - ffaWear*0.065;`)
-        .replace('#include <roughnessmap_fragment>', `
-        #include <roughnessmap_fragment>
-        roughnessFactor = clamp(roughnessFactor + thread*filterThread*0.04 - ffaSweat*0.06,0.3,1.0);`);
-    }
-  };
-  material.onBeforeCompile = hook;
-  material.customProgramCacheKey = () => `${cache?.call(material) || ''}|ffa-surface-v1-${type}`;
+// Derivative-filtered object-space fabric and static local bruises, as nodes on the fighter's
+// own lit material. No displacement, silhouette or skin-color replacement.
+//
+// One graph per surface type, shared by all sixteen fighters (see fighterFx.js for why): the
+// per-fighter wear and sweat are read at draw time from `mesh.userData.ffa`.
+const ffaWear = userData('ffa.wear', 'float'), ffaSweat = userData('ffa.sweat', 'float');
+const SURFACE = {
+  skin: (() => {
+    const local = positionLocal;
+    const bruise = smoothstep(0.3, 0.85, sin(local.x.mul(39).add(local.y.mul(23))).mul(sin(local.z.mul(33))));
+    const pores = sin(local.x.mul(390)).mul(sin(local.y.mul(370)));
+    const filterPore = smoothstep(0.001, 0.012, length(fwidth(local))).oneMinus();
+    return {
+      colorNode: mix(materialColor.rgb, materialColor.rgb.mul(vec3(0.68, 0.55, 0.7)), bruise.mul(ffaWear).mul(0.45)),
+      roughnessNode: clamp(materialRoughness.sub(ffaSweat.mul(0.19)).add(pores.mul(0.025).mul(filterPore)), 0.24, 1),
+    };
+  })(),
+  fabric: (() => {
+    const local = positionLocal;
+    const thread = sin(local.y.mul(270)).mul(sin(local.x.add(local.z).mul(240)));
+    const filterThread = smoothstep(0.002, 0.02, length(fwidth(local))).oneMinus();
+    return {
+      colorNode: materialColor.rgb.mul(thread.mul(0.045).mul(filterThread).sub(ffaWear.mul(0.065)).add(1)),
+      roughnessNode: clamp(materialRoughness.add(thread.mul(filterThread).mul(0.04)).sub(ffaSweat.mul(0.06)), 0.3, 1),
+    };
+  })(),
+};
+
+export function hookSurface(material, type) {
+  const nodes = SURFACE[type];
+  if (!nodes) return () => {};
+  const before = { colorNode: material.colorNode, roughnessNode: material.roughnessNode };
+  material.colorNode = nodes.colorNode;
+  material.roughnessNode = nodes.roughnessNode;
   material.needsUpdate = true;
   return () => {
-    if (material.onBeforeCompile !== hook) return;
-    material.onBeforeCompile = before; material.customProgramCacheKey = cache; material.needsUpdate = true;
+    if (material.colorNode !== nodes.colorNode) return;
+    material.colorNode = before.colorNode; material.roughnessNode = before.roughnessNode;
+    material.needsUpdate = true;
   };
 }
 
+// The ring canvas: scuffs and sweat from the wear maps, looked up by world XZ.
 function hookMat(material, wear, half) {
-  const before = material.onBeforeCompile, cache = material.customProgramCacheKey;
-  const hook = (shader, renderer) => {
-    before?.call(material, shader, renderer);
-    Object.assign(shader.uniforms, {
-      ffaWearMap: { value: wear.wear.tex }, ffaWetMap: { value: wear.wet.tex }, ffaHalf: { value: half },
-    });
-    shader.vertexShader = shader.vertexShader.replace('void main() {', 'varying vec2 vFfaMat;\nvoid main() {')
-      .replace('#include <begin_vertex>', '#include <begin_vertex>\nvFfaMat=(modelMatrix*vec4(transformed,1.0)).xz;');
-    shader.fragmentShader = shader.fragmentShader.replace('void main() {', `
-      varying vec2 vFfaMat;
-      uniform sampler2D ffaWearMap;
-      uniform sampler2D ffaWetMap;
-      uniform float ffaHalf;
-      void main() {`)
-      .replace('#include <map_fragment>', `
-        #include <map_fragment>
-        vec2 wearUV=clamp(vFfaMat/(2.0*ffaHalf)+0.5,0.0,1.0);
-        vec4 wear=texture2D(ffaWearMap,wearUV);
-        float wet=texture2D(ffaWetMap,wearUV).a;
-        diffuseColor.rgb=mix(diffuseColor.rgb,wear.rgb,wear.a)*(1.0-wet*0.22);`)
-      .replace('#include <roughnessmap_fragment>', `
-        #include <roughnessmap_fragment>
-        roughnessFactor=mix(roughnessFactor,0.3,wet);`);
-  };
-  material.onBeforeCompile = hook;
-  material.customProgramCacheKey = () => `${cache?.call(material) || ''}|ffa-mat-v1`;
+  const before = { colorNode: material.colorNode, roughnessNode: material.roughnessNode };
+  const wearUV = clamp(positionWorld.xz.div(2 * half).add(0.5), 0, 1);
+  const worn = texture(wear.wear.tex, wearUV);
+  const wet = texture(wear.wet.tex, wearUV).a;
+  material.colorNode = mix(materialColor.rgb, worn.rgb, worn.a).mul(wet.mul(0.22).oneMinus());
+  material.roughnessNode = mix(materialRoughness, 0.3, wet);
+  const mine = material.colorNode;
   material.needsUpdate = true;
   return () => {
-    if (material.onBeforeCompile === hook) {
-      material.onBeforeCompile = before; material.customProgramCacheKey = cache; material.needsUpdate = true;
-    }
+    if (material.colorNode !== mine) return;
+    material.colorNode = before.colorNode; material.roughnessNode = before.roughnessNode;
+    material.needsUpdate = true;
   };
 }
 
 function makeHaze(scene) {
   const geometry = new THREE.ConeGeometry(1.1, 5, 16, 1, true);
-  const material = new THREE.ShaderMaterial({
+  const material = new THREE.MeshBasicNodeMaterial({
     transparent: true, depthWrite: false, side: THREE.DoubleSide, blending: THREE.AdditiveBlending,
-    uniforms: {},
-    vertexShader: `
-      varying vec2 vUv; varying vec3 vView;
-      void main() { vUv=uv; vec4 p=modelViewMatrix*vec4(position,1.0); vView=-p.xyz; gl_Position=projectionMatrix*p; }`,
-    fragmentShader: `
-      varying vec2 vUv; varying vec3 vView;
-      void main() {
-        vec3 n=normalize(cross(dFdx(vView),dFdy(vView)));
-        float edge=pow(abs(dot(n,normalize(vView))),1.5);
-        float density=sin(vUv.y*3.14159)*edge;
-        // Side-dependent spectral tint imitates dispersion without a scene-copy/refraction pass.
-        vec3 tint=mix(vec3(0.23,0.38,0.65),vec3(0.66,0.48,0.25),vUv.x);
-        gl_FragColor=vec4(tint,density*0.025);
-      }`,
   });
+  // Face normal from the view-space derivatives: the cone is open and seen from both sides.
+  const toEye = positionView.negate();
+  const n = normalize(cross(dFdx(toEye), dFdy(toEye)));
+  const edge = pow(abs(dot(n, normalize(toEye))), 1.5);
+  const density = sin(uv().y.mul(3.14159)).mul(edge);
+  // Side-dependent spectral tint imitates dispersion without a scene-copy/refraction pass.
+  material.colorNode = mix(vec3(0.23, 0.38, 0.65), vec3(0.66, 0.48, 0.25), uv().x);
+  material.opacityNode = density.mul(0.025);
   const group = new THREE.Group();
   for (const x of [-3.5, 3.5]) {
     const mesh = new THREE.Mesh(geometry, material);
@@ -228,7 +192,7 @@ export function createFfaVisuals(scene, arena, policy) {
   const resetRound = () => {
     particles.clear(); rings.clear(); wear?.clear(); pulse = 0; lastPulse = -1;
     for (const record of fighters.values()) {
-      record.uniforms.ffaWear.value = record.uniforms.ffaSweat.value = 0;
+      record.surface.wear = record.surface.sweat = 0;
       record.previous = null; record.fallen = false;
     }
   };
@@ -238,17 +202,19 @@ export function createFfaVisuals(scene, arena, policy) {
       for (const entry of entries) {
         const rig = entry.rig || entry;
         if (!rig.root || fighters.has(rig)) continue;
-        const uniforms = { ffaWear: { value: 0 }, ffaSweat: { value: 0 } };
-        const record = { entry, rig, uniforms, previous: null, fallen: false };
+        // This fighter's surface values; every mesh of the rig points at the same object.
+        const surface = { wear: 0, sweat: 0 };
+        rig.root.traverse((o) => { if (o.isMesh) o.userData.ffa = surface; });
+        const record = { entry, rig, surface, previous: null, fallen: false };
         fighters.set(rig, record);
         const mats = rig.materials || {};
         const seen = new Set();
         for (const [name, material] of Object.entries(mats)) {
-          if (!material || seen.has(material) || !material.isMeshStandardMaterial) continue;
+          if (!material || seen.has(material) || !(material.isMeshStandardNodeMaterial || material.isMeshPhysicalNodeMaterial)) continue;
           seen.add(material);
           const type = ['skinMat', 'faceMat', 'plateMat'].includes(name) ? 'skin' :
             ['suitMat', 'tieMat'].includes(name) ? 'fabric' : null;
-          if (type) hooks.push(hookSurface(material, uniforms, type));
+          if (type) hooks.push(hookSurface(material, type));
         }
       }
     },
@@ -256,7 +222,7 @@ export function createFfaVisuals(scene, arena, policy) {
       if (disposed || !position || ![position.x, position.y, position.z].every(Number.isFinite)) return;
       power = Number.isFinite(power) ? Math.max(0, Math.min(1, power)) : 0.5;
       const record = fighters.get(target?.rig || target);
-      if (record && !blocked) record.uniforms.ffaWear.value = Math.min(1, record.uniforms.ffaWear.value + power * 0.08);
+      if (record && !blocked) record.surface.wear = Math.min(1, record.surface.wear + power * 0.08);
       if (wear) {
         if (kind === 'ko' || kind === 'fall') wear.bodyfall(position.x, position.z, power);
         else if (!blocked) wear.sweat(position.x, position.z, 0.25, 3);
@@ -283,9 +249,8 @@ export function createFfaVisuals(scene, arena, policy) {
       const stamp = footTimer >= 0.2;
       if (stamp) footTimer %= 0.2;
       for (const record of fighters.values()) {
-        const { rig, entry, uniforms } = record;
-        uniforms.ffaSweat.value = Math.min(0.8, uniforms.ffaSweat.value + dt * (entry.alive === false ? -0.015 : 0.005));
-        uniforms.ffaSweat.value = Math.max(0, uniforms.ffaSweat.value);
+        const { rig, entry, surface } = record;
+        surface.sweat = Math.max(0, Math.min(0.8, surface.sweat + dt * (entry.alive === false ? -0.015 : 0.005)));
         if (!stamp || !wear) continue;
         const p = rig.root.position;
         if (entry.alive === false && !record.fallen) {

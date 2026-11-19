@@ -33,7 +33,7 @@
 // Keys (local corner only): A/D walk (held), R or S guard (held), F punch, G kick, H special.
 // The touch pad and gamepads dispatch the same codes, so they need nothing of their own.
 
-import * as THREE from 'three';
+import * as THREE from 'three-eco/webgpu';
 import { ATTACKS } from './constants.js';
 import { testAttackHit, regionForHurtBone } from './hitboxes.js';
 import { regionEffect } from './combat.js';

@@ -1,5 +1,5 @@
 // Lightweight FFA rendering polish without changing the existing 1v1 renderer.
-import * as THREE from 'three';
+import * as THREE from 'three-eco/webgpu';
 import * as Quality from './quality.js';
 import { createFfaPost } from './ffaPost.js';
 import { createFfaVisuals, visualPolicy } from './ffaVisuals.js';
@@ -7,6 +7,7 @@ import { createFfaVisuals, visualPolicy } from './ffaVisuals.js';
 const states = new WeakMap();
 const DPR_FLOOR = 0.65;
 const PIXEL_BUDGET = 2_000_000;
+const SETTLE_SECONDS = 6;     // no resolution scaling until the opening builds are done
 let activeState = null;
 
 function dimensions(renderer) {
@@ -41,12 +42,10 @@ function applySize(state) {
   state.post?.resize(state.width, state.height, dpr);
 }
 
-function makeEnvironment(renderer) {
-  if (!globalThis.document?.createElement || !THREE.PMREMGenerator) return null;
+function makeEnvironment() {
+  if (!globalThis.document?.createElement) return null;
   let canvas;
   let texture;
-  let pmrem;
-  let target;
   try {
     canvas = document.createElement('canvas');
     canvas.width = 512;
@@ -70,17 +69,11 @@ function makeEnvironment(renderer) {
     texture = new THREE.CanvasTexture(canvas);
     texture.mapping = THREE.EquirectangularReflectionMapping;
     texture.colorSpace = THREE.SRGBColorSpace;
-    pmrem = new THREE.PMREMGenerator(renderer);
-    pmrem.compileEquirectangularShader?.();
-    target = pmrem.fromEquirectangular(texture);
-    return { texture, target, pmrem, environment: target.texture };
+    // The renderer prefilters an equirect environment itself, so the canvas is handed over as is.
+    return { texture, environment: texture };
   } catch {
-    target?.dispose?.();
     texture?.dispose?.();
-    pmrem?.dispose?.();
     return null;
-  } finally {
-    if (canvas) canvas.width = canvas.height = 1;
   }
 }
 
@@ -111,7 +104,7 @@ export function setup(scene, renderer, arena) {
   renderer.toneMappingExposure = Math.max(1, renderer.toneMappingExposure || 1);
   if (renderer.shadowMap) {
     renderer.shadowMap.enabled = true;
-    if (THREE.PCFSoftShadowMap !== undefined) renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+    renderer.shadowMap.type = THREE.PCFShadowMap;
   }
 
   const lights = arena?.lights || {};
@@ -135,7 +128,7 @@ export function setup(scene, renderer, arena) {
     lights.spot.shadow.map = null;
   }
 
-  const environment = scene.environment ? null : makeEnvironment(renderer);
+  const environment = scene.environment ? null : makeEnvironment();
   if (environment) {
     scene.environment = environment.environment;
     scene.environmentIntensity = 0.32;
@@ -143,13 +136,13 @@ export function setup(scene, renderer, arena) {
   const state = {
     renderer, original, originalLights, environment, lights,
     baseDpr: dpr, scale: 1, elapsed: 0, averageFrameMs: 16.7,
-    width, height, disposed: false, tier, slow: false, policy: null, post: null, visuals: null,
+    width, height, disposed: false, tier, slow: false, policy: null, post: null, visuals: null, settled: 0,
   };
   states.set(scene, state);
   activeState = state;
-  // Headless callers retain the direct renderer contract; real WebGL hosts own
+  // Headless callers retain the direct renderer contract; a real renderer owns
   // the full chain. Do not silently swallow shader/target failures in production.
-  if (renderer.isWebGLRenderer) {
+  if (renderer.isRenderer) {
     try {
       state.policy = visualPolicy(tier);
       state.visuals = createFfaVisuals(scene, arena, state.policy);
@@ -212,8 +205,15 @@ export function render(scene, camera, dt = 0) {
     state.elapsed += dt;
     if (state.elapsed >= 1) {
       state.elapsed %= 1;
-      if (state.averageFrameMs > 22) state.scale = Math.max(0.68, state.scale - 0.08);
-      else if (state.averageFrameMs < 15) state.scale = Math.min(1, state.scale + 0.04);
+      // The first seconds are shader builds, not the frame rate this machine will hold:
+      // judging them would drop the resolution for the whole match.
+      state.settled += 1;
+      if (state.settled > SETTLE_SECONDS) {
+        if (state.averageFrameMs > 22) state.scale = Math.max(0.68, state.scale - 0.08);
+        // Back up while it is holding the display's rate. Under 17.5 ms, not 15: on a 60 Hz
+        // display a frame never averages below 16.7, so a lower bar could never be met.
+        else if (state.averageFrameMs < 17.5) state.scale = Math.min(1, state.scale + 0.04);
+      }
       const nextTier = currentTier();
       // Hysteresis prevents toggling targets/passes around the frame-time boundary.
       const slow = state.averageFrameMs > 25 ? true : state.averageFrameMs < 18 ? false : state.slow;
@@ -224,9 +224,10 @@ export function render(scene, camera, dt = 0) {
         if (state.lights.spot) state.lights.spot.castShadow = nextTier === 'high' && !slow;
         const key = state.lights.key;
         const shadowSize = nextTier === 'low' || slow ? 512 : nextTier === 'medium' ? 1024 : 2048;
-        if (key?.shadow?.mapSize?.set && key.shadow.mapSize.x !== shadowSize) {
+        // A live shadow map is never resized on this renderer (see sceneSetup.js
+        // _setShadowSize): only a map that does not exist yet takes the new size.
+        if (key?.shadow?.mapSize?.set && !key.shadow.map && key.shadow.mapSize.x !== shadowSize) {
           key.shadow.mapSize.set(shadowSize, shadowSize);
-          key.shadow.map?.dispose?.(); key.shadow.map = null; key.shadow.needsUpdate = true;
         }
         applySize(state);
       }
@@ -251,9 +252,7 @@ export function dispose(scene) {
       scene.environment = state.original.environment;
       scene.environmentIntensity = state.original.environmentIntensity;
     }
-    state.environment.target.dispose?.();
     state.environment.texture.dispose?.();
-    state.environment.pmrem.dispose?.();
   }
   for (const saved of state.originalLights) {
     saved.light.castShadow = saved.castShadow;

@@ -4,7 +4,7 @@
 // and the Blazor interop callbacks. One fighter's own turn — movement, energy and the
 // state machine — is fighterTick.js; the rules it applies are energy.js, knockdown.js
 // and combat.js; best-of-three is rounds.js.
-import * as THREE from 'three';
+import * as THREE from 'three-eco/webgpu';
 import { buildArena, animateCrowd, updateAtmosphere, updateRopes, updateBanners, twangRope, damagePost, disposeArenaReflector, RING_HALF } from './arena.js';
 import { buildProps, resetProps, updateProps, disposeProps } from './props.js';
 import { buildFighter, updateJiggles, setExpression, CHARACTERS, CHARACTER_IDS } from './fighters.js';
@@ -14,10 +14,11 @@ import { AiController } from './ai.js';
 import { RandomGenerator } from './rng.js';
 import { CombatPlay } from './combat.js';
 import { PERSONALITIES, makePersonalityState } from './personalities.js';
-import * as PostFx from '../platform/postFx.js';
+import * as PostFx from '../platform/postPunch.js';
 import * as VisualRuntime from '../platform/visualRuntime.js';
 import * as Quality from './quality.js';
-import { createArenaStage, bindView } from './stageHost.js';
+import { applyFighterFx, inkHandles } from './fighterFx.js';
+import { createArenaStage, bindView, sampleGpuTime } from './stageHost.js';
 import { warmup } from '../platform/3d/warmup.js';
 import { AudioBus } from './audio.js';
 import { CannonRagdoll } from './ragdollPhysics.js';
@@ -57,8 +58,8 @@ const MAX_FRAME_DT = 0.05;
 
 // KO shot readability caps (_updateFx): afterimage feedback, speedline strength, and the share
 // of the rack focus's blur radius kept while the KO camera runs.
-const KO_SMEAR_MAX = 0.45;
-const KO_SPEED_MAX = 0.25;
+const KO_SMEAR_MAX = 0;
+const KO_SPEED_MAX = 0;
 const KO_DOF_MUL = 0.6;
 
 // The app-wide reduced-motion flag (user toggle OR OS preference), stamped by
@@ -242,23 +243,23 @@ export class BrawlGame {
     // Publishes --audio-bass/mid/treble/peak (visualRuntime.js). Off by default
     // there; switched on here and off in dispose so only this page pays for it.
     try { VisualRuntime.enableAudioReactive(true); } catch { /* never block the game on chrome */ }
+    // Booting builds the whole scene's shaders: seconds of stalled frames that are not the
+    // GPU's speed. The warm-up releases this once the first real frames are drawing.
+    try { VisualRuntime.holdQuality(30000); } catch { /* as above */ }
 
     // The shared stage owns the renderer, its sizing (tier-aware DPR through PoCanvasDpr's pixel
     // budget), the rAF loop and the dispose; this keeps only the look.
-    // PCFSoft: soft-edged shadows, a real penumbra under the fighters. AgX handles saturated
+    // PCF: soft-edged shadows, a real penumbra under the fighters. AgX handles saturated
     // bright lights (bloom pulses, colored corner accents) far more gracefully than ACES (~15%
     // of pixels stay in the midtones). Contrast comes from the lighting ratio (key vs hemisphere
     // fill), NOT exposure, which lifts shadows and highlights together; it is tied to
     // ENV_INTENSITY: with the env fill 1.5 would re-flatten the contrast.
-    // KNOWN WARNING, not ours: on Windows/ANGLE the first compile logs "X4000: use of
-    // potentially uninitialized variable (dyn_index_vec4_float4_int)" from three's own
-    // light/shadow array chunks, not this game's GLSL (checked). The program still links.
-    // antialias:false is deliberate: every frame goes through the composer's own MSAA target
-    // (see _buildComposer) and reaches the canvas as a fullscreen quad, so a multisampled
-    // default framebuffer would never be resolved against any geometry.
+    // antialias:false is deliberate: every frame goes through the pipeline's own MSAA scene
+    // pass (see _buildComposer) and reaches the canvas as a fullscreen quad, so a multisampled
+    // canvas would never be resolved against any geometry.
     this.exposureBase = ENV_INTENSITY > 0 ? 1.36 : 1.5;
     const { stage, renderer } = await createArenaStage(this.container,
-      { tone: 'agx', exposure: this.exposureBase, shadows: 'pcfsoft' },
+      { tone: 'agx', exposure: this.exposureBase, shadows: 'pcf' },
       { maxDpr: Quality.settings().maxDpr, maxDt: MAX_FRAME_DT, onFrame: (dt) => this._frame(dt) });
     if (this.disposed) { stage.dispose(); return; }
     this.stage = stage;
@@ -274,7 +275,7 @@ export class BrawlGame {
     // Light COUNT is fixed at boot from the tier — it is a shader #define, so it
     // cannot track live tier changes without recompiling every material. Shadow map
     // sizes and the post chain are retuned live in _applyQuality below.
-    this.arena = buildArena(this.scene, { rectAreaLights: Quality.settings().rectAreaLights });
+    this.arena = buildArena(this.scene, { rectAreaLights: Quality.settings().rectAreaLights, renderer: this.renderer });
     // Before _applyTextureAnisotropy, so the jumbotron canvas texture it
     // installs gets filtered along with everything else.
     this._initReactiveArena();
@@ -286,7 +287,7 @@ export class BrawlGame {
     // output (see _buildComposer).
     this._buildComposer(w, h);
 
-    // GPU particle pool: one THREE.Points draw call for every spark, sweat
+    // GPU particle pool: one instanced draw call for every spark, sweat
     // droplet and confetti fleck. Additive blending means "fade" is just
     // color → black, so no per-particle alpha attribute is needed.
     this._initParticles();
@@ -598,6 +599,8 @@ export class BrawlGame {
     // canvas keeps its last frame until the warm-up settles.
     if (this._compiling) return;
     this.composer.render();
+    // The GPU's own frame time, for the adaptive tier (stageHost.js).
+    this.gpuMs = sampleGpuTime(this.stage, this.renderer);
     // Showtime modules that read the finished frame (replay grade, result glass).
     this._renderShow(performance.now());
     // The result shatter snapshots the frame, so it has the same constraint.
@@ -746,10 +749,10 @@ export class BrawlGame {
         physicalMaterials: Quality.settings().physicalMaterials,
       });
       if (mirror && index === 2) altKit(rig);
-      // Must run before the first render: onBeforeCompile only fires on
-      // initial program compile, so injecting after a material has been drawn
-      // once does nothing until something else dirties it.
-      const inkUniforms = this._applyInkEdge(rig);
+      // The ink edge and the blood, on the graphs every fighter shares (fighterFx.js).
+      // Before the first render, so the warm-up compiles the finished materials.
+      const bloodWear = applyFighterFx(rig);
+      const inkUniforms = inkHandles(bloodWear);
       // Spawn on the same side as this fighter's HUD bar (SPAWN_X_BY_SIDE).
       const side = index === 1 ? 'left' : 'right';
       rig.root.position.set(SPAWN_X_BY_SIDE[side], 0, 0);
@@ -806,6 +809,9 @@ export class BrawlGame {
         // super cinematic can spike the edge to the character's accent colour
         // and let it fall back without re-walking the hierarchy every frame.
         inkUniforms,
+        // This rig's shader values: ink edge, and the blood on its skin and clothes
+        // (fighterFx.js; blood.js _bloody raises `wear`).
+        bloodWear,
         // Stance offsets give each president a personal idle silhouette
         // (Trump's chin-up lean, Nixon's hunch) on top of the shared guard.
         animator: new Animator(rig.joints, rig.config.stance),
@@ -1053,6 +1059,12 @@ export class BrawlGame {
   // Returns (and stores as _ready) a promise that settles when it is done.
   _warmupRender() {
     this._compiling = true;
+    // A newer warm-up (boot, then the first bout's reset) supersedes this one: only the
+    // latest may hand the loop back, or the frame after an early finish builds the rest
+    // of the scene synchronously.
+    const run = this._warmupRun = (this._warmupRun || 0) + 1;
+    // The builds below starve the frame loop; that is not the GPU being slow (visualRuntime).
+    try { VisualRuntime.holdQuality(30000); } catch { /* chrome, never the game's problem */ }
     // compile() only walks visible objects, and much of the scene waits hidden until
     // it is needed (strike trails, shock rings, flash bulbs, the shader keepers). Show
     // them for the synchronous compile pass inside the call, then hide them again.
@@ -1076,7 +1088,10 @@ export class BrawlGame {
       for (const o of hidden) o.visible = false;
     }
     this._ready = compiled.catch(() => {}).then(() => {
+      if (run !== this._warmupRun) return this._ready;
       this._compiling = false;
+      // Judge frames again once the first real ones have gone by.
+      try { VisualRuntime.holdQuality(2500, true); } catch { /* as above */ }
       if (this.disposed) return;
       const transient = [this.afterimage, this.rackFocus?.pass].filter((p) => p && !p.enabled);
       try {
@@ -1958,7 +1973,10 @@ export class BrawlGame {
     // Tournament: round baseline + the Elo storyline (cup.js); null in every other mode.
     this._tickCup(dt);
     const cup = this._cup;
-    animateCrowd(this.arena.crowd, dt, this.clock, this.excited);
+    // The stands lean toward the middle of the action (still under reduced motion).
+    const cf0 = this.fighters?.[0]?.rig.root.position, cf1 = this.fighters?.[1]?.rig.root.position;
+    animateCrowd(this.arena.crowd, dt, this.clock, this.excited,
+      cf0 && cf1 && !this._calm() ? { x: (cf0.x + cf1.x) / 2, z: (cf0.z + cf1.z) / 2 } : null);
     // Phones come up for the last ten seconds, a fighter in the red, and the result.
     const phonesWanted = Math.max(cup ? cup.phones : 0, this.phase === 'result' ? 0.8
       : this.phase === 'fighting' && !this.training
@@ -2004,7 +2022,8 @@ export class BrawlGame {
     if (this.gamepads) { this.gamepads.dispose(); this.gamepads = null; }
     if (this.haptics) { this.haptics.dispose(); this.haptics = null; }
     if (this.matWear) { this.matWear.dispose(); this.matWear = null; }
-    if (this._pSprite) { this._pSprite.dispose(); this._pSprite = null; }
+    if (this._particles) { this._particles.dispose(); this._particles = null; }
+    if (this._confetti) { this._confetti.dispose(); this._confetti = null; }
     this._disposeBlood();
     // Drop the tier subscription before anything else is torn down — the handler
     // touches the renderer and the arena lights, and a `po-gfx-tier` firing during
@@ -2048,9 +2067,8 @@ export class BrawlGame {
       });
     }
     if (this.composer) this.composer.dispose?.();
-    // PMREM output target — a WebGLRenderTarget, invisible to the
-    // geometry/material traverse above.
-    if (this._envRT) { this._envRT.dispose(); this._envRT = null; }
+    // The painted environment texture, invisible to the geometry/material traverse above.
+    if (this._envTex) { this._envTex.dispose(); this._envTex = null; }
     if (this.scene) this.scene.environment = null;
     // The contact-shadow and AO-disc gradients, shared by every spawn (lighting.js); the
     // traverse above freed their materials, never the maps.

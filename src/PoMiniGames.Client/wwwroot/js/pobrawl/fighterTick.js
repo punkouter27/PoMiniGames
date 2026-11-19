@@ -8,7 +8,7 @@
 // energy.js (the bar), knockdown.js (the canvas), combat.js (region damage and
 // which hand throws). game.js keeps the match loop that calls into here.
 
-import * as THREE from 'three';
+import * as THREE from 'three-eco/webgpu';
 import { RING_HALF } from './arena.js';
 import { AiController } from './ai.js';
 import { regionEffect, pickPunchArm } from './combat.js';

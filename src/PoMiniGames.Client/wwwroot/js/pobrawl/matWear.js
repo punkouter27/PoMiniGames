@@ -14,7 +14,7 @@
 // Painting is a few canvas arcs per event; the upload is throttled to 5 Hz and
 // skipped when nothing changed, so a quiet ring costs nothing at all.
 
-import * as THREE from 'three';
+import * as THREE from 'three-eco/webgpu';
 
 const SIZE = 512;
 const UPLOAD_EVERY = 0.2;  // s

@@ -4,13 +4,15 @@
 //
 // Mixed into BrawlGame's prototype, so `this` is the live game — see mixin.js.
 
-import * as THREE from 'three';
+import * as THREE from 'three-eco/webgpu';
+import { createParticlePool } from './particlePool.js';
+import { createConfettiSim } from './confettiSim.js';
+import { MAT_HALF } from './constants.js';
 import { SeveredArm } from './ragdollPhysics.js';
 import { stepWorld } from './physics.js';
 
 // Scratch objects so the trail sampler and particle spawns allocate nothing.
 const _trailPos = new THREE.Vector3();
-const _pColor = new THREE.Color();
 
 class VfxMethods {
   // Effects built mid-fight (callout words and the like) make their
@@ -20,7 +22,11 @@ class VfxMethods {
   // compiles the keepers with everything else, and the per-effect materials reuse it.
   _initShaderKeepers() {
     const geo = new THREE.PlaneGeometry(0.01, 0.01);
-    const tex = new THREE.CanvasTexture(document.createElement('canvas'));
+    // A canvas with a 2D context: WebGPU refuses to upload one that never had a context.
+    const blank = document.createElement('canvas');
+    blank.width = blank.height = 2;
+    blank.getContext('2d');
+    const tex = new THREE.CanvasTexture(blank);
     tex.colorSpace = THREE.SRGBColorSpace;
     this._keeperTex = tex;
     this._shaderKeepers = new THREE.Group();
@@ -204,98 +210,22 @@ class VfxMethods {
   }
 
   // ── GPU particles ────────────────────────────────────────────────────
-  // One Points draw call. A particle is written ONCE at spawn; the vertex
-  // shader evaluates the closed-form trajectory at `uTime` —
-  //     p(t) = p0 + v * (1 - e^(-k*t)) / k  +  0.5 * g * t^2      (k -> 0: p0 + v*t)
-  // — fades it over its life, and parks it off-screen once dead. Per frame the
-  // CPU only advances the uniform and uploads slots written since last frame.
-  // Slots are a ring; the oldest recycles first.
-  //
-  // `uTime` runs on the RENDER clock (advanced in _updateEffects), so sparks
-  // keep flying through hitstop.
+  // Every spark, mote, dust puff and confetti fleck: one additive instanced draw call
+  // (particlePool.js). Its clock is the RENDER clock (advanced in _updateEffects), so
+  // sparks keep flying through hitstop.
   _initParticles() {
-    const N = this._particleMax = 2048;
-    this._pCursor = 0;
-    this._pClock = 0;
-    this._pLo = Infinity;
-    this._pHi = -1;
-    const geo = new THREE.BufferGeometry();
-    const attr = (name, size) => {
-      const a = new THREE.BufferAttribute(new Float32Array(N * size), size);
-      a.setUsage(THREE.DynamicDrawUsage);
-      geo.setAttribute(name, a);
-      return a;
-    };
-    this._pPos = attr('position', 3);   // spawn point
-    this._pVel = attr('aVel', 3);
-    this._pCol = attr('aColor', 3);
-    this._pMeta = attr('aMeta', 4);     // birth, life, gravity, drag
-    this._pSize = attr('aSize', 1);
-    // Every slot starts long dead.
-    for (let i = 0; i < N; i++) this._pMeta.array[i * 4] = -1e6;
-    // Soft round sprite so points don't render as squares.
-    const c = document.createElement('canvas');
-    c.width = c.height = 32;
-    const g = c.getContext('2d');
-    const grad = g.createRadialGradient(16, 16, 1, 16, 16, 16);
-    grad.addColorStop(0, 'rgba(255,255,255,1)');
-    grad.addColorStop(0.4, 'rgba(255,255,255,0.55)');
-    grad.addColorStop(1, 'rgba(255,255,255,0)');
-    g.fillStyle = grad;
-    g.fillRect(0, 0, 32, 32);
-    this._pSprite = new THREE.CanvasTexture(c);
-    const mat = new THREE.ShaderMaterial({
-      uniforms: {
-        uTime: { value: 0 },
-        // Pixels per world unit at distance 1 — half the drawing-buffer height,
-        // the same factor PointsMaterial's sizeAttenuation uses. Set per frame.
-        uScale: { value: 300 },
-        uMap: { value: this._pSprite },
-      },
-      vertexShader: /* glsl */`
-        attribute vec3 aVel;
-        attribute vec3 aColor;
-        attribute vec4 aMeta;
-        attribute float aSize;
-        uniform float uTime;
-        uniform float uScale;
-        varying vec3 vColor;
-        void main() {
-          float age = uTime - aMeta.x;
-          if (age < 0.0 || age > aMeta.y) {
-            // Dead or not yet born: outside the clip volume, zero size.
-            gl_Position = vec4(2.0, 2.0, 2.0, 1.0);
-            gl_PointSize = 0.0;
-            vColor = vec3(0.0);
-            return;
-          }
-          float k = aMeta.w;
-          float travel = k > 0.001 ? (1.0 - exp(-k * age)) / k : age;
-          vec3 p = position + aVel * travel;
-          p.y += 0.5 * aMeta.z * age * age;
-          vec4 mv = modelViewMatrix * vec4(p, 1.0);
-          gl_Position = projectionMatrix * mv;
-          // Linear fade to black over the life: additive blending, so black is gone.
-          vColor = aColor * (1.0 - age / aMeta.y);
-          gl_PointSize = aSize * uScale / max(0.05, -mv.z);
-        }`,
-      fragmentShader: /* glsl */`
-        uniform sampler2D uMap;
-        varying vec3 vColor;
-        void main() {
-          float a = texture2D(uMap, gl_PointCoord).a;
-          if (a < 0.01) discard;
-          gl_FragColor = vec4(vColor, a);
-        }`,
-      transparent: true,
-      blending: THREE.AdditiveBlending,
-      depthWrite: false,
-      fog: false,
+    // Soft on WebGPU: the dust and smoke puffs fade into the canvas instead of cutting it.
+    this._particles = createParticlePool(2048, {
+      additive: true, renderOrder: 3, soft: !!this.renderer?.backend?.isWebGPUBackend && !/[?&]brawlSoft=off/.test(location.search),
     });
-    this._particlePoints = new THREE.Points(geo, mat);
-    this._particlePoints.frustumCulled = false;
-    this._particlePoints.renderOrder = 3;
-    this.scene.add(this._particlePoints);
+    this.scene.add(this._particles.mesh);
+    // Confetti that lands, lies there and gets kicked about (confettiSim.js). Null where the
+    // renderer cannot simulate it; then confetti goes through the pool above, as it did.
+    this._confetti = createConfettiSim(this.renderer, { half: MAT_HALF, floorY: 0.05 });
+    if (this._confetti) {
+      this.scene.add(this._confetti.mesh);
+      try { this._confetti.warm(); } catch { /* compiled on first use instead */ }
+    }
   }
 
   /**
@@ -303,39 +233,12 @@ class VfxMethods {
    * velocity damping rate, 0 = none.
    */
   _spawnParticle(x, y, z, vx, vy, vz, color, life, gravity = -8, size = 0.11, drag = 0) {
-    if (!this._particlePoints) return;
-    const i = this._pCursor;
-    this._pCursor = (i + 1) % this._particleMax;
-    const i3 = i * 3, i4 = i * 4;
-    const pos = this._pPos.array, vel = this._pVel.array, col = this._pCol.array, meta = this._pMeta.array;
-    pos[i3] = x; pos[i3 + 1] = y; pos[i3 + 2] = z;
-    vel[i3] = vx; vel[i3 + 1] = vy; vel[i3 + 2] = vz;
-    _pColor.set(color);
-    col[i3] = _pColor.r; col[i3 + 1] = _pColor.g; col[i3 + 2] = _pColor.b;
-    meta[i4] = this._pClock; meta[i4 + 1] = life; meta[i4 + 2] = gravity; meta[i4 + 3] = drag;
-    this._pSize.array[i] = size;
-    if (i < this._pLo) this._pLo = i;
-    if (i > this._pHi) this._pHi = i;
+    this._particles?.spawn(x, y, z, vx, vy, vz, color, life, gravity, size, drag);
   }
 
   _updateParticles(dt) {
-    if (!this._particlePoints) return;
-    this._pClock += dt;
-    const u = this._particlePoints.material.uniforms;
-    u.uTime.value = this._pClock;
-    // Composer targets match the drawing buffer, so its height is the right scale.
-    u.uScale.value = this.renderer.domElement.height * 0.5;
-    if (this._pHi < 0) return;
-    // Upload only the slots written since last frame. A ring wrap inside one
-    // frame makes the span the whole buffer, which is still just one upload.
-    const lo = this._pLo, count = this._pHi - lo + 1;
-    for (const a of [this._pPos, this._pVel, this._pCol, this._pMeta, this._pSize]) {
-      a.clearUpdateRanges();
-      a.addUpdateRange(lo * a.itemSize, count * a.itemSize);
-      a.needsUpdate = true;
-    }
-    this._pLo = Infinity;
-    this._pHi = -1;
+    this._particles?.update(dt, this.camera);
+    this._confetti?.update(dt);
   }
 
   // Canvas dust kicked up where a body hits the mat, or feet skid under a heavy
@@ -515,6 +418,13 @@ class VfxMethods {
 
   // Celebration confetti glitter over the ring at the K.O.
   _spawnConfetti() {
+    if (this._confetti) {
+      // Let go from the rafters over the whole ring; it drifts down and stays where it lands.
+      this._confetti.emit({
+        origin: [0, 6.7, 0], box: [3.6, 1.25, 3.6], velocity: [0, -0.6, 0], scatter: [0.5, 0.3, 0.5], count: 420,
+      });
+      return;
+    }
     const colors = [0xff4a3c, 0x4a7dff, 0xffd257, 0xf5f2ec];
     for (let i = 0; i < 80; i++) {
       this._spawnParticle(

@@ -2,7 +2,7 @@
 // super meter, the super cinematic and its effects, and the on-hit quirks.
 // Mixed into BrawlGame's prototype, so `this` is the live game (see mixin.js).
 
-import * as THREE from 'three';
+import * as THREE from 'three-eco/webgpu';
 import { PERSONALITIES } from './personalities.js';
 import { MAX_HP, ATTACKS } from './constants.js';
 import { guardCovers } from './hitboxes.js';
@@ -11,6 +11,7 @@ import * as Quality from './quality.js';
 // Super ink (see _startSuperInk): seconds in / held / out, full and calm (reduced motion).
 const INK_FULL = { in: 0.18, hold: 0.5, out: 0.32, peak: 1 };
 const INK_CALM = { in: 0.25, hold: 0.18, out: 0.3, peak: 0.45 };
+const INK_CUT_KO = 0.07;       // a KO takes the page away at once: the fall must be seen
 const INK_CUT = 0.2;           // an interrupted shift (a KO, a reset) still fades, never snaps
 const _inkProj = new THREE.Vector3();
 const _black = new THREE.Color(0x000000);
@@ -272,8 +273,9 @@ class PersonalityEffectsMethods {
       s.cutAt = s.t;
       s.cutFrom = k;
     }
-    if (s.cutAt >= 0) k = Math.min(k, s.cutFrom * (1 - ease((s.t - s.cutAt) / INK_CUT)));
-    const done = s.t >= s.in + s.hold + s.out || (s.cutAt >= 0 && s.t - s.cutAt >= INK_CUT);
+    const cut = this.phase === 'ko' || this.phase === 'result' ? INK_CUT_KO : INK_CUT;
+    if (s.cutAt >= 0) k = Math.min(k, s.cutFrom * (1 - ease((s.t - s.cutAt) / cut)));
+    const done = s.t >= s.in + s.hold + s.out || (s.cutAt >= 0 && s.t - s.cutAt >= cut);
     u.uSuperInk.value = done ? 0 : k * s.peak;
     u.uInkCheap.value = s.cheap;
     u.uInkMotion.value = s.motion;

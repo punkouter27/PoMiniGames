@@ -13,7 +13,7 @@
 // whole-frame brightness. Reduced motion: no beat pulse, no wave, no sway.
 // Every material is built here at init so _warmupRender compiles it; nothing compiles mid-fight.
 
-import * as THREE from 'three';
+import * as THREE from 'three-eco/webgpu';
 import { MAX_HP } from './constants.js';
 
 const TIME_LIMIT = 60;         // game.js TIME_LIMIT

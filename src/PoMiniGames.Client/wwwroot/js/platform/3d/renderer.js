@@ -55,7 +55,7 @@ export async function webgpuAvailable() {
  *
  * @param {object} THREE
  * @param {{api?:'webgl'|'webgpu'|'auto', canvas?:HTMLCanvasElement, antialias?:boolean, alpha?:boolean,
- *          powerPreference?:string, preserveDrawingBuffer?:boolean, forceWebGL?:boolean,
+ *          powerPreference?:string, preserveDrawingBuffer?:boolean, forceWebGL?:boolean, trackTimestamp?:boolean,
  *          tone?:string, exposure?:number, shadows?:any, colorSpace?:string, clearColor?:any, clearAlpha?:number,
  *          pixelRatio?:number}} [o]
  */
@@ -75,7 +75,8 @@ export async function createRenderer(THREE, o = {}) {
 
     let renderer;
     if (useGpu) {
-        renderer = new THREE.WebGPURenderer({ ...params, forceWebGL: !!o.forceWebGL });
+        // trackTimestamp: GPU frame times through timestamp queries, where the device has them.
+        renderer = new THREE.WebGPURenderer({ ...params, forceWebGL: !!o.forceWebGL, trackTimestamp: !!o.trackTimestamp });
         await renderer.init?.();
     } else {
         return createRendererSync(THREE, o);

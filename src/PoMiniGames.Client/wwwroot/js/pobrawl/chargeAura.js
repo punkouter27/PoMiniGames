@@ -12,7 +12,11 @@
 // One slot per corner (fighters[0] / fighters[1]), so both can charge at once. Every mesh is
 // built hidden at init: _warmupRender compiles the programs up front, nothing links mid-fight.
 // Presentation only: Math.random, never the match RNG. Local light only (flicker rule).
-import * as THREE from 'three';
+import * as THREE from 'three-eco/webgpu';
+import {
+  abs, atan, dot, mix, normalView, positionGeometry, positionLocal, positionViewDirection, pow, sin,
+  smoothstep, uniform, vec3,
+} from 'three-eco/tsl';
 import * as Quality from './quality.js';
 
 const _p = new THREE.Vector3();
@@ -22,71 +26,50 @@ const _c = new THREE.Color();
 
 const FLARE_SEC = 0.22;
 
-const VERT = /* glsl */`
-  uniform float uTime;
-  uniform float uShimmer;
-  varying vec3 vN;
-  varying vec3 vV;
-  varying vec3 vP;
-  void main() {
-    vP = position;
-    vec3 p = position;
-    // The shimmer shell's surface wobbles, so its rings read as heat haze, not a ball.
-    p *= 1.0 + uShimmer * 0.09 * sin(p.y * 9.0 + uTime * 11.0) * sin(p.x * 7.0 - uTime * 8.0);
-    vec4 mv = modelViewMatrix * vec4(p, 1.0);
-    vN = normalize(normalMatrix * normal);
-    vV = normalize(-mv.xyz);
-    gl_Position = projectionMatrix * mv;
-  }`;
-
-const FRAG = /* glsl */`
-  uniform float uTime;
-  uniform float uAmt;
-  uniform float uFade;
-  uniform float uShimmer;
-  varying vec3 vN;
-  varying vec3 vV;
-  varying vec3 vP;
-  void main() {
-    float fr = 1.0 - abs(dot(normalize(vN), normalize(vV)));
-    float a = atan(vP.z, vP.x);
-    vec3 col = mix(vec3(0.82, 0.9, 1.0), vec3(1.0, 0.7, 0.2), smoothstep(0.0, 1.0, uAmt));
-    float k;
-    if (uShimmer > 0.5) {
-      // Heat shimmer: thin travelling rings, bent by a slow swirl, faint at the rim.
-      float bands = sin(vP.y * 26.0 - uTime * 13.0 + sin(a * 3.0 + uTime * 3.0) * 2.2);
-      k = smoothstep(0.55, 1.0, bands) * pow(fr, 1.4) * 0.2;
-    } else {
-      // Energy shell: two counter-rotating swirls over a fresnel rim.
-      float s1 = sin(a * 4.0 + vP.y * 6.0 - uTime * (6.0 + 7.0 * uAmt)) * 0.5 + 0.5;
-      float s2 = sin(a * 7.0 - vP.y * 9.0 + uTime * 9.0) * 0.5 + 0.5;
-      float energy = mix(s1, s1 * s2, 0.5);
-      k = pow(fr, 2.0) * (0.35 + 0.95 * energy) + pow(fr, 6.0) * 0.55
-        // A hot core seen through the face, so it reads as energy, not a soap bubble.
-        + pow(1.0 - fr, 3.0) * (0.12 + 0.5 * uAmt) * (0.6 + 0.4 * energy);
-    }
-    k *= uFade * (0.3 + 0.95 * uAmt);
-    gl_FragColor = vec4(col * k, 1.0);
-  }`;
+// One aura shell material. `shimmer` picks the heat-haze variant: its surface wobbles, so
+// its rings read as heat haze, not a ball. Additive, so the colour IS the contribution.
+function shellMaterial(shimmer) {
+  const uTime = uniform(0), uAmt = uniform(0), uFade = uniform(0);
+  const mat = new THREE.MeshBasicNodeMaterial({
+    transparent: true,
+    blending: THREE.AdditiveBlending,
+    depthWrite: false,
+    fog: false,
+  });
+  const vP = positionGeometry;
+  if (shimmer) {
+    const wobble = sin(vP.y.mul(9).add(uTime.mul(11))).mul(sin(vP.x.mul(7).sub(uTime.mul(8)))).mul(0.09).add(1);
+    mat.positionNode = positionLocal.mul(wobble);
+  }
+  const fr = abs(dot(normalView, positionViewDirection)).oneMinus();
+  const a = atan(vP.z, vP.x);
+  const col = mix(vec3(0.82, 0.9, 1.0), vec3(1.0, 0.7, 0.2), smoothstep(0, 1, uAmt));
+  let k;
+  if (shimmer) {
+    // Heat shimmer: thin travelling rings, bent by a slow swirl, faint at the rim.
+    const bands = sin(vP.y.mul(26).sub(uTime.mul(13)).add(sin(a.mul(3).add(uTime.mul(3))).mul(2.2)));
+    k = smoothstep(0.55, 1.0, bands).mul(pow(fr, 1.4)).mul(0.2);
+  } else {
+    // Energy shell: two counter-rotating swirls over a fresnel rim.
+    const s1 = sin(a.mul(4).add(vP.y.mul(6)).sub(uTime.mul(uAmt.mul(7).add(6)))).mul(0.5).add(0.5);
+    const s2 = sin(a.mul(7).sub(vP.y.mul(9)).add(uTime.mul(9))).mul(0.5).add(0.5);
+    const energy = mix(s1, s1.mul(s2), 0.5);
+    k = pow(fr, 2).mul(energy.mul(0.95).add(0.35)).add(pow(fr, 6).mul(0.55))
+      // A hot core seen through the face, so it reads as energy, not a soap bubble.
+      .add(pow(fr.oneMinus(), 3).mul(uAmt.mul(0.5).add(0.12)).mul(energy.mul(0.4).add(0.6)));
+  }
+  mat.colorNode = col.mul(k).mul(uFade).mul(uAmt.mul(0.95).add(0.3));
+  mat.uniforms = { uTime, uAmt, uFade };
+  return mat;
+}
 
 class ChargeAuraMethods {
   _initChargeAura() {
     const geo = new THREE.SphereGeometry(1, 24, 16);
     const glintTex = starTexture();
-    const shellMat = (shimmer) => new THREE.ShaderMaterial({
-      uniforms: {
-        uTime: { value: 0 }, uAmt: { value: 0 }, uFade: { value: 0 }, uShimmer: { value: shimmer },
-      },
-      vertexShader: VERT,
-      fragmentShader: FRAG,
-      transparent: true,
-      blending: THREE.AdditiveBlending,
-      depthWrite: false,
-      fog: false,
-    });
     const slots = [0, 1].map(() => {
-      const shell = new THREE.Mesh(geo, shellMat(0));
-      const shimmer = new THREE.Mesh(geo, shellMat(1));
+      const shell = new THREE.Mesh(geo, shellMaterial(false));
+      const shimmer = new THREE.Mesh(geo, shellMaterial(true));
       const glint = new THREE.Sprite(new THREE.SpriteMaterial({
         map: glintTex, color: 0xfff1c0, transparent: true, opacity: 0,
         blending: THREE.AdditiveBlending, depthWrite: false, toneMapped: false, fog: false,

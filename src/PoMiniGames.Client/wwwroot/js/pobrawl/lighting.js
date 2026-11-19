@@ -2,7 +2,7 @@
 // rim pulses), the posture lean and the fighters' blob and AO shadows. Mixin (mixin.js), `this`
 // is the live game; moved out of game.js unchanged.
 
-import * as THREE from 'three';
+import * as THREE from 'three-eco/webgpu';
 import { PERSONALITIES } from './personalities.js';
 
 // The ring spotlight sweeps an ellipse (mostly along Z, with a vertical bob)

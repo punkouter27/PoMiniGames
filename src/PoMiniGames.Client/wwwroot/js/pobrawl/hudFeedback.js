@@ -2,7 +2,7 @@
 // callouts, damage numbers and floaters, and the 4 Hz HUD pump to the page. Mixin (mixin.js),
 // `this` is the live game; moved out of game.js unchanged.
 
-import * as THREE from 'three';
+import * as THREE from 'three-eco/webgpu';
 import { REGIONS } from './combat.js';
 import { HEAVY_HIT_DMG, TIME_LIMIT, COMBO_MIN_SHOWN } from './constants.js';
 

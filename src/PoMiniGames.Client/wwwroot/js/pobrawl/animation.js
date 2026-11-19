@@ -5,7 +5,7 @@
 // stance), layer overlays, damp-lerp every joint. Legs belong to the foot-IK
 // stepper unless the current track segment keys that leg.
 
-import * as THREE from 'three';
+import * as THREE from 'three-eco/webgpu';
 
 const GUARD = {
   torso: { x: 0.06, y: 0.18, z: 0 },

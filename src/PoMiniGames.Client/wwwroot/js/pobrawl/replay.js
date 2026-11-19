@@ -20,7 +20,7 @@
 // under the tournament's fast-forward. Reduced motion: no seal spin, straight cuts, one angle.
 // Presentation only: Math.random never this.rng, and every sim field touched is restored.
 
-import * as THREE from 'three';
+import * as THREE from 'three-eco/webgpu';
 import { RING_HALF } from './arena.js';
 
 const CAP = 300;               // ring frames: 5 s at REC_HZ

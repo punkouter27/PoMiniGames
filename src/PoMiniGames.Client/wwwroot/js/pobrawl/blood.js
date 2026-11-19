@@ -8,7 +8,15 @@
 // same however much it bleeds. Every mesh here is pooled and built at start(), so
 // _warmupRender compiles its programs up front and nothing links mid-fight.
 
-import * as THREE from 'three';
+import * as THREE from 'three-eco/webgpu';
+import {
+  attribute, floor, mix, mod, select, smoothstep, texture, uniform, uv, varying, vec2, vec3,
+} from 'three-eco/tsl';
+import * as Quality from './quality.js';
+import { createParticlePool } from './particlePool.js';
+import { createBloodFluid } from './bloodFluid.js';
+import { recordHit, recordDent, tickFighterFx } from './fighterFx.js';
+import { MAT_HALF } from './constants.js';
 
 const DROP_MAX = 768;       // blood droplets in flight
 const SWEAT_MAX = 256;      // sweat droplets in flight
@@ -40,11 +48,23 @@ const _up = new THREE.Vector3(0, 1, 0);
 const _socket = new THREE.Vector3();
 const _dir = new THREE.Vector3();
 const _head = new THREE.Vector3();
+// What the simulated droplets glance off: joint, radius, lift above the joint (metres at scale 1).
+const BODY_SPHERES = [['head', 0.19, 0.12], ['torso', 0.27, 0.26], ['hips', 0.22, 0.02]];
+// What drags the film on the canvas, when it is down on it.
+const FILM_PUSHERS = [['footL', 0.3], ['footR', 0.3], ['hips', 0.42]];
 
 // Both sit well below full red: AgX at this exposure turns a bright red salmon-pink.
 const BLOOD_FRESH = 0x6e0a08; // arterial: brighter
 const BLOOD_DARK = 0x4a0806;  // a face cut: darker
 const SWEAT_TINT = 0xeaf2fa;
+// The airborne spray is unlit, so its reds carry their own brightness: a touch above the
+// lit droplets' albedo, which the ring lights lift on their own.
+const SPRAY_STREAK = 0x7c0e0b;
+const SPRAY_MIST = 0x8a1612;
+const SPRAY_MAX = 1536;     // spray particles in flight
+const DECAL_MAX = 40;       // blood splats stuck to crates; the oldest recycles
+const RUN_SPEED = 0.045;        // m/s a fresh run creeps down the body
+const DRY_FIGHTER_SECS = 8;     // wet → tacky time constant
 
 function rnd(a, b) { return a + Math.random() * (b - a); }
 
@@ -131,19 +151,75 @@ function makeDropPool(max, material) {
 }
 
 class BloodMethods {
+  // The GPU blood simulation (bloodFluid.js), or null where the renderer cannot run it. Made
+  // on first ask: the canvas material needs its film nodes before _initBlood runs.
+  _ensureBloodFluid() {
+    if (this._fluid === undefined) {
+      // `?brawlFluid=off` keeps the closed-form spray, for comparing the two.
+      const off = /[?&]brawlFluid=off/.test(globalThis.location?.search ?? '');
+      this._fluid = off ? null : createBloodFluid(this.renderer, { half: MAT_HALF, floorY: STAIN_Y });
+      if (this._fluid) {
+        this.scene.add(this._fluid.mesh);
+        try { this._fluid.warm(); } catch { /* compiled on first use instead */ }
+      }
+    }
+    return this._fluid;
+  }
+
+  // Per frame: where the bodies are (droplets glance off them), what is moving through the
+  // film (it is dragged along), then one step of the simulation.
+  _stepBloodFluid(dt) {
+    const fluid = this._fluid;
+    if (!fluid || !(dt > 0)) return;
+    let sphere = 0, pusher = 0;
+    for (const f of this.fighters || []) {
+      const joints = f.rig.joints, hs = f.rig.config?.heightScale || 1;
+      for (const [name, radius, lift] of BODY_SPHERES) {
+        const joint = joints[name];
+        if (!joint) continue;
+        joint.getWorldPosition(_p);
+        fluid.setCollider(sphere++, _p.x, _p.y + lift * hs, _p.z, radius * hs);
+      }
+      const prev = f.filmPrev || (f.filmPrev = {});
+      for (const [name, reach] of FILM_PUSHERS) {
+        const joint = joints[name];
+        if (!joint) continue;
+        joint.getWorldPosition(_p);
+        const was = prev[name] || (prev[name] = { x: _p.x, z: _p.z });
+        // Only what is down on the canvas moves the film; a foot in the air does not.
+        const down = _p.y < reach;
+        const vx = down ? (_p.x - was.x) / dt : 0, vz = down ? (_p.z - was.z) / dt : 0;
+        fluid.setPusher(pusher, _p.x, _p.z, vx, vz);
+        // The same feet kick lying confetti back into the air (confettiSim.js).
+        this._confetti?.setPusher(pusher, _p.x, _p.z, vx, vz);
+        pusher++;
+        was.x = _p.x; was.z = _p.z;
+      }
+    }
+    for (; sphere < 8; sphere++) fluid.setCollider(sphere, 0, -99, 0, 0);
+    for (; pusher < 8; pusher++) { fluid.setPusher(pusher, 0, 0, 0, 0); this._confetti?.setPusher(pusher, 0, 0, 0, 0); }
+    fluid.update(dt);
+  }
+
   _initBlood() {
     this._bloodClock = 0;
-    this._drops = makeDropPool(DROP_MAX, new THREE.MeshStandardMaterial({
+    this._drops = makeDropPool(DROP_MAX, new THREE.MeshStandardNodeMaterial({
       // Fresh blood is a wet, glossy liquid — lit, never additive.
       color: 0xffffff, roughness: 0.2, metalness: 0,
     }));
-    this._sweatDrops = makeDropPool(SWEAT_MAX, new THREE.MeshStandardMaterial({
+    this._sweatDrops = makeDropPool(SWEAT_MAX, new THREE.MeshStandardNodeMaterial({
       // Clear water: almost no color of its own, it shows as a glint off the ring lights.
       color: 0xffffff, roughness: 0.04, metalness: 0, transparent: true, opacity: 0.55,
       envMapIntensity: 2.2, depthWrite: false,
     }));
     this._sweatDrops.mesh.renderOrder = 3;
     this.scene.add(this._drops.mesh, this._sweatDrops.mesh);
+
+    // The airborne spray: fine streaks and a thin mist, alpha-blended so it darkens what
+    // is behind it rather than glowing (particlePool.js). The low tier throws a third.
+    this._spray = createParticlePool(SPRAY_MAX, { additive: false, renderOrder: 3 });
+    this._sprayScale = Quality.tier() === 'low' ? 0.35 : Quality.tier() === 'medium' ? 0.7 : 1;
+    this.scene.add(this._spray.mesh);
 
     // Stains: one instanced quad per stain on the canvas, atlas cell + birth time
     // per instance, aged in the shader so drying costs nothing on the CPU.
@@ -156,51 +232,36 @@ class BloodMethods {
     geo.setAttribute('aCell', this._stainCell);
     geo.setAttribute('aBirth', this._stainBirth);
     this._stainTex = buildStainAtlas();
-    const mat = new THREE.ShaderMaterial({
-      uniforms: {
-        uMap: { value: this._stainTex },
-        uTime: { value: 0 },
-        uFresh: { value: new THREE.Color(0x520907) },
-        uDry: { value: new THREE.Color(0x2a0806) },
-        uRim: { value: new THREE.Color(0x140403) },
-      },
-      vertexShader: /* glsl */`
-        attribute float aCell;
-        attribute float aBirth;
-        uniform float uTime;
-        varying vec2 vUv;
-        varying float vAge;
-        void main() {
-          vec2 cell = vec2(mod(aCell, 2.0), floor(aCell / 2.0));
-          vUv = (uv + cell) * 0.5;
-          vAge = uTime - aBirth;
-          gl_Position = projectionMatrix * modelViewMatrix * instanceMatrix * vec4(position, 1.0);
-        }`,
-      fragmentShader: /* glsl */`
-        uniform sampler2D uMap;
-        uniform vec3 uFresh;
-        uniform vec3 uDry;
-        uniform vec3 uRim;
-        varying vec2 vUv;
-        varying float vAge;
-        void main() {
-          vec4 t = texture2D(uMap, vUv);
-          float cov = t.r;
-          if (cov < 0.04) discard;
-          float thick = t.g;
-          float dry = smoothstep(0.0, 1.0, vAge / ${DRY_SECS.toFixed(1)});
-          vec3 col = mix(uFresh, uDry, dry);
-          // Drying blood pulls its pigment to the edge (the coffee-ring look).
-          float rim = 1.0 - smoothstep(0.15, 0.7, thick);
-          col = mix(col, uRim, rim * (0.25 + 0.5 * dry));
-          // A wet film catches a soft highlight on its thick middle, dulling as it dries.
-          col += vec3(0.05, 0.012, 0.01) * smoothstep(0.55, 0.95, thick) * (1.0 - dry);
-          gl_FragColor = vec4(col, cov * mix(0.94, 0.85, dry));
-        }`,
-      transparent: true,
-      depthWrite: false,
-      fog: false,
+    const uTime = uniform(0);
+    const uFresh = uniform(new THREE.Color(0x520907));
+    const uDry = uniform(new THREE.Color(0x2a0806));
+    const uRim = uniform(new THREE.Color(0x140403));
+    const aCell = attribute('aCell', 'float');
+    const cell = vec2(mod(aCell, 2), floor(aCell.div(2)));
+    const t = texture(this._stainTex, varying(uv().add(cell).mul(0.5)));
+    const cov = t.r, thick = t.g;
+    const dry = smoothstep(0, 1, varying(uTime.sub(attribute('aBirth', 'float'))).div(DRY_SECS));
+    // Drying blood pulls its pigment to the edge (the coffee-ring look).
+    const rim = smoothstep(0.15, 0.7, thick).oneMinus();
+    const pigment = mix(mix(uFresh, uDry, dry), uRim, rim.mul(dry.mul(0.5).add(0.25)));
+    const mat = new THREE.MeshBasicNodeMaterial({ transparent: true, depthWrite: false, fog: false });
+    // A wet film catches a soft highlight on its thick middle, dulling as it dries.
+    mat.colorNode = pigment.add(vec3(0.05, 0.012, 0.01).mul(smoothstep(0.55, 0.95, thick)).mul(dry.oneMinus()));
+    mat.opacityNode = select(cov.lessThan(0.04), 0, cov.mul(mix(0.94, 0.85, dry)));
+    mat.uniforms = { uTime };
+    // Splats that stick to the corner crates: lit quads cut out by the two round atlas
+    // cells, parented to the crate so they ride it when it is shoved or launched.
+    this._decalGeo = new THREE.PlaneGeometry(1, 1);
+    this._decalMats = [0, 1].map((cellIndex) => {
+      const m = new THREE.MeshStandardNodeMaterial({
+        color: BLOOD_DARK, roughness: 0.32, metalness: 0, transparent: true, depthWrite: false,
+        polygonOffset: true, polygonOffsetFactor: -2, polygonOffsetUnits: -2,
+      });
+      m.opacityNode = texture(this._stainTex, uv().add(vec2(cellIndex, 0)).mul(0.5)).r.mul(0.92);
+      return m;
     });
+    this._decals = [];
+    this._decalCursor = 0;
     this._stains = new THREE.InstancedMesh(geo, mat, STAIN_MAX);
     this._stains.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
     this._stains.count = 0;
@@ -215,8 +276,8 @@ class BloodMethods {
     // Wound caps on the torn shoulder and the torn end of the limb. Shared, wet,
     // and kept alive by a hidden keeper so the program is compiled at warmup.
     this._woundGeo = new THREE.SphereGeometry(1, 14, 10);
-    this._woundMat = new THREE.MeshStandardMaterial({ color: 0x5a0a08, roughness: 0.28 });
-    this._woundCoreMat = new THREE.MeshStandardMaterial({ color: 0xa83a32, roughness: 0.35 });
+    this._woundMat = new THREE.MeshStandardNodeMaterial({ color: 0x5a0a08, roughness: 0.28 });
+    this._woundCoreMat = new THREE.MeshStandardNodeMaterial({ color: 0xa83a32, roughness: 0.35 });
     const keepers = new THREE.Group();
     keepers.visible = false;
     keepers.add(new THREE.Mesh(this._woundGeo, this._woundMat), new THREE.Mesh(this._woundGeo, this._woundCoreMat));
@@ -244,7 +305,7 @@ class BloodMethods {
 
   // Integrate one pool and repack the live drops into instances 0..k-1, each
   // stretched along its velocity so a fast drop reads as a streak of liquid.
-  _stepDrops(pool, dt, onLand) {
+  _stepDrops(pool, dt, onLand, onHit = null) {
     if (!pool || (!pool.live && !pool.mesh.count)) return;
     const d = pool.d, drag = Math.exp(-AIR_DRAG * dt);
     let k = 0;
@@ -260,6 +321,8 @@ class BloodMethods {
       if (onCanvas && y <= FLOOR_Y && d[o + 4] < 0) {
         onLand(x, z, d[o + 3], d[o + 4], d[o + 5], d[o + 6]);
         d[o + 7] = 0;
+      } else if (onHit && onHit(x, y, z, d[o + 6])) {
+        d[o + 7] = 0; // stuck to something on the way down
       } else if (y < -0.6) {
         d[o + 7] = 0; // fell off the ring
       }
@@ -283,7 +346,10 @@ class BloodMethods {
   _updateBlood(dt) {
     if (!this._drops) return;
     this._bloodClock += dt;
-    this._stepDrops(this._drops, dt, (x, z, vx, vy, vz, r) => this._addBloodStain(x, z, vx, vy, vz, r));
+    this._stepDrops(this._drops, dt, (x, z, vx, vy, vz, r) => this._addBloodStain(x, z, vx, vy, vz, r),
+      (x, y, z, r) => this._stainProp(x, y, z, r));
+    this._spray?.update(dt, this.camera);
+    this._stepBloodFluid(dt);
     // Sweat darkens the vinyl where it lands and dries off (matWear.js).
     this._stepDrops(this._sweatDrops, dt, (x, z) => this.matWear?.sweat(x, z, 0.02, 1));
     this._updateStains(dt);
@@ -303,6 +369,123 @@ class BloodMethods {
         dir.x * sp + rnd(-0.5, 0.5) * spread, rnd(0.6, 1.6), dir.z * sp + rnd(-0.5, 0.5) * spread,
         fat ? rnd(0.012, 0.02) : rnd(0.004, 0.008), BLOOD_DARK);
     }
+    this._bloodSpray(pos, dir, power);
+  }
+
+  // The spray the eye catches in the air: fine streaks thrown in a cone along the blow,
+  // arcing and falling, and a thin red mist that swells and hangs for a moment. GPU
+  // particles (particlePool.js), so a heavy burst costs one buffer upload; the lit
+  // droplets above are what lands and stains.
+  _bloodSpray(pos, dir, power = 1) {
+    // Simulated where the renderer can (bloodFluid.js): several times the droplets, and
+    // they collide and feed the film on the canvas. Otherwise the closed-form spray below.
+    const fluid = this._ensureBloodFluid();
+    if (fluid) {
+      fluid.emit(pos, dir, power, Math.round((130 + 120 * power) * this._sprayScale));
+      return;
+    }
+    const spray = this._spray;
+    if (!spray) return;
+    const k = this._sprayScale;
+    const flat = Math.hypot(dir.x, dir.z);
+    // A blow straight up or down has no heading: fan it all the way round.
+    const dx = flat > 0.05 ? dir.x / flat : 0, dz = flat > 0.05 ? dir.z / flat : 0;
+    const lift = (dir.y || 0) * 2.2;
+    const streaks = Math.round((26 + 30 * power) * k);
+    for (let i = 0; i < streaks; i++) {
+      const sp = rnd(1.8, 6.2) * (0.7 + 0.3 * power);
+      const side = rnd(-0.55, 0.55) * sp + (flat > 0.05 ? 0 : rnd(-2, 2));
+      const fwd = flat > 0.05 ? sp : rnd(-2, 2);
+      spray.spawn(
+        pos.x + rnd(-0.03, 0.03), pos.y + rnd(-0.03, 0.03), pos.z + rnd(-0.03, 0.03),
+        dx * fwd - dz * side, rnd(0.3, 2.6) + lift, dz * fwd + dx * side,
+        SPRAY_STREAK, rnd(0.35, 0.8), -12, rnd(0.016, 0.04), rnd(0.8, 1.9), rnd(0.75, 1));
+    }
+    const puffs = Math.round((3 + 3 * power) * k);
+    for (let i = 0; i < puffs; i++) {
+      spray.spawn(
+        pos.x + rnd(-0.05, 0.05), pos.y + rnd(-0.04, 0.06), pos.z + rnd(-0.05, 0.05),
+        dx * rnd(0.5, 1.7) + rnd(-0.3, 0.3), rnd(0.1, 0.7), dz * rnd(0.5, 1.7) + rnd(-0.3, 0.3),
+        SPRAY_MIST, rnd(0.35, 0.6), -1.2, rnd(0.1, 0.17), 3.2, rnd(0.2, 0.32), 1.6);
+    }
+  }
+
+  // ── Blood that sticks ────────────────────────────────────────────────
+  // A droplet that meets a corner crate on its way down leaves a splat on the face it
+  // hit. Returns true when the drop was caught.
+  _stainProp(x, y, z, r) {
+    const list = this.props?.bodies;
+    if (!list || !this._decalMats) return false;
+    for (const entry of list) {
+      const body = entry.body;
+      if (body.userData.isDebris || !entry.mesh) continue;
+      const h = body.shapes[0].halfExtents.x;
+      const bx = x - body.position.x, by = y - body.position.y, bz = z - body.position.z;
+      const reach = h * 1.8;
+      if (bx * bx + by * by + bz * bz > reach * reach) continue;
+      // Into the crate's own frame (the body, not the mesh: the mesh is synced after this).
+      _q.set(body.quaternion.x, body.quaternion.y, body.quaternion.z, body.quaternion.w).invert();
+      _p.set(bx, by, bz).applyQuaternion(_q);
+      const ax = Math.abs(_p.x), ay = Math.abs(_p.y), az = Math.abs(_p.z);
+      if (ax > h || ay > h || az > h) continue;
+      this._putDecal(entry.mesh, _p, h, ax >= ay && ax >= az ? 0 : ay >= az ? 1 : 2, r);
+      return true;
+    }
+    return false;
+  }
+
+  // One splat on the face of `mesh` nearest the local point `p`; `axis` is that face's normal.
+  _putDecal(mesh, p, h, axis, r) {
+    let decal = this._decals[this._decalCursor];
+    if (!decal) {
+      decal = this._decals[this._decalCursor] = new THREE.Mesh(this._decalGeo, this._decalMats[0]);
+      decal.receiveShadow = true;
+      decal.renderOrder = 2;
+    }
+    this._decalCursor = (this._decalCursor + 1) % DECAL_MAX;
+    decal.material = this._decalMats[Math.random() < 0.5 ? 0 : 1];
+    const comp = axis === 0 ? 'x' : axis === 1 ? 'y' : 'z';
+    const sign = p[comp] >= 0 ? 1 : -1;
+    const size = Math.min(h * 1.1, Math.max(0.07, r * rnd(7, 11)));
+    // On the face, kept inside its edges, a hair proud of the wood.
+    const lim = Math.max(0, h - size * 0.4);
+    decal.position.set(
+      Math.max(-lim, Math.min(lim, p.x)), Math.max(-lim, Math.min(lim, p.y)), Math.max(-lim, Math.min(lim, p.z)));
+    decal.position[comp] = sign * (h + 0.002);
+    _d.set(0, 0, 0);
+    _d[comp] = sign;
+    decal.quaternion.setFromUnitVectors(_s.set(0, 0, 1), _d);
+    decal.rotateZ(Math.random() * Math.PI * 2);
+    decal.scale.setScalar(size);
+    mesh.add(decal);
+  }
+
+  /** A landed blow at world `point`: the body takes it (a ripple through it, a squash of the part). */
+  _dent(fighter, point, power = 1) {
+    if (fighter?.bloodWear && point && !this._calm()) recordDent(fighter.rig, fighter.bloodWear, point, Math.min(1, 0.45 * power));
+  }
+
+  /**
+   * Raise the blood on `fighter` (0..1 total) and wet it again; it never lowers in a bout.
+   * The pattern itself is fighterFx.js: fine spatter, and runs that creep while it is wet.
+   */
+  _bloody(fighter, amount, point = null) {
+    const b = fighter?.bloodWear;
+    if (!b) return;
+    // Where it came from, when the caller knows: the blood gathers and runs from there.
+    if (point) recordHit(fighter.rig, b, point, Math.min(0.95, 0.45 + amount));
+    b.wear = Math.min(1, b.wear + amount);
+    b.wet = 1;
+  }
+
+  // Fresh blood runs at a few centimetres a second and slows as it dries (about eight
+  // seconds to tacky); a dry fighter costs nothing here.
+  _tickBloodWear(f, dt) {
+    const b = f.bloodWear;
+    if (b) tickFighterFx(f.rig, b, dt);
+    if (!b || b.wet <= 0.002) return;
+    b.run += dt * RUN_SPEED * b.wet;
+    b.wet *= Math.exp(-dt / DRY_FIGHTER_SECS);
   }
 
   // The gush the instant an arm comes off: a tight cone of fast drops, the biggest
@@ -318,12 +501,14 @@ class BloodMethods {
         (dir.x + rnd(-j, j)) * sp, (dir.y + rnd(-j, j)) * sp + 0.8, (dir.z + rnd(-j, j)) * sp,
         lead ? rnd(0.018, 0.024) : rnd(0.007, 0.015));
     }
+    this._bloodSpray(pos, dir, 1 + 0.5 * power);
   }
 
   // ── The torn shoulder ────────────────────────────────────────────────
   _startStump(fighter, side) {
     fighter.stumps.push({ side, t: 0, pressure: 1, beatT: 0, dripT: 0, lead: true });
     this._addWoundCap(fighter.rig.joints.torso, side, fighter.rig.config.buildScale);
+    this._bloody(fighter, 0.6);
   }
 
   // Socket in torso-local space (fighters.js: shoulder at x = ±0.28·buildScale,
@@ -425,6 +610,8 @@ class BloodMethods {
   // small and most drops come down steep). A drop landing on an earlier
   // round stain joins it, so a pool forms where blood keeps falling.
   _addBloodStain(x, z, vx = 0, vy = -1, vz = 0, r = 0.02) {
+    // The lit drop's volume joins the simulated film, where there is one.
+    this._fluid?.splat(x, z, Math.max(0.05, r * 4), 0.22 + r * 12);
     if (!this._stains) return;
     const h = Math.sqrt(vx * vx + vz * vz), v = Math.abs(vy);
     const sinA = v / Math.max(1e-4, Math.sqrt(h * h + v * v));
@@ -525,6 +712,9 @@ class BloodMethods {
       pool.live = 0;
       pool.mesh.count = 0;
     }
+    this._spray?.clear();
+    this._fluid?.clear();
+    for (const decal of this._decals) decal?.removeFromParent();
   }
 
   _disposeBlood() {
@@ -540,6 +730,14 @@ class BloodMethods {
     this._woundMat.dispose();
     this._woundCoreMat.dispose();
     this._stainTex.dispose();
+    this._spray?.dispose();
+    this._fluid?.dispose();
+    this._fluid = undefined;
+    for (const decal of this._decals) decal?.removeFromParent();
+    this._decalGeo.dispose();
+    for (const m of this._decalMats) m.dispose();
+    this._decals = [];
+    this._spray = this._decalMats = null;
     this._drops = this._sweatDrops = this._stains = null;
   }
 
@@ -565,6 +763,7 @@ class BloodMethods {
   // when the tank is low, feeding the skin's wet sheen (_applyDamageWear). A
   // fighter that is already wet flicks drops off any sharp head snap.
   _tickSweat(f, dt) {
+    this._tickBloodWear(f, dt);
     if (f.state === 'ko') return;
     if (this.phase === 'fighting') {
       const tired = 1 - Math.max(0, Math.min(1, f.energy ?? 1));

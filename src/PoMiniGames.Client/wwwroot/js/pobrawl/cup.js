@@ -15,7 +15,7 @@
 // Presentation only: Math.random, never the seeded match RNG, and no sim state is touched.
 // Flicker rule (see spectacle.js): looks ease over seconds; nothing changes whole-frame
 // brightness in one frame.
-import * as THREE from 'three';
+import * as THREE from 'three-eco/webgpu';
 import { ROUND_LOOKS, setCrowdFill } from './arena.js';
 import { MAX_HP, HEAVY_HIT_DMG } from './constants.js';
 import * as Quality from './quality.js';

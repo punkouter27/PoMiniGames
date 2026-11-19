@@ -3,14 +3,17 @@
 // every camera framing mode. Mixed into BrawlGame's prototype (`this` is the live
 // game) — see mixin.js.
 
-import * as THREE from 'three';
+import * as THREE from 'three-eco/webgpu';
 import { RING_HALF } from './arena.js';
 import { setExpression } from './fighters.js';
 import { REGIONS } from './combat.js';
 import { recordRound, matchVerdict, wouldDecide, firstRoundKo, ROUNDS_TO_WIN } from './rounds.js';
 import { TIME_LIMIT } from './constants.js';
+import { clearSightline, ringPosts } from './sightline.js';
 
 const _koHead = new THREE.Vector3();
+// The corner posts, padded out to their turnbuckles: what the fight camera steers round.
+const POSTS = ringPosts();
 
 // The lens the landscape framing was shot for, and the widest vertical FOV a
 // portrait frame may open to before the fish-eye stretch at the edges reads as a bug.
@@ -410,10 +413,24 @@ class CinematicsMethods {
         };
         // Latched for the rest of the shot: flipping back and forth would swing the boom
         // through the body.
-        let target = place(camSide);
-        if (this.cameraModeT <= dt) this._koFlip = false;
-        if (!this._koFlip && Math.hypot(target.x - lp.x, target.z - lp.z) < 2.2) this._koFlip = true;
-        if (this._koFlip) target = place(camSide.negate());
+        const near = place(camSide), far = place(camSide.clone().negate());
+        // The winner standing on the line from a camera spot to the body.
+        const wp = this.fighters.find((f) => f !== loser)?.rig.root.position;
+        const blocked = (t) => {
+          if (!wp) return false;
+          const dx = lp.x - t.x, dz = lp.z - t.z, len2 = dx * dx + dz * dz || 1;
+          const u = ((wp.x - t.x) * dx + (wp.z - t.z) * dz) / len2;
+          return u > 0.05 && u < 0.97 && Math.hypot(t.x + dx * u - wp.x, t.z + dz * u - wp.z) < 0.8;
+        };
+        if (this.cameraModeT <= dt) {
+          // Chosen once, as the shot starts: the side the body can be seen from. If the
+          // winner is in the way of both, the boom goes up and looks over them.
+          this._koFlip = blocked(near) && !blocked(far);
+          this._koHigh = blocked(near) && blocked(far);
+        }
+        if (!this._koFlip && Math.hypot(near.x - lp.x, near.z - lp.z) < 2.2) this._koFlip = true;
+        const target = this._koFlip ? far : near;
+        if (this._koHigh) target.y = 2.9;
         this.camera.position.lerp(target, k);
         this.camera.lookAt(lp.x, 0.3, lp.z);
         this.camera.fov = this.fovBase + Math.max(0, 4 - this.cameraModeT * 1.4);
@@ -460,6 +477,9 @@ class CinematicsMethods {
       // Slightly underdamped spring boom; hit impulses go straight into _camVel (_camImpulse).
       const target = mid.clone().add(perp.multiplyScalar(distance));
       target.y = height;
+      // A corner post on the line to the pair: step the boom sideways until it clears
+      // (sightline.js). Before the clamp, so the ring envelope still has the last word.
+      this._postSide = clearSightline(target, lookAt, POSTS, { prefer: this._postSide || 1 }) || this._postSide || 0;
       target.x = THREE.MathUtils.clamp(target.x, -(RING_HALF + 1.0), RING_HALF + 1.0);
       if (this._camSideCut) {
         // Changed sides: cut straight to the new framing rather than swing through the pair.

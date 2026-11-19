@@ -1,6 +1,12 @@
 // arena.js — the fight ring, breakable props, low-poly crowd and lighting.
-import * as THREE from 'three';
-import { RectAreaLightUniformsLib } from 'three/addons/lights/RectAreaLightUniformsLib.js';
+import * as THREE from 'three-eco/webgpu';
+import {
+  Fn, Loop, abs, atan, attribute, cameraFar, cameraNear, cameraPosition, clamp, dot, exp, float, fract, instanceIndex,
+  instancedArray, length, materialOpacity, max, mix, mod, modelWorldMatrixInverse, perspectiveDepthToViewZ,
+  positionGeometry, positionLocal, positionView, screenCoordinate, select, sin, smoothstep, step, uniform, vec2, vec3,
+  vec4, viewportDepthTexture,
+} from 'three-eco/tsl';
+import { RectAreaLightTexturesLib } from 'three-eco/addons/lights/RectAreaLightTexturesLib.js';
 import { createSoftGrid } from '../platform/softChain.js';
 import { spawnBatch } from '../platform/debrisField.js';
 
@@ -58,7 +64,7 @@ export function buildArena(scene, quality = {}) {
 
   const floor = new THREE.Mesh(
     new THREE.PlaneGeometry(120, 120),
-    new THREE.MeshStandardMaterial({ color: 0x14172a, roughness: 0.95, metalness: 0.0 })
+    new THREE.MeshStandardNodeMaterial({ color: 0x14172a, roughness: 0.95, metalness: 0.0 })
   );
   floor.rotation.x = -Math.PI / 2;
   floor.position.y = -0.5;
@@ -71,7 +77,7 @@ export function buildArena(scene, quality = {}) {
   grid.material.transparent = true;
   scene.add(grid);
 
-  const ringMat = new THREE.MeshStandardMaterial({
+  const ringMat = new THREE.MeshStandardNodeMaterial({
     color: 0x2a3160, roughness: 0.85, metalness: 0.05,
   });
   const ring = new THREE.Mesh(new THREE.BoxGeometry(12, 0.5, 12), ringMat);
@@ -80,7 +86,7 @@ export function buildArena(scene, quality = {}) {
   scene.add(ring);
 
   // High roughness so the mat doesn't mirror the house lights.
-  const canvasMat = new THREE.MeshStandardMaterial({
+  const canvasMat = new THREE.MeshStandardNodeMaterial({
     color: 0xffffff, roughness: 0.95, metalness: 0.0,
     map: ringCanvasTexture(),
   });
@@ -90,7 +96,7 @@ export function buildArena(scene, quality = {}) {
   scene.add(top);
 
   // Corner posts — breakable. The engine listens for collisions against these.
-  const postMat = new THREE.MeshStandardMaterial({
+  const postMat = new THREE.MeshStandardNodeMaterial({
     color: 0x8a92c9, roughness: 0.7, metalness: 0.1,
   });
   const postGeo = new THREE.CylinderGeometry(0.08, 0.1, 1.5, 10);
@@ -112,7 +118,7 @@ export function buildArena(scene, quality = {}) {
 
       const cap = new THREE.Mesh(
         new THREE.CylinderGeometry(0.12, 0.12, 0.1, 12),
-        new THREE.MeshStandardMaterial({ color: 0xd0d4f0, roughness: 0.85 })
+        new THREE.MeshStandardNodeMaterial({ color: 0xd0d4f0, roughness: 0.85 })
       );
       cap.position.set(x, 1.55, z);
       cap.castShadow = true;
@@ -121,7 +127,7 @@ export function buildArena(scene, quality = {}) {
 
       // Turnbuckle pads in corner colour (red −X / blue +X): marks the corner hazard.
       const padColor = x < 0 ? 0xd23b30 : 0x3b6bff;
-      const padMat = new THREE.MeshStandardMaterial({
+      const padMat = new THREE.MeshStandardNodeMaterial({
         color: padColor, roughness: 0.55, metalness: 0.05,
         emissive: padColor, emissiveIntensity: 0.12,
       });
@@ -137,7 +143,7 @@ export function buildArena(scene, quality = {}) {
   }
 
   // Ropes: spring-loaded bezier tubes (see updateRopes / twangRope).
-  const ropeMat = new THREE.MeshStandardMaterial({
+  const ropeMat = new THREE.MeshStandardNodeMaterial({
     color: 0xd0d4f0, roughness: 0.85, metalness: 0.0,
   });
   const ropes = [];
@@ -146,11 +152,13 @@ export function buildArena(scene, quality = {}) {
       for (const sign of [-1, 1]) {
         const rope = {
           axis, sign, y, half,
-          offset: 0, vel: 0, built: -1,
+          // The rope as a chain: how far each node is pushed outward, and how fast. The
+          // two ends are the posts and never move. `offset` is the largest of them.
+          d: new Float32Array(ROPE_NODES), v: new Float32Array(ROPE_NODES), shown: new Float32Array(ROPE_NODES),
+          offset: 0,
           mesh: new THREE.Mesh(undefined, ropeMat),
         };
         rope.mesh.geometry = ropeGeometry(rope);
-        rope.built = 0;
         scene.add(rope.mesh);
         ropes.push(rope);
       }
@@ -208,7 +216,7 @@ export function buildArena(scene, quality = {}) {
   let rectA = null;
   let rectB = null;
   if (rectCount > 0) {
-    RectAreaLightUniformsLib.init();
+    THREE.RectAreaLightNode.setLTC(RectAreaLightTexturesLib.init());
     rectB = new THREE.RectAreaLight(0xdfe6ff, 2.6, 4.5, 3.2);
     rectB.position.set(3.6, 8.5, -3.6);
     rectB.lookAt(0, 0, 0);
@@ -246,9 +254,9 @@ export function buildArena(scene, quality = {}) {
     scene.add(strip);
   }
 
-  const atmo = buildAtmosphere(scene);
+  const atmo = buildAtmosphere(scene, quality.renderer);
   const backdrop = buildBackdrop(scene);
-  const crowd = buildCrowd(scene);
+  const crowd = buildCrowd(scene, quality.renderer);
   scene.add(crowd);
 
   const flashes = buildCrowdFlashes(scene);
@@ -268,7 +276,7 @@ function buildBackdrop(scene) {
   const group = new THREE.Group();
   group.userData.kind = 'backdrop';
 
-  const steel = new THREE.MeshStandardMaterial({
+  const steel = new THREE.MeshStandardNodeMaterial({
     color: 0x12141f, roughness: 0.7, metalness: 0.6,
   });
 
@@ -300,7 +308,7 @@ function buildBackdrop(scene) {
   let li = 0;
   for (const x of [-5, -1.7, 1.7, 5]) {
     for (const z of [-trussHalf, trussHalf]) {
-      const lens = new THREE.Mesh(lensGeo, new THREE.MeshStandardMaterial({
+      const lens = new THREE.Mesh(lensGeo, new THREE.MeshStandardNodeMaterial({
         color: 0x0a0a0a, emissive: lensColors[li % lensColors.length],
         emissiveIntensity: 1.4, roughness: 0.4,
       }));
@@ -315,11 +323,11 @@ function buildBackdrop(scene) {
 
   // Segmented so updateBanners can ripple each banner's own geometry clone.
   const bannerGeo = new THREE.PlaneGeometry(2.2, 4.0, 4, 12);
-  const bannerRed = new THREE.MeshStandardMaterial({
+  const bannerRed = new THREE.MeshStandardNodeMaterial({
     color: 0x6a1f22, roughness: 0.9, side: THREE.DoubleSide,
     emissive: 0x2a0a0c, emissiveIntensity: 0.4,
   });
-  const bannerBlue = new THREE.MeshStandardMaterial({
+  const bannerBlue = new THREE.MeshStandardNodeMaterial({
     color: 0x1f2f6a, roughness: 0.9, side: THREE.DoubleSide,
     emissive: 0x0a1030, emissiveIntensity: 0.4,
   });
@@ -385,67 +393,89 @@ function jumbotronTexture() {
 }
 
 // ── Rope physics: quadratic-bezier tube, midpoint control on a damped spring ──
-const _ropeA = new THREE.Vector3();
-const _ropeM = new THREE.Vector3();
-const _ropeB = new THREE.Vector3();
+// A rope is a chain of ROPE_NODES points between two posts. Each point is pushed outward on
+// its own, so the rope bends where a body leans into it and the bend travels along the rope
+// to the posts and back, instead of the whole span bowing as one arc.
+const ROPE_NODES = 17;
+const ROPE_WAVE = 13;          // m/s a disturbance travels along the rope
+const ROPE_PRESS_K = 160;      // how hard a leaning body holds the rope out
+const ROPE_REST_K = 28;        // how hard the rope pulls itself straight
+const ROPE_DAMP = 5.5;
+const ROPE_REACH = 0.85;       // metres either side of a body that it presses
+const _ropePts = Array.from({ length: ROPE_NODES }, () => new THREE.Vector3());
+
 function ropeGeometry(rope) {
-  const { axis, sign, y, half, offset } = rope;
-  if (axis === 'x') {
-    _ropeA.set(-half, y, sign * half);
-    _ropeB.set(half, y, sign * half);
-    _ropeM.set(0, y - Math.abs(offset) * 0.18, sign * (half + offset * 1.6));
-  } else {
-    _ropeA.set(sign * half, y, -half);
-    _ropeB.set(sign * half, y, half);
-    _ropeM.set(sign * (half + offset * 1.6), y - Math.abs(offset) * 0.18, 0);
+  const { axis, sign, y, half, d } = rope;
+  for (let i = 0; i < ROPE_NODES; i++) {
+    const along = -half + (2 * half * i) / (ROPE_NODES - 1);
+    const out = sign * (half + d[i] * 1.6);
+    // A pushed rope also dips a little: it is being stretched round the body.
+    const drop = y - Math.abs(d[i]) * 0.18;
+    if (axis === 'x') _ropePts[i].set(along, drop, out);
+    else _ropePts[i].set(out, drop, along);
   }
-  return new THREE.TubeGeometry(
-    new THREE.QuadraticBezierCurve3(_ropeA.clone(), _ropeM.clone(), _ropeB.clone()),
-    12, 0.022, 6);
+  return new THREE.TubeGeometry(new THREE.CatmullRomCurve3(_ropePts.map((v) => v.clone())), 32, 0.022, 6);
 }
 
 // Per-frame rope solve. `fighters` is the engine's fighter list; a body
-// leaning past the clamp margin presses the ropes on that side.
+// leaning past the clamp margin presses the ropes on that side, where it is.
 export function updateRopes(arena, dt, fighters, t = 0) {
   if (!arena.ropes) return;
   const pressStart = RING_HALF - 0.55; // bodies this far out start pressing
+  const steps = 2, h = Math.min(dt, 1 / 30) / steps;
   for (const rope of arena.ropes) {
+    const { d, v, half } = rope;
+    const spacing = (2 * half) / (ROPE_NODES - 1);
+    const tension = (ROPE_WAVE * ROPE_WAVE) / (spacing * spacing);
     // Tiny idle sway; the press response below dominates.
-    let target = 0.012 * Math.sin(t * 1.25 + rope.y * 3.1 + (rope.axis === 'x' ? 0 : 1.6));
-    if (fighters) {
-      for (const f of fighters) {
-        const p = f.rig.root.position;
-        const along = rope.axis === 'x' ? p.x : p.z;
-        const out = (rope.axis === 'x' ? p.z : p.x) * rope.sign;
-        if (Math.abs(along) > rope.half - 0.4) continue; // near the posts, not the span
-        const press = out - pressStart;
-        if (press > 0) {
-          // The middle rope (torso height) takes the most load.
-          const w = rope.y === 0.9 ? 1.1 : 0.6;
-          target = Math.max(target, Math.min(0.55, press * w));
+    const sway = 0.012 * Math.sin(t * 1.25 + rope.y * 3.1 + (rope.axis === 'x' ? 0 : 1.6));
+    for (let step = 0; step < steps; step++) {
+      for (let i = 1; i < ROPE_NODES - 1; i++) {
+        const along = -half + spacing * i;
+        let press = 0;
+        if (fighters) {
+          for (const f of fighters) {
+            const p = f.rig.root.position;
+            const at = rope.axis === 'x' ? p.x : p.z;
+            const out = (rope.axis === 'x' ? p.z : p.x) * rope.sign - pressStart;
+            if (out <= 0) continue;
+            const gap = (at - along) / ROPE_REACH;
+            // The middle rope (torso height) takes the most load.
+            const w = rope.y === 0.9 ? 1.1 : 0.6;
+            press = Math.max(press, Math.min(0.55, out * w) * Math.exp(-gap * gap));
+          }
         }
+        // A body only pushes: it holds the rope out, it never pulls it in.
+        const hold = press > d[i] ? ROPE_PRESS_K * (press - d[i]) : 0;
+        const acc = tension * (d[i - 1] + d[i + 1] - 2 * d[i]) + hold
+          + ROPE_REST_K * (sway * Math.sin((Math.PI * i) / (ROPE_NODES - 1)) - d[i]) - ROPE_DAMP * v[i];
+        v[i] += acc * h;
       }
+      for (let i = 1; i < ROPE_NODES - 1; i++) d[i] += v[i] * h;
     }
-    // Underdamped spring toward the press target — released ropes twang.
-    rope.vel += ((target - rope.offset) * 55 - rope.vel * 7) * dt;
-    rope.offset += rope.vel * dt;
-    if (Math.abs(rope.offset - rope.built) > 0.004) {
+    let moved = 0, peak = 0;
+    for (let i = 1; i < ROPE_NODES - 1; i++) {
+      moved = Math.max(moved, Math.abs(d[i] - rope.shown[i]));
+      if (Math.abs(d[i]) > Math.abs(peak)) peak = d[i];
+    }
+    rope.offset = peak;
+    if (moved > 0.004) {
       rope.mesh.geometry.dispose();
       rope.mesh.geometry = ropeGeometry(rope);
-      rope.built = rope.offset;
+      rope.shown.set(d);
     }
   }
 }
 
-// Impulse a side's ropes (rebound off the boundary): axis 'x'|'z' is the
-// world axis the fighter was clamped on, sign which side.
+// One-shot twang from a rope-clamp event: a kick outward, strongest mid-span, that the
+// chain then carries to the posts and back.
 export function twangRope(arena, clampAxis, sign, power = 1) {
   if (!arena.ropes) return;
   for (const rope of arena.ropes) {
     // A clamp on world X hits the ropes that run along Z at x = sign*half.
     const runsAlong = clampAxis === 'x' ? 'z' : 'x';
     if (rope.axis === runsAlong && rope.sign === sign) {
-      rope.vel += 2.6 * power;
+      for (let i = 1; i < ROPE_NODES - 1; i++) rope.v[i] += 2.6 * power * Math.sin((Math.PI * i) / (ROPE_NODES - 1));
     }
   }
 }
@@ -493,8 +523,60 @@ export function updateBanners(backdrop, t, dt = 1 / 60, kick = 0) {
   });
 }
 
-// ── Atmosphere: fake volumetric light shaft (additive open cone, alpha gradient) ──
-function buildAtmosphere(scene) {
+// ── Atmosphere: the spotlight's beam through the hall's haze ──
+// Where the renderer can (WebGPU), the beam is a volume: each pixel marches the ray from the
+// lens through the cone and adds up the lit haze along it, so the shaft has depth, is denser
+// seen down its length than across it, brightens toward the lamp, and stops at whatever
+// solid thing the ray meets first (a fighter standing in the beam is in front of the haze
+// behind them, and behind the haze in front). It does not cast the fighters' shadows into
+// the haze: that needs the lamp's shadow map sampled per step, which this does not do.
+// Elsewhere it is the painted cone below.
+const BEAM_STEPS = 28;
+const BEAM_TOP = 0.35, BEAM_BOTTOM = 4.2, BEAM_HALF = 5;      // the cone's own shape (see geometry)
+const BEAM_GAIN = 0.62;
+
+function beamMaterial() {
+  const material = new THREE.MeshBasicNodeMaterial({
+    transparent: true, opacity: 0.09, blending: THREE.AdditiveBlending, depthWrite: false,
+    // Back faces only, untested against depth: one fragment per pixel that the whole volume
+    // lies in front of, even with the lens inside the cone. Occlusion is done below.
+    side: THREE.BackSide, depthTest: false, fog: false,
+  });
+  material.colorNode = Fn(() => {
+    // In the cone's own space, where it is an upright frustum whatever way the lamp points.
+    const from = modelWorldMatrixInverse.mul(vec4(cameraPosition, 1)).xyz;
+    const span = positionLocal.sub(from);
+    // No further than the first solid surface on this ray.
+    const sceneZ = perspectiveDepthToViewZ(viewportDepthTexture(), cameraNear, cameraFar);
+    const reach = clamp(sceneZ.div(positionView.z), 0, 1);
+    // A different start along the ray for every pixel turns the steps' banding into grain.
+    const jitter = fract(sin(dot(screenCoordinate.xy, vec2(12.9898, 78.233))).mul(43758.5453));
+    const lit = float(0).toVar();
+    Loop(BEAM_STEPS, ({ i }) => {
+      const p = from.add(span.mul(float(i).add(jitter).div(BEAM_STEPS).mul(reach)));
+      const up = p.y.add(BEAM_HALF).div(2 * BEAM_HALF);                 // 0 at the canvas, 1 at the lamp
+      const radial = length(p.xz).div(mix(BEAM_BOTTOM, BEAM_TOP, up));
+      // Inside the frustum, soft toward its edge, and thicker toward the lamp.
+      const inside = step(abs(p.y), BEAM_HALF).mul(smoothstep(0.5, 1, radial).oneMinus());
+      lit.addAssign(inside.mul(mix(0.3, 1, up.mul(up))));
+    });
+    const depth = length(span).mul(reach);
+    return vec3(1, 0.955, 0.88).mul(lit.div(BEAM_STEPS)).mul(depth).mul(materialOpacity).mul(BEAM_GAIN);
+  })();
+  return material;
+}
+
+function buildAtmosphere(scene, renderer = null) {
+  if (renderer?.backend?.isWebGPUBackend && !/[?&]brawlBeam=off/.test(globalThis.location?.search ?? '')) {
+    const cone = new THREE.Mesh(
+      new THREE.CylinderGeometry(BEAM_TOP, BEAM_BOTTOM, 2 * BEAM_HALF, 24, 1, false), beamMaterial());
+    cone.position.y = 5.6;
+    cone.renderOrder = 2;
+    cone.frustumCulled = false;
+    scene.add(cone);
+    return { cone };
+  }
+
   const c = document.createElement('canvas');
   c.width = 1; c.height = 64;
   const g = c.getContext('2d');
@@ -645,39 +727,82 @@ export function updateAtmosphere(arena, dt, t, excited, phones = 0) {
   }
 }
 
-// Instanced crowd (torsos + heads = 2 draw calls); sway/bounce in the vertex shader
-// via per-instance aPhase. Instances only rotate about Y, so object +Y is world +Y.
-function crowdBounceMaterial(uniforms) {
-  const mat = new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 0.9 });
-  mat.onBeforeCompile = (shader) => {
-    shader.uniforms.uTime = uniforms.uTime;
-    shader.uniforms.uExcited = uniforms.uExcited;
-    shader.uniforms.uWave = uniforms.uWave;
-    shader.vertexShader = `
-      uniform float uTime;
-      uniform float uExcited;
-      uniform vec4 uWave;
-      attribute float aPhase;
-    ` + shader.vertexShader.replace(
-      '#include <begin_vertex>',
-      `#include <begin_vertex>
-      float crowdPhase = aPhase + uTime * 1.4;
-      transformed.y += sin(crowdPhase) * 0.025
-        + sin(crowdPhase * 1.8) * 0.18 * uExcited;
-      // Stadium wave (ledBoards.js): uWave = (front angle, rise m, half-width rad, 0). Seats
-      // stand as the band passes; the rise is divided by the instance's Y scale so torso and
-      // head lift together (an empty seat's zero matrix still collapses it).
-      if (uWave.y > 0.001) {
-        vec2 seatXZ = instanceMatrix[3].xz;
-        float dA = mod(atan(seatXZ.x, seatXZ.y) - uWave.x + 3.14159265, 6.2831853) - 3.14159265;
-        transformed.y += uWave.y * exp(-dA * dA / (uWave.z * uWave.z))
-          / max(length(instanceMatrix[1].xyz), 0.05);
-      }`);
-  };
+// Instanced crowd (torsos + heads = 2 draw calls), animated in the vertex stage.
+// positionNode runs after the instance transform, so positionLocal here is already the
+// seat's place in the stands: every offset is in metres and the seat's angle is its own XZ.
+//
+//   bounce   per-instance aPhase sway, larger as uExcited rises
+//   wave     the stadium wave (ledBoards.js): uWave = (front angle, rise m, half-width rad, 0)
+//   lean     everyone tips toward uFocus (the action's XZ; z = strength 0..1), heads most
+//   react    a heavy hit at uImpact (x, z, seconds since, power) rolls out through the
+//            stands: the nearest seats jump and rock back first, the far side a beat later
+//
+// `lift` is how much of the lean this mesh takes: a torso tips from its base (0 at the
+// seat, 1 at the shoulders), a head rides the top of it.
+function crowdBounceMaterial(uniforms, head = false, memory = null) {
+  const mat = new THREE.MeshStandardNodeMaterial({ color: 0xffffff, roughness: 0.9 });
+  const { uTime, uExcited, uWave, uFocus, uImpact } = uniforms;
+  const seat = positionLocal.xz;
+  const crowdPhase = attribute('aPhase', 'float').add(uTime.mul(1.4));
+  // With memory (WebGPU), each spectator's own on-their-feet level drives the bounce and
+  // lifts them out of the seat; without it, everyone follows the one excitement value.
+  const level = memory ? memory.state.toAttribute().x : uExcited;
+  const stand = memory ? level.mul(0.26) : 0;
+  const bounce = sin(crowdPhase).mul(0.025).add(sin(crowdPhase.mul(1.8)).mul(0.18).mul(level)).add(stand);
+  // Seats stand as the band passes (an empty seat's zero matrix still collapses it).
+  const dA = mod(atan(seat.x, seat.y).sub(uWave.x).add(3.14159265), 6.2831853).sub(3.14159265);
+  const wave = uWave.y.mul(exp(dA.mul(dA).negate().div(uWave.z.mul(uWave.z))));
+
+  const lift = head ? 1.15 : smoothstep(-0.45, 0.45, positionGeometry.y);
+  const toFocus = uFocus.xy.sub(seat);
+  const lean = toFocus.div(max(length(toFocus), 0.001)).mul(uFocus.z).mul(0.11).mul(lift);
+
+  // The reaction travels outward at ~9 m/s and is spent after about a second.
+  const toHit = seat.sub(uImpact.xy);
+  const dist = length(toHit);
+  const since = uImpact.z.sub(dist.div(9));
+  const pulse = smoothstep(0, 0.07, since).mul(exp(since.mul(-4.2))).mul(uImpact.w)
+    .mul(smoothstep(6, 22, dist).oneMinus().mul(0.75).add(0.25));
+  const recoil = toHit.div(max(dist, 0.001)).mul(pulse).mul(0.16).mul(lift);
+  const jump = pulse.mul(0.2).mul(sin(since.mul(13)).mul(0.5).add(0.5));
+
+  const sway = vec2(lean.x.add(recoil.x), lean.y.add(recoil.y));
+  mat.positionNode = positionLocal.add(vec3(sway.x, bounce.add(wave).add(jump), sway.y));
   return mat;
 }
 
-function buildCrowd(scene) {
+// Crowd with memory (WebGPU only): every spectator carries a level of their own, how far
+// out of the seat they are, updated on the GPU each frame. A heavy hit or a rising crowd
+// brings them to their feet at their own pace, the excitable ones first and highest, and
+// they sit back down one by one afterwards instead of all dropping with the excitement value.
+function createCrowdMemory(renderer, total, uniforms) {
+  if (!renderer?.backend?.isWebGPUBackend) return null;
+  const seats = instancedArray(total, 'vec4');     // x, z, temperament 0..1, spare
+  const state = instancedArray(total, 'vec4');     // x: on-their-feet level 0..1
+  const dt = uniform(1 / 60);
+  const pass = Fn(() => {
+    const seat = seats.element(instanceIndex), s = state.element(instanceIndex);
+    const temper = seat.z;
+    // The same travelling reaction the vertex stage uses for the flinch, held for longer here.
+    const dist = length(seat.xy.sub(uniforms.uImpact.xy));
+    const since = uniforms.uImpact.z.sub(dist.div(9));
+    const pulse = smoothstep(0, 0.07, since).mul(exp(max(since, 0).mul(-1.4))).mul(uniforms.uImpact.w)
+      .mul(smoothstep(6, 22, dist).oneMinus().mul(0.75).add(0.25));
+    const want = clamp(
+      uniforms.uExcited.mul(temper.mul(0.9).add(0.3)).add(pulse.mul(1.5)).sub(temper.oneMinus().mul(0.22)), 0, 1);
+    // Up fast, down slowly, and each at their own speed.
+    const rate = select(want.greaterThan(s.x), temper.mul(5).add(3), temper.oneMinus().mul(0.5).add(0.22));
+    const level = s.x.add(want.sub(s.x).mul(exp(rate.mul(dt).negate()).oneMinus()));
+    state.element(instanceIndex).assign(vec4(level, 0, 0, 0));
+  })().compute(total);
+  return {
+    seats, state,
+    step(seconds) { dt.value = Math.min(Math.max(seconds, 0), 0.1); renderer.compute(pass); },
+    dispose() { pass.dispose?.(); },
+  };
+}
+
+function buildCrowd(scene, renderer = null) {
   const group = new THREE.Group();
   group.userData.kind = 'crowd';
 
@@ -693,11 +818,16 @@ function buildCrowd(scene) {
   ];
   const total = rows.reduce((n, r) => n + r.count, 0);
 
-  const uniforms = { uTime: { value: 0 }, uExcited: { value: 0 }, uWave: { value: new THREE.Vector4(0, 0, 0.4, 0) } };
+  const uniforms = {
+    uTime: uniform(0), uExcited: uniform(0), uWave: uniform(new THREE.Vector4(0, 0, 0.4, 0)),
+    uFocus: uniform(new THREE.Vector3(0, 0, 0)),          // x, z, strength
+    uImpact: uniform(new THREE.Vector4(0, 0, 99, 0)),     // x, z, seconds since, power
+  };
+  const memory = createCrowdMemory(renderer, total, uniforms);
   const torsoMesh = new THREE.InstancedMesh(
-    new THREE.BoxGeometry(0.42, 0.9, 0.28), crowdBounceMaterial(uniforms), total);
+    new THREE.BoxGeometry(0.42, 0.9, 0.28), crowdBounceMaterial(uniforms, false, memory), total);
   const headMesh = new THREE.InstancedMesh(
-    new THREE.BoxGeometry(0.24, 0.26, 0.24), crowdBounceMaterial(uniforms), total);
+    new THREE.BoxGeometry(0.24, 0.26, 0.24), crowdBounceMaterial(uniforms, true, memory), total);
   torsoMesh.castShadow = false;
   headMesh.castShadow = false;
 
@@ -735,6 +865,7 @@ function buildCrowd(scene) {
       headMesh.setColorAt(id, color.setHex(skins[(Math.random() * skins.length) | 0]));
 
       phases[id] = Math.random() * Math.PI * 2;
+      if (memory) memory.seats.value.array.set([x, z, Math.random(), 0], id * 4);
       spots.push({ x, y: y + 1.05 * heightJitter, z });
       id++;
     }
@@ -748,6 +879,8 @@ function buildCrowd(scene) {
   if (headMesh.instanceColor) headMesh.instanceColor.needsUpdate = true;
 
   group.add(torsoMesh, headMesh);
+  if (memory) memory.seats.value.needsUpdate = true;
+  group.userData.memory = memory;
   group.userData.uniforms = uniforms;
   // Head positions for the camera-flash sprites (updateAtmosphere).
   group.userData.spots = spots;
@@ -854,16 +987,37 @@ export const ROUND_LOOKS = [
 ];
 
 // Feeds the crowd shader's clock and excitement uniforms.
-export function animateCrowd(crowd, dt, t, excited) {
-  if (!crowd || !crowd.userData.uniforms) return;
-  crowd.userData.uniforms.uTime.value = t;
-  crowd.userData.uniforms.uExcited.value = excited;
+export function animateCrowd(crowd, dt, t, excited, focus = null) {
+  const u = crowd?.userData.uniforms;
+  if (!u) return;
+  u.uTime.value = t;
+  u.uExcited.value = excited;
+  // Lean toward the action, eased so a fighter crossing the ring turns heads, not snaps them.
+  // No focus (reduced motion, between bouts): the stands sit back up.
+  const f = u.uFocus.value, k = 1 - Math.exp(-dt * 2.5);
+  if (focus) { f.x += (focus.x - f.x) * k; f.y += (focus.z - f.y) * k; }
+  f.z += ((focus ? 0.45 + 0.55 * Math.min(1, excited) : 0) - f.z) * k;
+  u.uImpact.value.z += dt;
+  crowd.userData.memory?.step(dt);
+}
+
+/**
+ * A heavy hit lands at world (x, z): the stands flinch, nearest seats first. `power` 0..1.
+ * A weaker hit never cuts a stronger reaction short.
+ */
+export function crowdReact(crowd, x, z, power = 1) {
+  const u = crowd?.userData.uniforms;
+  if (!u) return;
+  const v = u.uImpact.value;
+  const left = v.w * Math.exp(-Math.max(0, v.z) * 4.2);
+  if (power < left) return;
+  v.set(x, z, 0, Math.min(1, power));
 }
 
 // Knock chunks off a post on collision. Returns the debris meshes for the engine
 // to integrate into its particle update list.
 const _debrisGeo = new THREE.BoxGeometry(0.18, 0.06, 0.18);
-const _debrisMat = new THREE.MeshStandardMaterial({ color: 0x8a92c9, roughness: 0.6 });
+const _debrisMat = new THREE.MeshStandardNodeMaterial({ color: 0x8a92c9, roughness: 0.6 });
 // `blast` (optional): { dir: {x,y,z}, momentum: {x,y,z}, seed } — the chunks leave in the
 // direction the fighter hit the post and carry the fighter's momentum (platform/debrisField.js),
 // instead of a random spray. Seeded, so the same break throws the same chunks.

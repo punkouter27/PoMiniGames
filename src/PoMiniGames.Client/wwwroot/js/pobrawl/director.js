@@ -12,7 +12,7 @@
 // Randomness: Math.random only. `this.rng` is the seeded match RNG; drawing from it here
 // would change seeded replays and break online determinism.
 
-import * as THREE from 'three';
+import * as THREE from 'three-eco/webgpu';
 import { MAX_HP, HEAVY_HIT_DMG } from './constants.js';
 
 // Shot clock, seconds. Reduced motion holds every shot longer and never whip-pans.

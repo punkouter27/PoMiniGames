@@ -23,7 +23,7 @@
 // joints, so even the "boxes" rotate with the limb. Capsules capture the same
 // silhouette with a single segment-segment distance check.
 
-import * as THREE from 'three';
+import * as THREE from 'three-eco/webgpu';
 
 // jointA/jointB are the rig's joint names; radius is the capsule thickness in
 // world units.

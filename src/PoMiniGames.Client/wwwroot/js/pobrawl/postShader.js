@@ -1,13 +1,28 @@
-// postShader.js — the CA / vignette / radial-blur / broadcast-grade pass. Pure
-// shader data; `_buildComposer` wraps it in a ShaderPass.
+// postShader.js — the CA / vignette / radial-blur / broadcast-grade stage, as a TSL node.
+// `_buildComposer` (sceneSetup.js) puts it last in the RenderPipeline, before the output
+// transform, so it works on the linear HDR frame on WebGPU and on the WebGL2 backend alike.
 //
-// Runs after bloom, before OutputPass (so it operates on the linear HDR
-// frame). uCA and uRadial are pulsed by hits and the KO flash; uDesat rides
-// the KO lights-down blend (drains color, keeps the reds); the teal-shadow /
-// warm-highlight grade and vignette are constant.
-export const CAVignetteShader = {
-  uniforms: {
-    tDiffuse: { value: null },
+// uCA and uRadial are pulsed by hits and the KO flash; uDesat rides the KO lights-down blend
+// (drains color, keeps the reds); the teal-shadow / warm-highlight grade and vignette are
+// constant. Every optional layer sits behind a uniform-only branch, so an idle effect costs
+// one comparison.
+//
+// THE UNIFORM BAG. The engine writes plain `{ value }` slots, and vectors as arrays
+// (`u.uShockC.value[0] = x`, `color.toArray(u.uInkA.value)`), exactly as it did when this was
+// a ShaderPass. `sync()` copies the bag onto the node uniforms once per frame.
+//
+// SCREEN UV. Every point the engine hands over (shock centre, ink focus, smear centre) is in
+// GL convention, y up. The pipeline's screenUV runs y down, so the graph works in y-up space
+// and flips once, in `at()`, where it reads the frame.
+import { Vector2, Vector3 } from 'three-eco/webgpu';
+import {
+  Fn, If, Loop, abs, atan, clamp, dot, exp, float, floor, fract, length, max, mix, mod, pow,
+  screenUV, select, smoothstep, sqrt, uniform, vec2, vec3, vec4,
+} from 'three-eco/tsl';
+
+/** The engine-facing uniform bag: plain values and arrays, the defaults the look was tuned at. */
+export function createFxUniforms() {
+  return {
     uCA: { value: 0 },
     uVignette: { value: 0.5 },
     uRadial: { value: 0 },
@@ -75,275 +90,276 @@ export const CAVignetteShader = {
     uInkC: { value: [0.5, 0.5] },
     uInkCheap: { value: 0 },
     uInkMotion: { value: 1 },
-  },
-  vertexShader: /* glsl */`
-    varying vec2 vUv;
-    void main() {
-      vUv = uv;
-      gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
-    }`,
-  fragmentShader: /* glsl */`
-    uniform sampler2D tDiffuse;
-    uniform float uCA;
-    uniform float uVignette;
-    uniform float uRadial;
-    uniform float uGrade;
-    uniform float uDesat;
-    uniform float uGodrays;
-    uniform vec2 uGodraysOrig;
-    uniform float uGodraysDecay;
-    uniform vec3 uGodraysTint;
-    uniform float uGrain;
-    uniform float uTime;
-    uniform float uSpeed;
-    uniform vec3 uSpeedTint;
-    uniform float uDangerL;
-    uniform float uDangerR;
-    uniform float uHeart;
-    uniform float uShock;
-    uniform vec2 uShockC;
-    uniform float uShockR;
-    uniform float uAspect;
-    uniform vec2 uRes;
-    uniform float uComic;
-    uniform float uRewind;
-    uniform float uNetSmear;
-    uniform vec2 uNetSmearC;
-    uniform float uNetSmearR;
-    uniform vec2 uNetSmearDir;
-    uniform float uSuperInk;
-    uniform vec3 uInkA;
-    uniform vec3 uInkB;
-    uniform vec2 uInkC;
-    uniform float uInkCheap;
-    uniform float uInkMotion;
-    varying vec2 vUv;
-    // Cheap hash for the film grain — no texture fetch.
-    float hash21(vec2 p) {
-      p = fract(p * vec2(123.34, 456.21));
-      p += dot(p, p + 45.32);
-      return fract(p.x * p.y);
+  };
+}
+
+// Cheap hash for the grain and the lane picks — no texture fetch.
+const hash21 = Fn(([pIn]) => {
+  const p = fract(pIn.mul(vec2(123.34, 456.21))).toVar();
+  p.addAssign(dot(p, p.add(45.32)));
+  return fract(p.x.mul(p.y));
+});
+
+const LUMA = vec3(0.2126, 0.7152, 0.0722);
+const LW = vec3(0.299, 0.587, 0.114);
+const sq = (x) => x.mul(x);
+const gammaOut = (c) => pow(max(c, vec3(0)), vec3(0.4545));
+
+/**
+ * The stage's uniforms plus `build(tex)`, which lays the stage over a texture node holding the
+ * linear HDR frame. The pipeline builds one output per transient-pass combination (see
+ * sceneSetup.js), and every one of them shares these uniforms.
+ * @returns {{ uniforms: object, sync: () => void, build: (tex: object) => object }}
+ */
+export function createFxStage() {
+  const bag = createFxUniforms();
+  // One node uniform per slot, typed from the default's shape.
+  const U = {};
+  for (const [key, slot] of Object.entries(bag)) {
+    const v = slot.value;
+    U[key] = Array.isArray(v)
+      ? uniform(v.length === 2 ? new Vector2(v[0], v[1]) : new Vector3(v[0], v[1], v[2]))
+      : uniform(v);
+  }
+  const sync = () => {
+    for (const key in bag) {
+      const v = bag[key].value, n = U[key];
+      if (typeof v === 'number') n.value = v;
+      else if (v.length === 2) n.value.set(v[0], v[1]);
+      else n.value.set(v[0], v[1], v[2]);
     }
-    void main() {
-      vec2 uv = vUv;
-      float ca = uCA;
-      // Tape rewind: each scanline band slides sideways on its own hash, and a
-      // tracking band rolls up the frame. Displacement only.
-      if (uRewind > 0.003) {
-        float band = floor(uv.y * 90.0);
-        uv.x += (hash21(vec2(band, floor(uTime * 30.0))) - 0.5) * 0.018 * uRewind;
-        float roll = fract(uTime * 1.7);
-        uv.x += exp(-pow((uv.y - roll) * 22.0, 2.0)) * 0.03 * uRewind;
-        ca += 1.2 * uRewind;
-      }
-      // Shockwave: a gaussian ring pushes pixels outward; its edge also splits
-      // the channels, so the ring reads as a lens being struck.
-      float ring = 0.0;
-      if (uShock > 0.003) {
-        vec2 sd = (uv - uShockC) * vec2(uAspect, 1.0);
-        float sdist = length(sd);
-        ring = exp(-pow((sdist - uShockR) * 16.0, 2.0)) * uShock;
-        uv -= (sd / max(sdist, 1e-4)) * vec2(1.0 / uAspect, 1.0) * ring * 0.035;
-        ca += ring * 3.0;
-      }
-      // Rollback smear: a gaussian blob around one fighter whose red channel is pulled back
-      // along the correction and blue pushed ahead — the same split the global CA does, but
-      // directional and local. Displacement only, so brightness holds.
-      vec2 smear = vec2(0.0);
-      if (uNetSmear > 0.003) {
-        vec2 nd = (uv - uNetSmearC) * vec2(uAspect, 1.0);
-        float nm = exp(-dot(nd, nd) / max(uNetSmearR * uNetSmearR, 1e-4)) * uNetSmear;
-        smear = uNetSmearDir * nm * 0.022;
-      }
-      vec2 off = (uv - 0.5) * ca * 0.012;
-      float r = texture2D(tDiffuse, uv + off - smear).r;
-      float g = texture2D(tDiffuse, uv - smear * 0.35).g;
-      float b = texture2D(tDiffuse, uv - off + smear * 0.5).b;
-      vec3 col = vec3(r, g, b);
+  };
+  return { uniforms: bag, sync, build: (tex) => buildFx(U, tex) };
+}
 
-      // Radial impact blur: a short streak toward the frame center. 4 extra
-      // taps is enough at pulse strengths — it reads as a punch, not a filter.
-      if (uRadial > 0.003) {
-        vec2 dir = (vec2(0.5) - uv) * uRadial * 0.05;
-        vec3 acc = col;
-        acc += texture2D(tDiffuse, uv + dir * 1.0).rgb;
-        acc += texture2D(tDiffuse, uv + dir * 2.0).rgb;
-        acc += texture2D(tDiffuse, uv + dir * 3.0).rgb;
-        acc += texture2D(tDiffuse, uv + dir * 4.0).rgb;
-        col = acc * 0.2;
-      }
+function buildFx(U, tex) {
+  const at = (p) => tex.sample(vec2(p.x, p.y.oneMinus()));
+  const sqrtLuma = (p) => sqrt(max(dot(at(p).rgb, LW), 0));
 
-      // Godrays: sample along a line from each pixel toward the spotlight origin
-      // (projected to screen space by the JS side). Each tap decays by
-      // uGodraysDecay, so bright pixels near the origin smear outward as
-      // the blade of light. 16 taps is cheap and reads as proper cinema.
-      if (uGodrays > 0.003) {
-        const int STEPS = 16;
-        vec2 dir = (uGodraysOrig - vUv) / float(STEPS);
-        float weight = 0.0;
-        vec3 acc = vec3(0.0);
-        float w = 1.0;
-        vec2 p = vUv;
-        for (int i = 0; i < STEPS; i++) {
-          p += dir;
-          vec3 s = texture2D(tDiffuse, p).rgb;
-          // Threshold the sample so the lit pixels (spotlight + ring trim)
-          // contribute most; the dim arena walls contribute little.
-          float l = max(max(s.r, s.g), s.b);
-          float mask = smoothstep(0.78, 1.05, l);
-          acc += s * w * mask;
-          weight += w * mask;
-          w *= uGodraysDecay;
-        }
-        if (weight > 0.0001) {
-          vec3 blade = acc / weight;
-          col += blade * uGodrays * uGodraysTint;
-        }
-      }
+  return Fn(() => {
+    // Anything read both inside and outside a branch is a var declared up here: an
+    // expression first built inside an If() is scoped to that branch.
+    const vUv = vec2(screenUV.x, screenUV.y.oneMinus()).toVar();
+    const uv = vUv.toVar();
+    const ca = float(U.uCA).toVar();
+    const aspect2 = vec2(U.uAspect, 1);
 
-      // Speedlines: radial streaks fanning out from the frame centre. The
-      // angle is quantised into lanes, each lane hashed for its own brightness
-      // and phase, so the fan is irregular the way an inked one is rather than
-      // a clean starburst. Added BEFORE the grade so the grade's shoulder rolls
-      // the hot ends of the lines off instead of leaving them clipped white.
-      if (uSpeed > 0.003) {
-        vec2 sd = vUv - 0.5;
-        float srad = length(sd) * 2.0;
-        float sang = atan(sd.y, sd.x) * 0.15915494 + 0.5;   // 0..1
-        float lane = floor(sang * 110.0);
-        float n = hash21(vec2(lane, 3.0));
-        // ~40% of lanes carry a line; the rest stay empty so the fan breathes.
-        float streak = smoothstep(0.58, 0.98, n);
-        // Nothing inside 0.3 of centre (that is where the fighters are) and
-        // nothing past the corners, so the lines read as framing, not overlay.
-        float radMask = smoothstep(0.30, 0.92, srad) * (1.0 - smoothstep(1.24, 1.72, srad));
-        // Each lane drifts outward on its own phase — static lines read as a
-        // texture laid over the frame instead of speed through it.
-        float phase = fract(n * 13.0 + uTime * 2.4);
-        col += uSpeedTint * streak * radMask * uSpeed * (0.30 + 0.70 * phase);
-      }
+    // Tape rewind: each scanline band slides sideways on its own hash, and a
+    // tracking band rolls up the frame. Displacement only.
+    If(U.uRewind.greaterThan(0.003), () => {
+      const band = floor(uv.y.mul(90));
+      uv.x.addAssign(hash21(vec2(band, floor(U.uTime.mul(30)))).sub(0.5).mul(0.018).mul(U.uRewind));
+      const roll = fract(U.uTime.mul(1.7));
+      uv.x.addAssign(exp(sq(uv.y.sub(roll).mul(22)).negate()).mul(0.03).mul(U.uRewind));
+      ca.addAssign(U.uRewind.mul(1.2));
+    });
 
-      // Broadcast grade: teal-pushed shadows, warm highlights, +saturation. Saturation is the
-      // lever that keeps the hall looking painted rather than washed out — it costs no contrast,
-      // unlike exposure, and it is the one number to raise for a brighter, more vibrant frame.
-      float lum = dot(col, vec3(0.2126, 0.7152, 0.0722));
-      col += vec3(0.005, 0.013, 0.026) * (1.0 - smoothstep(0.0, 0.4, lum)) * uGrade;
-      col *= mix(vec3(1.0), vec3(1.06, 1.0, 0.92), smoothstep(0.3, 1.0, lum) * uGrade);
-      col = mix(vec3(lum), col, 1.0 + 0.3 * uGrade);
-      // Filmic S-curve contrast: crush the toe a touch and roll the shoulder so
-      // the grade reads like a graded LUT rather than a flat colour shift. Only
-      // the amount is dialled by uGrade — the shape is fixed.
-      vec3 sc = col * col * (3.0 - 2.0 * col);   // smoothstep-shaped contrast
-      col = mix(col, sc, 0.18 * uGrade);
+    // Shockwave: a gaussian ring pushes pixels outward; its edge also splits
+    // the channels, so the ring reads as a lens being struck.
+    If(U.uShock.greaterThan(0.003), () => {
+      const sd = uv.sub(U.uShockC).mul(aspect2).toVar();
+      const sdist = length(sd).toVar();
+      const ring = exp(sq(sdist.sub(U.uShockR).mul(16)).negate()).mul(U.uShock).toVar();
+      uv.subAssign(sd.div(max(sdist, 1e-4)).mul(vec2(float(1).div(U.uAspect), 1)).mul(ring).mul(0.035));
+      ca.addAssign(ring.mul(3));
+    });
 
-      // KO drain: desaturate except strong reds (blood-red trim, red corner).
-      if (uDesat > 0.003) {
-        float keepRed = smoothstep(0.1, 0.4, col.r - max(col.g, col.b));
-        vec3 drained = mix(vec3(dot(col, vec3(0.2126, 0.7152, 0.0722))), col, keepRed);
-        col = mix(col, drained, uDesat);
-      }
+    // Rollback smear: a gaussian blob around one fighter whose red channel is pulled back
+    // along the correction and blue pushed ahead — the same split the global CA does, but
+    // directional and local. Displacement only, so brightness holds.
+    const smear = vec2(0).toVar();
+    If(U.uNetSmear.greaterThan(0.003), () => {
+      const nd = uv.sub(U.uNetSmearC).mul(aspect2).toVar();
+      const nm = exp(dot(nd, nd).negate().div(max(sq(U.uNetSmearR), 1e-4))).mul(U.uNetSmear);
+      smear.assign(U.uNetSmearDir.mul(nm).mul(0.022));
+    });
 
-      // Comic KO panel: posterised colour, ink where luminance steps, and a
-      // 45-degree Ben-Day dot screen. Inside a dot the colour is lifted and
-      // outside it is dropped by about the same amount, so the frame's average
-      // brightness stays put — a print texture, not a flash or a blackout.
-      // All of it in gamma space: this pass sees the LINEAR frame, where the
-      // dark hall and the suits sit under 0.1 and a linear posterise rounds
-      // them straight to black.
-      if (uComic > 0.003) {
-        vec2 px = 1.0 / uRes;
-        const vec3 LW = vec3(0.299, 0.587, 0.114);
-        float l0 = sqrt(max(dot(texture2D(tDiffuse, uv).rgb, LW), 0.0));
-        float lx = sqrt(max(dot(texture2D(tDiffuse, uv + vec2(px.x * 1.5, 0.0)).rgb, LW), 0.0));
-        float ly = sqrt(max(dot(texture2D(tDiffuse, uv + vec2(0.0, px.y * 1.5)).rgb, LW), 0.0));
-        float ink = smoothstep(0.1, 0.24, abs(l0 - lx) + abs(l0 - ly));
-        vec3 gcol = pow(max(col, vec3(0.0)), vec3(0.4545));
-        vec3 poster = floor(gcol * 5.0 + 0.5) / 5.0;
-        vec2 cell = mat2(0.7071, -0.7071, 0.7071, 0.7071) * (uv * uRes) / 7.0;
-        float dotR = 0.2 + 0.45 * clamp(1.0 - dot(poster, vec3(0.333)), 0.0, 1.0);
-        float inDot = 1.0 - smoothstep(dotR - 0.08, dotR + 0.08, length(fract(cell) - 0.5));
-        vec3 comic = poster * mix(0.86, 1.14, inDot);
-        comic = mix(comic, vec3(0.1, 0.08, 0.12), ink * 0.85);
-        col = mix(col, pow(comic, vec3(2.2)), uComic);
-      }
+    const off = uv.sub(0.5).mul(ca).mul(0.012).toVar();
+    const col = vec3(
+      at(uv.add(off).sub(smear)).r,
+      at(uv.sub(smear.mul(0.35))).g,
+      at(uv.sub(off).add(smear.mul(0.5))).b,
+    ).toVar();
 
-      // Super ink: the world prints as a two-tone comic page while a signature super fires.
-      // Flicker rule: every layer is brightness-neutral on average — the two-tone map keeps each
-      // pixel's own luminance, the dots lift inside and drop outside by the same amount, the
-      // grain is zero-mean, the speed lines alternate ink and paper lanes — and uSuperInk itself
-      // eases in and out over 150 ms or more (personalityEffects.js). Gamma space, as above.
-      if (uSuperInk > 0.003) {
-        const vec3 LW2 = vec3(0.299, 0.587, 0.114);
-        vec3 gc = pow(max(col, vec3(0.0)), vec3(0.4545));
-        float l = dot(gc, LW2);
-        vec3 ga = pow(max(uInkA, vec3(0.0)), vec3(0.4545));
-        vec3 gb = pow(max(uInkB, vec3(0.0)), vec3(0.4545));
-        // Two tones, stepped like a two-plate print, then rescaled to this pixel's brightness.
-        vec3 tone = mix(ga, gb, smoothstep(0.3, 0.42, l) * 0.6 + smoothstep(0.55, 0.68, l) * 0.4);
-        tone *= l / max(dot(tone, LW2), 0.03);
-        // Ben-Day dots: coarser than the KO panel's, on a 30-degree screen, bigger in the shadows.
-        vec2 cell = mat2(0.866, -0.5, 0.5, 0.866) * (uv * uRes) / 9.0;
-        float dotR = 0.16 + 0.4 * clamp(1.0 - l, 0.0, 1.0);
-        float inDot = 1.0 - smoothstep(dotR - 0.07, dotR + 0.07, length(fract(cell) - 0.5));
-        vec3 page = tone * mix(0.88, 1.12, inDot);
-        vec3 inkCol = ga * 0.22;
-        if (uInkCheap < 0.5) {
-          // Paper grain: a fibre-sized, zero-mean speckle (held still under reduced motion).
-          float pg = hash21(floor(uv * uRes * 0.5) + floor(uTime * 12.0) * uInkMotion);
-          page *= 0.965 + 0.07 * pg;
-          // Thick ink: luminance steps measured 2.5 px out (the KO panel uses 1.5).
-          vec2 px = 2.5 / uRes;
-          float lx = sqrt(max(dot(texture2D(tDiffuse, uv + vec2(px.x, 0.0)).rgb, LW2), 0.0));
-          float ly = sqrt(max(dot(texture2D(tDiffuse, uv + vec2(0.0, px.y)).rgb, LW2), 0.0));
-          float lxm = sqrt(max(dot(texture2D(tDiffuse, uv - vec2(px.x, 0.0)).rgb, LW2), 0.0));
-          float lym = sqrt(max(dot(texture2D(tDiffuse, uv - vec2(0.0, px.y)).rgb, LW2), 0.0));
-          float ink = smoothstep(0.09, 0.22, abs(lx - lxm) + abs(ly - lym));
-          page = mix(page, inkCol, ink * 0.88);
-        }
-        // Radial speed lines out of the firing fighter: thin lanes, ink and paper alternating.
-        vec2 kd = (uv - uInkC) * vec2(uAspect, 1.0);
-        float krad = length(kd);
-        float kang = atan(kd.y, kd.x) * 0.15915494 + 0.5;
-        float klane = floor(kang * 150.0);
-        float kn = hash21(vec2(klane, 11.0));
-        float kstreak = smoothstep(0.7, 0.95, kn) * smoothstep(0.28, 0.75, krad);
-        kstreak *= 0.45 + 0.55 * fract(kn * 7.0 + uTime * 2.6 * uInkMotion - krad * 0.6);
-        vec3 lanes = mod(klane, 2.0) < 1.0 ? inkCol : vec3(1.0, 0.96, 0.88) * max(l * 1.6, 0.35);
-        page = mix(page, lanes, kstreak * 0.6);
-        col = mix(col, pow(max(page, vec3(0.0)), vec3(2.2)), uSuperInk);
-      }
+    // Radial impact blur: a short streak toward the frame center. 4 extra
+    // taps is enough at pulse strengths — it reads as a punch, not a filter.
+    If(U.uRadial.greaterThan(0.003), () => {
+      const dir = vec2(0.5).sub(uv).mul(U.uRadial).mul(0.05).toVar();
+      const acc = vec3(col).toVar();
+      acc.addAssign(at(uv.add(dir)).rgb);
+      acc.addAssign(at(uv.add(dir.mul(2))).rgb);
+      acc.addAssign(at(uv.add(dir.mul(3))).rgb);
+      acc.addAssign(at(uv.add(dir.mul(4))).rgb);
+      col.assign(acc.mul(0.2));
+    });
 
-      float d = distance(vUv, vec2(0.5));
-      col *= 1.0 - smoothstep(0.55, 0.95, d) * uVignette;
+    // Godrays: sample along a line from each pixel toward the spotlight origin
+    // (projected to screen space by the JS side). Each tap decays by
+    // uGodraysDecay, so bright pixels near the origin smear outward as
+    // the blade of light. 16 taps is cheap and reads as proper cinema.
+    If(U.uGodrays.greaterThan(0.003), () => {
+      const dir = U.uGodraysOrig.sub(vUv).div(16).toVar();
+      const weight = float(0).toVar();
+      const acc = vec3(0).toVar();
+      const w = float(1).toVar();
+      const p = vec2(vUv).toVar();
+      Loop(16, () => {
+        p.addAssign(dir);
+        const s = at(p).rgb.toVar();
+        // Threshold the sample so the lit pixels (spotlight + ring trim)
+        // contribute most; the dim arena walls contribute little.
+        const mask = smoothstep(0.78, 1.05, max(max(s.r, s.g), s.b));
+        acc.addAssign(s.mul(w).mul(mask));
+        weight.addAssign(w.mul(mask));
+        w.mulAssign(U.uGodraysDecay);
+      });
+      If(weight.greaterThan(0.0001), () => {
+        col.addAssign(acc.div(weight).mul(U.uGodrays).mul(U.uGodraysTint));
+      });
+    });
 
-      // Rewind scanlines: every other line of the band dimmed a touch, plus a
-      // faint bright roll bar. Small both ways, so the average holds.
-      if (uRewind > 0.003) {
-        float sl = mod(floor(vUv.y * uRes.y * 0.5), 2.0);
-        col *= 1.0 - 0.12 * sl * uRewind;
-        col += vec3(0.05) * exp(-pow((vUv.y - fract(uTime * 1.7)) * 22.0, 2.0)) * uRewind;
-      }
+    // Speedlines: radial streaks fanning out from the frame centre. The
+    // angle is quantised into lanes, each lane hashed for its own brightness
+    // and phase, so the fan is irregular the way an inked one is rather than
+    // a clean starburst. Added BEFORE the grade so the grade's shoulder rolls
+    // the hot ends of the lines off instead of leaving them clipped white.
+    If(U.uSpeed.greaterThan(0.003), () => {
+      const sd = vUv.sub(0.5).toVar();
+      const srad = length(sd).mul(2);
+      const sang = atan(sd.y, sd.x).mul(0.15915494).add(0.5);   // 0..1
+      const lane = floor(sang.mul(110));
+      const n = hash21(vec2(lane, 3)).toVar();
+      // ~40% of lanes carry a line; the rest stay empty so the fan breathes.
+      const streak = smoothstep(0.58, 0.98, n);
+      // Nothing inside 0.3 of centre (that is where the fighters are) and
+      // nothing past the corners, so the lines read as framing, not overlay.
+      const radMask = smoothstep(0.30, 0.92, srad).mul(smoothstep(1.24, 1.72, srad).oneMinus());
+      // Each lane drifts outward on its own phase — static lines read as a
+      // texture laid over the frame instead of speed through it.
+      const phase = fract(n.mul(13).add(U.uTime.mul(2.4)));
+      col.addAssign(U.uSpeedTint.mul(streak).mul(radMask).mul(U.uSpeed).mul(phase.mul(0.70).add(0.30)));
+    });
 
-      // Danger edge: skipped outright unless a fighter is in the red.
-      if (uDangerL + uDangerR > 0.003) {
-        float edge = (1.0 - smoothstep(0.0, 0.3, vUv.x)) * uDangerL
-                   + smoothstep(0.7, 1.0, vUv.x) * uDangerR;
+    // Broadcast grade: teal-pushed shadows, warm highlights, +saturation. Saturation is the
+    // lever that keeps the hall looking painted rather than washed out — it costs no contrast,
+    // unlike exposure, and it is the one number to raise for a brighter, more vibrant frame.
+    const lum = dot(col, LUMA).toVar();
+    col.addAssign(vec3(0.005, 0.013, 0.026).mul(smoothstep(0.0, 0.4, lum).oneMinus()).mul(U.uGrade));
+    col.mulAssign(mix(vec3(1), vec3(1.06, 1.0, 0.92), smoothstep(0.3, 1.0, lum).mul(U.uGrade)));
+    col.assign(mix(vec3(lum), col, U.uGrade.mul(0.3).add(1)));
+    // Filmic S-curve contrast: crush the toe a touch and roll the shoulder so
+    // the grade reads like a graded LUT rather than a flat colour shift. Only
+    // the amount is dialled by uGrade — the shape is fixed.
+    // The curve is only a curve inside 0..1: past 1.5 it turns negative, and a highlight
+    // that bright (a fighter under the impact light) came out of the grade black with a
+    // coloured fringe. So it bends the displayable range and leaves the overshoot alone.
+    const inRange = clamp(col, 0, 1);
+    const sc = inRange.mul(inRange).mul(inRange.mul(-2).add(3));   // smoothstep-shaped contrast
+    col.addAssign(sc.sub(inRange).mul(U.uGrade.mul(0.18)));
+
+    // KO drain: desaturate except strong reds (blood-red trim, red corner).
+    If(U.uDesat.greaterThan(0.003), () => {
+      const keepRed = smoothstep(0.1, 0.4, col.r.sub(max(col.g, col.b)));
+      const drained = mix(vec3(dot(col, LUMA)), col, keepRed);
+      col.assign(mix(col, drained, U.uDesat));
+    });
+
+    // Comic KO panel: posterised colour, ink where luminance steps, and a
+    // 45-degree Ben-Day dot screen. Inside a dot the colour is lifted and
+    // outside it is dropped by about the same amount, so the frame's average
+    // brightness stays put — a print texture, not a flash or a blackout.
+    // All of it in gamma space: this stage sees the LINEAR frame, where the
+    // dark hall and the suits sit under 0.1 and a linear posterise rounds
+    // them straight to black.
+    If(U.uComic.greaterThan(0.003), () => {
+      const px = vec2(1).div(U.uRes).toVar();
+      const l0 = sqrtLuma(uv).toVar();
+      const lx = sqrtLuma(uv.add(vec2(px.x.mul(1.5), 0)));
+      const ly = sqrtLuma(uv.add(vec2(0, px.y.mul(1.5))));
+      const ink = smoothstep(0.1, 0.24, abs(l0.sub(lx)).add(abs(l0.sub(ly))));
+      const poster = floor(gammaOut(col).mul(5).add(0.5)).div(5).toVar();
+      const pxy = uv.mul(U.uRes).toVar();
+      const cell = vec2(pxy.x.add(pxy.y), pxy.y.sub(pxy.x)).mul(0.7071 / 7);
+      const dotR = clamp(dot(poster, vec3(0.333)).oneMinus(), 0, 1).mul(0.45).add(0.2).toVar();
+      const inDot = smoothstep(dotR.sub(0.08), dotR.add(0.08), length(fract(cell).sub(0.5))).oneMinus();
+      const comic = mix(poster.mul(mix(0.86, 1.14, inDot)), vec3(0.1, 0.08, 0.12), ink.mul(0.85));
+      col.assign(mix(col, pow(comic, vec3(2.2)), U.uComic));
+    });
+
+    // Super ink: the world prints as a two-tone comic page while a signature super fires.
+    // Flicker rule: every layer is brightness-neutral on average — the two-tone map keeps each
+    // pixel's own luminance, the dots lift inside and drop outside by the same amount, the
+    // grain is zero-mean, the speed lines alternate ink and paper lanes — and uSuperInk itself
+    // eases in and out over 150 ms or more (personalityEffects.js). Gamma space, as above.
+    If(U.uSuperInk.greaterThan(0.003), () => {
+      const l = dot(gammaOut(col), LW).toVar();
+      const ga = gammaOut(U.uInkA).toVar();
+      const gb = gammaOut(U.uInkB);
+      // Two tones, stepped like a two-plate print, then rescaled to this pixel's brightness.
+      const tone = mix(ga, gb, smoothstep(0.3, 0.42, l).mul(0.6).add(smoothstep(0.55, 0.68, l).mul(0.4))).toVar();
+      tone.mulAssign(l.div(max(dot(tone, LW), 0.03)));
+      // Ben-Day dots: coarser than the KO panel's, on a 30-degree screen, bigger in the shadows.
+      const pxy = uv.mul(U.uRes).toVar();
+      const cell = vec2(pxy.x.mul(0.866).add(pxy.y.mul(0.5)), pxy.y.mul(0.866).sub(pxy.x.mul(0.5))).div(9);
+      const dotR = clamp(l.oneMinus(), 0, 1).mul(0.4).add(0.16).toVar();
+      const inDot = smoothstep(dotR.sub(0.07), dotR.add(0.07), length(fract(cell).sub(0.5))).oneMinus();
+      const page = tone.mul(mix(0.88, 1.12, inDot)).toVar();
+      const inkCol = ga.mul(0.22).toVar();
+      If(U.uInkCheap.lessThan(0.5), () => {
+        // Paper grain: a fibre-sized, zero-mean speckle (held still under reduced motion).
+        const pg = hash21(floor(pxy.mul(0.5)).add(floor(U.uTime.mul(12)).mul(U.uInkMotion)));
+        page.mulAssign(pg.mul(0.07).add(0.965));
+        // Thick ink: luminance steps measured 2.5 px out (the KO panel uses 1.5).
+        const px = vec2(2.5).div(U.uRes).toVar();
+        const lx = sqrtLuma(uv.add(vec2(px.x, 0)));
+        const ly = sqrtLuma(uv.add(vec2(0, px.y)));
+        const lxm = sqrtLuma(uv.sub(vec2(px.x, 0)));
+        const lym = sqrtLuma(uv.sub(vec2(0, px.y)));
+        const ink = smoothstep(0.09, 0.22, abs(lx.sub(lxm)).add(abs(ly.sub(lym))));
+        page.assign(mix(page, inkCol, ink.mul(0.88)));
+      });
+      // Radial speed lines out of the firing fighter: thin lanes, ink and paper alternating.
+      const kd = uv.sub(U.uInkC).mul(aspect2).toVar();
+      const krad = length(kd).toVar();
+      const kang = atan(kd.y, kd.x).mul(0.15915494).add(0.5);
+      const klane = floor(kang.mul(150)).toVar();
+      const kn = hash21(vec2(klane, 11)).toVar();
+      const kstreak = smoothstep(0.7, 0.95, kn).mul(smoothstep(0.28, 0.75, krad))
+        .mul(fract(kn.mul(7).add(U.uTime.mul(2.6).mul(U.uInkMotion)).sub(krad.mul(0.6))).mul(0.55).add(0.45));
+      const lanes = select(mod(klane, 2).lessThan(1), inkCol, vec3(1.0, 0.96, 0.88).mul(max(l.mul(1.6), 0.35)));
+      page.assign(mix(page, lanes, kstreak.mul(0.6)));
+      col.assign(mix(col, pow(max(page, vec3(0)), vec3(2.2)), U.uSuperInk));
+    });
+
+    const d = length(vUv.sub(0.5));
+    col.mulAssign(smoothstep(0.55, 0.95, d).mul(U.uVignette).oneMinus());
+
+    // Rewind scanlines: every other line of the band dimmed a touch, plus a
+    // faint bright roll bar. Small both ways, so the average holds.
+    If(U.uRewind.greaterThan(0.003), () => {
+      const sl = mod(floor(vUv.y.mul(U.uRes.y).mul(0.5)), 2);
+      col.mulAssign(sl.mul(U.uRewind).mul(0.12).oneMinus());
+      col.addAssign(vec3(0.05).mul(exp(sq(vUv.y.sub(fract(U.uTime.mul(1.7))).mul(22)).negate())).mul(U.uRewind));
+    });
+
+    // Danger edge: skipped outright unless a fighter is in the red.
+    If(U.uDangerL.add(U.uDangerR).greaterThan(0.003), () => {
+      const edge = smoothstep(0.0, 0.3, vUv.x).oneMinus().mul(U.uDangerL)
+        .add(smoothstep(0.7, 1.0, vUv.x).mul(U.uDangerR))
         // Strongest at mid-height, easing off into the corners the vignette owns.
-        edge *= 0.55 + 0.45 * (1.0 - abs(vUv.y - 0.5) * 2.0);
-        float m = clamp(edge * (0.62 + 0.38 * uHeart), 0.0, 1.0) * 0.5;
-        col = mix(col, col * vec3(1.2, 0.6, 0.56) + vec3(0.045, 0.0, 0.004), m);
-      }
+        .mul(abs(vUv.y.sub(0.5)).mul(2).oneMinus().mul(0.45).add(0.55));
+      const m = clamp(edge.mul(U.uHeart.mul(0.38).add(0.62)), 0, 1).mul(0.5);
+      col.assign(mix(col, col.mul(vec3(1.2, 0.6, 0.56)).add(vec3(0.045, 0.0, 0.004)), m));
+    });
 
-      // Film grain (idea #10): animated monochrome noise, strongest in the
-      // shadows (where sensor noise actually lives) and fading out of the
-      // highlights so bright speculars stay clean. Two hashed samples offset
-      // by the frame time keep it crawling rather than static-dithering.
-      if (uGrain > 0.0001) {
-        float g1 = hash21(vUv * vec2(1920.0, 1080.0) + fract(uTime) * 71.7);
-        float grain = (g1 - 0.5);
-        float shadowW = 1.0 - smoothstep(0.0, 0.55, lum); // more grain in darks
-        col += grain * uGrain * (0.35 + 0.65 * shadowW);
-      }
-      gl_FragColor = vec4(col, 1.0);
-    }`,
-};
+    // Film grain: animated monochrome noise, strongest in the shadows (where sensor
+    // noise actually lives) and fading out of the highlights so bright speculars stay clean.
+    If(U.uGrain.greaterThan(0.0001), () => {
+      const grain = hash21(vUv.mul(vec2(1920, 1080)).add(fract(U.uTime).mul(71.7))).sub(0.5);
+      const shadowW = smoothstep(0.0, 0.55, lum).oneMinus();   // more grain in darks
+      col.addAssign(grain.mul(U.uGrain).mul(shadowW.mul(0.65).add(0.35)));
+    });
+
+    return vec4(max(col, vec3(0)), 1);
+  })();
+}

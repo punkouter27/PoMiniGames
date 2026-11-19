@@ -13,7 +13,7 @@
 // mid-shatter is safe.
 
 import * as CANNON from 'cannon-es';
-import * as THREE from 'three';
+import * as THREE from 'three-eco/webgpu';
 import { G_PROP, G_ROOT, G_RAGDOLL, G_ARENA } from './physics.js';
 
 const RING = 5.2;              // matches RING_HALF — keep crates inside the ropes
@@ -85,7 +85,7 @@ function crateGeo() {
 }
 
 function crateMaterial() {
-  return new THREE.MeshStandardMaterial({
+  return new THREE.MeshStandardNodeMaterial({
     map: crateTexture(), color: 0xffffff, roughness: 0.85, metalness: 0.0,
   });
 }
@@ -152,7 +152,7 @@ export function buildProps(world, mats, scene) {
     world, mats, scene,
     bodies: [],
     seq: 0,
-    debrisMat: new THREE.MeshStandardMaterial({
+    debrisMat: new THREE.MeshStandardNodeMaterial({
       map: crateTexture(), color: 0xd8b48a, roughness: 0.9,
     }),
   };

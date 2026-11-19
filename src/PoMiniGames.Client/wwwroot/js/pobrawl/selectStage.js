@@ -1,6 +1,6 @@
 // selectStage.js — the 2P fighter select's live portraits ("holo-glass" select).
 //
-// ONE WebGL renderer for the whole select screen: a single transparent canvas laid over
+// ONE renderer for the whole select screen: a single transparent canvas laid over
 // .pb-select, drawn into once per portrait with setViewport/setScissor from each
 // portrait element's getBoundingClientRect ("one canvas, many viewports"). Sixteen
 // canvases would burn sixteen of the browser's ~16 live WebGL contexts in an SPA that
@@ -25,11 +25,15 @@
 // Lifecycle: mount(host, state) → update(state)* → unmount(). unmount() (also called by
 // PoBrawl.init before the arena boots, and on a disconnected host) disposes the renderer
 // AND forces the context loss — dispose() alone leaves the context alive until GC.
-import * as THREE from 'three';
+//
+// BACKEND. The fighters are node materials, so this is three's WebGPURenderer like the arena,
+// but always on its WebGL2 backend, over a context this module creates itself: the round-robin
+// budget needs preserveDrawingBuffer, and a WebGPU canvas starts every frame empty.
+import * as THREE from 'three-eco/webgpu';
 import { buildFighter, setExpression, CHARACTERS } from './fighters.js';
 import { Animator } from './animation.js';
 import * as Quality from './quality.js';
-import { createRendererSync } from '../platform/3d/renderer.js';
+import { configureRenderer } from '../platform/3d/renderer.js';
 import { disposeRenderer } from '../platform/3d/dispose.js';
 
 const IDLE_MS = 15000;
@@ -85,17 +89,32 @@ class SelectStage {
     this.frameMs = tier === 'high' ? 0 : 1000 / 30;
     this.budget = tier === 'high' ? 5 : 3;
 
-    // mount() is synchronous (the page reads its boolean), so the sync shared factory.
-    // No shadows here: portraits are unshadowed.
-    this.renderer = createRendererSync(THREE, {
+    // mount() is synchronous (the page reads its boolean): the renderer is built here and
+    // its init() settles a moment later; nothing draws until `ready`.
+    // The context is ours so it can keep its drawing buffer; its own antialias smooths the
+    // canvas the renderer draws straight into. No shadows here: portraits are unshadowed.
+    const canvas = document.createElement('canvas');
+    const gl = canvas.getContext('webgl2', {
       alpha: true, antialias: true, preserveDrawingBuffer: true, powerPreference: 'low-power',
+    });
+    if (!gl) throw new Error('select stage: no WebGL2 context');
+    this.renderer = new THREE.WebGPURenderer({ canvas, context: gl, forceWebGL: true, alpha: true, antialias: false });
+    configureRenderer(THREE, this.renderer, {
       tone: 'agx', exposure: 1.45, shadows: false, clearColor: 0x000000, clearAlpha: 0,
     });
     this.renderer.autoClear = true;
     // One frame = many render() calls; count them together (see stats()).
     this.renderer.info.autoReset = false;
-    this.renderer.setScissorTest(true);
-    const canvas = this.renderer.domElement;
+    this.ready = false;
+    this.renderer.init().then(() => {
+      if (this.disposed) return;
+      // Scissoring needs the backend, which only exists once init() has settled.
+      this.renderer.setScissorTest(true);
+      this.ready = true;
+      this.layoutKey = '';     // the first real frame paints every portrait
+      this.wake();
+      if (this.reduced && !this.raf) this.raf = requestAnimationFrame(this._frame);
+    }, () => { if (!this.disposed) unmount(); });
     canvas.className = 'pb-select-gl';
     canvas.setAttribute('aria-hidden', 'true');
     canvas.tabIndex = -1;
@@ -214,6 +233,8 @@ class SelectStage {
     this.raf = 0;
     if (this.disposed) return;
     if (!this.host.isConnected) { unmount(); return; }
+    // The backend is still starting: come back next frame.
+    if (!this.ready) { this.raf = requestAnimationFrame(this._frame); return; }
     const building = this.buildQueue.length > 0;
     if (building) this._ensureRig(this.buildQueue.shift());
     const idle = now - this.lastInput > IDLE_MS;
@@ -397,11 +418,12 @@ class SelectStage {
     this.rim2.position.x = side === 2 ? -1.8 : 1.8;
 
     const x = r.left - x0, w = r.width, h = r.height;
-    const y = ch - (r.top - y0) - h;
+    // Top-left origin, y down: this renderer's viewport and scissor follow the page, not GL.
+    const y = r.top - y0;
     this.renderer.setViewport(x, y, w, h);
     // Scissor inside the card's rounded corners: the bottom edge (shoulders) hides under
     // the name plate's scrim, so a square cut there never shows.
-    this.renderer.setScissor(x + 2, y + 7, w - 4, h - 9);
+    this.renderer.setScissor(x + 2, y + 2, w - 4, h - 9);
     this.scene.add(rig.root);
     this.renderer.render(this.scene, cam);
     this.scene.remove(rig.root);

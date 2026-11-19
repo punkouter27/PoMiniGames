@@ -70,7 +70,7 @@ sign-in: a player is a random browser id plus three initials.
     integer-pixel scaling), `createParticles2D`, `tween.js` (easing, damp, spring), `createShaderQuad`
     (raw WebGL2 full-screen shaders).
   - **3D helpers:** `createRenderer(THREE, { api: 'webgl' | 'webgpu' | 'auto', tone, shadows, ... })` takes
-    `THREE` as an argument, so the r165 games and the r186 WebGPU PoEcosystem share it.
+    `THREE` as an argument, so the r165 games and the r186 WebGPU games (PoEcosystem, PoBrawl) share it.
     `attachRenderer(stage, renderer, { camera, composer })` sizes the renderer on every resize and
     disposes it with the stage. `disposeObject3D` and `watchContextLoss` handle teardown and context
     loss, and `warmup` compiles shaders before the first frame.
@@ -380,7 +380,9 @@ scripts/                        Working scripts only — see scripts/README.md
 - **Two three.js versions.** PoEcosystem renders with three r186 `WebGPURenderer` and node
   materials (TSL), imported as `three-eco/webgpu` / `three-eco/tsl` / `three-eco/addons/`; it
   falls back to three's WebGL2 backend by itself, and `?ecoBackend=webgl2` forces that. Every
-  every other three.js game stays on r165 (`three`, `three/addons/`). `three` and `gaussian-splats-3d`
+  PoBrawl uses the same r186 build (`?brawlBackend=webgl2` forces its fallback; its GPU blood,
+  crowd and confetti simulations need WebGPU and switch off without it). The other three.js games
+  stay on r165 (`three`, `three/addons/`). `three` and `gaussian-splats-3d`
   are pinned with SRI in the import map in `wwwroot/index.html`, while `cannon-es` (`0.20.0`)
   and `yuka` (`0.7.8`) resolve to their local copies under `wwwroot/lib/` so browsers, Web
   Workers, and Node tests load the same artifact. See the

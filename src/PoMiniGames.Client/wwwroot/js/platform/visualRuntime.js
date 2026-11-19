@@ -55,6 +55,10 @@ const RAISE_AFTER_MS = 6000;
 // cold-start on any device we target.
 const WARMUP_MS = 2500;
 
+// GPU time under which a slow frame is not the GPU's doing, and how long a report counts.
+const GPU_IDLE_MS = 7;
+const GPU_REPORT_FRESH_MS = 3000;
+
 let _running = false;
 let _rafId = 0;
 let _audioReactive = false;
@@ -66,6 +70,8 @@ let _windowStart = 0;
 let _fps = 60;
 let _belowSince = 0;
 let _aboveSince = 0;
+let _gpuMs = -1;      // last GPU frame time an engine reported (reportGpuMs), or -1
+let _gpuAt = 0;
 let _warmedAt = 0;   // set on the first measurement window; see WARMUP_MS
 
 // Reused so the loop allocates nothing per frame.
@@ -210,7 +216,11 @@ function step(now) {
                 _aboveSince = 0;
                 if (!_belowSince) _belowSince = now;
                 else if (now - _belowSince > DROP_AFTER_MS) {
-                    if (_tier === 'high') applyTier('medium');
+                    // A measured, nearly idle GPU: the frames are slow for some other reason,
+                    // and drawing less would not bring them back.
+                    const gpuIdle = _gpuMs >= 0 && now - _gpuAt < GPU_REPORT_FRESH_MS && _gpuMs < GPU_IDLE_MS;
+                    if (gpuIdle) { /* hold the tier */ }
+                    else if (_tier === 'high') applyTier('medium');
                     else if (_tier === 'medium') applyTier('low');
                     _belowSince = now;
                 }
@@ -270,6 +280,33 @@ export function enableAudioReactive(on) {
 export function enableAdaptiveQuality(on) {
     _adaptive = on !== false;
     if (_adaptive) ensureRunning(); else if (!_audioReactive) stopLoop();
+}
+
+/**
+ * How long the GPU spent on the last frames, in ms, from an engine that can measure it
+ * (WebGPU timestamp queries). The frame rate alone cannot tell a slow GPU from a busy main
+ * thread, and only the first is helped by a lower graphics tier: while a fresh report says
+ * the GPU is nearly idle, a low frame rate does not drop the tier.
+ */
+export function reportGpuMs(ms) {
+    _gpuMs = ms;
+    _gpuAt = performance.now();
+}
+
+/**
+ * Do not judge the frame rate for the next `ms`. For an engine that knows it is about to
+ * stall the frame loop for reasons that say nothing about the GPU: building shaders,
+ * loading a level. Without it a multi-second build reads as a slow machine, the tier drops,
+ * and the tier change itself costs another rebuild.
+ *
+ * A call extends a hold already running; `exact` replaces it instead, which is how the
+ * engine ends a long open-ended hold once its work is done.
+ */
+export function holdQuality(ms, exact = false) {
+    const until = performance.now() + Math.max(0, ms || 0);
+    if (exact || until > _warmedAt) _warmedAt = until;
+    _belowSince = 0;
+    _aboveSince = 0;
 }
 
 /** Force a tier and stop auto-adjusting — for a manual quality setting. */
