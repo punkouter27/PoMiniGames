@@ -118,6 +118,10 @@ const COUNTER_ATK_MUL = 1.5;
 // with arms that leak (combat.js regionEffect guardLeak). A perfect guard is a
 // read, not a soak, and costs the arms nothing.
 const BLOCK_ARM_WEAR = 0.3;
+// A blow taken on an arm with no guard held (_armBlock): the share that still gets through,
+// and how much harder it is on the arm than a held guard.
+const ARM_BLOCK_LEAK = 0.25;
+const ARM_BLOCK_WEAR_MUL = 1.5;
 
 // Super meter per unit of HP lost (see _rollHitDamage). 1.6 fills it after
 // ~60 HP of damage: a comeback for the fighter who is losing, with the fight
@@ -301,6 +305,40 @@ class HitResolutionMethods {
 
   // The guard branch. True when the swing was stopped (ordinary or perfect guard)
   // and the strike is fully resolved; false when it goes on to the damage roll.
+  // ── Arm block ─────────────────────────────────────────────────────────
+  // The blow met an arm before it met the head or the body. That is cover, whether or not
+  // the guard button is down: most of it is soaked by the arm, which bruises faster than
+  // under a held guard, and a share still gets through as damage. Unlike a held guard it
+  // pays the defender nothing and does not freeze the attacker: it was luck and stance,
+  // not a read. It can never be the knockout.
+  _armBlock(s) {
+    const { attacker, defender, attack, hit, knockDir, chargeMul, defMass, powerScale } = s;
+    const soaked = attack.dmg * chargeMul;
+    const tierBefore = regionTier(REGIONS.ARMS, defender.regionDmg.arms);
+    defender.regionDmg.arms = Math.min(100, defender.regionDmg.arms + soaked * BLOCK_ARM_WEAR * ARM_BLOCK_WEAR_MUL);
+    const hp = this.combat.getPlayer(defender.playerId)?.health ?? 0;
+    const chip = Math.min(soaked * powerScale * ARM_BLOCK_LEAK, Math.max(0, hp - 1));
+    if (chip > 0.5) {
+      if (this.training) this._trainingCushion(defender, chip);
+      this.combat.damage({ playerId: defender.playerId, amount: chip, sourceId: attacker.playerId });
+    }
+    defender.knockback.add(knockDir.clone().multiplyScalar(1.2 * chargeMul / defMass));
+    this._applyDamageWear(defender);
+    this._regionCallout(defender, REGIONS.ARMS, tierBefore, hit.point);
+    this._dent(defender, hit.point, chargeMul * 0.6);
+    this._spawnSparks(hit.point, 0x9ad0ff, 5, 0.9);
+    this.audio.block(hit.point);
+    this._show('block', { point: hit.point });
+    this._rumble(defender, 0, 0.3, 40);
+    // The struck arm gives; the glove comes off it.
+    const side = hit.capsule.endsWith('L') ? 'L' : 'R';
+    defender.animator.applyReaction('elbow' + side, -3.5, 0, 0);
+    defender.animator.applyReaction('shoulder' + side, 2, 0, 0);
+    this.hudDirty = true;
+    this._hitFeedback(attack, false);
+    return true;
+  }
+
   _resolveBlock(s) {
     const { attacker, defender, attack, hit, knockDir, chargeMul, defMass, powerScale } = s;
     // A held guard stops anything thrown from inside its arc (hitboxes.js
@@ -318,6 +356,8 @@ class HitResolutionMethods {
       if (dirtyCfg && this.rng.random() < dirtyCfg.dirtyBlockFraction) blocked = false;
       attacker._dirtySwing = false;
     }
+    // A glove that landed on an arm, with no guard held, is taken on that arm (_armBlock).
+    if (!blocked && s.region === REGIONS.ARMS) return this._armBlock(s);
     if (blocked) {
       // ── Block reward ──────────────────────────────────────────────
       // Holding guard already regenerates energy fastest of any state; landing

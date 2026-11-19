@@ -17,6 +17,9 @@
 // are the fist and the foot (with the shin behind it), nothing wider. So a punch scores
 // when the glove reaches the face or the body, and a swing that stops short, or passes
 // beside a head, is a miss.
+// Arms count too, but as cover: a glove that reaches an arm first has been blocked by it
+// (the engine's arm block), which is why a swept striker reports the FIRST thing on its path
+// rather than the part it ended up deepest in.
 // A fist crosses 10-15 cm in one sim tick, more than half a head: tested only where it is
 // each tick it could step straight over a face and never be "in" it. So the fist and foot
 // are tested along the path they travelled since the last tick (a sweep), not at a point.
@@ -53,8 +56,12 @@ const HURT_CAPSULES = {
   thighR:    { jointA: 'hipR',  jointB: 'kneeR',    radius: 0.095 },
   shinL:     { jointA: 'kneeL', jointB: 'footL',    radius: 0.08 },
   shinR:     { jointA: 'kneeR', jointB: 'footR',    radius: 0.08 },
-  // No arms: a glove on a forearm is not a scoring blow. A strike has to get to the head,
-  // the body or the legs; arms in the way are what the guard (below) is for.
+  // The arms. A glove that meets one of these before it meets the head or the body has
+  // been taken on the arm: the engine treats it as a block, not a scoring blow.
+  upperArmL: { jointA: 'shoulderL', jointB: 'elbowL', radius: 0.08 },
+  upperArmR: { jointA: 'shoulderR', jointB: 'elbowR', radius: 0.08 },
+  forearmL:  { jointA: 'elbowL', jointB: 'fistL',   radius: 0.075 },
+  forearmR:  { jointA: 'elbowR', jointB: 'fistR',   radius: 0.075 },
 };
 
 // The shapes this used before, kept for the battle royale and for anything that only needs
@@ -238,10 +245,11 @@ function testCapsuleAgainstSet(attackerRig, name, attackerCaps, defenderRig, def
       || { d: atk.a.distanceTo(def.a), pa: atk.a.clone(), pb: def.a.clone() };
     const threshold = atkRadius + cap.radius * rigScale(defenderRig, cap) * scale;
     if (hit.d <= threshold) {
-      // Tie-break: keep the deepest (smallest gap) intersection so the
-      // closest body part wins.
-      if (!best || hit.d < best.distance) {
-        best = { capsule: capName, point: hit.pa.clone(), distance: hit.d, hurtPoint: hit.pb.clone() };
+      // Which part: for a swept striker, the first one along its path (an arm in front of
+      // the chest is met before the chest); otherwise the one it is deepest into.
+      const order = attackerCaps.sweep ? hit.pa.distanceTo(atk.a) : hit.d;
+      if (!best || order < best.order) {
+        best = { capsule: capName, point: hit.pa.clone(), distance: hit.d, order, hurtPoint: hit.pb.clone() };
       }
     }
   }

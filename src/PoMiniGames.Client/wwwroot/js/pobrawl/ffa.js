@@ -573,7 +573,8 @@ export class BrawlFfaGame {
   _attack(attacker, target, humanKick = false) {
     if (this.phase !== 'fighting' || !attacker.alive || !target.alive) return;
     const kick = attacker.human ? humanKick : this.random() < 0.35;
-    attacker.animator.play(kick ? 'kick' : 'punch');
+    // Half of all punches go up at the face (animation.js punchHigh), the rest at the body.
+    attacker.animator.play(kick ? 'kick' : this.random() < 0.5 ? 'punchHigh' : 'punch');
     attacker.attackIn = (0.72 + this.random() * 0.32) * this._strategy(attacker).pace;
     const timing = SWINGS[kick ? 'kick' : 'punch'];
     attacker.swing = { target, kick, elapsed: 0, remaining: timing.total, resolved: false };
@@ -621,7 +622,8 @@ export class BrawlFfaGame {
       if (!other || other === attacker || !other.alive) continue;
       const to = other.rig.root.position;
       if (Math.hypot(to.x - from.x, to.z - from.z) > 1.6) continue;
-      const hit = testAttackHit(attacker.rig, swing.kick ? 'kick' : 'punch', 'active', other.rig, MODEL_SCALE, { loose: true });
+      // The same real-contact shapes as the 1v1 game, swept along the fist's path.
+      const hit = testAttackHit(attacker.rig, swing.kick ? 'kick' : 'punch', 'active', other.rig, MODEL_SCALE, { t: this.elapsed });
       if (hit) return { target: other, point: hit.point, region: regionForHurtBone(hit.capsule) };
     }
     return null;
@@ -640,7 +642,8 @@ export class BrawlFfaGame {
       const yaw = attacker.rig.root.rotation.y;
       if (distance > 0.001 && (Math.sin(yaw) * dx + Math.cos(yaw) * dz) / distance < 0.5) return;
     }
-    if (target.blocking && guardCovers(target.rig, attacker.rig.root.position)) {
+    // A held guard stops it, and so does an arm: a glove that met an arm first was blocked.
+    if (contact?.region === 'arms' || (target.blocking && guardCovers(target.rig, attacker.rig.root.position))) {
       const at = contact?.point || target.rig.root.position;
       this.spatialAudio?.impact({ position: at, energy: kick ? 35 : 20, material: 'cloth', blocked: true });
       this.rendering?.impact({ position: at, power: 0.3, kind: 'hit', target, blocked: true });
