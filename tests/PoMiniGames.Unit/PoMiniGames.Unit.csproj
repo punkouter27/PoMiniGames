@@ -29,4 +29,11 @@
     <Using Include="Xunit" />
   </ItemGroup>
 
+  <!-- The centerlines scripts/blender/pocabinet-bedroom.py and pocabinet-court.py checked against
+       their scans; PoCabinetTests compares them with the game's track. They moved here from the
+       deleted tests/Shared, which had copied them to the output the same way. -->
+  <ItemGroup>
+    <None Include="Fixtures\**" CopyToOutputDirectory="PreserveNewest" />
+  </ItemGroup>
+
 </Project>

@@ -29,13 +29,13 @@ dotnet test tests/PoMiniGames.E2EUI -p:SkipPlaywrightInstall=true --filter "..."
   `--artifacts-path artifacts/<name>` (it must stay inside the repo).
 - `scripts/dev/test-all.ps1` runs all four tiers. The AGENTS.md rules say not to run it for routine
   changes.
-- `.github/workflows/deploy.yml` builds and deploys only (no tests, no infra job, no rollback,
-  no PR runs): build, publish, `scripts/ci-package.ps1` stages the docs suite,
+- `.github/workflows/deploy.yml` checks formatting, builds and runs the Unit tier, then deploys (no other tests, no infra job,
+  no rollback, no PR runs; a red check stops the deploy): format, build, Unit, publish, `scripts/ci-package.ps1` stages the docs suite,
   `scripts/pre-deploy.ps1` clears stale Kudu files on the Windows App Service, deploy, then wait
   for `/health/live` to answer with this commit's `X-Commit`. The file is identical in every Po
   repo and each repo owns its copy. Tests and checks run locally: `scripts/ci-checks.ps1` still
-  bundles the trim/size, format, Bicep, CSS and JavaScript checks, but CI no longer
-  calls it. Provision Azure with `azd up` (or `az deployment ... what-if`) from a local shell.
+  bundles the trim/size, format, Bicep, CSS and JavaScript checks, but CI does not
+  call it. Provision Azure with `azd up` (or `az deployment ... what-if`) from a local shell.
 
 ## Tests
 

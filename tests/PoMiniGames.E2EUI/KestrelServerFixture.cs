@@ -122,11 +122,11 @@ public class KestrelServerFixture : WebApplicationFactory<Program>, IAsyncLifeti
 
             // Mirror Azurite to BOTH TableService and BlobService sections.
             foreach (var (k, v) in new Dictionary<string, string?>
-                {
-                    ["PoMiniGames:Storage:TableService:ConnectionString"] = _azuriteConnectionString,
-                    ["PoMiniGames:Storage:BlobService:ConnectionString"] = _azuriteConnectionString,
-                    ["PoMiniGames:Storage:TableService:TableName"] = "pominigames-e2eui",
-                })
+            {
+                ["PoMiniGames:Storage:TableService:ConnectionString"] = _azuriteConnectionString,
+                ["PoMiniGames:Storage:BlobService:ConnectionString"] = _azuriteConnectionString,
+                ["PoMiniGames:Storage:TableService:TableName"] = "pominigames-e2eui",
+            })
             {
                 overrides[k] = v;
             }

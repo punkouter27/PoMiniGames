@@ -56,11 +56,11 @@ public sealed class PoMiniGamesE2EFixture : WebApplicationFactory<Program>
             };
             // Mirror Azurite to BOTH TableService and BlobService sections.
             foreach (var (k, v) in new Dictionary<string, string?>
-                {
-                    ["PoMiniGames:Storage:TableService:ConnectionString"] = AzuriteConnectionString,
-                    ["PoMiniGames:Storage:BlobService:ConnectionString"] = AzuriteConnectionString,
-                    ["PoMiniGames:Storage:TableService:TableName"] = "pominigames-e2e",
-                })
+            {
+                ["PoMiniGames:Storage:TableService:ConnectionString"] = AzuriteConnectionString,
+                ["PoMiniGames:Storage:BlobService:ConnectionString"] = AzuriteConnectionString,
+                ["PoMiniGames:Storage:TableService:TableName"] = "pominigames-e2e",
+            })
             {
                 overrides[k] = v;
             }
