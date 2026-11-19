@@ -25,7 +25,7 @@ import * as THREE from 'three-eco/webgpu';
 import {
   Fn, If, Loop, abs, cameraProjectionMatrix, cameraViewMatrix, clamp, dot, exp, float, floor, fract, hash,
   instanceIndex, instancedArray, int, length, max, min, mix, positionGeometry, select, smoothstep, step, storage,
-  uint, uniform, uniformArray, uv, varying, vec2, vec3, vec4,
+  normalView, normalize, transformNormalToView, uint, uniform, uniformArray, uv, varying, vec2, vec3, vec4,
 } from 'three-eco/tsl';
 
 const DROPS = 16384;          // droplets in the ring buffer
@@ -46,6 +46,7 @@ const PUSH_RADIUS = 0.24;     // metres round a foot that drags the film
 const DROP_COLOR = 0x7c0e0b;  // unlit, so it carries its own brightness
 const FILM_WET = 0x4d0907;
 const FILM_DRY = 0x230605;
+const FILM_RELIEF = 0.9;       // how steep the film's edge is shaded, per unit of height
 
 /**
  * @param {object} renderer  an initialised WebGPURenderer
@@ -78,6 +79,8 @@ export function createBloodFluid(renderer, { half, floorY }) {
   // One burst. Slots [start, start + count) of the ring are (re)born from these.
   const eOrigin = uniform(new THREE.Vector3()), eDir = uniform(new THREE.Vector3(1, 0, 0));
   const eStart = uniform(0), eCount = uniform(0), ePower = uniform(1), eSeed = uniform(0, 'uint');
+  // 1 = thrown by a blow; near 0 = let go of, a drip that only falls.
+  const eThrow = uniform(1);
   const emitPass = Fn(() => {
     const slot = float(instanceIndex).sub(eStart);
     const offset = select(slot.lessThan(0), slot.add(DROPS), slot);
@@ -85,13 +88,13 @@ export function createBloodFluid(renderer, { half, floorY }) {
       const rnd = (k) => hash(instanceIndex.mul(uint(13)).add(uint(k)).add(eSeed));
       // The first sixth are a fine mist that hangs; the rest are streaks thrown along the blow.
       const mist = step(rnd(1), 0.16);
-      const speed = mix(mix(1.6, 6.4, rnd(2)), mix(0.4, 1.5, rnd(2)), mist).mul(ePower.mul(0.3).add(0.7));
+      const speed = mix(mix(1.6, 6.4, rnd(2)), mix(0.4, 1.5, rnd(2)), mist).mul(ePower.mul(0.3).add(0.7)).mul(eThrow);
       const side = vec3(eDir.z.negate(), 0, eDir.x);
       const cone = eDir.mul(speed)
         .add(side.mul(rnd(3).sub(0.5).mul(1.1).mul(speed)))
-        .add(vec3(0, mix(0.3, 2.7, rnd(4)), 0))
+        .add(vec3(0, mix(0.3, 2.7, rnd(4)).mul(eThrow), 0))
         // A blow with no heading (straight up or down) fans all the way round.
-        .add(vec3(rnd(5).sub(0.5), 0, rnd(6).sub(0.5)).mul(length(eDir.xz).oneMinus().mul(4)));
+        .add(vec3(rnd(5).sub(0.5), 0, rnd(6).sub(0.5)).mul(length(eDir.xz).oneMinus().mul(4)).mul(eThrow));
       const jitter = vec3(rnd(7), rnd(8), rnd(9)).sub(0.5).mul(0.07);
       const life = mix(1.2, 2.6, rnd(10));
       P.element(instanceIndex).assign(vec4(eOrigin.add(jitter), life));
@@ -247,9 +250,17 @@ export function createBloodFluid(renderer, { half, floorY }) {
     // A liquid has an edge: the cover comes up sharply at a thin film, not as a gradient.
     const wet = smoothstep(0.03, 0.1, film.x);
     const stained = mix(colorNode, new THREE.Color(FILM_DRY), film.y.mul(0.74));
+    // The film has thickness, and its surface slopes down to its edge. That slope is what
+    // the ring lights catch: a bright rim round every puddle and bead, which is the single
+    // thing that makes a dark patch read as liquid. From the height difference across the
+    // four cells this fragment sits between, exaggerated (the real film is a millimetre).
+    const h00 = at(0, 0).x, h10 = at(1, 0).x, h01 = at(0, 1).x, h11 = at(1, 1).x;
+    const slope = vec2(mix(h10.sub(h00), h11.sub(h01), f.y), mix(h01.sub(h00), h11.sub(h10), f.x)).mul(FILM_RELIEF);
+    const filmNormal = transformNormalToView(normalize(vec3(slope.x.negate(), 1, slope.y.negate())));
     return {
       colorNode: mix(stained, new THREE.Color(FILM_WET), wet.mul(0.94)),
       roughnessNode: mix(roughnessNode, 0.06, wet),
+      normalNode: normalize(mix(normalView, filmNormal, wet)),
     };
   };
 
@@ -261,12 +272,13 @@ export function createBloodFluid(renderer, { half, floorY }) {
     mesh,
     over,
     /** Throw `count` droplets from `origin` along `dir` (need not be unit). Queued to the next update. */
-    emit(origin, dir, power = 1, count = 160) {
+    emit(origin, dir, power = 1, count = 160, thrown = 1) {
+      // `thrown` near 0 makes it a drip: let go where it is, to fall straight down.
       if (bursts.length >= EMITS) return;
       const flat = Math.hypot(dir.x, dir.z);
       bursts.push({
         x: origin.x, y: origin.y, z: origin.z,
-        dx: flat > 0.05 ? dir.x / flat : 0, dz: flat > 0.05 ? dir.z / flat : 0, power, count,
+        dx: flat > 0.05 ? dir.x / flat : 0, dz: flat > 0.05 ? dir.z / flat : 0, power, count, thrown,
       });
     },
     /** A lit drop landed at (x, z): add it to the film. */
@@ -289,6 +301,7 @@ export function createBloodFluid(renderer, { half, floorY }) {
         eOrigin.value.set(b.x, b.y, b.z);
         eDir.value.set(b.dx, 0, b.dz);
         eStart.value = cursor; eCount.value = b.count; ePower.value = b.power; eSeed.value = seed;
+        eThrow.value = b.thrown;
         seed = (seed * 1664525 + 1013904223) >>> 0;
         cursor = (cursor + b.count) % DROPS;
         renderer.compute(emitPass);

@@ -74,9 +74,11 @@ class ReactiveArenaMethods {
       let roughnessNode = mix(materialRoughness, 0.28, wet);
       // The simulated blood film lies over all of it (bloodFluid.js; WebGPU only).
       const fluid = this._ensureBloodFluid?.();
-      if (fluid) ({ colorNode, roughnessNode } = fluid.over(colorNode, roughnessNode, matXZ));
+      let normalNode = null;
+      if (fluid) ({ colorNode, roughnessNode, normalNode } = fluid.over(colorNode, roughnessNode, matXZ));
       mat.colorNode = colorNode;
       mat.roughnessNode = roughnessNode;
+      if (normalNode) mat.normalNode = normalNode;
       // A SHADING ripple over the lit result: bands of light and shadow racing out.
       mat.outputNode = Fn(() => {
         const col = output.rgb.toVar();

@@ -48,6 +48,7 @@ const _up = new THREE.Vector3(0, 1, 0);
 const _socket = new THREE.Vector3();
 const _dir = new THREE.Vector3();
 const _head = new THREE.Vector3();
+const _dripDir = { x: 0, z: 0 };   // no heading: a drip only falls
 // What the simulated droplets glance off: joint, radius, lift above the joint (metres at scale 1).
 const BODY_SPHERES = [['head', 0.19, 0.12], ['torso', 0.27, 0.26], ['hips', 0.22, 0.02]];
 // What drags the film on the canvas, when it is down on it.
@@ -65,6 +66,15 @@ const SPRAY_MAX = 1536;     // spray particles in flight
 const DECAL_MAX = 40;       // blood splats stuck to crates; the oldest recycles
 const RUN_SPEED = 0.045;        // m/s a fresh run creeps down the body
 const DRY_FIGHTER_SECS = 8;     // wet → tacky time constant
+// A fresh wound drips: a couple of droplets let go at it every DRIP_EVERY seconds while wet.
+const DRIP_EVERY = 0.22;
+// Tracking blood: a foot that comes down in a wet patch carries it, and prints it every
+// PRINT_STRIDE metres, each print fainter than the last.
+const WET_SPOTS = 40;           // recent landings remembered, for "is this foot in blood"
+const WET_SPOT_SECS = 14;
+const WET_SPOT_REACH = 0.22;
+const PRINT_STRIDE = 0.3;
+const PRINT_FADE = 0.7;
 
 function rnd(a, b) { return a + Math.random() * (b - a); }
 
@@ -166,6 +176,21 @@ class BloodMethods {
     return this._fluid;
   }
 
+  // A patch of canvas that just took blood (a ring of the last WET_SPOTS).
+  _noteWetSpot(x, z) {
+    const spots = this._wetSpots || (this._wetSpots = []);
+    const slot = this._wetSpotCursor = ((this._wetSpotCursor ?? -1) + 1) % WET_SPOTS;
+    spots[slot] = { x, z, at: this._bloodClock || 0 };
+  }
+
+  _inWetSpot(x, z) {
+    const now = this._bloodClock || 0;
+    for (const spot of this._wetSpots || []) {
+      if (spot && now - spot.at < WET_SPOT_SECS && Math.hypot(x - spot.x, z - spot.z) < WET_SPOT_REACH) return true;
+    }
+    return false;
+  }
+
   // Per frame: where the bodies are (droplets glance off them), what is moving through the
   // film (it is dragged along), then one step of the simulation.
   _stepBloodFluid(dt) {
@@ -189,6 +214,15 @@ class BloodMethods {
         // Only what is down on the canvas moves the film; a foot in the air does not.
         const down = _p.y < reach;
         const vx = down ? (_p.x - was.x) / dt : 0, vz = down ? (_p.z - was.z) / dt : 0;
+        // Feet track blood: down in a wet patch a foot picks it up, then prints it every
+        // stride as it walks on, each print fainter, until it has walked it off.
+        if (down && name !== 'hips') {
+          if (this._inWetSpot(_p.x, _p.z)) { was.carry = 1; was.px = _p.x; was.pz = _p.z; }
+          else if (was.carry > 0.06 && Math.hypot(_p.x - was.px, _p.z - was.pz) > PRINT_STRIDE) {
+            fluid.splat(_p.x, _p.z, 0.06, 0.34 * was.carry);
+            was.carry *= PRINT_FADE; was.px = _p.x; was.pz = _p.z;
+          }
+        }
         fluid.setPusher(pusher, _p.x, _p.z, vx, vz);
         // The same feet kick lying confetti back into the air (confettiSim.js).
         this._confetti?.setPusher(pusher, _p.x, _p.z, vx, vz);
@@ -387,6 +421,9 @@ class BloodMethods {
     const fluid = this._ensureBloodFluid();
     if (fluid) {
       fluid.emit(pos, dir, power, Math.round((130 + 120 * power) * this._sprayScale));
+      // Where most of that will come down, for the feet that walk through it later.
+      const flat = Math.hypot(dir.x, dir.z) || 1;
+      this._noteWetSpot(pos.x + (dir.x / flat) * 0.9, pos.z + (dir.z / flat) * 0.9);
       return;
     }
     const spray = this._spray;
@@ -465,6 +502,22 @@ class BloodMethods {
     mesh.add(decal);
   }
 
+  // Fresh wounds drip: droplets let go at the wound, which fall, bead on the canvas and
+  // join the film. Only while the blood is wet, slowing as it dries.
+  _dripWounds(f, b, dt) {
+    f.dripT = (f.dripT || 0) - dt * b.wet;
+    if (f.dripT > 0) return;
+    f.dripT = DRIP_EVERY;
+    for (const h of b.hits) {
+      const strength = h.w - Math.floor(h.w);
+      if (strength < 0.05) continue;
+      const joint = f.rig.joints[b.jointNames[Math.floor(h.w)]];
+      if (!joint) continue;
+      joint.localToWorld(_p.set(h.x, h.y, h.z));
+      this._fluid.emit(_p, _dripDir, 0.2, 1 + (Math.random() < strength ? 1 : 0), 0.06);
+    }
+  }
+
   /** A landed blow at world `point`: the body takes it (a ripple through it, a squash of the part). */
   _dent(fighter, point, power = 1) {
     if (fighter?.bloodWear && point && !this._calm()) recordDent(fighter.rig, fighter.bloodWear, point, Math.min(1, 0.45 * power));
@@ -488,6 +541,7 @@ class BloodMethods {
   _tickBloodWear(f, dt) {
     const b = f.bloodWear;
     if (b) tickFighterFx(f.rig, b, dt);
+    if (b && this._fluid && b.wet > 0.12) this._dripWounds(f, b, dt);
     if (!b || b.wet <= 0.002) return;
     b.run += dt * RUN_SPEED * b.wet;
     b.wet *= Math.exp(-dt / DRY_FIGHTER_SECS);
@@ -615,6 +669,7 @@ class BloodMethods {
   // small and most drops come down steep). A drop landing on an earlier
   // round stain joins it, so a pool forms where blood keeps falling.
   _addBloodStain(x, z, vx = 0, vy = -1, vz = 0, r = 0.02) {
+    this._noteWetSpot(x, z);
     // The lit drop's volume joins the simulated film, where there is one.
     this._fluid?.splat(x, z, Math.max(0.05, r * 4), 0.22 + r * 12);
     if (!this._stains) return;

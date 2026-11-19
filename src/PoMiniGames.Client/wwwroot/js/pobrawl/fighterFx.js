@@ -201,6 +201,7 @@ export function applyFighterFx(rig, { ink = true, blood = true } = {}) {
     dentCursor: 0,
     squashes: [],  // parts springing back: { joint, t, amp }
     joints: null,  // joint name -> id, for recordHit
+    jointNames: null,
     run: 0,        // metres the fresh blood has run
     wet: 0,        // 1 = just bled, falling to 0 as it dries
   };
@@ -209,6 +210,7 @@ export function applyFighterFx(rig, { ink = true, blood = true } = {}) {
   const jointId = new Map(), names = Object.keys(rig.joints || {});
   names.forEach((name, i) => jointId.set(rig.joints[name], i + 1));
   state.joints = Object.fromEntries(names.map((name, i) => [name, i + 1]));
+  state.jointNames = [null, ...names];     // id -> joint name, for whoever needs the joint back
   rig.root.updateMatrixWorld(true);
   const seen = new Set();
   rig.root.traverse((obj) => {
