@@ -211,14 +211,32 @@ public static class GameCatalog
             },
         ]),
 
-        // PoFighter (preview): a fighter cut from a filmed performer, in a practice room.
-        // No score and no demo, so it stays out of the kiosk reel below.
+        // PoFighter (preview): fighters cut from filmed performers. Arcade (you vs the CPU ladder),
+        // local 2P, a practice room (no score), an arcade-style demo and a CPU tournament.
         new(GameKeys.PoFighter, "PoFighter", "sports_martial_arts",
         [
+            new(GameMode.OnePlayer, "/pofighter/arcade")
+            {
+                ChipLabel = "1P · Arcade",
+                ChipDescription = "Fight every other fighter in turn, then your own Shadow; Easy, Normal or Hard",
+            },
+            new(GameMode.TwoPlayer, "/pofighter/versus")
+            {
+                ChipDescription = "Two players on one screen: WASD vs arrows, or two pads; best of three",
+            },
             new(GameMode.OnePlayer, "/pofighter/1player")
             {
-                ChipLabel = "Preview",
-                ChipDescription = "Practice room: try every move on a punching bag; nothing is scored",
+                ChipLabel = "Practice",
+                ChipDescription = "Practice room: try every move on a punching bag, and make your own fighter in the Studio",
+            },
+            new(GameMode.Demo, "/pofighter/demo")
+            {
+                ChipDescription = "Kim vs Nick, both CPU, best of three, arcade style",
+            },
+            new(GameMode.Demo, "/pofighter/tournament")
+            {
+                ChipLabel = "Demo · Tournament",
+                ChipDescription = "16-slot CPU tournament: every fighter enters, EMPTY slots are byes, bouts move the fighter Elo board",
             },
         ]),
 
@@ -280,7 +298,7 @@ public static class GameCatalog
         [GameKeys.PoVoxelStrike.Value] = "Break the blocks before they break you.",
         [GameKeys.PoMule.Value] = "Sixteen colonists, twelve months, one colony.",
         [GameKeys.PoCapitol.Value] = "The Capitol, and 512 raiders who want it.",
-        [GameKeys.PoFighter.Value] = "A practice room, a punching bag, every move.",
+        [GameKeys.PoFighter.Value] = "Arcade, 2P and a practice room: fighters cut from real video.",
         [GameKeys.PoFunQuiz.Value] = "Trivia rounds against the computer.",
         [GameKeys.PoCoupleQuiz.Value] = "How well do you know each other?",
         [GameKeys.PoEcosystem.Value] = "A world you watch, never touch.",
@@ -307,7 +325,7 @@ public static class GameCatalog
         .. new[]
         {
             GameKeys.TicTacToe, GameKeys.ConnectFive, GameKeys.PoRacer, GameKeys.PoMarbleRace,
-            GameKeys.PoVoxelStrike, GameKeys.PoBrawl, GameKeys.PoCapitol,
+            GameKeys.PoVoxelStrike, GameKeys.PoBrawl, GameKeys.PoFighter, GameKeys.PoCapitol,
             GameKeys.PoCabinet, GameKeys.PoMule, GameKeys.PoEcosystem, GameKeys.SandPlayground,
         }
         .Select(key => All.First(g => g.Key == key))

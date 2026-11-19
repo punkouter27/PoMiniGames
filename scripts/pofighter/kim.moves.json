@@ -1,0 +1,22 @@
+{
+  "fighter": "kim",
+  "source": "KIMFIGHT.mp4",
+  "sourceFps": 30,
+  "ground": "feet",
+  "standPx": 373,
+  "res": 1.75,
+  "colorMatch": true,
+  "mirror": true,
+  "scaleFrom": "idle",
+  "moves": {
+    "idle":      {"from": 196, "to": 236, "step": 2, "anchor": "world", "loop": "pingpong"},
+    "walkF":     {"from": 120, "to": 134, "step": 2, "anchor": "track", "loop": "loop"},
+    "walkB":     {"from": 120, "to": 134, "step": 2, "reverse": true, "anchor": "track", "loop": "loop"},
+    "crouch":    {"from": 520, "to": 526, "step": 2, "anchor": "world", "loop": "hold"},
+    "punchMid":  {"from": 238, "to": 256, "step": 2, "anchor": "world", "loop": "once", "attack": true, "advance": true, "rate": 1.25},
+    "kick":      {"frames": [444, 446, 448, 450, 452, 454, 464, 466], "anchor": "world", "loop": "once", "attack": true, "advance": true, "rate": 1.25},
+    "victory":   {"from": 636, "to": 668, "step": 2, "anchor": "track", "speed": 0, "loop": "pingpong", "scaleAdjust": 0.81},
+    "ko":        {"frames": [953, 962, 965, 968, 971, 974, 977, 980, 983], "anchor": "world", "loop": "hold"},
+    "getUp":     {"frames": [866, 868, 870, 872, 874, 876, 878, 880, 888, 890, 892, 894, 898], "anchor": "world", "loop": "once", "rate": 1.2, "anchorFrame": 898}
+  }
+}

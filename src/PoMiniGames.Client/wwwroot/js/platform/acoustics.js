@@ -424,6 +424,7 @@ const GAME_SPACES = {
     pomule: 'crt',
     poecosystem: 'island',
     sandplayground: 'sandbox',
+    pofighter: 'court',
 };
 
 let _wanted = null;

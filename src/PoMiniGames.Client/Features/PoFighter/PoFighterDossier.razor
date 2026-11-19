@@ -1,0 +1,160 @@
+@using PoMiniGames.Shared.Games
+@inject ApiService Api
+
+@* The fighter dossier under a roster grid: portrait, Elo, record, win rate, current streak, the
+   last ten results and an Elo sparkline from the last 20 rated bouts
+   (GET /api/pofighter/elo/{id}/bouts). A Studio fighter lives in this browser only, so it has
+   no rating; its card says so. *@
+@if (Fighter is not null)
+{
+    <section class="pfd" aria-label="@($"{Fighter.Name} dossier")">
+        @if (string.IsNullOrEmpty(Fighter.Portrait))
+        {
+            <span class="pfd-portrait pfd-portrait--none material-symbols-outlined" aria-hidden="true">person</span>
+        }
+        else
+        {
+            <img class="pfd-portrait" src="@Fighter.Portrait" alt="" />
+        }
+        <div class="pfd-body">
+            <h3 class="pfd-name">@Fighter.Name</h3>
+            @if (Fighter.IsCustom)
+            {
+                <p class="pfd-note">Studio fighter · saved in this browser · not rated</p>
+            }
+            else if (Rating is null || Rating.Matches == 0)
+            {
+                <p class="pfd-note">No rated bouts yet. Run a tournament to rate them.</p>
+            }
+            else
+            {
+                @* Stat chips. The Elo counts up from zero (a CSS @property counter), so the
+                   number itself is in the label for screen readers. *@
+                <dl class="pfd-stats" @key="Fighter.Id">
+                    <div class="pfd-chip pfd-chip--elo" aria-label="@($"Elo {Rating.Elo}")">
+                        <dt>Elo</dt>
+                        <dd><span class="pfd-count" style="--to: @Rating.Elo" aria-hidden="true"></span>
+                            @if (Delta is { } d && d != 0)
+                            {
+                                <small class="pfd-delta @(d > 0 ? "is-up" : "is-down")">@(d > 0 ? "+" : "")@d</small>
+                            }
+                        </dd>
+                    </div>
+                    <div class="pfd-chip"><dt>Record</dt><dd>@Rating.Wins-@Rating.Losses-@Rating.Draws</dd></div>
+                    <div class="pfd-chip"><dt>Win rate</dt><dd>@WinRate</dd></div>
+                    @if (Streak is { } s)
+                    {
+                        <div class="pfd-chip @(s.StartsWith('W') && s.Length > 1 && s != "W1" ? "pfd-chip--hot" : "")"><dt>Streak</dt><dd>@s</dd></div>
+                    }
+                </dl>
+                @if (_bouts.Length > 0)
+                {
+                    <div class="pfd-form" aria-label="Last results, newest first" @key="@($"form-{Fighter.Id}")">
+                        @foreach (var (r, i) in _bouts.Take(10).Select((b, i) => (Result(b), i)))
+                        {
+                            <span class="pfd-r pfd-r--@r.ToLowerInvariant()" style="--i: @i">@r</span>
+                        }
+                    </div>
+                }
+                @if (_bouts.Length > 1)
+                {
+                    <svg class="pfd-spark" viewBox="0 0 120 28" role="img" aria-label="@SparkLabel" @key="@($"spark-{Fighter.Id}")">
+                        <defs>
+                            <linearGradient id="@_gradId" x1="0" y1="0" x2="0" y2="1">
+                                <stop offset="0" stop-opacity="0.45" />
+                                <stop offset="1" stop-opacity="0" />
+                            </linearGradient>
+                        </defs>
+                        <polygon class="pfd-spark-area" points="@($"2,28 {SparkPoints} 118,28")" fill="url(#@_gradId)" />
+                        <polyline points="@SparkPoints" />
+                        <circle class="pfd-spark-dot" cx="118" cy="@LastY" r="2.2" />
+                    </svg>
+                }
+            }
+        </div>
+    </section>
+}
+
+@code {
+    /// <summary>The fighter shown: a built-in one or a Studio one.</summary>
+    [Parameter] public PoFighterCard? Fighter { get; set; }
+
+    /// <summary>Its row on the Elo board, when it has one.</summary>
+    [Parameter] public PoFighterFighterRating? Rating { get; set; }
+
+    private PoFighterBout[] _bouts = [];
+    private readonly string _gradId = $"pfd-g-{Guid.NewGuid():N}";
+
+    /// <summary>The Elo change from the latest rated bout.</summary>
+    private int? Delta
+    {
+        get
+        {
+            var h = History;
+            return h.Length > 1 ? h[^1] - h[^2] : null;
+        }
+    }
+
+    private string LastY
+    {
+        get
+        {
+            var h = History;
+            int lo = h.Min(), hi = Math.Max(h.Max(), lo + 1);
+            return FormattableString.Invariant($"{26 - 24.0 * (h[^1] - lo) / (hi - lo):0.#}");
+        }
+    }
+    private string? _loadedFor;
+
+    protected override async Task OnParametersSetAsync()
+    {
+        var id = Fighter is { IsCustom: false } f ? f.Id : null;
+        if (id == _loadedFor) return;
+        _loadedFor = id;
+        _bouts = [];
+        if (id is null) return;
+        var bouts = await Api.GetPoFighterBoutsAsync(id);
+        if (_loadedFor == id) _bouts = bouts;
+    }
+
+    private string Result(PoFighterBout b) =>
+        b.IsDraw ? "D" : string.Equals(b.WinnerId, Fighter?.Id, StringComparison.OrdinalIgnoreCase) ? "W" : "L";
+
+    private string WinRate => Rating is { Matches: > 0 } r ? $"{100.0 * r.Wins / r.Matches:0}%" : "—";
+
+    /// <summary>"W3" / "L2" / "D1": the run of identical results ending with the latest bout.</summary>
+    private string? Streak
+    {
+        get
+        {
+            if (_bouts.Length == 0) return null;
+            var first = Result(_bouts[0]);
+            return $"{first}{_bouts.TakeWhile(b => Result(b) == first).Count()}";
+        }
+    }
+
+    /// <summary>This fighter's Elo after each bout, oldest first.</summary>
+    private int[] History => _bouts
+        .Select(b => string.Equals(b.WinnerId, Fighter?.Id, StringComparison.OrdinalIgnoreCase) ? b.WinnerElo : b.LoserElo)
+        .Reverse().ToArray();
+
+    private string SparkLabel
+    {
+        get
+        {
+            var h = History;
+            return $"Elo over the last {h.Length} bouts: from {h[0]} to {h[^1]}";
+        }
+    }
+
+    private string SparkPoints
+    {
+        get
+        {
+            var h = History;
+            int lo = h.Min(), hi = Math.Max(h.Max(), lo + 1);
+            return string.Join(' ', h.Select((v, i) => FormattableString.Invariant(
+                $"{2 + 116.0 * i / (h.Length - 1):0.#},{26 - 24.0 * (v - lo) / (hi - lo):0.#}")));
+        }
+    }
+}

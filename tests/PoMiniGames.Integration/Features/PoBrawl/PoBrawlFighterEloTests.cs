@@ -164,5 +164,47 @@ public sealed class PoBrawlFighterEloTests : IClassFixture<TestWebApplicationFac
         demoBoards.Should().ContainSingle(
             because: "the demo board is exactly one of the unified leaderboards");
         demoBoards.Single().GetProperty("title").GetString().Should().Be("Brawl Demo");
+
+        // ── PoFighter's board (POST/GET /api/pofighter/elo), folded in for the tier ceiling ──
+        // Same accumulator on its own table; relative assertions again, the two roster rows are shared.
+        static async Task<Dictionary<string, PoFighterFighterRating>> FighterBoard(HttpClient c) =>
+            (await c.GetFromJsonAsync<List<PoFighterFighterRating>>("/api/pofighter/elo"))!
+                .ToDictionary(r => r.FighterId);
+
+        var fightersBefore = await FighterBoard(client);
+        var fightPost = await client.PostAsJsonAsync(
+            "/api/pofighter/elo", new { winnerFighterId = "P1", loserFighterId = "kim", isDraw = false });
+        fightPost.StatusCode.Should().Be(HttpStatusCode.OK);
+        var pair = (await fightPost.Content.ReadFromJsonAsync<List<PoFighterFighterRating>>())!;
+        pair.Select(r => r.FighterId).Should().Equal("p1", "kim");
+        pair.Select(r => r.DisplayName).Should().Equal("Nick", "Kim");
+
+        var fightersAfter = await FighterBoard(client);
+        fightersAfter["p1"].Elo.Should().Be(pair[0].Elo);
+        var fighterGain = fightersAfter["p1"].Elo - (fightersBefore.GetValueOrDefault("p1")?.Elo ?? 1000);
+        fighterGain.Should().BePositive();
+        (fightersAfter["p1"].Elo + fightersAfter["kim"].Elo).Should().Be(
+            (fightersBefore.GetValueOrDefault("p1")?.Elo ?? 1000) + (fightersBefore.GetValueOrDefault("kim")?.Elo ?? 1000),
+            "the pool is conserved");
+        fightersAfter["p1"].Wins.Should().Be((fightersBefore.GetValueOrDefault("p1")?.Wins ?? 0) + 1);
+        fightersAfter["kim"].Losses.Should().Be((fightersBefore.GetValueOrDefault("kim")?.Losses ?? 0) + 1);
+        (await FighterBoard(client)).Values.Select(r => r.Elo).Should().BeInDescendingOrder();
+
+        // The dossier's bout log: the newest bout first, with both ratings as stored after it.
+        foreach (var id in new[] { "p1", "KIM" })
+        {
+            var bouts = (await client.GetFromJsonAsync<List<PoFighterBout>>($"/api/pofighter/elo/{id}/bouts"))!;
+            bouts.Should().NotBeEmpty().And.HaveCountLessThanOrEqualTo(20);
+            bouts[0].Should().BeEquivalentTo(new { WinnerId = "p1", LoserId = "kim", IsDraw = false,
+                WinnerElo = pair[0].Elo, LoserElo = pair[1].Elo });
+        }
+        (await client.GetAsync("/api/pofighter/elo/nope/bouts")).StatusCode.Should().Be(HttpStatusCode.BadRequest);
+
+        foreach (var (w, l, code) in new[] { ("nope", "kim", "invalid_fighter"), ("p1", "p1", "fighter_self_match"), ("P1", "p1", "fighter_self_match") })
+        {
+            var bad = await client.PostAsJsonAsync("/api/pofighter/elo", new { winnerFighterId = w, loserFighterId = l, isDraw = false });
+            bad.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+            (await bad.Content.ReadAsStringAsync()).Should().Contain(code);
+        }
     }
 }

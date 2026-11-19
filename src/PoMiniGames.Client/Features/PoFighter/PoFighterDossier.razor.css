@@ -1,0 +1,232 @@
+/* The fighter dossier: a larger portrait, stat chips (the Elo counts up through the --n counter),
+   the last results popping in one after another, and an Elo sparkline with a filled area. */
+@property --n {
+    syntax: '<integer>';
+    inherits: false;
+    initial-value: 0;
+}
+
+.pfd {
+    display: flex;
+    gap: 0.75rem;
+    align-items: flex-start;
+    width: min(100%, 24rem);
+    margin: 0.75rem auto 0;
+    padding: 0.65rem;
+    border: 1px solid var(--pf-glass-line);
+    border-radius: 0.8rem;
+    background:
+        radial-gradient(120% 90% at 0% 0%, rgba(255, 210, 63, 0.16), transparent 55%),
+        linear-gradient(180deg, var(--pf-navy) 0%, var(--pf-navy-deep) 100%);
+    color: white;
+    box-shadow: 0 10px 24px rgba(0, 0, 0, 0.25);
+    animation: pfd-in 260ms cubic-bezier(.2, .9, .3, 1) both;
+}
+
+@keyframes pfd-in {
+    from {
+        opacity: 0;
+        transform: translateY(6px);
+    }
+}
+
+.pfd-portrait {
+    flex: none;
+    width: 4.5rem;
+    height: 4.5rem;
+    border-radius: 0.6rem;
+    object-fit: cover;
+    box-shadow: 0 0 0 2px var(--pf-gold), 0 0 14px rgba(255, 210, 63, 0.45);
+}
+
+.pfd-portrait--none {
+    display: grid;
+    place-items: center;
+    font-size: 2.2rem;
+    background: rgba(23, 28, 56, 0.6);
+}
+
+.pfd-body {
+    flex: 1;
+    min-width: 0;
+}
+
+.pfd-name {
+    margin: 0;
+    font-size: 1rem;
+    font-weight: 900;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+    text-shadow: 0 0 12px rgba(255, 210, 63, 0.45);
+}
+
+.pfd-note {
+    margin: 0.25rem 0 0;
+    font-size: 0.75rem;
+    opacity: 0.75;
+}
+
+.pfd-stats {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.3rem;
+    margin: 0.35rem 0 0;
+}
+
+.pfd-chip {
+    padding: 0.15rem 0.45rem;
+    border: 1px solid var(--pf-glass-line);
+    border-radius: 0.5rem;
+    background: rgba(255, 255, 255, 0.06);
+}
+
+.pfd-chip--elo {
+    border-color: rgba(255, 210, 63, 0.6);
+    background: rgba(255, 210, 63, 0.12);
+}
+
+.pfd-chip--hot {
+    border-color: rgba(255, 90, 60, 0.7);
+    background: rgba(255, 90, 60, 0.16);
+}
+
+.pfd-chip--hot dd::after {
+    content: ' 🔥';
+}
+
+.pfd-stats dt {
+    font-size: 0.58rem;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    opacity: 0.7;
+}
+
+.pfd-stats dd {
+    display: flex;
+    align-items: baseline;
+    gap: 0.25rem;
+    margin: 0;
+    font-size: 0.9rem;
+    font-weight: 800;
+    font-variant-numeric: tabular-nums;
+}
+
+.pfd-count {
+    --n: var(--to);
+    counter-reset: pfd var(--n);
+    animation: pfd-count 900ms cubic-bezier(.2, .8, .3, 1);
+}
+
+.pfd-count::after {
+    content: counter(pfd);
+}
+
+@keyframes pfd-count {
+    from {
+        --n: 0;
+    }
+}
+
+.pfd-delta {
+    font-size: 0.65rem;
+    font-weight: 800;
+}
+
+.pfd-delta.is-up {
+    color: var(--pf-win);
+    filter: brightness(1.6);
+}
+
+.pfd-delta.is-down {
+    color: var(--pf-red);
+}
+
+.pfd-form {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.2rem;
+    margin-top: 0.4rem;
+}
+
+.pfd-r {
+    display: inline-grid;
+    place-items: center;
+    width: 1.15rem;
+    height: 1.15rem;
+    border-radius: 0.3rem;
+    font-size: 0.62rem;
+    font-weight: 900;
+    animation: pfd-pop 260ms cubic-bezier(.3, 1.6, .5, 1) both;
+    animation-delay: calc(var(--i) * 45ms);
+}
+
+@keyframes pfd-pop {
+    from {
+        opacity: 0;
+        transform: scale(0.4);
+    }
+}
+
+.pfd-r--w {
+    background: var(--pf-win);
+}
+
+.pfd-r--l {
+    background: var(--pf-loss);
+}
+
+.pfd-r--d {
+    background: var(--pf-draw);
+}
+
+.pfd-spark {
+    display: block;
+    width: 100%;
+    height: 2.25rem;
+    margin-top: 0.35rem;
+    overflow: visible;
+}
+
+.pfd-spark stop {
+    stop-color: var(--pf-gold);
+}
+
+.pfd-spark polyline {
+    fill: none;
+    stroke: var(--pf-gold);
+    stroke-width: 1.75;
+    stroke-linejoin: round;
+    vector-effect: non-scaling-stroke;
+    stroke-dasharray: 400;
+    stroke-dashoffset: 0;
+    animation: pfd-draw 900ms ease-out both;
+}
+
+@keyframes pfd-draw {
+    from {
+        stroke-dashoffset: 400;
+    }
+}
+
+.pfd-spark-dot {
+    fill: white;
+    stroke: var(--pf-gold);
+    stroke-width: 1.5;
+    vector-effect: non-scaling-stroke;
+}
+
+@media (prefers-reduced-motion: reduce) {
+    .pfd,
+    .pfd-count,
+    .pfd-r,
+    .pfd-spark polyline {
+        animation: none;
+    }
+}
+
+:root[data-motion="reduce"] .pfd,
+:root[data-motion="reduce"] .pfd-count,
+:root[data-motion="reduce"] .pfd-r,
+:root[data-motion="reduce"] .pfd-spark polyline {
+    animation: none;
+}

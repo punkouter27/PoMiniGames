@@ -59,6 +59,9 @@ namespace PoMiniGamesClient.Services.Http;
 // (the unified /api/leaderboards/pobrawl route serves it), so no array registration.
 [JsonSerializable(typeof(PoBrawlLadderEntry))]
 [JsonSerializable(typeof(PoBrawlDemoResultRequest))]
+[JsonSerializable(typeof(PoFighterBoutResultRequest))]
+[JsonSerializable(typeof(PoFighterFighterRating[]))]
+[JsonSerializable(typeof(PoFighterBout[]))]
 [JsonSerializable(typeof(PoMiniGames.Domain.Models.PoVoxelStrikeHighScore))]
 [JsonSerializable(typeof(PoMiniGames.Domain.Models.PoVoxelStrikeHighScore[]))]
 [JsonSerializable(typeof(PoVoxelStrikeRunRequest))]

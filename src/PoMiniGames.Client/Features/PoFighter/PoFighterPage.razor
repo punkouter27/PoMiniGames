@@ -4,29 +4,117 @@
 @using PoMiniGamesClient.Features.Shared
 @using PoMiniGamesClient.Models
 @using PoMiniGamesClient.Services
+@using PoMiniGamesClient.Services.Play
 @inject IJSRuntime JS
+@inject NavigationManager Navigation
+@inject KioskCoordinator Kiosk
+@inject ApiService Api
 @inject PlayerNameService PlayerNameService
+@inject GameResultService Results
 @inject ILogger<PoFighterPage> Logger
 
 <PageTitle>PoFighter · PoMiniGames</PageTitle>
 
-@* PoFighter (preview): one fighter cut from a filmed performer, in a practice room.
-   Blazor owns only this static markup. wwwroot/js/pofighter/index.js runs the loop, reads
-   keyboard, gamepad and the touch buttons, and writes the hit counter and the lit move row
-   straight into the elements marked data-pf-*; there are no .NET callbacks and nothing is
-   scored or sent. Product requirements: DOCS/20261112/PoFighter-PRD.md. *@
+@* PoFighter (preview): fighters cut from filmed performers. Blazor owns only this static markup;
+   wwwroot/js/pofighter/ runs the loops, reads keyboard, gamepads and the touch buttons, and draws.
+   Product requirements: DOCS/20261112/PoFighter-PRD.md.
+   /pofighter/1player is the practice room (js/pofighter/index.js): a punching bag, nothing scored.
+   /pofighter/arcade is 1P vs the CPU (js/pofighter/arcade.js): every other fighter in turn, then
+   your Shadow; difficulty on the start card; the run is recorded in local stats.
+   /pofighter/versus is local 2P (arcade.js): P1 WASD F/G, P2 arrows K/L, or two pads.
+   /pofighter/demo is the attract-mode demo (js/pofighter/demo.js): Kim and Nick, both CPU, best
+   of three, forever; no start card, and any key or tap returns to the main menu.
+   /pofighter/tournament is the 16-slot CPU tournament (js/pofighter/tournament.js); each bout
+   between built-in fighters posts to the fighter Elo board (POST /api/pofighter/elo).
+   Studio fighters (made in the practice room, kept in this browser's IndexedDB) join every
+   grid after the built-in ones; the start cards show the picked fighter's dossier. *@
 <GameShell Title=@TitleContent
            Player="@_playerName"
            BackTo="/"
            GameKey="pofighter"
+           GameOver="@_over"
+           Outcome="@_outcome"
+           GameSummary="@Summary"
            Fullscreen="true">
-    @if (!_introDismissed)
+    @if (IsTournament && !_introDismissed)
     {
         <GameIntro CueScope="pofighter"
                    Title=@TitleContent
-                   Objective="Preview: a practice room. Try every move on the bag."
+                   Objective="Tournament: all 16 slots enter, CPU vs CPU, best of three per bout. EMPTY slots are byes."
+                   Mode="GameIntro.IntroMode.Demo"
+                   Options="@TournamentField"
+                   OnStart="@(() => _introDismissed = true)" />
+    }
+    else if (IsArcade && !_introDismissed)
+    {
+        <GameIntro CueScope="pofighter"
+                   Title=@TitleContent
+                   Objective="Arcade: beat every other fighter, best of three each, then your own Shadow."
+                   Controls="@FightControls"
+                   Mode="GameIntro.IntroMode.OnePlayer"
+                   Maps="@DifficultyMaps"
+                   MapLabel="Difficulty"
+                   @bind-MapId="_difficulty"
+                   Options="@ArcadePicker"
+                   OnStart="@(() => _introDismissed = true)" />
+    }
+    else if (IsVersus && !_introDismissed)
+    {
+        <GameIntro CueScope="pofighter"
+                   Title=@TitleContent
+                   Objective="Two players, one screen: best of three."
+                   Controls="@VersusControls"
+                   Mode="GameIntro.IntroMode.TwoPlayer"
+                   Options="@VersusPicker"
+                   OnStart="@(() => _introDismissed = true)" />
+    }
+    else if (IsArcade || IsVersus)
+    {
+        <div class="pf-room pf-demo" @ref="_room" data-pf-device="keys">
+            <canvas class="pf-canvas" data-pf-canvas
+                    aria-label="@(IsArcade ? "Arcade: you on the left against the computer." : "Two players: P1 on the left, P2 on the right.")"></canvas>
+            <div class="pf-bracket" data-pf-bracket hidden aria-live="polite"></div>
+            @if (_failed)
+            {
+                <div class="pf-error"><ErrorState Title="The fight could not be loaded">Check your connection and reopen the game.</ErrorState></div>
+            }
+            @if (IsArcade)
+            {
+                @TouchPad("left", "right")
+            }
+        </div>
+    }
+    else if (IsTournament)
+    {
+        <div class="pf-room pf-demo" @ref="_room">
+            <canvas class="pf-canvas" data-pf-canvas
+                    aria-label="Tournament: computer-controlled fighters, best of three per bout."></canvas>
+            <div class="pf-bracket" data-pf-bracket hidden aria-live="polite"></div>
+            @if (_failed)
+            {
+                <div class="pf-error"><ErrorState Title="The tournament could not be loaded">Check your connection and reopen the game.</ErrorState></div>
+            }
+        </div>
+    }
+    else if (IsDemo)
+    {
+        <div class="pf-room pf-demo" @ref="_room">
+            <canvas class="pf-canvas" data-pf-canvas
+                    aria-label="Demo: Kim and Nick, both computer-controlled, fight best of three. Press any key to leave."></canvas>
+            @if (_failed)
+            {
+                <div class="pf-error"><ErrorState Title="The demo could not be loaded">Check your connection and reopen the game.</ErrorState></div>
+            }
+        </div>
+    }
+    else if (!_introDismissed)
+    {
+        <GameIntro CueScope="pofighter"
+                   Title=@TitleContent
+                   Objective="Practice room: try every move on the bag."
                    Controls="@ControlsContent"
                    Mode="GameIntro.IntroMode.OnePlayer"
+                   Options="@FighterPicker"
                    OnStart="@(() => _introDismissed = true)" />
     }
     else
@@ -40,95 +128,193 @@
                 <div class="pf-error"><ErrorState Title="The fighter could not be loaded">Check your connection and reopen the game.</ErrorState></div>
             }
 
-            <div class="pf-panel pf-moves" aria-label="Moves and their controls">
+            @* The move cards: the one being played lights up (index.js sets is-active). Cheer and
+               Fall are buttons, so a phone can play them too. After a few idle seconds the strip
+               folds into a "?" pill (index.js sets is-collapsed); the pill opens it again. *@
+            <nav class="pf-moves" data-pf-moves aria-label="Moves and their controls">
+                <button type="button" class="pf-moves-pill" data-pf-moves-toggle aria-label="Show the moves">
+                    <span class="material-symbols-outlined" aria-hidden="true">sports_martial_arts</span>?
+                </button>
                 <ul>
                     @foreach (var m in Moves)
                     {
-                        <li data-pf-move="@m.Id">
-                            <span class="pf-name">@m.Name</span>
-                            <span class="pf-ctl pf-ctl-keys">@m.Keys</span>
-                            <span class="pf-ctl pf-ctl-pad">@m.Pad</span>
+                        <li>
+                            @if (m.Tappable)
+                            {
+                                <button type="button" class="pf-move" data-pf-move="@m.Id" data-pf-btn="@m.Id" title="@m.Name">
+                                    @MoveCard(m)
+                                </button>
+                            }
+                            else
+                            {
+                                <span class="pf-move" data-pf-move="@m.Id">@MoveCard(m)</span>
+                            }
                         </li>
                     }
                 </ul>
-            </div>
+            </nav>
 
-            <div class="pf-panel pf-status">
-                <span class="pf-hits" role="status">Hits <strong data-pf-hits>0</strong></span>
-                <select class="pf-select" aria-label="Select fighter" value="@_fighterId" @onchange="OnFighterChangedAsync">
-                    <option value="p1">Default (P1)</option>
-                    @foreach (var f in _customFighters)
+            @* One toolbar: hit count, the fighter (opens the roster sheet), the room's two
+               toggles and the Studio. *@
+            <div class="pf-toolbar">
+                <span class="pf-hits" role="status"><small>Hits</small><strong data-pf-hits>0</strong></span>
+                <button type="button" data-spring class="pf-avatar" popovertarget="pf-roster-sheet"
+                        aria-label="@($"Fighter: {CardFor(_fighterId)?.Name ?? "Nick"}. Change fighter")">
+                    @if (CardFor(_fighterId) is { Portrait.Length: > 0 } card)
                     {
-                        <option value="@f.Id">@f.Name</option>
+                        <img src="@card.Portrait" alt="" />
                     }
-                </select>
-                <button type="button" class="pf-chip" @onclick="OpenStudioAsync" title="Create a fighter from webcam or video (MediaPipe WASM)">✨ Studio</button>
-                <button type="button" class="pf-chip" data-pf-btn="victory" title="Celebrate (V)">Cheer</button>
-                <button type="button" class="pf-chip" data-pf-btn="ko" title="Get knocked down; any button gets up (X)">Fall</button>
-                <button type="button" class="pf-chip" data-pf-action="reset" title="Reset the room (R)">Reset</button>
-                <button type="button" class="pf-chip" data-pf-action="slow" aria-pressed="false"
-                        title="Quarter speed, to judge a move picture by picture (T)">Slow</button>
+                    else
+                    {
+                        <span class="material-symbols-outlined" aria-hidden="true">person</span>
+                    }
+                    <span class="pf-avatar-name">@(CardFor(_fighterId)?.Name ?? "Nick")</span>
+                    <span class="material-symbols-outlined" aria-hidden="true">expand_more</span>
+                </button>
+                <div class="pf-seg" role="group" aria-label="Room">
+                    <button type="button" data-pf-action="reset" title="Reset the room (R)" aria-label="Reset the room">
+                        <span class="material-symbols-outlined" aria-hidden="true">restart_alt</span>
+                    </button>
+                    <button type="button" data-pf-action="slow" aria-pressed="false" aria-label="Slow motion"
+                            title="Quarter speed, to judge a move picture by picture (T)">
+                        <span class="material-symbols-outlined" aria-hidden="true">slow_motion_video</span>
+                    </button>
+                </div>
+                <button type="button" data-spring class="pf-create" @onclick="OpenStudioAsync" title="Film a new fighter from the webcam or a clip">
+                    <span class="material-symbols-outlined" aria-hidden="true">add_a_photo</span>
+                    <span class="pf-create-label">Create fighter</span>
+                </button>
             </div>
 
-            @if (_studioOpen)
-            {
-                <div class="pf-studio" role="dialog" aria-modal="true" aria-label="PoFighter Studio">
-                    <div class="pf-studio-card">
-                        <header class="pf-studio-head">
-                            <h2>PoFighter Studio</h2>
-                            <button type="button" class="pf-chip" @onclick="CloseStudioAsync"><span class="material-symbols-outlined" aria-hidden="true">close</span> Close</button>
-                        </header>
-                        <p class="pf-studio-status" @ref="_studioStatus">Ready — use webcam capture or upload a short clip (MediaPipe WASM runs 100% in your browser).</p>
-                        <div class="pf-studio-body">
-                            <div class="pf-studio-cams">
-                                <video @ref="_studioVideo" class="pf-studio-video" muted playsinline></video>
-                                <canvas @ref="_studioPreview" class="pf-studio-preview" width="240" height="240"></canvas>
-                            </div>
-                            <div class="pf-studio-controls">
-                                <label class="pf-studio-name">
-                                    <span>Fighter name</span>
-                                    <input type="text" maxlength="24" @bind="_studioFighterName" placeholder="My Fighter" />
-                                </label>
-                                <div class="pf-studio-row">
-                                    <button type="button" class="pf-chip" @onclick="StartWebcamAsync">📷 Start Webcam</button>
-                                    <button type="button" class="pf-chip" @onclick="CaptureBgAsync">🖼️ Capture BG</button>
-                                    <label class="pf-chip pf-upload">
-                                        🎞️ Upload Video
-                                        <input @ref="_studioFile" type="file" accept="video/*" @onchange="ImportVideoAsync" hidden />
-                                    </label>
-                                </div>
-                                <div class="pf-studio-moves">
-                                    @foreach (var m in StudioMoves)
+            <div id="pf-roster-sheet" popover="auto" class="pf-sheet" aria-label="Choose your fighter">
+                <header class="pf-sheet-head">
+                    <h2>Choose your fighter</h2>
+                    <button type="button" class="pf-icon-btn" popovertarget="pf-roster-sheet" popovertargetaction="hide" aria-label="Close">
+                        <span class="material-symbols-outlined" aria-hidden="true">close</span>
+                    </button>
+                </header>
+                <PoFighterRosterGrid Label="Choose your fighter" Compact="true" Selected="@_fighterId" Ratings="@_ratings"
+                                     Customs="@_customFighters" OnSelect="PickPracticeFighterAsync" OnCreate="OpenStudioAsync" />
+                <PoFighterDossier Fighter="@CardFor(_fighterId)" Rating="@RatingFor(_fighterId)" />
+            </div>
+
+            @* The Studio: a native modal dialog (focus stays inside, Esc closes) that walks through
+               four steps. It is always rendered, so the video and canvas the Studio controller
+               holds survive every step; index.js opens and closes it. *@
+            <dialog class="pf-studio" @ref="_studioDialog" data-step="@_studioStep" aria-label="PoFighter Studio" @onclose="OnStudioClosedAsync">
+                <header class="pf-studio-head">
+                    <h2>Create a fighter</h2>
+                    <button type="button" class="pf-icon-btn" @onclick="CloseStudioAsync" aria-label="Close the Studio">
+                        <span class="material-symbols-outlined" aria-hidden="true">close</span>
+                    </button>
+                </header>
+                <ol class="pf-steps">
+                    @foreach (var (n, label) in StudioSteps)
+                    {
+                        var state = n < _studioStep ? "done" : n == _studioStep ? "current" : "todo";
+                        <li class="pf-step pf-step--@state" aria-current="@(n == _studioStep ? "step" : null)">
+                            <button type="button" disabled="@(n > _studioReached || _studioBusy)" @onclick="() => _studioStep = n">
+                                <span class="pf-step-dot">
+                                    @if (state == "done")
                                     {
-                                        var count = _studioCounts.TryGetValue(m.Id, out var c) ? c : 0;
-                                        <button type="button" class="pf-chip" @onclick="() => CaptureMoveAsync(m.Id)" title="@m.Hint">
-                                            @m.Label (@count)
-                                        </button>
+                                        <span class="material-symbols-outlined" aria-hidden="true">check</span>
                                     }
-                                </div>
-                                <div class="pf-studio-row">
-                                    <button type="button" class="pf-chip pf-chip--primary" disabled="@(_studioTotalFrames == 0 || _studioBusy)" @onclick="SaveStudioFighterAsync">
-                                        ⚔️ Save &amp; Fight (@_studioTotalFrames frames)
-                                    </button>
-                                </div>
-                            </div>
-                        </div>
-                    </div>
-                </div>
-            }
+                                    else
+                                    {
+                                        @n
+                                    }
+                                </span>
+                                <span class="pf-step-label">@label</span>
+                            </button>
+                        </li>
+                    }
+                </ol>
+                <p class="pf-studio-status" @ref="_studioStatus" role="status">Everything runs in this browser: nothing is uploaded.</p>
+                <div class="pf-studio-progress" hidden="@(!_studioBusy)"><span style="--p: @(_studioProgress)%"></span></div>
 
-            <div class="pf-touch pf-touch-move" aria-label="Movement">
-                <button type="button" data-pf-btn="left" aria-label="Walk backward">◀</button>
-                <div class="pf-touch-stack">
-                    <button type="button" data-pf-btn="up" aria-label="Jump"><span class="material-symbols-outlined" aria-hidden="true">keyboard_arrow_up</span></button>
-                    <button type="button" data-pf-btn="down" aria-label="Crouch"><span class="material-symbols-outlined" aria-hidden="true">keyboard_arrow_down</span></button>
+                <div class="pf-studio-cams">
+                    <video @ref="_studioVideo" class="pf-studio-video" muted playsinline></video>
+                    <canvas @ref="_studioPreview" class="pf-studio-preview" width="240" height="240" aria-label="Cut-out preview"></canvas>
                 </div>
-                <button type="button" data-pf-btn="right" aria-label="Walk forward">▶</button>
-            </div>
-            <div class="pf-touch pf-touch-attack" aria-label="Attacks">
-                <button type="button" data-pf-btn="punchMid">Punch</button>
-                <button type="button" data-pf-btn="kick">Kick</button>
-            </div>
+
+                @if (_studioStep == 1)
+                {
+                    <div class="pf-sources">
+                        <button type="button" data-spring class="pf-source" disabled="@_studioBusy" @onclick="StartWebcamAsync">
+                            <span class="material-symbols-outlined" aria-hidden="true">videocam</span>
+                            <strong>Use the webcam</strong>
+                            <small>Perform each move in front of the camera.</small>
+                        </button>
+                        <label class="pf-source @(_studioBusy ? "is-disabled" : "")">
+                            <span class="material-symbols-outlined" aria-hidden="true">movie</span>
+                            <strong>Upload a clip</strong>
+                            <small>A short video of one person doing the moves.</small>
+                            <input @ref="_studioFile" type="file" accept="video/*" @onchange="ImportVideoAsync" disabled="@_studioBusy" class="pf-visually-hidden" />
+                        </label>
+                    </div>
+                }
+                else if (_studioStep == 2)
+                {
+                    <p class="pf-studio-tip">Step out of the frame, then capture the empty room. The cut-out is cleaner with it.</p>
+                    <div class="pf-studio-actions">
+                        <button type="button" data-spring class="pf-btn" @onclick="() => GoStudioStep(3)">Skip</button>
+                        <button type="button" data-spring class="pf-btn pf-btn--primary" @onclick="CaptureBgAsync">
+                            <span class="material-symbols-outlined" aria-hidden="true">wallpaper</span> Capture background
+                        </button>
+                    </div>
+                }
+                else if (_studioStep == 3)
+                {
+                    <ul class="pf-capture-grid">
+                        @foreach (var m in StudioMoves)
+                        {
+                            var count = _studioCounts.TryGetValue(m.Id, out var c) ? c : 0;
+                            var thumb = _studioThumbs.TryGetValue(m.Id, out var t) ? t : null;
+                            <li>
+                                <button type="button" class="pf-capture @(count > 0 ? "is-done" : "")" disabled="@_studioBusy"
+                                        @onclick="() => CaptureMoveAsync(m.Id)" aria-label="@($"Record {m.Label}: {m.Hint}. {count} pictures")">
+                                    <span class="pf-capture-ring" style="--p: @(Math.Min(100, count * 100 / StudioFramesPerMove))">
+                                        @if (thumb is not null)
+                                        {
+                                            <img src="@thumb" alt="" />
+                                        }
+                                        else
+                                        {
+                                            <span class="material-symbols-outlined" aria-hidden="true">@m.Icon</span>
+                                        }
+                                    </span>
+                                    <strong>@m.Label</strong>
+                                    <small>@(count > 0 ? $"{count} pictures" : m.Hint)</small>
+                                    @if (count > 0)
+                                    {
+                                        <span class="pf-capture-check material-symbols-outlined" aria-hidden="true">check_circle</span>
+                                    }
+                                </button>
+                            </li>
+                        }
+                    </ul>
+                    <div class="pf-studio-actions">
+                        <button type="button" data-spring class="pf-btn pf-btn--primary" disabled="@(_studioTotalFrames == 0 || _studioBusy)" @onclick="() => GoStudioStep(4)">
+                            Next <span class="material-symbols-outlined" aria-hidden="true">arrow_forward</span>
+                        </button>
+                    </div>
+                }
+                else
+                {
+                    <label class="pf-studio-name">
+                        <span>Fighter name</span>
+                        <input type="text" maxlength="24" @bind="_studioFighterName" placeholder="My Fighter" />
+                    </label>
+                    <p class="pf-studio-tip">@_studioCounts.Count(kv => kv.Value > 0) of @StudioMoves.Length moves, @_studioTotalFrames pictures. Saved in this browser only.</p>
+                    <div class="pf-studio-actions">
+                        <button type="button" data-spring class="pf-btn pf-btn--primary" disabled="@(_studioTotalFrames == 0 || _studioBusy)" @onclick="SaveStudioFighterAsync">
+                            <span class="material-symbols-outlined" aria-hidden="true">sports_mma</span> Save and fight
+                        </button>
+                    </div>
+                }
+            </dialog>
+
+            @TouchPad("backward", "forward")
         </div>
     }
 </GameShell>
@@ -136,23 +322,152 @@
 @code {
     [Parameter] public string? Mode { get; set; }
 
-    private sealed record MoveRow(string Id, string Name, string Keys, string Pad);
+    private bool IsDemo => string.Equals(Mode, "demo", StringComparison.OrdinalIgnoreCase);
+    private bool IsTournament => string.Equals(Mode, "tournament", StringComparison.OrdinalIgnoreCase);
+    private bool IsArcade => string.Equals(Mode, "arcade", StringComparison.OrdinalIgnoreCase);
+    private bool IsVersus => string.Equals(Mode, "versus", StringComparison.OrdinalIgnoreCase);
 
-    // Ids match the move names in wwwroot/data/pofighter/p1.json.
+    private Dictionary<string, int> _ratings = new(StringComparer.OrdinalIgnoreCase);
+    private PoFighterFighterRating[] _board = [];
+    private bool _over;
+    private Models.GameResult _outcome = Models.GameResult.Win;
+    private string _summary = "";
+    private string _difficulty = "normal";
+    private string _p2FighterId = "kim";
+    private string? _fieldPick;
+
+    private static readonly IReadOnlyList<IntroMap> DifficultyMaps =
+        [new("easy", "Easy"), new("normal", "Normal"), new("hard", "Hard")];
+
+    // Practice: the grid ends with a Create tile that opens the Studio once the room is up.
+    private RenderFragment FighterPicker => @<div>
+        <PoFighterRosterGrid Label="Choose your fighter" Compact="true" Selected="@_fighterId" Ratings="@_ratings"
+                             Customs="@_customFighters" OnSelect="@(id => _fighterId = id)"
+                             OnCreate="@(() => { _studioOnStart = true; _introDismissed = true; })" />
+        <PoFighterDossier Fighter="@CardFor(_fighterId)" Rating="@RatingFor(_fighterId)" />
+    </div>;
+
+    private RenderFragment ArcadePicker => @<div>
+        <PoFighterRosterGrid Label="Choose your fighter" Heading="Select your fighter" ShowRandom="true" Compact="true" Selected="@_fighterId" Ratings="@_ratings"
+                             Customs="@_customFighters" OnSelect="@(id => _fighterId = id)" />
+        <PoFighterDossier Fighter="@CardFor(_fighterId)" Rating="@RatingFor(_fighterId)" />
+    </div>;
+
+    // 2P: one grid, two cursors. The plate picked above the grid is the player choosing; a pick
+    // hands the turn to the other player.
+    private int _versusActive = 1;
+
+    private RenderFragment VersusPicker => @<div class="pf-vs">
+        <div class="pf-vs-plates">
+            @VersusPlate(1, _fighterId)
+            <span class="pf-vs-mark" aria-hidden="true">VS</span>
+            @VersusPlate(2, _p2FighterId)
+        </div>
+        <p class="pf-vs-hint" aria-live="polite">Picking for <strong>Player @_versusActive</strong></p>
+        <PoFighterRosterGrid Label="@($"Player {_versusActive} fighter")" Heading="@($"Player {_versusActive} select")" ShowRandom="true" Compact="true" Selected="@_fighterId"
+                             Selected2="@_p2FighterId" Ratings="@_ratings" Customs="@_customFighters"
+                             OnSelect="PickVersusFighter" />
+    </div>;
+
+    private RenderFragment VersusPlate(int player, string id) => @<button type="button" data-spring="0.96" data-sonify
+            class="pf-plate pf-plate--p@(player) @(_versusActive == player ? "is-active" : "")"
+            aria-pressed="@(_versusActive == player ? "true" : "false")"
+            aria-label="@($"Player {player}: {CardFor(id)?.Name}. Pick for player {player}")"
+            @onclick="() => _versusActive = player">
+        @if (CardFor(id) is { Portrait.Length: > 0 } c)
+        {
+            <img src="@c.Portrait" alt="" />
+        }
+        <span class="pf-plate-tag">P@(player)</span>
+        <strong>@(CardFor(id)?.Name ?? "?")</strong>
+    </button>;
+
+    private void PickVersusFighter(string id)
+    {
+        if (_versusActive == 1) { _fighterId = id; _versusActive = 2; }
+        else { _p2FighterId = id; _versusActive = 1; }
+    }
+
+    // The on-screen pad, the same in the practice room and the arcade. The walk buttons' names
+    // differ: the practice fighter always faces the bag, the arcade one faces the foe.
+    private static RenderFragment TouchPad(string leftName, string rightName) => @<text>
+        <div class="pf-touch pf-touch-move" aria-label="Movement">
+            <button type="button" data-pf-btn="left" aria-label="@($"Walk {leftName}")"><span class="material-symbols-outlined" aria-hidden="true">chevron_left</span></button>
+            <div class="pf-touch-stack">
+                <button type="button" data-pf-btn="up" aria-label="Jump"><span class="material-symbols-outlined" aria-hidden="true">keyboard_arrow_up</span></button>
+                <button type="button" data-pf-btn="down" aria-label="Crouch"><span class="material-symbols-outlined" aria-hidden="true">keyboard_arrow_down</span></button>
+            </div>
+            <button type="button" data-pf-btn="right" aria-label="@($"Walk {rightName}")"><span class="material-symbols-outlined" aria-hidden="true">chevron_right</span></button>
+        </div>
+        <div class="pf-touch pf-touch-attack" aria-label="Attacks">
+            <button type="button" class="pf-touch-punch" data-pf-btn="punchMid">Punch</button>
+            <button type="button" class="pf-touch-kick" data-pf-btn="kick">Kick</button>
+        </div>
+    </text>;
+
+    private RenderFragment TournamentField => @<div>
+        <PoFighterRosterGrid Label="Tournament field" Ratings="@_ratings" Customs="@_customFighters"
+                             Selected="@_fieldPick" OnSelect="@(id => _fieldPick = id)" />
+        <PoFighterDossier Fighter="@CardFor(_fieldPick)" Rating="@RatingFor(_fieldPick)" />
+    </div>;
+
+    private RenderFragment Summary => @<p>@_summary</p>;
+
+    private static RenderFragment FightControls => @<div>
+        <p><kbd>←</kbd> <kbd>→</kbd> walk (away from the foe guards high) · <kbd>↓</kbd> crouch (down-back guards low) · <kbd>↑</kbd> jump (with a direction to jump in or away)</p>
+        <p><kbd>J</kbd> or <kbd>F</kbd> punch · <kbd>L</kbd> or <kbd>G</kbd> kick. Press in the air for a jump attack. Pads and touch work too.</p>
+        @SpecialsList
+    </div>;
+
+    // The specials (js/pofighter/moves.js SPECIALS), written for a fighter facing right.
+    private static RenderFragment SpecialsList => @<p class="pf-specials">
+        <strong>Specials:</strong> <kbd>↓</kbd><kbd>↘</kbd><kbd>→</kbd> + punch <em>Po Blast</em> ·
+        <kbd>→</kbd><kbd>↓</kbd><kbd>↘</kbd> + punch <em>Rising Fist</em> ·
+        <kbd>↓</kbd><kbd>↙</kbd><kbd>←</kbd> + kick <em>Rush Kick</em> ·
+        <kbd>←</kbd><kbd>↙</kbd><kbd>↓</kbd><kbd>↘</kbd><kbd>→</kbd> + punch or kick: the fighter's own <em>signature</em>, once it's filmed
+    </p>;
+
+    private static RenderFragment VersusControls => @<div>
+        <p><strong>P1</strong> <kbd>W</kbd><kbd>A</kbd><kbd>S</kbd><kbd>D</kbd> move · <kbd>F</kbd> punch · <kbd>G</kbd> kick</p>
+        <p><strong>P2</strong> arrows move · <kbd>K</kbd> punch · <kbd>L</kbd> kick. With two pads, pad 1 is P1; one pad plays P2.</p>
+        @SpecialsList
+    </div>;
+
+    private PoFighterCard? CardFor(string? id)
+    {
+        if (string.IsNullOrEmpty(id)) return null;
+        if (PoMiniGames.Shared.Games.PoFighterRoster.IsRateable(id))
+            return new(id, PoMiniGames.Shared.Games.PoFighterRoster.DisplayName(id), $"data/pofighter/{id}-portrait.webp", false);
+        return _customFighters.FirstOrDefault(c => c.Id == id) is { } c ? new(c.Id, c.Name, c.Portrait, true) : null;
+    }
+
+    private PoFighterFighterRating? RatingFor(string? id) =>
+        _board.FirstOrDefault(r => string.Equals(r.FighterId, id, StringComparison.OrdinalIgnoreCase));
+
+    private sealed record MoveRow(string Id, string Name, string[] Keys, string Pad, bool Tappable = false);
+
+    // Ids match the move names in wwwroot/data/pofighter/p1.json. The stance has no control, so
+    // it has no card.
     private static readonly MoveRow[] Moves =
     [
-        new("idle", "Stance", "—", "—"),
-        new("walkF", "Walk forward", "→ / D", "D-pad →"),
-        new("walkB", "Walk backward", "← / A", "D-pad ←"),
-        new("crouch", "Crouch", "↓ / S", "D-pad ↓"),
-        new("jump", "Jump", "↑ / W", "D-pad ↑"),
-        new("punchMid", "Punch", "J", "X"),
-        new("kick", "Kick", "L", "A"),
-        new("victory", "Cheer · every 10 hits", "V", "LB"),
-        new("ko", "Knockdown · any key gets up", "X", "RB"),
+        new("walkF", "Forward", ["→", "D"], "D-pad →"),
+        new("walkB", "Back", ["←", "A"], "D-pad ←"),
+        new("crouch", "Crouch", ["↓", "S"], "D-pad ↓"),
+        new("jump", "Jump", ["↑", "W"], "D-pad ↑"),
+        new("punchMid", "Punch", ["J"], "X"),
+        new("kick", "Kick", ["L"], "A"),
+        new("victory", "Cheer", ["V"], "LB", Tappable: true),
+        new("ko", "Fall", ["X"], "RB", Tappable: true),
     ];
 
+    private static RenderFragment MoveCard(MoveRow m) => @<text>
+        <span class="pf-move-keys pf-ctl-keys">@foreach (var k in m.Keys) { <kbd>@k</kbd> }</span>
+        <span class="pf-move-keys pf-ctl-pad"><kbd>@m.Pad</kbd></span>
+        <span class="pf-move-name">@m.Name</span>
+    </text>;
+
     private ElementReference _room;
+    private ElementReference _studioDialog;
     private ElementReference _studioVideo;
     private ElementReference _studioPreview;
     private ElementReference _studioStatus;
@@ -162,28 +477,37 @@
     private bool _started;
     private bool _failed;
     private string _fighterId = "p1";
-    private List<CustomFighterItem> _customFighters = [];
+    private List<PoFighterCustom> _customFighters = [];
     private bool _studioOpen;
+    private bool _studioOnStart;
     private bool _studioBusy;
+    private int _studioStep = 1;
+    private int _studioReached = 1;
+    private int _studioProgress;
     private string _studioFighterName = "My Fighter";
     private Dictionary<string, int> _studioCounts = [];
+    private Dictionary<string, string> _studioThumbs = [];
     private int _studioTotalFrames => _studioCounts.Values.Sum();
     private IJSObjectReference? _studioModule;
     private IJSObjectReference? _studioCtrl;
     private DotNetObjectReference<PoFighterPage>? _selfRef;
 
-    private sealed record CustomFighterItem(string Id, string Name);
-    private sealed record StudioMoveDef(string Id, string Label, string Hint);
+    /// <summary>Pictures one webcam capture takes (studio.js captureMove).</summary>
+    private const int StudioFramesPerMove = 8;
+
+    private static readonly (int, string)[] StudioSteps = [(1, "Source"), (2, "Background"), (3, "Moves"), (4, "Save")];
+
+    private sealed record StudioMoveDef(string Id, string Label, string Hint, string Icon);
     private static readonly StudioMoveDef[] StudioMoves =
     [
-        new("idle", "Stance", "Stand in fighting guard"),
-        new("walkF", "Walk", "Step forward and back"),
-        new("punchMid", "Punch", "Throw a straight punch"),
-        new("kick", "Kick", "Throw a front or side kick"),
-        new("jump", "Jump", "Hop in place"),
-        new("crouch", "Crouch", "Duck low into guard"),
-        new("victory", "Cheer", "Raise both arms"),
-        new("ko", "Fall", "Drop or lean down"),
+        new("idle", "Stance", "Stand in fighting guard", "accessibility_new"),
+        new("walkF", "Walk", "Step forward and back", "directions_walk"),
+        new("punchMid", "Punch", "Throw a straight punch", "front_hand"),
+        new("kick", "Kick", "Throw a front or side kick", "sports_martial_arts"),
+        new("jump", "Jump", "Hop in place", "arrow_upward"),
+        new("crouch", "Crouch", "Duck low into guard", "arrow_downward"),
+        new("victory", "Cheer", "Raise both arms", "celebration"),
+        new("ko", "Fall", "Drop or lean down", "airline_seat_flat"),
     ];
 
     private static RenderFragment TitleContent => GameCatalog.TitleFor(GameKeys.PoFighter);
@@ -194,18 +518,63 @@
         <p><kbd>R</kbd> resets the room and <kbd>T</kbd> slows it down. A gamepad works too, and a phone gets on-screen buttons.</p>
     </div>;
 
-    protected override void OnInitialized() => _playerName = PlayerNameService.GetPlayerName();
+    protected override async Task OnInitializedAsync()
+    {
+        _playerName = PlayerNameService.GetPlayerName();
+        await LoadRatingsAsync();
+        if (!IsDemo) await RefreshFightersAsync();
+    }
+
+    private async Task LoadRatingsAsync()
+    {
+        _board = await Api.GetPoFighterRatingsAsync();
+        _ratings = _board.ToDictionary(r => r.FighterId, r => r.Elo, StringComparer.OrdinalIgnoreCase);
+    }
 
     protected override async Task OnAfterRenderAsync(bool firstRender)
     {
-        if (!_introDismissed || _started) return;
+        if ((!_introDismissed && !IsDemo) || _over || _started) return;
         _started = true;
         try
         {
-            if (await JS.InvokeAsync<bool>("loadEngine", "pofighter")
+            if (IsArcade)
+            {
+                _selfRef ??= DotNetObjectReference.Create(this);
+                if (await JS.InvokeAsync<bool>("loadEngine", "pofighter")
+                    && await JS.InvokeAsync<bool>("PoFighter.startArcade", _room, _selfRef, _fighterId, _difficulty, _ratings))
+                    return;
+            }
+            else if (IsVersus)
+            {
+                _selfRef ??= DotNetObjectReference.Create(this);
+                if (await JS.InvokeAsync<bool>("loadEngine", "pofighter")
+                    && await JS.InvokeAsync<bool>("PoFighter.startVersus", _room, _selfRef, _fighterId, _p2FighterId))
+                    return;
+            }
+            else if (IsTournament)
+            {
+                _selfRef ??= DotNetObjectReference.Create(this);
+                if (await JS.InvokeAsync<bool>("loadEngine", "pofighter")
+                    && await JS.InvokeAsync<bool>("PoFighter.startTournament", _room, _selfRef, _ratings))
+                    return;
+            }
+            else if (IsDemo)
+            {
+                // In the kiosk reel the kiosk bar owns leaving, so a key press does nothing.
+                _selfRef ??= DotNetObjectReference.Create(this);
+                if (await JS.InvokeAsync<bool>("loadEngine", "pofighter")
+                    && await JS.InvokeAsync<bool>("PoFighter.startDemo", _room, Kiosk.IsActive ? null : _selfRef))
+                    return;
+            }
+            else if (await JS.InvokeAsync<bool>("loadEngine", "pofighter")
                 && await JS.InvokeAsync<bool>("PoFighter.start", _room, _fighterId))
             {
                 await RefreshFightersAsync();
+                if (_studioOnStart)
+                {
+                    _studioOnStart = false;
+                    await OpenStudioAsync();
+                }
                 return;
             }
         }
@@ -220,64 +589,96 @@
 
     private async Task RefreshFightersAsync()
     {
+        // The Studio's fighters (IndexedDB) for the grids, dossiers and the practice dropdown.
         try
         {
+            _studioModule ??= await JS.InvokeAsync<IJSObjectReference>("import", "./js/pofighter/studio.js");
             using var doc = System.Text.Json.JsonDocument.Parse(
-                await JS.InvokeAsync<string>("JSON.stringify", await JS.InvokeAsync<object?>("PoFighter.listFighters")));
+                await _studioModule.InvokeAsync<string>("listCustomFightersJson"));
             _customFighters = doc.RootElement.EnumerateArray()
-                .Select(el => new CustomFighterItem(
+                .Select(el => new PoFighterCustom(
                     el.GetProperty("id").GetString() ?? "",
-                    el.GetProperty("name").GetString() ?? "Fighter"))
+                    el.GetProperty("name").GetString() ?? "Fighter",
+                    el.TryGetProperty("portrait", out var p) ? p.GetString() ?? "" : ""))
                 .Where(f => !string.IsNullOrEmpty(f.Id))
                 .ToList();
             StateHasChanged();
         }
-        catch { }
+        catch (JSException ex)
+        {
+            Logger.LogDebug(ex, "PoFighter: no Studio fighters could be listed");
+        }
     }
 
-    private async Task OnFighterChangedAsync(ChangeEventArgs e)
+    /// <summary>A tile in the practice room's roster sheet: close the sheet, swap the fighter.</summary>
+    private async Task PickPracticeFighterAsync(string id)
     {
-        _fighterId = e.Value?.ToString() ?? "p1";
+        _fighterId = id;
+        await JS.InvokeVoidAsync("PoFighter.hideSheet", "pf-roster-sheet");
         await JS.InvokeAsync<bool>("PoFighter.start", _room, _fighterId);
     }
 
     private async Task OpenStudioAsync()
     {
+        if (_studioOpen) return;
         _studioOpen = true;
         _studioCounts.Clear();
+        _studioThumbs.Clear();
+        _studioStep = _studioReached = 1;
+        await JS.InvokeVoidAsync("PoFighter.hideSheet", "pf-roster-sheet");
         await JS.InvokeVoidAsync("PoFighter.stop");
         StateHasChanged();
+        await JS.InvokeVoidAsync("PoFighter.showDialog", _studioDialog);
         _studioModule ??= await JS.InvokeAsync<IJSObjectReference>("import", "./js/pofighter/studio.js");
         _selfRef ??= DotNetObjectReference.Create(this);
         _studioCtrl = await _studioModule.InvokeAsync<IJSObjectReference>(
             "createStudioController", _studioVideo, _studioPreview, _studioStatus, _selfRef);
     }
 
-    private async Task CloseStudioAsync()
+    /// <summary>The close button: closing the dialog raises its close event, which tidies up.</summary>
+    private Task CloseStudioAsync() => JS.InvokeVoidAsync("PoFighter.closeDialog", _studioDialog).AsTask();
+
+    /// <summary>The dialog's close event (the close button, Esc, or a save).</summary>
+    private async Task OnStudioClosedAsync()
     {
+        if (!_studioOpen) return;
         if (_studioCtrl is not null)
         {
             try { await _studioCtrl.InvokeVoidAsync("dispose"); await _studioCtrl.DisposeAsync(); } catch { }
             _studioCtrl = null;
         }
         _studioOpen = false;
+        _studioBusy = false;
         await JS.InvokeAsync<bool>("PoFighter.start", _room, _fighterId);
+    }
+
+    private void GoStudioStep(int step)
+    {
+        _studioStep = step;
+        _studioReached = Math.Max(_studioReached, step);
     }
 
     private async Task StartWebcamAsync()
     {
-        if (_studioCtrl is not null) await _studioCtrl.InvokeAsync<bool>("startWebcam");
+        if (_studioCtrl is null || _studioBusy) return;
+        _studioBusy = true;
+        try
+        {
+            if (await _studioCtrl.InvokeAsync<bool>("startWebcam")) GoStudioStep(2);
+        }
+        finally { _studioBusy = false; }
     }
 
     private async Task CaptureBgAsync()
     {
-        if (_studioCtrl is not null) await _studioCtrl.InvokeAsync<bool>("captureBackground");
+        if (_studioCtrl is not null && await _studioCtrl.InvokeAsync<bool>("captureBackground")) GoStudioStep(3);
     }
 
     private async Task CaptureMoveAsync(string moveId)
     {
         if (_studioCtrl is null || _studioBusy) return;
         _studioBusy = true;
+        _studioProgress = 0;
         try { await _studioCtrl.InvokeAsync<int>("captureMove", moveId); }
         finally { _studioBusy = false; }
     }
@@ -286,7 +687,16 @@
     {
         if (_studioCtrl is null || _studioBusy) return;
         _studioBusy = true;
-        try { await _studioCtrl.InvokeAsync<bool>("importVideo", _studioFile); }
+        _studioProgress = 0;
+        try
+        {
+            // A clip needs no background plate: its moves go straight to the move grid.
+            if (await _studioCtrl.InvokeAsync<bool>("importVideo", _studioFile))
+            {
+                _studioReached = 3;
+                GoStudioStep(3);
+            }
+        }
         finally { _studioBusy = false; }
     }
 
@@ -301,25 +711,91 @@
             {
                 _fighterId = id;
                 await RefreshFightersAsync();
+                _studioBusy = false;
                 await CloseStudioAsync();
             }
         }
         finally { _studioBusy = false; }
     }
 
+    /// <summary>tournament.js, after each real bout: rate it on the fighter Elo board.</summary>
+    [JSInvokable]
+    public async Task BoutFinished(string winnerId, string loserId, bool isDraw)
+    {
+        await Api.SubmitPoFighterBoutAsync(new PoFighterBoutResultRequest(winnerId, loserId, isDraw));
+        await LoadRatingsAsync();
+    }
+
+    /// <summary>tournament.js, once the champion has been shown: the end card.</summary>
+    [JSInvokable]
+    public async Task TournamentFinished(string championName)
+    {
+        _summary = (string.IsNullOrEmpty(championName) ? "The tournament is over." : $"{championName} is the champion.")
+            + " Every bout between built-in fighters counted on the fighter Elo board.";
+        _outcome = Models.GameResult.Win;
+        _over = true;
+        await InvokeAsync(StateHasChanged);
+    }
+
+    /// <summary>arcade.js, when the run ends: cleared stages out of the ladder, and how it went.</summary>
+    [JSInvokable]
+    public async Task ArcadeFinished(int cleared, int stages, bool won, string lastOpponent)
+    {
+        _outcome = won ? Models.GameResult.Win : Models.GameResult.Loss;
+        _summary = won
+            ? $"You beat all {stages} stages, your Shadow included."
+            : $"{lastOpponent} stopped you at stage {cleared + 1} of {stages}.";
+        _over = true;
+        var difficulty = _difficulty switch { "easy" => Difficulty.Easy, "hard" => Difficulty.Hard, _ => Difficulty.Medium };
+        await Results.RecordAsync(GameKeys.PoFighter.Value, _playerName, difficulty, _outcome);
+        await InvokeAsync(StateHasChanged);
+    }
+
+    /// <summary>arcade.js, when the 2P match ends: "P1 · Nick" or a draw.</summary>
+    [JSInvokable]
+    public async Task VersusFinished(string winner, bool isDraw)
+    {
+        _outcome = isDraw ? Models.GameResult.Draw : Models.GameResult.Win;
+        _summary = isDraw ? "A draw game." : $"{winner} wins!";
+        _over = true;
+        await InvokeAsync(StateHasChanged);
+    }
+
+    /// <summary>Called by demo.js on the first key, tap or pad button: back to the main menu.</summary>
+    [JSInvokable]
+    public void ExitDemo() => Navigation.NavigateTo("/");
+
+    /// <summary>studio.js, after a capture or an import: per move, { n: pictures, thumb: data URL }.</summary>
     [JSInvokable]
     public void OnStudioCounts(string json)
     {
         try
         {
             using var doc = System.Text.Json.JsonDocument.Parse(json);
-            var next = new Dictionary<string, int>();
+            var counts = new Dictionary<string, int>();
+            var thumbs = new Dictionary<string, string>();
             foreach (var prop in doc.RootElement.EnumerateObject())
-                next[prop.Name] = prop.Value.GetInt32();
-            _studioCounts = next;
+            {
+                counts[prop.Name] = prop.Value.GetProperty("n").GetInt32();
+                if (prop.Value.TryGetProperty("thumb", out var t) && t.GetString() is { Length: > 0 } url)
+                    thumbs[prop.Name] = url;
+            }
+            _studioCounts = counts;
+            _studioThumbs = thumbs;
             InvokeAsync(StateHasChanged);
         }
-        catch { }
+        catch (System.Text.Json.JsonException ex)
+        {
+            Logger.LogDebug(ex, "PoFighter Studio sent unreadable counts");
+        }
+    }
+
+    /// <summary>studio.js, while recording or scanning a clip: 0–100.</summary>
+    [JSInvokable]
+    public void OnStudioProgress(int percent)
+    {
+        _studioProgress = Math.Clamp(percent, 0, 100);
+        InvokeAsync(StateHasChanged);
     }
 
     public async ValueTask DisposeAsync()

@@ -28,6 +28,7 @@ public partial class StorageService : IStorageService
     private const string PoBrawlTable = "PoBrawlHighScores";
     private const string PoBrawlLadderTable = "PoBrawlLadder";
     private const string PoBrawlEloTable = "PoBrawlFighterRatings";
+    private const string PoFighterEloTable = "PoFighterRatings";
     // The player-Elo table for live 1v1 over SignalR.
     // Distinct from PoBrawlEloTable (which rates fighters from CPU-vs-CPU demo) —
     // see PoBrawlPlayerRating's remarks for why a single table cannot serve both.
@@ -41,7 +42,7 @@ public partial class StorageService : IStorageService
     public static IReadOnlyList<string> KnownTableNames { get; } =
     [
         PlayerStatsTable, MarbleRaceTable, MarbleRaceRecordsTable, PoBrawlTable, PoBrawlLadderTable,
-        PoBrawlEloTable, PoBrawlPlayerEloTable, PoRacerTable, PoVoxelStrikeTable, PoCabinetTable,
+        PoBrawlEloTable, PoFighterEloTable, PoBrawlPlayerEloTable, PoRacerTable, PoVoxelStrikeTable, PoCabinetTable,
         PoMuleTable, MatchHistoryTable,
     ];
 
@@ -50,6 +51,7 @@ public partial class StorageService : IStorageService
     private const string PoBrawlPartition = "pobrawl";
     private const string PoBrawlLadderPartition = "pobrawlladder";
     private const string PoBrawlEloPartition = "pobrawlelo";
+    private const string PoFighterEloPartition = "pofighterelo";
     private const string PoBrawlPlayerEloPartition = "pobrawlplayerelo";
     private const string PoRacerPartition = "poracer";
     private const string PoVoxelStrikePartition = "povoxelstrike";
@@ -148,7 +150,7 @@ public partial class StorageService : IStorageService
     public void Initialize()
     {
         Exception? firstFailure = null;
-        foreach (var table in new[] { PlayerStatsTable, MarbleRaceTable, MarbleRaceRecordsTable, PoBrawlTable, PoBrawlLadderTable, PoBrawlEloTable, PoBrawlPlayerEloTable, PoRacerTable, PoVoxelStrikeTable })
+        foreach (var table in new[] { PlayerStatsTable, MarbleRaceTable, MarbleRaceRecordsTable, PoBrawlTable, PoBrawlLadderTable, PoBrawlEloTable, PoFighterEloTable, PoBrawlPlayerEloTable, PoRacerTable, PoVoxelStrikeTable })
         {
             try { Table(table); }
             catch (Exception ex)

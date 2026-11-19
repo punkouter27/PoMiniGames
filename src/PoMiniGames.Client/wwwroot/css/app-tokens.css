@@ -274,6 +274,22 @@
      .po-version stamp above it at the same breakpoint (768px). */
   --po-stamp-lift: calc(3.25rem + env(safe-area-inset-bottom, 0px));
 
+  /* PoFighter's corner colours (the canvas HUD's P2 blue and the arcade red), for the
+     arcade ladder overlay. */
+  --pf-p2: #4fc3ff;
+  --pf-red: #ff5a3c;
+  /* The PoFighter stage UI (always dark, whatever the device theme): panels, text, the punch
+     and kick buttons, and the win / loss / draw pills. */
+  --pf-glass: rgba(12, 15, 28, 0.72);
+  --pf-glass-line: rgba(255, 255, 255, 0.18);
+  --pf-text: #e8eaf2;
+  --pf-text-dim: #b7c2e2;
+  --pf-punch: #ffb020;
+  --pf-kick: #ff4d5e;
+  --pf-win: #1f9d5c;
+  --pf-loss: #c0303f;
+  --pf-draw: #7a7f96;
+
   /* Light and dark both supported; the device picks (po-tokens.css sets the same).
      `light dark` is also what lets the light-dark() pairs above resolve. */
   color-scheme: light dark;

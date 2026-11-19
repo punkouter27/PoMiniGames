@@ -1,0 +1,329 @@
+/* The select-screen tiles. The selected tile wears a gold ring with a light that runs round it
+   (an animated conic gradient on --pfr-spin); P2's pick in the 2P picker wears a blue one. */
+@property --pfr-spin {
+    syntax: '<angle>';
+    inherits: false;
+    initial-value: 0deg;
+}
+
+.pfr-grid {
+    display: grid;
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+    gap: 0.4rem;
+    width: min(100%, 18rem);
+    margin-inline: auto;
+}
+
+/* Pickers: only real fighters, bigger tiles, centred however many there are. */
+.pfr-grid--compact {
+    grid-template-columns: repeat(auto-fit, minmax(5.5rem, 7rem));
+    justify-content: center;
+    gap: 0.6rem;
+    width: min(100%, 30rem);
+}
+
+.pfr-tile {
+    position: relative;
+    aspect-ratio: 1;
+    min-height: 44px;
+    display: flex;
+    flex-direction: column;
+    justify-content: flex-end;
+    align-items: center;
+    overflow: hidden;
+    padding: 0.25rem;
+    border: 2px solid var(--pf-glass-line);
+    border-radius: 0.6rem;
+    background: linear-gradient(180deg, var(--pf-navy) 0%, var(--pf-navy-deep) 100%);
+    color: white;
+    font: inherit;
+    cursor: default;
+    isolation: isolate;
+    transition: transform 160ms cubic-bezier(.3, 1.4, .5, 1), border-color 160ms ease, box-shadow 160ms ease;
+}
+
+button.pfr-tile {
+    cursor: pointer;
+}
+
+button.pfr-tile:hover,
+button.pfr-tile:focus-visible {
+    border-color: var(--pf-gold);
+    outline: none;
+    transform: translateY(-3px);
+    box-shadow: 0 8px 18px rgba(0, 0, 0, 0.35);
+}
+
+button.pfr-tile:active {
+    transform: translateY(0) scale(0.96);
+}
+
+.pfr-tile.is-selected,
+.pfr-tile.is-selected-2 {
+    border-color: transparent;
+    box-shadow: 0 0 16px rgba(255, 210, 63, 0.55);
+}
+
+.pfr-tile.is-selected-2 {
+    box-shadow: 0 0 16px rgba(79, 195, 255, 0.55);
+}
+
+/* The running light: a conic ring under the tile's content, masked to the border. */
+.pfr-tile.is-selected::before,
+.pfr-tile.is-selected-2::after {
+    content: '';
+    position: absolute;
+    inset: -2px;
+    z-index: 2;
+    padding: 3px;
+    border-radius: inherit;
+    background: conic-gradient(from var(--pfr-spin), var(--pf-gold), rgba(255, 255, 255, 0.95) 12%, var(--pf-gold) 25%, rgba(232, 164, 18, 0.9) 60%, var(--pf-gold));
+    -webkit-mask: linear-gradient(black 0 0) content-box, linear-gradient(black 0 0);
+    -webkit-mask-composite: xor;
+    mask: linear-gradient(black 0 0) content-box exclude, linear-gradient(black 0 0);
+    pointer-events: none;
+    animation: pfr-spin 2.4s linear infinite;
+}
+
+.pfr-tile.is-selected-2::after {
+    background: conic-gradient(from calc(var(--pfr-spin) + 180deg), var(--pf-p2), rgba(255, 255, 255, 0.95) 12%, var(--pf-p2) 25%, rgba(30, 120, 200, 0.9) 60%, var(--pf-p2));
+}
+
+/* Both players on one fighter: P2's ring sits inside P1's. */
+.pfr-tile.is-selected.is-selected-2::after {
+    inset: 3px;
+}
+
+@keyframes pfr-spin {
+    to {
+        --pfr-spin: 360deg;
+    }
+}
+
+.pfr-portrait {
+    position: absolute;
+    inset: 0;
+    z-index: -1;
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+    transition: transform 240ms ease;
+}
+
+button.pfr-tile:hover .pfr-portrait,
+.pfr-tile.is-selected .pfr-portrait,
+.pfr-tile.is-selected-2 .pfr-portrait {
+    transform: scale(1.1);
+}
+
+.pfr-name {
+    position: relative;
+    max-width: 100%;
+    padding: 0 0.3rem;
+    border-radius: 0.3rem;
+    background: rgba(10, 12, 30, 0.75);
+    font-size: 0.72rem;
+    font-weight: 800;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.pfr-grid--compact .pfr-name {
+    font-size: 0.8rem;
+}
+
+.pfr-elo {
+    position: absolute;
+    top: 0.25rem;
+    right: 0.3rem;
+    padding: 0 0.3rem;
+    border-radius: 0.3rem;
+    background: rgba(255, 210, 63, 0.92);
+    color: var(--pf-ink);
+    font-size: 0.65rem;
+    font-weight: 800;
+}
+
+.pfr-tile--empty,
+.pfr-tile--create {
+    justify-content: center;
+    gap: 0.15rem;
+    border-style: dashed;
+    background: rgba(23, 28, 56, 0.55);
+    color: rgba(255, 255, 255, 0.45);
+}
+
+.pfr-tile--create {
+    border-color: rgba(255, 210, 63, 0.55);
+    background: linear-gradient(180deg, var(--pf-navy) 0%, var(--pf-navy-deep) 100%);
+    color: var(--pf-gold);
+}
+
+.pfr-empty-mark {
+    font-size: 1.4rem;
+}
+
+.pfr-tile--create .pfr-empty-mark {
+    font-size: 1.8rem;
+}
+
+.pfr-badge {
+    position: absolute;
+    top: 0.25rem;
+    left: 0.3rem;
+    padding: 0 0.3rem;
+    border-radius: 0.3rem;
+    background: rgba(79, 195, 255, 0.92);
+    color: var(--pf-ink);
+    font-size: 0.55rem;
+    font-weight: 800;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+}
+
+/* "P1" / "P2" flags in the 2P picker, top-left. */
+.pfr-cursors {
+    position: absolute;
+    top: 0.25rem;
+    left: 0.3rem;
+    z-index: 3;
+    display: flex;
+    gap: 0.2rem;
+}
+
+.pfr-cursor {
+    padding: 0 0.3rem;
+    border-radius: 0.3rem;
+    color: var(--pf-ink);
+    font-size: 0.6rem;
+    font-weight: 900;
+}
+
+.pfr-cursor--p1 {
+    background: var(--pf-gold);
+}
+
+.pfr-cursor--p2 {
+    background: var(--pf-p2);
+}
+
+@media (prefers-reduced-motion: reduce) {
+    .pfr-tile,
+    .pfr-portrait {
+        transition: none;
+    }
+
+    .pfr-tile.is-selected::before,
+    .pfr-tile.is-selected-2::after {
+        animation: none;
+    }
+}
+
+:root[data-motion="reduce"] .pfr-tile.is-selected::before,
+:root[data-motion="reduce"] .pfr-tile.is-selected-2::after {
+    animation: none;
+}
+
+/* ---- The arcade select screen (pickers) ----
+   A slanted header bar, square beveled tiles over a scanline panel, a name strip along each
+   tile's foot, a blinking 1P / 2P flag on the pick and a "?" roulette tile. */
+.pfr-head {
+    display: flex;
+    justify-content: center;
+    margin: 0 auto 0.5rem;
+}
+
+.pfr-head span {
+    display: inline-block;
+    padding: 0.2rem 1.4rem;
+    transform: skewX(-14deg);
+    background: linear-gradient(90deg, transparent, var(--pf-navy-deep) 12%, var(--pf-navy-deep) 88%, transparent);
+    border-block: 2px solid var(--pf-gold);
+    color: var(--pf-gold);
+    font: italic 900 clamp(1rem, 4vw, 1.35rem) / 1.2 'Arial Black', Impact, system-ui, sans-serif;
+    letter-spacing: 0.08em;
+    text-shadow: 2px 2px 0 rgba(0, 0, 0, 0.75);
+    text-transform: uppercase;
+}
+
+.pfr-grid--compact {
+    padding: 0.6rem;
+    border-radius: 0.35rem;
+    background:
+        repeating-linear-gradient(0deg, rgba(255, 255, 255, 0.035) 0 1px, transparent 1px 3px),
+        linear-gradient(180deg, rgba(10, 12, 30, 0.85), rgba(23, 28, 56, 0.85));
+    box-shadow: inset 0 0 0 1px rgba(255, 210, 63, 0.25);
+}
+
+.pfr-grid--compact .pfr-tile {
+    border-radius: 0.2rem;
+    border-width: 3px;
+    padding: 0;
+    box-shadow: inset 0 2px 0 rgba(255, 255, 255, 0.18), inset 0 -3px 0 rgba(0, 0, 0, 0.45);
+}
+
+.pfr-grid--compact .pfr-name {
+    width: 100%;
+    max-width: none;
+    padding: 0.1rem 0.3rem;
+    border-radius: 0;
+    background: linear-gradient(180deg, rgba(10, 12, 30, 0.35), rgba(10, 12, 30, 0.92));
+    font-style: italic;
+    font-weight: 900;
+    text-align: center;
+}
+
+.pfr-grid--compact .pfr-tile.is-selected .pfr-name {
+    color: var(--pf-gold);
+}
+
+.pfr-grid--compact .pfr-tile.is-selected-2 .pfr-name {
+    color: var(--pf-p2);
+}
+
+.pfr-grid--compact .pfr-cursor {
+    animation: pfr-blink 0.9s steps(2, jump-none) infinite;
+}
+
+@keyframes pfr-blink {
+    50% {
+        opacity: 0.25;
+    }
+}
+
+/* The roulette's moving highlight. */
+.pfr-tile.is-rolling {
+    border-color: white;
+    box-shadow: 0 0 18px rgba(255, 255, 255, 0.7);
+}
+
+.pfr-tile--random {
+    justify-content: center;
+    background: linear-gradient(180deg, var(--pf-navy) 0%, var(--pf-navy-deep) 100%);
+    color: var(--pf-gold);
+}
+
+.pfr-tile--random[disabled] {
+    cursor: progress;
+}
+
+.pfr-random-mark {
+    flex: 1;
+    display: grid;
+    place-items: center;
+    font: italic 900 2.4rem / 1 'Arial Black', Impact, system-ui, sans-serif;
+    text-shadow: 3px 3px 0 rgba(0, 0, 0, 0.6);
+}
+
+@media (prefers-reduced-motion: reduce) {
+    .pfr-grid--compact .pfr-cursor {
+        animation: none;
+    }
+}
+
+:root[data-motion="reduce"] .pfr-grid--compact .pfr-cursor {
+    animation: none;
+}

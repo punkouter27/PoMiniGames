@@ -1,0 +1,169 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>PoFighter Shot List</title>
+<style>
+  :root { --bg: #f6f4ef; --ink: #1d1f2b; --muted: #5b6070; --line: #d9d5ca; --card: #ffffff; --accent: #c2410c; --must: #b91c1c; --opt: #1d4ed8; --sig: #7c3aed; }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) { --bg: #12131a; --ink: #eceef6; --muted: #a3a8b8; --line: #2b2e3d; --card: #1a1c26; --accent: #fb923c; --must: #f87171; --opt: #60a5fa; --sig: #c4b5fd; }
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--ink); font: 16px/1.5 system-ui, -apple-system, "Segoe UI", sans-serif; }
+  main { max-width: 860px; margin: 0 auto; padding: 24px 16px 64px; }
+  h1 { margin: 0 0 4px; font-size: 1.8rem; }
+  h2 { margin: 36px 0 8px; font-size: 1.25rem; border-bottom: 2px solid var(--line); padding-bottom: 4px; }
+  p.lede { color: var(--muted); margin: 0 0 16px; }
+  ol.moves { list-style: none; padding: 0; margin: 0; display: grid; gap: 10px; }
+  .move { background: var(--card); border: 1px solid var(--line); border-left: 5px solid var(--must); border-radius: 8px; padding: 10px 14px; display: grid; grid-template-columns: auto 1fr; gap: 4px 12px; align-items: start; }
+  .move.opt { border-left-color: var(--opt); }
+  .move.sig { border-left-color: var(--sig); }
+  .move input { width: 22px; height: 22px; margin-top: 3px; grid-row: span 3; }
+  .move h3 { margin: 0; font-size: 1.05rem; }
+  .move h3 code { font-size: 0.85rem; color: var(--muted); font-weight: 500; margin-left: 6px; }
+  .move .how { margin: 0; }
+  .move .why { margin: 0; color: var(--muted); font-size: 0.9rem; }
+  .tag { display: inline-block; font-size: 0.72rem; font-weight: 700; letter-spacing: 0.04em; text-transform: uppercase; padding: 1px 6px; border-radius: 4px; color: var(--card); background: var(--must); vertical-align: 2px; margin-left: 6px; }
+  .tag.opt { background: var(--opt); }
+  .tag.sig { background: var(--sig); }
+  ul.rules { padding-left: 20px; margin: 0; }
+  ul.rules li { margin: 4px 0; }
+  table { width: 100%; border-collapse: collapse; background: var(--card); border: 1px solid var(--line); border-radius: 8px; overflow: hidden; font-size: 0.92rem; }
+  th, td { border-bottom: 1px solid var(--line); padding: 6px 8px; text-align: left; vertical-align: top; }
+  th { background: color-mix(in srgb, var(--line) 50%, var(--card)); }
+  pre { background: var(--card); border: 1px solid var(--line); border-radius: 8px; padding: 12px; overflow-x: auto; font-size: 0.85rem; }
+  .callout { background: color-mix(in srgb, var(--sig) 12%, var(--card)); border: 1px solid var(--sig); border-radius: 8px; padding: 12px 14px; }
+  .wrap { overflow-x: auto; }
+  @media print { body { background: white; color: black; } .move { break-inside: avoid; } }
+</style>
+</head>
+<body>
+<main>
+  <h1>PoFighter shot list</h1>
+  <p class="lede">Everything one performer records so they become a full PoFighter character. Tick each box on set.
+    The name in grey after each move is what goes in <code>&lt;id&gt;.moves.json</code> (see <code>scripts/pofighter/README.md</code>).</p>
+
+  <h2>Before you roll</h2>
+  <ul class="rules">
+    <li><strong>Phone fixed</strong> on a tripod, landscape, at hip height, 1080p or better (4K gives a sharper fighter). Don't move or zoom it during the session.</li>
+    <li><strong>Whole body in frame</strong> for every move, with room above the head (jumps) and a strip of floor under the feet.</li>
+    <li><strong>Side-on, always facing the same way</strong> (say, toward the left edge of the frame). The packer mirrors one direction; a turn mid-session breaks it.</li>
+    <li><strong>Same distance from the phone</strong> for every move. Mark the spot on the floor with tape. A move filmed closer shows up bigger in the game.</li>
+    <li><strong>Plain background, nobody else in shot.</strong> Clear bags, chairs and blankets; clothes that stand out from the wall; even light, no window behind.</li>
+    <li><strong>A mat</strong> for the falls.</li>
+    <li>Between moves, <strong>hold the fighting stance for one second</strong>, so every move starts and ends in the same pose.</li>
+    <li>Do each move <strong>three times</strong>; the best take is picked later. One long video is fine.</li>
+  </ul>
+
+  <h2>Required moves <span class="tag">must</span></h2>
+  <p class="lede">Without these the fighter can't play. Every attack: snap it out, hold the extended limb for a beat, return to stance.</p>
+  <ol class="moves">
+    <li class="move"><input type="checkbox" aria-label="Stance done"><h3>Fighting stance <code>idle</code></h3>
+      <p class="how">Guard up, bounce lightly on the spot for 3 seconds.</p><p class="why">The pose every other move starts and ends in.</p></li>
+    <li class="move"><input type="checkbox" aria-label="Walk forward done"><h3>Walk forward <code>walkF</code></h3>
+      <p class="how">5 steps forward in guard, at an even pace.</p><p class="why">The game measures the step length so the feet don't slide.</p></li>
+    <li class="move"><input type="checkbox" aria-label="Walk back done"><h3>Walk back <code>walkB</code></h3>
+      <p class="how">5 steps backward in guard.</p><p class="why">Walking back is the standing block; if skipped, the forward walk is played in reverse.</p></li>
+    <li class="move"><input type="checkbox" aria-label="Crouch done"><h3>Crouch <code>crouch</code></h3>
+      <p class="how">Drop low into a crouching guard and hold it for 2 seconds.</p><p class="why">Ducks punches, the low block, and the pose a jump is drawn in if no jump is filmed.</p></li>
+    <li class="move"><input type="checkbox" aria-label="Jump done"><h3>Jump <code>jump</code></h3>
+      <p class="how">Straight up, knees tucked, land back in stance.</p><p class="why">Needed for jump-ins; Kim has none yet.</p></li>
+    <li class="move"><input type="checkbox" aria-label="Punch done"><h3>Punch <code>punchMid</code></h3>
+      <p class="how">A straight punch at chest height toward the foe's side.</p><p class="why">Also the base for the jump punch and, until filmed, the specials.</p></li>
+    <li class="move"><input type="checkbox" aria-label="Kick done"><h3>Kick <code>kick</code></h3>
+      <p class="how">A front or side kick at waist height, leg fully out.</p><p class="why">Also the base for the jump kick.</p></li>
+    <li class="move"><input type="checkbox" aria-label="Cheer done"><h3>Victory cheer <code>victory</code></h3>
+      <p class="how">Arms up, celebrate on the spot for 3 seconds. Stay on the tape mark: don't walk at the phone.</p><p class="why">Plays after every round won.</p></li>
+    <li class="move"><input type="checkbox" aria-label="Fall done"><h3>Knockout fall <code>ko</code></h3>
+      <p class="how">Get hit, fall backward onto the mat, and lie still for 2 seconds.</p><p class="why">K.O.s and every knockdown (sweeps, Rising Fist, hits in the air).</p></li>
+    <li class="move"><input type="checkbox" aria-label="Get up done"><h3>Get up <code>getUp</code></h3>
+      <p class="how">From lying down, get up and finish in stance.</p><p class="why">Plays after every knockdown.</p></li>
+  </ol>
+
+  <h2>Signature move <span class="tag sig">one per fighter</span></h2>
+  <div class="callout">
+    <p style="margin:0 0 8px"><strong>Every fighter gets one special move of their own, invented by the performer on the day.</strong>
+      Anything that reads as a single strong attack works: a spinning backfist, a flying knee, a two-handed push, a throw-like
+      "energy" gesture. It's discovered in the recording: whatever they do becomes that fighter's signature.</p>
+    <ul class="rules">
+      <li>Keep it <strong>1 to 3 seconds</strong>, starting and ending in stance, staying roughly on the tape mark.</li>
+      <li>Ask the performer for a <strong>name</strong> (shown on screen as it fires, e.g. "THUNDER KNEE").</li>
+      <li>Decide its <strong>kind</strong>:
+        <em>strike</em> (hits where they stand), <em>rush</em> (travels forward into the foe),
+        <em>rise</em> (leaves the floor, beats jumpers) or <em>projectile</em> (a throwing gesture; the game adds the energy ball).</li>
+      <li>Decide its <strong>button</strong>: punch or kick. Every signature is input as <strong>← ↙ ↓ ↘ → + that button</strong> (half circle toward the foe).</li>
+      <li>A fighter without a filmed signature has none, so it's fine to add one in a later session.</li>
+    </ul>
+  </div>
+  <ol class="moves" style="margin-top:10px">
+    <li class="move sig"><input type="checkbox" aria-label="Signature done"><h3>Signature move <code>signature</code></h3>
+      <p class="how">Performer's own move, three takes. Write down: name ______________ · kind ________ · button ________</p>
+      <p class="why">Packed like any attack; the name, kind and button go in the moves file (below).</p></li>
+  </ol>
+
+  <h2>Recommended moves <span class="tag opt">better</span></h2>
+  <p class="lede">The game works without these. Each one is used automatically once it's in the fighter's data; until then the move borrows the punch or kick (or, for the crouch attacks, doesn't exist).</p>
+  <ol class="moves">
+    <li class="move opt"><input type="checkbox" aria-label="Crouch jab done"><h3>Crouch jab <code>crouchPunch</code></h3>
+      <p class="how">From the crouch, a quick punch forward, staying low the whole time.</p><p class="why">Down + punch. Not offered at all until filmed: sprites are never shrunk to fake a crouch.</p></li>
+    <li class="move opt"><input type="checkbox" aria-label="Sweep done"><h3>Leg sweep <code>sweep</code></h3>
+      <p class="how">From the crouch, sweep one leg out along the floor and back.</p><p class="why">Down + kick: the low attack that knocks down. Not offered until filmed.</p></li>
+    <li class="move opt"><input type="checkbox" aria-label="Jump kick done"><h3>Jump kick <code>jumpKick</code></h3>
+      <p class="how">Jump forward and kick at the top of the jump, land in stance.</p><p class="why">Kick in the air. Until filmed, the standing kick rides the jump arc.</p></li>
+    <li class="move opt"><input type="checkbox" aria-label="Jump punch done"><h3>Jump punch <code>jumpPunch</code></h3>
+      <p class="how">Jump forward and punch downward at the top, land in stance.</p><p class="why">Punch in the air.</p></li>
+    <li class="move opt"><input type="checkbox" aria-label="Po Blast done"><h3>Po Blast throw <code>blast</code></h3>
+      <p class="how">Both palms thrust forward from the hip, hold for a beat.</p><p class="why">↓ ↘ → + punch. The energy ball is drawn by the game.</p></li>
+    <li class="move opt"><input type="checkbox" aria-label="Rising Fist done"><h3>Rising Fist <code>risingPunch</code></h3>
+      <p class="how">A jumping uppercut: crouch, spring up with the fist overhead, land in stance.</p><p class="why">→ ↓ ↘ + punch, the anti-air.</p></li>
+    <li class="move opt"><input type="checkbox" aria-label="Rush Kick done"><h3>Rush Kick <code>rushKick</code></h3>
+      <p class="how">Two quick steps forward into a kick. Start on the tape mark; it's fine to travel.</p><p class="why">↓ ↙ ← + kick.</p></li>
+  </ol>
+
+  <h2>For later <span class="tag opt">future</span></h2>
+  <p class="lede">Not used by the game yet. They're cheap to film while the set is up and would let a future version add them.</p>
+  <ol class="moves">
+    <li class="move opt"><input type="checkbox" aria-label="Block high done"><h3>Standing block <code>blockHigh</code></h3><p class="how">Arms up in a tight guard, flinch as if a hit lands on it.</p><p class="why">A block pose instead of walking back.</p></li>
+    <li class="move opt"><input type="checkbox" aria-label="Block low done"><h3>Crouching block <code>blockLow</code></h3><p class="how">Same, from the crouch.</p><p class="why"></p></li>
+    <li class="move opt"><input type="checkbox" aria-label="Hit reaction done"><h3>Hit reaction <code>hurt</code></h3><p class="how">Head snaps back from a punch to the face, then recover to stance.</p><p class="why">A real flinch instead of the white flash.</p></li>
+    <li class="move opt"><input type="checkbox" aria-label="Throw done"><h3>Throw <code>throw</code></h3><p class="how">Grab forward and toss an imaginary opponent over the shoulder.</p><p class="why">A throw system.</p></li>
+    <li class="move opt"><input type="checkbox" aria-label="Taunt done"><h3>Taunt <code>taunt</code></h3><p class="how">A short show-off gesture at the foe.</p><p class="why"></p></li>
+  </ol>
+
+  <h2>Voice and lines <span class="tag">must</span></h2>
+  <p class="lede">Recorded close to the phone (or a mic) after the moves, in a quiet room. One clip per cell; a short shout or phrase is enough.
+    Files go to <code>wwwroot/audio/pofighter/&lt;id&gt;/&lt;mood&gt;-&lt;level&gt;.wav</code>, then run <code>scripts/pofighter/voices.ps1</code>.</p>
+  <div class="wrap">
+  <table>
+    <thead><tr><th>Mood</th><th>When it plays</th><th>1 (quiet) → 5 (all out)</th></tr></thead>
+    <tbody>
+      <tr><td><code>hurt</code></td><td>Taking hits; 5 is the knockout scream</td><td>grunt · "ugh" · "argh" · yell · scream</td></tr>
+      <tr><td><code>angry</code></td><td>Low health, blocked hits, losing; also shouted with a special</td><td>mutter · "hey!" · growl · "come on!" · roar</td></tr>
+      <tr><td><code>happy</code></td><td>Landing hits and combos</td><td>"heh" · "nice" · "yes!" · "got you!" · laugh</td></tr>
+      <tr><td><code>insult</code></td><td>Round start, the win quote</td><td>"hmph" · "that's it?" · "too slow" · "bring it!" · big taunt</td></tr>
+      <tr><td><code>celebrate</code></td><td>Winning the match</td><td>"yeah" · "alright!" · "woo!" · "champion!" · huge cheer</td></tr>
+    </tbody>
+  </table>
+  </div>
+  <ul class="rules" style="margin-top:10px">
+    <li><strong>The signature's name</strong>, shouted once as if throwing it.</li>
+    <li><strong>Three win quotes</strong>: short lines to the beaten foe (one sentence each). They go into <code>wwwroot/data/pofighter/quotes.json</code>; "{foe}" stands for the loser's name.</li>
+  </ul>
+
+  <h2>After the shoot: the moves file</h2>
+  <p class="lede">Frame ranges come from the contact sheets as before. The signature is one more move plus a block that names it; <code>pack.py</code> copies the block into the fighter's data.</p>
+<pre>{
+  "fighter": "newid",
+  ...
+  "moves": {
+    "idle":      {"from": 10, "to": 50, "step": 2, "anchor": "world", "loop": "pingpong"},
+    ...
+    "signature": {"from": 900, "to": 940, "step": 2, "anchor": "world", "loop": "once", "attack": true, "advance": true}
+  },
+  "signature": {"name": "Thunder Knee", "button": "kick", "kind": "rush", "damage": 18}
+}</pre>
+  <p class="lede"><code>kind</code>: strike, rush, rise or projectile. <code>damage</code> is optional (5–30, default 18). A <em>rise</em> filmed in the air is drawn from the footage, not lifted twice.</p>
+</main>
+</body>
+</html>

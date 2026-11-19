@@ -40,18 +40,56 @@ function openDb() {
     });
 }
 
+/**
+ * The Studio fighters, oldest first: [{ id, name, createdAt, portrait }]. `portrait` is a small
+ * head-and-shoulders data URL cut from the first stance picture (built fighters ship a
+ * <id>-portrait.webp instead), or '' when it cannot be made.
+ */
 export async function listCustomFighters() {
     try {
         const db = await openDb();
-        return await new Promise((resolve) => {
+        const records = await new Promise((resolve) => {
             const tx = db.transaction(STORE_NAME, 'readonly');
             const req = tx.objectStore(STORE_NAME).getAll();
-            req.onsuccess = () => resolve((req.result || []).map(r => ({ id: r.id, name: r.name, createdAt: r.createdAt })));
+            req.onsuccess = () => resolve(req.result || []);
             req.onerror = () => resolve([]);
         });
+        records.sort((a, b) => (a.createdAt ?? 0) - (b.createdAt ?? 0));
+        return await Promise.all(records.map(async r => ({
+            id: r.id, name: r.name, createdAt: r.createdAt, portrait: await portraitOf(r),
+        })));
     } catch {
         return [];
     }
+}
+
+/** listCustomFighters as a JSON string, for the Blazor page (trimmed WASM reads it with JsonDocument). */
+export async function listCustomFightersJson() {
+    return JSON.stringify(await listCustomFighters());
+}
+
+const portraits = new Map();   // id → data URL, so the grid does not re-cut it on every visit
+
+async function portraitOf(record) {
+    if (portraits.has(record.id)) return portraits.get(record.id);
+    let url = '';
+    try {
+        const f = record.data?.moves?.idle?.frames?.[0];
+        if (f && record.sheetDataUrl) {
+            const img = new Image();
+            img.src = record.sheetDataUrl;
+            await img.decode();
+            // The top 45% of the stance picture, squared off around its middle.
+            const side = Math.min(f.w, Math.round(f.h * 0.45));
+            const sx = f.x + Math.max(0, Math.round((f.w - side) / 2));
+            const c = document.createElement('canvas');
+            c.width = c.height = 96;
+            c.getContext('2d').drawImage(img, sx, f.y, side, side, 0, 0, 96, 96);
+            url = c.toDataURL('image/png');
+        }
+    } catch { url = ''; }
+    portraits.set(record.id, url);
+    return url;
 }
 
 export async function getCustomFighter(id) {
@@ -406,11 +444,27 @@ export function createStudioController(videoEl, previewCanvas, statusEl, dotnetR
 
     const setStatus = (msg) => { if (statusEl) statusEl.textContent = msg; };
 
+    // Per move: how many pictures, and a small thumbnail of the middle one for the wizard's
+    // move card. Thumbnails are cached per bucket, so a capture only redraws its own.
+    const thumbs = new Map();
+    const thumbOf = bucket => {
+        if (!bucket.length) return '';
+        if (thumbs.has(bucket)) return thumbs.get(bucket);
+        const cut = bucket[Math.floor(bucket.length / 2)];
+        const c = document.createElement('canvas');
+        c.width = c.height = 96;
+        const scale = Math.min(96 / cut.w, 96 / cut.h);
+        c.getContext('2d').drawImage(cut.canvas, (96 - cut.w * scale) / 2, 96 - cut.h * scale, cut.w * scale, cut.h * scale);
+        const url = c.toDataURL('image/webp', 0.7);
+        thumbs.set(bucket, url);
+        return url;
+    };
     const notifyCounts = () => {
         const counts = {};
-        for (const m of STUDIO_MOVES) counts[m.id] = buckets[m.id].length;
+        for (const m of STUDIO_MOVES) counts[m.id] = { n: buckets[m.id].length, thumb: thumbOf(buckets[m.id]) };
         dotnetRef?.invokeMethodAsync?.('OnStudioCounts', JSON.stringify(counts)).catch(() => {});
     };
+    const progress = pct => dotnetRef?.invokeMethodAsync?.('OnStudioProgress', Math.round(pct)).catch(() => {});
 
     const drawLoop = () => {
         if (!stream || !videoEl || !previewCanvas) return;
@@ -437,12 +491,12 @@ export function createStudioController(videoEl, previewCanvas, statusEl, dotnetR
                 videoEl.srcObject = stream;
                 await videoEl.play();
                 setStatus(vision.mode === 'mediapipe'
-                    ? 'Webcam + MediaPipe AI cutout ready! Pick a move and hold Capture.'
-                    : 'Webcam ready (offline silhouette mode — step out & click Capture BG first).');
+                    ? 'Webcam ready, with the AI cut-out.'
+                    : 'Webcam ready, in silhouette mode: capture the empty room first.');
                 drawLoop();
                 return true;
             } catch {
-                setStatus('Camera unavailable — upload a short video clip instead.');
+                setStatus('The camera is not available. Upload a short clip instead.');
                 return false;
             }
         },
@@ -450,22 +504,23 @@ export function createStudioController(videoEl, previewCanvas, statusEl, dotnetR
             if (!videoEl || videoEl.readyState < 2) return false;
             wctx.drawImage(videoEl, 0, 0, work.width, work.height);
             bgImageData = wctx.getImageData(0, 0, work.width, work.height);
-            setStatus('Background plate captured.');
+            setStatus('Background captured. Now record each move: tap a card and perform it.');
             return true;
         },
         async captureMove(moveId) {
             if (!stream || !videoEl || videoEl.readyState < 2) return 0;
             vision = vision || await ensureVision();
             buckets[moveId] = [];
-            setStatus(`Recording ${moveId}…`);
+            setStatus(`Recording ${STUDIO_MOVES.find(m => m.id === moveId)?.label ?? moveId}…`);
             for (let i = 0; i < 8; i++) {
                 wctx.drawImage(videoEl, 0, 0, work.width, work.height);
                 const cut = cutFrame(work, vision, bgImageData);
                 if (cut) buckets[moveId].push(cut);
+                progress((i + 1) * 100 / 8);
                 await new Promise(r => setTimeout(r, 110));
             }
             notifyCounts();
-            setStatus(`Captured ${buckets[moveId].length} frames for ${moveId}.`);
+            setStatus(`${buckets[moveId].length} pictures of ${STUDIO_MOVES.find(m => m.id === moveId)?.label ?? moveId}.`);
             return buckets[moveId].length;
         },
         async importVideo(inputEl) {
@@ -475,13 +530,14 @@ export function createStudioController(videoEl, previewCanvas, statusEl, dotnetR
             try {
                 const res = await extractFromVideoFile(file, (pct, mode) => {
                     setStatus(`Extracting moves (${mode}): ${pct}%`);
+                    progress(pct);
                 });
                 buckets = res.buckets;
                 notifyCounts();
                 const total = Object.values(buckets).reduce((a, b) => a + b.length, 0);
                 setStatus(total > 0
-                    ? `Extracted ${total} frames (${res.mode}). Click Save & Fight!`
-                    : 'No performer detected — try better lighting or contrast.');
+                    ? `Found ${total} pictures. Check the moves, then save.`
+                    : 'Nobody was found in the clip. Try better lighting or a plainer background.');
                 return total > 0;
             } catch (err) {
                 setStatus(`Video error: ${err?.message ?? err}`);

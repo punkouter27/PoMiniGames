@@ -60,6 +60,22 @@ public interface IStorageService
     Task RecordPoBrawlDemoResultAsync(
         string winnerFighterId, string loserFighterId, bool isDraw);
 
+    // PoFighter CPU-vs-CPU tournament fighter Elo (one row per fighter)
+    Task<List<PoFighterFighterRating>> GetPoFighterRatingsAsync();
+
+    /// <summary>
+    /// Records one PoFighter bout and returns both fighters' ratings as stored afterwards
+    /// (winner first), or null when storage is unavailable and the bout was dropped.
+    /// </summary>
+    Task<(PoFighterFighterRating Winner, PoFighterFighterRating Loser)?> RecordPoFighterBoutAsync(
+        string winnerFighterId, string loserFighterId, bool isDraw);
+
+    /// <summary>
+    /// A fighter's most recent rated bouts, newest first (at most <paramref name="take"/>), for
+    /// the dossier's form and Elo history. Empty when storage is unavailable.
+    /// </summary>
+    Task<List<PoFighterBout>> GetPoFighterBoutsAsync(string fighterId, int take);
+
     // ── PoBrawl online player Elo (one row per principal, head-to-head over SignalR) ──
     //
     // Deliberately separate from the demo fighter board — see PoBrawlPlayerRating's

@@ -1,0 +1,8 @@
+{
+  "fighter": "kim",
+  "align": true,
+  "floor": true,
+  "moves": {
+    "ko": { "pin": true }
+  }
+}

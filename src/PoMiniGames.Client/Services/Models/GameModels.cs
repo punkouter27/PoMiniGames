@@ -6,6 +6,9 @@ global using GameLeaderboardDto = PoMiniGames.Domain.Models.GameLeaderboardDto;
 global using LeaderboardEntryDto = PoMiniGames.Domain.Models.LeaderboardEntryDto;
 global using MarbleRaceHighScore = PoMiniGames.Domain.Models.MarbleRaceHighScore;
 global using PoBrawlDemoResultRequest = PoMiniGames.Domain.Models.PoBrawlDemoResultRequest;
+global using PoFighterBoutResultRequest = PoMiniGames.Domain.Models.PoFighterBoutResultRequest;
+global using PoFighterFighterRating = PoMiniGames.Domain.Models.PoFighterFighterRating;
+global using PoFighterBout = PoMiniGames.Domain.Models.PoFighterBout;
 global using PoBrawlHighScore = PoMiniGames.Domain.Models.PoBrawlHighScore;
 global using PoBrawlLadderEntry = PoMiniGames.Domain.Models.PoBrawlLadderEntry;
 

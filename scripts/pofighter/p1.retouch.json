@@ -1,0 +1,8 @@
+{
+  "fighter": "p1",
+  "align": true,
+  "floor": true,
+  "moves": {
+    "victory": { "keep": [0, 13] }
+  }
+}

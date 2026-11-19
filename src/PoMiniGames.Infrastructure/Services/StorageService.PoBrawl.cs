@@ -294,11 +294,11 @@ public partial class StorageService
     /// <summary>
     /// Current stored rating for a fighter, or the configured seed when it has never fought.
     /// </summary>
-    private async Task<int> ReadFighterEloAsync(TableClient table, string fighterId)
+    private async Task<int> ReadFighterEloAsync(TableClient table, string fighterId, string partition = PoBrawlEloPartition)
     {
         try
         {
-            var entity = await table.GetEntityAsync<TableEntity>(PoBrawlEloPartition, fighterId);
+            var entity = await table.GetEntityAsync<TableEntity>(partition, fighterId);
             return entity.Value.GetInt32("Elo") ?? _fighterElo.SeedElo;
         }
         catch (RequestFailedException ex) when (ex.Status == 404)
@@ -327,12 +327,13 @@ public partial class StorageService
     /// </para>
     /// </remarks>
     private Task ApplyFighterDeltaAsync(
-        TableClient table, string fighterId, int delta, MatchResult result, string stamp, bool undo = false) =>
+        TableClient table, string fighterId, int delta, MatchResult result, string stamp, bool undo = false,
+        string partition = PoBrawlEloPartition, Func<string, string>? displayName = null) =>
         TableConcurrency.UpdateWithRetryAsync<TableEntity>(
             table,
-            partitionKey: PoBrawlEloPartition,
+            partitionKey: partition,
             rowKey: fighterId,
-            factory: () => new TableEntity(PoBrawlEloPartition, fighterId),
+            factory: () => new TableEntity(partition, fighterId),
             mutate: e =>
             {
                 var current = e.GetInt32("Elo") ?? _fighterElo.SeedElo;
@@ -340,7 +341,7 @@ public partial class StorageService
                 e["FighterId"] = fighterId;
                 // Resolved server-side every write, so a roster rename lands on the next match
                 // instead of leaving the board showing a name nobody uses any more.
-                e["DisplayName"] = PoBrawlRoster.DisplayName(fighterId);
+                e["DisplayName"] = (displayName ?? PoBrawlRoster.DisplayName)(fighterId);
                 e["Elo"] = _fighterElo.ApplyDelta(current, delta);
                 // Max(0, …) so a roll-back can never drive a counter negative if the row it is
                 // undoing was itself lost to a concurrent rewrite.

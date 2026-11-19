@@ -7,6 +7,10 @@ A phone that follows the performer pans, tilts and zooms. Measured on the backgr
 [a, b, tx, c, d, ty] that maps its pixels onto the move's first picture. pack.py uses it to
 keep the fighter one size through a move, to pin "world" moves to one spot on the floor, and
 to recover the travel a following camera hides. Writes <cut_dir>/camera.json.
+
+It also measures each move's first picture against the idle stance's first picture and stores the
+zoom between them under "__global__" (move pixels -> idle pixels), so pack.py's "scaleFrom": "idle"
+can size every move from the stance instead of from its own pose.
 """
 import json
 import pathlib
@@ -57,7 +61,9 @@ def main() -> None:
     orb = cv2.ORB_create(3000)
     matcher = cv2.BFMatcher(cv2.NORM_HAMMING, crossCheck=True)
     small = 0.5
-    out = {}
+    out = {"__global__": {}}
+    first = lambda mv: sorted(mv["frames"] if "frames" in mv else range(mv["from"], mv["to"] + 1, mv["step"]))[0]
+    stance = background(frames, cut, first(cfg["moves"]["idle"]), small)
     for name, mv in cfg["moves"].items():
         ids = sorted(mv["frames"] if "frames" in mv else range(mv["from"], mv["to"] + 1, mv["step"]))
         chain = {ids[0]: IDENTITY.copy()}
@@ -67,8 +73,11 @@ def main() -> None:
             chain[b] = compose(chain[a], step_transform(orb, matcher, prev, cur, small))
             prev = cur
         out[name] = {f"f{i:04d}": [round(v, 5) for v in chain[i].ravel()] for i in ids}
+        to_stance = step_transform(orb, matcher, stance, background(frames, cut, ids[0], small), small)
+        out["__global__"][name] = round(float(np.hypot(*to_stance[0, :2])), 5)
         zooms = [float(np.hypot(*chain[i][0, :2])) for i in ids]
-        print(f"{name}: zoom {min(zooms):.3f}-{max(zooms):.3f}, pan x {chain[ids[-1]][0, 2]:+.0f}px")
+        print(f"{name}: zoom {min(zooms):.3f}-{max(zooms):.3f}, pan x {chain[ids[-1]][0, 2]:+.0f}px, "
+              f"vs stance x{out['__global__'][name]:.3f}")
     (cut / "camera.json").write_text(json.dumps(out))
 
 

@@ -7,8 +7,17 @@
 //                              [data-pf-move="<move>"]     move-list rows (lit while playing)
 //                              [data-pf-btn="<control>"]   touch buttons (left, kick, …)
 //                              [data-pf-action]            reset / slow buttons
+//                              [data-pf-moves]             the move-card strip; it folds
+//                                                          (is-collapsed) after IDLE_FOLD_MS
+//                                                          without input
+//   PoFighter.startDemo(root, exitRef) → the CPU-vs-CPU demo instead (demo.js)
+//   PoFighter.startTournament(root, dotnetRef, ratings) → the 16-slot tournament (tournament.js)
+//   PoFighter.startArcade(root, dotnetRef, fighterId, difficulty, ratings) → 1P vs CPU ladder (arcade.js)
+//   PoFighter.startVersus(root, dotnetRef, p1Id, p2Id) → local 2-player match (arcade.js)
 //   PoFighter.stop()       → cancels the loop and removes every listener
 //   PoFighter.peek()       → a copy of the room state (browser tests)
+//   PoFighter.hideSheet(id) / showDialog(el) / closeDialog(el) → the page's popover sheet and
+//                            the Studio <dialog> (Blazor cannot call element methods itself)
 //
 // The page's markup is static, so the engine writes the counter and the highlights straight
 // into it; there are no .NET callbacks. Nothing here is scored, saved or sent anywhere.
@@ -17,7 +26,15 @@ import { WORLD, ACTIONS, createState, reset, step, frameAt } from './sim.js';
 import { BUTTONS, ButtonEdges, activePad, pressed, stick } from '../platform/gamepadBus.js';
 import { createStage } from '../platform/stage/stage.js';
 import { fitWorld } from '../platform/2d/camera2d.js';
-import { listCustomFighters, getCustomFighter } from './studio.js';
+import { hitstop, vibrate } from '../platform/impactBus.js';
+import { listCustomFighters } from './studio.js';
+import { loadFighter, drawWall, drawFloor, FighterPainter, setKeyLight } from './art.js';
+import { createFightFx } from './fx.js';
+import { createFightAudio, createFoley } from './sfx.js';
+import { createPostPass } from './post.js';
+import { startDemo as runDemo } from './demo.js';
+import { startTournament as runTournament } from './tournament.js';
+import { startArcade as runArcade, startVersus as runVersus2p } from './arcade.js';
 
 const KEYS = {
     ArrowLeft: 'left', KeyA: 'left', ArrowRight: 'right', KeyD: 'right',
@@ -30,61 +47,50 @@ const PAD_ATTACKS = {
     [BUTTONS.west]: 'punchMid', [BUTTONS.south]: 'kick',
     [BUTTONS.lb]: 'victory', [BUTTONS.rb]: 'ko',
 };
+/** The move strip folds into its "?" pill after this long without input. */
+const IDLE_FOLD_MS = 5000;
 const reducedMotion = () => document.documentElement.dataset.motion === 'reduce'
     || !!window.matchMedia?.('(prefers-reduced-motion: reduce)').matches;
 
 let run = null;
-
-function assetUrl(path) {
-    return new URL(path, document.baseURI).href;
-}
-
-function loadImage(src) {
-    return new Promise((resolve, reject) => {
-        const img = new Image();
-        img.onload = () => resolve(img);
-        img.onerror = () => reject(new Error(`PoFighter: could not load ${src}`));
-        img.src = src;
-    });
-}
 
 async function start(root, fighterId = 'p1') {
     stop();
     const session = { stopped: false, cleanup: [] };
     run = session;
 
-    let data, sheet;
-    if (fighterId && fighterId !== 'p1') {
-        const custom = await getCustomFighter(fighterId);
-        if (!custom) return false;
-        data = custom.data;
-        sheet = await loadImage(custom.sheetDataUrl);
-    } else {
-        const base = `data/pofighter/${fighterId || 'p1'}`;
-        data = await (await fetch(assetUrl(`${base}.json`))).json();
-        sheet = await loadImage(assetUrl(`data/pofighter/${data.sheet}`));
-    }
-    if (session.stopped) return false;
+    const fighter = await loadFighter(fighterId || 'p1');
+    if (!fighter || session.stopped) return false;
+    const { data, sheet } = fighter;
 
     const canvas = root.querySelector('[data-pf-canvas]');
     const hitsEl = root.querySelector('[data-pf-hits]');
     const rows = new Map([...root.querySelectorAll('[data-pf-move]')].map(el => [el.dataset.pfMove, el]));
     const state = createState();
     session.state = state;
+    const painter = new FighterPainter();
 
     const keys = new Set(), touch = new Set(), pad = {};
     const tapped = new Set();     // controls pressed since the last step, so a quick tap between
                                   // two frames is not lost
     const presses = [];           // attack presses since the last step, in the order they came
     let slow = false;
+    // The fight's effects and sound (fx.js, sfx.js, post.js), aimed at the bag.
+    const fx = createFightFx({ ground: WORLD.ground });
+    const sfx = createFightAudio({ width: WORLD.width });
+    const foley = createFoley(sfx, fx);   // the room opts out of camera shake
+    const t0 = performance.now();
+    let cheered = false;
     const stage = createStage({
         canvas, maxDpr: 2, maxDt: 0.05, pauseOn: ['hidden', 'blur'], exclude: ['shake'],
-        timeScale: () => (slow ? 0.25 : 1),
+        // Slow motion, times the shared hitstop (a landed hit freezes the room for a beat).
+        timeScale: () => (slow ? 0.25 : 1) * (globalThis.PoImpact?.getTimeScale?.() ?? 1),
         onStep: dt => stepRoom(dt),
-        onFrame: () => { stage.render(draw); syncHud(); },
+        onFrame: () => { stage.render(draw); post.present(performance.now() / 1000); syncHud(); },
     });
     const ctx = stage.ctx;
-    session.cleanup.push(() => stage.dispose());
+    const post = createPostPass(canvas);
+    session.cleanup.push(() => stage.dispose(), () => post.dispose(), () => sfx.dispose());
     // Hidden tab or lost focus: the room holds still and forgets held controls.
     const forget = () => { keys.clear(); touch.clear(); presses.length = 0; tapped.clear(); };
     stage.on('pause', forget);
@@ -92,6 +98,12 @@ async function start(root, fighterId = 'p1') {
     if (!document.hasFocus()) stage.setPaused(true, 'blur');
     const padEdges = new ButtonEdges();
     let shownHits = -1, shownMove = '';
+    const strip = root.querySelector('[data-pf-moves]');
+    let lastInput = performance.now();
+    const woke = () => {
+        lastInput = performance.now();
+        if (strip?.classList.contains('is-collapsed')) strip.classList.remove('is-collapsed');
+    };
 
     const on = (target, type, handler, options) => {
         target.addEventListener(type, handler, options);
@@ -99,6 +111,7 @@ async function start(root, fighterId = 'p1') {
     };
     const device = name => { if (root.dataset.pfDevice !== name) root.dataset.pfDevice = name; };
     const press = control => {
+        woke();
         tapped.add(control);
         if (ACTIONS.includes(control)) presses.push(control);
     };
@@ -109,7 +122,7 @@ async function start(root, fighterId = 'p1') {
     };
 
     on(window, 'keydown', e => {
-        if (e.ctrlKey || e.altKey || e.metaKey || e.target?.closest?.('input, textarea, select, dialog')) return;
+        if (e.ctrlKey || e.altKey || e.metaKey || e.target?.closest?.('input, textarea, select, dialog, [popover]')) return;
         const control = KEYS[e.code];
         if (control) {
             e.preventDefault();
@@ -125,7 +138,8 @@ async function start(root, fighterId = 'p1') {
         const release = () => touch.delete(control);
         on(btn, 'pointerdown', e => {
             e.preventDefault();
-            device('touch');
+            // A mouse click on a move card plays it without switching to the touch layout.
+            if (e.pointerType !== 'mouse') { device('touch'); vibrate([8]); }
             touch.add(control);
             press(control);
         });
@@ -134,6 +148,8 @@ async function start(root, fighterId = 'p1') {
         on(btn, 'pointerleave', release);
         on(btn, 'contextmenu', e => e.preventDefault());
     }
+    const toggle = root.querySelector('[data-pf-moves-toggle]');
+    if (toggle) on(toggle, 'click', woke);
     for (const btn of root.querySelectorAll('[data-pf-action]')) {
         on(btn, 'click', () => (btn.dataset.pfAction === 'reset' ? doReset() : toggleSlow()));
     }
@@ -152,24 +168,12 @@ async function start(root, fighterId = 'p1') {
         if (went.length || pad.left || pad.right || pad.up || pad.down) device('pad');
     }
 
-    function drawStage() {
-        const far = 4000;   // the wall and floor run past the world so wide screens have no bars
-        const wall = ctx.createLinearGradient(0, 0, 0, WORLD.ground);
-        wall.addColorStop(0, '#232a45');
-        wall.addColorStop(1, '#4a5580');
-        ctx.fillStyle = wall;
-        ctx.fillRect(-far, -far, far * 2 + WORLD.width, far + WORLD.ground);
-        ctx.fillStyle = 'rgba(255,255,255,0.045)';
-        for (let x = -1320; x < WORLD.width + 1400; x += 220) ctx.fillRect(x, 0, 6, WORLD.ground - 70);
-        ctx.fillStyle = '#2d3558';
-        ctx.fillRect(-far, WORLD.ground - 70, far * 2 + WORLD.width, 70);
-        const floor = ctx.createLinearGradient(0, WORLD.ground - 34, 0, WORLD.height);
-        floor.addColorStop(0, '#8a6a4c');
-        floor.addColorStop(1, '#4f3a29');
-        ctx.fillStyle = floor;
-        ctx.fillRect(-far, WORLD.ground - 34, far * 2 + WORLD.width, far);
-        ctx.fillStyle = 'rgba(0,0,0,0.16)';
-        ctx.fillRect(-far, WORLD.ground - 34, far * 2 + WORLD.width, 3);
+    function drawStage(t) {
+        const still = reducedMotion();
+        if (!still) setKeyLight(-1 + 0.22 * Math.sin(t * 0.13), -0.8 + 0.08 * Math.sin(t * 0.29));
+        drawWall(ctx, WORLD.width, WORLD.ground, still ? 0 : t);
+        drawFloor(ctx, WORLD.width, WORLD.ground, WORLD.height);
+        fx.drawBack(ctx, t);
     }
 
     function drawBag() {
@@ -217,13 +221,9 @@ async function start(root, fighterId = 'p1') {
         const def = data.moves[state.move];
         const f = def.frames[frameAt(def, state.t).index];
         // The filmed jump already rises in the pictures; the shadow only shrinks.
-        const squash = Math.max(0.35, 1 - state.lift / (WORLD.jumpLift * 2.2));
-        ctx.fillStyle = 'rgba(0,0,0,0.3)';
-        ctx.beginPath();
-        ctx.ellipse(state.x, WORLD.ground - 4, 78 * squash, 13 * squash, 0, 0, Math.PI * 2);
-        ctx.fill();
-        const res = data.res ?? 1;   // sheet pixels per world unit
-        ctx.drawImage(sheet, f.x, f.y, f.w, f.h, state.x - f.ax, WORLD.ground - f.ay, f.w / res, f.h / res);
+        const reflect = (document.documentElement.dataset.gfx ?? 'high') === 'low' ? 0 : 0.16;
+        painter.paint(ctx, sheet, data, f, state.x, WORLD.ground,
+            { move: state.move, glow: fx.glowFor(state.x, 1), reflect, trail: true });
     }
 
     function draw() {
@@ -231,15 +231,26 @@ async function start(root, fighterId = 'p1') {
         const cam = fitWorld(cssW, cssH, WORLD.width, WORLD.height, { alignY: 'bottom' });
         stage.setTransform(cam.scale, cam.x, cam.y);
         ctx.imageSmoothingQuality = 'high';
-        drawStage();
+        drawStage((performance.now() - t0) / 1000);
         drawBag();
         drawFighter();
+        fx.drawFront(ctx);
     }
 
     function syncHud() {
         if (state.hits !== shownHits) {
+            const landed = shownHits >= 0 && state.hits > shownHits;
             shownHits = state.hits;
-            if (hitsEl) hitsEl.textContent = String(state.hits);
+            if (hitsEl) {
+                hitsEl.textContent = String(state.hits);
+                if (landed && !reducedMotion()) {
+                    hitsEl.animate([{ transform: 'scale(1.7)', color: '#ffffff' }, { transform: 'scale(1)' }],
+                        { duration: 260, easing: 'cubic-bezier(.3,1.6,.5,1)' });
+                }
+            }
+        }
+        if (strip && performance.now() - lastInput > IDLE_FOLD_MS && !strip.classList.contains('is-collapsed')) {
+            strip.classList.add('is-collapsed');
         }
         if (state.move !== shownMove) {
             rows.get(shownMove)?.classList.remove('is-active');
@@ -251,17 +262,62 @@ async function start(root, fighterId = 'p1') {
     function stepRoom(dt) {
         readPad();
         const held = name => keys.has(name) || touch.has(name) || tapped.has(name) || !!pad[name];
+        if (keys.size || touch.size || pad.left || pad.right || pad.up || pad.down) woke();
+        const hitsBefore = state.hits;
         step(state, {
             left: held('left'), right: held('right'), up: held('up'), down: held('down'),
             attack: presses[0] ?? null,   // two pressed together: the first one plays
         }, dt, data);
         presses.length = 0;
         tapped.clear();
+        if (state.hits > hitsBefore) {   // a landed hit: sparks, light and a thud off the bag, a short hitstop
+            const kick = state.move === 'kick';
+            const e = { type: 'hit', move: state.move, combo: 0, x: WORLD.bagX - WORLD.bagHalf, y: WORLD.ground - state.hitY };
+            // Sparks bounce back off the bag toward the fighter, the way the old spray did.
+            fx.hit(e, -1, false, { sweat: false });
+            sfx.impact(e);
+            if (kick) post.kick(0.35);
+            hitstop(kick ? 70 : 45);
+        }
+        // Every tenth hit the fighter cheers, and so does the crowd.
+        if (state.move === 'victory' && !cheered) sfx.cheer(0.8);
+        cheered = state.move === 'victory';
+        foley.step([state], dt);
+        sfx.update(dt, { fighting: false });
+        fx.step(dt);
     }
     stage.start();
     stage.render(draw);
     syncHud();
     return true;
+}
+
+async function startDemo(root, exitRef) {
+    stop();
+    const session = { stopped: false, cleanup: [] };
+    run = session;
+    return runDemo(root, exitRef, session);
+}
+
+async function startTournament(root, dotnetRef, ratings) {
+    stop();
+    const session = { stopped: false, cleanup: [] };
+    run = session;
+    return runTournament(root, dotnetRef, ratings, session);
+}
+
+async function startArcade(root, dotnetRef, fighterId, difficulty, ratings) {
+    stop();
+    const session = { stopped: false, cleanup: [] };
+    run = session;
+    return runArcade(root, dotnetRef, { fighterId, difficulty, ratings }, session);
+}
+
+async function startVersus(root, dotnetRef, p1, p2) {
+    stop();
+    const session = { stopped: false, cleanup: [] };
+    run = session;
+    return runVersus2p(root, dotnetRef, { p1, p2 }, session);
 }
 
 function stop() {
@@ -273,7 +329,14 @@ function stop() {
 
 window.PoFighter = {
     start,
+    startDemo,
+    startTournament,
+    startArcade,
+    startVersus,
     stop,
     listFighters: listCustomFighters,
     peek: () => (run?.state ? { ...run.state } : null),
+    hideSheet: id => { const el = document.getElementById(id); if (el?.matches?.(':popover-open')) el.hidePopover(); },
+    showDialog: el => { if (el && !el.open) el.showModal(); },
+    closeDialog: el => { if (el?.open) el.close(); },
 };

@@ -1,0 +1,23 @@
+{
+  "p1": [
+    "I filmed that win in one take, {foe}. No retakes needed.",
+    "Go home and stretch, {foe}. You fought like it was Monday morning.",
+    "Every rooftop in this city knows my name. Now you do too.",
+    "That was the warm-up. Come back when you want the real thing.",
+    "You blinked, {foe}. I didn't."
+  ],
+  "kim": [
+    "Balance first, power second. You had neither, {foe}.",
+    "The dojo floor remembers everyone who falls on it. Welcome, {foe}.",
+    "Quiet feet, quick hands. Write it down.",
+    "You were loud, {foe}. I was faster.",
+    "Bow out next time. It saves us both the trouble."
+  ],
+  "default": [
+    "Is that all you brought, {foe}?",
+    "Train harder. I'll still be here.",
+    "Next time, bring a better plan, {foe}.",
+    "One round would have been enough.",
+    "I was just getting started."
+  ]
+}

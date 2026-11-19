@@ -32,6 +32,16 @@ when the canvas scales the world up. Anchors ("ax", "ay") and reach ("r") stay i
 the sheet rect ("x", "y", "w", "h") is in sheet pixels, so readers draw it at w / res.
 Frames are resized with premultiplied alpha (no halo from the hidden room colours), and
 identical cells (a getUp that replays the knockdown) are stored once.
+
+"scaleFrom": "idle" sizes every move from the idle stance (corrected by the camera zoom between the
+two clips, measured by camera.py) instead of from its own reference picture, whose pose (a wide
+stance, raised arms, a crouch) skews a height-based size. A move the performer filmed nearer or
+further from the phone takes "scaleAdjust" (e.g. 0.81 when the head is 23% bigger).
+
+"mirror": true is for a performer filmed facing screen-left. The game draws every fighter
+facing right (it flips the one on the right-hand side itself), so each cell is flipped, the
+anchor and reach swap sides, and travel changes sign: walking toward screen-left on video is
+walking forward in the game.
 """
 import hashlib
 import json
@@ -92,12 +102,25 @@ def main() -> None:
     stand_px, default_ground = cfg["standPx"], cfg.get("ground", "feet")
     fps = cfg["sourceFps"]
     res = float(cfg.get("res", 1))
+    mirror = bool(cfg.get("mirror"))
+    sign = -1 if mirror else 1   # travel toward screen-left is forward for a mirrored performer
 
     reference_colour = None
     if cfg.get("colorMatch"):
         idle = cfg["moves"]["idle"]
         first = idle["frames"][0] if "frames" in idle else idle["from"]
         reference_colour = colour(np.array(Image.open(cut / f"f{first:04d}.png")))
+
+    def ids_of(mv):
+        return mv["frames"] if "frames" in mv else list(range(mv["from"], mv["to"] + 1, mv["step"]))
+
+    # The stance's size, for "scaleFrom": "idle": world units per pixel of the idle clip.
+    idle_cfg = cfg["moves"]["idle"]
+    idle_ref = idle_cfg.get("refFrame", ids_of(idle_cfg)[0])
+    idle_cam = camera.get("idle", {})
+    idle_base = stand_px / (height(np.array(Image.open(cut / f"f{idle_ref:04d}.png"))[..., 3])
+                            * zoom(mat(idle_cam.get(f"f{idle_ref:04d}", IDENTITY))))
+    global_zoom = camera.get("__global__", {})
 
     cells, meta = [], {}
     for name, mv in cfg["moves"].items():
@@ -116,7 +139,12 @@ def main() -> None:
         # One size for the whole move: the reference picture stands stand_px tall.
         ref = ids.index(mv["refFrame"]) if "refFrame" in mv else 0
         ref_height_in_ref = height(alphas[ref]) * zoom(to_ref[ref])
-        base = mv.get("scale") or stand_px / ref_height_in_ref
+        if "scale" in mv:
+            base = mv["scale"]
+        elif cfg.get("scaleFrom") == "idle":
+            base = idle_base * global_zoom.get(name, 1.0) * mv.get("scaleAdjust", 1.0)
+        else:
+            base = stand_px / ref_height_in_ref
         scales = [base * zoom(m) for m in to_ref]
 
         mode = mv.get("ground", default_ground)
@@ -132,7 +160,7 @@ def main() -> None:
         room_x = [apply(m, x, g)[0] for m, x, g in zip(to_ref, xs, grounds)]
         rate = mv.get("rate", 1)
         seconds = span / fps / rate
-        travel = (room_x[-1] - room_x[a0 if mv.get("advance") else 0]) * base
+        travel = sign * (room_x[-1] - room_x[a0 if mv.get("advance") else 0]) * base
 
         if mv["anchor"] == "world":
             xs = [apply(m, *room)[0] for m in from_ref]
@@ -156,9 +184,13 @@ def main() -> None:
             size = (max(1, round(crop.width * sc * res)), max(1, round(crop.height * sc * res)))
             # Premultiplied: the room's colour under transparent pixels must not bleed in.
             crop = crop.convert("RGBa").resize(size, Image.LANCZOS).convert("RGBA")
+            behind, ahead = ax - x0, x1 - ax
+            if mirror:
+                crop = crop.transpose(Image.Transpose.FLIP_LEFT_RIGHT)
+                behind, ahead = ahead, behind
             # r = how far the outline reaches in front of the anchor; attacks hit with it.
-            frames.append({"src": i, "ax": round((ax - x0) * sc, 1), "ay": round((g - y0) * sc, 1),
-                           "r": round((x1 - ax) * sc, 1)})
+            frames.append({"src": i, "ax": round(behind * sc, 1), "ay": round((g - y0) * sc, 1),
+                           "r": round(ahead * sc, 1)})
             cells.append((crop, frames[-1]))
         meta[name] = {"loop": mv["loop"], "fps": round(fps / gap * rate, 3), "frames": frames}
         if "speed" in mv:
@@ -197,6 +229,12 @@ def main() -> None:
     fighter = cfg["fighter"]
     sheet.save(out / f"{fighter}.webp", quality=90, alpha_quality=100, method=6)
     data = {"fighter": fighter, "sheet": f"{fighter}.webp", "standHeight": stand_px, "res": res, "moves": meta}
+    # The fighter's own special (shot-list.html): its clip is the "signature" move above; this
+    # block names it and says which button and kind it is. Hand-tuned timings pass through too.
+    if cfg.get("signature") and "signature" in meta:
+        data["signature"] = cfg["signature"]
+    if cfg.get("frameData"):
+        data["frameData"] = cfg["frameData"]
     (out / f"{fighter}.json").write_text(json.dumps(data, separators=(",", ":")))
 
     template = (pathlib.Path(__file__).parent / "review.template.html").read_text(encoding="utf-8")

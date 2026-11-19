@@ -80,6 +80,12 @@
   --rz-body-background-color: var(--po-bg);
   --rz-base-background-color: var(--po-surface);
   --rz-text-color: var(--po-text);
+
+  /* PoFighter: arcade gold, the select-grid navy, and dark ink on gold. */
+  --pf-gold: #ffd23f;
+  --pf-navy: #2c3560;
+  --pf-navy-deep: #171c38;
+  --pf-ink: #1b1b1b;
 }
 
 @media (prefers-color-scheme: dark) {

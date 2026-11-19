@@ -62,7 +62,7 @@ public sealed class PlayerDataUnavailableException(string table, Exception inner
 /// no UserId to compare (name-keyed tables, and rows written before identity was stamped).
 /// </para>
 /// <para>
-/// <c>PoBrawlFighterRatings</c> is excluded on purpose: those rows rate CPU fighters from
+/// <c>PoBrawlFighterRatings</c> and <c>PoFighterRatings</c> are excluded on purpose: those rows rate CPU fighters from
 /// demo-mode matches, not players, so they are not the caller's data and erasing them would
 /// corrupt a shared board.
 /// </para>

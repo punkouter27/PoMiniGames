@@ -156,6 +156,48 @@ public partial class ApiService
         }
     }
 
+    /// <summary>One finished PoFighter tournament bout for the fighter Elo board.</summary>
+    public async Task<bool> SubmitPoFighterBoutAsync(PoFighterBoutResultRequest request)
+    {
+        try
+        {
+            using var response = await _http.PostAsJsonAsync(
+                "/api/pofighter/elo", request, ApiJsonContext.Default.PoFighterBoutResultRequest);
+            return response.IsSuccessStatusCode;
+        }
+        catch
+        {
+            return false;
+        }
+    }
+
+    /// <summary>The PoFighter fighter Elo board (fighters that have fought), or empty offline.</summary>
+    public async Task<PoFighterFighterRating[]> GetPoFighterRatingsAsync()
+    {
+        try
+        {
+            return await _http.GetFromJsonAsync("/api/pofighter/elo", ApiJsonContext.Default.PoFighterFighterRatingArray) ?? [];
+        }
+        catch
+        {
+            return [];
+        }
+    }
+
+    /// <summary>A built-in fighter's last rated bouts, newest first (the dossier), or empty offline.</summary>
+    public async Task<PoFighterBout[]> GetPoFighterBoutsAsync(string fighterId)
+    {
+        try
+        {
+            return await _http.GetFromJsonAsync($"/api/pofighter/elo/{Uri.EscapeDataString(fighterId)}/bouts",
+                ApiJsonContext.Default.PoFighterBoutArray) ?? [];
+        }
+        catch
+        {
+            return [];
+        }
+    }
+
     public async Task<bool> SubmitPoBrawlOnlineMatchAsync(PoBrawlMatchResultDto result)
     {
         var deadline = DateTime.UtcNow + OnlineMatchRetryBudget;

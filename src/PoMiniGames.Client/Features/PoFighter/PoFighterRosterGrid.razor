@@ -1,0 +1,164 @@
+@using PoMiniGames.Shared.Games
+
+@* The arcade select screen. The built-in fighters (PoFighterRoster) come first in roster order,
+   then this browser's Studio fighters (Customs, marked STUDIO).
+   - Full (the tournament field): 16 slots in a 4x4 grid, the rest EMPTY until a new fighter is
+     filmed and packed (scripts/pofighter/), since the bracket has 16 seats.
+   - Compact (every picker): only real fighters, larger tiles, and with OnCreate a last
+     "Create" tile that opens the Studio.
+   With OnSelect every real tile is a button (a picker, or the tournament field's dossier);
+   without it, it only shows the field and each fighter's Elo. Selected is P1's (gold) cursor,
+   Selected2 P2's (blue) one in the 2P picker.
+   Heading puts the arcade's slanted "SELECT YOUR FIGHTER" bar over the grid; ShowRandom adds a "?"
+   tile that runs a roulette over the fighters and then picks one (OnSelect fires once, at the end). *@
+@if (!string.IsNullOrEmpty(Heading))
+{
+    <div class="pfr-head" aria-hidden="true"><span>@Heading</span></div>
+}
+<div class="pfr-grid @(Compact ? "pfr-grid--compact" : "")" role="@(OnSelect.HasDelegate ? "radiogroup" : "list")" aria-label="@Label">
+    @{ var entries = Entries(); }
+    @for (var i = 0; i < (Compact ? entries.Count : Slots); i++)
+    {
+        var slot = i < entries.Count ? entries[i] : null;
+        if (slot is null)
+        {
+            <div class="pfr-tile pfr-tile--empty" role="@(OnSelect.HasDelegate ? "radio" : "listitem")"
+                 aria-disabled="true" aria-checked="false" aria-label="Empty slot @(i + 1)">
+                <span class="pfr-empty-mark material-symbols-outlined" aria-hidden="true">person_add</span>
+                <span class="pfr-name">EMPTY</span>
+            </div>
+        }
+        else
+        {
+            var f = slot;
+            var p1 = string.Equals(Selected, f.Id, StringComparison.OrdinalIgnoreCase);
+            var p2 = Selected2 is not null && string.Equals(Selected2, f.Id, StringComparison.OrdinalIgnoreCase);
+            var rolling = string.Equals(_rolling, f.Id, StringComparison.Ordinal);
+            var css = $"pfr-tile {(p1 ? "is-selected" : "")} {(p2 ? "is-selected-2" : "")} {(rolling ? "is-rolling" : "")}";
+            int? elo = !f.IsCustom && Ratings is not null && Ratings.TryGetValue(f.Id, out var rated) ? rated : null;
+            @if (OnSelect.HasDelegate)
+            {
+                <button type="button" class="@css" role="radio" data-spring="0.96" data-sonify
+                        aria-checked="@(p1 || p2 ? "true" : "false")" aria-label="@TileLabel(f, elo)"
+                        @onclick="() => OnSelect.InvokeAsync(f.Id)">
+                    @Tile(f, elo, p1 && (Selected2 is not null || Compact), p2)
+                </button>
+            }
+            else
+            {
+                <div class="@css" role="listitem" aria-label="@TileLabel(f, elo)">
+                    @Tile(f, elo, false, false)
+                </div>
+            }
+        }
+    }
+    @if (Compact && ShowRandom && OnSelect.HasDelegate && entries.Count > 1)
+    {
+        <button type="button" class="pfr-tile pfr-tile--random @(_rolling is not null ? "is-rolling" : "")" data-spring="0.96" data-sonify
+                disabled="@(_rolling is not null)" @onclick="RollAsync" aria-label="Random fighter">
+            <span class="pfr-random-mark" aria-hidden="true">?</span>
+            <span class="pfr-name">Random</span>
+        </button>
+    }
+    @if (Compact && OnCreate.HasDelegate)
+    {
+        <button type="button" class="pfr-tile pfr-tile--create" data-spring="0.96" data-sonify @onclick="OnCreate" aria-label="Create a fighter in the Studio">
+            <span class="pfr-empty-mark material-symbols-outlined" aria-hidden="true">add_a_photo</span>
+            <span class="pfr-name">Create</span>
+        </button>
+    }
+</div>
+
+@code {
+    /// <summary>Always 16: the tournament bracket's size.</summary>
+    public const int Slots = 16;
+
+    /// <summary>The highlighted fighter id (the pick, P1's pick, or the current champion).</summary>
+    [Parameter] public string? Selected { get; set; }
+
+    /// <summary>P2's pick in the 2P picker: a second, blue cursor.</summary>
+    [Parameter] public string? Selected2 { get; set; }
+
+    /// <summary>Set to make the tiles buttons; EMPTY slots never fire it.</summary>
+    [Parameter] public EventCallback<string> OnSelect { get; set; }
+
+    /// <summary>With Compact: a last tile that opens the Studio.</summary>
+    [Parameter] public EventCallback OnCreate { get; set; }
+
+    /// <summary>Only real fighters, larger tiles (pickers); off for the 16-seat tournament field.</summary>
+    [Parameter] public bool Compact { get; set; }
+
+    /// <summary>Fighter id → Elo from the board; a fighter that has not fought shows none.</summary>
+    [Parameter] public IReadOnlyDictionary<string, int>? Ratings { get; set; }
+
+    /// <summary>This browser's Studio fighters, after the built-in ones.</summary>
+    [Parameter] public IReadOnlyList<PoFighterCustom>? Customs { get; set; }
+
+    [Parameter] public string Label { get; set; } = "Fighters";
+
+    /// <summary>The slanted arcade header over the grid ("SELECT YOUR FIGHTER"); none when empty.</summary>
+    [Parameter] public string? Heading { get; set; }
+
+    /// <summary>With Compact and OnSelect: a "?" tile that rolls a roulette and picks at random.</summary>
+    [Parameter] public bool ShowRandom { get; set; }
+
+    private string? _rolling;
+
+    /// <summary>The roulette: the highlight hops over the fighters, slowing down, then lands and picks.</summary>
+    private async Task RollAsync()
+    {
+        var entries = Entries();
+        if (entries.Count == 0 || _rolling is not null) return;
+        var pick = entries[Random.Shared.Next(entries.Count)].Id;
+        var i = Random.Shared.Next(entries.Count);
+        for (var step = 0; step < 12; step++)
+        {
+            _rolling = entries[(i + step) % entries.Count].Id;
+            StateHasChanged();
+            await Task.Delay(50 + step * 9);
+        }
+        _rolling = pick;
+        StateHasChanged();
+        await Task.Delay(140);
+        _rolling = null;
+        await OnSelect.InvokeAsync(pick);
+    }
+
+    private sealed record Entry(string Id, string Name, string Portrait, bool IsCustom);
+
+    private List<Entry> Entries() =>
+    [
+        .. PoFighterRoster.Fighters.Select(f => new Entry(f.Id, f.Name, $"data/pofighter/{f.Id}-portrait.webp", false)),
+        .. (Customs ?? []).Select(c => new Entry(c.Id, c.Name, c.Portrait, true)),
+    ];
+
+    private static string TileLabel(Entry f, int? elo) =>
+        f.IsCustom ? $"{f.Name}, Studio fighter" : elo is { } e ? $"{f.Name}, Elo {e}" : f.Name;
+
+    private static RenderFragment Tile(Entry f, int? elo, bool p1Tag, bool p2Tag) => @<text>
+        @if (string.IsNullOrEmpty(f.Portrait))
+        {
+            <span class="pfr-empty-mark material-symbols-outlined" aria-hidden="true">person</span>
+        }
+        else
+        {
+            <img class="pfr-portrait" src="@f.Portrait" alt="" loading="lazy" />
+        }
+        <span class="pfr-name">@f.Name</span>
+        @if (f.IsCustom)
+        {
+            <span class="pfr-badge">Studio</span>
+        }
+        else if (elo is { } e)
+        {
+            <span class="pfr-elo">@e</span>
+        }
+        @if (p1Tag || p2Tag)
+        {
+            <span class="pfr-cursors" aria-hidden="true">
+                @if (p1Tag) { <span class="pfr-cursor pfr-cursor--p1">P1</span> }
+                @if (p2Tag) { <span class="pfr-cursor pfr-cursor--p2">P2</span> }
+            </span>
+        }
+    </text>;
+}
