@@ -1,7 +1,6 @@
 @inherits LayoutComponentBase
 @implements IDisposable
 @using PoMiniGamesClient.Models
-@inject PlayerNameService PlayerNames
 @inject ToastService ToastService
 @inject KioskCoordinator Kiosk
 @inject ScoreSyncService ScoreSync
@@ -21,8 +20,9 @@
        reaching the game. Visually hidden until focused. *@
     <a class="gl-skip-link" href="#main-content">Skip to content</a>
 
-    @* The estate header (.po-header, po-tokens.css): the app name upper-left, the
-       player's initials menu and the settings gear upper-right, on every route. *@
+    @* The Po page shell header (.po-header, po-tokens.css, AGENTS.md): the app name upper-left and the settings
+       gear upper-right, on every route. No sign-in here, so nothing stands in for an email: the player's
+       initials live in the settings sheet (Player) and the first-visit prompt. *@
     <header class="gl-top-bar po-header">
         @* <nav> landmark. The brand link IS this app's persistent navigation on
            every route, so a screen-reader user needs a landmark to jump to.
@@ -75,35 +75,6 @@
             @* Always in the DOM: a live region only announces changes to one that already exists. *@
             <span class="gl-sr-only" role="status" aria-live="polite">@_connectivityAnnouncement</span>
             <SectionOutlet SectionName="game-elo" />
-            <button type="button" class="gl-account-trigger"
-                    popovertarget="gl-account-menu"
-                    aria-haspopup="menu"
-                    aria-label="@($"Player 1 menu, initials {DisplayInitialsLabel}")"
-                    title="Player 1 Initials & Menu">
-                <span class="gl-account-initial" aria-hidden="true">P1</span>
-                <span class="gl-account-name gl-arcade-initials" aria-hidden="true">[@PlayerNames.Initials]</span>
-                <span class="material-symbols-outlined gl-account-caret" aria-hidden="true">expand_more</span>
-            </button>
-            <div id="gl-account-menu" popover="auto" class="gl-overflow-panel"
-                 role="menu" aria-label="Player Menu">
-                <p class="gl-overflow-head">PLAYER 1: <strong class="gl-arcade-initials">[@PlayerNames.Initials]</strong></p>
-                <button type="button" class="gl-overflow-item" role="menuitem"
-                        popovertarget="gl-account-menu" popovertargetaction="hide"
-                        @onclick="PlayerNames.RequestOpenPrompt">
-                    <span class="material-symbols-outlined gl-overflow-icon" aria-hidden="true">edit</span>
-                    <span>Change initials</span>
-                </button>
-                @foreach (var (path, label, icon) in MenuPages)
-                {
-                    <button type="button" class="gl-overflow-item gl-overflow-item--desktop-only" role="menuitem"
-                            aria-current="@(IsCurrent(path) ? "page" : null)"
-                            popovertarget="gl-account-menu" popovertargetaction="hide"
-                            @onclick="() => GoTo(path)">
-                        <span class="material-symbols-outlined gl-overflow-icon" aria-hidden="true">@icon</span>
-                        <span>@label</span>
-                    </button>
-                }
-            </div>
             @* The one settings control (Po standard): a gear, last on the right. It opens the
                settings sheet in place, so a game keeps running underneath; /settings is the
                same sheet for a deep link or a new tab. *@
@@ -161,7 +132,6 @@
 </div>
 
 @code {
-    private Action? _onPlayerStateChanged;
     private Action? _onOnlineStateChanged;
     private Action? _onToastsChanged;
     private Action<int>? _onScoresFlushed;
@@ -174,25 +144,8 @@
     private string _connectivityAnnouncement = "";
     private bool _announcedOffline;
 
-    // The account menu's page destinations, in order, with the glyph each one shows.
-    // Settings is the gear beside the menu, not an item in it.
-    private static readonly (string Path, string Label, string Icon)[] MenuPages =
-    [
-        ("/profile", "My Stats", "person"),
-        ("/leaderboards", "Leaderboards", "leaderboard"),
-    ];
-
-    private bool IsCurrent(string path) =>
-        string.Equals(new Uri(NavigationManager.Uri).AbsolutePath.TrimEnd('/'), path, StringComparison.OrdinalIgnoreCase);
-
-    private string DisplayInitialsLabel =>
-        string.IsNullOrWhiteSpace(PlayerNames.Initials) ? "blank" : PlayerNames.Initials;
-
     protected override void OnInitialized()
     {
-        _onPlayerStateChanged = () => InvokeAsync(StateHasChanged);
-        PlayerNames.StateChanged += _onPlayerStateChanged;
-
         _onOnlineStateChanged = () => InvokeAsync(() =>
         {
             if (!OnlineStatus.IsOnline)
@@ -384,19 +337,8 @@
         Settings.RequestOpen();
     }
 
-    // Account-menu destinations: menu items are buttons, so they navigate in code.
-    private async Task GoTo(string path)
-    {
-        await Feedback.TapAsync();
-        NavigationManager.NavigateTo(path);
-    }
-
     public void Dispose()
     {
-        if (_onPlayerStateChanged is not null)
-        {
-            PlayerNames.StateChanged -= _onPlayerStateChanged;
-        }
         if (_onOnlineStateChanged is not null)
         {
             OnlineStatus.StateChanged -= _onOnlineStateChanged;

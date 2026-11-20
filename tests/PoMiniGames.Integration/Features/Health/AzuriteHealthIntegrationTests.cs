@@ -33,7 +33,7 @@ public sealed class AzuriteHealthIntegrationTests : IAsyncLifetime
 
     public Task DisposeAsync() => _azurite is null ? Task.CompletedTask : _azurite.DisposeAsync().AsTask();
 
-    [Fact]
+    [DockerFact]
     public async Task RootHealthEndpoint_ReturnsHealthy_WhenAzuriteTableIsConfigured()
     {
         if (!_dockerAvailable)

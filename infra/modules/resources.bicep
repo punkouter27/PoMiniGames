@@ -1,6 +1,14 @@
-param name string
 param location string
 param tags object
+
+@description('App Service name (Po web standard: app-<repo lowercase>)')
+param webAppName string
+
+@description('App Service plan name (F1, Windows)')
+param appServicePlanName string
+
+@description('Storage account name (Tables + Blobs)')
+param storageAccountName string
 
 @description('The name of the existing Key Vault in PoShared')
 param sharedKeyVaultName string = 'kv-poshared2'
@@ -11,14 +19,7 @@ param sharedAppInsightsName string = 'poappideinsights8f9c9a4e'
 @description('The name of the resource group containing shared resources')
 param sharedResourceGroupName string = 'PoShared'
 
-var resourceToken = toLower(uniqueString(subscription().id, name, location))
-// Solution identity baked into names per Azure Cloud Adoption Framework guidance.
-// Names stay stable across SKU/region changes; only the suffix varies.
-// Storage account cap: 24 chars lowercase. 'stpominigames' = 14 chars,
-// leaving 10 chars for the unique token suffix.
-var storageAccountName = toLower('stpominigames${take(resourceToken, 10)}')
-var planName           = 'plan-pominigames-${resourceToken}'
-var webAppName         = 'app-pominigames-${resourceToken}'
+var planName = appServicePlanName
 var storageTableDataContributorRoleId = subscriptionResourceId('Microsoft.Authorization/roleDefinitions', '0a9a7e1f-b9d0-4cc4-a60d-0319b160aaa3')
 // Storage Blob Data Contributor covers both the table writes (it includes table perms) and
 // the blob container CreateIfNotExists that DataProtection uses for key escrow.
@@ -48,7 +49,7 @@ resource appServicePlan 'Microsoft.Web/serverfarms@2022-09-01' = {
 resource webApp 'Microsoft.Web/sites@2022-09-01' = {
   name: webAppName
   location: location
-  tags: union(tags, { 'azd-service-name': 'api', tier: 'F1', os: 'windows' })
+  tags: union(tags, { tier: 'F1', os: 'windows' })
   kind: 'app'
   identity: {
     type: 'SystemAssigned'
@@ -59,6 +60,8 @@ resource webApp 'Microsoft.Web/sites@2022-09-01' = {
     siteConfig: {
       netFrameworkVersion: 'v10.0'
       alwaysOn: false // F1 does not support alwaysOn
+      webSocketsEnabled: true // SignalR multiplayer hubs (F1 allows a few concurrent sockets; others fall back)
+      http20Enabled: true
       ftpsState: 'FtpsOnly'
       minTlsVersion: '1.2'
       metadata: [
@@ -133,7 +136,7 @@ resource sharedAppInsights 'Microsoft.Insights/components@2020-02-02' existing =
 resource storageAccount 'Microsoft.Storage/storageAccounts@2023-05-01' = {
   name: storageAccountName
   location: location
-  tags: union(tags, { 'azd-service-name': 'storage' })
+  tags: tags
   kind: 'StorageV2'
   sku: {
     name: 'Standard_LRS'

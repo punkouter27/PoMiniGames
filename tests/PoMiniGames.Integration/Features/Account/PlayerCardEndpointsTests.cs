@@ -15,7 +15,7 @@ public sealed class PlayerCardEndpointsTests : IClassFixture<TestWebApplicationF
         _client = factory.CreateClient();
     }
 
-    [Fact]
+    [DockerFact]
     public async Task GetPlayerCard_ReturnsOk_WithValidDtoStructure()
     {
         var response = await _client.GetAsync("/api/player/card?name=TestSpeedster");
@@ -35,7 +35,7 @@ public sealed class PlayerCardEndpointsTests : IClassFixture<TestWebApplicationF
         card.Initials.Should().Be("TE");
     }
 
-    [Fact]
+    [DockerFact]
     public async Task GetPlayerCardSvg_ReturnsOk_WithValidSvgXml()
     {
         var response = await _client.GetAsync("/api/player/card/svg?name=CyberRacer");
@@ -52,7 +52,7 @@ public sealed class PlayerCardEndpointsTests : IClassFixture<TestWebApplicationF
         svg.Should().Contain("SILVER TIER");
     }
 
-    [Fact]
+    [DockerFact]
     public async Task GetOnlineMmrLeaderboard_ReturnsOk_WithLeaderboardDto()
     {
         var response = await _client.GetAsync("/api/leaderboards/online-mmr");

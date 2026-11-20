@@ -14,8 +14,8 @@ namespace PoMiniGames.Unit.Features.Health;
 /// the configuration holds them and a check fails with one in its exception message.
 /// </summary>
 /// <remarks>
-/// 2026-11-17: rewritten when /api/diag moved from a masked configuration dump to the fleet
-/// /diag report (DiagEndpoints.BuildReportAsync).
+/// The payload is the Po web standard DiagReportDto (AGENTS.md): Status, Environment, Version, CheckedAt,
+/// CheckedMs and Checks[] with Name, Group (api | data | service), Label, Status, Purpose, Detail, LatencyMs, Problem.
 /// </remarks>
 public sealed class DiagProjectionTests
 {
@@ -23,14 +23,22 @@ public sealed class DiagProjectionTests
     private const string VaultUri = "https://kv-pominigames-prod.vault.azure.net/";
     private const string AiConnection = "InstrumentationKey=00000000-1111-2222-3333-444444444444;IngestionEndpoint=https://eastus-0.in.applicationinsights.azure.com/";
 
-    // The report's shape: overall status, both sections, the configured services reported by
-    // presence, and a failing check reduced to its exception TYPE.
+    // The report's shape: overall status, the API row first, a failing check reduced to its exception TYPE, the
+    // storage listings, and the configured services reported by presence.
     [Theory]
     [InlineData("status", "Degraded")]
     [InlineData("environment", "Production")]
-    [InlineData("stores[0].error", "InvalidOperationException")]
-    [InlineData("services[0].status", "Healthy")]
-    [InlineData("containers[0].name", "poecosystem-worlds")]
+    [InlineData("checks[0].name", "api")]
+    [InlineData("checks[0].group", "api")]
+    [InlineData("checks[2].name", "Storage")]
+    [InlineData("checks[2].group", "data")]
+    [InlineData("checks[2].status", "Degraded")]
+    [InlineData("checks[2].problem", "InvalidOperationException")]
+    [InlineData("checks[3].name", "tables")]
+    [InlineData("checks[4].name", "blob-containers")]
+    [InlineData("checks[5].name", "key-vault")]
+    [InlineData("checks[5].group", "service")]
+    [InlineData("checks[6].name", "app-insights")]
     public void Report_CarriesTheContractedFields(string path, string expected)
     {
         using var doc = JsonDocument.Parse(SerializeReport());
@@ -62,6 +70,19 @@ public sealed class DiagProjectionTests
         json.Should().NotMatchRegex(@"[A-Za-z0-9+/]{32,}", "no raw key-like token may appear");
     }
 
+    [Fact]
+    public void Report_UsesOnlyTheStandardGroupsAndStatuses()
+    {
+        using var doc = JsonDocument.Parse(SerializeReport());
+        foreach (var check in doc.RootElement.GetProperty("checks").EnumerateArray())
+        {
+            check.GetProperty("group").GetString().Should().BeOneOf("api", "data", "service");
+            check.GetProperty("status").GetString().Should().BeOneOf("Healthy", "Degraded", "Unhealthy");
+            check.GetProperty("label").GetString().Should().NotBeNullOrWhiteSpace();
+            check.GetProperty("purpose").GetString().Should().NotBeNullOrWhiteSpace();
+        }
+    }
+
     private static string SerializeReport()
     {
         var config = new ConfigurationBuilder().AddInMemoryCollection(new Dictionary<string, string?>
@@ -72,9 +93,12 @@ public sealed class DiagProjectionTests
         }).Build();
         var env = new HostingEnvironment { EnvironmentName = "Production" };
 
-        var report = DiagEndpoints.BuildReportAsync(new StubHealthCheckService(), config, env, CancellationToken.None)
+        var probe = new DiagEndpoints.StorageProbe(
+            new HashSet<string>(DiagEndpoints.TableNames, StringComparer.OrdinalIgnoreCase),
+            new HashSet<string>(StringComparer.OrdinalIgnoreCase));
+        var report = DiagEndpoints.BuildReportAsync(new StubHealthCheckService(), config, env, CancellationToken.None, probe)
             .GetAwaiter().GetResult();
-        return JsonSerializer.Serialize(report, DiagJsonContext.Default.DiagReport);
+        return JsonSerializer.Serialize(report, DiagJsonContext.Default.DiagReportDto);
     }
 
     private sealed class HostingEnvironment : IWebHostEnvironment

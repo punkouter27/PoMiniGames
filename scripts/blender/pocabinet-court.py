@@ -389,7 +389,7 @@ def write_fixture(path, knots):
     sk = sim_knots(knots)
     xs, ys = resample([k[0] for k in sk]), resample([k[1] for k in sk])
     xy = []
-    for x, y in zip(xs, ys):
+    for x, y in zip(xs, ys, strict=False):
         xy += [round(x, 4), round(y, 4)]
     with open(path, "w", encoding="utf-8", newline="\n") as f:
         json.dump({"trackId": "court", "stepsPerSegment": STEPS, "centerXY": xy}, f)

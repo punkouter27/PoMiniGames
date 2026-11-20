@@ -32,7 +32,7 @@ namespace PoMiniGamesClient.Services.Http;
 // /health status page
 [JsonSerializable(typeof(HealthReportDto))]
 // /diag page (GET /api/diag)
-[JsonSerializable(typeof(PoMiniGames.Shared.Diagnostics.DiagReport))]
+[JsonSerializable(typeof(PoMiniGames.Shared.Diagnostics.DiagReportDto))]
 [JsonSerializable(typeof(ProblemDetailsDto))]
 // Score integrity + account data. Source-generated like everything else on this path:
 // the mint runs on the WASM HttpClient pipeline and the erase result is read back on the

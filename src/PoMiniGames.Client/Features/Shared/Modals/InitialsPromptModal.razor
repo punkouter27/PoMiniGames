@@ -81,13 +81,13 @@
     // A first-time visitor (nothing saved in this browser) is asked straight away; after that
     // the prompt opens only on request. Po standard (2026-11-18): it never covers the header
     // (the backdrop starts below it) and it waits while the visitor is on a page that is not
-    // about playing (/diag, /health, /settings), so a status check is never blocked.
+    // about playing (/diag, /settings), so a status check is never blocked.
     private bool ShouldShow =>
         PlayerNames.IsInitialized &&
         PlayerNames.IsPromptOpen &&
         !OnUtilityPage;
 
-    private static readonly string[] UtilityPages = ["/diag", "/health", "/settings"];
+    private static readonly string[] UtilityPages = ["/diag", "/settings"];
 
     private bool OnUtilityPage
     {

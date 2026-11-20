@@ -6,7 +6,10 @@ Reads <data_dir>/<id>.json and its sprite sheet, takes the first idle picture's 
 shoulders (the top 42% of the body, square, centred on the head) and writes
 <data_dir>/<id>-portrait.webp (256x256, transparent). The 4x4 roster grid shows it.
 """
-import json, pathlib, sys
+import json
+import pathlib
+import sys
+
 import numpy as np
 from PIL import Image
 

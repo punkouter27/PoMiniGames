@@ -61,7 +61,7 @@
 
 /* ── Top bar ──────────────────────────────────────────────────────────────
    No glass: the header is the estate's .po-header (po-tokens.css), a solid
-   surface that looks the same in every Po app. */
+   surface in the Po page shell. */
 
 .gl-overflow-panel.gl-overflow-panel {
     background: var(--glass-fill-strong);

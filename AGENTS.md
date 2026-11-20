@@ -1,23 +1,278 @@
-# Agent rules
+# AGENTS.md — PoMiniGames
 
-Rules for any AI agent working in this repository.
+Read this before changing anything; CLAUDE.md only points here. The first part is the Po web standard this repo
+follows (copied in, owned here); the second part is what is specific to this repo.
 
-## 1. Git & Workflow
+## Po Web App Standard
+
+This repo is one of several independent Po apps. It follows the conventions below, but it owns every file:
+nothing is generated from, synced with, or required to stay identical to another repository. Change anything
+here freely; only the *conventions* are common, never the code. Azure resources may be shared through the
+`PoShared` resource group; code may not.
+
+### Repo skeleton
+```
+README.md          what the app is, live URL, how to run locally, how it deploys
+AGENTS.md          this standard + repo-specific notes (CLAUDE.md just points here)
+CLAUDE.md          one line: "Read AGENTS.md."  (plus repo-specific notes only if unavoidable)
+<App>.slnx  global.json  Directory.Build.props  Directory.Packages.props  .editorconfig
+src/<App>.Api  src/<App>.Client  src/<App>.Shared  [src/<App>.Mobile]
+tests/<App>.Unit  tests/<App>.Integration  [tests/<App>.E2E...]
+infra/main.bicep  infra/main.bicepparam  [infra/modules/*.bicep]
+scripts/           setup / helper scripts (no infra/*.ps1)
+docs/              lowercase; everything else that is prose
+.github/workflows/deploy.yml   the ONLY workflow
+```
+No `.cursorrules`, `.copilotignore`, `SPEC.md`, `tasks/`, `DOCS/` at the root (fold useful content into docs/).
+`SCREENSHOTS/` is allowed only if README references it.
+
+### Page shell (every page, signed in or out, including the sign-in page)
+- Header `.po-header`, height 56px, sticky: app name top-left (`.po-header__title`, links to `/`).
+- Top-right `.po-header__actions`: signed-in user's **email** (`.po-header__email`, full email, ellipsis at 16ch on
+  phones) — or, signed out, one **Sign in** button `class="po-link-btn filled small"` (same style on every page) —
+  then the settings gear ONLY if the app has a settings page (the owner removed settings from some apps — don't
+  re-add it). Apps without OAuth show nothing in place of the email (no fake identity chips).
+- Version badge `.po-version` fixed bottom-right showing `vYYMMDD`. It must never cover content: `main` gets
+  `padding-bottom: calc(var(--po-space-6) + env(safe-area-inset-bottom))`, and when a mobile bottom nav exists the
+  badge sits above it (`--po-stamp-lift: <nav height>`).
+- Colours only from `wwwroot/css/po-tokens.css` (`--po-*`). All text ≥ 4.5:1 contrast in light AND dark mode
+  (status banners: use `--po-text` on `--po-*-soft` backgrounds, never warning-on-peach).
+- Login-only data must not be requested for signed-out visitors (no 401s in the console on public pages), and
+  actions a signed-out visitor cannot perform are hidden.
+
+### Version
+- `Directory.Build.props` stamps ONE assembly metadata key: `BuildVersion` = UTC `yyMMdd`. No `BuildStamp`/`BuildDate`
+  aliases. Every reader (header badge component, `/api/diag`, `/health` headers) reads `BuildVersion`.
+
+### Health + /diag contract
+- `GET /health/live` (liveness, returns header `X-Commit: <sha>`), `GET /health` (readiness), `GET /api/diag` →
+  ```
+  DiagReportDto(string Status, string Environment, string Version, DateTimeOffset CheckedAt, double CheckedMs,
+                DiagCheckDto[] Checks)
+  DiagCheckDto(string Name, string Group /* "api" | "data" | "service" */, string Label, string Status
+               /* Healthy|Degraded|Unhealthy */, string Purpose, string Detail, double LatencyMs, string? Problem)
+  ```
+- UI route `/diag` ONLY (delete other diagnostics pages/routes such as `/system`, `/diagnostics`, `/status`). Page
+  `<title>` and `h1`: **System status**. Layout: overall banner in plain words ("Everything is working" /
+  "Working, with N things degraded" / "Not working: …"), then three sections in this order: **API**, **Data**,
+  **Services**; each row = label, purpose, status pill, latency ms, problem/detail text. Every external dependency
+  the app really calls appears as a check. Anonymous, nothing secret in the payload.
+
+### Workflow (`.github/workflows/deploy.yml`, the only one)
+push to master → format check → build (Release, warnings as errors) → Unit tests → Integration tests (Testcontainers /
+Azurite; Docker is available on ubuntu-latest) → publish → deploy → confirm `/health/live` X-Commit = this SHA.
+If the repo has a MAUI `src/<App>.Mobile`, a second job in the SAME file (`mobile`, `needs: []`, not blocking deploy)
+installs the `maui-android` workload and builds the Android target, so the client is always compiled.
+
+### Tests
+- Unit tier: fast, no I/O, runs in CI.
+- Integration tier: runs in CI; locally it SKIPS with a clear message when Docker is not running (never a wall of
+  `DockerUnavailableException` failures).
+- E2E/UI tiers: run locally against a running app; when no app URL / browser is available they SKIP with a clear
+  message. They are not part of CI.
+- Docs must state real counts, not caps that are out of date.
+
+### Azure naming
+App Service `app-<repo lowercase>`; per-app resources named `<type>-<repo lowercase>`; shared things only in `PoShared`.
+
+## This repo
+
+PoMiniGames: fourteen instant-play mini-games on one website. A .NET 10 minimal API host (SignalR multiplayer hubs,
+Azure Table + Blob Storage) serves its own Blazor WebAssembly client; heavy games are JavaScript engines in
+`wwwroot/js/<game>/`. No sign-in: a player is a random browser id plus three initials. README.md has the tour, the
+games and the **Shared game UI** rules.
+
+- Live: https://app-pominigames.azurewebsites.net — App Service `app-pominigames` (F1, Windows, .NET 10) in resource
+  group `PoMiniGames`, system-assigned identity with Storage Table/Blob Data Contributor on `st5ln5hfdrvof5u2`,
+  Cognitive Services User on `po-aiservices-shared2` (PoShared) and get/list on `kv-poshared2`
+  (`scripts/ci/ensure-azure-access.ps1` grants all of it). The previous App Service `app-5ln5hfdrvof5u-f1win2` is
+  retired (left running until the owner deletes it).
+- Repo variables read by the workflow: `AZURE_CLIENT_ID`, `AZURE_TENANT_ID`, `AZURE_SUBSCRIPTION_ID` (GitHub OIDC,
+  the `gh-pominigames-deploy` app, Contributor on the resource group), `AZURE_WEBAPP_NAME`, `AZURE_RESOURCE_GROUP`.
+  Never move them to secrets or write resource names into the workflow.
+- Every permission the app and CI need lives in `scripts/ci/ensure-azure-access.ps1`. A role granted by hand and not
+  added there is a bug: the next re-provision loses it.
+- Tests pass on any machine: no drive-letter, temp-folder or working-directory assumptions, and no live config value
+  hard-coded as an expected result (read it from the same config the app reads).
+
+### Deviations from the standard (deliberate)
+
+| Standard | Here | Why |
+|---|---|---|
+| Header shows the email or Sign in | Nothing there | No OAuth by design; the initials live in the settings sheet |
+| `src/` = Api, Client, Shared | also `PoMiniGames.Domain`, `PoMiniGames.Infrastructure` | Score rules, Elo and the storage service are used by many slices; merging them is a separate refactor |
+| Per-app resources `<type>-pominigames` | plan `asp-pominigames-f1`, storage `st5ln5hfdrvof5u2` | Renaming means re-creating them (and moving the data); only the App Service was renamed |
+| `docs/` for prose | No `docs/` today | README.md and scripts/*/README.md carry the prose; `scripts/ci-package.ps1` stages `docs/` if one is added |
+
+### Commands
+
+```powershell
+docker compose up -d azurite                                   # storage emulator (ports 10000-10002)
+dotnet run --project src/PoMiniGames.Api/PoMiniGames.Api.csproj # API + Blazor WASM client on http://localhost:5080
+dotnet build PoMiniGames.slnx                                  # warnings are errors (Directory.Build.props)
+dotnet format PoMiniGames.slnx --verify-no-changes             # style gate (run locally)
+pwsh scripts/ci/css-lint.ps1                                      # CSS gate; run after any scripted CSS edit
+npm ci --prefix scripts/ci/js-lint && npm run lint --prefix scripts/ci/js-lint  # JS gate (undefined identifiers), run locally
+
+dotnet test tests/PoMiniGames.Unit --filter "FullyQualifiedName~PoMule"   # one test / one area
+dotnet test tests/PoMiniGames.E2EUI -p:SkipPlaywrightInstall=true --filter "..."
+uvx ruff check .                                               # Python lint (scripts/blender, scripts/pofighter)
+```
+
+- The API host serves the client on one origin, so there is no separate client dev server. Never
+  build `PoMiniGames.Client` alone while the host is running, because the fingerprinted wasm assets
+  stop matching. Under a running host, build with
+  `--artifacts-path artifacts/<name>` (it must stay inside the repo).
+- `scripts/dev/test-all.ps1` runs all four tiers. The AGENTS.md rules say not to run it for routine
+  changes.
+- `.github/workflows/deploy.yml` (the only workflow): format, ruff, build, Unit, Integration, publish,
+  `scripts/ci-package.ps1` stages the docs suite, `scripts/pre-deploy.ps1` clears stale Kudu files on the Windows
+  App Service, deploy, then wait for `/health/live` to answer with this commit's `X-Commit`. No rollback, no PR runs;
+  a red check stops the deploy. `scripts/ci-checks.ps1` bundles the local-only checks (Bicep, CSS, JS lint, JS engine
+  tests, WASM trim audit, ruff). Provision Azure locally:
+  `az deployment sub create -l westus2 -f infra/main.bicep -p infra/main.bicepparam` (what-if first).
+
+### Tests
+
+- There are four tiers (counts as of 2026-11-20). **Unit** (421) is hermetic and runs in CI. **Integration** (17)
+  uses a Testcontainers Azurite and runs in CI; locally every test SKIPS with one reason (`DockerFact`) when Docker is
+  not running. **E2EAPI** (16) runs HTTP contract tests in-process against the compose Azurite (local only).
+  **E2EUI** (22) runs C# Playwright against a Kestrel host in the `Test` environment (local only; `UiFact` skips when
+  Docker or Playwright Chromium is missing).
+- **Owner decision 2026-11-19:** `tests/` holds only the four project folders
+  (`PoMiniGames.Unit`, `.Integration`, `.E2EAPI`, `.E2EUI`). There is no shared test-utilities
+  project, no test-count ceiling guard and no root-level JS engine tests; tests that needed those
+  helpers were dropped. Don't add files or folders at the `tests/` root. Docs state real counts, never caps.
+- Each host fixture (`TestWebApplicationFactory`, `PoMiniGamesE2EFixture`, `KestrelServerFixture`)
+  sets its own config overrides inline: no live Wikipedia or external quiz packs, a dry Racer
+  track, no Key Vault, and storage on Azurite. A new external boundary needs a key in all three.
+
+### Architecture
+
+- **Decisions (owner):**
+  - `/diag` is the only status page (`Features/Health/DiagPage.razor`, title and h1 "System status"); it renders
+    `GET /api/diag` (`DiagEndpoints`, the standard `DiagReportDto`), which is always on and anonymous and must never
+    carry secrets, addresses or exception messages (`DiagProjectionTests`, `HealthEndpointTests`). Rows: API (the
+    server, the multiplayer hubs), Data (the storage health checks, tables, blob containers), Services (Key Vault and
+    Application Insights when configured). A table or container missing from the listing is normal: each is created
+    on first use. `/health` (JSON readiness, never HTML) and `/health/live` (`X-Commit`) are the probes.
+  - The build version (`v{YYMMDD}`, `Layout/BuildVersion.razor`) is visible bottom-right on every page, above the
+    BottomNav on phones (`--po-stamp-lift`); `.gl-content` reserves the strip under every page so it never covers
+    content (game shells subtract it through `--gps-bar-h`).
+  - Forms that submit (initials, ecosystem rename and alerts) validate with FluentValidation rules
+    in `PoMiniGames.Shared/Validation` through `Layout/FluentValidationValidator.cs`: inline errors,
+    submit disabled while submitting.
+  - **Page shell (Po web standard).** `wwwroot/css/po-tokens.css` (this repo's copy; change it freely) is the first
+    stylesheet; `css/app-tokens.css` aliases the app's own variables (and PoFighter's `--pf-*` colours) to `--po-*`
+    tokens. Light/dark follows the device only; Inter for text, Space Grotesk for titles (self-hosted in
+    `wwwroot/fonts/`; Bungee stays for PoBrawl's HUD). `MainLayout`'s header is `.po-header`: app name upper-left,
+    the settings gear (`.po-header__settings`, opens the settings sheet; `/settings` is the same sheet as a page)
+    upper-right, and nothing in place of an email: there is no sign-in, so no identity chip. The player's initials,
+    "Change initials", My stats, Leaderboards and System status live in the settings sheet's **Player** group. The
+    phone BottomNav is Games / Boards / Stats. Pressing Tab with nothing focused opens `/po-dev.html`
+    (`js/po-devwindow.js` + `js/po-dev.js`), which reads `/health/live` (`X-Commit`) and `/api/diag`; in a game the
+    Tab stats panel then opens from its pill. The first-visit initials prompt waits on `/diag` and `/settings` and
+    never covers the header.
+  - Storage settings are read from DI `IConfiguration` when the clients are built
+    (`StorageExtensions`), never at registration: read eagerly they missed the test hosts'
+    overrides and every integration fixture silently used the machine's shared Azurite.
+
+- **Projects:** `src/` holds five projects.
+  - `PoMiniGames.Api`: the ASP.NET Core host. It contains vertical slices in `Features/<Game>`
+    and also serves the client.
+  - `PoMiniGames.Client`: Blazor WASM, assembly name `PoMiniGamesClient`.
+  - `PoMiniGames.Domain`: `GameKey`, `ScoreRules`, Elo and the high-score models.
+  - `PoMiniGames.Infrastructure`: the `StorageService` partials and `HighScoreDescriptor<T>`.
+  - `PoMiniGames.Shared`: the DTOs and pure game logic shared by client and server.
+  - NuGet versions live only in `Directory.Packages.props` (Central Package Management).
+- **Adding a game** touches several files:
+  1. Add a `GameKey` value to the WellKnown list in Domain `Primitives/GameKey.cs`. It is a
+     string value-object, not an enum.
+  2. Add a `ScoreRules` bounds entry and a high-score model.
+  3. In `StorageService`, add the table and partition constants and a `HighScoreDescriptor`.
+  4. Create `Features/<Game>/*Endpoints.cs` and map it in
+     `Api/Infrastructure/EndpointRouteExtensions.cs` on the `gameApi` group (the `/api` prefix).
+     Map hubs there too.
+  5. Add a case to `Features/Leaderboard/UnifiedLeaderboardEndpoints.cs`.
+  6. Register services and options in `Infrastructure/GameServicesExtensions.cs`.
+  7. On the client, add `Models/GameKeys`, `Models/GameCatalog.cs`, and a page at
+     `Games/<Game>/<Game>Page.razor` with routes `/game` and `/game/{Mode}`.
+- **JS engines:** heavy games are JS engines in `Client/wwwroot/js/<game>/`.
+  `wwwroot/js/platform/engineLoader.js` (`loadEngine(name)`) loads them on demand, and the page's
+  `.razor.cs` drives them over IJSRuntime. Engines run on the shared host
+  `platform/stage/stage.js` (`createStage`) with helpers in `platform/2d/` and `platform/3d/`; a new
+  cross-game effect goes in `platform/stage/features/` (written once), not inside a game. The PWA service worker precaches them automatically
+  through the asset manifest.
+  - The CSP has no `'unsafe-eval'`: a library that builds functions from strings (three's Basis /
+    KTX2 transcoder does, in r165 and r186) fails in the browser. Check a new WASM library on
+    the running app before building on it. KTX2 textures go through our own build of the
+    transcoder in `wwwroot/lib/basis/` (`scripts/pocabinet/basis-build.sh`; `models.js` shows
+    how to point `KTX2Loader` at it).
+- **Results flow:**
+  - Every game reports to `Client/Services/Play/GameResultService`.
+  - It records local stats (`GameStatsService`) and submits the score through `ApiService`.
+  - A score that fails to submit is parked in `PendingScoreStore`/`ScoreSyncService` and
+    retried.
+  - On the server, `Features/Integrity` (`PlaySessionService`, `ScoreIntegrityGuard`) validates
+    scores.
+- **JSON:** new client DTOs need a `[JsonSerializable]` entry in
+  `Client/Services/Http/ApiJsonContext.cs` (or in the game's own JSON context), because the WASM
+  build is trimmed.
+- **Storage:** Azure Tables and Blob, using Azurite in dev and test and managed identity in
+  prod. `StorageInitializer` creates tables at startup.
+- **Identity:** there is no sign-in and no OAuth. Each browser keeps a random player id and the
+  player's three initials (`Client/Services/Play/PlayerNameService.cs`, prompted by
+  `InitialsPromptModal`) and sends them as `X-Player-Id` / `X-Player-Initials`
+  (`PlayerIdentityHandler`); SignalR carries them as the `playerId` / `initials` query parameters.
+  `Api/Infrastructure/PlayerIdentityExtensions.cs` (`UsePlayerIdentity`) turns them into claims and
+  every slice reads the caller through `Features/Identity/RequestIdentity.cs`. The id is a handle,
+  not a credential. Do not add sign-in back without being asked.
+  - Writes need the antiforgery token (`AntiforgeryExtensions`); reads are anonymous. There is no
+    route-level authorization gate: an endpoint that needs a player id checks for one itself.
+- **SignalR:** multiplayer games use hubs mapped in `EndpointRouteExtensions.cs`; their state is
+  held in memory, and a hub refuses a seat to a connection with no player id.
+- **AI:** none; quizzes draw from JSON banks.
+  - PoFunQuiz and PoCoupleQuiz pick random questions from in-memory banks loaded once from
+    `Features/*/Data/questions.json` (no table, no network). Couple answers use the free
+    `AnswerMatcher`.
+  - Ecosystem, Brawl and Cabinet are
+    scripted. Do not add AI services back without being asked.
+  - Cabinet's radio lines are spoken from clips voiced once, offline
+    (`scripts/pocabinet/radio-voices.mjs`, a local text-to-speech model; the MP3s and their
+    manifest are in `wwwroot/audio/pocabinet/`). Nothing is generated at run time. After editing
+    `PoCabinetDialogue` run the script again (`--check` lists lines with no clip).
+  - PoEcosystem's creature thoughts and chronicle narration are spoken the same way
+    (`scripts/poecosystem/voices.mjs`; clips and manifest in `wwwroot/audio/poecosystem/`).
+    After editing `sim/thoughts/templates.js` or `NARRATION` in `render/chronicle.js` run it
+    again. Its creature models are generated too (`scripts/poecosystem/creatures.mjs` writes
+    `wwwroot/models/poecosystem/*.glb`; `--check` fails if a file is stale).
+  - PoCapitol's after-action debrief (`wwwroot/js/pocapitol/debrief.js`) is client-only: a
+    built-in deterministic writer by default, or, if the player opts in, a model on their own
+    machine through Ollama. It has no server side, no key and no paid boundary; keep it that way.
+- **Constraints:**
+  - PoEcosystem is observation-only: never add controls that change its world.
+  - Every in-app `<a>` goes through the Blazor router. Hub links marked `data-hub-nav` are
+    launched by `wwwroot/js/platform/app.js` (`PoHubNav.go`): `Blazor.navigateTo` inside a same-document
+    view transition that morphs the card into the game's title. No WASM reboot.
+
+### Working rules
+
+#### 1. Git & Workflow
 
 - **Stay on `master`:** Commit directly to `master`. Create branches only when specifically asked.
 - **Casual Commits:** Write short, natural commit messages using informal American phrasing.
   Auto-commit and push on sync.
 
-## 2. Running, Testing & Clean Code
+#### 2. Running, Testing & Clean Code
 
-- **Run Only Related Tests:** Test only what was touched. Skip tests for minor edits; never run the
-  whole test suite.
+- **Run Only Related Tests:** Test only what was touched. Skip tests for minor edits; run the
+  whole suite (`scripts/dev/test-all.ps1`) only for a change to the shell or to many games.
 - **Zero Warnings:** Fix all build warnings immediately. Treat every warning as a failure.
 - **Restart After Changes:** Restart the app after a code change and verify it comes back up.
 - **No User Secrets:** Do not use `dotnet user-secrets`. Put local data in `appsettings` or in
   Azure Key Vault (if one exists).
 
-## 3. Architecture & Setup
+#### 3. Architecture & Setup
 
 - **Keep Docs Updated:** Check `docs/` and `README.md` first to get an overview of the app quickly.
   When a dependency, a configuration key or a major endpoint changes, update them in the same
@@ -25,7 +280,7 @@ Rules for any AI agent working in this repository.
 - **Fully Automated:** Run all builds, scripts, and setup commands directly. Do not ask the user to
   run terminal commands or click through a web GUI.
 
-## 4. UI & Output Rules
+#### 4. UI & Output Rules
 
 - **UI Previews:** For visual changes, save before-and-after HTML mockups to
   `SCREENSHOTS/{YYMMDD}-{feature}.html`, and annotate screenshots showing the before and after with
@@ -42,22 +297,13 @@ Rules for any AI agent working in this repository.
     Include a small diagram to make the changes easier to understand
     ([diagram-design](https://github.com/cathrynlavery/diagram-design)).
 
-## 5. Shared Components
+#### 5. Shared Components
 
 - **Consolidate When Practical:** Prefer consolidating reusable functionality and UI into shared
   components when it meaningfully reduces duplication without obscuring game-specific behavior.
 
-## 6. Game Workflow and UI/UX (PoMiniGames Only)
+#### 6. Game Workflow and UI/UX (PoMiniGames Only)
 
 Follow the **Shared game UI** section of [README.md](README.md#shared-game-ui) for all game workflow and UI/UX
 changes: Main menu → start card (one OK, plus a map dropdown in 1P/2P for games with several
 maps) → game → end card (one "Back to main menu"); Tab opens the stats panel during gameplay only.
-
-## CI/CD and Azure (same section in every Po repo)
-
-- A push to `master` checks formatting (`dotnet format --verify-no-changes`), builds, runs the Unit tier, then deploys (`.github/workflows/deploy.yml`, identical in every Po web repo; each repo owns its copy) and waits for `/health/live` to report the pushed commit in `X-Commit`. A red check stops the deploy and the live site keeps its last good build. Integration, E2E, Bicep and other checks run locally; there is no infra job, rollback or PR build. Nothing is deployed by hand.
-- Azure sign-in is GitHub OIDC (the `gh-<repo>-deploy` app). Its IDs are repo **variables** `AZURE_CLIENT_ID`, `AZURE_TENANT_ID` and `AZURE_SUBSCRIPTION_ID`, and the App Service name is `AZURE_WEBAPP_NAME`. Never move them to secrets or write resource names into workflows.
-- Every permission the app and CI need lives in `scripts/ci/ensure-azure-access.ps1`. A role granted by hand and not added there is a bug: the next re-provision loses it.
-- The app answers `/health/live` (process up, no dependencies, `X-Commit` header) and `/health` (dependencies reachable). The deploy checks `/health/live`.
-- Tests pass on any machine: no drive-letter, temp-folder or working-directory assumptions, and no live config value hard-coded as an expected result (read it from the same config the app reads).
-- A red run on the default branch gets an ntfy push from the CI watcher in PoPunkouterSoftware. Fix it, or say why it is red.

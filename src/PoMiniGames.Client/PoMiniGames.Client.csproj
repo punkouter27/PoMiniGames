@@ -68,17 +68,16 @@
     <ProjectReference Include="..\PoMiniGames.Domain\PoMiniGames.Domain.csproj" />
   </ItemGroup>
 
-  <!-- Build stamp. PoStamp (YYMMDD, the UTC date of the HEAD commit) comes from the
-       PoBuildStamp target in Directory.Build.props and is written into a generated constant,
-       PoMiniGamesClient.BuildInfo.Date, shown by Layout/BuildVersion.razor (.po-version).
-       A constant, not an assembly attribute, so reading it needs no reflection under
-       trimming. The file is only rewritten when the value changes. -->
+  <!-- BuildVersion (UTC yyMMdd of HEAD) from the PoBuildStamp target in Directory.Build.props, the same value
+       stamped as the BuildVersion assembly metadata, written into a generated constant
+       PoMiniGamesClient.BuildInfo.BuildVersion for Layout/BuildVersion.razor (.po-version). A constant, so
+       reading it needs no reflection under trimming. Rewritten only when the value changes. -->
   <Target Name="PoWriteBuildInfo" BeforeTargets="CoreCompile" DependsOnTargets="PoBuildStamp">
     <PropertyGroup>
       <_PoBuildInfoFile>$(IntermediateOutputPath)PoBuildInfo.g.cs</_PoBuildInfoFile>
     </PropertyGroup>
     <WriteLinesToFile File="$(_PoBuildInfoFile)"
-                      Lines="// &lt;auto-generated /&gt;;namespace PoMiniGamesClient%3B;internal static class BuildInfo;{;    public const string Date = &quot;$(PoStamp)&quot;%3B;}"
+                      Lines="// &lt;auto-generated /&gt;;namespace PoMiniGamesClient%3B;internal static class BuildInfo;{;    public const string BuildVersion = &quot;$(PoStamp)&quot;%3B;}"
                       Overwrite="true"
                       WriteOnlyWhenDifferent="true" />
     <ItemGroup>

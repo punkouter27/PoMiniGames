@@ -7,7 +7,7 @@ namespace PoMiniGames.Integration.Features.PoRacer;
 
 public sealed class PoRacerPendingScoreTests
 {
-    [Fact]
+    [DockerFact]
     public void PendingScores_SurviveSerialization_AndCanBeRemovedAfterSync()
     {
         var browser = new BrowserStorage();

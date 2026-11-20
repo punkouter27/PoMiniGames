@@ -6,7 +6,7 @@ namespace PoMiniGames.E2EUI;
 public sealed class PoRacerUiTests(KestrelServerFixture fixture)
 {
     private static readonly int[] ZeroAllocations = [0, 0, 0];
-    [Theory]
+    [UiTheory]
     [InlineData("circuit")]
     [InlineData("neonskyline")]
     [InlineData("desertdustway")]
@@ -62,7 +62,7 @@ public sealed class PoRacerUiTests(KestrelServerFixture fixture)
         errors.Should().BeEmpty();
     }
 
-    [Fact]
+    [UiFact]
     public async Task SoloRace_UnfinishedPlayerGetsDnfResultsAndCanReturnToHub()
     {
         using var playwright = await Playwright.CreateAsync();
@@ -86,7 +86,7 @@ public sealed class PoRacerUiTests(KestrelServerFixture fixture)
         errors.Should().BeEmpty();
     }
 
-    [Fact]
+    [UiFact]
     public async Task Multiplayer_BindsBothPlayersAfterLeavingTheLobby()
     {
         using var playwright = await Playwright.CreateAsync();
@@ -129,7 +129,7 @@ public sealed class PoRacerUiTests(KestrelServerFixture fixture)
         await page.GetByRole(AriaRole.Button, new() { Name = "OK", Exact = true }).WaitForAsync();
     }
 
-    [Theory]
+    [UiTheory]
     [InlineData(false)]
     [InlineData(true)]
     public async Task Race_StartsWithOneClick_InputMovesCar_AndNavigationReleasesTheRenderer(bool touch)

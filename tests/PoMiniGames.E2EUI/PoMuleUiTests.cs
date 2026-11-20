@@ -28,7 +28,7 @@ public class PoMuleUiTests
             $"() => window.__pomule && window.__pomule() && window.__pomule().phase === {phase} && window.__pomule().snap[0] >= {month}",
             null, new PageWaitForFunctionOptions { Timeout = timeoutMs });
 
-    [Fact]
+    [UiFact]
     public async Task OnePlayer_PlaysAMonthWithTheKeyboard_AndGetsTouchControlsOnAPhone()
     {
         using var playwright = await Playwright.CreateAsync();
@@ -159,7 +159,7 @@ public class PoMuleUiTests
             .Should().BeTrue("no sideways page scroll on a phone");
     }
 
-    [Fact]
+    [UiFact]
     public async Task Demo_PlaysAWholeMatchByItself_PostsNoScore_AndLeavesNoRadzenStylesBehind()
     {
         using var playwright = await Playwright.CreateAsync();

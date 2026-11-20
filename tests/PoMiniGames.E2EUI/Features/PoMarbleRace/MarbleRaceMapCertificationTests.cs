@@ -76,7 +76,7 @@ public class MarbleRaceMapCertificationTests
         }
         """;
 
-    [Theory]
+    [UiTheory]
     [InlineData(7)]   // Grand Circuit (the single unified mega-track)
     public async Task Map_KeepsEveryMarbleOnTheCourse_AndBringsTheFieldHome(int mapId)
     {

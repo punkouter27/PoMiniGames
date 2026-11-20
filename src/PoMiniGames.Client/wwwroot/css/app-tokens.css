@@ -344,3 +344,11 @@
   --rz-text-secondary-color: var(--color-text-secondary);
   --rz-border-color: var(--color-border);
 }
+
+/* PoFighter: arcade gold, the select-grid navy, and dark ink on gold (used by the PoFighter scoped stylesheets). */
+:root {
+  --pf-gold: #ffd23f;
+  --pf-navy: #2c3560;
+  --pf-navy-deep: #171c38;
+  --pf-ink: #1b1b1b;
+}

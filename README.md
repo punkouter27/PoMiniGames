@@ -5,6 +5,11 @@ Blazor WebAssembly client from a single origin (port 5080), with SignalR for rea
 multiplayer and Azure Table Storage for persistence. There are no AI services; the two
 quizzes draw from JSON question banks.
 
+- **Live:** https://app-pominigames.azurewebsites.net (System status: `/diag`)
+- **Run locally:** see [Quick start](#quick-start). **Deploys:** every push to `master` runs
+  `.github/workflows/deploy.yml` (format, build, Unit + Integration tests, deploy, `/health/live` check).
+- **Rules for changing it:** [AGENTS.md](AGENTS.md) (the Po web standard plus this repo's notes).
+
 ## Overview
 
 Fourteen small games on one website. The browser runs each game in full, including its
@@ -275,15 +280,15 @@ sign-in: a player is a random browser id plus three initials.
   matrix for hundreds of mostly static bodies.
   Chunk remeshing caches voxel samples across all six face sweeps without changing
   geometry, damage tinting, or collision accuracy.
-  The `/diag` status page (also at `/health` in a browser) shows the API, storage and services
-  in plain words, plus the build date; every page shows the build date (v YYMMDD) bottom-right.
+  The `/diag` "System status" page shows the API, data and services in plain words, plus the
+  build version; every page shows the build version (vYYMMDD) bottom-right.
 - **Works offline.** A score that cannot reach the server is parked in the browser and sent
   automatically later.
 
 ### Shared game UI
 
 - `PageHeader` is the one page header: title, an optional meta line and an action slot,
-  used by the hub, leaderboards, My Stats and Service health. New top-level pages use it
+  used by the hub, leaderboards and My Stats (/diag uses the standard System status layout). New top-level pages use it
   rather than their own head markup.
 - `GameShell` owns the title, Settings entry point, diagnostics and result dialog.
   Keep game artwork and HUDs game-specific, but do not override the shared dialogs'
@@ -299,8 +304,7 @@ sign-in: a player is a random browser id plus three initials.
 - During gameplay, **Tab toggles stats**, and **Esc closes them**. Shift+Tab, forms and
   dialogs retain normal focus navigation. The visible Stats control supports touch. The
   panel's **pop out** button opens `debug-window.html`, a separate developer window fed live
-  over a `BroadcastChannel` (frame rate graph, viewport, heap, the game's own rows); `/diag`
-  has a **Live debug window** button for the same window outside a game. Tab is not claimed on
+  over a `BroadcastChannel` (frame rate graph, viewport, heap, the game's own rows). Tab is not claimed on
   non-game pages, where it stays the keyboard's focus mover (WCAG 2.1.1).
   Ecosystem retains its observation dashboard and does not open a second generic panel. Marble's physics/render metrics join the shared
   stats panel instead of using a separate F3 overlay.
@@ -456,13 +460,11 @@ src/
 ├── PoMiniGames.Domain/         Domain primitives (EloCalculator, GameKey, ...)
 └── PoMiniGames.Shared/         DTOs shared between client and server
 tests/
-├── PoMiniGames.Unit/           ≤85 test methods (hermetic)
-├── PoMiniGames.Integration/    ≤34 test methods (Testcontainers Azurite)
-├── PoMiniGames.E2EAPI/         ≤18 test methods (HTTP contract)
-├── PoMiniGames.E2EUI/          ≤22 test methods (Playwright)
-├── *.test.mjs                  JS engine tests (node --test; run locally)
-└── Shared/                     TestBudgetGuard (no test ever spends AI tokens)
-infra/                          Bicep (azd up or az deployment, run locally)
+├── PoMiniGames.Unit/           421 tests (hermetic; CI)
+├── PoMiniGames.Integration/    17 tests (Testcontainers Azurite; CI; skip without Docker)
+├── PoMiniGames.E2EAPI/         16 tests (HTTP contract, in-process host; local only)
+└── PoMiniGames.E2EUI/          22 tests (Playwright; local only; skip without Docker or Chromium)
+infra/                          main.bicep + main.bicepparam + modules/ (az deployment, run locally)
 scripts/                        Working scripts only — see scripts/README.md
 ```
 
@@ -507,7 +509,7 @@ scripts/                        Working scripts only — see scripts/README.md
   arrive within four seconds the island runs on the local `cannon-es` instead. See the
   [visual architecture dashboard](docs/2026-11-12/VISUAL_ARCHITECTURE_DASHBOARD.html).
 - Offline-friendly PWA: finished scores park locally and sync on reconnect.
-- Deploy: `azd up` (App Service F1, resource group `PoMiniGames`).
+- Deploy: push to `master` (App Service `app-pominigames`, F1, resource group `PoMiniGames`).
 
 PoRacer ranks **best completed laps**, separately from final race times. Its legacy JSON
 field and Azure Table column `totalTimeSeconds` / `TotalTimeSeconds` retain their names
@@ -530,18 +532,16 @@ server races in it (grip 0.90 in rain, 0.80 in snow: less traction, longer braki
 that grows with speed, earlier slides; fog changes nothing but the view) and sends it in
 `PoRacerStaticWorld.Weather`, so the overlay draws what the sim ran. Laps set in the wet go on
 the same boards as dry ones and are slower; the medal times are dry-track times.
-Run `pwsh scripts/ci/test-ceilings.ps1` to check all four test-method budgets without Docker.
 Run `node --test tests/pomule-world.test.mjs tests/pomule-physics.test.mjs` for PoMule's renderer maths.
 
 Run `npm ci --prefix scripts/pomarblerace` then `node --test tests/pomarblerace-map-health.test.mjs` for Marble Race map health (a full headless 101-marble race on every course; see `scripts/pomarblerace/README.md`).
-`.github/workflows/deploy.yml` builds and deploys only: on a push to `master` (or a manual run)
-it builds the solution, publishes the API, stages the documentation suite
-(`scripts/ci-package.ps1`), prepares the live site (`scripts/pre-deploy.ps1`), deploys, and waits
-until `/health/live` answers with this commit's `X-Commit`. It runs no tests, no format or CSS
-checks, no Bicep and no rollback, and does not run on pull requests: tests and checks run
-locally (`scripts/ci-checks.ps1` still bundles them for a local run). The file is identical in
-every Po repo and each repo owns its copy. Provision or update Azure resources locally with
-`azd up`.
+`.github/workflows/deploy.yml` is the only workflow: on a push to `master` (or a manual run) it
+checks formatting, lints the Python scripts (ruff), builds, runs the Unit and Integration tiers,
+publishes the API, stages the documentation suite (`scripts/ci-package.ps1`), prepares the live
+site (`scripts/pre-deploy.ps1`), deploys to `app-pominigames`, and waits until `/health/live`
+answers with this commit's `X-Commit`. E2E tiers, Bicep, CSS and JS lint run locally
+(`scripts/ci-checks.ps1`). Provision or update Azure resources locally with
+`az deployment sub create -l westus2 -f infra/main.bicep -p infra/main.bicepparam`.
 
 **F1 budget (2026-11-18).** The F1 plan allows 165 MB/day of data out and 1 GB of disk; going over
 stops the site (`QuotaExceeded`, deploys get a 403). So:
@@ -565,8 +565,8 @@ stops the site (`QuotaExceeded`, deploys get a 403). So:
 
 | Endpoint | Change |
 |---|---|
-| `GET /api/diag` | 2026-11-17: always on (no longer behind `FeatureFlags:EnableDiagnostics`); returns the /diag page's report: overall status, each store and service with status, latency and purpose, build date and environment. No secrets, addresses or exception text |
-| `GET /api/diag/status` | 2026-11-18: the same report as `/api/diag`, at the first path the Tab developer window (`/po-dev.html`) reads |
+| `GET /api/diag` | 2026-11-20: the Po web standard `DiagReportDto` (status, environment, version, checkedAt, checkedMs, checks[] with name, group api/data/service, label, status, purpose, detail, latencyMs, problem); always on and anonymous. No secrets, addresses or exception messages. |
+| `GET /api/diag/status` | 2026-11-20: removed; `/api/diag` is the one diagnostics route (Po web standard `DiagReportDto`) |
 | `GET /api/diag/ai` | Removed with all AI services |
 | `GET /api/logs/tail` | Development only: not mapped in any other environment (2026-10-29) |
 | `GET /api/health/ai` | Removed (moved to `/api/diag/ai`) |

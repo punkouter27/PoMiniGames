@@ -3,7 +3,7 @@ using Microsoft.Playwright;
 namespace PoMiniGames.E2EUI;
 
 /// <summary>
-/// The /diag status page (Po standard, 2026-11-18): it renders the report from /api/diag at
+/// The /diag "System status" page (Po web standard, AGENTS.md): it renders the report from /api/diag at
 /// phone and desktop width as po-diag__card cards in the API / Data / Services groups, under
 /// the shared header (app name left, settings gear right), with the vYYMMDD build stamp
 /// visible bottom-right, no sideways scroll and zero console errors (PlaywrightErrorGuard
@@ -16,7 +16,7 @@ public class DiagPageUiTests
 
     public DiagPageUiTests(KestrelServerFixture fixture) => _fixture = fixture;
 
-    [Fact]
+    [UiFact]
     public async Task Diag_RendersAtPhoneAndDesktop_WithTheBuildStamp_AndNoConsoleErrors()
     {
         using var playwright = await Playwright.CreateAsync();
@@ -32,13 +32,15 @@ public class DiagPageUiTests
                     new PageGotoOptions { WaitUntil = WaitUntilState.NetworkIdle, Timeout = 60_000 });
 
                 await page.Locator("[data-testid='diag-banner']").WaitForAsync(new LocatorWaitForOptions { Timeout = 30_000 });
-                (await page.Locator("h1").First.TextContentAsync()).Should().Contain("Status");
-                (await page.GetByText("Data", new() { Exact = true }).CountAsync()).Should().BeGreaterThan(0);
-                (await page.GetByText("Services", new() { Exact = true }).CountAsync()).Should().BeGreaterThan(0);
-                (await page.Locator("[data-testid='diag-version']").InnerTextAsync()).Should().MatchRegex(@"^\d{6}$");
+                (await page.Locator("h1").First.TextContentAsync()).Should().Be("System status");
+                (await page.TitleAsync()).Should().Be("System status");
+                (await page.Locator(".po-diag__group h2").AllInnerTextsAsync()).Should().Equal("API", "Data", "Services");
+                (await page.Locator("[data-testid='diag-banner']").InnerTextAsync()).Should().MatchRegex(@"Version v\d{6}");
                 (await page.Locator(".po-diag__card .po-badge").CountAsync()).Should().BeGreaterThan(1);
                 (await page.Locator(".po-header .po-header__title").InnerTextAsync()).Should().Contain("PoMiniGames");
                 (await page.Locator(".po-header .po-header__settings").GetAttributeAsync("href")).Should().Be("/settings");
+                // No sign-in in this app, so nothing stands where the email would be (no initials chip).
+                (await page.Locator(".po-header .gl-account-trigger").CountAsync()).Should().Be(0);
                 (await page.Locator(".po-version").InnerTextAsync()).Should().MatchRegex(@"^v\d{6}$");
 
                 // The build stamp: visible, inside the viewport, in the bottom-right quarter.

@@ -19,7 +19,7 @@ public sealed class PoVoxelStrikeMultiplayerTests
     /// platform's 20 Hz cadence, the pump drains a frame, and end-of-run tears the
     /// session down cleanly.
     /// </summary>
-    [Fact]
+    [DockerFact]
     public void Lobby_Ready_Start_Lockstep_Pump_End_CleanLifecycle()
     {
         var lobby = new PoVoxelStrikeLobbyService();

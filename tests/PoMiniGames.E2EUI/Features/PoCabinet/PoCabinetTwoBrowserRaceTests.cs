@@ -17,7 +17,7 @@ namespace PoMiniGames.E2EUI.Features.PoCabinet;
 [Collection(KestrelServerCollection.Name)]
 public sealed class PoCabinetTwoBrowserRaceTests(KestrelServerFixture fixture)
 {
-    [Fact]
+    [UiFact]
     public async Task TwoBrowsers_LandInTheSameLobby_FirstArrivalHosts()
     {
         using var playwright = await Playwright.CreateAsync();

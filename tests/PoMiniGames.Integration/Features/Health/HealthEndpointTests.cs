@@ -26,7 +26,7 @@ public sealed class HealthEndpointTests : IClassFixture<TestWebApplicationFactor
     /// and which keys they asserted, and the Integration tier is at its 50-method ceiling
     /// (100/50/25/25 rule), so the slots were needed elsewhere.
     /// </summary>
-    [Theory]
+    [DockerTheory]
     // Bare reachability — the client's apiService.isAvailable() only reads the status code.
     [InlineData("/api/health/ping", null, null, false)]
     // Root health carries both the overall status and the per-check breakdown.
@@ -64,11 +64,11 @@ public sealed class HealthEndpointTests : IClassFixture<TestWebApplicationFactor
     }
 
     /// <summary>
-    /// GET /api/diag backs the public /diag page (fleet standard, 2026-11-17): it answers
+    /// GET /api/diag backs the public /diag page (Po web standard DiagReportDto): it answers
     /// anonymously with the report the page renders, and carries no secret or address — the
     /// test host's own Azurite connection string (account key and all) must not appear.
     /// </summary>
-    [Fact]
+    [DockerFact]
     public async Task DiagEndpoint_ReturnsOk()
     {
         using var anonymous = _factory.CreateClient();
@@ -83,12 +83,14 @@ public sealed class HealthEndpointTests : IClassFixture<TestWebApplicationFactor
 
         json["status"]!.GetValue<string>().Should().BeOneOf("Healthy", "Degraded", "Unhealthy");
         json["environment"]!.GetValue<string>().Should().Be("Test");
-        json["version"]!.GetValue<string>().Should().MatchRegex(@"^\d{6}$|^unknown$");
-        json["stores"]!.AsArray().Should().NotBeEmpty("the storage health checks are registered");
-        json["services"]!.AsArray().Should().NotBeEmpty();
-        json["tables"]!.AsArray().Should().NotBeEmpty("the app's tables are listed by name");
-        json["containers"]!.AsArray().Should().NotBeEmpty();
-        json["hubs"]!.AsArray().Should().Contain(h => h!["route"]!.GetValue<string>() == "/connectfive/hub");
+        json["version"]!.GetValue<string>().Should().MatchRegex(@"^\d{6}$|^dev$");
+        var checks = json["checks"]!.AsArray();
+        checks[0]!["name"]!.GetValue<string>().Should().Be("api", "the API row comes first");
+        checks.Should().Contain(c => c!["group"]!.GetValue<string>() == "data", "the storage checks are in Data");
+        checks.Should().Contain(c => c!["name"]!.GetValue<string>() == "tables", "the app's tables are listed");
+        checks.Should().Contain(c => c!["name"]!.GetValue<string>() == "blob-containers");
+        checks.Should().Contain(c => c!["name"]!.GetValue<string>() == "multiplayer"
+            && c!["detail"]!.GetValue<string>().Contains("/connectfive/hub", StringComparison.Ordinal));
 
         foreach (var leak in new[] { "AccountKey", "devstoreaccount1", "DefaultEndpointsProtocol", "127.0.0.1",
                      "localhost", "vault.azure.net", "core.windows.net", "InstrumentationKey", "StackTrace", "Exception:" })
@@ -102,7 +104,7 @@ public sealed class HealthEndpointTests : IClassFixture<TestWebApplicationFactor
     /// FeatureFlags:EnableDiagnostics no longer gates /api/diag (it only gates the Development
     /// log tail): the /diag page must work in production too.
     /// </summary>
-    [Fact]
+    [DockerFact]
     public async Task DiagEndpoint_StaysOn_WhenDiagnosticsFlagIsOff()
     {
         using var diagDisabledFactory = _factory.WithWebHostBuilder(builder =>

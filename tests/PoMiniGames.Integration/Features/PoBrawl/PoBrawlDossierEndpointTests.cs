@@ -19,7 +19,7 @@ public sealed class PoBrawlDossierEndpointTests : IClassFixture<TestWebApplicati
 
     public PoBrawlDossierEndpointTests(TestWebApplicationFactory factory) => _factory = factory;
 
-    [Fact]
+    [DockerFact]
     public async Task Dossier_IsAnonymous_AndServesStaticFactsForEveryFighter_WhenFetchIsOff()
     {
         using var client = _factory.CreateClient();

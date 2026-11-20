@@ -35,7 +35,7 @@ public class ProfileCoverageUiTests
         return await context.NewPageAsync();
     }
 
-    [Fact]
+    [UiFact]
     public async Task Profile_ListsEveryGame_IncludingPlayCountOnlyEntries()
     {
         using var playwright = await Playwright.CreateAsync();
@@ -87,7 +87,7 @@ public class ProfileCoverageUiTests
             because: "a game with no win condition must not display a win rate");
     }
 
-    [Fact]
+    [UiFact]
     public async Task Offline_ShowsBanner_AndMakesNetworkOnlyGamesUnavailable()
     {
         using var playwright = await Playwright.CreateAsync();

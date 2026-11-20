@@ -12,9 +12,10 @@ function Invoke-Check([string]$Name, [scriptblock]$Command) {
 }
 
 Invoke-Check 'Formatting' { dotnet format PoMiniGames.slnx --verify-no-changes --no-restore --verbosity minimal }
-Invoke-Check 'Bicep compile' { az bicep build --file infra/main.bicep --stdout > $null }
+Invoke-Check 'Bicep compile' { az bicep build --file infra/main.bicep --stdout > $null; if ($LASTEXITCODE -eq 0) { az bicep build-params --file infra/main.bicepparam --stdout > $null } }
 Invoke-Check 'CSS lint' { ./scripts/ci/css-lint.ps1 }
-Invoke-Check 'Test ceilings' { ./scripts/ci/test-ceilings.ps1 -Configuration Release -NoBuild }
+# Python (scripts/blender, scripts/pofighter): ruff.toml at the root; the deploy workflow runs the same check.
+Invoke-Check 'Python lint (ruff)' { uvx ruff check . }
 # A stale identifier in an engine throws on every frame and no test sees it (Voxel Strike's
 # frameDt, PoCabinet's THREE). ESLint with correctness rules only; see scripts/ci/js-lint.
 Invoke-Check 'JS lint' {

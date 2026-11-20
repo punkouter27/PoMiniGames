@@ -15,7 +15,7 @@ public class SandPlaygroundUiTests
 
     public SandPlaygroundUiTests(KestrelServerFixture fixture) => _fixture = fixture;
 
-    [Fact]
+    [UiFact]
     public async Task Demo_BootsTheEngine_WithEveryShaderCompiled()
     {
         using var playwright = await Playwright.CreateAsync();

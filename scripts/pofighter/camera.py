@@ -68,7 +68,7 @@ def main() -> None:
         ids = sorted(mv["frames"] if "frames" in mv else range(mv["from"], mv["to"] + 1, mv["step"]))
         chain = {ids[0]: IDENTITY.copy()}
         prev = background(frames, cut, ids[0], small)
-        for a, b in zip(ids, ids[1:]):
+        for a, b in zip(ids, ids[1:], strict=False):
             cur = background(frames, cut, b, small)
             chain[b] = compose(chain[a], step_transform(orb, matcher, prev, cur, small))
             prev = cur

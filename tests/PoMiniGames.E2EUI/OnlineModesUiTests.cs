@@ -25,7 +25,7 @@ public class OnlineModesUiTests
 
     private string Origin => _fixture.ServerAddress.TrimEnd('/');
 
-    [Theory]
+    [UiTheory]
     [InlineData("connectfive", ".cf-status-text", ".cf-cell[aria-colindex='5']", ".cf-cell.red")]
     [InlineData("tictactoe", ".ttt-online__turn", ".ttt-cell:not(.disabled)", ".ttt-cell .ttt-mark--x:not(.ttt-mark--ghost)")]
     public async Task TurnGame_PairsTwoBrowsers_AndRelaysTheOpeningMove(string game, string status, string cell, string placed)
@@ -64,7 +64,7 @@ public class OnlineModesUiTests
         await Assertions.Expect(mover.Locator(status).First).Not.ToContainTextAsync("Your turn", new() { Timeout = 20_000 });
     }
 
-    [Theory]
+    [UiTheory]
     // Brawl has no Start button: both players press Ready, the lobby counts down from three and
     // the host's client starts the fight.
     [InlineData("/pobrawl/multi", null, "/pobrawl/online", "#pobrawl-container canvas")]
@@ -132,7 +132,7 @@ public class OnlineModesUiTests
         }
     }
 
-    [Fact]
+    [UiFact]
     public async Task MarbleRace_PairsHostAndGuest_AndStreamsTheRaceToTheGuest()
     {
         using var playwright = await Playwright.CreateAsync();

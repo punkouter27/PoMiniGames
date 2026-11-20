@@ -17,7 +17,7 @@ public class PoVoxelStrikeUiTests
 
     public PoVoxelStrikeUiTests(KestrelServerFixture fixture) => _fixture = fixture;
 
-    [Fact]
+    [UiFact]
     public async Task Demo_BootsTheArena()
     {
         using var playwright = await Playwright.CreateAsync();

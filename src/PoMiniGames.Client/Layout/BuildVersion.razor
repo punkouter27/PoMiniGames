@@ -3,10 +3,10 @@
 
     Po web standard (2026-11-18): the stamp is the estate's .po-version (po-tokens.css). The
     date is the UTC date of the HEAD commit, computed once in Directory.Build.props
-    (PoBuildStamp) and compiled into BuildInfo.Date, so the server's /api/diag reports the
+    (PoBuildStamp) and compiled into BuildInfo.BuildVersion, so the server's /api/diag reports the
     same value. On a phone it sits above the BottomNav (--po-stamp-lift, BottomNav.razor.css).
 *@
 <footer class="app-build-footer" aria-label="Site information">
-    <span class="gl-sr-only">PoMiniGames, build @BuildInfo.Date</span>
-    <span class="po-version" data-testid="build-version" aria-hidden="true">v@(BuildInfo.Date)</span>
+    <span class="gl-sr-only">PoMiniGames, build @BuildInfo.BuildVersion</span>
+    <span class="po-version" data-testid="build-version" aria-hidden="true">v@(BuildInfo.BuildVersion)</span>
 </footer>

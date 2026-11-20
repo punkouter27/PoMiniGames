@@ -182,10 +182,8 @@ assets/
 # same-named .json beside it. Three of those (alerts, kv-secrets, shared-rbac) were
 # committed and went stale against their .bicep siblings — nothing deploys them,
 # since deploy.yml passes main.bicep straight to `az deployment sub create`.
-# main.parameters.json is NOT a build output (it is real deployment input), hence
-# the negation below.
+# Parameters live in infra/main.bicepparam.
 infra/*.json
-!infra/main.parameters.json
 
 # Claude Code agent worktrees (temporary, merged into master)
 .claude/worktrees/

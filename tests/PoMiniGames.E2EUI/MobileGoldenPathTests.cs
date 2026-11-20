@@ -36,7 +36,7 @@ public class MobileGoldenPathTests
         return (page, guard);
     }
 
-    [Fact]
+    [UiFact]
     public async Task Home_OnMobilePortrait_ShowsCatalog_AndNoMockBanner()
     {
         using var playwright = await Playwright.CreateAsync();
@@ -65,7 +65,7 @@ public class MobileGoldenPathTests
             because: "every card must offer at least one navigable mode");
     }
 
-    [Fact]
+    [UiFact]
     public async Task GoldenPath_OpenFirstSinglePlayerGame_Navigates_AndRenders()
     {
         using var playwright = await Playwright.CreateAsync();

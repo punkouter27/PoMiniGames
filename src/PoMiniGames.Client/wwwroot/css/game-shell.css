@@ -967,6 +967,8 @@ body:has(.pm-root) .gps-stats-toggle {
      split-screen mobile where `100dvh` can briefly go < 100px during a
      keyboard-driven viewport resize. */
   --gps-area-h: min(100dvh, max(18rem, 100dvh - var(--gps-topbar-h) - var(--gps-bar-h, 0px)));
+  /* The strip .gl-content reserves under every page for the version badge (MainLayout.razor.css). */
+  --gps-bar-h: var(--po-space-6);
 }
 
 /* Phones show the fixed bottom nav (Layout/BottomNav), and .gl-content reserves its height

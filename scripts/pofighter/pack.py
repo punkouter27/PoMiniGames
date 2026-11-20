@@ -150,14 +150,14 @@ def main() -> None:
         mode = mv.get("ground", default_ground)
         grounds = [feet(a) for a in alphas]
         stands = [ref_height_in_ref / zoom(m) for m in to_ref]   # standing height, this picture
-        xs = [torso_x(a, g, s) for a, g, s in zip(alphas, grounds, stands)]
+        xs = [torso_x(a, g, s) for a, g, s in zip(alphas, grounds, stands, strict=False)]
         # The anchor picture's torso on its floor, as a point in the room (reference coords).
         # Default: the first picture played; a move played backwards names its standing one.
         a0 = ids.index(mv["anchorFrame"]) if "anchorFrame" in mv else 0
         room = apply(to_ref[a0], xs[a0], grounds[a0])
         if mode == "hold":
             grounds = [apply(m, *room)[1] for m in from_ref]
-        room_x = [apply(m, x, g)[0] for m, x, g in zip(to_ref, xs, grounds)]
+        room_x = [apply(m, x, g)[0] for m, x, g in zip(to_ref, xs, grounds, strict=False)]
         rate = mv.get("rate", 1)
         seconds = span / fps / rate
         travel = sign * (room_x[-1] - room_x[a0 if mv.get("advance") else 0]) * base
@@ -175,7 +175,7 @@ def main() -> None:
             gains = [pad[j:j + k].mean(axis=0) for j in range(len(raw))]
 
         frames = []
-        for i, im, a, ax, g, sc, gain in zip(ids, imgs, alphas, xs, grounds, scales, gains):
+        for i, im, a, ax, g, sc, gain in zip(ids, imgs, alphas, xs, grounds, scales, gains, strict=False):
             ys, cols = np.nonzero(a > 24)
             x0, y0, x1, y1 = cols.min(), ys.min(), cols.max() + 1, ys.max() + 1
             px = im[y0:y1, x0:x1].astype(np.float32)

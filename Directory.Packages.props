@@ -80,10 +80,5 @@
          (High). Pin the patched line. Nothing references SSH.NET directly — it
          exists only inside Testcontainers' Docker plumbing in the test tiers. -->
     <PackageVersion Include="SSH.NET" Version="2026.0.0" />
-    <!-- Tag-driven versioning. MinVer reads the nearest 'v*' git tag and
-         produces a SemVer 2.0 version (e.g. v1.4.0 + 3 commits → 1.4.4-alpha.0.3).
-         Version flows into AssemblyVersion, FileVersion, and InformationalVersion
-         via Directory.Build.props so every project gets it for free. -->
-    <PackageVersion Include="MinVer" Version="6.1.0" />
   </ItemGroup>
 </Project>

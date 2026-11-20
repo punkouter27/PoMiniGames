@@ -9,7 +9,7 @@ namespace PoMiniGames.Integration.Features.PoRacer;
 
 public sealed class PoRacerLifecycleTests
 {
-    [Fact]
+    [DockerFact]
     public async Task ConcurrentJoins_KeepSoloRacesIsolated_AndReuseTheSameRace()
     {
         var services = new ServiceCollection();
@@ -41,7 +41,7 @@ public sealed class PoRacerLifecycleTests
         registry.CodeFor("race-a").Should().BeNull();
     }
 
-    [Fact]
+    [DockerFact]
     public async Task Reconnect_UsesStableIdentity_AndRevokesTheOldConnection()
     {
         await using var race = new PoRacerRaceService("solo-a",
@@ -74,7 +74,7 @@ public sealed class PoRacerLifecycleTests
         race.Result.Should().BeNull();
     }
 
-    [Theory]
+    [DockerTheory]
     [InlineData("circuit")]
     [InlineData("neonskyline")]
     [InlineData("desertdustway")]

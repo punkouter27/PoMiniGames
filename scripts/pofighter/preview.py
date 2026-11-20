@@ -41,11 +41,11 @@ def main() -> None:
         d.rectangle([0, top, width, top + ROW], fill=(36, 42, 64) if r % 2 else (30, 36, 56))
         d.line([(LEFT, top + GROUND), (width, top + GROUND)], fill=(200, 120, 80), width=2)
         d.text((8, top + 8), name, fill=(255, 210, 90))
-        info = "%d frames, %.1f fps, %s" % (len(mv["frames"]), mv["fps"], mv["loop"])
+        info = f"{len(mv['frames']):d} frames, {mv['fps']:.1f} fps, {mv['loop']}"
         if "speed" in mv:
-            info += ", speed %s" % mv["speed"]
+            info += f", speed {mv['speed']}"
         if "hitMin" in mv:
-            info += ", hitMin %s" % mv["hitMin"]
+            info += f", hitMin {mv['hitMin']}"
         d.text((8, top + 26), info, fill=(150, 160, 180))
         x = LEFT
         for i in idx:

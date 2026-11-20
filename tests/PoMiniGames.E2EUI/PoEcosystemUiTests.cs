@@ -15,7 +15,7 @@ public class PoEcosystemUiTests
 
     public PoEcosystemUiTests(KestrelServerFixture fixture) => _fixture = fixture;
 
-    [Fact]
+    [UiFact]
     public async Task Demo_TheIslandIsAlive()
     {
         using var playwright = await Playwright.CreateAsync();

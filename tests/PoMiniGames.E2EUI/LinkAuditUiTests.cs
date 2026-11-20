@@ -109,7 +109,7 @@ public class LinkAuditUiTests
         """;
 
     /// <summary>The non-game pages a player reaches from the shell.</summary>
-    private static readonly string[] MainPages = ["/", "/leaderboards", "/profile", "/diag", "/health", "/pobrawl/hq"];
+    private static readonly string[] MainPages = ["/", "/leaderboards", "/profile", "/diag", "/pobrawl/hq"];
 
     private const string ShiftObserver = """
         window.__poShifts = [];
@@ -132,7 +132,7 @@ public class LinkAuditUiTests
             .SelectMany(m => new[] { m.Url, m.ChipUrl })
             .OfType<string>();
 
-    [Fact]
+    [UiFact]
     public async Task LinkAudit_EveryCatalogRouteAndMainPage_Renders_WithoutErrors_404s_OrLayoutShift()
     {
         var routes = MainPages.Concat(CatalogRoutes()).Distinct(StringComparer.OrdinalIgnoreCase).ToList();

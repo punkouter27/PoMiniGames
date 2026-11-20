@@ -26,7 +26,7 @@ internal partial class AccountDataJsonContext : JsonSerializerContext
 }
 
 [JsonSourceGenerationOptions(JsonSerializerDefaults.Web)]
-[JsonSerializable(typeof(PoMiniGames.Shared.Diagnostics.DiagReport))]
+[JsonSerializable(typeof(PoMiniGames.Shared.Diagnostics.DiagReportDto))]
 internal partial class DiagJsonContext : JsonSerializerContext
 {
 }

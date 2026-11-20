@@ -1,0 +1,10 @@
+# Python lint for the authoring scripts (scripts/blender, scripts/pofighter). Run: uvx ruff check .
+# The deploy workflow runs the same check whenever this file exists.
+target-version = "py310"
+line-length = 120
+extend-exclude = ["**/node_modules", "**/bin", "**/obj", "src/**/wwwroot/lib"]
+
+[lint]
+select = ["E", "F", "W", "I", "B", "UP"]
+# Long lines and one-line lambdas are fine in these authoring scripts.
+ignore = ["E501", "E731"]

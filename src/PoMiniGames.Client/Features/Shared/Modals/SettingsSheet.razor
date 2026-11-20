@@ -5,6 +5,8 @@
 @inject ToastService Toasts
 @inject IJSRuntime JS
 @inject IWebAssemblyHostEnvironment HostEnv
+@inject PlayerNameService PlayerNames
+@inject NavigationManager Nav
 @implements IDisposable
 
 @* ─────────────────────────────────────────────────────────────────────────
@@ -35,6 +37,30 @@
     </header>
 
     <div class="prefs-grid">
+        @* The player: no sign-in in this app, so the initials (and the pages about this player) live here,
+           not as a chip in the header (Po page shell, AGENTS.md). *@
+        <fieldset class="prefs-group" data-testid="prefs-player">
+            <legend class="prefs-group-legend">Player</legend>
+            <div class="prefs-row">
+                <div class="prefs-label">
+                    <span class="prefs-name">Initials</span>
+                    <span class="prefs-hint">Shown on the leaderboards: <strong class="gl-arcade-initials">[@PlayerNames.Initials]</strong></span>
+                </div>
+                <button type="button" class="app-btn" data-spring @onclick="ChangeInitialsAsync">Change initials</button>
+            </div>
+            <div class="prefs-row prefs-preview-row">
+                <div class="prefs-label">
+                    <span class="prefs-name">Pages</span>
+                    <span class="prefs-hint">Your stats, the boards and how the app is running.</span>
+                </div>
+                <div class="prefs-preview-actions">
+                    <button type="button" class="app-btn" data-spring @onclick='() => GoToAsync("/profile")'>My stats</button>
+                    <button type="button" class="app-btn" data-spring @onclick='() => GoToAsync("/leaderboards")'>Leaderboards</button>
+                    <button type="button" class="app-btn" data-spring @onclick='() => GoToAsync("/diag")'>System status</button>
+                </div>
+            </div>
+        </fieldset>
+
         <fieldset class="prefs-group">
             <legend class="prefs-group-legend">Look</legend>
             <div class="prefs-row">
@@ -395,6 +421,19 @@
     }
 
     private async Task CloseAsync() => await _dialog.CloseAsync(JS);
+
+    // The initials prompt is its own modal: put the sheet away first, so only one is up.
+    private async Task ChangeInitialsAsync()
+    {
+        await CloseAsync();
+        PlayerNames.RequestOpenPrompt();
+    }
+
+    private async Task GoToAsync(string path)
+    {
+        await CloseAsync();
+        Nav.NavigateTo(path);
+    }
 
     public void Dispose()
     {

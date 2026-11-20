@@ -22,7 +22,6 @@ this script
 """
 
 import importlib.util
-import math
 import os
 import sys
 
@@ -65,8 +64,8 @@ def open_ply(path):
         while not head.endswith(b"end_header\n"):
             head += f.readline()
     lines = head.split(b"\n")
-    n = int([l for l in lines if l.startswith(b"element vertex")][0].split()[-1])
-    props = [l.split()[-1].decode() for l in lines if l.startswith(b"property")]
+    n = int([ln for ln in lines if ln.startswith(b"element vertex")][0].split()[-1])
+    props = [ln.split()[-1].decode() for ln in lines if ln.startswith(b"property")]
     data = np.memmap(path, dtype=np.float32, mode="r", offset=len(head), shape=(n, len(props)))
     return props, data
 

@@ -16,7 +16,7 @@ public class PoCabinetRouteUiTests
 
     public PoCabinetRouteUiTests(KestrelServerFixture fixture) => _fixture = fixture;
 
-    [Theory]
+    [UiTheory]
     [InlineData("/pocabinet/1player", "Cabinet")]
     [InlineData("/pocabinet/multi", "Cabinet")]
     [InlineData("/pocabinet/demo", "Cabinet")]

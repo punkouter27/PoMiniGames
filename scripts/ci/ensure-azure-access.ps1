@@ -1,6 +1,6 @@
 # Makes Azure and GitHub match what PoMiniGames needs: the app identity's roles, the CI deploy identity, and the
 # repo variables the deploy workflow reads. Run by a subscription owner:  pwsh scripts/ci/ensure-azure-access.ps1
-$Repo = 'PoMiniGames'; $Branch = 'master'; $ResourceGroup = 'PoMiniGames'; $App = 'app-5ln5hfdrvof5u-f1win2'
+$Repo = 'PoMiniGames'; $Branch = 'master'; $ResourceGroup = 'PoMiniGames'; $App = 'app-pominigames'
 $Identity = 'system'          # 'system', or the name of a user-assigned identity in PoShared
 $KeyVaultAccess = $true
 $DeployResourceGroups = @('PoMiniGames')
@@ -8,8 +8,9 @@ $MonthlyBudgetUsd = 5            # resource-group budget; alerts email at 50%, 1
 $AppRoles = @(                  # role | scope under the subscription ('' = the subscription itself)
     'Storage Table Data Contributor|/resourceGroups/PoMiniGames/providers/Microsoft.Storage/storageAccounts/st5ln5hfdrvof5u2'
     'Storage Blob Data Contributor|/resourceGroups/PoMiniGames/providers/Microsoft.Storage/storageAccounts/st5ln5hfdrvof5u2'
+    'Cognitive Services User|/resourceGroups/PoShared/providers/Microsoft.CognitiveServices/accounts/po-aiservices-shared2'
 )
-# ---- Same in every Po web repo below this line. Idempotent: re-run it after any re-provision. ----
+# ---- Idempotent: re-run it after any re-provision. ----
 # Grants exactly what the app and its CI need, so "the old resources had a role nobody wrote down"
 # cannot happen again. Needs Owner (or User Access Administrator) on the subscription.
 $ErrorActionPreference = 'Stop'

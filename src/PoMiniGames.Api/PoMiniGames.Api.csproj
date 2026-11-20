@@ -25,21 +25,7 @@
       BlazorWasm static-asset pipeline. `SpaProxyUrl` is similarly unused.
     -->
     <StaticWebAssetsFingerprintingEnabled>false</StaticWebAssetsFingerprintingEnabled>
-    <MinVerTagPrefix>v</MinVerTagPrefix>
-    <MinVerMinimumMajorVersion>1</MinVerMinimumMajorVersion>
-    <MinVerDefaultPreReleaseIdentifiers>preview.0</MinVerDefaultPreReleaseIdentifiers>
-    <MinVerSkipNonTagged>true</MinVerSkipNonTagged>
-    <Version>$(MinVerVersion)</Version>
-    <AssemblyVersion>$(MinVerVersion)</AssemblyVersion>
-    <FileVersion>$(MinVerVersion)</FileVersion>
-    <InformationalVersion>$(MinVerVersion)</InformationalVersion>
   </PropertyGroup>
-
-  <ItemGroup>
-    <!-- MinVer: brings in the .targets that compute the version at restore/build
-         time. No actual code reference; the only side effect is version stamping. -->
-    <PackageReference Include="MinVer" PrivateAssets="all" />
-  </ItemGroup>
 
   <ItemGroup>
     <!-- PoVoxelStrike voxel assets. The authored GLBs in drop/ are AUTHOR-TIME INPUT only:

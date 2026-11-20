@@ -206,7 +206,7 @@ public partial class ApiService
     /// the page shows as the API's own response time. Never throws: a failure comes back as
     /// a plain-English error for the page's error state.
     /// </summary>
-    public async Task<(PoMiniGames.Shared.Diagnostics.DiagReport? Report, double RoundTripMs, string? Error)> GetDiagReportAsync(CancellationToken ct = default)
+    public async Task<(PoMiniGames.Shared.Diagnostics.DiagReportDto? Report, double RoundTripMs, string? Error)> GetDiagReportAsync(CancellationToken ct = default)
     {
         var started = System.Diagnostics.Stopwatch.GetTimestamp();
         try
@@ -217,7 +217,7 @@ public partial class ApiService
             {
                 return (null, elapsed, $"The API answered {(int)response.StatusCode} {response.ReasonPhrase}.");
             }
-            var report = await response.Content.ReadFromJsonAsync(ApiJsonContext.Default.DiagReport, ct);
+            var report = await response.Content.ReadFromJsonAsync(ApiJsonContext.Default.DiagReportDto, ct);
             return (report, elapsed, report is null ? "The API sent an empty report." : null);
         }
         catch (OperationCanceledException)

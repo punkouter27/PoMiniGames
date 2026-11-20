@@ -18,7 +18,7 @@ public class HomePageUiTests
 
     public HomePageUiTests(KestrelServerFixture fixture) => _fixture = fixture;
 
-    [Fact]
+    [UiFact]
     public async Task Home_RendersBlazorClient_AndShowsAppName()
     {
         using var playwright = await Playwright.CreateAsync();

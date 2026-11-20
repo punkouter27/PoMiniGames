@@ -1,5 +1,4 @@
 using System.Diagnostics;
-using System.Reflection;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Http;
@@ -19,37 +18,32 @@ using PoMiniGames.Shared.Diagnostics;
 namespace PoMiniGames.Features.Health;
 
 /// <summary>
-/// <c>GET /api/diag</c>: the data behind the friendly /diag page (HealthPage.razor).
+/// <c>GET /api/diag</c>: the data behind the /diag "System status" page (Features/Health/DiagPage.razor), in the
+/// Po web standard shape (<see cref="DiagReportDto"/>, AGENTS.md).
 /// </summary>
 /// <remarks>
-/// 2026-11-17: rebuilt to the fleet /diag standard. It used to be a developer configuration
-/// dump (ports, application name, the Key Vault URI in Development) behind
-/// FeatureFlags:EnableDiagnostics, so the page had nothing to show in production. It is now
-/// always on and anonymous, and safe to be: it is the registered health checks' status and
-/// latency, a configured/not-configured note per external service, the build date and the
-/// environment name — never a connection string, key, URI, path, id or exception message
-/// (an exception TYPE name at most). HealthEndpointTests pins that.
+/// Always on and anonymous, and safe to be: one row per dependency (the API itself and its multiplayer hubs, the
+/// storage health checks, the tables and blob containers, Key Vault and Application Insights when configured), each
+/// with plain words, a status and a latency. Never a connection string, key, URI, path, id or exception message (an
+/// exception TYPE name at most). DiagProjectionTests and HealthEndpointTests pin that.
 /// </remarks>
 public static class DiagEndpoints
 {
     private const int MaxLogFileBytes = 512 * 1024;       // 512 KB upper bound on a log-tail response.
     private const int MaxTailLines = 500;                  // Cap rows per call to keep the response bounded.
 
-    /// <summary>What each registered health check is for, in plain English. Unknown checks get a generic line.</summary>
-    private static readonly Dictionary<string, (string Name, string Purpose)> StoreNames = new(StringComparer.OrdinalIgnoreCase)
+    /// <summary>Registered health check name → section, label and purpose. Unknown checks land in Services.</summary>
+    private static readonly Dictionary<string, (string Group, string Label, string Purpose)> CheckNames = new(StringComparer.OrdinalIgnoreCase)
     {
-        ["Storage"] = ("Scores and leaderboards", "Azure Table Storage: high scores, ladders, ratings and player stats."),
-        ["AzureTableStorage"] = ("Table storage connection", "A direct round trip to Azure Table Storage, the store every board reads."),
+        ["Storage"] = ("data", "Scores and leaderboards", "Azure Table Storage: high scores, ladders, ratings and player stats."),
+        ["AzureTableStorage"] = ("data", "Table storage connection", "A direct round trip to Azure Table Storage, the store every board reads."),
     };
 
     /// <summary>
-    /// Build stamp of the running server, YYMMDD: the UTC date of the commit it was built from,
-    /// stamped as <c>AssemblyMetadata("BuildVersion")</c> by PoBuildStamp in Directory.Build.props,
-    /// the same value the client shows as <c>.po-version</c>.
+    /// The build version, UTC yyMMdd: the one <c>BuildVersion</c> assembly metadata key (PoBuildStamp in
+    /// Directory.Build.props), the same value the client shows as <c>.po-version</c>.
     /// </summary>
-    internal static string BuildVersion { get; } =
-        typeof(DiagEndpoints).Assembly.GetCustomAttributes<AssemblyMetadataAttribute>()
-            .FirstOrDefault(a => a.Key == "BuildVersion")?.Value ?? "unknown";
+    internal static string BuildVersion => PoPlatform.Version;
 
     public static IEndpointRouteBuilder MapDiagEndpoints(this IEndpointRouteBuilder app)
     {
@@ -61,26 +55,15 @@ public static class DiagEndpoints
         {
             var probe = await ProbeStorageAsync(tables, blobs, ct);
             var report = await BuildReportAsync(health, configuration, environment, ct, probe, ListHubs(endpoints));
-            return Results.Json(report, DiagJsonContext.Default.DiagReport);
+            return Results.Json(report, DiagJsonContext.Default.DiagReportDto);
         }
 
-        var diag = app.MapGroup("/api/diag").WithTags("Health");
-
-        diag.MapGet("", diagHandler)
-        .WithName("GetDiagnostics")
-        .WithSummary("Plain status of the API, its stores and its services, for the /diag page (no secrets)")
-        .Produces<DiagReport>(StatusCodes.Status200OK);
-
-        // The same report at /api/diag/status: the first JSON endpoint the Tab developer
-        // window (wwwroot/po-dev.html, Po standard) tries. Without it the 404 there, a JSON
-        // problem response, was taken as the diagnostics source and showed no checks.
-        diag.MapGet("/status", diagHandler)
-        .WithName("GetDiagnosticsStatus")
-        .WithSummary("Same report as /api/diag, at the path the developer window reads first")
-        .Produces<DiagReport>(StatusCodes.Status200OK);
-
-        // Note: /diag is NOT registered as an API endpoint to avoid conflicting with
-        // the Blazor page route at /diag. Use /api/diag for programmatic access.
+        app.MapGet("/api/diag", diagHandler)
+            .WithTags("Health")
+            .WithName("GetDiagnostics")
+            .WithSummary("Plain status of the API, its data and its services, for the /diag page (no secrets)")
+            .Produces<DiagReportDto>(StatusCodes.Status200OK)
+            .AllowAnonymous();
 
         // ─── Log tail endpoint for dev diagnostics ───────────────────────
         // Serilog's File sink acquires an exclusive handle
@@ -172,8 +155,11 @@ public static class DiagEndpoints
         return app;
     }
 
-    /// <summary>Names of the tables and containers the storage account listed; null when it could not be listed.</summary>
-    internal sealed record StorageProbe(IReadOnlySet<string>? Tables, IReadOnlySet<string>? Containers);
+    /// <summary>Names of the tables and containers the storage account listed (null when it could not be listed), and how long each list took.</summary>
+    internal sealed record StorageProbe(IReadOnlySet<string>? Tables, IReadOnlySet<string>? Containers, double TablesMs = 0, double ContainersMs = 0);
+
+    /// <summary>One mapped SignalR hub: class name and route.</summary>
+    internal sealed record HubInfo(string Name, string Route);
 
     /// <summary>Every table the app uses, by name (the storage service's, the initializer's and the stores').</summary>
     internal static IReadOnlyList<string> TableNames { get; } =
@@ -194,6 +180,7 @@ public static class DiagEndpoints
         using var cts = CancellationTokenSource.CreateLinkedTokenSource(ct);
         cts.CancelAfter(TimeSpan.FromSeconds(3));
         HashSet<string>? tableNames = null, containerNames = null;
+        var started = Stopwatch.GetTimestamp();
         try
         {
             var found = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
@@ -201,6 +188,8 @@ public static class DiagEndpoints
             tableNames = found;
         }
         catch (Exception) when (!ct.IsCancellationRequested) { }
+        var tablesMs = Stopwatch.GetElapsedTime(started).TotalMilliseconds;
+        started = Stopwatch.GetTimestamp();
         try
         {
             var found = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
@@ -208,77 +197,110 @@ public static class DiagEndpoints
             containerNames = found;
         }
         catch (Exception) when (!ct.IsCancellationRequested) { }
-        return new StorageProbe(tableNames, containerNames);
+        return new StorageProbe(tableNames, containerNames, Math.Round(tablesMs, 1), Math.Round(Stopwatch.GetElapsedTime(started).TotalMilliseconds, 1));
     }
 
     /// <summary>The SignalR hubs mapped on this host: class name and route (the /negotiate twin is folded in).</summary>
-    internal static IReadOnlyList<DiagHub> ListHubs(EndpointDataSource endpoints) =>
+    internal static IReadOnlyList<HubInfo> ListHubs(EndpointDataSource endpoints) =>
     [
         .. endpoints.Endpoints.OfType<RouteEndpoint>()
             .Select(e => (Meta: e.Metadata.GetMetadata<HubMetadata>(), Route: e.RoutePattern.RawText))
             .Where(h => h.Meta is not null && h.Route is { Length: > 0 } && !h.Route.EndsWith("/negotiate", StringComparison.OrdinalIgnoreCase))
             .DistinctBy(h => h.Route, StringComparer.OrdinalIgnoreCase)
             .OrderBy(h => h.Route, StringComparer.OrdinalIgnoreCase)
-            // No hub keeps a cheap live connection count, so only "mapped" is reported.
-            .Select(h => new DiagHub(h.Meta!.HubType.Name, h.Route!, null)),
+            .Select(h => new HubInfo(h.Meta!.HubType.Name, h.Route!)),
     ];
 
-    /// <summary>Assembles the /api/diag report from the health checks and configuration presence.</summary>
-    internal static async Task<DiagReport> BuildReportAsync(
+    /// <summary>Assembles the /api/diag report: the API, the health checks, the storage listings and the configured services.</summary>
+    internal static async Task<DiagReportDto> BuildReportAsync(
         HealthCheckService health, IConfiguration configuration, IWebHostEnvironment environment, CancellationToken ct,
-        StorageProbe? storage = null, IReadOnlyList<DiagHub>? hubs = null)
+        StorageProbe? storage = null, IReadOnlyList<HubInfo>? hubs = null)
     {
         var started = Stopwatch.GetTimestamp();
         var report = await health.CheckHealthAsync(ct);
+        hubs ??= [];
 
-        var stores = report.Entries.Select(e =>
+        var checks = new List<DiagCheckDto>
         {
-            var (name, purpose) = StoreNames.TryGetValue(e.Key, out var known)
+            new("api", "api", "PoMiniGames API", "Healthy", "Serves every page, the games' data and the score boards.", "Answering.", 0, null),
+            new("multiplayer", "api", "Multiplayer hubs", hubs.Count > 0 ? "Healthy" : "Degraded",
+                "SignalR lobbies and live matches; they run inside this server.",
+                hubs.Count > 0 ? $"{hubs.Count} hubs mapped: {string.Join(", ", hubs.Select(h => h.Route))}." : "No hub is mapped.",
+                0, hubs.Count > 0 ? null : "No multiplayer hub is mapped on this server."),
+        };
+
+        foreach (var (name, entry) in report.Entries)
+        {
+            var (group, label, purpose) = CheckNames.TryGetValue(name, out var known)
                 ? known
-                : (e.Key, "A dependency this app checks on every health probe.");
-            return new DiagCheck(
-                name,
-                e.Value.Status.ToString(),
-                purpose,
-                Math.Round(e.Value.Duration.TotalMilliseconds, 1),
+                : ("service", name, "A dependency this app checks on every health probe.");
+            checks.Add(new DiagCheckDto(
+                name, group, label, entry.Status.ToString(), purpose, Plain(entry.Status),
+                Math.Round(entry.Duration.TotalMilliseconds, 1),
                 // Type name only: an exception MESSAGE can carry a host name or a key.
-                e.Value.Exception?.GetType().Name);
-        }).ToList();
+                entry.Status == HealthStatus.Healthy ? null : entry.Exception?.GetType().Name ?? "It did not answer as expected."));
+        }
 
-        static DiagCheck Configured(string name, bool configured, string purpose) =>
-            new(name, configured ? "Healthy" : "Not configured",
-                configured ? purpose : purpose + " Not used in this environment.", null, null);
-
-        var services = new List<DiagCheck>
+        if (storage is not null)
         {
-            // Presence only: the vault's address is never echoed.
-            Configured("Azure Key Vault", !string.IsNullOrWhiteSpace(configuration["KeyVault:Uri"]),
-                "Holds the production secrets; read once at startup."),
-            Configured("Application Insights",
-                !string.IsNullOrWhiteSpace(configuration["ApplicationInsights:ConnectionString"])
-                || !string.IsNullOrWhiteSpace(configuration["APPLICATIONINSIGHTS_CONNECTION_STRING"]),
-                "Receives request telemetry and errors for troubleshooting."),
-            new("Multiplayer hubs", "Healthy",
-                "SignalR lobbies and matches; they run inside this server, so they are up whenever the API is. Each hub is listed below.", null, null),
-        };
+            checks.Add(Listing("tables", "Tables", "Every Azure table the games read and write (a table is created on first use).", TableNames, storage.Tables, storage.TablesMs, missingIsNormal: true));
+            checks.Add(Listing("blob-containers", "Blob containers", "Saved worlds and files (a container is created on first use).", ContainerNames, storage.Containers, storage.ContainersMs, missingIsNormal: true));
+        }
 
-        var overall = report.Status switch
+        // Presence only: the vault's and the telemetry endpoint's addresses are never echoed. A service this
+        // environment does not use is not a dependency here, so it gets no row.
+        if (!string.IsNullOrWhiteSpace(configuration["KeyVault:Uri"]))
         {
-            HealthStatus.Unhealthy => "Unhealthy",
-            HealthStatus.Degraded => "Degraded",
-            _ => "Healthy",
-        };
+            checks.Add(new DiagCheckDto("key-vault", "service", "Azure Key Vault", "Healthy",
+                "Holds the production secrets; read once at startup.", "Configured; secrets were loaded at startup.", 0, null));
+        }
 
-        return new DiagReport(
+        if (!string.IsNullOrWhiteSpace(configuration["ApplicationInsights:ConnectionString"])
+            || !string.IsNullOrWhiteSpace(configuration["APPLICATIONINSIGHTS_CONNECTION_STRING"]))
+        {
+            checks.Add(new DiagCheckDto("app-insights", "service", "Application Insights", "Healthy",
+                "Receives request telemetry and errors for troubleshooting.", "Configured; telemetry is sent in the background.", 0, null));
+        }
+
+        var overall = checks.Any(c => c.Status == "Unhealthy") ? "Unhealthy"
+            : checks.Any(c => c.Status == "Degraded") ? "Degraded"
+            : "Healthy";
+
+        return new DiagReportDto(
             overall,
-            BuildVersion,
             environment.EnvironmentName,
+            BuildVersion,
             DateTimeOffset.UtcNow,
             Math.Round(Stopwatch.GetElapsedTime(started).TotalMilliseconds, 1),
-            stores,
-            services,
-            [.. TableNames.Select(n => new DiagResource(n, storage?.Tables is not null, storage?.Tables?.Contains(n) == true))],
-            [.. ContainerNames.Select(n => new DiagResource(n, storage?.Containers is not null, storage?.Containers?.Contains(n) == true))],
-            hubs ?? []);
+            [.. checks]);
     }
+
+    /// <summary>A storage listing as one row: every expected name present, some missing, or the service unreachable.</summary>
+    private static DiagCheckDto Listing(string name, string label, string purpose, IReadOnlyList<string> expected, IReadOnlySet<string>? found, double ms, bool missingIsNormal)
+    {
+        if (found is null)
+        {
+            return new DiagCheckDto(name, "data", label, "Unhealthy", purpose, $"Could not list the {expected.Count} {label.ToLowerInvariant()}.", ms,
+                "The storage service did not answer the listing.");
+        }
+
+        var missing = expected.Where(n => !found.Contains(n)).ToList();
+        if (missing.Count == 0)
+        {
+            return new DiagCheckDto(name, "data", label, "Healthy", purpose, $"All {expected.Count} present: {string.Join(", ", expected)}.", ms, null);
+        }
+
+        return missingIsNormal
+            ? new DiagCheckDto(name, "data", label, "Healthy", purpose,
+                $"{expected.Count - missing.Count} of {expected.Count} present; created on first use: {string.Join(", ", missing)}.", ms, null)
+            : new DiagCheckDto(name, "data", label, "Degraded", purpose,
+                $"{expected.Count - missing.Count} of {expected.Count} present.", ms, $"Missing: {string.Join(", ", missing)}.");
+    }
+
+    private static string Plain(HealthStatus status) => status switch
+    {
+        HealthStatus.Healthy => "Working normally.",
+        HealthStatus.Degraded => "Answering, but not fully.",
+        _ => "Not answering.",
+    };
 }

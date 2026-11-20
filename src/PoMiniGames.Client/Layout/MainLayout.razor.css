@@ -97,9 +97,9 @@
     flex: 1;
     display: flex;
     flex-direction: column;
-    /* Respect the home-indicator inset on phones; nothing else is reserved at the
-       bottom, so there is no strip of empty space under every page. */
-    padding-bottom: env(safe-area-inset-bottom, 0);
+    /* The Po shell's strip under every page (po-tokens.css `main`): the fixed .po-version badge sits in it
+       and never covers content. Phones reserve the BottomNav too (below). */
+    padding-bottom: calc(var(--po-space-6) + env(safe-area-inset-bottom, 0px));
 }
 
 /* ── Toast stack — rendered by MainLayout's @foreach toast loop, and only there.
