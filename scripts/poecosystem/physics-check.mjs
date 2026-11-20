@@ -12,6 +12,9 @@
 //   5. blast     an explosion moves what is near it and nothing else
 //   6. save      settled props survive snapshot() / restore()
 //   7. cost      the time a sim tick takes with the ragdoll cap in flight
+//   8. water     a log dropped in the sea is at the surface ten seconds later; a boulder is not
+//   9. walkers   a creature walking into a settled log moves it a little, never throws it,
+//                and is itself never stopped; the log settles again and keeps its lifetime
 //
 // Exits non-zero if any check fails. Run it after changing rapierWorld.js or the island.
 import path from 'node:path';
@@ -101,7 +104,8 @@ const rows = (physics) => {
     }
   }
   const flying = physics.activeRagdolls;
-  run(physics, PHYSICS.ragdollMaxSeconds + 1);
+  // A body thrown into a lake is given longer to drift in before it is frozen.
+  run(physics, PHYSICS.ragdollMaxSeconds + 14);
   let under = 0; let far = 0; let nan = 0; let deepest = 0;
   for (const r of rows(physics)) {
     if (!r.every(Number.isFinite)) { nan++; continue; }
@@ -200,6 +204,65 @@ const rows = (physics) => {
   for (let t = 0; t < 3; t += TICK_SECONDS) { physics.step(TICK_SECONDS); ticks++; }
   const ms = (performance.now() - t0) / ticks;
   check('cost', ms < 4, `${ms.toFixed(3)} ms per sim tick with ${bodies} bodies in flight`);
+  physics.dispose();
+}
+
+// 8. water
+{
+  const physics = createPhysics(RAPIER, terrain);
+  // Deep water not far from land: the bed two metres or more under the surface.
+  let wx = 0; let wz = 0;
+  for (let tries = 0; tries < 20000; tries++) {
+    const x = 6 + next() * (size - 12); const z = 6 + next() * (size - 12);
+    if (terrain.heightAt(x, z) < -2 && terrain.heightAt(x + 3, z) < -2 && terrain.heightAt(x - 3, z) < -2) { wx = x; wz = z; break; }
+  }
+  physics.fellTree({ x: wx, y: 0.4, z: wz, dirX: 1, dirZ: 0 }, rng);
+  physics.spawnRocks({ projectile: true, rocks: [{ x: wx + 6, y: 1.5, z: wz, vx: 0, vy: 0, vz: 0, big: true }] }, rng);
+  run(physics, 10);
+  const [log, rock] = rows(physics);
+  const bed = terrain.heightAt(rock[0], rock[2]);
+  const floats = log && log[1] > -0.25 && log[1] < 0.25;
+  const sank = rock && rock[1] < -0.6;
+  // The trunk's long axis is its local +Y: afloat, it lies flat.
+  const flat = log ? Math.abs(1 - 2 * (log[3] * log[3] + log[5] * log[5])) < 0.5 : false;
+  check('water', !!floats && !!sank && flat, `log at ${log?.[1].toFixed(2)} m (${flat ? 'lying flat' : 'on end'}), boulder at ${rock?.[1].toFixed(2)} m over a bed at ${bed.toFixed(2)} m`);
+  physics.dispose();
+}
+
+// 9. walkers
+{
+  const physics = createPhysics(RAPIER, terrain);
+  const [x, y, z] = land();
+  physics.fellTree({ x, y, z, dirX: 1, dirZ: 0 }, rng);
+  run(physics, PHYSICS.settleTimeoutSeconds + 1);
+  const start = rows(physics)[0];
+  const left = physics.snapshot()[0].remaining;
+  // One deer, walking straight through where the log lies, from six metres back.
+  const e = {
+    x: new Float32Array([start[0] - 6]), y: new Float32Array([0]), z: new Float32Array([start[2]]),
+    vx: new Float32Array([2]), vz: new Float32Array([0]), species: new Uint8Array([1]), scale: new Float32Array([1]),
+    forEachAlive(fn) { fn(0); }, handle: () => 7,
+  };
+  let most = 0; let fastest = 0; let prev = start; let ticks = 0;
+  for (let t = 0; t < 6; t += TICK_SECONDS) {
+    ticks++;
+    e.x[0] += e.vx[0] * TICK_SECONDS; e.y[0] = terrain.heightAt(e.x[0], e.z[0]);
+    physics.walkers(e);
+    most = Math.max(most, physics.activeWalkers);
+    physics.step(TICK_SECONDS);
+    const now = rows(physics)[0];
+    fastest = Math.max(fastest, Math.hypot(now[0] - prev[0], now[1] - prev[1], now[2] - prev[2]) / TICK_SECONDS);
+    prev = now;
+  }
+  e.vx[0] = 0;                       // it stops: nothing left to push
+  for (let t = 0; t < 6; t += TICK_SECONDS) { physics.walkers(e); physics.step(TICK_SECONDS); }
+  const end = rows(physics)[0];
+  const moved = Math.hypot(end[0] - start[0], end[2] - start[2]);
+  const after = physics.snapshot()[0]?.remaining ?? -1;
+  const walked = e.x[0] - (start[0] - 6);
+  check('walkers', most === 1 && physics.activeWalkers === 0 && moved > 0.1 && moved < 8 && fastest < 6 && physics.settledCount() === 1
+    && Math.abs(walked - ticks * 2 * TICK_SECONDS) < 0.01 && after <= left && after > left - 20,
+  `log moved ${moved.toFixed(2)} m (fastest ${fastest.toFixed(1)} m/s), settled again with ${after.toFixed(0)} s left of ${left.toFixed(0)}, the deer walked ${walked.toFixed(1)} m`);
   physics.dispose();
 }
 

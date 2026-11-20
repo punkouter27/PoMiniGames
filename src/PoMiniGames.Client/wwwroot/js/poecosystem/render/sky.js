@@ -31,14 +31,86 @@
 //   METEORS   one potential streak per 2.6 s slot, hashed from the slot; the rate is the
 //             renderer's (a shower night is again a property of the world and the date).
 //             Each is a short great-circle segment with a fading tail.
-import { BackSide, Color, DoubleSide, Mesh, MeshBasicNodeMaterial, PlaneGeometry, SphereGeometry, Vector3 } from 'three-eco/webgpu';
+//
+// A REAL NIGHT (the high and medium tiers):
+//
+//   STARS     the 1,630 stars of magnitude 5 or brighter from the Yale Bright Star Catalogue
+//             (wwwroot/models/poecosystem/stars.bin, packed by scripts/poecosystem/stars.mjs),
+//             each where it is and the colour it is, as one instanced sprite. The frame turns
+//             with the hour and with the seasons and is tilted to a latitude, so the sky over
+//             the island is a sky: Orion is there to find. Until the file has loaded, and on
+//             the low tier, the dome's own hash stars are drawn instead.
+//   MOON      it waxes and wanes. Its place on the sun's path trails the sun by its phase
+//             (new beside the sun, full opposite it) and the lit part of the disc is the part
+//             that faces the sun. The renderer says what phase it is: the island's own month,
+//             or tonight's real moon when Live Sky is on.
+import { AdditiveBlending, BackSide, Color, DoubleSide, DynamicDrawUsage, InstancedBufferAttribute, Matrix3, Mesh, MeshBasicNodeMaterial, PlaneGeometry, SphereGeometry, Sprite, SpriteNodeMaterial, Vector3 } from 'three-eco/webgpu';
 import {
-  Fn, If, abs, acos, cameraPosition, clamp, dot, exp, float, floor, fract, length, max, mix, normalize,
-  positionLocal, positionWorld, pow, sin, smoothstep, step, uniform, vec2, vec3,
+  Fn, If, abs, acos, cameraPosition, clamp, cross, dot, exp, float, floor, fract, instancedDynamicBufferAttribute, length, max, mix, normalize,
+  positionLocal, positionWorld, pow, sin, smoothstep, sqrt, step, uniform, uv, varying, vec2, vec3,
 } from 'three-eco/tsl';
 import { VIEW_ONLY_LAYER, hash21, vnoise } from './materials.js';
 
 const DOME_RADIUS = 560;
+const STAR_RADIUS = 470;         // inside the dome, inside the camera's far plane
+const STAR_COUNT = { high: 1630, medium: 900, low: 0 };
+const MOON_SIZE = 0.0245;        // the sine of the moon's angular radius as drawn (about 1.4 degrees)
+const DEFAULT_LATITUDE = 20;     // degrees north: where the island sits when Live Sky has no city
+
+/** A star's colour from its B-V index (0..1 over -0.4 .. 2.0): blue-white, white, yellow, orange. */
+function starColour(k, out) {
+  const bv = k * 2.4 - 0.4;
+  if (bv < 0.3) { const t = Math.max(0, (bv + 0.4) / 0.7); return out.setRGB(0.68 + 0.32 * t, 0.8 + 0.2 * t, 1); }
+  if (bv < 0.9) { const t = (bv - 0.3) / 0.6; return out.setRGB(1, 1 - 0.08 * t, 1 - 0.3 * t); }
+  const t = Math.min(1, (bv - 0.9) / 1.1); return out.setRGB(1, 0.92 - 0.24 * t, 0.7 - 0.28 * t);
+}
+
+/**
+ * The catalogue as one instanced sprite, or null if the file is empty. Each star is a
+ * direction (equatorial frame, +Y the north celestial pole); `u.uStarTurn` carries it into
+ * the world, and the sprite sits STAR_RADIUS out along it from the camera.
+ */
+function buildStars(scene, bytes, cap, u) {
+  const view = new DataView(bytes);
+  const n = Math.min(cap, view.getUint32(0, true), Math.floor((bytes.byteLength - 4) / 8));
+  if (!(n > 0)) return null;
+  const dir = new Float32Array(n * 3); const look = new Float32Array(n * 4);
+  const c = new Color();
+  for (let i = 0; i < n; i++) {
+    const o = 4 + i * 8;
+    dir[i * 3] = view.getInt16(o, true) / 32767; dir[i * 3 + 1] = view.getInt16(o + 2, true) / 32767; dir[i * 3 + 2] = view.getInt16(o + 4, true) / 32767;
+    starColour(view.getUint8(o + 7) / 255, c);
+    look[i * 4] = c.r; look[i * 4 + 1] = c.g; look[i * 4 + 2] = c.b; look[i * 4 + 3] = view.getUint8(o + 6) / 255;
+  }
+  const dirAttr = new InstancedBufferAttribute(dir, 3); const lookAttr = new InstancedBufferAttribute(look, 4);
+  for (const a of [dirAttr, lookAttr]) a.setUsage(DynamicDrawUsage);
+  const aDir = instancedDynamicBufferAttribute(dirAttr, 'vec3');
+  const aLook = instancedDynamicBufferAttribute(lookAttr, 'vec4');
+  const world = normalize(u.uStarTurn.mul(aDir));
+  const material = new SpriteNodeMaterial({ transparent: true, depthWrite: false, depthTest: true, fog: false, blending: AdditiveBlending });
+  material.positionNode = cameraPosition.add(world.mul(STAR_RADIUS));
+  // Brightness is size first and light second, as it is to the eye: Sirius is a small disc,
+  // a fifth-magnitude star a point.
+  const size = aLook.w.pow(1.3).mul(3.1).add(0.95);
+  material.scaleNode = vec2(size, size);
+  const d = uv().sub(0.5);
+  const round = float(1).sub(smoothstep(0.1, 1, dot(d, d).mul(4)));
+  // A slow twinkle, each star on its own beat, stronger low in the sky where the air is thick.
+  const beat = sin(u.uTime.mul(aLook.w.mul(2.3).add(1.4)).add(aDir.x.mul(91)).add(aDir.z.mul(57)));
+  const twinkle = beat.mul(mix(0.3, 0.08, smoothstep(0.05, 0.6, world.y))).add(0.9);
+  const seen = smoothstep(0.0, 0.1, world.y).mul(smoothstep(0.3, 0.85, u.uNight)).mul(float(1).sub(u.uOvercast));
+  material.colorNode = varying(aLook.rgb.mul(aLook.w.mul(0.75).add(0.5)).mul(1.5), 'vStarColour');
+  material.opacityNode = varying(seen.mul(twinkle), 'vStarSeen').mul(round);
+  material.alphaTest = 0.002;
+  const sprite = new Sprite(material);
+  sprite.count = n;
+  sprite.frustumCulled = false;
+  sprite.name = 'stars';
+  sprite.renderOrder = -9;          // over the dome, under the clouds
+  sprite.layers.set(VIEW_ONLY_LAYER);
+  scene.add(sprite);
+  return { sprite, material, count: n };
+}
 const CLOUD_Y = 96;
 const CLOUD_SPAN = 1400;
 
@@ -99,19 +171,33 @@ function domeMaterial(u) {
     const disc = smoothstep(0.9993, 0.9997, cosSun);
     const halo = pow(max(cosSun, 0), 220).mul(0.9);
     const glow = pow(max(cosSun, 0), 6).mul(u.uDusk.mul(0.5).add(0.22));
-    col.addAssign(u.uSunColor.mul(disc.mul(3).add(halo).add(glow)).mul(float(1).sub(u.uNight.mul(0.85))));
+    // Gone by full night: the light that is left then is the moon's, and `uSunDir` (which
+    // lighting.js keeps above the horizon so the island is never unlit) is no longer where a sun is.
+    col.addAssign(u.uSunColor.mul(disc.mul(3).add(halo).add(glow)).mul(float(1).sub(u.uNight.mul(0.85))).mul(float(1).sub(smoothstep(0.55, 0.85, u.uNight))));
 
-    // Moon: opposite the sun, small, cool, only at night.
-    const cosMoon = dot(d, normalize(u.uSunDir.negate().add(vec3(0, 0.35, 0))));
-    const moon = smoothstep(0.99955, 0.9998, cosMoon).add(pow(max(cosMoon, 0), 400).mul(0.35));
-    col.addAssign(vec3(0.86, 0.9, 1.0).mul(moon).mul(u.uNight).mul(1.4));
+    // Moon: small, cool, and lit on the side that faces the sun. `uMoonCos` is the cosine of
+    // how far round from the sun it is: 1 new, -1 full. Across the disc, the edge of the
+    // light is the ellipse x = cos * sqrt(1 - y^2), x measured toward the sun.
+    const m = normalize(u.uMoonDir);
+    const cosMoon = dot(d, m);
+    const moonDisc = smoothstep(0.99955, 0.9998, cosMoon);
+    const toSun = normalize(u.uTrueSun.sub(m.mul(dot(u.uTrueSun, m))).add(vec3(1e-5, 0, 0)));
+    const px = dot(d, toSun).div(MOON_SIZE);
+    const py = dot(d, cross(m, toSun)).div(MOON_SIZE);
+    const edge = u.uMoonCos.mul(sqrt(max(float(1).sub(py.mul(py)), 0)));
+    // The dark part is not black: earthshine, faint.
+    const lit = smoothstep(edge.sub(0.07), edge.add(0.07), px).mul(0.94).add(0.06);
+    const full = float(1).sub(u.uMoonCos).mul(0.5);
+    const moon = moonDisc.mul(lit).add(pow(max(cosMoon, 0), 400).mul(0.35).mul(full));
+    col.addAssign(vec3(0.86, 0.9, 1.0).mul(moon).mul(u.uNight).mul(1.4).mul(smoothstep(-0.04, 0.03, m.y)));
 
     // Stars: a hash on a quantised direction, thresholded so only a few cells light, with
-    // a slow twinkle, above the horizon and only once the sky is dark enough.
+    // a slow twinkle, above the horizon and only once the sky is dark enough. These are the
+    // stand-ins: once the catalogue is up (uCatalog), the real stars are drawn instead.
     const cell = floor(d.xz.div(max(abs(d.y), 0.05)).mul(90));
     const s = hash21(cell);
     const star = step(0.986, s).mul(sin(u.uTime.mul(s.mul(3).add(1.5)).add(s.mul(40))).mul(0.4).add(0.6));
-    col.addAssign(vec3(0.9, 0.95, 1.0).mul(star).mul(smoothstep(0.02, 0.2, up)).mul(smoothstep(0.35, 0.9, u.uNight)).mul(0.9));
+    col.addAssign(vec3(0.9, 0.95, 1.0).mul(star).mul(smoothstep(0.02, 0.2, up)).mul(smoothstep(0.35, 0.9, u.uNight)).mul(0.9).mul(float(1).sub(u.uCatalog)));
 
     // Rainbow: the primary bow, 42 degrees out from the antisolar point, red outside. Only
     // above the horizon, so a high sun (bow centre far below it) shows none.
@@ -165,6 +251,12 @@ export function createSky(scene, { tier = 'high' } = {}) {
     uAurora: uniform(0),
     uMeteors: uniform(0),
     uRainbow: uniform(0),
+    uMoonDir: uniform(new Vector3(0, 0.6, -0.8)),
+    uMoonCos: uniform(-1),
+    uTrueSun: uniform(new Vector3(0, -1, 0)),     // where the sun really is, below the horizon at night
+    uCatalog: uniform(0),
+    uStarTurn: uniform(new Matrix3()),
+    uOvercast: uniform(0),
     // The low tier keeps the gradient, sun, moon, stars and bow but builds the dome without
     // the aurora and meteor terms: the most expensive pixels in the sky, on the cheapest GPUs.
     spectacle: tier !== 'low',
@@ -200,6 +292,22 @@ export function createSky(scene, { tier = 'high' } = {}) {
     clouds = { plane, mat, u: c };
   }
 
+  // The catalogue, fetched in the background; the dome's hash stars stand in until it is up.
+  let stars = null; let disposed = false;
+  let latitude = DEFAULT_LATITUDE;
+  const starCap = STAR_COUNT[tier] ?? 0;
+  if (starCap > 0 && typeof fetch === 'function') {
+    fetch(new URL('../../../models/poecosystem/stars.bin', import.meta.url).href)
+      .then((r) => (r.ok ? r.arrayBuffer() : null))
+      .then((bytes) => {
+        if (!bytes || disposed) return;
+        stars = buildStars(scene, bytes, starCap, u);
+        if (stars) u.uCatalog.value = 1;
+      })
+      .catch(() => { /* the hash stars stay */ });
+  }
+  const moon = { dir: new Vector3(0, 0.6, -0.8), cos: -1 };
+
   const zenith = new Color();
   const WHITE = new Color(0xffffff);
   const SLATE = new Color(0x6b7a8c);
@@ -209,6 +317,7 @@ export function createSky(scene, { tier = 'high' } = {}) {
   let overcast = 0;
   let overcastTarget = 0;
   const spectacle = { aurora: 0, meteors: 0 };
+  let yearTurn = 0;
   let rainbow = 0;
   const DAY_ZENITH = new Color(0x2f6fd0);
   const NIGHT_ZENITH = new Color(0x0b1326);
@@ -230,6 +339,40 @@ export function createSky(scene, { tier = 'high' } = {}) {
     /** 0..1 rainbow strength (renderer.js: rain easing off over wet ground, in daylight). */
     setRainbow(v) { rainbow = Math.max(0, Math.min(1, v)); },
     get rainbow() { return u.uRainbow.value; },
+    /** How many catalogue stars are drawn (0 until the file is up, and on the low tier). */
+    get starCount() { return stars?.count ?? 0; },
+    /** Degrees north the sky is tilted to (Live Sky passes its city's; null puts it back). */
+    setLatitude(deg) { latitude = Number.isFinite(deg) ? Math.max(-80, Math.min(80, deg)) : DEFAULT_LATITUDE; },
+    /**
+     * The moon tonight: `phase` 0..1 round the month (0 new, 0.5 full) and `dayFraction` the
+     * hour. Returns `{ dir, lit, up }`: where it is, how much of its face is lit (0..1), and
+     * how far above the horizon it stands (0..1), which is what the night's light follows.
+     */
+    setMoon(phase, dayFraction) {
+      const turn = phase * Math.PI * 2;
+      // The sun's own path (lighting.js), trailed by the phase.
+      const a = (dayFraction - 0.25) * Math.PI * 2 - turn;
+      moon.dir.set(Math.cos(a) * 180, Math.sin(a) * 180, 60).normalize();
+      moon.cos = Math.cos(turn);
+      u.uMoonDir.value.copy(moon.dir);
+      const s = (dayFraction - 0.25) * Math.PI * 2;
+      u.uTrueSun.value.set(Math.cos(s) * 180, Math.sin(s) * 180, 60).normalize();
+      u.uMoonCos.value = moon.cos;
+      // The stars turn once a day and once more a year, about the pole the latitude sets.
+      const lat = (latitude * Math.PI) / 180;
+      const tilt = -(Math.PI / 2 - lat);
+      const spin = -(dayFraction * Math.PI * 2 + yearTurn);
+      const cs = Math.cos(spin); const sn = Math.sin(spin); const ct = Math.cos(tilt); const st = Math.sin(tilt);
+      // Rx(tilt) * Ry(spin), row-major into Matrix3.set.
+      u.uStarTurn.value.set(
+        cs, 0, sn,
+        st * sn, ct, -st * cs,
+        -ct * sn, st, ct * cs,
+      );
+      return { dir: moon.dir, lit: (1 - moon.cos) / 2, up: Math.max(0, Math.min(1, moon.dir.y * 3)) };
+    },
+    /** How far round the year it is, 0..1: the night sky of spring is not autumn's. */
+    setYear(fraction) { yearTurn = (fraction % 1) * Math.PI * 2; },
     /**
      * @param {{ sky: Color, sunColour: Color, sunDir: Vector3, night: number, day: number, dusk: number }} sky
      *   the object lighting.update() returns; this adds `zenith` to it, which the water
@@ -256,6 +399,7 @@ export function createSky(scene, { tier = 'high' } = {}) {
       u.uAurora.value += (spectacle.aurora * clear - u.uAurora.value) * 0.004;
       u.uMeteors.value = spectacle.meteors * clear;
       u.uRainbow.value += (rainbow - u.uRainbow.value) * 0.02;
+      u.uOvercast.value = Math.min(1, overcast * 1.15);
       if (clouds) {
         const c = clouds.u;
         c.uSunDir.value.copy(sky.sunDir);
@@ -269,6 +413,8 @@ export function createSky(scene, { tier = 'high' } = {}) {
       }
     },
     dispose() {
+      disposed = true;
+      if (stars) { scene.remove(stars.sprite); stars.material.dispose(); stars = null; }
       scene.remove(dome); dome.geometry.dispose(); domeMat.dispose();
       if (clouds) { scene.remove(clouds.plane); clouds.plane.geometry.dispose(); clouds.mat.dispose(); }
     },

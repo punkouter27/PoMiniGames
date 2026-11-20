@@ -110,6 +110,9 @@ export function createFauna(scene, terrainApi, { tier = 'high', renderer = null 
     fish = { mesh };
   }
 
+  // Where each CPU flock is (its birds' mean), for the ear; the GPU flock keeps its own.
+  const cpuPoints = Array.from({ length: flockCount }, (_, f) => ({ x: size * (0.3 + 0.2 * f), y: 26, z: size * 0.5 }));
+
   function stepBirds(dt, time, night, storm, focus = null) {
     const { mesh, pos, vel, phase } = birds;
     // Roost at night and in a storm: the flock fades out rather than vanishing mid-air.
@@ -132,6 +135,7 @@ export function createFauna(scene, terrainApi, { tier = 'high', renderer = null 
       for (let b = lo; b < hi; b++) { mx += pos[b * 3]; my += pos[b * 3 + 1]; mz += pos[b * 3 + 2]; ax += vel[b * 3]; ay += vel[b * 3 + 1]; az += vel[b * 3 + 2]; }
       const n = BIRDS_PER_FLOCK;
       mx /= n; my /= n; mz /= n; ax /= n; ay /= n; az /= n;
+      cpuPoints[f].x = mx; cpuPoints[f].y = my; cpuPoints[f].z = mz;
       for (let b = lo; b < hi; b++) {
         const o = b * 3;
         let fx = (mx - pos[o]) * 0.35 + (ax - vel[o]) * 0.5 + (tx - pos[o]) * 0.08;
@@ -206,6 +210,14 @@ export function createFauna(scene, terrainApi, { tier = 'high', renderer = null 
     /** Something loud happened at a world point: the flock near it scatters. */
     startle(x, y, z, strength = 1) { flock?.startle(x, y, z, strength); },
     get birdCount() { return flock ? flock.count : birdTotal; },
+    /**
+     * Where the birds are, for sound: `{ points: [{ x, y, z }], gather, presence }`.
+     * `presence` is 0 while they roost (night, storm); `gather` 0..1 the dusk murmuration.
+     */
+    get birds() {
+      if (flock) return { points: flock.points, gather: flock.gather, presence: flock.presence };
+      return { points: cpuPoints, gather: 0, presence: birds ? birds.presence : 0 };
+    },
     get flock() { return flock; },
     get fishSchools() { return schools.length; },
     dispose() {

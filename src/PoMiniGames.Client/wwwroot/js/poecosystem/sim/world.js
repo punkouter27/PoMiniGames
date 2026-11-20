@@ -1056,6 +1056,9 @@ export function createWorld({ seed = 1, caps = {}, physics = null, terrain: supp
       const decay = EVENTS.fearDecayPerSecond;
       for (let t = 0; t < fear.length; t++) if (fear[t] > 0) fear[t] = fear[t] > decay ? fear[t] - decay : 0;
     }
+    // Write-only, like everything said to the physics: where the living are, so a creature
+    // passing a loose log or stone pushes it. Nothing is read back.
+    phys.walkers(e);
     phys.step(dt);
 
     // A template thought lands on the next creature in turn every few seconds, so the

@@ -24,7 +24,7 @@
 // async, so createRenderer still returns at once — the scene, the input and the camera are
 // all live straight away — and only the draw loop waits for `ready`.
 import { ACESFilmicToneMapping, Color, PCFShadowMap, PerspectiveCamera, PointLight, Scene, Vector2, Vector3 } from 'three-eco/webgpu';
-import { CREATURE_CAP, PROP_CAP } from '../sim/core/config.js';
+import { CREATURE_CAP, DAY_SECONDS, DAY_START_FRACTION, PROP_CAP, TICK_SECONDS } from '../sim/core/config.js';
 import { FRAME, frameViews } from '../sim/frame.js';
 import { TILE, TILE_STATE } from '../sim/terrain/tiles.js';
 import { createTerrainMesh } from './terrainMesh.js';
@@ -44,7 +44,7 @@ import { createDirector } from './director.js';
 import { createPip } from './pip.js';
 import { createStage } from '../../platform/stage/stage.js';
 import { createSky } from './sky.js';
-import { VIEW_ONLY_LAYER, materialClock, materialCloud, materialDetail, materialSeason, materialSnow, materialWet, materialSky } from './materials.js';
+import { MAIN_ONLY_LAYER, VIEW_ONLY_LAYER, WIND_METRES_PER_SECOND, materialClock, materialCloud, materialDetail, materialSeason, materialSnow, materialWet, materialSky, materialWind } from './materials.js';
 import { applyCameraShake } from './impact.js';
 import { createSettlementMeshes, bannerColour } from './settlementMesh.js';
 import { createFauna } from './fauna.js';
@@ -54,6 +54,11 @@ import { createRipples } from './ripples.js';
 import { GOAL } from '../sim/behavior/utility.js';
 import { createSceneRenderer } from './backend.js';
 import { connectedPads, rumble as padRumble } from '../../platform/gamepadBus.js';
+import { TREE_STATE } from '../sim/flora/trees.js';
+import { clusterFires } from './fireClusters.js';
+import { createFireLights } from './fireLights.js';
+import { createBolts } from './bolt.js';
+import { createSoundscape } from './soundscape.js';
 
 const TAU = Math.PI * 2;
 // What the auto-director calls a cut to an event tile.
@@ -79,6 +84,19 @@ const THERMAL_MOOD = [0.5, 0.62, 0.95, 0.12];   // the world behind a thermal le
 const UNDER_FOG = new Color(0x0b5f73);
 const UNDER_FOG_DENSITY = 0.05;
 const CLOUD_SHADE = 0.42;         // how much sun a cloud takes at noon under a broken sky
+// Footfalls: how far the listener hears single steps and a running herd, the metres an
+// animal of each species covers per footfall, and how loud its step is.
+const STEP_RANGE = 42;
+const STEP_VOICES = 6;
+const HERD_RANGE = 110;
+const HERD_SPEED = 4.2;
+const FOOT_METRES = [0.9, 1.1, 1.0, 0.75];
+const FOOT_LEVEL = [0.22, 0.6, 0.42, 0.4];
+const MOON_CYCLES = 8;            // light cycles (days and nights) from one new moon to the next
+// The lakes' mirror pass runs only while a lake is this near, the camera this low, and the
+// lake in front of it (or underfoot).
+const MIRROR_RANGE = 120;
+const MIRROR_HEIGHT = 45;
 const GRAZE_CELL = 4;             // metres per cell of the minimap's grazing layer
 const TRAFFIC_BLOCK = 4;          // trail texels per cell of the traffic layer
 /** Deterministic 0..1 from a few integers — the world's seed and the date, never the viewer. */
@@ -157,12 +175,13 @@ export function createRenderer(container, {
   const scene = new Scene();
   const camera = new PerspectiveCamera(75, 1, 0.5, 700);
   camera.layers.enable(VIEW_ONLY_LAYER);
+  camera.layers.enable(MAIN_ONLY_LAYER);
   // lighting owns scene.fog now: its colour and density both ride the same day/night curve
   // as the sky, and the water and particle shaders read the density back off it.
   // The high tier's extras (the second shadow map, ambient occlusion) are for WebGPU: the
   // WebGL2 backend is the fallback, and it is kept as lean as it was.
   const extras = tier === 'high' && backend.asked === 'webgpu';
-  const lighting = createLighting(scene, { shadows: !lowEnd, shadowMapSize: lowEnd ? 1024 : 2048, twoMaps: extras });
+  const lighting = createLighting(scene, { shadows: !lowEnd, shadowMapSize: lowEnd ? 1024 : 2048, twoMaps: extras, mist: tier !== 'low' });
   // The sky dome and clouds ride the camera; every hooked Lambert material (materials.js)
   // reads one shared clock, set once per frame below.
   const skyDome = createSky(scene, { tier });
@@ -193,7 +212,11 @@ export function createRenderer(container, {
   // GFX pass 2 state. `surface` is what the terrain and water read every frame.
   let trails = null;
   let grass = null;
-  const surface = { wet: 0, rain: 0, snow: 0, bio: 0 };
+  const surface = { wet: 0, rain: 0, snow: 0, bio: 0, windX: 0.08, windZ: 0.03, swell: 1 };
+  // The island's one wind: a direction that veers slowly and a strength from the weather
+  // (or, with Live Sky on, the real wind over the chosen city). Everything that moves in
+  // air reads it through materials.js materialWind.
+  let windAngle = 0.6; let windStrength = 0.1; let swellNow = 1;
   let snowFall = 0;                // snow laid by a weather spell; melts when it ends
   let bioTarget = 0;
   let spectacleKey = '';
@@ -249,6 +272,21 @@ export function createRenderer(container, {
   campfireLight.layers.set(VIEW_ONLY_LAYER);
   scene.add(campfireLight);
   let campfireAt = null;
+  // Fire and lava light what is next to them (fireLights.js), a strike has a bolt (bolt.js),
+  // and the ground has a sound map (soundscape.js). `fireGroups` is where the island is
+  // burning, as the few places the lights and the fire's voice are parked on.
+  const fireLights = createFireLights(scene, { tier });
+  const bolts = createBolts(scene);
+  let soundscape = null; let treeTiles = null; let lastTileState = null;
+  let mirrorAsked = false; let mirrorReady = false;
+  // OFF by default: measured 2026-11-20, the mirror pass rebuilds ~25 GPU pipelines a frame
+  // for the instanced trees and creature models (about 850 ms a frame). `?ecoMirror=on`
+  // turns it on for working on that; the lakes keep the sky's reflection meanwhile.
+  let mirrorWanted = false;
+  try { mirrorWanted = new URLSearchParams(window.location.search).get('ecoMirror') === 'on'; } catch { /* no location */ }
+  let fireGroups = [];
+  let placeAt = 0; let windNow = 0.12; let padHerdAt = 0;
+  const steppers = [];
 
   // Auto-director + pop-out window. The director drives the same player pose the
   // controller does; any real input hands the camera back (see noteInput).
@@ -355,8 +393,9 @@ export function createRenderer(container, {
     };
     island = createTerrainMesh(terrainApi, { tier });
     lighting.setWorldSize?.(msg.size);
+    lighting.setTerrain?.(terrainApi);
     scene.add(island.mesh, island.water);
-    flora = createFloraMeshes(scene, terrainApi, { trees: msg.trees, bushes: msg.bushes });
+    flora = createFloraMeshes(scene, terrainApi, { trees: msg.trees, bushes: msg.bushes, tier });
     if (minimapCanvas) minimap = createMinimap(minimapCanvas, terrainApi);
     if (settlementMeshes) settlementMeshes.dispose();
     settlementMeshes = createSettlementMeshes(scene, (x, z) => terrainApi.heightAt(x, z), palette);
@@ -368,6 +407,11 @@ export function createRenderer(container, {
     trails = createTrails(terrainApi.size);
     grass?.dispose();
     grass = createGrass(scene, terrainApi, { tier });
+    soundscape = createSoundscape(terrainApi);
+    mirrorAsked = false; mirrorReady = false;
+    treeTiles = msg.trees ?? null; lastTileState = msg.tileState ?? null;
+    soundscape.setTrees(treeTiles);
+    fireGroups = [];
     // A new island: nothing the last one fed the data layers or the watch marks carries over.
     heat = null; lastGrass = null; watchedAt.clear(); watchedNow.clear();
     refreshLayer();
@@ -393,6 +437,8 @@ export function createRenderer(container, {
     flora?.update(msg, lastTime / 1000);
     minimap?.setTiles(msg);
     lastGrass = msg.grass ?? lastGrass;
+    lastTileState = msg.tileState ?? lastTileState;
+    if (msg.treeState) soundscape?.setTrees(treeTiles, msg.treeState, TREE_STATE.STANDING);
     if (layer === 'grazing') refreshLayer();
 
     // One pass over the tile states per sync, converted straight to world points. Capped
@@ -722,6 +768,79 @@ export function createRenderer(container, {
   }
 
   /**
+   * Where the listener is and what is around it, at 2 Hz: the groups of burning tiles (for
+   * the fire lights and the fire's voice), the shore and canopy under the camera, where the
+   * flocks are, the footfalls of the animals nearest by, and the rumble of a herd on the run.
+   * The lights are set here even with no audio: they are a picture, not a sound.
+   */
+  function updatePlace(timeSec, night) {
+    if (!terrainApi || timeSec - placeAt < 0.5) return;
+    placeAt = timeSec;
+    fireGroups = fireTiles.length || lavaTiles.length
+      ? clusterFires(fireTiles, lavaTiles, player, { max: 4, campfire: campfireAt, isWater: soundscape ? (x, z) => soundscape.isWater(x, z) : null })
+      : [];
+    fireLights.set(fireGroups);
+    // The lakes' mirror: a second pass over the scene, so only while there is a lake to
+    // look at (high tier on WebGPU; the rest keep the sky's reflection).
+    if (extras && island && soundscape && renderer.backend?.isWebGPUBackend) {
+      if (!mirrorAsked) { mirrorAsked = true; mirrorReady = island.setMirror({ scene, camera, shadows: () => lighting.shadows }); }
+      if (mirrorReady) {
+        const lake = soundscape.nearestLake(player.x, player.z);
+        let on = false;
+        if (lake && lake.distance < MIRROR_RANGE && player.y < MIRROR_HEIGHT && player.y > 0.1) {
+          const d = player.direction();
+          on = lake.distance < 18 || ((lake.x - player.x) * d.x + (lake.z - player.z) * d.z) / lake.distance > 0.15;
+        }
+        island.mirror(on && mirrorWanted);
+      }
+    }
+    if (!audio) return;
+    audio.setFires?.(fireGroups);
+    const ground = terrainApi.heightAt(player.x, player.z);
+    audio.setPlace?.({
+      shore: soundscape ? soundscape.shore(player.x, player.z) : 0.5,
+      canopy: soundscape ? soundscape.canopy(player.x, player.z) : 0,
+      wind: windNow, height: Math.max(0, (player.y - Math.max(0, ground) - 4) / 45),
+    });
+    const b = fauna?.birds;
+    audio.setBirds?.(b && b.presence > 0.3 ? b.points : null, b ? b.gather * b.presence : 0);
+
+    if (!curr) return;
+    // Footfalls for the nearest few animals that are moving; everything running past that
+    // is the herd. Steps are scheduled half a second ahead, which is this function's beat.
+    steppers.length = 0;
+    let herdN = 0; let hx = 0; let hy = 0; let hz = 0;
+    const r2 = STEP_RANGE * STEP_RANGE; const h2 = HERD_RANGE * HERD_RANGE;
+    for (let k = 0; k < interpCount; k++) {
+      const sp = speeds[k];
+      if (sp < 0.7) continue;
+      const o = k * FRAME.CREATURE_STRIDE;
+      const dx = interp[o] - player.x; const dz = interp[o + 2] - player.z;
+      const d2 = dx * dx + dz * dz + (interp[o + 1] - player.y) ** 2;
+      if (d2 > h2) continue;
+      if (sp > HERD_SPEED) { herdN++; hx += interp[o]; hy += interp[o + 1]; hz += interp[o + 2]; }
+      if (d2 < r2) steppers.push({ o, sp, d2 });
+    }
+    steppers.sort((p, q) => p.d2 - q.d2);
+    for (let i = 0; i < steppers.length && i < STEP_VOICES; i++) {
+      const { o, sp } = steppers[i];
+      const species = Math.max(0, Math.min(3, interp[o + 5] | 0));
+      const rate = Math.max(1.2, Math.min(9, sp / (FOOT_METRES[species] * Math.max(0.4, interp[o + 4]))));
+      const count = Math.max(1, Math.round(rate * 0.5));
+      const x = interp[o]; const y = interp[o + 1]; const z = interp[o + 2];
+      const on = soundscape ? soundscape.ground(x, z, y, surface.snow, lastTileState) : 'grass';
+      audio.footfalls?.({ x, y: y + 0.1, z }, on, count, 0.5 / count, FOOT_LEVEL[species] * (sp > HERD_SPEED ? 1 : 0.6));
+    }
+    if (herdN >= 5) {
+      const at = { x: hx / herdN, y: hy / herdN + 0.5, z: hz / herdN };
+      const level = Math.min(1, herdN / 18);
+      audio.setHerd?.(at, level);
+      // A big herd passing close is felt as well as heard.
+      if (level > 0.35 && timeSec - padHerdAt > 0.9 && Math.hypot(at.x - player.x, at.z - player.z) < 28) { padHerdAt = timeSec; rumble(0.1 + level * 0.12); }
+    } else audio.setHerd?.(null, 0);
+  }
+
+  /**
    * A connected gamepad rumbles for a near blast (the phone path is impactBus's). Through
    * gamepadBus, so the app's Haptics setting and duty caps apply. The bus has no startDelay, so
    * the sound-travel delay is a timer instead.
@@ -858,7 +977,7 @@ export function createRenderer(container, {
       const tick = curr.views.header[FRAME.H_TICK];
       if (tick !== lastPropTick) {
         lastPropTick = tick;
-        eventFx.props(curr.views.props, propCount, currAt, terrainApi);
+        eventFx.props(curr.views.props, propCount, currAt, terrainApi, player);
         trackWatched(curr.views, curr.views.header[FRAME.H_COUNT]);
       }
       // The traffic layer follows a grid that changes every frame; two seconds is plenty.
@@ -872,7 +991,14 @@ export function createRenderer(container, {
     const effDayFraction = liveEnv ? liveEnv.dayFraction : (stats?.dayFraction ?? 0.5);
     const overcast = liveEnv ? liveEnv.overcast : ((OVERCAST[effWeatherKind] ?? 0) * effWeatherIntensity);
     skyDome.setOvercast(overcast);
-    const sky = lighting.update(effDayFraction, player, timeSec, skyDome.overcast);
+    // The moon: the island's own month (eight light cycles, starting just before full), or
+    // tonight's real one under Live Sky. Its light is what the night is lit by.
+    const cycles = (stats?.tick ?? 0) * TICK_SECONDS / DAY_SECONDS + DAY_START_FRACTION;
+    const moonPhase = liveEnv?.moonPhase !== undefined && liveEnv?.moonPhase !== null ? liveEnv.moonPhase : (cycles / MOON_CYCLES + 0.44) % 1;
+    skyDome.setLatitude(liveEnv?.latitude ?? null);
+    skyDome.setYear(liveEnv?.yearFraction ?? ((stats?.season ?? 0) + (stats?.seasonProgress ?? 0)) / 4);
+    const moonNow = skyDome.setMoon(moonPhase, effDayFraction);
+    const sky = lighting.update(effDayFraction, player, timeSec, skyDome.overcast, moonNow.lit * moonNow.up);
     scene.background = sky.sky;
     materialClock.value = timeSec;
     if (stats && stats.season !== undefined) materialSeason.value = stats.season;
@@ -889,9 +1015,33 @@ export function createRenderer(container, {
     materialCloud.uCloudSun.value.copy(sky.sunDir);
     materialCloud.uCloudShade.value = tier === 'low' ? 0 : CLOUD_SHADE * Math.min(1, sky.day * 2.5) * (1 - skyDome.overcast * 0.75);
     updateUnderwater(dt);
+    // The wind. `windy` is 0..1 (calm to gale); a real wind from Live Sky replaces the
+    // weather's guess and its bearing. It veers slowly, and a gale holds its line.
+    let windy = effWeatherKind === WEATHER_STORM ? effWeatherIntensity : effWeatherKind === WEATHER_RAIN ? effWeatherIntensity * 0.4 : 0.12;
+    if (liveEnv?.wind) {
+      windy = Math.max(0.04, Math.min(1, liveEnv.wind.speed / 16));
+      windAngle += shortestAngle(windAngle, liveEnv.wind.angle) * Math.min(1, dt * 0.2);
+    } else windAngle += dt * 0.012;
+    windStrength += (0.06 + windy * 0.34 - windStrength) * Math.min(1, dt * 0.5);
+    materialWind.value.set(Math.cos(windAngle) * windStrength, Math.sin(windAngle) * windStrength);
+    surface.windX = materialWind.value.x; surface.windZ = materialWind.value.y;
+    // The sea's height: the wind's, unless Live Sky has the real swell (metres, significant).
+    const swellWant = liveEnv?.swell !== undefined && liveEnv.swell !== null ? Math.max(0.45, Math.min(2.2, 0.45 + liveEnv.swell * 0.55)) : 0.8 + windy * 0.9;
+    swellNow += (swellWant - swellNow) * Math.min(1, dt * 0.2);
+    surface.swell = swellNow;
     island?.update(timeSec, sky, surface);
-    const windy = effWeatherKind === WEATHER_STORM ? effWeatherIntensity : effWeatherKind === WEATHER_RAIN ? effWeatherIntensity * 0.4 : 0.12;
-    grass?.update(dt, player, windy, sky);
+    grass?.update(dt, player, sky);
+    windNow = windy;
+    // Mist in the low ground: at dawn, and for a while after rain. A wind clears it, a
+    // drought never has it, and it thins while the camera is on one creature.
+    const dawn = smoothstep(0.19, 0.25, effDayFraction) * (1 - smoothstep(0.31, 0.38, effDayFraction));
+    const afterRain = Math.max(0, Math.min(1, surface.wet * 1.4 - 0.35)) * (1 - Math.min(1, surface.rain * 3)) * 0.6;
+    let mistWant = Math.max(dawn, afterRain) * (1 - Math.min(1, windy * 1.5)) * (effWeatherKind === WEATHER_DROUGHT ? 0 : 1);
+    if (followHandle >= 0 || director.enabled) mistWant *= 0.4;
+    lighting.setMist?.(mistWant);
+    updatePlace(timeSec, sky.night ?? 0);
+    fireLights.update(dt, timeSec, sky.night ?? 0);
+    bolts.update(dt);
     if (campfireAt) {
       campfireLight.position.set(campfireAt.x, campfireAt.y + 1.1, campfireAt.z);
       const flicker = 0.85 + 0.15 * Math.sin(timeSec * 11.3) * Math.sin(timeSec * 7.1);
@@ -965,6 +1115,12 @@ export function createRenderer(container, {
       if (!ev || ev.tile === undefined || ev.tile < 0 || !terrainApi) return;
       const at = eventFx.worldOf(ev.tile, terrainApi, terrainApi.size);
       eventFx.event(ev, at, player, post);
+      // The bolt: a line in the sky, never a flash of the screen (see bolt.js). The tile and
+      // the event's id make its shape, so a strike looks the same to everyone watching it.
+      if (ev.kind === 'lightning') {
+        bolts.strike(at.x, at.y, at.z, (Math.imul(ev.tile | 0, 2654435761) ^ ((ev.id ?? 0) * 40503)) >>> 0,
+          motionReduced || window.PoQuality?.reduceFlashing?.() === true);
+      }
       if (ev.kind === 'eruption' || ev.kind === 'lightning') fauna?.startle(at.x, at.y, at.z, ev.kind === 'eruption' ? 1 : 0.7);
       // Shockwave + rumble (idea 4 and the haptics bonus): only for the physical blasts,
       // scaled by distance, and only when the blast is actually in front of the camera.
@@ -1094,6 +1250,17 @@ export function createRenderer(container, {
     },
     get underwater() { return underK; },
     get rainbow() { return skyDome.rainbow; },
+    /** Harness: the fire lights, the bolts and the island's sound map. */
+    get fireLights() { return fireLights; },
+    get fireGroups() { return fireGroups; },
+    get bolts() { return bolts; },
+    get soundscape() { return soundscape; },
+    get flora() { return flora; },
+    get sky() { return skyDome; },
+    /** True while the lakes' mirror pass is being drawn. */
+    get mirroring() { return !!island?.mirroring; },
+    /** The island's wind: { x, z } (materials.js units), its speed in m/s, and the swell. */
+    get wind() { return { x: materialWind.value.x, z: materialWind.value.y, speed: windStrength * WIND_METRES_PER_SECOND, swell: swellNow }; },
     // The page's 🎬 button goes through the same switch the C key does, so an explicit
     // off is remembered rather than undone by the idle timer.
     setDirector(on) { if (director.enabled === !!on) return; toggleDirector(); },
@@ -1144,6 +1311,8 @@ export function createRenderer(container, {
       input.dispose();
       pip.dispose();
       scene.remove(campfireLight);
+      fireLights.dispose(); bolts.dispose();
+      audio?.setFires?.([]); audio?.setHerd?.(null, 0); audio?.setRolls?.([]); audio?.setBirds?.(null, 0);
       settlementMeshes?.dispose();
       audio?.setUnderwater?.(false);
       kinThreads.dispose();

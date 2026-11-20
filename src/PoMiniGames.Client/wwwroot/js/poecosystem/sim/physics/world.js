@@ -24,7 +24,7 @@ import { createRapierPhysics } from './rapierWorld.js';
 export function nullPhysics() {
   return {
     kind: 'null', propCount: 0, activeRagdolls: 0,
-    onDeath() {}, fellTree() {}, spawnRocks() {}, explode() {},
+    onDeath() {}, fellTree() {}, spawnRocks() {}, explode() {}, walkers() {},
     step() {}, readProps() { return 0; }, settledCount() { return 0; },
     snapshot() { return []; }, restore() {}, dispose() {},
   };
@@ -121,6 +121,9 @@ export function createPhysics(lib, terrain, opts = {}) {
         props.push({ ...entry, born: time, settled: false, expires: Infinity });
       }
     },
+
+    /** Rapier's (rapierWorld.js): creatures pushing loose props. cannon-es leaves them be. */
+    walkers() {},
 
     explode(spec) {
       return applyExplosion(CANNON, props.map(p => p.body), spec);

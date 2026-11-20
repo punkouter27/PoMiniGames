@@ -16,6 +16,13 @@
 //   f   = (1 - exp(-k*t)) / k
 //   pos = origin + v0*f + g*(t - f)/k
 //
+// WIND, STILL WITH NO PER-FRAME STEP
+// The island has one wind (materials.js). A particle is carried by it in proportion to its
+// `wind` preset (smoke fully, a spark hardly, lava not at all), and the same closed form
+// holds: drag now pulls the particle toward the wind's speed instead of toward rest,
+//   pos = origin + w*t + (v0 - w)*f + g*(t - f)/k
+// so a smoke column leans downwind and rain slants, and nothing is integrated on the CPU.
+//
 // TWO POOLS, TWO BLEND MODES
 // Anything made of matter (smoke, ash, dust, spray, pollen) is alpha-blended and must not
 // glow; anything made of light (embers, sparks, lava spatter) is additive. One pool each,
@@ -26,6 +33,7 @@
 // the eldest smoke puff in a firestorm is invisible; a GC pause is not.
 import { AdditiveBlending, Color, DynamicDrawUsage, InstancedBufferAttribute, NormalBlending, Sprite, SpriteNodeMaterial } from 'three-eco/webgpu';
 import { dot, exp, float, instancedDynamicBufferAttribute, max, mix, sin, smoothstep, step, uniform, uv, varying, vec2, vec3 } from 'three-eco/tsl';
+import { WIND_METRES_PER_SECOND, materialWind } from './materials.js';
 
 const SOFT_CAP = { high: 3000, medium: 1400, low: 0 };
 const GLOW_CAP = { high: 1500, medium: 700, low: 0 };
@@ -35,33 +43,33 @@ const GLOW_CAP = { high: 1500, medium: 700, low: 0 };
 // (negative falls), `growth` the fraction the sprite grows over its life.
 const PRESETS = {
   // Smoke rises, spreads and lingers — the signature of a fire seen from across the island.
-  smoke: { pool: 'soft', life: [3.2, 5.5], size: [1.4, 2.6], speed: [0.7, 1.9], spread: 0.55, drag: 0.5, gravity: 0.55, growth: 2.6, alpha: 0.30, colors: [0x4a4a4a, 0x6b6560, 0x2f2c2a] },
+  smoke: { wind: 1, pool: 'soft', life: [3.2, 5.5], size: [1.4, 2.6], speed: [0.7, 1.9], spread: 0.55, drag: 0.5, gravity: 0.55, growth: 2.6, alpha: 0.30, colors: [0x4a4a4a, 0x6b6560, 0x2f2c2a] },
   // Ash falls. Same family, opposite sign, and it outlives everything else on screen.
-  ash: { pool: 'soft', life: [5.0, 9.0], size: [0.16, 0.34], speed: [1.2, 3.4], spread: 1.2, drag: 0.9, gravity: -1.1, growth: 0, alpha: 0.55, colors: [0x3a3634, 0x57514c, 0x1c1a19] },
-  dust: { pool: 'soft', life: [1.1, 2.2], size: [0.7, 1.6], speed: [1.4, 3.6], spread: 1.35, drag: 2.4, gravity: -0.9, growth: 2.0, alpha: 0.34, colors: [0xa89878, 0xc4b494, 0x8a7c62] },
-  spray: { pool: 'soft', life: [0.7, 1.3], size: [0.16, 0.36], speed: [2.0, 4.5], spread: 0.8, drag: 1.4, gravity: -7.0, growth: 0.4, alpha: 0.6, colors: [0xdff2ff, 0xa8d8f0] },
+  ash: { wind: 0.9, pool: 'soft', life: [5.0, 9.0], size: [0.16, 0.34], speed: [1.2, 3.4], spread: 1.2, drag: 0.9, gravity: -1.1, growth: 0, alpha: 0.55, colors: [0x3a3634, 0x57514c, 0x1c1a19] },
+  dust: { wind: 0.6, pool: 'soft', life: [1.1, 2.2], size: [0.7, 1.6], speed: [1.4, 3.6], spread: 1.35, drag: 2.4, gravity: -0.9, growth: 2.0, alpha: 0.34, colors: [0xa89878, 0xc4b494, 0x8a7c62] },
+  spray: { wind: 0.3, pool: 'soft', life: [0.7, 1.3], size: [0.16, 0.36], speed: [2.0, 4.5], spread: 0.8, drag: 1.4, gravity: -7.0, growth: 0.4, alpha: 0.6, colors: [0xdff2ff, 0xa8d8f0] },
   // Pollen is the only ambient emitter: a few motes a second around the player, by day.
-  pollen: { pool: 'soft', life: [7.0, 12.0], size: [0.06, 0.12], speed: [0.2, 0.6], spread: 1.6, drag: 0.35, gravity: 0.06, growth: 0, alpha: 0.5, colors: [0xfff3c4, 0xe8f0b0] },
-  splinter: { pool: 'soft', life: [1.0, 2.0], size: [0.1, 0.24], speed: [2.5, 5.5], spread: 1.5, drag: 0.7, gravity: -9.0, growth: 0, alpha: 0.9, colors: [0x8b5a2b, 0x6b4423, 0xa9793f] },
-  ember: { pool: 'glow', life: [1.6, 3.4], size: [0.10, 0.22], speed: [1.6, 4.2], spread: 1.0, drag: 1.1, gravity: 0.35, growth: 0, alpha: 1, sparkle: 1, colors: [0xff9d3c, 0xff5e1a, 0xffd27a] },
-  spark: { pool: 'glow', life: [0.35, 0.8], size: [0.07, 0.14], speed: [6.0, 13.0], spread: 1.6, drag: 3.2, gravity: -9.0, growth: 0, alpha: 1, sparkle: 1, colors: [0xfff6d8, 0xffd27a] },
+  pollen: { wind: 1, pool: 'soft', life: [7.0, 12.0], size: [0.06, 0.12], speed: [0.2, 0.6], spread: 1.6, drag: 0.35, gravity: 0.06, growth: 0, alpha: 0.5, colors: [0xfff3c4, 0xe8f0b0] },
+  splinter: { wind: 0.1, pool: 'soft', life: [1.0, 2.0], size: [0.1, 0.24], speed: [2.5, 5.5], spread: 1.5, drag: 0.7, gravity: -9.0, growth: 0, alpha: 0.9, colors: [0x8b5a2b, 0x6b4423, 0xa9793f] },
+  ember: { wind: 0.6, pool: 'glow', life: [1.6, 3.4], size: [0.10, 0.22], speed: [1.6, 4.2], spread: 1.0, drag: 1.1, gravity: 0.35, growth: 0, alpha: 1, sparkle: 1, colors: [0xff9d3c, 0xff5e1a, 0xffd27a] },
+  spark: { wind: 0.08, pool: 'glow', life: [0.35, 0.8], size: [0.07, 0.14], speed: [6.0, 13.0], spread: 1.6, drag: 3.2, gravity: -9.0, growth: 0, alpha: 1, sparkle: 1, colors: [0xfff6d8, 0xffd27a] },
   lava: { pool: 'glow', life: [1.4, 2.8], size: [0.18, 0.4], speed: [3.0, 8.0], spread: 0.9, drag: 0.5, gravity: -9.0, growth: 0, alpha: 1, colors: [0xff4d2d, 0xffa032, 0xd42a12] },
   // Nocturnal Bioluminescence: Fireflies wander and sparkle softly in the dark
-  firefly: { pool: 'glow', life: [4.0, 8.0], size: [0.14, 0.28], speed: [0.4, 1.2], spread: 1.8, drag: 0.35, gravity: 0.03, growth: 0.2, alpha: 0.95, sparkle: 1, colors: [0x66ff99, 0xaaff55, 0x33eebb, 0x88ffdd] },
+  firefly: { wind: 0.12, pool: 'glow', life: [4.0, 8.0], size: [0.14, 0.28], speed: [0.4, 1.2], spread: 1.8, drag: 0.35, gravity: 0.03, growth: 0.2, alpha: 0.95, sparkle: 1, colors: [0x66ff99, 0xaaff55, 0x33eebb, 0x88ffdd] },
   // Bioluminescent spores float upward around settlements and ancient trees
-  spore: { pool: 'glow', life: [5.0, 9.5], size: [0.09, 0.20], speed: [0.3, 0.9], spread: 1.4, drag: 0.3, gravity: 0.08, growth: 0.4, alpha: 0.88, sparkle: 1, colors: [0x77ccff, 0x99eeff, 0xbbffff] },
+  spore: { wind: 0.5, pool: 'glow', life: [5.0, 9.5], size: [0.09, 0.20], speed: [0.3, 0.9], spread: 1.4, drag: 0.3, gravity: 0.08, growth: 0.4, alpha: 0.88, sparkle: 1, colors: [0x77ccff, 0x99eeff, 0xbbffff] },
   // Weather (sim/events/weather.js). Emitted in a column above the god, pointed down, so
   // the drops are always where the camera is rather than spread thin over the island.
-  rain: { pool: 'soft', life: [0.9, 1.3], size: [0.05, 0.08], speed: [14, 19], spread: 0.08, drag: 0.05, gravity: -9.0, growth: 0, alpha: 0.42, colors: [0xb8c8d8, 0x9fb4c8, 0xd0dce8] },
-  snow: { pool: 'soft', life: [5.0, 8.0], size: [0.08, 0.16], speed: [0.8, 1.6], spread: 0.6, drag: 0.6, gravity: -0.7, growth: 0, alpha: 0.85, colors: [0xffffff, 0xeef4ff, 0xdfe8f5] },
+  rain: { wind: 0.4, pool: 'soft', life: [0.9, 1.3], size: [0.05, 0.08], speed: [14, 19], spread: 0.08, drag: 0.05, gravity: -9.0, growth: 0, alpha: 0.42, colors: [0xb8c8d8, 0x9fb4c8, 0xd0dce8] },
+  snow: { wind: 0.9, pool: 'soft', life: [5.0, 8.0], size: [0.08, 0.16], speed: [0.8, 1.6], spread: 0.6, drag: 0.6, gravity: -0.7, growth: 0, alpha: 0.85, colors: [0xffffff, 0xeef4ff, 0xdfe8f5] },
   // The seasons shed: blossom in spring, leaves in autumn, both
   // let go from canopy height near the camera and drift down on a little drag.
-  petal: { pool: 'soft', life: [5.0, 9.0], size: [0.08, 0.15], speed: [0.3, 0.9], spread: 1.4, drag: 0.8, gravity: -0.34, growth: 0, alpha: 0.88, colors: [0xffd1e8, 0xfff0f6, 0xf9a8d4, 0xffffff] },
-  leaf: { pool: 'soft', life: [4.0, 7.0], size: [0.11, 0.2], speed: [0.4, 1.2], spread: 1.3, drag: 0.7, gravity: -0.6, growth: 0, alpha: 0.9, colors: [0xd97706, 0xb45309, 0xf59e0b, 0x9a3412] },
+  petal: { wind: 1, pool: 'soft', life: [5.0, 9.0], size: [0.08, 0.15], speed: [0.3, 0.9], spread: 1.4, drag: 0.8, gravity: -0.34, growth: 0, alpha: 0.88, colors: [0xffd1e8, 0xfff0f6, 0xf9a8d4, 0xffffff] },
+  leaf: { wind: 0.9, pool: 'soft', life: [4.0, 7.0], size: [0.11, 0.2], speed: [0.4, 1.2], spread: 1.3, drag: 0.7, gravity: -0.6, growth: 0, alpha: 0.9, colors: [0xd97706, 0xb45309, 0xf59e0b, 0x9a3412] },
   // Under the waterline: air on its way up.
   bubble: { pool: 'soft', life: [1.6, 3.2], size: [0.05, 0.13], speed: [0.2, 0.6], spread: 0.8, drag: 0.6, gravity: 1.3, growth: 0.3, alpha: 0.5, colors: [0xdff6ff, 0xb5e8f7, 0xffffff] },
   // A watched creature's last breath rises; a birth in its family opens as a ring.
-  wisp: { pool: 'glow', life: [3.4, 5.4], size: [0.16, 0.34], speed: [0.5, 1.1], spread: 0.25, drag: 0.25, gravity: 0.5, growth: 0.6, alpha: 0.9, sparkle: 1, colors: [0xe0f2fe, 0xc7d2fe, 0xfef3c7] },
+  wisp: { wind: 0.3, pool: 'glow', life: [3.4, 5.4], size: [0.16, 0.34], speed: [0.5, 1.1], spread: 0.25, drag: 0.25, gravity: 0.5, growth: 0.6, alpha: 0.9, sparkle: 1, colors: [0xe0f2fe, 0xc7d2fe, 0xfef3c7] },
   mote: { pool: 'glow', life: [1.3, 2.1], size: [0.1, 0.18], speed: [2.3, 2.9], spread: 0.04, drag: 1.3, gravity: 0.06, growth: 0, alpha: 0.9, colors: [0xfde68a, 0xbbf7d0, 0xffffff] },
 };
 
@@ -75,13 +83,13 @@ function createPool(scene, cap, uTime, { additive, name }) {
   const vel = new Float32Array(cap * 3);
   const life = new Float32Array(cap * 4);
   const style = new Float32Array(cap * 4);
-  const colour = new Float32Array(cap * 3);
+  const colour = new Float32Array(cap * 4);      // rgb, and how much of the wind it takes
   const attrs = {
     origin: new InstancedBufferAttribute(origin, 3),
     vel: new InstancedBufferAttribute(vel, 3),
     life: new InstancedBufferAttribute(life, 4),     // birth, life, gravity, drag
     style: new InstancedBufferAttribute(style, 4),   // size, growth, sparkle, alpha
-    colour: new InstancedBufferAttribute(colour, 3),
+    colour: new InstancedBufferAttribute(colour, 4),
   };
   for (const a of Object.values(attrs)) a.setUsage(DynamicDrawUsage);
 
@@ -89,7 +97,7 @@ function createPool(scene, cap, uTime, { additive, name }) {
   const aVel = instancedDynamicBufferAttribute(attrs.vel, 'vec3');
   const aLife = instancedDynamicBufferAttribute(attrs.life, 'vec4');
   const aStyle = instancedDynamicBufferAttribute(attrs.style, 'vec4');
-  const aColour = instancedDynamicBufferAttribute(attrs.colour, 'vec3');
+  const aColour = instancedDynamicBufferAttribute(attrs.colour, 'vec4');
 
   const age = uTime.sub(aLife.x);
   const span = aLife.y;
@@ -98,7 +106,8 @@ function createPool(scene, cap, uTime, { additive, name }) {
   // dv/dt = g - k*v, solved exactly: f = (1 - e^-kt)/k; pos = o + v0*f + g*(t - f)/k.
   const k = max(0.01, aLife.w);
   const f = float(1).sub(exp(k.negate().mul(age))).div(k);
-  const pos = aOrigin.add(aVel.mul(f)).add(vec3(0, aLife.z, 0).mul(age.sub(f)).div(k));
+  const carried = vec3(materialWind.x, 0, materialWind.y).mul(WIND_METRES_PER_SECOND).mul(aColour.w);
+  const pos = aOrigin.add(carried.mul(age)).add(aVel.sub(carried).mul(f)).add(vec3(0, aLife.z, 0).mul(age.sub(f)).div(k));
   const t = age.div(span);
   const size = aStyle.x.mul(aStyle.y.mul(t).add(1)).mul(alive);
 
@@ -108,7 +117,7 @@ function createPool(scene, cap, uTime, { additive, name }) {
   });
   material.positionNode = pos;
   material.scaleNode = vec2(size, size);
-  material.colorNode = varying(aColour, 'vPartColour');
+  material.colorNode = varying(aColour.rgb, 'vPartColour');
   // Fade in over the first tenth of the life, out over the last two thirds; a soft round
   // sprite from the quad's own uv (no texture: cannot be blurry at any DPR). Embers flicker,
   // per particle via the colour, so a burst does not pulse in unison; matter does not.
@@ -166,6 +175,7 @@ export function createParticles(scene, { tier = 'high' } = {}) {
     pool.style[o4 + 1] = preset.growth;
     pool.style[o4 + 2] = preset.sparkle ?? 0;
     pool.style[o4 + 3] = preset.alpha;
+    pool.colour[o4 + 3] = preset.wind ?? 0;
     return i;
   }
 
@@ -174,7 +184,7 @@ export function createParticles(scene, { tier = 'high' } = {}) {
     else tmp.setHex(colours[(Math.random() * colours.length) | 0]);
     // No colour-space conversion here: ColorManagement (on by default since r152) already
     // moved the hex into three's linear working space, which is what the HDR target wants.
-    pool.colour[i * 3] = tmp.r; pool.colour[i * 3 + 1] = tmp.g; pool.colour[i * 3 + 2] = tmp.b;
+    pool.colour[i * 4] = tmp.r; pool.colour[i * 4 + 1] = tmp.g; pool.colour[i * 4 + 2] = tmp.b;
   }
 
   const api = {

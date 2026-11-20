@@ -5,6 +5,20 @@
 // mesh stopped. It read as coloured paper, which is a shame on an island game where water
 // is a third of every frame.
 //
+// THE LAKES MIRROR THE ISLAND (high tier on WebGPU). The reflection below is the sky's two
+// colours along the mirrored ray, so a mountain never appeared in the lake at its foot. With
+// a mirror attached (setMirror), a second camera, flipped about the water level, draws the
+// scene at half resolution into a texture (three's reflector node) and a LAKE shows that
+// instead: the treeline upside down, the deer drinking, bent by the same wave and ring
+// normals that bend everything else here. The sea keeps the cheap sky reflection.
+//
+// It is a second pass over the scene and the most expensive thing on the island, so:
+//   • the renderer switches it on only while a lake is near and in front of a low camera
+//     (mirror(on) swaps between two ready-made materials; off, the pass does not run);
+//   • the mirror camera leaves the grass out (materials.js MAIN_ONLY_LAYER);
+//   • the sun's shadow maps are NOT drawn again for it: they were drawn for this frame
+//     already and a shadow does not depend on who is looking.
+//
 // What it is now, one node material (TSL — the same graph on WebGPU and the WebGL2
 // fallback) with no textures beyond a 201x201 depth bake:
 //   • Three crossed sine trains displace the surface and their analytic derivatives give
@@ -40,9 +54,12 @@
 import { ClampToEdgeWrapping, Color, DataTexture, DoubleSide, LinearFilter, Mesh, MeshBasicNodeMaterial, PlaneGeometry, RGFormat, UnsignedByteType, Vector3 } from 'three-eco/webgpu';
 import {
   Fn, If, cameraPosition, clamp, cos, dot, exp, float, floor, fract, length, max, mix, modelWorldMatrix, normalize,
-  positionGeometry, positionLocal, positionWorld, pow, reflect, sin, smoothstep, step, texture, uniform, varying, vec2, vec3, vec4,
+  positionGeometry, positionLocal, positionWorld, pow, reflect, reflector, screenUV, sin, smoothstep, step, texture, uniform, varying, vec2, vec3, vec4,
 } from 'three-eco/tsl';
-import { hash21, vnoise } from './materials.js';
+import { MAIN_ONLY_LAYER, hash21, vnoise } from './materials.js';
+
+const MIRROR_SCALE = 0.5;        // the mirror pass's share of the frame's resolution
+const MIRROR_BEND = 0.035;       // how far a wave's slope pushes the mirrored image, in screen widths
 
 // Three trains at incommensurable angles and speeds. Two look like a grid; four costs more
 // than it adds at this wave height.
@@ -55,7 +72,7 @@ const RIPPLE_RELIEF = 9;
  * @param ripples the ripple field (ripples.js) or null. With it, the field's slope bends the
  *   surface normal and its crests catch a little light.
  */
-function buildMaterial(u, depthTex, size, ripples = null) {
+function buildMaterial(u, depthTex, size, ripples = null, mirror = null) {
   const material = new MeshBasicNodeMaterial({ transparent: true, depthWrite: false, side: DoubleSide, fog: true });
 
   // ── vertex: the wave sum and its exact derivative ──
@@ -63,11 +80,14 @@ function buildMaterial(u, depthTex, size, ripples = null) {
   const a = dot(world.xz, vec2(...A_DIR)).mul(0.42).add(u.uTime.mul(0.85));
   const b = dot(world.xz, vec2(...B_DIR)).mul(0.71).add(u.uTime.mul(1.31));
   const c = dot(world.xz, vec2(...C_DIR)).mul(1.30).add(u.uTime.mul(2.10));
-  const h = sin(a).mul(0.20).add(sin(b).mul(0.11)).add(sin(c).mul(0.05));
+  // Each train's height is its own times how well it runs with the wind (uTrain, set by
+  // the renderer): the sea heads the way the weather does without the pattern ever turning.
+  const ha = u.uTrain.x.mul(0.20); const hb = u.uTrain.y.mul(0.11); const hc = u.uTrain.z.mul(0.05);
+  const h = sin(a).mul(ha).add(sin(b).mul(hb)).add(sin(c).mul(hc));
   material.positionNode = positionLocal.add(vec3(0, h, 0));
   // dh/dx and dh/dz of the same sum — the normal is exact rather than sampled, which is
   // what keeps the specular from crawling as the camera moves.
-  const ka = cos(a).mul(0.42 * 0.20); const kb = cos(b).mul(0.71 * 0.11); const kc = cos(c).mul(1.30 * 0.05);
+  const ka = cos(a).mul(0.42).mul(ha); const kb = cos(b).mul(0.71).mul(hb); const kc = cos(c).mul(1.30).mul(hc);
   const dx = ka.mul(A_DIR[0]).add(kb.mul(B_DIR[0])).add(kc.mul(C_DIR[0]));
   const dz = ka.mul(A_DIR[1]).add(kb.mul(B_DIR[1])).add(kc.mul(C_DIR[1]));
   const waveNormal = varying(vec3(dx.negate(), 1, dz.negate()), 'vWaveNormal');
@@ -136,8 +156,17 @@ function buildMaterial(u, depthTex, size, ripples = null) {
 
     // The reflection is the sky along the reflected ray: horizon colour low, zenith high.
     const refl = reflect(view.negate(), n);
-    const skyRefl = mix(u.uSkyColor, u.uZenith, smoothstep(0.02, 0.55, refl.y));
-    const col = mix(body, skyRefl, fres.mul(0.85)).toVar();
+    const skyRefl = mix(u.uSkyColor, u.uZenith, smoothstep(0.02, 0.55, refl.y)).toVar();
+    const shine = fres.toVar();
+    if (mirror) {
+      // On a lake, what the water shows is the island: the mirror pass, pushed about by the
+      // surface's slope. Still water also mirrors at steeper angles than a sea does.
+      const lake = float(1).sub(open);
+      const image = mirror.sample(screenUV.flipX().add(vec2(n.x, n.z).mul(MIRROR_BEND))).rgb;
+      skyRefl.assign(mix(skyRefl, image, lake));
+      shine.assign(max(fres, lake.mul(0.28)));
+    }
+    const col = mix(body, skyRefl, shine.mul(0.85)).toVar();
 
     // The reflection warms toward the sun: looking sunward across the water, the grazing
     // band takes the sun's colour rather than the zenith's.
@@ -228,11 +257,16 @@ export function createWater(terrain, { tier = 'high' } = {}) {
     uNight: uniform(0),
     uRain: uniform(0),
     uBio: uniform(0),
+    uTrain: uniform(new Vector3(1, 1, 1)),
   };
+  const train = new Vector3(1, 1, 1);
   // The surface must not occlude the bed it is meant to reveal (no depth write), and the
   // camera can dive: from below, the surface is a ceiling (double-sided). The scene's
   // FogExp2 applies through the node material's own fog stage.
   let material = buildMaterial(u, depth, size);
+  // The lakes' mirror: made by setMirror, drawn only while `mirrorOn`.
+  let reflection = null; let mirrorMaterial = null; let mirrorOn = false; let field = null;
+  let mirrorScene = null;
 
   const mesh = new Mesh(geometry, material);
   mesh.position.set(size / 2, 0, size / 2);
@@ -248,7 +282,18 @@ export function createWater(terrain, { tier = 'high' } = {}) {
      */
     update(time, sky, surface = null) {
       u.uTime.value = time;
-      if (surface) { u.uRain.value = surface.rain; u.uBio.value = surface.bio ?? 0; }
+      if (surface) {
+        u.uRain.value = surface.rain; u.uBio.value = surface.bio ?? 0;
+        // A train's phase is k.x + wt, so it travels against its DIR: the ones heading
+        // downwind stand taller. `swell` scales the lot (a calm sea 0.5, a gale past 1.5).
+        const wl = Math.hypot(surface.windX ?? 0, surface.windZ ?? 0);
+        if (wl > 1e-4) {
+          const wx = surface.windX / wl; const wz = surface.windZ / wl;
+          const run = (d) => 0.55 + 0.9 * Math.max(0, -(d[0] * wx + d[1] * wz));
+          train.set(run(A_DIR), run(B_DIR), run(C_DIR)).multiplyScalar(surface.swell ?? 1);
+        } else train.set(1, 1, 1).multiplyScalar(surface.swell ?? 1);
+        u.uTrain.value.lerp(train, 0.02);
+      }
       if (!sky) return;
       u.uSunDir.value.copy(sky.sunDir);
       u.uSunColor.value.copy(sky.sunColour);
@@ -261,11 +306,61 @@ export function createWater(terrain, { tier = 'high' } = {}) {
      * is known: the field lives in storage buffers, which only WebGPU has.
      */
     attachRipples(ripples) {
+      field = ripples;
       const old = material;
       material = buildMaterial(u, depth, size, ripples);
-      mesh.material = material;
       old.dispose();
+      if (reflection) { const was = mirrorMaterial; mirrorMaterial = buildMaterial(u, depth, size, ripples, reflection); was?.dispose(); }
+      mesh.material = mirrorOn && mirrorMaterial ? mirrorMaterial : material;
     },
-    dispose() { geometry.dispose(); material.dispose(); depth.dispose(); },
+    /**
+     * Give the lakes a mirror. `scene` and `camera` are the main view's; `shadows` the sun's
+     * shadow maps (lighting.shadows), held still while the mirror is drawn. Returns false if
+     * the reflector cannot be built (the lakes then keep the sky).
+     */
+    setMirror({ scene, camera, shadows = [] }) {
+      if (reflection) return true;
+      try {
+        reflection = reflector({ resolutionScale: MIRROR_SCALE, bounces: false });
+        // The reflector's own +Z is the mirror's normal: turn it to face up, at sea level.
+        reflection.target.rotateX(-Math.PI / 2);
+        reflection.target.position.set(size / 2, 0, size / 2);
+        scene.add(reflection.target);
+        mirrorScene = scene;
+        const base = reflection.reflector;
+        // The mirror's camera, made here so it can leave the grass out.
+        const eye = camera.clone();
+        eye.layers.disable(MAIN_ONLY_LAYER);
+        base.virtualCameras.set(camera, eye);
+        // A shadow map is the light's view, not the viewer's: this frame's are already drawn.
+        const draw = base.updateBefore.bind(base);
+        base.updateBefore = (frame) => {
+          // Asked for each time: the high tier's second map does not exist until first drawn.
+          const maps = typeof shadows === 'function' ? shadows() : shadows;
+          const was = maps.map(s => s.autoUpdate);
+          for (const s of maps) s.autoUpdate = false;
+          try { return draw(frame); } finally { maps.forEach((s, i) => { s.autoUpdate = was[i]; }); }
+        };
+        mirrorMaterial = buildMaterial(u, depth, size, field, reflection);
+        return true;
+      } catch (err) {
+        console.warn('[poecosystem] lake mirror unavailable', err);
+        reflection = null; mirrorMaterial = null;
+        return false;
+      }
+    },
+    /** Draw the mirror pass (true) or not: the renderer says when a lake is worth it. */
+    mirror(on) {
+      const next = !!on && !!mirrorMaterial;
+      if (next === mirrorOn) return;
+      mirrorOn = next;
+      mesh.material = mirrorOn ? mirrorMaterial : material;
+    },
+    get mirroring() { return mirrorOn; },
+    dispose() {
+      geometry.dispose(); material.dispose(); depth.dispose();
+      mirrorMaterial?.dispose();
+      if (reflection) { mirrorScene?.remove(reflection.target); try { reflection.dispose(); } catch { /* targets already gone */ } }
+    },
   };
 }

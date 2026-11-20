@@ -13,6 +13,9 @@
 //           a scale the caller chooses. World space, so instances differ for free.
 //   SWAY    a vertex displacement that grows with the mesh's own height, phased per
 //           instance so a forest does not move in lockstep. Crowns and bushes only.
+//   WIND    one wind for the whole island (materialWind): crowns lean and gust with it,
+//           the grass lies over along it, smoke and rain drift down it, banners point
+//           along it and the waves run before it. The renderer sets it once a frame.
 //   CLOUDS  the deck overhead, projected down the sun's ray (cloudLight below).
 //   WEATHER wet surfaces darken and catch the sky on the rim; snow settles on faces that
 //           point up; autumn warms everything a little.
@@ -24,7 +27,7 @@
 // LOW TIER: the material reads materialDetail when it is built (the renderer sets it before
 // anything is created) and leaves rim, mottle and cloud shade out of the graph entirely —
 // not a branch that costs nothing, a shader that never had them.
-import { Color, MeshLambertNodeMaterial, Vector3 } from 'three-eco/webgpu';
+import { Color, MeshLambertNodeMaterial, Vector2, Vector3 } from 'three-eco/webgpu';
 import {
   Fn, clamp, diffuseColor, dot, float, floor, fract, instanceColor, instanceIndex, max, mix,
   normalView, normalWorldGeometry, positionGeometry, positionLocal, positionViewDirection,
@@ -35,6 +38,10 @@ import {
 // camera sees it and layer 0; the ambient-occlusion depth pass (postProcess.js) sees layer 0
 // alone, so it draws solid things unlit and leaves the meadow out of the occlusion.
 export const VIEW_ONLY_LAYER = 2;
+// Layer for what the main view draws and a mirror does not: the grass field. The lakes'
+// reflection (water.js) is a second pass over the scene, and thousands of blades thinner
+// than a pixel are the dearest thing in it and the least missed upside down.
+export const MAIN_ONLY_LAYER = 3;
 
 export const materialClock = uniform(0);
 export const materialDetail = { value: 1 };        // read at build time: 0 on the low tier
@@ -44,6 +51,11 @@ export const materialSnow = uniform(0);            // 0..1 snow coverage factor
 // surface reflects. Set once per frame by the renderer, like the clock.
 export const materialWet = uniform(0);
 export const materialSky = uniform(new Color(0x8ec5ff));
+// The wind, in the world's xz: its direction, and a length that is how hard it blows (0.06
+// a calm day, about 0.4 a gale; WIND_METRES_PER_SECOND turns that into a speed). One
+// uniform, so nothing on the island can disagree about which way the weather is going.
+export const materialWind = uniform(new Vector2(0.08, 0.03));
+export const WIND_METRES_PER_SECOND = 14;
 // The naturalist lenses: how far a creature's instance colour replaces its lit colour.
 export const materialLens = uniform(0);
 
@@ -108,20 +120,26 @@ export function weatherColour(base, up) {
  * materialLens (only meshes that carry instanceColor — the creatures).
  */
 export class EcoLambertMaterial extends MeshLambertNodeMaterial {
-  constructor(params = {}, { rim = 0.35, rimColor = 0xbfd4ff, mottle = 0.18, mottleScale = 1.6, sway = 0, swayHeight = 3, lens = false } = {}) {
+  constructor(params = {}, { rim = 0.35, rimColor = 0xbfd4ff, mottle = 0.18, mottleScale = 1.6, sway = 0, swayHeight = 3, swayFloor = null, lens = false } = {}) {
     super(params);
     this.detail = materialDetail.value > 0.5;
     this.eco = { rim, rimColor: new Color(rimColor), mottle, mottleInv: 1 / Math.max(0.05, mottleScale), lens };
     // three keys a compiled program on the material's node graph and its plain properties;
     // the constants baked in by the overrides below are neither, so they go in the key.
-    this.ecoKey = `eco:${this.detail ? 1 : 0}:${rim}:${rimColor}:${mottle}:${mottleScale}:${sway}:${swayHeight}:${lens ? 1 : 0}`;
+    this.ecoKey = `eco:${this.detail ? 1 : 0}:${rim}:${rimColor}:${mottle}:${mottleScale}:${sway}:${swayHeight}:${swayFloor}:${lens ? 1 : 0}`;
     if (sway > 0) {
       // positionLocal is already instance-transformed here; positionGeometry is the mesh's
       // own vertex, which is what the lift ramps over. The phase is per instance.
-      const lift = clamp(positionGeometry.y.add(swayHeight * 0.5).div(Math.max(0.1, swayHeight)), 0, 1);
+      // `swayFloor` is the height the wind takes hold at. A mesh centred on its own middle
+      // (a cone crown) leaves it out; a whole tree standing on its foot says where its
+      // foliage starts, so the trunk stays put.
+      const floor = swayFloor ?? -swayHeight * 0.5;
+      const lift = clamp(positionGeometry.y.sub(floor).div(Math.max(0.1, swayHeight)), 0, 1);
       const lift2 = lift.mul(lift);
       const phase = materialClock.mul(1.35).add(hash21(vec2(float(instanceIndex), 3.7)).mul(6.283));
-      this.positionNode = positionLocal.add(vec3(sin(phase).mul(sway).mul(lift2), 0, cos(phase.mul(0.83).add(1.7)).mul(sway * 0.6).mul(lift2)));
+      // The crown leans downwind and gusts: a breeze nods it, a gale holds it over.
+      const lean = materialWind.mul(sway * 6).mul(sin(phase.mul(0.55)).mul(0.35).add(0.65)).mul(lift2);
+      this.positionNode = positionLocal.add(vec3(sin(phase).mul(sway).mul(lift2).add(lean.x), 0, cos(phase.mul(0.83).add(1.7)).mul(sway * 0.6).mul(lift2).add(lean.y)));
     }
   }
 

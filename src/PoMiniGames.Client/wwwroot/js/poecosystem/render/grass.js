@@ -28,7 +28,7 @@ import {
   normalize, positionGeometry, positionWorld, pow, sin, smoothstep, step, texture, textureLoad, uniform, varying, vec2, vec3, vec4,
 } from 'three-eco/tsl';
 import { TILE, TILE_STATE } from '../sim/terrain/tiles.js';
-import { VIEW_ONLY_LAYER, cloudLight, materialClock, materialSeason, materialSnow } from './materials.js';
+import { MAIN_ONLY_LAYER, cloudLight, materialClock, materialSeason, materialSnow, materialWind } from './materials.js';
 import { trailUniforms } from './trails.js';
 
 const TIER = {
@@ -103,7 +103,7 @@ class GrassMaterial extends MeshLambertNodeMaterial {
     const phase = materialClock.mul(rnd.mul(0.7).add(1.3)).add(wp.x.mul(0.35)).add(wp.y.mul(0.21));
     // A slow travelling gust front: the field moves in waves, not in unison.
     const gust = sin(materialClock.mul(0.6).add(wp.x.mul(0.07)).sub(wp.y.mul(0.05))).mul(0.45).add(0.55);
-    const sway = u.uWind.mul(sin(phase).mul(0.55).add(0.45)).mul(gust).add(vec2(sin(phase.mul(1.3)), cos(phase.mul(0.9))).mul(0.03));
+    const sway = materialWind.mul(sin(phase).mul(0.55).add(0.45)).mul(gust).add(vec2(sin(phase.mul(1.3)), cos(phase.mul(0.9))).mul(0.03));
     // Trample: fresh tracks lay the blade down along its own facing.
     const laid = tr.y;
     const lay = vec2(across.y.negate(), across.x).mul(laid).mul(0.8);
@@ -171,7 +171,6 @@ export function createGrass(scene, terrain, { tier = 'high' } = {}) {
   const uniforms = {
     uCam: uniform(new Vector2(size / 2, size / 2)),
     uPatch: uniform(cfg.patch),
-    uWind: uniform(new Vector2(0.08, 0.03)),
     uSize: uniform(size),
     uGreen: uniform(new Color(0x5a9434)),
     uDry: uniform(new Color(0x9a8c52)),
@@ -186,11 +185,10 @@ export function createGrass(scene, terrain, { tier = 'high' } = {}) {
   mesh.frustumCulled = false;       // positions are made in the shader; the box is meaningless
   mesh.receiveShadow = true;
   mesh.name = 'grass';
-  // Blades in the occlusion pass would shade each other into a dull, noisy field.
-  mesh.layers.set(VIEW_ONLY_LAYER);
+  // Blades in the occlusion pass would shade each other into a dull, noisy field; in the
+  // lakes' mirror pass they would cost a meadow nobody sees upside down.
+  mesh.layers.set(MAIN_ONLY_LAYER);
   scene.add(mesh);
-
-  const windAngle = { value: 0.6 };
 
   return {
     mesh,
@@ -206,14 +204,10 @@ export function createGrass(scene, terrain, { tier = 'high' } = {}) {
       }
       maskTex.needsUpdate = true;
     },
-    /** Per frame: the patch follows the camera; wind is 0..1 (calm → gale); sky lights the backlit tips. */
-    update(dt, player, wind, sky = null) {
+    /** Per frame: the patch follows the camera; sky lights the backlit tips. The wind is the island's (materials.js materialWind). */
+    update(dt, player, sky = null) {
       uniforms.uCam.value.set(player.x, player.z);
       if (sky) { uniforms.uSunDir.value.copy(sky.sunDir); uniforms.uSunCol.value.copy(sky.sunColour); }
-      // The wind veers slowly; a gale holds its direction better than a breeze.
-      windAngle.value += dt * 0.012;
-      const strength = 0.06 + wind * 0.34;
-      uniforms.uWind.value.set(Math.cos(windAngle.value) * strength, Math.sin(windAngle.value) * strength);
     },
     dispose() {
       scene.remove(mesh);

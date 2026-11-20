@@ -1,7 +1,37 @@
 // settlementMesh.js — 3D procedural structures for tribal settlements.
 'use strict';
 
-import { BoxGeometry, ConeGeometry, CylinderGeometry, Group, Mesh, MeshBasicNodeMaterial, MeshLambertNodeMaterial, Object3D } from 'three-eco/webgpu';
+import { BoxGeometry, ConeGeometry, CylinderGeometry, DoubleSide, Group, Mesh, MeshBasicNodeMaterial, MeshLambertNodeMaterial, Object3D, PlaneGeometry } from 'three-eco/webgpu';
+import { clamp, length, modelWorldMatrixInverse, normalize, positionGeometry, sin, vec3, vec4 } from 'three-eco/tsl';
+import { materialClock, materialWind } from './materials.js';
+
+/**
+ * A banner is cloth on a pole: a strip that streams downwind from its hoist, hangs when
+ * the air is still, and carries a wave that runs out to its free edge. The strip's own x is
+ * the distance from the pole (flagGeometry below), so the wave grows toward the fly.
+ */
+function bannerMaterial(color, length_) {
+  const m = new MeshLambertNodeMaterial({ color, side: DoubleSide });
+  const along = positionGeometry.x;                     // 0 at the pole, `length_` at the fly
+  const k = along.div(length_);
+  // The wind in the banner's own frame: buildings do not turn, caravans do.
+  const local = modelWorldMatrixInverse.mul(vec4(materialWind.x, 0, materialWind.y, 0)).xyz;
+  const blow = clamp(length(materialWind).div(0.22), 0.12, 1);
+  const out = normalize(vec3(local.x, 0, local.z).add(vec3(1e-4, 0, 0)));
+  const dir = normalize(out.mul(blow).add(vec3(0, -1, 0).mul(blow.oneMinus().mul(0.9))));
+  const side = vec3(out.z.negate(), 0, out.x);
+  const wave = sin(along.mul(9).sub(materialClock.mul(blow.mul(9).add(3)))).mul(0.09).mul(k).mul(blow.mul(0.7).add(0.3));
+  m.positionNode = vec3(0, positionGeometry.y, 0).add(dir.mul(along)).add(side.mul(wave)).add(vec3(0, wave.mul(0.4), 0));
+  return m;
+}
+/** A strip in the xy plane: x from the pole out, y the cloth's height, cut finely along x. */
+function flagGeometry(length_, height) {
+  const g = new PlaneGeometry(length_, height, 10, 2);
+  g.translate(length_ / 2, 0, 0);
+  return g;
+}
+const BANNER_LENGTH = 1.0;
+const PENNANT_LENGTH = 0.7;
 import { BUILDING_KIND } from '../sim/tribe/contracts.js';
 
 // Okabe–Ito picks for the colour-blind palette (Settings): orange / blue / bluish green stay
@@ -42,6 +72,14 @@ export function createSettlementMeshes(scene, heightAt = () => 0, palette = 'def
     }
     return m;
   };
+  // The same colours as cloth in the wind: one material per tribe and per strip length.
+  const flagMats = new Map();
+  const getFlagMat = (tribeId, len) => {
+    const key = `${tribeId ?? -1}:${len}`;
+    let m = flagMats.get(key);
+    if (!m) { m = bannerMaterial(BANNER_COLORS[tribeId ?? -1] || 0xffffff, len); flagMats.set(key, m); }
+    return m;
+  };
 
   // Shared geometries (#12: created once per renderer lifecycle, disposed cleanly)
   const geo = {
@@ -56,14 +94,15 @@ export function createSettlementMeshes(scene, heightAt = () => 0, palette = 'def
     stoneLeg: new BoxGeometry(0.32, 4.2, 0.32),
     platform: new BoxGeometry(1.8, 0.2, 1.8),
     parapet: new BoxGeometry(2.1, 0.45, 2.1),
-    banner: new BoxGeometry(0.1, 0.8, 0.6),
+    banner: flagGeometry(BANNER_LENGTH, 0.7),
+    bannerPole: new CylinderGeometry(0.04, 0.04, 1.3, 5),
     pillar: new BoxGeometry(0.8, 3.5, 0.8),
     crest: new ConeGeometry(0.7, 1.0, 4),
     cartBody: new BoxGeometry(1.4, 0.65, 2.1),
     cartCargo: new BoxGeometry(1.1, 0.55, 1.2),
     cartWheel: new CylinderGeometry(0.36, 0.36, 0.14, 10),
     cartPole: new CylinderGeometry(0.05, 0.05, 1.4, 6),
-    cartFlag: new BoxGeometry(0.06, 0.45, 0.55),
+    cartFlag: flagGeometry(PENNANT_LENGTH, 0.4),
   };
 
   function buildStructureObject(b, tier = 0) {
@@ -89,8 +128,9 @@ export function createSettlementMeshes(scene, heightAt = () => 0, palette = 'def
       root.add(roofMesh);
 
       if (tier >= 1) {
-        const pennant = new Mesh(geo.cartFlag, bannerMat);
+        const pennant = new Mesh(geo.cartFlag, getFlagMat(b.tribeId, PENNANT_LENGTH));
         pennant.position.set(0, tier >= 2 ? 3.15 : 2.9, 0);
+        pennant.frustumCulled = false;       // the cloth is moved in the shader
         root.add(pennant);
       }
     } else if (b.kind === BUILDING_KIND.GRANARY) {
@@ -123,8 +163,12 @@ export function createSettlementMeshes(scene, heightAt = () => 0, palette = 'def
         parapet.position.y = 4.55;
         root.add(parapet);
       }
-      const banner = new Mesh(geo.banner, bannerMat);
-      banner.position.set(0, 5.1, 0);
+      const pole = new Mesh(geo.bannerPole, darkWoodMat);
+      pole.position.set(0, 4.95, 0);
+      root.add(pole);
+      const banner = new Mesh(geo.banner, getFlagMat(b.tribeId, BANNER_LENGTH));
+      banner.position.set(0, 5.2, 0);
+      banner.frustumCulled = false;
       root.add(banner);
     } else if (b.kind === BUILDING_KIND.WAR_TOTEM) {
       const pillar = new Mesh(geo.pillar, tier >= 3 ? stoneMat : darkWoodMat);
@@ -146,7 +190,6 @@ export function createSettlementMeshes(scene, heightAt = () => 0, palette = 'def
 
   function buildCaravanObject(tribeId) {
     const root = new Group();
-    const bannerMat = getBannerMat(tribeId);
     const body = new Mesh(geo.cartBody, woodMat);
     body.position.y = 0.55;
     root.add(body);
@@ -162,8 +205,9 @@ export function createSettlementMeshes(scene, heightAt = () => 0, palette = 'def
     const pole = new Mesh(geo.cartPole, darkWoodMat);
     pole.position.set(0.55, 1.35, 0.8);
     root.add(pole);
-    const flag = new Mesh(geo.cartFlag, bannerMat);
-    flag.position.set(0.55, 1.85, 0.55);
+    const flag = new Mesh(geo.cartFlag, getFlagMat(tribeId, PENNANT_LENGTH));
+    flag.position.set(0.55, 1.85, 0.8);
+    flag.frustumCulled = false;
     root.add(flag);
     return root;
   }
@@ -242,6 +286,8 @@ export function createSettlementMeshes(scene, heightAt = () => 0, palette = 'def
       for (const g of Object.values(geo)) g.dispose();
       for (const m of bannerMats.values()) m.dispose();
       bannerMats.clear();
+      for (const m of flagMats.values()) m.dispose();
+      flagMats.clear();
       woodMat.dispose();
       darkWoodMat.dispose();
       thatchMat.dispose();

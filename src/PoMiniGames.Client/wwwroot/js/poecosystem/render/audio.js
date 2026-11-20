@@ -35,12 +35,29 @@
 //   DRUMS   the tribe's night drumming at the campfire once it has Fire, one bar at a
 //           time on the score's own tempo so it sits inside the music rather than over it.
 //
+// STANDING SOUNDS. A stinger is one event; these are voices that stay, each built once and
+// then moved and levelled from the renderer (all of it observation, none of it reaches the sim):
+//
+//   FIRE     a crackle and a roar from where the island is burning (setFires, parked on the
+//            groups fireClusters.js makes), a hiss where lava meets the sea or rain meets
+//            flame. Before this a firestorm was silent.
+//   SHORE    the surf follows how near the coast is and the canopy rustles under trees in
+//            proportion to the wind (setPlace): with eyes shut, forest and beach differ.
+//   BIRDS    chirps come from where the flocks are (setBirds), with a rush of wings when
+//            they gather at dusk.
+//   FEET     footfalls for the animals nearest the listener, on the ground they are on
+//            (footfalls), and one low rumble for a herd on the run (setHerd).
+//   ROCK     a boulder rumbles while it rolls and loose stones rattle (setRolls); a felled
+//            tree creaks on its way over (creak).
+//
 // WHY ITS OWN AudioContext AND NOT PoAudioBus
 // The app-wide bus is a fine mixer but it is a different AudioContext with a listener
 // parked at the origin, and PoMaterialAudio's positioning is a stereo pan in screen space.
 // Neither can express "that tree fell 60 metres behind you and to the left" in world
 // coordinates. What the shared stack IS consulted for is mute and volume: this context
 // follows the player's app-wide setting for both (see syncGlobalMute).
+import { assignSlots } from './fireClusters.js';
+
 const MASTER_LEVEL = 0.55;
 const SPEED_OF_SOUND = 343;      // m/s — the delay that makes distance legible
 const MAX_AUDIBLE = 260;         // metres; past this a stinger is not scheduled at all
@@ -48,6 +65,18 @@ const MAX_AUDIBLE = 260;         // metres; past this a stinger is not scheduled
 // Impact voices. Deliberately parallel to the app's materialAudio.js recipes so the island
 // sounds like the rest of the platform, but re-synthesised here because they have to be
 // born inside this context to be positioned in world space.
+// Footfalls by ground: a soft thud on turf, a hiss on sand, a click on rock, a crunch on
+// snow, a slap in the shallows. `thump` 0 means no body to the step, only the noise.
+const FOOT = {
+  grass: { thump: 74, decay: 0.06, noiseHz: 700, noiseQ: 0.6, noiseSec: 0.05, noise: 0.35 },
+  sand: { thump: 60, decay: 0.05, noiseHz: 1700, noiseQ: 0.5, noiseSec: 0.09, noise: 0.5 },
+  rock: { thump: 130, decay: 0.03, noiseHz: 2600, noiseQ: 2.2, noiseSec: 0.03, noise: 0.7 },
+  snow: { thump: 0, decay: 0.05, noiseHz: 3200, noiseQ: 0.9, noiseSec: 0.08, noise: 0.6 },
+  water: { thump: 0, decay: 0.08, noiseHz: 1200, noiseQ: 0.8, noiseSec: 0.13, noise: 0.7 },
+};
+const FIRE_VOICES = 4;
+const ROLL_VOICES = 3;
+
 const MATERIALS = {
   wood: { thump: 95, decay: 0.16, noiseHz: 420, noiseQ: 1.2, noiseSec: 0.09 },
   stone: { thump: 55, decay: 0.13, noiseHz: 260, noiseQ: 0.8, noiseSec: 0.11 },
@@ -63,6 +92,10 @@ export function createAudio() {
   let cricketGain = null;
   let windGain = null;
   let rainGain = null;
+  let surfGain = null; let surfDepth = null; let canopyGain = null;
+  let rainNow = 0;           // 0..1, for the hiss of rain on fire
+  let birdLevelNow = 0;      // the day's bird level, for chirps that bypass the bus
+  let birdPoints = null;     // where the flocks are (setBirds)
   // Weather (setWeather): how much the rain bed is up, and how far it hushes the birds.
   let weatherHush = 0;
   let windBoost = 0;
@@ -155,9 +188,9 @@ export function createAudio() {
     const surf = loopNoise();
     const surfFilter = ctx.createBiquadFilter();
     surfFilter.type = 'bandpass'; surfFilter.frequency.value = 560; surfFilter.Q.value = 0.7;
-    const surfGain = ctx.createGain(); surfGain.gain.value = 0.04;
+    surfGain = ctx.createGain(); surfGain.gain.value = 0.04;
     const surfLfo = ctx.createOscillator(); surfLfo.frequency.value = 0.13;
-    const surfDepth = ctx.createGain(); surfDepth.gain.value = 0.02;
+    surfDepth = ctx.createGain(); surfDepth.gain.value = 0.02;
     surfLfo.connect(surfDepth).connect(surfGain.gain);
     surf.connect(surfFilter).connect(surfGain).connect(master);
     surf.start(); surfLfo.start();
@@ -172,6 +205,17 @@ export function createAudio() {
     rainGain = ctx.createGain(); rainGain.gain.value = 0;
     rain.connect(rainFilter).connect(rainTone).connect(rainGain).connect(master);
     rain.start();
+
+    // Canopy: leaves in the wind. Silent until the listener is under trees (setPlace).
+    const canopy = loopNoise();
+    const canopyFilter = ctx.createBiquadFilter();
+    canopyFilter.type = 'bandpass'; canopyFilter.frequency.value = 2600; canopyFilter.Q.value = 0.45;
+    const canopyLfo = ctx.createOscillator(); canopyLfo.frequency.value = 0.21;
+    const canopySwing = ctx.createGain(); canopySwing.gain.value = 600;
+    canopyLfo.connect(canopySwing).connect(canopyFilter.frequency);
+    canopyGain = ctx.createGain(); canopyGain.gain.value = 0;
+    canopy.connect(canopyFilter).connect(canopyGain).connect(master);
+    canopy.start(); canopyLfo.start();
 
     // Birds: silent bus; chirps are scheduled on top of it while the sun is up.
     birdGain = ctx.createGain(); birdGain.gain.value = 0;
@@ -224,6 +268,16 @@ export function createAudio() {
   }
 
   function chirp(at) {
+    // From a flock, when the renderer has said where the flocks are: the chirp then skips
+    // the bus (which has no place) and carries the day's bird level itself.
+    let dest = birdGain; let level = 0.05;
+    const from = birdPoints?.length ? birdPoints[(Math.random() * birdPoints.length) | 0] : null;
+    if (from) {
+      const placed = place(from.x, from.y, from.z, { wet: 0.4, ref: 34, rolloff: 0.6 });
+      if (!placed) return;
+      dest = placed.node; level = 0.11 * birdLevelNow;
+      if (level < 0.004) return;
+    }
     const notes = 2 + Math.floor(Math.random() * 3);
     for (let k = 0; k < notes; k++) {
       const t = at + k * (0.14 + Math.random() * 0.06);
@@ -235,9 +289,9 @@ export function createAudio() {
       osc.frequency.exponentialRampToValueAtTime(f * 0.9, t + 0.11);
       const g = ctx.createGain();
       g.gain.setValueAtTime(0, t);
-      g.gain.linearRampToValueAtTime(0.05, t + 0.02);
+      g.gain.linearRampToValueAtTime(level, t + 0.02);
       g.gain.exponentialRampToValueAtTime(0.0001, t + 0.13);
-      osc.connect(g).connect(birdGain);
+      osc.connect(g).connect(dest);
       osc.start(t); osc.stop(t + 0.16);
     }
   }
@@ -250,6 +304,7 @@ export function createAudio() {
     const t = ctx.currentTime;
     const isWinter = season === 3;
     const birdLevel = isWinter ? 0 : smooth(day) * 0.9 * (1 - weatherHush);
+    birdLevelNow = birdLevel;
     birdGain?.gain.setTargetAtTime(birdLevel, t, 0.5);
     cricketGain?.gain.setTargetAtTime(isWinter ? 0 : smooth(1 - day) * 0.035, t, 0.5);
     if (!isWinter && weatherHush < 0.6 && day > 0.3 && t - lastChirpAt > 2.5 + Math.random() * 5) { lastChirpAt = t; chirp(t + 0.05); }
@@ -260,6 +315,7 @@ export function createAudio() {
     if (!ctx) return;
     const i = Math.max(0, Math.min(1, intensity));
     const rainLevel = kind === 1 ? 0.07 * i : kind === 2 ? 0.12 * i : 0;
+    rainNow = kind === 1 || kind === 2 ? i : 0;
     rainGain?.gain.setTargetAtTime(rainLevel, ctx.currentTime, 1.2);
     weatherHush = kind === 1 ? 0.6 * i : kind === 2 ? 0.95 * i : kind === 4 ? 0.5 * i : 0;
     windBoost = kind === 2 ? 0.1 * i : kind === 4 ? 0.05 * i : 0;
@@ -639,8 +695,270 @@ export function createAudio() {
     } catch { return 0; }
   }
 
+  // ── standing sounds: voices that stay, built once, moved and levelled afterwards ──────
+
+  /** A positioned output that lasts: `out` is its level (0 until told), `at()` moves it. */
+  function standing({ ref = 10, rolloff = 1, wet = 0.2 } = {}) {
+    const panner = ctx.createPanner();
+    panner.panningModel = 'equalpower'; panner.distanceModel = 'inverse';
+    panner.refDistance = ref; panner.maxDistance = MAX_AUDIBLE; panner.rolloffFactor = rolloff;
+    const out = ctx.createGain(); out.gain.value = 0;
+    out.connect(panner); panner.connect(master);
+    if (wet > 0 && reverbSend) { const send = ctx.createGain(); send.gain.value = wet; panner.connect(send).connect(reverbSend); }
+    return {
+      out, panner, x: 0, y: 0, z: 0, level: 0,
+      /** `glide` seconds of travel; 0 is a jump (only ever done while silent). */
+      at(x, y, z, glide = 0) {
+        this.x = x; this.y = y; this.z = z;
+        const t = ctx.currentTime;
+        if (panner.positionX) {
+          if (glide > 0) { panner.positionX.setTargetAtTime(x, t, glide); panner.positionY.setTargetAtTime(y, t, glide); panner.positionZ.setTargetAtTime(z, t, glide); }
+          else { for (const [prm, v] of [[panner.positionX, x], [panner.positionY, y], [panner.positionZ, z]]) { prm.cancelScheduledValues(t); prm.setValueAtTime(v, t); } }
+        } else panner.setPosition(x, y, z);
+      },
+      to(level, seconds = 0.12) { this.level = level; out.gain.setTargetAtTime(level, ctx.currentTime, seconds); },
+    };
+  }
+
+  /** Noise through one filter into a gain: the body of every standing voice. */
+  function bed(dest, type, frequency, Q = 0.7) {
+    const src = loopNoise();
+    const filter = ctx.createBiquadFilter(); filter.type = type; filter.frequency.value = frequency; filter.Q.value = Q;
+    const gain = ctx.createGain(); gain.gain.value = 0;
+    src.connect(filter).connect(gain).connect(dest);
+    // Not all from the top of the buffer, or four fires are one fire four times as loud.
+    src.start(0, Math.random() * 1.9);
+    return { filter, gain };
+  }
+
+  /** A few seconds of pops at random times and sizes, looped: a fire's crackle, made once. */
+  let crackleBuf = null;
+  function crackleBuffer() {
+    if (crackleBuf) return crackleBuf;
+    const len = Math.floor(ctx.sampleRate * 3.7);
+    crackleBuf = ctx.createBuffer(1, len, ctx.sampleRate);
+    const d = crackleBuf.getChannelData(0);
+    for (let at = 0; at < len;) {
+      at += Math.floor(ctx.sampleRate * (0.012 + Math.random() * Math.random() * 0.2));
+      const size = Math.random() * Math.random();
+      const n = Math.floor(ctx.sampleRate * (0.002 + size * 0.012));
+      for (let i = 0; i < n && at + i < len; i++) d[at + i] += (Math.random() * 2 - 1) * (0.25 + size * 0.75) * Math.pow(1 - i / n, 2.5);
+    }
+    return crackleBuf;
+  }
+
+  let fires = null;
+  function fireVoices() {
+    if (fires) return fires;
+    fires = [];
+    for (let i = 0; i < FIRE_VOICES; i++) {
+      const v = standing({ ref: 9, rolloff: 1.05, wet: 0.22 });
+      const roar = bed(v.out, 'lowpass', 190, 0.5);
+      const hiss = bed(v.out, 'highpass', 3800, 0.4);
+      const src = ctx.createBufferSource();
+      src.buffer = crackleBuffer(); src.loop = true; src.playbackRate.value = 0.86 + i * 0.09;
+      const hp = ctx.createBiquadFilter(); hp.type = 'highpass'; hp.frequency.value = 650;
+      const crack = ctx.createGain(); crack.gain.value = 0;
+      src.connect(hp).connect(crack).connect(v.out);
+      src.start(0, Math.random() * 3);
+      fires.push({ v, roar, hiss, crack, x: 0, y: 0, z: 0, group: null });
+    }
+    return fires;
+  }
+
+  /**
+   * Where the island is burning: up to four groups from fireClusters.js
+   * (`{ x, y, z, size, lava, camp, steam }`). A voice keeps its fire between calls; one that
+   * has to move goes quiet where it is first, then starts up at the new place.
+   */
+  function setFires(groups) {
+    if (!ctx || !enabled) return;
+    if (!fires && !(groups?.length)) return;
+    try {
+      const slots = fireVoices();
+      assignSlots(slots, (groups ?? []).slice(0, FIRE_VOICES));
+      const t = ctx.currentTime;
+      for (const s of slots) {
+        const g = s.group;
+        if (!g) { if (s.v.level > 0) s.v.to(0, 0.25); continue; }
+        const far = Math.hypot(g.x - s.v.x, g.y + 1 - s.v.y, g.z - s.v.z) > 5;
+        // Sounding somewhere else: go quiet there; the next call starts it here.
+        if (far && s.v.level > 0) { s.v.to(0, 0.08); continue; }
+        s.v.at(g.x, g.y + 1, g.z, far ? 0 : 0.2);
+        s.x = g.x; s.z = g.z;
+        const k = g.camp ? 0.18 : Math.min(1, 0.28 + g.size / 10);
+        s.roar.filter.frequency.setTargetAtTime(g.lava ? 95 : 190, t, 0.3);
+        s.roar.gain.gain.setTargetAtTime((g.lava ? 0.5 : 0.3) * k * (g.camp ? 0.4 : 1), t, 0.3);
+        s.crack.gain.setTargetAtTime((g.lava ? 0.12 : 0.55) * (g.camp ? 0.55 : 0.4 + k * 0.6), t, 0.3);
+        // Water on something hot: the sea on lava, rain on flame.
+        s.hiss.gain.gain.setTargetAtTime(g.lava ? (g.steam ? 0.16 : 0) : rainNow * 0.14 * k, t, 0.4);
+        s.v.to(1, 0.2);
+      }
+    } catch { /* best effort */ }
+  }
+
+  /**
+   * Where the listener stands: `shore` 1 at the waterline falling to 0 well inland, `canopy`
+   * 0..1 trees overhead, `wind` 0..1, `height` 0..1 how far above the ground it has flown.
+   */
+  function setPlace({ shore = 0.5, canopy = 0, wind = 0.1, height = 0 } = {}) {
+    if (!ctx || !surfGain) return;
+    const t = ctx.currentTime;
+    const down = 1 - Math.min(1, Math.max(0, height)) * 0.85;
+    const surf = (0.006 + 0.085 * smooth(Math.min(1, Math.max(0, shore)))) * down;
+    surfGain.gain.setTargetAtTime(surf, t, 0.8);
+    surfDepth.gain.setTargetAtTime(surf * 0.45, t, 0.8);
+    canopyGain.gain.setTargetAtTime(Math.min(1, Math.max(0, canopy)) * (0.006 + Math.min(1, wind) * 0.05) * down, t, 0.7);
+  }
+
+  let wings = null;
+  /**
+   * Where the flocks are (`[{ x, y, z }]`, or null for "nowhere": chirps go back to the
+   * un-placed bus). `gather` 0..1 is the dusk murmuration: its wings are a sound of their own.
+   */
+  function setBirds(points, gather = 0) {
+    birdPoints = points?.length ? points : null;
+    if (!ctx || !enabled) return;
+    try {
+      if (!wings) {
+        if (gather < 0.05 || !birdPoints) return;
+        const v = standing({ ref: 26, rolloff: 0.8, wet: 0.3 });
+        const b = bed(v.out, 'bandpass', 760, 0.5);
+        // A flutter, not a hiss: the level beats at about wingbeat rate.
+        const lfo = ctx.createOscillator(); lfo.frequency.value = 12.5;
+        const depth = ctx.createGain(); depth.gain.value = 0.05;
+        lfo.connect(depth).connect(b.gain.gain); lfo.start();
+        b.gain.gain.value = 0.11;
+        wings = v;
+      }
+      const at = birdPoints?.[0];
+      if (at) wings.at(at.x, at.y, at.z, wings.level > 0.01 ? 0.4 : 0);
+      // The murmuration flies at last light, when the day's bird level is already low, so
+      // its wings answer to the weather's hush only.
+      wings.to(at ? Math.min(1, gather) * (1 - weatherHush) : 0, 0.8);
+    } catch { /* best effort */ }
+  }
+
+  /**
+   * Footfalls for one animal: `count` steps `interval` seconds apart from `at`, on `surface`
+   * (a FOOT key). One panner for the run of steps, which is what lets six animals be heard
+   * apart without a panner per step.
+   */
+  function footfalls(at, surface, count, interval, level = 0.5) {
+    if (!ctx || !enabled || !at || count <= 0) return;
+    try {
+      const placed = place(at.x, at.y, at.z, { wet: 0.12, ref: 4.5, rolloff: 1.6 });
+      if (!placed || placed.dist > 60) return;
+      const v = FOOT[surface] ?? FOOT.grass;
+      const t0 = arrival(placed) + Math.random() * interval;
+      const bus = ctx.createGain(); bus.gain.value = Math.max(0.05, Math.min(1, level)) * 0.5;
+      bus.connect(placed.node);
+      for (let k = 0; k < count; k++) {
+        const when = t0 + k * interval + (Math.random() - 0.5) * interval * 0.2;
+        const soft = 0.75 + Math.random() * 0.25;
+        if (v.thump > 0) thump(bus, when, v.thump * (0.92 + Math.random() * 0.16), v.thump * 0.55, v.decay, soft);
+        burst(bus, when, { type: 'bandpass', frequency: v.noiseHz * (0.9 + Math.random() * 0.2), Q: v.noiseQ, level: v.noise * soft, attack: 0.002, seconds: v.noiseSec });
+      }
+    } catch { /* best effort */ }
+  }
+
+  let herd = null;
+  /** A herd on the run: one low rumble from its middle. `level` 0..1; null `at` lets it die away. */
+  function setHerd(at, level = 0) {
+    if (!ctx || !enabled) return;
+    try {
+      if (!herd) {
+        if (!at || level < 0.03) return;
+        const v = standing({ ref: 12, rolloff: 1.1, wet: 0.25 });
+        const b = bed(v.out, 'lowpass', 120, 0.6);
+        const lfo = ctx.createOscillator(); lfo.frequency.value = 8.5;
+        const depth = ctx.createGain(); depth.gain.value = 0.3;
+        lfo.connect(depth).connect(b.gain.gain); lfo.start();
+        b.gain.gain.value = 0.6;
+        herd = v;
+      }
+      if (at) herd.at(at.x, at.y, at.z, herd.level > 0.01 ? 0.35 : 0);
+      herd.to(at ? Math.min(1, level) : 0, 0.45);
+    } catch { /* best effort */ }
+  }
+
+  let rolls = null;
+  /**
+   * Rock on the move across the ground: `[{ x, y, z, speed, small }]`, at most three, sent on
+   * every sim frame (an empty list lets them die away). A boulder is a rumble whose pitch
+   * rides its speed; loose stones are a rattle.
+   */
+  function setRolls(list) {
+    if (!ctx || !enabled) return;
+    if (!rolls && !(list?.length)) return;
+    try {
+      if (!rolls) {
+        rolls = [];
+        for (let i = 0; i < ROLL_VOICES; i++) {
+          const v = standing({ ref: 7, rolloff: 1.2, wet: 0.35 });
+          const b = bed(v.out, 'bandpass', 120, 0.8);
+          const lfo = ctx.createOscillator(); lfo.frequency.value = 9;
+          const depth = ctx.createGain(); depth.gain.value = 0.25;
+          lfo.connect(depth).connect(b.gain.gain); lfo.start();
+          b.gain.gain.value = 0.55;
+          rolls.push({ v, b, lfo, x: 0, y: 0, z: 0, group: null });
+        }
+      }
+      assignSlots(rolls, (list ?? []).slice(0, ROLL_VOICES));
+      const t = ctx.currentTime;
+      for (const s of rolls) {
+        const g = s.group;
+        if (!g) { if (s.v.level > 0) s.v.to(0, 0.1); continue; }
+        s.v.at(g.x, g.y, g.z, s.v.level > 0.01 ? 0.06 : 0);
+        s.x = g.x; s.z = g.z;
+        const sp = Math.min(1, g.speed / 10);
+        s.b.filter.frequency.setTargetAtTime(g.small ? 1500 + sp * 1400 : 85 + sp * 110, t, 0.06);
+        s.b.filter.Q.setTargetAtTime(g.small ? 1.6 : 0.8, t, 0.06);
+        s.lfo.frequency.setTargetAtTime(g.small ? 19 + sp * 14 : 5 + sp * 9, t, 0.06);
+        s.v.to((g.small ? 0.22 : 0.75) * (0.25 + sp * 0.75), 0.07);
+      }
+    } catch { /* best effort */ }
+  }
+
+  /** A tree going over: wood fibres letting go in jerks, slower as it leans. */
+  function creak(at) {
+    if (!ctx || !enabled || !at) return;
+    try {
+      const placed = place(at.x, at.y, at.z, { wet: 0.3, ref: 9, rolloff: 1.2 });
+      if (!placed) return;
+      const when = arrival(placed);
+      const len = 0.95;
+      const osc = ctx.createOscillator(); osc.type = 'sawtooth';
+      osc.frequency.setValueAtTime(74, when); osc.frequency.exponentialRampToValueAtTime(46, when + len);
+      const f = ctx.createBiquadFilter(); f.type = 'bandpass'; f.Q.value = 7;
+      f.frequency.setValueAtTime(520, when); f.frequency.linearRampToValueAtTime(980, when + len);
+      // Stick and slip: a square gate that slows as the trunk comes down.
+      const gate = ctx.createOscillator(); gate.type = 'square';
+      gate.frequency.setValueAtTime(19, when); gate.frequency.exponentialRampToValueAtTime(6.5, when + len);
+      const gateDepth = ctx.createGain(); gateDepth.gain.value = 0.5;
+      const chop = ctx.createGain(); chop.gain.value = 0.5;
+      gate.connect(gateDepth).connect(chop.gain);
+      const env = ctx.createGain();
+      env.gain.setValueAtTime(0, when); env.gain.linearRampToValueAtTime(0.5, when + 0.08);
+      env.gain.setValueAtTime(0.5, when + len * 0.7); env.gain.exponentialRampToValueAtTime(0.0001, when + len);
+      osc.connect(f).connect(chop).connect(env).connect(placed.node);
+      for (const o of [osc, gate]) { o.start(when); o.stop(when + len + 0.05); }
+      burst(placed.node, when + len * 0.82, { type: 'bandpass', frequency: 1900, Q: 1.4, level: 0.3, attack: 0.002, seconds: 0.09 });
+    } catch { /* best effort */ }
+  }
+
   return {
     ensure,
+    setFires, setPlace, setBirds, footfalls, setHerd, setRolls, creak,
+    /** What is sounding now, for a harness: fire voices up, and the bed levels. */
+    get standing() {
+      return {
+        fires: fires ? fires.filter(s => s.v.level > 0).length : 0,
+        rolls: rolls ? rolls.filter(s => s.v.level > 0).length : 0,
+        herd: herd?.level ?? 0, wings: wings?.level ?? 0,
+        surf: surfGain?.gain.value ?? 0, canopy: canopyGain?.gain.value ?? 0, placedBirds: !!birdPoints,
+      };
+    },
     setDay,
     setWeather,
     setUnderwater, knell, chime, sonify,
@@ -687,6 +1005,10 @@ export function createAudio() {
       applyMasterGain();
     },
     get enabled() { return enabled; },
-    dispose() { try { ctx?.close(); } catch { /* already gone */ } ctx = null; master = null; reverbSend = null; },
+    dispose() {
+      try { ctx?.close(); } catch { /* already gone */ }
+      ctx = null; master = null; reverbSend = null;
+      fires = null; rolls = null; herd = null; wings = null; crackleBuf = null; surfGain = null; surfDepth = null; canopyGain = null;
+    },
   };
 }

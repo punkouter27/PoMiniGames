@@ -303,6 +303,10 @@ export function createTerrainMesh(terrain, { tier = 'high' } = {}) {
     mesh,
     water: water.mesh,
     attachRipples: (ripples) => water.attachRipples(ripples),
+    /** The lakes' mirror (water.js): set it up once, then switch its pass on and off. */
+    setMirror: (opts) => water.setMirror(opts),
+    mirror: (on) => water.mirror(on),
+    get mirroring() { return water.mirroring; },
     paint,
     /**
      * Per frame. `time` drives the fire flicker on the emissive channel and the water's

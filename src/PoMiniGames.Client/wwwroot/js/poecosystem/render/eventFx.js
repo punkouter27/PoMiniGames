@@ -36,6 +36,10 @@ const MATCH_RADIUS = 2.5;         // a row that moved further than this is a dif
 const IMPACT_BUDGET = 6;          // impacts drawn per frame; a rockslide can produce dozens
 const TRACK_STRIDE = 5;           // x, y, z, packed kind, vertical speed
 const WATERLINE = 0.05;           // a prop's centre under this, over water, has gone in
+const ROLL_SPEED = 1.3;           // m/s along the ground before rock is heard rolling
+const ROLL_GROUND = 1.1;          // a rock's centre this close to the ground is on it
+const ROLL_RANGE = 120;           // metres from the listener past which a roll is not voiced
+const CREAK_GAP_MS = 350;         // two trunks felled together creak as one
 
 const PROP_MATERIAL = {
   [PROP_KIND.ragdollPart]: 'flesh',
@@ -66,6 +70,9 @@ export function createEventFx(particles, audio, { tier = 'high' } = {}) {
   // silently reduce how smoky the island is.
   let smokeDebt = 0;
   let lavaDebt = 0;
+  // Rock rolling this sim frame (audio.setRolls), and when a trunk last creaked.
+  const rolling = [];
+  let creakAt = -1e9;
 
   const tmp = new Vector3();
 
@@ -187,7 +194,7 @@ export function createEventFx(particles, audio, { tier = 'high' } = {}) {
      * repeated row as a body that had come to a dead stop, and every falling rock would
      * trail dust all the way down. `now` is therefore the frame's ARRIVAL time.
      */
-    props(view, count, now, terrainApi) {
+    props(view, count, now, terrainApi, listener = null) {
       // Not gated on particles: the loop is 256 rows and the audio half is worth having on
       // every tier. Only the emits themselves are skipped when there is no particle field.
       const dust = particles?.enabled;
@@ -197,6 +204,7 @@ export function createEventFx(particles, audio, { tier = 'high' } = {}) {
       // Velocity across a two-second gap is not velocity.
       const usable = prevCount > 0 && dt > 0.001 && dt < 0.25;
       let drawn = 0;
+      rolling.length = 0;
 
       for (let k = 0; k < n; k++) {
         const o = k * FRAME.PROP_STRIDE;
@@ -212,6 +220,15 @@ export function createEventFx(particles, audio, { tier = 'high' } = {}) {
           const moved = Math.hypot(x - px, y - py, z - pz);
           if (moved < MATCH_RADIUS) {
             vy = (y - py) / dt;                       // negative while falling
+            // Rock travelling ACROSS the ground is rolling: the sound between two landings.
+            const kindNow = Math.floor((packed % PROP_BASE) / 8);
+            if ((kindNow === PROP_KIND.rock || kindNow === PROP_KIND.projectile) && terrainApi) {
+              const along = Math.hypot(x - px, z - pz) / dt;
+              if (along > ROLL_SPEED && y - terrainApi.heightAt(x, z) < ROLL_GROUND) {
+                const far = listener ? Math.hypot(x - listener.x, y - listener.y, z - listener.z) : 0;
+                if (far < ROLL_RANGE) rolling.push({ x, y, z, speed: along, small: (packed % PROP_BASE) % 8 < 6, rank: along / (1 + far / 25) });
+              }
+            }
             const wasFalling = track[t + 4];
             // The landing test: it WAS coming down fast and this frame it kept only a
             // fraction of that speed. Comparing consecutive velocities rather than reading
@@ -244,8 +261,18 @@ export function createEventFx(particles, audio, { tier = 'high' } = {}) {
           api.onSplash?.(x, z, heavy ? 1.5 : 0.9, (heavy ? 1.3 : 0.5) * (0.4 + speed));
         }
 
+        // A log row past the end of last frame's rows is a trunk that has just been cut
+        // through: it creaks on its way over, and the landing is the wood impact above.
+        if (usable && k >= prevCount && Math.floor((packed % PROP_BASE) / 8) === PROP_KIND.log && now - creakAt > CREAK_GAP_MS) {
+          creakAt = now;
+          audio?.creak?.({ x, y, z });
+        }
+
         track[t] = x; track[t + 1] = y; track[t + 2] = z; track[t + 3] = packed; track[t + 4] = vy;
       }
+      // The three that matter most (fast and near); an empty list lets the voices die away.
+      if (rolling.length > 3) { rolling.sort((p, q) => q.rank - p.rank); rolling.length = 3; }
+      audio?.setRolls?.(rolling);
       prevCount = n;
       prevAt = now;
     },

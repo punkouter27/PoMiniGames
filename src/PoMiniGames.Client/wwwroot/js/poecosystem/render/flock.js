@@ -175,11 +175,16 @@ export function createFlock(renderer, scene, terrainApi, { groups = 3, perGroup 
 
   let presence = 1; let seed = 1; let startle = 0; let merge = 0;
   const centreXZ = size / 2;
+  const points = Array.from({ length: groups }, () => ({ x: centreXZ, y: 30, z: centreXZ }));
 
   return {
     mesh,
     count: N,
     get merged() { return merge > 0.5; },
+    /** 0..1: how far the flocks have gathered into the dusk murmuration. */
+    get gather() { return merge; },
+    /** Where each flock is headed (the point its birds circle): `[{ x, y, z }]`, reused. */
+    points,
     get presence() { return presence; },
 
     /**
@@ -213,6 +218,7 @@ export function createFlock(renderer, scene, terrainApi, { groups = 3, perGroup 
           tx += (mx - tx) * merge; ty += (my - ty) * merge; tz += (mz - tz) * merge;
         }
         targets.array[g].set(tx, ty, tz, 0);
+        points[g].x = tx; points[g].y = ty; points[g].z = tz;
       }
 
       startle = Math.max(0, startle - dt * 0.9);
