@@ -39,7 +39,7 @@ import { Training } from './training.js';
 import { SIM_DT, MAX_HP, TIME_LIMIT, MAT_HALF } from './constants.js';
 import { ENERGY_DEFAULT } from './energy.js';
 import { FighterTick } from './fighterTick.js';
-import { newMatch, roundLabel } from './rounds.js';
+import { newMatch, roundLabel, blankStats } from './rounds.js';
 import { SceneSetup, ENV_INTENSITY } from './sceneSetup.js';
 import { KeyBridge } from '../platform/gamepadBus.js';
 import { BrawlHaptics } from './haptics.js';
@@ -225,6 +225,8 @@ export class BrawlGame {
     // Best of three (rounds.js) where a human fights: the 1P ladder and 2P local. Null in
     // the Cup, online and the training room, which stay one round.
     this.match = this._roundsMode() ? newMatch() : null;
+    // Feats each corner has earned this match (feats.js), reported with the result.
+    this._matchFeats = [new Set(), new Set()];
   }
 
   async start() {
@@ -852,6 +854,11 @@ export class BrawlGame {
         guardAt: -99,
         blockStunT: 0,     // frozen out of our own recovery by the guard we hit
         counterUntil: -99, // perfect guard armed a bonus swing until this time
+        // ── Grab and taunt (constants.js GRAB / TAUNT) ────────────────
+        grabHit: false,      // this grab has landed: the short recovery applies
+        grabBack: false,     // held away as it started: throw them behind us
+        wakeSwing: false,    // the live swing was pressed on the way up off the canvas
+        tauntCdUntil: -99,   // no new taunt before this time
 
         // The super meter is NOT here: it lives on `personality.superMeter`.
         // Don't add a copy on the fighter — the HUD and AI would bind to it.
@@ -859,7 +866,8 @@ export class BrawlGame {
         // Counters for the end-of-fight recap and the on-screen combo readout.
         // Every round (including a best-of-3 rematch) goes through
         // _spawnFighters, so initialising here IS the per-round reset.
-        stats: { hits: 0, blocks: 0, biggestHit: 0, bestCombo: 0, knockdowns: 0 },
+        // Shape: rounds.js blankStats (the recap, the feats and the corner's advice read it).
+        stats: blankStats(),
         comboN: 0,      // consecutive landed hits inside COMBO_WINDOW
         comboT: -99,    // engine time of this fighter's last landed hit
         chargeCued: false, // full-charge audio cue fired
@@ -1121,7 +1129,11 @@ export class BrawlGame {
     this.setPaused(false);
     // A new bout starts a new best-of-three; only the engine's own round break keeps the score.
     this._roundBreak = false;
-    if (!nextRound) this.match = this._roundsMode() ? newMatch() : null;
+    if (!nextRound) {
+      this.match = this._roundsMode() ? newMatch() : null;
+      this._matchFeats = [new Set(), new Set()];
+      this._hideCorner();
+    }
     this._renderRounds();
     this.phase = 'intro';
     this.phaseT = 0;
@@ -1244,6 +1256,7 @@ export class BrawlGame {
       }
       if (this.phaseT >= 3.7) {
         this.phase = 'fighting';
+        this._hideCorner();
         this._show('fight');
         this.combat.startGame();
         this._setBanner('');
@@ -1316,6 +1329,7 @@ export class BrawlGame {
       });
       f.animator.decayLean(dt);
       f.hpCur = this._hp(f);
+      if (f.hpCur < f.stats.lowHp) f.stats.lowHp = f.hpCur;
 
       // Cartoon squash: compress the whole body for a couple of frames on impact.
       if (f.squashT > 0) {
@@ -1375,7 +1389,7 @@ export class BrawlGame {
       const ctx = this._aiContext(f, opp, dt);
       let intent = f.controller.update(ctx);
       if (f.blockStunT > 0) {
-        intent = { ...intent, punch: false, kick: false, block: false, side: 0 };
+        intent = { ...intent, punch: false, kick: false, block: false, side: 0, taunt: false };
       }
       // ── Nixon "I Am Not a Crook" eye-gouge / Ford "PARDON ME" ───────
       // Block presses drop with the blind window's miss rate
@@ -1394,7 +1408,7 @@ export class BrawlGame {
       }
       // ── W Bush "Decider Mode" freeze: stall out his attacking moves ──
       if (f.controller?.__freezeUntil && this.t < f.controller.__freezeUntil) {
-        intent = { ...intent, punch: false, kick: false, side: 0 };
+        intent = { ...intent, punch: false, kick: false, side: 0, taunt: false };
       }
       this._tickFighter(f, opp, intent, dt);
       if (this.online) this._netDeadline(f, opp);
@@ -1928,6 +1942,7 @@ export class BrawlGame {
     // Online the server owns every point of HP — the crate still flies, it just costs nothing.
     if (!this.online) this.combat.damage({ playerId: f.playerId, amount: capped, sourceId: f.playerId });
     this.hudDirty = true;
+    f.stats.crateHits += 1;
     this._commentate('crate', f);
     const p = f.rig.root.position;
     this._spawnSparks(new THREE.Vector3(p.x, 1.0, p.z), 0xffd0a0, 5, 1.2);
@@ -2096,6 +2111,7 @@ export class BrawlGame {
     if (this.flash) this.flash.remove();
     if (this.splash) this.splash.remove();
     if (this._roundsEl) { this._roundsEl.remove(); this._roundsEl = null; }
+    if (this._cornerEl) { this._cornerEl.remove(); this._cornerEl = null; }
     // Removing the fx layer takes its damage numbers and combo badges with it;
     // dropping the node list too so a disposed game holds no detached elements.
     if (this.fx) this.fx.remove();

@@ -1,3 +1,4 @@
+using System.Globalization;
 using Microsoft.AspNetCore.SignalR;
 using PoMiniGames.Domain.Primitives;
 using PoMiniGames.Features.Identity;
@@ -33,27 +34,58 @@ public sealed class PoBrawlLobbyHub : LobbyHub<PoBrawlLobbyPlayer, PoBrawlLobbyS
 
     protected override string StartingMessage => "Fight starting…";
 
+    /// <summary>The query parameter a browser states its <see cref="PoBrawlRollbackSim.WireVersion"/> in.</summary>
+    public const string VersionQuery = "v";
+
+    /// <summary>What each refused or displaced connection reads. Whole sentences: the page shows them as they are.</summary>
+    public const string OutdatedMessage = "A newer version of Brawl is out. Reload to play online.";
+    public const string FullMessage = "The room is full: two players are already in.";
+    public const string StartingRefusal = "A fight is being set up. Try again in a moment.";
+    public const string TakenOverMessage = "You opened this lobby somewhere else, so your seat moved there.";
+    public const string IdleMessage = "You were away for two minutes, so your seat went to a player who was waiting.";
+
+    /// <summary>The connections this Join cost a seat, for <see cref="OnSeatOpenedAsync"/> in the same call.</summary>
+    private IReadOnlyList<PoBrawlLobbyService.DisplacedSeat> _displaced = [];
+
     /// <summary>
     /// Server-canonical identity from the claims; the typed name is only a fallback for a nameless
     /// guest. A full or starting room refuses loudly, so the page shows why instead of a lobby
-    /// the caller is not in.
+    /// the caller is not in. So does a browser on an older build: it could take a seat but not
+    /// read the fight, which would cost its opponent the match.
     /// </summary>
     protected override (LobbyState<PoBrawlLobbyPlayer> state, string message) OpenSeat(string displayName, bool isGuest)
     {
+        var version = Context.GetHttpContext()?.Request.Query[VersionQuery].ToString();
+        if (version != PoBrawlRollbackSim.WireVersion.ToString(CultureInfo.InvariantCulture))
+        {
+            throw new HubException(LobbyRefusal.ReloadPrefix + OutdatedMessage);
+        }
+
         var identity = RequestIdentity.Resolve(Context.User);
         var name = !string.IsNullOrWhiteSpace(identity.DisplayName) ? identity.DisplayName : displayName;
-        var (state, msg) = Lobby.Open(Context.ConnectionId, identity.UserId, name, identity.IsGuest || isGuest, PoBrawlRoster.Bob,
-            out var evicted);
-        // The evicted connection learns it from the lobbyState broadcast that follows the join.
-        foreach (var gone in evicted)
+        var (state, msg, displaced) = Lobby.Seat(Context.ConnectionId, identity.UserId, name, identity.IsGuest || isGuest, PoBrawlRoster.Bob);
+        _displaced = displaced;
+        foreach (var gone in displaced.Where(d => !d.TakenOver))
         {
-            Log.LogInformation("PoBrawl lobby: {Name} was idle past {Ms} ms and gave up the seat", gone, PoBrawlLobbyService.IdleSeatMs);
+            Log.LogInformation("PoBrawl lobby: {Name} was idle past {Ms} ms and gave up the seat", gone.DisplayName, PoBrawlLobbyService.IdleSeatMs);
         }
         if (!state.Players.Any(p => p.ConnectionId == Context.ConnectionId))
         {
-            throw new HubException($"{msg} — a fight is being set up, try again in a moment.");
+            throw new HubException(state.Players.Count >= PoBrawlLobbyService.Cap ? FullMessage : StartingRefusal);
         }
         return (state, msg);
+    }
+
+    /// <summary>
+    /// Tell each connection that just lost its seat why. Without this an older tab of the same
+    /// player kept its page and showed the newer tab as its opponent.
+    /// </summary>
+    protected override async Task OnSeatOpenedAsync()
+    {
+        foreach (var gone in _displaced)
+        {
+            await Clients.Client(gone.ConnectionId).SendAsync("kicked", gone.TakenOver ? TakenOverMessage : IdleMessage);
+        }
     }
 
     protected override Task OnStartingAsync(IReadOnlyList<PoBrawlLobbyPlayer> roster)

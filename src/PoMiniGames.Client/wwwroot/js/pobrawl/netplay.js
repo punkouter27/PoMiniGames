@@ -30,18 +30,23 @@
 //     newest snapshot) carries a faint cyan ghost trail; it burns off once confirmed.
 //   • The page's signal meter: RTT and rollbacks per second, pushed at 2 Hz (OnNetSignal).
 //
-// Keys (local corner only): A/D walk (held), R or S guard (held), F punch, G kick, H special.
+//   • A GRAB the sim fired plays its reach at once; what it did (thrown, a break, air) lands when
+//     the hands close a tenth of a second later, so a rollback has that long to correct it, and the
+//     thrown fighter is held where they stood until then. A TAUNT plays the corner's gesture.
+//
+// Keys (local corner only): A/D walk (held), R or S guard (held; twice quickly = taunt), F punch,
+// G kick, T grab, H special.
 // The touch pad and gamepads dispatch the same codes, so they need nothing of their own.
 
 import * as THREE from 'three-eco/webgpu';
-import { ATTACKS } from './constants.js';
+import { ATTACKS, GRAB, TAUNT } from './constants.js';
 import { testAttackHit, regionForHurtBone } from './hitboxes.js';
 import { regionEffect } from './combat.js';
 import { RollbackSession, HISTORY } from './rollbackSession.js';
 import {
   HZ, ENERGY_MAX, HELD_IDLE, HELD_FORWARD, HELD_BACK, HELD_BLOCK,
   FLOOR_NONE, FLOOR_DOWN, ARM_LEFT,
-  PRESS_PUNCH, PRESS_KICK, PRESS_SPECIAL, PRESS_NONE,
+  PRESS_PUNCH, PRESS_KICK, PRESS_SPECIAL, PRESS_GRAB, PRESS_TAUNT, PRESS_NONE,
 } from './rollbackSim.js';
 
 // The engine's countdown ends ("FIGHT!") at phaseT 3.7 — see game.js _tick.
@@ -67,7 +72,7 @@ const _sb = new THREE.Vector3();
 
 const HELD = ['idle', 'forward', 'back', 'block']; // PoBrawlMatchAction 0..3
 const SWING = { [PRESS_PUNCH]: 'punch', [PRESS_KICK]: 'kick', [PRESS_SPECIAL]: 'special' };
-const OUTCOME = { 1: 'hit', 2: 'blocked', 3: 'whiff' };
+const OUTCOME = { 1: 'hit', 2: 'blocked', 3: 'whiff', 4: 'break' };
 
 /** Drives one fighter toward the sim's view of it. */
 export class NetController {
@@ -79,10 +84,11 @@ export class NetController {
     this.simX = null;      // metres, from the sim every render frame
     this.held = 'idle';    // the sim's held state for this corner
     this.localBlock = false; // local corner only: the guard key is down right now
+    this.holdX = null;     // metres: where to stand while a throw on this fighter has not landed on screen
   }
 
   /** Where this fighter should stand now, or null before the sim has a state. */
-  targetX() { return this.simX; }
+  targetX() { return this.holdX ?? this.simX; }
 
   update(ctx) {
     const f = this.fighter;
@@ -116,6 +122,8 @@ class NetInput {
     this.down = new Set();
     this.lastWalk = null;
     this.held = HELD_IDLE;
+    // Wall-clock time of the last guard press, for the double tap (the taunt).
+    this.blockDownAt = -1e9;
     this._onDown = (e) => {
       if (e.ctrlKey || e.metaKey || e.altKey) return;
       const tag = (e.target?.tagName || '').toLowerCase();
@@ -127,10 +135,25 @@ class NetInput {
         this.down.add(code);
         if (code === 'KeyA' || code === 'KeyD') this.lastWalk = code;
         this._sync();
-      } else if (code === 'KeyF' || code === 'KeyG' || code === 'KeyH') {
+        // The guard key twice inside TAUNT.tap asks for the taunt; the sim only takes it out of
+        // strike range. A third press starts over.
+        if (code === 'KeyR' || code === 'KeyS') {
+          const now = performance.now();
+          if (now - this.blockDownAt <= TAUNT.tap * 1000) {
+            this.blockDownAt = -1e9;
+            this.onInput(this.held, PRESS_TAUNT);
+          } else {
+            this.blockDownAt = now;
+          }
+        }
+      } else if (code === 'KeyF' || code === 'KeyG' || code === 'KeyH' || code === 'KeyT') {
         e.preventDefault?.();
         if (e.repeat) return;
-        this.onInput(this.held, code === 'KeyF' ? PRESS_PUNCH : code === 'KeyG' ? PRESS_KICK : PRESS_SPECIAL);
+        // The grab has a key of its own here (T). The local modes also take punch and kick
+        // together; online each press is sent the moment it happens, and waiting to see whether
+        // a second one follows would add that wait to every punch.
+        this.onInput(this.held, code === 'KeyF' ? PRESS_PUNCH : code === 'KeyG' ? PRESS_KICK
+          : code === 'KeyT' ? PRESS_GRAB : PRESS_SPECIAL);
       }
     };
     this._onUp = (e) => {
@@ -427,15 +450,19 @@ class NetplayMethods {
       if (!st || st.frame !== fr) continue;
       for (const [f, , side] of corners) {
         const c = side === 0 ? st.p1 : st.p2;
-        if (c.swingFrame !== fr || !SWING[c.swing]) continue;
+        const isGrab = c.swing === PRESS_GRAB, isTaunt = c.swing === PRESS_TAUNT;
+        if (c.swingFrame !== fr || !(SWING[c.swing] || isGrab || isTaunt)) continue;
         const key = `${side}:${fr}`;
         const outcome = OUTCOME[c.outcome] || 'whiff';
         if (o.thrown.has(key)) {
           // Already thrown: a rollback may have changed what it did — correct the verdict still in the air.
           if (f.netVerdict && f.netVerdict.key === key) { f.netVerdict.outcome = outcome; f.netVerdict.damage = c.damage; }
+          if (f.netGrab && f.netGrab.key === key) { f.netGrab.outcome = outcome; f.netGrab.damage = c.damage; }
           continue;
         }
         o.thrown.set(key, fr);
+        if (isTaunt) { this._netTaunt(f); continue; }
+        if (isGrab) { this._netGrab(f, { key, frame: fr, outcome, damage: c.damage }); continue; }
         this._netSwing(f, SWING[c.swing], {
           key, frame: fr, outcome, damage: c.damage, special: c.swing === PRESS_SPECIAL,
           // The hand the sim threw (rollbackSim.js: jab left, cross right).
@@ -446,6 +473,7 @@ class NetplayMethods {
     for (const [f, c] of corners) {
       // A verdict whose swing a rollback erased (the sim's latest swing is now older) never happened.
       if (f.netVerdict && f.netVerdict.frame > c.swingFrame) { f.netVerdict.outcome = 'whiff'; f.netVerdict.damage = 0; }
+      if (f.netGrab && f.netGrab.frame > c.swingFrame) { f.netGrab.outcome = 'whiff'; f.netGrab.damage = 0; }
     }
     if (o.thrown.size > 64) {
       for (const [key, frame] of o.thrown) if (frame < s.frame - 2 * HISTORY) o.thrown.delete(key);
@@ -456,7 +484,8 @@ class NetplayMethods {
     // _tickNet's finishing blow once the server has said "ko"), so a predicted KO cannot play early.
     for (const [f, c] of corners) {
       const opp = f === this.fighters[0] ? this.fighters[1] : this.fighters[0];
-      const pending = opp.netVerdict && opp.netVerdict.outcome !== 'whiff' ? opp.netVerdict.damage : 0;
+      const pending = (opp.netVerdict && opp.netVerdict.outcome !== 'whiff' ? opp.netVerdict.damage : 0)
+        + (opp.netGrab && opp.netGrab.outcome === 'hit' ? opp.netGrab.damage : 0);
       const player = this.combat.getPlayer(f.playerId);
       if (player && player.alive && f.state !== 'ko') {
         const want = Math.max(1, Math.min(player.maxHealth, c.hp + pending));
@@ -474,6 +503,7 @@ class NetplayMethods {
         if (f.state === 'down') continue;
         if (f.state === 'getup') { f.state = 'down'; f.stateT = 0; f.animator.setDown(true); continue; }
         if (opp.netVerdict && opp.netVerdict.outcome !== 'whiff') continue;
+        if (opp.netGrab && opp.netGrab.outcome === 'hit') continue;
         const dx = f.rig.root.position.x - opp.rig.root.position.x;
         this._knockDown(f, opp, new THREE.Vector3(dx >= 0 ? 1 : -1, 0, 0));
         f.knockback.set(0, 0, 0);   // the sim's X already carries the slide
@@ -511,6 +541,50 @@ class NetplayMethods {
     if (f.state !== attackName) this._presentNetVerdict(f, opp, ATTACKS[attackName], verdict, chestHit(opp));
   }
 
+  /**
+   * Reach for the grab the sim fired. What it did is shown when the hands close (GRAB.windup
+   * later, from _netDeadline), so a rollback can still correct it; a fighter it threw is held
+   * where they stand until then, or they would slide away before anyone touched them.
+   */
+  _netGrab(f, verdict) {
+    const opp = f === this.fighters[0] ? this.fighters[1] : this.fighters[0];
+    if (f.netVerdict) this._presentNetVerdict(f, opp, f.attack || ATTACKS.punch, f.netVerdict, chestHit(opp));
+    if (f.netGrab) this._presentNetGrab(f, opp);
+    if (f.state === 'ko') return;
+    f.blockStunT = 0;
+    if (f.state === 'down' || f.state === 'getup') f.animator.setDown(false);
+    this._enterGrab(f, null);
+    f.netGrab = { ...verdict, at: this.t + GRAB.windup };
+    f.netSwingFrame = verdict.frame;
+    if (verdict.outcome === 'hit') opp.controller.holdX = opp.rig.root.position.x;
+  }
+
+  /** The hands close: show what the sim says that grab did (thrown, a break, or air). */
+  _presentNetGrab(attacker, defender) {
+    const v = attacker.netGrab;
+    attacker.netGrab = null;
+    attacker.hasHit = true;
+    defender.controller.holdX = null;
+    if (!v || v.outcome === 'whiff' || defender.state === 'ko') return;
+    const apos = attacker.rig.root.position;
+    const dpos = defender.rig.root.position;
+    const dir = new THREE.Vector3(dpos.x - apos.x, 0, dpos.z - apos.z);
+    if (dir.lengthSq() > 1e-6) dir.normalize(); else dir.set(1, 0, 0);
+    const point = new THREE.Vector3((apos.x + dpos.x) / 2, 1.25, (apos.z + dpos.z) / 2);
+    if (v.outcome === 'break') { this._grabBroken(attacker, point); return; }
+    const wasGuarding = defender.state === 'block' || defender.controller.held === 'block';
+    const caught = defender.state === 'taunt';
+    // The shove that reads as a throw; the steering takes them the rest of the way to the sim's X.
+    defender.knockback.add(dir.clone().multiplyScalar(6));
+    this._grabLanded(attacker, defender, dir, v.damage, point, wasGuarding, caught);
+  }
+
+  /** The sim took this corner's taunt: play the gesture (fighterTick.js ends it after TAUNT.secs). */
+  _netTaunt(f) {
+    if (f.state === 'ko' || f.state === 'down' || f.state === 'getup' || f.state === 'taunt') return;
+    this._enterTaunt(f);
+  }
+
   /** The hit pipeline's online door (from _tryHit): the limb touched — land the sim's verdict. */
   _tryHitNet(attacker, defender, attack) {
     const v = attacker.netVerdict;
@@ -527,6 +601,8 @@ class NetplayMethods {
 
   /** After each fighter's tick: a verdict whose swing ended (or was interrupted) without contact lands now. */
   _netDeadline(f, opp) {
+    // A grab's verdict lands when its hands close, or at once if the reach was interrupted.
+    if (f.netGrab && (this.t >= f.netGrab.at || f.state !== 'grab')) this._presentNetGrab(f, opp);
     const v = f.netVerdict;
     if (!v) return;
     const a = f.attack;
@@ -583,6 +659,8 @@ class NetplayMethods {
       }
       return;
     }
+    // Caught showing off: the sim has already made the blow heavier; say why.
+    if (defender.state === 'taunt') this._spawnCallout(hit.point, 'CAUGHT!');
     this._landHit(s);
     this._resolveCombatEvents(s);
     this._heavyHitStagger(s);
@@ -632,6 +710,7 @@ class NetplayMethods {
     for (const f of this.fighters) {
       const opp = f === this.fighters[0] ? this.fighters[1] : this.fighters[0];
       if (f.netVerdict) this._presentNetVerdict(f, opp, f.attack || ATTACKS.punch, f.netVerdict, chestHit(opp));
+      if (f.netGrab) this._presentNetGrab(f, opp);
     }
     if (this.phase !== 'fighting') return; // that verdict was the KO
     const label = fin.event === 'forfeit' ? 'FORFEIT!' : fin.event === 'abandoned' ? 'NO CONTEST' : fin.event === 'ko' ? 'K.O.!' : 'TIME!';

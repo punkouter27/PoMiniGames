@@ -219,6 +219,9 @@ export class AutomaticHighlights {
         type: pending.type,
         url,
         mimeType: blob.type || this.mimeType,
+        // The blob itself, for a caller that keeps the clip past this recorder's dispose
+        // (keepsake.js): the url above is revoked with the recorder.
+        blob,
         createdAt: this.now(),
         durationSeconds: Math.max(0, (this.now() - this.segmentStartedAt) / 1000),
       };

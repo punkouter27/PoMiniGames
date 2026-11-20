@@ -3,10 +3,10 @@
 // This is the JavaScript twin of PoMiniGames.Shared/Games/PoBrawlRollbackSim.cs, and the two must
 // stay BIT-IDENTICAL: the same state and inputs give the same next state and the same checksum in
 // both. The server referees the fight with the C# copy; each browser predicts and rolls back with
-// this one (rollbackSession.js). A golden input script pins the final checksum on both sides
-// (tests/pobrawl-rollback.test.mjs and the C# PoBrawlMatchServiceTests scenario), and both read the
-// one contract file tests/pobrawl-rollback-golden.json — every constant in TUNING below and the
-// golden result. Change a rule here and there in the same commit, and update that file.
+// this one (rollbackSession.js). Golden input scripts pin the result on both sides: this file's
+// numbers come from scripts/dev/brawl-rollback-golden.mjs, and the C# test
+// PoBrawlRollbackSimTests asserts the twin reaches the same checksums. Change a rule here and
+// there in the same commit, run that script, and paste its numbers into the test.
 //
 // Integer discipline: every value is a small int. Division goes through `| 0` (truncation, like C#),
 // the RNG through Math.imul and `>>> 0` (uint32 wrap, like C# unchecked uint). No floats.
@@ -58,6 +58,36 @@ const JAB_DAMAGE_PCT = 90;
 const CROSS_DAMAGE_PCT = 120;
 export const ARM_NONE = 0, ARM_LEFT = 1, ARM_RIGHT = 2;
 
+// ── The grab ────────────────────────────────────────────────────────────────
+// The answer to a corner that stays behind its guard (the local modes' constants.js GRAB, in
+// this sim's terms). A grab ignores the guard and throws the corner GRAB_THROW_MM, but it only
+// takes hold of a STANDING corner: one that is not on the canvas, did not swing this frame and
+// is not still recovering from a swing (its cooldown is 0), or one that is taunting. So any
+// strike beats it. Grabbing air costs the long cooldown; a throw that lands, the short one. It
+// rolls no dice (flat damage, the RNG does not move) and is never the knockout: it always leaves
+// a point of health. Two grabs on one frame break: both are shoved GRAB_BREAK_MM apart, unhurt.
+// No back throw here: this ring is a line and P1 is always the left corner.
+const GRAB_REACH_MM = 1300;
+const GRAB_THROW_MM = 1500;
+const GRAB_BREAK_MM = 300;
+const GRAB_COOLDOWN = 36;
+const GRAB_HIT_COOLDOWN = 24;
+const GRAB_ENERGY_COST = 4 * ENERGY_SCALE;
+const GRAB_DAMAGE = 9;
+
+// ── The taunt ───────────────────────────────────────────────────────────────
+// TAUNT_FRAMES of showing off: no walking, no guard, no swing (a press made during it is
+// dropped). It is only taken with the other corner on its feet and further away than
+// KICK_REACH_MM + TAUNT_CLEAR_MM, and not again for TAUNT_COOLDOWN_FRAMES; a press that fails
+// those is simply spent. Finish it and the bar gains TAUNT_ENERGY (here the bar is the
+// special's meter). A blow or a grab that lands during it does TAUNT_PUNISH_PCT percent and ends
+// it with nothing gained.
+export const TAUNT_FRAMES = 66;
+const TAUNT_COOLDOWN_FRAMES = 420;
+const TAUNT_CLEAR_MM = 350;
+const TAUNT_ENERGY = 30 * ENERGY_SCALE;
+const TAUNT_PUNISH_PCT = 125;
+
 // ── The canvas ──────────────────────────────────────────────────────────────
 // Every point of damage taken adds DAZE_PER_DAMAGE daze, and one drains a frame. At DAZE_AT the
 // corner is knocked down: it cannot be hit, walk or swing. From DOWN_MIN_FRAMES it rises on any
@@ -75,14 +105,14 @@ const ROLL_STEP_MM = 45;
 export const FLOOR_NONE = 0, FLOOR_DOWN = 1, FLOOR_GETUP = 2, FLOOR_ROLL = 3;
 
 export const HELD_IDLE = 0, HELD_FORWARD = 1, HELD_BACK = 2, HELD_BLOCK = 3;
-export const PRESS_NONE = 0, PRESS_PUNCH = 4, PRESS_KICK = 5, PRESS_SPECIAL = 6;
-export const OUTCOME_NONE = 0, OUTCOME_HIT = 1, OUTCOME_BLOCKED = 2, OUTCOME_WHIFF = 3;
+export const PRESS_NONE = 0, PRESS_PUNCH = 4, PRESS_KICK = 5, PRESS_SPECIAL = 6, PRESS_GRAB = 7, PRESS_TAUNT = 8;
+export const OUTCOME_NONE = 0, OUTCOME_HIT = 1, OUTCOME_BLOCKED = 2, OUTCOME_WHIFF = 3, OUTCOME_BREAK = 4;
 export const REASON_NONE = 0, REASON_KO = 1, REASON_TIME = 2;
 
-const CORNER_LENGTH = 16;
+const CORNER_LENGTH = 18;
 const PACKED_LENGTH = 6 + 2 * CORNER_LENGTH;
 
-/** Every rule constant, keyed as tests/pobrawl-rollback-golden.json keys them (the C# twin's parity check). */
+/** Every rule constant by name, for the parity script (scripts/dev/brawl-rollback-golden.mjs) and diagnostics. */
 export const TUNING = Object.freeze({
   HZ, INPUT_DELAY_FRAMES: INPUT_DELAY, ROUND_FRAMES, MAX_HP,
   RING_HALF_MM, SPAWN_X_MM, MIN_GAP_MM, WALK_IN_MM, WALK_OUT_MM,
@@ -95,16 +125,18 @@ export const TUNING = Object.freeze({
   ONE_TWO_FRAMES, JAB_DAMAGE_PCT, CROSS_DAMAGE_PCT, ARM_NONE, ARM_LEFT, ARM_RIGHT,
   DAZE_PER_DAMAGE, DAZE_AT, DOWN_MIN_FRAMES, DOWN_MAX_FRAMES, GETUP_FRAMES, DAZE_IMMUNE_FRAMES,
   KNOCKDOWN_SLIDE_MM, ROLL_STEP_MM, FLOOR_NONE, FLOOR_DOWN, FLOOR_GETUP, FLOOR_ROLL,
+  GRAB_REACH_MM, GRAB_THROW_MM, GRAB_BREAK_MM, GRAB_COOLDOWN, GRAB_HIT_COOLDOWN, GRAB_ENERGY_COST, GRAB_DAMAGE,
+  TAUNT_FRAMES, TAUNT_COOLDOWN_FRAMES, TAUNT_CLEAR_MM, TAUNT_ENERGY, TAUNT_PUNISH_PCT,
   HELD_IDLE, HELD_FORWARD, HELD_BACK, HELD_BLOCK,
-  PRESS_NONE, PRESS_PUNCH, PRESS_KICK, PRESS_SPECIAL,
-  OUTCOME_NONE, OUTCOME_HIT, OUTCOME_BLOCKED, OUTCOME_WHIFF,
+  PRESS_NONE, PRESS_PUNCH, PRESS_KICK, PRESS_SPECIAL, PRESS_GRAB, PRESS_TAUNT,
+  OUTCOME_NONE, OUTCOME_HIT, OUTCOME_BLOCKED, OUTCOME_WHIFF, OUTCOME_BREAK,
   REASON_NONE, REASON_KO, REASON_TIME,
   CORNER_LENGTH, PACKED_LENGTH,
 });
 
 function newCorner(x) {
   return { hp: MAX_HP, energy: 0, x, held: HELD_IDLE, pending: PRESS_NONE, cooldown: 0, swingFrame: -1, swing: 0, outcome: 0, damage: 0,
-    daze: 0, floor: FLOOR_NONE, floorT: 0, immune: 0, arm: ARM_NONE, armFrame: 0 };
+    daze: 0, floor: FLOOR_NONE, floorT: 0, immune: 0, arm: ARM_NONE, armFrame: 0, taunt: 0, tauntCd: 0 };
 }
 
 /** A fresh fight: both corners on their marks, `fightStart` frames of pre-roll. */
@@ -132,10 +164,10 @@ export function nextRandom(holder) {
   return (t ^ (t >>> 14)) >>> 0;
 }
 
-/** One input event as an int: 0 = none; bits 0–2 hold held+1 (0 = unchanged), bits 3–5 the press. */
+/** One input event as an int: 0 = none; bits 0–2 hold held+1 (0 = unchanged), bits 3–6 the press. */
 export function encodeInput(held, press) { return ((held + 1) | (press << 3)) | 0; }
 function heldOf(input) { return (input & 7) - 1; }
-function pressOf(input) { return (input >> 3) & 7; }
+function pressOf(input) { return (input >> 3) & 15; }
 
 /** Two events on one frame: the later one's held if it set one, its press if it pressed. */
 export function mergeInput(earlier, later) {
@@ -151,7 +183,7 @@ function applyInput(c, input) {
   const held = heldOf(input);
   if (held >= HELD_IDLE && held <= HELD_BLOCK) c.held = held;
   const press = pressOf(input);
-  if (press >= PRESS_PUNCH && press <= PRESS_SPECIAL) c.pending = press;
+  if (press >= PRESS_PUNCH && press <= PRESS_TAUNT) c.pending = press;
 }
 
 function walkStep(held) {
@@ -187,19 +219,45 @@ function tickFloor(c, away) {
   }
 }
 
-function takeSwing(c) {
+/** One frame of the taunt's clocks: the cooldown, and the gesture itself (its reward on the last frame). */
+function tickTaunt(c) {
+  if (c.tauntCd > 0) c.tauntCd--;
+  if (c.taunt === 0) return;
+  if (c.floor !== FLOOR_NONE) { c.taunt = 0; return; }
+  c.taunt--;
+  if (c.taunt === 0) c.energy = Math.min(ENERGY_MAX, c.energy + TAUNT_ENERGY);
+}
+
+function takeSwing(s, c, other, gap) {
   // On the canvas nothing swings; the press waits and is thrown on standing (the wake-up strike).
   if (c.floor !== FLOOR_NONE) return PRESS_NONE;
+  // Mid-taunt nothing swings either, and a press made during it is dropped.
+  if (c.taunt > 0) { c.pending = PRESS_NONE; return PRESS_NONE; }
   const swing = c.pending;
   if (swing === PRESS_NONE || c.cooldown > 0) return PRESS_NONE;
   c.pending = PRESS_NONE;
   if (swing === PRESS_SPECIAL && c.energy < ENERGY_MAX) return PRESS_NONE;
+  if (swing === PRESS_TAUNT) {
+    // Not a swing: it starts here or the press is spent. Recorded like a swing for the presenter.
+    if (c.tauntCd === 0 && other.floor === FLOOR_NONE && gap > KICK_REACH_MM + TAUNT_CLEAR_MM) {
+      c.taunt = TAUNT_FRAMES;
+      c.tauntCd = TAUNT_COOLDOWN_FRAMES;
+      c.swingFrame = s.frame;
+      c.swing = PRESS_TAUNT;
+      c.outcome = OUTCOME_NONE;
+      c.damage = 0;
+    }
+    return PRESS_NONE;
+  }
   if (swing === PRESS_PUNCH) {
     c.cooldown = PUNCH_COOLDOWN;
     c.energy = Math.max(0, c.energy - PUNCH_ENERGY_COST);
   } else if (swing === PRESS_KICK) {
     c.cooldown = KICK_COOLDOWN;
     c.energy = Math.max(0, c.energy - KICK_ENERGY_COST);
+  } else if (swing === PRESS_GRAB) {
+    c.cooldown = GRAB_COOLDOWN;
+    c.energy = Math.max(0, c.energy - GRAB_ENERGY_COST);
   } else {
     c.cooldown = SPECIAL_COOLDOWN;
     c.energy = 0;
@@ -228,6 +286,11 @@ function resolveSwing(s, attacker, defender, swing, guarded, gap, shoveDir) {
   }
   const variance = (nextRandom(s) % (2 * DAMAGE_VARIANCE_PCT + 1)) - DAMAGE_VARIANCE_PCT;
   let damage = ((baseDmg * (100 + variance) + 50) / 100) | 0;
+  // Caught showing off: the blow lands harder and the taunt is over.
+  if (defender.taunt > 0) {
+    damage = ((damage * TAUNT_PUNISH_PCT + 50) / 100) | 0;
+    defender.taunt = 0;
+  }
   if (guarded) {
     damage = swing === PRESS_PUNCH ? 0 : swing === PRESS_KICK ? Math.max(1, (damage / 4) | 0) : damage;
     knockback = (knockback / 2) | 0;
@@ -240,15 +303,64 @@ function resolveSwing(s, attacker, defender, swing, guarded, gap, shoveDir) {
   attacker.damage = dealt;
   attacker.energy = Math.min(ENERGY_MAX, attacker.energy + ENERGY_ON_HIT);
   // Daze, and the knockdown: never the killing blow (that is the KO), never inside the immunity.
-  if (defender.immune === 0) {
-    defender.daze += dealt * DAZE_PER_DAMAGE;
-    if (defender.daze >= DAZE_AT && defender.hp > 0) {
-      defender.floor = FLOOR_DOWN;
-      defender.floorT = 0;
-      defender.daze = 0;
-      defender.x += shoveDir * KNOCKDOWN_SLIDE_MM;
-    }
+  addDaze(defender, dealt, shoveDir);
+}
+
+/** Daze from `dealt` damage, and the knockdown it may cause (never inside the immunity, never at 0 HP). */
+function addDaze(defender, dealt, shoveDir) {
+  if (defender.immune !== 0) return;
+  defender.daze += dealt * DAZE_PER_DAMAGE;
+  if (defender.daze >= DAZE_AT && defender.hp > 0) {
+    defender.floor = FLOOR_DOWN;
+    defender.floorT = 0;
+    defender.daze = 0;
+    defender.taunt = 0;
+    defender.x += shoveDir * KNOCKDOWN_SLIDE_MM;
   }
+}
+
+/**
+ * One corner's grab. `otherSwing` is what the defender threw this frame (any swing beats a grab).
+ * See the GRAB block for the rule.
+ */
+function resolveGrab(s, attacker, defender, otherSwing, gap, shoveDir) {
+  attacker.swingFrame = s.frame;
+  attacker.swing = PRESS_GRAB;
+  attacker.damage = 0;
+  const standing = otherSwing === PRESS_NONE && defender.floor === FLOOR_NONE
+    && (defender.cooldown === 0 || defender.taunt > 0);
+  if (gap > GRAB_REACH_MM || !standing) {
+    attacker.outcome = OUTCOME_WHIFF;
+    return;
+  }
+  let damage = GRAB_DAMAGE;
+  if (defender.taunt > 0) {
+    damage = ((damage * TAUNT_PUNISH_PCT + 50) / 100) | 0;
+    defender.taunt = 0;
+  }
+  const dealt = Math.min(damage, Math.max(0, defender.hp - 1));
+  defender.hp -= dealt;
+  defender.x += shoveDir * GRAB_THROW_MM;
+  attacker.damage = dealt;
+  attacker.outcome = OUTCOME_HIT;
+  attacker.cooldown = GRAB_HIT_COOLDOWN;
+  attacker.energy = Math.min(ENERGY_MAX, attacker.energy + ENERGY_ON_HIT);
+  addDaze(defender, dealt, shoveDir);
+}
+
+/** Both corners grabbed on the same frame: in reach they break apart unhurt, out of reach both miss. */
+function resolveBreak(s, gap) {
+  const hit = gap <= GRAB_REACH_MM;
+  for (const c of [s.p1, s.p2]) {
+    c.swingFrame = s.frame;
+    c.swing = PRESS_GRAB;
+    c.damage = 0;
+    c.outcome = hit ? OUTCOME_BREAK : OUTCOME_WHIFF;
+    if (hit) c.cooldown = GRAB_HIT_COOLDOWN;
+  }
+  if (!hit) return;
+  s.p1.x -= GRAB_BREAK_MM;
+  s.p2.x += GRAB_BREAK_MM;
 }
 
 function clamp(v, lo, hi) { return v < lo ? lo : v > hi ? hi : v; }
@@ -279,16 +391,25 @@ export function step(s, input1, input2) {
     return s;
   }
   const gap = s.p2.x - s.p1.x;
-  const a1 = takeSwing(s.p1);
-  const a2 = takeSwing(s.p2);
-  const p1Guarding = a1 === PRESS_NONE && s.p1.held === HELD_BLOCK && s.p1.floor === FLOOR_NONE;
-  const p2Guarding = a2 === PRESS_NONE && s.p2.held === HELD_BLOCK && s.p2.floor === FLOOR_NONE;
-  if (a1 !== PRESS_NONE) { resolveSwing(s, s.p1, s.p2, a1, p2Guarding, gap, 1); enforceSpacing(s); }
-  if (a2 !== PRESS_NONE) { resolveSwing(s, s.p2, s.p1, a2, p1Guarding, gap, -1); enforceSpacing(s); }
-  if (a1 === PRESS_NONE && s.p1.floor === FLOOR_NONE) s.p1.x += walkStep(s.p1.held);
-  if (a2 === PRESS_NONE && s.p2.floor === FLOOR_NONE) s.p2.x -= walkStep(s.p2.held);
+  const a1 = takeSwing(s, s.p1, s.p2, gap);
+  const a2 = takeSwing(s, s.p2, s.p1, gap);
+  const p1Guarding = a1 === PRESS_NONE && s.p1.held === HELD_BLOCK && s.p1.floor === FLOOR_NONE && s.p1.taunt === 0;
+  const p2Guarding = a2 === PRESS_NONE && s.p2.held === HELD_BLOCK && s.p2.floor === FLOOR_NONE && s.p2.taunt === 0;
+  if (a1 === PRESS_GRAB && a2 === PRESS_GRAB) {
+    resolveBreak(s, gap);
+    enforceSpacing(s);
+  } else {
+    if (a1 === PRESS_GRAB) { resolveGrab(s, s.p1, s.p2, a2, gap, 1); enforceSpacing(s); }
+    else if (a1 !== PRESS_NONE) { resolveSwing(s, s.p1, s.p2, a1, p2Guarding, gap, 1); enforceSpacing(s); }
+    if (a2 === PRESS_GRAB) { resolveGrab(s, s.p2, s.p1, a1, gap, -1); enforceSpacing(s); }
+    else if (a2 !== PRESS_NONE) { resolveSwing(s, s.p2, s.p1, a2, p1Guarding, gap, -1); enforceSpacing(s); }
+  }
+  if (a1 === PRESS_NONE && s.p1.floor === FLOOR_NONE && s.p1.taunt === 0) s.p1.x += walkStep(s.p1.held);
+  if (a2 === PRESS_NONE && s.p2.floor === FLOOR_NONE && s.p2.taunt === 0) s.p2.x -= walkStep(s.p2.held);
   tickFloor(s.p1, -1);
   tickFloor(s.p2, 1);
+  tickTaunt(s.p1);
+  tickTaunt(s.p2);
   enforceSpacing(s);
   regen(s.p1);
   regen(s.p2);
@@ -306,12 +427,14 @@ function packCorner(a, o, c) {
   a[o] = c.hp; a[o + 1] = c.energy; a[o + 2] = c.x; a[o + 3] = c.held; a[o + 4] = c.pending;
   a[o + 5] = c.cooldown; a[o + 6] = c.swingFrame; a[o + 7] = c.swing; a[o + 8] = c.outcome; a[o + 9] = c.damage;
   a[o + 10] = c.daze; a[o + 11] = c.floor; a[o + 12] = c.floorT; a[o + 13] = c.immune; a[o + 14] = c.arm; a[o + 15] = c.armFrame;
+  a[o + 16] = c.taunt; a[o + 17] = c.tauntCd;
 }
 
 function unpackCorner(a, o) {
   return { hp: a[o] | 0, energy: a[o + 1] | 0, x: a[o + 2] | 0, held: a[o + 3] | 0, pending: a[o + 4] | 0,
     cooldown: a[o + 5] | 0, swingFrame: a[o + 6] | 0, swing: a[o + 7] | 0, outcome: a[o + 8] | 0, damage: a[o + 9] | 0,
-    daze: a[o + 10] | 0, floor: a[o + 11] | 0, floorT: a[o + 12] | 0, immune: a[o + 13] | 0, arm: a[o + 14] | 0, armFrame: a[o + 15] | 0 };
+    daze: a[o + 10] | 0, floor: a[o + 11] | 0, floorT: a[o + 12] | 0, immune: a[o + 13] | 0, arm: a[o + 14] | 0, armFrame: a[o + 15] | 0,
+    taunt: a[o + 16] | 0, tauntCd: a[o + 17] | 0 };
 }
 
 /** The wire layout (C# PoBrawlRollbackSim.Pack). */

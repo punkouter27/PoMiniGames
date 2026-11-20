@@ -30,7 +30,31 @@ public class PoBrawlLobbyServiceTests
     [InlineData(nameof(SamePrincipal_OnASecondConnection_TakesOverTheSeat_NeverASecondOne))]
     [InlineData(nameof(IdleSeat_GivesWay_OnlyWhenSomeoneNeedsTheRoom))]
     [InlineData(nameof(TryStartWithRoster_HandsBackTheRosterTheGatePassed))]
+    [InlineData(nameof(Seat_ReportsEveryConnectionItDisplaced_AndWhy))]
     public Task Scenario(string name) => Scenarios.RunAsync(this, name);
+
+    // The hub tells each displaced connection why (another tab, or idling), so the service has
+    // to name them: a page that only watched the roster showed its own other tab as the opponent.
+    private static void Seat_ReportsEveryConnectionItDisplaced_AndWhy()
+    {
+        var time = new FakeTimeProvider();
+        var lobby = new PoBrawlLobbyService(time);
+        lobby.Seat("tab-1", "alice", "Alice", isGuest: false, AnyFighter).displaced.Should().BeEmpty();
+
+        var secondTab = lobby.Seat("tab-2", "alice", "Alice", isGuest: false, AnyFighter);
+        secondTab.displaced.Should().ContainSingle()
+            .Which.Should().Be(new PoBrawlLobbyService.DisplacedSeat("tab-1", "Alice", TakenOver: true));
+
+        lobby.Seat("conn-bob", "bob", "Bob", isGuest: false, AnyFighter);
+        lobby.Seat("conn-eve", "eve", "Eve", isGuest: false, AnyFighter).displaced
+            .Should().BeEmpty("a refused join costs nobody a seat");
+
+        time.Advance(TimeSpan.FromMilliseconds(PoBrawlLobbyService.IdleSeatMs));
+        var newcomer = lobby.Seat("conn-eve", "eve", "Eve", isGuest: false, AnyFighter);
+        newcomer.displaced.Should().OnlyContain(d => !d.TakenOver);
+        newcomer.displaced.Select(d => d.ConnectionId).Should().BeEquivalentTo(["tab-2", "conn-bob"]);
+        newcomer.state.Players.Should().ContainSingle(p => p.ConnectionId == "conn-eve");
+    }
 
     // Host assignment and the cap-2 bounce share one arrangement, so they are one
     // fact.

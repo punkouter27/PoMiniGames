@@ -58,7 +58,7 @@
     min-height: 40px;
 }
 
-/* ── Tabs: Ladder, Map, Boards, Titles — one surface at a time, so the page fits the
+/* ── Tabs: Ladder, Map, Boards, Titles, Last fight — one surface at a time, so the page fits the
    viewport. The tab strip and panel take the app's tokens, not Radzen's dark theme. ── */
 .hq {
     --rz-tabs-background-color: transparent;
@@ -229,6 +229,172 @@
 @media (pointer: coarse) {
     .hq-modes,
     .hq-boards ::deep .hq-select .rz-button {
+        min-height: 44px;
+    }
+}
+
+/* ── Ladder tab: the presidents beaten and the feats ── */
+.hq-sub {
+    margin: 14px 0 6px;
+    font-family: var(--font-display, inherit);
+    font-size: 0.95rem;
+    font-weight: 700;
+    color: var(--color-text-primary);
+}
+
+.hq-sub small {
+    margin-left: 6px;
+    font-family: var(--font-sans, inherit);
+    font-size: 0.8rem;
+    font-weight: 500;
+    color: var(--color-text-secondary);
+    font-variant-numeric: tabular-nums;
+}
+
+.hq-stamps {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(7.5rem, 1fr));
+    gap: 4px;
+}
+
+.hq-stamp {
+    padding: 5px 9px;
+    border: 1px dashed var(--color-border);
+    border-radius: var(--radius-md);
+    font-size: var(--text-sm);
+    color: var(--color-text-secondary);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.hq-stamp--on {
+    border-style: solid;
+    border-color: color-mix(in srgb, var(--color-accent) 55%, var(--color-border));
+    background: color-mix(in srgb, var(--color-accent) 12%, transparent);
+    color: var(--color-text-primary);
+    font-weight: 600;
+}
+
+.hq-feats {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(15rem, 1fr));
+    gap: 4px;
+}
+
+.hq-feat {
+    display: flex;
+    align-items: flex-start;
+    gap: 8px;
+    padding: 6px 9px;
+    border: 1px solid var(--color-border);
+    border-radius: var(--radius-md);
+    background: var(--surface-2);
+    font-size: var(--text-sm);
+    color: var(--color-text-secondary);
+}
+
+/* A feat not earned yet: the badge is greyed, the words stay readable. */
+.hq-feat:not(.hq-feat--on) .hq-feat-icon {
+    filter: grayscale(1);
+    opacity: 0.55;
+}
+
+.hq-feat--on {
+    border-color: color-mix(in srgb, var(--color-accent) 55%, var(--color-border));
+    color: var(--color-text-primary);
+}
+
+.hq-feat-icon {
+    flex: 0 0 auto;
+    font-size: 1.15rem;
+    line-height: 1.2;
+}
+
+.hq-feat-text {
+    display: grid;
+    min-width: 0;
+}
+
+.hq-feat-hint {
+    font-size: 0.75rem;
+    color: var(--color-text-secondary);
+}
+
+/* ── Last fight tab: the poster and the knockout clip ── */
+.hq-keep {
+    display: grid;
+    gap: 10px;
+}
+
+.hq-keep-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(min(100%, 18rem), 27rem));
+    gap: 12px;
+    align-items: start;
+}
+
+.hq-keep-item {
+    margin: 0;
+    display: grid;
+    gap: 8px;
+}
+
+.hq-keep-item img,
+.hq-keep-item video {
+    display: block;
+    width: 100%;
+    aspect-ratio: 16 / 9;
+    object-fit: cover;
+    border: 1px solid var(--color-border);
+    border-radius: var(--radius-md);
+    background: var(--surface-2);
+}
+
+.hq-keep-actions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+}
+
+.hq-keep-actions .app-btn {
+    min-height: 40px;
+}
+
+.hq-keep-pref {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px 16px;
+    padding-top: 10px;
+    border-top: 1px solid var(--color-border);
+}
+
+.hq-keep-pref > div:first-child {
+    display: grid;
+    gap: 2px;
+    flex: 1 1 16rem;
+    min-width: 0;
+}
+
+.hq-keep-pref-name {
+    font-weight: 600;
+}
+
+.hq-keep-pref-hint {
+    font-size: var(--text-sm);
+    color: var(--color-text-secondary);
+}
+
+@media (pointer: coarse) {
+    .hq-keep-actions .app-btn {
         min-height: 44px;
     }
 }

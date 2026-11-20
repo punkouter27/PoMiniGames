@@ -32,6 +32,13 @@ public abstract class LobbyHub<TPlayer, TRoom> : Hub
     protected abstract (LobbyState<TPlayer> state, string message) OpenSeat(string displayName, bool isGuest);
 
     /// <summary>
+    /// Runs once <see cref="OpenSeat"/> has seated the caller, before the room is broadcast. A room
+    /// whose seating can cost another connection its seat tells that connection here
+    /// (<c>kicked</c> with the reason), so its page never has to work it out from the roster.
+    /// </summary>
+    protected virtual Task OnSeatOpenedAsync() => Task.CompletedTask;
+
+    /// <summary>
     /// Runs after the host's start is accepted and before <c>gameStarted</c> is sent, with the
     /// roster the start gate passed. If it throws, the room is reset (<c>End</c>) so a failed
     /// start can never leave the lobby wedged on its started flag.
@@ -66,7 +73,20 @@ public abstract class LobbyHub<TPlayer, TRoom> : Hub
     {
         // A kicked seat left the group; joining again puts it back (idempotent otherwise).
         await Groups.AddToGroupAsync(Context.ConnectionId, _group);
-        var (state, msg) = OpenSeat(displayName, isGuest);
+        LobbyState<TPlayer> state;
+        string msg;
+        try
+        {
+            (state, msg) = OpenSeat(displayName, isGuest);
+        }
+        catch (HubException)
+        {
+            // Refused (a full room, a fight being set up, an old build). The caller still gets
+            // the room as it stands, so its page can say who is in instead of spinning.
+            await Clients.Caller.SendAsync("lobbyState", Lobby.State);
+            throw;
+        }
+        await OnSeatOpenedAsync();
         Log.LogInformation("{Hub}: conn={Conn} joined as {Name}; players={Count}/{Max} host={Host}",
             GetType().Name, Context.ConnectionId, displayName, state.Players.Count, state.MaxPlayers, state.HostConnectionId);
         await BroadcastStateAsync();

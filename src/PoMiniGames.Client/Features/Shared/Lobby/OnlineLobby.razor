@@ -8,6 +8,8 @@
 @inject ApiEndpoints Endpoints
 @inject PlayerNameService PlayerNames
 @inject ToastService Toasts
+@inject NavigationManager Nav
+@inject IJSRuntime JS
 @implements IAsyncDisposable
 
 @* ─────────────────────────────────────────────────────────────────────────
@@ -21,6 +23,11 @@
    settings (Picker), per-player badges or actions, and what to do with the match. Game-specific
    hub calls (a map pick, a fighter pick) go through the LobbyClient handed out by OnClient.
    Server side every lobby is a LobbyHub + LobbyRoom.
+
+   No seat, and why (SeatNotices): a browser the room refused (full, a game running, an old
+   build) or took a seat from (another tab, the host, idling) is told in the server's words,
+   with the one button that fixes it, in place of a "couldn't reach the lobby" toast beside a
+   green "connected" pill. Nothing rejoins by itself: there are no queues, the player presses.
    ───────────────────────────────────────────────────────────────────────── *@
 <LobbyPanel TPlayer="TPlayer"
             State="@_client?.State"
@@ -33,6 +40,7 @@
             WaitingHint="@WaitingHint"
             CanReady="@CanReady"
             HostReadies="@HostReadies"
+            UnreadyLabel="@UnreadyLabel"
             ShowReady="@ShowReady"
             ShowStart="@ShowStart"
             HowTo="@HowTo"
@@ -41,7 +49,11 @@
             PlayerActions="@PlayerActions"
             Picker="@Picker"
             PickerTitle="@PickerTitle"
-            Status="@Status"
+            Status="@(_notice is null ? Status : NoticeContent)"
+            Heading="@(_notice is not null && Heading is not null ? NoticeHeading : Heading)"
+            QuietWhenConnected="@QuietWhenConnected"
+            ShowInvite="@ShowInvite"
+            NoSeat="@(_notice is not null)"
             ExtraActions="@ExtraActions"
             OnReady="ReadyAsync"
             OnStart="StartAsync"
@@ -58,6 +70,7 @@
     [Parameter] public string WaitingHint { get; set; } = "Waiting for everyone to mark Ready…";
     [Parameter] public bool CanReady { get; set; } = true;
     [Parameter] public bool HostReadies { get; set; }
+    [Parameter] public string UnreadyLabel { get; set; } = "Not Ready";
     [Parameter] public bool ShowReady { get; set; } = true;
     [Parameter] public bool ShowStart { get; set; } = true;
     [Parameter] public RenderFragment? HowTo { get; set; }
@@ -68,6 +81,15 @@
     [Parameter] public string? PickerTitle { get; set; }
     [Parameter] public RenderFragment? Status { get; set; }
     [Parameter] public RenderFragment? ExtraActions { get; set; }
+    /// <summary>The game's own sentence in place of "Players · n/m" (see <c>LobbyPanel.Heading</c>). A seat notice takes its place while one is up.</summary>
+    [Parameter] public RenderFragment? Heading { get; set; }
+    [Parameter] public bool QuietWhenConnected { get; set; }
+    [Parameter] public bool ShowInvite { get; set; } = true;
+    /// <summary>
+    /// False for a lobby that words its own "no seat" states (Cabinet: a race in progress is
+    /// watched from the lobby, and it rejoins by itself when the race ends).
+    /// </summary>
+    [Parameter] public bool SeatNotices { get; set; } = true;
 
     /// <summary>The live client, once created: game-specific hub calls and the current state.</summary>
     [Parameter] public EventCallback<LobbyClient<TPlayer>> OnClient { get; set; }
@@ -82,14 +104,141 @@
     private bool _started;
     private bool _disposed;
 
+    // ── No seat, and why ─────────────────────────────────────────────────────────
+    private enum NoticeKind { Refused, SeatOpen, Removed, Reload }
+
+    /// <summary>Why this browser has no seat, and the label of the button that asks for one.</summary>
+    private sealed record SeatNotice(NoticeKind Kind, string Message, string Action);
+
+    private SeatNotice? _notice;
+    private bool _acting;      // the notice's button is mid-call
+    private bool _wasSeated;   // this browser has held a seat in this room
+    private bool _lostCheck;   // a "did we lose the seat?" look is already scheduled
+
+    private RenderFragment NoticeHeading => @<span>@_notice?.Message</span>;
+
+    // With a Heading the sentence is up there and only the button is needed here.
+    private RenderFragment NoticeContent => @<div class="lobby-notice-stack">
+        @if (_notice is { } n)
+        {
+            <div class="lobby-notice" role="alert">
+                @if (Heading is null)
+                {
+                    <span>@n.Message</span>
+                }
+                <button type="button" class="app-btn app-btn--primary" disabled="@_acting" @onclick="ActOnNoticeAsync">@n.Action</button>
+            </div>
+        }
+        @Status
+    </div>;
+
+    private bool Seated(LobbyState<TPlayer> state) =>
+        _client is { } c && state.Players.Any(p => p.ConnectionId == c.ConnectionId);
+
+    private static bool HasRoom(LobbyState<TPlayer> state) =>
+        !state.InProgress && state.Players.Count < state.MaxPlayers;
+
+    /// <summary>Every state that lands: a seat clears the notice, and a refused visitor sees a seat open or close.</summary>
+    private void TrackSeat(LobbyState<TPlayer> state)
+    {
+        if (Seated(state))
+        {
+            _wasSeated = true;
+            _notice = null;
+            return;
+        }
+        if (!SeatNotices || _started) return;
+        if (_notice is { Kind: NoticeKind.Refused } && HasRoom(state))
+        {
+            _notice = new SeatNotice(NoticeKind.SeatOpen, "A seat just opened.", "Take the seat");
+        }
+        else if (_notice is { Kind: NoticeKind.SeatOpen } && !HasRoom(state))
+        {
+            _notice = new SeatNotice(NoticeKind.Refused, "The seat was taken. The room is full again.", "Try again");
+        }
+        else if (_notice is null && _wasSeated && !_lostCheck)
+        {
+            // Held a seat, and this roster has none for us, with no "kicked" to say why (the
+            // server restarted, or the room was reset). Looked at again after a moment: the
+            // automatic re-join after a reconnect passes through this same state.
+            _lostCheck = true;
+            _ = InvokeAsync(ConfirmSeatLostAsync);
+        }
+    }
+
+    private async Task ConfirmSeatLostAsync()
+    {
+        await Task.Delay(1500);
+        _lostCheck = false;
+        if (_disposed || _started || _notice is not null) return;
+        if (_client is not { State: { } now, ConnectionState: HubConnectionState.Connected } || Seated(now)) return;
+        _notice = new SeatNotice(NoticeKind.Removed, "You lost your seat in this room.", "Rejoin here");
+        StateHasChanged();
+    }
+
+    /// <summary>A join that came back: most hubs answer a full room with the roster and no seat.</summary>
+    private void NoteJoined(LobbyState<TPlayer>? state)
+    {
+        if (state is null || !SeatNotices || Seated(state)) return;
+        _notice = new SeatNotice(NoticeKind.Refused,
+            state.InProgress ? "A game is running. You can join when it ends." : "The room is full.", "Try again");
+    }
+
+    /// <summary>A join that failed: the server's reason becomes the notice; a dead connection keeps its toast.</summary>
+    private void NoteFailure(Exception ex, string unreachable)
+    {
+        if (!SeatNotices || HubErrors.Reason(ex) is not { } reason)
+        {
+            Toasts.Show(unreachable, ToastType.Warning);
+            return;
+        }
+        _notice = reason.StartsWith(LobbyRefusal.ReloadPrefix, StringComparison.Ordinal)
+            ? new SeatNotice(NoticeKind.Reload, reason[LobbyRefusal.ReloadPrefix.Length..], "Reload")
+            : new SeatNotice(NoticeKind.Refused, reason, "Try again");
+    }
+
+    private async Task ActOnNoticeAsync()
+    {
+        if (_notice is not { } notice || _acting || _client is null) return;
+        if (notice.Kind == NoticeKind.Reload)
+        {
+            // Through the service worker: a plain reload would bring the old build back.
+            try { await JS.InvokeVoidAsync("poPwa.applyUpdate"); }
+            catch (Exception) { Nav.NavigateTo(Nav.Uri, forceLoad: true); }
+            return;
+        }
+        _acting = true;
+        try
+        {
+            NoteJoined(await _client.ReconnectAsync());
+        }
+        catch (Exception ex)
+        {
+            NoteFailure(ex, "Still can't reach the lobby.");
+        }
+        finally
+        {
+            _acting = false;
+        }
+        // Pressed, asked, still no seat: the sentence has not changed, so say that it was tried.
+        if (_notice is { Kind: NoticeKind.Refused }) Toasts.Show("Still no seat.", ToastType.Info);
+        StateHasChanged();
+    }
+
     protected override async Task OnAfterRenderAsync(bool firstRender)
     {
         if (!firstRender) return;
         _client = new LobbyClient<TPlayer>(Endpoints, HubPath);
-        _client.StateChanged += s => _ = InvokeAsync(async () => { await OnStateChanged.InvokeAsync(s); StateHasChanged(); });
+        _client.StateChanged += s => _ = InvokeAsync(async () => { TrackSeat(s); await OnStateChanged.InvokeAsync(s); StateHasChanged(); });
         _client.ConnectionChanged += state => _ = InvokeAsync(StateHasChanged);
         _client.GameStarted += code => _ = InvokeAsync(() => HandleStartedAsync(code));
-        _client.ReconnectFailed += error => _ = InvokeAsync(() => Toasts.Show("Lost the lobby. Tap Reconnect.", ToastType.Warning));
+        _client.ReconnectFailed += error => _ = InvokeAsync(() => { NoteFailure(error, "Lost the lobby. Tap Reconnect."); StateHasChanged(); });
+        _client.Kicked += reason => _ = InvokeAsync(() =>
+        {
+            // The seat was taken away (another tab of the same player, the host, idling).
+            if (SeatNotices) _notice = new SeatNotice(NoticeKind.Removed, reason, "Rejoin here");
+            StateHasChanged();
+        });
         await OnClient.InvokeAsync(_client);
         await JoinAsync();
     }
@@ -101,11 +250,11 @@
         {
             await PlayerNames.InitializeAsync();
             var name = PlayerNames.GetPlayerName();
-            await _client.ConnectAndJoinAsync(string.IsNullOrWhiteSpace(name) ? "Player" : name.Trim(), isGuest: false);
+            NoteJoined(await _client.ConnectAndJoinAsync(string.IsNullOrWhiteSpace(name) ? "Player" : name.Trim(), isGuest: false));
         }
-        catch (Exception)
+        catch (Exception ex)
         {
-            Toasts.Show("Couldn't reach the lobby. Tap Reconnect.", ToastType.Warning);
+            NoteFailure(ex, "Couldn't reach the lobby. Tap Reconnect.");
         }
         StateHasChanged();
     }
@@ -129,8 +278,8 @@
     private async Task ReconnectAsync()
     {
         if (_client is null) return;
-        try { await _client.ReconnectAsync(); }
-        catch (Exception) { Toasts.Show("Still can't reach the lobby.", ToastType.Warning); }
+        try { NoteJoined(await _client.ReconnectAsync()); }
+        catch (Exception ex) { NoteFailure(ex, "Still can't reach the lobby."); }
         StateHasChanged();
     }
 

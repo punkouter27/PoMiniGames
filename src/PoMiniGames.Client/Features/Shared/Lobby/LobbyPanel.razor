@@ -20,15 +20,30 @@
    Couple Quiz and Fun Quiz use this card too, which is what ShowReady / ShowStart
    are for. The status strip rides the roster's heading line. *@
 <div class="sp-page">
-    <div class="sp-card lobby">
+    @* data-lobby-seats: the seat count as "n/m", for tests and styles; the heading may be a sentence. *@
+    <div class="sp-card lobby" data-lobby-seats="@($"{State?.Players.Count ?? 0}/{MaxPlayers}")">
         <section class="lobby__section">
             <div class="lobby__head">
-                <h2 class="gps-phase-h">Players · @(State?.Players.Count ?? 0)@(MaxPlayers > 0 ? $"/{MaxPlayers}" : "")</h2>
-                <ConnectionStateStrip State="ConnectionState"
-                                      Pending="State is null && ConnectionState == HubConnectionState.Connecting"
-                                      OnRetry="OnReconnect" />
+                @if (Heading is not null)
+                {
+                    @* One sentence that says what to do now; it changes with the room, so it is announced. *@
+                    <h2 class="gps-phase-h lobby__say" aria-live="polite">@Heading</h2>
+                }
+                else
+                {
+                    <h2 class="gps-phase-h">Players · @(State?.Players.Count ?? 0)@(MaxPlayers > 0 ? $"/{MaxPlayers}" : "")</h2>
+                }
+                @if (!(QuietWhenConnected && ConnectionState == HubConnectionState.Connected && (State is not null || NoSeat)))
+                {
+                    <ConnectionStateStrip State="ConnectionState"
+                                          Pending="State is null && ConnectionState == HubConnectionState.Connecting"
+                                          OnRetry="OnReconnect" />
+                }
             </div>
-            <p class="lobby__hint">@Hint</p>
+            @if (!string.IsNullOrEmpty(Hint))
+            {
+                <p class="lobby__hint">@Hint</p>
+            }
             @if (Status is not null)
             {
                 @* A game's live notices (waiting for a seat, a race running, kicked → rejoin). *@
@@ -36,7 +51,11 @@
             }
             @if (State is null)
             {
-                <div class="app-loading"><span class="app-loading__spinner" aria-hidden="true"></span><span>Loading players…</span></div>
+                @* NoSeat: the browser was refused or removed and Status says so; nothing is loading. *@
+                @if (!NoSeat)
+                {
+                    <div class="app-loading"><span class="app-loading__spinner" aria-hidden="true"></span><span>Loading players…</span></div>
+                }
             }
             else if (State.Players.Count == 0)
             {
@@ -108,13 +127,14 @@
                 {
                     <p class="lobby__hint">@WaitingHint</p>
                 }
-                @if (ShowReady && (!IsHost || HostReadies))
+                @if (ShowReady && IsSeated && (!IsHost || HostReadies))
                 {
                     @* "Ready ✓" is a ready that cannot be taken back (Couple Quiz starts the
                        moment everyone is in): the button is disabled, so it must not read
                        as the "Not Ready" action it cannot perform. *@
-                    <button type="button" class="app-btn app-btn--primary" disabled="@(!CanReady || _busy)" @onclick="ReadyAsync">
-                        @(MyReady ? (CanReady ? "Not Ready" : "Ready") : "Ready!")@if (MyReady && !CanReady) { <span class="material-symbols-outlined" aria-hidden="true">check</span> }
+                    <button type="button" class="app-btn app-btn--primary lobby__ready" aria-pressed="@(MyReady ? "true" : "false")"
+                            disabled="@(!CanReady || _busy)" @onclick="ReadyAsync">
+                        @(MyReady ? (CanReady ? UnreadyLabel : "Ready") : "Ready!")@if (MyReady && !CanReady) { <span class="material-symbols-outlined" aria-hidden="true">check</span> }
                     </button>
                 }
                 @if (ShowStart && IsHost)
@@ -123,7 +143,15 @@
                 }
                 <button type="button" class="app-btn app-btn--secondary" @onclick="OnLeave">Leave</button>
                 @ExtraActions
-                <InviteLink />
+                @if (ShowInvite)
+                {
+                    <InviteLink />
+                }
+            }
+            else if (NoSeat)
+            {
+                @* Refused or removed with no roster to show: the way out still has to be there. *@
+                <button type="button" class="app-btn app-btn--secondary" @onclick="OnLeave">Leave</button>
             }
             @* State null: the strip above already says "connecting…" — rendering a
                second copy here was the drift the strip exists to kill. *@
@@ -160,6 +188,8 @@
     [Parameter] public string WaitingHint { get; set; } = "Waiting for everyone to mark Ready…";
     /// <summary>False disables the Ready button (e.g. until the player has picked).</summary>
     [Parameter] public bool CanReady { get; set; } = true;
+    /// <summary>What the Ready button reads once pressed, while it can still be taken back.</summary>
+    [Parameter] public string UnreadyLabel { get; set; } = "Not Ready";
     /// <summary>True when the host must also ready up (Brawl's 1v1); by default the host only starts.</summary>
     [Parameter] public bool HostReadies { get; set; }
     /// <summary>False for a lobby with no ready step: the host just starts (Fun Quiz).</summary>
@@ -183,6 +213,21 @@
     /// <summary>Optional non-primary buttons after Leave (e.g. a settings entry).</summary>
     [Parameter] public RenderFragment? ExtraActions { get; set; }
 
+    /// <summary>
+    /// Replaces "Players · n/m" with the game's own sentence: what the room is waiting on and what
+    /// the player should do now. Null keeps the count.
+    /// </summary>
+    [Parameter] public RenderFragment? Heading { get; set; }
+    /// <summary>True drops the "connected" pill while the hub is healthy; it returns the moment it is not.</summary>
+    [Parameter] public bool QuietWhenConnected { get; set; }
+    /// <summary>False when the game shows the Invite button somewhere of its own (Brawl: in the empty seat).</summary>
+    [Parameter] public bool ShowInvite { get; set; } = true;
+    /// <summary>
+    /// The browser has no seat and has been told why (<see cref="Status"/>): a refused join or a
+    /// seat taken away. No "Loading players…" spinner, and Leave stays reachable.
+    /// </summary>
+    [Parameter] public bool NoSeat { get; set; }
+
     [Parameter] public EventCallback OnReady { get; set; }
     [Parameter] public EventCallback OnStart { get; set; }
     [Parameter] public EventCallback OnLeave { get; set; }
@@ -192,6 +237,9 @@
 
     private bool IsHost =>
         State is not null && !string.IsNullOrEmpty(LocalConnectionId) && State.HostConnectionId == LocalConnectionId;
+
+    // A visitor the room had no seat for watches the roster; a Ready button would do nothing.
+    private bool IsSeated => State?.Players.Any(p => p.ConnectionId == LocalConnectionId) ?? false;
 
     private bool MyReady =>
         State?.Players.FirstOrDefault(p => p.ConnectionId == LocalConnectionId)?.IsReady ?? false;

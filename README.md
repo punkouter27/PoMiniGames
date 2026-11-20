@@ -20,6 +20,41 @@ sign-in: a player is a random browser id plus three initials.
 - **Lobby recovery is visible.** Shared lobbies automatically rejoin after SignalR reconnects
   when the game supports it, report a failed rejoin, and offer a manual retry after reconnect
   attempts are exhausted.
+- **A browser with no seat is told why (2026-11-20).** The shared `OnlineLobby` shows the
+  server's own sentence and the one button that asks for a seat, in place of a "couldn't reach
+  the lobby" toast beside a green "connected" pill:
+  - *Refused* (a hub throws a `HubException` from `OpenSeat`, or answers `Join` with a roster the
+    caller is not on): the reason, and **Try again**. While it waits, the visitor watches the room
+    (`LobbyHub.Join` sends a refused caller the current `lobbyState`); when a seat frees the
+    button becomes **Take the seat**. Nothing joins by itself: there are no queues.
+  - *Removed* (`kicked`: the host, another tab of the same player, idling): the reason, and
+    **Rejoin here**.
+  - *Old build* (the refusal starts with `LobbyRefusal.ReloadPrefix`): **Reload**, through the
+    service worker (`poPwa.applyUpdate`).
+  - A lobby that words its own no-seat states opts out with `SeatNotices="false"` (Cabinet).
+  - `LobbyPanel` takes four opt-in presentation parameters, used by Brawl: `Heading` (a sentence
+    in place of "Players · n/m"), `QuietWhenConnected` (no "connected" pill while the hub is
+    healthy), `ShowInvite="false"` and `UnreadyLabel`. A browser with no seat gets no Ready
+    button in any lobby. The seat count is also on the card as `data-lobby-seats="n/m"`.
+- **PoBrawl's online lobby (`/pobrawl/multi`) asks for one thing: Ready (2026-11-20).**
+  - The fighter is picked on the start card, by face (the Setup tab on a phone), from the same
+    `PoBrawlFighterGrid` as 2P with a portrait on each tile (the dossier's Wikipedia thumbnail; a
+    lettered disc when there is none). The pick is remembered
+    (`pominigames:pobrawl-online-fighter`) and sent once the browser holds a seat.
+  - The lobby card is one sentence that says what the room is waiting on and what to press, the
+    two seats, and **Ready** / **Leave**. The empty seat holds **Invite a friend**. A fighter's
+    name opens its dossier; **Change fighter** opens the grid again.
+  - Both seats ready counts down from three in each browser and the host's starts the fight;
+    **Cancel Ready** calls it off.
+  - The same player in a second tab still takes the seat over, and the older tab is now told so
+    (`kicked`, with **Rejoin here**), as is a seat lost to idling. `PoBrawlLobbyService.Seat`
+    reports every connection it displaced.
+  - A full room refuses with "The room is full: two players are already in."
+  - The hub refuses a browser whose `PoBrawlRollbackSim.WireVersion` (the `v` query parameter
+    of the hub URL) is not the server's, and asks it to reload. Raise `WireVersion` with every
+    change to an online rule, an input's bits or the packed state. A tab opened before
+    2026-11-20 sends no version, so it is refused and still shows its old "couldn't reach the
+    lobby" toast until it reloads.
 - **PoBrawl's 1P ladder and 2P local are best of three.** First to two rounds (60 seconds
   each; a bell too close to call is nobody's round), with round pips under the clock. The Cup,
   online and the training room stay one round. A hard enough beating in a short space is a
@@ -32,7 +67,71 @@ sign-in: a player is a random browser id plus three initials.
   machine is `fighterTick.js`), tested headless by `tests/pobrawl-core.test.mjs`.
   The fastest-KO board takes a round-one knockout only. Online has the knockdown and both hands
   too, in the rollback sim's own integer terms (daze, down / rising / rolling, jab and cross), so
-  the packed state is 38 ints (16 a corner), not 26.
+  the packed state grew from 26 ints to 38 (16 a corner), and to 42 with the taunt (see above).
+- **PoBrawl has a grab and a taunt (2026-11-19), in every mode.** Locally (1P, 2P, the Cup,
+  training) their numbers are `GRAB` and `TAUNT` in `js/pobrawl/constants.js`; online they are
+  rules of the rollback sim (the online bullet further down).
+  - **Grab:** its own key (**T** for Player 1, **O** for Player 2, a 🤼 button on the touch pad),
+    or punch and kick together (the second button inside 0.07 s of the first counts; that is how
+    a gamepad grabs). It is short, cannot be charged, goes straight through a held guard and throws the fighter
+    (about 1.5 m, into the ropes, a turnbuckle or the crates if they are there); holding away as
+    it starts throws them behind you. Any strike beats it: a fighter who is swinging, coiling,
+    reeling or on the canvas cannot be grabbed, and grabbing air leaves a 0.45 s recovery. Two
+    grabs at once break. A throw is never the knockout. Resolved by `hitResolution.js _tryGrab`.
+  - **Taunt:** block tapped twice with the opponent out of strike range plays the fighter's
+    entrance gesture: 1.1 s with no guard, steps or swing. Finish it and the energy bar refills,
+    the signature meter gains 30% and the crowd roars; a blow that lands during it does 25% more.
+    Seven seconds of cooldown. `fighterTick.js _canTaunt / _enterTaunt / _finishTaunt`.
+  - **The CPU uses both** (`ai.js`, `tactics.js`): it grabs a player who hides behind the guard
+    (weighted by the same turtle read and habit profile as its baits, never on rungs 1-2),
+    taunts when it is well ahead and far away, and walks in to kick a player who taunts.
+- **PoBrawl's corner talks between rounds (1P ladder).** At a round break one scripted line says
+  what the round showed and what to do about it (`js/pobrawl/corner.js`: about ten rules, worst
+  problem first). When one of the president's signature phrases did the damage, the line spells
+  that phrase out from its own steps ("A jab, a jab, then a wound-up punch. Guard the last
+  beat."), so the advice cannot drift from the pattern. It stays up until the bell and the page's
+  live region reads it (`OnCornerAdvice`).
+- **PoBrawl's recap counts more, and fights earn feats.** The round scorecard
+  (`js/pobrawl/rounds.js blankStats`) also counts strikes thrown, perfect guards, grabs, taunts,
+  times gassed and health lost by body part. The result's Recap tab adds accuracy, perfect
+  guards, knockdowns and throws (rows nobody scored on are left out), and a Damage tab draws
+  where each corner was hurt. Eleven **feats** (`js/pobrawl/feats.js`, mirrored by
+  `PoBrawlFeats.cs`: a round without losing health, a win from 10 health or less, a knockout off
+  a perfect guard's counter, and so on) are decided by the engine at the end of each round and
+  reported with the result; the 1P page stores them per player (`pobrawl_feats_{name}`), each is
+  an achievement on the profile, and Brawl HQ's Ladder tab lists them with a stamp for every
+  president beaten.
+- **PoBrawl keeps a poster and a knockout clip of the last fight** (`js/pobrawl/keepsake.js`; 1P,
+  2P and the Cup). The poster is a frame from the last quarter second before the knockout (or the
+  bell), both fighters still in the fight's own framing, with who beat whom, how and when
+  lettered over it. The clip comes from the battle royale's rolling canvas
+  recorder (`ffaHighlights.js`), marked at the knockout; recording is **off until switched on**
+  on Brawl HQ (`pominigames:pobrawl-clip` = `on`), and stays off on the low graphics tier and
+  under reduced motion.
+  Both live in memory only (nothing is uploaded, a reload forgets them) and are shown,
+  downloaded and shared from Brawl HQ's **Last fight** tab, because the end card keeps its one
+  button.
+- **Online, the grab and the taunt are rules of the rollback sim (2026-11-20)**, written in both
+  copies (`rollbackSim.js`, `PoBrawlRollbackSim.cs`) as two more presses: `Grab = 7` and
+  `Taunt = 8` on `PoBrawlMatchAction`, so an input's press field is 4 bits wide, not 3.
+  - **Grab (T, or the 🤼 touch button; a gamepad has no button for it online):** takes hold of a
+    corner within 1.3 m that is standing (not on the canvas, not swinging this frame, not still in
+    a swing's cooldown, or one that is taunting). It ignores the guard, does a flat 9 damage with
+    no roll, throws the corner 1.5 m and never knocks out. Grabbing air costs a 36-frame cooldown,
+    a landed throw 24. Two grabs on one frame break. There is no back throw: the online ring is a
+    line and P1 is always the left corner.
+  - **Taunt (guard tapped twice):** only taken with the other corner on its feet and more than
+    2.1 m away, at most once every 7 s. It lasts 66 frames with no walking, guard or swing, then
+    adds 30 energy (online the bar is the special's meter). A blow or grab that lands during it
+    does 125% and ends it.
+  - The packed state is 42 ints (18 a corner: `taunt` and `tauntCd` are new), so a browser still
+    running the old script cannot read a new server's snapshots until it reloads.
+  - Parity is checked by `scripts/dev/brawl-rollback-golden.mjs` (the rules on the JavaScript copy,
+    and the checksums of four scripted 4,000-frame fights) and `PoBrawlRollbackSimTests` (the same
+    rules and the same fights on the C# copy). Change a rule in both, run the script, paste its
+    numbers into the test.
+  - `netplay.js` shows a grab's reach at once and what it did a tenth of a second later, when the
+    hands close, so a rollback can still correct it.
 - **PoBrawl's online 1v1 uses rollback netcode.** Both browsers and the server run the same
   integer, 60 Hz fight sim, written twice to give bit-identical results
   (`Shared/Games/PoBrawlRollbackSim.cs` and `wwwroot/js/pobrawl/rollbackSim.js`). Your own
@@ -223,7 +322,7 @@ sign-in: a player is a random browser id plus three initials.
 | PoCapitol | Third-person alternate-history crowd simulation. `/pocapitol/1player`: join a crowd of 512 that starts out on the grass (mostly bystanders, a minority pushing), hold a police line, or observe; 64 police in five lines with shields, batons, spray, gas, flash-bangs and a few concussion grenades fall back in stages across grounds, Crypt, Rotunda and Statuary Hall to barricaded House chamber doors, on a 12:50 pm to 6:00 pm clock, while 64 staff and members shelter inside and are evacuated (nothing can harm them). As the solo raider you carry a machine gun, five concussion grenades and two smoke grenades (**Space**/**Click** fire, **G** throw, **H** smoke; on touch, FIRE and two grenade buttons that show what is left; on a gamepad, right trigger, X and Y); about one person in three breaks off into a room once inside, and one in twenty carries a historically sourced, one-to-six-word sign. `/pocapitol/demo` is an armed, entirely fictional variant in which both sides fire and those hit drop out; the first seven seconds are calm, then the police open fire, the crowd scatters and returns fire, protestor rounds can hit other protestors, and the camera alternates a high crane, a close orbit around the crowd and a shot from behind the police line. It loops and saves nothing. Blasts are overpressure: people are thrown into the air and knocked down, never dismembered. Synthesized sound, Yuka crowd steering (vendored, MIT), adaptive graphics with Auto/Low/High (the top rung adds temporal anti-aliasing with motion blur, ray-marched lit gas on a fluid grid, hundreds of small screen-space lights, lens flare and metering, and a second close shadow cascade with contact-hardening edges; hung banners and breaking panes are simulated for the picture only, while loose bike racks slow whoever wades through them and pushes travel through the packed crowd as pressure waves), and a crowd of individual synthesized voices placed around the listener. Adult themes, no injury shown; invented layout, not a documentary or real access plan. |
 | TicTacToe | 4-in-a-row on 6×6 vs AI, hot-seat, or online in the shared lobby (SignalR; the host plays first) |
 | ConnectFive | Five-in-a-row vs AI, hot-seat, or online in the shared lobby (SignalR; the host plays first) |
-| PoBrawl | Physics brawler with a presidents ladder and two CPU exhibitions on the home hub: **DEMO · Tournament** (the 16-slot Brawl Cup at `/pobrawl/demo`; all presidents enter, every bout advances automatically to one champion, and each bout updates fighter Elo) and **DEMO · FFA** (`/pobrawl/ffa`; all 16 presidents fight in the ring at once, rear attacks bypass guards, knockout places are shown, and a new round starts after five seconds; this exhibition does not submit 1v1 Elo results); the Cup has an animated bracket (with the cup's controls: the options gear for speed and camera, Tab for the bracket hub) and belt ceremony, golden-hour → dusk → night arena, an Elo-upset crowd, and a TV-style director camera; 1P/2P/online keep a plain side view; the old `/pobrawl/tournament` address redirects to the Cup; 1P, 2P and training pause on Esc / P, on the touch ⏸ button and automatically when the window loses focus (Resume, Restart fight, Quit), and the result leads with Fight again / Rematch in place; a showtime layer of charge auras and president motifs over a crowd that stomps and chants, plus — with the settings sheet's **Brawl show** set to Full (`pobrawl_show`; Simple is the default) — convention balloon drops, a stadium wave, an occasional instant replay, a glass result screen, the belt ceremony and the director camera (those four Full-only modules are loaded on demand, so Simple never parses them); live 3D fighter select (a mirror pick gives Player 2 an alternate suit); an election-night campaign map for the ladder + fighter Elo board; **Brawl HQ** (`/pobrawl/hq`) puts the ladder, campaign map, local record, the ladder / fastest-KO / fighter-Elo boards and Cup titles on one page |
+| PoBrawl | Physics brawler with a presidents ladder and two CPU exhibitions on the home hub: **DEMO · Tournament** (the 16-slot Brawl Cup at `/pobrawl/demo`; all presidents enter, every bout advances automatically to one champion, and each bout updates fighter Elo) and **DEMO · FFA** (`/pobrawl/ffa`; all 16 presidents fight in the ring at once, rear attacks bypass guards, knockout places are shown, and a new round starts after five seconds; this exhibition does not submit 1v1 Elo results); the Cup has an animated bracket (with the cup's controls: the options gear for speed and camera, Tab for the bracket hub) and belt ceremony, golden-hour → dusk → night arena, an Elo-upset crowd, and a TV-style director camera; 1P/2P/online keep a plain side view; the old `/pobrawl/tournament` address redirects to the Cup; 1P, 2P and training pause on Esc / P, on the touch ⏸ button and automatically when the window loses focus (Resume, Restart fight, Quit), and the result leads with Fight again / Rematch in place; a showtime layer of charge auras and president motifs over a crowd that stomps and chants, plus — with the settings sheet's **Brawl show** set to Full (`pobrawl_show`; Simple is the default) — convention balloon drops, a stadium wave, an occasional instant replay, a glass result screen, the belt ceremony and the director camera (those four Full-only modules are loaded on demand, so Simple never parses them); live 3D fighter select (a mirror pick gives Player 2 an alternate suit); an election-night campaign map for the ladder + fighter Elo board; **Brawl HQ** (`/pobrawl/hq`) puts the ladder, campaign map, local record, the ladder / fastest-KO / fighter-Elo boards, Cup titles, the presidents beaten, the feats and the last fight's poster and knockout clip on one page |
 | PoCoupleQuiz | Two-player realtime couples quiz (SignalR); online goes through one shared lobby (`/couplequiz/lobby-hub`: first in hosts and picks rounds + topic pack, the guest readies, the host starts); curated JSON question bank, free answer matching |
 | PoFunQuiz | Trivia from a JSON question bank (~8,500 questions; most from [The Trivia API](https://the-trivia-api.com), CC BY-NC 4.0, topped up from [Open Trivia DB](https://opentdb.com), CC BY-SA 4.0, by `scripts/content/import-trivia.ps1`). Solo and split-screen 2P pick one of eight categories on the start card (the last pick is remembered); online goes through one shared lobby (`/funquiz/lobby-hub`) where the host picks the category and question count, the guest readies, and the host starts. In split-screen each player can answer on their own controller: face buttons Y / X / B / A are options 1-4 |
 | PoMarbleRace | You steer the one red marble through a 101-marble field on four courses (Neon Canyon, Spiral Works, Grand Spiral, Playground Run); CPU rivals each have a personality (steady, cautious, line-hugger, bully, wildcard); your best run is a ghost; sector splits and per-track records; online is 2 players max through the one shared lobby (no codes: the first in hosts and picks the track, the guest readies, the host starts), with a running series score (the host's browser streams the physics); a **Race settings** drawer (ghost, sound, spoken announcer, F3 performance overlay, Full/Lite effects); keyboard, touch and gamepad steering; sound is fully synthesized (energy- and material-driven impacts, a skid hiss, per-map reverb, crowd stings). Engine modules live in `wwwroot/js/pomarblerace/` (game.js plus one mixin per system; constants in `tuning.js`, the save in `store.js`) |
@@ -470,7 +569,7 @@ stops the site (`QuotaExceeded`, deploys get a 403). So:
 | `POST /api/pobrawl/elo` (Cup bout Elo) | 2026-10-19: own `pobrawl-elo` rate-limit policy (20/min); per identity one bout every 3 s and 40 a UTC day (`429 demo_too_fast` / `demo_daily_cap`); both ids must be roster fighters and differ |
 | `POST` / `GET /api/pofighter/elo` (tournament fighter Elo) | 2026-11-18: one row per fighter (`p1` Nick, `kim` Kim; ids case-insensitive, stored lowercase) in table `PoFighterRatings`, same start rating, K and zero-sum update as the PoBrawl board. `POST {winnerFighterId, loserFighterId, isDraw}` returns `[winner, loser]` ratings (`fighterId`, `displayName`, `elo`, `wins`, `losses`, `draws`, `matches`, `lastUpdated`); unknown id `400 invalid_fighter`, same fighter twice `400 fighter_self_match`, `503` when storage is down; shares the `pobrawl-elo` rate-limit policy (20/min), no per-identity gate. `GET` is anonymous, ordered by Elo desc, and lists only fighters that have fought. New (2026-11-18): every rated bout is also logged on partition `pofighterbout` of the same table, and `GET /api/pofighter/elo/{fighterId}/bouts` (anonymous) returns that fighter's last 20, newest first (`winnerId`, `loserId`, `isDraw`, `winnerElo`, `loserElo` after the bout, `at`); an id off the roster is `400 invalid_fighter` |
 | `POST /api/pobrawl/matches` (online result) | 2026-10-19: answers `503` + `Retry-After: 5` when the Elo write fails (the claim is released; retry within 90 s); an abandoned match records nothing; the self-match check runs before any write |
-| `/pobrawl/lobby-hub`, `/pobrawl/match-hub` (SignalR) | 2026-10-19: one seat per user (a second tab takes over the seat), a seat idle 2 minutes gives way to a newcomer, `gameStarted` and the match code go to the two seated players only; the match waits for both corners before the countdown; `RequestRematch` / `VoteRematch` removed; inputs capped per corner |
+| `/pobrawl/lobby-hub`, `/pobrawl/match-hub` (SignalR) | 2026-10-19: one seat per user (a second tab takes over the seat), a seat idle 2 minutes gives way to a newcomer, `gameStarted` and the match code go to the two seated players only; the match waits for both corners before the countdown; `RequestRematch` / `VoteRematch` removed; inputs capped per corner. 2026-11-20: the lobby hub URL carries `?v=<PoBrawlRollbackSim.WireVersion>` and `Join` is refused (`reload: …`) when it is missing or not the server's; a full room refuses with "The room is full: two players are already in."; a connection that loses its seat to another tab of the same player or to idling gets `kicked(reason)` |
 | `/connectfive/lobby-hub`, `/tictactoe/lobby-hub`, `/connectfive/hub`, `/tictactoe/hub` (SignalR) | 2026-11-18: online play goes through one shared lobby per game (cap 2: first in hosts and moves first, the guest readies, the host starts; no code). `gameStarted` carries an internal match code to the two seated players only, and each calls `JoinMatch(code, name, isGuest, asHost)` on the match hub; `FindMatch`, `CancelSearch`, `RequestRematch`, `TurnMatchQueueStatus` and `TurnMatchSeat.WantsRematch` removed |
 | `GET /api/pobrawl/dossier` | 2026-10-19: answers within 4 s (static facts when Wikipedia is slow, enriched in the background; one 4 s Wikimedia attempt) |
 | `/funquiz/lobby-hub`, `/funquiz/gamehub`, `/couplequiz/lobby-hub`, `/couplequiz/hubs/game` (SignalR) | 2026-11-18: both quizzes use one shared lobby per game on the shared `LobbyHub`/`LobbyRoom` surface (cap 2, first in hosts, guest readies, host starts; no code, no pre-lobby step). New host-only lobby methods `SetOptions(category, questionCount)` (Fun Quiz) and `SetRounds(rounds)` / `SetTopicPack(pack)` (Couple Quiz); the picks ride on every seat of `lobbyState` (`LobbyState<FunQuizLobbyPlayer>` / `LobbyState<CoupleQuizLobbyPlayer>`). `gameStarted` carries an internal match code to the two seated players only, and each calls `JoinMatch(code, name)` on the game hub (an unclaimed Fun Quiz reservation is swept after 2 min; Couple Quiz keeps one live match). Removed: Fun Quiz `JoinLobby`, `StartGame` and events `GameCreated`, `GameJoined`, `PlayerJoined`, `LobbyError`; Couple Quiz `Join`, `SetReady`, `SetRounds`, `SetTopicPack` on the game hub and events `LobbyJoined`, `LobbyUpdated`, `LobbyError`, `PlayerDisconnected`. If the opponent leaves a Couple Quiz match the survivor gets `GameError` then `GameOver` on the scores so far. |
@@ -482,7 +581,7 @@ stops the site (`QuotaExceeded`, deploys get a 403). So:
 | `/pocabinet` settings (`pocabinet.settings.v1`), HUD | 2026-11-13: `roomDetail` gains `auto`, the new default: the full 9.6 MB scan on a computer, only the light 2.4 MB one on a phone, a slow or data-saving connection or a low-memory device (a stored `splat` or `mesh` is kept). `gpuCompute` (`"auto"`, `"webgpu"`, `"webgl"`) adds opt-in WebGPU WGSL particle compute (`gpucompute.js`) and UI shader backdrop (`uishader.js`) with automatic WebGL2 fallback. The lap strip gains a live delta (this lap against your best lap here, or a quicker lap of this race, from lap 2; drawn by `race.js`) |
 | `/pocabinet` graphics, audio, physics engine | 2026-11-13: 2-substep integration, sort-and-sweep swept midpoint CCD, and 5-style mass/inertia exchange mirrored between `physics.js` and `PoCabinetPhysics.cs`; `postfx.js` adds screen-space contact shadows, 1-bounce SSGI, and depth-guarded heat haze on high tier; `cars.js` / `paint.js` / `materials.js` add iridescent dispersive glass, volumetric brake cones, and wrapped subsurface scattering; `fx.js` adds barrier paint transfer, wreck scorch/oil pools, mud drag tracks, and 1200-spark bursts; `debris.js` adds spatial-hash piece-to-piece collisions and acoustic clatter; `audio.js` adds a 10-slot pooled HRTF panner bank, material-matrix modal synthesis, directional intake/exhaust engine bias, raised kerb thuds, and dual stereo canyon early reflections |
 | `/poracer`, `GET /api/leaderboards/poracer-crossfire` | 2026-11-13: fourth track, Crossfire Switchbacks (`crossfire`), with its own best-lap board (also in `GET /api/leaderboards`). The race join's `Static` gains `weather` (`clear`, `rain`, `snow`, `fog`); bots drive by style (`PoRacerAiStyle`) and go round a car they have caught; the bot "Vanguard" is now "Loose Cannon" (Wildcard) |
-| `/pobrawl/match-hub` (SignalR) | Rollback protocol: `SubmitInput` takes `{ frame, held, press, sequence }`; new `matchInput` event (each accepted input with the frame the server used) and `Ping` method (clock sync); `matchState` now carries `frame`, `sim` (38 packed ints, was 26 before 2026-11-13) and `checksum` in place of the per-tick swing fields |
+| `/pobrawl/match-hub` (SignalR) | Rollback protocol: `SubmitInput` takes `{ frame, held, press, sequence }`; new `matchInput` event (each accepted input with the frame the server used) and `Ping` method (clock sync); `matchState` now carries `frame`, `sim` (42 packed ints since 2026-11-20; 38 from 2026-11-13, 26 before) and `checksum` in place of the per-tick swing fields. `press` also takes `Grab` (7) and `Taunt` (8) since 2026-11-20 |
 
 PoBrawl's fighter dossiers quote summaries and portraits from [Wikipedia](https://en.wikipedia.org/)
 (text CC BY-SA 4.0); each card links its article with a "From Wikipedia" attribution.

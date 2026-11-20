@@ -310,7 +310,8 @@ public sealed class PoBrawlMatchService
     private static bool IsHeld(PoBrawlMatchAction a) => a is >= PoBrawlMatchAction.Idle and <= PoBrawlMatchAction.Block;
 
     private static bool IsPressOrNone(PoBrawlMatchAction a) =>
-        a is PoBrawlMatchAction.Idle or PoBrawlMatchAction.Punch or PoBrawlMatchAction.Kick or PoBrawlMatchAction.Special;
+        a is PoBrawlMatchAction.Idle or PoBrawlMatchAction.Punch or PoBrawlMatchAction.Kick or PoBrawlMatchAction.Special
+            or PoBrawlMatchAction.Grab or PoBrawlMatchAction.Taunt;
 
     /// <summary>
     /// Accept the caller's input. The side is the connection's pinned one, whatever

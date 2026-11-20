@@ -1,7 +1,8 @@
 @* The one controls legend for every Brawl entry point (1P, 2P, the online lobby): an
    action → keys grid instead of a bullet list per mode, then the few rules the HUD cannot
    teach. Keys follow the engine: input.js for the local modes (circle on W/S, the signature
-   move fires by itself) and netplay.js online (no circling, H is the special). On a touch
+   move fires by itself) and netplay.js online (no circling, H is the special). T grabs and
+   block twice taunts in every mode; locally punch and kick together also grabs. On a touch
    screen the key column shows the pad's glyphs instead (CSS, .pbc-touch). *@
 
 @if (Part != "tips" && Mode == "2p")
@@ -16,6 +17,10 @@
             <tr><th scope="row">Circle</th><td><kbd>W</kbd><kbd>S</kbd></td><td><kbd>↑</kbd><kbd>↓</kbd></td></tr>
             <tr><th scope="row">Block <small>(hold)</small></th><td><kbd>R</kbd></td><td><kbd>;</kbd></td></tr>
             <tr><th scope="row">Punch · kick <small>· lock</small></th><td><kbd>F</kbd> · <kbd>G</kbd></td><td><kbd>K</kbd> · <kbd>L</kbd></td></tr>
+            @* The grab has its own key (both strike keys at once also works); the taunt is the block
+               key tapped twice from range. *@
+            <tr><th scope="row">Grab <small>(beats a guard)</small></th><td><kbd>T</kbd></td><td><kbd>O</kbd></td></tr>
+            <tr><th scope="row">Taunt <small>(from range)</small></th><td><kbd>R</kbd><kbd>R</kbd></td><td><kbd>;</kbd><kbd>;</kbd></td></tr>
             <tr><th scope="row">Pause</th><td colspan="2"><kbd>Esc</kbd> or <kbd>P</kbd></td></tr>
         </tbody>
     </table>
@@ -33,6 +38,9 @@ else if (Part != "tips")
         <div><dt>Block <small>(hold)</small></dt><dd><span class="pbc-kb"><kbd>R</kbd></span><span class="pbc-touch">🛡</span></dd></div>
         <div><dt>Punch</dt><dd><span class="pbc-kb"><kbd>F</kbd></span><span class="pbc-touch">👊</span></dd></div>
         <div><dt>Kick</dt><dd><span class="pbc-kb"><kbd>G</kbd></span><span class="pbc-touch">🦵</span></dd></div>
+        @* The same two in every mode: the grab's own key and button, and block twice for the taunt. *@
+        <div><dt>Grab</dt><dd><span class="pbc-kb"><kbd>T</kbd></span><span class="pbc-touch">🤼</span></dd></div>
+        <div><dt>Taunt</dt><dd><span class="pbc-kb"><kbd>R</kbd><kbd>R</kbd></span><span class="pbc-touch">🛡🛡</span></dd></div>
         @if (Mode == "online")
         {
             <div><dt>Special</dt><dd><span class="pbc-kb"><kbd>H</kbd></span><span class="pbc-touch">⚡</span></dd></div>
@@ -56,6 +64,14 @@ else if (Part != "tips")
     @if (Mode != "2p")
     {
         <li>⚡ Every swing spends <b>energy</b>; run dry and you cannot strike. Blocking refills it.</li>
+    }
+    @if (Mode == "1p")
+    {
+        <li>🤼 A <b>grab</b> goes through a guard, and any strike beats it. Tap block twice from range to <b>taunt</b>: wide open for a second, then a full bar.</li>
+    }
+    @if (Mode == "online")
+    {
+        <li>🤼 A <b>grab</b> goes through a guard, and any strike beats it. Tap guard twice from range to <b>taunt</b>: wide open for a second, then 30 energy.</li>
     }
     @if (Mode == "online")
     {

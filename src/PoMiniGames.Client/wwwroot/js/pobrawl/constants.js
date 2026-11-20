@@ -43,3 +43,27 @@ export const HEAVY_HIT_DMG = 13; // threshold for the amplified stagger reaction
 
 /** Seconds a landed hit stuns for (a rattled head adds to it: combat.js flinchBonus). */
 export const HITSTUN = 0.35;
+
+// ── The grab (punch and kick pressed together) ──────────────────────────────
+// The answer to a fighter who stays behind the guard: it ignores the guard and throws them,
+// but it is short, it cannot be charged, and ANY strike beats it (a fighter who is swinging
+// or coiling cannot be grabbed, and the grabber is open for the whole whiff). Deliberately
+// not an ATTACKS entry: it has no striker capsules, no cancel windows and no charge.
+//   chord  — seconds after one button during which the other one still makes a grab
+//   reach  — root-to-root metres at the active frames (a punch connects from about 1.2)
+//   whiff  — recovery after grabbing air; `recover` is the short one after a throw lands
+//   kb     — the throw, as knockback (decays at 8/s, so about 1.5 m of travel)
+// The local modes only: online runs on rollbackSim.js, which has no grab.
+export const GRAB = Object.freeze({
+  name: 'grab', chord: 0.07, windup: 0.10, active: 0.08, whiff: 0.45, recover: 0.28,
+  reach: 1.3, dmg: 9, daze: 12, kb: 12, energyMul: 0.7,
+});
+
+// ── The taunt (block tapped twice, out of strike range) ─────────────────────
+// A fighter plays their entrance gesture mid-fight: `secs` wide open (no guard, no steps, no
+// swing). Finish it and the crowd roars, the bar refills and the signature meter jumps by
+// `meter`; get hit during it and the blow lands `punishMul` harder. `cooldown` runs from the
+// moment it starts, landed or not. `clear` is how far past kick range the opponent must be.
+export const TAUNT = Object.freeze({
+  secs: 1.1, tap: 0.3, clear: 0.35, cooldown: 7, meter: 0.3, punishMul: 1.25,
+});

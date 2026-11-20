@@ -27,7 +27,7 @@
             <a class="app-btn app-btn--ghost hq-modes" href="/pobrawl/demo">🏆 Watch the Cup</a>
         </section>
 
-        @* Four tabs, one surface at a time, so HQ fits a laptop screen without scrolling. It
+        @* Five tabs, one surface at a time, so HQ fits a laptop screen without scrolling. It
            used to stack the record, the map and the boards card in two long columns.
            Radzen's components call its script as they mount, so the tabs wait for it (the
            page loads it on first render); the box holds their place meanwhile. *@
@@ -44,6 +44,32 @@
                             <div><dt>Clears</dt><dd>@_clears</dd></div>
                             <div><dt>Cup titles</dt><dd>@_titles.Values.Sum()</dd></div>
                         </dl>
+                        @* A stamp per president beaten on the ladder, in ladder order. *@
+                        <h2 class="hq-sub">Presidents beaten <small>@_beaten.Count of @PoBrawlRoster.Count</small></h2>
+                        <ul class="hq-stamps" aria-label="Presidents beaten on the ladder">
+                            @foreach (var f in PoBrawlRoster.Fighters)
+                            {
+                                var done = _beaten.Contains(f.Id);
+                                <li class="hq-stamp @(done ? "hq-stamp--on" : "")" aria-label="@f.Name: @(done ? "beaten" : "not beaten yet")">
+                                    <span aria-hidden="true">@(done ? "✔" : "·")</span> @f.Name
+                                </li>
+                            }
+                        </ul>
+                        @* The feats: how the fights were won (js/pobrawl/feats.js). Earned ones first. *@
+                        <h2 class="hq-sub">Feats <small>@_feats.Count of @PoBrawlFeats.All.Count</small></h2>
+                        <ul class="hq-feats" aria-label="Brawl feats">
+                            @foreach (var feat in PoBrawlFeats.All.OrderByDescending(x => _feats.ContainsKey(x.Id)))
+                            {
+                                var n = _feats.GetValueOrDefault(feat.Id);
+                                <li class="hq-feat @(n > 0 ? "hq-feat--on" : "")">
+                                    <span class="hq-feat-icon" aria-hidden="true">@feat.Icon</span>
+                                    <span class="hq-feat-text">
+                                        <b>@feat.Title</b>@if (n > 1) { <small> ×@n</small> }
+                                        <span class="hq-feat-hint">@(n > 0 ? "Earned. " : "")@feat.Hint</span>
+                                    </span>
+                                </li>
+                            }
+                        </ul>
                     </RadzenTabsItem>
                     <RadzenTabsItem Text="Map">
                         <div class="hq-map">
@@ -118,6 +144,66 @@
                             </ol>
                         }
                     </RadzenTabsItem>
+                    <RadzenTabsItem Text="Last fight">
+                        @* The poster and knockout clip of the last 1P, 2P or Cup fight this session
+                           (js/pobrawl/keepsake.js). They are here, not on the end card, because the
+                           end card has one button. Held in memory only. *@
+                        <section class="hq-keep" aria-label="Last fight">
+                            @if (string.IsNullOrEmpty(_posterUrl) && string.IsNullOrEmpty(_clipUrl))
+                            {
+                                <EmptyState Title="No fight to show yet">Finish a 1P, 2P or Cup fight and its poster shows up here. It is kept until you reload or close the site.</EmptyState>
+                            }
+                            else
+                            {
+                                <p class="hq-board-note">@_caption. Kept until you reload or close the site; nothing is uploaded.</p>
+                                <div class="hq-keep-grid">
+                                    @if (!string.IsNullOrEmpty(_posterUrl))
+                                    {
+                                        <figure class="hq-keep-item">
+                                            <img src="@_posterUrl" alt="Poster: @_caption" />
+                                            <figcaption class="hq-keep-actions">
+                                                <button type="button" class="app-btn app-btn--primary" @onclick="@(() => DownloadKeepsakeAsync("poster"))">Download poster</button>
+                                                @if (_posterShare)
+                                                {
+                                                    <button type="button" class="app-btn app-btn--ghost" @onclick="@(() => ShareKeepsakeAsync("poster"))">Share</button>
+                                                }
+                                            </figcaption>
+                                        </figure>
+                                    }
+                                    @if (!string.IsNullOrEmpty(_clipUrl))
+                                    {
+                                        <figure class="hq-keep-item">
+                                            <video src="@_clipUrl" controls muted loop playsinline aria-label="Knockout clip: @_caption"></video>
+                                            <figcaption class="hq-keep-actions">
+                                                <button type="button" class="app-btn app-btn--primary" @onclick="@(() => DownloadKeepsakeAsync("clip"))">Download clip</button>
+                                                @if (_clipShare)
+                                                {
+                                                    <button type="button" class="app-btn app-btn--ghost" @onclick="@(() => ShareKeepsakeAsync("clip"))">Share</button>
+                                                }
+                                            </figcaption>
+                                        </figure>
+                                    }
+                                </div>
+                                @if (_keepStatus is not null)
+                                {
+                                    <p class="hq-board-note" role="status">@_keepStatus</p>
+                                }
+                            }
+                            @if (_keepsake is not null)
+                            {
+                                <div class="hq-keep-pref">
+                                    <div>
+                                        <span class="hq-keep-pref-name" id="hq-clip-label">Knockout clips</span>
+                                        <span class="hq-keep-pref-hint">Off until you switch it on. Records the last seconds of a knockout, which costs some frame rate; it stays off on the low graphics tier and with reduced motion. Applies from your next fight.</span>
+                                    </div>
+                                    <div class="app-seg" role="radiogroup" aria-labelledby="hq-clip-label">
+                                        <button type="button" role="radio" class="app-seg__btn" aria-checked="@(_clipWanted ? "false" : "true")" @onclick="@(() => SetClipWantedAsync(false))">Off</button>
+                                        <button type="button" role="radio" class="app-seg__btn" aria-checked="@(_clipWanted ? "true" : "false")" @onclick="@(() => SetClipWantedAsync(true))">On</button>
+                                    </div>
+                                </div>
+                            }
+                        </section>
+                    </RadzenTabsItem>
                 </Tabs>
             </RadzenTabs>
         }
@@ -141,6 +227,20 @@
     private double _bestKo;
     private AdaptiveRating _rating = new();
     private Dictionary<string, int> _titles = [];
+    // Ladder tab: the presidents beaten (ids) and how often each feat was earned.
+    private HashSet<string> _beaten = [];
+    private Dictionary<string, int> _feats = [];
+
+    // Last fight tab (js/pobrawl/keepsake.js): object URLs of the poster and the clip, a caption,
+    // whether the device can share each as a file, and the clip setting.
+    private IJSObjectReference? _keepsake;
+    private string _posterUrl = "";
+    private string _clipUrl = "";
+    private string _caption = "";
+    private bool _posterShare;
+    private bool _clipShare;
+    private bool _clipWanted;
+    private string? _keepStatus;
 
     private string _board = "pobrawl";
     private int _tab;
@@ -188,6 +288,7 @@
     {
         _playerName = PlayerNameService.GetPlayerName();
         Show(PoBrawlProgressBook.Load(_playerName));
+        _feats = PoBrawlProgressBook.LoadFeats(_playerName);
         _rating = _gameStats.GetAdaptiveRating("pobrawl", _playerName);
     }
 
@@ -206,6 +307,7 @@
         _ladder = progress.Rung;
         _clears = progress.Clears;
         _bestKo = progress.BestKoSeconds;
+        _beaten = PoBrawlProgressBook.Beaten(progress).Select(f => f.Id).ToHashSet(StringComparer.Ordinal);
     }
 
     protected override async Task OnInitializedAsync()
@@ -236,13 +338,84 @@
         {
             Console.Error.WriteLine($"[pobrawl-hq] Radzen theme failed: {ex.Message}");
         }
+        await LoadKeepsakeAsync();
         _radzenReady = true;
         StateHasChanged();
+    }
+
+    // The keepsake module is small and has no engine import; a failure only empties the tab.
+    private async Task LoadKeepsakeAsync()
+    {
+        try
+        {
+            _keepsake = await JS.InvokeAsync<IJSObjectReference>("import", "./js/pobrawl/keepsake.js");
+            await RefreshKeepsakeAsync();
+        }
+        catch (JSException ex)
+        {
+            Console.Error.WriteLine($"[pobrawl-hq] keepsake failed: {ex.Message}");
+            _keepsake = null;
+        }
+    }
+
+    // describe() answers six strings (see keepsake.js): poster url, clip url, caption, and three flags.
+    private async Task RefreshKeepsakeAsync()
+    {
+        if (_keepsake is null) return;
+        var d = await _keepsake.InvokeAsync<string[]>("describe");
+        if (d is not { Length: >= 6 }) return;
+        _posterUrl = d[0];
+        _clipUrl = d[1];
+        _caption = d[2];
+        _posterShare = d[3] == "1";
+        _clipShare = d[4] == "1";
+        _clipWanted = d[5] == "1";
+    }
+
+    private async Task DownloadKeepsakeAsync(string kind)
+    {
+        if (_keepsake is null) return;
+        try
+        {
+            var saved = await _keepsake.InvokeAsync<bool>("download", kind);
+            _keepStatus = saved ? null : "That one is gone. Finish another fight to get a new one.";
+        }
+        catch (JSException) { _keepStatus = "The download did not start."; }
+    }
+
+    private async Task ShareKeepsakeAsync(string kind)
+    {
+        if (_keepsake is null) return;
+        try
+        {
+            _keepStatus = await _keepsake.InvokeAsync<string>("share", kind) switch
+            {
+                "shared" => "Shared.",
+                "cancelled" => null,
+                "unsupported" => "This device cannot share files. Download it instead.",
+                _ => "Sharing did not work. Download it instead.",
+            };
+        }
+        catch (JSException) { _keepStatus = "Sharing did not work. Download it instead."; }
+    }
+
+    private async Task SetClipWantedAsync(bool on)
+    {
+        if (_keepsake is null) return;
+        try { _clipWanted = await _keepsake.InvokeAsync<bool>("setClipWanted", on); }
+        catch (JSException) { /* storage blocked: the setting stays as shown */ }
     }
 
     public async ValueTask DisposeAsync()
     {
         PlayerNameService.StateChanged -= OnPlayerNameChanged;
+        if (_keepsake is not null)
+        {
+            // The module's store is on globalThis, so letting go of the reference keeps the poster.
+            try { await _keepsake.DisposeAsync(); }
+            catch (JSDisconnectedException) { }
+            catch (JSException) { }
+        }
         if (_theme is null) return;
         try
         {

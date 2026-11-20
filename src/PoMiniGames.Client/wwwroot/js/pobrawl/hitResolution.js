@@ -4,7 +4,8 @@
 // reactions, dismemberment, and the KO hand-off.
 //
 // _tryHit is a short pipeline over named steps (_resolveBlock, _rollHitDamage,
-// _landHit, _resolveCombatEvents, _heavyHitStagger, _knockdownCheck). Mixed into BrawlGame's
+// _landHit, _resolveCombatEvents, _heavyHitStagger, _knockdownCheck). The grab has its own
+// short path (_tryGrab): it ignores the guard and never rolls the RNG. Mixed into BrawlGame's
 // prototype like the other subsystems (see mixin.js), so `this` is the live game.
 //
 // ORDER IS LOAD-BEARING. The seeded RNG draws in this file (Obama's dodge, Nixon's
@@ -18,7 +19,7 @@ import { COMBAT_EVENTS, REGIONS, regionEffect, regionTier, REGION_CALLOUTS } fro
 import { addDaze, isKnockdown, isFloored } from './knockdown.js';
 import { PERSONALITIES } from './personalities.js';
 import { testAttackHit, guardCovers, testAttackClash, regionForHurtBone } from './hitboxes.js';
-import { SIM_DT, MAX_HP, ATTACKS, HEAVY_HIT_DMG } from './constants.js';
+import { SIM_DT, MAX_HP, ATTACKS, HEAVY_HIT_DMG, GRAB, TAUNT } from './constants.js';
 import * as Feel from '../platform/feelPresets.js';
 
 // ── Dismemberment ─────────────────────────────────────────────────────────
@@ -215,6 +216,8 @@ class HitResolutionMethods {
     // strike may already have ended the fight, and a dead man's punch landing
     // a frame later would turn a clean KO into a double knockout.
     if (defender.state === 'ko' || attacker.state === 'ko') return;
+    // The grab is queued with the strikes (fighterTick.js) and resolved by its own rules.
+    if (attack === GRAB) return this._tryGrab(attacker, defender);
     // Online the server already decided this swing (netplay.js): land its verdict instead.
     if (this.online) return this._tryHitNet(attacker, defender, attack);
     // A fighter on the canvas, or still rising, cannot be hit (knockdown.js): the
@@ -291,6 +294,8 @@ class HitResolutionMethods {
       attacker, defender, attack, hit, phase, region, regionMod, effect, atkMul,
       knockDir, impulseDir, chargeMul, atkMass, defMass, powerScale, dpos,
       baseDmg: 0, torqueY: 0,
+      // Set by _rollHitDamage when this blow cashed a perfect guard's counter.
+      counter: false,
     };
 
     // The pipeline. See the file header for why the order is fixed.
@@ -301,6 +306,164 @@ class HitResolutionMethods {
     this._resolveCombatEvents(s);
     this._heavyHitStagger(s);
     this._knockdownCheck(s);
+  }
+
+  /**
+   * Scorecard for health actually lost to a blow (rounds.js blankStats): where it landed on
+   * the defender, and for a CPU attacker which signature phrase threw it (ai.js livePhrase),
+   * so the corner can name the string that is doing the damage (corner.js).
+   */
+  _noteDamage(attacker, defender, region, dmg) {
+    if (!(dmg > 0)) return;
+    const taken = defender.stats.taken;
+    if (region in taken) taken[region] += dmg;
+    const phrase = attacker.controller?.livePhrase?.();
+    if (phrase !== null && phrase !== undefined) {
+      attacker.stats.phraseHits[phrase] = (attacker.stats.phraseHits[phrase] || 0) + 1;
+    }
+  }
+
+  // ── The grab (constants.js GRAB) ────────────────────────────────────────
+  // Rock, paper, scissors with the two things a fighter could already do: a guard stops a
+  // strike, a grab goes through a guard, and a strike beats a grab. So a grab only takes hold
+  // of a fighter who is standing (idle, guarding, frozen in block stun, or taunting); one who
+  // is swinging, coiling, reeling or on the canvas cannot be grabbed, and the grabber is left
+  // in the long whiff recovery for whatever that fighter was throwing.
+  //
+  // Reach is root to root, not capsules: a grab is "close enough", and the arms do not have
+  // to find a body part. It is never the knockout (the throw always leaves a point of health,
+  // like a crate), so the KO stays a fist or a foot and its whole presentation is untouched.
+  // No RNG draws: a seeded match keeps its draw order with or without grabs in it.
+  _tryGrab(attacker, defender) {
+    if (this.online || defender.state === 'ko' || attacker.state === 'ko') return;
+    const apos = attacker.rig.root.position;
+    const dpos = defender.rig.root.position;
+    const toDef = new THREE.Vector3(dpos.x - apos.x, 0, dpos.z - apos.z);
+    const dist = toDef.length();
+    if (dist > GRAB.reach * (attacker.rig.config.heightScale || 1)) return;
+    if (toDef.lengthSq() > 1e-6) toDef.normalize(); else toDef.set(1, 0, 0);
+    const point = new THREE.Vector3((apos.x + dpos.x) / 2, 1.25, (apos.z + dpos.z) / 2);
+
+    // Both reached at once: the hands tangle and both are shoved off, neither thrown.
+    if (defender.state === 'grab') {
+      for (const [f, sign] of [[attacker, -1], [defender, 1]]) {
+        f.hasHit = true;
+        f.knockback.add(toDef.clone().multiplyScalar(sign * 3.2));
+        this._grabBroken(f, point);
+      }
+      return;
+    }
+    // Only a standing fighter can be taken hold of. The grab stays live through its active
+    // frames, so one that meets the end of a swing can still land.
+    const standing = defender.state === 'idle' || defender.state === 'block' || defender.state === 'taunt';
+    if (!standing) return;
+    // The same windows that let a strike graze past (personalities.js) let a grab slip.
+    const defPer = defender.personality;
+    if (defPer && [defPer.iframesUntil, defPer.jfkProfileIframesUntil, defPer.eisenhowerIframesUntil,
+      defPer.fdrIframesUntil].some((until) => until && this.t < until)) {
+      attacker.hasHit = true;
+      this._spawnSparks(point, 0xfff5b0, 4, 0.7);
+      this.audio.block(point);
+      return;
+    }
+
+    attacker.hasHit = true;
+    const wasGuarding = defender.state === 'block';
+    const caught = defender.state === 'taunt';
+    const atkMass = attacker.rig.config.mass;
+    const defMass = defender.rig.config.mass;
+    const massRatio = Math.min(1.4, atkMass / defMass);
+    let dmg = GRAB.dmg * attacker.rig.config.attackPower * massRatio
+      * regionEffect(attacker.regionDmg).atkMul * (caught ? TAUNT.punishMul : 1);
+    const hp = this.combat.getPlayer(defender.playerId)?.health ?? 0;
+    dmg = Math.min(dmg, Math.max(0, hp - 1));
+    if (this.training) this._trainingCushion(defender, dmg);
+    if (dmg > 0) this.combat.damage({ playerId: defender.playerId, amount: dmg, sourceId: attacker.playerId });
+
+    // Over the hip (the back throw): they land on the thrower's far side and keep going.
+    const dir = toDef.clone();
+    if (attacker.grabBack) {
+      dir.negate();
+      dpos.x = apos.x + dir.x * 1.0;
+      dpos.z = apos.z + dir.z * 1.0;
+    }
+    defender.knockback.set(0, 0, 0).add(dir.clone().multiplyScalar(GRAB.kb * massRatio));
+    defender.vel.set(0, 0, 0);
+    if (this.t >= (defender.dazeImmuneUntil ?? -99)) {
+      defender.daze = addDaze(defender.daze || 0, GRAB.daze, regionEffect(defender.regionDmg).dazeMul ?? 1);
+    }
+    if (defender.personality) {
+      defender.personality.superMeter = Math.min(1.0,
+        (defender.personality.superMeter || 0) + Math.min(0.5, SUPER_FILL_PER_HP * dmg / MAX_HP));
+    }
+    this._grabLanded(attacker, defender, dir, dmg, point, wasGuarding, caught);
+
+    // Enough daze and the throw ends on the canvas (the usual check, the usual get-up game).
+    if (this.phase === 'fighting' && isKnockdown(defender.daze || 0, this.t, defender.dazeImmuneUntil ?? -99)) {
+      this._knockDown(defender, attacker, dir);
+    }
+  }
+
+  /**
+   * A grab took hold: everything the throw shows and counts, with the numbers already decided.
+   * Shared by the local rule above and the online presenter (netplay.js _presentNetGrab), which
+   * hands in the server sim's damage. It moves no health and no position: the caller has.
+   */
+  _grabLanded(attacker, defender, dir, dmg, point, wasGuarding, caught) {
+    attacker.grabHit = true;   // the short recovery
+    defender.state = 'hitstun';
+    defender.stateT = 0;
+    // A thrown fighter reels a little longer. Offline only: online the server owns the clock.
+    defender.hitstunBonus = this.online ? 0 : 0.15;
+    defender.attack = null;
+    defender.chargeName = null;
+    defender.chargeAmt = 0;
+    defender.animator.setCharge(null, 0);
+    defender.animator.setBlocking(false);
+    defender.animator.play('hitstun');
+    defender.squashT = 0.14;
+    this._staggerFlail(defender, dir);
+    defender.regionDmg.torso = Math.min(100, defender.regionDmg.torso + Math.max(2, dmg) * 0.6);
+    this._applyDamageWear(defender);
+
+    attacker.stats.grabs += 1;
+    if (wasGuarding) attacker.stats.guardBreaks += 1;
+    attacker.animator.play('throw');
+    this._registerLandedHit(attacker, defender, dmg, point, REGIONS.TORSO);
+    this._noteDamage(attacker, defender, REGIONS.TORSO, dmg);
+    if (this.training) this._onTrainingHit(attacker, defender, dmg, REGIONS.TORSO, 1, GRAB);
+    defender.controller.notifyHit?.();
+
+    this._spawnCallout(point, wasGuarding ? 'GUARD BREAK!' : caught ? 'CAUGHT!' : 'THROWN!');
+    this._commentate('grab', attacker, defender);
+    this._spawnSparks(point, 0xffc857, 8, 1.4);
+    this._flashImpactLight(point, 5, 0xffe1a0, 0.18);
+    this._dent(defender, point, 1.2);
+    this._hitFeedback(ATTACKS.kick, true, 1.2);
+    if (!this._calm()) this._camVel.addScaledVector(dir, 1.4);
+    this.audio.impact({ power: 1.2, worldPos: point, kind: 'kick' });
+    this.audio.grunt({ power: 1.0, charId: defender.charId });
+    setExpression(defender.rig, 'hurt');
+    defender.expressionT = 0.7;
+    this.excited = Math.max(this.excited, 0.55);
+    this._show('grab', { attacker, defender, point, guardBreak: wasGuarding });
+    this.hudDirty = true;
+  }
+
+  /**
+   * Two grabs met: `f`'s half of the break. Called once per fighter (locally for both at once,
+   * online as each corner's grab is presented), so the sparks and the word are debounced.
+   */
+  _grabBroken(f, point) {
+    f.grabHit = true;   // the short recovery: nobody is punished for a break
+    f.animator.applyReaction('torso', -2, 0, 0);
+    if (this.t - (this._grabBreakT ?? -99) < 0.25) return;
+    this._grabBreakT = this.t;
+    this._spawnSparks(point, 0xfff2c0, 8, 1.2);
+    this._spawnCallout(point, 'BREAK!');
+    this.audio.block(point);
+    this._show('block', { point });
+    this.hitstopT = Math.max(this.hitstopT, 3 * SIM_DT);
   }
 
   // The guard branch. True when the swing was stopped (ordinary or perfect guard)
@@ -321,6 +484,7 @@ class HitResolutionMethods {
     if (chip > 0.5) {
       if (this.training) this._trainingCushion(defender, chip);
       this.combat.damage({ playerId: defender.playerId, amount: chip, sourceId: attacker.playerId });
+      defender.stats.taken.arms += chip;
     }
     defender.knockback.add(knockDir.clone().multiplyScalar(1.2 * chargeMul / defMass));
     this._applyDamageWear(defender);
@@ -399,6 +563,7 @@ class HitResolutionMethods {
           if (chip > 0.5) {
             if (this.training) this._trainingCushion(defender, chip);
             this.combat.damage({ playerId: defender.playerId, amount: chip, sourceId: attacker.playerId });
+            defender.stats.taken.arms += chip;
             this._spawnSparks(hit.point, 0xff7a5a, 5, 1.0);
           }
         }
@@ -415,6 +580,7 @@ class HitResolutionMethods {
         // Arm the counter. Read in the damage roll below, so the answer the
         // freeze just handed the defender also hits harder than a normal swing.
         defender.counterUntil = this.t + COUNTER_WINDOW;
+        defender.stats.perfects += 1;
         this._spawnSparks(hit.point, 0xffd257, 14, 1.8);
         this._flashImpactLight(hit.point, 6, 0xffd257, 0.16);
         this._spawnCallout(hit.point, 'PERFECT!');
@@ -563,8 +729,15 @@ class HitResolutionMethods {
     if (attacker.counterUntil > this.t) {
       attacker.counterUntil = -99;
       baseDmg *= COUNTER_ATK_MUL;
+      s.counter = true;
       this._spawnCallout(hit.point, 'COUNTER!');
       this._commentate('counter', attacker, defender);
+    }
+
+    // Caught showing off (constants.js TAUNT): a blow that lands mid-taunt lands harder.
+    if (defender.state === 'taunt') {
+      baseDmg *= TAUNT.punishMul;
+      this._spawnCallout(hit.point, 'CAUGHT!');
     }
 
     // Super meter fill on damage taken. Damage ratio × SUPER_FILL_PER_HP: a
@@ -595,6 +768,7 @@ class HitResolutionMethods {
     // below is knockback, reactions and region wear, none of which feed back
     // into the number the player is shown.
     this._registerLandedHit(attacker, defender, baseDmg, hit.point, region);
+    this._noteDamage(attacker, defender, region, baseDmg);
     if (this.training) this._onTrainingHit(attacker, defender, baseDmg, region, chargeMul, attack);
     // A hit interrupts a wind-up (state → hitstun below) but does not drain
     // the energy bar — only winding up or attacking moves it.
@@ -740,6 +914,8 @@ class HitResolutionMethods {
       if (ev.type === COMBAT_EVENTS.PLAYER_KILLED) {
         const downed = this.fighters.find((x) => x.playerId === ev.playerId);
         if (downed) {
+          // How the round ended, for the feats (feats.js): a counter, a wake-up strike, or plain.
+          s.attacker.stats.finisher = s.counter ? 'counter' : s.attacker.wakeSwing ? 'wakeup' : attack.name;
           downed.state = 'ko';
           downed.animator.frozen = true;
           downed.animator.play(null);

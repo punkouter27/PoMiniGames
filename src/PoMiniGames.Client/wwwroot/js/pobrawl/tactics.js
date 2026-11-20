@@ -7,12 +7,12 @@
 //      tactic family. The tree only chooses which family the CPU prefers; it never
 //      throws a punch itself.
 //   2. A utility scorer. Each candidate tactic (attack, guard, retreat, circle,
-//      charge, bait, punish) gets a score from health, energy, distance, rope
+//      charge, bait, punish, grab) gets a score from health, energy, distance, rope
 //      proximity, mood and the predictor, times the stance bias. ai.js picks one by
 //      weighted choice. The difficulty rung stays the dial: the caller passes in the
 //      rung's own weights (`base`) and this only reshapes them for the situation.
 
-export const TACTICS = ['attack', 'guard', 'retreat', 'circle', 'charge', 'bait', 'punish'];
+export const TACTICS = ['attack', 'guard', 'retreat', 'circle', 'charge', 'bait', 'punish', 'grab'];
 
 // ── tiny behaviour tree ──────────────────────────────────────────────────────
 // A node is a function (facts) => stance | null. null = failure, a stance = success.
@@ -67,7 +67,7 @@ export const ARCHETYPES = {
   turtle: selector(
     sequence(ahead, stance('protect', { attack: 0.5, guard: 1.6, retreat: 1.4, circle: 1.2 })),
     sequence(oppOpen, stance('burst', { attack: 1.3, charge: 1.5, punish: 1.5 })),
-    sequence(oppTurtling, stance('stalemate', { attack: 0.8, bait: 1.5, circle: 1.3, charge: 0.4 })),
+    sequence(oppTurtling, stance('stalemate', { attack: 0.8, bait: 1.5, circle: 1.3, charge: 0.4, grab: 1.5 })),
     stance('shell', { attack: 0.7, guard: 1.5, bait: 1.6, retreat: 1.1 }),
   ),
 };
@@ -122,6 +122,8 @@ export function facts(ctx, mood, predSwing, turtle) {
  * space, charge, bait, punish — already scaled by aggro, blockP, baitP, chargeP,
  * punishP, mood and habit reads); this multiplies in the situation.
  *
+ * `base.grab` is optional (0 when the fight has no grab, as online and in the self-play harness).
+ *
  * @returns {Record<string, number>} non-negative score per tactic in TACTICS
  */
 export function scoreTactics(base, ctx, f, st, strength = 1) {
@@ -145,6 +147,10 @@ export function scoreTactics(base, ctx, f, st, strength = 1) {
     bait: base.bait * (0.5 + 1.5 * f.predSwing),
     // Punish only has a target when the opponent is open.
     punish: f.oppRecovering || f.oppStunned ? base.punish : 0,
+    // The grab (constants.js GRAB) only takes a standing fighter, and it costs a swing's
+    // energy for a whiff a strike punishes: worth it against a guard, rarely otherwise.
+    grab: (base.grab || 0) * (tired ? 0.4 : 1)
+      * (ctx.opponentState === 'block' ? 1 : ctx.opponentState === 'idle' ? 0.35 : 0),
   };
   for (const t of TACTICS) sc[t] = Math.max(0, sc[t] * (bias[t] ?? 1) ** strength);
   return sc;

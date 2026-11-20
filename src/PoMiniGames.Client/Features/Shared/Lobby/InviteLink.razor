@@ -11,7 +11,7 @@
    and needs no code. The QR is drawn by the server (/api/invites/qr) and only fetched
    when the popover first opens. *@
 <span class="invite">
-    <button type="button" class="app-btn app-btn--secondary" popovertarget="@_qrId">Invite</button>
+    <button type="button" class="app-btn app-btn--secondary" popovertarget="@_qrId">@Label</button>
     <span id="@_qrId" popover="auto" class="invite__qr">
         <img src="@($"/api/invites/qr?game={Game}")" width="220" height="220" loading="lazy"
              alt="QR code that opens this lobby" />
@@ -23,6 +23,9 @@
 </span>
 
 @code {
+    /// <summary>The button's text. A lobby that puts the button in its empty seat says more ("Invite a friend").</summary>
+    [Parameter] public string Label { get; set; } = "Invite";
+
     private readonly string _qrId = $"invite-qr-{Guid.NewGuid():N}";
 
     /// <summary>The game's route slug: the first segment of the page this lobby is on.</summary>

@@ -220,3 +220,11 @@
     .lobby select { min-height: 44px; }
     .lobby__howto > summary { min-height: 44px; display: flex; align-items: center; }
 }
+
+/* A game's own sentence in place of "Players · n/m" (Heading): read as a sentence, not a label. */
+.lobby__say {
+    letter-spacing: 0;
+    text-transform: none;
+    font-size: var(--text-base, 1rem);
+    color: var(--color-text-primary);
+}

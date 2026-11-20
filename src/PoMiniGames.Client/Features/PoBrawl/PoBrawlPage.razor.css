@@ -2066,3 +2066,135 @@ button.pb-net-btn {
     inset: 0;
     pointer-events: none;
 }
+
+/* ── The corner's line between rounds (engine DOM, cinematics.js _cornerSay) ──
+   One sentence about the round that just ended, on the 1P ladder. It sits low over the ring
+   floor, above the caption bar and above the VS splash (z-index 6 against 5), so it can be
+   read from the round break through to the bell. */
+.pb-canvas-host ::deep .pb-corner {
+    position: absolute;
+    left: 50%;
+    bottom: calc(5% + 3.4rem);
+    transform: translate(-50%, 8px);
+    display: grid;
+    gap: 2px;
+    width: max-content;
+    max-width: min(92%, 40rem);
+    padding: 0.55rem 0.95rem 0.6rem;
+    border-radius: 0.6rem;
+    border-left: 4px solid var(--pb-gold);
+    background: rgba(8, 10, 20, 0.94);
+    color: var(--pb-ink);
+    text-align: left;
+    pointer-events: none;
+    opacity: 0;
+    visibility: hidden;
+    transition: opacity 0.25s ease-out, transform 0.25s ease-out, visibility 0s linear 0.25s;
+    z-index: 6;
+}
+
+.pb-canvas-host ::deep .pb-corner--on {
+    opacity: 1;
+    visibility: visible;
+    transform: translate(-50%, 0);
+    transition: opacity 0.25s ease-out, transform 0.25s ease-out;
+}
+
+.pb-canvas-host ::deep .pb-corner__tag {
+    font-family: var(--pb-display);
+    font-size: 0.75rem;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+    color: var(--pb-gold);
+}
+
+.pb-canvas-host ::deep .pb-corner__line {
+    font-size: clamp(0.9rem, 2vw, 1.1rem);
+    line-height: 1.35;
+}
+
+@media (prefers-reduced-motion: reduce) {
+    .pb-canvas-host ::deep .pb-corner,
+    .pb-canvas-host ::deep .pb-corner--on {
+        transition: none;
+        transform: translate(-50%, 0);
+    }
+}
+
+/* Clear the thumb pad, like the caption under it. */
+@media (hover: none) and (pointer: coarse) {
+    .pb-canvas-host ::deep .pb-corner {
+        bottom: calc(var(--pb-pad-h, 0px) + 3.6rem);
+    }
+}
+
+/* ── Recap: the damage map (where each corner was hurt) ──
+   The modal is outside .pb-wrap, so app tokens. One hue, pale to full, by each part's share of
+   that fighter's damage; the health lost is written beside it, so colour is never the only cue. */
+.pb-dm {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 8px;
+    padding: 6px 0;
+}
+
+.pb-dm-fig {
+    margin: 0;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    min-width: 0;
+}
+
+.pb-dm-fig--p2 {
+    flex-direction: row-reverse;
+    text-align: right;
+}
+
+.pb-dm-body {
+    flex: 0 0 auto;
+    width: 50px;
+    height: 80px;
+}
+
+.pb-dm-body circle,
+.pb-dm-body rect {
+    stroke: var(--color-border);
+    stroke-width: 1;
+    fill: color-mix(in srgb, var(--po-danger) calc(var(--share, 0) * 1%), var(--surface-2));
+}
+
+.pb-dm-fig figcaption {
+    display: grid;
+    gap: 1px;
+    min-width: 0;
+    font-size: var(--text-sm);
+    color: var(--color-text-secondary);
+}
+
+.pb-dm-who {
+    font-weight: 700;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.pb-dm-fig--p1 .pb-dm-who {
+    color: var(--po-success);
+}
+
+.pb-dm-fig--p2 .pb-dm-who {
+    color: var(--po-danger);
+}
+
+.pb-dm-nums b {
+    color: var(--color-text-primary);
+    font-variant-numeric: tabular-nums;
+}
+
+/* The poster note under the result: words only, never a control. */
+.pb-result-keep {
+    font-size: 0.8rem;
+}

@@ -27,6 +27,8 @@ public sealed record AchievementFacts
     public int BrawlRung { get; init; }
     /// <summary>Full Brawl ladder clears.</summary>
     public int BrawlClears { get; init; }
+    /// <summary>Brawl feats earned at least once (ids from <c>PoBrawlFeats</c>).</summary>
+    public IReadOnlySet<string> BrawlFeats { get; init; } = new HashSet<string>();
     /// <summary>Sessions of the two simulations (Ecosystem, Sand Playground).</summary>
     public int SimSessions { get; init; }
     /// <summary>The player's best rank on any all-time leaderboard seen this visit.</summary>
@@ -41,7 +43,7 @@ public sealed record Achievement(string Id, string Icon, string Title, string Hi
 /// <summary>
 /// A small on-device achievements layer. Nothing new is tracked for it: every rule reads
 /// numbers the games already keep (local W/L records and ratings, session counts, the
-/// the Brawl ladder), plus two facts pages report when they have them
+/// the Brawl ladder and the Brawl feats), plus two facts pages report when they have them
 /// (a leaderboard rank, online wins). An unlock is sticky and lives in localStorage
 /// <c>pominigames:achievements</c>, so it outlives the stat that earned it.
 /// </summary>
@@ -79,6 +81,9 @@ public sealed class AchievementService : IDisposable
         new("number-one", "👑", "Number one", "Top any leaderboard", f => f.BestBoardRank is 1),
         new("online-victor", "🌐", "Online victor", "Win an online match", f => f.OnlineWins >= 1),
         new("nature-watcher", "🌿", "Nature watcher", "Watch the Ecosystem or Sand Playground", f => f.SimSessions >= 1),
+        // One badge per Brawl feat (how you fought, where the two above are how far you got).
+        .. PoMiniGamesClient.Features.PoBrawl.PoBrawlFeats.All.Select(feat =>
+            new Achievement($"brawl-{feat.Id}", feat.Icon, feat.Title, feat.Hint, f => f.BrawlFeats.Contains(feat.Id))),
     ];
 
     private readonly GameStatsService _stats;
@@ -218,6 +223,7 @@ public sealed class AchievementService : IDisposable
             DayStreak = _dayStreak,
             BrawlRung = brawl.Rung,
             BrawlClears = brawl.Clears,
+            BrawlFeats = PoMiniGamesClient.Features.PoBrawl.PoBrawlProgressBook.LoadFeats(name).Keys.ToHashSet(StringComparer.Ordinal),
             SimSessions = simSessions,
             BestBoardRank = _bestBoardRank,
             OnlineWins = _onlineWins,

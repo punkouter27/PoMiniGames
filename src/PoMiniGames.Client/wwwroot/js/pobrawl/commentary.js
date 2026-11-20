@@ -6,8 +6,8 @@
 // Text only: there is no spoken commentary.
 //
 // Commentary: template lines on fight events — a long combo, a monster hit, a perfect guard,
-// a counter, a knockdown, a fighter in the red, a comeback, the last ten seconds, a trip into
-// the crates.
+// a counter, a knockdown, a throw, a taunt, a fighter in the red, a comeback, the last ten
+// seconds, a trip into the crates.
 // Deliberately not a model call: it fires many times a fight, and the one AI line a fight gets
 // is the pre-fight ring introduction (PoBrawlPage → /api/pobrawl/intro). Paced so lines never
 // pile up: one at most every MIN_GAP seconds and a cooldown per kind.
@@ -55,6 +55,16 @@ const LINES = {
     '{B} is down! {A} put them on the canvas!',
     'Down goes {B}! Can they beat the count?',
     '{A} drops {B} — now watch the get-up!',
+  ],
+  grab: [
+    '{A} grabs hold and throws {B} across the ring!',
+    'No guard stops that! {A} tosses {B}!',
+    '{B} goes flying! {A} got both hands on them!',
+  ],
+  taunt: [
+    '{A} is showing off, and the crowd loves it!',
+    '{A} plays to the cheap seats! Somebody stop this!',
+    'Look at {A}, taking a bow in the middle of a fight!',
   ],
   crate: [
     '{A} goes into the crates!',

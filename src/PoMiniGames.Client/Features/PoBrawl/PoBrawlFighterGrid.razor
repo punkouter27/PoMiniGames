@@ -1,12 +1,14 @@
 @using PoBrawlFighter = PoMiniGames.Domain.Primitives.PoBrawlFighter
 
-@* The 2P select's fighter grid: two players at one keyboard pick from these glass tiles, each
-   corner marked on its tile. The empty .pb-select-portrait spans are where selectStage.js
-   paints each president's live rig when the host mounts it; without the stage
-   (data-stage="off" on the .pb-select around this grid, or the low tier) they collapse and
-   the tiles stay plain glass buttons.
+@* The fighter grid: glass tiles to pick from, each chosen one marked on its tile.
+   2P select: two players at one keyboard, a mark per corner. The empty .pb-select-portrait
+   spans are where selectStage.js paints each president's live rig when the host mounts it;
+   without the stage (data-stage="off" on the .pb-select around this grid, or the low tier)
+   they collapse and the tiles stay plain glass buttons.
+   Online lobby: one player, one mark ("You"), and a face on every tile (Face) so the pick is
+   by sight, not from a list of surnames.
    Styles: PoBrawlPage.razor.css (.pb-select-*); this component shares that CSS scope. *@
-<ul class="pb-select-grid" role="radiogroup" aria-label="Fighters">
+<ul class="pb-select-grid @(Face is not null ? "pb-select-grid--faces" : "")" role="radiogroup" aria-label="Fighters">
     @for (var i = 0; i < Fighters.Count; i++)
     {
         var idx = i;
@@ -18,13 +20,27 @@
                     role="radio"
                     aria-checked="@(p1 || p2 ? "true" : "false")"
                     class="pb-select-tile @(p1 ? "pb-select-tile--p1" : "") @(p2 ? "pb-select-tile--p2" : "")"
-                    aria-label="@(f.Name + (p1 ? ", Player 1" : "") + (p2 ? ", Player 2" : ""))"
+                    aria-label="@(f.Name + (p1 ? $", {P1Name}" : "") + (p2 ? ", Player 2" : ""))"
+                    disabled="@Disabled"
                     @onclick="() => OnPick.InvokeAsync(idx)">
                 <span class="pb-select-portrait" aria-hidden="true" data-fighter="@f.Id" data-index="@idx"></span>
+                @if (Face is not null)
+                {
+                    @* The initial sits under the photo, so a face that is missing or fails to
+                       load leaves a lettered disc, never a broken image. *@
+                    <span class="pb-select-face" aria-hidden="true">
+                        <span>@f.Name[..1]</span>
+                        @if (Face(f.Id) is { Length: > 0 } src && !_failed.Contains(f.Id))
+                        {
+                            <img src="@src" alt="" loading="lazy" decoding="async" referrerpolicy="no-referrer"
+                                 @onerror="() => _failed.Add(f.Id)" />
+                        }
+                    </span>
+                }
                 <span class="pb-select-name">@f.Name</span>
                 @if (p1)
                 {
-                    <span class="pb-select-mark pb-select-mark--p1" aria-hidden="true">P1</span>
+                    <span class="pb-select-mark pb-select-mark--p1" aria-hidden="true">@P1Label</span>
                 }
                 @if (p2)
                 {
@@ -42,4 +58,13 @@
     /// <summary>The right (red) corner's tile, or -1.</summary>
     [Parameter] public int P2Index { get; set; } = -1;
     [Parameter] public EventCallback<int> OnPick { get; set; }
+
+    /// <summary>The green mark's text and how a screen reader names it; the online lobby says "You".</summary>
+    [Parameter] public string P1Label { get; set; } = "P1";
+    [Parameter] public string P1Name { get; set; } = "Player 1";
+    /// <summary>A portrait URL per fighter id (null when there is none). Null draws no faces at all.</summary>
+    [Parameter] public Func<string, string?>? Face { get; set; }
+    [Parameter] public bool Disabled { get; set; }
+
+    private readonly HashSet<string> _failed = [];
 }

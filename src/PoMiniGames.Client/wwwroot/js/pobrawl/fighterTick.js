@@ -1,7 +1,8 @@
 // fighterTick.js — one fighter's turn in the sim: what the AI is told about the
 // fight (_aiContext), the per-fighter state machine (_tickFighter: movement,
 // energy, idle / charge / block / swing / hitstun / down / getup), and the two
-// transitions into a strike (_enterCharge, _enterAttack).
+// transitions into a strike (_enterCharge, _enterAttack), the grab's start (_enterGrab; its
+// landing is hitResolution.js _tryGrab) and the taunt (_canTaunt, _enterTaunt, _finishTaunt).
 //
 // Mixed into BrawlGame's prototype like the other subsystems (see mixin.js), so
 // `this` is the live game. The rules it applies are pure and live beside it:
@@ -13,7 +14,7 @@ import { RING_HALF } from './arena.js';
 import { AiController } from './ai.js';
 import { regionEffect, pickPunchArm } from './combat.js';
 import { PERSONALITIES } from './personalities.js';
-import { MAX_HP, ATTACKS, TIME_LIMIT, HITSTUN } from './constants.js';
+import { MAX_HP, ATTACKS, TIME_LIMIT, HITSTUN, GRAB, TAUNT } from './constants.js';
 import { tickEnergy, drainCharge, paySwing, canAttack, chargeMultiplier } from './energy.js';
 import { KNOCKDOWN, COUNT, decayDaze, shouldRise, getUpChoice, isFloored, beatsCount } from './knockdown.js';
 
@@ -127,6 +128,13 @@ class FighterTickMethods {
       // up it — so this is the AI's cue to load a full coil (ai.js `punishGas`)
       // and ask the player whether they have learned to block yet.
       opponentExhausted: !!opp.gassed,
+      // The grab and the taunt (constants.js GRAB / TAUNT). `grabReach` is absent online,
+      // where neither exists; ai.js reads a missing value as: not in this fight.
+      grabReach: this.online ? undefined : GRAB.reach * (f.rig.config.heightScale || 1),
+      opponentGrabbing: opp.state === 'grab',
+      opponentTaunting: opp.state === 'taunt',
+      opponentTauntLeft: opp.state === 'taunt' ? Math.max(0, TAUNT.secs - opp.stateT) : 0,
+      canTaunt: this._canTaunt(f, opp),
     };
   }
 
@@ -149,7 +157,10 @@ class FighterTickMethods {
       && this.t < f.personality._bigGuyLockUntil);
     const effect = regionEffect(f.regionDmg);
     // Bruised ribs breathe slower: torso damage scales every regen (energy.js).
-    if (tickEnergy(f, dt, { regenMul: effect.regenMul, locked: bigGuyLocked })) this.hudDirty = true;
+    if (tickEnergy(f, dt, { regenMul: effect.regenMul, locked: bigGuyLocked })) {
+      this.hudDirty = true;
+      if (f.gassed) f.stats.gassed += 1;
+    }
     // Daze drains while nobody is hitting you (knockdown.js).
     if (f.daze > 0) f.daze = decayDaze(f.daze, dt);
     const pos = f.rig.root.position;
@@ -165,7 +176,8 @@ class FighterTickMethods {
     // On the canvas or rising: no steering (a get-up roll is an impulse, see _getUp).
     const incapacitated = f.state === 'ko' || isFloored(f.state);
     // Charging roots the fighter — all the weight is loaded into the coil.
-    const rooted = f.state === 'charge';
+    // So do a grab (it commits to the reach) and a taunt (that is the risk of it).
+    const rooted = f.state === 'charge' || f.state === 'grab' || f.state === 'taunt';
     const canSteer = !incapacitated && !rooted;
 
     // Unit vector toward the opponent. Hoisted out of the move branch below
@@ -230,6 +242,11 @@ class FighterTickMethods {
     pos.x += (f.vel.x + f.knockback.x) * dt;
     pos.z += (f.vel.z + f.knockback.z) * dt;
 
+    // ── Taunt ────────────────────────────────────────────────────────
+    // Block tapped twice (input.js) or the CPU showing off (ai.js). Only from a standing
+    // fighter with the opponent out of strike range: see _canTaunt.
+    if (intent.taunt && this._canTaunt(f, opp)) this._enterTaunt(f);
+
     // ── State machine ────────────────────────────────────────────────
     switch (f.state) {
       case 'idle': {
@@ -240,6 +257,11 @@ class FighterTickMethods {
         // only kick. Kick input still works with no arms.
         // The energy gate sits ahead of both: a gassed fighter throws nothing.
         const hasEnergy = this._canAttack(f);
+        // Both buttons on the same tick: the grab (constants.js GRAB). It needs a hand.
+        if (intent.punch && intent.kick && hasEnergy && this._canGrab(f)) {
+          this._enterGrab(f, intent);
+          break;
+        }
         const canPunch = intent.punch && hasEnergy && this._canPunch(f);
         if (canPunch || (intent.kick && hasEnergy)) {
           const name = canPunch ? 'punch' : 'kick';
@@ -267,6 +289,14 @@ class FighterTickMethods {
         // CHARGE_TIME; you can hold at max forever). Release throws the
         // attack scaled by the stored charge.
         const held = f.chargeName === 'punch' ? intent.punchHeld : intent.kickHeld;
+        // Two fingers never land on the same tick: the other button inside GRAB.chord of
+        // the first turns the coil that just started into the grab.
+        const other = f.chargeName === 'punch' ? intent.kick : intent.punch;
+        if (other && f.stateT <= GRAB.chord && this._canGrab(f)) {
+          f.animator.setCharge(null, 0);
+          this._enterGrab(f, intent);
+          break;
+        }
         // Holding POURS the pool into the strike: the bar
         // drains at the same rate the coil loads, so a fighter watching their
         // own energy bar can see exactly what the swing is costing them, and a
@@ -334,6 +364,24 @@ class FighterTickMethods {
         }
         break;
       }
+      case 'grab': {
+        // Reach, hold, recover. The landing is hitResolution.js _tryGrab, queued with this
+        // tick's strikes so a swing thrown on the same frame beats it.
+        const inActive = f.stateT >= GRAB.windup && f.stateT <= GRAB.windup + GRAB.active;
+        if (inActive && !f.hasHit) {
+          if (this._pendingHits) this._pendingHits.push([f, opp, GRAB]);
+          else this._tryGrab(f, opp);
+        }
+        // Grabbing air leaves the long recovery; a throw that landed is over sooner.
+        if (f.stateT >= GRAB.windup + GRAB.active + (f.grabHit ? GRAB.recover : GRAB.whiff)) {
+          f.state = 'idle'; f.stateT = 0;
+        }
+        break;
+      }
+      case 'taunt': {
+        if (f.stateT >= TAUNT.secs) this._finishTaunt(f, opp);
+        break;
+      }
       case 'hitstun': {
         // hitstunBonus: a rattled head stuns longer (hitResolution.js _landHit).
         if (f.stateT >= HITSTUN + (f.hitstunBonus || 0)) f.state = 'idle';
@@ -371,7 +419,7 @@ class FighterTickMethods {
           f.guardAt = this.t;
           f.animator.setBlocking(true);
         } else if (strike && this._canAttack(f) && (strike === 'kick' || this._canPunch(f))) {
-          this._enterCharge(f, strike);
+          this._enterCharge(f, strike, true);
         }
         break;
       }
@@ -381,11 +429,13 @@ class FighterTickMethods {
   // Start winding an attack up. The fighter is rooted until the button is
   // released (see the 'charge' case in _tickFighter), then _enterAttack
   // throws the strike scaled by the stored charge.
-  _enterCharge(f, name) {
+  // `wake` marks a strike pressed on the way up off the canvas (the wake-up KO feat).
+  _enterCharge(f, name, wake = false) {
     this.haptics?.chargeEnd(f);
     f.state = 'charge';
     f.stateT = 0;
     f.chargeName = name;
+    f.wakeSwing = wake;
     // Coil starts EMPTY and is filled out of the energy bar while the button is
     // held (see the 'charge' case) — except inside Biden's "THE BIG GUY" lock,
     // whose whole payload is a guaranteed full-power strike: resetting it here
@@ -451,8 +501,11 @@ class FighterTickMethods {
     // half a kick's, which is what makes it the tempo move. Blocking and
     // standing are what refill the bar — see energy.js and the regen
     // in _tickFighter.
-    paySwing(f, f.attack.energyMul ?? 1);
-    this.hudDirty = true;
+    this._paySwing(f, f.attack.energyMul ?? 1);
+    // Scorecard: a strike thrown (rounds.js blankStats).
+    f.stats.thrown += 1;
+    if (name === 'kick') f.stats.kicks += 1;
+    if (chargeAmt >= 0.5) f.stats.coils += 1;
     // Head or body: half of all punches go up at the face (animation.js punchHigh), the
     // rest at the chest. Decided on the match RNG, so a replay throws the same punch.
     // Online the server rules on hits, so the picture keeps to the plain punch.
@@ -529,6 +582,103 @@ class FighterTickMethods {
         f.knockback.add(dir.multiplyScalar(lunge));
       }
     }
+  }
+
+  /** The swing toll (energy.js paySwing), counting the times it runs the bar dry. */
+  _paySwing(f, energyMul) {
+    const was = f.gassed;
+    paySwing(f, energyMul);
+    if (f.gassed && !was) f.stats.gassed += 1;
+    this.hudDirty = true;
+  }
+
+  // ── The grab (constants.js GRAB) ──────────────────────────────────────────
+
+  /** A grab needs a hand, and exists only where this engine rules on hits (not online). */
+  _canGrab(f) {
+    return !this.online && this._canPunch(f);
+  }
+
+  /**
+   * Reach for the opponent. Away held as it starts is the back throw: they go over the hip
+   * and land behind the thrower, toward whatever was at the thrower's own back.
+   */
+  _enterGrab(f, intent) {
+    this.haptics?.chargeEnd(f);
+    f.state = 'grab';
+    f.stateT = 0;
+    f.hasHit = false;
+    f.grabHit = false;
+    // A human holds away; the CPU says so outright (its `move` passes through the ring check).
+    f.grabBack = intent?.grabBack ?? (intent?.move || 0) < 0;
+    f.attack = null;
+    f.chargeName = null;
+    f.chargeAmt = 0;
+    f.wakeSwing = false;
+    f.animator.setBlocking(false);
+    f.animator.setCharge(null, 0);
+    f.animator.play('grab');
+    this._paySwing(f, GRAB.energyMul);
+    f.stats.thrown += 1;
+    this.audio.whoosh();
+    // A half-step in: the reach is short on purpose, the lunge is not what closes it.
+    const opp = this.fighters.find((o) => o !== f);
+    if (opp) {
+      const dir = new THREE.Vector3().subVectors(opp.rig.root.position, f.rig.root.position);
+      dir.y = 0;
+      if (dir.lengthSq() > 1e-6) f.knockback.add(dir.normalize().multiplyScalar(1.4));
+    }
+  }
+
+  // ── The taunt (constants.js TAUNT) ────────────────────────────────────────
+
+  /**
+   * May `f` taunt right now? Standing (idle or guarding), not frozen, off cooldown, and the
+   * opponent on their feet but out of strike range: showing off over a floored fighter
+   * would be free, and the point is that it is not.
+   */
+  _canTaunt(f, opp) {
+    if (this.online || this.phase !== 'fighting') return false;
+    if (f.state !== 'idle' && f.state !== 'block') return false;
+    if (f.blockStunT > 0 || this.t < (f.tauntCdUntil ?? -99)) return false;
+    if (!opp || opp.state === 'ko' || isFloored(opp.state)) return false;
+    const dist = f.rig.root.position.distanceTo(opp.rig.root.position);
+    return dist > ATTACKS.kick.reach * opp.rig.config.heightScale + 0.3 + TAUNT.clear;
+  }
+
+  /** Start the gesture: TAUNT.secs with no guard, no steps and no swing. */
+  _enterTaunt(f) {
+    this.haptics?.chargeEnd(f);
+    f.state = 'taunt';
+    f.stateT = 0;
+    f.tauntCdUntil = this.t + TAUNT.cooldown;
+    f.attack = null;
+    f.animator.setBlocking(false);
+    f.animator.setCharge(null, 0);
+    f.animator.play(f.entranceKey);
+    this.audio.crowdSwell(0.35);
+    this._show('taunt', { f });
+  }
+
+  /** The gesture finished untouched: the bar is back, the meter jumps, the hall roars. */
+  _finishTaunt(f, opp) {
+    f.state = 'idle';
+    f.stateT = 0;
+    f.stats.taunts += 1;
+    f.energy = 1;
+    f.gassed = false;
+    // _tickSuperMeter zeroes this again for a fighter with no signature move (BOB).
+    if (f.personality) {
+      f.personality.superMeter = Math.min(1, (f.personality.superMeter || 0) + TAUNT.meter);
+    }
+    const p = f.rig.root.position;
+    this._spawnCallout(new THREE.Vector3(p.x, 1.9, p.z), 'SHOWBOAT!');
+    this._commentate('taunt', f, opp);
+    this.audio.crowdSwell(0.9);
+    this.excited = Math.max(this.excited, 0.9);
+    this._pressBurst(4);
+    this._show('tauntDone', { f });
+    this.hudDirty = true;
   }
 
   // The CPU's circling axis: the line between the fighters turned 90° (left of

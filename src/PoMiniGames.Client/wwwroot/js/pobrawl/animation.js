@@ -114,6 +114,30 @@ function mirrorPose(pose) {
   }
   return out;
 }
+// The grab (constants.js GRAB: 0.10 reach, 0.08 hold, then the whiff recovery). Both arms go
+// out at chest height and close; grabbing air, they hang there while the guard comes back.
+TRACKS.grab = [
+  [{ torso: { x: 0.2, y: 0.05, z: 0 }, head: { x: 0.05, y: 0, z: 0 },
+     shoulderL: { x: -1.3, y: 0, z: 0.42 }, shoulderR: { x: -1.35, y: 0, z: -0.42 },
+     elbowL: { x: -0.35, y: 0, z: 0 }, elbowR: { x: -0.35, y: 0, z: 0 } }, 0.10, { k: 34 }],
+  [{ torso: { x: 0.28, y: 0.05, z: 0 }, head: { x: 0.08, y: 0, z: 0 },
+     shoulderL: { x: -1.4, y: 0, z: 0.12 }, shoulderR: { x: -1.45, y: 0, z: -0.12 },
+     elbowL: { x: -0.95, y: 0, z: 0 }, elbowR: { x: -0.95, y: 0, z: 0 } }, 0.10, { k: 40 }],
+  [{ torso: { x: 0.18, y: 0.05, z: 0 },
+     shoulderL: { x: -1.0, y: 0, z: 0.3 }, shoulderR: { x: -1.05, y: 0, z: -0.3 },
+     elbowL: { x: -0.9, y: 0, z: 0 }, elbowR: { x: -0.9, y: 0, z: 0 } }, 0.2, { k: 9 }],
+  [GUARD, 0.23, { k: 8 }],
+];
+// The throw, played from the moment a grab takes hold: the hips turn and the arms sling across.
+TRACKS.throw = [
+  [{ torso: { x: 0.12, y: -1.0, z: 0.08 }, head: { x: 0, y: 0.35, z: 0 },
+     shoulderL: { x: -1.25, y: 0, z: 0.7 }, shoulderR: { x: -0.85, y: 0, z: -0.95 },
+     elbowL: { x: -0.5, y: 0, z: 0 }, elbowR: { x: -0.35, y: 0, z: 0 } }, 0.12, { k: 44, overshoot: 1.12 }],
+  [{ torso: { x: 0.06, y: -0.4, z: 0 },
+     shoulderL: { x: -0.9, y: 0, z: 0.4 }, shoulderR: { x: -0.8, y: 0, z: -0.5 } }, 0.08, { k: 14 }],
+  [GUARD, 0.2, { k: 9 }],
+];
+
 TRACKS.punchL = TRACKS.punch.map(([pose, dur, opts]) => [mirrorPose(pose), dur, opts]);
 
 // A punch at the head: the same cross with the arm driven up through the strike instead of

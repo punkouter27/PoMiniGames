@@ -195,6 +195,14 @@
    another component's markup. */
 
 
+/* Phones: the fixed BottomNav (3.25rem) is on every page, so the toast stack sits above it,
+   not over its three links. */
+@media (max-width: 768px) {
+    .toast-stack {
+        bottom: calc(3.25rem + var(--space-3) + env(safe-area-inset-bottom, 0px));
+    }
+}
+
 /* Phones: clear the fixed BottomNav (3.25rem) and the .po-version stamp lifted above it. */
 @media (max-width: 768px) {
     .gl-content {

@@ -157,12 +157,7 @@ public sealed class PoBrawlNetSession : IAsyncDisposable
     /// so the part after the last marker is the server's text. Any other failure (transport, a
     /// non-HubException) gets the fallback.
     /// </summary>
-    internal static string HubMessage(Exception ex, string fallback)
-    {
-        const string marker = "HubException: ";
-        var i = ex.Message.LastIndexOf(marker, StringComparison.Ordinal);
-        return i >= 0 ? ex.Message[(i + marker.Length)..] : fallback;
-    }
+    internal static string HubMessage(Exception ex, string fallback) => HubErrors.Reason(ex) ?? fallback;
 
     public async ValueTask DisposeAsync()
     {

@@ -15,8 +15,8 @@ namespace PoMiniGames.Shared.Games;
 /// <summary>
 /// One input event a client sends on every input change: the corner's HELD state (Idle,
 /// MoveForward, MoveBack or Block — it persists until the next event, so the client sends one on
-/// key-up too) and, optionally, an attack PRESS (Punch, Kick or Special, buffered one deep behind
-/// the cooldown).
+/// key-up too) and, optionally, a PRESS (Punch, Kick, Special, Grab or Taunt, buffered one deep
+/// behind the cooldown).
 /// </summary>
 /// <remarks>
 /// <para>
@@ -37,7 +37,7 @@ public sealed class PoBrawlMatchInput
     public long Frame { get; set; }
     /// <summary>The held state from this frame on: Idle, MoveForward, MoveBack or Block.</summary>
     public PoBrawlMatchAction Held { get; set; }
-    /// <summary>An attack pressed on this frame (Punch, Kick, Special), or Idle for none.</summary>
+    /// <summary>What was pressed on this frame (Punch, Kick, Special, Grab, Taunt), or Idle for none.</summary>
     public PoBrawlMatchAction Press { get; set; }
     /// <summary>Per-connection sequence number. The server drops one that is not newer, and echoes it back.</summary>
     public long Sequence { get; set; }
@@ -87,6 +87,10 @@ public enum PoBrawlMatchAction
     Kick = 5,
     /// <summary>Special. Needs and spends a full energy bar; unblockable.</summary>
     Special = 6,
+    /// <summary>Grab (a press). Goes through a guard and throws; any strike beats it; never the knockout.</summary>
+    Grab = 7,
+    /// <summary>Taunt (a press). Only taken out of strike range: about a second wide open, then energy.</summary>
+    Taunt = 8,
 }
 
 /// <summary>

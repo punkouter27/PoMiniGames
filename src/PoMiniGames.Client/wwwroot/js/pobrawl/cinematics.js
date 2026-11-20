@@ -8,10 +8,15 @@ import { RING_HALF } from './arena.js';
 import { setExpression } from './fighters.js';
 import { REGIONS } from './combat.js';
 import { recordRound, matchVerdict, wouldDecide, firstRoundKo, ROUNDS_TO_WIN } from './rounds.js';
-import { TIME_LIMIT } from './constants.js';
+import { TIME_LIMIT, MAX_HP } from './constants.js';
+import { roundFeats } from './feats.js';
+import { cornerAdvice } from './corner.js';
+import { PERSONALITIES } from './personalities.js';
 import { clearSightline, ringPosts } from './sightline.js';
 
 const _koHead = new THREE.Vector3();
+// A scorecard's damage map in the order the page draws it.
+const takenOf = (st) => ['head', 'torso', 'arms', 'legs'].map((r) => Math.round(st.taken?.[r] || 0));
 // The corner posts, padded out to their turnbuckles: what the fight camera steers round.
 const POSTS = ringPosts();
 
@@ -165,6 +170,8 @@ class CinematicsMethods {
    * set `this.winner` to the MATCH winner.
    */
   _roundOver(winner) {
+    // Before anything respawns: the feats are read off this round's scorecards.
+    this._collectFeats(winner);
     const m = this.match;
     if (!m) return false;
     recordRound(m, winner, this.fighters.map((f) => f.stats),
@@ -180,9 +187,64 @@ class CinematicsMethods {
     this._setBanner(name ? `ROUND ${m.played} · ${name}` : `ROUND ${m.played} · DRAW`);
     this._caption(name ? `Round ${m.played} to ${this.fighters[winner - 1].rig.config.name}.`
       : `Round ${m.played} is too close to call.`);
+    this._cornerSay(winner);
     // Hold the normal framing on the round's winner, as the result does.
     this._setCameraMode('normal', { force: true });
     return true;
+  }
+
+  // ── Feats and the corner (feats.js, corner.js) ────────────────────────────
+
+  /**
+   * Every round end, every mode: add what each corner just earned to the match's feats. They
+   * are reported once, with the result (_reportResult). The training room earns nothing.
+   */
+  _collectFeats(winner) {
+    if (!this._matchFeats || this.training || !this.fighters) return;
+    const ko = this.fighters.some((f) => f.state === 'ko');
+    this.fighters.forEach((f, i) => {
+      const earned = roundFeats({
+        won: winner === i + 1, ko, secs: this.clock, hp: this._hp(f), maxHp: MAX_HP,
+        me: f.stats, opp: this.fighters[1 - i].stats,
+      });
+      for (const id of earned) this._matchFeats[i].add(id);
+    });
+  }
+
+  /**
+   * Between rounds on the 1P ladder: one line from the player's corner about the round that
+   * just ended (corner.js). It stays up through the break and the count and goes at the bell.
+   * The page hears it too (OnCornerAdvice) so its live region can say it.
+   */
+  _cornerSay(winner) {
+    if (this.options?.mode !== '1p' || this.training || !this.match) return;
+    const [me, opp] = this.fighters;
+    const line = cornerAdvice({
+      me: me.stats, opp: opp.stats, won: winner === 1,
+      oppName: opp.rig.config.name, phrases: PERSONALITIES[opp.charId]?.aiPatterns,
+    });
+    if (!line) return;
+    if (!this._cornerEl) {
+      const el = document.createElement('div');
+      el.className = 'pb-corner';
+      // The host is one image to a screen reader; the page announces the line instead.
+      el.setAttribute('aria-hidden', 'true');
+      el.innerHTML = '<span class="pb-corner__tag">Your corner</span><span class="pb-corner__line"></span>';
+      this.container.appendChild(el);
+      this._cornerEl = el;
+    }
+    this._cornerEl.querySelector('.pb-corner__line').textContent = line;
+    this._cornerEl.classList.add('pb-corner--on');
+    this._cornerLine = line;
+    try {
+      this.dotnet?.invokeMethodAsync('OnCornerAdvice', line).catch(() => {});
+    } catch { /* the page's reference is already disposed */ }
+  }
+
+  /** The bell, or a new bout: the corner has had its say. */
+  _hideCorner() {
+    this._cornerEl?.classList.remove('pb-corner--on');
+    this._cornerLine = null;
   }
 
   /** The round break is over: both fighters back fresh, the score kept. */
@@ -279,6 +341,18 @@ class CinematicsMethods {
         // Best of three: rounds each corner took (0 in the one-round modes).
         p1Rounds: this.match ? this.match.wins[0] : 0,
         p2Rounds: this.match ? this.match.wins[1] : 0,
+        // Punch stats (rounds.js blankStats): strikes started, guards timed on the wind-up,
+        // knockdowns scored, grabs landed.
+        p1Thrown: st[0].thrown, p2Thrown: st[1].thrown,
+        p1Perfects: st[0].perfects, p2Perfects: st[1].perfects,
+        p1Knockdowns: st[0].knockdowns, p2Knockdowns: st[1].knockdowns,
+        p1Grabs: st[0].grabs, p2Grabs: st[1].grabs,
+        // The damage map: health each corner LOST, as [head, torso, arms, legs].
+        p1Taken: takenOf(st[0]), p2Taken: takenOf(st[1]),
+        // Feat ids each corner earned this match (feats.js).
+        p1Feats: [...(this._matchFeats?.[0] || [])], p2Feats: [...(this._matchFeats?.[1] || [])],
+        // A poster of this fight is waiting on Brawl HQ (keepsake.js).
+        poster: !!this._ksActive,
       }).catch(() => {});
     }
     this._show('result', { winner: this.winner, ko: this.fighters.some((f) => f.state === 'ko') });

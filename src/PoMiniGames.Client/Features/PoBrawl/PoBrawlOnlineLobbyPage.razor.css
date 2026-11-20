@@ -3,7 +3,7 @@
     display: contents;
 }
 
-/* ── Compact card: a 1v1 room has two seats and one pick, so it needs no full-width slab ── */
+/* ── Compact card: a 1v1 room has two seats and one button, so it needs no full-width slab ── */
 .pbl-room ::deep .sp-page {
     max-width: 36rem;
     padding-block: 1rem;
@@ -13,15 +13,15 @@
     padding: 1rem 1.25rem;
 }
 
-/* The card is one wrapping row: the heading line and the side cards take a line each, and
-   Leave / Invite / Dossiers / How to play share the last one. The picker section and its
-   .pb-lobby token wrapper are flattened so the Dossiers disclosure is an item of that row;
-   `order` puts it after the shared panel's buttons. An open disclosure takes a line. */
+/* The card is one wrapping column of full-width rows: the sentence, the two seats, the
+   fighter grid or a dossier when one is open, then Ready and Leave with How to play beside
+   them. The picker section and its .pb-lobby token wrapper are flattened so each of those is
+   an item of the card. */
 .pbl-room ::deep .lobby {
     display: flex;
     flex-wrap: wrap;
     align-items: center;
-    gap: 0.6rem 0.75rem;
+    gap: 0.75rem;
 }
 
 .pbl-room ::deep .lobby__section {
@@ -34,37 +34,71 @@
     display: contents;
 }
 
-.pbl-room .pb-select {
+.pbl-room .pb-select,
+.pbl-room .pbl-pick,
+.pbl-room .pbl-dossier {
     flex: 1 1 100%;
 }
 
-.pbl-room .pbl-seat-lost {
-    flex: 1 1 100%;
+/* ── The sentence: what the room is waiting on, and what to press ── */
+.pbl-room ::deep .lobby__section:first-child {
     display: flex;
     flex-wrap: wrap;
     align-items: center;
-    justify-content: space-between;
-    gap: 0.5rem 0.75rem;
-    padding: 0.6rem 0.75rem;
-    border-radius: var(--radius-md);
-    border: 1px solid var(--color-border);
-    background: var(--color-surface-elevated);
-    color: var(--color-text-secondary);
-    font-size: var(--text-sm);
+    gap: 0.4rem 0.6rem;
 }
 
-.pbl-room .pbl-seat-lost p {
-    margin: 0;
+.pbl-room ::deep .lobby__section:first-child > .lobby__head {
+    display: contents;
+}
+
+.pbl-room ::deep .lobby__say {
     flex: 1 1 14rem;
+    font-family: var(--font-display);
+    font-size: 1.15rem;
+    line-height: 1.3;
+    letter-spacing: 0;
+    text-transform: none;
+    text-wrap: balance;
+    color: var(--color-text-primary);
 }
 
+/* The hub pill only shows while the connection is not healthy. */
+.pbl-room ::deep .lobby__section:first-child .conn-strip {
+    margin-left: auto;
+}
+
+.pbl-room ::deep .lobby__section:first-child > .lobby__status,
+.pbl-room ::deep .lobby__section:first-child > .app-loading {
+    flex-basis: 100%;
+    margin: 0;
+}
+
+/* The two seat cards are the roster here (name, pick, ready), so the shared list of seats
+   would only say it twice. */
+.pbl-room ::deep .lobby__list,
+.pbl-room ::deep .lobby__empty {
+    display: none;
+}
+
+/* ── Ready is the one big button; Leave sits beside it, How to play at the row's end ── */
 .pbl-room ::deep .lobby__actions {
     order: 1;
+    flex: 1 1 16rem;
 }
 
-.pbl-room .pb-dossier-disclosure {
-    order: 2;
-    margin: 0 0 0 auto;
+.pbl-room ::deep .lobby__ready {
+    flex: 1 1 9rem;
+    min-height: 48px;
+    font-size: 1.05rem;
+}
+
+/* Ready given: the button is now the way back out of it, so it stops shouting. */
+.pbl-room ::deep .lobby__ready[aria-pressed="true"] {
+    background: transparent;
+    color: var(--color-text-primary);
+    border: 1px solid var(--color-border);
+    box-shadow: none;
 }
 
 .pbl-room ::deep .lobby__howto {
@@ -72,127 +106,123 @@
     margin: 0;
 }
 
-.pbl-room .pb-dossier-disclosure[open],
 .pbl-room ::deep .lobby__howto[open] {
     flex-basis: 100%;
-    margin: 0;
 }
 
-/* Heading line: "Players · 1/2", the 1v1 hint, and the hub pill pushed right. */
-.pbl-room ::deep .lobby__section:first-child {
-    display: flex;
-    flex-wrap: wrap;
-    align-items: center;
-    gap: 0.25rem 0.6rem;
-}
-
-.pbl-room ::deep .lobby__section:first-child > .lobby__head {
-    display: contents;
-}
-
-.pbl-room ::deep .lobby__section:first-child > .lobby__hint {
-    order: 1;
-    margin: 0;
-}
-
-.pbl-room ::deep .lobby__section:first-child .conn-strip {
-    order: 2;
-    margin-left: auto;
-}
-
-.pbl-room ::deep .lobby__section:first-child > .app-loading,
-.pbl-room ::deep .lobby__section:first-child > .lobby__empty {
-    order: 3;
-    flex-basis: 100%;
-    margin: 0;
-}
-
-/* The two side cards are the roster here (name, pick, ready), so the shared list of seats
-   would only say it twice. Its heading ("Players · 2/2") and the hub status stay. */
-.pbl-room ::deep .lobby__list {
-    display: none;
-}
-
-/* The picker reuses the 2P select (PoBrawlPage.razor.css, the same CSS scope): your card is
-   your Ready toggle; your opponent's is a read-out, so it takes no pointer. */
-.pb-lobby .pb-select-side--static {
-    cursor: default;
-}
-
-.pb-lobby .pb-select-side:disabled {
-    cursor: progress;
-}
-
-/* ── Slim side cards: two lines each (who + ready state, then the fighter), mirrored ── */
+/* ── Seats: the 2P select's glass cards (PoBrawlPage.razor.css, the same CSS scope), as
+      read-outs. A face, who it is, the fighter (a button: its dossier) and ready or not. ── */
 .pb-lobby .pb-select-vs {
     font-size: 1rem;
 }
 
-.pb-lobby .pb-select-side {
+.pb-lobby .pbl-seat {
     display: grid;
-    grid-template-columns: minmax(0, 1fr) auto;
-    align-items: baseline;
-    gap: 0 0.5rem;
-    min-height: 0;
-    padding: 0.35rem 0.6rem;
-    text-align: left;
-}
-
-.pb-lobby .pb-select-who {
-    grid-area: 1 / 1;
-    min-width: 0;
-    white-space: nowrap;
-    overflow: hidden;
-    text-overflow: ellipsis;
-}
-
-.pb-lobby .pb-select-state {
-    grid-area: 1 / 2;
-}
-
-.pb-lobby .pb-select-pick {
-    grid-area: 2 / 1 / 3 / 3;
-}
-
-.pb-lobby .pb-select-side--p2 {
     grid-template-columns: auto minmax(0, 1fr);
-    text-align: right;
+    align-items: center;
+    justify-items: start;
+    gap: 0.45rem 0.6rem;
+    align-self: stretch;
+    min-height: 5.25rem;
+    padding: 0.6rem 0.7rem;
+    text-align: left;
+    cursor: default;
 }
 
-.pb-lobby .pb-select-side--p2 .pb-select-who {
-    grid-area: 1 / 2;
+.pbl-face {
+    position: relative;
+    z-index: 2;
+    display: grid;
+    place-items: center;
+    width: 3rem;
+    height: 3rem;
+    overflow: hidden;
+    border-radius: 50%;
+    border: 1px solid var(--color-border);
+    background: var(--surface-2);
+    font-family: var(--pb-display);
+    font-size: 1.15rem;
+    color: var(--color-text-secondary);
 }
 
-.pb-lobby .pb-select-side--p2 .pb-select-state {
-    grid-area: 1 / 1;
+.pbl-face > img {
+    position: absolute;
+    inset: 0;
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+    object-position: 50% 20%;
 }
 
-/* The seal stamps the card's outer corner, clear of the ready text. */
-.pb-lobby .pb-select-seal {
+.pbl-seat-text {
+    position: relative;
+    z-index: 2;
+    display: grid;
+    justify-items: start;
+    gap: 1px;
+    min-width: 0;
+    max-width: 100%;
+}
+
+/* The fighter's name opens the dossier: a button that reads as the name it is. */
+.pb-lobby .pbl-seat-pick {
+    padding: 0;
+    border: 0;
+    background: none;
+    color: inherit;
+    cursor: pointer;
+    text-align: left;
+    text-decoration: underline dotted color-mix(in srgb, currentColor 45%, transparent);
+    text-underline-offset: 0.2em;
+}
+
+.pb-lobby .pbl-seat-pick:hover,
+.pb-lobby .pbl-seat-pick:focus-visible {
+    text-decoration-style: solid;
+}
+
+.pbl-seat-change {
+    position: relative;
+    z-index: 2;
+    grid-column: 1 / -1;
+}
+
+/* An empty seat is the invitation: dashed, neutral (not the red of a taken corner), and the
+   Invite button is the thing in it. */
+.pb-lobby .pbl-seat--open {
+    grid-template-columns: minmax(0, 1fr);
+    justify-items: center;
+    align-content: center;
+    border-style: dashed;
+    border-color: var(--color-border);
+    text-align: center;
+}
+
+.pbl-seat--open ::deep .invite {
+    position: relative;
+    z-index: 2;
+}
+
+/* The seal stamps the card's outer top corner, clear of every line of text, on both seats. */
+.pb-lobby .pb-select-seal,
+.pb-lobby .pb-select-side--p2 .pb-select-seal {
     top: -10px;
     right: -8px;
+    left: auto;
     width: 30px;
     height: 30px;
     margin-top: 0;
 }
 
-.pb-lobby .pb-select-side--p2 .pb-select-seal {
-    right: auto;
-    left: -8px;
-}
-
-/* Your fighter dropdown, under your card (the whole row on a phone). The box itself is the
-   shared lobby select (LobbyPanel.razor.css). */
-.pbl-fighter {
-    grid-area: 2 / 1;
-    display: flex;
-    align-items: center;
+/* ── The fighter grid (start card and "Change fighter") and the open dossier ── */
+.pbl-pick {
+    display: grid;
     gap: 0.5rem;
     min-width: 0;
 }
 
-.pbl-fighter > label {
-    flex: none;
+.pbl-pick-title {
+    margin: 0;
     font-size: var(--text-xs);
     font-weight: 700;
     letter-spacing: 0.08em;
@@ -200,21 +230,47 @@
     color: var(--color-text-secondary);
 }
 
-.pbl-fighter > select {
-    flex: 1 1 auto;
-    min-width: 0;
+.pbl-pick-style {
+    margin: 0;
+    font-size: var(--text-sm);
+    color: var(--color-text-secondary);
 }
 
+.pbl-dossier {
+    display: grid;
+    justify-items: start;
+    gap: 0.4rem;
+}
+
+/* A phone: one seat a row, so no name is ever cut short. */
 @media (max-width: 480px) {
-    .pbl-fighter {
-        grid-column: 1 / -1;
+    .pb-lobby .pbl-seats {
+        grid-template-columns: minmax(0, 1fr);
+    }
+
+    .pb-lobby .pbl-seats > .pb-select-vs {
+        justify-self: center;
+        line-height: 1;
+    }
+
+    .pb-lobby .pbl-seat {
+        min-height: 4.5rem;
+    }
+
+    .pb-lobby .pbl-seat-change {
+        grid-column: auto;
+        grid-area: 1 / 3;
+    }
+
+    .pb-lobby .pbl-seat:not(.pbl-seat--open) {
+        grid-template-columns: auto minmax(0, 1fr) auto;
     }
 }
 
-/* Touch: the slim side cards are the ready toggles, so they keep the 44px target on a
-   coarse pointer (GAME-CONSISTENCY rule 8). */
+/* Touch: every control in a seat keeps the 44px target (GAME-CONSISTENCY rule 8). */
 @media (pointer: coarse) {
-    .pb-lobby .pb-select-side {
+    .pb-lobby .pbl-seat-pick,
+    .pb-lobby .pbl-seat-change {
         min-height: 44px;
     }
 }

@@ -212,7 +212,19 @@ public partial class PoBrawlPage
         int P1BestCombo, int P2BestCombo,
         int P1BiggestHit, int P2BiggestHit,
         // Best of three (js/pobrawl/rounds.js): rounds each corner took. 0–0 in the one-round modes.
-        int P1Rounds = 0, int P2Rounds = 0);
+        int P1Rounds = 0, int P2Rounds = 0,
+        // Punch stats: strikes started (a grab attempt is one), guards timed on the wind-up,
+        // knockdowns scored and grabs landed.
+        int P1Thrown = 0, int P2Thrown = 0,
+        int P1Perfects = 0, int P2Perfects = 0,
+        int P1Knockdowns = 0, int P2Knockdowns = 0,
+        int P1Grabs = 0, int P2Grabs = 0,
+        // The damage map: health each corner lost, as [head, torso, arms, legs].
+        int[]? P1Taken = null, int[]? P2Taken = null,
+        // Feat ids each corner earned this match (js/pobrawl/feats.js, PoBrawlFeats).
+        string[]? P1Feats = null, string[]? P2Feats = null,
+        // A poster of this fight is waiting on Brawl HQ (js/pobrawl/keepsake.js).
+        bool Poster = false);
 
     // Totals for counts, best-of for peaks — a "biggest hit" summed across rounds
     // would be a number that never happened.
@@ -221,7 +233,32 @@ public partial class PoBrawlPage
             a.P1Hits + b.P1Hits, a.P2Hits + b.P2Hits,
             a.P1Blocks + b.P1Blocks, a.P2Blocks + b.P2Blocks,
             Math.Max(a.P1BestCombo, b.P1BestCombo), Math.Max(a.P2BestCombo, b.P2BestCombo),
-            Math.Max(a.P1BiggestHit, b.P1BiggestHit), Math.Max(a.P2BiggestHit, b.P2BiggestHit));
+            Math.Max(a.P1BiggestHit, b.P1BiggestHit), Math.Max(a.P2BiggestHit, b.P2BiggestHit))
+        {
+            P1Thrown = a.P1Thrown + b.P1Thrown,
+            P2Thrown = a.P2Thrown + b.P2Thrown,
+            P1Perfects = a.P1Perfects + b.P1Perfects,
+            P2Perfects = a.P2Perfects + b.P2Perfects,
+            P1Knockdowns = a.P1Knockdowns + b.P1Knockdowns,
+            P2Knockdowns = a.P2Knockdowns + b.P2Knockdowns,
+            P1Grabs = a.P1Grabs + b.P1Grabs,
+            P2Grabs = a.P2Grabs + b.P2Grabs,
+            P1Taken = AddRegions(a.P1Taken, b.P1Taken),
+            P2Taken = AddRegions(a.P2Taken, b.P2Taken),
+            Poster = b.Poster,
+        };
+
+    // Region by region; a payload that is not four numbers (a stale cached engine) counts as none.
+    private static int[] AddRegions(int[]? a, int[]? b)
+    {
+        var sum = new int[4];
+        foreach (var regions in new[] { a, b })
+        {
+            if (regions is not { Length: 4 }) continue;
+            for (var i = 0; i < 4; i++) sum[i] += Math.Max(0, regions[i]);
+        }
+        return sum;
+    }
 
     protected override void OnInitialized()
     {
@@ -981,6 +1018,10 @@ public partial class PoBrawlPage
 
         _gameStats.SaveLastPlayedGame("pobrawl");
 
+        // Feats BOB earned in this match (js/pobrawl/feats.js). Stored before the result is
+        // recorded below: that is what re-checks the achievements, which read them.
+        PoBrawlProgressBook.RecordFeats(_playerName, recap?.P1Feats);
+
         // A new fastest KO is submitted to the global board (session-debounced by _bestKo).
         PoBrawlHighScore? best = null;
         _newRecord = false;
@@ -1129,6 +1170,19 @@ public partial class PoBrawlPage
     {
         var bucket = _gameStats.GetDifficultyBucket(_stats, Difficulty.Medium);
         _record = $"{bucket.Wins}–{bucket.Losses}";
+    }
+
+    /// <summary>
+    /// Engine → page between rounds on the ladder: the line the player's corner just put on
+    /// screen (js/pobrawl/corner.js). The arena is one image to a screen reader, so the live
+    /// region says it.
+    /// </summary>
+    [JSInvokable]
+    public void OnCornerAdvice(string line)
+    {
+        if (string.IsNullOrWhiteSpace(line) || _mode != "1p") return;
+        _announcement = $"Your corner: {line}";
+        InvokeAsync(StateHasChanged);
     }
 
     // ── Pause ────────────────────────────────────────────────────────────

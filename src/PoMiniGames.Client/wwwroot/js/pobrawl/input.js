@@ -1,12 +1,21 @@
 // input.js — keyboard → fight intents for the two local layouts.
 // Intent shape (shared with ai.js): { move: -1|0|1 (+1 = toward opponent),
 // side: -1|0|1 (held), punch: bool (press edge), kick: bool
-// (press edge), punchHeld: bool, kickHeld: bool, block: bool, super: bool }.
+// (press edge), punchHeld: bool, kickHeld: bool, block: bool, super: bool,
+// taunt: bool (press edge) }.
 // The press edge starts a charge; the engine releases the attack when the
 // matching *Held flag drops — hold longer for a more powerful strike.
 //
-// Layout 1 (P1): A/D move · W away / S toward camera · R block (hold) · F punch · G kick
-// Layout 2 (P2): ←/→ move · ↑ away / ↓ toward camera · ; block (hold) · K punch · L kick
+// Layout 1 (P1): A/D move · W away / S toward camera · R block (hold) · F punch · G kick · T grab
+// Layout 2 (P2): ←/→ move · ↑ away / ↓ toward camera · ; block (hold) · K punch · L kick · O grab
+//
+// The GRAB is its own key (and a button on the touch pad), or punch and kick together: either
+// way both press edges reach the engine, which reads two on one tick (or the second inside
+// constants.js GRAB.chord of the first) as the grab. A pad has no spare button for it, so a pad
+// grabs with the two together. The TAUNT is block tapped twice inside TAUNT.tap
+// seconds; the engine only takes it with the opponent out of strike range, so the same two
+// taps in a scrap are just two guards. Both work unchanged from a pad and the touch panel,
+// which press these same key codes.
 //
 // No super key: a human's signature move fires by itself when the meter fills
 // (game.js `_autoSuperReady`). `super` stays in the intent shape for ai.js,
@@ -27,18 +36,19 @@
 // fighters would flip on screen whenever they swap sides.
 
 import { BUTTONS, pressed } from '../platform/gamepadBus.js';
+import { TAUNT } from './constants.js';
 
 // Exported because the touch panel (below) and padCodes (the controller) press these same codes.
 export const LAYOUTS = {
   1: {
     left: 'KeyA', right: 'KeyD',
     depthAway: 'KeyW', depthToward: 'KeyS',
-    block: 'KeyR', punch: 'KeyF', kick: 'KeyG',
+    block: 'KeyR', punch: 'KeyF', kick: 'KeyG', grab: 'KeyT',
   },
   2: {
     left: 'ArrowLeft', right: 'ArrowRight',
     depthAway: 'ArrowUp', depthToward: 'ArrowDown',
-    block: 'Semicolon', punch: 'KeyK', kick: 'KeyL',
+    block: 'Semicolon', punch: 'KeyK', kick: 'KeyL', grab: 'KeyO',
   },
 };
 
@@ -78,6 +88,9 @@ export class KeyboardController {
     this.down = new Set();
     this.punchQueued = false;
     this.kickQueued = false;
+    this.tauntQueued = false;
+    // Wall-clock time of the last block press, for the double tap (the taunt).
+    this._blockDownAt = -1e9;
 
     this._onDown = (e) => {
       // Let any modified chord through untouched: Ctrl+R / Cmd+R is reload, and
@@ -89,6 +102,8 @@ export class KeyboardController {
       this.down.add(e.code);
       if (e.code === this.map.punch) this._pressAttack('punch');
       else if (e.code === this.map.kick) this._pressAttack('kick');
+      else if (e.code === this.map.grab) { this._pressAttack('punch'); this._pressAttack('kick'); }
+      else if (e.code === this.map.block) this._pressBlock();
     };
     this._onUp = (e) => {
       this.down.delete(e.code);
@@ -109,6 +124,8 @@ export class KeyboardController {
     this.down.clear();
     this.punchQueued = false;
     this.kickQueued = false;
+    this.tauntQueued = false;
+    this._blockDownAt = -1e9;
   }
 
   update(ctx) {
@@ -137,15 +154,30 @@ export class KeyboardController {
       // Always false for a human; published explicitly because `intent.super`
       // is read unguarded in _tickFighter.
       super: false,
+      // Block tapped twice (see _pressBlock). The engine decides whether it may happen.
+      taunt: this.tauntQueued,
     };
     this.punchQueued = false;
     this.kickQueued = false;
+    this.tauntQueued = false;
     return intent;
   }
 
   // An attack press.
   _pressAttack(name) {
     this[name + 'Queued'] = true;
+  }
+
+  // A block press. The second of two inside TAUNT.tap asks for the taunt; a third starts over,
+  // so a player drumming the guard never chains them.
+  _pressBlock() {
+    const now = performance.now();
+    if (now - this._blockDownAt <= TAUNT.tap * 1000) {
+      this.tauntQueued = true;
+      this._blockDownAt = -1e9;
+    } else {
+      this._blockDownAt = now;
+    }
   }
 
   dispose() {
@@ -217,7 +249,8 @@ export function buildTouchControls(container, online) {
   const left = cluster(
     [mk(K.depthAway, '↺', 'Circle counter-clockwise', true), mk(K.depthToward, '↻', 'Circle clockwise', true)],
     [mk(K.left, '◀', 'Move left'), mk(K.right, '▶', 'Move right')]);
-  const guard = [mk(K.block, '🛡', 'Block (hold)', true)];
+  // The grab's own button: two thumbs on 👊 and 🦵 at once is not a phone move.
+  const guard = [mk(K.block, '🛡', 'Block (hold; twice from range to taunt)', true), mk(K.grab, '🤼', 'Grab', true)];
   // Online has a special (full energy); the local modes fire theirs by themselves.
   if (online) guard.push(mk('KeyH', '⚡', 'Special', true));
   const right = cluster(guard,

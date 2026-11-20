@@ -65,8 +65,8 @@ public class OnlineModesUiTests
     }
 
     [Theory]
-    // Brawl has no Start button: each player readies from their own fighter card and the
-    // host's client starts the fight once both seats are ready.
+    // Brawl has no Start button: both players press Ready, the lobby counts down from three and
+    // the host's client starts the fight.
     [InlineData("/pobrawl/multi", null, "/pobrawl/online", "#pobrawl-container canvas")]
     [InlineData("/poracer/multi", "Start race", "/poracer/multi?code=", ".race-hud")]
     // Voxel Strike's lobby is the Online tab of the game page itself: the run starts
@@ -80,23 +80,25 @@ public class OnlineModesUiTests
         var (first, guardFirst) = await OpenAsGuestAsync(browser, lobby, "A");
         await using var _first = guardFirst;
         // Seat order is arrival order (the first in hosts): A must hold its seat before B opens.
-        await Assertions.Expect(first.GetByText(new System.Text.RegularExpressions.Regex(@"Players · 1/"))).ToBeVisibleAsync(new() { Timeout = 60_000 });
+        // The seat count is an attribute of the lobby card: its heading is "Players · 1/2" in most
+        // lobbies and a sentence in Brawl's.
+        await Assertions.Expect(first.Locator(".lobby[data-lobby-seats^='1/']")).ToBeVisibleAsync(new() { Timeout = 60_000 });
         var (second, guardSecond) = await OpenAsGuestAsync(browser, lobby, "B");
         await using var _second = guardSecond;
 
         // Both listed, on both screens.
         foreach (var page in new[] { first, second })
         {
-            await Assertions.Expect(page.GetByText(new System.Text.RegularExpressions.Regex(@"Players · 2/")))
+            await Assertions.Expect(page.Locator(".lobby[data-lobby-seats^='2/']"))
                 .ToBeVisibleAsync(new() { Timeout = 30_000 });
         }
 
         if (startLabel is null)
         {
-            // Ready is each player's own fighter card; both ready starts the fight by itself.
+            // Both seats ready up (the host too); the fight then starts by itself.
             foreach (var page in new[] { first, second })
             {
-                var ready = page.GetByRole(AriaRole.Button, new() { NameRegex = new System.Text.RegularExpressions.Regex("press to ready up") });
+                var ready = page.GetByRole(AriaRole.Button, new() { Name = "Ready!" });
                 await Assertions.Expect(ready.First).ToBeEnabledAsync(new() { Timeout = 20_000 });
                 await ready.First.ClickAsync();
             }

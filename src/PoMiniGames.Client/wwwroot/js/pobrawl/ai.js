@@ -29,7 +29,7 @@ import { archetypeFor, chooseStance, facts as tacticFacts, scoreTactics, pickWei
 // the lead, behind late → press.
 //
 // Layer 2's neutral choice is a UTILITY pick (tactics.js): attack, guard, retreat,
-// circle, charge, bait and punish are each scored from health, energy, distance, the
+// circle, charge, bait, punish and grab are each scored from health, energy, distance, the
 // ropes, mood and the predictor, then biased by the behaviour-tree stance of the
 // president's archetype (aggressor / counter-puncher / turtle). The rung columns
 // below are the weights and gates the scores are built from, so they stay the dial.
@@ -42,6 +42,16 @@ import { archetypeFor, chooseStance, facts as tacticFacts, scoreTactics, pickWei
 //   • bait-and-punish — a feint (swing cancelled into guard, the old baitP) or a LURE
 //     (guard dropped, step out as the swing starts) arms a whiff-punish: a kick or
 //     punch into the spent swing's recovery.
+//
+// The grab and the taunt (constants.js GRAB / TAUNT), both scaled by rung:
+//   • a GRAB is the answer to a guard, so its weight is the turtle read (and the profile
+//     that seeds it). The CPU walks into reach and presses both buttons; near its own
+//     ropes it throws backward, into them. Rungs 1-2 never grab.
+//   • the CPU TAUNTS when it is well ahead and the human is far away, and less at the top
+//     of the ladder: it is an opening it is handing over. When the HUMAN taunts, a
+//     punish roll sends it in for a kick once the gesture has been visible for reactFloor.
+// Both read ctx fields the engine only supplies where the moves exist (`grabReach`,
+// `canTaunt`), so online and the self-play harness never see either.
 //
 // The canvas (knockdown.js) sits ahead of all of it. Knocked down, the CPU picks
 // one get-up per knockdown — when to rise and whether to roll, rise guarding or
@@ -120,6 +130,16 @@ const LATE_SECS = 15;
 // How long a press the engine could not take yet (still blocking, stunned,
 // recovering) is held for the next idle frame before it is dropped.
 const PRESS_WINDOW = 0.3;
+
+// A walk into grab reach is abandoned after this long (the opening has gone).
+const GRAB_CHASE_SECS = 0.6;
+// With less canvas than this behind it, the CPU throws backward, into its own ropes.
+const GRAB_BACK_ROOM = 2.2;
+// Seconds between the CPU's own taunts, and the health lead (0..1) it wants first.
+const TAUNT_EVERY = 14;
+const TAUNT_LEAD = 0.2;
+// How long after a phrase ends a hit still counts as that phrase's (its last coil lands late).
+const PHRASE_TAIL = 0.6;
 
 // Legacy string difficulties (used by demo / 2p fallbacks) map onto rungs.
 const NAMED_LEVELS = { easy: 2, medium: 5, hard: 8 };
@@ -248,6 +268,14 @@ export class AiController {
     this._pat = null;
     // Repertoire cursor: walks _unlockedPatterns in a fixed cycle, never random.
     this._patIdx = 0;
+    // Which phrase is (or just was) playing, for the scorecard: see livePhrase.
+    this._patLive = null;
+    this._patLastT = -1e9;
+    // A walk into grab reach ({ until, back }), and the taunt's own clocks.
+    this._grabPlan = null;
+    this._tauntReadyAt = 6 + this.rng.random() * 6;
+    this._tauntSeenAt = -1;
+    this._tauntChase = false;
     // Stagger the first opening (and desync demo pairings). Seeded RNG, so
     // replays stay deterministic.
     this._patReadyAt = 1.2 + this.rng.random() * 1.5;
@@ -266,6 +294,9 @@ export class AiController {
     // 0 at rungs 1-3 (they ignore all of it), 1 at the top.
     const mem = level <= 3 ? 0 : Math.min(1, (level - 3) / 12);
     this.archetype = archetypeFor(this.charId);
+    // Taunts per second while one is on (ahead, far, nothing coming): walk-in fighters show
+    // off more than the ones who wait, and everyone does it less up the ladder.
+    this._tauntRate = (this.archetype === 'aggressor' ? 2.4 : 1.2) * (1.2 - 0.7 * this.adapt);
     this.profile = opts.profile !== undefined ? opts.profile : PlayerProfile.load(defaultStorage());
     const seed = this.profile?.seed(mem);
     if (seed) Object.assign(this, seed);
@@ -286,6 +317,16 @@ export class AiController {
     this._stepOutUntil = 0;
   }
 
+  /**
+   * The index (into this president's aiPatterns) of the signature phrase that is playing, or
+   * that ended inside PHRASE_TAIL; null otherwise. hitResolution.js asks when a hit lands, so
+   * the corner can tell the player which string is doing the damage (corner.js).
+   */
+  livePhrase() {
+    if (this._patLive === null) return null;
+    return this._pat || this.t - this._patLastT <= PHRASE_TAIL ? this._patLive : null;
+  }
+
   /** Game hook: how the human got up from the canvas, for the cross-session profile. */
   notifyOpponentGetUp(choice) { this.profile?.noteGetUp(choice); }
 
@@ -302,6 +343,8 @@ export class AiController {
     this._pat = null;
     this._lure = null;
     this._stepOutUntil = 0;
+    this._grabPlan = null;
+    this._tauntChase = false;
   }
 
   /**
@@ -320,6 +363,8 @@ export class AiController {
     this._pat = null;
     this._lure = null;
     this._stepOutUntil = 0;
+    this._grabPlan = null;
+    this._tauntChase = false;
     this._meaty = false;
     const k = (this.level - 1) / (MAX_RUNG - 1);
     const r = this.rng.random();
@@ -585,6 +630,7 @@ export class AiController {
   _startPattern(ctx) {
     const set = this._unlockedPatterns();
     const pat = set[this._patIdx % set.length];
+    this._patLive = this._patIdx % set.length;
     // Advance on OPEN, not finish: an interrupted phrase still counts as played.
     this._patIdx = (this._patIdx + 1) % set.length;
     this._pat = {
@@ -607,6 +653,7 @@ export class AiController {
     const p = this._pat;
     const step = p.steps[p.i];
     if (!step) { this._pat = null; return null; }
+    this._patLastT = this.t;
 
     // Entering a step: stamp its dwell and let this tick carry the press edge.
     if (p.until === 0) {
@@ -791,6 +838,7 @@ export class AiController {
       this._pat = null;
       this.holdName = null;
       this._queued = null;
+      this._grabPlan = null;
       this.sinceDecision = 0;
       this._footLive = false;   // the dance is off while catching a breath
       const backoff = ctx.distance < ctx.kickRange * 0.9 ? -1 : 0;
@@ -806,6 +854,56 @@ export class AiController {
     } else {
       this._meatyRolled = false;
       this._meaty = false;
+    }
+
+    // ── The opponent is taunting ────────────────────────────────────────
+    // Wide open for about a second, but only from out of range: one punish roll per taunt,
+    // and once the gesture has been visible for reactFloor the CPU walks in and kicks.
+    if (ctx.opponentTaunting) {
+      if (this._tauntSeenAt < 0) {
+        this._tauntSeenAt = this.t;
+        this._tauntChase = this.rng.random() < effPunishP;
+      }
+      if (this._tauntChase && !this.holdName && this.t - this._tauntSeenAt >= this.reactFloor) {
+        this._pat = null;
+        this._grabPlan = null;
+        this._footLive = false;
+        this._guardSince = -1;
+        if (ctx.distance < ctx.kickRange * 0.95) {
+          if (ctx.selfState !== 'idle') return { ...NEUTRAL, super: false };
+          this._tauntChase = false;
+          this.sinceDecision = 0;
+          return this._press(ctx, 'kick');
+        }
+        this.current = { ...NEUTRAL, move: 1 };
+        return { ...this.current, super: false };
+      }
+    } else {
+      this._tauntSeenAt = -1;
+      this._tauntChase = false;
+    }
+
+    // ── Showing off ─────────────────────────────────────────────────────
+    // Well ahead, the opponent out of range and not winding anything up: the CPU may taunt.
+    // Checked every tick as a per-SECOND rate (like the super), not on the decision clock:
+    // two fighters are far apart for well under a second at a time, and a 300 ms decision
+    // tick nearly always missed it. Rarer up the ladder, since a taunt hands over an opening.
+    // The roll is only spent on a tick when it could fire, so it costs a seeded fight nothing
+    // the rest of the time. Ahead of the phrase runner: a phrase still playing its steps at an
+    // opponent who has been knocked out of range is exactly when there is room to show off.
+    if (ctx.canTaunt && !this.holdName && this.t >= this._tauntReadyAt
+        && (ctx.selfHp ?? 1) - (ctx.opponentHp ?? 1) >= TAUNT_LEAD
+        && ctx.distance > ctx.kickRange * 1.25 && !ctx.opponentCharging && !ctx.opponentWindup
+        && this.rng.random() < 1 - Math.exp(-this._tauntRate * ctx.dt)) {
+      this._tauntReadyAt = this.t + TAUNT_EVERY;
+      this._footLive = false;
+      this.baitArmed = false;
+      this._grabPlan = null;
+      this._pat = null;
+      this._queued = null;
+      this._guardSince = -1;
+      this.current = { ...NEUTRAL };
+      return { ...this.current, taunt: true };
     }
 
     // ── Signature pattern ───────────────────────────────────────────
@@ -863,6 +961,14 @@ export class AiController {
       } else {
         return { ...NEUTRAL, super: false };
       }
+    }
+
+    // ── Walking into a grab ─────────────────────────────────────────────
+    // Decided on a decision tick (_grab), carried out here every tick: close to reach, then
+    // both buttons from idle. Dropped the moment the opponent stops standing still for it.
+    if (this._grabPlan) {
+      const out = this._grabTick(ctx);
+      if (out) return out;
     }
 
     // ── Pre-planned cancel string ───────────────────────────────────────
@@ -1054,6 +1160,12 @@ export class AiController {
       charge: ctx.opponentState === 'idle'
         ? this.chargeP * 0.5 * mood.aggro * (1 - Math.min(1, turtle * 2)) : 0,
       punish: effPunishP * 0.4,
+      // The grab answers a guard: weighted by how much this human has been hiding behind one
+      // (the ~8 s read, seeded from the profile) and by a guard that is up right now.
+      grab: ctx.grabReach !== undefined && this.level >= 3
+        ? Math.min(0.45, (0.03 + 1.1 * turtle + (ctx.opponentState === 'block' ? 0.3 : 0))
+          * (0.25 + 0.75 * this.adapt))
+        : 0,
     };
     const predSwing = this._predSwing();
     const f = tacticFacts(ctx, mood, predSwing, turtle);
@@ -1073,6 +1185,7 @@ export class AiController {
       case 'charge':
         return this._loadCharge(0.4, 0.45);
       case 'bait': return this._bait(ctx, predSwing);
+      case 'grab': return this._grab(ctx);
       case 'guard':
         // Held for a beat through the reactive-guard machinery, so a swing that
         // bounces off it is punished the same way.
@@ -1100,6 +1213,40 @@ export class AiController {
     this._footLive = !!this.footwork && !mood.protect;
     this.baitArmed = false;
     return { ...this.current };
+  }
+
+  // Commit to a grab: a short plan _grabTick carries out. Backward (into the ropes behind
+  // us) when there is little canvas at our own back, forward otherwise.
+  _grab(ctx) {
+    this._grabPlan = { until: this.t + GRAB_CHASE_SECS, back: (ctx.backRoom ?? 9) < GRAB_BACK_ROOM };
+    this._footLive = false;
+    this.baitArmed = false;
+    this._guardSince = -1;
+    this._queued = null;
+    this.comboAt = 0;
+    return this._grabTick(ctx) || { ...NEUTRAL, super: false };
+  }
+
+  // One tick of a grab plan: null once it is over (thrown, timed out, or the opponent
+  // started something a grab loses to), otherwise the intent that closes or grabs.
+  _grabTick(ctx) {
+    const plan = this._grabPlan;
+    const standing = ctx.opponentState === 'idle' || ctx.opponentState === 'block';
+    if (!plan || ctx.grabReach === undefined || this.t > plan.until || !standing
+        || ctx.opponentWindup || ctx.opponentCharging) {
+      this._grabPlan = null;
+      return null;
+    }
+    if (ctx.distance > ctx.grabReach * 0.92) {
+      this.current = { ...NEUTRAL, move: 1 };
+      return { ...this.current, super: false };
+    }
+    this.current = { ...NEUTRAL };
+    // The engine takes both buttons from idle only: a guard still up drops this tick.
+    if (ctx.selfState !== 'idle') return { ...this.current, super: false };
+    this._grabPlan = null;
+    this.sinceDecision = 0;
+    return { ...this.current, super: false, punch: true, kick: true, grabBack: plan.back };
   }
 
   // A bait. The FEINT starts a punch and cancels into guard on the next decision

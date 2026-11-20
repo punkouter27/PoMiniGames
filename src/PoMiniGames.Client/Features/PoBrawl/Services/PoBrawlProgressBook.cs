@@ -24,6 +24,7 @@ public static class PoBrawlProgressBook
     private static string LadderAtKey(string player) => $"pobrawl_ladder_at_{player}";
     private static string BestKoKey(string player) => $"pobrawl_bestko_{player}";
     private static string ClearsKey(string player) => $"pobrawl_clears_{player}";
+    private static string FeatsKey(string player) => $"pobrawl_feats_{player}";
 
     /// <summary>This browser's copy for <paramref name="player"/>; the rung is clamped onto the roster.</summary>
     public static PoBrawlProgressDto Load(string player) => new()
@@ -79,6 +80,32 @@ public static class PoBrawlProgressBook
         LocalStorageService.SetItem(ClearsKey(player), clears.ToString(CultureInfo.InvariantCulture));
         return clears;
     }
+
+    /// <summary>How many times each Brawl feat has been earned in this browser (<see cref="PoBrawlFeats"/>).</summary>
+    public static Dictionary<string, int> LoadFeats(string player) =>
+        PoBrawlFeats.Parse(LocalStorageService.GetItem<string>(FeatsKey(player)));
+
+    /// <summary>
+    /// Counts the feats a match just reported (js/pobrawl/feats.js) and returns the ones earned
+    /// for the first time. Ids the page does not know are ignored.
+    /// </summary>
+    public static List<string> RecordFeats(string player, IEnumerable<string>? earned)
+    {
+        var counts = LoadFeats(player);
+        var fresh = PoBrawlFeats.Add(counts, earned);
+        if (counts.Count > 0) LocalStorageService.SetItem(FeatsKey(player), PoBrawlFeats.Format(counts));
+        return fresh;
+    }
+
+    /// <summary>
+    /// The presidents this player has beaten on the ladder, in ladder order: everyone below the
+    /// current rung, or the whole roster once the ladder has been cleared. Nothing extra is
+    /// stored for it: the rung and the clears already say it.
+    /// </summary>
+    public static IReadOnlyList<PoBrawlFighter> Beaten(PoBrawlProgressDto progress) =>
+        progress.Clears > 0
+            ? PoBrawlRoster.Fighters
+            : PoBrawlRoster.Fighters.Take(Math.Clamp(progress.Rung, 0, PoBrawlRoster.Count)).ToArray();
 
     /// <summary>Cup titles won in this browser, by fighter id (only roster fighters, only positive counts).</summary>
     public static Dictionary<string, int> LoadTitles()

@@ -23,6 +23,12 @@ namespace PoMiniGames.Features.PoBrawl.Online;
 /// </remarks>
 public sealed class PoBrawlLobbyService : LobbyRoom<PoBrawlLobbyPlayer>
 {
+    /// <summary>
+    /// A connection that lost its seat when someone else was seated. <c>TakenOver</c>: the same
+    /// player opened the lobby on another connection; otherwise the seat had idled too long.
+    /// </summary>
+    public readonly record struct DisplacedSeat(string ConnectionId, string DisplayName, bool TakenOver);
+
     public const string GlobalCode = "BRAWL";
 
     /// <summary>Hard cap. PoBrawl is 1v1 only — a third arrival is rejected.</summary>
@@ -50,15 +56,26 @@ public sealed class PoBrawlLobbyService : LobbyRoom<PoBrawlLobbyPlayer>
     public string CreateMatchCode() => "multi-" + Guid.NewGuid().ToString("N");
 
     /// <summary>
-    /// Seat the caller (see the remarks): their other connection's seat is taken over, and when the
-    /// room is full, seats idle past <see cref="IdleSeatMs"/> make way. <paramref name="evicted"/>
-    /// names whoever lost a seat to idling, for the lobby to announce.
+    /// <see cref="Seat"/>, reporting only the names of whoever lost a seat to idling.
     /// </summary>
     public (LobbyState<PoBrawlLobbyPlayer> state, string message) Open(
         string connectionId, string principalId, string displayName, bool isGuest, PoBrawlFighter fighter,
         out IReadOnlyList<string> evicted)
     {
-        var gone = new List<string>();
+        var (state, message, displaced) = Seat(connectionId, principalId, displayName, isGuest, fighter);
+        evicted = [.. displaced.Where(d => !d.TakenOver).Select(d => d.DisplayName)];
+        return (state, message);
+    }
+
+    /// <summary>
+    /// Seat the caller (see the remarks): their other connection's seat is taken over, and when the
+    /// room is full, seats idle past <see cref="IdleSeatMs"/> make way. <c>displaced</c> lists every
+    /// connection that lost its seat to this call, so the hub can tell each one why.
+    /// </summary>
+    public (LobbyState<PoBrawlLobbyPlayer> state, string message, IReadOnlyList<DisplacedSeat> displaced) Seat(
+        string connectionId, string principalId, string displayName, bool isGuest, PoBrawlFighter fighter)
+    {
+        var gone = new List<DisplacedSeat>();
         var result = WithLock(players =>
         {
             var now = _time.GetUtcNow().ToUnixTimeMilliseconds();
@@ -73,6 +90,7 @@ public sealed class PoBrawlLobbyService : LobbyRoom<PoBrawlLobbyPlayer>
                 foreach (var other in players.Values.Where(p => p.ConnectionId != connectionId && p.PrincipalId == principal).ToList())
                 {
                     takenOver = other;
+                    gone.Add(new DisplacedSeat(other.ConnectionId, other.DisplayName, TakenOver: true));
                     Leave(other.ConnectionId);
                 }
             }
@@ -86,7 +104,7 @@ public sealed class PoBrawlLobbyService : LobbyRoom<PoBrawlLobbyPlayer>
                                          && !(p.IsReady && p.ConnectionId != host))
                              .ToList())
                 {
-                    gone.Add(idle.DisplayName);
+                    gone.Add(new DisplacedSeat(idle.ConnectionId, idle.DisplayName, TakenOver: false));
                     Leave(idle.ConnectionId);
                 }
             }
@@ -110,8 +128,7 @@ public sealed class PoBrawlLobbyService : LobbyRoom<PoBrawlLobbyPlayer>
             }
             return opened;
         });
-        evicted = gone;
-        return result;
+        return (result.state, result.message, gone);
     }
 
     /// <summary>

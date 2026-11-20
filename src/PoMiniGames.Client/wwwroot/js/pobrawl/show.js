@@ -8,6 +8,7 @@
 //   ledBoards.js   — beat-pulsed truss, phone-light stadium wave (the LED ribbon ticker is gone)
 //   replay.js      — the occasional instant replay between the KO and the result
 //   resultGlass.js — the frozen-frame glass behind the result
+//   keepsake.js    — the fight's poster and knockout clip, kept for Brawl HQ
 //
 // A module registers in its `_init*`:
 //   this._onShow(fn)          fn(type, data) for every event below
@@ -23,6 +24,9 @@
 //   'hit'         { attacker, defender, dmg, point, region, power }   a landed hit (power 0..1)
 //   'block'       { point }                            a blocked strike
 //   'super'       { f }                                a signature move fires
+//   'grab'        { attacker, defender, point, guardBreak }   a grab took hold and threw
+//   'taunt'       { f }                                a taunt starts (f is wide open)
+//   'tauntDone'   { f }                                a taunt finished untouched
 //   'ko'          { winner }                           the final blow (phase → ko)
 //   'result'      { winner, ko }                       the result is reported (after the KO / bell)
 //   'cut'         { shot, whip }                       director camera cut (CPU-only modes)
@@ -47,9 +51,10 @@
 
 import { AudioShow } from './audioShow.js';
 import { ChargeAura } from './chargeAura.js';
+import { Keepsake } from './keepsake.js';
 import { mixin } from './mixin.js';
 
-export const SHOW_MODULES = [AudioShow, ChargeAura];
+export const SHOW_MODULES = [AudioShow, ChargeAura, Keepsake];
 
 // One fetch per page session, shared by every engine after it. Cleared on failure so a flaky
 // network gets another try at the next fight.
@@ -80,7 +85,7 @@ class ShowMethods {
     this._showFns = { ev: [], up: [], render: [], dispose: [] };
     // Read once per engine: a fight keeps the show it started with.
     this._showFull = fullShow();
-    this._runShowInits([this._initAudioShow, this._initChargeAura]);
+    this._runShowInits([this._initAudioShow, this._initChargeAura, this._initKeepsake]);
     if (!this._showFull) return null;
     return loadFullShow().then((mods) => {
       if (this.disposed || !this._showFns) return;

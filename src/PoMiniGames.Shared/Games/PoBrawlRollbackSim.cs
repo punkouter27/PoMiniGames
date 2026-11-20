@@ -25,12 +25,22 @@ namespace PoMiniGames.Shared.Games;
 /// <para>
 /// <b>Inputs.</b> Per frame, each corner has at most one input event: the new HELD state
 /// (Idle, MoveForward, MoveBack, Block — it persists in the state until the next event) and/or
-/// an attack PRESS (buffered one deep behind the cooldown). "No event" is the prediction for a
-/// corner whose input has not arrived: keep holding what it held, press nothing.
+/// a PRESS (a punch, kick, special, grab or taunt, buffered one deep behind the cooldown). "No
+/// event" is the prediction for a corner whose input has not arrived: keep holding what it held,
+/// press nothing.
 /// </para>
 /// </remarks>
 public static class PoBrawlRollbackSim
 {
+    /// <summary>
+    /// The version of the online rules and of the packed state. A browser and a server that
+    /// disagree cannot play each other, so the lobby hub refuses a browser whose number differs
+    /// and asks it to reload (<c>PoBrawlLobbyHub</c>, <see cref="LobbyRefusal.ReloadPrefix"/>).
+    /// Raise it with every change to a rule here, to an input's bits or to <c>Pack</c>: 1 was the
+    /// 26-int state, 2 the 38-int one, 3 the 42-int one with the grab and the taunt.
+    /// </summary>
+    public const int WireVersion = 3;
+
     /// <summary>Frames per second.</summary>
     public const int Hz = 60;
 
@@ -112,14 +122,47 @@ public static class PoBrawlRollbackSim
     public const int RollStepMm = 45;
     public const int FloorNone = 0, FloorDown = 1, FloorGetup = 2, FloorRoll = 3;
 
+    // ── The grab ─────────────────────────────────────────────────────────
+    // The answer to a corner that stays behind its guard. A grab ignores the guard and throws the
+    // corner GrabThrowMm, but it only takes hold of a STANDING corner: one that is not on the
+    // canvas, did not swing this frame and is not still recovering from a swing (its cooldown is
+    // 0), or one that is taunting. So any strike beats it. Grabbing air costs the long cooldown; a
+    // throw that lands, the short one. It rolls no dice (flat damage, the RNG does not move) and is
+    // never the knockout: it always leaves a point of health. Two grabs on one frame break: both
+    // are shoved GrabBreakMm apart, unhurt. No back throw: P1 is always the left corner.
+    /// <summary>Largest gap at which a grab takes hold.</summary>
+    public const int GrabReachMm = 1300;
+    /// <summary>How far a grab throws the corner it takes.</summary>
+    public const int GrabThrowMm = 1500;
+    /// <summary>How far two grabs that meet shove each corner back.</summary>
+    public const int GrabBreakMm = 300;
+    /// <summary>Frames after a grab before that corner can swing again: on air, and after a throw.</summary>
+    public const int GrabCooldown = 36;
+    public const int GrabHitCooldown = 24;
+    public const int GrabEnergyCost = 4 * EnergyScale;
+    public const int GrabDamage = 9;
+
+    // ── The taunt ────────────────────────────────────────────────────────
+    // TauntFrames of showing off: no walking, no guard, no swing (a press made during it is
+    // dropped). It is only taken with the other corner on its feet and further away than
+    // KickReachMm + TauntClearMm, and not again for TauntCooldownFrames; a press that fails those
+    // is simply spent. Finish it and the bar gains TauntEnergy (here the bar is the special's
+    // meter). A blow or a grab that lands during it does TauntPunishPct percent and ends it with
+    // nothing gained.
+    public const int TauntFrames = 66;
+    public const int TauntCooldownFrames = 420;
+    public const int TauntClearMm = 350;
+    public const int TauntEnergy = 30 * EnergyScale;
+    public const int TauntPunishPct = 125;
+
     // ── Codes (the PoBrawlMatchAction values) ────────────────────────────
     public const int HeldIdle = 0, HeldForward = 1, HeldBack = 2, HeldBlock = 3;
-    public const int PressNone = 0, PressPunch = 4, PressKick = 5, PressSpecial = 6;
-    public const int OutcomeNone = 0, OutcomeHit = 1, OutcomeBlocked = 2, OutcomeWhiff = 3;
+    public const int PressNone = 0, PressPunch = 4, PressKick = 5, PressSpecial = 6, PressGrab = 7, PressTaunt = 8;
+    public const int OutcomeNone = 0, OutcomeHit = 1, OutcomeBlocked = 2, OutcomeWhiff = 3, OutcomeBreak = 4;
     public const int ReasonNone = 0, ReasonKo = 1, ReasonTime = 2;
 
     /// <summary>Ints per corner in <see cref="Pack"/>'s array.</summary>
-    public const int CornerLength = 16;
+    public const int CornerLength = 18;
 
     /// <summary>Length of <see cref="Pack"/>'s array (6 globals + <see cref="CornerLength"/> per corner).</summary>
     public const int PackedLength = 6 + (2 * CornerLength);
@@ -161,14 +204,14 @@ public static class PoBrawlRollbackSim
     }
 
     /// <summary>
-    /// One input event as an int: 0 = none; bits 0–2 hold held+1 (0 = unchanged), bits 3–5 the press.
+    /// One input event as an int: 0 = none; bits 0–2 hold held+1 (0 = unchanged), bits 3–6 the press.
     /// Pass <paramref name="held"/> = -1 for "press only, keep holding".
     /// </summary>
     public static int EncodeInput(int held, int press) => (held + 1) | (press << 3);
 
     public static int HeldOf(int input) => (input & 7) - 1;
 
-    public static int PressOf(int input) => (input >> 3) & 7;
+    public static int PressOf(int input) => (input >> 3) & 15;
 
     /// <summary>Two events on one frame: the later one's held wins if it set one, and its press if it pressed.</summary>
     public static int MergeInput(int earlier, int later)
@@ -201,18 +244,30 @@ public static class PoBrawlRollbackSim
         // 1. Swings, both against the START-of-frame gap, so neither side's knockback moves the
         //    other out of range first. Swinging drops the guard: you cannot attack and block at once.
         var gap = s.P2.X - s.P1.X;
-        var a1 = TakeSwing(ref s.P1);
-        var a2 = TakeSwing(ref s.P2);
-        var p1Guarding = a1 == PressNone && s.P1.Held == HeldBlock && s.P1.Floor == FloorNone;
-        var p2Guarding = a2 == PressNone && s.P2.Held == HeldBlock && s.P2.Floor == FloorNone;
-        if (a1 != PressNone) ResolveSwing(ref s, a1, attackerIsP1: true, p2Guarding, gap);
-        if (a2 != PressNone) ResolveSwing(ref s, a2, attackerIsP1: false, p1Guarding, gap);
+        var a1 = TakeSwing(ref s.P1, s.P2.Floor, s.Frame, gap);
+        var a2 = TakeSwing(ref s.P2, s.P1.Floor, s.Frame, gap);
+        var p1Guarding = a1 == PressNone && s.P1.Held == HeldBlock && s.P1.Floor == FloorNone && s.P1.Taunt == 0;
+        var p2Guarding = a2 == PressNone && s.P2.Held == HeldBlock && s.P2.Floor == FloorNone && s.P2.Taunt == 0;
+        if (a1 == PressGrab && a2 == PressGrab)
+        {
+            ResolveBreak(ref s, gap);
+            EnforceSpacing(ref s);
+        }
+        else
+        {
+            if (a1 == PressGrab) ResolveGrab(ref s, attackerIsP1: true, otherSwing: a2, gap);
+            else if (a1 != PressNone) ResolveSwing(ref s, a1, attackerIsP1: true, p2Guarding, gap);
+            if (a2 == PressGrab) ResolveGrab(ref s, attackerIsP1: false, otherSwing: a1, gap);
+            else if (a2 != PressNone) ResolveSwing(ref s, a2, attackerIsP1: false, p1Guarding, gap);
+        }
 
-        // 2. Footwork. A guard plants you; a swing roots you for its frame; the canvas holds you.
-        if (a1 == PressNone && s.P1.Floor == FloorNone) s.P1.X += WalkStep(s.P1.Held);
-        if (a2 == PressNone && s.P2.Floor == FloorNone) s.P2.X -= WalkStep(s.P2.Held);
+        // 2. Footwork. A guard plants you; a swing roots you for its frame; the canvas and a taunt hold you.
+        if (a1 == PressNone && s.P1.Floor == FloorNone && s.P1.Taunt == 0) s.P1.X += WalkStep(s.P1.Held);
+        if (a2 == PressNone && s.P2.Floor == FloorNone && s.P2.Taunt == 0) s.P2.X -= WalkStep(s.P2.Held);
         TickFloor(ref s.P1, -1);
         TickFloor(ref s.P2, +1);
+        TickTaunt(ref s.P1);
+        TickTaunt(ref s.P2);
         EnforceSpacing(ref s);
 
         // 3. Energy regen from what is held, and the cooldown clocks.
@@ -242,7 +297,7 @@ public static class PoBrawlRollbackSim
         var held = HeldOf(input);
         if (held is >= HeldIdle and <= HeldBlock) c.Held = held;
         var press = PressOf(input);
-        if (press is >= PressPunch and <= PressSpecial) c.Pending = press;
+        if (press is >= PressPunch and <= PressTaunt) c.Pending = press;
     }
 
     private static int WalkStep(int held) => held switch
@@ -293,16 +348,53 @@ public static class PoBrawlRollbackSim
         }
     }
 
-    /// <summary>The buffered press, if this corner may swing this frame; consumes it, starts the cooldown, spends the energy.</summary>
-    private static int TakeSwing(ref PoBrawlSimCorner c)
+    /// <summary>One frame of the taunt's clocks: the cooldown, and the gesture itself (its reward on the last frame).</summary>
+    private static void TickTaunt(ref PoBrawlSimCorner c)
+    {
+        if (c.TauntCd > 0) c.TauntCd--;
+        if (c.Taunt == 0) return;
+        if (c.Floor != FloorNone)
+        {
+            c.Taunt = 0;
+            return;
+        }
+        c.Taunt--;
+        if (c.Taunt == 0) c.Energy = Math.Min(EnergyMax, c.Energy + TauntEnergy);
+    }
+
+    /// <summary>
+    /// The buffered press, if this corner may swing this frame; consumes it, starts the cooldown, spends the energy.
+    /// A taunt is not a swing: it starts here (or its press is spent) and the answer is <see cref="PressNone"/>.
+    /// </summary>
+    private static int TakeSwing(ref PoBrawlSimCorner c, int otherFloor, int frame, int gap)
     {
         // On the canvas nothing swings; the press waits and is thrown on standing (the wake-up strike).
         if (c.Floor != FloorNone) return PressNone;
+        // Mid-taunt nothing swings either, and a press made during it is dropped.
+        if (c.Taunt > 0)
+        {
+            c.Pending = PressNone;
+            return PressNone;
+        }
         var swing = c.Pending;
         if (swing == PressNone || c.Cooldown > 0) return PressNone;
         c.Pending = PressNone;
         // A special without a full bar is simply refused; the press is spent.
         if (swing == PressSpecial && c.Energy < EnergyMax) return PressNone;
+        if (swing == PressTaunt)
+        {
+            // Recorded like a swing so the presenter plays it once.
+            if (c.TauntCd == 0 && otherFloor == FloorNone && gap > KickReachMm + TauntClearMm)
+            {
+                c.Taunt = TauntFrames;
+                c.TauntCd = TauntCooldownFrames;
+                c.SwingFrame = frame;
+                c.Swing = PressTaunt;
+                c.Outcome = OutcomeNone;
+                c.Damage = 0;
+            }
+            return PressNone;
+        }
         switch (swing)
         {
             case PressPunch:
@@ -312,6 +404,10 @@ public static class PoBrawlRollbackSim
             case PressKick:
                 c.Cooldown = KickCooldown;
                 c.Energy = Math.Max(0, c.Energy - KickEnergyCost);
+                break;
+            case PressGrab:
+                c.Cooldown = GrabCooldown;
+                c.Energy = Math.Max(0, c.Energy - GrabEnergyCost);
                 break;
             default:
                 c.Cooldown = SpecialCooldown;
@@ -360,6 +456,13 @@ public static class PoBrawlRollbackSim
         var variance = (int)(NextRandom(ref rng) % (uint)(2 * DamageVariancePct + 1)) - DamageVariancePct;
         var damage = (baseDmg * (100 + variance) + 50) / 100;
 
+        // Caught showing off: the blow lands harder and the taunt is over.
+        if (defender.Taunt > 0)
+        {
+            damage = ((damage * TauntPunishPct) + 50) / 100;
+            defender.Taunt = 0;
+        }
+
         // A guard negates a punch (the defensive read on a jab), chips a kick to a quarter (it still
         // shoves) and does nothing against the special. Knockback is halved through it.
         if (guarded)
@@ -385,17 +488,82 @@ public static class PoBrawlRollbackSim
         attacker.Energy = Math.Min(EnergyMax, attacker.Energy + EnergyOnHit);
 
         // Daze, and the knockdown: never the killing blow (that is the KO), never inside the immunity.
-        if (defender.Immune == 0)
+        AddDaze(ref defender, dealt, shoveDir);
+    }
+
+    /// <summary>Daze from <paramref name="dealt"/> damage, and the knockdown it may cause (never inside the immunity, never at 0 HP).</summary>
+    private static void AddDaze(ref PoBrawlSimCorner defender, int dealt, int shoveDir)
+    {
+        if (defender.Immune != 0) return;
+        defender.Daze += dealt * DazePerDamage;
+        if (defender.Daze >= DazeAt && defender.Hp > 0)
         {
-            defender.Daze += dealt * DazePerDamage;
-            if (defender.Daze >= DazeAt && defender.Hp > 0)
-            {
-                defender.Floor = FloorDown;
-                defender.FloorT = 0;
-                defender.Daze = 0;
-                defender.X += shoveDir * KnockdownSlideMm;
-            }
+            defender.Floor = FloorDown;
+            defender.FloorT = 0;
+            defender.Daze = 0;
+            defender.Taunt = 0;
+            defender.X += shoveDir * KnockdownSlideMm;
         }
+    }
+
+    private static void ResolveGrab(ref PoBrawlSimState s, bool attackerIsP1, int otherSwing, int gap)
+    {
+        if (attackerIsP1) ResolveGrab(ref s.P1, ref s.P2, s.Frame, otherSwing, gap, +1);
+        else ResolveGrab(ref s.P2, ref s.P1, s.Frame, otherSwing, gap, -1);
+        EnforceSpacing(ref s);
+    }
+
+    /// <summary>
+    /// One corner's grab. <paramref name="otherSwing"/> is what the defender threw this frame: any
+    /// swing beats a grab. See the grab constants for the rule.
+    /// </summary>
+    private static void ResolveGrab(ref PoBrawlSimCorner attacker, ref PoBrawlSimCorner defender, int frame,
+        int otherSwing, int gap, int shoveDir)
+    {
+        attacker.SwingFrame = frame;
+        attacker.Swing = PressGrab;
+        attacker.Damage = 0;
+        var standing = otherSwing == PressNone && defender.Floor == FloorNone
+            && (defender.Cooldown == 0 || defender.Taunt > 0);
+        if (gap > GrabReachMm || !standing)
+        {
+            attacker.Outcome = OutcomeWhiff;
+            return;
+        }
+        var damage = GrabDamage;
+        if (defender.Taunt > 0)
+        {
+            damage = ((damage * TauntPunishPct) + 50) / 100;
+            defender.Taunt = 0;
+        }
+        var dealt = Math.Min(damage, Math.Max(0, defender.Hp - 1));
+        defender.Hp -= dealt;
+        defender.X += shoveDir * GrabThrowMm;
+        attacker.Damage = dealt;
+        attacker.Outcome = OutcomeHit;
+        attacker.Cooldown = GrabHitCooldown;
+        attacker.Energy = Math.Min(EnergyMax, attacker.Energy + EnergyOnHit);
+        AddDaze(ref defender, dealt, shoveDir);
+    }
+
+    /// <summary>Both corners grabbed on the same frame: in reach they break apart unhurt, out of reach both miss.</summary>
+    private static void ResolveBreak(ref PoBrawlSimState s, int gap)
+    {
+        var hit = gap <= GrabReachMm;
+        MarkBreak(ref s.P1, s.Frame, hit);
+        MarkBreak(ref s.P2, s.Frame, hit);
+        if (!hit) return;
+        s.P1.X -= GrabBreakMm;
+        s.P2.X += GrabBreakMm;
+    }
+
+    private static void MarkBreak(ref PoBrawlSimCorner c, int frame, bool hit)
+    {
+        c.SwingFrame = frame;
+        c.Swing = PressGrab;
+        c.Damage = 0;
+        c.Outcome = hit ? OutcomeBreak : OutcomeWhiff;
+        if (hit) c.Cooldown = GrabHitCooldown;
     }
 
     /// <summary>Ring clamp, then the minimum gap, split between the corners (a corner pinned on the rope yields nothing).</summary>
@@ -445,6 +613,7 @@ public static class PoBrawlRollbackSim
         a[o] = c.Hp; a[o + 1] = c.Energy; a[o + 2] = c.X; a[o + 3] = c.Held; a[o + 4] = c.Pending;
         a[o + 5] = c.Cooldown; a[o + 6] = c.SwingFrame; a[o + 7] = c.Swing; a[o + 8] = c.Outcome; a[o + 9] = c.Damage;
         a[o + 10] = c.Daze; a[o + 11] = c.Floor; a[o + 12] = c.FloorT; a[o + 13] = c.Immune; a[o + 14] = c.Arm; a[o + 15] = c.ArmFrame;
+        a[o + 16] = c.Taunt; a[o + 17] = c.TauntCd;
     }
 
     private static PoBrawlSimCorner UnpackCorner(IReadOnlyList<int> a, int o) => new()
@@ -465,6 +634,8 @@ public static class PoBrawlRollbackSim
         Immune = a[o + 13],
         Arm = a[o + 14],
         ArmFrame = a[o + 15],
+        Taunt = a[o + 16],
+        TauntCd = a[o + 17],
     };
 
     /// <summary>FNV-1a over the packed ints (one 32-bit word at a time) — what a snapshot carries for desync detection.</summary>
@@ -522,7 +693,7 @@ public struct PoBrawlSimCorner
     public int X;
     /// <summary>Idle / forward / back / block (PoBrawlMatchAction 0–3).</summary>
     public int Held;
-    /// <summary>A pressed attack waiting for the cooldown (4–6), or 0.</summary>
+    /// <summary>A press waiting for the cooldown (4–8: punch, kick, special, grab, taunt), or 0.</summary>
     public int Pending;
     public int Cooldown;
     // ── The most recent swing, for the 3D view: the presenter throws each (side, frame) once ──
@@ -546,4 +717,9 @@ public struct PoBrawlSimCorner
     public int Arm;
     /// <summary>Frame that punch fired on.</summary>
     public int ArmFrame;
+    // ── The taunt ──
+    /// <summary>Frames left of a taunt in progress (<see cref="PoBrawlRollbackSim.TauntFrames"/> at its start), 0 otherwise.</summary>
+    public int Taunt;
+    /// <summary>Frames before this corner may taunt again.</summary>
+    public int TauntCd;
 }
