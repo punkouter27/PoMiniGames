@@ -58,9 +58,9 @@ the asset changes, except where CI is named.
 
 | Path | Builds | Notes |
 |---|---|---|
-| `pocabinet/` | PoCabinet's world dump (`dump.cs`), the node race harness (`harness.mjs`), the debris check (`debris-check.mjs`), the splat packer (`ksplat.mjs`) and the radio voices (`radio-voices.mjs`, which writes `wwwroot/audio/pocabinet/`) | Run by hand after a track, physics, debris or dialogue change. See its README |
+| `pocabinet/` | PoCabinet's world dump (`dump.cs`), the node race harness (`harness.mjs`), the debris check (`debris-check.mjs`), the splat packer (`ksplat.mjs`), the court mesh packer (`court-pack.mjs`, KTX2 and Meshopt) with the build of the texture transcoder it needs (`basis-build.sh`, Docker), and the radio voices (`radio-voices.mjs`, which writes `wwwroot/audio/pocabinet/`) | Run by hand after a track, physics, debris or dialogue change. See its README |
 | `poecosystem/` | PoEcosystem's creature models (`creatures.mjs` writes `wwwroot/models/poecosystem/*.glb`), its spoken thoughts and narration (`voices.mjs` writes `wwwroot/audio/poecosystem/`) and the node check of its Rapier physics (`physics-check.mjs`) | Run by hand after a model, a thought or narrator line, or the physics changes. Uses `pocabinet/`'s `node_modules`. See its README |
-| `blender/` | The scanned court PoCabinet's circuit crosses and its gaussian splat (`wwwroot/models/court.glb`, `court*.ksplat`) | Blender scripts, fed to `pocabinet/ksplat.mjs` |
+| `blender/` | The scanned court PoCabinet's circuit crosses and its gaussian splat (`wwwroot/models/court.glb`, `court*.ksplat`) | Blender scripts, fed to `pocabinet/ksplat.mjs` and `pocabinet/court-pack.mjs` |
 | `pomarblerace/` | The headless harness behind `tests/pomarblerace-map-health.test.mjs` | CI runs `npm ci` here, then the test. See its README |
 | `pofighter/` | PoFighter's sprite sheet: `cutout.py` cuts the performer out of video frames (YOLO person mask + BiRefNet), `camera.py` measures the camera's pan and zoom, `pack.py` packs the moves listed in `p1.moves.json`. See its README | Python venv (ultralytics, rembg); intermediates stay under `artifacts/` |
 

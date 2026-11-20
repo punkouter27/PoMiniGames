@@ -34,6 +34,9 @@ const offlineAssetsExclude = [
     // Radzen's script; nothing else from the package is ever requested, so nothing else is
     // worth a first-visit download.
     /^_content\/Radzen\.Blazor\/(?!(?:css\/material-dark-base\.css|Radzen\.Blazor\.js|fonts\/(?:InterVariable|MaterialSymbolsOutlined)\.woff2)(?:\?.*)?$)/,
+    // The Basis texture transcoder (0.7 MB): only PoCabinet's court mesh needs it, on the low
+    // tier and the "Lite" setting. Cached on first use instead (runtimeCachePattern).
+    /^lib\/basis\//,
 ];
 
 // ── Never-cache list ──────────────────────────────────────────────────────────
@@ -62,9 +65,10 @@ const cdnCacheName = 'pominigames-cdn-v1';
 
 // Same-origin assets too heavy to precache for every visitor (track models and the
 // court scan's Gaussian splat are megabytes, sprite sheets hundreds of KB, PoCabinet's radio
-// lines 78 small clips). Cached the first time a game asks for
-// them, so a game played once online keeps working offline.
-const runtimeCachePattern = /\.(glb|ksplat|webp|mp3)$/;
+// lines 78 small clips, the Basis texture transcoder under lib/basis only the court's mesh
+// needs). Cached the first time a game asks for them, so a game played once online keeps
+// working offline.
+const runtimeCachePattern = /\.(glb|ksplat|webp|mp3)$|^\/lib\/basis\//;
 
 function isNetworkOnly(url, request) {
     // Cross-origin requests are never ours to cache, bar the pinned engine CDN.

@@ -112,7 +112,7 @@ Two files draw it (`wwwroot/js/pocabinet/models.js`):
   trees round the court reach in over it.
 - `wwwroot/models/court.glb`: the photogrammetry mesh, clipped to the same rectangle. The low
   graphics tier and the "Lite" scan-detail setting draw it, and it is the fallback when the splat
-  cannot load.
+  cannot load. Its three atlases are KTX2 (Basis ETC1S) and its geometry Meshopt (see below).
 
 Inside the rectangle `terrain.js` steps the scene's own ground down under the scan's floor.
 
@@ -140,12 +140,31 @@ node scripts/pocabinet/ksplat.mjs <tmp>\court.ply src/PoMiniGames.Client/wwwroot
 # court-low.ksplat: the same PLY cut to its first 100,000 vertices, packed the same way.
 ```
 
-`court.glb` is shipped as Blender writes it (Draco geometry, three JPEG atlases). Repacking it
-was tried on 2026-11-20 and nothing came out ahead: KTX2 / Basis atlases would stay compressed on
-the GPU (about 4 MB instead of 33 MB), but three's Basis transcoder builds functions from strings
-and the site's Content-Security-Policy has no `'unsafe-eval'`, so every texture fails to load;
-WebP atlases are no smaller than these JPEGs at the same look, and Meshopt geometry is 0.3 MB
-larger than Draco's.
+Blender writes `court.glb` with Draco geometry and three JPEG atlases. What ships is that file
+repacked (2026-11-20):
+
+```powershell
+node scripts/pocabinet/court-pack.mjs <blender's court.glb>     # writes wwwroot/models/court.glb
+```
+
+- **Why:** a JPEG atlas is decoded to RGBA on the GPU (32 MB for the three with their mips). As
+  KTX2 they stay compressed there: 4 MB on a phone (ETC2), 8 MB on a desktop (BC7). The mesh is
+  what the weakest devices draw. The file is 2.27 MB (it was 2.51) and needs no Draco decoder.
+- **The price:** ETC1S gives each 4x4 block one hue, so the noisy scan loses some saturation,
+  most in the distance (about 3% close up, 10 to 20% in the small mips). `--uastc` keeps the
+  colour for a 7 MB file. WebP atlases were also tried: no smaller than the JPEGs at the same
+  look.
+- **The transcoder** the page runs is `wwwroot/lib/basis/` (`basis_transcoder.js`, `.wasm`, the
+  Apache 2.0 `LICENSE`), not three's copy: three's is the stock embind build, which makes
+  functions from strings, and the site's Content-Security-Policy has no `'unsafe-eval'`, so every
+  texture failed with it. Ours is Basis Universal `v1_60` built with `-s DYNAMIC_EXECUTION=0`:
+
+  ```powershell
+  docker run --rm -v "${PWD}/scripts/pocabinet:/work:ro" -v "${PWD}/src/PoMiniGames.Client/wwwroot/lib/basis:/out" emscripten/emsdk:3.1.74-arm64 bash /work/basis-build.sh
+  ```
+
+  (drop `-arm64` on an x64 machine). The script fails if the output still holds `new Function`
+  or `eval(`. The service worker caches the two files on first use, not at install.
 
 `pocabinet-court.py` also lays and checks a lap of its own on the court floor (`route_plan`) and
 prints knots for it. That lap was the retired Center Court track; the circuit's road across the

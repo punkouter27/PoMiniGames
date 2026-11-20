@@ -109,7 +109,9 @@ dotnet test tests/PoMiniGames.E2EUI -p:SkipPlaywrightInstall=true --filter "..."
   through the asset manifest.
   - The CSP has no `'unsafe-eval'`: a library that builds functions from strings (three's Basis /
     KTX2 transcoder does, in r165 and r186) fails in the browser. Check a new WASM library on
-    the running app before building on it.
+    the running app before building on it. KTX2 textures go through our own build of the
+    transcoder in `wwwroot/lib/basis/` (`scripts/pocabinet/basis-build.sh`; `models.js` shows
+    how to point `KTX2Loader` at it).
 - **Results flow:**
   - Every game reports to `Client/Services/Play/GameResultService`.
   - It records local stats (`GameStatsService`) and submits the score through `ApiService`.

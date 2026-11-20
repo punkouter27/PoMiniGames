@@ -498,7 +498,10 @@ scripts/                        Working scripts only — see scripts/README.md
   (`@dimforge/rapier3d-compat` `0.21.0`, PoCabinet's debris physics, fetched when a race starts
   on the medium and high tiers) are pinned with SRI in the import map in `wwwroot/index.html`, while `cannon-es` (`0.20.0`)
   and `yuka` (`0.7.8`) resolve to their local copies under `wwwroot/lib/` so browsers, Web
-  Workers, and Node tests load the same artifact. PoEcosystem's sim worker also steps its
+  Workers, and Node tests load the same artifact. `wwwroot/lib/basis/` is Basis Universal's
+  KTX2 texture transcoder (`v1_60`, Apache 2.0), built here without string-made functions
+  (`scripts/pocabinet/basis-build.sh`) because the CDN build cannot run under the site's CSP;
+  PoCabinet's court mesh is the one thing that uses it. PoEcosystem's sim worker also steps its
   ragdolls, logs and rocks with Rapier (`sim/physics/rapierWorld.js`), imported by the same CDN
   URL (`RAPIER_CDN_URL` in `sim/core/config.js`; workers have no import map); if it does not
   arrive within four seconds the island runs on the local `cannon-es` instead. See the
@@ -603,6 +606,7 @@ stops the site (`QuotaExceeded`, deploys get a 403). So:
 | `/pocabinet/lobby-hub` (SignalR) | 2026-11-20: `SetTrack` removed and `PoCabinetLobbyPlayer` loses `trackId` (each seat still carries paint and the host's AI-driver count); the lobby's picker is the AI-driver count only |
 | `/pocabinet` settings (`pocabinet.settings.v1`) | 2026-11-20: new `radioVoice` (default on; a store without the key reads as on): speak the officials' radio lines, or only show them. The switch is **Radio voices** under Sound |
 | `wwwroot/audio/pocabinet/` | New (2026-11-20): `radio.json` (official id, line, clip file) and 78 MP3 clips (`radio/<officialId>/<hash>.mp3`, 16 kHz mono, 504 KB in all), one per line of `PoCabinetDialogue`. Fetched a line at a time and cached by the service worker on first use (`.mp3` joins its runtime-cache list). After editing a line run `node scripts/pocabinet/radio-voices.mjs`; until then the line is shown but not spoken |
+| `wwwroot/models/court.glb`, `wwwroot/lib/basis/` | 2026-11-20: PoCabinet's court mesh (the low tier and the "Lite" court setting) has KTX2 / Basis ETC1S atlases and Meshopt geometry (`scripts/pocabinet/court-pack.mjs`): 4 to 8 MB of texture memory where the JPEGs took 32, a 2.27 MB file, no Draco decoder; the court is a little paler in the distance. The transcoder is self-hosted in `wwwroot/lib/basis/` (cached by the service worker on first use) |
 | Import map (`wwwroot/index.html`) | 2026-11-20: new `rapier` entry, `@dimforge/rapier3d-compat@0.21.0` from jsDelivr with its SRI hash. Bump the version and the hash together |
 | `/poracer`, `GET /api/leaderboards/poracer-crossfire` | 2026-11-13: fourth track, Crossfire Switchbacks (`crossfire`), with its own best-lap board (also in `GET /api/leaderboards`). The race join's `Static` gains `weather` (`clear`, `rain`, `snow`, `fog`); bots drive by style (`PoRacerAiStyle`) and go round a car they have caught; the bot "Vanguard" is now "Loose Cannon" (Wildcard) |
 | `/pobrawl/match-hub` (SignalR) | Rollback protocol: `SubmitInput` takes `{ frame, held, press, sequence }`; new `matchInput` event (each accepted input with the frame the server used) and `Ping` method (clock sync); `matchState` now carries `frame`, `sim` (42 packed ints since 2026-11-20; 38 from 2026-11-13, 26 before) and `checksum` in place of the per-tick swing fields. `press` also takes `Grab` (7) and `Taunt` (8) since 2026-11-20 |

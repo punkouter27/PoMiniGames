@@ -8,7 +8,10 @@
 //   • court.ksplat, a Gaussian splat (400k splats, 9.6 MB; court-low.ksplat is its first 100k,
 //     shown first), through gaussian-splats-3d's DropInViewer, which sorts in a worker;
 //   • court.glb, the photogrammetry mesh: what the low graphics tier and the "Lite" setting
-//     draw, and the fallback if the splat cannot be.
+//     draw, and the fallback if the splat cannot be. Its three atlases are KTX2 (Basis ETC1S,
+//     mips in the file) and its geometry Meshopt, packed by scripts/pocabinet/court-pack.mjs:
+//     the textures stay compressed on the GPU (4 MB as ETC2 on a phone, 8 as BC7 on a desktop,
+//     where the JPEGs decoded to 32), which matters on exactly the devices that draw the mesh.
 //
 // Only the court and a few metres round it are drawn (track.scan.halfLength / halfWidth): the
 // splat's shader drops everything outside that rectangle and fades the last stretch, the mesh
@@ -36,15 +39,14 @@ export const COURT = {
     low: 0.6, hoopAt: 13.7, hoopReach: 1.9, hoopHalf: 1.5,
 };
 
-// court.glb stays as the Blender script writes it (Draco geometry, three JPEG atlases). Repacking
-// it was tried on 2026-11-20 and nothing came out ahead:
-//   - KTX2 / Basis atlases would stay compressed on the GPU (about 4 MB instead of 33 MB), but
-//     three's Basis transcoder (r165 and r186 both) is an embind build that makes functions from
-//     strings, and this site's Content-Security-Policy has no 'unsafe-eval': every texture fails.
-//     It needs a transcoder built with DYNAMIC_EXECUTION=0 before it can ship.
-//   - WebP atlases are no smaller than these JPEGs at the same look (the scan is noisy), and
-//     Meshopt geometry is 0.3 MB larger than Draco's.
-export const DRACO_PATH = 'https://cdn.jsdelivr.net/npm/three@0.165.0/examples/jsm/libs/draco/gltf/';
+/**
+ * The Basis Universal transcoder KTX2Loader runs in its worker, served by this site
+ * (wwwroot/lib/basis, built by scripts/pocabinet/basis-build.sh). Not three's copy on the CDN:
+ * that one is the stock embind build, which makes functions from strings, and this site's
+ * Content-Security-Policy has no 'unsafe-eval', so every texture failed to transcode with it
+ * (r165 and r186 both). Ours is the same source built with DYNAMIC_EXECUTION=0.
+ */
+export const BASIS_PATH = 'lib/basis/';
 
 /**
  * Where the scan stands in the scene (world units), from track.scan: its origin, the scale its
@@ -143,20 +145,23 @@ export async function loadScan(sh, group) {
 }
 
 /**
- * court.glb, placed and clipped to the drawn rectangle: unlit and single-sided as exported, it
+ * court.glb (KTX2 atlases, Meshopt geometry), placed and clipped to the drawn rectangle: unlit as exported, it
  * neither casts nor takes the sun's shadows (the catcher does). Its textures are already the
  * court as the camera saw it, so they skip the filmic curve (which would grey them).
  * Non-fatal, and dropped if the track changed meanwhile.
  */
 async function loadScanMesh(sh, group, place) {
-    let draco = null;
+    let ktx2 = null;
     try {
-        const [{ GLTFLoader }, { DRACOLoader }] = await Promise.all([
+        const [{ GLTFLoader }, { KTX2Loader }, { MeshoptDecoder }] = await Promise.all([
             import('three/addons/loaders/GLTFLoader.js'),
-            import('three/addons/loaders/DRACOLoader.js'),
+            import('three/addons/loaders/KTX2Loader.js'),
+            import('three/addons/libs/meshopt_decoder.module.js'),
         ]);
-        draco = new DRACOLoader().setDecoderPath(DRACO_PATH);
-        const gltf = await new GLTFLoader().setDRACOLoader(draco).loadAsync(COURT.url);
+        // detectSupport picks the GPU's own compressed format (ASTC, ETC2 or BC), so the
+        // atlases are never held as RGBA.
+        ktx2 = new KTX2Loader().setTranscoderPath(new URL(BASIS_PATH, document.baseURI).href).detectSupport(sh.renderer);
+        const gltf = await new GLTFLoader().setKTX2Loader(ktx2).setMeshoptDecoder(MeshoptDecoder).loadAsync(COURT.url);
         const model = gltf.scene;
         const planes = [
             new THREE.Plane(new THREE.Vector3(1, 0, 0), -(place.x - place.hx)),
@@ -190,7 +195,7 @@ async function loadScanMesh(sh, group, place) {
     } catch (e) {
         console.warn('pocabinet/scene: the court scan was skipped', e);
     } finally {
-        draco?.dispose();
+        ktx2?.dispose();
     }
 }
 
