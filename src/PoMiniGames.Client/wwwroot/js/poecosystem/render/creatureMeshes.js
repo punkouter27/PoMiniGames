@@ -13,6 +13,7 @@ import { PROP_BASE } from '../sim/core/config.js';
 import { SPECIES_ID } from '../sim/creatures/species.js';
 import { ecoLambert, materialLens } from './materials.js';
 import { createCreatureModels } from './creatureModels.js';
+import { lyingPose } from '../sim/physics/ragdoll.js';
 
 // Part = box or cone offset from the creature's origin (feet), forward = +Z.
 // feet = [fore-aft, sideways] distance from the origin to where the legs meet the ground:
@@ -107,6 +108,9 @@ export function createCreatureMeshes(scene, cap) {
   // Prop rows the models drew as bodies this frame (propMeshes.js skips them).
   let taken = new Uint8Array(0);
   const bodyRows = [];
+  // Bodies laid out by hand (a harness looking at how a species lies): [{ species, x, y, z, yaw }].
+  let staged = [];
+  const stagedView = new Float32Array(8 * 8);
 
   /**
    * The dead. A ragdoll's parts ride the frame as consecutive prop rows in rig order, each
@@ -190,6 +194,8 @@ export function createCreatureMeshes(scene, cap) {
     get tint() { return tint; },
     /** The animated models (creatureModels.js): which species have loaded, a clip override. */
     get models() { return models; },
+    /** Lay bodies out by hand, as a carcass lies (physics/ragdoll.js lyingPose): [{ species, x, y, z, yaw }]. */
+    set stagedBodies(list) { staged = Array.isArray(list) ? list : []; },
     /** Prop rows drawn as bodies in the last draw(): 1 per row taken. */
     get takenProps() { return taken; },
     /** The kin lens's subject and its living relatives ([{ handle, rel }], sim/world.js kinOf). */
@@ -287,6 +293,14 @@ export function createCreatureMeshes(scene, cap) {
         }
       }
       if (props) drawBodies(props, propCount); else taken.fill(0);
+      for (const b of staged) {
+        const g = groups[b.species];
+        if (!g || !models.ready(b.species)) continue;
+        const poses = lyingPose(b.species, b.x, b.y, b.z, b.yaw ?? 0, 1);
+        bodyRows.length = 0;
+        poses.forEach((p, k) => { stagedView.set([p.x, p.y, p.z, p.qx, p.qy, p.qz, p.qw, 0], k * 8); bodyRows.push(k); });
+        models.body(b.species, stagedView, bodyRows, g.rig.scale, true);
+      }
       models.end();
       if (tint < 0) repaint = false;
     },

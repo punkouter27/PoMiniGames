@@ -53,6 +53,7 @@ const HOLD_SECONDS = 0.35;       // a clip is kept at least this long, so a stut
 const WHITE = new Color(1, 1, 1);
 const BODY_ROWS = 48;            // bodies of one species drawn as the model at once; more lie as boxes
 const BODY_TINT = [0.8, 0.76, 0.74];   // a body is a little duller than the living
+const DEATH_SECONDS = 0.4;       // the living pose eases into the ragdoll's over this long
 
 /**
  * Which ragdoll part a joint follows, from its name: the part names in physics/ragdoll.js
@@ -226,6 +227,25 @@ export function createCreatureModels(scene, cap, { loader = null } = {}) {
   const euler = new Euler(0, 0, 0, 'YXZ'); const quat = new Quaternion();
   let disposed = false; let clock = 0; let swept = 0;
   let force = null;              // a clip name every creature plays (a harness looking at one clip)
+  const bodies = new Map();      // species and first prop row → { from, born, tx, ty, tz, seen }
+
+  /**
+   * The creature of this species that stopped being drawn in the last half second nearest
+   * (x, z), as { x, y, z, qx, qy, qz, qw, scale, clip, phase }, or null. Each is given to one
+   * body only.
+   */
+  function lastSeenNear(id, x, z, scale) {
+    let best = null; let reach = 1.2 + scale;
+    for (const a of state.values()) {
+      if (a.species !== id || a.claimed || a.seen >= clock || clock - a.seen > 0.5) continue;
+      const d = Math.hypot(a.x - x, a.z - z);
+      if (d < reach) { reach = d; best = a; }
+    }
+    if (!best) return null;
+    best.claimed = true;
+    const { x: px, y, z: pz, qx, qy, qz, qw, scale: size, clip, phase } = best;
+    return { x: px, y, z: pz, qx, qy, qz, qw, scale: size, clip, phase };
+  }
 
   async function load(id) {
     const url = new URL(`../../../models/poecosystem/${FILES[id]}.glb`, import.meta.url).href;
@@ -288,6 +308,23 @@ export function createCreatureModels(scene, cap, { loader = null } = {}) {
     set force(name) { force = name || null; },
     get force() { return force; },
     clipsOf: (id) => (species[id] ? Object.keys(species[id].clips) : []),
+    /** What a species is drawing this frame (a harness): counts, and the first body's instance and bone row. */
+    debug(id) {
+      const s = species[id];
+      if (!s) return null;
+      const i = s.count - s.bodies;      // bodies are put after the living
+      const row = s.bodies ? s.animA.array[i * 4] : -1;
+      const t = row >= 0 ? (row * s.width) * 4 : 0;
+      return {
+        count: s.count, bodies: s.bodies, instanceCount: s.geometry.instanceCount,
+        pose: s.bodies ? Array.from(s.pose.array.slice(i * 4, i * 4 + 4)) : null,
+        rot: s.bodies ? Array.from(s.rot.array.slice(i * 4, i * 4 + 4)) : null,
+        animA: s.bodies ? Array.from(s.animA.array.slice(i * 4, i * 4 + 4)) : null,
+        animB: s.bodies ? Array.from(s.animB.array.slice(i * 4, i * 4 + 4)) : null,
+        joint0: s.bodies ? Array.from(s.data.slice(t, t + 12)).map((v) => +v.toFixed(3)) : null,
+        rows: s.texture.image.height, bodyStart: s.bodyStart,
+      };
+    },
 
     begin(dt) {
       clock += dt;
@@ -299,13 +336,43 @@ export function createCreatureModels(scene, cap, { loader = null } = {}) {
      * prop rows of its parts in rig order (index into `view`, stride 8: x, y, z, qx, qy, qz,
      * qw, kind); `scale` is the size it was drawn at alive. Returns false when the species
      * has no model yet or has no row left, and the caller draws the boxes.
+     *
+     * THE MOMENT OF DEATH. A ragdoll starts from the rig's rest pose, and the creature was
+     * mid-stride: drawn as-is, its legs snapped straight in one frame. So a new body looks
+     * for the creature that just stopped being drawn where it is (same species, last seen
+     * this half second, within a body length), and for DEATH_SECONDS the vertex stage blends
+     * from that creature's last animated pose to the ragdoll. To blend the two they have to
+     * be in one frame, so the ragdoll's matrices are written relative to the creature's last
+     * place, turn and size, and the instance carries those.
      */
-    body(id, view, rows, scale) {
+    body(id, view, rows, scale, loose = false) {
       const s = species[id];
       if (!s || s.bodies >= BODY_ROWS || s.count >= cap) return false;
       const row = s.bodyStart + s.bodies++;
       const parts = RIGS[s.rig].parts;
       const { data, width } = s;
+
+      // Which body this is: its first prop row, checked against where that row's body was.
+      const o0 = rows[0] * 8;
+      const tx = view[o0]; const ty = view[o0 + 1]; const tz = view[o0 + 2];
+      // (`loose`: a body with no prop row of its own, laid out by a harness; never blended.)
+      const key = loose ? -1 - s.bodies : id * 4096 + rows[0];
+      let b = loose ? { from: null, born: clock, tx, ty, tz } : bodies.get(key);
+      if (!b || Math.hypot(tx - b.tx, ty - b.ty, tz - b.tz) > 3) {
+        b = { from: lastSeenNear(id, tx, tz, scale), born: clock, tx, ty, tz, seen: clock };
+        bodies.set(key, b);
+      }
+      b.tx = tx; b.ty = ty; b.tz = tz; b.seen = clock;
+      const f = b.from;
+      // The frame the matrices are written in: the creature's last, or the world's.
+      let f00 = 1, f01 = 0, f02 = 0, f10 = 0, f11 = 1, f12 = 0, f20 = 0, f21 = 0, f22 = 1, fx = 0, fy = 0, fz = 0, fs = 1;
+      if (f) {
+        const { qx, qy, qz, qw } = f;
+        f00 = 1 - 2 * (qy * qy + qz * qz); f01 = 2 * (qx * qy - qz * qw); f02 = 2 * (qx * qz + qy * qw);
+        f10 = 2 * (qx * qy + qz * qw); f11 = 1 - 2 * (qx * qx + qz * qz); f12 = 2 * (qy * qz - qx * qw);
+        f20 = 2 * (qx * qz - qy * qw); f21 = 2 * (qy * qz + qx * qw); f22 = 1 - 2 * (qx * qx + qy * qy);
+        fx = f.x; fy = f.y; fz = f.z; fs = f.scale;
+      }
       let moved = false;
       for (let j = 0; j < s.joints; j++) {
         // A part the frame did not carry (the prop table was full) rides the first one.
@@ -318,19 +385,24 @@ export function createCreatureModels(scene, cap, { loader = null } = {}) {
         const r10 = 2 * (qx * qy + qz * qw) * scale; const r11 = (1 - 2 * (qx * qx + qz * qz)) * scale; const r12 = 2 * (qy * qz - qx * qw) * scale;
         const r20 = 2 * (qx * qz - qy * qw) * scale; const r21 = 2 * (qy * qz + qx * qw) * scale; const r22 = (1 - 2 * (qx * qx + qy * qy)) * scale;
         const c = parts[k].offset;
+        const wx = view[o] - (r00 * c[0] + r01 * c[1] + r02 * c[2]) - fx;
+        const wy = view[o + 1] - (r10 * c[0] + r11 * c[1] + r12 * c[2]) - fy;
+        const wz = view[o + 2] - (r20 * c[0] + r21 * c[1] + r22 * c[2]) - fz;
         const t = (row * width + j * 3) * 4;
-        const put = (i, v) => { if (Math.abs(data[t + i] - v) > 1e-5) { data[t + i] = v; moved = true; } };
-        put(0, r00); put(1, r01); put(2, r02); put(3, view[o] - (r00 * c[0] + r01 * c[1] + r02 * c[2]));
-        put(4, r10); put(5, r11); put(6, r12); put(7, view[o + 1] - (r10 * c[0] + r11 * c[1] + r12 * c[2]));
-        put(8, r20); put(9, r21); put(10, r22); put(11, view[o + 2] - (r20 * c[0] + r21 * c[1] + r22 * c[2]));
+        const put = (i, v) => { v /= fs; if (Math.abs(data[t + i] - v) > 1e-5) { data[t + i] = v; moved = true; } };
+        // (frame rotation)^T x [ R | t ]: the world matrix seen from the frame.
+        put(0, f00 * r00 + f10 * r10 + f20 * r20); put(1, f00 * r01 + f10 * r11 + f20 * r21); put(2, f00 * r02 + f10 * r12 + f20 * r22); put(3, f00 * wx + f10 * wy + f20 * wz);
+        put(4, f01 * r00 + f11 * r10 + f21 * r20); put(5, f01 * r01 + f11 * r11 + f21 * r21); put(6, f01 * r02 + f11 * r12 + f21 * r22); put(7, f01 * wx + f11 * wy + f21 * wz);
+        put(8, f02 * r00 + f12 * r10 + f22 * r20); put(9, f02 * r01 + f12 * r11 + f22 * r21); put(10, f02 * r02 + f12 * r12 + f22 * r22); put(11, f02 * wx + f12 * wy + f22 * wz);
       }
       if (moved) s.texture.needsUpdate = true;
-      // The matrices are already in world space: no place, no turn, no size of its own.
       const i = s.count++;
-      s.pose.array.set([0, 0, 0, 1], i * 4);
-      s.rot.array.set([0, 0, 0, 1], i * 4);
-      s.animA.array.set([row, row, 0, 0], i * 4);
-      s.animB.array.set([row, row, 0, 0], i * 4);
+      s.pose.array.set([fx, fy, fz, fs], i * 4);
+      if (f) s.rot.array.set([f.qx, f.qy, f.qz, f.qw], i * 4); else s.rot.array.set([0, 0, 0, 1], i * 4);
+      // How much of the living pose is left: all of it at the death, none DEATH_SECONDS on.
+      const u = f ? Math.min(1, (clock - b.born) / DEATH_SECONDS) : 1;
+      s.animA.array.set([row, row, 0, 1 - u * u * (3 - 2 * u)], i * 4);
+      if (f && u < 1) rowsOf(s, f.clip, f.phase, s.animB.array, i * 4); else s.animB.array.set([row, row, 0, 0], i * 4);
       s.tint.array.set(BODY_TINT, i * 3);
       return true;
     },
@@ -351,6 +423,7 @@ export function createCreatureModels(scene, cap, { loader = null } = {}) {
         state.set(handle, a);
       }
       a.seen = clock;
+      a.species = id;
       let want = force ?? clipFor(id, goal, speed, a.clip);
       if (!s.clips[want]) want = want === 'work' ? 'feed' : 'idle';
       a.held += dt;
@@ -370,6 +443,8 @@ export function createCreatureModels(scene, cap, { loader = null } = {}) {
       s.pose.array.set([x, y, z, scale], i * 4);
       quat.setFromEuler(euler.set(pitch, yaw, roll));
       s.rot.array.set([quat.x, quat.y, quat.z, quat.w], i * 4);
+      // Where it was last drawn, in case the next thing drawn there is its body.
+      a.x = x; a.y = y; a.z = z; a.scale = scale; a.qx = quat.x; a.qy = quat.y; a.qz = quat.z; a.qw = quat.w;
       rowsOf(s, a.clip, a.phase, s.animA.array, i * 4);
       // Smoothstep on the fade, so the hand-over eases at both ends.
       s.animA.array[i * 4 + 3] = a.fade * a.fade * (3 - 2 * a.fade);
@@ -392,6 +467,7 @@ export function createCreatureModels(scene, cap, { loader = null } = {}) {
       if (clock - swept > 3) {
         swept = clock;
         for (const [h, a] of state) if (clock - a.seen > 2) state.delete(h);
+        for (const [k, b] of bodies) if (clock - b.seen > 2) bodies.delete(k);
       }
     },
 
@@ -402,7 +478,7 @@ export function createCreatureModels(scene, cap, { loader = null } = {}) {
         scene.remove(s.mesh);
         s.geometry.dispose(); s.material.dispose(); s.texture.dispose();
       }
-      species.length = 0; state.clear();
+      species.length = 0; state.clear(); bodies.clear();
     },
   };
 }

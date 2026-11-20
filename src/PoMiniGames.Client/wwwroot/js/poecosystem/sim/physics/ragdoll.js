@@ -59,22 +59,58 @@ export const rigFor = (species) => SPECIES_RIG[species] ?? SPECIES_RIG[SPECIES_I
 const rotY = (x, z, yaw) => [x * Math.cos(yaw) + z * Math.sin(yaw), -x * Math.sin(yaw) + z * Math.cos(yaw)];
 const propKind = (sizeIndex) => PROP_KIND.ragdollPart * 8 + sizeIndex;
 
-/** World-space poses for a creature lying on its side — static carcasses and snapshots. */
+// How a body lies. A carcass rolled onto its side as one rigid piece has four legs sticking
+// straight out like a toy tipped over; a real one goes slack. Each part takes this extra
+// turn about the joint that holds it to the body ([x, y, z] radians in the creature's own
+// frame, before the roll): the legs fold fore and aft, the ones on the upper side sag toward
+// the ground, and the head comes down to rest. After the roll the rig's +x is uppermost, so
+// the FR / BR legs and the right arm and leg are the upper ones.
+const REST = Object.freeze({
+  quadruped: Object.freeze({
+    head: [0.3, -0.6, 0], legFL: [-0.6, 0, 0], legFR: [-0.25, 0, -0.55], legBL: [0.5, 0, 0], legBR: [0.15, 0, -0.55],
+  }),
+  biped: Object.freeze({
+    chest: [0.14, 0, 0], head: [0.25, -0.3, -0.2], armL: [-0.9, 0, 0.35], armR: [-0.4, 0, -0.5], legL: [-0.6, 0, 0], legR: [-0.2, 0, -0.35],
+  }),
+});
+// How far the rig's centre line lies over the ground, in rig units: half the torso's width,
+// or for a person a little less than the shoulder's.
+const REST_LIFT = Object.freeze({ quadruped: 0.3, biped: 0.27 });
+
+const quatOf = ([x, y, z]) => mulQuat([0, Math.sin(y / 2), 0, Math.cos(y / 2)], mulQuat([Math.sin(x / 2), 0, 0, Math.cos(x / 2)], [0, 0, Math.sin(z / 2), Math.cos(z / 2)]));
+/** v turned by the unit quaternion q. */
+function turn(q, v) {
+  const [x, y, z, w] = q;
+  const cx = y * v[2] - z * v[1] + w * v[0]; const cy = z * v[0] - x * v[2] + w * v[1]; const cz = x * v[1] - y * v[0] + w * v[2];
+  return [v[0] + 2 * (y * cz - z * cy), v[1] + 2 * (z * cx - x * cz), v[2] + 2 * (x * cy - y * cx)];
+}
+
+/** World-space poses for a creature lying on its side, gone slack: static carcasses and snapshots. */
 export function lyingPose(species, x, y, z, yaw, scale = 1) {
   const { rig, scale: rs } = rigFor(species);
   const s = rs * scale;
   const half = Math.PI / 2;
-  // Quaternion for a 90° roll about the creature's forward axis, composed with the yaw.
+  // A 90° roll about the creature's forward axis, composed with the yaw.
   const qy = [0, Math.sin(yaw / 2), 0, Math.cos(yaw / 2)];
   const qr = [0, 0, Math.sin(half / 2), Math.cos(half / 2)];
   const q = mulQuat(qy, qr);
-  return RIGS[rig].parts.map((p, k) => {
-    // Rolled onto its side as one rigid body: a part's height becomes a lateral spread and
-    // its sideways offset a height, so the near legs lie over the far ones. (They used to be
-    // flattened to one height, which a box hid and a creature's own model would not.)
-    const lx = -p.offset[1] * s; const ly = (0.3 + p.offset[0]) * s; const lz = p.offset[2] * s;
+  const def = RIGS[rig];
+  return def.parts.map((p, k) => {
+    // The part's own slackening, about the joint that ties it to its parent.
+    const rest = REST[rig][p.name];
+    const joint = def.links.find((l) => l[0] === p.name)?.[2];
+    let c = p.offset; let qp = q;
+    if (rest && joint) {
+      const local = quatOf(rest);
+      const arm = turn(local, [p.offset[0] - joint[0], p.offset[1] - joint[1], p.offset[2] - joint[2]]);
+      c = [joint[0] + arm[0], joint[1] + arm[1], joint[2] + arm[2]];
+      qp = mulQuat(q, local);
+    }
+    // Rolled onto its side: height becomes a lateral spread and the sideways offset a height,
+    // so the near legs lie over the far ones.
+    const lx = -c[1] * s; const ly = Math.max(0.04, REST_LIFT[rig] + c[0]) * s; const lz = c[2] * s;
     const [wx, wz] = rotY(lx, lz, yaw);
-    return { x: x + wx, y: y + ly, z: z + wz, qx: q[0], qy: q[1], qz: q[2], qw: q[3], propKind: propKind(p.sizeIndex), owner: propOwner(species, k, scale) };
+    return { x: x + wx, y: y + ly, z: z + wz, qx: qp[0], qy: qp[1], qz: qp[2], qw: qp[3], propKind: propKind(p.sizeIndex), owner: propOwner(species, k, scale) };
   });
 }
 
