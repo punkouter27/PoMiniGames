@@ -11,8 +11,16 @@
 // cars.js tears off a car (throwPiece(): a bumper, the wing, a mirror, the tailgate, a wheel
 // off a wreck) are each their own mesh, handed over at the pose they were hanging at.
 //
-// The solver is a compact sequential-impulse one, each body on its own against the world (no
-// piece hits another). A piece is an oriented box (its eight corners touch) or a disc (the
+// Two solvers step the same pieces. On the medium and high tiers it is Rapier
+// (debris-rapier.js: a rigid-body engine in WASM, asked for when the race starts): real shapes
+// against each other, so a bumper lies across a wheel and shards pile up against a wreck, and
+// every car is a box in its world, moved to where the car is drawn. The low tier, the first
+// seconds before Rapier has loaded and any device where it cannot load use the solver in this
+// file, and a piece carries on from one to the other where it is.
+//
+// The built-in solver is a compact sequential-impulse one, each body on its own against the
+// world; pieces meet each other only as spheres (collidePieces()). A piece is an oriented box
+// (its eight corners touch) or a disc (the
 // rim points nearest the plane touch, so a wheel or a hubcap rolls on its edge and lies flat
 // on its face), mass 1, inertia from its shape. The world is the ground and the barriers: on
 // the road and its run-off, the road's own plane (track.z along, tilted by track.bank across:
@@ -26,7 +34,9 @@
 //
 // On the track a piece is an obstacle one way only: a car (any of them, by its drawn pose)
 // that runs into one kicks it out of its footprint the way the car was going, with a spark
-// off metal (fx.js). The car never feels it. Caps by quality tier (SceneHandle.quality):
+// off metal (fx.js). The car never feels it. Under Rapier the kick is only for a car at
+// speed (it covers a car's length in three steps, further than a shard is wide); a slow or
+// stopped car is its box, and pieces lie against it or on it. Caps by quality tier (SceneHandle.quality):
 // 24 / 64 / 160 pieces, of which 6 / 14 / 28 whole parts; past the cap, or once it has lain
 // there a while, the oldest sinks into the ground and is gone. Reduced motion
 // (scene.fx.reduced) throws a third as many and gently: they drop off rather than fly.
@@ -38,6 +48,7 @@ import * as THREE from 'three';
 import { wallFace } from './terrain.js';
 import { surfaceAt, SURF_GRAVEL, SURF_GRASS } from './physics.js';
 import { WORLD_SCALE as WS } from './util.js';
+import { loadRapier, RapierDebris } from './debris-rapier.js';
 
 const STEP = 1 / 60;
 const MAX_STEPS = 6;
@@ -63,6 +74,10 @@ let acc = 0;
 let kinds = null;              // the instanced meshes, built on the first throw
 let sparkBudget = 0;
 let clatterAt = 0;
+let RAPIER = null;             // the engine's module, once loaded
+let rapierAsked = false;
+let rapierOff = false;         // it failed here: the built-in solver for the rest of the session
+let rapier = null;             // RapierDebris for the track being raced
 
 function emitClatter(b, strength) {
     if (!world?.onClatter || strength < 0.08) return;
@@ -140,6 +155,7 @@ function newBody(kind, shape, p, q, v, w) {
         pp: p.clone(), pq: q.clone().normalize(), qi: new THREE.Quaternion(),
         e: 0.35, roll: 2, metal: true, floor: p.y - 0.5, hint: -1,
         asleep: false, still: 0, age: 0, rest: 0, sink: -1, kickT: 0,
+        rb: null, col: null,   // its body and collider under Rapier (debris-rapier.js)
     };
     return b;
 }
@@ -171,11 +187,65 @@ function asDisc(b, R, w) {
 function add(b) {
     b.hint = world?.track ? b.hint : -1;
     bodies.push(b);
+    engine(() => rapier.add(b));
     enforceCaps();
+}
+
+/** Run `fn` against the Rapier world if there is one. Anything it throws ends Rapier for the session. */
+function engine(fn) {
+    if (!rapier) return false;
+    try {
+        fn();
+        return true;
+    } catch (e) {
+        console.warn('pocabinet/debris: Rapier failed, back to the built-in solver', e);
+        dropEngine();
+        rapierOff = true;
+        return false;
+    }
+}
+
+function dropEngine() {
+    for (const b of bodies) { b.rb = null; b.col = null; }
+    try { rapier?.dispose(); } catch { /* it is going anyway */ }
+    rapier = null;
+}
+
+/**
+ * The Rapier world for the track being raced, on the tiers that get one. Asks for the engine the
+ * first time a race is seen (so it is there before the first shunt), builds the world when it
+ * arrives or the track changes, and hands it the pieces already lying about.
+ */
+function ensureEngine() {
+    const track = world?.track;
+    if (rapierOff || !track) return;
+    if (!RAPIER) {
+        if (rapierAsked || tier() === 'low') return;
+        rapierAsked = true;
+        loadRapier().then((R) => { if (R) RAPIER = R; else rapierOff = true; });
+        return;
+    }
+    if (rapier && rapier.track === track) return;
+    dropEngine();
+    try {
+        rapier = new RapierDebris(RAPIER, track, WS);
+    } catch (e) {
+        console.warn('pocabinet/debris: no Rapier world, keeping the built-in solver', e);
+        rapier = null;
+        rapierOff = true;
+        return;
+    }
+    engine(() => { for (const b of bodies) if (b.sink < 0) rapier.add(b); });
+}
+
+/** Which solver is stepping the pieces: 'rapier' or 'builtin' (for checks in a browser console). */
+export function debrisSolver() {
+    return rapier ? 'rapier' : 'builtin';
 }
 
 function removeAt(i) {
     const b = bodies[i];
+    if (b.rb) engine(() => rapier.remove(b));
     if (b.obj) {
         b.obj.parent?.remove(b.obj);
         b.dispose?.();
@@ -536,6 +606,7 @@ function pushOut(b) {
 // ── Cars kick it ────────────────────────────────────────────────────────
 
 const HALF_L = 1.95, HALF_W = 0.85;
+const KICK_FROM = 4;           // world units/s: under Rapier, slower cars push with their box alone
 
 /** Every piece inside a car's footprint is knocked out of it the way the car was going. One way only. */
 function kicks(dt) {
@@ -559,6 +630,9 @@ function kicks(dt) {
             const hl = HALF_L + grow, hw = HALF_W + grow;
             if (Math.abs(al) > hl || Math.abs(ac) > hw) continue;
             const sp = (Number(r.speed) || 0) / WS;
+            // Under Rapier a slow car is its box: the piece lies against it. (A piece the cars'
+            // boxes have not been given yet, because it is still inside one, is moved out.)
+            if (rapier && Math.abs(sp) < KICK_FROM && b.withCars) continue;
             const cvx = fx * sp, cvz = fz * sp;
             let ex, ez, push;
             if (hl - Math.abs(al) < hw - Math.abs(ac)) { const s = al >= 0 ? 1 : -1; ex = fx * s; ez = fz * s; push = hl - Math.abs(al); }
@@ -581,6 +655,7 @@ function kicks(dt) {
                 for (let k = 0; k < 3; k++) world.fx.spark(b.p.x, b.p.y + 0.05, b.p.z, b.v.x * 0.5 + (rnd() - 0.5) * 2, 0.6 + rnd() * 1.5, b.v.z * 0.5 + (rnd() - 0.5) * 2);
             }
             emitClatter(b, Math.min(1, hard * 0.85));
+            if (b.rb) engine(() => rapier.push(b));
             break;
         }
     }
@@ -694,14 +769,20 @@ function place(b, alpha, pos, quat) {
  */
 export function updateDebris(dt, race) {
     if (race !== undefined) world = race || null;
+    ensureEngine();
     if (!bodies.length) { if (kinds) for (const m of kinds) m.count = 0; return; }
     if (dt > 0) {
         enforceCaps();
+        // A piece on its way out is no longer a body: it sinks through whatever it lay on.
+        for (const b of bodies) if (b.sink >= 0 && b.rb) engine(() => rapier.remove(b));
         acc += Math.min(dt, 0.1);
         let steps = 0;
+        engine(() => rapier.syncCars(world?.cars));
         while (acc >= STEP && steps < MAX_STEPS) {
-            for (const b of bodies) if (!b.asleep && b.sink < 0) stepBody(b, STEP);
-            collidePieces();
+            if (!engine(() => rapier.step(bodies, bounced))) {
+                for (const b of bodies) if (!b.asleep && b.sink < 0) stepBody(b, STEP);
+                collidePieces();
+            }
             acc -= STEP;
             steps++;
         }
@@ -722,9 +803,15 @@ export function updateDebris(dt, race) {
     draw(Math.min(1, acc / STEP));
 }
 
+/** A piece's velocity changed by `dv` in one step under Rapier: it hit something. */
+function bounced(b, dv) {
+    emitClatter(b, (dv - 2.2) / 10);
+}
+
 /** Every piece off the road, and forget the race (it is over). */
 export function clearDebris() {
     while (bodies.length) removeAt(bodies.length - 1);
+    dropEngine();
     if (kinds) for (const m of kinds) { m.count = 0; m.parent?.remove(m); }
     world = null;
     acc = 0;

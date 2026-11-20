@@ -15,6 +15,12 @@
 //         music.js score ─► music bus ───────────────────┴► slow-mo lowpass ─► compressor
 //                                                            ─► master ─► out
 //
+//   • radio — the officials' lines, spoken (radio()): clips voiced once, offline, by
+//     scripts/pocabinet/radio-voices.mjs (wwwroot/audio/pocabinet/), fetched when a line is
+//     keyed and played through a radio band (highpass, a little drive, a presence peak,
+//     lowpass) with carrier hiss under it and a squelch as the key is released. It skips the
+//     room and the occlusion filter (it is in the helmet), ducks the sfx and the score while
+//     it speaks, and is off with the `radioVoice` setting.
 //   • music — the adaptive score (music.js, owned here): race state in through setMusic and
 //     musicStinger, ducked by the player engine's load and by every impact, off with the
 //     `music` setting (setMusicEnabled). Its bus joins before the slow-mo lowpass, so the
@@ -89,6 +95,14 @@ let modalReady = false;
 let musicBus = null;       // the score's bus (joins the sfx bus at the slow-mo lowpass)
 let music = null;          // music.js Music
 let musicEnabled = true;   // the `music` setting (applied whenever the score exists)
+let sfxDuck = null;        // the sfx bus's level while the radio speaks
+let radioIn = null;        // a spoken line goes in here (the radio band follows)
+let radioBus = null;       // and comes out here, to the slow-mo lowpass
+let radioOn = true;        // the `radioVoice` setting
+let radioLines = null;     // official id -> line -> clip file (radio.json), once loaded
+let radioAsked = false;
+let radioUntil = 0;        // ctx time the line being spoken ends
+const radioClips = new Map();   // clip file -> decoded AudioBuffer (or a promise of one)
 let hitBus = null;         // one-shots (impacts, pops, positional cheers): sfx bus + reverb send
 let verb = null;           // { send, rivalSend, slots: [{ conv, wet, zone }], active, switchAt }
 let irs = null;            // zone → impulse-response AudioBuffer
@@ -537,7 +551,9 @@ export function init() {
             envFilter = filter('lowpass', 20000, 0.65);
             slowFilter = filter('lowpass', 20000, 0.7);
             bus = gainNode(1);
-            bus.connect(envFilter);
+            sfxDuck = gainNode(1);
+            bus.connect(sfxDuck);
+            sfxDuck.connect(envFilter);
             envFilter.connect(slowFilter);
             slowFilter.connect(comp);
             comp.connect(master);
@@ -546,6 +562,7 @@ export function init() {
             musicBus.connect(slowFilter);
 
             buildReverb();
+            buildRadio();
             engine = buildPlayerEngine();
             buildBeds();
             buildSurface();
@@ -566,6 +583,7 @@ export function init() {
             } catch { music = null; /* the race runs without a score */ }
         }
         if (ctx.state === 'suspended') void ctx.resume();
+        loadRadioLines();
         return true;
     } catch {
         return false;
@@ -1371,6 +1389,108 @@ function beep(freq, durationSeconds, type = 'sine', gainValue = 0.15) {
 /** Countdown: 3 short pings then a raised GO ping. */
 export function countdownBeep(isFinal) {
     beep(isFinal ? 990 : 620, isFinal ? 0.5 : 0.14, 'sine', 0.18);
+}
+
+// ── The officials' radio, spoken ─────────────────────────────────────────────
+
+const RADIO_URL = 'audio/pocabinet/';
+const RADIO_LATE = 1.5;        // seconds: a clip that took longer than this to arrive is not played
+
+/** A soft clip: the radio's amplifier, driven a little. */
+function radioCurve() {
+    const n = 1024, curve = new Float32Array(n);
+    for (let i = 0; i < n; i++) {
+        const x = i / (n - 1) * 2 - 1;
+        curve[i] = Math.tanh(x * 2.6) / Math.tanh(2.6);
+    }
+    return curve;
+}
+
+function buildRadio() {
+    radioIn = gainNode(1);
+    const hp = filter('highpass', 420, 0.9);
+    const drive = ctx.createWaveShaper();
+    drive.curve = radioCurve();
+    drive.oversample = '2x';
+    const presence = filter('peaking', 1900, 1.1);
+    presence.gain.value = 6;
+    const lp = filter('lowpass', 2900, 0.8);
+    radioBus = gainNode(1.35);
+    radioIn.connect(hp); hp.connect(drive); drive.connect(presence); presence.connect(lp); lp.connect(radioBus);
+    radioBus.connect(slowFilter);
+}
+
+/** Which lines have a clip (radio.json), asked for once: with no file, or offline, the lines stay text. */
+function loadRadioLines() {
+    if (radioAsked) return;
+    radioAsked = true;
+    fetch(RADIO_URL + 'radio.json')
+        .then(r => (r.ok ? r.json() : null))
+        .then(j => { radioLines = j && typeof j.lines === 'object' ? j.lines : null; })
+        .catch(() => { radioLines = null; });
+}
+
+/** The `radioVoice` setting: speak the officials' lines, or only show them. */
+export function setRadioVoice(on) {
+    radioOn = on !== false;
+}
+
+function radioClip(file) {
+    const have = radioClips.get(file);
+    if (have) return Promise.resolve(have);
+    const p = fetch(RADIO_URL + 'radio/' + file)
+        .then(r => { if (!r.ok) throw new Error(String(r.status)); return r.arrayBuffer(); })
+        .then(bytes => ctx.decodeAudioData(bytes))
+        .then(buf => { radioClips.set(file, buf); return buf; });
+    radioClips.set(file, p);
+    p.catch(() => radioClips.delete(file));
+    return p;
+}
+
+/**
+ * Speak `text` as `officialId` (the line the bubble shows). False when there is no clip for it,
+ * the setting is off, or another line is still being spoken: the bubble and the blip stand alone.
+ */
+export function radio(officialId, text) {
+    if (!ctx || !radioOn || !radioIn) return false;
+    const file = radioLines?.[officialId]?.[text];
+    if (!file || ctx.currentTime < radioUntil) return false;
+    const asked = ctx.currentTime;
+    radioUntil = asked + RADIO_LATE;       // nothing else until this one has spoken or missed
+    radioClip(file).then((buf) => {
+        if (!ctx || !radioOn || ctx.currentTime - asked > RADIO_LATE) { radioUntil = 0; return; }
+        const t = Math.max(ctx.currentTime, asked + 0.16);     // after the two-tone blip
+        const dur = buf.duration;
+        radioUntil = t + dur + 0.2;
+        const src = ctx.createBufferSource();
+        src.buffer = buf;
+        const g = gainNode(0);
+        g.gain.setValueAtTime(0, t);
+        g.gain.linearRampToValueAtTime(1, t + 0.02);
+        g.gain.setValueAtTime(1, Math.max(t + 0.02, t + dur - 0.03));
+        g.gain.linearRampToValueAtTime(0, t + dur);
+        src.connect(g); g.connect(radioIn);
+        src.start(t);
+        // The open channel: a thin hiss under the voice, and the squelch as the key is released.
+        const hiss = noiseSource(true);
+        const band = filter('bandpass', 2400, 0.7);
+        const hg = gainNode(0);
+        hg.gain.setValueAtTime(0, t - 0.03);
+        hg.gain.linearRampToValueAtTime(0.022, t);
+        hg.gain.setValueAtTime(0.022, t + dur);
+        hg.gain.linearRampToValueAtTime(0, t + dur + 0.05);
+        hiss.connect(band); band.connect(hg); hg.connect(radioBus);
+        hiss.start(Math.max(ctx.currentTime, t - 0.03), Math.random() * 1.5);
+        hiss.stop(t + dur + 0.08);
+        burst('bandpass', 2600, 1.2, 0.07, 0.07, t + dur + 0.01, radioBus);
+        // Everything else steps back while the radio is open.
+        for (const [node, level] of [[sfxDuck, 0.62], [musicBus, 0.5]]) {
+            if (!node) continue;
+            node.gain.setTargetAtTime(level, t, 0.05);
+            node.gain.setTargetAtTime(1, t + dur, 0.14);
+        }
+    }).catch(() => { radioUntil = 0; });
+    return true;
 }
 
 /** Radio blip before an official speaks. */

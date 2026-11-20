@@ -30,6 +30,10 @@
             <span>Race music</span>
             <input type="checkbox" role="switch" class="pocabinet-switch" checked="@Value.Music" @onchange="OnMusicChanged" />
         </label>
+        <label class="pocabinet-settings__row">
+            <span>Radio voices</span>
+            <input type="checkbox" role="switch" class="pocabinet-switch" checked="@Value.RadioVoice" @onchange="OnRadioVoiceChanged" />
+        </label>
         @if (ShowAppSettings)
         {
             <div class="pocabinet-settings__row">
@@ -152,6 +156,9 @@
 
     private Task OnMusicChanged(ChangeEventArgs e) =>
         RaiseAsync(s => s.Music = e.Value is bool b && b);
+
+    private Task OnRadioVoiceChanged(ChangeEventArgs e) =>
+        RaiseAsync(s => s.RadioVoice = e.Value is bool b && b);
 
     private static double ParseDouble(string? raw, double fallback) =>
         double.TryParse(raw, System.Globalization.NumberStyles.Float,

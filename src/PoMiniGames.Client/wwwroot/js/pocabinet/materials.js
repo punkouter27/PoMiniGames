@@ -151,6 +151,29 @@ export function wind(material, amount = 0.12, axis = 'y', reach = 1) {
 }
 
 /**
+ * A flag on a pole: a plane `width` wide in its own x, held along the edge at x = pole * width / 2
+ * (`pole` -1 or +1) and rippling more the further from it, with a little droop. Two travelling
+ * waves in the vertex shader on the scene's one clock, out of phase by where the flag stands. The
+ * plane needs a few segments across to bend (a one-quad plane only shears).
+ */
+export function flutter(material, width, pole = -1, amount = 0.12) {
+    const k = Math.PI * 3 / width;
+    return addHook(material, `flutter${width}:${pole}:${amount}`, (shader) => {
+        shader.uniforms.uPcTime = clock;
+        shader.vertexShader = 'uniform float uPcTime;\n' + shader.vertexShader.replace('#include <begin_vertex>', `#include <begin_vertex>
+        {
+            float free = clamp(position.x * ${(-pole).toFixed(1)} / ${width.toFixed(3)} + 0.5, 0.0, 1.0);
+            float ph = dot(modelMatrix[3].xz, vec2(0.37, 0.23));
+            float along = position.x * ${(-pole * k).toFixed(3)};
+            float gust = 0.75 + 0.25 * sin(uPcTime * 0.4 + ph);
+            float wave = sin(along - uPcTime * 6.2 + ph) * 0.62 + sin(along * 2.3 - uPcTime * 9.7 + ph * 1.7) * 0.24;
+            transformed.z += wave * ${amount.toFixed(3)} * free * gust;
+            transformed.y -= free * free * ${(amount * 0.6).toFixed(3)} * (1.0 + 0.4 * wave);
+        }`);
+    });
+}
+
+/**
  * Wrapped subsurface scattering (#5): backlit sun transmission + soft wrap lighting for
  * foliage crowns, palms, and translucent painted plastics.
  */

@@ -4,13 +4,23 @@
 // Three r165 + gaussian-splats-3d@0.4.7 keep the main 3D scene on WebGL2, so GPU compute runs
 // on a shared WebGPU device when navigator.gpu is enabled ('auto' or 'webgpu' on high tier),
 // with automatic non-blocking fallback to WebGL2 / JS stepping when unavailable or disabled.
+//
+// The kernel also carries the particles on the wake field (wake.js: the air the cars stir, a
+// 64 x 64 grid of horizontal velocity round the camera, stepped on the CPU and uploaded here once
+// a frame it changes). wakeAt() mirrors WakeField.sample and the pull mirrors fx.js Pool.step:
+// change them together.
+
+import { WAKE_N, WAKE_COUPLE, WAKE_HEAVY, WAKE_CEILING } from './wake.js';
 
 const WGSL_PARTICLE_STEP = /* wgsl */`
 struct Params {
     dt: f32,
     count: u32,
-    pad0: u32,
-    pad1: u32,
+    wakeN: u32,
+    wakeGain: f32,
+    wakeOrigin: vec2<f32>,
+    wakeCell: f32,
+    pad0: f32,
 };
 
 // Packed 12 floats (48 bytes) per particle:
@@ -30,6 +40,24 @@ struct Particle {
 @group(0) @binding(0) var<uniform> params: Params;
 @group(0) @binding(1) var<storage, read_write> particles: array<Particle>;
 @group(0) @binding(2) var<storage, read_write> compactOut: array<vec4<f32>>;
+@group(0) @binding(3) var<storage, read> wake: array<vec2<f32>>;
+
+// The air at world (x, z): bilinear between cell centres, still outside the window.
+fn wakeAt(p: vec2<f32>) -> vec2<f32> {
+    let n = f32(params.wakeN);
+    let g = (p - params.wakeOrigin) / params.wakeCell - vec2<f32>(0.5, 0.5);
+    if (g.x < 0.0 || g.y < 0.0 || g.x >= n - 1.0 || g.y >= n - 1.0) {
+        return vec2<f32>(0.0, 0.0);
+    }
+    let i = vec2<u32>(floor(g));
+    let f = fract(g);
+    let w = params.wakeN;
+    let a = wake[i.y * w + i.x];
+    let b = wake[i.y * w + i.x + 1u];
+    let c = wake[(i.y + 1u) * w + i.x];
+    let d = wake[(i.y + 1u) * w + i.x + 1u];
+    return mix(mix(a, b, f.x), mix(c, d, f.x), f.y);
+}
 
 @compute @workgroup_size(64)
 fn main(@builtin(global_invocation_id) gid: vec3<u32>) {
@@ -64,6 +92,19 @@ fn main(@builtin(global_invocation_id) gid: vec3<u32>) {
     var vel = p.velMax.xyz * damp;
     vel.y = vel.y - grav * dt;
 
+    // Carried by the wake: light particles near the ground, as hard as the air there is moving.
+    if (params.wakeGain > 0.0 && grav < ${WAKE_HEAVY.toFixed(1)}) {
+        let air = wakeAt(p.posLife.xz);
+        let mag = length(air);
+        if (mag > 0.05) {
+            let light = clamp(1.0 - grav / ${WAKE_HEAVY.toFixed(1)}, 0.0, 1.0);
+            let low = clamp(1.0 - (p.posLife.y - floorY) / ${WAKE_CEILING.toFixed(1)}, 0.0, 1.0);
+            let pull = 1.0 - exp(-${WAKE_COUPLE.toFixed(2)} * params.wakeGain * light * low * min(1.0, mag * 0.5) * dt);
+            vel.x = vel.x + (air.x - vel.x) * pull;
+            vel.z = vel.z + (air.y - vel.z) * pull;
+        }
+    }
+
     var pos = p.posLife.xyz + vel * dt;
     if (pos.y < floorY) {
         pos.y = floorY;
@@ -93,9 +134,25 @@ const state = {
     adapterInfo: null,
     pipeline: null,
     bindLayout: null,
+    wakeBuf: null,       // the wake grid on the GPU (WAKE_N * WAKE_N vec2<f32>)
+    wake: null,          // the WakeField it is filled from (setWakeField), or null
+    wakeVersion: -1,     // the field version last uploaded
     dispatches: 0,
     failed: false,
 };
+
+/** The field the kernel carries particles on this frame (fx.js, once a frame), or null for none. */
+export function setWakeField(field) {
+    state.wake = field || null;
+}
+
+/** The grid into its GPU buffer, when it has changed since the last upload. */
+function uploadWake(device) {
+    const f = state.wake;
+    if (!f || !state.wakeBuf || state.wakeVersion === f.version) return;
+    state.wakeVersion = f.version;
+    device.queue.writeBuffer(state.wakeBuf, 0, f.u);
+}
 
 export function hasWebGpu() {
     return typeof navigator !== 'undefined' && !!navigator.gpu;
@@ -143,6 +200,8 @@ export async function ensureWebGpuDevice() {
                     state.device = null;
                     state.pipeline = null;
                     state.bindLayout = null;
+                    state.wakeBuf = null;
+                    state.wakeVersion = -1;
                     state.initPromise = null;
                 }
             });
@@ -182,8 +241,15 @@ function getParticlePipeline(device) {
             { binding: 0, visibility: GPUShaderStage.COMPUTE, buffer: { type: 'uniform' } },
             { binding: 1, visibility: GPUShaderStage.COMPUTE, buffer: { type: 'storage' } },
             { binding: 2, visibility: GPUShaderStage.COMPUTE, buffer: { type: 'storage' } },
+            { binding: 3, visibility: GPUShaderStage.COMPUTE, buffer: { type: 'read-only-storage' } },
         ],
     });
+    // Zero until a field is set: still air.
+    state.wakeBuf = device.createBuffer({
+        size: WAKE_N * WAKE_N * 2 * 4,
+        usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST,
+    });
+    state.wakeVersion = -1;
     state.pipeline = device.createComputePipeline({
         layout: device.createPipelineLayout({ bindGroupLayouts: [state.bindLayout] }),
         compute: { module, entryPoint: 'main' },
@@ -208,8 +274,9 @@ export class GpuParticleStepper {
         this.mapped = [false, false];
         this.writeIdx = 0;
         this.bindGroup = null;
+        this.wakeGain = 0;     // how strongly this pool's particles ride the wake (0: not at all)
         this.scratch = new Float32Array(maxParticles * 16);
-        this.uniformArr = new ArrayBuffer(16);
+        this.uniformArr = new ArrayBuffer(32);
         this.uniformF32 = new Float32Array(this.uniformArr);
         this.uniformU32 = new Uint32Array(this.uniformArr);
         this.readBufs = [new Float32Array(maxParticles * 16), new Float32Array(maxParticles * 16)];
@@ -232,7 +299,7 @@ export class GpuParticleStepper {
             usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_SRC,
         });
         this.uniformBuf = device.createBuffer({
-            size: 16,
+            size: 32,
             usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST,
         });
         for (let i = 0; i < 2; i++) {
@@ -247,6 +314,7 @@ export class GpuParticleStepper {
                 { binding: 0, resource: { buffer: this.uniformBuf } },
                 { binding: 1, resource: { buffer: this.storageBuf } },
                 { binding: 2, resource: { buffer: this.outBuf } },
+                { binding: 3, resource: { buffer: state.wakeBuf } },
             ],
         });
         this.pipeline = pipeline;
@@ -279,8 +347,16 @@ export class GpuParticleStepper {
         }
 
         const device = state.device;
+        const field = this.wakeGain > 0 ? state.wake : null;
         this.uniformF32[0] = dt;
         this.uniformU32[1] = n;
+        this.uniformU32[2] = WAKE_N;
+        this.uniformF32[3] = field ? this.wakeGain : 0;
+        this.uniformF32[4] = field ? field.ox : 0;
+        this.uniformF32[5] = field ? field.oz : 0;
+        this.uniformF32[6] = field ? field.cell : 1;
+        this.uniformF32[7] = 0;
+        if (field) uploadWake(device);
         device.queue.writeBuffer(this.uniformBuf, 0, this.uniformArr);
         device.queue.writeBuffer(this.storageBuf, 0, sc);
 

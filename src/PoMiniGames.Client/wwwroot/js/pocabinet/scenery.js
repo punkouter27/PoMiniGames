@@ -25,7 +25,7 @@
 import * as THREE from 'three';
 import { KERB_INNER, KERB_OUTER } from './physics.js';
 import { raised } from './kerbs.js';
-import { wind, water } from './materials.js';
+import { wind, water, flutter } from './materials.js';
 import { themeOf, wallFace } from './terrain.js';
 import { WORLD_SCALE as WS, fnv1a, roadPlane, canvasTexture } from './util.js';
 
@@ -608,7 +608,8 @@ export class Scenery {
         const t = this.track;
         const green = lam('#7fbf5a');
         const pole = lam('#e8e8e8');
-        const flagMat = lam('#d8262b', { side: THREE.DoubleSide });
+        // The pin flags ripple (materials.js flutter): held on the pole side, eight quads across.
+        const flagMat = flutter(lam('#d8262b', { side: THREE.DoubleSide }), 0.8, -1, 0.09);
         for (let i = 0; i < 5; i++) {
             const a = i / 5 * Math.PI * 2 + this.rng();
             const r = 60 + this.rng() * 180;
@@ -629,7 +630,7 @@ export class Scenery {
             const p = new THREE.Mesh(new THREE.CylinderGeometry(0.04, 0.04, 2.4, 5), pole);
             p.position.set(x / WS, gyc + 1.2, y / WS);
             this.group.add(p);
-            const f = new THREE.Mesh(new THREE.PlaneGeometry(0.8, 0.5), flagMat);
+            const f = new THREE.Mesh(new THREE.PlaneGeometry(0.8, 0.5, 8, 3), flagMat);
             f.position.set(x / WS + 0.4, gyc + 2.1, y / WS);
             this.group.add(f);
             this.exclusions.push({ x, y, r: 40 });
@@ -652,11 +653,13 @@ export class Scenery {
         const wood = lam('#5a3a22');
         add(new THREE.BoxGeometry(3, 2.6, 2), wood, 0, 1.3, 4);
         add(new THREE.CircleGeometry(0.6, 24), gold, 0, 1.6, 5.02);
-        const flag = new THREE.MeshBasicMaterial({ map: flagTexture(), side: THREE.DoubleSide });
         const poleMat = lam('#c9a445');
         for (const x of [-6, 6]) {
             add(new THREE.CylinderGeometry(0.07, 0.07, 7, 6), poleMat, x, 3.5, 2);
-            add(new THREE.PlaneGeometry(3.2, 1.7), flag, x + 1.65 * Math.sign(x), 5.9, 2);
+            // Each flag hangs away from the lectern, so its pole is on the inner edge: a
+            // material each, rippling from its own pole (materials.js flutter).
+            const flag = flutter(new THREE.MeshBasicMaterial({ map: flagTexture(), side: THREE.DoubleSide }), 3.2, -Math.sign(x), 0.24);
+            add(new THREE.PlaneGeometry(3.2, 1.7, 14, 5), flag, x + 1.65 * Math.sign(x), 5.9, 2);
         }
         const screen = new THREE.MeshBasicMaterial({ map: textTexture('NO FURTHER QUESTIONS', '#b0102a', '#ffffff', 1024, 160) });
         add(new THREE.BoxGeometry(30, 4.6, 0.4), lam('#111111'), 0, 16, 0);

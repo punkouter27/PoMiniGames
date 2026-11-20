@@ -816,7 +816,7 @@ public partial class PoCabinetPageBase : ComponentBase, IAsyncDisposable
             {
                 _lastDialogueKey = key;
                 _liveAnnouncement = $"{d.Text}";
-                if (_dialogueHandle is not null) Fire("PoCabinet.showDialogue", _dialogueHandle, PoCabinetCatalog.OfficialName(d.OfficialId), d.Text);
+                if (_dialogueHandle is not null) Fire("PoCabinet.showDialogue", _dialogueHandle, PoCabinetCatalog.OfficialName(d.OfficialId), d.Text, d.OfficialId);
                 forceRender = true;
             }
         }

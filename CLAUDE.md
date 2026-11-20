@@ -107,6 +107,9 @@ dotnet test tests/PoMiniGames.E2EUI -p:SkipPlaywrightInstall=true --filter "..."
   `platform/stage/stage.js` (`createStage`) with helpers in `platform/2d/` and `platform/3d/`; a new
   cross-game effect goes in `platform/stage/features/` (written once), not inside a game. The PWA service worker precaches them automatically
   through the asset manifest.
+  - The CSP has no `'unsafe-eval'`: a library that builds functions from strings (three's Basis /
+    KTX2 transcoder does, in r165 and r186) fails in the browser. Check a new WASM library on
+    the running app before building on it.
 - **Results flow:**
   - Every game reports to `Client/Services/Play/GameResultService`.
   - It records local stats (`GameStatsService`) and submits the score through `ApiService`.
@@ -136,6 +139,10 @@ dotnet test tests/PoMiniGames.E2EUI -p:SkipPlaywrightInstall=true --filter "..."
     `AnswerMatcher`.
   - Ecosystem, Brawl and Cabinet are
     scripted. Do not add AI services back without being asked.
+  - Cabinet's radio lines are spoken from clips voiced once, offline
+    (`scripts/pocabinet/radio-voices.mjs`, a local text-to-speech model; the MP3s and their
+    manifest are in `wwwroot/audio/pocabinet/`). Nothing is generated at run time. After editing
+    `PoCabinetDialogue` run the script again (`--check` lists lines with no clip).
   - PoCapitol's after-action debrief (`wwwroot/js/pocapitol/debrief.js`) is client-only: a
     built-in deterministic writer by default, or, if the player opts in, a model on their own
     machine through Ollama. It has no server side, no key and no paid boundary; keep it that way.

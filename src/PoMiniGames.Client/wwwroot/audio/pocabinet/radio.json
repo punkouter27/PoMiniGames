@@ -1,0 +1,110 @@
+{
+  "about": "PoCabinet radio lines, voiced once by scripts/pocabinet/radio-voices.mjs. Do not edit by hand.",
+  "model": "onnx-community/Kokoro-82M-v1.0-ONNX",
+  "voices": {
+    "sean-s": {
+      "voice": "am_puck",
+      "speed": 1
+    },
+    "steve-b": {
+      "voice": "am_onyx",
+      "speed": 0.96
+    },
+    "bill-b": {
+      "voice": "am_fenrir",
+      "speed": 1
+    },
+    "mike-p": {
+      "voice": "am_michael",
+      "speed": 0.97
+    }
+  },
+  "lines": {
+    "sean-s": {
+      "I'm not taking questions right now.": "sean-s/4892a0bb.mp3",
+      "There will be no comment at this time.": "sean-s/9f190707.mp3",
+      "The press can wait.": "sean-s/25911ff9.mp3",
+      "Stay on message.": "sean-s/4d880613.mp3",
+      "I'm here to drive, not explain.": "sean-s/1f0eaa2e.mp3",
+      "No briefing today — only racing.": "sean-s/67c0c68e.mp3",
+      "Off the record? Always.": "sean-s/94ccc8c7.mp3",
+      "I deny everything.": "sean-s/9e67f330.mp3",
+      "I'm not moving, you are.": "sean-s/f662c263.mp3",
+      "That's a misleading frame.": "sean-s/244a68a6.mp3",
+      "Spin it however you like.": "sean-s/df904639.mp3",
+      "I reject the premise.": "sean-s/48c0a3fa.mp3",
+      "Fake news.": "sean-s/277a8cd4.mp3",
+      "Don't read into it.": "sean-s/4a4a988b.mp3",
+      "That's not what happened.": "sean-s/7072f783.mp3",
+      "Plausible deniability.": "sean-s/73401bc1.mp3",
+      "Move along, nothing to see.": "sean-s/760205bb.mp3",
+      "The people have spoken.": "sean-s/f1926f2e.mp3",
+      "It's a big win. Yuge.": "sean-s/dd1f53fc.mp3",
+      "Total victory.": "sean-s/82d4d4ec.mp3",
+      "We're just getting started.": "sean-s/868d75cd.mp3"
+    },
+    "steve-b": {
+      "Let me explain how this works.": "steve-b/fe472b5f.mp3",
+      "There's a method to this.": "steve-b/8e2daa06.mp3",
+      "Strategy first, speed second.": "steve-b/c0a21eb1.mp3",
+      "I'm the brain of the operation.": "steve-b/276ed486.mp3",
+      "Patience wins races.": "steve-b/3e50e509.mp3",
+      "Inside line is for amateurs.": "steve-b/5ef1476a.mp3",
+      "Watch the corners.": "steve-b/7de801cb.mp3",
+      "I see three moves ahead.": "steve-b/2bfce888.mp3",
+      "I've been waiting for this.": "steve-b/4bdb1a96.mp3",
+      "Now we go.": "steve-b/65cf0bf7.mp3",
+      "Checkmate in three corners.": "steve-b/8761a879.mp3",
+      "You walked right into it.": "steve-b/75fe9fbf.mp3",
+      "Executing the plan.": "steve-b/1d6ef3f5.mp3",
+      "Right on schedule.": "steve-b/1ecca0a9.mp3",
+      "The board is set.": "steve-b/55bdf148.mp3",
+      "Confidence builds.": "steve-b/7a1f93ca.mp3",
+      "Victory has a thousand fathers.": "steve-b/afbcd73d.mp3",
+      "Strategy always wins.": "steve-b/ef066568.mp3",
+      "I told you so.": "steve-b/569403c0.mp3",
+      "The strategist takes the podium.": "steve-b/a7cc30ad.mp3"
+    },
+    "bill-b": {
+      "Order must be maintained.": "bill-b/01c7951d.mp3",
+      "Law and order on the track.": "bill-b/660f44d5.mp3",
+      "I'm the enforcer.": "bill-b/aadd002b.mp3",
+      "Don't make me bump you.": "bill-b/baea3dc0.mp3",
+      "Hard on the brakes, harder on you.": "bill-b/4e76a33a.mp3",
+      "Tough on corners, tough on crime.": "bill-b/9c945f47.mp3",
+      "I'll bump first, ask questions later.": "bill-b/7c38fc2f.mp3",
+      "Maximum aggression.": "bill-b/b2469761.mp3",
+      "That'll be a fine.": "bill-b/9f3574c1.mp3",
+      "You're under investigation.": "bill-b/9ab00bd4.mp3",
+      "Out of my way.": "bill-b/1175b16f.mp3",
+      "Side impact at my discretion.": "bill-b/96cb88af.mp3",
+      "Process server.": "bill-b/4f7e4033.mp3",
+      "Subpoena delivered.": "bill-b/d587eaea.mp3",
+      "Back to the paddock in cuffs.": "bill-b/af283278.mp3",
+      "Justice has prevailed.": "bill-b/8246e25e.mp3",
+      "Charge dismissed — for everyone except you.": "bill-b/eb050494.mp3",
+      "Order restored.": "bill-b/5eb83ed9.mp3",
+      "Long arm of the racing law.": "bill-b/5d98946b.mp3"
+    },
+    "mike-p": {
+      "I'm here to support the team.": "mike-p/26e6cab8.mp3",
+      "Steady wins the race.": "mike-p/f7979696.mp3",
+      "Follow the leader.": "mike-p/e11bda5c.mp3",
+      "I'll draft whoever's in front.": "mike-p/56ce6238.mp3",
+      "The quiet car wins.": "mike-p/4b3573fb.mp3",
+      "Patience and podiums.": "mike-p/7dccba12.mp3",
+      "You go ahead, I'll be right behind.": "mike-p/d9487b2a.mp3",
+      "Steady as she goes.": "mike-p/48a094a9.mp3",
+      "Just tagging along.": "mike-p/934dca53.mp3",
+      "Drafting is legal.": "mike-p/7e7fe92f.mp3",
+      "Where you lead, I follow.": "mike-p/ab62a4f5.mp3",
+      "Thanks for the tow.": "mike-p/5b34df12.mp3",
+      "Right where I want to be.": "mike-p/a7ef66a1.mp3",
+      "Steady does it.": "mike-p/d30bad33.mp3",
+      "Podium is the goal.": "mike-p/affd53fd.mp3",
+      "Happy to support.": "mike-p/8f124c97.mp3",
+      "Second is a great place to be.": "mike-p/9af31f20.mp3",
+      "We all win together.": "mike-p/5e4df7ce.mp3"
+    }
+  }
+}

@@ -30,7 +30,23 @@ public class PoCabinetTests
     [InlineData(nameof(Contacts_AreImpulsesBetweenCarShapedHulls))]
     [InlineData(nameof(Lobby_FirstArrivalHosts_LaterArrivalsShareIt_AndBouncesAtCap))]
     [InlineData(nameof(PerTickSnapshot_FitsTwoKilobytes_AtEightCars))]
+    [InlineData(nameof(TheRadioSpeaksUnlessSwitchedOff_AndAnOlderStoreStillSpeaks))]
     public Task Scenario(string name) => Scenarios.RunAsync(this, name);
+
+    /// <summary>
+    /// "Radio voices" (the officials' lines, spoken) is on by default, a store written before the
+    /// setting existed reads as on, and off survives the round trip under the key the engine reads.
+    /// </summary>
+    private static void TheRadioSpeaksUnlessSwitchedOff_AndAnOlderStoreStillSpeaks()
+    {
+        new PoCabinetUiSettings().RadioVoice.Should().BeTrue();
+        PoCabinetUiSettings.FromJson("""{"music":false}""").RadioVoice.Should().BeTrue("an older store has no radioVoice key");
+
+        var off = PoCabinetUiSettings.FromJson("""{"radioVoice":false}""");
+        off.RadioVoice.Should().BeFalse();
+        off.ToJs().GetProperty("radioVoice").GetBoolean().Should().BeFalse("audio.js reads the camelCase key");
+        PoCabinetUiSettings.FromJson(off.ToJson()).RadioVoice.Should().BeFalse();
+    }
 
     /// <summary>
     /// The scripted pool covers every official and every race.js moment, a line is picked

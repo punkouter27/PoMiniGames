@@ -39,6 +39,42 @@ server physics and check the features the circuit ships with):
 dotnet test tests/PoMiniGames.Unit --filter "FullyQualifiedName~PoCabinet"
 ```
 
+## Crash debris
+
+Debris is render-only (no piece ever touches the sim), and on the medium and high tiers the
+Rapier engine steps it (`wwwroot/js/pocabinet/debris-rapier.js`; the low tier and any device where
+Rapier cannot load keep the solver in `debris.js`). The solver file imports nothing from three, so
+it also runs in node:
+
+```powershell
+node scripts/pocabinet/debris-check.mjs      # once: npm ci --prefix scripts/pocabinet, and the world dump above
+```
+
+It builds the real circuit's road and barriers, drops pieces on it and checks six things: they
+settle on the road between the barriers, a bumper dropped on a wheel lies on it, a piece thrown
+at a barrier at a car's top speed stays in, a piece dropped on a stopped car does not end up
+inside it, a car driven through a pile clears it, and a step with the high tier's 160 pieces
+stays under 4 ms. Run it after changing `debris-rapier.js` or the track's width or run-off.
+
+## Radio voices
+
+The officials' radio lines (`src/PoMiniGames.Shared/Games/PoCabinetDialogue.cs`) are spoken in the
+game from clips voiced once, here, by a local text-to-speech model (Kokoro-82M through
+`kokoro-js`, on the CPU; its weights, about 90 MB, are fetched from Hugging Face the first time).
+Nothing is generated at run time.
+
+```powershell
+node scripts/pocabinet/radio-voices.mjs            # voice whatever has no clip yet (needs ffmpeg on PATH)
+node scripts/pocabinet/radio-voices.mjs --force    # voice every line again (after changing a voice or the trim)
+node scripts/pocabinet/radio-voices.mjs --check    # no model: list lines with no clip, exit 1 if any
+```
+
+It writes `wwwroot/audio/pocabinet/radio.json` (official id, line, clip file) and one 16 kHz mono
+MP3 a line under `radio/<officialId>/`. A clip's name is a hash of its voice, speed and text, so
+a changed line gets a new file and the old one is deleted. Until the script is run again after
+an edit, the new line is shown and blipped but not spoken. Each official has one of the model's
+stock voices (the `VOICES` table in the script); they imitate nobody.
+
 ## The circuit's zones
 
 `PoCabinetTrackDefinition.Zones` names what each stretch of the lap is dressed as; the world
@@ -94,6 +130,13 @@ Both come from the same photogrammetry reconstruction (`mesh.glb` and
 node scripts/pocabinet/ksplat.mjs <tmp>\court.ply src/PoMiniGames.Client/wwwroot/models/court.ksplat   # once: npm ci --prefix scripts/pocabinet
 # court-low.ksplat: the same PLY cut to its first 100,000 vertices, packed the same way.
 ```
+
+`court.glb` is shipped as Blender writes it (Draco geometry, three JPEG atlases). Repacking it
+was tried on 2026-11-20 and nothing came out ahead: KTX2 / Basis atlases would stay compressed on
+the GPU (about 4 MB instead of 33 MB), but three's Basis transcoder builds functions from strings
+and the site's Content-Security-Policy has no `'unsafe-eval'`, so every texture fails to load;
+WebP atlases are no smaller than these JPEGs at the same look, and Meshopt geometry is 0.3 MB
+larger than Draco's.
 
 `pocabinet-court.py` also lays and checks a lap of its own on the court floor (`route_plan`) and
 prints knots for it. That lap was the retired Center Court track; the circuit's road across the

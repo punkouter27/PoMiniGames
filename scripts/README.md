@@ -58,7 +58,7 @@ the asset changes, except where CI is named.
 
 | Path | Builds | Notes |
 |---|---|---|
-| `pocabinet/` | PoCabinet's world dump (`dump.cs`), the node race harness (`harness.mjs`) and the splat packer (`ksplat.mjs`) | Run by hand after a track or physics change. See its README |
+| `pocabinet/` | PoCabinet's world dump (`dump.cs`), the node race harness (`harness.mjs`), the debris check (`debris-check.mjs`), the splat packer (`ksplat.mjs`) and the radio voices (`radio-voices.mjs`, which writes `wwwroot/audio/pocabinet/`) | Run by hand after a track, physics, debris or dialogue change. See its README |
 | `blender/` | The scanned court PoCabinet's circuit crosses and its gaussian splat (`wwwroot/models/court.glb`, `court*.ksplat`) | Blender scripts, fed to `pocabinet/ksplat.mjs` |
 | `pomarblerace/` | The headless harness behind `tests/pomarblerace-map-health.test.mjs` | CI runs `npm ci` here, then the test. See its README |
 | `pofighter/` | PoFighter's sprite sheet: `cutout.py` cuts the performer out of video frames (YOLO person mask + BiRefNet), `camera.py` measures the camera's pan and zoom, `pack.py` packs the moves listed in `p1.moves.json`. See its README | Python venv (ultralytics, rembg); intermediates stay under `artifacts/` |

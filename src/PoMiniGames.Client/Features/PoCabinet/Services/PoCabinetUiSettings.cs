@@ -18,6 +18,12 @@ public sealed class PoCabinetUiSettings
     // settings, not Cabinet's, and the engine reads them from the app.
     /// <summary>The adaptive race score (pocabinet/music.js). On by default; an older store without the key reads as on.</summary>
     public bool Music { get; set; } = true;
+    /// <summary>
+    /// Speak the officials' radio lines (clips voiced once, offline: <c>wwwroot/audio/pocabinet/</c>,
+    /// audio.js <c>radio</c>). Off: the lines are only shown. On by default; an older store without
+    /// the key reads as on. JS key <c>radioVoice</c>.
+    /// </summary>
+    public bool RadioVoice { get; set; } = true;
     public double HudScale { get; set; } = 1;
     /// <summary>"clear" or "rain" (rain also lowers grip).</summary>
     public string Weather { get; set; } = "clear";

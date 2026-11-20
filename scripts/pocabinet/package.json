@@ -1,13 +1,17 @@
 {
   "name": "pocabinet-tools",
   "private": true,
-  "description": "Node tools for PoCabinet assets (ksplat.mjs packs the court scan's Gaussian splat). Not part of the app build.",
+  "description": "Node tools for PoCabinet assets and checks (ksplat.mjs packs the court scan's Gaussian splat, radio-voices.mjs voices the officials' radio lines, debris-check.mjs drops debris on the circuit through the Rapier solver). Not part of the app build.",
   "type": "module",
   "scripts": {
-    "ksplat": "node ksplat.mjs"
+    "ksplat": "node ksplat.mjs",
+    "radio-voices": "node radio-voices.mjs",
+    "debris-check": "node debris-check.mjs"
   },
   "dependencies": {
+    "@dimforge/rapier3d-compat": "0.21.0",
     "@mkkellogg/gaussian-splats-3d": "0.4.7",
+    "kokoro-js": "1.2.1",
     "three": "0.165.0"
   }
 }

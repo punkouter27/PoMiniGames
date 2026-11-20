@@ -40,6 +40,10 @@
          addons import them) resolve to the same r186 files, so there is one instance of it.
          Bump the version and the integrity hashes together.
 
+         "rapier" (@dimforge/rapier3d-compat: the WASM is inside the module) is PoCabinet's debris
+         physics on the medium and high tiers (js/pocabinet/debris-rapier.js). Nothing imports it
+         until a Cabinet race starts.
+
          "yuka" (crowd steering, PoCapitol) and "cannon-es" (physics, also imported directly by
          PoEcosystem's Web Worker) are served from this origin instead of the CDN so browser
          engines, Web Workers, and Node tests run against the same local copy. -->
@@ -51,6 +55,7 @@
         "cannon-es": "/lib/cannon-es/cannon-es.js",
         "yuka": "/lib/yuka/yuka.module.js",
         "gaussian-splats-3d": "https://cdn.jsdelivr.net/npm/@mkkellogg/gaussian-splats-3d@0.4.7/build/gaussian-splats-3d.module.js",
+        "rapier": "https://cdn.jsdelivr.net/npm/@dimforge/rapier3d-compat@0.21.0/dist/rapier.mjs",
         "three-eco/webgpu": "https://cdn.jsdelivr.net/npm/three@0.186.1/build/three.webgpu.js",
         "three-eco/tsl": "https://cdn.jsdelivr.net/npm/three@0.186.1/build/three.tsl.js",
         "three-eco/addons/": "https://cdn.jsdelivr.net/npm/three@0.186.1/examples/jsm/"
@@ -65,6 +70,7 @@
       "integrity": {
         "https://cdn.jsdelivr.net/npm/three@0.165.0/build/three.module.js": "sha384-Qvl1RLjZOCDFOOH2bKcGnaDHMM8MVv3zVtMvhy3juQdiIOs6RgQ/7zYdM1FbpHzI",
         "https://cdn.jsdelivr.net/npm/@mkkellogg/gaussian-splats-3d@0.4.7/build/gaussian-splats-3d.module.js": "sha384-DQVu71SUzpCfnf47PQBML4SmJum9lfByrWl+Xpp3n3jjVbBIfPEzkTOniE2jH+eM",
+        "https://cdn.jsdelivr.net/npm/@dimforge/rapier3d-compat@0.21.0/dist/rapier.mjs": "sha384-oPyJtSnZbl4qLdnQQ+3vWOQFLDFyMOcSgLr1xxtO2B2JUahMwj6wRA6I7pbueGxx",
         "https://cdn.jsdelivr.net/npm/three@0.186.1/build/three.webgpu.js": "sha384-4BcMoAQ5pbGKlA/ACC52ZLD19HUU8F/mGnEtg8LEb6G0S5xckMOrpPtPHQMzWi0D",
         "https://cdn.jsdelivr.net/npm/three@0.186.1/build/three.core.js": "sha384-mdKeCwPEcbDvzaxwhm+MVuLoMou+E7jQqrs4tmu/n8HBYPGI1kZt0MkJxlMR4zFM",
         "https://cdn.jsdelivr.net/npm/three@0.186.1/build/three.tsl.js": "sha384-i76xepHrmVxDoGJBGuT2FUEUGw0jdaDjus4NJ40g1FtIyusteqsUxnSz8avnH130",

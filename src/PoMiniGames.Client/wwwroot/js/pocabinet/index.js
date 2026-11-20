@@ -21,7 +21,7 @@
 //   PoCabinet.startReplay() / replayCommand(cmd, value) / stopReplay()
 //   PoCabinet.recordClip() -> 'shared' | 'downloaded' | 'unavailable'
 //   PoCabinet.lapProof() -> { inputs, wet }               — solo score verification
-//   PoCabinet.setBanter(lines)                             — officials' radio (scripted pool; text only)
+//   PoCabinet.setBanter(lines)                             — officials' radio (the scripted pool; showDialogue speaks a line that has a clip)
 //
 //   PoCabinet.applySettings(scene, settings)               — settings are Blazor's (PoCabinetUiSettings)
 //   PoCabinet.getRecords(trackId) / recordTrackResult(trackId, bestLap, sectors)
@@ -47,10 +47,12 @@ const api = {
     mount: sceneMount,
     unmount: sceneUnmount,
     mountDialogue,
-    /** One line from an official: names the speaker, shows the bubble, plays the radio blip. */
-    showDialogue(handle, name, text) {
+    /** One line from an official: names the speaker, shows the bubble, plays the radio blip and,
+     *  where the line has a clip (audio.js radio), speaks it. */
+    showDialogue(handle, name, text, officialId) {
         show(handle, name, text);
         audio.blip();
+        audio.radio(officialId, text);
     },
     unmountDialogue,
 
@@ -58,6 +60,7 @@ const api = {
      *  follow a stopRace (which suspended the audio) without another Start click. */
     startRace(dotnetRef, sceneHandle, minimapHandle, opts) {
         setComputeMode(opts?.settings?.gpuCompute || 'auto');
+        audio.setRadioVoice(opts?.settings?.radioVoice !== false);
         const r = startRace(dotnetRef, sceneHandle, minimapHandle, opts);
         audio.setSuspended(false);
         return r;
@@ -131,6 +134,7 @@ const api = {
         setComputeMode(settings?.gpuCompute || 'auto');
         setUiShaderMode(settings?.gpuCompute || 'auto');
         audio.setMusicEnabled(settings?.music !== false);
+        audio.setRadioVoice(settings?.radioVoice !== false);
         updateRaceSettings(settings);
     },
 };

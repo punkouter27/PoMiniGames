@@ -36,6 +36,14 @@ export const COURT = {
     low: 0.6, hoopAt: 13.7, hoopReach: 1.9, hoopHalf: 1.5,
 };
 
+// court.glb stays as the Blender script writes it (Draco geometry, three JPEG atlases). Repacking
+// it was tried on 2026-11-20 and nothing came out ahead:
+//   - KTX2 / Basis atlases would stay compressed on the GPU (about 4 MB instead of 33 MB), but
+//     three's Basis transcoder (r165 and r186 both) is an embind build that makes functions from
+//     strings, and this site's Content-Security-Policy has no 'unsafe-eval': every texture fails.
+//     It needs a transcoder built with DYNAMIC_EXECUTION=0 before it can ship.
+//   - WebP atlases are no smaller than these JPEGs at the same look (the scan is noisy), and
+//     Meshopt geometry is 0.3 MB larger than Draco's.
 export const DRACO_PATH = 'https://cdn.jsdelivr.net/npm/three@0.165.0/examples/jsm/libs/draco/gltf/';
 
 /**

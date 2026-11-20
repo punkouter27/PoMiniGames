@@ -39,7 +39,8 @@ import * as THREE from 'three';
 import { wrapAngle } from './track.js';
 import { throwChunks } from './debris.js';
 import { noise } from './materials.js';
-import { GpuParticleStepper } from './gpucompute.js';
+import { GpuParticleStepper, setWakeField } from './gpucompute.js';
+import { WakeField, WAKE_COUPLE, WAKE_HEAVY, WAKE_CEILING } from './wake.js';
 import { GRIP_ACCEL, CAR_RADIUS, hullContact, wallAt, surfaceAt, SURF_ROAD, SURF_GRASS, SURF_GRAVEL, SURF_SAUSAGE } from './physics.js';
 import { WORLD_SCALE as WS } from './util.js';
 
@@ -179,6 +180,11 @@ class Pool {
         this.seed = new Float32Array(max).fill(-1);
         this.slotEpoch = new Uint32Array(max);
         this.gpu = null;
+        // The air the cars stir (wake.js) and how strongly this pool rides it: set by CarFx for
+        // the smoke pool on the tiers that have a wake; null / 0 leaves the particles alone.
+        this.wake = null;
+        this.wakeGain = 0;
+        this.air = [0, 0];
         this.next = 0;
         this.live = 0;
         this.spawned = false;
@@ -248,8 +254,10 @@ class Pool {
 
     step(dt, useGpu = false) {
         if (!this.live && !this.spawned) return;
+        const wake = this.wakeGain > 0 ? this.wake : null;
         if (useGpu) {
             if (!this.gpu) this.gpu = new GpuParticleStepper(this.max);
+            this.gpu.wakeGain = wake ? this.wakeGain : 0;
             const applied = this.gpu.consumeLatest(this);
             const dispatched = this.gpu.dispatch(this, dt);
             if (applied && dispatched) return;
@@ -263,6 +271,19 @@ class Pool {
             const k = i * 3;
             const damp = Math.exp(-this.drag[i] * dt);
             this.vel[k] *= damp; this.vel[k + 1] = this.vel[k + 1] * damp - this.grav[i] * dt; this.vel[k + 2] *= damp;
+            // Carried by the wake: light particles near the ground, as hard as the air there is
+            // moving. MIRRORED in gpucompute.js's kernel.
+            if (wake && this.grav[i] < WAKE_HEAVY) {
+                const air = wake.sample(this.pos[k], this.pos[k + 2], this.air);
+                const mag = Math.hypot(air[0], air[1]);
+                if (mag > 0.05) {
+                    const light = Math.min(1, Math.max(0, 1 - this.grav[i] / WAKE_HEAVY));
+                    const low = Math.min(1, Math.max(0, 1 - (this.pos[k + 1] - this.floor[i]) / WAKE_CEILING));
+                    const pull = 1 - Math.exp(-WAKE_COUPLE * this.wakeGain * light * low * Math.min(1, mag * 0.5) * dt);
+                    this.vel[k] += (air[0] - this.vel[k]) * pull;
+                    this.vel[k + 2] += (air[1] - this.vel[k + 2]) * pull;
+                }
+            }
             this.pos[k] += this.vel[k] * dt; this.pos[k + 1] += this.vel[k + 1] * dt; this.pos[k + 2] += this.vel[k + 2] * dt;
             if (this.pos[k + 1] < this.floor[i]) { this.pos[k + 1] = this.floor[i]; this.vel[k + 1] *= -0.3; }
             const f = 1 - this.life[i] / this.maxLife[i];
@@ -556,6 +577,9 @@ class CarFx {
         this.sparks = new Pool(MAX_SPARKS, SPARK_FRAG, THREE.AdditiveBlending, 0.085);
         this.skids = new SkidMarks();
         this.decals = new WearDecals();
+        // The air the cars leave behind them (wake.js): the smoke pool rides it on the medium and
+        // high tiers. The low tier has none (and fewer puffs to move).
+        this.wake = new WakeField();
         if (this.persistWear && trackWearCache && trackWearCache.trackId === track.id) {
             this.skids.restore(trackWearCache.skids);
             this.decals.restore(trackWearCache.decals);
@@ -997,6 +1021,18 @@ class CarFx {
         }
 
         const useGpu = this.sh.quality === 'high';
+        // Stir the air with this frame's cars, round the camera, before the smoke moves on it.
+        const windy = this.sh.quality === 'high' || this.sh.quality === 'medium';
+        if (windy) {
+            const cam = this.sh.camera?.position;
+            if (cam) this.wake.recenter(cam.x, cam.z);
+            this.wake.step(dt, cars, WS);
+        } else if (this.wake.peak > 0) {
+            this.wake.clear();
+        }
+        this.smoke.wake = windy ? this.wake : null;
+        this.smoke.wakeGain = windy ? 1 : 0;
+        setWakeField(windy ? this.wake : null);
         this.smoke.step(dt, useGpu);
         this.sparks.step(dt, useGpu);
         this.skids.flush();
