@@ -222,6 +222,22 @@ class NetplayMethods {
     }
   }
 
+  /** Authoritative match result (PoBrawlMatchResult, camelCase) — guarantees final verdict reaches the arena. */
+  applyNetFinished(r) {
+    if (!this.online || !r || this.online.final) return;
+    let winner = 0;
+    if (!r.abandoned && r.outcome !== 2) {
+      const localIsP1 = r.localSide === 0;
+      winner = r.outcome === 0 ? (localIsP1 ? 1 : 2) : (localIsP1 ? 2 : 1);
+    }
+    const event = r.abandoned ? 'abandoned'
+      : r.forfeit ? 'forfeit'
+      : (r.player1Hp <= 0 || r.player2Hp <= 0) ? 'ko'
+      : winner === 0 ? 'time-up-draw' : 'time-up';
+    this.online.final = { winner, event };
+    this.online.finalAt = performance.now() / 1000;
+  }
+
   /** One confirmed input (PoBrawlMatchInputEvent, camelCase). */
   applyNetInput(ev) {
     if (!this.online || !ev) return;
@@ -385,6 +401,13 @@ class NetplayMethods {
       this._setBanner('');
     }
     if (this.phase === 'fighting') this.clock = Math.max(0, elapsed);
+    // If the server already ended the match (e.g. time-up or forfeit while compiling/stalled),
+    // finish directly so the arena never stays stuck at timer 0 waiting for _tickFighting.
+    if (o.final && this.phase === 'fighting' && o.final.event !== 'ko') {
+      const label = o.final.event === 'forfeit' ? 'FORFEIT!' : o.final.event === 'abandoned' ? 'NO CONTEST' : 'TIME!';
+      this._endMatch(o.final.winner, label);
+      return;
+    }
 
     const corners = [[this.fighters[0], s.p1, 0], [this.fighters[1], s.p2, 1]];
     for (const [f, c] of corners) {

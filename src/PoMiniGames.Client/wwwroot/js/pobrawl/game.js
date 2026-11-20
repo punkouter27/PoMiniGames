@@ -474,6 +474,11 @@ export class BrawlGame {
     } else {
       ready = this._warmupRender();
     }
+    if (this.options.mode === 'online') {
+      ready.then(() => {
+        if (!this.disposed) this.dotnet?.invokeMethodAsync('OnArenaReady').catch(() => {});
+      });
+    }
     if (this.training) {
       ready.then(() => { if (!this.disposed) this._startCountdown(); });
     } else {

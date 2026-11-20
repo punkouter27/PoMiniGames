@@ -38,6 +38,26 @@
     flex: 1 1 100%;
 }
 
+.pbl-room .pbl-seat-lost {
+    flex: 1 1 100%;
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    justify-content: space-between;
+    gap: 0.5rem 0.75rem;
+    padding: 0.6rem 0.75rem;
+    border-radius: var(--radius-md);
+    border: 1px solid var(--color-border);
+    background: var(--color-surface-elevated);
+    color: var(--color-text-secondary);
+    font-size: var(--text-sm);
+}
+
+.pbl-room .pbl-seat-lost p {
+    margin: 0;
+    flex: 1 1 14rem;
+}
+
 .pbl-room ::deep .lobby__actions {
     order: 1;
 }

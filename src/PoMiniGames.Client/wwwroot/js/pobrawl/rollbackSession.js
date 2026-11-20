@@ -33,7 +33,8 @@ const LEAD_MARGIN = 1;        // frames a player runs ahead of the server beyond
 const SPECTATOR_LAG = 4;      // frames a spectator trails beyond RTT/2
 const MAX_SLEW = 2;           // frames per second the clock may be nudged
 const SNAP_CLOCK_FRAMES = 30; // a clock error larger than this is fixed by a jump
-const MAX_STEPS = 60;         // frames simulated per update (a step is microseconds; a 4 fps tab must keep pace)
+const MAX_STEPS = 12;         // frames simulated per update (keeps slow/WebGL2 tabs responsive)
+const MAX_RESIM_DEPTH = 30;   // cap rollback re-simulation; deeper drift rebases to the anchor
 const UNCONFIRMED_TTL = 120;  // frames an un-echoed local input may chase the anchor before it is dropped
 const MAX_HALF_RTT = 20;      // frames: a lead longer than this would only buy deeper rollbacks
 const MAX_SANE_RTT = 2000;    // ms: a ping slower than this (a main thread busy booting) says nothing about the network
@@ -216,13 +217,13 @@ export class RollbackSession {
     if (target === null) return 0;
     let want = Math.floor(target) - this.state.frame;
     if (want <= 0) return 0; // ahead of the clock: hold this frame (a "duplicated" frame)
-    if (want > HISTORY && this.anchor && this.anchor.frame > this.state.frame) {
-      // Far behind (a backgrounded tab): restart from the newest confirmed state.
+    if (want > MAX_RESIM_DEPTH && this.anchor && this.anchor.frame > this.state.frame) {
+      // Far behind (a backgrounded or WebGL2-stalled tab): restart from the newest confirmed state.
       this.stats.jumps++;
       this._rebase(this.anchor);
       want = Math.floor(target) - this.state.frame;
     }
-    const n = Math.min(Math.max(0, want), want > HISTORY ? HISTORY : MAX_STEPS);
+    const n = Math.min(Math.max(0, want), MAX_STEPS);
     for (let i = 0; i < n; i++) this._stepOne();
     return n;
   }
@@ -268,9 +269,19 @@ export class RollbackSession {
   _resimulateFrom(base) {
     const before = this.state;
     const present = before.frame;
+    const depth = present - base.frame;
+    if (depth > MAX_RESIM_DEPTH) {
+      // Avoid a rollback death spiral on a throttled/backgrounded tab: rebase directly to the
+      // confirmed state instead of synchronously re-simulating hundreds of stale frames.
+      this.stats.jumps++;
+      this._rebase(base);
+      if (this.onCorrection) {
+        this.onCorrection({ depth: 0, dx: [this.state.p1.x - before.p1.x, this.state.p2.x - before.p2.x] });
+      }
+      return;
+    }
     this.state = cloneState(base);
     this.history[base.frame % HISTORY] = this.state;
-    const depth = present - base.frame;
     while (this.state.frame < present) this._stepOne();
     this.stats.resimulated += depth;
     if (depth > this.stats.maxDepth) this.stats.maxDepth = depth;

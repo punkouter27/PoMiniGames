@@ -27,7 +27,7 @@ public sealed class PoBrawlMatchRegistry : IDisposable
     /// <summary>Start a fresh match on <paramref name="code"/>, replacing any match that code held.</summary>
     public PoBrawlMatchService Start(string code, IReadOnlyList<PoBrawlLobbyPlayer> roster)
     {
-        var match = new PoBrawlMatchService(Guid.NewGuid().ToString("N"), code, roster, PoBrawlMatchService.CountdownSeconds);
+        var match = new PoBrawlMatchService(Guid.NewGuid().ToString("N"), code, roster, PoBrawlMatchService.CountdownSeconds, requireArenaReady: true);
         _byCode[code] = match;
         Wake();
         return match;

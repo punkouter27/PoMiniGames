@@ -98,6 +98,19 @@ public sealed class PoBrawlMatchHub : Hub
     public PoBrawlMatchClock? Ping() => _registry.MatchFor(Context.ConnectionId)?.Clock();
 
     /// <summary>
+    /// Called once a seated corner's 3D arena finishes shader warm-up. Once both corners report
+    /// ready, the match clock arms and the pre-roll countdown begins.
+    /// </summary>
+    public async Task ReadyMatch()
+    {
+        var match = _registry.MatchFor(Context.ConnectionId);
+        if (match?.SignalArenaReady(Context.ConnectionId) == true)
+        {
+            await Clients.Group(MatchGroup(match.GameCode)).SendAsync("matchState", match.Snapshot());
+        }
+    }
+
+    /// <summary>
     /// Explicit leave (client-initiated, not disconnect). Same as a drop: the corner's grace
     /// clock starts, and it forfeits if it does not come back.
     /// </summary>

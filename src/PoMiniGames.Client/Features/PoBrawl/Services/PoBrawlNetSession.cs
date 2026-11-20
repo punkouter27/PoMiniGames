@@ -116,6 +116,14 @@ public sealed class PoBrawlNetSession : IAsyncDisposable
         }
     }
 
+    /// <summary>Tell the server this corner's 3D arena finished shader warm-up and is ready to start.</summary>
+    public async Task SignalReadyAsync()
+    {
+        if (_hub is not { State: HubConnectionState.Connected } || Snapshot is not { IsSpectator: false }) return;
+        try { await _hub.SendAsync("ReadyMatch"); }
+        catch { /* match clock still starts via ArenaReadyGraceSeconds */ }
+    }
+
     /// <summary>Clock sync: ping the hub, time the round trip, report both.</summary>
     private async Task PingLoopAsync(CancellationToken ct)
     {

@@ -52,6 +52,13 @@ else
             @* .pb-lobby only carries the --pb-* tokens; the .razor.css flattens it so the
                Dossiers disclosure can share a row with Leave / Invite / How to play. *@
             <div class="pb-lobby">
+                @if (SeatLost)
+                {
+                    <div class="pbl-seat-lost" role="status">
+                        <p>Your seat moved to another tab (or timed out). To play 2P online on one computer, open the second player in a private window.</p>
+                        <button type="button" class="app-btn app-btn--primary" @onclick="ReclaimSeat">Reclaim seat</button>
+                    </div>
+                }
                 <div class="pb-select" data-stage="off">
                     <div class="pb-select-sides">
                         <button type="button"
@@ -87,7 +94,7 @@ else
                            change at any time); greyed out only until you hold a seat. *@
                         <div class="pbl-fighter">
                             <label for="pbl-fighter">Fighter</label>
-                            <select id="pbl-fighter" value="@MyFighterId" disabled="@(_lobby?.Me is null)" @onchange="OnFighterChangedAsync">
+                            <select id="pbl-fighter" name="fighter" value="@MyFighterId" disabled="@(_lobby?.Me is null)" @onchange="OnFighterChangedAsync">
                                 @foreach (var f in RosterForPicker)
                                 {
                                     <option value="@f.Id">@f.Name</option>
@@ -121,6 +128,11 @@ else
     private string? _failed;   // why the server could not be reached; the retry card shows it
 
     private bool _introDone;
+    private bool _everSeated;
+
+    private bool SeatLost => _everSeated && _lobby?.Me is null;
+
+    private void ReclaimSeat() => Nav.NavigateTo("/pobrawl/multi", forceLoad: true);
 
     // The opening card was dismissed. The lobby card goes up first, saying "connecting…",
     // once the availability probe passes.
@@ -176,6 +188,7 @@ else
 
     private async Task OnLobbyStateAsync(LobbyState<PoBrawlLobbyPlayer> _)
     {
+        if (_lobby?.Me is not null) _everSeated = true;
         if (!EveryoneReady) { _autoStarted = false; return; }
         if (_autoStarted || _lobby is not { IsHost: true }) return;
         _autoStarted = true;

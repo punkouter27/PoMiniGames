@@ -179,10 +179,10 @@ public partial class PoBrawlPage
             if (_net is null) return null;
             if (_net.ConnectionState == Microsoft.AspNetCore.SignalR.Client.HubConnectionState.Reconnecting) return "Reconnecting…";
             if (_net.ConnectionState == Microsoft.AspNetCore.SignalR.Client.HubConnectionState.Disconnected) return "Disconnected";
-            // The other corner has not reached the hub yet: the server holds the clock at frame 0
-            // and starts the countdown when they arrive. ForfeitInSeconds is their arrival time left.
+            // The other corner has not reached the hub yet, or both are here warming up shaders.
             if (_net.State is { Finished: false, WaitingForOpponent: true } w)
             {
+                if (w.Player1Connected && w.Player2Connected) return "Warming up arena…";
                 var due = w.ForfeitInSeconds is { } arrive ? $" ({Math.Ceiling(arrive):0}s)" : "";
                 var whom = _isSpectator ? (!w.Player1Connected ? _p1Player : _p2Player) : "your opponent";
                 return $"Waiting for {whom}…{due}";
@@ -718,6 +718,7 @@ public partial class PoBrawlPage
     private async Task OnNetFinishedAsync(PoMiniGames.Shared.Games.PoBrawlMatchResult r)
     {
         _netResult = r;
+        _ = JSRuntime.InvokeVoidAsync("PoBrawl.netFinished", r).AsTask().ContinueWith(_ => { }, TaskScheduler.Default);
         if (r.Abandoned)
         {
             // The opponent never arrived: no fight, no rating, nothing to report. The engine may
@@ -731,6 +732,7 @@ public partial class PoBrawlPage
             return;
         }
         StateHasChanged();
+        _ = EnsureOnlineResultShownAsync(r, _ladderRollGeneration);
         if (_netSubmittedFor == r.MatchId || _isSpectator || _net?.Snapshot is null) return;
         _netSubmittedFor = r.MatchId;
         // Retries a 503 (the Elo write) with the same body inside the server's hold on the fight.
@@ -739,6 +741,27 @@ public partial class PoBrawlPage
             Toasts.Show("Couldn't record the match — Elo didn't update.", ToastType.Warning);
         }
     }
+
+    /// <summary>
+    /// Authoritative fallback: if the JS engine doesn't call OnMatchEnd shortly after matchFinished
+    /// (e.g., backgrounded tab with paused rAF or WebGL2 stall), transition to the result card directly
+    /// from the server's canonical result so a player is never stuck at timer 0.
+    /// </summary>
+    private async Task EnsureOnlineResultShownAsync(PoMiniGames.Shared.Games.PoBrawlMatchResult r, int generation)
+    {
+        var isKo = !r.Forfeit && (r.Player1Hp <= 0 || r.Player2Hp <= 0);
+        await Task.Delay(isKo ? 3000 : 1200);
+        if (generation != _ladderRollGeneration || _mode != "online" || _phase == "result" || _engineMatchId != r.MatchId) return;
+        var winner = r.Outcome == PoMiniGames.Shared.Games.PoBrawlOutcome.Draw ? 0
+            : r.Outcome == PoMiniGames.Shared.Games.PoBrawlOutcome.Win
+                ? (r.LocalSide == PoMiniGames.Shared.Games.PoBrawlSide.Player1 ? 1 : 2)
+                : (r.LocalSide == PoMiniGames.Shared.Games.PoBrawlSide.Player1 ? 2 : 1);
+        await InvokeAsync(() => OnMatchEnd(winner, r.DurationSeconds));
+    }
+
+    /// <summary>Engine → page once WebGL2/WebGPU shader warm-up finishes in online mode.</summary>
+    [JSInvokable]
+    public Task OnArenaReady() => _net?.SignalReadyAsync() ?? Task.CompletedTask;
 
     /// <summary>
     /// netplay.js → one local input, already applied by the arena's rollback session on
@@ -928,6 +951,7 @@ public partial class PoBrawlPage
         // matchFinished (OnNetFinishedAsync).
         if (_mode == "online")
         {
+            if (_phase == "result") return;
             _phase = "result";
             // Abandoned (nobody fought): OnNetFinishedAsync already said so, and there is no presser.
             if (_netResult is { Abandoned: true })

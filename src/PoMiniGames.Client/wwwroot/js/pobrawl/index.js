@@ -119,6 +119,8 @@ window.PoBrawl = {
   phase() { return game ? game.phase : null; },
   /** Online: one server snapshot (PoBrawlMatchState, ~10 Hz) — desync check and sync point (netplay.js). */
   net(state) { if (game) game.applyNet(state); },
+  /** Online: authoritative match result (PoBrawlMatchResult) — ensures the arena ends even if the final snapshot was missed. */
+  netFinished(result) { if (game) game.applyNetFinished(result); },
   /** Online: one confirmed input (PoBrawlMatchInputEvent) — may roll the fight back (netplay.js). */
   netInput(ev) { if (game) game.applyNetInput(ev); },
   /** Online: one clock-sync sample (the server's frame clock, the round trip in ms). */

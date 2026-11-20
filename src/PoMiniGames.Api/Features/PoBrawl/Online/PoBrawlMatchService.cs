@@ -68,6 +68,12 @@ public sealed class PoBrawlMatchService
     /// <summary>How long both corners have to arrive (page load included) before the fight is abandoned.</summary>
     public const double ArrivalGraceSeconds = 25.0;
 
+    /// <summary>
+    /// Once both corners have joined the match hub, how long the clock waits for both 3D arenas
+    /// to finish shader warm-up (<see cref="SignalArenaReady"/>) before starting anyway.
+    /// </summary>
+    public const double ArenaReadyGraceSeconds = 20.0;
+
     /// <summary>Furthest ahead of the server's frame an input may be stamped (2 s); a later stamp is refused.</summary>
     public const int MaxInputLeadFrames = 2 * Sim.Hz;
 
@@ -100,6 +106,7 @@ public sealed class PoBrawlMatchService
         public long LastInputFrame;
         public long LastSequence = long.MinValue;
         public bool EverConnected;
+        public bool ArenaReady;
         /// <summary>Frames this corner has had no connection (reset on arrival).</summary>
         public long AbsentFrames;
         /// <summary>Inputs accepted per future frame, for <see cref="MaxInputsPerFrame"/>.</summary>
@@ -113,7 +120,10 @@ public sealed class PoBrawlMatchService
     private readonly Corner _c2 = new();
     private PoBrawlSimState _sim;
     private readonly long _createdAt = Stopwatch.GetTimestamp();
-    /// <summary>When the second corner arrived and the clock started, or null while one is still awaited.</summary>
+    private readonly bool _requireArenaReady;
+    /// <summary>When the second corner joined the hub (before both arenas finished warming up).</summary>
+    private long? _bothJoinedAt;
+    /// <summary>When the fight clock armed and started, or null while waiting.</summary>
     private long? _armedAt;
     private bool _finished;
     private bool _forfeit;
@@ -128,11 +138,13 @@ public sealed class PoBrawlMatchService
     private readonly ConcurrentDictionary<string, PoBrawlSide> _connections = new();
 
     /// <param name="countdownSeconds">Pre-roll before the bell (see <see cref="CountdownSeconds"/>); 0 starts the fight at once.</param>
-    public PoBrawlMatchService(string matchId, string gameCode, IReadOnlyList<PoBrawlLobbyPlayer> roster, double countdownSeconds = 0)
+    /// <param name="requireArenaReady">When true, holds the clock until both corners call <see cref="SignalArenaReady"/> (up to <see cref="ArenaReadyGraceSeconds"/>).</param>
+    public PoBrawlMatchService(string matchId, string gameCode, IReadOnlyList<PoBrawlLobbyPlayer> roster, double countdownSeconds = 0, bool requireArenaReady = false)
     {
         MatchId = matchId;
         GameCode = gameCode;
         Roster = roster.ToList();
+        _requireArenaReady = requireArenaReady;
         // Roster is exactly two (lobby cap), but be defensive about ordering so the
         // host is always P1 regardless of who joined first at the SignalR level.
         _p1 = Roster[0];
@@ -217,11 +229,36 @@ public sealed class PoBrawlMatchService
             corner.AbsentFrames = 0;
             // A fresh connection (a refresh, a reconnect) starts its own sequence numbers.
             corner.LastSequence = long.MinValue;
-            // Both corners here: start the clock, and with it the pre-roll countdown.
+            // Both corners here: start the clock immediately unless waiting for arena shader warm-up.
             if (_armedAt is null && _c1.EverConnected && _c2.EverConnected && !_finished)
             {
-                _armedAt = Stopwatch.GetTimestamp();
+                var now = Stopwatch.GetTimestamp();
+                _bothJoinedAt ??= now;
+                if (!_requireArenaReady || (_c1.ArenaReady && _c2.ArenaReady))
+                {
+                    _armedAt = now;
+                }
             }
+        }
+    }
+
+    /// <summary>
+    /// Mark a seated corner's 3D arena as warmed up and ready to render. Returns true when this
+    /// call armed the match clock so the hub can broadcast the starting snapshot immediately.
+    /// </summary>
+    public bool SignalArenaReady(string connectionId)
+    {
+        if (!_connections.TryGetValue(connectionId, out var side)) return false;
+        lock (_stateLock)
+        {
+            var corner = CornerOf(side);
+            corner.ArenaReady = true;
+            if (_armedAt is null && _c1.EverConnected && _c2.EverConnected && _c1.ArenaReady && _c2.ArenaReady && !_finished)
+            {
+                _armedAt = Stopwatch.GetTimestamp();
+                return true;
+            }
+            return false;
         }
     }
 
@@ -354,6 +391,15 @@ public sealed class PoBrawlMatchService
             if (_finished) return 0;
             if (_armedAt is null)
             {
+                if (_bothJoinedAt is { } bothJoined)
+                {
+                    if ((nowTimestamp - bothJoined) / (double)Stopwatch.Frequency >= ArenaReadyGraceSeconds)
+                    {
+                        _armedAt = nowTimestamp;
+                        return AdvanceToLocked((long)Math.Floor(ClockFrameLocked(nowTimestamp)));
+                    }
+                    return 0;
+                }
                 if ((nowTimestamp - _createdAt) / (double)Stopwatch.Frequency >= ArrivalGraceSeconds)
                 {
                     AbandonLocked();
@@ -476,7 +522,9 @@ public sealed class PoBrawlMatchService
         // Waiting: how long the missing corner has left to arrive. Otherwise only while a corner is
         // actually away (over a second).
         ForfeitInSeconds = _armedAt is null && !_finished
-            ? Math.Max(0, Math.Round(ArrivalGraceSeconds - (Stopwatch.GetTimestamp() - _createdAt) / (double)Stopwatch.Frequency, 1))
+            ? (_bothJoinedAt is not null
+                ? null
+                : Math.Max(0, Math.Round(ArrivalGraceSeconds - (Stopwatch.GetTimestamp() - _createdAt) / (double)Stopwatch.Frequency, 1)))
             : ForfeitInLocked() is { } left && (_c1.AbsentFrames > Sim.Hz || _c2.AbsentFrames > Sim.Hz) ? left : null,
         WaitingForOpponent = _armedAt is null && !_finished,
     };
