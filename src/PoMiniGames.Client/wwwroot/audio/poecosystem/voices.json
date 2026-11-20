@@ -1,0 +1,128 @@
+{
+  "about": "PoEcosystem thoughts and narration, voiced once by scripts/poecosystem/voices.mjs. Do not edit by hand.",
+  "model": "onnx-community/Kokoro-82M-v1.0-ONNX",
+  "voices": {
+    "rabbit": {
+      "voice": "af_sky",
+      "speed": 1.1
+    },
+    "deer": {
+      "voice": "bf_emma",
+      "speed": 0.96
+    },
+    "wolf": {
+      "voice": "bm_lewis",
+      "speed": 0.9
+    },
+    "human": {
+      "voice": "am_liam",
+      "speed": 1
+    },
+    "narrator": {
+      "voice": "bm_george",
+      "speed": 0.94
+    }
+  },
+  "species": [
+    "rabbit",
+    "deer",
+    "wolf",
+    "human"
+  ],
+  "asides": [
+    "Let the wolves come.",
+    "Better together.",
+    "What is over that ridge?",
+    "Mine first.",
+    "There is work to do."
+  ],
+  "lines": {
+    "narrator": {
+      "An extinction.": "narrator/945f10c1.mp3",
+      "A new variety appears.": "narrator/60d93962.mp3",
+      "A new age begins.": "narrator/fde04ae9.mp3",
+      "The mountain erupts.": "narrator/180bf964.mp3",
+      "An outbreak.": "narrator/13dd4639.mp3",
+      "A storm rolls in.": "narrator/22ea3a9a.mp3",
+      "A drought sets in.": "narrator/4953faef.mp3",
+      "War is declared.": "narrator/387d0853.mp3",
+      "Peace is made.": "narrator/722207b6.mp3"
+    },
+    "rabbit": {
+      "The clover by the hollow is sweetest.": "rabbit/bf29988b.mp3",
+      "Grass. Grass. More grass.": "rabbit/0e7bd019.mp3",
+      "My belly aches for the green.": "rabbit/343fae9f.mp3",
+      "Nibble fast, listen faster.": "rabbit/4b288d74.mp3",
+      "I can smell the lake from here.": "rabbit/fb240dce.mp3",
+      "Dew is never enough.": "rabbit/e4c51306.mp3",
+      "To the water, quick as a hop.": "rabbit/dc1634d8.mp3",
+      "My throat is dry as the beach.": "rabbit/11da44a9.mp3",
+      "Warm sun, full belly, twitchy nose.": "rabbit/9352e685.mp3",
+      "The warren is quiet today.": "rabbit/d1795179.mp3",
+      "I could dig a little.": "rabbit/20444435.mp3",
+      "Nothing hunts me right now. Right now.": "rabbit/e8690e71.mp3",
+      "Let the wolves come.": "rabbit/2c6cd90a.mp3",
+      "Better together.": "rabbit/bcdc350c.mp3",
+      "What is over that ridge?": "rabbit/f416b4e9.mp3",
+      "Mine first.": "rabbit/7853822f.mp3",
+      "There is work to do.": "rabbit/8b0f09ef.mp3"
+    },
+    "deer": {
+      "The meadow past the trees looks untouched.": "deer/83918460.mp3",
+      "Graze low, keep my head up.": "deer/c4f8cdf8.mp3",
+      "Hunger makes the forest louder.": "deer/8ce66a68.mp3",
+      "Every step, a mouthful.": "deer/1b133b55.mp3",
+      "The lake is worth the open ground.": "deer/4261b129.mp3",
+      "I must drink before dark.": "deer/5f1133d0.mp3",
+      "The wolves know where the water is too.": "deer/3a11ab68.mp3",
+      "Dust in my mouth.": "deer/2ab8057d.mp3",
+      "The herd moves like one animal.": "deer/1478d358.mp3",
+      "I like the smell of the hills after rain.": "deer/8beeda89.mp3",
+      "Stay with the others. Always the others.": "deer/cb6dc06d.mp3",
+      "The forest edge is my edge.": "deer/fb90f8ed.mp3",
+      "Let the wolves come.": "deer/f35d1729.mp3",
+      "Better together.": "deer/9b383737.mp3",
+      "What is over that ridge?": "deer/5b40c886.mp3",
+      "Mine first.": "deer/f1876ebe.mp3",
+      "There is work to do.": "deer/c56c92c8.mp3"
+    },
+    "wolf": {
+      "Rabbits scatter but deer tire.": "wolf/2ff42cc6.mp3",
+      "The pack eats when I say.": "wolf/b14b1447.mp3",
+      "I smell blood on the wind.": "wolf/60f1e030.mp3",
+      "Hunger sharpens everything.": "wolf/a746e05e.mp3",
+      "Down to the shore, then back to the hunt.": "wolf/69ca3388.mp3",
+      "Water first, then teeth.": "wolf/7e32ebc0.mp3",
+      "The lake smells of deer and dusk.": "wolf/1d66786b.mp3",
+      "A dry throat makes a slow chase.": "wolf/de794f39.mp3",
+      "The island is mine, tree by tree.": "wolf/88211cfc.mp3",
+      "The pups sleep. Good.": "wolf/21968c71.mp3",
+      "I could run until the sea stops me.": "wolf/c0976824.mp3",
+      "The pack is fed. I am fed.": "wolf/87b0656f.mp3",
+      "Let the wolves come.": "wolf/395c201a.mp3",
+      "Better together.": "wolf/7a61e4bc.mp3",
+      "What is over that ridge?": "wolf/9907e779.mp3",
+      "Mine first.": "wolf/2951521f.mp3",
+      "There is work to do.": "wolf/1eceba1f.mp3"
+    },
+    "human": {
+      "Berries by the forest edge, if the deer left any.": "human/6c4f36a9.mp3",
+      "A spear, a rabbit, a meal.": "human/40d36457.mp3",
+      "The village will want meat tonight.": "human/ca8772c3.mp3",
+      "Hunger is a good hunter.": "human/a50e4435.mp3",
+      "The lake water is cold and clean.": "human/687d46e1.mp3",
+      "One more jar for the hut.": "human/08e070ef.mp3",
+      "Thirst is a walk away, no more.": "human/59d9c432.mp3",
+      "I will drink, then think.": "human/19573be0.mp3",
+      "One more hut and we could take in another family.": "human/99a4808b.mp3",
+      "The mountain smokes. It always smokes.": "human/75a8292e.mp3",
+      "The children are growing faster than the huts.": "human/e9924f28.mp3",
+      "A good day to fell a tree.": "human/535a5d2f.mp3",
+      "Let the wolves come.": "human/b89695fe.mp3",
+      "Better together.": "human/a9da9b38.mp3",
+      "What is over that ridge?": "human/10841705.mp3",
+      "Mine first.": "human/309a852b.mp3",
+      "There is work to do.": "human/c9f0f6a3.mp3"
+    }
+  }
+}

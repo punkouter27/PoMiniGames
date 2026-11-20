@@ -40,8 +40,16 @@ export const RNG_SALT = Object.freeze({
   ecology: 0x9dbf1339,    // disease outbreaks and spread
 });
 
-// ── Physics props (frame propKind = kind * 8 + sizeIndex) ────────────────
+// ── Physics props (frame propKind = kind * 8 + sizeIndex + PROP_BASE * owner) ──
 export const PROP_KIND = Object.freeze({ ragdollPart: 0, log: 1, rock: 2, projectile: 3 });
+// A body part also says whose body it was, so the renderer can draw that creature's own
+// model in the ragdoll's pose instead of a brown box (render/creatureModels.js). `owner` is
+// 0 for a log or a rock, else 1 + part + 16 * species + 64 * round(scale * 100): the part's
+// place in its rig (physics/ragdoll.js RIGS), the species, and the creature's own size.
+// Everything fits a Float32 exactly (the largest value is about half a million).
+export const PROP_BASE = 32;
+export const propOwner = (species, part, scale = 1) =>
+  1 + part + 16 * species + 64 * Math.max(1, Math.min(255, Math.round((scale || 1) * 100)));
 export const PROP_SIZES = Object.freeze([
   [0.30, 0.20, 0.45], // 0 small quadruped torso
   [0.18, 0.18, 0.18], // 1 head / small part
@@ -56,6 +64,9 @@ export const PROP_SIZES = Object.freeze([
 // ── External modules (workers have no import map; vendored locally under wwwroot/lib) ──
 export const CANNON_LOCAL_URL = new URL('../../../../lib/cannon-es/cannon-es.js', import.meta.url).href;
 export const CANNON_CDN_URL = CANNON_LOCAL_URL;
+// The same file the page's import map calls "rapier" (PoCabinet's debris), so the two share
+// one HTTP cache entry. The WASM is inside the module.
+export const RAPIER_CDN_URL = 'https://cdn.jsdelivr.net/npm/@dimforge/rapier3d-compat@0.21.0/dist/rapier.mjs';
 
 // ── Flora ────────────────────────────────────────────────────
 export const FLORA = Object.freeze({

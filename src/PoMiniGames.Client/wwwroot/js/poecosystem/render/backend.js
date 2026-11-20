@@ -69,7 +69,8 @@ export function createSceneRenderer(canvas, { lowEnd = false, tier = 'high', onL
     powerPreference: 'high-performance',
     forceWebGL: choice.forceWebGL,
   });
-  const report = { backend: 'pending', reason: choice.reason, tier, adapter: null, disposed: false };
+  // `asked` is known at once (the scene is built before init settles); `backend` is what came up.
+  const report = { backend: 'pending', asked: choice.forceWebGL ? 'webgl2' : 'webgpu', reason: choice.reason, tier, adapter: null, disposed: false };
   try { globalThis.PoEcoBackend = report; } catch { /* frozen global: the report still rides the renderer */ }
 
   let lost = false;

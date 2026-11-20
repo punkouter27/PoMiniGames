@@ -44,12 +44,13 @@ import { createDirector } from './director.js';
 import { createPip } from './pip.js';
 import { createStage } from '../../platform/stage/stage.js';
 import { createSky } from './sky.js';
-import { materialClock, materialCloud, materialDetail, materialSeason, materialSnow, materialWet, materialSky } from './materials.js';
+import { VIEW_ONLY_LAYER, materialClock, materialCloud, materialDetail, materialSeason, materialSnow, materialWet, materialSky } from './materials.js';
 import { applyCameraShake } from './impact.js';
 import { createSettlementMeshes, bannerColour } from './settlementMesh.js';
 import { createFauna } from './fauna.js';
 import { createTrails } from './trails.js';
 import { createGrass } from './grass.js';
+import { createRipples } from './ripples.js';
 import { GOAL } from '../sim/behavior/utility.js';
 import { createSceneRenderer } from './backend.js';
 import { connectedPads, rumble as padRumble } from '../../platform/gamepadBus.js';
@@ -155,9 +156,13 @@ export function createRenderer(container, {
 
   const scene = new Scene();
   const camera = new PerspectiveCamera(75, 1, 0.5, 700);
+  camera.layers.enable(VIEW_ONLY_LAYER);
   // lighting owns scene.fog now: its colour and density both ride the same day/night curve
   // as the sky, and the water and particle shaders read the density back off it.
-  const lighting = createLighting(scene, { shadows: !lowEnd, shadowMapSize: lowEnd ? 1024 : 2048, tier });
+  // The high tier's extras (the second shadow map, ambient occlusion) are for WebGPU: the
+  // WebGL2 backend is the fallback, and it is kept as lean as it was.
+  const extras = tier === 'high' && backend.asked === 'webgpu';
+  const lighting = createLighting(scene, { shadows: !lowEnd, shadowMapSize: lowEnd ? 1024 : 2048, twoMaps: extras });
   // The sky dome and clouds ride the camera; every hooked Lambert material (materials.js)
   // reads one shared clock, set once per frame below.
   const skyDome = createSky(scene, { tier });
@@ -168,7 +173,7 @@ export function createRenderer(container, {
   const particles = createParticles(scene, { tier });
   const eventFx = createEventFx(particles, audio, { tier });
   const post = createPostProcess(renderer, scene, camera, {
-    tier, width: container.clientWidth || 1, height: container.clientHeight || 1,
+    tier, occlusion: extras, width: container.clientWidth || 1, height: container.clientHeight || 1,
   });
 
   // terrainApi mirrors the sim terrain's read API (heightAt/type) from the transferred arrays.
@@ -237,8 +242,11 @@ export function createRenderer(container, {
 
   // The campfire's light (behavior/tech.js FIRE): one point light parked on the hearth,
   // bright at night and a flicker by day. Zero intensity until the tribe has a fire.
+  let ripples = null; let ripplesAsked = false; let cameraUnder = false;
+  eventFx.onSplash = (x, z, radius, push) => ripples?.splash(x, z, radius, push);
   const campfireLight = new PointLight(0xffa040, 0, 28, 1.7);
   campfireLight.name = 'campfire';
+  campfireLight.layers.set(VIEW_ONLY_LAYER);
   scene.add(campfireLight);
   let campfireAt = null;
 
@@ -306,6 +314,7 @@ export function createRenderer(container, {
     post.setSize(w, h);
     camera.aspect = w / h;
     camera.updateProjectionMatrix();
+    lighting.cameraChanged();
   }
   // The shared stage owns the measuring only: a loop-safe (deferred) ResizeObserver plus the
   // window resize, torn down by stage.dispose(). The rAF loop stays here: pip.js re-routes it
@@ -352,7 +361,9 @@ export function createRenderer(container, {
     if (settlementMeshes) settlementMeshes.dispose();
     settlementMeshes = createSettlementMeshes(scene, (x, z) => terrainApi.heightAt(x, z), palette);
     fauna?.dispose();
-    fauna = createFauna(scene, terrainApi, { tier });
+    fauna = createFauna(scene, terrainApi, { tier, renderer });
+    // The new island's water starts flat; its ripple field is asked for on the next frame.
+    ripples?.dispose(); ripples = null; ripplesAsked = false;
     trails?.dispose();
     trails = createTrails(terrainApi.size);
     grass?.dispose();
@@ -743,6 +754,40 @@ export function createRenderer(container, {
     }
   }
 
+  /**
+   * The water's ripple field (ripples.js). Asked for from the frame loop, not when the
+   * island is built: it needs WebGPU, and which backend came up is only known once the
+   * renderer's init has settled.
+   */
+  function askForRipples() {
+    ripplesAsked = true;
+    if (tier === 'low' || !renderer.backend?.isWebGPUBackend) return;
+    try {
+      ripples = createRipples(renderer, terrainApi, { grid: tier === 'high' ? 512 : 256 });
+      if (ripples) island.attachRipples(ripples);
+    } catch (err) {
+      ripples = null;
+      console.warn('[poecosystem] water ripples unavailable', err);
+    }
+  }
+
+  /** What disturbs the water this frame: animals drinking, and the camera going through it. */
+  function feedRipples(dt, timeSec) {
+    // A drinking animal dips its muzzle a little more than once a second, each on its own
+    // beat, half a body length ahead of where it stands.
+    for (let k = 0; k < interpCount; k++) {
+      const o = k * FRAME.CREATURE_STRIDE;
+      if ((interp[o + 6] | 0) !== GOAL.DRINK || speeds[k] > 0.4) continue;
+      const beat = (timeSec * 1.3 + k * 0.618) % 1;
+      if (beat >= dt * 1.3) continue;
+      const yaw = interp[o + 3]; const reach = 0.5 + interp[o + 4] * 0.4;
+      ripples.splash(interp[o] + Math.sin(yaw) * reach, interp[o + 2] + Math.cos(yaw) * reach, 0.7, 0.12);
+    }
+    const under = player.y < 0;
+    if (under !== cameraUnder && terrainApi.heightAt(player.x, player.z) < -0.05) ripples.splash(player.x, player.z, 1.4, 0.8);
+    cameraUnder = under;
+  }
+
   function frame(now) {
     if (!running) return;
     const dt = Math.min(0.05, (now - lastTime) / 1000 || 0);
@@ -795,7 +840,7 @@ export function createRenderer(container, {
           break;
         }
       }
-      creatures.draw(interp, interpCount, timeSec, speeds, curr.views.handles, terrainApi?.heightAt);
+      creatures.draw(interp, interpCount, timeSec, speeds, curr.views.handles, terrainApi?.heightAt, curr.views.props, propCount);
       kinThreads.update(interp, curr.views.handles, interpCount, timeSec);
       trails?.stamp(interp, interpCount, speeds, dt);
       if (trails && stats?.caravans?.length && stats?.tribes?.length) {
@@ -807,7 +852,7 @@ export function createRenderer(container, {
           trails.stampPoint(a.centerX + (b.centerX - a.centerX) * p, a.centerZ + (b.centerZ - a.centerZ) * p, 2.2, dt);
         }
       }
-      props.draw(curr.views.props, propCount);
+      props.draw(curr.views.props, propCount, creatures.takenProps);
       // Only on a frame the sim actually produced: see eventFx.props for why feeding it
       // repeated rows would read every falling body as one that had just landed.
       const tick = curr.views.header[FRAME.H_TICK];
@@ -857,6 +902,8 @@ export function createRenderer(container, {
     emitWeather(dt);
     emitSeason(dt);
     fauna?.update(dt, timeSec, { player, night: sky.night ?? 0, storm: effWeatherKind === WEATHER_STORM ? effWeatherIntensity : 0 });
+    if (!ripplesAsked && island && terrainApi) askForRipples();
+    if (ripples) { feedRipples(dt, timeSec); ripples.update(dt); }
     particles.update(dt);
 
     post.setNight(sky.night, sky.dusk);
@@ -888,6 +935,8 @@ export function createRenderer(container, {
     get playerState() { return player; },
     get fps() { return fps; },
     get dprScale() { return dprScale; },
+    /** The lighting module, for a console or a harness (its `csm` is the two-map shadow node). */
+    get lighting() { return lighting; },
     get tier() { return tier; },
     /** The post facade (dev console: post.pipeline, post.scenePass). */
     get post() { return post; },
@@ -916,6 +965,7 @@ export function createRenderer(container, {
       if (!ev || ev.tile === undefined || ev.tile < 0 || !terrainApi) return;
       const at = eventFx.worldOf(ev.tile, terrainApi, terrainApi.size);
       eventFx.event(ev, at, player, post);
+      if (ev.kind === 'eruption' || ev.kind === 'lightning') fauna?.startle(at.x, at.y, at.z, ev.kind === 'eruption' ? 1 : 0.7);
       // Shockwave + rumble (idea 4 and the haptics bonus): only for the physical blasts,
       // scaled by distance, and only when the blast is actually in front of the camera.
       if (ev.kind === 'eruption' || ev.kind === 'lightning' || ev.kind === 'rockslide') {
@@ -984,6 +1034,7 @@ export function createRenderer(container, {
       const clamped = Math.max(28, Math.min(95, Number(fov) || 60));
       camera.fov = clamped;
       camera.updateProjectionMatrix();
+      lighting.cameraChanged();
       return clamped;
     },
     get fov() { return camera.fov; },
@@ -1065,6 +1116,13 @@ export function createRenderer(container, {
     setLiveEnv(env) { liveEnv = env || null; },
     get contextLost() { return contextLost; },
     get faunaInfo() { return { birds: fauna?.birdCount ?? 0, fishSchools: fauna?.fishSchools ?? 0 }; },
+    /** The creature drawing (its `models` say which species are animated models yet). */
+    get creatures() { return creatures; },
+    /** The interpolated creature rows being drawn this frame (a harness reads positions from it). */
+    debugFrame: () => ({ view: interp, count: interpCount, handles: curr?.views.handles ?? null }),
+    /** The GPU flock and the water's ripple field, when WebGPU gave them (else null). */
+    get flock() { return fauna?.flock ?? null; },
+    get ripples() { return ripples; },
     touchMove: (x, z) => input.setTouchVector(x, z),
     touchRelease: () => input.releaseTouch(),
     toggleFly: () => player.toggleFly(),
@@ -1078,6 +1136,7 @@ export function createRenderer(container, {
       if (lastRecycle) { if (prev) lastRecycle(prev.buffer); if (curr) lastRecycle(curr.buffer); }
       prev = null; curr = null;
       fauna?.dispose();
+      ripples?.dispose();
       for (const id of howlTimers) clearTimeout(id);
       howlTimers.clear();
       grass?.dispose(); trails?.dispose();

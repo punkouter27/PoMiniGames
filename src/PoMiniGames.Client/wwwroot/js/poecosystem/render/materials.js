@@ -31,6 +31,11 @@ import {
   positionWorld, pow, sin, cos, smoothstep, step, uniform, vec2, vec3,
 } from 'three-eco/tsl';
 
+// Layer for what only the main view draws: the lights, the grass, the sky, the birds. The
+// camera sees it and layer 0; the ambient-occlusion depth pass (postProcess.js) sees layer 0
+// alone, so it draws solid things unlit and leaves the meadow out of the occlusion.
+export const VIEW_ONLY_LAYER = 2;
+
 export const materialClock = uniform(0);
 export const materialDetail = { value: 1 };        // read at build time: 0 on the low tier
 export const materialSeason = uniform(0);          // 0 = Spring, 1 = Summer, 2 = Autumn, 3 = Winter

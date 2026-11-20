@@ -26,7 +26,7 @@
 // fine, because a missed dust puff is invisible and the sim stays untouched.
 import { Vector3 } from 'three-eco/webgpu';
 import { FRAME } from '../sim/frame.js';
-import { PROP_CAP, PROP_KIND } from '../sim/core/config.js';
+import { PROP_BASE, PROP_CAP, PROP_KIND } from '../sim/core/config.js';
 import { tileX, tileZ } from '../sim/terrain/tiles.js';
 
 // Impact detection thresholds.
@@ -35,6 +35,7 @@ const IMPACT_BRAKE = 0.4;         // a hit is a frame that keeps under this shar
 const MATCH_RADIUS = 2.5;         // a row that moved further than this is a different body
 const IMPACT_BUDGET = 6;          // impacts drawn per frame; a rockslide can produce dozens
 const TRACK_STRIDE = 5;           // x, y, z, packed kind, vertical speed
+const WATERLINE = 0.05;           // a prop's centre under this, over water, has gone in
 
 const PROP_MATERIAL = {
   [PROP_KIND.ragdollPart]: 'flesh',
@@ -80,7 +81,9 @@ export function createEventFx(particles, audio, { tier = 'high' } = {}) {
     return scale;
   }
 
-  return {
+  const api = {
+    /** Set by the renderer: (x, z, radius, push) when a prop goes into the water. */
+    onSplash: null,
     /**
      * @param {{kind:string, tile:number}} ev a drained sim event
      * @param {{x:number,y:number,z:number}} at its world position
@@ -217,7 +220,7 @@ export function createEventFx(particles, audio, { tier = 'high' } = {}) {
             const nearGround = !terrainApi || y - terrainApi.heightAt(x, z) < 1.4;
             if (braked && nearGround && drawn < IMPACT_BUDGET) {
               drawn++;
-              const kind = Math.floor(packed / 8);
+              const kind = Math.floor((packed % PROP_BASE) / 8);
               const speed = Math.min(1, -wasFalling / 14);
               if (dust) {
                 particles.emit('dust', x, y, z, { count: 4 + Math.round(speed * 10), scale: 0.6 + speed, radius: 0.4, spread: 1.45 });
@@ -229,6 +232,16 @@ export function createEventFx(particles, audio, { tier = 'high' } = {}) {
               if (speed > 0.55 && kind !== PROP_KIND.ragdollPart) window.PoImpact?.impact?.('light', speed * 0.5);
             }
           }
+        }
+
+        // Through the waterline, over water: rings and spray. `vy` is only non-zero for a
+        // row that was matched to last frame's, so a prop that appears under water is silent.
+        if (vy < -0.8 && y <= WATERLINE && track[t + 1] > WATERLINE && terrainApi && terrainApi.heightAt(x, z) < -0.05) {
+          const kind = Math.floor((packed % PROP_BASE) / 8);
+          const heavy = kind === PROP_KIND.rock || kind === PROP_KIND.projectile || kind === PROP_KIND.log;
+          const speed = Math.min(1, -vy / 12);
+          if (dust) particles.emit('spray', x, 0.1, z, { count: heavy ? 10 : 4, scale: heavy ? 1.3 : 0.7, radius: 0.3, spread: 1.2 });
+          api.onSplash?.(x, z, heavy ? 1.5 : 0.9, (heavy ? 1.3 : 0.5) * (0.4 + speed));
         }
 
         track[t] = x; track[t + 1] = y; track[t + 2] = z; track[t + 3] = packed; track[t + 4] = vy;
@@ -248,4 +261,5 @@ export function createEventFx(particles, audio, { tier = 'high' } = {}) {
       return tmp;
     },
   };
+  return api;
 }

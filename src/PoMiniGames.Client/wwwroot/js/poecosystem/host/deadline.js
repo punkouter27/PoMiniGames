@@ -23,3 +23,21 @@ export function withDeadline(promise, ms, onTimeout) {
 
 /** How long any single boot dependency may take before the sim starts without it. */
 export const BOOT_DEADLINE_MS = 6000;
+
+/**
+ * Rapier gets a shorter clock than the rest: it is the preferred engine, not a required one,
+ * and cannon-es (a local file) is already loading beside it.
+ */
+export const RAPIER_DEADLINE_MS = 4000;
+
+/** The Rapier module, initialised, or null when it cannot load or its WASM cannot start. */
+export async function loadRapier(importer) {
+  try {
+    const m = await importer();
+    const R = m?.default ?? m;
+    await R.init();
+    return R;
+  } catch {
+    return null;
+  }
+}

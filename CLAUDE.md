@@ -143,6 +143,11 @@ dotnet test tests/PoMiniGames.E2EUI -p:SkipPlaywrightInstall=true --filter "..."
     (`scripts/pocabinet/radio-voices.mjs`, a local text-to-speech model; the MP3s and their
     manifest are in `wwwroot/audio/pocabinet/`). Nothing is generated at run time. After editing
     `PoCabinetDialogue` run the script again (`--check` lists lines with no clip).
+  - PoEcosystem's creature thoughts and chronicle narration are spoken the same way
+    (`scripts/poecosystem/voices.mjs`; clips and manifest in `wwwroot/audio/poecosystem/`).
+    After editing `sim/thoughts/templates.js` or `NARRATION` in `render/chronicle.js` run it
+    again. Its creature models are generated too (`scripts/poecosystem/creatures.mjs` writes
+    `wwwroot/models/poecosystem/*.glb`; `--check` fails if a file is stale).
   - PoCapitol's after-action debrief (`wwwroot/js/pocapitol/debrief.js`) is client-only: a
     built-in deterministic writer by default, or, if the player opts in, a model on their own
     machine through Ollama. It has no server side, no key and no paid boundary; keep it that way.

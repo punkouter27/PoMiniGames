@@ -26,16 +26,16 @@ export function snapshotWorld(world) {
 
 /**
  * Rebuild a world from a snapshot; null when the snapshot cannot be honoured.
- * Pass either a ready `physics` object or `CANNON`, in which case the island is generated
+ * Pass either a ready `physics` object or `physicsLib` (Rapier or cannon-es), in which case the island is generated
  * once and shared between the heightfield and the simulation.
  */
-export function restoreWorld(snap, { physics = null, CANNON = null, caps = {} } = {}) {
+export function restoreWorld(snap, { physics = null, physicsLib = null, caps = {} } = {}) {
   if (!snap || typeof snap !== 'object' || (snap.schemaVersion !== 1 && snap.schemaVersion !== SNAPSHOT_VERSION) || !snap.state) return null;
   const terrain = generateIsland(snap.seed);
   if (terrain.hash !== snap.terrainHash) return null;
   let phys = physics;
-  if (!phys && CANNON) {
-    try { phys = createPhysics(CANNON, terrain, { substeps: caps.substeps ?? 2 }); } catch { phys = null; }
+  if (!phys && physicsLib) {
+    try { phys = createPhysics(physicsLib, terrain, { substeps: caps.substeps ?? 2 }); } catch { phys = null; }
   }
   const world = createWorld({ seed: snap.seed, caps: { creatureCap: snap.cap }, physics: phys, terrain });
   if (world.terrain.hash !== snap.terrainHash) return null;

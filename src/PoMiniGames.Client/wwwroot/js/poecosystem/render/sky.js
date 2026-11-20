@@ -36,7 +36,7 @@ import {
   Fn, If, abs, acos, cameraPosition, clamp, dot, exp, float, floor, fract, length, max, mix, normalize,
   positionLocal, positionWorld, pow, sin, smoothstep, step, uniform, vec2, vec3,
 } from 'three-eco/tsl';
-import { hash21, vnoise } from './materials.js';
+import { VIEW_ONLY_LAYER, hash21, vnoise } from './materials.js';
 
 const DOME_RADIUS = 560;
 const CLOUD_Y = 96;
@@ -174,6 +174,7 @@ export function createSky(scene, { tier = 'high' } = {}) {
   dome.renderOrder = -10;
   dome.frustumCulled = false;
   dome.name = 'sky';
+  dome.layers.set(VIEW_ONLY_LAYER);
   scene.add(dome);
 
   let clouds = null;
@@ -194,6 +195,7 @@ export function createSky(scene, { tier = 'high' } = {}) {
     plane.renderOrder = -5;
     plane.frustumCulled = false;
     plane.name = 'clouds';
+    plane.layers.set(VIEW_ONLY_LAYER);
     scene.add(plane);
     clouds = { plane, mat, u: c };
   }

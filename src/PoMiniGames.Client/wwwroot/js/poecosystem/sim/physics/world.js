@@ -1,17 +1,20 @@
-// physics/world.js — the cannon-es side of the simulation (plan decisions 4 and 7).
+// physics/world.js — the simulation's physics surface, and its cannon-es implementation
+// (plan decisions 4 and 7). Rapier, where it loads, is the engine of choice
+// (rapierWorld.js); cannon-es is what runs offline or when the WASM cannot start.
 //
 // This module is WRITE-ONLY from the sim's point of view: world.js tells it about deaths,
 // felled trees, rocks and explosions and reads back prop poses for the render frame; no
 // rule ever reads a body. That is what keeps the seeded simulation deterministic while the
 // props stay physically real. `createPhysics` and `nullPhysics` share one surface.
 //
-// CANNON is injected: the worker imports it from the CDN (no import map in workers), the
-// main-thread fallback from the import map, and Vitest from node_modules.
-import { PHYSICS } from '../core/config.js';
+// The engine is injected: the worker imports it by URL (no import map in workers) and the
+// main-thread fallback from the import map.
+import { PHYSICS, PROP_BASE } from '../core/config.js';
 import { applyExplosion } from './explosion.js';
 import { buildRagdoll, freezeRagdoll, lyingPose, ragdollAsleep } from './ragdoll.js';
 import { spawnFallingTree, releaseTree } from './fallingTree.js';
 import { spawnRocks } from './rocks.js';
+import { createRapierPhysics } from './rapierWorld.js';
 
 /**
  * The no-physics implementation of the same surface. Kept beside createPhysics so the two
@@ -36,7 +39,13 @@ const LAUNCH = Object.freeze({
   rockfall: { x: 0, y: 2, z: 0 }, fire: { x: 0, y: 0.5, z: 0 },
 });
 
-export function createPhysics(CANNON, terrain, opts = {}) {
+/**
+ * `lib` is whichever engine the host managed to load: the Rapier module (rapierWorld.js)
+ * or cannon-es (below). Both return the same surface.
+ */
+export function createPhysics(lib, terrain, opts = {}) {
+  if (lib?.RigidBodyDesc) return createRapierPhysics(lib, terrain, opts);
+  const CANNON = lib;
   const cfg = { ...PHYSICS, ...opts };
   const world = new CANNON.World({ gravity: new CANNON.Vec3(0, -cfg.gravity, 0) });
   world.broadphase = new CANNON.SAPBroadphase(world);
@@ -89,7 +98,7 @@ export function createPhysics(CANNON, terrain, opts = {}) {
           body.position.set(pose.x, pose.y, pose.z);
           body.quaternion.set(pose.qx, pose.qy, pose.qz, pose.qw);
           world.addBody(body);
-          props.push({ body, kind: Math.floor(pose.propKind / 8), sizeIndex, born: time, settled: true, expires: time + cfg.carcassSeconds });
+          props.push({ body, kind: Math.floor(pose.propKind / 8), sizeIndex, owner: pose.owner, born: time, settled: true, expires: time + cfg.carcassSeconds });
         }
         return;
       }
@@ -152,7 +161,7 @@ export function createPhysics(CANNON, terrain, opts = {}) {
         const p = props[k]; const o = k * 8;
         view[o] = p.body.position.x; view[o + 1] = p.body.position.y; view[o + 2] = p.body.position.z;
         view[o + 3] = p.body.quaternion.x; view[o + 4] = p.body.quaternion.y; view[o + 5] = p.body.quaternion.z; view[o + 6] = p.body.quaternion.w;
-        view[o + 7] = p.kind * 8 + p.sizeIndex;
+        view[o + 7] = p.kind * 8 + p.sizeIndex + PROP_BASE * (p.owner ?? 0);
       }
       return n;
     },
@@ -170,12 +179,12 @@ export function createPhysics(CANNON, terrain, opts = {}) {
       for (const p of props) {
         if (!p.settled) continue;
         const b = p.body;
-        out.push({ x: b.position.x, y: b.position.y, z: b.position.z, qx: b.quaternion.x, qy: b.quaternion.y, qz: b.quaternion.z, qw: b.quaternion.w, kind: p.kind, sizeIndex: p.sizeIndex, remaining: Math.max(1, p.expires - time) });
+        out.push({ x: b.position.x, y: b.position.y, z: b.position.z, qx: b.quaternion.x, qy: b.quaternion.y, qz: b.quaternion.z, qw: b.quaternion.w, kind: p.kind, sizeIndex: p.sizeIndex, owner: p.owner ?? 0, remaining: Math.max(1, p.expires - time) });
       }
       for (const rag of ragdolls) {
         if (rag.settled || !rag.info) continue;
         for (const pose of lyingPose(rag.info.species, rag.info.x, rag.info.y, rag.info.z, rag.info.yaw, rag.info.scale)) {
-          out.push({ x: pose.x, y: pose.y, z: pose.z, qx: pose.qx, qy: pose.qy, qz: pose.qz, qw: pose.qw, kind: Math.floor(pose.propKind / 8), sizeIndex: pose.propKind % 8, remaining: cfg.carcassSeconds });
+          out.push({ x: pose.x, y: pose.y, z: pose.z, qx: pose.qx, qy: pose.qy, qz: pose.qz, qw: pose.qw, kind: Math.floor(pose.propKind / 8), sizeIndex: pose.propKind % 8, owner: pose.owner, remaining: cfg.carcassSeconds });
         }
       }
       return out;
@@ -189,7 +198,7 @@ export function createPhysics(CANNON, terrain, opts = {}) {
         body.position.set(s.x, s.y, s.z);
         body.quaternion.set(s.qx, s.qy, s.qz, s.qw);
         world.addBody(body);
-        props.push({ body, kind: s.kind, sizeIndex: s.sizeIndex, born: time, settled: true, expires: time + (s.remaining ?? cfg.carcassSeconds) });
+        props.push({ body, kind: s.kind, sizeIndex: s.sizeIndex, owner: s.owner ?? 0, born: time, settled: true, expires: time + (s.remaining ?? cfg.carcassSeconds) });
       }
     },
     dispose() {

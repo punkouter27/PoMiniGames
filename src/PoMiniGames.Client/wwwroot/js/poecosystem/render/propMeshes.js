@@ -2,7 +2,7 @@
 // InstancedMesh per PROP_SIZES entry. The frame carries a full quaternion per prop, so
 // these are drawn exactly where cannon-es put them.
 import { BoxGeometry, DynamicDrawUsage, IcosahedronGeometry, InstancedMesh, Object3D } from 'three-eco/webgpu';
-import { PROP_KIND, PROP_SIZES } from '../sim/core/config.js';
+import { PROP_BASE, PROP_KIND, PROP_SIZES } from '../sim/core/config.js';
 import { FRAME } from '../sim/frame.js';
 import { ecoLambert } from './materials.js';
 
@@ -33,11 +33,13 @@ export function createPropMeshes(scene, propCap) {
   }
 
   return {
-    draw(view, count) {
+    /** `taken`: rows drawn elsewhere (a body the creature models drew, creatureMeshes.js); skipped here. */
+    draw(view, count, taken = null) {
       const used = new Map();
       for (let k = 0; k < count; k++) {
+        if (taken && taken[k]) continue;
         const o = k * FRAME.PROP_STRIDE;
-        const packed = view[o + 7] | 0;
+        const packed = (view[o + 7] | 0) % PROP_BASE;     // without whose body it was
         const kind = Math.floor(packed / 8); const sizeIndex = packed % 8;
         const bucket = buckets[kind]?.perSize[sizeIndex];
         if (!bucket) continue;

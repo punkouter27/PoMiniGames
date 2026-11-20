@@ -3,7 +3,9 @@
 import { dominantDrive } from '../creatures/drives.js';
 import { dominantTrait } from '../creatures/traits.js';
 
-const LINES = [
+// Exported for scripts/poecosystem/voices.mjs, which voices every line here once. After
+// editing a line, run that script: until then the new line is shown and not spoken.
+export const THOUGHT_LINES = [
   { // rabbit
     hunger: ['The clover by the hollow is sweetest.', 'Grass. Grass. More grass.', 'My belly aches for the green.', 'Nibble fast, listen faster.'],
     thirst: ['I can smell the lake from here.', 'Dew is never enough.', 'To the water, quick as a hop.', 'My throat is dry as the beach.'],
@@ -26,14 +28,14 @@ const LINES = [
   },
 ];
 
-const TRAIT_FLAVOUR = {
+export const TRAIT_FLAVOUR = {
   boldness: ' Let the wolves come.', sociability: ' Better together.', curiosity: ' What is over that ridge?',
   greed: ' Mine first.', diligence: ' There is work to do.',
 };
 
 export function templateThought(world, i, rng) {
   const e = world.entities;
-  const table = LINES[e.species[i]] ?? LINES[0];
+  const table = THOUGHT_LINES[e.species[i]] ?? THOUGHT_LINES[0];
   const drive = dominantDrive(e, i);
   const lines = table[drive] ?? table.content;
   let text = lines[rng.int(lines.length)];

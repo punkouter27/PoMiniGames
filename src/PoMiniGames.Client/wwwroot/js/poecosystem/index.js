@@ -11,7 +11,8 @@ import { connectedPads } from '../platform/gamepadBus.js';
 import { createAudio } from './render/audio.js';
 import { createMusic } from './render/music.js';
 import { createLeitmotif } from './render/leitmotif.js';
-import { createChronicle, isChronicleEvent } from './render/chronicle.js';
+import { createChronicle, isChronicleEvent, narrationFor } from './render/chronicle.js';
+import { createVoices } from './render/voices.js';
 import { createReel } from './render/reel.js';
 import { openWorldStore, loadWorldMeta } from './sim/persistence/idb.js';
 import { createPrefs } from './sim/persistence/prefs.js';
@@ -77,6 +78,9 @@ function createEngine(container, dotnetRef, opts) {
     findId: 0, layer: 'none', kinOf: NONE, kinAt: 0, heatAt: 0, ambient: false, wakeLock: null, past: -1,
   };
   state.music = createMusic(state.audio);
+  // Recorded lines (voices.js): a creature's thought in its own voice, the chronicle's narrator.
+  state.voices = createVoices(state.audio);
+  state.voicedThought = '';
   state.leitmotif = createLeitmotif(state.audio, state.music);
   const rootEl = () => container?.closest?.('.poeco-root') ?? null;
   // Palette and motion are the app's settings (<html data-colorsafe> / <html data-motion>,
@@ -91,6 +95,23 @@ function createEngine(container, dotnetRef, opts) {
     try { await dotnetRef.invokeMethodAsync(method, ...args); } catch (err) { state.errors.push(`${method}: ${err?.message ?? err}`); }
   };
 
+  /**
+   * The creature being studied says what it is thinking, once per thought, from where it
+   * stands. The cinematic camera studies whatever it is filming, so with it on this is the
+   * film's voice-over; it is kept sparse there, and immediate when the viewer picked the
+   * creature themselves.
+   */
+  function speakThought(detail) {
+    if (!detail?.lastThought || !state.sound) return;
+    const key = `${detail.handle}|${detail.lastThought}`;
+    if (key === state.voicedThought) return;
+    const filming = !!state.renderer?.director;
+    // Refused (another line is playing, or it is too soon): the next detail message asks again.
+    if (state.voices.thought(detail.species, detail.lastThought, { x: detail.x, y: detail.y + 0.6, z: detail.z }, { gap: filming ? 12 : 1.5 })) {
+      state.voicedThought = key;
+    }
+  }
+
   function onMessage(msg) {
     // Per-type counters: the cheapest way to tell "the worker is silent" from "a handler
     // threw", both from the console and from the E2E smoke.
@@ -100,7 +121,7 @@ function createEngine(container, dotnetRef, opts) {
         // The living count rides on ready: the first stats message follows the terrain,
         // whose mesh build can take a while, and until then the engine reported 0.
         state.ready = true; state.seed = msg.seed; state.creatureCount = msg.alive ?? state.creatureCount;
-        state.past = msg.past ?? -1; state.kinOf = NONE;
+        state.past = msg.past ?? -1; state.kinOf = NONE; state.physics = msg.physics ?? 'null';
         state.renderer?.setKin(NONE, []);
         invoke('OnReady', msg.seed, msg.tick, msg.resumed, msg.physics, state.past);
         return;
@@ -209,6 +230,7 @@ function createEngine(container, dotnetRef, opts) {
         return;
       case 'detail':
         state.lastDetail = msg.detail;
+        speakThought(msg.detail);
         invoke('OnDetail', msg.detail ? JSON.stringify(msg.detail) : null);
         return;
       case 'saved':
@@ -371,7 +393,11 @@ function createEngine(container, dotnetRef, opts) {
         state.renderer = buildRenderer();
         state.renderer.setPose(prefs.get('player'));
         state.poseTimer = setInterval(() => { if (state.renderer) prefs.set('player', state.renderer.player); }, 5000);
-        state.chronicle = createChronicle(container, { reducedMotion: motionReduced });
+        state.chronicle = createChronicle(container, {
+          reducedMotion: motionReduced,
+          onPresent: (ev) => { const line = narrationFor(ev); if (line && state.sound) state.voices.narrate(line); },
+        });
+        state.voices.warm();
         state.reel = createReel(container, { tier: state.renderer.tier, photo: () => state.renderer?.photo() });
         state.reel.setSource(state.renderer.canvas);
         state.subjectTimer = setInterval(() => { updateSubject(); slowPoll(); }, 250);
@@ -540,6 +566,7 @@ function createEngine(container, dotnetRef, opts) {
       state.host = await createSimHost({
         onMessage,
         importCannon: () => import('cannon-es'),
+        importRapier: () => import('rapier'),
         log: (m) => { state.errors.push(m); console.warn('[poecosystem]', m); },
       });
       state.mode = state.host.mode;

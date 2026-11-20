@@ -2,7 +2,7 @@
 // start, otherwise the same runtime inline (loudly, so `__poeco().mode` shows it).
 import { createSimRuntime } from './simRuntime.js';
 import { openWorldStore } from '../sim/persistence/idb.js';
-import { BOOT_DEADLINE_MS, withDeadline } from './deadline.js';
+import { BOOT_DEADLINE_MS, RAPIER_DEADLINE_MS, loadRapier, withDeadline } from './deadline.js';
 
 // How long the worker may stay silent after being asked for a world before the main
 // thread stops believing in it. A worker that fails outright raises onerror in
@@ -10,7 +10,7 @@ import { BOOT_DEADLINE_MS, withDeadline } from './deadline.js';
 // and simply never speaks — see deadline.js.
 const READY_DEADLINE_MS = 15000;
 
-export async function createSimHost({ onMessage, WorkerCtor = globalThis.Worker, workerUrl = null, importCannon = null, idb = null, log = null } = {}) {
+export async function createSimHost({ onMessage, WorkerCtor = globalThis.Worker, workerUrl = null, importCannon = null, importRapier = null, idb = null, log = null } = {}) {
   const say = (m) => { if (log) log(m); };
 
   async function inline() {
@@ -23,7 +23,8 @@ export async function createSimHost({ onMessage, WorkerCtor = globalThis.Worker,
         : null;
     } catch (err) { say(`cannon-es unavailable inline: ${err?.message ?? err}`); }
     const store = idb ?? await openWorldStore();
-    const runtime = createSimRuntime((msg) => queueMicrotask(() => onMessage(msg)), { CANNON, idb: store });
+    const RAPIER = importRapier ? await withDeadline(loadRapier(importRapier), RAPIER_DEADLINE_MS, () => null) : null;
+    const runtime = createSimRuntime((msg) => queueMicrotask(() => onMessage(msg)), { physicsLib: RAPIER ?? CANNON, idb: store });
     say('PoEcosystem sim running INLINE on the main thread (worker unavailable)');
     return { mode: 'inline', runtime, send: (msg) => runtime.handle(msg), dispose: () => runtime.dispose() };
   }

@@ -41,8 +41,11 @@
          Bump the version and the integrity hashes together.
 
          "rapier" (@dimforge/rapier3d-compat: the WASM is inside the module) is PoCabinet's debris
-         physics on the medium and high tiers (js/pocabinet/debris-rapier.js). Nothing imports it
-         until a Cabinet race starts.
+         physics on the medium and high tiers (js/pocabinet/debris-rapier.js) and PoEcosystem's
+         prop physics (js/poecosystem/sim/physics/rapierWorld.js: its worker imports the same
+         URL directly, RAPIER_CDN_URL in sim/core/config.js, and this entry serves the
+         main-thread fallback). Nothing imports it until one of those games starts. Bump the
+         version here and in config.js together.
 
          "yuka" (crowd steering, PoCapitol) and "cannon-es" (physics, also imported directly by
          PoEcosystem's Web Worker) are served from this origin instead of the CDN so browser

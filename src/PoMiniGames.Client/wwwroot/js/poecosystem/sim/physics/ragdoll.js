@@ -3,7 +3,7 @@
 // standing pose (the renderer's animation is cosmetic, so there is no pop), joined by
 // ConeTwistConstraints whose zero is the spawn pose — the same pivot construction as
 // pobrawl/ragdollPhysics.js. `sizeIndex` picks the render box from PROP_SIZES.
-import { PROP_KIND } from '../core/config.js';
+import { PROP_KIND, propOwner } from '../core/config.js';
 import { SPECIES_ID } from '../creatures/species.js';
 
 // offset = part centre relative to the creature origin (ground under it), forward = +Z.
@@ -68,12 +68,13 @@ export function lyingPose(species, x, y, z, yaw, scale = 1) {
   const qy = [0, Math.sin(yaw / 2), 0, Math.cos(yaw / 2)];
   const qr = [0, 0, Math.sin(half / 2), Math.cos(half / 2)];
   const q = mulQuat(qy, qr);
-  return RIGS[rig].parts.map((p) => {
-    // Rolled onto its side: the part's height offset becomes a lateral spread and every part
-    // rests a little above the ground.
-    const lx = -p.offset[1] * s; const ly = 0.3 * s; const lz = p.offset[2] * s;
+  return RIGS[rig].parts.map((p, k) => {
+    // Rolled onto its side as one rigid body: a part's height becomes a lateral spread and
+    // its sideways offset a height, so the near legs lie over the far ones. (They used to be
+    // flattened to one height, which a box hid and a creature's own model would not.)
+    const lx = -p.offset[1] * s; const ly = (0.3 + p.offset[0]) * s; const lz = p.offset[2] * s;
     const [wx, wz] = rotY(lx, lz, yaw);
-    return { x: x + wx, y: y + ly, z: z + wz, qx: q[0], qy: q[1], qz: q[2], qw: q[3], propKind: propKind(p.sizeIndex) };
+    return { x: x + wx, y: y + ly, z: z + wz, qx: q[0], qy: q[1], qz: q[2], qw: q[3], propKind: propKind(p.sizeIndex), owner: propOwner(species, k, scale) };
   });
 }
 
@@ -96,7 +97,7 @@ export function buildRagdoll(CANNON, world, material, filter, info, rng, launch 
   const def = RIGS[rig];
   const bodies = new Map();
   const parts = [];
-  for (const p of def.parts) {
+  for (const [k, p] of def.parts.entries()) {
     const [ox, oz] = rotY(p.offset[0] * s, p.offset[2] * s, info.yaw);
     const body = new CANNON.Body({
       mass: p.mass * s, material,
@@ -111,7 +112,7 @@ export function buildRagdoll(CANNON, world, material, filter, info, rng, launch 
     body.angularVelocity.set((rng.next() - 0.5) * 2, (rng.next() - 0.5) * 2, (rng.next() - 0.5) * 2);
     world.addBody(body);
     bodies.set(p.name, body);
-    parts.push({ body, kind: PROP_KIND.ragdollPart, sizeIndex: p.sizeIndex });
+    parts.push({ body, kind: PROP_KIND.ragdollPart, sizeIndex: p.sizeIndex, owner: propOwner(info.species, k, info.scale) });
   }
   const constraints = [];
   for (const [childName, parentName, joint, cone, twist] of def.links) {

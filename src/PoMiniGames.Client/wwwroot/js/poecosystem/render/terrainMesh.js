@@ -302,6 +302,7 @@ export function createTerrainMesh(terrain, { tier = 'high' } = {}) {
   return {
     mesh,
     water: water.mesh,
+    attachRipples: (ripples) => water.attachRipples(ripples),
     paint,
     /**
      * Per frame. `time` drives the fire flicker on the emissive channel and the water's

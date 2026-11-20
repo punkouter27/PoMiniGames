@@ -7,14 +7,21 @@
 // Birds are boids (cohesion, alignment, separation) chasing a slow flock target that loops
 // the island; they roost at night and ground themselves in a storm. Fish are schools
 // circling in the shallows, where the water shader is transparent enough to see them.
+//
+// On WebGPU the birds are flock.js instead: the same rules in a compute pass, so there are
+// hundreds of them rather than two dozen. The birds stepped here are what flies on the
+// WebGL2 backend, and what keeps flying if the flock cannot be built.
 import { BufferAttribute, BufferGeometry, DoubleSide, InstancedMesh, MeshLambertNodeMaterial, Object3D } from 'three-eco/webgpu';
 import { TILE } from '../sim/terrain/tiles.js';
+import { VIEW_ONLY_LAYER } from './materials.js';
+import { createFlock } from './flock.js';
 
 const FLOCKS = { high: 3, medium: 2, low: 0 };
 const BIRDS_PER_FLOCK = 8;
 const SCHOOLS = { high: 7, medium: 4, low: 0 };
 const FISH_PER_SCHOOL = { high: 7, medium: 4, low: 0 };
 const FISH_VISIBLE_METRES = 80;
+const GPU_BIRDS_PER_FLOCK = { high: 300, medium: 140, low: 0 };
 
 function birdGeometry() {
   // A flat "V": nose, two wing tips, tail. Flapping is a per-instance Y scale that swings
@@ -41,7 +48,7 @@ function fishGeometry() {
   return g;
 }
 
-export function createFauna(scene, terrainApi, { tier = 'high' } = {}) {
+export function createFauna(scene, terrainApi, { tier = 'high', renderer = null } = {}) {
   const flockCount = FLOCKS[tier] ?? 0;
   const schoolCount = SCHOOLS[tier] ?? 0;
   const perSchool = FISH_PER_SCHOOL[tier] ?? 0;
@@ -55,6 +62,7 @@ export function createFauna(scene, terrainApi, { tier = 'high' } = {}) {
     const mesh = new InstancedMesh(birdGeometry(), new MeshLambertNodeMaterial({ color: 0x2e3036, side: DoubleSide, flatShading: true }), birdTotal);
     mesh.frustumCulled = false;
     mesh.name = 'birds';
+    mesh.layers.set(VIEW_ONLY_LAYER);
     scene.add(mesh);
     const pos = new Float32Array(birdTotal * 3);
     const vel = new Float32Array(birdTotal * 3);
@@ -97,6 +105,7 @@ export function createFauna(scene, terrainApi, { tier = 'high' } = {}) {
     mesh.frustumCulled = false;
     mesh.name = 'fish';
     mesh.count = 0;
+    mesh.layers.set(VIEW_ONLY_LAYER);
     scene.add(mesh);
     fish = { mesh };
   }
@@ -175,14 +184,32 @@ export function createFauna(scene, terrainApi, { tier = 'high' } = {}) {
     if (k) mesh.instanceMatrix.needsUpdate = true;
   }
 
+  // The GPU flock is asked for on the first update, not here: which backend came up is only
+  // known once the renderer's init has settled, and the frame loop does not start before.
+  let flock = null; let flockAsked = false;
+  function askForFlock() {
+    flockAsked = true;
+    if (!birds || !renderer) return;
+    try { flock = createFlock(renderer, scene, terrainApi, { groups: flockCount, perGroup: GPU_BIRDS_PER_FLOCK[tier] ?? 0 }); }
+    catch (err) { flock = null; console.warn('[poecosystem] GPU flock unavailable, keeping the CPU birds', err); }
+    if (flock) birds.mesh.visible = false;
+  }
+  const heightAt = (x, z) => terrainApi.heightAt(x, z);
+
   return {
     update(dt, time, { player, night = 0, storm = 0, focus = null } = {}) {
-      if (birds) stepBirds(Math.min(dt, 0.05), time, night, storm, focus);
+      if (!flockAsked) askForFlock();
+      if (flock) flock.update(dt, time, { night, storm, focus, heightAt });
+      else if (birds) stepBirds(Math.min(dt, 0.05), time, night, storm, focus);
       if (fish && player) stepFish(time, player);
     },
-    get birdCount() { return birdTotal; },
+    /** Something loud happened at a world point: the flock near it scatters. */
+    startle(x, y, z, strength = 1) { flock?.startle(x, y, z, strength); },
+    get birdCount() { return flock ? flock.count : birdTotal; },
+    get flock() { return flock; },
     get fishSchools() { return schools.length; },
     dispose() {
+      flock?.dispose(); flock = null;
       for (const f of [birds, fish]) {
         if (!f) continue;
         scene.remove(f.mesh);

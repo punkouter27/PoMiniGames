@@ -49,8 +49,13 @@ import { hash21, vnoise } from './materials.js';
 const A_DIR = [0.86, 0.51];
 const B_DIR = [-0.41, 0.91];
 const C_DIR = [0.62, -0.78];
+const RIPPLE_RELIEF = 9;
 
-function buildMaterial(u, depthTex, size) {
+/**
+ * @param ripples the ripple field (ripples.js) or null. With it, the field's slope bends the
+ *   surface normal and its crests catch a little light.
+ */
+function buildMaterial(u, depthTex, size, ripples = null) {
   const material = new MeshBasicNodeMaterial({ transparent: true, depthWrite: false, side: DoubleSide, fog: true });
 
   // ── vertex: the wave sum and its exact derivative ──
@@ -91,6 +96,20 @@ function buildMaterial(u, depthTex, size) {
     const rgz = vnoise(rp.add(vec2(0, re))).sub(vnoise(rp.sub(vec2(0, re))));
     n.assign(normalize(n.add(vec3(rgx, 0, rgz).mul(u.uNight.mul(-0.5).add(1).mul(0.35)))));
 
+    // Rings from whatever touched the water (ripples.js). The slope is in metres per metre
+    // and a ring is a few centimetres high, so it is exaggerated to be seen from the air.
+    const ring = float(0).toVar();
+    const ringShade = float(0).toVar();
+    if (ripples) {
+      const r = ripples.sample(P.xz).toVar();
+      n.assign(normalize(n.add(vec3(r.x.negate(), 0, r.z.negate()).mul(RIPPLE_RELIEF))));
+      // The steep face of a ring, not its height: a raised dome of water is not white.
+      ring.assign(smoothstep(0.02, 0.1, length(r.xz)));
+      // A wave face turned to the sun is lighter than one turned away. Seen from straight
+      // above, where the water reflects almost nothing, this is all that draws a ring.
+      ringShade.assign(clamp(dot(r.xz, u.uSunDir.xz).mul(-9), -0.45, 0.9));
+    }
+
     If(u.uRain.greaterThan(0.02), () => {
       const cell = floor(P.xz.mul(0.9));
       const local = fract(P.xz.mul(0.9)).sub(0.5);
@@ -106,6 +125,7 @@ function buildMaterial(u, depthTex, size) {
     // almost perfectly reflective at the horizon, which is the whole look.
     const fres = pow(float(1).sub(clamp(dot(n, view), 0, 1)), 5).mul(0.98).add(0.02).toVar();
     const body = mix(u.uShallow, u.uDeep, smoothstep(0.02, 0.55, depth)).toVar();
+    body.mulAssign(ringShade.add(1));
 
     // Caustics: two counter-drifting noise fields multiplied. Strongest where the bed is
     // closest to the surface, and by day only.
@@ -138,6 +158,8 @@ function buildMaterial(u, depthTex, size) {
     const grain = vnoise(P.xz.mul(1.7).add(vec2(u.uTime.mul(0.35), u.uTime.mul(-0.22))));
     const foam = clamp(shore.mul(grain.mul(0.75).add(0.55)).add(crest.mul(shore).mul(0.9)), 0, 1).mul(inside).mul(open).toVar();
     col.assign(mix(col, vec3(0.93, 0.97, 1.0), foam.mul(0.85)));
+    // The face of a ring is a thin line of broken water.
+    col.assign(mix(col, vec3(0.93, 0.97, 1.0), ring.mul(0.2)));
 
     // Bioluminescence: dinoflagellates light where the water is disturbed — the breaking
     // shore and the crests — in pulses that travel with the surf.
@@ -210,7 +232,7 @@ export function createWater(terrain, { tier = 'high' } = {}) {
   // The surface must not occlude the bed it is meant to reveal (no depth write), and the
   // camera can dive: from below, the surface is a ceiling (double-sided). The scene's
   // FogExp2 applies through the node material's own fog stage.
-  const material = buildMaterial(u, depth, size);
+  let material = buildMaterial(u, depth, size);
 
   const mesh = new Mesh(geometry, material);
   mesh.position.set(size / 2, 0, size / 2);
@@ -233,6 +255,16 @@ export function createWater(terrain, { tier = 'high' } = {}) {
       u.uSkyColor.value.copy(sky.sky);
       if (sky.zenith) u.uZenith.value.copy(sky.zenith);
       u.uNight.value = sky.night;
+    },
+    /**
+     * Rebuild the surface with a ripple field in it. Done once, after the renderer's backend
+     * is known: the field lives in storage buffers, which only WebGPU has.
+     */
+    attachRipples(ripples) {
+      const old = material;
+      material = buildMaterial(u, depth, size, ripples);
+      mesh.material = material;
+      old.dispose();
     },
     dispose() { geometry.dispose(); material.dispose(); depth.dispose(); },
   };

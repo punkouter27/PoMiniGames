@@ -651,6 +651,31 @@ export function createAudio() {
     constructionMallet,
     howl, bark, footThump, drumBar,
     setPlayer,
+    /**
+     * Play a recorded clip (voices.js): from a world point `at` ({ x, y, z }) through the
+     * positional path, or straight to the master when `at` is null. Returns the seconds it
+     * will take, or 0 if nothing was started (no context, muted, out of earshot).
+     */
+    playClip(buffer, at = null, { when = 0, level = 0.9, wet = 0.3 } = {}) {
+      if (!ctx || !enabled || !master || !buffer) return 0;
+      try {
+        let out = master;
+        if (at) {
+          // A voice carries: a wider reference distance than an impact, and the HRTF model,
+          // because there is only ever one of these at a time.
+          const placed = place(at.x, at.y, at.z, { hrtf: true, wet, ref: 12, rolloff: 0.9 });
+          if (!placed) return 0;
+          out = placed.node;
+        }
+        const src = ctx.createBufferSource();
+        src.buffer = buffer;
+        const gain = ctx.createGain();
+        gain.gain.value = level;
+        src.connect(gain).connect(out);
+        src.start(Math.max(ctx.currentTime, when));
+        return buffer.duration;
+      } catch { return 0; }
+    },
     /** A positioned output node for voices built elsewhere (leitmotif.js); null out of earshot. */
     placeNode(x, y, z, opts) { if (!ctx || !enabled) return null; try { return place(x, y, z, opts); } catch { return null; } },
     get speedOfSound() { return SPEED_OF_SOUND; },

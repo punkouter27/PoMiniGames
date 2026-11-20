@@ -24,6 +24,23 @@ const KICKER = {
   eruption: 'Eruption', outbreak: 'Outbreak', weather: 'Weather',
 };
 
+// What the narrator says as a card comes up (voices.js; voiced once, offline, by
+// scripts/poecosystem/voices.mjs: run it again after changing a line). The card's own title
+// is written by the sim and is different every time, so it is read, not spoken.
+export const NARRATION = Object.freeze({
+  extinction: 'An extinction.', variety: 'A new variety appears.', tech: 'A new age begins.',
+  eruption: 'The mountain erupts.', outbreak: 'An outbreak.',
+  storm: 'A storm rolls in.', drought: 'A drought sets in.', war: 'War is declared.', peace: 'Peace is made.',
+});
+
+/** The narrator's line for a landmark event, or null. */
+export function narrationFor(ev) {
+  if (!ev) return null;
+  if (ev.kind === 'weather') return ev.weather === 2 ? NARRATION.storm : ev.weather === 3 ? NARRATION.drought : null;
+  if (ev.kind === 'diplomacy') return NARRATION[ev.action] ?? null;
+  return NARRATION[ev.kind] ?? null;
+}
+
 /** Is this sim event a landmark worth a card? Mirrors world.js LANDMARK_KINDS. */
 export function isChronicleEvent(ev) {
   if (!ev || !PRIORITY[ev.kind]) return false;
@@ -40,7 +57,7 @@ const TICK_MS = 4600;
 const TICK_GAP_MS = 350;
 const TICK_QUEUE = 6;
 
-export function createChronicle(host, { reducedMotion = () => false } = {}) {
+export function createChronicle(host, { reducedMotion = () => false, onPresent = null } = {}) {
   if (!host || typeof document === 'undefined') return { show() {}, ticker() {}, dispose() {} };
 
   const root = document.createElement('div');
@@ -82,6 +99,8 @@ export function createChronicle(host, { reducedMotion = () => false } = {}) {
     // Reflow between the class flips so the entrance animation restarts every time.
     void root.offsetWidth;
     root.classList.add('is-on');
+    // The card is throttled, so this (not show()) is the moment a landmark is on screen.
+    try { onPresent?.(item.ev); } catch { /* a caption must not depend on its listener */ }
     later(file, SHOW_MS);
   }
 

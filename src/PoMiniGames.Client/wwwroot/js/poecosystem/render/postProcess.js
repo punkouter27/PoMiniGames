@@ -2,11 +2,30 @@
 // RenderPipeline: one node graph that runs on WebGPU and on the WebGL2 fallback alike.
 //
 //   pass(scene)  →  bloom  →  ATMOSPHERE  →  output transform (ACES tone map + sRGB)
+//   [depth pass  →  AO]  ↗
 //
-// The scene pass carries MSAA on the high tier (it inherits the renderer's samples), which
-// is what SMAA used to clean up after; there is no separate AA pass any more. On the low
-// tier there is no pipeline at all: `render()` is a plain `renderer.render()` (see the null
-// facade below), which is the whole of the low-tier story.
+// HIGH TIER ON WEBGPU (`occlusion`): AMBIENT OCCLUSION. three's GTAO darkens the places light does not reach: under
+// a deer's belly, where a trunk meets the ground, the corner where a hut wall meets the
+// next. Flat-shaded Lambert has no other way to say that two surfaces touch, so this is what
+// seats the island's boxes on the island.
+//
+// It reads a depth buffer of its OWN, not the scene pass's, for two reasons found by trying
+// the obvious thing first:
+//   • GTAO cannot read a multisampled depth texture, so sharing the scene pass's depth meant
+//     giving up MSAA for FXAA, and the grass (thousands of blades thinner than a pixel) went
+//     from a soft meadow to a sparse, crawling one.
+//   • with the blades in the depth buffer they occlude each other and the ground between
+//     them, and the whole meadow went dull.
+// So a second pass draws layer 0 only (materials.js VIEW_ONLY_LAYER keeps the grass, the sky
+// and the lights out of it) at half resolution, opaque only, and with no lights in it every
+// material compiles to almost nothing: it is a depth prepass in all but name. The occlusion
+// term is folded into the atmosphere stage's own scene read, so it adds no full-screen pass
+// of ours. `?ecoAo=off` removes it, for comparing.
+//
+// The scene pass keeps MSAA on the high tier (it inherits the renderer's samples). The
+// medium tier draws one sample with no AO, as it always did. On the low tier there is
+// no pipeline at all: `render()` is a plain `renderer.render()` (see the null facade below),
+// which is the whole of the low-tier story.
 //
 // WHY ONE "ATMOSPHERE" STAGE RATHER THAN THREE
 // God rays, chromatic aberration, radial blur and the vignette all work from the same
@@ -39,20 +58,38 @@
 // SCREEN UV: the renderer hands every point (sun, heat, shock) in GL convention, y up.
 // The pipeline's quad uv runs y down, so the graph works in y-up space (`up`) and flips
 // once, in `at()`, where it reads a texture.
-import { Color, RenderPipeline, Vector2, Vector4 } from 'three-eco/webgpu';
+import { Color, Layers, RenderPipeline, Vector2, Vector4 } from 'three-eco/webgpu';
 import {
   Fn, If, Loop, abs, clamp, cos, dot, exp, float, fract, length, luminance, max, mix, pass, sin, smoothstep,
   screenUV, uniform, vec2, vec3, vec4,
 } from 'three-eco/tsl';
 import { bloom } from 'three-eco/addons/tsl/display/BloomNode.js';
+import { ao } from 'three-eco/addons/tsl/display/GTAONode.js';
 import { punchAberration, punchRadial } from './impact.js';
 
 // Shaft taps per tier. The cost of the atmosphere stage is dominated by this loop, so it is
 // the first thing to give way — the aberration/blur/vignette terms are a handful of taps
 // and stay on at every tier that runs the pipeline at all.
 const SHAFT_TAPS = { high: 28, medium: 14 };
+// How much of the occlusion term reaches the frame, the reach of a sample in metres (a
+// creature is about one), the samples per pixel, and the share of the frame's resolution
+// the depth and the occlusion are drawn at.
+const AO_BLEND = 0.78;
+const AO_RADIUS = 1.1;
+const AO_SAMPLES = 12;
+const AO_SCALE = 0.5;
 
-function atmosphere(u, sceneTex, bloomTex, taps) {
+/** `?ecoAo=off|<samples>`: the high tier without ambient occlusion, or with that many samples. */
+function aoSamples() {
+  try {
+    const v = new URLSearchParams(window.location.search).get('ecoAo');
+    if (v === 'off') return 0;
+    const n = Number(v);
+    return n >= 2 && n <= 32 ? Math.round(n) : AO_SAMPLES;
+  } catch { return AO_SAMPLES; }
+}
+
+function atmosphere(u, sceneTex, bloomTex, taps, aoTex = null) {
   return Fn(() => {
     // Anything read both inside and outside a branch is a var declared up here: a bare
     // expression first built inside an If() is cached in that branch's scope, and every
@@ -60,7 +97,11 @@ function atmosphere(u, sceneTex, bloomTex, taps) {
     const q = screenUV;
     const up = vec2(q.x, float(1).sub(q.y)).toVar('up');
     const at = (p) => vec2(p.x, float(1).sub(p.y));
-    const read = (p) => sceneTex.sample(at(p)).rgb.add(bloomTex.sample(at(p)).rgb);
+    // Occlusion dims what the scene reflects, never what glows over it (the bloom).
+    const lit = aoTex
+      ? (uv) => sceneTex.sample(uv).rgb.mul(mix(float(1), aoTex.sample(uv).r, u.uAo))
+      : (uv) => sceneTex.sample(uv).rgb;
+    const read = (p) => lit(at(p)).add(bloomTex.sample(at(p)).rgb);
 
     // ── refraction: every term bends the UV that all the reads below use ──
     const bend = vec2(0).toVar('bend');
@@ -154,10 +195,10 @@ function atmosphere(u, sceneTex, bloomTex, taps) {
  * @param {import('three-eco/webgpu').WebGPURenderer} renderer an initialised renderer
  * @param {import('three-eco/webgpu').Scene} scene
  * @param {import('three-eco/webgpu').PerspectiveCamera} camera
- * @param {{ tier?: string, width?: number, height?: number }} opts
+ * @param {{ tier?: string, occlusion?: boolean, width?: number, height?: number }} opts
  * @returns a post facade; on the low tier, a null facade that draws directly.
  */
-export function createPostProcess(renderer, scene, camera, { tier = 'high', width = 1, height = 1 } = {}) {
+export function createPostProcess(renderer, scene, camera, { tier = 'high', occlusion = false, width = 1, height = 1 } = {}) {
   // The null facade exists so renderer.js has exactly one code path.
   if (tier === 'low') {
     return {
@@ -188,6 +229,7 @@ export function createPostProcess(renderer, scene, camera, { tier = 'high', widt
     uMood: uniform(new Color(1, 1, 1)),
     uSaturation: uniform(1),
     uUnder: uniform(0),
+    uAo: uniform(AO_BLEND),
   };
 
   // MSAA in the scene pass on the high tier only (the renderer's samples: 4 with antialias,
@@ -195,12 +237,27 @@ export function createPostProcess(renderer, scene, camera, { tier = 'high', widt
   // `undefined` reads renderer.samples when the pass renders, i.e. after init has settled.
   const scenePass = pass(scene, camera, { samples: tier === 'high' ? undefined : 0 });
   const sceneTex = scenePass.getTextureNode('output');
+  let aoNode = null; let depthPass = null;
+  const samples = occlusion && tier !== 'low' ? aoSamples() : 0;
+  if (samples) {
+    try {
+      const solid = new Layers();   // layer 0: everything but VIEW_ONLY_LAYER
+      depthPass = pass(scene, camera, { samples: 0 });
+      depthPass.setLayers(solid);
+      depthPass.setResolutionScale(AO_SCALE);
+      depthPass.transparent = false;
+      aoNode = ao(depthPass.getTextureNode('depth'), null, camera);
+      aoNode.resolutionScale = AO_SCALE;
+      aoNode.radius.value = AO_RADIUS;
+      aoNode.samples.value = samples;
+    } catch { aoNode = null; depthPass = null; /* a nicety: the island never waits on it */ }
+  }
   // Bloom strength is driven from setNight(): daylight needs almost none (the sky is
   // already the brightest thing on screen, and blooming it just fogs the frame), while at
   // night lava, fire and the borders are the only bright pixels and should glow.
   const bloomNode = bloom(sceneTex, 0.32, 0.72, 0.85);
   const pipeline = new RenderPipeline(renderer);
-  pipeline.outputNode = atmosphere(u, sceneTex, bloomNode.getTextureNode(), SHAFT_TAPS[tier] ?? 14);
+  pipeline.outputNode = atmosphere(u, sceneTex, bloomNode.getTextureNode(), SHAFT_TAPS[tier] ?? 14, aoNode ? aoNode.getTextureNode() : null);
 
   // Shockwaves in flight: { x, y, age, strength }. Two slots; a third replaces the oldest.
   const shocks = [];
@@ -218,6 +275,7 @@ export function createPostProcess(renderer, scene, camera, { tier = 'high', widt
     pipeline,
     scenePass,
     bloom: bloomNode,
+    ao: aoNode,
     render: () => pipeline.render(),
     /**
      * Per-frame. Folds the shared impact envelope (impactBus) into the atmosphere
@@ -303,6 +361,8 @@ export function createPostProcess(renderer, scene, camera, { tier = 'high', widt
     setSize(w, h) { u.uAspect.value = Math.max(0.1, w / Math.max(1, h)); },
     setPixelRatio() {},
     dispose() {
+      aoNode?.dispose?.();
+      depthPass?.dispose?.();
       bloomNode.dispose?.();
       scenePass.dispose?.();
       pipeline.dispose();

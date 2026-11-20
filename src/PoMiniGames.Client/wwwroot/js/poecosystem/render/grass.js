@@ -28,7 +28,7 @@ import {
   normalize, positionGeometry, positionWorld, pow, sin, smoothstep, step, texture, textureLoad, uniform, varying, vec2, vec3, vec4,
 } from 'three-eco/tsl';
 import { TILE, TILE_STATE } from '../sim/terrain/tiles.js';
-import { cloudLight, materialClock, materialSeason, materialSnow } from './materials.js';
+import { VIEW_ONLY_LAYER, cloudLight, materialClock, materialSeason, materialSnow } from './materials.js';
 import { trailUniforms } from './trails.js';
 
 const TIER = {
@@ -186,6 +186,8 @@ export function createGrass(scene, terrain, { tier = 'high' } = {}) {
   mesh.frustumCulled = false;       // positions are made in the shader; the box is meaningless
   mesh.receiveShadow = true;
   mesh.name = 'grass';
+  // Blades in the occlusion pass would shade each other into a dull, noisy field.
+  mesh.layers.set(VIEW_ONLY_LAYER);
   scene.add(mesh);
 
   const windAngle = { value: 0.6 };

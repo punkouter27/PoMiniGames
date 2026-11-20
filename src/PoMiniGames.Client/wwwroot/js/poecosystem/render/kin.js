@@ -13,6 +13,7 @@
 // lifted in the middle, so a thread clears the ground between two animals on a slope.
 import { AdditiveBlending, BufferAttribute, BufferGeometry, Color, DynamicDrawUsage, LineBasicNodeMaterial, LineSegments } from 'three-eco/webgpu';
 import { FRAME } from '../sim/frame.js';
+import { VIEW_ONLY_LAYER } from './materials.js';
 
 const MAX_KIN = 48;
 const ARC_SEGMENTS = 10;
@@ -35,6 +36,7 @@ export function createKinThreads(scene) {
   lines.name = 'kin-threads';
   // Hidden while there is nothing to draw: WebGPU warns on a zero-vertex draw call.
   lines.visible = false;
+  lines.layers.set(VIEW_ONLY_LAYER);
   scene.add(lines);
 
   let self = -1;

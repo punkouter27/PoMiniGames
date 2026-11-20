@@ -3,10 +3,15 @@
 // actually see rather than the whole 200 m island (the trick from povoxelstrike/game.js).
 //
 // Publishes the sun and fog settings shared by water and post-processing.
+//
+// HIGH TIER ON WEBGPU (`twoMaps`): the sun casts through two maps instead of one
+// (shadows.js): a sharp one for the ground in front of the camera and this module's
+// whole-island one for the rest.
 import { AmbientLight, Color, DirectionalLight, FogExp2, HemisphereLight, Vector3 } from 'three-eco/webgpu';
+import { createIslandShadow } from './shadows.js';
+import { VIEW_ONLY_LAYER } from './materials.js';
 
 const SHADOW_HALF = 120; // Encloses the full 200m island (plus margins) to eliminate frustum clipping lines
-
 // Night is deliberately mild — the sky darkens slightly and the
 // sun dims, but light floors stay high enough that creatures and terrain remain clearly
 // observable around the clock. The scene must never become a dark screen.
@@ -18,7 +23,7 @@ const NIGHT_SUN = new Color(0x9db4d8);
 // A closed storm deck greys the sky and the haze together (weather).
 const OVERCAST_SKY = new Color(0x7d8894);
 
-export function createLighting(scene, { shadows = true, shadowMapSize = 2048 } = {}) {
+export function createLighting(scene, { shadows = true, shadowMapSize = 2048, twoMaps = false } = {}) {
   const hemi = new HemisphereLight(0xbfd4ff, 0x2f3a2a, 1.1);
   const ambient = new AmbientLight(0xc8d4e8, 0.35);
   const sun = new DirectionalLight(0xfff2df, 2.0);
@@ -33,6 +38,10 @@ export function createLighting(scene, { shadows = true, shadowMapSize = 2048 } =
     // separate soft-PCF mode is gone.
     sun.shadow.radius = 2;
   }
+  // Built from the sun's shadow as it stands here, so it comes after the block above.
+  const csm = shadows && twoMaps ? createIslandShadow(sun) : null;
+  // The lights belong to the main view alone: the occlusion pass wants depth, not shading.
+  for (const light of [hemi, ambient, sun]) light.layers.set(VIEW_ONLY_LAYER);
   scene.add(hemi, ambient, sun, sun.target);
 
   // The fog is owned here rather than by the renderer: its colour and density both track
@@ -51,7 +60,10 @@ export function createLighting(scene, { shadows = true, shadowMapSize = 2048 } =
   const info = { sky, sunColour, sunDir, night: 0, day: 1, dusk: 0, fogDensity: 0.0045 };
 
   return {
-    sun, hemi, ambient, fog,
+    sun, hemi, ambient, fog, csm,
+
+    /** The camera's projection changed (resize, field of view): the cascades are cut from it. */
+    cameraChanged() { if (csm?.camera) csm.updateFrustums(); },
 
     setWorldSize(size) {
       if (!size || size <= 0) return;
@@ -63,6 +75,7 @@ export function createLighting(scene, { shadows = true, shadowMapSize = 2048 } =
         sun.shadow.camera.top = half;
         sun.shadow.camera.bottom = -half;
         sun.shadow.camera.updateProjectionMatrix();
+        csm?.islandChanged();
       }
     },
 
@@ -103,6 +116,7 @@ export function createLighting(scene, { shadows = true, shadowMapSize = 2048 } =
     },
 
     dispose() {
+      csm?.dispose();
       scene.remove(hemi, ambient, sun, sun.target);
       sun.dispose?.();
       scene.fog = null;

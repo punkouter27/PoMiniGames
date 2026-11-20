@@ -1,7 +1,9 @@
 // simWorker.js — dedicated module worker hosting the simulation (plan decision 1).
 //
-// Import maps do not apply inside workers, so cannon-es comes from the absolute CDN URL in
-// config.js; a failed import leaves physics off (nullPhysics) rather than killing the sim.
+// Import maps do not apply inside workers, so the physics engines come from the absolute
+// URLs in config.js: Rapier (WASM, from the CDN) is the one the island wants, cannon-es
+// (vendored, so it is there offline) is what it runs on when Rapier does not arrive in time.
+// With neither, physics is off (nullPhysics); the sim never waits on either past a deadline.
 // Messages that arrive while the module is still evaluating are queued and replayed.
 //
 // Both dependencies run against a deadline (see deadline.js): neither a silent CDN nor an
@@ -9,8 +11,8 @@
 // message the page needs — terrain included — is posted after this await.
 import { createSimRuntime } from './simRuntime.js';
 import { memoryIdb, openWorldStore } from '../sim/persistence/idb.js';
-import { CANNON_CDN_URL } from '../sim/core/config.js';
-import { BOOT_DEADLINE_MS, withDeadline } from './deadline.js';
+import { CANNON_CDN_URL, RAPIER_CDN_URL } from '../sim/core/config.js';
+import { BOOT_DEADLINE_MS, RAPIER_DEADLINE_MS, loadRapier, withDeadline } from './deadline.js';
 
 const queue = [];
 self.onmessage = (e) => queue.push(e.data);
@@ -19,7 +21,8 @@ const fail = (where, message) => self.postMessage({ type: 'error', where, messag
 
 // The CDN fetch and the IndexedDB open are independent — overlapping them makes the
 // worker responsive a full network round-trip sooner.
-const [CANNON, idb] = await Promise.all([
+const [RAPIER, CANNON, idb] = await Promise.all([
+  withDeadline(loadRapier(() => import(/* @vite-ignore */ RAPIER_CDN_URL)), RAPIER_DEADLINE_MS, () => null),
   withDeadline(
     import(/* @vite-ignore */ CANNON_CDN_URL).catch((err) => { fail('cannon', String(err?.message ?? err)); return null; }),
     BOOT_DEADLINE_MS,
@@ -33,7 +36,7 @@ const [CANNON, idb] = await Promise.all([
     () => { fail('storage', `the world store did not open within ${BOOT_DEADLINE_MS} ms — this island will not be saved`); return memoryIdb(); },
   ),
 ]);
-const runtime = createSimRuntime((msg, transfer) => self.postMessage(msg, transfer ?? []), { CANNON, idb });
+const runtime = createSimRuntime((msg, transfer) => self.postMessage(msg, transfer ?? []), { physicsLib: RAPIER ?? CANNON, idb });
 
 self.onmessage = (e) => runtime.handle(e.data);
 for (const msg of queue) runtime.handle(msg);

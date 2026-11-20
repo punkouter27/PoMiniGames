@@ -1,11 +1,18 @@
-// creatureMeshes.js — creatures as low-poly primitive assemblies, one InstancedMesh per
-// (species × body part). Every creature is drawn from the frame's [x, y, z, yaw, scale,
-// species, goal, lifeStage] record; legs swing cosmetically from the position delta, so
-// walking reads as walking without the sim sending any animation state.
+// creatureMeshes.js — the island's creatures. Every one is drawn from the frame's [x, y, z,
+// yaw, scale, species, goal, lifeStage] record: this module turns a row into a place, a
+// tilt to the ground, a size and a colour, and hands it to one of two drawings:
+//
+//   MODELS  creatureModels.js: an animated glTF model per species, with a clip for what the
+//           creature is doing. What is drawn once a species' file has loaded.
+//   BOXES   below: low-poly primitive assemblies, one InstancedMesh per (species x body part),
+//           legs swinging cosmetically with the speed. What is drawn until then, and for good
+//           if a file cannot load.
 import { BoxGeometry, Color, ConeGeometry, DynamicDrawUsage, InstancedBufferAttribute, InstancedMesh, Object3D } from 'three-eco/webgpu';
 import { FRAME } from '../sim/frame.js';
+import { PROP_BASE } from '../sim/core/config.js';
 import { SPECIES_ID } from '../sim/creatures/species.js';
 import { ecoLambert, materialLens } from './materials.js';
+import { createCreatureModels } from './creatureModels.js';
 
 // Part = box or cone offset from the creature's origin (feet), forward = +Z.
 // feet = [fore-aft, sideways] distance from the origin to where the legs meet the ground:
@@ -95,6 +102,37 @@ const KIN_REL = [new Color(0x7dd3fc), new Color(0x86efac), new Color(0xfda4af)];
 const KIN_OTHER = new Color(0x2c313c);
 
 export function createCreatureMeshes(scene, cap) {
+  const models = createCreatureModels(scene, cap);
+  let drawnAt = -1;
+  // Prop rows the models drew as bodies this frame (propMeshes.js skips them).
+  let taken = new Uint8Array(0);
+  const bodyRows = [];
+
+  /**
+   * The dead. A ragdoll's parts ride the frame as consecutive prop rows in rig order, each
+   * saying whose body it was (config.js propOwner). A run that starts at part 0 is one body:
+   * the models draw it as the creature it was, and its rows are marked taken.
+   */
+  function drawBodies(props, count) {
+    if (taken.length < count) taken = new Uint8Array(count);
+    taken.fill(0, 0, count);
+    let k = 0;
+    while (k < count) {
+      const owner = Math.floor((props[k * FRAME.PROP_STRIDE + 7] | 0) / PROP_BASE);
+      // owner = 1 + part + 16 * species + 64 * round(scale * 100); part 0 starts a body.
+      if (owner <= 0 || (owner - 1) % 16 !== 0) { k++; continue; }
+      const species = Math.floor((owner - 1) / 16) % 4;
+      const own = Math.floor((owner - 1) / 64) / 100;
+      const g = groups[species];
+      bodyRows.length = 0;
+      let n = k;
+      while (n < count && Math.floor((props[n * FRAME.PROP_STRIDE + 7] | 0) / PROP_BASE) === owner + (n - k)) bodyRows.push(n++);
+      // The size it was drawn at alive: the young are drawn smaller than their sim scale.
+      const scale = (g?.rig.scale ?? 1) * own * (own < 0.995 ? JUVENILE_SCALE : 1);
+      if (g && models.ready(species) && models.body(species, props, bodyRows, scale)) for (let j = k; j < n; j++) taken[j] = 1;
+      k = Math.max(n, k + 1);
+    }
+  }
   const groups = [];
   let tint = -1;               // lens id: a trait index, a LENS value, or -1 for none
   let repaint = false;         // one pass back to white after the tint is switched off
@@ -146,9 +184,14 @@ export function createCreatureMeshes(scene, cap) {
       tint = next;
       repaint = true;
       materialLens.value = LENS_GLOW[tint] ?? 0;
+      models.setPlain(tint >= 0);
       for (const g of groups) if (g) g.material.color.setHex(tint >= 0 ? 0xffffff : g.rig.colour);
     },
     get tint() { return tint; },
+    /** The animated models (creatureModels.js): which species have loaded, a clip override. */
+    get models() { return models; },
+    /** Prop rows drawn as bodies in the last draw(): 1 per row taken. */
+    get takenProps() { return taken; },
     /** The kin lens's subject and its living relatives ([{ handle, rel }], sim/world.js kinOf). */
     setKin(self, list) {
       kinSelf = self ?? -1;
@@ -159,10 +202,14 @@ export function createCreatureMeshes(scene, cap) {
      * `time` seconds for the leg swing, `handles` the frame's handle per row, `heightAt`
      * the terrain (four-legged bodies are pitched and rolled to the ground under their
      * feet; the frame only carries the height under the centre, which on a slope left one
-     * end of the body in the hill and the other in the air).
+     * end of the body in the hill and the other in the air). `props` / `propCount` are the
+     * frame's physics props: the bodies among them are drawn here, as models.
      */
-    draw(view, count, time, speeds, handles, heightAt = null) {
+    draw(view, count, time, speeds, handles, heightAt = null, props = null, propCount = 0) {
       for (const g of groups) if (g) g.count = 0;
+      const dt = drawnAt < 0 ? 0 : Math.max(0, Math.min(0.1, time - drawnAt));
+      drawnAt = time;
+      models.begin(dt);
       const paint = tint >= 0 || repaint;
       let sickPainted = false;
       for (let k = 0; k < count; k++) {
@@ -175,8 +222,10 @@ export function createCreatureMeshes(scene, cap) {
         const flags = view[o + FRAME.STATE] | 0;
         const isSickFlag = (flags & FRAME.C_SICK) !== 0;
         const isTamedFlag = (flags & FRAME.C_TAMED) !== 0;
-        const i = g.count++;
-        if (paint || isSickFlag || isTamedFlag) {
+        const asModel = models.ready(species);
+        const i = asModel ? -1 : g.count++;
+        const tinted = paint || isSickFlag || isTamedFlag;
+        if (tinted) {
           if (tint < 0) {
             tintColour.setRGB(1, 1, 1);
             if (isSickFlag) tintColour.lerp(SICK, 0.55);
@@ -194,7 +243,7 @@ export function createCreatureMeshes(scene, cap) {
             const rel = kin.get(h);
             tintColour.copy(h === kinSelf ? KIN_SELF : rel === undefined ? KIN_OTHER : KIN_REL[rel] ?? KIN_OTHER);
           }
-          for (const part of g.parts) part.mesh.setColorAt(i, tintColour);
+          if (!asModel) for (const part of g.parts) part.mesh.setColorAt(i, tintColour);
         }
         let pitch = isSickFlag ? 0.14 : 0; let roll = 0;
         const feet = g.rig.feet;
@@ -211,6 +260,11 @@ export function createCreatureMeshes(scene, cap) {
           if (Math.abs(left) > fw * SEAT_MAX_SLOPE) left = -right;
           pitch = Math.atan2(back - front, 2 * fl);
           roll = Math.atan2(right - left, 2 * fw);
+        }
+        if (asModel) {
+          models.put(species, handles ? handles[k] : k, view[o], view[o + 1], view[o + 2], view[o + 3], pitch, roll, scale,
+            tinted ? tintColour : null, view[o + 6] | 0, speeds?.[k] ?? 0, dt);
+          continue;
         }
         dummy.position.set(view[o], view[o + 1], view[o + 2]);
         dummy.rotation.set(pitch, view[o + 3], roll);
@@ -232,9 +286,12 @@ export function createCreatureMeshes(scene, cap) {
           if ((paint || sickPainted) && part.mesh.instanceColor) part.mesh.instanceColor.needsUpdate = true;
         }
       }
+      if (props) drawBodies(props, propCount); else taken.fill(0);
+      models.end();
       if (tint < 0) repaint = false;
     },
     dispose() {
+      models.dispose();
       materialLens.value = 0;
       for (const g of groups) {
         if (!g) continue;

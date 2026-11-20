@@ -20,7 +20,7 @@ import { packSnapshot, unpackSnapshot } from '../sim/persistence/codec.js';
 
 export function createSimRuntime(post, deps = {}) {
   const {
-    CANNON = null, idb = null,
+    physicsLib = null, idb = null,
     now = () => (typeof performance !== 'undefined' ? performance.now() : Date.now()),
     schedule = (fn, ms) => setTimeout(fn, ms),
     cancel = (h) => clearTimeout(h),
@@ -54,8 +54,8 @@ export function createSimRuntime(post, deps = {}) {
   const buildWorld = (seed) => {
     const terrain = generateIsland(seed);
     let phys = null;
-    if (CANNON) {
-      try { phys = createPhysics(CANNON, terrain, { substeps: caps.substeps ?? 2 }); }
+    if (physicsLib) {
+      try { phys = createPhysics(physicsLib, terrain, { substeps: caps.substeps ?? 2 }); }
       catch (err) { post({ type: 'error', where: 'physics', message: String(err?.message ?? err) }); }
     }
     return createWorld({ seed, caps, physics: phys, terrain });
@@ -97,7 +97,7 @@ export function createSimRuntime(post, deps = {}) {
     if (msg.resume && idb && !ephemeral) {
       loadWorld(idb).then((snap) => {
         if (disposed) return;
-        const restored = snap ? restoreWorld(snap, { CANNON, caps }) : null;
+        const restored = snap ? restoreWorld(snap, { physicsLib, caps }) : null;
         if (restored) { world = restored; announce(true); } else fresh();
       }).catch((err) => { post({ type: 'error', where: 'resume', message: String(err?.message ?? err) }); fresh(); });
       return;
@@ -239,7 +239,7 @@ export function createSimRuntime(post, deps = {}) {
           if (!msg.bytes) return;
           unpackSnapshot(msg.bytes).then((snap) => {
             if (disposed) return;
-            const restored = restoreWorld(snap, { CANNON, caps });
+            const restored = restoreWorld(snap, { physicsLib, caps });
             if (!restored) { post({ type: 'error', where: 'import', message: 'That save was written by a different island generator and cannot be loaded.' }); return; }
             // A world loaded INTO the local slot replaces the island that was here, keyframes
             // and all; a visited one leaves both alone.
@@ -294,7 +294,7 @@ export function createSimRuntime(post, deps = {}) {
           const first = ephemeral ? Promise.resolve(true) : save('timemachine');
           first.then(() => loadKeyframe(idb, year)).then((snap) => {
             if (disposed) return;
-            const restored = snap ? restoreWorld(snap, { CANNON, caps }) : null;
+            const restored = snap ? restoreWorld(snap, { physicsLib, caps }) : null;
             if (!restored) { post({ type: 'error', where: 'keyframe', message: `Year ${year} is no longer kept.` }); return; }
             adopt(restored, year);
           }).catch((err) => post({ type: 'error', where: 'keyframe', message: String(err?.message ?? err) }));
