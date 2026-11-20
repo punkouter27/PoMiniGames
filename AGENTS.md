@@ -158,7 +158,8 @@ uvx ruff check .                                               # Python lint (sc
     on first use. `/health` (JSON readiness, never HTML) and `/health/live` (`X-Commit`) are the probes.
   - The build version (`v{YYMMDD}`, `Layout/BuildVersion.razor`) is visible bottom-right on every page, above the
     BottomNav on phones (`--po-stamp-lift`); `.gl-content` reserves the strip under every page so it never covers
-    content (game shells subtract it through `--gps-bar-h`).
+    content, except desktop game routes (`game-shell.css`), where the game fills the well and its start cards are
+    sized to it.
   - Forms that submit (initials, ecosystem rename and alerts) validate with FluentValidation rules
     in `PoMiniGames.Shared/Validation` through `Layout/FluentValidationValidator.cs`: inline errors,
     submit disabled while submitting.

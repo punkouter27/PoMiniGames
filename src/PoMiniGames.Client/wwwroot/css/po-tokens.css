@@ -251,6 +251,8 @@ main {
 .po-link-btn:hover { filter: brightness(1.08); }
 .po-link-btn:focus-visible { outline: 2px solid var(--po-focus); outline-offset: 2px; }
 .po-link-btn[disabled] { opacity: 0.6; cursor: default; }
+/* Phones: every tap target is at least 44px tall. */
+@media (max-width: 480px) { .po-link-btn.small { min-height: 44px; } }
 
 /* ── Status pills: --po-text on a soft background, so every pill reads at ≥ 4.5:1 in light and dark ── */
 .po-badge {
