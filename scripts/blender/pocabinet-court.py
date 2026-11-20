@@ -26,6 +26,11 @@ scan's up is -Y in its own frame, roughly a metre to the unit) and
    PoCabinetTrackGeometry.BuildCenterlineXY (the route checked here is the road the game races).
 
 pocabinet-court-splat.py imports this file for the same court frame.
+
+Steps 3 to 5 are the lap of the retired Center Court track. PoCabinet's one circuit (Cabinet
+Grand Prix) crosses this court on knots of its own in PoCabinetTrackGeometry, so the knots printed
+here are not used and --fixture has no test to feed; the script is kept for steps 1 and 2, which
+build court.glb (see scripts/pocabinet/README.md).
 """
 
 import math

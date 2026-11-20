@@ -130,7 +130,7 @@ export function buildTrack(world) {
 
 class Track {
     constructor(world, x, y, segLen, cum, tx, ty, curv, length, halfWidth) {
-        this.id = String(world?.trackId || 'capitol');
+        this.id = String(world?.trackId || 'grandprix');
         this.x = x; this.y = y;
         this.segLen = segLen; this.cum = cum;
         this.tx = tx; this.ty = ty; this.curv = curv;
@@ -138,7 +138,7 @@ class Track {
         this.length = length;
         this.halfWidth = halfWidth;
 
-        // Point-to-point (world.finishIndex > 0, the Playground run): the lap ends at that
+        // Point-to-point (world.finishIndex > 0): the lap ends at that
         // centerline sample instead of back at the line, and a finished car rolls on into the
         // run-out and parks half way down it instead of taking a cool-down lap. The loop still
         // closes — through a return link nobody drives — so every wrap in here keeps working.
@@ -152,13 +152,10 @@ class Track {
 
         // Road height per sample in sim units and the road's cross slope (tan of the bank, + =
         // right side higher): the physics reads them per segment (grade(), bankOf(): gravity on
-        // a slope, grip in a banked turn), the scene interpolated (heightAt(), bankAt()). Then
-        // render-only: the stretch of the loop that is not drawn (the return link), and where
-        // the tarmac starts — before it the scene lays an open chute in place of the model's gutter.
+        // a slope, grip in a banked turn), the scene interpolated (heightAt(), bankAt()).
         const perSample = (a) => Array.isArray(a) && a.length === this.count ? Float64Array.from(a, Number) : null;
         this.z = perSample(world?.centerZ);
         this.bank = perSample(world?.centerBank);
-        this.roadFrom = Number(world?.roadFrom) || 0;
 
         // Track features (PoCabinetTrackFeatures, shipped with the world): road half width,
         // run-off either side (0 grass, 1 gravel, 2 tarmac), apex kerbs (±1 flat, ±2 raised, sign
@@ -171,6 +168,20 @@ class Track {
         this.kerbs = ints(world?.kerbs);
         this.line = perSample(world?.racingLine) || new Float64Array(this.count);
         this.theme = String(world?.theme || this.id);
+        // Render-only: the scenery zone each sample is dressed as (capitol, senate, court,
+        // maralago; '' where the world names none) and the scan the lap drives through
+        // ({ x, y, scale, floorZ, halfLength, halfWidth } in sim units and metres), or null.
+        this.zoneOf = new Array(this.count).fill('');
+        for (const z of Array.isArray(world?.zones) ? world.zones : []) {
+            const from = Number(z.from) | 0, to = Number(z.to) | 0;
+            const span = ((to - from) % this.count + this.count) % this.count || this.count;
+            for (let j = 0; j < span; j++) this.zoneOf[(from + j) % this.count] = String(z.theme || '');
+        }
+        const scan = world?.scan;
+        this.scan = scan && Number(scan.scale) > 0 ? {
+            x: Number(scan.x) || 0, y: Number(scan.y) || 0, scale: Number(scan.scale), floorZ: Number(scan.floorZ) || 0,
+            halfLength: Number(scan.halfLength) || 0, halfWidth: Number(scan.halfWidth) || 0,
+        } : null;
         this.patches = (Array.isArray(world?.patches) ? world.patches : []).map(p => ({
             from: Number(p.from) | 0, to: Number(p.to) | 0, latFrom: Number(p.latFrom), latTo: Number(p.latTo),
             dryGrip: Number(p.dryGrip), wetGrip: Number(p.wetGrip), kind: String(p.kind || ''),
@@ -255,9 +266,15 @@ class Track {
         return !(i >= this.hiddenFrom && i < this.hiddenTo);
     }
 
-    /** True where the scene lays tarmac (everywhere, unless the track starts on a chute: see roadFrom). */
-    built(i) {
-        return this.drawn(i) && (this.roadFrom <= 0 || (i >= this.roadFrom && i < this.hiddenFrom));
+    /** The scenery zone sample `i` is dressed as: 'capitol', 'senate', 'court', 'maralago' or ''. */
+    zoneAt(i) {
+        return this.zoneOf[i];
+    }
+
+    /** True inside the drawn part of the scan (sim point), grown by `pad` sim units; false without one. */
+    inScan(x, y, pad = 0) {
+        const s = this.scan;
+        return !!s && Math.abs(x - s.x) <= s.halfLength * s.scale + pad && Math.abs(y - s.y) <= s.halfWidth * s.scale + pad;
     }
 
     /** Rise per unit of road along segment `i` (+ = uphill in the direction of travel); 0 on a flat track. Mirrors PoCabinetTrack.Grade. */

@@ -17,7 +17,7 @@
 
    Graphics: the quality tier is the APP's (window.PoQuality via SettingsService, the same
    switch as the app sheet's Graphics row), shown here because a 3D race is where it
-   matters. Room scans is Cabinet's own (RoomDetail). The camera is not a stored setting:
+   matters. Scan detail is Cabinet's own (RoomDetail). The camera is not a stored setting:
    it is the race's C-key cycle, so its button only shows while a race is mounted. No
    Radzen here either: its theme is global CSS that the app loads only on the pages built
    on it (PoMule, Brawl HQ, the leaderboards), and it cannot be scoped to one panel. *@
@@ -43,8 +43,8 @@
         <legend>Graphics &amp; camera</legend>
         @Pills("gfx", "Graphics quality", GraphicsOptions, AppSettings.Graphics, SetGraphicsAsync,
                "Every game's setting. Lower is smoother on a slow device.")
-        @Pills("room", "Room scans", RoomOptions, Value.RoomDetail, v => RaiseAsync(s => s.RoomDetail = v),
-               "Auto is the full 9.6 MB scan on a computer and a light 2.4 MB one on a phone or a slow link; Lite draws the plain room.")
+        @Pills("room", "Scan detail", RoomOptions, Value.RoomDetail, v => RaiseAsync(s => s.RoomDetail = v),
+               "The scanned court: Auto is the full 9.6 MB scan on a computer and a light 2.4 MB one on a phone or a slow link; Lite draws the plain court.")
         @Pills("gpu", "GPU shaders", GpuOptions, Value.GpuCompute, v => RaiseAsync(s => s.GpuCompute = v),
                "Uses WebGPU WGSL compute and fluid UI shaders when supported, with automatic WebGL2 fallback.")
         @if (OnCycleCamera.HasDelegate)

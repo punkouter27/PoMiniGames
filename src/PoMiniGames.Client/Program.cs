@@ -99,10 +99,6 @@ builder.Services.AddScoped<GameStatsService>();
 // PoCabinet race session owns both lobby + race hub connections for
 // the lifetime of one race. Scoped — each Blazor circuit creates its own.
 builder.Services.AddScoped<PoCabinetSession>();
-// PoCabinetCareerState holds the player's 3-stage progress
-// in localStorage and exposes a Changed event the ChampionshipView subscribes
-// to. Scoped so each Blazor circuit reads its own ILocalStorageService cache.
-builder.Services.AddScoped<PoCabinetCareerState>();
 // Offline score resilience: durable localStorage queue + flusher behind GameResultService,
 // so a failed leaderboard submit is parked and synced on reconnect rather than lost.
 builder.Services.AddScoped<PendingScoreStore>();

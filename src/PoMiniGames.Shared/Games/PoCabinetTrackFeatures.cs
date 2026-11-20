@@ -2,7 +2,7 @@ namespace PoMiniGames.Shared.Games;
 
 /// <summary>
 /// The per-sample track features of a <see cref="PoCabinetStaticWorld"/>: road width, run-off,
-/// apex kerbs, the racing line, grip patches and road dividers. Computed once, here, and shipped
+/// apex kerbs, the racing line, grip patches, road dividers and scenery zones. Computed once, here, and shipped
 /// with the world, so the server's physics (PoCabinetTrack), the browser's (track.js) and the
 /// scene all read the same arrays instead of each deriving their own. Nothing in here has to be
 /// bit-exact across runtimes: only its output is simulated, and both sides get the same output.
@@ -151,6 +151,14 @@ public static class PoCabinetTrackFeatures
             ShortSide = s.ShortSide,
         }).ToList();
         world.Theme = def.Theme ?? def.Id;
+        var zones = def.Zones ?? [];
+        world.Zones = zones.Select((z, k) => new PoCabinetZoneWire
+        {
+            From = Sample(z.FromKnot),
+            To = Sample(zones[(k + 1) % zones.Count].FromKnot),
+            Theme = z.Theme,
+        }).ToList();
+        world.Scan = def.Scan;
     }
 
     /// <summary>Samples [from, to) round the loop (wrapping past the line when from &gt; to).</summary>

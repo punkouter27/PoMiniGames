@@ -55,7 +55,7 @@ public partial class StorageService : IStorageService
     private const string PoBrawlPlayerEloPartition = "pobrawlplayerelo";
     private const string PoRacerPartition = "poracer";
     private const string PoVoxelStrikePartition = "povoxelstrike";
-    private const string PoCabinetPartition = "pocabinet";
+    private const string PoCabinetPartition = "pocabinet_" + PoCabinetHighScore.CircuitId;
     private const string PoMulePartition = "pomule";
 
     private readonly TableServiceClient _serviceClient;

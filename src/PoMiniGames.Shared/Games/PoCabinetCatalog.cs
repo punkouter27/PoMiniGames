@@ -1,18 +1,16 @@
 namespace PoMiniGames.Shared.Games;
 
 /// <summary>
-/// Display metadata for the themed PoCabinet tracks: the card's name, blurb, accent colour,
-/// length and difficulty. Geometry (knots, width, atmosphere) lives next door in
-/// <see cref="PoCabinetTrackGeometry"/>, keyed by the same ids. Track ids are lower-case,
-/// kebab-friendly strings safe for URL paths.
+/// Display metadata for PoCabinet's circuit: the card's name, blurb, accent colour, length and
+/// difficulty. Geometry (knots, width, atmosphere) lives next door in
+/// <see cref="PoCabinetTrackGeometry"/> under the same id, a lower-case string safe for URL paths.
 /// </summary>
 public sealed record PoCabinetTrackInfo(string Id, string Name, string Description, string Accent, int LengthKm, string Difficulty);
 
 public static class PoCabinetCatalog
 {
-    /// <summary>Race laps on a circuit. Matches PoRacer's per-race length so leaderboard comparisons are
-    /// apples-to-apples. A track can say otherwise (<see cref="PoCabinetTrackDefinition.Laps"/>): the
-    /// point-to-point Playground run is 1.</summary>
+    /// <summary>Race laps where a definition does not say otherwise
+    /// (<see cref="PoCabinetTrackDefinition.Laps"/>, which is what a race reads).</summary>
     public const int TotalLaps = 3;
 
     /// <summary>Driver seats in a multiplayer lobby: the most humans in one race.</summary>
@@ -32,17 +30,11 @@ public static class PoCabinetCatalog
     public const int SoloPlayerSlot = 32;
 
     /// <summary>Solo places that mean something, now that "the podium" is 3 of 64 and the
-    /// player starts 33rd: the top six earn the fanfare and count as a win, a top-quarter finish
-    /// clears a campaign stage, and a top-six finish in the final race wins the trophy. First set
-    /// for a 100-car field (top ten, top 25) from headless runs in the real page with the throttle
-    /// held and both driver aids on, and scaled with the field: a stage takes a little more than
-    /// the aids alone, the trophy takes driving.</summary>
+    /// player starts 33rd: the top six earn the fanfare and count as a win.</summary>
     public const int SoloFrontRunners = 6;
-    public const int CampaignPassPlace = 16;
-    public const int CampaignTrophyPlace = 6;
 
-    /// <summary>Default track when none is specified (matches the championship opening leg).</summary>
-    public const string DefaultTrackId = "capitol";
+    /// <summary>The one circuit's id: what a race, a stored lap and the board are keyed by.</summary>
+    public const string DefaultTrackId = PoCabinetTrackGeometry.TrackId;
 
     /// <summary>AI drivers a multiplayer host can add to the grid: the four officials first,
     /// then field racers (<see cref="BotName"/>). The race seats as many as fit beside the
@@ -89,74 +81,19 @@ public static class PoCabinetCatalog
     /// <summary>The <c>OfficialId</c> a field racer carries on the wire (physics.js <c>soloField</c>'s id).</summary>
     public const string FieldRacerId = "field";
 
-    public static IReadOnlyList<PoCabinetTrackInfo> Tracks { get; } = Array.AsReadOnly(new[]
-    {
-        new PoCabinetTrackInfo(
-            "capitol",
-            "Capitol Speedway",
-            "Asphalt oval framed by marble columns and gold trim. Government-building backdrop.",
-            "#d4af37", 3, "Easy"),
-        new PoCabinetTrackInfo(
-            "maralago",
-            "Mar-a-Lago Grand Prix",
-            "Palm-lined beachside course with golf-course greens and ocean mist.",
-            "#2e7d4f", 4, "Medium"),
-        new PoCabinetTrackInfo(
-            "pressbriefing",
-            "Press Briefing 500",
-            "Podium-shaped stadium with press-box grandstands and klieg lights.",
-            "#c0392b", 3, "Hard"),
-        new PoCabinetTrackInfo(
-            "playground",
-            "Playground Marble Run",
-            "Point-to-point down a giant play structure's marble run: off the top, round the banked turns, down the slide to the finish tray. One run.",
-            "#f39c12", 3, "Medium"),
-        new PoCabinetTrackInfo(
-            "senate",
-            "Senate Hill",
-            "Autumn hill road course: a climb to a blind crest, a banked downhill hairpin, the esses, a filibuster chicane with raised kerbs and a split sweeper with a joker lane.",
-            "#b3541e", 4, "Hard"),
-        new PoCabinetTrackInfo(
-            "bedroom",
-            "Bedroom Floor GP",
-            "Toy-car circuit on a scanned bedroom floor: past the drum kit and the closet, a banked ramp up onto the floor cushion, a drop off its end and an S round the office chair.",
-            "#ff7a1a", 1, "Medium"),
-        new PoCabinetTrackInfo(
-            "court",
-            "Center Court",
-            "Toy-car circuit on the floor of a scanned outdoor basketball court: round the centre circle and both keys, the hoops and the trees towering over you.",
-            "#e8712a", 1, "Medium"),
-    });
+    /// <summary>The circuit: one lap takes in every kind of road the game has.</summary>
+    public static PoCabinetTrackInfo Track { get; } = new(
+        DefaultTrackId,
+        "Cabinet Grand Prix",
+        "One lap of everything: the stadium straight and its banked first turn, the climb over Senate Hill to the hairpin and the chicane, a blast across a giant scanned basketball court, the joker-lane sweeper and the beach road past the sand traps.",
+        "#d4af37", 12, "Medium");
 
-    /// <summary>The tracks that are campaign stages, in stage order (the first four of <see cref="Tracks"/>).</summary>
-    public const int CampaignStages = 4;
+    /// <summary>The circuit's card, whatever id a caller still carries.</summary>
+    public static PoCabinetTrackInfo GetTrack(string? id = null) => Track;
 
-    /// <summary>The campaign stage a track is (0-based), or -1 for a free race.</summary>
-    public static int StageIndexOf(string? trackId)
-    {
-        for (int i = 0; i < CampaignStages; i++)
-        {
-            if (string.Equals(Tracks[i].Id, trackId, StringComparison.OrdinalIgnoreCase)) return i;
-        }
-        return -1;
-    }
-
-    public static PoCabinetTrackInfo GetTrack(string? id) =>
-        PoCabinetDailyTrack.TryParse(id, out var day) ? Daily(day)
-        : Tracks.FirstOrDefault(t => string.Equals(t.Id, id?.Trim(), StringComparison.OrdinalIgnoreCase)) ?? Tracks[0];
-
-    /// <summary>A track a race may be run and a lap posted on: the fixed ones, and the daily
-    /// circuit of yesterday, today or tomorrow (UTC).</summary>
+    /// <summary>The id a race may be run and a lap posted on: the circuit's own.</summary>
     public static bool IsKnownTrack(string? id) =>
-        Tracks.Any(t => string.Equals(t.Id, id?.Trim(), StringComparison.OrdinalIgnoreCase))
-        || PoCabinetDailyTrack.IsCurrent(id, DateTime.UtcNow);
-
-    /// <summary>The daily circuit's card: a new seeded layout each UTC day, the same for everyone.</summary>
-    public static PoCabinetTrackInfo Daily(DateOnly day) => new(
-        PoCabinetDailyTrack.IdFor(day),
-        PoCabinetDailyTrack.NameFor(day),
-        "Today's circuit, generated from the date: a new layout every day, the same hills, corners and run-off for every player, with its own leaderboard.",
-        "#7b61ff", 3, "New every day");
+        string.Equals(id?.Trim(), DefaultTrackId, StringComparison.OrdinalIgnoreCase);
 
     /// <summary>A lap or race time as the HUD, the cards and the results show it: m:ss.s.</summary>
     public static string FormatLap(double seconds)
@@ -165,7 +102,4 @@ public static class PoCabinetCatalog
         var minutes = (int)(seconds / 60);
         return $"{minutes}:{seconds - minutes * 60:00.0}";
     }
-
-    /// <summary>Today's daily circuit (UTC).</summary>
-    public static PoCabinetTrackInfo Today(DateTime utcNow) => Daily(DateOnly.FromDateTime(utcNow));
 }

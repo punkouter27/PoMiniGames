@@ -85,7 +85,7 @@ export function ribbon(track, fromLat, toLat, height, tile, pick = (i) => track.
     return geom;
 }
 
-/** The Playground's lawn (and the fallback if the terrain fails): one flat plane past the fog. */
+/** The ground if the terrain cannot be built: one flat plane past the fog. */
 export function flatGround(world, material, reach, tile) {
     const minX = Number(world.minX) || 0, maxX = Number(world.maxX) || 0;
     const minY = Number(world.minY) || 0, maxY = Number(world.maxY) || 0;

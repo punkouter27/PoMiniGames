@@ -3,7 +3,7 @@ namespace PoMiniGames.Shared.Games;
 /// <summary>
 /// A resampled centerline's arc-length tables: segment lengths, running distance, unit tangents
 /// and the heading change at each sample. Built once per track and shared by the features
-/// (<see cref="PoCabinetTrackFeatures"/>), the daily layout check and the server's runtime track,
+/// (<see cref="PoCabinetTrackFeatures"/>), and the server's runtime track,
 /// which used to compute their own copies. Mirrors track.js's constructor.
 /// </summary>
 public sealed class PoCabinetCenterline

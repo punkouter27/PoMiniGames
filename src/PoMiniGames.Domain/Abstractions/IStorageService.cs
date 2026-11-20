@@ -136,7 +136,7 @@ public interface IStorageService
     Task<List<PoMuleHighScore>> GetPoMuleHighScoresAsync(int limit = 10, bool weekly = false);
     Task<PoMuleHighScore> SavePoMuleHighScoreAsync(PoMuleHighScore entry);
 
-    // PoCabinet High Scores (lowest best-lap wins, partitioned by TrackId)
-    Task<List<PoCabinetHighScore>> GetPoCabinetHighScoresAsync(int limit = 10, string? trackId = null);
+    // PoCabinet High Scores (lowest best-lap wins, one board for the one circuit)
+    Task<List<PoCabinetHighScore>> GetPoCabinetHighScoresAsync(int limit = 10);
     Task<PoCabinetHighScore> SavePoCabinetHighScoreAsync(PoCabinetHighScore entry);
 }

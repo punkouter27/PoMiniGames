@@ -61,7 +61,7 @@ const cdnOrigin = 'https://cdn.jsdelivr.net';
 const cdnCacheName = 'pominigames-cdn-v1';
 
 // Same-origin assets too heavy to precache for every visitor (track models and the
-// bedroom's Gaussian splat are megabytes, sprite sheets hundreds of KB). Cached the first time a game asks for
+// court scan's Gaussian splat are megabytes, sprite sheets hundreds of KB). Cached the first time a game asks for
 // them, so a game played once online keeps working offline.
 const runtimeCachePattern = /\.(glb|ksplat|webp)$/;
 

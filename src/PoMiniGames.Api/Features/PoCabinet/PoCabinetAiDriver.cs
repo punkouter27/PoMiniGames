@@ -383,7 +383,7 @@ public static class PoCabinetAiDriver
     {
         double v = car.Speed;
         // Capped at a turn as tight as the road is wide: the centerline has kinks sharper than
-        // that (Mar-a-Lago's last bend, a few samples long) which a car simply cuts across, and
+        // that (a spline kink a few samples long) which a car simply cuts across, and
         // braking for them parked a 100-car field on the start line.
         double cap = 1 / track.HalfWidth;
         double to = car.Along + 30 + Math.Abs(v) * reach;

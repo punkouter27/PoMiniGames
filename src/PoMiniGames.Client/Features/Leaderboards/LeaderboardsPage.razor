@@ -375,15 +375,14 @@
     private void ToggleSearch() => _searchOpen = !_searchOpen;
 
     /// <summary>
-    /// The board's game, as a route to play it. Racer and Cabinet have one board per
-    /// track and Brawl has a fighters board, so a board key is not always a game key.
+    /// The board's game, as a route to play it. Racer has one board per track and Brawl
+    /// has a fighters board, so a board key is not always a game key.
     /// Null when the key maps to no playable game, and the claim card then shows text only.
     /// </summary>
     private static string? PlayUrlFor(GameLeaderboardDto board)
     {
         var key = board.GameKey;
         if (key.StartsWith("poracer-", StringComparison.OrdinalIgnoreCase)) key = GameKeys.PoRacer.Value;
-        else if (key.StartsWith("pocabinet-", StringComparison.OrdinalIgnoreCase)) key = GameKeys.PoCabinet.Value;
         else if (string.Equals(key, "pobrawldemo", StringComparison.OrdinalIgnoreCase)) key = GameKeys.PoBrawl.Value;
 
         return GameCatalog.All
@@ -749,10 +748,8 @@
         // Racer has one board per track ("poracer", "poracer-neonskyline", …). They are all the
         // Racer game's, so they group by its catalog key; without this the two newer tracks fell
         // to "Other" at the bottom of the page, away from the Grand Prix board.
-        // Cabinet the same: "pocabinet", "pocabinet-senate", …, "pocabinet-daily".
         static GameKey Game(GameLeaderboardDto b) =>
             b.GameKey.StartsWith("poracer-", StringComparison.OrdinalIgnoreCase) ? GameKeys.PoRacer
-            : b.GameKey.StartsWith("pocabinet-", StringComparison.OrdinalIgnoreCase) ? GameKeys.PoCabinet
             : (GameKey)b.GameKey;
 
         _groupedBoards = new List<BoardGroup>

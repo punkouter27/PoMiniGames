@@ -28,7 +28,7 @@ public sealed class PoCabinetUiSettings
     public string SteeringAssist { get; set; } = "light";
     public bool AutoBrake { get; set; }
     /// <summary>
-    /// The scanned tracks (the bedroom, the court): "splat" draws the full Gaussian-splat scan (a
+    /// The circuit's scanned court: "splat" draws the full Gaussian-splat scan (a
     /// 9.6 MB download, heavier on phones), "mesh" the lite mesh it collides with, and "auto" (the
     /// default) the full scan on a desktop but only its light 2.4 MB version on a phone, a slow
     /// link or a data-saving browser (models.js <c>roomPlan</c>). JS key <c>roomDetail</c>.

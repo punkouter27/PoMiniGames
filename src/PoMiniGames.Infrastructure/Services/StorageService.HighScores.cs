@@ -398,9 +398,9 @@ public partial class StorageService
     }
 
     // ── PoCabinet High Scores (T5) ────────────────────────────────────────────
-    // TrackId partitions the leaderboard: Capitol best-lap never competes with
-    // Mar-a-Lago best-lap. Identity-keyed on (player + track) — one row per
-    // (player, track), ratcheted by ShouldOverwrite to only accept a faster lap.
+    // One board in the circuit's own partition ("pocabinet_grandprix"): rows the retired tracks
+    // left in "pocabinet" and "pocabinet_{track}" are never read. Identity-keyed, one row per
+    // player, ratcheted by ShouldOverwrite to only accept a faster lap.
     private static readonly HighScoreDescriptor<PoCabinetHighScore> PoCabinetScores = new(
         Table: PoCabinetTable,
         Partition: PoCabinetPartition,
@@ -408,10 +408,8 @@ public partial class StorageService
         {
             PlayerName = DisplayName24(e.PlayerName),
             UserId = string.IsNullOrWhiteSpace(e.UserId) ? "" : e.UserId,
-            // An unknown track id defaults to "capitol"; the OpenAPI contract pins this
-            // fallback. Future tracks added to the catalog
-            // will fall through to default as well until the descriptor is updated.
-            TrackId = string.IsNullOrWhiteSpace(e.TrackId) ? "capitol" : e.TrackId.Trim().ToLowerInvariant(),
+            // Every row in this partition is a lap of the circuit, whatever the caller sent.
+            TrackId = PoCabinetHighScore.CircuitId,
             BestLapSeconds = double.IsFinite(e.BestLapSeconds) ? Math.Clamp(e.BestLapSeconds, 0.001, 3600) : 0,
             // 100, not PoCabinetCatalog.SoloCarCount (64): rows posted from the old 100-car field keep their place.
             FinalPosition = e.FinalPosition is >= 1 and <= 100 ? e.FinalPosition : 1,
@@ -434,7 +432,7 @@ public partial class StorageService
         {
             PlayerName = e.GetString("PlayerName") ?? "",
             UserId = e.GetString("UserId") ?? "",
-            TrackId = e.GetString("TrackId") ?? "capitol",
+            TrackId = e.GetString("TrackId") ?? PoCabinetHighScore.CircuitId,
             BestLapSeconds = e.GetDouble("BestLapSeconds") ?? 0d,
             FinalPosition = e.GetInt32("FinalPosition") ?? 0,
             IsGuest = e.GetBoolean("IsGuest") ?? false,
@@ -446,31 +444,17 @@ public partial class StorageService
         // when someone later matches it).
         Rank: s => s.OrderBy(x => x.BestLapSeconds).ThenBy(x => x.Date))
     {
-        // One row per (player, track): only a strictly faster lap may replace the stored PB.
+        // One row per player: only a strictly faster lap may replace the stored PB.
         ShouldOverwrite = (existing, incoming) =>
             (incoming.TryGetValue("BestLapSeconds", out var v) ? v as double? ?? double.MaxValue : double.MaxValue)
                 < (existing.GetDouble("BestLapSeconds") ?? double.MaxValue),
     };
 
-    public Task<List<PoCabinetHighScore>> GetPoCabinetHighScoresAsync(int limit = 10, string? trackId = null)
-    {
-        if (string.IsNullOrWhiteSpace(trackId))
-        {
-            return GetHighScoresAsync(PoCabinetScores, limit);
-        }
-        var partition = string.Equals(trackId, "capitol", StringComparison.OrdinalIgnoreCase)
-            ? PoCabinetPartition
-            : $"pocabinet_{trackId.Trim().ToLowerInvariant()}";
-        return GetHighScoresAsync(PoCabinetScores, limit, partition: partition);
-    }
+    public Task<List<PoCabinetHighScore>> GetPoCabinetHighScoresAsync(int limit = 10) =>
+        GetHighScoresAsync(PoCabinetScores, limit);
 
-    public Task<PoCabinetHighScore> SavePoCabinetHighScoreAsync(PoCabinetHighScore entry)
-    {
-        var partition = string.Equals(entry.TrackId, "capitol", StringComparison.OrdinalIgnoreCase)
-            ? PoCabinetPartition
-            : $"pocabinet_{entry.TrackId.Trim().ToLowerInvariant()}";
-        return SaveHighScoreAsync(PoCabinetScores, entry, partition: partition, requirePersistence: true);
-    }
+    public Task<PoCabinetHighScore> SavePoCabinetHighScoreAsync(PoCabinetHighScore entry) =>
+        SaveHighScoreAsync(PoCabinetScores, entry, requirePersistence: true);
 
 
     // ── Weekly boards ─────────────────────────────────────────────────────

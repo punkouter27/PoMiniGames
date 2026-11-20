@@ -12,8 +12,7 @@ namespace PoMiniGames.Features.PoCabinet;
 /// <summary>
 /// PoCabinet's score endpoint: authenticated best-lap submissions guarded by the
 /// <c>pocabinet</c> rate-limit policy. The stored laps are read by the unified
-/// leaderboard (<c>GET /api/leaderboards/pocabinet</c>, <c>pocabinet-{track}</c>,
-/// <c>pocabinet-daily</c>): one board per track.
+/// leaderboard (<c>GET /api/leaderboards/pocabinet</c>): one board, for the one circuit.
 ///
 /// <para>
 /// <b>Every stored lap and place is server-computed.</b> A solo submission carries its
@@ -55,7 +54,7 @@ public static class PoCabinetScoreEndpoints
         if (dto.FinalPosition is < 1 or > PoCabinetCatalog.SoloCarCount)
             errors[nameof(dto.FinalPosition)] = [$"Final position must be between 1 and {PoCabinetCatalog.SoloCarCount}."];
         if (!PoCabinetCatalog.IsKnownTrack(dto.TrackId))
-            errors[nameof(dto.TrackId)] = ["Choose a supported track."];
+            errors[nameof(dto.TrackId)] = ["That track is no longer raced."];
         if (!IsValidGameCode(dto.GameCode))
             errors[nameof(dto.GameCode)] = [$"Game code must be at most {MaxGameCodeLength} letters, digits, '-' or '_'."];
         if (dto.Inputs is { Length: > MaxInputsChars })
@@ -70,7 +69,7 @@ public static class PoCabinetScoreEndpoints
 
         var (userId, displayName, isGuest, _) = RequestIdentity.Resolve(http.User);
         var log = loggerFactory.CreateLogger("PoCabinetScores");
-        var trackId = ResolveTrack(dto.TrackId);
+        const string trackId = PoCabinetCatalog.DefaultTrackId;
 
         double verifiedLap;
         int verifiedPlace;
@@ -91,7 +90,7 @@ public static class PoCabinetScoreEndpoints
             }
             try
             {
-                (verifiedLap, verifiedPlace) = PoCabinetLapVerifier.Replay(trackId, dto.Wet, inputs);
+                (verifiedLap, verifiedPlace) = PoCabinetLapVerifier.Replay(dto.Wet, inputs);
             }
             finally
             {
@@ -182,26 +181,18 @@ public static class PoCabinetScoreEndpoints
     private static bool IsValidGameCode(string? code) =>
         string.IsNullOrEmpty(code)
         || (code.Length <= MaxGameCodeLength && code.All(ch => char.IsAsciiLetterOrDigit(ch) || ch is '-' or '_'));
-
-    /// <summary>Normalise unknown / null / casing to the canonical default track id.</summary>
-    private static string ResolveTrack(string? track)
-    {
-        if (string.IsNullOrWhiteSpace(track)) return PoCabinetCatalog.DefaultTrackId;
-        var trimmed = track.Trim().ToLowerInvariant();
-        return PoCabinetCatalog.IsKnownTrack(trimmed) ? trimmed : PoCabinetCatalog.DefaultTrackId;
-    }
 }
 
 /// <summary>
-/// Inbound score payload from the client. <see cref="TrackId"/> accepts any
-/// casing; the server normalises to the canonical lower-case id before saving.
+/// Inbound score payload from the client. <see cref="TrackId"/> must be the circuit's id (any
+/// casing): a lap run on a track that is no longer raced is refused, never stored.
 /// </summary>
 public sealed class PoCabinetScoreDto
 {
     public string PlayerDisplayName { get; set; } = "";
     /// <summary>Server-populated from auth cookie. Empty/zero on submit → server fills.</summary>
     public string UserId { get; set; } = "";
-    public string TrackId { get; set; } = "capitol";
+    public string TrackId { get; set; } = PoCabinetCatalog.DefaultTrackId;
     public double BestLapSeconds { get; set; }
     public int FinalPosition { get; set; }
     public DateTimeOffset AchievedAtUtc { get; set; }

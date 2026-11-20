@@ -1,10 +1,9 @@
 @*
     PoCabinetPreRace — the 1P start card's setup as one tabbed sheet: Car (the paint shop) and
-    Settings (the settings panel), with the room-scan choice above them while a scanned track is
-    picked. The track itself is the card's dropdown beside OK (GameIntro.Maps, owner rule
-    2026-11-18). It replaced the track list alone on the card, with the car and
-    the settings one drawer away; the drawer (PoCabinetDrawer) is still how the pause card and
-    the lobby reach them.
+    Settings (the settings panel), with the scan-detail choice above them (the circuit crosses a
+    scanned basketball court, drawn as a Gaussian splat). There is one circuit, so the card has
+    no track picker. The drawer (PoCabinetDrawer) is how the pause card and the lobby reach the
+    same panels.
 
     Every control here is a tab, a radio or a switch, so OK stays the card's one action
     (LinkAuditUiTests), and the Settings tab leaves out the "App settings" button for the same
@@ -14,24 +13,20 @@
 @using PoMiniGames.Shared.Games
 
 <div class="pocabinet-prerace">
-    @if (HasRoomScan(TrackId))
-    {
-        @* The scanned track's own choice, shown while that track is picked in the card's Track
-           dropdown (the Settings tab has it too). *@
-        <div class="pocabinet-prerace__room" role="radiogroup" aria-label="Scan detail">
-            <span>Scan detail <small>Auto picks for this device; Full is a 9.6 MB download; Lite is the plain room</small></span>
-            <span class="pocabinet-prerace__pills">
-                @foreach (var (value, text) in RoomOptions)
-                {
-                    <label class="pocabinet-prerace__pill">
-                        <input type="radio" name="pocabinet-room-track" value="@value"
-                               checked="@(Settings.RoomDetail == value)" @onchange="() => SetRoomDetailAsync(value)" />
-                        <span>@text</span>
-                    </label>
-                }
-            </span>
-        </div>
-    }
+    @* How the scanned court is drawn (the Settings tab has it too). *@
+    <div class="pocabinet-prerace__room" role="radiogroup" aria-label="Scan detail">
+        <span>Scan detail <small>Auto picks for this device; Full is a 9.6 MB download; Lite is the plain court</small></span>
+        <span class="pocabinet-prerace__pills">
+            @foreach (var (value, text) in RoomOptions)
+            {
+                <label class="pocabinet-prerace__pill">
+                    <input type="radio" name="pocabinet-room-track" value="@value"
+                           checked="@(Settings.RoomDetail == value)" @onchange="() => SetRoomDetailAsync(value)" />
+                    <span>@text</span>
+                </label>
+            }
+        </span>
+    </div>
     <div class="pocabinet-prerace__tabs" role="tablist" aria-label="Race setup" @onkeydown="OnTabKey">
         @for (var i = 0; i < Tabs.Length; i++)
         {
@@ -72,7 +67,6 @@
     private static readonly (Tab Tab, string Label)[] Tabs = [(Tab.Car, "Car"), (Tab.Settings, "Settings")];
     private static readonly (string Value, string Text)[] RoomOptions = [("auto", "Auto"), ("splat", "Full"), ("mesh", "Lite")];
 
-    [Parameter] public string? TrackId { get; set; }
     [Parameter] public PoCabinetUiSettings Settings { get; set; } = new();
     [Parameter] public EventCallback<PoCabinetUiSettings> SettingsChanged { get; set; }
     [Parameter] public string? Color { get; set; }
@@ -84,11 +78,6 @@
     private readonly ElementReference[] _tabRefs = new ElementReference[Tabs.Length];
     /// <summary>An arrow key moved the selection: focus follows it after the render.</summary>
     private bool _focusTab;
-
-    /// <summary>The tracks drawn from a scan (scene.js loads its splat): the bedroom and the court.</summary>
-    public static bool HasRoomScan(string? trackId) =>
-        string.Equals(trackId, "bedroom", StringComparison.OrdinalIgnoreCase)
-        || string.Equals(trackId, "court", StringComparison.OrdinalIgnoreCase);
 
     private async Task SetRoomDetailAsync(string value)
     {

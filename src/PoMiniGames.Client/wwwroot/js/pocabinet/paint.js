@@ -46,21 +46,15 @@ const G = {
     dust: { value: new THREE.Color('#8f887c') },
     noise: null,
 };
-let dustTheme;
 
 /**
  * The conditions every car's paint reads (race.js, once a rendered frame): the scene's rain
- * and quality tier, and the track (Mar-a-Lago's traps are beach sand).
+ * and quality tier.
  */
-export function paintScene(sceneHandle, track) {
+export function paintScene(sceneHandle) {
     const q = sceneHandle?.quality;
     G.quality.value = q === 'low' ? 0 : q === 'medium' ? 1 : 2;
     G.wet.value = sceneHandle?.raining ? 1 : 0;
-    const theme = track?.theme ?? null;
-    if (theme !== dustTheme) {
-        dustTheme = theme;
-        G.dust.value.set(theme === 'maralago' ? '#cdb78a' : '#8f887c');
-    }
 }
 
 // Rivulets run on a flow distance wrapped at 16 cells, so the quarter-step rates the shader

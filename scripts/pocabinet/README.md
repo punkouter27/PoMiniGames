@@ -1,130 +1,105 @@
 # PoCabinet race harness
 
-PoCabinet's physics runs in two copies that must agree to the last bit:
-`src/PoMiniGames.Client/wwwroot/js/pocabinet/physics.js` + `track.js` (solo races in the browser)
-and `src/PoMiniGames.Api/Features/PoCabinet/` (`PoCabinetPhysics`, `PoCabinetAiDriver`,
-`PoCabinetTrack`; the lap verifier and online races). These tools race the browser copy in
-node, so track and physics changes can be checked without a browser, and regenerate the lap
-proofs the tests replay.
+PoCabinet has one circuit, **Cabinet Grand Prix** (`grandprix`), defined in
+`src/PoMiniGames.Shared/Games/PoCabinetTrackGeometry.cs`. Its physics runs in two copies that must
+agree to the last bit: `src/PoMiniGames.Client/wwwroot/js/pocabinet/physics.js` + `track.js` (solo
+races in the browser) and `src/PoMiniGames.Api/Features/PoCabinet/` (`PoCabinetPhysics`,
+`PoCabinetAiDriver`, `PoCabinetTrack`; the lap verifier and online races). These tools race the
+browser copy in node, so a change to the track or the physics can be checked without a browser.
 
-1. Dump the worlds the page hands race.js (the same JSON, from the shared C#):
-
-   ```powershell
-   dotnet run scripts/pocabinet/dump.cs -- artifacts/pocabinet-worlds capitol maralago pressbriefing playground senate bedroom court today
-   ```
-
-   `today` is today's daily circuit; `daily:7` dumps the next seven.
-
-2. Race a 64-car field on one (the player on the demo autopilot from grid slot 32):
+1. Dump the world the page hands race.js (the same JSON, from the shared C#):
 
    ```powershell
-   node scripts/pocabinet/harness.mjs race capitol clean      # or messy / wild; add 1 for rain
-   node scripts/pocabinet/harness.mjs profile senate 12       # where the field slows down, per knot
-   node scripts/pocabinet/harness.mjs log pressbriefing       # wrecks and stalled cars
-   node scripts/pocabinet/harness.mjs svg maralago            # top-down preview: run-off, kerbs, patches, dividers, line
+   dotnet run scripts/pocabinet/dump.cs -- artifacts/pocabinet-worlds
    ```
 
-   A healthy track: the field's median lap within a few seconds of its best, a handful of
-   wrecks, few "stuck" events (a car under 5 u/s for 4 s) and no knot where most cars are slow.
-
-3. Regenerate the lap proofs after an intended physics, track or field change (it searches the
-   "wild" driver's swerve period and the "messy" driver's line until Capitol orders
-   messy < clean < wild, which
-   `PoCabinetScoreStorageTests` needs):
+2. Race the 64-car field on it (the player on the demo autopilot from grid slot 32):
 
    ```powershell
-   node scripts/pocabinet/gen.mjs tests/Shared/Fixtures/pocabinet-lap-proofs.txt
-   dotnet test tests/PoMiniGames.Unit --filter "FullyQualifiedName~PoCabinet"
+   node scripts/pocabinet/harness.mjs race grandprix clean      # or messy / wild; add 1 for rain
+   node scripts/pocabinet/harness.mjs profile grandprix 12      # where the field slows down, per knot
+   node scripts/pocabinet/harness.mjs log grandprix             # wrecks and stalled cars
+   node scripts/pocabinet/harness.mjs svg grandprix             # top-down preview, see below
    ```
 
-   `PoCabinetLapVerifierTests` replays every proof in C# and needs the browser's lap time
-   exactly; a mismatch means the two copies have drifted apart.
+   A healthy track: no "stuck" events (a car under 5 u/s for 4 s), a handful of wrecks at most
+   and no knot where most cars are slow. The race ends when the player finishes, so the field's
+   median best lap includes cars that only ran the traffic of lap 1.
 
-## Bedroom Floor GP (a track built from a room scan)
+   The preview (`artifacts/pocabinet-worlds/grandprix.svg`) draws the run-off, kerbs, patches,
+   the divider and the racing line, each knot's `number:height`, the scenery zones as a coloured
+   line outside the right-hand barrier (gold stadium, orange Senate Hill, blue court, green
+   beach) and the scan: the dashed rectangle is what is drawn of it, the solid one the court's
+   lines, the white dots the hoop poles.
 
-`scripts/blender/pocabinet-bedroom.py` builds the bedroom track in headless Blender from the
-merged room scan (`BedroomScene.glb`, kept out of the repo). It stands the scan up, cuts the
-ceiling, decimates it, shrinks the textures and writes `wwwroot/models/bedroom.glb`
-(Draco). It also checks the hand-laid `ROUTE` against the room: every road sample's corridor
-must clear the furniture, the road must sit on whatever it crosses, and no two parts of the
-lap may overlap. Then it prints the knots, `KnotZ` and `KnotBank` to paste into
-`PoCabinetTrackGeometry["bedroom"]`:
+After a change to the knots, run the Cabinet unit tests (they lap every official through the
+server physics and check the features the circuit ships with):
 
 ```powershell
+dotnet test tests/PoMiniGames.Unit --filter "FullyQualifiedName~PoCabinet"
+```
+
+## The circuit's zones
+
+`PoCabinetTrackDefinition.Zones` names what each stretch of the lap is dressed as; the world
+carries them per sample (`zones`) and the scene reads `track.zoneAt(i)`:
+
+| Zone | Knots | What the scene puts there |
+|---|---|---|
+| `capitol` | 50 to 6 | The start straight and banked turn 1: grandstand, press pen, the dome, the briefing-room wall, the obelisk and its pool, conifers |
+| `senate` | 6.5 to 26 | The climb, crest, hairpin, esses and chicane: the temple on the crest, an autumn forest, high hills |
+| `court` | 26 to 37 | The run down to and across the scanned basketball court: tarmac run-off with blue limit stripes |
+| `maralago` | 37 to 50 | The joker sweeper and the beach road: sand traps, palms, the mansion, golf greens, dunes |
+
+## The scanned court
+
+The lap crosses an outdoor basketball court that is a scan, not a model built in code.
+`PoCabinetTrackGeometry.Court` says where it stands: its centre in sim units, 50 sim units to the
+metre (a car is a ~78 cm toy), its floor 10 sim units up, and the half extents (metres) of the
+rectangle that is drawn: the court and 3.5 m round it. The road is laid 10 sim units over the
+floor (the scan's floor is lumpy by about that much), with tarmac run-off either side.
+
+Two files draw it (`wwwroot/js/pocabinet/models.js`):
+
+- `wwwroot/models/court.ksplat`: a Gaussian splat, 400k splats, 9.6 MB (`court-low.ksplat` is
+  its first 100k, 2.4 MB, shown first). The scene patches the splat shader to drop everything
+  outside the rectangle, fade the edge, and above 0.6 m keep only the two hoops, because the
+  trees round the court reach in over it.
+- `wwwroot/models/court.glb`: the photogrammetry mesh, clipped to the same rectangle. The low
+  graphics tier and the "Lite" scan-detail setting draw it, and it is the fallback when the splat
+  cannot load.
+
+Inside the rectangle `terrain.js` steps the scene's own ground down under the scan's floor.
+
+When moving the road on the court, keep clear of the hoops: in the court's frame (metres, x along
+the court) the poles stand at x = ±14.5, y = 0, and the boards reach in to x = ±12.9. A bench
+stands at x = 0, y = -9.3.
+
+### Rebuilding the scan files
+
+Both come from the same photogrammetry reconstruction (`mesh.glb` and
+`gaussian_pointcloud.ply`, kept out of the repo).
+
+```powershell
+# court.glb: levels the scan into the court frame (floor on z = 0, x from board A to board B,
+# metres), crops it ~25 m round the court, drops the scraps floating in the air, decimates it.
 & "C:\Program Files\Blender Foundation\Blender 5.2\blender.exe" -b --factory-startup --python-exit-code 1 `
-  -P scripts/blender/pocabinet-bedroom.py -- <path>\BedroomScene.glb --preview SCREENSHOTS/<yymmdd>-bedroom.png
-```
+  -P scripts/blender/pocabinet-court.py -- <path>\mesh.glb --preview SCREENSHOTS/<yymmdd>-court.png
 
-After pasting, dump the world and race it here (step 2) before shipping.
-
-- `--nudge`: when the check fails, the script moves knots one at a time in shrinking steps,
-  keeping any move that lowers the problem count, and prints a repaired `ROUTE` to paste back.
-- `--fixture tests/Shared/Fixtures/pocabinet-bedroom-centerline.json`: writes the script's own
-  centerline samples. `PoCabinetTests` compares them with `BuildCenterlineXY("bedroom")`, so the
-  road the script cleared of furniture is provably the road the race runs on. Re-run it whenever
-  `ROUTE` changes.
-
-## Race health in CI
-
-`tests/pocabinet-race-health.test.mjs` races the 64-car field (clean and messy drivers) on
-Capitol, the Bedroom Floor GP and Center Court through `harness.mjs` and fails on a jam, a wreck-fest or a
-strung-out field. The bounds sit above today's numbers; the harness is deterministic.
-
-```powershell
-dotnet run scripts/pocabinet/dump.cs -- artifacts/pocabinet-worlds capitol bedroom court
-node --test tests/pocabinet-race-health.test.mjs
-```
-
-### The room as a Gaussian splat
-
-The room is drawn from a separate 3DGS capture (`scene.ply`, 2.4M splats, base colour only). The
-mesh above stays the collision model: the route is checked against it. To rebuild
-`wwwroot/models/bedroom.ksplat`:
-
-```powershell
-# 1. Register the splat onto the mesh (similarity ICP, then point-to-surface; prints the median
-#    error, ~0.034 room units = under a centimetre), crop it like the mesh, keep the 400k most
-#    important splats, write a plain 3DGS PLY.
-& "C:\Program Files\Blender Foundation\Blender 5.2\blender.exe" -b --factory-startup --python-exit-code 1 `
-  -P scripts/blender/pocabinet-bedroom-splat.py -- <path>\BedroomScene.glb <path>\scene.ply <tmp>\bedroom-room.ply --budget 400000
-
-# 2. Pack it for gaussian-splats-3d (once: npm ci --prefix scripts/pocabinet).
-node scripts/pocabinet/ksplat.mjs <tmp>\bedroom-room.ply src/PoMiniGames.Client/wwwroot/models/bedroom.ksplat
-```
-
-`scene.js` loads it through `gaussian-splats-3d` (pinned 0.4.7 in the `index.html` import map,
-which works with the three r165 PoCabinet uses). The low graphics tier keeps the mesh, which is
-also the fallback if the splat fails to load.
-
-## Center Court (a track built from a basketball-court scan)
-
-`scripts/blender/pocabinet-court.py` builds the court track in headless Blender from the
-photogrammetry mesh of an outdoor court (`mesh.glb`, kept out of the repo). It levels the scan
-into the court frame (fits the floor plane, finds both backboards between 3.2 and 4.0 m up; floor
-on z = 0, metres, x from board A to board B), crops it ~25 m round the court, drops the scraps
-floating in the air (never the hoops), decimates it and writes `wwwroot/models/court.glb`. The
-lap is waypoints on the court floor in `route_plan`: round both keys and most of the way round the
-centre circle, the road 13 cm up (clear of the scan floor's lumps) so the chase camera sits low
-among the hoops and trees. The script checks the car's space over every road sample is clear of
-the scan, nothing stands in the corridor, no two parts of the lap share a corridor, no corner is
-tighter than the road is wide and no grade passes 20%. It prints the knots, `KnotZ` and `KnotBank`
-for `PoCabinetTrackGeometry["court"]` at 100 sim units per metre:
-
-```powershell
-& "C:\Program Files\Blender Foundation\Blender 5.2\blender.exe" -b --factory-startup --python-exit-code 1 `
-  -P scripts/blender/pocabinet-court.py -- <path>\mesh.glb --preview SCREENSHOTS/<yymmdd>-court.png `
-  --fixture tests/Shared/Fixtures/pocabinet-court-centerline.json
-```
-
-The splat is the same reconstruction as the mesh, so it needs no registration, only the same
-frame. `pocabinet-court-splat.py` maps every Gaussian into it, prints how far the solid ones sit
-from the mesh (~9 cm, the floor's own noise), crops it like the mesh and keeps the 400k most
-important, 40% of them reserved for the court floor (flat discs a volume ranking would trade for
-the trees). The file is sorted most important first, so its first 100k rows are the light version:
-
-```powershell
+# court.ksplat: maps every Gaussian into the same frame, crops it like the mesh and keeps the
+# 400k most important, 40% of them reserved for the court floor. Sorted most important first,
+# so its first 100k rows are the light version.
 & "C:\Program Files\Blender Foundation\Blender 5.2\blender.exe" -b --factory-startup --python-exit-code 1 `
   -P scripts/blender/pocabinet-court-splat.py -- <path>\mesh.glb <path>\gaussian_pointcloud.ply <tmp>\court.ply --budget 400000
-node scripts/pocabinet/ksplat.mjs <tmp>\court.ply src/PoMiniGames.Client/wwwroot/models/court.ksplat
+node scripts/pocabinet/ksplat.mjs <tmp>\court.ply src/PoMiniGames.Client/wwwroot/models/court.ksplat   # once: npm ci --prefix scripts/pocabinet
 # court-low.ksplat: the same PLY cut to its first 100,000 vertices, packed the same way.
 ```
+
+`pocabinet-court.py` also lays and checks a lap of its own on the court floor (`route_plan`) and
+prints knots for it. That lap was the retired Center Court track; the circuit's road across the
+court is the `// 30-36: across the court` knots in `PoCabinetTrackGeometry`, so ignore the knots
+the script prints.
+
+`scene.js` loads the splat through `gaussian-splats-3d` (pinned 0.4.7 in the `index.html` import
+map, which works with the three r165 PoCabinet uses). The shader patch in `models.js` matches that
+version's text; a different version is drawn unpatched (uncropped), so re-check it on an upgrade.

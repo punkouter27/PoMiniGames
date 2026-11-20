@@ -2,22 +2,6 @@ using System.Text.Json.Serialization;
 
 namespace PoMiniGames.Shared.Games;
 
-// ──────────────────────────────  Career state  ──────────────────────────────
-
-/// <summary>
-/// Player's campaign progress, kept in this browser's localStorage (PoCabinetCareerState).
-/// Winning the trophy also wins the gold livery badge: they are one unlock.
-/// </summary>
-public sealed class PoCabinetCareerDto
-{
-    /// <summary>Index into the campaign stages (<see cref="PoCabinetCatalog.StageIndexOf"/>).</summary>
-    public int CurrentStageIndex { get; set; }
-    public bool TrophyUnlocked { get; set; }
-    public IReadOnlyList<int> CompletedStages { get; set; } = new List<int>();
-
-    public static PoCabinetCareerDto New() => new();
-}
-
 // ──────────────────────────────  Atmosphere wire  ──────────────────────────────
 
 public sealed class PoCabinetAtmosphereWire
@@ -128,7 +112,7 @@ public sealed class PoCabinetRaceSnapshot
 /// </summary>
 public sealed class PoCabinetStaticWorld
 {
-    public string TrackId { get; set; } = "capitol";
+    public string TrackId { get; set; } = PoCabinetCatalog.DefaultTrackId;
     public string TrackName { get; set; } = "";
     public PoCabinetAtmosphereWire Atmosphere { get; set; } = new();
     public IReadOnlyList<double> CenterXY { get; set; } = new List<double>();
@@ -150,9 +134,6 @@ public sealed class PoCabinetStaticWorld
     /// <summary>Cross slope per centerline sample (tan of the bank, + = right side higher); empty
     /// on an unbanked track. Drawn only.</summary>
     public IReadOnlyList<double> CenterBank { get; set; } = new List<double>();
-    /// <summary>The centerline sample the scene starts laying tarmac at (0 = the whole track);
-    /// before it the track is an open chute in place of a model's gutter. Drawn only.</summary>
-    public int RoadFrom { get; set; }
 
     // Track features (PoCabinetTrackFeatures): computed once here, read by both physics copies
     // and the scene, so the road everyone drives on is the same to the last value.
@@ -168,8 +149,40 @@ public sealed class PoCabinetStaticWorld
     public IReadOnlyList<double> RacingLine { get; set; } = new List<double>();
     public IReadOnlyList<PoCabinetPatchWire> Patches { get; set; } = new List<PoCabinetPatchWire>();
     public IReadOnlyList<PoCabinetIslandWire> Islands { get; set; } = new List<PoCabinetIslandWire>();
-    /// <summary>Which scenery, sky and props dress the track (the id, or a borrowed theme for the daily track).</summary>
-    public string Theme { get; set; } = "capitol";
+    /// <summary>Which scenery, sky and props dress the track (the track id unless the definition names a theme).</summary>
+    public string Theme { get; set; } = PoCabinetCatalog.DefaultTrackId;
+    /// <summary>The lap's scenery zones, in order round the lap. Drawn only.</summary>
+    public IReadOnlyList<PoCabinetZoneWire> Zones { get; set; } = new List<PoCabinetZoneWire>();
+    /// <summary>The scan the lap drives through and where it stands, or null. Drawn only.</summary>
+    public PoCabinetScanWire? Scan { get; set; }
+}
+
+/// <summary>Samples [From, To) (wrapping past the line when From &gt; To) are dressed as
+/// <see cref="Theme"/>: capitol (the stadium), senate (the autumn hill), court (the scanned
+/// basketball court) or maralago (the beach).</summary>
+public sealed class PoCabinetZoneWire
+{
+    public int From { get; set; }
+    public int To { get; set; }
+    public string Theme { get; set; } = "";
+}
+
+/// <summary>
+/// A scanned place the lap drives through (the basketball court: models/court.glb and its
+/// Gaussian splat). <see cref="X"/>, <see cref="Y"/> is where the scan's origin stands (sim
+/// units) and <see cref="Scale"/> how many sim units its metre is drawn at; its floor is
+/// <see cref="FloorZ"/> sim units up. Only the part within <see cref="HalfLength"/> (along the
+/// scan's x, which lies along the sim's) and <see cref="HalfWidth"/> metres of the origin is
+/// drawn; inside that rectangle the scene's own ground steps down out of its way.
+/// </summary>
+public sealed class PoCabinetScanWire
+{
+    public double X { get; set; }
+    public double Y { get; set; }
+    public double Scale { get; set; } = 1;
+    public double FloorZ { get; set; }
+    public double HalfLength { get; set; }
+    public double HalfWidth { get; set; }
 }
 
 /// <summary>A grip patch on samples [From, To) between two lateral offsets (sim units).</summary>
@@ -215,8 +228,8 @@ public sealed class PoCabinetInput
 /// <summary>
 /// One lobby seat on the shared lobby wire (<c>LobbyState&lt;PoCabinetLobbyPlayer&gt;</c>).
 /// <see cref="ConnectionId"/> is the seat id. The claim id the race hub keys cars by
-/// (<see cref="UserId"/>) is server-only and never serialized. <see cref="TrackId"/> and
-/// <see cref="BotCount"/> are the host's picks, stamped on every seat so a migrating host keeps them.
+/// (<see cref="UserId"/>) is server-only and never serialized. <see cref="BotCount"/> is the
+/// host's pick, stamped on every seat so a migrating host keeps it.
 /// </summary>
 public sealed record PoCabinetLobbyPlayer(
     string ConnectionId,
@@ -224,7 +237,6 @@ public sealed record PoCabinetLobbyPlayer(
     bool IsGuest,
     bool IsReady,
     string Color = "",
-    string TrackId = PoCabinetCatalog.DefaultTrackId,
     int BotCount = 0) : ILobbyPlayer
 {
     /// <summary>Claim-derived player id the race grid is built from. Never sent to clients.</summary>

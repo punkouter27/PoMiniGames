@@ -1,16 +1,19 @@
 namespace PoMiniGames.Domain.Models;
 
 /// <summary>
-/// A single PoCabinet high-score entry — best lap on a track. TrackId
-/// partitions the leaderboard; the same player can hold one row per track
-/// (so Capitol best-lap and Mar-a-Lago best-lap never compete).
+/// A single PoCabinet high-score entry: a player's best lap of the circuit. The store keeps
+/// one row per player in the circuit's own partition (<see cref="CircuitId"/>), so laps from
+/// the tracks the game used to have never rank against it.
 /// </summary>
 public sealed class PoCabinetHighScore
 {
     public string PlayerName { get; set; } = string.Empty;
     /// <summary>Server-populated from the auth cookie (sub/oid). Empty for guests.</summary>
     public string UserId { get; set; } = string.Empty;
-    public string TrackId { get; set; } = "capitol";
+    /// <summary>The one circuit's id (PoCabinetCatalog.DefaultTrackId, which Domain cannot see).</summary>
+    public const string CircuitId = "grandprix";
+
+    public string TrackId { get; set; } = CircuitId;
     /// <summary>Best completed lap in seconds.</summary>
     public double BestLapSeconds { get; set; }
     /// <summary>Final position in the race that produced the best lap (1..9).</summary>

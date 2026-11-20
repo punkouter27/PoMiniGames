@@ -10,8 +10,8 @@ namespace PoMiniGames.Features.PoCabinet;
 /// ready/start is the shared surface (<c>Join</c>, <c>ToggleReady</c>, <c>StartGame</c>,
 /// <c>LeaveLobby</c>, host-only <c>Kick(connectionId)</c>; <c>lobbyState</c> / <c>lobbyEvent</c> /
 /// <c>gameStarted</c> / <c>kicked</c> broadcasts). What is Cabinet's own: the host's
-/// <see cref="SetTrack"/> and <see cref="SetBots"/> (carried in the lobby state on every seat),
-/// the caller's <see cref="SetColor"/>, and the start: the race is created under a fresh internal
+/// <see cref="SetBots"/> (carried in the lobby state on every seat), the caller's
+/// <see cref="SetColor"/>, and the start: the race is created under a fresh internal
 /// code with the roster the start gate passed, and <c>gameStarted(code)</c> hands everyone to
 /// <see cref="PoCabinetRaceHub"/>. The lobby reopens when the race ends
 /// (<see cref="PoCabinetRaceRegistry"/>).
@@ -37,9 +37,6 @@ public sealed class PoCabinetLobbyHub : LobbyHub<PoCabinetLobbyPlayer, PoCabinet
         return Lobby.Open(Context.ConnectionId, name, isGuest, identity.UserId);
     }
 
-    /// <summary>Host-only: the track for the next race.</summary>
-    public Task<bool> SetTrack(string trackId) => MutateAsync(Lobby.SetTrack(Context.ConnectionId, trackId));
-
     /// <summary>Host-only: how many AI drivers join the grid.</summary>
     public Task<bool> SetBots(int count) => MutateAsync(Lobby.SetBots(Context.ConnectionId, count));
 
@@ -52,7 +49,7 @@ public sealed class PoCabinetLobbyHub : LobbyHub<PoCabinetLobbyPlayer, PoCabinet
         var code = Lobby.BeginRace();
         try
         {
-            _races.Create(code, Lobby.TrackId, Lobby.BuildGrid(roster));
+            _races.Create(code, Lobby.BuildGrid(roster));
         }
         catch (Exception ex)
         {

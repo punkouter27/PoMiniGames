@@ -31,7 +31,7 @@ public sealed class PoCabinetScoreContractTests
         var badLap = new PoCabinetScoreDto
         {
             PlayerDisplayName = "contract-test",
-            TrackId = "capitol",
+            TrackId = PoMiniGames.Shared.Games.PoCabinetCatalog.DefaultTrackId,
             BestLapSeconds = -1, // negative — fails validation
             FinalPosition = 1,
             AchievedAtUtc = DateTimeOffset.UtcNow,

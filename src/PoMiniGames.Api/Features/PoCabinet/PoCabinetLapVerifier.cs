@@ -68,9 +68,9 @@ public static class PoCabinetLapVerifier
     /// (-1 when the inputs never complete one) and their place when the log ends (at their
     /// finish, or at their wreck): finishers by finish order, then everyone by race distance.
     /// </summary>
-    public static PoCabinetReplay Replay(string trackId, bool wet, IReadOnlyList<PoCabinetControls> inputs)
+    public static PoCabinetReplay Replay(bool wet, IReadOnlyList<PoCabinetControls> inputs)
     {
-        var track = PoCabinetTrack.Get(trackId);
+        var track = PoCabinetTrack.Get();
         double grip = wet ? WetGrip : 1;
         double tick = PoCabinetPhysics.TickSeconds;
         int totalLaps = track.Laps;

@@ -2,8 +2,7 @@
     PoCabinetLobby — the one shared lobby (no codes: the first arrival hosts, later arrivals take
     the next seats) on the shared OnlineLobby: it owns the connection, the roster, Ready / Start /
     Leave and the panel; this page supplies only what is Cabinet's own. The host's Picker holds
-    the track dropdown (every track plus today's Daily, the solo card's names) and the AI-driver
-    count, both read from the host's seat in the lobby state and written with SetTrack / SetBots;
+    the AI-driver count, read from the host's seat in the lobby state and written with SetBots;
     the host can remove a seat between races (PlayerActions, the generic Kick). Car & settings opens
     the page's drawer (OnOpenSettings); a paint change flows in through Color and is sent as
     SetColor. gameStarted (every start, including rematches, so this listens on the client rather
@@ -47,15 +46,6 @@
             @if (IsHost && !InRace)
             {
                 <div class="pocabinet-pick">
-                    <label>
-                        <span>Track</span>
-                        <select value="@TrackId" disabled="@_busy" @onchange="SetTrackAsync">
-                            @foreach (var track in AllTracks)
-                            {
-                                <option value="@track.Id">@track.Name</option>
-                            }
-                        </select>
-                    </label>
                     <label>
                         <span>AI drivers</span>
                         <select value="@BotCount" disabled="@_busy" @onchange="SetBotsAsync">
@@ -101,17 +91,16 @@
             <button type="button" class="app-btn app-btn--secondary" @onclick="OnOpenSettings">Car &amp; settings</button>
         </ExtraActions>
         <HowTo>
-            <p>One shared room: the first driver in hosts, picks the track and the AI drivers, and starts once everyone is ready. After a race you come back here for the rematch; ready up within @ReadyTimeoutSeconds seconds or the seat is freed.</p>
+            <p>One shared room: the first driver in hosts, picks the AI drivers, and starts once everyone is ready. After a race you come back here for the rematch; ready up within @ReadyTimeoutSeconds seconds or the seat is freed.</p>
         </HowTo>
     </OnlineLobby>
 </div>
 
 @code {
-    /// <summary>Track the lobby opens on if this player is the first to arrive.</summary>
-    [Parameter] public string? InitialTrackId { get; set; }
     /// <summary>Paint hex this player races in.</summary>
     [Parameter] public string? Color { get; set; }
-    [Parameter] public EventCallback<(string Code, string TrackId)> OnRaceStarting { get; set; }
+    /// <summary>A race is starting (or being watched): its internal race code.</summary>
+    [Parameter] public EventCallback<string> OnRaceStarting { get; set; }
     [Parameter] public EventCallback OnExit { get; set; }
     /// <summary>Car &amp; settings: the page owns the one drawer.</summary>
     [Parameter] public EventCallback OnOpenSettings { get; set; }
@@ -125,16 +114,11 @@
     private string? _error;
     private bool _busy;
     private bool _rejoining;
-    private bool _initialTrackHandled;
     private string? _sentColor;
     /// <summary>Our seat was freed (kicked, or the rematch ready timeout); why, until we rejoin.</summary>
     private string? _kickedReason;
     /// <summary>The latest notice broadcast (e.g. who lost a seat to the ready timeout).</summary>
     private string? _notice;
-
-    /// <summary>The fixed tracks, then today's daily circuit (UTC), as on the solo start card.</summary>
-    private static IReadOnlyList<PoCabinetTrackInfo> AllTracks =>
-        [.. PoCabinetCatalog.Tracks, PoCabinetCatalog.Today(DateTime.UtcNow)];
 
     private LobbyState<PoCabinetLobbyPlayer>? State => _client?.State;
 
@@ -144,10 +128,8 @@
 
     private bool InRace => State?.InProgress == true;
 
-    /// <summary>The host's seat carries the track and AI-driver picks.</summary>
+    /// <summary>The host's seat carries the AI-driver pick.</summary>
     private PoCabinetLobbyPlayer? HostSeat => State?.Players.FirstOrDefault(p => p.ConnectionId == State.HostConnectionId);
-
-    private string TrackId => HostSeat?.TrackId ?? PoCabinetCatalog.DefaultTrackId;
 
     private int BotCount => HostSeat?.BotCount ?? 0;
 
@@ -168,8 +150,8 @@
         : "Waiting for everyone to ready up…";
 
     private string PanelHint => State is null ? "Single shared room — first to arrive becomes host."
-        : IsHost ? "You're the host: pick the track and AI drivers, then start."
-        : $"Track {PoCabinetCatalog.GetTrack(TrackId).Name} · {BotSeats} AI driver{(BotSeats == 1 ? "" : "s")} · the host starts";
+        : IsHost ? "You're the host: pick the AI drivers, then start."
+        : $"{BotSeats} AI driver{(BotSeats == 1 ? "" : "s")} · the host starts";
 
     private string? CurrentNotice => _notice ?? Notice;
 
@@ -199,7 +181,7 @@
         client.GameStarted += code => _ = InvokeAsync(() =>
         {
             _notice = null;
-            return OnRaceStarting.InvokeAsync((code, TrackId));
+            return OnRaceStarting.InvokeAsync(code);
         });
         return Task.CompletedTask;
     }
@@ -215,7 +197,7 @@
             _ = InvokeAsync(RejoinAsync);
     }
 
-    /// <summary>Send the paint and, for a first arrival, the opening track once seated (join takes neither).</summary>
+    /// <summary>Send the paint once seated (join does not take it).</summary>
     private async Task SyncSeatAsync()
     {
         if (_client is null || Me is not { } me) return;
@@ -226,15 +208,6 @@
             _sentColor = wanted;
             try { await _client.SendAsync("SetColor", wanted); }
             catch { /* best effort: the seat keeps its old colour */ }
-        }
-        if (!_initialTrackHandled)
-        {
-            _initialTrackHandled = true;
-            if (IsHost && State is { Players.Count: 1 } && !string.IsNullOrEmpty(InitialTrackId) && TrackId != InitialTrackId)
-            {
-                try { await _client.SendAsync("SetTrack", InitialTrackId); }
-                catch { /* the lobby opens on the default track */ }
-            }
         }
     }
 
@@ -250,8 +223,6 @@
         finally { _rejoining = false; }
         StateHasChanged();
     }
-
-    private Task SetTrackAsync(ChangeEventArgs e) => SendAsync("SetTrack", e.Value?.ToString() ?? PoCabinetCatalog.DefaultTrackId);
 
     private Task SetBotsAsync(ChangeEventArgs e) =>
         SendAsync("SetBots", int.TryParse(e.Value?.ToString(), out var n) ? Math.Clamp(n, 0, PoCabinetCatalog.MaxBots) : 0);
@@ -279,5 +250,5 @@
 
     /// <summary>Follow the running race; a seated player gets their car back, anyone else spectates.</summary>
     private Task WatchAsync() =>
-        State is { } state ? OnRaceStarting.InvokeAsync((state.GameCode, TrackId)) : Task.CompletedTask;
+        State is { } state ? OnRaceStarting.InvokeAsync(state.GameCode) : Task.CompletedTask;
 }

@@ -6,7 +6,6 @@
 // takes the SceneHandle first; scene.js keeps thin methods that call them.
 
 import * as THREE from 'three';
-import { RUN_OFF } from './physics.js';
 import { wallFace } from './terrain.js';
 import { WORLD_SCALE } from './util.js';
 
@@ -67,9 +66,9 @@ export function setView(sh, p) {
         // back at the cars coming to the line straight through the gantry's beam.
         const at = idx * (t.length / 8) + (idx === 0 ? 2 : 40);
         const q = t.pointAt(at);
-        const side = (sh.playground ? t.halfWidth + RUN_OFF : wallFace(t, t.indexAt(at), 1)) + 30;
+        const side = wallFace(t, t.indexAt(at), 1) + 30;
         const gx = q.x - q.ty * side, gy = q.y + q.tx * side;
-        // On its mast on the ground, or (in the air, the Playground) at the road's height.
+        // On its mast on the ground, never below the road.
         const road = t.heightAt(at) / WORLD_SCALE;
         const ground = sh.terrain ? Math.max(road, sh.terrain.worldHeight(gx, gy)) : road;
         sh._tvPos = new THREE.Vector3(gx / WORLD_SCALE, 7 + ground, gy / WORLD_SCALE);

@@ -36,14 +36,14 @@ public sealed class PoCabinetSim
     private int _tickCount;
     private int _finishOrder;
 
-    public PoCabinetSim(string? trackId, int seed, IReadOnlyList<PoCabinetDriver> drivers)
+    public PoCabinetSim(int seed, IReadOnlyList<PoCabinetDriver> drivers)
     {
         if (drivers is null || drivers.Count == 0)
             throw new ArgumentException("at least one driver is required", nameof(drivers));
         if (drivers.Count > PoCabinetCatalog.OnlineGridSize)
             throw new ArgumentException($"max {PoCabinetCatalog.OnlineGridSize} drivers", nameof(drivers));
 
-        _track = PoCabinetTrack.Get(trackId);
+        _track = PoCabinetTrack.Get();
         TotalLaps = _track.Laps;
         _rng = new Random(seed);
 
@@ -71,7 +71,7 @@ public sealed class PoCabinetSim
         _bodies = [.. _cars];
     }
 
-    /// <summary>Track this sim is running on (id is the geometry key).</summary>
+    /// <summary>The circuit's id: what a lap timed here is stored under.</summary>
     public string TrackId => _track.Id;
 
     public PoCabinetTrack Track => _track;

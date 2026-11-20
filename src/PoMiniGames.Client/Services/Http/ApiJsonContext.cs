@@ -49,8 +49,8 @@ namespace PoMiniGamesClient.Services.Http;
 [JsonSerializable(typeof(MarbleRaceHighScoreRequest))]
 [JsonSerializable(typeof(MarbleRaceRecordRequest))]
 [JsonSerializable(typeof(PoMiniGames.Domain.Models.MarbleRaceMapRecord[]))]
-// PoCabinet: the per-track leaderboard ratchets on lap time;
-// the request shape carries only the score + the contextual track/position,
+// PoCabinet: the leaderboard ratchets on lap time;
+// the request shape carries only the score + the circuit id and position,
 // identity is resolved server-side.
 [JsonSerializable(typeof(PoCabinetHighScoreRequest))]
 [JsonSerializable(typeof(PoBrawlHighScore))]

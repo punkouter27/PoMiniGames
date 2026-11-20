@@ -5,7 +5,7 @@
 //
 // Its node_modules stay in scripts/pocabinet/ (git-ignored); nothing here is part of the app
 // build. Compression level 1 is 16-bit centres/scales/rotations and 8-bit
-// colour; base colour only (degree 0), which is all the bedroom capture has.
+// colour; base colour only (degree 0), which is all the court scan is drawn with.
 import fs from 'node:fs';
 import * as GS from '@mkkellogg/gaussian-splats-3d';
 import * as THREE from 'three';

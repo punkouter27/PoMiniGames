@@ -1,20 +1,24 @@
 // pocabinet/terrain.js
 //
-// The ground a circuit with heights stands on (render only: the physics never sees it).
+// The ground the circuit stands on (render only: the physics never sees it).
 //
 // The road (track.z, the centerline's height, tilted across by track.bank) is a fixed plane
 // out to the barriers; the cars ride it (race.js place()). The terrain is a heightfield that
 // lies on that plane under the road and its run-off (a hair below, so the road and its run-off
 // strips always sit on top), then leaves it beyond the barrier: over BLEND it eases into a
-// smooth average of the whole lap's heights, and further out into rolling hills (and, on the
-// themes that have them, a ring of distant ones the fog fades). Every prop the scene puts
-// trackside stands on heightAt(), the same grid the ground mesh is built from.
+// smooth average of the whole lap's heights, and further out into rolling hills (and a ring of
+// distant ones the fog fades), as tall as the scenery zone they stand by: Senate Hill's are
+// high, the beach's are dunes. Every prop the scene puts trackside stands on heightAt(), the
+// same grid the ground mesh is built from.
+//
+// Where the lap drives through a scan (track.scan, the basketball court) the scan is the
+// ground: inside its drawn rectangle the mesh steps down under the scan's floor (PIT_DEPTH)
+// and heightAt() answers with the floor, so props there stand on the court.
 //
 // The grid is fine (CELL) around the track and grows coarser out to FAR_PAD, so the hills
 // reach well into the fog for a few thousand vertices more. Built once per track.
 //
-// Also the home of the theme lookup (track.theme with a fallback), so scene, scenery, sky
-// and grass decide by the same word.
+// Also the home of the theme lookup (track.theme with a fallback).
 
 import * as THREE from 'three';
 import { runOffAt } from './physics.js';
@@ -30,41 +34,20 @@ const DIP = 1.2;          // the ground under the road band sits this far below 
 const BUCKET = 120;
 const REACH = 420;        // segments further off than this have no say in the near ground
 
-/** Rolling hills near (sim units) and the far ring's height, per theme. */
+const PIT_DEPTH = 15;     // the ground under a scan sits this far below the scan's floor
+const PIT_EASE = 40;      // and steps down to there over this much, inside the scan's edge
+
+/** Rolling hills near (sim units) and the far ring's height, per scenery zone. */
 const HILLS = {
     capitol: { near: 70, far: 170 },
-    maralago: { near: 30, far: 0 },
-    pressbriefing: { near: 10, far: 0 },
+    maralago: { near: 30, far: 40 },
+    court: { near: 10, far: 60 },
     senate: { near: 170, far: 400 },
 };
 
-const THEMES = new Set(['capitol', 'maralago', 'pressbriefing', 'senate', 'playground', 'bedroom', 'court']);
-
-/** The scenery theme a track is dressed in: its own word, else its id, else Capitol. */
+/** The word the track's look goes by (sky preset, seeds): its theme, else its id. */
 export function themeOf(track) {
-    const t = String(track?.theme || '');
-    if (THEMES.has(t)) return t;
-    const id = String(track?.id || '');
-    return THEMES.has(id) ? id : 'capitol';
-}
-
-/** A toy track laid on a scanned room (Bedroom Floor GP): the model is the ground and the
- *  scenery, the road is plastic on the carpet and up on stilts where it climbs. */
-export function isRoom(track) {
-    return themeOf(track) === 'bedroom';
-}
-
-/** A toy track laid over a scan (models.js SCANS): the bedroom, indoors, and Center Court, the
- *  outdoor basketball court. The scan is the ground and the scenery; the road is moulded plastic,
- *  on stilts wherever it is off the floor. */
-export function isScan(track) {
-    const t = themeOf(track);
-    return t === 'bedroom' || t === 'court';
-}
-
-/** The Playground run: a road in the air over a model, with its own (older) staging. */
-export function isPlayground(track) {
-    return (Number(track?.roadFrom) || 0) > 0 || track?.id === 'playground';
+    return String(track?.theme || track?.id || 'grandprix');
 }
 
 /** Lateral of the barrier's face at sample `i` on `side` (+1 right), sim units, unsigned. */
@@ -125,10 +108,9 @@ function cellOf(v, x) {
 }
 
 export class Terrain {
-    /** @param track runtime track (track.js); @param theme themeOf(track) */
-    constructor(track, theme) {
+    /** @param track runtime track (track.js) */
+    constructor(track) {
         this.track = track;
-        this.theme = theme;
         const n = track.count;
         let minX = Infinity, maxX = -Infinity, minY = Infinity, maxY = -Infinity, zSum = 0;
         for (let i = 0; i < n; i++) {
@@ -138,8 +120,21 @@ export class Terrain {
         }
         this.bounds = { minX, maxX, minY, maxY };
         this.base = zSum / n;
-        this.hills = HILLS[theme] || HILLS.capitol;
         this.seed = fnv1a(`pocabinet-terrain:${track.id}`) % 100000;
+        // Hill heights per sample, from its zone.
+        this.hillNear = new Float32Array(n);
+        this.hillFar = new Float32Array(n);
+        for (let i = 0; i < n; i++) {
+            const hills = HILLS[track.zoneAt(i)] || HILLS.capitol;
+            this.hillNear[i] = hills.near;
+            this.hillFar[i] = hills.far;
+        }
+        // The scan's drawn rectangle (sim units), its floor, and the ground's level under it.
+        const scan = track.scan;
+        this.pit = scan ? {
+            x: scan.x, y: scan.y, hx: scan.halfLength * scan.scale, hy: scan.halfWidth * scan.scale,
+            floor: scan.floorZ, level: scan.floorZ - PIT_DEPTH,
+        } : null;
 
         // Per-sample barrier (outer face + shoulder) either side, and the plane's height.
         this.wallL = new Float64Array(n);
@@ -232,27 +227,31 @@ export class Terrain {
         const dip = DIP * (1 - smoothstep(0, 14, eMin));
         // (and as far again under it as they disagree: the grid cannot follow a fold exactly).
         this.lastInBand = inBand < Infinity;
-        if (this.lastInBand) return inBand - dip - (inTop - inBand);
+        if (this.lastInBand) return this.underScan(x, y, inBand - dip - (inTop - inBand));
         const near = sw > 0 ? sh / sw : this.base;
         const s = smoothstep(0, BLEND, eMin);
         let far = this.base;
         if (s > 0) {
             // A smooth average of the lap's heights (so a high corner's infield stays high)...
-            let fw = 0, fh = 0, near2 = Infinity;
+            // (the hills as tall as the zones near by say, the nearest having the most say)
+            let fw = 0, fh = 0, near2 = Infinity, hw = 0, hn = 0, hf = 0;
             for (let i = 0; i < n; i += 2) {
                 const d2 = (x - t.x[i]) ** 2 + (y - t.y[i]) ** 2;
                 const w = 1 / (d2 + 62500);
                 fw += w; fh += w * (t.z ? t.z[i] : 0);
+                const wz = w * w;
+                hw += wz; hn += wz * this.hillNear[i]; hf += wz * this.hillFar[i];
                 if (d2 < near2) near2 = d2;
             }
             far = fh / fw;
+            const hillNear = hn / hw, hillFar = hf / hw;
             // ...rolling hills that grow with the distance from the road, and the far ring.
             // (Past REACH no segment reported in: the distance to the nearest sample, less a
             // barrier's worth, stands in, so the hills grow on smoothly instead of starting at once.)
             const d = eMin < Infinity ? eMin : Math.max(REACH, Math.sqrt(near2) - this.wallMax);
             // (scattered mounds, not a wall: most of the ground stays near the average)
-            const hills = Math.max(0, fbm(x, y, 800, this.seed) - 0.42) * 3 * this.hills.near * smoothstep(150, 900, d);
-            const ring = this.hills.far > 0 ? fbm(x, y, 2600, this.seed + 7) * this.hills.far * smoothstep(3000, 6500, d) : 0;
+            const hills = Math.max(0, fbm(x, y, 800, this.seed) - 0.42) * 3 * hillNear * smoothstep(150, 900, d);
+            const ring = hillFar > 0 ? fbm(x, y, 2600, this.seed + 7) * hillFar * smoothstep(3000, 6500, d) : 0;
             far += hills + ring;
         }
         let h = near + (far - near) * s - dip;
@@ -260,11 +259,28 @@ export class Terrain {
         const b = this.bounds;
         const outside = Math.max(b.minX - x, x - b.maxX, b.minY - y, y - b.maxY, 0);
         const k = smoothstep(FAR_PAD * 0.8, FAR_PAD * 0.98, outside);
-        return h + (this.base - h) * k;
+        return this.underScan(x, y, h + (this.base - h) * k);
     }
 
-    /** Ground height (sim units) at a sim point: bilinear over the grid the mesh is built from. */
+    /** `h`, or inside the scan's rectangle the level the ground keeps under it (eased in from the edge). */
+    underScan(x, y, h) {
+        const p = this.pit;
+        if (!p) return h;
+        const inside = Math.min(p.hx - Math.abs(x - p.x), p.hy - Math.abs(y - p.y));
+        if (inside <= 0) return h;
+        return h + (p.level - h) * smoothstep(0, PIT_EASE, inside);
+    }
+
+    /** True where the scan is the ground (sim point). */
+    onScan(x, y) {
+        const p = this.pit;
+        return !!p && Math.abs(x - p.x) < p.hx && Math.abs(y - p.y) < p.hy;
+    }
+
+    /** Ground height (sim units) at a sim point: bilinear over the grid the mesh is built from
+     *  (the scan's floor where a scan is the ground). */
     heightAt(x, y) {
+        if (this.onScan(x, y)) return this.pit.floor;
         const xs = this.xs, ys = this.ys, W = xs.length;
         if (x < xs[0] || x > xs[W - 1] || y < ys[0] || y > ys[ys.length - 1]) return this.edge;
         const c = cellOf(xs, x), r = cellOf(ys, y);

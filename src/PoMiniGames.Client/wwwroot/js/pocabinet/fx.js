@@ -549,12 +549,9 @@ class CarFx {
         this.grip = Number(opts.grip) || 1;
         this.persistWear = !!opts.persistWear;
         this.dust = new THREE.Color(opts.groundHex || '#6b6040').lerp(new THREE.Color('#c8b890'), 0.45);
-        // Bedroom Floor GP: the toy track's run-off kicks up carpet fluff and lint, not dirt.
-        if (track.theme === 'bedroom') this.dust = new THREE.Color('#e2ddd4');
-        // Gravel traps: grey-brown stones and pale dust; Mar-a-Lago's are beach sand.
-        this.beach = track.theme === 'maralago';
-        this.stone = new THREE.Color(this.beach ? '#d9c79c' : '#8d8577');
-        this.grit = new THREE.Color(this.beach ? '#efe2c2' : '#c9bba0');
+        // Gravel traps: grey-brown stones and pale dust; the beach road's are sand.
+        this.stones = { gravel: new THREE.Color('#8d8577'), sand: new THREE.Color('#d9c79c') };
+        this.grits = { gravel: new THREE.Color('#c9bba0'), sand: new THREE.Color('#efe2c2') };
         this.smoke = new Pool(MAX_SMOKE, SMOKE_FRAG, THREE.NormalBlending, 0);
         this.sparks = new Pool(MAX_SPARKS, SPARK_FRAG, THREE.AdditiveBlending, 0.085);
         this.skids = new SkidMarks();
@@ -751,6 +748,8 @@ class CarFx {
             const hw = t.hwAt(proj.index);
             // What the car is on: the sim's word where it has one, else the same rule.
             const surface = Number.isInteger(c.surface) && c.surface >= 0 ? c.surface : surfaceAt(t, proj.index, proj.lateral);
+            const beach = t.zoneAt(proj.index) === 'maralago';
+            const stoneCol = beach ? this.stones.sand : this.stones.gravel, gritCol = beach ? this.grits.sand : this.grits.gravel;
             const kicked = surface === SURF_SAUSAGE && s.surf !== SURF_SAUSAGE;
             s.surf = surface;
             const limit = GRIP_ACCEL * this.grip * (Math.abs(proj.lateral) > hw ? 0.6 : 1);
@@ -774,18 +773,18 @@ class CarFx {
                     const side = rnd() < 0.5 ? -1 : 1;
                     const wx = x - fx * REAR + rx * TRACK_HALF * side, wz = z - fz * REAR + rz * TRACK_HALF * side;
                     const kick = 0.15 + rnd() * 0.35;
-                    const stone = rnd() < (this.beach ? 0.35 : 0.6);
+                    const stone = rnd() < (beach ? 0.35 : 0.6);
                     if (stone) {
                         const shade = 0.7 + rnd() * 0.5;
                         this.smoke.spawn(wx, up + 0.15, wz,
                             -vx * kick + rx * side * (rnd() * 2.5) + (rnd() - 0.5), 1.2 + rnd() * 2.8, -vz * kick + rz * side * (rnd() * 2.5) + (rnd() - 0.5),
-                            0.5 + rnd() * 0.5, this.beach ? 0.06 : 0.09 + rnd() * 0.06, 0.07, 1,
-                            this.stone.r * shade, this.stone.g * shade, this.stone.b * shade, 0.3, 9.8, up);
+                            0.5 + rnd() * 0.5, beach ? 0.06 : 0.09 + rnd() * 0.06, 0.07, 1,
+                            stoneCol.r * shade, stoneCol.g * shade, stoneCol.b * shade, 0.3, 9.8, up);
                     } else {
                         this.puff(PUFF.DUST, wx + (rnd() - 0.5) * 0.4, up + 0.25, wz + (rnd() - 0.5) * 0.4,
                             vx * 0.2 + (rnd() - 0.5) * 1.6, 0.6 + rnd() * 1.1, vz * 0.2 + (rnd() - 0.5) * 1.6,
-                            0.9 + rnd() * 0.6, 0.5, 2.4 + rnd() * 0.8, this.beach ? 0.2 : 0.26,
-                            this.grit.r, this.grit.g, this.grit.b, 1.3, -0.15, up);
+                            0.9 + rnd() * 0.6, 0.5, 2.4 + rnd() * 0.8, beach ? 0.2 : 0.26,
+                            gritCol.r, gritCol.g, gritCol.b, 1.3, -0.15, up);
                     }
                 }
             }
@@ -797,7 +796,7 @@ class CarFx {
                     if (i % 2) this.spark(x + (rnd() - 0.5) * 1.4, up + 0.12, z + (rnd() - 0.5) * 1.4, -vx * 0.3 + (rnd() - 0.5) * 3, 1 + rnd() * 2, -vz * 0.3 + (rnd() - 0.5) * 3);
                     else this.puff(PUFF.GRIT, x + (rnd() - 0.5) * 1.6, up + 0.2, z + (rnd() - 0.5) * 1.6,
                         (rnd() - 0.5) * 2, 0.8 + rnd() * 1.4, (rnd() - 0.5) * 2, 0.5, 0.25, 1.2, 0.18,
-                        this.grit.r, this.grit.g, this.grit.b, 2, 2, up);
+                        gritCol.r, gritCol.g, gritCol.b, 2, 2, up);
                 }
                 const cam = this.sh.camera?.position, fxs = this.sh.fx;
                 if (cam && fxs && (x - cam.x) ** 2 + (z - cam.z) ** 2 < 14 * 14) fxs.shake = Math.max(fxs.shake || 0, 0.35 * Math.min(1, v / 90));
@@ -838,7 +837,7 @@ class CarFx {
                         const d2 = (wx - mprev[0]) ** 2 + (wz - mprev[1]) ** 2;
                         if (d2 > 0.4 * 0.4) {
                             if (d2 < 9) {
-                                const mc = this.beach ? this.stone : this.dust;
+                                const mc = beach ? stoneCol : this.dust;
                                 this.decals.addStrip(mprev[0], mprev[1], wx, wz, up, 0.14, mc.r * 0.55, mc.g * 0.52, mc.b * 0.48, s.mud * 0.48);
                             }
                             s.mudPrev[w] = [wx, wz];

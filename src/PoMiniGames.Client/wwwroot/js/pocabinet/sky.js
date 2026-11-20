@@ -10,42 +10,12 @@
 
 import * as THREE from 'three';
 
-// Per-theme look (scene.js passes terrain.js themeOf(track); an unknown one gets Capitol's). Directions are world space (y up). The DirectionalLight in
+// The circuit's look. Directions are world space (y up). The DirectionalLight in
 // scene.js follows `sun`, clamped high enough to keep the road lit.
-// All are daytime: a low-sun dusk or a night makes the race hard to read.
-const PRESETS = {
-    capitol: {
-        zenith: '#3a78c8', sun: [-0.45, 0.66, -0.6], sunColor: '#fff1d6', sunSize: 1.2,
-        clouds: 0.3, cloudColor: '#ffffff',
-    },
-    maralago: {
-        zenith: '#2f6fbf', sun: [0.35, 0.72, 0.45], sunColor: '#fff2d0', sunSize: 1.4,
-        clouds: 0.26, cloudColor: '#ffffff',
-    },
-    pressbriefing: {
-        zenith: '#4a86cf', sun: [0.3, 0.7, 0.55], sunColor: '#fff4dc', sunSize: 1.2,
-        clouds: 0.32, cloudColor: '#ffffff',
-    },
-    // Senate Hill: a cool, high autumn sky over the woods, the sun lower and warmer.
-    senate: {
-        zenith: '#4f7fb4', sun: [0.55, 0.5, -0.45], sunColor: '#ffe0b0', sunSize: 1.3,
-        clouds: 0.42, cloudColor: '#f4f1ec',
-    },
-    playground: {
-        zenith: '#3f86d6', sun: [-0.4, 0.74, 0.5], sunColor: '#fff3d8', sunSize: 1.3,
-        clouds: 0.34, cloudColor: '#ffffff',
-    },
-    // Bedroom Floor GP: indoors. The scan has no ceiling (it is cut off over the walls), so the
-    // dome stands in for one: a dim warm grey, no clouds, the "sun" a ceiling light near overhead.
-    // Center Court: an outdoor court on a sunny afternoon, the sun high and warm through the trees.
-    court: {
-        zenith: '#3f80cf', sun: [0.42, 0.7, -0.35], sunColor: '#fff0d2', sunSize: 1.2,
-        clouds: 0.3, cloudColor: '#ffffff',
-    },
-    bedroom: {
-        zenith: '#8f887e', sun: [0.18, 0.94, 0.28], sunColor: '#f4e6cf', sunSize: 0.5,
-        clouds: 0, cloudColor: '#ffffff',
-    },
+// Daytime: a low-sun dusk or a night makes the race hard to read.
+const PRESET = {
+    zenith: '#3a78c8', sun: [-0.45, 0.66, -0.6], sunColor: '#fff1d6', sunSize: 1.2,
+    clouds: 0.3, cloudColor: '#ffffff',
 };
 
 const VERT = /* glsl */ `
@@ -118,8 +88,8 @@ void main() {
 }`;
 
 export class Sky {
-    constructor(trackId) {
-        const p = PRESETS[trackId] || PRESETS.capitol;
+    constructor() {
+        const p = PRESET;
         this.preset = p;
         this.baseZenith = new THREE.Color(p.zenith);
         this.material = new THREE.ShaderMaterial({

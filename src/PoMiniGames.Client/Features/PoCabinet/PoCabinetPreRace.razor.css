@@ -65,7 +65,7 @@
 
 .pocabinet-prerace__car p { margin: 0.6rem 0 0; font-size: 0.85rem; }
 
-/* The bedroom's room-scan choice under the track list. */
+/* The scanned court's detail choice, above the tabs. */
 .pocabinet-prerace__room {
     display: flex;
     flex-wrap: wrap;

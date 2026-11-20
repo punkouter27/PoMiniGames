@@ -140,7 +140,7 @@ public static class PoCabinetPhysics
     public const double SuspDamp = 9.0;
     public const int SolverIterations = 3;
     public const double CcdSpeedSq = 4900.0;
-    /// <summary>Cars further apart than this along the road never touch: where the Playground run
+    /// <summary>Cars further apart than this along the road never touch: where a course
     /// crosses over itself they are on different levels.</summary>
     public const double SameRoad = 120;
     public const double GridColumn = 22;

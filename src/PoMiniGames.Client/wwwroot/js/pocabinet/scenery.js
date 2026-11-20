@@ -1,10 +1,10 @@
 // pocabinet/scenery.js
 //
 // Everything trackside that is not the road: apex kerbs, the start-light gantry,
-// street lamps, per-track
+// street lamps, each zone's
 // landmarks and planting, satirical billboards, and a press pen of
 // photographers whose flashbulbs race.js fires on a personal-best lap or a
-// photo finish (and, on Press Briefing, whenever something fast goes by).
+// photo finish (and whenever something fast goes by).
 //
 // The grandstand holds a crowd that jumps when race.js excites it
 // (a pass by, an overtake, a PB, the finish); `crowd.center` is where audio.js
@@ -13,9 +13,10 @@
 // Deterministic: placement uses an RNG seeded by the track id, so every player
 // sees the same island of props. Everything is placed outside the barrier line
 // (checked against the full centerline, at each sample's own width and run-off depth), so
-// nothing sits where physics runs. What the track is dressed as (landmark, planting,
-// billboards) is its theme (track.theme: Capitol, Mar-a-Lago, Press Briefing, Senate Hill);
-// everything stands on the terrain (terrain.js heightAt), the kerbs on the road's plane.
+// nothing sits where physics runs, and off the scan (track.inScan): the court is its own
+// scenery. What a stretch of the lap is dressed as (landmark, planting, billboards) is its
+// zone (track.zoneAt: capitol, senate, court, maralago); everything stands on the terrain
+// (terrain.js heightAt), the kerbs on the road's plane.
 //
 // Built once per SceneHandle.setTrack and added to the track group, so the
 // group's traversal disposes geometry and materials; textures are cached per
@@ -122,10 +123,10 @@ function flagTexture() {
 }
 
 const BILLBOARDS = {
-    capitol: ['SPEED LIMIT: VETOED', 'FILIBUSTER ZONE', 'NO OVERTAKING WITHOUT A QUORUM', 'PIT STOP OF THE UNION'],
+    capitol: ['SPEED LIMIT: VETOED', 'BREAKING: LAP RECORD', 'NO OVERTAKING WITHOUT A QUORUM', 'PIT STOP OF THE UNION', 'ALTERNATIVE LAP TIMES'],
     maralago: ['MEMBERS ONLY', 'GOLF CARTS YIELD', 'RESORT SPEED LIMIT: NEGOTIABLE', 'VALET PARKING ONLY'],
-    pressbriefing: ['NO FURTHER QUESTIONS', 'BREAKING: LAP RECORD', 'OFF THE RECORD', 'ALTERNATIVE LAP TIMES'],
     senate: ['CLOTURE AHEAD', 'FILIBUSTER HILL', 'NO AMENDMENTS PAST THIS POINT', 'MAJORITY LEADER PARKING'],
+    court: ['HOME COURT ADVANTAGE', 'TRAVELING IS ENCOURAGED', 'SHOT CLOCK: ONE LAP', 'NO DUNKING FROM THE PIT LANE'],
 };
 
 // ── The scenery handle ───────────────────────────────────────────────────────
@@ -152,17 +153,12 @@ export class Scenery {
 
         this.buildKerbs(world.kerbs);
         this.buildGantry();
-        // The Playground run rides on a model that IS the scenery; everywhere else the props
-        // below stand on the ground beside the road.
-        const playground = world.playground ?? !!track.z;
-        if (!playground) {
-            this.buildLandmarks();
-            this.buildLamps();
-            this.buildPlanting();
-            this.buildBillboards();
-            this.buildPressPen();
-            this.buildGrandstand();
-        }
+        this.buildLandmarks();
+        this.buildLamps();
+        this.buildPlanting();
+        this.buildBillboards();
+        this.buildPressPen();
+        this.buildGrandstand();
         this.group.traverse(o => {
             if (!o.isMesh || o.userData.noShadow) return;
             const m = o.material;
@@ -290,7 +286,6 @@ export class Scenery {
         for (const s of [-1, 1]) {
             // Local +X is the driver's left once the gantry faces down the straight.
             const q = simAt(t, 20, -s * half);
-            // (No terrain, the Playground: the gantry stands on its own deck, as it always has.)
             const foot = this.terrain
                 ? Math.min(this.gy(q.x, q.y), y0 + roadPlane(t, t.indexAt(20), -s * half) / WS - t.heightAt(20) / WS) - y0 - 0.3
                 : 0;
@@ -399,44 +394,78 @@ export class Scenery {
         }
     }
 
+    /** On a landmark's footprint, or on the scan (and a little round it). */
     excluded(x, y) {
-        return this.exclusions.some(e => (x - e.x) ** 2 + (y - e.y) ** 2 < e.r * e.r);
+        return this.track.inScan(x, y, 20) || this.exclusions.some(e => (x - e.x) ** 2 + (y - e.y) ** 2 < e.r * e.r);
     }
 
     // ── Landmarks ──
+    /**
+     * A clear spot for a landmark: beside the road at `dist` along the lap on `side` (+1 right),
+     * stepped outward from `push` past the barrier until a footprint of `clear` sim units is off
+     * every stretch of road and off the scan. Returns { x, y, face } (face: toward the road).
+     */
+    landmarkSpot(dist, side, push, clear = 200) {
+        const t = this.track;
+        const wall = wallAtDist(t, dist, side);
+        const road = simAt(t, dist, 0);
+        let out = simAt(t, dist, side * (wall + push));
+        for (let k = 0; k < 16 && (!clearOfTrack(t, out.x, out.y, clear) || t.inScan(out.x, out.y, clear)); k++) {
+            push += 60;
+            out = simAt(t, dist, side * (wall + push));
+        }
+        return { x: out.x, y: out.y, face: { x: road.x - out.x, y: road.y - out.y } };
+    }
+
+    /** Distance along the lap of the middle of the first run of samples dressed as `zone` (0 if none). */
+    zoneMiddle(zone) {
+        const t = this.track, n = t.count;
+        let from = -1, len = 0;
+        for (let i = 0; i < n; i++) {
+            if (t.zoneAt(i) !== zone || t.zoneAt((i - 1 + n) % n) === zone) continue;
+            from = i;
+            while (len < n && t.zoneAt((i + len) % n) === zone) len++;
+            break;
+        }
+        return from < 0 ? 0 : t.cum[(from + (len >> 1)) % n];
+    }
+
+    /**
+     * One landmark per zone, each on open ground beside its stretch of the lap: the Capitol's
+     * dome and the briefing-room wall outside the stadium straight (the wall behind the
+     * grandstand), the obelisk and its pool inside it; the temple on the crest of Senate Hill;
+     * the mansion outside the beach road and the golf greens inside it.
+     */
     buildLandmarks() {
         const t = this.track;
-        let minX = Infinity, maxX = -Infinity, minY = Infinity, maxY = -Infinity, sx = 0, sy = 0;
+        let sx = 0, sy = 0, crest = 0;
         for (let i = 0; i < t.count; i++) {
-            minX = Math.min(minX, t.x[i]); maxX = Math.max(maxX, t.x[i]);
-            minY = Math.min(minY, t.y[i]); maxY = Math.max(maxY, t.y[i]);
             sx += t.x[i]; sy += t.y[i];
+            if (t.z && t.z[i] > t.z[crest]) crest = i;
         }
-        const cx = (minX + maxX) / 2, cy = (minY + maxY) / 2;
         const centroid = { x: sx / t.count, y: sy / t.count };
-        // "Outside the main straight": the side of the start line away from the centroid.
-        const start = t.pointAt(0);
-        const right = { x: -start.ty, y: start.tx };
-        const inside = (centroid.x - start.x) * right.x + (centroid.y - start.y) * right.y > 0 ? 1 : -1;
-        // Step outward until the footprint (≈ 300 sim units across) is clear of every stretch of road.
-        let push = 330;
-        const wall = wallAtDist(t, t.length * 0.08, -inside);
-        let out = simAt(t, t.length * 0.08, -inside * (wall + push));
-        while (push < 1200 && !clearOfTrack(t, out.x, out.y, 200)) {
-            push += 60;
-            out = simAt(t, t.length * 0.08, -inside * (wall + push));
-        }
-        const facing = { x: -out.x + simAt(t, t.length * 0.08, 0).x, y: -out.y + simAt(t, t.length * 0.08, 0).y };
-        this.landmarkOut = { x: out.x, y: out.y, face: facing };
-        this.centroid = { x: cx, y: cy };
+        // Which side of the road at `dist` faces away from the middle of the circuit.
+        const outside = (dist) => {
+            const p = t.pointAt(dist);
+            return (centroid.x - p.x) * -p.ty + (centroid.y - p.y) * p.tx > 0 ? -1 : 1;
+        };
+        const L = t.length;
 
-        if (this.theme === 'maralago') this.buildMansion(out, facing);
-        else if (this.theme === 'pressbriefing') this.buildBriefingRoom(out, facing);
-        else if (this.theme === 'senate') this.buildTemple(out, facing);
-        else this.buildCapitol(out, facing);
+        const dome = this.landmarkSpot(L * 0.08, outside(L * 0.08), 330);
+        this.landmarkOut = dome;
+        this.buildCapitol(dome, dome.face);
+        const wall = this.landmarkSpot(L - 420, outside(L - 420), 260, 300);
+        this.buildBriefingRoom(wall, wall.face);
+        const obelisk = simAt(t, L - 260, -outside(L - 260) * (wallAtDist(t, L - 260, -outside(L - 260)) + 150));
+        this.buildMonument(obelisk);
 
-        if (this.theme === 'capitol') this.buildMonument(centroid);
-        if (this.theme === 'maralago') this.buildGolf(centroid);
+        const hill = this.landmarkSpot(t.cum[crest], outside(t.cum[crest]), 300);
+        this.buildTemple(hill, hill.face);
+
+        const beach = this.zoneMiddle('maralago');
+        const mansion = this.landmarkSpot(beach, outside(beach), 330);
+        this.buildMansion(mansion, mansion.face);
+        this.buildGolf(simAt(t, beach, -outside(beach) * (wallAtDist(t, beach, -outside(beach)) + 380)));
     }
 
     /**
@@ -508,6 +537,7 @@ export class Scenery {
         if (!clearOfTrack(t, c.x, c.y, 30)) return;
         const g = new THREE.Group();
         g.name = 'pocabinet-monument';
+        // (c: a point on the infield lawn; skipped if a stretch of road is too near)
         const stone = lam('#ece6d8');
         const shaft = new THREE.Mesh(new THREE.CylinderGeometry(0.75, 1.15, 26, 4, 1), stone);
         shaft.rotation.y = Math.PI / 4;
@@ -697,55 +727,82 @@ export class Scenery {
     }
 
     // ── Trees / palms ──
-    buildPlanting() {
+    /**
+     * Up to `target` clear spots beside the samples dressed as `zone`: `near` to `near + reach`
+     * sim units past the barrier (thicker near the road, `pow`), at least `gap` apart, off every
+     * stretch of road, every landmark and the scan.
+     */
+    scatter(zone, target, near, reach, pow, gap) {
         const t = this.track;
-        if (this.theme === 'pressbriefing') return;
-        if (this.theme === 'senate') { this.buildForest(); return; }
-        const palms = this.theme === 'maralago';
-        const target = palms ? 90 : 150;
+        const samples = [];
+        for (let i = 0; i < t.count; i++) if (t.zoneAt(i) === zone) samples.push(i);
         const spots = [];
+        if (!samples.length) return spots;
         for (let tries = 0; tries < target * 8 && spots.length < target; tries++) {
-            const d = this.rng() * t.length;
+            const i = samples[Math.floor(this.rng() * samples.length)];
+            const d = t.cum[i] + this.rng() * t.segLen[i];
             const s = this.rng() < 0.5 ? -1 : 1;
-            const lat = s * (wallAtDist(t, d, s) + 30 + Math.pow(this.rng(), 1.6) * 520);
+            const lat = s * (wallAtDist(t, d, s) + near + Math.pow(this.rng(), pow) * reach);
             const p = simAt(t, d, lat);
-            if (!clearOfTrack(t, p.x, p.y, 22) || this.excluded(p.x, p.y)) continue;
-            if (spots.some(q => (q.x - p.x) ** 2 + (q.y - p.y) ** 2 < 28 * 28)) continue;
+            if (!clearOfTrack(t, p.x, p.y, near - 8) || this.excluded(p.x, p.y)) continue;
+            if (spots.some(q => (q.x - p.x) ** 2 + (q.y - p.y) ** 2 < gap * gap)) continue;
             spots.push(p);
         }
+        return spots;
+    }
+
+    /** Each zone's planting: dark conifers round the stadium and the court, an autumn forest
+     *  on Senate Hill, palms along the beach road. A zone's share follows its length. */
+    buildPlanting() {
+        const t = this.track;
+        const share = (zone) => t.zoneOf.filter(z => z === zone).length / t.count;
+        const conifers = [
+            ...this.scatter('capitol', Math.round(560 * share('capitol')), 30, 520, 1.6, 28),
+            ...this.scatter('court', Math.round(300 * share('court')), 30, 520, 1.6, 28),
+        ];
+        this.plantConifers(conifers);
+        this.plantForest(this.scatter('senate', Math.round(900 * share('senate')), 24, 640, 1.4, 22));
+        this.plantPalms(this.scatter('maralago', Math.round(340 * share('maralago')), 30, 520, 1.6, 28));
+    }
+
+    plantConifers(spots) {
+        if (!spots.length) return;
         const dummy = new THREE.Object3D();
         const color = new THREE.Color();
-        if (!palms) {
-            const trunkGeom = new THREE.CylinderGeometry(0.14, 0.2, 1, 5);
-            trunkGeom.translate(0, 0.5, 0);
-            const coneGeom = new THREE.ConeGeometry(1, 1, 7);
-            coneGeom.translate(0, 0.5, 0);
-            const trunks = new THREE.InstancedMesh(trunkGeom, lam('#5a4230'), spots.length);
-            const crowns = new THREE.InstancedMesh(coneGeom, wind(lam('#ffffff', { roughness: 0.9 }), 0.07), spots.length);
-            spots.forEach((p, i) => {
-                const h = 4 + this.rng() * 4;
-                const r = 1.2 + this.rng() * 1.1;
-                const y = this.gy(p.x, p.y) - 0.15;
-                dummy.position.set(p.x / WS, y, p.y / WS);
-                dummy.rotation.set(0, this.rng() * 6.28, 0);
-                dummy.scale.set(1, h * 0.35, 1);
-                dummy.updateMatrix();
-                trunks.setMatrixAt(i, dummy.matrix);
-                dummy.position.y = y + h * 0.28;
-                dummy.scale.set(r, h * 0.8, r);
-                dummy.updateMatrix();
-                crowns.setMatrixAt(i, dummy.matrix);
-                color.setHSL(0.27 + this.rng() * 0.08, 0.45, 0.2 + this.rng() * 0.1);
-                crowns.setColorAt(i, color);
-            });
-            for (const m of [trunks, crowns]) {
-                m.instanceMatrix.needsUpdate = true;
-                if (m.instanceColor) m.instanceColor.needsUpdate = true;
-                m.frustumCulled = false;
-                this.group.add(m);
-            }
-            return;
+        const trunkGeom = new THREE.CylinderGeometry(0.14, 0.2, 1, 5);
+        trunkGeom.translate(0, 0.5, 0);
+        const coneGeom = new THREE.ConeGeometry(1, 1, 7);
+        coneGeom.translate(0, 0.5, 0);
+        const trunks = new THREE.InstancedMesh(trunkGeom, lam('#5a4230'), spots.length);
+        const crowns = new THREE.InstancedMesh(coneGeom, wind(lam('#ffffff', { roughness: 0.9 }), 0.07), spots.length);
+        spots.forEach((p, i) => {
+            const h = 4 + this.rng() * 4;
+            const r = 1.2 + this.rng() * 1.1;
+            const y = this.gy(p.x, p.y) - 0.15;
+            dummy.position.set(p.x / WS, y, p.y / WS);
+            dummy.rotation.set(0, this.rng() * 6.28, 0);
+            dummy.scale.set(1, h * 0.35, 1);
+            dummy.updateMatrix();
+            trunks.setMatrixAt(i, dummy.matrix);
+            dummy.position.y = y + h * 0.28;
+            dummy.scale.set(r, h * 0.8, r);
+            dummy.updateMatrix();
+            crowns.setMatrixAt(i, dummy.matrix);
+            color.setHSL(0.27 + this.rng() * 0.08, 0.45, 0.2 + this.rng() * 0.1);
+            crowns.setColorAt(i, color);
+        });
+        for (const m of [trunks, crowns]) {
+            m.instanceMatrix.needsUpdate = true;
+            if (m.instanceColor) m.instanceColor.needsUpdate = true;
+            m.frustumCulled = false;
+            this.group.add(m);
         }
+    }
+
+    plantPalms(spots) {
+        if (!spots.length) return;
+        const dummy = new THREE.Object3D();
+        const color = new THREE.Color();
         const LEAVES = 7;
         const trunkGeom = new THREE.CylinderGeometry(0.11, 0.2, 1, 6);
         trunkGeom.translate(0, 0.5, 0);
@@ -787,19 +844,8 @@ export class Scenery {
      * crowns each), a few dark firs between them, thicker near the road and on out into the
      * hills. Instanced: four draw calls for the lot.
      */
-    buildForest() {
-        const t = this.track;
-        const target = 300;
-        const spots = [];
-        for (let tries = 0; tries < target * 8 && spots.length < target; tries++) {
-            const d = this.rng() * t.length;
-            const s = this.rng() < 0.5 ? -1 : 1;
-            const lat = s * (wallAtDist(t, d, s) + 24 + Math.pow(this.rng(), 1.4) * 640);
-            const p = simAt(t, d, lat);
-            if (!clearOfTrack(t, p.x, p.y, 18) || this.excluded(p.x, p.y)) continue;
-            if (spots.some(q => (q.x - p.x) ** 2 + (q.y - p.y) ** 2 < 22 * 22)) continue;
-            spots.push(p);
-        }
+    plantForest(spots) {
+        if (!spots.length) return;
         const dummy = new THREE.Object3D();
         const color = new THREE.Color();
         const firs = spots.filter(() => this.rng() < 0.18);
@@ -856,13 +902,17 @@ export class Scenery {
     }
 
     // ── Billboards ──
+    /** Eight round the lap, each with a line from the zone it stands in. */
     buildBillboards() {
         const t = this.track;
-        const texts = BILLBOARDS[this.theme] || BILLBOARDS.capitol;
         const bg = '#' + this.accent.clone().multiplyScalar(0.35).getHexString();
         const frame = lam('#202226');
-        texts.forEach((text, i) => {
-            const d = t.length * (0.2 + i * 0.2);
+        const used = {};
+        for (let i = 0; i < 8; i++) {
+            const d = t.length * (0.07 + i * 0.12);
+            const zone = t.zoneAt(t.indexAt(d));
+            const texts = BILLBOARDS[zone] || BILLBOARDS.capitol;
+            const text = texts[(used[zone] = (used[zone] ?? -1) + 1) % texts.length];
             for (const s of [1, -1]) {
                 const lat = s * (wallAtDist(t, d, s) + 40);
                 const p = simAt(t, d, lat);
@@ -887,15 +937,14 @@ export class Scenery {
                 this.group.add(g);
                 break;
             }
-        });
+        }
     }
 
-    // ── Press pen: photographers with flashbulbs ──
+    // ── Press pen: photographers with flashbulbs, on the right of the start straight ──
     buildPressPen() {
         const t = this.track;
-        const heavy = this.theme === 'pressbriefing';
-        const sides = heavy ? [-1, 1] : [1];
-        const perSide = heavy ? 18 : 9;
+        const sides = [1];
+        const perSide = 14;
         const bodyGeom = new THREE.CylinderGeometry(0.22, 0.26, 1.2, 6);
         const headGeom = new THREE.SphereGeometry(0.17, 8, 6);
         const camGeom = new THREE.BoxGeometry(0.24, 0.18, 0.3);
@@ -908,7 +957,7 @@ export class Scenery {
         let n = 0;
         for (const s of sides) {
             for (let i = 0; i < perSide; i++) {
-                const d = -140 + i * (heavy ? 22 : 26) + this.rng() * 8;
+                const d = -200 + i * 24 + this.rng() * 8;
                 const lat = s * (wallAtDist(t, d, s) + 10 + this.rng() * 6);
                 const p = simAt(t, d, lat);
                 // Near a kinked start the offset point can land on another stretch of road.
@@ -953,9 +1002,8 @@ export class Scenery {
     // ── Grandstand: four stepped rows of fans facing the start straight ──
     buildGrandstand() {
         const t = this.track;
-        const press = this.theme === 'pressbriefing';
-        // Opposite the press pen; Press Briefing has pens both sides of the line, so its stand is half a lap on.
-        const mid = press ? t.length * 0.5 : 0;
+        // Opposite the press pen.
+        const mid = 0;
         const side = -1;
         const cols = 26, rows = 4, spacing = 6;
         const stepGeom = new THREE.BoxGeometry(0.62, 0.5, 1.1);
@@ -1043,11 +1091,11 @@ export class Scenery {
     /**
      * @param dt seconds
      * @param focus { x, z, speed01 } world-space camera focus (the player's car),
-     *        or null — drives the Press Briefing paparazzi.
+     *        or null — drives the paparazzi: the pen fires as it goes by at speed.
      */
     update(dt, focus) {
         this.time += dt;
-        const paparazzi = this.theme === 'pressbriefing' && focus && focus.speed01 > 0.35;
+        const paparazzi = focus && focus.speed01 > 0.35;
         for (const f of this.flashes) {
             if (paparazzi && f.delay < 0 && f.t <= 0) {
                 const d2 = (f.pos.x - focus.x) ** 2 + (f.pos.z - focus.z) ** 2;

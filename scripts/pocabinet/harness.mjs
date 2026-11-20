@@ -2,7 +2,7 @@
 // the same loop as race.js soloTick + lapBookkeeping (and PoCabinetLapVerifier.Replay).
 //
 //   node harness.mjs race <trackId> [driver=clean|messy|wild] [wet=0|1]   → stats + proof line
-//   node harness.mjs svg <trackId>                                        → <worlds>/<id>.svg top-down preview
+//   node harness.mjs svg <trackId>                                        → <worlds>/<id>.svg top-down preview (knot:height, zones, the scan)
 //   node harness.mjs profile <trackId> [stepsPerKnot]                     → speed / slow / off-road share per knot
 //   node harness.mjs log <trackId>                                        → wrecks and stalled cars through the race
 import fs from 'node:fs';
@@ -143,6 +143,11 @@ function svg(id) {
     const hw = (i) => (w.halfWidths?.[i] ?? t.halfWidth);
     let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
     for (let i = 0; i < n; i++) { minX = Math.min(minX, t.x[i]); maxX = Math.max(maxX, t.x[i]); minY = Math.min(minY, t.y[i]); maxY = Math.max(maxY, t.y[i]); }
+    // The picture takes in the whole of the scan's drawn rectangle too.
+    if (w.scan) {
+        const c = w.scan, hx = c.halfLength * c.scale, hy = c.halfWidth * c.scale;
+        minX = Math.min(minX, c.x - hx); maxX = Math.max(maxX, c.x + hx); minY = Math.min(minY, c.y - hy); maxY = Math.max(maxY, c.y + hy);
+    }
     const pad = 160;
     const pt = (i, lat) => [t.x[i] - t.ty[i] * lat, t.y[i] + t.tx[i] * lat];
     const poly = (lat, color, width = 1, pick = () => true) => {
@@ -187,13 +192,24 @@ function svg(id) {
     }
     if (w.racingLine?.length) parts.push(poly((i) => w.racingLine[i], '#00e5ff', 2, (i) => t.drawn(i)));
     parts.push(poly(() => 0, 'rgba(255,255,255,0.25)', 1, (i) => t.drawn(i)));
-    // Start line, knot labels every `steps` samples, heights.
+    // Start line, then every knot's number and height (12 samples to the knot).
     const s0 = pt(0, -hw(0)), s1 = pt(0, hw(0));
     parts.push(`<line x1="${s0[0]}" y1="${s0[1]}" x2="${s1[0]}" y2="${s1[1]}" stroke="#fff" stroke-width="6"/>`);
-    const steps = Math.round(n / (w.knots || 1));
-    for (let i = 0; i < n; i += 4) {
-        const z = w.centerZ?.[i];
-        if (z !== undefined && i % 12 === 0) { const [x, y] = pt(i, -hw(i) - 60); parts.push(`<text x="${x.toFixed(0)}" y="${y.toFixed(0)}" font-size="22" fill="#ffd54f">${Math.round(z)}</text>`); }
+    const STEPS = 12;
+    for (let i = 0; i < n; i += STEPS) {
+        const [x, y] = pt(i, -hw(i) - 70);
+        parts.push(`<text x="${x.toFixed(0)}" y="${y.toFixed(0)}" font-size="26" fill="#ffd54f" text-anchor="middle">${i / STEPS}:${Math.round(w.centerZ?.[i] ?? 0)}</text>`);
+    }
+    // Scenery zones (a coloured line outside the right-hand barrier) and the scan's footprint.
+    const ZONE = { capitol: '#d4af37', senate: '#e0662a', court: '#4aa3ff', maralago: '#37d39a' };
+    for (const z of w.zones || []) {
+        parts.push(poly((i) => hw(i) + 60, ZONE[z.theme] || '#f0f', 8, (i) => (z.from <= z.to ? i >= z.from && i < z.to : i >= z.from || i < z.to)));
+    }
+    if (w.scan) {
+        const c = w.scan, S = c.scale;
+        const rect = (hx, hy, dash) => `<rect x="${c.x - hx * S}" y="${c.y - hy * S}" width="${2 * hx * S}" height="${2 * hy * S}" fill="none" stroke="#4aa3ff" stroke-width="4" ${dash ? 'stroke-dasharray="20 14"' : ''}/>`;
+        parts.push(rect(c.halfLength, c.halfWidth, true), rect(14, 7.5, false));
+        for (const sx of [-14.5, 14.5]) parts.push(`<circle cx="${c.x + sx * S}" cy="${c.y}" r="14" fill="#fff"/>`);
     }
     const out = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="${minX - pad} ${minY - pad} ${maxX - minX + pad * 2} ${maxY - minY + pad * 2}" width="1100" style="background:#1d2b1d">${parts.join('')}</svg>`;
     fs.writeFileSync(path.join(WORLDS, id + '.svg'), out);

@@ -78,7 +78,7 @@ const SUSP_K = 48.0;
 const SUSP_DAMP = 9.0;
 const SOLVER_ITERATIONS = 3;
 const CCD_SPEED_SQ = 4900.0;
-/** Cars further apart than this along the road never touch: where the Playground run
+/** Cars further apart than this along the road never touch: where a course
  *  crosses over itself they are on different levels. */
 const SAME_ROAD = 120;
 /** Damage (hurt()): closing speed a body shrugs off, and the square of the excess over it that

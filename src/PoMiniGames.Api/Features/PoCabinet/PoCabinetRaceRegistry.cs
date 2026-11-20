@@ -84,16 +84,16 @@ public sealed class PoCabinetRaceRegistry : IAsyncDisposable
     public const string LobbyGroup = "lobby:cabinet";
 
     /// <summary>Start a race for <paramref name="code"/>, replacing any finished one.</summary>
-    public void Create(string code, string trackId, IReadOnlyList<PoCabinetDriver> drivers)
+    public void Create(string code, IReadOnlyList<PoCabinetDriver> drivers)
     {
-        var sim = new PoCabinetSim(trackId, seed: Random.Shared.Next(), drivers)
+        var sim = new PoCabinetSim(seed: Random.Shared.Next(), drivers)
         {
             CountdownSeconds = CountdownSeconds,
         };
         var session = new RaceSession(code, sim, _time.GetUtcNow());
         foreach (var d in drivers.Where(d => d.IsPlayer)) session.Queues[d.OwnerId] = new Queue<PoCabinetInput>();
         _races[code] = session;
-        _logger.LogInformation("PoCabinet race {Code} created with {Count} cars on {Track}", code, drivers.Count, trackId);
+        _logger.LogInformation("PoCabinet race {Code} created with {Count} cars", code, drivers.Count);
     }
 
     /// <summary>
@@ -152,7 +152,7 @@ public sealed class PoCabinetRaceRegistry : IAsyncDisposable
             session.Connections[connectionId] = seated;
             session.LastSeen = _time.GetUtcNow();
             var snap = BuildSnapshot(session, dialogue: null);
-            snap.Static = PoCabinetTrackGeometry.BuildStaticWorld(session.Sim.TrackId);
+            snap.Static = PoCabinetTrackGeometry.BuildStaticWorld(PoCabinetTrackGeometry.Get());
             snap.LocalCarId = carId;
             return snap;
         }

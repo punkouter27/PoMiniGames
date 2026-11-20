@@ -61,29 +61,29 @@ public class PoCabinetRouteUiTests
         var appHtml = await page.Locator("#app").InnerHTMLAsync();
         appHtml.Should().NotBeNullOrWhiteSpace("the Blazor app shell must render markup after NetworkIdle");
 
-        // Every mode opens on the shared intro card. Solo's carries the track selector; Online's
-        // only OK (the lobby host picks the track there); Demo's times out
-        // into the race reel.
+        // Every mode opens on the shared intro card. There is one circuit, so no card carries a
+        // track picker: Solo's has the scan-detail choice and the Car / Settings tabs, Online's
+        // only OK, and Demo's times out into the race reel.
         if (path.EndsWith("/multi", StringComparison.OrdinalIgnoreCase))
         {
             var join = page.GetByRole(AriaRole.Button, new() { Name = "OK", Exact = true });
             await join.WaitForAsync(new() { Timeout = 30_000 });
-            (await page.Locator(".pocabinet-track").CountAsync()).Should().Be(0,
-                "the online start card no longer repeats the tracks the lobby host picks");
+            (await page.Locator(".gps-intro-map-select").CountAsync()).Should().Be(0,
+                "the online start card has no track picker");
         }
         else if (path.EndsWith("/demo", StringComparison.OrdinalIgnoreCase))
         {
-            var raceMount = page.Locator("#pocabinetCanvas, .pocabinet-track").First;
+            var raceMount = page.Locator("#pocabinetCanvas").First;
             await raceMount.WaitForAsync(new() { Timeout = 30_000 });
-            (await raceMount.IsVisibleAsync()).Should().BeTrue("demo mode mounts the race view or track selector");
+            (await raceMount.IsVisibleAsync()).Should().BeTrue("demo mode mounts the race view");
         }
         else
         {
-            await page.Locator(".gps-intro-map-select").WaitForAsync(new() { Timeout = 30_000 });
-            var ids = await page.Locator(".gps-intro-map-select option").EvaluateAllAsync<string[]>(
-                "els => els.map(e => e.getAttribute('value') ?? '')");
-            ids.Should().Equal(["capitol", "maralago", "pressbriefing", "playground", "senate", "bedroom", "court", PoMiniGames.Shared.Games.PoCabinetDailyTrack.TodayId(DateTime.UtcNow)],
-                "the track selector renders the seven themed tracks and today's daily circuit, in campaign order");
+            await page.Locator(".pocabinet-prerace__room").WaitForAsync(new() { Timeout = 30_000 });
+            (await page.Locator(".gps-intro-map-select").CountAsync()).Should().Be(0,
+                "one circuit: the solo start card has no track dropdown beside OK");
+            (await page.Locator(".pocabinet-prerace__room input[type=radio]").CountAsync()).Should().Be(3,
+                "the scan-detail choice (Auto / Full / Lite) is on the card, since the circuit crosses the scanned court");
         }
     }
 }

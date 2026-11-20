@@ -148,7 +148,7 @@ public sealed class GameResultService
             () => _sync.EnqueueMarbleRace(highScore!));
 
     /// <summary>
-    /// PoCabinet: per-track best-lap ratchet. Ties the
+    /// PoCabinet: best-lap ratchet. Ties the
     /// finished-race flow through the same offline-resilient path as the
     /// other games so a player who finishes a race while offline still gets
     /// the run recorded later.

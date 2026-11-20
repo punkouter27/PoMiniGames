@@ -117,7 +117,8 @@ public sealed class PlayerDataService(
         new("PoBrawlPlayerRatings", ["pobrawlplayerelo"], [], UserIdField: "PrincipalId",
             MapId: id => id.Trim().ToLowerInvariant()),
 
-        new("PoCabinetHighScores", ["pocabinet"], ["PlayerName"]),
+        // Every partition: the circuit's board, and the rows the retired tracks left behind.
+        new("PoCabinetHighScores", null, ["PlayerName"]),
         // One partition per category; rows carry a display name only.
         new("PoFunQuizPlayers", null, ["PlayerName"]),
         // Saved islands: the slots live in a partition named by the same hash, and each shared

@@ -8,7 +8,7 @@
 
 @* The race ends on the shared end-of-game modal, with race again and a way home.
    A demo has nobody to press it, so it loops instead.
-   GameKey is the raced track's board (BoardKey), withheld while the lap is being checked. *@
+   GameKey is the circuit's board (BoardKey), withheld while the lap is being checked. *@
 <GameShell Title="@TitleContent" Player="@_playerName" BackTo="/" Fullscreen="true" RequiresWebGl="true"
            GameOver="@(_phase == Phase.Finished && Mode != GameMode.Demo)" GameKey="@BoardKey"
            Outcome="@ResultsOutcome" NewBest="@_isPersonalBest"
@@ -24,7 +24,7 @@
             @* Mounted from the lobby on, hidden while the race runs: its connection (and so the roster
                and the rematch) outlives the race. Leaving to the start card unmounts it, which leaves. *@
             <div hidden="@(_phase != Phase.Lobby)">
-                <PoCabinetLobby InitialTrackId="@_trackId" Color="@PlayerColorHex"
+                <PoCabinetLobby Color="@PlayerColorHex"
                                 OnRaceStarting="OnLobbyRaceStartingAsync" OnExit="LeaveLobbyAsync"
                                 OnOpenSettings="OpenDrawerAsync" Notice="@_lobbyNotice" />
             </div>
@@ -45,10 +45,6 @@
                                Options="@OptionsContent"
                                Mode="@(Mode == GameMode.Demo ? GameIntro.IntroMode.Demo : GameIntro.IntroMode.OnePlayer)"
                                Wide="@(Mode == GameMode.OnePlayer)"
-                               Maps="@(Mode == GameMode.OnePlayer ? TrackMaps : null)"
-                               MapLabel="Track"
-                               MapId="@_trackId"
-                               MapIdChanged="OnTrackChanged"
                                OnStart="StartRaceAsync" />
                 </div>
             }
@@ -284,9 +280,6 @@
 </GameShell>
 
 @code {
-    // The track: the start card's dropdown beside OK (owner rule), every track and today's Daily.
-    private static IReadOnlyList<IntroMap> TrackMaps =>
-        [.. PoCabinetCatalog.Tracks.Append(PoCabinetCatalog.Today(DateTime.UtcNow)).Select(t => new IntroMap(t.Id, t.Name))];
     // One line, for the device in hand (.keys-only / .touch-only, game-shell.css). It used to be
     // two bullets for every device, and the settings panel repeated the keyboard line.
     private RenderFragment ControlsContent => Mode == GameMode.Demo
@@ -319,13 +312,12 @@
         }
     </span>;
 
-    // The card's Options slot, in 1P: one tabbed sheet, Track (the default) / Car / Settings
-    // (online, the lobby host picks the track; the demo picks its own). In a race the same
-    // panels are in the drawer, from the pause card. Otherwise only a failed start says so here.
+    // The card's Options slot, in 1P: one tabbed sheet, Car / Settings, under the scan-detail
+    // choice. In a race the same panels are in the drawer, from the pause card. Otherwise only
+    // a failed start says so here.
     private RenderFragment? OptionsContent => Mode == GameMode.OnePlayer
         ? @<div class="pocabinet-start">
-            <PoCabinetPreRace TrackId="@_trackId"
-                              Settings="Settings" SettingsChanged="OnSettingsChangedAsync"
+            <PoCabinetPreRace Settings="Settings" SettingsChanged="OnSettingsChangedAsync"
                               Color="@_color" PaintChanged="OnPaintChanged"
                               Livery="@_livery" LiveryChanged="OnLiveryChanged" />
             @if (!string.IsNullOrEmpty(_status))
@@ -339,12 +331,12 @@
 
     /// <summary>
     /// The race view could not start, or threw while it ran: a card where the race would be,
-    /// with a plain retry and one on lite graphics (the mesh room, the low tier), not a dead page.
+    /// with a plain retry and one on lite graphics (the mesh court, the low tier), not a dead page.
     /// </summary>
     private RenderFragment CrashCard(string? message) => @<div class="pocabinet-crash">
         <div class="pocabinet-crash__card">
             <ErrorState Title="The race view stopped" OnRetry="RetryRaceAsync" RetryLabel="Retry">
-                <p>Cabinet's 3D view hit a problem on this device. Try again, or try with lite graphics: the low quality tier and the plain room instead of the room scan.</p>
+                <p>Cabinet's 3D view hit a problem on this device. Try again, or try with lite graphics: the low quality tier and the plain court instead of the court scan.</p>
                 @if (!string.IsNullOrWhiteSpace(message))
                 {
                     <p class="pocabinet-crash__detail pocabinet-muted">@message</p>
@@ -363,7 +355,7 @@
         <PoCabinetResults Laps="_laps" Standings="_finalStandings" Position="_position" TotalCars="_totalCars"
                           TrackName="@TrackName" IsSpectating="IsSpectating" IsMultiplayer="IsMultiplayerMode"
                           AwaitingFinal="_awaitingFinal" IsPersonalBest="_isPersonalBest" PreviousBest="_previousBest"
-                          CampaignNote="CampaignNote" Debrief="_debrief" TelemetrySummary="@_telemetrySummary"
+                          Debrief="_debrief" TelemetrySummary="@_telemetrySummary"
                           HasReferenceLap="_hasReferenceLap" Status="@_status" Dnf="_dnf" />
     </section>;
 }

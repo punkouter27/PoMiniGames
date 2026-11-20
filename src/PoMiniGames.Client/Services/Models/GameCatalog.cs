@@ -158,9 +158,8 @@ public static class GameCatalog
             new(GameMode.Demo, "/poracer/demo"),
         ]),
 
-        // PoCabinet: third-person arcade racing, four named officials, four
-        // tracks (Capitol Speedway / Mar-a-Lago GP / Press Briefing 500 / Playground Marble Run).
-        // Three modes: 1P championship, multi SignalR lobby, demo AI showcase. There is no 2P
+        // PoCabinet: third-person arcade racing, four named officials, one circuit
+        // (Cabinet Grand Prix). Three modes: 1P race, multi SignalR lobby, demo AI showcase. There is no 2P
         // mode; /pocabinet/2player links land on 1P (PoCabinetPage.Mode). The lobby endpoint
         // at /api/pocabinet is authed; the leaderboard reads are anonymous.
         new(GameKeys.PoCabinet, "Cabinet", "videogame_asset",

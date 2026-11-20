@@ -50,10 +50,6 @@
             {
                 <span class="pocabinet-chip pocabinet-chip--pb" role="status">★ New personal best</span>
             }
-            @if (CampaignNote is { } note)
-            {
-                <span class="pocabinet-chip @(note.Good ? "pocabinet-chip--good" : null)">@note.Text</span>
-            }
         </p>
     </div>
 </header>
@@ -175,15 +171,13 @@
     [Parameter] public bool AwaitingFinal { get; set; }
     [Parameter] public bool IsPersonalBest { get; set; }
     [Parameter] public double PreviousBest { get; set; }
-    /// <summary>What this race did for the campaign (1P, a stage track), as a chip.</summary>
-    [Parameter] public (string Text, bool Good)? CampaignNote { get; set; }
     [Parameter] public PoCabinetTalk.Debrief? Debrief { get; set; }
     [Parameter] public string? TelemetrySummary { get; set; }
     [Parameter] public bool HasReferenceLap { get; set; }
     [Parameter] public string? Status { get; set; }
     /// <summary>The player's car was wrecked: did not finish, classified behind every runner.</summary>
     [Parameter] public bool Dnf { get; set; }
-    /// <summary>The card's primary button: the same track again (online: back to the lobby).</summary>
+    /// <summary>The card's primary button: race again (online: back to the lobby).</summary>
     [Parameter] public EventCallback OnRaceAgain { get; set; }
     [Parameter] public string RaceAgainLabel { get; set; } = "Race again";
 

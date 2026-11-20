@@ -19,7 +19,7 @@ import { WORLD_SCALE as WS, addHook } from './util.js';
 
 const TILE = 44;
 
-function roadMask(track, margin, keepOut, playground) {
+function roadMask(track, margin, keepOut) {
     let minX = Infinity, maxX = -Infinity, minY = Infinity, maxY = -Infinity, widest = track.halfWidth;
     for (let i = 0; i < track.count; i++) {
         minX = Math.min(minX, track.x[i]); maxX = Math.max(maxX, track.x[i]);
@@ -35,10 +35,9 @@ function roadMask(track, margin, keepOut, playground) {
     g.fillStyle = '#000';
     g.fillRect(0, 0, S, S);
     const sx = S / (maxX - minX), sy = S / (maxY - minY);
-    // A road with height (the Playground run) is up on the model, not on the lawn. Anywhere
-    // else: the road at its own width each sample, plus the run-off out to the barrier where
-    // that is gravel or tarmac (one quad per segment, so the width can change).
-    if (!playground) {
+    // The road at its own width each sample, plus the run-off out to the barrier where that is
+    // gravel or tarmac (one quad per segment, so the width can change).
+    {
         const n = track.count;
         const edge = (i, side) => track.hw[i] + (track.runoffAt(i, side) === 0 ? margin : runOffAt(track, i, side) + 3);
         const at = (i, lat) => [(track.x[i] - track.ty[i] * lat - minX) * sx, (track.y[i] + track.tx[i] * lat - minY) * sy];
@@ -54,7 +53,7 @@ function roadMask(track, margin, keepOut, playground) {
             g.fill();
         }
     }
-    // No blades where a scene model already covers the ground (the Playground's pad).
+    // No blades where a scan is the ground (the court).
     if (keepOut) {
         g.fillStyle = '#fff';
         g.beginPath();
@@ -104,10 +103,10 @@ export class Grass {
      * @param color  base colour (the ground's)
      * @param count  blades in the tile (quality tier)
      * @param opts   { keepOut: optional sim ring [x0, y0, …] kept bare, like the road;
-     *                 terrain: terrain.js (blades grow from its height), playground: bool }
+     *                 terrain: terrain.js (blades grow from its height) }
      */
     constructor(track, color, count, opts = {}) {
-        const mask = roadMask(track, KERB_OUTER + 6, opts.keepOut, !!opts.playground);
+        const mask = roadMask(track, KERB_OUTER + 6, opts.keepOut);
         this.mask = mask.tex;
         const height = opts.terrain ? opts.terrain.heightTexture() : null;
         this.flatTex = height ? null : flatHeight();

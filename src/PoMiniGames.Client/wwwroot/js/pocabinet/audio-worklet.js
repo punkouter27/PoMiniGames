@@ -40,7 +40,6 @@ class ModalBankProcessor extends AudioWorkletProcessor {
         this.steamEnv = 0;
         this.steamLp = 0;
         this.scrapeLevel = 0;
-        this.scrapeRoom = 0;
         this.slipLevel = 0;
         this.stickPhase = 0;
         this.seed = 0x13579bdf;
@@ -115,7 +114,6 @@ class ModalBankProcessor extends AudioWorkletProcessor {
             }
         } else if (d.type === 'scrape') {
             this.scrapeLevel = Math.min(1, Math.max(0, d.level || 0));
-            this.scrapeRoom = d.room ? 1 : 0;
         } else if (d.type === 'slip') {
             this.slipLevel = Math.min(1, Math.max(0, d.slip || 0));
         }
@@ -165,7 +163,7 @@ class ModalBankProcessor extends AudioWorkletProcessor {
                 this.stickPhase += (110 + this.scrapeLevel * 240) / sr;
                 if (this.stickPhase >= 1) {
                     this.stickPhase -= 1;
-                    const freq = (this.scrapeRoom ? 1450 : 2750) + this.rnd() * 1400;
+                    const freq = 2750 + this.rnd() * 1400;
                     this.triggerMode(freq, 26, 0.032 * this.scrapeLevel * (0.6 + this.rnd() * 0.6));
                 }
             }

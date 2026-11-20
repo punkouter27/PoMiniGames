@@ -12,8 +12,8 @@ namespace PoMiniGames.Features.PoCabinet;
 /// opens the multiplayer page lands here.
 ///
 /// <para>
-/// The host's track and AI-driver picks live on the room and are stamped on every seat, so the
-/// shared lobby state carries them. Each start mints an internal race code (<see cref="BeginRace"/>)
+/// The host's AI-driver pick lives on the room and is stamped on every seat, so the shared
+/// lobby state carries it. Each start mints an internal race code (<see cref="BeginRace"/>)
 /// that <c>gameStarted</c> carries and <see cref="PoCabinetRaceHub"/> keys the race by.
 /// </para>
 /// <para>
@@ -36,7 +36,6 @@ public sealed class PoCabinetLobbyService : LobbyRoom<PoCabinetLobbyPlayer>
 
     private readonly TimeProvider _time;
     private readonly Dictionary<string, DateTimeOffset> _unreadySince = new(StringComparer.Ordinal);
-    private string _trackId = PoCabinetCatalog.DefaultTrackId;
     private int _botCount = DefaultBots;
     private bool _hasRaced;
 
@@ -48,34 +47,21 @@ public sealed class PoCabinetLobbyService : LobbyRoom<PoCabinetLobbyPlayer>
 
     public override bool CanKick => true;
 
-    /// <summary>The host's track pick for the next race.</summary>
-    public string TrackId => WithLock(_ => _trackId);
-
     /// <summary>The AI drivers the host asked for (the race seats <see cref="PoCabinetLobbyRules.BotSeats"/> of them).</summary>
     public int BotCount => WithLock(_ => _botCount);
 
-    /// <summary>Seat the caller. An empty room starts fresh (default picks, no rematch timeout yet).</summary>
+    /// <summary>Seat the caller. An empty room starts fresh (the default AI count, no rematch timeout yet).</summary>
     public (LobbyState<PoCabinetLobbyPlayer> state, string message) Open(string connectionId, string displayName, bool isGuest, string userId) =>
         OpenCore(connectionId, displayName, isGuest, (name, previous, others) =>
         {
             if (others.Count == 0)
             {
                 _hasRaced = false;
-                _trackId = PoCabinetCatalog.DefaultTrackId;
                 _botCount = DefaultBots;
             }
             _unreadySince[connectionId] = _time.GetUtcNow();
-            return new PoCabinetLobbyPlayer(connectionId, name, isGuest, false, previous?.Color ?? "", _trackId, _botCount) { UserId = userId };
+            return new PoCabinetLobbyPlayer(connectionId, name, isGuest, false, previous?.Color ?? "", _botCount) { UserId = userId };
         });
-
-    /// <summary>Host-only, idle: switch the track for the next race.</summary>
-    public bool SetTrack(string connectionId, string? trackId) => WithLock(seats =>
-    {
-        if (!HostedIdle(connectionId) || !PoCabinetCatalog.IsKnownTrack(trackId)) return false;
-        _trackId = PoCabinetCatalog.GetTrack(trackId).Id;
-        foreach (var key in seats.Keys.ToList()) seats[key] = seats[key] with { TrackId = _trackId };
-        return true;
-    });
 
     /// <summary>Host-only, idle: how many AI drivers join the grid (0 to <see cref="PoCabinetCatalog.MaxBots"/>).</summary>
     public bool SetBots(string connectionId, int count) => WithLock(seats =>

@@ -6,8 +6,8 @@ using Xunit;
 
 namespace PoMiniGames.Unit.Features.PoCabinet;
 
-/// <summary>PoCabinet's scripted talk, its track features, the daily circuit, the AI and the
-/// physics under it, the one lobby, and the per-tick wire budget.</summary>
+/// <summary>PoCabinet's scripted talk, its one circuit's features, the AI and the physics under
+/// it, the one lobby, and the per-tick wire budget.</summary>
 public class PoCabinetTests
 {
     private static readonly string[] ExpectedMoments = ["finish", "lead", "passed", "preRace"];
@@ -24,13 +24,12 @@ public class PoCabinetTests
     /// </summary>
     [Theory]
     [InlineData(nameof(ScriptedBanterCoversEveryOfficial_AndTheDebriefFollowsTheNumbers))]
-    [InlineData(nameof(EveryTrackShipsItsFeatures_AndTheServerReadsTheSameRoad))]
-    [InlineData(nameof(DailyCircuit_IsTheSameTrackFromTheSameDate_RacesForThreeDays_AndChangesDaily))]
+    [InlineData(nameof(TheCircuitShipsItsFeatures_AndTheServerReadsTheSameRoad))]
+    [InlineData(nameof(ThereIsOneCircuit_WhateverIdACallerCarries))]
     [InlineData(nameof(EachOfficial_LapsOnItsOwnLine_AndAHumanCarObeysInputsAndTheBarrier))]
     [InlineData(nameof(Contacts_AreImpulsesBetweenCarShapedHulls))]
     [InlineData(nameof(Lobby_FirstArrivalHosts_LaterArrivalsShareIt_AndBouncesAtCap))]
     [InlineData(nameof(PerTickSnapshot_FitsTwoKilobytes_AtEightCars))]
-    [InlineData(nameof(EveryTrack_IsDefinedAndThemed_AnOfficialFinishesALap_AndTheBlenderRouteIsTheRaceRoad))]
     public Task Scenario(string name) => Scenarios.RunAsync(this, name);
 
     /// <summary>
@@ -51,7 +50,7 @@ public class PoCabinetTests
         PoCabinetDialogue.PickLine("unknown-official", DialogueKind.PreRace, 0).Should().BeEmpty("no line, no bubble");
 
         var slow = PoCabinetTalk.DebriefFor(new PoCabinetTalk.Facts(
-            "Capitol Speedway", 4, [0.1, 0.9, -0.2], FullThrottlePct: 40, BrakePct: 10, SlowestKmh: 150, WorstPointPct: 45, WallHits: 2));
+            "Cabinet Grand Prix", 4, [0.1, 0.9, -0.2], FullThrottlePct: 40, BrakePct: 10, SlowestKmh: 150, WorstPointPct: 45, WallHits: 2));
         slow.Tips.Should().HaveCount(3);
         slow.Tips[0].Should().Contain("Sector 2").And.Contain("0.90");
         slow.Tips[1].Should().Contain("Sector 3").And.Contain("quicker");
@@ -59,153 +58,142 @@ public class PoCabinetTests
         slow.Headline.Should().Contain("P4");
 
         // No reference lap: the tip says where the time went instead.
-        PoCabinetTalk.DebriefFor(new PoCabinetTalk.Facts("Senate Hill", 1, [], 80, 10, 120, 45, 0))
+        PoCabinetTalk.DebriefFor(new PoCabinetTalk.Facts("Cabinet Grand Prix", 1, [], 80, 10, 120, 45, 0))
             .Tips.Should().ContainSingle().Which.Should().Contain("45%");
 
         // A wreck is never "a clean race", even with no barrier hit (car contact did it).
-        var wreck = PoCabinetTalk.DebriefFor(new PoCabinetTalk.Facts("Capitol Speedway", 29, [], 90, 5, 120, -1, 0, Wrecked: true));
+        var wreck = PoCabinetTalk.DebriefFor(new PoCabinetTalk.Facts("Cabinet Grand Prix", 29, [], 90, 5, 120, -1, 0, Wrecked: true));
         wreck.Tips[0].Should().Contain("wrecked");
         wreck.Tips.Should().NotContain(t => t.Contains("clean race"));
         wreck.Headline.Should().Contain("WRECK");
     }
 
     /// <summary>
-    /// Every track's world carries a value per centerline sample for each feature (width,
-    /// run-off, kerbs, racing line, heights), the hand-built tracks have the features they were
-    /// built around (raised kerbs, gravel, tarmac run-off, a divider with a tapered nose), and
-    /// the server's runtime track reads the very same values the browser is handed.
+    /// The circuit's world carries a value per centerline sample for each feature (width,
+    /// run-off, kerbs, racing line, heights), it has the features its lap is built from (hills,
+    /// apex kerbs with raised ones at the chicane, a gravel trap, tarmac run-off, one divider
+    /// with a tapered nose: the joker lane), and the server's runtime track reads the very same
+    /// values the browser is handed.
     /// </summary>
-    private static void EveryTrackShipsItsFeatures_AndTheServerReadsTheSameRoad()
+    private static void TheCircuitShipsItsFeatures_AndTheServerReadsTheSameRoad()
     {
-        foreach (var info in PoCabinetCatalog.Tracks)
-        {
-            var world = PoCabinetTrackGeometry.BuildStaticWorld(info.Id);
-            int n = world.CenterXY.Count / 2;
-            new[] { world.HalfWidths.Count, world.RunoffLeft.Count, world.RunoffRight.Count, world.Kerbs.Count, world.RacingLine.Count, world.CenterZ.Count }
-                .Should().AllBeEquivalentTo(n, $"{info.Id} ships every feature per sample");
-            world.HalfWidths.Should().OnlyContain(hw => hw > 25, info.Id);
-            if (info.Id != "playground") world.Kerbs.Should().Contain(k => k != 0, $"{info.Id} has apex kerbs (the marble run's chute bends are too gentle for any)");
+        var def = PoCabinetTrackGeometry.Get();
+        var world = PoCabinetTrackGeometry.BuildStaticWorld(def);
+        int n = world.CenterXY.Count / 2;
+        new[] { world.HalfWidths.Count, world.RunoffLeft.Count, world.RunoffRight.Count, world.Kerbs.Count, world.RacingLine.Count, world.CenterZ.Count }
+            .Should().AllBeEquivalentTo(n, "every feature ships per sample");
+        world.HalfWidths.Should().OnlyContain(hw => hw > 25);
+        world.CenterZ.Should().Contain(z => z != 0, "the circuit has hills");
+        world.Kerbs.Should().Contain(k => Math.Abs(k) == 1, "apex kerbs").And.Contain(k => Math.Abs(k) == 2, "the chicane has raised kerbs");
+        var runoff = world.RunoffLeft.Concat(world.RunoffRight).ToList();
+        runoff.Should().Contain((int)PoCabinetRunoff.Gravel, "gravel and sand traps").And.Contain((int)PoCabinetRunoff.Tarmac, "tarmac run-off");
+        world.TotalLaps.Should().Be(def.Laps).And.BeGreaterThan(0);
+        world.TrackId.Should().Be(PoCabinetCatalog.DefaultTrackId);
+        world.TrackName.Should().Be(PoCabinetCatalog.Track.Name);
 
-            var track = PoCabinetTrack.Get(info.Id);
-            Enumerable.Range(0, n).Should().OnlyContain(i =>
-                track.HalfWidthAt(i) == world.HalfWidths[i] && track.KerbAt(i) == world.Kerbs[i]
-                && track.RunoffAt(i, -1) == world.RunoffLeft[i] && track.RunoffAt(i, 1) == world.RunoffRight[i],
-                $"{info.Id}: the server races the road the browser draws");
-        }
+        var track = PoCabinetTrack.Get();
+        track.Laps.Should().Be(def.Laps);
+        Enumerable.Range(0, n).Should().OnlyContain(i =>
+            track.HalfWidthAt(i) == world.HalfWidths[i] && track.KerbAt(i) == world.Kerbs[i]
+            && track.RunoffAt(i, -1) == world.RunoffLeft[i] && track.RunoffAt(i, 1) == world.RunoffRight[i],
+            "the server races the road the browser draws");
 
-        PoCabinetTrackGeometry.BuildStaticWorld("capitol").Kerbs.Should().Contain(k => Math.Abs(k) == 2, "the bus stop has raised kerbs");
-        PoCabinetTrackGeometry.BuildStaticWorld("maralago").RunoffRight.Should().Contain((int)PoCabinetRunoff.Gravel, "sand traps");
-        PoCabinetTrackGeometry.BuildStaticWorld("pressbriefing").RunoffLeft.Should().OnlyContain(k => k == (int)PoCabinetRunoff.Tarmac, "a plaza");
-
-        // Senate Hill's divider: its own lane either side, a point at each end, and the AI and the
-        // physics both know where it stands.
-        var senate = PoCabinetTrack.Get("senate");
-        senate.Islands.Should().ContainSingle();
-        var isl = senate.Islands[0];
-        senate.IslandIndexAt(isl.From).Should().Be(0);
-        (senate.IslandHi(isl.From) - senate.IslandLo(isl.From)).Should().BeLessThan(isl.LatTo - isl.LatFrom, "the nose tapers");
+        // The divider: its own lane either side, a point at each end, and the AI and the physics
+        // both know where it stands.
+        track.Islands.Should().ContainSingle("one joker lane");
+        var isl = track.Islands[0];
+        track.IslandIndexAt(isl.From).Should().Be(0);
+        (track.IslandHi(isl.From) - track.IslandLo(isl.From)).Should().BeLessThan(isl.LatTo - isl.LatFrom, "the nose tapers");
         int mid = (isl.From + isl.To) / 2;
-        (senate.IslandHi(mid) - senate.IslandLo(mid)).Should().Be(isl.LatTo - isl.LatFrom);
-        senate.IslandIndexAt((isl.To + 1) % senate.Count).Should().Be(-1);
-    }
+        (track.IslandHi(mid) - track.IslandLo(mid)).Should().Be(isl.LatTo - isl.LatFrom);
+        track.IslandIndexAt((isl.To + 1) % track.Count).Should().Be(-1);
 
-    /// <summary>
-    /// The daily circuit is built from the date alone, so the browser and the server (and two
-    /// builds) agree on every value; laps post for yesterday's, today's and tomorrow's, not a
-    /// stale one; and tomorrow is a different track.
-    /// </summary>
-    private static void DailyCircuit_IsTheSameTrackFromTheSameDate_RacesForThreeDays_AndChangesDaily()
-    {
-        var day = new DateOnly(2026, 10, 19);
-        var id = PoCabinetDailyTrack.IdFor(day);
-        id.Should().Be("daily-20261019");
-        var a = PoCabinetTrackGeometry.BuildStaticWorld(id);
-        var b = PoCabinetTrackGeometry.BuildStaticWorld("DAILY-20261019");
-        a.CenterXY.Should().Equal(b.CenterXY);
-        a.HalfWidths.Should().Equal(b.HalfWidths);
-        a.Kerbs.Should().Equal(b.Kerbs);
-        a.TrackName.Should().Be("Daily Circuit · Oct 19");
-        a.TotalLaps.Should().Be(3);
-        a.CenterZ.Should().HaveCount(a.CenterXY.Count / 2).And.Contain(z => z != 0, "the daily circuit has hills");
-        PoCabinetTrack.Get(id).Length.Should().BeApproximately(3200, 5);
-
-        var tomorrow = PoCabinetTrackGeometry.BuildStaticWorld(PoCabinetDailyTrack.IdFor(day.AddDays(1)));
-        tomorrow.CenterXY.Should().NotEqual(a.CenterXY);
-
-        var noon = new DateTime(2026, 10, 19, 12, 0, 0, DateTimeKind.Utc);
-        PoCabinetDailyTrack.IsCurrent("daily-20261018", noon).Should().BeTrue("a race that ran over midnight still posts");
-        PoCabinetDailyTrack.IsCurrent("daily-20261020", noon).Should().BeTrue();
-        PoCabinetDailyTrack.IsCurrent("daily-20261010", noon).Should().BeFalse("a stale daily board is closed");
-        PoCabinetDailyTrack.IsCurrent("daily-2026101", noon).Should().BeFalse();
-        PoCabinetCatalog.IsKnownTrack(PoCabinetDailyTrack.TodayId(DateTime.UtcNow)).Should().BeTrue();
-    }
-
-    /// <summary>
-    /// Each of the four officials, alone on Capitol, completes a lap through the real physics on
-    /// its own line (every pair's mean lateral offset over the lap differs by ≥ 8 units); a human
-    /// car flat out on full right lock ends up pinned at the barrier, never through it, and every
-    /// applied input's sequence number is acknowledged.
-    /// </summary>
-    /// <summary>
-    /// Every catalog track (and today's daily circuit) has its own geometry, not the fallback,
-    /// and a theme the scene dresses (terrain.js THEMES); an AI official drives one full lap of
-    /// each under the server physics; and the bedroom's and the court's centerlines are the ones
-    /// scripts/blender/pocabinet-bedroom.py and pocabinet-court.py checked against their scans (--fixture),
-    /// so the road the script cleared of furniture is the road the race is run on.
-    /// </summary>
-    private static void EveryTrack_IsDefinedAndThemed_AnOfficialFinishesALap_AndTheBlenderRouteIsTheRaceRoad()
-    {
-        string[] sceneThemes = ["capitol", "maralago", "pressbriefing", "senate", "playground", "bedroom", "court"];
-        var ids = PoCabinetCatalog.Tracks.Select(t => t.Id).Append(PoCabinetDailyTrack.TodayId(DateTime.UtcNow)).ToList();
-        var official = PoCabinetPersonality.Roster[0];
-        foreach (var id in ids)
+        // The scenery zones cover the lap once each sample, and all four are there.
+        var zoned = new int[n];
+        foreach (var z in world.Zones)
         {
-            var def = PoCabinetTrackGeometry.Get(id);
-            def.Id.Should().Be(id, $"{id} has its own geometry, not the default track's");
-            sceneThemes.Should().Contain(def.Theme ?? def.Id, $"{id}'s theme is one the scene can dress");
-
-            var sim = new PoCabinetSim(id, seed: 7,
-                [new PoCabinetDriver("bot", PoCabinetCatalog.OfficialName(official.Id), IsPlayer: false, official.Color, official.Personality, official.MaxSpeed, official.CorneringSkill, official.Id)]);
-            var car = sim.SnapshotCars()[0];
-            for (var i = 0; i < 30 * 300 && car.LapsDone < 1; i++)
-                sim.Tick(1.0 / 30.0, new Dictionary<string, PoCabinetInput>());
-            car.LapsDone.Should().BeGreaterThanOrEqualTo(1, $"an official completes a full lap of {id}");
+            for (int i = z.From; i != z.To; i = (i + 1) % n) zoned[i]++;
         }
+        zoned.Should().OnlyContain(c => c == 1, "every sample is in exactly one zone");
+        world.Zones.Select(z => z.Theme).Distinct().Should().BeEquivalentTo(["capitol", "senate", "court", "maralago"]);
 
-        // The scanned tracks: pocabinet-bedroom.py and pocabinet-court.py each write the centerline
-        // they checked against their scan.
-        foreach (var scanned in new[] { "bedroom", "court" })
+        // The scanned court: the lap crosses the part of it that is drawn, level and a hand over
+        // its floor (the scan's floor is lumpy), clear of both hoop poles (14.5 m out on its axis),
+        // on tarmac run-off; and no other stretch of the lap comes near it, because inside that
+        // rectangle the scene's own ground steps down.
+        var scan = world.Scan!;
+        scan.Should().NotBeNull();
+        double hx = scan.HalfLength * scan.Scale, hy = scan.HalfWidth * scan.Scale;
+        var on = Enumerable.Range(0, n)
+            .Where(i => Math.Abs(world.CenterXY[i * 2] - scan.X) < hx && Math.Abs(world.CenterXY[i * 2 + 1] - scan.Y) < hy)
+            .ToList();
+        on.Should().NotBeEmpty("the lap drives across the scan");
+        on.Should().BeInAscendingOrder().And.HaveCount(on[^1] - on[0] + 1, "it crosses the scan once");
+        var court = world.Zones.Single(z => z.Theme == "court");
+        on.Should().OnlyContain(i => i >= court.From && i < court.To, "the court zone holds the whole crossing");
+        on.Should().OnlyContain(i => world.CenterZ[i] == scan.FloorZ + 10 && world.CenterBank[i] == 0, "the road over the court is level");
+        on.Should().OnlyContain(i => world.RunoffLeft[i] == (int)PoCabinetRunoff.Tarmac && world.RunoffRight[i] == (int)PoCabinetRunoff.Tarmac);
+        const double BarrierFace = 40 + 3;   // tarmac run-off and the barrier's thickness
+        foreach (int side in new[] { -1, 1 })
         {
-            using var fixture = System.Text.Json.JsonDocument.Parse(
-                File.ReadAllText(Path.Combine(AppContext.BaseDirectory, "Fixtures", $"pocabinet-{scanned}-centerline.json")));
-            var script = fixture.RootElement.GetProperty("centerXY").EnumerateArray().Select(e => e.GetDouble()).ToArray();
-            var game = PoCabinetTrackGeometry.BuildCenterlineXY(PoCabinetTrackGeometry.Get(scanned));
-            game.Should().HaveSameCount(script, $"the {scanned} script and the game sample the same knots at the same steps");
-            // The knots are printed to 0.1 sim unit, so the two splines agree to well under a unit.
-            Enumerable.Range(0, game.Length).Max(i => Math.Abs(game[i] - script[i])).Should().BeLessThan(0.5,
-                $"the {scanned} route the Blender script checked is the road PoCabinet races");
+            double poleX = scan.X + side * 14.5 * scan.Scale;
+            on.Should().OnlyContain(
+                i => Math.Sqrt(Math.Pow(world.CenterXY[i * 2] - poleX, 2) + Math.Pow(world.CenterXY[i * 2 + 1] - scan.Y, 2)) > world.HalfWidths[i] + BarrierFace + 25,
+                "the barrier stands clear of the hoop's pole");
         }
     }
 
+    /// <summary>
+    /// The catalog is one track. Only its id is a track a lap may be posted on (any casing), so a
+    /// lap parked on a track the game used to have is refused; every geometry lookup returns the
+    /// circuit, whatever id an old caller still carries.
+    /// </summary>
+    private static void ThereIsOneCircuit_WhateverIdACallerCarries()
+    {
+        var track = PoCabinetCatalog.Track;
+        track.Id.Should().Be(PoCabinetCatalog.DefaultTrackId).And.Be(PoCabinetTrackGeometry.TrackId);
+        track.Name.Should().Be("Cabinet Grand Prix");
+        PoCabinetCatalog.GetTrack("capitol").Should().BeSameAs(track);
+
+        PoCabinetCatalog.IsKnownTrack(track.Id).Should().BeTrue();
+        PoCabinetCatalog.IsKnownTrack(" " + track.Id.ToUpperInvariant() + " ").Should().BeTrue();
+        foreach (var gone in new[] { "capitol", "maralago", "pressbriefing", "playground", "senate", "bedroom", "court", "daily-20261019", "", null })
+            PoCabinetCatalog.IsKnownTrack(gone).Should().BeFalse($"'{gone}' is not a track any more");
+
+        PoCabinetTrackGeometry.Get("capitol").Should().BeSameAs(PoCabinetTrackGeometry.Get());
+        PoCabinetTrackGeometry.Get().Id.Should().Be(track.Id);
+        new PoCabinetScoreDto().TrackId.Should().Be(track.Id, "a client that sends no track means the circuit");
+    }
+
+    /// <summary>
+    /// Each of the four officials, alone on the circuit, completes a lap through the real physics
+    /// on its own line (every pair's mean lateral offset over the lap differs by ≥ 8 units); a
+    /// human car flat out on full right lock ends up pinned at the barrier, never through it, and
+    /// every applied input's sequence number is acknowledged.
+    /// </summary>
     private static void EachOfficial_LapsOnItsOwnLine_AndAHumanCarObeysInputsAndTheBarrier()
     {
         const double dt = 1.0 / 30.0;
         var laterals = new Dictionary<string, double>();
         foreach (var o in PoCabinetPersonality.Roster)
         {
-            var sim = new PoCabinetSim("capitol", seed: 42,
+            var sim = new PoCabinetSim(seed: 42,
                 [new PoCabinetDriver("bot", PoCabinetCatalog.OfficialName(o.Id), IsPlayer: false, o.Color, o.Personality, o.MaxSpeed, o.CorneringSkill, o.Id)]);
             var car = sim.SnapshotCars()[0];
             var series = new List<double>();
-            for (var i = 0; i < 30 * 60 && car.LapsDone < 1; i++)
+            // A lap at a crawl (40 units/s) is the longest this waits.
+            double lap = sim.Track.LapLength;
+            for (var i = 0; i < 30 * lap / 40 && car.LapsDone < 1; i++)
             {
                 sim.Tick(dt, new Dictionary<string, PoCabinetInput>());
                 // The settled part of the lap, past the grid and the first turn-in.
                 if (car.Distance > 150) series.Add(car.Lateral);
             }
             car.LapsDone.Should().Be(1, $"{o.Id} completes a lap under the real physics");
-            // A wild lap may break track limits (no best lap), but the clock still ran.
-            car.LapStartTime.Should().BeInRange(12, 60, $"{o.Id}'s lap is a plausible arcade lap");
+            // A wild lap may break track limits (no best lap), but the clock still ran: slower
+            // than flat out all the way round, quicker than half that pace.
+            car.LapStartTime.Should().BeInRange(lap / PoCabinetPhysics.MaxSpeed, lap / (PoCabinetPhysics.MaxSpeed * 0.5),
+                $"{o.Id}'s lap is a plausible arcade lap");
             laterals[o.Id] = series.Average();
         }
         foreach (var a in laterals)
@@ -214,12 +202,12 @@ public class PoCabinetTests
                 Math.Abs(a.Value - b.Value).Should().BeGreaterThanOrEqualTo(8, $"{a.Key} and {b.Key} hold visibly different lines");
         }
 
-        var human = new PoCabinetSim("capitol", seed: 1, [new PoCabinetDriver("me", "Me", IsPlayer: true, "#fff", null)]);
+        var human = new PoCabinetSim(seed: 1, [new PoCabinetDriver("me", "Me", IsPlayer: true, "#fff", null)]);
         var me = human.SnapshotCars()[0];
-        var wall = human.Track.HalfWidth + PoCabinetPhysics.RunOff - PoCabinetPhysics.CarRadius * 0.5;
         for (var seq = 1; seq <= 150; seq++)
         {
             human.Tick(dt, new Dictionary<string, PoCabinetInput> { ["me"] = new() { Throttle = 1, Steer = 1, Seq = seq } });
+            var wall = PoCabinetPhysics.WallAt(human.Track, me.SegHint, me.Lateral > 0 ? 1 : -1);
             Math.Abs(me.Lateral).Should().BeLessThanOrEqualTo(wall + 0.5, "no car passes through the barrier");
         }
         me.AckSeq.Should().Be(150, "every applied input is acknowledged");
@@ -233,7 +221,7 @@ public class PoCabinetTests
     /// </summary>
     private static void Contacts_AreImpulsesBetweenCarShapedHulls()
     {
-        var track = PoCabinetTrack.Get("capitol");
+        var track = PoCabinetTrack.Get();
         static PoCabinetCarBody Car(double x, double y, double speed) => new() { X = x, Y = y, Speed = speed };
 
         // Nose to tail, dead centre: equal masses and restitution 0.2 turn 100 into 60 as 76 and
@@ -271,22 +259,21 @@ public class PoCabinetTests
         (100 - van.Speed).Should().BeLessThan(hatch.Speed - 60, "heavier style transfers more delta-v to lighter style");
 
         // Continuous 2-substep integration keeps a flat-out car inside barrier limits without tunneling.
-        var senate = PoCabinetTrack.Get("senate");
         var wallCar = Car(0, 0, PoCabinetPhysics.MaxSpeed);
-        PoCabinetPhysics.GridSlot(senate, wallCar, 0);
+        PoCabinetPhysics.GridSlot(track, wallCar, 0);
         wallCar.Speed = PoCabinetPhysics.MaxSpeed;
         for (int t = 0; t < 90; t++)
         {
-            PoCabinetPhysics.Step(senate, wallCar, new PoCabinetControls(1, 0, 1), PoCabinetPhysics.TickSeconds, 1);
-            double limit = PoCabinetPhysics.WallAt(senate, wallCar.SegHint, wallCar.Lateral > 0 ? 1 : -1);
+            PoCabinetPhysics.Step(track, wallCar, new PoCabinetControls(1, 0, 1), PoCabinetPhysics.TickSeconds, 1);
+            double limit = PoCabinetPhysics.WallAt(track, wallCar.SegHint, wallCar.Lateral > 0 ? 1 : -1);
             Math.Abs(wallCar.Lateral).Should().BeLessThanOrEqualTo(limit + 1e-6, "2-substep CCD stops barrier clipping");
         }
     }
 
     /// <summary>
     /// There is one lobby and no join codes: the first arrival hosts, the next arrivals share it,
-    /// the ninth is bounced. Ready toggling, the start rule, host migration, the host's picks
-    /// riding every seat, the generic host kick, the rematch loop with its ready timeout, and AI
+    /// the ninth is bounced. Ready toggling, the start rule, host migration, the host's AI-driver
+    /// pick riding every seat, the generic host kick, the rematch loop with its ready timeout, and AI
     /// officials filling free seats so a lone host can race all hold, on the shared LobbyRoom.
     /// </summary>
     private static void Lobby_FirstArrivalHosts_LaterArrivalsShareIt_AndBouncesAtCap()
@@ -297,16 +284,16 @@ public class PoCabinetTests
         room.Open("c-h", "Alice", false, "host");
         room.HostConnectionId.Should().Be("c-h", "the first arrival hosts");
         room.Open("c-2", "Bob", false, "p2");
-        room.State.Players.Should().HaveCount(2).And.OnlyContain(p => p.TrackId == PoCabinetCatalog.DefaultTrackId);
+        room.State.Players.Should().HaveCount(2).And.OnlyContain(p => p.BotCount == PoCabinetLobbyService.DefaultBots);
         for (var i = 3; i <= 8; i++) room.Open($"c-{i}", $"Player{i}", false, $"p{i}").state.Players.Should().Contain(p => p.ConnectionId == $"c-{i}");
         room.Open("c-9", "Eve", false, "p9").message.Should().Be("Lobby is full");
         room.State.Players.Should().HaveCount(PoCabinetCatalog.CarCount, "eight seats, no more");
 
-        room.SetTrack("c-2", "maralago").Should().BeFalse("only the host picks the track");
-        room.SetTrack("c-h", "maralago").Should().BeTrue();
+        room.SetBots("c-2", 0).Should().BeFalse("only the host picks the AI drivers");
         room.SetBots("c-h", 99).Should().BeTrue();
         room.BotCount.Should().Be(PoCabinetCatalog.MaxBots, "the request is clamped");
-        room.State.Players.Should().OnlyContain(p => p.TrackId == "maralago" && p.BotCount == PoCabinetCatalog.MaxBots, "the picks ride every seat");
+        room.State.Players.Should().OnlyContain(p => p.BotCount == PoCabinetCatalog.MaxBots, "the pick rides every seat");
+        System.Text.Json.JsonSerializer.Serialize(room.State.Players[0]).Should().NotContainEquivalentOf("trackId", "there is no track to pick");
         room.SetBots("c-h", PoCabinetLobbyService.DefaultBots);
 
         room.TryStart("c-h").Should().BeFalse("nobody has readied");
@@ -366,7 +353,7 @@ public class PoCabinetTests
         solo.Leave("g");
         solo.IsEmpty.Should().BeTrue();
         solo.Open("n", "New", false, "n1").state.Players.Single().BotCount.Should().Be(PoCabinetLobbyService.DefaultBots, "an emptied lobby resets the picks");
-        new PoCabinetSim("capitol", 1, fullGrid).SnapshotCars().Should().HaveCount(fullGrid.Count);
+        new PoCabinetSim(1, fullGrid).SnapshotCars().Should().HaveCount(fullGrid.Count);
     }
 
     /// <summary>

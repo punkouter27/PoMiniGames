@@ -16,8 +16,8 @@ public sealed record PoCabinetTrackIsland(int From, int To, double LatFrom, doub
     double FromAlong, double ToAlong, double HalfWidth);
 
 /// <summary>
-/// Runtime view of one track: the resampled centerline from <see cref="PoCabinetTrackGeometry"/>
-/// plus the arc-length tables and curvature the physics and AI need. Built once per track id.
+/// Runtime view of the circuit: the resampled centerline from <see cref="PoCabinetTrackGeometry"/>
+/// plus the arc-length tables and curvature the physics and AI need. Built once.
 ///
 /// <para>
 /// <b>Mirror contract:</b> <c>wwwroot/js/pocabinet/track.js</c> is a line-for-line port. The
@@ -82,7 +82,7 @@ public sealed class PoCabinetTrack
         _z = world.CenterZ.Count == Count ? [.. world.CenterZ] : null;
         _bank = world.CenterBank.Count == Count ? [.. world.CenterBank] : null;
 
-        // Point-to-point (the Playground run): the lap ends at the finish knot instead of back
+        // Point-to-point: the lap ends at the finish knot instead of back
         // at the line, and a finished car rolls on into the run-out and parks half way down
         // it instead of taking a cool-down lap, because past the run-out there is only the
         // return link. Mirrored in track.js.
@@ -203,9 +203,10 @@ public sealed class PoCabinetTrack
 
     public double TangentY(int i) => _ty[i];
 
-    public static PoCabinetTrack Get(string? trackId)
+    /// <summary>The circuit, built once.</summary>
+    public static PoCabinetTrack Get()
     {
-        var def = PoCabinetTrackGeometry.Get(trackId);
+        var def = PoCabinetTrackGeometry.Get();
         return Cache.GetOrAdd(def.Id, _ => new PoCabinetTrack(def));
     }
 

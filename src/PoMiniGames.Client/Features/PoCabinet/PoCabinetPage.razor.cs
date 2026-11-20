@@ -12,7 +12,7 @@ namespace PoMiniGamesClient.Features.PoCabinet;
 /// <summary>
 /// Code-behind for <see cref="PoCabinetPage"/>. The page lifecycle is:
 /// <list type="number">
-///   <item><b>Start</b> — the shared card: how to play and, in 1P, the track list. 1p/demo go
+///   <item><b>Start</b> — the shared card: how to play and, in 1P, the race setup. 1p/demo go
 ///         to <see cref="Phase.Loading"/>; multiplayer joins the one lobby (first in hosts; there
 ///         are no codes).</item>
 ///   <item><b>Lobby</b> — <see cref="PoCabinetLobby"/>; its <c>gameStarted</c> hand-off calls
@@ -40,7 +40,6 @@ public partial class PoCabinetPageBase : ComponentBase, IAsyncDisposable
     [Inject] private PlayerNameService PlayerNameSvc { get; set; } = default!;
     [Inject] private GameResultService GameResults { get; set; } = default!;
     [Inject] private PoCabinetSession Session { get; set; } = default!;
-    [Inject] private PoCabinetCareerState Career { get; set; } = default!;
     [Inject] private NavigationManager Nav { get; set; } = default!;
 
     [Parameter] public string? ModeSegment { get; set; }
@@ -56,7 +55,6 @@ public partial class PoCabinetPageBase : ComponentBase, IAsyncDisposable
     protected Phase _phase = Phase.Start;
     /// <summary>The stored settings are read: the opening card may render.</summary>
     protected bool _loaded;
-    protected string? _trackId = PoCabinetCatalog.DefaultTrackId;
     protected string? _color = "Indigo";
     protected int _livery = 1;
 
@@ -104,10 +102,8 @@ public partial class PoCabinetPageBase : ComponentBase, IAsyncDisposable
     protected string? _telemetrySummary;
     protected bool _hasReferenceLap;
     private bool _telemetryDrawn;
-    /// <summary>The player's car was wrecked: a DNF (no place, no stage credit).</summary>
+    /// <summary>The player's car was wrecked: a DNF (no place).</summary>
     protected bool _dnf;
-    /// <summary>What this race did for the campaign, decided when the result is recorded.</summary>
-    private (string Text, bool Good)? _campaignNote;
 
     /// <summary>Only a 1P race pauses: the server owns online time, and the demo is a broadcast.</summary>
     protected bool Pausable => Mode == GameMode.OnePlayer && _phase == Phase.Racing;
@@ -118,7 +114,7 @@ public partial class PoCabinetPageBase : ComponentBase, IAsyncDisposable
 
     protected string PlayerColorHex => PoCabinetPaintShop.HexFor(_color);
 
-    protected string TrackName => PoCabinetCatalog.GetTrack(_trackId).Name;
+    protected static string TrackName => PoCabinetCatalog.Track.Name;
 
     protected string PingClass => (_pingMs ?? 999) switch
     {
@@ -130,52 +126,26 @@ public partial class PoCabinetPageBase : ComponentBase, IAsyncDisposable
     protected string Lede => Mode == GameMode.Demo
         ? $"A hundred cars race themselves, covered like TV: the director cuts to the closest battles. {RaceLength}."
         : IsMultiplayerMode
-            ? $"Everyone who joins lands in one lobby — first in hosts and picks the track. {RaceLength}."
-            : $"Pick a track and take on {PoCabinetCatalog.SoloCarCount - 1} rivals from the middle of the grid. {RaceLength}; a top-{PoCabinetCatalog.CampaignPassPlace} finish moves the campaign on.";
+            ? $"Everyone who joins lands in one lobby — first in hosts and starts the race. {RaceLength}."
+            : $"Take on {PoCabinetCatalog.SoloCarCount - 1} rivals from the middle of the grid, on a circuit that runs from the stadium over Senate Hill, along the beach and across a giant basketball court. {RaceLength}; a top-{PoCabinetCatalog.SoloFrontRunners} finish is a win.";
 
     /// <summary>The place that earns the fanfare and counts as a win: the podium in a
     /// multiplayer-sized field (16 cars at most), the top six of the 64-car solo field.</summary>
     private int FrontRunnerCut => _totalCars > PoCabinetCatalog.OnlineGridSize ? PoCabinetCatalog.SoloFrontRunners : 3;
 
     /// <summary>
-    /// The raced track's board for the results' Top 3 (UnifiedLeaderboardEndpoints): Capitol is
-    /// bare "pocabinet", the others "pocabinet-{trackId}", a daily circuit by its dated id.
+    /// The circuit's board for the results' Top 3 (UnifiedLeaderboardEndpoints, "pocabinet").
     /// Null while the lap is with the server (a solo lap is replayed there, which takes a
     /// moment), so the board is read once the new row can be on it; and for a spectator.
     /// </summary>
-    protected string? BoardKey => _submitting || _awaitingFinal || IsSpectating || Mode == GameMode.Demo ? null
-        : (_trackId ?? PoCabinetCatalog.DefaultTrackId) is var track && track == PoCabinetCatalog.DefaultTrackId
-            ? "pocabinet" : "pocabinet-" + track;
+    protected string? BoardKey => _submitting || _awaitingFinal || IsSpectating || Mode == GameMode.Demo ? null : GameKeys.PoCabinet.Value;
 
-    /// <summary>"3 laps" on a circuit; the Playground run is point-to-point, once.</summary>
-    private string RaceLength => PoCabinetTrackGeometry.Get(_trackId).Laps is var laps && laps == 1
-        ? "One run, start to finish"
-        : $"{laps} laps";
+    /// <summary>"2 laps": the circuit's own race length.</summary>
+    private static string RaceLength => PoCabinetTrackGeometry.Get().Laps is var laps && laps == 1 ? "1 lap" : $"{laps} laps";
 
     protected static RenderFragment TitleContent => GameCatalog.TitleFor(GameKeys.PoCabinet);
 
     protected PoCabinetDrawer? _drawer;
-
-    /// <summary>What THIS race did for the campaign (1P, a stage track), as a results chip.
-    /// It used to read the career instead, so a P90 on a stage cleared last week said "cleared ✓".</summary>
-    protected (string Text, bool Good)? CampaignNote => Mode == GameMode.OnePlayer && !_awaitingFinal ? _campaignNote : null;
-
-    /// <summary>The chip for a race on campaign stage <paramref name="stage"/>, from the career as it
-    /// stood before the race was recorded.</summary>
-    private static (string Text, bool Good)? StageNote(PoCabinetCareerDto career, int stage, int position, bool dnf)
-    {
-        var n = stage + 1;
-        var cleared = career.CompletedStages.Contains(stage);
-        if (dnf) return cleared ? null : ($"Wrecked — no credit for Stage {n}", false);
-        var counts = stage == career.CurrentStageIndex || cleared;
-        if (!counts) return ($"Stage {n} opens after Stage {career.CurrentStageIndex + 1}", false);
-        if (position > PoCabinetCatalog.CampaignPassPlace)
-            return cleared ? null : ($"Stage {n}: top {PoCabinetCatalog.CampaignPassPlace} needed to advance", false);
-        var final = stage == PoCabinetCatalog.CampaignStages - 1;
-        if (final && position <= PoCabinetCatalog.CampaignTrophyPlace) return ("🏆 Campaign won", true);
-        if (final) return ($"Stage {n} cleared ✓ · a top {PoCabinetCatalog.CampaignTrophyPlace} wins the trophy", true);
-        return cleared ? null : ($"Stage {n} cleared ✓", true);
-    }
 
     private IJSObjectReference? _sceneHandle;
     private IJSObjectReference? _dialogueHandle;
@@ -208,7 +178,6 @@ public partial class PoCabinetPageBase : ComponentBase, IAsyncDisposable
 
     protected override async Task OnInitializedAsync()
     {
-        await Career.LoadAsync();
         _selfRef = DotNetObjectReference.Create(this);
         try
         {
@@ -231,7 +200,7 @@ public partial class PoCabinetPageBase : ComponentBase, IAsyncDisposable
         : _position <= FrontRunnerCut ? GameResult.Win
         : GameResult.InProgress;
 
-    /// <summary>Back on the start card (the track list re-reads the best laps the race just set).</summary>
+    /// <summary>Back on the start card.</summary>
     private Task ReturnToStartAsync()
     {
         Fire("PoCabinet.clearTrackWear");
@@ -312,14 +281,6 @@ public partial class PoCabinetPageBase : ComponentBase, IAsyncDisposable
         }
     }
 
-    protected Task OnTrackChanged(string trackId)
-    {
-        if (!string.Equals(_trackId, trackId, StringComparison.Ordinal))
-            Fire("PoCabinet.clearTrackWear");
-        _trackId = trackId;
-        return Task.CompletedTask;
-    }
-
     protected async Task OnPaintChanged(string color)
     {
         _color = color;
@@ -336,13 +297,6 @@ public partial class PoCabinetPageBase : ComponentBase, IAsyncDisposable
     /// <summary>The opening card's Start (or a demo card timing out): multiplayer joins the lobby; everything else races.</summary>
     protected async Task StartRaceAsync()
     {
-        // A demo shows a different track each time it starts itself.
-        if (Mode == GameMode.Demo)
-        {
-            // Today's daily circuit is in the draw too.
-            int pick = Random.Shared.Next(PoCabinetCatalog.Tracks.Count + 1);
-            _trackId = pick < PoCabinetCatalog.Tracks.Count ? PoCabinetCatalog.Tracks[pick].Id : PoCabinetCatalog.Today(DateTime.UtcNow).Id;
-        }
         _playerName = PlayerNameSvc.GetOrReadInitialName();
         _status = null;
         // The race view renders first (its canvas is what the mount waits for); the audio
@@ -352,15 +306,11 @@ public partial class PoCabinetPageBase : ComponentBase, IAsyncDisposable
         await UnlockAudioAsync();
     }
 
-    protected Task OnLobbyRaceStartingAsync((string Code, string TrackId) start)
-    {
-        _trackId = start.TrackId;
-        return BeginWireModeAsync(start.Code);
-    }
+    protected Task OnLobbyRaceStartingAsync(string code) => BeginWireModeAsync(code);
 
     protected Task LeaveLobbyAsync() => ReturnToStartAsync();
 
-    /// <summary>Pause card's Restart and the results' Race again: the same track, a fresh grid.</summary>
+    /// <summary>Pause card's Restart and the results' Race again: a fresh grid.</summary>
     protected async Task RestartRaceAsync()
     {
         if (IsMultiplayerMode) return;
@@ -399,14 +349,13 @@ public partial class PoCabinetPageBase : ComponentBase, IAsyncDisposable
     {
         try
         {
-            var trackId = _trackId ?? PoCabinetCatalog.DefaultTrackId;
             _gameCode = null;
             _localCarId = null;
             ResetTelemetry();
-            _world = PoCabinetTrackGeometry.BuildStaticWorld(trackId);
+            _world = PoCabinetTrackGeometry.BuildStaticWorld(PoCabinetTrackGeometry.Get());
             _totalLaps = _world.TotalLaps;
             await EnsureEngineAsync();
-            await LoadStoredRecordsAsync(trackId);
+            await LoadStoredRecordsAsync();
             await MountSceneAsync(_world);
             _status = null;
             _phase = Phase.Racing;
@@ -494,10 +443,9 @@ public partial class PoCabinetPageBase : ComponentBase, IAsyncDisposable
             WireSessionHandlers();
             var snap = await Session.JoinRaceAsync(gameCode);
             _localCarId = snap.LocalCarId;
-            _world = snap.Static ?? PoCabinetTrackGeometry.BuildStaticWorld(_trackId);
-            _trackId = _world.TrackId;
+            _world = snap.Static ?? PoCabinetTrackGeometry.BuildStaticWorld(PoCabinetTrackGeometry.Get());
             _totalLaps = _world.TotalLaps;
-            await LoadStoredRecordsAsync(_world.TrackId);
+            await LoadStoredRecordsAsync();
             await MountSceneAsync(_world);
             await JS.InvokeVoidAsync("PoCabinet.startRace", _selfRef, _sceneHandle, _minimapHandle, new
             {
@@ -929,11 +877,10 @@ public partial class PoCabinetPageBase : ComponentBase, IAsyncDisposable
     }
 
     /// <summary>
-    /// Record the result: career progress (1P stage tracks), personal records (best lap +
-    /// sectors) and the leaderboard submit. Runs once per race. The place, the DNF and the
-    /// race are read BEFORE the first await: "Race again" during the slow server check used
-    /// to reset <see cref="_position"/> under it, so the stage was recorded with the new
-    /// race's P1. Nothing here touches the page once a newer race has started.
+    /// Record the result: personal records (best lap + sectors) and the leaderboard submit.
+    /// Runs once per race. The place, the DNF and the race are read BEFORE the first await:
+    /// "Race again" during the slow server check resets <see cref="_position"/> under it.
+    /// Nothing here touches the page once a newer race has started.
     /// </summary>
     private async Task SubmitFinalAsync(double lapSeconds)
     {
@@ -944,7 +891,7 @@ public partial class PoCabinetPageBase : ComponentBase, IAsyncDisposable
         var position = _position;
         var dnf = _dnf;
         var serial = _raceSerial;
-        var trackId = _trackId ?? PoCabinetCatalog.DefaultTrackId;
+        const string trackId = PoCabinetCatalog.DefaultTrackId;
         bool Current() => serial == _raceSerial && !_disposed;
         try
         {
@@ -963,16 +910,6 @@ public partial class PoCabinetPageBase : ComponentBase, IAsyncDisposable
                     wet = proof.TryGetProperty("wet", out var w) && w.ValueKind == JsonValueKind.True;
                 }
                 catch (JSException) { /* no proof → the server refuses the lap; local records still stand */ }
-            }
-
-            // The campaign first: it is local, needs a finish rather than a lap that counted
-            // (every lap deleted for track limits still finished the race), and the results'
-            // chip and Next stage should not wait on the network.
-            if (Mode == GameMode.OnePlayer && PoCabinetCatalog.StageIndexOf(trackId) is var stage and >= 0)
-            {
-                _campaignNote = StageNote(Career.Current, stage, position, dnf);
-                if (!dnf) await Career.RecordStageResultAsync(stage, position);
-                if (Current()) await InvokeAsync(StateHasChanged);
             }
 
             try
@@ -1073,16 +1010,15 @@ public partial class PoCabinetPageBase : ComponentBase, IAsyncDisposable
         _placeAnnouncedAt = 0;
         _debrief = null;
         _dnf = false;
-        _campaignNote = null;
         _lap = 1;
         _position = 1;
         _totalCars = 0;
         _lapSeconds = 0;
     }
 
-    private async Task LoadStoredRecordsAsync(string trackId)
+    private async Task LoadStoredRecordsAsync()
     {
-        try { _laps.LoadStored(await JS.InvokeAsync<JsonElement>("PoCabinet.getRecords", trackId)); }
+        try { _laps.LoadStored(await JS.InvokeAsync<JsonElement>("PoCabinet.getRecords", PoCabinetCatalog.DefaultTrackId)); }
         catch { /* first race ever, or storage unavailable — no personal bests */ }
     }
 

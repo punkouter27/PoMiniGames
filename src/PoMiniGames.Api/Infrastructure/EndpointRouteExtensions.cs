@@ -14,7 +14,7 @@ using PoMiniGames.Features.PoEcosystem;   // cloud world slots, gallery
 using PoMiniGames.Features.PoFighter;
 using PoMiniGames.Features.PoFunQuiz;
 using PoMiniGames.Features.PoRacer;
-using PoMiniGames.Features.PoCabinet;     // career, score, lobby + race hubs
+using PoMiniGames.Features.PoCabinet;     // score, lobby + race hubs
 using PoMiniGames.Features.PoVoxelStrike;
 using PoMiniGames.Features.PoMule;
 

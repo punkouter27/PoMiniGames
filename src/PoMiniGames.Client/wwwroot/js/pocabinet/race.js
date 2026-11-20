@@ -256,12 +256,10 @@ class Race {
             this.scene.scenery.onFlash = (pos) => audio.shutter(pos, 0.8);
         }
 
-        // Wet-road light streaks (they show only in the rain, on the low tier), not on the
-        // Playground's chute; each streak is drawn at its car's road height.
+        // Wet-road light streaks (they show only in the rain, on the low tier); each streak is
+        // drawn at its car's road height.
         this.reflections = null;
-        if (!this.track.roadFrom) {
-            try { this.reflections = new WetReflections(this.scene); } catch { this.reflections = null; }
-        }
+        try { this.reflections = new WetReflections(this.scene); } catch { this.reflections = null; }
         this.moments = { lastPos: this.local?.position ?? 0, overtakeAt: 0, standAt: 0, finished: false, raceStart: 0 };
         this.gauge = null;
 
@@ -360,8 +358,8 @@ class Race {
         body.y = Number(s.y) || 0;
         body.heading = Number(s.heading) || 0;
         body.speed = (Number(s.speedKmh) || 0) / ph.KMH_PER_UNIT;
-        // A body with no hint yet takes the server's lap fraction as one: the Playground run
-        // crosses over itself, and a blind nearest-point search can land on the wrong level.
+        // A body with no hint yet takes the server's lap fraction as one: where a course
+        // crosses over itself a blind nearest-point search can land on the wrong level.
         if (body.segHint < 0) body.segHint = this.track.indexAt((Number(s.lapProgress) || 0) * this.track.length);
         const proj = this.track.project(body.x, body.y, body.segHint);
         body.segHint = proj.index;
@@ -1276,8 +1274,8 @@ class Race {
     /**
      * Seconds the local car is up (negative) or down on the lap to beat, at this point of the
      * lap; null when there is nothing to compare. The first lap of a circuit race is a standing
-     * start from the grid against a flying lap, so it shows nothing; a one-run track (the
-     * Playground) compares from the start, run against run.
+     * start from the grid against a flying lap, so it shows nothing; a point-to-point run
+     * compares from the start, run against run.
      */
     liveDelta() {
         const car = this.local, ref = this.deltaRef, rec = this.rec;

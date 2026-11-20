@@ -125,7 +125,7 @@ const api = {
     applySettings(sceneHandle, settings) {
         if (sceneHandle && !sceneHandle.disposed) {
             sceneHandle.applyView(settings);
-            // "Room scans": auto, the full splat or the lite mesh (PoCabinetUiSettings.RoomDetail).
+            // "Scan detail": auto, the full splat or the lite mesh (PoCabinetUiSettings.RoomDetail).
             if (settings?.roomDetail) sceneHandle.setRoomDetail(settings.roomDetail);
         }
         setComputeMode(settings?.gpuCompute || 'auto');
