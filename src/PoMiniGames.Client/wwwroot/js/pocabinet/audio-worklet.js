@@ -1,22 +1,13 @@
 // pocabinet/audio-worklet.js
 //
-// Sample-accurate AudioWorklet procedural modal synthesis (#6, #12):
-//   - 32-slot damped 2-pole resonant eigenmode bank (car_0..4, wall, divider), struck only for a hit the ear is in
-//   - Zone-shaped strikes (front engine bay = warm/steam hiss, side = hollow door, glass crack cascade)
-//   - Sample-rate stick-slip chatter impulses for continuous wall scrape & tire scrub texture
+// Sample-accurate AudioWorklet synthesis (#6, #12):
+//   - A hit the ear is in: steam hiss after a hard frontal one, a glass crack cascade after a very
+//     hard one. No tuned ring: the bank of body modes a hit used to strike played like a xylophone.
+//   - Sample-rate stick-slip chatter (a 32-slot bank of damped 2-pole resonators) for a continuous
+//     wall scrape, and tire scrub texture
 
 const MAX_MODES = 32;
 const MAX_GRAINS = 24;
-
-const PROFILES = {
-    wall: { f: [118, 295, 620, 1140, 1980, 3150], q: [14, 24, 32, 38, 28, 22], a: [0.36, 0.28, 0.22, 0.16, 0.10, 0.06] },
-    divider: { f: [96, 210, 480, 960, 1620], q: [18, 26, 30, 26, 20], a: [0.42, 0.30, 0.20, 0.12, 0.07] },
-    car_0: { f: [158, 390, 780, 1460, 2420, 3680], q: [16, 28, 36, 42, 34, 24], a: [0.32, 0.28, 0.24, 0.18, 0.11, 0.06] },
-    car_1: { f: [195, 480, 980, 1820, 2960, 4420], q: [18, 30, 40, 44, 34, 24], a: [0.28, 0.26, 0.24, 0.18, 0.12, 0.07] },
-    car_2: { f: [140, 340, 690, 1280, 2180, 3360], q: [16, 26, 34, 38, 30, 22], a: [0.35, 0.28, 0.22, 0.16, 0.10, 0.06] },
-    car_3: { f: [122, 290, 580, 1120, 1880, 2920], q: [15, 25, 32, 36, 28, 20], a: [0.38, 0.30, 0.22, 0.15, 0.09, 0.05] },
-    car_4: { f: [168, 420, 840, 1560, 2580, 3920], q: [17, 29, 38, 42, 32, 24], a: [0.31, 0.27, 0.23, 0.17, 0.11, 0.06] },
-};
 
 class ModalBankProcessor extends AudioWorkletProcessor {
     constructor() {
@@ -76,17 +67,9 @@ class ModalBankProcessor extends AudioWorkletProcessor {
     onMsg(d) {
         if (!d) return;
         if (d.type === 'strike') {
-            const prof = PROFILES[d.mat] || PROFILES.wall;
+            // A hit rings nothing: only what is not a note is made here.
             const s = Math.min(1.2, Math.max(0.05, d.strength || 0.3));
             const zone = d.zone || 'side';
-            const zonePitch = zone === 'front' ? 0.92 : zone === 'rear' ? 1.07 : 1.0;
-            const pMul = (d.pitch || 1) * zonePitch;
-            const n = prof.f.length;
-            for (let k = 0; k < n; k++) {
-                const jitter = 0.96 + this.rnd() * 0.08;
-                const bright = k >= 3 ? (0.45 + 0.7 * s) : 1.0;
-                this.triggerMode(prof.f[k] * pMul * jitter, prof.q[k] * (0.85 + 0.3 * s), prof.a[k] * s * bright);
-            }
             // Radiator steam burst on heavy frontal impacts (#6)
             if (zone === 'front' && s > 0.55) {
                 this.steamEnv = Math.min(0.65, this.steamEnv + (s - 0.5) * 0.75);
@@ -99,14 +82,6 @@ class ModalBankProcessor extends AudioWorkletProcessor {
                     const delayMs = 4 + this.rnd() * 140;
                     const freq = 2200 + this.rnd() * 5200;
                     this.triggerGrain((delayMs * 0.001 * sampleRate) | 0, (0.018 * sampleRate) | 0, freq, 0.09 * crack * (1 - k * 0.07));
-                }
-            }
-            // Heavy hit secondary interior trim rattle (#6)
-            if (s > 0.5) {
-                const rattles = Math.min(5, Math.floor((s - 0.45) * 9));
-                for (let k = 0; k < rattles; k++) {
-                    const delayMs = 22 + k * (16 + this.rnd() * 20);
-                    this.triggerGrain((delayMs * 0.001 * sampleRate) | 0, (0.012 * sampleRate) | 0, 820 + this.rnd() * 1600, 0.055 * s * (1 - k / (rattles + 1)));
                 }
             }
         } else if (d.type === 'scrape') {
@@ -133,7 +108,7 @@ class ModalBankProcessor extends AudioWorkletProcessor {
                 sum += y0;
             }
 
-            // Granular glass shards & loose trim rattles
+            // Granular glass shards
             for (let g = 0; g < MAX_GRAINS; g++) {
                 if (this.gLen[g] <= 0) continue;
                 if (this.gDelay[g] > 0) {

@@ -1241,14 +1241,16 @@ export function cheer(strength = 1, pos = null) {
 
 // ── One-shots & Material-Matrix Modal Audio (#1, #9) ────────────────────────
 
-const MODAL_BANK = {
-    wall: { thump: [115, 42], modes: [310, 840, 1680, 2950], decays: [0.16, 0.11, 0.075, 0.04], amps: [0.06, 0.048, 0.032, 0.02], band: 2250, ring: 'triangle' },
-    divider: { thump: [92, 34], modes: [185, 440, 920], decays: [0.14, 0.09, 0.045], amps: [0.085, 0.055, 0.026], band: 1450, ring: 'sine' },
-    car_0: { thump: [168, 66], modes: [620, 1340, 2480], decays: [0.11, 0.08, 0.045], amps: [0.045, 0.036, 0.022], band: 2900, ring: 'triangle' },
-    car_1: { thump: [182, 74], modes: [710, 1520, 2780], decays: [0.095, 0.068, 0.038], amps: [0.042, 0.034, 0.02], band: 3200, ring: 'triangle' },
-    car_2: { thump: [142, 54], modes: [460, 1020, 2060], decays: [0.135, 0.095, 0.055], amps: [0.055, 0.04, 0.024], band: 2350, ring: 'triangle' },
-    car_3: { thump: [128, 48], modes: [380, 860, 1780], decays: [0.15, 0.105, 0.06], amps: [0.06, 0.042, 0.025], band: 2100, ring: 'triangle' },
-    car_4: { thump: [154, 60], modes: [530, 1180, 2320], decays: [0.12, 0.085, 0.05], amps: [0.05, 0.038, 0.022], band: 2650, ring: 'triangle' },
+// What a hit sounds like by what was hit: the sweep of its body thump and the centre of its
+// crunch. There is no tuned ring any more (it read as a xylophone over the race).
+const HIT_BANK = {
+    wall: { thump: [115, 42], band: 2250 },
+    divider: { thump: [92, 34], band: 1450 },
+    car_0: { thump: [168, 66], band: 2900 },
+    car_1: { thump: [182, 74], band: 3200 },
+    car_2: { thump: [142, 54], band: 2350 },
+    car_3: { thump: [128, 48], band: 2100 },
+    car_4: { thump: [154, 60], band: 2650 },
 };
 const HRTF_POOL_SIZE = 10;
 
@@ -1291,7 +1293,7 @@ export function impact(strength, kind = 'wall', pos = null, meta = null) {
     const car = kind === 'car';
     music?.hit(pos ? s * 0.35 : s);
     const matKey = car ? `car_${((meta?.style ?? 0) % 5 + 5) % 5}` : (kind === 'divider' ? 'divider' : 'wall');
-    const m = MODAL_BANK[matKey] || MODAL_BANK.wall;
+    const m = HIT_BANK[matKey] || HIT_BANK.wall;
     const pitch = 0.88 + 0.24 * s;
     const bright = 0.6 + 0.65 * s;
     const len = 0.65 + 0.55 * s;
@@ -1303,31 +1305,21 @@ export function impact(strength, kind = 'wall', pos = null, meta = null) {
     if (graze > 0.15) {
         burst('bandpass', 3200 + graze * 1400, 3.5, 0.06 + 0.14 * graze, 0.09 * graze * (0.4 + 0.6 * s), t + 0.01, dest);
     }
-    // The tuned ring (the modal bank, or its Web Audio stand-in below) is only for a hit the ear
-    // is in. The bank is one unplaced voice at full level, and a 64-car pack is in contact about
-    // twenty times a second somewhere on the lap: rung for every one of those it played like a
-    // xylophone over the whole race. Another pair's shunt keeps the thump and crunch above,
-    // placed where it happened and fading with distance.
+    // Nothing here is tuned: the hit is the thump and crunch above plus a band of noise. The ring
+    // of the struck body (a bank of resonant modes) is gone, for the car the ear is in as well as
+    // for the rest of the field. The worklet keeps what is not a note: steam after a hard frontal
+    // hit and breaking glass after a very hard one. Another pair's shunt (it has a place) stops
+    // at the thump and crunch: a 64-car pack is in contact about twenty times a second.
     if (pos) return;
-    if (modalReady && modalNode) {
-        modalNode.port.postMessage({
-            type: 'strike',
-            mat: matKey,
-            zone: meta?.zone || (car ? 'side' : 'front'),
-            strength: s,
-            pitch,
-            glassCrack: meta?.glass ?? (s > 0.65 ? s : 0),
-            graze,
-        });
-        return;
-    }
-
     burst('bandpass', m.band * (0.85 + 0.3 * s), 5.5, 0.09 * len, 0.11 * s, t + 0.008, dest);
-    for (let k = 0; k < m.modes.length; k++) {
-        const f = m.modes[k] * pitch * (0.97 + Math.random() * 0.06);
-        sweep(f, f * 0.96, m.decays[k] * len, m.ring, m.amps[k] * s, t + 0.002 * k, dest);
-    }
     if (!car && s > 0.6) burst('bandpass', 4200, 3, 0.16 * len, 0.05 * (s - 0.6) / 0.4, t + 0.018, dest);
+    if (!modalReady || !modalNode) return;
+    modalNode.port.postMessage({
+        type: 'strike',
+        zone: meta?.zone || (car ? 'side' : 'front'),
+        strength: s,
+        glassCrack: meta?.glass ?? (s > 0.65 ? s : 0),
+    });
 }
 
 /** Press-camera shutter: two clicks and a faint flash-charge whine. Rate-limited. */
