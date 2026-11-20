@@ -12,8 +12,13 @@
 //   4. parked   a piece dropped on a stopped car does not end up inside it
 //   5. driven   a car driven through a pile clears it out of its path
 //   6. cost     the time a 60 Hz step takes with the high tier's 160 pieces
+//   7. props    the tyre stacks and cones (props.js) stand on run-off, clear of the road, the
+//               kerbs, the gravel, the barriers and each other
+//   8. standing every prop, once a car nearby has started it, still stands where it was put; a
+//               car at walking pace moves a stack that has gone back to sleep (woken as debris.js
+//               rouse() wakes it), and a car at speed scatters the cones
 //
-// Exits non-zero if any check fails. Run it after changing debris-rapier.js or the track.
+// Exits non-zero if any check fails. Run it after changing debris-rapier.js, props.js or the track.
 import fs from 'node:fs';
 import path from 'node:path';
 import { pathToFileURL, fileURLToPath } from 'node:url';
@@ -30,6 +35,7 @@ if (!fs.existsSync(worldFile)) {
 const { buildTrack } = await import(pathToFileURL(path.join(js, 'track.js')));
 const { RapierDebris } = await import(pathToFileURL(path.join(js, 'debris-rapier.js')));
 const ph = await import(pathToFileURL(path.join(js, 'physics.js')));
+const { placeProps, TYRE, CONE } = await import(pathToFileURL(path.join(js, 'props.js')));
 await RAPIER.init();
 
 const WS = 10;
@@ -236,6 +242,96 @@ const check = (name, ok, detail) => { results.push(ok); console.log(`${ok ? 'ok 
     run(solver, bodies, 2);
     const ms = (performance.now() - t0) / 120;
     check('cost', ms < 4, `160 pieces falling in a heap: ${ms.toFixed(2)} ms a step`);
+    solver.dispose();
+}
+
+// 7. props
+const props = placeProps(track);
+{
+    let onRoad = 0, out = 0, close = 0;
+    const stands = [];
+    for (const p of props) {
+        const pr = track.project(p.x, p.y, p.index);
+        const surf = ph.surfaceAt(track, pr.index, pr.lateral);
+        if ([ph.SURF_ROAD, ph.SURF_KERB, ph.SURF_SAUSAGE].includes(surf) || (surf === ph.SURF_GRAVEL && p.kind === 'cone')) onRoad++;
+        const side = pr.lateral > 0 ? 1 : -1;
+        const reach = (p.kind === 'cone' ? CONE.radius : TYRE.radius) * WS;
+        if (Math.abs(pr.lateral) + reach > track.hwAt(pr.index) + ph.runOffAt(track, pr.index, side)) out++;
+        if (p.kind === 'cone' || p.up < TYRE.half * 2) {
+            if (stands.some(o => Math.hypot(o.x - p.x, o.y - p.y) < 6)) close++;
+            stands.push(p);
+        }
+    }
+    const tyres = props.filter(p => p.kind === 'tyre').length;
+    check('props', props.length > 20 && onRoad === 0 && out === 0 && close === 0,
+        `${tyres} tyres in ${tyres / 3} stacks and ${props.length - tyres} cones: ${onRoad} on the road or a kerb (or a cone on gravel), ${out} in a barrier, ${close} on top of another`);
+}
+
+// 8. standing
+{
+    const solver = new RapierDebris(RAPIER, track, WS);
+    // As debris.js standProps makes them (square to the road, old enough for the cars' boxes)
+    // and rouse() starts them: awake, in the engine.
+    const up = new THREE.Vector3(0, 1, 0), n = new THREE.Vector3();
+    const bodies = props.map((p) => {
+        const i = p.index, g = track.grade(i), k = track.bankOf(i);
+        n.set(-(g * track.tx[i] - k * track.ty[i]), 1, -(g * track.ty[i] + k * track.tx[i])).normalize();
+        const floor = ((track.z ? track.z[i] : 0) + p.lat * k) / WS + 0.02;
+        const pos = new THREE.Vector3(p.x / WS, floor, p.y / WS).addScaledVector(n, p.up);
+        const b = p.kind === 'cone' ? piece(0, [CONE.radius, CONE.half, CONE.radius], pos.toArray()) : piece(1, [TYRE.radius, TYRE.half], pos.toArray());
+        b.q.setFromUnitVectors(up, n);
+        b.cone = p.kind === 'cone'; b.age = 10; b.hint = i; b.prop = p;
+        b.grip = b.cone ? 1.3 : 1.8; b.e = b.cone ? 0.3 : 0.5; b.roll = b.cone ? 1.2 : 0.9;
+        solver.add(b);
+        return b;
+    });
+    const start = bodies.map(b => b.p.clone());
+    run(solver, bodies, 6);
+    let drifted = 0, worst = 0;
+    bodies.forEach((b, k) => {
+        const d = b.p.distanceTo(start[k]);
+        worst = Math.max(worst, d);
+        if (d > 0.06) {
+            drifted++;
+            if (process.env.DEBRIS_VERBOSE) console.log(`   moved: ${b.cone ? 'cone' : 'tyre'} at sample ${b.prop.index}, ${d.toFixed(3)} (${(b.p.y - start[k].y).toFixed(3)} of it up), bank ${track.bankOf(b.prop.index).toFixed(3)}, grade ${track.grade(b.prop.index).toFixed(3)}`);
+        }
+    });
+
+    // A car at walking pace into the first stack: only its box can move the tyres.
+    const stack = bodies.filter(b => !b.cone && b.prop.index === props.find(p => p.kind === 'tyre').index);
+    const sp = stack[0].prop;
+    const tangent = Math.atan2(track.ty[sp.index], track.tx[sp.index]);
+    const slow = { render: { x: sp.x - track.tx[sp.index] * 60, y: sp.y - track.ty[sp.index] * 60, h: stack[0].p.y - TYRE.half, heading: tangent, speed: 25 } };
+    const top0 = stack[stack.length - 1].p.clone();
+    const asleepFirst = stack.every(b => b.rb.isSleeping());
+    run(solver, bodies, 5, () => {
+        slow.render.x += track.tx[sp.index] * 25 / 60; slow.render.y += track.ty[sp.index] * 25 / 60;
+        // debris.js rouse(): the engine does not wake a sleeping piece for a car's box.
+        for (const b of stack) if (Math.hypot(b.p.x - slow.render.x / WS, b.p.z - slow.render.y / WS) < 3.2) solver.wake(b);
+        solver.syncCars([slow]);
+    });
+    run(solver, bodies, 3, () => solver.syncCars([]));
+    const toppled = stack[stack.length - 1].p.distanceTo(top0);
+
+    // A car at speed along the first row of cones.
+    const cones = bodies.filter(b => b.cone);
+    const cp = cones[0].prop, c0 = cones.map(b => b.p.clone());
+    const side = cp.lat > 0 ? 1 : -1;
+    let along = track.cum[cp.index] - 250;
+    const fast = { render: { x: 0, y: 0, h: 0, heading: 0, speed: 280 } };
+    run(solver, bodies, 3, () => {
+        along += 280 / 60;
+        const i = track.indexAt(along), q = track.pointAt(along);
+        const lat = side * (track.hwAt(i) + ph.KERB_OUTER + 3);
+        Object.assign(fast.render, { x: q.x - q.ty * lat, y: q.y + q.tx * lat, h: (track.heightAt(along) + lat * track.bankAt(along)) / WS, heading: Math.atan2(q.ty, q.tx) });
+        solver.syncCars([fast]);
+    });
+    run(solver, bodies, 5, () => solver.syncCars([]));
+    let thrown = 0, low = 0, gone = 0;
+    cones.forEach((b, k) => { if (b.p.distanceTo(c0[k]) > 1) thrown++; });
+    for (const b of bodies) { const w = where(b); if (w.over < -0.03) low++; if (w.inside < -0.05) gone++; }
+    check('standing', drifted === 0 && asleepFirst && toppled > 0.5 && thrown >= 2 && low === 0 && gone === 0,
+        `${bodies.length} props started and left alone for 6 s: ${drifted} moved (most ${worst.toFixed(3)}), the first stack ${asleepFirst ? 'asleep again' : 'STILL AWAKE'}; a car at 2.5 u/s then moved its top tyre ${toppled.toFixed(2)}; a car at 28 u/s threw ${thrown} cones; ${low} under the road, ${gone} past a barrier`);
     solver.dispose();
 }
 

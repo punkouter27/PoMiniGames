@@ -58,7 +58,7 @@ import { buildTrack, wrapAngle, rubberAt } from './track.js';
 import * as ph from './physics.js';
 import { attachInput } from './input.js';
 import { mountCar, unmountCar, CarCrowd } from './cars.js';
-import { updateDebris, clearDebris } from './debris.js';
+import { updateDebris, clearDebris, standProps } from './debris.js';
 import * as audio from './audio.js';
 import { currentEnvironment } from './environment.js';
 import { lapTraces, bestTrace, loadPbTrace, savePbTrace, renderTelemetry, debriefFacts, traceTimeAt } from './telemetry.js';
@@ -245,6 +245,8 @@ class Race {
                 persistWear: this.mode === 'solo',
             });
         } catch { this.fx = null; }
+        // The trackside props (tyre stacks, cones): stood afresh for every race.
+        try { standProps(this.scene.scene, this.track); } catch (e) { console.warn('[pocabinet] no trackside props:', e); }
         const pb = getRecords(this.track.id).bestLap;
         this.pbLap = pb > 0 ? pb : -1;
         this.timeScale = 1;

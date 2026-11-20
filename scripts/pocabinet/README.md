@@ -50,11 +50,20 @@ it also runs in node:
 node scripts/pocabinet/debris-check.mjs      # once: npm ci --prefix scripts/pocabinet, and the world dump above
 ```
 
-It builds the real circuit's road and barriers, drops pieces on it and checks six things: they
+It builds the real circuit's road and barriers, drops pieces on it and checks eight things: they
 settle on the road between the barriers, a bumper dropped on a wheel lies on it, a piece thrown
 at a barrier at a car's top speed stays in, a piece dropped on a stopped car does not end up
-inside it, a car driven through a pile clears it, and a step with the high tier's 160 pieces
-stays under 4 ms. Run it after changing `debris-rapier.js` or the track's width or run-off.
+inside it, a car driven through a pile clears it, a step with the high tier's 160 pieces
+stays under 4 ms, the props stand only on run-off clear of the road, the kerbs, the barriers and
+each other, and every prop stands still once started until a car moves it. Run it after changing
+`debris-rapier.js`, `props.js` or the track's width or run-off.
+
+The props (`wwwroot/js/pocabinet/props.js`: a stack of three tyres at the apex of each bend, a
+row of cones along its exit) are the same render-only bodies. Where they stand is a pure function
+of the track, so every player sees the same ones; what happens to them is each player's own. A
+prop is in neither solver until a car is about to touch it (`debris.js` `rouse()`), and the
+engine's road is built from the same points as the road that is drawn (`meshes.js` `ribbon()`),
+so a piece lies on the tarmac the player sees.
 
 ## Radio voices
 

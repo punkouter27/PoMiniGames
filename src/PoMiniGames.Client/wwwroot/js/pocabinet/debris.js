@@ -41,6 +41,12 @@
 // there a while, the oldest sinks into the ground and is gone. Reduced motion
 // (scene.fx.reduced) throws a third as many and gently: they drop off rather than fly.
 //
+// Props (standProps: props.js says where) are the same bodies with no end: a stack of tyres on
+// the inside of a corner, cones along its exit. A prop only stands there, in neither solver,
+// until a car comes within a few lengths (rouse()): from then on it is a piece like any other,
+// except that it is outside the caps and the clear-away clock and lies where it fell until the
+// race is over. They are drawn as two more instanced meshes.
+//
 // Pieces are silent (2026-11-20: their clatter, a tuned ping for every bounce anywhere on the
 // lap, played like a xylophone through the whole race).
 //
@@ -52,6 +58,8 @@ import { wallFace } from './terrain.js';
 import { surfaceAt, SURF_GRAVEL, SURF_GRASS } from './physics.js';
 import { WORLD_SCALE as WS } from './util.js';
 import { loadRapier, RapierDebris } from './debris-rapier.js';
+import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
+import { placeProps, TYRE, CONE } from './props.js';
 
 const STEP = 1 / 60;
 const MAX_STEPS = 6;
@@ -69,12 +77,14 @@ const CAPACITY = 220;          // instances per kind: the top cap and the ones s
 const MAX_W = 40;              // rad/s
 
 const BOX = 0, DISC = 1;
-const PANEL = 0, CHUNK = 1, GLASS = 2, HUBCAP = 3, PART = 4;
+const PANEL = 0, CHUNK = 1, GLASS = 2, HUBCAP = 3, PART = 4, CONE_PROP = 5, TYRE_PROP = 6;
 
 const bodies = [];
 let world = null;              // the race (track, cars, scene, fx), from updateDebris
 let acc = 0;
 let kinds = null;              // the instanced meshes, built on the first throw
+let propKinds = null;          // the props' two (CONE_PROP, TYRE_PROP), built by standProps
+let propCount = 0;
 let sparkBudget = 0;
 let RAPIER = null;             // the engine's module, once loaded
 let rapierAsked = false;
@@ -149,6 +159,9 @@ function newBody(kind, shape, p, q, v, w) {
         e: 0.35, roll: 2, metal: true, floor: p.y - 0.5, hint: -1,
         asleep: false, still: 0, age: 0, rest: 0, sink: -1, kickT: 0,
         rb: null, col: null,   // its body and collider under Rapier (debris-rapier.js)
+        prop: false, cone: false,   // a trackside prop (no caps, no end); a cone (a hull under Rapier, a box here)
+        standing: false, stand: -1, // a prop no car has reached yet, and which stand it is part of
+        grip: 1,                    // friction over a loose part's (rubber: a stack must not slide apart on a banked corner)
     };
     return b;
 }
@@ -228,7 +241,7 @@ function ensureEngine() {
         rapierOff = true;
         return;
     }
-    engine(() => { for (const b of bodies) if (b.sink < 0) rapier.add(b); });
+    engine(() => { for (const b of bodies) if (b.sink < 0 && !b.standing) rapier.add(b); });
 }
 
 /** Which solver is stepping the pieces: 'rapier' or 'builtin' (for checks in a browser console). */
@@ -253,13 +266,113 @@ function enforceCaps() {
     let live = 0, parts = 0;
     for (let i = bodies.length - 1; i >= 0; i--) {
         const b = bodies[i];
-        if (b.sink >= 0) continue;
+        if (b.sink >= 0 || b.prop) continue;
         if (b.kind === PART && ++parts > partCap) { b.sink = 0; continue; }
         if (++live > cap) b.sink = 0;
     }
-    for (let i = 0; bodies.length > cap + 40 && i < bodies.length;) {
+    for (let i = 0; bodies.length - propCount > cap + 40 && i < bodies.length;) {
         if (bodies[i].sink >= 0) removeAt(i); else i++;
     }
+}
+
+// ── Props ───────────────────────────────────────────────────────────────
+
+/** A traffic cone about its middle: three bands (orange, white, orange) on a square foot. */
+function coneGeometry() {
+    const h = CONE.half * 2, r = CONE.radius;
+    const paint = (g, hex) => {
+        const c = new THREE.Color(hex), n = g.attributes.position.count, a = new Float32Array(n * 3);
+        for (let i = 0; i < n; i++) { a[i * 3] = c.r; a[i * 3 + 1] = c.g; a[i * 3 + 2] = c.b; }
+        g.setAttribute('color', new THREE.BufferAttribute(a, 3));
+        return g;
+    };
+    const band = (y0, y1, hex) => {
+        // The cone's radius at a height: its full width at the foot, a blunt tip.
+        const at = (y) => r * 0.82 * (1 - (y + CONE.half) / h) + 0.022;
+        return paint(new THREE.CylinderGeometry(at(y1), at(y0), y1 - y0, 14, 1, false).translate(0, (y0 + y1) / 2, 0), hex);
+    };
+    const foot = 0.035;
+    const parts = [
+        paint(new THREE.BoxGeometry(r * 2, foot, r * 2).translate(0, -CONE.half + foot / 2, 0), '#d94f0a'),
+        band(-CONE.half + foot, -CONE.half + h * 0.42, '#ff6a13'),
+        band(-CONE.half + h * 0.42, -CONE.half + h * 0.66, '#f4f1ea'),
+        band(-CONE.half + h * 0.66, CONE.half, '#ff6a13'),
+    ];
+    const g = mergeGeometries(parts, false);
+    for (const p of parts) p.dispose();
+    return g;
+}
+
+/** A tyre lying flat (its axis +Y), TYRE.radius across and TYRE.half * 2 thick. */
+function tyreGeometry() {
+    return new THREE.TorusGeometry(TYRE.radius - TYRE.half, TYRE.half, 10, 22).rotateX(Math.PI / 2);
+}
+
+function dropProps() {
+    if (propKinds) {
+        for (const m of Object.values(propKinds)) {
+            m.parent?.remove(m);
+            m.geometry.dispose();
+            m.material.dispose();
+        }
+    }
+    propKinds = null;
+    propCount = 0;
+}
+
+/**
+ * Stand the track's props (props.js placeProps) on the road: every tyre and cone a body of its
+ * own, asleep where it stands, square to the road's own plane (a banked corner tilts the stack
+ * with it). Replaces whatever props stood before. Returns how many there are.
+ */
+export function standProps(parent, track) {
+    for (let i = bodies.length - 1; i >= 0; i--) if (bodies[i].prop) removeAt(i);
+    dropProps();
+    if (!parent || !track) return 0;
+    const list = placeProps(track);
+    if (!list.length) return 0;
+    const cones = list.filter(p => p.kind === 'cone').length;
+    const make = (geom, mat, count) => {
+        const m = new THREE.InstancedMesh(geom, mat, Math.max(1, count));
+        m.frustumCulled = false;      // they stand all round the lap
+        m.castShadow = true;
+        m.receiveShadow = true;
+        m.count = 0;
+        m.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
+        m.name = 'pocabinet-props';
+        parent.add(m);
+        return m;
+    };
+    propKinds = {
+        [CONE_PROP]: make(coneGeometry(), new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.62, metalness: 0 }), cones),
+        [TYRE_PROP]: make(tyreGeometry(), new THREE.MeshStandardMaterial({ color: '#16171a', roughness: 0.93, metalness: 0 }), list.length - cones),
+    };
+    const still = new THREE.Vector3(), n = new THREE.Vector3(), tilt = new THREE.Quaternion();
+    for (const p of list) {
+        const i = p.index;
+        const g = track.grade(i), k = track.bankOf(i);
+        n.set(-(g * track.tx[i] - k * track.ty[i]), 1, -(g * track.ty[i] + k * track.tx[i])).normalize();
+        const floor = ((track.z ? track.z[i] : 0) + p.lat * k) / WS + ROAD_LIFT;
+        _p.set(p.x / WS, floor, p.y / WS).addScaledVector(n, p.up);
+        // Turned a different way each (a fixed turn by where it stands), then laid on the road.
+        _q.setFromAxisAngle(UP, (i * 2.399 + p.up * 5.1) % (Math.PI * 2));
+        _q.premultiply(tilt.setFromUnitVectors(UP, n));
+        const b = newBody(p.kind === 'cone' ? CONE_PROP : TYRE_PROP, BOX, _p, _q, still, still);
+        if (p.kind === 'cone') {
+            asBox(b, CONE.radius, CONE.half, CONE.radius);
+            b.cone = true; b.e = 0.3; b.roll = 1.2; b.grip = 1.3;
+        } else {
+            asDisc(b, TYRE.radius, TYRE.half);
+            b.e = 0.5; b.roll = 0.9; b.grip = 1.8;
+        }
+        b.prop = true; b.metal = false; b.asleep = true;
+        b.standing = true; b.stand = p.stand;
+        b.age = 10;                // no car threw it: the cars' boxes have it from the start
+        b.hint = i; b.floor = floor;
+        bodies.push(b);
+    }
+    propCount = list.length;
+    return propCount;
 }
 
 const _v = new THREE.Vector3();
@@ -592,6 +705,47 @@ function pushOut(b) {
     }
 }
 
+// ── Cars rouse it ───────────────────────────────────────────────────────
+
+/**
+ * A car about to reach something that is not being stepped starts it: a standing prop
+ * joins the solver (with the rest of its stack), and under Rapier a piece asleep on the road is
+ * woken, because the engine does not wake a sleeping body for a car's box that has reached it.
+ */
+function rouse() {
+    const cars = world?.cars;
+    if (!Array.isArray(cars) || !cars.length) return;
+    for (const b of bodies) {
+        // (Without Rapier a standing prop waits for the kick itself: started early, a stack
+        // would slump before the car arrived, because that solver cannot stack.)
+        if (b.sink >= 0 || !rapier || !(b.standing || (b.rb && b.asleep))) continue;
+        for (const car of cars) {
+            const r = car.render;
+            if (!r || !Number.isFinite(r.x)) continue;
+            // The car's own footprint and a little round it, stretched ahead by what it covers
+            // in the next few steps: a car that only goes by on the road wakes nothing (a prop
+            // woken for every passing car is a body stepped all race).
+            const sp = Math.abs(Number(r.speed) || 0) / WS;
+            const reach = HALF_L + 1 + sp * 0.07;
+            const dx = b.p.x - r.x / WS, dz = b.p.z - r.y / WS;
+            if (dx > reach || dx < -reach || dz > reach || dz < -reach) continue;
+            if (Math.abs((Number(r.h) || 0) - b.p.y) > 2.5) continue;      // the other deck of a crossing
+            const fx = Math.cos(r.heading), fz = Math.sin(r.heading);
+            if (Math.abs(dx * fx + dz * fz) > reach || Math.abs(-dx * fz + dz * fx) > HALF_W + 0.6 + b.rad * 0.5) continue;
+            if (b.standing) {
+                for (const o of bodies) {
+                    if (!o.standing || o.stand !== b.stand) continue;
+                    o.standing = false; o.asleep = false; o.still = 0;
+                    engine(() => rapier.add(o));
+                }
+            } else {
+                engine(() => rapier.wake(b));
+            }
+            break;
+        }
+    }
+}
+
 // ── Cars kick it ────────────────────────────────────────────────────────
 
 const HALF_L = 1.95, HALF_W = 0.85;
@@ -605,6 +759,7 @@ function kicks(dt) {
     for (const b of bodies) {
         if (b.sink >= 0) continue;
         if (b.kickT > 0) { b.kickT -= dt; continue; }
+        if (b.standing && rapier) continue;  // rouse() starts it first
         for (const car of cars) {
             const r = car.render;
             if (!r || !Number.isFinite(r.x)) continue;
@@ -639,6 +794,8 @@ function kicks(dt) {
             b.w.x += (rnd() - 0.5) * 18 * hard * calm; b.w.y += (rnd() - 0.5) * 12 * hard * calm; b.w.z += (rnd() - 0.5) * 18 * hard * calm;
             if (b.shape === DISC) rollSpin(b);
             b.asleep = false; b.still = 0; b.rest = 0; b.kickT = 0.12;
+            // A standing prop kicked under the built-in solver: the rest of its stack comes down.
+            if (b.standing) for (const o of bodies) if (o.standing && o.stand === b.stand) { o.standing = false; o.asleep = false; o.still = 0; }
             if (b.metal && hard > 0.25 && sparkBudget >= 1 && world.fx?.spark) {
                 sparkBudget -= 1;
                 for (let k = 0; k < 3; k++) world.fx.spark(b.p.x, b.p.y + 0.05, b.p.z, b.v.x * 0.5 + (rnd() - 0.5) * 2, 0.6 + rnd() * 1.5, b.v.z * 0.5 + (rnd() - 0.5) * 2);
@@ -717,16 +874,21 @@ const _dp = new THREE.Vector3();
 const _dq = new THREE.Quaternion();
 
 function draw(alpha) {
-    if (!kinds) {
-        for (const b of bodies) if (b.obj) place(b, alpha, b.obj.position, b.obj.quaternion);
-        return;
-    }
     const shadows = tier() !== 'low';
-    for (const m of kinds) { m.count = 0; m.castShadow = shadows; }
+    if (kinds) for (const m of kinds) { m.count = 0; m.castShadow = shadows; }
+    if (propKinds) for (const m of Object.values(propKinds)) { m.count = 0; m.castShadow = shadows; }
     for (const b of bodies) {
         if (b.obj) { place(b, alpha, b.obj.position, b.obj.quaternion); continue; }
-        const mesh = kinds[b.kind];
-        if (mesh.count >= CAPACITY) continue;
+        if (b.prop) {
+            // Drawn at its own size: the geometry is the tyre or the cone itself.
+            const pm = propKinds?.[b.kind];
+            if (!pm) continue;
+            place(b, alpha, _dp, _dq);
+            pm.setMatrixAt(pm.count++, _m.compose(_dp, _dq, _s.set(1, 1, 1)));
+            continue;
+        }
+        const mesh = kinds?.[b.kind];
+        if (!mesh || mesh.count >= CAPACITY) continue;
         place(b, alpha, _dp, _dq);
         const shrink = b.sink > 0 ? 1 - 0.4 * b.sink : 1;
         if (b.shape === DISC) _s.set(b.R * shrink, b.w2 * 2 * shrink, b.R * shrink);
@@ -736,11 +898,12 @@ function draw(alpha) {
         if (b.color) mesh.setColorAt(mesh.count, b.color);
         mesh.count++;
     }
-    for (const m of kinds) {
+    for (const m of kinds || []) {
         if (!m.count) continue;
         m.instanceMatrix.needsUpdate = true;
         if (m.instanceColor) m.instanceColor.needsUpdate = true;
     }
+    if (propKinds) for (const m of Object.values(propKinds)) if (m.count) m.instanceMatrix.needsUpdate = true;
 }
 
 /** The pose drawn: between the last two steps, sunk into the ground as it goes. */
@@ -764,6 +927,7 @@ export function updateDebris(dt, race) {
         for (const b of bodies) if (b.sink >= 0 && b.rb) engine(() => rapier.remove(b));
         acc += Math.min(dt, 0.1);
         let steps = 0;
+        rouse();
         engine(() => rapier.syncCars(world?.cars));
         while (acc >= STEP && steps < MAX_STEPS) {
             if (!engine(() => rapier.step(bodies))) {
@@ -780,7 +944,7 @@ export function updateDebris(dt, race) {
             const b = bodies[i];
             b.age += dt;
             if (b.asleep) b.rest += dt;
-            if (b.sink < 0 && (b.rest > life || b.age > life * 2)) b.sink = 0;
+            if (b.sink < 0 && !b.prop && (b.rest > life || b.age > life * 2)) b.sink = 0;
             if (b.sink >= 0) {
                 b.sink += dt / SINK_S;
                 if (b.sink >= 1) removeAt(i);
@@ -793,6 +957,7 @@ export function updateDebris(dt, race) {
 /** Every piece off the road, and forget the race (it is over). */
 export function clearDebris() {
     while (bodies.length) removeAt(bodies.length - 1);
+    dropProps();
     dropEngine();
     if (kinds) for (const m of kinds) { m.count = 0; m.parent?.remove(m); }
     world = null;

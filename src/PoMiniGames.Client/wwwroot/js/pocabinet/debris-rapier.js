@@ -17,7 +17,7 @@
 //   • the barriers, a wall of triangles on the face physics.js stops a car against.
 //   • one box per car, moved every step to where the car is drawn, with the car's velocity.
 //
-// Each piece is a box or a cylinder (a wheel, a hubcap) with continuous collision detection:
+// Each piece is a box, a cylinder (a wheel, a hubcap, a prop's tyre) or a cone (a prop's), with continuous collision detection:
 // a shard is thinner than the distance it falls in a step. What the piece lies on (gravel
 // grabs it, grass a little less) is read from the track every step, as the built-in solver
 // does, and applied as damping, friction and bounce. No imports from three or util.js: this
@@ -42,6 +42,18 @@ const groups = (member, filter) => ((member << 16) | filter) >>> 0;
 
 let loading = null;
 
+/**
+ * A traffic cone as a convex hull: its square foot and a blunt tip. Not the engine's own cone
+ * shape, which rests on one contact point and wobbles over: a hull has faces, so the cone
+ * stands on its foot, and lies on a flank from a foot corner to the tip once it is down.
+ */
+function coneHull(R, radius, half) {
+    const pts = [];
+    for (const y of [-half, -half + 0.035]) for (const sx of [-1, 1]) for (const sz of [-1, 1]) pts.push(sx * radius, y, sz * radius);
+    for (let k = 0; k < 6; k++) pts.push(Math.cos(k * Math.PI / 3) * 0.03, half, Math.sin(k * Math.PI / 3) * 0.03);
+    return R.ColliderDesc.convexHull(new Float32Array(pts)) || R.ColliderDesc.cuboid(radius, half, radius);
+}
+
 /** The Rapier module, loaded and initialised once (null if it cannot be: offline, blocked, no WASM). */
 export function loadRapier() {
     if (!loading) {
@@ -65,12 +77,10 @@ export function trackMesh(track, ws) {
     const ground = new Float32Array(n * 6);
     const wall = new Float32Array(n * 12);
     for (let i = 0; i < n; i++) {
-        const p = (i - 1 + n) % n;
-        // The across direction at a sample: the mean of the two segments that meet there.
-        let tx = track.tx[p] + track.tx[i], ty = track.ty[p] + track.ty[i];
-        const len = Math.hypot(tx, ty) || 1;
-        tx /= len; ty /= len;
-        const rx = -ty, ry = tx;
+        // Across the road at a sample: its own segment's normal, as meshes.js ribbon() lays the
+        // road that is drawn, so a piece lies on the tarmac the player sees and not on a mesh a
+        // few centimetres off it out on the run-off of a tight, banked corner.
+        const rx = -track.ty[i], ry = track.tx[i];
         const z = track.z ? track.z[i] : 0, bank = track.bank ? track.bank[i] : 0;
         const faceR = track.hwAt(i) + runOffAt(track, i, 1), faceL = track.hwAt(i) + runOffAt(track, i, -1);
         const put = (arr, o, lat, lift) => {
@@ -134,13 +144,15 @@ export class RapierDebris {
             .setLinvel(b.v.x, b.v.y, b.v.z)
             .setAngvel({ x: b.w.x, y: b.w.y, z: b.w.z })
             .setCcdEnabled(true));
-        const shape = b.shape === 1
-            ? R.ColliderDesc.cylinder(Math.max(MIN_HALF, b.w2), b.R)
-            : R.ColliderDesc.cuboid(Math.max(MIN_HALF, b.hx), Math.max(MIN_HALF, b.hy), Math.max(MIN_HALF, b.hz));
+        const shape = b.cone
+            ? coneHull(R, b.hx, b.hy)
+            : b.shape === 1
+                ? R.ColliderDesc.cylinder(Math.max(MIN_HALF, b.w2), b.R)
+                : R.ColliderDesc.cuboid(Math.max(MIN_HALF, b.hx), Math.max(MIN_HALF, b.hy), Math.max(MIN_HALF, b.hz));
         b.withCars = b.age >= NEW_PIECE_S;
         b.col = this.world.createCollider(shape
             .setDensity(1)
-            .setFriction(0.5).setRestitution(b.e)
+            .setFriction(0.5 * (b.grip || 1)).setRestitution(b.e)
             .setFrictionCombineRule(R.CoefficientCombineRule.Multiply)
             .setRestitutionCombineRule(R.CoefficientCombineRule.Multiply)
             .setCollisionGroups(groups(G_PIECE, G_WORLD | G_PIECE | (b.withCars ? G_CAR : 0))), body);
@@ -153,6 +165,11 @@ export class RapierDebris {
         if (!b.rb) return;
         this.world.removeRigidBody(b.rb);
         b.rb = null; b.col = null;
+    }
+
+    /** Wake piece `b`: the engine does not wake a sleeping piece because a car's box has reached it. */
+    wake(b) {
+        if (b.rb?.isSleeping()) b.rb.wakeUp();
     }
 
     /** A piece debris.js moved by hand (a car kicked it): its pose and velocity into the engine. */
@@ -231,7 +248,7 @@ export class RapierDebris {
         b.grounded = grounded;
         // No bounce once it has all but stopped: a resting contact that still bounces buzzes.
         const rest = dying ? 0 : b.e * e;
-        if (mu !== b.mu) { b.mu = mu; b.col.setFriction(mu); }
+        if (mu !== b.mu) { b.mu = mu; b.col.setFriction(mu * (b.grip || 1)); }
         if (rest !== b.rest0) { b.rest0 = rest; b.col.setRestitution(rest); }
         // Under the road (it should never be): back on it, still.
         if (b.p.y < h - b.rad - 1) {
