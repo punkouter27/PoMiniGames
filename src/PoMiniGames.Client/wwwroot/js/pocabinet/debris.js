@@ -41,6 +41,9 @@
 // there a while, the oldest sinks into the ground and is gone. Reduced motion
 // (scene.fx.reduced) throws a third as many and gently: they drop off rather than fly.
 //
+// Pieces are silent (2026-11-20: their clatter, a tuned ping for every bounce anywhere on the
+// lap, played like a xylophone through the whole race).
+//
 // race.js drives it: updateDebris(dt, race) once a rendered frame (race supplies the track,
 // the cars, the scene handle and fx), clearDebris() when the race goes.
 
@@ -73,20 +76,10 @@ let world = null;              // the race (track, cars, scene, fx), from update
 let acc = 0;
 let kinds = null;              // the instanced meshes, built on the first throw
 let sparkBudget = 0;
-let clatterAt = 0;
 let RAPIER = null;             // the engine's module, once loaded
 let rapierAsked = false;
 let rapierOff = false;         // it failed here: the built-in solver for the rest of the session
 let rapier = null;             // RapierDebris for the track being raced
-
-function emitClatter(b, strength) {
-    if (!world?.onClatter || strength < 0.08) return;
-    const now = performance.now();
-    if (now - clatterAt < 75 || (b.clatterAt && now - b.clatterAt < 140)) return;
-    clatterAt = b.clatterAt = now;
-    const mat = b.kind === GLASS ? 'glass_shard' : b.metal ? 'debris_metal' : 'bedroom_plastic';
-    world.onClatter(mat, Math.min(1, strength), b.p);
-}
 
 // ── Instanced kinds ─────────────────────────────────────────────────────
 
@@ -518,7 +511,6 @@ function stepBody(b, h) {
 
     // Sequential impulses: normal (accumulated, never pulling), then friction in the contact's plane.
     const v = b.v, w = b.w;
-    const impactSpeed = nc ? Math.abs(v.dot(n)) : 0;
     for (let it = 0; it < ITERATIONS && nc; it++) {
         for (let i = 0; i < nc; i++) {
             const c = C[i];
@@ -537,9 +529,6 @@ function stepBody(b, h) {
             d = jn - c.j2; c.j2 = jn;
             v.addScaledVector(c.t2, d); w.addScaledVector(c.i2, d);
         }
-    }
-    if (deepest > 0.008 && impactSpeed > 2.6) {
-        emitClatter(b, (impactSpeed - 2.2) / 10);
     }
 
     if (grounded) {
@@ -654,7 +643,6 @@ function kicks(dt) {
                 sparkBudget -= 1;
                 for (let k = 0; k < 3; k++) world.fx.spark(b.p.x, b.p.y + 0.05, b.p.z, b.v.x * 0.5 + (rnd() - 0.5) * 2, 0.6 + rnd() * 1.5, b.v.z * 0.5 + (rnd() - 0.5) * 2);
             }
-            emitClatter(b, Math.min(1, hard * 0.85));
             if (b.rb) engine(() => rapier.push(b));
             break;
         }
@@ -664,7 +652,7 @@ function kicks(dt) {
 const GRID_CELL = 0.9;
 const hashGrid = new Map();
 
-/** Spatial-hash debris-to-debris impulse resolution & acoustic clatter (#9). */
+/** Spatial-hash debris-to-debris impulse resolution (#9). */
 function collidePieces() {
     if (bodies.length < 2) return;
     hashGrid.clear();
@@ -714,7 +702,6 @@ function collidePieces() {
                         a.w.x += nz * spinKick; a.w.z -= nx * spinKick;
                         b.w.x -= nz * spinKick; b.w.z += nx * spinKick;
                         if (b.asleep && closing > 1.2) { b.asleep = false; b.still = 0; b.rest = 0; }
-                        if (closing > 2.2) emitClatter(a, Math.min(1, (closing - 1.5) / 10));
                     }
                 }
             }
@@ -779,7 +766,7 @@ export function updateDebris(dt, race) {
         let steps = 0;
         engine(() => rapier.syncCars(world?.cars));
         while (acc >= STEP && steps < MAX_STEPS) {
-            if (!engine(() => rapier.step(bodies, bounced))) {
+            if (!engine(() => rapier.step(bodies))) {
                 for (const b of bodies) if (!b.asleep && b.sink < 0) stepBody(b, STEP);
                 collidePieces();
             }
@@ -801,11 +788,6 @@ export function updateDebris(dt, race) {
         }
     }
     draw(Math.min(1, acc / STEP));
-}
-
-/** A piece's velocity changed by `dv` in one step under Rapier: it hit something. */
-function bounced(b, dv) {
-    emitClatter(b, (dv - 2.2) / 10);
 }
 
 /** Every piece off the road, and forget the race (it is over). */

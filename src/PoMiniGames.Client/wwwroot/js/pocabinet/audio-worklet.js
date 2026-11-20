@@ -1,7 +1,7 @@
 // pocabinet/audio-worklet.js
 //
 // Sample-accurate AudioWorklet procedural modal synthesis (#6, #12):
-//   - 32-slot damped 2-pole resonant eigenmode bank (car_0..4, wall, divider, glass, plastic, debris)
+//   - 32-slot damped 2-pole resonant eigenmode bank (car_0..4, wall, divider), struck only for a hit the ear is in
 //   - Zone-shaped strikes (front engine bay = warm/steam hiss, side = hollow door, glass crack cascade)
 //   - Sample-rate stick-slip chatter impulses for continuous wall scrape & tire scrub texture
 
@@ -16,9 +16,6 @@ const PROFILES = {
     car_2: { f: [140, 340, 690, 1280, 2180, 3360], q: [16, 26, 34, 38, 30, 22], a: [0.35, 0.28, 0.22, 0.16, 0.10, 0.06] },
     car_3: { f: [122, 290, 580, 1120, 1880, 2920], q: [15, 25, 32, 36, 28, 20], a: [0.38, 0.30, 0.22, 0.15, 0.09, 0.05] },
     car_4: { f: [168, 420, 840, 1560, 2580, 3920], q: [17, 29, 38, 42, 32, 24], a: [0.31, 0.27, 0.23, 0.17, 0.11, 0.06] },
-    bedroom_plastic: { f: [340, 720, 1480, 2420, 3850], q: [10, 16, 20, 18, 14], a: [0.26, 0.32, 0.24, 0.14, 0.08] },
-    glass_shard: { f: [1940, 2860, 4120, 5640, 7280], q: [48, 62, 70, 58, 42], a: [0.22, 0.28, 0.24, 0.16, 0.10] },
-    debris_metal: { f: [540, 1280, 2340, 3760, 5120], q: [28, 42, 48, 38, 28], a: [0.26, 0.30, 0.22, 0.14, 0.08] },
 };
 
 class ModalBankProcessor extends AudioWorkletProcessor {
@@ -96,7 +93,7 @@ class ModalBankProcessor extends AudioWorkletProcessor {
             }
             // Crystalline granular glass shatter cascade (#6)
             const crack = d.glassCrack || 0;
-            if (crack > 0.25 && d.mat !== 'bedroom_plastic') {
+            if (crack > 0.25) {
                 const count = Math.min(10, 3 + Math.floor(crack * 7));
                 for (let k = 0; k < count; k++) {
                     const delayMs = 4 + this.rnd() * 140;

@@ -61,7 +61,6 @@
 //   handle.setView({ x, y, heading, mode, speed, dt });
 //   handle.setStartLights(lit, go); handle.setWeather(rain); handle.setRubber(r, wet);
 //   handle.groundHeight(xSim, ySim) — world height of the ground there
-//   handle.setPip(pose | null)   — demo broadcast inset; handle.pipRect says where it landed
 //   unmount(handle);
 
 import * as THREE from 'three';
@@ -171,8 +170,6 @@ class SceneHandle {
         this._chaseLook = new THREE.Vector3();
         this._chaseInit = false;
         this._v = new THREE.Vector3();
-        this.pip = null;
-        this.pipRect = null;
         // Render budget (#1): p95 frame time walks a ladder of resolution / particle / shadow
         // settings under the app tier. Replaces the old one-way three-slow-seconds step-down.
         this.particleScale = 1;
@@ -233,9 +230,6 @@ class SceneHandle {
         } catch { /* decoration never kills the frame */ }
         if (this.post) this.post.render(this.scene, this.camera, this.fx, now / 1000);
         else this.renderer.render(this.scene, this.camera);
-        if (this.pip) {
-            try { this.renderPip(); } catch { this.pipRect = null; }
-        }
         this.fx.exposure = e0;
         this.fx.bloom = b0;
         try { this.board?.update(this.camera, now); } catch { /* the HUD fallback still has the text */ }
@@ -247,20 +241,6 @@ class SceneHandle {
 
     setView(p) {
         return cams.setView(this, p);
-    }
-
-    /**
-     * Picture in picture (the demo's broadcast.js): a camera on a car's roof, looking ahead or
-     * (back) behind, drawn into a corner of the canvas after the main frame. p = a car pose
-     * { x, y, heading, h, pitch, back } in sim units, or null for none.
-     */
-    setPip(p) {
-        this.pip = p || null;
-        if (!this.pip) this.pipRect = null;
-    }
-
-    renderPip() {
-        return cams.renderPip(this);
     }
 
     applyFx(dt) {

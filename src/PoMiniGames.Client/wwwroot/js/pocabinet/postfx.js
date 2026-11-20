@@ -535,6 +535,11 @@ void main() {
     float lenPx = length(vDom * uRes);
     vec3 c0 = texture2D(tColor, vUv).rgb;
     if (lenPx < 1.0) { gl_FragColor = vec4(c0, 1.0); return; }
+    // A car that is all but still on the screen (the one the camera rides behind) stays sharp.
+    // Its tile's dominant velocity is its own spinning wheels or a car going by, and gathering
+    // along that laid the gather's per-pixel noise over paint that was not moving.
+    vec4 own = texture2D(tVel, vUv);
+    if (own.w > 0.5 && abs(own.z - z) < 0.4 + z * 0.03 && length(vX * uRes) < 1.5) { gl_FragColor = vec4(c0, 1.0); return; }
     float lenX = max(length(vX * uRes), 0.5);
     float soft = 0.5 + z * 0.02;
     vec3 sum = c0 / lenX;
@@ -623,19 +628,6 @@ vec3 acesFilmic(vec3 c) {
     return clamp(outM * RRTAndODTFit(inM * c), 0.0, 1.0);
 }`;
 
-// The picture-in-picture inset: its HDR frame tone-mapped like the main one, straight onto the canvas.
-const INSET_FRAG = /* glsl */ `
-uniform sampler2D tSrc;
-uniform float uExposure;
-varying vec2 vUv;
-${TONE_GLSL}
-void main() {
-    vec3 c = texture2D(tSrc, vUv).rgb;
-    if (any(isnan(c)) || any(isinf(c))) c = vec3(0.0);
-    gl_FragColor = vec4(acesFilmic(c * uExposure / 0.6), 1.0);
-    #include <colorspace_fragment>
-}`;
-
 // ── Quarter-res depth-occluded crepuscular light shafts (#17) ──
 const VOL_FRAG = /* glsl */ `
 ${DEPTH_GLSL}
@@ -667,6 +659,8 @@ const TAA_FRAG = /* glsl */ `
 ${DEPTH_GLSL}
 uniform sampler2D tCur;
 uniform sampler2D tHist;
+uniform sampler2D tVel;      // the cars' velocity buffer (the motion blur's), when uHasVel
+uniform float uHasVel;
 uniform mat4 uInvViewProj;
 uniform mat4 uPrevViewProj;
 uniform vec2 uTexel;
@@ -690,6 +684,15 @@ void main() {
     w /= w.w;
     vec4 p = uPrevViewProj * w;
     vec2 prevUv = p.xy / p.w * 0.5 + 0.5;
+    // The matrices only know where a pixel of the still world was last frame. A car moves on its
+    // own: reprojected that way, the car the camera rides behind fetched its history from the
+    // road going by under it, and the tarmac's texture crawled over its paint and glass. Where a
+    // car is in front, its own screen motion (the velocity buffer) says where it was.
+    if (uHasVel > 0.5) {
+        float z = -viewZOf(d);
+        vec4 cv = texture2D(tVel, vUv);
+        if (cv.w > 0.5 && abs(cv.z - z) < 0.4 + z * 0.03) prevUv = vUv - cv.xy;
+    }
     if (prevUv.x < 0.002 || prevUv.x > 0.998 || prevUv.y < 0.002 || prevUv.y > 0.998) {
         gl_FragColor = vec4(cur, 1.0); return;
     }
@@ -706,8 +709,13 @@ void main() {
     vec3 lo = m1 - sig * 1.15, hi = m1 + sig * 1.15;
     vec3 hist = toYCoCg(max(vec3(0.0), texture2D(tHist, prevUv).rgb));
     hist = clamp(hist, lo, hi);
-    vec3 res = mix(cur, toRGB(hist), uBlend);
-    gl_FragColor = vec4(res, 1.0);
+    // Blended by inverse brightness (Karis): the camera's jitter puts a pin-sharp highlight on a
+    // pixel in one frame of eight, and blended straight that one HDR sample outweighed the other
+    // seven, so the paint and glass twinkled with specks. Weighted, it settles to its average.
+    vec3 h = toRGB(hist);
+    float wc = (1.0 - uBlend) / (1.0 + max(cur.r, max(cur.g, cur.b)));
+    float wh = uBlend / (1.0 + max(h.r, max(h.g, h.b)));
+    gl_FragColor = vec4((cur * wc + h * wh) / (wc + wh), 1.0);
 }`;
 
 const COMPOSITE_FRAG = /* glsl */ `
@@ -988,7 +996,7 @@ export class PostFx {
             ...depthUniforms(), uSun: { value: new THREE.Vector3() }, uRes: { value: new THREE.Vector2() },
         });
         this.taaMat = mat(TAA_FRAG, {
-            ...depthUniforms(), tCur: { value: null }, tHist: { value: null },
+            ...depthUniforms(), tCur: { value: null }, tHist: { value: null }, tVel: { value: null }, uHasVel: { value: 0 },
             uInvViewProj: { value: new THREE.Matrix4() }, uPrevViewProj: { value: new THREE.Matrix4() },
             uTexel: { value: new THREE.Vector2() }, uJitterUV: { value: new THREE.Vector2() }, uBlend: { value: 0.84 },
         });
@@ -1023,8 +1031,6 @@ export class PostFx {
             uHazeShape: { value: Array.from({ length: MAX_HAZE }, () => new THREE.Vector3()) },
             uMirage: { value: 0 },
         });
-        this.insetMat = mat(INSET_FRAG, { tSrc: { value: null }, uExposure: { value: 1 } });
-        this.insetTarget = null;
         this.quad = new THREE.Mesh(new THREE.PlaneGeometry(2, 2), this.material);
         this.quad.frustumCulled = false;
         this.quadScene = new THREE.Scene();
@@ -1176,7 +1182,9 @@ export class PostFx {
                 this.setDepthUniforms(camera);
                 const cut = this.cameraCut(camera);
                 if (p.ao || p.ssr) src = this.lighting(camera, fx, timeSeconds) || src;
-                if (p.blur && motion) src = this.motionBlur(camera, fx, src, dt, cut) || src;
+                // The cars' velocity buffer is drawn by the motion blur; the TAA below reads it too.
+                const moved = !!(p.blur && motion && this.velTarget);
+                if (moved) src = this.motionBlur(camera, fx, src, dt, cut) || src;
                 else this.forgetMovers();
                 if (useTaa) {
                     const readIdx = this.taaIdx, writeIdx = readIdx ^ 1;
@@ -1187,6 +1195,8 @@ export class PostFx {
                     t.uPrevViewProj.value.copy(cut ? this.viewProj : this.prevViewProj);
                     t.uTexel.value.set(1 / src.width, 1 / src.height);
                     t.uJitterUV.value.copy(this.jitterUV);
+                    t.tVel.value = moved ? this.velTarget.texture : null;
+                    t.uHasVel.value = moved ? 1 : 0;
                     t.uBlend.value = cut || !this.taaValid ? 0 : 0.84;
                     this.pass(this.taaMat, this.taaTargets[writeIdx]);
                     src = this.taaTargets[writeIdx];
@@ -1259,41 +1269,6 @@ export class PostFx {
         else { u.uHazeCount.value = 0; u.uMirage.value = 0; }
         this.pass(this.material, null);
         this.quad.material = this.material;
-    }
-
-    /**
-     * A second view (scene.js's picture-in-picture) into the canvas rectangle x, y, w, h (CSS px,
-     * y from the bottom): rendered into a lightweight 0.75x non-MSAA linear HDR target reusing shadows (#19).
-     */
-    drawInset(scene, camera, x, y, w, h, exposure) {
-        const r = this.renderer;
-        const pr = r.getPixelRatio();
-        const tw = Math.max(1, Math.round(w * pr * 0.75)), th = Math.max(1, Math.round(h * pr * 0.75));
-        if (!this.insetTarget) this.insetTarget = target(tw, th, 0);
-        else if (this.insetTarget.width !== tw || this.insetTarget.height !== th) this.insetTarget.setSize(tw, th);
-        const prevShadow = r.shadowMap.autoUpdate;
-        r.shadowMap.autoUpdate = false;
-        r.setRenderTarget(this.insetTarget);
-        try {
-            r.render(scene, camera);
-        } finally {
-            r.shadowMap.autoUpdate = prevShadow;
-        }
-        this.insetMat.uniforms.tSrc.value = this.insetTarget.texture;
-        this.insetMat.uniforms.uExposure.value = exposure;
-        const full = r.getSize(this._full || (this._full = new THREE.Vector2()));
-        this.quad.material = this.insetMat;
-        r.setRenderTarget(null);
-        r.setScissorTest(true);
-        r.setScissor(x, y, w, h);
-        r.setViewport(x, y, w, h);
-        try {
-            r.render(this.quadScene, this.quadCamera);
-        } finally {
-            r.setScissorTest(false);
-            r.setViewport(0, 0, full.x, full.y);
-            this.quad.material = this.material;
-        }
     }
 
     /** True when the camera jumped (a cut, a snap): no motion this frame, it would smear the screen. */
@@ -1540,8 +1515,6 @@ export class PostFx {
     dispose() {
         this.sceneTarget.depthTexture?.dispose();
         this.sceneTarget.dispose();
-        this.insetTarget?.dispose();
-        this.insetMat.dispose();
         for (const t of [...this.down, ...this.up, ...this.depthTargets]) t.dispose();
         for (const m of [this.brightMat, this.downMat, this.upMat, this.material, this.aoMat, this.aoBlurMat,
             this.ssrMat, this.lightMat, this.volMat, this.taaMat, this.tileMat, this.neighborMat, this.motionMat, this.velMat]) m.dispose();

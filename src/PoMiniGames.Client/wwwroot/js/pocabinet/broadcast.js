@@ -15,9 +15,6 @@
 //     and in a battle the gap to the car it is fighting.
 //   • Callouts: lead changes, a pass in the battle on screen, fastest laps, wrecks near the
 //     front, the last lap and the flag.
-//   • Picture in picture: in a battle, the rear camera of the car being chased; on a TV shot of
-//     the leader, its onboard (scene.setPip; scene.js leaves it out on the low tier and on narrow
-//     screens).
 //
 // The page renders the containers (#pocabinetBroadcast) with every text node empty, so Blazor
 // owns no text in them; everything inside is written here, a few times a second, never through
@@ -188,9 +185,8 @@ export class Broadcast {
         return this.shot;
     }
 
-    /** After the camera: the picture in picture and the graphics. */
+    /** After the camera: the graphics. */
     draw(now) {
-        this.updatePip();
         if (now - this.domAt >= DOM_MS) {
             this.domAt = now;
             try { this.updateDom(now); } catch { /* graphics are decoration */ }
@@ -281,18 +277,6 @@ export class Broadcast {
         this.domAt = 0;
     }
 
-    updatePip() {
-        const scene = this.race.scene;
-        const sh = this.shot;
-        let p = null;
-        if (sh?.kind === 'battle' && sh.rival) p = { car: sh.rival, back: true };
-        else if (sh?.kind === 'leader' && sh.mode === 'tv') p = { car: sh.car, back: false };
-        if (!p) { scene.setPip?.(null); this.pipCar = null; return; }
-        const r = p.car.render;
-        scene.setPip?.({ x: r.x, y: r.y, heading: r.heading, h: r.h, pitch: r.pitch, back: p.back });
-        this.pipCar = p;
-    }
-
     // ── Graphics ─────────────────────────────────────────────────────────
 
     nodes() {
@@ -309,7 +293,6 @@ export class Broadcast {
             })),
             callout: q('callout'), ck: q('ck'), ct: q('ct'),
             lower: q('lower'), shot: q('shot'), pos: q('pos'), chip: q('chip'), name: q('name'), style: q('style'), meta: q('meta'),
-            pip: q('pip'), pipLabel: q('piplabel'),
         };
         return this.dom;
     }
@@ -433,22 +416,6 @@ export class Broadcast {
             setData(d.callout, 'show', 'on');
         }
 
-        // Picture in picture: the frame and its label over the scene's viewport.
-        const rect = r.scene.pipRect;
-        if (rect && this.pipCar && d.pip) {
-            const canvas = r.scene.canvas;
-            const parent = d.pip.offsetParent || d.pip.parentElement;
-            const cb = canvas.getBoundingClientRect(), pb = parent.getBoundingClientRect();
-            const st = d.pip.style;
-            st.left = `${Math.round(cb.left - pb.left + rect.x)}px`;
-            st.top = `${Math.round(cb.top - pb.top + rect.y)}px`;
-            st.width = `${rect.w}px`;
-            st.height = `${rect.h}px`;
-            setText(d.pipLabel, `${this.pipCar.back ? 'Rear cam' : 'Onboard'} · ${nameOf(this.pipCar.car)}`);
-            setData(d.pip, 'show', 'on');
-        } else if (d.pip) {
-            setData(d.pip, 'show', 'off');
-        }
     }
 
     /** The timed gap to the leader in seconds, or null when the row shows a word instead (OUT, Leader, +N laps). */
@@ -472,11 +439,9 @@ export class Broadcast {
     }
 
     dispose() {
-        this.race.scene.setPip?.(null);
         const d = this.dom;
         if (d?.root.isConnected) {
             setData(d.callout, 'show', 'off');
-            setData(d.pip, 'show', 'off');
         }
         this.dom = null;
     }

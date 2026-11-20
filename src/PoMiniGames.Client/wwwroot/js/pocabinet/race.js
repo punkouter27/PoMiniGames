@@ -12,7 +12,7 @@
 //               carries the whole field only when it has to.
 //   demo      — as solo, with the local car on autopilot, covered like a TV race
 //               (broadcast.js): a director follows the best battle in the field, with a
-//               timing tower, a caption, callouts and a picture-in-picture onboard.
+//               timing tower, a caption and callouts.
 //
 // The camera is third person at all times: 'chase', 'far' (the
 // camera button toggles them) and, in the demo and replays, 'tv'.
@@ -1344,11 +1344,6 @@ class Race {
         if (this.gaugeSpeed && this.gaugeSpeed.textContent !== speed) this.gaugeSpeed.textContent = speed;
         const gear = kmh < 1 && !live ? 'N' : String(es.gear);
         if (this.gaugeGear && this.gaugeGear.textContent !== gear) this.gaugeGear.textContent = gear;
-    }
-
-    /** Positional acoustic clatter callback invoked by debris.js when shards bounce or collide. */
-    onClatter(mat, strength, pos) {
-        audio.debrisHit(mat, strength, pos);
     }
 
     /** Car poses for fx.js, in sim units. Locally simulated cars report their exact slide flag. */

@@ -1,7 +1,7 @@
 // pocabinet/cameras.js
 //
-// Where the camera goes each frame: the chase / far / TV cameras (setView), the demo's
-// picture-in-picture (renderPip), FOV kick and shake (applyFx), the sun's shadow frustum riding
+// Where the camera goes each frame: the chase / far / TV cameras (setView), FOV kick and
+// shake (applyFx), the sun's shadow frustum riding
 // with the car in focus (followShadow) and the sun's spot on screen for the glare. Every function
 // takes the SceneHandle first; scene.js keeps thin methods that call them.
 
@@ -10,7 +10,6 @@ import { wallFace } from './terrain.js';
 import { WORLD_SCALE } from './util.js';
 
 export const SHADOW_EXTENT = 38;
-export const PIP_WIDTH = 0.26;   // of the canvas width
 
 /**
  * Place the camera for a car pose. mode: 'chase' | 'far' | 'tv'.
@@ -77,68 +76,6 @@ export function setView(sh, p) {
     sh.camera.lookAt(x, h + 0.6, z);
 }
 
-/**
- * The PiP pass: an HDR frame of its own, tone-mapped into a corner of the canvas by the post
- * pass (postfx.js drawInset; without one, straight to the canvas through a scissor with the
- * renderer's tone mapping), reusing this frame's shadow map. Left out on the low
- * tier, where the frame has no time for a second scene, and on a narrow canvas, where the
- * inset would be too small to read. pipRect (canvas CSS px from the top left) tells the
- * page where to put the frame and label, or null when nothing was drawn.
- */
-export function renderPip(sh) {
-    const r = sh.renderer;
-    const size = r.getSize(sh._pipSize || (sh._pipSize = new THREE.Vector2()));
-    if (sh.quality === 'low' || size.x < 560) { sh.pipRect = null; return; }
-    const p = sh.pip;
-    const w = Math.round(size.x * PIP_WIDTH), h = Math.round(w * 9 / 16);
-    const m = Math.round(Math.max(8, size.x * 0.012));
-    const x = size.x - w - m, y = m;   // bottom right (the viewport counts y from the bottom)
-    const cam = sh.pipCamera || (sh.pipCamera = new THREE.PerspectiveCamera(62, 16 / 9, 0.2, 2000));
-    if (Math.abs(cam.aspect - w / h) > 1e-3) { cam.aspect = w / h; cam.updateProjectionMatrix(); }
-    const cx = (Number(p.x) || 0) / WORLD_SCALE, cz = (Number(p.y) || 0) / WORLD_SCALE;
-    const ground = Number(p.h) || 0;
-    const rise = Math.tan(Number(p.pitch) || 0);
-    const dir = p.back ? -1 : 1;
-    const fx = Math.cos(Number(p.heading) || 0) * dir, fz = Math.sin(Number(p.heading) || 0) * dir;
-    // Above the roof line of the tallest body (the van's, 1.42), a touch towards the view.
-    cam.position.set(cx + fx * 0.6, ground + 1.75 + rise * 0.6 * dir, cz + fz * 0.6);
-    const ahead = p.back ? 14 : 30;
-    cam.lookAt(cx + fx * ahead, ground + rise * ahead * dir + (p.back ? 0.9 : 1.1), cz + fz * ahead);
-
-    // Through the post pass when there is one: drawn into a linear HDR target, the inset uses
-    // the very programs the main pass compiled (drawn straight to the canvas with tone mapping,
-    // every material needs a second variant, and compiling ~25 of them the moment the demo's
-    // PiP first appears froze the start for seconds), then tone-mapped into its corner.
-    if (sh.post) {
-        const shadows = r.shadowMap.autoUpdate;
-        r.shadowMap.autoUpdate = false;
-        try {
-            sh.post.drawInset(sh.scene, cam, x, y, w, h, sh.fx.exposure || 1);
-        } finally {
-            r.shadowMap.autoUpdate = shadows;
-        }
-        sh.pipRect = { x, y: size.y - y - h, w, h };
-        return;
-    }
-    const tone = r.toneMapping, exposure = r.toneMappingExposure, shadows = r.shadowMap.autoUpdate;
-    r.setRenderTarget(null);
-    r.toneMapping = THREE.ACESFilmicToneMapping;
-    r.toneMappingExposure = sh.fx.exposure || 1;
-    r.shadowMap.autoUpdate = false;
-    r.setScissorTest(true);
-    r.setScissor(x, y, w, h);
-    r.setViewport(x, y, w, h);
-    try {
-        r.render(sh.scene, cam);
-    } finally {
-        r.setScissorTest(false);
-        r.setViewport(0, 0, size.x, size.y);
-        r.toneMapping = tone;
-        r.toneMappingExposure = exposure;
-        r.shadowMap.autoUpdate = shadows;
-    }
-    sh.pipRect = { x, y: size.y - y - h, w, h };
-}
 
 /**
  * Speed FOV kick + camera shake, applied after setView has placed the camera

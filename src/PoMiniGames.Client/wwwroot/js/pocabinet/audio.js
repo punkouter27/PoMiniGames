@@ -1249,9 +1249,6 @@ const MODAL_BANK = {
     car_2: { thump: [142, 54], modes: [460, 1020, 2060], decays: [0.135, 0.095, 0.055], amps: [0.055, 0.04, 0.024], band: 2350, ring: 'triangle' },
     car_3: { thump: [128, 48], modes: [380, 860, 1780], decays: [0.15, 0.105, 0.06], amps: [0.06, 0.042, 0.025], band: 2100, ring: 'triangle' },
     car_4: { thump: [154, 60], modes: [530, 1180, 2320], decays: [0.12, 0.085, 0.05], amps: [0.05, 0.038, 0.022], band: 2650, ring: 'triangle' },
-    bedroom_plastic: { thump: [240, 110], modes: [640, 1390, 2280], decays: [0.055, 0.035, 0.02], amps: [0.075, 0.045, 0.025], band: 2400, ring: 'triangle' },
-    glass_shard: { thump: [900, 620], modes: [2850, 4420, 6180], decays: [0.055, 0.04, 0.025], amps: [0.04, 0.034, 0.024], band: 4800, ring: 'sine' },
-    debris_metal: { thump: [380, 210], modes: [1320, 2680, 4120], decays: [0.085, 0.058, 0.032], amps: [0.048, 0.036, 0.022], band: 3300, ring: 'triangle' },
 };
 const HRTF_POOL_SIZE = 10;
 
@@ -1306,12 +1303,18 @@ export function impact(strength, kind = 'wall', pos = null, meta = null) {
     if (graze > 0.15) {
         burst('bandpass', 3200 + graze * 1400, 3.5, 0.06 + 0.14 * graze, 0.09 * graze * (0.4 + 0.6 * s), t + 0.01, dest);
     }
+    // The tuned ring (the modal bank, or its Web Audio stand-in below) is only for a hit the ear
+    // is in. The bank is one unplaced voice at full level, and a 64-car pack is in contact about
+    // twenty times a second somewhere on the lap: rung for every one of those it played like a
+    // xylophone over the whole race. Another pair's shunt keeps the thump and crunch above,
+    // placed where it happened and fading with distance.
+    if (pos) return;
     if (modalReady && modalNode) {
         modalNode.port.postMessage({
             type: 'strike',
             mat: matKey,
             zone: meta?.zone || (car ? 'side' : 'front'),
-            strength: pos ? s * 0.65 : s,
+            strength: s,
             pitch,
             glassCrack: meta?.glass ?? (s > 0.65 ? s : 0),
             graze,
@@ -1325,34 +1328,6 @@ export function impact(strength, kind = 'wall', pos = null, meta = null) {
         sweep(f, f * 0.96, m.decays[k] * len, m.ring, m.amps[k] * s, t + 0.002 * k, dest);
     }
     if (!car && s > 0.6) burst('bandpass', 4200, 3, 0.16 * len, 0.05 * (s - 0.6) / 0.4, t + 0.018, dest);
-}
-
-/** Synthesize crisp spatialized clatter for tumbling/colliding debris pieces (#9). */
-export function debrisHit(mat = 'debris_metal', strength = 0.35, pos = null) {
-    if (!ctx) return;
-    const t = ctx.currentTime;
-    const s = Math.min(1, Math.max(0.06, Number(strength) || 0));
-    const matKey = mat;
-    if (modalReady && modalNode) {
-        modalNode.port.postMessage({
-            type: 'strike',
-            mat: matKey,
-            zone: 'side',
-            strength: s * 0.52,
-            pitch: 0.9 + Math.random() * 0.22,
-            glassCrack: mat === 'glass_shard' ? s * 0.65 : 0,
-            graze: 0,
-        });
-        return;
-    }
-    const m = MODAL_BANK[matKey] || MODAL_BANK.debris_metal;
-    const dest = oneShotDest(pos, 0.25);
-    const pitch = 0.9 + Math.random() * 0.22;
-    burst('bandpass', m.band * pitch, 2.2, 0.025 + 0.02 * s, 0.12 * s, t, dest);
-    for (let k = 0; k < m.modes.length; k++) {
-        const f = m.modes[k] * pitch;
-        sweep(f, f * 0.97, m.decays[k] * (0.6 + 0.5 * s), m.ring, m.amps[k] * s * 0.85, t, dest);
-    }
 }
 
 /** Press-camera shutter: two clicks and a faint flash-charge whine. Rate-limited. */

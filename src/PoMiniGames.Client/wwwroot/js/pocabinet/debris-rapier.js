@@ -243,10 +243,9 @@ export class RapierDebris {
 
     /**
      * One 60 Hz step of every piece in `bodies` that is in the engine. Leaves each piece's pose
-     * and velocity in its record (pp/pq the pose before, for the interpolated draw) and calls
-     * `onImpact(b, dv)` where a piece's velocity changed sharply (a bounce: the clatter).
+     * and velocity in its record (pp/pq the pose before, for the interpolated draw).
      */
-    step(bodies, onImpact) {
+    step(bodies) {
         for (const b of bodies) {
             if (!b.rb) continue;
             b.pp.copy(b.p); b.pq.copy(b.q);
@@ -285,10 +284,6 @@ export class RapierDebris {
                 b.v.set(0, 0, 0); b.w.set(0, 0, 0);
                 b.pp.copy(b.p); b.pq.copy(b.q);
             } else {
-                if (onImpact) {
-                    const dv = Math.hypot(v.x - b.v.x, v.y - b.v.y + GRAVITY * STEP, v.z - b.v.z);
-                    if (dv > 2.4) onImpact(b, dv);
-                }
                 b.p.set(p.x, p.y, p.z); b.q.set(q.x, q.y, q.z, q.w);
                 b.v.set(v.x, v.y, v.z); b.w.set(w.x, w.y, w.z);
             }

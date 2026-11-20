@@ -2,8 +2,8 @@
    bits (muted text, status lines, sector chips, screen-reader text) stay on the page as ::deep. */
 
 /* ─── Demo broadcast (broadcast.js writes every text node and data-* state) ───
-   TV graphics over the race: timing tower top left, callout top centre, caption bottom left,
-   the frame round the scene's picture-in-picture bottom right. Scheme-invariant like the
+   TV graphics over the race: timing tower top left, callout top centre, caption bottom left.
+   Scheme-invariant like the
    rest of the canvas overlays: what sits behind them is the race, not the page. */
 .pocabinet-bc {
     --bc-panel: rgba(8, 12, 24, 0.8);
@@ -300,31 +300,6 @@
     white-space: nowrap;
     overflow: hidden;
     text-overflow: ellipsis;
-}
-
-/* The frame round the scene's PiP viewport (broadcast.js places it over scene.pipRect). */
-.pocabinet-bc__pip {
-    position: absolute;
-    border: 2px solid rgba(255, 255, 255, 0.85);
-    box-shadow: 0 10px 26px rgba(0, 0, 0, 0.4);
-}
-
-.pocabinet-bc__pip[data-show="off"] { display: none; }
-
-.pocabinet-bc__piplabel {
-    position: absolute;
-    left: 0;
-    top: 0;
-    max-width: 100%;
-    padding: 0.15rem 0.5rem;
-    font-size: max(12px, calc(0.72rem * var(--pocabinet-hud, 1)));
-    font-weight: 800;
-    text-transform: uppercase;
-    letter-spacing: 0.06em;
-    white-space: nowrap;
-    overflow: hidden;
-    text-overflow: ellipsis;
-    background: var(--bc-panel);
 }
 
 /* Phones: a top-five tower (plus the car on screen), the callout above the caption, a slimmer caption. */
