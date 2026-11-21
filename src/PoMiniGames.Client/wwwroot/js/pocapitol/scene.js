@@ -1,7 +1,7 @@
 import * as THREE from 'three';
 import { areas, obstacles, columns, statues, milestones, lineDefs, selectLeader, groundHeight, walkable, surgeSample, CROWD_SIZE, MAX_POLICE, CIVILIANS, CURFEW_ELAPSED } from './world.js';
 import { createCrowd, createDistantCrowd, bakeImpostors, flagTexture, coats } from './crowd.js';
-import { SURFACE, addSurface, surfaceTexture, createSky, setSkyColors, createEnvironment, addWave, softTexture } from './look.js';
+import { SURFACE, addSurface, surfaceTexture, createSky, setSkyColors, createEnvironment, addWave, softTexture, snowUniform } from './look.js';
 import { createParticles } from './particles.js';
 import { createBursts } from './bursts.js';
 import { createDecals } from './decals.js';
@@ -9,6 +9,8 @@ import { createPost } from './post.js';
 import { createCampus } from './campus.js';
 import { addArchitecturalDetail } from './architecture.js';
 import { createWear } from './ground.js';
+import { scenarioSun, daylightFactor } from './sun.js';
+import { createOverlay } from './overlay.js';
 import { createFluidGrid } from '../platform/3d/fluidGrid.js';
 import { createGpuFluidGrid } from '../platform/3d/fluidGridGpu.js';
 import { createCloth } from './cloth.js';
@@ -66,15 +68,26 @@ function scatter(seed) {
 }
 
 /**
- * Where the sun stands over the west front on 6 January, as a unit vector. +x is south and +z
- * west in this scene. 12:50 pm is about 29° up, a little west of south; it sets at about
- * 4:59 pm in the south-west. Kept a few degrees up so shadows never run to infinity.
+ * Where the sun stands over the west front on 6 January 2021, as a unit vector, from NOAA's
+ * solar position equations (sun.js) at the scenario minute. +x is south and +z west in this
+ * scene. 12:50 pm is 28° up, a little west of south; it sets at 4:59 pm at 241°. Kept a few
+ * degrees up so shadows never run to infinity once it has gone.
  */
 export function sunDirection(day, out = new THREE.Vector3()) {
-    const minutes = day * CURFEW_ELAPSED, toSunset = Math.min(1, minutes / 249);
-    const altitude = THREE.MathUtils.degToRad(Math.max(4, 29 * (1 - toSunset ** 1.6)));
-    const azimuth = THREE.MathUtils.degToRad(190 + 48 * toSunset);
+    const sky = scenarioSun(day * CURFEW_ELAPSED);
+    const altitude = THREE.MathUtils.degToRad(Math.max(4, sky.altitude));
+    const azimuth = THREE.MathUtils.degToRad(sky.azimuth);
     return out.set(-Math.cos(azimuth) * Math.cos(altitude), Math.sin(altitude), -Math.sin(azimuth) * Math.cos(altitude));
+}
+
+/**
+ * How much the cloud cover changes the sun against the archive's overcast (92%): a clear
+ * afternoon throws harder light and crisper shadows, a gale's solid cloud less. Bounded so the
+ * keyframed look of the day (SUN) stays in charge of the shape.
+ */
+function cloudLight(cloudCover = 0.92, altitude = 20) {
+    const base = daylightFactor(Math.max(1, altitude), 0.92);
+    return base > 0 ? Math.max(0.6, Math.min(1.5, daylightFactor(Math.max(1, altitude), cloudCover) / base)) : 1;
 }
 
 export async function createScene(host, { figure, osm, signs = [] } = {}) {
@@ -110,6 +123,10 @@ export async function createScene(host, { figure, osm, signs = [] } = {}) {
     const sunDir = sunDirection(0);
     const placeSun = () => sun.position.copy(sun.target.position).addScaledVector(sunDir, 110);
     placeSun();
+    // Where the sun is now (sun.js), for the diagnostics.
+    const sunSky = { altitude: 0, azimuth: 0 };
+    // The analysis overlay (overlay.js): Fruin density or the contagion discs, off by default.
+    const overlay = createOverlay(scene);
 
     const time = { value: 0 };
     // One wind for the whole scene, in m/s: banners, cloth, smoke, gas, breath and the snow all
@@ -1094,6 +1111,8 @@ export async function createScene(host, { figure, osm, signs = [] } = {}) {
     let lastHealth = null, lastDaze = -99;
     const dazzled = new WeakSet();
     const lastFocus = { x: 0, z: 100 };
+    const commandFocus = { id: -2, x: 0, z: 33, heading: 0, health: 1 };
+    let snowClock = 0;
     // Scenario time for the GPU bursts: it stops with the game, so a paused spark shower hangs in the air.
     let fxClock = 0;
     function render(state, yaw, pitch, moving, dt, options = {}) {
@@ -1139,7 +1158,13 @@ export async function createScene(host, { figure, osm, signs = [] } = {}) {
             selectRing.visible = false;
         }
 
-        const subject = latched || (spectating ? (options.director ?? selectLeader(state)) : state.player);
+        // The incident commander has no body: the camera works the line they have selected.
+        const commanding = state.role === 'commander' && state.command;
+        if (commanding) {
+            const def = lineDefs[state.command.selected] ?? lineDefs[0];
+            commandFocus.x = (def.x0 + def.x1) / 2; commandFocus.z = def.z;
+        }
+        const subject = latched || (spectating ? (options.director ?? selectLeader(state)) : commanding ? commandFocus : state.player);
         host.dataset.crowdBatches = crowd.batchCount;
         host.dataset.cameraSubject = spectating ? subject?.id ?? 'none' : 'human';
         // Phone POV: most of what the day looks like is footage from phones held up in the crowd.
@@ -1178,7 +1203,9 @@ export async function createScene(host, { figure, osm, signs = [] } = {}) {
         skyColor.set(sky0.a).lerp(tint.set(sky0.b), sky0.mix);
         setSkyColors(sky.uniforms, skyColor);
         scene.fog.color.copy(skyColor);
-        sun.intensity = level(SUN, day);
+        const sunNow = scenarioSun(state.elapsed);
+        sunSky.altitude = sunNow.altitude; sunSky.azimuth = sunNow.azimuth;
+        sun.intensity = level(SUN, day) * cloudLight(weather?.cloudCover, sunNow.altitude);
         // The image-based light now carries most of the ambient, so the old fill is cut back.
         fill.intensity = level(FILL, day) * 0.4;
         scene.environmentIntensity = level(ENV, day);
@@ -1287,6 +1314,15 @@ export async function createScene(host, { figure, osm, signs = [] } = {}) {
         droppedFlags.count = brokenLines * FLAGS_PER_LINE;
 
         const quiet = calm();
+        overlay.update(state, options.analysis, dt);
+        // Falling snow round the camera whenever snow is lying (setSnow, from the weather).
+        if (snowUniform.value > 0.2 && state.status === 'active' && camera.position.z > 14.5) {
+            snowClock += dt;
+            if (snowClock > 0.3) {
+                snowClock = 0;
+                bursts.flurry(camera.position.x, camera.position.y - 2, camera.position.z, Math.round(4 + 10 * snowUniform.value));
+            }
+        }
         particles.illuminate(sunDir, Math.min(1, sun.intensity / SUN[0][1]), airLights);
         particles.update(state.effects, state.elapsed, daylight, quiet, wind, dusk);
         // Light bars: two quick flashes of red, then two of blue. Dim by day, and after dark the
@@ -1501,7 +1537,7 @@ export async function createScene(host, { figure, osm, signs = [] } = {}) {
         // Demo camera: long, high shots behind the crowd and behind the police line. Indoors the
         // crane would sit in the ceiling, so it drops to a lower, shorter follow instead.
         const focusIndoors = focus.z < 14.5;
-        let policeShot = false, orbitShot = false;
+        let policeShot = false, orbitShot = false, commandShot = false;
         if (spectating && !latched) {
             const holding = state.lines.find(line => line.state === 'holding');
             const behindLine = holding ? holding.z - 5 : 0;
@@ -1553,6 +1589,17 @@ export async function createScene(host, { figure, osm, signs = [] } = {}) {
             } else {
                 desired.set(focus.x + Math.sin(yaw) * 21, floor + 14 + pitch * 4, focus.z + Math.cos(yaw) * 21);
             }
+        } else if (commanding && !latched) {
+            // Command view: a crane over the selected line, looking down on both sides of it. The
+            // first line is in the open and gets the full height; the doors are framed from the
+            // crowd's side at the facade; inside, the camera drops under the ceiling of the room
+            // the crowd is in. ← → swing it round, within reason.
+            const swing = Math.max(-0.7, Math.min(0.7, yaw));
+            const reach = focus.z > 20 ? 26 : focus.z > 10 ? 15 : 11;
+            const lift = focus.z > 20 ? 24 : focus.z > 10 ? 10 : 5.2;
+            desired.set(focus.x + Math.sin(swing) * reach, floor + lift, focus.z + Math.cos(swing) * reach);
+            target.set(focus.x, floor + 0.8, focus.z + 1.5);
+            commandShot = true;
         } else desired.set(focus.x + Math.sin(yaw) * 6.5, floor + 3.7 + pitch * 3, focus.z + Math.cos(yaw) * 6.5);
         // A bad number here used to paint the whole frame black, so fall back to a sane shot.
         if (!Number.isFinite(desired.x) || !Number.isFinite(desired.y) || !Number.isFinite(desired.z)) {
@@ -1587,7 +1634,7 @@ export async function createScene(host, { figure, osm, signs = [] } = {}) {
         }
         look.set(focus.x - Math.sin(yaw) * 10, floor + 1.5 - pitch * 5, focus.z - Math.cos(yaw) * 10);
         // From behind the line, or around the crowd, the camera aims at the crowd itself.
-        if (policeShot || orbitShot) look.copy(target);
+        if (policeShot || orbitShot || commandShot) look.copy(target);
         // Closing shot: past the doors nobody got through, into the chamber they had emptied.
         const wasClosing = closing > 0;
         closing = state.outcome === 'doors' && state.status !== 'active' ? Math.min(1, closing + dt / 2.5) : 0;
@@ -1597,7 +1644,7 @@ export async function createScene(host, { figure, osm, signs = [] } = {}) {
             look.lerp(target.set(0, 1.4, CHAMBER_Z - 9), ease);
             camera.position.copy(desired);
             if (!wasClosing) post.rackFocus(14, 2.2, 0.7);
-        } else if (spectating && cameraReady) {
+        } else if ((spectating || commanding) && cameraReady) {
             // Slower, cinematic gliding crane/dolly. A demo cut moves faster for a beat so the
             // change of side reads as a sweep, not a jump.
             const followSpeed = latched ? 3.0 : sinceCut < 1.2 ? 5.0 : 1.35;
@@ -1610,7 +1657,7 @@ export async function createScene(host, { figure, osm, signs = [] } = {}) {
             camera.position.y += Math.sin(clock * 0.45 + 1) * 0.025;
         }
         // Smooth cinematic look-at: pans gracefully across subject changes instead of snapping
-        if (spectating && cameraReady) {
+        if ((spectating || commanding) && cameraReady) {
             smoothLook.lerp(look, 1 - Math.exp(-dt * 2.0));
             camera.lookAt(smoothLook);
         } else {
@@ -1789,7 +1836,7 @@ export async function createScene(host, { figure, osm, signs = [] } = {}) {
         perchCrowd.dispose();
         impostors?.dispose();
         particles.dispose();
-        bursts.dispose(); decals.dispose(); glass.dispose(); cascade.dispose(); debris.dispose();
+        bursts.dispose(); decals.dispose(); glass.dispose(); cascade.dispose(); debris.dispose(); overlay.dispose();
         fogCards?.dispose();
         for (const light of flares) scene.remove(light);
         post.dispose();
@@ -1820,6 +1867,10 @@ export async function createScene(host, { figure, osm, signs = [] } = {}) {
         else if (event.type === 'smoke' || event.type === 'gas') paper.blast(event.x, event.z, 0.15, 2.5);
     }
     return { canvas: renderer.domElement, stage, render, aim, pickUnit, applyQuality, dispose, renderer, camera, startIntro, introActive, setTracerMode, setMotionReduction, setFov, setFootage, setMenu, onEvent,
+        setOverlay: next => overlay.setMode(next), setOverlayPalette: next => overlay.setPalette(next),
+        setSnow: amount => { snowUniform.value = Math.max(0, Math.min(1, amount)); },
+        /** The sun now, degrees (sun.js): for the diagnostics. */
+        sun: () => ({ altitude: Math.round(sunSky.altitude * 10) / 10, azimuth: Math.round(sunSky.azimuth * 10) / 10 }),
         /** What the add-on layers are doing, for getDiagnostics. */
         addons: () => ({ debris: debris.count(), debrisReady: debris.ready(), debrisStatus: debris.status(), gas: gasGrid.gpu ? 'webgpu' : 'cpu', flyers: paper.drawing() }) };
 }

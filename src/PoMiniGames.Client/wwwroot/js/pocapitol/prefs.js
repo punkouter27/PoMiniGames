@@ -29,6 +29,7 @@ const ALWAYS = { forward: ['ArrowUp'], back: ['ArrowDown'] };
 export const DEFAULTS = Object.freeze({
     sensitivity: 1, fov: 62, captions: false, contrast: 'normal', radar: 'auto', director: true,
     tracers: 'luminous', motion: 'full', footage: 'light', debrief: 'rules', debriefModel: 'llama3.2', score: 'off', hailer: 'off',
+    overlay: 'off',
 });
 
 const clamp = (value, low, high, fallback) =>
@@ -70,6 +71,8 @@ export function sanitizePrefs(raw) {
         // the default stays the documentary sound, synthesized only.
         score: oneOf(value.score, ['on', 'off'], DEFAULTS.score),
         hailer: oneOf(value.hailer, ['on', 'off'], DEFAULTS.hailer),
+        // The analysis overlay on the ground (overlay.js): Fruin density, contagion, or nothing.
+        overlay: oneOf(value.overlay, ['off', 'density', 'contagion'], DEFAULTS.overlay),
         debriefModel: typeof value.debriefModel === 'string' && /^[\w.:\/-]{1,60}$/.test(value.debriefModel)
             ? value.debriefModel : DEFAULTS.debriefModel,
         keys,

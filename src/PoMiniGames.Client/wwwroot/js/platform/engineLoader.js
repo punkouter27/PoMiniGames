@@ -87,6 +87,9 @@ const INTEGRITY = {
         'sha384-SSf4pKRrGaeWL8bdA89QvGkhZo5WvIVCGwKVzfX7z+9sSaIHtE/AkOLehofI4JVY',
     'https://cdn.jsdelivr.net/npm/tone@15.1.22/build/Tone.js':
         'sha384-NWoslxaf/3dYwQk+uGziDYJFdsjBpVlU1WpFRexuDFcIk/5PJpCbpVXia2Uikeix',
+    // PoCapitol's opt-in street map of an attempt (streetmap.js): MapLibre GL, BSD-3.
+    'https://cdn.jsdelivr.net/npm/maplibre-gl@4.7.1/dist/maplibre-gl.js':
+        'sha384-SYKAG6cglRMN0RVvhNeBY0r3FYKNOJtznwA0v7B5Vp9tr31xAHsZC0DqkQ/pZDmj',
 };
 
 const _pending = new Map();

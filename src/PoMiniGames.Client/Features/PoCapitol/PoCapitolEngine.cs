@@ -79,6 +79,20 @@ public sealed class PoCapitolEngine(IJSRuntime js)
 
     public ValueTask HideAftermathAsync() => Void("hideAftermath");
 
+    /// <summary>One order from the incident commander's panel; returns the radio's reply (empty if refused silently).</summary>
+    public ValueTask<string> GiveOrderAsync(string order, int line) => Get<string>("giveOrder", order, line);
+
+    /// <summary>Steps the analysis overlay (off, density, contagion); returns the new mode.</summary>
+    public ValueTask<string> CycleOverlayAsync() => Get<string>("cycleOverlay");
+
+    /// <summary>Draws the attempt over OpenStreetMap (MapLibre) in an element; false if it could not load.</summary>
+    public ValueTask<bool> ShowStreetMapAsync(string containerId) => Get<bool>("showStreetMap", containerId);
+
+    public ValueTask HideStreetMapAsync() => Void("hideStreetMap");
+
+    /// <summary>The attempt as GeoJSON text (crowd heat, rooms, lines, milestones).</summary>
+    public ValueTask<string> GetGeoJsonAsync() => Get<string>("getGeoJson");
+
     private ValueTask Void(string name, params object?[] args) => js.InvokeVoidAsync(Root + name, args);
 
     private ValueTask<T> Get<[DynamicallyAccessedMembers(JsonMembers)] T>(string name, params object?[] args) => js.InvokeAsync<T>(Root + name, args);

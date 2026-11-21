@@ -877,7 +877,8 @@ export function createCrowd(scene, capacity, { time, groundHeight, shadowTexture
     }
     function update(state, humanHeading, humanMoving, cameraPosition) {
         const actors = [
-            ...(state.role !== 'none' ? [{ ...state.player, id: -1, health: state.health, heading: humanHeading,
+            // The incident commander has no figure on the field.
+            ...(state.role !== 'none' && state.role !== 'commander' ? [{ ...state.player, id: -1, health: state.health, heading: humanHeading,
                 moving: humanMoving, police: state.role === 'police', observer: state.role === 'observer', key: 'h' }] : []),
             ...(state.armed ? state.companions.map(c => ({ ...c, armed: true })) : state.companions),
             ...state.enemies.map(e => ({ ...e, police: true, armed: state.armed, key: `p${e.id}` })),

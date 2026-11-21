@@ -84,9 +84,17 @@ const TILE = [3, 4.8, 6.4, 9, 5.6, 2.4, 7.2];
  * `wear` (ground.js) is optional: a map of where the crowd has walked. Grass under it turns to
  * churned mud, paving picks up a wet film of tracked dirt.
  */
+/**
+ * How much snow is lying, 0..1, shared by every surface: the scene sets it from the weather
+ * (freezing presets and a freezing live reading). Always declared, so changing it never
+ * recompiles a shader.
+ */
+export const snowUniform = { value: 0 };
+
 export function addSurface(material, kind, texture, detail, wear = null) {
     material.onBeforeCompile = shader => {
         shader.uniforms.uSurf = { value: texture };
+        shader.uniforms.uSnow = snowUniform;
         shader.uniforms.uSurfTile = { value: TILE[kind] };
         shader.uniforms.uSurfDetail = detail;
         shader.defines = { ...shader.defines, SURF_KIND: kind };
@@ -113,6 +121,7 @@ export function addSurface(material, kind, texture, detail, wear = null) {
                 uniform sampler2D uSurf;
                 uniform float uSurfTile;
                 uniform float uSurfDetail;
+                uniform float uSnow;
                 #ifdef SURF_WEAR
                     uniform sampler2D uWear;
                     uniform vec4 uWearRect;
@@ -200,6 +209,28 @@ export function addSurface(material, kind, texture, detail, wear = null) {
                     float micro = texture2D(uSurf, sp.xz * 5.3 + sp.yx * 2.9).r;
                     surfHeight += (micro - 0.5) * 0.22 * uSurfDetail;
                     surfRough = clamp(surfRough + (micro - 0.5) * 0.1 * uSurfDetail, 0.04, 1.0);
+                }
+                // Snow lies on whatever faces up outdoors: thick on the lawn, the ledges and the
+                // roofs, thinner on paving people keep clearing, and trodden to grey slush along
+                // every route the crowd has walked (the same wear map that turns the lawn to mud).
+                // Kept out of the building's ground floor, which is under a roof.
+                if (uSnow > 0.0 && !(vSurfPos.z < 14.6 && abs(vSurfPos.x) < 45.0 && vSurfPos.y < 2.5)) {
+                    float snowUp = smoothstep(0.55, 0.92, clamp(vSurfNormal.y, 0.0, 1.0));
+                    float trodden = 0.0;
+                    #ifdef SURF_WEAR
+                        vec2 snowUv = (vSurfPos.xz - uWearRect.xy) * uWearRect.zw;
+                        if (snowUv.x > 0.0 && snowUv.x < 1.0 && snowUv.y > 0.0 && snowUv.y < 1.0) {
+                            trodden = smoothstep(0.03, 0.4, texture2D(uWear, snowUv).r);
+                        }
+                    #endif
+                    float snowGrain = texture2D(uSurf, vSurfPos.xz / uSurfTile).g;
+                    float snowAmount = snowUp * uSnow * (0.8 + 0.2 * snowGrain) * (1.0 - 0.5 * trodden);
+                    #if SURF_KIND == 2
+                        snowAmount *= 0.7;
+                    #endif
+                    vec3 snowCover = mix(vec3(0.93, 0.95, 0.98), vec3(0.46, 0.45, 0.43), trodden);
+                    diffuseColor.rgb = mix(diffuseColor.rgb, snowCover, clamp(snowAmount, 0.0, 1.0));
+                    surfRough = mix(surfRough, mix(0.85, 0.22, trodden), snowAmount);
                 }`)
             .replace('#include <roughnessmap_fragment>', '#include <roughnessmap_fragment>\nroughnessFactor = mix(roughnessFactor, surfRough, uSurfDetail);')
             .replace('#include <normal_fragment_maps>', `#include <normal_fragment_maps>

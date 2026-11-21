@@ -123,6 +123,11 @@ export function toText(report) {
         `First line broken: ${report.firstBreak === null ? 'never' : `${report.firstBreak}s`}`,
         `Casualties ${report.casualties} (${report.immediate} immediate)`,
     ];
+    if (report.peakDensity !== undefined) {
+        lines.push(`Peak density ${report.peakDensity}/m² (Fruin ${report.peakGrade}), crush risk ${report.riskSeconds}s in ${report.riskEpisodes} episodes, ${report.packedShare}% of crowd-time at level D or worse`);
+        lines.push(`Contagion: up to ${report.peakPushing}% pushing, ${report.peakTipped}% tipping`);
+    }
+    if (report.command) lines.push(`Orders given ${report.command.issued}, lines withdrawn ${report.command.withdrawn}, gas left ${report.command.gasLeft}`);
     return lines.join('\n');
 }
 

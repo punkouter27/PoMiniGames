@@ -1,4 +1,5 @@
-import { createAttempt, advance, shove, fire, throwPlayerGrenade, setPaused, selectLeader, frontLine, milestones, clockLabel, CURFEW_ELAPSED, areas, obstacles, columns } from './world.js';
+import { createAttempt, advance, shove, fire, throwPlayerGrenade, setPaused, selectLeader, frontLine, milestones, clockLabel, CURFEW_ELAPSED, areas, obstacles, columns, command, orderWait, lineDefs, ORDERS } from './world.js';
+import { createAnalysis } from './analysis.js';
 import { createScene } from './scene.js';
 import { loadFigure } from './crowd.js';
 import { createAudio } from './audio.js';
@@ -73,6 +74,8 @@ async function init(hostId, reference) {
         frames: [], longFrames: 0, captionAt: 0, initMs: Math.round(nowMs() - bootAt),
         osmBuildings: osm?.buildings?.length ?? 0, osmAttribution: osm?.attribution ?? '',
         lastMilestone: 0, telemetry: [], debrief: createDebriefRouter(),
+        // Fruin density and contagion (analysis.js), rebuilt four times a second while play runs.
+        analysis: createAnalysis(), analysisAt: 0, analysisElapsed: 0, snow: 0, streetMap: null, streetAsk: null,
     };
     game = g;
     view.applyQuality?.(g.governor.settings());
@@ -81,7 +84,7 @@ async function init(hostId, reference) {
 
     // Weather API integration & dynamic updates
     fetchWeather(storedWeather()).then(w => {
-        g.weather = w;
+        applyWeather(g, w);
         g.weatherRefreshAt = nowMs() + 300000;
         reference?.invokeMethodAsync('OnWeatherUpdate', w.condition).catch(() => {});
     }).catch(() => {});
@@ -102,8 +105,20 @@ async function init(hostId, reference) {
     const signal = g.events.signal;
     const listen = (target, type, fn, options = {}) => target.addEventListener(type, fn, { ...options, signal });
     const clearInput = () => { g.keys.clear(); g.firing = false; g.drag = null; };
-    const human = () => g.state.role !== 'none';
-    const held = action => { for (const code of g.keys) if (matches(g.prefs, action, code)) return true; return false; };
+    // Someone with a body on the field. The incident commander has none: they give orders.
+    const human = () => g.state.role !== 'none' && g.state.role !== 'commander';
+    const commanding = () => g.state.role === 'commander' && g.state.status === 'active';
+    // An order from the keyboard or the page: the radio's reply goes to the captions.
+    g.order = (name, line) => {
+        // Orders arrive between frames, so what they set off is heard and seen now: the next
+        // step clears the event list before the frame loop would read it.
+        const mark = g.state.events.length;
+        const result = command(g.state, name, line ?? g.state.command?.selected ?? 0);
+        for (let i = mark; i < g.state.events.length; i++) { g.audio?.event(g.state.events[i]); g.view.onEvent?.(g.state.events[i]); }
+        if (result.message) { g.caption(result.message, 'event'); g.lastReply = result.message; }
+        notify(g);
+        return result;
+    };    const held = action => { for (const code of g.keys) if (matches(g.prefs, action, code)) return true; return false; };
     // Strafe only follows the binding itself: the arrows are reserved for turning the view.
     const bound = action => { for (const code of g.keys) if (g.prefs.keys[action] === code) return true; return false; };
     g.caption = (text, kind = 'radio') => {
@@ -117,6 +132,19 @@ async function init(hostId, reference) {
         if (!g.started || e.target.closest?.('input, select, textarea, [role="slider"]')) return;
         if ((e.code === 'Escape' || matches(g.prefs, 'pause', e.code)) && !e.repeat) {
             pause(g.state.status === 'active'); e.preventDefault(); return;
+        }
+        // V cycles the analysis overlay: off, Fruin density, contagion. Any role, demo included.
+        if (e.code === 'KeyV' && !e.repeat && !e.target.closest?.('button, a, summary, [role="radio"]')) {
+            cycleOverlay(); e.preventDefault(); return;
+        }
+        if (commanding() && !e.target.closest?.('button, a, summary, [role="radio"]')) {
+            if (e.code === 'ArrowLeft' || e.code === 'ArrowRight') { g.keys.add(e.code); e.preventDefault(); return; }
+            if (e.repeat) return;
+            const digit = /^Digit([1-5])$/.exec(e.code);
+            if (digit) { g.order('select', Number(digit[1]) - 1); e.preventDefault(); return; }
+            const orders = { KeyB: 'brace', KeyR: 'reinforce', KeyT: 'relieve', KeyG: 'gas', KeyF: 'fallback' };
+            if (orders[e.code]) { g.order(orders[e.code]); e.preventDefault(); }
+            return;
         }
         if (!human()) return;
         if (g.state.status !== 'active') return;
@@ -143,8 +171,8 @@ async function init(hostId, reference) {
         if (e.code !== 'KeyG' && e.code !== 'KeyH') return;
         if (lob(e.code === 'KeyH' ? 'smoke' : 'concussion')) e.preventDefault();
     });
-    listen(window, 'blur', () => { clearInput(); if (human()) pause(true); });
-    listen(document, 'visibilitychange', () => { if (document.hidden) { clearInput(); if (human()) pause(true); } });
+    listen(window, 'blur', () => { clearInput(); if (human() || commanding()) pause(true); });
+    listen(document, 'visibilitychange', () => { if (document.hidden) { clearInput(); if (human() || commanding()) pause(true); } });
     listen(document, 'pointerlockchange', () => {
         if (document.pointerLockElement !== view.canvas && g.started && human()) { clearInput(); pause(true); }
     });
@@ -264,6 +292,8 @@ async function init(hostId, reference) {
                 const right = pad && human() ? stick(pad, 0.2, 1) : { x: 0, y: 0 };
                 g.yaw -= ((g.keys.has('ArrowRight') ? 1 : 0) - (g.keys.has('ArrowLeft') ? 1 : 0) + right.x) * dt * 2;
                 g.pitch = Math.max(-0.45, Math.min(0.65, g.pitch + right.y * dt));
+                // The command crane only swings so far round its line (scene.js).
+                if (g.state.role === 'commander') g.yaw = Math.max(-0.7, Math.min(0.7, g.yaw));
                 const strafe = (bound('right') ? 1 : 0) - (bound('left') ? 1 : 0) + left.x;
                 const forward = (held('forward') ? 1 : 0) - (held('back') ? 1 : 0) - left.y;
                 x = strafe * Math.cos(g.yaw) - forward * Math.sin(g.yaw);
@@ -289,6 +319,11 @@ async function init(hostId, reference) {
                     g.caption(milestones[g.state.milestone - 1]?.label ?? 'Objective reached', 'event');
                 }
                 g.recorder.step(g.state);
+                if (now >= g.analysisAt) {
+                    g.analysisAt = now + 250;
+                    g.analysis.update(g.state, Math.max(0, g.state.elapsed - g.analysisElapsed));
+                    g.analysisElapsed = g.state.elapsed;
+                }
                 g.director.observe(g.state, now);
                 if (human() && (g.firing || held('push') || pressed(pad, 7))) {
                     const aim = view.aim(g.state, g.yaw);
@@ -327,6 +362,7 @@ async function init(hostId, reference) {
                 latchedUnit: g.inspector?.isLatched() ? g.inspector.getSelected() : null,
                 weather: g.weather,
                 director: directed,
+                analysis: g.analysis,
             });
 
             const s = g.state;
@@ -336,11 +372,11 @@ async function init(hostId, reference) {
             if (g.audio) {
                 if (now >= g.mixAt) { g.mixAt = now + 200; g.mix = soundMix(s); }
                 // Heading changes every frame; the 5 Hz crowd read does not carry it.
-                const ear = s.role === 'none' ? selectLeader(s) ?? s.player : s.player;
+                const ear = listenerOf(s);
                 const yaw = s.role === 'none' ? ear.heading ?? 0 : g.yaw;
                 // Whoever the camera is on is who the mix favours.
-                const focus = s.role === 'none' ? (directed ?? ear) : s.player;
-                g.audio.update({ ...g.mix, focus, x: ear.x, z: ear.z, yaw, walking: moving, gassed: s.gassed, wind: g.weather?.windSpeed, active: g.started && s.status === 'active' }, dt);
+                const focus = s.role === 'none' ? (directed ?? ear) : s.role === 'commander' ? ear : s.player;
+                g.audio.update({ ...g.mix, focus, x: ear.x, z: ear.z, yaw, walking: moving, gassed: s.gassed, wind: g.weather?.windSpeed, snow: g.snow, active: g.started && s.status === 'active' }, dt);
                 const active = g.started && s.status === 'active';
                 g.hailer?.update({ x: ear.x, z: ear.z, yaw, horn: g.mix?.horn, pressure: g.mix?.pressure, elapsed: s.elapsed, active, curfew: CURFEW_ELAPSED - 8 });
                 g.score?.update({ ...g.mix, elapsed: s.elapsed, milestone: s.milestone, active, openfire: Boolean(g.openfire) }, dt);
@@ -349,7 +385,7 @@ async function init(hostId, reference) {
                 g.weatherRefreshAt = now + 300000;
                 fetchWeather('live').then(w => {
                     if (g.disposed) return;
-                    g.weather = w;
+                    applyWeather(g, w);
                     reference?.invokeMethodAsync('OnWeatherUpdate', w.condition).catch(() => {});
                 }).catch(() => {});
             }
@@ -383,8 +419,34 @@ function initRadar(canvasId = 'pocapitol-radar') {
  * `shear` is how fast a packed crowd is moving against itself (friction), `walkers` the nearest
  * people on the move (each gets its own footfalls), `horn` where the nearest officer stands.
  */
+/**
+ * Where the listener stands: the human, the leader in the demo, or for the commander just behind
+ * the selected line, where a command post would put its radio.
+ */
+function listenerOf(s) {
+    if (s.role === 'none') return selectLeader(s) ?? s.player;
+    if (s.role === 'commander') {
+        const def = lineDefs[s.command?.selected ?? 0] ?? lineDefs[0];
+        return { x: (def.x0 + def.x1) / 2, z: def.z - 3, heading: 0 };
+    }
+    return s.player;
+}
+
+/** Snow lying, 0..1, from the weather: none above freezing, a full cover in a hard frost. */
+function snowFor(weather) {
+    const t = weather?.tempC;
+    if (!Number.isFinite(t) || t > 0.5) return 0;
+    return Math.max(0, Math.min(1, 0.45 + (0.5 - t) * 0.2));
+}
+
+function applyWeather(g, w) {
+    g.weather = w;
+    g.snow = snowFor(w);
+    g.view.setSnow?.(g.snow);
+}
+
 function soundMix(s) {
-    const ear = s.role === 'none' ? selectLeader(s) ?? s.player : s.player;
+    const ear = listenerOf(s);
     let crowd = 0, morale = 0, shear = 0, packed = 0;
     const near = [];
     // Where the crowd stands round the listener, in eight compass sectors (north is toward the
@@ -456,6 +518,8 @@ function notify(g) {
                 g.host.dataset.interfaceError = message;
             }
         }).finally(() => { g.notifying = false; });
+    // The commander's board is its own call, so a slow board never stalls the HUD or pauses play.
+    if (s.command) g.reference.invokeMethodAsync('OnCommand', commandView(s, g.lastReply)).catch(() => { /* page gone */ });
 }
 
 function start(difficulty, demo = false, role = 'raider') {
@@ -467,6 +531,8 @@ function start(difficulty, demo = false, role = 'raider') {
     game.inspector?.clear();
     hideAftermath();
     game.recorder.reset(); game.director.reset();
+    game.analysis.reset(); game.analysisAt = 0; game.analysisElapsed = 0; game.lastReply = '';
+    hideStreetMap();
     game.lastMilestone = 0; game.ended = false; game.state.subject = -1;
     track('start', { mode: demo ? 'demo' : 'solo', role, difficulty, tier: game.governor.label() });
     // The opening establishing shot: five seconds over the Capitol before the player is behind
@@ -514,7 +580,7 @@ function setGraphics(mode) {
 async function setWeather(mode) {
     if (!game) return 'historical';
     const w = await fetchWeather(mode);
-    game.weather = w;
+    applyWeather(game, w);
     game.weatherRefreshAt = nowMs() + 300000;
     try { window.localStorage?.setItem(WEATHER_KEY, mode); } catch {}
     return w.condition;
@@ -567,6 +633,9 @@ function getDiagnostics() {
         actors: Number.parseInt(game?.host?.dataset?.actorCount ?? '0', 10),
         footprints: game?.osmBuildings ?? 0,
         weather: game?.weather?.condition ?? '',
+        sun: game?.view?.sun?.() ?? null,
+        snow: game?.snow ?? 0,
+        overlay: game?.prefs?.overlay ?? 'off',
         director: game?.prefs?.director ?? false,
         captions: game?.prefs?.captions ?? false,
         canvas: game?.view?.canvas ? { width: game.view.canvas.width, height: game.view.canvas.height } : null,
@@ -585,6 +654,7 @@ function getDiagnosticsText() {
         `Init ${d.initMs ?? '—'} ms · tier ${d.tier} · ${d.drawCalls} draw calls · ${d.triangles} triangles`,
         `Frame ${d.frameMsP50} ms p50 / ${d.frameMsP95} ms p95 · ${d.longFrames} frames over 55 ms`,
         `Actors ${d.actors} · OSM footprints ${d.footprints} · weather ${d.weather || 'n/a'}`,
+        `Sun ${d.sun ? `${d.sun.altitude}° up at ${d.sun.azimuth}°` : 'n/a'} · snow ${Math.round(d.snow * 100)}% · overlay ${d.overlay}`,
         `Director ${d.director ? 'on' : 'off'} · captions ${d.captions ? 'on' : 'off'}`,
         `Add-ons: debris ${d.addons.debris ?? 0} · gas ${d.addons.gas ?? 'cpu'} · paper ${d.addons.flyers ? 'on' : 'off'} · score ${d.addons.score ? 'on' : 'off'} · loudhailer ${d.addons.hailer ? 'on' : 'off'}`,
         `Canvas ${d.canvas ? `${d.canvas.width}×${d.canvas.height}` : 'none'} @ ${d.devicePixelRatio}x`,
@@ -594,11 +664,21 @@ function getDiagnosticsText() {
 }
 
 function buildReport(state) {
-    return game.recorder.build(state, {
+    const report = game.recorder.build(state, {
         mode: state.demo ? 'demo' : 'solo',
         role: state.role,
         clock: clockLabel(state.elapsed),
     });
+    const crowd = game.analysis.summary();
+    report.crowd = crowd;
+    Object.assign(report, {
+        peakDensity: crowd.peakDensity, peakGrade: crowd.peakGrade, riskSeconds: crowd.riskSeconds,
+        riskEpisodes: crowd.riskEpisodes, packedShare: crowd.packedShare, peakPushing: crowd.peakPushing,
+        peakTipped: crowd.peakTipped,
+    });
+    report.lines = state.lines.map(l => ({ brokenAt: l.brokenAt, withdrawn: l.withdrawn === true }));
+    if (state.command) report.command = { issued: state.command.issued, withdrawn: state.command.withdrawn, gasLeft: state.command.gas };
+    return report;
 }
 
 /**
@@ -627,7 +707,90 @@ function getReportView() {
         firstBreak: report.firstBreak ?? -1,
         milestones: report.milestones.length,
         minutes: Math.round(report.elapsed / 60),
+        peakDensity: report.peakDensity ?? 0, peakGrade: report.peakGrade ?? 'A',
+        riskSeconds: report.riskSeconds ?? 0, riskEpisodes: report.riskEpisodes ?? 0, packedShare: report.packedShare ?? 0,
+        peakPushing: report.peakPushing ?? 0, peakTipped: report.peakTipped ?? 0,
+        orders: report.command?.issued ?? -1, withdrawn: report.command?.withdrawn ?? 0,
     };
+}
+
+/**
+ * The incident commander's board for the page: one flat record. Lists are comma-separated
+ * strings (integrity per line, -1 once it has gone; braced as 1/0) so the trimmed WASM build
+ * reads it without nested types.
+ */
+function commandView(s, reply = '') {
+    const cmd = s.command;
+    return {
+        selected: cmd.selected, gas: cmd.gas, issued: cmd.issued, reply: reply ?? '',
+        reinforceIn: Math.ceil(orderWait(s, 'reinforce')), relieveIn: Math.ceil(orderWait(s, 'relieve')), gasIn: Math.ceil(orderWait(s, 'gas')),
+        braced: cmd.braced.map(b => (b ? 1 : 0)).join(','),
+        integrity: s.lines.map(l => (l.state === 'holding' ? Math.round(l.integrity) : -1)).join(','),
+        strain: s.lines.map(l => Math.round(Math.min(1, l.strain / 95) * 100)).join(','),
+        officers: lineDefs.map((_, i) => s.enemies.filter(e => e.health > 0 && e.line === i).length).join(','),
+    };
+}
+
+/** One order from the page's command panel. Returns the radio's reply. */
+function giveOrder(order, line) {
+    if (!game?.order || game.state.role !== 'commander') return '';
+    if (order !== 'select' && !ORDERS.includes(order)) return '';
+    return game.order(order, line).message;
+}
+
+const OVERLAYS = ['off', 'density', 'contagion'];
+const OVERLAY_NAMES = { off: 'Analysis overlay off', density: 'Overlay: crowd density (Fruin levels of service)', contagion: 'Overlay: contagion (red pushing, amber tipping, blue calm)' };
+
+/** V: off, density, contagion, and round again. Saved like any other setting. */
+function cycleOverlay() {
+    if (!game) return 'off';
+    const next = OVERLAYS[(OVERLAYS.indexOf(game.prefs.overlay) + 1) % OVERLAYS.length];
+    setPrefs({ overlay: next });
+    game.caption?.(OVERLAY_NAMES[next], 'event');
+    game.reference?.invokeMethodAsync('OnPrefsChanged', prefsView(game.prefs)).catch(() => { /* page gone */ });
+    return next;
+}
+
+/**
+ * The attempt on OpenStreetMap (streetmap.js, MapLibre): loaded only when the player asks for
+ * it. Resolves true once the map is drawing in the element with `containerId`.
+ */
+async function showStreetMap(containerId) {
+    hideStreetMap();
+    if (!game) return false;
+    const container = document.getElementById(containerId);
+    if (!container) return false;
+    const asked = game.streetAsk = {};
+    try {
+        const { createStreetMap } = await import('./streetmap.js');
+        const r = currentReport();
+        const map = await createStreetMap(container, {
+            heat: r.heat, cols: HEAT.cols, rows: HEAT.rows, rect: { x0: HEAT.x0, z0: HEAT.z0, w: HEAT.w, d: HEAT.d },
+            series: r.series, lines: r.lines ?? [], outcome: r.outcome, role: r.role,
+        }, { reducedMotion: document.documentElement.dataset.motion === 'reduce' || game.prefs.motion === 'reduced' });
+        if (!game || game.streetAsk !== asked || !container.isConnected) { map.dispose(); return false; }
+        game.streetMap = map;
+        return true;
+    } catch (error) {
+        console.warn('[PoCapitol] street map unavailable:', error);
+        return false;
+    }
+}
+
+function hideStreetMap() {
+    game?.streetMap?.dispose();
+    if (game) { game.streetMap = null; game.streetAsk = null; }
+}
+
+/** The attempt as GeoJSON text, for the "Export GeoJSON" button. */
+async function getGeoJson() {
+    if (!game) return '';
+    const { attemptGeoJson } = await import('./streetmap.js');
+    const r = currentReport();
+    return JSON.stringify(attemptGeoJson({
+        heat: r.heat, cols: HEAT.cols, rows: HEAT.rows, rect: { x0: HEAT.x0, z0: HEAT.z0, w: HEAT.w, d: HEAT.d },
+        series: r.series, lines: r.lines ?? [], outcome: r.outcome, role: r.role,
+    }));
 }
 
 /** Evenly thin a series to at most `limit` values (the report card takes 240). */
@@ -648,7 +811,7 @@ function getReportCard() {
     let lastFront = 33;
     const fronts = series.map(s => (lastFront = s.frontZ ?? lastFront));
     return {
-        outcome: safe(r.outcome || r.status), role: r.role === 'observer' ? 'none' : r.role, mode: r.mode,
+        outcome: safe(r.outcome || r.status), role: r.role === 'observer' ? 'none' : r.role === 'commander' ? 'police' : r.role, mode: r.mode,
         difficulty: safe(r.difficulty), clock: String(r.clock ?? '').toLowerCase().replace(/[^0-9apm: ]/g, '').slice(0, 12),
         minutes: Math.round((r.elapsed ?? 0) / 60 * 10) / 10, standing: r.standing ?? 0, police: r.police ?? 0,
         casualties: r.casualties ?? 0, lowestIntegrity: r.lowestIntegrity ?? 100, peakPressure: r.peakPressure ?? 0,
@@ -774,6 +937,7 @@ function prefsView(prefs) {
         contrast: prefs.contrast, radar: prefs.radar, director: prefs.director,
         tracers: prefs.tracers, motion: prefs.motion, footage: prefs.footage,
         debrief: prefs.debrief, debriefModel: prefs.debriefModel, score: prefs.score, hailer: prefs.hailer,
+        overlay: prefs.overlay,
         forward: prefs.keys.forward, back: prefs.keys.back, left: prefs.keys.left, right: prefs.keys.right,
         push: prefs.keys.push, sprint: prefs.keys.sprint, pause: prefs.keys.pause,
     };
@@ -809,6 +973,10 @@ function applyViewPrefs(view, prefs) {
     view.setTracerMode?.(prefs.tracers);
     view.setMotionReduction?.(prefs.motion === 'reduced');
     view.setFootage?.(FOOTAGE_AMOUNT[prefs.footage] ?? 0);
+    view.setOverlay?.(prefs.overlay);
+    // The overlay follows the radar's palette, and 'auto' follows the app's colour-safe setting.
+    const colorsafe = prefs.radar === 'colorsafe' || (prefs.radar === 'auto' && document.documentElement.hasAttribute('data-colorsafe'));
+    view.setOverlayPalette?.(colorsafe ? 'colorsafe' : 'default');
 }
 
 /**
@@ -837,7 +1005,7 @@ function dispose() {
     g.disposed = true; g.events.abort();
     if (document.pointerLockElement === g.view.canvas) document.exitPointerLock();
     g.audio?.dispose?.();
-    g.hailer?.dispose(); g.score?.dispose(); g.aftermath?.dispose();
+    g.hailer?.dispose(); g.score?.dispose(); g.aftermath?.dispose(); g.streetMap?.dispose();
     g.ui?.dispose?.();
     g.radar?.destroy?.();
     g.inspector?.clear?.();
@@ -856,4 +1024,5 @@ window.PoCapitol = {
     getReportView, getDebrief, probeDebrief, download, downloadBytes, exportPng, copyText,
     getReportCard, showAftermath, hideAftermath,
     getDiagnostics, getDiagnosticsText,
+    giveOrder, cycleOverlay, showStreetMap, hideStreetMap, getGeoJson,
 };

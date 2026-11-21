@@ -61,7 +61,7 @@ const plural = (count, one, many = `${one}s`) => `${count} ${count === 1 ? one :
 /** The built-in writer. Deterministic: the same report always reads the same way. */
 export function ruleDebrief(report) {
     const r = report ?? {};
-    const who = r.mode === 'demo' ? 'The armed demo' : r.role === 'police' ? 'The police-line attempt'
+    const who = r.mode === 'demo' ? 'The armed demo' : r.role === 'commander' ? 'The commanded defence' : r.role === 'police' ? 'The police-line attempt'
         : r.role === 'observer' ? 'The observed attempt' : 'The attempt';
     const ended = OUTCOMES[r.outcome] ?? 'it ended';
     const when = r.clock ? ` at ${r.clock}` : '';
@@ -75,6 +75,11 @@ export function ruleDebrief(report) {
         ? `${plural(r.casualties, 'casualty', 'casualties')} (${r.immediate ?? 0} immediate)`
         : 'no casualties';
     lines.push(`${r.standing ?? 0} of the crowd and ${r.police ?? 0} police were still standing, with ${harm} recorded.`);
+    if (Number(r.peakDensity) > 0) {
+        const risk = (r.riskSeconds ?? 0) > 0 ? `${plural(r.riskSeconds, 'second')} of crush risk in ${plural(r.riskEpisodes ?? 0, 'episode')}` : 'no crush risk';
+        lines.push(`At its densest the crowd packed to ${r.peakDensity} people per square metre (level of service ${r.peakGrade ?? '?'}), with ${risk}; at the peak ${r.peakPushing ?? 0}% of it was pushing.`);
+    }
+    if (r.command) lines.push(`${plural(r.command.issued ?? 0, 'order')} went out over the radio, and ${plural(r.command.withdrawn ?? 0, 'line')} fell back in good order.`);
     return lines.join(' ');
 }
 

@@ -65,6 +65,8 @@ export const MATERIALS = {
     ground: { modes: [[140, 0.05, 1], [310, 0.03, 0.4]], click: 480, thud: 80 },
     glass: { modes: [[2150, 0.09, 1], [3380, 0.07, 0.8], [4720, 0.05, 0.6], [6450, 0.04, 0.4]], click: 7200, thud: 0 },
     wood: { modes: [[112, 0.17, 1], [208, 0.11, 0.6], [345, 0.07, 0.3]], click: 900, thud: 72 },
+    // Packed snow: hardly any ring, a dull low thump and a bright, crushed-ice crunch on top.
+    snow: { modes: [[150, 0.035, 0.7], [380, 0.025, 0.35]], click: 3400, thud: 55 },
 };
 
 /** The first three formants of the vowels a chanting crowd uses, Hz (adult averages). */
@@ -114,8 +116,10 @@ function areaIndex(x, z) {
  * uses, so a footfall cannot disagree with the surface under the feet: anything raised (the
  * portico, the terrace treads, the paved approach) is stone, and the lawn is turf.
  */
-export function footstepMaterial(x, z) {
+export function footstepMaterial(x, z, snow = 0) {
     if (z < 15) return 'marble';
+    // Snow lying outdoors crunches underfoot, on the lawn and the paving alike.
+    if (snow > 0.3) return 'snow';
     return groundHeight(x, z) >= 0.019 ? 'marble' : 'ground';
 }
 
@@ -228,34 +232,77 @@ export function duckDepth(type, energy = 0, distance = 0) {
     return base <= 0 ? 0 : clamp(base / (1 + Math.max(0, distance) / 14), 0, 0.75);
 }
 
-/** Ceiling heights, meters: the crypt is low, the rotunda a dome, the statuary hall tall. */
-const CEILING = [0, 9, 24, 4, 14, 5];
+/**
+ * Each room's acoustics: ceiling height in metres, the share of sound its surfaces soak up on
+ * each bounce, and the longest tail allowed. The Crypt is low sandstone and a forest of columns
+ * that break the sound up; the Rotunda is bare stone under a dome about 55 m (180 ft) up, the
+ * longest-ringing room in the building; Statuary Hall's coffered half-dome is the whispering
+ * gallery. The rooms here are smaller than the real ones; the heights are the real ones.
+ */
+export const ROOMS = [
+    null,
+    { name: 'Crypt', ceiling: 6, absorb: 0.2, maxRt: 1.8 },
+    { name: 'Rotunda', ceiling: 55, absorb: 0.045, maxRt: 7 },
+    { name: 'Connecting doorway', ceiling: 6, absorb: 0.1, maxRt: 2.5 },
+    { name: 'Statuary Hall', ceiling: 17, absorb: 0.08, maxRt: 3.5 },
+    { name: 'House corridor', ceiling: 6, absorb: 0.1, maxRt: 2.5 },
+];
+
+/**
+ * Statuary Hall's whispering gallery: the half-dome ceiling focuses a sound made at one point onto
+ * its mirror image across the hall, so a whisper off to one side is heard clearly at the matching
+ * spot on the other. Returns `focus` 0..1 (how close the listener is to the source's mirror
+ * point) and the `length` of the path up over the ceiling, metres.
+ */
+export function whisperFocus(source, listener) {
+    if (areaIndex(source.x, source.z) !== 4 || areaIndex(listener.x, listener.z) !== 4) return { focus: 0, length: 0 };
+    if (Math.abs(source.x) < 3) return { focus: 0, length: 0 };
+    const miss = Math.hypot(listener.x + source.x, listener.z - source.z);
+    const focus = Math.max(0, 1 - miss / 2.5);
+    const span = Math.hypot(listener.x - source.x, listener.z - source.z);
+    return { focus, length: 2 * Math.hypot(span / 2, ROOMS[4].ceiling - 1.5) };
+}
 
 /**
  * An impulse response for the room around `listener`, built from its geometry. Indoors: the six
  * first-order reflections at their true path lengths over a decaying diffuse tail whose length is
  * Sabine's 0.161 V / (S a). Outdoors: a short ground bounce and the facade's slap-back.
  */
-export function roomImpulse(listener, rate = 44100, random = Math.random) {
+export function roomImpulse(listener, rate = 44100, random = Math.random, { snow = 0 } = {}) {
     const index = areaIndex(listener.x, listener.z);
-    const length = Math.ceil(rate * (index === 0 ? 0.9 : 3.2));
     const taps = [];
-    let rt = 0.25, tail = 0.18;
+    let rt = 0.25, tail = 0.18, seconds = 0.9;
     if (index === 0) {
+        // Fresh snow is one of the most absorbent surfaces outdoors: it kills the ground bounce
+        // and takes the edge off the slap-back from the facade.
+        const soak = 1 - 0.55 * clamp(snow, 0, 1);
         const facade = Math.max(8, listener.z - 15);
-        taps.push([0.006, 0.5], [2 * facade / SPEED_OF_SOUND, facade > 70 ? 0.07 : 0.2]);
-        if (facade < 70) taps.push([2 * facade / SPEED_OF_SOUND + 0.07, 0.07]);
-        tail = 0.04;
+        taps.push([0.006, 0.5 * soak], [2 * facade / SPEED_OF_SOUND, (facade > 70 ? 0.07 : 0.2) * soak]);
+        if (facade < 70) taps.push([2 * facade / SPEED_OF_SOUND + 0.07, 0.07 * soak]);
+        tail = 0.04 * soak;
     } else {
-        const room = areas[index], height = CEILING[index];
+        const room = areas[index], acoustics = ROOMS[index], height = acoustics.ceiling;
         const volume = room.w * room.d * height;
         const surface = 2 * (room.w * room.d + room.w * height + room.d * height);
-        // Polished stone with people in it absorbs about 8% on each bounce.
-        rt = clamp(0.161 * volume / (surface * 0.08), 0.3, 3);
+        // Sabine: 0.161 V / (S a), with each room's own absorption.
+        rt = clamp(0.161 * volume / (surface * acoustics.absorb), 0.3, acoustics.maxRt);
+        seconds = Math.min(8, rt + 0.4);
         const walls = [listener.x - (room.x - room.w / 2), room.x + room.w / 2 - listener.x,
             listener.z - (room.z - room.d / 2), room.z + room.d / 2 - listener.z, height - 1.7, 1.7];
         for (const wall of walls) taps.push([2 * Math.max(0.5, wall) / SPEED_OF_SOUND, 0.45]);
+        if (index === 1) {
+            // The Crypt's columns scatter the early sound into a dense patter instead of clean echoes.
+            for (let k = 0; k < 10; k++) taps.push([0.008 + random() * 0.05, 0.12 + random() * 0.1]);
+        }
+        if (index === 2) {
+            // The dome hands the sound back to the middle of the floor, a third of a second later,
+            // and again: strongest under the eye of the dome, fading toward the walls.
+            const centred = Math.max(0, 1 - Math.hypot(listener.x - room.x, listener.z - room.z) / 14);
+            const up = 2 * (height - 1.7) / SPEED_OF_SOUND;
+            taps.push([up, 0.25 + 0.45 * centred], [2 * up, 0.1 + 0.25 * centred], [3 * up, 0.05 + 0.12 * centred]);
+        }
     }
+    const length = Math.ceil(rate * seconds);
     const buffer = new AudioBuffer({ numberOfChannels: 2, length, sampleRate: rate });
     for (let ch = 0; ch < 2; ch++) {
         const data = buffer.getChannelData(ch);
@@ -312,14 +359,15 @@ export function createAudio({ onCaption } = {}) {
     const bed = ctx.createGain();
     bed.connect(master);
     nodes.push(bed);
-    let activeSlot = -1, roomKey = '', disposed = false;
+    let activeSlot = -1, roomKey = '', disposed = false, snowLying = 0;
     function tuneRoom(listenerPoint) {
         const index = areaIndex(listenerPoint.x, listenerPoint.z);
         // Outdoors the slap-back delay moves with the listener, quantized so it rebuilds rarely.
-        const key = index === 0 ? `0:${Math.round(listenerPoint.z / 10)}` : String(index);
+        const key = index === 0 ? `0:${Math.round(listenerPoint.z / 10)}:${Math.round(snowLying * 4)}`
+            : index === 2 ? `2:${Math.round(Math.hypot(listenerPoint.x, listenerPoint.z + 14) / 4)}` : String(index);
         if (key === roomKey) return;
         roomKey = key;
-        const { buffer } = roomImpulse(listenerPoint, ctx.sampleRate);
+        const { buffer } = roomImpulse(listenerPoint, ctx.sampleRate, Math.random, { snow: snowLying });
         const next = (activeSlot + 1) % 2;
         slots[next].convolver.buffer = buffer;
         const t = ctx.currentTime;
@@ -492,6 +540,21 @@ export function createAudio({ onCaption } = {}) {
         muffle.connect(level).connect(flight).connect(panner).connect(master);
         const made = [muffle, level, flight, panner];
         let longest = flight.delayTime.value;
+        // Statuary Hall: a sound from the far side's mirror point arrives a second time, focused
+        // by the half-dome, nearly as loud as the direct sound and from overhead.
+        const whisper = whisperFocus({ x, z }, listener);
+        if (whisper.focus > 0) {
+            const over = ctx.createGain(), late = ctx.createDelay(1), from = ctx.createPanner();
+            try { from.panningModel = 'HRTF'; } catch { from.panningModel = 'equalpower'; }
+            from.distanceModel = 'inverse'; from.refDistance = 6; from.rolloffFactor = 0.4; from.maxDistance = 60;
+            if (from.positionX) { from.positionX.value = listener.x; from.positionY.value = 8; from.positionZ.value = listener.z - 1; }
+            else from.setPosition(listener.x, 8, listener.z - 1);
+            over.gain.value = 0.85 * whisper.focus * gain;
+            late.delayTime.value = Math.min(0.95, whisper.length / SPEED_OF_SOUND);
+            muffle.connect(over).connect(late).connect(from).connect(master);
+            made.push(over, late, from);
+            longest = Math.max(longest, late.delayTime.value);
+        }
         if (echoes && path.doors === 0) {
             // The same sound again off each flat face that can see both ends: later by the
             // longer route, quieter, with the top taken off by the stone.
@@ -788,6 +851,10 @@ export function createAudio({ onCaption } = {}) {
             case 'reinforce':
                 radio(0.16, dest, true);
                 break;
+            case 'order':
+                // The commander's order going out over the net: a squelch and a beep at the line.
+                radio(0.12, dest, false);
+                break;
         }
     }
 
@@ -855,6 +922,7 @@ export function createAudio({ onCaption } = {}) {
         clock += dt;
         listener.x = mix.x; listener.z = mix.z; listener.yaw = mix.yaw ?? 0;
         listener.focus = mix.focus ?? null;
+        snowLying = mix.snow ?? 0;
         aimListener();
         placeVoices();
         const indoors = mix.z < 14.5, live = mix.active && !bus.isMuted?.();
@@ -956,14 +1024,14 @@ export function createAudio({ onCaption } = {}) {
         }
         if (mix.walking && clock >= stepAt) {
             stepAt = clock + 0.36;
-            strike({ material: footstepMaterial(mix.x, mix.z), energy: indoors ? 14 : 9, mass: 80, gain: 0.8 });
+            strike({ material: footstepMaterial(mix.x, mix.z, snowLying), energy: indoors ? 14 : 9, mass: 80, gain: 0.8 });
         }
         // The nearest walkers, one footfall at a time, each from where its feet are.
         const walkers = mix.walkers;
         if (walkers?.length && clock >= footAt) {
             footAt = clock + 0.07 + Math.random() * 0.12;
             const w = walkers[walker++ % walkers.length];
-            strike({ material: footstepMaterial(w.x, w.z), energy: indoors ? 3 : 6, mass: w.mass ?? 75, gain: 0.7, dest: place(w.x, w.z, 1, 0.1) });
+            strike({ material: footstepMaterial(w.x, w.z, snowLying), energy: indoors ? 3 : 6, mass: w.mass ?? 75, gain: 0.7, dest: place(w.x, w.z, 1, 0.1) });
         }
         if (mix.gassed && clock >= coughAt) {
             coughAt = clock + 1.3 + Math.random();

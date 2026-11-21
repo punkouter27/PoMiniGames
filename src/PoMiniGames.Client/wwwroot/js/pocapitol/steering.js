@@ -75,7 +75,7 @@ export function createSteering(capacity) {
             const vehicle = vehicles[agent.id];
             const neighbors = vehicle.neighbors;
             neighbors.length = 0;
-            let retreatingNear = 0, surgingNear = 0, aheadBlocking = 0;
+            let retreatingNear = 0, surgingNear = 0, aheadBlocking = 0, activeNear = 0, peers = 0;
             const toTargetX = agent.targetX - agent.x, toTargetZ = agent.targetZ - agent.z;
             const toTargetLen = Math.hypot(toTargetX, toTargetZ) || 1;
             grid.query(agent.x, agent.z, NEIGHBOR_RADIUS, other => {
@@ -86,6 +86,8 @@ export function createSteering(capacity) {
                     neighbors.push(vehicles[other.id]);
                     if (other.actor?.retreating || (other.actor && other.actor.health <= 0)) retreatingNear++;
                     if ((other.actor?.surge ?? 0) > 0) surgingNear++;
+                    // Contagion (world.js): how many of the people round this one are pushing.
+                    if (other.actor && other.actor.health > 0) { peers++; if (other.actor.pushing) activeNear++; }
                     const d = Math.sqrt(d2) || 1;
                     const dot = (dx * toTargetX + dz * toTargetZ) / (d * toTargetLen);
                     if (dot > 0.7 && d < 1.1) aheadBlocking++;
@@ -98,6 +100,8 @@ export function createSteering(capacity) {
             agent.crowding = neighbors.length;
             agent.retreatingNear = retreatingNear;
             agent.surgingNear = surgingNear;
+            agent.activeNear = activeNear;
+            agent.peers = peers;
             // People per square metre under this agent's own feet: what a crowd is actually
             // compressed to, which is what carries someone along when they stop walking.
             agent.density = neighbors.length / (Math.PI * NEIGHBOR_RADIUS * NEIGHBOR_RADIUS);

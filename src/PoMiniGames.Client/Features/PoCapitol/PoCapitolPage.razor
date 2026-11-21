@@ -52,7 +52,7 @@
                 {
                     <GameIntro CueScope="pocapitol"
                                Title="@TitleContent"
-                               Objective="One afternoon, five police lines. Play it as the crowd, the line, or an observer."
+                               Objective="One afternoon, five police lines. Play it as the crowd, the line, the commander, or an observer."
                                Controls="@IntroControls"
                                HowToPlay="@IntroRules"
                                Options="@IntroOptions"
@@ -133,7 +133,74 @@
                         {
                             <div class="pc-crosshair" aria-hidden="true">+</div>
                         }
-                        @if (!_demo)
+                        @if (Commanding && _command is { } board)
+                        {
+                            var integrity = Csv(board.integrity);
+                            var braced = Csv(board.braced);
+                            var strain = Csv(board.strain);
+                            var officers = Csv(board.officers);
+                            <section class="pc-command" aria-label="Incident command">
+                                <header class="pc-command-head">
+                                    <span class="pc-eyebrow">INCIDENT COMMAND</span>
+                                    <span>@board.issued orders · gas @board.gas</span>
+                                </header>
+                                <ol class="pc-command-lines">
+                                    @for (var i = 0; i < LineNames.Length; i++)
+                                    {
+                                        var line = i;
+                                        var value = line < integrity.Length ? integrity[line] : -1;
+                                        var on = board.selected == line;
+                                        <li>
+                                            <button type="button" class="pc-command-line @(on ? "pc-command-line--on" : null)" aria-pressed="@(on ? "true" : "false")"
+                                                    disabled="@(value < 0)" @onclick="@(() => OrderAsync("select", line))">
+                                                <span class="pc-command-key">@(line + 1)</span>
+                                                <span class="pc-command-name">@LineNames[line]</span>
+                                                <span class="pc-command-meta">
+                                                    @(value < 0 ? "fallen back"
+                                                        : $"{value}% · {(line < officers.Length ? officers[line] : 0)} officers · tired {(line < strain.Length ? strain[line] : 0)}%{(line < braced.Length && braced[line] == 1 ? " · braced" : "")}")
+                                                </span>
+                                                <span class="pc-command-bar" aria-hidden="true"><i style="width: @(Math.Max(0, value))%"></i></span>
+                                            </button>
+                                        </li>
+                                    }
+                                </ol>
+                                <div class="pc-command-orders">
+                                    @foreach (var (order, label, key) in Orders)
+                                    {
+                                        var wait = OrderWait(order);
+                                        var name = order;
+                                        <button type="button" class="app-btn app-btn--sm" disabled="@(wait > 0 || (name == "gas" && board.gas == 0) || _orderBusy)"
+                                                @onclick="() => OrderAsync(name, board.selected)">
+                                            @label <kbd>@key</kbd>@(wait > 0 ? $" {wait}s" : "")
+                                        </button>
+                                    }
+                                </div>
+                                <p class="pc-command-reply" role="status">@board.reply</p>
+                            </section>
+                        }
+                        @if (_prefs.overlay == "density")
+                        {
+                            <div class="pc-legend" aria-label="Crowd density legend">
+                                <span class="pc-eyebrow">DENSITY · FRUIN LEVEL OF SERVICE · V</span>
+                                <span><i class="pc-swatch pc-swatch--b"></i>B &lt;1.1/m²</span>
+                                <span><i class="pc-swatch pc-swatch--c"></i>C &lt;1.5</span>
+                                <span><i class="pc-swatch pc-swatch--d"></i>D &lt;3.6</span>
+                                <span><i class="pc-swatch pc-swatch--e"></i>E &lt;5.4</span>
+                                <span><i class="pc-swatch pc-swatch--f"></i>F crush</span>
+                                <span><i class="pc-swatch pc-swatch--risk"></i>Packed + force</span>
+                            </div>
+                        }
+                        else if (_prefs.overlay == "contagion")
+                        {
+                            <div class="pc-legend" aria-label="Contagion legend">
+                                <span class="pc-eyebrow">CONTAGION · V</span>
+                                <span><i class="pc-swatch pc-swatch--push"></i>Pushing</span>
+                                <span><i class="pc-swatch pc-swatch--tip"></i>Tipping</span>
+                                <span><i class="pc-swatch pc-swatch--calm"></i>Calm</span>
+                                <span><i class="pc-swatch pc-swatch--back"></i>Retreating</span>
+                            </div>
+                        }
+                        @if (!_demo && !Commanding)
                         {
                             <div class="pc-touch" aria-label="Touch controls">
                                 <div class="pc-dpad">
@@ -240,12 +307,36 @@
                 <div><dt>First break</dt><dd>@(report.firstBreak < 0 ? "never" : $"{report.firstBreak:0}s")</dd></div>
                 <div><dt>Casualties</dt><dd>@report.casualties (@report.immediate immediate)</dd></div>
                 <div><dt>Standing</dt><dd>@report.standing raiders · @report.police police</dd></div>
+                <div><dt>Peak density</dt><dd>@report.peakDensity.ToString("0.00")/m² (LOS @report.peakGrade)</dd></div>
+                <div><dt>Crush risk</dt><dd>@report.riskSeconds s · @report.riskEpisodes episodes</dd></div>
+                <div><dt>Packed (D or worse)</dt><dd>@report.packedShare.ToString("0.#")% of crowd-time</dd></div>
+                <div><dt>Contagion peak</dt><dd>@report.peakPushing.ToString("0")% pushing · @report.peakTipped.ToString("0")% tipping</dd></div>
+                @if (report.orders >= 0)
+                {
+                    <div><dt>Orders</dt><dd>@report.orders given · @report.withdrawn lines withdrawn</dd></div>
+                }
             </dl>
+            <div class="pc-streetmap" data-state="@_mapState">
+                @if (_mapState is "loading" or "live")
+                {
+                    <div id="pocapitol-streetmap" class="pc-streetmap-canvas" aria-label="The attempt on a street map of Capitol Hill"></div>
+                }
+                @if (_mapState == "failed")
+                {
+                    <p class="pc-small">The street map could not load. The rest of the report is unchanged.</p>
+                }
+                @if (_mapState is "" or "failed")
+                {
+                    <p class="pc-small">Lays where the crowd stood and where each line held over an OpenStreetMap basemap of Capitol Hill. The route is invented, drawn at true scale from the Rotunda. Loads map tiles from openstreetmap.org when you open it.</p>
+                }
+            </div>
             <div class="pc-report-actions">
                 <button type="button" class="app-btn app-btn--sm" @onclick="ExportCsvAsync">Export CSV</button>
                 <button type="button" class="app-btn app-btn--sm" @onclick="ExportPngAsync">Save chart (PNG)</button>
                 <button type="button" class="app-btn app-btn--sm" @onclick="SaveReportCardAsync" disabled="@_cardBusy">@(_cardBusy ? "Drawing card…" : "Report card (PNG)")</button>
                 <button type="button" class="app-btn app-btn--sm" @onclick="CopySummaryAsync">Copy summary</button>
+                <button type="button" class="app-btn app-btn--sm" @onclick="ShowStreetMapAsync" disabled="@(_mapState is "loading" or "live")">@(_mapState == "loading" ? "Loading map…" : "Street map")</button>
+                <button type="button" class="app-btn app-btn--sm" @onclick="ExportGeoJsonAsync">Export GeoJSON</button>
             </div>
         }
     </div>;
@@ -399,6 +490,16 @@
                     </RadzenSelectBar>
                     <p class="pc-small">@_weatherCondition</p>
 
+                    <label class="pc-small" for="pc-opt-overlay">Analysis overlay (V)</label>
+                    <RadzenSelectBar TValue="string" Value="@_prefs.overlay" Change="@(async (string val) => await SavePrefsAsync(overlay: val))" id="pc-opt-overlay">
+                        <Items>
+                            <RadzenSelectBarItem Text="Off" Value="@("off")" />
+                            <RadzenSelectBarItem Text="Crowd density" Value="@("density")" />
+                            <RadzenSelectBarItem Text="Contagion" Value="@("contagion")" />
+                        </Items>
+                    </RadzenSelectBar>
+                    <p class="pc-small">Density grades the ground by John Fruin's levels of service (people per square metre). Contagion marks who is pushing, who is about to join (enough of the people round them are pushing), and who is calm.</p>
+
                     <label class="pc-small" for="pc-opt-tracers">Ballistic tracers</label>
                     <RadzenSelectBar TValue="string" Value="@_prefs.tracers" Change="@(async (string val) => await SavePrefsAsync(tracers: val))" id="pc-opt-tracers">
                         <Items>
@@ -545,7 +646,8 @@
     private RenderFragment IntroControls => @<div>
         <p><kbd>W</kbd> <kbd>A</kbd> <kbd>S</kbd> <kbd>D</kbd> move · <kbd>Mouse</kbd> look &amp; aim · <kbd>↑</kbd> <kbd>↓</kbd> move · <kbd>←</kbd> <kbd>→</kbd> turn camera · <kbd>Shift</kbd> sprint</p>
         <p><kbd>Space</kbd> / <kbd>Click</kbd> fire (in the crowd) or push (police line) · <kbd>G</kbd> concussion grenade · <kbd>H</kbd> smoke grenade</p>
-        <p><kbd>Esc</kbd> / <kbd>P</kbd> pause</p>
+        <p><kbd>Esc</kbd> / <kbd>P</kbd> pause · <kbd>V</kbd> analysis overlay (density, contagion)</p>
+        <p>Commander: <kbd>1</kbd>–<kbd>5</kbd> pick a line · <kbd>B</kbd> brace · <kbd>R</kbd> reinforce · <kbd>T</kbd> rotate rank · <kbd>G</kbd> gas · <kbd>F</kbd> fall back · <kbd>←</kbd> <kbd>→</kbd> swing the camera</p>
         <p class="touch-only">Touch: d-pad to move, drag to look, FIRE / PUSH, and grenade buttons that show what is left.</p>
         <p>Gamepad: sticks move and look, right trigger fires or pushes, X grenade, Y smoke, Start pauses.</p>
     </div>;
@@ -562,6 +664,7 @@
             <Items>
                 <RadzenSelectBarItem Text="In the crowd" Value="@("raider")" />
                 <RadzenSelectBarItem Text="Police line" Value="@("police")" />
+                <RadzenSelectBarItem Text="Commander" Value="@("commander")" />
                 <RadzenSelectBarItem Text="Observer" Value="@("observer")" />
             </Items>
         </RadzenSelectBar>

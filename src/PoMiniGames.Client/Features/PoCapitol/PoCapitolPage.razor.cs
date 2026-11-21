@@ -70,6 +70,19 @@ public partial class PoCapitolPage : IAsyncDisposable
     private string _probeStatus = "";
     private string _caption = "";
     private DateTime _captionStamp;
+    private CommandDto? _command;
+    private string _mapState = "";
+    private bool _orderBusy;
+
+    /// <summary>The incident commander's orders, in panel order: engine name, button label, key.</summary>
+    private static readonly (string Order, string Label, string Key)[] Orders =
+    [
+        ("brace", "Brace", "B"),
+        ("reinforce", "Reinforce", "R"),
+        ("relieve", "Rotate rank", "T"),
+        ("gas", "Gas", "G"),
+        ("fallback", "Fall back", "F"),
+    ];
 
     private IEnumerable<(string Action, string Label, string Code)> KeyRows =>
     [
@@ -82,7 +95,9 @@ public partial class PoCapitolPage : IAsyncDisposable
         ("pause", "Pause", _prefs.pause),
     ];
 
-    private bool Playing => !_demo && _role != "observer";
+    private bool Playing => !_demo && _role is not ("observer" or "commander");
+
+    private bool Commanding => !_demo && _role == "commander";
 
     /// <summary>Only a solo player in the crowd carries the machine gun and the grenades.</summary>
     private bool Armed => !_demo && _role == "raider";
@@ -95,15 +110,19 @@ public partial class PoCapitolPage : IAsyncDisposable
         Timeline.Last(entry => entry.Minute <= Math.Max(Timeline[0].Minute, 12 * 60 + 50 + (int)_elapsed));
 
     private string HudEyebrow => _role == "raider" || _demo ? $"OBJECTIVE {Math.Min(_milestone + 1, Objectives.Length)} / {Objectives.Length}"
-        : _role == "police" ? "HOLD UNTIL THE 6:00 PM CURFEW" : "OBSERVING · CROWD PROGRESS";
+        : _role == "police" ? "HOLD UNTIL THE 6:00 PM CURFEW"
+        : _role == "commander" ? "INCIDENT COMMAND · HOLD UNTIL 6:00 PM" : "OBSERVING · CROWD PROGRESS";
 
     private string HudTitle => _role == "police" && !_demo
-        ? (_lineIndex >= 0 ? $"Hold the {LineNames[_lineIndex].ToLowerInvariant()}" : "Fall back to the chamber doors") : Objective;
+        ? (_lineIndex >= 0 ? $"Hold the {LineNames[_lineIndex].ToLowerInvariant()}" : "Fall back to the chamber doors")
+        : Commanding ? (_command is { } c && c.selected >= 0 && c.selected < LineNames.Length ? $"Commanding the {LineNames[c.selected].ToLowerInvariant()}" : "Command all five lines")
+        : Objective;
 
     private string RoleBrief => _role switch
     {
         "police" => "Stand in the line and push back. You win by keeping the crowd from the chamber doors until the curfew. Not saved to your stats.",
         "observer" => "Walk anywhere and watch. Nobody targets you, you cannot push, and nothing is saved.",
+        "commander" => "Run all five lines from above. Brace a line, move officers up from behind, rotate a tired front rank, call gas, or order an orderly fall-back. You win if the crowd never reaches the chamber doors before the curfew. Not saved to your stats.",
         _ => "Lean on a line with the crowd to tip it. You carry a machine gun, five concussion grenades and two smoke grenades. Reach the House chamber doors before the curfew.",
     };
 
@@ -119,6 +138,7 @@ public partial class PoCapitolPage : IAsyncDisposable
             return _role switch
             {
                 "observer" => $"{move} · {pause}",
+                "commander" => $"1–5 pick a line · B brace · R reinforce · T rotate · G gas · F fall back · ← → swing · V overlay · {pause}",
                 "police" => $"{move} · {DescribeKey(_prefs.push)} push · {pause}",
                 _ => $"{move} · {DescribeKey(_prefs.push)} fire · G grenade · H smoke · {pause}",
             };
@@ -137,8 +157,8 @@ public partial class PoCapitolPage : IAsyncDisposable
     private string ResultBody => _outcome switch
     {
         "doors" => "The crowd reached the House chamber doors and found them barricaded. The chamber behind them had been evacuated. "
-            + (_role == "police" ? "The lines did not hold long enough." : "Nobody in this scenario gets in, as nobody did. Reaching the doors ends the game; it is not a historical victory."),
-        "curfew" => _role == "police" ? "The lines held until the curfew and the building was cleared."
+            + (_role is "police" or "commander" ? "The lines did not hold long enough." : "Nobody in this scenario gets in, as nobody did. Reaching the doors ends the game; it is not a historical victory."),
+        "curfew" => _role is "police" or "commander" ? "The lines held until the curfew and the building was cleared."
             : "The lines held. At 6:00 pm the curfew began and the building was cleared.",
         "overcome" => _role == "police" ? "You were worn down and pulled back behind the line. The scenario ends here."
             : "Batons, spray and gas wore you down, and street medics walked you back to the aid station. A new attempt starts outside.",
@@ -162,7 +182,7 @@ public partial class PoCapitolPage : IAsyncDisposable
     };
 
     private string ResultNote =>
-        _role != "raider" ? "Police-line and observer attempts are not saved."
+        _role != "raider" ? "Police-line, command and observer attempts are not saved."
         : _resultWarning.Length > 0 ? _resultWarning
         : "Results stay in your local game stats. No public ranking and no score for harming anyone.";
 
@@ -280,6 +300,8 @@ public partial class PoCapitolPage : IAsyncDisposable
             _report = null;
             _debrief = null;
             _caption = "";
+            _command = null;
+            _mapState = "";
             _status = "active";
             _health = 100; _milestone = 0; _elapsed = 0; _message = ""; _resultWarning = ""; _outcome = "";
             _activeRaiders = _crowdTotal; _activePolice = 44; _totalPolice = 44; _subject = 0; _lineIndex = 0; _lineIntegrity = 100; _sheltering = 64;
@@ -374,6 +396,79 @@ public partial class PoCapitolPage : IAsyncDisposable
         if (_disposed) return Task.CompletedTask;
         _weatherCondition = condition;
         return InvokeAsync(StateHasChanged);
+    }
+
+    /// <summary>The incident commander's board, five times a second while that role plays.</summary>
+    [JSInvokable]
+    public Task OnCommand(CommandDto? board)
+    {
+        if (_disposed || board is null) return Task.CompletedTask;
+        _command = board;
+        return InvokeAsync(StateHasChanged);
+    }
+
+    /// <summary>A setting changed from inside the scene (V cycles the overlay): mirror it.</summary>
+    [JSInvokable]
+    public Task OnPrefsChanged(PrefsDto? prefs)
+    {
+        if (_disposed || prefs is null) return Task.CompletedTask;
+        _prefs = prefs;
+        return InvokeAsync(StateHasChanged);
+    }
+
+    private async Task OrderAsync(string order, int line)
+    {
+        if (_orderBusy || !Commanding || _status != "active") return;
+        _orderBusy = true;
+        try
+        {
+            var reply = await Engine.GiveOrderAsync(order, line);
+            if (_command is not null && reply.Length > 0) _command.reply = reply;
+            if (reply.Length > 0) _announcement = reply;
+        }
+        catch (JSException ex) { Logger.LogDebug(ex, "PoCapitol order {Order} not given", order); }
+        finally { _orderBusy = false; }
+    }
+
+    /// <summary>Seconds until an order can be given again, from the board (0 when ready).</summary>
+    private int OrderWait(string order) => _command is not { } c ? 0 : order switch
+    {
+        "reinforce" => c.reinforceIn,
+        "relieve" => c.relieveIn,
+        "gas" => c.gasIn,
+        _ => 0,
+    };
+
+    private static int[] Csv(string? value) =>
+        string.IsNullOrEmpty(value) ? []
+        : Array.ConvertAll(value.Split(','), part => int.TryParse(part, NumberStyles.Integer, CultureInfo.InvariantCulture, out var n) ? n : 0);
+
+    /// <summary>The street map of the attempt (OpenStreetMap via MapLibre): only loaded when asked for.</summary>
+    private async Task ShowStreetMapAsync()
+    {
+        if (_report is null || _mapState is "loading" or "live") return;
+        _mapState = "loading";
+        StateHasChanged();
+        // The container is rendered by the state change above; give the render a turn before drawing into it.
+        await Task.Yield();
+        try { _mapState = await Engine.ShowStreetMapAsync("pocapitol-streetmap") ? "live" : "failed"; }
+        catch (JSException ex)
+        {
+            Logger.LogDebug(ex, "PoCapitol street map unavailable");
+            _mapState = "failed";
+        }
+        StateHasChanged();
+    }
+
+    private async Task ExportGeoJsonAsync()
+    {
+        if (_report is null) return;
+        try
+        {
+            var json = await Engine.GetGeoJsonAsync();
+            if (json.Length > 0) await Engine.DownloadAsync(ReportFileName("geojson"), json);
+        }
+        catch (JSException ex) { Logger.LogDebug(ex, "PoCapitol GeoJSON export unavailable"); }
     }
 
     /// <summary>Spoken radio arrives as a caption when the player has asked for them.</summary>
@@ -481,7 +576,7 @@ public partial class PoCapitolPage : IAsyncDisposable
     private async Task SavePrefsAsync(double? sensitivity = null, int? fov = null, bool? captions = null,
         string? contrast = null, string? radar = null, bool? director = null, string? tracers = null,
         string? motion = null, string? debrief = null, string? debriefModel = null, string? footage = null,
-        string? score = null, string? hailer = null)
+        string? score = null, string? hailer = null, string? overlay = null)
     {
         if (sensitivity is not null) _prefs.sensitivity = sensitivity.Value;
         if (fov is not null) _prefs.fov = fov.Value;
@@ -498,6 +593,7 @@ public partial class PoCapitolPage : IAsyncDisposable
         if (footage is not null) _prefs.footage = footage;
         if (score is not null) _prefs.score = score;
         if (hailer is not null) _prefs.hailer = hailer;
+        if (overlay is not null) _prefs.overlay = overlay;
         if (debrief is not null)
         {
             _prefs.debrief = debrief;
@@ -522,6 +618,7 @@ public partial class PoCapitolPage : IAsyncDisposable
                 debriefModel = _prefs.debriefModel,
                 score = _prefs.score,
                 hailer = _prefs.hailer,
+                overlay = _prefs.overlay,
             });
         }
         catch (JSException ex)
@@ -679,6 +776,7 @@ public partial class PoCapitolPage : IAsyncDisposable
         public string debriefModel { get; set; } = "llama3.2";
         public string score { get; set; } = "off";
         public string hailer { get; set; } = "off";
+        public string overlay { get; set; } = "off";
         public string forward { get; set; } = "KeyW";
         public string back { get; set; } = "KeyS";
         public string left { get; set; } = "KeyA";
@@ -704,6 +802,7 @@ public partial class PoCapitolPage : IAsyncDisposable
         public string debriefModel { get; set; } = "";
         public string score { get; set; } = "";
         public string hailer { get; set; } = "";
+        public string overlay { get; set; } = "";
     }
 
     public sealed class ReportDto
@@ -726,6 +825,35 @@ public partial class PoCapitolPage : IAsyncDisposable
         public double firstBreak { get; set; } = -1;
         public int milestones { get; set; }
         public int minutes { get; set; }
+        public double peakDensity { get; set; }
+        public string peakGrade { get; set; } = "A";
+        public int riskSeconds { get; set; }
+        public int riskEpisodes { get; set; }
+        public double packedShare { get; set; }
+        public double peakPushing { get; set; }
+        public double peakTipped { get; set; }
+        /// <summary>Orders the commander gave, or -1 when nobody was commanding.</summary>
+        public int orders { get; set; } = -1;
+        public int withdrawn { get; set; }
+    }
+
+    /// <summary>
+    /// The incident commander's board (index.js commandView). Per-line lists are comma-separated
+    /// strings, front line first, so the record stays flat for the trimmed build.
+    /// </summary>
+    public sealed class CommandDto
+    {
+        public int selected { get; set; }
+        public int gas { get; set; }
+        public int issued { get; set; }
+        public string reply { get; set; } = "";
+        public int reinforceIn { get; set; }
+        public int relieveIn { get; set; }
+        public int gasIn { get; set; }
+        public string braced { get; set; } = "";
+        public string integrity { get; set; } = "";
+        public string strain { get; set; } = "";
+        public string officers { get; set; } = "";
     }
 
     /// <summary>The debrief and the telemetry of whatever wrote it.</summary>

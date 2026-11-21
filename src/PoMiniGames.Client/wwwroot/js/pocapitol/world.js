@@ -165,7 +165,44 @@ const difficulties = {
     story: { hold: 1.2, baton: 4, spray: 3, gas: 0.8, interval: 3.2, playerBaton: 6, playerSpray: 4, playerGas: 3, wear: 0.34, tire: 55, shot: 4 },
     standard: { hold: 2.2, baton: 12, spray: 8, gas: 1.8, interval: 1.1, playerBaton: 14, playerSpray: 9, playerGas: 6, wear: 0.2, tire: 95, shot: 16, raiderShot: 1.6 },
 };
-const roles = ['raider', 'police', 'observer'];
+const roles = ['raider', 'police', 'observer', 'commander'];
+
+/**
+ * Whether the human has a body on the field. The incident commander does not: they run all five
+ * lines from above, so nobody can shove, gas or knock them down, and nothing steers round them.
+ */
+const embodied = state => state.role !== 'none' && state.role !== 'commander';
+
+/** The sides a role plays for: a police officer and the commander both defend the doors. */
+export const defends = role => role === 'police' || role === 'commander';
+
+/**
+ * Social contagion as thresholds (Granovetter, 1978). Everyone joins a push once a big enough
+ * share of the people round them already are: the instigators need nobody, most followers need
+ * a fifth to a half, and bystanders need most of their neighbours. Stable per person, so a run
+ * can be replayed and compared. Medics never join.
+ */
+export function thresholdOf(id, temperament = temperamentOf(id)) {
+    if (temperament === 'pusher') return 0;
+    if (temperament === 'medic') return 2;
+    let h = Math.imul(id + 7, 2246822519) >>> 0;
+    h = (h ^ (h >>> 13)) >>> 0;
+    const u = (h % 1000) / 1000;
+    return temperament === 'follower' ? 0.2 + 0.35 * u : 0.5 + 0.45 * u;
+}
+
+/**
+ * A person counts as pushing when they are on their feet and leaning in: an instigator, a follower
+ * whose nerve is up, or anyone but a bystander riding a surge. (A bystander carried along by a
+ * surge after a line breaks is moving, not pushing.)
+ */
+const pushingNow = c => c.health > 0 && !c.retreating && c.stun <= 0 &&
+    (c.temperament === 'pusher' || (c.temperament === 'follower' && c.morale > 0.7) || (c.surge > 0 && c.temperament !== 'bystander'));
+
+/** The commander's orders, and how long each keeps the radio busy before it can be given again. */
+export const ORDERS = ['brace', 'reinforce', 'relieve', 'gas', 'fallback'];
+const ORDER_COOLDOWN = { reinforce: 18, relieve: 25, gas: 10 };
+const COMMAND_GAS = 3;
 
 const inside = (x, z, r, margin = 0) =>
     Math.abs(x - r.x) <= r.w / 2 - margin && Math.abs(z - r.z) <= r.d / 2 - margin;
@@ -323,7 +360,8 @@ export function createAttempt(difficulty = 'standard', demo = false, role = 'rai
     let officerId = 0;
     const state = {
         status: 'active', outcome: '', difficulty, demo, role, health: 100, elapsed: 0, milestone: 0,
-        player: { ...(role === 'police' ? { x: 3, z: 30 } : role === 'observer' ? { x: 18, z: 52 } : { x: 0, z: 100 }),
+        // The commander's "player" is only a listening post behind the chamber; nothing reaches it.
+        player: { ...(role === 'police' ? { x: 3, z: 30 } : role === 'observer' ? { x: 18, z: 52 } : role === 'commander' ? { x: 0, z: -70 } : { x: 0, z: 100 }),
             mass: role === 'police' ? 92 : 80, vx: 0, vz: 0, kx: 0, kz: 0 },
         cooldown: 0, pushes: 0, staggers: 0, damageFlash: 0, playerPush: 0, sprayed: 0, gassed: false, flashed: 0,
         suppression: 0, recoil: 0,
@@ -354,6 +392,8 @@ export function createAttempt(difficulty = 'standard', demo = false, role = 'rai
                 grenades: id % 80 === 7 ? 3 : 0, grenadeCooldown: 3 + id % 5,
                 grenadeType: id % 160 === 7 ? 'smoke' : 'concussion',
                 sprayed: 0, stun: 0, surge: 0, downFor: 0, helped: false, resting: false, crowding: 0,
+                // Contagion: the share of pushing neighbours it takes for this person to join in.
+                threshold: thresholdOf(id, temperament), pushing: false, tipped: false, activeNear: 0, peers: 0,
             };
         }),
         effects: [], events: [], reinforcements: 0, droppedShields: [], grenades: [],
@@ -382,7 +422,90 @@ export function createAttempt(difficulty = 'standard', demo = false, role = 'rai
         state.playerSmoke = 2;
         state.mgReady = 0;
     }
+    if (role === 'commander') {
+        state.command = { selected: 0, braced: lineDefs.map(() => false), gas: COMMAND_GAS,
+            ready: { reinforce: 0, relieve: 0, gas: 0 }, issued: 0, withdrawn: 0 };
+    }
     return state;
+}
+
+/** Seconds until an order can be given again (0 when it is ready). */
+export function orderWait(state, order) {
+    const at = state.command?.ready?.[order] ?? 0;
+    return Math.max(0, at - state.elapsed);
+}
+
+/**
+ * One order from the incident commander to one line. Returns `{ ok, message }`: the message is
+ * what the radio says back, so a refused order explains itself. Orders only ever change the
+ * police side: where officers stand, how hard a line braces, when gas is used and when a line
+ * pulls back. They never touch the crowd directly.
+ */
+export function command(state, order, lineIndex = state.command?.selected ?? 0) {
+    const cmd = state.command;
+    if (!cmd || state.status !== 'active') return { ok: false, message: '' };
+    const i = Math.trunc(lineIndex);
+    if (!(i >= 0 && i < lineDefs.length)) return { ok: false, message: 'No such line.' };
+    const def = lineDefs[i], line = state.lines[i];
+    if (order === 'select') { cmd.selected = i; return { ok: true, message: `${def.name} selected.` }; }
+    if (line.state !== 'holding') return { ok: false, message: `The ${def.name.toLowerCase()} has already fallen back.` };
+    if (!ORDERS.includes(order)) return { ok: false, message: 'Unknown order.' };
+    const wait = orderWait(state, order);
+    if (wait > 0) return { ok: false, message: `Radio busy: ${Math.ceil(wait)} seconds.` };
+    cmd.selected = i;
+    const said = text => { cmd.issued++; state.events.push({ type: 'order', order, line: i, x: 0, z: def.z }); return { ok: true, message: text }; };
+    switch (order) {
+        case 'brace':
+            cmd.braced[i] = !cmd.braced[i];
+            return said(cmd.braced[i] ? `${def.name}: brace, shields locked.` : `${def.name}: stand easy.`);
+        case 'reinforce': {
+            // Officers come forward from the lines behind, rearmost first, and no line behind is
+            // stripped below two: a line with nobody in it would just be furniture.
+            const counts = lineDefs.map(() => 0);
+            for (const e of state.enemies) if (e.health > 0 && e.line < lineDefs.length) counts[e.line]++;
+            let moved = 0;
+            for (let from = lineDefs.length - 1; from > i && moved < 4; from--) {
+                if (state.lines[from].state !== 'holding') continue;
+                for (const e of state.enemies) {
+                    if (moved >= 4 || counts[from] <= 2) break;
+                    if (e.health <= 0 || e.line !== from) continue;
+                    e.line = i; counts[from]--; moved++;
+                }
+            }
+            if (!moved) return { ok: false, message: 'No officers to spare behind this line.' };
+            cmd.ready.reinforce = state.elapsed + ORDER_COOLDOWN.reinforce;
+            state.events.push({ type: 'reinforce', x: 0, z: def.z - 3, line: i });
+            return said(`${moved} officers moving up to the ${def.name.toLowerCase()}.`);
+        }
+        case 'relieve':
+            // Fresh officers rotate into the front rank: the line's fatigue mostly goes, at the
+            // price of a moment's gap while the ranks change.
+            line.strain *= 0.35;
+            line.integrity = Math.max(5, line.integrity - 6);
+            cmd.ready.relieve = state.elapsed + ORDER_COOLDOWN.relieve;
+            return said(`${def.name}: rotating the front rank.`);
+        case 'gas': {
+            if (cmd.gas <= 0) return { ok: false, message: 'No gas left.' };
+            let sum = 0, n = 0;
+            for (const c of state.companions) {
+                if (c.health <= 0 || c.x < def.x0 || c.x > def.x1 || c.z < def.z || c.z > def.z + 5) continue;
+                sum += c.x; n++;
+            }
+            if (!n) return { ok: false, message: `Nobody at the ${def.name.toLowerCase()} to gas.` };
+            cmd.gas--;
+            cmd.ready.gas = state.elapsed + ORDER_COOLDOWN.gas;
+            const life = i === 0 ? 8 : 12, x = Math.max(def.x0 + 2, Math.min(def.x1 - 2, sum / n));
+            state.effects.push({ type: 'gas', x, z: def.z + 3.4, r: 4, life, span: life });
+            state.events.push({ type: 'gas', x, z: def.z + 3.4 });
+            return said(`Gas at the ${def.name.toLowerCase()}. ${cmd.gas} left.`);
+        }
+        case 'fallback':
+            if (i === lineDefs.length - 1) return { ok: false, message: 'There is nowhere left to fall back to.' };
+            cmd.withdrawn++;
+            breakLine(state, i, true);
+            return said(`${def.name}: fall back in good order.`);
+    }
+    return { ok: false, message: '' };
 }
 
 export function setPaused(state, paused) {
@@ -488,7 +611,7 @@ function stepField(state, dt) {
     }
     if (loose.bodies.some(body => body.free)) {
         const near = state.companions.filter(c => c.health > 0 && Math.abs(c.z - def.z) < 16);
-        if (state.role !== 'none' && state.health > 0) near.push(state.player);
+        if (embodied(state) && state.health > 0) near.push(state.player);
         let rung = 0;
         for (const hit of loose.step(dt, near, (x, z) => !walkable(x, z))) {
             if (rung++ >= 3) break;
@@ -598,7 +721,7 @@ const inSmoke = (state, actor) => state.effects.some(e =>
 
 function end(state, outcome) {
     state.outcome = outcome;
-    const won = state.role === 'police' ? outcome === 'curfew' || outcome === 'dispersed' : outcome === 'doors';
+    const won = defends(state.role) ? outcome === 'curfew' || outcome === 'dispersed' : outcome === 'doors';
     state.status = won ? 'completed' : 'failed';
 }
 
@@ -622,6 +745,34 @@ function evacuate(state, dt) {
         const step = Math.min(d, (rush ? 7 : 3.4) * dt);
         person.x += dx / d * step; person.z += dz / d * step;
         person.heading = Math.atan2(-dx, -dz); person.moving = true;
+    }
+}
+
+/**
+ * A line stops holding. Overrun, it drops shields and the crowd surges through on the high of
+ * it. Withdrawn in good order (the commander's fall-back), the officers take their kit with them,
+ * the crowd gets far less of a lift, and they arrive at the next line as a fresh rank.
+ */
+function breakLine(state, i, withdrawn) {
+    const def = lineDefs[i], line = state.lines[i];
+    line.state = 'broken'; line.brokenAt = state.elapsed; line.pressure = 0; line.withdrawn = withdrawn;
+    state.events.push({ type: 'break', x: 0, z: def.z, line: i, withdrawn });
+    if (!withdrawn) {
+        state.droppedShields = state.droppedShields ?? [];
+        state.droppedShields.push({ x: (def.x0 + def.x1) * 0.5 - 2.5, z: def.z + 0.5 });
+        state.droppedShields.push({ x: (def.x0 + def.x1) * 0.5 + 2.5, z: def.z + 0.5 });
+    } else {
+        const next = state.lines.findIndex((l, j) => j > i && l.state === 'holding');
+        if (next >= 0) state.lines[next].integrity = Math.min(100, state.lines[next].integrity + 15);
+    }
+    // A line giving way is the moment a hesitant crowd surges.
+    for (const c of state.companions) {
+        if (c.health <= 0 || Math.abs(c.z - def.z) > 35) continue;
+        c.morale = Math.min(1, c.morale + (withdrawn ? 0.12 : 0.35)); c.surge = withdrawn ? 1.5 : 4; c.retreating = false;
+    }
+    if (state.command && state.command.selected === i) {
+        const next = state.lines.findIndex(l => l.state === 'holding');
+        if (next >= 0) state.command.selected = next;
     }
 }
 
@@ -686,8 +837,11 @@ function updateLines(state, difficulty, dt) {
         if (humanOfficer && Math.abs(state.player.z - def.z) < 2.6 && state.player.x >= def.x0 - 1 && state.player.x <= def.x1 + 1) {
             hold += state.playerPush > 0 ? 6 : 3;
         }
+        // A braced line (the commander's order) stands firmer and tires faster.
+        const braced = state.command?.braced?.[i] === true;
+        if (braced) hold *= 1.4;
         // A line that has been leaned on for a long time tires, however many stand in it.
-        if (pressure > hold * 0.3) line.strain += dt;
+        if (pressure > hold * 0.3) line.strain += dt * (braced ? 1.6 : 1);
         hold *= 1 - Math.min(0.65, line.strain / difficulty.tire);
         line.pressure = pressure; line.hold = hold; line.support = support;
         line.integrity = Math.max(0, Math.min(100, line.integrity + (hold - pressure) * (pressure > hold ? 1.5 : 0.25) * dt));
@@ -714,19 +868,7 @@ function updateLines(state, difficulty, dt) {
             }
             if (humanRaider && Math.hypot(state.player.x - fx, state.player.z - fz) < 5) state.flashed = 1.2;
         }
-        if (line.integrity <= 0) {
-            line.state = 'broken'; line.brokenAt = state.elapsed; line.pressure = 0;
-            state.events.push({ type: 'break', x: 0, z: def.z, line: i });
-            // Drop captured police shields along the broken line
-            state.droppedShields = state.droppedShields ?? [];
-            state.droppedShields.push({ x: (def.x0 + def.x1) * 0.5 - 2.5, z: def.z + 0.5 });
-            state.droppedShields.push({ x: (def.x0 + def.x1) * 0.5 + 2.5, z: def.z + 0.5 });
-            // A line giving way is the moment a hesitant crowd surges.
-            for (const c of state.companions) {
-                if (c.health <= 0 || Math.abs(c.z - def.z) > 35) continue;
-                c.morale = Math.min(1, c.morale + 0.35); c.surge = 4; c.retreating = false;
-            }
-        }
+        if (line.integrity <= 0) breakLine(state, i, false);
     }
     const front = state.lines.findIndex(line => line.state === 'holding');
     if (front >= 0 && state.reinforcements < reinforcementTimes.length &&
@@ -895,7 +1037,7 @@ function nearestCoverPoint(actor) {
 
 /** Decides what every raider wants this step; steering then works out how they move. */
 function planRaiders(state, difficulty, dt, agents, bodies) {
-    if (state.role !== 'none' && state.health > 0) bodies.push(state.player);
+    if (embodied(state) && state.health > 0) bodies.push(state.player);
     for (const e of state.enemies) if (e.health > 0) bodies.push(e);
     const down = state.armed ? [] : state.companions.filter(c => c.health <= 0 && !c.helped);
     const frontIdx = state.lines.findIndex(l => l.state === 'holding');
@@ -908,6 +1050,8 @@ function planRaiders(state, difficulty, dt, agents, bodies) {
         c.surge = Math.max(0, c.surge - dt);
         c.suppression = Math.max(0, (c.suppression ?? 0) - dt * 0.65);
         c.rallyCooldown = Math.max(0, (c.rallyCooldown ?? (5 + c.id % 11)) - dt);
+        c.pushing = pushingNow(c);
+        if (c.health <= 0) c.tipped = false;
         c.cooldown -= dt;
         c.moving = false;
         let goal, field, speed = c.speed;
@@ -943,6 +1087,13 @@ function planRaiders(state, difficulty, dt, agents, bodies) {
                 c.morale = Math.min(1, c.morale + 0.1 * dt);
                 if (c.surge <= 0 && c.morale > 0.65) c.surge = 1.6;
             }
+            // Threshold contagion: once enough of the people round someone are pushing, they tip.
+            // A tipped follower's nerve rises until they push too; a tipped bystander stops
+            // hanging back and stands with the followers, filming. Read from the last step's
+            // neighbour counts (steering.js), so the order people are visited in does not matter.
+            const share = (c.peers ?? 0) >= 3 ? (c.activeNear ?? 0) / c.peers : 0;
+            c.tipped = !c.pushing && share >= c.threshold;
+            if (c.tipped && !gassed && c.temperament === 'follower') c.morale = Math.min(0.85, c.morale + 0.1 * dt);
             // Coordinated surge waves (#3): high-morale pushers packed at the line trigger a local surge pulse.
             if (c.temperament === 'pusher' && !c.retreating && !gassed && c.morale > 0.72 &&
                 c.crowding >= 3 && lineAhead(state, c) < 3.5 && c.rallyCooldown <= 0) {
@@ -968,7 +1119,7 @@ function planRaiders(state, difficulty, dt, agents, bodies) {
                 return !best || score < best.score ? { actor: d, distance, score } : best;
             }, null) : null;
             const standoff = c.temperament === 'pusher' || (c.temperament === 'follower' && c.morale > 0.7) ? 0
-                : c.temperament === 'follower' ? 2.6 + c.id % 3 * 0.7 : c.temperament === 'medic' ? 6 : 9 + c.id % 6;
+                : c.temperament === 'follower' || c.tipped ? 2.6 + c.id % 3 * 0.7 : c.temperament === 'medic' ? 6 : 9 + c.id % 6;
             let stand = false;
             const cover = state.armed && (c.suppression ?? 0) > 0.65 && c.temperament !== 'pusher' ? nearestCoverPoint(c) : null;
             if ((c.panic ?? 0) > 0) {
@@ -1134,7 +1285,7 @@ function explodeConcussion(state, g) {
         c.surge = 0;
         if (c.health === 0) state.events.push({ type: 'down', x: c.x, z: c.z, energy: 40, material: 'body' });
     }
-    if (state.role !== 'none' && state.health > 0) {
+    if (embodied(state) && state.health > 0) {
         const fall = reach(state.player.x, state.player.z);
         if (fall > 0) {
             const dx = state.player.x - x, dz = state.player.z - z, d = Math.hypot(dx, dz) || 1;
@@ -1296,7 +1447,7 @@ export function advance(state, input, seconds) {
     state.mgHeat = Math.max(0, (state.mgHeat ?? 0) - dt * 0.7);
     stepHarm(state, dt);
 
-    if (state.role !== 'none' && state.health > 0) {
+    if (embodied(state) && state.health > 0) {
         const magnitude = Math.max(1, Math.hypot(x, z));
         // Climbing the terrace steps is slower than walking the pavement, for the human too.
         const climb = 1 / (1 + 2.6 * Math.min(1.4, groundSlope(state.player.x, state.player.z)));
@@ -1420,7 +1571,7 @@ export function advance(state, input, seconds) {
                 state.events.push({ type: 'down', x: victim.x, z: victim.z, energy: 30, material: 'body' });
                 // A body dropping makes the people pressed against it check their step. This is a
                 // render-only flinch: nothing here touches position, momentum or line holding.
-                for (const other of [...(state.role !== 'none' && state.health > 0 ? [state.player] : []), ...state.companions, ...state.enemies]) {
+                for (const other of [...(embodied(state) && state.health > 0 ? [state.player] : []), ...state.companions, ...state.enemies]) {
                     if (!other || other === victim || other.health <= 0) continue;
                     const dx = other.x - victim.x, dz = other.z - victim.z, d = Math.hypot(dx, dz);
                     if (d <= 0.01 || d >= 1.6) continue;
@@ -1513,6 +1664,8 @@ function stepRaiders(state, difficulty, dt) {
         actor.density = agent.density ?? 0;
         actor.retreatingNear = agent.retreatingNear ?? 0;
         actor.surgingNear = agent.surgingNear ?? 0;
+        actor.activeNear = agent.activeNear ?? 0;
+        actor.peers = agent.peers ?? 0;
         actor.moving = moved > 0.3 * dt;
         // What the body is doing, in m/s, for the contact pass below and for the sound of a crowd's friction.
         actor.vx = dt > 0 ? dx / dt : 0; actor.vz = dt > 0 ? dz / dt : 0;
@@ -1559,7 +1712,7 @@ function stepHarm(state, dt) {
     if (dt <= 0) return;
     const list = contactList;
     list.length = 0;
-    if (state.role !== 'none' && state.health > 0) list.push(state.player);
+    if (embodied(state) && state.health > 0) list.push(state.player);
     for (const e of state.enemies) if (e.health > 0) list.push(e);
     for (const c of state.companions) list.push(c);
     let impacts = 0;

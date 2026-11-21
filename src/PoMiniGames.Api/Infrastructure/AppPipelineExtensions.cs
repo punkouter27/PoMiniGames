@@ -73,7 +73,7 @@ internal static class AppPipelineExtensions
                 "default-src 'self'; " +
                 "script-src 'self' 'unsafe-inline' 'wasm-unsafe-eval' https://cdn.jsdelivr.net; " +
                 "style-src 'self' 'unsafe-inline'; " +
-                "img-src 'self' data: blob: https://*.wikimedia.org; " +
+                "img-src 'self' data: blob: https://*.wikimedia.org https://tile.openstreetmap.org; " +
                 // Brawl's highlight reel and PoEcosystem's clip share hand a <video> a
                 // blob URL; with no media-src, default-src 'self' blocked playback.
                 "media-src 'self' blob:; " +
@@ -86,7 +86,9 @@ internal static class AppPipelineExtensions
                 // api.open-meteo.com (forecast) does not cover it.
                 // huggingface.co and *.hf.co (the weights' CDN) serve the model behind PoCapitol's
                 // opt-in in-browser debrief (Transformers.js); nothing else fetches from them.
-                "connect-src 'self' blob: ws: wss: https://cdn.jsdelivr.net https://huggingface.co https://*.hf.co https://api.open-meteo.com https://archive-api.open-meteo.com https://geocoding-api.open-meteo.com https://www.wikidata.org" + modelsOrigin + "; " +
+                // tile.openstreetmap.org serves the basemap of PoCapitol's opt-in street map of an
+                // attempt (MapLibre, streetmap.js); it is only asked once the player opens it.
+                "connect-src 'self' blob: ws: wss: https://cdn.jsdelivr.net https://huggingface.co https://*.hf.co https://api.open-meteo.com https://archive-api.open-meteo.com https://geocoding-api.open-meteo.com https://www.wikidata.org https://tile.openstreetmap.org" + modelsOrigin + "; " +
                 "worker-src 'self' blob:; " +
                 "frame-ancestors 'none'; base-uri 'self'; object-src 'none'";
             await next();
