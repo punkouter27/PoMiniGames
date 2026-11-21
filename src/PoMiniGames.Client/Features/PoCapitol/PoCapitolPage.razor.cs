@@ -927,7 +927,7 @@ public partial class PoCapitolPage : IAsyncDisposable
         public string score { get; set; } = "off";
         public string hailer { get; set; } = "off";
         public string overlay { get; set; } = "off";
-        public string hudSound { get; set; } = "on";
+        public string hudSound { get; set; } = "off";
         public string forward { get; set; } = "KeyW";
         public string back { get; set; } = "KeyS";
         public string left { get; set; } = "KeyA";

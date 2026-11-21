@@ -29,7 +29,7 @@ const ALWAYS = { forward: ['ArrowUp'], back: ['ArrowDown'] };
 export const DEFAULTS = Object.freeze({
     sensitivity: 1, fov: 62, captions: false, contrast: 'normal', radar: 'auto', director: true,
     tracers: 'luminous', motion: 'full', footage: 'light', debrief: 'rules', debriefModel: 'llama3.2', score: 'off', hailer: 'off',
-    overlay: 'off', hudSound: 'on',
+    overlay: 'off', hudSound: 'off',
 });
 
 const clamp = (value, low, high, fallback) =>

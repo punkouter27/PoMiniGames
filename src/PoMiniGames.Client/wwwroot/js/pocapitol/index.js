@@ -133,7 +133,13 @@ async function init(hostId, reference) {
     };
     listen(window, 'keydown', e => {
         if (!g.started || e.target.closest?.('input, select, textarea, [role="slider"]')) return;
-        if ((e.code === 'Escape' || matches(g.prefs, 'pause', e.code)) && !e.repeat) {
+        // Esc leaves for the main menu (owner, 2026-11-21); P (or its rebinding) pauses. A menu that
+        // is open (options sheet, pause panel, end card) handles its own Esc, so it is left alone.
+        if (e.code === 'Escape' && !e.repeat) {
+            if (g.state.status === 'active' && !document.querySelector('dialog[open]')) { e.preventDefault(); toMainMenu(); }
+            return;
+        }
+        if (matches(g.prefs, 'pause', e.code) && !e.repeat) {
             pause(g.state.status === 'active'); e.preventDefault(); return;
         }
         // V cycles the analysis overlay: off, Fruin density, contagion. Any role, demo included.
@@ -176,8 +182,17 @@ async function init(hostId, reference) {
     });
     listen(window, 'blur', () => { clearInput(); if (human() || commanding()) pause(true); });
     listen(document, 'visibilitychange', () => { if (document.hidden) { clearInput(); if (human() || commanding()) pause(true); } });
+    // While the pointer is locked the browser keeps Esc for itself: it only releases the lock, and
+    // the page never sees the key. So a release the game did not ask for, with the tab still
+    // focused and visible (not an alt-tab, which blurs and pauses above), is read as that Esc.
     listen(document, 'pointerlockchange', () => {
-        if (document.pointerLockElement !== view.canvas && g.started && human()) { clearInput(); pause(true); }
+        if (document.pointerLockElement === view.canvas || !g.started || !human()) return;
+        clearInput();
+        if (nowMs() - (g.selfUnlock ?? -1e9) < 600 || g.state.status !== 'active') return;
+        setTimeout(() => {
+            if (g.state.status !== 'active') return;
+            if (document.hasFocus() && !document.hidden) toMainMenu(); else pause(true);
+        }, 120);
     });
     listen(document, 'mousemove', e => {
         if (!human() || g.state.status !== 'active' || document.pointerLockElement !== view.canvas) return;
@@ -345,7 +360,7 @@ async function init(hostId, reference) {
                         track('end', { mode: g.state.demo ? 'demo' : 'solo', outcome: g.state.outcome, seconds: Math.round(g.state.elapsed) });
                     }
                     if (g.state.demo) g.restartAt = now + 6000;
-                    if (document.pointerLockElement === view.canvas) document.exitPointerLock();
+                    if (document.pointerLockElement === view.canvas) releasePointer(g);
                 }
             }
             const moving = Math.hypot(x, z) > 0.1 && g.state.status === 'active';
@@ -594,7 +609,7 @@ function pause(value) {
     const now = game.state.status === 'paused';
     game.view.setMenu?.(now);
     if (now !== was) game.ui?.wipe?.('pass');
-    if (value && document.pointerLockElement === game.view.canvas) document.exitPointerLock();
+    if (value && document.pointerLockElement === game.view.canvas) releasePointer(game);
     notify(game);
 }
 
@@ -1004,6 +1019,17 @@ function setPrefs(patch = {}) {
 }
 
 /** Bind one key. If another action already holds it the two swap; the page gets the new map. */
+/** Let go of the mouse on the game's own account, so the pointer-lock handler does not read it as Esc. */
+function releasePointer(g) {
+    g.selfUnlock = nowMs();
+    try { document.exitPointerLock(); } catch { /* not locked */ }
+}
+
+/** Esc: leave the scenario for the hub, through the Blazor router like every in-app link. */
+function toMainMenu() {
+    try { window.Blazor?.navigateTo?.('/'); } catch { location.assign('/'); }
+}
+
 function rebindKey(action, code) {
     const base = game?.prefs ?? loadPrefs();
     return setPrefs({ keys: rebind(base, action, code).keys });
@@ -1048,7 +1074,7 @@ function dispose() {
     if (!game) return;
     const g = game;
     g.disposed = true; g.events.abort();
-    if (document.pointerLockElement === g.view.canvas) document.exitPointerLock();
+    if (document.pointerLockElement === g.view.canvas) releasePointer(g);
     g.audio?.dispose?.();
     g.hailer?.dispose(); g.score?.dispose(); g.aftermath?.dispose(); g.streetMap?.dispose();
     g.ui?.dispose?.(); g.dissolve?.dispose?.();
