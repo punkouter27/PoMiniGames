@@ -16,7 +16,7 @@
 //
 // Crush ripples: `sources` lists up to six crush-risk cells (analysis.js's risk flag), the most
 // packed first and kept apart, for the sheet to send rings out from.
-import * as THREE from 'three';
+import * as THREE from 'three-eco/webgpu';
 import { CROWD_SIZE } from './world.js';
 import { gpuDevice, reducedMotion, qualityTier } from './gpu.js';
 

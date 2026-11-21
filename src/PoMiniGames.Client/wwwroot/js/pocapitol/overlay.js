@@ -13,7 +13,9 @@
 //
 // Both are on layer 1 with the other see-through things, drawn without writing depth, so they
 // never hide a person and never show up in the depth-of-field or AO passes.
-import * as THREE from 'three';
+import * as THREE from 'three-eco/webgpu';
+import * as TSL from 'three-eco/tsl';
+import { mirror } from './nodes.js';
 import { DENSITY, FRUIN, gradeIndex, contagionState } from './analysis.js';
 import { createDensityField } from './densityField.js';
 import { reducedMotion, qualityTier } from './gpu.js';
@@ -52,7 +54,7 @@ export function createOverlay(scene) {
     }
     at.needsUpdate = true; uv.needsUpdate = true;
     sheetGeometry.computeBoundingSphere();
-    const sheetMaterial = new THREE.MeshBasicMaterial({ map: texture, transparent: true, depthWrite: false, toneMapped: false, fog: false });
+    const sheetMaterial = new THREE.MeshBasicNodeMaterial({ map: texture, transparent: true, depthWrite: false, toneMapped: false, fog: false });
 
     // The terrain: the pressure field raises the sheet, draws the Fruin boundaries as contour
     // lines and sends rings out from crush-risk cells. All of it is added to the stock basic
@@ -68,51 +70,44 @@ export function createOverlay(scene) {
         uRiskColour: { value: new THREE.Color(1.0, 0.16, 0.78) },
         uRisk: { value: Array.from({ length: 6 }, () => new THREE.Vector3(0, 0, 0)) },
     };
-    sheetMaterial.onBeforeCompile = shader => {
-        Object.assign(shader.uniforms, fx);
-        shader.vertexShader = shader.vertexShader
-            .replace('#include <common>', `#include <common>
-uniform sampler2D uField; uniform vec4 uRect; uniform float uHeight;
-varying vec3 vWorld; varying vec2 vField;
-float pressureHeight(float p) { return uHeight * pow(clamp((p - 0.2) / 3.4, 0.0, 1.0), 0.9); }`)
-            .replace('#include <begin_vertex>', `#include <begin_vertex>
-vField = (transformed.xz - uRect.xy) / uRect.zw;
-transformed.y += pressureHeight(texture2D(uField, vField).r);
-vWorld = (modelMatrix * vec4(transformed, 1.0)).xyz;`);
-        shader.fragmentShader = shader.fragmentShader
-            .replace('#include <common>', `#include <common>
-uniform sampler2D uField; uniform float uTime; uniform float uLevels[5];
-uniform vec3 uLine; uniform vec3 uRiskColour; uniform vec3 uRisk[6];
-varying vec3 vWorld; varying vec2 vField;`)
-            .replace('#include <opaque_fragment>', `
-{
-    float p = texture2D(uField, vField).r;
-    // Flat shading from the surface slope, so the hills read without a light in the scene.
-    vec3 n = normalize(cross(dFdx(vWorld), dFdy(vWorld)));
-    n *= n.y < 0.0 ? -1.0 : 1.0;
-    float shade = 0.8 + 0.38 * max(dot(n, normalize(vec3(-0.45, 0.8, 0.35))), 0.0) - 0.12;
-    outgoingLight *= shade;
-    // Contour lines at Fruin's grade boundaries, a constant two pixels wide, with a soft glow.
-    float px = max(fwidth(p), 1e-4), lines = 0.0, glow = 0.0;
-    for (int i = 0; i < 5; i++) {
-        float off = abs(p - uLevels[i]) / px;
-        lines = max(lines, 1.0 - smoothstep(0.7, 1.7, off));
-        glow = max(glow, exp(-off * 0.22));
+    {
+        const { vec2, vec3, vec4, float, clamp, pow, max, min, dot, cross, normalize, smoothstep, fract, exp, distance, Loop, abs } = TSL;
+        const field_ = TSL.texture(fx.uField.value);
+        const uRect = mirror(fx.uRect), uHeight = mirror(fx.uHeight), uTime = mirror(fx.uTime);
+        const uLine = mirror(fx.uLine), uRiskColour = mirror(fx.uRiskColour);
+        const levels = TSL.uniformArray(fx.uLevels.value, 'float'), risk = TSL.uniformArray(fx.uRisk.value, 'vec3');
+        const vField = TSL.positionGeometry.xz.sub(uRect.xy).div(uRect.zw);
+        const pressureHeight = p => uHeight.mul(pow(clamp(p.sub(0.2).div(3.4), 0, 1), 0.9));
+        sheetMaterial.positionNode = TSL.positionLocal.add(vec3(0, pressureHeight(field_.sample(vField).level(0).r), 0));
+        const vFieldF = TSL.varying(vField, 'vCapField');
+        sheetMaterial.colorNode = TSL.Fn(() => {
+            const base = TSL.materialColor.toVar();
+            const p = field_.sample(vFieldF).r;
+            // Flat shading from the surface slope, so the hills read without a light in the scene.
+            const nrm = normalize(cross(TSL.dFdx(TSL.positionWorld), TSL.dFdy(TSL.positionWorld))).toVar();
+            nrm.mulAssign(TSL.select(nrm.y.lessThan(0), -1, 1));
+            const shade = dot(nrm, normalize(vec3(-0.45, 0.8, 0.35))).max(0).mul(0.38).add(0.68);
+            const out = base.rgb.mul(shade).toVar(), a = base.a.toVar();
+            // Contour lines at Fruin's grade boundaries, a constant two pixels wide, with a soft glow.
+            const px = max(TSL.fwidth(p), 1e-4), lines = float(0).toVar(), glow = float(0).toVar();
+            for (let i = 0; i < 5; i++) {
+                const off = abs(p.sub(levels.element(i))).div(px);
+                lines.assign(max(lines, smoothstep(0.7, 1.7, off).oneMinus()));
+                glow.assign(max(glow, exp(off.mul(-0.22))));
+            }
+            const lit = smoothstep(0.15, 0.5, p);
+            out.addAssign(uLine.mul(lines.mul(0.95).add(glow.mul(0.16))).mul(lit));
+            a.assign(max(a, lines.mul(0.9).add(glow.mul(0.12)).mul(lit)));
+            // Rings out of the crush-risk cells (a source with z = 0 is unused).
+            for (let i = 0; i < 6; i++) {
+                const phase = fract(uTime.mul(0.55).add(i * 0.37));
+                const ring = exp(pow(distance(TSL.positionWorld.xz, risk.element(i).xy).sub(phase.mul(10)).div(0.55), 2).negate()).mul(phase.oneMinus()).mul(TSL.step(0.5, risk.element(i).z));
+                out.addAssign(uRiskColour.mul(ring).mul(1.3));
+                a.assign(max(a, ring.mul(0.85)));
+            }
+            return vec4(out, a);
+        })();
     }
-    float lit = smoothstep(0.15, 0.5, p);
-    outgoingLight += uLine * (lines * 0.95 + glow * 0.16) * lit;
-    diffuseColor.a = max(diffuseColor.a, (lines * 0.9 + glow * 0.12) * lit);
-    // Rings out of the crush-risk cells (a source with z = 0 is unused).
-    for (int i = 0; i < 6; i++) {
-        if (uRisk[i].z < 0.5) continue;
-        float phase = fract(uTime * 0.55 + float(i) * 0.37);
-        float ring = exp(-pow((distance(vWorld.xz, uRisk[i].xy) - phase * 10.0) / 0.55, 2.0)) * (1.0 - phase);
-        outgoingLight += uRiskColour * ring * 1.3;
-        diffuseColor.a = max(diffuseColor.a, ring * 0.85);
-    }
-}
-#include <opaque_fragment>`);
-    };
 
     const sheet = new THREE.Mesh(sheetGeometry, sheetMaterial);
     sheet.layers.set(1); sheet.visible = false; sheet.renderOrder = 2; sheet.frustumCulled = false;

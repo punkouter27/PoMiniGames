@@ -1,4 +1,4 @@
-import * as THREE from 'three';
+import * as THREE from 'three-eco/webgpu';
 
 // Reference-inspired public architecture, drawn from the Architect of the Capitol and House
 // history pages the PRD cites. Decorative geometry never changes the playable plan: the

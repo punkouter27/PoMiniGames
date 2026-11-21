@@ -1,5 +1,7 @@
-import * as THREE from 'three';
-import { addWave, billboardChunk, createPolycarbonateMaterial, addSubsurfaceScattering, addFabric, CLOTH } from './look.js';
+import * as THREE from 'three-eco/webgpu';
+import * as TSL from 'three-eco/tsl';
+import { addWave, billboard, createPolycarbonateMaterial, addSubsurfaceScattering, addFabric, CLOTH } from './look.js';
+import { mirror } from './nodes.js';
 import { BONES as RIG_BONES, REGIONS, buildFigure } from './rig.js';
 import { collapseStage, tipAxes, impactFrame, restPlace } from './collapse.js';
 
@@ -171,7 +173,7 @@ let figurePromise = null;
 export function loadFigure() {
     figurePromise ??= (async () => {
         try {
-            const { GLTFLoader } = await import('three/addons/loaders/GLTFLoader.js');
+            const { GLTFLoader } = await import('three-eco/addons/loaders/GLTFLoader.js');
             return fromGltf(await new GLTFLoader().loadAsync(FIGURE_URL));
         } catch (error) {
             console.warn('PoCapitol: figure.glb unavailable, building the figure in code.', error);
@@ -291,7 +293,7 @@ function createBodies(scene, t, capacity, { detail, flat = false } = {}) {
     geometry.setDrawRange(0, 0);
     // `flat` is the unlit body the far-crowd bake uses to cut out its coat mask.
     const material = flat ? new THREE.MeshBasicMaterial({ vertexColors: true, fog: false })
-        : addFabric(addSubsurfaceScattering(new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.82 })), detail);
+        : addFabric(addSubsurfaceScattering(new THREE.MeshStandardNodeMaterial({ vertexColors: true, roughness: 0.82 })), detail);
     // The skeleton's bones are never posed through the scene graph: matrices are written straight
     // into its bone texture, so a single placeholder bone stands in for all of them.
     const placeholder = new THREE.Bone(), identity = new THREE.Matrix4();
@@ -825,16 +827,11 @@ export function createCrowd(scene, capacity, { time, groundHeight, shadowTexture
     for (let i = 0; i < bannerKinds.length; i++) {
         const { kind, text } = bannerKinds[i];
         const texture = flagTexture(kind, text); textures.add(texture);
-        const board = addWave(new THREE.MeshStandardMaterial({ map: texture, side: THREE.DoubleSide, roughness: 0.9 }), time, { wind });
+        const board = addWave(new THREE.MeshStandardNodeMaterial({ map: texture, side: THREE.DoubleSide, roughness: 0.9 }), time, { wind });
         // One double-sided plane means the face seen from behind shows the texture mirrored, so
         // every slogan read backwards from behind the crowd. Flip the sample on back faces only.
-        const wave = board.onBeforeCompile;
-        board.onBeforeCompile = (shader, renderer) => {
-            wave?.call(board, shader, renderer);
-            shader.fragmentShader = shader.fragmentShader.replace('#include <map_fragment>', `#include <map_fragment>
-                if (!gl_FrontFacing) diffuseColor.rgb = texture2D(map, vec2(1.0 - vMapUv.x, vMapUv.y)).rgb;`);
-        };
-        board.customProgramCacheKey = () => 'pocapitol-wave-board';
+        const boardMap = TSL.texture(texture), boardUv = TSL.uv();
+        board.colorNode = TSL.select(TSL.frontFacing, TSL.materialColor, TSL.vec4(boardMap.sample(TSL.vec2(boardUv.x.oneMinus(), boardUv.y)).rgb, 1));
         const flag = part('flag', new THREE.PlaneGeometry(1.7, 1.1, 16, 6), board,
             [0.86, 1.98, 0], [1, 1, 1], a => bearer(a) && bannerIndex(a) === i, false, right);
         flag.mesh.layers.set(1);
@@ -1233,49 +1230,61 @@ export function createDistantCrowd(scene, spots, { time, shadowTexture, atlas = 
     const { map, mask } = atlas ?? painted;
     const cols = atlas?.cols ?? CELLS, views = atlas?.views ?? 1, frames = atlas?.frames ?? 1;
     const [wide, tall] = atlas?.size ?? [0.95, 1.9];
-    const geometry = new THREE.PlaneGeometry(1, 1);
-    geometry.translate(0, 0.5, 0);
+    // One draw, one buffer per attribute and no instance matrix: WebGPU allows eight vertex buffers
+    // and this sprite's own data (where it stands, how big, which cell, which way, what colour) is five.
+    const quad = new THREE.PlaneGeometry(1, 1);
+    quad.translate(0, 0.5, 0);
+    const geometry = new THREE.InstancedBufferGeometry();
+    geometry.index = quad.index; geometry.setAttribute('position', quad.getAttribute('position')); geometry.setAttribute('uv', quad.getAttribute('uv'));
+    geometry.instanceCount = count;
     const cells = new Float32Array(count), faces = new Float32Array(count);
     const light = { value: 1 };
-    const material = new THREE.MeshBasicMaterial({ map, alphaTest: 0.5, fog: true });
-    material.onBeforeCompile = shader => {
-        shader.uniforms.uTime = time;
-        shader.uniforms.uLight = light;
-        shader.uniforms.uCoat = { value: mask };
-        shader.vertexShader = shader.vertexShader
-            .replace('#include <common>', '#include <common>\nattribute float aCell;\nattribute float aFace;\nuniform float uTime;')
-            .replace('#include <uv_vertex>', `#include <uv_vertex>
-                vec3 dcAt = (modelMatrix * instanceMatrix * vec4(0.0, 0.0, 0.0, 1.0)).xyz;
-                vec3 dcTo = cameraPosition - dcAt;
-                // Which side of the person the camera is on, in quarter turns from their back.
-                float dcView = mod(floor((atan(dcTo.x, dcTo.z) + aFace) / 1.5707963 + 0.5), ${views}.0);
-                // The second frame is the fist in the air: up on each of the bar's three beats,
-                // in whichever patches of the crowd are chanting just now.
-                float dcBar = mod(uTime, 1.75);
-                float dcBeat = step(dcBar, 1.26) * step(fract(dcBar / 0.42), 0.55)
-                    * step(-0.2, sin(uTime * 0.21 + floor(dcAt.x / 14.0) * 1.3 + floor(dcAt.z / 18.0)));
-                float dcRow = dcView + ${frames > 1 ? 'dcBeat' : '0.0'} * ${views}.0;
-                vMapUv = vec2((vMapUv.x + aCell) / ${cols}.0, (vMapUv.y + dcRow) / ${views * frames}.0);`)
-            .replace('#include <project_vertex>', `
-                float swayPhase = aCell * 2.1 + instanceMatrix[3].x * 0.7 + instanceMatrix[3].z * 0.4;
-                transformed.x += sin(uTime * 1.3 + swayPhase) * ${atlas ? '0.012' : '0.025'} * transformed.y;
-                transformed.y += max(0.0, sin(uTime * 2.2 + swayPhase * 3.0)) * ${atlas ? '0.008' : '0.02'};
-                ${billboardChunk(true)}`);
-        shader.fragmentShader = shader.fragmentShader
-            .replace('#include <common>', '#include <common>\nuniform float uLight;\nuniform sampler2D uCoat;')
-            .replace('#include <color_fragment>', atlas ? `
-                #ifdef USE_COLOR
-                    // The bake lit a neutral grey coat; scaling it by this person's colour keeps the folds and shading.
-                    diffuseColor.rgb = mix(diffuseColor.rgb, diffuseColor.rgb * vColor * ${(1 / atlas.neutral).toFixed(3)}, texture2D(uCoat, vMapUv).r);
-                #endif
-                diffuseColor.rgb *= uLight * 1.09;` : `
-                #ifdef USE_COLOR
-                    diffuseColor.rgb = mix(diffuseColor.rgb, vColor * 0.9, texture2D(uCoat, vMapUv).r);
-                #endif
-                diffuseColor.rgb *= uLight;`);
-    };
-    material.customProgramCacheKey = () => `pocapitol-far-crowd-${atlas ? `${cols}x${views}x${frames}` : 'painted'}`;
-    const people = new THREE.InstancedMesh(geometry, material, count);
+    const material = new THREE.MeshBasicNodeMaterial({ map, alphaTest: 0.5, fog: true });
+    // Where each sprite stands and its size, for the vertex stage to build the billboard from.
+    const stands = new THREE.InstancedBufferAttribute(new Float32Array(count * 4), 4);   // xyz, cell
+    const sizes = new THREE.InstancedBufferAttribute(new Float32Array(count * 3), 3);    // width, height, face
+    const tints = new THREE.InstancedBufferAttribute(new Float32Array(count * 3), 3);
+    geometry.setAttribute('aAt', stands); geometry.setAttribute('aSize', sizes); geometry.setAttribute('aTint', tints);
+    {
+        const { vec2, vec3, float, sin, mod, floor, step, fract, atan, mix, max } = TSL;
+        const uTime = mirror(time), uLight = mirror(light);
+        const aAt = TSL.attribute('aAt', 'vec4'), aSize = TSL.attribute('aSize', 'vec3');
+        const aCell = aAt.w, aFace = aSize.z, at = aAt.xyz, size = aSize.xy;
+        const to = TSL.cameraPosition.sub(at);
+        // Which side of the person the camera is on, in quarter turns from their back.
+        const dcView = mod(floor(atan(to.x, to.z).add(aFace).div(1.5707963).add(0.5)), views);
+        // The second frame is the fist in the air: up on each of the bar's three beats,
+        // in whichever patches of the crowd are chanting just now.
+        const dcBar = mod(uTime, 1.75);
+        const dcBeat = step(dcBar, 1.26).mul(step(fract(dcBar.div(0.42)), 0.55))
+            .mul(step(-0.2, sin(uTime.mul(0.21).add(floor(at.x.div(14)).mul(1.3)).add(floor(at.z.div(18))))));
+        const dcRow = dcView.add(frames > 1 ? dcBeat.mul(views) : 0);
+        const uv0 = TSL.uv();
+        const mapUv = vec2(uv0.x.add(aCell).div(cols), uv0.y.add(dcRow).div(views * frames));
+        material.vertexNode = TSL.Fn(() => {
+            const swayPhase = aCell.mul(2.1).add(at.x.mul(0.7)).add(at.z.mul(0.4));
+            const local = TSL.positionGeometry.toVar();
+            local.x.addAssign(sin(uTime.mul(1.3).add(swayPhase)).mul(atlas ? 0.012 : 0.025).mul(local.y));
+            local.y.addAssign(max(0, sin(uTime.mul(2.2).add(swayPhase.mul(3)))).mul(atlas ? 0.008 : 0.02));
+            const world = billboard(at, size, true, local);
+            return world.clip;
+        })();
+        material.colorNode = TSL.Fn(() => {
+            const tex = TSL.texture(map).sample(mapUv).toVar();
+            const coat = TSL.texture(mask).sample(mapUv).r;
+            const tint = TSL.attribute('aTint', 'vec3');
+            if (atlas) {
+                // The bake lit a neutral grey coat; scaling it by this person's colour keeps the folds and shading.
+                tex.rgb.assign(mix(tex.rgb, tex.rgb.mul(tint).mul(1 / atlas.neutral), coat));
+                tex.rgb.mulAssign(uLight.mul(1.09));
+            } else {
+                tex.rgb.assign(mix(tex.rgb, tint.mul(0.9), coat));
+                tex.rgb.mulAssign(uLight);
+            }
+            return tex;
+        })();
+    }
+    const people = new THREE.Mesh(geometry, material);
     const shadowGeometry = new THREE.PlaneGeometry(1, 1);
     const shadowMaterial = new THREE.MeshBasicMaterial({ map: shadowTexture, transparent: true, depthWrite: false,
         polygonOffset: true, polygonOffsetFactor: -2, polygonOffsetUnits: -2 });
@@ -1285,26 +1294,24 @@ export function createDistantCrowd(scene, spots, { time, shadowTexture, atlas = 
         // A baked cell has a little ground under the feet; a painted one stands on its edge.
         pose.position.set(spot.x, spot.y - (atlas ? atlas.foot * spot.scale : 0), spot.z); pose.rotation.set(0, 0, 0);
         pose.scale.set(wide * spot.scale, tall * spot.scale, 1); pose.updateMatrix();
-        people.setMatrixAt(i, pose.matrix);
-        people.setColorAt(i, tint.set(coats[spot.coat % coats.length]));
+        stands.setXYZW(i, spot.x, spot.y - (atlas ? atlas.foot * spot.scale : 0), spot.z, spot.cell % cols); sizes.setXYZ(i, wide * spot.scale, tall * spot.scale, spot.face ?? 0);
+        tint.set(coats[spot.coat % coats.length]); tints.setXYZ(i, tint.r, tint.g, tint.b);
         cells[i] = spot.cell % cols;
         faces[i] = spot.face ?? 0;
         pose.position.y = spot.y + 0.015; pose.rotation.set(-Math.PI / 2, 0, 0);
         pose.scale.set(0.9 * spot.scale, 0.75 * spot.scale, 1); pose.updateMatrix();
         shadows.setMatrixAt(i, pose.matrix);
     });
-    geometry.setAttribute('aCell', new THREE.InstancedBufferAttribute(cells, 1));
-    geometry.setAttribute('aFace', new THREE.InstancedBufferAttribute(faces, 1));
     for (const mesh of [people, shadows]) {
         mesh.frustumCulled = false;
         mesh.layers.set(1);
         scene.add(mesh);
     }
     return {
-        setCount(n) { people.count = shadows.count = Math.max(0, Math.min(count, n)); },
+        setCount(n) { geometry.instanceCount = shadows.count = Math.max(0, Math.min(count, n)); },
         setLight(level) { light.value = level; },
         dispose() {
-            for (const mesh of [people, shadows]) { scene.remove(mesh); mesh.dispose(); }
+            for (const mesh of [people, shadows]) { scene.remove(mesh); mesh.dispose?.(); }
             geometry.dispose(); shadowGeometry.dispose(); material.dispose(); shadowMaterial.dispose();
             // A baked atlas belongs to whoever baked it, and may be shared between crowds.
             painted?.map.dispose(); painted?.mask.dispose();
@@ -1356,7 +1363,7 @@ export function bakeImpostors(renderer, scene, figure, { detail } = {}) {
             made.push(crowd);
             crowd.setExtras(true);
             const cw = pxW / shrink, ch = pxH / shrink;
-            const target = new THREE.WebGLRenderTarget(cols * cw, views * frames * ch, {
+            const target = new THREE.RenderTarget(cols * cw, views * frames * ch, {
                 generateMipmaps: true, minFilter: THREE.LinearMipmapLinearFilter, magFilter: THREE.LinearFilter, samples: 4,
             });
             target.texture.colorSpace = THREE.LinearSRGBColorSpace;

@@ -1,7 +1,9 @@
-import * as THREE from 'three';
+import * as THREE from 'three-eco/webgpu';
 import { areas, obstacles, columns, statues, milestones, lineDefs, selectLeader, groundHeight, walkable, surgeSample, CROWD_SIZE, MAX_POLICE, CIVILIANS, CURFEW_ELAPSED } from './world.js';
 import { createCrowd, createDistantCrowd, bakeImpostors, flagTexture, coats } from './crowd.js';
-import { SURFACE, addSurface, surfaceTexture, createSky, setSkyColors, createEnvironment, addWave, softTexture, snowUniform } from './look.js';
+import { SURFACE, addSurface, surfaceTexture, createSky, setSkyColors, createEnvironment, addWave, softTexture, snowUniform, sssSun } from './look.js';
+import * as TSL from 'three-eco/tsl';
+import { mergeGeometries } from 'three-eco/addons/utils/BufferGeometryUtils.js';
 import { createParticles } from './particles.js';
 import { createBursts } from './bursts.js';
 import { createDecals } from './decals.js';
@@ -21,7 +23,7 @@ import { createNearCascade } from './cascade.js';
 // so depth-tested fog cards carry the haze instead, drifting with the wind and thinned by blasts.
 import { FogCards } from '../platform/volumetricFog.js';
 import { createStage } from '../platform/stage/stage.js';
-import { createRenderer, attachRenderer } from '../platform/3d/renderer.js';
+import { createRenderer, attachRenderer, webgpuAvailable } from '../platform/3d/renderer.js';
 
 // The chamber is drawn but never walked: its doors stay barricaded, as they did. It is only
 // seen in the closing shot, empty.
@@ -93,8 +95,11 @@ function cloudLight(cloudCover = 0.92, altitude = 20) {
 export async function createScene(host, { figure, osm, signs = [] } = {}) {
     const scene = new THREE.Scene();
     scene.fog = new THREE.FogExp2(SKY[0][1], FOG_OUT);
-    // The composer does the anti-aliasing (MSAA on its own target), so the canvas needs none.
-    const renderer = await createRenderer(THREE, { antialias: false, tone: 'aces', exposure: 1.1 });
+    // The post pipeline does the anti-aliasing (MSAA on its own target), so the canvas needs none.
+    // WebGPURenderer drops to its WebGL2 backend by itself when the browser has no adapter;
+    // ?capitolGl forces that backend, for comparing the two.
+    const forceWebGL = !(await webgpuAvailable()) || /[?&]capitolGl/.test(location.search);
+    const renderer = await createRenderer(THREE, { api: 'webgpu', forceWebGL, antialias: false, tone: 'aces', exposure: 1.1 });
     renderer.info.autoReset = false;
     renderer.domElement.tabIndex = 0;
     renderer.domElement.setAttribute('aria-label', 'PoCapitol third-person scene. Click to look around.');
@@ -118,7 +123,7 @@ export async function createScene(host, { figure, osm, signs = [] } = {}) {
     scene.add(sun);
     // The sun's second, close shadow map (cascade.js). Its light exists from the start, at zero
     // brightness, so the light count never changes and nothing recompiles when it is switched on.
-    const cascade = createNearCascade(scene, sun);
+    const cascade = createNearCascade(scene, sun, { camera, enabled: (window.PoQuality?.tier?.() ?? 'high') !== 'low' });
     let shadowFrame = 0;
     const sunDir = sunDirection(0);
     const placeSun = () => sun.position.copy(sun.target.position).addScaledVector(sunDir, 110);
@@ -182,32 +187,21 @@ export async function createScene(host, { figure, osm, signs = [] } = {}) {
             if (GLASS.has(color)) {
                 // Old window glass: dark, smooth, and it shows the overcast. After dark the rooms
                 // behind it are lit, but not all of them: the glow is switched per window.
-                value = new THREE.MeshStandardMaterial({ color: '#2a3542', roughness: 0.08, metalness: 0.1, envMapIntensity: 1.6,
+                value = new THREE.MeshStandardNodeMaterial({ color: '#2a3542', roughness: 0.08, metalness: 0.1, envMapIntensity: 1.6,
                     emissive: '#ffcf8a', emissiveIntensity: 0 });
-                value.onBeforeCompile = shader => {
-                    shader.vertexShader = shader.vertexShader
-                        .replace('#include <common>', '#include <common>\nvarying vec3 vPanePos;')
-                        .replace('#include <worldpos_vertex>', `#include <worldpos_vertex>
-                            // The pane's own centre, so the whole window is lit or dark together.
-                            vec4 paneP = vec4(0.0, 0.0, 0.0, 1.0);
-                            #ifdef USE_INSTANCING
-                                paneP = instanceMatrix * paneP;
-                            #endif
-                            vPanePos = (modelMatrix * paneP).xyz;`);
-                    shader.fragmentShader = shader.fragmentShader
-                        .replace('#include <common>', '#include <common>\nvarying vec3 vPanePos;')
-                        .replace('#include <emissivemap_fragment>', `#include <emissivemap_fragment>
-                            float paneLit = fract(sin(dot(floor(vPanePos * 2.0 + 0.5), vec3(12.9898, 78.233, 37.719))) * 43758.5453);
-                            totalEmissiveRadiance *= step(0.42, paneLit) * (0.55 + 0.45 * fract(paneLit * 7.3));`);
-                };
-                value.customProgramCacheKey = () => 'pocapitol-pane';
+                // One draw per window: the lit or dark choice is the instance's own, so the whole pane
+                // is lit or dark together (the object's origin stands in for where it is when it is not instanced).
+                const paneAt = TSL.attribute('aCentre', 'vec3').add(TSL.modelWorldMatrix.element(3).xyz);
+                const paneKey = TSL.float(TSL.instanceIndex).mul(12.9898).add(paneAt.x.mul(78.233)).add(paneAt.y.mul(37.719)).add(paneAt.z.mul(11.131));
+                const paneLit = TSL.fract(TSL.sin(paneKey).mul(43758.5453));
+                value.emissiveNode = TSL.materialEmissive.mul(TSL.step(0.42, paneLit)).mul(TSL.fract(paneLit.mul(7.3)).mul(0.45).add(0.55));
                 glassMaterials.push(value);
             } else if (METAL.has(color)) {
                 const [metal, rough] = METAL.get(color);
                 value = new THREE.MeshStandardMaterial({ color, roughness: rough, metalness: metal });
             } else {
                 const kind = surfaceKind(color);
-                value = addSurface(new THREE.MeshStandardMaterial({ color, roughness: 0.78, metalness }), kind, surfaces, surfaceDetail,
+                value = addSurface(new THREE.MeshStandardNodeMaterial({ color, roughness: 0.78, metalness }), kind, surfaces, surfaceDetail,
                     kind === SURFACE.grass || kind === SURFACE.paving ? wearUniforms : null);
             }
             materials.set(key, value);
@@ -385,7 +379,7 @@ export async function createScene(host, { figure, osm, signs = [] } = {}) {
     const domeLantern = mesh(new THREE.CylinderGeometry(1.3, 1.8, 2.8, 24), '#c9c4b8', 0, 39, -14);
     // The dome is floodlit after dark. Its shell, drum, attic and lantern share one material of
     // their own, so the glow can be raised at dusk without lighting every cornice in the building.
-    const domeLit = addSurface(new THREE.MeshStandardMaterial({ color: '#ede5d6', roughness: 0.78, emissive: '#ffe9c6', emissiveIntensity: 0 }),
+    const domeLit = addSurface(new THREE.MeshStandardNodeMaterial({ color: '#ede5d6', roughness: 0.78, emissive: '#ffe9c6', emissiveIntensity: 0 }),
         SURFACE.stone, surfaces, surfaceDetail);
     materials.set('dome-lit', domeLit);
     for (const lit of [domeDrum, domeAttic, domeShell, domeLantern]) lit.material = domeLit;
@@ -447,7 +441,7 @@ export async function createScene(host, { figure, osm, signs = [] } = {}) {
         mesh(new THREE.CylinderGeometry(ring, ring, 0.025, 64), ring < 2 ? '#eeeadf' : i % 2 ? '#b5a090' : '#ebe2cd',
             0, 0.14 + i * 0.006, -14);
     const innerDome = mesh(new THREE.SphereGeometry(11.5, 40, 20, 0, Math.PI * 2, 0, Math.PI / 2), '#d6c6ad', 0, 8, -14);
-    const domeMaterial = addSurface(new THREE.MeshStandardMaterial({ color: '#d6c6ad', roughness: 0.95, side: THREE.DoubleSide }),
+    const domeMaterial = addSurface(new THREE.MeshStandardNodeMaterial({ color: '#d6c6ad', roughness: 0.95, side: THREE.DoubleSide }),
         SURFACE.stone, surfaces, surfaceDetail);
     materials.set('inner-dome', domeMaterial); innerDome.material = domeMaterial;
     for (const y of [7.6, 8.2]) {
@@ -617,12 +611,37 @@ export async function createScene(host, { figure, osm, signs = [] } = {}) {
         if (!repeated.has(id)) repeated.set(id, []);
         repeated.get(id).push(object);
     }
+    // The repeated static pieces of the building. On r165 these were InstancedMeshes, one per shape and
+    // material. WebGPURenderer gives every InstancedMesh a shader of its own (its instance matrices are
+    // bound per object), and a few hundred of them were a minute of compile. They are baked into one
+    // mesh per material instead (the matrices are applied to the vertices once), which every material
+    // of the same look then shares a program for. `aCentre` keeps where each piece was, for the windows.
+    const bakedByMaterial = new Map();
     for (const objects of repeated.values()) {
         if (objects.length < 2) continue;
-        const batch = new THREE.InstancedMesh(objects[0].geometry, objects[0].material, objects.length);
+        const material = objects[0].material;
+        if (!bakedByMaterial.has(material)) bakedByMaterial.set(material, []);
+        for (const object of objects) {
+            const geometry = object.geometry.clone();
+            geometry.applyMatrix4(object.matrixWorld);
+            for (const name of Object.keys(geometry.attributes)) if (!['position', 'normal', 'uv'].includes(name)) geometry.deleteAttribute(name);
+            if (!geometry.getAttribute('uv')) geometry.setAttribute('uv', new THREE.BufferAttribute(new Float32Array(geometry.getAttribute('position').count * 2), 2));
+            const at = new THREE.Vector3().setFromMatrixPosition(object.matrixWorld);
+            const centre = new Float32Array(geometry.getAttribute('position').count * 3);
+            for (let i = 0; i < centre.length; i += 3) { centre[i] = at.x; centre[i + 1] = at.y; centre[i + 2] = at.z; }
+            geometry.setAttribute('aCentre', new THREE.BufferAttribute(centre, 3));
+            bakedByMaterial.get(material).push(geometry);
+            scene.remove(object);
+        }
+    }
+    for (const [material, list] of bakedByMaterial) {
+        const indexed = list.every(g => g.index);
+        const merged = mergeGeometries(indexed ? list : list.map(g => (g.index ? g.toNonIndexed() : g)));
+        for (const g of list) g.dispose();
+        if (!merged) continue;
+        const batch = new THREE.Mesh(merged, material);
         batch.castShadow = true; batch.receiveShadow = true;
-        objects.forEach((object, i) => { batch.setMatrixAt(i, object.matrixWorld); scene.remove(object); });
-        scene.add(batch); architectureBatches.push(batch);
+        scene.add(batch); architectureBatches.push({ dispose() { merged.dispose(); } });
     }
 
     // Everything below moves or appears during play, so it stays out of the static batches.
@@ -685,7 +704,7 @@ export async function createScene(host, { figure, osm, signs = [] } = {}) {
     const farFlags = [];
     let farPole = 0;
     for (const [kind, count] of FAR_FLAGS) {
-        const flagMaterial = addWave(new THREE.MeshLambertMaterial({ map: flagTexture(kind), side: THREE.DoubleSide }), time, { wind });
+        const flagMaterial = addWave(new THREE.MeshLambertNodeMaterial({ map: flagTexture(kind), side: THREE.DoubleSide }), time, { wind });
         textures.add(flagMaterial.map); materials.set(`far-flags-${kind}`, flagMaterial);
         const flags = instanced(farFlagGeometry, flagMaterial, count);
         flags.layers.set(1);
@@ -1051,7 +1070,6 @@ export async function createScene(host, { figure, osm, signs = [] } = {}) {
         // about one and a half; with it off the far map goes back to every frame.
         const close = settings.shadows >= 2048 && (settings.post ?? 0) >= 3;
         cascade.setEnabled(close);
-        sun.shadow.autoUpdate = !close;
         if (renderer.shadowMap.autoUpdate !== shadows) {
             // Switching shadows off the usual way recompiles every lit shader, a multi-second
             // freeze on exactly the devices that need the help. Instead the shadow pass is
@@ -1062,10 +1080,7 @@ export async function createScene(host, { figure, osm, signs = [] } = {}) {
             renderer.shadowMap.autoUpdate = shadows;
             renderer.shadowMap.needsUpdate = true;
         }
-        if (shadows && sun.shadow.mapSize.x !== settings.shadows) {
-            sun.shadow.mapSize.set(settings.shadows, settings.shadows);
-            sun.shadow.map?.dispose(); sun.shadow.map = null; sun.shadow.needsUpdate = true;
-        }
+        // The map keeps its size: resizing a live shadow map on WebGPU would rebuild every lit pipeline.
         const distant = Math.floor(DISTANT * settings.distant);
         farCrowd.setCount(distant);
         let poles = 0;
@@ -1524,7 +1539,6 @@ export async function createScene(host, { figure, osm, signs = [] } = {}) {
         const shotReach = Math.min(46, Math.max(20, camera.position.distanceTo(sun.target.position) * 1.7 + 8));
         shadowReach += (shotReach - shadowReach) * (1 - Math.exp(-dt * 1.5));
         cascade.update(focus, sunDir);
-        if (cascade.enabled()) sun.shadow.needsUpdate = (shadowFrame++ & 1) === 0;
         const reachStep = Math.round(shadowReach / 4) * 4;
         if (reachStep !== shadowReachSet && sun.shadow.camera.far > 1) {
             shadowReachSet = reachStep;
@@ -1707,6 +1721,7 @@ export async function createScene(host, { figure, osm, signs = [] } = {}) {
         }
         sky.mesh.position.copy(camera.position);
         post.jitter();
+        sssSun.set(sun, camera);
         depthCamera.copy(camera);
         depthCamera.layers.set(0);
         host.dataset.actorCount = crowd.update(state, spectating ? 0 : yaw, moving, camera.position);
@@ -1866,7 +1881,10 @@ export async function createScene(host, { figure, osm, signs = [] } = {}) {
         else if (event.type === 'grenade') paper.blast(event.x, event.z, 1, event.radius ?? 9);
         else if (event.type === 'smoke' || event.type === 'gas') paper.blast(event.x, event.z, 0.15, 2.5);
     }
-    return { canvas: renderer.domElement, stage, render, aim, pickUnit, applyQuality, dispose, renderer, camera, startIntro, introActive, setTracerMode, setMotionReduction, setFov, setFootage, setMenu, onEvent,
+    // Pipelines are built off the main thread, and in parallel, against the target the scene is drawn
+    // into; built one at a time during the first frames they would freeze the page for the whole set.
+    await post.compile();
+    return { canvas: renderer.domElement, scene, stage, render, aim, pickUnit, applyQuality, dispose, renderer, camera, startIntro, introActive, setTracerMode, setMotionReduction, setFov, setFootage, setMenu, onEvent,
         setOverlay: next => overlay.setMode(next), setOverlayPalette: next => overlay.setPalette(next),
         setSnow: amount => { snowUniform.value = Math.max(0, Math.min(1, amount)); },
         /** The sun now, degrees (sun.js): for the diagnostics. */

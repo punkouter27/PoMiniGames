@@ -1,4 +1,6 @@
-import * as THREE from 'three';
+import * as THREE from 'three-eco/webgpu';
+import * as TSL from 'three-eco/tsl';
+import { mirror } from './nodes.js';
 
 // Window panes that actually break.
 //
@@ -68,62 +70,56 @@ export function createGlass(scene, panes, { floor = 0.12, sun = null } = {}) {
     geometry.setAttribute('aVelocity', new THREE.Float32BufferAttribute(velocity, 3));
     geometry.setAttribute('aSpin', new THREE.Float32BufferAttribute(spin, 4));
     geometry.setAttribute('aPane', new THREE.Float32BufferAttribute(pane, 1));
-    const born = new Float32Array(Math.max(1, panes.length)).fill(1e9);
-    const material = new THREE.ShaderMaterial({
-        uniforms: {
-            uTime: { value: 0 }, uBorn: { value: born }, uFloor: { value: floor }, uLight: { value: 1 },
-            uSun: { value: sun ?? new THREE.Vector3(0.3, 0.6, 0.7) },
-        },
-        vertexShader: `
-            attribute vec3 aCentre, aVelocity;
-            attribute vec4 aSpin;
-            attribute float aPane;
-            uniform float uTime, uFloor;
-            uniform float uBorn[${Math.max(1, panes.length)}];
-            varying vec3 vNormal, vWorld;
-            varying float vRest;
-            vec3 turn(vec3 v, vec3 axis, float angle) {
-                float c = cos(angle), s = sin(angle);
-                return v * c + cross(axis, v) * s + axis * dot(axis, v) * (1.0 - c);
-            }
-            void main() {
-                float t = uTime - uBorn[int(aPane + 0.5)];
-                if (t < 0.0) { gl_Position = vec4(2.0, 2.0, 2.0, 1.0); return; }
-                // When this shard reaches the floor, from where it started and how it was thrown.
-                float drop = max(aCentre.y - uFloor, 0.0);
-                float land = (aVelocity.y + sqrt(aVelocity.y * aVelocity.y + 2.0 * ${GRAVITY.toFixed(2)} * drop)) / ${GRAVITY.toFixed(2)};
-                float air = min(t, land), rest = clamp((t - land) * 5.0, 0.0, 1.0);
-                vec3 at = aCentre + aVelocity * air;
-                at.y -= 0.5 * ${GRAVITY.toFixed(2)} * air * air;
-                // Landed: it skids a little further the way it was going, and stops.
-                float skid = (1.0 - exp(-max(t - land, 0.0) * 6.0)) / 6.0;
-                at.xz += aVelocity.xz * 0.35 * skid;
-                vec3 shard = turn(position, aSpin.xyz, aSpin.w * air);
-                vec3 normal = turn(vec3(0.0, 0.0, 1.0), aSpin.xyz, aSpin.w * air);
-                // And lies flat, whichever way up it came down.
-                shard = mix(shard, vec3(shard.x, 0.004 + aPane * 0.0015, shard.z + shard.y), rest);
-                normal = normalize(mix(normal, vec3(0.0, 1.0, 0.0), rest));
-                at.y = max(at.y, uFloor) + 0.0;
-                vWorld = at + shard; vNormal = normal; vRest = rest;
-                gl_Position = projectionMatrix * viewMatrix * vec4(vWorld, 1.0);
-            }`,
-        fragmentShader: `
-            uniform vec3 uSun;
-            uniform float uLight;
-            varying vec3 vNormal, vWorld;
-            varying float vRest;
-            void main() {
-                vec3 n = normalize(vNormal), view = normalize(cameraPosition - vWorld);
-                if (dot(n, view) < 0.0) n = -n;
-                float fresnel = pow(1.0 - clamp(dot(n, view), 0.0, 1.0), 3.0);
-                // Glass is nearly invisible face-on and a mirror edge-on; a tumbling shard flashes
-                // white for one frame as it catches the sun, bright enough for the bloom to see.
-                float glint = pow(max(dot(reflect(-normalize(uSun), n), view), 0.0), 90.0);
-                vec3 body = mix(vec3(0.16, 0.22, 0.24), vec3(0.78, 0.86, 0.9), fresnel) * uLight;
-                gl_FragColor = vec4(body + glint * 5.0 * uLight, mix(0.5, 0.95, fresnel) + glint);
-            }`,
-        transparent: true, depthWrite: false, side: THREE.DoubleSide,
-    });
+    const born = new Array(Math.max(1, panes.length)).fill(1e9);
+    const uniforms = { uTime: { value: 0 }, uBorn: { value: born }, uFloor: { value: floor }, uLight: { value: 1 },
+        uSun: { value: sun ?? new THREE.Vector3(0.3, 0.6, 0.7) } };
+    const material = new THREE.NodeMaterial();
+    Object.assign(material, { transparent: true, depthWrite: false, side: THREE.DoubleSide, fog: false });
+    {
+        const { vec3, vec4, float, cos, sin, cross, dot, normalize, max, min, clamp, exp, sqrt, mix, pow, select, reflect } = TSL;
+        const aCentre = TSL.attribute('aCentre', 'vec3'), aVelocity = TSL.attribute('aVelocity', 'vec3');
+        const aSpin = TSL.attribute('aSpin', 'vec4'), aPane = TSL.attribute('aPane', 'float');
+        const uTime = mirror(uniforms.uTime), uFloor = mirror(uniforms.uFloor), uLight = mirror(uniforms.uLight), uSun = mirror(uniforms.uSun);
+        const uBorn = TSL.uniformArray(born, 'float');
+        const turn = (v, axis, angle) => {
+            const c = cos(angle), sn = sin(angle);
+            return v.mul(c).add(cross(axis, v).mul(sn)).add(axis.mul(dot(axis, v)).mul(c.oneMinus()));
+        };
+        // The whole flight, solved in closed form: world position, facing, and how long since it broke.
+        const flight = TSL.Fn(() => {
+            const t = uTime.sub(uBorn.element(TSL.int(aPane.add(0.5))));
+            // When this shard reaches the floor, from where it started and how it was thrown.
+            const drop = max(aCentre.y.sub(uFloor), 0);
+            const land = aVelocity.y.add(sqrt(aVelocity.y.mul(aVelocity.y).add(drop.mul(2 * GRAVITY)))).div(GRAVITY);
+            const air = min(t, land), rest = clamp(t.sub(land).mul(5), 0, 1);
+            const at = aCentre.add(aVelocity.mul(air)).toVar();
+            at.y.subAssign(air.mul(air).mul(0.5 * GRAVITY));
+            // Landed: it skids a little further the way it was going, and stops.
+            const skid = exp(max(t.sub(land), 0).mul(-6)).oneMinus().div(6);
+            at.x.addAssign(aVelocity.x.mul(0.35).mul(skid));
+            at.z.addAssign(aVelocity.z.mul(0.35).mul(skid));
+            const shard0 = turn(TSL.positionGeometry, aSpin.xyz, aSpin.w.mul(air));
+            const normal0 = turn(vec3(0, 0, 1), aSpin.xyz, aSpin.w.mul(air));
+            // And lies flat, whichever way up it came down.
+            const shard = mix(shard0, vec3(shard0.x, aPane.mul(0.0015).add(0.004), shard0.z.add(shard0.y)), rest);
+            const nrm = normalize(mix(normal0, vec3(0, 1, 0), rest));
+            at.y.assign(max(at.y, uFloor));
+            return TSL.mat3(at.add(shard), nrm, vec3(t, 0, 0));
+        })().toVar('shardFlight');
+        const world = flight.element(0), nrm = flight.element(1), t = flight.element(2).x;
+        const vNormal = TSL.varying(nrm, 'vShardN'), vWorld = TSL.varying(world, 'vShardW');
+        material.vertexNode = select(t.lessThan(0), vec4(2, 2, 2, 1), TSL.cameraProjectionMatrix.mul(TSL.cameraViewMatrix).mul(vec4(world, 1)));
+        material.fragmentNode = TSL.Fn(() => {
+            const n = normalize(vNormal).toVar(), view = normalize(TSL.cameraPosition.sub(vWorld));
+            n.assign(select(dot(n, view).lessThan(0), n.negate(), n));
+            const fresnel = pow(clamp(dot(n, view), 0, 1).oneMinus(), 3);
+            // Glass is nearly invisible face-on and a mirror edge-on; a tumbling shard flashes
+            // white for one frame as it catches the sun, bright enough for the bloom to see.
+            const glint = pow(max(dot(reflect(normalize(uSun).negate(), n), view), 0), 90);
+            const body = mix(vec3(0.16, 0.22, 0.24), vec3(0.78, 0.86, 0.9), fresnel).mul(uLight);
+            return vec4(body.add(glint.mul(5).mul(uLight)), mix(0.5, 0.95, fresnel).add(glint));
+        })();
+    }
     const mesh = new THREE.Mesh(geometry, material);
     mesh.frustumCulled = false;
     mesh.layers.set(1);
@@ -140,7 +136,7 @@ export function createGlass(scene, panes, { floor = 0.12, sun = null } = {}) {
         },
         broken: index => born[index] < 1e8,
         /** @param light 0..1 brightness of the day, so the glass does not glow at dusk */
-        update(time, light = 1) { material.uniforms.uTime.value = time; material.uniforms.uLight.value = 0.25 + 0.75 * light; },
+        update(time, light = 1) { uniforms.uTime.value = time; uniforms.uLight.value = 0.25 + 0.75 * light; },
         /** A new attempt: every pane is whole again. */
         reset() { born.fill(1e9); mesh.visible = false; },
         dispose() { scene.remove(mesh); geometry.dispose(); material.dispose(); },

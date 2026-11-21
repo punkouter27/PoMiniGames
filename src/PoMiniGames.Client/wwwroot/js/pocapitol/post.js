@@ -1,11 +1,10 @@
-import * as THREE from 'three';
-import { EffectComposer } from 'three/addons/postprocessing/EffectComposer.js';
-import { RenderPass } from 'three/addons/postprocessing/RenderPass.js';
-import { GTAOPass } from 'three/addons/postprocessing/GTAOPass.js';
-import { UnrealBloomPass } from 'three/addons/postprocessing/UnrealBloomPass.js';
-import { OutputPass } from 'three/addons/postprocessing/OutputPass.js';
-import { ShaderPass } from 'three/addons/postprocessing/ShaderPass.js';
-import { createRackFocus } from '../platform/postFx.js';
+import * as THREE from 'three-eco/webgpu';
+import * as TSL from 'three-eco/tsl';
+import { bloom } from 'three-eco/addons/tsl/display/BloomNode.js';
+import { ao } from 'three-eco/addons/tsl/display/GTAONode.js';
+import { dof } from 'three-eco/addons/tsl/display/DepthOfFieldNode.js';
+import { allowHeavy } from '../platform/postPunch.js';
+import { makeTarget, makeQuad, drawQuad, tap, hashFrag, isWebGPU } from './nodes.js';
 import { createTemporal } from './temporal.js';
 import { createVolumetric } from './volumetric.js';
 import { createSmallLights } from './smallLights.js';
@@ -14,497 +13,328 @@ import { createLens } from './lens.js';
 // PoCapitol's frame: scene -> ambient occlusion -> contact shadows (SSCS) ->
 // diffuse global illumination (SSGI) -> screen-space reflections (SSR) -> small lights ->
 // lit air -> temporal resolve -> refraction -> bloom -> sun shafts -> motion blur ->
-// (transient) depth of field -> lens (metering, flare) -> tone map -> grade. The scene always goes through the
-// composer, even with every optional pass off, so a quality change never flips the scene's
-// shaders between "to screen" and "to target" variants (that recompile is the multi-second hitch
-// quality.js exists to avoid).
+// (transient) depth of field -> lens (metering, flare) -> tone map -> FXAA -> grade.
+//
+// r186 PORT. On r165 this was an EffectComposer of ShaderPass GLSL strings. It is now the same
+// list of steps as TSL node graphs, each a node material on a QuadMesh drawn into a render target
+// (nodes.js explains why it is not one RenderPipeline graph: the steps that are off most of the
+// time must cost nothing, and the lights, the air and the velocity boxes are draws of their own).
+//   - ambient occlusion is three's own GTAONode (it replaces the GTAOPass, which drew the scene a
+//     second time with a normal/depth override; this one reads the scene's own depth)
+//   - bloom is three's BloomNode, depth of field three's DepthOfFieldNode
+//   - everything else (contact shadows, bounce, reflections, shafts, the temporal resolve, the
+//     lit air, the lens and the grade) is the old GLSL, rewritten in TSL line for line
+//
+// DIFFERENCES FROM r165 worth knowing
+//   - the scene target has no MSAA: the one place it was used (levels 1 and 2) is FXAA now. A
+//     multisampled target cannot give a depth texture back on WebGPU, and changing a target's
+//     sample count would rebuild every pipeline of the scene (the multi-second hitch quality.js
+//     exists to avoid)
+//   - the AO pass no longer needs its own depth render, so level 3 draws the scene once, not twice
+//   - the scene still always goes through the targets, even with every optional step off, so a
+//     quality change never flips the scene's shaders between "to screen" and "to target"
+//
+// Levels (post.setLevel): 3 everything, anti-aliased over time; 2 bloom, shafts, flare and
+// metering with FXAA; 1 FXAA and grade; 0 grade only.
 
-const QUAD = `
-    varying vec2 vUv;
-    void main() {
-        vUv = uv;
-        gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
-    }`;
-
-// Contact shadows: the last few centimetres the shadow map cannot draw. From each pixel a short
-// ray is walked toward the sun through the depth buffer; if something solid stands between the
-// pixel and the light within arm's reach, the pixel is darkened. It is what plants a boot on the
-// paving and a rack on the grass. Positions are rebuilt in view space, in metres, so the reach
-// and the thickness test mean the same thing next to the lens and across the lawn.
-const SSCSShader = {
-    uniforms: {
-        tDiffuse: { value: null },
-        tDepth: { value: null },
-        uCameraNear: { value: 0.1 },
-        uCameraFar: { value: 420 },
-        // The sun's direction in view space, and the projection's x and y scale.
-        uLightView: { value: new THREE.Vector3(0, 1, 0) },
-        uProj: { value: new THREE.Vector2(1, 1) },
-        uIntensity: { value: 0.3 },
-        uReach: { value: 0.4 },
-        uTime: { value: 0 },
-    },
-    vertexShader: QUAD,
-    fragmentShader: `
-        #include <packing>
-        uniform sampler2D tDiffuse;
-        uniform sampler2D tDepth;
-        uniform float uCameraNear, uCameraFar, uIntensity, uReach, uTime;
-        uniform vec3 uLightView;
-        uniform vec2 uProj;
-        varying vec2 vUv;
-
-        float viewZ(vec2 coord) {
-            return perspectiveDepthToViewZ(textureLod(tDepth, coord, 0.0).r, uCameraNear, uCameraFar);
-        }
-
-        void main() {
-            vec4 col = texture2D(tDiffuse, vUv);
-            float z = viewZ(vUv);
-            // Sky, and anything too far off for a hand's width of shadow to be a pixel.
-            if (z < -70.0 || uIntensity <= 0.0) { gl_FragColor = col; return; }
-            vec3 at = vec3((vUv * 2.0 - 1.0) * -z / uProj, z);
-            // Further away the ray is longer, so its steps never fall inside one pixel.
-            float reach = uReach * (1.0 + -z * 0.035);
-            float start = fract(sin(dot(gl_FragCoord.xy + fract(uTime) * 53.0, vec2(12.9898, 78.233))) * 43758.5453);
-            float shadow = 0.0;
-            for (int i = 0; i < 6; i++) {
-                float t = reach * (float(i) + start) / 6.0;
-                vec3 p = at + uLightView * t;
-                if (p.z > -uCameraNear) break;
-                vec2 uv = p.xy * uProj / -p.z * 0.5 + 0.5;
-                if (uv.x < 0.0 || uv.x > 1.0 || uv.y < 0.0 || uv.y > 1.0) break;
-                // How far in front of the ray the scene's surface is here. Just in front: something
-                // is in the way. Far in front: a person a street nearer the lens, not a caster.
-                float gap = viewZ(uv) - p.z;
-                if (gap > 0.025 + t * 0.12 && gap < 0.45) shadow = max(shadow, 1.0 - t / reach);
-            }
-            col.rgb *= 1.0 - shadow * uIntensity;
-            gl_FragColor = col;
-        }
-    `
-};
-
-// Bounced light, in screen space: a surface next to a brighter one picks up some of its colour.
-// Eight neighbours at about the same depth are averaged, and only what they have over the pixel
-// itself is added, so an evenly lit wall gains nothing and the shaded side of a column next to
-// sunlit paving is lifted and tinted by it. The sample pattern turns every frame; the temporal
-// resolve averages the turns.
-const SSGIShader = {
-    uniforms: {
-        tDiffuse: { value: null },
-        tDepth: { value: null },
-        uCameraNear: { value: 0.1 },
-        uCameraFar: { value: 420 },
-        uBounceIntensity: { value: 0.2 },
-        uResolution: { value: new THREE.Vector2(1, 1) },
-        uTime: { value: 0 },
-        uRadius: { value: 26 },
-    },
-    vertexShader: QUAD,
-    fragmentShader: `
-        #include <packing>
-        uniform sampler2D tDiffuse;
-        uniform sampler2D tDepth;
-        uniform float uCameraNear, uCameraFar, uBounceIntensity, uTime, uRadius;
-        uniform vec2 uResolution;
-        varying vec2 vUv;
-
-        float viewZ(vec2 coord) {
-            return perspectiveDepthToViewZ(textureLod(tDepth, coord, 0.0).r, uCameraNear, uCameraFar);
-        }
-
-        const vec2 POISSON[8] = vec2[8](
-            vec2(-0.326, -0.406), vec2(-0.840, -0.074),
-            vec2(-0.696,  0.457), vec2(-0.203,  0.621),
-            vec2( 0.962, -0.195), vec2( 0.473, -0.480),
-            vec2( 0.519,  0.767), vec2( 0.185, -0.893)
-        );
-
-        void main() {
-            vec4 col = texture2D(tDiffuse, vUv);
-            float z = -viewZ(vUv);
-            if (z > 120.0 || uBounceIntensity <= 0.0) { gl_FragColor = col; return; }
-            // A fixed reach on the ground, so it is wide on screen up close and tight far away.
-            vec2 radius = vec2(uResolution.y / uResolution.x, 1.0) * clamp(uRadius * 0.05 / z, 0.004, 0.06);
-            float rot = fract(sin(dot(gl_FragCoord.xy + fract(uTime) * 11.0, vec2(12.9898, 78.233))) * 43758.5453) * 6.28318;
-            mat2 rotMat = mat2(cos(rot), -sin(rot), sin(rot), cos(rot));
-            vec3 bounce = vec3(0.0);
-            float total = 0.0;
-            for (int i = 0; i < 8; i++) {
-                vec2 sUv = vUv + rotMat * POISSON[i] * radius;
-                if (sUv.x < 0.0 || sUv.x > 1.0 || sUv.y < 0.0 || sUv.y > 1.0) continue;
-                // Only what is about as far away as this pixel can be lighting it.
-                float near = 1.0 - clamp(abs(-viewZ(sUv) - z) / 1.5, 0.0, 1.0);
-                bounce += textureLod(tDiffuse, sUv, 0.0).rgb * near;
-                total += near;
-            }
-            if (total > 0.001) {
-                // What the neighbours have over this pixel is what they can give it.
-                vec3 excess = max(bounce / total - col.rgb, 0.0);
-                col.rgb += min(excess, vec3(1.5)) * uBounceIntensity;
-            }
-            gl_FragColor = col;
-        }
-    `
-};
-
-// Screen-Space Reflections (SSR) with roughness jitter and Schlick Fresnel.
-const SSRShader = {
-    uniforms: {
-        tDiffuse: { value: null },
-        tDepth: { value: null },
-        uCameraNear: { value: 0.1 },
-        uCameraFar: { value: 150 },
-        uResolution: { value: new THREE.Vector2(1, 1) },
-        uIntensity: { value: 0.45 },
-    },
-    vertexShader: `
-        varying vec2 vUv;
-        void main() {
-            vUv = uv;
-            gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
-        }
-    `,
-    fragmentShader: `
-        uniform sampler2D tDiffuse;
-        uniform sampler2D tDepth;
-        uniform float uCameraNear, uCameraFar, uIntensity;
-        uniform vec2 uResolution;
-        varying vec2 vUv;
-
-        float readDepth(vec2 coord) {
-            float z = texture2D(tDepth, coord).r;
-            return (2.0 * uCameraNear) / (uCameraFar + uCameraNear - z * (uCameraFar - uCameraNear));
-        }
-
-        void main() {
-            vec4 col = texture2D(tDiffuse, vUv);
-            float depth = readDepth(vUv);
-            if (depth > 0.92 || depth < 0.005) {
-                gl_FragColor = col;
-                return;
-            }
-            vec2 texel = 1.0 / uResolution;
-            float dL = readDepth(vUv - vec2(texel.x, 0.0));
-            float dR = readDepth(vUv + vec2(texel.x, 0.0));
-            float dU = readDepth(vUv + vec2(0.0, texel.y));
-            float dD = readDepth(vUv - vec2(0.0, texel.y));
-
-            vec3 n = normalize(vec3((dL - dR) * 18.0, (dD - dU) * 18.0, 1.0));
-            float upFacing = clamp(n.y * 1.5 + 0.15, 0.0, 1.0);
-            if (upFacing < 0.1) {
-                gl_FragColor = col;
-                return;
-            }
-
-            vec2 rStep = vec2(n.x, -n.y) * texel * 16.0;
-            vec3 reflColor = vec3(0.0);
-            float hitWeight = 0.0;
-
-            for (int i = 1; i <= 8; i++) {
-                vec2 sampleUv = vUv + rStep * float(i);
-                if (sampleUv.x < 0.05 || sampleUv.x > 0.95 || sampleUv.y < 0.05 || sampleUv.y > 0.95) break;
-                float sDepth = readDepth(sampleUv);
-                if (sDepth < depth - 0.002 && (depth - sDepth) < 0.055) {
-                    reflColor = texture2D(tDiffuse, sampleUv).rgb;
-                    hitWeight = 1.0 - float(i) / 8.0;
-                    break;
-                }
-            }
-
-            float fresnel = 0.04 + 0.96 * pow(clamp(1.0 - n.z, 0.0, 1.0), 5.0);
-            col.rgb = mix(col.rgb, col.rgb + reflColor * fresnel * uIntensity, hitWeight * upFacing);
-            gl_FragColor = col;
-        }
-    `
-};
-
-// Volumetric Sun Shafts (Atmospheric God Rays)
-const VolumetricShaftsShader = {
-    uniforms: {
-        tDiffuse: { value: null },
-        tDepth: { value: null },
-        uSunPosScreen: { value: new THREE.Vector3(0.5, 0.5, 1.0) },
-        uExposure: { value: 0.18 },
-        uDecay: { value: 0.93 },
-        uDensity: { value: 0.8 },
-        uWeight: { value: 0.32 },
-        uCameraNear: { value: 0.1 },
-        uCameraFar: { value: 150.0 },
-    },
-    vertexShader: `
-        varying vec2 vUv;
-        void main() {
-            vUv = uv;
-            gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
-        }
-    `,
-    fragmentShader: `
-        uniform sampler2D tDiffuse;
-        uniform sampler2D tDepth;
-        uniform vec3 uSunPosScreen;
-        uniform float uExposure, uDecay, uDensity, uWeight, uCameraNear, uCameraFar;
-        varying vec2 vUv;
-
-        float readDepth(vec2 coord) {
-            float z = texture2D(tDepth, coord).r;
-            return (2.0 * uCameraNear) / (uCameraFar + uCameraNear - z * (uCameraFar - uCameraNear));
-        }
-
-        void main() {
-            vec4 col = texture2D(tDiffuse, vUv);
-            if (uSunPosScreen.z <= 0.0) {
-                gl_FragColor = col;
-                return;
-            }
-            vec2 sunUv = uSunPosScreen.xy;
-            vec2 deltaUv = (vUv - sunUv) * (1.0 / 14.0) * uDensity;
-            vec2 coord = vUv;
-            float illuminationDecay = 1.0;
-            vec3 rays = vec3(0.0);
-
-            for (int i = 0; i < 14; i++) {
-                coord -= deltaUv;
-                if (coord.x < 0.0 || coord.x > 1.0 || coord.y < 0.0 || coord.y > 1.0) break;
-                float d = readDepth(coord);
-                if (d > 0.94) {
-                    vec3 sCol = texture2D(tDiffuse, coord).rgb;
-                    rays += sCol * illuminationDecay * uWeight;
-                }
-                illuminationDecay *= uDecay;
-            }
-            vec3 sunTint = vec3(1.05, 0.98, 0.92);
-            col.rgb += rays * uExposure * sunTint;
-            gl_FragColor = col;
-        }
-    `
-};
-
-// Edge-preserving Fast Approximate Anti-Aliasing (FXAA)
-const FXAAShader = {
-    uniforms: {
-        tDiffuse: { value: null },
-        uResolution: { value: new THREE.Vector2(1, 1) },
-    },
-    vertexShader: `varying vec2 vUv; void main() { vUv = uv; gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0); }`,
-    fragmentShader: `
-        uniform sampler2D tDiffuse;
-        uniform vec2 uResolution;
-        varying vec2 vUv;
-        void main() {
-            vec2 r = 1.0 / uResolution;
-            vec4 col = texture2D(tDiffuse, vUv);
-            vec3 rgbNW = texture2D(tDiffuse, vUv + vec2(-r.x, -r.y)).rgb;
-            vec3 rgbNE = texture2D(tDiffuse, vUv + vec2(r.x, -r.y)).rgb;
-            vec3 rgbSW = texture2D(tDiffuse, vUv + vec2(-r.x, r.y)).rgb;
-            vec3 rgbSE = texture2D(tDiffuse, vUv + vec2(r.x, r.y)).rgb;
-            vec3 rgbM  = col.rgb;
-
-            vec3 luma = vec3(0.299, 0.587, 0.114);
-            float lumaNW = dot(rgbNW, luma);
-            float lumaNE = dot(rgbNE, luma);
-            float lumaSW = dot(rgbSW, luma);
-            float lumaSE = dot(rgbSE, luma);
-            float lumaM  = dot(rgbM,  luma);
-
-            float lumaMin = min(lumaM, min(min(lumaNW, lumaNE), min(lumaSW, lumaSE)));
-            float lumaMax = max(lumaM, max(max(lumaNW, lumaNE), max(lumaSW, lumaSE)));
-            if (lumaMax - lumaMin < max(0.04, lumaMax * 0.12)) {
-                gl_FragColor = col;
-                return;
-            }
-
-            vec2 dir = vec2(
-                -((lumaNW + lumaNE) - (lumaSW + lumaSE)),
-                ((lumaNW + lumaSW) - (lumaNE + lumaSE))
-            );
-            float dirReduce = max((lumaNW + lumaNE + lumaSW + lumaSE) * 0.03125, 0.0078125);
-            float rcpDirMin = 1.0 / (min(abs(dir.x), abs(dir.y)) + dirReduce);
-            dir = clamp(dir * rcpDirMin, -8.0, 8.0) * r;
-
-            vec3 rgbA = 0.5 * (
-                texture2D(tDiffuse, vUv + dir * (1.0 / 3.0 - 0.5)).rgb +
-                texture2D(tDiffuse, vUv + dir * (2.0 / 3.0 - 0.5)).rgb
-            );
-            vec3 rgbB = rgbA * 0.5 + 0.25 * (
-                texture2D(tDiffuse, vUv + dir * -0.5).rgb +
-                texture2D(tDiffuse, vUv + dir * 0.5).rgb
-            );
-            float lumaB = dot(rgbB, luma);
-            if ((lumaB < lumaMin) || (lumaB > lumaMax)) {
-                gl_FragColor = vec4(rgbA, col.a);
-            } else {
-                gl_FragColor = vec4(rgbB, col.a);
-            }
-        }
-    `
-};
-
-// Display-space grade: clean tone mapping, documentary saturation, subtle optical lens artifacts and fine sensor grain.
-const GradeShader = {
-    uniforms: {
-        tDiffuse: { value: null }, uTime: { value: 0 }, uGrain: { value: 0.024 },
-        uVignette: { value: 0.25 }, uSaturation: { value: 0.94 },
-        uDistortion: { value: 0.025 }, uChromatic: { value: 0.0025 },
-        uFlash: { value: 0.0 }, uSuppression: { value: 0.0 },
-        // How much of this frame is shot on a phone held up in the crowd, 0..1.
-        uPhone: { value: 0.0 }, uPhoneTime: { value: 0.0 },
-        // The footage look, 0..1: the frame as a small sensor behind a wide plastic lens sees it.
-        uFootage: { value: 0.0 }, uTexel: { value: new THREE.Vector2(1 / 1280, 1 / 720) },
-    },
-    vertexShader: `varying vec2 vUv; void main() { vUv = uv; gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0); }`,
-    fragmentShader: `
-        uniform sampler2D tDiffuse; uniform float uTime, uGrain, uVignette, uSaturation, uDistortion, uChromatic, uFlash, uSuppression, uPhone, uPhoneTime, uFootage;
-        uniform vec2 uTexel;
-        varying vec2 vUv;
-        void main() {
-            vec2 uv = vUv;
-            // A phone in the crowd frames portrait, and the hand holding it shakes.
-            bool cropped = false;
-            if (uPhone > 0.001) {
-                vec2 p = uv - 0.5;
-                p.x *= 0.56;
-                p.y += p.x * 0.02 * uPhone;                                  // rolling shutter skew
-                p.x += sin(uPhoneTime * 11.0) * 0.0016 * uPhone;              // hand
-                p.y += cos(uPhoneTime * 8.3) * 0.0016 * uPhone;
-                uv = p + 0.5;
-                cropped = abs(vUv.x - 0.5) > 0.28;
-            }
-            vec2 d = uv - 0.5;
-            float r2 = dot(d, d);
-            // A phone's wide lens bows straight lines more than a cinema lens does, and its
-            // sensor reads top to bottom, so a moving hand leans the picture.
-            uv += d * (r2 * (uDistortion + 0.05 * uFootage));
-            uv.x += sin(uv.y * 5.0 + uTime * 6.3) * 0.0007 * uFootage;
-
-            float r = texture2D(tDiffuse, uv + d * uChromatic).r;
-            float g = texture2D(tDiffuse, uv).g;
-            float b = texture2D(tDiffuse, uv - d * uChromatic).b;
-            vec3 c = vec3(r, g, b);
-
-            if (uFootage > 0.001) {
-                // Over-sharpening: the halo a phone draws round every hard edge.
-                vec3 around = texture2D(tDiffuse, uv + vec2(uTexel.x * 1.5, 0.0)).rgb + texture2D(tDiffuse, uv - vec2(uTexel.x * 1.5, 0.0)).rgb
-                    + texture2D(tDiffuse, uv + vec2(0.0, uTexel.y * 1.5)).rgb + texture2D(tDiffuse, uv - vec2(0.0, uTexel.y * 1.5)).rgb;
-                c += (c - around * 0.25) * 0.4 * uFootage;
-                // Lens smear: bright things drag a faint horizontal streak across greasy glass.
-                vec3 streak = vec3(0.0);
-                for (int i = 1; i <= 4; i++) {
-                    float reach = float(i) * uTexel.x * 9.0;
-                    streak += max(texture2D(tDiffuse, uv + vec2(reach, 0.0)).rgb - 0.82, 0.0)
-                        + max(texture2D(tDiffuse, uv - vec2(reach, 0.0)).rgb - 0.82, 0.0);
-                }
-                c += streak * 0.11 * uFootage;
-                // Metering that never settles, a sky that clips early, and shadows that sit up grey.
-                c *= 1.0 + 0.05 * uFootage * sin(uTime * 0.83) * sin(uTime * 0.31 + 1.0);
-                c = mix(c, min(c * 1.08, vec3(1.0)), 0.6 * uFootage);
-                c = mix(c, c * 0.96 + 0.02, 0.6 * uFootage);
-                c *= mix(vec3(1.0), vec3(0.985, 1.0, 1.02), uFootage);
-            }
-            float l = dot(c, vec3(0.2126, 0.7152, 0.0722));
-            float sat = max(0.2, uSaturation - uSuppression * 0.45);
-            c = mix(vec3(l), c, sat);
-            c += vec3(-0.012, 0.0, 0.022) * (1.0 - l) + vec3(0.018, 0.006, -0.014) * l;
-            float vig = uVignette + uSuppression * 0.75;
-            c *= 1.0 - vig * r2 * 1.6;
-
-            if (uFlash > 0.0) {
-                c = mix(c, vec3(1.15, 1.1, 0.98), clamp(uFlash, 0.0, 1.0));
-            }
-
-            if (uGrain > 0.0) {
-                float noise = fract(sin(dot(uv * 980.0 + fract(uTime * 17.0), vec2(12.9898, 78.233))) * 43758.5453);
-                c += (noise - 0.5) * uGrain * (0.4 + 0.6 * (1.0 - l));
-            }
-            if (uPhone > 0.001) {
-                // Autofocus hunting, then metering pumping as the sky comes into frame.
-                float hunt = 0.0016 * uPhone * (0.5 + 0.5 * sin(uPhoneTime * 3.7));
-                vec3 soft = texture2D(tDiffuse, uv + vec2(hunt, 0.0)).rgb
-                    + texture2D(tDiffuse, uv - vec2(hunt, 0.0)).rgb
-                    + texture2D(tDiffuse, uv + vec2(0.0, hunt)).rgb
-                    + texture2D(tDiffuse, uv - vec2(0.0, hunt)).rgb;
-                c = mix(c, soft * 0.25, 0.55 * uPhone);
-                c *= 1.0 + 0.09 * uPhone * sin(uPhoneTime * 1.9);
-                if (cropped) c = vec3(0.015);
-            }
-            gl_FragColor = vec4(c, 1.0);
-        }`,
-};
+const POISSON = [[-0.326, -0.406], [-0.840, -0.074], [-0.696, 0.457], [-0.203, 0.621], [0.962, -0.195], [0.473, -0.480], [0.519, 0.767], [0.185, -0.893]];
+const DOF_PEAK = 0.012, DOF_BOKEH = 2.4, DOF_BAND = 2.2;
 
 /**
- * @param depthCamera a camera that sees only layer 0: AO and depth of field read its depth, so
- *   sprites, sky and decals (layer 1) are not mistaken for solid geometry.
+ * @param depthCamera unused now (kept for the caller): the AO and depth of field read the scene's
+ *   own depth, and the see-through layer-1 things (sky, sprites, decals) do not write depth.
  */
 export function createPost(renderer, scene, camera, depthCamera) {
-    const target = new THREE.WebGLRenderTarget(1, 1, {
-        type: THREE.HalfFloatType,
-        samples: 4,
+    void depthCamera;
+    const { Fn, If, float, vec2, vec3, vec4, uniform, texture, mix, clamp, max, min, select, pow, dot, smoothstep, sin, cos, fract, step, abs, normalize } = TSL;
+    const gpu = isWebGPU(renderer);
+    // Clip-space z for a depth read: WebGPU's is the depth itself, the WebGL2 backend's is -1..1.
+    const ndcZ = d => (gpu ? d : d.mul(2).sub(1));
+    camera.coordinateSystem = renderer.coordinateSystem;
+    camera.updateProjectionMatrix();
+
+    // ---- targets
+    const scenePass = new THREE.RenderTarget(1, 1, {
+        type: THREE.HalfFloatType, depthBuffer: true, samples: 0,
         depthTexture: new THREE.DepthTexture(1, 1),
     });
-    const composer = new EffectComposer(renderer, target);
-    composer.addPass(new RenderPass(scene, camera));
+    scenePass.depthTexture.type = THREE.FloatType;
+    const A = makeTarget(), B = makeTarget(), D = makeTarget();
+    const history = [makeTarget(), makeTarget()];
+    let histAt = 0;
+    const dummy = scenePass.texture;
+    const src = () => texture(dummy);
 
-    const ao = new GTAOPass(scene, depthCamera, 1, 1);
-    ao.blendIntensity = 0.85;
-    ao.updateGtaoMaterial({ radius: 0.7, distanceExponent: 1.5, thickness: 1, scale: 1, samples: 8 });
-    ao.updatePdMaterial({ lumaPhi: 10, depthPhi: 2, normalPhi: 3, radius: 5, rings: 2, samples: 8 });
-    composer.addPass(ao);
+    // ---- shared uniforms
+    const uNear = uniform(0.1), uFar = uniform(420), uTime = uniform(0);
+    const depthTex = texture(scenePass.depthTexture);
+    const viewZ = uv => TSL.perspectiveDepthToViewZ(depthTex.sample(uv).r, uNear, uFar);
+    // SSR and the shafts were written against this normalised depth (0 at the lens, 1 at the far plane).
+    const lin01 = uv => {
+        const z = depthTex.sample(uv).r;
+        return uNear.mul(2).div(uFar.add(uNear).sub(z.mul(uFar.sub(uNear))));
+    };
+    const uTexel = uniform(new THREE.Vector2(1 / 1280, 1 / 720)), uRes = uniform(new THREE.Vector2(1280, 720));
 
-    const depthTex = ao.depthTexture || target.depthTexture;
+    const temporal = createTemporal(renderer, camera, scenePass.depthTexture, ndcZ);
+    const lens = createLens(renderer);
+    const lightsSrc = src();
+    const lights = createSmallLights(renderer, camera, scenePass.depthTexture, lightsSrc, temporal.matrices.invViewProj, ndcZ);
+    const air = createVolumetric(renderer, scenePass.depthTexture, temporal.matrices.invViewProj, ndcZ);
 
-    const sscsPass = new ShaderPass(SSCSShader);
-    sscsPass.uniforms.tDepth.value = depthTex;
-    composer.addPass(sscsPass);
+    // ---- step 1: ambient occlusion and contact shadows
+    const uSscsIntensity = uniform(0.3), uSscsReach = uniform(0.4), uLightView = uniform(new THREE.Vector3(0, 1, 0)), uProj = uniform(new THREE.Vector2(1, 1));
+    const aoNode = ao(depthTex, null, camera);
+    aoNode.resolutionScale = 0.5;
+    aoNode.radius.value = 0.7; aoNode.distanceExponent.value = 1.5; aoNode.thickness.value = 1; aoNode.scale.value = 1; aoNode.samples.value = 8;
+    const AO_BLEND = 0.85;
+    const srcLit = src();
+    const quadOcclusion = makeQuad(Fn(() => {
+        const uv = TSL.screenUV;
+        const col = tap(srcLit, uv).toVar();
+        col.rgb.mulAssign(mix(1, aoNode.getTextureNode().r, AO_BLEND));
+        // Contact shadows: the last few centimetres the shadow map cannot draw. From each pixel a
+        // short ray is walked toward the sun through the depth buffer; if something solid stands
+        // between the pixel and the light within arm's reach, the pixel is darkened. Positions are
+        // rebuilt in view space, in metres, so the reach and the thickness test mean the same
+        // thing next to the lens and across the lawn.
+        const z = viewZ(uv);
+        const at = vec3(uv.mul(2).sub(1).mul(z.negate()).div(uProj), z);
+        // Further away the ray is longer, so its steps never fall inside one pixel.
+        const reach = uSscsReach.mul(z.negate().mul(0.035).add(1));
+        const start = hashFrag(TSL.screenCoordinate.add(fract(uTime).mul(53)));
+        const shadow = float(0).toVar(), alive = float(1).toVar();
+        for (let i = 0; i < 6; i++) {
+            const t = reach.mul(start.add(i)).div(6);
+            const p = at.add(uLightView.mul(t));
+            const uvp = p.xy.mul(uProj).div(p.z.negate()).mul(0.5).add(0.5);
+            alive.mulAssign(step(p.z, uNear.negate()).mul(step(0, uvp.x)).mul(step(uvp.x, 1)).mul(step(0, uvp.y)).mul(step(uvp.y, 1)));
+            // How far in front of the ray the scene's surface is here. Just in front: something is in
+            // the way. Far in front: a person a street nearer the lens, not a caster.
+            const gap = viewZ(uvp.clamp(0, 1)).sub(p.z);
+            const hit = step(t.mul(0.12).add(0.025), gap).mul(step(gap, 0.45));
+            shadow.assign(max(shadow, hit.mul(alive).mul(t.div(reach).oneMinus())));
+        }
+        const skip = z.lessThan(-70).or(uSscsIntensity.lessThanEqual(0));
+        col.rgb.mulAssign(select(skip, 1, shadow.mul(uSscsIntensity).oneMinus()));
+        return col;
+    })());
 
-    const ssgiPass = new ShaderPass(SSGIShader);
-    ssgiPass.uniforms.tDepth.value = depthTex;
-    composer.addPass(ssgiPass);
+    // ---- step 2: bounced light and reflections
+    // Bounced light, in screen space: a surface next to a brighter one picks up some of its colour.
+    // Eight neighbours at about the same depth are averaged, and only what they have over the pixel
+    // itself is added, so an evenly lit wall gains nothing and the shaded side of a column next to
+    // sunlit paving is lifted and tinted by it. The sample pattern turns every frame; the temporal
+    // resolve averages the turns.
+    const uBounce = uniform(0.2), uRadius = uniform(26), uSsrIntensity = uniform(0.45);
+    const srcOcc = src();
+    const quadBounce = makeQuad(Fn(() => {
+        const uv = TSL.screenUV;
+        const col = tap(srcOcc, uv).toVar();
+        const z = viewZ(uv).negate();
+        const radius = vec2(uRes.y.div(uRes.x), 1).mul(clamp(uRadius.mul(0.05).div(z), 0.004, 0.06));
+        const rot = hashFrag(TSL.screenCoordinate.add(fract(uTime).mul(11))).mul(6.28318);
+        const cs = cos(rot), sn = sin(rot);
+        const bounce = vec3(0).toVar(), total = float(0).toVar();
+        for (const [px, py] of POISSON) {
+            const turned = vec2(cs.mul(px).sub(sn.mul(py)), sn.mul(px).add(cs.mul(py)));
+            const sUv = uv.add(turned.mul(radius));
+            const inside = step(0, sUv.x).mul(step(sUv.x, 1)).mul(step(0, sUv.y)).mul(step(sUv.y, 1));
+            // Only what is about as far away as this pixel can be lighting it.
+            const near = abs(viewZ(sUv.clamp(0, 1)).negate().sub(z)).div(1.5).clamp(0, 1).oneMinus().mul(inside);
+            bounce.addAssign(tap(srcOcc, sUv.clamp(0, 1)).rgb.mul(near));
+            total.addAssign(near);
+        }
+        const excess = max(bounce.div(max(total, 1e-3)).sub(col.rgb), 0);
+        const gain = select(z.greaterThan(120).or(uBounce.lessThanEqual(0)).or(total.lessThanEqual(0.001)), 0, 1);
+        col.rgb.addAssign(min(excess, vec3(1.5)).mul(uBounce).mul(gain));
 
-    const ssrPass = new ShaderPass(SSRShader);
-    ssrPass.uniforms.tDepth.value = depthTex;
-    composer.addPass(ssrPass);
+        // Screen-Space Reflections (SSR) with roughness jitter and Schlick Fresnel, from the colour the
+        // pixels around this one had before the bounce.
+        const depth = lin01(uv);
+        const dL = lin01(uv.sub(vec2(uTexel.x, 0))), dR = lin01(uv.add(vec2(uTexel.x, 0)));
+        const dU = lin01(uv.add(vec2(0, uTexel.y))), dDn = lin01(uv.sub(vec2(0, uTexel.y)));
+        const n = normalize(vec3(dL.sub(dR).mul(18), dDn.sub(dU).mul(18), 1));
+        const upFacing = clamp(n.y.mul(1.5).add(0.15), 0, 1);
+        const rStep = vec2(n.x, n.y.negate()).mul(uTexel).mul(16);
+        const refl = vec3(0).toVar(), weight = float(0).toVar(), found = float(0).toVar();
+        for (let i = 1; i <= 8; i++) {
+            const sUv = uv.add(rStep.mul(i));
+            const ok = step(0.05, sUv.x).mul(step(sUv.x, 0.95)).mul(step(0.05, sUv.y)).mul(step(sUv.y, 0.95)).mul(found.oneMinus());
+            const sDepth = lin01(sUv.clamp(0, 1));
+            const hit = step(sDepth, depth.sub(0.002)).mul(step(depth.sub(sDepth), 0.055)).mul(ok);
+            refl.assign(mix(refl, tap(srcOcc, sUv.clamp(0, 1)).rgb, hit));
+            weight.assign(mix(weight, float(1 - i / 8), hit));
+            found.assign(max(found, hit));
+        }
+        const fresnel = pow(clamp(n.z.oneMinus(), 0, 1), 5).mul(0.96).add(0.04);
+        const live = step(depth, 0.92).mul(step(0.005, depth)).mul(step(0.1, upFacing));
+        col.rgb.assign(mix(col.rgb, col.rgb.add(refl.mul(fresnel).mul(uSsrIntensity)), weight.mul(upFacing).mul(live)));
+        return col;
+    })());
 
-    // Everything from here to the resolve is accumulated over frames by it: the phone screens and
-    // lamp posts lighting what is near them, then the air itself, lit and ray-marched.
-    const temporal = createTemporal(camera, depthTex);
-    const lights = createSmallLights(camera, depthTex, temporal.matrices.invViewProj);
-    composer.addPass(lights.pass);
-    const air = createVolumetric(depthTex, temporal.matrices.invViewProj);
-    composer.addPass(air.pass);
-    composer.addPass(temporal.velocity);
-    composer.addPass(temporal.resolve);
-    const lens = createLens();
-    composer.addPass(lens.refract);
+    // ---- step 3: small lights and the lit air join the frame
+    const uLightsOn = uniform(0), uAirOn = uniform(0);
+    const srcLights = src(), srcAirIn = src(), srcAir = src();
+    const quadAir = makeQuad(Fn(() => {
+        const uv = TSL.screenUV;
+        const scene_ = tap(srcAirIn, uv);
+        const lit = scene_.rgb.add(tap(srcLights, uv).rgb.mul(uLightsOn)).toVar();
+        const a = tap(srcAir, uv);
+        lit.assign(mix(lit, lit.mul(a.a.mul(0.85).oneMinus()).add(a.rgb), uAirOn));
+        return vec4(lit, scene_.a);
+    })());
 
-    // Only what is genuinely brighter than lit stone blooms: lamps at dusk, phone screens,
-    // the flash-bang core.
-    const bloom = new UnrealBloomPass(new THREE.Vector2(1, 1), 0.45, 0.55, 1.15);
-    composer.addPass(bloom);
+    // ---- step 4: temporal resolve and sharpen
+    const srcNow = src(), srcHist = src(), srcResolved = src();
+    const quadResolve = makeQuad(temporal.resolve(srcNow, srcHist));
+    const quadSharpen = makeQuad(temporal.sharpen(srcResolved));
 
-    const shaftsPass = new ShaderPass(VolumetricShaftsShader);
-    shaftsPass.uniforms.tDepth.value = depthTex;
-    composer.addPass(shaftsPass);
+    // ---- step 5: refraction
+    const srcRefract = src();
+    const quadRefract = makeQuad(lens.refractNode(srcRefract));
 
-    composer.addPass(temporal.blur);
+    // ---- step 6: bloom and sun shafts. Only what is genuinely brighter than lit stone blooms:
+    // lamps at dusk, phone screens, the flash-bang core.
+    const srcBloom = src();
+    const bloomNode = bloom(srcBloom, 0.45, 0.55, 1.15);
+    const uSun = uniform(new THREE.Vector3(0.5, 0.5, 0)), uShaftDensity = uniform(0.8);
+    const quadBloom = makeQuad(Fn(() => {
+        const uv = TSL.screenUV;
+        const col = tap(srcBloom, uv).toVar();
+        col.rgb.addAssign(bloomNode.rgb);
+        // Volumetric sun shafts (atmospheric god rays).
+        const deltaUv = uv.sub(uSun.xy).mul(1 / 14).mul(uShaftDensity);
+        const coord = uv.toVar(), decay = float(1).toVar(), alive = float(1).toVar(), rays = vec3(0).toVar();
+        for (let i = 0; i < 14; i++) {
+            coord.subAssign(deltaUv);
+            alive.mulAssign(step(0, coord.x).mul(step(coord.x, 1)).mul(step(0, coord.y)).mul(step(coord.y, 1)));
+            const c = coord.clamp(0, 1);
+            const sky = step(0.94, lin01(c)).mul(alive);
+            rays.addAssign(tap(srcBloom, c).rgb.mul(decay).mul(0.32).mul(sky));
+            decay.mulAssign(0.93);
+        }
+        col.rgb.addAssign(rays.mul(0.18).mul(vec3(1.05, 0.98, 0.92)).mul(step(0.5, uSun.z)));
+        return col;
+    })());
 
-    const focus = createRackFocus(scene, depthCamera, 1, 1);
-    composer.addPass(focus.pass);
-    composer.addPass(lens.lens);
+    // ---- step 7: motion blur
+    const srcBlur = src();
+    const quadBlur = makeQuad(temporal.blurNode(srcBlur));
 
-    composer.addPass(new OutputPass());
+    // ---- step 8: transient depth of field (built the first time focus is racked)
+    const srcDof = src();
+    const uFocus = uniform(40), uBokeh = uniform(0);
+    let quadDof = null;
+    const dofQuad = () => {
+        quadDof ??= makeQuad(dof(srcDof, TSL.perspectiveDepthToViewZ(depthTex.sample(TSL.screenUV).r, uNear, uFar), uFocus, DOF_BAND, uBokeh));
+        return quadDof;
+    };
 
-    const fxaaPass = new ShaderPass(FXAAShader);
-    composer.addPass(fxaaPass);
+    // ---- step 9: lens (flare, metering), tone map
+    const srcLens = src();
+    const quadDisplay = makeQuad(TSL.renderOutput(lens.combineNode(srcLens), THREE.ACESFilmicToneMapping, THREE.SRGBColorSpace));
+    const quadDisplayPlain = makeQuad(TSL.renderOutput(tap(srcLens, TSL.screenUV), THREE.ACESFilmicToneMapping, THREE.SRGBColorSpace));
 
-    const grade = new ShaderPass(GradeShader);
-    composer.addPass(grade);
+    // ---- step 10: edge-preserving FXAA (levels 1 and 2), then the display-space grade
+    const srcFxaa = src();
+    const lumaC = vec3(0.299, 0.587, 0.114);
+    const quadFxaa = makeQuad(Fn(() => {
+        const uv = TSL.screenUV, r = uTexel;
+        const col = tap(srcFxaa, uv);
+        const rgbNW = tap(srcFxaa, uv.add(vec2(r.x.negate(), r.y.negate()))).rgb, rgbNE = tap(srcFxaa, uv.add(vec2(r.x, r.y.negate()))).rgb;
+        const rgbSW = tap(srcFxaa, uv.add(vec2(r.x.negate(), r.y))).rgb, rgbSE = tap(srcFxaa, uv.add(vec2(r.x, r.y))).rgb;
+        const lNW = dot(rgbNW, lumaC), lNE = dot(rgbNE, lumaC), lSW = dot(rgbSW, lumaC), lSE = dot(rgbSE, lumaC), lM = dot(col.rgb, lumaC);
+        const lMin = min(lM, min(min(lNW, lNE), min(lSW, lSE))), lMax = max(lM, max(max(lNW, lNE), max(lSW, lSE)));
+        const dir = vec2(lNW.add(lNE).sub(lSW.add(lSE)).negate(), lNW.add(lSW).sub(lNE.add(lSE))).toVar();
+        const dirReduce = max(lNW.add(lNE).add(lSW).add(lSE).mul(0.03125), 0.0078125);
+        const rcpDirMin = float(1).div(min(abs(dir.x), abs(dir.y)).add(dirReduce));
+        dir.assign(clamp(dir.mul(rcpDirMin), -8, 8).mul(r));
+        const rgbA = tap(srcFxaa, uv.add(dir.mul(1 / 3 - 0.5))).rgb.add(tap(srcFxaa, uv.add(dir.mul(2 / 3 - 0.5))).rgb).mul(0.5);
+        const rgbB = rgbA.mul(0.5).add(tap(srcFxaa, uv.add(dir.mul(-0.5))).rgb.add(tap(srcFxaa, uv.add(dir.mul(0.5))).rgb).mul(0.25));
+        const lB = dot(rgbB, lumaC);
+        const edge = lMax.sub(lMin).greaterThanEqual(max(0.04, lMax.mul(0.12)));
+        const picked = select(lB.lessThan(lMin).or(lB.greaterThan(lMax)), rgbA, rgbB);
+        return vec4(select(edge, picked, col.rgb), col.a);
+    })());
+    // Display-space grade: clean tone mapping, documentary saturation, subtle optical lens
+    // artifacts and fine sensor grain.
+    const srcDisplay = src();
+    const uGrain = uniform(0.024), uVignette = uniform(0.25), uSaturation = uniform(0.94), uDistortion = uniform(0.025), uChromatic = uniform(0.0025);
+    const uFlash = uniform(0), uSuppression = uniform(0), uPhone = uniform(0), uPhoneTime = uniform(0), uFootage = uniform(0);
+    const quadGrade = makeQuad(Fn(() => {
+        const vUv = TSL.screenUV;
+        const uv0 = vUv.toVar();
+        // A phone in the crowd frames portrait, and the hand holding it shakes.
+        const cropped = float(0).toVar();
+        If(uPhone.greaterThan(0.001), () => {
+            const p = uv0.sub(0.5).toVar();
+            p.x.mulAssign(0.56);
+            p.y.addAssign(p.x.mul(0.02).mul(uPhone));                                  // rolling shutter skew
+            p.x.addAssign(sin(uPhoneTime.mul(11)).mul(0.0016).mul(uPhone));             // hand
+            p.y.addAssign(cos(uPhoneTime.mul(8.3)).mul(0.0016).mul(uPhone));
+            uv0.assign(p.add(0.5));
+            cropped.assign(step(0.28, abs(vUv.x.sub(0.5))));
+        });
+        const d = uv0.sub(0.5);
+        const r2 = dot(d, d);
+        // A phone's wide lens bows straight lines more than a cinema lens does, and its sensor reads
+        // top to bottom, so a moving hand leans the picture.
+        const uv = uv0.add(d.mul(r2.mul(uFootage.mul(0.05).add(uDistortion)))).toVar();
+        uv.x.addAssign(sin(uv.y.mul(5).add(uTime.mul(6.3))).mul(0.0007).mul(uFootage));
+        const tapRgb = u => tap(srcDisplay, u).rgb;
+        const c = vec3(tapRgb(uv.add(d.mul(uChromatic))).r, tapRgb(uv).g, tapRgb(uv.sub(d.mul(uChromatic))).b).toVar();
+        If(uFootage.greaterThan(0.001), () => {
+            // Over-sharpening: the halo a phone draws round every hard edge.
+            const around = tapRgb(uv.add(vec2(uTexel.x.mul(1.5), 0))).add(tapRgb(uv.sub(vec2(uTexel.x.mul(1.5), 0))))
+                .add(tapRgb(uv.add(vec2(0, uTexel.y.mul(1.5))))).add(tapRgb(uv.sub(vec2(0, uTexel.y.mul(1.5)))));
+            c.addAssign(c.sub(around.mul(0.25)).mul(0.4).mul(uFootage));
+            // Lens smear: bright things drag a faint horizontal streak across greasy glass.
+            const streak = vec3(0).toVar();
+            for (let i = 1; i <= 4; i++) {
+                const reach = uTexel.x.mul(i * 9);
+                streak.addAssign(max(tapRgb(uv.add(vec2(reach, 0))).sub(0.82), 0).add(max(tapRgb(uv.sub(vec2(reach, 0))).sub(0.82), 0)));
+            }
+            c.addAssign(streak.mul(0.11).mul(uFootage));
+            // Metering that never settles, a sky that clips early, and shadows that sit up grey.
+            c.mulAssign(sin(uTime.mul(0.83)).mul(sin(uTime.mul(0.31).add(1))).mul(0.05).mul(uFootage).add(1));
+            c.assign(mix(c, min(c.mul(1.08), vec3(1)), uFootage.mul(0.6)));
+            c.assign(mix(c, c.mul(0.96).add(0.02), uFootage.mul(0.6)));
+            c.mulAssign(mix(vec3(1), vec3(0.985, 1.0, 1.02), uFootage));
+        });
+        const l = dot(c, vec3(0.2126, 0.7152, 0.0722));
+        const sat = max(0.2, uSaturation.sub(uSuppression.mul(0.45)));
+        c.assign(mix(vec3(l), c, sat));
+        c.addAssign(vec3(-0.012, 0.0, 0.022).mul(l.oneMinus()).add(vec3(0.018, 0.006, -0.014).mul(l)));
+        const vig = uVignette.add(uSuppression.mul(0.75));
+        c.mulAssign(vig.mul(r2).mul(1.6).oneMinus());
+        c.assign(mix(c, vec3(1.15, 1.1, 0.98), clamp(uFlash, 0, 1)));
+        const noise = hashFrag(uv.mul(980).add(fract(uTime.mul(17))));
+        c.addAssign(noise.sub(0.5).mul(uGrain).mul(l.oneMinus().mul(0.6).add(0.4)));
+        If(uPhone.greaterThan(0.001), () => {
+            // Autofocus hunting, then metering pumping as the sky comes into frame.
+            const hunt = uPhone.mul(0.0016).mul(sin(uPhoneTime.mul(3.7)).mul(0.5).add(0.5));
+            const soft = tapRgb(uv.add(vec2(hunt, 0))).add(tapRgb(uv.sub(vec2(hunt, 0)))).add(tapRgb(uv.add(vec2(0, hunt)))).add(tapRgb(uv.sub(vec2(0, hunt))));
+            c.assign(mix(c, soft.mul(0.25), uPhone.mul(0.55)));
+            c.mulAssign(uPhone.mul(0.09).mul(sin(uPhoneTime.mul(1.9))).add(1));
+            c.assign(mix(c, vec3(0.015), cropped));
+        });
+        return vec4(c, 1);
+    })());
 
-    let samples = 4, dofAllowed = true;
-    // Cinematic light response. The same passes read differently under the low winter sun and in
-    // a marble room, so their strength follows the light instead of being one fixed grade. Only
-    // uniforms move here, so a change of light never recompiles a shader.
-    let lightKey = -1, interior = null;
+    // ---- rack focus: off during play, ramped in for a moment on a KO or a photo finish
+    const rack = { level: 0, target: 0, hold: 0, peak: DOF_PEAK, active: false, focus: 40 };
+
+    // ---- state
+    let level = 3, dofAllowed = true, lightKey = -1, interior = null;
+    const white = new THREE.Color(1, 1, 1);
+    const noPeople = [], noWaves = [];
+
+    /**
+     * Cinematic light response. The same passes read differently under the low winter sun and in a
+     * marble room, so their strength follows the light instead of being one fixed grade. Only
+     * uniforms move here, so a change of light never recompiles a shader.
+     */
     function setEnvironment({ sunlight = 1, indoors = false } = {}) {
         const key = Math.round(Math.max(0, Math.min(1, sunlight)) * 20) / 20;
         if (key === lightKey && indoors === interior) return;
@@ -512,56 +342,35 @@ export function createPost(renderer, scene, camera, depthCamera) {
         const dusk = 1 - key;
         // A contact shadow is the sun's: strong under a clear low sun, faint once it has gone.
         // Indoors the light comes in from high windows: a shorter, softer one.
-        sscsPass.uniforms.uIntensity.value = indoors ? 0.16 : 0.1 + key * 0.26;
-        sscsPass.uniforms.uReach.value = indoors ? 0.28 : 0.4;
+        uSscsIntensity.value = indoors ? 0.16 : 0.1 + key * 0.26;
+        uSscsReach.value = indoors ? 0.28 : 0.4;
         // Bounced light matters most in the rotunda, where marble returns it all.
-        ssgiPass.uniforms.uBounceIntensity.value = indoors ? 0.3 : 0.14 + dusk * 0.1;
-        ssgiPass.uniforms.uRadius.value = indoors ? 18 : 26;
+        uBounce.value = indoors ? 0.3 : 0.14 + dusk * 0.1;
+        uRadius.value = indoors ? 18 : 26;
         // Polished interior floors and wet paving reflect; grass does not.
-        ssrPass.uniforms.uIntensity.value = indoors ? 0.62 : 0.3 + dusk * 0.4;
-        shaftsPass.uniforms.uDensity.value = indoors ? 0.45 : 0.8;
-        bloom.threshold = 1.2 - dusk * 0.32;
-        grade.uniforms.uSaturation.value = indoors ? 0.9 : 0.94;
+        uSsrIntensity.value = indoors ? 0.62 : 0.3 + dusk * 0.4;
+        uShaftDensity.value = indoors ? 0.45 : 0.8;
+        bloomNode.threshold.value = 1.2 - dusk * 0.32;
+        uSaturation.value = indoors ? 0.9 : 0.94;
     }
-    const sunNDC = new THREE.Vector3(), white = new THREE.Color(1, 1, 1);
-    /**
-     * 3: everything, anti-aliased over time; 2: bloom, shafts, flare and metering under MSAA;
-     * 1: MSAA, FXAA and grade; 0: grade only.
-     */
-    function setLevel(level) {
-        // The depth these read is drawn by the ambient-occlusion pass, so they go with it.
+    function setLevel(next) {
+        level = next;
+        // The depth these read is drawn with the scene, so they go with the top level only.
         temporal.setEnabled(level >= 3);
         lights.setAllowed(level >= 3);
         air.setAllowed(level >= 3);
-        lens.setAllowed(level >= 2);
+        lens.setAllowed(level >= 3);
         lens.setLens(level >= 2);
-        ao.enabled = level >= 3;
-        sscsPass.enabled = level >= 3;
-        ssgiPass.enabled = level >= 3;
-        ssrPass.enabled = level >= 3;
-        shaftsPass.enabled = level >= 2;
-        // Temporal resolve is the anti-aliasing at the top level: MSAA and FXAA would only cost.
-        fxaaPass.enabled = level >= 1 && level < 3;
         dofAllowed = level >= 3;
-        bloom.enabled = level >= 2;
-        const want = level >= 1 && level < 3 ? 4 : 0;
-        if (want !== samples) {
-            samples = want;
-            for (const t of [composer.renderTarget1, composer.renderTarget2]) { t.samples = want; t.dispose(); }
-        }
-        if (!dofAllowed) { focus.pass.enabled = false; }
+        if (!dofAllowed) { rack.active = false; rack.level = 0; uBokeh.value = 0; }
     }
     function setSize(w, h, ratio) {
-        composer.setPixelRatio(ratio);
-        composer.setSize(w, h);
         const pw = Math.max(1, Math.floor(w * ratio)), ph = Math.max(1, Math.floor(h * ratio));
-        grade.uniforms.uTexel.value.set(1 / pw, 1 / ph);
-        ssrPass.uniforms.uResolution.value.set(pw, ph);
-        ssgiPass.uniforms.uResolution.value.set(pw, ph);
-        fxaaPass.uniforms.uResolution.value.set(pw, ph);
-        temporal.setSize(pw, ph);
+        for (const t of [scenePass, A, B, D, ...history]) t.setSize(pw, ph);
+        uTexel.value.set(1 / pw, 1 / ph); uRes.value.set(pw, ph);
+        temporal.setSize(pw, ph); lights.setSize(pw, ph); air.setSize(pw, ph); lens.setSize(pw, ph);
     }
-    const noPeople = [], noWaves = [];
+    const sunNDC = new THREE.Vector3();
     /**
      * @param frame  what moved and what is in the air this frame: `people` for motion vectors,
      *               `lights`/`ambient`/`haze`/`gas` for the lit air, `waves`/`hazes` for
@@ -569,62 +378,145 @@ export function createPost(renderer, scene, camera, depthCamera) {
      */
     function render(dt, time, calm, cam, sunPos, environment, frame = {}) {
         if (environment) setEnvironment(environment);
-        temporal.update(frame.people ?? noPeople, dt, time, calm || frame.still === true);
-        air.update(cam ?? camera, frame.lights ?? noPeople, frame.ambient ?? white, frame.haze ?? 0, frame.gas ?? 0, time);
-        lens.update(cam ?? camera, frame.waves ?? noWaves, frame.hazes ?? noWaves, time, calm);
-        grade.uniforms.uTime.value = time;
-        grade.uniforms.uPhoneTime.value = time;
-        // The two depth-reading passes work in the camera's own space, in metres.
         const eye = cam ?? camera;
-        for (const pass of [sscsPass, ssgiPass]) {
-            pass.uniforms.uCameraNear.value = eye.near; pass.uniforms.uCameraFar.value = eye.far; pass.uniforms.uTime.value = time;
-        }
-        sscsPass.uniforms.uProj.value.set(eye.projectionMatrix.elements[0], eye.projectionMatrix.elements[5]);
-        if (frame.sunDir) sscsPass.uniforms.uLightView.value.copy(frame.sunDir).transformDirection(eye.matrixWorldInverse);
+        temporal.update(frame.people ?? noPeople, dt, time, calm || frame.still === true);
+        air.update(eye, frame.lights ?? noPeople, frame.ambient ?? white, frame.haze ?? 0, frame.gas ?? 0, time);
+        lens.update(eye, frame.waves ?? noWaves, frame.hazes ?? noWaves, time, calm);
+        uTime.value = time; uPhoneTime.value = time;
+        // The depth-reading passes work in the camera's own space, in metres.
+        uNear.value = eye.near; uFar.value = eye.far;
+        uProj.value.set(eye.projectionMatrix.elements[0], eye.projectionMatrix.elements[5]);
+        if (frame.sunDir) uLightView.value.copy(frame.sunDir).transformDirection(eye.matrixWorldInverse);
         // A small sensor in flat light is noisy; reduced flashing keeps the frame still either way.
-        grade.uniforms.uGrain.value = calm ? 0.0 : 0.024 + 0.045 * grade.uniforms.uFootage.value;
-        if (cam && sunPos && shaftsPass.enabled) {
+        uGrain.value = calm ? 0.0 : 0.024 + 0.045 * uFootage.value;
+        uSun.value.z = 0;
+        if (cam && sunPos && level >= 2) {
             sunNDC.copy(sunPos).project(cam);
-            shaftsPass.uniforms.uSunPosScreen.value.set(
-                (sunNDC.x + 1.0) * 0.5,
-                (sunNDC.y + 1.0) * 0.5,
-                sunNDC.z < 1.0 ? 1.0 : 0.0
-            );
+            uSun.value.set((sunNDC.x + 1.0) * 0.5, (sunNDC.y + 1.0) * 0.5, sunNDC.z < 1.0 ? 1.0 : 0.0);
         }
-        focus.update(dt);
-        composer.render(dt);
+        // Rack focus: ease in fast, out slow. A slow fade IN would mean the blur arrives after the
+        // moment it is reacting to; a fast fade OUT would snap.
+        if (rack.active) {
+            if (rack.hold > 0) { rack.hold -= dt; if (rack.hold <= 0) rack.target = 0; }
+            const k = rack.target > rack.level ? 9 : 2.2;
+            rack.level += (rack.target - rack.level) * (1 - Math.exp(-k * dt));
+            uBokeh.value = (rack.level * rack.peak / DOF_PEAK) * DOF_BOKEH;
+            if (rack.target === 0 && rack.level < 0.01) { rack.level = 0; uBokeh.value = 0; rack.active = false; }
+        }
+
+        // 1. the scene, with its depth
+        renderer.setRenderTarget(scenePass);
+        renderer.render(scene, camera);
+        let cur = scenePass.texture;
+        const free = [A, B];
+        let held = null;     // the target `cur` lives in, when it is one of ours
+        const take = () => free.shift();
+        const use = target => { if (held) free.push(held); held = target; cur = target.texture; };
+
+        if (level >= 3) {
+            // 2. occlusion and contact shadows
+            srcLit.value = cur;
+            const t1 = take(); drawQuad(renderer, quadOcclusion, t1); use(t1);
+            // 3. bounce and reflections
+            srcOcc.value = cur;
+            const t2 = take(); drawQuad(renderer, quadBounce, t2); use(t2);
+            // 4. small lights and the lit air
+            const lit = lights.active(), haze = air.active();
+            if (lit) { lightsSrc.value = cur; lights.draw(); srcLights.value = lights.target.texture; }
+            if (haze) { air.draw(); srcAir.value = air.target.texture; }
+            uLightsOn.value = lit ? 1 : 0; uAirOn.value = haze ? 1 : 0;
+            if (lit || haze) {
+                srcAirIn.value = cur;
+                if (!lit) srcLights.value = cur;
+                if (!haze) srcAir.value = cur;
+                const t3 = take(); drawQuad(renderer, quadAir, t3); use(t3);
+            }
+            // 5. the resolve: this frame into the history of the old ones
+            temporal.drawVelocity();
+            const fresh = temporal.consumeFresh();
+            const from = history[histAt], to = history[1 - histAt];
+            srcNow.value = cur; srcHist.value = from.texture;
+            const blend = temporal.uniforms.uBlend.value;
+            if (fresh) temporal.uniforms.uBlend.value = 0;
+            drawQuad(renderer, quadResolve, to);
+            temporal.uniforms.uBlend.value = blend;
+            histAt = 1 - histAt;
+            srcResolved.value = to.texture;
+            const t4 = take(); drawQuad(renderer, quadSharpen, t4); use(t4);
+            // 6. refraction (only while something is bending light)
+            if (lens.refractActive()) {
+                srcRefract.value = cur;
+                const t5 = take(); drawQuad(renderer, quadRefract, t5); use(t5);
+            }
+        }
+        // 7. bloom and shafts
+        if (level >= 2) {
+            srcBloom.value = cur;
+            const t6 = take(); drawQuad(renderer, quadBloom, t6); use(t6);
+        }
+        // 8. motion blur
+        if (level >= 3 && temporal.blurOn) {
+            srcBlur.value = cur;
+            const t7 = take(); drawQuad(renderer, quadBlur, t7); use(t7);
+        }
+        // 9. rack focus
+        if (rack.active && dofAllowed) {
+            srcDof.value = cur; uFocus.value = rack.focus;
+            const t8 = take(); drawQuad(renderer, dofQuad(), t8); use(t8);
+        }
+        // 10. lens and tone map
+        srcLens.value = cur;
+        if (level >= 2) { lens.measure(cur, dt); drawQuad(renderer, quadDisplay, D); }
+        else drawQuad(renderer, quadDisplayPlain, D);
+        // 11. FXAA (levels 1 and 2), then the grade, to the canvas
+        let shown = D;
+        if (level >= 1 && level < 3) {
+            srcFxaa.value = D.texture;
+            const t9 = take(); drawQuad(renderer, quadFxaa, t9); use(t9);
+            shown = held;
+        }
+        srcDisplay.value = shown.texture;
+        drawQuad(renderer, quadGrade, null);
     }
+    setLevel(3);
     return {
         setLevel, setSize, render, setEnvironment,
         /** Updates retinal flash bloom and combat suppression stress. */
-        setCombatStress(flash, suppression) {
-            grade.uniforms.uFlash.value = flash;
-            grade.uniforms.uSuppression.value = suppression;
-        },
+        setCombatStress(flash, suppression) { uFlash.value = flash; uSuppression.value = suppression; },
         /** Cuts to (or out of) a phone held up in the crowd, 0..1, with its own lens artefacts. */
-        setPhone(amount) {
-            grade.uniforms.uPhone.value = Math.max(0, Math.min(1, amount));
-        },
+        setPhone(amount) { uPhone.value = Math.max(0, Math.min(1, amount)); },
         /** The footage look, 0..1: wide-lens bow, sharpening halo, smear, clipped sky, sensor noise. */
-        setFootage(amount) {
-            grade.uniforms.uFootage.value = Math.max(0, Math.min(1, amount));
-        },
+        setFootage(amount) { uFootage.value = Math.max(0, Math.min(1, amount)); },
         /** Pulls focus onto a subject `distance` metres away for a moment (top quality only). */
-        rackFocus(distance, hold, strength) { if (dofAllowed) focus.trigger(distance, hold, strength); },
+        rackFocus(distance, holdSec, strength) {
+            // Skipped outright below the top tier: a machine already dropping frames does not need a
+            // full-frame blur at the most dramatic moment of the match.
+            if (!dofAllowed || !allowHeavy()) return;
+            rack.focus = distance == null ? 40 : distance;
+            rack.peak = DOF_PEAK * (strength == null ? 1 : Math.max(0, Math.min(1.5, strength)));
+            rack.hold = holdSec == null ? 0.9 : holdSec;
+            rack.target = 1; rack.active = true;
+        },
         /** Nudges the camera for temporal anti-aliasing. Call before anything copies its projection. */
         jitter() { temporal.jitter(); },
         /** After a hard camera cut: last frame's picture is no use to this one. */
         cut() { temporal.cut(); },
         /** The list of small lights: `begin()`, `add(x, y, z, reach, r, g, b, power)`, `end()`. */
         lights,
+        /** Builds the scene's pipelines for the target it is drawn into, without freezing the page. */
+        async compile() {
+            const was = renderer.getRenderTarget();
+            renderer.setRenderTarget(scenePass);
+            try { await renderer.compileAsync(scene, camera); } catch { /* the first frame builds what is missing */ }
+            renderer.setRenderTarget(was);
+        },
         /** The gas grid's density texture and the ground it covers, for the lit air. */
-        setGas(texture, rect) { air.setGas(texture, rect); },
+        setGas(texture_, rect) { air.setGas(texture_, rect); },
         dispose() {
-            focus.dispose();
             temporal.dispose(); lights.dispose(); air.dispose(); lens.dispose();
-            for (const pass of composer.passes) pass.dispose?.();
-            composer.dispose?.();
-            target.dispose();
+            for (const q of [quadOcclusion, quadBounce, quadAir, quadResolve, quadSharpen, quadRefract, quadBloom, quadBlur, quadDisplay, quadDisplayPlain, quadFxaa, quadGrade, quadDof]) q?.material.dispose();
+            for (const t of [scenePass, A, B, D, ...history]) t.dispose();
+            aoNode.dispose?.(); bloomNode.dispose?.();
         },
     };
 }

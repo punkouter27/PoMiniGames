@@ -1,6 +1,6 @@
 // paper.js (feature) — loose paper blowing about the ground, for any 3D stage.
 //
-// Wraps platform/3d/paperField.js (16k sheets simulated on the GPU with GPUComputationRenderer)
+// Wraps platform/3d/paperFieldTsl.js (16k sheets simulated on the GPU by a TSL compute kernel, WebGPU only)
 // so a 3D game opts in with `use: ['paper']` and does three things only:
 //
 //   const paper = stage.feature('paper');
@@ -14,7 +14,7 @@
 // with setLevel, holds still while the stage is paused, and frees the GPU targets on dispose.
 // Blasts are one-frame impulses: they are queued and handed over on the next step.
 //
-// paperField.js (and three.js with it) is imported only by attach(): every stage loads this
+// paperFieldTsl.js (and three.js with it) is imported only by attach(): every stage loads this
 // registry, 2D games included, and none of them should pay for it.
 
 import { registerFeature } from '../features.js';
@@ -39,7 +39,7 @@ export default registerFeature({
             async attach(scene, renderer, options = {}) {
                 const ticket = ++attaching;
                 try {
-                    const { createPaperField } = await import('../../3d/paperField.js');
+                    const { createPaperField } = await import('../../3d/paperFieldTsl.js');
                     if (gone || ticket !== attaching) return api;
                     field?.dispose();
                     field = createPaperField(scene, renderer ?? stage.renderer, options);
