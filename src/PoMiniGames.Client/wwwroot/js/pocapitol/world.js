@@ -973,7 +973,7 @@ function updateOfficers(state, difficulty, dt) {
         e.cooldown = difficulty.interval + e.id % 3 * 0.25;
         if (!baton && state.armed) {
             e.attacking = 0.2; e.tool = 'gun';
-            state.shots.push({ x: e.x, z: e.z, dx, dz, life: 1.2, faction: 'police' });
+            state.shots.push({ x: e.x, z: e.z, dx, dz, life: 1.2, faction: 'police', owner: e });
             state.events.push({ type: 'gunshot', x: e.x, z: e.z });
             continue;
         }
@@ -1039,7 +1039,7 @@ function nearestCoverPoint(actor) {
 function planRaiders(state, difficulty, dt, agents, bodies) {
     if (embodied(state) && state.health > 0) bodies.push(state.player);
     for (const e of state.enemies) if (e.health > 0) bodies.push(e);
-    const down = state.armed ? [] : state.companions.filter(c => c.health <= 0 && !c.helped);
+    const down = state.armed ? [] : state.companions.filter(c => c.health <= 0 && !c.helped && !c.killed);
     const frontIdx = state.lines.findIndex(l => l.state === 'holding');
     const weakX = frontIdx >= 0 ? weakestLineX(state, frontIdx, 0) : 0;
     for (const c of state.companions) {
@@ -1056,9 +1056,9 @@ function planRaiders(state, difficulty, dt, agents, bodies) {
         c.moving = false;
         let goal, field, speed = c.speed;
         if (c.health <= 0) {
-            // Armed demo: eliminated and lying where they dropped. They are not steering
+            // Armed demo, or killed by a blast: lying where they dropped. They are not steering
             // obstacles, because the crowd walks over the fallen instead of around them.
-            if (state.armed) continue;
+            if (state.armed || c.killed) continue;
             // Out of the scenario, not out of the world: they sit until a street medic (or
             // time) gets them up, then walk back to the aid station and stay there.
             if (!c.helped) {
@@ -1247,6 +1247,27 @@ export function blastExposure(x, z, tx, tz) {
     return clearLine(x, z, tx, tz) ? 1 : BLAST_SHADOW;
 }
 
+/**
+ * A blast strong enough to lift someone off their feet (this share of full force or more) kills
+ * them: they go limp in the air and come down dead (owner, 2026-11-21). Below it, people at the
+ * edge of the blast are thrown back and staggered but stay on the ground.
+ */
+export const LAUNCH_FALL = 0.3;
+
+/** Killed outright by a blast: health gone, limp from this instant, and nobody comes to help. */
+function killByBlast(state, body, x, z, fall) {
+    const dx = body.x - x, dz = body.z - z, d = Math.hypot(dx, dz) || 1;
+    body.health = 0;
+    body.killed = true;
+    body.stun = 0; body.stagger = 0; body.surge = 0; body.retreating = false;
+    // Which way the renderer tips the collapse: away from the blast.
+    body.ix = dx / d; body.iz = dz / d;
+    body.hitZone = 'torso'; body.hitAt = state.elapsed ?? 0; body.hitPower = 1;
+    body.harm ??= createHarm();
+    applyInjury(body.harm, { zone: 'torso', energy: 900 + 1400 * fall });
+    state.events.push({ type: 'down', x: body.x, z: body.z, energy: 40, material: 'body' });
+}
+
 function explodeConcussion(state, g) {
     const x = g.toX, z = g.toZ;
     // Distance sets the pressure and what stands in between takes most of it away, so a blast in
@@ -1264,8 +1285,12 @@ function explodeConcussion(state, g) {
         if (fall <= 0) continue;
         const dx = e.x - x, dz = e.z - z, d = Math.hypot(dx, dz) || 1;
         knockback(e, dx / d * 7 * fall, dz / d * 7 * fall);
-        e.vy = Math.max(e.vy ?? 0, 1.8 + 5.2 * fall);
-        e.spin = ((e.id * 29) % 5 - 2) * (0.4 + fall);
+        if (fall >= LAUNCH_FALL) {
+            e.vy = Math.max(e.vy ?? 0, 1.8 + 5.2 * fall);
+            e.spin = ((e.id * 29) % 5 - 2) * (0.4 + fall);
+            killByBlast(state, e, x, z, fall);
+            continue;
+        }
         e.stagger = Math.max(e.stagger, 1.4 * fall);
         e.health = Math.max(0, e.health - 5 * fall);
         if (e.health === 0) state.events.push({ type: 'down', x: e.x, z: e.z, energy: 40, material: 'body' });
@@ -1276,9 +1301,13 @@ function explodeConcussion(state, g) {
         if (fall <= 0) continue;
         const dx = c.x - x, dz = c.z - z, d = Math.hypot(dx, dz) || 1;
         knockback(c, dx / d * 7 * fall, dz / d * 7 * fall);
-        // Close enough and the blast lifts them off their feet: they arc, tumble and land.
-        c.vy = Math.max(c.vy ?? 0, 2.4 + 6.6 * fall);
-        c.spin = ((c.id * 37) % 7 - 3) * (0.5 + fall);
+        // Close enough and the blast lifts them off their feet: they arc, tumble and land dead.
+        if (fall >= LAUNCH_FALL) {
+            c.vy = Math.max(c.vy ?? 0, 2.4 + 6.6 * fall);
+            c.spin = ((c.id * 37) % 7 - 3) * (0.5 + fall);
+            killByBlast(state, c, x, z, fall);
+            continue;
+        }
         c.stun = Math.max(c.stun, 2.4 * fall);
         c.health = Math.max(0, c.health - 9 * fall);
         c.morale = Math.max(0, c.morale - 0.3 * fall);
@@ -1504,7 +1533,8 @@ export function advance(state, input, seconds) {
     }
 
     // Armed demo: rounds in flight, swept as segments so a 1.5 m step cannot skip a body or a
-    // wall. A hit takes stamina; nobody is hit by their own side.
+    // wall. A hit takes stamina. Fire is friendly on both sides: a round takes whoever it meets
+    // first, officer or protestor, whoever fired it (owner, 2026-11-21).
     state.suppression = Math.max(0, (state.suppression ?? 0) - dt * 0.75);
     const listenerX = state.role === 'none' ? (state.cameraLeader?.x ?? state.companions[0]?.x ?? 0) : state.player.x;
     const listenerZ = state.role === 'none' ? (state.cameraLeader?.z ?? state.companions[0]?.z ?? 50) : state.player.z;
@@ -1519,13 +1549,12 @@ export function advance(state, input, seconds) {
 
         let reach = firstBlocked(fromX, fromZ, toX, toZ, walkable), victim = null;
         if (reach < 0) reach = 1;
-        // A protestor's round can hit the crowd in front of it: whoever meets the bullet first
-        // takes it, police or protestor. Police fire meets the crowd. Nobody is hit by their own
-        // round, and the shooter's own body does not block the shot.
-        const targets = shot.faction === 'raider' ? [...state.enemies, ...state.companions] : state.companions;
-        for (const actor of targets) {
+        // Whoever meets the round first takes it: a protestor's round can drop the protestor in
+        // front of them, an officer's the officer beside them. Only the shooter is skipped (by
+        // reference: police and crowd ids overlap), so their own body does not block the shot.
+        for (const actor of [...state.enemies, ...state.companions]) {
             if (actor.health <= 0) continue;
-            if (shot.faction === 'raider' && shot.owner !== undefined && actor.id === shot.owner) continue;
+            if (shot.owner !== undefined && actor === shot.owner) continue;
             const t = segmentCircle(fromX, fromZ, toX, toZ, actor.x, actor.z, 0.6);
             if (t >= 0 && t <= reach) { reach = t; victim = actor; }
         }
@@ -1604,7 +1633,7 @@ export function advance(state, input, seconds) {
         if (state.armed) {
             if (!state.openedFire || (c.panic ?? 0) > 0) { c.cooldown = 0.4; continue; }
             if (!target || !clearLine(c.x, c.z, target.x, target.z)) { c.cooldown = 0.3; continue; }
-            state.shots.push({ x: c.x, z: c.z, dx: (target.x - c.x) / nearest, dz: (target.z - c.z) / nearest, life: 0.9, faction: 'raider', owner: c.id });
+            state.shots.push({ x: c.x, z: c.z, dx: (target.x - c.x) / nearest, dz: (target.z - c.z) / nearest, life: 0.9, faction: 'raider', owner: c });
             state.events.push({ type: 'gunshot', x: c.x, z: c.z });
             c.attacking = 0.2;
             c.cooldown = 2.4 + c.id % 5 * 0.3;
@@ -1713,7 +1742,8 @@ function stepHarm(state, dt) {
     const list = contactList;
     list.length = 0;
     if (embodied(state) && state.health > 0) list.push(state.player);
-    for (const e of state.enemies) if (e.health > 0) list.push(e);
+    // Officers killed by a blast are carried by its throw as well as its lift.
+    for (const e of state.enemies) if (e.health > 0 || e.killed) list.push(e);
     for (const c of state.companions) list.push(c);
     let impacts = 0;
     // Bodies thrown into the air by a blast arc, tumble and come back down under gravity. Every

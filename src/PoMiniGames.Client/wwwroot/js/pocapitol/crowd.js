@@ -909,7 +909,7 @@ export function createCrowd(scene, capacity, { time, groundHeight, shadowTexture
             const floor = groundHeight(a.x, a.z);
             const b = { a, tall, wide, floor, moving, phase, stride: gait.stride, limp: gait.limp, ground: floor + (moving ? Math.abs(Math.cos(phase)) * 0.045 : 0),
                 pushing: raider(a) && a.attacking > 0 && a.health > 0, filming: filming(a), bearer: bearer(a), gun: gun(a),
-                lying: a.health <= 0 && state.armed, stooped: a.health <= 0 && !state.armed && a.helped && !a.resting };
+                lying: a.health <= 0 && (state.armed || a.killed), stooped: a.health <= 0 && !state.armed && !a.killed && a.helped && !a.resting };
             const key = a.key ?? (a.civilian ? `s${a.id}` : `r${a.id}`);
             b.slot = bodies.claim(key);
             const alive = a.health > 0;
@@ -993,8 +993,10 @@ export function createCrowd(scene, capacity, { time, groundHeight, shadowTexture
                     const frame = impactFrame(hx, hz, h);
                     // Bodies already on the ground nearby decide the heap this one joins.
                     const rest = restPlace(a.x, a.z, [...restSpots.values()]);
+                    // Killed by a blast: limp from the instant it lifts them, so the collapse
+                    // starts already slack instead of bracing in mid-air.
                     fall = {
-                        t0: now, rel: frame.rel, rest,
+                        t0: a.killed ? now - 2 : now, rel: frame.rel, rest,
                         seed: trait(a.id, 5), zone: a.hitZone ?? 'torso', how: null,
                     };
                     restSpots.set(key, { x: a.x, z: a.z, layer: rest.layer });
@@ -1034,13 +1036,14 @@ export function createCrowd(scene, capacity, { time, groundHeight, shadowTexture
             const brace = strain ? Math.sin(now * (1.4 + strain * 2.5) + (a.id || 0) * 1.7) * (0.012 + strain * 0.045) : 0;
             // Blast lift and the rise over a body on the ground: feet clear what is underfoot.
             // A body that has fallen lies on the deck: its height is the floor plus the thickness
-            // of one body, whatever the heap maths or a blast arc wanted to add.
+            // of one body, whatever the heap maths wanted to add. A body still in a blast's arc
+            // (killed in the air) rides the arc and settles when it lands.
             const lift = Math.max(0, a.y ?? 0) + Math.max(0, a.step ?? 0);
             const y = b.lying
-                ? b.ground + 0.06 + Math.min(0.12, rest?.height ?? 0)
+                ? b.ground + 0.06 + Math.min(0.12, rest?.height ?? 0) + Math.max(0, a.y ?? 0)
                 : b.ground + lift - how.drop * tall + how.lift * wide + (rest?.height ?? 0);
             transform.position.set(a.x + (rest?.dx ?? 0) + b.dx, y, a.z + (rest?.dz ?? 0) + b.dz);
-            transform.rotation.set(how.fall + brace - b.rockF + ((a.y ?? 0) > 0.05 && !b.lying ? (a.spin ?? 0) * 0.5 : 0), b.yaw, (how.lean || 0) + (rest?.roll ?? 0) - b.rockR);
+            transform.rotation.set(how.fall + brace - b.rockF + ((a.y ?? 0) > 0.05 ? (a.spin ?? 0) * (b.lying ? 1.1 : 0.5) : 0), b.yaw, (how.lean || 0) + (rest?.roll ?? 0) - b.rockR);
             transform.scale.set(wide, tall, wide);
             const figureMatrix = slotFigure[b.slot].compose(transform.position, transform.quaternion, transform.scale);
             bodies.pose(b.slot, figureMatrix, pose);
