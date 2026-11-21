@@ -6,7 +6,7 @@
 // game's root (--pc-ax/--pc-ay: the anchor in root pixels; --pc-card-x/--pc-card-y: where the
 // card goes) and the line's end points. When nobody is selected, or the person is behind the
 // camera, the properties are removed and the card falls back to its corner placement.
-import * as THREE from 'three';
+import * as THREE from 'three-eco/webgpu';
 import { groundHeight } from './world.js';
 
 const CARD_W = 340, CARD_H = 250, GAP = 28, EDGE = 12;

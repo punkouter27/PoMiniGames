@@ -1,5 +1,6 @@
-import * as THREE from 'three';
-import { Pass, FullScreenQuad } from 'three/addons/postprocessing/Pass.js';
+import * as THREE from 'three-eco/webgpu';
+import * as TSL from 'three-eco/tsl';
+import { makeTarget, tap } from './nodes.js';
 
 // Hundreds of small lights for the price of one draw call.
 //
@@ -12,98 +13,71 @@ import { Pass, FullScreenQuad } from 'three/addons/postprocessing/Pass.js';
 //
 // What uses it: a phone screen in front of everyone filming, phones held up across the far crowd
 // once the light goes, each lamp post, each police light bar, and every round in flight.
+//
+// r186: the quads are drawn (additively) into a target of their own, which the frame then adds
+// in (post.js). On r165 they were drawn straight onto the frame; the sum is the same.
 
-const VERTEX_COPY = 'varying vec2 vUv; void main() { vUv = uv; gl_Position = vec4(position.xy, 0.0, 1.0); }';
-const COPY = 'uniform sampler2D tDiffuse; varying vec2 vUv; void main() { gl_FragColor = texture2D(tDiffuse, vUv); }';
-
-const VERTEX = `
-    attribute vec4 aAt;      // xyz, reach in metres
-    attribute vec3 aColor;
-    varying vec4 vAt;
-    varying vec3 vColor;
-    void main() {
-        vAt = aAt; vColor = aColor;
-        vec4 centre = viewMatrix * vec4(aAt.xyz, 1.0);
-        // Pulled toward the lens by its own reach, so the quad still covers the light's sphere
-        // when the camera is standing inside it.
-        bool behind = centre.z - aAt.w > 0.0;
-        centre.xy += position.xy * aAt.w * 2.0;
-        centre.z = min(centre.z + aAt.w, -0.12);
-        // A light wholly behind the lens reaches nothing on screen.
-        gl_Position = behind ? vec4(2.0, 2.0, 2.0, 1.0) : projectionMatrix * centre;
-    }`;
-
-const FRAGMENT = `
-    uniform sampler2D tDepth, tScene;
-    uniform mat4 uInvViewProjJ;
-    uniform vec2 uSize;
-    varying vec4 vAt;
-    varying vec3 vColor;
-    vec3 worldAt(vec2 uv) {
-        vec4 p = uInvViewProjJ * vec4(uv * 2.0 - 1.0, texture2D(tDepth, uv).r * 2.0 - 1.0, 1.0);
-        return p.xyz / p.w;
-    }
-    void main() {
-        vec2 uv = gl_FragCoord.xy / uSize;
-        vec3 p = worldAt(uv), to = vAt.xyz - p;
-        float d2 = dot(to, to), reach = vAt.w;
-        if (d2 > reach * reach) discard;
-        // The surface's facing, from how its position changes across the pixel.
-        vec3 n = normalize(cross(dFdx(p), dFdy(p)));
-        float facing = clamp(dot(n, to * inversesqrt(max(d2, 1e-4))), 0.0, 1.0) * 0.8 + 0.2;
-        float window = 1.0 - d2 / (reach * reach);
-        // What the surface is: its own lit colour with the brightness taken out, near enough.
-        vec3 scene = texture2D(tScene, uv).rgb;
-        vec3 albedo = clamp(scene / (dot(scene, vec3(0.2126, 0.7152, 0.0722)) + 0.25), 0.0, 1.6);
-        gl_FragColor = vec4(vColor * albedo * facing * window * window / (1.0 + d2 * 0.6), 0.0);
-    }`;
-
-class LightsPass extends Pass {
-    constructor(mesh, camera) {
-        super();
-        this.mesh = mesh; this.camera = camera;
-        this.scene = new THREE.Scene();
-        this.scene.add(mesh);
-        this.copy = new THREE.ShaderMaterial({ uniforms: { tDiffuse: { value: null } }, vertexShader: VERTEX_COPY, fragmentShader: COPY, depthTest: false, depthWrite: false });
-        this.quad = new FullScreenQuad(this.copy);
-    }
-    setSize(w, h) { this.mesh.material.uniforms.uSize.value.set(w, h); }
-    render(renderer, writeBuffer, readBuffer) {
-        this.copy.uniforms.tDiffuse.value = readBuffer.texture;
-        this.mesh.material.uniforms.tScene.value = readBuffer.texture;
-        const auto = renderer.autoClear;
-        renderer.autoClear = false;
-        renderer.setRenderTarget(this.renderToScreen ? null : writeBuffer);
-        this.quad.render(renderer);
-        renderer.render(this.scene, this.camera);
-        renderer.autoClear = auto;
-    }
-    dispose() { this.copy.dispose(); this.quad.dispose(); }
-}
-
-export function createSmallLights(camera, depthTexture, invViewProj, capacity = 640) {
+/**
+ * @param renderer      the WebGPURenderer
+ * @param camera        the scene camera
+ * @param depthTexture  solid-geometry depth
+ * @param sceneTex      a texture node of the lit frame the lights read the surface colour from
+ * @param invViewProj   the shared (jittered) inverse view-projection matrix from temporal.js
+ * @param ndcZ          (depth node) => clip-space z for this backend
+ */
+export function createSmallLights(renderer, camera, depthTexture, sceneTex, invViewProj, ndcZ, capacity = 640) {
+    const { vec2, vec3, vec4, float, dot, cross, normalize, clamp, max, min, select, uniform, texture } = TSL;
     const geometry = new THREE.PlaneGeometry(1, 1);
     const at = new THREE.InstancedBufferAttribute(new Float32Array(capacity * 4), 4);
     const color = new THREE.InstancedBufferAttribute(new Float32Array(capacity * 3), 3);
     at.setUsage(THREE.DynamicDrawUsage); color.setUsage(THREE.DynamicDrawUsage);
     geometry.setAttribute('aAt', at); geometry.setAttribute('aColor', color);
-    const material = new THREE.ShaderMaterial({
-        uniforms: {
-            tDepth: { value: depthTexture }, tScene: { value: null }, uInvViewProjJ: { value: invViewProj },
-            uSize: { value: new THREE.Vector2(1, 1) },
-        },
-        vertexShader: VERTEX, fragmentShader: FRAGMENT,
-        transparent: true, depthTest: false, depthWrite: false,
-        blending: THREE.CustomBlending, blendEquation: THREE.AddEquation, blendSrc: THREE.OneFactor, blendDst: THREE.OneFactor,
-    });
+    const depth = texture(depthTexture);
+    const uInvViewProjJ = uniform(invViewProj);
+
+    const material = new THREE.NodeMaterial();
+    Object.assign(material, { transparent: true, depthTest: false, depthWrite: false, fog: false, toneMapped: false, blending: THREE.AdditiveBlending });
+    {
+        const aAt = TSL.attribute('aAt', 'vec4'), aColor = TSL.attribute('aColor', 'vec3');
+        const vAt = TSL.varying(aAt, 'vLightAt'), vColor = TSL.varying(aColor, 'vLightColor');
+        // Pulled toward the lens by its own reach, so the quad still covers the light's sphere when
+        // the camera is standing inside it. A light wholly behind the lens reaches nothing on screen.
+        material.vertexNode = TSL.Fn(() => {
+            const centre = TSL.cameraViewMatrix.mul(vec4(aAt.xyz, 1)).toVar();
+            const behind = centre.z.sub(aAt.w).greaterThan(0);
+            centre.xy.addAssign(TSL.positionGeometry.xy.mul(aAt.w).mul(2));
+            centre.z.assign(min(centre.z.add(aAt.w), -0.12));
+            return select(behind, vec4(2, 2, 2, 1), TSL.cameraProjectionMatrix.mul(centre));
+        })();
+        material.fragmentNode = TSL.Fn(() => {
+            const uv = TSL.screenUV;
+            const world = uInvViewProjJ.mul(vec4(uv.mul(2).sub(1), ndcZ(depth.sample(uv).r), 1));
+            const p = world.xyz.div(world.w);
+            const to = vAt.xyz.sub(p);
+            const d2 = dot(to, to), reach = vAt.w;
+            d2.greaterThan(reach.mul(reach)).discard();
+            // The surface's facing, from how its position changes across the pixel.
+            const n = normalize(cross(TSL.dFdx(p), TSL.dFdy(p)));
+            const facing = clamp(dot(n, to.mul(TSL.inverseSqrt(max(d2, 1e-4)))), 0, 1).mul(0.8).add(0.2);
+            const window = d2.div(reach.mul(reach)).oneMinus();
+            // What the surface is: its own lit colour with the brightness taken out, near enough.
+            const scene = tap(sceneTex, uv).rgb;
+            const albedo = clamp(scene.div(dot(scene, vec3(0.2126, 0.7152, 0.0722)).add(0.25)), 0, 1.6);
+            return vec4(vColor.mul(albedo).mul(facing).mul(window).mul(window).div(d2.mul(0.6).add(1)), 1);
+        })();
+    }
     const mesh = new THREE.InstancedMesh(geometry, material, capacity);
     mesh.frustumCulled = false; mesh.count = 0;
-    const pass = new LightsPass(mesh, camera);
-    pass.enabled = false;
-    let n = 0, allowed = true;
+    const lights = new THREE.Scene();
+    lights.add(mesh);
+    const target = makeTarget(1, 1);
+    let n = 0, allowed = true, active = false;
     return {
-        pass, capacity,
-        setAllowed(value) { allowed = value; if (!value) pass.enabled = false; },
+        capacity, target,
+        /** True on a frame with anything to draw. */
+        active: () => active,
+        setAllowed(value) { allowed = value; if (!value) active = false; },
+        setSize(w, h) { target.setSize(w, h); },
         /** Start this frame's list. */
         begin() { n = 0; },
         /** One light: where, how far it reaches (metres), its colour and how bright. */
@@ -117,9 +91,19 @@ export function createSmallLights(camera, depthTexture, invViewProj, capacity = 
         end() {
             mesh.count = n;
             if (n) { at.needsUpdate = true; color.needsUpdate = true; }
-            pass.enabled = allowed && n > 0;
+            active = allowed && n > 0;
             return n;
         },
-        dispose() { pass.dispose(); geometry.dispose(); material.dispose(); mesh.dispose(); },
+        /** Draws this frame's lights into the target (cleared to black first). */
+        draw() {
+            const clearA = renderer.getClearAlpha(), autoClear = renderer.autoClear, clear = renderer.getClearColor(new THREE.Color());
+            renderer.setRenderTarget(target);
+            renderer.setClearColor(0x000000, 0); renderer.autoClear = true;
+            renderer.clear();
+            renderer.autoClear = false;
+            renderer.render(lights, camera);
+            renderer.setClearColor(clear, clearA); renderer.autoClear = autoClear;
+        },
+        dispose() { geometry.dispose(); material.dispose(); mesh.dispose(); target.dispose(); },
     };
 }

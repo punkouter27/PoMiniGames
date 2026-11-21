@@ -1,4 +1,6 @@
-import * as THREE from 'three';
+import * as THREE from 'three-eco/webgpu';
+import * as TSL from 'three-eco/tsl';
+import { mirror, fbm2, noise3 } from './nodes.js';
 
 // Surface, sky and material helpers for PoCapitol's realism pass.
 //
@@ -77,223 +79,200 @@ export const SURFACE = { generic: 0, stone: 1, paving: 2, grass: 3, marble: 4, w
 const TILE = [3, 4.8, 6.4, 9, 5.6, 2.4, 7.2];
 
 /**
- * Adds world-space surface detail to a MeshStandardMaterial: tone variation, joints, a
+ * How much snow is lying, 0..1, shared by every surface: the scene sets it from the weather
+ * (freezing presets and a freezing live reading). Always a uniform, so changing it never
+ * recompiles a shader.
+ */
+export const snowUniform = { value: 0 };
+
+// One node graph per surface kind, shared by every material of that kind: a material colour is
+// read per object, so the program is the same and only the graph's own uniforms (the one noise
+// texture, the detail and snow amounts, the wear map) are shared. A graph per material would be
+// a program per material.
+const surfaceGraphs = new Map();
+
+function surfaceGraph(kind, texture, detail, wear) {
+    const key = `${kind}${wear ? 'w' : ''}`;
+    let graph = surfaceGraphs.get(key);
+    if (graph && graph.texture === texture) return graph;
+    const tex = TSL.texture(texture), uDetail = mirror(detail), uSnow = mirror(snowUniform), tile = TSL.float(TILE[kind]);
+    const uWear = wear ? TSL.texture(wear.map.isTexture ? wear.map : wear.map.value) : null;
+    const uRect = wear ? mirror(wear.rect) : null;
+    const height = TSL.float(0).toVar('surfHeight'), rough = TSL.float(0).toVar('surfRough');
+    const { float, vec3, mix, smoothstep, clamp, pow, abs, dot, sin, If, select } = TSL;
+    const tap = uv => tex.sample(uv);
+
+    // Colour, and as a side effect the height and roughness the other two hooks read.
+    const colorNode = TSL.Fn(() => {
+        const base = TSL.materialColor.rgb.toVar('surfBase');
+        height.assign(0); rough.assign(TSL.materialRoughness);
+        const n = TSL.normalWorldGeometry, p = TSL.positionWorld;
+        const upNormal = clamp(n.y, 0, 1).toVar('surfUp');
+        // The worn map is read at a mip level: it is a low-frequency map, and a sample in a branch
+        // that depends on the pixel could not take derivatives.
+        const worn = float(0).toVar('surfWorn');
+        const trodden = float(0).toVar('surfTrodden');
+        const wearUv = wear ? p.xz.sub(uRect.xy).mul(uRect.zw).toVar('surfWearUv') : null;
+        const wearIn = wear ? TSL.step(0, wearUv.x).mul(TSL.step(wearUv.x, 1)).mul(TSL.step(0, wearUv.y)).mul(TSL.step(wearUv.y, 1)).toVar() : null;
+        const wearVal = wear ? uWear.sample(wearUv).level(0).r : null;
+        If(uDetail.greaterThan(0), () => {
+            const sb = pow(abs(n), vec3(4)).toVar();
+            sb.divAssign(dot(sb, vec3(1)));
+            const sp = p.div(tile).toVar();
+            const s = tap(sp.zy).mul(sb.x).add(tap(sp.xz).mul(sb.y)).add(tap(sp.xy).mul(sb.z)).toVar('surfSample');
+            const tone = float(1).toVar();
+            if (wear) worn.assign(smoothstep(0.1, 0.72, wearVal.mul(s.r.mul(0.8).add(0.6))).mul(upNormal).mul(wearIn));
+            if (kind === 1) {
+                tone.assign(mix(0.92, 1.04, s.r.mul(0.6).add(s.g.mul(0.4))).mul(s.b.mul(0.09).oneMinus()));
+                height.assign(s.r.mul(0.35).sub(s.b.mul(0.6)));
+                rough.assign(s.r.mul(0.3).add(0.6));
+                // Cold winter frost on horizontal stone ledges and capitals
+                const frost = smoothstep(0.55, 0.95, upNormal).mul(s.r.mul(0.4).add(0.6));
+                base.assign(mix(base, vec3(0.94, 0.96, 0.98), frost.mul(0.35).mul(uDetail)));
+                rough.assign(mix(rough, 0.45, frost.mul(0.4)));
+                // Water streaks gather below exposed ledges and toward the base of walls.
+                const streak = pow(s.g, 3).mul(upNormal.oneMinus()).mul(smoothstep(0.15, 0.85, s.r));
+                base.mulAssign(streak.mul(0.16).mul(uDetail).oneMinus());
+            } else if (kind === 4) {
+                const vein = smoothstep(0.72, 0.94, abs(sin(sp.x.add(sp.y).mul(8).add(s.g.mul(5)))));
+                base.mulAssign(vein.mul(0.12).mul(uDetail).oneMinus());
+                tone.assign(mix(0.96, 1.04, s.r));
+                height.assign(s.r.mul(0.08));
+                rough.assign(s.g.mul(0.2).add(0.38));
+            } else if (kind === 5) {
+                const grain = sin(sp.y.mul(90).add(s.g.mul(9))).mul(0.5).add(0.5);
+                base.mulAssign(mix(0.78, 1.08, grain));
+                height.assign(grain.mul(0.18));
+                rough.assign(s.r.mul(0.25).add(0.48));
+            } else if (kind === 6) {
+                const aggregate = smoothstep(0.58, 0.82, s.r);
+                base.mulAssign(mix(0.72, 1.18, aggregate));
+                height.assign(aggregate.mul(0.35));
+                rough.assign(s.g.mul(0.1).add(0.88));
+            } else if (kind === 2) {
+                tone.assign(mix(0.84, 1.06, s.r.mul(0.5).add(s.g.mul(0.5))).mul(s.a.mul(0.15).oneMinus()));
+                height.assign(s.r.mul(0.3).sub(s.a.mul(0.6)));
+                rough.assign(s.g.mul(0.2).add(0.72));
+                // Wet winter puddles in paving depressions
+                const puddle = smoothstep(0.46, 0.85, s.g.mul(0.65).add(s.r.oneMinus().mul(0.35))).mul(upNormal);
+                base.mulAssign(puddle.mul(0.36).mul(uDetail).oneMinus());
+                rough.assign(mix(rough, 0.04, puddle.mul(uDetail)));
+                // Mud walked in off the lawn: a dark wet film where the crowd has been.
+                base.mulAssign(mix(vec3(1), vec3(0.6, 0.54, 0.47), worn.mul(0.85)));
+                rough.assign(mix(rough, 0.22, worn.mul(0.55)));
+            } else if (kind === 3) {
+                base.mulAssign(mix(vec3(1), mix(vec3(0.82, 0.9, 0.76), vec3(1.32, 1.16, 0.82), s.g), uDetail));
+                tone.assign(mix(0.78, 1.12, s.r));
+                height.assign(s.r);
+                rough.assign(1);
+                // January frost and frozen grass blade tips
+                const grassFrost = smoothstep(0.48, 0.92, upNormal).mul(s.r.mul(0.5).add(0.5));
+                base.assign(mix(base, vec3(0.88, 0.92, 0.9), grassFrost.mul(0.42).mul(uDetail)));
+                rough.assign(mix(rough, 0.85, grassFrost.mul(0.5)));
+                // A lawn under a few hundred boots in January: the frost goes first, then
+                // the grass, and what is left is dark, wet and shines where it has pooled.
+                const mud = vec3(0.11, 0.076, 0.046).mul(s.g.mul(0.6).add(0.7));
+                base.assign(mix(base, mud, worn.mul(0.94)));
+                rough.assign(mix(rough, s.r.mul(0.5).add(0.2), worn));
+                height.assign(mix(height, s.g.mul(1.6).sub(s.r.mul(0.5)), worn));
+            } else {
+                tone.assign(mix(0.93, 1.04, s.r.mul(0.7).add(s.g.mul(0.3))));
+                height.assign(s.r.mul(0.5));
+                const genFrost = smoothstep(0.65, 0.98, upNormal).mul(0.3);
+                base.assign(mix(base, vec3(0.95, 0.96, 0.98), genFrost.mul(uDetail)));
+            }
+            base.mulAssign(mix(1, tone, uDetail));
+            height.mulAssign(uDetail);
+            // Micro-detail: a second, finer triplanar tap gives stone a tooth, breaks up the joint
+            // edges and stops large flat panels reading as smooth plastic.
+            const micro = tap(sp.xz.mul(5.3).add(sp.yx.mul(2.9))).r;
+            height.addAssign(micro.sub(0.5).mul(0.22).mul(uDetail));
+            rough.assign(clamp(rough.add(micro.sub(0.5).mul(0.1).mul(uDetail)), 0.04, 1));
+        });
+        // Snow lies on whatever faces up outdoors: thick on the lawn, the ledges and the roofs,
+        // thinner on paving people keep clearing, and trodden to grey slush along every route the
+        // crowd has walked (the same wear map that turns the lawn to mud). Kept out of the
+        // building's ground floor, which is under a roof.
+        If(uSnow.greaterThan(0), () => {
+            const outdoors = TSL.step(14.6, p.z).max(TSL.step(45, abs(p.x))).max(TSL.step(2.5, p.y));
+            const snowUp = smoothstep(0.55, 0.92, clamp(n.y, 0, 1));
+            if (wear) trodden.assign(smoothstep(0.03, 0.4, wearVal).mul(wearIn));
+            const snowGrain = tap(p.xz.div(tile)).g;
+            let amount = snowUp.mul(uSnow).mul(snowGrain.mul(0.2).add(0.8)).mul(trodden.mul(0.5).oneMinus());
+            if (kind === 2) amount = amount.mul(0.7);
+            amount = amount.mul(outdoors);
+            const cover = mix(vec3(0.93, 0.95, 0.98), vec3(0.46, 0.45, 0.43), trodden);
+            base.assign(mix(base, cover, clamp(amount, 0, 1)));
+            rough.assign(mix(rough, mix(0.85, 0.22, trodden), amount));
+        });
+        return base;
+    })();
+
+    const roughnessNode = TSL.Fn(() => mix(TSL.materialRoughness, rough, uDetail))();
+
+    // Screen-space bump from the height above (three.js's perturbNormalArb).
+    const normalNode = TSL.Fn(() => {
+        const nrm = TSL.normalViewGeometry.toVar();
+        If(uDetail.greaterThan(0), () => {
+            const dpx = TSL.dFdx(TSL.positionView), dpy = TSL.dFdy(TSL.positionView);
+            const hx = TSL.dFdx(height).mul(0.022), hy = TSL.dFdy(height).mul(0.022);
+            const r1 = TSL.cross(dpy, nrm), r2 = TSL.cross(nrm, dpx);
+            const det = dot(dpx, r1);
+            nrm.assign(TSL.normalize(abs(det).mul(nrm).sub(TSL.sign(det).mul(hx.mul(r1).add(hy.mul(r2))))));
+        });
+        return nrm;
+    })();
+
+    graph = { texture, colorNode, roughnessNode, normalNode };
+    surfaceGraphs.set(key, graph);
+    return graph;
+}
+
+/**
+ * Adds world-space surface detail to a MeshStandardNodeMaterial: tone variation, joints, a
  * roughness spread and a bump from the same height. `detail` is a shared uniform (0..1) so the
  * quality governor can turn it down without recompiling a shader.
  *
  * `wear` (ground.js) is optional: a map of where the crowd has walked. Grass under it turns to
  * churned mud, paving picks up a wet film of tracked dirt.
  */
-/**
- * How much snow is lying, 0..1, shared by every surface: the scene sets it from the weather
- * (freezing presets and a freezing live reading). Always declared, so changing it never
- * recompiles a shader.
- */
-export const snowUniform = { value: 0 };
-
 export function addSurface(material, kind, texture, detail, wear = null) {
-    material.onBeforeCompile = shader => {
-        shader.uniforms.uSurf = { value: texture };
-        shader.uniforms.uSnow = snowUniform;
-        shader.uniforms.uSurfTile = { value: TILE[kind] };
-        shader.uniforms.uSurfDetail = detail;
-        shader.defines = { ...shader.defines, SURF_KIND: kind };
-        if (wear) {
-            shader.uniforms.uWear = wear.map;
-            shader.uniforms.uWearRect = wear.rect;
-            shader.defines.SURF_WEAR = 1;
-        }
-        shader.vertexShader = shader.vertexShader
-            .replace('#include <common>', '#include <common>\nvarying vec3 vSurfPos;\nvarying vec3 vSurfNormal;')
-            .replace('#include <worldpos_vertex>', `#include <worldpos_vertex>
-                vec4 surfP = vec4(transformed, 1.0);
-                vec3 surfN = objectNormal;
-                #ifdef USE_INSTANCING
-                    surfP = instanceMatrix * surfP;
-                    surfN = mat3(instanceMatrix) * surfN;
-                #endif
-                vSurfPos = (modelMatrix * surfP).xyz;
-                vSurfNormal = normalize(mat3(modelMatrix) * surfN);`);
-        shader.fragmentShader = shader.fragmentShader
-            .replace('#include <common>', `#include <common>
-                varying vec3 vSurfPos;
-                varying vec3 vSurfNormal;
-                uniform sampler2D uSurf;
-                uniform float uSurfTile;
-                uniform float uSurfDetail;
-                uniform float uSnow;
-                #ifdef SURF_WEAR
-                    uniform sampler2D uWear;
-                    uniform vec4 uWearRect;
-                #endif`)
-            .replace('#include <map_fragment>', `#include <map_fragment>
-                float surfHeight = 0.0, surfRough = roughness;
-                if (uSurfDetail > 0.0) {
-                    vec3 sb = pow(abs(vSurfNormal), vec3(4.0));
-                    sb /= dot(sb, vec3(1.0));
-                    vec3 sp = vSurfPos / uSurfTile;
-                    vec4 s = texture2D(uSurf, sp.zy) * sb.x + texture2D(uSurf, sp.xz) * sb.y + texture2D(uSurf, sp.xy) * sb.z;
-                    float tone = 1.0;
-                    float upNormal = clamp(vSurfNormal.y, 0.0, 1.0);
-                    float worn = 0.0;
-                    #ifdef SURF_WEAR
-                        vec2 wearUv = (vSurfPos.xz - uWearRect.xy) * uWearRect.zw;
-                        if (wearUv.x > 0.0 && wearUv.x < 1.0 && wearUv.y > 0.0 && wearUv.y < 1.0) {
-                            // The noise breaks the edge up, so a path frays out instead of ending in a line.
-                            worn = smoothstep(0.1, 0.72, texture2D(uWear, wearUv).r * (0.6 + 0.8 * s.r)) * upNormal;
-                        }
-                    #endif
-                    #if SURF_KIND == 1
-                        tone = mix(0.92, 1.04, s.r * 0.6 + s.g * 0.4) * (1.0 - s.b * 0.09);
-                        surfHeight = s.r * 0.35 - s.b * 0.6;
-                        surfRough = 0.6 + s.r * 0.3;
-                        // Cold winter frost on horizontal stone ledges and capitals
-                        float frost = smoothstep(0.55, 0.95, upNormal) * (0.6 + s.r * 0.4);
-                        diffuseColor.rgb = mix(diffuseColor.rgb, vec3(0.94, 0.96, 0.98), frost * 0.35 * uSurfDetail);
-                        surfRough = mix(surfRough, 0.45, frost * 0.4);
-                        // Water streaks gather below exposed ledges and toward the base of walls.
-                        float streak = pow(s.g, 3.0) * (1.0 - upNormal) * smoothstep(0.15, 0.85, s.r);
-                        diffuseColor.rgb *= 1.0 - streak * 0.16 * uSurfDetail;
-                    #elif SURF_KIND == 4
-                        float vein = smoothstep(0.72, 0.94, abs(sin((sp.x + sp.y) * 8.0 + s.g * 5.0)));
-                        diffuseColor.rgb *= 1.0 - vein * 0.12 * uSurfDetail;
-                        tone = mix(0.96, 1.04, s.r);
-                        surfHeight = s.r * 0.08;
-                        surfRough = 0.38 + s.g * 0.2;
-                    #elif SURF_KIND == 5
-                        float grain = sin(sp.y * 90.0 + s.g * 9.0) * 0.5 + 0.5;
-                        diffuseColor.rgb *= mix(0.78, 1.08, grain);
-                        surfHeight = grain * 0.18;
-                        surfRough = 0.48 + s.r * 0.25;
-                    #elif SURF_KIND == 6
-                        float aggregate = smoothstep(0.58, 0.82, s.r);
-                        diffuseColor.rgb *= mix(0.72, 1.18, aggregate);
-                        surfHeight = aggregate * 0.35;
-                        surfRough = 0.88 + s.g * 0.1;
-                    #elif SURF_KIND == 2
-                        tone = mix(0.84, 1.06, s.r * 0.5 + s.g * 0.5) * (1.0 - s.a * 0.15);
-                        surfHeight = s.r * 0.3 - s.a * 0.6;
-                        surfRough = 0.72 + s.g * 0.2;
-                        // Wet winter puddles in paving depressions
-                        float puddle = smoothstep(0.46, 0.85, s.g * 0.65 + (1.0 - s.r) * 0.35) * upNormal;
-                        diffuseColor.rgb *= (1.0 - puddle * 0.36 * uSurfDetail);
-                        surfRough = mix(surfRough, 0.04, puddle * uSurfDetail);
-                        // Mud walked in off the lawn: a dark wet film where the crowd has been.
-                        diffuseColor.rgb *= mix(vec3(1.0), vec3(0.6, 0.54, 0.47), worn * 0.85);
-                        surfRough = mix(surfRough, 0.22, worn * 0.55);
-                    #elif SURF_KIND == 3
-                        diffuseColor.rgb *= mix(vec3(1.0), mix(vec3(0.82, 0.9, 0.76), vec3(1.32, 1.16, 0.82), s.g), uSurfDetail);
-                        tone = mix(0.78, 1.12, s.r);
-                        surfHeight = s.r;
-                        surfRough = 1.0;
-                        // January frost and frozen grass blade tips
-                        float grassFrost = smoothstep(0.48, 0.92, upNormal) * (0.5 + s.r * 0.5);
-                        diffuseColor.rgb = mix(diffuseColor.rgb, vec3(0.88, 0.92, 0.9), grassFrost * 0.42 * uSurfDetail);
-                        surfRough = mix(surfRough, 0.85, grassFrost * 0.5);
-                        // A lawn under a few hundred boots in January: the frost goes first, then
-                        // the grass, and what is left is dark, wet and shines where it has pooled.
-                        vec3 mud = vec3(0.11, 0.076, 0.046) * (0.7 + 0.6 * s.g);
-                        diffuseColor.rgb = mix(diffuseColor.rgb, mud, worn * 0.94);
-                        surfRough = mix(surfRough, 0.2 + 0.5 * s.r, worn);
-                        surfHeight = mix(surfHeight, s.g * 1.6 - s.r * 0.5, worn);
-                    #else
-                        tone = mix(0.93, 1.04, s.r * 0.7 + s.g * 0.3);
-                        surfHeight = s.r * 0.5;
-                        float genFrost = smoothstep(0.65, 0.98, upNormal) * 0.3;
-                        diffuseColor.rgb = mix(diffuseColor.rgb, vec3(0.95, 0.96, 0.98), genFrost * uSurfDetail);
-                    #endif
-                    diffuseColor.rgb *= mix(1.0, tone, uSurfDetail);
-                    surfHeight *= uSurfDetail;
-                    // Micro-detail: a second, finer triplanar tap gives stone a tooth, breaks up
-                    // the joint edges and stops large flat panels reading as smooth plastic.
-                    float micro = texture2D(uSurf, sp.xz * 5.3 + sp.yx * 2.9).r;
-                    surfHeight += (micro - 0.5) * 0.22 * uSurfDetail;
-                    surfRough = clamp(surfRough + (micro - 0.5) * 0.1 * uSurfDetail, 0.04, 1.0);
-                }
-                // Snow lies on whatever faces up outdoors: thick on the lawn, the ledges and the
-                // roofs, thinner on paving people keep clearing, and trodden to grey slush along
-                // every route the crowd has walked (the same wear map that turns the lawn to mud).
-                // Kept out of the building's ground floor, which is under a roof.
-                if (uSnow > 0.0 && !(vSurfPos.z < 14.6 && abs(vSurfPos.x) < 45.0 && vSurfPos.y < 2.5)) {
-                    float snowUp = smoothstep(0.55, 0.92, clamp(vSurfNormal.y, 0.0, 1.0));
-                    float trodden = 0.0;
-                    #ifdef SURF_WEAR
-                        vec2 snowUv = (vSurfPos.xz - uWearRect.xy) * uWearRect.zw;
-                        if (snowUv.x > 0.0 && snowUv.x < 1.0 && snowUv.y > 0.0 && snowUv.y < 1.0) {
-                            trodden = smoothstep(0.03, 0.4, texture2D(uWear, snowUv).r);
-                        }
-                    #endif
-                    float snowGrain = texture2D(uSurf, vSurfPos.xz / uSurfTile).g;
-                    float snowAmount = snowUp * uSnow * (0.8 + 0.2 * snowGrain) * (1.0 - 0.5 * trodden);
-                    #if SURF_KIND == 2
-                        snowAmount *= 0.7;
-                    #endif
-                    vec3 snowCover = mix(vec3(0.93, 0.95, 0.98), vec3(0.46, 0.45, 0.43), trodden);
-                    diffuseColor.rgb = mix(diffuseColor.rgb, snowCover, clamp(snowAmount, 0.0, 1.0));
-                    surfRough = mix(surfRough, mix(0.85, 0.22, trodden), snowAmount);
-                }`)
-            .replace('#include <roughnessmap_fragment>', '#include <roughnessmap_fragment>\nroughnessFactor = mix(roughnessFactor, surfRough, uSurfDetail);')
-            .replace('#include <normal_fragment_maps>', `#include <normal_fragment_maps>
-                if (uSurfDetail > 0.0) {
-                    // Screen-space bump from the height above (three.js's perturbNormalArb).
-                    vec3 dpx = dFdx(-vViewPosition), dpy = dFdy(-vViewPosition);
-                    float hx = dFdx(surfHeight) * 0.022, hy = dFdy(surfHeight) * 0.022;
-                    vec3 r1 = cross(dpy, normal), r2 = cross(normal, dpx);
-                    float det = dot(dpx, r1);
-                    normal = normalize(abs(det) * normal - sign(det) * (hx * r1 + hy * r2));
-                }`);
-    };
-    material.customProgramCacheKey = () => `pocapitol-surface-${kind}${wear ? '-wear' : ''}`;
+    const graph = surfaceGraph(kind, texture, detail, wear);
+    material.colorNode = graph.colorNode;
+    material.roughnessNode = graph.roughnessNode;
+    material.normalNode = graph.normalNode;
     return material;
 }
 
 // ---------------------------------------------------------------- sky and environment
 
-const SKY_VERTEX = `
-    varying vec3 vDir;
-    void main() {
-        vDir = normalize(position);
-        vec4 p = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
-        gl_Position = p.xyww;
-    }`;
-const SKY_FRAGMENT = `
-    uniform vec3 uZenith, uHorizon, uGround, uSunColor, uSunDir;
-    uniform float uTime, uCloud;
-    varying vec3 vDir;
-    float h2(vec2 p) { return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453); }
-    float vnoise(vec2 p) {
-        vec2 i = floor(p), f = fract(p); f = f * f * (3.0 - 2.0 * f);
-        return mix(mix(h2(i), h2(i + vec2(1, 0)), f.x), mix(h2(i + vec2(0, 1)), h2(i + vec2(1, 1)), f.x), f.y);
-    }
-    float fbm(vec2 p) { float v = 0.0, a = 0.5; for (int i = 0; i < 5; i++) { v += a * vnoise(p); p *= 2.03; a *= 0.5; } return v; }
-    void main() {
-        vec3 d = normalize(vDir);
-        float h = d.y;
-        vec3 col = mix(uHorizon, uZenith, smoothstep(0.0, 0.55, h));
-        // A low, unbroken January overcast: the deck is brighter where it is thin.
-        if (h > 0.0) {
-            vec2 p = d.xz / (h + 0.12) * 0.9 + vec2(uTime * 0.006, uTime * 0.002);
-            float c = fbm(p);
-            float fade = smoothstep(0.0, 0.25, h);
-            col *= mix(1.0, mix(0.86, 1.1, c), uCloud * fade);
-        }
-        float s = max(dot(d, uSunDir), 0.0);
-        col += uSunColor * (pow(s, 6.0) * 0.18 + pow(s, 60.0) * 0.35) * (1.0 - uCloud * 0.5);
-        col = mix(col, uGround, smoothstep(0.0, -0.12, h));
-        gl_FragColor = vec4(col, 1.0);
-    }`;
-
 /** A gradient-and-cloud sky dome. Its uniforms are driven by the scene's clock. */
 export function createSky(radius = 200) {
+    const { vec3, vec4, mix, smoothstep, pow, max, dot } = TSL;
     const uniforms = {
-        uZenith: { value: new THREE.Color() }, uHorizon: { value: new THREE.Color() },
-        uGround: { value: new THREE.Color('#56594f') }, uSunColor: { value: new THREE.Color('#fff4e0') },
-        uSunDir: { value: new THREE.Vector3(0, 1, 0) }, uTime: { value: 0 }, uCloud: { value: 1 },
+        uZenith: TSL.uniform(new THREE.Color()), uHorizon: TSL.uniform(new THREE.Color()),
+        uGround: TSL.uniform(new THREE.Color('#56594f')), uSunColor: TSL.uniform(new THREE.Color('#fff4e0')),
+        uSunDir: TSL.uniform(new THREE.Vector3(0, 1, 0)), uTime: TSL.uniform(0), uCloud: TSL.uniform(1),
     };
-    const material = new THREE.ShaderMaterial({
-        uniforms, vertexShader: SKY_VERTEX, fragmentShader: SKY_FRAGMENT,
-        side: THREE.BackSide, depthWrite: false, fog: false,
-    });
+    const u = uniforms;
+    const material = new THREE.MeshBasicNodeMaterial({ side: THREE.BackSide, depthWrite: false, fog: false });
+    // Pinned to the far plane: the dome is drawn behind everything whatever its radius.
+    material.vertexNode = TSL.Fn(() => {
+        const p = TSL.cameraProjectionMatrix.mul(TSL.modelViewMatrix).mul(vec4(TSL.positionLocal, 1));
+        return vec4(p.x, p.y, p.w, p.w);
+    })();
+    material.colorNode = TSL.Fn(() => {
+        const d = TSL.normalize(TSL.positionLocal).toVar(), h = d.y;
+        const col = mix(u.uHorizon, u.uZenith, smoothstep(0.0, 0.55, h)).toVar();
+        const p = d.xz.div(max(h, 0).add(0.12)).mul(0.9).add(TSL.vec2(u.uTime.mul(0.006), u.uTime.mul(0.002)));
+        const c = fbm2(p);
+        const fade = smoothstep(0.0, 0.25, h);
+        col.mulAssign(mix(1, mix(0.86, 1.1, c), u.uCloud.mul(fade).mul(TSL.step(0, h))));
+        const s = max(dot(d, u.uSunDir), 0);
+        col.addAssign(u.uSunColor.mul(pow(s, 6).mul(0.18).add(pow(s, 60).mul(0.35))).mul(u.uCloud.mul(0.5).oneMinus()));
+        // smoothstep(0, -0.12, h) in GLSL runs backwards; written forwards here.
+        return vec4(mix(col, u.uGround, smoothstep(-0.12, 0.0, h).oneMinus()), 1);
+    })();
     const mesh = new THREE.Mesh(new THREE.SphereGeometry(radius, 32, 16), material);
     mesh.frustumCulled = false;
     mesh.renderOrder = -10;
@@ -342,12 +321,12 @@ export function createPolycarbonateMaterial({ color = '#c4e0ea', opacity = 0.42,
     // Physical transmission costs a colour-buffer copy plus refraction samples. On the lowest tier
     // the shield stays tinted and see-through, but as a plain alpha blend.
     if (tier === 'low') {
-        return new THREE.MeshStandardMaterial({
+        return new THREE.MeshStandardNodeMaterial({
             color: new THREE.Color(color), transparent: true, opacity: Math.min(0.6, opacity + 0.14),
             roughness: 0.2, metalness: 0.05, depthWrite: false,
         });
     }
-    const mat = new THREE.MeshPhysicalMaterial({
+    const mat = new THREE.MeshPhysicalNodeMaterial({
         color: new THREE.Color(color),
         transparent: true,
         opacity,
@@ -360,183 +339,176 @@ export function createPolycarbonateMaterial({ color = '#c4e0ea', opacity = 0.42,
         attenuationDistance: 0.35,
         depthWrite: false,
     });
-    mat.onBeforeCompile = shader => {
-        shader.uniforms.uDispersion = { value: dispersion };
-        shader.fragmentShader = shader.fragmentShader
-            .replace('#include <common>', '#include <common>\nuniform float uDispersion;')
-            .replace('#include <transmission_fragment>', `#include <transmission_fragment>
-                // Chromatic dispersion grows toward grazing angles, where light crosses the most
-                // plastic: the edge of a shield splits into a thin warm and cool fringe.
-                vec3 dispNormal = normalize(vNormal);
-                float dispEdge = pow(1.0 - abs(dot(dispNormal, normalize(vViewPosition))), 1.6);
-                diffuseColor.r += uDispersion * dispEdge * 0.4;
-                diffuseColor.b += uDispersion * dispEdge * 0.8;
-                diffuseColor.g += uDispersion * dispEdge * 0.2;
-                totalEmissiveRadiance += vec3(0.035, 0.06, 0.075) * dispEdge;`);
-    };
-    mat.customProgramCacheKey = () => 'pocapitol-polycarbonate';
+    // Chromatic dispersion grows toward grazing angles, where light crosses the most plastic:
+    // the edge of a shield splits into a thin warm and cool fringe.
+    const edge = TSL.pow(TSL.abs(TSL.dot(TSL.normalViewGeometry, TSL.positionViewDirection)).oneMinus(), 1.6);
+    mat.colorNode = TSL.materialColor.add(TSL.vec4(TSL.float(dispersion).mul(edge).mul(TSL.vec3(0.4, 0.2, 0.8)), 0));
+    mat.emissiveNode = TSL.vec3(0.035, 0.06, 0.075).mul(edge);
     return mat;
 }
 
 /**
  * Screen-space wrap lighting and red dermis subsurface scattering (SSSS) for skin and woven fabric.
+ * Applied to a MeshStandardNodeMaterial: the wrap term is added to its light as emissive, which is
+ * what it was in effect (it was added to the direct diffuse), keyed to the scene's sun direction.
  */
 export function addSubsurfaceScattering(material, { wrap = 0.38, scatterColor = '#d95a42', scatterIntensity = 0.45 } = {}) {
-    material.onBeforeCompile = shader => {
-        shader.uniforms.uSssColor = { value: new THREE.Color(scatterColor) };
-        shader.uniforms.uSssWrap = { value: wrap };
-        shader.uniforms.uSssIntensity = { value: scatterIntensity };
-        shader.fragmentShader = shader.fragmentShader
-            .replace('#include <common>', `#include <common>
-                uniform vec3 uSssColor;
-                uniform float uSssWrap;
-                uniform float uSssIntensity;`)
-            .replace('#include <lights_fragment_end>', `#include <lights_fragment_end>
-                #if NUM_DIR_LIGHTS > 0
-                for ( int sssIdx = 0; sssIdx < NUM_DIR_LIGHTS; sssIdx ++ ) {
-                    vec3 sssLightDir = directionalLights[ sssIdx ].direction;
-                    float sssDot = dot( normal, sssLightDir );
-                    float sssWrapVal = max( 0.0, ( sssDot + uSssWrap ) / ( 1.0 + uSssWrap ) );
-                    float sssTerm = smoothstep( -0.28, 0.28, -abs( sssDot ) );
-                    // Light that passed through the far side glows most when it is behind the
-                    // viewer's line of sight: cloth and ears rim-brighten against the low sun.
-                    float sssBack = pow( clamp( dot( -normal, normalize( vViewPosition ) ), 0.0, 1.0 ), 2.0 );
-                    reflectedLight.directDiffuse += uSssColor * directionalLights[ sssIdx ].color * sssTerm * uSssIntensity * sssWrapVal * ( 0.55 + 0.45 * sssBack );
-                }
-                #endif`);
-    };
-    material.customProgramCacheKey = () => 'pocapitol-ssss';
+    const sun = sssSun;
+    const color = TSL.uniform(new THREE.Color(scatterColor));
+    material.emissiveNode = TSL.Fn(() => {
+        const sssDot = TSL.dot(TSL.normalViewGeometry, sun.dirView);
+        const wrapVal = TSL.max(0, sssDot.add(wrap).div(1 + wrap));
+        const term = TSL.smoothstep(-0.28, 0.28, TSL.abs(sssDot).negate());
+        // Light that passed through the far side glows most when it is behind the viewer's line of
+        // sight: cloth and ears rim-brighten against the low sun.
+        const back = TSL.pow(TSL.clamp(TSL.dot(TSL.normalViewGeometry.negate(), TSL.positionViewDirection), 0, 1), 2);
+        return color.mul(sun.color).mul(term).mul(scatterIntensity).mul(wrapVal).mul(back.mul(0.45).add(0.55)).mul(sun.on);
+    })();
     return material;
 }
+
+/**
+ * The sun, as the subsurface term reads it: its direction in view space, colour and intensity.
+ * scene.js feeds it once a frame (`sssSun.set(light, camera)`); with no sun the term is off.
+ */
+export const sssSun = {
+    dirView: TSL.uniform(new THREE.Vector3(0, 1, 0)), color: TSL.uniform(new THREE.Color(1, 1, 1)), on: TSL.uniform(0),
+    set(light, camera) {
+        this.dirView.value.copy(light.position).sub(light.target.position).normalize().transformDirection(camera.matrixWorldInverse);
+        this.color.value.copy(light.color).multiplyScalar(light.intensity);
+        this.on.value = light.intensity > 0 ? 1 : 0;
+    },
+};
 
 /** What each part of a person is made of. The fabric shader draws the weave, quilting or print. */
 export const CLOTH = { plain: 0, quilt: 1, fleece: 2, denim: 3, camo: 4, plaid: 5, canvas: 6, hiVis: 7, skin: 8, hide: 9, duty: 10, hair: 11 };
 
+function buildFabricGraph(detail) {
+    const { float, vec3, mix, smoothstep, clamp, sin, abs, If, fract, floor } = TSL;
+    const uDetail = mirror(detail);
+    const kindAttr = TSL.attribute('aCloth', 'float');
+    const rest = TSL.positionGeometry;
+    const height = float(0).toVar('fabHeight'), rough = float(0).toVar('fabRough');
+    const colorNode = TSL.Fn(() => {
+        const base = TSL.materialColor.rgb.toVar('fabBase');
+        height.assign(0); rough.assign(TSL.materialRoughness);
+        If(uDetail.greaterThan(0), () => {
+            const kind = TSL.int(kindAttr.add(0.5)).toVar('fabKind');
+            const fp = rest;
+            // Metres of cloth under one pixel: what decides which detail can still be drawn.
+            const fabPx = TSL.length(TSL.fwidth(fp));
+            const fineFade = smoothstep(0.003, 0.009, fabPx).oneMinus();
+            const bandFade = smoothstep(0.03, 0.08, fabPx).oneMinus();
+            // Noise is the expensive part, and most of a crowd is too far away to show it: it is
+            // only worked out for the people close enough to need it.
+            const fine = TSL.select(fineFade.greaterThan(0), noise3(fp.mul(160)).mul(fineFade).add(fineFade.oneMinus().mul(0.5)), 0.5).toVar();
+            const near = bandFade.greaterThan(0);
+            const nz = (scale, shift = 0) => TSL.select(near, noise3(fp.mul(scale).add(shift)), 0.5);
+            const tone = float(1).toVar('fabTone');
+            If(kind.equal(1), () => {
+                // Quilted puffer: horizontal baffles, stitched in at the seams.
+                const band = fract(fp.y.mul(9.5).add(0.2));
+                const seam = smoothstep(0, 0.09, TSL.min(band, band.oneMinus())).oneMinus();
+                tone.assign(seam.mul(0.3).mul(bandFade).oneMinus());
+                height.assign(sin(band.mul(3.14159)).mul(0.013).mul(bandFade));
+                rough.assign(fine.mul(0.16).add(0.46));
+            }).ElseIf(kind.equal(2), () => {
+                tone.assign(fine.mul(0.14).add(0.93));
+                height.assign(fine.mul(0.0012));
+                rough.assign(0.98);
+            }).ElseIf(kind.equal(3), () => {
+                // Denim: a diagonal twill, faded down the front of the thigh and at the knee.
+                const twill = sin(fp.x.add(fp.y).add(fp.z).mul(520)).mul(fineFade);
+                const fade = smoothstep(0.05, -0.1, fp.z).mul(smoothstep(0.25, 0.42, fp.y)).mul(smoothstep(0.62, 0.84, fp.y).oneMinus());
+                tone.assign(nz(11).mul(0.1).add(0.9).add(twill.mul(0.05)).add(fade.mul(0.22)));
+                height.assign(twill.mul(0.0006));
+                rough.assign(0.9);
+            }).ElseIf(kind.equal(4), () => {
+                // Camouflage: three tones in soft blotches.
+                const blot = nz(13, 3.1), spot = nz(21, 11.7);
+                const darkPatch = smoothstep(0.52, 0.58, blot), palePatch = smoothstep(0.6, 0.66, spot).mul(darkPatch.oneMinus());
+                tone.assign(mix(1, darkPatch.mul(-0.45).add(1).add(palePatch.mul(0.4)), bandFade));
+                base.assign(mix(base, base.mul(vec3(1.18, 1.0, 0.72)), darkPatch.mul(0.5).mul(bandFade)));
+                rough.assign(0.92);
+            }).ElseIf(kind.equal(5), () => {
+                // Flannel plaid: crossing bands, darker where two meet, a thin light line through.
+                const px = fract(fp.x.mul(0.9).add(fp.z.mul(0.6)).mul(7)), py = fract(fp.y.mul(7));
+                const bars = TSL.step(0.5, px).add(TSL.step(0.5, py));
+                const line = smoothstep(0, 0.03, abs(px.sub(0.25))).oneMinus().add(smoothstep(0, 0.03, abs(py.sub(0.25))).oneMinus());
+                tone.assign(mix(0.78, bars.mul(-0.26).add(1).add(line.mul(0.22)), bandFade));
+                height.assign(fine.mul(0.0008));
+                rough.assign(0.96);
+            }).ElseIf(kind.equal(6), () => {
+                tone.assign(fine.mul(0.14).add(0.92).add(nz(6).mul(0.06)));
+                height.assign(fine.mul(0.001));
+                rough.assign(0.94);
+            }).ElseIf(kind.equal(7), () => {
+                // Hi-vis: two reflective bands round the body and one round each arm.
+                const tape = TSL.max(smoothstep(0, 0.006, abs(fp.y.sub(0.98)).sub(0.028)).oneMinus(), smoothstep(0, 0.006, abs(fp.y.sub(1.24)).sub(0.028)).oneMinus());
+                base.assign(mix(base, vec3(0.82, 0.84, 0.8), tape));
+                rough.assign(mix(0.7, 0.28, tape));
+                tone.assign(fine.mul(0.08).add(0.96));
+            }).ElseIf(kind.equal(8), () => {
+                // Skin, and what a raw afternoon does to it: nose and cheeks go red.
+                const cold = smoothstep(-0.13, -0.2, fp.z).mul(smoothstep(1.7, 1.75, fp.y)).mul(smoothstep(1.81, 1.85, fp.y).oneMinus());
+                base.assign(mix(base, base.mul(vec3(1.14, 0.88, 0.86)), cold.mul(0.55)));
+                tone.assign(nz(40).mul(0.06).add(0.97));
+                rough.assign(0.62);
+            }).ElseIf(kind.equal(9), () => {
+                // Leather, rubber, and the eye: smooth, and a boot has a darker sole.
+                tone.assign(TSL.select(fp.y.lessThan(0.035), 0.55, fine.mul(0.1).add(0.94)));
+                rough.assign(0.42);
+            }).ElseIf(kind.equal(10), () => {
+                // Duty uniform: plain dark cloth under a wide leather belt.
+                const belt = smoothstep(0, 0.006, abs(fp.y.sub(0.93)).sub(0.03)).oneMinus();
+                tone.assign(mix(fine.mul(0.1).add(0.95), 0.35, belt));
+                rough.assign(mix(0.86, 0.4, belt));
+            }).ElseIf(kind.equal(11), () => {
+                tone.assign(fine.mul(0.3).add(0.82));
+                height.assign(fine.mul(0.0015));
+                rough.assign(0.97);
+            }).Else(() => {
+                tone.assign(fine.mul(0.1).add(0.95));
+                height.assign(fine.mul(0.0006));
+            });
+            // A zip or a button placket down the front of anything worn on the body.
+            const onBody = kind.notEqual(8).and(kind.notEqual(9)).and(kind.notEqual(11)).and(fp.z.lessThan(0)).and(fp.y.greaterThan(0.6)).and(fp.y.lessThan(1.58));
+            const placket = smoothstep(0.004, 0.01, abs(fp.x)).oneMinus().mul(bandFade).mul(TSL.select(onBody, 1, 0));
+            tone.mulAssign(placket.mul(0.4).oneMinus());
+            height.subAssign(placket.mul(0.002));
+            base.mulAssign(mix(1, tone, uDetail));
+            height.mulAssign(uDetail);
+        });
+        return base;
+    })();
+    const roughnessNode = TSL.Fn(() => mix(TSL.materialRoughness, rough, uDetail))();
+    const normalNode = TSL.Fn(() => {
+        const nrm = TSL.normalViewGeometry.toVar();
+        If(uDetail.greaterThan(0), () => {
+            const dpx = TSL.dFdx(TSL.positionView), dpy = TSL.dFdy(TSL.positionView);
+            const hx = TSL.dFdx(height), hy = TSL.dFdy(height);
+            const r1 = TSL.cross(dpy, nrm), r2 = TSL.cross(nrm, dpx);
+            const det = TSL.dot(dpx, r1);
+            nrm.assign(TSL.normalize(abs(det).mul(nrm).sub(TSL.sign(det).mul(hx.mul(r1).add(hy.mul(r2))))));
+        });
+        return nrm;
+    })();
+    return { colorNode, roughnessNode, normalNode };
+}
+
 /**
  * Cloth on the rigged figures. Each vertex carries a CLOTH kind (`aCloth`), and the pattern is
  * drawn in the figure's rest pose, so quilting and plaid stay sewn to the coat while it moves.
- * Fine detail fades out with distance instead of shimmering. Call after any other shader hook
- * on the material: it keeps the earlier one.
+ * Fine detail fades out with distance instead of shimmering.
  */
 export function addFabric(material, detail = { value: 1 }) {
-    const before = material.onBeforeCompile, key = material.customProgramCacheKey?.() ?? '';
-    material.onBeforeCompile = (shader, renderer) => {
-        before?.call(material, shader, renderer);
-        shader.uniforms.uClothDetail = detail;
-        shader.vertexShader = shader.vertexShader
-            .replace('#include <common>', '#include <common>\nattribute float aCloth;\nvarying float vCloth;\nvarying vec3 vRest;')
-            .replace('#include <begin_vertex>', '#include <begin_vertex>\nvCloth = aCloth;\nvRest = position;');
-        shader.fragmentShader = shader.fragmentShader
-            .replace('#include <common>', `#include <common>
-                varying float vCloth;
-                varying vec3 vRest;
-                uniform float uClothDetail;
-                float fabHash(vec3 p) { p = fract(p * 0.3183099 + 0.1); p *= 17.0; return fract(p.x * p.y * p.z * (p.x + p.y + p.z)); }
-                float fabNoise(vec3 x) {
-                    vec3 i = floor(x), f = fract(x); f = f * f * (3.0 - 2.0 * f);
-                    return mix(mix(mix(fabHash(i), fabHash(i + vec3(1, 0, 0)), f.x), mix(fabHash(i + vec3(0, 1, 0)), fabHash(i + vec3(1, 1, 0)), f.x), f.y),
-                        mix(mix(fabHash(i + vec3(0, 0, 1)), fabHash(i + vec3(1, 0, 1)), f.x), mix(fabHash(i + vec3(0, 1, 1)), fabHash(i + vec3(1, 1, 1)), f.x), f.y), f.z);
-                }`)
-            .replace('#include <color_fragment>', `#include <color_fragment>
-                float fabHeight = 0.0, fabRough = roughness;
-                if (uClothDetail > 0.0) {
-                    int fabKind = int(vCloth + 0.5);
-                    vec3 fp = vRest;
-                    // Metres of cloth under one pixel: what decides which detail can still be drawn.
-                    float fabPx = length(fwidth(fp));
-                    float fineFade = 1.0 - smoothstep(0.003, 0.009, fabPx);
-                    float bandFade = 1.0 - smoothstep(0.03, 0.08, fabPx);
-                    // Noise is the expensive part, and most of a crowd is too far away to show it:
-                    // it is only worked out for the people close enough to need it.
-                    bool fabNear = bandFade > 0.0;
-                    float fine = fineFade > 0.0 ? fabNoise(fp * 160.0) * fineFade + 0.5 * (1.0 - fineFade) : 0.5;
-                    float fabTone = 1.0;
-                    if (fabKind == 1) {
-                        // Quilted puffer: horizontal baffles, stitched in at the seams.
-                        float band = fract(fp.y * 9.5 + 0.2);
-                        float seam = 1.0 - smoothstep(0.0, 0.09, min(band, 1.0 - band));
-                        fabTone = 1.0 - 0.3 * seam * bandFade;
-                        fabHeight = sin(band * 3.14159) * 0.013 * bandFade;
-                        fabRough = 0.46 + 0.16 * fine;
-                    } else if (fabKind == 2) {
-                        fabTone = 0.93 + 0.14 * fine;
-                        fabHeight = fine * 0.0012;
-                        fabRough = 0.98;
-                    } else if (fabKind == 3) {
-                        // Denim: a diagonal twill, faded down the front of the thigh and at the knee.
-                        float twill = sin((fp.x + fp.y + fp.z) * 520.0) * fineFade;
-                        float fade = smoothstep(0.05, -0.1, fp.z) * smoothstep(0.25, 0.42, fp.y) * (1.0 - smoothstep(0.62, 0.84, fp.y));
-                        fabTone = 0.9 + 0.1 * (fabNear ? fabNoise(fp * 11.0) : 0.5) + 0.05 * twill + 0.22 * fade;
-                        fabHeight = twill * 0.0006;
-                        fabRough = 0.9;
-                    } else if (fabKind == 4) {
-                        // Camouflage: three tones in soft blotches.
-                        float blot = fabNear ? fabNoise(fp * 13.0 + 3.1) : 0.5, spot = fabNear ? fabNoise(fp * 21.0 + 11.7) : 0.5;
-                        float darkPatch = smoothstep(0.52, 0.58, blot), palePatch = smoothstep(0.6, 0.66, spot) * (1.0 - darkPatch);
-                        fabTone = mix(1.0, 1.0 - 0.45 * darkPatch + 0.4 * palePatch, bandFade);
-                        diffuseColor.rgb = mix(diffuseColor.rgb, diffuseColor.rgb * vec3(1.18, 1.0, 0.72), darkPatch * 0.5 * bandFade);
-                        fabRough = 0.92;
-                    } else if (fabKind == 5) {
-                        // Flannel plaid: crossing bands, darker where two meet, a thin light line through.
-                        float px = fract((fp.x * 0.9 + fp.z * 0.6) * 7.0), py = fract(fp.y * 7.0);
-                        float bars = step(0.5, px) + step(0.5, py);
-                        float line = (1.0 - smoothstep(0.0, 0.03, abs(px - 0.25))) + (1.0 - smoothstep(0.0, 0.03, abs(py - 0.25)));
-                        fabTone = mix(0.78, 1.0 - 0.26 * bars + 0.22 * line, bandFade);
-                        fabHeight = fine * 0.0008;
-                        fabRough = 0.96;
-                    } else if (fabKind == 6) {
-                        fabTone = 0.92 + 0.14 * fine + 0.06 * (fabNear ? fabNoise(fp * 6.0) : 0.5);
-                        fabHeight = fine * 0.001;
-                        fabRough = 0.94;
-                    } else if (fabKind == 7) {
-                        // Hi-vis: two reflective bands round the body and one round each arm.
-                        float tape = max((1.0 - smoothstep(0.0, 0.006, abs(fp.y - 0.98) - 0.028)), (1.0 - smoothstep(0.0, 0.006, abs(fp.y - 1.24) - 0.028)));
-                        diffuseColor.rgb = mix(diffuseColor.rgb, vec3(0.82, 0.84, 0.8), tape);
-                        fabRough = mix(0.7, 0.28, tape);
-                        fabTone = 0.96 + 0.08 * fine;
-                    } else if (fabKind == 8) {
-                        // Skin, and what a raw afternoon does to it: nose and cheeks go red.
-                        float cold = smoothstep(-0.13, -0.2, fp.z) * smoothstep(1.7, 1.75, fp.y) * (1.0 - smoothstep(1.81, 1.85, fp.y));
-                        diffuseColor.rgb = mix(diffuseColor.rgb, diffuseColor.rgb * vec3(1.14, 0.88, 0.86), cold * 0.55);
-                        fabTone = 0.97 + 0.06 * (fabNear ? fabNoise(fp * 40.0) : 0.5);
-                        fabRough = 0.62;
-                    } else if (fabKind == 9) {
-                        // Leather, rubber, and the eye: smooth, and a boot has a darker sole.
-                        fabTone = fp.y < 0.035 ? 0.55 : 0.94 + 0.1 * fine;
-                        fabRough = 0.42;
-                    } else if (fabKind == 10) {
-                        // Duty uniform: plain dark cloth under a wide leather belt.
-                        float belt = 1.0 - smoothstep(0.0, 0.006, abs(fp.y - 0.93) - 0.03);
-                        fabTone = mix(0.95 + 0.1 * fine, 0.35, belt);
-                        fabRough = mix(0.86, 0.4, belt);
-                    } else if (fabKind == 11) {
-                        fabTone = 0.82 + 0.3 * fine;
-                        fabHeight = fine * 0.0015;
-                        fabRough = 0.97;
-                    } else {
-                        fabTone = 0.95 + 0.1 * fine;
-                        fabHeight = fine * 0.0006;
-                    }
-                    // A zip or a button placket down the front of anything worn on the body.
-                    if (fabKind != 8 && fabKind != 9 && fabKind != 11 && fp.z < 0.0 && fp.y > 0.6 && fp.y < 1.58) {
-                        float placket = (1.0 - smoothstep(0.004, 0.01, abs(fp.x))) * bandFade;
-                        fabTone *= 1.0 - 0.4 * placket;
-                        fabHeight -= placket * 0.002;
-                    }
-                    diffuseColor.rgb *= mix(1.0, fabTone, uClothDetail);
-                    fabHeight *= uClothDetail;
-                }`)
-            .replace('#include <roughnessmap_fragment>', '#include <roughnessmap_fragment>\nroughnessFactor = mix(roughnessFactor, fabRough, uClothDetail);')
-            .replace('#include <normal_fragment_maps>', `#include <normal_fragment_maps>
-                if (uClothDetail > 0.0) {
-                    vec3 fdx = dFdx(-vViewPosition), fdy = dFdy(-vViewPosition);
-                    float fhx = dFdx(fabHeight), fhy = dFdy(fabHeight);
-                    vec3 fr1 = cross(fdy, normal), fr2 = cross(normal, fdx);
-                    float fdet = dot(fdx, fr1);
-                    normal = normalize(abs(fdet) * normal - sign(fdet) * (fhx * fr1 + fhy * fr2));
-                }`);
-    };
-    material.customProgramCacheKey = () => `${key}-fabric`;
+    // A graph per call, not one shared: a body material is made twice (the live crowd and the far-crowd
+    // bake) and the bake's is disposed. Programs are shared between materials whose graphs hash alike
+    // and freed with the last of them; the live crowd must not lose its program with the bake's.
+    const graph = buildFabricGraph(detail);
+    material.colorNode = graph.colorNode;
+    material.roughnessNode = graph.roughnessNode;
+    material.normalNode = graph.normalNode;
     return material;
 }
 
@@ -547,58 +519,57 @@ export function addFabric(material, detail = { value: 1 }) {
  * `wind` is a shared `{ value: THREE.Vector2 }` in m/s, the same one the precipitation and the
  * smoke read, so a gust that walks across the lawn also stiffens every banner on it. Its speed
  * sets how hard the cloth blows out; its direction sets which way the crest travels.
+ *
+ * The wave pushes the vertices along the plane's own normal, so it follows an instance's turn
+ * (the GLSL pushed them in the plane's local z before the instance matrix was applied).
  */
 export function addWave(material, time, { pin = -0.85, length = 1.7, amp = 0.15, wind = null } = {}) {
     const windUniform = wind?.uniform ?? { value: new THREE.Vector2(0, 0) };
     material.userData.wind = windUniform;
-    material.onBeforeCompile = shader => {
-        shader.uniforms.uTime = time;
-        shader.uniforms.uWind = windUniform;
-        shader.vertexShader = shader.vertexShader
-            .replace('#include <common>', '#include <common>\nuniform float uTime;\nuniform vec2 uWind;')
-            .replace('#include <beginnormal_vertex>', `#include <beginnormal_vertex>
-                float wPhase = 0.0;
-                #ifdef USE_INSTANCING
-                    wPhase = dot(instanceMatrix[3].xz, vec2(0.37, 0.23));
-                #endif
-                float wSpeed = length(uWind);
-                float wSide = wSpeed > 0.001 ? dot(normalize(uWind), vec2(0.94, 0.34)) : 1.0;
-                float wAlong = clamp((position.x - (${pin.toFixed(3)})) / ${length.toFixed(3)}, 0.0, 1.0);
-                float wGust = 0.65 + 0.35 * sin(uTime * 0.8 + wPhase * 1.7);
-                float wTravel = 6.0 + min(9.0, wSpeed * 0.55);
-                float wArg = position.x * 3.4 - uTime * wTravel + wPhase;
-                float wLoad = 0.55 + 0.45 * min(2.2, wSpeed / 6.7);
-                float wAmp = ${amp.toFixed(3)} * wAlong * wGust * wLoad;
-                float wOff = sin(wArg) * wAmp * (0.55 + 0.45 * abs(wSide)) + sin(wArg * 1.9 + position.y * 2.5) * wAmp * 0.3;
-                float wSlope = cos(wArg) * 3.4 * wAmp + cos(wArg * 1.9 + position.y * 2.5) * 6.4 * wAmp * 0.3;
-                objectNormal = normalize(vec3(-wSlope, 0.0, 1.0));`)
-            .replace('#include <begin_vertex>', `#include <begin_vertex>
-                transformed.z += wOff;
-                // Cloth standing out downwind, and the lee edge sagging when the gust drops.
-                transformed.z += wAlong * wAlong * (0.06 + 0.1 * min(1.4, wSpeed / 6.7)) * sign(wSide);
-                transformed.y -= wAlong * wAlong * 0.12 * (1.0 - wGust);`);
-    };
-    material.customProgramCacheKey = () => 'pocapitol-wave';
+    const { float, sin, cos, min, clamp, mix } = TSL;
+    const uTime = mirror(time), uWind = mirror(windUniform);
+    const key = `${pin}:${length}:${amp}`;
+    const phase = TSL.fract(TSL.float(TSL.instanceIndex).mul(0.6180339)).mul(6.2831853);
+    const wSpeed = TSL.length(uWind);
+    const wSide = TSL.select(wSpeed.greaterThan(0.001), TSL.dot(TSL.normalize(uWind), TSL.vec2(0.94, 0.34)), 1);
+    const x = TSL.positionGeometry.x, y = TSL.positionGeometry.y;
+    const wAlong = clamp(x.sub(pin).div(length), 0, 1);
+    const wGust = sin(uTime.mul(0.8).add(phase.mul(1.7))).mul(0.35).add(0.65);
+    const wTravel = min(wSpeed.mul(0.55), 9).add(6);
+    const wArg = x.mul(3.4).sub(uTime.mul(wTravel)).add(phase);
+    const wLoad = min(wSpeed.div(6.7), 2.2).mul(0.45).add(0.55);
+    const wAmp = wAlong.mul(wGust).mul(wLoad).mul(amp);
+    const wOff = sin(wArg).mul(wAmp).mul(TSL.abs(wSide).mul(0.45).add(0.55)).add(sin(wArg.mul(1.9).add(y.mul(2.5))).mul(wAmp).mul(0.3));
+    const wSlope = cos(wArg).mul(3.4).mul(wAmp).add(cos(wArg.mul(1.9).add(y.mul(2.5))).mul(6.4).mul(wAmp).mul(0.3));
+    // Cloth standing out downwind, and the lee edge sagging when the gust drops.
+    const out = wAlong.mul(wAlong).mul(min(wSpeed.div(6.7), 1.4).mul(0.1).add(0.06)).mul(TSL.sign(wSide));
+    const sag = wAlong.mul(wAlong).mul(0.12).mul(wGust.oneMinus());
+    const push = wOff.add(out);
+    material.positionNode = TSL.positionLocal.add(TSL.normalLocal.mul(push)).sub(TSL.vec3(0, sag, 0));
+    material.normalNode = TSL.transformNormalToView(TSL.normalize(TSL.normalLocal.add(TSL.vec3(wSlope.negate(), 0, 0))));
+    void key;
     return material;
 }
 
 /**
- * Turns an instanced plane into camera-facing sprites. `upright` sprites turn about the
- * vertical only (people); the others face the camera fully (smoke). Instance scale is kept.
+ * Turns an instanced plane into camera-facing sprites: the clip-space position of a quad vertex
+ * whose instance stands at `center` (world) and is `scale` (vec2, metres) across. `upright`
+ * sprites turn about the vertical only (people); the others face the camera fully (smoke).
+ * Returns { clip, right, up } so a caller can shade with the same basis.
  */
-export function billboardChunk(upright) {
-    return `
-        vec3 bbCenter = (modelMatrix * instanceMatrix * vec4(0.0, 0.0, 0.0, 1.0)).xyz;
-        vec2 bbScale = vec2(length(instanceMatrix[0].xyz), length(instanceMatrix[1].xyz));
-        ${upright ? `
-        vec3 bbTo = cameraPosition - bbCenter;
-        vec3 bbRight = normalize(vec3(bbTo.z, 0.0, -bbTo.x));
-        vec3 bbUp = vec3(0.0, 1.0, 0.0);` : `
-        vec3 bbRight = vec3(viewMatrix[0][0], viewMatrix[1][0], viewMatrix[2][0]);
-        vec3 bbUp = vec3(viewMatrix[0][1], viewMatrix[1][1], viewMatrix[2][1]);`}
-        vec3 bbWorld = bbCenter + bbRight * transformed.x * bbScale.x + bbUp * transformed.y * bbScale.y;
-        vec4 mvPosition = viewMatrix * vec4(bbWorld, 1.0);
-        gl_Position = projectionMatrix * mvPosition;`;
+export function billboard(center, scale, upright, local = TSL.positionGeometry) {
+    const { vec3, vec4, normalize } = TSL;
+    let right, up;
+    if (upright) {
+        const to = TSL.cameraPosition.sub(center);
+        right = normalize(vec3(to.z, 0, to.x.negate()));
+        up = vec3(0, 1, 0);
+    } else {
+        right = TSL.cameraWorldMatrix.element(0).xyz;
+        up = TSL.cameraWorldMatrix.element(1).xyz;
+    }
+    const world = center.add(right.mul(local.x).mul(scale.x)).add(up.mul(local.y).mul(scale.y));
+    return { clip: TSL.cameraProjectionMatrix.mul(TSL.cameraViewMatrix).mul(vec4(world, 1)), right, up };
 }
 
 /** A soft round blob, used for contact shadows (dark) and smoke puffs (light, noisy). */

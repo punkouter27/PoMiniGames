@@ -1,5 +1,6 @@
-import * as THREE from 'three';
-import { Pass, FullScreenQuad } from 'three/addons/postprocessing/Pass.js';
+import * as THREE from 'three-eco/webgpu';
+import * as TSL from 'three-eco/tsl';
+import { makeTarget, makeQuad, drawQuad, tap } from './nodes.js';
 
 // Lit air: the haze, gas and powder between the camera and the scene, ray-marched.
 //
@@ -17,108 +18,75 @@ import { Pass, FullScreenQuad } from 'three/addons/postprocessing/Pass.js';
 export const MAX_LIGHTS = 8;
 const STEPS = 12, REACH = 70;
 
-const VERTEX = 'varying vec2 vUv; void main() { vUv = uv; gl_Position = vec4(position.xy, 0.0, 1.0); }';
-
-const MARCH = `
-    uniform sampler2D tDepth, tGas;
-    uniform mat4 uInvViewProjJ;
-    uniform vec3 uCamera, uAmbient;
-    uniform vec4 uGasRect, uLightAt[${MAX_LIGHTS}];
-    uniform vec3 uLightColor[${MAX_LIGHTS}];
-    uniform int uLights;
-    uniform float uHaze, uTime, uGas;
-    varying vec2 vUv;
-    float gasAt(vec3 p) {
-        vec2 uv = (p.xz - uGasRect.xy) * uGasRect.zw;
-        if (uv.x < 0.0 || uv.x > 1.0 || uv.y < 0.0 || uv.y > 1.0) return 0.0;
-        // Gas is heavy: thick at the knees, gone a little above head height.
-        return textureLod(tGas, uv, 0.0).r * exp(-max(p.y - 0.4, 0.0) / 1.9);
-    }
-    void main() {
-        float z = texture2D(tDepth, vUv).r;
-        vec4 far = uInvViewProjJ * vec4(vUv * 2.0 - 1.0, z * 2.0 - 1.0, 1.0);
-        vec3 ray = far.xyz / far.w - uCamera;
-        float span = min(length(ray), ${REACH.toFixed(1)});
-        vec3 dir = normalize(ray);
-        float stride = span / ${STEPS.toFixed(1)};
-        float start = fract(sin(dot(gl_FragCoord.xy + fract(uTime) * 37.0, vec2(12.9898, 78.233))) * 43758.5453);
-        vec3 light = vec3(0.0);
-        float clear = 1.0;
-        for (int i = 0; i < ${STEPS}; i++) {
-            vec3 p = uCamera + dir * (float(i) + start) * stride;
-            float gas = uGas > 0.0 ? gasAt(p) * uGas : 0.0;
-            // The standing haze lies low too, so a crane shot does not look through a wall of it.
-            float air = uHaze * exp(-max(p.y, 0.0) / 9.0) + gas * 0.22;
-            if (air <= 0.00002) continue;
-            vec3 lit = uAmbient * gas * 0.22;
-            for (int k = 0; k < ${MAX_LIGHTS}; k++) {
-                if (k >= uLights) break;
-                vec3 to = uLightAt[k].xyz - p;
-                float d2 = dot(to, to), range = uLightAt[k].w;
-                float window = clamp(1.0 - d2 / (range * range), 0.0, 1.0);
-                lit += uLightColor[k] * (window * window / (1.0 + d2)) * air;
-            }
-            light += lit * clear * stride;
-            clear *= exp(-air * stride * 0.9);
-        }
-        gl_FragColor = vec4(light, 1.0 - clear);
-    }`;
-
-const BLEND = `
-    uniform sampler2D tDiffuse, tAir;
-    varying vec2 vUv;
-    void main() {
-        vec4 scene = texture2D(tDiffuse, vUv), air = texture2D(tAir, vUv);
-        gl_FragColor = vec4(scene.rgb * (1.0 - air.a * 0.85) + air.rgb, scene.a);
-    }`;
-
-class AirPass extends Pass {
-    constructor(uniforms) {
-        super();
-        this.march = new THREE.ShaderMaterial({ uniforms, vertexShader: VERTEX, fragmentShader: MARCH, depthTest: false, depthWrite: false });
-        this.blend = new THREE.ShaderMaterial({ uniforms: { tDiffuse: { value: null }, tAir: { value: null } }, vertexShader: VERTEX, fragmentShader: BLEND, depthTest: false, depthWrite: false });
-        this.quad = new FullScreenQuad(this.march);
-        this.target = new THREE.WebGLRenderTarget(1, 1, { type: THREE.HalfFloatType, depthBuffer: false });
-        this.blend.uniforms.tAir.value = this.target.texture;
-    }
-    setSize(w, h) { this.target.setSize(Math.max(1, w >> 1), Math.max(1, h >> 1)); }
-    render(renderer, writeBuffer, readBuffer) {
-        this.quad.material = this.march;
-        renderer.setRenderTarget(this.target);
-        this.quad.render(renderer);
-        this.blend.uniforms.tDiffuse.value = readBuffer.texture;
-        this.quad.material = this.blend;
-        renderer.setRenderTarget(this.renderToScreen ? null : writeBuffer);
-        this.quad.render(renderer);
-    }
-    dispose() { this.march.dispose(); this.blend.dispose(); this.quad.dispose(); this.target.dispose(); }
-}
-
 /**
+ * @param renderer      the WebGPURenderer
  * @param depthTexture  solid-geometry depth
  * @param invViewProj   the shared (jittered) inverse view-projection matrix from temporal.js
+ * @param ndcZ          (depth node) => clip-space z for this backend
  */
-export function createVolumetric(depthTexture, invViewProj) {
+export function createVolumetric(renderer, depthTexture, invViewProj, ndcZ) {
+    const { vec2, vec3, vec4, float, exp, max, min, dot, normalize, length, clamp, Loop, If, Continue, uniform, texture } = TSL;
     const blank = new THREE.DataTexture(new Uint8Array([0]), 1, 1, THREE.RedFormat);
     blank.needsUpdate = true;
-    const uniforms = {
-        tDepth: { value: depthTexture }, tGas: { value: blank }, uInvViewProjJ: { value: invViewProj },
-        uCamera: { value: new THREE.Vector3() }, uAmbient: { value: new THREE.Color(1, 1, 1) },
-        uGasRect: { value: new THREE.Vector4(0, 0, 1, 1) },
-        uLightAt: { value: Array.from({ length: MAX_LIGHTS }, () => new THREE.Vector4()) },
-        uLightColor: { value: Array.from({ length: MAX_LIGHTS }, () => new THREE.Vector3()) },
-        uLights: { value: 0 }, uHaze: { value: 0 }, uTime: { value: 0 }, uGas: { value: 0 },
+    const state = {
+        camera: new THREE.Vector3(), ambient: new THREE.Color(1, 1, 1), gasRect: new THREE.Vector4(0, 0, 1, 1),
+        lightAt: Array.from({ length: MAX_LIGHTS }, () => new THREE.Vector4()),
+        lightColor: Array.from({ length: MAX_LIGHTS }, () => new THREE.Vector3()),
     };
-    const pass = new AirPass(uniforms);
-    pass.enabled = false;
-    let allowed = true;
+    const uInvViewProjJ = uniform(invViewProj), uCamera = uniform(state.camera), uAmbient = uniform(state.ambient), uGasRect = uniform(state.gasRect);
+    const uLightAt = TSL.uniformArray(state.lightAt, 'vec4'), uLightColor = TSL.uniformArray(state.lightColor, 'vec3');
+    const uLights = uniform(0, 'int'), uHaze = uniform(0), uTime = uniform(0), uGas = uniform(0);
+    const gasTex = texture(blank), depth = texture(depthTexture);
+
+    const gasAt = p => {
+        const uv = p.xz.sub(uGasRect.xy).mul(uGasRect.zw);
+        // Gas is heavy: thick at the knees, gone a little above head height.
+        const inside = TSL.step(0, uv.x).mul(TSL.step(uv.x, 1)).mul(TSL.step(0, uv.y)).mul(TSL.step(uv.y, 1));
+        return tap(gasTex, uv).r.mul(exp(max(p.y.sub(0.4), 0).negate().div(1.9))).mul(inside);
+    };
+    const march = TSL.Fn(() => {
+        const uv = TSL.screenUV;
+        const z = depth.sample(uv).r;
+        const far = uInvViewProjJ.mul(vec4(uv.mul(2).sub(1), ndcZ(z), 1));
+        const ray = far.xyz.div(far.w).sub(uCamera);
+        const span = min(length(ray), REACH);
+        const dir = normalize(ray);
+        const stride = span.div(STEPS);
+        const start = TSL.fract(TSL.sin(TSL.dot(TSL.screenCoordinate.add(TSL.fract(uTime).mul(37)), vec2(12.9898, 78.233))).mul(43758.5453));
+        const light = vec3(0).toVar(), clear = float(1).toVar();
+        Loop(STEPS, ({ i }) => {
+            const p = uCamera.add(dir.mul(float(i).add(start).mul(stride)));
+            const gas = uGas.greaterThan(0).select(gasAt(p).mul(uGas), 0);
+            // The standing haze lies low too, so a crane shot does not look through a wall of it.
+            const air = uHaze.mul(exp(max(p.y, 0).negate().div(9))).add(gas.mul(0.22));
+            If(air.lessThanEqual(0.00002), () => { Continue(); });
+            const lit = uAmbient.mul(gas).mul(0.22).toVar();
+            for (let k = 0; k < MAX_LIGHTS; k++) {
+                const to = uLightAt.element(k).xyz.sub(p);
+                const d2 = dot(to, to), range = uLightAt.element(k).w;
+                const window = clamp(d2.div(range.mul(range)).oneMinus(), 0, 1);
+                lit.addAssign(uLightColor.element(k).mul(window.mul(window).div(d2.add(1)).mul(air)).mul(uLights.greaterThan(k).select(1, 0)));
+            }
+            light.addAssign(lit.mul(clear).mul(stride));
+            clear.mulAssign(exp(air.mul(stride).mul(0.9).negate()));
+        });
+        return vec4(light, clear.oneMinus());
+    })();
+
+    const target = makeTarget(1, 1);
+    const quad = makeQuad(march);
+    let allowed = true, active = false;
     return {
-        pass,
-        setAllowed(value) { allowed = value; if (!value) pass.enabled = false; },
+        /** The marched haze, half the frame's size: colour scattered toward the lens, and how much it hides. */
+        target,
+        active: () => active,
+        setAllowed(value) { allowed = value; if (!value) active = false; },
+        setSize(w, h) { target.setSize(Math.max(1, w >> 1), Math.max(1, h >> 1)); },
+        draw() { drawQuad(renderer, quad, target); },
         /** The gas grid's density as a texture, and the ground it covers. */
-        setGas(texture, rect) {
-            uniforms.tGas.value = texture ?? blank;
-            if (rect) uniforms.uGasRect.value.set(rect.x0, rect.z0, 1 / rect.w, 1 / rect.d);
+        setGas(texture_, rect) {
+            gasTex.value = texture_ ?? blank;
+            if (rect) state.gasRect.set(rect.x0, rect.z0, 1 / rect.w, 1 / rect.d);
         },
         /**
          * Once a frame.
@@ -132,21 +100,21 @@ export function createVolumetric(depthTexture, invViewProj) {
             for (const light of lights) {
                 if (n >= MAX_LIGHTS) break;
                 if (!(light.intensity > 0.5)) continue;
-                uniforms.uLightAt.value[n].set(light.position.x, light.position.y, light.position.z, light.distance || 40);
+                state.lightAt[n].set(light.position.x, light.position.y, light.position.z, light.distance || 40);
                 // Candela to "how much of it a metre of haze throws at the lens".
                 // A flash-bang is fifty times a lamp; uncapped it would white out every cloud near it.
                 const k = Math.min(light.intensity, 320) * 0.05;
-                uniforms.uLightColor.value[n].set(light.color.r * k, light.color.g * k, light.color.b * k);
+                state.lightColor[n].set(light.color.r * k, light.color.g * k, light.color.b * k);
                 n++;
             }
-            uniforms.uLights.value = n;
-            uniforms.uCamera.value.copy(camera.position);
-            uniforms.uAmbient.value.copy(ambient);
-            uniforms.uHaze.value = n > 0 ? haze : 0;
-            uniforms.uGas.value = gas;
-            uniforms.uTime.value = time;
-            pass.enabled = allowed && (n > 0 || gas > 0);
+            uLights.value = n;
+            state.camera.copy(camera.position);
+            state.ambient.copy(ambient);
+            uHaze.value = n > 0 ? haze : 0;
+            uGas.value = gas;
+            uTime.value = time;
+            active = allowed && (n > 0 || gas > 0);
         },
-        dispose() { pass.dispose(); blank.dispose(); },
+        dispose() { quad.material.dispose(); target.dispose(); blank.dispose(); },
     };
 }

@@ -16,7 +16,7 @@
 // debris. Nothing waits on it.
 //
 // Medium and high tiers only (quality settings with `extras`); the low tier never loads it.
-import * as THREE from 'three';
+import * as THREE from 'three-eco/webgpu';
 import { obstacles, columns, statues } from './world.js';
 
 const PROPS_URL = 'models/pocapitol/props.glb';
@@ -44,8 +44,8 @@ const PROPS_DEADLINE_MS = 45000;
 
 async function loadPropsOnce() {
     const [{ GLTFLoader }, { DRACOLoader }] = await Promise.all([
-        import('three/addons/loaders/GLTFLoader.js'),
-        import('three/addons/loaders/DRACOLoader.js'),
+        import('three-eco/addons/loaders/GLTFLoader.js'),
+        import('three-eco/addons/loaders/DRACOLoader.js'),
     ]);
     const draco = new DRACOLoader().setDecoderPath(DRACO_DECODER);
     let timer = 0;

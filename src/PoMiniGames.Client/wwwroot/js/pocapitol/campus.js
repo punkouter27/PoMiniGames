@@ -1,4 +1,6 @@
-import * as THREE from 'three';
+import * as THREE from 'three-eco/webgpu';
+import * as TSL from 'three-eco/tsl';
+import { mirror } from './nodes.js';
 import { SURFACE, addSurface } from './look.js';
 
 // Public-reference massing and landscape detail. The playable footprint remains fictional.
@@ -8,7 +10,7 @@ export function createCampus({ surfaces, surfaceDetail, osm } = {}) {
     const geometries = new Set(), materials = new Set();
     const detail = surfaceDetail ?? { value: 1 };
     const mat = (color, roughness = 0.8, metalness = 0, kind = SURFACE.stone) => {
-        const value = new THREE.MeshStandardMaterial({ color, roughness, metalness });
+        const value = new THREE.MeshStandardNodeMaterial({ color, roughness, metalness });
         if (surfaces) addSurface(value, kind, surfaces, detail);
         materials.add(value);
         return value;
@@ -58,17 +60,14 @@ export function createCampus({ surfaces, surfaceDetail, osm } = {}) {
     for (const x of [-15, 15]) box(x, 0.02, 128, 1, 0.55, 57, stone);
     for (const z of [100, 156]) box(0, 0.02, z, 31, 0.55, 1, stone);
     const waterUniforms = { uTime: { value: 0 } };
-    const water = new THREE.MeshPhysicalMaterial({ color: '#344d59', roughness: 0.16, metalness: 0.05, transmission: 0.18, transparent: true, opacity: 0.92, ior: 1.333, clearcoat: 1, clearcoatRoughness: 0.12, envMapIntensity: 1.7 });
-    water.onBeforeCompile = shader => {
-        Object.assign(shader.uniforms, waterUniforms);
-        shader.vertexShader = shader.vertexShader.replace('#include <common>', '#include <common>\nuniform float uTime;')
-            .replace('#include <begin_vertex>', `#include <begin_vertex>
-                transformed.z += sin(position.x * 1.7 + uTime * 0.7) * 0.018 + cos(position.y * 2.1 - uTime * 0.45) * 0.012;`);
-        shader.fragmentShader = shader.fragmentShader.replace('#include <common>', '#include <common>\nuniform float uTime;')
-            .replace('#include <normal_fragment_maps>', `#include <normal_fragment_maps>
-                normal = normalize(normal + vec3(sin(vViewPosition.x * 3.0 + uTime) * 0.025, cos(vViewPosition.z * 4.0 - uTime * 0.8) * 0.025, 0.0));`);
-    };
-    water.customProgramCacheKey = () => 'pocapitol-pool-water';
+    const water = new THREE.MeshPhysicalNodeMaterial({ color: '#344d59', roughness: 0.16, metalness: 0.05, transmission: 0.18, transparent: true, opacity: 0.92, ior: 1.333, clearcoat: 1, clearcoatRoughness: 0.12, envMapIntensity: 1.7 });
+    {
+        const uTime = mirror(waterUniforms.uTime), pg = TSL.positionGeometry;
+        water.positionNode = TSL.positionLocal.add(TSL.vec3(0, 0, TSL.sin(pg.x.mul(1.7).add(uTime.mul(0.7))).mul(0.018).add(TSL.cos(pg.y.mul(2.1).sub(uTime.mul(0.45))).mul(0.012))));
+        // A ripple in the surface's own normal, from where it is on screen (the GLSL used the view position).
+        water.normalNode = TSL.normalize(TSL.normalViewGeometry.add(TSL.vec3(
+            TSL.sin(TSL.positionView.x.mul(3).add(uTime)).mul(0.025), TSL.cos(TSL.positionView.z.mul(4).sub(uTime.mul(0.8))).mul(0.025), 0)));
+    }
     materials.add(water);
     const pool = mesh(new THREE.PlaneGeometry(29, 55, 32, 48), water, 0, -0.08, 128);
     pool.rotation.x = -Math.PI / 2; pool.castShadow = false;

@@ -1,5 +1,7 @@
-import * as THREE from 'three';
-import { billboardChunk, softTexture } from './look.js';
+import * as THREE from 'three-eco/webgpu';
+import * as TSL from 'three-eco/tsl';
+import { billboard, softTexture } from './look.js';
+import { mirror } from './nodes.js';
 
 // Gas, spray and flash-bangs as soft camera-facing sprites instead of solid spheres and lines.
 //
@@ -41,52 +43,54 @@ export function createParticles(scene, capacity = 430) {
     const alpha = new THREE.InstancedBufferAttribute(new Float32Array(capacity), 1);
     alpha.setUsage(THREE.DynamicDrawUsage);
     geometry.setAttribute('aAlpha', alpha);
-    const material = new THREE.MeshBasicMaterial({ map: texture, transparent: true, depthWrite: false, fog: true });
+    // Where each sprite stands and how big it is: the vertex stage builds the billboard from this
+    // rather than from the instance matrix, which only the engine's own instancing reads.
+    const stand = new THREE.InstancedBufferAttribute(new Float32Array(capacity * 4), 4);
+    stand.setUsage(THREE.DynamicDrawUsage);
+    geometry.setAttribute('aStand', stand);
+    const material = new THREE.MeshBasicNodeMaterial({ map: texture, transparent: true, depthWrite: false, fog: true });
     const lighting = {
         uSunDir: { value: new THREE.Vector3(0.3, 0.6, 0.7) }, uSunAmount: { value: 1 },
         uGlowAt: { value: Array.from({ length: LIGHTS }, () => new THREE.Vector4()) },
         uGlowColor: { value: Array.from({ length: LIGHTS }, () => new THREE.Vector3()) },
         uGlows: { value: 0 },
     };
-    material.onBeforeCompile = shader => {
-        Object.assign(shader.uniforms, lighting);
-        shader.vertexShader = shader.vertexShader
-            .replace('#include <common>', '#include <common>\nattribute float aAlpha;\nvarying float vAlpha;\nvarying vec2 vDisc;\nvarying vec3 vPuff, vPuffRight, vPuffUp;\nvarying float vPuffSize;')
-            .replace('#include <project_vertex>', billboardChunk(false) + `
-                vAlpha = aAlpha;
-                vDisc = position.xy * 2.0; vPuff = bbCenter; vPuffRight = bbRight; vPuffUp = bbUp; vPuffSize = bbScale.x * 0.5;`);
-        shader.fragmentShader = shader.fragmentShader
-            .replace('#include <common>', `#include <common>
-                varying float vAlpha;
-                varying vec2 vDisc;
-                varying vec3 vPuff, vPuffRight, vPuffUp;
-                varying float vPuffSize;
-                uniform vec3 uSunDir, uGlowColor[${LIGHTS}];
-                uniform vec4 uGlowAt[${LIGHTS}];
-                uniform float uSunAmount;
-                uniform int uGlows;`)
-            .replace('#include <color_fragment>', `#include <color_fragment>
-                diffuseColor.a *= vAlpha;
-                // The facing a ball of smoke would have at this pixel, in the world.
-                float puffR = min(dot(vDisc, vDisc), 1.0);
-                vec3 puffToward = normalize(cameraPosition - vPuff);
-                vec3 puffN = normalize(vPuffRight * vDisc.x + vPuffUp * vDisc.y + puffToward * sqrt(1.0 - puffR));
-                vec3 puffAt = vPuff + puffN * vPuffSize;
-                // Sun on one side, the cloud's own shadow on the other, and a darker underside.
-                float puffSun = dot(puffN, normalize(uSunDir)) * 0.5 + 0.5;
-                diffuseColor.rgb *= mix(1.0, (0.58 + 0.56 * puffSun) * (0.86 + 0.14 * puffN.y), uSunAmount);
-                vec3 puffGlow = vec3(0.0);
-                for (int i = 0; i < ${LIGHTS}; i++) {
-                    if (i >= uGlows) break;
-                    vec3 puffTo = uGlowAt[i].xyz - puffAt;
-                    float puffD2 = dot(puffTo, puffTo), puffWindow = clamp(1.0 - puffD2 / (uGlowAt[i].w * uGlowAt[i].w), 0.0, 1.0);
-                    // Smoke scatters light through itself, so the far side is lit too, only less.
-                    float puffFace = dot(puffN, puffTo * inversesqrt(max(puffD2, 1e-4))) * 0.4 + 0.6;
-                    puffGlow += uGlowColor[i] * puffFace * puffWindow * puffWindow / (1.0 + puffD2);
-                }
-                diffuseColor.rgb += puffGlow;`);
-    };
-    material.customProgramCacheKey = () => 'pocapitol-particles-lit';
+    {
+        const { vec3, vec4, float, dot, normalize, min, max, clamp, mix, sqrt, Loop, If, Break } = TSL;
+        const at = TSL.attribute('aStand', 'vec4');
+        const { clip, right, up } = billboard(at.xyz, vec3(at.w, at.w, 1), false);
+        material.vertexNode = clip;
+        const vAlpha = TSL.attribute('aAlpha', 'float');
+        const uSunDir = mirror(lighting.uSunDir), uSunAmount = mirror(lighting.uSunAmount), uGlows = mirror(lighting.uGlows);
+        const glowAt = TSL.uniformArray(lighting.uGlowAt.value, 'vec4'), glowColor = TSL.uniformArray(lighting.uGlowColor.value, 'vec3');
+        material.opacityNode = vAlpha;
+        material.colorNode = TSL.Fn(() => {
+            const base = TSL.materialColor.toVar();
+            // The facing a ball of smoke would have at this pixel, in the world.
+            const disc = TSL.positionGeometry.xy.mul(2);
+            const puffR = min(dot(disc, disc), 1);
+            const toward = normalize(TSL.cameraPosition.sub(at.xyz));
+            const puffN = normalize(right.mul(disc.x).add(up.mul(disc.y)).add(toward.mul(sqrt(float(1).sub(puffR)))));
+            const puffAt = at.xyz.add(puffN.mul(at.w.mul(0.5)));
+            // Sun on one side, the cloud's own shadow on the other, and a darker underside.
+            const puffSun = dot(puffN, normalize(uSunDir)).mul(0.5).add(0.5);
+            base.rgb.mulAssign(mix(1, puffSun.mul(0.56).add(0.58).mul(puffN.y.mul(0.14).add(0.86)), uSunAmount));
+            const glow = vec3(0).toVar();
+            Loop(LIGHTS, ({ i }) => {
+                If(i.greaterThanEqual(uGlows), () => { Break(); });
+                const to = glowAt.element(i).xyz.sub(puffAt);
+                const d2 = dot(to, to), reach = glowAt.element(i).w;
+                const window = clamp(d2.div(reach.mul(reach)).oneMinus(), 0, 1);
+                // Smoke scatters light through itself, so the far side is lit too, only less.
+                const face = dot(puffN, to.mul(TSL.inverseSqrt(max(d2, 1e-4)))).mul(0.4).add(0.6);
+                glow.addAssign(glowColor.element(i).mul(face).mul(window).mul(window).div(d2.add(1)));
+            });
+            // The engine multiplies the instance colour in after this, so the glow is divided by it
+            // to arrive as added light and not as a tint of the smoke.
+            base.rgb.addAssign(glow.div(TSL.instanceColor.max(0.04)));
+            return base;
+        })();
+    }
     const mesh = new THREE.InstancedMesh(geometry, material, capacity);
     mesh.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
     mesh.setColorAt(0, new THREE.Color());
@@ -110,6 +114,7 @@ export function createParticles(scene, capacity = 430) {
         pose.position.set(x, y, z); pose.scale.set(size, size, 1); pose.updateMatrix();
         mesh.setMatrixAt(n, pose.matrix);
         mesh.setColorAt(n, color.copy(c).multiplyScalar(light * boost));
+        stand.setXYZW(n, x, y, z, size);
         alpha.array[n] = Math.min(1, a);
         n++;
     }
@@ -237,6 +242,7 @@ export function createParticles(scene, capacity = 430) {
         mesh.instanceMatrix.needsUpdate = true;
         mesh.instanceColor.needsUpdate = true;
         alpha.needsUpdate = true;
+        stand.needsUpdate = true;
     }
     /**
      * What is lighting the clouds this frame.

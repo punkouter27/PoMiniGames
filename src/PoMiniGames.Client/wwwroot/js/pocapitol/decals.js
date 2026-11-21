@@ -1,4 +1,5 @@
-import * as THREE from 'three';
+import * as THREE from 'three-eco/webgpu';
+import * as TSL from 'three-eco/tsl';
 
 // Wear that stays: scuffs where people were shoved, scorch where a flash-bang or a round landed,
 // and chalky residue where gas was released. Flat quads laid on the ground just above it, in two
@@ -61,19 +62,11 @@ function ring(scene, kind, capacity, hold = 40) {
     const alpha = new THREE.InstancedBufferAttribute(new Float32Array(capacity), 1);
     alpha.setUsage(THREE.DynamicDrawUsage);
     geometry.setAttribute('aAlpha', alpha);
-    const material = new THREE.MeshBasicMaterial({
+    const material = new THREE.MeshBasicNodeMaterial({
         map: texture, transparent: true, depthWrite: false, fog: true,
         polygonOffset: true, polygonOffsetFactor: -4, polygonOffsetUnits: -4,
     });
-    material.onBeforeCompile = shader => {
-        shader.vertexShader = shader.vertexShader
-            .replace('#include <common>', '#include <common>\nattribute float aAlpha;\nvarying float vAlpha;')
-            .replace('#include <begin_vertex>', '#include <begin_vertex>\nvAlpha = aAlpha;');
-        shader.fragmentShader = shader.fragmentShader
-            .replace('#include <common>', '#include <common>\nvarying float vAlpha;')
-            .replace('#include <color_fragment>', '#include <color_fragment>\ndiffuseColor.a *= vAlpha;');
-    };
-    material.customProgramCacheKey = () => `pocapitol-decal-${kind}`;
+    material.opacityNode = TSL.attribute('aAlpha', 'float');
     const mesh = new THREE.InstancedMesh(geometry, material, capacity);
     mesh.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
     mesh.setColorAt(0, new THREE.Color());

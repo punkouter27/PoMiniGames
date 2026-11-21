@@ -1,4 +1,6 @@
-import * as THREE from 'three';
+import * as THREE from 'three-eco/webgpu';
+import * as TSL from 'three-eco/tsl';
+import { mirror } from './nodes.js';
 
 // GPU particle bursts: sparks, dust and debris thrown by blows, rounds, flash-bangs and breaking
 // barriers.
@@ -14,66 +16,67 @@ import * as THREE from 'three';
 // ordinary alpha, grows and drifts; sparks are additive, run hotter than white so the bloom pass
 // catches them, shrink as they cool, and bounce.
 
-const VERTEX = /* glsl */`
-    attribute vec3 aVelocity;
-    attribute vec4 aLife;   // birth time, lifetime, start size (m), drag
-    attribute vec4 aColor;  // rgb (may exceed 1 to bloom), opacity
-    attribute float aGravity;
-    uniform float uTime, uScale, uGrow, uGround;
-    varying vec4 vColor;
-    varying float vAge;
-    void main() {
-        float age = uTime - aLife.x;
-        if (age < 0.0 || age > aLife.y) { gl_Position = vec4(2.0, 2.0, 2.0, 1.0); gl_PointSize = 0.0; vAge = 1.0; vColor = vec4(0.0); return; }
-        float drag = max(aLife.w, 0.0001);
-        float travel = (1.0 - exp(-drag * age)) / drag;
-        vec3 p = position + aVelocity * travel;
-        p.x += sin(age * 2.4 + position.z * 0.15) * 0.32 * min(1.0, age);
-        p.y -= 0.5 * aGravity * age * age;
+// WebGPU draws a point as one pixel whatever its size, so each particle is an instanced quad the
+// vertex stage sizes in pixels (what gl_PointSize was) and turns to face the lens.
+function particleNodes(uniforms) {
+    const { vec2, vec3, vec4, float, exp, min, max, select, length, smoothstep, pow, mix } = TSL;
+    const origin = TSL.attribute('aOrigin', 'vec3'), velocity = TSL.attribute('aVelocity', 'vec3');
+    const life = TSL.attribute('aLife', 'vec4'), color = TSL.attribute('aColor', 'vec4'), gravity = TSL.attribute('aGravity', 'float');
+    const uTime = mirror(uniforms.uTime), uScale = mirror(uniforms.uScale), uGrow = mirror(uniforms.uGrow), uGround = mirror(uniforms.uGround), uSoft = mirror(uniforms.uSoft);
+    const age = uTime.sub(life.x);
+    const alive = age.greaterThanEqual(0).and(age.lessThanEqual(life.y));
+    const vAge = TSL.varying(select(alive, age.div(life.y), 1), 'vBurstAge');
+    const vColor = TSL.varying(select(alive, color, vec4(0)), 'vBurstColor');
+    const vertexNode = TSL.Fn(() => {
+        const drag = max(life.w, 0.0001);
+        const travel = float(1).sub(exp(drag.negate().mul(age))).div(drag);
+        const p = origin.add(velocity.mul(travel)).toVar();
+        p.x.addAssign(TSL.sin(age.mul(2.4).add(origin.z.mul(0.15))).mul(0.32).mul(min(1, age)));
+        p.y.subAssign(gravity.mul(0.5).mul(age).mul(age));
         // One soft bounce: fold whatever sank below the ground back up, losing most of its energy.
-        if (p.y < uGround) p.y = uGround + (uGround - p.y) * 0.32;
-        vec4 view = modelViewMatrix * vec4(p, 1.0);
-        vAge = age / aLife.y;
-        vColor = aColor;
-        gl_PointSize = max(1.0, aLife.z * (1.0 + uGrow * vAge) * uScale / max(0.1, -view.z));
-        gl_Position = projectionMatrix * view;
-    }
-`;
-
-const FRAGMENT = /* glsl */`
-    uniform float uSoft;
-    varying vec4 vColor;
-    varying float vAge;
-    void main() {
-        float d = length(gl_PointCoord - 0.5) * 2.0;
-        if (d > 1.0 || vAge >= 1.0) discard;
+        p.y.assign(select(p.y.lessThan(uGround), uGround.add(uGround.sub(p.y).mul(0.32)), p.y));
+        const view = TSL.cameraViewMatrix.mul(vec4(p, 1));
+        const px = max(1, life.z.mul(uGrow.mul(age.div(life.y)).add(1)).mul(uScale).div(max(0.1, view.z.negate())));
+        const clip = TSL.cameraProjectionMatrix.mul(view).toVar();
+        const corner = TSL.positionGeometry.xy;
+        clip.xy.addAssign(corner.mul(px).mul(2).div(TSL.viewportSize).mul(clip.w));
+        return select(alive, clip, vec4(2, 2, 2, 1));
+    })();
+    const fragmentNode = TSL.Fn(() => {
+        const d = length(TSL.uv().sub(0.5)).mul(2);
+        d.greaterThan(1).or(vAge.greaterThanEqual(1)).discard();
         // Soft disc; a hard core for sparks (uSoft near 0), a puff for dust (near 1).
-        float shape = pow(1.0 - d, mix(0.7, 2.2, uSoft));
-        float fade = smoothstep(1.0, 0.55, vAge) * smoothstep(0.0, 0.03, vAge);
-        gl_FragColor = vec4(vColor.rgb * mix(1.0, 1.0 - 0.6 * vAge, 1.0 - uSoft), shape * fade * vColor.a);
-    }
-`;
+        const shape = pow(d.oneMinus(), mix(0.7, 2.2, uSoft));
+        const fade = smoothstep(1.0, 0.55, vAge).mul(smoothstep(0.0, 0.03, vAge));
+        return vec4(vColor.rgb.mul(mix(1.0, vAge.mul(-0.6).add(1), uSoft.oneMinus())), shape.mul(fade).mul(vColor.a));
+    })();
+    return { vertexNode, fragmentNode };
+}
 
 function layer(scene, capacity, { additive, grow, soft, order }) {
-    const geometry = new THREE.BufferGeometry();
+    const quad = new THREE.PlaneGeometry(1, 1);
+    const geometry = new THREE.InstancedBufferGeometry();
+    geometry.index = quad.index; geometry.setAttribute('position', quad.getAttribute('position')); geometry.setAttribute('uv', quad.getAttribute('uv'));
+    geometry.instanceCount = capacity;
     const origin = new Float32Array(capacity * 3), velocity = new Float32Array(capacity * 3);
     const life = new Float32Array(capacity * 4), color = new Float32Array(capacity * 4), gravity = new Float32Array(capacity);
     // Born "in the future" so an empty slot never draws.
     for (let i = 0; i < capacity; i++) life[i * 4] = 1e9;
     const attributes = {
-        position: new THREE.BufferAttribute(origin, 3), aVelocity: new THREE.BufferAttribute(velocity, 3),
-        aLife: new THREE.BufferAttribute(life, 4), aColor: new THREE.BufferAttribute(color, 4),
-        aGravity: new THREE.BufferAttribute(gravity, 1),
+        aOrigin: new THREE.InstancedBufferAttribute(origin, 3), aVelocity: new THREE.InstancedBufferAttribute(velocity, 3),
+        aLife: new THREE.InstancedBufferAttribute(life, 4), aColor: new THREE.InstancedBufferAttribute(color, 4),
+        aGravity: new THREE.InstancedBufferAttribute(gravity, 1),
     };
     for (const [name, attribute] of Object.entries(attributes)) { attribute.setUsage(THREE.DynamicDrawUsage); geometry.setAttribute(name, attribute); }
     const uniforms = {
         uTime: { value: 0 }, uScale: { value: 600 }, uGrow: { value: grow }, uGround: { value: 0.02 }, uSoft: { value: soft },
     };
-    const material = new THREE.ShaderMaterial({
-        uniforms, vertexShader: VERTEX, fragmentShader: FRAGMENT, transparent: true, depthWrite: false,
-        blending: additive ? THREE.AdditiveBlending : THREE.NormalBlending,
-    });
-    const points = new THREE.Points(geometry, material);
+    const nodes = particleNodes(uniforms);
+    const material = new THREE.NodeMaterial();
+    Object.assign(material, { transparent: true, depthWrite: false, fog: false, side: THREE.DoubleSide,
+        blending: additive ? THREE.AdditiveBlending : THREE.NormalBlending });
+    material.vertexNode = nodes.vertexNode; material.fragmentNode = nodes.fragmentNode;
+    const points = new THREE.Mesh(geometry, material);
     points.frustumCulled = false;
     points.renderOrder = order;
     points.layers.set(1);
