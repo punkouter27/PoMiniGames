@@ -417,10 +417,9 @@ export function createMarbles(world, materials, startPositions, chosenIndex, onC
   if (glass) {
     glassGeo = new THREE.SphereGeometry(1.0, 24, 16);
     glassMat = new THREE.MeshPhysicalMaterial({
-      color: 0xffffff, roughness: 0.06, metalness: 0, transmission: 0.85, thickness: 1.6, ior: 1.5,
-      clearcoat: 1, clearcoatRoughness: 0.04, iridescence: 0.35,
-      dispersion: readPref('effects') === 'lite' ? 0 : DISPERSION_LEADERS,
-      envMap: envMap || null, envMapIntensity: envMap ? 1.2 : 0,
+      color: 0xffffff, roughness: 0.06, metalness: 0.05, transmission: 0, ior: 1.5,
+      clearcoat: 1, clearcoatRoughness: 0.04, iridescence: 0.55,
+      envMap: envMap || null, envMapIntensity: envMap ? 1.45 : 0,
     });
     glassMesh = new THREE.InstancedMesh(glassGeo, glassMat, LEADERS);
     glassMesh.frustumCulled = false;
@@ -478,10 +477,9 @@ export function createMarbles(world, materials, startPositions, chosenIndex, onC
         envMapIntensity: envMap ? (chrome ? 1.6 : 0.95) : 0,
         map: chrome ? null : playerTex,
         ...(glass ? {
-          clearcoat: 1, clearcoatRoughness: 0.05,
-          transmission: chrome ? 0 : 0.4, thickness: 1.4, ior: 1.5,
-          dispersion: chrome || readPref('effects') === 'lite' ? 0 : DISPERSION_PLAYER,
-          iridescence: skin === 'galaxy' ? 1 : 0.25,
+          clearcoat: 1, clearcoatRoughness: 0.04,
+          transmission: 0, ior: 1.5,
+          iridescence: skin === 'galaxy' ? 1 : 0.45,
         } : {}),
       });
       mesh = new THREE.Mesh(sphereGeo, mat);
