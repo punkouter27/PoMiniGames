@@ -1,4 +1,7 @@
-// Gas and smoke as a fluid on a grid.
+// platform/3d/fluidGrid.js — gas, smoke or any light airborne density as a fluid on a 2D grid
+// over the ground, for any 3D game (written for PoCapitol's gas, which still uses the defaults).
+// fluidGridGpu.js is the same model as WebGPU compute shaders, with this as its fallback.
+//
 //
 // The world reports a cloud as a point, a radius and a lifetime, and the sprites in particles.js
 // draw exactly that: a ball that grows and fades where the canister landed. This layer is what
@@ -8,8 +11,8 @@
 // So gas let off in a doorway pools in the room behind it, a cloud on the lawn streams downwind
 // and splits round the stands, and a crowd running through a bank drags a hole in it.
 //
-// Nothing in the simulation reads this: who coughs is still decided by world.js. It is drawn by
-// the ray-marched haze (volumetric.js), which samples `bytes` as a texture.
+// In PoCapitol nothing in the simulation reads this (who coughs is still decided by its
+// world.js); its ray-marched haze (pocapitol/volumetric.js) samples `bytes` as a texture.
 //
 // Pure arithmetic with no DOM or three.js, so it can be tested with made-up clouds.
 
@@ -25,7 +28,12 @@ export const WIND_SHARE = 0.16;
  * @param blocked  (x, z) => true where gas cannot be (walls, columns, the stands)
  * @param indoors  (x, z) => true where there is no wind
  */
-export function createGasGrid({ x0 = -40, z0 = -56, w = 80, d = 152 } = {}, cols = 64, rows = 120, blocked = () => false, indoors = (x, z) => z < 14.5) {
+/**
+ * @param physics  { lifeOut, lifeIn, windShare }: seconds to thin to 1/e outdoors and indoors, and
+ *                 the share of the wind the air at ground level moves at (defaults: PoCapitol's gas)
+ */
+export function createFluidGrid({ x0 = -40, z0 = -56, w = 80, d = 152 } = {}, cols = 64, rows = 120, blocked = () => false, indoors = (x, z) => z < 14.5,
+    { lifeOut = GAS_LIFE_OUT, lifeIn = GAS_LIFE_IN, windShare = WIND_SHARE } = {}) {
     const n = cols * rows, cw = w / cols, cd = d / rows;
     const density = new Float32Array(n), next = new Float32Array(n);
     const vx = new Float32Array(n), vz = new Float32Array(n), pressure = new Float32Array(n), div = new Float32Array(n);
@@ -81,7 +89,7 @@ export function createGasGrid({ x0 = -40, z0 = -56, w = 80, d = 152 } = {}, cols
         // The air: outdoors it eases toward a share of the wind, indoors toward rest.
         for (let k = 0; k < n; k++) {
             if (solid[k]) { vx[k] = vz[k] = 0; continue; }
-            const tx = inside[k] ? 0 : wind.x * WIND_SHARE, tz = inside[k] ? 0 : wind.z * WIND_SHARE;
+            const tx = inside[k] ? 0 : wind.x * windShare, tz = inside[k] ? 0 : wind.z * windShare;
             vx[k] += (tx - vx[k]) * settle; vz[k] += (tz - vz[k]) * settle;
         }
         for (const m of movers) {
@@ -129,7 +137,7 @@ export function createGasGrid({ x0 = -40, z0 = -56, w = 80, d = 152 } = {}, cols
             const around = beside(density, i - 1, j, here, 0) + beside(density, i + 1, j, here, 0)
                 + beside(density, i, j - 1, here, 0) + beside(density, i, j + 1, here, 0);
             value += (around / 4 - here) * spread;
-            value *= Math.exp(-dt / (inside[k] ? GAS_LIFE_IN : GAS_LIFE_OUT));
+            value *= Math.exp(-dt / (inside[k] ? lifeIn : lifeOut));
             next[k] = value < 0.002 ? 0 : value;
             mass += next[k];
         }

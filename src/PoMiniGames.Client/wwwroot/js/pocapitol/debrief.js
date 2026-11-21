@@ -8,7 +8,8 @@
  *   ollama  A model on the player's own machine (http://localhost:11434). Free and private, but
  *           slow to start and only there if the player runs it. Opt-in.
  *   browser A small model run inside this page by Transformers.js on ONNX Runtime Web (WebGPU when
- *           the browser has it, WASM otherwise). Opt-in: the first use downloads about 120 MB of
+ *           the browser has it, WASM otherwise). Opt-in: the first use downloads about 270 MB of
+ *           (390 MB without WebGPU)
  *           weights from Hugging Face, which the browser then keeps; nothing is sent anywhere,
  *           the report never leaves the page. A model that small cannot be trusted with figures
  *           (in testing it swapped the crowd and police counts), so it writes only an opening
@@ -25,8 +26,12 @@
  */
 export const DEFAULT_ENDPOINT = 'http://localhost:11434';
 export const DEFAULT_MODEL = 'llama3.2';
-/** The in-page model: SmolLM2 135M Instruct (Apache-2.0), ONNX weights published with the model. */
-export const BROWSER_MODEL = 'HuggingFaceTB/SmolLM2-135M-Instruct';
+/**
+ * The in-page model: SmolLM2 360M Instruct (Apache-2.0), ONNX weights published with the model.
+ * The 135M one was tried first and wrote noticeably worse lines; the owner accepted the larger
+ * download (2026-11-20).
+ */
+export const BROWSER_MODEL = 'HuggingFaceTB/SmolLM2-360M-Instruct';
 
 let generatorLoading = null;
 /** Transformers.js (the import map's `transformers` entry) and the model, loaded once per page. */

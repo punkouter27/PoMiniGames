@@ -1,6 +1,6 @@
-// Gas and smoke as a fluid on the GPU.
+// platform/3d/fluidGridGpu.js — gas and smoke as a fluid on the GPU, for any 3D game.
 //
-// The same model as gasGrid.js (read that first for what the layer is for), run as WebGPU compute
+// The same model as fluidGrid.js (read that first for what the layer is for), run as WebGPU compute
 // shaders so the High graphics tier can afford a grid four times as fine and a pressure solve with
 // three times the passes. Gas let off in a doorway then pools and bends round the stands with far
 // less of the blur that a 1.25 m cell gives it.
@@ -13,7 +13,7 @@
 //
 // Everything here resolves to null instead of throwing, so the caller can keep the CPU grid.
 
-import { GAS_LIFE_OUT, GAS_LIFE_IN, WIND_SHARE } from './gasGrid.js';
+import { GAS_LIFE_OUT, GAS_LIFE_IN, WIND_SHARE } from './fluidGrid.js';
 
 /** Pressure passes per step. Even, so the warm-started solution always ends in the first buffer. */
 const PRESSURE_PASSES = 24;
@@ -193,22 +193,23 @@ const USES = {
  * @returns the CPU grid's interface plus dispose(), lost() and gpu: true, or null when this
  *          browser or machine cannot run it; it never rejects
  */
-export async function createGpuGasGrid({ x0 = -40, z0 = -56, w = 80, d = 152 } = {}, cols = 128, rows = 240, blocked = () => false, indoors = (x, z) => z < 14.5) {
+export async function createGpuFluidGrid({ x0 = -40, z0 = -56, w = 80, d = 152 } = {}, cols = 128, rows = 240, blocked = () => false, indoors = (x, z) => z < 14.5,
+    { lifeOut = GAS_LIFE_OUT, lifeIn = GAS_LIFE_IN, windShare = WIND_SHARE } = {}) {
     let device = null;
     try {
         if (typeof navigator === 'undefined' || !navigator.gpu) return null;
         const adapter = await navigator.gpu.requestAdapter();
         if (!adapter) return null;
         device = await adapter.requestDevice();
-        return await build(device, { x0, z0, w, d }, cols, rows, blocked, indoors);
+        return await build(device, { x0, z0, w, d }, cols, rows, blocked, indoors, { lifeOut, lifeIn, windShare });
     } catch (err) {
-        console.warn('GPU gas grid unavailable:', err);
+        console.warn('GPU fluid grid unavailable:', err);
         try { device?.destroy(); } catch { /* nothing to free */ }
         return null;
     }
 }
 
-async function build(device, rect, cols, rows, blocked, indoors) {
+async function build(device, rect, cols, rows, blocked, indoors, { lifeOut, lifeIn, windShare }) {
     const { x0, z0, w, d } = rect;
     const n = cols * rows, cw = w / cols, cd = d / rows;
     // The CPU grid's cell is the unit its constants were tuned in. Diffusion per step scales with
@@ -340,11 +341,11 @@ async function build(device, rect, cols, rows, blocked, indoors) {
 
         uniU[0] = cols; uniU[1] = rows; uniU[2] = nSrc; uniU[3] = nMov;
         uniF[4] = x0; uniF[5] = z0; uniF[6] = cw; uniF[7] = cd;
-        uniF[8] = wind.x * WIND_SHARE; uniF[9] = wind.z * WIND_SHARE; uniF[10] = dt;
+        uniF[8] = wind.x * windShare; uniF[9] = wind.z * windShare; uniF[10] = dt;
         uniF[11] = 1 - Math.exp(-dt * 1.5);
         uniF[12] = Math.min(1, dt * 4);
         uniF[13] = Math.min(0.2, dt * 0.55) * spreadScale;
-        uniF[14] = Math.exp(-dt / GAS_LIFE_OUT); uniF[15] = Math.exp(-dt / GAS_LIFE_IN);
+        uniF[14] = Math.exp(-dt / lifeOut); uniF[15] = Math.exp(-dt / lifeIn);
         uniF[16] = cw * cd; uniF[17] = refCw / 2; uniF[18] = refCd / 2;
         device.queue.writeBuffer(uni, 0, uniData);
 

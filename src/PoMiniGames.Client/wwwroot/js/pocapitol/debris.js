@@ -35,24 +35,39 @@ function loadRapier() {
 }
 
 let propsLoading = null;
+/**
+ * How long one load of the props may take. The Draco decoder runs in a worker made from a blob,
+ * and when the browser cannot make that blob (seen as ERR_BLOB_OUT_OF_MEMORY on a page under
+ * memory pressure) the decode never answers: without a deadline the debris would wait forever.
+ */
+const PROPS_DEADLINE_MS = 45000;
+
+async function loadPropsOnce() {
+    const [{ GLTFLoader }, { DRACOLoader }] = await Promise.all([
+        import('three/addons/loaders/GLTFLoader.js'),
+        import('three/addons/loaders/DRACOLoader.js'),
+    ]);
+    const draco = new DRACOLoader().setDecoderPath(DRACO_DECODER);
+    let timer = 0;
+    try {
+        const gltf = await Promise.race([
+            new GLTFLoader().setDRACOLoader(draco).loadAsync(PROPS_URL),
+            new Promise((_, reject) => { timer = setTimeout(() => reject(new Error('props.glb took too long to decode')), PROPS_DEADLINE_MS); }),
+        ]);
+        const props = {};
+        gltf.scene.traverse(o => { if (o.isMesh) props[o.name] = { geometry: o.geometry, material: o.material }; });
+        return props;
+    } finally {
+        clearTimeout(timer);
+        draco.dispose();
+    }
+}
+
+/** The props, loaded once per page; a failed or stalled load is tried once more, then given up. */
 function loadProps() {
-    propsLoading ??= (async () => {
-        try {
-            const [{ GLTFLoader }, { DRACOLoader }] = await Promise.all([
-                import('three/addons/loaders/GLTFLoader.js'),
-                import('three/addons/loaders/DRACOLoader.js'),
-            ]);
-            const draco = new DRACOLoader().setDecoderPath(DRACO_DECODER);
-            const gltf = await new GLTFLoader().setDRACOLoader(draco).loadAsync(PROPS_URL);
-            draco.dispose();
-            const props = {};
-            gltf.scene.traverse(o => { if (o.isMesh) props[o.name] = { geometry: o.geometry, material: o.material }; });
-            return props;
-        } catch (error) {
-            console.warn('[PoCapitol] props.glb unavailable; no debris.', error);
-            return null;
-        }
-    })();
+    propsLoading ??= loadPropsOnce()
+        .catch(error => { console.warn('[PoCapitol] props.glb did not load; trying once more.', error); return loadPropsOnce(); })
+        .catch(error => { console.warn('[PoCapitol] props.glb unavailable; no debris.', error); return null; });
     return propsLoading;
 }
 
@@ -72,13 +87,17 @@ export function createDebris(scene, { crowd, bannerTexture }) {
     const matrix = new THREE.Matrix4(), position = new THREE.Vector3(), quaternion = new THREE.Quaternion(), unit = new THREE.Vector3(1, 1, 1);
     const hidden = new THREE.Matrix4().makeScale(0, 0, 0);
 
+    let status = 'idle';
     function begin() {
+        if (!loading) status = 'loading';
         loading ??= Promise.all([loadRapier(), loadProps()]).then(([rapier, loaded]) => {
-            if (disposed || !rapier || !loaded) return;
+            if (disposed) return;
+            if (!rapier || !loaded) { status = 'failed'; return; }
             R = rapier; props = loaded;
             buildWorld();
             buildPools();
-        });
+            status = 'ready';
+        }).catch(error => { status = 'failed'; console.warn('[PoCapitol] debris could not start.', error); });
         return loading;
     }
 
@@ -291,6 +310,10 @@ export function createDebris(scene, { crowd, bannerTexture }) {
             for (const mesh of faces) mesh.visible = enabled;
         },
         count: () => pieces.length,
+        /** True once Rapier and the props are in: events before that drop nothing. */
+        ready: () => Boolean(world) && status === 'ready',
+        /** idle (not wanted yet), loading, ready or failed: for diagnostics. */
+        status: () => status,
         dispose() {
             disposed = true;
             if (world) { reset(); world.free(); world = null; }

@@ -1,6 +1,9 @@
 import * as THREE from 'three';
 import { GPUComputationRenderer } from 'three/addons/misc/GPUComputationRenderer.js';
 
+// platform/3d/paperField.js — shared by every 3D game; the easy way in is the `paper` stage
+// feature (platform/stage/features/paper.js), which feeds and steps it. Written for PoCapitol.
+//
 // Loose paper: flyers, leaflets, torn placards and a few red and blue sheets, lying about the
 // lawn and the floors until wind, a blast or a running crowd lifts them.
 //
@@ -11,7 +14,7 @@ import { GPUComputationRenderer } from 'three/addons/misc/GPUComputationRenderer
 // full-screen passes and one instanced draw with no per-frame JavaScript beyond a few uniforms.
 //
 // The world is baked once into a small float texture over the play rectangle (ground height,
-// wall mask, indoors mask), because the compute shader cannot call back into world.js. Resting
+// wall mask, indoors mask), because the compute shader cannot call back into the game's world code. Resting
 // sheets do nothing but stay put, so a still day is almost free.
 //
 // Flight is a flat plate in moving air: the part of the relative wind along the sheet's normal
@@ -266,7 +269,7 @@ const VERTEX_POSITION = /* glsl */`
     vec3 transformed = fP.xyz + orient(vec3(position.x, 0.05 * fCurl * fX * fX, position.z) * fScale, fR.xyz);
 `;
 
-export function createFlyers(scene, renderer, { rect = { x0: -40, z0: -56, w: 80, d: 152 }, groundHeight, blocked, indoors, size = 128 } = {}) {
+export function createPaperField(scene, renderer, { rect = { x0: -40, z0: -56, w: 80, d: 152 }, groundHeight, blocked, indoors, size = 128 } = {}) {
     try {
         if (!renderer || !renderer.isWebGLRenderer || renderer.capabilities.isWebGL2 === false) return { ...noop };
         if (!renderer.extensions.has('EXT_color_buffer_float')) return { ...noop };

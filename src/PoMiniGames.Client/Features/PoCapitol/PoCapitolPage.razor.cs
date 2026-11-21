@@ -677,8 +677,8 @@ public partial class PoCapitolPage : IAsyncDisposable
         public string footage { get; set; } = "light";
         public string debrief { get; set; } = "rules";
         public string debriefModel { get; set; } = "llama3.2";
-        public string score { get; set; } = "on";
-        public string hailer { get; set; } = "on";
+        public string score { get; set; } = "off";
+        public string hailer { get; set; } = "off";
         public string forward { get; set; } = "KeyW";
         public string back { get; set; } = "KeyS";
         public string left { get; set; } = "KeyA";
