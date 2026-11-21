@@ -25,7 +25,7 @@ public sealed class PoRacerUiTests(KestrelServerFixture fixture)
         var driver = new PoRacerDriver(page);
         await page.GotoAsync($"{fixture.ServerAddress.TrimEnd('/')}/poracer/1player");
         await page.GetByRole(AriaRole.Button, new() { Name = "OK", Exact = true }).WaitForAsync(new() { Timeout = 60000 });
-        await page.Locator(".track-select select").SelectOptionAsync(track);
+        await page.Locator(".gps-intro-map-select").SelectOptionAsync(track);
         // Isolate lap timing and persistence from 63-car traffic: the keyboard driver
         // follows the centerline and does not plan overtakes. Full-field input is tested below.
         await page.GetByText("Time trial", new() { Exact = true }).ClickAsync();
@@ -51,10 +51,9 @@ public sealed class PoRacerUiTests(KestrelServerFixture fixture)
         await page.WaitForURLAsync(url => new Uri(url).AbsolutePath == "/");
         await page.GotoAsync($"{fixture.ServerAddress.TrimEnd('/')}/poracer/1player");
         await page.GetByRole(AriaRole.Button, new() { Name = "OK", Exact = true }).WaitForAsync(new() { Timeout = 60000 });
-        // The lap just driven is shown in Track details as a personal best.
-        var trackDetails = page.Locator(".racer-setup details", new() { HasText = "Track details" });
-        await trackDetails.Locator("summary").ClickAsync();
-        (await trackDetails.InnerTextAsync()).Should().Contain("Your best");
+        // The lap just driven is shown beside the track name in the start card's track dropdown.
+        var trackOption = page.Locator($".gps-intro-map-select option[value='{track}']");
+        (await trackOption.InnerTextAsync()).Should().Contain("best ");
         driver.Reset();
         await page.GetByRole(AriaRole.Button, new() { Name = "OK", Exact = true }).ClickAsync();
         await page.Locator(".race-metrics").WaitForAsync();

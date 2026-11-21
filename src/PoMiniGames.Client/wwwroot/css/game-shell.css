@@ -468,8 +468,8 @@ dialog.gps-intro-overlay::backdrop { background: transparent; }
   overflow: hidden;
   display: flex;
   flex-direction: column;
-  gap: 0.6rem;
-  padding: 1.05rem 1.25rem 0.85rem;
+  gap: 0.45rem;
+  padding: 0.85rem 1.15rem 0.75rem;
   background: var(--color-surface);
   border: 1px solid var(--color-border);
   border-radius: var(--gps-card-radius);
@@ -497,8 +497,8 @@ dialog.gps-intro-overlay::backdrop { background: transparent; }
   overflow-y: auto;
   display: flex;
   flex-direction: column;
-  gap: 0.75rem;
-  padding-top: 0.6rem;
+  gap: 0.5rem;
+  padding-top: 0.45rem;
   border-top: 1px solid var(--color-border);
 }
 

@@ -79,6 +79,12 @@ public class PoCabinetRouteUiTests
         }
         else
         {
+            var setupTab = page.GetByRole(AriaRole.Tab, new() { Name = "Setup", Exact = true });
+            if (await setupTab.IsVisibleAsync())
+            {
+                await setupTab.ClickAsync();
+            }
+
             await page.Locator(".pocabinet-prerace__room").WaitForAsync(new() { Timeout = 30_000 });
             (await page.Locator(".gps-intro-map-select").CountAsync()).Should().Be(0,
                 "one circuit: the solo start card has no track dropdown beside OK");

@@ -52,6 +52,7 @@
                    Objective="Arcade: beat every other fighter, best of three each, then your own Shadow."
                    Controls="@FightControls"
                    Mode="GameIntro.IntroMode.OnePlayer"
+                   Wide="true"
                    Maps="@DifficultyMaps"
                    MapLabel="Difficulty"
                    @bind-MapId="_difficulty"
@@ -65,6 +66,7 @@
                    Objective="Two players, one screen: best of three."
                    Controls="@VersusControls"
                    Mode="GameIntro.IntroMode.TwoPlayer"
+                   Wide="true"
                    Options="@VersusPicker"
                    OnStart="@(() => _introDismissed = true)" />
     }
