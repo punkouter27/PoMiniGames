@@ -3,7 +3,7 @@
 // FXAA, speed-reactive FOV, 8k GPU particles, pooled impact light pulses, and Act-reactive lighting.
 import * as THREE from 'three-eco/webgpu';
 import {
-  Fn, dot, max, mix, pass, renderOutput, screenUV, sin, smoothstep, step, uniform, vec2, vec3, vec4,
+  Fn, convertToTexture, dot, max, mix, pass, renderOutput, screenUV, sin, smoothstep, step, uniform, vec3, vec4,
 } from 'three-eco/tsl';
 import { bloom } from 'three-eco/addons/tsl/display/BloomNode.js';
 import { fxaa } from 'three-eco/addons/tsl/display/FXAANode.js';
@@ -262,7 +262,7 @@ export function createScene(container, renderer, stage) {
       return vec4(col, 1.0);
     })();
 
-    pipeline.outputNode = fxaa(renderOutput(graded));
+    pipeline.outputNode = fxaa(convertToTexture(renderOutput(graded)));
   } catch (err) {
     console.warn('[PoMarbleRace] TSL RenderPipeline unavailable, using direct WebGPU render:', err?.message || err);
     pipeline = null;
