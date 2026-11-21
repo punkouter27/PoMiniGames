@@ -1,5 +1,5 @@
 import * as THREE from 'three-eco/webgpu';
-import { Fn, uniform, float, vec2, vec3, dot, fract, sin, floor, mix, exp } from 'three-eco/tsl';
+import { Fn, uniform, float, vec2, vec3, dot, fract, sin, floor, mix } from 'three-eco/tsl';
 
 // Small TSL building blocks shared by PoCapitol's node materials and post passes.
 //
@@ -70,15 +70,11 @@ export const noise3 = Fn(([x]) => {
         mix(mix(h(0, 0, 1), h(1, 0, 1), f.x), mix(h(0, 1, 1), h(1, 1, 1), f.x), f.y), f.z);
 });
 
-export const LUMA = vec3(0.2126, 0.7152, 0.0722);
-
 /** True on the WebGPU backend, false on the WebGL2 backend of WebGPURenderer. */
 export function isWebGPU(renderer) {
     return renderer?.backend?.isWebGPUBackend === true;
 }
 
-export { exp };
-export const CLEAR = new THREE.Color(0, 0, 0);
 
 // ---------------------------------------------------------------- full-screen passes
 //

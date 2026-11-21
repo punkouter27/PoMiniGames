@@ -383,8 +383,6 @@ export const sssSun = {
 /** What each part of a person is made of. The fabric shader draws the weave, quilting or print. */
 export const CLOTH = { plain: 0, quilt: 1, fleece: 2, denim: 3, camo: 4, plaid: 5, canvas: 6, hiVis: 7, skin: 8, hide: 9, duty: 10, hair: 11 };
 
-let fabricGraph = null;
-
 function buildFabricGraph(detail) {
     const { float, vec3, mix, smoothstep, clamp, sin, abs, If, fract, floor } = TSL;
     const uDetail = mirror(detail);
@@ -504,10 +502,13 @@ function buildFabricGraph(detail) {
  * Fine detail fades out with distance instead of shimmering.
  */
 export function addFabric(material, detail = { value: 1 }) {
-    fabricGraph ??= buildFabricGraph(detail);
-    material.colorNode = fabricGraph.colorNode;
-    material.roughnessNode = fabricGraph.roughnessNode;
-    material.normalNode = fabricGraph.normalNode;
+    // A graph per call, not one shared: a body material is made twice (the live crowd and the far-crowd
+    // bake) and the bake's is disposed. Programs are shared between materials whose graphs hash alike
+    // and freed with the last of them; the live crowd must not lose its program with the bake's.
+    const graph = buildFabricGraph(detail);
+    material.colorNode = graph.colorNode;
+    material.roughnessNode = graph.roughnessNode;
+    material.normalNode = graph.normalNode;
     return material;
 }
 

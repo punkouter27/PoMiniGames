@@ -266,7 +266,7 @@ function template(names, parents, heads, regions, shapeNames = []) {
  * its own run of bones in a single bone texture. One draw call per pass, and because it is a
  * real SkinnedMesh the shadow, ambient-occlusion and depth-of-field passes all see the pose.
  */
-function createBodies(scene, t, capacity, { detail, flat = false } = {}) {
+function createBodies(scene, t, capacity, { detail, flat = false, bake = false } = {}) {
     const V = t.vertices, B = t.bones;
     const position = new Float32Array(V * capacity * 3), normal = new Float32Array(V * capacity * 3);
     const skinIndex = new Uint16Array(V * capacity * 4), skinWeight = new Float32Array(V * capacity * 4);
@@ -294,6 +294,10 @@ function createBodies(scene, t, capacity, { detail, flat = false } = {}) {
     // `flat` is the unlit body the far-crowd bake uses to cut out its coat mask.
     const material = flat ? new THREE.MeshBasicMaterial({ vertexColors: true, fog: false })
         : addFabric(addSubsurfaceScattering(new THREE.MeshStandardNodeMaterial({ vertexColors: true, roughness: 0.82 })), detail);
+    // The far-crowd bake draws and then throws away crowds that look exactly like the live one. WebGPURenderer
+    // shares one program between render objects whose materials hash the same, and frees it when the
+    // last one is disposed: the bake's disposal must not take the live crowd's program with it.
+    if (bake) { const own = material.customProgramCacheKey.bind(material); material.customProgramCacheKey = () => `${own()}|bake`; }
     // The skeleton's bones are never posed through the scene graph: matrices are written straight
     // into its bone texture, so a single placeholder bone stands in for all of them.
     const placeholder = new THREE.Bone(), identity = new THREE.Matrix4();
@@ -574,7 +578,7 @@ export function createCrowd(scene, capacity, { time, groundHeight, shadowTexture
     let extras = true;
     const mask = palette === 'mask';
     const rig = figure ?? fromRig(buildFigure());
-    const bodies = createBodies(scene, rig, capacity, { detail, flat: mask });
+    const bodies = createBodies(scene, rig, capacity, { detail, flat: mask, bake: palette !== null });
     const maskBlack = new THREE.MeshBasicMaterial({ color: '#000000', fog: false }), maskWhite = new THREE.MeshBasicMaterial({ color: '#ffffff', fog: false });
     resources.add(maskBlack); resources.add(maskWhite);
     /**
@@ -588,6 +592,9 @@ export function createCrowd(scene, capacity, { time, groundHeight, shadowTexture
         resources.add(geometry); resources.add(material);
         const mesh = new THREE.InstancedMesh(geometry, mask ? (name === 'hood' ? maskWhite : maskBlack) : material, capacity);
         mesh.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
+        // The colour buffer exists from the start: a node material decides whether it reads one when its
+        // program is built, and a buffer first made by the first tinted person would never be read.
+        mesh.setColorAt(0, new THREE.Color(1, 1, 1)); mesh.instanceColor.setUsage(THREE.DynamicDrawUsage);
         mesh.frustumCulled = false;
         mesh.count = 0;
         mesh.castShadow = ['helmet', 'bike-helmet', 'hood', 'hard-hat', 'backpack', 'shield', 'flag-pole', 'beanie', 'cap'].includes(name);
@@ -1237,7 +1244,6 @@ export function createDistantCrowd(scene, spots, { time, shadowTexture, atlas = 
     const geometry = new THREE.InstancedBufferGeometry();
     geometry.index = quad.index; geometry.setAttribute('position', quad.getAttribute('position')); geometry.setAttribute('uv', quad.getAttribute('uv'));
     geometry.instanceCount = count;
-    const cells = new Float32Array(count), faces = new Float32Array(count);
     const light = { value: 1 };
     const material = new THREE.MeshBasicNodeMaterial({ map, alphaTest: 0.5, fog: true });
     // Where each sprite stands and its size, for the vertex stage to build the billboard from.
@@ -1296,8 +1302,6 @@ export function createDistantCrowd(scene, spots, { time, shadowTexture, atlas = 
         pose.scale.set(wide * spot.scale, tall * spot.scale, 1); pose.updateMatrix();
         stands.setXYZW(i, spot.x, spot.y - (atlas ? atlas.foot * spot.scale : 0), spot.z, spot.cell % cols); sizes.setXYZ(i, wide * spot.scale, tall * spot.scale, spot.face ?? 0);
         tint.set(coats[spot.coat % coats.length]); tints.setXYZ(i, tint.r, tint.g, tint.b);
-        cells[i] = spot.cell % cols;
-        faces[i] = spot.face ?? 0;
         pose.position.y = spot.y + 0.015; pose.rotation.set(-Math.PI / 2, 0, 0);
         pose.scale.set(0.9 * spot.scale, 0.75 * spot.scale, 1); pose.updateMatrix();
         shadows.setMatrixAt(i, pose.matrix);
