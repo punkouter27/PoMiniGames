@@ -1,6 +1,9 @@
-// physics.js — cannon-es world + materials for PoMarbleRace
+// physics.js — Rapier WASM (primary in browser) + cannon-es fallback world for PoMarbleRace
 // Sphere marbles, box floor/walls, sphere pegs/bumps, hinged turnstile paddles.
 import * as CANNON from 'cannon-es';
+import { loadRapier, getRapier, createRapierWorld } from './physics-rapier.js';
+
+export { loadRapier };
 
 // Real-marble physics. The world is scaled at 1 unit = 1 cm, so a radius-1 marble is a 20 mm
 // glass "shooter" (see marbles.js for the ~10.5 g mass that implies). Gravity is a weighty,
@@ -69,7 +72,12 @@ class TypedCollisionMatrix {
 }
 
 export function createWorld() {
+  // Prefer Rapier WASM (native BVH + Continuous Collision Detection) when preloaded in the browser.
+  const R = getRapier();
+  if (R) return createRapierWorld(R, GRAVITY);
+
   const world = new CANNON.World({ gravity: new CANNON.Vec3(0, -GRAVITY, 0) });
+  world.engineName = 'cannon-es';
   world.collisionMatrix = new TypedCollisionMatrix();
   world.collisionMatrixPrevious = new TypedCollisionMatrix();
   world.broadphase = new CANNON.SAPBroadphase(world);

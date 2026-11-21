@@ -1267,7 +1267,9 @@ export function generateTrack(world, materials, seed, marbleCount = 8, variant =
     },
     // Cannon zeroes a motor's target the moment something stalls it hard; re-arming
     // every frame keeps the Gauntlet turning instead of seizing on a wedged marble.
+    // Also scrolls boost-pad chevrons down-track so boost zones visibly surge forward.
     driveMotors() {
+      boostTex.offset.y = (boostTex.offset.y - 0.028) % 1;
       // Two kinds: the pendulum bobs are hinge motors (re-armed, since cannon-es zeroes a motor
       // that stalls); the Gauntlet rotors are kinematic (spin re-asserted).
       for (const m of motors) {

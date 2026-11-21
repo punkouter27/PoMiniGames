@@ -10,6 +10,7 @@ import { createMarbles, MARBLE_COUNT, SKINS } from './marbles.js';
 import { load as loadSave, update as updateSave, readBest, rollDaily } from './store.js';
 import { gpBegin } from './grandprix.js';
 import { createAudio } from './audio.js';
+import { createMinimap } from './minimap.js';
 import { GhostMixin } from './ghost.js';
 import { InputMixin } from './input.js';
 import { DirectorMixin } from './director.js';
@@ -75,6 +76,8 @@ export class Game {
     this.world = w.world;
     this.materials = w.materials;
     this.audio = createAudio();
+    this.minimap = createMinimap(this.container);
+    this._actAnnounced = -1;
 
     this.phase = 'pick';
     this.score = 0;
@@ -183,6 +186,7 @@ export class Game {
     this._steerLeft = this._steerRight = false;
     this._sector = 0;
     this._sectorStart = 0;
+    this._actAnnounced = -1;
     this._setPhase('racing');
     this.raceClock = 0;
     this.tickAccum = TICK_INTERVAL;
@@ -218,6 +222,8 @@ export class Game {
     this._dropGhost();
     if (this.marbleSet) this.marbleSet.dispose();
     if (this.track) this.track.dispose();
+    if (this.minimap) this.minimap.dispose();
+    if (this.world && this.world.free) this.world.free();
     this.audio.dispose();
     this.scene.dispose();
     this.stage.dispose();   // stops the loop, drops the observer + listeners, frees the renderer and its GL context
@@ -280,6 +286,7 @@ export class Game {
     this._shotMarble = null;
     this._lastFocus = null;
     this._leaders = [];
+    this.minimap.setTrack(this.track);
     this._setPhase('pick');
     // frame the start gate from above, looking along the track rather than down world +Z
     this.scene.followTarget(this.track.overviewTarget, 0, true, this.track.dirAt(0));
@@ -447,6 +454,23 @@ export class Game {
 
       // Audio beds, colour grade, camera and sector splits: shared with the online guest's frame.
       this._presentRace(order, dt, this._surface);
+
+      // Adaptive synth score + live 2D minimap + Act transition broadcaster callouts.
+      const focus = this._lastFocus || order[0];
+      if (focus && this.track.length > 0) {
+        const prog = Math.max(0, Math.min(1, focus.s / this.track.length));
+        const spd = focus.body ? focus.body.velocity.length() : 0;
+        this.audio.updateMusic?.(prog, spd, this._wasBoosting, dt);
+        const ACT_THRESH = [0.12, 0.22, 0.52, 0.695, 0.885];
+        for (let a = ACT_THRESH.length - 1; a >= 0; a--) {
+          if (prog >= ACT_THRESH[a] && a > this._actAnnounced) {
+            this._actAnnounced = a;
+            this.audio.announceAct?.(a);
+            break;
+          }
+        }
+      }
+      this.minimap.update(this.marbleSet.marbles, this.chosen, dt);
 
       this.tickAccum += dt;
       if (this.tickAccum >= TICK_INTERVAL) { this.tickAccum = 0; this._sendTick(); }

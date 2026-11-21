@@ -330,74 +330,13 @@ export function createScene(container, renderer, stage) {
     }
   }
 
-  // ── GPU spark pool (#7 — collision sparks) ────────────────────────────
-  // 320, up from 160: the finish burst (game.js) throws 120 at once for your own top-10 crossing.
-  const SPARKS = 320;
-  const sparkPos = new Float32Array(SPARKS * 3);
-  const sparkCol = new Float32Array(SPARKS * 3);
-  const sparkVel = new Float32Array(SPARKS * 3);
-  const sparkLife = new Float32Array(SPARKS);
-  const sparkBase = new Float32Array(SPARKS * 3);
-  const sparkGeo = new THREE.BufferGeometry();
-  sparkGeo.setAttribute('position', new THREE.BufferAttribute(sparkPos, 3));
-  sparkGeo.setAttribute('color', new THREE.BufferAttribute(sparkCol, 3));
-  const sparkMat = new THREE.PointsMaterial({
-    size: 0.7, vertexColors: true, transparent: true,
-    blending: THREE.AdditiveBlending, depthWrite: false,
-  });
-  const sparkPoints = new THREE.Points(sparkGeo, sparkMat);
-  sparkPoints.frustumCulled = false;
-  for (let i = 0; i < SPARKS; i++) { sparkPos[i * 3 + 1] = -9999; }
-  scene.add(sparkPoints);
-  let sparkHead = 0;
-  const _col = new THREE.Color();
-
+  // ── GPU spark & confetti routing (zero-CPU per-frame particle simulation via fx-race.js) ──
   function burstSparks(pos, colorHex, count = 9, strength = 1) {
-    _col.set(colorHex ?? 0xffd9a0);
-    for (let k = 0; k < count; k++) {
-      const i = sparkHead; sparkHead = (sparkHead + 1) % SPARKS;
-      sparkPos[i * 3] = pos.x; sparkPos[i * 3 + 1] = pos.y; sparkPos[i * 3 + 2] = pos.z;
-      sparkVel[i * 3] = (Math.random() - 0.5) * 10 * strength;
-      sparkVel[i * 3 + 1] = (Math.random() * 0.7 + 0.3) * 9 * strength;
-      sparkVel[i * 3 + 2] = (Math.random() - 0.5) * 10 * strength;
-      sparkLife[i] = 1;
-      sparkBase[i * 3] = _col.r; sparkBase[i * 3 + 1] = _col.g; sparkBase[i * 3 + 2] = _col.b;
-    }
+    raceFx.burst('sparks', pos, colorHex, { count, strength });
   }
 
-  // Multicolored confetti burst — reuses the spark pool but with random bright
-  // colors and a strong upward pop. Fired when a marble crosses the finish line.
-  const CONFETTI_COLORS = [0x22d3ee, 0xe879f9, 0xa3e635, 0xfb923c, 0xf87171, 0x60a5fa, 0xfde047, 0xf472b6, 0xffffff];
   function burstConfetti(pos, count = 24) {
-    for (let k = 0; k < count; k++) {
-      const i = sparkHead; sparkHead = (sparkHead + 1) % SPARKS;
-      sparkPos[i * 3] = pos.x; sparkPos[i * 3 + 1] = pos.y + 1.2; sparkPos[i * 3 + 2] = pos.z;
-      sparkVel[i * 3] = (Math.random() - 0.5) * 16;
-      sparkVel[i * 3 + 1] = Math.random() * 12 + 7;
-      sparkVel[i * 3 + 2] = (Math.random() - 0.5) * 16;
-      sparkLife[i] = 1.3;
-      _col.set(CONFETTI_COLORS[(Math.random() * CONFETTI_COLORS.length) | 0]);
-      sparkBase[i * 3] = _col.r; sparkBase[i * 3 + 1] = _col.g; sparkBase[i * 3 + 2] = _col.b;
-    }
-  }
-
-  function updateSparks(dt) {
-    let any = false;
-    for (let i = 0; i < SPARKS; i++) {
-      if (sparkLife[i] <= 0) continue;
-      any = true;
-      sparkLife[i] -= dt / 0.45;
-      const l = Math.max(0, sparkLife[i]);
-      sparkVel[i * 3 + 1] -= 26 * dt;
-      sparkPos[i * 3] += sparkVel[i * 3] * dt;
-      sparkPos[i * 3 + 1] += sparkVel[i * 3 + 1] * dt;
-      sparkPos[i * 3 + 2] += sparkVel[i * 3 + 2] * dt;
-      sparkCol[i * 3] = sparkBase[i * 3] * l;
-      sparkCol[i * 3 + 1] = sparkBase[i * 3 + 1] * l;
-      sparkCol[i * 3 + 2] = sparkBase[i * 3 + 2] * l;
-      if (sparkLife[i] <= 0) { sparkPos[i * 3 + 1] = -9999; sparkCol[i * 3] = sparkCol[i * 3 + 1] = sparkCol[i * 3 + 2] = 0; }
-    }
-    if (any) { sparkGeo.attributes.position.needsUpdate = true; sparkGeo.attributes.color.needsUpdate = true; }
+    raceFx.burst('confetti', pos, null, count);
   }
 
   // ── Audio spatialization helper (#9) ──────────────────────────────────
@@ -592,7 +531,6 @@ export function createScene(container, renderer, stage) {
     // translate the eye without moving the image.
     PostFx.applyCameraShake(camera, performance.now() / 1000, 1.4);
 
-    updateSparks(dt);
     updatePulses(dt);
     updatePost(dt);             // #3 colour grade
     rackFocus.update(dt);       // §GFX-2 — no-op unless a photo finish is running
@@ -649,8 +587,6 @@ export function createScene(container, renderer, stage) {
     resize,
     dispose() {
       raceFx.dispose();
-      sparkGeo.dispose();
-      sparkMat.dispose();
       marbleEnv.dispose();   // PMREM render target + its texture
       rackFocus.dispose();
       gtao?.dispose?.();

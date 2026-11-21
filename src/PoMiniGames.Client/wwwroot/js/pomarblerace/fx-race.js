@@ -19,10 +19,10 @@ import { SSRPass } from 'three/addons/postprocessing/SSRPass.js';
 const reducedMotion = () =>
   typeof matchMedia === 'function' && matchMedia('(prefers-reduced-motion: reduce)').matches;
 
-// ── GPU bursts ────────────────────────────────────────────────────────────
-// 2048 slots in a ring: the biggest single burst (your own finish) is ~140, and a lap of boost pads
-// spawns a few dozen a second, so the ring never overwrites a particle that is still alive.
-const POOL = 2048;
+// ── GPU bursts & sparks ──────────────────────────────────────────────────
+// 8192 slots in a GPU ring buffer: handles collision sparks, confetti cannons, kicker rings,
+// boost streaks, and finish fountains in ONE draw call with zero per-frame CPU simulation.
+const POOL = 8192;
 const GRAVITY = 26;           // matches scene.js's CPU sparks, so the two kinds of debris fall alike
 const DRAG = 2.2;             // per-second exponential drag: bursts pop out then hang, rather than fly off
 
@@ -147,6 +147,27 @@ function createBursts(scene) {
     }
   }
 
+  function sparks(p, colorHex, count = 9, strength = 1) {
+    const col = colorHex ?? 0xffd9a0;
+    for (let k = 0; k < count; k++) {
+      emit(p.x, p.y, p.z,
+        (Math.random() - 0.5) * 14 * strength,
+        (Math.random() * 0.7 + 0.3) * 12 * strength,
+        (Math.random() - 0.5) * 14 * strength,
+        rnd(0.35, 0.65), 0.75, 1, col);
+    }
+  }
+
+  function confetti(p, count = 24) {
+    for (let k = 0; k < count; k++) {
+      emit(p.x, p.y + 1.2, p.z,
+        (Math.random() - 0.5) * 20,
+        Math.random() * 14 + 8,
+        (Math.random() - 0.5) * 20,
+        rnd(0.9, 1.5), 0.95, 0.85, FINISH[(Math.random() * FINISH.length) | 0]);
+    }
+  }
+
   function update(dt, camera, renderer) {
     clock += dt;
     mat.uniforms.uTime.value = clock;
@@ -170,6 +191,8 @@ function createBursts(scene) {
       else if (kind === 'pop') pop(p);
       else if (kind === 'boost') boost(p, dir);
       else if (kind === 'finish') finish(p, !!big);
+      else if (kind === 'sparks') sparks(p, dir, big?.count, big?.strength);
+      else if (kind === 'confetti') confetti(p, big);
     },
     update,
     clear() { for (let i = 0; i < POOL; i++) meta[i * 4] = -1e6; lo = 0; hi = POOL - 1; },

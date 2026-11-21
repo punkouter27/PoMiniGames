@@ -907,6 +907,73 @@ export function createAudio() {
     src.stop(now + seconds + 0.05);
   }
 
+  // ── Adaptive Procedural Synth Score (routed through bedBus so duck() and mute work automatically) ──
+  // Scales tempo and harmonic tension from Act 1 (chill pulse) to Act 5 (high-energy Gauntlet arp).
+  const MUSIC_SCALE = [146.83, 174.61, 196.00, 220.00, 261.63, 293.66, 349.23, 392.00]; // D minor pentatonic/dorian
+  let musicStep = 0;
+  let musicAccum = 0;
+  function updateMusic(progress, speed, boosting, dt) {
+    if (!ctx || !bedBus || muted || dt <= 0) return;
+    const p = Math.max(0, Math.min(1, progress || 0));
+    const tempo = 112 + p * 34 + (boosting ? 14 : 0); // 112 BPM -> 160 BPM in the Gauntlet
+    const stepDur = 60 / tempo / 2;                   // 8th-note pulse
+    musicAccum += dt;
+    if (musicAccum < stepDur) return;
+    musicAccum -= stepDur;
+
+    const now = ctx.currentTime;
+    const idx = musicStep++;
+    // Subtle sub-bass pulse on beats 0, 2, 4, 6
+    if (idx % 2 === 0) {
+      const bass = ctx.createOscillator();
+      const bf = ctx.createBiquadFilter();
+      const bg = ctx.createGain();
+      const root = MUSIC_SCALE[(Math.floor(idx / 8) % 4)] * 0.5;
+      bass.type = 'triangle';
+      bass.frequency.setValueAtTime(root, now);
+      bf.type = 'lowpass';
+      bf.frequency.setValueAtTime(220 + p * 260 + (boosting ? 180 : 0), now);
+      const peak = 0.045 + p * 0.025;
+      bg.gain.setValueAtTime(0.0001, now);
+      bg.gain.exponentialRampToValueAtTime(peak, now + 0.015);
+      bg.gain.exponentialRampToValueAtTime(0.0001, now + stepDur * 1.4);
+      bass.connect(bf).connect(bg).connect(bedBus);
+      bass.start(now);
+      bass.stop(now + stepDur * 1.5);
+    }
+    // High-energy arpeggio kicks in past Act 2 (Plinko) or while boosting.
+    if (p > 0.22 || boosting) {
+      const osc = ctx.createOscillator();
+      const lp = ctx.createBiquadFilter();
+      const g = ctx.createGain();
+      const note = MUSIC_SCALE[(idx * 3 + (p > 0.7 ? 2 : 0)) % MUSIC_SCALE.length] * (p > 0.85 ? 2 : 1);
+      osc.type = p > 0.75 ? 'sawtooth' : 'sine';
+      osc.frequency.setValueAtTime(note, now);
+      lp.type = 'lowpass';
+      lp.frequency.setValueAtTime(600 + p * 1600 + (boosting ? 900 : 0), now);
+      const amp = (0.018 + p * 0.022) * (boosting ? 1.35 : 1);
+      g.gain.setValueAtTime(0.0001, now);
+      g.gain.exponentialRampToValueAtTime(amp, now + 0.01);
+      g.gain.exponentialRampToValueAtTime(0.0001, now + stepDur * 0.85);
+      osc.connect(lp).connect(g).connect(bedBus);
+      osc.start(now);
+      osc.stop(now + stepDur * 0.9);
+    }
+  }
+
+  // ── Act Transition Broadcaster Callouts ──
+  const ACT_LINES = [
+    'Entering the Split Lanes!',
+    'Into the Neon Plinko scramble!',
+    'Vortex Funnel and free-fall plunge ahead!',
+    'Dropping into the Playground Tunnel!',
+    'Final Gauntlet! Hold your line to the finish!',
+  ];
+  function announceAct(actIndex) {
+    const line = ACT_LINES[actIndex];
+    if (line) say(line);
+  }
+
   // ── Announcer ──
   // The browser's own speech voice. Never queued (cancel, then speak) and silent when muted.
   function say(text) {
@@ -941,6 +1008,8 @@ export function createAudio() {
     playPhotoFinish,
     playMilestone,
     say,
+    announceAct,
+    updateMusic,
     setReverb,
     setAnnouncer(on) { announcerOn = !!on; if (!announcerOn) stopSpeech(); },
     isAnnouncerOn() { return announcerOn; },
