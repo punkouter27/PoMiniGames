@@ -18,10 +18,16 @@
 import { rumble } from './input.js';
 import { createMusicLayers } from '../platform/musicLayers.js';
 import { createTensionMixer } from '../platform/tensionMixer.js';
+import { createContactVoice } from '../platform/contactLoop.js';
 
 const GEAR_TOP = [70, 130, 195, 265, 345];   // sim units/s at the top of each gear
 const HEAR = 620;
 const AUDIO_UNITS = 1 / 45;                  // sim units per audio unit
+// platform/contactLoop.js voices: the player's tyres (roll + skid squeal) and the loudest sliding
+// rival, placed in the world. Slip speed (m/s of the contact patch) = sin(slip angle) · speed in
+// audio units · SLIP_MS; SLIP_MS makes a full-lock drift at top speed land near the squeal's knee.
+const SLIP_MS = 3;
+let tyreMe = null, tyreRival = null;
 
 let ctx = null, engine = null, rivals = [], beds = null, noiseBuffer = null;
 let gear = 0, lastV = 0, lastThrottle = 0;
@@ -160,6 +166,13 @@ export function start(laps) {
         beds.wind.gain.gain.value = 0;
     } catch { beds = null; }
 
+    // Continuous tyre contact (worklet): road roar + skid squeal. Until its module loads
+    // (or where worklets don't exist) update() is a no-op and the scrub bed above carries the sound.
+    try {
+        tyreMe = createContactVoice('tyre', { radius: 0.33, gain: 0.8 });
+        tyreRival = createContactVoice('tyre', { spatial: true, radius: 0.33, refDistance: 6, gain: 0.7 });
+    } catch { tyreMe = null; tyreRival = null; }
+
     gear = 0; lastV = 0; lastThrottle = 0; litWas = 0;
 }
 
@@ -176,6 +189,8 @@ export function stop() {
             for (const node of [b.src, b.filter, b.gain]) { try { node.disconnect(); } catch { /* not connected */ } }
         }
     }
+    try { tyreMe?.stop(); tyreRival?.stop(); } catch { /* best effort */ }
+    tyreMe = null; tyreRival = null;
     engine = null; rivals = []; beds = null; ctx = null;
 }
 
@@ -271,6 +286,24 @@ export function frame(cars, me, quiet) {
         } catch { /* a panner bug must not silence the field */ }
     }
 
+    if (tyreMe) {
+        const v = Math.abs(me.v) * AUDIO_UNITS;
+        tyreMe.update({ rollSpeed: Math.min(9, v * 1.2), slipSpeed: Math.abs(Math.sin(me.slip || 0)) * v * SLIP_MS, load: quiet ? 0.5 : 1 });
+        // The rival that is sliding the hardest, placed relative to the listener (which sits at the origin).
+        let best = null, bestS = 0.3;
+        for (let i = 0; i < cars.length; i++) {
+            const c = cars[i];
+            if (c === me) continue;
+            const dx = c.x - me.x, dy = c.y - me.y;
+            if (dx * dx + dy * dy > 260 * 260) continue;
+            const sp = Math.abs(Math.sin(c.slip || 0)) * Math.abs(c.v) * AUDIO_UNITS * SLIP_MS;
+            if (sp > bestS) { bestS = sp; best = { c, dx, dy }; }
+        }
+        if (best) tyreRival.update({ rollSpeed: Math.min(9, Math.abs(best.c.v) * AUDIO_UNITS * 1.2), slipSpeed: bestS, load: 1,
+            position: { x: best.dx * AUDIO_UNITS, y: 0, z: -best.dy * AUDIO_UNITS } });
+        else tyreRival.update({ rollSpeed: 0, slipSpeed: 0, load: 0 });
+    }
+
     // Tyre scrub: the loudest slip on the frame, not just the player's. A car sliding past is
     // the sound that makes a pass feel close.
     if (beds) {
@@ -282,7 +315,8 @@ export function frame(cars, me, quiet) {
             if (d2 > 260 * 260) continue;
             slip = Math.max(slip, Math.abs(c.slip || 0) * (1 - Math.sqrt(d2) / 260));
         }
-        const scrub = Math.min(1, Math.max(0, (slip - 0.1) * 2.4));
+        // The worklet tyre voices take over the scrub once they are sounding; the bed stays as the fallback.
+        const scrub = Math.min(1, Math.max(0, (slip - 0.1) * 2.4)) * (tyreMe?.active ? 0.25 : 1);
         beds.scrub.gain.gain.setTargetAtTime(scrub * 0.075, t, 0.06);
         beds.scrub.filter.frequency.setTargetAtTime(1500 + scrub * 1600, t, 0.08);
         const speed = Math.min(1, Math.abs(me.v) / 345);

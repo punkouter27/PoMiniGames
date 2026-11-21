@@ -528,10 +528,158 @@ export function dopplerRatio2D(dx, dy, vx, vy) {
     return dopplerRatio({ x: dx, y: 0, z: dy }, { x: vx, y: 0, z: vy });
 }
 
+// ── Live early reflections ────────────────────────────────────────────────
+//
+// The SPACES above bake their early taps into a convolution IR, which is right for a fixed
+// room and wrong for a game where the listener walks from a canyon into a field. acousticProbe.js
+// measures the real geometry around the listener (ray casts) and hands the result here as a
+// short list of taps; this bank plays them as discrete delayed copies of the dry signal,
+// panned by where the wall actually is.
+//
+// WHY TWO BANKS: changing a DelayNode's delayTime while it is playing sweeps its read head and
+// is heard as a pitch glide (a "zipper" on every probe update). So the live taps are double
+// buffered: the new set is written into the SILENT bank — delays, gains and pans set
+// directly, nobody is listening — and then the two bank gains crossfade over `fadeMs`.
+// Nothing audible is ever re-timed. An update that arrives mid-crossfade replaces the pending
+// set and lands when the fade is done (so a fast-moving listener fades continuously instead
+// of stacking half-finished fades).
+
+const EARLY_MAX_TAPS = 10;
+const EARLY_MAX_DELAY = 0.45;   // s — taps past this are the reverb's job
+
+/**
+ * @param {BaseAudioContext} ctx
+ * @param {AudioNode} input    dry signal to reflect (e.g. the sfx bus)
+ * @param {AudioNode} output   where the reflections are summed
+ * @param {{taps?:number, level?:number}} [opts]
+ * @returns {{setTaps:(taps:{delay:number,gain:number,pan?:number}[], o?:{fadeMs?:number}) => boolean,
+ *            setLevel:(v:number)=>void, dispose:()=>void, readonly active:number}}
+ */
+export function createEarlyTaps(ctx, input, output, opts = {}) {
+    const n = Math.min(EARLY_MAX_TAPS, opts.taps || EARLY_MAX_TAPS);
+    const master = ctx.createGain();
+    master.gain.value = opts.level == null ? 1 : opts.level;
+    master.connect(output);
+
+    const banks = [0, 1].map(() => {
+        const bank = ctx.createGain();
+        bank.gain.value = 0;
+        bank.connect(master);
+        const taps = [];
+        for (let i = 0; i < n; i++) {
+            const d = ctx.createDelay(EARLY_MAX_DELAY + 0.05);
+            const g = ctx.createGain(); g.gain.value = 0;
+            const lp = ctx.createBiquadFilter();   // a wall takes the top off each bounce
+            lp.type = 'lowpass'; lp.frequency.value = 7000;
+            input.connect(d); d.connect(g); g.connect(lp);
+            let node = lp;
+            if (ctx.createStereoPanner) { const p = ctx.createStereoPanner(); lp.connect(p); node = p; taps.push({ d, g, lp, p }); }
+            else taps.push({ d, g, lp, p: null });
+            node.connect(bank);
+        }
+        return { bank, taps };
+    });
+
+    let active = 0;
+    let busyUntil = -1;
+    let pending = null;
+    let timer = 0;
+    let used = 0;
+
+    function load(b, list) {
+        const set = list.slice(0, n);
+        for (let i = 0; i < n; i++) {
+            const t = b.taps[i], s = set[i];
+            if (s) {
+                t.d.delayTime.value = Math.max(0.001, Math.min(EARLY_MAX_DELAY, s.delay));
+                t.g.gain.value = Math.max(0, Math.min(1, s.gain));
+                // farther/longer bounce = darker
+                t.lp.frequency.value = Math.max(1800, 8000 - s.delay * 9000);
+                if (t.p) t.p.pan.value = Math.max(-1, Math.min(1, s.pan || 0));
+            } else t.g.gain.value = 0;
+        }
+        used = set.length;
+    }
+
+    function apply(list, fadeMs) {
+        const now = ctx.currentTime;
+        const fade = Math.max(0.05, fadeMs / 1000);
+        const next = 1 - active;
+        load(banks[next], list);
+        banks[next].bank.gain.cancelScheduledValues(now);
+        banks[active].bank.gain.cancelScheduledValues(now);
+        banks[next].bank.gain.setTargetAtTime(1, now, fade / 3);
+        banks[active].bank.gain.setTargetAtTime(0, now, fade / 3);
+        active = next;
+        busyUntil = now + fade * 1.1;
+    }
+
+    return {
+        setTaps(list, o = {}) {
+            if (!Array.isArray(list)) return false;
+            const fadeMs = o.fadeMs ?? 280;
+            if (ctx.currentTime < busyUntil) {
+                pending = { list, fadeMs };
+                if (!timer && typeof setTimeout === 'function') {
+                    timer = setTimeout(() => {
+                        timer = 0;
+                        if (pending) { const p = pending; pending = null; apply(p.list, p.fadeMs); }
+                    }, Math.max(20, (busyUntil - ctx.currentTime) * 1000 + 10));
+                }
+                return false;
+            }
+            apply(list, fadeMs);
+            return true;
+        },
+        setLevel(v) { master.gain.setTargetAtTime(Math.max(0, v), ctx.currentTime, 0.1); },
+        get active() { return used; },
+        dispose() {
+            if (timer) clearTimeout(timer);
+            for (const b of banks) {
+                try { b.bank.disconnect(); } catch { /* gone */ }
+                for (const t of b.taps) {
+                    try { input.disconnect(t.d); } catch { /* gone */ }
+                    for (const nd of [t.d, t.g, t.lp, t.p]) { try { nd?.disconnect(); } catch { /* gone */ } }
+                }
+            }
+            try { master.disconnect(); } catch { /* gone */ }
+        },
+    };
+}
+
+let _live = null;   // the app-bus instance: sfx → taps → ui
+
+/**
+ * Drive the shared sfx bus's live early reflections (acousticProbe.js calls this). No-op before
+ * the first gesture. `level` scales the whole bank (0 = off).
+ */
+export function setEarlyTaps(taps, opts = {}) {
+    if (!_live) {
+        if (!AudioBus.hasContext()) return false;
+        const ctx = AudioBus.contextSync();
+        const sfx = AudioBus.busSync('sfx'), ui = AudioBus.busSync('ui');
+        if (!ctx || !sfx || !ui) return false;
+        const tap = ctx.createGain();           // own tap node so dispose never disconnects the bus
+        sfx.connect(tap);
+        const bank = createEarlyTaps(ctx, tap, ui, { level: opts.level });
+        _live = { bank, tap, sfx };
+    }
+    if (opts.level != null) _live.bank.setLevel(opts.level);
+    return _live.bank.setTaps(taps, opts);
+}
+
+export function clearEarlyTaps() {
+    if (!_live) return;
+    const l = _live; _live = null;
+    try { l.sfx.disconnect(l.tap); } catch { /* gone */ }
+    l.bank.dispose();
+}
+
 if (typeof window !== 'undefined') {
     window.PoAcoustics = {
         setSpace, currentSpace, useGame, prewarm, dopplerRatio, dopplerRatio2D,
         ZONES, zoneAt, createZoneMap, zoneSend, zoneImpulse, setZone, updateZone, currentZone, clearZone,
+        createEarlyTaps, setEarlyTaps, clearEarlyTaps,
     };
     // paletteBus (a classic script) may have run its first setGame before this module
     // evaluated; pick the route up here so a direct load into a game gets its space.

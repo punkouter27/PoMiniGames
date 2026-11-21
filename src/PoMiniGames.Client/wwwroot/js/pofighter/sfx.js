@@ -215,7 +215,7 @@ export function createFightAudio({ width }) {
             if (!a) return;
             const { ctx, out } = a;
             const s = impactShape(e);
-            ImpactSynth.play(s.tag, s.impulse, { pan: panFor(e.x, width), size: (e.heavy ?? e.move === 'kick') ? 1.4 : 1 });
+            ImpactSynth.play(s.tag, s.impulse, { pan: panFor(e.x, width), scale: (e.heavy ?? e.move === 'kick') ? 1.4 : 1 });
             const dest = placed(ctx, out, e.x);
             if (s.crack > 0) {
                 // The slap: bright, very short, the part that reads as skin and glove.

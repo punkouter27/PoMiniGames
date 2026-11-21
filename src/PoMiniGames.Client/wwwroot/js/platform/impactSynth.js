@@ -46,7 +46,11 @@ const clamp = (v, lo, hi) => (v < lo ? lo : v > hi ? hi : v);
  * @param {number} impulse raw collision impulse (engine units)
  * @param {object} [opts]
  * @param {number} [opts.full=20]      impulse that counts as a full-strength hit
- * @param {number} [opts.size=1]       object size; bigger rings lower (f ∝ 1/√size)
+ * @param {number} [opts.size]         object bounding radius in METRES. Mode pitch scales
+ *        ~ typicalSize/size (impactMaterials audio.size, ratio clamped 0.25..4) and
+ *        the ring lengthens with √ratio, so a pebble pings and a boulder booms. Omitted = the
+ *        material's typical object, i.e. exactly the old sound.
+ * @param {number} [opts.scale=1]      legacy abstract size; bigger rings lower (f ∝ 1/√scale)
  * @param {number} [opts.mass]         heavier = longer ring (capped)
  * @param {number} [opts.pan]          -1..1 stereo place, used when no position is given
  * @param {number} [opts.occlusion=0]  0..1 — lowpass toward 900 Hz
@@ -59,7 +63,10 @@ export function buildImpactVoice(tag, impulse, opts = {}) {
     const sig = signature(tag, impulse, { full: opts.full });
     const m = material(sig.material);
     const a = sig.audio;
-    const size = Math.max(0.05, Number(opts.size) || 1);
+    const scale = Math.max(0.05, Number(opts.scale) || 1);
+    const metres = Number(opts.size) > 0 ? Number(opts.size) : 0;
+    // size/typical: >1 = bigger than the material's usual object = lower and longer.
+    const rel = metres ? clamp(metres / (a.size || metres), 0.25, 4) : 1;
     const massRing = opts.mass > 0 ? clamp(Math.log2(1 + opts.mass) / 4, 0.6, 1.6) : 1;
     const variation = opts.variation == null ? Math.random() : clamp(opts.variation, 0, 1);
 
@@ -68,9 +75,9 @@ export function buildImpactVoice(tag, impulse, opts = {}) {
         doppler = dopplerRatio(opts.position, opts.velocity, opts.listener);
     }
 
-    const base = (BASE_HZ[sig.material] || 220) / Math.sqrt(size)
+    const base = (BASE_HZ[sig.material] || 220) / Math.sqrt(scale) / rel
         * a.pitchScale * doppler * (1 + (variation - 0.5) * 0.06);
-    const decay = clamp(a.decay * massRing, 0.03, 2.5);
+    const decay = clamp(a.decay * massRing * Math.sqrt(rel), 0.03, 2.5);
 
     const modes = [];
     for (let i = 0; i < Math.min(MAX_MODES, a.modes.length); i++) {

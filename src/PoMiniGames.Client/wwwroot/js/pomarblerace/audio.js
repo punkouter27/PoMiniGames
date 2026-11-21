@@ -63,6 +63,9 @@
 
 import { readPref } from './store.js';
 import * as ImpactSynth from '../platform/impactSynth.js';
+import { createContactVoice } from '../platform/contactLoop.js';
+import { createAcousticProbe } from '../platform/acousticProbe.js';
+import { setEarlyTaps, clearEarlyTaps } from '../platform/acoustics.js';
 
 const NOISE_SECONDS = 2;
 
@@ -128,7 +131,25 @@ const SURFACES = {
   air: { type: 'bandpass', lo: 140, span: 620, q: 1.1, gain: 0, trem: 0, rate: 0 },
 };
 
+// Which friction colour the camera marble's contact voice wears on each SURFACES kind.
+const CONTACT_TAG = { surface: 'stone', obstacle: 'metal', rumble: 'stone', bump: 'wood', ice: 'ice', boost: 'metal', air: 'stone' };
+
 export function createAudio() {
+  // Platform contact voices (contactLoop.js), one per tag, made on demand. Only the one matching the
+  // surface under the camera marble is fed; the others idle out and hand their slot back.
+  const contactVoices = {};
+  // Ray-cast early reflections (platform/acousticProbe.js). Needs the game to hand over a raycaster
+  // — setRaycaster((origin, dir, maxDist) => distance|null) — because the course geometry lives in
+  // the physics world, not here. Without one nothing changes.
+  let probe = null;
+  function setRaycaster(fn) {
+    if (!fn) { probe = null; clearEarlyTaps(); return; }
+    probe = createAcousticProbe({
+      raycast: fn, rays: 24, perFrame: 3, maxDist: 60,
+      apply(est) { setEarlyTaps(est.taps.map((t) => ({ delay: t.delay, gain: t.gain * 0.8, pan: t.pan })), { fadeMs: 300 }); },
+    });
+  }
+  let contactOn = false;
   let ctx = null;
   let muted = false;
   let lastClink = 0;
@@ -412,6 +433,7 @@ export function createAudio() {
     if (!rivals || !rivals.length || !camera) return;
     const now = ctx.currentTime;
     placeListener(camera, now);
+    if (probe) { const e = camera.matrixWorld.elements; probe.update(camera.position, { rightX: e[0], rightZ: e[2] }); }
     nearest.length = 0;
     if (racing && marbles) {
       const c = camera.position;
@@ -452,7 +474,26 @@ export function createAudio() {
       const spin = Math.hypot(w.x, w.y, w.z);
       if (spin > 0) slip = Math.abs(Math.hypot(v.x, v.y, v.z) - spin * (m.radius || 1));
     }
-    const k = Math.min(1, Math.max(0, (slip - 2) / SLIP_FULL));
+    // Continuous contact voice: |ω|·r is the no-slip roll speed, `slip` the sliding speed on top.
+    // While it sounds it carries the scrape, so the old slip hiss and part of the roll bed step back.
+    let spinSpeed = 0;
+    if (racing && m && m.body && rollKind !== 'air' && !m.finished && !m.eliminated) {
+      const w = m.body.angularVelocity;
+      spinSpeed = Math.hypot(w.x, w.y, w.z) * (m.radius || 1);
+    }
+    const tag = CONTACT_TAG[rollKind] || 'stone';
+    contactOn = false;
+    for (const t in contactVoices) {
+      const cv = contactVoices[t];
+      if (t === tag) {
+        cv.update({ rollSpeed: spinSpeed, slipSpeed: slip, load: rollKind === 'air' ? 0 : 1 });
+        contactOn = contactOn || cv.active;
+      } else if (cv.active) cv.update({ rollSpeed: 0, slipSpeed: 0, load: 0 });
+    }
+    if (!contactVoices[tag]) {
+      try { contactVoices[tag] = createContactVoice(tag, { radius: m?.radius || 0.3, gain: 0.9 }); } catch { /* optional */ }
+    }
+    const k = Math.min(1, Math.max(0, (slip - 2) / SLIP_FULL)) * (contactOn ? 0.2 : 1);
     // Ice skids are the point of ice: let them through louder.
     const trim = rollKind === 'ice' ? 1.4 : 1;
     slipGain.gain.setTargetAtTime(k * k * SLIP_GAIN * trim, now, 0.05);
@@ -620,7 +661,7 @@ export function createAudio() {
       tremOsc.frequency.setTargetAtTime(sf.rate || 12, now, 0.03);
     }
     // Ramp rather than set: a per-frame setValueAtTime on a gain is a zipper-noise generator.
-    const rollTarget = racing ? (0.02 + v * 0.16) * sf.gain : 0;
+    const rollTarget = racing ? (0.02 + v * 0.16) * sf.gain * (contactOn ? 0.55 : 1) : 0;
     rollGain.gain.setTargetAtTime(rollTarget, now, surface === 'air' ? 0.03 : 0.08);
     rollFilter.frequency.setTargetAtTime(sf.lo + v * sf.span, now, 0.08);
     tremDepth.gain.setTargetAtTime(sf.trem * (0.4 + 0.6 * v), now, 0.05);
@@ -697,7 +738,7 @@ export function createAudio() {
     // from the shared material table (its own capped pool and rate limit), into this game's mix.
     if (!(bank && bank.length)) {
       const played = ImpactSynth.play(SYNTH_MATERIAL[material] || 'stone', speed, {
-        full: IMPACT_FULL, size: material === 'marble' ? 0.35 : 1, pan: cue?.pan || 0,
+        full: IMPACT_FULL, scale: material === 'marble' ? 0.35 : 1, pan: cue?.pan || 0,
         context: c, destination: sfxBus,
       });
       if (played) { lastClink = now; return; }
@@ -1091,7 +1132,7 @@ export function createAudio() {
     playRoar,
     playFinish,
     updateBeds,
-    updateRivals,
+    updateRivals, setRaycaster,
     silenceBeds,
     setMuted(m) { muted = !!m; applyMute(); },
     toggleMuted() { muted = !muted; applyMute(); return muted; },
@@ -1107,6 +1148,8 @@ export function createAudio() {
         try { slipSrc && slipSrc.stop(); } catch { }
         for (const x of impactVoices) { try { x.src.stop(); } catch { } }
         if (rivals) for (const r of rivals) { try { r.src.stop(); r.panner.disconnect(); } catch { } }
+        for (const t in contactVoices) { try { contactVoices[t].stop(); } catch { } delete contactVoices[t]; }
+        if (probe) { probe = null; clearEarlyTaps(); }
         resetListener();
         // The shared context outlives this game: detach our graph from it instead of closing it.
         try { master && master.disconnect(); } catch { }

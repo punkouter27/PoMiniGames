@@ -57,6 +57,27 @@
 // coordinates. What the shared stack IS consulted for is mute and volume: this context
 // follows the player's app-wide setting for both (see syncGlobalMute).
 import { assignSlots } from './fireClusters.js';
+import { createAmbisonicBed } from '../../platform/ambisonics.js';
+import { createAcousticProbe, heightfieldRaycaster } from '../../platform/acousticProbe.js';
+import { createEarlyTaps } from '../../platform/acoustics.js';
+
+// GFX/audio pass: the ambience is a first-order AMBISONIC bed (platform/ambisonics.js) and the
+// room around the listener is MEASURED (platform/acousticProbe.js).
+//
+//   AMBIENCE  wind (four decorrelated sources round the horizon), surf (toward the nearest sea,
+//             found by marching the heightfield), canopy and rain (overhead), crickets and
+//             un-placed bird chirps (random directions) are encoded once at fixed WORLD
+//             directions and the whole field is rotated by the camera's heading every frame —
+//             turn to face the sea and the surf comes round to your front instead of staying
+//             "left" the way a stereo loop would.
+//   ROOM      ~28 terrain rays, three per frame, give early-reflection taps (a canyon wall 30 m
+//             away returns a slapback ~175 ms later; an open beach returns almost nothing but
+//             the ground) and a wet scale for the reverb send: the same island sounds closed
+//             in a gorge and open on a summit. Taps crossfade between two banks, so nothing
+//             zippers while the player flies.
+//   OCCLUSION one-shot stingers (place()) ask the probe whether a hill is between them and the
+//             listener and take a lowpass + level cut when it is — the rockslide behind the
+//             ridge is muffled, the one in plain view is not.
 
 const MASTER_LEVEL = 0.55;
 const SPEED_OF_SOUND = 343;      // m/s — the delay that makes distance legible
@@ -91,6 +112,9 @@ export function createAudio() {
   let birdGain = null;
   let cricketGain = null;
   let windGain = null;
+  let ambi = null;           // ambisonic ambience bed (dry, into master)
+  let probe = null; let early = null; let wetOut = null; let terrainRef = null;
+  let seaDir = null; let seaAt = -10; let surfSrc = null;
   let rainGain = null;
   let surfGain = null; let surfDepth = null; let canopyGain = null;
   let rainNow = 0;           // 0..1, for the hiss of rain on fire
@@ -114,7 +138,7 @@ export function createAudio() {
     const Ctor = window.AudioContext || window.webkitAudioContext;
     if (!Ctor) return;
     try { ctx = new Ctor(); } catch { ctx = null; return; }
-    try { build(); } catch { ctx = null; }     // a broken device disables audio, not the game
+    try { build(); initProbe(); } catch { ctx = null; }     // a broken device disables audio, not the game
   }
 
   /**
@@ -159,6 +183,13 @@ export function createAudio() {
     const wet = ctx.createGain();
     wet.gain.value = 0.34;
     reverbSend.connect(convolver).connect(wet).connect(master);
+    wetOut = wet;
+    // The ambience bed and the live early reflections. Taps hear the master mix and return into
+    // the filter downstream of it (not master itself: that would be a feedback loop).
+    try {
+      ambi = createAmbisonicBed(ctx, master);
+      early = createEarlyTaps(ctx, master, underFilter, { level: 0.55 });
+    } catch { ambi = null; early = null; }
 
     // One pink-ish noise buffer feeds wind, waves and the stingers.
     const len = Math.floor(ctx.sampleRate * 2);
@@ -174,15 +205,29 @@ export function createAudio() {
     // Wind: looped noise through a slowly wandering low-pass. Kept non-positional on
     // purpose — wind has no source, and panning it would make the god's own head the
     // weather. Its LEVEL does move, with altitude (see setPlayer).
-    const wind = loopNoise();
-    const windFilter = ctx.createBiquadFilter();
-    windFilter.type = 'lowpass'; windFilter.frequency.value = 320; windFilter.Q.value = 0.4;
-    windGain = ctx.createGain(); windGain.gain.value = 0.05;
+    // On the ambisonic bed it is four decorrelated copies round the horizon (each its own read
+    // offset into the noise, so they are four winds, not one): the field has no centre to
+    // pan, but it still turns with the camera and its sides differ from moment to moment.
     const windLfo = ctx.createOscillator(); windLfo.frequency.value = 0.07;
     const windDepth = ctx.createGain(); windDepth.gain.value = 140;
-    windLfo.connect(windDepth).connect(windFilter.frequency);
-    wind.connect(windFilter).connect(windGain).connect(master);
-    wind.start(); windLfo.start();
+    const windDirs = [{ x: 1, y: 0.15, z: 1 }, { x: -1, y: 0.15, z: 1 }, { x: -1, y: 0.15, z: -1 }, { x: 1, y: 0.15, z: -1 }];
+    const windGains = [];
+    windDirs.forEach((dir, i) => {
+      const wind = loopNoise();
+      const windFilter = ctx.createBiquadFilter();
+      windFilter.type = 'lowpass'; windFilter.frequency.value = 320; windFilter.Q.value = 0.4;
+      const g = ctx.createGain(); g.gain.value = 0.05;
+      windLfo.connect(windDepth).connect(windFilter.frequency);
+      wind.connect(windFilter).connect(g);
+      if (ambi) ambi.addSource(g, { dir, spread: 0.35, gain: 1 }); else g.connect(master);
+      wind.start(0, i * 0.47);
+      windGains.push(g);
+    });
+    // One handle the rest of the file drives like the single gain it used to be.
+    windGain = { gain: {
+      setTargetAtTime(v, t, tc) { for (const g of windGains) g.gain.setTargetAtTime(v, t, tc); },
+    } };
+    windLfo.start();
 
     // Waves: the same noise through a band-pass, swelling and receding.
     const surf = loopNoise();
@@ -192,7 +237,8 @@ export function createAudio() {
     const surfLfo = ctx.createOscillator(); surfLfo.frequency.value = 0.13;
     surfDepth = ctx.createGain(); surfDepth.gain.value = 0.02;
     surfLfo.connect(surfDepth).connect(surfGain.gain);
-    surf.connect(surfFilter).connect(surfGain).connect(master);
+    surf.connect(surfFilter).connect(surfGain);
+    if (ambi) surfSrc = ambi.addSource(surfGain, { dir: { x: 1, y: 0, z: 0 }, spread: 1, gain: 1 }); else surfGain.connect(master);
     surf.start(); surfLfo.start();
 
     // Rain: the same noise, high-passed into hiss, with a slow swell so a downpour breathes.
@@ -203,7 +249,8 @@ export function createAudio() {
     const rainTone = ctx.createBiquadFilter();
     rainTone.type = 'peaking'; rainTone.frequency.value = 3200; rainTone.gain.value = 4; rainTone.Q.value = 0.8;
     rainGain = ctx.createGain(); rainGain.gain.value = 0;
-    rain.connect(rainFilter).connect(rainTone).connect(rainGain).connect(master);
+    rain.connect(rainFilter).connect(rainTone).connect(rainGain);
+    if (ambi) ambi.addSource(rainGain, { dir: { x: 0, y: 1, z: 0 }, spread: 0.7, gain: 1 }); else rainGain.connect(master);
     rain.start();
 
     // Canopy: leaves in the wind. Silent until the listener is under trees (setPlace).
@@ -214,7 +261,8 @@ export function createAudio() {
     const canopySwing = ctx.createGain(); canopySwing.gain.value = 600;
     canopyLfo.connect(canopySwing).connect(canopyFilter.frequency);
     canopyGain = ctx.createGain(); canopyGain.gain.value = 0;
-    canopy.connect(canopyFilter).connect(canopyGain).connect(master);
+    canopy.connect(canopyFilter).connect(canopyGain);
+    if (ambi) ambi.addSource(canopyGain, { dir: { x: 0, y: 1, z: 0 }, spread: 0.55, gain: 1 }); else canopyGain.connect(master);
     canopy.start(); canopyLfo.start();
 
     // Birds: silent bus; chirps are scheduled on top of it while the sun is up.
@@ -230,7 +278,8 @@ export function createAudio() {
     const amDepth = ctx.createGain(); amDepth.gain.value = 0.5;
     amLfo.connect(amDepth).connect(am.gain);
     cricketGain = ctx.createGain(); cricketGain.gain.value = 0;
-    cricket.connect(am).connect(cricketGain).connect(master);
+    cricket.connect(am).connect(cricketGain);
+    if (ambi) ambi.addSource(cricketGain, { dir: { x: -0.7, y: 0.1, z: 0.7 }, spread: 0.3, gain: 1 }); else cricketGain.connect(master);
     cricket.start(); amLfo.start();
   }
 
@@ -238,6 +287,15 @@ export function createAudio() {
     const src = ctx.createBufferSource();
     src.buffer = noise; src.loop = true;
     return src;
+  }
+
+  /** 0..1 how much terrain is between the listener and a world point (0 with no probe yet). */
+  function occlusionAt(x, y, z) {
+    if (!probe) return 0;
+    try {
+      // The key is a coarse cell so a rockslide's forty chunks share one answer.
+      return probe.occlusionFor({ x, y, z }, listener, { key: ((x / 3) | 0) + '|' + ((y / 3) | 0) + '|' + ((z / 3) | 0) });
+    } catch { return 0; }
   }
 
   /**
@@ -264,13 +322,29 @@ export function createAudio() {
       send.gain.value = wet;
       panner.connect(send).connect(reverbSend);
     }
-    return { node: panner, dist };
+    // Is a hill in the way? Then the sound arrives dull and quieter (a lowpass toward 900 Hz).
+    const occ = occlusionAt(x, y, z);
+    if (occ > 0.05) {
+      const lp = ctx.createBiquadFilter();
+      lp.type = 'lowpass'; lp.frequency.value = 18000 * Math.pow(900 / 18000, occ);
+      const cut = ctx.createGain(); cut.gain.value = 1 - 0.45 * occ;
+      lp.connect(cut).connect(panner);
+      return { node: lp, dist, occlusion: occ };
+    }
+    return { node: panner, dist, occlusion: 0 };
   }
 
   function chirp(at) {
     // From a flock, when the renderer has said where the flocks are: the chirp then skips
     // the bus (which has no place) and carries the day's bird level itself.
     let dest = birdGain; let level = 0.05;
+    if (ambi) {
+      // No flock to place it: a chirp from somewhere round the listener, in the sky half.
+      const az = Math.random() * Math.PI * 2, el = 0.2 + Math.random() * 0.5;
+      dest = ambi.oneShot({ x: Math.cos(az) * Math.cos(el), y: Math.sin(el), z: Math.sin(az) * Math.cos(el) }, 1.4, { spread: 0.1 });
+      level = 0.05 * birdLevelNow;
+      if (level < 0.002) return;
+    }
     const from = birdPoints?.length ? birdPoints[(Math.random() * birdPoints.length) | 0] : null;
     if (from) {
       const placed = place(from.x, from.y, from.z, { wet: 0.4, ref: 34, rolloff: 0.6 });
@@ -604,11 +678,64 @@ export function createAudio() {
       }
     } catch { /* older engines expose one path or the other, never neither */ }
 
+    // The ambience field turns with the camera; the probe re-measures the room a few rays a frame.
+    try {
+      ambi?.setOrientation(dir.x, dir.y, dir.z);
+      probe?.update(pose, { rightX: -dir.z, rightZ: dir.x });
+      if (terrainRef && surfSrc && ctx.currentTime - seaAt > 0.5) { seaAt = ctx.currentTime; aimSurf(pose); }
+    } catch { /* ambience is decoration */ }
+
     // Altitude is the one thing the wind should answer to: a god at 80 m is in it.
     if (windGain) {
       const high = Math.min(1, Math.max(0, (pose.y - 6) / 70));
       windGain.gain.setTargetAtTime(0.05 + high * 0.13 + windBoost, ctx.currentTime, 0.6);
     }
+  }
+
+  /**
+   * Point the surf at the nearest sea: 16 headings marched across the heightfield for the first
+   * sample below the waterline, nearer shores weighing more. Inland (nothing found) it is diffuse.
+   */
+  function aimSurf(pose) {
+    let sx = 0, sz = 0, w = 0, nearest = Infinity;
+    for (let k = 0; k < 16; k++) {
+      const a = (k / 16) * Math.PI * 2, cx = Math.cos(a), cz = Math.sin(a);
+      for (let d = 6; d <= 140; d += 6) {
+        if (terrainRef.heightAt(pose.x + cx * d, pose.z + cz * d) < -0.05) {
+          const wk = 1 / (d + 10);
+          sx += cx * wk; sz += cz * wk; w += wk;
+          if (d < nearest) nearest = d;
+          break;
+        }
+      }
+    }
+    if (w > 0 && Math.hypot(sx, sz) > 1e-4) {
+      surfSrc.setDirection({ x: sx, y: 0, z: sz });
+      surfSrc.setSpread(Math.max(0.25, Math.min(1, 0.35 + nearest / 200)));
+    } else surfSrc.setSpread(1);
+  }
+
+  /** The renderer's terrain read API (heightAt) — the probe's rays and the surf's bearing march it. */
+  function setTerrain(api) {
+    terrainRef = api || null;
+    probe = null;
+    if (!ctx || !api) return;
+    initProbe();
+  }
+
+  function initProbe() {
+    if (!terrainRef || !ctx || !early) return;
+    probe = createAcousticProbe({
+      raycast: heightfieldRaycaster((x, z) => terrainRef.heightAt(x, z), { minHeight: 0, step: 1.5 }),
+      rays: 28, perFrame: 3, maxDist: 70,
+      apply(est) {
+        // Taps are quiet next to the dry sound; scale with how enclosed the spot is.
+        const k = 0.35 + 0.65 * (1 - est.openness);
+        early.setTaps(est.taps.map((t) => ({ delay: t.delay, gain: t.gain * k, pan: t.pan })), { fadeMs: 350 });
+        // Closed-in spots are wetter; summits and beaches drier than the island's baseline.
+        wetOut?.gain.setTargetAtTime(0.34 * Math.max(0.5, Math.min(1.5, 0.45 + est.wetScale * 0.6)), ctx.currentTime, 0.6);
+      },
+    });
   }
 
   /** The camera went under the waterline (true) or came back up. */
@@ -948,7 +1075,7 @@ export function createAudio() {
   }
 
   return {
-    ensure,
+    ensure, setTerrain,
     setFires, setPlace, setBirds, footfalls, setHerd, setRolls, creak,
     /** What is sounding now, for a harness: fire voices up, and the bed levels. */
     get standing() {
@@ -1007,6 +1134,8 @@ export function createAudio() {
     get enabled() { return enabled; },
     dispose() {
       try { ctx?.close(); } catch { /* already gone */ }
+      try { ambi?.dispose(); early?.dispose(); } catch { /* gone */ }
+      ambi = null; early = null; probe = null; surfSrc = null; wetOut = null;
       ctx = null; master = null; reverbSend = null;
       fires = null; rolls = null; herd = null; wings = null; crackleBuf = null; surfGain = null; surfDepth = null; canopyGain = null;
     },
