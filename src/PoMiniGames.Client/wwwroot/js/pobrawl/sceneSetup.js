@@ -4,7 +4,13 @@
 // The post chain is a three RenderPipeline (TSL), so one node graph runs on WebGPU and on
 // WebGPURenderer's own WebGL2 backend alike:
 //
-//   pass(scene) → GTAO → bloom → [afterimage] → [rack focus] → CA/vignette/grade → output
+//   pass(scene) → [SSGI → SSR] → GTAO → TRAA → exposure + flare/streak → bloom → [afterimage]
+//     → [rack focus] → CA/vignette/grade → output → [FXAA]
+//
+// The bracketed front half (SSGI, SSR, TRAA, auto-exposure, lens flare, anamorphic streaks,
+// dynamic resolution) is the shared post stack, platform/3d/postStack.js, tier-gated there:
+// medium gets TRAA + exposure + flare, high adds SSGI + SSR, low none. TRAA replaces MSAA, so
+// the scene pass is single-sample on every tier but low; FXAA is the low-tier path.
 //
 // The engine still talks to it through the handles the old EffectComposer chain had
 // (`composer.render()`, `bloomPass.strength`, `fxPass.uniforms`, `afterimage.enabled`,
@@ -18,6 +24,8 @@ import { afterImage } from 'three-eco/addons/tsl/display/AfterImageNode.js';
 import { dof } from 'three-eco/addons/tsl/display/DepthOfFieldNode.js';
 import { fxaa } from 'three-eco/addons/tsl/display/FXAANode.js';
 import { allowHeavy } from '../platform/postPunch.js';
+import { POST_LIB } from '../platform/3d/postAddons.js';
+import { createPostStack } from '../platform/3d/postStack.js';
 import * as Quality from './quality.js';
 import { bindView, setMaxDpr } from './stageHost.js';
 import { createFxStage } from './postShader.js';
@@ -49,28 +57,39 @@ class SceneSetupMethods {
     // MSAA lives on this pass, tiered 4 → 2 → 0. The AO stage reads the pass's depth, and a
     // multisampled depth texture cannot be sampled the way it needs on WebGPU, so with AO on
     // the pass renders single-sample and FXAA cleans the edges at the end instead.
-    const useFxaa = !!q.gtao;
-    const scenePass = pass(this.scene, this.camera, { samples: useFxaa ? 0 : q.msaaSamples });
-    // The pass only gives its target these on its first render. The warm-up compiles the
-    // scene against that target BEFORE then (game.js _warmupRender), and a target that later
-    // changes sample count or type is a different render context: every material would be
-    // built a second time, synchronously, on the first real frame.
-    scenePass.renderTarget.samples = useFxaa ? 0 : q.msaaSamples;
-    scenePass.renderTarget.texture.type = this.renderer.getOutputBufferType?.() ?? THREE.HalfFloatType;
-    const sceneTex = scenePass.getTextureNode('output');
-
-    // GTAO is by far the most expensive stage; 'high' tier only, at half resolution.
-    let lit = sceneTex;
+    //
+    // The shared stack builds that pass (samples/type are preset inside it, see postStack.js, for
+    // the same reason: the warm-up compiles against the target before its first render). GTAO is
+    // by far the most expensive stage of this chain; 'high' tier only, at half resolution, and
+    // handed to the stack as a pre-resolve hook so TRAA anti-aliases the occlusion with the frame.
     let aoNode = null;
-    if (q.gtao) {
-      try {
-        aoNode = ao(scenePass.getTextureNode('depth'), null, this.camera);
-        aoNode.resolutionScale = 0.5;
-        aoNode.samples.value = q.gtaoSamples;
-        const occlusion = mix(1, aoNode.getTextureNode().r, AO_BLEND);
-        lit = vec4(sceneTex.rgb.mul(occlusion), sceneTex.a);
-      } catch { aoNode = null; lit = sceneTex; /* AO is a nicety — never block the game on it */ }
-    }
+    const stack = createPostStack(POST_LIB, this.renderer, this.scene, this.camera, {
+      tier: Quality.tier(),
+      // No MRT attachments: the warm-up's compileAsync cannot build their outputs (see postStack.js).
+      velocity: 'camera',
+      // The hall is dark on purpose (a dark blue arena, bright lamp heads); keep the meter close to 1.
+      exposure: { key: 0.07, strength: 0.4, min: 0.9, max: 1.15 },
+      samples: q.gtao ? 0 : q.msaaSamples,
+      type: this.renderer.getOutputBufferType?.() ?? THREE.HalfFloatType,
+      // Dynamic resolution moves the stage's pixel-ratio ceiling, the one policy PoBrawl already has.
+      onScale: (scale) => setMaxDpr(this.stage, q.maxDpr * scale),
+      lit: (sceneTex, pass0) => {
+        if (!q.gtao) return sceneTex;
+        try {
+          aoNode = ao(pass0.getTextureNode('depth'), null, this.camera);
+          aoNode.resolutionScale = 0.5;
+          aoNode.samples.value = q.gtaoSamples;
+          const occlusion = mix(1, aoNode.getTextureNode().r, AO_BLEND);
+          return vec4(sceneTex.rgb.mul(occlusion), sceneTex.a);
+        } catch { aoNode = null; return sceneTex; /* AO is a nicety — never block the game on it */ }
+      },
+    });
+    const scenePass = stack.scenePass;
+    this._postStack = stack;
+    // TRAA resolved the edges itself when it is in the stack, and MSAA did when it is on the
+    // pass; with neither (the low tier) FXAA takes over at the end.
+    const useFxaa = !stack.antialiased && scenePass.renderTarget.samples === 0;
+    let lit = stack.node;
     this.gtaoPass = { enabled: !!aoNode, node: aoNode };
 
     let bloomNode = null;
@@ -150,6 +169,7 @@ class SceneSetupMethods {
       // What RenderPass used to draw into: the warm-up compiles the scene against it.
       get readBuffer() { return scenePass.renderTarget; },
       render: () => {
+        stack.update();
         fx.sync();
         focus.value = rack.focus.value;
         bokeh.value = (rack.maxblur.value / DOF_PEAK) * DOF_BOKEH;
@@ -162,7 +182,7 @@ class SceneSetupMethods {
         try { aoNode?.dispose?.(); } catch { /* already gone */ }
         try { bloomNode?.dispose?.(); } catch { /* already gone */ }
         try { smear?.dispose?.(); } catch { /* already gone */ }
-        try { scenePass.dispose?.(); } catch { /* already gone */ }
+        try { stack.dispose(); } catch { /* already gone */ }
         try { pipeline.dispose(); } catch { /* already gone */ }
       },
     };
@@ -322,7 +342,7 @@ class SceneSetupMethods {
 }
 
 function composerKey(q) {
-  return `${q.msaaSamples}|${q.gtao ? q.gtaoSamples : 0}|${q.bloom ? 1 : 0}`;
+  return `${q.msaaSamples}|${q.gtao ? q.gtaoSamples : 0}|${q.bloom ? 1 : 0}|${Quality.tier()}`;
 }
 
 /**

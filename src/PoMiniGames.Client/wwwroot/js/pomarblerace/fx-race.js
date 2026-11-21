@@ -3,8 +3,18 @@
 // Runs an 8,192-slot ring buffer of GPU-simulated particles (sparks, confetti, kicker shockwaves,
 // boost chevrons, finish fountains) using THREE.PointsNodeMaterial + TSL so the exact same node
 // graph compiles to WGSL on WebGPU and GLSL on the WebGL2 backend in ONE draw call.
+//
+// COLLIDING PARTICLES (platform/3d/gpuParticles.js). Those 8,192 follow closed-form curves in the
+// vertex shader, so a spark never lands on the track and a landing never raises dust that settles.
+// On the WebGPU backend `attachGpu()` adds a compute particle system (65k-262k slots by quality
+// tier) that bounces off the track, walls and ramps the camera sees (screen-space depth collision):
+// impact sparks, track-chip debris, landing dust and, on snowy maps, snow. `sparks`, `pop` and the
+// new `debris` / `dust` / `snow` bursts go to it when it is up; every other burst, and every burst
+// on the WebGL2 backend or while it is still building, stays on the ring above.
+// scene.js hands over (renderer, camera, scene-pass depth) with one call after it builds the pipeline.
 import * as THREE from 'three-eco/webgpu';
 import * as TSL from 'three-eco/tsl';
+import { createGpuParticles } from '../platform/3d/gpuParticles.js';
 
 const reducedMotion = () =>
   typeof matchMedia === 'function' && matchMedia('(prefers-reduced-motion: reduce)').matches;
@@ -175,10 +185,48 @@ export function createRaceFx({ scene, level = 'full' }) {
   let boosting = false;
   let streakVal = 0;
   let clock = 0;
+  // GPU colliding particles: bound lazily (the renderer finishes its async init after createScene).
+  let gpuArgs = null; let gpu = null; let gpuTried = 0;
+  const gpuScale = () => { const t = (typeof window !== 'undefined' && window.PoQuality?.tier?.()) || 'high'; return t === 'low' ? 0.4 : t === 'medium' ? 0.7 : 1; };
+  function bindGpu() {
+    if (gpu || !gpuArgs || gpuTried > 600) return;
+    if (!gpuArgs.renderer?.backend) return;   // not initialised yet
+    gpuTried = 601;
+    try { gpu = createGpuParticles(gpuArgs.renderer, scene, { camera: gpuArgs.camera, depth: gpuArgs.depth }); } catch (e) { console.warn('[fx-race] gpu particles unavailable:', e?.message || e); gpu = null; }
+    if (gpu) gpu.mesh.visible = false;
+  }
+  const v3 = (x, y, z) => ({ x, y, z });
+
+  /** Spawn on the GPU system when it is up. Returns true if it took the burst. */
+  function gpuBurst(kind, p, dir, big) {
+    if (!gpu || gpu.failed || !p) return false;
+    const k = gpuScale();
+    if (kind === 'sparks') {
+      const n = Math.round((big?.count ?? 9) * 14 * k), st = big?.strength ?? 1;
+      gpu.emit(v3(p.x, p.y, p.z), v3(0, 7 * st, 0), n, 'sparks', { spread: 9 * st, speedJitter: 0.3, radius: 0.1, colour: dir ?? 0xffd9a0 });
+      return true;
+    }
+    if (kind === 'pop') {
+      gpu.emit(v3(p.x, p.y + 0.2, p.z), v3(0, 4, 0), Math.round(220 * k), 'sparks', { spread: 12, radius: 0.3, colour: 0xfef08a });
+      gpu.emit(v3(p.x, p.y + 0.1, p.z), v3(0, 1.5, 0), Math.round(40 * k), 'dust', { spread: 3, radius: 0.5, size: 1.0 });
+      gpu.emit(v3(p.x, p.y + 0.1, p.z), v3(0, 5, 0), Math.round(30 * k), 'debris', { spread: 7, radius: 0.3, colour: 0x8a8f99 });
+      return false;       // the ring's own pop still plays: this adds the bits that land
+    }
+    if (kind === 'debris') { gpu.emit(v3(p.x, p.y, p.z), dir ?? v3(0, 5, 0), Math.round((big ?? 40) * k), 'debris', { spread: 6 }); return true; }
+    if (kind === 'dust') { gpu.emit(v3(p.x, p.y, p.z), dir ?? v3(0, 1.5, 0), Math.round((big ?? 30) * k), 'dust', { spread: 3, radius: 0.6 }); return true; }
+    if (kind === 'snow') { gpu.emit(v3(p.x, p.y, p.z), dir ?? v3(0, -1, 0), Math.round((big ?? 200) * k), 'snow', { spread: 1.5, radius: 14 }); return true; }
+    return false;
+  }
 
   return {
+    /** The compute particle system (or null): `.stats()`, `.emit()` for tests and tools. */
+    get gpu() { return gpu; },
+    /** scene.js: renderer, the camera, and the scene pass's depth node (optional: without it particles do not collide). */
+    attachGpu(args) { gpuArgs = args; gpuTried = 0; bindGpu(); },
     burst(kind, pos, dir, big) {
       if (!enabled || reducedMotion()) return;
+      if (gpuBurst(kind, pos, dir, big)) return;
+      if (kind === 'debris' || kind === 'dust' || kind === 'snow') return;   // GPU-only kinds
       bursts.spawn(kind, pos, dir, big);
     },
     setBoosting(b) { boosting = !!b; },
@@ -187,7 +235,7 @@ export function createRaceFx({ scene, level = 'full' }) {
     setLevel(l) {
       enabled = l !== 'lite';
       bursts.points.visible = enabled;
-      if (!enabled) bursts.clear();
+      if (!enabled) { bursts.clear(); gpu?.clear(); }
     },
     get streak() { return streakVal; },
     get time() { return clock; },
@@ -198,10 +246,12 @@ export function createRaceFx({ scene, level = 'full' }) {
         return;
       }
       bursts.update(dt);
+      if (!gpu) bindGpu();
+      gpu?.update(dt);
       const target = Math.max(0, Math.min(1, ((speed || 0) - 48) / 42)) * 0.7 + (boosting ? 0.55 : 0);
       streakVal += (Math.min(1, target) - streakVal) * (1 - Math.exp(-8 * dt));
     },
     resize() { },
-    dispose() { bursts.dispose(); },
+    dispose() { bursts.dispose(); gpu?.dispose(); },
   };
 }

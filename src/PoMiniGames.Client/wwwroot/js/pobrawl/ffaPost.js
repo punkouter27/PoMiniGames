@@ -1,18 +1,25 @@
 // ffaPost.js — the battle royale's post chain, as a three RenderPipeline (TSL): one node graph
 // on WebGPU and on the WebGL2 backend alike.
 //
-//   pass(scene) → AO → bloom → grade → tone map + sRGB → [FXAA when the pass has no MSAA]
+//   pass(scene) → AO → [TRAA → exposure → flare + streak] → bloom → grade → tone map + sRGB
+//     → [FXAA when neither MSAA nor TRAA cleaned the edges]
+//
+// The bracketed stage is the shared post stack (platform/3d/postStack.js). The arena has its own
+// frame-time scale (ffaRendering.js), so the stack's dynamic resolution is off here, and SSGI is
+// off because GTAO already owns occlusion for sixteen bodies.
 //
 // The policy (ffaVisuals.visualPolicy) decides which stages exist. Each is part of the graph,
 // so a policy change rebuilds it; that only happens on a tier move or a sustained slow-down.
 import * as THREE from 'three-eco/webgpu';
 import {
-  Fn, clamp, convertToTexture, dot, exp, mix, normalize, pass, renderOutput, screenUV, smoothstep,
+  Fn, clamp, convertToTexture, dot, exp, mix, normalize, renderOutput, screenUV, smoothstep,
   uniform, vec2, vec3, vec4,
 } from 'three-eco/tsl';
 import { bloom } from 'three-eco/addons/tsl/display/BloomNode.js';
 import { ao } from 'three-eco/addons/tsl/display/GTAONode.js';
 import { fxaa } from 'three-eco/addons/tsl/display/FXAANode.js';
+import { POST_LIB } from '../platform/3d/postAddons.js';
+import { createPostStack } from '../platform/3d/postStack.js';
 
 // The AO term never takes more than this share of the lit colour: sixteen bodies overlap
 // constantly, and a full-strength term would paint a dark halo round every one of them.
@@ -29,7 +36,7 @@ export function createFfaPost(scene, renderer, policy) {
   // The graph ends in its own output transform, so FXAA can run on the display-referred frame.
   pipeline.outputColorTransform = false;
 
-  let live = null;        // { key, scenePass, aoNode, bloomNode }
+  let live = null;        // { policy, camera, stack, aoNode, bloomNode, ... }
   let wanted = policy;
 
   // The grade: a local refractive RGB split at the last heavy hit (never a whole-frame white
@@ -58,7 +65,7 @@ export function createFfaPost(scene, renderer, policy) {
     if (!live) return;
     try { live.aoNode?.dispose?.(); } catch { /* already gone */ }
     try { live.bloomNode?.dispose?.(); } catch { /* already gone */ }
-    try { live.scenePass.dispose?.(); } catch { /* already gone */ }
+    try { live.stack.dispose(); } catch { /* already gone */ }
     live = null;
   };
 
@@ -68,17 +75,24 @@ export function createFfaPost(scene, renderer, policy) {
     // The AO stage needs a single-sample depth texture (WebGPU cannot sample a multisampled
     // one the way it reads it), so with AO on the pass drops MSAA and FXAA takes over.
     const samples = next.ao ? 0 : next.samples;
-    const scenePass = pass(scene, camera, { samples });
-    const sceneTex = scenePass.getTextureNode('output');
-    let lit = sceneTex;
     let aoNode = null;
-    if (next.ao) {
-      // Depth-only: the normals are rebuilt from depth, so no second fighter/normal render.
-      aoNode = ao(scenePass.getTextureNode('depth'), null, camera);
-      aoNode.resolutionScale = 0.5;
-      aoNode.samples.value = AO_SAMPLES;
-      lit = vec4(sceneTex.rgb.mul(mix(1, aoNode.getTextureNode().r, AO_BLEND)), sceneTex.a);
-    }
+    const stack = createPostStack(POST_LIB, renderer, scene, camera, {
+      // The policy's own rungs, as the stack's tiers: AO is the high tier, no MSAA the low one.
+      tier: next.ao ? 'high' : next.samples === 0 ? 'low' : 'medium',
+      samples,
+      velocity: 'camera',          // no MRT: see postStack.js (compileAsync cannot build the outputs)
+      features: { dynres: false, ssgi: false, ssr: false },
+      exposure: { key: 0.07, strength: 0.4, min: 0.9, max: 1.15 },
+      lit: (sceneTex, pass0) => {
+        if (!next.ao) return sceneTex;
+        // Depth-only: the normals are rebuilt from depth, so no second fighter/normal render.
+        aoNode = ao(pass0.getTextureNode('depth'), null, camera);
+        aoNode.resolutionScale = 0.5;
+        aoNode.samples.value = AO_SAMPLES;
+        return vec4(sceneTex.rgb.mul(mix(1, aoNode.getTextureNode().r, AO_BLEND)), sceneTex.a);
+      },
+    });
+    let lit = stack.node;
     let bloomNode = null;
     if (next.bloom) {
       bloomNode = bloom(lit, 0.18, 0.4, 1.05);
@@ -86,11 +100,11 @@ export function createFfaPost(scene, renderer, policy) {
     }
     let out = renderOutput(grade(convertToTexture(lit)));
     // MSAA already cleaned the edges when the pass has samples.
-    const useFxaa = samples === 0;
+    const useFxaa = samples === 0 && !stack.antialiased;
     if (useFxaa) out = fxaa(out);
     pipeline.outputNode = out;
     pipeline.needsUpdate = true;
-    live = { policy: next, camera, scenePass, aoNode, bloomNode, samples, fxaa: useFxaa };
+    live = { policy: next, camera, stack, aoNode, bloomNode, samples, fxaa: useFxaa };
   };
 
   return {
@@ -108,6 +122,7 @@ export function createFfaPost(scene, renderer, policy) {
         hitUV.value.set(p.x * 0.5 + 0.5, p.y * 0.5 + 0.5);
         if (p.z < -1 || p.z > 1) hit.value = 0;
       }
+      live.stack.update();
       pipeline.render();
     },
     dispose() {

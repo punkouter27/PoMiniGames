@@ -21,12 +21,25 @@
 // for free, on WebGPU and the WebGL2 fallback alike. The normal is forced to world-up so a
 // blade is lit like the ground under it rather than like a vertical card.
 //
+// GPU CULLING (platform/3d/gpuCulling.js)
+// All 56,000 blades used to be vertex-shaded every frame, wherever the camera looked: on the
+// sea, on snow, on bare rock (blades there have no height), behind the camera, and behind
+// hills. A compute pass now re-derives each blade's world position with the SAME wrapping
+// formula the vertex stage uses (`bladeFrame`, shared so the two cannot drift), drops the blades
+// that would draw nothing (no biomass, faded out) or lie outside the frustum or behind the
+// terrain the last frame drew, and compacts the rest into an indirect draw. The vertex stage
+// then looks its seed up through `culler.slot`. If the culler cannot be built (WebGL2 backend,
+// compatibility-mode device, no renderer handed in) or `?grassCull=0` is on the URL, the original
+// attribute-driven draw of every blade runs unchanged.
+//
 // Low tier: not built at all.
 import { Color, DataTexture, DoubleSide, Float32BufferAttribute, FloatType, InstancedBufferAttribute, InstancedBufferGeometry, LinearFilter, Mesh, MeshLambertNodeMaterial, NearestFilter, RedFormat, UnsignedByteType, Vector2, Vector3 } from 'three-eco/webgpu';
 import {
-  attribute, cameraPosition, cameraViewMatrix, clamp, cos, diffuseColor, dot, float, floor, ivec2, length, mix, mod,
+  attribute, cameraPosition, cameraViewMatrix, clamp, cos, diffuseColor, dot, float, floor, instancedArray, ivec2, length, mix, mod,
   normalize, positionGeometry, positionWorld, pow, sin, smoothstep, step, texture, textureLoad, uniform, varying, vec2, vec3, vec4,
 } from 'three-eco/tsl';
+import { createDepthGrid } from '../../platform/3d/depthGrid.js';
+import { createGpuCulling } from '../../platform/3d/gpuCulling.js';
 import { TILE, TILE_STATE } from '../sim/terrain/tiles.js';
 import { MAIN_ONLY_LAYER, cloudLight, materialClock, materialSeason, materialSnow, materialWind } from './materials.js';
 import { trailUniforms } from './trails.js';
@@ -39,7 +52,7 @@ const TIER = {
 // Strip profile: t (0 base → 1 tip) and side (-0.5 / +0.5). Three rungs and a tip.
 const RUNGS = [0, 0.38, 0.72];
 
-function bladeGeometry(count) {
+function bladeGeometry(count, withSeedAttribute = true) {
   const positions = [];
   for (const t of RUNGS) positions.push(-0.5, t, 0, 0.5, t, 0);
   positions.push(0, 1, 0);
@@ -66,8 +79,9 @@ function bladeGeometry(count) {
     seeds[i * 3 + 1] = (gz + rand()) / side;
     seeds[i * 3 + 2] = rand();
   }
-  geo.setAttribute('aSeed', new InstancedBufferAttribute(seeds, 3));
+  if (withSeedAttribute) geo.setAttribute('aSeed', new InstancedBufferAttribute(seeds, 3));
   geo.instanceCount = count;
+  geo.userData.seeds = seeds;
   return geo;
 }
 
@@ -77,22 +91,31 @@ function bladeGeometry(count) {
  * normal seated on world-up (a blade is lit like the ground it stands on) and a
  * translucency term added after the lighting sum.
  */
+/**
+ * Where a blade stands, and how much of it there is: the camera-wrapped world XZ, the fade at the
+ * patch edge and the biomass under it. Used by BOTH the vertex stage and the culling kernel.
+ */
+function bladeFrame(u, maskTex, seed) {
+  const patch = vec2(u.uPatch);
+  const seedPos = seed.xy.mul(u.uPatch);
+  const wp = u.uCam.add(mod(seedPos.sub(u.uCam).add(patch.mul(0.5)), patch)).sub(patch.mul(0.5));
+  const camDist = length(wp.sub(u.uCam));
+  // Fade to nothing well inside the patch edge, so the wrap never shows as a line.
+  const fade = float(1).sub(smoothstep(u.uPatch.mul(0.28), u.uPatch.mul(0.47), camDist));
+  const muv = wp.div(u.uSize);
+  const inside = step(0, muv.x).mul(step(muv.x, 1)).mul(step(0, muv.y)).mul(step(muv.y, 1));
+  const biomass = texture(maskTex, muv).level(0).r.mul(inside);
+  return { wp, fade, biomass };
+}
+
 class GrassMaterial extends MeshLambertNodeMaterial {
-  constructor(u, heightTex, maskTex) {
+  /** @param seed TSL vec3: the blade's seed (from the instance attribute, or the culled slot's buffer entry) */
+  constructor(u, heightTex, maskTex, seed, culled = false) {
     super({ side: DoubleSide });
     this.u = u;
-    this.ecoKey = 'grass';
-    const seed = attribute('aSeed', 'vec3');
-    const patch = vec2(u.uPatch);
-    const seedPos = seed.xy.mul(u.uPatch);
-    const wp = u.uCam.add(mod(seedPos.sub(u.uCam).add(patch.mul(0.5)), patch)).sub(patch.mul(0.5));
+    this.ecoKey = culled ? 'grass-culled' : 'grass';
+    const { wp, fade, biomass } = bladeFrame(u, maskTex, seed);
     const rnd = seed.z;
-    const camDist = length(wp.sub(u.uCam));
-    // Fade to nothing well inside the patch edge, so the wrap never shows as a line.
-    const fade = float(1).sub(smoothstep(u.uPatch.mul(0.28), u.uPatch.mul(0.47), camDist));
-    const muv = wp.div(u.uSize);
-    const inside = step(0, muv.x).mul(step(muv.x, 1)).mul(step(0, muv.y)).mul(step(muv.y, 1));
-    const biomass = texture(maskTex, muv).level(0).r.mul(inside);
     const tr = trailUniforms.uTrail.sample(wp.div(trailUniforms.uTrailSpan)).level(0).rg;
     const bladeH = rnd.mul(0.46).add(0.2).mul(smoothstep(0.06, 0.55, biomass)).mul(fade)
       .mul(float(1).sub(tr.x.mul(0.8))).mul(float(1).sub(clamp(materialSnow, 0, 1).mul(0.92)));
@@ -149,7 +172,20 @@ function heightAt(heightTex, p, size) {
   return mix(mix(h00, h10, f.x), mix(h01, h11, f.x), f.y);
 }
 
-export function createGrass(scene, terrain, { tier = 'high' } = {}) {
+/** Is the culler allowed? `?grassCull=0` (or localStorage poeco:grassCull = '0') turns it off for A/B runs. */
+function cullAllowed() {
+  try {
+    const q = new URLSearchParams(location.search).get('grassCull');
+    if (q !== null) return q !== '0';
+    return localStorage.getItem('poeco:grassCull') !== '0';
+  } catch { return true; }
+}
+
+/**
+ * @param opts.renderer / opts.camera  the island's renderer and camera: with both, the blades are culled on the GPU
+ * @param opts.depth  a non-multisampled depth TextureNode of the solid scene (for the occlusion test); optional
+ */
+export function createGrass(scene, terrain, { tier = 'high', renderer = null, camera = null, depth = null } = {}) {
   const cfg = TIER[tier];
   if (!cfg) return null;
   const { size } = terrain;
@@ -178,9 +214,40 @@ export function createGrass(scene, terrain, { tier = 'high' } = {}) {
     uSunCol: uniform(new Color(0xfff2df)),
   };
 
-  const material = new GrassMaterial(uniforms, heightTex, maskTex);
+  // The culler needs the seed through a buffer (it maps instanceIndex through its compacted slots);
+  // when it cannot be built the seed stays an instance attribute and every blade is drawn.
+  let culler = null; let grid = null; let seedBuf = null;
+  const wantCull = !!(renderer && camera) && cullAllowed();
+  const geometry = bladeGeometry(cfg.blades, !wantCull);
+  const bladeCount = cfg.blades;
+  if (wantCull) {
+    try {
+      const packed = new Float32Array(bladeCount * 4);
+      const src = geometry.userData.seeds;
+      for (let i = 0; i < bladeCount; i++) { packed[i * 4] = src[i * 3]; packed[i * 4 + 1] = src[i * 3 + 1]; packed[i * 4 + 2] = src[i * 3 + 2]; }
+      seedBuf = instancedArray(packed, 'vec4');
+      grid = depth ? createDepthGrid(renderer, { depth, near: camera.near, far: camera.far }) : null;
+      culler = createGpuCulling(renderer, {
+        count: bladeCount,
+        indexCount: geometry.index.count,
+        grid,
+        maxCells: 8,     // blades are small on screen: a sphere up to 4 cells across is still judged against the old depth
+        // One sphere per blade, tall enough to hold the tallest blade plus its bend.
+        bounds: (i) => {
+          const sd = seedBuf.element(i).xyz;
+          const { wp, fade, biomass } = bladeFrame(uniforms, maskTex, sd);
+          const live = fade.greaterThan(0.001).and(biomass.greaterThan(0.065));
+          const y = heightAt(heightTex, wp, uniforms.uSize);
+          return vec4(wp.x, y.add(0.33), wp.y, live.select(float(0.55), float(0)));
+        },
+      });
+    } catch (e) { console.warn('[grass] GPU culling unavailable, drawing every blade:', e?.message || e); culler = null; grid = null; }
+  }
+  if (wantCull && !culler) { geometry.setAttribute('aSeed', new InstancedBufferAttribute(geometry.userData.seeds, 3)); }
+  const seedNode = culler ? seedBuf.toReadOnly().element(culler.slot).xyz : attribute('aSeed', 'vec3');
+  if (culler) culler.apply(geometry);
+  const material = new GrassMaterial(uniforms, heightTex, maskTex, seedNode, !!culler);
 
-  const geometry = bladeGeometry(cfg.blades);
   const mesh = new Mesh(geometry, material);
   mesh.frustumCulled = false;       // positions are made in the shader; the box is meaningless
   mesh.receiveShadow = true;
@@ -192,6 +259,9 @@ export function createGrass(scene, terrain, { tier = 'high' } = {}) {
 
   return {
     mesh,
+    /** The GPU culler (or null): `.setEnabled(false)` draws everything through the same indirect path, for A/B runs. */
+    culler,
+    grid,
     /** Tile sync: repack biomass onto the tiles that can carry a meadow. */
     setTiles(tileState, grass) {
       if (!grass) return;
@@ -208,10 +278,18 @@ export function createGrass(scene, terrain, { tier = 'high' } = {}) {
     update(dt, player, sky = null) {
       uniforms.uCam.value.set(player.x, player.z);
       if (sky) { uniforms.uSunDir.value.copy(sky.sunDir); uniforms.uSunCol.value.copy(sky.sunColour); }
+      // Cull for the camera as it will render, reading the depth the last frame left; then remember
+      // this camera as the one the NEXT depth is drawn with.
+      if (culler) {
+        grid?.update();
+        culler.update(camera);
+        grid?.commit(camera);
+      }
     },
     dispose() {
       scene.remove(mesh);
       geometry.dispose(); material.dispose(); heightTex.dispose(); maskTex.dispose();
+      culler?.dispose(); grid?.dispose();
     },
   };
 }

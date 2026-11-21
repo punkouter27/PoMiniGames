@@ -394,6 +394,7 @@ export function createRenderer(container, {
     island = createTerrainMesh(terrainApi, { tier });
     lighting.setWorldSize?.(msg.size);
     lighting.setTerrain?.(terrainApi);
+    audio?.setTerrain?.(terrainApi);   // acousticProbe rays + the surf's bearing march this
     scene.add(island.mesh, island.water);
     flora = createFloraMeshes(scene, terrainApi, { trees: msg.trees, bushes: msg.bushes, tier });
     if (minimapCanvas) minimap = createMinimap(minimapCanvas, terrainApi);
@@ -406,7 +407,7 @@ export function createRenderer(container, {
     trails?.dispose();
     trails = createTrails(terrainApi.size);
     grass?.dispose();
-    grass = createGrass(scene, terrainApi, { tier });
+    grass = createGrass(scene, terrainApi, { tier, renderer, camera, depth: post.ao?.depthNode ?? null });
     soundscape = createSoundscape(terrainApi);
     mirrorAsked = false; mirrorReady = false;
     treeTiles = msg.trees ?? null; lastTileState = msg.tileState ?? null;
@@ -1090,6 +1091,8 @@ export function createRenderer(container, {
     get tier() { return tier; },
     /** The post facade (dev console: post.pipeline, post.scenePass). */
     get post() { return post; },
+    /** The grass field (dev console: grass.culler.stats(), grass.culler.setEnabled(false) for an A/B). */
+    get grass() { return grass; },
     /** { backend: 'pending' | 'webgpu' | 'webgl2' | 'none', reason, tier, adapter }. */
     get backend() { return backend; },
     /** Resolves (to the backend report) once the renderer can draw. */

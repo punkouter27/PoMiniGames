@@ -1,13 +1,20 @@
 // scene.js — Three.js r186 WebGPU renderer/scene/lights + smooth orbit-follow camera, plus the
 // TSL RenderPipeline: ACES tone mapping, soft shadows, TSL bloom, colour grade, speed streak,
 // FXAA, speed-reactive FOV, 8k GPU particles, pooled impact light pulses, and Act-reactive lighting.
+// Ahead of that chain sits the shared post stack (platform/3d/postStack.js): TRAA + auto-exposure
+// + lens flare + anamorphic streaks on medium, + SSGI and SSR on high, and dynamic resolution
+// driven by platform/renderBudget.js; the sun gets cascades and PCSS contact-hardening shadows
+// (platform/3d/shadows.js) on high / PCSS alone on medium. Low keeps the old FXAA-only path.
 import * as THREE from 'three-eco/webgpu';
 import {
-  Fn, convertToTexture, dot, max, mix, pass, renderOutput, screenUV, sin, smoothstep, step, uniform, vec3, vec4,
+  Fn, convertToTexture, dot, max, mix, renderOutput, screenUV, sin, smoothstep, step, uniform, vec3, vec4,
 } from 'three-eco/tsl';
 import { bloom } from 'three-eco/addons/tsl/display/BloomNode.js';
 import { fxaa } from 'three-eco/addons/tsl/display/FXAANode.js';
 import * as PostFx from '../platform/postFx.js';
+import { POST_LIB } from '../platform/3d/postAddons.js';
+import { createPostStack, currentTier } from '../platform/3d/postStack.js';
+import { applySunShadows } from '../platform/3d/shadows.js';
 import { createRenderer, attachRenderer } from '../platform/3d/renderer.js';
 import { createRaceFx } from './fx-race.js';
 import { readPref } from './store.js';
@@ -104,9 +111,14 @@ const GRADES = {
   loss: { tint: [0.92, 0.92, 0.96], contrast: 0.96, saturation: 0.35 },
 };
 
+/** `?gpuTime`: ask the device for timestamp queries so a harness can read per-pass GPU cost. */
+function gpuTimeWanted() {
+  try { return new URLSearchParams(location.search).has('gpuTime'); } catch { return false; }
+}
+
 /** The race renderer: Three.js r186 WebGPURenderer (automatic WebGL2 backend fallback), ACES filmic. */
 export function createSceneRenderer() {
-  return createRenderer(THREE, { api: 'webgpu', antialias: true, alpha: false, powerPreference: 'high-performance', tone: 'aces', exposure: 1.15, shadows: 'pcfsoft', clearColor: BG });
+  return createRenderer(THREE, { api: 'webgpu', trackTimestamp: gpuTimeWanted(), antialias: true, alpha: false, powerPreference: 'high-performance', tone: 'aces', exposure: 1.15, shadows: 'pcfsoft', clearColor: BG });
 }
 
 /** @param {HTMLElement} container @param {object} renderer from createSceneRenderer @param {object} stage the game's 3D stage */
@@ -185,6 +197,15 @@ export function createScene(container, renderer, stage) {
   const SHADOW_TEXEL = (SHADOW_HALF * 2) / 2048;
   scene.add(key);
   scene.add(key.target);
+  // Cascades (high) + contact-hardening soft shadows (medium and up). Boot-time: the filter and the
+  // cascade node are baked into every receiver's program, and a live shadow map cannot be resized.
+  // `?mrShadows=off` keeps the single PCF map for comparisons.
+  const tier = currentTier();
+  const sun = applySunShadows(POST_LIB, key, {
+    renderer,   // on the WebGL2 fallback PCSS (raw depth reads) cannot compile: shadows.js keeps plain PCF there
+    tier: new URLSearchParams(location.search).get('mrShadows') === 'off' ? 'low' : tier,
+    cascades: 2, maxFar: 150, splits: [0.3],
+  });
 
   // ── Marble-only environment ───────────────────────────────────────────
   // Glass spheres are defined by their highlight. With no scene.environment the marbles would
@@ -235,13 +256,15 @@ export function createScene(container, renderer, stage) {
   const uTime = uniform(0);
 
   let pipeline = null;
-  let scenePass = null;
+  let stack = null;
   let bloomNode = null;
   try {
     pipeline = new THREE.RenderPipeline(renderer);
     pipeline.outputColorTransform = false;
-    scenePass = pass(scene, camera);
-    const sceneTex = scenePass.getTextureNode('output');
+    // The shared front half: scene pass, SSGI, SSR, TRAA, exposure, flare, streaks (tier-gated).
+    // On low it is a plain single-sample scene pass and FXAA below stays the anti-aliasing.
+    stack = createPostStack(POST_LIB, renderer, scene, camera, { tier, reflections: { enabled: false } });
+    const sceneTex = stack.node;
     bloomNode = bloom(sceneTex, 0.28, 0.35, 0.92);
     const combined = sceneTex.add(bloomNode);
 
@@ -262,11 +285,16 @@ export function createScene(container, renderer, stage) {
       return vec4(col, 1.0);
     })();
 
-    pipeline.outputNode = fxaa(convertToTexture(renderOutput(graded)));
+    // TRAA already resolved the edges when the stack runs it; FXAA is the low-tier path.
+    pipeline.outputNode = stack.antialiased ? renderOutput(graded) : fxaa(convertToTexture(renderOutput(graded)));
   } catch (err) {
     console.warn('[PoMarbleRace] TSL RenderPipeline unavailable, using direct WebGPU render:', err?.message || err);
+    try { stack?.dispose(); } catch { /* half built */ }
+    stack = null;
     pipeline = null;
   }
+  // GPU colliding particles (fx-race.js -> platform/3d/gpuParticles.js) reproject into this depth.
+  raceFx.attachGpu?.({ renderer, camera, depth: stack?.depthNode ?? null });
 
   const reducedMotion = () =>
     typeof matchMedia === 'function' && matchMedia('(prefers-reduced-motion: reduce)').matches;
@@ -288,6 +316,7 @@ export function createScene(container, renderer, stage) {
     key.color.setHex(t.key[0]); key.intensity = t.key[1];
     renderer.toneMappingExposure = t.exposure;
     raceFx.setTheme(t);   // a theme with `reflect` asks for SSR (fx-race.js)
+    stack?.setReflections(!!t.reflect);   // and for the shared stack's SSR, which is off otherwise (it is the dearest pass)
   }
 
   // ── Impact light pulses (GFX #5) ──────────────────────────────────────
@@ -350,6 +379,7 @@ export function createScene(container, renderer, stage) {
   let haveTarget = false;
   let cutT = 0;                 // seconds left on the accelerated post-cut ease
   let fovPunch = 0;
+  let csmFov = FOV_BASE;
   function punchFov() { fovPunch = -9; }
   let swoopT = 0;               // seconds left on the finish swoop (#26)
   let swoopDir = 1;
@@ -423,7 +453,7 @@ export function createScene(container, renderer, stage) {
   // renderer, composer and camera aspect; the passes that own their own targets follow here.
   // Both of these own internal render targets sized independently of the composer's; missing
   // either leaves it sampling a stale buffer at the old aspect (AO / bokeh stretched).
-  const rig = attachRenderer(stage, renderer, { camera });
+  const rig = attachRenderer(stage, renderer, { camera, onResize: (view) => stack?.resync(view.dpr) });
   const resize = () => rig.resize();
 
   // Smoothly move the camera to orbit-and-follow `pos`. With no drag this is the default
@@ -508,6 +538,8 @@ export function createScene(container, renderer, stage) {
     const targetFov = FOV_BASE + speedT * FOV_SPEED_ADD + fovPunch;
     camera.fov += (targetFov - camera.fov) * (1 - Math.exp(-5 * dt));
     camera.updateProjectionMatrix();
+    // The cascades are fitted to the view frustum: refit when the speed FOV has moved it enough to matter.
+    if (Math.abs(camera.fov - csmFov) > 1.5) { csmFov = camera.fov; sun.updateFrustums(); }
     fovPunch = Math.abs(fovPunch) > 0.05 ? fovPunch * Math.exp(-6 * dt) : 0;
 
     // Camera shake, applied LAST so it offsets the final framing. Put
@@ -563,6 +595,8 @@ export function createScene(container, renderer, stage) {
     },
     /** #24 GPU burst: kind 'kicker' | 'pop' | 'boost' | 'finish' | 'sparks' | 'confetti'. */
     burstFx(kind, pos, dir, big) { raceFx.burst(kind, pos, dir, big); },
+    /** The race effects (fx-race.js); `.gpu` is the colliding compute-particle system, for tools and tests. */
+    get raceFx() { return raceFx; },
     /** #28 the followed marble is on a boost pad: the streak swells. */
     setBoosting(b) { raceFx.setBoosting(b); },
     /** #26 swing the camera round the winner at the line. Skipped on Lite and under reduced motion. */
@@ -579,8 +613,11 @@ export function createScene(container, renderer, stage) {
     },
     get effects() { return effects; },
     composer: pipeline,
+    /** The shared post stack (null on the plain render path): features, exposure, scale, budget. */
+    post: () => stack,
+    sun,
     render() {
-      if (pipeline && effects !== 'lite') pipeline.render();
+      if (pipeline && effects !== 'lite') { stack?.update(); pipeline.render(); }
       else renderer.render(scene, camera);
     },
     resize,
@@ -588,7 +625,8 @@ export function createScene(container, renderer, stage) {
       raceFx.dispose();
       marbleEnv.dispose();
       try { bloomNode?.dispose?.(); } catch { }
-      try { scenePass?.dispose?.(); } catch { }
+      try { stack?.dispose(); } catch { }
+      sun.dispose();
     },
   };
 }
