@@ -10,6 +10,23 @@ namespace PoMiniGamesClient.Services.Http;
 /// <summary>Per-game API endpoints split out of <see cref="ApiService"/>.</summary>
 public partial class ApiService
 {
+    // ── PoCapitol ─────────────────────────────────────────────────────────
+
+    /// <summary>Renders the after-action report card; the 1200x630 PNG bytes, or null when the server refuses or is unreachable.</summary>
+    public async Task<byte[]?> GetPoCapitolReportCardAsync(PoCapitolReportCardRequest request, CancellationToken ct = default)
+    {
+        try
+        {
+            using var response = await _http.PostAsJsonAsync(
+                "/api/pocapitol/report-card", request, ApiJsonContext.Default.PoCapitolReportCardRequest, ct);
+            return response.IsSuccessStatusCode ? await response.Content.ReadAsByteArrayAsync(ct) : null;
+        }
+        catch (Exception ex) when (ex is HttpRequestException or TaskCanceledException)
+        {
+            return null;
+        }
+    }
+
     // ── PoMarbleRace ──────────────────────────────────────────────────────
 
     public Task<MarbleRaceHighScore[]?> GetMarbleRaceHighScoresAsync(int count = 10) =>

@@ -28,7 +28,7 @@ const ALWAYS = { forward: ['ArrowUp'], back: ['ArrowDown'] };
 
 export const DEFAULTS = Object.freeze({
     sensitivity: 1, fov: 62, captions: false, contrast: 'normal', radar: 'auto', director: true,
-    tracers: 'luminous', motion: 'full', footage: 'light', debrief: 'rules', debriefModel: 'llama3.2',
+    tracers: 'luminous', motion: 'full', footage: 'light', debrief: 'rules', debriefModel: 'llama3.2', score: 'on', hailer: 'on',
 });
 
 const clamp = (value, low, high, fallback) =>
@@ -64,7 +64,11 @@ export function sanitizePrefs(raw) {
         // on the sound as well), a trace of it on the picture only, or none.
         footage: oneOf(value.footage, ['on', 'light', 'off'], DEFAULTS.footage),
         // Who writes the after-action debrief: the built-in writer, or a model on this machine.
-        debrief: oneOf(value.debrief, ['rules', 'ollama'], DEFAULTS.debrief),
+        debrief: oneOf(value.debrief, ['rules', 'ollama', 'browser'], DEFAULTS.debrief),
+        // The adaptive score (score.js, Tone.js) and the police loudhailer's spoken orders
+        // (loudhailer.js, Howler). Off keeps the synthesized sound only.
+        score: oneOf(value.score, ['on', 'off'], DEFAULTS.score),
+        hailer: oneOf(value.hailer, ['on', 'off'], DEFAULTS.hailer),
         debriefModel: typeof value.debriefModel === 'string' && /^[\w.:\/-]{1,60}$/.test(value.debriefModel)
             ? value.debriefModel : DEFAULTS.debriefModel,
         keys,

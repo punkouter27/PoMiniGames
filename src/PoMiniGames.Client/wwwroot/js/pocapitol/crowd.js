@@ -1150,7 +1150,15 @@ export function createCrowd(scene, capacity, { time, groundHeight, shadowTexture
         parts.forEach(p => { scene.remove(p.mesh); p.mesh.dispose(); });
         resources.forEach(r => r.dispose()); textures.forEach(t => t.dispose());
     }
-    return { update, dispose, setExtras(value) { extras = value; }, batchCount: parts.length + 1 };
+    return {
+        update, dispose, setExtras(value) { extras = value; }, batchCount: parts.length + 1,
+        /** What a person carries aloft ({ kind, text } for flagTexture), or null: debris.js drops it when they fall. */
+        bannerOf(a) {
+            if (!a || a.police || a.civilian || a.id < 0 || a.id % 12 !== 0) return null;
+            const banner = bannerKinds[bannerIndex(a)];
+            return banner ? { kind: banner.kind, text: banner.text ?? '' } : null;
+        },
+    };
 }
 
 // ---------------------------------------------------------------- the crowd that stayed outside

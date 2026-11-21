@@ -84,7 +84,9 @@ internal static class AppPipelineExtensions
                 // already allows blob: for the <img> path.
                 // archive-api is the historical-weather host PoCapitol's scenario reads;
                 // api.open-meteo.com (forecast) does not cover it.
-                "connect-src 'self' blob: ws: wss: https://cdn.jsdelivr.net https://api.open-meteo.com https://archive-api.open-meteo.com https://geocoding-api.open-meteo.com https://www.wikidata.org" + modelsOrigin + "; " +
+                // huggingface.co and *.hf.co (the weights' CDN) serve the model behind PoCapitol's
+                // opt-in in-browser debrief (Transformers.js); nothing else fetches from them.
+                "connect-src 'self' blob: ws: wss: https://cdn.jsdelivr.net https://huggingface.co https://*.hf.co https://api.open-meteo.com https://archive-api.open-meteo.com https://geocoding-api.open-meteo.com https://www.wikidata.org" + modelsOrigin + "; " +
                 "worker-src 'self' blob:; " +
                 "frame-ancestors 'none'; base-uri 'self'; object-src 'none'";
             await next();

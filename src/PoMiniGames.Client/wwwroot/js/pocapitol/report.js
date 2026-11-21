@@ -8,7 +8,14 @@
  *
  * Pure: it takes a state and returns data. No DOM, no storage, no clock of its own.
  */
+import { lineDefs } from './world.js';
+
 const SAMPLE_SECONDS = 1;
+/**
+ * Where the crowd stood, as person-seconds per cell over the route (the gas grid's rectangle):
+ * the aftermath map (aftermath.js) draws it. Coarse on purpose: a 64 x 120 grid is 30 KB.
+ */
+export const HEAT = { x0: -40, z0: -56, w: 80, d: 152, cols: 64, rows: 120 };
 
 export function createRecorder({ maxSamples = 900, labels = [] } = {}) {
     const series = [];
@@ -19,9 +26,11 @@ export function createRecorder({ maxSamples = 900, labels = [] } = {}) {
     let lowestIntegrity = 100;
     let casualties = 0;
     let immediate = 0;
+    const heat = new Float32Array(HEAT.cols * HEAT.rows);
 
     return {
         reset() {
+            heat.fill(0);
             series.length = 0;
             milestones.length = 0;
             lastMilestone = 0;
@@ -48,10 +57,16 @@ export function createRecorder({ maxSamples = 900, labels = [] } = {}) {
             const pressure = line ? Math.round(line.pressure * 10) / 10 : 0;
             peakPressure = Math.max(peakPressure, pressure);
             lowestIntegrity = Math.min(lowestIntegrity, integrity);
+            for (const c of state.companions) {
+                if (c.health <= 0) continue;
+                const i = Math.floor((c.x - HEAT.x0) / HEAT.w * HEAT.cols), j = Math.floor((c.z - HEAT.z0) / HEAT.d * HEAT.rows);
+                if (i >= 0 && j >= 0 && i < HEAT.cols && j < HEAT.rows) heat[j * HEAT.cols + i] += SAMPLE_SECONDS;
+            }
             series.push({
                 at: Math.round(state.elapsed * 10) / 10,
                 integrity,
                 pressure,
+                frontZ: line ? lineDefs[line.id]?.z ?? null : null,
                 raiders: state.companions.filter(c => c.health > 0).length,
                 police: state.enemies.filter(e => e.health > 0).length,
                 casualties: state.harmed ?? 0,
@@ -82,6 +97,7 @@ export function createRecorder({ maxSamples = 900, labels = [] } = {}) {
                 staggers: state.staggers ?? 0,
                 milestones: milestones.slice(),
                 series: series.slice(),
+                heat,
             };
         },
     };

@@ -68,6 +68,12 @@
     <EmbeddedResource Include="Features/PoCoupleQuiz/Data/questions.json" LogicalName="PoCoupleQuiz.questions.json" />
   </ItemGroup>
 
+  <!-- Report-card font (Inter, SIL OFL 1.1, see Fonts/OFL.txt): Skia on Linux has no system fonts
+       to fall back on, so the TTF travels inside the assembly. -->
+  <ItemGroup>
+    <EmbeddedResource Include="Features/PoCapitol/Fonts/Inter-Latin.ttf" LogicalName="PoCapitol.Inter.ttf" />
+  </ItemGroup>
+
   <!-- Expose internals (e.g. PoRacerSim) to the unit-test tier so the AI sim can be
        driven headlessly in a bot-only race for regression testing. -->
   <ItemGroup>
@@ -90,6 +96,12 @@
     <!-- Invites: the lobby QR code (Features/Invites/InviteEndpoints.QrSvg). Server-side only,
          so it costs the WASM bundle nothing. -->
     <PackageReference Include="QRCoder" />
+    <!-- PoCapitol report card (Features/PoCapitol): the PNG is drawn server-side with SkiaSharp and
+         projected with Silk.NET.Maths. The Windows native lib ships inside SkiaSharp itself (App
+         Service is win-x64); the Linux assets keep tests and CI on ubuntu working. -->
+    <PackageReference Include="SkiaSharp" />
+    <PackageReference Include="SkiaSharp.NativeAssets.Linux.NoDependencies" />
+    <PackageReference Include="Silk.NET.Maths" />
     <!-- Logging / Telemetry -->
     <PackageReference Include="Azure.Monitor.OpenTelemetry.AspNetCore" />
     <PackageReference Include="Serilog.AspNetCore" />

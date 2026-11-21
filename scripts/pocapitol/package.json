@@ -1,0 +1,18 @@
+{
+  "name": "pocapitol-tools",
+  "private": true,
+  "description": "Node tools for PoCapitol assets (props.mjs builds the Draco-compressed PBR debris props, voices.mjs voices the police loudhailer lines with Kokoro through Transformers.js / ONNX Runtime). Not part of the app build.",
+  "type": "module",
+  "scripts": {
+    "props": "node props.mjs",
+    "voices": "node voices.mjs"
+  },
+  "dependencies": {
+    "@gltf-transform/core": "4.5.1",
+    "@gltf-transform/extensions": "4.5.1",
+    "@gltf-transform/functions": "4.5.1",
+    "draco3dgltf": "1.5.9",
+    "kokoro-js": "1.2.1",
+    "three": "0.165.0"
+  }
+}

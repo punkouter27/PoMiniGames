@@ -14,6 +14,7 @@ using PoMiniGames.Features.PoEcosystem;   // cloud world slots, gallery
 using PoMiniGames.Features.PoFighter;
 using PoMiniGames.Features.PoFunQuiz;
 using PoMiniGames.Features.PoRacer;
+using PoMiniGames.Features.PoCapitol;     // after-action report card PNG
 using PoMiniGames.Features.PoCabinet;     // score, lobby + race hubs
 using PoMiniGames.Features.PoVoxelStrike;
 using PoMiniGames.Features.PoMule;
@@ -94,6 +95,8 @@ internal static class EndpointRouteExtensions
         gameApi.MapPoCabinetScoreEndpoints();
         gameApi.MapPoVoxelStrikeScoreEndpoints();
         gameApi.MapPoMuleScoreEndpoints();
+        // PoCapitol after-action report card: stateless, renders a PNG from the posted series.
+        gameApi.MapPoCapitolReportCardEndpoints();
         // PoBrawl online (lobby + match hub) — match result ingest endpoint. Same
         // shape as PoRacer's score endpoints: rate-limited highscores.
         gameApi.MapPoBrawlOnlineMatchEndpoints();

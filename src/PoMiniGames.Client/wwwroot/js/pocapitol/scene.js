@@ -10,8 +10,11 @@ import { createCampus } from './campus.js';
 import { addArchitecturalDetail } from './architecture.js';
 import { createWear } from './ground.js';
 import { createGasGrid } from './gasGrid.js';
+import { createGpuGasGrid } from './gasGridGpu.js';
 import { createCloth } from './cloth.js';
 import { createGlass } from './glass.js';
+import { createDebris } from './debris.js';
+import { createFlyers } from './flyers.js';
 import { createNearCascade } from './cascade.js';
 // Deck #4 fallback: below the top post level the ray-marched lit air (volumetric.js) is off,
 // so depth-tested fog cards carry the haze instead, drifting with the wind and thinned by blasts.
@@ -905,11 +908,44 @@ export async function createScene(host, { figure, osm, signs = [] } = {}) {
     // past the edge of the lawn is open air, which is where the wind takes it.
     const gasBlocked = (x, z) => (z < 14.5 ? !walkable(x, z)
         : obstacles.some(o => Math.abs(x - o.x) <= o.w / 2 && Math.abs(z - o.z) <= o.d / 2) || columns.some(c => Math.hypot(x - c.x, z - c.z) < 1.15));
-    const gasGrid = createGasGrid(undefined, undefined, undefined, gasBlocked);
-    const gasTexture = new THREE.DataTexture(gasGrid.bytes, gasGrid.cols, gasGrid.rows, THREE.RedFormat);
-    gasTexture.magFilter = gasTexture.minFilter = THREE.LinearFilter;
-    gasTexture.needsUpdate = true;
-    textures.add(gasTexture);
+    const cpuGas = createGasGrid(undefined, undefined, undefined, gasBlocked);
+    const gasTextureFor = grid => {
+        const texture = new THREE.DataTexture(grid.bytes, grid.cols, grid.rows, THREE.RedFormat);
+        texture.magFilter = texture.minFilter = THREE.LinearFilter;
+        texture.needsUpdate = true;
+        textures.add(texture);
+        return texture;
+    };
+    const cpuGasTexture = gasTextureFor(cpuGas);
+    let gasGrid = cpuGas, gasTexture = cpuGasTexture;
+    // On the top rung the gas runs as WebGPU compute shaders instead (gasGridGpu.js): four times
+    // the cells and three times the pressure passes, so it pools and curls round the columns more
+    // finely. The CPU grid stays as the fallback for every other rung, a browser without WebGPU,
+    // and a GPU device that is lost mid-attempt. A swap starts the air clean.
+    let gpuGas = null, gpuGasTexture = null, gpuGasTried = false;
+    function useGas(grid, texture) {
+        if (grid === gasGrid) return;
+        grid.reset(); texture.needsUpdate = true;
+        gasGrid = grid; gasTexture = texture;
+        post.setGas(gasTexture, gasGrid.rect);
+    }
+    function wantGpuGas(on) {
+        if (!on) { useGas(cpuGas, cpuGasTexture); return; }
+        if (gpuGas && !gpuGas.lost()) { useGas(gpuGas, gpuGasTexture); return; }
+        if (gpuGasTried) return;
+        gpuGasTried = true;
+        createGpuGasGrid(cpuGas.rect, 128, 240, gasBlocked).then(grid => {
+            if (!grid) return;
+            if (disposedScene) { grid.dispose(); return; }
+            gpuGas = grid; gpuGasTexture = gasTextureFor(grid);
+            if (postLevel >= 3) useGas(gpuGas, gpuGasTexture);
+        }).catch(() => { /* resolves null on failure; nothing to do */ });
+    }
+    let disposedScene = false;
+    // Sixteen thousand loose sheets of paper simulated on the GPU (flyers.js): they lie where
+    // they were dropped, lift in the gusts, and a blast or a running crowd throws them about.
+    const flyers = createFlyers(scene, renderer, { rect: cpuGas.rect, groundHeight, blocked: gasBlocked, indoors: (x, z) => z < 14.5 });
+    const flyerBlasts = [];
     // The crowd renderer asks how the wave is rocking each person; the answer is the live attempt's.
     let liveState = null;
     const surge = { sample: (x, z, packed, out) => (liveState ? surgeSample(liveState, x, z, packed, out) : out) };
@@ -934,6 +970,12 @@ export async function createScene(host, { figure, osm, signs = [] } = {}) {
     }
 
     const crowd = createCrowd(scene, CROWD_SIZE + MAX_POLICE + CIVILIANS + 1, { time, groundHeight, shadowTexture: shadowBlob, figure, wind, signs, detail: surfaceDetail, surge });
+    // Canisters, flash-bang bodies, bottles and dropped signs under Rapier (debris.js). Loaded on
+    // the first tier that wants it; until then, and on the low tier, there is none.
+    const debris = createDebris(scene, {
+        crowd,
+        bannerTexture: (kind, text) => { const map = flagTexture(kind, text); map.colorSpace = THREE.SRGBColorSpace; return map; },
+    });
     // The far crowd is photographed from the rigged figure, here, now that every light the scene
     // will ever have exists: the pictures are then lit and compiled exactly as the near crowd is.
     // A device on the lowest tier keeps the painted far crowd: the bake costs memory it does not have.
@@ -1022,10 +1064,13 @@ export async function createScene(host, { figure, osm, signs = [] } = {}) {
         bottles.visible = droppedFlags.visible = settings.extras;
         clutterPlacards.visible = settings.extras;
         campus.setDetail(settings.extras);
+        debris.setEnabled(settings.extras);
+        flyers.setLevel((settings.post ?? 0) >= 2 ? 2 : settings.extras ? 1 : 0);
         // Surface detail is a uniform, not a define: lowering it costs no recompile.
         surfaceDetail.value = settings.detail ?? 1;
         post.setLevel(settings.post ?? 0);
         postLevel = settings.post ?? 0;
+        wantGpuGas(postLevel >= 3);
         // The cards stand in for the lit air only where post.js has switched it off.
         fogCards?.setEnabled(postLevel < 3);
         host.dataset.renderScale = settings.scale;
@@ -1264,6 +1309,7 @@ export async function createScene(host, { figure, osm, signs = [] } = {}) {
             wear.reset(); fenceFell.fill(-1); standsTaken = -1; wearClock = 0;
             gasGrid.reset(); gasTexture.needsUpdate = true;
             glass.reset(); shocks.length = 0; post.cut();
+            debris.reset(); flyers.reset();
         }
         wearElapsed = state.elapsed;
         const afoot = state.companions;
@@ -1392,11 +1438,22 @@ export async function createScene(host, { figure, osm, signs = [] } = {}) {
                 gasDue += dt;
                 if (gasDue >= 1 / 30) {
                     if (gasGrid.step(Math.min(0.1, gasDue), venting, wind, movers)) gasTexture.needsUpdate = true;
+                    if (gasGrid.gpu && gasGrid.lost()) useGas(cpuGas, cpuGasTexture);
                     gasDue = 0;
                 }
             }
         }
         glass.update(fxClock, daylight);
+        debris.update(state, dt);
+        if (running) {
+            const runners = [];
+            for (let i = 0; i < afoot.length && runners.length < 32; i += 5) {
+                const p = afoot[i];
+                if (p.health > 0 && (p.vx ?? 0) ** 2 + (p.vz ?? 0) ** 2 > 2) runners.push(p);
+            }
+            flyers.update(dt, fxClock, { wind, blasts: flyerBlasts, movers: runners });
+        }
+        flyerBlasts.length = 0;
         bursts.update(fxClock, camera, renderer.domElement.height, groundHeight(camera.position.x, camera.position.z));
         decals.update(daylight, dt);
         let flash = 0, flashAt = null;
@@ -1724,12 +1781,14 @@ export async function createScene(host, { figure, osm, signs = [] } = {}) {
         return best;
     }
     function dispose() {
+        disposedScene = true;
+        gpuGas?.dispose();
         crowd.dispose();
         farCrowd.dispose();
         perchCrowd.dispose();
         impostors?.dispose();
         particles.dispose();
-        bursts.dispose(); decals.dispose(); glass.dispose(); cascade.dispose();
+        bursts.dispose(); decals.dispose(); glass.dispose(); cascade.dispose(); debris.dispose(); flyers.dispose();
         fogCards?.dispose();
         for (const light of flares) scene.remove(light);
         post.dispose();
@@ -1752,5 +1811,15 @@ export async function createScene(host, { figure, osm, signs = [] } = {}) {
         menuUp = on;
         post.rackFocus(2.2, on ? 3600 : 0.01, 0.9);
     }
-    return { canvas: renderer.domElement, stage, render, aim, pickUnit, applyQuality, dispose, renderer, camera, startIntro, introActive, setTracerMode, setMotionReduction, setFov, setFootage, setMenu };
+    /** One world.js event, after the step that made it: what lands on the ground and what gets kicked. */
+    function onEvent(event) {
+        debris.onEvent(event);
+        if (event.type === 'flash') flyerBlasts.push({ x: event.x, z: event.z, strength: 0.45, radius: 5 });
+        else if (event.type === 'grenade') flyerBlasts.push({ x: event.x, z: event.z, strength: 1, radius: event.radius ?? 9 });
+        else if (event.type === 'smoke' || event.type === 'gas') flyerBlasts.push({ x: event.x, z: event.z, strength: 0.15, radius: 2.5 });
+        if (flyerBlasts.length > 8) flyerBlasts.shift();
+    }
+    return { canvas: renderer.domElement, stage, render, aim, pickUnit, applyQuality, dispose, renderer, camera, startIntro, introActive, setTracerMode, setMotionReduction, setFov, setFootage, setMenu, onEvent,
+        /** What the add-on layers are doing, for getDiagnostics. */
+        addons: () => ({ debris: debris.count(), gas: gasGrid.gpu ? 'webgpu' : 'cpu', flyers: Boolean(flyers.mesh?.visible) }) };
 }

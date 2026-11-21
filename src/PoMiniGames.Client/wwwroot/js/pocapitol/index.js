@@ -1,13 +1,15 @@
-import { createAttempt, advance, shove, fire, throwPlayerGrenade, setPaused, selectLeader, frontLine, milestones, clockLabel } from './world.js';
+import { createAttempt, advance, shove, fire, throwPlayerGrenade, setPaused, selectLeader, frontLine, milestones, clockLabel, CURFEW_ELAPSED, areas, obstacles, columns } from './world.js';
 import { createScene } from './scene.js';
 import { loadFigure } from './crowd.js';
 import { createAudio } from './audio.js';
+import { createLoudhailer } from './loudhailer.js';
+import { createScore } from './score.js';
 import { createUiFx } from './ui.js';
 import { createGovernor, preferredMode, detectTier } from './quality.js';
 import { fetchWeather } from './weather.js';
 import { createRadar } from './radar.js';
 import { createInspector } from './inspector.js';
-import { createRecorder, toCsv, toText, toSvg } from './report.js';
+import { createRecorder, toCsv, toText, toSvg, HEAT } from './report.js';
 import { createDirector } from './director.js';
 import { loadPrefs, savePrefs, matches, rebind } from './prefs.js';
 import { createDebriefRouter } from './debrief.js';
@@ -270,6 +272,9 @@ async function init(hostId, reference) {
                 // Read this step's events before a shove appends its own.
                 for (const event of g.state.events) {
                     g.audio?.event(event);
+                    view.onEvent?.(event);
+                    g.hailer?.event(event, g.state);
+                    if (event.type === 'openfire') g.openfire = true;
                     // A blast near the player is felt in the hands as well as heard.
                     if (human() && (event.type === 'flash' || event.type === 'grenade')) {
                         const near = 1 / (1 + Math.hypot(event.x - g.state.player.x, event.z - g.state.player.z) / 8);
@@ -291,7 +296,7 @@ async function init(hostId, reference) {
                     // not just whichever of the two happened to be appended last.
                     const mark = g.state.events.length;
                     if (g.state.weapon === 'mg') fire(g.state, aim); else shove(g.state, aim);
-                    for (let i = mark; i < g.state.events.length; i++) g.audio?.event(g.state.events[i]);
+                    for (let i = mark; i < g.state.events.length; i++) { g.audio?.event(g.state.events[i]); view.onEvent?.(g.state.events[i]); }
                 }
                 if (g.state.status === 'completed' || g.state.status === 'failed') {
                     clearInput();
@@ -336,6 +341,9 @@ async function init(hostId, reference) {
                 // Whoever the camera is on is who the mix favours.
                 const focus = s.role === 'none' ? (directed ?? ear) : s.player;
                 g.audio.update({ ...g.mix, focus, x: ear.x, z: ear.z, yaw, walking: moving, gassed: s.gassed, wind: g.weather?.windSpeed, active: g.started && s.status === 'active' }, dt);
+                const active = g.started && s.status === 'active';
+                g.hailer?.update({ x: ear.x, z: ear.z, yaw, horn: g.mix?.horn, pressure: g.mix?.pressure, elapsed: s.elapsed, active, curfew: CURFEW_ELAPSED - 8 });
+                g.score?.update({ ...g.mix, elapsed: s.elapsed, milestone: s.milestone, active, openfire: Boolean(g.openfire) }, dt);
             }
             if (g.weather?.mode === 'live' && now >= (g.weatherRefreshAt || 0)) {
                 g.weatherRefreshAt = now + 300000;
@@ -457,6 +465,7 @@ function start(difficulty, demo = false, role = 'raider') {
     game.pitch = 0; game.keys.clear(); game.firing = false;
     game.started = true; game.message = ''; game.notifyAt = 0; game.restartAt = 0;
     game.inspector?.clear();
+    hideAftermath();
     game.recorder.reset(); game.director.reset();
     game.lastMilestone = 0; game.ended = false; game.state.subject = -1;
     track('start', { mode: demo ? 'demo' : 'solo', role, difficulty, tier: game.governor.label() });
@@ -471,7 +480,13 @@ function start(difficulty, demo = false, role = 'raider') {
         const current = game;
         game.audio = createAudio({ onCaption: text => current.caption?.(text, 'radio') });
         game.audio.setFootage?.(game.prefs.footage === 'on');
+        game.hailer = createLoudhailer({ onCaption: text => current.caption?.(text, 'event') });
+        game.score = createScore();
     }
+    game.openfire = false;
+    game.hailer.reset(); game.score.reset();
+    game.hailer.setEnabled?.(game.prefs.hailer === 'on');
+    game.score.setEnabled(game.prefs.score === 'on');
     if (!demo) game.view.canvas.focus();
 }
 
@@ -559,6 +574,7 @@ function getDiagnostics() {
         userAgent: navigator.userAgent,
         url: location.href,
         events: game?.telemetry?.slice(-10) ?? [],
+        addons: { ...(game?.view?.addons?.() ?? {}), score: Boolean(window.Tone && game?.prefs?.score === 'on'), hailer: Boolean(window.Howler && game?.prefs?.hailer === 'on'), aftermath: Boolean(game?.aftermath) },
     };
 }
 
@@ -570,6 +586,7 @@ function getDiagnosticsText() {
         `Frame ${d.frameMsP50} ms p50 / ${d.frameMsP95} ms p95 · ${d.longFrames} frames over 55 ms`,
         `Actors ${d.actors} · OSM footprints ${d.footprints} · weather ${d.weather || 'n/a'}`,
         `Director ${d.director ? 'on' : 'off'} · captions ${d.captions ? 'on' : 'off'}`,
+        `Add-ons: debris ${d.addons.debris ?? 0} · gas ${d.addons.gas ?? 'cpu'} · paper ${d.addons.flyers ? 'on' : 'off'} · score ${d.addons.score ? 'on' : 'off'} · loudhailer ${d.addons.hailer ? 'on' : 'off'}`,
         `Canvas ${d.canvas ? `${d.canvas.width}×${d.canvas.height}` : 'none'} @ ${d.devicePixelRatio}x`,
         `URL ${d.url}`,
         `UA ${d.userAgent}`,
@@ -611,6 +628,90 @@ function getReportView() {
         milestones: report.milestones.length,
         minutes: Math.round(report.elapsed / 60),
     };
+}
+
+/** Evenly thin a series to at most `limit` values (the report card takes 240). */
+function resample(values, limit = 240) {
+    if (values.length <= limit) return values;
+    return Array.from({ length: limit }, (_, i) => values[Math.round(i * (values.length - 1) / (limit - 1))]);
+}
+
+/**
+ * The last attempt in the shape of POST /api/pocapitol/report-card (PoCapitolReportCardRequest):
+ * the page posts it and the server draws the card with SkiaSharp. Series are thinned to 240.
+ */
+function getReportCard() {
+    if (!game) return null;
+    const r = currentReport();
+    const series = r.series ?? [];
+    const safe = text => String(text ?? '').replace(/[^A-Za-z0-9 _.:-]/g, '').slice(0, 32);
+    let lastFront = 33;
+    const fronts = series.map(s => (lastFront = s.frontZ ?? lastFront));
+    return {
+        outcome: safe(r.outcome || r.status), role: r.role === 'observer' ? 'none' : r.role, mode: r.mode,
+        difficulty: safe(r.difficulty), clock: String(r.clock ?? '').toLowerCase().replace(/[^0-9apm: ]/g, '').slice(0, 12),
+        minutes: Math.round((r.elapsed ?? 0) / 60 * 10) / 10, standing: r.standing ?? 0, police: r.police ?? 0,
+        casualties: r.casualties ?? 0, lowestIntegrity: r.lowestIntegrity ?? 100, peakPressure: r.peakPressure ?? 0,
+        milestones: r.milestones?.length ?? 0,
+        integrity: resample(series.map(s => s.integrity)),
+        pressure: resample(series.map(s => s.pressure)),
+        frontZ: resample(fronts),
+    };
+}
+
+/**
+ * The aftermath map on the report: where the crowd stood, drawn by aftermath.js on its own
+ * WebGPU renderer with TSL materials. Loaded only when a report is shown.
+ */
+async function showAftermath(canvasId) {
+    hideAftermath();
+    if (!game) return false;
+    const r = currentReport();
+    if (!r.heat?.some(v => v > 0)) return false;
+    // The report body is only in the page once the player opens "More details", so wait for the
+    // canvas (a minute at most) rather than asking the page to call again.
+    const asked = game.aftermathAsk = {};
+    let canvas = document.getElementById(canvasId);
+    for (let waited = 0; !canvas && waited < 60000; waited += 250) {
+        await new Promise(resolve => setTimeout(resolve, 250));
+        if (!game || game.aftermathAsk !== asked) return false;
+        canvas = document.getElementById(canvasId);
+    }
+    if (!canvas) return false;
+    // The frame stays collapsed until something is drawing in it.
+    const frame = canvas.parentElement;
+    frame.dataset.live = '1';
+    try {
+        const { createAftermathMap } = await import('./aftermath.js');
+        const series = r.series ?? [];
+        const end = Math.max(1, series.at(-1)?.at ?? 1);
+        const frontPath = [];
+        for (const s of series) if (s.frontZ !== null && s.frontZ !== undefined && frontPath.at(-1)?.z !== s.frontZ) frontPath.push({ z: s.frontZ, t: s.at / end });
+        const map = await createAftermathMap(canvas, {
+            heat: r.heat, cols: HEAT.cols, rows: HEAT.rows, rect: { x0: HEAT.x0, z0: HEAT.z0, w: HEAT.w, d: HEAT.d },
+            areas, obstacles, columns, frontPath,
+            reducedMotion: document.documentElement.dataset.motion === 'reduce' || game.prefs.motion === 'reduced',
+        });
+        if (!map.backend || !game || game.aftermathAsk !== asked || !canvas.isConnected) {
+            map.dispose(); delete frame.dataset.live; return false;
+        }
+        game.aftermath = map;
+        return true;
+    } catch (error) {
+        console.warn('[PoCapitol] aftermath map unavailable:', error);
+        delete frame.dataset.live;
+        return false;
+    }
+}
+
+function hideAftermath() {
+    game?.aftermath?.dispose();
+    if (game) { game.aftermath = null; game.aftermathAsk = null; }
+}
+
+/** Save bytes the page holds (the report card PNG from the server). Blazor passes byte[] as a Uint8Array. */
+function downloadBytes(name, bytes, type = 'application/octet-stream') {
+    download(name, new Blob([bytes], { type }));
 }
 
 /** Copy text, falling back to the old selection trick where the clipboard API is blocked. */
@@ -672,7 +773,7 @@ function prefsView(prefs) {
         sensitivity: prefs.sensitivity, fov: prefs.fov, captions: prefs.captions,
         contrast: prefs.contrast, radar: prefs.radar, director: prefs.director,
         tracers: prefs.tracers, motion: prefs.motion, footage: prefs.footage,
-        debrief: prefs.debrief, debriefModel: prefs.debriefModel,
+        debrief: prefs.debrief, debriefModel: prefs.debriefModel, score: prefs.score, hailer: prefs.hailer,
         forward: prefs.keys.forward, back: prefs.keys.back, left: prefs.keys.left, right: prefs.keys.right,
         push: prefs.keys.push, sprint: prefs.keys.sprint, pause: prefs.keys.pause,
     };
@@ -686,6 +787,8 @@ function setPrefs(patch = {}) {
         game.prefs = merged;
         applyViewPrefs(game.view, merged);
         game.audio?.setFootage?.(merged.footage === 'on');
+        game.hailer?.setEnabled(merged.hailer === 'on');
+        game.score?.setEnabled(merged.score === 'on');
         game.radar?.setPalette?.(merged.radar);
     }
     return prefsView(merged);
@@ -734,6 +837,7 @@ function dispose() {
     g.disposed = true; g.events.abort();
     if (document.pointerLockElement === g.view.canvas) document.exitPointerLock();
     g.audio?.dispose?.();
+    g.hailer?.dispose(); g.score?.dispose(); g.aftermath?.dispose();
     g.ui?.dispose?.();
     g.radar?.destroy?.();
     g.inspector?.clear?.();
@@ -741,10 +845,15 @@ function dispose() {
     game = null;
 }
 
+// Debugging and headless checks only: with localStorage 'pominigames:pocapitol-debug' set, the
+// live game is reachable as window.__pocapitol() (state, view, audio layers).
+try { if (window.localStorage?.getItem('pominigames:pocapitol-debug')) window.__pocapitol = () => game; } catch { /* storage blocked */ }
+
 window.PoCapitol = {
     init, start, pause, dispose, setGraphics, getGraphics: storedGraphics,
     setWeather, getWeather: storedWeather, initRadar, toggleUnitLatch, clearUnitInspect,
     getPrefs, setPrefs, rebindKey,
-    getReportView, getDebrief, probeDebrief, download, exportPng, copyText,
+    getReportView, getDebrief, probeDebrief, download, downloadBytes, exportPng, copyText,
+    getReportCard, showAftermath, hideAftermath,
     getDiagnostics, getDiagnosticsText,
 };

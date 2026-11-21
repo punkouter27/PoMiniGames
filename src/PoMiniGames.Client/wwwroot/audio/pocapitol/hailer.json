@@ -1,0 +1,13 @@
+{
+  "lines": {
+    "disperse": "hailer/disperse-9fff5182.mp3",
+    "back": "hailer/back-0732ed36.mp3",
+    "chemical": "hailer/chemical-796248d4.mp3",
+    "gas": "hailer/gas-1a33637d.mp3",
+    "hold": "hailer/hold-4b9cd7bf.mp3",
+    "fallback": "hailer/fallback-d20d6617.mp3",
+    "shelter": "hailer/shelter-7d3fd70b.mp3",
+    "evacuate": "hailer/evacuate-492827c6.mp3",
+    "curfew": "hailer/curfew-ffb96c6c.mp3"
+  }
+}

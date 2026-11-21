@@ -5,6 +5,7 @@
 @inject PlayerNameService PlayerNames
 @inject ILogger<PoCapitolPage> Logger
 @inject KioskCoordinator Kiosk
+@inject ApiService Api
 
 @* State, engine calls and the engine's records are in PoCapitolPage.razor.cs. This file is
    the markup and the render fragments handed to the shared shell. *@
@@ -228,6 +229,9 @@
         @if (_report is { svg.Length: > 0 } report)
         {
             @DebriefBlock
+            <div class="pc-aftermath">
+                <canvas id="pocapitol-aftermath" aria-label="Map of where the crowd stood during the attempt"></canvas>
+            </div>
             <div class="pc-report-chart">@((MarkupString)report.svg)</div>
             <dl class="pc-report-facts">
                 <div><dt>Milestones</dt><dd>@report.milestones / @Objectives.Length</dd></div>
@@ -240,6 +244,7 @@
             <div class="pc-report-actions">
                 <button type="button" class="app-btn app-btn--sm" @onclick="ExportCsvAsync">Export CSV</button>
                 <button type="button" class="app-btn app-btn--sm" @onclick="ExportPngAsync">Save chart (PNG)</button>
+                <button type="button" class="app-btn app-btn--sm" @onclick="SaveReportCardAsync" disabled="@_cardBusy">@(_cardBusy ? "Drawing card…" : "Report card (PNG)")</button>
                 <button type="button" class="app-btn app-btn--sm" @onclick="CopySummaryAsync">Copy summary</button>
             </div>
         }
@@ -435,6 +440,22 @@
                         </Items>
                     </RadzenSelectBar>
 
+                    <label class="pc-small" for="pc-opt-score">Score</label>
+                    <RadzenSelectBar TValue="string" Value="@_prefs.score" Change="@(async (string val) => await SavePrefsAsync(score: val))" id="pc-opt-score">
+                        <Items>
+                            <RadzenSelectBarItem Text="Adaptive music" Value="@("on")" />
+                            <RadzenSelectBarItem Text="Off" Value="@("off")" />
+                        </Items>
+                    </RadzenSelectBar>
+
+                    <label class="pc-small" for="pc-opt-hailer">Police loudhailer</label>
+                    <RadzenSelectBar TValue="string" Value="@_prefs.hailer" Change="@(async (string val) => await SavePrefsAsync(hailer: val))" id="pc-opt-hailer">
+                        <Items>
+                            <RadzenSelectBarItem Text="Spoken orders" Value="@("on")" />
+                            <RadzenSelectBarItem Text="Off" Value="@("off")" />
+                        </Items>
+                    </RadzenSelectBar>
+
                     <label class="pc-small" for="pc-opt-motion">Combat motion &amp; shake</label>
                     <RadzenSelectBar TValue="string" Value="@_prefs.motion" Change="@(async (string val) => await SavePrefsAsync(motion: val))" id="pc-opt-motion">
                         <Items>
@@ -493,6 +514,7 @@
                         <Items>
                             <RadzenSelectBarItem Text="Built-in" Value="@("rules")" />
                             <RadzenSelectBarItem Text="Local model" Value="@("ollama")" />
+                            <RadzenSelectBarItem Text="In browser" Value="@("browser")" />
                         </Items>
                     </RadzenSelectBar>
                     @if (_prefs.debrief == "ollama")
@@ -505,6 +527,10 @@
                         </div>
                         <button type="button" class="app-btn pc-opt-button" @onclick="ProbeDebriefAsync">Check connection</button>
                         <p class="pc-small pc-probe" role="status">@_probeStatus</p>
+                    }
+                    else if (_prefs.debrief == "browser")
+                    {
+                        <p class="pc-small">A small language model (SmolLM2, 135M) runs inside this page with Transformers.js, on the graphics card when the browser supports WebGPU. The first debrief downloads about 120 MB from Hugging Face, which the browser then keeps; the report itself never leaves the page. If it cannot load, the built-in writer takes over.</p>
                     }
                     else
                     {

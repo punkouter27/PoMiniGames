@@ -7,6 +7,13 @@
  *           fallback, so a debrief can never fail to appear.
  *   ollama  A model on the player's own machine (http://localhost:11434). Free and private, but
  *           slow to start and only there if the player runs it. Opt-in.
+ *   browser A small model run inside this page by Transformers.js on ONNX Runtime Web (WebGPU when
+ *           the browser has it, WASM otherwise). Opt-in: the first use downloads about 120 MB of
+ *           weights from Hugging Face, which the browser then keeps; nothing is sent anywhere,
+ *           the report never leaves the page. A model that small cannot be trusted with figures
+ *           (in testing it swapped the crowd and police counts), so it writes only an opening
+ *           line with no numbers in it, and the figures follow word for word from the built-in
+ *           writer. A line with a digit in it is refused like any other failure.
  *
  * There is deliberately no cloud provider: this app ships no paid AI boundary, and the debrief
  * is not worth one. `PROVIDERS` is the one place a new backend would be added.
@@ -18,6 +25,23 @@
  */
 export const DEFAULT_ENDPOINT = 'http://localhost:11434';
 export const DEFAULT_MODEL = 'llama3.2';
+/** The in-page model: SmolLM2 135M Instruct (Apache-2.0), ONNX weights published with the model. */
+export const BROWSER_MODEL = 'HuggingFaceTB/SmolLM2-135M-Instruct';
+
+let generatorLoading = null;
+/** Transformers.js (the import map's `transformers` entry) and the model, loaded once per page. */
+function loadBrowserGenerator(onProgress) {
+    generatorLoading ??= (async () => {
+        const { pipeline, env } = await import('transformers');
+        env.allowLocalModels = false;
+        const webgpu = Boolean(globalThis.navigator?.gpu && await globalThis.navigator.gpu.requestAdapter().catch(() => null));
+        return pipeline('text-generation', BROWSER_MODEL, {
+            device: webgpu ? 'webgpu' : 'wasm', dtype: webgpu ? 'q4f16' : 'q4',
+            progress_callback: onProgress,
+        });
+    })().catch(error => { generatorLoading = null; throw error; });
+    return generatorLoading;
+}
 const MAX_CHARS = 600;
 
 const OUTCOMES = {
@@ -61,6 +85,22 @@ export function buildPrompt(report) {
     ].join('\n');
 }
 
+/** What the in-page model is asked: one opening line in words, the figures stay out of its hands. */
+export function buildHeadlinePrompt(report) {
+    return [
+        'Write one short, neutral opening sentence for an after-action note about a fictional crowd simulation game.',
+        'Do not use any numbers or digits. Do not invent names, events or dialogue. Do not praise either side or describe injuries.',
+        '',
+        ruleDebrief(report),
+    ].join('\n');
+}
+
+/** The first sentence of a reply, with its full stop. */
+export function firstSentence(text) {
+    const match = /^(.{12,220}?[.!?])(\s|$)/.exec(text ?? '');
+    return match ? match[1] : '';
+}
+
 /** Model output is untrusted text: one paragraph, no markup, bounded length. */
 export function cleanText(raw) {
     const text = String(raw ?? '').replace(/<[^>]*>/g, ' ').replace(/[*_#`>]+/g, '').replace(/\s+/g, ' ').trim();
@@ -79,6 +119,7 @@ export function createDebriefRouter({
     fetch: fetchImpl = globalThis.fetch?.bind(globalThis),
     now = () => globalThis.performance?.now?.() ?? Date.now(),
     endpoint = DEFAULT_ENDPOINT, timeoutMs = 25000, retries = 1,
+    loadGenerator = loadBrowserGenerator, onProgress = null,
 } = {}) {
     let last = null;
 
@@ -121,6 +162,24 @@ export function createDebriefRouter({
                 // eval_duration is nanoseconds of generation only, so this is the model's real pace.
                 const seconds = (Number(data.eval_duration) || 0) / 1e9;
                 return { text, model, tokens, tokensPerSecond: seconds > 0 ? Math.round(tokens / seconds * 10) / 10 : 0 };
+            },
+        },
+        browser: {
+            label: 'In-browser model', local: true,
+            async write(report) {
+                // The download is the slow part and happens once; it has no timeout of its own.
+                const generate = await loadGenerator(onProgress);
+                const started = now();
+                const messages = [{ role: 'user', content: buildHeadlinePrompt(report) }];
+                const output = await generate(messages, { max_new_tokens: 40, do_sample: false, return_full_text: false });
+                const reply = output?.[0]?.generated_text;
+                const headline = firstSentence(cleanText(Array.isArray(reply) ? reply.at(-1)?.content : reply));
+                if (!headline) throw new Error('The model returned nothing.');
+                if (/\d/.test(headline)) throw new Error('The model put figures in its line.');
+                const tokens = Math.round(headline.length / 4);
+                const text = cleanText(`${headline} ${ruleDebrief(report)}`);
+                const seconds = (now() - started) / 1000;
+                return { text, model: BROWSER_MODEL, tokens, tokensPerSecond: seconds > 0 ? Math.round(tokens / seconds * 10) / 10 : 0 };
             },
         },
     };

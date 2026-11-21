@@ -3,6 +3,7 @@ using Microsoft.AspNetCore.Components;
 using Microsoft.AspNetCore.Components.Web;
 using Microsoft.JSInterop;
 using PoMiniGamesClient.Models;
+using PoMiniGames.Shared.Games;
 using Radzen;
 
 namespace PoMiniGamesClient.Features.PoCapitol;
@@ -44,6 +45,10 @@ public partial class PoCapitolPage : IAsyncDisposable
         ["KeyW", "KeyA", "KeyS", "KeyD", "KeyQ", "KeyE", "KeyI", "KeyJ", "KeyK", "KeyL", "KeyF", "KeyR", "Space", "ShiftLeft", "ControlLeft", "KeyP"];
 
     private DotNetObjectReference<PoCapitolPage>? _reference;
+    private PoCapitolEngine? _engine;
+
+    /// <summary>The engine, through its typed wrapper (<see cref="PoCapitolEngine"/>).</summary>
+    private PoCapitolEngine Engine => _engine ??= new PoCapitolEngine(JS);
     private ErrorBoundary? _errorBoundary;
     private string _status = "loading", _difficulty = "standard", _error = "", _message = "", _announcement = "";
     private string _resultWarning = "", _role = "raider", _outcome = "", _graphics = "auto", _graphicsLabel = "Auto";
@@ -61,7 +66,7 @@ public partial class PoCapitolPage : IAsyncDisposable
     private PrefsDto _prefs = new();
     private ReportDto? _report;
     private DebriefDto? _debrief;
-    private bool _debriefBusy;
+    private bool _debriefBusy, _cardBusy;
     private string _probeStatus = "";
     private string _caption = "";
     private DateTime _captionStamp;
@@ -212,7 +217,7 @@ public partial class PoCapitolPage : IAsyncDisposable
             {
                 try
                 {
-                    await JS.InvokeVoidAsync("PoCapitol.dispose");
+                    await Engine.DisposeEngineAsync();
                     await LoadAsync();
                 }
                 catch (JSException ex) { await OnEngineError(ex.Message); }
@@ -226,7 +231,7 @@ public partial class PoCapitolPage : IAsyncDisposable
         if (_radarNeedsInit && _radarExpanded)
         {
             _radarNeedsInit = false;
-            try { await JS.InvokeVoidAsync("PoCapitol.initRadar", "pocapitol-radar"); }
+            try { await Engine.InitRadarAsync("pocapitol-radar"); }
             catch (JSException ex) { Logger.LogDebug(ex, "PoCapitol radar is not ready yet"); }
         }
     }
@@ -237,13 +242,13 @@ public partial class PoCapitolPage : IAsyncDisposable
         StateHasChanged();
         try
         {
-            if (!await JS.InvokeAsync<bool>("loadEngine", "pocapitol"))
+            if (!await Engine.LoadAsync())
                 throw new InvalidOperationException("The 3D assets could not be downloaded. Check your connection and retry.");
             _reference ??= DotNetObjectReference.Create(this);
-            await JS.InvokeVoidAsync("PoCapitol.init", "pocapitol-scene", _reference);
-            _graphics = await JS.InvokeAsync<string>("PoCapitol.getGraphics");
-            _weatherMode = await JS.InvokeAsync<string>("PoCapitol.getWeather");
-            _prefs = await JS.InvokeAsync<PrefsDto>("PoCapitol.getPrefs");
+            await Engine.InitAsync("pocapitol-scene", _reference);
+            _graphics = await Engine.GetGraphicsAsync();
+            _weatherMode = await Engine.GetWeatherAsync();
+            _prefs = await Engine.GetPrefsAsync();
             _ready = true;
             _status = "intro";
             if (_demo) await StartAsync();
@@ -270,7 +275,7 @@ public partial class PoCapitolPage : IAsyncDisposable
     {
         try
         {
-            await JS.InvokeVoidAsync("PoCapitol.start", _difficulty, _demo, _role);
+            await Engine.StartAsync(_difficulty, _demo, _role);
             _recorded = false;
             _report = null;
             _debrief = null;
@@ -285,14 +290,14 @@ public partial class PoCapitolPage : IAsyncDisposable
 
     private async Task PauseAsync(bool paused)
     {
-        try { await JS.InvokeVoidAsync("PoCapitol.pause", paused); }
+        try { await Engine.PauseAsync(paused); }
         catch (JSException ex) { await OnEngineError(ex.Message); }
     }
 
     private async Task SetGraphicsAsync(string mode)
     {
         _graphics = mode;
-        try { _graphicsLabel = await JS.InvokeAsync<string>("PoCapitol.setGraphics", mode); }
+        try { _graphicsLabel = await Engine.SetGraphicsAsync(mode); }
         catch (JSException ex) { await OnEngineError(ex.Message); }
     }
 
@@ -395,7 +400,7 @@ public partial class PoCapitolPage : IAsyncDisposable
         _disposed = true;
         if (_ready)
         {
-            try { await JS.InvokeVoidAsync("PoCapitol.dispose"); }
+            try { await Engine.DisposeEngineAsync(); }
             catch (JSDisconnectedException ex) { Logger.LogDebug(ex, "PoCapitol browser disconnected during disposal"); }
         }
         _reference?.Dispose();
@@ -412,7 +417,7 @@ public partial class PoCapitolPage : IAsyncDisposable
     {
         try
         {
-            var isLatched = await JS.InvokeAsync<bool>("PoCapitol.toggleUnitLatch");
+            var isLatched = await Engine.ToggleUnitLatchAsync();
             if (_selectedTelemetry != null) _selectedTelemetry.latched = isLatched;
         }
         catch (JSException ex) { Logger.LogDebug(ex, "PoCapitol camera latch unavailable"); }
@@ -421,14 +426,14 @@ public partial class PoCapitolPage : IAsyncDisposable
     private async Task ClearInspectAsync()
     {
         _selectedTelemetry = null;
-        try { await JS.InvokeVoidAsync("PoCapitol.clearUnitInspect"); }
+        try { await Engine.ClearUnitInspectAsync(); }
         catch (JSException ex) { Logger.LogDebug(ex, "PoCapitol inspector unavailable"); }
     }
 
     private async Task SetWeatherAsync(string mode)
     {
         _weatherMode = mode;
-        try { _weatherCondition = await JS.InvokeAsync<string>("PoCapitol.setWeather", mode); }
+        try { _weatherCondition = await Engine.SetWeatherAsync(mode); }
         catch (JSException ex) { Logger.LogDebug(ex, "PoCapitol weather unavailable"); }
     }
 
@@ -457,7 +462,7 @@ public partial class PoCapitolPage : IAsyncDisposable
     private async Task SetKeyAsync(string action, object? value)
     {
         if (value?.ToString() is not { Length: > 0 } code) return;
-        try { _prefs = await JS.InvokeAsync<PrefsDto>("PoCapitol.rebindKey", action, code); }
+        try { _prefs = await Engine.RebindKeyAsync(action, code); }
         catch (JSException ex) { Logger.LogWarning(ex, "PoCapitol could not rebind {Action}", action); }
     }
 
@@ -475,7 +480,8 @@ public partial class PoCapitolPage : IAsyncDisposable
     /// </summary>
     private async Task SavePrefsAsync(double? sensitivity = null, int? fov = null, bool? captions = null,
         string? contrast = null, string? radar = null, bool? director = null, string? tracers = null,
-        string? motion = null, string? debrief = null, string? debriefModel = null, string? footage = null)
+        string? motion = null, string? debrief = null, string? debriefModel = null, string? footage = null,
+        string? score = null, string? hailer = null)
     {
         if (sensitivity is not null) _prefs.sensitivity = sensitivity.Value;
         if (fov is not null) _prefs.fov = fov.Value;
@@ -490,6 +496,8 @@ public partial class PoCapitolPage : IAsyncDisposable
         if (tracers is not null) _prefs.tracers = tracers;
         if (motion is not null) _prefs.motion = motion;
         if (footage is not null) _prefs.footage = footage;
+        if (score is not null) _prefs.score = score;
+        if (hailer is not null) _prefs.hailer = hailer;
         if (debrief is not null)
         {
             _prefs.debrief = debrief;
@@ -499,7 +507,7 @@ public partial class PoCapitolPage : IAsyncDisposable
         try
         {
             // Keys are not sent: they only change through rebindKey, which owns the swap rule.
-            _prefs = await JS.InvokeAsync<PrefsDto>("PoCapitol.setPrefs", new PrefsPatch
+            _prefs = await Engine.SetPrefsAsync(new PrefsPatch
             {
                 sensitivity = _prefs.sensitivity,
                 fov = _prefs.fov,
@@ -512,6 +520,8 @@ public partial class PoCapitolPage : IAsyncDisposable
                 footage = _prefs.footage,
                 debrief = _prefs.debrief,
                 debriefModel = _prefs.debriefModel,
+                score = _prefs.score,
+                hailer = _prefs.hailer,
             });
         }
         catch (JSException ex)
@@ -524,9 +534,10 @@ public partial class PoCapitolPage : IAsyncDisposable
 
     private async Task LoadReportAsync()
     {
-        try { _report = await JS.InvokeAsync<ReportDto>("PoCapitol.getReportView"); }
+        try { _report = await Engine.GetReportViewAsync(); }
         catch (JSException ex) { Logger.LogDebug(ex, "PoCapitol report unavailable"); }
         await InvokeAsync(StateHasChanged);
+        _ = ShowAftermathAsync();
         await LoadDebriefAsync();
     }
 
@@ -539,7 +550,7 @@ public partial class PoCapitolPage : IAsyncDisposable
         if (_disposed || _report is null) return;
         _debriefBusy = true;
         await InvokeAsync(StateHasChanged);
-        try { _debrief = await JS.InvokeAsync<DebriefDto?>("PoCapitol.getDebrief"); }
+        try { _debrief = await Engine.GetDebriefAsync(); }
         catch (JSException ex) { Logger.LogDebug(ex, "PoCapitol debrief unavailable"); }
         finally { _debriefBusy = false; }
         if (!_disposed) await InvokeAsync(StateHasChanged);
@@ -551,7 +562,7 @@ public partial class PoCapitolPage : IAsyncDisposable
         StateHasChanged();
         try
         {
-            var probe = await JS.InvokeAsync<ProbeDto>("PoCapitol.probeDebrief");
+            var probe = await Engine.ProbeDebriefAsync();
             var installed = probe.models.Split(", ", StringSplitOptions.RemoveEmptyEntries);
             if (!probe.available)
             {
@@ -589,22 +600,53 @@ public partial class PoCapitolPage : IAsyncDisposable
     private async Task ExportCsvAsync()
     {
         if (_report is null) return;
-        try { await JS.InvokeVoidAsync("PoCapitol.download", ReportFileName("csv"), _report.csv); }
+        try { await Engine.DownloadAsync(ReportFileName("csv"), _report.csv); }
         catch (JSException ex) { Logger.LogDebug(ex, "PoCapitol CSV export unavailable"); }
     }
 
     private async Task ExportPngAsync()
     {
         if (_report is null) return;
-        try { await JS.InvokeAsync<bool>("PoCapitol.exportPng", "pocapitol-report-chart", ReportFileName("png")); }
+        try { await Engine.ExportPngAsync("pocapitol-report-chart", ReportFileName("png")); }
         catch (JSException ex) { Logger.LogDebug(ex, "PoCapitol PNG export unavailable"); }
+    }
+
+    /// <summary>
+    /// The aftermath map over the report (aftermath.js: WebGPU, TSL materials). The engine waits
+    /// for the canvas (it appears when "More details" opens) and opens its frame only once it is
+    /// drawing, so a browser that cannot draw it keeps the plain report.
+    /// </summary>
+    private async Task ShowAftermathAsync()
+    {
+        if (_disposed || _report is null) return;
+        try { await Engine.ShowAftermathAsync("pocapitol-aftermath"); }
+        catch (JSException ex) { Logger.LogDebug(ex, "PoCapitol aftermath map unavailable"); }
+    }
+
+    /// <summary>
+    /// The shareable report card: the engine hands over the attempt's series, the API draws the
+    /// card (SkiaSharp, POST /api/pocapitol/report-card) and the bytes are saved as a PNG.
+    /// </summary>
+    private async Task SaveReportCardAsync()
+    {
+        if (_report is null || _cardBusy) return;
+        _cardBusy = true;
+        try
+        {
+            var request = await Engine.GetReportCardAsync<PoCapitolReportCardRequest?>();
+            var png = request is null ? null : await Api.GetPoCapitolReportCardAsync(request);
+            if (png is { Length: > 0 }) await Engine.DownloadBytesAsync(ReportFileName("card.png"), png, "image/png");
+            else Logger.LogWarning("PoCapitol report card could not be drawn");
+        }
+        catch (JSException ex) { Logger.LogDebug(ex, "PoCapitol report card unavailable"); }
+        finally { _cardBusy = false; }
     }
 
     private async Task CopySummaryAsync()
     {
         if (_report is null) return;
         var text = _debrief is { text.Length: > 0 } d ? $"{_report.text}\n\n{d.text}" : _report.text;
-        try { await JS.InvokeAsync<bool>("PoCapitol.copyText", text); }
+        try { await Engine.CopyTextAsync(text); }
         catch (JSException ex) { Logger.LogDebug(ex, "PoCapitol clipboard unavailable"); }
     }
 
@@ -612,8 +654,8 @@ public partial class PoCapitolPage : IAsyncDisposable
     {
         try
         {
-            var text = await JS.InvokeAsync<string>("PoCapitol.getDiagnosticsText");
-            await JS.InvokeAsync<bool>("PoCapitol.copyText", $"{text}\nDebrief {DebriefMeta}");
+            var text = await Engine.GetDiagnosticsTextAsync();
+            await Engine.CopyTextAsync($"{text}\nDebrief {DebriefMeta}");
         }
         catch (JSException ex) { Logger.LogDebug(ex, "PoCapitol diagnostics unavailable"); }
     }
@@ -635,6 +677,8 @@ public partial class PoCapitolPage : IAsyncDisposable
         public string footage { get; set; } = "light";
         public string debrief { get; set; } = "rules";
         public string debriefModel { get; set; } = "llama3.2";
+        public string score { get; set; } = "on";
+        public string hailer { get; set; } = "on";
         public string forward { get; set; } = "KeyW";
         public string back { get; set; } = "KeyS";
         public string left { get; set; } = "KeyA";
@@ -658,6 +702,8 @@ public partial class PoCapitolPage : IAsyncDisposable
         public string footage { get; set; } = "";
         public string debrief { get; set; } = "";
         public string debriefModel { get; set; } = "";
+        public string score { get; set; } = "";
+        public string hailer { get; set; } = "";
     }
 
     public sealed class ReportDto

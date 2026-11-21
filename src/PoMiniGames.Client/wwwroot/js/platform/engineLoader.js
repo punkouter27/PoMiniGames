@@ -81,6 +81,12 @@ const CLASSIC_DEPS = {
 const INTEGRITY = {
     'https://cdn.jsdelivr.net/npm/matter-js@0.20.0/build/matter.min.js':
         'sha384-ZRKYEXtLBVeqs9z1WxyeKutCqnkqolS/r1EUWuoUpG4ZKbnRAIXnHhHdnNuiB6CL',
+    // PoCapitol's loudhailer (Howler, with its spatial plugin) and its adaptive score (Tone):
+    // UMD builds, loaded on first use through loadLibrary() below.
+    'https://cdn.jsdelivr.net/npm/howler@2.2.4/dist/howler.min.js':
+        'sha384-SSf4pKRrGaeWL8bdA89QvGkhZo5WvIVCGwKVzfX7z+9sSaIHtE/AkOLehofI4JVY',
+    'https://cdn.jsdelivr.net/npm/tone@15.1.22/build/Tone.js':
+        'sha384-NWoslxaf/3dYwQk+uGziDYJFdsjBpVlU1WpFRexuDFcIk/5PJpCbpVXia2Uikeix',
 };
 
 const _pending = new Map();
@@ -108,6 +114,15 @@ function loadClassic(src) {
         el.addEventListener('error', () => reject(new Error(`failed to load ${src}`)), { once: true });
         document.head.appendChild(el);
     });
+}
+
+/**
+ * Load one classic (UMD) library script once, with its integrity hash when it has one. For an
+ * engine module that needs a library only some of the time (PoCapitol's Howler and Tone).
+ * @param {string} src  an absolute CDN URL listed in INTEGRITY, or a path under wwwroot
+ */
+export function loadLibrary(src) {
+    return loadClassic(src);
 }
 
 /**

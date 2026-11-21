@@ -288,7 +288,12 @@ uvx ruff check .                                               # Python lint (sc
     `wwwroot/models/poecosystem/*.glb`; `--check` fails if a file is stale).
   - PoCapitol's after-action debrief (`wwwroot/js/pocapitol/debrief.js`) is client-only: a
     built-in deterministic writer by default, or, if the player opts in, a model on their own
-    machine through Ollama. It has no server side, no key and no paid boundary; keep it that way.
+    machine through Ollama, or SmolLM2-135M run inside the page by Transformers.js (owner
+    request 2026-11-20; weights from Hugging Face on first use). It has no server side, no key
+    and no paid boundary; keep it that way.
+  - PoCapitol's police loudhailer orders are voiced offline like Cabinet's radio
+    (`scripts/pocapitol/voices.mjs`; clips in `wwwroot/audio/pocapitol/`). After editing `LINES`
+    in `js/pocapitol/loudhailer.js` run it again (`--check` lists lines with no clip).
 - **Constraints:**
   - PoEcosystem is observation-only: never add controls that change its world.
   - Every in-app `<a>` goes through the Blazor router. Hub links marked `data-hub-nav` are
