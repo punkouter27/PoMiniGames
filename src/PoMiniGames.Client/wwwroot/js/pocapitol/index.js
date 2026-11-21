@@ -16,6 +16,8 @@ import { loadPrefs, savePrefs, matches, rebind } from './prefs.js';
 import { createDebriefRouter } from './debrief.js';
 import { loadCampusData } from './campusData.js';
 import { loadSigns } from './signs.js';
+import { startDissolve } from './dissolve.js';
+import { createLeader } from './leader.js';
 import { ensure, remove } from '../platform/radzenTheme.js';
 import { connectedPads, stick, pressed, ButtonEdges } from '../platform/gamepadBus.js';
 
@@ -102,6 +104,7 @@ async function init(hostId, reference) {
 
     // Menu sound, motion and the glass shader. Decoration only: if it cannot start, the game still can.
     try { g.ui = createUiFx(host.parentElement); } catch (error) { console.warn('[PoCapitol] interface effects unavailable:', error); }
+    g.leader = createLeader(host.parentElement);
     const signal = g.events.signal;
     const listen = (target, type, fn, options = {}) => target.addEventListener(type, fn, { ...options, signal });
     const clearInput = () => { g.keys.clear(); g.firing = false; g.drag = null; };
@@ -351,6 +354,8 @@ async function init(hostId, reference) {
             initRadar('pocapitol-radar');
             if (g.radar) g.radar.render(g.state, g.inspector?.getSelected(), dt);
             g.inspector?.update(g.state);
+            // The inspector card follows whoever it describes (leader.js), after the render below.
+            const tethered = g.inspector?.getSelected() ?? null;
 
             // The auto-director only cuts while the demo is running; a paused or finished attempt
             // holds the last subject so the closing shot does not jump.
@@ -364,6 +369,13 @@ async function init(hostId, reference) {
                 director: directed,
                 analysis: g.analysis,
             });
+            try { g.leader?.update(view.camera, tethered); } catch { /* the card keeps its corner */ }
+            // The attempt just ended: take this frame apart into particles (dissolve.js). It has to
+            // copy the canvas in the same task as the render, so it is here and not on the status change.
+            if (g.ended && g.dissolve === null) {
+                try { g.dissolve = startDissolve({ source: view.canvas, host, heat: { data: g.lastReport?.heat ?? [], cols: HEAT.cols, rows: HEAT.rows }, demo: g.state.demo }) ?? false; }
+                catch (error) { g.dissolve = false; console.warn('[PoCapitol] dissolve failed:', error); }
+            }
 
             const s = g.state;
             host.dataset.damaged = s.damageFlash > 0 ? 'true' : 'false';
@@ -376,7 +388,7 @@ async function init(hostId, reference) {
                 const yaw = s.role === 'none' ? ear.heading ?? 0 : g.yaw;
                 // Whoever the camera is on is who the mix favours.
                 const focus = s.role === 'none' ? (directed ?? ear) : s.role === 'commander' ? ear : s.player;
-                g.audio.update({ ...g.mix, focus, x: ear.x, z: ear.z, yaw, walking: moving, gassed: s.gassed, wind: g.weather?.windSpeed, snow: g.snow, active: g.started && s.status === 'active' }, dt);
+                g.audio.update({ ...g.mix, focus, x: ear.x, z: ear.z, yaw, walking: moving, gassed: s.gassed, wind: g.weather?.windSpeed, snow: g.snow, active: g.started && s.status === 'active', health: s.health, ...hudCues(g, s, ear) }, dt);
                 const active = g.started && s.status === 'active';
                 g.hailer?.update({ x: ear.x, z: ear.z, yaw, horn: g.mix?.horn, pressure: g.mix?.pressure, elapsed: s.elapsed, active, curfew: CURFEW_ELAPSED - 8 });
                 g.score?.update({ ...g.mix, elapsed: s.elapsed, milestone: s.milestone, active, openfire: Boolean(g.openfire) }, dt);
@@ -423,6 +435,22 @@ function initRadar(canvasId = 'pocapitol-radar') {
  * Where the listener stands: the human, the leader in the demo, or for the commander just behind
  * the selected line, where a command post would put its radio.
  */
+/**
+ * What the sonified HUD (hudWorklet.js) sounds: the integrity of the police line nearest the
+ * listener that is still holding (0..100, null when none is), and the heaviest Fruin density in
+ * the few cells around them (people/m2; LOS F starts at 5.38).
+ */
+function hudCues(g, s, ear) {
+    let lineIntegrity = null, best = 30;
+    s.lines.forEach((line, i) => {
+        const away = Math.abs(ear.z - lineDefs[i].z);
+        if (line.state === 'holding' && away < best) { best = away; lineIntegrity = line.integrity; }
+    });
+    let crowdDensity = 0;
+    for (const [dx, dz] of [[0, 0], [1.5, 0], [-1.5, 0], [0, 1.5], [0, -1.5]]) crowdDensity = Math.max(crowdDensity, g.analysis.at(ear.x + dx, ear.z + dz));
+    return { lineIntegrity, crowdDensity };
+}
+
 function listenerOf(s) {
     if (s.role === 'none') return selectLeader(s) ?? s.player;
     if (s.role === 'commander') {
@@ -533,7 +561,7 @@ function start(difficulty, demo = false, role = 'raider') {
     game.recorder.reset(); game.director.reset();
     game.analysis.reset(); game.analysisAt = 0; game.analysisElapsed = 0; game.lastReply = '';
     hideStreetMap();
-    game.lastMilestone = 0; game.ended = false; game.state.subject = -1;
+    game.lastMilestone = 0; game.ended = false; game.dissolve?.dispose?.(); game.dissolve = null; game.state.subject = -1;
     track('start', { mode: demo ? 'demo' : 'solo', role, difficulty, tier: game.governor.label() });
     // The opening establishing shot: five seconds over the Capitol before the player is behind
     // the crowd. Skipped when reduced motion is asked for.
@@ -546,6 +574,7 @@ function start(difficulty, demo = false, role = 'raider') {
         const current = game;
         game.audio = createAudio({ onCaption: text => current.caption?.(text, 'radio') });
         game.audio.setFootage?.(game.prefs.footage === 'on');
+        game.audio.setHudSound?.(game.prefs.hudSound !== 'off');
         game.hailer = createLoudhailer({ onCaption: text => current.caption?.(text, 'event') });
         game.score = createScore();
     }
@@ -711,7 +740,22 @@ function getReportView() {
         riskSeconds: report.riskSeconds ?? 0, riskEpisodes: report.riskEpisodes ?? 0, packedShare: report.packedShare ?? 0,
         peakPushing: report.peakPushing ?? 0, peakTipped: report.peakTipped ?? 0,
         orders: report.command?.issued ?? -1, withdrawn: report.command?.withdrawn ?? 0,
+        // Sparklines for the end card's stat cards: each series thinned to at most 40 points,
+        // comma-separated so the record stays flat for the trimmed build.
+        sparkIntegrity: spark(report.series, s => s.integrity),
+        sparkPressure: spark(report.series, s => s.pressure),
+        sparkRaiders: spark(report.series, s => s.raiders),
+        sparkPolice: spark(report.series, s => s.police),
+        sparkCasualties: spark(report.series, s => s.casualties),
     };
+}
+
+/** One sampled series as at most `points` comma-separated numbers (rounded to 0.1). */
+function spark(series = [], pick, points = 40) {
+    if (!series?.length) return '';
+    const step = Math.max(1, series.length / points), out = [];
+    for (let i = 0; i < series.length; i += step) out.push(Math.round((Number(pick(series[Math.floor(i)])) || 0) * 10) / 10);
+    return out.join(',');
 }
 
 /**
@@ -951,6 +995,7 @@ function setPrefs(patch = {}) {
         game.prefs = merged;
         applyViewPrefs(game.view, merged);
         game.audio?.setFootage?.(merged.footage === 'on');
+        game.audio?.setHudSound?.(merged.hudSound !== 'off');
         game.hailer?.setEnabled(merged.hailer === 'on');
         game.score?.setEnabled(merged.score === 'on');
         game.radar?.setPalette?.(merged.radar);
@@ -1006,7 +1051,7 @@ function dispose() {
     if (document.pointerLockElement === g.view.canvas) document.exitPointerLock();
     g.audio?.dispose?.();
     g.hailer?.dispose(); g.score?.dispose(); g.aftermath?.dispose(); g.streetMap?.dispose();
-    g.ui?.dispose?.();
+    g.ui?.dispose?.(); g.dissolve?.dispose?.();
     g.radar?.destroy?.();
     g.inspector?.clear?.();
     g.view.dispose(); remove();   // the view's stage stops the loop

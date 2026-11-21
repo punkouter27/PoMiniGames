@@ -10,7 +10,8 @@
 //              on hover, menus rise in out of a blur, and when Blazor removes a menu a ghost of it is
 //              kept just long enough to slide out. Animations use the individual `translate` and
 //              `scale` properties, so they compose with the CSS transforms the panels already have.
-//   shader     One WebGL2 pass behind the menus: a domain-warped fluid height field, a refracting
+//   shader     (Where WebGPU exists, menuFluid.js replaces the fluid below with a stable-fluids
+//              solver and this pass only draws the wipes.) One WebGL2 pass behind the menus: a domain-warped fluid height field, a refracting
 //              rim around the panel with chromatic dispersion (red, green and blue bend by slightly
 //              different amounts), and shockwave ripples from every press. It runs only while a menu
 //              is on screen.
@@ -217,6 +218,23 @@ export function createUiFx(root) {
         gl = quad.gl;
         ripLoc = gl.getUniformLocation(quad.program, 'uRip');
         root.prepend(canvas);
+        startFluid();
+    }
+    // Where WebGPU exists, a real fluid solver (menuFluid.js) draws the liquid behind the menu and
+    // this WebGL canvas only does the wipes. It loads on demand; until it is ready, and if it ever
+    // stops, the shader's own fake fluid is what shows.
+    let fluid = null, fluidAsked = false;
+    function startFluid() {
+        if (fluidAsked || !navigator.gpu) return;
+        fluidAsked = true;
+        import('./menuFluid.js')
+            .then(m => m.createMenuFluid(root, { panel: currentPanel, onLost: () => { fluid = null; wake(); } }))
+            .then(made => {
+                if (!made) return;
+                if (!gl) { made.dispose(); return; }
+                fluid = made; wake();
+            })
+            .catch(error => console.warn('[PoCapitol] menu fluid unavailable:', error));
     }
     function frame() {
         running = 0;
@@ -226,7 +244,8 @@ export function createUiFx(root) {
         const time = (performance.now() - start) / 1000;
         const wiped = cut ? (time - cut.start) / cut.seconds : 2;
         if (wiped >= 1) cut = null;
-        const busy = panel || on > 0.01 || cut || ripples.some(r => time - r[2] < 1.8);
+        const solver = fluid?.alive() === true;   // then this canvas only draws the wipes
+        const busy = solver ? cut : panel || on > 0.01 || cut || ripples.some(r => time - r[2] < 1.8);
         // Half resolution is plenty for soft light.
         const w = Math.max(2, Math.round(root.clientWidth * 0.5)), h = Math.max(2, Math.round(root.clientHeight * 0.5));
         if (canvas.width !== w || canvas.height !== h) { canvas.width = w; canvas.height = h; gl.viewport(0, 0, w, h); }
@@ -236,7 +255,7 @@ export function createUiFx(root) {
         }
         gl.clearColor(0, 0, 0, 0); gl.clear(gl.COLOR_BUFFER_BIT);
         if (busy) {
-            quad.set('uRes', w, h); quad.set('uTime', time); quad.set('uOn', on);
+            quad.set('uRes', w, h); quad.set('uTime', time); quad.set('uOn', solver ? 0 : on);
             quad.set('uPanel', ...panelBox);
             gl.uniform4fv(ripLoc, ripples.flat());
             quad.set('uWipe', cut ? Math.max(0.0001, wiped) : 2, cut?.veil ? 1 : 0, cut?.seed ?? 0);
@@ -244,9 +263,10 @@ export function createUiFx(root) {
             running = requestAnimationFrame(frame);
         }
     }
-    function wake() { if (gl && !running) running = requestAnimationFrame(frame); }
+    function wake() { fluid?.wake(); if (gl && !running) running = requestAnimationFrame(frame); }
     function ripple(x, y, strength = 1) {
         if (!gl || !canvas) return;
+        fluid?.splash(x, y, strength);
         const b = root.getBoundingClientRect(), k = canvas.width / Math.max(1, b.width);
         ripples[rippleNext] = [(x - b.left) * k, (y - b.top) * k, (performance.now() - start) / 1000, strength];
         rippleNext = (rippleNext + 1) % ripples.length;
@@ -432,7 +452,7 @@ export function createUiFx(root) {
     // ---------------------------------------------------------- readouts
     // Blazor owns every node in the heads-up panel and rewrites text in place, so nothing in it is
     // touched: a change is noticed and the element that holds it is animated from outside.
-    const ROLLS = '.pc-time, .pc-health-header > span:last-child, .pc-line-header > span:last-child, .pc-crowd > span, .pc-crowd > b';
+    const ROLLS = '.pc-hud-clock, .pc-hud-num, .pc-time, .pc-health-header > span:last-child, .pc-line-header > span:last-child, .pc-crowd > span, .pc-crowd > b';
     const rolled = new WeakMap();
     let tock = false;
     function roll(el) {
@@ -474,14 +494,65 @@ export function createUiFx(root) {
             else for (const node of record.addedNodes) readoutChanged(node);
         }
     });
-    let hud = null;
+    // Two panels carry readouts: the always-on strip over the scene (.pc-hud) and the Tab panel.
+    let huds = [];
     function watchHud() {
-        const found = document.querySelector('.pc-tab-hud');
-        if (found === hud) return;
+        const found = [...document.querySelectorAll('.pc-hud, .pc-tab-hud')];
+        if (found.length === huds.length && found.every((el, i) => el === huds[i])) return;
         readouts.disconnect();
-        hud = found;
-        if (hud) readouts.observe(hud, { subtree: true, childList: true, characterData: true, attributes: true, attributeFilter: ['class'] });
+        huds = found;
+        for (const el of huds) readouts.observe(el, { subtree: true, childList: true, characterData: true, attributes: true, attributeFilter: ['class'] });
     }
+
+    // ---------------------------------------------------------- menus, for the rest of the game
+    // Whether any menu covers the scene: the pause panel, the options sheet or the end card. The
+    // audio listens (a spectral freeze of the scene while one is up), so it is announced on change.
+    let menuOpen = false;
+    function announceMenu() {
+        const open = Boolean(currentPanel() || document.querySelector('dialog.gps-modal[open], dialog.game-opts-sheet[open]'));
+        if (open === menuOpen) return;
+        menuOpen = open;
+        try { window.dispatchEvent(new CustomEvent('pocapitol:menu', { detail: { open } })); } catch { /* nobody listening */ }
+    }
+
+    // ---------------------------------------------------------- hold to confirm
+    // A control marked data-hold (Restart) acts only after it is held for a moment: a ring fills
+    // round it, and a plain click does nothing, so one stray press cannot throw an attempt away.
+    // The click Blazor listens for is swallowed here, on the way down, until the hold completes.
+    const HOLD_MS = 650;
+    const holding = new WeakMap();
+    const holdTarget = e => e.target.closest?.('[data-hold]');
+    function holdStart(el) {
+        if (!el || el.disabled || holding.has(el)) return;
+        const run = el.animate([{ '--pc-hold': '0%' }, { '--pc-hold': '100%' }], { duration: calm() ? 1 : HOLD_MS, easing: 'linear', fill: 'forwards' });
+        holding.set(el, run);
+        el.setAttribute('data-holding', '');
+        run.finished.then(() => {
+            if (holding.get(el) !== run) return;
+            holdEnd(el);
+            el.dataset.holdOk = '1';
+            rumble(0.6, 80);
+            el.click();
+            delete el.dataset.holdOk;
+        }, () => {});
+    }
+    function holdEnd(el) {
+        const run = el && holding.get(el);
+        if (!run) return;
+        holding.delete(el);
+        el.removeAttribute('data-holding');
+        run.cancel();
+    }
+    on_('click', e => {
+        const el = holdTarget(e);
+        if (el && el.dataset.holdOk !== '1') { e.preventDefault(); e.stopImmediatePropagation(); e.stopPropagation(); }
+    }, { capture: true });
+    on_('pointerdown', e => { if (e.button === 0) holdStart(holdTarget(e)); });
+    on_('pointerup', e => holdEnd(holdTarget(e)));
+    on_('pointerout', e => { const el = holdTarget(e); if (el && !el.contains(e.relatedTarget)) holdEnd(el); });
+    on_('pointercancel', e => holdEnd(holdTarget(e)));
+    on_('keydown', e => { if (!e.repeat && (e.key === 'Enter' || e.key === ' ')) holdStart(holdTarget(e)); });
+    on_('keyup', e => { if (e.key === 'Enter' || e.key === ' ') holdEnd(holdTarget(e)); });
     // A caption arriving sweeps in from the left and settles; it is spoken radio, so it should land.
     const captions = new MutationObserver(records => {
         if (calm()) return;
@@ -500,7 +571,7 @@ export function createUiFx(root) {
     captions.observe(root, { subtree: true, childList: true, characterData: true });
 
     // Positions are sampled while a menu is up, so a panel that resizes is still ghosted where it was.
-    const sampler = setInterval(() => { track(); watchHud(); }, 120);
+    const sampler = setInterval(() => { track(); watchHud(); announceMenu(); }, 120);
     watchHud();
     track();
     if (currentPanel()) { initShader(); wake(); }
@@ -510,9 +581,11 @@ export function createUiFx(root) {
         ripple,
         wipe, rumble,
         dispose() {
+            if (menuOpen) { menuOpen = false; try { window.dispatchEvent(new CustomEvent('pocapitol:menu', { detail: { open: false } })); } catch { /* gone */ } }
             controller.abort(); watcher.disconnect(); readouts.disconnect(); captions.disconnect(); clearInterval(sampler);
             if (running) cancelAnimationFrame(running);
             canvas?.remove();
+            fluid?.dispose(); fluid = null;
             quad?.dispose();
             gl?.getExtension('WEBGL_lose_context')?.loseContext();
             gl = quad = null;

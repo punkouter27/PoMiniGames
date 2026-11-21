@@ -1,5 +1,6 @@
 @page "/pocapitol"
 @page "/pocapitol/{Mode}"
+@using System.Globalization
 @inject IJSRuntime JS
 @inject GameResultService Results
 @inject PlayerNameService PlayerNames
@@ -40,6 +41,7 @@
                             <span class="pc-caption-tag">RADIO</span> @_caption
                         }
                     </div>
+                    @HudContent
                 }
                 @if (_status != "active")
                 {
@@ -73,9 +75,13 @@
                 }
                 else
                 {
-                    @if (_selectedTelemetry != null)
+                    @* Only while play is live: a paused or finished scenario has its own panel on top. *@
+                    @if (_selectedTelemetry != null && _status == "active")
                     {
-                        <div class="pc-inspector-card" role="region" aria-label="Unit Telemetry">
+                        @* The card is tethered to the person it describes (leader.js writes the
+                           anchor and the line every frame); without an anchor it sits in its corner. *@
+                        <svg class="pc-leader" aria-hidden="true"><line x1="0" y1="0" x2="0" y2="0" /><circle cx="0" cy="0" r="5" /></svg>
+                        <div class="pc-inspector-card" role="region" aria-label="Unit telemetry">
                             <div class="pc-inspector-header">
                                 <div class="pc-inspector-title">
                                     <span class="pc-badge @(_selectedTelemetry.faction == "police" ? "pc-badge--police" : "pc-badge--raider")">
@@ -83,37 +89,37 @@
                                     </span>
                                     <strong>@_selectedTelemetry.name</strong>
                                 </div>
-                                <button type="button" class="pc-debug-close" @onclick="ClearInspectAsync" aria-label="Close Inspector"><span class="material-symbols-outlined" aria-hidden="true">close</span></button>
+                                <button type="button" class="pc-debug-close" @onclick="ClearInspectAsync" aria-label="Close inspector"><span class="material-symbols-outlined" aria-hidden="true">close</span></button>
                             </div>
-                            <div class="pc-inspector-role">@_selectedTelemetry.role</div>
-                            <div class="pc-inspector-status"><span>STATUS:</span> <b>@_selectedTelemetry.status</b></div>
+                            <div class="pc-inspector-role">@_selectedTelemetry.role · <b>@_selectedTelemetry.status</b></div>
                             <div class="pc-inspector-metrics">
-                                <div>
-                                    <span>STAMINA / HEALTH</span>
-                                    <RadzenProgressBar Value="@_selectedTelemetry.health" Max="100" Unit="%" ShowValue="true"
-                                                       ProgressBarStyle="@GetHealthProgressStyle(_selectedTelemetry.health)" />
+                                @* The DTO's `stamina` is the unit's morale (inspector.js), so it is labelled that. *@
+                                <div class="pc-ring @(Tone(_selectedTelemetry.health))" style="--v: @_selectedTelemetry.health; --g: @_selectedTelemetry.health" role="meter"
+                                     aria-valuenow="@_selectedTelemetry.health" aria-valuemin="0" aria-valuemax="100" aria-label="Health">
+                                    <span class="pc-hud-num">@_selectedTelemetry.health</span><small>HEALTH</small>
                                 </div>
-                                <div>
-                                    <span>MORALE</span>
-                                    <RadzenProgressBar Value="@_selectedTelemetry.stamina" Max="100" Unit="%" ShowValue="true"
-                                                       ProgressBarStyle="ProgressBarStyle.Info" />
+                                <div class="pc-ring pc-ring--info" style="--v: @_selectedTelemetry.stamina; --g: @_selectedTelemetry.stamina" role="meter"
+                                     aria-valuenow="@_selectedTelemetry.stamina" aria-valuemin="0" aria-valuemax="100" aria-label="Morale">
+                                    <span class="pc-hud-num">@_selectedTelemetry.stamina</span><small>MORALE</small>
                                 </div>
+                                <dl class="pc-inspector-facts">
+                                    <div><dt>Density</dt><dd>@_selectedTelemetry.density.ToString("0.0")/m²</dd></div>
+                                    @if (!string.IsNullOrEmpty(_selectedTelemetry.lineAssignment))
+                                    {
+                                        <div><dt>Line</dt><dd>@_selectedTelemetry.lineAssignment</dd></div>
+                                    }
+                                    @if (!string.IsNullOrEmpty(_selectedTelemetry.milestone))
+                                    {
+                                        <div><dt>Heading for</dt><dd>@_selectedTelemetry.milestone</dd></div>
+                                    }
+                                </dl>
                             </div>
                             <div class="pc-inspector-meta">
                                 <span>@_selectedTelemetry.gear</span>
-                                <span>Crowd density: @_selectedTelemetry.density.ToString("0.0") people/m²</span>
-                                @if (!string.IsNullOrEmpty(_selectedTelemetry.lineAssignment))
-                                {
-                                    <span>Assignment: @_selectedTelemetry.lineAssignment</span>
-                                }
-                                @if (!string.IsNullOrEmpty(_selectedTelemetry.milestone))
-                                {
-                                    <span>Objective: @_selectedTelemetry.milestone</span>
-                                }
                                 @if (_selectedTelemetry.harmHits > 0)
                                 {
                                     <span class="pc-harm">
-                                        HARM: severity @_selectedTelemetry.harmSeverity/6 · @_selectedTelemetry.harmLossMl mL est.
+                                        Harm: severity @_selectedTelemetry.harmSeverity/6 · @_selectedTelemetry.harmLossMl mL est.
                                         (@(_selectedTelemetry.harmHemorrhage == 0 ? "no class" : $"class {_selectedTelemetry.harmHemorrhage}")) ·
                                         triage <b>@_selectedTelemetry.harmTriage</b>
                                     </span>
@@ -121,6 +127,7 @@
                             </div>
                             <div class="pc-inspector-actions">
                                 <button type="button" class="app-btn app-btn--primary" @onclick="ToggleLatchAsync">
+                                    <span class="material-symbols-outlined" aria-hidden="true">@(_selectedTelemetry.latched ? "videocam_off" : "videocam")</span>
                                     @(_selectedTelemetry.latched ? "Unlatch camera" : "Latch camera")
                                 </button>
                                 <button type="button" class="app-btn" @onclick="ClearInspectAsync">Deselect</button>
@@ -142,7 +149,8 @@
                             <section class="pc-command" aria-label="Incident command">
                                 <header class="pc-command-head">
                                     <span class="pc-eyebrow">INCIDENT COMMAND</span>
-                                    <span>@board.issued orders · gas @board.gas</span>
+                                    <span class="pc-command-tally"><span class="material-symbols-outlined" aria-hidden="true">campaign</span>@board.issued
+                                        <span class="material-symbols-outlined" aria-hidden="true">air</span>@board.gas</span>
                                 </header>
                                 <ol class="pc-command-lines">
                                     @for (var i = 0; i < LineNames.Length; i++)
@@ -150,28 +158,50 @@
                                         var line = i;
                                         var value = line < integrity.Length ? integrity[line] : -1;
                                         var on = board.selected == line;
+                                        var tired = line < strain.Length ? strain[line] : 0;
+                                        var isBraced = line < braced.Length && braced[line] == 1;
                                         <li>
-                                            <button type="button" class="pc-command-line @(on ? "pc-command-line--on" : null)" aria-pressed="@(on ? "true" : "false")"
-                                                    disabled="@(value < 0)" @onclick="@(() => OrderAsync("select", line))">
-                                                <span class="pc-command-key">@(line + 1)</span>
-                                                <span class="pc-command-name">@LineNames[line]</span>
-                                                <span class="pc-command-meta">
-                                                    @(value < 0 ? "fallen back"
-                                                        : $"{value}% · {(line < officers.Length ? officers[line] : 0)} officers · tired {(line < strain.Length ? strain[line] : 0)}%{(line < braced.Length && braced[line] == 1 ? " · braced" : "")}")
+                                            <button type="button" class="pc-command-line @(on ? "pc-command-line--on" : null) @(value < 0 ? "pc-command-line--fallen" : null) @(isBraced ? "pc-command-line--braced" : null)"
+                                                    aria-pressed="@(on ? "true" : "false")" disabled="@(value < 0)" @onclick="@(() => OrderAsync("select", line))"
+                                                    aria-label="@($"{LineNames[line]}: {(value < 0 ? "fallen back" : $"{value}% holding, {(line < officers.Length ? officers[line] : 0)} officers, {tired}% tired{(isBraced ? ", braced" : "")}")}")">
+                                                <span class="pc-ring pc-ring--sm @(Tone(Math.Max(0, value)))" style="--v: @Math.Max(0, value); --g: @Math.Max(0, value)" aria-hidden="true">
+                                                    <span class="pc-hud-num">@(value < 0 ? "—" : value.ToString(CultureInfo.InvariantCulture))</span>
                                                 </span>
-                                                <span class="pc-command-bar" aria-hidden="true"><i style="width: @(Math.Max(0, value))%"></i></span>
+                                                <span class="pc-command-text">
+                                                    <span class="pc-command-name"><kbd>@(line + 1)</kbd> @LineNames[line]</span>
+                                                    <span class="pc-command-meta" aria-hidden="true">
+                                                        @if (value < 0)
+                                                        {
+                                                            <span>Fallen back</span>
+                                                        }
+                                                        else
+                                                        {
+                                                            <span><span class="material-symbols-outlined">groups</span>@(line < officers.Length ? officers[line] : 0)</span>
+                                                            @if (isBraced)
+                                                            {
+                                                                <span class="pc-command-braced"><span class="material-symbols-outlined">shield</span>braced</span>
+                                                            }
+                                                        }
+                                                    </span>
+                                                    <span class="pc-command-tired" aria-hidden="true" title="Front rank fatigue"><i style="width: @tired%"></i></span>
+                                                </span>
                                             </button>
                                         </li>
                                     }
                                 </ol>
                                 <div class="pc-command-orders">
-                                    @foreach (var (order, label, key) in Orders)
+                                    @foreach (var (order, label, key, icon) in Orders)
                                     {
                                         var wait = OrderWait(order);
                                         var name = order;
-                                        <button type="button" class="app-btn app-btn--sm" disabled="@(wait > 0 || (name == "gas" && board.gas == 0) || _orderBusy)"
+                                        var sweep = OrderSweep(order);
+                                        <button type="button" class="pc-order @(wait > 0 ? "pc-order--cooling" : null)" style="--cd: @sweep"
+                                                disabled="@(wait > 0 || (name == "gas" && board.gas == 0) || _orderBusy)"
+                                                aria-label="@($"{label} ({key}){(wait > 0 ? $", ready in {wait} seconds" : "")}")"
                                                 @onclick="() => OrderAsync(name, board.selected)">
-                                            @label <kbd>@key</kbd>@(wait > 0 ? $" {wait}s" : "")
+                                            <span class="material-symbols-outlined" aria-hidden="true">@icon</span>
+                                            <span class="pc-order-label">@label</span>
+                                            <kbd aria-hidden="true">@(wait > 0 ? $"{wait}s" : key)</kbd>
                                         </button>
                                     }
                                 </div>
@@ -237,7 +267,11 @@
                             @GraphicsPicker("pc-graphics-paused")
                             <div class="pc-actions">
                                 <button type="button" class="app-btn app-btn--primary" @onclick="() => PauseAsync(false)">Resume</button>
-                                <button type="button" class="app-btn" @onclick="StartAsync">Restart</button>
+                                @* Held, not clicked: ui.js fills a ring and only then lets the click through. *@
+                                <button type="button" class="app-btn pc-hold" data-hold @onclick="StartAsync" aria-describedby="pc-hold-hint">
+                                    <span class="material-symbols-outlined" aria-hidden="true">restart_alt</span> Hold to restart
+                                </button>
+                                <span id="pc-hold-hint" class="pc-visually-hidden">Press and hold to restart the attempt.</span>
                             </div>
                             <details><summary>Historical context</summary>@ContextContent</details>
                         </GamePauseDialog>
@@ -271,6 +305,80 @@
         </Items>
     </RadzenSelectBar>;
 
+    /// <summary>
+    /// The always-on heads-up strip while play is live: the clock, milestone pips and what to do
+    /// now at the top; the player's own vitals bottom-left. Everything else is the Tab panel's.
+    /// </summary>
+    private RenderFragment HudContent => @<div class="pc-hud">
+        <div class="pc-hud-top">
+            <div class="pc-hud-row">
+                @if (_demo)
+                {
+                    <span class="pc-rec-pill" aria-hidden="true"><i></i>REC</span>
+                }
+                <span class="pc-hud-clock" aria-label="@($"Time {Clock}")">@Clock</span>
+                <div class="pc-progress" role="img" aria-label="@($"{_milestone} of {Objectives.Length} milestones complete")">
+                    @for (var i = 0; i < Objectives.Length; i++)
+                    {
+                        <span class="@(i < _milestone ? "pc-done" : null)"></span>
+                    }
+                </div>
+            </div>
+            <span class="pc-hud-title">@HudTitle</span>
+        </div>
+
+        @if (Playing)
+        {
+            <div class="pc-hud-vitals">
+                <div class="pc-ring @(Tone(_health))" style="--v: @_health; --g: @_health" role="meter" aria-valuenow="@_health" aria-valuemin="0" aria-valuemax="100" aria-label="Stamina">
+                    <span class="pc-hud-num">@_health</span><small>STAMINA</small>
+                </div>
+                @if (_role == "police" && _lineIndex >= 0)
+                {
+                    <div @key="_lineIndex" class="pc-ring pc-ring--line @(Tone(_lineIntegrity)) @(_lineIndex > 0 ? "pc-shake" : null)" style="--v: @_lineIntegrity; --g: @_lineIntegrity"
+                         role="meter" aria-valuenow="@_lineIntegrity" aria-valuemin="0" aria-valuemax="100" aria-label="@($"{LineNames[_lineIndex]} holding")">
+                        <span class="pc-hud-num">@_lineIntegrity</span><small>LINE @(_lineIndex + 1)</small>
+                    </div>
+                }
+                @if (Armed)
+                {
+                    <div class="pc-ammo-chips">
+                        <span class="pc-ammo-chip @(_grenades == 0 ? "pc-ammo-chip--empty" : null)" aria-label="@($"{_grenades} concussion grenades")">
+                            <span class="material-symbols-outlined" aria-hidden="true">flare</span><span class="pc-hud-num">@_grenades</span><kbd>G</kbd>
+                        </span>
+                        <span class="pc-ammo-chip @(_smoke == 0 ? "pc-ammo-chip--empty" : null)" aria-label="@($"{_smoke} smoke grenades")">
+                            <span class="material-symbols-outlined" aria-hidden="true">cloud</span><span class="pc-hud-num">@_smoke</span><kbd>H</kbd>
+                        </span>
+                    </div>
+                }
+            </div>
+        }
+
+        @* A milestone lands as a split-flap banner with a bloom of light behind it; the historical
+           record's next entry slides in under the clock. Both show for a few seconds after the
+           change (stamped in OnUpdate), so a pause and resume does not replay them. *@
+        @if (ToastLive(_milestoneAt) && _milestone > 0)
+        {
+            var text = (_milestone >= Objectives.Length ? "Chamber doors reached" : Objectives[_milestone - 1]).ToUpperInvariant();
+            <div @key="@($"m{_milestone}")" class="pc-toast" role="status">
+                <span class="pc-eyebrow">MILESTONE @_milestone / @Objectives.Length</span>
+                <strong class="pc-flap" aria-label="@text">
+                    @for (var c = 0; c < text.Length; c++)
+                    {
+                        <span style="--i: @c" aria-hidden="true">@(text[c] == ' ' ? " " : text[c].ToString())</span>
+                    }
+                </strong>
+            </div>
+        }
+        @if (ToastLive(_dayAt) && _dayShown.Length > 0)
+        {
+            <div @key="_dayShown" class="pc-day" role="status">
+                <span class="pc-eyebrow">ON THE DAY · @OnTheDay.Time</span>
+                <span>@OnTheDay.Text</span>
+            </div>
+        }
+    </div>;
+
     private RenderFragment ResultSummary => @<div>
         <div>@ResultBody</div>
         <div>@ResultNote</div>
@@ -287,116 +395,109 @@
         <span class="pc-debrief-meta @(_debrief is { fallback: true } ? "pc-debrief-meta--warn" : null)">@DebriefMeta</span>
     </div>;
 
+    /// <summary>One stat card on the end card: a big figure, a caption and the series under it.</summary>
+    private RenderFragment StatCard(string label, string value, string tone, string? spark, string? note = null) => @<div class="pc-stat pc-stat--@tone">
+        <span class="pc-stat-label">@label</span>
+        <strong class="pc-stat-value">@value</strong>
+        @if (note is { Length: > 0 })
+        {
+            <span class="pc-stat-note">@note</span>
+        }
+        @if (Spark(spark) is { Count: > 1 } points)
+        {
+            <RadzenSparkline Class="pc-stat-spark" Style="height: 34px; width: 100%;">
+                <RadzenLineSeries Data="@points" CategoryProperty="X" ValueProperty="Y" Smooth="true" StrokeWidth="2" />
+                <RadzenValueAxis Visible="false" />
+                <RadzenCategoryAxis Visible="false" />
+            </RadzenSparkline>
+        }
+    </div>;
+
     /// <summary>
-    /// The after-action report, below the result summary: what the attempt actually looked like,
-    /// from the sampled series the engine already keeps. Charts and files only — no score, and
-    /// nothing leaves the browser unless the player exports it.
+    /// The after-action report, below the result summary in "More details": three tabs (the
+    /// story, the charts, the street map) instead of one long scroll, stat cards with their
+    /// sparklines in place of a table, and one Export button that holds every file.
     /// </summary>
     private RenderFragment ResultDetails => @<div class="pc-report">
         @if (_report is { svg.Length: > 0 } report)
         {
-            @DebriefBlock
-            <div class="pc-aftermath">
-                <canvas id="pocapitol-aftermath" aria-label="Map of where the crowd stood during the attempt"></canvas>
-            </div>
-            <div class="pc-report-chart">@((MarkupString)report.svg)</div>
-            <dl class="pc-report-facts">
-                <div><dt>Milestones</dt><dd>@report.milestones / @Objectives.Length</dd></div>
-                <div><dt>Lowest line</dt><dd>@report.lowestIntegrity%</dd></div>
-                <div><dt>Peak pressure</dt><dd>@report.peakPressure.ToString("0.0")</dd></div>
-                <div><dt>First break</dt><dd>@(report.firstBreak < 0 ? "never" : $"{report.firstBreak:0}s")</dd></div>
-                <div><dt>Casualties</dt><dd>@report.casualties (@report.immediate immediate)</dd></div>
-                <div><dt>Standing</dt><dd>@report.standing raiders · @report.police police</dd></div>
-                <div><dt>Peak density</dt><dd>@report.peakDensity.ToString("0.00")/m² (LOS @report.peakGrade)</dd></div>
-                <div><dt>Crush risk</dt><dd>@report.riskSeconds s · @report.riskEpisodes episodes</dd></div>
-                <div><dt>Packed (D or worse)</dt><dd>@report.packedShare.ToString("0.#")% of crowd-time</dd></div>
-                <div><dt>Contagion peak</dt><dd>@report.peakPushing.ToString("0")% pushing · @report.peakTipped.ToString("0")% tipping</dd></div>
-                @if (report.orders >= 0)
-                {
-                    <div><dt>Orders</dt><dd>@report.orders given · @report.withdrawn lines withdrawn</dd></div>
-                }
-            </dl>
-            <div class="pc-streetmap" data-state="@_mapState">
-                @if (_mapState is "loading" or "live")
-                {
-                    <div id="pocapitol-streetmap" class="pc-streetmap-canvas" aria-label="The attempt on a street map of Capitol Hill"></div>
-                }
-                @if (_mapState == "failed")
-                {
-                    <p class="pc-small">The street map could not load. The rest of the report is unchanged.</p>
-                }
-                @if (_mapState is "" or "failed")
-                {
-                    <p class="pc-small">Lays where the crowd stood and where each line held over an OpenStreetMap basemap of Capitol Hill. The route is invented, drawn at true scale from the Rotunda. Loads map tiles from openstreetmap.org when you open it.</p>
-                }
-            </div>
+            <RadzenTabs RenderMode="TabRenderMode.Client" @bind-SelectedIndex="_reportTab" Change="OnReportTabAsync" class="pc-report-tabs">
+                <Tabs>
+                    <RadzenTabsItem Text="Summary">
+                        @DebriefBlock
+                        <div class="pc-stats">
+                            @(StatCard("Milestones", $"{report.milestones}/{Objectives.Length}", report.milestones >= Objectives.Length ? "bad" : report.milestones > 2 ? "warn" : "good", null))
+                            @(StatCard("Lowest line", $"{report.lowestIntegrity}%", ToneName(report.lowestIntegrity), report.sparkIntegrity,
+                                report.firstBreak < 0 ? "No line broke" : $"First break at {report.firstBreak:0}s"))
+                            @(StatCard("Peak density", $"{report.peakDensity:0.0}/m²", report.peakGrade is "E" or "F" ? "bad" : report.peakGrade == "D" ? "warn" : "good", report.sparkPressure,
+                                $"Level of service {report.peakGrade}"))
+                            @(StatCard("Crush risk", $"{report.riskSeconds}s", report.riskSeconds > 30 ? "bad" : report.riskSeconds > 0 ? "warn" : "good", null,
+                                $"{report.riskEpisodes} episodes"))
+                            @(StatCard("Casualties", report.casualties.ToString(CultureInfo.InvariantCulture), report.casualties > 0 ? "bad" : "good", report.sparkCasualties,
+                                $"{report.immediate} immediate"))
+                            @(StatCard("Standing", report.standing.ToString(CultureInfo.InvariantCulture), "info", report.sparkRaiders, $"{report.police} police"))
+                        </div>
+                        <details class="pc-more">
+                            <summary>More figures</summary>
+                            <dl class="pc-report-facts">
+                                <div><dt>Peak pressure</dt><dd>@report.peakPressure.ToString("0.0")</dd></div>
+                                <div><dt>Packed (D or worse)</dt><dd>@report.packedShare.ToString("0.#")% of crowd-time</dd></div>
+                                <div><dt>Contagion peak</dt><dd>@report.peakPushing.ToString("0")% pushing · @report.peakTipped.ToString("0")% tipping</dd></div>
+                                @if (report.orders >= 0)
+                                {
+                                    <div><dt>Orders</dt><dd>@report.orders given · @report.withdrawn lines withdrawn</dd></div>
+                                }
+                            </dl>
+                        </details>
+                    </RadzenTabsItem>
+                    <RadzenTabsItem Text="Charts">
+                        <div class="pc-aftermath">
+                            <canvas id="pocapitol-aftermath" aria-label="Map of where the crowd stood during the attempt"></canvas>
+                        </div>
+                        <div class="pc-report-chart">@((MarkupString)report.svg)</div>
+                    </RadzenTabsItem>
+                    <RadzenTabsItem Text="Street map">
+                        <div class="pc-streetmap" data-state="@_mapState">
+                            @if (_mapState is "loading" or "live")
+                            {
+                                <div id="pocapitol-streetmap" class="pc-streetmap-canvas" aria-label="The attempt on a street map of Capitol Hill"></div>
+                            }
+                            @if (_mapState == "failed")
+                            {
+                                <p class="pc-small">The street map could not load. The rest of the report is unchanged.</p>
+                            }
+                            <p class="pc-small">Where the crowd stood and where each line held, over an OpenStreetMap basemap of Capitol Hill. The route is invented, drawn at true scale from the Rotunda. Map tiles load from openstreetmap.org while this tab is open.</p>
+                        </div>
+                    </RadzenTabsItem>
+                </Tabs>
+            </RadzenTabs>
             <div class="pc-report-actions">
-                <button type="button" class="app-btn app-btn--sm" @onclick="ExportCsvAsync">Export CSV</button>
-                <button type="button" class="app-btn app-btn--sm" @onclick="ExportPngAsync">Save chart (PNG)</button>
-                <button type="button" class="app-btn app-btn--sm" @onclick="SaveReportCardAsync" disabled="@_cardBusy">@(_cardBusy ? "Drawing card…" : "Report card (PNG)")</button>
-                <button type="button" class="app-btn app-btn--sm" @onclick="CopySummaryAsync">Copy summary</button>
-                <button type="button" class="app-btn app-btn--sm" @onclick="ShowStreetMapAsync" disabled="@(_mapState is "loading" or "live")">@(_mapState == "loading" ? "Loading map…" : "Street map")</button>
-                <button type="button" class="app-btn app-btn--sm" @onclick="ExportGeoJsonAsync">Export GeoJSON</button>
+                <RadzenSplitButton Text="@(_cardBusy ? "Drawing card…" : "Save report card")" Icon="download" Disabled="@_cardBusy"
+                                   Click="OnExportAsync" class="pc-export">
+                    <ChildContent>
+                        <RadzenSplitButtonItem Text="Report card (PNG)" Value="@("card")" Icon="image" />
+                        <RadzenSplitButtonItem Text="Chart (PNG)" Value="@("chart")" Icon="show_chart" />
+                        <RadzenSplitButtonItem Text="Samples (CSV)" Value="@("csv")" Icon="table_view" />
+                        <RadzenSplitButtonItem Text="Route (GeoJSON)" Value="@("geojson")" Icon="map" />
+                        <RadzenSplitButtonItem Text="Copy summary" Value="@("copy")" Icon="content_copy" />
+                    </ChildContent>
+                </RadzenSplitButton>
             </div>
         }
     </div>;
 
+    /// <summary>
+    /// The Tab panel: a debug and stats view only. What a player needs while playing is on the
+    /// always-on strip (HudContent); this keeps the counts, the radar and the diagnostics copy.
+    /// </summary>
     private RenderFragment TabHudContent => @<div class="pc-tab-hud @(_prefs.contrast == "high" ? "pc-contrast" : null)">
         <div class="pc-tab-hud-head">
             <div>
-                <div class="pc-hud-eyebrow-row">
-                    <span class="pc-eyebrow">@HudEyebrow</span>
-                    @if (_demo)
-                    {
-                        <span class="pc-rec-pill" aria-hidden="true"><i></i>REC</span>
-                    }
-                </div>
+                <span class="pc-eyebrow">@HudEyebrow</span>
                 <strong>@HudTitle</strong>
             </div>
             <button type="button" class="app-btn app-btn--sm" @onclick="() => PauseAsync(true)" disabled="@(_status != "active")">Pause</button>
         </div>
-
-        <div class="pc-progress" aria-label="@($"{_milestone} of {Objectives.Length} milestones complete")">
-            @for (var i = 0; i < Objectives.Length; i++)
-            {
-                <span class="@(i < _milestone ? "pc-done" : null)"></span>
-            }
-        </div>
-
-        @if (_lineIndex >= 0)
-        {
-            <div class="pc-tab-bar">
-                <div class="pc-line-header">
-                    <span>LINE: @LineNames[_lineIndex].ToUpperInvariant()</span>
-                    <span>@_lineIntegrity%</span>
-                </div>
-                <RadzenProgressBar Value="@_lineIntegrity" Max="100" Unit="" ShowValue="false"
-                                   ProgressBarStyle="@GetLineProgressStyle(_lineIntegrity)" Class="pc-progress-bar" />
-            </div>
-        }
-
-        @if (Playing)
-        {
-            <div class="pc-tab-bar">
-                <div class="pc-health-header">
-                    <span>STAMINA</span>
-                    <span>@_health%</span>
-                </div>
-                <RadzenProgressBar Value="@_health" Max="100" Unit="" ShowValue="false"
-                                   ProgressBarStyle="@GetHealthProgressStyle(_health)" Class="pc-progress-bar" />
-                @if (Armed)
-                {
-                    <div class="pc-health-header pc-ammo">
-                        <span>GRENADES · G</span>
-                        <span>@_grenades</span>
-                    </div>
-                    <div class="pc-health-header pc-ammo">
-                        <span>SMOKE · H</span>
-                        <span>@_smoke</span>
-                    </div>
-                }
-            </div>
-        }
 
         <div class="pc-crowd">
             <span>@_activeRaiders / @_crowdTotal IN CROWD</span>
@@ -405,39 +506,15 @@
             {
                 <b>FOLLOWING RAIDER @_subject.ToString("000")</b>
             }
-        </div>
-
-        <div class="pc-tab-meta">
-            <span class="pc-weather-pill" title="Atmospheric conditions">⛅ @_weatherCondition</span>
-            <span class="pc-time">@Clock</span>
-        </div>
-
-        @if (_demo)
-        {
-            <div class="pc-demo-chip" title="Armed demo variant for autonomous tactical simulation.">
-                <span class="pc-rec-pill" aria-hidden="true"><i></i>LIVE SIMULATION</span>
-                <strong>ARMED DEMO · @(_subject > 0 ? $"TRACKING RAIDER {_subject:000}" : "AUTONOMOUS")</strong>
-            </div>
-        }
-        else if (_role == "raider")
-        {
-            <div class="pc-beacon-chip">BEACON · @Objective.ToUpperInvariant()</div>
-        }
-
-        <div class="pc-hint-chip">@BottomHint</div>
-
-        <div class="pc-onthisday-chip" title="@OnTheDay.Text">
-            <span class="pc-eyebrow">HISTORICAL RECORD · @OnTheDay.Time</span>
-            <span>@OnTheDay.Text</span>
+            <span class="pc-time">@Clock · @_weatherCondition</span>
         </div>
 
         <div class="pc-tab-radar">
-            <div class="pc-radar-header">
-                <button type="button" class="pc-radar-toggle" @onclick="ToggleRadar" title="Toggle Tactical Radar" aria-expanded="@(_radarExpanded ? "true" : "false")">
-                    <span>📡 RADAR</span>
-                    <span class="material-symbols-outlined" aria-hidden="true">@(_radarExpanded ? "expand_less" : "expand_more")</span>
-                </button>
-            </div>
+            <button type="button" class="pc-radar-toggle" @onclick="ToggleRadar" aria-expanded="@(_radarExpanded ? "true" : "false")">
+                <span class="material-symbols-outlined" aria-hidden="true">radar</span>
+                <span>RADAR</span>
+                <span class="material-symbols-outlined" aria-hidden="true">@(_radarExpanded ? "expand_less" : "expand_more")</span>
+            </button>
             @if (_radarExpanded)
             {
                 <div class="pc-radar-body">
@@ -451,26 +528,13 @@
             }
         </div>
 
-        @if (_report is { } report)
-        {
-            <div class="pc-tab-report">
-                <strong>Last attempt</strong>
-                <p class="pc-small">@report.mode · @report.outcome · @report.milestones milestones · lowest line @report.lowestIntegrity% · @report.casualties casualties</p>
-                @DebriefBlock
-                <div class="pc-report-actions">
-                    <button type="button" class="app-btn app-btn--sm" @onclick="ExportCsvAsync">Export CSV</button>
-                    <button type="button" class="app-btn app-btn--sm" @onclick="CopySummaryAsync">Copy summary</button>
-                </div>
-            </div>
-        }
-
         <button type="button" class="app-btn app-btn--sm" @onclick="CopyDiagnosticsAsync">Copy diagnostics</button>
     </div>;
 
     /// <summary>
     /// Mid-match options for GameShell's shared gear (GameOptionsSheet): the same drawer every
-    /// other game uses, split into four tabs so nothing needs a long scroll. Role and difficulty
-    /// are *not* here — they belong on the start card — and diagnostics are the Tab panel.
+    /// other game uses, in five short tabs. Role and difficulty are *not* here — they belong on
+    /// the start card — and diagnostics are the Tab panel.
     /// </summary>
     private RenderFragment ScenarioOptions => @<div class="pc-opts">
         <RadzenTabs RenderMode="TabRenderMode.Client">
@@ -479,13 +543,13 @@
                     <label class="pc-small" for="pc-opt-graphics">Graphics quality · now @_graphicsLabel</label>
                     @GraphicsPicker("pc-opt-graphics")
 
-                    <label class="pc-small" for="pc-opt-weather">Atmospheric conditions (Open-Meteo)</label>
+                    <label class="pc-small" for="pc-opt-weather">Weather (Open-Meteo)</label>
                     <RadzenSelectBar TValue="string" Value="@_weatherMode" Change="@(async (string val) => await SetWeatherAsync(val))" id="pc-opt-weather">
                         <Items>
-                            <RadzenSelectBarItem Text="Jan 6 Archive" Value="@("historical")" />
+                            <RadzenSelectBarItem Text="Jan 6" Value="@("historical")" />
                             <RadzenSelectBarItem Text="Live D.C." Value="@("live")" />
                             <RadzenSelectBarItem Text="Clear" Value="@("clear")" />
-                            <RadzenSelectBarItem Text="Winter Gale" Value="@("blizzard")" />
+                            <RadzenSelectBarItem Text="Gale" Value="@("blizzard")" />
                         </Items>
                     </RadzenSelectBar>
                     <p class="pc-small">@_weatherCondition</p>
@@ -494,57 +558,35 @@
                     <RadzenSelectBar TValue="string" Value="@_prefs.overlay" Change="@(async (string val) => await SavePrefsAsync(overlay: val))" id="pc-opt-overlay">
                         <Items>
                             <RadzenSelectBarItem Text="Off" Value="@("off")" />
-                            <RadzenSelectBarItem Text="Crowd density" Value="@("density")" />
+                            <RadzenSelectBarItem Text="Density" Value="@("density")" />
                             <RadzenSelectBarItem Text="Contagion" Value="@("contagion")" />
                         </Items>
                     </RadzenSelectBar>
-                    <p class="pc-small">Density grades the ground by John Fruin's levels of service (people per square metre). Contagion marks who is pushing, who is about to join (enough of the people round them are pushing), and who is calm.</p>
+                    <p class="pc-small">Density raises the ground where people are packed (Fruin's levels of service). Contagion marks who is pushing, who is about to join, and who is calm.</p>
 
-                    <label class="pc-small" for="pc-opt-tracers">Ballistic tracers</label>
+                    <label class="pc-small" for="pc-opt-tracers">Tracers</label>
                     <RadzenSelectBar TValue="string" Value="@_prefs.tracers" Change="@(async (string val) => await SavePrefsAsync(tracers: val))" id="pc-opt-tracers">
                         <Items>
-                            <RadzenSelectBarItem Text="Luminous" Value="@("luminous")" />
-                            <RadzenSelectBarItem Text="Stealth" Value="@("stealth")" />
+                            <RadzenSelectBarItem Text="On" Value="@("luminous")" />
                             <RadzenSelectBarItem Text="Off" Value="@("off")" />
                         </Items>
                     </RadzenSelectBar>
 
-                    <label class="pc-small" for="pc-opt-radar-palette">Radar palette</label>
-                    <RadzenSelectBar TValue="string" Value="@_prefs.radar" Change="@(async (string value) => await SavePrefsAsync(radar: value))" id="pc-opt-radar-palette">
-                        <Items>
-                            <RadzenSelectBarItem Text="Auto" Value="@("auto")" />
-                            <RadzenSelectBarItem Text="Tablet" Value="@("default")" />
-                            <RadzenSelectBarItem Text="Colour-safe" Value="@("colorsafe")" />
-                        </Items>
-                    </RadzenSelectBar>
-
-                    <button type="button" class="app-btn pc-opt-button" @onclick="ToggleRadar">
-                        @(_radarExpanded ? "Hide tactical radar" : "Show tactical radar")
-                    </button>
-                </RadzenTabsItem>
-
-                <RadzenTabsItem Text="Comfort">
-                    <label class="pc-small" for="pc-opt-sens">Camera sensitivity · @_prefs.sensitivity.ToString("0.00")×</label>
-                    <input id="pc-opt-sens" class="pc-range" type="range" min="0.4" max="2.5" step="0.05"
-                           value="@_prefs.sensitivity.ToString(System.Globalization.CultureInfo.InvariantCulture)" @onchange="OnSensitivityChanged" />
-
-                    <label class="pc-small" for="pc-opt-fov">Field of view · @_prefs.fov°</label>
-                    <input id="pc-opt-fov" class="pc-range" type="range" min="50" max="85" step="1"
-                           value="@_prefs.fov" @onchange="OnFovChanged" />
-
-                    <label class="pc-small" for="pc-opt-footage">Picture &amp; sound</label>
+                    <label class="pc-small" for="pc-opt-footage">Camera look</label>
                     <RadzenSelectBar TValue="string" Value="@_prefs.footage" Change="@(async (string val) => await SavePrefsAsync(footage: val))" id="pc-opt-footage">
                         <Items>
-                            <RadzenSelectBarItem Text="Phone footage" Value="@("on")" />
+                            <RadzenSelectBarItem Text="Phone" Value="@("on")" />
                             <RadzenSelectBarItem Text="Light" Value="@("light")" />
                             <RadzenSelectBarItem Text="Clean" Value="@("off")" />
                         </Items>
                     </RadzenSelectBar>
+                </RadzenTabsItem>
 
-                    <label class="pc-small" for="pc-opt-score">Score</label>
+                <RadzenTabsItem Text="Sound">
+                    <label class="pc-small" for="pc-opt-score">Adaptive music</label>
                     <RadzenSelectBar TValue="string" Value="@_prefs.score" Change="@(async (string val) => await SavePrefsAsync(score: val))" id="pc-opt-score">
                         <Items>
-                            <RadzenSelectBarItem Text="Adaptive music" Value="@("on")" />
+                            <RadzenSelectBarItem Text="On" Value="@("on")" />
                             <RadzenSelectBarItem Text="Off" Value="@("off")" />
                         </Items>
                     </RadzenSelectBar>
@@ -557,19 +599,38 @@
                         </Items>
                     </RadzenSelectBar>
 
-                    <label class="pc-small" for="pc-opt-motion">Combat motion &amp; shake</label>
-                    <RadzenSelectBar TValue="string" Value="@_prefs.motion" Change="@(async (string val) => await SavePrefsAsync(motion: val))" id="pc-opt-motion">
+                    <label class="pc-small" for="pc-opt-hudsound">Sound cues for the HUD</label>
+                    <RadzenSelectBar TValue="string" Value="@_prefs.hudSound" Change="@(async (string val) => await SavePrefsAsync(hudSound: val))" id="pc-opt-hudsound">
                         <Items>
-                            <RadzenSelectBarItem Text="Full" Value="@("full")" />
-                            <RadzenSelectBarItem Text="Reduced" Value="@("reduced")" />
+                            <RadzenSelectBarItem Text="On" Value="@("on")" />
+                            <RadzenSelectBarItem Text="Off" Value="@("off")" />
                         </Items>
                     </RadzenSelectBar>
+                    <p class="pc-small">A line under strain creaks and a packed crowd ticks faster, so you can hear trouble without looking.</p>
 
                     <label class="pc-small" for="pc-opt-captions">Captions for spoken radio</label>
                     <RadzenSelectBar TValue="bool" Value="@_prefs.captions" Change="@(async (bool value) => await SavePrefsAsync(captions: value))" id="pc-opt-captions">
                         <Items>
                             <RadzenSelectBarItem Text="Off" Value="@false" />
                             <RadzenSelectBarItem Text="On" Value="@true" />
+                        </Items>
+                    </RadzenSelectBar>
+                </RadzenTabsItem>
+
+                <RadzenTabsItem Text="Comfort">
+                    <label class="pc-small" for="pc-opt-sens">Camera sensitivity · @_prefs.sensitivity.ToString("0.00")×</label>
+                    <input id="pc-opt-sens" class="pc-range" type="range" min="0.4" max="2.5" step="0.05" style="--p: @(((_prefs.sensitivity - 0.4) / 2.1 * 100).ToString("0", CultureInfo.InvariantCulture))%"
+                           value="@_prefs.sensitivity.ToString(CultureInfo.InvariantCulture)" @onchange="OnSensitivityChanged" />
+
+                    <label class="pc-small" for="pc-opt-fov">Field of view · @_prefs.fov°</label>
+                    <input id="pc-opt-fov" class="pc-range" type="range" min="50" max="85" step="1" style="--p: @(((_prefs.fov - 50) / 35.0 * 100).ToString("0", CultureInfo.InvariantCulture))%"
+                           value="@_prefs.fov" @onchange="OnFovChanged" />
+
+                    <label class="pc-small" for="pc-opt-motion">Combat motion &amp; shake</label>
+                    <RadzenSelectBar TValue="string" Value="@_prefs.motion" Change="@(async (string val) => await SavePrefsAsync(motion: val))" id="pc-opt-motion">
+                        <Items>
+                            <RadzenSelectBarItem Text="Full" Value="@("full")" />
+                            <RadzenSelectBarItem Text="Reduced" Value="@("reduced")" />
                         </Items>
                     </RadzenSelectBar>
 
@@ -580,6 +641,7 @@
                             <RadzenSelectBarItem Text="High" Value="@("high")" />
                         </Items>
                     </RadzenSelectBar>
+                    <p class="pc-small">Colour-safe palettes for the radar and overlays follow the app-wide setting.</p>
 
                     @if (_demo)
                     {
@@ -593,20 +655,29 @@
                     }
                 </RadzenTabsItem>
 
-                <RadzenTabsItem Text="Controls">
-                    <p class="pc-small">Arrow keys always steer, whatever is bound here. Picking a key another action uses swaps the two. G throws a concussion grenade and H a smoke grenade; on a gamepad, X and Y.</p>
-                    @foreach (var row in KeyRows)
-                    {
-                        <div class="pc-key-row">
-                            <label for="@($"pc-key-{row.Action}")">@row.Label</label>
-                            <select id="@($"pc-key-{row.Action}")" class="pc-key-select" value="@row.Code" @onchange="@(e => SetKeyAsync(row.Action, e.Value))">
-                                @foreach (var option in KeyChoices)
-                                {
-                                    <option value="@option" selected="@(option == row.Code)">@DescribeKey(option)</option>
-                                }
-                            </select>
-                        </div>
-                    }
+                <RadzenTabsItem Text="Keys">
+                    <p class="pc-small">Select a key, then press the new one. A key another action uses swaps with it. Arrow keys always steer.</p>
+                    <ul class="pc-keys">
+                        @foreach (var row in KeyRows)
+                        {
+                            var action = row.Action;
+                            var listening = _listening == action;
+                            <li class="pc-key-row">
+                                <span class="pc-key-label" id="@($"pc-key-label-{action}")">@row.Label</span>
+                                <span class="pc-pad-glyph" title="Gamepad" aria-hidden="true">@PadGlyph(action)</span>
+                                <button type="button" class="pc-keycap @(listening ? "pc-keycap--listening" : null) @(_swapped == action ? "pc-keycap--swapped" : null)"
+                                        @key="@($"{action}-{row.Code}")"
+                                        aria-labelledby="@($"pc-key-label-{action}")" aria-describedby="@($"pc-key-now-{action}")"
+                                        @onclick="() => _listening = listening ? null : action"
+                                        @onkeydown="e => CaptureKeyAsync(action, e)"
+                                        @onkeydown:preventDefault="@listening" @onkeydown:stopPropagation="@listening"
+                                        @onfocusout="() => { if (_listening == action) _listening = null; }">
+                                    <span id="@($"pc-key-now-{action}")">@(listening ? "Press a key…" : DescribeKey(row.Code))</span>
+                                </button>
+                            </li>
+                        }
+                    </ul>
+                    <p class="pc-small">G throws a concussion grenade and H a smoke grenade. Esc cancels a change.</p>
                 </RadzenTabsItem>
 
                 <RadzenTabsItem Text="Debrief">
@@ -658,16 +729,27 @@
         <details><summary>Historical record</summary>@ContextContent</details>
     </div>;
 
+    /// <summary>
+    /// The scenario's setup: who you are, as four cards (a radio group: arrow keys move between
+    /// them), then difficulty and graphics. Cards are inputs, not actions, so the card keeps its
+    /// one OK.
+    /// </summary>
     private RenderFragment IntroOptions => @<div class="pc-intro-opts">
-        <label class="pc-small" for="pc-role">Who you are</label>
-        <RadzenSelectBar TValue="string" @bind-Value="_role" id="pc-role">
-            <Items>
-                <RadzenSelectBarItem Text="In the crowd" Value="@("raider")" />
-                <RadzenSelectBarItem Text="Police line" Value="@("police")" />
-                <RadzenSelectBarItem Text="Commander" Value="@("commander")" />
-                <RadzenSelectBarItem Text="Observer" Value="@("observer")" />
-            </Items>
-        </RadzenSelectBar>
+        <span class="pc-small" id="pc-role-label">Who you are</span>
+        <div class="pc-roles" role="radiogroup" aria-labelledby="pc-role-label" id="pc-role">
+            @for (var i = 0; i < Roles.Length; i++)
+            {
+                var index = i;
+                var (value, label, icon) = Roles[i];
+                var on = _role == value;
+                <button type="button" role="radio" aria-checked="@(on ? "true" : "false")" tabindex="@(on ? 0 : -1)"
+                        class="pc-role @(on ? "pc-role--on" : null)" @ref="_roleRefs[index]"
+                        @onclick="() => _role = value" @onkeydown="e => RoleKeyAsync(index, e)">
+                    <span class="material-symbols-outlined" aria-hidden="true">@icon</span>
+                    <span class="pc-role-name">@label</span>
+                </button>
+            }
+        </div>
         <p class="pc-small pc-role-brief">@RoleBrief</p>
         <div class="pc-options">
             <div>

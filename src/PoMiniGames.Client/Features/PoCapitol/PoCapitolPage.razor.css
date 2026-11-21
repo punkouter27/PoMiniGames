@@ -1,3 +1,10 @@
+/* Registered so they animate: ring fills ease, cooldown sweeps glide, a held button's ring fills.
+   --cd and --pc-hold inherit because the pseudo-elements that draw them read them from the button. */
+@property --v { syntax: "<number>"; inherits: false; initial-value: 0; }
+@property --g { syntax: "<number>"; inherits: false; initial-value: 0; }
+@property --cd { syntax: "<number>"; inherits: true; initial-value: 0; }
+@property --pc-hold { syntax: "<percentage>"; inherits: true; initial-value: 0%; }
+
 .pc-root {
     position: relative;
     width: 100%;
@@ -11,6 +18,12 @@
     --rz-primary: #b98c45;
     --rz-primary-light: #d6b36f;
     --rz-border-radius: 6px;
+    --pc-glass: #0b1724c4;
+    --pc-gold: #e4c482;
+    --pc-good: #5fd39a;
+    --pc-warn: #f5b33d;
+    --pc-bad: #ff5a4e;
+    --pc-info: #6fb4ff;
     touch-action: manipulation;
 }
 .pc-scene { position: absolute; inset: 0; touch-action: none; }
@@ -51,38 +64,293 @@
 .pc-panel summary { cursor: pointer; color: #b7c4ce; }
 .pc-context p { font-size: 12px; }
 .pc-centered { top: 50%; left: 50%; transform: translate(-50%, -50%); width: min(520px, calc(100% - 36px)); }
-.pc-hud-eyebrow-row { display: flex; align-items: center; gap: 8px; }
+.pc-visually-hidden { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
 .pc-rec-pill { display: inline-flex; align-items: center; gap: 5px; font-size: 9.5px; font-family: ui-monospace, Consolas, monospace; font-weight: 700; color: #ff5252; background: #ff525222; border: 1px solid #ff525255; padding: 1px 6px; border-radius: 4px; }
 .pc-rec-pill i { width: 6px; height: 6px; border-radius: 50%; background: #ff5252; animation: pc-rec 1.2s steps(2, jump-none) infinite; }
-.pc-health-header, .pc-line-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 4px; font-size: 10px; letter-spacing: 0.1em; color: #dfc285; }
-.pc-progress-bar { width: 100%; height: 7px; border-radius: 4px; background: #132435; overflow: hidden; display: block; }
-.pc-time { font-variant-numeric: tabular-nums; color: #ddc69b; font-size: 12.5px; }
-.pc-progress { display: flex; gap: 5px; margin-top: 6px; }
-.pc-progress span { height: 3px; width: 24px; border-radius: 2px; background: #263d4f; }
-.pc-progress .pc-done { background: #e4c482; }
+.pc-time { font-variant-numeric: tabular-nums; color: #ddc69b; font-size: 12px; }
+.pc-progress { display: flex; gap: 5px; }
+.pc-progress span { height: 4px; width: 22px; border-radius: 2px; background: #ffffff26; transition: background-color 300ms ease, box-shadow 300ms ease; }
+.pc-progress .pc-done { background: var(--pc-gold); box-shadow: 0 0 8px #e4c482aa; }
 .pc-crosshair { position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); color: #fff6d8; font-size: 25px; text-shadow: 0 1px 5px #000; pointer-events: none; }
-.pc-demo-chip { display: flex; flex-direction: column; padding: 5px 12px; background: #0c1a29d0; border: 1px solid #d5b77c55; border-radius: 6px; backdrop-filter: blur(10px); pointer-events: auto; }
-.pc-demo-chip strong { color: #f2cf87; font-size: 10.5px; letter-spacing: 0.08em; }
-.pc-demo-chip span { color: #9cb1c2; font-size: 9.5px; }
-.pc-beacon-chip { padding: 5px 10px; background: #0c1a29cc; border: 1px solid #d5b77c44; border-radius: 6px; font-size: 10px; letter-spacing: 0.08em; color: #f6e5bb; backdrop-filter: blur(8px); }
-.pc-hint-chip { font-size: 10px; letter-spacing: 0.08em; color: #e4d7ba; text-shadow: 0 1px 4px #000; text-align: center; }
-.pc-onthisday-chip { display: flex; flex-direction: column; max-width: 320px; padding: 6px 12px; background: #0c1a29d0; border-right: 2px solid #7fa9d6; border-radius: 6px; font-size: 11px; line-height: 1.4; color: #d7dde2; backdrop-filter: blur(10px); pointer-events: auto; }
-.pc-onthisday-chip .pc-eyebrow { font-size: 9px; color: #9fc0e2; margin-bottom: 2px; }
-.pc-onthisday-chip span { overflow: hidden; text-overflow: ellipsis; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; }
 .pc-touch { display: none; }
 .pc-scene[data-flash="true"]::after { content: ""; position: absolute; inset: 0; background: #fffdf2; opacity: 0.75; pointer-events: none; }
 .pc-scene[data-hazard="gas"]:not([data-interface-error])::before { content: ""; position: absolute; z-index: 1; inset: 0; background: #d7dacb59; backdrop-filter: blur(3px); pointer-events: none; }
 .pc-scene[data-hazard="spray"]:not([data-interface-error])::before { content: ""; position: absolute; z-index: 1; inset: 0; background: #c9762f40; backdrop-filter: blur(5px); pointer-events: none; }
 .pc-phonecam .pc-film { background: none; }
 @keyframes pc-rec { to { opacity: 0.15; } }
-@media (prefers-reduced-motion: reduce) { .pc-rec-pill i { animation: none; } }
 .pc-options { display: flex; flex-wrap: wrap; gap: 4px 28px; }
-.pc-debug-close { background: none; border: none; color: #a4b3bf; cursor: pointer; font-size: 13px; padding: 2px 6px; }
-.pc-debug-close:hover { color: #fff; }
+.pc-debug-close { display: inline-grid; place-items: center; min-width: 32px; min-height: 32px; background: none; border: none; border-radius: 50%; color: #a4b3bf; cursor: pointer; transition: background-color 150ms ease, color 150ms ease; }
+.pc-debug-close:hover { color: #fff; background: #ffffff14; }
 @keyframes pc-fade-in { from { opacity: 0; } to { opacity: 1; } }
+
+/* ── Rings: one gauge for every 0–100 reading (stamina, a line, a unit's health) ── */
+
+.pc-ring {
+    --size: 60px;
+    --c: var(--pc-good);
+    position: relative;
+    display: grid;
+    place-content: center;
+    justify-items: center;
+    width: var(--size);
+    height: var(--size);
+    border-radius: 50%;
+    background:
+        radial-gradient(closest-side, #0a1622ee 79%, transparent 81% 100%),
+        conic-gradient(from -90deg, var(--c) calc(var(--v) * 1%), #ffffffa6 0 calc(var(--g) * 1%), #ffffff1c 0);
+    box-shadow: 0 0 22px color-mix(in srgb, var(--c) 30%, transparent), inset 0 0 0 1px #ffffff12;
+    transition: --v 480ms cubic-bezier(0.2, 0.8, 0.2, 1), --g 1100ms ease-in 350ms, box-shadow 300ms ease;
+    line-height: 1;
+}
+.pc-ring .pc-hud-num { font-size: 17px; font-weight: 800; font-variant-numeric: tabular-nums; color: #fff; }
+.pc-ring small { margin-top: 3px; font-size: 7.5px; letter-spacing: 0.14em; color: #c9d4de; font-weight: 700; }
+.pc-ring--good { --c: var(--pc-good); }
+.pc-ring--warn { --c: var(--pc-warn); }
+.pc-ring--bad { --c: var(--pc-bad); animation: pc-throb 1.1s ease-in-out infinite; }
+.pc-ring--info { --c: var(--pc-info); }
+.pc-ring--line { --size: 66px; }
+.pc-ring--sm { --size: 40px; }
+.pc-ring--sm .pc-hud-num { font-size: 12px; }
+@keyframes pc-throb { 50% { box-shadow: 0 0 30px color-mix(in srgb, var(--c) 60%, transparent), inset 0 0 0 1px #ffffff12; } }
+/* A line that just gave way: the ring for the next one arrives with a jolt. */
+.pc-shake { animation: pc-shake 520ms cubic-bezier(0.36, 0.07, 0.19, 0.97) 1; }
+@keyframes pc-shake {
+    10%, 90% { translate: -1px 0; }
+    20%, 80% { translate: 3px 0; }
+    30%, 50%, 70% { translate: -6px 0; }
+    40%, 60% { translate: 6px 0; }
+}
+
+/* ── The always-on HUD: clock and milestones top-centre, the player's vitals bottom-left ── */
+
+.pc-hud { position: absolute; inset: 0; z-index: 4; pointer-events: none; }
+.pc-hud-top {
+    position: absolute; top: 12px; left: 50%; translate: -50% 0;
+    display: grid; justify-items: center; gap: 5px;
+    max-width: min(560px, calc(100% - 32px));
+    padding: 7px 16px 8px;
+    background: var(--pc-glass);
+    border: 1px solid #e4c48233;
+    border-radius: 14px;
+    box-shadow: 0 10px 30px #00000055, inset 0 1px 0 #ffffff1c;
+    -webkit-backdrop-filter: blur(12px) saturate(1.3); backdrop-filter: blur(12px) saturate(1.3);
+}
+.pc-hud-row { display: flex; align-items: center; gap: 12px; }
+.pc-hud-clock { font-variant-numeric: tabular-nums; font-weight: 800; font-size: 15px; letter-spacing: 0.04em; color: #fff2d6; }
+.pc-hud-title { font-size: 11.5px; color: #d8e0e6; text-align: center; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 100%; }
+.pc-hud-vitals {
+    position: absolute; left: max(16px, env(safe-area-inset-left)); bottom: 64px;
+    display: flex; align-items: flex-end; gap: 10px;
+}
+.pc-ammo-chips { display: grid; gap: 6px; }
+.pc-ammo-chip {
+    display: inline-flex; align-items: center; gap: 6px; padding: 4px 9px 4px 7px;
+    background: var(--pc-glass); border: 1px solid #ffffff1f; border-radius: 999px;
+    color: #fff; font-size: 13px; font-weight: 800; font-variant-numeric: tabular-nums;
+    -webkit-backdrop-filter: blur(10px); backdrop-filter: blur(10px);
+}
+.pc-ammo-chip .material-symbols-outlined { font-size: 17px; color: var(--pc-gold); }
+.pc-ammo-chip kbd { font-size: 9px; padding: 1px 4px; border-radius: 3px; background: #ffffff1a; color: #c9d4de; font-family: inherit; }
+.pc-ammo-chip--empty { opacity: 0.45; }
+
+/* A milestone: split-flap letters behind a bloom of light, gone after a few seconds. */
+.pc-toast {
+    position: absolute; top: 96px; left: 50%; translate: -50% 0;
+    display: grid; justify-items: center; gap: 6px; padding: 12px 22px;
+    background: #08121ce0; border: 1px solid #e4c48266; border-radius: 10px;
+    box-shadow: 0 16px 50px #00000080;
+    animation: pc-toast 4.8s cubic-bezier(0.2, 0.8, 0.2, 1) forwards;
+}
+.pc-toast::before {
+    content: ""; position: absolute; inset: -80px -140px; z-index: -1; pointer-events: none;
+    background: radial-gradient(closest-side, #ffe3a666, #ffcf7a22 45%, transparent 70%);
+    mix-blend-mode: screen; animation: pc-bloom 1.6s ease-out forwards;
+}
+.pc-flap { display: flex; perspective: 400px; font-size: 18px; letter-spacing: 0.08em; color: #fff4da; }
+.pc-flap span {
+    display: inline-block; min-width: 0.62em; text-align: center;
+    padding: 1px 1px; margin: 0 1px; border-radius: 2px;
+    background: linear-gradient(#1a2a3a 50%, #142231 50%);
+    box-shadow: inset 0 -1px 0 #00000080;
+    transform-origin: 50% 50%;
+    animation: pc-flap 420ms cubic-bezier(0.3, 1.3, 0.5, 1) backwards;
+    animation-delay: calc(var(--i) * 28ms + 120ms);
+}
+@keyframes pc-flap { from { transform: rotateX(-95deg); opacity: 0; filter: brightness(2); } }
+@keyframes pc-bloom { 0% { opacity: 0; scale: 0.4; } 18% { opacity: 1; } 100% { opacity: 0; scale: 1.4; } }
+@keyframes pc-toast {
+    0% { opacity: 0; translate: -50% -14px; scale: 0.96; }
+    8% { opacity: 1; translate: -50% 0; scale: 1; }
+    82% { opacity: 1; translate: -50% 0; }
+    100% { opacity: 0; translate: -50% -8px; visibility: hidden; }
+}
+
+/* The historical record's next entry, sliding in at the top-left for a few seconds. */
+.pc-day {
+    position: absolute; top: 14px; left: max(16px, env(safe-area-inset-left));
+    display: grid; gap: 3px; max-width: min(300px, calc(50% - 200px)); min-width: 200px;
+    padding: 8px 12px; border-left: 3px solid #7fa9d6; border-radius: 6px;
+    background: var(--pc-glass); color: #dbe3ea; font-size: 11.5px; line-height: 1.4;
+    -webkit-backdrop-filter: blur(10px); backdrop-filter: blur(10px);
+    animation: pc-day 5s cubic-bezier(0.2, 0.8, 0.2, 1) forwards;
+}
+.pc-day .pc-eyebrow { color: #9fc0e2; font-size: 9px; }
+@keyframes pc-day {
+    0% { opacity: 0; translate: -24px 0; filter: blur(4px); }
+    9% { opacity: 1; translate: 0 0; filter: blur(0); }
+    84% { opacity: 1; translate: 0 0; }
+    100% { opacity: 0; translate: -12px 0; visibility: hidden; }
+}
+
+/* ── Captions ── */
+
+.pc-caption {
+    position: absolute; z-index: 6; left: 50%; bottom: 96px; transform: translateX(-50%);
+    max-width: min(720px, calc(100% - 48px)); padding: 8px 14px;
+    color: #f7f2e6; background: #0b1622e8; border-left: 3px solid #d5b77c; border-radius: 4px;
+    font-size: 13px; line-height: 1.45; text-align: center; pointer-events: none;
+}
+/* An empty caption keeps its place in the tree and is simply not drawn. */
+.pc-caption--idle { visibility: hidden; }
+.pc-caption-tag { margin-right: 8px; color: #9fc0e2; font-size: 9px; letter-spacing: 0.16em; font-weight: 700; }
+
+/* ── The inspector: a card tethered to the person it describes ── */
+
+.pc-leader { position: absolute; inset: 0; z-index: 6; width: 100%; height: 100%; pointer-events: none; display: none; overflow: visible; }
+.pc-root[data-anchored] .pc-leader { display: block; }
+.pc-leader line { stroke: #e4c482; stroke-width: 1.5; stroke-dasharray: 4 3; filter: drop-shadow(0 0 3px #000); animation: pc-march 900ms linear infinite; }
+.pc-leader circle { fill: none; stroke: #ffe3a6; stroke-width: 2; filter: drop-shadow(0 0 4px #e4c482); animation: pc-ping 1.6s ease-out infinite; transform-box: fill-box; transform-origin: center; }
+@keyframes pc-march { to { stroke-dashoffset: -14; } }
+@keyframes pc-ping { 0% { scale: 0.6; opacity: 1; } 100% { scale: 1.8; opacity: 0; } }
+.pc-inspector-card {
+    position: absolute; z-index: 7;
+    bottom: max(50px, env(safe-area-inset-bottom)); left: max(32px, env(safe-area-inset-left));
+    width: min(340px, calc(100vw - 64px));
+    padding: 12px 14px;
+    background: #0a1622ec; border: 1px solid #e4c48288; border-radius: 12px;
+    box-shadow: 0 18px 46px #000000aa, inset 0 1px 0 #ffffff22;
+    -webkit-backdrop-filter: blur(16px) saturate(1.3); backdrop-filter: blur(16px) saturate(1.3);
+    color: #d1dbe2; font-size: 11px;
+    animation: pc-slide-up 200ms ease;
+}
+/* Anchored: placed beside the person, and opened out of the point where they stand. */
+.pc-root[data-anchored] .pc-inspector-card {
+    left: var(--pc-card-x); top: var(--pc-card-y); bottom: auto; translate: none;
+    transform-origin: calc(var(--pc-ax) - var(--pc-card-x)) calc(var(--pc-ay) - var(--pc-card-y));
+    animation: pc-grow 320ms cubic-bezier(0.2, 0.9, 0.3, 1.15);
+}
+@keyframes pc-grow { from { scale: 0.08; opacity: 0; filter: blur(6px); } to { scale: 1; opacity: 1; filter: blur(0); } }
+@keyframes pc-slide-up { from { transform: translateY(16px); opacity: 0; } to { transform: translateY(0); opacity: 1; } }
+.pc-inspector-header { display: flex; justify-content: space-between; align-items: center; padding-bottom: 6px; margin-bottom: 6px; border-bottom: 1px solid #ffffff18; }
+.pc-inspector-title { display: flex; align-items: center; gap: 8px; }
+.pc-inspector-title strong { font-size: 13px; color: #f6eedb; letter-spacing: 0.04em; }
+.pc-badge { padding: 2px 6px; border-radius: 3px; font-size: 9px; font-weight: 800; letter-spacing: 0.08em; }
+.pc-badge--police { background: #0984e3; color: #fff; }
+.pc-badge--raider { background: #d63031; color: #fff; }
+.pc-inspector-role { margin-bottom: 8px; font-size: 11px; color: #dfc285; font-weight: 600; }
+.pc-inspector-role b { color: #8ff0cf; font-weight: 600; }
+.pc-inspector-metrics { display: grid; grid-template-columns: auto auto 1fr; align-items: center; gap: 10px; margin-bottom: 8px; }
+.pc-inspector-metrics .pc-ring { --size: 54px; }
+.pc-inspector-facts { display: grid; gap: 4px; margin: 0; }
+.pc-inspector-facts dt { font-size: 8.5px; letter-spacing: 0.12em; text-transform: uppercase; color: #8fa5b5; }
+.pc-inspector-facts dd { margin: 0; font-size: 11px; color: #e6edf2; }
+.pc-inspector-meta { display: flex; flex-direction: column; gap: 2px; padding-top: 6px; margin-bottom: 10px; border-top: 1px dotted #ffffff15; font-size: 10px; line-height: 1.4; color: #92a4b2; }
+.pc-inspector-actions { display: flex; gap: 8px; }
+.pc-inspector-actions .app-btn { display: inline-flex; align-items: center; gap: 6px; }
+.pc-inspector-actions .material-symbols-outlined { font-size: 17px; }
+.pc-harm { color: #8fd3c7; letter-spacing: 0.02em; }
+
+/* ── Incident command: five line cards and five order buttons ── */
+
+.pc-command {
+    position: absolute; z-index: 5; top: 12px; right: max(14px, env(safe-area-inset-right));
+    width: min(320px, calc(100% - 28px)); max-height: calc(100% - 90px); overflow-y: auto;
+    padding: 12px; display: grid; gap: 10px;
+    background: var(--pc-glass); border: 1px solid #e4c48244; border-radius: 14px;
+    box-shadow: 0 18px 50px #00000077, inset 0 1px 0 #ffffff1c;
+    -webkit-backdrop-filter: blur(14px) saturate(1.3); backdrop-filter: blur(14px) saturate(1.3);
+}
+.pc-command-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+.pc-command-tally { display: inline-flex; align-items: center; gap: 4px; font-size: 12px; font-weight: 700; color: #e6edf2; font-variant-numeric: tabular-nums; }
+.pc-command-tally .material-symbols-outlined { font-size: 16px; color: var(--pc-gold); margin-left: 6px; }
+.pc-command-lines { display: grid; gap: 6px; margin: 0; padding: 0; list-style: none; }
+.pc-command-line {
+    display: grid; grid-template-columns: auto 1fr; align-items: center; gap: 10px;
+    width: 100%; min-height: 52px; padding: 6px 10px 6px 6px; text-align: left;
+    color: #e6edf2; background: #ffffff0a; border: 1px solid #ffffff14; border-radius: 10px; cursor: pointer;
+    transition: background-color 160ms ease, border-color 160ms ease, box-shadow 200ms ease;
+}
+.pc-command-line:hover:not(:disabled) { background: #ffffff14; border-color: #e4c48266; }
+.pc-command-line--on { background: #e4c4821f; border-color: var(--pc-gold); box-shadow: 0 0 0 1px #e4c48255, 0 6px 22px #e4c48233; }
+.pc-command-line--braced .pc-ring { box-shadow: 0 0 0 2px #6fb4ff88, 0 0 18px #6fb4ff55; }
+.pc-command-line--fallen { opacity: 0.5; cursor: default; animation: pc-shake 520ms cubic-bezier(0.36, 0.07, 0.19, 0.97) 1; }
+.pc-command-text { display: grid; gap: 3px; min-width: 0; }
+.pc-command-name { display: flex; align-items: center; gap: 6px; font-size: 12px; font-weight: 700; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.pc-command-name kbd { font: 700 9px/1 inherit; padding: 2px 5px; border-radius: 3px; background: #ffffff1f; color: #c9d4de; }
+.pc-command-meta { display: flex; gap: 10px; font-size: 10.5px; color: #aebdc9; }
+.pc-command-meta > span { display: inline-flex; align-items: center; gap: 3px; }
+.pc-command-meta .material-symbols-outlined { font-size: 14px; }
+.pc-command-braced { color: #9cc9ff; }
+/* Front-rank fatigue. (A ring's pale ghost, --g, drains after a loss: see .pc-ring.) */
+.pc-command-tired { position: relative; height: 4px; border-radius: 2px; background: #ffffff14; overflow: hidden; }
+.pc-command-tired i { position: absolute; inset: 0 auto 0 0; border-radius: 2px; background: linear-gradient(90deg, #f5b33d, #ff5a4e); transition: width 260ms ease; }
+.pc-command-orders { display: grid; grid-template-columns: repeat(5, 1fr); gap: 6px; }
+.pc-order {
+    position: relative; display: grid; justify-items: center; gap: 2px; min-height: 58px; padding: 6px 2px;
+    color: #f3ead8; background: #ffffff0d; border: 1px solid #ffffff1f; border-radius: 10px; cursor: pointer; overflow: hidden;
+    transition: background-color 160ms ease, border-color 160ms ease, --cd 900ms linear;
+}
+.pc-order:hover:not(:disabled) { background: #e4c48222; border-color: #e4c48288; }
+.pc-order:disabled { cursor: default; color: #8d9aa6; }
+.pc-order .material-symbols-outlined { font-size: 20px; color: var(--pc-gold); }
+.pc-order:disabled .material-symbols-outlined { color: #6d7a86; }
+.pc-order-label { font-size: 9.5px; font-weight: 700; letter-spacing: 0.04em; }
+.pc-order kbd { font: 700 8.5px/1 inherit; padding: 2px 4px; border-radius: 3px; background: #ffffff1a; color: #c9d4de; font-variant-numeric: tabular-nums; }
+/* The cooldown is a shadow sweeping clockwise off the button as it becomes ready. */
+.pc-order--cooling::before {
+    content: ""; position: absolute; inset: -40%; pointer-events: none;
+    background: conic-gradient(#00000099 calc(var(--cd) * 1%), transparent 0);
+    transition: --cd 900ms linear;
+}
+.pc-command-reply { margin: 0; min-height: 1.4em; font-size: 11px; color: #c9d4de; font-style: italic; }
+
+/* ── Analysis overlay legend ── */
+
+.pc-legend {
+    position: absolute; z-index: 4; right: max(14px, env(safe-area-inset-right)); bottom: 56px;
+    display: flex; flex-wrap: wrap; align-items: center; gap: 6px 12px; max-width: min(520px, calc(100% - 28px));
+    padding: 8px 12px; background: var(--pc-glass); border: 1px solid #ffffff1f; border-radius: 10px;
+    font-size: 10.5px; color: #dbe3ea; pointer-events: none;
+    -webkit-backdrop-filter: blur(10px); backdrop-filter: blur(10px);
+}
+.pc-legend .pc-eyebrow { flex-basis: 100%; font-size: 9px; }
+.pc-legend > span:not(.pc-eyebrow) { display: inline-flex; align-items: center; gap: 5px; }
+.pc-swatch { display: inline-block; width: 12px; height: 8px; border-radius: 2px; }
+.pc-swatch--b { background: #46be78; } .pc-swatch--c { background: #aad250; } .pc-swatch--d { background: #f5a528; }
+.pc-swatch--e { background: #e64632; } .pc-swatch--f { background: #dc28a0; } .pc-swatch--risk { background: #ff28c8; box-shadow: 0 0 6px #ff28c8; }
+.pc-swatch--push { background: #e5484d; } .pc-swatch--tip { background: #f5a524; } .pc-swatch--calm { background: #4c8dff; } .pc-swatch--back { background: #8b8d98; }
+
+/* Secondary buttons on the dark in-game glass: light text and a hairline, not the theme's dark text. */
+.pc-panel .app-btn:not(.app-btn--primary), .pc-inspector-actions .app-btn:not(.app-btn--primary) { color: #f3ead8; background: #ffffff10; border: 1px solid #ffffff38; }
+.pc-panel .app-btn:not(.app-btn--primary):hover, .pc-inspector-actions .app-btn:not(.app-btn--primary):hover { background: #ffffff1f; border-color: #e4c48299; }
+
+/* ── Hold to confirm (ui.js): a bar of light fills along the button while it is held ── */
+
+.pc-hold { position: relative; display: inline-flex; align-items: center; gap: 6px; isolation: isolate; }
+.pc-hold .material-symbols-outlined { font-size: 18px; }
+.pc-hold { overflow: hidden; }
+.pc-hold::after {
+    content: ""; position: absolute; left: 0; bottom: 0; height: 3px; width: var(--pc-hold); pointer-events: none;
+    background: linear-gradient(90deg, #b98c45, #ffe3a6); box-shadow: 0 0 10px #e4c482;
+    opacity: 0; transition: opacity 120ms ease;
+}
+.pc-hold[data-holding]::after { opacity: 1; }
+
+/* ── Touch ── */
+
 @media (pointer: coarse) {
     /* 76px clears the shared Stats chip, which sits in the same bottom-left corner. */
-    .pc-touch { display: flex; position: absolute; bottom: max(76px, env(safe-area-inset-bottom)); left: max(20px, env(safe-area-inset-left)); right: max(20px, env(safe-area-inset-right)); justify-content: space-between; align-items: end; pointer-events: none; }
+    .pc-touch { display: flex; position: absolute; z-index: 5; bottom: max(76px, env(safe-area-inset-bottom)); left: max(20px, env(safe-area-inset-left)); right: max(20px, env(safe-area-inset-right)); justify-content: space-between; align-items: end; pointer-events: none; }
     .pc-touch button { width: 48px; height: 48px; border: 1px solid #dfc79780; border-radius: 10px; color: #f9e3b2; background: #142536b8; font-size: 20px; touch-action: none; pointer-events: auto; user-select: none; }
     .pc-dpad { display: grid; grid-template-columns: repeat(3, 48px); gap: 4px; }
     .pc-dpad button:first-child { grid-column: 2; }
@@ -94,323 +362,157 @@
     .pc-throw small { display: block; color: #fff; font-size: 14px; font-weight: 800; }
     .pc-touch button:disabled { opacity: 0.4; }
     .pc-touch button:active:not(:disabled) { background: #22405cd0; transform: scale(0.94); }
-    /* The d-pad owns the bottom-left corner on a touchscreen, so the inspector moves up. */
+    /* The d-pad owns the bottom-left corner on a touchscreen: the vitals move up under the clock. */
+    .pc-hud-vitals { bottom: auto; top: 84px; left: max(12px, env(safe-area-inset-left)); }
+    .pc-hud-vitals .pc-ring { --size: 50px; }
+    .pc-day { display: none; }
     .pc-inspector-card { top: max(64px, env(safe-area-inset-top)); bottom: auto; left: 50%; translate: -50% 0; }
-    /* The 44px floor for the small controls: the inspector's close, the radar toggle. */
-    .pc-debug-close, .pc-radar-toggle { min-width: 44px; min-height: 44px; }
+    /* The 44px floor for the small controls. */
+    .pc-debug-close, .pc-radar-toggle, .pc-keycap { min-width: 44px; min-height: 44px; }
 }
 @media (max-width: 650px) {
     .pc-root { min-height: min(420px, var(--gps-area-h)); }
     .pc-edition { left: 18px; top: 15px; }
     .pc-edition span { max-width: 180px; font-size: 8px; }
     .pc-panel h2 { font-size: 28px; }
+    .pc-caption { bottom: 128px; font-size: 12px; }
+    .pc-hud-top { top: 8px; padding: 6px 12px; }
+    .pc-progress span { width: 14px; }
+    .pc-toast { top: 78px; }
+    .pc-flap { font-size: 13px; }
+    .pc-command { top: auto; bottom: 8px; right: 8px; left: 8px; width: auto; max-height: 52%; }
 }
 @media (max-height: 650px) and (min-width: 651px) {
     .pc-panel h2 { font-size: 32px; margin: 8px 0; }
 }
 
-/* Atmospheric Weather Pill */
-.pc-weather-pill {
-    display: inline-flex;
-    align-items: center;
-    gap: 5px;
-    padding: 4px 8px;
-    background: #0f1e2ec0;
-    border: 1px solid #d5b77c44;
-    border-radius: 4px;
-    color: #cad8e2;
-    font-size: 11px;
-    letter-spacing: 0.04em;
-    backdrop-filter: blur(8px);
-    white-space: nowrap;
-    cursor: pointer;
-    transition: all 160ms ease;
-}
-.pc-weather-pill:hover {
-    background: #172d42;
-    border-color: #f2cf87;
-    color: #fff;
-    transform: translateY(-1px);
-}
+/* ── Tab panel: debug and stats only ── */
 
-/* Tactical Radar & Heatmap HUD */
-.pc-radar-header {
-    display: flex;
-    justify-content: flex-end;
-}
+.pc-tab-hud { display: flex; flex-direction: column; gap: 10px; }
+.pc-tab-hud-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+.pc-tab-hud-head strong { display: block; margin-top: 2px; font-size: 13px; }
+.pc-tab-radar { display: flex; flex-direction: column; align-items: stretch; gap: 6px; }
 .pc-radar-toggle {
-    display: inline-flex;
-    align-items: center;
-    gap: 8px;
-    padding: 5px 10px;
-    background: #0d1a27e0;
-    border: 1px solid #d5b77c60;
-    border-radius: 6px;
-    color: #e4c793;
-    font-size: 10.5px;
-    font-weight: 700;
-    letter-spacing: 0.08em;
-    cursor: pointer;
-    backdrop-filter: blur(10px);
-    transition: all 180ms ease;
-    box-shadow: 0 4px 16px #00000055;
+    display: inline-flex; align-items: center; gap: 8px; align-self: flex-start; padding: 5px 10px;
+    background: #0d1a27e0; border: 1px solid #d5b77c60; border-radius: 8px; color: #e4c793;
+    font-size: 10.5px; font-weight: 700; letter-spacing: 0.08em; cursor: pointer;
+    transition: background-color 180ms ease, border-color 180ms ease;
 }
-.pc-radar-toggle:hover {
-    background: #172d42;
-    border-color: #f2cf87;
-    transform: translateY(-1px);
-}
-.pc-radar-toggle small {
-    font-size: 9px;
-    color: #9ab2c4;
-    font-weight: normal;
-}
-.pc-radar-body {
-    margin-top: 6px;
-    padding: 8px;
-    background: #070e17f2;
-    border: 1px solid #d5b77c80;
-    border-radius: 8px;
-    box-shadow: 0 12px 32px #000000aa;
-    backdrop-filter: blur(16px);
-    animation: pc-fade-in 180ms ease;
-}
-.pc-radar-canvas {
-    display: block;
-    width: 200px;
-    height: 270px;
-    border-radius: 4px;
-    border: 1px solid #5a8bb855;
-    cursor: crosshair;
-}
-.pc-radar-legend {
-    display: flex;
-    justify-content: space-around;
-    gap: 6px;
-    margin-top: 6px;
-    font-size: 9.5px;
-    color: #a2b4c2;
-}
-.pc-radar-legend span {
-    display: inline-flex;
-    align-items: center;
-    gap: 4px;
-}
-.pc-radar-legend i {
-    display: inline-block;
-    width: 7px;
-    height: 7px;
-    border-radius: 50%;
-}
+.pc-radar-toggle:hover { background: #172d42; border-color: #f2cf87; }
+.pc-radar-toggle .material-symbols-outlined { font-size: 18px; }
+.pc-radar-body { padding: 8px; background: #070e17f2; border: 1px solid #d5b77c80; border-radius: 10px; box-shadow: 0 12px 32px #000000aa; animation: pc-fade-in 180ms ease; }
+.pc-radar-canvas { display: block; width: 200px; height: 270px; margin: 0 auto; border-radius: 4px; border: 1px solid #5a8bb855; cursor: crosshair; }
+.pc-radar-legend { display: flex; justify-content: space-around; gap: 6px; margin-top: 6px; font-size: 9.5px; color: #a2b4c2; }
+.pc-radar-legend span { display: inline-flex; align-items: center; gap: 4px; }
+.pc-radar-legend i { display: inline-block; width: 7px; height: 7px; border-radius: 50%; }
 .pc-radar-legend .dot-raider { background: #54a0ff; }
 .pc-radar-legend .dot-police { background: #00d2d3; }
 .pc-radar-legend .dot-heat { background: #ff4757; }
 
-/* Tactical Unit Inspector Card */
-.pc-tab-hud {
-    display: flex;
-    flex-direction: column;
-    gap: 8px;
-}
-.pc-tab-hud-head {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    gap: 8px;
-}
-.pc-tab-hud-head strong {
-    display: block;
-    margin-top: 2px;
-    font-size: 13px;
-}
-.pc-tab-bar {
-    width: 100%;
-}
-.pc-tab-meta {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    gap: 8px;
-}
-.pc-tab-hud .pc-onthisday-chip {
-    max-width: none;
-}
-.pc-tab-radar {
-    display: flex;
-    flex-direction: column;
-    align-items: stretch;
-}
-.pc-tab-radar .pc-radar-canvas {
-    margin: 0 auto;
-}
-.pc-inspector-card {
-    position: absolute;
-    bottom: max(50px, env(safe-area-inset-bottom));
-    left: max(32px, env(safe-area-inset-left));
-    z-index: 7;
-    width: min(340px, calc(100vw - 64px));
-    padding: 14px 16px;
-    background: #0c1825f4;
-    border: 1px solid #d5b77c90;
-    border-radius: 8px;
-    box-shadow: 0 16px 40px #000000aa, inset 0 1px 0 #ffffff22;
-    backdrop-filter: blur(16px);
-    color: #d1dbe2;
-    font-size: 11px;
-    animation: pc-slide-up 200ms ease;
-}
-@keyframes pc-slide-up {
-    from { transform: translateY(16px); opacity: 0; }
-    to { transform: translateY(0); opacity: 1; }
-}
-.pc-inspector-header {
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
-    border-bottom: 1px solid #ffffff18;
-    padding-bottom: 6px;
-    margin-bottom: 6px;
-}
-.pc-inspector-title {
-    display: flex;
-    align-items: center;
-    gap: 8px;
-}
-.pc-inspector-title strong {
-    font-size: 12.5px;
-    color: #f6eedb;
-    letter-spacing: 0.05em;
-}
-.pc-badge {
-    padding: 2px 6px;
-    border-radius: 3px;
-    font-size: 9px;
-    font-weight: 800;
-    letter-spacing: 0.08em;
-}
-.pc-badge--police { background: #0984e3; color: #fff; }
-.pc-badge--raider { background: #d63031; color: #fff; }
-.pc-inspector-role {
-    font-size: 11px;
-    color: #dfc285;
-    font-weight: 600;
-    margin-bottom: 4px;
-}
-.pc-inspector-status {
-    font-size: 10.5px;
-    margin-bottom: 8px;
-    color: #a4b7c6;
-}
-.pc-inspector-status b {
-    color: #55efc4;
-    font-weight: normal;
-}
-.pc-inspector-metrics {
-    display: grid;
-    grid-template-columns: 1fr 1fr;
-    gap: 10px;
-    margin-bottom: 8px;
-}
-.pc-inspector-metrics span {
-    display: block;
-    font-size: 9.5px;
-    color: #8fa5b5;
-    margin-bottom: 3px;
-}
-.pc-inspector-meta {
-    font-size: 10px;
-    line-height: 1.4;
-    color: #92a4b2;
-    border-top: 1px dotted #ffffff15;
-    padding-top: 6px;
-    margin-bottom: 10px;
-    display: flex;
-    flex-direction: column;
-    gap: 2px;
-}
-.pc-inspector-actions {
-    display: flex;
-    gap: 8px;
-}
-.pc-harm {
-    color: #8fd3c7;
-    letter-spacing: 0.02em;
-}
+/* High contrast raises the HUD text and glass without recolouring the world. */
+.pc-contrast { --pc-glass: #02080ff5; }
+.pc-contrast .pc-hud-title, .pc-contrast .pc-crowd, .pc-contrast .pc-time { color: #fff; text-shadow: 0 0 4px #000, 0 1px 2px #000; }
+.pc-contrast .pc-hud-top, .pc-contrast .pc-command, .pc-contrast .pc-ammo-chip { border-color: #ffffff88; }
+.pc-contrast .pc-ring small { color: #fff; }
 
-/* ── Comfort, captions and the after-action report ── */
+/* ── The end card's report: tabs, stat cards, one Export button ── */
 
-.pc-caption {
-    position: absolute;
-    z-index: 6;
-    left: 50%;
-    bottom: 96px;
-    transform: translateX(-50%);
-    max-width: min(720px, calc(100% - 48px));
-    padding: 8px 14px;
-    color: #f7f2e6;
-    background: #0b1622e8;
-    border-left: 3px solid #d5b77c;
-    border-radius: 4px;
-    font-size: 13px;
-    line-height: 1.45;
-    text-align: center;
-    pointer-events: none;
+.pc-report { display: grid; gap: 10px; margin-top: 10px; }
+.pc-report-tabs ::deep .rz-tabview-panel { padding: 10px 0 2px; }
+.pc-report-tabs ::deep .rz-tabview-panel > * + * { margin-top: 10px; }
+.pc-stats { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; }
+.pc-stat {
+    --c: var(--pc-info, #6fb4ff);
+    position: relative; display: grid; align-content: start; gap: 1px; min-width: 0; padding: 8px 10px 4px;
+    border-radius: 10px; border: 1px solid color-mix(in srgb, var(--c) 35%, transparent);
+    background: linear-gradient(160deg, color-mix(in srgb, var(--c) 12%, transparent), transparent 70%);
+    overflow: hidden;
+    animation: pc-card-in 420ms cubic-bezier(0.2, 0.8, 0.2, 1) backwards;
 }
-/* An empty caption keeps its place in the tree and is simply not drawn. */
-.pc-caption--idle { visibility: hidden; }
-.pc-caption-tag { margin-right: 8px; color: #9fc0e2; font-size: 9px; letter-spacing: 0.16em; font-weight: 700; }
-
-.pc-range { display: block; width: 100%; margin: 2px 0 10px; accent-color: #b98c45; }
-/* These rows sit in the shared options sheet, which follows the app theme, so they take its
-   colours instead of the in-game dark palette (pale text on a white sheet was unreadable). */
-.pc-key-row { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-top: 8px; font-size: 13px; color: inherit; }
-.pc-key-select { min-width: 110px; min-height: 32px; padding: 4px 8px; color: inherit; background: transparent; border: 1px solid color-mix(in srgb, currentColor 40%, transparent); border-radius: 4px; font: inherit; font-size: 13px; }
-.pc-key-select option { color: #111; background: #fff; }
-
-/* High contrast raises the HUD text and chip faces without recolouring the world. */
-.pc-contrast .pc-hint-chip,
-.pc-contrast .pc-crowd,
-.pc-contrast .pc-time { color: #fff; text-shadow: 0 0 4px #000, 0 1px 2px #000; }
-.pc-contrast .pc-hint-chip { font-weight: 700; letter-spacing: 0.1em; }
-.pc-contrast .pc-onthisday-chip { background: #04101ef2; border-right-color: #cfe3ff; }
-.pc-contrast .pc-demo-chip,
-.pc-contrast .pc-beacon-chip { background: #04101ef2; }
-
-.pc-report { display: grid; gap: 10px; margin-top: 14px; }
-/* The aftermath map (aftermath.js draws it with WebGPU); collapsed until the engine marks it data-live. */
-.pc-aftermath { width: 100%; aspect-ratio: 16 / 9; max-height: 320px; border-radius: 6px; overflow: hidden; border: 1px solid var(--po-border); background: var(--po-surface); }
-.pc-aftermath:not([data-live]) { height: 0; max-height: 0; border: 0; }
-.pc-aftermath canvas { display: block; width: 100%; height: 100%; }
-.pc-report-chart { width: 100%; overflow: hidden; border-radius: 6px; border: 1px solid #88888855; }
-.pc-report-chart svg { display: block; width: 100%; height: auto; }
-.pc-report-facts { display: grid; grid-template-columns: repeat(auto-fit, minmax(120px, 1fr)); gap: 8px 14px; margin: 0; }
+.pc-stat:nth-child(2) { animation-delay: 50ms; } .pc-stat:nth-child(3) { animation-delay: 100ms; }
+.pc-stat:nth-child(4) { animation-delay: 150ms; } .pc-stat:nth-child(5) { animation-delay: 200ms; } .pc-stat:nth-child(6) { animation-delay: 250ms; }
+@keyframes pc-card-in { from { opacity: 0; translate: 0 8px; } }
+.pc-stat--good { --c: #1f9d60; } .pc-stat--warn { --c: #c98512; } .pc-stat--bad { --c: #d8453a; } .pc-stat--info { --c: #3b82d6; }
+.pc-stat-label { font-size: 9px; letter-spacing: 0.12em; text-transform: uppercase; color: var(--color-text-secondary); }
+.pc-stat-value { font-size: 18px; font-weight: 800; font-variant-numeric: tabular-nums; color: var(--c); line-height: 1.2; }
+.pc-stat-note { font-size: 10.5px; color: var(--color-text-secondary); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.pc-stat ::deep .pc-stat-spark { margin-top: 2px; }
+.pc-stat ::deep .pc-stat-spark path { stroke: var(--c) !important; }
+.pc-more summary { cursor: pointer; font-size: 12px; color: var(--color-text-secondary); }
+.pc-report-facts { display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); gap: 8px 14px; margin: 8px 0 0; }
 .pc-report-facts dt { font-size: 9px; letter-spacing: 0.12em; text-transform: uppercase; color: var(--color-text-secondary); }
 .pc-report-facts dd { margin: 2px 0 0; font-size: 13px; }
-.pc-report-actions { display: flex; flex-wrap: wrap; gap: 8px; }
-.pc-tab-report { margin-top: 12px; padding-top: 10px; border-top: 1px solid #ffffff1a; }
-.pc-tab-report .pc-small { margin: 4px 0 8px; }
+/* The aftermath map (aftermath.js draws it with WebGPU); collapsed until the engine marks it data-live. */
+.pc-aftermath { width: 100%; aspect-ratio: 16 / 9; max-height: 260px; border-radius: 8px; overflow: hidden; border: 1px solid var(--po-border); background: var(--po-surface); }
+.pc-aftermath:not([data-live]) { height: 0; max-height: 0; border: 0; }
+.pc-aftermath canvas { display: block; width: 100%; height: 100%; }
+.pc-report-chart { width: 100%; overflow: hidden; border-radius: 8px; border: 1px solid #88888855; }
+.pc-report-chart svg { display: block; width: 100%; height: auto; }
+.pc-report-actions { display: flex; justify-content: flex-end; }
+.pc-report-actions ::deep .rz-splitbutton .rz-button { min-height: 44px; }
+@media (max-width: 520px) { .pc-stats { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
 
-@media (max-width: 650px) {
-    .pc-caption { bottom: 128px; font-size: 12px; }
-}
-
-/* ── Options sheet: four tabs instead of one long scroll ── */
+/* ── Options sheet: five short tabs ── */
 
 .pc-opts ::deep .rz-tabview-nav { flex-wrap: wrap; }
-/* Four tabs on one row in a 340px sheet, and choice bars that wrap instead of running off it. */
 .pc-opts ::deep .rz-tabview-nav li button { padding: 10px 6px; font-size: 13px; letter-spacing: 0.02em; }
 .pc-opts ::deep .rz-selectbar { display: flex; flex-wrap: wrap; max-width: 100%; }
 .pc-opts ::deep .rz-tabview-panel { padding: 12px 2px 4px; }
+/* Sliders: a gold fill up to the value (--p, written by the page) and a thumb that grows on use. */
+.pc-range { display: block; width: 100%; height: 22px; margin: 4px 0 12px; background: transparent; appearance: none; -webkit-appearance: none; cursor: pointer; }
+.pc-range::-webkit-slider-runnable-track { height: 6px; border-radius: 3px; background: linear-gradient(90deg, #b98c45 var(--p, 50%), color-mix(in srgb, currentColor 18%, transparent) 0); }
+.pc-range::-moz-range-track { height: 6px; border-radius: 3px; background: linear-gradient(90deg, #b98c45 var(--p, 50%), color-mix(in srgb, currentColor 18%, transparent) 0); }
+.pc-range::-webkit-slider-thumb { -webkit-appearance: none; width: 18px; height: 18px; margin-top: -6px; border-radius: 50%; background: #f3e2bd; border: 2px solid #b98c45; box-shadow: 0 2px 8px #00000055; transition: scale 150ms ease; }
+.pc-range::-moz-range-thumb { width: 18px; height: 18px; border-radius: 50%; background: #f3e2bd; border: 2px solid #b98c45; }
+.pc-range:hover::-webkit-slider-thumb, .pc-range:active::-webkit-slider-thumb { scale: 1.2; }
+.pc-range:focus-visible { outline: 2px solid #b98c45; outline-offset: 2px; border-radius: 4px; }
 .pc-opt-button { margin-top: 12px; }
 .pc-model-input { min-width: 150px; }
 /* These lines change length or appear late; holding their height keeps the card still. */
 .pc-probe { min-height: 1.5em; }
+
+/* Key bindings: a keycap per action. Select one and press the new key; a swap flashes. */
+.pc-keys { display: grid; gap: 6px; margin: 6px 0; padding: 0; list-style: none; }
+.pc-key-row { display: grid; grid-template-columns: 1fr auto auto; align-items: center; gap: 10px; font-size: 13px; color: inherit; }
+.pc-pad-glyph { font-size: 10px; font-weight: 700; letter-spacing: 0.04em; color: var(--color-text-secondary); padding: 2px 6px; border: 1px solid color-mix(in srgb, currentColor 25%, transparent); border-radius: 999px; }
+.pc-pad-glyph:empty { display: none; }
+.pc-keycap {
+    min-width: 84px; min-height: 36px; padding: 4px 12px;
+    font: 700 13px/1 ui-monospace, Consolas, monospace; color: inherit;
+    background: linear-gradient(color-mix(in srgb, currentColor 6%, transparent), color-mix(in srgb, currentColor 12%, transparent));
+    border: 1px solid color-mix(in srgb, currentColor 30%, transparent); border-bottom-width: 3px; border-radius: 7px;
+    cursor: pointer; transition: transform 90ms ease, border-color 150ms ease, box-shadow 150ms ease;
+}
+.pc-keycap:hover { border-color: #b98c45; }
+.pc-keycap:active { transform: translateY(2px); border-bottom-width: 1px; }
+.pc-keycap--listening { border-color: #b98c45; box-shadow: 0 0 0 3px #b98c4544; animation: pc-listen 1s ease-in-out infinite; font-family: inherit; font-weight: 600; }
+.pc-keycap--swapped { animation: pc-swap 700ms cubic-bezier(0.2, 0.9, 0.3, 1.3) 1; border-color: #b98c45; }
+@keyframes pc-listen { 50% { box-shadow: 0 0 0 6px #b98c4522; } }
+@keyframes pc-swap { 0% { transform: translateY(-10px) scale(1.1); background-color: #b98c4544; } 100% { transform: none; } }
+.pc-key-select { min-width: 110px; min-height: 32px; padding: 4px 8px; color: inherit; background: transparent; border: 1px solid color-mix(in srgb, currentColor 40%, transparent); border-radius: 4px; font: inherit; font-size: 13px; }
+
+/* ── Start card: who you are, as four cards ── */
+
+/* The start card is on the light theme surface: take its text colour, not the in-game cream. */
+.pc-intro-opts { color: var(--color-text-primary); }
+.pc-roles { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 6px; width: 100%; }
+.pc-role {
+    display: grid; justify-items: center; align-content: center; gap: 2px; min-height: 58px; padding: 6px 4px;
+    color: inherit; background: color-mix(in srgb, currentColor 4%, transparent);
+    border: 1px solid color-mix(in srgb, currentColor 18%, transparent); border-radius: 10px;
+    cursor: pointer; font: inherit; transition: border-color 150ms ease, background-color 150ms ease, box-shadow 200ms ease;
+}
+.pc-role .material-symbols-outlined { font-size: 22px; color: #b98c45; transition: scale 200ms cubic-bezier(0.2, 0.9, 0.3, 1.4); }
+.pc-role-name { font-size: 12px; font-weight: 600; line-height: 1.15; text-align: center; }
+.pc-role:hover { border-color: #b98c4588; }
+.pc-role--on { border-color: #b98c45; background: color-mix(in srgb, #b98c45 14%, transparent); box-shadow: 0 0 0 1px #b98c45, 0 6px 18px #b98c4533; }
+.pc-role--on .material-symbols-outlined { scale: 1.15; }
+.pc-role:focus-visible { outline: 2px solid #b98c45; outline-offset: 2px; }
 .pc-role-brief { min-height: 3em; }
-.pc-ammo { margin: 6px 0 0; }
 
 /* ── The debrief: what happened in three sentences, and what wrote them ── */
 
-.pc-debrief { display: grid; align-content: start; gap: 4px; min-height: 7.5em; padding: 10px 12px; border-left: 3px solid #b98c45; border-radius: 4px; background: color-mix(in srgb, currentColor 7%, transparent); }
+.pc-debrief { display: grid; align-content: start; gap: 4px; min-height: 6em; padding: 10px 12px; border-left: 3px solid #b98c45; border-radius: 6px; background: color-mix(in srgb, currentColor 7%, transparent); }
 .pc-debrief-head { font-size: 9px; font-weight: 700; letter-spacing: 0.14em; text-transform: uppercase; }
 .pc-debrief p { margin: 0; font-size: 13px; line-height: 1.5; }
 .pc-debrief[aria-busy="true"] p { opacity: 0.7; }
@@ -418,7 +520,12 @@
 .pc-debrief-meta--warn { font-weight: 700; }
 .pc-debrief-meta--warn::before { content: "⚠ "; }
 
-/* The role picker shares the card's width on a phone: "Observer" ran off the right edge of a
-   375px card. Equal segments, and a long label wraps inside its own segment. */
-.pc-intro-opts ::deep #pc-role { display: flex; width: 100%; }
-.pc-intro-opts ::deep #pc-role > .rz-button { flex: 1 1 0; min-width: 0; padding-inline: 0.4rem; white-space: normal; }
+@media (prefers-reduced-motion: reduce) {
+    .pc-rec-pill i, .pc-ring--bad, .pc-shake, .pc-command-line--fallen, .pc-leader line, .pc-leader circle,
+    .pc-keycap--listening, .pc-keycap--swapped, .pc-stat, .pc-flap span, .pc-toast::before { animation: none; }
+    .pc-toast { animation: pc-toast-calm 4.8s linear forwards; }
+    .pc-day { animation: pc-toast-calm 5s linear forwards; }
+    .pc-root[data-anchored] .pc-inspector-card { animation: none; }
+    .pc-ring, .pc-order, .pc-order--cooling::before { transition: none; }
+}
+@keyframes pc-toast-calm { 0%, 90% { opacity: 1; } 100% { opacity: 0; visibility: hidden; } }

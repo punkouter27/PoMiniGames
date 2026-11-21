@@ -73,15 +73,39 @@ public partial class PoCapitolPage : IAsyncDisposable
     private CommandDto? _command;
     private string _mapState = "";
     private bool _orderBusy;
+    // The end card's report tab (0 summary, 1 charts, 2 street map) and whether the aftermath
+    // map has been drawn into its canvas yet: it is drawn the first time Charts is opened.
+    private int _reportTab;
+    private bool _aftermathShown;
+    // When the last milestone and the last "on the day" entry changed (UTC), for the HUD toasts.
+    private DateTime _milestoneAt = DateTime.MinValue, _dayAt = DateTime.MinValue;
+    private string _dayShown = "";
+    // The keycap waiting for a key, and the one that just swapped with it (both action ids).
+    private string? _listening, _swapped;
+    // The longest wait seen for each order since it was last ready: the cooldown sweep's 100%.
+    private readonly Dictionary<string, int> _orderMax = [];
+    private readonly ElementReference[] _roleRefs = new ElementReference[4];
+
+    /// <summary>The start card's role cards: engine value, label, Material Symbols icon.</summary>
+    private static readonly (string Value, string Label, string Icon)[] Roles =
+    [
+        ("raider", "In the crowd", "groups"),
+        ("police", "Police line", "shield"),
+        ("commander", "Commander", "military_tech"),
+        ("observer", "Observer", "visibility"),
+    ];
+
+    /// <summary>A sparkline point (Radzen's series binds by property name).</summary>
+    public sealed record SparkPoint(double X, double Y);
 
     /// <summary>The incident commander's orders, in panel order: engine name, button label, key.</summary>
-    private static readonly (string Order, string Label, string Key)[] Orders =
+    private static readonly (string Order, string Label, string Key, string Icon)[] Orders =
     [
-        ("brace", "Brace", "B"),
-        ("reinforce", "Reinforce", "R"),
-        ("relieve", "Rotate rank", "T"),
-        ("gas", "Gas", "G"),
-        ("fallback", "Fall back", "F"),
+        ("brace", "Brace", "B", "shield"),
+        ("reinforce", "Reinforce", "R", "group_add"),
+        ("relieve", "Rotate", "T", "autorenew"),
+        ("gas", "Gas", "G", "air"),
+        ("fallback", "Fall back", "F", "undo"),
     ];
 
     private IEnumerable<(string Action, string Label, string Code)> KeyRows =>
@@ -302,6 +326,11 @@ public partial class PoCapitolPage : IAsyncDisposable
             _caption = "";
             _command = null;
             _mapState = "";
+            _reportTab = 0;
+            _aftermathShown = false;
+            _milestoneAt = _dayAt = DateTime.MinValue;
+            _dayShown = "";
+            _orderMax.Clear();
             _status = "active";
             _health = 100; _milestone = 0; _elapsed = 0; _message = ""; _resultWarning = ""; _outcome = "";
             _activeRaiders = _crowdTotal; _activePolice = 44; _totalPolice = 44; _subject = 0; _lineIndex = 0; _lineIntegrity = 100; _sheltering = 64;
@@ -330,11 +359,78 @@ public partial class PoCapitolPage : IAsyncDisposable
         _ = LoadAsync();
     }
 
-    private static ProgressBarStyle GetHealthProgressStyle(int health) =>
-        health > 50 ? ProgressBarStyle.Success : health > 25 ? ProgressBarStyle.Warning : ProgressBarStyle.Danger;
+    /// <summary>A 0–100 reading's tone: good above half, a warning above a quarter, bad below.</summary>
+    private static string ToneName(int value) => value > 50 ? "good" : value > 25 ? "warn" : "bad";
 
-    private static ProgressBarStyle GetLineProgressStyle(int integrity) =>
-        integrity > 50 ? ProgressBarStyle.Info : integrity > 25 ? ProgressBarStyle.Warning : ProgressBarStyle.Danger;
+    /// <summary>The ring class for a 0–100 reading (pc-ring--good / --warn / --bad).</summary>
+    private static string Tone(int value) => $"pc-ring--{ToneName(value)}";
+
+    /// <summary>A HUD toast is shown for this long after the change that raised it.</summary>
+    private static bool ToastLive(DateTime at) => (DateTime.UtcNow - at).TotalSeconds < 5;
+
+    /// <summary>A comma-separated series from the engine as sparkline points (null when empty).</summary>
+    private static List<SparkPoint>? Spark(string? csv)
+    {
+        if (string.IsNullOrEmpty(csv)) return null;
+        var parts = csv.Split(',');
+        var points = new List<SparkPoint>(parts.Length);
+        for (var i = 0; i < parts.Length; i++)
+        {
+            if (double.TryParse(parts[i], NumberStyles.Float, CultureInfo.InvariantCulture, out var y)) points.Add(new SparkPoint(i, y));
+        }
+        return points;
+    }
+
+    /// <summary>The gamepad control for an action, shown beside its keycap.</summary>
+    private static string PadGlyph(string action) => action switch
+    {
+        "forward" or "back" or "left" or "right" => "L-stick",
+        "push" => "RT",
+        "sprint" => "L3",
+        "pause" => "Start",
+        _ => "",
+    };
+
+    /// <summary>Arrow keys move between the role cards, as a radio group should.</summary>
+    private async Task RoleKeyAsync(int index, KeyboardEventArgs e)
+    {
+        var step = e.Key switch { "ArrowRight" or "ArrowDown" => 1, "ArrowLeft" or "ArrowUp" => -1, _ => 0 };
+        if (step == 0) return;
+        var next = (index + step + Roles.Length) % Roles.Length;
+        _role = Roles[next].Value;
+        StateHasChanged();
+        await Task.Yield();
+        try { await _roleRefs[next].FocusAsync(); }
+        catch (InvalidOperationException) { /* not rendered yet */ }
+    }
+
+    /// <summary>
+    /// A keycap is listening: the next key pressed is the new binding (Esc cancels). Only codes
+    /// the engine accepts (letters, digits and named keys) are taken.
+    /// </summary>
+    private async Task CaptureKeyAsync(string action, KeyboardEventArgs e)
+    {
+        if (_listening != action) return;
+        if (e.Code is "Escape" or "Tab" || e.Key == "Escape")
+        {
+            _listening = null;
+            return;
+        }
+        if (string.IsNullOrEmpty(e.Code) || e.Code.StartsWith("Arrow", StringComparison.Ordinal)) return;
+        var before = KeyRows.ToDictionary(r => r.Action, r => r.Code);
+        _listening = null;
+        await SetKeyAsync(action, e.Code);
+        // Whichever other action now holds this action's old key is the one that swapped.
+        _swapped = KeyRows.FirstOrDefault(r => r.Action != action && before.TryGetValue(r.Action, out var was) && was != r.Code).Action;
+        if (_swapped is not null) _ = ClearSwapAsync();
+    }
+
+    private async Task ClearSwapAsync()
+    {
+        await Task.Delay(1200);
+        _swapped = null;
+        if (!_disposed) await InvokeAsync(StateHasChanged);
+    }
 
     [JSInvokable]
     public async Task OnUpdate(int health, int milestone, double elapsed, string status, int crowdTotal, string message,
@@ -346,10 +442,17 @@ public partial class PoCapitolPage : IAsyncDisposable
         var changed = _milestone != milestone || _status != status || _lineIndex != lineIndex;
         var lineBroke = lineIndex != _lineIndex && _lineIndex >= 0 && status == "active";
         var ended = status is "completed" or "failed";
+        if (milestone > _milestone && status == "active") _milestoneAt = DateTime.UtcNow;
         _health = health; _milestone = milestone; _elapsed = elapsed; _status = status; _message = message;
         _crowdTotal = crowdTotal; _activeRaiders = activeRaiders; _activePolice = activePolice; _subject = subject;
         _outcome = outcome; _totalPolice = totalPolice; _lineIndex = lineIndex; _lineIntegrity = lineIntegrity;
         _graphicsLabel = graphics; _sheltering = sheltering; _grenades = grenades; _smoke = smoke;
+        // The historical record's next entry slides in once, when the clock passes it.
+        if (status == "active" && OnTheDay.Time != _dayShown)
+        {
+            if (_dayShown.Length > 0 || elapsed > 1) _dayAt = DateTime.UtcNow;
+            _dayShown = OnTheDay.Time;
+        }
         // Each attempt that ends refreshes the report, including the demo's repeated runs.
         if (ended && previousStatus is not ("completed" or "failed")) _ = LoadReportAsync();
         if (changed) _announcement = status != "active" ? $"Scenario {status}. {ResultHeading}"
@@ -439,6 +542,19 @@ public partial class PoCapitolPage : IAsyncDisposable
         _ => 0,
     };
 
+    /// <summary>How much of an order's cooldown is left, 0–100, for the sweep round its button.</summary>
+    private int OrderSweep(string order)
+    {
+        var wait = OrderWait(order);
+        if (wait <= 0)
+        {
+            _orderMax.Remove(order);
+            return 0;
+        }
+        if (!_orderMax.TryGetValue(order, out var max) || wait > max) _orderMax[order] = max = wait;
+        return (int)Math.Round(100.0 * wait / Math.Max(1, max));
+    }
+
     private static int[] Csv(string? value) =>
         string.IsNullOrEmpty(value) ? []
         : Array.ConvertAll(value.Split(','), part => int.TryParse(part, NumberStyles.Integer, CultureInfo.InvariantCulture, out var n) ? n : 0);
@@ -458,6 +574,38 @@ public partial class PoCapitolPage : IAsyncDisposable
             _mapState = "failed";
         }
         StateHasChanged();
+    }
+
+    /// <summary>
+    /// A report tab opened. Charts draws the aftermath map into its canvas the first time; the
+    /// street map loads its tiles only when its own tab is opened (that is the opt-in).
+    /// </summary>
+    private async Task OnReportTabAsync(int index)
+    {
+        _reportTab = index;
+        if (index == 1 && !_aftermathShown)
+        {
+            _aftermathShown = true;
+            await Task.Yield();
+            await ShowAftermathAsync();
+        }
+        else if (index == 2 && _mapState is "" or "failed")
+        {
+            await ShowStreetMapAsync();
+        }
+    }
+
+    /// <summary>The Export split button: its face saves the report card, its menu every other file.</summary>
+    private async Task OnExportAsync(Radzen.Blazor.RadzenSplitButtonItem? item)
+    {
+        switch (item?.Value ?? "card")
+        {
+            case "chart": await ExportPngAsync(); break;
+            case "csv": await ExportCsvAsync(); break;
+            case "geojson": await ExportGeoJsonAsync(); break;
+            case "copy": await CopySummaryAsync(); break;
+            default: await SaveReportCardAsync(); break;
+        }
     }
 
     private async Task ExportGeoJsonAsync()
@@ -576,7 +724,7 @@ public partial class PoCapitolPage : IAsyncDisposable
     private async Task SavePrefsAsync(double? sensitivity = null, int? fov = null, bool? captions = null,
         string? contrast = null, string? radar = null, bool? director = null, string? tracers = null,
         string? motion = null, string? debrief = null, string? debriefModel = null, string? footage = null,
-        string? score = null, string? hailer = null, string? overlay = null)
+        string? score = null, string? hailer = null, string? overlay = null, string? hudSound = null)
     {
         if (sensitivity is not null) _prefs.sensitivity = sensitivity.Value;
         if (fov is not null) _prefs.fov = fov.Value;
@@ -594,6 +742,7 @@ public partial class PoCapitolPage : IAsyncDisposable
         if (score is not null) _prefs.score = score;
         if (hailer is not null) _prefs.hailer = hailer;
         if (overlay is not null) _prefs.overlay = overlay;
+        if (hudSound is not null) _prefs.hudSound = hudSound;
         if (debrief is not null)
         {
             _prefs.debrief = debrief;
@@ -609,7 +758,8 @@ public partial class PoCapitolPage : IAsyncDisposable
                 fov = _prefs.fov,
                 captions = _prefs.captions,
                 contrast = _prefs.contrast,
-                radar = _prefs.radar,
+                // The radar's palette now follows the app-wide colour-safe setting.
+                radar = "auto",
                 director = _prefs.director,
                 tracers = _prefs.tracers,
                 motion = _prefs.motion,
@@ -619,6 +769,7 @@ public partial class PoCapitolPage : IAsyncDisposable
                 score = _prefs.score,
                 hailer = _prefs.hailer,
                 overlay = _prefs.overlay,
+                hudSound = _prefs.hudSound,
             });
         }
         catch (JSException ex)
@@ -634,7 +785,6 @@ public partial class PoCapitolPage : IAsyncDisposable
         try { _report = await Engine.GetReportViewAsync(); }
         catch (JSException ex) { Logger.LogDebug(ex, "PoCapitol report unavailable"); }
         await InvokeAsync(StateHasChanged);
-        _ = ShowAftermathAsync();
         await LoadDebriefAsync();
     }
 
@@ -777,6 +927,7 @@ public partial class PoCapitolPage : IAsyncDisposable
         public string score { get; set; } = "off";
         public string hailer { get; set; } = "off";
         public string overlay { get; set; } = "off";
+        public string hudSound { get; set; } = "on";
         public string forward { get; set; } = "KeyW";
         public string back { get; set; } = "KeyS";
         public string left { get; set; } = "KeyA";
@@ -803,6 +954,7 @@ public partial class PoCapitolPage : IAsyncDisposable
         public string score { get; set; } = "";
         public string hailer { get; set; } = "";
         public string overlay { get; set; } = "";
+        public string hudSound { get; set; } = "";
     }
 
     public sealed class ReportDto
@@ -835,6 +987,11 @@ public partial class PoCapitolPage : IAsyncDisposable
         /// <summary>Orders the commander gave, or -1 when nobody was commanding.</summary>
         public int orders { get; set; } = -1;
         public int withdrawn { get; set; }
+        public string sparkIntegrity { get; set; } = "";
+        public string sparkPressure { get; set; } = "";
+        public string sparkRaiders { get; set; } = "";
+        public string sparkPolice { get; set; } = "";
+        public string sparkCasualties { get; set; } = "";
     }
 
     /// <summary>

@@ -325,7 +325,7 @@ export function createAudio({ onCaption } = {}) {
     const bus = window.PoAudioBus;
     let out = null;
     try { out = quiet() || !bus ? null : bus.busSync?.('sfx') ?? null; } catch { out = null; }
-    if (!out) return { update() {}, event() {}, dispose() {}, setFootage() {}, caption };
+    if (!out) return { update() {}, event() {}, dispose() {}, setFootage() {}, setHudSound() {}, caption };
     const ctx = out.context;
     const master = ctx.createGain();
     master.gain.value = 0.9;
@@ -339,9 +339,13 @@ export function createAudio({ onCaption } = {}) {
     micPeak.type = 'peaking'; micPeak.frequency.value = 2800; micPeak.Q.value = 0.8; micPeak.gain.value = 5;
     micLimit.threshold.value = -34; micLimit.knee.value = 4; micLimit.ratio.value = 14;
     micLimit.attack.value = 0.002; micLimit.release.value = 0.38;
-    master.connect(dry).connect(out);
-    master.connect(micTone).connect(micPeak).connect(micLimit).connect(mic).connect(out);
-    nodes.push(dry, mic, micTone, micPeak, micLimit);
+    // master collects every sound; `gate` is the live mix's on/off (pause, menus, end of the
+    // attempt) and `post` is where it leaves, after the shell-shock worklet when that loaded.
+    const gate = ctx.createGain(), post = ctx.createGain();
+    master.connect(gate).connect(post);
+    post.connect(dry).connect(out);
+    post.connect(micTone).connect(micPeak).connect(micLimit).connect(mic).connect(out);
+    nodes.push(dry, mic, micTone, micPeak, micLimit, gate, post);
     let footage = false;
 
     // Reverb: two convolvers that cross-fade, so moving between rooms never clicks.
@@ -353,7 +357,7 @@ export function createAudio({ onCaption } = {}) {
         wetSend.connect(convolver).connect(level).connect(out);
         return { convolver, level };
     });
-    master.connect(wetSend);
+    post.connect(wetSend);
     // The beds: everything that is a continuous texture rather than an event. A transient ducks
     // this bus and nothing else, so the bang itself is never turned down by its own duck.
     const bed = ctx.createGain();
@@ -498,6 +502,106 @@ export function createAudio({ onCaption } = {}) {
             voices.node = node;
         }).catch(() => { /* no worklet: the bed carries the crowd alone */ });
     } catch { /* not a browser module (tests): no worklet */ }
+    // Three more worklets, each optional and each failing soft: with none of them the game sounds
+    // as it did before. They share this context and its bus; none makes a context of its own.
+    //   shock   (shockWorklet.js) sits in the live mix's path: steep low-pass sweep, falling ring
+    //           and heartbeat after a near flash-bang or concussion;
+    //   hud     (hudWorklet.js) creak of the line you hold and a tick for crowd density, behind
+    //           the `hudSound` preference;
+    //   freezer (freezeWorklet.js) holds the scene as a smeared spectral pad while a menu is up.
+    const shock = { node: null, sent: 0 };
+    const hud = { node: null, level: ctx.createGain(), on: true, sent: 0 };
+    const freezer = { node: null, out: ctx.createGain() };
+    const menu = { open: false, until: 0 };
+    hud.level.gain.value = 1; hud.level.connect(out);
+    freezer.out.gain.value = 1; freezer.out.connect(out);
+    nodes.push(hud.level, freezer.out);
+    const loadWorklet = (file, name, options, wire) => {
+        try {
+            ctx.audioWorklet?.addModule(new URL(file, import.meta.url)).then(() => {
+                if (disposed) return;
+                try { wire(new AudioWorkletNode(ctx, name, options)); } catch { /* the node would not build: carry on without it */ }
+            }).catch(() => { /* no worklet: the game sounds as before */ });
+        } catch { /* not a browser module (tests) */ }
+    };
+    loadWorklet('./shockWorklet.js', 'pocapitol-shock', { numberOfInputs: 1, numberOfOutputs: 1, outputChannelCount: [2] }, node => {
+        // From now on the live mix goes gate -> node -> post.
+        gate.disconnect(post);
+        gate.connect(node).connect(post);
+        nodes.push(node);
+        shock.node = node;
+    });
+    loadWorklet('./hudWorklet.js', 'pocapitol-hud', { numberOfInputs: 0, numberOfOutputs: 1, outputChannelCount: [2] }, node => {
+        node.connect(hud.level);
+        nodes.push(node);
+        hud.node = node;
+    });
+    loadWorklet('./freezeWorklet.js', 'pocapitol-freeze', { numberOfInputs: 1, numberOfOutputs: 1, outputChannelCount: [2] }, node => {
+        // Listens to the scene before the gate, so it still hears it when the gate has closed.
+        master.connect(node);
+        node.connect(freezer.out);
+        nodes.push(node);
+        freezer.node = node;
+        if (menu.open) node.port.postMessage({ freeze: true });
+    });
+    const gentle = () => { try { return window.PoQuality?.reduceFlashing?.() === true; } catch { return false; } };
+    /**
+     * A blast `away` metres from the listener. Returns false when the shell-shock worklet is not
+     * there (the caller then plays the plain ringing tone); true when it took the event.
+     */
+    shock.hit = (base, away, reach) => {
+        if (!shock.node) return false;
+        const strength = clamp(base / (1 + away / (reach / 3)), 0, 1);
+        if (strength >= 0.05) {
+            shock.node.port.postMessage({ shock: { strength, delay: Math.min(0.9, away / SPEED_OF_SOUND) + 0.05, gentle: gentle() } });
+        }
+        return true;
+    };
+    shock.sync = (live, mix) => {
+        if (!shock.node || clock < shock.sent) return;
+        shock.sent = clock + 0.15;
+        shock.node.port.postMessage({ state: { active: live && !menu.open, health: mix.health ?? 100, moving: mix.walking === true, gentle: gentle() } });
+    };
+    shock.dispose = () => { try { shock.node?.disconnect(); } catch { /* gone already */ } };
+    hud.sync = (live, mix) => {
+        if (!hud.node || clock < hud.sent) return;
+        hud.sent = clock + 0.1;
+        hud.node.port.postMessage({
+            enabled: hud.on, active: live && !menu.open,
+            integrity: Number.isFinite(mix.lineIntegrity) ? mix.lineIntegrity : null, density: mix.crowdDensity ?? 0,
+        });
+    };
+    hud.dispose = () => { try { hud.node?.disconnect(); hud.level.disconnect(); } catch { /* gone already */ } };
+    freezer.sync = live => {
+        const track = live && !menu.open;
+        if (freezer.node && freezer.tracking !== track) { freezer.tracking = track; freezer.node.port.postMessage({ track }); }
+    };
+    freezer.dispose = () => { try { freezer.node?.disconnect(); freezer.out.disconnect(); } catch { /* gone already */ } };
+    // A menu opening or closing (ui.js dispatches `pocapitol:menu`). Opening: the live mix fades
+    // out over 250 ms as the held pad fades in. Closing: the pad swells for 400 ms and the live
+    // mix comes back under the end of it. With no freeze worklet the live mix simply follows
+    // the same gate, as it always did on a pause.
+    menu.listen = event => {
+        const open = event?.detail?.open === true;
+        if (open === menu.open) return;
+        menu.open = open;
+        const t = ctx.currentTime;
+        gate.gain.cancelScheduledValues(t);
+        gate.gain.setValueAtTime(gate.gain.value, t);
+        if (open) {
+            gate.gain.linearRampToValueAtTime(0, t + 0.25);
+            menu.until = Infinity;
+            freezer.node?.port.postMessage({ freeze: true });
+        } else {
+            freezer.node?.port.postMessage({ freeze: false });
+            const swell = freezer.node ? 0.4 : 0;
+            gate.gain.setValueAtTime(0, t + swell * 0.55);
+            gate.gain.linearRampToValueAtTime(1, t + swell + 0.05);
+            menu.until = clock + swell + 0.1;
+            // If the attempt is not live (the end card closing), the next update eases it shut again.
+        }
+    };
+    window.addEventListener('pocapitol:menu', menu.listen);
     function placeVoices() {
         voices.panners.forEach((panner, i) => {
             const x = listener.x + COMPASS[i][0] * 12, z = listener.z + COMPASS[i][1] * 12;
@@ -791,7 +895,7 @@ export function createAudio({ onCaption } = {}) {
                 burst({ type: 'lowpass', frequency: 9000, volume: 0.75, seconds: 0.32, sweep: 300, dest });
                 tone({ from: 70, to: 30, volume: 0.6, seconds: 0.5, dest });
                 // The ringing afterwards, and everything else ducked under it.
-                tone({ from: 3800, to: 3700, volume: 0.05, seconds: 1.6, at: 0.1, dest: master });
+                if (!shock.hit(0.8, away, 26)) tone({ from: 3800, to: 3700, volume: 0.05, seconds: 1.6, at: 0.1, dest: master });
                 Promise.resolve().then(() => bus.duck?.(0.5 * Math.min(1, 1 / (1 + Math.hypot(e.x - listener.x, e.z - listener.z) / 7)), 900)).catch(() => { /* a duck is a nicety */ });
                 break;
             case 'openfire': {
@@ -817,7 +921,7 @@ export function createAudio({ onCaption } = {}) {
                 strike({ material: 'ground', energy: 320, mass: 260, at: 0.02, dest });
                 // The ringing that follows a blast close by, and a duck under it.
                 if (Math.hypot(e.x - listener.x, e.z - listener.z) < 22) {
-                    tone({ from: 3700, to: 3600, volume: 0.04, seconds: 1.8, at: 0.12, dest: master });
+                    if (!shock.hit(1, away, 22)) tone({ from: 3700, to: 3600, volume: 0.04, seconds: 1.8, at: 0.12, dest: master });
                     Promise.resolve().then(() => bus.duck?.(0.6, 1100)).catch(() => { /* a duck is a nicety */ });
                 }
                 break;
@@ -881,7 +985,7 @@ export function createAudio({ onCaption } = {}) {
                 const utterance = new SpeechSynthesisUtterance(msg);
                 utterance.rate = 1.15;
                 utterance.pitch = 0.9;
-                utterance.volume = Math.min(1, Math.max(0.2, (master.gain.value || 0.8) * 0.85));
+                utterance.volume = Math.min(1, Math.max(0.2, ((gate.gain.value * 0.9) || 0.8) * 0.85));
                 window.speechSynthesis.speak(utterance);
             } catch { /* graceful fallback */ }
         }
@@ -926,7 +1030,11 @@ export function createAudio({ onCaption } = {}) {
         aimListener();
         placeVoices();
         const indoors = mix.z < 14.5, live = mix.active && !bus.isMuted?.();
-        ease(master.gain, live ? 0.9 : 0, 0.25);
+        // While a menu is up (or just closed) the freeze owns the gate (see `menu` below).
+        if (clock >= menu.until) ease(gate.gain, live && !menu.open ? 1 : 0, 0.25);
+        shock.sync(live, mix);
+        hud.sync(live, mix);
+        freezer.sync(live);
         // Overhead all afternoon. Through the roof it is a faint thud; outdoors it is the floor
         // under every other sound.
         const overhead = helicopterAt(clock);
@@ -1044,17 +1152,19 @@ export function createAudio({ onCaption } = {}) {
         for (const source of running) { try { source.stop(); } catch { /* already stopped */ } }
         try {
             for (const node of nodes) node.disconnect();
-            master.disconnect(); wetSend.disconnect();
+            master.disconnect(); wetSend.disconnect(); freezer.dispose(); shock.dispose(); hud.dispose();
+            window.removeEventListener('pocapitol:menu', menu.listen);
             for (const slot of slots) { slot.convolver.disconnect(); slot.level.disconnect(); }
         } catch { /* already disconnected */ }
         // Leave the listener where the rest of the app expects it: the origin, looking down -Z.
         listener.x = 0; listener.z = 0; listener.yaw = 0; aimListener();
     }
     /** Routes the whole mix through a phone's microphone (or back out of it). */
+    function setHudSound(on) { hud.on = on !== false; }
     function setFootage(on) {
         footage = on === true;
         ease(dry.gain, footage ? 0 : 1, 0.15);
         ease(mic.gain, footage ? 1.5 : 0, 0.15);
     }
-    return { update, event, dispose, setFootage };
+    return { update, event, dispose, setFootage, setHudSound };
 }

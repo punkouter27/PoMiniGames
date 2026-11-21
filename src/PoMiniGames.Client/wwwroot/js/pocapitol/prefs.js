@@ -29,7 +29,7 @@ const ALWAYS = { forward: ['ArrowUp'], back: ['ArrowDown'] };
 export const DEFAULTS = Object.freeze({
     sensitivity: 1, fov: 62, captions: false, contrast: 'normal', radar: 'auto', director: true,
     tracers: 'luminous', motion: 'full', footage: 'light', debrief: 'rules', debriefModel: 'llama3.2', score: 'off', hailer: 'off',
-    overlay: 'off',
+    overlay: 'off', hudSound: 'on',
 });
 
 const clamp = (value, low, high, fallback) =>
@@ -59,7 +59,8 @@ export function sanitizePrefs(raw) {
         contrast: oneOf(value.contrast, ['normal', 'high'], DEFAULTS.contrast),
         radar: oneOf(value.radar, ['auto', 'default', 'colorsafe'], DEFAULTS.radar),
         director: value.director !== false,
-        tracers: oneOf(value.tracers, ['luminous', 'stealth', 'off'], DEFAULTS.tracers),
+        // 'stealth' was retired from the options (it read as a third "off"); a saved one becomes the default.
+        tracers: oneOf(value.tracers, ['luminous', 'off'], DEFAULTS.tracers),
         motion: oneOf(value.motion, ['full', 'reduced'], DEFAULTS.motion),
         // How much of the picture is a phone in the crowd: all of it (with the phone's microphone
         // on the sound as well), a trace of it on the picture only, or none.
@@ -73,6 +74,9 @@ export function sanitizePrefs(raw) {
         hailer: oneOf(value.hailer, ['on', 'off'], DEFAULTS.hailer),
         // The analysis overlay on the ground (overlay.js): Fruin density, contagion, or nothing.
         overlay: oneOf(value.overlay, ['off', 'density', 'contagion'], DEFAULTS.overlay),
+        // The sonified HUD (hudWorklet.js): a creak that follows your line's integrity and a tick
+        // that follows the crowd's density. On by default; both cues are quiet.
+        hudSound: oneOf(value.hudSound, ['on', 'off'], DEFAULTS.hudSound),
         debriefModel: typeof value.debriefModel === 'string' && /^[\w.:\/-]{1,60}$/.test(value.debriefModel)
             ? value.debriefModel : DEFAULTS.debriefModel,
         keys,
