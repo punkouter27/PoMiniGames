@@ -37,8 +37,8 @@
 //   OnResumed() · OnPaused(reason) · OnFatalError(message)
 //   Online only: OnLockstepBatch(batch) · OnCarve(kind, structure, x, y, z) · OnChaliceClaimed()
 
-import * as THREE from 'three';
-import * as CANNON from 'cannon-es';
+import * as THREE from 'three-eco/webgpu';
+import { PhysBody, TYPE, loadRapier } from './rapierWorld.js';
 import { buildWorld, ARENA_HALF } from './world.js';
 import { DebrisManager } from './debris.js';
 import { Weapon } from './combat.js';
@@ -54,6 +54,7 @@ import { DecalField } from './decals.js';
 import { FortressGuns, Chalice } from './fortress.js';
 import { ShrapnelField } from './shrapnel.js';
 import { createPhysicsWorld, PHYSICS_STEP as SI_PHYSICS_STEP } from './physics.js';
+import { wireImpacts } from './impacts.js';
 import { Avatar } from './avatar.js';
 import { AltInput } from './input.js';
 import { Weather } from './weather.js';
@@ -80,9 +81,9 @@ const LOOK_RAD_PER_PX = 0.0025;
 const STRIDE_M = 2.3;                   // ground covered per footstep sound
 const PHYSICS_STEP = SI_PHYSICS_STEP;
 // The player is a rigid body now (see _buildPlayerBody). A sphere, not a capsule:
-// cannon-es has no capsule primitive, and a single sphere at the hips with a ground probe
-// underneath is the standard, robust way to do this — it cannot catch its corners on a
-// voxel edge the way a box does, and every FPS controller built on cannon works this way.
+// A single sphere at the hips with a ground probe underneath is the standard, robust way to
+// do this — it cannot catch its corners on a voxel edge the way a box does (a capsule would
+// work too, but the sphere is what the tuning below was done against).
 const PLAYER_RADIUS = 0.45;
 const PLAYER_MASS = 80;                 // kg
 const PLAYER_EYE_ABOVE_CENTRE = 0.75;
@@ -353,14 +354,9 @@ export class Engine {
     this.skyEnv = new SkyEnvironment(this.renderer, this.scene, this.q);
     this.skyEnv.update(0, this.vfx.skyKey, this.vfx._sunDir, true);
     this.particles = new ParticleSystem(this.scene, this.q.particles);
-    const drawSize = this.renderer.getDrawingBufferSize(new THREE.Vector2());
-    this.particles.setViewportHeight(drawSize.y, drawSize.x);
     this.particles.setSoftLighting({
-      // The depth COPY, not sceneTarget's own depth: the particles draw inside the
-      // pass that writes sceneTarget, so sampling its depth there is a feedback loop.
-      depthTexture: this.vfx.softDepthTexture,
-      near: this.camera.near,
-      far: this.camera.far,
+      // Soft depth fade reads the renderer's own viewport depth (an opaque-pass copy the
+      // renderer makes on demand), so there is no hand-rolled depth blit any more.
       sunDir: this.vfx._sunDir,
       sunColor: this.vfx.skyKey?.sun,
       enabled: !!this.q.softSmoke,
@@ -390,11 +386,11 @@ export class Engine {
     this._stride = 0;
     this.indoors = 0;
 
-    // Physics: cannon-es (the platform's physics engine — PoRacer/PoMarbleRace ship it
-    // via the same import map).
-    // SI units, sweep-and-prune broadphase and the full per-material contact table all
-    // come from physics.js — there is one definition of what stone-on-stone means.
-    const built2 = createPhysicsWorld();
+    // Physics: Rapier (rapierWorld.js; cannon-es is gone from this game). SI units and the
+    // per-surface contact table come from physics.js — there is one definition of what
+    // stone-on-stone means.
+    // Rapier is WASM: it must be up before the world is built (start() is async for this).
+    const built2 = createPhysicsWorld(await loadRapier());
     this.physicsWorld = built2.world;
     this.physicsMaterials = built2.materials;
     this.physicsAccumulator = 0;
@@ -438,6 +434,8 @@ export class Engine {
       },
     }, this.physicsMaterials);
     this.debris.structures = this.structures; // blast shielding needs the occluders
+    // Every contact-force event -> platform impactSynth by voxel material, + PoImpact for heavy hits.
+    this.impacts = wireImpacts(this.physicsWorld, () => this);
     // The structural solve runs in a worker now, so detached mass arrives a frame or two
     // after the shot that caused it rather than as a return value. This is the delivery
     // point; scoring still counts every voxel, just slightly later.
@@ -588,6 +586,7 @@ export class Engine {
     // zeroes it), the deferred ResizeObserver, pause-on-hidden and listener teardown. The sim's
     // own accumulator, hit-stop scale and trauma shake (rotation + shader uniform) stay here.
     this.stage = createStage({ kind: '3d', container: this.host, exclude: ['shake'], maxDt: 0.05, onFrame: (dt) => this._frame(dt), onResize: () => this._resize() });
+    this.stage.userData.isOnline = () => this.mode === 'multi';   // photo mode never opens in a live match
     this.stage.listen(window, 'keydown', this._onKeyDown);
     this.stage.listen(window, 'keyup', this._onKeyUp);
     this.stage.listen(document, 'pointerlockchange', this._onPointerLockChange);
@@ -684,6 +683,8 @@ export class Engine {
     this.debris?.dispose();
     for (const s of this.structures ?? []) s.dispose();
     this.terrain?.dispose(this.scene, this.physicsWorld);
+    this.impacts?.dispose();
+    this.physicsWorld?.dispose();
 
     // Free GPU resources explicitly — this SPA holds one live GL context per mounted 3D
     // game and Chrome caps the pool (~16), so a leaked context starves sibling games.
@@ -797,6 +798,7 @@ export class Engine {
       this.terrain.updateLod(this.camera.position);
       this.terrain.rebuildDirty(Math.max(0, remeshBudget)); // no-op unless a dig landed
       this.terrain.rebuildCollider();
+      this.terrain.flushCollider();
     }
 
     if (playing) this._updateFeel(dt);
@@ -815,14 +817,11 @@ export class Engine {
     tickMaterials(this.vfx.time);
     this.vfx.applyShake(); // AFTER lookAt so the shake never fights the follow lerp
     this.particles.setSoftLighting({
-      depthTexture: this.vfx.softDepthTexture,
-      near: this.camera.near,
-      far: this.camera.far,
       sunDir: this.vfx._sunDir,
       sunColor: this.vfx.skyKey?.sun,
       enabled: !!this.q.softSmoke,
     });
-    this.particles.update(sdt);
+    this.particles.update(sdt, this.camera);
     this.decals.update(dt);
     this.damage?.update(sdt);
     this.shrapnel.update(sdt);
@@ -1171,9 +1170,9 @@ export class Engine {
     if (change.tier !== this.q.renderTier) {
       applyRenderTier(this.q, change.tier);
       this.shrapnel?.setBudget(this.q.shrapnel);
-      this.sun.shadow.map?.dispose();
-      this.sun.shadow.map = null;
-      this.sun.shadow.mapSize.set(this.q.shadowMapSize, this.q.shadowMapSize);
+      // The shadow map is never resized or disposed live on the r186 renderer (the renderer
+      // keeps its own handle to it: replacing it mid-run is a validation error / a black frame).
+      // A tier change only flips whether the sun casts.
       this.sun.castShadow = this.q.shadows;
       this.renderer.shadowMap.enabled = this.q.shadows;
       this.vfx.syncQuality();
@@ -1326,21 +1325,20 @@ export class Engine {
    */
   _buildPlayerBody() {
     const p = this.player.position;
-    this.playerBody = new CANNON.Body({
+    this.playerBody = new PhysBody({
       mass: PLAYER_MASS,
-      shape: new CANNON.Sphere(PLAYER_RADIUS),
-      position: new CANNON.Vec3(p.x, p.y + PLAYER_RADIUS, p.z),
+      position: { x: p.x, y: p.y + PLAYER_RADIUS, z: p.z },
       material: this.physicsMaterials.player,
       linearDamping: 0.0,
       angularDamping: 1.0,
       allowSleep: false,
-      collisionFilterGroup: PLAYER_GROUP,
-      collisionFilterMask: WORLD_GROUP | PLAYER_GROUP,
+      ccd: true,
+      fixedRotation: true,   // no tumbling; the camera owns orientation
+      group: PLAYER_GROUP,
+      mask: WORLD_GROUP | PLAYER_GROUP,
     });
-    this.playerBody.fixedRotation = true;   // no tumbling; the camera owns orientation
-    this.playerBody.updateMassProperties();
+    this.playerBody.addBall(PLAYER_RADIUS);
     this.physicsWorld.addBody(this.playerBody);
-    this._groundRay = { from: new CANNON.Vec3(), to: new CANNON.Vec3() };
     this.onGround = false;
   }
 
@@ -1352,17 +1350,11 @@ export class Engine {
   _probeGround() {
     if (!this.playerBody) return false;
     const b = this.playerBody.position;
-    this._groundRay.from.set(b.x, b.y, b.z);
-    this._groundRay.to.set(b.x, b.y - GROUND_PROBE, b.z);
-    const result = this._rayResult ??= new CANNON.RaycastResult();
-    result.reset();
     // The ray starts at the body's own centre, so without a filter it can hit the player
     // sphere first and report "airborne" while standing still. Filtering by group is the
     // fix; treating a self-hit as not-grounded (the first attempt) meant the step assist
     // never ran and ground movement permanently used the sluggish in-air control factor.
-    this.physicsWorld.raycastClosest(this._groundRay.from, this._groundRay.to,
-      { skipBackfaces: true, collisionFilterMask: WORLD_GROUP }, result);
-    return result.hasHit;
+    return this.physicsWorld.rayDownHits(b.x, b.y, b.z, GROUND_PROBE, WORLD_GROUP);
   }
 
   /** @param from world position of whatever did it (a wall gun), for the HUD's hit arc */
@@ -1807,7 +1799,7 @@ export class Engine {
     this.renderer.setSize(width, height);
     this.vfx?.resize(width, height);
     const ratio = this.renderer.getPixelRatio();
-    this.particles?.setViewportHeight(height * ratio, width * ratio);
+    this.particles?.setViewportHeight(height * ratio, width * ratio);   // no-op: quads follow the lens
   }
 
   // ── Pointer lock ───────────────────────────────────────────────────────

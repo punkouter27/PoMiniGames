@@ -8,8 +8,8 @@
 // to the ground" (severed) and "cantilever exceeds material strength" (too far from a
 // support column) in one BFS, at ~2-5 ms for a typical asset.
 
-import * as THREE from 'three';
-import * as CANNON from 'cannon-es';
+import * as THREE from 'three-eco/webgpu';
+import { PhysBody, TYPE } from './rapierWorld.js';
 import { createVoxelMaterial, markCrack } from './materials.js';
 import { greedyBoxes } from './voxelboxes.js';
 import { greedyMesh } from './greedymesh.js';
@@ -240,7 +240,7 @@ export class Structure {
         (MATERIAL_PRESETS.stone.compressive / this.crushStress[v]) ** 0.25));
     }
     this.surface = surfaceOf(this.materialTable[0]);
-    this.physicsMaterial = physicsMaterials ? physicsMaterials[this.surface] : undefined;
+    this.physicsMaterial = physicsMaterials ? physicsMaterials[this.surface] : 'stone';
 
     // Async solve bookkeeping. `onClusters` is set by the engine and is how detached mass
     // reaches the debris system now that the answer arrives a frame or two after the shot.
@@ -1064,23 +1064,19 @@ export class Structure {
       if (!any) continue;
 
       const { boxes, count } = greedyBoxes(sub, [w, h, d], COLLIDER_BOX_BUDGET);
-      const body = new CANNON.Body({ type: CANNON.Body.STATIC, material: this.physicsMaterial });
-      body.voxelBoundsStatic = true;
-      // Cannon's broadphase uses position ± boundingRadius. Anchoring every chunk at
-      // the building origin inflated that radius by its offset across the fortress.
-      // Keep shape coordinates chunk-local so distant chunks can actually be rejected.
+      const body = new PhysBody({ type: TYPE.STATIC, material: this.physicsMaterial });
+      // Shape coordinates stay chunk-local (not anchored at the building origin) so the
+      // broadphase bounds of a distant chunk are tight and it is rejected cheaply.
       const centerX = (x0 + w / 2 - this.cx) * this.scale;
       const centerY = (y0 + h / 2) * this.scale;
       const centerZ = (z0 + d / 2 - this.cz) * this.scale;
       for (let i = 0; i < count; i++) {
         const o = i * 6;
-        body.addShape(
-          new CANNON.Box(new CANNON.Vec3(
-            boxes[o + 3] * this.scale, boxes[o + 4] * this.scale, boxes[o + 5] * this.scale)),
-          new CANNON.Vec3(
-            (boxes[o] - w / 2) * this.scale,
-            (boxes[o + 1] - h / 2) * this.scale,
-            (boxes[o + 2] - d / 2) * this.scale));
+        body.addBox(
+          boxes[o + 3] * this.scale, boxes[o + 4] * this.scale, boxes[o + 5] * this.scale,
+          (boxes[o] - w / 2) * this.scale,
+          (boxes[o + 1] - h / 2) * this.scale,
+          (boxes[o + 2] - d / 2) * this.scale);
       }
       const cos = Math.cos(ry), sin = Math.sin(ry);
       body.position.set(

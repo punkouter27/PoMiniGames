@@ -13,7 +13,7 @@
 // wavelength, so a 2 m terrain step and the structures' own voxel DDA are already more
 // precise than the ear. Structures are rejected by bounding sphere before any march.
 
-import * as THREE from 'three';
+import * as THREE from 'three-eco/webgpu';
 
 const TERRAIN_STEP_M = 2;
 const REFLECT_MAX_M = 48;

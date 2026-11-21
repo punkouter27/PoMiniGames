@@ -14,51 +14,48 @@
 // race.js already drew. Each streak lies on the road under its car (the car's own height:
 // hills and banking), not at sea level.
 
-import * as THREE from 'three';
+import * as THREE from './three.js';
+import {
+    uniform, varying, instancedBufferAttribute, positionGeometry, cameraProjectionMatrix, cameraViewMatrix, vec2, vec4, float,
+    length, max, min, clamp, smoothstep, exp, sin, select,
+} from 'three-eco/tsl';
 
 const MAX = 32;
 const TAIL = new THREE.Color('#ff2a18');
 const TAILS = [new THREE.Vector3(-1.9, 0.56, 0.56), new THREE.Vector3(-1.9, 0.56, -0.56)];
 
-const VERT = /* glsl */ `
-attribute vec4 aLight;     // world x, world z, light height, intensity
-attribute vec3 aColor;
-attribute float aGround;   // road height under the light (world y)
-uniform vec3 uCam;
-varying vec2 vQ;
-varying vec3 vColor;
-varying float vI;
-void main() {
-    vec2 foot = aLight.xy;
-    vec2 toCam = uCam.xz - foot;
-    float dist = length(toCam);
-    vec2 dir = toCam / max(dist, 1e-3);
-    vec2 side = vec2(-dir.y, dir.x);
+/**
+ * The streak material as a TSL node material (r186). The per-light attributes are the instanced
+ * buffers on the geometry (aLight: world x, z, height, intensity; aColor; aGround). One graph, so
+ * one program; `uniforms` keeps the old names (`uCam`, `uTime`) as uniform nodes with `.value`.
+ */
+function streakMaterial(light, color, ground) {
+    const U = { uCam: uniform(new THREE.Vector3()), uTime: uniform(0) };
+    const aLight = instancedBufferAttribute(light), aColor = instancedBufferAttribute(color), aGround = instancedBufferAttribute(ground);
+    const q = positionGeometry.xy;
+    const foot = aLight.xy;
+    const toCam = U.uCam.xz.sub(foot);
+    const dist = length(toCam);
+    const dir = toCam.div(max(dist, 1e-3));
+    const side = vec2(dir.y.negate(), dir.x);
     // The mirror image sits under the light; roughness smears it toward the eye,
     // longer for a higher light and a longer view across the wet.
-    float len = clamp(aLight.z * 2.4 + dist * 0.14, 1.0, max(1.0, min(dist * 0.85, 28.0)));
-    float width = 0.16 + aLight.z * 0.05;
-    vec2 p = foot + side * position.x * width + dir * position.y * len;
-    vQ = position.xy;
-    vColor = aColor;
-    vI = aLight.w * smoothstep(120.0, 55.0, dist);
-    gl_Position = projectionMatrix * viewMatrix * vec4(p.x, aGround + 0.06, p.y, 1.0);
-}`;
-
-const FRAG = /* glsl */ `
-uniform float uTime;
-varying vec2 vQ;
-varying vec3 vColor;
-varying float vI;
-void main() {
-    float across = exp(-vQ.x * vQ.x * 3.2);
-    float along = smoothstep(0.0, 0.06, vQ.y) * (1.0 - vQ.y) * (1.0 - vQ.y);
-    float band = 0.6 + 0.4 * sin(vQ.y * 42.0 - uTime * 5.0 + vQ.x * 2.5 + vColor.r * 9.0);
-    float a = across * along * band * vI;
-    if (a < 0.003) discard;
-    gl_FragColor = vec4(vColor * a, 1.0);
-    #include <colorspace_fragment>
-}`;
+    const len = clamp(aLight.z.mul(2.4).add(dist.mul(0.14)), 1, max(1, min(dist.mul(0.85), 28)));
+    const width = aLight.z.mul(0.05).add(0.16);
+    const p = foot.add(side.mul(q.x).mul(width)).add(dir.mul(q.y).mul(len));
+    const vQ = varying(q, 'vWQ'), vColor = varying(aColor, 'vWColor');
+    const vI = varying(aLight.w.mul(float(1).sub(smoothstep(55, 120, dist))), 'vWI');
+    const across = exp(vQ.x.mul(vQ.x).mul(-3.2));
+    const along = smoothstep(0, 0.06, vQ.y).mul(float(1).sub(vQ.y)).mul(float(1).sub(vQ.y));
+    const band = sin(vQ.y.mul(42).sub(U.uTime.mul(5)).add(vQ.x.mul(2.5)).add(vColor.r.mul(9))).mul(0.4).add(0.6);
+    const a = across.mul(along).mul(band).mul(vI);
+    const m = new THREE.MeshBasicNodeMaterial({ transparent: true, depthWrite: false, blending: THREE.AdditiveBlending });
+    m.vertexNode = cameraProjectionMatrix.mul(cameraViewMatrix).mul(vec4(p.x, aGround.add(0.06), p.y, 1));
+    m.colorNode = vColor.mul(a);
+    m.opacityNode = select(a.lessThan(0.003), float(0), float(1));
+    m.uniforms = U;
+    return m;
+}
 
 export class WetReflections {
     /** @param sceneHandle scene.js SceneHandle */
@@ -75,14 +72,7 @@ export class WetReflections {
         quad.setAttribute('aGround', this.ground);
         quad.instanceCount = 0;
         this.geom = quad;
-        this.material = new THREE.ShaderMaterial({
-            vertexShader: VERT,
-            fragmentShader: FRAG,
-            uniforms: { uCam: { value: new THREE.Vector3() }, uTime: { value: 0 } },
-            transparent: true,
-            depthWrite: false,
-            blending: THREE.AdditiveBlending,
-        });
+        this.material = streakMaterial(this.light, this.color, this.ground);
         this.mesh = new THREE.Mesh(quad, this.material);
         this.mesh.frustumCulled = false;
         this.mesh.renderOrder = 3;

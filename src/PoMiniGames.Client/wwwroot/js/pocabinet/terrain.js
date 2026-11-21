@@ -20,7 +20,7 @@
 //
 // Also the home of the theme lookup (track.theme with a fallback).
 
-import * as THREE from 'three';
+import * as THREE from './three.js';
 import { runOffAt } from './physics.js';
 import { WORLD_SCALE as WS, hash, fnv1a, clamp01 } from './util.js';
 

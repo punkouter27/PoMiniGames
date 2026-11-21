@@ -5,94 +5,87 @@
 // A short-lived pooled PointLight illuminates nearby masonry, and a smoke puff follow-up
 // lingers after the fireball cools.
 
-import * as THREE from 'three';
+import * as THREE from 'three-eco/webgpu';
+import {
+  cameraPosition, dot, floor, fract, mix, modelWorldMatrix, normalGeometry, normalize, positionGeometry, positionWorld, select,
+  smoothstep, userData, varying, vec3, vec4, clamp, max, float, Fn, cameraProjectionMatrix, cameraViewMatrix, transformNormalToView,
+} from 'three-eco/tsl';
 
 const FIREBALL_LIFE_S = 0.65;
 const LIGHT_POOL_SIZE = 4;
 
-const FIREBALL_VERTEX = /* glsl */`
-  uniform float uAge;
-  uniform float uSeed;
-  varying vec3 vNormal;
-  varying vec3 vViewDir;
-  varying float vNoise;
+// Per-fireball state (age, seed) rides on mesh.userData and is read through userData nodes, so
+// every fireball shares ONE node graph and one compiled program. (A graph per spawn would
+// compile a pipeline per explosion: a visible hitch at the exact moment of the blast.)
+const uAge = userData('uAge', 'float');
+const uSeed = userData('uSeed', 'float');
 
-  float hash31(vec3 p) {
-    p = fract(p * 0.1031);
-    p += dot(p, p.yzx + 33.33);
-    return fract((p.x + p.y) * p.z);
+const hash31 = Fn(([p0]) => {
+  const p = fract(p0.mul(0.1031)).toVar();
+  p.addAssign(dot(p, p.yzx.add(33.33)));
+  return fract(p.x.add(p.y).mul(p.z));
+});
+
+const noise3 = Fn(([p]) => {
+  const i = floor(p);
+  const f0 = fract(p);
+  const f = f0.mul(f0).mul(f0.mul(-2).add(3));
+  const h = (ox, oy, oz) => hash31(i.add(vec3(ox, oy, oz)));
+  const x00 = mix(h(0, 0, 0), h(1, 0, 0), f.x);
+  const x10 = mix(h(0, 1, 0), h(1, 1, 0), f.x);
+  const x01 = mix(h(0, 0, 1), h(1, 0, 1), f.x);
+  const x11 = mix(h(0, 1, 1), h(1, 1, 1), f.x);
+  return mix(mix(x00, x10, f.y), mix(x01, x11, f.y), f.z);
+});
+
+// 3-octave FBM; octaves unrolled (the loop count is fixed at 3).
+const fbm = Fn(([p0]) => {
+  const p = p0.toVar();
+  const v = float(0).toVar();
+  let amp = 0.5;
+  for (let o = 0; o < 3; o++) {
+    v.addAssign(noise3(p).mul(amp));
+    p.assign(p.mul(2.07).add(vec3(1.7, 3.2, 2.1)));
+    amp *= 0.5;
   }
+  return v;
+});
 
-  float noise3(vec3 p) {
-    vec3 i = floor(p);
-    vec3 f = fract(p);
-    f = f * f * (3.0 - 2.0 * f);
-    return mix(
-      mix(mix(hash31(i), hash31(i + vec3(1.0, 0.0, 0.0)), f.x),
-          mix(hash31(i + vec3(0.0, 1.0, 0.0)), hash31(i + vec3(1.0, 1.0, 0.0)), f.x), f.y),
-      mix(mix(hash31(i + vec3(0.0, 0.0, 1.0)), hash31(i + vec3(1.0, 0.0, 1.0)), f.x),
-          mix(hash31(i + vec3(0.0, 1.0, 1.0)), hash31(i + vec3(1.0, 1.0, 1.0)), f.x), f.y), f.z);
-  }
+// 1.0 = white-hot core, 0.65 = yellow-orange, 0.35 = deep red, 0.0 = dark soot smoke
+const blackbodyRamp = (temp) => {
+  const soot = vec3(0.08, 0.06, 0.05), red = vec3(0.95, 0.18, 0.03);
+  const orange = vec3(1.8, 0.78, 0.15), white = vec3(3.4, 3.1, 2.5);
+  return select(temp.lessThan(0.35), mix(soot, red, temp.div(0.35)),
+    select(temp.lessThan(0.7), mix(red, orange, temp.sub(0.35).div(0.35)), mix(orange, white, temp.sub(0.7).div(0.3))));
+};
 
-  float fbm(vec3 p) {
-    float v = 0.0;
-    float a = 0.5;
-    for (int i = 0; i < 3; i++) {
-      v += a * noise3(p);
-      p = p * 2.07 + vec3(1.7, 3.2, 2.1);
-      a *= 0.5;
-    }
-    return v;
-  }
-
-  void main() {
-    vec3 n = normalize(normal);
-    float nVal = fbm(n * 3.2 + vec3(0.0, -uAge * 4.5, uSeed * 11.3));
-    vNoise = nVal;
-    float disp = (nVal - 0.35) * (0.35 + uAge * 0.55);
-    vec3 displaced = position + n * disp;
-    vec4 worldPos = modelMatrix * vec4(displaced, 1.0);
-    vNormal = normalize(mat3(modelMatrix) * n);
-    vViewDir = normalize(cameraPosition - worldPos.xyz);
-    gl_Position = projectionMatrix * viewMatrix * worldPos;
-  }
-`;
-
-const FIREBALL_FRAGMENT = /* glsl */`
-  uniform float uAge;
-  varying vec3 vNormal;
-  varying vec3 vViewDir;
-  varying float vNoise;
-
-  vec3 blackbodyRamp(float temp) {
-    // 1.0 = white-hot core, 0.65 = yellow-orange, 0.35 = deep red, 0.0 = dark soot smoke
-    vec3 soot = vec3(0.08, 0.06, 0.05);
-    vec3 red = vec3(0.95, 0.18, 0.03);
-    vec3 orange = vec3(1.8, 0.78, 0.15);
-    vec3 white = vec3(3.4, 3.1, 2.5);
-    if (temp < 0.35) return mix(soot, red, temp / 0.35);
-    if (temp < 0.7) return mix(red, orange, (temp - 0.35) / 0.35);
-    return mix(orange, white, (temp - 0.7) / 0.3);
-  }
-
-  void main() {
-    float ndv = clamp(dot(normalize(vNormal), normalize(vViewDir)), 0.0, 1.0);
-    // Core is hottest at center (ndv near 1) and cools with age + FBM turbulence
-    float heat = clamp(ndv * 0.75 + vNoise * 0.55 - uAge * 0.85, 0.0, 1.0);
-    vec3 col = blackbodyRamp(heat);
-    float edgeFade = smoothstep(0.0, 0.22, ndv);
-    float lifeFade = 1.0 - smoothstep(0.45, 1.0, uAge);
-    float alpha = clamp(edgeFade * lifeFade * (0.65 + 0.35 * vNoise), 0.0, 1.0);
-    if (alpha < 0.01) discard;
-    gl_FragColor = vec4(col, alpha);
-  }
-`;
+function buildFireballMaterial() {
+  const n = normalize(normalGeometry);
+  const nVal = fbm(n.mul(3.2).add(vec3(0, uAge.mul(-4.5), uSeed.mul(11.3))));
+  const disp = nVal.sub(0.35).mul(uAge.mul(0.55).add(0.35));
+  const displaced = positionGeometry.add(n.mul(disp));
+  const worldPos = modelWorldMatrix.mul(vec4(displaced, 1)).xyz;
+  const material = new THREE.MeshBasicNodeMaterial({ transparent: true, depthWrite: false, fog: false });
+  material.vertexNode = cameraProjectionMatrix.mul(cameraViewMatrix).mul(vec4(worldPos, 1));
+  const vNormal = varying(normalize(modelWorldMatrix.mul(vec4(n, 0)).xyz));
+  const vViewDir = varying(normalize(cameraPosition.sub(worldPos)));
+  const vNoise = varying(nVal);
+  const ndv = clamp(dot(normalize(vNormal), normalize(vViewDir)), 0, 1);
+  // Core is hottest at centre (ndv near 1) and cools with age + FBM turbulence.
+  const heat = clamp(ndv.mul(0.75).add(vNoise.mul(0.55)).sub(uAge.mul(0.85)), 0, 1);
+  const edgeFade = smoothstep(0, 0.22, ndv);
+  const lifeFade = smoothstep(0.45, 1.0, uAge).oneMinus();
+  material.colorNode = blackbodyRamp(heat);
+  material.opacityNode = clamp(edgeFade.mul(lifeFade).mul(vNoise.mul(0.35).add(0.65)), 0, 1);
+  return material;
+}
 
 export class FireballPool {
   constructor(scene, onSmoke = null) {
     this.scene = scene;
     this.onSmoke = onSmoke; // optional (point, radius) callback for follow-up smoke puff
     this.geometry = new THREE.SphereGeometry(1, 20, 16);
+    this.material = buildFireballMaterial();   // shared by every fireball
     this.active = [];
     this.lights = [];
     this.lightCursor = 0;
@@ -107,17 +100,9 @@ export class FireballPool {
 
   spawn(point, radius = 4.5, enabled = true) {
     if (!enabled) return;
-    const material = new THREE.ShaderMaterial({
-      uniforms: {
-        uAge: { value: 0 },
-        uSeed: { value: Math.random() * 10 },
-      },
-      vertexShader: FIREBALL_VERTEX,
-      fragmentShader: FIREBALL_FRAGMENT,
-      transparent: true,
-      depthWrite: false,
-    });
-    const mesh = new THREE.Mesh(this.geometry, material);
+    const mesh = new THREE.Mesh(this.geometry, this.material);
+    mesh.userData.uAge = 0;
+    mesh.userData.uSeed = Math.random() * 10;
     mesh.position.copy(point);
     mesh.scale.setScalar(Math.max(0.5, radius * 0.28));
     mesh.renderOrder = 3;
@@ -136,7 +121,6 @@ export class FireballPool {
 
     this.active.push({
       mesh,
-      material,
       point: point.clone(),
       radius,
       age: 0,
@@ -169,26 +153,23 @@ export class FireballPool {
       }
       if (normAge >= 1) {
         this.scene.remove(f.mesh);
-        f.material.dispose();
         this.active.splice(i, 1);
         continue;
       }
-      f.material.uniforms.uAge.value = normAge;
+      f.mesh.userData.uAge = normAge;
       const grow = f.radius * (0.28 + 0.82 * (1 - Math.pow(1 - normAge, 2.4)));
       f.mesh.scale.setScalar(grow);
     }
   }
 
   dispose() {
-    for (const f of this.active) {
-      this.scene.remove(f.mesh);
-      f.material.dispose();
-    }
+    for (const f of this.active) this.scene.remove(f.mesh);
     this.active.length = 0;
     for (const slot of this.lights) {
       this.scene.remove(slot.light);
     }
     this.lights.length = 0;
     this.geometry.dispose();
+    this.material.dispose();
   }
 }

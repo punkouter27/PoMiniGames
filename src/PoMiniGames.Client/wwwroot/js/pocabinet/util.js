@@ -8,7 +8,8 @@
 // Render and audio only. physics.js and track.js keep their own arithmetic: they must stay
 // bit-identical with the C# replay that verifies lap proofs.
 
-import * as THREE from 'three';
+import * as THREE from './three.js';
+import * as TSL from 'three-eco/tsl';
 
 /** Sim units per world (three.js) unit: sim (x, y) → world (x / 10, h, y / 10). */
 export const WORLD_SCALE = 10;
@@ -111,23 +112,51 @@ export function canvasTexture(w, h, draw, { srgb = true, repeat = false, anisotr
     return t;
 }
 
-// ── Shader hooks ────────────────────────────────────────────────────────────
+// ── Shader hooks (TSL) ───────────────────────────────────────────────────────
 
 /**
- * Chain an onBeforeCompile hook onto a material: each material keeps a list and one
- * onBeforeCompile runs them in order; the program cache key is the hooks' keys, so materials
- * with the same hooks share a program.
+ * Chain a TSL node hook onto a node material. The r165 version patched GLSL chunks in
+ * onBeforeCompile; the r186 WebGPURenderer has no chunks, a material carries nodes instead
+ * (colorNode, roughnessNode, positionNode, normalNode, emissiveNode, outputNode).
+ *
+ * `build()` is called ONCE per `key` (the key must name every parameter that changes the graph)
+ * and returns { color, rough, position, normal, emissive, output }: each an optional function
+ * (previousNode) => nextNode. A hook's per-instance values are not closed over: they are
+ * uniform nodes created inside build() and shared (clock, weather) or userData nodes. The
+ * chain of keys on a material is folded into one set of nodes, cached by the joined key, so
+ * every material with the same hooks shares ONE node graph and ONE compiled program (a
+ * graph per instance made every instance compile its own, the PoBrawl lesson).
  */
-const HOOKS = new WeakMap();
-export function addHook(material, key, fn) {
-    // Kept off userData: Material.clone() deep-copies that as JSON, functions dropped.
-    let hooks = HOOKS.get(material);
-    if (!hooks) {
-        HOOKS.set(material, hooks = []);
-        material.onBeforeCompile = (shader, renderer) => { for (const h of hooks) h.fn(shader, renderer); };
-        material.customProgramCacheKey = () => hooks.map(h => h.key).join('|');
+const HOOK_SPEC = new Map();      // key -> spec
+const CHAIN = new WeakMap();      // material -> [key]
+const FOLDED = new Map();         // joined keys -> { colorNode, ... }
+const CHANNELS = [
+    ['color', 'colorNode', () => TSL.materialColor],
+    ['rough', 'roughnessNode', () => TSL.materialRoughness],
+    ['position', 'positionNode', () => TSL.positionLocal],
+    ['normal', 'normalNode', () => TSL.materialNormal],
+    ['emissive', 'emissiveNode', () => TSL.materialEmissive],
+    ['metal', 'metalnessNode', () => TSL.materialMetalness],
+    ['clearcoat', 'clearcoatNode', () => TSL.materialClearcoat],
+    ['clearcoatRough', 'clearcoatRoughnessNode', () => TSL.materialClearcoatRoughness],
+    ['output', 'outputNode', () => TSL.output],
+];
+export function addHook(material, key, build) {
+    if (!HOOK_SPEC.has(key)) HOOK_SPEC.set(key, build());
+    let chain = CHAIN.get(material);
+    if (!chain) CHAIN.set(material, chain = []);
+    chain.push(key);
+    const joined = chain.join('|');
+    let nodes = FOLDED.get(joined);
+    if (!nodes) {
+        nodes = {};
+        for (const [ch, prop, base] of CHANNELS) {
+            const fns = chain.map(k => HOOK_SPEC.get(k)[ch]).filter(Boolean);
+            if (fns.length) nodes[prop] = fns.reduce((n, fn) => fn(n), base());
+        }
+        FOLDED.set(joined, nodes);
     }
-    hooks.push({ key, fn });
+    for (const [prop, node] of Object.entries(nodes)) material[prop] = node;
     material.needsUpdate = true;
     return material;
 }

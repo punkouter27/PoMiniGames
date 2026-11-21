@@ -12,11 +12,22 @@
 // for a machine that cannot afford Standard across 2.2 M triangles.
 //
 // The probe is a 64×32 equirectangular gradient — sky above, ground bounce below, sun
-// disc where the sun is — pushed through PMREMGenerator and assigned to scene.environment.
+// disc where the sun is — assigned to scene.environment (the WebGPU renderer prefilters an
+// equirect environment itself, and re-prefilters when the texture's version moves).
+//
+// r186 / TSL. The two ShaderMaterial-era hooks that used to live here as onBeforeCompile
+// string surgery (hot carve rims + crack fissures, both evaluated in WORLD space) are node
+// graphs now: `colorNode` darkens by the crack term, `emissiveNode` adds the glow. Every
+// voxel material builds the SAME graph from the same module-level uniform nodes, so they
+// share one program per lighting variant; per-material state (wetness) is plain material
+// colour / roughness, not a graph input.
 // MeshStandardMaterial picks scene.environment up on its own, so nothing has to be
 // re-assigned when the sky changes; only the probe texture is rebuilt.
 
-import * as THREE from 'three';
+import * as THREE from 'three-eco/webgpu';
+import {
+  abs, dot, float, materialColor, max, mix, positionWorld, select, sin, smoothstep, uniform, vec3, vec4,
+} from 'three-eco/tsl';
 
 // Module-scoped tier. Terrain and Structure are constructed deep inside world.js, which
 // has no reason to know about GFX settings, so the tier is published here once by
@@ -39,13 +50,13 @@ const PROBE_INTERVAL_S = 2.5;
  */
 export function createVoxelMaterial(extra = {}, quality = activeQuality) {
   const material = quality.pbr
-    ? new THREE.MeshStandardMaterial({
+    ? new THREE.MeshStandardNodeMaterial({
       vertexColors: true,
       roughness: 0.88,   // stone and dirt; the env probe supplies the only sheen
       metalness: 0.02,   // not zero — a hair of grazing reflection keeps edges readable
       ...extra,
     })
-    : new THREE.MeshLambertMaterial({ vertexColors: true, ...extra });
+    : new THREE.MeshLambertNodeMaterial({ vertexColors: true, ...extra });
   if (quality.hotCarve) hookHotCarve(material);
   voxelMaterials.add(material);
   applyWetness(material);
@@ -64,101 +75,89 @@ export function createVoxelMaterial(extra = {}, quality = activeQuality) {
 // rebuilt. One shared program (customProgramCacheKey), so it costs no extra compiles.
 const HOT_CARVES = 8;
 const HOT_LIFE_S = 2.2;
+// Each slot is a pair of uniform NODES (sphere xyz + radius, birth time) written by
+// markHotCarve; the graph below reads them unrolled, so there is no array-uniform plumbing.
 const hot = {
-  spheres: { value: Array.from({ length: HOT_CARVES }, () => new THREE.Vector4(0, -9999, 0, 0)) },
-  births: { value: new Float32Array(HOT_CARVES).fill(-1000) },
-  time: { value: 0 },
+  spheres: Array.from({ length: HOT_CARVES }, () => uniform(new THREE.Vector4(0, -9999, 0, 0))),
+  births: Array.from({ length: HOT_CARVES }, () => uniform(-1000)),
+  time: uniform(0),
 };
 let hotNext = 0;
 // Crack telegraph: voxels the support solver just pushed into the top stress band get a
 // world-space crack pattern (dark fissures + a faint red pulse) for CRACK_LIFE_S. Purely
 // presentation — the solver's verdict is never delayed, so co-op determinism is untouched.
-// Shares the hot-carve program (same cache key), so it costs no extra compile.
+// Shares the hot-carve graph, so it costs no extra compile.
 const CRACKS = 8;
 const CRACK_LIFE_S = 1.6;
 const crack = {
-  spheres: { value: Array.from({ length: CRACKS }, () => new THREE.Vector4(0, -9999, 0, 0)) },
-  births: { value: new Float32Array(CRACKS).fill(-1000) },
+  spheres: Array.from({ length: CRACKS }, () => uniform(new THREE.Vector4(0, -9999, 0, 0))),
+  births: Array.from({ length: CRACKS }, () => uniform(-1000)),
 };
 let crackNext = 0;
 const voxelMaterials = new Set();
 let wetness = 0;
 
+/** World-space crack mask 0..1 at `p` (a node), over the live crack spheres. */
+function crackAt(p) {
+  let c = float(0);
+  for (let i = 0; i < CRACKS; i++) {
+    const age = hot.time.sub(crack.births[i]);
+    const sph = crack.spheres[i];
+    const d = p.sub(sph.xyz).length();
+    const reach = sph.w.mul(smoothstep(0, 0.35, age));       // fissures spread out
+    const q = p.mul(3.1);
+    const n = abs(sin(dot(q, vec3(1.7, 9.2, 3.1)).add(sin(dot(q, vec3(4.1, -2.7, 6.3))).mul(2.3))));
+    const line = smoothstep(0, 0.09, n).oneMinus();
+    const fade = smoothstep(CRACK_LIFE_S * 0.7, CRACK_LIFE_S, age).oneMinus();
+    const live = age.greaterThanEqual(0).and(age.lessThanEqual(CRACK_LIFE_S)).and(d.lessThanEqual(reach));
+    const v = line.mul(fade).mul(d.div(max(reach, 0.001)).oneMinus());
+    c = max(c, select(live, v, 0));
+  }
+  return c;
+}
+
+/** Hot rims: emissive on the shell of each recent carve sphere, cooling over HOT_LIFE_S. */
+function hotGlowAt(p) {
+  let glow = vec3(0);
+  for (let i = 0; i < HOT_CARVES; i++) {
+    const age = hot.time.sub(hot.births[i]);
+    const sph = hot.spheres[i];
+    const shell = smoothstep(0, 0.6, p.sub(sph.xyz).length().sub(sph.w).abs()).oneMinus();
+    const cool = age.div(HOT_LIFE_S).oneMinus();
+    const live = age.greaterThanEqual(0).and(age.lessThanEqual(HOT_LIFE_S));
+    glow = glow.add(vec3(1.0, 0.34, 0.05).mul(select(live, shell.mul(cool).mul(cool).mul(2.2), 0)));
+  }
+  return glow;
+}
+
 function hookHotCarve(material) {
-  material.onBeforeCompile = (shader) => {
-    shader.uniforms.uHot = hot.spheres;
-    shader.uniforms.uHotBirth = hot.births;
-    shader.uniforms.uHotTime = hot.time;
-    shader.uniforms.uCrack = crack.spheres;
-    shader.uniforms.uCrackBirth = crack.births;
-    shader.vertexShader = shader.vertexShader
-      .replace('#include <common>', '#include <common>\nvarying vec3 vPvsWorld;')
-      .replace('#include <project_vertex>', /* glsl */`#include <project_vertex>
-        vec4 pvsWorld = vec4(transformed, 1.0);
-        #ifdef USE_INSTANCING
-          pvsWorld = instanceMatrix * pvsWorld;
-        #endif
-        vPvsWorld = (modelMatrix * pvsWorld).xyz;`);
-    shader.fragmentShader = shader.fragmentShader
-      .replace('#include <common>', /* glsl */`#include <common>
-        varying vec3 vPvsWorld;
-        uniform vec4 uHot[${HOT_CARVES}];
-        uniform float uHotBirth[${HOT_CARVES}];
-        uniform float uHotTime;
-        uniform vec4 uCrack[${CRACKS}];
-        uniform float uCrackBirth[${CRACKS}];
-        float pvsCrackAt(vec3 p) {
-          float c = 0.0;
-          for (int i = 0; i < ${CRACKS}; i++) {
-            float age = uHotTime - uCrackBirth[i];
-            if (age < 0.0 || age > ${CRACK_LIFE_S.toFixed(1)}) continue;
-            float d = distance(p, uCrack[i].xyz);
-            float reach = uCrack[i].w * smoothstep(0.0, 0.35, age);   // fissures spread out
-            if (d > reach) continue;
-            vec3 q = p * 3.1;
-            float n = abs(sin(dot(q, vec3(1.7, 9.2, 3.1)) + 2.3 * sin(dot(q, vec3(4.1, -2.7, 6.3)))));
-            float line = 1.0 - smoothstep(0.0, 0.09, n);
-            float fade = 1.0 - smoothstep(${(CRACK_LIFE_S * 0.7).toFixed(2)}, ${CRACK_LIFE_S.toFixed(1)}, age);
-            c = max(c, line * fade * (1.0 - d / max(reach, 0.001)));
-          }
-          return c;
-        }`)
-      .replace('#include <color_fragment>', /* glsl */`#include <color_fragment>
-        float pvsCrack = pvsCrackAt(vPvsWorld);
-        diffuseColor.rgb *= 1.0 - 0.75 * pvsCrack;`)
-      .replace('#include <emissivemap_fragment>', /* glsl */`#include <emissivemap_fragment>
-        totalEmissiveRadiance += vec3(0.9, 0.12, 0.03) * pvsCrack * (0.5 + 0.5 * sin(uHotTime * 18.0));
-        for (int i = 0; i < ${HOT_CARVES}; i++) {
-          float pvsAge = uHotTime - uHotBirth[i];
-          if (pvsAge < 0.0 || pvsAge > ${HOT_LIFE_S.toFixed(1)}) continue;
-          float pvsShell = 1.0 - smoothstep(0.0, 0.6, abs(distance(vPvsWorld, uHot[i].xyz) - uHot[i].w));
-          float pvsCool = 1.0 - pvsAge / ${HOT_LIFE_S.toFixed(1)};
-          totalEmissiveRadiance += vec3(1.0, 0.34, 0.05) * pvsShell * pvsCool * pvsCool * 2.2;
-        }`);
-  };
-  material.customProgramCacheKey = () => 'pvs-hot-carve';
+  const crackMask = crackAt(positionWorld);
+  // The crack darkens the diffuse colour; the vertex colour is multiplied in after this.
+  material.colorNode = vec4(materialColor.rgb.mul(crackMask.mul(0.75).oneMinus()), 1);
+  material.emissiveNode = vec3(0.9, 0.12, 0.03).mul(crackMask).mul(sin(hot.time.mul(18)).mul(0.5).add(0.5))
+    .add(hotGlowAt(positionWorld));
 }
 
 /** A carve just happened here: its rim glows and cools. */
 export function markHotCarve(point, radius) {
-  hot.spheres.value[hotNext].set(point.x, point.y, point.z, radius);
-  hot.births.value[hotNext] = hot.time.value;
+  hot.spheres[hotNext].value.set(point.x, point.y, point.z, radius);
+  hot.births[hotNext].value = hot.time.value;
   hotNext = (hotNext + 1) % HOT_CARVES;
 }
 
 /** Stone about to give way here: dark fissures spread over `radius` and pulse, then fade. */
 export function markCrack(point, radius) {
-  crack.spheres.value[crackNext].set(point.x, point.y, point.z, radius);
-  crack.births.value[crackNext] = hot.time.value;
+  crack.spheres[crackNext].value.set(point.x, point.y, point.z, radius);
+  crack.births[crackNext].value = hot.time.value;
   crackNext = (crackNext + 1) % CRACKS;
 }
 
 /** Advance the glow clock. Call once per frame with the engine's running time. */
 export function tickMaterials(time) { hot.time.value = time; }
 
-/** Read-only access to the live hot-carve sphere ring buffer for screen-space heat haze. */
+/** The live hot-carve uniform NODES (spheres[], births[], time) for the screen-space heat haze. */
 export function getHotCarves() {
-  return { spheres: hot.spheres.value, births: hot.births.value, time: hot.time.value, life: HOT_LIFE_S };
+  return { spheres: hot.spheres, births: hot.births, time: hot.time, life: HOT_LIFE_S };
 }
 
 /** Current surface wetness (0 = dry, 1 = soaked) for screen-space puddle reflections. */
@@ -167,7 +166,7 @@ export function getWetness() { return wetness; }
 function applyWetness(material) {
   // Wet stone is darker and shinier. Lambert has no roughness, so it only darkens.
   material.color.setScalar(1 - 0.2 * wetness);
-  if (material.isMeshStandardMaterial) {
+  if (material.isMeshStandardNodeMaterial || material.isMeshStandardMaterial) {
     material.roughness = 0.88 - 0.42 * wetness;
     material.metalness = 0.02 + 0.06 * wetness;
   }
@@ -183,20 +182,19 @@ export function setWetness(amount) {
 export function resetMaterials() {
   voxelMaterials.clear();
   wetness = 0;
-  hot.births.value.fill(-1000);
-  crack.births.value.fill(-1000);
+  for (const b of hot.births) b.value = -1000;
+  for (const b of crack.births) b.value = -1000;
 }
 
 /** Solid-colour material for actors (player capsule, enemies). */
 export function createActorMaterial(params = {}, quality = activeQuality) {
-  if (!quality.pbr) return new THREE.MeshLambertMaterial(params);
-  return new THREE.MeshStandardMaterial({ roughness: 0.55, metalness: 0.1, ...params });
+  if (!quality.pbr) return new THREE.MeshLambertNodeMaterial(params);
+  return new THREE.MeshStandardNodeMaterial({ roughness: 0.55, metalness: 0.1, ...params });
 }
 
 /**
- * Image-based lighting from the current sky. Owns one PMREM texture and swaps it in
- * place on scene.environment; the previous one is disposed on every rebuild, because a
- * 360 s day at 2.5 s per rebuild would otherwise leak 144 cube render targets per day.
+ * Image-based lighting from the current sky. Owns ONE equirect DataTexture that stays on
+ * scene.environment and is repainted in place every PROBE_INTERVAL_S.
  */
 export class SkyEnvironment {
   constructor(renderer, scene, quality) {
@@ -206,12 +204,14 @@ export class SkyEnvironment {
     this._texture = null;
     if (!this.enabled) return;
 
-    this.pmrem = new THREE.PMREMGenerator(renderer);
-    this.pmrem.compileEquirectangularShader();
     this.data = new Float32Array(PROBE_W * PROBE_H * 4);
     this.source = new THREE.DataTexture(this.data, PROBE_W, PROBE_H, THREE.RGBAFormat, THREE.FloatType);
     this.source.mapping = THREE.EquirectangularReflectionMapping;
     this.source.colorSpace = THREE.LinearSRGBColorSpace;
+    this.source.magFilter = THREE.LinearFilter;
+    this.source.minFilter = THREE.LinearFilter;
+    this.source.generateMipmaps = false;
+    scene.environment = this.source; // the renderer prefilters it (and again when it changes)
     this._sky = new THREE.Color();
     this._ground = new THREE.Color();
   }
@@ -227,11 +227,8 @@ export class SkyEnvironment {
     if (!force && this._clock > 0) return;
     this._clock = PROBE_INTERVAL_S;
     this._paint(key, sunDir);
-
-    const next = this.pmrem.fromEquirectangular(this.source).texture;
-    this._texture?.dispose();
-    this._texture = next;
-    this.scene.environment = next;
+    // source.needsUpdate (in _paint) bumps the version; the renderer re-prefilters it. The
+    // old WebGL path leaked a cube target per rebuild unless disposed; this owns one texture.
   }
 
   _paint(key, sunDir) {
@@ -264,9 +261,7 @@ export class SkyEnvironment {
 
   dispose() {
     if (!this.enabled) return;
-    this.scene.environment = null;
-    this._texture?.dispose();
+    if (this.scene.environment === this.source) this.scene.environment = null;
     this.source.dispose();
-    this.pmrem.dispose();
   }
 }

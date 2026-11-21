@@ -20,7 +20,7 @@
 // Solo only — an online run is co-presence, and each client would be fighting its own
 // private horde.
 
-import * as THREE from 'three';
+import * as THREE from 'three-eco/webgpu';
 import { createActorMaterial } from './materials.js';
 
 const ARCHETYPES = {

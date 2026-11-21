@@ -48,17 +48,21 @@
 // World: sim (x, y) → three (x / 10, 0, y / 10); the car is built along +X and
 // rotated by −heading about Y (unchanged from the box cars it replaces).
 
-import * as THREE from 'three';
-import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
-import { TessellateModifier } from 'three/addons/modifiers/TessellateModifier.js';
+import * as THREE from './three.js';
+import {
+    Fn, If, uniform, attribute, varying, reference, positionGeometry, positionView, normalLocal, transformNormalToView, vec2, vec3, vec4, mat3,
+    float, int, length, dot, sin, floor, fract, step, smoothstep, clamp, mix, max, min, sqrt, normalize, cross, dFdx, dFdy, fwidth, select, mod, exp2,
+} from 'three-eco/tsl';
+import { mergeGeometries } from 'three-eco/addons/utils/BufferGeometryUtils.js';
+import { TessellateModifier } from 'three-eco/addons/modifiers/TessellateModifier.js';
 import { LivingPaint, livingPaint, paintSeed } from './paint.js';
 import { reflective } from './materials.js';
 import { throwPiece } from './debris.js';
 import { WORLD_SCALE as WS, addHook, canvasTexture } from './util.js';
 
-const CAR_PAINT_REFL = { value: 0.28 };
-const CAR_GLASS_REFL = { value: 0.68 };
-const CROWD_PAINT_REFL = { value: 0.20 };
+const CAR_PAINT_REFL = uniform(0.28);
+const CAR_GLASS_REFL = uniform(0.68);
+const CROWD_PAINT_REFL = uniform(0.20);
 
 const WHEEL_R = 0.36;
 const WHEELS = [[1.2, 0.8, true], [1.2, -0.8, true], [-1.22, 0.8, false], [-1.22, -0.8, false]];
@@ -265,129 +269,112 @@ const MAX_DENTS = 16;
 const DENT_MERGE = 0.45;   // a hit this close to an existing dent deepens and widens it instead
 const MAX_CRUSH = 0.62;    // no vertex is pushed further than this (the body is 1.66 wide)
 
+/** Distance to the nearest crack: the edges of a Voronoi tiling (3 x 3 cells), as a function with real variables. */
+const dmgHash = (p) => {
+    const q = vec2(dot(p, vec2(127.1, 311.7)), dot(p, vec2(269.5, 183.3)));
+    return fract(sin(q).mul(43758.5453));
+};
+const dmgCracks = Fn(([p]) => {
+    const i = floor(p), f = fract(p);
+    const d1 = float(8).toVar(), d2 = float(8).toVar();
+    for (let y = -1; y <= 1; y++) for (let x = -1; x <= 1; x++) {
+        const g = vec2(x, y);
+        const r = g.add(dmgHash(i.add(g))).sub(f);
+        const d = dot(r, r);
+        If(d.lessThan(d1), () => { d2.assign(d1); d1.assign(d); }).ElseIf(d.lessThan(d2), () => { d2.assign(d); });
+    }
+    return sqrt(d2).sub(sqrt(d1));
+});
+
 /**
- * The damage hook on one of a car's chassis materials. `d` is that car's damage uniforms,
- * shared by all of them: the dents (uDentP: a point on the skin, w = depth; uDentD: the way
- * the metal was pushed, w = radius), the loose parts' matrices, the glass crack and the
- * scorch of a wreck. `lamp` is this material's own (left, right) broken flags, for the
- * lights. Chunk names are three 0.165's; a material without one of them (the unlit lights)
- * simply skips that part.
+ * The damage hook on one of a car's chassis materials (TSL, r186). The values the GLSL took as
+ * uniforms are read per material through reference, so every car shares ONE program:
+ *   material.userData.pcDmg = { dentP, dentD: Vector4[MAX_DENTS] (a point on the skin, w = depth;
+ *   the way the metal was pushed, w = radius), parts: Matrix4[PARTS], crack: {value}, scorch: {value} },
+ *   material.userData.lamp = { value: Vector2 } (this material's own left/right broken flags).
+ * `crackable` (the glass) adds the crazing; `scratches` (not the body, whose paint layer has its own
+ * scars) draws the scrape streaks. A material without lamps simply never reads them.
  */
-function damageable(material, d, lamp) {
-    return addHook(material, 'pocabinet-damage', (shader) => {
-        shader.uniforms.uDentP = d.dentP;
-        shader.uniforms.uDentD = d.dentD;
-        shader.uniforms.uParts = d.parts;
-        shader.uniforms.uCrack = d.crack;
-        shader.uniforms.uScorch = d.scorch;
-        shader.uniforms.uLamp = lamp;
-        shader.vertexShader = shader.vertexShader
-            .replace('#include <common>', `#include <common>
-uniform vec4 uDentP[${MAX_DENTS}];
-uniform vec4 uDentD[${MAX_DENTS}];
-uniform mat4 uParts[${PARTS}];
-attribute vec2 aPart;
-varying float vDamage;
-varying vec3 vPanel;`)
-            .replace('#include <beginnormal_vertex>', `#include <beginnormal_vertex>
-{
-    int np = int(aPart.x + 0.5);
-    if (np > 0) {
-        vec3 turned = mat3(uParts[np - 1]) * objectNormal;
-        if (dot(turned, turned) > 1e-6) objectNormal = normalize(turned);
-    }
-}`)
-            .replace('#include <begin_vertex>', `#include <begin_vertex>
-vDamage = 0.0;
-vPanel = position;
-vec3 crush = vec3(0.0);
-for (int i = 0; i < ${MAX_DENTS}; i++) {
-    vec4 p = uDentP[i];
-    if (p.w <= 0.0) continue;
-    vec4 dd = uDentD[i];
-    vec3 rel = position - p.xyz;
-    float dist = length(rel);
-    // A dish the width of the hit, a sharper core where it landed, and buckle creases
-    // across it: the metal is pushed the way the hit was going, not toward the middle.
-    float dish = 1.0 - smoothstep(0.0, dd.w, dist);
-    dish = dish * dish * (3.0 - 2.0 * dish);
-    float core = 1.0 - smoothstep(0.0, dd.w * 0.35, dist);
-    float buckle = sin(dot(rel, vec3(21.0, 13.0, 25.0)) + float(i) * 1.7) * 0.5
-                 + sin(dot(rel, vec3(-15.0, 31.0, 9.0)) - float(i)) * 0.5;
-    crush += dd.xyz * p.w * (dish * (0.75 + 0.3 * buckle) + core * 0.45);
-    vDamage = max(vDamage, dish * clamp(p.w * 3.5, 0.0, 1.0));
-}
-float crushed = length(crush);
-if (crushed > ${MAX_CRUSH.toFixed(2)}) crush *= ${MAX_CRUSH.toFixed(2)} / crushed;
-transformed += crush;
-int part = int(aPart.x + 0.5);
-if (part > 0) transformed = (uParts[part - 1] * vec4(transformed, 1.0)).xyz;`);
-        shader.fragmentShader = shader.fragmentShader
-            .replace('#include <common>', `#include <common>
-uniform float uCrack;
-uniform float uScorch;
-uniform vec2 uLamp;
-varying float vDamage;
-varying vec3 vPanel;
-vec2 dmgHash(vec2 p) {
-    p = vec2(dot(p, vec2(127.1, 311.7)), dot(p, vec2(269.5, 183.3)));
-    return fract(sin(p) * 43758.5453);
-}
-// Distance to the nearest crack: the edges of a Voronoi tiling, finer near the impact.
-float dmgCracks(vec2 p) {
-    vec2 i = floor(p), f = fract(p);
-    float d1 = 8.0, d2 = 8.0;
-    for (int y = -1; y <= 1; y++) for (int x = -1; x <= 1; x++) {
-        vec2 g = vec2(float(x), float(y));
-        vec2 r = g + dmgHash(i + g) - f;
-        float d = dot(r, r);
-        if (d < d1) { d2 = d1; d1 = d; } else if (d < d2) d2 = d;
-    }
-    return sqrt(d2) - sqrt(d1);
-}`)
-            .replace('#include <normal_fragment_begin>', `#include <normal_fragment_begin>
-{
-    // Bent metal catches the light fold by fold: where the body is crushed, shade it by the
-    // crushed surface itself (the vertex normals still describe the undamaged car).
-    vec3 folded = normalize(cross(dFdx(vViewPosition), dFdy(vViewPosition)));
-    normal = normalize(mix(normal, folded, smoothstep(0.03, 0.3, vDamage)));
-    nonPerturbedNormal = normal;
-}`)
-            .replace('#include <color_fragment>', `#include <color_fragment>
-{
-    float scuff = smoothstep(0.1, 0.8, vDamage);
-    // Scrapes: thin streaks along the panel (cells long in x and z, thin in y) through to primer.
-    vec3 cell = floor(vPanel * vec3(5.0, 64.0, 5.0) + vec3(floor(vPanel.y * 64.0) * 0.37, 0.0, 0.0));
-    float scratch = step(0.84, fract(sin(dot(cell, vec3(12.9898, 78.233, 37.719))) * 43758.5453));
-    // Gone at a distance, where a streak is finer than a pixel and would only sparkle.
-    scratch *= 1.0 - smoothstep(0.35, 1.0, fwidth(vPanel.y * 64.0));
-    diffuseColor.rgb *= 1.0 - scuff * 0.5;
-#ifndef PC_PAINT
-    // (The paint's own scars, paint.js, replace these on the body colour.)
-    diffuseColor.rgb = mix(diffuseColor.rgb, vec3(0.56, 0.57, 0.6), scratch * 0.8 * smoothstep(0.4, 0.95, vDamage));
-#endif
-    // A wreck is scorched and sooted, darkest round the engine bay.
-    diffuseColor.rgb *= 1.0 - uScorch * (0.45 + 0.35 * smoothstep(0.4, 1.6, vPanel.x));
-    // A broken lamp is a dark hole with a few shards left in it.
-    float lampSide = vPanel.z > 0.0 ? uLamp.y : uLamp.x;
-    diffuseColor.rgb *= 1.0 - lampSide * 0.92;
-    // Crazed glass: white crack lines, finer and denser where it took the hit.
-    if (uCrack > 0.0) {
-        // The web shows in patches that spread as the crack grows, never the whole pane at once.
-        float web = dmgCracks(vPanel.zy * 17.0 + vPanel.x * 4.0);
-        vec2 patchCell = floor(vPanel.zy * 3.0 + vPanel.x);
-        float patchOn = step(1.0 - uCrack, dmgHash(patchCell).x);
-        float aa = fwidth(web);
-        float line = (1.0 - smoothstep(0.0, 0.035 + aa, web)) * (1.0 - smoothstep(0.03, 0.1, aa));
-        diffuseColor.rgb = mix(diffuseColor.rgb, vec3(0.7, 0.74, 0.78), line * patchOn * 0.7);
-    }
-}`)
-            .replace('#include <roughnessmap_fragment>', `#include <roughnessmap_fragment>
-roughnessFactor = mix(roughnessFactor, 0.9, max(smoothstep(0.1, 0.7, vDamage), uScorch * 0.8));`)
-            .replace('#include <lights_physical_fragment>', `#include <lights_physical_fragment>
-#ifdef USE_CLEARCOAT
-material.clearcoat *= (1.0 - smoothstep(0.1, 0.6, vDamage)) * (1.0 - uScorch);
-#endif`);
+function damageable(material, d, lamp, { crackable = false, scratches = true } = {}) {
+    material.userData.pcDmg = d;
+    material.userData.lamp = lamp;
+    return addHook(material, `pocabinet-damage:${crackable ? 1 : 0}${scratches ? 1 : 0}`, () => {
+        const dentP = reference('userData.pcDmg.dentP.value', 'vec4');
+        const dentD = reference('userData.pcDmg.dentD.value', 'vec4');
+        const parts = reference('userData.pcDmg.parts.value', 'mat4');
+        const uCrack = reference('userData.pcDmg.crack.value', 'float');
+        const uScorch = reference('userData.pcDmg.scorch.value', 'float');
+        const uLamp = reference('userData.lamp.value', 'vec2');
+        const aPart = attribute('aPart', 'vec2');
+        const part = int(aPart.x.add(0.5));
+        const partM = parts.element(max(part.sub(1), 0));
+        const pos = positionGeometry;
+        // Vertex: the dents push the skin the way the hit was going; loose parts hang on their own matrices.
+        let crush = vec3(0), damage = float(0);
+        for (let i = 0; i < MAX_DENTS; i++) {
+            const p = dentP.element(i), dd = dentD.element(i);
+            const rel = pos.sub(p.xyz);
+            const dist = length(rel);
+            // A dish the width of the hit, a sharper core where it landed, and buckle creases
+            // across it: the metal is pushed the way the hit was going, not toward the middle.
+            let dish = smoothstep(0, dd.w, dist).oneMinus();
+            dish = dish.mul(dish).mul(float(3).sub(dish.mul(2)));
+            const core = smoothstep(0, dd.w.mul(0.35), dist).oneMinus();
+            const buckle = sin(dot(rel, vec3(21, 13, 25)).add(i * 1.7)).mul(0.5).add(sin(dot(rel, vec3(-15, 31, 9)).sub(i)).mul(0.5));
+            const live = select(p.w.greaterThan(0), float(1), float(0));
+            crush = crush.add(dd.xyz.mul(p.w).mul(dish.mul(buckle.mul(0.3).add(0.75)).add(core.mul(0.45))).mul(live));
+            damage = max(damage, dish.mul(clamp(p.w.mul(3.5), 0, 1)).mul(live));
+        }
+        const crushed = length(crush);
+        crush = select(crushed.greaterThan(MAX_CRUSH), crush.mul(float(MAX_CRUSH).div(crushed)), crush);
+        const moved = pos.add(crush);
+        const vDamage = varying(damage, 'vPcDamage'), vPanel = varying(pos, 'vPcPanel');
+        const hash2 = dmgHash;
+        return {
+            position: () => select(part.greaterThan(0), partM.mul(vec4(moved, 1)).xyz, moved),
+            normal: () => {
+                const nl = normalLocal;
+                const turned = mat3(partM[0].xyz, partM[1].xyz, partM[2].xyz).mul(nl);
+                const nObj = select(part.greaterThan(0).and(dot(turned, turned).greaterThan(1e-6)), normalize(turned), nl);
+                const nView = normalize(transformNormalToView(nObj));
+                // Bent metal catches the light fold by fold: where the body is crushed, shade it by the
+                // crushed surface itself (the vertex normals still describe the undamaged car).
+                const folded = normalize(cross(dFdx(positionView), dFdy(positionView)));
+                return normalize(mix(nView, folded, smoothstep(0.03, 0.3, vDamage)));
+            },
+            color: (c) => {
+                let rgb = c.rgb;
+                const scuff = smoothstep(0.1, 0.8, vDamage);
+                rgb = rgb.mul(float(1).sub(scuff.mul(0.5)));
+                if (scratches) {
+                    // Scrapes: thin streaks along the panel (cells long in x and z, thin in y) through to primer.
+                    const cell = floor(vPanel.mul(vec3(5, 64, 5)).add(vec3(floor(vPanel.y.mul(64)).mul(0.37), 0, 0)));
+                    let scratch = step(0.84, fract(sin(dot(cell, vec3(12.9898, 78.233, 37.719))).mul(43758.5453)));
+                    // Gone at a distance, where a streak is finer than a pixel and would only sparkle.
+                    scratch = scratch.mul(smoothstep(0.35, 1, fwidth(vPanel.y.mul(64))).oneMinus());
+                    rgb = mix(rgb, vec3(0.56, 0.57, 0.6), scratch.mul(0.8).mul(smoothstep(0.4, 0.95, vDamage)));
+                }
+                // A wreck is scorched and sooted, darkest round the engine bay.
+                rgb = rgb.mul(float(1).sub(uScorch.mul(float(0.45).add(smoothstep(0.4, 1.6, vPanel.x).mul(0.35)))));
+                // A broken lamp is a dark hole with a few shards left in it.
+                const lampSide = select(vPanel.z.greaterThan(0), uLamp.y, uLamp.x);
+                rgb = rgb.mul(float(1).sub(lampSide.mul(0.92)));
+                if (crackable) {
+                    // Crazed glass: white crack lines, finer and denser where it took the hit. The web
+                    // shows in patches that spread as the crack grows, never the whole pane at once.
+                    const pp = vPanel.zy.mul(17).add(vPanel.x.mul(4));
+                    const web = dmgCracks(pp);
+                    const patchCell = floor(vPanel.zy.mul(3).add(vPanel.x));
+                    const patchOn = step(float(1).sub(uCrack), hash2(patchCell).x);
+                    const aa = fwidth(web);
+                    const line = smoothstep(0, float(0.035).add(aa), web).oneMinus().mul(smoothstep(0.03, 0.1, aa).oneMinus());
+                    rgb = mix(rgb, vec3(0.7, 0.74, 0.78), line.mul(patchOn).mul(0.7).mul(step(0.0001, uCrack)));
+                }
+                return vec4(rgb, c.a);
+            },
+            rough: (r) => mix(r, 0.9, max(smoothstep(0.1, 0.7, vDamage), uScorch.mul(0.8))),
+            clearcoat: (cc) => cc.mul(smoothstep(0.1, 0.6, vDamage).oneMinus()).mul(float(1).sub(uScorch)),
+        };
     });
 }
 
@@ -870,13 +857,13 @@ export function mountCar(parent, opts) {
         tail: lamp(new THREE.MeshBasicMaterial({ color: TAIL.clone() })),
     };
     // Only the glass crazes: the others read a crack that stays 0.
-    const noCrack = { value: 0 };
+    const noCrack = { value: 0 };   // (the glass reads dmg.crack; the other materials a crack that stays 0)
     // Living paint (paint.js) over the dents: dirt, rain, scars and flake on the body; dirt,
     // parallax cabin & rain on the glass; dirt on the trim; clearcoat SSR masks (#3/#5).
     const livMode = opts.livery ?? (opts.id === 'player' ? 0 : Math.abs(paintSeed(opts.id || opts.name) * 10 | 0) % 5);
     const livery = new LivingPaint(paintSeed(opts.id || opts.name), dmg.dentP.value, livMode, opts.liveryAccent || '#f4f6fa');
     for (const [key, mat] of Object.entries(mats)) {
-        damageable(mat, key === 'glass' ? dmg : { ...dmg, crack: noCrack }, mat.userData.lamp);
+        damageable(mat, key === 'glass' ? dmg : { ...dmg, crack: noCrack }, mat.userData.lamp, { crackable: key === 'glass', scratches: key !== 'paint' });
         if (key === 'paint' || key === 'glass' || key === 'trim') livingPaint(mat, key, livery);
         if (key === 'paint') reflective(mat, CAR_PAINT_REFL);
         else if (key === 'glass') reflective(mat, CAR_GLASS_REFL);
@@ -889,6 +876,9 @@ export function mountCar(parent, opts) {
 
     const add = (geom, mat, parentObj = chassis, cast = true) => {
         const mesh = new THREE.Mesh(geom, mat);
+        // The hooks (damageable, livingPaint) read their per-car values off the rendered OBJECT: the
+        // shadow pass draws with a derived material that carries no userData of ours.
+        Object.assign(mesh.userData, { pcDmg: mat.userData.pcDmg, lamp: mat.userData.lamp, pcPaint: mat.userData.pcPaint });
         mesh.castShadow = cast;
         mesh.receiveShadow = cast;
         parentObj.add(mesh);
@@ -960,22 +950,16 @@ export class CarCrowd {
         };
         this.material = reflective(new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.55, metalness: 0.18 }), CROWD_PAINT_REFL);
         // Per instance: the parts it has lost (bit id − 1) fold away, and a wreck is sooted.
-        addHook(this.material, 'pocabinet-crowd', (shader) => {
-            shader.vertexShader = shader.vertexShader
-                .replace('#include <common>', `#include <common>
-attribute vec2 aPart;
-attribute float aLost;
-attribute float aScorch;
-varying float vScorch;`)
-                .replace('#include <begin_vertex>', `#include <begin_vertex>
-vScorch = aScorch;
-float crowdPart = floor(aPart.x + 0.5);
-if (crowdPart > 0.5 && mod(floor(aLost / exp2(crowdPart - 1.0)), 2.0) > 0.5) transformed = vec3(0.0);`);
-            shader.fragmentShader = shader.fragmentShader
-                .replace('#include <common>', `#include <common>
-varying float vScorch;`)
-                .replace('#include <color_fragment>', `#include <color_fragment>
-diffuseColor.rgb *= 1.0 - 0.55 * vScorch;`);
+        addHook(this.material, 'pocabinet-crowd', () => {
+            const aPart = attribute('aPart', 'vec2'), aLost = attribute('aLost', 'float'), aScorch = attribute('aScorch', 'float');
+            const crowdPart = floor(aPart.x.add(0.5));
+            const gone = crowdPart.greaterThan(0.5).and(mod(floor(aLost.div(exp2(crowdPart.sub(1)))), 2).greaterThan(0.5));
+            const vScorch = varying(aScorch, 'vCrowdScorch');
+            return {
+                // The parts it has lost fold away; a wreck is sooted.
+                position: (p) => select(gone, vec3(0), p),
+                color: (c) => vec4(c.rgb.mul(float(1).sub(vScorch.mul(0.55))), c.a),
+            };
         });
         this.max = max;
         this.meshes = STYLES.map((_, style) => {

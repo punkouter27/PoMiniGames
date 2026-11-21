@@ -53,12 +53,12 @@
 // race.js drives it: updateDebris(dt, race) once a rendered frame (race supplies the track,
 // the cars, the scene handle and fx), clearDebris() when the race goes.
 
-import * as THREE from 'three';
+import * as THREE from './three.js';
 import { wallFace } from './terrain.js';
 import { surfaceAt, SURF_GRAVEL, SURF_GRASS } from './physics.js';
 import { WORLD_SCALE as WS } from './util.js';
 import { loadRapier, RapierDebris } from './debris-rapier.js';
-import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
+import { mergeGeometries } from 'three-eco/addons/utils/BufferGeometryUtils.js';
 import { placeProps, TYRE, CONE } from './props.js';
 
 const STEP = 1 / 60;

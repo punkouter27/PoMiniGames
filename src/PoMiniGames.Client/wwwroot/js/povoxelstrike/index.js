@@ -296,6 +296,9 @@ async function boot(host, dotnetRef, demo, loaded, online, opts) {
 }
 
 window.PoVoxelStrike = {
+  /** Debug/test handle: the live Engine (headless checks drive the camera through it). */
+  debugEngine() { return engine; },
+
   /**
    * Build a run. It comes up in 'ready' (rendered, frozen) behind the page's start card;
    * enter() is what starts it. Calling start() again replaces the run — that is "Play

@@ -5,7 +5,7 @@
 // Dust skirts spawn an outward-rolling low-profile ring of masonry dust on hard debris
 // landings and blast bases.
 
-import * as THREE from 'three';
+import * as THREE from 'three-eco/webgpu';
 
 const SPARK_GRAVITY = -16.5;
 const SKIRT_POOL = 8;

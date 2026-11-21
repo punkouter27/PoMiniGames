@@ -1,7 +1,9 @@
 // particles.js — GPU dust and smoke for PoVoxelStrike.
 //
-// One THREE.Points object, one draw call, a fixed ring buffer of particles. The CPU
-// never touches a particle after it is spawned: the vertex shader integrates
+// One instanced draw call of camera-facing quads (WebGPU draws a Points object one pixel wide,
+// so a sized sprite has to be a quad; the same quads run on the WebGL2 backend), a fixed ring
+// buffer of particles. The CPU never touches a particle after it is spawned: the vertex stage
+// (a TSL node graph now, r186) integrates
 // position = origin + velocity·t + ½·g·t² from a per-particle birth time, so a frame
 // with 4000 live puffs costs exactly the same JS as a frame with none.
 //
@@ -13,98 +15,12 @@
 // (`addUpdateRange`), so a 12-particle puff uploads 12 particles, not 4000. Wrapping
 // spawns split into two ranges rather than uploading the whole buffer.
 
-import * as THREE from 'three';
-
-const VERTEX = /* glsl */`
-  attribute vec3 aVelocity;
-  attribute vec4 aSeed;       // x: birth time, y: lifetime, z: size, w: spin/flicker seed
-  attribute vec3 aColor;
-  uniform float uTime;
-  uniform float uGravity;
-  uniform float uPixelScale;  // drawingBufferHeight — keeps size stable across DPR
-  varying vec3 vColor;
-  varying float vAge;
-  varying float vSeed;
-  varying float vViewZ;
-  varying vec3 vWorldPos;
-
-  void main() {
-    float age = (uTime - aSeed.x) / max(0.0001, aSeed.y);
-    vAge = age;
-    vColor = aColor;
-    vSeed = aSeed.w;
-    if (age < 0.0 || age > 1.0) {
-      // Dead: collapse to a degenerate point behind the camera so it costs no fill.
-      vViewZ = 1.0;
-      vWorldPos = vec3(0.0);
-      gl_Position = vec4(0.0, 0.0, 2.0, 1.0);
-      gl_PointSize = 0.0;
-      return;
-    }
-    float t = age * aSeed.y;
-    // Drag: puffs slow down as they expand, or every plume looks like a firework.
-    float drag = 1.0 - exp(-2.2 * t);
-    vec3 pos = position + aVelocity * (drag / 2.2) + vec3(0.0, 0.5 * uGravity * t * t, 0.0);
-    vWorldPos = (modelMatrix * vec4(pos, 1.0)).xyz;
-
-    vec4 mv = modelViewMatrix * vec4(pos, 1.0);
-    vViewZ = -mv.z;
-    gl_Position = projectionMatrix * mv;
-    // Smoke grows as it ages; the 1/-z term is standard perspective size attenuation.
-    float grow = aSeed.z * (0.45 + age * 1.6);
-    gl_PointSize = max(1.0, grow * uPixelScale / max(0.001, -mv.z));
-  }`;
-
-const FRAGMENT = /* glsl */`
-  uniform sampler2D uDepthTex;
-  uniform vec2 uResolution;
-  uniform float uNear;
-  uniform float uFar;
-  uniform float uSoftSmoke;
-  uniform vec3 uSunDir;
-  uniform vec3 uSunColor;
-  varying vec3 vColor;
-  varying float vAge;
-  varying float vSeed;
-  varying float vViewZ;
-  varying vec3 vWorldPos;
-
-  float linearizeDepth(float d) {
-    float z = d * 2.0 - 1.0;
-    return (2.0 * uNear * uFar) / max(0.0001, uFar + uNear - z * (uFar - uNear));
-  }
-
-  void main() {
-    // Soft round sprite, generated rather than sampled — no texture to load, decode,
-    // or keep resident, and it stays crisp at any point size.
-    vec2 d = gl_PointCoord - 0.5;
-    float r = dot(d, d) * 4.0;
-    if (r > 1.0) discard;
-    float soft = 1.0 - smoothstep(0.35, 1.0, r);
-    // Fade in fast, out slow: a puff should appear instantly and linger.
-    float fade = smoothstep(0.0, 0.08, vAge) * (1.0 - smoothstep(0.45, 1.0, vAge));
-    float flicker = 0.85 + 0.15 * sin(vSeed * 30.0 + vAge * 12.0);
-    vec3 col = vColor * flicker;
-
-    if (uSoftSmoke > 0.5) {
-      // Soft depth fade against scene geometry intersections (#3)
-      vec2 screenUv = gl_FragCoord.xy / max(vec2(1.0), uResolution);
-      float rawDepth = texture2D(uDepthTex, screenUv).x;
-      if (rawDepth < 0.9999 && rawDepth > 0.0) {
-        float sceneZ = linearizeDepth(rawDepth);
-        fade *= clamp((sceneZ - vViewZ) * 0.85, 0.0, 1.0);
-      }
-      // Directional sun-backlit forward scattering + rim glow (#3)
-      vec3 viewDir = normalize(vWorldPos - cameraPosition);
-      float fwd = max(0.0, dot(viewDir, normalize(uSunDir)));
-      float scatter = pow(fwd, 4.0) * 0.65 + (1.0 - soft) * pow(fwd, 2.0) * 0.35;
-      // Top-hemisphere normal approximation on the puff sprite
-      float topLight = clamp(0.5 - d.y * 0.9, 0.0, 1.0) * max(0.0, uSunDir.y);
-      col += uSunColor * (scatter + topLight * 0.22);
-    }
-
-    gl_FragColor = vec4(col, soft * fade * 0.55);
-  }`;
+import * as THREE from 'three-eco/webgpu';
+import {
+  cameraFar, cameraNear, cameraPosition, cameraProjectionMatrix, cameraViewMatrix, clamp, dot, exp, instancedDynamicBufferAttribute,
+  max, perspectiveDepthToViewZ, positionGeometry, pow, select, sin, smoothstep, uniform, uv, varying, vec3, vec4,
+  viewportDepthTexture,
+} from 'three-eco/tsl';
 
 export class ParticleSystem {
   /** @param capacity max simultaneous particles; 0 disables the system entirely. */
@@ -114,6 +30,7 @@ export class ParticleSystem {
     this.enabled = this.capacity > 0;
     this.cursor = 0;
     this.time = 0;
+    this.soft = null;               // soft-depth / sun-scatter mode the material was built for
     if (!this.enabled) return;
 
     const n = this.capacity;
@@ -121,68 +38,105 @@ export class ParticleSystem {
     this.velocities = new Float32Array(n * 3);
     this.seeds = new Float32Array(n * 4);
     this.colors = new Float32Array(n * 3);
-    // Birth time far in the past → age > 1 → the vertex shader discards them on frame 1.
+    // Birth time far in the past → age > 1 → the vertex stage collapses them on frame 1.
     for (let i = 0; i < n; i++) { this.seeds[i * 4] = -1e6; this.seeds[i * 4 + 1] = 1; }
 
-    const g = new THREE.BufferGeometry();
-    this.aPos = new THREE.BufferAttribute(this.positions, 3).setUsage(THREE.DynamicDrawUsage);
-    this.aVel = new THREE.BufferAttribute(this.velocities, 3).setUsage(THREE.DynamicDrawUsage);
-    this.aSeed = new THREE.BufferAttribute(this.seeds, 4).setUsage(THREE.DynamicDrawUsage);
-    this.aCol = new THREE.BufferAttribute(this.colors, 3).setUsage(THREE.DynamicDrawUsage);
-    g.setAttribute('position', this.aPos);
-    g.setAttribute('aVelocity', this.aVel);
-    g.setAttribute('aSeed', this.aSeed);
-    g.setAttribute('aColor', this.aCol);
+    const quad = new THREE.PlaneGeometry(1, 1);
+    const g = new THREE.InstancedBufferGeometry().copy(quad);
+    quad.dispose();
+    g.instanceCount = n;
+    this.aPos = new THREE.InstancedBufferAttribute(this.positions, 3).setUsage(THREE.DynamicDrawUsage);
+    this.aVel = new THREE.InstancedBufferAttribute(this.velocities, 3).setUsage(THREE.DynamicDrawUsage);
+    this.aSeed = new THREE.InstancedBufferAttribute(this.seeds, 4).setUsage(THREE.DynamicDrawUsage);
+    this.aCol = new THREE.InstancedBufferAttribute(this.colors, 3).setUsage(THREE.DynamicDrawUsage);
     // Particles move in the shader, so three's own bounds are always wrong. An infinite
     // sphere disables culling — cheaper and more correct than recomputing bounds.
     g.boundingSphere = new THREE.Sphere(new THREE.Vector3(), Infinity);
+    this.geometry = g;
 
-    this.material = new THREE.ShaderMaterial({
-      uniforms: {
-        uTime: { value: 0 },
-        uGravity: { value: -3.2 },  // lighter than the physics world: dust hangs
-        uPixelScale: { value: 600 },
-        uDepthTex: { value: null },
-        uResolution: { value: new THREE.Vector2(800, 480) },
-        uNear: { value: 0.1 },
-        uFar: { value: 500 },
-        uSoftSmoke: { value: 0 },
-        uSunDir: { value: new THREE.Vector3(0.4, 0.8, 0.25) },
-        uSunColor: { value: new THREE.Color(0xfff2df) },
-      },
-      vertexShader: VERTEX,
-      fragmentShader: FRAGMENT,
-      transparent: true,
-      depthWrite: false,
-      blending: THREE.NormalBlending,
-    });
-
-    this.points = new THREE.Points(g, this.material);
-    this.points.frustumCulled = false;
-    this.points.renderOrder = 2;
-    scene.add(this.points);
+    // Uniform nodes, shared by every material variant (soft on / off).
+    this.u = {
+      time: uniform(0),
+      gravity: uniform(-3.2),       // lighter than the physics world: dust hangs
+      scale: uniform(0.52),         // tan(fov / 2): world size that keeps the old pixel size
+      sunDir: uniform(new THREE.Vector3(0.4, 0.8, 0.25)),
+      sunColor: uniform(new THREE.Color(0xfff2df)),
+    };
+    this.mesh = new THREE.Mesh(g, this._buildMaterial(false));
+    this.mesh.frustumCulled = false;
+    this.mesh.renderOrder = 2;
+    scene.add(this.mesh);
+    this.soft = false;
 
     this._c = new THREE.Color();
   }
 
-  /** Keep point size independent of canvas height / device pixel ratio. */
-  setViewportHeight(pixels, width = 0) {
-    if (!this.enabled) return;
-    const h = Math.max(1, pixels);
-    this.material.uniforms.uPixelScale.value = h * 0.5;
-    this.material.uniforms.uResolution.value.set(Math.max(1, width || h * 1.6), h);
+  /**
+   * The graph. `soft` adds the depth fade against scene geometry and the sunlit forward
+   * scattering; it is a separate material because sampling the scene depth makes the renderer
+   * copy it every frame, which the low tier must not pay for.
+   */
+  _buildMaterial(soft) {
+    const u = this.u;
+    const iPos = instancedDynamicBufferAttribute(this.aPos, 'vec3');
+    const iVel = instancedDynamicBufferAttribute(this.aVel, 'vec3');
+    const iSeed = instancedDynamicBufferAttribute(this.aSeed, 'vec4');   // birth, life, size, flicker seed
+    const iCol = instancedDynamicBufferAttribute(this.aCol, 'vec3');
+    const age = u.time.sub(iSeed.x).div(max(iSeed.y, 0.0001));
+    const alive = age.greaterThanEqual(0).and(age.lessThanEqual(1));
+    const t = age.mul(iSeed.y);
+    // Drag: puffs slow down as they expand, or every plume looks like a firework.
+    const drag = exp(t.mul(-2.2)).oneMinus();
+    const pos = iPos.add(iVel.mul(drag.div(2.2))).add(vec3(0, u.gravity.mul(0.5).mul(t).mul(t), 0));
+    const mv = cameraViewMatrix.mul(vec4(pos, 1));
+    // Smoke grows as it ages. Dead: zero size, so the quad covers no pixels.
+    const width = select(alive, iSeed.z.mul(age.mul(1.6).add(0.45)).mul(u.scale), 0);
+    const material = new THREE.MeshBasicNodeMaterial({
+      transparent: true, depthWrite: false, fog: false, blending: THREE.NormalBlending,
+    });
+    material.vertexNode = cameraProjectionMatrix.mul(vec4(mv.xy.add(positionGeometry.xy.mul(width)), mv.zw));
+
+    const d = uv().sub(0.5);
+    const r = dot(d, d).mul(4);
+    // Soft round sprite, generated rather than sampled: nothing to load or keep resident.
+    const round = smoothstep(0.35, 1.0, r).oneMinus().mul(select(r.greaterThan(1), 0, 1));
+    // Fade in fast, out slow: a puff should appear instantly and linger.
+    let fade = varying(smoothstep(0, 0.08, age).mul(smoothstep(0.45, 1.0, age).oneMinus()));
+    const flicker = varying(sin(iSeed.w.mul(30).add(age.mul(12))).mul(0.15).add(0.85));
+    let col = varying(iCol).mul(flicker);
+    if (soft) {
+      // Soft depth fade against scene geometry intersections.
+      const sceneZ = perspectiveDepthToViewZ(viewportDepthTexture(), cameraNear, cameraFar);
+      fade = fade.mul(clamp(varying(mv.z).sub(sceneZ).mul(0.85), 0, 1));
+      // Directional sun-backlit forward scattering + rim glow; the rim term uses the sprite's
+      // own up (uv y is up here, where the old point-coord y was down).
+      const worldPos = varying(pos);
+      const viewDir = worldPos.sub(cameraPosition).normalize();
+      const fwd = max(0, dot(viewDir, u.sunDir.normalize()));
+      const scatter = pow(fwd, 4).mul(0.65).add(round.oneMinus().mul(pow(fwd, 2)).mul(0.35));
+      const topLight = clamp(d.y.mul(0.9).add(0.5), 0, 1).mul(max(0, u.sunDir.y));
+      col = col.add(u.sunColor.mul(scatter.add(topLight.mul(0.22))));
+    }
+    material.colorNode = col;
+    material.opacityNode = round.mul(fade).mul(0.55);
+    return material;
   }
 
-  /** Wire scene depth + sun uniforms for soft depth intersections and sunlit scattering (#3). */
-  setSoftLighting({ depthTexture = null, near = 0.1, far = 500, sunDir = null, sunColor = null, enabled = true } = {}) {
+  /** Kept for the engine's resize path: the quad size follows the camera now, not the pixel height. */
+  setViewportHeight() {}
+
+  /** Wire the sun uniforms; builds the soft-depth variant of the material on demand. */
+  setSoftLighting({ sunDir = null, sunColor = null, enabled = true } = {}) {
     if (!this.enabled) return;
-    const u = this.material.uniforms;
-    if (depthTexture !== undefined) u.uDepthTex.value = depthTexture;
-    u.uNear.value = near;
-    u.uFar.value = far;
-    if (sunDir) u.uSunDir.value.copy(sunDir);
-    if (sunColor) u.uSunColor.value.copy(sunColor);
-    u.uSoftSmoke.value = enabled && u.uDepthTex.value ? 1 : 0;
+    if (sunDir) this.u.sunDir.value.copy(sunDir);
+    if (sunColor) this.u.sunColor.value.copy(sunColor);
+    const want = !!enabled;
+    if (want !== this.soft) {
+      const old = this.mesh.material;
+      this.mesh.material = this._buildMaterial(want);
+      old.dispose();
+      this.soft = want;
+    }
   }
 
   /**
@@ -246,16 +200,19 @@ export class ParticleSystem {
     }
   }
 
-  update(dt) {
+  /** @param camera optional: keeps the quad size matched to the lens through FOV changes */
+  update(dt, camera = null) {
     if (!this.enabled) return;
     this.time += dt;
-    this.material.uniforms.uTime.value = this.time;
+    this.u.time.value = this.time;
+    // 1 / projection[1][1] = tan(fov / 2).
+    if (camera) this.u.scale.value = 1 / (camera.projectionMatrix.elements[5] || 1.92);
   }
 
   dispose() {
     if (!this.enabled) return;
-    this.scene.remove(this.points);
-    this.points.geometry.dispose();
-    this.material.dispose();
+    this.scene.remove(this.mesh);
+    this.geometry.dispose();
+    this.mesh.material.dispose();
   }
 }

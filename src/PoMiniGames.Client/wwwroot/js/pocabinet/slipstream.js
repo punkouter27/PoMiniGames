@@ -14,7 +14,7 @@
 // There are no wind-tunnel streamlines any more (2026-10-19): the ribbons wrapped the car ahead
 // in a grey net that hid it. Reduced motion keeps the meter; the haze stops.
 
-import * as THREE from 'three';
+import * as THREE from './three.js';
 import * as ph from './physics.js';
 import { WORLD_SCALE as WS } from './util.js';
 

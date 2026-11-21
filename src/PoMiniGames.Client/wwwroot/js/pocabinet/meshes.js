@@ -4,7 +4,7 @@
 // road's plane, banked), the barrier walls exactly where physics.js stops a car, the flat ground,
 // the chequered start line, and their small helpers. Split out of scene.js; render-only.
 
-import * as THREE from 'three';
+import * as THREE from './three.js';
 import { WORLD_SCALE, roadPlane, canvasTexture } from './util.js';
 
 export function hex(value, fallback) {

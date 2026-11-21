@@ -13,59 +13,11 @@
 // Oldest-first reuse: when the pool is full the next mark overwrites the oldest, which is
 // the behaviour players expect — the battle's recent history stays visible.
 
-import * as THREE from 'three';
-
-const VERTEX = /* glsl */`
-  attribute vec4 aDecal;    // xyz: centre, w: radius
-  attribute vec4 aBasis;    // xyz: surface normal, w: birth time
-  attribute vec4 aTint;     // rgb: colour, a: lifetime (0 = permanent)
-  uniform float uTime;
-  varying vec2 vUv;
-  varying vec3 vTint;
-  varying float vFade;
-
-  void main() {
-    float life = aTint.a;
-    float fade = 1.0;
-    if (life > 0.0) fade = 1.0 - clamp((uTime - aBasis.w) / life, 0.0, 1.0);
-    vFade = fade;
-    vTint = aTint.rgb;
-    vUv = uv;
-    if (aDecal.w <= 0.0 || fade <= 0.0) { gl_Position = vec4(0.0, 0.0, 2.0, 1.0); return; }
-
-    // Build a frame around the surface normal. The up-vector fallback matters: the
-    // perimeter wall and cliff faces are vertical, and cross(n, up) degenerates there.
-    vec3 n = normalize(aBasis.xyz);
-    vec3 ref = abs(n.y) > 0.95 ? vec3(1.0, 0.0, 0.0) : vec3(0.0, 1.0, 0.0);
-    vec3 t = normalize(cross(ref, n));
-    vec3 b = cross(n, t);
-    // Lift along the normal so the quad wins the depth test against the surface it
-    // marks; polygonOffset alone is not enough on a stepped voxel heightfield.
-    vec3 world = aDecal.xyz + n * 0.06
-      + (t * position.x + b * position.y) * aDecal.w;
-    gl_Position = projectionMatrix * modelViewMatrix * vec4(world, 1.0);
-  }`;
-
-const FRAGMENT = /* glsl */`
-  varying vec2 vUv;
-  varying vec3 vTint;
-  varying float vFade;
-
-  float hash(vec2 p) { return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453); }
-
-  void main() {
-    vec2 d = vUv - 0.5;
-    float r = length(d) * 2.0;
-    if (r > 1.0) discard;
-    // Ragged edge: a smooth disc reads as a decal, a noisy one reads as a burn.
-    float ang = atan(d.y, d.x);
-    float wobble = 0.82 + 0.18 * hash(vec2(floor(ang * 6.0), 3.0));
-    float edge = 1.0 - smoothstep(wobble * 0.55, wobble, r);
-    // Hot centre, sooty rim.
-    float core = 1.0 - smoothstep(0.0, 0.55, r);
-    vec3 c = mix(vTint * 0.35, vTint, core);
-    gl_FragColor = vec4(c, edge * vFade * 0.85);
-  }`;
+import * as THREE from 'three-eco/webgpu';
+import {
+  atan, cross, fract, instancedDynamicBufferAttribute, max, mix, normalize, positionGeometry, select, sin, smoothstep,
+  uniform, uv, varying, vec2, vec3, vec4, cameraProjectionMatrix, cameraViewMatrix, modelWorldMatrix, dot, abs, float,
+} from 'three-eco/tsl';
 
 export class DecalField {
   /** @param capacity max simultaneous marks; 0 disables the field entirely. */
@@ -96,17 +48,43 @@ export class DecalField {
     g.setAttribute('aTint', this.aTint);
     g.boundingSphere = new THREE.Sphere(new THREE.Vector3(), Infinity);
 
-    this.material = new THREE.ShaderMaterial({
-      uniforms: { uTime: { value: 0 } },
-      vertexShader: VERTEX,
-      fragmentShader: FRAGMENT,
-      transparent: true,
-      depthWrite: false,
-      polygonOffset: true,
-      polygonOffsetFactor: -2,
-      polygonOffsetUnits: -2,
-      side: THREE.DoubleSide,
+    // Instance attributes -> a camera-independent oriented quad, drawn procedurally (no
+    // texture). The old GLSL had a vertex stage that built a frame around the surface normal
+    // and a fragment stage that drew a ragged soft ring; both are nodes now.
+    const uTime = uniform(0);
+    this.uTime = uTime;
+    const aDecal = instancedDynamicBufferAttribute(this.aDecal, 'vec4');   // xyz centre, w radius
+    const aBasis = instancedDynamicBufferAttribute(this.aBasis, 'vec4');   // xyz normal, w birth
+    const aTint = instancedDynamicBufferAttribute(this.aTint, 'vec4');     // rgb, a lifetime
+    const life = aTint.w;
+    const fade = select(life.greaterThan(0), max(life.sub(uTime.sub(aBasis.w)).div(max(life, 0.0001)), 0), 1);
+    const nrm = normalize(aBasis.xyz);
+    // The up-vector fallback matters: the perimeter wall and cliff faces are vertical, and
+    // cross(nrm, up) degenerates there.
+    const ref = select(abs(nrm.y).greaterThan(0.95), vec3(1, 0, 0), vec3(0, 1, 0));
+    const t = normalize(cross(ref, nrm));
+    const bt = cross(nrm, t);
+    // Lifted along the normal so the quad wins the depth test against the surface it marks.
+    const world = aDecal.xyz.add(nrm.mul(0.06)).add(t.mul(positionGeometry.x).add(bt.mul(positionGeometry.y)).mul(aDecal.w));
+    const dead = aDecal.w.lessThanEqual(0).or(fade.lessThanEqual(0));
+    const clip = cameraProjectionMatrix.mul(cameraViewMatrix).mul(vec4(world, 1));
+    const material = new THREE.MeshBasicNodeMaterial({
+      transparent: true, depthWrite: false, side: THREE.DoubleSide, fog: false,
+      polygonOffset: true, polygonOffsetFactor: -2, polygonOffsetUnits: -2,
     });
+    // A dead slot goes behind the far plane (w stays valid, z > w clips it).
+    material.vertexNode = select(dead, vec4(0, 0, 2, 1), clip);
+    const d = uv().sub(0.5);
+    const r = d.length().mul(2);
+    // Ragged edge: a smooth disc reads as a decal, a noisy one reads as a burn.
+    const ang = atan(d.y, d.x);
+    const wobble = fract(sin(vec2(ang.mul(6).floor(), 3).dot(vec2(127.1, 311.7))).mul(43758.5453)).mul(0.18).add(0.82);
+    const edge = smoothstep(wobble.mul(0.55), wobble, r).oneMinus();
+    const core = smoothstep(0, 0.55, r).oneMinus();
+    const tint = varying(aTint.rgb);
+    material.colorNode = mix(tint.mul(0.35), tint, core);
+    material.opacityNode = edge.mul(varying(fade)).mul(0.85).mul(select(r.greaterThan(1), 0, 1));
+    this.material = material;
 
     this.mesh = new THREE.Mesh(g, this.material);
     this.mesh.frustumCulled = false;
@@ -152,7 +130,7 @@ export class DecalField {
   update(dt) {
     if (!this.enabled) return;
     this.time += dt;
-    this.material.uniforms.uTime.value = this.time;
+    this.uTime.value = this.time;
   }
 
   dispose() {

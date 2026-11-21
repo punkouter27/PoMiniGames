@@ -53,7 +53,7 @@
 // close is into sound: the reverb zone, the tyre surface, the slipstream (scene.fx.draft) and
 // the adaptive score (music.js: grid bed, drums in a battle, final-lap lift, overtake stinger).
 
-import { Vector3 } from 'three';
+import { Vector3 } from './three.js';
 import { buildTrack, wrapAngle, rubberAt } from './track.js';
 import * as ph from './physics.js';
 import { attachInput } from './input.js';

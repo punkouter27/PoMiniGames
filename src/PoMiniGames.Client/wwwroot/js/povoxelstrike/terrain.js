@@ -14,8 +14,8 @@
 // (top metre) then stone, and only touched chunks re-mesh. Gameplay reads the surface
 // through heightAt() / raycast().
 
-import * as THREE from 'three';
-import * as CANNON from 'cannon-es';
+import * as THREE from 'three-eco/webgpu';
+import { PhysHeightfield } from './rapierWorld.js';
 import { createVoxelMaterial } from './materials.js';
 
 // Declared here (not world.js) so this module has no import back into world.js — world.js
@@ -46,6 +46,7 @@ const DIRT_BAND = 10;            // levels of dirt (1 unit) before digging hits 
 // well inside the 0.25 m voxels anything actually stands on.
 const PHYS_STRIDE = 10;
 const PHYS_N = CELLS / PHYS_STRIDE;
+const PHYS_REBUILD_S = 0.15;
 
 const GRASS = new THREE.Color(0x4c8f46);
 const DIRT = new THREE.Color(0x6d5138);
@@ -387,41 +388,45 @@ export class Terrain {
     if (!this.colliderDirty || !this.physicsWorld) return;
     this.colliderDirty = false;
 
+    // Rapier heightfields cannot be edited in place: a dig re-samples the dug rectangle into
+    // the CPU grid, then the collider is rebuilt (a 181 x 181 grid: well under a millisecond
+    // of data, a few ms for the BVH). Digging fires ~7 times a second, so rebuilds are
+    // coalesced to one per PHYS_REBUILD_S; the grid is always current, the collider at most
+    // that stale (the swept shrapnel test and the player's step probe read the voxel grid).
     if (!this.body) {
-      const data = [];
+      const W = PHYS_N + 1;
+      const data = new Float32Array(W * W);
       for (let i = 0; i <= PHYS_N; i++) {
-        const column = new Array(PHYS_N + 1);
-        for (let j = 0; j <= PHYS_N; j++) column[j] = this._physSample(i, j);
-        data.push(column);
+        for (let j = 0; j <= PHYS_N; j++) data[i * W + j] = this._physSample(i, j);
       }
       this.physData = data;
-      this.physShape = new CANNON.Heightfield(data, { elementSize: PHYS_STRIDE * BLOCK });
-      this.body = new CANNON.Body({ type: CANNON.Body.STATIC, material: this.physicsMaterial });
-      this.body.addShape(this.physShape);
-      this.body.quaternion.setFromEuler(-Math.PI / 2, 0, 0);
-      this.body.position.set(-ARENA_HALF, 0, ARENA_HALF);
-      this.physicsWorld.addBody(this.body);
+      this.physShape = new PhysHeightfield(this.physicsWorld, PHYS_N, PHYS_STRIDE * BLOCK,
+        -ARENA_HALF, ARENA_HALF, 'dirt');
+      this.physShape.set(data);
+      this.body = this.physShape;
       this.physDirty = null;
+      this._physRebuiltAt = performance.now();
       return;
     }
 
     const d = this.physDirty;
     if (!d) return;
-    this.physDirty = null;
+    const W = PHYS_N + 1;
     for (let i = d.i0; i <= d.i1; i++) {
-      const column = this.physData[i];
-      for (let j = d.j0; j <= d.j1; j++) column[j] = this._physSample(i, j);
+      for (let j = d.j0; j <= d.j1; j++) this.physData[i * W + j] = this._physSample(i, j);
     }
-    // cannon caches the two triangle prisms it builds per cell; a changed height makes
-    // every cached pillar in the region stale. Dropping the whole cache is one object
-    // assignment and the cells rebuild lazily on next contact.
-    this.physShape.updateMinValue();
-    this.physShape.updateMaxValue();
-    // `_cachedPillars` is cannon's per-cell prism cache and is the only thing that goes
-    // stale when a height changes. `pillarConvex` / `pillarOffset` are scratch that cannon
-    // rebuilds on every cache miss -- replacing those was pointless and, with an empty
-    // ConvexPolyhedron, a good way to hand the narrowphase geometry with no faces.
-    this.physShape._cachedPillars = {};
+    this.physDirty = null;
+    this._physPending = true;
+  }
+
+  /** Flush a pending heightfield rebuild, at most once per PHYS_REBUILD_S. */
+  flushCollider() {
+    if (!this._physPending || !this.physShape) return;
+    const now = performance.now();
+    if (now - this._physRebuiltAt < PHYS_REBUILD_S * 1000) return;
+    this._physPending = false;
+    this._physRebuiltAt = now;
+    this.physShape.set(this.physData);
   }
 
   /**
@@ -626,7 +631,7 @@ export class Terrain {
     this.chunkData.clear();
     this.material?.dispose();
     if (this.group) scene.remove(this.group);
-    if (this.body) physicsWorld.removeBody(this.body);
+    this.body?.dispose();
   }
 }
 

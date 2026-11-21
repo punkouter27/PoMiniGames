@@ -22,7 +22,7 @@
 // in the game sizes itself from a sizeRange; these pieces have to interlock, so they are
 // dimensioned instead of sampled.
 
-import * as THREE from 'three';
+import * as THREE from 'three-eco/webgpu';
 import { buildMaterialTable } from './physics.js';
 
 export const CELLS_PER_UNIT = 2;   // authoring resolution; world.js refines this further

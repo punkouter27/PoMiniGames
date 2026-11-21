@@ -19,16 +19,16 @@ import { createRenderer as createSharedRenderer } from '../platform/3d/renderer.
 
 const TIERS = ['low', 'medium', 'high', 'ultra'];
 
-// WebGPU status, honestly stated so nobody re-litigates it from the ticket title:
-// three r165 (pinned in the app's import map) ships WebGPURenderer, but its post chain
-// is the WebGL-only EffectComposer and the sky dome is raw GLSL — neither survives the
-// move to WGSL. So WebGPU renders the arena correctly but with NO bloom, SSAO, shafts,
-// or SMAA, which is a downgrade, not an upgrade. It is therefore probe-only and opt-in
-// (?gpu=webgpu) until three is upgraded to a build that ships three/webgpu + TSL post.
-export const WEBGPU_STATUS = Object.freeze({
+// Backend status. The game renders with three r186's WebGPURenderer ('three-eco/webgpu'), whose
+// own fallback is a WebGL2 backend running the SAME node graphs (TSL materials + the post
+// pipeline in post.js), so "WebGPU or not" is a backend choice and not a second renderer. The
+// r165 situation this used to document (a WebGL-only EffectComposer chain and a raw-GLSL sky,
+// so a WebGPU context rendered a downgraded picture) is gone with the port.
+//   ?gpu=webgl  forces the WebGL2 backend (A/B, or a driver whose WebGPU misbehaves)
+export const WEBGPU_STATUS = ({
   supported: typeof navigator !== 'undefined' && 'gpu' in navigator,
-  usable: false,     // set true by createRenderer when a WebGPU context actually came up
-  reason: 'three r165 post-processing is WebGL-only; WebGPU path renders unpostprocessed',
+  usable: false,     // set true by createRenderer when a real WebGPU backend came up
+  reason: '',
 });
 
 function urlFlag(name) {
@@ -196,24 +196,31 @@ export class AdaptiveQuality {
 
 /**
  * Build the renderer through the shared factory. Returns { renderer, api: 'webgpu' | 'webgl2' }.
- * WebGPU is only attempted when ?gpu=webgpu is present (see WEBGPU_STATUS); r165 keeps its
- * WebGPURenderer in an addon, so it is lent to the factory on a copy of the THREE namespace.
+ * WebGPU is the default where the browser has it; otherwise (or with ?gpu=webgl, or if the
+ * adapter request fails) the same WebGPURenderer runs on its WebGL2 backend.
  * `look` is the shared factory's tone / exposure / shadows / pixelRatio.
  */
 export async function createRenderer(THREE, { antialias = true, ...look } = {}) {
-  const base = { antialias, powerPreference: 'default', ...look };
-  if ((urlFlag('gpu') || '').toLowerCase() === 'webgpu' && WEBGPU_STATUS.supported) {
+  // The canvas itself is never the multisampled target: the scene is drawn by the post
+  // pipeline's pass (which owns its own sample count), so canvas MSAA would be wasted fill.
+  // 'default' is a legacy WebGL value; it is not a GPUPowerPreference, so requestAdapter() threw and the renderer
+  // silently fell back to the WebGL2 backend even on a WebGPU machine.
+  const base = { antialias: false, powerPreference: 'high-performance', ...look };
+  void antialias;
+  const flag = (urlFlag('gpu') || '').toLowerCase();
+  let forceWebGL = flag === 'webgl' || !WEBGPU_STATUS.supported;
+  for (let attempt = 0; attempt < 2; attempt++) {
     try {
-      const { default: WebGPURenderer } = await import('three/addons/renderers/webgpu/WebGPURenderer.js');
-      const renderer = await createSharedRenderer({ ...THREE, WebGPURenderer }, { ...base, api: 'webgpu' });
-      WEBGPU_STATUS.usable = true;
-      console.info('[povoxelstrike/quality] WebGPU renderer active — post-processing is '
-        + 'disabled on this path (' + WEBGPU_STATUS.reason + ').');
-      return { renderer, api: 'webgpu' };
+      const renderer = await createSharedRenderer(THREE, { ...base, api: 'webgpu', forceWebGL });
+      const gpu = !!renderer.backend?.isWebGPUBackend;
+      WEBGPU_STATUS.usable = gpu;
+      WEBGPU_STATUS.reason = gpu ? '' : (forceWebGL ? 'WebGL2 backend requested or WebGPU absent' : 'WebGPU adapter unavailable');
+      return { renderer, api: gpu ? 'webgpu' : 'webgl2' };
     } catch (e) {
-      console.warn('[povoxelstrike/quality] WebGPU requested but unavailable; '
-        + 'falling back to WebGL2:', e);
+      if (forceWebGL) throw e;
+      console.warn('[povoxelstrike/quality] WebGPU backend failed, retrying on WebGL2:', e);
+      forceWebGL = true;
     }
   }
-  return { renderer: await createSharedRenderer(THREE, { ...base, api: 'webgl' }), api: 'webgl2' };
+  throw new Error('renderer unavailable');
 }

@@ -4,7 +4,7 @@
 // LivingPaint clearcoat, metallic flake, analytical cabin interior glass, and the
 // selected procedural livery so players inspect changes in real time before racing.
 
-import * as THREE from 'three';
+import * as THREE from './three.js';
 import { mountCar, unmountCar } from './cars.js';
 import { createStage } from '../platform/stage/stage.js';
 import { attachRenderer, configureRenderer } from '../platform/3d/renderer.js';
@@ -21,7 +21,9 @@ export function mountCarPreview(canvasId, colorHex = '#3470d8', liveryIndex = 1)
 
     let renderer;
     try {
-        renderer = new THREE.WebGLRenderer({ canvas, alpha: true, antialias: true, powerPreference: 'low-power' });
+        // r186: the WebGPURenderer (its own WebGL2 backend where there is no WebGPU); init() is async, so the
+        // loop below starts when it resolves while the handle is returned at once, as before.
+        renderer = new THREE.WebGPURenderer({ canvas, alpha: true, antialias: true, powerPreference: 'low-power', forceWebGL: !navigator.gpu });
     } catch {
         return null;
     }
@@ -98,7 +100,7 @@ export function mountCarPreview(canvasId, colorHex = '#3470d8', liveryIndex = 1)
     stage.listen(canvas, 'pointerdown', onDown);
     stage.listen(canvas, 'pointermove', onMove);
     stage.listen(window, 'pointerup', onUp);
-    stage.start();
+    renderer.init().then(() => { if (!disposed) stage.start(); }).catch((e) => console.warn('pocabinet/car-preview: renderer init failed', e));
 
     return {
         setLook(nextHex, nextLivery) {

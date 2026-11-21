@@ -6,7 +6,7 @@
 // of decorative sprites that passed through the ground. So the thing the player actually
 // aimed at — the stone coming out of the wall — never existed.
 //
-// Now every carve throws voxels. Each one is a cannon-es box that collides with the
+// Now every carve throws voxels. Each one is a Rapier box (CCD on) that collides with the
 // terrain heightfield, the structure colliders and the debris already lying around, and
 // it comes to rest in the rubble.
 //
@@ -19,14 +19,14 @@
 //      The cap is the tier knob; it is not a hidden truncation, it is the whole design.
 //
 //   2. POOLING. Bodies are allocated once and recycled oldest-first. Creating and
-//      destroying a hundred cannon bodies per trigger pull churns the broadphase and the
+//      destroying a hundred rigid bodies per trigger pull churns the broadphase and the
 //      GC in the exact frame that is already doing a carve and a re-mesh.
 //
 // Rendering is one InstancedMesh: the entire field of flying rubble is a single draw
 // call regardless of how much of it is in the air.
 
-import * as THREE from 'three';
-import * as CANNON from 'cannon-es';
+import * as THREE from 'three-eco/webgpu';
+import { PhysBody } from './rapierWorld.js';
 import { materialFor, massOf, MATERIAL_PRESETS } from './physics.js';
 
 const LIFE_S = 11;             // then it fades and returns to the pool
@@ -42,7 +42,7 @@ export class ShrapnelField {
   /**
    * @param capacity max simultaneous voxels in flight; 0 disables the system
    * @param collision { terrain, structures } for the swept-contact pass; omit to skip it
-   * @param physicsMaterial CANNON.Material this rubble contacts the world with
+   * @param physicsMaterial surface tag ('stone' ...) this rubble contacts the world with
    */
   constructor(scene, physicsWorld, capacity, collision = null, physicsMaterial = undefined) {
     this.scene = scene;
@@ -77,22 +77,23 @@ export class ShrapnelField {
     // the shape is resized per spawn because voxel size differs between structures.
     this.slots = [];
     for (let i = 0; i < this.capacity; i++) {
-      const body = new CANNON.Body({
+      const body = new PhysBody({
         mass: 1,
-        shape: new CANNON.Box(new CANNON.Vec3(MIN_COLLIDER_HALF, MIN_COLLIDER_HALF, MIN_COLLIDER_HALF)),
         angularDamping: 0.25,
         linearDamping: 0.02,
         allowSleep: true,
-        material: this.physicsMaterial,
+        // The fastest, smallest bodies in the world: continuous collision detection.
+        ccd: true,
+        material: this.physicsMaterial ?? 'stone',
       });
-      body.sleepSpeedLimit = 0.4;
-      body.sleepTimeLimit = 0.6;
+      body.addBox(MIN_COLLIDER_HALF, MIN_COLLIDER_HALF, MIN_COLLIDER_HALF);
       const slot = { body, live: false, age: 0, size: 1, material: this.physicsMaterial };
-      body.addEventListener('collide', (e) => {
+      body.userData = slot;
+      body.eventSpeed = 1.5;
+      body.onCollide = (impactSpeed) => {
         if (!slot.live || !this.onHit) return;
-        const impactSpeed = Math.abs(e.contact.getImpactVelocityAlongNormal());
-        if (impactSpeed >= 1.5) this.onHit(slot.body.position, impactSpeed, slot.size, slot.material);
-      });
+        this.onHit(slot.body.position, impactSpeed, slot.size, slot.material);
+      };
       this.slots.push(slot);
       this.mesh.setMatrixAt(i, this._zero);
     }
@@ -115,16 +116,10 @@ export class ShrapnelField {
     if (slot.live) this.world.removeBody(slot.body); else this.live++;
 
     const half = Math.max(MIN_COLLIDER_HALF, size / 2);
-    const shape = slot.body.shapes[0];
-    shape.halfExtents.set(half, half, half);
-    shape.updateConvexPolyhedronRepresentation();
-    shape.updateBoundingSphereRadius();
-    slot.body.updateBoundingRadius();
-    slot.body.updateMassProperties();
+    slot.body.setBoxHalf(half);
     // Real mass: rho * V, no fudge factor. A 0.25 m stone voxel is 37 kg, which is why
     // it lands with weight and does not get flicked around by the pieces near it.
     slot.body.mass = massOf(1, size, density);
-    slot.body.updateMassProperties();
 
     slot.body.position.set(position.x, position.y, position.z);
     slot.body.quaternion.set(0, 0, 0, 1);
@@ -217,7 +212,7 @@ export class ShrapnelField {
     const from = this._sweepFrom ??= new THREE.Vector3();
     for (let i = 0; i < this.capacity; i++) {
       const slot = this.slots[i];
-      if (!slot.live || slot.body.sleepState === CANNON.Body.SLEEPING) continue;
+      if (!slot.live || slot.body.isSleeping) continue;
       const v = slot.body.velocity;
       const speed = Math.sqrt(v.x * v.x + v.y * v.y + v.z * v.z);
       const travel = speed * dt;

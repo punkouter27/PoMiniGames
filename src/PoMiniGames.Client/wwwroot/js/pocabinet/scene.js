@@ -63,7 +63,8 @@
 //   handle.groundHeight(xSim, ySim) — world height of the ground there
 //   unmount(handle);
 
-import * as THREE from 'three';
+import * as THREE from './three.js';
+import { uniform } from 'three-eco/tsl';
 import { buildTrack } from './track.js';
 import { runOffAt } from './physics.js';
 import { computeKerbs } from './kerbs.js';
@@ -84,7 +85,7 @@ import * as models from './models.js';
 // app tier, the pre-impact light swell, the shared light rig (lightning, wreck beacons, rim
 // pulse) and the in-world standings board with its flat HUD fallback.
 import { createStage } from '../platform/stage/stage.js';
-import { createRenderer, attachRenderer, configureRenderer } from '../platform/3d/renderer.js';
+import { createRenderer, attachRenderer, configureRenderer, webgpuAvailable } from '../platform/3d/renderer.js';
 import { Anticipation, closestApproach } from '../platform/anticipation.js';
 import { LightRig } from '../platform/lightRig.js';
 import { DiegeticBoard } from '../platform/diegeticBoard.js';
@@ -155,7 +156,7 @@ class SceneHandle {
         this.sunDirVisual = null;
         this.sunVisibility = 0;
         this.raining = false;
-        this.wetUniform = { value: 0 };
+        this.wetUniform = uniform(0);
         this.rain = null;         // the falling-rain streaks while it rains (setRainStreaks)
         this.fx = {
             speed: 0, rain: 0, flash: 0, slow: 0,
@@ -827,7 +828,10 @@ export async function mount(canvas, world) {
 
     // preserveDrawingBuffer so the clip recorder and the result card can read frames back.
     // Tone mapping is the post pass's (it falls back to ACES below without one).
-    const renderer = await createRenderer(THREE, { canvas, antialias: true, preserveDrawingBuffer: true, tone: 'none' });
+    // r186 WebGPURenderer: the WebGPU backend where an adapter exists, else its own WebGL2 backend (the build
+    // has no WebGLRenderer). `?cabwebgl` forces the WebGL2 backend, for comparing the two.
+    const gpu = await webgpuAvailable();
+    const renderer = await createRenderer(THREE, { api: 'webgpu', canvas, antialias: true, preserveDrawingBuffer: true, tone: 'none', forceWebGL: !gpu || /[?&]cabwebgl/.test(location.search) });
 
     const scene = new THREE.Scene();
     const camera = new THREE.PerspectiveCamera(70, 16 / 9, 0.25, 5000);

@@ -5,7 +5,7 @@
 // with the car in focus (followShadow) and the sun's spot on screen for the glare. Every function
 // takes the SceneHandle first; scene.js keeps thin methods that call them.
 
-import * as THREE from 'three';
+import * as THREE from './three.js';
 import { wallFace } from './terrain.js';
 import { WORLD_SCALE } from './util.js';
 

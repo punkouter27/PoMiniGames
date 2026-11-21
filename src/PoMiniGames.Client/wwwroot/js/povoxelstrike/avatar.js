@@ -8,7 +8,7 @@
 // The group's origin is the body centre (0.9 above the feet), which is where game.js has
 // always placed the player mesh, so swapping the capsule for this moved nothing.
 
-import * as THREE from 'three';
+import * as THREE from 'three-eco/webgpu';
 import { createActorMaterial } from './materials.js';
 
 export class Avatar {

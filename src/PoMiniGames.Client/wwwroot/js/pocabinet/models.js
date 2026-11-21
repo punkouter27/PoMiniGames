@@ -6,7 +6,7 @@
 // pocabinet-court.py and pocabinet-court-splat.py build them from the same reconstruction):
 //
 //   • court.ksplat, a Gaussian splat (400k splats, 9.6 MB; court-low.ksplat is its first 100k,
-//     shown first), through gaussian-splats-3d's DropInViewer, which sorts in a worker;
+//     shown first), through platform/3d/splats.js (r186 TSL splat renderer; its Web Worker sorts back to front);
 //   • court.glb, the photogrammetry mesh: what the low graphics tier and the "Lite" setting
 //     draw, and the fallback if the splat cannot be. Its three atlases are KTX2 (Basis ETC1S,
 //     mips in the file) and its geometry Meshopt, packed by scripts/pocabinet/court-pack.mjs:
@@ -20,9 +20,11 @@
 // court as the camera saw it). Every function takes the SceneHandle first; scene.js keeps thin
 // methods that call them. Render-only.
 
-import * as THREE from 'three';
+import * as THREE from './three.js';
 import { WORLD_SCALE } from './util.js';
 import { disposeObject } from './meshes.js';
+import * as TSL from 'three-eco/tsl';
+import { loadSplat } from '../platform/3d/splats.js';
 
 export const COURT = {
     url: 'models/court.glb',
@@ -154,9 +156,9 @@ async function loadScanMesh(sh, group, place) {
     let ktx2 = null;
     try {
         const [{ GLTFLoader }, { KTX2Loader }, { MeshoptDecoder }] = await Promise.all([
-            import('three/addons/loaders/GLTFLoader.js'),
-            import('three/addons/loaders/KTX2Loader.js'),
-            import('three/addons/libs/meshopt_decoder.module.js'),
+            import('three-eco/addons/loaders/GLTFLoader.js'),
+            import('three-eco/addons/loaders/KTX2Loader.js'),
+            import('three-eco/addons/libs/meshopt_decoder.module.js'),
         ]);
         // detectSupport picks the GPU's own compressed format (ASTC, ETC2 or BC), so the
         // atlases are never held as RGBA.
@@ -199,13 +201,12 @@ async function loadScanMesh(sh, group, place) {
     }
 }
 
-/** Dispose a DropInViewer: its dispose() is async (it terminates the sort worker), so a failure
- *  arrives as a rejection, not a throw. Never lets either escape. */
+/** Dispose a splat cloud's object (platform/3d/splats.js): ends its sort worker, frees its textures. */
 function disposeViewer(viewer) {
     if (!viewer) return;
     viewer.parent?.remove(viewer);
     try {
-        Promise.resolve(viewer.dispose()).catch(e => console.warn('pocabinet/scene: splat dispose', e));
+        viewer.userData.cloud?.dispose();
     } catch (e) {
         console.warn('pocabinet/scene: splat dispose', e);
     }
@@ -244,36 +245,34 @@ function progressBar(sh) {
     };
 }
 
-async function makeViewer(sh, group, GS, url, place, onProgress) {
-    const viewer = new GS.DropInViewer({
-        gpuAcceleratedSort: false,
-        sharedMemoryForWorkers: false,   // no cross-origin isolation on this site
-        integerBasedSort: true,
-        dynamicScene: false,
-        sphericalHarmonicsDegree: 0,
-        logLevel: GS.LogLevel.None,
+/**
+ * How many splats this quality tier can sort and blend: the whole 400k scan on high, half on
+ * medium, a quarter (the light file's size) on low. The loader strides the file down to the cap.
+ */
+export const SPLAT_CAP = { high: 400000, medium: 200000, low: 100000 };
+
+async function makeViewer(sh, group, url, place, onProgress) {
+    // The splat's frame is z up: turned to three's y up, scaled and stood where the scan stands.
+    const upright = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(1, 0, 0), -Math.PI / 2);
+    const matrix = new THREE.Matrix4().compose(new THREE.Vector3(place.x, place.y, place.z), upright,
+        new THREE.Vector3(place.scale, place.scale, place.scale));
+    const cloud = await loadSplat(THREE, TSL, url, {
+        matrix,
+        maxSplats: SPLAT_CAP[sh.quality] ?? SPLAT_CAP.high,
+        lift: COURT.splatLift,
+        name: 'pocabinet-scan-splat',
+        // Only the court and a few metres round it, softly ending in the lawn; above `low` metres
+        // only the two hoops (the trees round the court would otherwise hang in the air).
+        crop: { x: place.x, z: place.z, hx: place.hx, hz: place.hz, fade: COURT.fade },
+        hide: { floorY: place.y, scale: place.scale, low: COURT.low, hoopAt: COURT.hoopAt, hoopReach: COURT.hoopReach, hoopHalf: COURT.hoopHalf, cx: place.x, cz: place.z },
+        onProgress: (p) => onProgress?.(Number(p) || 0),
     });
-    try {
-        // The splat's frame is z up: turned to three's y up, scaled and stood where the scan stands.
-        const upright = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(1, 0, 0), -Math.PI / 2);
-        await viewer.addSplatScene(url, {
-            format: GS.SceneFormat.KSplat,
-            showLoadingUI: false,
-            progressiveLoad: false,
-            position: [place.x, place.y, place.z],
-            rotation: upright.toArray(),
-            scale: [place.scale, place.scale, place.scale],
-            onProgress: (percent) => onProgress?.(Number(percent) || 0),
-        });
-    } catch (e) {
-        disposeViewer(viewer);
-        throw e;
-    }
     if (sh.disposed || sh.trackGroup !== group) {
-        disposeViewer(viewer);
+        cloud.dispose();
         return null;
     }
-    return viewer;
+    cloud.object.userData.cloud = cloud;
+    return cloud.object;
 }
 
 /**
@@ -291,16 +290,14 @@ export async function loadScanSplat(sh, group, full = true) {
     sh.roomProgress = bar;
     const done = () => { bar.remove(); if (sh.roomProgress === bar) sh.roomProgress = null; };
     try {
-        const GS = await import('gaussian-splats-3d');
-        if (sh.disposed || sh.trackGroup !== group) { done(); return false; }
-        const low = await makeViewer(sh, group, GS, COURT.splatLow, place, (p) => bar.set(p * (full ? 0.25 : 1), `Loading ${COURT.label}`));
+        const low = await makeViewer(sh, group, COURT.splatLow, place, (p) => bar.set(p * (full ? 0.25 : 1), `Loading ${COURT.label}`));
         if (!low) { done(); return false; }
         low.name = 'pocabinet-scan-splat';
         group.add(low);
         sh.roomSplat = low;
         if (!full) { done(); return true; }
         // The sharp version, behind the light one; any failure just keeps the light one.
-        makeViewer(sh, group, GS, COURT.splat, place, (p) => bar.set(25 + p * 0.75, `Sharpening ${COURT.label}`))
+        makeViewer(sh, group, COURT.splat, place, (p) => bar.set(25 + p * 0.75, `Sharpening ${COURT.label}`))
             .then((sharp) => {
                 if (!sharp) return;
                 if (sh.roomSplat !== low) { disposeViewer(sharp); return; }
@@ -341,51 +338,11 @@ export function setRoomDetail(sh, detail) {
 }
 
 /**
- * gaussian-splats-3d's shaders, patched for this scene (lazily: the viewer may swap its mesh).
- * They match the pinned 0.4.7 text; a shader whose text ever differs is left alone.
- *
- *   • Fragment: it writes its sRGB colour straight out. Drawn straight to the canvas that is
- *     right; through postfx.js (a linear HDR target, then ACES and sRGB) it is encoded twice and
- *     comes out washed white. So: linearize (and scale by COURT.splatLift) while the post pass is on.
- *   • Vertex: a splat whose centre is outside the drawn rectangle (pcCrop: centre x, z and half
- *     extents, world units; the centres are already in the scene's frame, the viewer bakes the
- *     placement in) is dropped, and the last COURT.fade before the edge fades out, so the scan
- *     ends in a soft edge on the lawn instead of a wall of grass and tree fuzz. So is one more
- *     than COURT.low metres over the floor that is not part of a hoop (pcScan: the floor's
- *     height and the scale; pcHoop: COURT.low, hoopAt, hoopReach, hoopHalf).
+ * Per frame: nothing the splat needs from the scene any more. The old viewer's GLSL had to be
+ * patched with a linearize switch (post pass on or off) and the crop; platform/3d/splats.js takes
+ * both as options and the r186 pipeline is always linear, so this stays as the scene's hook only.
  */
 export function syncRoomSplat(sh) {
-    const mat = sh.roomSplat?.viewer?.splatMesh?.material;
-    if (!mat) return;
-    if (!mat.userData.pcPatched) {
-        mat.userData.pcPatched = true;
-        const out = 'gl_FragColor = vec4(color.rgb, opacity);';
-        if (mat.fragmentShader.includes(out)) {
-            mat.uniforms.pcLinear = { value: 1 };
-            mat.uniforms.pcLift = { value: COURT.splatLift };
-            mat.fragmentShader = mat.fragmentShader
-                .replace('void main () {', 'uniform float pcLinear;\nuniform float pcLift;\nvoid main () {')
-                .replace(out, 'color = mix(color, pow(max(color, vec3(0.0)), vec3(2.2)) * pcLift, pcLinear);\n' + out);
-        }
-        const centre = 'vec3 splatCenter = uintBitsToFloat(uvec3(sampledCenterColor.gba));';
-        const colour = 'vColor = uintToRGBAVec(sampledCenterColor.r);';
-        const place = scanPlace(sh);
-        if (place && mat.vertexShader.includes(centre) && mat.vertexShader.includes(colour)) {
-            mat.uniforms.pcCrop = { value: new THREE.Vector4(place.x, place.z, place.hx, place.hz) };
-            mat.uniforms.pcFade = { value: COURT.fade };
-            mat.uniforms.pcScan = { value: new THREE.Vector2(place.y, place.scale) };
-            mat.uniforms.pcHoop = { value: new THREE.Vector4(COURT.low, COURT.hoopAt, COURT.hoopReach, COURT.hoopHalf) };
-            mat.vertexShader = mat.vertexShader
-                .replace('void main () {', 'uniform vec4 pcCrop;\nuniform float pcFade;\nuniform vec2 pcScan;\nuniform vec4 pcHoop;\nvoid main () {')
-                .replace(centre, centre + `
-                    vec2 pcIn = pcCrop.zw - abs(splatCenter.xz - pcCrop.xy);
-                    float pcEdge = min(pcIn.x, pcIn.y);
-                    vec3 pcM = vec3(splatCenter.x - pcCrop.x, splatCenter.y - pcScan.x, splatCenter.z - pcCrop.y) / pcScan.y;
-                    bool pcHigh = pcM.y > pcHoop.x && !(abs(abs(pcM.x) - pcHoop.y) < pcHoop.z && abs(pcM.z) < pcHoop.w);
-                    if (pcEdge < 0.0 || pcHigh) { gl_Position = vec4(0.0, 0.0, 2.0, 1.0); return; }`)
-                .replace(colour, colour + '\nvColor.a *= smoothstep(0.0, pcFade, pcEdge);');
-        }
-        mat.needsUpdate = true;
-    }
-    if (mat.uniforms.pcLinear) mat.uniforms.pcLinear.value = sh.post ? 1 : 0;
+    const cloud = sh.roomSplat?.userData?.cloud;
+    if (cloud) cloud.uniforms.lift.value = COURT.splatLift;
 }

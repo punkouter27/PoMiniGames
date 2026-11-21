@@ -18,7 +18,11 @@
 // Banners hang from poles on the tallest structures and fall when the stone under the
 // pole is shot away.
 
-import * as THREE from 'three';
+import * as THREE from 'three-eco/webgpu';
+import {
+  attribute, exp, float, cos, modelWorldMatrix, modelWorldMatrixInverse, positionLocal, select, sin, uniform,
+  vec3, vec4,
+} from 'three-eco/tsl';
 import { createActorMaterial } from './materials.js';
 
 const BLASTS = 6;
@@ -27,74 +31,58 @@ const BLAST_LIFE_S = 3.5;
 const GRID = 8;                  // spatial grid cell for re-seating blades (m)
 const BLADE_COUNT = { low: 0, medium: 9000, high: 22000, ultra: 40000 };
 
+// Uniform NODES, one per blast slot, shared by every foliage material (grass and cloth build
+// the same graph, so they compile once per stiffness and never per instance).
 const shared = {
-  time: { value: 0 },
-  blasts: { value: Array.from({ length: BLASTS }, () => new THREE.Vector4(0, -9999, 0, 0)) },
-  births: { value: new Float32Array(BLASTS).fill(-1000) },
-  power: { value: new Float32Array(BLASTS) },
+  time: uniform(0),
+  blasts: Array.from({ length: BLASTS }, () => uniform(new THREE.Vector4(0, -9999, 0, 0))),
+  births: Array.from({ length: BLASTS }, () => uniform(-1000)),
+  power: Array.from({ length: BLASTS }, () => uniform(0)),
 };
 let blastNext = 0;
 const listeners = new Set();
 
 /** A blast/carve happened: the shock front bends grass and billows banners within radius. */
 export function markBlast(point, radius, power = 1) {
-  shared.blasts.value[blastNext].set(point.x, point.y, point.z, radius);
-  shared.births.value[blastNext] = shared.time.value;
-  shared.power.value[blastNext] = power;
+  shared.blasts[blastNext].value.set(point.x, point.y, point.z, radius);
+  shared.births[blastNext].value = shared.time.value;
+  shared.power[blastNext].value = power;
   blastNext = (blastNext + 1) % BLASTS;
   for (const fn of listeners) fn(point, radius);
 }
 
-// Shared GLSL: world-space displacement for a vertex at `wp` whose bend weight is `w`.
-const BEND_GLSL = /* glsl */`
-  uniform float uFolTime;
-  uniform vec4 uBlast[${BLASTS}];
-  uniform float uBlastBirth[${BLASTS}];
-  uniform float uBlastPower[${BLASTS}];
-  vec3 pvsBend(vec3 wp, float w, float stiff) {
-    float gust = sin(wp.x * 0.07 + uFolTime * 1.3) * 0.5 + sin(wp.z * 0.11 - uFolTime * 0.9) * 0.5;
-    float flutter = sin(uFolTime * 6.0 + wp.x * 1.7 + wp.z * 2.3) * 0.08;
-    vec3 d = vec3(0.6, 0.0, 0.35) * (0.18 + 0.22 * gust + flutter) * w / stiff;
-    for (int i = 0; i < ${BLASTS}; i++) {
-      float age = uFolTime - uBlastBirth[i];
-      if (age < 0.0 || age > ${BLAST_LIFE_S.toFixed(1)}) continue;
-      vec3 off = wp - uBlast[i].xyz;
-      float dist = length(off.xz) + 0.001;
-      if (dist > uBlast[i].w) continue;
-      float since = age - dist / ${SHOCK_SPEED.toFixed(1)};   // time since the front passed
-      if (since < 0.0) continue;
-      float reach = 1.0 - dist / uBlast[i].w;
-      float spring = exp(-since * 2.6) * cos(since * 9.0);
-      vec2 away = off.xz / dist;
-      float amt = uBlastPower[i] * reach * spring * 1.4 * w / stiff;
-      d.xz += away * amt;
-      d.y -= abs(amt) * 0.35;                                   // flattened, not stretched
-    }
-    return d;
-  }`;
+// World-space displacement for a vertex at `wp` (a node) whose bend weight is `w`: a steady
+// gust + flutter, plus the damped shock-front spring of each live blast. Unrolled over the
+// BLASTS slots with select() masks (TSL has no `continue`); the maths is the old GLSL's.
+function bendAt(wp, w, stiff) {
+  const t = shared.time;
+  const gust = sin(wp.x.mul(0.07).add(t.mul(1.3))).mul(0.5).add(sin(wp.z.mul(0.11).sub(t.mul(0.9))).mul(0.5));
+  const flutter = sin(t.mul(6).add(wp.x.mul(1.7)).add(wp.z.mul(2.3))).mul(0.08);
+  let d = vec3(0.6, 0, 0.35).mul(gust.mul(0.22).add(0.18).add(flutter)).mul(w).div(stiff);
+  for (let i = 0; i < BLASTS; i++) {
+    const age = t.sub(shared.births[i]);
+    const sph = shared.blasts[i];
+    const offX = wp.x.sub(sph.x), offZ = wp.z.sub(sph.z);
+    const dist = offX.mul(offX).add(offZ.mul(offZ)).sqrt().add(0.001);
+    const since = age.sub(dist.div(SHOCK_SPEED));        // time since the front passed
+    const live = age.greaterThanEqual(0).and(age.lessThanEqual(BLAST_LIFE_S))
+      .and(dist.lessThanEqual(sph.w)).and(since.greaterThanEqual(0));
+    const reach = dist.div(sph.w).oneMinus();
+    const spring = exp(since.mul(-2.6)).mul(cos(since.mul(9)));
+    const amt = select(live, shared.power[i].mul(reach).mul(spring).mul(1.4).mul(w).div(stiff), 0);
+    d = d.add(vec3(offX.div(dist).mul(amt), amt.abs().mul(-0.35), offZ.div(dist).mul(amt)));
+  }
+  return d;
+}
 
-// Bend weight is a custom attribute (aBend: 0 = pinned, 1 = free) rather than uv, because
-// three only declares `uv` in the vertex prefix when the material samples a texture.
-function hookBend(material, stiff, key) {
-  material.onBeforeCompile = (shader) => {
-    shader.uniforms.uFolTime = shared.time;
-    shader.uniforms.uBlast = shared.blasts;
-    shader.uniforms.uBlastBirth = shared.births;
-    shader.uniforms.uBlastPower = shared.power;
-    const bendDecl = shader.vertexShader.includes('attribute float aBend;') ? '' : 'attribute float aBend;\n';
-    shader.vertexShader = shader.vertexShader
-      .replace('#include <common>', `#include <common>\n${bendDecl}${BEND_GLSL}`)
-      .replace('#include <project_vertex>', /* glsl */`
-        vec4 pvsWp = vec4(transformed, 1.0);
-        #ifdef USE_INSTANCING
-          pvsWp = instanceMatrix * pvsWp;
-        #endif
-        pvsWp = modelMatrix * pvsWp;
-        pvsWp.xyz += pvsBend(pvsWp.xyz, aBend, ${stiff.toFixed(2)});
-        vec4 mvPosition = viewMatrix * pvsWp;
-        gl_Position = projectionMatrix * mvPosition;`);
-  };
-  material.customProgramCacheKey = () => key;
+// Bend weight is a custom attribute (aBend: 0 = pinned, 1 = free). The instance transform is
+// already folded into positionLocal by the time positionNode runs, so the world position is one
+// model-matrix multiply away; the bent point goes back to local space for the pipeline.
+function hookBend(material, stiff) {
+  const aBend = attribute('aBend', 'float');
+  const world = modelWorldMatrix.mul(vec4(positionLocal, 1)).xyz;
+  const bent = world.add(bendAt(world, aBend, float(stiff)));
+  material.positionNode = modelWorldMatrixInverse.mul(vec4(bent, 1)).xyz;
 }
 
 /** Seeded PRNG (mulberry32) — the meadow layout belongs to the seed like the weather. */
@@ -136,7 +124,7 @@ export class Foliage {
     this._checkT = 0;
     this._onBlast = (p, r) => this._reseat(p, r);
     listeners.add(this._onBlast);
-    shared.births.value.fill(-1000);
+    for (const b of shared.births) b.value = -1000;
 
     const count = BLADE_COUNT[quality?.tier] ?? 0;
     if (count > 0) this._buildGrass(count, arenaHalf, seed);
@@ -161,8 +149,8 @@ export class Foliage {
   _buildGrass(count, half, seed) {
     const rnd = prng((seed ?? 1) * 7919 + 13);
     const boxes = this._footprints();
-    const mat = new THREE.MeshLambertMaterial({ vertexColors: true, side: THREE.DoubleSide });
-    hookBend(mat, 1, 'pvs-grass');
+    const mat = new THREE.MeshLambertNodeMaterial({ vertexColors: true, side: THREE.DoubleSide });
+    hookBend(mat, 1);
     const mesh = new THREE.InstancedMesh(bladeGeometry(), mat, count);
     mesh.frustumCulled = false;
     mesh.receiveShadow = true;
@@ -237,8 +225,8 @@ export class Foliage {
       .sort((a, b) => b.h - a.h)
       .slice(0, 4);
     const rnd = prng((seed ?? 1) * 31 + 5);
-    const clothMat = new THREE.MeshLambertMaterial({ vertexColors: true, side: THREE.DoubleSide });
-    hookBend(clothMat, 0.55, 'pvs-banner');
+    const clothMat = new THREE.MeshLambertNodeMaterial({ vertexColors: true, side: THREE.DoubleSide });
+    hookBend(clothMat, 0.55);
     const poleMat = createActorMaterial({ color: 0x3b2d22 });
     for (const { st } of tall) {
       const top = this._topOf(st);

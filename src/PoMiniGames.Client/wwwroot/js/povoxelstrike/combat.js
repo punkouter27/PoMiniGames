@@ -6,7 +6,7 @@
 // Targets, nearest first: structure voxels (grid DDA), the terrain surface (ray march),
 // debris pieces, enemies.
 
-import * as THREE from 'three';
+import * as THREE from 'three-eco/webgpu';
 import { markBlast } from './foliage.js';
 
 const PRIMARY_INTERVAL_S = 0.14;

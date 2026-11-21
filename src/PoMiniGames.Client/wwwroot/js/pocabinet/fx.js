@@ -35,7 +35,11 @@
 // solid. Nothing is emitted further than PUFF_RANGE from the camera. Fire is HDR sparks off the
 // bonnet (the bloom catches them). Rain spray follows the scene's weather live.
 
-import * as THREE from 'three';
+import * as THREE from './three.js';
+import {
+    uniform, varying, texture, uv, instancedBufferAttribute, positionGeometry, cameraProjectionMatrix, cameraViewMatrix, vec2, vec3, vec4, float,
+    length, dot, max, clamp, normalize, smoothstep, mix, sin, cos, select,
+} from 'three-eco/tsl';
 import { wrapAngle } from './track.js';
 import { throwChunks } from './debris.js';
 import { noise } from './materials.js';
@@ -67,102 +71,68 @@ const KIND = [
     { n: 2, life: 1.5, size: 1.2, alpha: 0.75, spread: 0.3 },     // wreck smoke
 ];
 
-const QUAD_VERT = /* glsl */ `
-attribute vec3 aPos;
-attribute vec3 aVel;
-attribute float aSize;
-attribute float aAlpha;
-attribute vec3 aColor;
-attribute float aSeed;
-attribute float aFloor;
-uniform float uStretch;
-varying vec2 vUv;
-varying float vAlpha;
-varying vec3 vColor;
-varying float vSeed;
-varying float vGroundGap;
-void main() {
-    vUv = uv;
-    vColor = aColor;
-    vSeed = aSeed;
-    if (aAlpha <= 0.002 || aSize <= 0.001) {
-        vAlpha = 0.0;
-        gl_Position = vec4(2.0, 2.0, 2.0, 1.0);
-        return;
-    }
-    vec4 mv = viewMatrix * vec4(aPos, 1.0);
+/**
+ * The particle quads as TSL node materials (r186). Instanced attributes (aPos, aVel, aSize, aAlpha,
+ * aColor, aSeed, aFloor) come off the pool's geometry; `kind` picks the fragment: 'smoke' (a puff
+ * whose edge and density the noise texture breaks up, a different patch per particle, turning as
+ * it fades, lit from above, soft floor contact; seed < 0 is a solid dot) or 'spark' (a hot streak).
+ * The two kinds are two programs, shared by every pool of that kind.
+ */
+function poolMaterial(geom, kind, blending, stretch) {
+    const at = (n) => instancedBufferAttribute(geom.attributes[n]);
+    const aPos = at('aPos'), aVel = at('aVel'), aSize = at('aSize'), aAlpha = at('aAlpha'), aColor = at('aColor');
+    const aSeed = at('aSeed'), aFloor = at('aFloor');
+    const uStretch = uniform(stretch);
+    const noiseTex = noise();
+    const uvq = uv();
+    const mv = cameraViewMatrix.mul(vec4(aPos, 1));
+    const dead = aAlpha.lessThanEqual(0.002).or(aSize.lessThanEqual(0.001));
     // Fade out right at the lens: a puff beside the cockpit would otherwise fill the screen.
-    vAlpha = aAlpha * smoothstep(1.2, 4.5, -mv.z);
-    vGroundGap = max(0.0, aPos.y - aFloor) / max(0.3, aSize * 0.48);
-
-    vec2 rightV = vec2(1.0, 0.0);
-    vec2 upV = vec2(0.0, 1.0);
-    float wx = aSize;
-    float hy = aSize;
-    if (uStretch > 0.0) {
-        vec3 vv = mat3(viewMatrix) * aVel;
-        float sp2 = dot(vv.xy, vv.xy);
-        float lenScale = clamp(length(vv) * uStretch, 1.0, 7.5);
-        if (sp2 > 0.02) {
-            upV = normalize(vv.xy);
-            rightV = vec2(-upV.y, upV.x);
-        }
-        wx = aSize * 0.42;
-        hy = aSize * lenScale;
-    }
-    vec3 offsetV = vec3(rightV * (position.x * wx) + upV * (position.y * hy), 0.0);
-    mv.xyz += offsetV;
-    gl_Position = projectionMatrix * mv;
-}`;
-
-// A puff (vSeed >= 0): a soft ball whose edge and density the noise texture breaks up, a
-// different patch of it per particle, turning as it fades, lit from above, plus soft floor contact.
-const SMOKE_FRAG = /* glsl */ `
-uniform sampler2D uNoise;
-varying vec2 vUv;
-varying float vAlpha;
-varying vec3 vColor;
-varying float vSeed;
-varying float vGroundGap;
-void main() {
-    vec2 c = vUv - 0.5;
-    float d = length(c);
-    float a, lit;
-    if (vSeed < 0.0) {
-        a = smoothstep(0.5, 0.05, d);
-        lit = 0.85 + 0.25 * (0.5 - vUv.y);
+    const vAlpha = varying(select(dead, float(0), aAlpha.mul(smoothstep(1.2, 4.5, mv.z.negate()))), 'vPAlpha');
+    const vColor = varying(aColor, 'vPColor'), vSeed = varying(aSeed, 'vPSeed');
+    const vGap = varying(max(0, aPos.y.sub(aFloor)).div(max(0.3, aSize.mul(0.48))), 'vPGap');
+    const vUv = varying(uvq, 'vPUv');
+    const vv = cameraViewMatrix.mul(vec4(aVel, 0)).xyz;
+    const sp2 = dot(vv.xy, vv.xy);
+    const lenScale = clamp(length(vv).mul(uStretch), 1, 7.5);
+    const stretched = uStretch.greaterThan(0).and(sp2.greaterThan(0.02));
+    const upV = select(stretched, normalize(vv.xy), vec2(0, 1));
+    const rightV = vec2(upV.y.negate(), upV.x);
+    const wx = select(uStretch.greaterThan(0), aSize.mul(0.42), aSize), hy = select(uStretch.greaterThan(0), aSize.mul(lenScale), aSize);
+    const q = positionGeometry.xy;
+    const off = rightV.mul(q.x.mul(wx)).add(upV.mul(q.y.mul(hy)));
+    const clip = cameraProjectionMatrix.mul(vec4(mv.xy.add(off), mv.z, 1));
+    const m = new THREE.MeshBasicNodeMaterial({ transparent: true, depthWrite: false, depthTest: true, blending });
+    m.vertexNode = select(dead, vec4(2, 2, 2, 1), clip);
+    const c = vUv.sub(0.5);
+    const d = length(c);
+    if (kind === 'smoke') {
+        const ang = vSeed.mul(6.2831853).add(vAlpha.mul(1.5));
+        const rq = vec2(cos(ang).mul(c.x).add(sin(ang).mul(c.y)), sin(ang).negate().mul(c.x).add(cos(ang).mul(c.y)));
+        const n = texture(noiseTex, rq.mul(0.55).add(vSeed.mul(vec2(17.31, 9.17))));
+        const mm = texture(noiseTex, rq.mul(1.3).add(vSeed.mul(vec2(5.13, 23.7))));
+        const edge = float(0.5).sub(float(0.2).mul(float(1).sub(n.r)));
+        let aPuff = smoothstep(edge.mul(0.15), edge, d).oneMinus().mul(float(0.6).add(n.g.mul(0.8).mul(float(0.5).add(mm.a))));
+        aPuff = aPuff.mul(mix(0.32, 1, smoothstep(0, 0.75, vGap)));
+        const litPuff = float(0.78).add(float(0.5).sub(vUv.y).mul(0.32)).add(mm.b.sub(0.5).mul(0.18));
+        const aDot = smoothstep(0.05, 0.5, d).oneMinus();
+        const litDot = float(0.85).add(float(0.5).sub(vUv.y).mul(0.25));
+        const solid = vSeed.lessThan(0);
+        const al = select(solid, aDot, aPuff).mul(vAlpha), lit = select(solid, litDot, litPuff);
+        m.colorNode = vColor.mul(lit);
+        m.opacityNode = select(al.lessThan(0.004), float(0), al);
     } else {
-        float ang = vSeed * 6.2831853 + vAlpha * 1.5;
-        vec2 q = mat2(cos(ang), -sin(ang), sin(ang), cos(ang)) * c;
-        vec4 n = texture2D(uNoise, q * 0.55 + vSeed * vec2(17.31, 9.17));
-        vec4 m = texture2D(uNoise, q * 1.3 + vSeed * vec2(5.13, 23.7));
-        float edge = 0.5 - 0.2 * (1.0 - n.r);
-        a = smoothstep(edge, edge * 0.15, d) * (0.6 + 0.8 * n.g * (0.5 + m.a));
-        // Soft analytical ground intersection fade (#17) — zero depth feedback loop.
-        a *= mix(0.32, 1.0, smoothstep(0.0, 0.75, vGroundGap));
-        lit = 0.78 + 0.32 * (0.5 - vUv.y) + 0.18 * (m.b - 0.5);
+        const cc = vUv.sub(0.5).mul(2);
+        const core = smoothstep(0, 1, length(vec2(cc.x.mul(1.35), cc.y.mul(0.78)))).oneMinus();
+        const al = core.mul(core).mul(vAlpha);
+        m.colorNode = vColor.mul(float(1.35).add(core.mul(2.6)));
+        m.opacityNode = select(al.lessThan(0.004), float(0), al);
     }
-    a *= vAlpha;
-    if (a < 0.004) discard;
-    gl_FragColor = vec4(vColor * lit, a);
-    #include <colorspace_fragment>
-}`;
-
-const SPARK_FRAG = /* glsl */ `
-varying vec2 vUv;
-varying float vAlpha;
-varying vec3 vColor;
-void main() {
-    vec2 c = (vUv - 0.5) * 2.0;
-    float core = smoothstep(1.0, 0.0, length(vec2(c.x * 1.35, c.y * 0.78)));
-    float a = core * core * vAlpha;
-    if (a < 0.004) discard;
-    gl_FragColor = vec4(vColor * (1.35 + 2.6 * core), a);
-    #include <colorspace_fragment>
-}`;
+    return m;
+}
 
 class Pool {
-    constructor(max, frag, blending, stretch = 0) {
+    constructor(max, kind, blending, stretch = 0) {
         this.max = max;
         this.pos = new Float32Array(max * 3);
         this.vel = new Float32Array(max * 3);
@@ -202,15 +172,7 @@ class Pool {
         geom.setAttribute('aColor', new THREE.InstancedBufferAttribute(this.color, 3).setUsage(THREE.DynamicDrawUsage));
         geom.setAttribute('aSeed', new THREE.InstancedBufferAttribute(this.seed, 1).setUsage(THREE.DynamicDrawUsage));
         geom.setAttribute('aFloor', new THREE.InstancedBufferAttribute(this.floor, 1).setUsage(THREE.DynamicDrawUsage));
-        this.material = new THREE.ShaderMaterial({
-            vertexShader: QUAD_VERT,
-            fragmentShader: frag,
-            uniforms: { uNoise: { value: noise() }, uStretch: { value: stretch } },
-            transparent: true,
-            depthWrite: false,
-            depthTest: true,
-            blending,
-        });
+        this.material = poolMaterial(geom, kind, blending, stretch);
         this.mesh = new THREE.Mesh(geom, this.material);
         this.points = this.mesh;
         this.mesh.frustumCulled = false;
@@ -321,28 +283,17 @@ class SkidMarks {
         this.geom.setAttribute('uv', new THREE.BufferAttribute(uv, 2));
         this.geom.setIndex(new THREE.BufferAttribute(idx, 1));
         this.geom.setDrawRange(0, 0);
-        this.material = new THREE.ShaderMaterial({
-            uniforms: { uOpacity: { value: 0.54 } },
-            vertexShader: /* glsl */ `
-                varying float vU;
-                void main() {
-                    vU = uv.x;
-                    gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
-                }`,
-            fragmentShader: /* glsl */ `
-                uniform float uOpacity;
-                varying float vU;
-                void main() {
-                    float edge = smoothstep(0.0, 0.24, vU) * smoothstep(1.0, 0.76, vU);
-                    float groove = 0.78 + 0.22 * cos((vU - 0.5) * 12.566);
-                    float a = uOpacity * edge * groove;
-                    if (a < 0.005) discard;
-                    gl_FragColor = vec4(0.015, 0.015, 0.018, a);
-                    #include <colorspace_fragment>
-                }`,
-            transparent: true, depthWrite: false,
-            polygonOffset: true, polygonOffsetFactor: -2, polygonOffsetUnits: -4, side: THREE.DoubleSide,
-        });
+        {
+            const vU = varying(uv().x, 'vSkidU');
+            const groove = float(0.78).add(cos(vU.sub(0.5).mul(12.566)).mul(0.22));
+            const al = uniform(0.54).mul(smoothstep(0, 0.24, vU)).mul(smoothstep(0.76, 1, vU).oneMinus()).mul(groove);
+            const m = new THREE.MeshBasicNodeMaterial({
+                transparent: true, depthWrite: false, polygonOffset: true, polygonOffsetFactor: -2, polygonOffsetUnits: -4, side: THREE.DoubleSide,
+            });
+            m.colorNode = vec3(0.015, 0.015, 0.018);
+            m.opacityNode = select(al.lessThan(0.005), float(0), al);
+            this.material = m;
+        }
         this.mesh = new THREE.Mesh(this.geom, this.material);
         this.mesh.frustumCulled = false;
         this.mesh.renderOrder = 1;
@@ -573,8 +524,8 @@ class CarFx {
         // Gravel traps: grey-brown stones and pale dust; the beach road's are sand.
         this.stones = { gravel: new THREE.Color('#8d8577'), sand: new THREE.Color('#d9c79c') };
         this.grits = { gravel: new THREE.Color('#c9bba0'), sand: new THREE.Color('#efe2c2') };
-        this.smoke = new Pool(MAX_SMOKE, SMOKE_FRAG, THREE.NormalBlending, 0);
-        this.sparks = new Pool(MAX_SPARKS, SPARK_FRAG, THREE.AdditiveBlending, 0.085);
+        this.smoke = new Pool(MAX_SMOKE, 'smoke', THREE.NormalBlending, 0);
+        this.sparks = new Pool(MAX_SPARKS, 'spark', THREE.AdditiveBlending, 0.085);
         this.skids = new SkidMarks();
         this.decals = new WearDecals();
         // The air the cars leave behind them (wake.js): the smoke pool rides it on the medium and

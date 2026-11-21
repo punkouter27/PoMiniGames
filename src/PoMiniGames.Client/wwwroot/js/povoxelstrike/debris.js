@@ -8,8 +8,8 @@
 // allocate). Clusters at rest freeze to static after REST_FREEZE_S so a settled ruin
 // stops costing simulation.
 
-import * as THREE from 'three';
-import * as CANNON from 'cannon-es';
+import * as THREE from 'three-eco/webgpu';
+import { PhysBody, TYPE } from './rapierWorld.js';
 import { createVoxelMaterial } from './materials.js';
 import { greedyBoxes } from './voxelboxes.js';
 import { materialFor, massOf, surfaceOf, MATERIAL_PRESETS } from './physics.js';
@@ -121,13 +121,14 @@ export class DebrisManager {
     // 500 kg, so a collapsing tower section weighed about as much as a bag of sand and
     // bounced accordingly. A cubic metre of stone is 2400 kg and it is allowed to be.
     const mass = massOf(voxels, scale, mat.density ?? 2400);
-    const body = new CANNON.Body({
+    const body = new PhysBody({
       mass,
-      position: new CANNON.Vec3(position.x, position.y, position.z),
-      velocity: new CANNON.Vec3(velocity.x, velocity.y, velocity.z),
+      position, velocity,
       angularDamping: 0.35,
       linearDamping: 0.05,
-      material: this.physicsMaterials ? this.physicsMaterials[surfaceOf(mat)] : undefined,
+      // Falling chunks are fast against the thin heightfield: CCD keeps them out of it.
+      ccd: true,
+      material: this.physicsMaterials ? this.physicsMaterials[surfaceOf(mat)] : 'stone',
     });
     // Shape: the piece's own voxels, greedy-merged, offset to the mesh's centre. The
     // single AABB box this replaces meant an L-shaped cornice tumbled and stacked like a
@@ -136,27 +137,26 @@ export class DebrisManager {
     const ox = dims[0] / 2, oy = dims[1] / 2, oz = dims[2] / 2;
     for (let i = 0; i < count; i++) {
       const o = i * 6;
-      body.addShape(
-        new CANNON.Box(new CANNON.Vec3(
-          Math.max(1e-3, boxes[o + 3] * scale),
-          Math.max(1e-3, boxes[o + 4] * scale),
-          Math.max(1e-3, boxes[o + 5] * scale))),
-        new CANNON.Vec3(
-          (boxes[o] - ox) * scale, (boxes[o + 1] - oy) * scale, (boxes[o + 2] - oz) * scale));
+      body.addBox(
+        Math.max(1e-3, boxes[o + 3] * scale),
+        Math.max(1e-3, boxes[o + 4] * scale),
+        Math.max(1e-3, boxes[o + 5] * scale),
+        (boxes[o] - ox) * scale, (boxes[o + 1] - oy) * scale, (boxes[o + 2] - oz) * scale);
     }
-    body.updateMassProperties();
     body.quaternion.setFromEuler(0, rotationY, 0);
-    if (impulse) body.applyImpulse(new CANNON.Vec3(impulse.x * mass, impulse.y * mass, impulse.z * mass));
-    this.world.addBody(body);
+    if (impulse) body.applyImpulse({ x: impulse.x * mass, y: impulse.y * mass, z: impulse.z * mass });
 
     const piece = {
       mesh, body, cells, dims, palette, scale, voxels, material: mat,
       age: 0, restTime: 0, frozen: false, fragCooldown: 0, fragDepth: fragDepth ?? 0,
     };
-    // Impacts fragment: queue rather than mutate inside cannon's
-    // collide callback — the physics step must not see bodies vanish mid-solve.
-    body.addEventListener('collide', (e) => {
-      const rel = Math.abs(e.contact.getImpactVelocityAlongNormal());
+    // Impacts fragment: queue rather than mutate inside the contact callback —
+    // the physics step must not see bodies vanish mid-solve. (The callback is the engine's
+    // contact-force event, see rapierWorld.js; it is registered BEFORE the body is added
+    // because the collider's force threshold is chosen at that moment.)
+    body.userData = piece;
+    body.eventSpeed = 3;
+    body.onCollide = (rel) => {
       // Landing thud + dust kick — the audio side throttles itself, so calling from
       // every contact is safe.
       if (rel > 4 && piece.age > 0.15) {
@@ -171,7 +171,8 @@ export class DebrisManager {
       if (rel <= FRAG_IMPACT_SPEED) return;
       piece.fragCooldown = 0.5;
       this._pendingFragments.push(piece);
-    });
+    };
+    this.world.addBody(body);
     this.pieces.push(piece);
   }
 
@@ -256,8 +257,7 @@ export class DebrisManager {
       if (piece.frozen) {
         piece.frozen = false;
         piece.restTime = 0;
-        piece.body.type = CANNON.Body.DYNAMIC;
-        piece.body.updateMassProperties();
+        piece.body.setType(TYPE.DYNAMIC);
       }
       piece.body.wakeUp();
     }
@@ -296,7 +296,7 @@ export class DebrisManager {
       d.normalize().multiplyScalar(j);
       d.y += j * 0.4; // lift so blasts read as blasts
       piece.body.wakeUp();
-      piece.body.applyImpulse(new CANNON.Vec3(d.x, d.y, d.z));
+      piece.body.applyImpulse(d);
     }
   }
 
@@ -322,10 +322,7 @@ export class DebrisManager {
         if (piece.restTime > REST_FREEZE_S) {
           // Settled ruin → static scenery: stops costing the solver, still shootable.
           piece.frozen = true;
-          piece.body.type = CANNON.Body.STATIC;
-          piece.body.velocity.setZero();
-          piece.body.angularVelocity.setZero();
-          piece.body.updateMassProperties();
+          piece.body.setType(TYPE.STATIC);
         }
       }
     }

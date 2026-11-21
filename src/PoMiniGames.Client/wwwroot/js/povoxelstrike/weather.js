@@ -12,7 +12,10 @@
 // The rain is one LineSegments object and one draw call. The vertex shader wraps every
 // drop inside a box that rides the camera, so the CPU never touches a drop after start-up.
 
-import * as THREE from 'three';
+import * as THREE from 'three-eco/webgpu';
+import {
+  attribute, cameraProjectionMatrix, cameraViewMatrix, mod, normalize, uniform, vec3, vec4,
+} from 'three-eco/tsl';
 import { setWetness } from './materials.js';
 
 const KINDS = ['clear', 'clear', 'rain', 'fog', 'storm'];
@@ -61,29 +64,18 @@ export class Weather {
     const geometry = new THREE.BufferGeometry();
     geometry.setAttribute('position', new THREE.BufferAttribute(base, 3));
     geometry.setAttribute('aTail', new THREE.BufferAttribute(tail, 1));
-    const material = new THREE.ShaderMaterial({
-      transparent: true, depthWrite: false, fog: false,
-      uniforms: {
-        uTime: { value: 0 },
-        uCam: { value: new THREE.Vector3() },
-        uBox: { value: BOX },
-        uVel: { value: new THREE.Vector3(3.5, -30, 1.5) },
-        uAlpha: { value: 0.3 },
-      },
-      vertexShader: /* glsl */`
-        attribute float aTail;
-        uniform float uTime;
-        uniform vec3 uCam, uBox, uVel;
-        void main() {
-          // Fixed in the world, wrapped around the camera: walking does not drag the rain.
-          vec3 p = mod(position * uBox + uVel * uTime - uCam, uBox) - 0.5 * uBox + uCam;
-          p -= normalize(uVel) * aTail * 0.85;
-          gl_Position = projectionMatrix * viewMatrix * vec4(p, 1.0);
-        }`,
-      fragmentShader: /* glsl */`
-        uniform float uAlpha;
-        void main() { gl_FragColor = vec4(0.74, 0.82, 0.95, uAlpha); }`,
-    });
+    // Fixed in the world, wrapped around the camera: walking does not drag the rain.
+    this.u = { time: uniform(0), cam: uniform(new THREE.Vector3()), alpha: uniform(0.3) };
+    const box = uniform(BOX);
+    const vel = uniform(new THREE.Vector3(3.5, -30, 1.5));
+    const aTail = attribute('aTail', 'float');
+    const basePos = attribute('position', 'vec3');
+    const wrapped = mod(basePos.mul(box).add(vel.mul(this.u.time)).sub(this.u.cam), box).sub(box.mul(0.5)).add(this.u.cam);
+    const p = wrapped.sub(normalize(vel).mul(aTail).mul(0.85));
+    const material = new THREE.LineBasicNodeMaterial({ transparent: true, depthWrite: false, fog: false });
+    material.vertexNode = cameraProjectionMatrix.mul(cameraViewMatrix).mul(vec4(p, 1));
+    material.colorNode = vec3(0.74, 0.82, 0.95);
+    material.opacityNode = this.u.alpha;
     this.rain = new THREE.LineSegments(geometry, material);
     this.rain.frustumCulled = false;
     this.rain.renderOrder = 5;
@@ -93,10 +85,10 @@ export class Weather {
   /** @param indoors 0..1 from the engine's roof probe: no rain falls through a vault. */
   update(dt, cameraPosition, indoors) {
     if (this.rain) {
-      const u = this.rain.material.uniforms;
-      u.uTime.value += dt;
-      u.uCam.value.copy(cameraPosition);
-      u.uAlpha.value += ((indoors > 0.5 ? 0.0 : 0.3) - u.uAlpha.value) * Math.min(1, dt * 5);
+      const u = this.u;
+      u.time.value += dt;
+      u.cam.value.copy(cameraPosition);
+      u.alpha.value += ((indoors > 0.5 ? 0.0 : 0.3) - u.alpha.value) * Math.min(1, dt * 5);
     }
     if (this.kind !== 'storm') return;
     this._boltT -= dt;

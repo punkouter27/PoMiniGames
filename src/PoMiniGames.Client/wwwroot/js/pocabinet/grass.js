@@ -12,12 +12,17 @@
 // blades shrink out toward the tile edge so the wrap never shows. On a track with a terrain
 // (terrain.js) each blade grows from the ground's height, read from its height texture.
 
-import * as THREE from 'three';
+import * as THREE from './three.js';
+import {
+    uniform, attribute, varying, texture, positionGeometry, cameraViewMatrix, vec2, vec3, vec4, float, mod, length, smoothstep, mix, sin, cos,
+    normalize, select,
+} from 'three-eco/tsl';
 import { clock, noise } from './materials.js';
 import { runOffAt, KERB_OUTER } from './physics.js';
 import { WORLD_SCALE as WS, addHook } from './util.js';
 
 const TILE = 44;
+let grassSerial = 0;
 
 function roadMask(track, margin, keepOut) {
     let minX = Infinity, maxX = -Infinity, minY = Infinity, maxY = -Infinity, widest = track.halfWidth;
@@ -114,59 +119,46 @@ export class Grass {
         this.material = new THREE.MeshStandardMaterial({
             color: new THREE.Color(color).multiplyScalar(1.15), roughness: 0.85, metalness: 0, side: THREE.DoubleSide,
         });
-        const uniforms = {
-            uCenter: { value: this.center },
-            uMask: { value: mask.tex },
-            uMaskRect: { value: mask.rect },
-            uHeight: { value: height ? height.tex : this.flatTex },
-            uHeightRect: { value: height ? height.rect : new THREE.Vector4(0, 0, 1, 1) },
-            uPcNoise: { value: noise() },
-            uPcTime: clock,
+        // One node graph for this lawn (r186): the old GLSL hook, as TSL. The blades' own tile-wrapped
+        // placement, height, sway and culling run in the vertex stage (positionNode); the colour ramp
+        // along the blade is the fragment's. Unique key: the uniforms below belong to THIS Grass.
+        const U = {
+            uCenter: uniform(this.center),
+            uMaskRect: uniform(mask.rect),
+            uHeightRect: uniform(height ? height.rect : new THREE.Vector4(0, 0, 1, 1)),
         };
-        addHook(this.material, 'pocabinet-grass', (shader) => {
-            Object.assign(shader.uniforms, uniforms);
-            shader.vertexShader = `
-uniform vec3 uCenter;
-uniform sampler2D uMask;
-uniform vec4 uMaskRect;
-uniform sampler2D uHeight;
-uniform vec4 uHeightRect;
-uniform sampler2D uPcNoise;
-uniform float uPcTime;
-attribute vec2 aOffset;
-attribute vec4 aRand;
-varying float vBlade;
-` + shader.vertexShader
-                .replace('#include <beginnormal_vertex>', `
-    float yaw = aRand.z * 6.2831853;
-    vec2 bdir = vec2(cos(yaw), sin(yaw));
-    vec3 objectNormal = normalize(vec3(bdir.y * 0.35, 1.0, -bdir.x * 0.35));
-    #ifdef USE_TANGENT
-        vec3 objectTangent = vec3(1.0, 0.0, 0.0);
-    #endif`)
-                .replace('#include <begin_vertex>', `
-    const float T = ${TILE.toFixed(1)};
-    vec2 rel = mod(aOffset - uCenter.xz + T * 0.5, T) - T * 0.5;
-    vec2 root = uCenter.xz + rel;
-    float fade = 1.0 - smoothstep(T * 0.3, T * 0.48, length(rel));
-    float road = texture2D(uMask, (root - uMaskRect.xy) / uMaskRect.zw).r;
-    float ground = texture2D(uHeight, (root - uHeightRect.xy) / uHeightRect.zw).r;
-    float patchy = texture2D(uPcNoise, root * 0.015).r + aRand.y * 0.35;
-    float h = (0.28 + aRand.x * 0.55) * fade * (1.0 - smoothstep(0.1, 0.6, road)) * smoothstep(0.42, 0.62, patchy);
-    float t = position.y;
-    float gust = texture2D(uPcNoise, root * 0.02 + vec2(uPcTime * 0.05, uPcTime * 0.03)).g;
-    float sway = sin(uPcTime * 1.9 + root.x * 0.45 + root.y * 0.3) * 0.25 + (gust - 0.5) * 0.9;
-    vec3 transformed = vec3(root.x, ground, root.y);
-    transformed.xz += bdir * position.x * 0.045 * (1.0 - t * 0.85);
-    transformed.xz += (vec2(0.8, 0.45) * sway + vec2(-bdir.y, bdir.x) * (aRand.w - 0.5) * 0.6) * t * t * h * 0.55;
-    transformed.y = ground + t * h;
-    // A culled blade (road, patch gap, tile edge) collapses to one point underground:
-    // left at full width it lies flat as a sliver that shades into HDR fireflies.
-    if (h < 0.03) transformed = vec3(root.x, ground - 1.0, root.y);
-    vBlade = t;`);
-            shader.fragmentShader = 'varying float vBlade;\n' + shader.fragmentShader.replace('#include <map_fragment>', `#include <map_fragment>
-    diffuseColor.rgb *= mix(0.35, 1.25, vBlade);
-    diffuseColor.rgb = mix(diffuseColor.rgb, diffuseColor.rgb * vec3(1.15, 1.1, 0.7), vBlade * vBlade * 0.5);`);
+        const maskTex = mask.tex, heightTex = height ? height.tex : this.flatTex, noiseTex = noise();
+        addHook(this.material, 'pocabinet-grass:' + (grassSerial++), () => {
+            const aOffset = attribute('aOffset', 'vec2'), aRand = attribute('aRand', 'vec4');
+            const yaw = aRand.z.mul(6.2831853);
+            const bdir = vec2(cos(yaw), sin(yaw));
+            const T = float(TILE);
+            const rel = mod(aOffset.sub(U.uCenter.xz).add(T.mul(0.5)), T).sub(T.mul(0.5));
+            const root = U.uCenter.xz.add(rel);
+            const fade = smoothstep(T.mul(0.3), T.mul(0.48), length(rel)).oneMinus();
+            const road = texture(maskTex, root.sub(U.uMaskRect.xy).div(U.uMaskRect.zw), 0).r;
+            const ground = texture(heightTex, root.sub(U.uHeightRect.xy).div(U.uHeightRect.zw), 0).r;
+            const patchy = texture(noiseTex, root.mul(0.015), 0).r.add(aRand.y.mul(0.35));
+            const h = float(0.28).add(aRand.x.mul(0.55)).mul(fade).mul(smoothstep(0.1, 0.6, road).oneMinus()).mul(smoothstep(0.42, 0.62, patchy));
+            const t = positionGeometry.y;
+            const gust = texture(noiseTex, root.mul(0.02).add(vec2(clock.mul(0.05), clock.mul(0.03))), 0).g;
+            const sway = sin(clock.mul(1.9).add(root.x.mul(0.45)).add(root.y.mul(0.3))).mul(0.25).add(gust.sub(0.5).mul(0.9));
+            const xz = root.add(bdir.mul(positionGeometry.x.mul(0.045).mul(float(1).sub(t.mul(0.85)))))
+                .add(vec2(0.8, 0.45).mul(sway).add(vec2(bdir.y.negate(), bdir.x).mul(aRand.w.sub(0.5).mul(0.6))).mul(t.mul(t).mul(h).mul(0.55)));
+            const pos = vec3(xz.x, ground.add(t.mul(h)), xz.y);
+            // A culled blade (road, patch gap, tile edge) collapses to one point underground:
+            // left at full width it lies flat as a sliver that shades into HDR fireflies.
+            const culled = h.lessThan(0.03);
+            const vBlade = varying(t, 'vGrassBlade');
+            return {
+                position: () => select(culled, vec3(root.x, ground.sub(1), root.y), pos),
+                normal: () => normalize(cameraViewMatrix.transformDirection(vec3(bdir.y.mul(0.35), 1, bdir.x.mul(-0.35)))),
+                color: (c) => {
+                    let rgb = c.rgb.mul(mix(0.35, 1.25, vBlade));
+                    rgb = mix(rgb, rgb.mul(vec3(1.15, 1.1, 0.7)), vBlade.mul(vBlade).mul(0.5));
+                    return vec4(rgb, c.a);
+                },
+            };
         });
         this.mesh = new THREE.Mesh(bladeGeometry(count), this.material);
         this.mesh.name = 'pocabinet-grass';

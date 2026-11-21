@@ -20,7 +20,7 @@
 // Placement is still seeded, so a seed reproduces the same ward furniture; the ring
 // geometry itself is fixed, because a fortress whose walls move is not a fortress.
 
-import * as THREE from 'three';
+import * as THREE from 'three-eco/webgpu';
 import { Structure } from './structure.js';
 import { Terrain, ARENA_HALF } from './terrain.js';
 import { builtinVolumes } from './buildings.js';

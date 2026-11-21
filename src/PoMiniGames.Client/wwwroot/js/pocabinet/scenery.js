@@ -22,7 +22,7 @@
 // group's traversal disposes geometry and materials; textures are cached per
 // module (a handful of small canvases) and live for the page.
 
-import * as THREE from 'three';
+import * as THREE from './three.js';
 import { KERB_INNER, KERB_OUTER } from './physics.js';
 import { raised } from './kerbs.js';
 import { wind, water, flutter } from './materials.js';

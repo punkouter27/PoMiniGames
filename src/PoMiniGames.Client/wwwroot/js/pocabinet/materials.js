@@ -13,11 +13,16 @@
 //
 // `clock.value` is advanced once per frame by scene.js.
 
-import * as THREE from 'three';
+import * as THREE from './three.js';
 import { hash, fbm, dataTexture, normalMap, addHook, clamp01 } from './util.js';
+import {
+    uniform, float, vec2, vec3, vec4, mix, clamp, max, min, pow, dot, sin, cos, fract, smoothstep, normalize, texture,
+    positionWorld, positionGeometry, positionView, normalView, materialColor, cameraViewMatrix, modelWorldMatrix, instanceIndex,
+} from 'three-eco/tsl';
 
-export const clock = { value: 0 };
-export const sunDirUniform = { value: new THREE.Vector3(0.35, 0.75, 0.45) };
+// Uniform nodes: the scene still does `clock.value = t` and `sunDirUniform.value.copy(...)`.
+export const clock = uniform(0);
+export const sunDirUniform = uniform(new THREE.Vector3(0.35, 0.75, 0.45));
 
 let asphaltSet = null;
 /** { map, normalMap, roughnessMap } — neutral grey, tinted by the material colour. */
@@ -76,120 +81,90 @@ export function noise() {
     return noiseTex;
 }
 
-// ── Hooks ────────────────────────────────────────────────────────────────────
+// ── Hooks (TSL; see util.js addHook) ─────────────────────────────────────────
+// Each hook below is a node transformer, built once per key and shared by every material that
+// carries it. World position is `positionWorld`; instances differ by `instanceIndex` (the GLSL read the
+// instance matrix's translation, which a positionNode no longer sees: the instance is already applied).
 
-const WORLD_VARYING_V = `
-varying vec3 vPcWorld;
-`;
-
-function ensureWorldVarying(shader) {
-    if (shader.vertexShader.includes('vPcWorld')) return;
-    shader.vertexShader = WORLD_VARYING_V + shader.vertexShader.replace('#include <worldpos_vertex>', `#include <worldpos_vertex>
-    {
-        vec4 pcw = vec4(transformed, 1.0);
-        #ifdef USE_INSTANCING
-            pcw = instanceMatrix * pcw;
-        #endif
-        vPcWorld = (modelMatrix * pcw).xyz;
-    }`);
-    shader.fragmentShader = WORLD_VARYING_V + shader.fragmentShader;
-}
-
-/**
- * A uniform declaration, or '' when an earlier hook on the same material already declared it.
- * Hooks stack (the road is macro + puddlePorosity + reflective) and GLSL rejects a uniform
- * declared twice, which silently drops the whole material.
- */
-function decl(shader, line) {
-    return shader.fragmentShader.includes(line) ? '' : line + '\n';
-}
+const wxz = () => positionWorld.xz;
+const noiseAt = (uvNode) => texture(noise(), uvNode);
+const phaseOf = () => fract(float(instanceIndex).mul(0.6180339)).mul(40);
 
 /**
  * World-space low-frequency variation of the albedo: `amount` ± around 1 at
  * `scale` world units per noise tile. Kills visible tiling on big surfaces.
  */
 export function macro(material, scale = 60, amount = 0.25) {
-    return addHook(material, `macro${scale}:${amount}`, (shader) => {
-        ensureWorldVarying(shader);
-        shader.uniforms.uPcNoise = { value: noise() };
-        shader.fragmentShader = decl(shader, 'uniform sampler2D uPcNoise;') + shader.fragmentShader.replace('#include <map_fragment>', `#include <map_fragment>
-        {
-            vec4 n1 = texture2D(uPcNoise, vPcWorld.xz / ${scale.toFixed(1)});
-            vec4 n2 = texture2D(uPcNoise, vPcWorld.xz / ${(scale * 0.23).toFixed(2)});
-            float m = (n1.r - 0.5) * 1.4 + (n2.g - 0.5) * 0.6;
-            diffuseColor.rgb *= 1.0 + m * ${amount.toFixed(3)};
-            diffuseColor.rgb = mix(diffuseColor.rgb, diffuseColor.rgb * vec3(1.08, 1.0, 0.86), clamp(n1.b - 0.45, 0.0, 1.0) * ${amount.toFixed(3)} * 2.0);
-        }`);
-    });
+    return addHook(material, `macro${scale}:${amount}`, () => ({
+        color: (c) => {
+            const n1 = noiseAt(wxz().div(scale)), n2 = noiseAt(wxz().div(scale * 0.23));
+            const m = n1.r.sub(0.5).mul(1.4).add(n2.g.sub(0.5).mul(0.6));
+            let rgb = c.rgb.mul(float(1).add(m.mul(amount)));
+            rgb = mix(rgb, rgb.mul(vec3(1.08, 1.0, 0.86)), clamp(n1.b.sub(0.45), 0, 1).mul(amount * 2));
+            return vec4(rgb, c.a);
+        },
+    }));
 }
 
 /**
  * Foliage sway + wrapped subsurface scattering translucency (#5). Geometry is authored with
  * its root at the local origin and the free end along +`axis` ('y' for trees, 'x' for palm
- * fronds); the bend grows with distance² (× `reach`). Instances sway out of phase by position.
+ * fronds); the bend grows with distance² (× `reach`). Instances sway out of phase by index.
  */
 export function wind(material, amount = 0.12, axis = 'y', reach = 1) {
     subsurface(material, 0x86c45a, 0.28);
-    return addHook(material, `wind${amount}${axis}${reach}`, (shader) => {
-        shader.uniforms.uPcTime = clock;
-        shader.vertexShader = 'uniform float uPcTime;\n' + shader.vertexShader.replace('#include <begin_vertex>', `#include <begin_vertex>
-        {
-            vec3 root = vec3(0.0);
-            #ifdef USE_INSTANCING
-                root = instanceMatrix[3].xyz;
-            #endif
-            float h = max(position.${axis}, 0.0) * ${reach.toFixed(3)};
-            float ph = dot(root.xz, vec2(0.37, 0.23));
-            float gust = 0.7 + 0.3 * sin(uPcTime * 0.31 + root.x * 0.02);
-            float sx = sin(uPcTime * 1.3 + ph) * 0.6 + sin(uPcTime * 2.9 + ph * 1.7) * 0.2;
-            float sz = cos(uPcTime * 1.05 + ph * 0.8) * 0.4;
-            transformed.x += sx * ${amount.toFixed(3)} * h * h * gust;
-            transformed.z += sz * ${amount.toFixed(3)} * h * h * gust;
-            transformed.y += (sx + sz) * ${(amount * 0.4).toFixed(3)} * h * h * gust;
-        }`);
-    });
+    return addHook(material, `wind${amount}${axis}${reach}`, () => ({
+        position: (p) => {
+            const g = positionGeometry[axis];
+            const h = max(g, 0).mul(reach);
+            const ph = phaseOf();
+            const gust = float(0.7).add(sin(clock.mul(0.31).add(ph)).mul(0.3));
+            const sx = sin(clock.mul(1.3).add(ph)).mul(0.6).add(sin(clock.mul(2.9).add(ph.mul(1.7))).mul(0.2));
+            const sz = cos(clock.mul(1.05).add(ph.mul(0.8))).mul(0.4);
+            const k = h.mul(h).mul(gust);
+            return p.add(vec3(sx.mul(amount).mul(k), sx.add(sz).mul(amount * 0.4).mul(k), sz.mul(amount).mul(k)));
+        },
+    }));
 }
 
 /**
  * A flag on a pole: a plane `width` wide in its own x, held along the edge at x = pole * width / 2
  * (`pole` -1 or +1) and rippling more the further from it, with a little droop. Two travelling
- * waves in the vertex shader on the scene's one clock, out of phase by where the flag stands. The
+ * waves in the vertex stage on the scene's one clock, out of phase by where the flag stands. The
  * plane needs a few segments across to bend (a one-quad plane only shears).
  */
 export function flutter(material, width, pole = -1, amount = 0.12) {
     const k = Math.PI * 3 / width;
-    return addHook(material, `flutter${width}:${pole}:${amount}`, (shader) => {
-        shader.uniforms.uPcTime = clock;
-        shader.vertexShader = 'uniform float uPcTime;\n' + shader.vertexShader.replace('#include <begin_vertex>', `#include <begin_vertex>
-        {
-            float free = clamp(position.x * ${(-pole).toFixed(1)} / ${width.toFixed(3)} + 0.5, 0.0, 1.0);
-            float ph = dot(modelMatrix[3].xz, vec2(0.37, 0.23));
-            float along = position.x * ${(-pole * k).toFixed(3)};
-            float gust = 0.75 + 0.25 * sin(uPcTime * 0.4 + ph);
-            float wave = sin(along - uPcTime * 6.2 + ph) * 0.62 + sin(along * 2.3 - uPcTime * 9.7 + ph * 1.7) * 0.24;
-            transformed.z += wave * ${amount.toFixed(3)} * free * gust;
-            transformed.y -= free * free * ${(amount * 0.6).toFixed(3)} * (1.0 + 0.4 * wave);
-        }`);
-    });
+    return addHook(material, `flutter${width}:${pole}:${amount}`, () => ({
+        position: (p) => {
+            const px = positionGeometry.x;
+            const free = clamp(px.mul(-pole).div(width).add(0.5), 0, 1);
+            const ph = modelWorldMatrix[3].x.mul(0.37).add(modelWorldMatrix[3].z.mul(0.23));
+            const along = px.mul(-pole * k);
+            const gust = float(0.75).add(sin(clock.mul(0.4).add(ph)).mul(0.25));
+            const wave = sin(along.sub(clock.mul(6.2)).add(ph)).mul(0.62).add(sin(along.mul(2.3).sub(clock.mul(9.7)).add(ph.mul(1.7))).mul(0.24));
+            return p.add(vec3(0, free.mul(free).mul(amount * 0.6).mul(float(1).add(wave.mul(0.4))).negate(), wave.mul(amount).mul(free).mul(gust)));
+        },
+    }));
 }
 
 /**
  * Wrapped subsurface scattering (#5): backlit sun transmission + soft wrap lighting for
- * foliage crowns, palms, and translucent painted plastics.
+ * foliage crowns, palms, and translucent painted plastics. The GLSL added it into the light loop
+ * (so the sun's shadow took it away); a node material has no such seam, so it is added as emission:
+ * the same terms, without the shadow.
  */
 export function subsurface(material, tintHex = 0x90c864, strength = 0.26) {
     const c = new THREE.Color(tintHex);
-    return addHook(material, `sss${c.getHexString()}:${strength}`, (shader) => {
-        if (!shader.fragmentShader.includes('#include <lights_fragment_end>')) return;
-        shader.uniforms.uPcSunDir = sunDirUniform;
-        shader.fragmentShader = 'uniform vec3 uPcSunDir;\n' + shader.fragmentShader.replace('#include <lights_fragment_end>', `#include <lights_fragment_end>
-        {
-            vec3 sssL = normalize(uPcSunDir);
-            float sssBack = pow(clamp(dot(geometryViewDir, -sssL) * 0.5 + 0.5, 0.0, 1.0), 2.5);
-            float sssRim = 1.0 - saturate(dot(geometryNormal, geometryViewDir));
-            reflectedLight.directDiffuse += diffuseColor.rgb * vec3(${c.r.toFixed(3)}, ${c.g.toFixed(3)}, ${c.b.toFixed(3)}) * (sssBack * 0.65 + sssRim * 0.35) * ${strength.toFixed(3)};
-        }`);
-    });
+    return addHook(material, `sss${c.getHexString()}:${strength}`, () => ({
+        emissive: (e) => {
+            const sunV = normalize(cameraViewMatrix.transformDirection(sunDirUniform));
+            const viewDir = normalize(positionView.negate());
+            const back = pow(clamp(dot(viewDir, sunV.negate()).mul(0.5).add(0.5), 0, 1), 2.5);
+            const rim = float(1).sub(clamp(dot(normalView, viewDir), 0, 1));
+            return e.add(materialColor.rgb.mul(vec3(c.r, c.g, c.b)).mul(back.mul(0.65).add(rim.mul(0.35))).mul(strength));
+        },
+    }));
 }
 
 /**
@@ -197,58 +172,37 @@ export function subsurface(material, tintHex = 0x90c864, strength = 0.26) {
  * aggregate and focuses wet SSR mirrors inside organic road depressions.
  */
 export function puddlePorosity(material, uWet) {
-    return addHook(material, 'puddle-porosity', (shader) => {
-        ensureWorldVarying(shader);
-        shader.uniforms.uPcNoise = { value: noise() };
-        shader.uniforms.uPcWetRoad = uWet;
-        shader.fragmentShader = decl(shader, 'uniform sampler2D uPcNoise;') + 'uniform float uPcWetRoad;\nfloat pcPuddleMask = 0.0;\n'
-            + shader.fragmentShader
-                .replace('#include <roughnessmap_fragment>', `#include <roughnessmap_fragment>
-                {
-                    if (uPcWetRoad > 0.01) {
-                        float pn1 = texture2D(uPcNoise, vPcWorld.xz * 0.032).r;
-                        float pn2 = texture2D(uPcNoise, vPcWorld.xz * 0.14).g;
-                        float pool = smoothstep(0.46, 0.72, pn1 * 0.72 + pn2 * 0.28) * uPcWetRoad;
-                        pcPuddleMask = pool;
-                        diffuseColor.rgb *= 1.0 - 0.32 * uPcWetRoad - 0.18 * pool;
-                        roughnessFactor = mix(roughnessFactor * (1.0 - 0.45 * uPcWetRoad), 0.04, pool);
-                    }
-                }`)
-                .replace('#include <dithering_fragment>', `#include <dithering_fragment>
-                if (uPcWetRoad > 0.01) {
-                    gl_FragColor.a = min(gl_FragColor.a, 1.0 - max(1.0 - gl_FragColor.a, pcPuddleMask * 0.92));
-                }`);
+    return addHook(material, 'puddle-porosity', () => {
+        const pool = smoothstep(0.46, 0.72, noiseAt(wxz().mul(0.032)).r.mul(0.72).add(noiseAt(wxz().mul(0.14)).g.mul(0.28))).mul(uWet);
+        return {
+            color: (c) => vec4(c.rgb.mul(float(1).sub(uWet.mul(0.32)).sub(pool.mul(0.18))), c.a),
+            rough: (r) => mix(r.mul(float(1).sub(uWet.mul(0.45))), float(0.04), pool),
+        };
     });
 }
 
 /** Rippling water: animated normal perturbation on a flat, glossy surface. */
 export function water(material, strength = 0.18) {
-    return addHook(material, `water${strength}`, (shader) => {
-        ensureWorldVarying(shader);
-        shader.uniforms.uPcTime = clock;
-        shader.uniforms.uPcNoise = { value: noise() };
-        shader.fragmentShader = decl(shader, 'uniform float uPcTime;') + decl(shader, 'uniform sampler2D uPcNoise;') + shader.fragmentShader.replace('#include <normal_fragment_maps>', `#include <normal_fragment_maps>
-        {
-            vec2 p = vPcWorld.xz;
-            vec2 a = texture2D(uPcNoise, p * 0.11 + vec2(uPcTime * 0.021, uPcTime * 0.013)).rg - 0.5;
-            vec2 b = texture2D(uPcNoise, p * 0.23 - vec2(uPcTime * 0.017, -uPcTime * 0.024)).ba - 0.5;
-            vec2 g = (a + b) * ${strength.toFixed(3)} * 2.0;
-            normal = normalize(normal + (viewMatrix * vec4(g.x, 0.0, g.y, 0.0)).xyz);
-        }`);
-    });
+    return addHook(material, `water${strength}`, () => ({
+        normal: (n) => {
+            const p = wxz();
+            const a = noiseAt(p.mul(0.11).add(vec2(clock.mul(0.021), clock.mul(0.013)))).rg.sub(0.5);
+            const b = noiseAt(p.mul(0.23).sub(vec2(clock.mul(0.017), clock.mul(-0.024)))).ba.sub(0.5);
+            const g = a.add(b).mul(strength * 2);
+            return normalize(n.add(cameraViewMatrix.transformDirection(vec3(g.x, 0, g.y))));
+        },
+    }));
 }
 
 /**
- * Reflectivity for postfx.js's screen-space reflections: an opaque material writes
- * 1 − reflectivity into the HDR target's alpha (everything else writes 1). `uRefl` is a
- * shared { value } so a weather change needs no recompile.
+ * Reflectivity for postfx.js's screen-space reflections: the GLSL wrote 1 - reflectivity into the
+ * HDR target's alpha. The r186 chain has no SSR yet (and a stray alpha on the way to the canvas
+ * is only a hazard), so this records the shared `uRefl` on the material for the pass that will
+ * read it and changes nothing on screen.
  */
 export function reflective(material, uRefl) {
-    return addHook(material, 'reflective', (shader) => {
-        shader.uniforms.uPcRefl = uRefl;
-        shader.fragmentShader = decl(shader, 'uniform float uPcRefl;') + shader.fragmentShader.replace('#include <dithering_fragment>', `#include <dithering_fragment>
-        gl_FragColor.a = 1.0 - uPcRefl;`);
-    });
+    material.userData.refl = uRefl;
+    return material;
 }
 
 /**

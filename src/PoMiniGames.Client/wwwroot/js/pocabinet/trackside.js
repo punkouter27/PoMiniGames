@@ -17,7 +17,7 @@
 // Heights: everything on the road rides the road's plane (track.z, tilted by track.bank);
 // everything beside it stands on the terrain (terrain.js).
 
-import * as THREE from 'three';
+import * as THREE from './three.js';
 import { GRIP_ACCEL } from './physics.js';
 import { asphalt, water, mirrorDecal } from './materials.js';
 import { wallFace } from './terrain.js';
