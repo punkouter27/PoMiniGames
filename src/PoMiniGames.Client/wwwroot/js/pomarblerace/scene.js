@@ -11,7 +11,7 @@ import {
 } from 'three-eco/tsl';
 import { bloom } from 'three-eco/addons/tsl/display/BloomNode.js';
 import { fxaa } from 'three-eco/addons/tsl/display/FXAANode.js';
-import * as PostFx from '../platform/postFx.js';
+import * as PostFx from '../platform/postPunch.js'; // renderer-free half; postFx.js would pull r165 three in
 import { POST_LIB } from '../platform/3d/postAddons.js';
 import { createPostStack, currentTier } from '../platform/3d/postStack.js';
 import { applySunShadows } from '../platform/3d/shadows.js';

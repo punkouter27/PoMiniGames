@@ -179,7 +179,7 @@ sign-in: a player is a random browser id plus three initials.
     integer-pixel scaling), `createParticles2D`, `tween.js` (easing, damp, spring), `createShaderQuad`
     (raw WebGL2 full-screen shaders).
   - **3D helpers:** `createRenderer(THREE, { api: 'webgl' | 'webgpu' | 'auto', tone, shadows, ... })` takes
-    `THREE` as an argument, so the r165 games and the r186 WebGPU games (PoEcosystem, PoBrawl) share it.
+    `THREE` as an argument, so it works with either build; every engine now passes the r186 one.
     `attachRenderer(stage, renderer, { camera, composer })` sizes the renderer on every resize and
     disposes it with the stage. `disposeObject3D` and `watchContextLoss` handle teardown and context
     loss, and `warmup` compiles shaders before the first frame. `fluidGrid.js` /
@@ -510,9 +510,9 @@ scripts/                        Working scripts only — see scripts/README.md
   `PoMiniGames.Shared/Games/PoMule` (unit-tested, seeded, deterministic) with JavaScript only
   drawing and moving the avatars. The server replays a submitted match from its seed and
   action log (`PoMuleRunVerifier`).
-- **Two three.js versions.** Five games render with three r186 `WebGPURenderer` and node materials (TSL): PoEcosystem,
-  PoBrawl, PoMarbleRace, and (ported 2026-11-21) PoCabinet and PoVoxelStrike; PoCapitol's engine is the only one still
-  on r165 in this tree. PoEcosystem's details: it uses the r186 build, imported as `three-eco/webgpu` / `three-eco/tsl` / `three-eco/addons/`; it
+- **Two three.js versions.** Every 3D engine renders with three r186 `WebGPURenderer` and node materials (TSL): PoEcosystem,
+  PoBrawl, PoMarbleRace, and (ported 2026-11-21) PoCabinet, PoVoxelStrike and PoCapitol. The r165 `three` build is
+  left only for `platform/postFx.js` and `platform/3d/paperField.js`, which no engine imports any more. PoEcosystem's details: it uses the r186 build, imported as `three-eco/webgpu` / `three-eco/tsl` / `three-eco/addons/`; it
   falls back to three's WebGL2 backend by itself, and `?ecoBackend=webgl2` forces that.
   On WebGPU it also runs a bird flock and the water's ripples as compute passes
   (`render/flock.js`, `render/ripples.js`; the WebGL2 backend keeps the CPU birds and flat
@@ -524,7 +524,7 @@ scripts/                        Working scripts only — see scripts/README.md
   PoBrawl uses the same r186 build (`?brawlBackend=webgl2` forces its fallback; its GPU blood,
   crowd and confetti simulations need WebGPU and switch off without it). PoCabinet's post chain
   (`pocabinet/postfx.js`) is a r186 `RenderPipeline` on top of `postStack.js`, with SSR on the wet road in the rain.
-  `three` (r165, still PoCapitol's), `rapier` (`@dimforge/rapier3d-compat` `0.21.0`, the engine behind
+  `three` (r165, no engine left on it), `rapier` (`@dimforge/rapier3d-compat` `0.21.0`, the engine behind
   `platform/physics/`; PoMarbleRace's node harness in `scripts/pomarblerace` loads the same version) and the r186 files are pinned with SRI in the import map in `wwwroot/index.html`, while `cannon-es` (`0.20.0`, now only PoEcosystem's fallback)
   and `yuka` (`0.7.8`) resolve to their local copies under `wwwroot/lib/` so browsers, Web
   Workers, and Node tests load the same artifact. `wwwroot/lib/basis/` is Basis Universal's

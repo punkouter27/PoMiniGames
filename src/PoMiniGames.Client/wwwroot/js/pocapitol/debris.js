@@ -20,7 +20,7 @@ import * as THREE from 'three-eco/webgpu';
 import { obstacles, columns, statues } from './world.js';
 
 const PROPS_URL = 'models/pocapitol/props.glb';
-const DRACO_DECODER = 'https://cdn.jsdelivr.net/npm/three@0.165.0/examples/jsm/libs/draco/gltf/';
+const DRACO_DECODER = 'https://cdn.jsdelivr.net/npm/three@0.186.1/examples/jsm/libs/draco/gltf/';
 /** The most loose things at once. The oldest is recycled when a new one lands. */
 const CAPACITY = { canister: 24, flashbang: 16, bottle: 28, placard: 14, flag: 10 };
 const STEP = 1 / 60;
