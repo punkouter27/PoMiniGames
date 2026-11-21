@@ -97,8 +97,8 @@ export async function createScene(host, { figure, osm, signs = [] } = {}) {
     scene.fog = new THREE.FogExp2(SKY[0][1], FOG_OUT);
     // The post pipeline does the anti-aliasing (MSAA on its own target), so the canvas needs none.
     // WebGPURenderer drops to its WebGL2 backend by itself when the browser has no adapter;
-    // ?capitolGl forces that backend, for comparing the two.
-    const forceWebGL = !(await webgpuAvailable()) || /[?&]capitolGl/.test(location.search);
+    // ?capitolGl, or localStorage 'pominigames:pocapitol-gl', forces that backend, for comparing the two.
+    const forceWebGL = !(await webgpuAvailable()) || /[?&]capitolGl/.test(location.search) || (() => { try { return Boolean(localStorage.getItem('pominigames:pocapitol-gl')); } catch { return false; } })();
     const renderer = await createRenderer(THREE, { api: 'webgpu', forceWebGL, antialias: false, tone: 'aces', exposure: 1.1 });
     renderer.info.autoReset = false;
     renderer.domElement.tabIndex = 0;
