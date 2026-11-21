@@ -1,9 +1,16 @@
 # AGENTS.md — PoMiniGames
 
-Read this before changing anything; CLAUDE.md only points here. The first part is the Po web standard this repo
-follows (copied in, owned here); the second part is what is specific to this repo.
+Read this before changing anything; CLAUDE.md only points here. Sections 1–3 are the rules every session follows;
+"This repo" below them is what is specific to PoMiniGames.
 
-## Po Web App Standard
+## 1. Standard
+
+> This repo owns every file in it. Nothing here is generated from, synced with, or required to stay identical to
+> another repository. Headers like "SAME FILE IN EVERY PO …", "Generated from po-shared … DO NOT EDIT", and scripts
+> that copy files into or check other repos are forbidden. Only Azure resources in the `PoShared` resource group
+> may be shared.
+
+The Po Web App Standard, this repo's copy:
 
 This repo is one of several independent Po apps. It follows the conventions below, but it owns every file:
 nothing is generated from, synced with, or required to stay identical to another repository. Change anything
@@ -74,6 +81,38 @@ installs the `maui-android` workload and builds the Android target, so the clien
 
 ### Azure naming
 App Service `app-<repo lowercase>`; per-app resources named `<type>-<repo lowercase>`; shared things only in `PoShared`.
+
+## 2. Concurrent work
+
+> Several sessions (people and agents) commit to this repo, sometimes at the same time.
+> - Before every commit and every push: `git fetch origin && git rebase --autostash origin/master`.
+> - Stage only the files you changed (`git add <paths>`); never `git add -A` / `git add .`; check `git diff --cached`.
+> - Never revert, reformat or overwrite changes you didn't make; keep the owner's recent decisions (e.g. features
+>   removed on purpose stay removed).
+> - Don't commit or sync from the IDE while an agent is working in this folder.
+> - Pushing `master` deploys production; changes to `.github/workflows/*` need a token with the `workflow` scope.
+
+## 3. Verification
+
+Every command here was run on 2026-11-20 (Windows, PowerShell or Git Bash, from the repo root).
+
+| What | Command | Needs / skips |
+|---|---|---|
+| Format | `dotnet format PoMiniGames.slnx --verify-no-changes` | — |
+| Build | `dotnet build PoMiniGames.slnx -c Release` (warnings are errors) | — |
+| Unit (421) | `dotnet test tests/PoMiniGames.Unit -c Release --no-build` | nothing; runs in CI |
+| Integration (17) | `dotnet test tests/PoMiniGames.Integration -c Release --no-build` | Docker (Testcontainers Azurite); every test skips with one reason without it; runs in CI |
+| E2E API (16) | `dotnet test tests/PoMiniGames.E2EAPI -c Release --no-build` | Azurite on 127.0.0.1:10000/10002 (`docker compose up -d azurite`); local only |
+| E2E UI (22 methods, 34 cases) | `dotnet test tests/PoMiniGames.E2EUI -c Release --no-build` | Docker + Playwright Chromium (skips with one reason without either); local only, ~40 min, heavy |
+| JS lint | `npm ci --prefix scripts/ci/js-lint && npm run lint --prefix scripts/ci/js-lint` | Node |
+| CSS lint | `pwsh scripts/ci/css-lint.ps1` | PowerShell 7 |
+| Python lint | `uvx ruff check .` (ruff.toml; CI runs `pipx run ruff check .`) | uv |
+| Bicep | `az bicep build --file infra/main.bicep` and `az bicep build-params --file infra/main.bicepparam` | Azure CLI |
+| Run locally | `docker compose up -d azurite` then `dotnet run --project src/PoMiniGames.Api --launch-profile http` → http://localhost:5080 (status: http://localhost:5080/diag) | Docker for Azurite |
+| Deploy | push to `master` → `.github/workflows/deploy.yml` (format, ruff, build, Unit, Integration, publish, deploy to `vars.AZURE_WEBAPP_NAME` = `app-pominigames`) | — |
+| Deploy check | `curl -sI https://app-pominigames.azurewebsites.net/health/live` shows `X-Commit: <pushed sha>` (the workflow waits for it) | — |
+| Live | https://app-pominigames.azurewebsites.net and https://app-pominigames.azurewebsites.net/diag | — |
+| Pinned tools | .NET SDK 10.0.400 (`global.json`, latestFeature), Python 3.10+ with ruff, Node for the JS lint | — |
 
 ## This repo
 
