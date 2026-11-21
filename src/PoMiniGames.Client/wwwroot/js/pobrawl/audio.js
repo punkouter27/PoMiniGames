@@ -534,7 +534,10 @@ class AudioBus {
   //           ~0.1 s, not a note), then a patter of splinters landing
   //   rope  — a low twang with a vibrato wobble: a cable under tension, not a string
   //   steel — inharmonic bar partials (1 : 2.76 : 5.4 : 8.93), a turnbuckle clang
-  prop({ material = 'wood', power = 1, worldPos = null } = {}) {
+  //   `splintersOnly` (wood): skip the knock and crack. The physics contact bridge (platform/physics/rapier.js ->
+  //   impactSynth, material tag 'wood') already voices every crate/mat contact, including the one that breaks a
+  //   crate, so the break event adds only what the bridge has no model for: the patter of splinters.
+  prop({ material = 'wood', power = 1, worldPos = null, splintersOnly = false } = {}) {
     if (!this._ensure() || this.muted) return;
     const ctx = this.ctx;
     const now = ctx.currentTime;
@@ -596,8 +599,10 @@ class AudioBus {
       noise(4200, 1.2, now, 0.08, 0.04);                        // strike click
     } else {
       this._pulse(0.35 + p * 0.2);
-      tone('sine', rand(150, 190), now, 0.26 * Math.min(1.4, p), 0.12, 70);   // knock
-      for (const hz of [420, 950, 2100]) noise(hz * rand(0.9, 1.1), 9, now, 0.12 * p, rand(0.08, 0.16));
+      if (!splintersOnly) {
+        tone('sine', rand(150, 190), now, 0.26 * Math.min(1.4, p), 0.12, 70);   // knock
+        for (const hz of [420, 950, 2100]) noise(hz * rand(0.9, 1.1), 9, now, 0.12 * p, rand(0.08, 0.16));
+      }
       // Splinters: clicks thinning out as the pieces settle.
       const n = 4 + Math.round(p * 3);
       for (let i = 0; i < n; i++) {

@@ -1,7 +1,7 @@
 // online.js — Game mixin: the host-authoritative relay. The host streams the field; the guest
 // renders it and sends only its steering. See PoMarbleRaceShared.cs. Mixed in by game.js.
 import * as THREE from 'three-eco/webgpu';
-import * as CANNON from 'cannon-es';
+import * as CANNON from '../platform/physics/cannonCompat.js';
 import {
   RESULT_MS, TICK_INTERVAL, NET_INTERVAL, NET_SMOOTH,
 } from './tuning.js';

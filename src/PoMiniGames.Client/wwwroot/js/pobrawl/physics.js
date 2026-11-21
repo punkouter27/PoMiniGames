@@ -1,4 +1,11 @@
-// physics.js — cannon-es world for PoBrawl.
+// physics.js — rigid-body world for PoBrawl's VISUALS (Rapier, via platform/physics).
+//
+// Not the fight sim: hit detection, knockback and netplay run on the fixed-point rollback sim and
+// never read this world. What lives here is dressing — KO ragdolls, severed arms, the corner crates
+// and the ring's posts/ropes — so the physics engine can change without touching a replay. The
+// engine code still speaks the cannon Body API (platform/physics/cannonCompat.js), now backed by the
+// shared Rapier wrapper; contact-force events from tagged materials (ragdoll=flesh, props/ring=wood)
+// reach impactSynth on their own (platform/physics/rapier.js), so crates thud on the mat for free.
 //
 // The character controllers own intent (move, attack, block) and hit detection
 // is the capsule test in hitboxes.js. The physics world owns what needs a
@@ -9,7 +16,12 @@
 // Filter groups (A collides with B iff A.group & B.mask && B.group & A.mask).
 // Bits 1 and 2 are unused.
 
-import * as CANNON from 'cannon-es';
+import * as CANNON from '../platform/physics/cannonCompat.js';
+import { loadRapier } from '../platform/physics/rapier.js';
+
+// Rapier is a CDN WASM module; the world is built synchronously by game.js, so it is awaited here at
+// module load. If it never arrives the compat world is inert (bodies hold still) and nothing throws.
+await loadRapier();
 
 export const G_ROOT = 1 << 0;
 export const G_RAGDOLL = 1 << 3;  // KO rigid-body ragdoll parts
@@ -28,9 +40,9 @@ function ensureMaterials(world) {
   if (!_materials) {
     _materials = {
       root: new CANNON.Material('root'),
-      ragdoll: new CANNON.Material('ragdoll'),
-      arena: new CANNON.Material('arena'),
-      prop: new CANNON.Material('prop'),
+      ragdoll: new CANNON.Material({ name: 'ragdoll', impactTag: 'flesh' }),
+      arena: new CANNON.Material({ name: 'arena', impactTag: 'wood' }),
+      prop: new CANNON.Material({ name: 'prop', impactTag: 'wood' }),
     };
   }
   const m = _materials;
@@ -68,11 +80,14 @@ function ensureMaterials(world) {
 
 // One world per match.
 export function createPhysicsWorld() {
-  const world = new CANNON.World({ gravity: new CANNON.Vec3(0, -GRAVITY, 0) });
+  const world = new CANNON.World({
+    gravity: new CANNON.Vec3(0, -GRAVITY, 0), fixedDt: FIXED_DT,
+    // Quiet scuffles stay silent; a crate hitting the mat or a limp body landing rings once per pair.
+    impact: { threshold: 2.5, pairGapMs: 110, maxPerStep: 2, full: 25 },
+  });
   world.broadphase = new CANNON.SAPBroadphase(world);
   world.allowSleep = false;
   world.solver.iterations = 14;
-  world.solver.tolerance = 0.001;
   world.defaultContactMaterial.friction = 0;
   const mats = ensureMaterials(world);
   // Floor at y = 0.04 to match the arena canvas.

@@ -28,6 +28,8 @@ import {
   RACE_TIMEOUT, TICK_INTERVAL, SLOWMO_DIST, SLOWMO_SCALE, GUEST_COLOR, GHOST_KEY,
 } from './tuning.js';
 
+const ACOUSTIC_M_PER_UNIT = 0.04;   // metres the audio probe counts per physics unit (see _buildTrack)
+
 
 export class Game {
   /**
@@ -70,6 +72,7 @@ export class Game {
         this._frame(this._fresh || !dt ? (this._fresh = false, 0.016) : dt);
       },
     });
+    this.stage.userData.isOnline = () => !!this.online;   // photo mode never opens in a live match
     this.scene = createScene(this.container, renderer, this.stage);
     this.scene.setTheme(this.map.theme);
     const w = createWorld();
@@ -251,6 +254,18 @@ export class Game {
     }
     // The map's acoustics (maps.js `reverb`); zones are measured against the course length.
     this.audio.setReverb(this.map.reverb, this.track.length);
+    // Acoustic probe (audio.js -> platform/acousticProbe.js): 3 rays a frame from the camera through the SAME
+    // Rapier world the marbles roll in, so the early reflections follow the course walls, tubes and funnels.
+    // The probe thinks in metres; the world is in cm-scale units, but a course the size of a living room
+    // is mixed as a stadium (marbles are heard as big as they look), so one unit counts as 4 cm: the walls
+    // of a tube sit a few metres away and return their taps at a few ms, instead of all merging below 4 ms.
+    // The world can be rebuilt between races, so the ray reads this.world at call time.
+    this.audio.setRaycaster((o, d, maxDist) => {
+      const pw = this.world?._pw;
+      if (!pw) return null;
+      const hit = pw.raycast({ x: o.x, y: o.y, z: o.z }, { x: d.x, y: d.y, z: d.z }, maxDist / ACOUSTIC_M_PER_UNIT, true);
+      return hit && hit.toi > 0.5 ? hit.toi * ACOUSTIC_M_PER_UNIT : null;
+    });
     this.marbleSet = createMarbles(this.world, this.materials, this.track.startPositions, -1,
       (v, pos, color, material) => {
         // Impact sound by energy and by what was hit (audio.js playImpact). Soft taps are quiet

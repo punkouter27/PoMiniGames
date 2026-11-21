@@ -33,9 +33,22 @@
 // The headroom this frees is what pays for the motion blur, shockwave rings and road sheen.
 import * as THREE from 'three-eco/webgpu';
 import * as TSL from 'three-eco/tsl';
-import * as CANNON from 'cannon-es';
+import * as CANNON from '../platform/physics/cannonCompat.js';
 import { newProjection } from './maps.js';
 import { readPref } from './store.js';
+import { createJellyShell } from '../platform/3d/softBody.js';
+
+// The jelly shell is decoration: skipped on the low tier and when the user asks for less motion.
+function jellyAllowed() {
+  try {
+    const q = typeof window !== 'undefined' ? window.PoQuality : null;
+    if (q && typeof q.tier === 'function' && q.tier() === 'low') return false;
+    const de = typeof document !== 'undefined' ? document.documentElement : null;
+    if (de && de.dataset && de.dataset.motion === 'reduce') return false;
+    if (typeof matchMedia === 'function' && matchMedia('(prefers-reduced-motion: reduce)').matches) return false;
+  } catch { /* gate open */ }
+  return true;
+}
 
 // #23 chromatic dispersion on the glass marbles (heavy tier only, where they transmit at all): the
 // refraction through the player and the glass top three splits into colour fringes, the way real
@@ -87,7 +100,7 @@ export function marbleColor(index) {
 //
 // Real glass marble: at the world scale of 1 unit = 1 cm, a radius-1 marble is 20 mm across,
 // and solid soda-lime glass (~2500 kg/m³) makes that ≈ 10.5 g. Mass is carried here as 1.0
-// "marble unit" (the obstacle masses in track-procedural.js are multiples of it), and cannon-es derives a
+// "marble unit" (the obstacle masses in track-procedural.js are multiples of it), and the physics engine derives a
 // real SOLID-SPHERE moment of inertia (I = 2/5·m·r²) from the sphere shape — so the marbles
 // carry realistic rotational momentum and roll true.
 //
@@ -516,6 +529,7 @@ export function createMarbles(world, materials, startPositions, chosenIndex, onC
     });
     body.linearDamping = spec.linDamp;
     body.angularDamping = spec.angDamp;
+    body.trackContacts = true;   // course.js reads world.contacts to know who is grounded / on what
     // Only the player's collisions make sparks/sound — 100 marbles clattering would be a spark
     // firehose and an audio wall.
     if (onCollide && isPlayer) {
@@ -527,9 +541,18 @@ export function createMarbles(world, materials, startPositions, chosenIndex, onC
     }
     world.addBody(body);
 
+    // Soft-body squash-and-stretch (platform/3d/softBody.js, XPBD on the GPU): the player's marble
+    // wears a translucent jelly shell that is pressed flat by landings and knocks, bulges sideways
+    // (volume constraint) and wobbles back. Medium/high tiers only, and not under reduced motion.
+    let jelly = null;
+    if (isPlayer && jellyAllowed()) {
+      jelly = createJellyShell({ radius: radius * 1.18, subdiv: 3, color: 0xff8a8a, opacity: 0.42, emissive: 0x7a1818 });
+      group.add(jelly.mesh);
+    }
+
     marbles.push({
       index: i, body, mesh, packIndex,
-      blob,
+      blob, jelly,
       spec, radius, sphereGeo, blobGeo,
       finished: false, finishOrder: -1, place: -1, finishTime: 0,
       // prevPlace lets the director spot an overtake without re-deriving standings.
@@ -722,6 +745,13 @@ export function createMarbles(world, materials, startPositions, chosenIndex, onC
       m.mesh.position.copy(m.body.position);
       m.mesh.quaternion.copy(m.body.quaternion);
       m.speed = m.body.velocity.length();
+      if (m.jelly) {
+        const now = performance.now(), dt = Math.min(0.05, (now - (m.jellyT || now)) / 1000);
+        m.jellyT = now;
+        const on = !m.finished && jellyAllowed();
+        m.jelly.mesh.visible = on;
+        if (on && dt > 0) m.jelly.update(dt, m.body.position, m.body.velocity);
+      }
 
       // Pack marbles are drawn as instances: push the proxy's transform into the matrix buffer.
       // Colour is NOT written here — each marble's palette colour is constant and was seeded at
@@ -871,6 +901,7 @@ export function createMarbles(world, materials, startPositions, chosenIndex, onC
       try { world.removeBody(m.body); } catch { }
       // Blob/red-material/red-geometry are owned by the player marble only.
       if (m.blob) m.blob.material.dispose();
+      if (m.jelly) m.jelly.dispose();
       if (m.index === PLAYER_INDEX) {
         // The player's map is a CLONE of the atlas. Dispose the clone (it owns its own GPU
         // texture entry) but never the atlas itself — that's a module-level singleton shared by

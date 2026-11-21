@@ -265,6 +265,8 @@ export class BrawlGame {
       { maxDpr: Quality.settings().maxDpr, maxDt: MAX_FRAME_DT, onFrame: (dt) => this._frame(dt) });
     if (this.disposed) { stage.dispose(); return; }
     this.stage = stage;
+    stage.userData.isOnline = () => this.options.mode === 'online';   // photo mode never opens in a live match
+    stage.userData.boundKeys = ['KeyP', 'KeyO'];
     this.renderer = renderer;
 
     this.scene = new THREE.Scene();
@@ -1918,7 +1920,7 @@ export class BrawlGame {
       onImpactFx: (pos, power, kind) => {
         this._spawnSparks(pos, 0xc8a060, 8, 1.6);
         if (kind === 'wood') {
-          this.audio.prop({ material: 'wood', power: power ?? 1, worldPos: pos });
+          this.audio.prop({ material: 'wood', power: power ?? 1, worldPos: pos, splintersOnly: true });   // the contact bridge voices the knock
           // 1.4 is a crate breaking apart (props.js damageCrate); a lighter knock only thuds.
           if ((power ?? 1) >= 1.4) this._crateSplinters(pos);
           this._kickRig(0.35, pos.x, pos.z);

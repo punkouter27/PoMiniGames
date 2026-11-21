@@ -12,7 +12,7 @@
 // it cannot be stopped. (Zones are laid out along s in ZONES below — keep them
 // non-overlapping when editing, the ribbons assume it.)
 import * as THREE from 'three-eco/webgpu';
-import * as CANNON from 'cannon-es';
+import * as CANNON from '../platform/physics/cannonCompat.js';
 
 // The base chute recipe. A map may run it with a VARIANT (generateTrack's last argument), which
 // overrides any of these and of ZONES / pinches / curve amplitude — that is how Neon Canyon is

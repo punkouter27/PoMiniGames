@@ -1,4 +1,4 @@
-// Module resolve hook for the harness. The engine's modules import bare 'three' / 'cannon-es'
+// Module resolve hook for the harness. The engine's modules import bare 'three' / 'rapier'
 // (an import map in the browser), and game.js pulls in the renderer, the audio graph and two
 // window-only effect modules. Bare names resolve to this folder's node_modules; the renderer,
 // audio and effects resolve to the headless stubs. Everything else is the real engine source.
@@ -13,9 +13,10 @@ const BARE = {
   'three': pathToFileURL(path.join(nm, 'three/build/three.module.js')).href,
   'three-eco/webgpu': pathToFileURL(path.join(nm, 'three/build/three.module.js')).href,
   'three-eco/tsl': stub('empty.mjs'),
-  'cannon-es': pathToFileURL(path.join(nm, 'cannon-es/dist/cannon-es.js')).href,
+  // The engine runs on Rapier through platform/physics/cannonCompat.js; that module's import('rapier') is this.
+  'rapier': pathToFileURL(path.join(nm, '@dimforge/rapier3d-compat/dist/rapier.mjs')).href,
 };
-const STUBBED = { 'scene.js': stub('scene.mjs'), 'audio.js': stub('audio.mjs'), 'weather.js': stub('empty.mjs'), 'glassFx.js': stub('empty.mjs') };
+const STUBBED = { 'softBody.js': stub('softBody.mjs'), 'scene.js': stub('scene.mjs'), 'audio.js': stub('audio.mjs'), 'weather.js': stub('empty.mjs'), 'glassFx.js': stub('empty.mjs') };
 
 export function resolve(specifier, context, next) {
   if (BARE[specifier]) return { url: BARE[specifier], shortCircuit: true };

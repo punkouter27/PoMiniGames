@@ -1,7 +1,16 @@
-// physics.js — Rapier WASM (primary in browser) + cannon-es fallback world for PoMarbleRace
+// physics.js — the Rapier world for PoMarbleRace (the only physics backend: cannon-es is gone).
 // Sphere marbles, box floor/walls, sphere pegs/bumps, hinged turnstile paddles.
-import * as CANNON from 'cannon-es';
-import { loadRapier, getRapier, createRapierWorld } from './physics-rapier.js';
+//
+// The engine code (marbles, course, track-procedural, online) still speaks the CANNON.Body proxy
+// API; platform/physics/cannonCompat.js provides it on top of the shared Rapier wrapper
+// (platform/physics/rapier.js). Rapier brings what cannon-es lacked here: continuous collision
+// detection on every marble (the speed ceiling in marbles.js is now a safety net, not the thing
+// that stops marbles tunnelling through the open course shell) and a BVH broadphase.
+//
+// Online play is unchanged: the host steps this world and streams marble positions; the guest never
+// creates bodies that need simulating (it eases toward streamed targets in online.js).
+import * as CANNON from '../platform/physics/cannonCompat.js';
+import { loadRapier } from '../platform/physics/rapier.js';
 
 export { loadRapier };
 
@@ -35,57 +44,13 @@ export const GRAVITY = 72;        // world gravity magnitude (down -Y) — weigh
 export const FIXED_DT = 1 / 60;   // fixed physics step
 export const MAX_SUBSTEPS = 4;
 
-// cannon-es remembers which body pairs touched last step in a triangular ArrayCollisionMatrix: a
-// plain JS array sized n(n-1)/2 by assigning `length`, then zeroed element by element every step.
-// With ~1700 static chunks plus the field (Neon Canyon) that is ~1.5 million slots, which V8 keeps
-// as a sparse dictionary rather than a packed array, so the per-step reset and every set() were
-// hash-table writes: 60% of the whole step in a profile (scripts/pomarblerace, node --cpu-prof),
-// and ~260 ms a frame on Playground Run at the start. A Uint8Array holds the same bits densely and
-// zeroes with one fill(). Same get/set/reset/setNumObjects contract, same results bit for bit
-// (the headless harness races are identical with and without it), 2-10x faster steps.
-class TypedCollisionMatrix {
-  constructor() { this.matrix = new Uint8Array(0); }
-  _at(bi, bj) {
-    let i = bi.index, j = bj.index;
-    if (j > i) { const t = j; j = i; i = t; }
-    return ((i * (i + 1)) >> 1) + j - 1;
-  }
-  get(bi, bj) { return this.matrix[this._at(bi, bj)]; }
-  set(bi, bj, value) {
-    const k = this._at(bi, bj);
-    // cannon-es sizes only the CURRENT matrix as bodies are added, and swaps the pair every step,
-    // so the other one meets the larger body count only when written: grow then, the way the
-    // plain array it replaces did.
-    if (k >= this.matrix.length) this._grow(k + 1);
-    this.matrix[k] = value ? 1 : 0;
-  }
-  reset() { this.matrix.fill(0); }
-  setNumObjects(n) { this._grow((n * (n + 1)) >> 1); }
-  // Grows only (with headroom, so a race adding marbles one by one is not n reallocations);
-  // bodies come and go each race and a larger buffer is harmless.
-  _grow(len) {
-    if (len <= this.matrix.length) return;
-    const next = new Uint8Array(Math.max(len, Math.ceil(this.matrix.length * 1.25)));
-    next.set(this.matrix);
-    this.matrix = next;
-  }
-}
-
 export function createWorld() {
-  // Prefer Rapier WASM (native BVH + Continuous Collision Detection) when preloaded in the browser.
-  const R = getRapier();
-  if (R) return createRapierWorld(R, GRAVITY);
-
-  const world = new CANNON.World({ gravity: new CANNON.Vec3(0, -GRAVITY, 0) });
-  world.engineName = 'cannon-es';
-  world.collisionMatrix = new TypedCollisionMatrix();
-  world.collisionMatrixPrevious = new TypedCollisionMatrix();
+  // 1 unit = 1 cm, so a radius-1 marble is a 20 mm shooter; unitScale lets the contact bridge report
+  // sizes in metres. The marble race has its own audio graph (audio.js), so the generic
+  // contact->impactSynth bridge stays off here (no tagged materials = no force events).
+  const world = new CANNON.World({ gravity: new CANNON.Vec3(0, -GRAVITY, 0), fixedDt: FIXED_DT, unitScale: 0.01, impact: false });
   world.broadphase = new CANNON.SAPBroadphase(world);
   world.allowSleep = false;
-  // Friction now matters, and 101 marbles pile up a lot of simultaneous contacts, so give the
-  // solver a couple more iterations to keep the rolling stable and jitter-free.
-  world.solver.iterations = 16;
-  world.solver.tolerance = 0.001;
   world.defaultContactMaterial.friction = 0.12;
 
   // Real glass marbles: they roll (surface friction couples spin to travel) and they're
@@ -142,9 +107,9 @@ export function createWorld() {
 }
 
 /**
- * @returns {number} seconds the physics actually advanced. NOT always `dt`: cannon-es stops
- *   sub-stepping as soon as one step has cost more wall time than FIXED_DT and throws the rest of
- *   the accumulated time away, so a frame that asked for three steps can get one.
+ * @returns {number} seconds the physics actually advanced. NOT always `dt`: at most MAX_SUBSTEPS
+ *   fixed steps run per call and the remainder of a long stall is dropped, so a frame that asked
+ *   for five steps gets four.
  */
 export function stepWorld(world, dt) {
   const before = world.stepnumber;

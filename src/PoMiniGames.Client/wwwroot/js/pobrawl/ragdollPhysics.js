@@ -1,8 +1,8 @@
-// ragdollPhysics.js — true rigid-body KO ragdoll on cannon-es.
+// ragdollPhysics.js — true rigid-body KO ragdoll on the shared Rapier wrapper (cannon-style Body API, platform/physics/cannonCompat.js).
 //
 // The one and only ragdoll: at the final KO the fighter hands off to
 // eleven jointed rigid boxes matching the visual rig, connected by
-// ConeTwistConstraints, simulated by the same cannon-es world that runs the
+// ConeTwistConstraints, simulated by the same physics world that runs the
 // fight. The body carries its momentum, tumbles under gravity, bounces off
 // the canvas with restitution, slides with friction, crumples against the
 // corner posts and rope walls (G_ARENA colliders), and gets shoved by the
@@ -20,7 +20,7 @@
 // hierarchy in order. Joint local POSITIONS are never touched — bone lengths
 // stay rig-perfect while the constraint solver keeps bodies at the joints.
 
-import * as CANNON from 'cannon-es';
+import * as CANNON from '../platform/physics/cannonCompat.js';
 import * as THREE from 'three-eco/webgpu';
 import { G_ROOT, G_RAGDOLL, G_ARENA, G_PROP } from './physics.js';
 import { createSettler } from '../platform/ragdollBlend.js';

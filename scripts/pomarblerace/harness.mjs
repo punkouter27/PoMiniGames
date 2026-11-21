@@ -33,6 +33,11 @@ const { mapById, mapMenu } = await import(engine('maps.js'));
 const tuning = await import(engine('tuning.js')).catch(() =>
   import(pathToFileURL(path.resolve(here, '../../src/PoMiniGames.Client/wwwroot/js/pomarblerace/tuning.js')).href));
 
+// The engine's physics is Rapier behind platform/physics/cannonCompat.js; its WASM must be up before a
+// world is built (the browser awaits the same loadRapier() in the page's own boot).
+const { loadRapier } = await import(pathToFileURL(path.resolve(engineDir, '../platform/physics/rapier.js')).href);
+if (!(await loadRapier())) throw new Error('Rapier failed to load: run npm ci --prefix scripts/pomarblerace');
+
 export const MAP_IDS = mapMenu().map((m) => m.id);
 const DT = 1 / 60;
 // Progress a marble must make in STALL_WINDOW seconds to count as moving (the engine's own
@@ -120,10 +125,8 @@ export async function race(mapId, seed = 1, patch = null) {
  */
 export async function tunnel(mapId) {
   const { MAX_SPEED } = await import(engine('marbles.js'));
-  const CANNON = await import('cannon-es');
-  const ray = new CANNON.RaycastResult();
-  const rayOpts = { skipBackfaces: false, collisionFilterMask: -1 };
   const g = await bootRace(mapId, 1);
+  g.world.step(DT, DT, 2);   // Rapier's query pipeline only sees colliders after a step
   const track = g.track;
   const ms = g.marbleSet.marbles;
   const escaped = [];
@@ -140,9 +143,9 @@ export async function tunnel(mapId) {
       const d = dirName === 'down' ? up.multiplyScalar(-1) : right.multiplyScalar(dirName === 'left' ? -1 : 1);
       // Only a shot at a surface that is there tests tunnelling: over a funnel's open mouth or
       // past a lane's open end there is nothing to pass through, and the marble leaves by design.
-      ray.reset();
-      g.world.raycastClosest(new CANNON.Vec3(p.x, p.y, p.z), new CANNON.Vec3(p.x + d.x * 60, p.y + d.y * 60, p.z + d.z * 60), rayOpts, ray);
-      if (!ray.hasHit || ray.body.mass !== 0) {
+      const dl = Math.hypot(d.x, d.y, d.z) || 1;
+      const hit = g.world._pw.raycast({ x: p.x, y: p.y, z: p.z }, { x: d.x / dl, y: d.y / dl, z: d.z / dl }, 60, true);
+      if (!hit || (hit.body && hit.body.type !== 'fixed')) {
         m.body.position.set(0, -1e5 - i * 10, 0); m.body.velocity.set(0, 0, 0); m.skipShot = true; skipped++;
         continue;
       }

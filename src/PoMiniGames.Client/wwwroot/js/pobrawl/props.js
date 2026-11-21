@@ -1,7 +1,7 @@
 // props.js — destructible corner crates, persistent debris, and the physics
 // glue that lets fighters interact with them.
 //
-// Each corner gets a 10-crate pyramid of cannon-es dynamic bodies (G_PROP):
+// Each corner gets a 10-crate pyramid of rigid dynamic bodies (G_PROP):
 //   • A fighter walking into a stack nudges it apart (explicit shove impulses,
 //     since fighters are kinematic in the solver).
 //   • A fighter KNOCKED into a stack at speed damages crates, which splinter
@@ -12,7 +12,7 @@
 // Everything here runs OUTSIDE world.step, so adding/removing bodies
 // mid-shatter is safe.
 
-import * as CANNON from 'cannon-es';
+import * as CANNON from '../platform/physics/cannonCompat.js';
 import * as THREE from 'three-eco/webgpu';
 import { G_PROP, G_ROOT, G_RAGDOLL, G_ARENA } from './physics.js';
 

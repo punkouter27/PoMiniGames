@@ -13,6 +13,7 @@ node scripts/pomarblerace/tune-stall.mjs all 1,2       # sweep tuning.js STALL_*
 node --test tests/pomarblerace-map-health.test.mjs     # the CI gate (deploy.yml)
 ```
 
+- Physics is Rapier (`@dimforge/rapier3d-compat` 0.21 in this folder, mapped as `rapier` by `loader.mjs`) behind `platform/physics/cannonCompat.js`; `softBody.js` (GPU compute) is stubbed.
 - A race is repeatable: `Math.random` and the course seed are pinned per seed argument.
 - Playground Run's visual model is Draco-compressed (a browser Worker decodes it); the harness
   loads an empty model in its place. Its physics comes from `playground_colliders.glb` and the
