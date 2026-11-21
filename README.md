@@ -169,7 +169,9 @@ sign-in: a player is a random browser id plus three initials.
     its `index.js`; `kind: 'any' | '2d' | '3d'` decides which stages get it, and `default: true` turns
     it on everywhere (a game opts out with `exclude: ['id']`). Today: `shake` (default, any; camera
     shake driven by `PoImpact` trauma), `renderBudget` (opt-in, 3D; the adaptive pixel-ratio and
-    shadow ladder) and `paper` (opt-in, 3D, 2026-11-20; loose paper simulated on the GPU:
+    shadow ladder), `photoMode` (default, 3D, 2026-11-21; N freezes the game and opens a free camera with focus,
+    exposure and Save PNG; never in an online or `/multi` route, and it takes a key the game does not bind:
+    `userData.photoKey` / `boundKeys`) and `paper` (opt-in, 3D, 2026-11-20; loose paper simulated on the GPU:
     `stage.feature('paper').attach(scene, renderer, { rect, groundHeight, blocked, indoors })`, then
     `feed({ wind, movers })` each frame and `blast(x, z, strength, radius)`; the tier sets how many
     sheets unless the game pins `setLevel`; three.js loads only on `attach`).
@@ -185,6 +187,15 @@ sign-in: a player is a random browser id plus three initials.
     over the ground on a wind and pressure-solved flow round walls: `createFluidGrid(rect, cols,
     rows, blocked, indoors, { lifeOut, lifeIn, windShare })` on the CPU, `createGpuFluidGrid(...)` the
     same on WebGPU compute (resolves null without WebGPU; `lost()` says when to fall back).
+  - **Shared r186 3D modules (2026-11-21, `platform/3d/`):** `postStack.js` (scene pass, TRAA, auto-exposure,
+    lens flare, anamorphic streaks, SSGI and SSR as ONE HDR node; SSGI and SSR are *earned*: off at boot, on only after
+    the measured p95 frame time shows headroom, shed at once and barred for a growing cooldown when it does not;
+    `?postOff=ssgi,ssr,traa,exposure,flare,streak,dynres|all` switches passes off and `?postEarn=all` forces
+    both on, for A/B), `postAddons.js` (the r186 addon imports), `shadows.js` (cascaded sun shadows + PCSS soft
+    shadows; plain PCF on the WebGL2 fallback), `gpuParticles.js` (compute particles that collide with scene depth
+    through `depthGrid.js`; capacity 65,536 / 32,768 / 16,384 on high / medium / low), `gpuCulling.js` (GPU frustum +
+    occlusion culling into an indirect draw), `splats.js` (Gaussian-splat backdrops on r186; PoCabinet's court scan),
+    `softBody.js` (XPBD soft bodies on the GPU).
   - Tested in `tests/platform-stage.test.mjs`.
 - **GFX / physics / audio layer (2026-11-17).**
   All of these are in `wwwroot/js/platform/` and are lazy-imported by engines, except `springUi`, `framePacing`
@@ -200,20 +211,28 @@ sign-in: a player is a random browser id plus three initials.
     - `diegeticBoard.js`: an in-world board, always mirrored to an `aria-live` HUD.
     - `volumetricFog.js`: ray-marched fog, with fog cards as the fallback.
   - **Physics:**
+    - `platform/physics/` (2026-11-21): one Rapier engine for the 3D games (`rapier.js` the world, contact events and a
+      raycast; `cannonCompat.js` the cannon-es API on top of it, which PoMarbleRace and PoBrawl's props run on;
+      `workerWorld.js` / `physicsWorker.js` for a worker-hosted world). Contacts reach `impactSynth` by themselves for
+      materials that carry an `impactTag`.
+    - `contactLoop.js`: a continuous rolling/scraping voice (worklet `worklets/contactVoice.js`) driven by contacts.
     - `feelPresets.fromImpulse/impulseImpact`: one profile for shake, hit-stop, blur, haptics and the crowd
       (a `po-crowd-recoil` event).
     - `ragdollBlend.js`, `debrisField.js` and `softChain.js`.
     - `simInterest.js`: interest management. Anything that is multiplayer or replay state is always simulated at
       full precision.
   - **Audio:**
-    - `impactSynth.js`.
+    - `impactSynth.js` (pitch scales with object size).
+    - `acousticProbe.js`: ray-cast early reflections and occlusion from the game's own geometry (PoEcosystem terrain, PoMarbleRace's course through Rapier).
+    - `ambisonics.js`: a first-order ambience bed that rotates with the camera.
     - Acoustic zones: `acoustics.setZone/zoneAt`.
     - `tensionMixer.js`: drives six-stem `musicLayers`.
     - Keyboard-only `data-sonify` menu cues in `uiAudio.js` (pan ≤ 0.6, pitch carries the meaning). `uiAudio.js` loads globally
       from `index.html` so the listener binds on the hub; the hub mode chips opt in.
     - `speechBus.speakResultSummary`, which only speaks when the voice announcer is on.
   - **UI:**
-    - `springUi.js` (`data-spring`/`data-magnetic`).
+    - `springUi.js` (`data-spring`/`data-magnetic`); `uiTargets.js` is the one list of controls that get the press spring
+      and press cue (`uiAudio.js`).
     - The hub launch morph keeps the top bar still, adds an edge wipe and plays a sweep cue.
     - `resultCeremony.js`: the five-beat game-over sequence. It can be skipped and is off under reduced motion.
     - `framePacing.js`: the 10-second Settings preview measures p95 and recommends Auto/Low/Medium/High. After a
@@ -467,7 +486,7 @@ src/
 ├── PoMiniGames.Domain/         Domain primitives (EloCalculator, GameKey, ...)
 └── PoMiniGames.Shared/         DTOs shared between client and server
 tests/
-├── PoMiniGames.Unit/           421 tests (hermetic; CI)
+├── PoMiniGames.Unit/           435 tests (hermetic; CI)
 ├── PoMiniGames.Integration/    17 tests (Testcontainers Azurite; CI; skip without Docker)
 ├── PoMiniGames.E2EAPI/         16 tests (HTTP contract, in-process host; local only)
 └── PoMiniGames.E2EUI/          22 tests (Playwright; local only; skip without Docker or Chromium)
@@ -491,8 +510,9 @@ scripts/                        Working scripts only — see scripts/README.md
   `PoMiniGames.Shared/Games/PoMule` (unit-tested, seeded, deterministic) with JavaScript only
   drawing and moving the avatars. The server replays a submitted match from its seed and
   action log (`PoMuleRunVerifier`).
-- **Two three.js versions.** PoEcosystem renders with three r186 `WebGPURenderer` and node
-  materials (TSL), imported as `three-eco/webgpu` / `three-eco/tsl` / `three-eco/addons/`; it
+- **Two three.js versions.** Five games render with three r186 `WebGPURenderer` and node materials (TSL): PoEcosystem,
+  PoBrawl, PoMarbleRace, and (ported 2026-11-21) PoCabinet and PoVoxelStrike; PoCapitol's engine is the only one still
+  on r165 in this tree. PoEcosystem's details: it uses the r186 build, imported as `three-eco/webgpu` / `three-eco/tsl` / `three-eco/addons/`; it
   falls back to three's WebGL2 backend by itself, and `?ecoBackend=webgl2` forces that.
   On WebGPU it also runs a bird flock and the water's ripples as compute passes
   (`render/flock.js`, `render/ripples.js`; the WebGL2 backend keeps the CPU birds and flat
@@ -502,10 +522,10 @@ scripts/                        Working scripts only — see scripts/README.md
   `render/creatureModels.js`; a species whose file does not load keeps its box rig, and
   `?ecoCreatures=boxes` forces that).
   PoBrawl uses the same r186 build (`?brawlBackend=webgl2` forces its fallback; its GPU blood,
-  crowd and confetti simulations need WebGPU and switch off without it). The other three.js games
-  stay on r165 (`three`, `three/addons/`). `three`, `gaussian-splats-3d` and `rapier`
-  (`@dimforge/rapier3d-compat` `0.21.0`, PoCabinet's debris physics, fetched when a race starts
-  on the medium and high tiers) are pinned with SRI in the import map in `wwwroot/index.html`, while `cannon-es` (`0.20.0`)
+  crowd and confetti simulations need WebGPU and switch off without it). PoCabinet's post chain
+  (`pocabinet/postfx.js`) is a r186 `RenderPipeline` on top of `postStack.js`, with SSR on the wet road in the rain.
+  `three` (r165, still PoCapitol's), `rapier` (`@dimforge/rapier3d-compat` `0.21.0`, the engine behind
+  `platform/physics/`; PoMarbleRace's node harness in `scripts/pomarblerace` loads the same version) and the r186 files are pinned with SRI in the import map in `wwwroot/index.html`, while `cannon-es` (`0.20.0`, now only PoEcosystem's fallback)
   and `yuka` (`0.7.8`) resolve to their local copies under `wwwroot/lib/` so browsers, Web
   Workers, and Node tests load the same artifact. `wwwroot/lib/basis/` is Basis Universal's
   KTX2 texture transcoder (`v1_60`, Apache 2.0), built here without string-made functions

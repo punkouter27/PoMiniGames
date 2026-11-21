@@ -72,6 +72,53 @@
   animation: none;
 }
 
+/* Item 18: the pressed card's frame (`po-card`) grows into the game's play area. A card and a
+   stage differ wildly in aspect and scale, so neither snapshot is stretched to the other: the
+   card's snapshot keeps its natural size in the group's corner and fades out over the first
+   40% while the group's box grows, and the stage's snapshot (cropped, not stretched) fades in
+   as it passes the halfway mark. The page behind cross-fades instead of wiping from an edge,
+   so the morph is the only thing that moves. */
+::view-transition-group(po-card) {
+  animation-duration: 460ms;
+  animation-timing-function: cubic-bezier(0.2, 0.9, 0.25, 1);
+  overflow: clip;
+  border-radius: var(--radius-lg, 14px);
+}
+::view-transition-old(po-card) {
+  height: auto;
+  width: auto;
+  animation: po-card-card-out 460ms ease-out both;
+}
+::view-transition-new(po-card) {
+  height: 100%;
+  width: 100%;
+  object-fit: cover;
+  animation: po-card-stage-in 460ms ease-out both;
+}
+@keyframes po-card-card-out {
+  0%, 15% { opacity: 1; }
+  45%, 100% { opacity: 0; }
+}
+@keyframes po-card-stage-in {
+  0%, 30% { opacity: 0; }
+  65%, 100% { opacity: 1; }
+}
+:root[data-hero-nav][data-hero-card]::view-transition-new(root) {
+  animation: po-route-fade-in 380ms ease-out both;
+}
+:root[data-hero-nav][data-hero-card]::view-transition-old(root) {
+  animation: po-route-edge-out 380ms ease-in both;
+}
+@keyframes po-route-fade-in {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+:root[data-motion='reduce']::view-transition-group(po-card),
+:root[data-motion='reduce']::view-transition-old(po-card),
+:root[data-motion='reduce']::view-transition-new(po-card) {
+  animation: none;
+}
+
 :root[data-hero-nav]::view-transition-new(root) {
   animation: po-route-edge-ltr 420ms cubic-bezier(0.2, 0.9, 0.25, 1) both;
 }

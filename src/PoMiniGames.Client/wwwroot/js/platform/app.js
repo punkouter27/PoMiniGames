@@ -49,6 +49,13 @@
       var root = document.documentElement;
       var title = null;
       if (hero) hero.style.viewTransitionName = 'po-hero';
+      // Item 18: the card's frame is a second shared element. Its snapshot (border, fill, accent)
+      // grows into the game's play area, so the card itself becomes the stage rather than just
+      // lending its heading. Cards without a frame (the hero is a bare [data-hero]) keep the
+      // edge wipe.
+      var card = hero && hero.closest ? hero.closest('.home-card') : null;
+      var area = null;
+      if (card) { card.style.viewTransitionName = 'po-card'; root.setAttribute('data-hero-card', ''); }
       // The top bar is the one HUD surface both pages share. Named on its own it is
       // captured apart from the page, so it holds still while the page wipes under it
       // instead of cross-fading with itself (po-motion.css).
@@ -64,15 +71,21 @@
       root.setAttribute('data-hero-nav', '');
       var transition = document.startViewTransition(function () {
         if (hero) hero.style.viewTransitionName = '';
+        if (card) card.style.viewTransitionName = '';
         navigate();
         return waitForTitle(450).then(function (el) {
           title = el;
           if (title) title.style.viewTransitionName = 'po-hero';
+          area = card ? document.querySelector('.gps-game-area') : null;
+          if (area) area.style.viewTransitionName = 'po-card';
         });
       });
       var cleanup = function () {
         if (title) title.style.viewTransitionName = '';
         if (hero) hero.style.viewTransitionName = '';
+        if (card) card.style.viewTransitionName = '';
+        if (area) area.style.viewTransitionName = '';
+        root.removeAttribute('data-hero-card');
         if (hud) hud.style.viewTransitionName = '';
         root.removeAttribute('data-hero-nav');
         root.removeAttribute('data-hero-dir');

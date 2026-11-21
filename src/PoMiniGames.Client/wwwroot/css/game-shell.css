@@ -1290,6 +1290,55 @@ dialog.gps-modal[data-ceremony][data-beats~="action"] .gps-play-again-actions .a
   animation: gps-ceremony-action 0.5s cubic-bezier(0.2, 0.9, 0.3, 1.3) 1;
 }
 
+/* Stagger (deck idea #19): the stat grid and the board stay put and their cells rise in one after
+   another (resultCeremony.js writes --i on each). The Back button fades and rises last; it never
+   drops below 30% opacity and stays focusable, so the one action is always reachable. */
+dialog.gps-modal[data-ceremony] .gps-modal-stats,
+dialog.gps-modal[data-ceremony] .gps-modal-board {
+  opacity: 1;
+  translate: 0 0;
+}
+dialog.gps-modal[data-ceremony] .gps-modal-stats > *,
+dialog.gps-modal[data-ceremony] .gps-modal-board-row,
+dialog.gps-modal[data-ceremony] .gps-play-again-actions .app-btn {
+  opacity: 0;
+  translate: 0 12px;
+  transition: opacity 0.3s ease-out calc(var(--i, 0) * 60ms),
+    translate 0.5s cubic-bezier(0.2, 0.9, 0.3, 1.3) calc(var(--i, 0) * 60ms);
+}
+dialog.gps-modal[data-ceremony] .gps-play-again-actions .app-btn {
+  opacity: 0.3;
+}
+dialog.gps-modal[data-beats~="headline"] .gps-modal-stats > *,
+dialog.gps-modal[data-beats~="rank"] .gps-modal-board-row {
+  opacity: 1;
+  translate: 0 0;
+}
+dialog.gps-modal[data-beats~="rank"] .gps-play-again-actions .app-btn {
+  opacity: 1;
+  translate: 0 0;
+  transition-delay: 120ms;
+}
+
+/* Frosted last frame (resultCeremony.js sets --end-frost and data-frost). ::backdrop inherits
+   custom properties from its dialog. The image is already blurred and darkened; a light
+   backdrop-filter on top keeps the card edge soft. Losses keep their grey vignette on top. */
+dialog.gps-modal[data-frost]::backdrop {
+  background:
+    radial-gradient(ellipse at center, rgba(4, 8, 20, 0.12) 40%, rgba(4, 8, 20, 0.5) 100%),
+    var(--end-frost) center / cover no-repeat;
+  backdrop-filter: blur(3px);
+  -webkit-backdrop-filter: blur(3px);
+}
+dialog.gps-modal.gps-modal--loss[data-frost]::backdrop {
+  backdrop-filter: blur(3px) grayscale(0.7);
+  -webkit-backdrop-filter: blur(3px) grayscale(0.7);
+}
+:root[data-gfx='low'] dialog.gps-modal.gps-modal--loss[data-frost]::backdrop {
+  backdrop-filter: blur(3px);
+  -webkit-backdrop-filter: blur(3px);
+}
+
 @keyframes gps-ceremony-record {
   0% { box-shadow: 0 0 0 0 color-mix(in srgb, var(--fx-accent, #fbbf24) 70%, transparent); }
   100% { box-shadow: 0 0 0 14px transparent; }

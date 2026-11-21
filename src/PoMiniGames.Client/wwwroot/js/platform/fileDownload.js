@@ -21,3 +21,17 @@ export function saveText(fileName, text, mimeType) {
 
   requestAnimationFrame(() => URL.revokeObjectURL(url));
 }
+
+// Same hand-off for a Blob that already exists (the photo-mode PNG). saveText wraps a string in a
+// Blob and does this; an image must not round-trip through a string.
+export function saveBlob(fileName, blob) {
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement('a');
+  link.href = url;
+  link.download = fileName;
+  link.rel = 'noopener';
+  document.body.appendChild(link);
+  link.click();
+  link.remove();
+  setTimeout(() => URL.revokeObjectURL(url), 10000);   // a big file can still be streaming to disk next frame
+}

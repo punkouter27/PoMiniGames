@@ -100,7 +100,7 @@ Every command here was run on 2026-11-20 (Windows, PowerShell or Git Bash, from 
 |---|---|---|
 | Format | `dotnet format PoMiniGames.slnx --verify-no-changes` | — |
 | Build | `dotnet build PoMiniGames.slnx -c Release` (warnings are errors) | — |
-| Unit (421) | `dotnet test tests/PoMiniGames.Unit -c Release --no-build` | nothing; runs in CI |
+| Unit (435) | `dotnet test tests/PoMiniGames.Unit -c Release --no-build` | nothing; runs in CI |
 | Integration (17) | `dotnet test tests/PoMiniGames.Integration -c Release --no-build` | Docker (Testcontainers Azurite); every test skips with one reason without it; runs in CI |
 | E2E API (16) | `dotnet test tests/PoMiniGames.E2EAPI -c Release --no-build` | Azurite on 127.0.0.1:10000/10002 (`docker compose up -d azurite`); local only |
 | E2E UI (22 methods, 34 cases) | `dotnet test tests/PoMiniGames.E2EUI -c Release --no-build` | Docker + Playwright Chromium (skips with one reason without either); local only, ~40 min, heavy |
@@ -173,7 +173,7 @@ uvx ruff check .                                               # Python lint (sc
 
 ### Tests
 
-- There are four tiers (counts as of 2026-11-20). **Unit** (421) is hermetic and runs in CI. **Integration** (17)
+- There are four tiers (counts as of 2026-11-21). **Unit** (435) is hermetic and runs in CI. **Integration** (17)
   uses a Testcontainers Azurite and runs in CI; locally every test SKIPS with one reason (`DockerFact`) when Docker is
   not running. **E2EAPI** (16) runs HTTP contract tests in-process against the compose Azurite (local only).
   **E2EUI** (22) runs C# Playwright against a Kestrel host in the `Test` environment (local only; `UiFact` skips when

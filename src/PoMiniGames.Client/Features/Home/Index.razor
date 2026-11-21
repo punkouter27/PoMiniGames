@@ -53,7 +53,7 @@
                         aria-pressed="@(Kiosk.IsActive ? "true" : "false")"
                         aria-label="@(Kiosk.IsActive ? "Stop demos" : "Watch all demos")"
                         title="@(Kiosk.IsActive ? "Stop watching all demos" : "Auto-play every demo in turn")"
-                        @onclick="ToggleWatchAll">
+                        data-no-press-sound @onclick="ToggleWatchAll">
                     <span class="home-action-icon" aria-hidden="true">
                         <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                             <rect x="2" y="3" width="20" height="14" rx="2"/>

@@ -24,7 +24,14 @@
 //   • One rAF loop, running only while a spring is still moving. An idle page costs a
 //     single delegated pointerdown/pointerover listener.
 //
+// DEFAULT ON (deck idea #17): the opt-in attribute is no longer required for the shared
+// controls. uiTargets.js lists the classes (.app-btn, segmented buttons, bottom nav, catalog
+// card heads and chips, intro tabs, Radzen buttons, buttons inside .gps-modal) that spring
+// without markup; data-spring="off" opts a control out.
+//
 // Exposed as window.PoSpring and as ES exports (springStep is pure, for tests).
+
+import { pressTarget } from './uiTargets.js';
 
 /** Spring constants: snappy press, a little overshoot on release. */
 export const SPRING = Object.freeze({ stiffness: 520, damping: 26 });
@@ -80,7 +87,7 @@ let _last = 0;
 function stateFor(el) {
     let st = _live.get(el);
     if (!st) {
-        const attr = parseFloat(el.getAttribute('data-spring'));
+        const attr = parseFloat(el.getAttribute('data-spring'));  // '' / 'off' → NaN → default
         st = {
             s: { x: 1, v: 0 },
             tx: { x: 0, v: 0 },
@@ -133,8 +140,8 @@ function kick() {
 }
 
 function controlFrom(target) {
-    const el = target && target.closest ? target.closest('[data-spring], [data-magnetic]') : null;
-    if (!el || el.disabled || el.getAttribute('aria-disabled') === 'true') return null;
+    const el = pressTarget(target);
+    if (!el || el.getAttribute('data-spring') === 'off') return null;
     return el;
 }
 

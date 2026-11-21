@@ -10,6 +10,7 @@
 import * as AudioBus from './audioBus.js';
 import * as Cue from './gameCues.js';
 import * as Dsp from './dsp.js';
+import { pressTarget, KNOWN_SELECTOR } from './uiTargets.js';
 
 /**
  * Fire a named cue from the shared vocabulary (gameCues.js).
@@ -461,6 +462,36 @@ function onActivate(e) {
     const r = el.getBoundingClientRect();
     navCue({ index: sonifyIndex(el), x: r.left + r.width / 2, kind: 'select' });
 }
+
+// ── Delegated press cue (deck idea #17) ───────────────────────────────────────
+// Every shared control (uiTargets.js) answers a press with the ui scope's soft cue, panned by
+// where the control sits: 'confirm' for primary actions, 'back' for the end card's exit and
+// anything marked data-press-cue="back", 'tap' otherwise. Hover stays silent on purpose (see
+// the data-sonify note above: sweeping the mouse over the catalog must not chirp).
+// Opt out with data-no-press-sound on the control or an ancestor — used where C# already
+// plays its own Feedback.TapAsync so a press never sounds twice. Keyboard activation of a
+// data-sonify item already has navCue 'select', so those are skipped here.
+function onPress(e) {
+    if (e.button !== undefined && e.button !== 0) return;
+    const el = pressTarget(e.target);
+    if (!el || el.closest('[data-no-press-sound]') || el.hasAttribute('data-sonify')) return;
+    // A hand-opted data-spring tile outside the shared list (a game's own menu) keeps the
+    // game's own sounds; only the shared controls get the delegated cue.
+    if (!el.matches(KNOWN_SELECTOR)) return;
+    const r = el.getBoundingClientRect();
+    const name = el.getAttribute('data-press-cue')
+        || (el.hasAttribute('data-end-action') ? 'back'
+            : (el.matches('.app-btn--primary, [data-intro-action]') ? 'confirm' : 'tap'));
+    cue('ui', name, { pan: screenPan(r.left + r.width / 2, window.innerWidth), gain: 0.8 });
+}
+
+let _pressBound = false;
+export function enablePressCue() {
+    if (_pressBound || typeof document === 'undefined') return;
+    _pressBound = true;
+    document.addEventListener('pointerdown', onPress, { capture: true, passive: true });
+}
+if (typeof window !== 'undefined' && typeof document !== 'undefined') enablePressCue();
 
 let _sonifyBound = false;
 let _countdownObserver = null;

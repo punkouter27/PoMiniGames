@@ -17,7 +17,7 @@
 
 @if (Kiosk.IsActive)
 {
-    <div class="kiosk-bar" role="toolbar" aria-label="Demo reel controls">
+    <div class="kiosk-bar" data-no-press-sound role="toolbar" aria-label="Demo reel controls">
         <span class="kiosk-bar-now">
             <span class="kiosk-bar-dot @(Kiosk.IsPaused ? "kiosk-bar-dot--paused" : null)" aria-hidden="true"></span>
             @* CurrentGameName is null until a demo page reports itself via
