@@ -42,20 +42,7 @@ public partial class PoMarbleRacePage
     // One record per race: set when a result is taken, cleared when the next race sets up.
     private bool _raceRecorded;
 
-    // ── Grand Prix (1P): every course in turn, points for the top 10 of each round, one table
-    // across all of them. The table lives in the engine (grandprix.js); the page walks the rounds,
-    // booting a new engine per course. ──
-    private bool _gp;
-    private int _gpRound = 1;          // 1-based
-    private bool _gpDone;
-    private int _gpGained, _gpPoints, _gpRank;
-    private List<(int Index, int Points)> _gpTop = new();
-    private MarbleMapOption[] GpOrder => _menu?.Maps.Where(m => !m.Daily).ToArray() ?? [];
-    private int GpNextMapId => GpOrder is { Length: > 0 } o ? o[Math.Min(_gpRound, o.Length - 1)].Id : _mapId;
-    private bool ShowGpInterim => _gp && !_gpDone && _phase == "result" && !_loading && _engineError is null;
-    private const int GpRoundGapMs = 4500;
-
-    // ── Daily Canyon: today's board (each player's fastest finish on today's course) ──
+    // ── Daily board (retained for legacy API compatibility; Grand Circuit is the one course) ──
     private PoMiniGames.Domain.Models.MarbleRaceMapRecord[] _dailyBoard = [];
     private bool IsDailyMap(int id) => MapAt(id)?.Daily == true;
 
@@ -79,7 +66,7 @@ public partial class PoMarbleRacePage
     // ── Setup (intro card, 1P) ──
     // Everything offered here comes from the engine (PoMarbleRace.menu()); see MarbleMenu.cs.
     private MarbleMenu? _menu;
-    private int _mapId = 2;                 // until the menu names its default
+    private int _mapId = 7;                 // unified Grand Circuit course (maps.js DEFAULT_MAP_ID)
     private string _skin = "swirl";
     private string _weight = "balanced";
 
@@ -120,7 +107,6 @@ public partial class PoMarbleRacePage
         && (_pickCountdown > 0 || _loading || IsOnlineGuest || _showTutorial);
     private bool ShowOnlineCard => _introDone && _online && _onlinePhase is not (OnlinePhase.Racing or OnlinePhase.Idle);
     private bool ShowPlace => _phase == "racing" && !_demo;
-    private IEnumerable<MarbleMapOption> PickableMaps => (_menu?.Maps ?? []).Where(m => !_online || !m.Daily);
     private string StandingsLabel => ShowPlace ? $"Your position: {_myPlace} of {_myField}" : "Podium";
 
     // ── Engine health (item 32/33): a failed start is a retry card, the download a progress bar ──
@@ -174,73 +160,6 @@ public partial class PoMarbleRacePage
             ? "Race another player through a pack of 101. One of you steers RED, the other WHITE — finish in the top 10 to score."
             : "You steer the one RED marble in a pack of 101. Finish in the top 10 to score.";
 
-
-    // The track after this one in the menu's order, wrapping.
-    // ── Grand Prix rounds ──
-
-    private void StartGrandPrix()
-    {
-        _gpRound = 1;
-        _gpDone = false;
-        _gpGained = _gpPoints = _gpRank = 0;
-        _gpTop.Clear();
-        if (GpOrder is { Length: > 0 } order) _mapId = order[0].Id;
-        else _gp = false;   // no menu, no order: race the one track instead
-    }
-
-    /// <summary>
-    /// A Grand Prix round resolved (results.js _resolveGrandPrix). <paramref name="rank"/> and
-    /// <paramref name="points"/> are yours across the rounds so far; the top of the table rides
-    /// along as parallel arrays of marble index and points.
-    /// </summary>
-    [JSInvokable]
-    public async Task OnGrandPrix(int round, int rounds, int place, int gained, int points, int rank,
-                                  int mapId, double myTime, int[] topIndices, int[] topPoints)
-    {
-        if (_raceRecorded || !_gp) return;
-        _raceRecorded = true;
-        _lastPlace = place;
-        _lastWon = gained > 0;
-        _lastGained = gained;
-        _gpGained = gained;
-        _gpPoints = points;
-        _gpRank = rank;
-        _gpTop = topIndices.Select((ix, i) => (Index: ix, Points: i < topPoints.Length ? topPoints[i] : 0)).ToList();
-        _phase = "result";
-        _gameStats.SaveLastPlayedGame("pomarblerace");
-        UpdateStats();
-        await InvokeAsync(StateHasChanged);
-
-        if (place > 0 && myTime > 0)
-        {
-            await GameResults.SubmitMarbleRaceMapRecordAsync(new MarbleRaceRecordRequest(mapId, myTime));
-        }
-
-        if (round >= rounds)
-        {
-            // One local result for the whole Grand Prix: a podium overall is the win.
-            _gpDone = true;
-            _stats = await GameResults.RecordAndSubmitMarbleRaceAsync(
-                _playerName, rank is >= 1 and <= 3 ? GameResult.Win : GameResult.Loss, null);
-            UpdateStats();
-            await InvokeAsync(StateHasChanged);
-            return;
-        }
-
-        // On to the next course once the round's result has been read.
-        await Task.Delay(GpRoundGapMs);
-        if (_disposed || !_gp || _gpDone || _gpRound != round || _phase != "result") return;
-        _gpRound = round + 1;
-        _mapId = GpOrder is { Length: > 0 } order ? order[Math.Min(round, order.Length - 1)].Id : _mapId;
-        await StopEngineAsync();
-        _phase = "pick";
-        _podium.Clear();
-        _myPlace = -1;
-        _split = null;
-        _pickCountdown = PickSeconds;
-        await InvokeAsync(StateHasChanged);
-        await BootEngineAsync(null);
-    }
 
     /// <summary>Your marble left the course and was put back (course.js _respawn).</summary>
     [JSInvokable]
@@ -423,9 +342,6 @@ public partial class PoMarbleRacePage
             return;
         }
 
-        if (_gp && !_demo) StartGrandPrix();
-        else _gp = false;
-
         if (_engineStarted)
         {
             // The engine was already up (demo re-cycle) — just kick it.
@@ -434,21 +350,6 @@ public partial class PoMarbleRacePage
             return;
         }
         await BootEngineAsync(null);
-    }
-
-    /// <summary>
-    /// Change track: tear the engine down and reopen the intro card. A map is chosen at build
-    /// time, so a new one means a new engine — and a new run, exactly as switching always did.
-    /// </summary>
-    private async Task ChangeTrackAsync()
-    {
-        StopPickCountdown();
-        await StopEngineAsync();
-        _introDone = false;
-        _phase = "pick";
-        _podium.Clear();
-        await LoadMenuAsync();   // the card's per-track stats have moved on since it last opened
-        await InvokeAsync(StateHasChanged);
     }
 
     /// <summary>
@@ -478,9 +379,8 @@ public partial class PoMarbleRacePage
             // uses the last pick it saved itself.
             if (_disposed) return;
             object? marble = _menu is null || _demo || _online ? null : new { skin = _skin, weight = _weight };
-            object? opts = _gp && online is null ? new { gp = new { round = _gpRound, rounds = GpOrder.Length } } : null;
             _raceRecorded = false;
-            await JSRuntime.InvokeVoidAsync("PoMarbleRace.start", "marble-race-container", _ref, _demo, _mapId, online, marble, opts);
+            await JSRuntime.InvokeVoidAsync("PoMarbleRace.start", "marble-race-container", _ref, _demo, _mapId, online, marble, null);
             if (_disposed) return;
             await JSRuntime.InvokeVoidAsync("PoMarbleRace.resume");
         }
@@ -539,15 +439,6 @@ public partial class PoMarbleRacePage
     private void OnLobbyStarted(OnlineLobbyStart start) => _ = InvokeAsync(() => JoinRaceSafeAsync(start.MatchCode));
 
     private void LeaveLobby() => Navigation.NavigateTo("/");
-
-    // The host's track on the lobby seat list (the race runs the host's course).
-    private int LobbyMapId =>
-        _lobby?.State?.Players.FirstOrDefault(p => p.ConnectionId == _lobby.State.HostConnectionId)?.MapId ?? _menu?.DefaultMap ?? 2;
-
-    private Task PickLobbyMapAsync(string? id) =>
-        int.TryParse(id, System.Globalization.NumberStyles.Integer, System.Globalization.CultureInfo.InvariantCulture, out var mapId) && _lobby is { } lobby
-            ? lobby.SendAsync("PickMap", mapId)
-            : Task.CompletedTask;
 
     private async Task JoinRaceSafeAsync(string matchCode)
     {
@@ -1014,13 +905,9 @@ public partial class PoMarbleRacePage
     private void UpdateStats()
     {
         var bucket = _gameStats.GetDifficultyBucket(_stats, Difficulty.Medium);
-        _statItems = _gp
-            ? GameStatsPanel.Build(bucket, includeDraws: false, includeElo: true,
-                ("Round", $"{_gpRound}/{Math.Max(1, GpOrder.Length)}"),
-                ("GP points", _gpPoints.ToString(System.Globalization.CultureInfo.InvariantCulture)))
-            : GameStatsPanel.Build(bucket, includeDraws: false, includeElo: true,
-                ("Run", _score.ToString(System.Globalization.CultureInfo.InvariantCulture)),
-                ("Best", _best.ToString(System.Globalization.CultureInfo.InvariantCulture)));
+        _statItems = GameStatsPanel.Build(bucket, includeDraws: false, includeElo: true,
+            ("Run", _score.ToString(System.Globalization.CultureInfo.InvariantCulture)),
+            ("Best", _best.ToString(System.Globalization.CultureInfo.InvariantCulture)));
     }
 
     private static string Ordinal(int n) => (n % 100) switch

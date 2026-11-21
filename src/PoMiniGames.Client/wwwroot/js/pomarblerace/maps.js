@@ -1,149 +1,20 @@
-// maps.js — the marble-race map registry, and the single track interface the game speaks to.
+// maps.js — the single combined marble-race track ("Grand Circuit") and the track interface
+// the game speaks to.
 //
-// Slots 1-9. Slot 1 is Neon Canyon (procedural), slot 2 is the authored marble_track.glb
-// course, slot 3 is marble_track_2.glb, 4 is retired (it was Canyon Run, now folded into slot 1),
-// 5 is the imported playground.glb scene, 6 is the Daily Canyon (Neon Canyon's generator on the
-// UTC day's seed), and 7-9 are free for further GLB courses. TO ADD A MAP,
-// see ADDING A GLB MAP below — it is a handful of lines here plus one bake, with nothing to
-// change in game.js.
+// Grand Circuit (slot 7) fuses the signature best sections of all four previous courses into one
+// continuous, strictly-descending, non-trapping mega-track:
+//   · Spiral Works   — banked opening helix, brake strip before the split, physical split-lane island
+//   · Neon Canyon    — wet reflective neon night, boost pads, 9-row plinko, kickers, pendulums, double Gauntlet
+//   · Grand Spiral   — washboard ridges, wide vortex funnel bowl + neck pinch, steep free-fall plunge
+//   · Playground Run — enclosed drop tunnel (with boxed-in reverb zone) into the glossy big slide & wide finish tray
 //
-// ── THE TRACK INTERFACE ─────────────────────────────────────────────────────────────────────
-// The two existing maps are built on completely different premises. The procedural chute is a
-// straight descent whose progress IS its world +Z coordinate. The GLB course spirals back over
-// itself, banks to near-vertical and branches, so it has no such coordinate and measures progress
-// as arclength along a baked centerline. Rather than teach the game about both, every map is
-// presented through one interface keyed on `s` — distance along the course in world units:
-//
-//   group            THREE.Object3D holding everything the map renders
-//   startPositions   Vector3[] — one per marble, in grid order
-//   length           total course length in world units
-//   finishS          `s` at which a marble is scored as finished
-//   overviewTarget   Vector3 the pick-phase camera frames
-//   paddles          [{ body, mesh }] driven props whose meshes follow their bodies each frame
-//   project(pos, hint, out)  world position -> { s, index, lateral, height }, `index` being an
-//                    opaque hint to pass back next frame to keep the search local
-//   centerAt/dirAt/rightAt/upAt(s, out)   the local frame at `s`
-//   halfWidthAt(s)   half the channel width at `s`
-//   lateralOf(proj)  signed position across the channel, 0 centre / ±1 at the wall
-//   isOutOfBounds(proj)   has this marble left the course?
-//   floorPoint(pos, proj, out)  the point on the floor beneath a marble, for its contact shadow
-//   driveMotors()    re-assert any powered obstacle each frame
-//   dispose()
-//
-// OPTIONAL, and absent on maps that have no such feature — the game feature-detects each:
-//   inBoost(s)       is `s` on a boost pad?
-//   brakeAt(s)       speed cap on a brake strip at `s`, 0 elsewhere (game.js _applyBrakes)
-//   checkpoints      `s` of each checkpoint arch / sector split (addCheckpointArches, game.js)
-//   kickers          telegraphed kicker bands (see game.js _applyKickers)
-//   regenerate       true if asking for a new track means anything (procedural maps only)
-//   respawnPoint(safe, lift, out)  where to put a marble back on (course.js _respawn)
-//
-// A registry entry (MAPS below) may also carry a `theme` — scene.js setTheme(): background/fog
-// colour, fog range, ambient/hemisphere/key lights and exposure. The page reads names and blurbs
-// from mapMenu(), so this file is the only place a map is described.
+// Slots 1-6 remain recognized on the server (MarbleRaceRunVerifier.cs) for legacy records only.
 import * as THREE from 'three';
 import { generateTrack } from './track-procedural.js';
-import { createGlbCourse } from './track-glb.js';
-import * as SPIRAL_WORKS_PATH from './courses/spiral-works.path.js';
-import * as SPIRAL_WORKS_COL from './courses/spiral-works.collision.js';
-import * as GRAND_SPIRAL_PATH from './courses/grand-spiral.path.js';
-import * as GRAND_SPIRAL_COL from './courses/grand-spiral.collision.js';
-import * as PLAYGROUND_PATH from './courses/playground-run.path.js';
-
-// Reverb zones (audio.js setReverb) for a baked course with a CEILING (clear height per sample,
-// 99 = open sky) and AIR (no floor: the drop well): every covered or enclosed run of samples, as
-// fractions of the course, gets the close, darker room sound in `room`.
-function enclosedZones(path, room) {
-  const { CEILING, AIR, CUM, COUNT } = path;
-  if (!CEILING || !CUM) return null;
-  const total = CUM[COUNT - 1] || 1;
-  const zones = [];
-  let from = -1;
-  for (let i = 0; i < COUNT; i++) {
-    const shut = CEILING[i] < 99 || (AIR && AIR[i]);
-    if (shut && from < 0) from = i;
-    if ((!shut || i === COUNT - 1) && from >= 0) {
-      zones.push({ from: CUM[from] / total, to: CUM[i] / total, ...room });
-      from = -1;
-    }
-  }
-  return zones;
-}
-
-// ── authored courses ────────────────────────────────────────────────────────────────────────
-// One createGlbCourse() per GLB. The factory closes over that course's baked centerline and
-// collision shell, so the two share every line of the builder and cannot drift apart — see the
-// header of track-glb.js for why that mattered enough to refactor.
-const spiralWorks = createGlbCourse({
-  modelUrl: 'models/marble_track.glb',
-  path: SPIRAL_WORKS_PATH,
-  collision: SPIRAL_WORKS_COL,
-  // Track-Bowl is a funnel with no ring structure, so it collides against its own geometry.
-  bowlMeshName: 'Track-Bowl',
-  // Rumble strips capping speed before the three split mouths: the field reached Split A at the
-  // 85 u/s cap and 108 of 152 census falls happened there.
-  brakeBands: [[905, 965, 46], [1480, 1536, 46], [1690, 1712, 46]],
-  // Elevated recovery nudges should fall toward LowerA rather than jump into its overpass.
-  dropStallAssist: true,
-  // The full 3628-unit course runs through Track-Bowl, the Track-LowerA loop, the hazard lanes,
-  // and Track-LowerC to the finish ring. Boost/kicker bands carry the pack over the climbs and a
-  // tangent drive keeps the tail of the 101-marble pack moving through the hazard lanes inside
-  // the 180 s race clock.
-  driveAccel: 16,
-  boostBands: [[2262, 2334, 90], [3176, 3248, 90], [3520, 3612]],
-  kickerBands: [[3000, 3030]],
-});
-
-const grandSpiral = createGlbCourse({
-  modelUrl: 'models/marble_track_2.glb',
-  path: GRAND_SPIRAL_PATH,
-  collision: GRAND_SPIRAL_COL,
-  // Track-Bowl2 is this course's funnel — same deal as Spiral Works' Track-Bowl.
-  bowlMeshName: 'Track-Bowl2',
-  // The authored bends bleed too much speed for the full field to clear LowerA consistently.
-  driveAccel: 16,
-});
-
-// Playground Run: an imported scene — a marble gutter winding three laps down around a
-// real-scale play structure, through a drop well, down the slide and into a tray. Authored in metres
-// for four 10 cm marbles; at SCALE 40 our radius-1 marble is a 5 cm one, so the 28 cm gutter holds
-// the field about five abreast. The export is a plain trimesh with no ring layout, so its centerline
-// and cross-sections were baked from the export's own reference race (courses/playground-run.path.js).
-// The gutter collides against a shell synthesized from those cross-sections (see ringShell in
-// track-glb.js), fitted to descend everywhere; the well, slide, tray and ground collide as authored,
-// with the slide walled by a containment-only lane.
-//
-// DRIVE. The authored grade is 1.46° after the launch — the export's Rapier race rolls it nearly
-// losslessly, but cannon-es contacts bleed that much pull away and a lone marble settled at ~15 u/s
-// with the pack slower still. Raising gravity did not help (the losses scale with it). A steady
-// 16 u/s² along the course for marbles on the track brings a lone marble home in ~70 s.
-const playground = createGlbCourse({
-  modelUrl: 'models/playground.glb',
-  colliderUrl: 'models/playground_colliders.glb',
-  colliderNodes: /^COL_(DropWell|FinishTray|RightSlide|Ground)/,
-  path: PLAYGROUND_PATH,
-  collision: null,
-  ringLanes: [
-    // Into the well's side opening: the authored gutter's tail is not collided, so a shell stopping
-    // short of the well left a gap marbles rolled off into the fall.
-    { name: 'Track-Run', from: 0, to: PLAYGROUND_PATH.WELL_INDEX + 1, collide: true },
-    // The slide collides as authored (a bare surface with no sides), so this lane only walls it:
-    // marbles landing out of the drop well bounced off its open side. It stops short of the tray.
-    // No back kerb: marbles land on both sides of its first ring.
-    { name: 'Track-Slide', from: PLAYGROUND_PATH.SLIDE_INDEX, to: PLAYGROUND_PATH.FINISH_INDEX - 12, collide: false, kerb: false },
-  ],
-  hideNodes: /^SM_Marble_\d/,
-  // The gutter and the tops of its support poles are drawn where the shell is, not where the
-  // model has them (track-glb.js conformToShell).
-  conformNodes: /^SM_Marble(Track|Supports)/,
-  grid: { colSpacing: 2.6, rowGap: 5, wallClear: 3 },
-  driveAccel: 16,
-});
 
 /**
  * A fresh, zeroed projection record for a caller to own and reuse. `lane`/`ring`/`hw`/`reach`
- * are filled by the authored courses (track-glb.js refineLane): which lane the marble is over,
- * that lane's floor half-width and how far its walls reach. -1 means "judged on the main line".
+ * are kept on the shape so callers stay uniform.
  */
 export const newProjection = () => ({ s: 0, index: -1, lateral: 0, height: 0, lane: -1, ring: 0, hw: 0, reach: 0 });
 
@@ -228,6 +99,7 @@ function adaptProceduralTrack(t) {
     // Where a respawned marble goes back on (course.js _respawn): above the centre of the floor.
     respawnPoint: (safe, lift, out) => out.copy(t.centerAt(safe.s)).addScaledVector(upAt(safe.s, _u), lift),
     inBoost: (s) => t.inBoost(s),
+    brakeAt: t.brakeAt ? (s) => t.brakeAt(s) : undefined,
     checkpoints: t.checkpoints,
     driveMotors: () => t.driveMotors(),
     dispose: () => t.dispose(),
@@ -264,49 +136,47 @@ function addCheckpointArches(track) {
   return track;
 }
 
-// ── registry ────────────────────────────────────────────────────────────────────────────────
-//
-// ADDING A GLB MAP (slots 6-9; 4 is retired — reusing it would inherit Canyon Run's records):
-//   1. Drop the model in wwwroot/models/. It must satisfy the ring-major swept-channel layout the
-//      baker asserts — see the EXPORT CONTRACT in scripts/build-marble-track-2.py, which
-//      generates a conforming course from scratch and is the easiest starting point.
-//   2. Add an entry to COURSES in scripts/bake-marble-track.mjs naming the model, its output
-//      files and its segment order, then run `node scripts/bake-marble-track.mjs <id>`. That
-//      emits the centerline and the collision shell. Check its slope table before going further:
-//      any segment it flags as below friction is a place the pack can stall.
-//   3. Import the two generated modules here, call createGlbCourse() with them, and add an entry
-//      below with the next free `id`.
-// `load` is awaited once before the first build and may return anything the map needs; whatever
-// it resolves to is handed back to `build` as `asset`.
-// Neon Canyon: the two procedural maps (Neon Chute and Canyon Run) folded into one. From Canyon
-// Run: the longer, steeper, twistier canyon (2200 long, 930 drop), its tight early washboard, the
-// four boost pads, the nine-row plinko, three pinches and the long double Gauntlet. From Neon
-// Chute: the pendulum bobs (Canyon Run dropped them), a wider road than the canyon's 50 so the
-// bobs have room to swing past the pack, the neon night with its wet reflective floor, the
-// two-band rumble timing and the sparser three-turnstile spacing (Canyon Run's four, 0.037 apart,
-// queued the pack: a marble sat 58 s behind them on seed 1, 25 s with these). The echo off the canyon walls comes along too (reverb below).
-// Zones are fractions of the course and must not overlap (track-procedural.js).
-const NEON_CANYON = {
-  track: { LENGTH: 2200, DROP: 930, START_Y: 180, CHANNEL_WIDTH: 56, SEGMENTS: 640 },
+// ── Grand Circuit: the one unified mega-track ───────────────────────────────────────────────
+// Combines the signature set-pieces of every previous track into one non-trapping 2,800-unit run:
+//   0.00–0.21  Spiral Works   — banked opener, brake strip, physical split-lane island + boost
+//   0.22–0.52  Neon Canyon    — 9-row plinko, telegraphed kickers, rumble, boost, pendulum bobs
+//   0.52–0.69  Grand Spiral   — washboard ridges, wide vortex funnel bowl + pinch, free-fall plunge
+//   0.70–0.86  Playground Run — enclosed drop tunnel (reverb zone) into the glossy slide & turnstiles
+//   0.86–1.00  Grand Finale   — final boost launch into the double kinematic Gauntlet & wide finish tray
+const GRAND_CIRCUIT = {
+  track: { LENGTH: 2800, DROP: 1120, START_Y: 240, CHANNEL_WIDTH: 58, SEGMENTS: 780 },
   zones: {
-    RIDGES: { from: 0.05, to: 0.13, step: 0.035 },
-    BOOST: [[0.15, 0.18], [0.44, 0.47], [0.63, 0.66], [0.835, 0.865]],
-    PLINKO: { from: 0.20, to: 0.33, rows: 9 },
+    BRAKE: [[0.085, 0.115, 50]],
+    SPLITS: [{ from: 0.125, to: 0.205, widthFrac: 0.20 }],
+    BOOST: [[0.145, 0.175], [0.41, 0.435], [0.775, 0.80], [0.865, 0.885]],
+    PLINKO: { from: 0.22, to: 0.33, rows: 9 },
     KICKERS: [0.345, 0.365],
-    RUMBLE: [[0.375, 0.405], [0.60, 0.62]],
-    BOBS: { from: 0.48, to: 0.57, step: 0.045 },
-    TURNSTILES: { from: 0.70, to: 0.78, step: 0.04 },
-    GAUNTLET: { from: 0.87, to: 0.925, step: 0.018 },
-    FINISH: [0.93, 1.0],
+    RUMBLE: [[0.375, 0.40], [0.585, 0.605]],
+    BOBS: { from: 0.445, to: 0.515, step: 0.035 },
+    RIDGES: { from: 0.525, to: 0.575, step: 0.025 },
+    TUNNELS: [{ from: 0.695, to: 0.765 }],
+    SLIDE: [0.77, 0.82],
+    TURNSTILES: { from: 0.815, to: 0.855, step: 0.02 },
+    GAUNTLET: { from: 0.89, to: 0.94, step: 0.016 },
+    FINISH: [0.945, 1.0],
   },
-  pinches: [{ c: 0.185, w: 0.04, d: 0.45 }, { c: 0.595, w: 0.045, d: 0.5 }, { c: 0.855, w: 0.03, d: 0.4 }],
-  curve: 1.1,
+  // Vortex funnel bowl (0.61) + wide finish tray (0.975)
+  flares: [
+    { c: 0.61, w: 0.03, d: 0.42 },
+    { c: 0.975, w: 0.035, d: 0.35 },
+  ],
+  // Funnel neck pinch (0.65) + pre-gauntlet squeeze (0.86)
+  pinches: [
+    { c: 0.39, w: 0.03, d: 0.35 },
+    { c: 0.65, w: 0.028, d: 0.52 },
+    { c: 0.86, w: 0.025, d: 0.36 },
+  ],
+  // Grand Spiral free-fall waterfall drop out of the funnel neck into Playground's drop tunnel
+  plunges: [{ c: 0.675, w: 0.015, drop: 90 }],
+  curve: 1.12,
 };
 
-// ── the daily course ──
-// One canyon per UTC day, the same for everyone: the day is the seed. game.js asks for both when
-// it builds a daily map, and sends the day with a finish so the server files it on that day's board.
-/** Today's UTC day as yyyy-MM-dd. */
+/** Today's UTC day as yyyy-MM-dd (retained for store.js compatibility). */
 export const dailyKey = (now = Date.now()) => new Date(now).toISOString().slice(0, 10);
 /** The course seed for a day key (FNV-1a over its characters). */
 export function dailySeed(key) {
@@ -317,94 +187,36 @@ export function dailySeed(key) {
 
 const MAPS = [
   {
-    id: 1,
-    name: 'Neon Canyon',
-    blurb: 'Procedural — a new canyon every race: neon night, boost pads, a long plinko, pendulums and a double Gauntlet.',
-    // Night: the chute's neon emissives are the light show, so the fill drops and goes violet;
-    // the ground bounce keeps a little of the canyon's red rock.
+    id: 7,
+    name: 'Grand Circuit',
+    blurb: 'All-in-one mega-track: split-lane helix, neon plinko & pendulums, vortex funnel plunge, drop tunnel slide, and double Gauntlet.',
+    // Neon twilight with wet reflective tarmac and warm highlight bounce.
     theme: {
-      bg: 0x0a0a1c, fogNear: 80, fogFar: 300,
-      ambient: [0xa8a4cc, 2.6], hemi: [0xb89cff, 0x2a1420, 1.7], key: [0xe0dcff, 2.7], exposure: 1.1,
-      // The neon floor reads wet: screen-space reflections on the heavy tier (fx-race.js #25).
+      bg: 0x0b1024, fogNear: 90, fogFar: 360,
+      ambient: [0xb4b0d8, 2.7], hemi: [0xc4a8ff, 0x2a1824, 1.8], key: [0xffe8cc, 3.0], exposure: 1.1,
       reflect: true,
     },
-    // Tall canyon walls: a medium tail plus a slapback echo off the far wall (audio.js setReverb).
-    reverb: { decay: 1.8, wet: 0.27, tone: 4200, echo: { time: 0.32, feedback: 0.3, level: 0.4 } },
+    // Open canyon slapback echo that tightens into Playground Run's enclosed tunnel acoustics.
+    reverb: {
+      decay: 1.8, wet: 0.25, tone: 4400,
+      echo: { time: 0.30, feedback: 0.28, level: 0.36 },
+      zones: [{ from: 0.695, to: 0.765, wet: 0.45, tone: 2200 }],
+    },
     load: () => Promise.resolve(null),
     build: (world, materials, marbleCount, _asset, seed) =>
-      addCheckpointArches(adaptProceduralTrack(generateTrack(world, materials, seed >>> 0, marbleCount, NEON_CANYON))),
-  },
-  {
-    id: 2,
-    name: 'Spiral Works',
-    blurb: 'A four-turn helix into split lanes, a funnel, two banked loops and a hazard fan.',
-    // Factory floor under sodium lamps: warm key, rust-brown ground bounce, smoky brown haze.
-    theme: {
-      bg: 0x17130f, fogNear: 78, fogFar: 250,
-      ambient: [0xc4b59c, 3.3], hemi: [0xffd9a8, 0x3a2a1c, 2.0], key: [0xffc98a, 3.2], exposure: 1.12,
-    },
-    // A factory hall: long, dark tail.
-    reverb: { decay: 2.4, wet: 0.32, tone: 3200 },
-    load: (onProgress) => spiralWorks.loadModel(onProgress),
-    build: (world, materials, marbleCount, asset) => addCheckpointArches(spiralWorks.buildTrack(world, materials, marbleCount, asset)),
-  },
-  {
-    id: 3,
-    name: 'Grand Spiral',
-    blurb: 'A wide weave: a risky split, washboard, a funnel, a free fall and boost pads to the line.',
-    // Open daytime sky: pale blue haze pushed further out, bright neutral sun.
-    theme: {
-      bg: 0x7fb0d8, fogNear: 150, fogFar: 560,
-      ambient: [0xd0d8e0, 2.8], hemi: [0xbcdcff, 0x6a6450, 2.0], key: [0xffeccc, 4.0], exposure: 0.95,
-    },
-    // Open sky: almost dry, nothing to reflect off.
-    reverb: { decay: 0.8, wet: 0.1, tone: 7500 },
-    load: (onProgress) => grandSpiral.loadModel(onProgress),
-    build: (world, materials, marbleCount, asset) => addCheckpointArches(grandSpiral.buildTrack(world, materials, marbleCount, asset)),
-  },
-  {
-    id: 6,
-    name: 'Daily Canyon',
-    blurb: 'One canyon a day, the same for everyone until midnight UTC, with its own board. Your best run is a ghost.',
-    // `daily`: the seed is the UTC day (dailySeed above), not the clock, and a finish goes on
-    // that day's board. Same generator and layout rules as Neon Canyon, under a dawn sky.
-    daily: true,
-    theme: {
-      bg: 0x1c1430, fogNear: 90, fogFar: 340,
-      ambient: [0xc8b4cc, 2.8], hemi: [0xffb48a, 0x2a1830, 1.8], key: [0xffd2b0, 3.0], exposure: 1.1,
-      reflect: true,
-    },
-    reverb: { decay: 1.8, wet: 0.27, tone: 4200, echo: { time: 0.32, feedback: 0.3, level: 0.4 } },
-    load: () => Promise.resolve(null),
-    build: (world, materials, marbleCount, _asset, seed) =>
-      addCheckpointArches(adaptProceduralTrack(generateTrack(world, materials, seed >>> 0, marbleCount, NEON_CANYON))),
-  },
-  {
-    id: 5,
-    name: 'Playground Run',
-    blurb: 'Three laps of gutter round a jungle gym, down the drop well and the big slide into the tray.',
-    // Afternoon park: warm sun, soft sky fill, light haze.
-    theme: {
-      bg: 0x9cc7e8, fogNear: 260, fogFar: 900,
-      ambient: [0xe6e0d4, 2.4], hemi: [0xcfe6ff, 0x6b5a3a, 1.8], key: [0xfff0d6, 3.8], exposure: 1.0,
-    },
-    // Outdoors and dry, closing in to a boxy little room under the play structure and down the
-    // drop well (the baked CEILING / AIR samples).
-    reverb: { decay: 0.7, wet: 0.1, tone: 7000, zones: enclosedZones(PLAYGROUND_PATH, { wet: 0.42, tone: 2400 }) },
-    load: (onProgress) => playground.loadModel(onProgress),
-    build: (world, materials, marbleCount, asset) => addCheckpointArches(playground.buildTrack(world, materials, marbleCount, asset)),
+      addCheckpointArches(adaptProceduralTrack(generateTrack(world, materials, seed >>> 0, marbleCount, GRAND_CIRCUIT))),
   },
 ];
 
-/** The slot the game opens on when nothing has been chosen. */
-export const DEFAULT_MAP_ID = 2;
+/** The slot the game opens on (the one unified Grand Circuit). */
+export const DEFAULT_MAP_ID = 7;
 
-/** Look a map up by slot id, falling back to the default rather than throwing. */
+/** Look a map up by slot id, falling back to Grand Circuit rather than throwing. */
 export function mapById(id) {
-  return MAPS.find((m) => m.id === Number(id)) || MAPS.find((m) => m.id === DEFAULT_MAP_ID) || MAPS[0];
+  return MAPS.find((m) => m.id === Number(id)) || MAPS[0];
 }
 
-/** Slot ids and names, for the host's map picker. */
+/** Slot ids and names (single entry: Grand Circuit). */
 export function mapMenu() {
   return MAPS.map((m) => ({ id: m.id, name: m.name, blurb: m.blurb, daily: !!m.daily }));
 }

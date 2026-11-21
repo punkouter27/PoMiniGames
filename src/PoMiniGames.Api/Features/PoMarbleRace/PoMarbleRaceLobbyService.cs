@@ -13,8 +13,8 @@ public sealed class PoMarbleRaceLobbyService : LobbyRoom<PoMarbleRaceLobbyPlayer
 {
     public const string GlobalCode = "LOBBY";
 
-    /// <summary>The map slot a fresh room starts on (the engine menu's default course).</summary>
-    public const int DefaultMapId = 2;
+    /// <summary>The map slot a fresh room starts on (the unified Grand Circuit course).</summary>
+    public const int DefaultMapId = 7;
 
     public PoMarbleRaceLobbyService()
         : base(GlobalCode, PoMarbleRaceOnlineService.MaxPlayers, "Race already in progress")

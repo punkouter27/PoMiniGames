@@ -38,6 +38,8 @@ public static class MarbleRaceRunVerifier
         [4] = 2189,
         [5] = 2169,
         [MarbleRaceDaily.MapId] = 2189,
+        // Slot 7: Grand Circuit (unified mega-track combining all four courses, 0.995 × 2800).
+        [7] = 2786,
     };
 
     // ponytail: a speed bound, not a replay — marbles.js MAX_SPEED (85) doubled, because a marble

@@ -68,7 +68,7 @@ public sealed record PoMarbleRaceLobbyPlayer(
     bool IsGuest,
     bool IsReady,
     [property: System.Text.Json.Serialization.JsonIgnore] string UserId = "",
-    int MapId = 2) : ILobbyPlayer;
+    int MapId = 7) : ILobbyPlayer;
 
 /// <summary>
 /// One finish on one map, offered as a world record. The server keeps it only if it is the fastest.

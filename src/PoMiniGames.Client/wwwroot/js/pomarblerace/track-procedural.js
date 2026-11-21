@@ -441,12 +441,25 @@ export function generateTrack(world, materials, seed, marbleCount = 8, variant =
   // even straights tilt gently side to side and marbles drift laterally.
   const cambAmp = 0.10 + rnd() * 0.06, cambFreq = 2.5 + rnd() * 2.0, cambPh = rnd() * 6.28;
 
+  // Optional steep waterfall drops (from Grand Spiral): smooth logistic steps whose
+  // derivative is strictly negative everywhere, preserving the non-trapping guarantee.
+  const PLUNGES = v.plunges || [];
+  const plungeY = (s) => {
+    let dy = 0;
+    for (const pl of PLUNGES) {
+      const sig0 = 1 / (1 + Math.exp(pl.c / pl.w));
+      const sig = 1 / (1 + Math.exp(-(s - pl.c) / pl.w));
+      dy += pl.drop * (sig - sig0);
+    }
+    return dy;
+  };
+
   const sample = (s) => {
     const z = s * TRACK.LENGTH;
     const x = amp1 * Math.sin(s * freq1 * Math.PI + ph1)
             + amp2 * Math.sin(s * freq2 * Math.PI + ph2)
             + amp3 * Math.sin(s * freq3 * Math.PI + ph3);
-    const y = TRACK.START_Y - s * TRACK.DROP
+    const y = TRACK.START_Y - s * TRACK.DROP - plungeY(s)
             + undAmp * Math.sin(s * undFreq * Math.PI + undPh);
     return new THREE.Vector3(x, y, z);
   };
@@ -474,10 +487,13 @@ export function generateTrack(world, materials, seed, marbleCount = 8, variant =
     { c: 0.37, w: 0.055, d: 0.52 },
     { c: 0.66, w: 0.050, d: 0.55 },
   ];
+  // Optional Gaussian widenings (vortex funnel bowl, wide finish tray).
+  const FLARES = v.flares || [];
   const widthAt = (s) => {
     let f = 1;
     for (const p of PINCHES) f -= p.d * Math.exp(-((s - p.c) ** 2) / (2 * p.w * p.w));
-    return TRACK.CHANNEL_WIDTH * Math.max(0.35, f);
+    for (const fl of FLARES) f += fl.d * Math.exp(-((s - fl.c) ** 2) / (2 * fl.w * fl.w));
+    return TRACK.CHANNEL_WIDTH * Math.max(0.35, Math.min(1.55, f));
   };
 
   // #5 rumble bands: floor stretches with real friction (everywhere else the
@@ -486,6 +502,12 @@ export function generateTrack(world, materials, seed, marbleCount = 8, variant =
   // Boost pads: no collider of their own (marbles roll over the normal floor);
   // game.js reads inBoost() each frame and accelerates whatever is on top.
   const inBoost = (s) => ZONES.BOOST.some(([a, b]) => s >= a && s <= b);
+  // Optional speed-cap brake strips (Spiral Works): [from, to, capSpeed] in fractional s.
+  const BRAKES = ZONES.BRAKE || [];
+  const brakeAt = (s) => {
+    for (const [a, b, cap] of BRAKES) if (s >= a && s <= b) return cap;
+    return 0;
+  };
 
   // Frame (position, tangent, right, up, bank quaternion) at parameter s.
   const frameAt = (s) => {
@@ -742,6 +764,152 @@ export function generateTrack(world, materials, seed, marbleCount = 8, variant =
     const bm = new THREE.Mesh(buildFloorRibbon(a, b, 0.05, 14), boostFloorMat);
     bm.receiveShadow = true;
     group.add(bm);
+  }
+
+  // Optional brake strips (Spiral Works): crimson-amber grooved bands that bleed excess speed
+  // before a split mouth.
+  if (BRAKES.length) {
+    const brakeFloorMat = new THREE.MeshStandardMaterial({
+      color: 0x4c1d1d, emissive: 0xf97316, emissiveIntensity: 0.65,
+      roughness: 0.85, metalness: 0.0, map: grid, side: THREE.DoubleSide,
+      ...OVERLAY_OFFSET,
+    });
+    for (const [a, b] of BRAKES) {
+      const br = new THREE.Mesh(buildFloorRibbon(a, b, 0.055, 16), brakeFloorMat);
+      br.receiveShadow = true;
+      group.add(br);
+    }
+  }
+
+  // Optional Playground big slide overlay: glossy emerald-teal chute surface.
+  if (ZONES.SLIDE) {
+    const [a, b] = ZONES.SLIDE;
+    const slideMat = new THREE.MeshStandardMaterial({
+      color: 0x0d9488, emissive: 0x14b8a6, emissiveIntensity: 0.35,
+      roughness: 0.22, metalness: 0.05, side: THREE.DoubleSide,
+      ...OVERLAY_OFFSET,
+    });
+    const sm = new THREE.Mesh(buildFloorRibbon(a, b, 0.045, 18), slideMat);
+    sm.receiveShadow = true;
+    group.add(sm);
+  }
+
+  // Optional enclosed drop tunnels (Playground Run): glowing overhead arched canopy + ribs.
+  // Purely visual overhead enclosure; paired with maps.js reverb.zones for tunnel acoustics.
+  if (ZONES.TUNNELS && ZONES.TUNNELS.length) {
+    const tunnelSkinMat = new THREE.MeshStandardMaterial({
+      color: 0x1e293b, emissive: 0x38bdf8, emissiveIntensity: 0.22,
+      roughness: 0.35, metalness: 0.2, transparent: true, opacity: 0.42,
+      side: THREE.DoubleSide,
+    });
+    const tunnelRibMat = new THREE.MeshStandardMaterial({
+      color: 0x334155, emissive: 0x38bdf8, emissiveIntensity: 0.85,
+      roughness: 0.4, metalness: 0.3,
+    });
+    const ARC_SEGS = 12;
+    const TUNNEL_H = 26;
+    for (const { from, to } of ZONES.TUNNELS) {
+      const steps = Math.max(8, Math.round(RIBBON_N * (to - from) * 0.5));
+      const pos = [], idx = [];
+      for (let i = 0; i <= steps; i++) {
+        const s = from + (to - from) * (i / steps);
+        const f = frameAt(s), hw = widthAt(s) * 0.52;
+        for (let k = 0; k <= ARC_SEGS; k++) {
+          const ang = (k / ARC_SEGS) * Math.PI;
+          const P = f.p.clone()
+            .addScaledVector(f.rb, -Math.cos(ang) * hw)
+            .addScaledVector(f.up, Math.sin(ang) * TUNNEL_H);
+          pos.push(P.x, P.y, P.z);
+        }
+        if (i < steps) {
+          const row = i * (ARC_SEGS + 1), next = (i + 1) * (ARC_SEGS + 1);
+          for (let k = 0; k < ARC_SEGS; k++) {
+            const a0 = row + k, b0 = row + k + 1, c0 = next + k, d0 = next + k + 1;
+            idx.push(a0, c0, b0, b0, c0, d0);
+          }
+        }
+      }
+      const tg = new THREE.BufferGeometry();
+      tg.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
+      tg.setIndex(idx); tg.computeVertexNormals();
+      group.add(new THREE.Mesh(tg, tunnelSkinMat));
+
+      // Structural glowing hoops along the tunnel so speed reads vividly inside.
+      const ribCount = 7;
+      const basis = new THREE.Matrix4();
+      for (let r = 0; r <= ribCount; r++) {
+        const s = from + (to - from) * (r / ribCount);
+        const f = frameAt(s), hw = widthAt(s) * 0.52;
+        const rib = new THREE.Mesh(new THREE.TorusGeometry(hw, 0.85, 8, 28, Math.PI), tunnelRibMat);
+        // Negate f.rb to match the right-handed basis (right × up = dir).
+        basis.makeBasis(f.rb.clone().negate(), f.up, f.dir);
+        rib.quaternion.setFromRotationMatrix(basis);
+        rib.scale.set(1, TUNNEL_H / hw, 1);
+        rib.position.copy(f.p);
+        group.add(rib);
+      }
+    }
+  }
+
+  // Optional split-lane island dividers (Spiral Works): a central industrial island with rounded
+  // cylindrical entry/exit noses so marbles split cleanly into left/right lanes and never snag.
+  if (ZONES.SPLITS && ZONES.SPLITS.length) {
+    const islandMat = new THREE.MeshStandardMaterial({
+      color: 0x3b2f2f, emissive: 0xf59e0b, emissiveIntensity: 0.45,
+      roughness: 0.5, metalness: 0.15,
+    });
+    const noseMat = new THREE.MeshStandardMaterial({
+      color: 0x78350f, emissive: 0xfbbf24, emissiveIntensity: 0.9,
+      roughness: 0.35, metalness: 0.2,
+    });
+    const ISLAND_H = 10;
+    for (const { from, to, widthFrac = 0.20 } of ZONES.SPLITS) {
+      const steps = Math.max(8, Math.round(TRACK.SEGMENTS * (to - from)));
+      for (let i = 0; i < steps; i++) {
+        const s0 = from + (to - from) * (i / steps);
+        const s1 = from + (to - from) * ((i + 1) / steps);
+        const sMid = (s0 + s1) * 0.5;
+        const p0 = sample(s0), p1 = sample(s1);
+        const mid = p0.clone().add(p1).multiplyScalar(0.5);
+        const segLen = p0.distanceTo(p1) * 1.15;
+        const f = frameAt(sMid);
+        // Taper the island smoothly at entry and exit so the pack splits and merges gently.
+        const u = (i + 0.5) / steps;
+        const taper = Math.sin(u * Math.PI);
+        const iw = Math.max(2.6, widthAt(sMid) * widthFrac * (0.35 + 0.65 * taper));
+        const ipos = mid.clone().addScaledVector(f.up, ISLAND_H / 2 - 0.2);
+
+        const mesh = new THREE.Mesh(new THREE.BoxGeometry(iw, ISLAND_H, segLen), islandMat);
+        mesh.position.copy(ipos);
+        mesh.quaternion.copy(f.q);
+        mesh.castShadow = true;
+        mesh.receiveShadow = true;
+        group.add(mesh);
+
+        const body = new CANNON.Body({ mass: 0, material: materials.obstacle });
+        body.addShape(new CANNON.Box(new CANNON.Vec3(iw / 2, ISLAND_H / 2, segLen / 2)));
+        body.position.set(ipos.x, ipos.y, ipos.z);
+        body.quaternion.set(f.q.x, f.q.y, f.q.z, f.q.w);
+        addBody(body);
+      }
+      // Rounded cylindrical splitter nose at entry & exit so a head-on marble always deflects.
+      for (const endS of [from, to]) {
+        const f = frameAt(endS);
+        const noseR = Math.max(2.2, widthAt(endS) * widthFrac * 0.24);
+        const npos = f.p.clone().addScaledVector(f.up, ISLAND_H / 2 - 0.2);
+        const nmesh = new THREE.Mesh(new THREE.CylinderGeometry(noseR, noseR, ISLAND_H, 16, 1), noseMat);
+        nmesh.position.copy(npos);
+        nmesh.quaternion.copy(f.q);
+        nmesh.castShadow = true;
+        group.add(nmesh);
+
+        const nbody = new CANNON.Body({ mass: 0, material: materials.bump });
+        nbody.addShape(new CANNON.Cylinder(noseR, noseR, ISLAND_H, 12));
+        nbody.position.set(npos.x, npos.y, npos.z);
+        nbody.quaternion.set(f.q.x, f.q.y, f.q.z, f.q.w);
+        addBody(nbody);
+      }
+    }
   }
 
   // #6 telegraphed KICKER band: push-only (no collider, like the boost pads) but it fires on a
@@ -1078,6 +1246,8 @@ export function generateTrack(world, materials, seed, marbleCount = 8, variant =
     // Is the marble at forward position z standing on a boost pad? game.js applies
     // the acceleration itself — the pads are visual + a predicate, not colliders.
     inBoost: (z) => inBoost(sAt(z)),
+    // Optional speed-cap brake strip at forward position z (0 outside a brake strip).
+    brakeAt: BRAKES.length ? (z) => brakeAt(sAt(z)) : undefined,
     // Centerline point at a forward position. The camera frames the ROAD rather than the
     // marble (see scene.js followTarget): anchoring the shot here is what keeps the chute
     // horizontally centred no matter how far across it the subject has drifted.

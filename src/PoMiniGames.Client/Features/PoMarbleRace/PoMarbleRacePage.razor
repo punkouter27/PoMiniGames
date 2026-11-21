@@ -23,15 +23,14 @@
            Player="@_playerName"
            BackTo="/"
            Stats="@_statItems"
-           GameOver="@(_phase == "result" && !_demo && (_gp ? _gpDone : (_online || !_lastWon)))"
+           GameOver="@(_phase == "result" && !_demo && (_online || !_lastWon))"
            GameKey="pomarblerace"
            RequiresWebGl="true"
            Fullscreen="true"
            OptionsContent="@(_demo ? null : SettingsContent)"
            OptionsHeading="Race settings"
-           GameSummary="@GameSummaryContent">
-    @* The one decision card: controls, and in 1P the track and your marble. Everything after it
-       is the pre-race panel — there is nothing left to choose by then. *@
+           GameSummary="@RaceSummary">
+    @* The one decision card: controls, and in 1P your marble finish and weight. *@
     @if (!_introDone)
     {
         <GameIntro CueScope="pomarblerace"
@@ -41,10 +40,6 @@
                    Options="@(_demo || _online ? null : SetupContent)"
                    Wide="@(!_demo)"
                    Mode="@(_demo ? GameIntro.IntroMode.Demo : GameIntro.IntroMode.OnePlayer)"
-                   Maps="@TrackMaps"
-                   MapLabel="Track"
-                   MapId="@_mapId.ToString(System.Globalization.CultureInfo.InvariantCulture)"
-                   MapIdChanged="OnTrackPicked"
                    OnStart="OnIntroStartAsync" />
     }
     <div class="mr-wrap-row">
@@ -64,10 +59,6 @@
                             <div class="mr-error">
                                 <ErrorState Title="The race didn't start" OnRetry="ReloadEngineAsync" RetryLabel="Reload engine">
                                     <p class="mr-error-line">@_engineError</p>
-                                    @if (!_online)
-                                    {
-                                        <button type="button" class="app-btn app-btn--secondary" @onclick="ChangeTrackAsync">Change track</button>
-                                    }
                                 </ErrorState>
                             </div>
                         </div>
@@ -82,30 +73,13 @@
                                 <div class="mr-lobby">
                                     <OnlineLobby TPlayer="PoMarbleRaceLobbyPlayer"
                                                  HubPath="pomarblerace/lobby-hub"
-                                                 Hint="One shared room. The first to arrive hosts, runs the race and picks the track; the second steers WHITE."
+                                                 Hint="One shared room. The first to arrive hosts and runs the race; the second steers WHITE."
                                                  MaxPlayersHint="2"
                                                  StartLabel="Start race"
                                                  HowTo="OnlineHowToPlayContent"
                                                  OnClient="OnLobbyClient"
                                                  OnGameStarted="OnLobbyStarted"
-                                                 OnLeave="LeaveLobby">
-                                        <Picker>
-                                            <div class="mr-lobby-pick">
-                                                <label class="mr-setup-label" for="mr-lobby-map">Track</label>
-                                                <select id="mr-lobby-map" value="@LobbyMapId" disabled="@(_lobby?.IsHost != true)"
-                                                        @onchange="e => PickLobbyMapAsync(e.Value?.ToString())">
-                                                    @foreach (var m in PickableMaps)
-                                                    {
-                                                        <option value="@m.Id">@m.Name</option>
-                                                    }
-                                                </select>
-                                                @if (_lobby?.IsHost != true)
-                                                {
-                                                    <p class="mr-setup-note">The host picks the track.</p>
-                                                }
-                                            </div>
-                                        </Picker>
-                                    </OnlineLobby>
+                                                 OnLeave="LeaveLobby" />
                                 </div>
                             }
                             else
@@ -127,10 +101,6 @@
                         @* The start beat: who you are, the load, then the countdown. One panel, fixed
                            size, so nothing jumps as it moves from loading to counting. *@
                         <div class="mr-prerace" role="status">
-                            @if (_gp)
-                            {
-                                <p class="mr-prerace-kicker">Grand Prix · round @_gpRound of @GpOrder.Length · @(MapAt(_mapId)?.Name)</p>
-                            }
                             <p class="mr-prerace-title">You're the <span class="@MyColorClass">@MyColorWord</span> marble</p>
                             @if (_online)
                             {
@@ -155,22 +125,6 @@
                                 <i style="width:@(_loading ? _loadPct : 100)%"></i>
                             </div>
                             <p class="mr-prerace-hint">@SteerHint</p>
-                            @if (!_online && !_gp && !_loading)
-                            {
-                                <div class="mr-prerace-actions">
-                                    <button type="button" class="mr-chip-btn" @onclick="ChangeTrackAsync">Change track</button>
-                                </div>
-                            }
-                        </div>
-                    }
-                    else if (ShowGpInterim)
-                    {
-                        @* Between Grand Prix rounds: what the round paid, the running total, what is next. *@
-                        <div class="mr-prerace" role="status">
-                            <p class="mr-prerace-kicker">Grand Prix · round @_gpRound of @GpOrder.Length</p>
-                            <p class="mr-prerace-title">@(_lastPlace > 0 ? $"{Ordinal(_lastPlace)} place · +{_gpGained} points" : "Didn't finish · no points")</p>
-                            <p class="mr-prerace-line">Total <strong>@_gpPoints</strong> points · @Ordinal(_gpRank) overall</p>
-                            <p class="mr-prerace-hint">Next: @(MapAt(GpNextMapId)?.Name)</p>
                         </div>
                     }
 
@@ -324,10 +278,6 @@
                 }
             </span>
         </div>
-        @if (!_online)
-        {
-            <button type="button" class="app-btn app-btn--secondary mr-settings-track" @onclick="ChangeTrackAsync">Change track (R)</button>
-        }
     </div>;
 
     private RenderFragment SettingSwitch(string name, string hint, bool on, Func<bool, Task> set) => @<label class="mr-setting">
@@ -400,17 +350,12 @@
             : "WR: be the first";
     }
 
-    // Track thumbnails: a glyph of each course's shape in its own colour, drawn inline so the card
-    // needs no image download (slots per maps.js; an unknown slot gets a plain descent).
+    // Track thumbnail for the unified Grand Circuit course.
     private static RenderFragment TrackGlyph(int mapId)
     {
         var (path, color) = mapId switch
         {
-            1 => ("M4 8 C 16 24, 22 2, 34 14 L 22 22 L 46 28 L60 24", "#22d3ee"),          // Neon Canyon: meanders into a switchback
-            2 => ("M32 17 m-3 0 a3 3 0 1 1 6 0 a7 7 0 1 1 -14 0 a11 11 0 1 1 22 0 a14 13 0 1 1 -28 0", "#a855f7"), // Spiral Works
-            3 => ("M8 30 C 8 4, 30 4, 30 17 S 56 30, 56 4", "#f59e0b"),                    // Grand Spiral: twin helix
-            5 => ("M6 6 H40 V14 H14 V22 H48 L58 30", "#4ade80"),                           // Playground Run: gutter laps + slide
-            6 => ("M4 8 C 16 24, 22 2, 34 14 L 22 22 L 46 28 L60 24", "#fb923c"),          // Daily Canyon: the canyon at dawn
+            7 => ("M4 8 C 14 26, 20 2, 28 16 C 34 26, 40 6, 46 20 L 58 28", "#22d3ee"), // Grand Circuit: helix + funnel + plunge + slide
             _ => ("M6 6 L58 30", "#94a3b8"),
         };
         return @<svg class="mr-track-glyph" viewBox="0 0 64 34" aria-hidden="true" focusable="false">
@@ -429,39 +374,17 @@
     private RenderFragment SetupContent => @<div class="mr-setup">
         @if (_menu is null)
         {
-            <p class="mr-setup-note">Loading tracks…</p>
+            <p class="mr-setup-note">Loading track…</p>
         }
         else
         {
-            <div class="mr-setup-label">Mode</div>
-            <div class="mr-weights" role="radiogroup" aria-label="Race mode">
-                @foreach (var (gp, name, hint) in new[]
-                {
-                    (false, "Single track", "Chain top-10 finishes on one course"),
-                    (true, "Grand Prix", $"All {GpOrder.Length} courses, points for the top 10 of each"),
-                })
-                {
-                    var g = gp;
-                    <button type="button" role="radio" aria-checked="@(g == _gp ? "true" : "false")"
-                            class="mr-opt @(g == _gp ? "is-on" : "")"
-                            @onclick="() => _gp = g">
-                        <span class="mr-opt-name">@name</span>
-                        <span class="mr-opt-hint">@hint</span>
-                    </button>
-                }
-            </div>
-            @if (_gp)
-            {
+            <div class="mr-track-pick">
+                @TrackGlyph(_mapId)
                 <p class="mr-setup-note">
-                    @(string.Join(" → ", GpOrder.Select(m => m.Name))).
-                    25 points for a win down to 1 for 10th, against the same 100 rivals every round.
-                    @(_menu.Gp.Best > 0 ? $"Your best: {_menu.Gp.Best} points, {Ordinal(_menu.Gp.BestRank)} overall." : "")
+                    <strong>@(MapAt(_mapId)?.Name ?? "Grand Circuit")</strong> · @(MapAt(_mapId)?.Blurb)
+                    @RecordText(_mapId) · @TrackStatText(StatFor(_mapId))
                 </p>
-            }
-            else
-            {
-                @TrackPicker
-            }
+            </div>
 
             <details>
             <summary>Marble finish and weight</summary>
@@ -499,77 +422,6 @@
             </div>
             </details>
         }
-    </div>;
-
-    private static readonly IReadOnlyList<IntroMap> DefaultTrackMaps =
-    [
-        new("1", "Neon Canyon"),
-        new("2", "Spiral Works"),
-        new("3", "Grand Spiral"),
-        new("6", "Daily Canyon"),
-        new("5", "Playground Run"),
-    ];
-
-    // The track is the start card's dropdown beside OK (owner rule 2026-11-18): every pickable
-    // course, its record beside the name. None while a Grand Prix (it runs them all), a demo or online
-    // (the host picks the track in the lobby) is set up.
-    private IReadOnlyList<IntroMap>? TrackMaps =>
-        _demo || _online || _gp ? null
-        : _menu is null ? DefaultTrackMaps
-        : [.. PickableMaps.Select(m => new IntroMap(m.Id.ToString(System.Globalization.CultureInfo.InvariantCulture),
-            RecordText(m.Id) is { Length: > 0 } record ? $"{m.Name} · {record}" : m.Name))];
-
-    private void OnTrackPicked(string id)
-    {
-        if (int.TryParse(id, System.Globalization.NumberStyles.Integer, System.Globalization.CultureInfo.InvariantCulture, out var mapId)) _mapId = mapId;
-    }
-
-    // What the picked course is like, under the setup (the dropdown only names it).
-    private RenderFragment TrackPicker => @<div>
-        @if (_menu is null)
-        {
-            <p class="mr-setup-note">Loading tracks…</p>
-        }
-        else
-        {
-            <div class="mr-track-pick">
-                @TrackGlyph(_mapId)
-                <p class="mr-setup-note"><strong>@(MapAt(_mapId)?.Name)</strong> · @(MapAt(_mapId)?.Blurb) @TrackStatText(StatFor(_mapId))</p>
-            </div>
-        }
-    </div>;
-
-    // Host and guest share one summary: the guest simply has no run score of its own.
-    // The standings with your own row picked out, then the run. The end card's only action is
-    // "Back to main menu"; another race starts from the start card.
-    private RenderFragment GameSummaryContent => _gp ? GrandPrixSummary : RaceSummary;
-
-    // The Grand Prix table: the top five on points, and your own row when you are not among them.
-    private RenderFragment GrandPrixSummary => @<div class="mr-result">
-        <div class="mr-result-head">🏁 Grand Prix · @Ordinal(_gpRank) overall · @_gpPoints points</div>
-        <table class="mr-result-table">
-            <caption class="mr-sr-only">Grand Prix standings</caption>
-            <tbody>
-                @for (var i = 0; i < _gpTop.Count; i++)
-                {
-                    var row = _gpTop[i];
-                    <tr class="@(row.Index == PlayerIndex ? "is-me" : null)">
-                        <td>@(i + 1)</td>
-                        <td><span class="mr-podium-dot" style="--dot:@ColorOf(row.Index)"></span> @RosterName(row.Index)</td>
-                        <td>@row.Points pts</td>
-                    </tr>
-                }
-                @if (_gpTop.All(r => r.Index != PlayerIndex))
-                {
-                    <tr class="is-me">
-                        <td>@_gpRank</td>
-                        <td><span class="mr-podium-dot" style="--dot:@ColorOf(PlayerIndex)"></span> You</td>
-                        <td>@_gpPoints pts</td>
-                    </tr>
-                }
-            </tbody>
-        </table>
-        <div class="mr-result-run">Last round: @(_lastPlace > 0 ? $"{Ordinal(_lastPlace)} place, +{_gpGained} points" : "didn't finish")</div>
     </div>;
 
     private RenderFragment RaceSummary => @<div class="mr-result">

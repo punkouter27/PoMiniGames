@@ -77,10 +77,7 @@ public class MarbleRaceMapCertificationTests
         """;
 
     [Theory]
-    [InlineData(1)]   // Neon Canyon (procedural; a new seed every run)
-    [InlineData(2)]   // Spiral Works
-    [InlineData(3)]   // Grand Spiral
-    [InlineData(5)]   // Playground Run (imported scene)
+    [InlineData(7)]   // Grand Circuit (the single unified mega-track)
     public async Task Map_KeepsEveryMarbleOnTheCourse_AndBringsTheFieldHome(int mapId)
     {
         using var playwright = await Playwright.CreateAsync();

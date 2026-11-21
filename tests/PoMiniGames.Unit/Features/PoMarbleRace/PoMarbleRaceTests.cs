@@ -64,6 +64,8 @@ public class PoMarbleRaceTests
         (2, "11:40:0", -1, "a miss ends a run, so it cannot be inside one"),
         (2, "1:5:0", -1, "faster than any marble can cover the course"),
         (2, "1:181:0", -1, "past the race timeout"),
+        (7, "1:50:2", 14, "Grand Circuit dominant win: (10 + 4) x 1"),
+        (7, "1:10:0", -1, "Grand Circuit faster than physically reachable"),
         (9, "1:40:0", -1, "no such map"),
         (2, "", -1, "no races, no verified run"),
     ];
