@@ -30,7 +30,7 @@
            OptionsContent="@(_demo ? null : SettingsContent)"
            OptionsHeading="Race settings"
            GameSummary="@RaceSummary">
-    @* The one decision card: controls, and in 1P your marble finish and weight. *@
+    @* The one decision card: controls and the track, then OK. *@
     @if (!_introDone)
     {
         <GameIntro CueScope="pomarblerace"
@@ -126,25 +126,6 @@
                                 <span class="mr-light @(!_loading && _pickCountdown <= 1 ? "is-lit is-go" : "")"></span>
                             </div>
                             <p class="mr-prerace-hint">@SteerHint</p>
-                        </div>
-                    }
-
-                    @if (_showTutorial && !_loading && _engineError is null)
-                    {
-                        @* First race only: point at the red marble and name the boost pads. *@
-                        @if (_tutorialAt is { } at)
-                        {
-                            <div class="mr-tut-ring" style="left:@Pct(at.X);top:@Pct(at.Y)" aria-hidden="true"></div>
-                        }
-                        <div class="mr-tutorial" role="region" aria-label="How to race">
-                            <ul>
-                                <li><span class="mr-red">That's you</span>: the one red marble in a pack of 101.</li>
-                                <li>@SteerHint</li>
-                                <li><span class="mr-boost-swatch" aria-hidden="true"></span> Cyan chevrons are boost pads: roll over them for speed.</li>
-                                <li>Finish in the top 10 to score. A miss ends the run.</li>
-                                <li>Fall off and you're put back on the track after a short hold.</li>
-                            </ul>
-                            <button type="button" class="app-btn app-btn--primary" @onclick="DismissTutorialAsync">Got it, race!</button>
                         </div>
                     }
 
@@ -398,41 +379,6 @@
                 </p>
             </div>
 
-            <details>
-            <summary>Marble finish and weight</summary>
-            <div class="mr-setup-label">Your marble</div>
-            <div class="mr-skins" role="radiogroup" aria-label="Marble finish">
-                @foreach (var k in _menu.Skins)
-                {
-                    var id = k.Id;
-                    var locked = k.Need > _menu.Best;
-                    <button type="button" role="radio" aria-checked="@(id == _skin ? "true" : "false")"
-                            disabled="@locked"
-                            title="@(locked ? $"Unlocks at a best run of {k.Need}" : k.Name)"
-                            class="mr-opt mr-skin mr-skin--@id @(id == _skin ? "is-on" : "")"
-                            @onclick="() => _skin = id">
-                        <span class="mr-skin-ball" aria-hidden="true"></span>
-                        <span class="mr-opt-name">@k.Name</span>
-                        @if (locked)
-                        {
-                            <span class="mr-opt-hint">Best @k.Need</span>
-                        }
-                    </button>
-                }
-            </div>
-            <div class="mr-weights" role="radiogroup" aria-label="Marble weight">
-                @foreach (var w in _menu.Weights)
-                {
-                    var id = w.Id;
-                    <button type="button" role="radio" aria-checked="@(id == _weight ? "true" : "false")"
-                            class="mr-opt @(id == _weight ? "is-on" : "")"
-                            @onclick="() => _weight = id">
-                        <span class="mr-opt-name">@w.Name</span>
-                        <span class="mr-opt-hint">@w.Hint</span>
-                    </button>
-                }
-            </div>
-            </details>
         }
     </div>;
 

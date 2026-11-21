@@ -444,8 +444,12 @@ export class Game {
         this._podiumSent = true;
         this._sendPodium();
       }
-      if (allDone || this.raceClock >= RACE_TIMEOUT) {
+      // The race ends the moment the winner crosses the line (owner, 2026-11-21): everyone still
+      // running is placed where they stand, by distance along the course.
+      const winnerIn = justFinished.some((m) => m.finishOrder === 0);
+      if (allDone || winnerIn || this.raceClock >= RACE_TIMEOUT) {
         if (!allDone) this.marbleSet.forceFinishRemaining(this.raceClock);
+        if (!this._podiumSent) { this._podiumSent = true; this._sendPodium(); }
         this._resolve();
       }
 
