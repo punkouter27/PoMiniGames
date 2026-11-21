@@ -1,6 +1,6 @@
 // director.js — Game mixin: which marble the camera follows, and the rivals drawn in glass.
 // Mixed into Game.prototype by game.js.
-import * as THREE from 'three';
+import * as THREE from 'three-eco/webgpu';
 import { PLAYER_INDEX } from './marbles.js';
 import {
   ROAD_BIAS, FINAL_STRETCH, BED_NEAR_RANGE, BED_NEAR_EASE, LEADERS, SHOT_MIN_HOLD, SHOT_LEAD_MARGIN,

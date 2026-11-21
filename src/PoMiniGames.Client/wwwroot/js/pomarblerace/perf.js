@@ -48,9 +48,10 @@ export class PerfMixin {
     const live = this.marbleSet ? this.marbleSet.marbles.filter((m) => !m.finished && !m.eliminated).length : 0;
     const bodies = this.world ? this.world.bodies.length : 0;
     const engine = this.world && this.world.engineName ? this.world.engineName : 'cannon-es';
+    const gfxApi = this.scene.renderer?.backend?.isWebGPUBackend ? 'webgpu' : (this.scene.renderer?.userData?.api || 'webgl2');
     window.poGameStatsDetails = [
       { label: `Physics (${engine})`, value: `${(p.step / p.frames).toFixed(1)} ms` },
-      { label: 'Render', value: `${(p.render / p.frames).toFixed(1)} ms` },
+      { label: `Render (${gfxApi})`, value: `${(p.render / p.frames).toFixed(1)} ms` },
       { label: 'Draw calls', value: String(calls) },
       { label: 'Triangles', value: String(tris) },
       { label: 'Live marbles', value: String(live) },

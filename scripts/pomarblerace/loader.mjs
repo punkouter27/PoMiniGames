@@ -11,6 +11,8 @@ const stub = (f) => pathToFileURL(path.join(here, 'stubs', f)).href;
 
 const BARE = {
   'three': pathToFileURL(path.join(nm, 'three/build/three.module.js')).href,
+  'three-eco/webgpu': pathToFileURL(path.join(nm, 'three/build/three.module.js')).href,
+  'three-eco/tsl': stub('empty.mjs'),
   'cannon-es': pathToFileURL(path.join(nm, 'cannon-es/dist/cannon-es.js')).href,
 };
 const STUBBED = { 'scene.js': stub('scene.mjs'), 'audio.js': stub('audio.mjs'), 'weather.js': stub('empty.mjs'), 'glassFx.js': stub('empty.mjs') };

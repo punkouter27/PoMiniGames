@@ -1,6 +1,6 @@
 // ghost.js — Game mixin: the faint replay of your fastest finish on an authored course.
 // See the Ghost block in tuning.js. Mixed into Game.prototype by game.js.
-import * as THREE from 'three';
+import * as THREE from 'three-eco/webgpu';
 import { encodeTrack, resample, sampleAt, loadGhost, saveGhost } from '../platform/ghostTrack.js';
 import {
   GHOST_HZ, GHOST_SCALES, GHOST_KEY,

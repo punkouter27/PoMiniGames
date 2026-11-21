@@ -11,7 +11,7 @@
 // diameters, and the centerline is strictly descending. The pack CAN be wrecked;
 // it cannot be stopped. (Zones are laid out along s in ZONES below — keep them
 // non-overlapping when editing, the ribbons assume it.)
-import * as THREE from 'three';
+import * as THREE from 'three-eco/webgpu';
 import * as CANNON from 'cannon-es';
 
 // The base chute recipe. A map may run it with a VARIANT (generateTrack's last argument), which

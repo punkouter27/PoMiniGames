@@ -12,7 +12,7 @@
 // go. Rules only, no randomness at run time beyond the wildcard's seeded line changes. Applied
 // on the simulating browser only — an online guest renders the host's stream and never runs it.
 // Mixed into Game.prototype by game.js.
-import * as THREE from 'three';
+import * as THREE from 'three-eco/webgpu';
 import { STEER_ACCEL, RIVAL_STEER_SHARE, RIVAL_DEADBAND, RIVAL_GAIN, RIVAL_LOOKAHEAD } from './tuning.js';
 
 /** Personality names, with each one's share of the pack (they sum to 1). */

@@ -31,7 +31,8 @@
 // visually distinct marbles still cost exactly one draw call.
 //
 // The headroom this frees is what pays for the motion blur, shockwave rings and road sheen.
-import * as THREE from 'three';
+import * as THREE from 'three-eco/webgpu';
+import * as TSL from 'three-eco/tsl';
 import * as CANNON from 'cannon-es';
 import { newProjection } from './maps.js';
 import { readPref } from './store.js';
@@ -372,69 +373,42 @@ export function createMarbles(world, materials, startPositions, chosenIndex, onC
   // because of one tight highlight and a hint of what is around it; with no environment at all
   // (scene.environment was removed) a 0.34-rough sphere lit by three lights is indistinguishable
   // from matte putty. `envMapIntensity` is kept low — this is a sheen, not a chrome ball.
-  const packMat = new THREE.MeshStandardMaterial({
-    color: 0xffffff, emissive: 0x000000, emissiveIntensity: 0, roughness: 0.18, metalness: 0.0,
-    map: atlas,
-    envMap: envMap || null,
-    envMapIntensity: envMap ? 0.85 : 0,
-  });
-  // NOTE the white base colour above: with an InstancedMesh, `instanceColor` MULTIPLIES both the
-  // material colour and the sampled texel. White here means a marble's rendered colour is exactly
-  // its palette entry times the greyscale swirl pattern — any tint on the material itself would
-  // be applied a second time on top of every marble's own colour.
+  const cellU = 1 / ATLAS_COLS, cellV = 1 / ATLAS_ROWS;
+  const useTsl = typeof THREE.MeshStandardNodeMaterial === 'function' && typeof TSL.uv === 'function';
+  const packMat = useTsl
+    ? new THREE.MeshStandardNodeMaterial({
+        color: 0xffffff, roughness: 0.16, metalness: 0.0,
+        envMap: envMap || null, envMapIntensity: envMap ? 0.9 : 0,
+      })
+    : new THREE.MeshStandardMaterial({
+        color: 0xffffff, emissive: 0x000000, emissiveIntensity: 0, roughness: 0.18, metalness: 0.0,
+        map: atlas, envMap: envMap || null, envMapIntensity: envMap ? 0.85 : 0,
+      });
+  if (useTsl) {
+    // TSL node graph (compiles to WGSL on WebGPU and GLSL on WebGL2):
+    // Samples each instance's glass-swirl cell from the shared atlas and adds iridescent Fresnel caustics.
+    const cellUv = TSL.uv().mul(TSL.vec2(cellU, cellV)).add(TSL.attribute('aUvOffset', 'vec2'));
+    packMat.colorNode = TSL.texture(atlas, cellUv);
+    const ndotv = TSL.max(TSL.dot(TSL.normalize(TSL.normalView), TSL.normalize(TSL.positionViewDirection)), 0.0);
+    const fres = TSL.pow(ndotv.oneMinus(), 3.0);
+    const irid = TSL.vec3(
+      TSL.sin(fres.mul(6.28)).mul(0.5).add(0.5),
+      TSL.sin(fres.mul(6.28).add(2.09)).mul(0.5).add(0.5),
+      TSL.sin(fres.mul(6.28).add(4.18)).mul(0.5).add(0.5),
+    );
+    packMat.emissiveNode = irid.mul(fres).mul(0.32);
+  }
   const PACK_COUNT = MARBLE_COUNT - 1;   // every marble except the player
   const pack = new THREE.InstancedMesh(packGeo, packMat, PACK_COUNT);
-  // The pack spans the whole track and is a single draw call, so per-object frustum culling has
-  // nothing to win and would only risk popping the whole field out at once.
   pack.frustumCulled = false;
-  // The pack casts a shadow like the player's marble: without one, 100 of the 101 marbles float
-  // over the road with nothing tying them to it. Contact shadow is the single strongest cue that
-  // an object is resting on a surface, and its absence is most of why the pack would read as
-  // sprites laid over the track. An InstancedMesh casts for every instance from one shadow draw,
-  // so this is one extra pass over the pack, not a hundred.
   pack.castShadow = true;
-  // Receive too: marbles in a pile-up should darken the ones beneath them.
   pack.receiveShadow = true;
   pack.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
-  // Per-instance colour — impossible while the pack shared one material. Each marble carries its
-  // own palette colour for the whole race.
-  //
-  // This REPLACES the speed-reactive blue→cyan tint that lived here: with every marble now a
-  // different colour, a tint that drove them all toward the same cyan at pace would have undone
-  // exactly the variety it is supposed to show. Written once at construction, not per frame.
   pack.instanceColor = new THREE.InstancedBufferAttribute(new Float32Array(PACK_COUNT * 3), 3);
   group.add(pack);
 
-  // Per-instance atlas cell. This is what lets 100 marbles show 16 different glass patterns from
-  // ONE draw call: each instance gets the UV origin of its cell, and the vertex patch below
-  // scales the sphere's UVs into that cell.
   const uvOffsets = new Float32Array(PACK_COUNT * 2);
   packGeo.setAttribute('aUvOffset', new THREE.InstancedBufferAttribute(uvOffsets, 2));
-
-  // Inject the atlas lookup into three's standard material. `vMapUv` is produced by the
-  // <uv_vertex> chunk whenever a map is present, so remapping it right after that chunk reroutes
-  // every texture read for this instance into its own cell — no fragment-shader surgery, and the
-  // rest of MeshStandardMaterial (lighting, IBL, shadows) is untouched.
-  const cellU = 1 / ATLAS_COLS, cellV = 1 / ATLAS_ROWS;
-  packMat.onBeforeCompile = (shader) => {
-    shader.vertexShader = shader.vertexShader
-      .replace('#include <common>', '#include <common>\nattribute vec2 aUvOffset;')
-      .replace(
-        '#include <uv_vertex>',
-        `#include <uv_vertex>\n\tvMapUv = vMapUv * vec2(${cellU.toFixed(6)}, ${cellV.toFixed(6)}) + aUvOffset;`);
-    shader.fragmentShader = shader.fragmentShader
-      .replace('#include <dithering_fragment>', `
-        #include <dithering_fragment>
-        // Iridescent glass caustics & chromatic rim sheen
-        vec3 normW = normalize(vNormal);
-        vec3 vW = normalize(vViewPosition);
-        float fres = pow(1.0 - max(dot(normW, vW), 0.0), 3.0);
-        vec3 irid = vec3(sin(fres * 6.28 + 0.0) * 0.5 + 0.5,
-                         sin(fres * 6.28 + 2.09) * 0.5 + 0.5,
-                         sin(fres * 6.28 + 4.18) * 0.5 + 0.5);
-        gl_FragColor.rgb += irid * fres * 0.32;
-      `);
-  };
 
   // GFX #3 — the lead pack in glass. The top three rivals are drawn from this small InstancedMesh
   // (transmission, tinted by instanceColor) and zero-scaled in `pack` while they lead, so the

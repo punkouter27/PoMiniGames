@@ -2,7 +2,7 @@
 // pads, brake strips, the course drive, containment, contacts, unsticking and kickers — plus
 // reading what a marble is rolling on. Every feature is optional per map (see maps.js) and
 // feature-detected here. Mixed into Game.prototype by game.js.
-import * as THREE from 'three';
+import * as THREE from 'three-eco/webgpu';
 import * as CANNON from 'cannon-es';
 import {
   LOST_AIR, REACQUIRE_AFTER, RESPAWN_HOLD, RESPAWN_SPEED, RESPAWN_LIFT, AIR_HOLD, BRAKE_RATE, STALL_AFTER, STALL_REPEAT, STALL_GAIN, STALL_NUDGE, STALL_STEP, STALL_MAX, STALL_LOOKAHEAD, STALL_SIDESTEP, STALL_SIDE_SHARE, BOOST_ACCEL, BOOST_MAX_SPEED, KICK_DV, KICK_UP, KICK_CHARGE,

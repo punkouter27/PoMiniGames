@@ -9,7 +9,7 @@
 //   · Playground Run — enclosed drop tunnel (with boxed-in reverb zone) into the glossy big slide & wide finish tray
 //
 // Slots 1-6 remain recognized on the server (MarbleRaceRunVerifier.cs) for legacy records only.
-import * as THREE from 'three';
+import * as THREE from 'three-eco/webgpu';
 import { generateTrack } from './track-procedural.js';
 
 /**

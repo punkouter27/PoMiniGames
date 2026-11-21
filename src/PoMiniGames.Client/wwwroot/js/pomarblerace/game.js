@@ -1,7 +1,7 @@
 // game.js — the Game: construction, the phase machine, the rAF loop and the per-frame step
 // order, and the C# callback seam. Each system's methods live in a mixin module (ghost, input,
 // director, course, results, online) and are copied onto Game.prototype at the bottom.
-import * as THREE from 'three';
+import * as THREE from 'three-eco/webgpu';
 import { createScene } from './scene.js';
 import { createStage } from '../platform/stage/stage.js';
 import { createWorld, stepWorld } from './physics.js';

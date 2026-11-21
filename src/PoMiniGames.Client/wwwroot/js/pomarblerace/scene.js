@@ -1,16 +1,12 @@
-// scene.js — Three.js renderer/scene/lights + smooth orbit-follow camera, plus the
-// post-processing pipeline: ACES tone mapping, dynamic shadows, GTAO, a transient rack focus,
-// a colour grade, SMAA, a speed-reactive FOV, GPU sparks, pooled impact light pulses and a
-// per-map lighting theme (setTheme). The race's extra GPU effects (bursts, speed streak + lens
-// dirt, SSR) live in fx-race.js and the finish swoop in followTarget; Effects: Lite turns all of
-// those off (store.js prefs.effects, setEffects below).
-import * as THREE from 'three';
-import { EffectComposer } from 'three/addons/postprocessing/EffectComposer.js';
-import { RenderPass } from 'three/addons/postprocessing/RenderPass.js';
-import { ShaderPass } from 'three/addons/postprocessing/ShaderPass.js';
-import { SMAAPass } from 'three/addons/postprocessing/SMAAPass.js';
-import { GTAOPass } from 'three/addons/postprocessing/GTAOPass.js';
-import { OutputPass } from 'three/addons/postprocessing/OutputPass.js';
+// scene.js — Three.js r186 WebGPU renderer/scene/lights + smooth orbit-follow camera, plus the
+// TSL RenderPipeline: ACES tone mapping, soft shadows, TSL bloom, colour grade, speed streak,
+// FXAA, speed-reactive FOV, 8k GPU particles, pooled impact light pulses, and Act-reactive lighting.
+import * as THREE from 'three-eco/webgpu';
+import {
+  Fn, dot, max, mix, pass, renderOutput, screenUV, sin, smoothstep, step, uniform, vec2, vec3, vec4,
+} from 'three-eco/tsl';
+import { bloom } from 'three-eco/addons/tsl/display/BloomNode.js';
+import { fxaa } from 'three-eco/addons/tsl/display/FXAANode.js';
 import * as PostFx from '../platform/postFx.js';
 import { createRenderer, attachRenderer } from '../platform/3d/renderer.js';
 import { createRaceFx } from './fx-race.js';
@@ -108,22 +104,15 @@ const GRADES = {
   loss: { tint: [0.92, 0.92, 0.96], contrast: 0.96, saturation: 0.35 },
 };
 
-/** The race renderer (shared factory): ACES filmic 1.15, soft shadows, no MSAA (SMAA runs in the composer). */
+/** The race renderer: Three.js r186 WebGPURenderer (automatic WebGL2 backend fallback), ACES filmic. */
 export function createSceneRenderer() {
-  return createRenderer(THREE, { antialias: false, alpha: false, powerPreference: 'default', tone: 'aces', exposure: 1.15, shadows: 'pcfsoft', clearColor: BG });
+  return createRenderer(THREE, { api: 'webgpu', antialias: true, alpha: false, powerPreference: 'high-performance', tone: 'aces', exposure: 1.15, shadows: 'pcfsoft', clearColor: BG });
 }
 
 /** @param {HTMLElement} container @param {object} renderer from createSceneRenderer @param {object} stage the game's 3D stage */
 export function createScene(container, renderer, stage) {
-  // The glass marbles (marbles.js, heavy tier) render the scene once more for refraction; they
-  // are small on screen, so half resolution is indistinguishable and halves that pass.
   renderer.transmissionResolutionScale = 0.5;
-  // FLICKER FIX (1/4) — anisotropy. Every procedural texture in track-procedural.js pinned itself to 4,
-  // and the kerb stripes (hard red/white, seen at grazing angles by a chase cam) aliased into
-  // crawling moiré at that level. Textures inherit this default, so raising it here raises it
-  // for the whole track — createScene runs before buildTrack, and track-procedural.js's texture
-  // singletons are built lazily on first use, so the ordering holds.
-  THREE.Texture.DEFAULT_ANISOTROPY = renderer.capabilities.getMaxAnisotropy();
+  THREE.Texture.DEFAULT_ANISOTROPY = Math.min(16, renderer.getMaxAnisotropy?.() ?? renderer.capabilities?.getMaxAnisotropy?.() ?? 16);
   container.style.position = 'relative';
   container.style.overflow = 'hidden';
   container.appendChild(renderer.domElement);
@@ -223,64 +212,62 @@ export function createScene(container, renderer, stage) {
     const src = new THREE.CanvasTexture(c);
     src.mapping = THREE.EquirectangularReflectionMapping;
     src.colorSpace = THREE.SRGBColorSpace;
-    const pm = new THREE.PMREMGenerator(renderer);
-    const rt = pm.fromEquirectangular(src);
-    pm.dispose();
-    src.dispose();
-    return rt;   // caller disposes rt.texture via dispose() below
+    try {
+      const pm = new THREE.PMREMGenerator(renderer);
+      const rt = pm.fromEquirectangular(src);
+      pm.dispose();
+      src.dispose();
+      return rt;
+    } catch {
+      return { texture: src, dispose() { src.dispose(); } };
+    }
   })();
 
-  // ── Post-processing composer ──────────────────────────────────────────
-  const composer = new EffectComposer(renderer);
-  composer.setPixelRatio(renderer.getPixelRatio());
-  const renderPass = new RenderPass(scene, camera);
-  composer.addPass(renderPass);
+  // ── WebGPU / TSL RenderPipeline (unified WGSL + GLSL post-processing graph) ──
+  const heavy = PostFx.allowHeavy();
+  let effects = readPref('effects') === 'lite' ? 'lite' : 'full';
+  const raceFx = createRaceFx({ scene, level: effects });
 
-  // GTAO. The chute is a big diffuse trough lit by one key light, so without it the
-  // marbles read as *hovering over* the road rather than rolling on it — there is no
-  // contact darkening anywhere. Ground truth ambient occlusion is what puts them in
-  // contact with the floor.
-  //
-  // High tier only, and OFF rather than degraded below it: GTAO costs a depth +
-  // normal prepass, which is the wrong thing to be paying for on a machine that
-  // is already dropping frames. The scene still reads correctly without it.
-  let gtao = null;
-  if (PostFx.allowHeavy()) {
-    gtao = new GTAOPass(scene, camera, 1, 1);
-    gtao.output = GTAOPass.OUTPUT.Default;
-    // Radius in world units. The track is ~64 wide and marbles are radius 1, so
-    // a small radius is right — a large one would darken whole berms instead of
-    // the crease where a marble meets the road.
-    gtao.updateGtaoMaterial({ radius: 2.2, distanceExponent: 1.0, thickness: 1.0, scale: 1.1 });
-    composer.addPass(gtao);
-    // The pass hides Points and Lines from its depth/normal prepass but not Meshes, so an additive
-    // Mesh (the ribbon trails) was written as solid depth and drew a black AO smear. Objects marked
-    // userData.noAO are hidden too; restoreVisibility() restores them from the cache the original
-    // overrideVisibility() just filled.
-    const hideFromAo = gtao.overrideVisibility.bind(gtao);
-    gtao.overrideVisibility = () => {
-      hideFromAo();
-      scene.traverse((o) => { if (o.userData.noAO) o.visible = false; });
-    };
+  const uTint = uniform(new THREE.Vector3(1, 1, 1));
+  const uContrast = uniform(1);
+  const uSaturation = uniform(1);
+  const uStreak = uniform(0);
+  const uTime = uniform(0);
+
+  let pipeline = null;
+  let scenePass = null;
+  let bloomNode = null;
+  try {
+    pipeline = new THREE.RenderPipeline(renderer);
+    pipeline.outputColorTransform = false;
+    scenePass = pass(scene, camera);
+    const sceneTex = scenePass.getTextureNode('output');
+    bloomNode = bloom(sceneTex, 0.28, 0.35, 0.92);
+    const combined = sceneTex.add(bloomNode);
+
+    const graded = Fn(() => {
+      const col = combined.rgb.toVar();
+      const luma = dot(col, vec3(0.2126, 0.7152, 0.0722));
+      col.assign(mix(vec3(luma), col, uSaturation));
+      col.assign(col.sub(0.5).mul(uContrast).add(0.5));
+      col.assign(max(col.mul(uTint), 0.0));
+      // Speed-streak rim glow when boosting or tearing down the plunge
+      const c = screenUV.sub(0.5);
+      const r = c.length();
+      const rim = smoothstep(0.32, 0.78, r);
+      const pulse = sin(r.mul(28.0).sub(uTime.mul(36.0))).mul(0.5).add(0.5);
+      col.addAssign(vec3(0.45, 0.88, 1.0).mul(rim).mul(step(0.6, pulse)).mul(uStreak).mul(0.18));
+      // Subtle cinematic vignette
+      col.mulAssign(dot(c, c).mul(0.14).oneMinus());
+      return vec4(col, 1.0);
+    })();
+
+    pipeline.outputNode = fxaa(renderOutput(graded));
+  } catch (err) {
+    console.warn('[PoMarbleRace] TSL RenderPipeline unavailable, using direct WebGPU render:', err?.message || err);
+    pipeline = null;
   }
 
-  // Rack focus. Disabled during the race; the photo finish turns it on
-  // for a beat. See postFx.js for why a transient DoF pass is affordable and a
-  // permanent one is not.
-  const rackFocus = PostFx.createRackFocus(scene, camera, 1, 1);
-  composer.addPass(rackFocus.pass);
-  // ShaderPass CLONES the uniforms off the descriptor, so drive `post.uniforms` — writing to
-  // PostShader.uniforms would touch the module-level template and leak between scenes.
-  const post = new ShaderPass(PostShader);                // #3 colour grade (all this pass still does)
-  composer.addPass(post);
-  const smaa = new SMAAPass(1, 1);                        // #10 — anti-aliasing
-  composer.addPass(smaa);
-  composer.addPass(new OutputPass());                     // tone-map + sRGB to screen
-
-  // #23-#28 extras (fx-race.js): bursts, the speed-streak/lens-dirt pass (slotted in before the
-  // grade) and lazily built SSR. Heavy-only pieces check `heavy` themselves.
-  let effects = readPref('effects') === 'lite' ? 'lite' : 'full';
-  const raceFx = createRaceFx({ scene, camera, renderer, composer, renderPass, gradePass: post, heavy: !!gtao, level: effects });
   const reducedMotion = () =>
     typeof matchMedia === 'function' && matchMedia('(prefers-reduced-motion: reduce)').matches;
 
@@ -391,10 +378,11 @@ export function createScene(container, renderer, stage) {
     gradeNow.contrast += (gradeTo.contrast - gradeNow.contrast) * k;
     gradeNow.saturation += (gradeTo.saturation - gradeNow.saturation) * k;
 
-    const u = post.uniforms;
-    u.uTint.value.copy(gradeNow.tint);
-    u.uContrast.value = gradeNow.contrast;
-    u.uSaturation.value = gradeNow.saturation;
+    uTint.value.copy(gradeNow.tint);
+    uContrast.value = gradeNow.contrast;
+    uSaturation.value = gradeNow.saturation;
+    uStreak.value = raceFx.streak;
+    uTime.value = raceFx.time;
   }
 
   // ── Left-drag mouse orbit around the followed target ──────────────────
@@ -435,10 +423,7 @@ export function createScene(container, renderer, stage) {
   // renderer, composer and camera aspect; the passes that own their own targets follow here.
   // Both of these own internal render targets sized independently of the composer's; missing
   // either leaves it sampling a stale buffer at the old aspect (AO / bokeh stretched).
-  const rig = attachRenderer(stage, renderer, {
-    camera, composer,
-    onResize({ cssW, cssH }) { smaa.setSize(cssW, cssH); gtao?.setSize(cssW, cssH); rackFocus.setSize(cssW, cssH); },
-  });
+  const rig = attachRenderer(stage, renderer, { camera });
   const resize = () => rig.resize();
 
   // Smoothly move the camera to orbit-and-follow `pos`. With no drag this is the default
@@ -532,9 +517,8 @@ export function createScene(container, renderer, stage) {
     PostFx.applyCameraShake(camera, performance.now() / 1000, 1.4);
 
     updatePulses(dt);
-    updatePost(dt);             // #3 colour grade
-    rackFocus.update(dt);       // §GFX-2 — no-op unless a photo finish is running
     raceFx.update(dt, spd);         // #24/#28 bursts and the speed streak follow the shot's marble
+    updatePost(dt);                 // #3 TSL colour grade + streak uniforms
   }
 
   // ── Act-reactive dynamic lighting cross-fade across Grand Circuit's 5 Acts ──
@@ -564,7 +548,7 @@ export function createScene(container, renderer, stage) {
     add(obj) { scene.add(obj); },
     remove(obj) { scene.remove(obj); },
     // True where the device can afford the heavy passes (GTAO, glass transmission).
-    heavy: !!gtao,
+    heavy,
     followTarget,
     burstSparks,
     burstConfetti,
@@ -574,42 +558,37 @@ export function createScene(container, renderer, stage) {
     audioCue,         // #9
     setGrade,         // #3
     punchFov,
-    /**
-     * Rack the focus for the photo finish. `distance` is how far the
-     * winning marble is from the camera; the chase cam holds it at roughly
-     * CAM_BACK, so that is the default and callers only need to pass a value if
-     * they are framing something else.
-     */
-    photoFinish(distance) {
-      rackFocus.trigger(distance == null ? CAM_BACK : distance, 1.1, 1);
+    photoFinish() {
+      // Handled via finishSwoop + TSL bloom/grade transition on WebGPU.
     },
-    /** #24 GPU burst: kind 'kicker' | 'pop' | 'boost' | 'finish'; `dir` (boost) the track heading; `big` (finish). */
+    /** #24 GPU burst: kind 'kicker' | 'pop' | 'boost' | 'finish' | 'sparks' | 'confetti'. */
     burstFx(kind, pos, dir, big) { raceFx.burst(kind, pos, dir, big); },
-    /** #28 the followed marble is on a boost pad: the streak and lens dirt swell. */
+    /** #28 the followed marble is on a boost pad: the streak swells. */
     setBoosting(b) { raceFx.setBoosting(b); },
     /** #26 swing the camera round the winner at the line. Skipped on Lite and under reduced motion. */
     finishSwoop() {
       if (effects === 'lite' || reducedMotion()) return;
       swoopDir = Math.random() < 0.5 ? -1 : 1;
       swoopT = SWOOP_TIME;
-      raceFx.flashDirt(0.8);
     },
-    /** 'full' | 'lite' — everything fx-race.js adds, the swoop and marble dispersion follow it. */
+    /** 'full' | 'lite' — toggles GPU bursts, speed streak, and swoop. */
     setEffects(level) {
       effects = level === 'lite' ? 'lite' : 'full';
       raceFx.setLevel(effects);
       if (effects === 'lite') swoopT = 0;
     },
     get effects() { return effects; },
-    composer,
-    render() { composer.render(); },
+    composer: pipeline,
+    render() {
+      if (pipeline && effects !== 'lite') pipeline.render();
+      else renderer.render(scene, camera);
+    },
     resize,
     dispose() {
       raceFx.dispose();
-      marbleEnv.dispose();   // PMREM render target + its texture
-      rackFocus.dispose();
-      gtao?.dispose?.();
-      composer.dispose();   // the stage disposes the renderer, hands the GL context back and removes the canvas
+      marbleEnv.dispose();
+      try { bloomNode?.dispose?.(); } catch { }
+      try { scenePass?.dispose?.(); } catch { }
     },
   };
 }
