@@ -107,22 +107,23 @@
                                 <p class="mr-prerace-line">@_opponentName steers @TheirColorWord</p>
                             }
                             <p class="mr-prerace-line">
-                                @if (_loading)
-                                {
-                                    <text>Loading track… <span class="mr-num">@(_loadPct)%</span></text>
-                                }
-                                else if (IsOnlineGuest)
+                                @if (IsOnlineGuest)
                                 {
                                     <text>Waiting for @_opponentName to start…</text>
                                 }
-                                else
+                                else if (!_loading)
                                 {
                                     <text>Go in <strong class="mr-countdown-num" @key="_pickCountdown">@_pickCountdown</strong></text>
                                 }
+                                else
+                                {
+                                    <text>Building Grand Circuit…</text>
+                                }
                             </p>
-                            <div class="mr-progress @(_loading ? "" : "is-done")" role="progressbar" aria-label="Track download"
-                                 aria-valuemin="0" aria-valuemax="100" aria-valuenow="@_loadPct">
-                                <i style="width:@(_loading ? _loadPct : 100)%"></i>
+                            <div class="mr-lights" aria-hidden="true">
+                                <span class="mr-light @(!_loading && _pickCountdown <= 3 ? "is-lit" : "")"></span>
+                                <span class="mr-light @(!_loading && _pickCountdown <= 2 ? "is-lit" : "")"></span>
+                                <span class="mr-light @(!_loading && _pickCountdown <= 1 ? "is-lit is-go" : "")"></span>
                             </div>
                             <p class="mr-prerace-hint">@SteerHint</p>
                         </div>
@@ -160,6 +161,12 @@
                                 <div class="mr-place-line">
                                     <span class="mr-place-value">P@(_myPlace > 0 ? _myPlace.ToString() : "–")</span>
                                     <span class="mr-place-field">/@_myField</span>
+                                    @if (_rankDelta != 0)
+                                    {
+                                        <span class="mr-delta @(_rankDelta > 0 ? "is-up" : "is-down")">
+                                            @(_rankDelta > 0 ? $"▲ +{_rankDelta}" : $"▼ {_rankDelta}")
+                                        </span>
+                                    }
                                     @if (_respawned)
                                     {
                                         <span class="mr-split is-slower">Back on track</span>
@@ -260,10 +267,11 @@
     // the engine has not shipped yet is skipped quietly (the saved value still applies next start).
     private RenderFragment SettingsContent => @<div class="mr-settings">
         @{ var p = _menu?.Prefs ?? new MarblePrefs(); }
-        @SettingSwitch("Ghost of your best run", "Replays your fastest finish on the authored courses (G)", p.GhostOn, v => SetPrefAsync("ghost", v))
+        @SettingSwitch("Ghost of your best run", "Replays your fastest finish (G)", p.GhostOn, v => SetPrefAsync("ghost", v))
         @SettingSwitch("Sound", "All race audio (M)", !p.Muted, v => SetPrefAsync("sound", v))
-        @SettingSwitch("Announcer", "Calls lead changes, photo finishes and your top-10 moments", p.Announcer, v => SetPrefAsync("announcer", v))
-        <p class="mr-setting-hint">Tab or Stats opens frame rate, physics time and draw calls.</p>
+        @SettingSwitch("Race music", "4-stem adaptive procedural synth score", p.Music, v => SetPrefAsync("music", v))
+        @SettingSwitch("Announcer", "Calls Act transitions, lead changes and photo finishes", p.Announcer, v => SetPrefAsync("announcer", v))
+        <p class="mr-setting-hint">Tab or Stats opens frame rate, Rapier WASM physics time and draw calls.</p>
         <div class="mr-setting">
             <span class="mr-setting-text">
                 <span class="mr-setting-name">Effects</span>
@@ -280,13 +288,13 @@
         </div>
     </div>;
 
-    private RenderFragment SettingSwitch(string name, string hint, bool on, Func<bool, Task> set) => @<label class="mr-setting">
+    private RenderFragment SettingSwitch(string name, string hint, bool on, Func<bool, Task> set) => @<div class="mr-setting">
         <span class="mr-setting-text">
             <span class="mr-setting-name">@name</span>
             <span class="mr-setting-hint">@hint</span>
         </span>
-        <input type="checkbox" role="switch" class="mr-switch" checked="@on" @onchange="e => set(e.Value is true)" />
-    </label>;
+        <RadzenSwitch Value="@on" Change="@(async (bool v) => await set(v))" aria-label="@name" />
+    </div>;
 
     private async Task SetPrefAsync(string key, bool on)
     {
@@ -300,6 +308,10 @@
             case "sound":
                 p.Muted = !on;
                 await TryJsAsync("PoMarbleRace.setMuted", !on);
+                break;
+            case "music":
+                p.Music = on;
+                await TryJsAsync("PoMarbleRace.setMusic", on);
                 break;
             case "announcer":
                 p.Announcer = on;
@@ -436,27 +448,24 @@
     private RenderFragment ResultStandings => @<div>
         @if (_podium.Count > 0 || _lastPlace > 0)
         {
-            <table class="mr-result-table">
-                <caption class="mr-sr-only">Final standings</caption>
-                <tbody>
-                    @foreach (var row in _podium)
-                    {
-                        <tr class="@(row.Place == _lastPlace ? "is-me" : null)">
-                            <td>@row.Place</td>
-                            <td><span class="mr-podium-dot" style="--dot:@row.Color"></span> @row.Name</td>
-                            <td>@(row.Place == 1 ? $"{row.Time:0.00}s" : $"+{row.Gap:0.00}")</td>
-                        </tr>
-                    }
-                    @if (_lastPlace > _podium.Count)
-                    {
-                        <tr class="is-me">
-                            <td>@_lastPlace</td>
-                            <td><span class="mr-podium-dot" style="--dot:@ColorOf(IsOnlineGuest ? _guestIndex : PlayerIndex)"></span> You</td>
-                            <td></td>
-                        </tr>
-                    }
-                </tbody>
-            </table>
+            <div class="mr-podium-cards" role="list" aria-label="Final podium">
+                @foreach (var row in _podium)
+                {
+                    <div class="mr-podium-card mr-podium-card--@row.Place @(row.Place == _lastPlace ? "is-me" : null)" role="listitem">
+                        <div class="mr-podium-card-rank">@MedalIcon(row.Place)</div>
+                        <span class="mr-podium-orb" style="--dot:@row.Color" aria-hidden="true"></span>
+                        <div class="mr-podium-card-name">@row.Name</div>
+                        <div class="mr-podium-card-time">@(row.Place == 1 ? $"{row.Time:0.00}s" : $"+{row.Gap:0.00}s")</div>
+                    </div>
+                }
+            </div>
+            @if (_lastPlace > _podium.Count)
+            {
+                <div class="mr-podium-you">
+                    <span class="mr-podium-dot" style="--dot:@ColorOf(IsOnlineGuest ? _guestIndex : PlayerIndex)"></span>
+                    <strong>@Ordinal(_lastPlace) place</strong> · You
+                </div>
+            }
         }
         @if (!IsOnlineGuest)
         {

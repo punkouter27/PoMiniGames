@@ -256,7 +256,10 @@ export class Game {
         // Impact sound by energy and by what was hit (audio.js playImpact). Soft taps are quiet
         // and short there, and its voice pool caps a pile-up, so the gate can sit low.
         // #9: placed in the stereo field by where the hit happened on screen.
-        if (v > 3) this.audio.playImpact(v, material, this.scene.audioCue(pos));
+        if (v > 3) {
+          this.audio.playImpact(v, material, this.scene.audioCue(pos));
+          this.audio.triggerWorkletImpact?.(v, material);
+        }
         this.scene.burstSparks(pos, color, Math.min(14, 4 + Math.floor(v)), Math.min(1.6, 0.5 + v * 0.12));
         // GFX #5: a genuinely heavy hit lights the track around it for a beat. Gated harder than
         // the clink, or traffic would strobe.
@@ -455,22 +458,27 @@ export class Game {
       // Audio beds, colour grade, camera and sector splits: shared with the online guest's frame.
       this._presentRace(order, dt, this._surface);
 
-      // Adaptive synth score + live 2D minimap + Act transition broadcaster callouts.
+      // Adaptive synth score + live 2D minimap + Act lighting & transition callouts.
       const focus = this._lastFocus || order[0];
+      let braking = false;
       if (focus && this.track.length > 0) {
         const prog = Math.max(0, Math.min(1, focus.s / this.track.length));
         const spd = focus.body ? focus.body.velocity.length() : 0;
+        braking = !!(this.track.brakeAt && this.track.brakeAt(focus.s) > 0);
         this.audio.updateMusic?.(prog, spd, this._wasBoosting, dt);
-        const ACT_THRESH = [0.12, 0.22, 0.52, 0.695, 0.885];
+        const ACT_THRESH = [0.02, 0.22, 0.52, 0.695, 0.86];
+        let curAct = 0;
         for (let a = ACT_THRESH.length - 1; a >= 0; a--) {
-          if (prog >= ACT_THRESH[a] && a > this._actAnnounced) {
-            this._actAnnounced = a;
-            this.audio.announceAct?.(a);
-            break;
-          }
+          if (prog >= ACT_THRESH[a]) { curAct = a; break; }
+        }
+        this.scene.setActLighting?.(curAct, dt);
+        if (curAct > this._actAnnounced) {
+          this._actAnnounced = curAct;
+          this.audio.announceAct?.(curAct);
+          this.minimap.showAct?.(curAct);
         }
       }
-      this.minimap.update(this.marbleSet.marbles, this.chosen, dt);
+      this.minimap.update(this.marbleSet.marbles, this.chosen, dt, order, this._wasBoosting, braking);
 
       this.tickAccum += dt;
       if (this.tickAccum >= TICK_INTERVAL) { this.tickAccum = 0; this._sendTick(); }

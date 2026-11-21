@@ -1187,6 +1187,17 @@ export function generateTrack(world, materials, seed, marbleCount = 8, variant =
   checkerMesh.receiveShadow = true;
   group.add(checkerMesh);
 
+  // Billowing checkered finish-line cloth ribbon spanning the gate (animated in driveMotors).
+  const finGateF = frameAt(ZONES.FINISH[0]);
+  const finSpan = widthAt(ZONES.FINISH[0]) + 4;
+  const clothGeo = new THREE.PlaneGeometry(finSpan, 7.5, 24, 4);
+  const clothBaseZ = Float32Array.from(clothGeo.attributes.position.array);
+  const clothMesh = new THREE.Mesh(clothGeo, checkerMat);
+  clothMesh.position.copy(finGateF.p).addScaledVector(finGateF.up, 13.5);
+  clothMesh.quaternion.copy(finGateF.q);
+  group.add(clothMesh);
+  let clothPhase = 0;
+
   // Start positions: a full starting field of `marbleCount` marbles (now 101) laid out in a
   // wide grid that fills the road across and stacks rows up-track, so nothing overlaps at spawn
   // and the pack immediately funnels into the first hazards together. All marbles are identical,
@@ -1270,6 +1281,17 @@ export function generateTrack(world, materials, seed, marbleCount = 8, variant =
     // Also scrolls boost-pad chevrons down-track so boost zones visibly surge forward.
     driveMotors() {
       boostTex.offset.y = (boostTex.offset.y - 0.028) % 1;
+      // Billow the finish-line cloth banner smoothly in the wind.
+      clothPhase += 0.08;
+      const posAttr = clothGeo.attributes.position;
+      const arr = posAttr.array;
+      for (let i = 0; i < posAttr.count; i++) {
+        const bx = clothBaseZ[i * 3];
+        const by = clothBaseZ[i * 3 + 1];
+        const edge = 1 - Math.min(1, Math.abs(bx) / (finSpan * 0.5));
+        arr[i * 3 + 2] = Math.sin(bx * 0.22 + clothPhase) * 1.45 * edge + Math.cos(by * 0.5 + clothPhase * 1.3) * 0.45 * edge;
+      }
+      posAttr.needsUpdate = true;
       // Two kinds: the pendulum bobs are hinge motors (re-armed, since cannon-es zeroes a motor
       // that stalls); the Gauntlet rotors are kinematic (spin re-asserted).
       for (const m of motors) {

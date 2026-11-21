@@ -537,6 +537,24 @@ export function createScene(container, renderer, stage) {
     raceFx.update(dt, spd);         // #24/#28 bursts and the speed streak follow the shot's marble
   }
 
+  // ── Act-reactive dynamic lighting cross-fade across Grand Circuit's 5 Acts ──
+  const ACT_LIGHTS = [
+    { bg: new THREE.Color(0x16110e), key: new THREE.Color(0xffd2a0), hemi: new THREE.Color(0xffdca8) }, // Act 1: Spiral Works (warm sodium)
+    { bg: new THREE.Color(0x0a0a1e), key: new THREE.Color(0xe0dcff), hemi: new THREE.Color(0xb89cff) }, // Act 2: Neon Canyon (neon violet)
+    { bg: new THREE.Color(0x16243a), key: new THREE.Color(0xffe6b8), hemi: new THREE.Color(0xbce0ff) }, // Act 3: Grand Spiral (golden sky)
+    { bg: new THREE.Color(0x071a26), key: new THREE.Color(0x8be9fd), hemi: new THREE.Color(0x38bdf8) }, // Act 4: Playground Tunnel (cool cyan)
+    { bg: new THREE.Color(0x180a16), key: new THREE.Color(0xffb4c8), hemi: new THREE.Color(0xf472b6) }, // Act 5: Double Gauntlet (electric finale)
+  ];
+  function setActLighting(actIndex, dt) {
+    const target = ACT_LIGHTS[actIndex];
+    if (!target) return;
+    const rate = 1 - Math.exp(-2.2 * Math.min(dt || 0.016, 0.05));
+    scene.background.lerp(target.bg, rate);
+    if (scene.fog) scene.fog.color.lerp(target.bg, rate);
+    key.color.lerp(target.key, rate);
+    hemi.color.lerp(target.hemi, rate);
+  }
+
   return {
     scene,
     camera,
@@ -552,6 +570,7 @@ export function createScene(container, renderer, stage) {
     burstConfetti,
     pulseLight,       // GFX #5
     setTheme,
+    setActLighting,
     audioCue,         // #9
     setGrade,         // #3
     punchFov,

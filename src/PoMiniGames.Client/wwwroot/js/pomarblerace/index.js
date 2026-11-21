@@ -107,6 +107,8 @@ window.PoMarbleRace = {
   },
   // Settings drawer: the spoken race announcer (audio.js say), off by default and remembered.
   setAnnouncer(on) { setPref('announcer', !!on); if (game) game.audio.setAnnouncer(!!on); },
+  // Settings drawer: adaptive procedural synth race music (audio.js updateMusic).
+  setMusic(on) { setPref('music', !!on); if (game) game.audio.setMusic?.(!!on); },
   // Settings drawer: remember a switch the engine reads at start (tutorialSeen, ...).
   setPref(key, value) { setPref(key, value); },
   // Report the input device in use ('keys' | 'touch' | 'pad') to the page's OnInputKind.

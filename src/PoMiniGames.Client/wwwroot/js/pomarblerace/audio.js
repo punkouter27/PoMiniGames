@@ -907,23 +907,58 @@ export function createAudio() {
     src.stop(now + seconds + 0.05);
   }
 
-  // ── Adaptive Procedural Synth Score (routed through bedBus so duck() and mute work automatically) ──
-  // Scales tempo and harmonic tension from Act 1 (chill pulse) to Act 5 (high-energy Gauntlet arp).
+  // ── Real-Time AudioWorklet Modal Glass Synth & Surface-Grain Engine ──
+  // Loads marble-audio-worklet.js on the dedicated Web Audio render thread when supported;
+  // transparently falls back to existing Web Audio nodes in headless/unsupported environments.
+  let workletNode = null;
+  let workletLoading = false;
+  let musicOn = readPref('music') !== false;
+
+  function ensureWorklet() {
+    if (workletNode || workletLoading || !ctx || !ctx.audioWorklet || !sfxBus) return;
+    workletLoading = true;
+    ctx.audioWorklet.addModule('/js/pomarblerace/marble-audio-worklet.js')
+      .then(() => {
+        if (!ctx || !sfxBus) return;
+        workletNode = new AudioWorkletNode(ctx, 'marble-synth-processor');
+        workletNode.connect(sfxBus);
+      })
+      .catch(() => { /* fallback to standard Web Audio bank */ });
+  }
+
+  function triggerWorkletImpact(energy, material) {
+    ensureWorklet();
+    if (!workletNode) return;
+    workletNode.port.postMessage({ type: 'impact', energy: Math.min(1, energy / 25), material });
+  }
+
+  function updateWorkletRoll(speed, slip, surfaceCode) {
+    if (!workletNode) return;
+    workletNode.port.postMessage({ type: 'roll', speed, slip, surface: surfaceCode });
+  }
+
+  // ── 4-Stem Adaptive Procedural Synth Score (routed through bedBus for auto-ducking & mute) ──
+  // Stems: (1) sub-bass pulse, (2) crisp filtered hi-hat pulse, (3) neon arpeggio, (4) Act 5 riser.
   const MUSIC_SCALE = [146.83, 174.61, 196.00, 220.00, 261.63, 293.66, 349.23, 392.00]; // D minor pentatonic/dorian
   let musicStep = 0;
   let musicAccum = 0;
   function updateMusic(progress, speed, boosting, dt) {
-    if (!ctx || !bedBus || muted || dt <= 0) return;
+    if (!ctx || !bedBus || muted || !musicOn || dt <= 0) return;
+    ensureWorklet();
     const p = Math.max(0, Math.min(1, progress || 0));
-    const tempo = 112 + p * 34 + (boosting ? 14 : 0); // 112 BPM -> 160 BPM in the Gauntlet
-    const stepDur = 60 / tempo / 2;                   // 8th-note pulse
+    const surfaceCode = boosting ? 3 : (p >= 0.77 && p <= 0.82) ? 2 : (p >= 0.695 && p <= 0.765) ? 1 : 0;
+    updateWorkletRoll(speed || 0, boosting ? 0.35 : 0, surfaceCode);
+
+    const tempo = 114 + p * 36 + (boosting ? 14 : 0); // 114 BPM -> 164 BPM in Act 5
+    const stepDur = 60 / tempo / 2;                   // 8th-note grid
     musicAccum += dt;
     if (musicAccum < stepDur) return;
     musicAccum -= stepDur;
 
     const now = ctx.currentTime;
     const idx = musicStep++;
-    // Subtle sub-bass pulse on beats 0, 2, 4, 6
+
+    // Stem 1: Sub-bass pulse on even 8ths
     if (idx % 2 === 0) {
       const bass = ctx.createOscillator();
       const bf = ctx.createBiquadFilter();
@@ -932,16 +967,33 @@ export function createAudio() {
       bass.type = 'triangle';
       bass.frequency.setValueAtTime(root, now);
       bf.type = 'lowpass';
-      bf.frequency.setValueAtTime(220 + p * 260 + (boosting ? 180 : 0), now);
-      const peak = 0.045 + p * 0.025;
+      bf.frequency.setValueAtTime(220 + p * 280 + (boosting ? 180 : 0), now);
+      const peak = 0.048 + p * 0.025;
       bg.gain.setValueAtTime(0.0001, now);
-      bg.gain.exponentialRampToValueAtTime(peak, now + 0.015);
-      bg.gain.exponentialRampToValueAtTime(0.0001, now + stepDur * 1.4);
+      bg.gain.exponentialRampToValueAtTime(peak, now + 0.014);
+      bg.gain.exponentialRampToValueAtTime(0.0001, now + stepDur * 1.35);
       bass.connect(bf).connect(bg).connect(bedBus);
       bass.start(now);
-      bass.stop(now + stepDur * 1.5);
+      bass.stop(now + stepDur * 1.45);
     }
-    // High-energy arpeggio kicks in past Act 2 (Plinko) or while boosting.
+
+    // Stem 2: Crisp percussive hi-hat tick on off-beats once pack hits speed
+    if (noiseBuf && (p > 0.12 || boosting) && idx % 2 === 1) {
+      const hat = ctx.createBufferSource();
+      hat.buffer = noiseBuf;
+      const hp = ctx.createBiquadFilter();
+      hp.type = 'highpass';
+      hp.frequency.setValueAtTime(7500, now);
+      const hg = ctx.createGain();
+      hg.gain.setValueAtTime(0.0001, now);
+      hg.gain.exponentialRampToValueAtTime(0.014 + p * 0.016, now + 0.004);
+      hg.gain.exponentialRampToValueAtTime(0.0001, now + 0.045);
+      hat.connect(hp).connect(hg).connect(bedBus);
+      hat.start(now, Math.random() * 0.5);
+      hat.stop(now + 0.05);
+    }
+
+    // Stem 3: Neon arpeggio past Act 2 (Plinko) or while boosting
     if (p > 0.22 || boosting) {
       const osc = ctx.createOscillator();
       const lp = ctx.createBiquadFilter();
@@ -950,7 +1002,7 @@ export function createAudio() {
       osc.type = p > 0.75 ? 'sawtooth' : 'sine';
       osc.frequency.setValueAtTime(note, now);
       lp.type = 'lowpass';
-      lp.frequency.setValueAtTime(600 + p * 1600 + (boosting ? 900 : 0), now);
+      lp.frequency.setValueAtTime(620 + p * 1700 + (boosting ? 950 : 0), now);
       const amp = (0.018 + p * 0.022) * (boosting ? 1.35 : 1);
       g.gain.setValueAtTime(0.0001, now);
       g.gain.exponentialRampToValueAtTime(amp, now + 0.01);
@@ -958,6 +1010,21 @@ export function createAudio() {
       osc.connect(lp).connect(g).connect(bedBus);
       osc.start(now);
       osc.stop(now + stepDur * 0.9);
+    }
+
+    // Stem 4: Final Gauntlet tension shimmer on bar downbeats (p > 0.84)
+    if (p > 0.84 && idx % 8 === 0) {
+      const pad = ctx.createOscillator();
+      const pg = ctx.createGain();
+      pad.type = 'sine';
+      pad.frequency.setValueAtTime(587.33, now);
+      pad.frequency.exponentialRampToValueAtTime(880, now + stepDur * 4);
+      pg.gain.setValueAtTime(0.0001, now);
+      pg.gain.exponentialRampToValueAtTime(0.022, now + 0.04);
+      pg.gain.exponentialRampToValueAtTime(0.0001, now + stepDur * 4.2);
+      pad.connect(pg).connect(bedBus);
+      pad.start(now);
+      pad.stop(now + stepDur * 4.4);
     }
   }
 
@@ -1010,6 +1077,9 @@ export function createAudio() {
     say,
     announceAct,
     updateMusic,
+    triggerWorkletImpact,
+    setMusic(on) { musicOn = !!on; },
+    isMusicOn() { return musicOn; },
     setReverb,
     setAnnouncer(on) { announcerOn = !!on; if (!announcerOn) stopSpeech(); },
     isAnnouncerOn() { return announcerOn; },

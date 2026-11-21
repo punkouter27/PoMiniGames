@@ -24,7 +24,7 @@ const LEGACY = {
   ghost: 'pomarblerace_ghost',
 };
 
-const PREFS = () => ({ announcer: false, muted: false, perfHud: false, effects: 'full', tutorialSeen: false });
+const PREFS = () => ({ announcer: false, muted: false, music: true, perfHud: false, effects: 'full', tutorialSeen: false });
 const fresh = () => ({ v: 2, courseEpoch: COURSE_EPOCH_NOW, best: 0, trackStats: {}, marble: { skin: 'swirl', weight: 'balanced' }, sectors: {}, ghostOn: true, prefs: PREFS(), gp: { best: 0, bestRank: 0 }, dailyDay: '' });
 
 function parse(raw, fallback) {

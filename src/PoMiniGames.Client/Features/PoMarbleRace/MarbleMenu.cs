@@ -35,6 +35,7 @@ public sealed class MarblePrefs
 {
     public bool GhostOn { get; set; } = true;
     public bool Muted { get; set; }
+    public bool Music { get; set; } = true;
     public bool Announcer { get; set; }
     public bool PerfHud { get; set; }
     /// <summary>"full" or "lite".</summary>

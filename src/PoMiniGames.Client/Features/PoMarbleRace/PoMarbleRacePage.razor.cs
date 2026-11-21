@@ -33,6 +33,7 @@ public partial class PoMarbleRacePage
     private int _best;
     private int _streak;
     private int _myPlace = -1;
+    private int _rankDelta;
     private HudRegion? _hud;
     private int _myField = MarbleCount;
     private bool _lastWon;
@@ -837,6 +838,10 @@ public partial class PoMarbleRacePage
     [JSInvokable]
     public async Task OnRaceTick(int myPlace, int myField)
     {
+        if (_myPlace > 0 && myPlace > 0 && myPlace != _myPlace)
+        {
+            _rankDelta = _myPlace - myPlace;
+        }
         _myPlace = myPlace;
         _myField = myField > 0 ? myField : MarbleCount;
         if (_hud is { } hud) hud.Refresh();

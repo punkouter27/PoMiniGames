@@ -843,3 +843,126 @@
         min-width: 44px;
     }
 }
+
+/* F1-style 3-pip countdown light-tree (replaces dead download progress bar on procedural track). */
+.mr-lights {
+    display: flex;
+    justify-content: center;
+    gap: 10px;
+    margin: 10px 0 8px;
+}
+
+.mr-light {
+    width: 14px;
+    height: 14px;
+    border-radius: 50%;
+    background: rgba(148, 163, 184, 0.25);
+    border: 1px solid rgba(148, 163, 184, 0.35);
+    transition: background 180ms ease, box-shadow 180ms ease, transform 180ms ease;
+}
+
+.mr-light.is-lit {
+    background: #ef4444;
+    border-color: #fca5a5;
+    box-shadow: 0 0 12px rgba(239, 68, 68, 0.85);
+    transform: scale(1.15);
+}
+
+.mr-light.is-lit.is-go {
+    background: #4ade80;
+    border-color: #bbf7d0;
+    box-shadow: 0 0 14px rgba(74, 222, 128, 0.9);
+}
+
+/* Live rank-change delta pill beside P/101. */
+.mr-delta {
+    display: inline-flex;
+    align-items: center;
+    padding: 1px 7px;
+    margin-left: 6px;
+    border-radius: 999px;
+    font-size: 0.76rem;
+    font-weight: 700;
+    letter-spacing: 0.02em;
+}
+
+.mr-delta.is-up {
+    color: #4ade80;
+    background: rgba(74, 222, 128, 0.16);
+}
+
+.mr-delta.is-down {
+    color: #f87171;
+    background: rgba(248, 113, 113, 0.16);
+}
+
+/* Responsive Olympic Podium glass cards (replaces dense table). */
+.mr-podium-cards {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(100px, 1fr));
+    gap: 10px;
+    margin: 12px 0;
+}
+
+.mr-podium-card {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 5px;
+    padding: 12px 8px;
+    border-radius: 12px;
+    background: color-mix(in srgb, var(--color-surface, #161b2e) 82%, transparent);
+    border: 1px solid color-mix(in srgb, var(--color-border, #334155) 75%, transparent);
+    transition: transform 180ms ease, border-color 180ms ease;
+}
+
+.mr-podium-card--1 {
+    border-color: rgba(250, 204, 21, 0.65);
+    box-shadow: 0 6px 20px rgba(250, 204, 21, 0.14);
+}
+
+.mr-podium-card--2 {
+    border-color: rgba(226, 232, 240, 0.45);
+}
+
+.mr-podium-card--3 {
+    border-color: rgba(251, 146, 60, 0.5);
+}
+
+.mr-podium-card.is-me {
+    outline: 2px solid #22d3ee;
+    outline-offset: 1px;
+}
+
+.mr-podium-orb {
+    width: 22px;
+    height: 22px;
+    border-radius: 50%;
+    background: radial-gradient(circle at 32% 30%, #ffffff 0%, var(--dot, #ef4444) 45%, #0f172a 100%);
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.35);
+}
+
+.mr-podium-card-name {
+    font-weight: 700;
+    font-size: 0.88rem;
+    text-align: center;
+}
+
+.mr-podium-card-time {
+    font-size: 0.8rem;
+    opacity: 0.8;
+    font-variant-numeric: tabular-nums;
+}
+
+.mr-podium-you {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+    padding: 8px 12px;
+    margin-bottom: 10px;
+    border-radius: 10px;
+    background: rgba(34, 211, 238, 0.12);
+    border: 1px solid rgba(34, 211, 238, 0.4);
+    font-size: 0.9rem;
+}
