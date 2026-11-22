@@ -94,6 +94,13 @@ App Service `app-<repo lowercase>`; per-app resources named `<type>-<repo lowerc
 
 ## 3. Verification
 
+One command sequence verifies the repo (format, build, Unit, Integration, E2E API, then E2E UI on the trimmed Release
+publish, ~40 min; E2E API needs `docker compose up -d azurite` first):
+
+```powershell
+dotnet format PoMiniGames.slnx --verify-no-changes && dotnet build PoMiniGames.slnx -c Release && dotnet test tests/PoMiniGames.Unit -c Release --no-build && dotnet test tests/PoMiniGames.Integration -c Release --no-build && dotnet test tests/PoMiniGames.E2EAPI -c Release --no-build && pwsh scripts/run-e2eui.ps1
+```
+
 Every command here was run on 2026-11-22 (Windows, PowerShell or Git Bash, from the repo root). Known red on that
 date: the CSS gate (hex literals 697 vs baseline 594, already over on 593c148a) and, on the trimmed Release publish,
 `PoMuleUiTests.OnePlayer_PlaysAMonth…` (passes on the in-process host) and `PoEcosystemUiTests.Demo_TheIslandIsAlive`
@@ -109,7 +116,7 @@ date: the CSS gate (hex literals 697 vs baseline 594, already over on 593c148a) 
 | E2E UI (22 methods, 31 cases) | `pwsh scripts/run-e2eui.ps1` (publishes the trimmed Release build to a temp folder and runs the tier against it via `POMINIGAMES_E2EUI_APP_DIR`; `-Filter` narrows it) | Docker + Playwright Chromium (skips with one reason without either); local only, ~40 min, heavy. Plain `dotnet test tests/PoMiniGames.E2EUI` still runs the in-process (untrimmed) host |
 | JS lint | `npm ci --prefix scripts/ci/js-lint && npm run lint --prefix scripts/ci/js-lint` | Node |
 | CSS lint | `pwsh scripts/ci/css-lint.ps1` | PowerShell 7 |
-| Python lint | `uvx ruff check .` (ruff.toml; CI runs `pipx run ruff check .`) | uv |
+| Python lint | `uvx ruff check .` (CI runs it only when `ruff.toml` exists; the owner removed it in `1bb7cc8b`, 2026-11-22) | uv |
 | Bicep | `az bicep build --file infra/main.bicep` and `az bicep build-params --file infra/main.bicepparam` | Azure CLI |
 | Run locally | `docker compose up -d azurite` then `dotnet run --project src/PoMiniGames.Api --launch-profile http` → http://localhost:5080 (status: http://localhost:5080/diag) | Docker for Azurite |
 | Deploy | push to `master` → `.github/workflows/deploy.yml` (format, ruff, build, Unit, Integration, publish, deploy to `vars.AZURE_WEBAPP_NAME` = `app-5ln5hfdrvof5u-f1win2`) | — |
@@ -139,15 +146,22 @@ games and the **Shared game UI** rules.
 - Tests pass on any machine: no drive-letter, temp-folder or working-directory assumptions, and no live config value
   hard-coded as an expected result (read it from the same config the app reads).
 
-### Deviations from the standard (deliberate)
+### Deliberate deviations
 
-| Standard | Here | Why |
-|---|---|---|
-| Header shows the email or Sign in | Nothing there | No OAuth by design; the initials live in the settings sheet |
-| `src/` = Api, Client, Shared | also `PoMiniGames.Domain`, `PoMiniGames.Infrastructure` | Score rules, Elo and the storage service are used by many slices; merging them is a separate refactor |
-| Per-app resources `<type>-pominigames` | plan `asp-pominigames-f1`, storage `st5ln5hfdrvof5u2`, App Service `app-5ln5hfdrvof5u-f1win2` | Renaming means re-creating them (and moving the data); the App Service rename to `app-pominigames` is planned in infra/ but not done |
-| Radzen controls only | `PoButton` (a `RadzenButton` without Radzen's theme classes) for the shell's action buttons in /diag, /settings, the settings sheet, the leaderboards, /profile and the shared error/empty states; Radzen grids, tabs, select bars and charts on Leaderboards, Profile, Mule, Capitol and Brawl HQ | Not yet converted (open item, ~350 native controls in ~70 files): the game pages' own buttons, chips and HUD controls, the start/end cards' tabs and OK buttons, the settings sheet's toggles and range sliders, the intro map `<select>` and the hidden initials `<input>`. Allowed natives kept on purpose: native `<video>` (Brawl HQ's knockout clip player, PoFighter studio's camera capture) and read-only data `<table>`s (Brawl controls, FFA standings x2, tournament recap, Cabinet laps, Ecosystem almanac and key bindings, Marble Race and Racer results); no file inputs or audio players. In-canvas game UI drawn by the JS engines is not Blazor markup and is outside the rule |
-| `docs/` for prose | No `docs/` today | README.md and scripts/*/README.md carry the prose; `scripts/ci-package.ps1` stages `docs/` if one is added |
+| Deviation | Why | Commit sha / date | How to undo |
+|---|---|---|---|
+| Header shows nothing where the email would be | no OAuth by owner rule; the initials live in the settings sheet | — | — |
+| `src/` also has `PoMiniGames.Domain`, `PoMiniGames.Infrastructure` | score rules, Elo and storage are used by many slices | — | a separate merge refactor |
+| Azure names: plan `asp-pominigames-f1`, storage `st5ln5hfdrvof5u2`, App Service `app-5ln5hfdrvof5u-f1win2` (infra/ plans `app-pominigames`, never created) | renaming means recreating and moving data | — | owner-approved recreate |
+| Radzen (Profile A), partly done: shell action buttons are `PoButton` (a `RadzenButton` without Radzen's theme classes, since the theme loads on demand per `radzenTheme.js`); Radzen grids/tabs/select bars/charts on Leaderboards, Profile, Mule, Capitol, Brawl HQ. ~350 native controls in game pages, start/end cards, settings toggles/sliders, intro map `<select>` are an **open item**. Allowed natives kept: `<video>` (Brawl HQ clip player, PoFighter camera) and read-only data `<table>`s. In-canvas game UI drawn by JS is outside the rule | owner note on loading the Radzen theme on demand | `9e374ccf` 2026-11-22 | — |
+| /diag: a service switched off on purpose shows a grey **Off** pill, not counted | opt-in services left off are not faults | `9e374ccf` 2026-11-22 | `DiagLiveProbes.cs` |
+| Phones: the version stamp sits in a footer after the content, above the BottomNav; desktop keeps it fixed | a fixed stamp covered home cards and /diag rows (overrides the older fixed rule) | `9e374ccf` 2026-11-22 | `git revert 9e374ccf` (stamp part) |
+| Ecosystem keeps Tab for its own observation dashboard, not the shared panel | owner design (README "Shared game UI") | — | — |
+| E2E UI runs the plain Release publish (Production WASM env, as deployed); the server runs as `Test` with hermetic overrides | same bytes as deploy | `75078287` 2026-11-22 | — |
+
+**Hosting:** App Service F1 (Free, Windows, `asp-pominigames-f1`): 331 MB of data out per day (the quota Azure enforced
+on 2026-11-22; over it the site stops with `QuotaExceeded` until 00:00 UTC) and 60 CPU-minutes per day. Never run test
+suites against the live site; live checks = at most 6 page loads + /diag + X-Commit.
 
 ### Commands
 
