@@ -1,6 +1,7 @@
 @page "/diag"
 @* System status (Po web standard, AGENTS.md): the only diagnostics page. Everything comes from the anonymous
    GET /api/diag (DiagReportDto), in plain words: an overall banner, then API, Data and Services, one row per check.
+   A service switched off on purpose shows a grey "Off" pill and does not count toward the banner.
    Styled only by the .po-diag* / .po-badge* rules in wwwroot/css/po-tokens.css. *@
 @using System.Globalization
 @using PoMiniGames.Shared.Diagnostics
@@ -11,7 +12,7 @@
 <div class="po-diag" data-testid="diag">
     <div class="po-diag__head">
         <h1>System status</h1>
-        <button type="button" class="po-link-btn outlined small" disabled="@_loading" @onclick="LoadAsync">@(_loading ? "Checking…" : "Check again")</button>
+        <PoButton class="po-link-btn outlined small" Disabled="@_loading" Click="LoadAsync">@(_loading ? "Checking…" : "Check again")</PoButton>
     </div>
 
     @if (_error is not null)
@@ -109,6 +110,7 @@
     {
         "Healthy" => "ok",
         "Degraded" => "warn",
+        "Off" => "off",   // switched off on purpose: neutral, and never counted in the banner
         _ => "bad",
     };
 

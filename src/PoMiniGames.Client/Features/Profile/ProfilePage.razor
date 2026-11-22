@@ -470,10 +470,10 @@ else
                                typed on this device, not someone who can be reached. *@
                             <RadzenDataGridColumn TItem="OpponentRecord" Title="Invite" Width="90px" TextAlign="TextAlign.Right">
                                 <Template Context="o">
-                                    <button type="button" class="app-btn app-btn--secondary app-btn--sm prf-h2h-invite"
-                                            disabled="@(_inviting == o.Name)"
+                                    <PoButton class="app-btn app-btn--secondary app-btn--sm prf-h2h-invite"
+                                            Disabled="@(_inviting == o.Name)"
                                             aria-label="@($"Invite {o.Name} to play again")"
-                                            @onclick="() => InviteAsync(o)">Invite</button>
+                                            Click="() => InviteAsync(o)">Invite</PoButton>
                                 </Template>
                             </RadzenDataGridColumn>
                         }

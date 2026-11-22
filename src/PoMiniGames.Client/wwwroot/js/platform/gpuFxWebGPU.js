@@ -94,7 +94,7 @@ fn vs(@builtin(vertex_index) vi: u32,
 
 @fragment
 fn fs(in: VOut) -> @location(0) vec4f {
-    let a = smoothstep(1.0, 0.15, length(in.uv)) * u.tintA.a;
+    let a = (1.0 - smoothstep(0.15, 1.0, length(in.uv))) * u.tintA.a;   // WGSL rejects a constant low >= high
     let rgb = mix(u.tintA.rgb, u.tintB.rgb, in.mixv);
     return vec4f(rgb * a, a);   // premultiplied, to match the canvas alpha mode
 }`;

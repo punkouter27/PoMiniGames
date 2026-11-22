@@ -975,11 +975,11 @@ body:has(.pm-root) .gps-stats-toggle {
   .gl-page .gl-content:has(.gps-shell-wrap) { padding-bottom: env(safe-area-inset-bottom, 0px); }
 }
 
-/* Phones show the fixed bottom nav (Layout/BottomNav), and .gl-content reserves its height
-   as bottom padding. Subtract the same amount here, or every game sized to --gps-area-h
-   spills under the nav and scrolls the page. Keep in step with MainLayout.razor.css. */
+/* Phones show the fixed bottom nav (Layout/BottomNav) and, after the content, the .po-version stamp
+   whose footer reserves the nav (BuildVersion.razor.css). Subtract both here, or every game sized to
+   --gps-area-h spills under the nav and scrolls the page. Keep in step with MainLayout.razor.css. */
 @media (max-width: 768px) {
-  .gps-shell { --gps-bar-h: calc(4.25rem + env(safe-area-inset-bottom)); }
+  .gps-shell { --gps-bar-h: calc(6.25rem + env(safe-area-inset-bottom)); }
 }
 
 /* Universal game title — every game page binds `<Title>` to a fragment that

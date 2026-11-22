@@ -35,9 +35,15 @@ the rendered Blazor WASM UI.
 ## Running
 
 ```pwsh
-# from repo root
+# from repo root: against the trimmed Release publish (what deploys) - the tier of record
+pwsh scripts/run-e2eui.ps1
+# quick loop against the in-process, untrimmed host
 dotnet test tests/PoMiniGames.E2EUI/PoMiniGames.E2EUI.csproj
 ```
+
+`scripts/run-e2eui.ps1` publishes `src/PoMiniGames.Api` with `-c Release` to a temp folder, sets
+`POMINIGAMES_E2EUI_APP_DIR`, and `KestrelServerFixture` then starts `dotnet PoMiniGames.Api.dll` from it (Test
+environment, the same hermetic overrides, its own Testcontainers Azurite) instead of the in-process host.
 
 > **Not run in CI** by default (needs browser binaries). Per repo UPDATES,
 > the `.github/workflows/deploy.yml` runs only the Unit tier; this tier is run locally

@@ -102,7 +102,7 @@
      read from an -ink token, never from the raw hue. */
   --accent-ink: var(--po-accent-hover);
   --accent-success-ink: var(--po-success);
-  --accent-warning-ink: var(--po-warning);
+  --accent-warning-ink: color-mix(in srgb, var(--po-warning) 75%, var(--po-text));   /* raw warning on its soft tint read 4.07:1 in light */
   --accent-danger-ink: var(--po-danger);
   --accent-amber-ink: #fde68a;
 

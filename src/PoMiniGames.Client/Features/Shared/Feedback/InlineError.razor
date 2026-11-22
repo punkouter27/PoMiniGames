@@ -20,7 +20,7 @@
         <span class="app-error-inline__text">@Message</span>
         @if (OnRetry.HasDelegate)
         {
-            <button type="button" class="app-btn app-btn--secondary app-btn--sm" @onclick="OnRetry">@RetryLabel</button>
+            <PoButton class="app-btn app-btn--secondary app-btn--sm" Click="OnRetry">@RetryLabel</PoButton>
         }
     </p>
 }

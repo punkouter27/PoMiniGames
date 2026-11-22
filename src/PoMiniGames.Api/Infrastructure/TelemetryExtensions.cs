@@ -19,6 +19,12 @@ internal static class TelemetryExtensions
     /// reflection guard ("don't execute this in Blazor WASM") becomes a structural one.</summary>
     public const string CloudRoleName = "PoMiniGames";
 
+    /// <summary>The App Insights connection string telemetry starts with (empty: telemetry is off). /api/diag reads the same value.</summary>
+    public static string? AppInsightsConnectionString(IConfiguration configuration) =>
+        configuration["PoMiniGames:ApplicationInsights:ConnectionString"]
+            ?? PoPlatform.ResolveAppInsightsConnectionString(configuration)
+            ?? configuration["APPINSIGHTS_CONNECTIONSTRING"];
+
     /// <summary>Adds Azure Monitor / OpenTelemetry when an App Insights connection string is present.</summary>
     public static WebApplicationBuilder AddPoMiniGamesTelemetry(this WebApplicationBuilder builder)
     {
@@ -27,9 +33,7 @@ internal static class TelemetryExtensions
         // (Console, Debug, EventSource, EventLog) BEFORE UseAzureMonitor registers that provider.
         builder.Logging.ClearProviders();
 
-        var appInsightsConnString = builder.Configuration["PoMiniGames:ApplicationInsights:ConnectionString"]
-            ?? PoPlatform.ResolveAppInsightsConnectionString(builder.Configuration)
-            ?? builder.Configuration["APPINSIGHTS_CONNECTIONSTRING"];
+        var appInsightsConnString = AppInsightsConnectionString(builder.Configuration);
 
         if (!string.IsNullOrEmpty(appInsightsConnString))
         {

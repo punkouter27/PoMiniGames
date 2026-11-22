@@ -46,7 +46,7 @@
                     <span class="prefs-name">Initials</span>
                     <span class="prefs-hint">Shown on the leaderboards: <strong class="gl-arcade-initials">[@PlayerNames.Initials]</strong></span>
                 </div>
-                <button type="button" class="app-btn" data-spring @onclick="ChangeInitialsAsync">Change initials</button>
+                <PoButton class="app-btn" data-spring Click="ChangeInitialsAsync">Change initials</PoButton>
             </div>
             <div class="prefs-row prefs-preview-row">
                 <div class="prefs-label">
@@ -54,9 +54,9 @@
                     <span class="prefs-hint">Your stats, the boards and how the app is running.</span>
                 </div>
                 <div class="prefs-preview-actions">
-                    <button type="button" class="app-btn" data-spring @onclick='() => GoToAsync("/profile")'>My stats</button>
-                    <button type="button" class="app-btn" data-spring @onclick='() => GoToAsync("/leaderboards")'>Leaderboards</button>
-                    <button type="button" class="app-btn" data-spring @onclick='() => GoToAsync("/diag")'>System status</button>
+                    <PoButton class="app-btn" data-spring Click='() => GoToAsync("/profile")'>My stats</PoButton>
+                    <PoButton class="app-btn" data-spring Click='() => GoToAsync("/leaderboards")'>Leaderboards</PoButton>
+                    <PoButton class="app-btn" data-spring Click='() => GoToAsync("/diag")'>System status</PoButton>
                 </div>
             </div>
         </fieldset>
@@ -100,8 +100,8 @@
                 @if (_previewActive)
                 {
                     <div class="prefs-preview-actions">
-                        <button type="button" class="app-btn app-btn--primary" data-spring @onclick="CommitGraphicsPreview">Keep</button>
-                        <button type="button" class="app-btn" data-spring @onclick="CancelGraphicsPreview">Cancel</button>
+                        <PoButton class="app-btn app-btn--primary" data-spring Click="CommitGraphicsPreview">Keep</PoButton>
+                        <PoButton class="app-btn" data-spring Click="CancelGraphicsPreview">Cancel</PoButton>
                     </div>
                 }
                 else
@@ -120,14 +120,14 @@
                                 </button>
                             }
                         </div>
-                        <button type="button" class="app-btn" data-spring @onclick="() => StartGraphicsPreview(PreviewTier)">
+                        <PoButton class="app-btn" data-spring Click="() => StartGraphicsPreview(PreviewTier)">
                             Preview
-                        </button>
+                        </PoButton>
                         @if (_previewStatus.HasResult && _previewStatus.Recommend is { } rec && rec != Settings.Graphics)
                         {
-                            <button type="button" class="app-btn app-btn--primary" data-spring @onclick="() => SetGraphics(rec)">
+                            <PoButton class="app-btn app-btn--primary" data-spring Click="() => SetGraphics(rec)">
                                 Use @GraphicsLabel(rec)
-                            </button>
+                            </PoButton>
                         }
                     </div>
                 }

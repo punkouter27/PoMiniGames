@@ -91,6 +91,15 @@ public sealed class HealthEndpointTests : IClassFixture<TestWebApplicationFactor
         checks.Should().Contain(c => c!["name"]!.GetValue<string>() == "blob-containers");
         checks.Should().Contain(c => c!["name"]!.GetValue<string>() == "multiplayer"
             && c!["detail"]!.GetValue<string>().Contains("/connectfive/hub", StringComparison.Ordinal));
+        // The test host switches Key Vault, App Insights, Wikipedia and the quiz packs off on purpose: each is a
+        // neutral "Off" row with no problem text, never Degraded (Po standard).
+        foreach (var off in new[] { "key-vault", "app-insights", "wikipedia", "datamuse", "restcountries", "gutendex" })
+        {
+            var row = checks.Single(c => c!["name"]!.GetValue<string>() == off)!;
+            row["status"]!.GetValue<string>().Should().Be("Off", because: $"{off} is switched off in the test host");
+            row["problem"].Should().BeNull();
+        }
+        checks.Should().Contain(c => c!["name"]!.GetValue<string>() == "push", "the push-invite keys are checked in storage");
 
         foreach (var leak in new[] { "AccountKey", "devstoreaccount1", "DefaultEndpointsProtocol", "127.0.0.1",
                      "localhost", "vault.azure.net", "core.windows.net", "InstrumentationKey", "StackTrace", "Exception:" })

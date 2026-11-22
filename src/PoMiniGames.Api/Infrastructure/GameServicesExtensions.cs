@@ -70,6 +70,14 @@ internal static class GameServicesExtensions
         services.AddHttpClient<PoMiniGames.Features.Invites.WebPushSender>(client => client.Timeout = TimeSpan.FromSeconds(10))
             .ConfigurePrimaryHttpMessageHandler(() => new HttpClientHandler { AllowAutoRedirect = false });
 
+        // /api/diag's live rows (Features/Health/DiagLiveProbes): one singleton so its 60 s cache is shared.
+        services.AddSingleton<PoMiniGames.Features.Health.DiagLiveProbes>();
+        services.AddHttpClient(PoMiniGames.Features.Health.DiagLiveProbes.HttpClientName, client =>
+        {
+            client.Timeout = TimeSpan.FromSeconds(8);
+            client.DefaultRequestHeaders.TryAddWithoutValidation("User-Agent", PoMiniGames.Features.PoBrawl.PoBrawlDossierService.UserAgent);
+        });
+
         // Fail-fast startup validator: throws in Production when fake auth is on.
         services.AddHostedService<StartupSecretValidator>();
 

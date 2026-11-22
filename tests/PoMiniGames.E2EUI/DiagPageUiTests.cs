@@ -43,13 +43,22 @@ public class DiagPageUiTests
                 (await page.Locator(".po-header .gl-account-trigger").CountAsync()).Should().Be(0);
                 (await page.Locator(".po-version").InnerTextAsync()).Should().MatchRegex(@"^v\d{6}$");
 
-                // The build stamp: visible, inside the viewport, in the bottom-right quarter.
+                // The build stamp, on the right. Desktop: fixed in the bottom-right corner of the viewport. Phone (Po
+                // standard): after the page content, so it never covers a row while the page scrolls.
                 var stamp = await page.Locator("[data-testid='build-version']").BoundingBoxAsync();
                 stamp.Should().NotBeNull();
                 (stamp!.X + stamp.Width).Should().BeLessThanOrEqualTo(viewport.Width);
-                (stamp.Y + stamp.Height).Should().BeLessThanOrEqualTo(viewport.Height);
                 stamp.X.Should().BeGreaterThan(viewport.Width / 2f);
-                stamp.Y.Should().BeGreaterThan(viewport.Height / 2f);
+                if (viewport.Width > 768)
+                {
+                    (stamp.Y + stamp.Height).Should().BeLessThanOrEqualTo(viewport.Height);
+                    stamp.Y.Should().BeGreaterThan(viewport.Height / 2f);
+                }
+                else
+                {
+                    var main = await page.Locator("main").BoundingBoxAsync();
+                    stamp.Y.Should().BeGreaterThanOrEqualTo(main!.Y + main.Height - 1, "on a phone the stamp follows the content");
+                }
 
                 (await page.EvaluateAsync<bool>("() => document.documentElement.scrollWidth <= innerWidth"))
                     .Should().BeTrue("the status page must not scroll sideways at {0}px", viewport.Width);

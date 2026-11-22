@@ -253,6 +253,10 @@ button {
   line-height: 1.2;
 }
 
+/* PoButton (Features/Shared/Shell/PoButton.cs) is a RadzenButton that keeps only the app's classes; Radzen wraps its
+   content in .rz-button-box, which must not change how the label, icon and kbd lay out inside .app-btn. */
+.po-rz-plain > .rz-button-box { display: contents; }
+
 /* Page headings are programmatically focused on route change (FocusOnNavigate,
    App.razor) so screen readers announce the new page. Sighted users must not see
    that focus.

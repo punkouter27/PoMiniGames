@@ -47,7 +47,8 @@ function particleNodes(uniforms) {
         d.greaterThan(1).or(vAge.greaterThanEqual(1)).discard();
         // Soft disc; a hard core for sparks (uSoft near 0), a puff for dust (near 1).
         const shape = pow(d.oneMinus(), mix(0.7, 2.2, uSoft));
-        const fade = smoothstep(1.0, 0.55, vAge).mul(smoothstep(0.0, 0.03, vAge));
+        const fade = smoothstep(0.55, 1.0, vAge).oneMinus().mul(   // WGSL rejects a constant low >= high
+            smoothstep(0.0, 0.03, vAge));
         return vec4(vColor.rgb.mul(mix(1.0, vAge.mul(-0.6).add(1), uSoft.oneMinus())), shape.mul(fade).mul(vColor.a));
     })();
     return { vertexNode, fragmentNode };

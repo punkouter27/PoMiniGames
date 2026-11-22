@@ -1,3 +1,6 @@
+using System.Diagnostics;
+using System.Net;
+using System.Net.Sockets;
 using Azure.Data.Tables;
 using Azure.Storage.Blobs;
 using Microsoft.AspNetCore.Hosting;
@@ -78,23 +81,116 @@ internal static class E2EUiAzurite
 /// </remarks>
 public class KestrelServerFixture : WebApplicationFactory<Program>, IAsyncLifetime
 {
+    /// <summary>
+    /// Set to a <c>dotnet publish -c Release</c> output folder (scripts/run-e2eui.ps1 does) and the tier drives that
+    /// trimmed Release build, the same bits the workflow deploys, in its own process instead of the in-process host.
+    /// </summary>
+    public const string AppDirVariable = "POMINIGAMES_E2EUI_APP_DIR";
+
     private string _azuriteConnectionString = string.Empty;
     private IHost? _kestrelHost;
+    private Process? _published;
+    private string? _publishedAddress;
 
-    public async Task InitializeAsync() =>
+    public async Task InitializeAsync()
+    {
         _azuriteConnectionString = await E2EUiAzurite.GetConnectionStringAsync();
+        var appDir = Environment.GetEnvironmentVariable(AppDirVariable);
+        if (!string.IsNullOrWhiteSpace(appDir) && UiEnvironment.SkipReason is null)
+            _publishedAddress = await StartPublishedAsync(appDir);
+    }
 
-    Task IAsyncLifetime.DisposeAsync() => Task.CompletedTask;
+    Task IAsyncLifetime.DisposeAsync()
+    {
+        if (_published is { HasExited: false })
+        {
+            _published.Kill(entireProcessTree: true);
+            _published.WaitForExit(10_000);
+        }
+        _published?.Dispose();
+        return Task.CompletedTask;
+    }
 
     /// <summary>The base URL Playwright should navigate to (e.g. http://127.0.0.1:51234).</summary>
     public string ServerAddress
     {
         get
         {
+            if (_publishedAddress is not null)
+                return _publishedAddress;
             EnsureServer();
             return ClientOptions.BaseAddress.ToString();
         }
     }
+
+    /// <summary>
+    /// Runs the published app (<c>dotnet PoMiniGames.Api.dll</c>) in the Test environment with the same hermetic
+    /// overrides as <see cref="ConfigureWebHost"/>, on a free port, and waits for <c>/health/live</c>.
+    /// </summary>
+    private async Task<string> StartPublishedAsync(string appDir)
+    {
+        var dll = Path.Combine(Path.GetFullPath(appDir), "PoMiniGames.Api.dll");
+        if (!File.Exists(dll))
+            throw new InvalidOperationException($"{AppDirVariable} points at '{appDir}', which has no PoMiniGames.Api.dll.");
+
+        int port;
+        using (var probe = new TcpListener(IPAddress.Loopback, 0))
+        {
+            probe.Start();
+            port = ((IPEndPoint)probe.LocalEndpoint).Port;
+            probe.Stop();
+        }
+        var address = $"http://127.0.0.1:{port}/";
+        var start = new ProcessStartInfo("dotnet", $"\"{dll}\"")
+        {
+            WorkingDirectory = Path.GetDirectoryName(dll)!,
+            UseShellExecute = false,
+            RedirectStandardOutput = true,
+            RedirectStandardError = true,
+            CreateNoWindow = true,
+        };
+        start.Environment["ASPNETCORE_ENVIRONMENT"] = "Test";
+        start.Environment["ASPNETCORE_URLS"] = address.TrimEnd('/');
+        foreach (var (key, value) in HermeticOverrides())
+            start.Environment[key.Replace(":", "__", StringComparison.Ordinal)] = value ?? string.Empty;
+
+        _published = Process.Start(start) ?? throw new InvalidOperationException("Could not start the published app.");
+        _published.OutputDataReceived += (_, _) => { };
+        _published.ErrorDataReceived += (_, _) => { };
+        _published.BeginOutputReadLine();
+        _published.BeginErrorReadLine();
+
+        using var http = new HttpClient { Timeout = TimeSpan.FromSeconds(5) };
+        var deadline = DateTime.UtcNow.AddSeconds(90);
+        while (DateTime.UtcNow < deadline)
+        {
+            if (_published.HasExited)
+                throw new InvalidOperationException($"The published app exited with code {_published.ExitCode} before it answered.");
+            try
+            {
+                using var live = await http.GetAsync(new Uri(new Uri(address), "health/live"));
+                if (live.IsSuccessStatusCode)
+                    return address;
+            }
+            catch (HttpRequestException) { }
+            catch (TaskCanceledException) { }
+            await Task.Delay(500);
+        }
+        throw new TimeoutException($"The published app did not answer /health/live on {address} within 90 s.");
+    }
+
+    /// <summary>Keep test hosts hermetic: no live Wikipedia or external quiz packs, a dry Racer track, no Key Vault, storage on Azurite.</summary>
+    private Dictionary<string, string?> HermeticOverrides() => new()
+    {
+        ["PoMiniGames:PoBrawl:Dossier:FetchWikipedia"] = "false",
+        ["PoCoupleQuiz:FetchExternalPacks"] = "false",
+        ["PoMiniGames:PoRacer:Weather"] = "clear",
+        ["KeyVault:Uri"] = "",
+        // Mirror Azurite to BOTH TableService and BlobService sections.
+        ["PoMiniGames:Storage:TableService:ConnectionString"] = _azuriteConnectionString,
+        ["PoMiniGames:Storage:BlobService:ConnectionString"] = _azuriteConnectionString,
+        ["PoMiniGames:Storage:TableService:TableName"] = "pominigames-e2eui",
+    };
 
     private void EnsureServer()
     {
@@ -109,30 +205,7 @@ public class KestrelServerFixture : WebApplicationFactory<Program>, IAsyncLifeti
         // id and initials with every request.
         builder.UseEnvironment("Test");
 
-        builder.ConfigureAppConfiguration((_, cfg) =>
-        {
-            var overrides = new Dictionary<string, string?>
-            {
-                // Keep test hosts hermetic: no live Wikipedia or external quiz packs, a dry Racer track, no Key Vault.
-                ["PoMiniGames:PoBrawl:Dossier:FetchWikipedia"] = "false",
-                ["PoMiniGames:PoCoupleQuiz:FetchExternalPacks"] = "false",
-                ["PoMiniGames:PoRacer:Weather"] = "clear",
-                ["KeyVault:Uri"] = "",
-            };
-
-            // Mirror Azurite to BOTH TableService and BlobService sections.
-            foreach (var (k, v) in new Dictionary<string, string?>
-            {
-                ["PoMiniGames:Storage:TableService:ConnectionString"] = _azuriteConnectionString,
-                ["PoMiniGames:Storage:BlobService:ConnectionString"] = _azuriteConnectionString,
-                ["PoMiniGames:Storage:TableService:TableName"] = "pominigames-e2eui",
-            })
-            {
-                overrides[k] = v;
-            }
-
-            cfg.AddInMemoryCollection(overrides);
-        });
+        builder.ConfigureAppConfiguration((_, cfg) => cfg.AddInMemoryCollection(HermeticOverrides()));
 
         builder.ConfigureTestServices(services =>
         {
