@@ -16,3 +16,16 @@
 @media print {
     .po-version { display: none; }
 }
+
+/* Phones (Po standard): the stamp leaves the fixed corner and sits after the page content, right-aligned,
+   with the fixed BottomNav's height reserved under it, so it never covers anything while the page scrolls. */
+@media (max-width: 768px) {
+    .app-build-footer {
+        display: flex;
+        justify-content: flex-end;
+        padding: var(--po-space-2) var(--po-space-3) calc(3.25rem + var(--po-space-2) + env(safe-area-inset-bottom, 0px));
+    }
+    .po-version {
+        position: static;
+    }
+}

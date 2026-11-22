@@ -4,17 +4,24 @@
 // loader (js/pomule/index.js ensureRadzen), so the two never add it twice, and the service
 // worker's Radzen allowlist (service-worker.published.js) already covers both files.
 const CSS_ID = 'pomule-radzen-css';
+// The theme follows the device like the rest of the app: Radzen's light base theme under a light
+// scheme, its dark one under a dark scheme (a dark grid on a light page failed contrast).
+const THEMES = [
+  { id: CSS_ID, file: 'material-dark-base.css', media: '(prefers-color-scheme: dark)' },
+  { id: CSS_ID + '-light', file: 'material-base.css', media: 'not all and (prefers-color-scheme: dark)' },
+];
 
 export function ensure() {
   const base = document.baseURI;
-  const css = document.getElementById(CSS_ID) ? Promise.resolve() : new Promise((done) => {
+  const css = Promise.all(THEMES.map(t => document.getElementById(t.id) ? Promise.resolve() : new Promise((done) => {
     const link = document.createElement('link');
-    link.id = CSS_ID;
+    link.id = t.id;
     link.rel = 'stylesheet';
-    link.href = new URL('_content/Radzen.Blazor/css/material-dark-base.css?v=12.2.0', base).href;
+    link.media = t.media;
+    link.href = new URL(`_content/Radzen.Blazor/css/${t.file}?v=12.2.0`, base).href;
     link.onload = link.onerror = () => done();
     document.head.appendChild(link);
-  });
+  })));
   const js = window.Radzen ? Promise.resolve() : new Promise((done) => {
     const script = document.createElement('script');
     script.src = new URL('_content/Radzen.Blazor/Radzen.Blazor.js?v=12.2.0', base).href;
@@ -25,5 +32,5 @@ export function ensure() {
 }
 
 export function remove() {
-  document.getElementById(CSS_ID)?.remove();
+  for (const t of THEMES) document.getElementById(t.id)?.remove();
 }

@@ -203,9 +203,10 @@
     }
 }
 
-/* Phones: clear the fixed BottomNav (3.25rem) and the .po-version stamp lifted above it. */
+/* Phones: the .po-version stamp follows the content (BuildVersion.razor.css), and its footer reserves the
+   fixed BottomNav, so the well only keeps a small gap above the stamp. */
 @media (max-width: 768px) {
     .gl-content {
-        padding-bottom: calc(5.5rem + env(safe-area-inset-bottom));
+        padding-bottom: var(--po-space-2);
     }
 }

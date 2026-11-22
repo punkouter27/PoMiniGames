@@ -17,16 +17,16 @@
     </p>
 
     <div class="acct-data-actions">
-        <button type="button" class="app-btn app-btn--secondary app-btn--sm" disabled="@_dataBusy" @onclick="ExportDataAsync">
+        <PoButton class="app-btn app-btn--secondary app-btn--sm" Disabled="@_dataBusy" Click="ExportDataAsync">
             @(_dataBusy && _busyAction == "export" ? "Preparing…" : "Download my data")
-        </button>
+        </PoButton>
 
         @if (!_eraseArmed)
         {
-            <button type="button" class="app-btn app-btn--secondary app-btn--sm acct-data-danger"
-                    disabled="@_dataBusy" @onclick="() => _eraseArmed = true">
+            <PoButton class="app-btn app-btn--secondary app-btn--sm acct-data-danger"
+                    Disabled="@_dataBusy" Click="() => _eraseArmed = true">
                 Erase my data
-            </button>
+            </PoButton>
         }
     </div>
 
@@ -41,14 +41,14 @@
                 <input class="acct-data-input" type="text" autocomplete="off" spellcheck="false"
                        aria-label="Type ERASE to confirm" placeholder="ERASE"
                        @bind="_eraseConfirm" @bind:event="oninput" />
-                <button type="button" class="app-btn app-btn--secondary app-btn--sm acct-data-danger"
-                        disabled="@(_dataBusy || !EraseConfirmed)" @onclick="EraseDataAsync">
+                <PoButton class="app-btn app-btn--secondary app-btn--sm acct-data-danger"
+                        Disabled="@(_dataBusy || !EraseConfirmed)" Click="EraseDataAsync">
                     @(_dataBusy && _busyAction == "erase" ? "Erasing…" : "Erase everything")
-                </button>
-                <button type="button" class="app-btn app-btn--ghost app-btn--sm"
-                        disabled="@_dataBusy" @onclick="CancelErase">
+                </PoButton>
+                <PoButton class="app-btn app-btn--ghost app-btn--sm"
+                        Disabled="@_dataBusy" Click="CancelErase">
                     Cancel
-                </button>
+                </PoButton>
             </div>
         </div>
     }

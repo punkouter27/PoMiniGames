@@ -23,8 +23,8 @@ namespace PoMiniGames.Features.Health;
 /// </summary>
 /// <remarks>
 /// Always on and anonymous, and safe to be: one row per dependency (the API itself and its multiplayer hubs, the
-/// storage health checks, the tables and blob containers, Key Vault and Application Insights when configured), each
-/// with plain words, a status and a latency. Never a connection string, key, URI, path, id or exception message (an
+/// storage health checks, the tables and blob containers, and the live service probes in DiagLiveProbes), each
+/// with plain words, a status and a latency; a service switched off on purpose reads "Off". Never a connection string, key, URI, path, id or exception message (an
 /// exception TYPE name at most). DiagProjectionTests and HealthEndpointTests pin that.
 /// </remarks>
 public static class DiagEndpoints
@@ -50,11 +50,21 @@ public static class DiagEndpoints
         var isDevelopment = app.ServiceProvider.GetRequiredService<IWebHostEnvironment>().IsDevelopment();
 
         async Task<IResult> diagHandler(
-            HealthCheckService health, IConfiguration configuration, IWebHostEnvironment environment,
+            HttpContext http, HealthCheckService health, IWebHostEnvironment environment, DiagLiveProbes live,
             TableServiceClient tables, BlobServiceClient blobs, EndpointDataSource endpoints, CancellationToken ct)
         {
-            var probe = await ProbeStorageAsync(tables, blobs, ct);
-            var report = await BuildReportAsync(health, configuration, environment, ct, probe, ListHubs(endpoints));
+            var started = Stopwatch.GetTimestamp();
+            var self = Uri.TryCreate($"{http.Request.Scheme}://{http.Request.Host}{http.Request.PathBase}/", UriKind.Absolute, out var u) ? u : null;
+            var storageTask = ProbeStorageAsync(tables, blobs, ct);
+            var hubsTask = live.HubsAsync(self, ListHubs(endpoints), ct);
+            var vaultTask = live.KeyVaultAsync(ct);
+            var insightsTask = live.AppInsightsAsync(ct);
+            var wikiTask = live.WikipediaAsync(ct);
+            var packsTask = live.CoupleQuizPacksAsync(ct);
+            var pushTask = live.PushKeysAsync(ct);
+            var probe = await storageTask;
+            DiagCheckDto[] rows = [await hubsTask, await vaultTask, await insightsTask, await pushTask, await wikiTask, .. await packsTask];
+            var report = await BuildReportAsync(health, environment, ct, probe, rows, Stopwatch.GetElapsedTime(started).TotalMilliseconds);
             return Results.Json(report, DiagJsonContext.Default.DiagReportDto);
         }
 
@@ -211,23 +221,25 @@ public static class DiagEndpoints
             .Select(h => new HubInfo(h.Meta!.HubType.Name, h.Route!)),
     ];
 
-    /// <summary>Assembles the /api/diag report: the API, the health checks, the storage listings and the configured services.</summary>
+    /// <summary>
+    /// Assembles the /api/diag report: the API row (this request, measured), the live API-group rows (the hubs),
+    /// the health checks, the storage listings, then the live service rows. Rows switched off on purpose
+    /// (<see cref="DiagLiveProbes.Off"/>) never lower the overall status.
+    /// </summary>
     internal static async Task<DiagReportDto> BuildReportAsync(
-        HealthCheckService health, IConfiguration configuration, IWebHostEnvironment environment, CancellationToken ct,
-        StorageProbe? storage = null, IReadOnlyList<HubInfo>? hubs = null)
+        HealthCheckService health, IWebHostEnvironment environment, CancellationToken ct,
+        StorageProbe? storage = null, IReadOnlyList<DiagCheckDto>? live = null, double apiMs = 0)
     {
         var started = Stopwatch.GetTimestamp();
         var report = await health.CheckHealthAsync(ct);
-        hubs ??= [];
+        live ??= [];
 
         var checks = new List<DiagCheckDto>
         {
-            new("api", "api", "PoMiniGames API", "Healthy", "Serves every page, the games' data and the score boards.", "Answering.", 0, null),
-            new("multiplayer", "api", "Multiplayer hubs", hubs.Count > 0 ? "Healthy" : "Degraded",
-                "SignalR lobbies and live matches; they run inside this server.",
-                hubs.Count > 0 ? $"{hubs.Count} hubs mapped: {string.Join(", ", hubs.Select(h => h.Route))}." : "No hub is mapped.",
-                0, hubs.Count > 0 ? null : "No multiplayer hub is mapped on this server."),
+            new("api", "api", "PoMiniGames API", "Healthy", "Serves every page, the games' data and the score boards.",
+                "Answered this request.", Math.Round(apiMs + Stopwatch.GetElapsedTime(started).TotalMilliseconds, 1), null),
         };
+        checks.AddRange(live.Where(c => c.Group == "api"));
 
         foreach (var (name, entry) in report.Entries)
         {
@@ -247,23 +259,11 @@ public static class DiagEndpoints
             checks.Add(Listing("blob-containers", "Blob containers", "Saved worlds and files (a container is created on first use).", ContainerNames, storage.Containers, storage.ContainersMs, missingIsNormal: true));
         }
 
-        // Presence only: the vault's and the telemetry endpoint's addresses are never echoed. A service this
-        // environment does not use is not a dependency here, so it gets no row.
-        if (!string.IsNullOrWhiteSpace(configuration["KeyVault:Uri"]))
-        {
-            checks.Add(new DiagCheckDto("key-vault", "service", "Azure Key Vault", "Healthy",
-                "Holds the production secrets; read once at startup.", "Configured; secrets were loaded at startup.", 0, null));
-        }
+        checks.AddRange(live.Where(c => c.Group != "api"));
 
-        if (!string.IsNullOrWhiteSpace(configuration["ApplicationInsights:ConnectionString"])
-            || !string.IsNullOrWhiteSpace(configuration["APPLICATIONINSIGHTS_CONNECTION_STRING"]))
-        {
-            checks.Add(new DiagCheckDto("app-insights", "service", "Application Insights", "Healthy",
-                "Receives request telemetry and errors for troubleshooting.", "Configured; telemetry is sent in the background.", 0, null));
-        }
-
-        var overall = checks.Any(c => c.Status == "Unhealthy") ? "Unhealthy"
-            : checks.Any(c => c.Status == "Degraded") ? "Degraded"
+        var counted = checks.Where(c => c.Status != DiagLiveProbes.Off).ToList();
+        var overall = counted.Any(c => c.Status == "Unhealthy") ? "Unhealthy"
+            : counted.Any(c => c.Status == "Degraded") ? "Degraded"
             : "Healthy";
 
         return new DiagReportDto(
@@ -271,7 +271,7 @@ public static class DiagEndpoints
             environment.EnvironmentName,
             BuildVersion,
             DateTimeOffset.UtcNow,
-            Math.Round(Stopwatch.GetElapsedTime(started).TotalMilliseconds, 1),
+            Math.Round(apiMs + Stopwatch.GetElapsedTime(started).TotalMilliseconds, 1),
             [.. checks]);
     }
 

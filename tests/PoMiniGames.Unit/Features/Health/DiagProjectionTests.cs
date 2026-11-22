@@ -5,6 +5,7 @@ using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Diagnostics.HealthChecks;
 using PoMiniGames.Features.Health;
 using PoMiniGames.Serialization;
+using PoMiniGames.Shared.Diagnostics;
 
 namespace PoMiniGames.Unit.Features.Health;
 
@@ -20,8 +21,6 @@ namespace PoMiniGames.Unit.Features.Health;
 public sealed class DiagProjectionTests
 {
     private const string Secret = "DefaultEndpointsProtocol=https;AccountName=pominiprod;AccountKey=c2VjcmV0c2VjcmV0c2VjcmV0c2VjcmV0c2VjcmV0;EndpointSuffix=core.windows.net";
-    private const string VaultUri = "https://kv-pominigames-prod.vault.azure.net/";
-    private const string AiConnection = "InstrumentationKey=00000000-1111-2222-3333-444444444444;IngestionEndpoint=https://eastus-0.in.applicationinsights.azure.com/";
 
     // The report's shape: overall status, the API row first, a failing check reduced to its exception TYPE, the
     // storage listings, and the configured services reported by presence.
@@ -30,6 +29,7 @@ public sealed class DiagProjectionTests
     [InlineData("environment", "Production")]
     [InlineData("checks[0].name", "api")]
     [InlineData("checks[0].group", "api")]
+    [InlineData("checks[1].name", "multiplayer")]
     [InlineData("checks[2].name", "Storage")]
     [InlineData("checks[2].group", "data")]
     [InlineData("checks[2].status", "Degraded")]
@@ -77,28 +77,62 @@ public sealed class DiagProjectionTests
         foreach (var check in doc.RootElement.GetProperty("checks").EnumerateArray())
         {
             check.GetProperty("group").GetString().Should().BeOneOf("api", "data", "service");
-            check.GetProperty("status").GetString().Should().BeOneOf("Healthy", "Degraded", "Unhealthy");
+            check.GetProperty("status").GetString().Should().BeOneOf("Healthy", "Degraded", "Unhealthy", "Off");
             check.GetProperty("label").GetString().Should().NotBeNullOrWhiteSpace();
             check.GetProperty("purpose").GetString().Should().NotBeNullOrWhiteSpace();
         }
     }
 
+    /// <summary>Services switched off on purpose read "Off": neutral, no problem text, and they never lower the overall status.</summary>
+    [Fact]
+    public async Task OffRows_AreNeutralAndNeverLowerTheOverallStatus()
+    {
+        var probe = new DiagEndpoints.StorageProbe(
+            new HashSet<string>(DiagEndpoints.TableNames, StringComparer.OrdinalIgnoreCase),
+            new HashSet<string>(DiagEndpoints.ContainerNames, StringComparer.OrdinalIgnoreCase));
+        DiagCheckDto[] live =
+        [
+            new("multiplayer", "api", "Multiplayer hubs", "Healthy", "p", "answered a negotiate", 3, null),
+            new("key-vault", "service", "Azure Key Vault", DiagLiveProbes.Off, "p", "Not used in this environment.", 0, null),
+            new("wikipedia", "service", "Wikipedia", DiagLiveProbes.Off, "p", "Switched off in this environment.", 0, null),
+        ];
+
+        var report = await DiagEndpoints.BuildReportAsync(new HealthyHealthCheckService(), new HostingEnvironment(), CancellationToken.None, probe, live, apiMs: 4);
+
+        report.Status.Should().Be("Healthy", "Off rows are switched off on purpose and are not a fault");
+        report.Checks.Where(c => c.Status == DiagLiveProbes.Off).Should().HaveCount(2).And.OnlyContain(c => c.Problem == null);
+        report.Checks[0].LatencyMs.Should().BeGreaterThanOrEqualTo(4, "the API row is this request, measured");
+        report.Checks.Select(c => c.Name).Should().ContainInOrder("api", "multiplayer", "tables", "blob-containers", "key-vault", "wikipedia");
+    }
+
     private static string SerializeReport()
     {
-        var config = new ConfigurationBuilder().AddInMemoryCollection(new Dictionary<string, string?>
-        {
-            ["KeyVault:Uri"] = VaultUri,
-            ["ApplicationInsights:ConnectionString"] = AiConnection,
-            ["PoMiniGames:Storage:TableService:ConnectionString"] = Secret,
-        }).Build();
         var env = new HostingEnvironment { EnvironmentName = "Production" };
 
         var probe = new DiagEndpoints.StorageProbe(
             new HashSet<string>(DiagEndpoints.TableNames, StringComparer.OrdinalIgnoreCase),
             new HashSet<string>(StringComparer.OrdinalIgnoreCase));
-        var report = DiagEndpoints.BuildReportAsync(new StubHealthCheckService(), config, env, CancellationToken.None, probe)
+        // The live rows as DiagLiveProbes words them (it never echoes the vault or ingestion address it called).
+        DiagCheckDto[] live =
+        [
+            new("multiplayer", "api", "Multiplayer hubs", "Healthy", "SignalR lobbies.", "/connectfive/hub answered a negotiate.", 3, null),
+            new("key-vault", "service", "Azure Key Vault", "Healthy", "Holds the production secrets.", "Listed its secrets with this app's identity.", 40, null),
+            new("app-insights", "service", "Application Insights", "Degraded", "Telemetry.", "The ingestion service did not confirm this app.", 90, "It answered HTTP 400."),
+        ];
+        var report = DiagEndpoints.BuildReportAsync(new StubHealthCheckService(), env, CancellationToken.None, probe, live)
             .GetAwaiter().GetResult();
         return JsonSerializer.Serialize(report, DiagJsonContext.Default.DiagReportDto);
+    }
+
+    private sealed class HealthyHealthCheckService : HealthCheckService
+    {
+        public override Task<HealthReport> CheckHealthAsync(
+            Func<HealthCheckRegistration, bool>? predicate = null,
+            CancellationToken cancellationToken = default) =>
+            Task.FromResult(new HealthReport(new Dictionary<string, HealthReportEntry>
+            {
+                ["Storage"] = new(HealthStatus.Healthy, null, TimeSpan.FromMilliseconds(5), null, null),
+            }, TimeSpan.FromMilliseconds(5)));
     }
 
     private sealed class HostingEnvironment : IWebHostEnvironment

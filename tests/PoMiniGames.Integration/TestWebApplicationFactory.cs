@@ -61,7 +61,7 @@ public class TestWebApplicationFactory : WebApplicationFactory<Program>, IAsyncL
             {
                 // Keep test hosts hermetic: no live Wikipedia or external quiz packs, a dry Racer track, no Key Vault.
                 ["PoMiniGames:PoBrawl:Dossier:FetchWikipedia"] = "false",
-                ["PoMiniGames:PoCoupleQuiz:FetchExternalPacks"] = "false",
+                ["PoCoupleQuiz:FetchExternalPacks"] = "false",
                 ["PoMiniGames:PoRacer:Weather"] = "clear",
                 ["KeyVault:Uri"] = "",
             };
