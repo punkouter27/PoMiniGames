@@ -570,7 +570,7 @@ answers with this commit's `X-Commit`. E2E tiers, Bicep, CSS and JS lint run loc
 (`scripts/ci-checks.ps1`). Provision or update Azure resources locally with
 `az deployment sub create -l westus2 -f infra/main.bicep -p infra/main.bicepparam`.
 
-**F1 budget (2026-11-18).** The F1 plan allows 165 MB/day of data out and 1 GB of disk; going over
+**F1 budget (2026-11-22).** The Windows F1 plan allows 331 MB/day of data out and 1 GB of disk; going over
 stops the site (`QuotaExceeded`, deploys get a 403). So:
 - The deploy has no rollback step and never pulls a zip of the live site from Kudu.
 - `scripts/pre-deploy.ps1` deletes old run-from-package zips in `data/SitePackages`, and, when the
