@@ -1,0 +1,600 @@
+<!doctype html>
+<html lang="en" data-tier="2">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>PoMiniGames Architecture</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<meta name="description" content="Containers, components, core sequences and storage tables of PoMiniGames, with file:line evidence.">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&amp;family=Space+Grotesk:wght@500;600;700&amp;family=JetBrains+Mono:wght@400;500&amp;display=swap">
+<script>
+/* Apply the saved tier and theme before first paint so nothing flashes. */
+(function () {
+  var r = document.documentElement;
+  try {
+    var t = localStorage.getItem('net_docs_tier');
+    if (t === '1' || t === '2' || t === '3') r.setAttribute('data-tier', t);
+    var th = localStorage.getItem('net_docs_theme');
+    if (th === 'light' || th === 'dark') r.setAttribute('data-theme', th);
+  } catch (e) { /* storage blocked: defaults apply */ }
+})();
+</script>
+<style>
+/* Layout: one 68rem reading column under a sticky control bar; prose stays ~65ch, diagrams and tables may use the full column.
+   Palette: the app's own --po-* tokens (src/PoMiniGames.Client/wwwroot/css/po-tokens.css), plus Okabe-Ito role hues for diagrams. */
+:root {
+  --bg: #f6f7fb;
+  --surface: #ffffff;
+  --surface-2: #eef0f6;
+  --text: #141826;
+  --muted: #596075;
+  --accent: #4f46e5;
+  --accent-soft: #e8e7fd;
+  --border: #dcdfe8;
+  --ok: #0f7a55;
+  --warn-soft: #fff1d6;
+  --warn-text: #5c3b00;
+  --code-bg: #f1f2f8;
+  --role-ui: #cfe3f5;   /* Okabe-Ito blue, light */
+  --role-api: #fbe3b8;  /* orange */
+  --role-data: #c9eee0; /* bluish green */
+  --role-ext: #f3d6e8;  /* reddish purple */
+  --role-ink: #141826;
+  --font-display: "Space Grotesk", "Segoe UI", system-ui, sans-serif;
+  --font-body: "Inter", "Segoe UI", system-ui, -apple-system, sans-serif;
+  --font-mono: "JetBrains Mono", ui-monospace, "Cascadia Mono", Consolas, monospace;
+  --radius: 10px;
+  color-scheme: light;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #0f1117; --surface: #171a23; --surface-2: #1e2230; --text: #e8eaf2; --muted: #a1a8bd;
+    --accent: #8b85ff; --accent-soft: #24224a; --border: #2c3142; --ok: #5fd3a5;
+    --warn-soft: #3a2c10; --warn-text: #ffdca0; --code-bg: #1b1f2b;
+    --role-ui: #1d3a55; --role-api: #4a3510; --role-data: #133f33; --role-ext: #47233a; --role-ink: #e8eaf2;
+    color-scheme: dark;
+  }
+}
+:root[data-theme="dark"] {
+  --bg: #0f1117; --surface: #171a23; --surface-2: #1e2230; --text: #e8eaf2; --muted: #a1a8bd;
+  --accent: #8b85ff; --accent-soft: #24224a; --border: #2c3142; --ok: #5fd3a5;
+  --warn-soft: #3a2c10; --warn-text: #ffdca0; --code-bg: #1b1f2b;
+  --role-ui: #1d3a55; --role-api: #4a3510; --role-data: #133f33; --role-ext: #47233a; --role-ink: #e8eaf2;
+  color-scheme: dark;
+}
+
+* { box-sizing: border-box; }
+html { -webkit-text-size-adjust: 100%; }
+body {
+  margin: 0; background: var(--bg); color: var(--text);
+  font: 400 16px/1.6 var(--font-body);
+}
+body::before {
+  content: ""; position: fixed; inset: 0 0 auto; height: env(safe-area-inset-top, 0px);
+  z-index: 10; background: var(--surface);
+}
+a { color: var(--accent); text-underline-offset: 2px; }
+a:focus-visible, button:focus-visible, select:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; border-radius: 4px; }
+
+/* ---------- sticky bar ---------- */
+.bar {
+  position: sticky; top: env(safe-area-inset-top, 0px); z-index: 5;
+  background: var(--surface); border-bottom: 1px solid var(--border);
+  padding-left: max(16px, env(safe-area-inset-left, 0px));
+  padding-right: max(16px, env(safe-area-inset-right, 0px));
+}
+.bar-inner {
+  max-width: 68rem; margin: 0 auto; padding-block: 10px;
+  display: flex; flex-wrap: wrap; align-items: center; gap: 10px 16px;
+}
+.brand { font: 700 1.05rem/1.2 var(--font-display); color: var(--text); text-decoration: none; letter-spacing: -0.01em; }
+.brand small { font: 500 0.72rem var(--font-mono); color: var(--muted); margin-left: 6px; }
+.nav { display: flex; flex-wrap: wrap; gap: 4px; flex: 1 1 auto; min-width: 0; }
+.nav a {
+  font-size: 0.85rem; text-decoration: none; color: var(--muted);
+  padding: 4px 9px; border-radius: 999px;
+}
+.nav a:hover { color: var(--text); background: var(--surface-2); }
+.nav a[aria-current="page"] { color: var(--accent); background: var(--accent-soft); font-weight: 600; }
+.controls { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+.seg { display: inline-flex; border: 1px solid var(--border); border-radius: 999px; padding: 2px; background: var(--surface-2); }
+.seg button, .theme-btn {
+  font: 500 0.8rem var(--font-body); color: var(--muted); background: transparent;
+  border: 0; border-radius: 999px; padding: 5px 10px; cursor: pointer; white-space: nowrap;
+}
+.seg button[aria-pressed="true"] { background: var(--surface); color: var(--text); box-shadow: 0 1px 2px rgba(0,0,0,.12); }
+.theme-btn { border: 1px solid var(--border); background: var(--surface-2); }
+.seg-label { font: 500 0.7rem var(--font-mono); text-transform: uppercase; letter-spacing: .08em; color: var(--muted); }
+html.embedded .bar { display: none; }
+html.embedded body::before { display: none; }
+
+/* ---------- page ---------- */
+main {
+  max-width: 68rem; margin: 0 auto;
+  padding-left: max(16px, env(safe-area-inset-left, 0px));
+  padding-right: max(16px, env(safe-area-inset-right, 0px));
+  padding-block: 28px 56px;
+  display: grid; gap: 40px;
+}
+main > * { min-width: 0; }
+.eyebrow { font: 500 0.75rem var(--font-mono); text-transform: uppercase; letter-spacing: .1em; color: var(--accent); margin: 0 0 6px; }
+h1, h2, h3 { font-family: var(--font-display); text-wrap: balance; letter-spacing: -0.015em; margin: 0; }
+h1 { font-size: clamp(1.8rem, 4.5vw, 2.6rem); line-height: 1.1; font-weight: 700; }
+h2 { font-size: clamp(1.3rem, 3vw, 1.65rem); line-height: 1.2; font-weight: 600; }
+h3 { font-size: 1.08rem; line-height: 1.3; font-weight: 600; }
+p { margin: 0; max-width: 68ch; }
+.lede { font-size: 1.12rem; color: var(--muted); max-width: 62ch; margin-top: 10px; }
+section { display: grid; gap: 14px; }
+section > * { min-width: 0; }
+.stack { display: grid; gap: 12px; }
+ul, ol { margin: 0; padding-left: 1.3em; max-width: 68ch; }
+li + li { margin-top: 4px; }
+
+/* plain-English opener for each section */
+.eli5 {
+  border-left: 3px solid var(--accent); background: var(--accent-soft);
+  padding: 12px 16px; border-radius: 0 var(--radius) var(--radius) 0; max-width: 72ch;
+}
+.eli5 strong:first-child { font: 600 0.72rem var(--font-mono); text-transform: uppercase; letter-spacing: .08em; color: var(--accent); display: block; margin-bottom: 2px; }
+
+/* tier blocks */
+.tier-2, .tier-3 { display: grid; gap: 12px; }
+.tier-2 > *, .tier-3 > * { min-width: 0; }
+html[data-tier="1"] .tier-2, html[data-tier="1"] .tier-3, html[data-tier="2"] .tier-3 { display: none !important; }
+.tier-tag {
+  justify-self: start; font: 500 0.68rem var(--font-mono); text-transform: uppercase; letter-spacing: .08em;
+  color: var(--muted); border: 1px dashed var(--border); border-radius: 999px; padding: 2px 8px;
+}
+.tier-3 .tier-tag { color: var(--accent); border-color: var(--accent); }
+/* tables whose last column is file:line evidence show it only in tier 3 */
+html:not([data-tier="3"]) table.t3 th:last-child, html:not([data-tier="3"]) table.t3 td:last-child { display: none; }
+
+/* narrative step cards: the order is the information */
+.steps { list-style: none; padding: 0; margin: 0; display: grid; gap: 10px; grid-template-columns: repeat(auto-fit, minmax(14rem, 1fr)); max-width: none; counter-reset: step; }
+.steps li { margin: 0; counter-increment: step; background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); padding: 14px 14px 14px 46px; position: relative; min-width: 0; }
+.steps li::before {
+  content: counter(step); position: absolute; left: 12px; top: 13px; width: 24px; height: 24px; border-radius: 50%;
+  background: var(--accent); color: var(--surface); font: 600 0.8rem/24px var(--font-mono); text-align: center;
+}
+.steps b { display: block; font-family: var(--font-display); font-weight: 600; margin-bottom: 2px; }
+.steps span { color: var(--muted); font-size: 0.92rem; }
+
+/* navigation cards (index only) */
+.cards { display: grid; gap: 12px; grid-template-columns: repeat(auto-fit, minmax(15rem, 1fr)); }
+.card { display: grid; gap: 6px; background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); padding: 16px; text-decoration: none; color: var(--text); }
+.card:hover { border-color: var(--accent); }
+.card h3 { color: var(--accent); }
+.card p { color: var(--muted); font-size: 0.92rem; }
+
+/* tables */
+.tbl { overflow-x: auto; border: 1px solid var(--border); border-radius: var(--radius); background: var(--surface); }
+table { border-collapse: collapse; width: 100%; font-size: 0.9rem; }
+th, td { text-align: left; vertical-align: top; padding: 9px 12px; border-bottom: 1px solid var(--border); }
+tr:last-child td { border-bottom: 0; }
+th { font: 600 0.72rem var(--font-mono); text-transform: uppercase; letter-spacing: .06em; color: var(--muted); background: var(--surface-2); white-space: nowrap; }
+td { font-variant-numeric: tabular-nums; }
+
+/* code + citations */
+code, .cite { font-family: var(--font-mono); font-size: 0.84em; }
+code { background: var(--code-bg); padding: 1px 5px; border-radius: 4px; overflow-wrap: anywhere; }
+.cite { color: var(--accent); background: var(--accent-soft); padding: 1px 6px; border-radius: 4px; overflow-wrap: anywhere; -webkit-box-decoration-break: clone; box-decoration-break: clone; }
+pre.code {
+  margin: 0; overflow-x: auto; background: var(--code-bg); border: 1px solid var(--border); border-radius: var(--radius);
+  padding: 12px 14px; font: 400 0.8rem/1.55 var(--font-mono); color: var(--text);
+}
+figure.snip { margin: 0; display: grid; gap: 6px; min-width: 0; }
+figure.snip figcaption { font-size: 0.82rem; color: var(--muted); }
+
+/* status chips */
+.chip { display: inline-block; font: 600 0.7rem var(--font-mono); letter-spacing: .04em; padding: 2px 7px; border-radius: 999px; border: 1px solid var(--border); white-space: nowrap; }
+.chip.ok { color: var(--ok); border-color: var(--ok); }
+.chip.gap { color: var(--warn-text); background: var(--warn-soft); border-color: transparent; }
+.chip.none { color: var(--muted); }
+.note-gap { background: var(--warn-soft); color: var(--warn-text); border-radius: var(--radius); padding: 10px 14px; max-width: 72ch; font-size: 0.93rem; }
+
+/* diagrams */
+.diagram { overflow-x: auto; background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); padding: 16px; }
+.diagram .mmd { margin: 0; min-height: 60px; font: 400 0.75rem var(--font-mono); color: var(--muted); white-space: pre; }
+.diagram .mmd[data-done] { white-space: normal; text-align: center; }
+.diagram svg { max-width: 100%; height: auto; }
+.legend { display: flex; flex-wrap: wrap; gap: 8px 14px; font-size: 0.8rem; color: var(--muted); }
+.legend i { display: inline-block; width: 12px; height: 12px; border-radius: 3px; border: 1px solid var(--border); vertical-align: -2px; margin-right: 5px; }
+
+.kv { display: grid; grid-template-columns: max-content 1fr; gap: 6px 16px; font-size: 0.92rem; }
+.kv dt { color: var(--muted); }
+.kv dd { margin: 0; min-width: 0; }
+
+footer {
+  border-top: 1px solid var(--border); color: var(--muted); font-size: 0.8rem;
+  padding-left: max(16px, env(safe-area-inset-left, 0px)); padding-right: max(16px, env(safe-area-inset-right, 0px));
+  padding-block: 16px calc(16px + env(safe-area-inset-bottom, 0px));
+}
+footer div { max-width: 68rem; margin: 0 auto; display: flex; flex-wrap: wrap; gap: 6px 18px; }
+footer code { background: transparent; padding: 0; }
+
+@media (max-width: 640px) {
+  .kv { grid-template-columns: 1fr; gap: 2px; }
+  .kv dd { margin-bottom: 8px; }
+  .seg button { padding: 5px 8px; }
+}
+@media (prefers-reduced-motion: reduce) { * { transition: none !important; animation: none !important; } }
+</style>
+</head>
+<body>
+<header class="bar">
+  <div class="bar-inner">
+    <a class="brand" href="index.html">PoMiniGames docs<small>593c148a</small></a>
+    <nav class="nav" aria-label="Reports">
+      <a href="index.html" data-page="index">Overview</a>
+      <a href="USER_WORKFLOW.html" data-page="workflow">User workflows</a>
+      <a href="VISUAL_ARCHITECTURE_DASHBOARD.html" data-page="architecture">Architecture</a>
+      <a href="AI_SERVICES_REPORT.html" data-page="services">AI &amp; services</a>
+      <a href="AUTH_SECURITY_REPORT.html" data-page="security">Security</a>
+      <a href="artifact.html" data-page="suite">All in one</a>
+    </nav>
+    <div class="controls">
+      <span class="seg-label" id="tier-label">Detail</span>
+      <div class="seg" role="group" aria-labelledby="tier-label">
+        <button type="button" id="tier-1" data-tier-btn="1" aria-pressed="false" title="Plain English only">1 Simple</button>
+        <button type="button" id="tier-2" data-tier-btn="2" aria-pressed="true" title="Adds diagrams and component layouts">2 Architecture</button>
+        <button type="button" id="tier-3" data-tier-btn="3" aria-pressed="false" title="Adds file:line citations, schemas and configs">3 Code</button>
+      </div>
+      <button type="button" class="theme-btn" id="theme-btn" data-theme-btn>Theme: system</button>
+    </div>
+  </div>
+</header>
+<main data-page="architecture">
+<section>
+  <p class="eyebrow">Architecture</p>
+  <h1>How the pieces fit</h1>
+  <p class="lede">One server program does three jobs: it hands the browser the game app, answers API calls, and runs live matches. Everything it must remember goes into Azure storage; everything it may forget lives in its own memory.</p>
+  <div class="legend" aria-label="Diagram colour key">
+    <span><i style="background:var(--role-ui)"></i>Runs in the player's browser</span>
+    <span><i style="background:var(--role-api)"></i>Runs on the App Service</span>
+    <span><i style="background:var(--role-data)"></i>Stored in Azure</span>
+    <span><i style="background:var(--role-ext)"></i>Outside service</span>
+  </div>
+</section>
+
+<section id="containers">
+  <h2>Containers (C4 level 2)</h2>
+  <div class="eli5"><strong>In plain words</strong>Think of a shop: the browser is the customer's table, the App Service is the counter and kitchen, Azure storage is the filing cabinet in the back, and a few outside suppliers deliver extras.</div>
+  <div class="tier-2">
+    <span class="tier-tag">Architecture view</span>
+    <div class="diagram"><pre class="mmd">flowchart LR
+  subgraph Browser["Player's browser"]
+    WASM["Blazor WebAssembly app&lt;br/&gt;pages, settings, results"]:::ui
+    JS["JS game engines&lt;br/&gt;three.js r186, Rapier"]:::ui
+    LS[("localStorage&lt;br/&gt;id, initials, stats,&lt;br/&gt;pending scores")]:::ui
+  end
+  subgraph Azure["Azure: resource group PoMiniGames"]
+    API["App Service app-pominigames&lt;br/&gt;ASP.NET Core host&lt;br/&gt;minimal APIs + SignalR hubs"]:::api
+    TBL[("Table Storage&lt;br/&gt;boards, ratings, history")]:::data
+    BLOB[("Blob Storage&lt;br/&gt;dp-keys, worlds, models")]:::data
+  end
+  subgraph Shared["PoShared resource group"]
+    KV["Key Vault kv-poshared2"]:::ext
+    AI["Application Insights"]:::ext
+  end
+  EXT["Wikipedia, Datamuse,&lt;br/&gt;REST Countries, Gutendex,&lt;br/&gt;push services"]:::ext
+  WASM -- "HTTPS JSON /api" --> API
+  WASM -- "WebSocket hubs" --> API
+  WASM --- JS
+  WASM --- LS
+  API -- "managed identity" --> TBL
+  API -- "managed identity" --> BLOB
+  API -- "config at startup" --> KV
+  API -- "OpenTelemetry" --> AI
+  API -- "HttpClient, 4-15 s timeouts" --> EXT
+  %%CLASSES%%</pre></div>
+    <ol class="steps">
+      <li><b>Browser asks for the app</b><span>The same host serves <code>index.html</code>, the WASM files and the game scripts, compressed.</span></li>
+      <li><b>App calls the API</b><span>Same address, so no cross-site setup in production.</span></li>
+      <li><b>API reads and writes storage</b><span>It signs in to Azure with its own managed identity; no storage keys in config.</span></li>
+      <li><b>Live play uses hubs</b><span>A long-lived WebSocket per lobby or match.</span></li>
+    </ol>
+  </div>
+  <div class="tier-3">
+    <span class="tier-tag">Code view</span>
+    <div class="tbl"><table>
+      <thead><tr><th>Claim</th><th>Citation</th></tr></thead>
+      <tbody>
+        <tr><td>Host serves WASM, static files, API and SPA fallback</td><td><span class="cite">src/PoMiniGames.Api/Program.cs:238-277</span></td></tr>
+        <tr><td>Client uses its own origin as the API base</td><td><span class="cite">src/PoMiniGames.Client/Program.cs:28-33</span></td></tr>
+        <tr><td>Table client with <code>DefaultAzureCredential</code></td><td><span class="cite">src/PoMiniGames.Api/Infrastructure/StorageExtensions.cs:133-136</span></td></tr>
+        <tr><td>Blob client with <code>DefaultAzureCredential</code></td><td><span class="cite">src/PoMiniGames.Api/Infrastructure/StorageExtensions.cs:171-172</span></td></tr>
+        <tr><td>App Service plan F1 and web app</td><td><span class="cite">infra/modules/resources.bicep:32-49</span></td></tr>
+        <tr><td>App settings (Key Vault URI, storage account, App Insights)</td><td><span class="cite">infra/modules/resources.bicep:88-117</span></td></tr>
+        <tr><td>Shared Key Vault and App Insights referenced as <code>existing</code></td><td><span class="cite">infra/modules/resources.bicep:126-131</span></td></tr>
+      </tbody>
+    </table></div>
+  </div>
+</section>
+
+<section id="components">
+  <h2>Components inside the API host (C4 level 3)</h2>
+  <div class="eli5"><strong>In plain words</strong>Each game has its own folder of counters (endpoints) and tables (hubs). They share one checkpoint at the door, one tool shed of services, and one filing clerk who talks to storage.</div>
+  <div class="tier-2">
+    <span class="tier-tag">Architecture view</span>
+    <div class="diagram"><pre class="mmd">flowchart LR
+  REQ["Incoming request"]:::ui --> MW["Checkpoint&lt;br/&gt;compression, logging, headers,&lt;br/&gt;identity, rate limit, anti-forgery"]:::api
+  MW --> EP["Feature slices: Features/Game/*Endpoints.cs"]:::api
+  MW --> HUB["SignalR hubs: lobby and match"]:::api
+  EP --> INT["Integrity: PlaySessionService, ScoreIntegrityGuard"]:::api
+  EP --> DOM["Domain: GameKey, ScoreRules, Elo"]:::api
+  INT --> DOM
+  EP --> STO["StorageService and per-feature stores"]:::api
+  HUB --> MEM["In-memory lobbies, matches, race registries"]:::api
+  BG["Hosted workers&lt;br/&gt;match pump, lockstep pump,&lt;br/&gt;asset ingestion, validator"]:::api --> MEM
+  STO --> TBL[("Table + Blob Storage")]:::data
+  %%CLASSES%%</pre></div>
+    <p>Projects: <code>PoMiniGames.Api</code> (host and slices), <code>PoMiniGames.Client</code> (Blazor WASM), <code>PoMiniGames.Domain</code> (score rules, Elo, game keys), <code>PoMiniGames.Infrastructure</code> (<code>StorageService</code> partials), <code>PoMiniGames.Shared</code> (DTOs and pure game rules used on both sides).</p>
+  </div>
+  <div class="tier-3">
+    <span class="tier-tag">Code view: dependency injection registry</span>
+    <div class="tbl"><table>
+      <thead><tr><th>Service</th><th>Lifetime</th><th>Purpose</th><th>Citation</th></tr></thead>
+      <tbody>
+        <tr><td><code>IntegrityOptions</code></td><td>options</td><td>Bound from <code>PoMiniGames:Integrity</code></td><td><span class="cite">src/PoMiniGames.Api/Infrastructure/GameServicesExtensions.cs:26-27</span></td></tr>
+        <tr><td><code>PlaySessionService</code>, <code>ScoreIntegrityGuard</code></td><td>singleton</td><td>Mint and check play tickets</td><td><span class="cite">src/PoMiniGames.Api/Infrastructure/GameServicesExtensions.cs:31-32</span></td></tr>
+        <tr><td><code>PlayerDataService</code></td><td>scoped</td><td>Export and erase</td><td><span class="cite">src/PoMiniGames.Api/Infrastructure/GameServicesExtensions.cs:34</span></td></tr>
+        <tr><td><code>EloCalculator</code>, <code>PairwiseEloCalculator</code></td><td>singleton</td><td>Ratings</td><td><span class="cite">src/PoMiniGames.Api/Infrastructure/GameServicesExtensions.cs:37-52</span></td></tr>
+        <tr><td><code>StorageInitializer</code></td><td>singleton</td><td>Create tables and containers at startup</td><td><span class="cite">src/PoMiniGames.Api/Infrastructure/GameServicesExtensions.cs:56</span></td></tr>
+        <tr><td><code>MatchHistoryRepository</code>, <code>VerifiedResultStore</code></td><td>singleton</td><td>History and server-timed race proofs</td><td><span class="cite">src/PoMiniGames.Api/Infrastructure/GameServicesExtensions.cs:60-64</span></td></tr>
+        <tr><td><code>InviteStore</code>, <code>WebPushSender</code> (typed HttpClient, no redirects)</td><td>singleton / typed client</td><td>Push invites</td><td><span class="cite">src/PoMiniGames.Api/Infrastructure/GameServicesExtensions.cs:69-71</span></td></tr>
+        <tr><td><code>StartupSecretValidator</code></td><td>hosted</td><td>Fail fast in Production when config is missing</td><td><span class="cite">src/PoMiniGames.Api/Infrastructure/GameServicesExtensions.cs:74</span></td></tr>
+        <tr><td><code>GameSessionManager</code>, <code>CoupleQuizRoundDirector</code></td><td>singleton</td><td>Couple quiz state and round clock</td><td><span class="cite">src/PoMiniGames.Api/Infrastructure/GameServicesExtensions.cs:79-97</span></td></tr>
+        <tr><td>Fun quiz question source, leaderboard, lobby rooms</td><td>singleton</td><td>Quiz bank and lobbies</td><td><span class="cite">src/PoMiniGames.Api/Infrastructure/GameServicesExtensions.cs:105-110</span></td></tr>
+        <tr><td><code>EcosystemWorldStore</code></td><td>singleton</td><td>Cloud save slots and gallery</td><td><span class="cite">src/PoMiniGames.Api/Infrastructure/GameServicesExtensions.cs:114</span></td></tr>
+        <tr><td>Racer and Cabinet lobby + race registries</td><td>singleton</td><td>Server-simulated races (Cabinet at 30 Hz)</td><td><span class="cite">src/PoMiniGames.Api/Infrastructure/GameServicesExtensions.cs:121-128</span></td></tr>
+        <tr><td>Brawl lobby, match registry, <code>PoBrawlMatchPump</code></td><td>singleton / hosted</td><td>Online 1v1 frames</td><td><span class="cite">src/PoMiniGames.Api/Infrastructure/GameServicesExtensions.cs:133-137</span></td></tr>
+        <tr><td><code>PoBrawlDossierService</code> + named HttpClient</td><td>singleton</td><td>Wikipedia summaries, cached</td><td><span class="cite">src/PoMiniGames.Api/Infrastructure/GameServicesExtensions.cs:143-161</span></td></tr>
+        <tr><td><code>TurnMatchService&lt;THub&gt;</code>, <code>TurnLobbyRoom&lt;THub&gt;</code></td><td>singleton</td><td>Connect Five and Tic-Tac-Toe online</td><td><span class="cite">src/PoMiniGames.Api/Infrastructure/GameServicesExtensions.cs:168-178</span></td></tr>
+        <tr><td>Marble Race online + lobby services</td><td>singleton</td><td>Pairing and relay (host browser simulates)</td><td><span class="cite">src/PoMiniGames.Api/Infrastructure/GameServicesExtensions.cs:183-184</span></td></tr>
+        <tr><td><code>VoxelAssetCatalog</code>, <code>AssetIngestionHostedService</code>, lockstep services + pump</td><td>singleton / hosted</td><td>GLB to voxel ingestion, co-op at 50 ms ticks</td><td><span class="cite">src/PoMiniGames.Api/Infrastructure/GameServicesExtensions.cs:188-198</span></td></tr>
+        <tr><td>Storage clients and health checks</td><td>singleton</td><td><code>TableServiceClient</code>, <code>BlobServiceClient</code>, <code>StorageHealthCheck</code></td><td><span class="cite">src/PoMiniGames.Api/Infrastructure/StorageExtensions.cs:52-172</span></td></tr>
+        <tr><td>Rate limiter, antiforgery, data protection, SignalR</td><td>framework</td><td>Registered in <code>Program.cs</code></td><td><span class="cite">src/PoMiniGames.Api/Program.cs:33-85</span></td></tr>
+      </tbody>
+    </table></div>
+  </div>
+</section>
+
+<section id="sequences">
+  <h2>Core transactions</h2>
+  <div class="eli5"><strong>In plain words</strong>Two exchanges matter most: posting a score (one request, checked twice) and an online turn (a move goes to the dealer, who tells both players).</div>
+  <div class="tier-2">
+    <span class="tier-tag">Architecture view: posting a score</span>
+    <div class="diagram"><pre class="mmd">sequenceDiagram
+  autonumber
+  participant C as Browser HttpClient
+  participant MW as Middleware
+  participant EP as Score endpoint
+  participant G as ScoreIntegrityGuard
+  participant S as StorageService
+  C->>MW: POST /api/pomule/highscores
+  MW->>MW: identity claims from X-Player-Id
+  MW->>MW: rate limit (highscores, 10 per min)
+  MW->>MW: anti-forgery header vs cookie
+  MW->>EP: request
+  EP->>G: Inspect(game, score)
+  G->>G: tier 1 absolute range (always)
+  G->>G: tier 2 session + rate (mode Observe)
+  G-->>EP: verdict
+  EP->>S: upsert row
+  S-->>EP: ok
+  EP-->>C: 200 with rank</pre></div>
+    <span class="tier-tag">Architecture view: an online turn</span>
+    <div class="diagram"><pre class="mmd">sequenceDiagram
+  participant A as Player A
+  participant H as TurnMatchHub
+  participant M as TurnMatchService
+  participant B as Player B
+  A->>H: PlaceMark(cell)
+  H->>M: apply move with rules
+  alt legal
+    M-->>A: board state
+    M-->>B: board state
+  else illegal or not your turn
+    H-->>A: HubException with reason
+  end</pre></div>
+  </div>
+  <div class="tier-3">
+    <span class="tier-tag">Code view</span>
+    <p>Guard tiers: <span class="cite">src/PoMiniGames.Api/Features/Integrity/ScoreIntegrityGuard.cs:68-104</span>. Mule score route: <span class="cite">src/PoMiniGames.Api/Features/PoMule/PoMuleEndpoints.cs:24-91</span>. Turn hub relays rejected moves as <code>HubException</code>: <span class="cite">src/PoMiniGames.Api/Features/Shared/TurnMatch/TurnMatchHub.cs:58-64</span>.</p>
+  </div>
+</section>
+
+<section id="data">
+  <h2>Stored data</h2>
+  <div class="eli5"><strong>In plain words</strong>The filing cabinet has one drawer per board. Each card in a drawer is filed under a folder name (partition key) and a card number (row key). There is no SQL database and no Entity Framework.</div>
+  <div class="tier-2">
+    <span class="tier-tag">Architecture view: entity map</span>
+    <div class="diagram"><pre class="mmd">erDiagram
+  PLAYER ||--o{ PLAYER_STATS : "has per game"
+  PLAYER ||--o{ HIGH_SCORE : "posts"
+  PLAYER ||--o{ MATCH_HISTORY : "owns"
+  PLAYER ||--o| BRAWL_PROGRESS : "ladder run"
+  PLAYER ||--o{ ECOSYSTEM_WORLD : "up to 3 slots"
+  PLAYER ||--o{ PUSH_INVITE : "subscribes, invites"
+  ECOSYSTEM_WORLD ||--|| WORLD_BLOB : "bytes in poecosystem-worlds"
+  FIGHTER ||--o{ FIGHTER_RATING : "Elo row"
+  PLAYER {
+    string playerId "browser-made, not stored as its own table"
+    string initials "three letters"
+  }
+  HIGH_SCORE {
+    string table "MarbleRace, PoBrawl, PoRacer, PoVoxelStrike, PoCabinet, PoMule"
+    double score
+    string initials
+  }
+  MATCH_HISTORY {
+    string PartitionKey "owner identity"
+    string RowKey "reverse time"
+  }
+  FIGHTER_RATING {
+    string RowKey "canonical fighter id"
+    int rating
+  }</pre></div>
+    <p class="note-gap"><b>EF Core / SQL:</b> Not used. Storage is Azure Table Storage through <code>Azure.Data.Tables</code> 12.13.0, so there is no DbContext, no migrations and no relational constraints; the lines above are logical links held by matching keys.</p>
+  </div>
+  <div class="tier-3">
+    <span class="tier-tag">Code view: table and container inventory</span>
+    <div class="tbl"><table>
+      <thead><tr><th>Name</th><th>Kind</th><th>Keys / notes</th><th>Citation</th></tr></thead>
+      <tbody>
+        <tr><td><code>PlayerStats</code></td><td>table</td><td>Per-game win/loss stats</td><td><span class="cite">src/PoMiniGames.Infrastructure/Services/StorageService.cs:25</span></td></tr>
+        <tr><td><code>MarbleRaceHighScores</code>, <code>MarbleRaceMapRecords</code></td><td>table</td><td>Records: RowKey = MapId</td><td><span class="cite">src/PoMiniGames.Infrastructure/Services/StorageService.cs:26-27</span>, <span class="cite">src/PoMiniGames.Infrastructure/Services/StorageService.HighScores.cs:81</span></td></tr>
+        <tr><td><code>PoBrawlHighScores</code>, <code>PoBrawlLadder</code></td><td>table</td><td>KO board and ladder</td><td><span class="cite">src/PoMiniGames.Infrastructure/Services/StorageService.cs:28-29</span></td></tr>
+        <tr><td><code>PoBrawlFighterRatings</code>, <code>PoBrawlPlayerRatings</code></td><td>table</td><td>Fighter Elo (RowKey = fighter id); player Elo (RowKey = hash of claim id)</td><td><span class="cite">src/PoMiniGames.Infrastructure/Services/StorageService.cs:30-35</span>, <span class="cite">src/PoMiniGames.Infrastructure/Services/StorageService.PoBrawl.cs:32,167</span></td></tr>
+        <tr><td><code>PoFighterRatings</code></td><td>table</td><td>RowKey = fighter id; bout log on its own partition</td><td><span class="cite">src/PoMiniGames.Infrastructure/Services/StorageService.PoFighter.cs:10,113</span></td></tr>
+        <tr><td><code>PoRacerHighScores</code>, <code>PoVoxelStrikeHighScores</code>, <code>PoCabinetHighScores</code>, <code>PoMuleHighScores</code></td><td>table</td><td>Per-game boards</td><td><span class="cite">src/PoMiniGames.Infrastructure/Services/StorageService.cs:36-39</span></td></tr>
+        <tr><td><code>MatchHistory</code></td><td>table</td><td>PK = owner identity, RK = reverse time</td><td><span class="cite">src/PoMiniGames.Api/Features/MatchHistory/MatchHistoryRepository.cs:14</span>, <span class="cite">src/PoMiniGames.Api/Infrastructure/GameServicesExtensions.cs:58-59</span></td></tr>
+        <tr><td><code>PoFunQuizPlayers</code></td><td>table</td><td>PK = category, RK = Guid</td><td><span class="cite">src/PoMiniGames.Api/Features/PoFunQuiz/Storage/LeaderboardRepository.cs:26</span></td></tr>
+        <tr><td><code>PoBrawlProgress</code></td><td>table</td><td>1P ladder run per player</td><td><span class="cite">src/PoMiniGames.Api/Features/PoBrawl/PoBrawlProgressStore.cs:20</span></td></tr>
+        <tr><td><code>VerifiedResults</code></td><td>table</td><td>Server-timed race results</td><td><span class="cite">src/PoMiniGames.Api/Features/Integrity/VerifiedResultStore.cs:30</span></td></tr>
+        <tr><td><code>PushInvites</code></td><td>table</td><td>Subscriptions, invites, VAPID key</td><td><span class="cite">src/PoMiniGames.Api/Features/Invites/InviteStore.cs:40</span></td></tr>
+        <tr><td><code>PoEcosystemWorlds</code> + <code>poecosystem-worlds</code></td><td>table + blob</td><td>Slot metadata and world bytes</td><td><span class="cite">src/PoMiniGames.Api/Features/PoEcosystem/EcosystemWorldStore.cs:37-38</span></td></tr>
+        <tr><td><code>dp-keys</code></td><td>blob</td><td>Data Protection key ring (Production)</td><td><span class="cite">src/PoMiniGames.Api/Infrastructure/DataProtectionExtensions.cs:44</span></td></tr>
+        <tr><td><code>PoMiniGamesStorageHealthProbe</code></td><td>table</td><td>Health check round trip</td><td><span class="cite">src/PoMiniGames.Infrastructure/Services/StorageService.cs:84</span></td></tr>
+      </tbody>
+    </table></div>
+    <p>Local default: Azurite on ports 10000-10002 (<span class="cite">docker-compose.yml</span>). Base table name config: <code>PoMiniGames:Storage:TableService:TableName = "pominigames"</code> at <span class="cite">src/PoMiniGames.Api/appsettings.json:24</span>.</p>
+  </div>
+</section>
+
+<section id="deploy">
+  <h2>Build and deploy</h2>
+  <div class="eli5"><strong>In plain words</strong>Every push to master runs the checks, and only if they all pass does the new version go live. The pipeline then waits until the live site reports the new commit.</div>
+  <div class="tier-2">
+    <span class="tier-tag">Architecture view</span>
+    <div class="diagram"><pre class="mmd">flowchart LR
+  A["push to master"]:::ui --> B["format check"]:::api --> C["ruff lint"]:::api --> D["Release build, warnings are errors"]:::api --> E["Unit tests"]:::api --> F["Integration tests on Azurite"]:::api --> G["publish + package"]:::api --> H["deploy to app-pominigames"]:::data --> I["wait for X-Commit = this SHA"]:::data
+  %%CLASSES%%</pre></div>
+  </div>
+  <div class="tier-3">
+    <span class="tier-tag">Code view</span>
+    <p>Steps: <span class="cite">.github/workflows/deploy.yml:59-101</span>. Docs suite staging: <span class="cite">scripts/ci-package.ps1:5-22</span> copies <code>docs/</code> into <code>wwwroot/docs</code>. Permissions script: <span class="cite">scripts/ci/ensure-azure-access.ps1</span>.</p>
+  </div>
+</section>
+
+</main>
+<footer>
+  <div>
+    <span>Generated <time datetime="2026-11-21">2026-11-21</time></span>
+    <span>Commit <code>593c148a</code> (master)</span>
+    <span>Source: PoMiniGames repository; every citation is <code>path:line</code> at that commit</span>
+  </div>
+</footer>
+<script src="https://cdn.jsdelivr.net/npm/mermaid@10.9.0/dist/mermaid.min.js"></script>
+<script>
+(function () {
+  var root = document.documentElement;
+  var KEY_TIER = 'net_docs_tier', KEY_THEME = 'net_docs_theme';
+  function load(k) { try { return localStorage.getItem(k); } catch (e) { return null; } }
+  function save(k, v) { try { if (v == null) localStorage.removeItem(k); else localStorage.setItem(k, v); } catch (e) {} }
+
+  // Embedded inside artifact.html: the shell owns the controls.
+  var shell = null;
+  try { if (window.parent !== window && window.parent.document.getElementById('net-docs-shell')) shell = window.parent; } catch (e) {}
+  if (shell) root.classList.add('embedded');
+
+  var page = document.querySelector('main').getAttribute('data-page');
+  document.querySelectorAll('.nav a').forEach(function (a) { if (a.getAttribute('data-page') === page) a.setAttribute('aria-current', 'page'); });
+
+  function isDark() {
+    var t = root.getAttribute('data-theme');
+    if (t) return t === 'dark';
+    return window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches;
+  }
+  function tok(n) { return getComputedStyle(root).getPropertyValue(n).trim(); }
+
+  function setTier(t, quiet) {
+    t = String(t); if (!/^[123]$/.test(t)) t = '2';
+    root.setAttribute('data-tier', t); save(KEY_TIER, t);
+    document.querySelectorAll('[data-tier-btn]').forEach(function (b) { b.setAttribute('aria-pressed', String(b.getAttribute('data-tier-btn') === t)); });
+    if (!quiet && shell) shell.postMessage({ type: 'net-docs', tier: t }, '*');
+    renderDiagrams();
+  }
+  function setTheme(th, quiet) {
+    if (th === 'light' || th === 'dark') root.setAttribute('data-theme', th); else { root.removeAttribute('data-theme'); th = 'system'; }
+    save(KEY_THEME, th === 'system' ? null : th);
+    var btn = document.getElementById('theme-btn'); if (btn) btn.textContent = 'Theme: ' + th;
+    if (!quiet && shell) shell.postMessage({ type: 'net-docs', theme: th }, '*');
+    renderDiagrams();
+  }
+
+  document.querySelectorAll('[data-tier-btn]').forEach(function (b) {
+    b.addEventListener('click', function () { setTier(b.getAttribute('data-tier-btn')); });
+  });
+  document.getElementById('theme-btn').addEventListener('click', function () {
+    var cur = root.getAttribute('data-theme') || 'system';
+    setTheme(cur === 'system' ? 'light' : cur === 'light' ? 'dark' : 'system');
+  });
+  window.addEventListener('message', function (e) {
+    var d = e.data; if (!d || d.type !== 'net-docs') return;
+    if (d.tier) setTier(d.tier, true);
+    if (d.theme) setTheme(d.theme, true);
+  });
+  if (window.matchMedia) window.matchMedia('(prefers-color-scheme: dark)').addEventListener('change', function () { renderDiagrams(); });
+
+  // ---- Mermaid: render only what is visible, re-render on theme change ----
+  var seq = 0, busy = false, again = false;
+  function classDefs() {
+    var ink = tok('--role-ink'), line = tok('--border');
+    return '\n classDef ui fill:' + tok('--role-ui') + ',stroke:' + line + ',color:' + ink +
+           '\n classDef api fill:' + tok('--role-api') + ',stroke:' + line + ',color:' + ink +
+           '\n classDef data fill:' + tok('--role-data') + ',stroke:' + line + ',color:' + ink +
+           '\n classDef ext fill:' + tok('--role-ext') + ',stroke:' + line + ',color:' + ink + '\n';
+  }
+  async function renderDiagrams() {
+    if (!window.mermaid) return;
+    if (busy) { again = true; return; }
+    busy = true;
+    var key = isDark() ? 'dark' : 'light';
+    window.mermaid.initialize({
+      startOnLoad: false, securityLevel: 'strict', theme: 'base',
+      fontFamily: 'Inter, Segoe UI, system-ui, sans-serif',
+      flowchart: { useMaxWidth: true, htmlLabels: true, curve: 'basis' },
+      sequence: { useMaxWidth: true, mirrorActors: false },
+      themeVariables: {
+        darkMode: key === 'dark', background: tok('--surface'), fontSize: '14px',
+        primaryColor: tok('--surface-2'), primaryTextColor: tok('--text'), primaryBorderColor: tok('--accent'),
+        secondaryColor: tok('--accent-soft'), tertiaryColor: tok('--surface'),
+        lineColor: tok('--muted'), textColor: tok('--text'),
+        actorBkg: tok('--surface-2'), actorBorder: tok('--accent'), actorTextColor: tok('--text'), signalColor: tok('--muted'), signalTextColor: tok('--text'),
+        noteBkgColor: tok('--accent-soft'), noteTextColor: tok('--text'), noteBorderColor: tok('--accent'),
+        labelBoxBkgColor: tok('--surface-2'), labelTextColor: tok('--text'), loopTextColor: tok('--text'),
+        clusterBkg: tok('--bg'), clusterBorder: tok('--border'), edgeLabelBackground: tok('--surface'),
+        attributeBackgroundColorOdd: tok('--surface'), attributeBackgroundColorEven: tok('--surface-2')
+      }
+    });
+    var nodes = document.querySelectorAll('.mmd');
+    for (var i = 0; i < nodes.length; i++) {
+      var el = nodes[i];
+      if (el.offsetParent === null) continue;          // hidden by the current tier
+      if (el.getAttribute('data-done') === key) continue;
+      var src = el.getAttribute('data-src');
+      if (src === null) { src = el.textContent; el.setAttribute('data-src', src); }
+      var full = src.indexOf('%%CLASSES%%') >= 0 ? src.replace('%%CLASSES%%', classDefs()) : src;
+      try {
+        var out = await window.mermaid.render('mmd-' + (++seq), full);
+        el.innerHTML = out.svg; el.setAttribute('data-done', key);
+      } catch (err) {
+        el.textContent = 'This diagram could not be drawn. Its source is kept in the page.';
+        el.setAttribute('data-done', key);
+        if (window.console) console.error(err);
+      }
+    }
+    busy = false;
+    if (again) { again = false; renderDiagrams(); }
+  }
+
+  setTier(root.getAttribute('data-tier') || '2', true);
+  setTheme(root.getAttribute('data-theme') || 'system', true);
+  if (document.readyState === 'complete') renderDiagrams(); else window.addEventListener('load', renderDiagrams);
+})();
+</script>
+</body>
+</html>
