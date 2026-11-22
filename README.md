@@ -5,7 +5,7 @@ Blazor WebAssembly client from a single origin (port 5080), with SignalR for rea
 multiplayer and Azure Table Storage for persistence. There are no AI services; the two
 quizzes draw from JSON question banks.
 
-- **Live:** https://app-pominigames.azurewebsites.net (System status: `/diag`)
+- **Live:** https://app-5ln5hfdrvof5u-f1win2.azurewebsites.net (System status: `/diag`)
 - **Run locally:** see [Quick start](#quick-start). **Deploys:** every push to `master` runs
   `.github/workflows/deploy.yml` (format, build, Unit + Integration tests, deploy, `/health/live` check).
 - **Rules for changing it:** [AGENTS.md](AGENTS.md) (the Po web standard plus this repo's notes).
@@ -486,7 +486,7 @@ src/
 ├── PoMiniGames.Domain/         Domain primitives (EloCalculator, GameKey, ...)
 └── PoMiniGames.Shared/         DTOs shared between client and server
 tests/
-├── PoMiniGames.Unit/           435 tests (hermetic; CI)
+├── PoMiniGames.Unit/           437 tests (hermetic; CI)
 ├── PoMiniGames.Integration/    17 tests (Testcontainers Azurite; CI; skip without Docker)
 ├── PoMiniGames.E2EAPI/         16 tests (HTTP contract, in-process host; local only)
 └── PoMiniGames.E2EUI/          22 tests (Playwright; local only; skip without Docker or Chromium)
@@ -536,7 +536,7 @@ scripts/                        Working scripts only — see scripts/README.md
   arrive within four seconds the island runs on the local `cannon-es` instead. See the
   [visual architecture dashboard](docs/2026-11-12/VISUAL_ARCHITECTURE_DASHBOARD.html).
 - Offline-friendly PWA: finished scores park locally and sync on reconnect.
-- Deploy: push to `master` (App Service `app-pominigames`, F1, resource group `PoMiniGames`).
+- Deploy: push to `master` (App Service `app-5ln5hfdrvof5u-f1win2` (the repo variable `AZURE_WEBAPP_NAME`), F1, resource group `PoMiniGames`).
 
 PoRacer ranks **best completed laps**, separately from final race times. Its legacy JSON
 field and Azure Table column `totalTimeSeconds` / `TotalTimeSeconds` retain their names
@@ -565,7 +565,7 @@ Run `npm ci --prefix scripts/pomarblerace` then `node --test tests/pomarblerace-
 `.github/workflows/deploy.yml` is the only workflow: on a push to `master` (or a manual run) it
 checks formatting, lints the Python scripts (ruff), builds, runs the Unit and Integration tiers,
 publishes the API, stages the documentation suite (`scripts/ci-package.ps1`), prepares the live
-site (`scripts/pre-deploy.ps1`), deploys to `app-pominigames`, and waits until `/health/live`
+site (`scripts/pre-deploy.ps1`), deploys to `vars.AZURE_WEBAPP_NAME` (`app-5ln5hfdrvof5u-f1win2`), and waits until `/health/live`
 answers with this commit's `X-Commit`. E2E tiers, Bicep, CSS and JS lint run locally
 (`scripts/ci-checks.ps1`). Provision or update Azure resources locally with
 `az deployment sub create -l westus2 -f infra/main.bicep -p infra/main.bicepparam`.

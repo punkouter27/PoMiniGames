@@ -94,24 +94,27 @@ App Service `app-<repo lowercase>`; per-app resources named `<type>-<repo lowerc
 
 ## 3. Verification
 
-Every command here was run on 2026-11-20 (Windows, PowerShell or Git Bash, from the repo root).
+Every command here was run on 2026-11-22 (Windows, PowerShell or Git Bash, from the repo root). Known red on that
+date: the CSS gate (hex literals 697 vs baseline 594, already over on 593c148a) and, on the trimmed Release publish,
+`PoMuleUiTests.OnePlayer_PlaysAMonth…` (passes on the in-process host) and `PoEcosystemUiTests.Demo_TheIslandIsAlive`
+(the engine never reports ready under SwiftShader within 180 s, on both hosts).
 
 | What | Command | Needs / skips |
 |---|---|---|
 | Format | `dotnet format PoMiniGames.slnx --verify-no-changes` | — |
 | Build | `dotnet build PoMiniGames.slnx -c Release` (warnings are errors) | — |
-| Unit (435) | `dotnet test tests/PoMiniGames.Unit -c Release --no-build` | nothing; runs in CI |
+| Unit (437) | `dotnet test tests/PoMiniGames.Unit -c Release --no-build` | nothing; runs in CI |
 | Integration (17) | `dotnet test tests/PoMiniGames.Integration -c Release --no-build` | Docker (Testcontainers Azurite); every test skips with one reason without it; runs in CI |
 | E2E API (16) | `dotnet test tests/PoMiniGames.E2EAPI -c Release --no-build` | Azurite on 127.0.0.1:10000/10002 (`docker compose up -d azurite`); local only |
-| E2E UI (22 methods, 34 cases) | `dotnet test tests/PoMiniGames.E2EUI -c Release --no-build` | Docker + Playwright Chromium (skips with one reason without either); local only, ~40 min, heavy |
+| E2E UI (22 methods, 31 cases) | `pwsh scripts/run-e2eui.ps1` (publishes the trimmed Release build to a temp folder and runs the tier against it via `POMINIGAMES_E2EUI_APP_DIR`; `-Filter` narrows it) | Docker + Playwright Chromium (skips with one reason without either); local only, ~40 min, heavy. Plain `dotnet test tests/PoMiniGames.E2EUI` still runs the in-process (untrimmed) host |
 | JS lint | `npm ci --prefix scripts/ci/js-lint && npm run lint --prefix scripts/ci/js-lint` | Node |
 | CSS lint | `pwsh scripts/ci/css-lint.ps1` | PowerShell 7 |
 | Python lint | `uvx ruff check .` (ruff.toml; CI runs `pipx run ruff check .`) | uv |
 | Bicep | `az bicep build --file infra/main.bicep` and `az bicep build-params --file infra/main.bicepparam` | Azure CLI |
 | Run locally | `docker compose up -d azurite` then `dotnet run --project src/PoMiniGames.Api --launch-profile http` → http://localhost:5080 (status: http://localhost:5080/diag) | Docker for Azurite |
-| Deploy | push to `master` → `.github/workflows/deploy.yml` (format, ruff, build, Unit, Integration, publish, deploy to `vars.AZURE_WEBAPP_NAME` = `app-pominigames`) | — |
-| Deploy check | `curl -sI https://app-pominigames.azurewebsites.net/health/live` shows `X-Commit: <pushed sha>` (the workflow waits for it) | — |
-| Live | https://app-pominigames.azurewebsites.net and https://app-pominigames.azurewebsites.net/diag | — |
+| Deploy | push to `master` → `.github/workflows/deploy.yml` (format, ruff, build, Unit, Integration, publish, deploy to `vars.AZURE_WEBAPP_NAME` = `app-5ln5hfdrvof5u-f1win2`) | — |
+| Deploy check | `curl -sI https://app-5ln5hfdrvof5u-f1win2.azurewebsites.net/health/live` shows `X-Commit: <pushed sha>` (the workflow waits for it) | — |
+| Live | https://app-5ln5hfdrvof5u-f1win2.azurewebsites.net and https://app-5ln5hfdrvof5u-f1win2.azurewebsites.net/diag | — |
 | Pinned tools | .NET SDK 10.0.400 (`global.json`, latestFeature), Python 3.10+ with ruff, Node for the JS lint | — |
 
 ## This repo
@@ -121,11 +124,13 @@ Azure Table + Blob Storage) serves its own Blazor WebAssembly client; heavy game
 `wwwroot/js/<game>/`. No sign-in: a player is a random browser id plus three initials. README.md has the tour, the
 games and the **Shared game UI** rules.
 
-- Live: https://app-pominigames.azurewebsites.net — App Service `app-pominigames` (F1, Windows, .NET 10) in resource
-  group `PoMiniGames`, system-assigned identity with Storage Table/Blob Data Contributor on `st5ln5hfdrvof5u2`,
-  Cognitive Services User on `po-aiservices-shared2` (PoShared) and get/list on `kv-poshared2`
-  (`scripts/ci/ensure-azure-access.ps1` grants all of it). The previous App Service `app-5ln5hfdrvof5u-f1win2` is
-  retired (left running until the owner deletes it).
+- Live: https://app-5ln5hfdrvof5u-f1win2.azurewebsites.net — App Service `app-5ln5hfdrvof5u-f1win2` (F1, Windows,
+  .NET 10) in resource group `PoMiniGames`, the one the repo variable `AZURE_WEBAPP_NAME` deploys to (checked 2026-11-22:
+  `az webapp list -g PoMiniGames` lists only it, and `app-pominigames.azurewebsites.net` does not resolve). It has a
+  system-assigned identity with Storage Table/Blob Data Contributor on `st5ln5hfdrvof5u2`, Cognitive Services User on
+  `po-aiservices-shared2` (PoShared) and get/list on `kv-poshared2`. **Open item for the owner:** `infra/main.bicep(param)`
+  and `scripts/ci/ensure-azure-access.ps1` name a planned `app-pominigames` that was never created; provisioning it and
+  moving `AZURE_WEBAPP_NAME` (or pointing those files back at the live app) needs the owner's approval.
 - Repo variables read by the workflow: `AZURE_CLIENT_ID`, `AZURE_TENANT_ID`, `AZURE_SUBSCRIPTION_ID` (GitHub OIDC,
   the `gh-pominigames-deploy` app, Contributor on the resource group), `AZURE_WEBAPP_NAME`, `AZURE_RESOURCE_GROUP`.
   Never move them to secrets or write resource names into the workflow.
@@ -140,7 +145,8 @@ games and the **Shared game UI** rules.
 |---|---|---|
 | Header shows the email or Sign in | Nothing there | No OAuth by design; the initials live in the settings sheet |
 | `src/` = Api, Client, Shared | also `PoMiniGames.Domain`, `PoMiniGames.Infrastructure` | Score rules, Elo and the storage service are used by many slices; merging them is a separate refactor |
-| Per-app resources `<type>-pominigames` | plan `asp-pominigames-f1`, storage `st5ln5hfdrvof5u2` | Renaming means re-creating them (and moving the data); only the App Service was renamed |
+| Per-app resources `<type>-pominigames` | plan `asp-pominigames-f1`, storage `st5ln5hfdrvof5u2`, App Service `app-5ln5hfdrvof5u-f1win2` | Renaming means re-creating them (and moving the data); the App Service rename to `app-pominigames` is planned in infra/ but not done |
+| Radzen controls only | `PoButton` (a `RadzenButton` without Radzen's theme classes) for the shell's action buttons in /diag, /settings, the settings sheet, the leaderboards, /profile and the shared error/empty states; Radzen grids, tabs, select bars and charts on Leaderboards, Profile, Mule, Capitol and Brawl HQ | Not yet converted (open item, ~350 native controls in ~70 files): the game pages' own buttons, chips and HUD controls, the start/end cards' tabs and OK buttons, the settings sheet's toggles and range sliders, the intro map `<select>` and the hidden initials `<input>`. Allowed natives kept on purpose: native `<video>` (Brawl HQ's knockout clip player, PoFighter studio's camera capture) and read-only data `<table>`s (Brawl controls, FFA standings x2, tournament recap, Cabinet laps, Ecosystem almanac and key bindings, Marble Race and Racer results); no file inputs or audio players. In-canvas game UI drawn by the JS engines is not Blazor markup and is outside the rule |
 | `docs/` for prose | No `docs/` today | README.md and scripts/*/README.md carry the prose; `scripts/ci-package.ps1` stages `docs/` if one is added |
 
 ### Commands
@@ -173,7 +179,7 @@ uvx ruff check .                                               # Python lint (sc
 
 ### Tests
 
-- There are four tiers (counts as of 2026-11-21). **Unit** (435) is hermetic and runs in CI. **Integration** (17)
+- There are four tiers (counts as of 2026-11-22). **Unit** (437) is hermetic and runs in CI. **Integration** (17)
   uses a Testcontainers Azurite and runs in CI; locally every test SKIPS with one reason (`DockerFact`) when Docker is
   not running. **E2EAPI** (16) runs HTTP contract tests in-process against the compose Azurite (local only).
   **E2EUI** (22) runs C# Playwright against a Kestrel host in the `Test` environment (local only; `UiFact` skips when
@@ -191,9 +197,13 @@ uvx ruff check .                                               # Python lint (sc
 - **Decisions (owner):**
   - `/diag` is the only status page (`Features/Health/DiagPage.razor`, title and h1 "System status"); it renders
     `GET /api/diag` (`DiagEndpoints`, the standard `DiagReportDto`), which is always on and anonymous and must never
-    carry secrets, addresses or exception messages (`DiagProjectionTests`, `HealthEndpointTests`). Rows: API (the
-    server, the multiplayer hubs), Data (the storage health checks, tables, blob containers), Services (Key Vault and
-    Application Insights when configured). A table or container missing from the listing is normal: each is created
+    carry secrets, addresses or exception messages (`DiagProjectionTests`, `HealthEndpointTests`). Rows: API (this
+    request, measured; the multiplayer hubs, proven by a live SignalR negotiate on this server), Data (the storage
+    health checks, tables, blob containers), Services (`Features/Health/DiagLiveProbes.cs`: a Key Vault secret
+    listing, the App Insights ingestion profile, the push-invite keys in storage, Wikipedia and the three Couple Quiz
+    APIs, each a real call cached 60 s, 10 min for the free third-party APIs). A service switched off on purpose
+    (test hosts, no connection string, a feature flag set to false) reads **Off**: a grey pill, no problem text, never
+    counted in the banner (`DiagProjectionTests`, `HealthEndpointTests`). A table or container missing from the listing is normal: each is created
     on first use. `/health` (JSON readiness, never HTML) and `/health/live` (`X-Commit`) are the probes.
   - The build version (`v{YYMMDD}`, `Layout/BuildVersion.razor`) is visible bottom-right on every page, above the
     BottomNav on phones (`--po-stamp-lift`); `.gl-content` reserves the strip under every page so it never covers

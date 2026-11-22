@@ -714,11 +714,12 @@
         </RadzenTabs>
     </div>;
 
+    @* Keyboard lines are keys-only, so a touch phone sees its own line and the card fits 375x667 without scrolling. *@
     private RenderFragment IntroControls => @<div>
-        <p><kbd>W</kbd> <kbd>A</kbd> <kbd>S</kbd> <kbd>D</kbd> move · <kbd>Mouse</kbd> look &amp; aim · <kbd>↑</kbd> <kbd>↓</kbd> move · <kbd>←</kbd> <kbd>→</kbd> turn camera · <kbd>Shift</kbd> sprint</p>
-        <p><kbd>Space</kbd> / <kbd>Click</kbd> fire (in the crowd) or push (police line) · <kbd>G</kbd> concussion grenade · <kbd>H</kbd> smoke grenade</p>
-        <p><kbd>P</kbd> pause · <kbd>Esc</kbd> back to the main menu · <kbd>V</kbd> analysis overlay (density, contagion)</p>
-        <p>Commander: <kbd>1</kbd>–<kbd>5</kbd> pick a line · <kbd>B</kbd> brace · <kbd>R</kbd> reinforce · <kbd>T</kbd> rotate rank · <kbd>G</kbd> gas · <kbd>F</kbd> fall back · <kbd>←</kbd> <kbd>→</kbd> swing the camera</p>
+        <p class="keys-only"><kbd>W</kbd> <kbd>A</kbd> <kbd>S</kbd> <kbd>D</kbd> move · <kbd>Mouse</kbd> look &amp; aim · <kbd>↑</kbd> <kbd>↓</kbd> move · <kbd>←</kbd> <kbd>→</kbd> turn camera · <kbd>Shift</kbd> sprint</p>
+        <p class="keys-only"><kbd>Space</kbd> / <kbd>Click</kbd> fire (in the crowd) or push (police line) · <kbd>G</kbd> concussion grenade · <kbd>H</kbd> smoke grenade</p>
+        <p class="keys-only"><kbd>P</kbd> pause · <kbd>Esc</kbd> back to the main menu · <kbd>V</kbd> analysis overlay (density, contagion)</p>
+        <p class="keys-only">Commander: <kbd>1</kbd>–<kbd>5</kbd> pick a line · <kbd>B</kbd> brace · <kbd>R</kbd> reinforce · <kbd>T</kbd> rotate rank · <kbd>G</kbd> gas · <kbd>F</kbd> fall back · <kbd>←</kbd> <kbd>→</kbd> swing the camera</p>
         <p class="touch-only">Touch: d-pad to move, drag to look, FIRE / PUSH, and grenade buttons that show what is left.</p>
         <p>Gamepad: sticks move and look, right trigger fires or pushes, X grenade, Y smoke, Start pauses.</p>
     </div>;
