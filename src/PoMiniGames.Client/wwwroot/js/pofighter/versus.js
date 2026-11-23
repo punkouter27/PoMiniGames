@@ -18,8 +18,9 @@
 //     `whiff` recovery. Down plus a button gives the same standing attack.
 //   - Holding back guards (walking back, or crouching back); crouching ducks the punch. A hit
 //     on a guard costs chip damage only.
-//   - Up jumps (up-forward and up-back travel); no attacks in the air. A fighter with no filmed
-//     jump jumps in its crouch pose on a computed arc. A hit in the air knocks the defender down
+//   - Up jumps (up-forward and up-back travel); no attacks in the air. A jump passes over the
+//     foe, so a forward jump from close lands on the far side (the foe's swings then miss until
+//     both face again). A fighter with no filmed jump jumps in its crouch pose on a computed arc. A hit in the air knocks the defender down
 //     (the K.O. fall, then the get-up); they get up invulnerable.
 //   - Unblocked hits within COMBO_WINDOW of each other chain into a combo (a 'combo' event from
 //     the second hit on), each extra hit doing a little less.
@@ -277,10 +278,11 @@ function act(m, f) {
 function clampPair(m) {
     const [a, b] = m.fighters;
     for (const f of m.fighters) f.x = Math.min(ARENA.maxX, Math.max(ARENA.minX, f.x));
-    // Bodies never pass through each other: push both apart evenly, then off a wall.
+    // Bodies on the floor never pass through each other: push both apart evenly, then off a wall.
+    // One in the air passes over; it is pushed clear on whichever side it lands.
     const d = b.x - a.x;
     const want = ARENA.minGap * Math.sign(d || a.dir);
-    if (Math.abs(d) < ARENA.minGap) {
+    if (Math.abs(d) < ARENA.minGap && !a.air && !b.air) {
         const fix = (want - d) / 2;
         a.x -= fix; b.x += fix;
         for (const [f, o] of [[a, b], [b, a]]) {
