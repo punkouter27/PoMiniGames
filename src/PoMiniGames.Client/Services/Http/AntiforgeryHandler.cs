@@ -77,7 +77,10 @@ public sealed class AntiforgeryHandler : DelegatingHandler
 
         var response = await base.SendAsync(request, cancellationToken);
 
-        if (!await IsAntiforgeryRejectionAsync(response, cancellationToken))
+        // Only replay if we actually had a token that turned out to be stale. When GetTokenAsync
+        // returned null (e.g. 401/offline), re-fetching and replaying immediately would only
+        // double the failed 401/403 requests.
+        if (token is null || !await IsAntiforgeryRejectionAsync(response, cancellationToken))
         {
             return response;
         }

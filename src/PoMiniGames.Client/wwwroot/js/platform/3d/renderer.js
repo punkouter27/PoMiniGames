@@ -40,12 +40,18 @@ export function configureRenderer(THREE, renderer, o = {}) {
     return renderer;
 }
 
-/** WebGPU usable here? (cheap probe; the adapter request is what really decides). */
+let _webgpuProbe = null;
+
+/** WebGPU usable here? Cached once per session (no powerPreference so Windows Chrome does not warn). */
 export async function webgpuAvailable() {
-    try {
-        if (typeof navigator === 'undefined' || !navigator.gpu) return false;
-        return !!(await navigator.gpu.requestAdapter());
-    } catch { return false; }
+    if (_webgpuProbe) return _webgpuProbe;
+    _webgpuProbe = (async () => {
+        try {
+            if (typeof navigator === 'undefined' || !navigator.gpu) return false;
+            return !!(await navigator.gpu.requestAdapter());
+        } catch { return false; }
+    })();
+    return _webgpuProbe;
 }
 
 /**
@@ -70,15 +76,19 @@ export async function createRenderer(THREE, o = {}) {
     const params = {
         antialias: o.antialias ?? false,
         alpha: o.alpha ?? false,
-        powerPreference: o.powerPreference ?? 'high-performance',
     };
     if (o.canvas) params.canvas = o.canvas;
     if (o.preserveDrawingBuffer) params.preserveDrawingBuffer = true;
 
     let renderer;
     if (useGpu) {
+        // Probe once up front so WebGPURenderer skips adapter probing (and its console warnings)
+        // when no WebGPU adapter is available. Omit powerPreference on WebGPU because Windows
+        // Chrome logs a warning whenever powerPreference is passed to requestAdapter().
+        const forceWebGL = !!o.forceWebGL || !(await webgpuAvailable());
+        if (forceWebGL) params.powerPreference = o.powerPreference ?? 'high-performance';
         // trackTimestamp: GPU frame times through timestamp queries, where the device has them.
-        renderer = new THREE.WebGPURenderer({ ...params, forceWebGL: !!o.forceWebGL, trackTimestamp: !!o.trackTimestamp });
+        renderer = new THREE.WebGPURenderer({ ...params, forceWebGL, trackTimestamp: !!o.trackTimestamp });
         await renderer.init?.();
     } else {
         return createRendererSync(THREE, o);

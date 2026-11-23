@@ -108,6 +108,12 @@ public sealed class PlaySessionService : IDisposable
     /// </summary>
     private async Task SyncAsync(string uri)
     {
+        if (IsDemoOrKioskRoute(uri))
+        {
+            _store.Clear();
+            return;
+        }
+
         var game = ResolveGameKey(uri);
         if (game is null)
         {
@@ -177,6 +183,24 @@ public sealed class PlaySessionService : IDisposable
             _store.Clear();
             _quietUntil = DateTimeOffset.UtcNow + FailureBackoff;
         }
+    }
+
+    /// <summary>
+    /// Demo and kiosk routes are CPU-vs-CPU attract modes and never submit player scores, so
+    /// minting a play session on them only generates unnecessary POST traffic.
+    /// </summary>
+    internal static bool IsDemoOrKioskRoute(string uri)
+    {
+        if (string.IsNullOrEmpty(uri)) return false;
+        if (uri.Contains("?kiosk=", StringComparison.OrdinalIgnoreCase)
+            || uri.Contains("&kiosk=", StringComparison.OrdinalIgnoreCase))
+        {
+            return true;
+        }
+
+        var path = ExtractPath(uri);
+        return path.EndsWith("/demo", StringComparison.OrdinalIgnoreCase)
+            || path.Contains("/demo/", StringComparison.OrdinalIgnoreCase);
     }
 
     /// <summary>

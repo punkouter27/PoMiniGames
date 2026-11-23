@@ -44,6 +44,8 @@ public sealed class KioskCoordinator : IDisposable
     private string? _currentKey;
     private int _currentIndex;
     private bool _isPaused;
+    private DateTimeOffset _advanceAtUtc;
+    private int _remainingOnPause = AdvanceSeconds;
     private int _advanceIndex; // index of the demo to jump to on the next advance
     private bool _disposed;
 
@@ -155,6 +157,8 @@ public sealed class KioskCoordinator : IDisposable
             CurrentGameName = _currentIndex >= 0 ? _entries[_currentIndex].DisplayName : null;
         }
         SecondsUntilAdvance = AdvanceSeconds;
+        _advanceAtUtc = DateTimeOffset.UtcNow.AddSeconds(AdvanceSeconds);
+        _remainingOnPause = AdvanceSeconds;
         Changed?.Invoke();
     }
 
@@ -162,6 +166,8 @@ public sealed class KioskCoordinator : IDisposable
     {
         Stop();
         _advanceIndex = advanceIndex;
+        _advanceAtUtc = DateTimeOffset.UtcNow.AddSeconds(AdvanceSeconds);
+        _remainingOnPause = AdvanceSeconds;
         _timer = new System.Threading.Timer(_ => OnTick(), null, 1000, 1000);
         Changed?.Invoke();
     }
@@ -175,12 +181,32 @@ public sealed class KioskCoordinator : IDisposable
         _currentKey = null;
         CurrentGameName = null;
         SecondsUntilAdvance = AdvanceSeconds;
+        _remainingOnPause = AdvanceSeconds;
         Changed?.Invoke();
     }
 
-    public void Pause() { _isPaused = true; Changed?.Invoke(); }
-    public void Resume() { _isPaused = false; Changed?.Invoke(); }
-    public void TogglePause() { _isPaused = !_isPaused; Changed?.Invoke(); }
+    public void Pause()
+    {
+        if (_isPaused) return;
+        _remainingOnPause = Math.Max(1, (int)Math.Ceiling((_advanceAtUtc - DateTimeOffset.UtcNow).TotalSeconds));
+        SecondsUntilAdvance = _remainingOnPause;
+        _isPaused = true;
+        Changed?.Invoke();
+    }
+
+    public void Resume()
+    {
+        if (!_isPaused) return;
+        _isPaused = false;
+        _advanceAtUtc = DateTimeOffset.UtcNow.AddSeconds(_remainingOnPause);
+        Changed?.Invoke();
+    }
+
+    public void TogglePause()
+    {
+        if (_isPaused) Resume();
+        else Pause();
+    }
 
     public void SkipNext()
     {
@@ -239,7 +265,9 @@ public sealed class KioskCoordinator : IDisposable
     {
         if (_disposed || _timer is null) return;
         if (_isPaused) return;
-        SecondsUntilAdvance--;
+        // Compute remaining time from wall-clock UTC so a slow/low-FPS 3D demo starving the
+        // single-threaded WASM timer cannot stretch a 60s demo into several minutes.
+        SecondsUntilAdvance = Math.Max(0, (int)Math.Ceiling((_advanceAtUtc - DateTimeOffset.UtcNow).TotalSeconds));
         Changed?.Invoke();
         if (SecondsUntilAdvance <= 0)
         {

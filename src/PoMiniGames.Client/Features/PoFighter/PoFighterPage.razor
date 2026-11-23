@@ -418,6 +418,7 @@
     private ElementReference _studioStatus;
     private ElementReference _studioFile;
     private string _playerName = "";
+    private string? _activeMode;
     private bool _introDismissed;
     private bool _started;
     private bool _failed;
@@ -468,6 +469,31 @@
         _playerName = PlayerNameService.GetPlayerName();
         await LoadRatingsAsync();
         if (!IsDemo) await RefreshFightersAsync();
+    }
+
+    protected override async Task OnParametersSetAsync()
+    {
+        var mode = Mode ?? string.Empty;
+        if (string.Equals(_activeMode, mode, StringComparison.OrdinalIgnoreCase))
+        {
+            if (Kiosk.IsActive && (IsDemo || IsTournament) && !_introDismissed)
+                _introDismissed = true;
+            return;
+        }
+
+        if (_started)
+        {
+            try { await JS.InvokeVoidAsync("PoFighter.stop"); }
+            catch (JSDisconnectedException) { }
+            catch (JSException) { }
+        }
+
+        _activeMode = mode;
+        _started = false;
+        _failed = false;
+        _over = false;
+        _summary = "";
+        _introDismissed = Kiosk.IsActive && (IsDemo || IsTournament);
     }
 
     private async Task LoadRatingsAsync()

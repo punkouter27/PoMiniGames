@@ -63,12 +63,14 @@ export function chooseBackend({ override = null, broken = false, hasGpu = true }
 export function createSceneRenderer(canvas, { lowEnd = false, tier = 'high', onLost = () => {} } = {}) {
   const override = backendOverride();
   const choice = chooseBackend({ override, broken: wasMarkedBroken(), hasGpu: !!globalThis.navigator?.gpu });
-  const renderer = new WebGPURenderer({
+  const rendererOpts = {
     canvas,
     antialias: !lowEnd,
-    powerPreference: 'high-performance',
     forceWebGL: choice.forceWebGL,
-  });
+  };
+  // Omit powerPreference on WebGPU: Windows Chrome logs a warning when passed to requestAdapter().
+  if (choice.forceWebGL) rendererOpts.powerPreference = 'high-performance';
+  const renderer = new WebGPURenderer(rendererOpts);
   // `asked` is known at once (the scene is built before init settles); `backend` is what came up.
   const report = { backend: 'pending', asked: choice.forceWebGL ? 'webgl2' : 'webgpu', reason: choice.reason, tier, adapter: null, disposed: false };
   try { globalThis.PoEcoBackend = report; } catch { /* frozen global: the report still rides the renderer */ }

@@ -302,7 +302,7 @@ a.home-card-head:hover .home-card-title { text-decoration: underline; text-under
     gap: 0.3rem;
     flex-wrap: wrap;
     align-items: center;
-    min-width: 4.5rem;
+    width: fit-content;
 }
 
 .home-mode-group:not(:empty) {

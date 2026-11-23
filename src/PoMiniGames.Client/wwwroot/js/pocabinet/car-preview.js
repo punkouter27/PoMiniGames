@@ -21,9 +21,8 @@ export function mountCarPreview(canvasId, colorHex = '#3470d8', liveryIndex = 1)
 
     let renderer;
     try {
-        // r186: the WebGPURenderer (its own WebGL2 backend where there is no WebGPU); init() is async, so the
-        // loop below starts when it resolves while the handle is returned at once, as before.
-        renderer = new THREE.WebGPURenderer({ canvas, alpha: true, antialias: true, powerPreference: 'low-power', forceWebGL: !navigator.gpu });
+        // r186: the WebGPURenderer on its WebGL2 backend (lightweight preview turntable, no adapter probe warning).
+        renderer = new THREE.WebGPURenderer({ canvas, alpha: true, antialias: true, powerPreference: 'low-power', forceWebGL: true });
     } catch {
         return null;
     }

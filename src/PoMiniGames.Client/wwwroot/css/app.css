@@ -569,8 +569,8 @@ h3[tabindex="0"]:focus-visible {
 .app-empty-state--error {
   padding: var(--space-6) var(--space-4);
   min-height: 0;
-  /* Soft danger tint so the eye lands here before the headline. */
-  background: var(--accent-danger-soft);
+  /* Opaque surface backing under the danger tint so dark game stages never bleed through in light mode. */
+  background: color-mix(in srgb, var(--accent-danger) 14%, var(--surface-1));
   border: 1px solid color-mix(in srgb, var(--accent-danger) 35%, transparent);
   border-radius: var(--radius-lg);
 }
