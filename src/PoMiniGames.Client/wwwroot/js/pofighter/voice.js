@@ -1,26 +1,21 @@
 // pofighter/voice.js — each fighter's voice: 5 moods × 5 intensities, a real recording when one
-// exists and a procedural stand-in when it does not (the shared platform/emotionVoice.js).
+// exists and the advanced procedural imitation when it does not (the shared
+// platform/emotionVoice.js).
 //
+//   wwwroot/audio/pofighter/voices.json                       every fighter × mood × level: its WAV
+//                                                             path, `exists`, and the fighter's voice profile
 //   wwwroot/audio/pofighter/<fighterId>/<mood>-<1..5>.wav     e.g. kim/hurt-3.wav
-//   wwwroot/audio/pofighter/manifest.json                     which of those files exist
 //
-// Drop WAVs into a fighter's folder and run scripts/pofighter/voices.ps1 to rewrite the
-// manifest; every clip it lists replaces the procedural sound for that fighter, mood and
-// intensity, and the rest stay procedural. Sound goes through the platform's sfx bus.
+// Drop WAVs into a fighter's folder and run scripts/pofighter/voices.ps1 to refresh voices.json;
+// every clip it marks `exists` replaces the procedural line for that fighter, mood and intensity.
+// A fighter's procedural voice (pitch, formants, breath, rasp, vibrato, tempo) is its `voice`
+// profile in voices.json. Sound goes through the platform's sfx bus.
 
-import { createEmotionVoice, MOODS, LEVELS, NEUTRAL_VOICE } from '../platform/emotionVoice.js';
+import { createEmotionVoice, MOODS, LEVELS } from '../platform/emotionVoice.js';
 
 export { MOODS, LEVELS };
 
-// The procedural voice per fighter: a base pitch (Hz), a timbre and a level trim (a sawtooth or
-// square wave is far louder than a triangle at the same gain, so each voice is evened out to peak
-// around the same level). BYE slots and fighters not listed use the neutral voice.
-const VOICES = {
-    p1: { pitch: 150, wave: 'sawtooth', formant: 900, trim: 0.42 },    // Nick
-    kim: { pitch: 255, wave: 'triangle', formant: 1400, trim: 1 },     // Kim
-};
-
-const voice = createEmotionVoice({ game: 'pofighter', voices: VOICES, neutral: NEUTRAL_VOICE });
+const voice = createEmotionVoice({ game: 'pofighter' });
 
 export const loadManifest = voice.loadManifest;
 export const hasRecording = voice.hasRecording;

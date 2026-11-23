@@ -1,0 +1,325 @@
+{
+  "schema": "po-voice-manifest/1",
+  "game": "pofighter",
+  "generated": "2026-11-23T04:05:54Z",
+  "root": "src/PoMiniGames.Client/wwwroot/audio/pofighter",
+  "emotions": [
+    "angry",
+    "happy",
+    "hurt",
+    "insult",
+    "celebrate"
+  ],
+  "levels": [
+    1,
+    2,
+    3,
+    4,
+    5
+  ],
+  "fallback": "procedural",
+  "characters": [
+    {
+      "id": "p1",
+      "name": "Nick",
+      "voice": {
+        "pitchHz": 120,
+        "formantScale": 0.97,
+        "breath": 0.18,
+        "rasp": 0.3,
+        "vibratoHz": 5.2,
+        "vibratoDepth": 0.02,
+        "tempo": 1.0,
+        "timbre": "adult-male"
+      },
+      "clips": {
+        "angry": [
+          {
+            "level": 1,
+            "file": "p1/angry-1.wav",
+            "exists": false
+          },
+          {
+            "level": 2,
+            "file": "p1/angry-2.wav",
+            "exists": false
+          },
+          {
+            "level": 3,
+            "file": "p1/angry-3.wav",
+            "exists": false
+          },
+          {
+            "level": 4,
+            "file": "p1/angry-4.wav",
+            "exists": false
+          },
+          {
+            "level": 5,
+            "file": "p1/angry-5.wav",
+            "exists": false
+          }
+        ],
+        "happy": [
+          {
+            "level": 1,
+            "file": "p1/happy-1.wav",
+            "exists": false
+          },
+          {
+            "level": 2,
+            "file": "p1/happy-2.wav",
+            "exists": false
+          },
+          {
+            "level": 3,
+            "file": "p1/happy-3.wav",
+            "exists": false
+          },
+          {
+            "level": 4,
+            "file": "p1/happy-4.wav",
+            "exists": false
+          },
+          {
+            "level": 5,
+            "file": "p1/happy-5.wav",
+            "exists": false
+          }
+        ],
+        "hurt": [
+          {
+            "level": 1,
+            "file": "p1/hurt-1.wav",
+            "exists": false
+          },
+          {
+            "level": 2,
+            "file": "p1/hurt-2.wav",
+            "exists": false
+          },
+          {
+            "level": 3,
+            "file": "p1/hurt-3.wav",
+            "exists": false
+          },
+          {
+            "level": 4,
+            "file": "p1/hurt-4.wav",
+            "exists": false
+          },
+          {
+            "level": 5,
+            "file": "p1/hurt-5.wav",
+            "exists": false
+          }
+        ],
+        "insult": [
+          {
+            "level": 1,
+            "file": "p1/insult-1.wav",
+            "exists": false
+          },
+          {
+            "level": 2,
+            "file": "p1/insult-2.wav",
+            "exists": false
+          },
+          {
+            "level": 3,
+            "file": "p1/insult-3.wav",
+            "exists": false
+          },
+          {
+            "level": 4,
+            "file": "p1/insult-4.wav",
+            "exists": false
+          },
+          {
+            "level": 5,
+            "file": "p1/insult-5.wav",
+            "exists": false
+          }
+        ],
+        "celebrate": [
+          {
+            "level": 1,
+            "file": "p1/celebrate-1.wav",
+            "exists": false
+          },
+          {
+            "level": 2,
+            "file": "p1/celebrate-2.wav",
+            "exists": false
+          },
+          {
+            "level": 3,
+            "file": "p1/celebrate-3.wav",
+            "exists": false
+          },
+          {
+            "level": 4,
+            "file": "p1/celebrate-4.wav",
+            "exists": false
+          },
+          {
+            "level": 5,
+            "file": "p1/celebrate-5.wav",
+            "exists": false
+          }
+        ]
+      }
+    },
+    {
+      "id": "kim",
+      "name": "Kim",
+      "voice": {
+        "pitchHz": 225,
+        "formantScale": 1.17,
+        "breath": 0.3,
+        "rasp": 0.08,
+        "vibratoHz": 5.8,
+        "vibratoDepth": 0.025,
+        "tempo": 1.08,
+        "timbre": "adult-female"
+      },
+      "clips": {
+        "angry": [
+          {
+            "level": 1,
+            "file": "kim/angry-1.wav",
+            "exists": false
+          },
+          {
+            "level": 2,
+            "file": "kim/angry-2.wav",
+            "exists": false
+          },
+          {
+            "level": 3,
+            "file": "kim/angry-3.wav",
+            "exists": false
+          },
+          {
+            "level": 4,
+            "file": "kim/angry-4.wav",
+            "exists": false
+          },
+          {
+            "level": 5,
+            "file": "kim/angry-5.wav",
+            "exists": false
+          }
+        ],
+        "happy": [
+          {
+            "level": 1,
+            "file": "kim/happy-1.wav",
+            "exists": false
+          },
+          {
+            "level": 2,
+            "file": "kim/happy-2.wav",
+            "exists": false
+          },
+          {
+            "level": 3,
+            "file": "kim/happy-3.wav",
+            "exists": false
+          },
+          {
+            "level": 4,
+            "file": "kim/happy-4.wav",
+            "exists": false
+          },
+          {
+            "level": 5,
+            "file": "kim/happy-5.wav",
+            "exists": false
+          }
+        ],
+        "hurt": [
+          {
+            "level": 1,
+            "file": "kim/hurt-1.wav",
+            "exists": false
+          },
+          {
+            "level": 2,
+            "file": "kim/hurt-2.wav",
+            "exists": false
+          },
+          {
+            "level": 3,
+            "file": "kim/hurt-3.wav",
+            "exists": false
+          },
+          {
+            "level": 4,
+            "file": "kim/hurt-4.wav",
+            "exists": false
+          },
+          {
+            "level": 5,
+            "file": "kim/hurt-5.wav",
+            "exists": false
+          }
+        ],
+        "insult": [
+          {
+            "level": 1,
+            "file": "kim/insult-1.wav",
+            "exists": false
+          },
+          {
+            "level": 2,
+            "file": "kim/insult-2.wav",
+            "exists": false
+          },
+          {
+            "level": 3,
+            "file": "kim/insult-3.wav",
+            "exists": false
+          },
+          {
+            "level": 4,
+            "file": "kim/insult-4.wav",
+            "exists": false
+          },
+          {
+            "level": 5,
+            "file": "kim/insult-5.wav",
+            "exists": false
+          }
+        ],
+        "celebrate": [
+          {
+            "level": 1,
+            "file": "kim/celebrate-1.wav",
+            "exists": false
+          },
+          {
+            "level": 2,
+            "file": "kim/celebrate-2.wav",
+            "exists": false
+          },
+          {
+            "level": 3,
+            "file": "kim/celebrate-3.wav",
+            "exists": false
+          },
+          {
+            "level": 4,
+            "file": "kim/celebrate-4.wav",
+            "exists": false
+          },
+          {
+            "level": 5,
+            "file": "kim/celebrate-5.wav",
+            "exists": false
+          }
+        ]
+      }
+    }
+  ]
+}

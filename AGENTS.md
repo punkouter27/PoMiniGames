@@ -110,7 +110,7 @@ date: the CSS gate (hex literals 697 vs baseline 594, already over on 593c148a) 
 |---|---|---|
 | Format | `dotnet format PoMiniGames.slnx --verify-no-changes` | — |
 | Build | `dotnet build PoMiniGames.slnx -c Release` (warnings are errors) | — |
-| Unit (438) | `dotnet test tests/PoMiniGames.Unit -c Release --no-build` | nothing; runs in CI |
+| Unit (440) | `dotnet test tests/PoMiniGames.Unit -c Release --no-build` | nothing; runs in CI |
 | Integration (17) | `dotnet test tests/PoMiniGames.Integration -c Release --no-build` | Docker (Testcontainers Azurite); every test skips with one reason without it; runs in CI |
 | E2E API (16) | `dotnet test tests/PoMiniGames.E2EAPI -c Release --no-build` | Azurite on 127.0.0.1:10000/10002 (`docker compose up -d azurite`); local only |
 | E2E UI (22 methods, 31 cases) | `pwsh scripts/run-e2eui.ps1` (publishes the trimmed Release build to a temp folder and runs the tier against it via `POMINIGAMES_E2EUI_APP_DIR`; `-Filter` narrows it) | Docker + Playwright Chromium (skips with one reason without either); local only, ~40 min, heavy. Plain `dotnet test tests/PoMiniGames.E2EUI` still runs the in-process (untrimmed) host |
@@ -193,7 +193,7 @@ uvx ruff check .                                               # Python lint (sc
 
 ### Tests
 
-- There are four tiers (counts as of 2026-11-22). **Unit** (438) is hermetic and runs in CI. **Integration** (17)
+- There are four tiers (counts as of 2026-11-22). **Unit** (440) is hermetic and runs in CI. **Integration** (17)
   uses a Testcontainers Azurite and runs in CI; locally every test SKIPS with one reason (`DockerFact`) when Docker is
   not running. **E2EAPI** (16) runs HTTP contract tests in-process against the compose Azurite (local only).
   **E2EUI** (22) runs C# Playwright against a Kestrel host in the `Test` environment (local only; `UiFact` skips when

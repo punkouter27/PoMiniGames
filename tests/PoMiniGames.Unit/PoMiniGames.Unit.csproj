@@ -26,6 +26,12 @@
   </ItemGroup>
 
   <ItemGroup>
+    <!-- The per-game voice manifests (VoiceManifestTests): copied next to the tests, so no path to the repo is assumed. -->
+    <None Include="..\..\src\PoMiniGames.Client\wwwroot\audio\pobrawl\voices.json" Link="VoiceManifests\pobrawl\voices.json" CopyToOutputDirectory="PreserveNewest" />
+    <None Include="..\..\src\PoMiniGames.Client\wwwroot\audio\pofighter\voices.json" Link="VoiceManifests\pofighter\voices.json" CopyToOutputDirectory="PreserveNewest" />
+  </ItemGroup>
+
+  <ItemGroup>
     <Using Include="Xunit" />
   </ItemGroup>
 
