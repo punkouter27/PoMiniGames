@@ -1,0 +1,134 @@
+/* connectfive-extras.css — global styles for js/connectfive/extras.js.
+   Global on purpose: every element here is body-parented (or an attribute the page never
+   renders), so the page's scoped stylesheet cannot reach it. Loaded by extras.js itself. */
+
+/* Touch: horizontal drags aim the held disc; vertical swipes still scroll the page. */
+.cf-board { touch-action: pan-y; }
+
+/* Desktop: a gap between the turn strip and the board for the disc in hand. The cell-size
+   reserve grows by the same 40px so the board still fits one viewport height (the page's own
+   rule reserves 310px; `body` wins over its scoped selector). Phones keep their layout. */
+@media (min-width: 641px) and (hover: hover) and (pointer: fine) {
+  body .cf-layout.cf-layout {
+    --cf-cell: clamp(28px, min(calc((100dvh - 350px) / 9), calc((100dvw - 100px) / 9)), 84px);
+  }
+  body .cf-layout .cf-status-slot.cf-status-slot { margin-bottom: 40px; }
+}
+
+/* ── WebGPU board light ── additive over the board: black adds nothing. */
+.cf-x-light {
+  position: fixed;
+  left: 0;
+  top: 0;
+  z-index: 4;
+  pointer-events: none;
+  mix-blend-mode: plus-lighter;
+  will-change: transform;
+}
+
+/* ── Held disc ── shares .cf-physics-clone's look (app.css). */
+.cf-x-held {
+  position: fixed;
+  left: 0;
+  top: 0;
+  z-index: 6;
+  pointer-events: none;
+  opacity: 0;
+  transition: opacity 140ms var(--ease-standard, ease);
+  will-change: transform, opacity;
+}
+.cf-x-held--on { opacity: 1; }
+
+/* ── Drain ── */
+.cf-x-drain {
+  position: fixed;
+  left: 0;
+  top: 0;
+  z-index: 5;
+  pointer-events: none;
+  will-change: transform;
+}
+
+/* ── Last move ── a thin ring on each side's newest disc. */
+.cf-cell[data-cf-last]::after {
+  content: "";
+  position: absolute;
+  inset: 4%;
+  border-radius: 50%;
+  border: 2px solid var(--cf-x-last, #fff);
+  box-shadow: 0 0 10px var(--cf-x-last, #fff);
+  opacity: 0.85;
+  pointer-events: none;
+  animation: cf-x-last 1.6s ease-in-out infinite;
+}
+.cf-cell[data-cf-last="red"] { --cf-x-last: var(--disc-red-lit); }
+.cf-cell[data-cf-last="yellow"] { --cf-x-last: var(--disc-yellow-lit); }
+@keyframes cf-x-last {
+  0%, 100% { transform: scale(1); opacity: 0.85; }
+  50% { transform: scale(1.06); opacity: 0.45; }
+}
+
+/* ── Big block ── the board swells while the blocking disc falls. */
+.cf-board.cf-anticipate { animation: cf-x-swell 0.6s ease-in forwards; }
+@keyframes cf-x-swell {
+  from { filter: brightness(1) saturate(1); }
+  to { filter: brightness(1.18) saturate(1.25); }
+}
+.cf-x-tag {
+  position: fixed;
+  z-index: 7;
+  pointer-events: none;
+  transform: translate(-50%, -50%);
+  padding: 0.2rem 0.6rem;
+  border-radius: 999px;
+  font-weight: 800;
+  font-size: 0.85rem;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--po-text, #111);
+  background: var(--cf-x-tag, #fff);
+  box-shadow: 0 4px 18px rgba(0, 0, 0, 0.35);
+  animation: cf-x-tag 1.2s cubic-bezier(0.2, 1.4, 0.4, 1) forwards;
+}
+.cf-x-tag--red { --cf-x-tag: var(--disc-red-lit); }
+.cf-x-tag--yellow { --cf-x-tag: var(--disc-yellow-lit); }
+@keyframes cf-x-tag {
+  0% { transform: translate(-50%, -20%) scale(0.4); opacity: 0; }
+  18% { transform: translate(-50%, -110%) scale(1.1); opacity: 1; }
+  30% { transform: translate(-50%, -110%) scale(1); }
+  80% { opacity: 1; }
+  100% { transform: translate(-50%, -150%) scale(1); opacity: 0; }
+}
+
+/* ── Turn baton ── a glow that glides between the names in the turn strip. */
+.cf-x-baton {
+  position: fixed;
+  left: 0;
+  top: 0;
+  z-index: 3;
+  pointer-events: none;
+  border-radius: 999px;
+  opacity: 0;
+  transition: opacity 200ms ease;
+  background: radial-gradient(ellipse at center, color-mix(in srgb, var(--disc-red-mid) 32%, transparent), transparent 72%);
+  box-shadow: inset 0 0 0 1.5px color-mix(in srgb, var(--disc-red-lit) 70%, transparent);
+  mix-blend-mode: plus-lighter;
+}
+.cf-x-baton--yellow {
+  background: radial-gradient(ellipse at center, color-mix(in srgb, var(--disc-yellow-mid) 32%, transparent), transparent 72%);
+  box-shadow: inset 0 0 0 1.5px color-mix(in srgb, var(--disc-yellow-lit) 70%, transparent);
+}
+.cf-x-baton--on { opacity: 1; }
+
+/* ── Start card → board ── (html.cf-vt only while extras.js runs the transition) */
+html.cf-vt::view-transition-old(root) { animation: cf-x-vt-out 380ms cubic-bezier(0.4, 0, 1, 1) both; }
+html.cf-vt::view-transition-new(root) { animation: cf-x-vt-in 460ms cubic-bezier(0.2, 0.9, 0.3, 1) both; }
+@keyframes cf-x-vt-out { to { opacity: 0; transform: scale(1.04); filter: blur(6px); } }
+@keyframes cf-x-vt-in { from { opacity: 0; transform: scale(0.97); filter: blur(4px); } }
+
+@media (prefers-reduced-motion: reduce) {
+  .cf-cell[data-cf-last]::after { animation: none; }
+  .cf-board.cf-anticipate { animation: none; }
+  .cf-x-tag { animation: none; transform: translate(-50%, -110%); }
+}
+html[data-motion="reduce"] .cf-cell[data-cf-last]::after { animation: none; }

@@ -358,8 +358,12 @@
         "2p"   => GameIntro.IntroMode.TwoPlayer,
         _      => GameIntro.IntroMode.OnePlayer,
     };
-    private void DismissIntro()
+    private async Task DismissIntro()
     {
+        // The start card hands over to the board with a View Transition (extras.js); it resolves
+        // once the "before" frame is captured, and never blocks when the module is not loaded.
+        try { await JS.InvokeAsync<bool>("PoConnectFiveExtras.beginIntroTransition"); }
+        catch { /* no transition: close the card plainly */ }
         _introDone = true;
         // Online connects only once the player has read the intro: the lobby is a
         // promise to play, and nobody should take a seat while still reading the rules.

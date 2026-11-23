@@ -260,8 +260,18 @@
         const vr = l.visR;      // drawn radius (matches the CSS disc)
         // Spawn JUST ABOVE the board top. The exact value doesn't matter as
         // long as it's clearly above; matter.js integrates gravity from here.
-        const cx = cellCx(col);
-        const cy = spawnY();
+        let cx = cellCx(col);
+        let cy = spawnY();
+        // The held disc (extras.js) is where the player let go: start the fall there, inside
+        // this column's walls, so the disc in hand is the one that drops.
+        try {
+            const held = window.PoConnectFiveHeld?.take?.(col);
+            if (held) {
+                const play = l.strideX / 2 - r - 1;
+                cx = Math.max(cx - play, Math.min(cx + play, held.x));
+                cy = Math.max(cy, Math.min(held.y, cellCy(0) - l.strideY));
+            }
+        } catch { /* the hand is cosmetic: fall from the default spot */ }
 
         // Floating clone. position: fixed so it can move with the body without
         // affecting the grid layout. The clone's class matches the existing
