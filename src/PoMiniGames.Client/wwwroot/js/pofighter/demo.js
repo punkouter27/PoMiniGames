@@ -1,6 +1,8 @@
 // pofighter/demo.js — two CPU fighters on the canvas with the arcade HUD (versus.js holds the
 // rules). runVersus() plays either the endless attract-mode demo or one tournament bout;
-// startDemo() is the demo: Kim vs Nick, best of three, forever.
+// startDemo() is the demo: Kim vs Nick, best of three, forever. Every completed match (never one
+// left early) is rated on the live fighter Elo board through eloRef.DemoBoutFinished, once per
+// match, and the win card shows both fighters' new Elo and its change.
 //
 // Any key, tap or gamepad button leaves the demo through exitRef.invokeMethodAsync('ExitDemo')
 // (the page navigates home). The page passes no exitRef while the kiosk reel is running, since
@@ -45,13 +47,17 @@ export async function loadRoster() {
  * Plays a match on root's canvas. fighters: two loaded fighters (the first starts left), each
  * optionally with { palette, input } — an input (input.js createInput) makes that corner human.
  * opts: { loop (rematch forever), exitRef, label (a caption under the timer, e.g. "FINAL"),
- *         final (louder celebration), difficulty (the CPU's: easy | normal | hard) }.
+ *         final (louder celebration), difficulty (the CPU's: easy | normal | hard),
+ *         onMatch (result, matchNo) → Promise<[winnerElo, winnerDelta, loserElo, loserDelta] | null>:
+ *         called once per completed match; its numbers go on the win card }.
  * Resolves with { winnerId, loserId, isDraw, winnerIndex } when a single match ends (never when
  * looping), or null when the session is stopped first. winnerIndex is the fighters[] index
  * (−1 for a draw), which tells a mirror match's two corners apart.
  */
 export function runVersus(root, session, fighters, opts = {}) {
-    const { loop = false, exitRef = null, label = '', final = false, difficulty = 'normal' } = opts;
+    const { loop = false, exitRef = null, label = '', final = false, difficulty = 'normal', onMatch = null } = opts;
+    const rated = new Set();         // match numbers already reported: a match counts once
+    let elo = null;                  // { [fighterId]: [elo, delta] } for the current win card
     loadManifest();
     loadQuotes();
     const sheets = new Map(fighters.map(f => [f.data, f.sheet]));
@@ -269,6 +275,16 @@ export function runVersus(root, session, fighters, opts = {}) {
             } else if (e.type === 'match' && e.winner >= 0) {
                 const w = match.fighters[e.winner], l = match.fighters[1 - e.winner];
                 quote = { text: pickQuote(w.id, l.name, Math.random()), winner: w, loser: l, said: false };
+            }
+            if (e.type === 'match' && onMatch && !rated.has(match.matchNo)) {
+                rated.add(match.matchNo);
+                elo = null;
+                const [a, b] = match.fighters;
+                const r = e.winner === -1 ? { winnerId: a.id, loserId: b.id, isDraw: true }
+                    : { winnerId: match.fighters[e.winner].id, loserId: match.fighters[1 - e.winner].id, isDraw: false };
+                Promise.resolve(onMatch(r, match.matchNo)).then(n => {
+                    if (!session.stopped && Array.isArray(n) && n.length === 4) elo = { [r.winnerId]: [n[0], n[1]], [r.loserId]: [n[2], n[3]] };
+                }).catch(() => { });
             }
             if (e.type === 'ko' || e.type === 'time') perfect = !!e.perfect;
             // The shared camera shake and hitstop (impactBus turns both off for reduced motion).
@@ -753,6 +769,10 @@ export function runVersus(root, session, fighters, opts = {}) {
         portraitBox(portraits[li], quote.loser, VIEW.width - 300 + slide, 150, 170, true);
         text(quote.winner.name.toUpperCase(), 420 - slide * 0.5, 120, 54, color, 'left', 9);
         text('WINS', 420 - slide * 0.5, 180, 34, '#ffffff', 'left', 7);
+        // The fighter Elo board after this match (demo): new rating and its change.
+        const eloText = id => elo?.[id] ? `ELO ${elo[id][0]} (${elo[id][1] >= 0 ? '+' : ''}${elo[id][1]})` : null;
+        if (eloText(quote.winner.id)) text(eloText(quote.winner.id), 420 - slide * 0.5, 230, 26, color, 'left', 5);
+        if (eloText(quote.loser.id)) text(eloText(quote.loser.id), VIEW.width - 215 + slide, 350, 22, '#bbbbbb', 'center', 4);
         // The line, typed out.
         const shown = reducedMotion() ? quote.text : quote.text.slice(0, Math.floor(Math.max(0, s - 0.3) * 45));
         const box = { x: 100, y: 370, w: VIEW.width - 200, h: 170 };
@@ -900,10 +920,13 @@ export function runVersus(root, session, fighters, opts = {}) {
 }
 
 /** The attract-mode demo: Kim (left) vs Nick, best of three, rematches forever. */
-export async function startDemo(root, exitRef, session) {
+export async function startDemo(root, exitRef, session, eloRef = null) {
     const roster = await loadRoster();
     if (session.stopped || !roster) return false;
     const kim = roster.find(f => f.id === 'kim'), nick = roster.find(f => f.id === 'p1');
-    runVersus(root, session, [kim, nick], { loop: true, exitRef });
+    const onMatch = eloRef
+        ? (r, matchNo) => eloRef.invokeMethodAsync('DemoBoutFinished', matchNo, r.winnerId, r.loserId, r.isDraw)
+        : null;
+    runVersus(root, session, [kim, nick], { loop: true, exitRef, onMatch });
     return true;
 }
