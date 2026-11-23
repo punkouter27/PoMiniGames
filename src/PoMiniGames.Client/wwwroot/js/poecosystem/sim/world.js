@@ -528,13 +528,20 @@ export function createWorld({ seed = 1, caps = {}, physics = null, terrain: supp
     const isHound = sp.id === SPECIES_ID.WOLF && e.role[i] === ROLE.TAMED_HOUND;
     // The watchtower (behavior/tech.js) lets the tribe see further while it stands.
     const perception = sp.builds && hasTower(settlement) ? sp.perception * TECH.towerPerceptionMultiplier : sp.perception;
+    // Every threat in range pushes the creature away, the nearer the harder (1/d); the
+    // threat point it flees from sits along that sum at the nearest one's distance. Fleeing
+    // the nearest alone, a deer between two wolves turned round at every rescore and
+    // sprinted back and forth on the spot.
+    let awayX = 0; let awayZ = 0; let threats = 0;
     spatial.forEachInRadius(x, z, perception, (j, d2) => {
       if (j === i) return;
       const d = Math.sqrt(d2);
       const sj = e.species[j];
       const fleeAt = flees[sj];
-      if (!isHound && fleeAt !== undefined && d <= fleeAt && d < ctx.threatDist) {
-        ctx.threatDist = d; ctx.threatX = e.x[j]; ctx.threatZ = e.z[j];
+      if (!isHound && fleeAt !== undefined && d <= fleeAt) {
+        if (d > 1e-6) { awayX += (x - e.x[j]) / d2; awayZ += (z - e.z[j]) / d2; }
+        threats++;
+        if (d < ctx.threatDist) { ctx.threatDist = d; ctx.threatX = e.x[j]; ctx.threatZ = e.z[j]; }
       }
       if (isHound) {
         const huntTarget = (sj === SPECIES_ID.WOLF && e.role[j] !== ROLE.TAMED_HOUND)
@@ -550,6 +557,14 @@ export function createWorld({ seed = 1, caps = {}, physics = null, terrain: supp
       if (sj === sp.id && e.sex[j] !== e.sex[i] && d < ctx.mateDist && !juvenile && canMate(e, i, j, tick)) { ctx.mateDist = d; ctx.mateIdx = j; }
       if ((j === mother || j === father) && d < ctx.parentDist) { ctx.parentDist = d; ctx.parentIdx = j; }
     });
+    if (threats > 1) {
+      const m = Math.hypot(awayX, awayZ);
+      // Threats close to evenly round it cancel out; then the nearest one still decides.
+      if (m > 0.25 / ctx.threatDist) {
+        const r = Math.max(1, ctx.threatDist);
+        ctx.threatX = x - awayX / m * r; ctx.threatZ = z - awayZ / m * r;
+      }
+    }
     // Carnivores remember where they last saw prey, so a hungry wolf with nothing in
     // sight roams back toward the herds instead of random-walking the beach.
     if (ctx.preyIdx !== NONE) remember(e, i, MEMORY_KIND.FOOD, tileOf(ctx.preyIdx), tick);
@@ -1040,7 +1055,7 @@ export function createWorld({ seed = 1, caps = {}, physics = null, terrain: supp
       }
       const px0 = e.x[i]; const pz0 = e.z[i];
       act(i, e.goal[i], plans[i], dt);
-      moveCreature(e, i, terrain, tileState, dt, ground);
+      moveCreature(e, i, terrain, tileState, dt, ground, e.goal[i] === GOAL.FLEE);
       e.dist[i] += Math.hypot(e.x[i] - px0, e.z[i] - pz0);   // lifetime metres (telemetry)
     }
 

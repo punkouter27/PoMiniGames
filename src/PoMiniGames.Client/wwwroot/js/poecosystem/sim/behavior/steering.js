@@ -87,9 +87,10 @@ export function refuge(terrain, tileState, ground, x, z, lip) {
  * Integrate one step; returns true when the creature moved. `ground` (terrain/ground.js)
  * adds cliffs and footprints to the tile test. Everything here is a pure function of the
  * creature's position, velocity and yaw: the yaw it already carries is the only memory the
- * detour needs, so nothing new is snapshotted and no stream is drawn from.
+ * detour needs, so nothing new is snapshotted and no stream is drawn from. `forwardOnly`
+ * (fleeing) refuses a detour that goes back against the wanted heading.
  */
-export function moveCreature(e, i, terrain, tileState, dt, ground = null) {
+export function moveCreature(e, i, terrain, tileState, dt, ground = null, forwardOnly = false) {
   const species = e.species[i];
   const lip = LIP[species];
   const x0 = e.x[i]; const z0 = e.z[i];
@@ -179,6 +180,10 @@ export function moveCreature(e, i, terrain, tileState, dt, ground = null) {
     }
     if (found || fore === 0) break;
   }
+  // A fleeing animal whose only way on is back toward what it runs from is cornered. Taking
+  // that step put it a stride from the water, and the next tick ran it straight back to the
+  // edge: a herd in a corner of the coast ran on the spot, forever. It stands at bay instead.
+  if (found && forwardOnly && (nx - x0) * vx + (nz - z0) * vz < 0) found = false;
   if (!found) { stop(e, i); return false; }
   e.x[i] = nx; e.z[i] = nz;
   e.y[i] = terrain.heightAt(nx, nz);
