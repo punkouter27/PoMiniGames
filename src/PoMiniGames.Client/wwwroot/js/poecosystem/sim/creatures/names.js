@@ -17,6 +17,11 @@ const TABLES = [
     suf: ['el', 'ara', 'i', 'mas', 'ra', 'th', 'ma', 'on', 'va', 'dia', 'nas', 'n', 'ren', 'o'] },
 ];
 
+// Syllable pairs that land on a rude word or a slur. Every combination was listed and read
+// (2026-11-23); these three are the ones that came out wrong. A blocked pair takes the next
+// suffix instead, with no extra draw, so the stream (and every other name) is unchanged.
+const BLOCKED = new Set(['Piss', 'Porn', 'Kyke']);
+
 function roman(n) {
   const map = [[1000, 'M'], [900, 'CM'], [500, 'D'], [400, 'CD'], [100, 'C'], [90, 'XC'], [50, 'L'], [40, 'XL'], [10, 'X'], [9, 'IX'], [5, 'V'], [4, 'IV'], [1, 'I']];
   let out = '';
@@ -29,7 +34,10 @@ export function createNamer(rng) {
   return {
     next(speciesId) {
       const t = TABLES[speciesId] ?? TABLES[0];
-      const base = t.pre[rng.int(t.pre.length)] + t.suf[rng.int(t.suf.length)];
+      const pre = t.pre[rng.int(t.pre.length)];
+      let si = rng.int(t.suf.length);
+      while (BLOCKED.has(pre + t.suf[si])) si = (si + 1) % t.suf.length;
+      const base = pre + t.suf[si];
       const count = (used.get(base) ?? 0) + 1;
       used.set(base, count);
       return count === 1 ? base : `${base} ${roman(count)}`;

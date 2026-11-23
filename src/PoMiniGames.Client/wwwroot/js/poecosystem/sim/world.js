@@ -20,7 +20,7 @@ import { createBushes, dryUpBushes, isRipe, stepBushes, stripBush } from './flor
 import { TREE_STATE, browseTree, burnTree, chopTree, createTrees, dryUpTrees, stepTrees } from './flora/trees.js';
 import { SPECIES, SPECIES_ID } from './creatures/species.js';
 import { drink, feed, stepDrives } from './creatures/drives.js';
-import { DEATH_CAUSE, LIFE_STAGE, checkVitals, killCreature, oldAgeDeathChance, spawnCreature, updateLifeStage } from './creatures/lifecycle.js';
+import { DEATH_CAUSE, LIFE_STAGE, checkVitals, wastingAway, killCreature, oldAgeDeathChance, spawnCreature, updateLifeStage } from './creatures/lifecycle.js';
 import { TRAIT, baseTrait, randomTraits } from './creatures/traits.js';
 import { canMate, chooseSex, inheritTraits, litterSize } from './creatures/genetics.js';
 import { createNamer } from './creatures/names.js';
@@ -38,7 +38,7 @@ import { stepFire } from './events/fire.js';
 import { erupt, stepLava } from './events/volcano.js';
 import { templateThought } from './thoughts/templates.js';
 import { createLedger } from './telemetry/ledger.js';
-import { nullPhysics } from './physics/world.js';
+import { guardPhysics, nullPhysics } from './physics/world.js';
 import { createTribeStore } from './tribe/tribeStore.js';
 import { createWeather, getWeatherState, setWeatherState, stepWeather, triggerCatastrophicDrought, weatherTelemetry } from './events/weather.js';
 import { isSick, stepDisease } from './creatures/disease.js';
@@ -124,7 +124,9 @@ export function createWorld({ seed = 1, caps = {}, physics = null, terrain: supp
     }
     return best;
   };
-  const phys = physics ?? nullPhysics();
+  // Guarded: a physics engine that throws is dropped for nullPhysics, never the sim with it.
+  let physicsFailure = null;
+  const phys = guardPhysics(physics ?? nullPhysics(), (err, kind) => { physicsFailure = `${kind}: ${err?.message ?? err}`; });
   const carcasses = [];
   let nextCarcassId = 1;
   const popHistory = [];
@@ -1041,7 +1043,13 @@ export function createWorld({ seed = 1, caps = {}, physics = null, terrain: supp
       const vital = checkVitals(e, i);
       if (vital) {
         const here = tileState[tileOf(i)];
-        kill(i, here === TILE_STATE.LAVA ? DEATH_CAUSE.ERUPTION : here === TILE_STATE.FIRE ? DEATH_CAUSE.FIRE : isSick(e, i, tick) ? DEATH_CAUSE.DISEASE : vital);
+        // Health worn away while neither starving nor parched came from something else: a
+        // blizzard on an exposed body, or wounds from a fight it walked away from. Blaming
+        // the bigger of hunger and thirst logged frozen villagers as dying of thirst.
+        const cause = here === TILE_STATE.LAVA ? DEATH_CAUSE.ERUPTION : here === TILE_STATE.FIRE ? DEATH_CAUSE.FIRE
+          : isSick(e, i, tick) ? DEATH_CAUSE.DISEASE : wastingAway(e, i) ? vital
+          : chill > 0.35 ? DEATH_CAUSE.COLD : DEATH_CAUSE.WOUNDS;
+        kill(i, cause);
         continue;
       }
       const oldAge = oldAgeDeathChance(e, i, sp, dt);
@@ -1507,6 +1515,8 @@ export function createWorld({ seed = 1, caps = {}, physics = null, terrain: supp
   const world = {
     seed, terrain, tileState, fear, grass, bushes, trees, settlement, ground, entities: e, clock, log, bus, spatial, namer, streams,
     get shoreField() { return shoreField; }, carcasses, physics: phys, popHistory,
+    /** A physics failure since the last call (the engine was dropped), else null. */
+    takePhysicsFailure() { const f = physicsFailure; physicsFailure = null; return f; },
     scheduler, corridors, boulders, fires, burnt, ignite, rebuildShoreField, lava: null,
     thoughtFeed, telemetry: ledger, lineage, tribe,
     erupt: () => erupt(world),

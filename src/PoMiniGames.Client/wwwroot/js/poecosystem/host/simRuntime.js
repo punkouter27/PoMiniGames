@@ -176,6 +176,22 @@ export function createSimRuntime(post, deps = {}) {
       .catch((err) => { post({ type: 'error', where: 'save', message: String(err?.message ?? err) }); return false; });
   }
 
+  // One tick, and nothing escapes it. A physics engine that failed was already dropped by
+  // the world (guardPhysics) and is only reported. Anything else pauses the island with
+  // the reason on screen: a silent throw here once left the clock stopped while the page
+  // kept drawing, so the island looked alive and was not.
+  function stepSafely() {
+    try { world.step(); }
+    catch (err) {
+      paused = true;
+      post({ type: 'error', where: 'sim', message: `The island stopped on an error and is paused: ${err?.message ?? err}` });
+      return false;
+    }
+    const failed = world.takePhysicsFailure?.();
+    if (failed) post({ type: 'error', where: 'physics', message: failed });
+    return true;
+  }
+
   function tick() {
     if (!world || disposed) return;
     const wall = now();
@@ -185,7 +201,7 @@ export function createSimRuntime(post, deps = {}) {
     const steps = world.clock.advance(wallDt);
     const t0 = now();
     for (let k = 0; k < steps; k++) {
-      world.step();
+      if (!stepSafely()) return;
       const tk = world.clock.tick;
       if (tk % HOST.statsEveryTicks === 0) { postStats(); postEvents(); postThoughts(); }
       if (selected !== NONE && tk % HOST.detailEveryTicks === 0) postDetail();
@@ -262,7 +278,7 @@ export function createSimRuntime(post, deps = {}) {
           const totalTicks = Math.min(36000, Math.round((years * YEAR_SECONDS) / TICK_SECONDS));
           const keyInterval = Math.round(KEYFRAME_YEARS * YEAR_SECONDS / TICK_SECONDS);
           for (let k = 0; k < totalTicks; k++) {
-            world.step();
+            if (!stepSafely()) break;
             const tk = world.clock.tick;
             if (!ephemeral && idb && tk % keyInterval === 0) {
               const yr = world.clock.year();

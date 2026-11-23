@@ -30,6 +30,33 @@ export function nullPhysics() {
   };
 }
 
+/**
+ * The same surface, made unable to take the simulation down. Physics is write-only (no
+ * rule reads a body), so an engine that throws — a Rapier WASM abort poisons every later
+ * call — is swapped for nullPhysics and the island carries on without its props. `onFail`
+ * hears about it once.
+ */
+export function guardPhysics(inner, onFail = null) {
+  let cur = inner;
+  return new Proxy({}, {
+    get(_, key) {
+      const v = cur[key];
+      if (typeof v !== 'function') return v;
+      return (...args) => {
+        try { return v.apply(cur, args); }
+        catch (err) {
+          if (cur.kind === 'null') throw err;
+          const failed = cur;
+          cur = nullPhysics();
+          try { failed.dispose(); } catch { /* the engine is already broken */ }
+          onFail?.(err, failed.kind);
+          return cur[key](...args);
+        }
+      };
+    },
+  });
+}
+
 export const G_TERRAIN = 1;
 export const G_RAGDOLL = 2;
 export const G_PROP = 4;

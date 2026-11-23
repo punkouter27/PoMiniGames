@@ -55,9 +55,15 @@ export function scoreGoals(e, i, ctx) {
   s[GOAL.FLEE] += fear * 0.6;
 
   const foodDist = Math.min(ctx.foodDist ?? Infinity, sp.carnivore ? (ctx.carcassDist ?? Infinity) : Infinity);
-  if (foodDist !== Infinity) s[GOAL.EAT] = h * (0.45 + 0.55 * near(foodDist, 30)) * (1 + 0.1 * greed);
+  // Past URGENT a need outranks work and a distant meal however far the food or water is:
+  // with water over 30 m off, a parched villager scored drinking 0.45 against building's
+  // 1.05 and worked on until it died of thirst.
+  // Only with no threat in sight: urgency does not walk a parched deer past a wolf.
+  const URGENT = 0.75;
+  const urge = (v) => (ctx.threatDist === Infinity ? 2 * Math.max(0, v - URGENT) : 0);
+  if (foodDist !== Infinity) s[GOAL.EAT] = h * (0.45 + 0.55 * near(foodDist, 30)) * (1 + 0.1 * greed) + urge(h);
   // Thirst is convex so a half-thirsty animal keeps foraging instead of living on the shore.
-  if (ctx.waterDist !== Infinity) s[GOAL.DRINK] = Math.pow(t, 1.5) * (0.45 + 0.55 * near(ctx.waterDist, 30));
+  if (ctx.waterDist !== Infinity) s[GOAL.DRINK] = Math.pow(t, 1.5) * (0.45 + 0.55 * near(ctx.waterDist, 30)) + urge(t);
   if (sp.carnivore && ctx.preyDist !== Infinity) s[GOAL.HUNT] = h * (0.5 + 0.5 * near(ctx.preyDist, 40)) + 0.1 * bold * h;
 
   if (ctx.mateDist !== Infinity && fitToMate(e, i, tick)) {
@@ -72,6 +78,8 @@ export function scoreGoals(e, i, ctx) {
 
   if (sp.builds && ctx.hasHome) {
     const role = e.role ? e.role[i] : ROLE.NORMAL;
+    // Work gives way to need: full until hunger or thirst passes 0.4, 40% at the edge.
+    const toil = 1 - Math.max(0, Math.max(h, t) - 0.4);
     // Home at night, or when chilled by winter snow/storms (#10).
     const chillBoost = (ctx.chill ?? 0) > 0.4 ? 0.35 : 0;
     s[GOAL.RETURN_HOME] = ctx.night || chillBoost > 0
@@ -82,10 +90,10 @@ export function scoreGoals(e, i, ctx) {
       const logs = ctx.logsCarried ?? 0;
       const builderBoost = role === ROLE.BUILDER ? 0.25 : 0;
       if (ctx.hasTribeProject || logs >= 3) {
-        s[GOAL.BUILD] = 0.58 + builderBoost + 0.22 * near(ctx.projectDist ?? ctx.homeDist, 50);
+        s[GOAL.BUILD] = (0.58 + builderBoost + 0.22 * near(ctx.projectDist ?? ctx.homeDist, 50)) * toil;
       }
       if (logs < 3 && ctx.treeDist !== Infinity) {
-        s[GOAL.CHOP] = (0.32 + 0.3 * near(ctx.treeDist, 50)) * (0.4 + 0.8 * diligent);
+        s[GOAL.CHOP] = (0.32 + 0.3 * near(ctx.treeDist, 50)) * (0.4 + 0.8 * diligent) * toil;
       }
     }
 
@@ -93,13 +101,13 @@ export function scoreGoals(e, i, ctx) {
     const fightDist = Math.min(ctx.rivalDist ?? Infinity, ctx.hostileBuildingDist ?? Infinity);
     if (fightDist !== Infinity) {
       const warriorBoost = role === ROLE.WARRIOR ? 0.32 : 0;
-      s[GOAL.FIGHT_RIVAL] = (0.42 + warriorBoost + 0.45 * near(fightDist, 28)) * (0.7 + 0.6 * bold) * (1 - 0.5 * h);
+      s[GOAL.FIGHT_RIVAL] = (0.42 + warriorBoost + 0.45 * near(fightDist, 28)) * (0.7 + 0.6 * bold) * (1 - 0.5 * Math.max(h, t));
     }
 
     // Cultivated field tending (#8)
     if (ctx.fieldDist !== Infinity && h < 0.75) {
       const foragerBoost = role === ROLE.FORAGER ? 0.18 : 0;
-      s[GOAL.TEND_FIELD] = (0.28 + foragerBoost + 0.24 * near(ctx.fieldDist, 30)) * (0.5 + 0.6 * diligent);
+      s[GOAL.TEND_FIELD] = (0.28 + foragerBoost + 0.24 * near(ctx.fieldDist, 30)) * (0.5 + 0.6 * diligent) * toil;
     }
 
     // Perimeter patrol for warriors (#8, #9)

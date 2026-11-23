@@ -200,14 +200,17 @@ export function createRapierPhysics(R, terrain, opts = {}) {
       // A carcass wakes whole or not at all, and never past the cap a fresh death needs.
       if (!p.rag.settled || physics.activeRagdolls >= cfg.maxActiveRagdolls - 4) return;
       for (const part of p.rag.parts) {
-        part.keep = part.keep ?? part.expires; part.settled = false; part.nudged = time;
+        // Its clock is held (keep) while it moves: a part that expired awake was removed
+        // from Rapier while the carcass still stepped it, and the next isSleeping() on the
+        // freed body aborted the WASM ("unreachable") and took the whole sim down.
+        part.keep = part.keep ?? part.expires; part.expires = Infinity; part.settled = false; part.nudged = time;
         part.body.setBodyType(R.RigidBodyType.Dynamic, true);
       }
       p.rag.settled = false;
       p.rag.born = time - cfg.ragdollMaxSeconds + NUDGE_SETTLE;
       return;
     }
-    p.keep = p.keep ?? p.expires; p.settled = false; p.nudged = time;
+    p.keep = p.keep ?? p.expires; p.expires = Infinity; p.settled = false; p.nudged = time;
     p.born = time - cfg.settleTimeoutSeconds + NUDGE_SETTLE;
     p.body.setBodyType(R.RigidBodyType.Dynamic, true);
   };
@@ -448,7 +451,8 @@ export function createRapierPhysics(R, terrain, opts = {}) {
         }
       }
       for (let k = props.length - 1; k >= 0; k--) {
-        if (props[k].expires <= time) { world.removeRigidBody(props[k].body); props.splice(k, 1); }
+        // Only a settled prop is ever removed: a moving one may still be a ragdoll's part.
+        if (props[k].settled && props[k].expires <= time) { world.removeRigidBody(props[k].body); props.splice(k, 1); }
       }
       for (let k = ragdolls.length - 1; k >= 0; k--) if (ragdolls[k].settled && !props.some(p => p.rag === ragdolls[k])) ragdolls.splice(k, 1);
       for (let k = trees.length - 1; k >= 0; k--) if (!trees[k].hinge && !props.includes(trees[k].entry)) trees.splice(k, 1);
