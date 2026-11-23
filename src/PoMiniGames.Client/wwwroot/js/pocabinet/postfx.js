@@ -110,9 +110,9 @@ export class PostFx {
         // Exposure's strength is low: the composite below has its own authored exposure and weather rig.
         const stack = createPostStack(POST_LIB, this.renderer, scene, camera, {
             // MRT (per-object velocity + normals + roughness, the price of SSR) makes every material compile a second
-            // program (about 350 instead of 165 here, ~15 s of boot compile on a slow GPU), so only the high tier pays
-            // it; medium reprojects from the camera alone ('camera' velocity: no MRT, TRAA + exposure only).
-            velocity: q === 'high' ? 'mrt' : 'camera',
+            // program (about 350 instead of 165 here, ~15 s of boot compile on a slow GPU), so only the high tier on
+            // WebGPU pays it; WebGL2 fallback and medium reproject from the camera alone ('camera' velocity: no MRT).
+            velocity: q === 'high' && !!this.renderer?.backend?.isWebGPUBackend ? 'mrt' : 'camera',
             tier: q, features: { dynres: false, flare: false, streak: false }, samples: 0,   // GTAO below needs a sampleable (single-sample) depth
             reflections: { enabled: false, intensity: 0.9, maxDistance: 80 },
             exposure: { strength: 0.3, min: 0.9, max: 1.12 },

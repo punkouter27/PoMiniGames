@@ -380,7 +380,16 @@ export async function createAftermathMap(canvas, {
             }
         };
 
-        await renderer.compileAsync(scene, camera);
+        if (renderer.backend?.isWebGPUBackend) {
+            let timer = 0;
+            try {
+                await Promise.race([
+                    renderer.compileAsync(scene, camera),
+                    new Promise(resolve => { timer = setTimeout(resolve, 3000); }),
+                ]);
+            } catch { /* first draw compiles what is missing */ }
+            clearTimeout(timer);
+        }
         if (disposed) { renderer.dispose(); return none; }
 
         observer = new ResizeObserver(() => { resize(); if (reducedMotion && !disposed) frame(); });

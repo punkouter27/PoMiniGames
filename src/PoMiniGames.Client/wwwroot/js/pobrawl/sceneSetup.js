@@ -62,19 +62,22 @@ class SceneSetupMethods {
     // the same reason: the warm-up compiles against the target before its first render). GTAO is
     // by far the most expensive stage of this chain; 'high' tier only, at half resolution, and
     // handed to the stack as a pre-resolve hook so TRAA anti-aliases the occlusion with the frame.
+    const isWebGpu = !!this.renderer?.backend?.isWebGPUBackend;
+    const useGtao = q.gtao && isWebGpu;
+    const msaaSamples = isWebGpu ? q.msaaSamples : Math.min(q.msaaSamples, 2);
     let aoNode = null;
     const stack = createPostStack(POST_LIB, this.renderer, this.scene, this.camera, {
-      tier: Quality.tier(),
+      tier: isWebGpu ? Quality.tier() : (Quality.tier() === 'high' ? 'medium' : Quality.tier()),
       // No MRT attachments: the warm-up's compileAsync cannot build their outputs (see postStack.js).
       velocity: 'camera',
       // The hall is dark on purpose (a dark blue arena, bright lamp heads); keep the meter close to 1.
       exposure: { key: 0.07, strength: 0.4, min: 0.9, max: 1.15 },
-      samples: q.gtao ? 0 : q.msaaSamples,
+      samples: useGtao ? 0 : msaaSamples,
       type: this.renderer.getOutputBufferType?.() ?? THREE.HalfFloatType,
       // Dynamic resolution moves the stage's pixel-ratio ceiling, the one policy PoBrawl already has.
       onScale: (scale) => setMaxDpr(this.stage, q.maxDpr * scale),
       lit: (sceneTex, pass0) => {
-        if (!q.gtao) return sceneTex;
+        if (!useGtao) return sceneTex;
         try {
           aoNode = ao(pass0.getTextureNode('depth'), null, this.camera);
           aoNode.resolutionScale = 0.5;

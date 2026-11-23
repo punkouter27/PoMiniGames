@@ -295,20 +295,22 @@ export function lightPass(g, cars, camX, camY, scale, w, h, env) {
         if (x < -80 || x > lightW + 80 || y < -80 || y > lightH + 80) continue;
         const cos = Math.cos(c.h), sin = Math.sin(c.h);
 
-        // Headlights: a cone, longer on the night track where it is the only light.
-        const reach = (night ? 132 : 54) * scale * k;
-        const spread = night ? 0.46 : 0.3;
-        const grd = lc.createLinearGradient(x, y, x + cos * reach, y + sin * reach);
-        const head = night ? 0.5 : 0.12;
-        grd.addColorStop(0, `rgba(255,244,206,${head})`);
-        grd.addColorStop(1, 'rgba(255,244,206,0)');
-        lc.fillStyle = grd;
-        lc.beginPath();
-        lc.moveTo(x + sin * 3 * scale * k, y - cos * 3 * scale * k);
-        lc.lineTo(x - sin * 3 * scale * k, y + cos * 3 * scale * k);
-        lc.lineTo(x + Math.cos(c.h - spread) * reach, y + Math.sin(c.h - spread) * reach);
-        lc.lineTo(x + Math.cos(c.h + spread) * reach, y + Math.sin(c.h + spread) * reach);
-        lc.closePath(); lc.fill();
+        // Headlights: a cone on night tracks (in daytime rain, 64 bunched cars allocating
+        // 64 linear gradients per frame stalls Canvas 2D for an almost-invisible 0.12 alpha cone).
+        if (night) {
+            const reach = 132 * scale * k;
+            const spread = 0.46;
+            const grd = lc.createLinearGradient(x, y, x + cos * reach, y + sin * reach);
+            grd.addColorStop(0, 'rgba(255,244,206,0.5)');
+            grd.addColorStop(1, 'rgba(255,244,206,0)');
+            lc.fillStyle = grd;
+            lc.beginPath();
+            lc.moveTo(x + sin * 3 * scale * k, y - cos * 3 * scale * k);
+            lc.lineTo(x - sin * 3 * scale * k, y + cos * 3 * scale * k);
+            lc.lineTo(x + Math.cos(c.h - spread) * reach, y + Math.sin(c.h - spread) * reach);
+            lc.lineTo(x + Math.cos(c.h + spread) * reach, y + Math.sin(c.h + spread) * reach);
+            lc.closePath(); lc.fill();
+        }
 
         // Tail lights: always a little red, a pool on a wet road.
         const tail = (c.braking ? 0.55 : 0.18) * (env.wet < 1 ? 1.5 : 1);
@@ -335,9 +337,10 @@ export function lightPass(g, cars, camX, camY, scale, w, h, env) {
     const bc = bloomCtx;
     bc.setTransform(1, 0, 0, 1, 0, 0);
     bc.globalCompositeOperation = 'copy';
-    try { bc.filter = 'blur(3px)'; } catch { /* older engine: a hard downscale still reads as glow */ }
+    // Quarter-res bilinear downscale + upscale gives a soft bloom halo without the
+    // software Gaussian stall caused by ctx.filter = 'blur(...)' on Canvas 2D.
+    bc.imageSmoothingEnabled = true;
     bc.drawImage(lightCanvas, 0, 0, bloomCanvas.width, bloomCanvas.height);
-    bc.filter = 'none';
     g.globalAlpha = night ? 0.55 : 0.4;
     g.drawImage(bloomCanvas, 0, 0, w, h);
     g.globalAlpha = 1;

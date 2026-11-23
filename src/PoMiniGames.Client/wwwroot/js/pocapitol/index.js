@@ -57,12 +57,14 @@ async function init(hostId, reference) {
     // The app's own quality tier is a device guess made elsewhere. When it says nothing, fall back
     // to what this browser actually reports rather than assuming the best GPU.
     const caps = view.renderer?.capabilities;
-    const tier = window.PoQuality?.tier?.() ?? detectTier({
+    let tier = window.PoQuality?.tier?.() ?? detectTier({
         webgl2: caps?.isWebGL2 ?? true,
         maxTexture: caps?.maxTextureSize ?? 4096,
         memory: navigator.deviceMemory ?? 4,
         cores: navigator.hardwareConcurrency ?? 4,
     });
+    // WebGL2 fallback struggles with the full level-3 volumetric/AO/DoF post stack on boot.
+    if (!view.renderer?.backend?.isWebGPUBackend && tier === 'high') tier = 'medium';
     const prefs = loadPrefs();
     applyViewPrefs(view, prefs);
     const g = {

@@ -15,7 +15,7 @@
 // Structural debris, scoring, masses and the physics timestep remain unchanged.
 
 import { loadSettings } from './settings.js';
-import { createRenderer as createSharedRenderer } from '../platform/3d/renderer.js';
+import { createRenderer as createSharedRenderer, webgpuAvailable } from '../platform/3d/renderer.js';
 
 const TIERS = ['low', 'medium', 'high', 'ultra'];
 
@@ -48,7 +48,7 @@ function detectChoice() {
 
   const device = typeof navigator === 'undefined' ? {} : navigator;
   const mobile = /Android|iPhone|iPad|iPod|Mobile/i.test(device.userAgent || '');
-  if (mobile) return { tier: 'low', auto: true };
+  if (mobile || window.PoQuality?.tier?.() === 'low') return { tier: 'low', auto: true };
 
   const cores = device.hardwareConcurrency || 4;
   const memory = device.deviceMemory || 4; // GB, Chromium-only; undefined elsewhere
@@ -163,8 +163,9 @@ export class AdaptiveQuality {
   }
 
   update(dt, visible = true) {
-    // Tab suspension/stale initial timestamps are not evidence of rendering cost.
-    if (!visible || !Number.isFinite(dt) || dt <= 0 || dt > 0.5) {
+    // Tab suspension/stale initial timestamps are not evidence of rendering cost,
+    // but 0.3–2.0s frames ARE severe GPU overload (2–3 FPS) and must trigger demotion.
+    if (!visible || !Number.isFinite(dt) || dt <= 0 || dt > 2.5) {
       this.reset();
       return null;
     }
@@ -179,13 +180,21 @@ export class AdaptiveQuality {
     const average = this.elapsed / this.frames;
     const oldScale = this.scale;
     const oldTier = this.tier;
-    if (average > 1 / 60 * 1.35) this.scale = Math.max(0.6, this.scale - 0.1);
-    else if (average < 1 / 60 * 1.05) this.scale = Math.min(1, this.scale + 0.05);
-    this.slowTime = this.auto && this.scale <= 0.600001 && average > 1 / 30
-      ? this.slowTime + this.elapsed : 0;
-    if (this.slowTime >= 2 && this.tier !== 'low') {
+    if (this.auto && average > 1 / 15 && this.tier !== 'low') {
+      // Severe overload (<15 FPS): drop resolution and demote one tier immediately
+      // instead of starving the main thread for 4+ seconds.
+      this.scale = 0.6;
       this.tier = TIERS[Math.max(0, TIERS.indexOf(this.tier) - 1)];
       this.slowTime = 0;
+    } else {
+      if (average > 1 / 60 * 1.35) this.scale = Math.max(0.6, this.scale - 0.1);
+      else if (average < 1 / 60 * 1.05) this.scale = Math.min(1, this.scale + 0.05);
+      this.slowTime = this.auto && this.scale <= 0.600001 && average > 1 / 30
+        ? this.slowTime + this.elapsed : 0;
+      if (this.slowTime >= 2 && this.tier !== 'low') {
+        this.tier = TIERS[Math.max(0, TIERS.indexOf(this.tier) - 1)];
+        this.slowTime = 0;
+      }
     }
     this.elapsed = 0;
     this.frames = 0;
@@ -203,12 +212,10 @@ export class AdaptiveQuality {
 export async function createRenderer(THREE, { antialias = true, ...look } = {}) {
   // The canvas itself is never the multisampled target: the scene is drawn by the post
   // pipeline's pass (which owns its own sample count), so canvas MSAA would be wasted fill.
-  // 'default' is a legacy WebGL value; it is not a GPUPowerPreference, so requestAdapter() threw and the renderer
-  // silently fell back to the WebGL2 backend even on a WebGPU machine.
-  const base = { antialias: false, powerPreference: 'high-performance', ...look };
+  const base = { antialias: false, ...look };
   void antialias;
   const flag = (urlFlag('gpu') || '').toLowerCase();
-  let forceWebGL = flag === 'webgl' || !WEBGPU_STATUS.supported;
+  let forceWebGL = flag === 'webgl' || !(await webgpuAvailable());
   for (let attempt = 0; attempt < 2; attempt++) {
     try {
       const renderer = await createSharedRenderer(THREE, { ...base, api: 'webgpu', forceWebGL });

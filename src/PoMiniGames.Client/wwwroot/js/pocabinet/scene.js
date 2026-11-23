@@ -826,12 +826,13 @@ export async function mount(canvas, world) {
     if (!canvas) throw new Error('pocabinet/scene: canvas element is required');
     if (!world || !world.atmosphere) throw new Error('pocabinet/scene: world is required');
 
-    // preserveDrawingBuffer so the clip recorder and the result card can read frames back.
     // Tone mapping is the post pass's (it falls back to ACES below without one).
+    // PostFx owns its own offscreen pass + FXAA/TRAA, so canvas MSAA / preserveDrawingBuffer
+    // would only double VRAM without improving the picture.
     // r186 WebGPURenderer: the WebGPU backend where an adapter exists, else its own WebGL2 backend (the build
     // has no WebGLRenderer). `?cabwebgl` forces the WebGL2 backend, for comparing the two.
     const gpu = await webgpuAvailable();
-    const renderer = await createRenderer(THREE, { api: 'webgpu', canvas, antialias: true, preserveDrawingBuffer: true, tone: 'none', forceWebGL: !gpu || /[?&]cabwebgl/.test(location.search) });
+    const renderer = await createRenderer(THREE, { api: 'webgpu', canvas, antialias: false, preserveDrawingBuffer: false, tone: 'none', forceWebGL: !gpu || /[?&]cabwebgl/.test(location.search) });
 
     const scene = new THREE.Scene();
     const camera = new THREE.PerspectiveCamera(70, 16 / 9, 0.25, 5000);

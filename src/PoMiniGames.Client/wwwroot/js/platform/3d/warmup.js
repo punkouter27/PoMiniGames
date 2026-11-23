@@ -38,6 +38,11 @@ export function keepers(THREE, scene, materials) {
  */
 export async function warmup(renderer, scene, camera, o = {}) {
     const t0 = performance.now();
+    // On WebGPURenderer's WebGL2 backend, compileAsync compiles shaders synchronously on the
+    // main thread and can freeze the tab. Skip upfront compile there and let draws compile lazily.
+    if (renderer.backend && !renderer.backend.isWebGPUBackend) {
+        return performance.now() - t0;
+    }
     const timeout = o.timeoutMs ?? 8000;
     const compile = renderer.compileAsync
         ? renderer.compileAsync(scene, camera)

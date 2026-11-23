@@ -508,6 +508,10 @@ export function createPost(renderer, scene, camera, depthCamera) {
         // Edge, both backends): the scene then never reaches its start card. It is a head start, not a
         // requirement, so it gets three seconds and the first frame builds whatever is still missing.
         async compile(timeoutMs = 3000) {
+            // On the WebGL2 backend, compileAsync compiles every TSL shader synchronously on the
+            // main thread before returning a Promise, freezing the tab before setTimeout can fire.
+            // Skip the upfront pass on WebGL2 and let the first draw compile lazily.
+            if (!renderer.backend?.isWebGPUBackend) return;
             const was = renderer.getRenderTarget();
             renderer.setRenderTarget(scenePass);
             let timer = 0;
