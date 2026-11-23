@@ -194,9 +194,6 @@
                             </HudRegion>
                         }
                         <span class="pocabinet-hudbar">
-                            <button type="button" class="pocabinet-iconbtn" @onclick="CycleCameraAsync"
-                                    aria-label="@(Mode == GameMode.Demo ? "Cut to the next shot (C)" : "Change camera (C)")"
-                                    title="@(Mode == GameMode.Demo ? "The director follows the closest fights · cut to the next shot" : "Change camera (C)")">🎥</button>
                             @if (Pausable)
                             {
                                 <button type="button" class="pocabinet-iconbtn" @onclick="TogglePauseAsync"
@@ -286,7 +283,7 @@
         ? @<p>Nothing to drive: the camera follows the race</p>
         : @<p class="pocabinet-controls">
             <span class="keys-only"><kbd>W</kbd><kbd>A</kbd><kbd>S</kbd><kbd>D</kbd> or arrows drive · <kbd>C</kbd> camera · <kbd>Esc</kbd> pause · a gamepad works too</span>
-            <span class="touch-only">On-screen wheel and pedals · 🎥 camera · ⏸ pause</span>
+            <span class="touch-only">On-screen wheel and pedals · ⏸ pause</span>
         </p>;
 
     /// <summary>The sector splits: on the race view and on the pause card.</summary>

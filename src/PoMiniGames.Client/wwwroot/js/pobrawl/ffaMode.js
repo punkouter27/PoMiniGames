@@ -30,6 +30,9 @@ const HIT_REACH = 2.2;
 const OVERTIME_DMG = 1.5;
 /** Seconds a fallen body stays in the physics solver before it is frozen in place. */
 const RETIRE_AFTER = 4;
+/** Overtime: the closing ring's radius shrinks this fast (m/s) down to RING_MIN. */
+const RING_CLOSE_RATE = 0.2;
+const RING_MIN = 1.4;
 /** Seconds between broadcast snapshots to the page. */
 const BROADCAST_EVERY = 0.5;
 
@@ -137,6 +140,7 @@ class FfaModeMethods {
     this.ffaFocus = null;
     this.ffaFocusHold = 0;
     this.ffaResultPending = false;
+    this.ffaRingCalled = false;
     this._ffaNotify('OnFfaPaused', false);
     this._ffaNotify('OnFfaRoundStarted', this.ffaRound, this.ffaRoundId);
     this._ffaPublishDashboard();
@@ -320,7 +324,10 @@ class FfaModeMethods {
   /** Per tick, before the fighters move. */
   _ffaTick(dt) {
     this.ffaFocusHold = Math.max(0, this.ffaFocusHold - dt);
-    if (this.phase === 'fighting') this._ffaRetarget(dt);
+    if (this.phase === 'fighting') {
+      this._ffaRetarget(dt);
+      this._ffaCloseRing(dt);
+    }
     this._ffaRetireBodies();
     this.ffaBroadcastT += dt;
     if (this.ffaBroadcastT >= BROADCAST_EVERY) {
@@ -346,6 +353,33 @@ class FfaModeMethods {
       f.koRagdoll?.dispose();
       f.ffaRetired = true;
     }
+  }
+
+  /**
+   * Overtime: the ring closes. Past the clock every standing fighter is herded inside a
+   * shrinking circle, so the last few cannot keep to their own corners and the round ends.
+   */
+  _ffaCloseRing(dt) {
+    const over = (this.clock || 0) - TIME_LIMIT;
+    if (over < 0) { this.ffaRingCalled = false; return; }
+    if (!this.ffaRingCalled) {
+      this.ffaRingCalled = true;
+      this._jumboCaption?.('OVERTIME', 1.6);
+      this._caption?.('Overtime: the ring is closing.');
+      this.audio?.crowdSwell?.(0.9);
+    }
+    const r = Math.max(RING_MIN, SPAWN_RADIUS + 1 - over * RING_CLOSE_RATE);
+    for (const f of this.fighters) {
+      if (!f.alive) continue;
+      const p = f.rig.root.position;
+      const d = Math.hypot(p.x, p.z);
+      if (d <= r || d < 1e-3) continue;
+      const push = Math.min(4, (d - r) * 6) * dt;
+      f.knockback.x -= (p.x / d) * push;
+      f.knockback.z -= (p.z / d) * push;
+    }
+    // Everybody squares up to the nearest survivor: no more stalking across the ring.
+    for (const f of this.fighters) if (f.alive && f.retargetIn > 0.5) f.retargetIn = 0.5;
   }
 
   _ffaNextRound() {

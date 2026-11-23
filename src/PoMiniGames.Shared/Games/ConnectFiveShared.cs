@@ -191,7 +191,10 @@ public sealed record TurnMatchMove(int Row, int Col, TurnMatchSide Side);
 /// <see cref="Cells"/> is the flat <see cref="GridGameRules"/> board; <see cref="WinCells"/>
 /// holds flat indices of the winning line when there is one. A client that is exactly
 /// one move behind applies <see cref="LastMove"/> so its placement animation plays;
-/// any other gap rebuilds from <see cref="Cells"/>.
+/// any other gap rebuilds from <see cref="Cells"/>. <see cref="TurnMsLeft"/> is how long the seat to
+/// move has left on the server's turn clock at <see cref="UpdatedUtc"/> (null: no clock, game over, or
+/// the clock is paused while a seat reconnects); a duration rather than a timestamp, so client clock
+/// skew does not matter. <see cref="Ratings"/> is set once a rated match has been scored.
 /// </summary>
 public sealed record TurnMatchState(
     string MatchId,
@@ -205,11 +208,19 @@ public sealed record TurnMatchState(
     int[] WinCells,
     TurnMatchSeat First,
     TurnMatchSeat Second,
-    DateTimeOffset UpdatedUtc)
+    DateTimeOffset UpdatedUtc,
+    int? TurnMsLeft = null,
+    TurnMatchRatings? Ratings = null)
 {
     public TurnMatchSeat SeatOf(TurnMatchSide side) => side == TurnMatchSide.First ? First : Second;
     public TurnMatchSeat OpponentOf(TurnMatchSide side) => side == TurnMatchSide.First ? Second : First;
 }
+
+/// <summary>One seat's online rating after a finished match: the new rating, the change, and games rated so far.</summary>
+public sealed record TurnRatingChange(int Rating, int Delta, int Games);
+
+/// <summary>Server-computed online ratings for a finished, rated match. Clients never submit these.</summary>
+public sealed record TurnMatchRatings(TurnRatingChange First, TurnRatingChange Second);
 
 /// <summary>A seat in the ConnectFive / TicTacToe lobby (cap 2: the host and one guest).</summary>
 public sealed record TurnLobbyPlayer(string ConnectionId, string DisplayName, bool IsGuest, bool IsReady) : ILobbyPlayer;

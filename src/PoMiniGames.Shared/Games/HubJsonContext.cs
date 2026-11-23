@@ -28,6 +28,7 @@ namespace PoMiniGames.Shared.Games;
 [JsonSerializable(typeof(TurnMatchState))]
 [JsonSerializable(typeof(LobbyState<TurnLobbyPlayer>))]
 [JsonSerializable(typeof(TurnMatchRejoinResult))]
+[JsonSerializable(typeof(TurnMatchRatings))]
 // PoBrawl online
 [JsonSerializable(typeof(PoBrawlMatchSnapshot))]
 [JsonSerializable(typeof(PoBrawlMatchState))]

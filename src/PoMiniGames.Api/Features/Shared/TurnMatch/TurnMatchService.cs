@@ -40,17 +40,30 @@ public sealed class TurnMatchService<THub> where THub : Hub
     private readonly ILogger _log;
     private readonly string _gameName;
     private readonly object _lock = new();
+    private readonly TimeSpan? _turnClock;
+    private readonly ITurnMatchResultSink? _results;
+    private readonly Func<int, int> _pick;
 
     /// <summary>Codes the lobby has minted, each holding the first arrival until the second joins.</summary>
     private readonly Dictionary<string, Reservation> _reservations = new(StringComparer.Ordinal);
     private readonly Dictionary<string, Match> _byConnection = new(StringComparer.Ordinal);
     private readonly Dictionary<string, Match> _byToken = new(StringComparer.Ordinal);
 
-    public TurnMatchService(GridGameRules rules, IHubContext<THub> hub, ILogger<TurnMatchService<THub>> log)
+    /// <param name="rules">The game's placement and win rules.</param>
+    /// <param name="hub">Used for the broadcasts the service makes itself (timeouts, scoring, disconnect forfeits).</param>
+    /// <param name="log">Logger.</param>
+    /// <param name="turnClock">Time a seat has per move; when it runs out the server plays a random legal move. Null: no clock.</param>
+    /// <param name="results">Scores each finished match (online Elo). Null: matches are not rated.</param>
+    /// <param name="pick">Chooses an index below the given count for the auto-move; defaults to <see cref="Random.Shared"/>.</param>
+    public TurnMatchService(GridGameRules rules, IHubContext<THub> hub, ILogger<TurnMatchService<THub>> log,
+        TimeSpan? turnClock = null, ITurnMatchResultSink? results = null, Func<int, int>? pick = null)
     {
         _rules = rules;
         _hub = hub;
         _log = log;
+        _turnClock = turnClock;
+        _results = results;
+        _pick = pick ?? Random.Shared.Next;
         _gameName = typeof(THub).Name.Replace("Hub", "", StringComparison.Ordinal);
     }
 
@@ -122,6 +135,7 @@ public sealed class TurnMatchService<THub> where THub : Hub
 
             _log.LogInformation("{Game}: paired {First} (first) vs {Second} (second) as match {MatchId}",
                 _gameName, first.DisplayName, second.DisplayName, match.MatchId);
+            StartClock(match, _turnClock);
             return match.Pairing();
         }
     }
@@ -154,26 +168,119 @@ public sealed class TurnMatchService<THub> where THub : Hub
             var landing = _rules.ResolveRow(match.Cells, row, col);
             if (landing < 0) throw new InvalidOperationException("You can't play there.");
 
-            var mark = (byte)seat.Side;
-            match.Cells[landing * _rules.Cols + col] = mark;
-            match.MoveCount++;
-            match.LastMove = new TurnMatchMove(landing, col, seat.Side);
-
-            var line = _rules.FindWin(match.Cells, mark);
-            if (line is not null)
-            {
-                match.Finish(seat.Side == TurnMatchSide.First ? TurnMatchStatus.FirstWon : TurnMatchStatus.SecondWon,
-                    TurnMatchEndReason.Line, line);
-            }
-            else if (PoMiniGames.Shared.Games.GridGameRules.IsFull(match.Cells))
-            {
-                match.Finish(TurnMatchStatus.Draw, TurnMatchEndReason.BoardFull, []);
-            }
-            else
-            {
-                match.Turn = Other(match.Turn);
-            }
+            ApplyMove(match, seat.Side, landing, col);
             return match.Snapshot();
+        }
+    }
+
+    /// <summary>Put the mark down, then settle the game: a win, a full board, or the other seat's turn (and a fresh clock).</summary>
+    private void ApplyMove(Match match, TurnMatchSide side, int landing, int col)
+    {
+        var mark = (byte)side;
+        match.Cells[landing * _rules.Cols + col] = mark;
+        match.MoveCount++;
+        match.LastMove = new TurnMatchMove(landing, col, side);
+
+        var line = _rules.FindWin(match.Cells, mark);
+        if (line is not null)
+        {
+            match.Finish(side == TurnMatchSide.First ? TurnMatchStatus.FirstWon : TurnMatchStatus.SecondWon,
+                TurnMatchEndReason.Line, line);
+            OnFinished(match);
+        }
+        else if (PoMiniGames.Shared.Games.GridGameRules.IsFull(match.Cells))
+        {
+            match.Finish(TurnMatchStatus.Draw, TurnMatchEndReason.BoardFull, []);
+            OnFinished(match);
+        }
+        else
+        {
+            match.Turn = Other(match.Turn);
+            StartClock(match, _turnClock);
+        }
+    }
+
+    // ── Turn clock ──────────────────────────────────────────────────────
+
+    /// <summary>
+    /// (Re)start the move clock for the seat to move. Bumping <see cref="Match.ClockEpoch"/> orphans any
+    /// timer already running, so a move, a pause or the end of the game simply invalidates it.
+    /// </summary>
+    private void StartClock(Match match, TimeSpan? duration)
+    {
+        match.ClockEpoch++;
+        match.DeadlineUtc = null;
+        if (duration is not { } d || match.Status != TurnMatchStatus.InProgress) return;
+        match.DeadlineUtc = DateTimeOffset.UtcNow + d;
+        _ = TurnTimeoutAsync(match, match.ClockEpoch, d);
+    }
+
+    private async Task TurnTimeoutAsync(Match match, int epoch, TimeSpan duration)
+    {
+        try
+        {
+            await Task.Delay(duration);
+            TurnMatchState state;
+            lock (_lock)
+            {
+                if (match.ClockEpoch != epoch || match.Status != TurnMatchStatus.InProgress) return;
+                if (RandomLegalMove(match) is not { } move) return;
+                ApplyMove(match, match.Turn, move.Row, move.Col);
+                state = match.Snapshot();
+            }
+            _log.LogInformation("{Game}: match {MatchId} turn clock ran out; played a random move", _gameName, match.MatchId);
+            await _hub.Clients.Group(GroupFor(match.MatchId)).SendAsync("state", state);
+        }
+        catch (Exception ex)
+        {
+            _log.LogWarning(ex, "{Game}: turn-clock move failed for match {MatchId}", _gameName, match.MatchId);
+        }
+    }
+
+    /// <summary>A uniformly random legal placement for the seat to move, by the game's own rules (gravity included).</summary>
+    private (int Row, int Col)? RandomLegalMove(Match match)
+    {
+        var legal = new List<(int Row, int Col)>();
+        for (var c = 0; c < _rules.Cols; c++)
+        {
+            for (var r = 0; r < _rules.Rows; r++)
+            {
+                if (_rules.ResolveRow(match.Cells, r, c) == r) legal.Add((r, c));
+            }
+        }
+        return legal.Count == 0 ? null : legal[_pick(legal.Count)];
+    }
+
+    /// <summary>The game just ended: stop the clock and score the match once.</summary>
+    private void OnFinished(Match match)
+    {
+        match.ClockEpoch++;
+        match.DeadlineUtc = null;
+        match.PausedRemaining = null;
+        if (_results is null || match.ResultRecorded) return;
+        match.ResultRecorded = true;
+        _ = RecordResultAsync(match);
+    }
+
+    private async Task RecordResultAsync(Match match)
+    {
+        try
+        {
+            var result = new TurnMatchResult(match.MatchId, match.First.PrincipalId, match.First.DisplayName,
+                match.Second.PrincipalId, match.Second.DisplayName, match.Status);
+            var ratings = await _results!.RecordAsync(result);
+            if (ratings is null) return;
+            TurnMatchState state;
+            lock (_lock)
+            {
+                match.Ratings = ratings;
+                state = match.Snapshot();
+            }
+            await _hub.Clients.Group(GroupFor(match.MatchId)).SendAsync("state", state);
+        }
+        catch (Exception ex)
+        {
+            _log.LogWarning(ex, "{Game}: scoring match {MatchId} failed", _gameName, match.MatchId);
         }
     }
 
@@ -192,6 +299,7 @@ public sealed class TurnMatchService<THub> where THub : Hub
             if (match.Status == TurnMatchStatus.InProgress)
             {
                 match.Finish(WinnerAgainst(seat.Side), TurnMatchEndReason.Forfeit, []);
+                OnFinished(match);
             }
             Unseat(match, seat);
             return match.Snapshot();
@@ -222,6 +330,14 @@ public sealed class TurnMatchService<THub> where THub : Hub
                 return match.Snapshot();
             }
 
+            // The move clock stands still while a seat is inside its reconnect grace window; it
+            // resumes with what was left once every seat is back (see Rejoin).
+            if (match.DeadlineUtc is { } deadline)
+            {
+                match.PausedRemaining = TimeSpan.FromTicks(Math.Max((deadline - DateTimeOffset.UtcNow).Ticks, TimeSpan.FromSeconds(1).Ticks));
+                match.ClockEpoch++;
+                match.DeadlineUtc = null;
+            }
             _ = ForfeitAfterGraceAsync(match, seat, seat.DisconnectEpoch);
             return match.Snapshot();
         }
@@ -243,6 +359,12 @@ public sealed class TurnMatchService<THub> where THub : Hub
             seat.Connected = true;
             seat.DisconnectEpoch++; // invalidates any pending forfeit timer
             _byConnection[connectionId] = match;
+            if (match.Status == TurnMatchStatus.InProgress && match.PausedRemaining is { } left
+                && match.First.Connected && match.Second.Connected)
+            {
+                match.PausedRemaining = null;
+                StartClock(match, left);
+            }
             return new TurnMatchRejoinResult(match.StartFor(seat), match.Snapshot());
         }
     }
@@ -262,6 +384,7 @@ public sealed class TurnMatchService<THub> where THub : Hub
                 if (match.Status == TurnMatchStatus.InProgress)
                 {
                     match.Finish(WinnerAgainst(seat.Side), TurnMatchEndReason.Disconnect, []);
+                    OnFinished(match);
                     state = match.Snapshot();
                 }
                 Unseat(match, seat);
@@ -373,6 +496,14 @@ public sealed class TurnMatchService<THub> where THub : Hub
         public TurnMatchEndReason EndReason { get; private set; } = TurnMatchEndReason.None;
         public TurnMatchMove? LastMove { get; set; }
         public int[] WinCells { get; private set; } = [];
+        /// <summary>When the seat to move runs out of time; null when there is no clock or it is paused.</summary>
+        public DateTimeOffset? DeadlineUtc { get; set; }
+        /// <summary>Time left on the clock when it was paused for a disconnected seat.</summary>
+        public TimeSpan? PausedRemaining { get; set; }
+        /// <summary>Bumped whenever the clock restarts or stops, so a stale timer can tell it lost.</summary>
+        public int ClockEpoch { get; set; }
+        public bool ResultRecorded { get; set; }
+        public TurnMatchRatings? Ratings { get; set; }
 
         public Seat SeatFor(string connectionId) =>
             First.ConnectionId == connectionId ? First
@@ -392,8 +523,14 @@ public sealed class TurnMatchService<THub> where THub : Hub
         public Pairing Pairing() =>
             new(MatchId, [(First.ConnectionId, StartFor(First)), (Second.ConnectionId, StartFor(Second))], Snapshot());
 
-        public TurnMatchState Snapshot() =>
-            new(MatchId, GameNumber, (byte[])Cells.Clone(), MoveCount, Turn, Status, EndReason, LastMove,
-                (int[])WinCells.Clone(), First.Public(), Second.Public(), DateTimeOffset.UtcNow);
+        public TurnMatchState Snapshot()
+        {
+            var now = DateTimeOffset.UtcNow;
+            int? msLeft = DeadlineUtc is { } deadline && Status == TurnMatchStatus.InProgress
+                ? (int)Math.Max(0, (deadline - now).TotalMilliseconds)
+                : null;
+            return new(MatchId, GameNumber, (byte[])Cells.Clone(), MoveCount, Turn, Status, EndReason, LastMove,
+                (int[])WinCells.Clone(), First.Public(), Second.Public(), now, msLeft, Ratings);
+        }
     }
 }

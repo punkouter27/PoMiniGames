@@ -42,6 +42,33 @@ public class ConnectFiveAI
     public (int Row, int Col) GetAdaptiveMove(ConnectFiveBoard board, Player player, int cpuElo) =>
         GetMove(board, player, StrengthForElo(cpuElo));
 
+    /// <summary>
+    /// <see cref="GetAdaptiveMove"/> without freezing the page: the search runs in short slices
+    /// and <paramref name="yieldAsync"/> (a short Task.Delay in the page) lets the browser paint
+    /// between them, so drop animations and the 3D board keep moving while the CPU thinks.
+    /// </summary>
+    public Task<(int Row, int Col)> GetAdaptiveMoveAsync(ConnectFiveBoard board, Player player, int cpuElo,
+        Func<Task> yieldAsync, CancellationToken ct = default) =>
+        GetMoveAsync(board, player, StrengthForElo(cpuElo), yieldAsync, ct);
+
+    /// <summary>The demo's fixed-difficulty move, sliced like <see cref="GetAdaptiveMoveAsync"/>.</summary>
+    public Task<(int Row, int Col)> GetMoveAsync(ConnectFiveBoard board, Player player, Difficulty difficulty,
+        Func<Task> yieldAsync, CancellationToken ct = default) =>
+        GetMoveAsync(board, player, RungForDifficulty(difficulty), yieldAsync, ct);
+
+    /// <summary>Longest stretch the search holds the thread before it yields (ms).</summary>
+    public const int SliceMs = 8;
+
+    public async Task<(int Row, int Col)> GetMoveAsync(ConnectFiveBoard board, Player player, AiRung rung,
+        Func<Task> yieldAsync, CancellationToken ct = default)
+    {
+        if (UseMcts) rung = rung with { UseMcts = true };
+        var pos = ToPosition(board, player);
+        var cell = await _engine.ChooseAsync(pos, rung, SliceMs, yieldAsync, ct);
+        if (cell < 0) return (0, 0);
+        return (cell / ConnectFiveBoard.Cols, cell % ConnectFiveBoard.Cols);
+    }
+
     /// <summary>Plays on an explicit rung (self-play and tests use tiny budgets).</summary>
     public (int Row, int Col) GetMove(ConnectFiveBoard board, Player player, AiRung rung)
     {

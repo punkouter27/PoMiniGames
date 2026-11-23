@@ -1,0 +1,14 @@
+.cfb-pick {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.cfb-pick__label {
+  margin: 0;
+  font-size: var(--text-xs);
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--color-text-secondary);
+}

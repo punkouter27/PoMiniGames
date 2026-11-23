@@ -35,6 +35,8 @@ public sealed class StorageInitializer
         // Push subscriptions, pending game invites and the VAPID key pair. Name must match
         // InviteStore.TableName.
         "PushInvites",
+        // Connect Five online Elo (server-scored). Name must match ConnectFiveOnlineEloStore.TableName.
+        "ConnectFiveOnlineElo",
     ];
 
     /// <summary>Blob containers used by the consolidated games.</summary>

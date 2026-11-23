@@ -32,7 +32,7 @@
     GameOver="@_isGameOver"
     GameOverDelayMs="5000"
     Elo="@(PlayMode == "ai" ? _rating.Elo : (int?)null)"
-    GameKey="@(PlayMode == "ai" ? "connectfive" : null)"
+    GameKey="@(PlayMode == "ai" ? "connectfive" : PlayMode == "online" ? "connectfive-online" : null)"
     Outcome="@OutcomeForCue"
     Stats="@(PlayMode == "ai" ? _statItems : null)"
     Diagnostics="@(PlayMode == "ai" ? _statItems : null)"
@@ -46,6 +46,7 @@
                    Objective="Connect five of your discs in a row — horizontal, vertical or diagonal — before your opponent."
                    Controls="@HowToPlayContent"
                    Mode="@_introMode"
+                   Options="@IntroOptions"
                    OnStart="DismissIntro" />
     }
 
@@ -73,10 +74,15 @@
                        LeftActive="@IsRedTurn" RightActive="@IsYellowTurn"
                        LeftColor="var(--disc-red-mid)" RightColor="var(--disc-yellow-mid)"
                        TextClass="cf-status-text" />
+            @if (IsOnline && _gameResult == GameResult.InProgress)
+            {
+                <TurnClock Deadline="@_online?.TurnDeadlineUtc" Mine="@IsMyOnlineTurn" />
+            }
         </div>
         @* Hover-ghost: pointerleave on the board clears the column preview so
            the ghost disc never sticks when the cursor exits the grid. *@
         <div class="cf-board" role="grid" aria-label="Connect Five game board. Left and right arrows pick a column, Enter, Space or Down arrow drops a disc."
+             data-result="@ResultAttr"
              tabindex="@(_gameResult == GameResult.InProgress && PlayMode != "demo" ? 0 : -1)"
              @onkeydown="HandleBoardKey"
              @onkeydown:preventDefault="_boardKeyHandled"
@@ -271,6 +277,10 @@
     // cf-slide-down keyframe runs unchanged — and continues to run as the
     // fallback on every failure path (CDN blocked, reduced motion, low tier).
     private bool _engineReady;
+    private bool _fxReady;
+    // The player's verdict for the board's celebration (js/connectfive/fx.js): the CPU's win is
+    // a quieter variant than the player's. Empty in 2P and demo, where any line is celebrated.
+    private string ResultAttr => PlayMode is "ai" or "online" ? _gameResult.ToString().ToLowerInvariant() : "";
     // vs-AI W/L/D/ELO stats surfaced in the end-of-game modal (1-player only).
     private List<StatItem> _statItems = new();
     // Adaptive 1-player rating. The CPU is matched to _cpuElo — the player's
@@ -376,6 +386,9 @@
     // switch and the first segment after the game in the address.
     private static RenderFragment TitleContent => GameCatalog.TitleFor(GameKeys.ConnectFive);
 
+    // The start card's setup: Board 2D / 3D, remembered in the browser (not the settings drawer).
+    private static RenderFragment IntroOptions => @<div class="cf-options"><ConnectFiveBoardPicker /></div>;
+
     // Mode-specific HowToPlay. 1P talks about the CPU and ELO, 2P
     // talks about two players and a hot seat, and the demo explains it is a
     // CPU-vs-CPU exhibition.
@@ -439,6 +452,17 @@
         else if (OnlineEndReason == TurnMatchEndReason.Disconnect)
         {
             <div class="cf-online-note">@OpponentName lost their connection.</div>
+        }
+        @if (_online?.MyRating is { } mine)
+        {
+            <div class="cf-elo-change">
+                <span class="cf-elo-now">Online rating @mine.Rating</span>
+                <span class="cf-elo-delta @(mine.Delta > 0 ? "cf-elo-delta--up" : mine.Delta < 0 ? "cf-elo-delta--down" : "cf-elo-delta--flat")">@(mine.Delta >= 0 ? $"+{mine.Delta}" : mine.Delta.ToString())</span>
+                @if (_online.OpponentRating is { } theirs)
+                {
+                    <span class="cf-elo-cpu">@OpponentName @theirs.Rating (@(theirs.Delta >= 0 ? $"+{theirs.Delta}" : theirs.Delta.ToString()))</span>
+                }
+            </div>
         }
     </div>;
 
@@ -563,7 +587,7 @@
             // the next piece starts falling.
             const int demoStepMs = 850;
             // Red (CPU1) move — full-strength Hard play (see DemoMove).
-            var (rr, rc) = DemoMove(_board, Player.Red);
+            var (rr, rc) = await DemoMoveAsync(_board, Player.Red, ct);
             _board = _board.Place(rr, rc, Player.Red);
             _demoPly++;
             _ = Feedback.ChipDropAsync(rr, UiFeedbackService.BoardPan(rc, ConnectFiveBoard.Cols)); // demo was silent before — now each CPU drop plays the slide + thud
@@ -576,7 +600,7 @@
             await Task.Delay(demoStepMs, ct);
 
             // Yellow (CPU2) move — full-strength Hard play (see DemoMove).
-            var (yr, yc) = DemoMove(_board, Player.Yellow);
+            var (yr, yc) = await DemoMoveAsync(_board, Player.Yellow, ct);
             _board = _board.Place(yr, yc, Player.Yellow);
             _demoPly++;
             TryDrop(yc, yr, "yellow"); // §CF-1 physics-driven visual drop (demo Yellow)
@@ -617,7 +641,7 @@
     /// Yellow blocks the obvious four — but Red eventually builds a double threat and
     /// the demo shows a win, its cascade, and a fresh board.
     /// </remarks>
-    private (int Row, int Col) DemoMove(ConnectFiveBoard board, Player player)
+    private async Task<(int Row, int Col)> DemoMoveAsync(ConnectFiveBoard board, Player player, CancellationToken ct)
     {
         if (_demoPly < DemoOpeningRandomPlies)
         {
@@ -630,16 +654,33 @@
             return (board.GetTargetRow(pick), pick);
         }
 
-        return player == Player.Red
-            ? _ai.GetMove(board, player, Difficulty.Hard)
-            : _ai.GetMove(board, player, Difficulty.Medium);
+        return await _ai.GetMoveAsync(board, player, player == Player.Red ? Difficulty.Hard : Difficulty.Medium,
+            AiYield, ct);
     }
+
+    /// <summary>
+    /// Between slices of the CPU's search: a macrotask, so the browser paints (drops, the win
+    /// cascade, the 3D board) instead of freezing for the whole think (ConnectFiveAI.SliceMs).
+    /// </summary>
+    private static Task AiYield() => Task.Delay(1);
 
     // Lazy-load the matter.js physics engine on first render. Failure is
     // silent — the CSS keyframe drop is the fallback in every error case.
     protected override async Task OnAfterRenderAsync(bool firstRender)
     {
         if (!firstRender || _engineReady) return;
+        // Landing feel, win celebration and the optional 3D board (js/connectfive/fx.js). It
+        // watches this board and needs no matter.js, so it starts before the physics engine does.
+        try
+        {
+            await JS.InvokeAsync<object>("loadEngine", "connectfivefx");
+            await JS.InvokeVoidAsync("PoConnectFiveFx.start");
+            _fxReady = true;
+        }
+        catch
+        {
+            // The board is fully playable without it.
+        }
         try
         {
             // loadEngine injects the matter.js classic <script> from CDN, then
@@ -680,6 +721,12 @@
         _demoCts?.Cancel();
         _aiMoveCts?.Cancel();
         _aiMoveCts?.Dispose();
+        if (_fxReady)
+        {
+            try { _ = JS.InvokeVoidAsync("PoConnectFiveFx.stop"); }
+            catch { /* page is going away */ }
+            _fxReady = false;
+        }
         if (_engineReady)
         {
             try { _ = JS.InvokeVoidAsync("PoConnectFive.reset"); }
@@ -769,20 +816,36 @@
         _ = RunAiTurnAsync(_aiMoveCts.Token);
     }
 
-    // Bug fix QA #9: explicit AI-turn task with a hard 8 s ceiling. If the
-    // search exceeds the budget the loop is cancelled, the AI flag clears,
-    // and the player gets a toast with a Retry button rather than being
-    // stuck on "🤖 AI thinking…".
+    // Bug fix QA #9: explicit AI-turn task with a hard 8 s ceiling. The search
+    // yields between slices, so the ceiling can cancel it; past it the CPU plays
+    // the most central open column instead of leaving "🤖 AI thinking…" up.
     private const int AiMoveBudgetMs = 8_000;
     private CancellationTokenSource? _aiMoveCts;
 
     private async Task RunAiTurnAsync(CancellationToken ct)
     {
+        // The ceiling is real now: the search yields between slices, so a cancel lands.
+        using var budget = CancellationTokenSource.CreateLinkedTokenSource(ct);
+        budget.CancelAfter(AiMoveBudgetMs);
         try
         {
             await Task.Delay(300, ct);
-            // Strength scales with the CPU's ELO (matched to the player's rating).
-            var (ar, ac) = _ai.GetAdaptiveMove(_board, Player.Yellow, _cpuElo);
+            // Strength scales with the CPU's ELO (matched to the player's rating). The search runs
+            // in short slices so the player's drop keeps animating while the CPU thinks.
+            (int Row, int Col) move;
+            try
+            {
+                move = await _ai.GetAdaptiveMoveAsync(_board, Player.Yellow, _cpuElo, AiYield, budget.Token);
+            }
+            catch (OperationCanceledException) when (!ct.IsCancellationRequested)
+            {
+                // Past AiMoveBudgetMs: the most central open column, rather than a stuck "thinking".
+                var center = ConnectFiveBoard.Cols / 2;
+                var fallback = _board.GetAvailableCols().OrderBy(c => Math.Abs(c - center)).First();
+                move = (_board.GetTargetRow(fallback), fallback);
+            }
+            ct.ThrowIfCancellationRequested();
+            var (ar, ac) = move;
             _board = _board.Place(ar, ac, Player.Yellow);
             _ = Feedback.ChipDropAsync(ar, UiFeedbackService.BoardPan(ac, ConnectFiveBoard.Cols)); // AI's disc lands with the same realistic cue
             TryDrop(ac, ar, "yellow"); // §CF-1 physics-driven visual drop (AI)

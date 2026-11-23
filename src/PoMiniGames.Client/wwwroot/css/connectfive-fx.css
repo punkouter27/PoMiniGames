@@ -1,0 +1,134 @@
+/* Connect Five effects: the win light drawn over the board and the board's look in 3D mode.
+
+   Global (not the page's scoped sheet) because every element here is created by
+   js/connectfive/fx.js, which Blazor's scope attribute never reaches. fx.js adds this file on start().
+   Colours are tokens only: --disc-*-lit / --disc-*-mid for the winner, --color-text-secondary for
+   the neutral draw. White highlights are written as rgb() with an alpha, never a hex literal. */
+
+/* ── Win light ─────────────────────────────────────────────────────────── */
+.cf-fx {
+  position: fixed;
+  inset: 0;
+  z-index: 6;
+  pointer-events: none;
+  overflow: hidden;
+  animation: cf-fx-life 3.3s linear both;
+}
+.cf-fx--draw { --cf-fx-glow: var(--color-text-secondary); --cf-fx-core: var(--color-text-secondary); }
+
+/* The sweep: a rotated bar along the five discs; a bright band runs through it. */
+.cf-fx__sweep {
+  position: fixed;
+  border-radius: 999px;
+  overflow: hidden;
+  transform-origin: center;
+  background: color-mix(in srgb, var(--cf-fx-glow) 30%, transparent);
+  box-shadow: 0 0 22px 2px color-mix(in srgb, var(--cf-fx-glow) 60%, transparent);
+  mix-blend-mode: screen;
+}
+.cf-fx__sweep::before {
+  content: "";
+  position: absolute;
+  inset: 0 auto 0 0;
+  width: 38%;
+  background: linear-gradient(90deg,
+    transparent 0%,
+    color-mix(in srgb, var(--cf-fx-glow) 80%, transparent) 30%,
+    rgb(255 255 255 / 0.95) 55%,
+    transparent 100%);
+  transform: translateX(-110%);
+  animation: cf-fx-sweep 0.95s var(--ease-standard, ease-in-out) 0.05s 2 both;
+}
+.cf-fx__sweep--board { border-radius: var(--radius-lg, 16px); background: none; box-shadow: none; }
+.cf-fx__sweep--board::before { width: 30%; animation-iteration-count: 1; animation-duration: 1.4s; }
+
+/* The bloom: a soft halo on each disc, popping in along the line in step with the page's cascade. */
+.cf-fx__bloom {
+  position: fixed;
+  border-radius: 50%;
+  background: radial-gradient(circle,
+    rgb(255 255 255 / 0.9) 0%,
+    color-mix(in srgb, var(--cf-fx-glow) 85%, transparent) 32%,
+    transparent 68%);
+  mix-blend-mode: screen;
+  opacity: 0;
+  animation: cf-fx-bloom 0.9s var(--ease-out, ease-out) calc(var(--i, 0) * 110ms) 2 both;
+}
+
+/* The CPU's win: the same light, quieter and cooler. A draw: one pass, no bloom. */
+.cf-fx--loss { filter: saturate(0.35); opacity: 0.8; }
+.cf-fx--loss .cf-fx__sweep::before { animation-iteration-count: 1; }
+.cf-fx--loss .cf-fx__bloom { animation-iteration-count: 1; }
+.cf-fx--draw .cf-fx__bloom { display: none; }
+
+/* Reduced motion: nothing travels. The line is lit once and fades. */
+.cf-fx--still .cf-fx__sweep::before { display: none; }
+.cf-fx--still .cf-fx__bloom { animation: cf-fx-fade 2.6s ease-out calc(var(--i, 0) * 60ms) 1 both; }
+@media (prefers-reduced-motion: reduce) {
+  .cf-fx__sweep::before { display: none; }
+  .cf-fx__bloom { animation: cf-fx-fade 2.6s ease-out calc(var(--i, 0) * 60ms) 1 both; }
+}
+
+@keyframes cf-fx-life {
+  0%   { opacity: 0; }
+  8%   { opacity: 1; }
+  82%  { opacity: 1; }
+  100% { opacity: 0; }
+}
+@keyframes cf-fx-sweep {
+  from { transform: translateX(-110%); }
+  to   { transform: translateX(300%); }
+}
+@keyframes cf-fx-bloom {
+  0%   { opacity: 0;    transform: scale(0.4); }
+  40%  { opacity: 0.95; transform: scale(1.15); }
+  100% { opacity: 0.3;  transform: scale(0.9); }
+}
+@keyframes cf-fx-fade {
+  0%   { opacity: 0; }
+  20%  { opacity: 0.7; }
+  100% { opacity: 0.25; }
+}
+
+/* ── 3D board ──────────────────────────────────────────────────────────── */
+/* The canvas host sits over the board and never takes input; the DOM board underneath keeps the
+   pointer, keyboard and aria grid. */
+.cf-3d-host {
+  position: fixed;
+  z-index: 3;
+  pointer-events: none;
+  contain: strict;
+}
+.cf-3d-host canvas {
+  display: block;
+  width: 100%;
+  height: 100%;
+}
+
+/* While the 3D board is up the DOM board is visually replaced but stays in the layout and the
+   accessibility tree: no frame, no sockets, no discs, no ghost, no win glow (the canvas draws all
+   of them). !important because the page's scoped rules carry an attribute selector and outrank a
+   plain global one. */
+.cf-board.cf-board--3d {
+  background: none !important;
+  border-color: transparent !important;
+  box-shadow: none !important;
+  -webkit-backdrop-filter: none !important;
+  backdrop-filter: none !important;
+}
+.cf-board.cf-board--3d .cf-cell {
+  background: none !important;
+  border-color: transparent !important;
+  box-shadow: none !important;
+  animation: none !important;
+}
+.cf-board.cf-board--3d .cf-cell .piece {
+  opacity: 0 !important;
+  animation: none !important;
+  box-shadow: none !important;
+}
+/* Room for the frame's top edge and its stand, which reach past the grid the DOM board is sized to. */
+.cf-board.cf-board--3d {
+  margin-top: 1.9rem !important;
+  margin-bottom: 2.6rem !important;
+}

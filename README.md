@@ -60,11 +60,17 @@ sign-in: a player is a random browser id plus three initials.
     change to an online rule, an input's bits or the packed state. A tab opened before
     2026-11-20 sends no version, so it is refused and still shows its old "couldn't reach the
     lobby" toast until it reloads.
-- **PoBrawl's 1P ladder and 2P local are best of three.** First to two rounds (60 seconds
-  each; a bell too close to call is nobody's round), with round pips under the clock. The Cup,
-  online and the training room stay one round. A hard enough beating in a short space is a
-  **knockdown**: the fighter cannot be hit on the canvas and picks a get-up (plain, a roll,
-  rising into the guard, or a wake-up strike). Taps punch left-right-left (jab, cross); a coil
+- **PoBrawl's 1P ladder and 2P local are three-round bouts.** All three rounds (60 seconds
+  each) are fought and scored on health at the bell (a bell too close to call is nobody's
+  round), with round pips under the clock; whoever is ahead on rounds after the third takes it,
+  level is a draw. A **KO ends the whole match** on the spot. The Cup, online and the training
+  room stay one round. A hard enough beating in a short space is a **knockdown**: the fighter
+  cannot be hit on the canvas and the **referee counts to ten**, one number a second. The blow
+  that dropped them decides whether they beat it (`knockdown.js` `riseOdds`: a knockdown blow of
+  10 damage or less is always beaten, 40 or more never, linear between, about half overall);
+  one who beats it rises on a number from 3 to 8, and what the player holds as they rise still
+  picks the get-up (plain, a roll, rising into the guard, or a wake-up strike). Counted out is a
+  KO. The training room keeps the free get-up game, and online keeps its own rollback rules. Taps punch left-right-left (jab, cross); a coil
   is the right hand. Body damage costs each region something different: head = stunned longer
   and down sooner, torso = slower energy regen, arms = weaker strikes and a guard that leaks,
   legs = slower on the feet and off the canvas. The rules are pure modules
@@ -352,7 +358,7 @@ sign-in: a player is a random browser id plus three initials.
 |---|---|
 | PoCapitol | Third-person alternate-history crowd simulation. `/pocapitol/1player`: join a crowd of 512 that starts out on the grass (mostly bystanders, a minority pushing), hold a police line, or observe; 64 police in five lines with shields, batons, spray, gas, flash-bangs and a few concussion grenades fall back in stages across grounds, Crypt, Rotunda and Statuary Hall to barricaded House chamber doors, on a 12:50 pm to 6:00 pm clock, while 64 staff and members shelter inside and are evacuated (nothing can harm them). As the solo raider you carry a machine gun, five concussion grenades and two smoke grenades (**Space**/**Click** fire, **G** throw, **H** smoke; on touch, FIRE and two grenade buttons that show what is left; on a gamepad, right trigger, X and Y); about one person in three breaks off into a room once inside, and one in twenty carries a historically sourced, one-to-six-word sign. `/pocapitol/demo` is an armed, entirely fictional variant in which both sides fire and those hit drop out; the first seven seconds are calm, then the police open fire, the crowd scatters and returns fire, protestor rounds can hit other protestors, and the camera alternates a high crane, a close orbit around the crowd and a shot from behind the police line. It loops and saves nothing. Blasts are overpressure: people are thrown into the air and knocked down, never dismembered. Synthesized sound, Yuka crowd steering (vendored, MIT), adaptive graphics with Auto/Low/High (the top rung adds temporal anti-aliasing with motion blur, ray-marched lit gas on a fluid grid, hundreds of small screen-space lights, lens flare and metering, and a second close shadow cascade with contact-hardening edges; hung banners and breaking panes are simulated for the picture only, while loose bike racks slow whoever wades through them and pushes travel through the packed crowd as pressure waves), and a crowd of individual synthesized voices placed around the listener. Adult themes, no injury shown; invented layout, not a documentary or real access plan. |
 | TicTacToe | 4-in-a-row on 6×6 vs AI, hot-seat, or online in the shared lobby (SignalR; the host plays first) |
-| ConnectFive | Five-in-a-row vs AI, hot-seat, or online in the shared lobby (SignalR; the host plays first) |
+| ConnectFive | Five-in-a-row vs AI, hot-seat, or online in the shared lobby (SignalR; the host plays first). Online has a 30 s move clock (the server plays a random legal column when it runs out; paused while a seat is in its 30 s reconnect grace) and a server-scored online Elo (K 32, start 1200; stored per player id in table `ConnectFiveOnlineElo`; board at `GET /api/leaderboards/connectfive-online`; separate from the 1P adaptive Elo; clients cannot submit it). The rating change shows on the end card. Feel and looks live in `js/connectfive/fx.js` (a DOM observer, so the .NET page owns only the rules): every landing gets a pitched, panned click, a board bump scaled by fall height, a dust/spark puff in the disc's colour and a haptic tap; a win sweeps light along the five discs with confetti in the winner's colour and a crowd + brass sting, the CPU's win is a quieter variant and a draw a neutral chime (all inside the 5 s end-modal delay; reduced motion, low tier and mute are honoured). The start card's Options hold **Board: 2D / 3D** (`pominigames:connectfive:board`): 3D is a three.js/WebGPU board on the shared stage (`js/connectfive/board3d.js`) drawn over the DOM board, which stays the input, keyboard and aria source; it falls back to 2D without WebGPU/WebGL or on the low tier |
 | PoBrawl | Physics brawler with a presidents ladder and two CPU exhibitions on the home hub: **DEMO · Tournament** (the 16-slot Brawl Cup at `/pobrawl/demo`; all presidents enter, seeded by their fighter-board Elo into the standard order 1v16, 8v9, 4v13, 5v12, 2v15, 7v10, 3v14, 6v11 (`PoBrawlTournament.SeedOrder`; equal ratings in random order), open slots are BYE on the bottom seeds and their opponent advances unfought, the start card shows the field as a 4x4 of the 16 slots with seed and Elo (`PoBrawlFighterGrid`, BYE tiles for open slots), every bout advances automatically to one champion, a level bell goes to the higher seed, and each bout updates the live fighter Elo board; note the server's per-identity cap of 40 Cup bouts a UTC day (`PoBrawlDemoEloGate`), so a kiosk running the Cup all day stops rating after about 2.6 cups) and **DEMO · FFA** (`/pobrawl/ffa`; all 16 presidents fight in the ring at once, rear attacks bypass guards, knockout places are shown, and a new round starts after five seconds; this exhibition does not submit 1v1 Elo results); the Cup has an animated bracket (with the cup's controls: the options gear for speed and camera, Tab for the bracket hub) and belt ceremony, golden-hour → dusk → night arena, an Elo-upset crowd, and a TV-style director camera; 1P/2P/online keep a plain side view; the old `/pobrawl/tournament` address redirects to the Cup; 1P, 2P and training pause on Esc / P, on the touch ⏸ button and automatically when the window loses focus (Resume, Restart fight, Quit), and the result leads with Fight again / Rematch in place; a showtime layer of charge auras and president motifs over a crowd that stomps and chants, plus — with the settings sheet's **Brawl show** set to Full (`pobrawl_show`; Simple is the default) — convention balloon drops, a stadium wave, an occasional instant replay, a glass result screen, the belt ceremony and the director camera (those four Full-only modules are loaded on demand, so Simple never parses them); live 3D fighter select (a mirror pick gives Player 2 an alternate suit); an election-night campaign map for the ladder + fighter Elo board; **Brawl HQ** (`/pobrawl/hq`) puts the ladder, campaign map, local record, the ladder / fastest-KO / fighter-Elo boards, Cup titles, the presidents beaten, the feats and the last fight's poster on one page; every fighter speaks 5 emotions (angry, happy, hurt, insult, celebrate) × 5 intensities (`js/pobrawl/fighterVoice.js` on the shared `js/platform/emotionVoice.js`): hurt when hit (by damage), angry landing a big hit, insult on a taunt, happy on a round or points win, celebrate on a KO and the Cup belt; `wwwroot/audio/pobrawl/voices.json` lists every fighter × emotion × level with its WAV path (`<id>/<emotion>-<level>.wav`), an `exists` flag and the fighter's voice profile; drop a WAV in and run `pwsh scripts/pofighter/voices.ps1 -Game pobrawl` to mark it, and every cell without one plays an advanced procedural imitation (glottal pulses, gliding formants, syllables with consonant onsets and a prosody per emotion, deterministic and cached) in that fighter's voice (the FFA has no voice set) |
 | PoCoupleQuiz | Two-player realtime couples quiz (SignalR); online goes through one shared lobby (`/couplequiz/lobby-hub`: first in hosts and picks rounds + topic, the guest readies, the host starts); a JSON bank of questions about the couple's own life together, not trivia (about 240, in six topics: Our story, Dates & trips, Home life, Celebrations, Adventures & mishaps, Just us; or Everything), free answer matching |
 | PoFunQuiz | Trivia from a JSON question bank (~8,500 questions; most from [The Trivia API](https://the-trivia-api.com), CC BY-NC 4.0, topped up from [Open Trivia DB](https://opentdb.com), CC BY-SA 4.0, by `scripts/content/import-trivia.ps1`). Solo and split-screen 2P pick one of eight categories on the start card (the last pick is remembered); online goes through one shared lobby (`/funquiz/lobby-hub`) where the host picks the category and question count, the guest readies, and the host starts. In split-screen each player can answer on their own controller: face buttons Y / X / B / A are options 1-4 |
@@ -365,94 +371,46 @@ sign-in: a player is a random browser id plus three initials.
 | SandPlayground | GPU sand-and-water sandbox |
 | PoFighter | Preview. A 2D fighter whose characters are cut from phone videos of real people; the roster is **Nick** and **Kim** (`wwwroot/data/pofighter/p1.*`, `kim.*`) in 16 slots, the rest BYE (no player) until filmed; the start cards pick on a select grid (`PoFighterRosterGrid`: compact in the pickers, only real fighters plus a Create tile that opens the Studio; the full 4x4 of 16 slots only for the tournament field) with each fighter's Elo, this browser's Studio fighters after the built-in ones (marked STUDIO), and the picked fighter's dossier (`PoFighterDossier`: Elo counting up with its last change, record, win rate, streak, last ten results and a filled Elo sparkline from `GET /api/pofighter/elo/{id}/bouts`; a Studio fighter is not rated). **1P · Arcade** (`/pofighter/arcade`) is you against the CPU: every other fighter in turn, lowest Elo first, then your own Shadow (a mirror match in the Shadow palette), best of three each; a draw replays the stage, a loss ends the run; Easy / Normal / Hard on the start card; the run goes to local stats. **2P** (`/pofighter/versus`) is two players on one screen (one shared grid with a gold P1 and a blue P2 cursor; the plates above it pick whose turn it is): P1 WASD + F punch / G kick, P2 arrows + K / L, or two pads (one pad plays P2). In every fight (2026-11-18) punch and kick give a standing, crouching (down held: a quick crouch jab or a low sweep that knocks down, only for a fighter with those clips filmed; otherwise down plus a button stands up and attacks) or jumping attack (up, up-forward, up-back; Kim, with no filmed jump, jumps in her crouch pose on a computed arc), each with frame data in `js/pofighter/moves.js` (startup, active and recovery from the clip, overridable per fighter with `frameData` in its json, plus whiff recovery so a missed sweep is punishable); air attacks borrow the filmed punch and kick carried on the jump arc until clips of their own are filmed; a sprite is never squashed or shrunk (2026-11-18 owner rule), so nothing borrows a clip at a smaller size. Specials come from motions read off a direction history: quarter-circle-forward + punch throws a **Po Blast** projectile (two clash), forward-down-down-forward + punch is the **Rising Fist** (invulnerable rising anti-air, knocks down, open on landing) and quarter-circle-back + kick the **Rush Kick**; every fighter can also have a **signature** special of their own, found in their recording (half circle forward + its button; name, button and kind strike / rush / rise / projectile from the fighter's data, none until filmed; shot list: `scripts/pofighter/shot-list.html`); the CPU uses all of them. Holding back guards high, down-back guards low: lows beat a standing guard, jump attacks are overheads that beat a crouching one, crouching ducks a standing punch, and a guarded hit costs only chip damage. A hit in the air, a sweep or a Rising Fist knocks down; the fighter gets up invulnerable. Unblocked hits within 0.9 s chain into a combo ("3 HIT COMBO" under the bar; each extra hit does a little less); a mirror match draws the second corner in an alternate palette (`PALETTES` in `js/pofighter/art.js`); human corners feel hits through their own pad's rumble or the phone's vibration (the Haptics setting gates both). Rules: `js/pofighter/versus.js`, attacks and motions: `moves.js`, modes: `arcade.js`, controls: `input.js`. Each fighter has a home stage (`js/pofighter/stages.js`: Nick the Night Rooftop, Kim the Paper Dojo, Studio fighters one picked from their id among those and the Neon Alley, whose crowd jumps on big hits, or the Gym), and a fight is held on the right-hand corner's stage, so each arcade stage looks different; the VS screen names it. After a match the winner's quote card shows both portraits (the loser greyed and cracked) and types out a line from `data/pofighter/quotes.json` (one list per fighter id plus `default`, `{foe}` is the loser's name). The announcer also calls ROUND n / FINAL ROUND, FIGHT!, FIRST ATTACK, combos of 3+, K.O. / DOUBLE K.O. / TIME OVER, PERFECT and the winner; on screen the clock pops each second under 10, the bar turns red under a quarter, a special's name pops over its fighter, and banners sit above the fighters' heads (rising into the empty band above the bars on tall screens, where the STAGE caption goes too). The arcade and 2P pickers are an arcade select screen: a slanted SELECT YOUR FIGHTER bar, a blinking 1P / 2P flag and a "?" tile that rolls a roulette and picks at random. `/pofighter/1player` is a practice room: walk, crouch, jump, punch and kick against a punching bag that counts hits, plus a cheer (every 10 hits) and a knockdown; keyboard, gamepad or touch; it shares the fight's effects and sound (bag hits throw sparks and light and thud, whooshes, footsteps, the window shafts, reflection, music, a crowd cheer every 10 hits, and the WebGL pass on the high tier) but not its camera shake. One toolbar holds the hit count, the fighter (its portrait opens the roster sheet, a popover), reset / slow and **Create fighter**; the moves are key-cap cards along the bottom that light up as they play and fold into a "?" pill after 5 idle seconds. **Create fighter** opens the Studio, a native `<dialog>` wizard (Source: webcam or clip, Background, Moves with a thumbnail and progress ring per move, Save) that runs MediaPipe in the browser and keeps the fighter in IndexedDB. **DEMO** (`/pofighter/demo`, also in the kiosk reel) is an arcade attract mode: Kim vs Nick, both CPU, best of three with a VS card, angled health bars with portraits, a 99 timer in a hexagon, round diamonds and ROUND / FIGHT! / K.O. banners that slam in over a round wipe, then a rematch with the corners swapped, forever; walking back is the block, any key or tap returns to the menu (rules in `js/pofighter/versus.js`); every completed demo match (in the kiosk reel too, never one left early, each match once) is rated on the live fighter Elo board through `POST /api/pofighter/elo` (`PoFighterDemoElo`; a draw is half a point each, Studio fighters unrated) and the win card shows both fighters' new Elo and change. **Demo · Tournament** (`/pofighter/tournament`) enters all 16 slots seeded by Elo (unrated and Studio fighters at 1000, the board's seed; Studio bouts unrated); slots with no player show BYE and their opponent advances, every real bout is best of three, and each result posts to the fighter Elo board (`POST /api/pofighter/elo`, read with `GET /api/pofighter/elo`; bracket in `js/pofighter/bracket.js`). Fighters speak 5 moods (angry, happy, hurt, insult, celebrate) × 5 intensities (`js/pofighter/voice.js` on the shared `js/platform/emotionVoice.js`, which PoBrawl uses too): `wwwroot/audio/pofighter/voices.json` lists every fighter's 25 cells with its WAV path (`<id>/<mood>-<level>.wav`), an `exists` flag and the fighter's voice profile, written by `scripts/pofighter/voices.ps1` (which also trims silence, normalises loudness to -16 LUFS and writes mono 24 kHz via ffmpeg, keeping originals in `scripts/pofighter/voices-raw/`); a recorded cell plays its WAV, any other the advanced procedural imitation in that fighter's voice. Fighters are drawn lit by the arena (`FighterPainter` in `js/pofighter/art.js`: a cool rim light, a shadow cast from the body's own silhouette, a 60 ms cross-fade into and out of one-shot moves, an additive hit flash); a landed hit holds the fight still (the sim's hit-stop plus `impactBus.hitstop`), throws sparks along the blow with a profile per punch / kick / block / K.O., sweat drops that bounce on the floor and a dust puff at the skidding feet (`js/pofighter/fx.js`), lights the wall, floor and the facing side of each fighter for a moment, and shakes the camera through the shared `impactBus`; kicks leave after-images, both fighters reflect faintly in the floor, the key light drifts, dust motes hang in the window shafts and the wall sits on a slower camera than the floor; on the `high` quality tier a WebGL pass (`js/pofighter/post.js`) adds bloom, a colour grade, grain and a colour split on a heavy blow; a K.O. flashes white, plays in slow motion and pushes the camera in; a match opens with an iris, rounds dip to dark between them and a single match fades out before its end card. Sound (`js/pofighter/sfx.js`, all procedural on the shared buses): `impactSynth` body thuds plus a slap crack per hit (a dull pap on a block, an echo tail on the K.O. blow), swing whooshes, footsteps, cloth and landing thumps, all panned by the fighter's x; the gym reverb is the acoustics `court` space; a crowd murmur swells on combos and roars on a K.O.; `musicLayers` + `tensionMixer` score the round by health and clock and drop to a heartbeat at a knockout; ROUND / FIGHT! / K.O. land on a low whomp. The health bar flashes the slice just lost white and shakes on a heavy hit; menu tiles and buttons spring on press (`data-spring`) and the roster grid sonifies keyboard moves (`data-sonify`). Every VS screen has a match announcer (`js/pofighter/announcer.js`): a cut-out face (`data/pofighter/announcer.webp` + `.json`, built by `scripts/pofighter/announcer.py`) calls "Nick! Versus... Kim!" through the browser's speech synthesis (muted with the app's sound) and drops its jaw per syllable, synced to the voice's word boundaries; when speech is muted or blocked the jaw runs on its own clock. The VS screen waits up to 2.5 s for the line. Engine tests: `tests/pofighter-*.test.mjs` (`pofighter-humans.test.mjs`: human corners, combos, ducking, palettes, difficulty; `pofighter-moves.test.mjs`: frame data, motions, specials, projectiles, guard levels, knockdowns, first attack and perfect; `pofighter-fx.test.mjs`: impact, whoosh, pan and spark profiles). New fighters are made offline with `scripts/pofighter/` (see `docs/2026-11-12/PoFighter-PRD.md`); a fighter whose video lacks a move (Kim has no jump) shows the stance for it |
 
-In PoBrawl FFA, knockouts use the same jointed physics ragdolls as 1v1: fighters
-fall from their current pose with the final hit's momentum instead of snapping
-sideways. Bodies stay on the mat through the rest of
-the round and its five-second result hold. The next round returns all 16 fighters
-to their standing starting positions.
-Its cinematic camera cuts to the lowest-health survivor, alternates three fight
-angles, holds briefly on their knockout, and returns to a wide shot after the
-champion close-up. Reduced-motion mode keeps the steady arena overview.
+**PoBrawl FFA runs on the 1v1 engine.** `/pobrawl/ffa` is `BrawlGame` in mode `ffa`
+(`js/pobrawl/ffaMode.js` mixes the free-for-all into `game.js`), so it has everything a 1v1
+bout has: the same fighters, materials, post chain, blood, sweat, limb loss, charge strikes,
+grabs, daze, personalities, crowd, PA, director camera and KO ragdolls. On top of that:
 
-**1P · FFA** (`/pobrawl/ffa/play`, also **Play as Bob** inside the exhibition)
-adds human-controlled Bob to all 16 CPU presidents: 17 entrants, no replaced CPU.
-A stable over-the-shoulder camera follows Bob rather than cutting to endangered
-CPUs. WASD moves relative to that view; F punches, G kicks, R guards, and P/Esc
-pauses. Nearby opponents are aimed at automatically; attacks require a press.
-The existing controller and touch input paths work too. Losing focus pauses human
-play; Resume is explicit. If Bob is knocked out, he stays down until next round.
-Human matches have their own browser-local seasons, ratings and agent choices;
-they never modify the 16-CPU exhibition's saved standings.
+- 16 presidents (17 with Bob) spawn on a ring and each picks a **target**, the nearest rival
+  weighted toward the hurt ones by its agent style, with grudges against whoever just hit it.
+  The CPU fighters are the 1v1 `AiController`, fighting that target.
+- A swing lands on whoever its limb touches: the target first, then any standing body in reach.
+- **There is no count: a fighter who goes down is out.** A knockdown and an empty health bar both
+  eliminate; the body stays where it fell and leaves the physics solver after four seconds.
+- Past 60 seconds it is **overtime**: blows land 1.5× harder and the ring closes (the survivors
+  are herded into a circle that shrinks to 1.4 m), so a round always ends.
+- The camera, spotlight and director frame a pair: Bob (or the most endangered fighter) and
+  whoever they are squared up to. Only that pair casts real shadows; the rest keep their contact
+  shadows, which keeps the draw calls level with a 1v1 bout.
+- The champion holds the ring for five seconds, then the next round spawns.
 
-The final KO has a bounded, transform-only half-speed replay before champion
-results. It includes the fall, never replays score or impact events, then restores
-the final poses. The five-second results hold starts after playback. Reduced
-motion skips the replay. Leaving or restarting clears the replay buffer.
+**1P · FFA** (`/pobrawl/ffa/play`, also **Play as Bob** inside the exhibition) adds
+human-controlled Bob to all 16 CPU presidents: 17 entrants, no replaced CPU. Bob uses the 1v1
+controls (keyboard, pad or touch) and fights his nearest rival; P/Esc pauses. If Bob is out, the
+camera follows the most endangered survivor. Human matches have their own browser-local
+seasons, ratings and agent choices; they never modify the 16-CPU exhibition's saved standings.
 
-**FFA seasons & studio** (top-right button) adds an unattended, browser-local
-20-round season. Placement points crown each season's champion; pairwise
-placement Elo, wins, average finishing place, damage, knockouts and rear hits
-accumulate independently of the global 1v1 leaderboard. Eight recent season
-titles and the latest completed benchmark are retained. An interrupted round is
-restarted from the same seed on reload; only finished rounds are scored.
+**FFA seasons & studio** (Stats / Tab) keeps an unattended, browser-local 20-round season.
+Placement points crown each season's champion; pairwise placement Elo, wins, average finishing
+place, damage, knockouts and rear hits accumulate independently of the global 1v1 leaderboard.
 
-The strategy selector applies balanced, aggressive or cautious behavior next
-round. **Run strategy benchmark** executes 48 repeatable fixed-step simulations:
-16 paired seeds rotate the test president through all three profiles against 15
-balanced rivals. The saved report compares placement gains, wins, damage and KOs
-without changing live-season ratings. This is scripted strategy testing, not
-training or paid AI. Lifetime damage bars and accessible tables need no new
-charting dependency.
-After 55 simulated seconds, overtime increases damage and disables guards so
-cautious fighters cannot stall an unattended season indefinitely.
+**Run strategy benchmark** and the **Agent lab** play their rounds in `js/pobrawl/ffaSim.js`,
+a seeded, fixed-step free-for-all with no renderer (flat circle bodies, range-and-facing
+strikes, the same down-is-out rule). The benchmark runs 48 simulations (16 paired seeds × the
+balanced, aggressive and cautious profiles); the agent lab runs the incumbent and a candidate
+preset on the same eight seeds and promotes only a strictly better average placement. In the
+live ring an agent preset shapes how its president picks targets.
 
-FFA now uses the existing Three.js quality and studio-rendering mechanisms:
-physical fighter materials, arena reflections, shadows and an adaptive
-resolution/effects budget. The broadcast overlay labels its featured fighter,
-health, last attacker, recent knockouts and the final duel.
-
-Optional president facts use Wikidata's structured-data API (CC0), not copied
-article text. Enable them in the studio to show champion facts between rounds.
-Public entity IDs are sent to Wikimedia; no account or gameplay data is sent.
-Facts are cached locally, linked to their source, and network/offline failures
-are displayed without interrupting the match. No API key is needed.
-Strategy, highlight capture and fact-card preferences are remembered locally.
-Wikidata HTTP failures impose a cooldown of at least 60 seconds (or the
-server's longer `Retry-After`) rather than retrying every round.
-
-**Agent lab** gives every president a distinct scripted default style and offers
-pressure, counter and opportunist candidates. **Evaluate and promote if better**
-runs the incumbent and candidate on the same eight fixed seeds against the same
-frozen CPU roster/presets/global strategy (16 simulations, CPU-only even from human
-mode). Only strictly improved average placement replaces the saved incumbent;
-ties and regressions are rejected. The last report and presets survive reload;
-promotions apply next round. This is repeatable rule tuning, not neural-network
-training, learned models, external AI or paid inference.
-
-### FFA graphics, physics and audio
-
-FFA uses continuous swept-circle contacts for its 16 or 17 standing body capsules and
-ring boundary, with the roster's mass ratios, friction and momentum-aware
-knockback. Knockouts use the shared jointed ragdoll solver. Settled parts sleep;
-each whole corpse retires from physics within four seconds while keeping its
-final visual pose. At most 16 corpses/176 dynamic parts are tracked. Survivors
-step over corpses instead of clipping through or getting stuck behind a pile.
-The same fixed-step physics runs in benchmarks; older benchmark reports are
-invalidated when this physics revision changes.
-
-Quality-adaptive WebGL effects add bounded instanced sweat/dust bursts and
-shock rings, anti-aliasing, bloom, screen-space contact shading, subtle hit
-dispersion and color grading. Skin uses a scattering approximation; clothing
-gets procedural micro-detail, sweat and battle wear. Mat marks and bruising
-last until the next round. Light shafts and haze approximate volumetric arena
-lighting; these are not ray-traced RTX or multi-bounce global illumination.
-
-Web Audio impacts now follow collision energy and flesh/cloth/shoe/rope
-materials. HRTF sources follow the cinematic camera's listener, with bounded
-nearest-fighter friction voices and approximate arena reverb/occlusion.
-Studio clicks, toggle cues, drawer slides, standings highlights and press
-feedback respect shared mute/volume and reduced-motion preferences. The
-top-right sound toggle controls the same app-wide mute setting.
+Optional president facts use Wikidata's structured-data API (CC0), not copied article text.
+Enable them in the studio to show champion facts between rounds. Public entity IDs are sent to
+Wikimedia; no account or gameplay data is sent. Facts are cached locally and linked to their
+source; Wikidata HTTP failures impose a cooldown of at least 60 seconds (or the server's longer
+`Retry-After`).
 
 ## Quick start
 

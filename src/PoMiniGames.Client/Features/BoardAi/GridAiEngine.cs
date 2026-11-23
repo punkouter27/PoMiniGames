@@ -54,6 +54,40 @@ public sealed class GridAiEngine
     /// <summary>Returns the chosen cell index, or -1 when no move exists.</summary>
     public int Choose(GridPosition pos, AiRung rung)
     {
+        var quick = Prelude(pos, rung, out var filter);
+        if (quick != NoQuickMove) return quick;
+        return rung.UseMcts ? ChooseMcts(pos, rung, filter) : ChooseNegamax(pos, rung, filter);
+    }
+
+    /// <summary>
+    /// <see cref="Choose"/> with the main search run in slices of <paramref name="sliceMs"/>,
+    /// awaiting <paramref name="yieldAsync"/> between them, so a single-threaded host (Blazor
+    /// WebAssembly) keeps animating while the CPU thinks. Same strength and budget.
+    /// </summary>
+    public async Task<int> ChooseAsync(GridPosition pos, AiRung rung, int sliceMs, Func<Task> yieldAsync, CancellationToken ct = default)
+    {
+        var quick = Prelude(pos, rung, out var filter);
+        if (quick != NoQuickMove) return quick;
+        if (rung.UseMcts)
+        {
+            var mcts = await _mcts.RunAsync(pos, rung.BudgetMs, sliceMs, yieldAsync, ct);
+            return PickMcts(mcts, rung, filter);
+        }
+        var wantScores = rung.Temperature > 0 && rung.TopK > 1;
+        var result = await _search.RunAsync(pos, rung.BudgetMs, rung.MaxDepth, wantScores, filter, sliceMs, yieldAsync, ct);
+        return PickNegamax(result, rung, wantScores);
+    }
+
+    private const int NoQuickMove = int.MinValue;
+
+    /// <summary>
+    /// Everything before the main search: no or one move, the opening book, immediate tactics
+    /// and the threat-space search. Returns a move, or <see cref="NoQuickMove"/> with the root
+    /// filter the main search should respect.
+    /// </summary>
+    private int Prelude(GridPosition pos, AiRung rung, out int[]? filter)
+    {
+        filter = null;
         var buf = new int[_g.Total];
         var n = pos.GenMoves(buf);
         if (n == 0) return -1;
@@ -66,7 +100,6 @@ public sealed class GridAiEngine
         }
 
         int me = pos.ToMove, opp = 3 - me;
-        int[]? filter = null;
         if (_rng.NextDouble() < rung.TacticChance)
         {
             int block = -1, threats = 0;
@@ -88,8 +121,7 @@ public sealed class GridAiEngine
                 }
             }
         }
-
-        return rung.UseMcts ? ChooseMcts(pos, rung, filter) : ChooseNegamax(pos, rung, filter);
+        return NoQuickMove;
     }
 
     private int[]? SafeMoves(GridPosition pos, int[] moves, int n, int depth, long nodes)
@@ -111,7 +143,11 @@ public sealed class GridAiEngine
     private int ChooseNegamax(GridPosition pos, AiRung rung, int[]? filter)
     {
         var wantScores = rung.Temperature > 0 && rung.TopK > 1;
-        var result = _search.Run(pos, rung.BudgetMs, rung.MaxDepth, wantScores, filter);
+        return PickNegamax(_search.Run(pos, rung.BudgetMs, rung.MaxDepth, wantScores, filter), rung, wantScores);
+    }
+
+    private int PickNegamax(SearchResult result, AiRung rung, bool wantScores)
+    {
         if (result.Move < 0) return -1;
         if (!wantScores || result.Moves.Length < 2) return result.Move;
         return SoftmaxPick(result.Moves, result.Scores, rung);
@@ -119,7 +155,11 @@ public sealed class GridAiEngine
 
     private int ChooseMcts(GridPosition pos, AiRung rung, int[]? filter)
     {
-        var result = _mcts.Run(pos, rung.BudgetMs);
+        return PickMcts(_mcts.Run(pos, rung.BudgetMs), rung, filter);
+    }
+
+    private int PickMcts(MctsResult result, AiRung rung, int[]? filter)
+    {
         if (result.Move < 0) return -1;
         var moves = new List<int>();
         var scores = new List<int>();

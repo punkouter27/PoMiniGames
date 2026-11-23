@@ -1,0 +1,48 @@
+@inject IJSRuntime JS
+
+@* Board: 2D / 3D, on the start card's Options (not the settings drawer). The choice lives in the
+   browser under pominigames:connectfive:board; js/connectfive/fx.js reads it when the board
+   mounts and falls back to 2D on its own when WebGPU/WebGL is missing or the quality tier is low. *@
+<div class="cfb-pick">
+    <p class="cfb-pick__label" id="cfb-pick-label">Board</p>
+    <div class="app-seg" role="radiogroup" aria-labelledby="cfb-pick-label">
+        <button type="button" role="radio" class="app-seg__btn" aria-checked="@(!_is3d ? "true" : "false")"
+                @onclick="() => SelectAsync(false)">2D</button>
+        <button type="button" role="radio" class="app-seg__btn" aria-checked="@(_is3d ? "true" : "false")"
+                title="A 3D board with real lighting. Falls back to 2D when graphics are limited."
+                @onclick="() => SelectAsync(true)">3D</button>
+    </div>
+</div>
+
+@code {
+    private const string StorageKey = "pominigames:connectfive:board";
+    private bool _is3d;
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (!firstRender) return;
+        try
+        {
+            var stored = await JS.InvokeAsync<string?>("localStorage.getItem", StorageKey);
+            if (stored == "3d")
+            {
+                _is3d = true;
+                StateHasChanged();
+            }
+        }
+        catch
+        {
+            // Storage blocked: the picker starts on 2D and works for this visit only.
+        }
+    }
+
+    private async Task SelectAsync(bool threeD)
+    {
+        _is3d = threeD;
+        var value = threeD ? "3d" : "2d";
+        try { await JS.InvokeVoidAsync("localStorage.setItem", StorageKey, value); }
+        catch { /* private mode: not remembered */ }
+        try { await JS.InvokeVoidAsync("PoConnectFiveFx.setBoardMode", value); }
+        catch { /* the effects module is not loaded yet: it reads the stored choice when the board mounts */ }
+    }
+}

@@ -128,13 +128,6 @@
     private const int EndHoldMs = 2500;
 
     private RenderFragment SetupOptions => @<div class="pffa-setup">
-        <label>Strategy
-            <select @bind="_startProfile" @bind:after="ApplyStartProfile">
-                <option value="balanced">Balanced</option>
-                <option value="aggressive">Aggressive: faster attacks, hunt weak rivals</option>
-                <option value="cautious">Cautious: more frequent guarding</option>
-            </select>
-        </label>
         <p><a href="@(IsHuman ? "/pobrawl/ffa" : "/pobrawl/ffa/play")">@(IsHuman ? "Switch to Watch CPU FFA" : "Switch to Play as Bob")</a></p>
     </div>;
 
@@ -256,10 +249,10 @@
     private static RenderFragment TitleContent => @<span><span aria-hidden="true">🥊</span> Brawl FFA</span>;
     private RenderFragment HowItWorks => @<ul>
         <li>@(IsHuman ? "You are Bob, fighting all 16 CPU presidents from a player-follow camera." : "All 16 presidents fight in the ring together — no bracket and no player controls.")</li>
-        @if (IsHuman) { <li>WASD move, F punch, G kick, R guard. P/Esc pauses. Touch and controller controls are available.</li> }
-        <li>Every fighter chooses a nearby rival. Knockouts are ranked, and the final survivor takes the round.</li>
-        <li>Watch your back: guards cover the front, but attacks from behind still land.</li>
-        <li>The final knockout gets a slow-motion replay, then five-second results and a fresh round.</li>
+        @if (IsHuman) { <li>WASD move, F punch, G kick (hold to charge), R guard, T grab. P/Esc pauses. Touch and controller controls are available.</li> }
+        <li>Every fighter chooses a nearby rival, and a swing lands on whoever it touches.</li>
+        <li>Go down and you are out: no count in the free-for-all. The last one standing takes the round.</li>
+        <li>After 60 seconds it is overtime: blows hit harder and the ring closes in.</li>
     </ul>;
 
     private readonly Dictionary<string, int> _health =
@@ -281,7 +274,6 @@
     private string? _endHeadline;
     private string? _endDetail;
     private int _seenTitles = -1;
-    private string _startProfile = "balanced";
     private bool _confirmReset;
     private bool _factsEnabled;
     private bool _paused;
@@ -355,7 +347,6 @@
                 human = IsHuman,
                 muted = Settings.Muted,
             });
-            if (_startProfile != "balanced") await CommandAsync("PoBrawl.ffaProfile", _startProfile);
         }
         catch (Exception ex)
         {
@@ -435,8 +426,6 @@
     private static string NameOf(string fighterId) =>
         Names.TryGetValue(fighterId, out var name) ? name : fighterId;
 
-    private Task ApplyStartProfile() =>
-        _engineLoaded ? CommandAsync("PoBrawl.ffaProfile", _startProfile) : Task.CompletedTask;
 
     private async Task ToggleMuteAsync()
     {

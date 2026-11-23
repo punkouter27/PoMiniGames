@@ -39,6 +39,11 @@
 (function () {
     'use strict';
 
+    // The landing feel, win celebration and optional 3D board (fx.js) are a DOM observer that does
+    // not need matter.js, so they load before the matter check below and survive its early return.
+    // Same URL as the page's own loadEngine('connectfivefx'), so it is one module instance.
+    const fxReady = import('./fx.js').catch((e) => { console.warn('PoConnectFive fx unavailable:', e); return null; });
+
     // matter.js exposes itself on `window.Matter` when loaded as a classic
     // script. If the CDN injection failed, we return early and never publish
     // `window.PoConnectFive` — the page's Blazor JSInterop call then throws,
@@ -99,6 +104,8 @@
     function enabled() {
         if (motionReduced()) return false;
         if (tier() === 'low') return false;
+        // The 3D board animates its own drops; a DOM clone falling over it would be a second disc.
+        if (document.querySelector('.cf-board--3d')) return false;
         return true;
     }
 
@@ -543,6 +550,7 @@
      * primitives + strings). On Blazor's side the page passes ".cf-board".
      */
     function init(boardElOrSelector) {
+        fxReady.then((m) => m?.start());
         if (!enabled()) return false;
         if (_active) return true;
         const board = typeof boardElOrSelector === 'string'
@@ -614,6 +622,7 @@
 
     /** Tear down the engine and any in-flight drop. Page calls this on Dispose. */
     function reset() {
+        fxReady.then((m) => m?.stop());
         cancelDrop();
         suppressKeyframe(false);
         clearWatchdog();

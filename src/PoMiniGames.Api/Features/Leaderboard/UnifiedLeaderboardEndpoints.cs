@@ -3,6 +3,7 @@ using PoMiniGames.Domain.Models;
 using PoMiniGames.Domain.Abstractions;
 using PoMiniGames.Features.PoFunQuiz;
 using PoMiniGames.Features.PoFunQuiz.Storage;
+using PoMiniGames.Features.Shared.TurnMatch;
 using PoMiniGames.Domain.Primitives;
 using PoMiniGames.Domain.Services;
 using PoCabinetCatalog = PoMiniGames.Shared.Games.PoCabinetCatalog;
@@ -57,9 +58,16 @@ public static class UnifiedLeaderboardEndpoints
             .Produces<IEnumerable<GameLeaderboardDto>>(StatusCodes.Status200OK);
 
         boards.MapGet("/{game}",
-            async (string game, IStorageService storage, LeaderboardRepository funQuiz, int limit = 10, string? period = null) =>
+            async (string game, IStorageService storage, LeaderboardRepository funQuiz, ConnectFiveOnlineEloStore online, int limit = 10, string? period = null) =>
             {
                 limit = Math.Clamp(limit, 1, 100);
+                // Online Connect Five Elo (server-scored head-to-head), separate from the 1P adaptive "connectfive" board.
+                if (string.Equals(game, ConnectFiveOnlineBoardKey, StringComparison.OrdinalIgnoreCase))
+                {
+                    return IsWeekly(period)
+                        ? Results.NotFound(new { message = $"No weekly leaderboard for game '{game}'" })
+                        : Results.Ok(await BuildConnectFiveOnlineAsync(online, limit));
+                }
                 var board = await BuildOneAsync(storage, funQuiz, game, limit, IsWeekly(period));
                 return board is null ? Results.NotFound(new { message = $"No leaderboard for game '{game}'" })
                                      : Results.Ok(board);
@@ -70,6 +78,22 @@ public static class UnifiedLeaderboardEndpoints
             .Produces(StatusCodes.Status404NotFound);
 
         return app;
+    }
+
+    /// <summary>Board key for online Connect Five Elo; the client passes it as GameShell's GameKey in online play.</summary>
+    public const string ConnectFiveOnlineBoardKey = "connectfive-online";
+
+    private static async Task<GameLeaderboardDto> BuildConnectFiveOnlineAsync(ConnectFiveOnlineEloStore store, int limit)
+    {
+        IReadOnlyList<ConnectFiveOnlineRating> top;
+        try { top = await store.GetTopAsync(limit); }
+        catch { top = []; }
+        var entries = top
+            .Select((r, i) => new LeaderboardEntryDto(
+                i + 1, r.DisplayName, r.Rating, r.Rating.ToString("N0", CultureInfo.InvariantCulture)))
+            .ToList();
+        PadWithPlaceholders(entries, limit, "0");
+        return new GameLeaderboardDto(ConnectFiveOnlineBoardKey, "Connect Five Online", "ELO", HigherIsBetter: true, entries);
     }
 
     private static bool IsWeekly(string? period) =>

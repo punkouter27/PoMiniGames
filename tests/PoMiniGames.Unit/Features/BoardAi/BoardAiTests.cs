@@ -25,6 +25,9 @@ public sealed class BoardAiTests
     [InlineData(nameof(Softmax_NeverPicksAnIllegalMove))]
     [InlineData(nameof(Mcts_TakesAnImmediateWinInBothGames))]
     [InlineData(nameof(HardBeatsEasy_OverASmallSeededSample))]
+    [InlineData(nameof(SlicedSearch_FindsTheForcedWinAndYieldsBetweenSlices))]
+    [InlineData(nameof(SlicedMcts_TakesAnImmediateWinAndYields))]
+    [InlineData(nameof(SlicedSearch_StopsWhenCancelled))]
     public Task Scenario(string name) => Scenarios.RunAsync(this, name);
 
     private static ConnectFiveBoard Drop(ConnectFiveBoard board, Player player, params int[] cols)
@@ -177,5 +180,43 @@ public sealed class BoardAiTests
 
         hardWins.Should().BeGreaterThanOrEqualTo(3);
         easyWins.Should().BeLessThan(hardWins);
+    }
+
+    private static async Task SlicedSearch_FindsTheForcedWinAndYieldsBetweenSlices()
+    {
+        // The same forced win as the VCF scenario, through the sliced path with the VCF off so
+        // the negamax itself has to find it over several slices.
+        var board = Drop(Drop(new ConnectFiveBoard(), Player.Red, 3, 4, 5), Player.Yellow, 3, 4, 5);
+        var rung = new AiRung(60, 14, 0, 100_000, 1, 0, 0, 0);
+        var yields = 0;
+        var (_, col) = await new ConnectFiveAI(new Random(1)).GetMoveAsync(board, Player.Red, rung,
+            () => { yields++; return Task.CompletedTask; });
+        col.Should().BeOneOf(2, 6);
+        yields.Should().BeGreaterThan(0, "a 60 ms think in 8 ms slices hands the thread back between them");
+    }
+
+    private static async Task SlicedMcts_TakesAnImmediateWinAndYields()
+    {
+        var board = Drop(Drop(new ConnectFiveBoard(), Player.Red, 2, 3, 4, 5), Player.Yellow, 2, 3, 4);
+        var rung = new AiRung(40, 14, 0, 100_000, 1, 0, 0, 0, UseMcts: true);
+        var yields = 0;
+        var (_, col) = await new ConnectFiveAI(new Random(2)).GetMoveAsync(board, Player.Red, rung,
+            () => { yields++; return Task.CompletedTask; });
+        col.Should().BeOneOf(1, 6);
+        yields.Should().BeGreaterThan(0);
+    }
+
+    private static async Task SlicedSearch_StopsWhenCancelled()
+    {
+        var board = Drop(Drop(new ConnectFiveBoard(), Player.Red, 4), Player.Yellow, 3);
+        var rung = new AiRung(5_000, 30, 0, 100_000, 1, 0, 0, 0);
+        using var cts = new CancellationTokenSource();
+        var watch = Stopwatch.StartNew();
+        var think = new ConnectFiveAI(new Random(3)).GetMoveAsync(board, Player.Red, rung, async () =>
+        {
+            if (watch.ElapsedMilliseconds > 30) await cts.CancelAsync();
+        }, cts.Token);
+        await think.Invoking(t => t).Should().ThrowAsync<OperationCanceledException>();
+        watch.ElapsedMilliseconds.Should().BeLessThan(2_000, "the cancel lands at the next slice, not at the 5 s budget");
     }
 }

@@ -41,6 +41,9 @@ const REGISTRY = {
     // remains the fallback when matter.js fails to load or reduced-motion /
     // low-quality tier opts the page out.
     connectfive: ['js/connectfive/index.js', 'PoConnectFive'],
+    // ConnectFive feel + 3D board: landing sound/bump/dust/haptic, win celebration and the optional
+    // three.js board. A DOM observer with no matter.js dependency, so it loads even when the CDN is blocked.
+    connectfivefx: ['js/connectfive/fx.js', 'PoConnectFiveFx'],
     // PoCabinet — three.js racing engine (third-person scene, race driver, audio).
     // The engine module registers window.PoCabinet and proxies the named
     // exports of js/pocabinet/scene.js | race.js | audio.js | minimap.js |

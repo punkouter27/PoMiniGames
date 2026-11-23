@@ -80,6 +80,16 @@ public sealed class OnlineTurnSession : IAsyncDisposable
     public bool AwaitingServer { get; private set; }
     public bool Reconnecting { get; private set; }
 
+    /// <summary>
+    /// When the seat to move runs out of time, on THIS device's clock (the server sends time left, not a
+    /// timestamp, so clock skew cannot show). Null: no clock, the game is over, or it is paused for a reconnect.
+    /// </summary>
+    public DateTime? TurnDeadlineUtc { get; private set; }
+    /// <summary>Server-scored online ratings once the match has ended (null until then, or when the match is unrated).</summary>
+    public TurnMatchRatings? Ratings { get; private set; }
+    public TurnRatingChange? MyRating => Ratings is { } r ? (MySide == TurnMatchSide.First ? r.First : r.Second) : null;
+    public TurnRatingChange? OpponentRating => Ratings is { } r ? (MySide == TurnMatchSide.First ? r.Second : r.First) : null;
+
     public bool IsMyTurn =>
         Phase == QuickMatchPhase.Playing && Result == GameResult.InProgress
         && Turn == MySide && !AwaitingServer && !Reconnecting;
@@ -179,6 +189,8 @@ public sealed class OnlineTurnSession : IAsyncDisposable
         EndReason = TurnMatchEndReason.None;
         Result = GameResult.InProgress;
         _matchRecorded = false;
+        Ratings = null;
+        TurnDeadlineUtc = null;
         await StartAsync();
     }
 
@@ -255,6 +267,8 @@ public sealed class OnlineTurnSession : IAsyncDisposable
         Turn = TurnMatchSide.First;
         AwaitingServer = false;
         _matchRecorded = false;
+        Ratings = null;
+        TurnDeadlineUtc = null;
         GameStarted?.Invoke(start);
         Changed?.Invoke();
     }
@@ -280,6 +294,10 @@ public sealed class OnlineTurnSession : IAsyncDisposable
         MoveCount = state.MoveCount;
         Turn = state.Turn;
         EndReason = state.EndReason;
+        TurnDeadlineUtc = state.Status == TurnMatchStatus.InProgress && state.TurnMsLeft is { } ms
+            ? DateTime.UtcNow.AddMilliseconds(ms)
+            : null;
+        if (state.Ratings is not null) Ratings = state.Ratings;
 
         if (state.Status != TurnMatchStatus.InProgress && Result == GameResult.InProgress)
         {

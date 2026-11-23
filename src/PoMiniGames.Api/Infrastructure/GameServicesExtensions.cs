@@ -160,10 +160,15 @@ internal static class GameServicesExtensions
         // authoritative board; each game also has one shared TurnLobbyRoom (host, ready, start,
         // no codes) that reserves the match. The rules instance is the only thing
         // that differs. See Features/Shared/TurnMatch for the reconnect contract.
+        // Connect Five alone has the 30 s move clock and the server-scored online Elo;
+        // Tic-Tac-Toe passes neither and behaves as before.
+        services.AddSingleton<PoMiniGames.Features.Shared.TurnMatch.ConnectFiveOnlineEloStore>();
         services.AddSingleton(sp => new PoMiniGames.Features.Shared.TurnMatch.TurnMatchService<PoMiniGames.Features.Shared.TurnMatch.ConnectFiveHub>(
             PoMiniGames.Shared.Games.ConnectFiveRules.Instance,
             sp.GetRequiredService<Microsoft.AspNetCore.SignalR.IHubContext<PoMiniGames.Features.Shared.TurnMatch.ConnectFiveHub>>(),
-            sp.GetRequiredService<ILogger<PoMiniGames.Features.Shared.TurnMatch.TurnMatchService<PoMiniGames.Features.Shared.TurnMatch.ConnectFiveHub>>>()));
+            sp.GetRequiredService<ILogger<PoMiniGames.Features.Shared.TurnMatch.TurnMatchService<PoMiniGames.Features.Shared.TurnMatch.ConnectFiveHub>>>(),
+            turnClock: PoMiniGames.Features.Shared.TurnMatch.ConnectFiveHub.TurnClock,
+            results: sp.GetRequiredService<PoMiniGames.Features.Shared.TurnMatch.ConnectFiveOnlineEloStore>()));
         services.AddSingleton(sp => new PoMiniGames.Features.Shared.TurnMatch.TurnMatchService<PoMiniGames.Features.Shared.TurnMatch.TicTacToeHub>(
             PoMiniGames.Shared.Games.TicTacToeRules.Instance,
             sp.GetRequiredService<Microsoft.AspNetCore.SignalR.IHubContext<PoMiniGames.Features.Shared.TurnMatch.TicTacToeHub>>(),

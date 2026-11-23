@@ -37,6 +37,15 @@ public sealed class GridSearch
     private bool _aborted;
     private bool _abortable;
 
+    // The search in progress (Begin / Iterate / Result): the root moves in the order the last
+    // completed iteration left them, its scores, and the best move it found.
+    private int[] _rootMoves = [];
+    private int[] _rootScores = [];
+    private int _bestMove;
+    private int _bestScore;
+    private int _doneDepth;
+    private bool _wantScores;
+
     public GridSearch(GridGeometry geometry, int ttSizeLog2 = 16)
     {
         _g = geometry;
@@ -57,14 +66,68 @@ public sealed class GridSearch
     /// <param name="wantScores">Search every root move with a full window so all scores are exact (needed for softmax sampling).</param>
     public SearchResult Run(GridPosition pos, int budgetMs, int maxDepth, bool wantScores, int[]? rootFilter = null)
     {
+        var early = Begin(pos, wantScores, rootFilter);
+        if (early is not null) return early;
+        var start = Stopwatch.GetTimestamp();
+        _deadline = start + budgetMs * Stopwatch.Frequency / 1000;
+
+        for (int depth = 1; depth <= Math.Min(maxDepth, MaxPly - 2); depth++)
+        {
+            _abortable = depth > 1;
+            if (!Iterate(depth)) break;
+            if (Math.Abs(_bestScore) >= Mate - MateBand) break;
+            var elapsed = Stopwatch.GetTimestamp() - start;
+            if (elapsed * 3 > _deadline - start) break; // the next iteration cannot finish in time
+        }
+        return Result();
+    }
+
+    /// <summary>
+    /// The same search, run in slices of at most <paramref name="sliceMs"/> with
+    /// <paramref name="yieldAsync"/> awaited between them, so a single-threaded host (Blazor
+    /// WebAssembly) keeps painting while the CPU thinks. An iteration that runs out of its slice
+    /// is started again after the yield; the transposition table keeps what it learned, so the
+    /// retry is much cheaper. The total stays within <paramref name="budgetMs"/>, and the result
+    /// comes from the last fully completed iteration, as with <see cref="Run"/>.
+    /// </summary>
+    public async Task<SearchResult> RunAsync(GridPosition pos, int budgetMs, int maxDepth, bool wantScores,
+        int[]? rootFilter, int sliceMs, Func<Task> yieldAsync, CancellationToken ct = default)
+    {
+        var early = Begin(pos, wantScores, rootFilter);
+        if (early is not null) return early;
+        var end = Stopwatch.GetTimestamp() + budgetMs * Stopwatch.Frequency / 1000;
+        var slice = Math.Max(1, sliceMs) * Stopwatch.Frequency / 1000;
+
+        int depth = 1;
+        while (depth <= Math.Min(maxDepth, MaxPly - 2))
+        {
+            ct.ThrowIfCancellationRequested();
+            _deadline = Math.Min(end, Stopwatch.GetTimestamp() + slice);
+            _abortable = depth > 1;
+            var done = Iterate(depth);
+            if (done)
+            {
+                if (Math.Abs(_bestScore) >= Mate - MateBand) break;
+                depth++;
+            }
+            if (Stopwatch.GetTimestamp() >= end) break;
+            await yieldAsync();
+        }
+        ct.ThrowIfCancellationRequested();
+        return Result();
+    }
+
+    /// <summary>Starts a search; returns a finished result when the root leaves no choice.</summary>
+    private SearchResult? Begin(GridPosition pos, bool wantScores, int[]? rootFilter)
+    {
         _pos = pos;
+        _wantScores = wantScores;
         _tt.NewSearch();
         Array.Fill(_killers, -1);
         for (int i = 0; i < _history.Length; i++) _history[i] >>= 2;
         _nodes = 0;
         _aborted = false;
         _abortable = false;
-        _deadline = Stopwatch.GetTimestamp() + budgetMs * Stopwatch.Frequency / 1000;
 
         var buf = new int[_g.Total];
         var n = pos.GenMoves(buf);
@@ -76,52 +139,61 @@ public sealed class GridSearch
         if (roots.Count == 0) return new SearchResult();
         if (roots.Count == 1) return new SearchResult { Move = roots[0], Moves = [roots[0]], Scores = [0] };
 
-        var moves = roots.ToArray();
-        var scores = new int[moves.Length];
-        int bestMove = moves[0], bestScore = 0, doneDepth = 0;
-        var start = Stopwatch.GetTimestamp();
+        _rootMoves = roots.ToArray();
+        _rootScores = new int[_rootMoves.Length];
+        _bestMove = _rootMoves[0];
+        _bestScore = 0;
+        _doneDepth = 0;
+        return null;
+    }
 
-        for (int depth = 1; depth <= Math.Min(maxDepth, MaxPly - 2); depth++)
+    /// <summary>One full iteration at <paramref name="depth"/>. False when the deadline cut it short (nothing changes).</summary>
+    private bool Iterate(int depth)
+    {
+        _aborted = false;
+        var pos = _pos;
+        var moves = _rootMoves;
+        var iter = new int[moves.Length];
+        int alpha = -Mate - 1;
+        int iterBest = int.MinValue, iterBestIdx = 0;
+        for (int i = 0; i < moves.Length; i++)
         {
-            _abortable = depth > 1;
-            var iter = new int[moves.Length];
-            int alpha = -Mate - 1;
-            int iterBest = int.MinValue, iterBestIdx = 0;
-            for (int i = 0; i < moves.Length; i++)
+            int score;
+            if (pos.Make(moves[i])) score = Mate - 1;
+            else
             {
-                int score;
-                if (pos.Make(moves[i])) score = Mate - 1;
-                else
-                {
-                    score = -Search(depth - 1, -Mate - 1, wantScores ? Mate + 1 : -alpha, 1);
-                }
-                pos.Undo();
-                if (_aborted) break;
-                iter[i] = score;
-                if (score > iterBest)
-                {
-                    iterBest = score;
-                    iterBestIdx = i;
-                }
-                if (!wantScores && score > alpha) alpha = score;
+                score = -Search(depth - 1, -Mate - 1, _wantScores ? Mate + 1 : -alpha, 1);
             }
-            if (_aborted) break;
-
-            // Order the next iteration: best move first, the rest by score.
-            bestMove = moves[iterBestIdx];
-            bestScore = iterBest;
-            doneDepth = depth;
-            var order = Enumerable.Range(0, moves.Length).OrderByDescending(i => i == iterBestIdx ? int.MaxValue : iter[i]).ToArray();
-            moves = order.Select(i => moves[i]).ToArray();
-            scores = order.Select(i => iter[i]).ToArray();
-
-            if (Math.Abs(bestScore) >= Mate - MateBand) break;
-            var elapsed = Stopwatch.GetTimestamp() - start;
-            if (elapsed * 3 > _deadline - start) break; // the next iteration cannot finish in time
+            pos.Undo();
+            if (_aborted) return false;
+            iter[i] = score;
+            if (score > iterBest)
+            {
+                iterBest = score;
+                iterBestIdx = i;
+            }
+            if (!_wantScores && score > alpha) alpha = score;
         }
 
-        return new SearchResult { Move = bestMove, Score = bestScore, Depth = doneDepth, Nodes = _nodes, Moves = moves, Scores = scores };
+        // Order the next iteration: best move first, the rest by score.
+        _bestMove = moves[iterBestIdx];
+        _bestScore = iterBest;
+        _doneDepth = depth;
+        var order = Enumerable.Range(0, moves.Length).OrderByDescending(i => i == iterBestIdx ? int.MaxValue : iter[i]).ToArray();
+        _rootMoves = order.Select(i => moves[i]).ToArray();
+        _rootScores = order.Select(i => iter[i]).ToArray();
+        return true;
     }
+
+    private SearchResult Result() => new()
+    {
+        Move = _bestMove,
+        Score = _bestScore,
+        Depth = _doneDepth,
+        Nodes = _nodes,
+        Moves = _rootMoves,
+        Scores = _rootScores,
+    };
 
     private int Search(int depth, int alpha, int beta, int ply)
     {

@@ -54,10 +54,42 @@ public sealed class GridMcts
         var root = new Node(-1, 3 - pos.ToMove, null);
         Expand(root, pos);
         if (root.UntriedCount == 0) return new MctsResult();
-
         int iterations = 0;
-        while (iterations < maxIterations && (iterations < 32 || Stopwatch.GetTimestamp() < deadline))
+        Grow(pos, root, deadline, maxIterations, 32, ref iterations);
+        return Collect(root, iterations);
+    }
+
+    /// <summary>
+    /// <see cref="Run"/> in slices of at most <paramref name="sliceMs"/>, awaiting
+    /// <paramref name="yieldAsync"/> between them so a single-threaded host keeps painting.
+    /// The tree is kept across slices, so the result matches one uninterrupted run.
+    /// </summary>
+    public async Task<MctsResult> RunAsync(GridPosition pos, int budgetMs, int sliceMs, Func<Task> yieldAsync, CancellationToken ct = default)
+    {
+        var end = Stopwatch.GetTimestamp() + budgetMs * Stopwatch.Frequency / 1000;
+        var slice = Math.Max(1, sliceMs) * Stopwatch.Frequency / 1000;
+        var root = new Node(-1, 3 - pos.ToMove, null);
+        Expand(root, pos);
+        if (root.UntriedCount == 0) return new MctsResult();
+        int iterations = 0;
+        while (true)
         {
+            ct.ThrowIfCancellationRequested();
+            Grow(pos, root, Math.Min(end, Stopwatch.GetTimestamp() + slice), int.MaxValue, iterations == 0 ? 32 : 0, ref iterations);
+            if (Stopwatch.GetTimestamp() >= end) break;
+            await yieldAsync();
+        }
+        ct.ThrowIfCancellationRequested();
+        return Collect(root, iterations);
+    }
+
+    /// <summary>Selection, expansion, playout and backpropagation until the deadline (at least <paramref name="minIterations"/>).</summary>
+    private void Grow(GridPosition pos, Node root, long deadline, int maxIterations, int minIterations, ref int iterations)
+    {
+        int ran = 0;
+        while (iterations < maxIterations && (ran < minIterations || Stopwatch.GetTimestamp() < deadline))
+        {
+            ran++;
             iterations++;
             var node = root;
             int made = 0;
@@ -100,7 +132,10 @@ public sealed class GridMcts
             }
             for (int i = 0; i < made; i++) pos.Undo();
         }
+    }
 
+    private static MctsResult Collect(Node root, int iterations)
+    {
         var moves = new int[root.Children.Count];
         var visits = new int[moves.Length];
         var rates = new double[moves.Length];

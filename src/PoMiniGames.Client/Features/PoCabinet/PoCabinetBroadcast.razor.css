@@ -2,9 +2,14 @@
    bits (muted text, status lines, sector chips, screen-reader text) stay on the page as ::deep. */
 
 /* ─── Demo broadcast (broadcast.js writes every text node and data-* state) ───
-   TV graphics over the race: timing tower top left, callout top centre, caption bottom left.
+   TV graphics over the race: the timing tower, top left, only while the shared Stats panel is
+   open (Tab, or its button; game-debug.js sets the root class). The race itself is the show.
    Scheme-invariant like the
    rest of the canvas overlays: what sits behind them is the race, not the page. */
+:root:not(.po-game-stats-open) .pocabinet-bc {
+    display: none;
+}
+
 .pocabinet-bc {
     --bc-panel: rgba(8, 12, 24, 0.8);
     --bc-row: rgba(255, 255, 255, 0.06);
@@ -161,162 +166,16 @@
 
 .pocabinet-bc__row[data-out="on"] .pocabinet-bc__rgap { color: var(--bc-out); font-weight: 700; }
 
-/* Callout: a coloured tag for what happened, then the line. */
-.pocabinet-bc__callout {
-    position: absolute;
-    top: 0.9rem;
-    left: 50%;
-    display: flex;
-    align-items: stretch;
-    max-width: min(46%, 32rem);
-    font-size: calc(0.95rem * var(--pocabinet-hud, 1));
-    background: var(--bc-panel);
-    border-radius: 6px;
-    box-shadow: 0 10px 26px rgba(0, 0, 0, 0.35);
-    overflow: hidden;
-    opacity: 0;
-    transform: translate(-50%, -0.6rem);
-    transition: opacity 0.25s ease, transform 0.25s ease;
-}
-
-.pocabinet-bc__callout[data-show="on"] {
-    opacity: 1;
-    transform: translate(-50%, 0);
-}
-
-.pocabinet-bc__callout[data-show="on"] .pocabinet-bc__ct {
-    animation: pocabinet-bc-wipe 0.45s 0.1s cubic-bezier(0.2, 0.8, 0.2, 1) both;
-}
-
-.pocabinet-bc__ck {
-    display: flex;
-    align-items: center;
-    padding: 0.35rem 0.7rem;
-    font-weight: 800;
-    text-transform: uppercase;
-    letter-spacing: 0.06em;
-    white-space: nowrap;
-    color: #10131c;
-    background: var(--bc-focus);
-}
-
-.pocabinet-bc__callout[data-kind="overtake"] .pocabinet-bc__ck { background: #4cc3ff; }
-
-.pocabinet-bc__callout[data-kind="fastest"] .pocabinet-bc__ck { background: #b884ff; }
-
-.pocabinet-bc__callout[data-kind="wreck"] .pocabinet-bc__ck { background: var(--bc-out); }
-
-.pocabinet-bc__callout[data-kind="final"] .pocabinet-bc__ck { background: #ff9f43; }
-
-.pocabinet-bc__callout[data-kind="flag"] .pocabinet-bc__ck {
-    background: repeating-conic-gradient(#10131c 0 25%, #ffffff 0 50%) 0 0 / 0.7rem 0.7rem;
-    color: #ffffff;
-    text-shadow: 0 0 3px #10131c, 0 0 6px #10131c;
-}
-
-.pocabinet-bc__ct {
-    padding: 0.35rem 0.8rem;
-    font-weight: 600;
-    white-space: nowrap;
-    overflow: hidden;
-    text-overflow: ellipsis;
-}
-
-/* Caption (lower third): the car on screen. */
-.pocabinet-bc__lower {
-    position: absolute;
-    left: 0.7rem;
-    bottom: 0.8rem;
-    display: grid;
-    gap: 0.15rem;
-    min-width: calc(15rem * var(--pocabinet-hud, 1));
-    max-width: min(46%, 26rem);
-    padding: 0.45rem 0.8rem 0.5rem;
-    font-size: calc(0.85rem * var(--pocabinet-hud, 1));
-    background: var(--bc-panel);
-    border-left: 4px solid var(--bc-focus);
-    border-radius: 6px;
-    box-shadow: 0 10px 26px rgba(0, 0, 0, 0.35);
-    opacity: 0;
-    transform: translateX(-0.6rem);
-    transition: opacity 0.3s ease, transform 0.3s ease;
-}
-
-.pocabinet-bc__lower[data-show="on"] {
-    opacity: 1;
-    transform: none;
-}
-
-.pocabinet-bc__shot {
-    font-size: max(12px, 0.78em);
-    font-weight: 800;
-    text-transform: uppercase;
-    letter-spacing: 0.08em;
-    color: var(--bc-focus);
-}
-
-.pocabinet-bc__who {
-    display: flex;
-    align-items: center;
-    gap: 0.5rem;
-    min-width: 0;
-}
-
-.pocabinet-bc__pos {
-    font-size: 1.35em;
-    font-weight: 800;
-}
-
-.pocabinet-bc__chip {
-    flex: none;
-    width: 0.35rem;
-    height: 1.3em;
-    border-radius: 2px;
-}
-
-.pocabinet-bc__name {
-    font-size: 1.15em;
-    font-weight: 700;
-    white-space: nowrap;
-    overflow: hidden;
-    text-overflow: ellipsis;
-}
-
-.pocabinet-bc__style {
-    flex: none;
-    padding: 0.05rem 0.4rem;
-    border-radius: 999px;
-    font-size: max(12px, 0.75em);
-    font-weight: 700;
-    text-transform: uppercase;
-    letter-spacing: 0.04em;
-    background: rgba(255, 255, 255, 0.14);
-}
-
-.pocabinet-bc__style:empty { display: none; }
-
-.pocabinet-bc__meta {
-    color: var(--bc-muted);
-    white-space: nowrap;
-    overflow: hidden;
-    text-overflow: ellipsis;
-}
-
-/* Phones: a top-five tower (plus the car on screen), the callout above the caption, a slimmer caption. */
+/* Phones: a top-five tower (plus the car on screen). */
 @media (max-width: 640px) {
     .pocabinet-bc__tower { width: calc(10.5rem * var(--pocabinet-hud, 1)); font-size: max(12px, calc(0.72rem * var(--pocabinet-hud, 1))); }
     .pocabinet-bc__row:nth-child(n+6):not([data-focus="on"]) { display: none; }
     .pocabinet-bc__rows { min-height: calc(5 * (1.35em + 0.2rem) + 0.4rem); }
-    .pocabinet-bc__callout { top: auto; bottom: 5.4rem; max-width: calc(100% - 1.4rem); font-size: calc(0.82rem * var(--pocabinet-hud, 1)); }
-    .pocabinet-bc__lower { max-width: calc(100% - 1.4rem); font-size: calc(0.78rem * var(--pocabinet-hud, 1)); }
 }
 
 @media (prefers-reduced-motion: reduce) {
     .pocabinet-bc__live::before,
-    .pocabinet-bc__tower,
-    .pocabinet-bc__callout[data-show="on"] .pocabinet-bc__ct { animation: none; }
-    .pocabinet-bc__callout,
-    .pocabinet-bc__lower { transition: none; }
+    .pocabinet-bc__tower { animation: none; }
 }
 
 @keyframes pocabinet-bc-blink {

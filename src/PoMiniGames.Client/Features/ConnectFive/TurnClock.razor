@@ -1,0 +1,29 @@
+@implements IDisposable
+
+@* The online move clock: counts down to the deadline the server sent. The server owns the clock
+   and plays the move itself when it runs out; this only draws it. Renders nothing without a deadline. *@
+@if (Deadline is { } deadline)
+{
+    var left = Math.Max(0, (deadline - DateTime.UtcNow).TotalSeconds);
+    var whole = (int)Math.Ceiling(left);
+    var urgent = Mine && left < 5;
+    <div class="cf-clock @(Mine ? "cf-clock--mine" : null) @(urgent ? "cf-clock--urgent" : null)" role="timer" aria-live="off"
+         title="@(Mine ? "Time left for your move" : "Time left for their move")">
+        <span class="cf-clock__who">@(Mine ? "Your move" : "Their move")</span>
+        <span class="cf-clock__time">0:@whole.ToString("00")</span>
+    </div>
+}
+
+@code {
+    /// <summary>When the seat to move runs out of time, on this device's clock; null hides the clock.</summary>
+    [Parameter] public DateTime? Deadline { get; set; }
+    /// <summary>True when the local player is the one to move.</summary>
+    [Parameter] public bool Mine { get; set; }
+
+    private Timer? _tick;
+
+    protected override void OnInitialized() =>
+        _tick = new Timer(_ => { if (Deadline is not null) _ = InvokeAsync(StateHasChanged); }, null, 250, 250);
+
+    public void Dispose() => _tick?.Dispose();
+}

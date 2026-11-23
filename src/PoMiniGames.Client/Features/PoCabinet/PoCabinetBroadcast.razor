@@ -1,6 +1,6 @@
 @*
-    PoCabinetBroadcast — the demo's TV graphics (broadcast.js): a timing tower, a callout and a
-    caption for the car on screen. Every data-bc text
+    PoCabinetBroadcast — the demo's timing tower (broadcast.js), shown only while the Stats panel
+    is open (Tab). Every data-bc text
     node is rendered EMPTY on purpose and written by JS a few times a second, like the gauge, so
     Blazor owns no text that JS changes. aria-hidden: an attract loop; the page's announcer
     covers the finish.
@@ -22,19 +22,6 @@
                 </li>
             }
         </ol>
-    </div>
-    <div class="pocabinet-bc__callout" data-bc="callout" data-show="off">
-        <b class="pocabinet-bc__ck" data-bc="ck"></b><span class="pocabinet-bc__ct" data-bc="ct"></span>
-    </div>
-    <div class="pocabinet-bc__lower" data-bc="lower" data-show="off">
-        <span class="pocabinet-bc__shot" data-bc="shot"></span>
-        <span class="pocabinet-bc__who">
-            <span class="pocabinet-bc__pos" data-bc="pos"></span>
-            <span class="pocabinet-bc__chip" data-bc="chip"></span>
-            <span class="pocabinet-bc__name" data-bc="name"></span>
-            <span class="pocabinet-bc__style" data-bc="style"></span>
-        </span>
-        <span class="pocabinet-bc__meta" data-bc="meta"></span>
     </div>
 </div>
 

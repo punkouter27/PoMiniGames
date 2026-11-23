@@ -368,8 +368,8 @@ export class Broadcast {
             }
         }
 
-        // Caption.
-        if (focus) {
+        // Caption: the lower third is gone from the page, so this only runs if a page brings one back.
+        if (focus && d.lower) {
             const label = sh.kind === 'battle' && sh.rival ? `Battle for P${Math.min(focus.position, sh.rival.position)}`
                 : sh.kind === 'leader' ? 'Race leader'
                     : sh.kind === 'incident' ? 'Incident'
