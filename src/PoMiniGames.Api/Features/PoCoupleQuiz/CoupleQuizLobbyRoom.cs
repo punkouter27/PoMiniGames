@@ -14,7 +14,7 @@ public sealed class CoupleQuizLobbyRoom : LobbyRoom<CoupleQuizLobbyPlayer>
 
     // The last picks the host made: a new seat starts on them (see FunQuizLobbyRoom).
     private int _rounds = Game.DefaultRounds;
-    private string _topicPack = "Classic";
+    private string _topicPack = CoupleQuizQuestionBank.Everything;
 
     public CoupleQuizLobbyRoom() : base(GlobalCode, Cap, "A quiz is starting")
     {
@@ -38,8 +38,8 @@ public sealed class CoupleQuizLobbyRoom : LobbyRoom<CoupleQuizLobbyPlayer>
     /// <summary>Host-only. Returns false for anyone else or an unknown pack.</summary>
     public bool SetTopicPack(string connectionId, string topicPack) => WithLock(seats =>
     {
-        if (HostConnectionId != connectionId || !CoupleQuizExternalPackService.IsValidPack(topicPack)) return false;
-        _topicPack = CoupleQuizExternalPackService.NormalizePack(topicPack);
+        if (HostConnectionId != connectionId || !CoupleQuizQuestionBank.IsValidTopic(topicPack)) return false;
+        _topicPack = CoupleQuizQuestionBank.NormalizeTopic(topicPack);
         foreach (var key in seats.Keys.ToList()) seats[key] = seats[key] with { TopicPack = _topicPack };
         return true;
     });

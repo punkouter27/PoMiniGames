@@ -49,7 +49,7 @@ public sealed class HubJsonContextTests
         var funQuizLobby = new LobbyState<FunQuizLobbyPlayer>(
             [new FunQuizLobbyPlayer("c1", "Ana", false, true, "ArtCulture", 15)], "c1", "FUNQUIZ", 2, DateTimeOffset.UnixEpoch);
         var coupleQuizLobby = new LobbyState<CoupleQuizLobbyPlayer>(
-            [new CoupleQuizLobbyPlayer("c1", "Ana", false, false, 7, "WorldTravel")], "c1", "COUPLEQUIZ", 2, DateTimeOffset.UnixEpoch);
+            [new CoupleQuizLobbyPlayer("c1", "Ana", false, false, 7, "DatesAndTrips")], "c1", "COUPLEQUIZ", 2, DateTimeOffset.UnixEpoch);
 
         var reflection = HubOptions(withContext: false);
         var generated = HubOptions(withContext: true);

@@ -22,10 +22,4 @@ public sealed class CoupleQuizOptions
 
     /// <summary>How long the round result stays on screen before the next question.</summary>
     public int RevealSeconds { get; set; } = 6;
-
-    /// <summary>
-    /// When true (the default), topic packs beyond Classic fetch live prompts from free
-    /// keyless APIs (Datamuse, REST Countries, Gutendex). Tests pin this to false.
-    /// </summary>
-    public bool FetchExternalPacks { get; set; } = true;
 }

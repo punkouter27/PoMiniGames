@@ -34,21 +34,18 @@ public sealed class CoupleQuizRoundDirector : IDisposable
     private readonly GameSessionManager _sessions;
     private readonly IOptionsMonitor<CoupleQuizOptions> _options;
     private readonly ILogger<CoupleQuizRoundDirector> _logger;
-    private readonly CoupleQuizExternalPackService? _externalPacks;
     private readonly SemaphoreSlim _gate = new(1, 1);
 
     public CoupleQuizRoundDirector(
         IHubContext<CoupleQuizHub, IGameClient> hub,
         GameSessionManager sessions,
         IOptionsMonitor<CoupleQuizOptions> options,
-        ILogger<CoupleQuizRoundDirector> logger,
-        CoupleQuizExternalPackService? externalPacks = null)
+        ILogger<CoupleQuizRoundDirector> logger)
     {
         _hub = hub;
         _sessions = sessions;
         _options = options;
         _logger = logger;
-        _externalPacks = externalPacks;
     }
 
     private int RoundSeconds => Math.Max(10, _options.CurrentValue.RoundSeconds);
@@ -318,16 +315,11 @@ public sealed class CoupleQuizRoundDirector : IDisposable
 
     // ── Questions and scoring ───────────────────────────────────────────────
 
-    /// <summary>The next question, drawn from the selected topic pack (falling back to the curated bank).</summary>
-    private async Task<Question> NextQuestionAsync(bool newMatch, CancellationToken ct)
+    /// <summary>The next question from the match's topic in the couple bank.</summary>
+    private Task<Question> NextQuestionAsync(bool newMatch, CancellationToken ct)
     {
-        if (_externalPacks is null) return _sessions.TakeBankQuestion(newMatch);
-        var (pack, asked) = _sessions.PrepareQuestionDraw(newMatch);
-        if (string.Equals(pack, "Classic", StringComparison.OrdinalIgnoreCase))
-            return _sessions.TakeBankQuestion(newMatch: false);
-        var q = await _externalPacks.DrawAsync(pack, asked, ct);
-        _sessions.RecordAskedQuestion(q.Text);
-        return q;
+        ct.ThrowIfCancellationRequested();
+        return Task.FromResult(_sessions.TakeBankQuestion(newMatch));
     }
 
     // ── Timer plumbing ──────────────────────────────────────────────────────

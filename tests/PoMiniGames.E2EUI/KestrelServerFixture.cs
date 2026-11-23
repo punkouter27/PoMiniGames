@@ -183,7 +183,6 @@ public class KestrelServerFixture : WebApplicationFactory<Program>, IAsyncLifeti
     private Dictionary<string, string?> HermeticOverrides() => new()
     {
         ["PoMiniGames:PoBrawl:Dossier:FetchWikipedia"] = "false",
-        ["PoCoupleQuiz:FetchExternalPacks"] = "false",
         ["PoMiniGames:PoRacer:Weather"] = "clear",
         ["KeyVault:Uri"] = "",
         // Mirror Azurite to BOTH TableService and BlobService sections.

@@ -7,7 +7,6 @@ using Azure.Security.KeyVault.Secrets;
 using Microsoft.Extensions.Options;
 using PoMiniGames.Features.Invites;
 using PoMiniGames.Features.PoBrawl;
-using PoMiniGames.Features.PoCoupleQuiz;
 using PoMiniGames.Infrastructure;
 using PoMiniGames.Shared.Diagnostics;
 
@@ -30,7 +29,6 @@ public sealed class DiagLiveProbes(
     IConfiguration configuration,
     IHostEnvironment environment,
     IOptionsMonitor<PoBrawlDossierOptions> dossier,
-    IOptionsMonitor<CoupleQuizOptions> coupleQuiz,
     InviteStore invites)
 {
     /// <summary>The neutral status of a service switched off on purpose.</summary>
@@ -119,22 +117,6 @@ public sealed class DiagLiveProbes(
         ThirdPartyAsync("wikipedia", "Wikipedia", "Enriches Brawl's fighter dossiers with a summary and portrait (static facts otherwise).",
             dossier.CurrentValue.FetchWikipedia, PoBrawlDossierService.HttpClientName, new Uri("page/summary/Abraham_Lincoln", UriKind.Relative),
             json => json.TryGetProperty("title", out _), ct);
-
-    /// <summary>The three free word, country and book APIs Couple Quiz's topic packs draw from.</summary>
-    public async Task<DiagCheckDto[]> CoupleQuizPacksAsync(CancellationToken ct)
-    {
-        var on = coupleQuiz.CurrentValue.FetchExternalPacks;
-        return await Task.WhenAll(
-            ThirdPartyAsync("datamuse", "Datamuse", "Word associations for Couple Quiz's word packs (the built-in bank otherwise).",
-                on, CoupleQuizExternalPackService.HttpClientName, new Uri("https://api.datamuse.com/words?rel_trg=ocean&max=1"),
-                json => json.ValueKind == JsonValueKind.Array, ct),
-            ThirdPartyAsync("restcountries", "REST Countries", "Country facts for Couple Quiz's travel pack (the built-in bank otherwise).",
-                on, CoupleQuizExternalPackService.HttpClientName, new Uri("https://restcountries.com/v3.1/name/france?fields=name"),
-                json => json.ValueKind == JsonValueKind.Array, ct),
-            ThirdPartyAsync("gutendex", "Gutendex", "Popular books for Couple Quiz's book pack (the built-in bank otherwise).",
-                on, CoupleQuizExternalPackService.HttpClientName, new Uri("https://gutendex.com/books/?ids=1342"),
-                json => json.TryGetProperty("results", out _), ct));
-    }
 
     /// <summary>The push-invite key pair is readable from storage (pushes go to each player's browser push service).</summary>
     public Task<DiagCheckDto> PushKeysAsync(CancellationToken ct) =>

@@ -15,7 +15,7 @@ public sealed record FunQuizLobbyPlayer(
     string Category,
     int QuestionCount) : ILobbyPlayer;
 
-/// <summary>A Couple Quiz seat. <see cref="TopicPack"/> is the normalised pack name.</summary>
+/// <summary>A Couple Quiz seat. <see cref="TopicPack"/> is the normalised topic id (Everything or a question-bank category).</summary>
 public sealed record CoupleQuizLobbyPlayer(
     string ConnectionId,
     string DisplayName,

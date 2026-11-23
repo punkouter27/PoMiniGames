@@ -60,10 +60,9 @@ public static class DiagEndpoints
             var vaultTask = live.KeyVaultAsync(ct);
             var insightsTask = live.AppInsightsAsync(ct);
             var wikiTask = live.WikipediaAsync(ct);
-            var packsTask = live.CoupleQuizPacksAsync(ct);
             var pushTask = live.PushKeysAsync(ct);
             var probe = await storageTask;
-            DiagCheckDto[] rows = [await hubsTask, await vaultTask, await insightsTask, await pushTask, await wikiTask, .. await packsTask];
+            DiagCheckDto[] rows = [await hubsTask, await vaultTask, await insightsTask, await pushTask, await wikiTask];
             var report = await BuildReportAsync(health, environment, ct, probe, rows, Stopwatch.GetElapsedTime(started).TotalMilliseconds);
             return Results.Json(report, DiagJsonContext.Default.DiagReportDto);
         }

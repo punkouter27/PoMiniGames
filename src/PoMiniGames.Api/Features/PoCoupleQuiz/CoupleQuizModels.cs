@@ -9,14 +9,18 @@ public enum SessionState
     Finished
 }
 
+/// <summary>
+/// The topics of the bank: things the couple did and shared together, never general trivia.
+/// The names are the keys of <c>Data/questions.json</c> and the lobby's topic ids.
+/// </summary>
 public enum QuestionCategory
 {
-    Relationships,
-    Hobbies,
-    Childhood,
-    Future,
-    Preferences,
-    Values
+    OurStory,
+    DatesAndTrips,
+    HomeLife,
+    Celebrations,
+    Adventures,
+    JustUs
 }
 
 /// <summary>What the lobby is doing right now. Drives the single per-session timer.</summary>
@@ -139,7 +143,7 @@ public class GameSession
     public List<string> ExpectedNames { get; set; } = new();
     public DateTime ReservedAtUtc { get; set; } = DateTime.UtcNow;
     public int MaxRounds { get; set; } = Game.DefaultRounds;
-    public string TopicPack { get; set; } = "Classic";
+    public string TopicPack { get; set; } = CoupleQuizQuestionBank.Everything;
     public SessionState State { get; set; } = SessionState.Waiting;
     public List<LobbyPlayer> Players { get; set; } = new();
     public Game? ActiveGame { get; set; }

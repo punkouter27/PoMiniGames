@@ -50,9 +50,7 @@ public sealed class GameSessionManager
                 MatchCode = "match-" + Guid.NewGuid().ToString("N"),
                 ExpectedNames = [.. names],
                 MaxRounds = Game.AllowedRounds.Contains(rounds) ? rounds : Game.DefaultRounds,
-                TopicPack = CoupleQuizExternalPackService.IsValidPack(topicPack)
-                    ? CoupleQuizExternalPackService.NormalizePack(topicPack)
-                    : "Classic",
+                TopicPack = CoupleQuizQuestionBank.NormalizeTopic(topicPack),
                 State = SessionState.Waiting,
             };
             return _session.MatchCode;
@@ -124,27 +122,6 @@ public sealed class GameSessionManager
     }
 
     /// <summary>
-    /// Snapshot of asked question texts for the current session (clears history when starting a match).
-    /// </summary>
-    public (string TopicPack, HashSet<string> Asked) PrepareQuestionDraw(bool newMatch)
-    {
-        lock (_gate)
-        {
-            if (_session is null) return ("Classic", new HashSet<string>(StringComparer.Ordinal));
-            if (newMatch) _session.AskedQuestions.Clear();
-            return (_session.TopicPack, new HashSet<string>(_session.AskedQuestions, StringComparer.Ordinal));
-        }
-    }
-
-    public void RecordAskedQuestion(string text)
-    {
-        lock (_gate)
-        {
-            _session?.AskedQuestions.Add(text);
-        }
-    }
-
-    /// <summary>
     /// A curated question this match has not asked yet. <paramref name="newMatch"/> clears the
     /// match's history first.
     /// </summary>
@@ -154,7 +131,7 @@ public sealed class GameSessionManager
         {
             if (_session is null) return CoupleQuizQuestionBank.Draw(new HashSet<string>());
             if (newMatch) _session.AskedQuestions.Clear();
-            var question = CoupleQuizQuestionBank.Draw(_session.AskedQuestions);
+            var question = CoupleQuizQuestionBank.Draw(_session.AskedQuestions, _session.TopicPack);
             _session.AskedQuestions.Add(question.Text);
             return question;
         }
@@ -176,7 +153,7 @@ public sealed class GameSessionManager
             game.CurrentQuestion = new GameQuestion
             {
                 Text = questionText,
-                Category = Enum.TryParse<QuestionCategory>(category, out var cat) ? cat : QuestionCategory.Preferences
+                Category = Enum.TryParse<QuestionCategory>(category, out var cat) ? cat : QuestionCategory.OurStory
             };
             game.CurrentRound = 0;
 

@@ -50,7 +50,6 @@ public sealed class PoMiniGamesE2EFixture : WebApplicationFactory<Program>
             {
                 // Keep test hosts hermetic: no live Wikipedia or external quiz packs, a dry Racer track, no Key Vault.
                 ["PoMiniGames:PoBrawl:Dossier:FetchWikipedia"] = "false",
-                ["PoCoupleQuiz:FetchExternalPacks"] = "false",
                 ["PoMiniGames:PoRacer:Weather"] = "clear",
                 ["KeyVault:Uri"] = "",
             };

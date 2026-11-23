@@ -44,7 +44,7 @@ public sealed class CoupleQuizLobbyHub : LobbyHub<CoupleQuizLobbyPlayer, CoupleQ
         if (Lobby.SetRounds(Context.ConnectionId, rounds)) await BroadcastStateAsync();
     }
 
-    /// <summary>Host-only: topic pack (Classic, WordSync, WorldTravel, BooksAndStories, Mixed).</summary>
+    /// <summary>Host-only: topic (Everything, or one of the bank's categories: OurStory, DatesAndTrips, HomeLife, Celebrations, Adventures, JustUs).</summary>
     public async Task SetTopicPack(string topicPack)
     {
         if (Lobby.SetTopicPack(Context.ConnectionId, topicPack)) await BroadcastStateAsync();

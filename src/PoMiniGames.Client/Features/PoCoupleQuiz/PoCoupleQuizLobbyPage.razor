@@ -45,7 +45,7 @@
                     {
                         <label class="lobby-inline-opt">
                             <span>Topic</span>
-                            <select aria-label="Topic pack" value="@TopicPack" @onchange="OnTopicPackChanged">
+                            <select aria-label="Topic" value="@TopicPack" @onchange="OnTopicPackChanged">
                                 @foreach (var p in TopicPacks)
                                 {
                                     <option value="@p.Id">@p.Label</option>
@@ -66,14 +66,17 @@
 @code {
     private static readonly (string Id, string Label)[] TopicPacks =
     [
-        ("Classic", "Classic (Curated)"),
-        ("WordSync", "Word Sync (Datamuse)"),
-        ("WorldTravel", "World Travel (REST Countries)"),
-        ("BooksAndStories", "Books & Stories (Gutendex)"),
-        ("Mixed", "Mixed (All Packs)"),
+        // Questions about the couple's own life together (the server's CoupleQuizQuestionBank), not trivia.
+        ("Everything", "Everything"),
+        ("OurStory", "Our story"),
+        ("DatesAndTrips", "Dates & trips"),
+        ("HomeLife", "Home life"),
+        ("Celebrations", "Celebrations"),
+        ("Adventures", "Adventures & mishaps"),
+        ("JustUs", "Just us"),
     ];
     private static string PackLabel(string? id) =>
-        TopicPacks.FirstOrDefault(p => string.Equals(p.Id, id, StringComparison.OrdinalIgnoreCase)).Label ?? "Classic";
+        TopicPacks.FirstOrDefault(p => string.Equals(p.Id, id, StringComparison.OrdinalIgnoreCase)).Label ?? "Everything";
 
     // Multiplayer-only route, so the title carries the mode like every other lobby
     // title rather than reading as the game's whole name.
@@ -95,7 +98,7 @@
     private CoupleQuizLobbyPlayer? HostSeat => _lobby?.State is { } s
         ? s.Players.FirstOrDefault(p => p.ConnectionId == s.HostConnectionId) ?? s.Players.FirstOrDefault()
         : null;
-    private string TopicPack => HostSeat?.TopicPack ?? "Classic";
+    private string TopicPack => HostSeat?.TopicPack ?? "Everything";
 
     protected override async Task OnInitializedAsync()
     {
@@ -116,7 +119,7 @@
     private Task OnLobbyStateAsync(LobbyState<CoupleQuizLobbyPlayer> _) => Task.CompletedTask;
 
     private Task OnTopicPackChanged(ChangeEventArgs e) =>
-        _lobby?.SendAsync("SetTopicPack", e.Value?.ToString() ?? "Classic") ?? Task.CompletedTask;
+        _lobby?.SendAsync("SetTopicPack", e.Value?.ToString() ?? "Everything") ?? Task.CompletedTask;
 
     // Both browsers get the match's internal code. The game page claims the seat under the
     // name the lobby gave it (made unique if both players carry the same initials).

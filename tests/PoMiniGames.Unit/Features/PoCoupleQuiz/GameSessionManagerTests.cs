@@ -48,15 +48,15 @@ public sealed class GameSessionManagerTests
     {
         var mgr = new GameSessionManager();
 
-        var code = mgr.Reserve(["Alice", "Bob"], 7, "worldtravel")!;
+        var code = mgr.Reserve(["Alice", "Bob"], 7, "datesandtrips")!;
         code.Should().NotBeNullOrEmpty();
         var session = mgr.Current!;
         session.State.Should().Be(SessionState.Waiting);
         session.MaxRounds.Should().Be(7);
-        session.TopicPack.Should().Be("WorldTravel");
+        session.TopicPack.Should().Be("DatesAndTrips");
 
         // One match at a time: a second reservation is refused while this one is fresh.
-        mgr.Reserve(["Carla", "Dan"], 5, "Classic").Should().BeNull();
+        mgr.Reserve(["Carla", "Dan"], 5, "Everything").Should().BeNull();
 
         // A stale code, a name nobody reserved, and a taken seat are refused.
         mgr.JoinMatch("conn1", "match-nope", "Alice").Should().BeNull();
@@ -75,7 +75,7 @@ public sealed class GameSessionManagerTests
         var other = new GameSessionManager();
         other.Reserve(["Alice", "Bob"], 4, "NotARealPack");
         other.Current!.MaxRounds.Should().Be(Game.DefaultRounds);
-        other.Current.TopicPack.Should().Be("Classic");
+        other.Current.TopicPack.Should().Be("Everything");
     }
 
     [Theory]
