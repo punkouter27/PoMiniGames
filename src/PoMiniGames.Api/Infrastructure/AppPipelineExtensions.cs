@@ -73,7 +73,8 @@ internal static class AppPipelineExtensions
                 "default-src 'self'; " +
                 "script-src 'self' 'unsafe-inline' 'wasm-unsafe-eval' https://cdn.jsdelivr.net; " +
                 "style-src 'self' 'unsafe-inline'; " +
-                "img-src 'self' data: blob: https://*.wikimedia.org https://tile.openstreetmap.org; " +
+                // iNaturalist hosts PoEcosystem's species photos (host/naturalist.js) on these two.
+                "img-src 'self' data: blob: https://*.wikimedia.org https://tile.openstreetmap.org https://inaturalist-open-data.s3.amazonaws.com https://static.inaturalist.org; " +
                 // Brawl's highlight reel and PoEcosystem's clip share hand a <video> a
                 // blob URL; with no media-src, default-src 'self' blocked playback.
                 "media-src 'self' blob:; " +
@@ -88,7 +89,9 @@ internal static class AppPipelineExtensions
                 // opt-in in-browser debrief (Transformers.js); nothing else fetches from them.
                 // tile.openstreetmap.org serves the basemap of PoCapitol's opt-in street map of an
                 // attempt (MapLibre, streetmap.js); it is only asked once the player opens it.
-                "connect-src 'self' blob: ws: wss: https://cdn.jsdelivr.net https://huggingface.co https://*.hf.co https://api.open-meteo.com https://archive-api.open-meteo.com https://geocoding-api.open-meteo.com https://www.wikidata.org https://tile.openstreetmap.org" + modelsOrigin + "; " +
+                // api.inaturalist.org and en.wikipedia.org (REST summary) give PoEcosystem's Island
+                // tab its species cards (host/naturalist.js).
+                "connect-src 'self' blob: ws: wss: https://api.inaturalist.org https://en.wikipedia.org https://cdn.jsdelivr.net https://huggingface.co https://*.hf.co https://api.open-meteo.com https://archive-api.open-meteo.com https://geocoding-api.open-meteo.com https://www.wikidata.org https://tile.openstreetmap.org" + modelsOrigin + "; " +
                 "worker-src 'self' blob:; " +
                 "frame-ancestors 'none'; base-uri 'self'; object-src 'none'";
             await next();

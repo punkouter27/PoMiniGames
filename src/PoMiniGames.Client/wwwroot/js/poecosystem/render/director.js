@@ -21,6 +21,7 @@ export const DIRECTOR = Object.freeze({
   ease: 1.8,                // exponential follow rate once a shot is established
   cutEase: 7,               // faster for the first moments after a cut
   minClearance: 2.2,        // metres above the ground the camera never dips below
+  canopyClearance: 12,      // metres above the ground when every orbit spot is wooded (trees stand ~5–7 m)
 });
 
 // What makes a creature worth watching (#13 story-aware weights).
@@ -97,7 +98,7 @@ export function createDirector({ onSubject = () => {}, onCaption = () => {}, ran
      * Drive the player pose toward the current shot. `now` in seconds. Returns false when
      * nothing was done (off, no terrain, or an empty island).
      */
-    update(dt, now, { player, terrain, interp, handles, count }) {
+    update(dt, now, { player, terrain, interp, handles, count, blocked = null }) {
       if (!enabled || !terrain) return false;
       let row = -1;
       if (shot?.kind === 'creature') row = rowOf(handles, count, shot.handle);
@@ -112,9 +113,28 @@ export function createDirector({ onSubject = () => {}, onCaption = () => {}, ran
       else { tx = shot.x; tz = shot.z; ty = terrain.heightAt(tx, tz); }
 
       angle += DIRECTOR.orbitRate * dt;
-      const gx = tx + Math.sin(angle) * shot.radius;
-      const gz = tz + Math.cos(angle) * shot.radius;
-      const gy = Math.max(ty + shot.height, terrain.heightAt(gx, gz) + DIRECTOR.minClearance);
+      // In woodland the orbit spot slides in toward the subject until it is in the open;
+      // only when every spot on the way is wooded does the camera rise over the canopy.
+      // Orbiting blindly at its usual height flew it through the trees, and the shot was
+      // all leaves and trunks.
+      let radius = shot.radius; let clearance = DIRECTOR.minClearance;
+      if (blocked) {
+        const wooded = (x, z) => {
+          const size = terrain.size; const cx = Math.floor(x); const cz = Math.floor(z);
+          for (let oz = -1; oz <= 1; oz++) for (let ox = -1; ox <= 1; ox++) {
+            const bx = cx + ox; const bz = cz + oz;
+            if (bx >= 0 && bz >= 0 && bx < size && bz < size && blocked[bz * size + bx]) return true;
+          }
+          return false;
+        };
+        const sx = Math.sin(angle); const sz = Math.cos(angle);
+        let r = shot.radius;
+        while (r > 2.5 && wooded(tx + sx * r, tz + sz * r)) r -= 1;
+        if (wooded(tx + sx * r, tz + sz * r)) clearance = DIRECTOR.canopyClearance; else radius = r;
+      }
+      const gx = tx + Math.sin(angle) * radius;
+      const gz = tz + Math.cos(angle) * radius;
+      const gy = Math.max(ty + shot.height, terrain.heightAt(gx, gz) + clearance);
       const rate = justCut > 0 ? DIRECTOR.cutEase : DIRECTOR.ease;
       justCut = Math.max(0, justCut - dt);
       const k = Math.min(1, dt * rate);

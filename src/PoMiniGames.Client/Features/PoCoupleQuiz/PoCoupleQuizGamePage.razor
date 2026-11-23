@@ -67,10 +67,11 @@
             {
                 <EditForm EditContext="_editContext" OnValidSubmit="Submit" novalidate>
                     <FluentValidationValidator TModel="CoupleAnswerInput" Validator="Validator" />
-                    <label class="sr-only" for="cq-answer">@(_isKing ? "Your secret answer" : "Your guess")</label>
-                    <InputText id="cq-answer"
+                    <label class="gps-sr-only" for="cq-answer">@(_isKing ? "Your secret answer" : "Your guess")</label>
+                    @* InputTextLive, not InputText + @bind-Value:event="oninput": on a component that
+                       binding throws on the first keystroke (see InputTextLive). *@
+                    <InputTextLive id="cq-answer"
                                @bind-Value="_model.Answer"
-                               @bind-Value:event="oninput"
                                placeholder="@(_isKing ? "Your secret answer (1-2 words)" : "Your guess")"
                                maxlength="60"
                                autocomplete="off"

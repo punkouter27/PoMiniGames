@@ -14,8 +14,8 @@ namespace PoMiniGamesClient.Services.Ui;
 ///
 /// Components inject this scoped service and call <see cref="RefreshAsync"/>
 /// inside OnAfterRenderAsync, then read <see cref="IsNarrow"/> from their
-/// build pass. The service also subscribes to <c>window.resize</c> so the
-/// value stays current if the user rotates their phone.
+/// build pass. It is read when asked, not on resize: call RefreshAsync again to
+/// pick up a rotated phone.
 /// </summary>
 public sealed class BrowserViewport
 {
@@ -29,20 +29,17 @@ public sealed class BrowserViewport
     public bool IsNarrow { get; private set; }
 
     /// <summary>
-    /// Reads window.innerWidth and updates <see cref="IsNarrow"/>. Wires up a
-    /// resize listener the first time it's called. Safe to invoke from
+    /// Reads window.innerWidth and updates <see cref="IsNarrow"/>. Safe to invoke from
     /// OnAfterRenderAsync — throws are swallowed and the previous value sticks.
     /// </summary>
     public async Task RefreshAsync()
     {
         try
         {
-            var w = await _js.InvokeAsync<int>("eval", "window.innerWidth || 0");
+            // A named function (js/platform/app.js), not "eval": the CSP has no 'unsafe-eval',
+            // so the eval call threw, was swallowed below, and IsNarrow stayed false on phones.
+            var w = await _js.InvokeAsync<int>("PoViewport.width");
             IsNarrow = w > 0 && w <= NarrowBreakpointPx;
-            // Best-effort: if the page later resizes, refresh via JS subscription.
-            await _js.InvokeVoidAsync("eval",
-                "window.__bpViewportListener || (window.__bpViewportListener = true, " +
-                "window.addEventListener('resize', () => window.dispatchEvent(new CustomEvent('bp-viewport'))));");
         }
         catch
         {

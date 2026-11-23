@@ -14,9 +14,11 @@
                    and Name is disabled while the rename is in flight (forms standard, 2026-11-17). *@
                 <EditForm EditContext="_renameContext" OnValidSubmit="SubmitRename" class="poeco-rename" novalidate>
                     <FluentValidationValidator TModel="CreatureRenameInput" Validator="RenameValidator" />
-                    <InputText @bind-Value="_rename.Name" @bind-Value:event="oninput" maxlength="@CreatureRenameInput.MaxLength"
-                               placeholder="@($"A name for {Detail.Name}")" aria-label="New name" autofocus
-                               aria-describedby="poeco-rename-error" />
+                    @* Focused from code (OnAfterRenderAsync): `autofocus` does nothing on an input
+                       Blazor inserts after load, and the keys typed then steered the camera. *@
+                    <InputTextLive @ref="_renameInput" @bind-Value="_rename.Name" maxlength="@CreatureRenameInput.MaxLength"
+                               placeholder="@($"A name for {Detail.Name}")" aria-label="New name"
+                               @onkeydown="RenameKey" aria-describedby="poeco-rename-error" />
                     <button type="submit" class="poeco-pill poeco-pill--on" disabled="@_renameSubmitting">Name</button>
                     <button type="button" class="poeco-pill" disabled="@_renameSubmitting" @onclick="() => _renaming = false">Cancel</button>
                     <div id="poeco-rename-error" class="poeco-field-error" aria-live="polite">
@@ -135,11 +137,28 @@
     private CreatureRenameInput _rename = new();
     private EditContext _renameContext = new(new CreatureRenameInput());
 
+    private InputTextLive? _renameInput;
+    private bool _focusRename;
+
     private void BeginRename()
     {
         _rename = new CreatureRenameInput { Name = Detail.Name };
         _renameContext = new EditContext(_rename);
         _renaming = true;
+        _focusRename = true;
+    }
+
+    // Esc in the box cancels the rename (the game's own Esc ignores keys typed into a field).
+    private void RenameKey(KeyboardEventArgs e)
+    {
+        if (e.Key == "Escape" && !_renameSubmitting) _renaming = false;
+    }
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (!_focusRename || _renameInput?.Element is not { } input) return;
+        _focusRename = false;
+        await input.FocusAsync();
     }
 
     /// <summary>

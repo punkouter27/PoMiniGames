@@ -41,6 +41,10 @@
   // card's heading is named `po-hero` in the old state and the game's title in the new one, so
   // the browser morphs one into the other. Without the API, or with motion reduced, it is a
   // plain in-app navigation.
+  // BrowserViewport.cs reads the width here. It used JS eval, which the CSP (no
+  // 'unsafe-eval') refuses, so IsNarrow was false on every phone.
+  window.PoViewport = { width: function () { return window.innerWidth || 0; } };
+
   window.PoHubNav = {
     go: function (href, hero) {
       var navigate = function () { window.Blazor.navigateTo(href); };

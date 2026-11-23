@@ -130,7 +130,9 @@
 .poeco-narrow .poeco-tribe-top,
 .poeco-narrow .poeco-tribe-record,
 .poeco-narrow .poeco-worlds { grid-template-columns: minmax(0, 1fr); }
-.poeco-narrow .poeco-ticker { top: 96px; max-width: calc(100% - 24px); }
+/* Below the phone HUD (two rows of pills and the icon row end ~168px down), and a
+   rounded box rather than a pill: two wrapped lines in a pill read as an oval. */
+.poeco-narrow .poeco-ticker { top: 176px; max-width: calc(100% - 24px); border-radius: var(--radius-md); }
 .poeco-narrow .poeco-menu-panel { min-width: 200px; }
 .poeco-narrow .poeco-inspector--family { width: auto; }
 .poeco-narrow .poeco-minimap-layer { left: 4px; bottom: 4px; padding: 0 6px; }

@@ -87,7 +87,10 @@ export function createPip(canvas, { onChange = () => {} } = {}) {
      * the page's own requestAnimationFrame.
      */
     raf(fn) {
-      if (win) { win.requestAnimationFrame(fn); return; }
+      // The pop-out's clock, but this document's time: a rAF timestamp counts from ITS window's
+      // time origin (zero when the pop-out opened), so handed on as-is it ran the loop's dt
+      // hugely negative and every effect backwards — the island went magenta.
+      if (win) { win.requestAnimationFrame(() => fn(performance.now())); return; }
       if (video && document.hidden) { setTimeout(() => fn(performance.now()), 200); return; }
       requestAnimationFrame(fn);
     },

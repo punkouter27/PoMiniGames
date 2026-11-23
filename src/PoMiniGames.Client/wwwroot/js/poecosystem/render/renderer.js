@@ -246,6 +246,8 @@ export function createRenderer(container, {
   let propCount = 0;
   let hovered = null;
   let followHandle = -1;
+  // Tiles the camera must not stand in (blockedTiles, from the last terrain message).
+  let cameraBlocked = null;
   let stats = null;
   let running = true;
   let fps = 0; let frames = 0; let fpsAt = 0;
@@ -427,6 +429,7 @@ export function createRenderer(container, {
     const blocked = msg.tileState
       ? blockedTiles({ trees: msg.trees, bushes: msg.bushes, tileState: msg.tileState, size: terrainApi.size })
       : null;
+    cameraBlocked = blocked;
     player = createPlayer(terrainApi, 'fly', blocked);
     if (pending) player.setPose(pending);
   }
@@ -910,7 +913,8 @@ export function createRenderer(container, {
 
   function frame(now) {
     if (!running) return;
-    const dt = Math.min(0.05, (now - lastTime) / 1000 || 0);
+    // Clamped both ways: time never runs backwards, whatever clock delivered `now`.
+    const dt = Math.max(0, Math.min(0.05, (now - lastTime) / 1000 || 0));
     lastTime = now;
     const timeSec = now / 1000;
     frames++;
@@ -934,7 +938,7 @@ export function createRenderer(container, {
       } else if (directorIdleSeconds > 0 && !director.enabled && !directorDismissed && !directorHeld
         && now - lastInputAt > (everInteracted ? Math.max(directorIdleSeconds, DIRECTOR_RETAKE_SECONDS) : directorIdleSeconds) * 1000) setDirector(true);
       const driven = director.enabled && curr
-        && director.update(dt, timeSec, { player, terrain: terrainApi, interp, handles: curr.views.handles, count: interpCount });
+        && director.update(dt, timeSec, { player, terrain: terrainApi, interp, handles: curr.views.handles, count: interpCount, blocked: cameraBlocked });
       if (!driven) stepPlayer(player, intent, dt, terrainApi);
     }
     // The camera is re-seated on EVERY frame, terrain or not. It used to live inside the
@@ -955,7 +959,18 @@ export function createRenderer(container, {
         for (let k = 0; k < interpCount; k++) {
           if (curr.views.handles[k] !== followHandle) continue;
           const o = k * FRAME.CREATURE_STRIDE;
-          const tx = interp[o] - Math.sin(player.yaw) * 6; const tz = interp[o + 2] - Math.cos(player.yaw) * 6;
+          // Six metres back, or closer where a tree, hut or boulder stands there: tethered
+          // blindly, a creature walking through a forest dragged the camera into the trunks.
+          let back = 6;
+          if (cameraBlocked && terrainApi) {
+            const size = terrainApi.size;
+            for (; back > 1.5; back -= 0.5) {
+              const bx = Math.floor(interp[o] - Math.sin(player.yaw) * back);
+              const bz = Math.floor(interp[o + 2] - Math.cos(player.yaw) * back);
+              if (bx < 0 || bz < 0 || bx >= size || bz >= size || !cameraBlocked[bz * size + bx]) break;
+            }
+          }
+          const tx = interp[o] - Math.sin(player.yaw) * back; const tz = interp[o + 2] - Math.cos(player.yaw) * back;
           player.x += (tx - player.x) * Math.min(1, dt * 2);
           player.z += (tz - player.z) * Math.min(1, dt * 2);
           break;
