@@ -14,7 +14,7 @@ using PoMiniGamesClient.Services.Play;
 namespace PoMiniGames.Unit.Features.PoBrawl;
 
 /// <summary>
-/// The CPU tournament's bracket: a random 16-slot field with automatic BYEs, winners walking
+/// The CPU tournament's bracket: a rating-seeded 16-slot field with BYEs on the bottom seeds, winners walking
 /// through to the final, and Elo moving like the fighter board.
 /// </summary>
 public sealed class PoBrawlTournamentTests
@@ -22,6 +22,7 @@ public sealed class PoBrawlTournamentTests
     [Theory]
     [InlineData(nameof(Draw_PicksAllPresidents_AndSeedsUnratedAtTheBoardSeed))]
     [InlineData(nameof(Byes_FillTheBracketAndAdvanceWithoutChangingElo))]
+    [InlineData(nameof(Draw_SeedsByRating_InTheStandardOrder_WithByesOnTheBottomSeeds))]
     [InlineData(nameof(Winners_AdvanceIntoTheirSlots_UntilTheFinalCrownsAChampion))]
     [InlineData(nameof(Elo_IsZeroSum_AndAnUpsetPaysMoreThanAFavouriteWinning))]
     [InlineData(nameof(Results_AreRefused_WhenNotASide_OrOnceDecided))]
@@ -125,6 +126,48 @@ public sealed class PoBrawlTournamentTests
         NewCup(seed: 8).Field.Select(f => f.Id).Should().NotEqual(NewCup().Field.Select(f => f.Id));
     }
 
+    private static void Draw_SeedsByRating_InTheStandardOrder_WithByesOnTheBottomSeeds()
+    {
+        PoBrawlTournament.SeedOrder.Should().Equal(1, 16, 8, 9, 4, 13, 5, 12, 2, 15, 7, 10, 3, 14, 6, 11);
+
+        // A full field with distinct ratings: the roster's last fighter rated best, its first worst.
+        var roster = PoBrawlRoster.Fighters;
+        var ratings = roster.Select((f, i) => (f.Id, Elo: 1000 + i * 10)).ToDictionary(x => x.Id, x => x.Elo);
+        var bySeed = roster.Reverse().Select(f => f.Id).ToArray();
+        foreach (var seed in new[] { 1, 99 })
+        {
+            var cup = NewCup(seed, ratings);
+            cup.Entrants.Should().Equal(PoBrawlTournament.SeedOrder.Select(s => bySeed[s - 1]),
+                because: "the rng only breaks ties; distinct ratings fix the draw");
+            cup.BySeed.Select(f => f.Id).Should().Equal(bySeed);
+            cup.SeedOf(bySeed[0]).Should().Be(1);
+            cup.SeedOf(bySeed[15]).Should().Be(16);
+            cup.Bouts[0].P1Id.Should().Be(bySeed[0], because: "1 meets 16 first");
+            cup.Bouts[0].P2Id.Should().Be(bySeed[15]);
+            cup.HigherSeedSide(cup.Bouts[0]).Should().Be(1);
+        }
+
+        // Five fighters: seeds 6-16 are BYEs. 1, 2 and 3 walk to the semifinals; 4 and 5 fight.
+        var five = roster.Take(5).ToArray();
+        var fiveRatings = five.Select((f, i) => (f.Id, Elo: 1400 - i * 50)).ToDictionary(x => x.Id, x => x.Elo);
+        var small = PoBrawlTournament.Draw(five, new Random(3), fiveRatings);
+        for (var i = 0; i < PoBrawlTournament.Size; i++)
+        {
+            var seed = PoBrawlTournament.SeedOrder[i];
+            small.Entrants[i].Should().Be(seed <= 5 ? five[seed - 1].Id : PoBrawlTournament.ByeId, because: $"slot {i} holds seed {seed}");
+        }
+        small.Bouts[1].WinnerId.Should().Be(PoBrawlTournament.ByeId, because: "8 v 9 is BYE v BYE: a BYE goes on");
+        small.Bouts[8].WinnerId.Should().Be(five[0].Id, because: "seed 1 meets that BYE and advances unfought");
+        small.Bouts[12].P1Id.Should().Be(five[0].Id);
+        small.Bouts[13].P1Id.Should().Be(five[1].Id);
+        small.Bouts[13].P2Id.Should().Be(five[2].Id);
+        small.Current.Should().BeSameAs(small.Bouts[9], because: "4 v 5 is the only quarterfinal with two fighters");
+        (small.Current!.P1Id, small.Current.P2Id).Should().Be((five[3].Id, five[4].Id));
+        small.HigherSeedSide(small.Current).Should().Be(1, because: "a level bout goes to the higher seed, seed 4");
+        small.HigherSeedSide(small.Bouts[14]).Should().Be(0, because: "the final is not paired yet");
+        small.SeedOf(PoBrawlTournament.ByeId).Should().Be(0);
+    }
+
     private static void Byes_FillTheBracketAndAdvanceWithoutChangingElo()
     {
         var cup = PoBrawlTournament.Draw(PoBrawlRoster.Fighters.Take(5).ToArray(), new Random(2));
@@ -186,8 +229,8 @@ public sealed class PoBrawlTournamentTests
         var even = NewCup();
         var b = even.Current!;
         var decided = even.RecordResult(1, 20, knockout: true);
-        decided.P1Delta.Should().Be(12, because: "K 24 between two 1000s is ±12");
-        decided.P2Delta.Should().Be(-12);
+        decided.P1Delta.Should().Be(16, because: "K 32 between two 1000s is ±16");
+        decided.P2Delta.Should().Be(-16);
         (even.EloOf(b.P1Id!) + even.EloOf(b.P2Id!)).Should().Be(2 * PoBrawlTournament.SeedElo);
 
         var first = NewCup().Current!;
@@ -195,7 +238,7 @@ public sealed class PoBrawlTournamentTests
         var favourite = NewCup(ratings: ratings).RecordResult(1, 20, knockout: true).P1Delta;
         var upset = NewCup(ratings: ratings).RecordResult(2, 20, knockout: true).P2Delta;
         upset.Should().BeGreaterThan(favourite);
-        (favourite + upset).Should().Be(24, because: "the two expectations sum to one");
+        (favourite + upset).Should().Be(32, because: "the two expectations sum to one");
     }
 
     private static void Expectation_FavoursTheHigherRating_AndOnlyAnUnderdogWinIsAnUpset()

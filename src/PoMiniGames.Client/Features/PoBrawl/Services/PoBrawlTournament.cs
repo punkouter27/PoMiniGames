@@ -4,21 +4,27 @@ using PoMiniGames.Domain.Services;
 namespace PoMiniGamesClient.Features.PoBrawl;
 
 /// <summary>
-/// One CPU-only, 16-slot, single-elimination Brawl tournament: the random draw, byes, the bouts,
-/// who advances where, and every
-/// fighter's Elo as the results come in.
+/// One CPU-only, 16-slot, single-elimination Brawl tournament: the rating-seeded draw, byes,
+/// the bouts, who advances where, and every fighter's Elo as the results come in.
 /// </summary>
 /// <remarks>
 /// <para>
 /// The Elo arithmetic is the server's own <see cref="PairwiseEloCalculator"/> with its default
-/// <see cref="PairwiseEloOptions"/> (seed 1000, K 24, floor 100), so the numbers shown here
+/// <see cref="PairwiseEloOptions"/> (seed 1000, K 32, floor 100), so the numbers shown here
 /// move the way the global "Brawl Demo" fighter board does when the page reports each bout to
 /// <c>POST /api/pobrawl/elo</c>. Starting ratings come from that board when it can be read.
 /// The server stays the authority for the board: this copy is what the bracket shows.
 /// </para>
 /// <para>
+/// The draw follows the tournament standard: fighters are seeded by rating (best first) into
+/// the standard 16-seed order <see cref="SeedOrder"/> (1v16, 8v9, 4v13, 5v12, 2v15, 7v10,
+/// 3v14, 6v11), so the top two can only meet in the final. BYEs take the bottom seeds; a
+/// BYE's opponent advances without a fight, and BYE vs BYE sends a BYE on.
+/// </para>
+/// <para>
 /// A bout is never a draw. The engine breaks a level bell in tournament mode
-/// (game.js <c>_tournamentDecision</c>), because a knockout bracket cannot advance two fighters.
+/// (game.js <c>_tournamentDecision</c>): a level bout goes to the higher seed
+/// (<see cref="HigherSeedSide"/>), because a knockout bracket cannot advance two fighters.
 /// </para>
 /// </remarks>
 public sealed class PoBrawlTournament
@@ -26,6 +32,9 @@ public sealed class PoBrawlTournament
     /// <summary>Slots in the bracket, including any BYEs needed to fill the field.</summary>
     public const int Size = 16;
     public const string ByeId = "bye";
+
+    /// <summary>Seed numbers (1 = best) in bracket order: 1v16, 8v9, 4v13, 5v12, 2v15, 7v10, 3v14, 6v11.</summary>
+    public static readonly IReadOnlyList<int> SeedOrder = [1, 16, 8, 9, 4, 13, 5, 12, 2, 15, 7, 10, 3, 14, 6, 11];
 
     private static readonly PairwiseEloCalculator Elo = new(new PairwiseEloOptions());
 
@@ -41,12 +50,16 @@ public sealed class PoBrawlTournament
     private readonly Dictionary<string, int> _startElo;
     private readonly Dictionary<string, int> _elo;
     private readonly Dictionary<string, (int Wins, int Losses)> _record = [];
+    private readonly Dictionary<string, int> _seed = [];
 
     /// <summary>The actual fighters in the draw; BYE slots are excluded.</summary>
     public IReadOnlyList<PoBrawlFighter> Field { get; }
 
-    /// <summary>All 16 opening-round slots in bracket order, including BYE entries.</summary>
+    /// <summary>All 16 opening-round slots in bracket order (<see cref="SeedOrder"/>), including BYE entries.</summary>
     public IReadOnlyList<string> Entrants { get; }
+
+    /// <summary>The fighters by seed, best first (index 0 is seed 1); BYEs are not listed.</summary>
+    public IReadOnlyList<PoBrawlFighter> BySeed => [.. Field.OrderBy(f => _seed[f.Id])];
 
     /// <summary>All 15 bracket bouts in play order: 8 opening round, 4 quarterfinals, 2 semifinals, final.</summary>
     public IReadOnlyList<Bout> Bouts { get; }
@@ -60,6 +73,10 @@ public sealed class PoBrawlTournament
         _startElo = Field.ToDictionary(f => f.Id, f => ratings.TryGetValue(f.Id, out var r) ? r : SeedElo);
         _elo = new Dictionary<string, int>(_startElo);
         foreach (var f in Field) _record[f.Id] = (0, 0);
+        for (var i = 0; i < Size; i++)
+        {
+            if (entrants[i] != ByeId) _seed[entrants[i]] = SeedOrder[i];
+        }
 
         var bouts = new List<Bout>(Size - 1);
         for (var i = 0; i < Size / 2; i++)
@@ -74,23 +91,45 @@ public sealed class PoBrawlTournament
     }
 
     /// <summary>
-    /// Draw up to <see cref="Size"/> distinct fighters at random and fill the remaining slots
-    /// with randomly placed BYEs. <paramref name="ratings"/> maps fighter id to a starting
-    /// rating; anyone missing starts at <see cref="SeedElo"/>.
+    /// Seed up to <see cref="Size"/> distinct fighters by rating, best first, into
+    /// <see cref="SeedOrder"/>; BYEs fill the bottom seeds. <paramref name="ratings"/> maps
+    /// fighter id to a starting rating; anyone missing starts at <see cref="SeedElo"/>.
+    /// <paramref name="rng"/> only breaks ties between equal ratings (and, past
+    /// <see cref="Size"/> fighters, who among equals makes the cut).
     /// </summary>
     public static PoBrawlTournament Draw(IReadOnlyList<PoBrawlFighter> roster, Random rng, IReadOnlyDictionary<string, int>? ratings = null)
     {
         ArgumentNullException.ThrowIfNull(roster);
         ArgumentNullException.ThrowIfNull(rng);
+        ratings ??= new Dictionary<string, int>();
         var distinct = roster.DistinctBy(f => f.Id).ToArray();
-        rng.Shuffle(distinct);
         if (distinct.Length == 0)
             throw new ArgumentException("A tournament needs at least one fighter.", nameof(roster));
-        var entrants = distinct.Take(Size).Select(f => f.Id).ToList();
-        while (entrants.Count < Size) entrants.Add(ByeId);
-        var shuffledEntrants = entrants.ToArray();
-        rng.Shuffle(shuffledEntrants);
-        return new PoBrawlTournament(shuffledEntrants, ratings ?? new Dictionary<string, int>());
+        // Shuffle first, then a stable sort by rating: equal ratings keep the shuffled order.
+        rng.Shuffle(distinct);
+        var bySeed = distinct
+            .OrderByDescending(f => ratings.TryGetValue(f.Id, out var r) ? r : SeedElo)
+            .Take(Size)
+            .Select(f => f.Id)
+            .ToList();
+        while (bySeed.Count < Size) bySeed.Add(ByeId);
+        var entrants = SeedOrder.Select(seed => bySeed[seed - 1]).ToArray();
+        return new PoBrawlTournament(entrants, ratings);
+    }
+
+    /// <summary>A fighter's seed, 1 (best) to 16, or 0 for a BYE or a fighter not in the draw.</summary>
+    public int SeedOf(string? fighterId) => fighterId is not null && _seed.TryGetValue(fighterId, out var s) ? s : 0;
+
+    /// <summary>
+    /// The corner (1 left, 2 right) holding the higher seed in <paramref name="bout"/>: who a
+    /// level bout goes to. 0 while the bout is unpaired or a BYE.
+    /// </summary>
+    public int HigherSeedSide(Bout bout)
+    {
+        ArgumentNullException.ThrowIfNull(bout);
+        var s1 = SeedOf(bout.P1Id);
+        var s2 = SeedOf(bout.P2Id);
+        return s1 == 0 || s2 == 0 ? 0 : s1 <= s2 ? 1 : 2;
     }
 
     /// <summary>The next bout to fight, or null once the final is decided.</summary>

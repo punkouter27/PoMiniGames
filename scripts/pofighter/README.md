@@ -79,7 +79,7 @@ phone gives a 373-unit fighter, so a sharper fighter needs 4K footage, not a big
   in `src/PoMiniGames.Shared/Games/PoFighterRoster.cs` (the Elo board accepts only listed ids); give
   it a procedural voice in `VOICES` in `wwwroot/js/pofighter/voice.js` (pitch, wave, formant).
 - Voice clips: `wwwroot/audio/pofighter/<id>/<mood>-<level>.wav` (moods angry, happy, hurt, insult,
-  celebrate; levels 1-5), then `pwsh scripts/pofighter/voices.ps1` trims each new clip's silence, normalises it to -16 LUFS and writes it as mono 24 kHz (ffmpeg; the original goes to `scripts/pofighter/voices-raw/<id>/`, `-Force` reprocesses from there, `-NoProcess` skips it) and rewrites `manifest.json`.
+  celebrate; levels 1-5), then `pwsh scripts/pofighter/voices.ps1` trims each new clip's silence, normalises it to -16 LUFS and writes it as mono 24 kHz (ffmpeg; the original goes to `scripts/pofighter/voices-raw/<id>/`, `-Force` reprocesses from there, `-NoProcess` skips it) and rewrites `manifest.json`. `-Game pobrawl` does the same for PoBrawl's presidents (`wwwroot/audio/pobrawl/<id>/`, originals in `scripts/pobrawl/voices-raw/`).
 
 ## A quicker draft cut
 

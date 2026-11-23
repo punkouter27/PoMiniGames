@@ -473,6 +473,10 @@
     gap: 8px;
 }
 
+.pt-field {
+    margin: 8px 0;
+}
+
 .pt-draw-title {
     font-family: var(--pb-display);
     font-size: 1.05rem;

@@ -43,7 +43,7 @@ class CupMethods {
     this._cupBoardData = null;
     if (this.options.mode !== 'tournament') return;
     this._cup = {
-      round: 0, p1Expected: 0.5, underdog: -1, strength: 0, upset: 0,
+      round: 0, p1Expected: 0.5, higherSeed: 0, underdog: -1, strength: 0, upset: 0,
       exciteFloor: 0, crowdLift: 0, energy: 1, decay: 0.4, phones: 0,
       moodPushed: 0, booT: 4, gaspT: 0, decided: false, captionT: 0, look: null,
     };
@@ -54,7 +54,8 @@ class CupMethods {
 
   /**
    * The page's per-bout options (PoBrawl.init / PoBrawl.matchup): `round` 0 quarterfinal,
-   * 1 semifinal, 2 final; `p1Expected` the left corner's Elo expectation, 0..1.
+   * 1 semifinal, 2 final; `p1Expected` the left corner's Elo expectation, 0..1; `higherSeed`
+   * the corner (1|2) with the better bracket seed, who a level bell goes to (0 = unknown).
    */
   cupBout(opts = {}, snap = false) {
     const c = this._cup;
@@ -63,6 +64,8 @@ class CupMethods {
     c.round = r === 1 || r === 2 ? r : 0;
     const e = Number(opts?.p1Expected);
     c.p1Expected = Number.isFinite(e) ? THREE.MathUtils.clamp(e, 0.01, 0.99) : 0.5;
+    const hs = Number(opts?.higherSeed);
+    c.higherSeed = hs === 1 || hs === 2 ? hs : 0;
     const gap = 0.5 - c.p1Expected;
     c.underdog = gap > 0 ? 0 : 1;
     c.strength = Math.abs(gap) < EVEN_GAP ? 0 : Math.min(1, Math.abs(gap) / FULL_GAP);

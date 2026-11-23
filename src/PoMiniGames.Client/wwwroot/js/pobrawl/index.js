@@ -80,9 +80,10 @@ window.PoBrawl = {
    * @param {string} p2Character  right corner
    * @param {string|null} roundLabel  splash heading, e.g. 'SEMIFINAL 1 OF 2'
    * @param {string|null} introLine  the PA's ring introduction
-   * @param {{round?: 0|1|2, p1Expected?: number}} [opts]  the bout's round (quarterfinal 0,
+   * @param {{round?: 0|1|2, p1Expected?: number, higherSeed?: 0|1|2}} [opts]  the bout's round (quarterfinal 0,
    *   semifinal 1, final 2: the arena's time of day and crowd) and the left corner's Elo
-   *   expectation (the crowd's upset storyline). Optional; absent = round 0, an even bout.
+   *   expectation (the crowd's upset storyline) and the higher seed's corner (a level bell goes to
+   *   it). Optional; absent = round 0, an even bout.
    */
   matchup(p1Character, p2Character, roundLabel, introLine, opts) {
     if (!game) return;

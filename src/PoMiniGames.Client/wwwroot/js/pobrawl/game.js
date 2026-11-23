@@ -1038,10 +1038,14 @@ export class BrawlGame {
    */
   /**
    * A knockout bracket cannot advance a draw, so a tournament bout always has a winner at the
-   * bell: more health, then more hits landed, then the bigger single hit, then a seeded coin.
+   * bell: more health; level health goes to the higher seed (the page's `higherSeed`), and
+   * without one to more hits landed, then the bigger single hit, then a seeded coin.
    */
   _tournamentDecision(h1, h2) {
     if (h1 !== h2) return h1 > h2 ? 1 : 2;
+    // A level bout goes to the higher seed (the tournament standard; the page sends it, cup.js).
+    const seeded = this._cup?.higherSeed;
+    if (seeded === 1 || seeded === 2) return seeded;
     const [a, b] = this.fighters.map((f) => f.stats);
     if (a.hits !== b.hits) return a.hits > b.hits ? 1 : 2;
     if (a.biggestHit !== b.biggestHit) return a.biggestHit > b.biggestHit ? 1 : 2;

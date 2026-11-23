@@ -17,8 +17,9 @@
 
 @* The Brawl Cup (/pobrawl/demo — the app-wide Demo tab; /pobrawl/tournament, the old address,
    redirects here): the CPU-only knockout bracket. The literal routes win over PoBrawlPage's
-   /pobrawl/{Mode}. All current presidents enter the 16-slot draw, remaining slots are BYEs,
-   and every real bout plays out
+   /pobrawl/{Mode}. All current presidents enter the 16-slot draw, seeded by their fighter-board
+   rating (PoBrawlTournament.SeedOrder: 1v16, 8v9, …), remaining slots are BYEs on the bottom
+   seeds, and every real bout plays out
    in the same arena the other modes use (engine mode 'tournament': both corners CPU, the page
    picks every pairing through PoBrawl.matchup), and each result moves both fighters' Elo.
    This component shares PoBrawlPage's CSS scope (CssScope in the csproj), so the engine's DOM —
@@ -90,8 +91,8 @@
     private string _playerName = "";
     private PoBrawlTournament? _cup;
     private IReadOnlyDictionary<string, int> _ratings = new Dictionary<string, int>();
-    // The draw is rebuilt from this seed when the board's ratings arrive, so the same entrants
-    // fighters keep their places and only the numbers change.
+    // The draw is seeded by rating and rebuilt when the board's ratings arrive; this seed only
+    // breaks ties between equal ratings, so a rebuild with the same ratings is the same draw.
     private int _drawSeed = Random.Shared.Next();
     private bool _ratingsLoaded;
     private int _reportedMatches;
@@ -224,7 +225,7 @@
     </div>;
 
     private static RenderFragment HowItWorks => @<ul>
-        <li>🎲 All sixteen presidents fill the 16-slot bracket; open slots, if any, are BYEs</li>
+        <li>🎲 All sixteen presidents are seeded by Elo (1 v 16, 8 v 9, …); open slots, if any, are BYEs on the bottom seeds</li>
         <li>🤖 The CPU plays each bout through to one champion; BYEs advance without a fight</li>
         <li>📈 Every result moves both fighters' Elo · ⏩ 2×/4× and 🗂 Bracket on the arena's bar</li>
         <li>⏱ Results stay up for 5 seconds before the next bout starts automatically</li>
@@ -236,6 +237,11 @@
         </div>
         @if (_cup is not null)
         {
+            @* The field as a 4x4 of the 16 slots, by seed: an open slot is a BYE tile. *@
+            <div class="pt-field" aria-label="The field, by seed">
+                <PoBrawlFighterGrid Fighters="@_cup.BySeed" ByeSlots="@(PoBrawlTournament.Size - _cup.Field.Count)"
+                                    Caption="@FieldCaption" Disabled="true" />
+            </div>
             <details>
             <summary>Preview the draw</summary>
             <div class="pt-menu-bracket" aria-label="16-player tournament bracket">
@@ -249,6 +255,9 @@
         }
         <p class="pt-draw-note">Every completed bout automatically updates global fighter Elo; BYEs do not affect ratings.</p>
     </div>;
+
+    // The field tile's second line: "#1 · 1032" (seed · Elo going in).
+    private string? FieldCaption(PoBrawlFighter f) => _cup is null ? null : $"#{_cup.SeedOf(f.Id)} · {_cup.EloOf(f.Id)}";
 
     private RenderFragment PreviewRound(string title, IEnumerable<PoBrawlTournament.Bout> bouts) => @<section class="pt-menu-round">
         <h4>@title</h4>
@@ -544,6 +553,8 @@
             _ => 0,
         },
         p1Expected = _cup!.ExpectedP1(b),
+        // Who a level bell goes to (game.js _tournamentDecision): the higher seed.
+        higherSeed = _cup.HigherSeedSide(b),
     };
 
     protected override void OnInitialized()
@@ -614,6 +625,7 @@
                 introLine = PoBrawlPressLines.Intro(_p1Char, _p2Char)?.Text,
                 round = (int)first.Round,
                 p1Expected = _cup.ExpectedP1(first),
+                higherSeed = _cup.HigherSeedSide(first),
             });
             if (generation != _generation)
             {
@@ -661,7 +673,8 @@
     {
         if (_cup?.Current is not { } bout || bout.P1Id is null || bout.P2Id is null) return;
         // Belt and braces: an older cached engine without the tournament decision could still say 0.
-        if (winner is not (1 or 2)) winner = recap is { } r && r.P2Hits > r.P1Hits ? 2 : 1;
+        // A level bout goes to the higher seed.
+        if (winner is not (1 or 2)) winner = _cup.HigherSeedSide(bout) is 2 ? 2 : 1;
         var decided = _cup.RecordResult(winner, elapsedSeconds, knockout: elapsedSeconds < 59.9);
         _lastDecided = decided;
         _freshIndex = decided.Index;

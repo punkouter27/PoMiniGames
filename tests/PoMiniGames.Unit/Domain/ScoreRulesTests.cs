@@ -86,10 +86,10 @@ public sealed class ScoreRulesTests
     }
 
     [Theory]
-    [InlineData(1000, 1000, false, 12)]  // even match, K = 24
+    [InlineData(1000, 1000, false, 16)]  // even match, K = 32
     [InlineData(1000, 1000, true, 0)]
-    [InlineData(1000, 1400, false, 22)]  // upset win
-    [InlineData(1400, 1000, true, -10)]  // a draw against a weaker fighter costs rating
+    [InlineData(1000, 1400, false, 29)]  // upset win
+    [InlineData(1400, 1000, true, -13)]  // a draw against a weaker fighter costs rating
     public void PairwiseElo_Delta_IsZeroSumAndFloored(int sideA, int sideB, bool isDraw, int expected)
     {
         var elo = new PairwiseEloCalculator(new PairwiseEloOptions());

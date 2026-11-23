@@ -188,6 +188,7 @@ class CinematicsMethods {
     this._caption(name ? `Round ${m.played} to ${this.fighters[winner - 1].rig.config.name}.`
       : `Round ${m.played} is too close to call.`);
     this._cornerSay(winner);
+    this._show('round', { winner, ko: this.fighters.some((f) => f.state === 'ko') });
     // Hold the normal framing on the round's winner, as the result does.
     this._setCameraMode('normal', { force: true });
     return true;

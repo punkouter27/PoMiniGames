@@ -27,13 +27,14 @@ public class PairwiseEloOptions
     /// </remarks>
     public int SeedElo { get; set; } = 1000;
 
-    /// <summary>K-factor for head-to-head fighter ratings. Default: 24.</summary>
+    /// <summary>K-factor for head-to-head fighter ratings. Default: 32.</summary>
     /// <remarks>
-    /// Lower than <see cref="EloOptions.K"/> (32) on purpose: an unattended kiosk plays these
-    /// matches continuously over a closed 15-fighter pool, so the sample is large and the
-    /// board wants stability more than responsiveness.
+    /// The tournament standard (Elo, start 1000, K 32) shared by the PoBrawl and PoFighter
+    /// fighter boards and by the clients that mirror them (PoBrawlTournament prices its
+    /// bracket with this calculator). Same K as <see cref="EloOptions.K"/>, but still its own
+    /// knob: the two rating systems stay separate.
     /// </remarks>
-    public int K { get; set; } = 24;
+    public int K { get; set; } = 32;
 
     /// <summary>
     /// Floor below which a fighter's rating cannot fall. Default: 100.
