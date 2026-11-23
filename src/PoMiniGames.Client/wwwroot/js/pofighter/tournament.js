@@ -1,7 +1,7 @@
 // pofighter/tournament.js — the 16-slot CPU tournament (bracket.js holds the rules).
 //
 // Every roster slot enters: the built-in fighters seeded by their Elo, then this browser's
-// Studio fighters (seeded at 1500), the rest EMPTY (byes). Between bouts the bracket is shown
+// Studio fighters (seeded at 1000, the board's seed), the rest BYE (no player). Between bouts the bracket is shown
 // in [data-pf-bracket] (built here, styled by the page's CSS); each real bout is a best-of-three
 // on the canvas (demo.js runVersus). After a bout between two built-in fighters the page is told
 // through dotnetRef.invokeMethodAsync('BoutFinished', winnerId, loserId, isDraw), and it posts
@@ -20,13 +20,13 @@ const wait = (session, s) => new Promise(r => {
     session.cleanup.push(() => { clearTimeout(id); r(); });
 });
 
-/** The 16 slots: built-in fighters first, then Studio fighters ([{ id, name, portrait }]), then EMPTY. */
+/** The 16 slots: built-in fighters first, then Studio fighters ([{ id, name, portrait }]), then BYE. */
 export function slots(customs = []) {
     const entrants = [...ROSTER.map(f => ({ id: f.id, name: f.name })),
         ...customs.map(c => ({ id: c.id, name: c.name, portrait: c.portrait }))];
     return Array.from({ length: SIZE }, (_, i) => entrants[i]
         ? entrants[i]
-        : { id: `empty-${i + 1}`, name: 'EMPTY', empty: true });
+        : { id: `empty-${i + 1}`, name: 'BYE', empty: true });
 }
 
 function esc(s) {
@@ -49,7 +49,7 @@ function renderBracket(el, bracket, current, championId) {
             <section class="pfb-round" aria-label="${esc(ROUND_NAMES[r])}">
                 <h3>${esc(ROUND_NAMES[r])}</h3>
                 ${round.map(m => `<ol class="pfb-match${m === current ? ' pfb-match--next' : ''}${m.bye ? ' pfb-match--bye' : ''}">
-                    ${side(m.a, m)}${side(m.b, m)}${m.bye ? '<li class="pfb-bye">BYE</li>' : ''}</ol>`).join('')}
+                    ${side(m.a, m)}${side(m.b, m)}</ol>`).join('')}
             </section>`).join('')}
         </div>`;
     el.hidden = false;

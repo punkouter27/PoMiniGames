@@ -2,7 +2,7 @@
 
 @* The arcade select screen. The built-in fighters (PoFighterRoster) come first in roster order,
    then this browser's Studio fighters (Customs, marked STUDIO).
-   - Full (the tournament field): 16 slots in a 4x4 grid, the rest EMPTY until a new fighter is
+   - Full (the tournament field): 16 slots in a 4x4 grid, the rest BYE (no player) until a new fighter is
      filmed and packed (scripts/pofighter/), since the bracket has 16 seats.
    - Compact (every picker): only real fighters, larger tiles, and with OnCreate a last
      "Create" tile that opens the Studio.
@@ -23,9 +23,9 @@
         if (slot is null)
         {
             <div class="pfr-tile pfr-tile--empty" role="@(OnSelect.HasDelegate ? "radio" : "listitem")"
-                 aria-disabled="true" aria-checked="false" aria-label="Empty slot @(i + 1)">
+                 aria-disabled="true" aria-checked="false" aria-label="Bye, slot @(i + 1): no player">
                 <span class="pfr-empty-mark material-symbols-outlined" aria-hidden="true">person_add</span>
-                <span class="pfr-name">EMPTY</span>
+                <span class="pfr-name">BYE</span>
             </div>
         }
         else
@@ -79,7 +79,7 @@
     /// <summary>P2's pick in the 2P picker: a second, blue cursor.</summary>
     [Parameter] public string? Selected2 { get; set; }
 
-    /// <summary>Set to make the tiles buttons; EMPTY slots never fire it.</summary>
+    /// <summary>Set to make the tiles buttons; BYE slots never fire it.</summary>
     [Parameter] public EventCallback<string> OnSelect { get; set; }
 
     /// <summary>With Compact: a last tile that opens the Studio.</summary>

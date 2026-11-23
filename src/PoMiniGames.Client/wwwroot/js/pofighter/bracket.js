@@ -2,8 +2,8 @@
 // tests/pofighter-bracket.test.mjs drives it directly.
 //
 // Every roster slot enters. Real fighters are seeded by rating (best first) into the standard
-// 16-seed order, so the top two can only meet in the final; EMPTY slots take the bottom seeds
-// and forfeit — their opponent advances on a bye, and EMPTY vs EMPTY sends an EMPTY on (which
+// 16-seed order, so the top two can only meet in the final; BYE slots (no player) take the bottom seeds
+// and forfeit — their opponent advances on a bye, and BYE vs BYE sends a BYE on (which
 // then forfeits to whoever it meets). Only bouts between two real fighters are fought.
 
 export const SIZE = 16;
@@ -12,15 +12,15 @@ export const SEED_ORDER = [1, 16, 8, 9, 4, 13, 5, 12, 2, 15, 7, 10, 3, 14, 6, 11
 export const ROUND_NAMES = ['Round of 16', 'Quarterfinals', 'Semifinals', 'Final'];
 
 /**
- * roster: [{ id, name, empty? }] (16 slots); ratings: { [id]: elo } (missing = 1500).
+ * roster: [{ id, name, empty? }] (16 slots); ratings: { [id]: elo } (missing = 1000, the board's seed).
  * Returns { rounds: [[match]], champion: null }, match = { a, b, winner, bye, round, index }.
  */
 export function createBracket(roster, ratings = {}) {
-    const elo = f => ratings[f.id] ?? 1500;
+    const elo = f => ratings[f.id] ?? 1000;   // the server board's seed (PairwiseEloOptions.SeedElo)
     const real = roster.filter(f => !f.empty).sort((x, y) => elo(y) - elo(x) || x.name.localeCompare(y.name));
     const empties = roster.filter(f => f.empty);
     const bySeed = [...real, ...empties].slice(0, SIZE);
-    while (bySeed.length < SIZE) bySeed.push({ id: `empty-${bySeed.length + 1}`, name: 'EMPTY', empty: true });
+    while (bySeed.length < SIZE) bySeed.push({ id: `empty-${bySeed.length + 1}`, name: 'BYE', empty: true });
     const slots = SEED_ORDER.map(seed => ({ ...bySeed[seed - 1], seed }));
 
     const rounds = [];
@@ -42,7 +42,7 @@ function advance(bracket, match, winner) {
     if (match.index % 2 === 0) target.a = winner; else target.b = winner;
 }
 
-// Decide every match that has both sides and at least one EMPTY: those are byes, never fought.
+// Decide every match that has both sides and at least one BYE: never fought, the real side advances.
 function settleByes(bracket) {
     let changed = true;
     while (changed) {
