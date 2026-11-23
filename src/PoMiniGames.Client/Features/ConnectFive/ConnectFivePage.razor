@@ -37,7 +37,6 @@
     Stats="@(PlayMode == "ai" ? _statItems : null)"
     Diagnostics="@(PlayMode == "ai" ? _statItems : null)"
     Announcement="@Announcement"
-    OptionsContent="@OptionsContent"
     GameSummary="@GameSummaryContent">
 
     @if (!_introDone)
@@ -372,11 +371,6 @@
     // bar and is cut at "· 1"; the mode is the selected button on the intro card's
     // switch and the first segment after the game in the address.
     private static RenderFragment TitleContent => GameCatalog.TitleFor(GameKeys.ConnectFive);
-
-    private static RenderFragment OptionsContent => @<div class="cf-options">
-        <p class="cf-options__label">Mode</p>
-        <ModeSwitch />
-    </div>;
 
     // Mode-specific HowToPlay. 1P talks about the CPU and ELO, 2P
     // talks about two players and a hot seat, and the demo explains it is a

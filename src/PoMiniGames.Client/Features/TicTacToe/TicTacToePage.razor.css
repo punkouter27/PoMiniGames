@@ -310,23 +310,6 @@
     color: var(--color-text-secondary);
 }
 
-/* The options drawer's body (GameShell OptionsContent). Rendered by this page, so its
-   scope applies inside the drawer. */
-.ttt-options {
-    display: flex;
-    flex-direction: column;
-    gap: var(--space-2);
-}
-
-.ttt-options__label {
-    margin: 0;
-    font-size: var(--text-xs);
-    font-weight: 700;
-    letter-spacing: 0.08em;
-    text-transform: uppercase;
-    color: var(--color-text-secondary);
-}
-
 /* Keyboard / gamepad focus on a cell. The cell's own border and win glow would
    otherwise hide the shell's shared focus shadow, so the ring is an outline. */
 .ttt-cell:focus-visible {
