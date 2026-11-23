@@ -367,18 +367,9 @@
     private RenderFragment Summary => @<p>@_summary</p>;
 
     private static RenderFragment FightControls => @<div>
-        <p><kbd>←</kbd> <kbd>→</kbd> walk (away from the foe guards high) · <kbd>↓</kbd> crouch (down-back guards low) · <kbd>↑</kbd> jump (with a direction to jump in or away)</p>
-        <p><kbd>J</kbd> or <kbd>F</kbd> punch · <kbd>L</kbd> or <kbd>G</kbd> kick. Press in the air for a jump attack. Pads and touch work too.</p>
-        @SpecialsList
+        <p><kbd>←</kbd> <kbd>→</kbd> walk (away from the foe guards) · <kbd>↓</kbd> crouch (ducks a punch; down-back guards) · <kbd>↑</kbd> jump (with a direction to jump in or away)</p>
+        <p><kbd>J</kbd> or <kbd>F</kbd> punch · <kbd>L</kbd> or <kbd>G</kbd> kick. Pads and touch work too.</p>
     </div>;
-
-    // The specials (js/pofighter/moves.js SPECIALS), written for a fighter facing right.
-    private static RenderFragment SpecialsList => @<p class="pf-specials">
-        <strong>Specials:</strong> <kbd>↓</kbd><kbd>↘</kbd><kbd>→</kbd> + punch <em>Po Blast</em> ·
-        <kbd>→</kbd><kbd>↓</kbd><kbd>↘</kbd> + punch <em>Rising Fist</em> ·
-        <kbd>↓</kbd><kbd>↙</kbd><kbd>←</kbd> + kick <em>Rush Kick</em> ·
-        <kbd>←</kbd><kbd>↙</kbd><kbd>↓</kbd><kbd>↘</kbd><kbd>→</kbd> + punch or kick: the fighter's own <em>signature</em>, once it's filmed
-    </p>;
 
     private PoFighterCard? CardFor(string? id)
     {

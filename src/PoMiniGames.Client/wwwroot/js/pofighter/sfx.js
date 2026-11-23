@@ -34,7 +34,7 @@ export function panFor(x, width) {
 
 /** The swing sweep for a move: { from, to, dur, gain } (Hz, seconds). Pure. */
 export function whooshShape(move) {
-    return move === 'kick' || move === 'sweep' || move === 'jumpKick' || move === 'rushKick'
+    return move === 'kick'
         ? { from: 320, to: 1500, dur: 0.24, gain: 0.22 }
         : { from: 520, to: 2600, dur: 0.15, gain: 0.16 };
 }
@@ -54,8 +54,8 @@ export function impactShape(e) {
  * audio: createFightAudio(); fx: createFightFx(); onFall(x): extra feel for a knockdown (a shake).
  * step(bodies, dt) takes [{ move, x }] in a fixed order (one slot per body).
  */
-const AIR_MOVES = new Set(['jump', 'jumpPunch', 'jumpKick', 'risingPunch']);
-const ATTACK_MOVES = new Set(['punchMid', 'kick', 'crouchPunch', 'sweep', 'jumpPunch', 'jumpKick', 'blast', 'risingPunch', 'rushKick']);
+const AIR_MOVES = new Set(['jump']);
+const ATTACK_MOVES = new Set(['punchMid', 'kick']);
 
 export function createFoley(audio, fx, onFall = () => { }) {
     const tracks = [];

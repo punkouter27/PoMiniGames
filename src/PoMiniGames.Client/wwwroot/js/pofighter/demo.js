@@ -18,7 +18,7 @@ import { ButtonEdges, activePad } from '../platform/gamepadBus.js';
 import { ROSTER, loadFighter, drawPicture, FighterPainter, setKeyLight } from './art.js';
 import { ARENA, MAX_HP, ROUND_SECONDS, WINS_NEEDED, PHASE_SECONDS, QUOTE_AT, createMatch, stepMatch, pictureOf, poseOf,
     setInput } from './versus.js';
-import { specOf, isAttack } from './moves.js';
+import { MOVES, isAttack } from './moves.js';
 import { STAGES, stageFor, drawStageWall, drawStageFloor, cheer as crowdCheer } from './stages.js';
 import { loadQuotes, pickQuote } from './quotes.js';
 import { say, loadManifest } from './voice.js';
@@ -91,7 +91,6 @@ export function runVersus(root, session, fighters, opts = {}) {
     });
     const callouts = [null, null];   // per corner: { count, t } — the "3 HIT COMBO" under the bar
     const firsts = [null, null];     // per corner: seconds since its FIRST ATTACK tag appeared
-    const shouts = [];               // a special's name over the fighter: { text, x, y, t, color }
     let arena = stageFor(match.fighters[1].id);   // the right-hand corner's home stage
     let quote = null;                // the winner's line on the win screen: { text, winner, loser, said }
     let perfect = false;             // the round just won was untouched
@@ -229,8 +228,6 @@ export function runVersus(root, session, fighters, opts = {}) {
         inputs.forEach((input, i) => { if (input) setInput(match, i, input.sample()); });
         for (const c of callouts) if (c) c.t += dt;
         for (let i = 0; i < 2; i++) if (firsts[i] !== null) firsts[i] += dt;
-        for (const sh of shouts) sh.t += dt;
-        for (let i = shouts.length - 1; i >= 0; i--) if (shouts[i].t > 1.2) shouts.splice(i, 1);
         secsPop += dt;
         if (match.phase === 'vs' && shownPhase !== 'vs') {
             const [a, b] = match.fighters;
@@ -256,20 +253,7 @@ export function runVersus(root, session, fighters, opts = {}) {
                 if (e.count >= 3) crowdCheer(Math.min(1, e.count / 5));
             } else if (e.type === 'round' || e.type === 'ko' || e.type === 'time') { callouts.fill(null); firsts.fill(null); }
             if (e.type === 'first') firsts[e.by] = 0;
-            if (e.type === 'special') {
-                const f = match.fighters[e.by];
-                shouts.push({ text: `${e.name}!`, x: f.x, y: ARENA.ground - 390, t: 0, color: e.by === 0 ? P1_COLOR : P2_COLOR });
-                say(f.id, 'angry', 3);
-            } else if (e.type === 'projectile') {
-                sfx.whoosh(e.x, 'kick');
-                fx.puff(match.fighters[e.by].x, 0.3, -match.fighters[e.by].dir);
-            } else if (e.type === 'clash') {
-                fx.hit({ type: 'block', x: e.x, y: e.y }, 1);
-                sfx.impact({ type: 'block', x: e.x }, false);
-                burst(e.x, e.y, true, false, 1);
-                burst(e.x, e.y, true, false, -1);
-                addTrauma(0.2);
-            } else if (e.type === 'knockdown') {
+            if (e.type === 'knockdown') {
                 addTrauma(0.3);
                 crowdCheer(0.6);
             } else if (e.type === 'match' && e.winner >= 0) {
@@ -392,12 +376,11 @@ export function runVersus(root, session, fighters, opts = {}) {
                     glow: fx.glowFor(f.x, f.dir), reflect, trail: true, attacking: swinging(f),
                     lift: pose.lift });
         }
-        drawProjectiles(now);
         // A blow that would end the round builds a warm glow around its target as it winds up.
         for (const f of match.fighters) {
             const foe = match.fighters[1 - f.index];
-            const lethal = match.phase === 'fight' && isAttack(f.move) && !specOf(f.data, f.move).projectile
-                && foe.hp <= specOf(f.data, f.move).damage && !reducedMotion();
+            const lethal = match.phase === 'fight' && isAttack(f.move)
+                && foe.hp <= MOVES[f.move].damage && !reducedMotion();
             if (!lethal) continue;
             const k = Math.min(1, f.t / 0.2);
             const g = ctx.createRadialGradient(foe.x, ARENA.ground - 220, 20, foe.x, ARENA.ground - 220, 300);
@@ -434,47 +417,6 @@ export function runVersus(root, session, fighters, opts = {}) {
         }
         ctx.restore();
         fx.drawFront(ctx);
-        // A special's name pops over the fighter who threw it and floats up.
-        for (const sh of shouts) {
-            const k = reducedMotion() ? 1 : Math.min(1, 0.4 + sh.t * 5);
-            ctx.save();
-            ctx.globalAlpha = Math.max(0, Math.min(1, (1.2 - sh.t) * 3));
-            ctx.translate(sh.x, sh.y - (reducedMotion() ? 0 : sh.t * 15));
-            ctx.scale(k, k);
-            text(sh.text, 0, 0, 34, sh.color, 'center', 7);
-            ctx.restore();
-        }
-    }
-
-    // A Po Blast: a hot core in the thrower's colour, a ring that spins and a tail behind it.
-    function drawProjectiles(now) {
-        if (!match.projectiles.length) return;
-        ctx.save();
-        ctx.globalCompositeOperation = 'lighter';
-        for (const p of match.projectiles) {
-            const color = p.owner === 0 ? '255,210,63' : '79,195,255';
-            const back = -Math.sign(p.vx);
-            for (let i = 6; i >= 1; i--) {   // the tail
-                ctx.fillStyle = `rgba(${color},${0.08 * (7 - i) / 6})`;
-                ctx.beginPath();
-                ctx.arc(p.x + back * i * 16, p.y, 30 - i * 3, 0, Math.PI * 2);
-                ctx.fill();
-            }
-            const g = ctx.createRadialGradient(p.x, p.y, 2, p.x, p.y, 48);
-            g.addColorStop(0, 'rgba(255,255,255,1)');
-            g.addColorStop(0.35, `rgba(${color},0.9)`);
-            g.addColorStop(1, `rgba(${color},0)`);
-            ctx.fillStyle = g;
-            ctx.beginPath();
-            ctx.arc(p.x, p.y, 48, 0, Math.PI * 2);
-            ctx.fill();
-            ctx.strokeStyle = 'rgba(255,255,255,0.7)';
-            ctx.lineWidth = 3;
-            ctx.beginPath();
-            ctx.ellipse(p.x, p.y, 26, 16, reducedMotion() ? 0 : now * 14, 0.3, Math.PI * 1.5);
-            ctx.stroke();
-        }
-        ctx.restore();
     }
 
     // The HUD: an angled bar per corner that drains toward the middle, a portrait at its outer

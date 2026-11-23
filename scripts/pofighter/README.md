@@ -8,18 +8,11 @@ stays under `artifacts/pofighter/` (gitignored). The video itself is never commi
 
 ## Filming: the shot list
 
-Open `scripts/pofighter/shot-list.html` on set (prints too). It lists every move to record (the
-required ones, the performer's own **signature** move, recommended ones the game picks up
-automatically once packed, and some for later), the camera rules (fixed phone, side-on, same spot),
-the voice clips and the win quotes.
-
-**Signature move.** Each fighter can have one special of their own, found in their recording. Add
-its frames as a `signature` move (with `"attack": true`) and a top-level block
-`"signature": {"name": "Thunder Knee", "button": "kick", "kind": "rush", "damage": 18}` to the
-moves file; `pack.py` copies the block into `<id>.json`. Kinds: `strike`, `rush`, `rise`,
-`projectile` (`js/pofighter/moves.js` `SIGNATURE_KINDS`). In the game every signature is a half
-circle forward (← ↙ ↓ ↘ →) + its button; a fighter without one has none. A top-level
-`frameData` block (hand-tuned startup / active / recovery in 60 fps frames) passes through too.
+Open `scripts/pofighter/shot-list.html` on set (prints too). It lists the 10 moves to film, the
+camera rules (fixed phone, side-on, same spot), the voice clips and the win quotes. Those 10 are
+the whole game: the punch and the kick are the only attacks (`js/pofighter/moves.js`), with no
+crouching, jumping or special attacks. A top-level `frameData` block in the moves file
+(hand-tuned startup / active / recovery in 60 fps frames) passes through to `<id>.json`.
 
 ## One-time setup (CPU is fine, no GPU needed)
 
