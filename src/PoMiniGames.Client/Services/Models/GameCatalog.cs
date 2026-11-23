@@ -231,10 +231,9 @@ public static class GameCatalog
             },
         ]),
 
-        // Questions come from /api/funquiz/quiz/questions, so even solo needs a server.
+        // Online only: there is no 1-player mode. /funquiz and /funquiz/multi both open the lobby.
         new(GameKeys.PoFunQuiz, "Fun Quiz", "quiz",
         [
-            new(GameMode.OnePlayer, "/funquiz/1player", RequiresNetwork: true),
             new(GameMode.Multiplayer, "/funquiz/multi", RequiresNetwork: true),
         ]),
 

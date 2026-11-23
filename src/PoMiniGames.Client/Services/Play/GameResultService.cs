@@ -238,21 +238,6 @@ public sealed class GameResultService
     }
 
     /// <summary>
-    /// PoFunQuiz solo: records the local outcome and submits the run to the category board in
-    /// one awaited call; an offline or server failure parks it in the retry queue.
-    /// </summary>
-    public Task<PlayerStats> RecordAndSubmitFunQuizAsync(
-        string playerName, GameResult result, FunQuizLeaderboardSubmission submission) =>
-        RecordAndSubmitCoreAsync("pofunquiz", playerName, result, true,
-            async () =>
-            {
-                var submitted = await _api.SubmitFunQuizScoreAsync(submission);
-                if (submitted.IsSaved) return SubmitOutcome.Saved;
-                return submitted.ShouldRetry ? SubmitOutcome.Park : SubmitOutcome.Rejected;
-            },
-            () => _sync.EnqueueFunQuiz(submission));
-
-    /// <summary>
     /// PoRacer: submits the best lap of a finished race. The local win/loss is recorded
     /// separately through <see cref="RecordAsync"/> because a time trial moves no record but
     /// still submits a lap. A retriable failure (or leaving the page mid-submit) parks the lap

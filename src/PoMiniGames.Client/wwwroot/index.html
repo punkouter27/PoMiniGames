@@ -218,12 +218,10 @@
         <span class="dismiss">🗙</span>
     </div>
     <!-- Per-game interop is NOT loaded here any more (2026-08-07).
-         poFunQuizSplitHotkeys.js and gl-fps.js were global
-         <script> tags, so every page in the app fetched and parsed ~39 KB of
-         code that exactly one game (or one opt-out diagnostic) ever calls.
-         Each is now imported at its point of use: the quiz keys as an ES module
-         (js/pofunquiz/hotkeys.js, see PoFunQuizPage) and gl-fps.js from
-         FpsCounter, which still assigns a window global on evaluation. -->
+         gl-fps.js was a global <script> tag, so every page in the app fetched
+         and parsed code that one opt-out diagnostic ever calls. It is now
+         imported at its point of use, FpsCounter, which still assigns a window
+         global on evaluation. -->
     <script src="_framework/blazor.webassembly.js"></script>
 
     <!-- ── Game engines: route-gated, NOT loaded here ──────────────────────────
