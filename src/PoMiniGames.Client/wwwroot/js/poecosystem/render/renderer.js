@@ -917,8 +917,9 @@ export function createRenderer(container, {
     if (now - fpsAt >= 1000) {
       fps = frames * 1000 / (now - fpsAt); frames = 0; fpsAt = now; onFps(fps);
       if (fps < DPR_DOWN_FPS) { slowSeconds++; fastSeconds = 0; } else if (fps > DPR_UP_FPS) { fastSeconds++; slowSeconds = 0; } else { slowSeconds = 0; fastSeconds = 0; }
-      if (slowSeconds >= DPR_DOWN_SECONDS) { setDprScale(dprScale - 0.12); slowSeconds = 0; }
-      else if (fastSeconds >= DPR_UP_SECONDS && dprScale < 1) { setDprScale(dprScale + 0.08); fastSeconds = 0; }
+      // No adaptive resolution: a lower frame rate beats a softer picture (the owner's call). The
+      // counters stay for the stats overlay; only a scale already below 1 is walked back up.
+      if (fastSeconds >= DPR_UP_SECONDS && dprScale < 1) { setDprScale(dprScale + 0.08); fastSeconds = 0; }
     }
 
     interpolate(now);

@@ -12,7 +12,8 @@
 //     resolution scale · max DPR · particle share · shadow distance · static shadows · AO · post
 //
 // Asymmetric hysteresis: two slow reads drop a rung (the player is already suffering), five
-// fast reads in a row raise one (so a borderline machine does not flap). The ladder top is
+// reads in a row that hold the refresh rate raise one (so a borderline machine does not flap;
+// a raise that drops straight back doubles the wait for the next try). The ladder top is
 // capped by the PoQuality tier, re-read on every evaluation, so a choice in Settings or a
 // preview applies on the next read without any wiring.
 //
@@ -23,17 +24,20 @@
 // the live tier; applyToRenderer() is the only function that touches three.js.
 
 /**
- * Cheapest first. `maxDpr` caps devicePixelRatio, `resScale` multiplies what is left;
+ * Cheapest first. Resolution is NOT a rung: every rung keeps `maxDpr: 2, resScale: 1`, because the
+ * owner would rather see a lower frame rate than a softer picture (a dropped rung used to render
+ * PoCabinet at 40% of native and stretch it). The fields stay so engines that read them keep
+ * working. `maxDpr` caps devicePixelRatio, `resScale` multiplies what is left;
  * `particles` is a share of the engine's full particle budget; `shadowDistance` a share of
  * its shadow reach; `staticShadows` means the shadow map updates every few frames, not
  * every frame; `tier` is the engine-level name the rung belongs to.
  */
 export const LADDER = Object.freeze([
-    Object.freeze({ tier: 'low',    maxDpr: 1,   resScale: 0.8,  particles: 0.25, shadowDistance: 0.5, staticShadows: true,  ao: false, post: false }),
-    Object.freeze({ tier: 'low',    maxDpr: 1,   resScale: 1,    particles: 0.35, shadowDistance: 0.6, staticShadows: true,  ao: false, post: true }),
-    Object.freeze({ tier: 'medium', maxDpr: 1.5, resScale: 0.85, particles: 0.6,  shadowDistance: 0.8, staticShadows: false, ao: false, post: true }),
-    Object.freeze({ tier: 'medium', maxDpr: 1.5, resScale: 1,    particles: 0.75, shadowDistance: 0.9, staticShadows: false, ao: true,  post: true }),
-    Object.freeze({ tier: 'high',   maxDpr: 2,   resScale: 0.9,  particles: 1,    shadowDistance: 1,   staticShadows: false, ao: true,  post: true }),
+    Object.freeze({ tier: 'low',    maxDpr: 2,   resScale: 1,    particles: 0.25, shadowDistance: 0.5, staticShadows: true,  ao: false, post: false }),
+    Object.freeze({ tier: 'low',    maxDpr: 2,   resScale: 1,    particles: 0.35, shadowDistance: 0.6, staticShadows: true,  ao: false, post: true }),
+    Object.freeze({ tier: 'medium', maxDpr: 2,   resScale: 1,    particles: 0.6,  shadowDistance: 0.8, staticShadows: false, ao: false, post: true }),
+    Object.freeze({ tier: 'medium', maxDpr: 2,   resScale: 1,    particles: 0.75, shadowDistance: 0.9, staticShadows: false, ao: true,  post: true }),
+    Object.freeze({ tier: 'high',   maxDpr: 2,   resScale: 1,    particles: 1,    shadowDistance: 1,   staticShadows: false, ao: true,  post: true }),
     Object.freeze({ tier: 'high',   maxDpr: 2,   resScale: 1,    particles: 1,    shadowDistance: 1,   staticShadows: false, ao: true,  post: true }),
 ]);
 
@@ -47,6 +51,19 @@ const RING = 90;
 const EVAL_EVERY = 30;
 const DROP_READS = 2;
 const RAISE_READS = 5;
+/**
+ * A p95 at or under targetMs × this is "holding the refresh rate", which counts as headroom.
+ * Under vsync a 60 Hz display paces every frame at ~16.7 ms however little work it holds, so
+ * the old raise test (p95 < 0.85 × 16.7 = 14.2 ms) could never pass there: one early stall
+ * (a splat or shader compile) dropped the ladder and it stayed down for the whole session,
+ * rendering below native resolution while the FPS chip read a perfect 60. 1.1 sits above
+ * vsync jitter and below the 1.25 drop line.
+ */
+const HOLDING = 1.1;
+/** A raise that is dropped again within this many reads is a failed probe: back off. */
+const PROBE_READS = 4;
+/** Cap on the back-off doublings: 5 × 2^4 = 80 reads ≈ 40 s at 60 FPS between probes. */
+const MAX_BACKOFF = 4;
 
 /**
  * p-th percentile (0..1) of the first `n` entries of `values`, without sorting the source.
@@ -82,6 +99,10 @@ export function createBudgetState(opts = {}) {
         slowReads: 0,
         fastReads: 0,
         lastP95: 0,
+        /** Reads since the last raise (Infinity: no raise to judge). */
+        sinceRaise: Infinity,
+        /** Failed raises in a row; each doubles the reads the next raise needs. */
+        backoff: 0,
     };
 }
 
@@ -111,17 +132,24 @@ export function stepBudget(s, frameMs, tier) {
     const p95 = percentile(s.ring, s.filled, 0.95, s.scratch);
     s.lastP95 = p95;
     const top = TIER_TOP[s.tier];
+    s.sinceRaise++;
     if (p95 > s.targetMs * 1.25) {
         s.fastReads = 0;
         if (++s.slowReads >= DROP_READS && s.rung > 0) {
+            // Dropped straight back after a raise: that rung is too dear, wait longer next time.
+            if (s.sinceRaise <= PROBE_READS) s.backoff = Math.min(MAX_BACKOFF, s.backoff + 1);
+            s.sinceRaise = Infinity;
             s.rung--; s.slowReads = 0; changed = s.rung;
             // A drop invalidates the history: the next read should judge the new rung.
             s.filled = 0; s.cursor = 0;
         }
-    } else if (p95 < s.targetMs * 0.85) {
+    } else if (p95 <= s.targetMs * HOLDING) {
         s.slowReads = 0;
-        if (++s.fastReads >= RAISE_READS && s.rung < top) {
+        // A raise that held: the machine has the headroom, so forget earlier failed probes.
+        if (s.sinceRaise > PROBE_READS && s.sinceRaise !== Infinity) { s.backoff = 0; s.sinceRaise = Infinity; }
+        if (++s.fastReads >= (RAISE_READS << s.backoff) && s.rung < top) {
             s.rung++; s.fastReads = 0; changed = s.rung;
+            s.sinceRaise = 0;
             s.filled = 0; s.cursor = 0;
         }
     } else {

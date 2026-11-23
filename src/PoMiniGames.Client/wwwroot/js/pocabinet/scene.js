@@ -100,7 +100,8 @@ const SHADOW_SIZE = { low: 1024, medium: 1536, high: 2048 };
 const calm = () => document.documentElement.dataset.motion === 'reduce';
 
 
-const RENDER_SCALE = { low: 0.6, medium: 0.8, high: 1 };
+// Full resolution on every tier: a lower frame rate beats a softer picture (the owner's call).
+const RENDER_SCALE = { low: 1, medium: 1, high: 1 };
 
 /** The app's quality tier (qualityTiers.js), or 'high' where it is not loaded. */
 function appTier() {
