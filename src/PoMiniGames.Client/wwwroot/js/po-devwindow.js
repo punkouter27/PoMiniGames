@@ -44,7 +44,9 @@
   var devWin = null;
   function openDevWindow() {
     if (devWin && !devWin.closed) { devWin.focus(); return true; }
-    devWin = window.open('/po-dev.html', 'po-dev', 'popup,width=560,height=820');
+    // No window features: the browser opens a tab in the existing window, not a popup window.
+    // The named target reuses that same tab on later presses.
+    devWin = window.open('/po-dev.html', 'po-dev');
     return !!devWin;
   }
   window.poOpenDevWindow = openDevWindow;
