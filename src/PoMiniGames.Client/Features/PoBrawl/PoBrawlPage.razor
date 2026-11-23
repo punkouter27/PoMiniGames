@@ -287,7 +287,7 @@
     // and 2P and online keep no record of their own — the 1P numbers would be someone else's.
     private RenderFragment GameSummaryContent => @<div class="pb-result">
         <div class="pb-result-line">@ResultLine()</div>
-        @* Best of three: the round score (the engine reports it once, with the match). *@
+        @* Three rounds: the round score (the engine reports it once, with the match). *@
         @if (_mode == "2p" && _lastRecap is { } rr && rr.P1Rounds + rr.P2Rounds > 0)
         {
             <div class="pb-result-facts">

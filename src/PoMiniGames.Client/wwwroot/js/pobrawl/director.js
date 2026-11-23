@@ -168,8 +168,9 @@ class DirectorMethods {
     let ev = null;
     const rank = { combo: 1, heavy: 2, red: 3 };
     const raise = (kind, idx) => { if (!ev || rank[kind] > rank[ev.kind]) ev = { kind, idx }; };
+    const duo = this._duo();
     for (let i = 0; i < 2; i++) {
-      const f = this.fighters[i];
+      const f = duo[i];
       const hp = this._hp(f);
       const drop = d.lastHp[i] - hp;
       if (drop > 0) { d.victim = i; d.lastHitAt = d.clock; }
@@ -187,7 +188,7 @@ class DirectorMethods {
   _directorReset() {
     const d = this._dir;
     for (let i = 0; i < 2; i++) {
-      d.lastHp[i] = this.fighters ? this._hp(this.fighters[i]) : MAX_HP;
+      d.lastHp[i] = this.fighters ? this._hp(this._duo()[i]) : MAX_HP;
       d.lastCombo[i] = 0;
       d.red[i] = false;
     }
@@ -207,7 +208,7 @@ class DirectorMethods {
     const lens = calm ? CALM_LEN : SHOT_LEN;
     this._camVel.set(0, 0, 0); // hit impulses are the spring boom's; a TV camera holds
     d.clock += dt;
-    const c = { mid, axis, perp, sep, p: [this.fighters[0].rig.root.position, this.fighters[1].rig.root.position] };
+    const c = { mid, axis, perp, sep, p: this._duo().map((f) => f.rig.root.position) };
 
     if (!d.live) {
       // New round: open on the house framing (what the countdown showed), then reset the

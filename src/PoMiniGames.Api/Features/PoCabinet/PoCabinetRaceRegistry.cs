@@ -37,6 +37,10 @@ public sealed class PoCabinetRaceRegistry : IAsyncDisposable
     private const int TickHz = 30;
     private const double CountdownSeconds = 3;
     private const int MaxQueuedInputs = 3;
+    /// <summary>The 63 AI cars ride every third snapshot (10 Hz); the humans ride all of them.
+    /// A 64-car grid at 30 Hz would be ~400 KB/s a client, far over the free plan's data quota.
+    /// The client interpolates each car between the two snapshots that carry it.</summary>
+    private const int BotEveryTicks = 3;
     /// <summary>No input for this many ticks (half a second) and the car coasts.</summary>
     private const int StaleInputTicks = TickHz / 2;
     /// <summary>Consecutive failed ticks before the race is called off.</summary>
@@ -256,7 +260,9 @@ public sealed class PoCabinetRaceRegistry : IAsyncDisposable
                 }
             }
             session.Sim.Tick(1.0 / TickHz, session.Applied);
-            snapshot = BuildSnapshot(session, session.Sim.TakeDialogue());
+            // The whole field on every third tick, the first and the last; the humans alone between.
+            bool everyone = session.Ticks % BotEveryTicks == 1 || session.Sim.IsFinished;
+            snapshot = BuildSnapshot(session, session.Sim.TakeDialogue(), everyone);
             abandoned = session.Connections.Count == 0 && _time.GetUtcNow() - session.LastSeen > AbandonAfter;
             // Every human has walked away: nobody is left to race for, so call it now.
             bool deserted = session.Queues.Count > 0 && session.Queues.Keys.All(session.Forfeited.Contains);
@@ -389,12 +395,12 @@ public sealed class PoCabinetRaceRegistry : IAsyncDisposable
 
     private void BroadcastLobby() =>
         _ = _lobbyHub.Clients.Group(LobbyGroup).SendAsync("lobbyState", _lobbies.State);
-    private static PoCabinetRaceSnapshot BuildSnapshot(RaceSession session, PoCabinetDialogueEvent? dialogue)
+    private static PoCabinetRaceSnapshot BuildSnapshot(RaceSession session, PoCabinetDialogueEvent? dialogue, bool everyone = true)
     {
         var sim = session.Sim;
         // Rounded on purpose: at 30 Hz, full-precision doubles blew the frame budget (2 KB at
         // 8 cars, 4 KB at the full 16-car grid), and a hundredth of a unit is far below one pixel.
-        var cars = sim.SnapshotCars().Select(c => new PoCabinetCarState
+        var cars = sim.SnapshotCars().Where(c => everyone || c.IsPlayer).Select(c => new PoCabinetCarState
         {
             Id = c.Id,
             Name = c.Name,

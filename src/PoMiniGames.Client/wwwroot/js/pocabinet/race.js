@@ -865,14 +865,22 @@ class Race {
     remotePose(car, renderMs) {
         const snaps = this.net.snaps;
         if (!snaps.length) return null;
-        let a = null, b = null;
+        // AI cars ride every third snapshot (10 Hz) and the humans every one, so each car is
+        // interpolated between the two snapshots that carry IT, a further 100 ms behind for the AI.
+        if (!car.isPlayer) renderMs -= INTERP_DELAY_MS;
+        let ia = -1;
         for (let i = snaps.length - 1; i >= 0; i--) {
-            if (snaps[i].t <= renderMs) { a = snaps[i]; b = snaps[i + 1] || null; break; }
+            if (snaps[i].t <= renderMs && snaps[i].cars.some(c => c.id === car.id)) { ia = i; break; }
         }
-        if (!a) a = snaps[0];
+        if (ia < 0) ia = snaps.findIndex(s => s.cars.some(c => c.id === car.id));
+        if (ia < 0) return null;
+        const a = snaps[ia];
+        let b = null, sb = null;
+        for (let i = ia + 1; i < snaps.length; i++) {
+            sb = snaps[i].cars.find(c => c.id === car.id) || null;
+            if (sb) { b = snaps[i]; break; }
+        }
         const sa = a.cars.find(c => c.id === car.id);
-        if (!sa) return null;
-        const sb = b ? b.cars.find(c => c.id === car.id) : null;
         // Where along the loop (for the road height): the server's lap fraction, not a projection.
         const L = this.track.length;
         const alongA = (Number(sa.lapProgress) || 0) * L;

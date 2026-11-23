@@ -110,13 +110,14 @@ class LightingMethods {
 
     // Spotlight target: the midpoint between the fighters normally, the loser
     // during the KO.
-    const loser = this.fighters && this.fighters.find((f) => f.state === 'ko');
+    const loser = this.fighters && !this.ffa && this.fighters.find((f) => f.state === 'ko');
     if (loser && d > 0.01) {
       const lp = loser.rig.root.position;
       _spotTarget.set(lp.x, 0, lp.z);
-    } else if (this.fighters && this.fighters.length === 2) {
-      const a = this.fighters[0].rig.root.position;
-      const b = this.fighters[1].rig.root.position;
+    } else if (this.fighters && this.fighters.length >= 2) {
+      const [fa, fb] = this._duo();
+      const a = fa.rig.root.position;
+      const b = fb.rig.root.position;
       _spotTarget.set((a.x + b.x) * 0.5, 0, (a.z + b.z) * 0.5);
     } else {
       _spotTarget.set(0, 0, 0);

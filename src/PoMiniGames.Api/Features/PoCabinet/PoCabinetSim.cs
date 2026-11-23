@@ -359,7 +359,7 @@ public sealed record PoCabinetPersonality(
 
     /// <summary>
     /// The AI a multiplayer host can add, in the order it is seated: the four officials, then
-    /// the eight quickest field racers of <see cref="SoloField"/>, each with the name and the
+    /// the quickest field racers of <see cref="SoloField"/>, each with the name and the
     /// paint it has in a solo race (physics.js <c>soloField</c>).
     /// </summary>
     public static IReadOnlyList<(string Id, string Name, string Color, PoCabinetPersonality Personality, double MaxSpeed, double CorneringSkill)> OnlineBots => LazyOnlineBots.Value;
@@ -369,7 +369,7 @@ public sealed record PoCabinetPersonality(
 
     private static (string, string, string, PoCabinetPersonality, double, double)[] BuildOnlineBots()
     {
-        var bots = new (string, string, string, PoCabinetPersonality, double, double)[PoCabinetCatalog.MaxBots];
+        var bots = new (string, string, string, PoCabinetPersonality, double, double)[PoCabinetCatalog.OnlineGridSize - 1];
         for (int i = 0; i < bots.Length; i++)
         {
             if (i < Roster.Count)

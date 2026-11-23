@@ -26,8 +26,6 @@ namespace PoMiniGames.Features.PoCabinet;
 /// </summary>
 public sealed class PoCabinetLobbyService : LobbyRoom<PoCabinetLobbyPlayer>
 {
-    public const int DefaultBots = 3;
-
     /// <summary>The fixed room code in the lobby state while idle; a running race swaps in its own code.</summary>
     public const string GlobalCode = "LOBBY";
 
@@ -36,7 +34,6 @@ public sealed class PoCabinetLobbyService : LobbyRoom<PoCabinetLobbyPlayer>
 
     private readonly TimeProvider _time;
     private readonly Dictionary<string, DateTimeOffset> _unreadySince = new(StringComparer.Ordinal);
-    private int _botCount = DefaultBots;
     private bool _hasRaced;
 
     public PoCabinetLobbyService(TimeProvider? time = null)
@@ -47,30 +44,17 @@ public sealed class PoCabinetLobbyService : LobbyRoom<PoCabinetLobbyPlayer>
 
     public override bool CanKick => true;
 
-    /// <summary>The AI drivers the host asked for (the race seats <see cref="PoCabinetLobbyRules.BotSeats"/> of them).</summary>
-    public int BotCount => WithLock(_ => _botCount);
-
-    /// <summary>Seat the caller. An empty room starts fresh (the default AI count, no rematch timeout yet).</summary>
+    /// <summary>Seat the caller. An empty room starts fresh (no rematch timeout yet).</summary>
     public (LobbyState<PoCabinetLobbyPlayer> state, string message) Open(string connectionId, string displayName, bool isGuest, string userId) =>
         OpenCore(connectionId, displayName, isGuest, (name, previous, others) =>
         {
             if (others.Count == 0)
             {
                 _hasRaced = false;
-                _botCount = DefaultBots;
             }
             _unreadySince[connectionId] = _time.GetUtcNow();
-            return new PoCabinetLobbyPlayer(connectionId, name, isGuest, false, previous?.Color ?? "", _botCount) { UserId = userId };
+            return new PoCabinetLobbyPlayer(connectionId, name, isGuest, false, previous?.Color ?? "") { UserId = userId };
         });
-
-    /// <summary>Host-only, idle: how many AI drivers join the grid (0 to <see cref="PoCabinetCatalog.MaxBots"/>).</summary>
-    public bool SetBots(string connectionId, int count) => WithLock(seats =>
-    {
-        if (!HostedIdle(connectionId)) return false;
-        _botCount = Math.Clamp(count, 0, PoCabinetCatalog.MaxBots);
-        foreach (var key in seats.Keys.ToList()) seats[key] = seats[key] with { BotCount = _botCount };
-        return true;
-    });
 
     /// <summary>The caller's paint: a paint-shop name or #rrggbb; anything else clears it (client default).</summary>
     public bool SetColor(string connectionId, string? color) => WithLock(seats =>
@@ -118,7 +102,7 @@ public sealed class PoCabinetLobbyService : LobbyRoom<PoCabinetLobbyPlayer>
 
     /// <summary>
     /// The race grid for <paramref name="roster"/> (the roster the start gate passed): humans in
-    /// seat order, then as many AI drivers as asked for and fit.
+    /// seat order, then AI drivers to make 64 cars.
     /// </summary>
     public IReadOnlyList<PoCabinetDriver> BuildGrid(IReadOnlyList<PoCabinetLobbyPlayer> roster)
     {
@@ -127,7 +111,7 @@ public sealed class PoCabinetLobbyService : LobbyRoom<PoCabinetLobbyPlayer>
                 Color: string.IsNullOrEmpty(p.Color) ? PoCabinetCatalog.DefaultSeatColor : p.Color, Personality: null))
             .ToList();
         var bots = PoCabinetPersonality.OnlineBots;
-        for (int i = 0; i < PoCabinetLobbyRules.BotSeats(BotCount, roster.Count); i++)
+        for (int i = 0; i < PoCabinetLobbyRules.BotSeats(roster.Count); i++)
         {
             var o = bots[i];
             grid.Add(new PoCabinetDriver($"bot-{i}", o.Name, IsPlayer: false, o.Color, o.Personality,
@@ -136,10 +120,10 @@ public sealed class PoCabinetLobbyService : LobbyRoom<PoCabinetLobbyPlayer>
         return grid;
     }
 
-    /// <summary>The host can begin: every other seat is ready and the grid would hold at least two cars, AI counted (a lone host with bots on can race).</summary>
+    /// <summary>The host can begin: every other seat is ready and the grid is always 64 cars (AI fills it), so a lone host can race.</summary>
     protected override bool CanStart(IReadOnlyList<PoCabinetLobbyPlayer> players, string hostConnectionId) =>
         base.CanStart(players, hostConnectionId)
-        && players.Count + PoCabinetLobbyRules.BotSeats(_botCount, players.Count) >= 2;
+        && players.Count + PoCabinetLobbyRules.BotSeats(players.Count) >= 2;
 
     protected override PoCabinetLobbyPlayer WithReady(PoCabinetLobbyPlayer player, bool ready) =>
         player with { IsReady = ready };

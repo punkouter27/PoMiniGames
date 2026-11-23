@@ -129,7 +129,7 @@ class AudioShowMethods {
         A.lockBpm = false;
         break;
       case 'chargeStart': {
-        const i = fs ? fs.indexOf(d.f) : -1;
+        const i = fs ? this._duo().indexOf(d.f) : -1;
         if (i < 0) break;
         A.risers[i]?.stop(0);
         const human = d.f.controller?.isHuman === true;
@@ -139,7 +139,7 @@ class AudioShowMethods {
         break;
       }
       case 'release': {
-        const i = fs ? fs.indexOf(d.f) : -1;
+        const i = fs ? this._duo().indexOf(d.f) : -1;
         if (i >= 0 && A.risers[i]) { A.risers[i].stop(d.chargeAmt || 0); A.risers[i] = null; }
         break;
       }
@@ -181,7 +181,7 @@ class AudioShowMethods {
     const A = this._as;
     const fs = this.fighters;
     if (!fs || !this.combat) return;
-    const h0 = this._hp(fs[0]), h1 = this._hp(fs[1]);
+    const h0 = this._hp(this._duo()[0]), h1 = this._hp(this._duo()[1]);
     const lead = h0 - h1;
     const ai = fs.indexOf(d.attacker);
     if (ai >= 0) {
@@ -202,7 +202,7 @@ class AudioShowMethods {
 
   // A fighter's chest, written into the reusable rpos slot the riser holds on to.
   _asFighterPos(i) {
-    const p = this.fighters[i].rig.root.position;
+    const p = this._duo()[i].rig.root.position;
     const r = this._as.rpos[i];
     r.x = p.x; r.y = p.y + 1.2; r.z = p.z;
     return r;

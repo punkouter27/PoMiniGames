@@ -2,7 +2,7 @@
     PoCabinetLobby — the one shared lobby (no codes: the first arrival hosts, later arrivals take
     the next seats) on the shared OnlineLobby: it owns the connection, the roster, Ready / Start /
     Leave and the panel; this page supplies only what is Cabinet's own. The host's Picker holds
-    the AI-driver count, read from the host's seat in the lobby state and written with SetBots;
+    nothing (the AI always fills the grid to 64 cars, so there is no picker);
     the host can remove a seat between races (PlayerActions, the generic Kick). Car & settings opens
     the page's drawer (OnOpenSettings); a paint change flows in through Color and is sent as
     SetColor. gameStarted (every start, including rematches, so this listens on the client rather
@@ -42,20 +42,6 @@
                         @onclick="() => KickAsync(context.ConnectionId)"><span class="material-symbols-outlined" aria-hidden="true">close</span></button>
             }
         </PlayerActions>
-        <Picker>
-            @if (IsHost && !InRace)
-            {
-                <label class="lobby-inline-opt">
-                    <span>AI drivers</span>
-                    <select value="@BotCount" disabled="@_busy" @onchange="SetBotsAsync">
-                        @for (var n = 0; n <= PoCabinetCatalog.MaxBots; n++)
-                        {
-                            <option value="@n">@n</option>
-                        }
-                    </select>
-                </label>
-            }
-        </Picker>
         <Status>
             @if (CurrentNotice is { Length: > 0 } notice)
             {
@@ -117,30 +103,28 @@
 
     private bool InRace => State?.InProgress == true;
 
-    /// <summary>The host's seat carries the AI-driver pick.</summary>
-    private PoCabinetLobbyPlayer? HostSeat => State?.Players.FirstOrDefault(p => p.ConnectionId == State.HostConnectionId);
+    private int Humans => State?.Players.Count ?? 0;
 
-    private int BotCount => HostSeat?.BotCount ?? 0;
+    /// <summary>The AI that fills the grid: 64 minus the humans.</summary>
+    private int BotSeats => PoCabinetLobbyRules.BotSeats(Humans);
 
-    private int BotSeats => PoCabinetLobbyRules.BotSeats(BotCount, State?.Players.Count ?? 0);
+    private string FieldLine => $"{Humans} player{(Humans == 1 ? "" : "s")} + {BotSeats} AI · {PoCabinetCatalog.OnlineGridSize} cars";
 
     private bool CanReady => Me is not null && !InRace;
 
     /// <summary>The host may start: every other seat is ready and two cars would line up, AI counted.</summary>
     private bool Startable => State is { InProgress: false } s && Me is not null
-        && s.Players.Count + BotSeats >= 2
         && s.Players.All(p => p.ConnectionId == s.HostConnectionId || p.IsReady);
 
     // The button always reads "Start race" (every lobby keeps its Start label fixed); what the
     // host is waiting on is the panel's waiting line.
     private string WaitingHint =>
         InRace ? "Race running…"
-        : State is { } s && s.Players.Count + BotSeats < 2 ? "Add an AI driver or wait for a friend."
         : "Waiting for everyone to ready up…";
 
     private string PanelHint => State is null ? "Single shared room — first to arrive becomes host."
-        : IsHost ? "You're the host: pick the AI drivers, then start."
-        : $"{BotSeats} AI driver{(BotSeats == 1 ? "" : "s")} · the host starts";
+        : IsHost ? $"You're the host: {FieldLine}. Start when everyone is ready."
+        : $"{FieldLine} · the host starts";
 
     private string? CurrentNotice => _notice ?? Notice;
 
@@ -212,9 +196,6 @@
         finally { _rejoining = false; }
         StateHasChanged();
     }
-
-    private Task SetBotsAsync(ChangeEventArgs e) =>
-        SendAsync("SetBots", int.TryParse(e.Value?.ToString(), out var n) ? Math.Clamp(n, 0, PoCabinetCatalog.MaxBots) : 0);
 
     private async Task SendAsync(string method, object value)
     {

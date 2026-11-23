@@ -1,6 +1,5 @@
 // index.js — public interop surface for PoBrawl. The Blazor page calls these.
 import { BrawlGame } from './game.js';
-import { BrawlFfaGame } from './ffa.js';
 import * as SelectStage from './selectStage.js';
 
 let game = null;
@@ -37,9 +36,8 @@ window.PoBrawl = {
     if (game) { game.dispose(); game = null; }
     const el = document.getElementById(containerId);
     if (!el) { console.error('[PoBrawl] container not found:', containerId); return; }
-    game = options?.mode === 'ffa'
-      ? new BrawlFfaGame(el, dotnetRef, { ...options })
-      : new BrawlGame(el, dotnetRef, { ...options });
+    // Every mode, the free-for-all included, runs on the one engine (ffaMode.js).
+    game = new BrawlGame(el, dotnetRef, { ...options });
     // Headless harnesses: ?debug (or localStorage pominigames:pobrawl-debug) exposes the live engine as
     // window.__pobrawl(). A redirect can drop the query, hence the storage flag.
     let debug = /[?&]debug/.test(location.search);
@@ -135,13 +133,13 @@ window.PoBrawl = {
   },
   /** Training-room controls (training.js). key: 'reset'. No-op outside a training session. */
   training(key) { if (game && key === 'reset') game.resetTraining(); },
-  ffaProfile(profile) { if (game instanceof BrawlFfaGame) game.setProfile(profile); },
-  ffaBenchmark() { if (game instanceof BrawlFfaGame) void game.runBenchmark(); },
-  ffaResetSeasons() { if (game instanceof BrawlFfaGame) game.resetSeasons(); },
-  ffaFacts(enabled) { if (game instanceof BrawlFfaGame) game.setFacts(enabled); },
-  ffaClick(action) { if (game instanceof BrawlFfaGame) game.uiClick(action); },
-  ffaPause(paused) { if (game instanceof BrawlFfaGame) game.setPaused(paused); },
-  ffaEvaluateAgent(id, preset) { if (game instanceof BrawlFfaGame) void game.evaluateAgent(id, preset); },
+  ffaProfile(profile) { if (game?.ffa) game.setProfile(profile); },
+  ffaBenchmark() { if (game?.ffa) void game.runBenchmark(); },
+  ffaResetSeasons() { if (game?.ffa) game.resetSeasons(); },
+  ffaFacts(enabled) { if (game?.ffa) game.setFacts(enabled); },
+  ffaClick(action) { if (game?.ffa) game.uiClick(action); },
+  ffaPause(paused) { if (game?.ffa) game.setPaused(paused); },
+  ffaEvaluateAgent(id, preset) { if (game?.ffa) void game.evaluateAgent(id, preset); },
   destroy() {
     SelectStage.unmount();
     if (game) { game.dispose(); game = null; }

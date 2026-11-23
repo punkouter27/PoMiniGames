@@ -7,7 +7,7 @@ import * as THREE from 'three-eco/webgpu';
 import { RING_HALF } from './arena.js';
 import { setExpression } from './fighters.js';
 import { REGIONS } from './combat.js';
-import { recordRound, matchVerdict, wouldDecide, firstRoundKo, ROUNDS_TO_WIN } from './rounds.js';
+import { recordRound, matchVerdict, wouldDecide, firstRoundKo, MAX_ROUNDS } from './rounds.js';
 import { TIME_LIMIT, MAX_HP } from './constants.js';
 import { roundFeats } from './feats.js';
 import { cornerAdvice } from './corner.js';
@@ -112,7 +112,8 @@ class CinematicsMethods {
 
   _tickKoFall(dt) {
     for (const f of this.fighters) {
-      if (f.state !== 'ko') continue;
+      // A free-for-all body that settled has left the solver and keeps its pose (ffaMode.js).
+      if (f.state !== 'ko' || f.ffaRetired) continue;
       if (f.koRagdoll && f.koRagdoll.active) {
         f.koRagdoll.drive();
         continue;
@@ -146,21 +147,21 @@ class CinematicsMethods {
     this._reportResult();
   }
 
-  // ── Best of three (rounds.js) ─────────────────────────────────────────────
-  // The 1P ladder and 2P local fight first-to-two. Everything the page hears is
+  // ── Three rounds (rounds.js) ──────────────────────────────────────────────
+  // The 1P ladder and 2P local fight three rounds (a KO ends it early). Everything the page hears is
   // still one OnMatchEnd per MATCH: a round that leaves it open stays inside the
   // engine — the banner names the round's winner, the pips fill, and after a beat
   // the next round respawns both fighters fresh.
 
-  /** Does this mode fight best of three? */
+  /** Does this mode fight three rounds? */
   _roundsMode() {
     const m = this.options?.mode;
     return (m === '1p' && !this.training) || m === '2p';
   }
 
-  /** Would a round won by `winner` end the match? Always true outside a best-of-three. */
+  /** Would a round won by `winner` end the match? Always true outside the three-round modes. */
   _roundDecides(winner) {
-    return !this.match || wouldDecide(this.match, winner);
+    return !this.match || wouldDecide(this.match, winner, this.fighters?.some((f) => f.state === 'ko'));
   }
 
   /**
@@ -200,7 +201,7 @@ class CinematicsMethods {
    * are reported once, with the result (_reportResult). The training room earns nothing.
    */
   _collectFeats(winner) {
-    if (!this._matchFeats || this.training || !this.fighters) return;
+    if (!this._matchFeats || this.training || this.ffa || !this.fighters) return;
     const ko = this.fighters.some((f) => f.state === 'ko');
     this.fighters.forEach((f, i) => {
       const earned = roundFeats({
@@ -273,7 +274,7 @@ class CinematicsMethods {
       const el = document.createElement('div');
       el.className = 'pb-rounds';
       el.setAttribute('role', 'img');
-      const side = () => `<span class="pb-rounds__side">${'<i class="pb-rounds__pip"></i>'.repeat(ROUNDS_TO_WIN)}</span>`;
+      const side = () => `<span class="pb-rounds__side">${'<i class="pb-rounds__pip"></i>'.repeat(MAX_ROUNDS)}</span>`;
       el.innerHTML = `${side()}<span class="pb-rounds__label"></span>${side()}`;
       this.container.appendChild(el);
       this._roundsEl = el;
@@ -287,8 +288,8 @@ class CinematicsMethods {
       if (i === 1) pips.reverse();
       pips.forEach((pip, n) => pip.classList.toggle('pb-rounds__pip--on', n < m.wins[i]));
     });
-    el.querySelector('.pb-rounds__label').textContent = `ROUND ${Math.max(1, over ? m.played : m.played + 1)}`;
-    el.setAttribute('aria-label', `Best of three — rounds won: left corner ${m.wins[0]}, right corner ${m.wins[1]}`);
+    el.querySelector('.pb-rounds__label').textContent = `ROUND ${Math.max(1, over ? m.played : m.played + 1)} / ${MAX_ROUNDS}`;
+    el.setAttribute('aria-label', `Three rounds — rounds won: left corner ${m.wins[0]}, right corner ${m.wins[1]}`);
   }
 
   // Victory hops + entrance gesture replay. Cleared in _startCountdown.
@@ -311,6 +312,7 @@ class CinematicsMethods {
   }
 
   _reportResult() {
+    if (this.ffa) { this._ffaReportResult(); return; }
     const name = this.winner === 0
       ? 'DRAW'
       : `${this.fighters[this.winner - 1].rig.config.name.toUpperCase()} WINS!`;
@@ -338,7 +340,7 @@ class CinematicsMethods {
         p2BestCombo: st[1].bestCombo,
         p1BiggestHit: Math.round(st[0].biggestHit),
         p2BiggestHit: Math.round(st[1].biggestHit),
-        // Best of three: rounds each corner took (0 in the one-round modes).
+        // Three rounds: rounds each corner took (0 in the one-round modes).
         p1Rounds: this.match ? this.match.wins[0] : 0,
         p2Rounds: this.match ? this.match.wins[1] : 0,
         // Punch stats (rounds.js blankStats): strikes started, guards timed on the wind-up,
@@ -394,9 +396,10 @@ class CinematicsMethods {
   // Place the boom exactly where the spring would settle (+Z side, zero velocity) at
   // countdown, so the round doesn't open with a spring lurch on top of shader compile.
   _snapCameraToFraming() {
-    if (!this.fighters || this.fighters.length !== 2) return;
-    const p1 = this.fighters[0].rig.root.position;
-    const p2 = this.fighters[1].rig.root.position;
+    if (!this.fighters || this.fighters.length < 2) return;
+    const [d1, d2] = this._duo();
+    const p1 = d1.rig.root.position;
+    const p2 = d2.rig.root.position;
     const mid = p1.clone().add(p2).multiplyScalar(0.5);
     const axis = p2.clone().sub(p1);
     axis.y = 0;
@@ -421,7 +424,7 @@ class CinematicsMethods {
   }
 
   _updateCamera(dt) {
-    const [f1, f2] = this.fighters;
+    const [f1, f2] = this._duo();
     const p1 = f1.rig.root.position, p2 = f2.rig.root.position;
     const mid = p1.clone().add(p2).multiplyScalar(0.5);
     const axis = p2.clone().sub(p1);

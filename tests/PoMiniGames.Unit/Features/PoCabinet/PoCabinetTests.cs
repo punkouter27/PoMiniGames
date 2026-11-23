@@ -288,8 +288,8 @@ public class PoCabinetTests
 
     /// <summary>
     /// There is one lobby and no join codes: the first arrival hosts, the next arrivals share it,
-    /// the ninth is bounced. Ready toggling, the start rule, host migration, the host's AI-driver
-    /// pick riding every seat, the generic host kick, the rematch loop with its ready timeout, and AI
+    /// the ninth is bounced. Ready toggling, the start rule, host migration, the AI filling the grid
+    /// to 64 cars, the generic host kick, the rematch loop with its ready timeout, and AI
     /// officials filling free seats so a lone host can race all hold, on the shared LobbyRoom.
     /// </summary>
     private static void Lobby_FirstArrivalHosts_LaterArrivalsShareIt_AndBouncesAtCap()
@@ -300,17 +300,12 @@ public class PoCabinetTests
         room.Open("c-h", "Alice", false, "host");
         room.HostConnectionId.Should().Be("c-h", "the first arrival hosts");
         room.Open("c-2", "Bob", false, "p2");
-        room.State.Players.Should().HaveCount(2).And.OnlyContain(p => p.BotCount == PoCabinetLobbyService.DefaultBots);
+        room.State.Players.Should().HaveCount(2);
         for (var i = 3; i <= 8; i++) room.Open($"c-{i}", $"Player{i}", false, $"p{i}").state.Players.Should().Contain(p => p.ConnectionId == $"c-{i}");
         room.Open("c-9", "Eve", false, "p9").message.Should().Be("Lobby is full");
         room.State.Players.Should().HaveCount(PoCabinetCatalog.CarCount, "eight seats, no more");
 
-        room.SetBots("c-2", 0).Should().BeFalse("only the host picks the AI drivers");
-        room.SetBots("c-h", 99).Should().BeTrue();
-        room.BotCount.Should().Be(PoCabinetCatalog.MaxBots, "the request is clamped");
-        room.State.Players.Should().OnlyContain(p => p.BotCount == PoCabinetCatalog.MaxBots, "the pick rides every seat");
         System.Text.Json.JsonSerializer.Serialize(room.State.Players[0]).Should().NotContainEquivalentOf("trackId", "there is no track to pick");
-        room.SetBots("c-h", PoCabinetLobbyService.DefaultBots);
 
         room.TryStart("c-h").Should().BeFalse("nobody has readied");
         for (var i = 2; i <= 8; i++) room.ToggleReady($"c-{i}");
@@ -324,7 +319,8 @@ public class PoCabinetTests
         room.State.Should().Match<LobbyState<PoCabinetLobbyPlayer>>(s => s.InProgress && s.GameCode == code, "a latecomer sees the race in progress and can Watch by its code");
         room.Open("c-late", "Latecomer", false, "late").state.Players.Should().NotContain(p => p.ConnectionId == "c-late");
         var grid = room.BuildGrid(roster);
-        grid.Should().HaveCount(8 + 3, "eight humans plus the three AI that asked for and fit");
+        grid.Should().HaveCount(PoCabinetCatalog.OnlineGridSize, "eight humans plus AI make 64 cars");
+        grid.Count(d => !d.IsPlayer).Should().Be(64 - 8);
         grid.Take(8).Select(d => d.OwnerId).Should().Equal(roster.Select(p => p.UserId));
         System.Text.Json.JsonSerializer.Serialize(roster[0]).Should().NotContainEquivalentOf("userId", "the claim id never leaves the server");
 
@@ -352,34 +348,30 @@ public class PoCabinetTests
         solo.Open("s", "Hana", false, "solo");
         solo.TryStartWithRoster("s").Should().NotBeNull("a lone host races the default AI officials");
         solo.End();
-        solo.SetBots("s", 0).Should().BeTrue();
-        solo.TryStart("s").Should().BeFalse("one car is not a race");
-        solo.SetBots("s", 99);
         solo.Open("g", "Gil", false, "g1");
         solo.ToggleReady("g");
         var soloRoster = solo.TryStartWithRoster("s")!;
         // A full AI grid: the four officials, then field racers under the names and paint they
         // have in a solo race, and never more cars than the online grid holds.
         var fullGrid = solo.BuildGrid(soloRoster);
-        fullGrid.Should().HaveCount(2 + PoCabinetLobbyRules.BotSeats(PoCabinetCatalog.MaxBots, 2));
+        fullGrid.Should().HaveCount(PoCabinetCatalog.OnlineGridSize, "two humans plus 62 AI: always 64 cars");
         fullGrid.Select(d => d.Name).Should().OnlyHaveUniqueItems();
         fullGrid.Skip(2).Take(4).Select(d => d.OfficialId).Should().Equal(PoCabinetCatalog.Officials.Select(o => o.Id));
         fullGrid[6].Should().Match<PoCabinetDriver>(d => d.Name == "Dana K." && d.OfficialId == PoCabinetCatalog.FieldRacerId && d.Color.StartsWith("hsl("));
         solo.Leave("s");
         solo.Leave("g");
         solo.IsEmpty.Should().BeTrue();
-        solo.Open("n", "New", false, "n1").state.Players.Single().BotCount.Should().Be(PoCabinetLobbyService.DefaultBots, "an emptied lobby resets the picks");
         new PoCabinetSim(1, fullGrid).SnapshotCars().Should().HaveCount(fullGrid.Count);
     }
 
     /// <summary>
     /// The 30 Hz race broadcast fits its frame in the hub's JSON (camelCase, string enums):
-    /// 2 KB at eight cars, 4 KB at the full sixteen-car grid. The static world goes once, on
+    /// 2 KB at eight cars (the humans-only tick), 16 KB for the whole 64-car field (every third tick). The static world goes once, on
     /// join, not per tick.
     /// </summary>
     private static void PerTickSnapshot_FitsTwoKilobytes_AtEightCars()
     {
-        foreach (var (count, budget) in new[] { (PoCabinetCatalog.CarCount, 2048), (PoCabinetCatalog.OnlineGridSize, 4096) })
+        foreach (var (count, budget) in new[] { (PoCabinetCatalog.CarCount, 2048), (PoCabinetCatalog.OnlineGridSize, 16384) })
         {
             var bytes = System.Text.Json.JsonSerializer.SerializeToUtf8Bytes(TickSnapshot(count), SnapshotJsonOptions);
             bytes.Length.Should().BeLessThanOrEqualTo(budget, $"the per-tick broadcast fits one frame at {count} cars; measured {bytes.Length} bytes");

@@ -1103,7 +1103,7 @@ button.pb-net-btn {
     font-size: 0.78rem;
 }
 
-/* Best of three: the round pips under the HUD clock. Engine DOM (cinematics.js
+/* Three rounds: the round pips under the HUD clock. Engine DOM (cinematics.js
    _renderRounds), hence ::deep. Two pips a corner, lit gold as rounds are won. */
 .pb-canvas-host ::deep .pb-rounds {
     position: absolute;

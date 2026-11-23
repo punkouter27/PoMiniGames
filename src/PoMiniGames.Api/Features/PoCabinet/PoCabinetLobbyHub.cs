@@ -37,9 +37,6 @@ public sealed class PoCabinetLobbyHub : LobbyHub<PoCabinetLobbyPlayer, PoCabinet
         return Lobby.Open(Context.ConnectionId, name, isGuest, identity.UserId);
     }
 
-    /// <summary>Host-only: how many AI drivers join the grid.</summary>
-    public Task<bool> SetBots(int count) => MutateAsync(Lobby.SetBots(Context.ConnectionId, count));
-
     /// <summary>The caller's car paint (a paint-shop name or #rrggbb).</summary>
     public Task<bool> SetColor(string color) => MutateAsync(Lobby.SetColor(Context.ConnectionId, color));
 

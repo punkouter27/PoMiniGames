@@ -82,34 +82,40 @@ export function isFloored(state) {
 }
 
 // ── The referee's count ──────────────────────────────────────────────────
-// A CPU fight has nobody to mash a button, so a knockdown is counted over like a real bout:
-// one number a second, and the fighter on the canvas beats the count on a roll against the
-// energy left in the tank. A full tank on the first number is close to a certainty; a gassed
-// fighter late in the count is nearly gone. The roll is what gives every count its own story.
+// Every knockdown outside the training room and online is counted over like a real bout:
+// one number a second up to ten. Whether the fighter beats it is settled by the blow that
+// put them there: a string of light shots that tipped the daze over leaves them shaken but
+// able to rise, a full haymaker usually keeps them down. Across a fight that comes out at
+// about half. Counted out is a KO, and a KO ends the whole match (rounds.js).
 export const COUNT = Object.freeze({
   /** Seconds between numbers. */
   step: 1.0,
   /** The number that ends it. */
   max: 10,
-  /** Below this the tank has nothing to give: no odds at all. */
-  energyFloor: 0.2,
-  /** Odds at a full tank on the first number. */
-  best: 0.92,
+  /** A knockdown blow this light (damage) or lighter is always beaten. */
+  softDmg: 10,
+  /** A knockdown blow this heavy or heavier always stays down. */
+  hardDmg: 40,
+  /** Earliest and latest number a fighter who beats the count rises on. */
+  riseFrom: 3,
+  riseTo: 8,
 });
 
 /**
- * Odds the downed fighter beats the count on this number: the tank squared (a little energy
- * is not much help) times how much count is left, out of `COUNT.best`.
+ * Odds the downed fighter beats the count, from the damage of the blow that dropped them:
+ * 1 at COUNT.softDmg, 0 at COUNT.hardDmg, linear between (about even for a typical drop).
  */
-export function riseOdds(count, energy) {
-  const e = Math.max(0, Math.min(1, Number(energy) || 0));
-  if (e <= COUNT.energyFloor) return 0;
-  const tank = (e - COUNT.energyFloor) / (1 - COUNT.energyFloor);
-  const left = Math.max(0, Math.min(1, 1 - (count - 1) / COUNT.max));
-  return COUNT.best * tank * tank * left;
+export function riseOdds(blowDmg) {
+  const d = Number(blowDmg);
+  if (!Number.isFinite(d)) return 0.5;
+  return Math.max(0, Math.min(1, (COUNT.hardDmg - d) / (COUNT.hardDmg - COUNT.softDmg)));
 }
 
-/** One number of the count. `roll` is Math.random unless a test or a replay supplies one. */
-export function beatsCount(count, energy, roll = Math.random()) {
-  return roll < riseOdds(count, energy);
+/**
+ * Settle the count the moment the fighter drops: the number they rise on, or null when
+ * they will be counted out. `rand` is Math.random unless a test or a replay supplies one.
+ */
+export function planCount(blowDmg, rand = Math.random) {
+  if (rand() >= riseOdds(blowDmg)) return null;
+  return COUNT.riseFrom + Math.floor(rand() * (COUNT.riseTo - COUNT.riseFrom + 1));
 }

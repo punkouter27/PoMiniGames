@@ -30,6 +30,7 @@ import {
 // into BrawlGame's prototype below, so `this` is the live game in each.
 // mixin.js explains why prototypes rather than free functions or Object.assign.
 import { mixin } from './mixin.js';
+import { FfaMode } from './ffaMode.js';
 import { PersonalityEffects } from './personalityEffects.js';
 import { Vfx } from './vfx.js';
 import { Blood } from './blood.js';
@@ -218,11 +219,13 @@ export class BrawlGame {
     // Seeded RNG: pass options.seed to reproduce a match; otherwise a random seed
     // so headlines, KO shots and demo pairings differ per visit.
     this.rng = new RandomGenerator((options && options.seed) || (1 + Math.floor(Math.random() * 0x7ffffffe)));
+    // The free-for-all (ffaMode.js): a full field on this same engine.
+    this.ffa = options?.mode === 'ffa';
     // The training room (training.js), 1-player only.
     this.training = options && options.training && options.mode === '1p'
       ? this._makeTraining()
       : null;
-    // Best of three (rounds.js) where a human fights: the 1P ladder and 2P local. Null in
+    // Three rounds (rounds.js) where a human fights: the 1P ladder and 2P local. Null in
     // the Cup, online and the training room, which stay one round.
     this.match = this._roundsMode() ? newMatch() : null;
     // Feats each corner has earned this match (feats.js), reported with the result.
@@ -384,7 +387,7 @@ export class BrawlGame {
     // tap-vs-hold block key — works unchanged.
     const spectating = this.options.mode === 'online' && !this.options.localSide;
     // The tournament is CPU vs CPU: nobody to hand a pad or touch controls to.
-    const cpuOnly = this.options.mode === 'tournament';
+    const cpuOnly = this.options.mode === 'tournament' || (this.ffa && !this.options.human);
     if (!cpuOnly && !spectating) {
       this.touchEl = buildTouchControls(this.container, this.options.mode === 'online');
     }
@@ -456,6 +459,7 @@ export class BrawlGame {
     // deal chip damage / spawn impact FX back through the engine.
     this._propHooks = this._makePropHooks();
     this.props = buildProps(this._physics.world, this._physics.materials, this.scene);
+    if (this.ffa) this._ffaInit();
     this._spawnFighters(this.options.p1Character, this.options.p2Character);
     this._initTraining();
     if (this.options.mode === 'online') this._initNet();
@@ -485,12 +489,21 @@ export class BrawlGame {
     }
     if (this.training) {
       ready.then(() => { if (!this.disposed) this._startCountdown(); });
+    } else if (this.ffa) {
+      // The free-for-all has no VS card: the field idles until the warm-up settles, then counts.
+      this.phase = 'intro';
+      this.phaseT = 0;
+      this.clock = 0;
+      this.winner = 0;
+      this._snapCameraToFraming();
+      this._ffaRoundStarted();
+      this._armSplashTimer(0);
     } else {
       this._beginWithSplash(this.fighters[0].charId, this.fighters[1].charId,
-        this.options.mode === '2p' ? 'BEST OF 3 · ROUND 1'
+        this.options.mode === '2p' ? '3 ROUNDS · ROUND 1'
           : this.options.mode === 'tournament' ? (this.options.roundLabel || 'TOURNAMENT')
           : this.options.mode === 'online' ? (spectating ? 'LIVE · SPECTATING' : 'ONLINE · 60 SECONDS')
-          : this.match ? 'MAIN EVENT · BEST OF 3'
+          : this.match ? 'MAIN EVENT · 3 ROUNDS'
           : 'MAIN EVENT');
     }
 
@@ -621,6 +634,7 @@ export class BrawlGame {
   /** Pause exists in 1P (training included) and 2P, never online or in the Cup, and only live. */
   _canPause() {
     const m = this.options.mode;
+    if (this.ffa) return !!this.options.human && this.phase !== 'intro';
     return (m === '1p' || m === '2p') && (this.phase === 'countdown' || this.phase === 'fighting');
   }
 
@@ -644,8 +658,10 @@ export class BrawlGame {
       if (!this._audioKicked) this._resumeAudio?.();
     }
     try {
-      this.dotnet?.invokeMethodAsync('OnPauseChanged', want).catch(() => {});
+      this.dotnet?.invokeMethodAsync(this.ffa ? 'OnFfaPaused' : 'OnPauseChanged', want).catch(() => {});
     } catch { /* the page's reference is already disposed */ }
+    // A champion's hold that ran out under the pause menu starts the next round on resume.
+    if (!want && this.ffa && this.ffaResultPending) this._ffaNextRound();
     return want;
   }
 
@@ -684,6 +700,10 @@ export class BrawlGame {
     if (mode === 'online') return new NetController(playerIndex === this.options.localSide);
     const keys = (layout) => new KeyboardController(layout);
     if (mode === 'tournament') return new AiController(difficulty, this.rng, charIdForIndex);
+    if (mode === 'ffa') {
+      return this.options.human && spawnedCharId === 'bob'
+        ? keys(1) : new AiController(difficulty, this.rng, charIdForIndex);
+    }
     if (mode === '2p') return keys(playerIndex);
     return playerIndex === 1
       ? keys(1)
@@ -745,9 +765,11 @@ export class BrawlGame {
     this.combat = new CombatPlay({ maxHealth: MAX_HP });
 
     const resolve = (id) => (CHARACTERS[id] ? id : CHARACTER_IDS[0]);
-    const mirror = resolve(p1Char) === resolve(p2Char);
-    this.fighters = [1, 2].map((index) => {
-      const charId = index === 1 ? p1Char : p2Char;
+    const ids = this.ffa ? this._ffaCharIds() : [p1Char, p2Char];
+    const spots = this.ffa ? this._ffaSpawnSlots(ids.length) : null;
+    const mirror = !this.ffa && resolve(p1Char) === resolve(p2Char);
+    this.fighters = ids.map((charId, slot) => {
+      const index = slot + 1;
       const resolvedId = resolve(charId);
       // Wardrobe material tier. Build-time only, like the light count and for the
       // same reason: swapping a material's class means new shader programs for
@@ -764,7 +786,12 @@ export class BrawlGame {
       const inkUniforms = inkHandles(bloodWear);
       // Spawn on the same side as this fighter's HUD bar (SPAWN_X_BY_SIDE).
       const side = index === 1 ? 'left' : 'right';
-      rig.root.position.set(SPAWN_X_BY_SIDE[side], 0, 0);
+      if (spots) {
+        rig.root.position.set(spots[slot].x, 0, spots[slot].z);
+        rig.root.rotation.y = spots[slot].yaw;
+      } else {
+        rig.root.position.set(SPAWN_X_BY_SIDE[side], 0, 0);
+      }
       this.scene.add(rig.root);
       const playerId = `p${index}`;
       this.combat.addPlayer({ playerId, teamId: String(index) });
@@ -933,11 +960,12 @@ export class BrawlGame {
         rigBody,
       };
     });
+    if (this.ffa) this.fighters.forEach((f, i) => this._ffaDecorate(f, this.ffaRoster[i]));
     this.hudDirty = true;
     this.hudTimer = 0;
     // Tell the HUD which characters actually spawned so the left/right names
     // match the fighters (an unknown id resolves to a different one).
-    if (this.dotnet) {
+    if (this.dotnet && !this.ffa) {
       this.dotnet.invokeMethodAsync('OnMatchStart',
         this.fighters[0].charId, this.fighters[1].charId).catch(() => {});
       // Whether this match is a training session, so the page can drop the
@@ -945,6 +973,21 @@ export class BrawlGame {
       // interop fails silently on an arity change.
       this.dotnet.invokeMethodAsync('OnTrainingState', !!this.training).catch(() => {});
     }
+  }
+
+  /** Pairs of standing fighters close enough to need pushing apart (both corners in a 1v1). */
+  _separationPairs() {
+    if (!this.ffa) return [this.fighters];
+    const out = [];
+    const fs = this.fighters.filter((f) => f.alive);
+    for (let i = 0; i < fs.length; i++) {
+      const p = fs[i].rig.root.position;
+      for (let j = i + 1; j < fs.length; j++) {
+        const q = fs[j].rig.root.position;
+        if (Math.abs(p.x - q.x) < MIN_SEPARATION && Math.abs(p.z - q.z) < MIN_SEPARATION) out.push([fs[i], fs[j]]);
+      }
+    }
+    return out;
   }
 
   _hp(f) {
@@ -1146,6 +1189,7 @@ export class BrawlGame {
     // A tier change deferred mid-match lands here, ahead of the warm-up that compiles it.
     if (this._qualityDirty) this._applyQuality();
     this._spawnFighters(p1, p2);
+    if (this.ffa) this._ffaRoundStarted();
     this._initTraining();
     this._renderTrainingHud();
     // New rigs mean new materials: compile them under the splash rather than
@@ -1242,6 +1286,7 @@ export class BrawlGame {
     // The sim clock every timed personality effect is written against.
     this.t += dt;
     this.phaseT += dt;
+    if (this.ffa) this._ffaTick(dt);
 
     if (this.phase === 'countdown') {
       const remaining = 3 - Math.floor(this.phaseT);
@@ -1265,13 +1310,17 @@ export class BrawlGame {
       }
     } else if (this.phase === 'fighting') {
       this.clock += dt;
+      // The free-for-all keeps fighting over the fallen: their ragdolls are built and driven here.
+      if (this.ffa) this._buildPendingKO();
       this._tickFighting(dt);
+      if (this.ffa) this._tickKoFall(dt);
       this._tickCombos();
       this._tickCommentary();
       // The training room has no clock.
       if (this.training) this._tickTraining();
       // Online the server rings the bell (netplay.js _tickNet), on its own clock.
-      if (!this.training && !this.online && this.clock >= TIME_LIMIT && this.phase === 'fighting') {
+      // The free-for-all has no bell: past the clock it goes to overtime (ffaMode.js).
+      if (!this.training && !this.online && !this.ffa && this.clock >= TIME_LIMIT && this.phase === 'fighting') {
         const h1 = this._hp(this.fighters[0]), h2 = this._hp(this.fighters[1]);
         // Decision on health. A clear health lead wins; bars within DRAW_HP_BAND
         // of each other is a DRAW.
@@ -1318,8 +1367,7 @@ export class BrawlGame {
 
     for (const f of this.fighters) {
       f.idleT += dt;
-      const opp = f === this.fighters[0] ? this.fighters[1] : this.fighters[0];
-      this._updatePosture(f, opp, dt);
+      this._updatePosture(f, this._opponentOf(f), dt);
       // Per-fighter personality evaluation: trigger-once modes, slow clears,
       // flourish scheduling.
       this._tickPersonalities(f, dt);
@@ -1348,7 +1396,7 @@ export class BrawlGame {
 
     // Drive music tension from the lower of the two HPs (0..1 → 0..1).
     if (this.fighters && this.fighters.length) {
-      const low = Math.min(...this.fighters.map((f) => f.hpCur)) / MAX_HP;
+      const low = Math.min(...this._duo().map((f) => f.hpCur)) / MAX_HP;
       this.audio.setMusicTension(1 - low);
     }
 
@@ -1369,7 +1417,6 @@ export class BrawlGame {
   }
 
   _tickFighting(dt) {
-    const [f1, f2] = this.fighters;
 
     // Skip sim while in hit-pause.
     if (this.hitstopT > 0) return;
@@ -1382,12 +1429,14 @@ export class BrawlGame {
     this._pendingHits = this.online ? null : [];
 
     for (const f of this.fighters) {
+      // The fallen of a free-for-all lie where they dropped.
+      if (this.ffa && !f.alive) continue;
       if (f.blockStunT > 0) {
         f.blockStunT = Math.max(0, f.blockStunT - dt);
         f.vel.multiplyScalar(0.2);
         f.knockback.multiplyScalar(0.25);
       }
-      const opp = f === f1 ? f2 : f1;
+      const opp = this._opponentOf(f);
       const ctx = this._aiContext(f, opp, dt);
       let intent = f.controller.update(ctx);
       if (f.blockStunT > 0) {
@@ -1554,7 +1603,7 @@ export class BrawlGame {
       //    dynamic body — so the contact loop above only handles ragdoll
       //    shoves. Enforce the fighter-vs-fighter minimum separation
       //    directly: half the deficit each, XZ only.
-      const [fA, fB] = this.fighters;
+      for (const [fA, fB] of this._separationPairs()) {
       if (fA.state !== 'ko' && fB.state !== 'ko'
           && fA.rigBody && fB.rigBody) {
         const pa = fA.rigBody.position;
@@ -1587,9 +1636,12 @@ export class BrawlGame {
         }
       }
 
+      }
+
       // 3c. Side view: cap the depth offset between the two at SIDE_VIEW_DEPTH_RATIO of their
       //    side-on spacing, half the correction each.
-      if (this._sideView() && fA.state !== 'ko' && fB.state !== 'ko'
+      const [fA, fB] = this.fighters;
+      if (!this.ffa && this._sideView() && fA.state !== 'ko' && fB.state !== 'ko'
           && fA.rigBody && fB.rigBody) {
         const pa = fA.rigBody.position;
         const pb = fB.rigBody.position;
@@ -1645,8 +1697,8 @@ export class BrawlGame {
     // Rotational knockback rides on top as a decaying yaw offset: a hook
     // spins the defender off-facing, then they recover square.
     for (const f of this.fighters) {
-      const opp = f === f1 ? f2 : f1;
       if (f.state !== 'ko' && f.state !== 'down') {
+        const opp = this._opponentOf(f);
         if (f.spinVel !== 0 || f.spinYaw !== 0) {
           f.spinYaw += f.spinVel * dt;
           f.spinYaw = THREE.MathUtils.clamp(f.spinYaw, -0.7, 0.7);
@@ -2038,6 +2090,7 @@ export class BrawlGame {
   }
 
   dispose() {
+    this._ffaDispose?.();
     this.disposed = true;
     this.stage?.stop();
     clearTimeout(this._splashTimer);
@@ -2126,5 +2179,5 @@ export class BrawlGame {
 // is constructed. index.js only ever imports BrawlGame from here, so by the time
 // `new BrawlGame()` can be reached these methods are already on the prototype. The Full-show
 // layers are the exception: show.js mixes them in when they first load.
-mixin(BrawlGame.prototype, SceneSetup, FighterTick, PersonalityEffects, Vfx, Blood, Cinematics, HitResolution, Training, Netplay, Commentary, Spectacle, Cup, Ceremony, Director, Show, ...SHOW_MODULES,
+mixin(BrawlGame.prototype, SceneSetup, FfaMode, FighterTick, PersonalityEffects, Vfx, Blood, Cinematics, HitResolution, Training, Netplay, Commentary, Spectacle, Cup, Ceremony, Director, Show, ...SHOW_MODULES,
   ReactiveArena, Lighting, HudFeedback);

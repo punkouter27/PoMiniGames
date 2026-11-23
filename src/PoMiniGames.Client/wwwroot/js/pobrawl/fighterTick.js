@@ -16,7 +16,7 @@ import { regionEffect, pickPunchArm } from './combat.js';
 import { PERSONALITIES } from './personalities.js';
 import { MAX_HP, ATTACKS, TIME_LIMIT, HITSTUN, GRAB, TAUNT } from './constants.js';
 import { tickEnergy, drainCharge, paySwing, canAttack, chargeMultiplier } from './energy.js';
-import { KNOCKDOWN, COUNT, decayDaze, shouldRise, getUpChoice, isFloored, beatsCount } from './knockdown.js';
+import { KNOCKDOWN, COUNT, decayDaze, shouldRise, getUpChoice, isFloored, planCount } from './knockdown.js';
 
 // Lateral orbit speed for the circle keys, in the same units as the 2.4 / 1.9
 // forward / backward walk. Slightly under the advance so that closing distance
@@ -347,8 +347,11 @@ class FighterTickMethods {
         // Queued for the end of the tick when _tickFighting is collecting
         // (see _pendingHits there), so a same-frame trade is fair to both.
         if (inActive && !f.hasHit) {
-          if (this._pendingHits) this._pendingHits.push([f, opp, a]);
-          else this._tryHit(f, opp, a);
+          // The free-for-all tests every standing body in reach, the target first.
+          for (const def of this._hitCandidates(f, opp)) {
+            if (this._pendingHits) this._pendingHits.push([f, def, a]);
+            else if (!f.hasHit) this._tryHit(f, def, a);
+          }
         }
 
         // Cancel windows: if the player input another action and we're past the
@@ -390,10 +393,11 @@ class FighterTickMethods {
       case 'down': {
         // Online the sim decides when and how a fighter rises (netplay.js follows it).
         if (this.online) break;
-        // A CPU-only bout has nobody to answer the canvas for the fighter, so the referee
-        // counts them over instead of handing the rise to an AI that would take it at once.
-        if (this.options?.mode === 'tournament' && !this.training) { this._refCounted(f, dt); break; }
-        // Lying there is safe; getting up is the decision. Any input after
+        // A real bout: the referee counts every knockdown, and the blow that dropped them
+        // decides whether they beat it (knockdown.js COUNT). What is held as they rise
+        // still picks how they rise.
+        if (!this.training) { this._refCounted(f, opp, intent, dt); break; }
+        // The training room keeps the free get-up game: any input after
         // DOWN_MIN starts the rise, and what is held picks how (knockdown.js).
         const wants = intent.move !== 0 || intent.side !== 0
           || intent.punch || intent.kick || intent.block;
@@ -743,13 +747,16 @@ class FighterTickMethods {
    * Put `f` on the canvas. Called by hitResolution.js when a landed, non-lethal
    * hit fills the daze pool. The fighter cannot be hit until they are back up.
    */
-  _knockDown(f, attacker, knockDir) {
+  _knockDown(f, attacker, knockDir, blowDmg = NaN) {
+    // The free-for-all has no count: down is out (ffaMode.js).
+    if (this.ffa) { this._ffaKnockout(f, attacker, knockDir); return; }
     this.haptics?.chargeEnd(f);
     f.state = 'down';
     f.stateT = 0;
     f.daze = 0;
-    // Every knockdown starts its own count (knockdown.js COUNT).
+    // Every knockdown starts its own count, settled now by the blow (knockdown.js COUNT).
     f.refCount = undefined;
+    f.refRiseAt = planCount(blowDmg, () => this.rng.random());
     f.attack = null;
     f.chargeName = null;
     f.chargeAmt = 0;
@@ -799,26 +806,23 @@ class FighterTickMethods {
   }
 
   // ── The referee's count (knockdown.js COUNT) ─────────────────────────────
-  // Only a CPU-only bout has nobody to answer the canvas for them, so only there does the
-  // referee count: a number a second, up to ten. A player's own get-up game is untouched.
+  // Every offline knockdown outside the training room: a number a second, up to ten.
+  // _knockDown already settled on which number (if any) the fighter rises.
 
-  /**
-   * Count a downed CPU fighter over: a number a second up to ten, and the tank answers it.
-   * Ten and they are counted out.
-   */
-  _refCounted(f, dt) {
+  /** Count a downed fighter over. They rise on their number, or ten and they are out. */
+  _refCounted(f, opp, intent, dt) {
     if (f.refCount === undefined) { f.refCount = 0; f.refT = 0; f.refNextAt = COUNT.step; }
     f.refT += dt;
     if (f.refT < f.refNextAt) return;
     f.refNextAt += COUNT.step;
     f.refCount += 1;
     this._jumboCaption(String(f.refCount), 0.7);
-    if (f.refCount >= COUNT.max) { this._countedOut(f); return; }
-    // The tank answers the count, and the roll is what makes every count its own story.
-    if (beatsCount(f.refCount, f.energy)) {
-      f.refCount = 0; f.refT = 0; f.refNextAt = COUNT.step;
-      this._getUp(f, this.fighters.find((o) => o !== f), CALM_RISE);
+    if (f.refRiseAt != null && f.refCount >= f.refRiseAt) {
+      f.refCount = undefined;
+      this._getUp(f, opp, intent || CALM_RISE);
+      return;
     }
+    if (f.refCount >= COUNT.max) this._countedOut(f);
   }
 
   /** Ten and they are out: the same knockout presentation a killing blow gets. */

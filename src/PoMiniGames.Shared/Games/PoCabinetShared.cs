@@ -228,16 +228,14 @@ public sealed class PoCabinetInput
 /// <summary>
 /// One lobby seat on the shared lobby wire (<c>LobbyState&lt;PoCabinetLobbyPlayer&gt;</c>).
 /// <see cref="ConnectionId"/> is the seat id. The claim id the race hub keys cars by
-/// (<see cref="UserId"/>) is server-only and never serialized. <see cref="BotCount"/> is the
-/// host's pick, stamped on every seat so a migrating host keeps it.
+/// (<see cref="UserId"/>) is server-only and never serialized.
 /// </summary>
 public sealed record PoCabinetLobbyPlayer(
     string ConnectionId,
     string DisplayName,
     bool IsGuest,
     bool IsReady,
-    string Color = "",
-    int BotCount = 0) : ILobbyPlayer
+    string Color = "") : ILobbyPlayer
 {
     /// <summary>Claim-derived player id the race grid is built from. Never sent to clients.</summary>
     [System.Text.Json.Serialization.JsonIgnore]
@@ -247,9 +245,9 @@ public sealed record PoCabinetLobbyPlayer(
 /// <summary>Grid arithmetic the lobby server and its page both read.</summary>
 public static class PoCabinetLobbyRules
 {
-    /// <summary>The AI drivers that fit: min(asked, grid slots the humans leave free).</summary>
-    public static int BotSeats(int botCount, int humans) =>
-        Math.Min(botCount, Math.Max(0, PoCabinetCatalog.OnlineGridSize - humans));
+    /// <summary>The AI drivers on the grid: every slot the humans leave, so the field is always 64 cars.</summary>
+    public static int BotSeats(int humans) =>
+        Math.Max(0, PoCabinetCatalog.OnlineGridSize - humans);
 }
 
 // ──────────────────────────────  Final result  ──────────────────────────────

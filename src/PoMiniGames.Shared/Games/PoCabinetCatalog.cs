@@ -16,10 +16,11 @@ public static class PoCabinetCatalog
     /// <summary>Driver seats in a multiplayer lobby: the most humans in one race.</summary>
     public const int CarCount = 8;
 
-    /// <summary>Cars on a multiplayer grid: the drivers plus the AI that fills it out
-    /// (<see cref="MaxBots"/>). The server simulates every one and sends each in the 30 Hz
-    /// snapshot (about 250 bytes a car), which is what keeps online well under the solo field.</summary>
-    public const int OnlineGridSize = 16;
+    /// <summary>Cars on every grid, solo, demo or online: always 64. The AI fills whatever the
+    /// humans leave (64 minus the humans), so there is no AI-count setting anywhere. Online the
+    /// server simulates every car; the humans ride every 30 Hz snapshot and the AI a third of
+    /// them (see PoCabinetRaceRegistry.BotEveryTicks).</summary>
+    public const int OnlineGridSize = SoloCarCount;
 
     /// <summary>Cars in a solo or demo race: 63 rivals and the player. The whole
     /// race runs in the browser, so only the lap verifier pays for it server-side.</summary>
@@ -35,11 +36,6 @@ public static class PoCabinetCatalog
 
     /// <summary>The one circuit's id: what a race, a stored lap and the board are keyed by.</summary>
     public const string DefaultTrackId = PoCabinetTrackGeometry.TrackId;
-
-    /// <summary>AI drivers a multiplayer host can add to the grid: the four officials first,
-    /// then field racers (<see cref="BotName"/>). The race seats as many as fit beside the
-    /// drivers (<see cref="OnlineGridSize"/>).</summary>
-    public const int MaxBots = 12;
 
     /// <summary>A multiplayer seat's paint when the player sent none.</summary>
     public const string DefaultSeatColor = "#3a7d44";

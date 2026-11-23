@@ -400,7 +400,7 @@ class HitResolutionMethods {
 
     // Enough daze and the throw ends on the canvas (the usual check, the usual get-up game).
     if (this.phase === 'fighting' && isKnockdown(defender.daze || 0, this.t, defender.dazeImmuneUntil ?? -99)) {
-      this._knockDown(defender, attacker, dir);
+      this._knockDown(defender, attacker, dir, dmg);
     }
   }
 
@@ -627,7 +627,7 @@ class HitResolutionMethods {
     // the struck region and the attacker's own arm wear.
     // `armMul` is the hand: the lead jab gives a little, the cross behind it takes it back.
     let baseDmg = (attack.dmg * chargeMul * (attacker.armMul ?? 1) + this.rng.randint(-1, 1))
-      * atkMul * regionMod * powerScale;
+      * atkMul * regionMod * powerScale * this._ffaDamageMul();
 
     // ── Per-hit personality modifiers ─────────────────────────────────
     // 1) The attacker may be carrying a temporary atkMul (Reagan's "Morning
@@ -763,6 +763,7 @@ class HitResolutionMethods {
     // The training room never lets a hit kill (training.js): it tops the bar back up first.
     if (this.training) this._trainingCushion(defender, baseDmg);
     this.combat.damage({ playerId: defender.playerId, amount: baseDmg, sourceId: attacker.playerId });
+    if (this.ffa) this._ffaOnDamage(attacker, defender, baseDmg);
     // Scorecard + combo run + the floating damage number. Placed here rather
     // than further down because `baseDmg` is final at this point — everything
     // below is knockback, reactions and region wear, none of which feed back
@@ -921,7 +922,7 @@ class HitResolutionMethods {
           downed.animator.play(null);
           // Trump personality: KO-stack increment on the WINNER. Each stack
           // adds +5% damage on every swing for the rest of the match.
-          const winner = this.fighters.find((x) => x !== downed);
+          const winner = this.ffa ? s.attacker : this.fighters.find((x) => x !== downed);
           if (winner?.personality?.id === 'trump'
               && PERSONALITIES.trump?.onKoReceived === 'stack'
               && winner.personality.koStacks
@@ -941,6 +942,8 @@ class HitResolutionMethods {
             hitY: hit.point.y,
             spin: torqueY,
           };
+          // Out of the free-for-all; the round goes on until one is left standing.
+          if (this.ffa) this._ffaEliminated(downed, s.attacker);
         }
       } else if (ev.type === COMBAT_EVENTS.COMBAT_FINISHED) {
         this.phase = 'ko';
@@ -958,7 +961,8 @@ class HitResolutionMethods {
         // ── KO presentation ──────────────────────────────────────────
         // The one moment in the match where every layer fires at once, and
         // the only place the full-strength concussion is allowed.
-        const loser = this.fighters.find((f) => f !== (this.winner ? this.fighters[this.winner - 1] : null));
+        const loser = this.ffa ? s.defender
+          : this.fighters.find((f) => f !== (this.winner ? this.fighters[this.winner - 1] : null));
         if (this.audio) {
           this.audio.concussion(1.0);
           this.audio.crowdSwell(1.0);
@@ -1062,7 +1066,7 @@ class HitResolutionMethods {
     const { attacker, defender, knockDir } = s;
     if (defender.state === 'ko' || this.phase !== 'fighting') return;
     if (isKnockdown(defender.daze || 0, this.t, defender.dazeImmuneUntil ?? -99)) {
-      this._knockDown(defender, attacker, knockDir);
+      this._knockDown(defender, attacker, knockDir, s.baseDmg);
     }
   }
 

@@ -1,13 +1,13 @@
-// rounds.js — best-of-three bookkeeping for the modes a human fights in (1P ladder
+// rounds.js — three-round bookkeeping for the modes a human fights in (1P ladder
 // and 2P local). Pure: the engine (cinematics.js _roundOver) feeds it each round's
 // winner and asks whether the match is over. The Cup, online and the training room
 // stay single-round and never build one of these.
 //
-// A round is won by KO or on health at the bell; a bell too close to call is a
-// drawn round and nobody's point. First to ROUNDS_TO_WIN takes the match. After
-// MAX_ROUNDS the fighter ahead on rounds takes it, and level on rounds is a draw.
+// Like a real bout: all MAX_ROUNDS rounds are fought, each scored on health at the
+// bell (a bell too close to call is a drawn round and nobody's point), unless a KO
+// (counted out, or health gone) ends the WHOLE match on the spot. After the last
+// bell the fighter ahead on rounds takes it, and level on rounds is a draw.
 
-export const ROUNDS_TO_WIN = 2;
 export const MAX_ROUNDS = 3;
 
 /**
@@ -76,8 +76,8 @@ export function recordRound(match, winner, stats = null, { ko = false, secs = 0 
  */
 export function matchVerdict(match) {
   const [a, b] = match.wins;
-  if (a >= ROUNDS_TO_WIN) return { winner: 1 };
-  if (b >= ROUNDS_TO_WIN) return { winner: 2 };
+  const last = match.rounds[match.rounds.length - 1];
+  if (last?.ko && last.winner) return { winner: last.winner };
   if (match.played >= MAX_ROUNDS) return { winner: a === b ? 0 : a > b ? 1 : 2 };
   return null;
 }
@@ -91,20 +91,17 @@ export function firstRoundKo(match, corner) {
   return r && r.ko && r.winner === corner ? r.secs : 0;
 }
 
-/** Would a round won by `winner` end the match? (Decides whether the KO gets its replay.) */
-export function wouldDecide(match, winner) {
-  const next = { wins: [...match.wins], played: match.played };
-  next.played += 1;
-  if (winner === 1 || winner === 2) next.wins[winner - 1] += 1;
+/** Would a round won by `winner` (by KO when `ko`) end the match? (Decides whether the KO gets its replay.) */
+export function wouldDecide(match, winner, ko = false) {
+  const w = winner === 1 || winner === 2 ? winner : 0;
+  const next = { wins: [...match.wins], played: match.played + 1, rounds: [...match.rounds, { winner: w, ko }] };
+  if (w) next.wins[w - 1] += 1;
   return matchVerdict(next) !== null;
 }
 
 /** The splash heading for the round about to start. */
 export function roundLabel(match) {
   const n = match.played + 1;
-  const [a, b] = match.wins;
   if (n >= MAX_ROUNDS) return 'FINAL ROUND';
-  // Someone is one round from the match: say so.
-  if (a === ROUNDS_TO_WIN - 1 || b === ROUNDS_TO_WIN - 1) return `ROUND ${n} · MATCH POINT`;
-  return `ROUND ${n}`;
+  return `ROUND ${n} OF ${MAX_ROUNDS}`;
 }

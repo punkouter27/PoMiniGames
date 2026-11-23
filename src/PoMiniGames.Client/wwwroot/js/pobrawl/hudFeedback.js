@@ -185,6 +185,7 @@ class HudFeedbackMethods {
   }
 
   _pushHud(dt) {
+    if (this.ffa) return;
     this.hudTimer += dt;
     if (!this.hudDirty && this.hudTimer < 0.25) return;
     this.hudTimer = 0;

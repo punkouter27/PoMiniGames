@@ -96,6 +96,7 @@ public partial class PoCabinetPageBase : ComponentBase, IAsyncDisposable
     private double _goUntilElapsed;
 
     protected PoCabinetRaceSnapshot? _lastSnapshot;
+    private IReadOnlyList<PoCabinetCarState>? _fullField;
 
     // Telemetry (race.js owns the data; these are the view model).
     protected string? _telemetrySummary;
@@ -130,7 +131,7 @@ public partial class PoCabinetPageBase : ComponentBase, IAsyncDisposable
 
     /// <summary>The place that earns the fanfare and counts as a win: the podium in a
     /// multiplayer-sized field (16 cars at most), the top six of the 64-car solo field.</summary>
-    private int FrontRunnerCut => _totalCars > PoCabinetCatalog.OnlineGridSize ? PoCabinetCatalog.SoloFrontRunners : 3;
+    private static int FrontRunnerCut => PoCabinetCatalog.SoloFrontRunners;
 
     /// <summary>
     /// The circuit's board for the results' Top 3 (UnifiedLeaderboardEndpoints, "pocabinet").
@@ -752,6 +753,8 @@ public partial class PoCabinetPageBase : ComponentBase, IAsyncDisposable
         // Solo snapshots carry the whole field only on the first tick and at the finish
         // (race.js pushHud); in between there is one row, the local car's.
         _totalCars = Math.Max(_totalCars, cars.Count);
+        // Online, the AI ride every third snapshot: the last whole field is what the standings read.
+        if (cars.Count >= _totalCars) _fullField = cars;
         var localCar = FindLocal(snap);
         if (localCar is not null)
         {
@@ -823,7 +826,7 @@ public partial class PoCabinetPageBase : ComponentBase, IAsyncDisposable
         var localDone = IsMultiplayerMode ? localCar?.Finished == true : snap.Finished;
         if ((localDone || (IsMultiplayerMode && snap.Finished)) && _phase == Phase.Racing)
         {
-            _finalStandings ??= cars.OrderBy(c => c.Position)
+            _finalStandings ??= (_fullField ?? cars).OrderBy(c => c.Position)
                 .Select(c => new PoCabinetResults.Row(c.Name, StandingDetail(c, c.Id == localCar?.Id), c.Id == localCar?.Id))
                 .ToList();
             _awaitingFinal = IsMultiplayerMode && _finalResult is null;
@@ -983,7 +986,7 @@ public partial class PoCabinetPageBase : ComponentBase, IAsyncDisposable
     private void ResetTelemetry()
     {
         _laps = new PoCabinetLapBook();
-        _totalCars = IsMultiplayerMode ? 0 : PoCabinetCatalog.SoloCarCount;
+        _totalCars = PoCabinetCatalog.SoloCarCount;
         _lastCountdown = -1;
         _goUntilElapsed = 0;
         _showGo = false;
@@ -1011,7 +1014,8 @@ public partial class PoCabinetPageBase : ComponentBase, IAsyncDisposable
         _dnf = false;
         _lap = 1;
         _position = 1;
-        _totalCars = 0;
+        _totalCars = PoCabinetCatalog.SoloCarCount;
+        _fullField = null;
         _lapSeconds = 0;
     }
 
