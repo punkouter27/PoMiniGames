@@ -217,6 +217,9 @@ export function createInput(canvas, { onAction = () => {}, onLook = () => {}, bi
     }
   };
 
+  // Tab is this game's observation dashboard: tell the estate dev-window opener
+  // (js/po-devwindow.js) to leave it alone while the game is up.
+  document.documentElement.setAttribute('data-po-owns-tab', '');
   window.addEventListener('keydown', onKeyDown);
   window.addEventListener('keyup', onKeyUp);
   window.addEventListener('blur', onBlur);
@@ -249,6 +252,7 @@ export function createInput(canvas, { onAction = () => {}, onLook = () => {}, bi
     dispose() {
       disposed = true;
       window.removeEventListener('keydown', onKeyDown);
+      document.documentElement.removeAttribute('data-po-owns-tab');
       window.removeEventListener('keyup', onKeyUp);
       window.removeEventListener('blur', onBlur);
       document.removeEventListener('pointerlockchange', onLockChange);

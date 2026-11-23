@@ -54,6 +54,8 @@
   document.addEventListener('keydown', function (e) {
     if (e.key !== 'Tab' || e.shiftKey || e.ctrlKey || e.altKey || e.metaKey || e.repeat) return;
     if (tabUsed) return;
+    // A game that keeps Tab for itself (PoEcosystem's dashboard) marks the page.
+    if (document.documentElement.hasAttribute('data-po-owns-tab')) return;
     var a = document.activeElement;
     var nothingFocused = !a || a === document.body || a === document.documentElement;
     if (!nothingFocused) return;
