@@ -7,8 +7,7 @@
 //   board light (WebGPU)   a falling disc lights the empty holes it passes and rims the discs
 //                          beside it; a light ring runs out from each landing; a glass edge with
 //                          a chromatic fringe and a highlight that follows the pointer; dust motes
-//                          drifting in a soft beam tinted toward whoever is to move; the optional
-//                          coach heatmap (open threes / fours glow in the threatening colour)
+//                          drifting in a soft beam tinted toward whoever is to move
 //   held disc              a disc in hand above the board that follows the pointer on a spring;
 //                          the physics drop (index.js) starts from it. On touch: drag along the
 //                          board and let go to drop. While the CPU thinks, its disc scans the
@@ -18,27 +17,21 @@
 //                          shockwave, a heavy bump, a low boom and a "Blocked" tag on landing
 //   column notes           each landing also plays a quiet pentatonic note for its column,
 //                          brighter the higher it lands (a spectral height cue on top of fx.js's pan)
-//   tension music          optional (off by default): adaptive stems from musicLayers through
-//                          tensionMixer, driven by open threats and how full the board is
 //   drain                  when a finished board clears, its discs fall out of the bottom with a
 //                          clatter instead of vanishing
 //   turn baton             a glow that glides between the names in the turn strip
 //   intro transition       the start card hands over to the board with a View Transition
 //
 // GATES: reduced motion → no held-disc spring, scan, motes, ring, drain or transition (the
-// marker, coach and notes stay); data-gfx="low" → no WebGPU layer and no drain; no WebGPU → the
-// board light is simply absent; mute → no notes, music or boom. Every piece is best-effort.
+// marker and notes stay); data-gfx="low" → no WebGPU layer and no drain; no WebGPU → the
+// board light is simply absent; mute → no notes or boom. Every piece is best-effort.
 
 import * as Dsp from '../platform/dsp.js';
-import { createMusicLayers } from '../platform/musicLayers.js';
-import { createTensionMixer } from '../platform/tensionMixer.js';
 import { springStep } from '../platform/springUi.js';
 
 const COLS = 9;
 const ROWS = 9;
 const CELLS = 81;
-const COACH_KEY = 'pominigames:connectfive:coach';
-const MUSIC_KEY = 'pominigames:connectfive:music';
 const CSS_HREF = 'css/connectfive-extras.css';
 /** C major pentatonic across the nine columns, C4 … G5. */
 const NOTES = [261.63, 293.66, 329.63, 392.0, 440.0, 523.25, 587.33, 659.25, 783.99];
@@ -56,9 +49,6 @@ function tier() {
 }
 function muted() {
     try { return !!window.PoAudioBus?.isMuted?.(); } catch { return false; }
-}
-function pref(key) {
-    try { return localStorage.getItem(key) === 'on'; } catch { return false; }
 }
 function finePointer() {
     try { return window.matchMedia('(hover: hover) and (pointer: fine)').matches; } catch { return true; }
@@ -254,7 +244,6 @@ function scan() {
         _last[1] = -1; _last[2] = -1;
         _blocks.clear();
         _fall = null;
-        _music?.mixer.reset();
     }
     if (added > 0 && added <= 2 && removed === 0) {
         for (let i = 0; i < CELLS; i++) {
@@ -276,7 +265,6 @@ function scan() {
     _analysis = analyse(state);
     paintLast(snap.cells);
     gpu.upload();
-    updateMusic(filled);
 }
 
 function paintLast(cells = cellEls()) {
@@ -627,27 +615,6 @@ const baton = (() => {
     };
 })();
 
-// ─── Music (optional) ────────────────────────────────────────────────────
-let _music = null;
-function updateMusic(filled) {
-    const want = pref(MUSIC_KEY) && !muted() && _started && !!_board && pageMode() !== 'demo';
-    if (!want) {
-        if (_music) { try { _music.layers.stop(); } catch { /* gone */ } _music = null; }
-        return;
-    }
-    if (!_music) {
-        try {
-            const layers = createMusicLayers({ root: 49, bpmLow: 84, bpmHigh: 112, gain: 0.5 });
-            const mixer = createTensionMixer(layers, { attack: 0.8, release: 4 });
-            layers.start();
-            _music = { layers, mixer };
-        } catch (err) { console.warn('PoConnectFive extras: music unavailable', err?.message || err); return; }
-    }
-    const worst = Math.max(_analysis.maxR, _analysis.maxY);
-    const proximity = worst >= 4 ? 1 : worst === 3 ? 0.5 : worst === 2 ? 0.15 : 0;
-    _music.mixer.update({ clock: (filled ?? 0) / CELLS, proximity });
-}
-
 // ─── WebGPU board light ──────────────────────────────────────────────────
 const SHADER = /* wgsl */ `
 struct U { v: array<vec4f, 10> };
@@ -674,7 +641,6 @@ fn band(x: f32, c: f32, w: f32) -> f32 { let d = (x - c) / w; return exp(-d * d)
   let st = u.v[1].zw;
   let cs = u.v[2].x;
   let turn = u.v[2].y;
-  let coach = u.v[2].z;
   let motes = u.v[2].w;
   let red = u.v[8].xyz;
   let yel = u.v[9].xyz;
@@ -731,13 +697,6 @@ fn band(x: f32, c: f32, w: f32) -> f32 { let d = (x - c) / w; return exp(-d * d)
     let w = st.x * 0.35;
     let ringv = band(length(p - fl.xy), rr, w) * (1.0 - age / 0.7) * fl.w;
     col += mix(vec3f(1.0), fcol, 0.6) * ringv * 0.22;
-  }
-
-  // Coach heatmap: open threes and fours glow in the threatening side's colour.
-  if (coach > 0.5 && empty) {
-    let pulse = 0.72 + 0.28 * sin(t * 3.2 + f32(idx) * 0.7);
-    let weight = mix(0.45, 1.0, cell.w);
-    col += (red * cell.y + yel * cell.z) * hole * pulse * weight * 0.55;
   }
 
   // Glass edge: a thin chromatic fringe inside the rim, a soft inner glow, and a highlight
@@ -888,7 +847,7 @@ const gpu = (() => {
         const reduce = motionReduced();
         u[0] = w; u[1] = h; u[2] = (now / 1000) % 3600; u[3] = dpr;
         u[4] = px(g.x0); u[5] = py(g.y0); u[6] = g.sx * dpr; u[7] = g.sy * dpr;
-        u[8] = g.size * dpr; u[9] = activeSide(); u[10] = pref(COACH_KEY) ? 1 : 0; u[11] = !reduce && tier() === 'high' ? 1 : 0;
+        u[8] = g.size * dpr; u[9] = activeSide(); u[10] = 0; u[11] = !reduce && tier() === 'high' ? 1 : 0;
         // The disc in flight: the physics clone, else the cell's own (keyframe-dropping) disc.
         u[12] = 0; u[13] = 0; u[14] = 0; u[15] = 0;
         if (_fall && now - _fall.since < 1100) {
@@ -1038,16 +997,11 @@ function syncBoard() {
     if (b) attach(b);
 }
 
-function onStorage(e) {
-    if (e.key === MUSIC_KEY) updateMusic(_prev.reduce((n, v) => n + (v ? 1 : 0), 0));
-}
-
 export function start() {
     if (_started) { syncBoard(); return true; }
     _started = true;
     ensureCss();
     window.addEventListener('po-cf-landed', onLanded);
-    window.addEventListener('storage', onStorage);
     _rootObs = new MutationObserver(() => { if (!_syncRaf) _syncRaf = requestAnimationFrame(syncBoard); });
     _rootObs.observe(document.body, { childList: true, subtree: true });
     syncBoard();
@@ -1060,7 +1014,6 @@ export function stop() {
     if (!_started) return;
     _started = false;
     window.removeEventListener('po-cf-landed', onLanded);
-    window.removeEventListener('storage', onStorage);
     if (_rootObs) { _rootObs.disconnect(); _rootObs = null; }
     if (_syncRaf) { cancelAnimationFrame(_syncRaf); _syncRaf = 0; }
     if (_loopRaf) { cancelAnimationFrame(_loopRaf); _loopRaf = 0; }
@@ -1070,22 +1023,14 @@ export function stop() {
     held.dispose();
     baton.dispose();
     gpu.dispose();
-    updateMusic(0);
     for (const el of document.querySelectorAll('.cf-x-tag, .cf-x-drain')) el.remove();
-}
-
-/** The start card's Coach / Music switches (ConnectFiveExtrasPicker). */
-export function setPref(key, on) {
-    const k = key === 'music' ? MUSIC_KEY : COACH_KEY;
-    try { localStorage.setItem(k, on ? 'on' : 'off'); } catch { /* this visit only */ }
-    if (k === MUSIC_KEY) updateMusic(_prev.reduce((n, v) => n + (v ? 1 : 0), 0));
 }
 
 /** Debug and test hook: the live state, never used by the game. */
 export function debug() {
     return {
         started: _started, board: !!_board, last: { ..._last }, blocksPending: _blocks.size,
-        maxThreat: { red: _analysis.maxR, yellow: _analysis.maxY }, music: !!_music,
+        maxThreat: { red: _analysis.maxR, yellow: _analysis.maxY },
         light: !!document.querySelector('canvas.cf-x-light'),
     };
 }
@@ -1094,4 +1039,4 @@ export function debug() {
 export const _test = { analyse, isBlock, landingRows, WINDOWS, drain, bigBlock };
 
 window.PoConnectFiveHeld = { take: (col) => held.take(col) };
-window.PoConnectFiveExtras = { start, stop, setPref, beginIntroTransition, debug };
+window.PoConnectFiveExtras = { start, stop, beginIntroTransition, debug };
