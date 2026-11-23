@@ -41,12 +41,17 @@ export function herdCohesion(e, hash, i, radius) {
   return n === 0 ? { cx: e.x[i], cz: e.z[i], n: 0 } : { cx: sx / n, cz: sz / n, n };
 }
 
-/** Unit vector away from a threat, rotated by up to ±60° so a group fans out. */
-export function scatterDirection(e, i, tx, tz, rng) {
+/**
+ * Unit vector away from a threat, rotated by up to ±60° so a group fans out. Each creature
+ * keeps its own fixed angle (from its handle) for as long as it runs: one re-rolled every
+ * tick swung the heading back and forth 20 times a second, so a herd pinned against the
+ * coast ran on the spot instead of along the beach.
+ */
+export function scatterDirection(e, i, tx, tz) {
   let dx = e.x[i] - tx; let dz = e.z[i] - tz;
   const d = Math.hypot(dx, dz);
   if (d < 1e-6) { dx = 1; dz = 0; } else { dx /= d; dz /= d; }
-  const a = (rng.next() - 0.5) * (2 * Math.PI / 3);
+  const a = ((e.handle(i) * 0.6180339887) % 1 - 0.5) * (2 * Math.PI / 3);
   const c = Math.cos(a); const s = Math.sin(a);
   return { x: dx * c - dz * s, z: dx * s + dz * c };
 }

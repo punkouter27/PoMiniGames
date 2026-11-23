@@ -810,7 +810,7 @@ export function createWorld({ seed = 1, caps = {}, physics = null, terrain: supp
       case GOAL.FLEE: {
         if (c.threatDist !== Infinity) {
           if (sp.fleeStyle === 'scatter') {
-            const d = scatterDirection(e, i, c.threatX, c.threatZ, streams.behavior);
+            const d = scatterDirection(e, i, c.threatX, c.threatZ);
             e.vx[i] = d.x * sp.runSpeed; e.vz[i] = d.z * sp.runSpeed;
           } else fleeFrom(e, i, c.threatX, c.threatZ, sp.runSpeed);
           if (sp.alarms && !isAlerted(e, i, tick)) raiseAlarm(e, spatial, i, BEHAVIOR.herdRadius, tick, c.threatX, c.threatZ);
