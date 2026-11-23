@@ -9,7 +9,6 @@ import { MAX_HP } from './constants.js';
 import { FfaSeason, FFA_PROFILES, seededRandom } from './ffaSeason.js';
 import { setup as setupFfaRendering } from './ffaRendering.js';
 import { createArenaStage, bindView, sampleGpuTime } from './stageHost.js';
-import { createAutomaticHighlights } from './ffaHighlights.js';
 import { createWikimediaFacts } from './ffaFacts.js';
 import { moveFighters, impactImpulse } from './ffaPhysics.js';
 import { FfaAudio } from './ffaAudio.js';
@@ -87,7 +86,6 @@ export class BrawlFfaGame {
     this.benchmark = null;
     this.agentEvaluation = null;
     this.rendering = null;
-    this.highlights = null;
     this.facts = null;
     this.factsEnabled = false;
     this.presentation = {};
@@ -140,9 +138,6 @@ export class BrawlFfaGame {
       this.presentation = { ...this.presentation, ...partial };
       this._notify('OnFfaPresentation', JSON.stringify(this.presentation));
     };
-    this.highlights = createAutomaticHighlights(this.renderer.domElement, {
-      onPresentation, enabled: this.seasons.state.recordHighlights !== false,
-    });
     this.facts = createWikimediaFacts({ onPresentation });
     if (this.factsEnabled) this._waitingForFact();
 
@@ -711,8 +706,6 @@ export class BrawlFfaGame {
     this.spatialAudio?.impact({ position: fighter.rig.root.position, energy: 55, material: 'shoe' });
     this.rendering?.impact({ position: fighter.rig.root.position, power: 1, kind: 'ko', target: fighter });
     this._notify('OnFfaEliminated', fighter.id, fighter.place, remaining);
-    this.highlights?.mark({ type: 'ko', label: `Round ${this.round}: ${fighter.name} knocked out (#${fighter.place})` });
-    if (remaining === 2) this.highlights?.mark({ type: 'final', label: `Round ${this.round}: final duel` });
     if (remaining === 1) this._finish(this.fighters.find((entry) => entry.alive));
   }
 
@@ -747,7 +740,6 @@ export class BrawlFfaGame {
     this.audio?.crowdSwell(1);
     this._notify('OnFfaChampion', champion.id, this.roundId);
     if (this.options.headless) return;
-    this.highlights?.mark({ type: 'champion', label: `Round ${this.round}: ${champion.name} wins` });
     if (this.factsEnabled) void this.facts.loadFighter(champion.id, champion.name);
     this.seasons?.record(this._results());
     this._publishDashboard();
@@ -797,16 +789,6 @@ export class BrawlFfaGame {
     this._publishDashboard();
   }
 
-  setRecording(enabled) {
-    this.highlights.setEnabled(enabled);
-    this.seasons.state.recordHighlights = enabled;
-    this.seasons.save();
-  }
-
-  downloadClip(id) {
-    this.highlights.download(id);
-  }
-
   setFacts(enabled) {
     this.factsEnabled = enabled;
     this.seasons.state.factsEnabled = enabled;
@@ -837,7 +819,6 @@ export class BrawlFfaGame {
     this.benchmark = null;
     this.seasons.reset();
     this.setFacts(false);
-    this.setRecording(true);
     this.round = 0;
     this._startRound();
   }
@@ -970,7 +951,6 @@ export class BrawlFfaGame {
     this.motionQuery?.removeEventListener('change', this.motionListener);
     this.spatialAudio?.dispose();
     this.audio?.close();
-    this.highlights?.dispose();
     this.facts?.dispose();
     this.rendering?.dispose();
     this.playerInput?.dispose();

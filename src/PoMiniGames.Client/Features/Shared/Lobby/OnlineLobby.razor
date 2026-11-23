@@ -37,6 +37,7 @@
             MaxPlayersHint="@MaxPlayersHint"
             StartLabel="@StartLabel"
             CanStart="@CanStart"
+            MinPlayers="@MinPlayers"
             WaitingHint="@WaitingHint"
             CanReady="@CanReady"
             HostReadies="@HostReadies"
@@ -67,6 +68,8 @@
     [Parameter] public string Hint { get; set; } = "One shared room — the first to arrive hosts.";
     [Parameter] public int MaxPlayersHint { get; set; } = 2;
     [Parameter] public bool? CanStart { get; set; }
+    /// <summary>Seats that must be filled before Start is offered (LobbyPanel.MinPlayers).</summary>
+    [Parameter] public int MinPlayers { get; set; } = 1;
     [Parameter] public string WaitingHint { get; set; } = "Waiting for everyone to mark Ready…";
     [Parameter] public bool CanReady { get; set; } = true;
     [Parameter] public bool HostReadies { get; set; }

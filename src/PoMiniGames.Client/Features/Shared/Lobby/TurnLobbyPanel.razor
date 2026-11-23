@@ -10,8 +10,9 @@
 {
     <OnlineLobby TPlayer="TurnLobbyPlayer"
                  HubPath="@Session.LobbyHubPath"
-                 Hint="Two players. The first one in hosts and moves first."
+                 Hint="First in hosts and moves first."
                  MaxPlayersHint="2"
+                 MinPlayers="2"
                  StartLabel="Start game"
                  HowTo="@HowTo"
                  OnGameStarted="@(start => Session.JoinMatchAsync(start.MatchCode, start.WasHost))"

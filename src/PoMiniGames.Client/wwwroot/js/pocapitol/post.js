@@ -504,10 +504,20 @@ export function createPost(renderer, scene, camera, depthCamera) {
         /** The list of small lights: `begin()`, `add(x, y, z, reach, r, g, b, power)`, `end()`. */
         lights,
         /** Builds the scene's pipelines for the target it is drawn into, without freezing the page. */
-        async compile() {
+        // compileAsync can stay pending forever on some drivers (seen on Windows ARM64, Chromium and
+        // Edge, both backends): the scene then never reaches its start card. It is a head start, not a
+        // requirement, so it gets three seconds and the first frame builds whatever is still missing.
+        async compile(timeoutMs = 3000) {
             const was = renderer.getRenderTarget();
             renderer.setRenderTarget(scenePass);
-            try { await renderer.compileAsync(scene, camera); } catch { /* the first frame builds what is missing */ }
+            let timer = 0;
+            try {
+                await Promise.race([
+                    renderer.compileAsync(scene, camera),
+                    new Promise(resolve => { timer = setTimeout(resolve, timeoutMs); }),
+                ]);
+            } catch { /* the first frame builds what is missing */ }
+            clearTimeout(timer);
             renderer.setRenderTarget(was);
         },
         /** The gas grid's density texture and the ground it covers, for the lit air. */

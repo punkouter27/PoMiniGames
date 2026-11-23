@@ -138,8 +138,6 @@ window.PoBrawl = {
   ffaProfile(profile) { if (game instanceof BrawlFfaGame) game.setProfile(profile); },
   ffaBenchmark() { if (game instanceof BrawlFfaGame) void game.runBenchmark(); },
   ffaResetSeasons() { if (game instanceof BrawlFfaGame) game.resetSeasons(); },
-  ffaRecording(enabled) { if (game instanceof BrawlFfaGame) game.setRecording(enabled); },
-  ffaDownloadClip(id) { if (game instanceof BrawlFfaGame) game.downloadClip(id); },
   ffaFacts(enabled) { if (game instanceof BrawlFfaGame) game.setFacts(enabled); },
   ffaClick(action) { if (game instanceof BrawlFfaGame) game.uiClick(action); },
   ffaPause(paused) { if (game instanceof BrawlFfaGame) game.setPaused(paused); },

@@ -69,7 +69,7 @@ import { Broadcast } from './broadcast.js';
 import { Acoustics } from './acoustics.js';
 import { Slipstream } from './slipstream.js';
 import { paintScene } from './paint.js';
-import { WORLD_SCALE as WS, shareOrDownload } from './util.js';
+import { WORLD_SCALE as WS } from './util.js';
 
 const TICK = ph.TICK_SECONDS;
 const COUNTDOWN = 3;
@@ -126,7 +126,6 @@ export function showTelemetry(canvasId) {
 export function startReplay() { return race ? race.startReplay() : false; }
 export function replayCommand(cmd, value) { race?.replayCommand(cmd, value); }
 export function stopReplay() { race?.stopReplay(); }
-export function recordClip() { return race ? race.recordClip() : Promise.resolve('unavailable'); }
 /** The officials' scripted line pool (PoCabinetTalk.Banter, handed over by the page right after the start). */
 export function setBanter(lines) { race?.setBanter(lines); }
 /** Solo lap proof for the score submit: { inputs: base64 | null, wet }. */
@@ -1667,47 +1666,6 @@ class Race {
         try {
             this.dotnet.invokeMethodAsync('OnReplayStateAsync', rp.t - rp.t0, rp.t1 - rp.t0, rp.playing, rp.camera, rp.speed);
         } catch { /* disposed */ }
-    }
-
-    /**
-     * Record the local car's best lap (chase cam, real time) to a video file via
-     * MediaRecorder on the canvas stream, then share it or download it.
-     * Resolves 'shared' | 'downloaded' | 'unavailable'.
-     */
-    async recordClip() {
-        const canvas = this.scene.canvas;
-        if (!canvas || typeof canvas.captureStream !== 'function' || typeof MediaRecorder === 'undefined') return 'unavailable';
-        // The best lap that counted: a lap deleted for track limits is nobody's best.
-        const lap = [...(this.rec?.laps || [])].filter(l => l.valid !== false).sort((a, b) => a.time - b.time)[0];
-        if (!lap) return 'nolap';
-        const from = lap.startT, to = lap.endT;
-        if (!Number.isFinite(from) || !Number.isFinite(to) || to <= from) return 'unavailable';
-
-        const mime = ['video/webm;codecs=vp9', 'video/webm;codecs=vp8', 'video/webm', 'video/mp4']
-            .find(m => MediaRecorder.isTypeSupported?.(m)) || '';
-        let recorder;
-        const chunks = [];
-        try {
-            recorder = new MediaRecorder(canvas.captureStream(30), mime ? { mimeType: mime, videoBitsPerSecond: 4_000_000 } : undefined);
-        } catch {
-            return 'unavailable';
-        }
-        recorder.ondataavailable = e => { if (e.data && e.data.size) chunks.push(e.data); };
-        const stopped = new Promise(resolve => { recorder.onstop = resolve; });
-
-        if (!this.replay) this.startReplay(from);
-        const rp = this.replay;
-        rp.t = from; rp.speed = 1; rp.playing = true; rp.endAt = to;
-        if (rp.camera !== 'far') rp.camera = 'chase';
-        rp.onEnd = () => { rp.onEnd = null; rp.endAt = null; try { recorder.stop(); } catch { /* already stopped */ } };
-        recorder.start(250);
-        this.pushReplayState(true);
-        await stopped;
-        if (rp.cancelled) return 'cancelled';
-
-        const type = recorder.mimeType || mime || 'video/webm';
-        const ext = type.includes('mp4') ? 'mp4' : 'webm';
-        return shareOrDownload(new Blob(chunks, { type }), `pocabinet-${this.track.id}-lap.${ext}`, 'Cabinet — my best lap');
     }
 
     dispose() {

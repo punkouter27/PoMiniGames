@@ -71,7 +71,7 @@ function createEngine(container, dotnetRef, opts) {
     // reservoir bumped by each natural event, which is what lets the soundtrack stay tense
     // for a few seconds after an eruption rather than only during it.
     lastBorn: -1, lastDied: 0, eventPressure: 0,
-    // GFX pass 2: the chronicle card, the reel, the genome synth.
+    // GFX pass 2: the chronicle card, the photo drawer, the genome synth.
     chronicle: null, reel: null, leitmotif: null, subjectTimer: 0, bloomTimer: 0,
     // The finder's request counter, the minimap's data layer, the kin of
     // whoever the camera is on (asked for every two seconds), and ambient mode.
@@ -181,14 +181,13 @@ function createEngine(container, dotnetRef, opts) {
         return;
       case 'events':
         for (const ev of msg.events) {
-          // A landmark gets its moment: the card, the camera, the score and the reel all
+          // A landmark gets its moment: the card, the camera and the score all
           // land on it together (chronicle.js throttles the card; the rest are cheap).
           if (isChronicleEvent(ev) && state.ready) {
             const year = state.stats?.year ?? 0;
             state.chronicle?.show(ev, year);
             state.renderer?.moment(ev);
             state.music?.flourish(ev.kind === 'diplomacy' ? ev.action : ev.kind);
-            state.reel?.capture(`Year ${year} — ${ev.text ?? ev.kind}`);
           }
           // A birth in a watched family gets its ring (the death mark needs no event: the
           // renderer sees a watched creature leave the frame).
@@ -398,7 +397,7 @@ function createEngine(container, dotnetRef, opts) {
           onPresent: (ev) => { const line = narrationFor(ev); if (line && state.sound) state.voices.narrate(line); },
         });
         state.voices.warm();
-        state.reel = createReel(container, { tier: state.renderer.tier, photo: () => state.renderer?.photo() });
+        state.reel = createReel(container, { photo: () => state.renderer?.photo() });
         state.reel.setSource(state.renderer.canvas);
         state.subjectTimer = setInterval(() => { updateSubject(); slowPoll(); }, 250);
         if (motionReduced()) rootEl()?.setAttribute('data-poeco-still', '');
@@ -461,7 +460,7 @@ function createEngine(container, dotnetRef, opts) {
           },
           directorIdleSeconds: opts.demo ? 4 : 150,
           tempo: () => state.music?.state?.bpm ?? 54,
-          onAfterRender: () => state.reel?.mirror(),
+          onAfterRender: () => state.reel?.afterFrame(),
         });
   }
 
@@ -509,7 +508,7 @@ function createEngine(container, dotnetRef, opts) {
       state.prefs?.set('quality', t);
       rebuildRenderer();
     },
-    /** Open or close the Island Reel drawer; returns whether it is now open. */
+    /** Open or close the photo drawer; returns whether it is now open. */
     toggleReel: () => state.reel?.toggle() ?? false,
     setBinding(action, code) {
       if (!BINDABLE.includes(action) || typeof code !== 'string' || !code) return settingsSnapshot();

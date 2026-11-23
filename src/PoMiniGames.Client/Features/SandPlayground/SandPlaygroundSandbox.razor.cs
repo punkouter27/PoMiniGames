@@ -53,7 +53,6 @@ public partial class SandPlaygroundSandbox : ComponentBase, IAsyncDisposable
     protected int Rain { get; private set; }
     protected double Gravity { get; private set; } = 1;
     protected bool Tilt { get; private set; }
-    protected bool Recording { get; private set; }
     protected string Preset { get; private set; } = "classic";
     protected long Seed { get; private set; }
     protected long[] SlotTimes { get; private set; } = [0, 0, 0];
@@ -200,7 +199,7 @@ public partial class SandPlaygroundSandbox : ComponentBase, IAsyncDisposable
     /// <summary>
     /// The one callback the engine uses. <paramref name="kind"/> is one of: tool, brush,
     /// paused, undo, world ("preset:seed"), challenge (JSON, or "" when it ends),
-    /// challenge-done (JSON), recording, toast, view (x-ray index), remote (radio bombs lying about).
+    /// challenge-done (JSON), toast, view (x-ray index), remote (radio bombs lying about).
     /// </summary>
     [JSInvokable]
     public void OnEngine(string kind, string value)
@@ -238,9 +237,6 @@ public partial class SandPlaygroundSandbox : ComponentBase, IAsyncDisposable
                 break;
             case "challenge-done":
                 ReadChallengeDone(value);
-                break;
-            case "recording":
-                Recording = value == "true";
                 break;
             case "toast":
                 ShowToast(value);
@@ -489,20 +485,6 @@ public partial class SandPlaygroundSandbox : ComponentBase, IAsyncDisposable
     {
         MenuOpen = false;
         if (_module is not null) await _module.InvokeVoidAsync("shareShot");
-    }
-
-    protected async Task ClipAsync()
-    {
-        MenuOpen = false;
-        if (_module is null) return;
-        if (!await _module.InvokeAsync<bool>("recordClip", 8)) ShowToast("This browser cannot record the canvas");
-    }
-
-    protected async Task GifAsync()
-    {
-        MenuOpen = false;
-        if (_module is null) return;
-        if (!await _module.InvokeAsync<bool>("recordGif", 6)) ShowToast("Already recording a clip");
     }
 
     protected async Task ToggleLabHudAsync()

@@ -245,15 +245,9 @@
                 </section>
 
                 <section>
-                    <h2>Share &amp; Time-Lapse</h2>
+                    <h2>Share</h2>
                     <div class="sp-row">
                         <button type="button" class="sp-pill" @onclick="ShotAsync">📷 Screenshot</button>
-                        <button type="button" class="sp-pill" disabled="@Recording" @onclick="ClipAsync">
-                            @(Recording ? "● Recording…" : "🎬 Clip (8 s)")
-                        </button>
-                        <button type="button" class="sp-pill" disabled="@Recording" @onclick="GifAsync">
-                            @(Recording ? "● Capturing…" : "🖼️ GIF (6 s)")
-                        </button>
                     </div>
                 </section>
             </div>

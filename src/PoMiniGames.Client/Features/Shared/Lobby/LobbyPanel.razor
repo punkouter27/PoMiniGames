@@ -125,7 +125,7 @@
             {
                 @if (ShowStart && IsHost && !EffectiveCanStart)
                 {
-                    <p class="lobby__hint">@WaitingHint</p>
+                    <p class="lobby__hint">@(TooFew ? (MinPlayers == 2 ? "Waiting for a second player to join…" : $"Waiting for {MinPlayers} players to join…") : WaitingHint)</p>
                 }
                 @if (ShowReady && IsSeated && (!IsHost || HostReadies))
                 {
@@ -185,6 +185,12 @@
     /// seat is ready); a game with more to check (a character picked) passes its own.
     /// </summary>
     [Parameter] public bool? CanStart { get; set; }
+    /// <summary>
+    /// Seats that must be filled before Start is offered, whatever <see cref="CanStart"/> says.
+    /// The 1v1 games (Tic-Tac-Toe, Connect Five, both quizzes) pass 2: their hubs refuse a lone
+    /// host, so an enabled Start there only produced an error.
+    /// </summary>
+    [Parameter] public int MinPlayers { get; set; } = 1;
     [Parameter] public string WaitingHint { get; set; } = "Waiting for everyone to mark Ready…";
     /// <summary>False disables the Ready button (e.g. until the player has picked).</summary>
     [Parameter] public bool CanReady { get; set; } = true;
@@ -244,10 +250,12 @@
     private bool MyReady =>
         State?.Players.FirstOrDefault(p => p.ConnectionId == LocalConnectionId)?.IsReady ?? false;
 
-    private bool EffectiveCanStart => CanStart ?? (
+    private bool TooFew => (State?.Players.Count ?? 0) < MinPlayers;
+
+    private bool EffectiveCanStart => !TooFew && (CanStart ?? (
         State is not null
         && State.Players.Count > 0
-        && State.Players.All(p => p.ConnectionId == State.HostConnectionId || p.IsReady));
+        && State.Players.All(p => p.ConnectionId == State.HostConnectionId || p.IsReady)));
 
     // ── Lobby moments ────────────────────────────────────────────────────────────
     // A second player arriving, readying up or leaving changes one row of text, which a

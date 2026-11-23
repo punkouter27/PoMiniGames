@@ -1,14 +1,13 @@
-// keepsake.js — something to take away from a fight: a poster made from its final frame, and
-// (where the device can afford it) a short clip of the knockout.
+// keepsake.js — something to take away from a fight: a poster made from its final frame.
 //
 // Two halves in one file:
 //
-//   THE STORE. The last fight's poster and clip live in memory, on `globalThis`, so they
+//   THE STORE. The last fight's poster lives in memory, on `globalThis`, so they
 //   outlive the engine that made them: the end card stays one button (Back to main menu), and
-//   Brawl HQ's "Last fight" tab is where they are shown, downloaded and shared. Nothing is
+//   Brawl HQ's "Last fight" tab is where it is shown, downloaded and shared. Nothing is
 //   uploaded and nothing is written to storage; a reload forgets them. Brawl HQ imports this
 //   file on its own (it has no three.js import, so that costs nothing) and calls `describe`,
-//   `download`, `share` and the clip setting.
+//   `download` and `share`.
 //
 //   THE SHOW MODULE (mixin, `this` is the live game; see show.js). In 1P, 2P and the Cup:
 //     • while the fight is on, the finished frame is copied off the canvas four times a second
@@ -16,16 +15,10 @@
 //       reused canvas. The knockout, or the bell, keeps the copy it finds there: the last
 //       exchange, both fighters in the fight's own framing. Not the knockout frame itself:
 //       the KO camera cuts on that very frame, and half the time to a close-up of one head;
-//     • at the result that frame becomes a poster: who beat whom, how, and when;
-//     • a rolling canvas recorder (ffaHighlights.js, the battle royale's) keeps the last few
-//       seconds, and the knockout marks them for keeping.
-//   The recorder costs frame time, so it is OFF until the player switches it on (Brawl HQ, Last
-//   fight), and stays off on the low tier and under reduced motion whatever the switch says. The poster costs one drawImage every
-//   quarter of a second while a fight is live.
+//     • at the result that frame becomes a poster: who beat whom, how, and when.
+//   The poster costs one drawImage every quarter of a second while a fight is live.
 //
 // Presentation only: nothing here reads or writes the sim.
-
-import { createAutomaticHighlights } from './ffaHighlights.js';
 
 const POSTER_W = 1600;
 const POSTER_H = 900;
@@ -33,15 +26,11 @@ const POSTER_H = 900;
 // may be and still stand for the finish.
 const ROLL_EVERY_MS = 250;
 const ROLL_FRESH_MS = 1500;
-// The knockout plays for about four seconds of slow motion; keep all of it.
-const CLIP_POST_ROLL_SECS = 4.5;
-const CLIP_ROTATION_SECS = 10;
-const CLIP_PREF_KEY = 'pominigames:pobrawl-clip';
 
 /** The one store, shared by every copy of this module (the engine's and Brawl HQ's). */
 function store() {
   const g = globalThis;
-  g.__poBrawlKeepsake ||= { poster: null, clip: null, caption: '', when: 0 };
+  g.__poBrawlKeepsake ||= { poster: null, caption: '', when: 0 };
   return g.__poBrawlKeepsake;
 }
 
@@ -55,19 +44,6 @@ function put(slot, blob, name) {
 /** A file-name-safe slug of a caption. */
 const slug = (text) => String(text || 'fight').toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '').slice(0, 60) || 'fight';
 
-// ── The clip setting ─────────────────────────────────────────────────────────
-
-/** True only once the player has switched knockout clips on (a missing key is off). */
-export function clipWanted() {
-  try { return localStorage.getItem(CLIP_PREF_KEY) === 'on'; } catch { return false; }
-}
-
-/** Brawl HQ's toggle. Applies from the next fight the engine boots. */
-export function setClipWanted(on) {
-  try { localStorage.setItem(CLIP_PREF_KEY, on ? 'on' : 'off'); } catch { /* storage blocked */ }
-  return clipWanted();
-}
-
 // ── Brawl HQ ─────────────────────────────────────────────────────────────────
 
 function canShareFile(item) {
@@ -79,20 +55,19 @@ function canShareFile(item) {
 
 /**
  * What there is to show, as plain strings (the trimmed WASM client needs no interop DTO):
- * [posterUrl, clipUrl, caption, posterShareable '1'|'', clipShareable '1'|'', clipWanted '1'|''].
+ * [posterUrl, caption, posterShareable '1'|''].
  * Empty strings where there is nothing.
  */
 export function describe() {
   const s = store();
   return [
-    s.poster?.url || '', s.clip?.url || '', s.caption || '',
-    canShareFile(s.poster) ? '1' : '', canShareFile(s.clip) ? '1' : '', clipWanted() ? '1' : '',
+    s.poster?.url || '', s.caption || '', canShareFile(s.poster) ? '1' : '',
   ];
 }
 
-/** Save the poster ('poster') or the clip ('clip') as a file. False when there is none. */
-export function download(kind) {
-  const item = store()[kind === 'clip' ? 'clip' : 'poster'];
+/** Save the poster as a file. False when there is none. */
+export function download() {
+  const item = store().poster;
   if (!item?.url || typeof document === 'undefined') return false;
   const link = document.createElement('a');
   link.href = item.url;
@@ -105,12 +80,12 @@ export function download(kind) {
 }
 
 /**
- * Hand the poster or the clip to the device's share sheet.
+ * Hand the poster to the device's share sheet.
  * @returns {Promise<string>} 'shared' | 'cancelled' | 'unsupported' | 'failed'
  */
-export async function share(kind) {
+export async function share() {
   const s = store();
-  const item = s[kind === 'clip' ? 'clip' : 'poster'];
+  const item = s.poster;
   if (!canShareFile(item)) return 'unsupported';
   try {
     await navigator.share({
@@ -226,21 +201,6 @@ class KeepsakeMethods {
     // The rolling copy of the live fight: { canvas, at }.
     this._ksRoll = null;
 
-    const canvas = this.renderer?.domElement;
-    const lowTier = document.documentElement.getAttribute('data-gfx') === 'low';
-    if (canvas && clipWanted() && !lowTier && !this._calm()) {
-      try {
-        this._ksRec = createAutomaticHighlights(canvas, {
-          maxClips: 1, postRollSeconds: CLIP_POST_ROLL_SECS, rotationSeconds: CLIP_ROTATION_SECS,
-          onClip: (clip) => {
-            if (!clip?.blob) return;
-            const ext = (clip.mimeType || '').includes('mp4') ? 'mp4' : 'webm';
-            put('clip', clip.blob, `pobrawl-${slug(this._ksCaption || clip.label)}.${ext}`);
-          },
-        });
-      } catch { this._ksRec = null; /* no recorder: the poster still works */ }
-    }
-
     this._onShow((type, data) => {
       if (type === 'countdown') {
         // A new round: its own finish decides the frame.
@@ -250,7 +210,6 @@ class KeepsakeMethods {
       } else if (type === 'ko') {
         this._keepsakeHold();
         this._ksCaption = this._keepsakeMeta(data.winner, true).caption;
-        this._ksRec?.mark({ type: 'ko', label: this._ksCaption });
       } else if (type === 'result') {
         this._ksResult = this._keepsakeMeta(data.winner, data.ko);
         if (!this._ksFrame) this._keepsakeHold();   // a decision: the last exchange before the bell
@@ -270,8 +229,6 @@ class KeepsakeMethods {
       if (this._ksResult && this._ksFrame) this._keepsakeFinish();
     });
     this._onShowDispose(() => {
-      this._ksRec?.dispose();
-      this._ksRec = null;
       this._ksFrame = null;
       this._ksRoll = null;
     });

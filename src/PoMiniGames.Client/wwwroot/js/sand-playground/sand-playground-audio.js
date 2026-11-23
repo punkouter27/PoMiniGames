@@ -51,14 +51,6 @@ export function slowmo(amount) {
     duckFilter.frequency.setTargetAtTime(hz, ctx.currentTime, 0.05);
 }
 
-// Audio track of everything this game plays, for the clip recorder.
-export function recordTap() {
-    if (!ctx || !ctx.createMediaStreamDestination) return null;
-    const d = ctx.createMediaStreamDestination();
-    limiter.connect(d);
-    return { stream: d.stream, close: () => { try { limiter.disconnect(d); } catch { /* gone */ } } };
-}
-
 // ---------------------------------------------------------------------------
 // Graph construction
 // ---------------------------------------------------------------------------

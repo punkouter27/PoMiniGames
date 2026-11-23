@@ -18,7 +18,7 @@ export function seededRandom(seed) {
 
 function fresh(roster) {
   return {
-    version: 1, totalRounds: 0, season: 1, completed: 0, profile: 'balanced', factsEnabled: false, recordHighlights: true, history: [],
+    version: 1, totalRounds: 0, season: 1, completed: 0, profile: 'balanced', factsEnabled: false, history: [],
     agentLab: createFfaAgentState(),
     records: roster.map(({ id, name }) => ({
       id, name, rating: 1000, rounds: 0, wins: 0, places: 0, damage: 0,
@@ -57,7 +57,6 @@ export class FfaSeason {
       && integer(state.completed) && state.completed < SEASON_ROUNDS
       && Object.hasOwn(FFA_PROFILES, state.profile) && Array.isArray(state.history) && state.history.length <= 8
       && (state.factsEnabled === undefined || typeof state.factsEnabled === 'boolean')
-      && (state.recordHighlights === undefined || typeof state.recordHighlights === 'boolean')
       && (state.agentLab === undefined || isValidFfaAgentState(state.agentLab, this.roster.map((entry) => entry.id)))
       && state.history.every((h) => integer(h.season) && this.roster.some((r) => r.id === h.champion))
       && (state.benchmark == null || (state.benchmark.completed === 48 && state.benchmark.total === 48

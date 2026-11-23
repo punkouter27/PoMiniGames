@@ -11,7 +11,6 @@ import * as SFX from './sand-playground-audio.js';
 import { source as physicsSource } from './sand-playground-physics.glsl.js';
 import { source as renderSource } from './sand-playground-render.glsl.js';
 import { SAND_PLAYGROUND_CALIBRATION, consumePhysicsSteps } from './sand-playground-calibration.js';
-import { encodeGif } from './gifEncoder.js';
 import { createStage } from '../platform/stage/stage.js';
 import {
     W, H, AIR, SAND, CONCRETE, WATER, BEDROCK, MATBYTE, SAT_BYTE, BEDROCK_TOP, GRAVITY0, SLING_K, SLING_MAX,
@@ -95,7 +94,7 @@ let preset = 'classic', worldSeed = 1;
 let rnd = Math.random;         // scene builders draw from this so a seed replays a world
 let undoStack = [];
 let challenge = null;          // { id, def, t, n0, progress, done, held, tnt }
-let shotRequest = false, rec = null, recCanvas = null, gifRec = null;
+let shotRequest = false;
 let lastHaptic = 0;
 // <html data-motion> is the OS preference OR the player's own switch in the settings sheet.
 const reducedMotion = (typeof document !== 'undefined' && document.documentElement.dataset.motion === 'reduce')
@@ -287,7 +286,7 @@ export async function init(canvasEl, overlayEl, dotnetRef, startWorld) {
     // The module instance survives navigation, so a second visit must start clean.
     disposed = false; inited = false;
     stage?.dispose(); stage = null;
-    undoStack = []; challenge = null; rec = null; gifRec = null; simCredit = 0; hitStop = 0; slowmo = 0;
+    undoStack = []; challenge = null; simCredit = 0; hitStop = 0; slowmo = 0;
     canvas = canvasEl;
     overlay = overlayEl;
     dotnet = dotnetRef || null;
@@ -516,7 +515,6 @@ export function dispose() {
     for (const fn of cleanups) { try { fn(); } catch { /* already gone */ } }
     cleanups = [];
     setTilt(false);
-    try { rec?.recorder.stop(); } catch { /* not recording */ }
     undoStack = [];
     pointers.clear(); pinch = null;
     delete window.__sandPlayground;
@@ -2870,7 +2868,7 @@ function attachResize() {
 }
 
 // ---------------------------------------------------------------------------
-// Share: a still, or a short clip. The GL canvas has no preserved drawing buffer
+// Share: a still. The GL canvas has no preserved drawing buffer
 // and the ordnance lives on the 2D overlay, so both are composed onto a mirror
 // canvas inside the frame that drew them.
 // ---------------------------------------------------------------------------
@@ -2898,53 +2896,6 @@ async function deliver(blob, name) {
 
 export function shareShot() { shotRequest = true; }
 
-/** Record the next `seconds` of play and hand the clip to the share sheet (or a download). */
-export function recordClip(seconds = 8) {
-    if (rec || typeof MediaRecorder === 'undefined') return false;
-    recCanvas = recCanvas || document.createElement('canvas');
-    recCanvas.width = W; recCanvas.height = H;
-    const chunks = [];
-    let recorder;
-    // Picture from the mirror canvas, sound from the game's own mix.
-    const stream = recCanvas.captureStream(30);
-    const tap = SFX.recordTap();
-    const track = tap?.stream.getAudioTracks()[0];
-    if (track) stream.addTrack(track);
-    try { recorder = new MediaRecorder(stream, { videoBitsPerSecond: 4_000_000 }); }
-    catch { tap?.close(); return false; }
-    recorder.ondataavailable = e => { if (e.data.size) chunks.push(e.data); };
-    recorder.onstop = () => {
-        rec = null;
-        tap?.close();
-        notify('recording', 'false');
-        if (chunks.length && !disposed) deliver(new Blob(chunks, { type: recorder.mimeType || 'video/webm' }), 'sandplayground.webm');
-    };
-    rec = { recorder, until: performance.now() + seconds * 1000 };
-    recorder.start();
-    notify('recording', 'true');
-    return true;
-}
-
-/** Record a loopable 400x300 animated GIF time-lapse over `seconds` seconds. */
-export function recordGif(seconds = 6) {
-    if (rec || gifRec) return false;
-    const gw = 400, gh = 300;
-    const gCanvas = document.createElement('canvas');
-    gCanvas.width = gw; gCanvas.height = gh;
-    const gctx = gCanvas.getContext('2d', { willReadFrequently: true });
-    recCanvas = recCanvas || document.createElement('canvas');
-    recCanvas.width = W; recCanvas.height = H;
-    gifRec = {
-        gCanvas, gctx, gw, gh,
-        frames: [],
-        nextAt: 0,
-        intervalMs: 160,
-        until: performance.now() + Math.max(2, Math.min(12, seconds)) * 1000,
-    };
-    notify('recording', 'true');
-    return true;
-}
-
 function afterFrame(t) {
     if (shotRequest) {
         shotRequest = false;
@@ -2952,30 +2903,6 @@ function afterFrame(t) {
         shot.width = canvas.width; shot.height = canvas.height;
         composeFrame(shot);
         shot.toBlob(b => { if (b) deliver(b, 'sandplayground.png'); }, 'image/png');
-    }
-    if (rec) {
-        composeFrame(recCanvas);
-        if (t >= rec.until) { try { rec.recorder.stop(); } catch { rec = null; } }
-    }
-    if (gifRec) {
-        if (t >= gifRec.nextAt) {
-            gifRec.nextAt = t + gifRec.intervalMs;
-            composeFrame(recCanvas);
-            gifRec.gctx.drawImage(recCanvas, 0, 0, gifRec.gw, gifRec.gh);
-            const rgba = gifRec.gctx.getImageData(0, 0, gifRec.gw, gifRec.gh).data;
-            gifRec.frames.push({ rgba: new Uint8Array(rgba), delayCs: 10 });
-        }
-        if (t >= gifRec.until || gifRec.frames.length >= 45) {
-            const finished = gifRec;
-            gifRec = null;
-            notify('recording', 'false');
-            if (finished.frames.length && !disposed) {
-                try {
-                    const blob = encodeGif({ width: finished.gw, height: finished.gh, frames: finished.frames });
-                    deliver(blob, 'sandplayground-timelapse.gif');
-                } catch { /* ignore encode errors */ }
-            }
-        }
     }
 }
 
@@ -3733,11 +3660,6 @@ function drawOverlay(t) {
         octx.textAlign = 'right'; octx.fillText(lo, gx - 4, y0 + 12);
         octx.textAlign = 'left'; octx.fillText(hi, gx + gw + 4, y0 + 12);
         octx.font = 'bold 11px monospace';
-    }
-    if (rec || gifRec) {
-        chip(W - 62, H - 22, 58, 18);
-        octx.fillStyle = (t / 500 | 0) % 2 ? '#ff5e5e' : '#ffb0b0';
-        octx.fillText(gifRec ? '● GIF' : '● REC', W - 54, H - 9);
     }
 
     // Diagnostics (?debug) or Physics Lab Telemetry toggle: frame rate and live cell counts.

@@ -132,7 +132,7 @@ export function createRenderer(container, {
   bindings = null,
   // The score's tempo (music.js), so the campfire drums sit on its beat.
   tempo = () => 54,
-  // Called right after every composed frame (the reel's mirror).
+  // Called right after every composed frame (the photo drawer's long exposure).
   onAfterRender = null,
 } = {}) {
   const canvas = document.createElement('canvas');

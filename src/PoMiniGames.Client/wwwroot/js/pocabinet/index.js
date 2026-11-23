@@ -19,7 +19,6 @@
 //   PoCabinet.cycleCamera()
 //   PoCabinet.showTelemetry(canvasId) -> summary text
 //   PoCabinet.startReplay() / replayCommand(cmd, value) / stopReplay()
-//   PoCabinet.recordClip() -> 'shared' | 'downloaded' | 'unavailable'
 //   PoCabinet.lapProof() -> { inputs, wet }               — solo score verification
 //   PoCabinet.setBanter(lines)                             — officials' radio (the scripted pool; showDialogue speaks a line that has a clip)
 //
@@ -36,7 +35,7 @@ import { mountUiShader, unmountUiShader, setUiShaderMode, pulseUiShader } from '
 import { mountCarPreview, updateCarPreview, unmountCarPreview } from './car-preview.js';
 import {
     startRace, stopRace, pauseRace, resumeRace, pushServerSnapshot, updateRaceSettings, cycleCamera,
-    showTelemetry, startReplay, replayCommand, stopReplay, recordClip, lapProof, setBanter,
+    showTelemetry, startReplay, replayCommand, stopReplay, lapProof, setBanter,
 } from './race.js';
 import { getRecords, recordTrackResult } from './records.js';
 import * as audio from './audio.js';
@@ -83,7 +82,6 @@ const api = {
     startReplay,
     replayCommand,
     stopReplay,
-    recordClip,
     lapProof,
     setBanter,
 

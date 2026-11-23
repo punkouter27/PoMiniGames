@@ -106,24 +106,7 @@ public sealed class FfaElimination
 
 public sealed class FfaPresentation
 {
-    public FfaRecording Recording { get; set; } = new();
     public FfaFact Fact { get; set; } = new();
-}
-
-public sealed class FfaRecording
-{
-    public bool Supported { get; set; }
-    public bool Enabled { get; set; }
-    public string Status { get; set; } = "Checking recording support";
-    public List<FfaClip> Clips { get; set; } = [];
-}
-
-public sealed class FfaClip
-{
-    public int Id { get; set; }
-    public string Label { get; set; } = "";
-    public string Url { get; set; } = "";
-    public string MimeType { get; set; } = "";
 }
 
 public sealed class FfaFact

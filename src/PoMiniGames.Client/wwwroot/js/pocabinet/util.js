@@ -167,33 +167,3 @@ export function addHook(material, key, build) {
 export function roadPlane(track, i, lat) {
     return (track.z ? track.z[i] : 0) + (track.bank ? track.bank[i] * lat : 0);
 }
-
-// ── Sharing ─────────────────────────────────────────────────────────────────
-
-/**
- * Hand a file to the Web Share API where it can take files, else (or if sharing fails)
- * download it. Returns 'shared' | 'downloaded' | 'unavailable'; a cancelled share sheet
- * counts as shared.
- */
-export async function shareOrDownload(blob, filename, title) {
-    if (!blob || !blob.size) return 'unavailable';
-    try {
-        const file = new File([blob], filename, { type: blob.type });
-        if (navigator.canShare && navigator.canShare({ files: [file] })) {
-            await navigator.share({ files: [file], title });
-            return 'shared';
-        }
-    } catch (e) {
-        if (e && e.name === 'AbortError') return 'shared';
-    }
-    try {
-        const a = document.createElement('a');
-        a.href = URL.createObjectURL(blob);
-        a.download = filename;
-        a.click();
-        window.setTimeout(() => URL.revokeObjectURL(a.href), 10000);
-        return 'downloaded';
-    } catch {
-        return 'unavailable';
-    }
-}

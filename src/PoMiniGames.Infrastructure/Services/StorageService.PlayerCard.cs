@@ -249,7 +249,9 @@ public partial class StorageService
         var parts = name.Split([' ', '-', '_'], StringSplitOptions.RemoveEmptyEntries);
         if (parts.Length == 1)
         {
-            return parts[0].Length >= 2 ? parts[0][..2].ToUpperInvariant() : parts[0].ToUpperInvariant();
+            // Three-letter arcade initials ("QAT") are the player's whole name here, so they are shown
+            // whole; a longer single word is cut to its first two letters.
+            return parts[0].Length <= 3 ? parts[0].ToUpperInvariant() : parts[0][..2].ToUpperInvariant();
         }
         return $"{char.ToUpperInvariant(parts[0][0])}{char.ToUpperInvariant(parts[^1][0])}";
     }

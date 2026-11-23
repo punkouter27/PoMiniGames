@@ -4,7 +4,7 @@
    it is the control most used, and on a phone the 0–3 keys do not exist.
 
    Everything else is an icon. The two that are a choice rather than a switch open a small
-   menu: the lens (what the creatures are coloured by) and "more" (pop-out, reel, ambient
+   menu: the lens (what the creatures are coloured by) and "more" (pop-out, photos, ambient
    mode, the key legend). The menus are plain component state — no popover API, because a
    top-layer element escapes .poeco-hud's idle fade and would hang over a hidden HUD. *@
 <div class="poeco-hudbar">
@@ -75,13 +75,13 @@
 
     <div class="poeco-menu">
         <button type="button" class="poeco-pill poeco-reel-btn @(Pip || Ambient ? "poeco-pill--on" : "")" aria-haspopup="true" aria-expanded="@(_menu == "more" ? "true" : "false")"
-                title="More — pop-out window, island reel, ambient mode, keys" aria-label="More views"
+                title="More — pop-out window, photos, ambient mode, keys" aria-label="More views"
                 @onclick="@(() => Toggle("more"))">⋯</button>
         @if (_menu == "more")
         {
             <div class="poeco-menu-panel" role="menu" aria-label="More views">
                 <button type="button" role="menuitemcheckbox" aria-checked="@(PhotoMode ? "true" : "false")" class="poeco-menu-item @(PhotoMode ? "poeco-menu-item--on" : "")" @onclick="@(() => Run(OnPhotoMode))">📷 Photo mode <span class="poeco-menu-hint">FOV slider · stamped postcard PNG</span></button>
-                <button type="button" role="menuitem" class="poeco-menu-item" @onclick="@(() => Run(OnReel))">🎞 Island reel <span class="poeco-menu-hint">replays · photos · long exposure</span></button>
+                <button type="button" role="menuitem" class="poeco-menu-item" @onclick="@(() => Run(OnReel))">📷 Photos <span class="poeco-menu-hint">stills · miniature · long exposure</span></button>
                 <button type="button" role="menuitemcheckbox" aria-checked="@(Pip ? "true" : "false")" class="poeco-menu-item @(Pip ? "poeco-menu-item--on" : "")" @onclick="@(() => Run(OnPip))">⧉ Pop out <kbd>P</kbd> <span class="poeco-menu-hint">a small always-on-top window</span></button>
                 <button type="button" role="menuitemcheckbox" aria-checked="@(Ambient ? "true" : "false")" class="poeco-menu-item @(Ambient ? "poeco-menu-item--on" : "")" @onclick="@(() => Run(OnAmbient))">🌙 Ambient mode <span class="poeco-menu-hint">director on, HUD off, screen kept awake</span></button>
                 <button type="button" role="menuitemcheckbox" aria-checked="@(Keys ? "true" : "false")" class="poeco-menu-item @(Keys ? "poeco-menu-item--on" : "")" @onclick="@(() => Run(OnKeys))">⌨ Keys <kbd>H</kbd></button>

@@ -346,8 +346,7 @@
     gap: 8px;
 }
 
-.hq-keep-item img,
-.hq-keep-item video {
+.hq-keep-item img {
     display: block;
     width: 100%;
     aspect-ratio: 16 / 9;
@@ -365,32 +364,6 @@
 
 .hq-keep-actions .app-btn {
     min-height: 40px;
-}
-
-.hq-keep-pref {
-    display: flex;
-    flex-wrap: wrap;
-    align-items: center;
-    justify-content: space-between;
-    gap: 8px 16px;
-    padding-top: 10px;
-    border-top: 1px solid var(--color-border);
-}
-
-.hq-keep-pref > div:first-child {
-    display: grid;
-    gap: 2px;
-    flex: 1 1 16rem;
-    min-width: 0;
-}
-
-.hq-keep-pref-name {
-    font-weight: 600;
-}
-
-.hq-keep-pref-hint {
-    font-size: var(--text-sm);
-    color: var(--color-text-secondary);
 }
 
 @media (pointer: coarse) {

@@ -1,24 +1,7 @@
-/* Router fallbacks — the NotAuthorized / NotFound fragments rendered
-   inline inside App.razor's <AuthorizeRouteView>. Kept scoped so the global
-   style-recalc surface shrinks. */
-
-/* Colours come from the theme tokens, never hard-coded hexes, so both schemes
-   stay readable (every non-canvas surface follows this rule). */
-.app-fallback {
-    max-width: 480px;
-    margin: 4rem auto;
-    text-align: center;
-    padding: var(--space-5);
-    border-radius: var(--radius-lg);
-    background: var(--surface-1);
-    border: 1px solid var(--color-border);
-    color: var(--color-text-secondary);
-}
-
-.app-fallback h1 { margin: 0 0 var(--space-2) 0; color: var(--color-text-primary); }
-.app-fallback p { margin: 0 0 var(--space-4) 0; line-height: 1.45; }
-
-.app-fallback-link { color: var(--color-accent); text-decoration: none; }
+/* The 404 page (Layout/NotFound.razor), rendered by App.razor's <NotFound> inside MainLayout.
+   Scoped here, beside the component: while these rules sat in App.razor.css they were scoped to
+   App, so the page rendered unstyled, flush against the left edge. Colours come from the theme
+   tokens so both schemes stay readable. */
 
 .app-fallback--plain {
     color: var(--color-text-secondary);

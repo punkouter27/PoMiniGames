@@ -11,7 +11,9 @@
 //   attachRenderer(stage, renderer, { camera, composer });
 
 const TONES = { none: 'NoToneMapping', linear: 'LinearToneMapping', reinhard: 'ReinhardToneMapping', cineon: 'CineonToneMapping', aces: 'ACESFilmicToneMapping', agx: 'AgXToneMapping', neutral: 'NeutralToneMapping' };
-const SHADOWS = { basic: 'BasicShadowMap', pcf: 'PCFShadowMap', pcfsoft: 'PCFSoftShadowMap', vsm: 'VSMShadowMap' };
+// three r186 removed PCFSoftShadowMap and falls back to PCFShadowMap with a console warning on
+// every renderer; 'pcfsoft' asks for that fallback directly (same picture, no warning).
+const SHADOWS = { basic: 'BasicShadowMap', pcf: 'PCFShadowMap', pcfsoft: 'PCFShadowMap', vsm: 'VSMShadowMap' };
 
 /**
  * Apply the look settings to an existing renderer (also used when a mode swaps tone mapping).

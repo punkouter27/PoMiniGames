@@ -145,11 +145,11 @@
                         }
                     </RadzenTabsItem>
                     <RadzenTabsItem Text="Last fight">
-                        @* The poster and knockout clip of the last 1P, 2P or Cup fight this session
-                           (js/pobrawl/keepsake.js). They are here, not on the end card, because the
+                        @* The poster of the last 1P, 2P or Cup fight this session
+                           (js/pobrawl/keepsake.js). It is here, not on the end card, because the
                            end card has one button. Held in memory only. *@
                         <section class="hq-keep" aria-label="Last fight">
-                            @if (string.IsNullOrEmpty(_posterUrl) && string.IsNullOrEmpty(_clipUrl))
+                            @if (string.IsNullOrEmpty(_posterUrl))
                             {
                                 <EmptyState Title="No fight to show yet">Finish a 1P, 2P or Cup fight and its poster shows up here. It is kept until you reload or close the site.</EmptyState>
                             }
@@ -170,37 +170,11 @@
                                             </figcaption>
                                         </figure>
                                     }
-                                    @if (!string.IsNullOrEmpty(_clipUrl))
-                                    {
-                                        <figure class="hq-keep-item">
-                                            <video src="@_clipUrl" controls muted loop playsinline aria-label="Knockout clip: @_caption"></video>
-                                            <figcaption class="hq-keep-actions">
-                                                <button type="button" class="app-btn app-btn--primary" @onclick="@(() => DownloadKeepsakeAsync("clip"))">Download clip</button>
-                                                @if (_clipShare)
-                                                {
-                                                    <button type="button" class="app-btn app-btn--ghost" @onclick="@(() => ShareKeepsakeAsync("clip"))">Share</button>
-                                                }
-                                            </figcaption>
-                                        </figure>
-                                    }
                                 </div>
                                 @if (_keepStatus is not null)
                                 {
                                     <p class="hq-board-note" role="status">@_keepStatus</p>
                                 }
-                            }
-                            @if (_keepsake is not null)
-                            {
-                                <div class="hq-keep-pref">
-                                    <div>
-                                        <span class="hq-keep-pref-name" id="hq-clip-label">Knockout clips</span>
-                                        <span class="hq-keep-pref-hint">Off until you switch it on. Records the last seconds of a knockout, which costs some frame rate; it stays off on the low graphics tier and with reduced motion. Applies from your next fight.</span>
-                                    </div>
-                                    <div class="app-seg" role="radiogroup" aria-labelledby="hq-clip-label">
-                                        <button type="button" role="radio" class="app-seg__btn" aria-checked="@(_clipWanted ? "false" : "true")" @onclick="@(() => SetClipWantedAsync(false))">Off</button>
-                                        <button type="button" role="radio" class="app-seg__btn" aria-checked="@(_clipWanted ? "true" : "false")" @onclick="@(() => SetClipWantedAsync(true))">On</button>
-                                    </div>
-                                </div>
                             }
                         </section>
                     </RadzenTabsItem>
@@ -231,15 +205,12 @@
     private HashSet<string> _beaten = [];
     private Dictionary<string, int> _feats = [];
 
-    // Last fight tab (js/pobrawl/keepsake.js): object URLs of the poster and the clip, a caption,
-    // whether the device can share each as a file, and the clip setting.
+    // Last fight tab (js/pobrawl/keepsake.js): object URL of the poster, a caption,
+    // and whether the device can share it as a file.
     private IJSObjectReference? _keepsake;
     private string _posterUrl = "";
-    private string _clipUrl = "";
     private string _caption = "";
     private bool _posterShare;
-    private bool _clipShare;
-    private bool _clipWanted;
     private string? _keepStatus;
 
     private string _board = "pobrawl";
@@ -358,18 +329,15 @@
         }
     }
 
-    // describe() answers six strings (see keepsake.js): poster url, clip url, caption, and three flags.
+    // describe() answers three strings (see keepsake.js): poster url, caption, and a share flag.
     private async Task RefreshKeepsakeAsync()
     {
         if (_keepsake is null) return;
         var d = await _keepsake.InvokeAsync<string[]>("describe");
-        if (d is not { Length: >= 6 }) return;
+        if (d is not { Length: >= 3 }) return;
         _posterUrl = d[0];
-        _clipUrl = d[1];
-        _caption = d[2];
-        _posterShare = d[3] == "1";
-        _clipShare = d[4] == "1";
-        _clipWanted = d[5] == "1";
+        _caption = d[1];
+        _posterShare = d[2] == "1";
     }
 
     private async Task DownloadKeepsakeAsync(string kind)
@@ -397,13 +365,6 @@
             };
         }
         catch (JSException) { _keepStatus = "Sharing did not work. Download it instead."; }
-    }
-
-    private async Task SetClipWantedAsync(bool on)
-    {
-        if (_keepsake is null) return;
-        try { _clipWanted = await _keepsake.InvokeAsync<bool>("setClipWanted", on); }
-        catch (JSException) { /* storage blocked: the setting stays as shown */ }
     }
 
     public async ValueTask DisposeAsync()

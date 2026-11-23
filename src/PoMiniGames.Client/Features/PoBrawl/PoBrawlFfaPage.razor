@@ -238,16 +238,6 @@
                     <p>@(evaluation.Promoted ? "PROMOTED next round" : "Incumbent retained") · average place @evaluation.AveragePlace.Candidate.ToString("F2", CultureInfo.InvariantCulture) vs @evaluation.AveragePlace.Incumbent.ToString("F2", CultureInfo.InvariantCulture) · gain @evaluation.PlacementGain.ToString("+0.00;-0.00;0.00", CultureInfo.InvariantCulture)</p>
                 }
             }
-            <h3>Automatic highlights</h3>
-            <label><input type="checkbox" checked="@_presentation.Recording.Enabled" disabled="@(!_presentation.Recording.Supported)" @onchange="ToggleRecordingAsync" /> Capture knockout and final-duel clips</label>
-            <p>@_presentation.Recording.Status</p>
-            <small>Silent video of the arena. Download before leaving; clips are session-only and bounded to protect memory.</small>
-            <ul>
-                @foreach (var clip in _presentation.Recording.Clips)
-                {
-                    <li><a href="@clip.Url" download="@ClipFileName(clip)" @onclick="DownloadCueAsync">Download @clip.Label</a></li>
-                }
-            </ul>
             <h3>President fact cards</h3>
             <label><input type="checkbox" checked="@_factsEnabled" @onchange="ToggleFactsAsync" /> Show cached Wikidata facts between rounds</label>
             <p>@_presentation.Fact.Status</p>
@@ -445,9 +435,6 @@
     private static string NameOf(string fighterId) =>
         Names.TryGetValue(fighterId, out var name) ? name : fighterId;
 
-    private static string ClipFileName(FfaClip clip) =>
-        $"pobrawl-ffa-highlight-{clip.Id}.{(clip.MimeType.Contains("mp4", StringComparison.OrdinalIgnoreCase) ? "mp4" : "webm")}";
-
     private Task ApplyStartProfile() =>
         _engineLoaded ? CommandAsync("PoBrawl.ffaProfile", _startProfile) : Task.CompletedTask;
 
@@ -458,7 +445,6 @@
         if (!Settings.Muted) await CommandAsync("PoBrawl.ffaClick", "toggle");
     }
 
-    private Task DownloadCueAsync() => CommandAsync("PoBrawl.ffaClick", "download");
     private Task TogglePauseAsync() => CommandAsync("PoBrawl.ffaPause", !_paused);
 
     [JSInvokable]
@@ -494,7 +480,6 @@
     private Task ChangeProfileAsync(ChangeEventArgs e) => StudioCommandAsync("PoBrawl.ffaProfile", e.Value?.ToString() ?? "balanced");
     private Task RunBenchmarkAsync() => StudioCommandAsync("PoBrawl.ffaBenchmark");
     private Task EvaluateAgentAsync() => StudioCommandAsync("PoBrawl.ffaEvaluateAgent", _agentId, _agentPreset);
-    private Task ToggleRecordingAsync(ChangeEventArgs e) => StudioCommandAsync("PoBrawl.ffaRecording", e.Value is true);
     private Task ToggleFactsAsync(ChangeEventArgs e)
     {
         _factsEnabled = e.Value is true;

@@ -132,7 +132,9 @@
     pointer-events: none;
     opacity: 0;
     transition: opacity 0.2s ease-out, transform 0.2s ease-out;
-    z-index: 4;
+    /* Above the round splash (z-index 5): the PA's ring introduction is captioned while the
+       splash is up, and under its blur it read as ghost text behind the VS cards on phones. */
+    z-index: 6;
 }
 
 .pb-canvas-host ::deep .pb-caption:empty {
