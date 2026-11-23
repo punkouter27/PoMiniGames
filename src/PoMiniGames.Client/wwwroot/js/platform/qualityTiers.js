@@ -55,13 +55,8 @@
     }
 
     function computeTier() {
-        // Conservative device read: memory and core count are the two signals
-        // that correlate with sustained GPU/CPU headroom for this app's loads.
+        // Default to high graphics on hardware WebGL; keep software renderers (e.g. SwiftShader) on low.
         if (isSoftwareRenderer()) return 'low';
-        const mem = navigator.deviceMemory || 8;   // Chrome-only; assume healthy
-        const cores = navigator.hardwareConcurrency || 4;
-        if (mem <= 2 || cores <= 2) return 'low';
-        if (mem <= 4 || cores <= 4) return 'medium';
         return 'high';
     }
 

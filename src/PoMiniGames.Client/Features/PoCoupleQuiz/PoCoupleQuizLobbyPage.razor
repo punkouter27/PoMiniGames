@@ -36,33 +36,26 @@
                          StartLabel="Start quiz"
                          MaxPlayersHint="2"
                          MinPlayers="2"
-                         PickerTitle="Rounds and topic"
-                         HowTo="@HowToPlayContent"
                          OnClient="OnClientAsync"
                          OnStateChanged="OnLobbyStateAsync"
                          OnGameStarted="OnMatchStarted"
                          OnLeave="Leave">
                 <Picker>
-                    @* Rounds and topic pack are the host's: everyone else reads them off the
-                       host's seat. *@
                     @if (_lobby is { IsHost: true })
                     {
-                        <select aria-label="Rounds" value="@Rounds" @onchange="OnRoundsChanged">
-                            @foreach (var n in RoundChoices)
-                            {
-                                <option value="@n">@n rounds</option>
-                            }
-                        </select>
-                        <select aria-label="Topic pack" value="@TopicPack" @onchange="OnTopicPackChanged">
-                            @foreach (var p in TopicPacks)
-                            {
-                                <option value="@p.Id">@p.Label</option>
-                            }
-                        </select>
+                        <label class="lobby-inline-opt">
+                            <span>Topic</span>
+                            <select aria-label="Topic pack" value="@TopicPack" @onchange="OnTopicPackChanged">
+                                @foreach (var p in TopicPacks)
+                                {
+                                    <option value="@p.Id">@p.Label</option>
+                                }
+                            </select>
+                        </label>
                     }
                     else
                     {
-                        <p class="lobby__hint">@Rounds rounds · @PackLabel(TopicPack) pack, set by the host.</p>
+                        <p class="lobby__hint">Topic: @PackLabel(TopicPack)</p>
                     }
                 </Picker>
             </OnlineLobby>
@@ -71,7 +64,6 @@
 </GameShell>
 
 @code {
-    private static readonly int[] RoundChoices = [3, 5, 7];
     private static readonly (string Id, string Label)[] TopicPacks =
     [
         ("Classic", "Classic (Curated)"),
@@ -103,7 +95,6 @@
     private CoupleQuizLobbyPlayer? HostSeat => _lobby?.State is { } s
         ? s.Players.FirstOrDefault(p => p.ConnectionId == s.HostConnectionId) ?? s.Players.FirstOrDefault()
         : null;
-    private int Rounds => HostSeat?.Rounds ?? 5;
     private string TopicPack => HostSeat?.TopicPack ?? "Classic";
 
     protected override async Task OnInitializedAsync()
@@ -123,11 +114,6 @@
 
     // Repaints the host's picks for the guest as they change.
     private Task OnLobbyStateAsync(LobbyState<CoupleQuizLobbyPlayer> _) => Task.CompletedTask;
-
-    private Task OnRoundsChanged(ChangeEventArgs e) =>
-        int.TryParse(e.Value?.ToString(), out var rounds) && _lobby is not null
-            ? _lobby.SendAsync("SetRounds", rounds)
-            : Task.CompletedTask;
 
     private Task OnTopicPackChanged(ChangeEventArgs e) =>
         _lobby?.SendAsync("SetTopicPack", e.Value?.ToString() ?? "Classic") ?? Task.CompletedTask;

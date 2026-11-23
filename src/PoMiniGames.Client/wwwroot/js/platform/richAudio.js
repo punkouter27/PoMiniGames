@@ -1,4 +1,4 @@
-// richAudio.js — Opt-in Rich Audio Layer (`pominigames:rich-audio`, default off).
+// richAudio.js — Rich Audio Layer (`pominigames:rich-audio`, default on).
 //
 // When enabled, lazily loads Tone.js (MIT) from jsDelivr for warm polyphonic synth
 // textures when online, and provides a rich built-in Web Audio FM/chorus/sub-bass
@@ -14,9 +14,9 @@ let _toneSynth = null;
 
 function readEnabled() {
     try {
-        return localStorage.getItem(RICH_KEY) === '1';
+        return localStorage.getItem(RICH_KEY) !== '0';
     } catch {
-        return false;
+        return true;
     }
 }
 

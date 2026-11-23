@@ -23,11 +23,8 @@
 {
     <GameIntro CueScope="pobrawl"
                Title="@TitleContent"
-               Objective="A real-time 1v1 in the arena: one round, 60 seconds, and the server keeps the HP."
+               Objective="Real-time 1v1 in the arena — one 60-second round."
                Controls="@IntroKeys"
-               HowToPlay="@IntroTips"
-               Options="@IntroOptions"
-               Wide="true"
                OnStart="OnIntroStartAsync" />
 }
 else if (_failed is { } why)
@@ -52,7 +49,6 @@ else
                  ShowInvite="false"
                  QuietWhenConnected="true"
                  Heading="@Sentence"
-                 HowTo="@HowToPlayContent"
                  OnClient="OnClientAsync"
                  OnStateChanged="OnLobbyStateAsync"
                  OnGameStarted="OnGameStarted"
@@ -76,19 +72,17 @@ else
                             @SeatCard(right, 2, false)
                         </div>
                     </div>
-                    @if (_picking && me is not null)
+                    @if (me is not null)
                     {
-                        <div class="pbl-pick">
-                            <PoBrawlFighterGrid Fighters="@RosterForPicker" P1Index="@IndexOf(me.Fighter.Id)" P1Label="You"
-                                                P1Name="your fighter" Face="@FaceOf" OnPick="PickInLobbyAsync" />
-                        </div>
-                    }
-                    @if (_dossierFor is { } shown)
-                    {
-                        <div class="pbl-dossier">
-                            <PoBrawlDossierCard FighterId="@shown" Compact="true" />
-                            <button type="button" class="app-btn app-btn--secondary app-btn--sm" @onclick="() => _dossierFor = null">Close</button>
-                        </div>
+                        <label class="lobby-inline-opt">
+                            <span>Fighter</span>
+                            <select aria-label="Fighter" value="@_pick" @onchange="OnFighterChangedAsync">
+                                @foreach (var fighter in RosterForPicker)
+                                {
+                                    <option value="@fighter.Id">@fighter.Name</option>
+                                }
+                            </select>
+                        </label>
                     }
                 }
             </div>
@@ -115,8 +109,6 @@ else
     // to the hub once this browser holds a seat.
     private string _pick = PoBrawlRoster.Bob.Id;
     private string? _pickAsked;   // the id already sent for the seat held now
-    private bool _picking;        // the lobby's "Change fighter" grid is open
-    private string? _dossierFor;  // the fighter whose dossier is open under the seats
 
     protected override async Task OnInitializedAsync()
     {
@@ -144,23 +136,9 @@ else
     }
 
     private static RenderFragment TitleContent => GameCatalog.TitleFor(GameKeys.PoBrawl);
-    private static RenderFragment HowToPlayContent => @<PoBrawlControls Mode="online" />;
     private static RenderFragment IntroKeys => @<PoBrawlControls Mode="online" Part="keys" />;
-    private static RenderFragment IntroTips => @<PoBrawlControls Mode="online" Part="tips" />;
 
-    // The start card's setup: who you fight as, by face. The line under the grid is how that
-    // fighter plays; the full dossier opens from the fighter's name in the lobby.
-    private RenderFragment IntroOptions => @<div class="pb-lobby pbl-pick pbl-pick--card">
-        <p class="pbl-pick-title">Your fighter</p>
-        <PoBrawlFighterGrid Fighters="@RosterForPicker" P1Index="@IndexOf(_pick)" P1Label="You" P1Name="your fighter"
-                            Face="@FaceOf" OnPick="PickOnCardAsync" />
-        @if (Dossiers.Peek(_pick) is { FightingStyle.Length: > 0 } d)
-        {
-            <p class="pbl-pick-style"><b>@FighterName(_pick)</b> · @d.FightingStyle</p>
-        }
-    </div>;
-
-    // One seat: a face, who it is, the fighter (tap for the dossier) and whether it is ready.
+    // One seat: a face, who it is, the fighter and whether it is ready.
     // An empty seat is the invitation.
     private RenderFragment SeatCard(PoBrawlLobbyPlayer? p, int side, bool mine) => @<div class="pb-select-side pb-select-side--p@(side) pb-select-side--static pbl-seat @(p?.IsReady == true ? "pb-select-side--locked" : "") @(p is null ? "pbl-seat--open" : "")"
                                                                                          data-seat="@(mine ? "you" : p is null ? "open" : "taken")">
@@ -183,15 +161,9 @@ else
             </span>
             <span class="pbl-seat-text">
                 <span class="pb-select-who">@(mine ? "You" : LeaderboardNames.Pretty(p.DisplayName))</span>
-                <button type="button" class="pb-select-pick pbl-seat-pick" aria-expanded="@(_dossierFor == p.Fighter.Id ? "true" : "false")"
-                        aria-label="@($"{FighterName(p.Fighter.Id)}: open the dossier")" @onclick="() => ToggleDossier(p.Fighter.Id)">@FighterName(p.Fighter.Id)</button>
+                <span class="pb-select-pick">@FighterName(p.Fighter.Id)</span>
                 <span class="pb-select-state">@if (p.IsReady) { <span class="material-symbols-outlined" aria-hidden="true">check</span> }@(p.IsReady ? "Ready" : "Not ready")</span>
             </span>
-            @if (mine)
-            {
-                <button type="button" class="app-btn app-btn--secondary app-btn--sm pbl-seat-change"
-                        aria-expanded="@(_picking ? "true" : "false")" @onclick="() => _picking = !_picking">@(_picking ? "Done" : "Change fighter")</button>
-            }
             @if (p.IsReady)
             {
                 <span class="pb-select-seal" aria-hidden="true">@PoBrawlPage.SealSvg</span>
@@ -206,20 +178,9 @@ else
     // An id this build no longer knows still renders, as itself.
     private static string FighterName(string id) => PoBrawlRoster.NameOf(id) ?? id;
 
-    private static int IndexOf(string id)
-    {
-        for (var i = 0; i < RosterForPicker.Count; i++)
-        {
-            if (string.Equals(RosterForPicker[i].Id, id, StringComparison.OrdinalIgnoreCase)) return i;
-        }
-        return -1;
-    }
-
     private readonly HashSet<string> _faceFailed = [];
 
     private string? FaceOf(string fighterId) => Dossiers.Peek(fighterId)?.ThumbnailUrl;
-
-    private void ToggleDossier(string fighterId) => _dossierFor = _dossierFor == fighterId ? null : fighterId;
 
     private bool EveryoneReady =>
         _lobby?.State is { } s && _lobby.Me is not null && s.Players.Count == s.MaxPlayers && s.Players.All(p => p.IsReady);
@@ -263,7 +224,7 @@ else
 
     private async Task OnLobbyStateAsync(LobbyState<PoBrawlLobbyPlayer> room)
     {
-        if (_lobby?.Me is null) { _pickAsked = null; _picking = false; }
+        if (_lobby?.Me is null) _pickAsked = null;
         if (!EveryoneReady)
         {
             StopCountdown();
@@ -276,7 +237,6 @@ else
     private async Task CountDownAsync()
     {
         var count = _count = new CancellationTokenSource();
-        _picking = false;
         try
         {
             for (var n = CountdownSeconds; n > 0; n--)
@@ -311,16 +271,11 @@ else
     }
 
     // ── The pick ─────────────────────────────────────────────────────────────────
-    private async Task PickOnCardAsync(int index)
+    private async Task OnFighterChangedAsync(ChangeEventArgs e)
     {
-        _pick = RosterForPicker[index].Id;
-        await RememberPickAsync();
-    }
-
-    private async Task PickInLobbyAsync(int index)
-    {
-        _pick = RosterForPicker[index].Id;
-        _picking = false;
+        var id = e.Value?.ToString();
+        if (string.IsNullOrWhiteSpace(id)) return;
+        _pick = id;
         await RememberPickAsync();
         await SyncPickAsync();
     }

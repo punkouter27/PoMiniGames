@@ -21,6 +21,39 @@ function isSleeping(body) {
   return body.sleepState === body.constructor.SLEEPING;
 }
 
+// Top of the physics floor plane (physics.js createPhysicsWorld: floorBody at y 0.04).
+const FLOOR_Y = 0.04;
+
+// A frozen pose must lie on the mat. Retiring a ragdoll mid-fall — the 4 s deadline, a
+// body caught on the ropes, or the capacity cap — used to freeze it in the air. Shift
+// every body down so the lowest one touches the floor before the pose is written out.
+function dropToFloor(ragdoll) {
+  const bodies = ragdoll?.bodies ? Object.values(ragdoll.bodies) : [];
+  let lowest = Infinity;
+  for (const body of bodies) {
+    let bottom = body.position.y;
+    try {
+      body.updateAABB?.();
+      if (Number.isFinite(body.aabb?.lowerBound?.y)) bottom = body.aabb.lowerBound.y;
+    } catch { /* fall back to the centre */ }
+    if (bottom < lowest) lowest = bottom;
+  }
+  const lift = lowest - FLOOR_Y;
+  if (!Number.isFinite(lift) || lift <= 0.01) return;
+  for (const body of bodies) {
+    body.position.y -= lift;
+    body.velocity?.set?.(0, 0, 0);
+    body.angularVelocity?.set?.(0, 0, 0);
+  }
+}
+
+// Write the final pose (on the floor) to the rig and remove the physics bodies.
+function freeze(ragdoll) {
+  dropToFloor(ragdoll);
+  ragdoll.drive();
+  ragdoll.dispose();
+}
+
 export class FfaRagdollBudget {
   constructor(options = {}) {
     this.maxRagdolls = Math.max(1, Math.floor(finitePositive(options.maxRagdolls, DEFAULTS.maxRagdolls)));
@@ -82,8 +115,7 @@ export class FfaRagdollBudget {
     const trackedBodies = [...this.ragdolls.keys()]
       .reduce((count, current) => count + Object.keys(current.bodies || {}).length, 0);
     if (this.ragdolls.size >= this.maxRagdolls || trackedBodies + bodies.length > this.maxBodies) {
-      ragdoll.drive();
-      ragdoll.dispose();
+      freeze(ragdoll);
       return false;
     }
 
@@ -170,10 +202,7 @@ export class FfaRagdollBudget {
   retire(ragdoll, reason = 'manual') {
     const record = this.ragdolls.get(ragdoll);
     if (!record || record.retired) return false;
-    if (ragdoll.active) {
-      ragdoll.drive();
-      ragdoll.dispose();
-    }
+    if (ragdoll.active) freeze(ragdoll);
     record.bodies.length = 0;
     record.settledFor.clear();
     record.settled = reason === 'settled';

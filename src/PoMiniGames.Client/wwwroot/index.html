@@ -182,6 +182,9 @@
          first among the game scripts: the racing renderer and the engine modules
          read window.PoCanvasDpr during their own setup. -->
     <script src="js/platform/canvasDpr.js"></script>
+    <!-- Records which canvases got a WebGPU / WebGL context, for the top-nav FPS pill.
+         Must run before any game script creates a context. -->
+    <script src="js/platform/gpuBackend.js"></script>
     <!-- Reports uncaught errors, console.error and lost WebGL contexts to the server
          log (POST /client-errors). Must stay ABOVE consoleFilter.js: the filter then
          wraps this file's console.error, so the noise it drops is never reported. -->

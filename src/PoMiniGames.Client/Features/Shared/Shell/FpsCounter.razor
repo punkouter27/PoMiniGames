@@ -16,7 +16,7 @@
    user can't distinguish from "this game is at zero fps". *@
 @if (_enabled && _hasReading)
 {
-    <span class="gl-fps gl-fps--centered" title="Frames per second" data-tier="@_tier">@_label</span>
+    <span class="gl-fps gl-fps--centered" title="Frames per second and the graphics API the game is drawing with" data-tier="@_tier">@_label</span>
 }
 
 @code {
@@ -68,11 +68,14 @@
     // gl-fps.js counts frames itself and calls this once per ~500 ms window,
     // not once per frame.
     [JSInvokable]
-    public void OnSample(int frames, double elapsedMs)
+    public void OnSample(int frames, double elapsedMs, string? backend)
     {
         if (frames <= 0 || elapsedMs <= 0) return;
         var fps = Math.Round(frames * 1000.0 / elapsedMs);
-        var next = $"{fps:0} FPS";
+        // The graphics API of the canvas on screen (js/platform/gpuBackend.js):
+        // WebGPU, WebGL 2 or WebGL; "No 3D" on a page with no GPU canvas.
+        var api = string.IsNullOrEmpty(backend) ? "No 3D" : backend;
+        var next = $"{fps:0} FPS · {api}";
         var nextTier = fps >= 55 ? "ok" : fps >= 30 ? "warn" : "bad";
         if (next == _label && nextTier == _tier && _hasReading) return;
         _label = next;

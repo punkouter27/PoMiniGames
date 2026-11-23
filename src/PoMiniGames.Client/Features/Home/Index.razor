@@ -79,9 +79,7 @@
         {
             var playable = IsPlayable(game.Primary);
             <article class="home-card" aria-labelledby="@($"home-card-{game.Key.Value}")">
-                @* The heading opens the game's main mode: one large target on every card,
-                   however small a short phone makes the chips. Out of the tab order,
-                   because the first chip is the same destination for a keyboard. *@
+                @* Left-to-right row: icon + game name, description, then a button for each mode. *@
                 @if (playable)
                 {
                     <a class="home-card-head" href="@game.Primary.Url" data-hub-nav data-spring="0.97" tabindex="-1"
@@ -100,39 +98,23 @@
                     </div>
                 }
 
-                @* Four chips, then a "+N" that opens the rest in a popover. Brawl used to
-                   spend six chips on one card, which made its whole grid row taller than
-                   every other one; the popover keeps those modes one tap away instead of
-                   spending the layout on them. *@
+                <p class="home-card-desc">@game.Description</p>
+
+                @* Three fixed groups — 1P, Online, Demo — so each kind lines up card to card.
+                   A group can hold several chips (Brawl's Demo · Tournament and Demo · FFA). *@
                 <div class="home-card-modes">
-                    @foreach (var m in game.Modes.Take(HomeChipLimit))
+                    @foreach (var kind in ModeGroupOrder)
                     {
-                        @ModeChip(game, m)
-                    }
-                    @if (game.Modes.Count > HomeChipLimit)
-                    {
-                        var rest = game.Modes.Skip(HomeChipLimit).ToList();
-                        var panelId = $"home-more-{game.Key.Value}";
-                        @* One anchor name per card. A single shared name would have every
-                           panel anchor to whichever button the browser picked last, which
-                           put Brawl's folded modes under the Racer card. *@
-                        <button type="button" class="home-mode-chip home-mode-chip--more" data-spring data-sonify
-                                popovertarget="@panelId" aria-haspopup="true"
-                                style="@($"anchor-name: --home-more-{game.Key.Value}")"
-                                aria-label="@($"{game.Title}: {rest.Count} more modes")">+@rest.Count</button>
-                        <div id="@panelId" popover="auto" class="home-more-panel"
-                             role="group" aria-label="@($"{game.Title} other modes, {game.Description}")"
-                             style="@($"position-anchor: --home-more-{game.Key.Value}")">
-                            @foreach (var m in rest)
+                        var inGroup = game.Modes.Where(m => m.Mode == kind).ToList();
+                        <div class="home-mode-group home-mode-group--@(kind.ToString().ToLowerInvariant())"
+                             role="group" aria-label="@GameModes.ToDescription(kind)">
+                            @foreach (var m in inGroup)
                             {
                                 @ModeChip(game, m)
                             }
                         </div>
                     }
                 </div>
-
-                @* What the game is. Sits on its own line under the title and chips. *@
-                <p class="home-card-desc">@game.Description</p>
             </article>
         }
     </div>
@@ -167,12 +149,6 @@
     private IJSObjectReference? _ambientModule;
     private bool _ambientStarted;
 
-    // How many mode chips a card shows before the rest fold into a "+N" popover. Three,
-    // not four: a 305px card on a laptop cannot hold a title and four chips — the fourth
-    // was being clipped mid-word by the card's paint containment.
-    private const int HomeChipLimit = 3;
-
-
     // Activity feed (recent matches).
     private IReadOnlyList<ActivityFeedService.FeedItem> _activity = Array.Empty<ActivityFeedService.FeedItem>();
 
@@ -185,6 +161,8 @@
     // data-hub-nav: js/platform/app.js launches the game in place, morphing the card into its title.
     private static string ModeLabel(CatalogMode mode) => mode.ChipLabel ?? GameModes.ToLabel(mode.Mode);
     private static string ModeDescription(CatalogMode mode) => mode.ChipDescription ?? GameModes.ToDescription(mode.Mode);
+
+    private static readonly GameMode[] ModeGroupOrder = [GameMode.OnePlayer, GameMode.Multiplayer, GameMode.Demo];
 
     private RenderFragment ModeChip(CatalogGame game, CatalogMode m) =>
         IsPlayable(m)

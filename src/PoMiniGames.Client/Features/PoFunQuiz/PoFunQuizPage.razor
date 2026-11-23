@@ -439,13 +439,11 @@
 
     protected override void OnInitialized()
     {
-        // Demo runs forever (GameOver stays suppressed), so it is resolved first and
-        // wins. /funquiz/2player is the split-screen board.
+        // Demo runs forever (GameOver stays suppressed), so it is resolved first and wins.
         var routeMode = GameModes.Parse(Mode);
         _playMode = routeMode switch
         {
             GameMode.Demo => "demo",
-            GameMode.TwoPlayer => "2ps",
             _ => "solo",
         };
         _splitScreen = _playMode == "2ps";

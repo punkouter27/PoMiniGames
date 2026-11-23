@@ -502,6 +502,12 @@ dialog.gps-intro-overlay::backdrop { background: transparent; }
   border-top: 1px solid var(--color-border);
 }
 
+/* Online lobby modals pack tightly with no scrollbars. */
+.gps-intro-body:has(.lobby) {
+  overflow: visible;
+  gap: 0.35rem;
+}
+
 /* Wide: info on the left, setup on the right. */
 @media (min-width: 760px) {
   .gps-intro-card--wide .gps-intro-body:has(> .gps-intro-controls + .gps-intro-options) {

@@ -103,10 +103,10 @@ public sealed class SettingsService : IAsyncDisposable
     public bool ColorSafe { get; private set; }
 
     /// <summary>Graphics quality for every game: one of <see cref="GraphicsTiers"/>.</summary>
-    public string Graphics { get; private set; } = "auto";
+    public string Graphics { get; private set; } = "high";
 
-    /// <summary>Opt-in polyphonic FM/Tone.js synth &amp; hall reverb layer.</summary>
-    public bool RichAudio { get; private set; }
+    /// <summary>Polyphonic FM/Tone.js synth &amp; hall reverb layer. On by default.</summary>
+    public bool RichAudio { get; private set; } = true;
 
     /// <summary>Opt-in Web Speech API play-by-play announcer and question reader.</summary>
     public bool VoiceAnnouncer { get; private set; }
@@ -123,10 +123,10 @@ public sealed class SettingsService : IAsyncDisposable
             Haptics = LocalStorageService.GetItem<string>(HapticsKey) != "0";
             ReducedMotion = LocalStorageService.GetItem<string>(ReducedMotionKey) == "1";
             ColorSafe = LocalStorageService.GetItem<string>(ColorSafeKey) == "1";
-            RichAudio = LocalStorageService.GetItem<string>(RichAudioKey) == "1";
+            RichAudio = LocalStorageService.GetItem<string>(RichAudioKey) != "0";
             VoiceAnnouncer = LocalStorageService.GetItem<string>(VoiceAnnouncerKey) == "1";
             var tier = LocalStorageService.GetItem<string>(GraphicsKey);
-            Graphics = GraphicsTiers.Contains(tier) ? tier! : "auto";
+            Graphics = GraphicsTiers.Contains(tier) ? tier! : "high";
         }
         catch { /* pre-render — defaults stand */ }
     }

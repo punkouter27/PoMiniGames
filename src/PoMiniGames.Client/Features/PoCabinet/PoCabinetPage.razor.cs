@@ -47,8 +47,7 @@ public partial class PoCabinetPageBase : ComponentBase, IAsyncDisposable
     /// <summary>Failed: the race view could not mount (or threw); the crash card offers a retry.</summary>
     protected enum Phase { Start, Lobby, Loading, Racing, Finished, Failed }
 
-    // There is no 2P mode: a stale /pocabinet/2player link plays 1P.
-    protected GameMode Mode => GameModes.Parse(ModeSegment) is var m && m == GameMode.TwoPlayer ? GameMode.OnePlayer : m;
+    protected GameMode Mode => GameModes.Parse(ModeSegment);
 
 #pragma warning disable CA1051 // Blazor code-behind protected fields shared directly with PoCabinetPage.razor markup.
     protected string _playerName = "Player";

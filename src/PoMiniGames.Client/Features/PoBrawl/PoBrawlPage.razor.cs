@@ -263,8 +263,8 @@ public partial class PoBrawlPage
     protected override void OnInitialized()
     {
         // /pobrawl/demo (the Cup), /pobrawl/multi (the lobby) and /pobrawl/hq are their own
-        // pages' literal routes, so only 1P, 2P and online land here.
-        _mode = GameModes.Parse(Mode) == GameMode.TwoPlayer ? "2p" : "1p";
+        // pages' literal routes, so only 1P and online land here.
+        _mode = "1p";
         // /pobrawl/online?code=… — the lobby's fight. Not a GameModes slug: it is not a way to
         // START a game (that is /pobrawl/multi), only where a started one is played or watched.
         // The lobby page showed the intro card, so there is none here.
@@ -297,8 +297,7 @@ public partial class PoBrawlPage
 
     private static bool IsKnownMode(string? mode) =>
         string.IsNullOrEmpty(mode)
-        || string.Equals(mode, GameModes.OnePlayerSlug, StringComparison.OrdinalIgnoreCase)
-        || string.Equals(mode, GameModes.TwoPlayerSlug, StringComparison.OrdinalIgnoreCase);
+        || string.Equals(mode, GameModes.OnePlayerSlug, StringComparison.OrdinalIgnoreCase);
 
     /// <summary>
     /// 1P: pick up ladder progress saved from another device (GET /api/pobrawl/progress). The

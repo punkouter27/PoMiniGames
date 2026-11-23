@@ -42,7 +42,7 @@
                        @oninput="OnInput" />
             </div>
 
-            <p class="arcade-modal-hint">Type three letters, A to Z. You can change them later in Settings (the gear, top right).</p>
+            <p class="arcade-modal-hint">Type three letters, A to Z.</p>
 
             <div class="arcade-modal-error" aria-live="polite">
                 <ValidationMessage For="() => _model.Initials" class="arcade-field-error" />
@@ -87,7 +87,7 @@
         PlayerNames.IsPromptOpen &&
         !OnUtilityPage;
 
-    private static readonly string[] UtilityPages = ["/diag", "/settings"];
+    private static readonly string[] UtilityPages = ["/diag"];
 
     private bool OnUtilityPage
     {

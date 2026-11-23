@@ -480,8 +480,7 @@
     protected override void OnInitialized()
     {
         _playerName = PlayerNameService.GetPlayerName();
-        if (RouteMode == GameMode.TwoPlayer) _playMode = "2p";
-        else if (RouteMode == GameMode.Multiplayer) _playMode = "online";
+        if (RouteMode == GameMode.Multiplayer) _playMode = "online";
         ResetGame();
         if (IsDemo) Kiosk.SetCurrent("connectfive-demo");
     }

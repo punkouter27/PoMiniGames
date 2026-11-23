@@ -35,7 +35,9 @@
           const f = frames, e = elapsed;
           frames = 0;
           elapsed = 0;
-          try { dotnetRef.invokeMethodAsync('OnSample', f, e); } catch { /* component gone */ }
+          let backend = '';
+          try { backend = window.PoGpuBackend ? window.PoGpuBackend.current() : ''; } catch { /* best effort */ }
+          try { dotnetRef.invokeMethodAsync('OnSample', f, e, backend); } catch { /* component gone */ }
         }
       }
     }

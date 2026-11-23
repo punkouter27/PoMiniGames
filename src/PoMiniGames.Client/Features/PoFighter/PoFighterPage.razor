@@ -59,31 +59,17 @@
                    Options="@ArcadePicker"
                    OnStart="@(() => _introDismissed = true)" />
     }
-    else if (IsVersus && !_introDismissed)
-    {
-        <GameIntro CueScope="pofighter"
-                   Title=@TitleContent
-                   Objective="Two players, one screen: best of three."
-                   Controls="@VersusControls"
-                   Mode="GameIntro.IntroMode.TwoPlayer"
-                   Wide="true"
-                   Options="@VersusPicker"
-                   OnStart="@(() => _introDismissed = true)" />
-    }
-    else if (IsArcade || IsVersus)
+    else if (IsArcade)
     {
         <div class="pf-room pf-demo" @ref="_room" data-pf-device="keys">
             <canvas class="pf-canvas" data-pf-canvas
-                    aria-label="@(IsArcade ? "Arcade: you on the left against the computer." : "Two players: P1 on the left, P2 on the right.")"></canvas>
+                    aria-label="Arcade: you on the left against the computer."></canvas>
             <div class="pf-bracket" data-pf-bracket hidden aria-live="polite"></div>
             @if (_failed)
             {
                 <div class="pf-error"><ErrorState Title="The fight could not be loaded">Check your connection and reopen the game.</ErrorState></div>
             }
-            @if (IsArcade)
-            {
-                @TouchPad("left", "right")
-            }
+            @TouchPad("left", "right")
         </div>
     }
     else if (IsTournament)
@@ -327,7 +313,6 @@
     private bool IsDemo => string.Equals(Mode, "demo", StringComparison.OrdinalIgnoreCase);
     private bool IsTournament => string.Equals(Mode, "tournament", StringComparison.OrdinalIgnoreCase);
     private bool IsArcade => string.Equals(Mode, "arcade", StringComparison.OrdinalIgnoreCase);
-    private bool IsVersus => string.Equals(Mode, "versus", StringComparison.OrdinalIgnoreCase);
 
     private Dictionary<string, int> _ratings = new(StringComparer.OrdinalIgnoreCase);
     private PoFighterFighterRating[] _board = [];
@@ -335,7 +320,6 @@
     private Models.GameResult _outcome = Models.GameResult.Win;
     private string _summary = "";
     private string _difficulty = "normal";
-    private string _p2FighterId = "kim";
     private string? _fieldPick;
 
     private static readonly IReadOnlyList<IntroMap> DifficultyMaps =
@@ -354,41 +338,6 @@
                              Customs="@_customFighters" OnSelect="@(id => _fighterId = id)" />
         <PoFighterDossier Fighter="@CardFor(_fighterId)" Rating="@RatingFor(_fighterId)" />
     </div>;
-
-    // 2P: one grid, two cursors. The plate picked above the grid is the player choosing; a pick
-    // hands the turn to the other player.
-    private int _versusActive = 1;
-
-    private RenderFragment VersusPicker => @<div class="pf-vs">
-        <div class="pf-vs-plates">
-            @VersusPlate(1, _fighterId)
-            <span class="pf-vs-mark" aria-hidden="true">VS</span>
-            @VersusPlate(2, _p2FighterId)
-        </div>
-        <p class="pf-vs-hint" aria-live="polite">Picking for <strong>Player @_versusActive</strong></p>
-        <PoFighterRosterGrid Label="@($"Player {_versusActive} fighter")" Heading="@($"Player {_versusActive} select")" ShowRandom="true" Compact="true" Selected="@_fighterId"
-                             Selected2="@_p2FighterId" Ratings="@_ratings" Customs="@_customFighters"
-                             OnSelect="PickVersusFighter" />
-    </div>;
-
-    private RenderFragment VersusPlate(int player, string id) => @<button type="button" data-spring="0.96" data-sonify
-            class="pf-plate pf-plate--p@(player) @(_versusActive == player ? "is-active" : "")"
-            aria-pressed="@(_versusActive == player ? "true" : "false")"
-            aria-label="@($"Player {player}: {CardFor(id)?.Name}. Pick for player {player}")"
-            @onclick="() => _versusActive = player">
-        @if (CardFor(id) is { Portrait.Length: > 0 } c)
-        {
-            <img src="@c.Portrait" alt="" />
-        }
-        <span class="pf-plate-tag">P@(player)</span>
-        <strong>@(CardFor(id)?.Name ?? "?")</strong>
-    </button>;
-
-    private void PickVersusFighter(string id)
-    {
-        if (_versusActive == 1) { _fighterId = id; _versusActive = 2; }
-        else { _p2FighterId = id; _versusActive = 1; }
-    }
 
     // The on-screen pad, the same in the practice room and the arcade. The walk buttons' names
     // differ: the practice fighter always faces the bag, the arcade one faces the foe.
@@ -428,12 +377,6 @@
         <kbd>↓</kbd><kbd>↙</kbd><kbd>←</kbd> + kick <em>Rush Kick</em> ·
         <kbd>←</kbd><kbd>↙</kbd><kbd>↓</kbd><kbd>↘</kbd><kbd>→</kbd> + punch or kick: the fighter's own <em>signature</em>, once it's filmed
     </p>;
-
-    private static RenderFragment VersusControls => @<div>
-        <p><strong>P1</strong> <kbd>W</kbd><kbd>A</kbd><kbd>S</kbd><kbd>D</kbd> move · <kbd>F</kbd> punch · <kbd>G</kbd> kick</p>
-        <p><strong>P2</strong> arrows move · <kbd>K</kbd> punch · <kbd>L</kbd> kick. With two pads, pad 1 is P1; one pad plays P2.</p>
-        @SpecialsList
-    </div>;
 
     private PoFighterCard? CardFor(string? id)
     {
@@ -544,13 +487,6 @@
                 _selfRef ??= DotNetObjectReference.Create(this);
                 if (await JS.InvokeAsync<bool>("loadEngine", "pofighter")
                     && await JS.InvokeAsync<bool>("PoFighter.startArcade", _room, _selfRef, _fighterId, _difficulty, _ratings))
-                    return;
-            }
-            else if (IsVersus)
-            {
-                _selfRef ??= DotNetObjectReference.Create(this);
-                if (await JS.InvokeAsync<bool>("loadEngine", "pofighter")
-                    && await JS.InvokeAsync<bool>("PoFighter.startVersus", _room, _selfRef, _fighterId, _p2FighterId))
                     return;
             }
             else if (IsTournament)
@@ -750,16 +686,6 @@
         _over = true;
         var difficulty = _difficulty switch { "easy" => Difficulty.Easy, "hard" => Difficulty.Hard, _ => Difficulty.Medium };
         await Results.RecordAsync(GameKeys.PoFighter.Value, _playerName, difficulty, _outcome);
-        await InvokeAsync(StateHasChanged);
-    }
-
-    /// <summary>arcade.js, when the 2P match ends: "P1 · Nick" or a draw.</summary>
-    [JSInvokable]
-    public async Task VersusFinished(string winner, bool isDraw)
-    {
-        _outcome = isDraw ? Models.GameResult.Draw : Models.GameResult.Win;
-        _summary = isDraw ? "A draw game." : $"{winner} wins!";
-        _over = true;
         await InvokeAsync(StateHasChanged);
     }
 

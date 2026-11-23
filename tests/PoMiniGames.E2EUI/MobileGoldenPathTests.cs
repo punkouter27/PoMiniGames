@@ -120,7 +120,7 @@ public class MobileGoldenPathTests
                 IsMobile = true,
             });
             var page = await context.NewPageAsync();
-            await page.GotoAsync($"{_fixture.ServerAddress}connectfive/2player", new()
+            await page.GotoAsync($"{_fixture.ServerAddress}connectfive/1player", new()
             {
                 WaitUntil = WaitUntilState.NetworkIdle,
                 Timeout = 60_000,
@@ -143,9 +143,10 @@ public class MobileGoldenPathTests
             for (var i = 0; i < 4; i++) await controls.Nth(0).TapAsync();
             await page.GetByRole(AriaRole.Button, new() { Name = "Drop in column 1" }).TapAsync();
             (await page.Locator(".cf-cell.red[aria-colindex='1']").CountAsync()).Should().Be(1);
+            await Assertions.Expect(page.Locator(".cf-cell.yellow")).ToHaveCountAsync(1, new() { Timeout = 10_000 });
             for (var i = 0; i < 8; i++) await controls.Nth(2).TapAsync();
             await page.GetByRole(AriaRole.Button, new() { Name = "Drop in column 9" }).TapAsync();
-            (await page.Locator(".cf-cell.yellow[aria-colindex='9']").CountAsync()).Should().Be(1);
+            (await page.Locator(".cf-cell.red[aria-colindex='9']").CountAsync()).Should().Be(1);
         }
     }
 }

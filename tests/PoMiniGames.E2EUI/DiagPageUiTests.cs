@@ -38,7 +38,7 @@ public class DiagPageUiTests
                 (await page.Locator("[data-testid='diag-banner']").InnerTextAsync()).Should().MatchRegex(@"Version v\d{6}");
                 (await page.Locator(".po-diag__card .po-badge").CountAsync()).Should().BeGreaterThan(1);
                 (await page.Locator(".po-header .po-header__title").InnerTextAsync()).Should().Contain("PoMiniGames");
-                (await page.Locator(".po-header .po-header__settings").GetAttributeAsync("href")).Should().Be("/settings");
+                (await page.Locator(".po-header .po-header__settings").CountAsync()).Should().Be(0);
                 // No sign-in in this app, so nothing stands where the email would be (no initials chip).
                 (await page.Locator(".po-header .gl-account-trigger").CountAsync()).Should().Be(0);
                 (await page.Locator(".po-version").InnerTextAsync()).Should().MatchRegex(@"^v\d{6}$");

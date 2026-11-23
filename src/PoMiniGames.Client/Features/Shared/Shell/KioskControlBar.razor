@@ -6,10 +6,11 @@
 @implements IDisposable
 
 @* ─────────────────────────────────────────────────────────────────────────
-   Kiosk controls — pause / skip / exit for the "Watch all demos" reel.
+   Kiosk controls — mute / exit for the "Watch all demos" reel (no prev/pause/next
+   transport buttons: the reel just rotates on its own).
 
-   This is the UI for KioskCoordinator's TogglePause, SkipNext, Exit, IsPaused,
-   SecondsUntilAdvance and CurrentGameName. Without it a player who started the
+   This is the UI for KioskCoordinator's Exit, IsPaused, SecondsUntilAdvance and
+   CurrentGameName. Without it a player who started the
    reel has no way out of the 60-second auto-rotation except the browser's back
    button. It renders only while the reel is actually running, and disappears
    the moment it stops.
@@ -42,19 +43,6 @@
             </span>
         }
 
-        <button type="button" class="kiosk-bar-btn"
-                aria-label="Go to the previous demo" title="Previous demo"
-                @onclick="PreviousAsync">⏮</button>
-
-        <button type="button" class="kiosk-bar-btn"
-                aria-label="@(Kiosk.IsPaused ? "Resume the demo reel" : "Pause the demo reel")"
-                title="@(Kiosk.IsPaused ? "Resume" : "Pause")"
-                @onclick="TogglePauseAsync">@(Kiosk.IsPaused ? "▶" : "❚❚")</button>
-
-        <button type="button" class="kiosk-bar-btn"
-                aria-label="Skip to the next demo" title="Next demo"
-                @onclick="SkipAsync">⏭</button>
-
         @* Audio mute toggle. Persistent via localStorage so a 5-minute museum loop
            at full volume doesn't become a problem on the second run. *@
         <button type="button" class="kiosk-bar-btn kiosk-bar-btn--mute"
@@ -81,28 +69,10 @@
         Settings.Changed += _onChanged;
     }
 
-    private async Task TogglePauseAsync()
-    {
-        await Feedback.ClickAsync();
-        Kiosk.TogglePause();
-    }
-
-    private async Task SkipAsync()
-    {
-        await Feedback.TapAsync();
-        Kiosk.SkipNext();
-    }
-
     private async Task ExitAsync()
     {
         await Feedback.SwipeBackAsync();
         Kiosk.Exit();
-    }
-
-    private async Task PreviousAsync()
-    {
-        await Feedback.TapAsync();
-        Kiosk.PreviousDemo();
     }
 
     // The mute button is a second door onto the one global sound setting, so it goes

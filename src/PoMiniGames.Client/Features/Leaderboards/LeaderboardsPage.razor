@@ -720,7 +720,6 @@
         // catalog lands in the "Other" bucket so the page never silently
         // drops a board.
         var spKeys = GameCatalog.KeysFor(GameMode.OnePlayer);
-        var lpKeys = GameCatalog.KeysFor(GameMode.TwoPlayer);
         var mpKeys = GameCatalog.KeysFor(GameMode.Multiplayer);
 
         // The Brawl Demo board (fighter ELO from CPU-vs-CPU matches) is
@@ -754,7 +753,6 @@
         _groupedBoards = new List<BoardGroup>
         {
             new BoardGroup("1p",      "1 Player",       Claim(b => spKeys.Contains(Game(b)) || string.Equals(b.GameKey, brawlDemoKey, StringComparison.OrdinalIgnoreCase))),
-            new BoardGroup("2p",      "2 Player",       Claim(b => lpKeys.Contains(Game(b)))),
             new BoardGroup("multi",   "Multiplayer",    Claim(b => mpKeys.Contains(Game(b)))),
             new BoardGroup("other",   "Other",          Claim(_ => true)),
         }.Where(g => g.Boards.Count > 0).ToList();

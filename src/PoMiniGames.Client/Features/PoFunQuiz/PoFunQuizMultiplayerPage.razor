@@ -44,19 +44,15 @@
                      StartLabel="Start quiz"
                      MaxPlayersHint="2"
                      MinPlayers="2"
-                     PickerTitle="Quiz"
-                     HowTo="@HowToPlayContent"
                      OnClient="OnClientAsync"
                      OnStateChanged="OnLobbyStateAsync"
                      OnGameStarted="OnMatchStartedAsync"
                      OnLeave="Leave">
             <Picker>
-                @* Category and question count are the host's: everyone else reads them off the
-                   host's seat. *@
                 @if (_lobby is { IsHost: true })
                 {
-                    <label class="fq-join__field">
-                        <span class="fq-join__label">Category</span>
+                    <label class="lobby-inline-opt">
+                        <span>Category</span>
                         <select aria-label="Category" value="@HostCategory" @onchange="OnCategoryChanged">
                             @foreach (var c in FunQuizCategories.All)
                             {
@@ -64,19 +60,10 @@
                             }
                         </select>
                     </label>
-                    <label class="fq-join__field">
-                        <span class="fq-join__label">Questions</span>
-                        <select aria-label="Questions" value="@HostQuestionCount" @onchange="OnQuestionCountChanged">
-                            @foreach (var n in QuestionCounts)
-                            {
-                                <option value="@n">@n questions</option>
-                            }
-                        </select>
-                    </label>
                 }
                 else
                 {
-                    <p class="lobby__hint">@FunQuizCategories.LabelFor(HostCategory) · @HostQuestionCount questions, set by the host.</p>
+                    <p class="lobby__hint">Category: @FunQuizCategories.LabelFor(HostCategory)</p>
                 }
             </Picker>
         </OnlineLobby>
@@ -123,8 +110,6 @@
 </GameShell>
 
 @code {
-    private static readonly int[] QuestionCounts = [5, 10, 15, 20];
-
     private static RenderFragment TitleContent => GameCatalog.TitleFor(GameKeys.PoFunQuiz);
 
     private RenderFragment GameSummaryContent => @<div>
@@ -217,11 +202,6 @@
         LocalStorageService.SetItem(FunQuizCategories.StorageKey, category);
         return _lobby?.SendAsync("SetOptions", category, HostQuestionCount) ?? Task.CompletedTask;
     }
-
-    private Task OnQuestionCountChanged(ChangeEventArgs e) =>
-        int.TryParse(e.Value?.ToString(), out var count) && _lobby is not null
-            ? _lobby.SendAsync("SetOptions", HostCategory, count)
-            : Task.CompletedTask;
 
     // DisposeAsync drops the hub connections, which is what gives the seat back.
     private void Leave() => Navigation.NavigateTo("/");

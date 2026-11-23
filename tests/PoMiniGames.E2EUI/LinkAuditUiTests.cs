@@ -314,14 +314,22 @@ public class LinkAuditUiTests
 
         // The end card, on the small phone where it is tightest: the shared GameOverModal every
         // game ends on, so one game's result card stands for the component.
-        current = "/tictactoe/2player";
+        current = "/tictactoe/1player";
         await page.SetViewportSizeAsync(phone.Width, phone.Height);
         await page.GotoAsync(new Uri(origin, current).ToString());
         await page.Locator("dialog[open] [data-intro-action]").ClickAsync();
-        var cells = page.GetByRole(AriaRole.Gridcell);
-        foreach (var index in new[] { 0, 6, 1, 7, 2, 8, 3 })
-            await cells.Nth(index).ClickAsync();
         var result = page.Locator("dialog.gps-modal[open]");
+        for (var move = 0; move < 36 && !await result.IsVisibleAsync(); move++)
+        {
+            var openCell = page.Locator(".ttt-cell:not(.disabled)").First;
+            if (await openCell.CountAsync() == 0)
+            {
+                await page.WaitForTimeoutAsync(250);
+                continue;
+            }
+            await openCell.ClickAsync();
+            await page.WaitForTimeoutAsync(300);
+        }
         await result.WaitForAsync(new LocatorWaitForOptions { Timeout = 15_000 });
         await page.WaitForTimeoutAsync(SettleMs);
         if (await page.EvaluateAsync<string>(EndCardProblems) is { Length: > 0 } endProblems)

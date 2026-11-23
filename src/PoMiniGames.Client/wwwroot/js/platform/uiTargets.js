@@ -15,7 +15,7 @@ export const KNOWN_SELECTOR = [
     '.app-btn', '.app-seg__btn', '.app-bottom-nav__item',
     '.home-card-head', '.home-mode-chip', '.home-action',
     '.gps-intro-tab', '.gps-ceremony-skip',
-    '.lb-me-chip', '.lb-search__toggle', '.po-header__settings',
+    '.lb-me-chip', '.lb-search__toggle',
     '.rz-button', '[role="tab"]', '[role="radio"]',
     '.gps-modal button',
 ].join(',');

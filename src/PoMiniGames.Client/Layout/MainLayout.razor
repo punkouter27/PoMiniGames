@@ -8,6 +8,7 @@
 @inject ScreenFxService ScreenFx
 @inject IJSRuntime JS
 @inject SettingsService Settings
+@inject PlayerNameService PlayerNames
 @inject OnlineStatusService OnlineStatus
 @inject AppUpdateService AppUpdate
 @inject PlaySessionService PlaySessions
@@ -75,13 +76,12 @@
             @* Always in the DOM: a live region only announces changes to one that already exists. *@
             <span class="gl-sr-only" role="status" aria-live="polite">@_connectivityAnnouncement</span>
             <SectionOutlet SectionName="game-elo" />
-            @* The one settings control (Po standard): a gear, last on the right. It opens the
-               settings sheet in place, so a game keeps running underneath; /settings is the
-               same sheet for a deep link or a new tab. *@
-            <a class="po-header__settings" href="/settings" aria-label="Settings" title="Settings"
-               data-no-press-sound @onclick="OpenSettings" @onclick:preventDefault="true">
-                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 1 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 1 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 1 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 1 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
-            </a>
+            @* The only player setting left: the initials shown on the leaderboards. Everything
+               else runs on fixed defaults (graphics high, rich audio on). *@
+            <button type="button" class="po-header__initials" data-no-press-sound
+                    aria-label="Change initials" title="Change initials" @onclick="OpenInitials">
+                @InitialsLabel
+            </button>
         </div>
     </header>
 
@@ -125,9 +125,6 @@
     <BuildVersion />
     <BottomNav />
 
-    @* The one settings sheet. Mounted here so it exists on every route; it opens
-       itself when anything calls Settings.RequestOpen(). *@
-    <SettingsSheet />
     <InitialsPromptModal />
 </div>
 
@@ -161,6 +158,7 @@
             StateHasChanged();
         });
         OnlineStatus.StateChanged += _onOnlineStateChanged;
+        PlayerNames.StateChanged += OnPlayerNamesChanged;
 
         // The installed app's badge counts the scores still parked for sync.
         _onPendingChanged = () => _ = UpdateBadgeAsync();
@@ -331,14 +329,20 @@
         }
     }
 
-    private async Task OpenSettings()
+    private string InitialsLabel =>
+        string.IsNullOrWhiteSpace(PlayerNames.Initials) ? "AAA" : PlayerNames.Initials.Trim();
+
+    private async Task OpenInitials()
     {
         await Feedback.TapAsync();
-        Settings.RequestOpen();
+        PlayerNames.RequestOpenPrompt();
     }
+
+    private void OnPlayerNamesChanged() => _ = InvokeAsync(StateHasChanged);
 
     public void Dispose()
     {
+        PlayerNames.StateChanged -= OnPlayerNamesChanged;
         if (_onOnlineStateChanged is not null)
         {
             OnlineStatus.StateChanged -= _onOnlineStateChanged;

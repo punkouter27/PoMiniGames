@@ -38,7 +38,7 @@
                    Objective="@IntroObjective"
                    Controls="@(_demo ? DemoQuickControls : _online ? OnlineHowToPlayContent : HowToPlayContent)"
                    Options="@(_demo || _online ? null : SetupContent)"
-                   Wide="@(!_demo)"
+                   Wide="@(!_demo && !_online)"
                    Mode="@(_demo ? GameIntro.IntroMode.Demo : GameIntro.IntroMode.OnePlayer)"
                    OnStart="OnIntroStartAsync" />
     }
@@ -73,10 +73,9 @@
                                 <div class="mr-lobby">
                                     <OnlineLobby TPlayer="PoMarbleRaceLobbyPlayer"
                                                  HubPath="pomarblerace/lobby-hub"
-                                                 Hint="One shared room. The first to arrive hosts and runs the race; the second steers WHITE."
+                                                 Hint="First in hosts; second steers WHITE."
                                                  MaxPlayersHint="2"
                                                  StartLabel="Start race"
-                                                 HowTo="OnlineHowToPlayContent"
                                                  OnClient="OnLobbyClient"
                                                  OnGameStarted="OnLobbyStarted"
                                                  OnLeave="LeaveLobby" />

@@ -1,17 +1,14 @@
 namespace PoMiniGamesClient.Models;
 
 /// <summary>
-/// The four ways any game in the catalog can be played. This is the canonical
-/// vocabulary — the route segment, the home-page chip, and each page's internal
-/// branching all resolve through <see cref="GameModes.Parse"/>.
+/// The ways any game in the catalog can be played. This is the canonical
+/// vocabulary — the route segment, the home-page mode button, and each page's
+/// internal branching all resolve through <see cref="GameModes.Parse"/>.
 /// </summary>
 public enum GameMode
 {
     /// <summary>Solo against the CPU. The default when a route carries no mode.</summary>
     OnePlayer,
-
-    /// <summary>Two players sharing one device/keyboard.</summary>
-    TwoPlayer,
 
     /// <summary>Hub-backed online play. Always requires a live server.</summary>
     Multiplayer,
@@ -27,7 +24,6 @@ public enum GameMode
 public static class GameModes
 {
     public const string OnePlayerSlug = "1player";
-    public const string TwoPlayerSlug = "2player";
     public const string MultiplayerSlug = "multi";
     public const string DemoSlug = "demo";
 
@@ -39,7 +35,6 @@ public static class GameModes
     public static GameMode Parse(string? routeSegment) => routeSegment?.ToLowerInvariant() switch
     {
         DemoSlug => GameMode.Demo,
-        TwoPlayerSlug => GameMode.TwoPlayer,
         MultiplayerSlug => GameMode.Multiplayer,
         _ => GameMode.OnePlayer,
     };
@@ -47,45 +42,41 @@ public static class GameModes
     /// <summary>The canonical URL segment for a mode.</summary>
     public static string ToSlug(GameMode mode) => mode switch
     {
-        GameMode.TwoPlayer => TwoPlayerSlug,
         GameMode.Multiplayer => MultiplayerSlug,
         GameMode.Demo => DemoSlug,
         _ => OnePlayerSlug,
     };
 
-    /// <summary>Short label for the mode chip on the home page.</summary>
+    /// <summary>Short label for the mode button on the home page.</summary>
     public static string ToLabel(GameMode mode) => mode switch
     {
-        GameMode.TwoPlayer => "2P",
         GameMode.Multiplayer => "Online",
         GameMode.Demo => "Demo",
         _ => "1P",
     };
 
-    /// <summary>Accessible name for the mode chip; the short label alone is not one.</summary>
+    /// <summary>Accessible name for the mode button; the short label alone is not one.</summary>
     public static string ToDescription(GameMode mode) => mode switch
     {
-        GameMode.TwoPlayer => "2 players, one device",
         GameMode.Multiplayer => "Online multiplayer",
         GameMode.Demo => "Watch a demo",
         _ => "1 player vs CPU",
     };
 
     /// <summary>
-    /// Long-form mode name for a page heading (<c>Connect Five · 2 Players</c>).
+    /// Long-form mode name for a page heading (<c>Connect Five · 1 Player</c>).
     /// </summary>
     /// <remarks>
-    /// Distinct from <see cref="ToLabel"/>, which is the terse chip on the home card
-    /// ("2P") and is sized for a chip, not a title. Every game title should compose
+    /// Distinct from <see cref="ToLabel"/>, which is the terse button label on the home page
+    /// ("1P") and is sized for a button, not a title. Every game title should compose
     /// through this so the mode is readable in the top bar: a heading that names the
-    /// game but not the mode cannot tell a player which of the three Connect Five
+    /// game but not the mode cannot tell a player which of the Connect Five
     /// routes a shared link dropped them into. It exists because the pages had started
     /// inventing their own headings — "Voxel Strike · Co-op", "PoEcosystem · A living
     /// island" — which left twelve of sixteen games with no mode in the title at all.
     /// </remarks>
     public static string ToHeading(GameMode mode) => mode switch
     {
-        GameMode.TwoPlayer => "2 Players",
         GameMode.Multiplayer => "Multiplayer",
         GameMode.Demo => "Demo",
         _ => "1 Player",

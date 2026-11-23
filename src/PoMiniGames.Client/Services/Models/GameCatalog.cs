@@ -57,7 +57,6 @@ public sealed record CatalogGame(GameKey Key, string Title, string Icon, IReadOn
     public CatalogMode Primary =>
         Modes.FirstOrDefault(m => m.Mode == GameMode.OnePlayer)
         ?? Modes.FirstOrDefault(m => m.Mode == GameMode.Multiplayer)
-        ?? Modes.FirstOrDefault(m => m.Mode == GameMode.TwoPlayer)
         ?? Modes[0];
 
     public CatalogMode? Find(GameMode mode) => Modes.FirstOrDefault(m => m.Mode == mode);
@@ -105,7 +104,6 @@ public static class GameCatalog
         new(GameKeys.ConnectFive, "Connect Five", "grid_on",
         [
             new(GameMode.OnePlayer, "/connectfive/1player"),
-            new(GameMode.TwoPlayer, "/connectfive/2player"),
             // Quick-match 1v1 over SignalR: no lobby, the first two arrivals are
             // paired. Server-authoritative board — see Features/ConnectFive.
             new(GameMode.Multiplayer, "/connectfive/multi", RequiresNetwork: true),
@@ -119,7 +117,6 @@ public static class GameCatalog
         new(GameKeys.TicTacToe, "Tic-Tac-Toe", "apps",
         [
             new(GameMode.OnePlayer, "/tictactoe/1player"),
-            new(GameMode.TwoPlayer, "/tictactoe/2player"),
             // Quick-match 1v1 over SignalR, same turn-match service as Connect Five.
             new(GameMode.Multiplayer, "/tictactoe/multi", RequiresNetwork: true),
             new(GameMode.Demo, "/tictactoe/demo"),
@@ -128,7 +125,6 @@ public static class GameCatalog
         new(GameKeys.PoBrawl, "Brawl", "sports_mma",
         [
             new(GameMode.OnePlayer, "/pobrawl/1player"),
-            new(GameMode.TwoPlayer, "/pobrawl/2player"),
             // Server-authoritative 1v1 over SignalR. Two humans, one lobby, one
             // fight. POST /api/pobrawl/matches feeds the per-player Elo table —
             // see Features/PoBrawl/Online.
@@ -211,17 +207,13 @@ public static class GameCatalog
         ]),
 
         // PoFighter (preview): fighters cut from filmed performers. Arcade (you vs the CPU ladder),
-        // local 2P, a practice room (no score), an arcade-style demo and a CPU tournament.
+        // a practice room (no score), an arcade-style demo and a CPU tournament.
         new(GameKeys.PoFighter, "PoFighter", "sports_martial_arts",
         [
             new(GameMode.OnePlayer, "/pofighter/arcade")
             {
                 ChipLabel = "1P · Arcade",
                 ChipDescription = "Fight every other fighter in turn, then your own Shadow; Easy, Normal or Hard",
-            },
-            new(GameMode.TwoPlayer, "/pofighter/versus")
-            {
-                ChipDescription = "Two players on one screen: WASD vs arrows, or two pads; best of three",
             },
             new(GameMode.OnePlayer, "/pofighter/1player")
             {
@@ -243,7 +235,6 @@ public static class GameCatalog
         new(GameKeys.PoFunQuiz, "Fun Quiz", "quiz",
         [
             new(GameMode.OnePlayer, "/funquiz/1player", RequiresNetwork: true),
-            new(GameMode.TwoPlayer, "/funquiz/2player", RequiresNetwork: true),
             new(GameMode.Multiplayer, "/funquiz/multi", RequiresNetwork: true),
         ]),
 
@@ -297,7 +288,7 @@ public static class GameCatalog
         [GameKeys.PoVoxelStrike.Value] = "Break the blocks before they break you.",
         [GameKeys.PoMule.Value] = "Sixteen colonists, twelve months, one colony.",
         [GameKeys.PoCapitol.Value] = "The Capitol, and 512 raiders who want it.",
-        [GameKeys.PoFighter.Value] = "Arcade, 2P and a practice room: fighters cut from real video.",
+        [GameKeys.PoFighter.Value] = "Arcade and a practice room: fighters cut from real video.",
         [GameKeys.PoFunQuiz.Value] = "Trivia rounds against the computer.",
         [GameKeys.PoCoupleQuiz.Value] = "How well do you know each other?",
         [GameKeys.PoEcosystem.Value] = "A world you watch, never touch.",

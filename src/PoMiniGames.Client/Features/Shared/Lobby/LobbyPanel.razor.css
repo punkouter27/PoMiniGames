@@ -11,6 +11,7 @@
    motion like the app's other reactive colour. */
 .lobby {
     position: relative;
+    overflow: hidden;
 }
 
 .lobby::after {
@@ -31,8 +32,8 @@
     align-items: center;
     justify-content: space-between;
     flex-wrap: wrap;
-    gap: 0.25rem 0.75rem;
-    margin-bottom: 0.4rem;
+    gap: 0.2rem 0.6rem;
+    margin-bottom: 0.3rem;
 }
 
 .lobby__head ::deep .conn-strip { margin: 0; }
@@ -48,19 +49,28 @@
 
 .lobby__hint,
 ::deep .lobby__hint {
-    font-size: 0.85rem;
+    font-size: 0.82rem;
     color: var(--color-text-secondary);
-    margin: 0 0 0.5rem;
+    margin: 0 0 0.35rem;
 }
 
 .lobby__section {
-    margin: 0 0 0.9rem;
+    margin: 0 0 0.6rem;
 }
 
-/* A native control a game puts in the picker slot (Couple Quiz's round count). */
+/* Compact inline picker row for minimal online options (e.g., track, category, AI drivers). */
+.lobby__section ::deep .lobby-inline-opt {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.5rem;
+    font-size: 0.85rem;
+    color: var(--color-text-secondary);
+}
+
+/* A native control a game puts in the picker slot. */
 .lobby__section ::deep select {
-    min-height: 2.25rem;
-    padding: 0 0.6rem;
+    min-height: 2.1rem;
+    padding: 0 0.55rem;
     border: 1px solid var(--color-border);
     border-radius: var(--radius-md);
     background: var(--color-surface);
@@ -70,23 +80,23 @@
 
 .lobby__empty {
     color: var(--color-text-secondary);
-    margin: 0.5rem 0;
+    margin: 0.35rem 0;
 }
 
 .lobby__list {
     list-style: none;
     padding: 0;
-    margin: 0.5rem 0 0;
+    margin: 0.35rem 0 0;
     display: grid;
-    gap: 0.5rem;
+    gap: 0.35rem;
 }
 
 .lobby__player {
     display: flex;
     align-items: center;
     flex-wrap: wrap;
-    gap: 0.5rem;
-    padding: 0.5rem 0.75rem;
+    gap: 0.4rem;
+    padding: 0.38rem 0.65rem;
     border: 1px solid var(--color-border);
     border-radius: var(--radius-md);
     background: var(--surface-3);

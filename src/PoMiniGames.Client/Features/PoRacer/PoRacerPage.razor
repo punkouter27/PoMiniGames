@@ -31,7 +31,7 @@
                            Title="@TitleContent"
                            Objective="@IntroObjective"
                            Controls="@ControlsContent"
-                           HowToPlay="@TipsContent"
+                           HowToPlay="@(_mode == RaceMode.Online ? null : TipsContent)"
                            Options="@(_mode == RaceMode.Solo ? SoloSetup : StartError)"
                            Mode="@(IsDemo ? GameIntro.IntroMode.Demo : GameIntro.IntroMode.OnePlayer)"
                            Wide="@(_mode == RaceMode.Solo)"
@@ -50,18 +50,29 @@
                     {
                         <OnlineLobby TPlayer="PoRacerLobbyPlayer"
                                      HubPath="poracer/lobby-hub"
-                                     Hint="One shared room. The first driver in hosts and picks the track; bots fill the empty seats."
+                                     Hint="First in hosts and picks the track; bots fill open seats."
                                      MaxPlayersHint="PoRacerCatalog.CarCount"
                                      StartLabel="Start race"
                                      OnClient="OnLobbyClient"
                                      OnGameStarted="OnLobbyStarted"
                                      OnLeave="LeaveLobby">
                             <Picker>
-                                @* Track, then paint, then the buttons: the paint shop used to sit
-                                   under Start race, after the thing it is a choice for. *@
-                                <PoRacerTrackSelector SelectedTrackId="@LobbyTrackId" SelectedTrackIdChanged="PickLobbyTrackAsync"
-                                                      Disabled="@(_lobby?.IsHost != true)" Bests="_bests" Compact="true" />
-                                <PoRacerPaintShop @bind-Customization="_customization" EngineReady="_engineReady" />
+                                @if (_lobby?.IsHost == true)
+                                {
+                                    <label class="lobby-inline-opt">
+                                        <span>Track</span>
+                                        <select aria-label="Track" value="@LobbyTrackId" @onchange="@(e => PickLobbyTrackAsync(e.Value?.ToString() ?? PoRacerCatalog.DefaultTrackId))">
+                                            @foreach (var t in PoRacerCatalog.Tracks)
+                                            {
+                                                <option value="@t.Id">@t.Name</option>
+                                            }
+                                        </select>
+                                    </label>
+                                }
+                                else
+                                {
+                                    <p class="lobby__hint">Track: @(PoRacerCatalog.Tracks.FirstOrDefault(t => t.Id == LobbyTrackId)?.Name ?? LobbyTrackId)</p>
+                                }
                             </Picker>
                         </OnlineLobby>
                     }

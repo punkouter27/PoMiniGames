@@ -169,7 +169,7 @@ function buildGraph(ctx) {
     // Exponentially-decaying stereo noise is a crude but convincing small-room
     // tail, and it costs one buffer we generate at runtime.
     const convolver = ctx.createConvolver();
-    const richOn = (() => { try { return localStorage.getItem('pominigames:rich-audio') === '1'; } catch { return false; } })();
+    const richOn = (() => { try { return localStorage.getItem('pominigames:rich-audio') !== '0'; } catch { return true; } })();
     convolver.buffer = richOn && window.PoRichAudio?.buildHallImpulse
         ? window.PoRichAudio.buildHallImpulse(ctx)
         : makeImpulseResponse(ctx, 1.9, 3.2);

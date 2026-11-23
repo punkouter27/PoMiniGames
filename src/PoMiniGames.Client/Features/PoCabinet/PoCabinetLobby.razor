@@ -45,17 +45,15 @@
         <Picker>
             @if (IsHost && !InRace)
             {
-                <div class="pocabinet-pick">
-                    <label>
-                        <span>AI drivers</span>
-                        <select value="@BotCount" disabled="@_busy" @onchange="SetBotsAsync">
-                            @for (var n = 0; n <= PoCabinetCatalog.MaxBots; n++)
-                            {
-                                <option value="@n">@n</option>
-                            }
-                        </select>
-                    </label>
-                </div>
+                <label class="lobby-inline-opt">
+                    <span>AI drivers</span>
+                    <select value="@BotCount" disabled="@_busy" @onchange="SetBotsAsync">
+                        @for (var n = 0; n <= PoCabinetCatalog.MaxBots; n++)
+                        {
+                            <option value="@n">@n</option>
+                        }
+                    </select>
+                </label>
             }
         </Picker>
         <Status>
@@ -87,12 +85,6 @@
                 <InlineError Message="@_error" />
             }
         </Status>
-        <ExtraActions>
-            <button type="button" class="app-btn app-btn--secondary" @onclick="OnOpenSettings">Car &amp; settings</button>
-        </ExtraActions>
-        <HowTo>
-            <p>One shared room: the first driver in hosts, picks the AI drivers, and starts once everyone is ready. After a race you come back here for the rematch; ready up within @ReadyTimeoutSeconds seconds or the seat is freed.</p>
-        </HowTo>
     </OnlineLobby>
 </div>
 
@@ -106,9 +98,6 @@
     [Parameter] public EventCallback OnOpenSettings { get; set; }
     /// <summary>A line from the page, e.g. how the last race ended when its finish was missed.</summary>
     [Parameter] public string? Notice { get; set; }
-
-    /// <summary>Mirrors the server's PoCabinetLobbyService.ReadyTimeout.</summary>
-    private const int ReadyTimeoutSeconds = 90;
 
     private LobbyClient<PoCabinetLobbyPlayer>? _client;
     private string? _error;
