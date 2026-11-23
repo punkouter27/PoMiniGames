@@ -181,16 +181,6 @@ export function animOf(f) {
 const filmedJump = f => f.move === 'jump' && !!f.data.moves.jump;
 const arc = air => air.h * Math.sin(Math.PI * Math.min(1, Math.max(0, air.t / air.T)));
 
-/** How high the fighter's feet are off the floor (how high a jump is). */
-export function liftOf(f) {
-    if (!f.air) return 0;
-    if (filmedJump(f)) {
-        const p = pictureOf(f);
-        return p.h !== undefined ? Math.max(0, p.ay - p.h / (f.data.res ?? 1)) : 0;
-    }
-    return arc(f.air);
-}
-
 /** How far to raise the picture when drawing it (a filmed jump already rises in the footage). */
 export const drawLiftOf = f => (f.air && !filmedJump(f) ? arc(f.air) : 0);
 
@@ -426,7 +416,7 @@ function resolveHit(m, att, def) {
     if (f.r + 30 < gap(m)) return;
     if (mv.level === 'high' && crouching(def)) return;   // ducked: the punch sails over
     att.hitDone = true;
-    applyHit(m, att, def, att.move, mv, { x: def.x - def.dir * 20, y: ARENA.ground - mv.hitY - drawLiftOf(att) * 0.5 });
+    applyHit(m, att, def, att.move, mv, { x: def.x - def.dir * 20, y: ARENA.ground - mv.hitY });
 }
 
 function endRound(m, reason) {
