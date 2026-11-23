@@ -26,7 +26,7 @@ const esc = s => String(s).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;',
 /** The arcade ladder for a pick: the others by Elo (lowest first, then by name), then the Shadow. */
 export function ladderFor(all, pickId, ratings = {}) {
     const me = all.find(f => f.id === pickId) ?? all[0];
-    const elo = f => ratings[f.id] ?? 1500;
+    const elo = f => ratings[f.id] ?? 1000;   // the server board's seed (PairwiseEloOptions.SeedElo)
     const others = all.filter(f => f.id !== me.id).sort((a, b) => elo(a) - elo(b) || a.name.localeCompare(b.name));
     const shadow = { ...me, name: `${PALETTES[1].name} ${me.name}`, palette: 1, boss: true };
     return { me, stages: [...others, shadow] };

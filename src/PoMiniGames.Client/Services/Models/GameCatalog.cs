@@ -227,7 +227,7 @@ public static class GameCatalog
             new(GameMode.Demo, "/pofighter/tournament")
             {
                 ChipLabel = "Demo · Tournament",
-                ChipDescription = "16-slot CPU tournament: every fighter enters, EMPTY slots are byes, bouts move the fighter Elo board",
+                ChipDescription = "16-slot CPU tournament: every fighter enters, no-player slots are BYEs, bouts move the fighter Elo board",
             },
         ]),
 

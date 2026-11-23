@@ -19,7 +19,7 @@ export const LEVELS = [1, 2, 3, 4, 5];
 
 // The procedural voice per fighter: a base pitch (Hz), a timbre and a level trim (a sawtooth or
 // square wave is far louder than a triangle at the same gain, so each voice is evened out to peak
-// around the same level). EMPTY slots and fighters not listed use the neutral voice.
+// around the same level). BYE slots and fighters not listed use the neutral voice.
 const VOICES = {
     p1: { pitch: 150, wave: 'sawtooth', formant: 900, trim: 0.42 },    // Nick
     kim: { pitch: 255, wave: 'triangle', formant: 1400, trim: 1 },     // Kim

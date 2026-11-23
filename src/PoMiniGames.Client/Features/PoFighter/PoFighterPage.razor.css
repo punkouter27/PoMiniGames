@@ -1002,16 +1002,6 @@ button.pf-move:hover {
     color: var(--pf-ink);
 }
 
-.pf-room ::deep .pfb-bye {
-    position: absolute;
-    right: 0.3rem;
-    top: 50%;
-    transform: translateY(-50%);
-    font-size: 0.6rem;
-    font-weight: 900;
-    color: rgba(255, 255, 255, 0.7);
-}
-
 /* Arcade ladder overlay (arcade.js builds it into the same [data-pf-bracket] panel). */
 .pf-room ::deep .pfl-vs {
     display: flex;
