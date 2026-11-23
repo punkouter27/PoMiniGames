@@ -7,6 +7,8 @@
    they collapse and the tiles stay plain glass buttons.
    Online lobby: one player, one mark ("You"), and a face on every tile (Face) so the pick is
    by sight, not from a list of surnames.
+   Brawl Cup start card: the 16-slot field as a 4x4, read-only (Disabled), each tile captioned
+   with its seed and Elo (Caption), and every open slot a BYE tile (ByeSlots) after the fighters.
    Styles: PoBrawlPage.razor.css (.pb-select-*); this component shares that CSS scope. *@
 <ul class="pb-select-grid @(Face is not null ? "pb-select-grid--faces" : "")" role="radiogroup" aria-label="Fighters">
     @for (var i = 0; i < Fighters.Count; i++)
@@ -38,6 +40,10 @@
                     </span>
                 }
                 <span class="pb-select-name">@f.Name</span>
+                @if (Caption?.Invoke(f) is { Length: > 0 } caption)
+                {
+                    <small class="pb-select-caption">@caption</small>
+                }
                 @if (p1)
                 {
                     <span class="pb-select-mark pb-select-mark--p1" aria-hidden="true">@P1Label</span>
@@ -47,6 +53,14 @@
                     <span class="pb-select-mark pb-select-mark--p2" aria-hidden="true">P2</span>
                 }
             </button>
+        </li>
+    }
+    @for (var i = 0; i < ByeSlots; i++)
+    {
+        <li role="none">
+            <span class="pb-select-tile pb-select-tile--bye" role="img" aria-label="BYE: open slot, no player">
+                <span class="pb-select-name">BYE</span>
+            </span>
         </li>
     }
 </ul>
@@ -65,6 +79,10 @@
     /// <summary>A portrait URL per fighter id (null when there is none). Null draws no faces at all.</summary>
     [Parameter] public Func<string, string?>? Face { get; set; }
     [Parameter] public bool Disabled { get; set; }
+    /// <summary>A second line under each fighter's name (the Cup's seed and Elo); null or empty draws none.</summary>
+    [Parameter] public Func<PoBrawlFighter, string?>? Caption { get; set; }
+    /// <summary>Open slots drawn as BYE tiles after the fighters (the tournament field's 4x4).</summary>
+    [Parameter] public int ByeSlots { get; set; }
 
     private readonly HashSet<string> _failed = [];
 }

@@ -10,7 +10,8 @@
 //                              [data-pf-moves]             the move-card strip; it folds
 //                                                          (is-collapsed) after IDLE_FOLD_MS
 //                                                          without input
-//   PoFighter.startDemo(root, exitRef) → the CPU-vs-CPU demo instead (demo.js)
+//   PoFighter.startDemo(root, exitRef, eloRef) → the CPU-vs-CPU demo instead (demo.js); eloRef
+//                          rates each completed match on the fighter Elo board (DemoBoutFinished)
 //   PoFighter.startTournament(root, dotnetRef, ratings) → the 16-slot tournament (tournament.js)
 //   PoFighter.startArcade(root, dotnetRef, fighterId, difficulty, ratings) → 1P vs CPU ladder (arcade.js)
 //   PoFighter.startVersus(root, dotnetRef, p1Id, p2Id) → local 2-player match (arcade.js)
@@ -292,11 +293,11 @@ async function start(root, fighterId = 'p1') {
     return true;
 }
 
-async function startDemo(root, exitRef) {
+async function startDemo(root, exitRef, eloRef = null) {
     stop();
     const session = { stopped: false, cleanup: [] };
     run = session;
-    return runDemo(root, exitRef, session);
+    return runDemo(root, exitRef, session, eloRef);
 }
 
 async function startTournament(root, dotnetRef, ratings) {

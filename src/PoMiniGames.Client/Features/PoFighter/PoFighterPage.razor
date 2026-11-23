@@ -23,7 +23,8 @@
    your Shadow; difficulty on the start card; the run is recorded in local stats.
    /pofighter/versus is local 2P (arcade.js): P1 WASD F/G, P2 arrows K/L, or two pads.
    /pofighter/demo is the attract-mode demo (js/pofighter/demo.js): Kim and Nick, both CPU, best
-   of three, forever; no start card, and any key or tap returns to the main menu.
+   of three, forever; no start card, and any key or tap returns to the main menu. Every completed
+   match is rated on the live fighter Elo board (DemoBoutFinished, PoFighterDemoElo).
    /pofighter/tournament is the 16-slot CPU tournament (js/pofighter/tournament.js); each bout
    between built-in fighters posts to the fighter Elo board (POST /api/pofighter/elo).
    Studio fighters (made in the practice room, kept in this browser's IndexedDB) join every
@@ -315,6 +316,7 @@
     private bool IsArcade => string.Equals(Mode, "arcade", StringComparison.OrdinalIgnoreCase);
 
     private Dictionary<string, int> _ratings = new(StringComparer.OrdinalIgnoreCase);
+    private readonly PoFighterDemoElo _demoElo = new();
     private PoFighterFighterRating[] _board = [];
     private bool _over;
     private Models.GameResult _outcome = Models.GameResult.Win;
@@ -524,10 +526,11 @@
             }
             else if (IsDemo)
             {
-                // In the kiosk reel the kiosk bar owns leaving, so a key press does nothing.
+                // In the kiosk reel the kiosk bar owns leaving, so a key press does nothing; every
+                // completed match is still rated (DemoBoutFinished), in the reel too.
                 _selfRef ??= DotNetObjectReference.Create(this);
                 if (await JS.InvokeAsync<bool>("loadEngine", "pofighter")
-                    && await JS.InvokeAsync<bool>("PoFighter.startDemo", _room, Kiosk.IsActive ? null : _selfRef))
+                    && await JS.InvokeAsync<bool>("PoFighter.startDemo", _room, Kiosk.IsActive ? null : _selfRef, _selfRef))
                     return;
             }
             else if (await JS.InvokeAsync<bool>("loadEngine", "pofighter")
@@ -688,6 +691,21 @@
     {
         await Api.SubmitPoFighterBoutAsync(new PoFighterBoutResultRequest(winnerId, loserId, isDraw));
         await LoadRatingsAsync();
+    }
+
+    /// <summary>
+    /// demo.js, after each completed demo match: rate it on the live fighter Elo board and hand
+    /// back [winner Elo, change, loser Elo, change] for the win card (null when not rated).
+    /// </summary>
+    [JSInvokable]
+    public async Task<int[]?> DemoBoutFinished(int matchNo, string winnerId, string loserId, bool isDraw)
+    {
+        if (_demoElo.Admit(matchNo, winnerId, loserId, isDraw) is not { } bout) return null;
+        var before = new Dictionary<string, int>(_ratings, StringComparer.OrdinalIgnoreCase);
+        var after = await Api.RecordPoFighterBoutAsync(bout);
+        if (after is null) return null;
+        await LoadRatingsAsync();
+        return PoFighterDemoElo.Change(bout, before, after);
     }
 
     /// <summary>tournament.js, once the champion has been shown: the end card.</summary>

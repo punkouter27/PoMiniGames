@@ -188,6 +188,23 @@ public partial class ApiService
         }
     }
 
+    /// <summary>One finished PoFighter bout for the fighter Elo board: both fighters' new ratings, or null when it was not recorded.</summary>
+    public async Task<PoFighterFighterRating[]?> RecordPoFighterBoutAsync(PoFighterBoutResultRequest request)
+    {
+        try
+        {
+            using var response = await _http.PostAsJsonAsync(
+                "/api/pofighter/elo", request, ApiJsonContext.Default.PoFighterBoutResultRequest);
+            return response.IsSuccessStatusCode
+                ? await response.Content.ReadFromJsonAsync(ApiJsonContext.Default.PoFighterFighterRatingArray)
+                : null;
+        }
+        catch
+        {
+            return null;
+        }
+    }
+
     /// <summary>The PoFighter fighter Elo board (fighters that have fought), or empty offline.</summary>
     public async Task<PoFighterFighterRating[]> GetPoFighterRatingsAsync()
     {

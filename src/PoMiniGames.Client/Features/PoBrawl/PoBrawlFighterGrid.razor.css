@@ -51,3 +51,30 @@
     cursor: default;
     opacity: 0.6;
 }
+
+/* ── The Brawl Cup field (read-only): seed and Elo under the name, BYE tiles for open slots ── */
+.pb-select-caption {
+    position: relative;
+    z-index: 2;
+    display: block;
+    font-size: var(--text-xs);
+    color: var(--color-text-secondary);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.pb-select-tile--bye {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    min-height: 2.6rem;
+    border-style: dashed;
+    color: var(--color-text-secondary);
+    cursor: default;
+    box-shadow: none;
+}
+
+.pb-select-tile:disabled {
+    cursor: default;
+}

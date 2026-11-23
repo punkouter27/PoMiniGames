@@ -442,7 +442,8 @@ class HitResolutionMethods {
     this._hitFeedback(ATTACKS.kick, true, 1.2);
     if (!this._calm()) this._camVel.addScaledVector(dir, 1.4);
     this.audio.impact({ power: 1.2, worldPos: point, kind: 'kick' });
-    this.audio.grunt({ power: 1.0, charId: defender.charId });
+    // Hurt by the throw's damage: a clip from the voice set, or its procedural line (fighterVoice.js).
+    this._fighterHurt(defender, dmg);
     setExpression(defender.rig, 'hurt');
     defender.expressionT = 0.7;
     this.excited = Math.max(this.excited, 0.55);
@@ -902,7 +903,8 @@ class HitResolutionMethods {
       this._camVel.y += 0.35 * chargeMul;
     }
     this.audio.impact({ power: Math.min(2, baseDmg / 3), worldPos: hit.point, kind: attack.name });
-    this.audio.grunt({ power: Math.min(2, baseDmg / 3), charId: defender.charId });
+    // Hurt by damage: a clip from the voice set, or its procedural line (fighterVoice.js).
+    this._fighterHurt(defender, baseDmg);
     this.hudDirty = true;
   }
 

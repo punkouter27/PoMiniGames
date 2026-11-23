@@ -9,6 +9,7 @@
 //   replay.js      — the occasional instant replay between the KO and the result
 //   resultGlass.js — the frozen-frame glass behind the result
 //   keepsake.js    — the fight's poster and knockout clip, kept for Brawl HQ
+//   fighterVoice.js — each president's emotion voice (5 emotions × 5 levels, clips or stand-ins)
 //
 // A module registers in its `_init*`:
 //   this._onShow(fn)          fn(type, data) for every event below
@@ -28,16 +29,18 @@
 //   'taunt'       { f }                                a taunt starts (f is wide open)
 //   'tauntDone'   { f }                                a taunt finished untouched
 //   'ko'          { winner }                           the final blow (phase → ko)
+//   'round'       { winner, ko }                       a best-of-three round ended and the match goes on
 //   'result'      { winner, ko }                       the result is reported (after the KO / bell)
 //   'cut'         { shot, whip }                       director camera cut (CPU-only modes)
 //   'reset'       {}                                   a new match is being set up
+//   'champion'    { charId }                           the Cup's final is decided (PoBrawl.ceremony)
 //
 // Presentation only: handlers use Math.random, never `this.rng` (seeded replays, online lockstep).
 // A throwing handler is logged and skipped, never allowed to take the fight down.
 //
 // Simple vs Full show (the settings sheet's "Brawl show" row, PoBrawlShowPrefs.razor). Full is the
-// default. Simple registers only the modules that carry fight information — the sound design and the
-// charge aura. Full adds the dressing: balloons, LED boards, the instant replay and the result
+// default. Simple registers only the modules that carry fight information — the sound design, the
+// fighters' voices and the charge aura. Full adds the dressing: balloons, LED boards, the instant replay and the result
 // glass (plus, elsewhere, the KO shatter and pyro, the comic KO words, the crowd's camera flashes,
 // the belt ceremony and the director's TV cuts — each gated on _fullShow()). A module that never
 // registered costs nothing: the bus only calls what registered, and _replayBegin is absent or
@@ -51,10 +54,11 @@
 
 import { AudioShow } from './audioShow.js';
 import { ChargeAura } from './chargeAura.js';
+import { FighterVoice } from './fighterVoice.js';
 import { Keepsake } from './keepsake.js';
 import { mixin } from './mixin.js';
 
-export const SHOW_MODULES = [AudioShow, ChargeAura, Keepsake];
+export const SHOW_MODULES = [AudioShow, ChargeAura, Keepsake, FighterVoice];
 
 // One fetch per page session, shared by every engine after it. Cleared on failure so a flaky
 // network gets another try at the next fight.
@@ -85,7 +89,7 @@ class ShowMethods {
     this._showFns = { ev: [], up: [], render: [], dispose: [] };
     // Read once per engine: a fight keeps the show it started with.
     this._showFull = fullShow();
-    this._runShowInits([this._initAudioShow, this._initChargeAura, this._initKeepsake]);
+    this._runShowInits([this._initAudioShow, this._initChargeAura, this._initKeepsake, this._initFighterVoice]);
     if (!this._showFull) return null;
     return loadFullShow().then((mods) => {
       if (this.disposed || !this._showFns) return;
